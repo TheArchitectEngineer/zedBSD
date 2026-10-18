@@ -34,6 +34,26 @@ static uintptr_t conversion_primitive_address;
 /* Records collections at callback return so the independent case can prove a later parser collection occurred. */
 static size_t conversion_primitive_collections;
 
+/* The active typed GC case borrows the production immutable policy while its live object is temporarily wrapped. */
+static const struct vm_native_operations *typed_saved_operations;
+
+/* Supplies collection context only for the bounded native typed-storage observation. */
+static struct vm_heap *typed_case_heap;
+
+/* Observes the original managed owner without creating a collector edge to it. */
+static uintptr_t typed_case_realm_address;
+
+/* Counts forced typed validity collections that retained their original managed owner. */
+static unsigned typed_case_collections;
+
+static int typed_collect_get_own(struct vm_object *object, vm_value key, struct vm_property *property);
+static int typed_forward_define(struct vm_realm *realm, struct vm_object *object, vm_value key, const struct vm_descriptor *descriptor, int *handled, int *done);
+
+/* This fixture table only collects and forwards actual native typed policy; it cannot implement script-side storage. */
+static const struct vm_native_operations typed_collect_operations = {
+	typed_collect_get_own, NULL, typed_forward_define, NULL, NULL
+};
+
 static int proxy_sole_get_own(struct vm_object *object, vm_value key, struct vm_property *property);
 
 /* A target-specific fixture policy collects before returning its ordinary descriptor and never runs user script. */
@@ -41,6 +61,7 @@ static const struct vm_native_operations proxy_sole_operations = {
 	proxy_sole_get_own, NULL, NULL, NULL, NULL
 };
 
+static int typed_storage_pressure(struct page *page);
 static int proxy_canonical_index(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
 static int proxy_to_bigint(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
 static int conversion_primitive(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
@@ -170,12 +191,12 @@ main(
 		goto cleanup;
 	}
 
-	/* TypedArray's separate Set contract remains explicitly unsupported in this private receiver-aware stage. */
+	/* Fixed-buffer TypedArray Set now accepts its actual numeric element operation. */
 	status = proxy_script(page->realm, "new Uint8Array(1)", &answer);
 	if (status != 0)
 		goto cleanup;
 	status = vm_set_receiver(page->realm, (struct vm_object *)vm_value_as_cell(answer), vm_value_int32(0), vm_value_int32(1), answer, &done);
-	if (status != ENOTSUP || done) {
+	if (status != 0 || !done) {
 		status = 1;
 		goto cleanup;
 	}
@@ -195,6 +216,9 @@ main(
 	if (status != 0)
 		goto cleanup;
 	status = numeric_conversion_pressure(page);
+	if (status != 0)
+		goto cleanup;
+	status = typed_storage_pressure(page);
 
 cleanup:
 	/* Restore ordinary scanning before retiring the complete Page graph. */
@@ -1488,5 +1512,287 @@ cleanup:
 		return status;
 
 	/* Succeeded: both conversion frames and their complete temporary graphs were actually retired. */
+	return 0;
+}
+
+/* Forces real collection at a typed validity read, then preserves the original immutable native policy result. */
+static int
+typed_collect_get_own(
+	struct vm_object *object,
+	vm_value key,
+	struct vm_property *property)
+{
+	struct vm_cell *found;
+	int present;
+
+	/* The active Set frame must retain both the bare owner and a sole converted BigInt. */
+	vm_heap_collect(typed_case_heap);
+	found = vm_heap_find_cell(typed_case_heap, typed_case_realm_address);
+	if (found != NULL)
+		typed_case_collections++;
+	present = typed_saved_operations->get_own(object, key, property);
+
+	/* Preserve the real typed storage policy's found/missing/negative errno convention. */
+	if (present < 0)
+		return present;
+
+	/* Succeeded: the original native descriptor decides validity. */
+	return present;
+}
+
+/* Verifies that realm conversion finished before forwarding the actual pure native definition policy. */
+static int
+typed_forward_define(
+	struct vm_realm *realm,
+	struct vm_object *object,
+	vm_value key,
+	const struct vm_descriptor *descriptor,
+	int *handled,
+	int *done)
+{
+	struct vm_bigint *big;
+	int status;
+
+	/* Native policy must receive no script realm and an already converted BigInt value. */
+	if (realm != NULL)
+		return EINVAL;
+	if ((descriptor->has & VM_HAS_VALUE) != 0U) {
+		big = vm_value_as_bigint(descriptor->value);
+		if (big == NULL)
+			return EINVAL;
+	}
+
+	/* The original callback owns validation and actual byte storage; the fixture does not emulate it. */
+	status = typed_saved_operations->define(NULL, object, key, descriptor, handled, done);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: actual native storage completed without a script-capable callback. */
+	return 0;
+}
+
+/* Checks the real typed object, view, buffer and converted input graph across native collection and actual retirement. */
+static int
+typed_storage_pressure(
+	struct page *page)
+{
+	struct vm_cell *roots[4];
+	struct vm_cell *found;
+	struct vm_realm *realm;
+	struct vm_object *object;
+	struct vm_object *source;
+	struct vm_object *buffer;
+	struct vm_bigint *big;
+	struct wb_buffer text;
+	vm_value array;
+	vm_value input;
+	vm_value answer;
+	vm_value key;
+	uintptr_t object_address;
+	uintptr_t source_address;
+	uintptr_t view_address;
+	uintptr_t buffer_address;
+	uintptr_t storage_address;
+	uintptr_t result_address;
+	unsigned index;
+	unsigned registered;
+	int is_object;
+	int done;
+	int differs;
+	int status;
+
+	/* All saved addresses are observations; only the explicitly registered setup slots own cells. */
+	memset(roots, 0, sizeof(roots));
+	wb_buffer_init(&text);
+	registered = 0;
+	object_address = 0;
+	typed_case_heap = page->heap;
+	typed_case_realm_address = 0;
+	typed_case_collections = 0;
+	typed_saved_operations = NULL;
+	for (index = 0; index < 4U; index++) {
+		status = vm_heap_add_root(page->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+		registered++;
+	}
+
+	/* The public constructor must create the actual BigInt content metadata and backing graph. */
+	status = proxy_script(page->realm, "new BigInt64Array(1)", &array);
+	if (status != 0)
+		goto cleanup;
+	object = (struct vm_object *)vm_value_as_cell(array);
+	roots[1] = &object->cell;
+	object_address = (uintptr_t)object;
+	view_address = (uintptr_t)vm_value_as_cell(object->internal);
+	if ((object->flags & VM_OBJECT_TYPED_BIGINT) == 0U) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* Observe the real public backing object without inventing private typed-view layout in the fixture. */
+	key = vm_key_from_ascii(page->heap, "buffer");
+	if (key == VM_VALUE_EMPTY) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* The typed object's own graph is the only owner of its buffer after this read. */
+	status = vm_get(page->realm, array, key, &answer);
+	if (status != 0)
+		goto cleanup;
+	buffer = (struct vm_object *)vm_value_as_cell(answer);
+	buffer_address = (uintptr_t)buffer;
+	storage_address = (uintptr_t)vm_value_as_cell(buffer->internal);
+	status = vm_realm_create_managed(page->heap, &realm);
+	if (status != 0)
+		goto cleanup;
+	roots[0] = &realm->cell;
+	typed_case_realm_address = (uintptr_t)realm;
+	source = vm_object_create(page->heap, NULL);
+	if (source == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* This otherwise unowned source creates a fresh primitive and real subsequent conversion pressure. */
+	roots[2] = &source->cell;
+	source_address = (uintptr_t)source;
+	status = js_builtin_method(page->realm, source, "valueOf", 0, conversion_primitive);
+	if (status != 0)
+		goto cleanup;
+	input = vm_value_cell(source);
+	typed_saved_operations = object->native_operations;
+	object->native_operations = &typed_collect_operations;
+	vm_heap_collect(page->heap);
+	roots[0] = NULL;
+	roots[1] = NULL;
+	roots[2] = NULL;
+	status = vm_set_receiver(realm, object, vm_value_int32(0), input, array, &done);
+	if (status != 0)
+		goto cleanup;
+	if (!done ||
+	    typed_case_collections < 2U ||
+	    realm->property_depth != 0U) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* Restore ordinary embedding ownership only after the native collectors observed the original managed owner. */
+	roots[1] = &object->cell;
+	object->native_operations = typed_saved_operations;
+	vm_heap_collect(page->heap);
+	found = vm_heap_find_cell(page->heap, typed_case_realm_address);
+	if (found != NULL) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* Neither the typed result graph nor completed conversion may retain its original source object. */
+	found = vm_heap_find_cell(page->heap, source_address);
+	if (found != NULL) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* The native valueOf primitive has no persistent owner after conversion and pure storage end. */
+	found = vm_heap_find_cell(page->heap, conversion_primitive_address);
+	if (found != NULL) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* Read the actual stored bytes through the production typed descriptor path. */
+	status = vm_get(page->realm, array, vm_value_int32(0), &answer);
+	if (status != 0)
+		goto cleanup;
+	big = vm_value_as_bigint(answer);
+	if (big == NULL) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* The sole converted BigInt must survive native validity collection rather than being replaced by a loaded zero. */
+	roots[3] = vm_value_as_cell(answer);
+	result_address = (uintptr_t)roots[3];
+	status = vm_bigint_to_text(big, 10, &text);
+	if (status != 0)
+		goto cleanup;
+	differs = strcmp(wb_buffer_string(&text), "9007199254740993");
+	if (differs != 0) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* The last typed-object root must own its actual view and backing storage rather than an abandoned setup frame. */
+	roots[1] = NULL;
+	roots[3] = NULL;
+	vm_heap_collect(page->heap);
+	found = vm_heap_find_cell(page->heap, object_address);
+	if (found != NULL) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* The view cell retires with its final typed wrapper. */
+	found = vm_heap_find_cell(page->heap, view_address);
+	if (found != NULL) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* The actual public ArrayBuffer object has no residual constructor or conversion owner. */
+	found = vm_heap_find_cell(page->heap, buffer_address);
+	if (found != NULL) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* Its native storage cell is also collectible after the complete view graph retires. */
+	found = vm_heap_find_cell(page->heap, storage_address);
+	if (found != NULL) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* The loaded output BigInt has no accidental native root after the embedding releases it. */
+	found = vm_heap_find_cell(page->heap, result_address);
+	if (found != NULL) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* Every observed production storage component met its independent ownership and retirement condition. */
+	status = 0;
+
+cleanup:
+	/* Restore native policy only on a still-live object before retiring the fixture's saved immutable table. */
+	if (object_address != 0U && typed_saved_operations != NULL) {
+		found = vm_heap_find_cell(page->heap, object_address);
+		if (found != NULL) {
+			is_object = vm_value_is_object(vm_value_cell(found));
+			if (is_object)
+				((struct vm_object *)found)->native_operations = typed_saved_operations;
+		}
+	}
+
+	/* The observational globals and callback have no lifecycle beyond this bounded native case. */
+	typed_saved_operations = NULL;
+	typed_case_heap = NULL;
+	typed_case_realm_address = 0;
+	typed_case_collections = 0;
+	conversion_primitive_address = 0;
+	conversion_primitive_collections = 0;
+	wb_buffer_release(&text);
+	while (registered != 0U) {
+		registered--;
+		vm_heap_remove_root(page->heap, &roots[registered]);
+	}
+
+	/* Preserve failed native observations after restoring policy and releasing every setup root. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: actual pure native storage and its complete managed graph survived and retired correctly. */
 	return 0;
 }

@@ -86,6 +86,8 @@ static const struct vm_cell_type access_for_in_type = {
 	"for-in", access_for_in_trace, access_for_in_finalize
 };
 
+static int access_set_typed(struct vm_realm *realm, struct vm_object *object, vm_value key, vm_value value, vm_value receiver, int *done);
+static int access_define_typed(struct vm_realm *realm, struct vm_object *object, vm_value key, const struct vm_descriptor *descriptor, int *handled, int *done);
 static void access_write_trace(struct vm_heap *heap, void *context);
 static int access_set_receiver(struct vm_realm *realm, struct vm_object *object, vm_value key, vm_value value, vm_value receiver, int *done);
 static int access_proxy_set(struct vm_realm *realm, struct vm_proxy *proxy, vm_value key, vm_value value, vm_value receiver, int *done);
@@ -275,18 +277,28 @@ vm_set(
 		return status;
 	}
 
-	/* Direct Proxy assignment uses receiver-aware traps and preserves strict versus sloppy refusal. */
+	/* Direct Proxy and TypedArray assignment use their actual receiver-aware exotic operations. */
 	object = (struct vm_object *)vm_value_as_cell(base);
-	if (object->kind == VM_KIND_PROXY) {
+	if (object->kind == VM_KIND_PROXY || object->kind == VM_KIND_TYPED_ARRAY) {
 		status = vm_set_receiver(realm, object, key, value, base, &done);
 		if (status != 0)
 			return status;
 		if (!done) {
-			status = access_refuse(realm, strict, "Proxy set trap returned false");
-			return status;
+			if (object->kind == VM_KIND_PROXY) {
+				status = access_refuse(realm, strict, "Proxy set trap returned false");
+			} else {
+				status = access_refuse(realm, strict, "Cannot assign to read only property");
+			}
+
+			/* Strict refusal propagates its error while sloppy assignment remains silent. */
+			if (status != 0)
+				return status;
+
+			/* Succeeded: sloppy assignment deliberately ignores Boolean refusal. */
+			return 0;
 		}
 
-		/* Succeeded: the direct Proxy accepted this assignment. */
+		/* Succeeded: the direct exotic operation accepted this assignment. */
 		return 0;
 	}
 
@@ -363,7 +375,7 @@ vm_set(
 
 /*
  * Sets an object's property while preserving the original receiver and Boolean refusal.
- * This private stage supports ordinary, array and Proxy dispatch; TypedArray Set remains separate.
+ * Ordinary, array, Proxy and fixed-buffer TypedArray dispatch share explicit native input ownership.
  */
 int
 vm_set_receiver(
@@ -393,16 +405,12 @@ vm_set_receiver(
 		return status;
 	}
 
-	/* TypedArray Set must never be silently certified with ordinary fallback rules. */
-	if (object->kind == VM_KIND_TYPED_ARRAY) {
-		vm_heap_remove_tracer(realm->heap, access_write_trace, &roots);
-		return ENOTSUP;
-	}
-
 	/* One native operation depth covers both Proxy and ordinary dispatch. */
 	realm->property_depth++;
 	if (object->kind == VM_KIND_PROXY) {
 		status = access_proxy_set(realm, (struct vm_proxy *)object, key, value, receiver, done);
+	} else if (object->kind == VM_KIND_TYPED_ARRAY) {
+		status = access_set_typed(realm, object, key, value, receiver, done);
 	} else {
 		status = access_set_receiver(realm, object, key, value, receiver, done);
 	}
@@ -1295,6 +1303,15 @@ vm_define_own_property(
 		if (status != 0)
 			return status;
 		return 0;
+	}
+
+	/* TypedArray value conversion belongs to this realm layer before pure native policy. */
+	if (object->kind == VM_KIND_TYPED_ARRAY) {
+		status = access_define_typed(realm, object, key, descriptor, &handled, done);
+		if (status != 0)
+			return status;
+		if (handled)
+			return 0;
 	}
 
 	/* Native policy may reject or handle a descriptor before ordinary validation. */
@@ -3606,5 +3623,276 @@ cleanup:
 		return status;
 
 	/* Succeeded: done distinguishes accepted assignment from a false trap result. */
+	return 0;
+}
+
+/* Applies fixed-buffer integer-index Set while distinguishing conversion order for identical and different receivers. */
+static int
+access_set_typed(
+	struct vm_realm *realm,
+	struct vm_object *object,
+	vm_value key,
+	vm_value value,
+	vm_value receiver,
+	int *done)
+{
+	struct vm_cell *converted_root;
+	struct vm_property property;
+	struct vm_descriptor change;
+	vm_value converted;
+	double number;
+	int canonical;
+	int same;
+	int present;
+	int is_cell;
+	int status;
+
+	/* The outer write frame owns original inputs; this slot owns a fresh converted BigInt before native validity reads. */
+	converted_root = NULL;
+	status = vm_heap_add_root(realm->heap, &converted_root);
+	if (status != 0)
+		return status;
+	status = vm_canonical_numeric_index(key, &number, &canonical);
+	if (status != 0)
+		goto cleanup;
+	if (!canonical) {
+		status = access_set_receiver(realm, object, key, value, receiver, done);
+		goto cleanup;
+	}
+
+	/* A real TypedArray exposes pure integer-index validity through its own native policy. */
+	if (object->native_operations == NULL || object->native_operations->get_own == NULL) {
+		status = EINVAL;
+		goto cleanup;
+	}
+
+	/* Identical receivers convert first, even when the numeric index is invalid or out of range. */
+	same = vm_same_value(vm_value_cell(object), receiver);
+	if (same) {
+		converted = VM_VALUE_UNDEFINED;
+		if ((object->flags & VM_OBJECT_TYPED_BIGINT) != 0U) {
+			status = vm_to_bigint(realm, value, &converted);
+			if (status != 0)
+				goto cleanup;
+		} else {
+			status = vm_to_number(realm, value, &number);
+			if (status != 0)
+				goto cleanup;
+			converted = vm_value_number(number);
+		}
+
+		/* Preserve the sole converted value through subsequent native collection and metadata observation. */
+		is_cell = vm_value_is_cell(converted);
+		if (is_cell)
+			converted_root = vm_value_as_cell(converted);
+		present = object->native_operations->get_own(object, key, &property);
+		if (present < 0) {
+			status = -present;
+			goto cleanup;
+		}
+
+		/* An invalid integer index ignores the already converted value and still reports true. */
+		if (!present) {
+			*done = 1;
+			status = 0;
+			goto cleanup;
+		}
+
+		/* Native Define stores only the normalized primitive; no user conversion can occur inside the callback. */
+		memset(&change, 0, sizeof(change));
+		change.has = VM_HAS_VALUE;
+		change.value = converted;
+		status = vm_define_own_property(realm, object, key, &change, done);
+		goto cleanup;
+	}
+
+	/* A distinct receiver checks integer-index validity before any value conversion. */
+	present = object->native_operations->get_own(object, key, &property);
+	if (present < 0) {
+		status = -present;
+		goto cleanup;
+	}
+
+	/* Invalid numeric keys accept assignment without consulting or creating a property on the receiver. */
+	if (!present) {
+		*done = 1;
+		status = 0;
+		goto cleanup;
+	}
+
+	/* Valid indices apply ordinary receiver reflection and definition to the original unconverted value. */
+	status = access_set_receiver(realm, object, key, value, receiver, done);
+
+cleanup:
+	/* The temporary conversion owner retires before the surrounding write frame. */
+	vm_heap_remove_root(realm->heap, &converted_root);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: done distinguishes ordinary refusal from accepted integer-index assignment. */
+	return 0;
+}
+
+/* Converts fixed-buffer TypedArray descriptors in the realm before calling pure native storage policy. */
+static int
+access_define_typed(
+	struct vm_realm *realm,
+	struct vm_object *object,
+	vm_value key,
+	const struct vm_descriptor *descriptor,
+	int *handled,
+	int *done)
+{
+	struct access_descriptor_roots input_roots;
+	struct access_descriptor_roots converted_roots;
+	struct vm_descriptor converted;
+	struct vm_property property;
+	struct vm_cell *key_root;
+	double number;
+	int input_registered;
+	int converted_registered;
+	int canonical;
+	int present;
+	int native_handled;
+	int is_cell;
+	int status;
+
+	/* A direct native caller can supply a sole target, key or flagged payload with no embedding roots. */
+	*handled = 0;
+	*done = 0;
+	input_registered = 0;
+	converted_registered = 0;
+	key_root = NULL;
+	is_cell = vm_value_is_cell(key);
+	if (is_cell)
+		key_root = vm_value_as_cell(key);
+	status = vm_heap_add_root(realm->heap, &key_root);
+	if (status != 0)
+		return status;
+	input_roots.realm = realm;
+	input_roots.source = vm_value_cell(object);
+	input_roots.descriptor = descriptor;
+	input_roots.made = VM_VALUE_UNDEFINED;
+	status = vm_heap_add_tracer(realm->heap, access_descriptor_trace, &input_roots);
+	if (status != 0)
+		goto cleanup;
+	input_registered = 1;
+	status = vm_canonical_numeric_index(key, &number, &canonical);
+	if (status != 0)
+		goto cleanup;
+	if (!canonical) {
+		status = 0;
+		goto cleanup;
+	}
+
+	/* Canonical numeric keys belong exclusively to integer-index policy, even when missing. */
+	*handled = 1;
+	if (object->native_operations == NULL ||
+	    object->native_operations->get_own == NULL ||
+	    object->native_operations->define == NULL) {
+		status = EINVAL;
+		goto cleanup;
+	}
+
+	/* Index validity is observed before flags or user value conversion. */
+	present = object->native_operations->get_own(object, key, &property);
+	if (present < 0) {
+		status = -present;
+		goto cleanup;
+	}
+
+	/* An initially invalid index refuses without observing the value's primitive conversion. */
+	if (!present) {
+		status = 0;
+		goto cleanup;
+	}
+
+	/* Integer-index properties cannot become nonconfigurable or nonenumerable. */
+	if ((descriptor->has & VM_HAS_CONFIGURABLE) != 0U && (descriptor->attributes & VM_PROPERTY_CONFIGURABLE) == 0U) {
+		status = 0;
+		goto cleanup;
+	}
+
+	/* Enumerability has the same mandatory true attribute. */
+	if ((descriptor->has & VM_HAS_ENUMERABLE) != 0U && (descriptor->attributes & VM_PROPERTY_ENUMERABLE) == 0U) {
+		status = 0;
+		goto cleanup;
+	}
+
+	/* Accessor descriptors are never integer-index data properties. */
+	if ((descriptor->has & (VM_HAS_GET | VM_HAS_SET)) != 0U) {
+		status = 0;
+		goto cleanup;
+	}
+
+	/* A writable:false claim is rejected before any value conversion. */
+	if ((descriptor->has & VM_HAS_WRITABLE) != 0U && (descriptor->attributes & VM_PROPERTY_WRITABLE) == 0U) {
+		status = 0;
+		goto cleanup;
+	}
+
+	/* An attribute-only descriptor needs no element conversion or native write. */
+	if ((descriptor->has & VM_HAS_VALUE) == 0U) {
+		*done = 1;
+		status = 0;
+		goto cleanup;
+	}
+
+	/* Copy only present metadata and initialize every payload before exposing the converted descriptor tracer. */
+	memset(&converted, 0, sizeof(converted));
+	converted.has = descriptor->has;
+	converted.value = VM_VALUE_UNDEFINED;
+	converted.getter = VM_VALUE_UNDEFINED;
+	converted.setter = VM_VALUE_UNDEFINED;
+	if ((descriptor->has & VM_HAS_WRITABLE) != 0U)
+		converted.attributes |= descriptor->attributes & VM_PROPERTY_WRITABLE;
+	if ((descriptor->has & VM_HAS_ENUMERABLE) != 0U)
+		converted.attributes |= descriptor->attributes & VM_PROPERTY_ENUMERABLE;
+	if ((descriptor->has & VM_HAS_CONFIGURABLE) != 0U)
+		converted.attributes |= descriptor->attributes & VM_PROPERTY_CONFIGURABLE;
+	converted_roots.realm = realm;
+	converted_roots.source = VM_VALUE_UNDEFINED;
+	converted_roots.descriptor = &converted;
+	converted_roots.made = VM_VALUE_UNDEFINED;
+	status = vm_heap_add_tracer(realm->heap, access_descriptor_trace, &converted_roots);
+	if (status != 0)
+		goto cleanup;
+	converted_registered = 1;
+	if ((object->flags & VM_OBJECT_TYPED_BIGINT) != 0U) {
+		status = vm_to_bigint(realm, descriptor->value, &converted.value);
+		if (status != 0)
+			goto cleanup;
+	} else {
+		status = vm_to_number(realm, descriptor->value, &number);
+		if (status != 0)
+			goto cleanup;
+		converted.value = vm_value_number(number);
+	}
+
+	/* Heap policy receives NULL realm and normalized primitives, so it cannot execute user conversion. */
+	native_handled = 0;
+	status = object->native_operations->define(NULL, object, key, &converted, &native_handled, done);
+	if (status != 0)
+		goto cleanup;
+	if (!native_handled) {
+		status = EINVAL;
+		goto cleanup;
+	}
+
+	/* A conversion-time invalidation makes SetElement a no-op after the original valid Define was accepted. */
+	*done = 1;
+	status = 0;
+
+cleanup:
+	/* Retire converted and original descriptor owners before their stack storage leaves this operation. */
+	if (converted_registered)
+		vm_heap_remove_tracer(realm->heap, access_descriptor_trace, &converted_roots);
+	if (input_registered)
+		vm_heap_remove_tracer(realm->heap, access_descriptor_trace, &input_roots);
+	vm_heap_remove_root(realm->heap, &key_root);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: handled distinguishes integer-index policy from ordinary fallback and done preserves refusal. */
 	return 0;
 }

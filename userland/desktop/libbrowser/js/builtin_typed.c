@@ -151,6 +151,10 @@ static const char typed_weak_prelude[] =
 	"  def(g, 'FinalizationRegistry', FinalizationRegistry);\n"
 	"})";
 
+static int typed_numeric_index(const struct typed_view *view, vm_value key, int *canonical, int *valid, uint32_t *index);
+static int typed_convert(struct vm_realm *realm, int type, vm_value value, double *number, uint64_t *big);
+static int typed_make_view(struct vm_realm *realm, int type, struct vm_object *prototype, vm_value buffer_object, uint32_t offset, uint32_t length, int data_view, vm_value *result);
+
 /* Marks a view's buffer object. */
 static void
 typed_view_trace(
@@ -254,33 +258,28 @@ typed_convert(
 	uint64_t *big)
 {
 	struct vm_bigint *bigint;
+	vm_value converted;
 	int status;
 
+	/* Content type selects the language conversion, independently of element width or signedness. */
 	*number = 0.0;
 	*big = 0;
 	if (type == TYPED_BIGINT64 || type == TYPED_BIGUINT64) {
-		bigint = vm_value_as_bigint(value);
-		if (bigint == NULL) {
-			if (realm == NULL)
-				return 0;
-			status = vm_throw_type_error(realm, "Cannot convert a value to a BigInt");
-			if (status != 0)
-				return status;
-			return 0;
-		}
+		status = vm_to_bigint(realm, value, &converted);
+		if (status != 0)
+			return status;
+		bigint = vm_value_as_bigint(converted);
 		*big = vm_bigint_to_uint64(bigint);
 		return 0;
 	}
-	if (vm_value_is_number(value)) {
-		*number = vm_value_as_number(value);
-		return 0;
-	}
-	if (realm == NULL) {
-		*number = value == VM_VALUE_TRUE ? 1.0 : (value == VM_VALUE_FALSE || value == VM_VALUE_NULL ? 0.0 : NAN);
-		return 0;
-	}
+
+	/* Number content rejects BigInt and Symbol while honoring object conversion in the owning realm. */
 	status = vm_to_number(realm, value, number);
-	return status;
+	if (status != 0)
+		return status;
+
+	/* Succeeded: native storage receives scalar Number or modulo-64-bit BigInt content. */
+	return 0;
 }
 
 /* Writes a converted element into bytes. */
@@ -456,6 +455,7 @@ typed_own_keys(
 	return 0;
 }
 
+/* Applies immutable integer-index policy to normalized primitive descriptors without running script. */
 static int
 typed_define(
 	struct vm_realm *realm,
@@ -466,27 +466,64 @@ typed_define(
 	int *done)
 {
 	struct typed_view *view;
+	struct vm_bigint *bigint;
 	uint32_t index;
 	uint64_t big;
 	double number;
+	int canonical;
+	int valid;
+	int is_number;
 	int status;
 
-	view = (struct typed_view *)vm_value_as_cell(object->internal);
-	*handled = 0;
-	if (!vm_value_is_int32(key) || vm_value_as_int32(key) < 0)
-		return 0;
+	UNUSED_PARAMETER(realm);
 
-	/* An index past the end is ignored. */
-	*handled = 1;
-	*done = 1;
-	if (!typed_index(view, key, &index))
-		return 0;
-	if ((descriptor->has & VM_HAS_VALUE) == 0U)
-		return 0;
-	status = typed_convert(realm, (int)view->type, descriptor->value, &number, &big);
+	/* Realm-owned callers perform conversion before entering this immutable heap policy. */
+	*handled = 0;
+	*done = 0;
+	view = (struct typed_view *)vm_value_as_cell(object->internal);
+	status = typed_numeric_index(view, key, &canonical, &valid, &index);
 	if (status != 0)
 		return status;
+	if (!canonical)
+		return 0;
+	*handled = 1;
+	if (!valid)
+		return 0;
+
+	/* Integer-index descriptors keep their required configurable, enumerable and writable attributes. */
+	if ((descriptor->has & VM_HAS_CONFIGURABLE) != 0U && (descriptor->attributes & VM_PROPERTY_CONFIGURABLE) == 0U)
+		return 0;
+	if ((descriptor->has & VM_HAS_ENUMERABLE) != 0U && (descriptor->attributes & VM_PROPERTY_ENUMERABLE) == 0U)
+		return 0;
+	if ((descriptor->has & (VM_HAS_GET | VM_HAS_SET)) != 0U)
+		return 0;
+	if ((descriptor->has & VM_HAS_WRITABLE) != 0U && (descriptor->attributes & VM_PROPERTY_WRITABLE) == 0U)
+		return 0;
+	if ((descriptor->has & VM_HAS_VALUE) == 0U) {
+		*done = 1;
+		return 0;
+	}
+
+	/* Native storage accepts a normalized primitive of the view's content type and never invokes ToPrimitive. */
+	number = 0.0;
+	big = 0;
+	if (view->type == TYPED_BIGINT64 || view->type == TYPED_BIGUINT64) {
+		bigint = vm_value_as_bigint(descriptor->value);
+		if (bigint == NULL)
+			return EINVAL;
+		big = vm_bigint_to_uint64(bigint);
+	} else {
+		is_number = vm_value_is_number(descriptor->value);
+		if (!is_number)
+			return EINVAL;
+		number = vm_value_as_number(descriptor->value);
+	}
+
+	/* Existing fixed-view bounds and byte representation belong to the native storage implementation. */
 	typed_store((int)view->type, view->buffer->data + view->offset + (size_t)index * typed_sizes[view->type], number, big);
+	*done = 1;
+
+	/* Succeeded: one already converted value was stored without executing script. */
 	return 0;
 }
 
@@ -557,10 +594,38 @@ typed_make_view(
 {
 	struct typed_view *view;
 	struct vm_object *object;
+	struct vm_cell *roots[4];
+	unsigned index;
+	unsigned registered;
+	int status;
 
+	/* A direct native caller need not retain the managed owner, prototype or fresh backing buffer. */
+	*result = VM_VALUE_UNDEFINED;
+	roots[0] = NULL;
+	if (realm->managed)
+		roots[0] = &realm->cell;
+	roots[1] = NULL;
+	if (prototype != NULL)
+		roots[1] = &prototype->cell;
+	roots[2] = vm_value_as_cell(buffer_object);
+	roots[3] = NULL;
+	registered = 0;
+	for (index = 0; index < 4U; index++) {
+		status = vm_heap_add_root(realm->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+		registered++;
+	}
+
+	/* The new view remains unpublished until an actual object takes ownership of it. */
 	view = vm_heap_alloc(realm->heap, &typed_view_type, sizeof(*view));
-	if (view == NULL)
-		return ENOMEM;
+	if (view == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* Keep the view and its backing object live while allocating the final wrapper. */
+	roots[3] = &view->cell;
 	view->buffer_object = buffer_object;
 	view->buffer = typed_buffer_of(buffer_object);
 	view->offset = offset;
@@ -568,16 +633,38 @@ typed_make_view(
 	view->type = (uint32_t)type;
 	view->heap = realm->heap;
 	object = vm_object_create(realm->heap, prototype);
-	if (object == NULL)
-		return ENOMEM;
+	if (object == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* Native storage metadata is immutable and independent of user-modifiable prototype properties. */
 	object->internal = vm_value_cell(view);
 	if (data_view) {
 		object->kind = VM_KIND_DATA_VIEW;
 	} else {
 		object->kind = VM_KIND_TYPED_ARRAY;
 		object->native_operations = &typed_operations;
+		if (type == TYPED_BIGINT64 || type == TYPED_BIGUINT64)
+			object->flags |= VM_OBJECT_TYPED_BIGINT;
 	}
+
+	/* The wrapper now owns its view and buffer graph, with no remaining fallible operation before publication. */
 	*result = vm_value_cell(object);
+	status = 0;
+
+cleanup:
+	/* No factory root may escape its actual native frame. */
+	while (registered != 0U) {
+		registered--;
+		vm_heap_remove_root(realm->heap, &roots[registered]);
+	}
+
+	/* Preserve failed construction without publishing a partial view. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the completed typed object owns every collectible storage component. */
 	return 0;
 }
 
@@ -1465,5 +1552,50 @@ js_builtin_install_typed(
 		return status;
 
 	/* Succeeded: the buffers and views are installed. */
+	return 0;
+}
+
+/* Classifies canonical numeric keys and valid fixed-view indices without script or VM allocation. */
+static int
+typed_numeric_index(
+	const struct typed_view *view,
+	vm_value key,
+	int *canonical,
+	int *valid,
+	uint32_t *index)
+{
+	double number;
+	double whole;
+	int negative_zero;
+	int status;
+
+	/* Noncanonical names continue into ordinary property storage. */
+	*valid = 0;
+	*index = 0;
+	status = vm_canonical_numeric_index(key, &number, canonical);
+	if (status != 0)
+		return status;
+	if (!*canonical)
+		return 0;
+	if (number != number)
+		return 0;
+
+	/* Negative zero is an invalid integer index even though its numeric value equals zero. */
+	negative_zero = 0;
+	if (number == 0.0)
+		negative_zero = signbit(number);
+	if (negative_zero)
+		return 0;
+	if (number < 0.0 || number >= (double)view->length)
+		return 0;
+
+	/* Bounds exclude infinities before integral conversion. */
+	whole = floor(number);
+	if (whole != number)
+		return 0;
+	*index = (uint32_t)number;
+	*valid = 1;
+
+	/* Succeeded: the key is either ordinary, invalid numeric, or a valid fixed-view index. */
 	return 0;
 }

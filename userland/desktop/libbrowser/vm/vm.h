@@ -69,9 +69,10 @@
 /* The status a native function or an engine call reports when it threw (the value is the realm's exception). */
 #define VM_THROWN (-1)
 
-/* The object's flags: it is an array; it takes no new properties. */
+/* The object's flags: array identity, nonextensibility, and immutable BigInt TypedArray content. */
 #define VM_OBJECT_ARRAY 0x1U
 #define VM_OBJECT_NOT_EXTENSIBLE 0x2U
+#define VM_OBJECT_TYPED_BIGINT 0x4U
 
 /* The hints of ToPrimitive: which of valueOf and toString is tried first. */
 #define VM_HINT_DEFAULT 0
