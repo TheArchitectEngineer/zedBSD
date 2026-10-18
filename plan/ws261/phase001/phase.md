@@ -2,7 +2,7 @@
 
 # ws261-p001 boot.h の PC-98・RPi の構造体を除く
 
-Status: in-progress（2026-10-18 q1254-i01、P3）
+Status: cleared（2026-10-18 Q1 判定: T1-709 で Pi 4（QEMU raspi4b、SD の root・画面に login）・PC-98（login と uname -a）・amd64 UEFI（画面に login）が PASS。bios-ide は UEFI の image では成立せず未実施（依頼は任意）。kernel・driver・include の bootloader/ の include は 0 件）（旧: in-progress（2026-10-18 q1254-i01、P3））
 
 - 親: [WS261](../ws.md)。Queue: q1254-i01。
 - 規約: [Guardrail](../../guardrail.md)「HAL と kernel・boot loader と HAL の受け渡し」（2026-10-18 ユーザー）。
