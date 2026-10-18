@@ -15,14 +15,14 @@ Status: in-progress（2026-10-18 q1248-i01、P1）
 
 `src/drivers/` と `include/drivers/` の .c・.h・.S・.inc 1,031 file について、先頭の comment（最初の `#include` より前、license の block を除く。`#include` の無い header は file の頭の最初の comment）を script で抜き出し、出典・参考・派生の語（Linux・FreeBSD・OpenBSD・Mesa・anv・blorp・nouveau・amdgpu・the reference・follows・derived・ported・transcribed・MIT・GPL・PRM・Technical Reference Manual・specification・SHA-256 など）を含む 165 file を file ごとに読んで決めた。残りの 866 file は語の一致が無く、直す要が無い。header guard の後の block ごとの `Values referenced:` は規則どおりなので残した（amdrdna-regs.h・gfx10-isa.h・display-dpcd-xd.h・xd-vbt-layout.h ほか）。
 
-### 直した file（33、comment だけ）
+### 直した file（44、comment だけ）
 
 | driver | 数 | file | commit |
 | --- | --- | --- | --- |
 | usb・pci・typec・i2c・gpio・pc98 | 9 | usb.c、usb.h、pci.h、pci-pcat-assign.c、pci-window.c、ucsi.h、lpss-i2c.c、intel-gpio.c、pc98-ide.c | cd5eccda3 |
 | rpi4 | 7 | rpi4-board.c、rpi4-mmal.c、rpi4-vchiq-wire.h、rpi4-vchiq.c、rpi4-h264.h（cd5eccda3）、rpi4-bt-link.c、rpi4-bt.c（f7235146b） | cd5eccda3・f7235146b |
 | amdrdna・nvrtx・bcm2711 | 6 | bytecode.c、products.c、cl.c、native-bin.c、native-shader.c、qpu.c | ceac7454d |
-| i915 display・compiler・render | 15 | gen9-link.c、gen9-backlight.c、gen9-mode.c、gen9-modeset.c、gen9-outputs.c、interrupts.c、present.c、scanout.c、compile-compute.inc、compile.c、eu.c、eu.h、compute.c、state.h、transport.h、blit.h | e91b944a4 |
+| i915 display・compiler・render | 16 | gen9-link.c、gen9-backlight.c、gen9-mode.c、gen9-modeset.c、gen9-outputs.c、interrupts.c、present.c、scanout.c、compile-compute.inc、compile.c、eu.c、eu.h、compute.c、state.h、transport.h、blit.h | e91b944a4 |
 | i915 tests | 6 | gen9-fake-hw.h、host-gen9-modeset-test.c、eu-test.c、fhd-render.c、draw-fixture.c、draw-fixture.h | e5466651d |
 
 直し方: 先頭からは出典の名前・関数名・版を外して file の役割だけにし、出典は該当の関数・表・define の block の comment に `Procedure referenced: <版> <path> (<関数>)` か `Values referenced: …` の複数行の形で移した。同じ file を直すついでに、先頭の開発の管理情報（ws・BUG・T1 の番号、plan/ の path）も外した（guardrail の「source の中の開発の管理情報」）。
