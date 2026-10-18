@@ -1,0 +1,43 @@
+{
+  "product_and_fixture_changes_bounded_to_selected_functions_private_state": true,
+  "other_engine_VM_headers_unchanged": true,
+  "native_operations_definition_comment_unchanged": true,
+  "old726_prefix_unchanged": true,
+  "added_conditions": 26,
+  "full_changed_functions": {
+    "userland/desktop/libbrowser/js/builtin_json.c": [
+      "json_parse",
+      "json_parse_inner",
+      "json_object",
+      "json_array",
+      "json_parse_container",
+      "json_object_inner",
+      "json_array_inner",
+      "json_internalize",
+      "json_internalize_inner",
+      "json_enumerable_keys",
+      "json_trace_parser",
+      "json_trace_parse_frame",
+      "json_trace_reviver"
+    ],
+    "plan/ws074/tests/host-proxy-read.c": [
+      "main",
+      "proxy_parse_pressure"
+    ]
+  },
+  "raw_allowed_cleanup": 48,
+  "only_single_forward_cleanup": true,
+  "other_checker_findings": 0,
+  "manual_review": [
+    "full C standard declaration groups/function/prototype/public-static order/semantic paragraphs/branch conditions/per-return comments",
+    "top parser slots initialized before tracer registration/input coercion; fresh text, managed realm, parsed root, holder/key/reviver retained until any outcome",
+    "parse-container wrapper retains unpublished container/name/member/key through recursive allocations; recursive child result transfers to caller traced slot before retirement",
+    "reviver wrapper retains saved value independently of deleted original property and independently of child callback result; key-string allocation and actual callback remain within root frame",
+    "realm IsArray before length/object enumeration; array snapshots indices without own-key or descriptor traps; object OwnKeys\u2192filter Symbols\u2192all GetOwn enumerability\u2192children",
+    "vector tracer marks initialized keys through GetOwn script; compaction only replaces visited slots; no descriptor payload used after subsequent allocation",
+    "Delete/Define false ignored by InternalizeJSONProperty; original exceptions and errno preserved, result root independently retained",
+    "pressure bridge normal VM native function only, unchanged production8MiB threshold/inert allocation/real collection counter; final input text built dynamically via join, original constant-text probe retained as initial build",
+    "no new weak-address reclaim gate or mid-parser arbitrary collection coverage claimed; actual post-coercion collection gate and shared reviver GC controls have separate evidence",
+    "parser grammar/string/number/value and q49 stringify functions tokens unchanged; newer reviver source-context/width/resource/global/full acceptance pending"
+  ]
+}
