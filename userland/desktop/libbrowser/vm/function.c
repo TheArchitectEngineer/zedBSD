@@ -6,7 +6,7 @@
  */
 
 /*
- * Functions (plan/ws074/design.md §11.6): the function cell, native
+ * Functions: the function cell, native
  * functions, bytecode functions and the closures a script makes with their
  * environments, calling one, and throwing.
  *
@@ -28,6 +28,15 @@ struct function_roots {
 	struct vm_heap *heap;
 	struct vm_cell **cells;
 	size_t registered;
+};
+
+/* One Proxy invocation snapshots revocable edges and owns fresh trap methods and argument lists. */
+struct function_proxy_roots {
+	struct vm_realm *realm;
+	vm_value target;
+	vm_value handler;
+	vm_value method;
+	vm_value list;
 };
 
 /* Trace declarations are required by the cell-type initializers below. */
@@ -54,8 +63,10 @@ static int function_retain(struct vm_realm *realm, const vm_value *values, unsig
 static void function_release(struct function_roots *roots);
 static int function_add_prototype(struct vm_realm *realm, struct vm_function *function);
 static int function_add_generator_prototype(struct vm_realm *realm, struct vm_function *function);
-static struct vm_object *function_default_prototype(struct vm_realm *realm, vm_value target, struct vm_object *fallback);
-static int function_run_native(struct vm_function *function, vm_native native, vm_value this_value, const vm_value *args, unsigned count, vm_value new_target, vm_value *result);
+static int function_default_prototype(struct vm_realm *realm, vm_value target, struct vm_object *fallback, struct vm_object **prototype);
+static void function_proxy_trace(struct vm_heap *heap, void *context);
+static int function_proxy_invoke(struct vm_realm *realm, vm_value callee, vm_value receiver, const vm_value *args, unsigned count, vm_value new_target, int construct, vm_value *result);
+static int function_run_native(struct vm_realm *realm, struct vm_function *function, vm_native native, vm_value this_value, const vm_value *args, unsigned count, vm_value new_target, vm_value *result);
 static void function_transfer_exception(struct vm_realm *caller, struct vm_realm *callee, int status);
 
 /*
@@ -111,6 +122,7 @@ vm_function_create_native(
 
 	/* Protects the newborn while initialization may allocate a cold root shape. */
 	roots[1] = &function->object.cell;
+	function->bound_target = VM_VALUE_UNDEFINED;
 	error = vm_object_init(heap, &function->object, realm->function_prototype);
 	if (error != 0)
 		goto cleanup;
@@ -226,6 +238,7 @@ vm_function_create(
 
 	/* Protects the partially initialized cell before any shape allocation. */
 	roots[2] = &function->object.cell;
+	function->bound_target = VM_VALUE_UNDEFINED;
 	error = vm_object_init(heap, &function->object, realm->function_prototype);
 	if (error != 0)
 		goto cleanup;
@@ -496,20 +509,30 @@ vm_value_is_callable(
 	vm_value value)
 {
 	struct vm_cell *cell;
+	struct vm_object *object;
+	struct vm_proxy *proxy;
 	int is_cell;
+	int is_object;
 
-	/* Only cells are functions. */
+	/* Primitive values have no internal Call method. */
 	is_cell = vm_value_is_cell(value);
 	if (!is_cell)
 		return 0;
-
-	/* A function cell. */
 	cell = vm_value_as_cell(value);
-	if (cell->type != &vm_function_type)
-		return 0;
+	if (cell->type == &vm_function_type)
+		return 1;
 
-	/* Succeeded: a function cell can be called. */
-	return 1;
+	/* A Proxy retains its creation-time Call slot after target and handler revocation. */
+	is_object = vm_value_is_object(value);
+	if (!is_object)
+		return 0;
+	object = (struct vm_object *)cell;
+	if (object->kind != VM_KIND_PROXY)
+		return 0;
+	proxy = (struct vm_proxy *)object;
+
+	/* Succeeded: only the immutable native slot determines Proxy callability. */
+	return proxy->callable;
 }
 
 /*
@@ -522,6 +545,7 @@ vm_value_is_constructor(
 	vm_value value)
 {
 	struct vm_function *function;
+	struct vm_object *object;
 	int callable;
 
 	/* Only functions construct. */
@@ -529,9 +553,15 @@ vm_value_is_constructor(
 	if (!callable)
 		return 0;
 
+	/* Proxy Construct classification is immutable and never reads a vm_function layout. */
+	object = (struct vm_object *)vm_value_as_cell(value);
+	if (object->kind == VM_KIND_PROXY)
+		return ((struct vm_proxy *)object)->constructor;
+
 	/* A code unit that can, or a native constructor. */
 	function = (struct vm_function *)vm_value_as_cell(value);
-	if (function->code != NULL && (function->code->flags & VM_CODE_CONSTRUCTOR) != 0U) {
+	if (function->code != NULL &&
+	    (function->code->flags & VM_CODE_CONSTRUCTOR) != 0U) {
 		/* Succeeded: the bytecode explicitly permits construction. */
 		return 1;
 	}
@@ -590,7 +620,9 @@ vm_construct_prototype(
 	if (is_object) {
 		*prototype = (struct vm_object *)vm_value_as_cell(value);
 	} else {
-		*prototype = function_default_prototype(realm, new_target, fallback);
+		status = function_default_prototype(realm, new_target, fallback, prototype);
+		if (status != 0)
+			goto cleanup;
 	}
 
 cleanup:
@@ -648,6 +680,8 @@ vm_call(
 	vm_value *result)
 {
 	struct vm_function *function;
+	struct vm_realm *native_realm;
+	struct vm_object *object;
 	struct function_roots roots;
 	vm_value inputs[2];
 	int callable;
@@ -671,6 +705,13 @@ vm_call(
 	status = function_retain(realm, inputs, 2, args, count, &roots);
 	if (status != 0)
 		return status;
+
+	/* An exotic callable uses its own dispatch before any ordinary function fields are inspected. */
+	object = (struct vm_object *)vm_value_as_cell(callee);
+	if (object->kind == VM_KIND_PROXY) {
+		status = function_proxy_invoke(realm, callee, this_value, args, count, VM_VALUE_UNDEFINED, 0, result);
+		goto cleanup;
+	}
 
 	/* Rejects a class constructor invoked without new. */
 	function = (struct vm_function *)vm_value_as_cell(callee);
@@ -705,7 +746,12 @@ vm_call(
 		}
 
 		/* Preserves the native caller's callee and construction state. */
+		/* Bound forwarding has no execution context of its own; ordinary natives enter their creation realm. */
+		native_realm = function->realm;
+		if (function->bound_target != VM_VALUE_UNDEFINED)
+			native_realm = realm;
 		status = function_run_native(
+		    native_realm,
 		    function,
 		    function->native,
 		    this_value,
@@ -714,7 +760,7 @@ vm_call(
 		    VM_VALUE_UNDEFINED,
 		    result);
 		if (status != 0) {
-			function_transfer_exception(realm, function->realm, status);
+			function_transfer_exception(realm, native_realm, status);
 			goto cleanup;
 		}
 	}
@@ -745,6 +791,8 @@ vm_construct(
 	vm_value *result)
 {
 	struct vm_function *function;
+	struct vm_realm *native_realm;
+	struct vm_object *object;
 	struct function_roots roots;
 	vm_value inputs[2];
 	struct vm_object *prototype;
@@ -777,10 +825,22 @@ vm_construct(
 	if (status != 0)
 		return status;
 
+	/* An exotic constructor forwards the original new.target through its own Construct method. */
+	object = (struct vm_object *)vm_value_as_cell(constructor);
+	if (object->kind == VM_KIND_PROXY) {
+		status = function_proxy_invoke(realm, constructor, VM_VALUE_UNDEFINED, args, count, new_target, 1, result);
+		goto cleanup;
+	}
+
 	/* A native constructor creates its object in its own realm. */
 	function = (struct vm_function *)vm_value_as_cell(constructor);
 	if (function->code == NULL) {
+		/* Bound forwarding has no execution context of its own; ordinary natives enter their creation realm. */
+		native_realm = function->realm;
+		if (function->bound_target != VM_VALUE_UNDEFINED)
+			native_realm = realm;
 		status = function_run_native(
+		    native_realm,
 		    function,
 		    function->construct,
 		    VM_VALUE_UNDEFINED,
@@ -789,7 +849,7 @@ vm_construct(
 		    new_target,
 		    result);
 		if (status != 0) {
-			function_transfer_exception(realm, function->realm, status);
+			function_transfer_exception(realm, native_realm, status);
 			goto cleanup;
 		}
 	} else if ((function->code->flags & VM_CODE_DERIVED) != 0U) {
@@ -807,16 +867,14 @@ vm_construct(
 			goto cleanup;
 		}
 	} else {
-		/* Allocates this using new.target's prototype and the callee's fallback. */
+		/* Ordinary construction resolves new.target before entering the callee's execution context. */
 		status = vm_construct_prototype(
-		    function->realm,
+		    realm,
 		    new_target,
-		    function->realm->object_prototype,
+		    realm->object_prototype,
 		    &prototype);
-		if (status != 0) {
-			function_transfer_exception(realm, function->realm, status);
+		if (status != 0)
 			goto cleanup;
-		}
 
 		/* Makes the ordinary constructor's receiver in the shared heap. */
 		made = vm_object_create(function->realm->heap, prototype);
@@ -998,59 +1056,251 @@ function_release(
 	return;
 }
 
+/* Retain snapshotted protocol participants and unpublished callback inputs across reentrant code. */
+static void
+function_proxy_trace(
+	struct vm_heap *heap,
+	void *context)
+{
+	struct function_proxy_roots *roots;
+
+	/* Only initialized tagged fields and a collectible caller realm enter this native ownership frame. */
+	roots = context;
+	if (roots->realm->managed)
+		vm_heap_mark(heap, &roots->realm->cell);
+	vm_heap_mark_value(heap, roots->target);
+	vm_heap_mark_value(heap, roots->handler);
+	vm_heap_mark_value(heap, roots->method);
+	vm_heap_mark_value(heap, roots->list);
+
+	/* Succeeded: every initialized invocation snapshot contributes its collector edge. */
+	return;
+}
+
+/* Invoke Proxy Call or Construct using actual traps and the original argument and new.target values. */
+static int
+function_proxy_invoke(
+	struct vm_realm *realm,
+	vm_value callee,
+	vm_value receiver,
+	const vm_value *args,
+	unsigned count,
+	vm_value new_target,
+	int construct,
+	vm_value *result)
+{
+	struct function_proxy_roots roots;
+	struct vm_proxy *proxy;
+	struct vm_object *object;
+	struct vm_object *list;
+	vm_value key;
+	vm_value index_key;
+	const char *method_name;
+	vm_value trap_args[3];
+	unsigned index;
+	int is_object;
+	int status;
+
+	/* The outer dispatcher owns direct arguments while this frame owns revocable snapshots and fresh VM results. */
+	roots.realm = realm;
+	roots.target = callee;
+	roots.handler = VM_VALUE_UNDEFINED;
+	roots.method = VM_VALUE_UNDEFINED;
+	roots.list = VM_VALUE_UNDEFINED;
+	status = vm_heap_add_tracer(realm->heap, function_proxy_trace, &roots);
+	if (status != 0)
+		return status;
+
+	/* A missing trap can follow nested immutable Proxy targets without consuming another C recursion frame. */
+	for (;;) {
+		proxy = (struct vm_proxy *)vm_value_as_cell(roots.target);
+		if (proxy->handler == VM_VALUE_NULL) {
+			status = vm_throw_type_error(realm, "Cannot invoke a revoked Proxy");
+			goto cleanup;
+		}
+
+		/* Snapshot both original edges before GetMethod can revoke the record or collect its previous target. */
+		roots.handler = proxy->handler;
+		roots.target = proxy->target;
+		method_name = "apply";
+		if (construct)
+			method_name = "construct";
+		key = vm_key_from_ascii(realm->heap, method_name);
+		if (key == VM_VALUE_EMPTY) {
+			status = ENOMEM;
+			goto cleanup;
+		}
+
+		/* A nullish method falls back; every other value must be callable before any argument Array is allocated. */
+		status = vm_get_method(realm, roots.handler, key, &roots.method);
+		if (status != 0)
+			goto cleanup;
+		if (roots.method == VM_VALUE_UNDEFINED) {
+			object = (struct vm_object *)vm_value_as_cell(roots.target);
+			if (object->kind == VM_KIND_PROXY)
+				continue;
+
+			/* Forward exactly the original receiver or new.target to the final target operation. */
+			if (construct) {
+				status = vm_construct(realm, roots.target, args, count, new_target, result);
+			} else {
+				status = vm_call(realm, roots.target, receiver, args, count, result);
+			}
+
+			/* Retire the fallback snapshot through the common cleanup path. */
+			goto cleanup;
+		}
+
+		/* A real trap receives a newly allocated dense Array owned before the first element definition. */
+		list = vm_array_create(realm->heap, realm->array_prototype);
+		if (list == NULL) {
+			status = ENOMEM;
+			goto cleanup;
+		}
+
+		/* Publish ownership of the fresh Array before defining its elements. */
+		roots.list = vm_value_cell(list);
+
+		/* Own default data properties cannot invoke inherited Array prototype setters. */
+		for (index = 0; index < count; index++) {
+			index_key = vm_value_int32((int32_t)index);
+			status = vm_object_define(realm->heap, list, index_key, args[index], VM_PROPERTY_DEFAULT);
+			if (status != 0)
+				goto cleanup;
+		}
+
+		/* Apply and Construct share handler this but have distinct specified argument positions. */
+		trap_args[0] = roots.target;
+		if (construct) {
+			trap_args[1] = roots.list;
+			trap_args[2] = new_target;
+		} else {
+			trap_args[1] = receiver;
+			trap_args[2] = roots.list;
+		}
+
+		/* Invoke the selected trap with its specified handler receiver and three arguments. */
+		status = vm_call(realm, roots.method, roots.handler, trap_args, 3, result);
+		if (status != 0)
+			goto cleanup;
+		if (construct) {
+			is_object = vm_value_is_object(*result);
+			if (!is_object) {
+				/* An unused primitive result need not survive the TypeError allocation. */
+				*result = VM_VALUE_UNDEFINED;
+				status = vm_throw_type_error(realm, "Proxy construct trap must return an object");
+				goto cleanup;
+			}
+		}
+
+		/* A successful trap result needs no later allocation before returning to the original caller. */
+		goto cleanup;
+	}
+
+	/* Retire snapshots only after target or trap execution and all refusal reporting have finished. */
+cleanup:
+	vm_heap_remove_tracer(realm->heap, function_proxy_trace, &roots);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the original caller receives the complete Call or Construct result. */
+	return 0;
+}
+
 /* Resolves a default intrinsic in a direct function target's own realm. */
-static struct vm_object *
+static int
 function_default_prototype(
 	struct vm_realm *realm,
 	vm_value target,
-	struct vm_object *fallback)
+	struct vm_object *fallback,
+	struct vm_object **prototype)
 {
+	struct vm_cell *cell;
+	struct vm_object *object;
+	struct vm_proxy *proxy;
 	struct vm_function *function;
 	struct vm_realm *target_realm;
 	unsigned index;
 	int callable;
+	int status;
 
-	/* A host-provided non-function target retains its explicit fallback. */
+	/* Host-provided nonfunctions retain the explicit default chosen by their caller. */
+	*prototype = fallback;
 	callable = vm_value_is_callable(target);
 	if (!callable)
-		return fallback;
+		return 0;
 
-	/* The common same-realm case requires no intrinsic translation. */
-	function = (struct vm_function *)vm_value_as_cell(target);
-	target_realm = function->realm;
-	if (target_realm == realm)
-		return fallback;
+	/* GetFunctionRealm follows immutable Proxy and bound targets without interpreting JS private data. */
+	for (;;) {
+		cell = vm_value_as_cell(target);
+		object = (struct vm_object *)cell;
+		if (object->kind == VM_KIND_PROXY) {
+			proxy = (struct vm_proxy *)object;
+			if (proxy->handler == VM_VALUE_NULL) {
+				status = vm_throw_type_error(realm, "Cannot obtain realm of a revoked Proxy");
+				if (status != 0)
+					return status;
 
-	/* Translates the three foundational prototypes stored outside intrinsics. */
-	if (fallback == realm->object_prototype)
-		return target_realm->object_prototype;
+				/* Succeeded: the VM accepted the revocation exception report. */
+				return 0;
+			}
 
-	/* Function.prototype is independently initialized in each realm. */
-	if (fallback == realm->function_prototype)
-		return target_realm->function_prototype;
-
-	/* Array.prototype is likewise a realm-specific foundational object. */
-	if (fallback == realm->array_prototype)
-		return target_realm->array_prototype;
-
-	/* Maps any registered default intrinsic to its counterpart in the target. */
-	for (index = 0; index < VM_INTRINSICS; index++) {
-		/* Only a constructed intrinsic can match the provided fallback. */
-		if (realm->intrinsics[index] == NULL)
+			/* The target chain cannot change through user-visible assignments. */
+			target = proxy->target;
 			continue;
+		}
 
-		/* Keeps fallback identity within the target function's realm. */
-		if (fallback == realm->intrinsics[index])
-			return target_realm->intrinsics[index];
+		/* Every remaining callable belongs to the actual ordinary function cell layout. */
+		function = (struct vm_function *)cell;
+		if (function->bound_target != VM_VALUE_UNDEFINED) {
+			target = function->bound_target;
+			continue;
+		}
+
+		break;
 	}
 
-	/* Succeeded: a host-specific fallback retains its explicit ownership. */
-	return fallback;
+	/* The common same-realm case requires no intrinsic translation. */
+	target_realm = function->realm;
+	if (target_realm == realm)
+		return 0;
+
+	/* Translate foundational prototypes stored outside the intrinsic registry. */
+	if (fallback == realm->object_prototype) {
+		*prototype = target_realm->object_prototype;
+		return 0;
+	}
+
+	/* A function default retains the target realm's Function.prototype identity. */
+	if (fallback == realm->function_prototype) {
+		*prototype = target_realm->function_prototype;
+		return 0;
+	}
+
+	/* An array default retains the target realm's Array.prototype identity. */
+	if (fallback == realm->array_prototype) {
+		*prototype = target_realm->array_prototype;
+		return 0;
+	}
+
+	/* Each registered default intrinsic retains its logical identity in the target realm. */
+	for (index = 0; index < VM_INTRINSICS; index++) {
+		if (realm->intrinsics[index] == NULL)
+			continue;
+		if (fallback == realm->intrinsics[index]) {
+			*prototype = target_realm->intrinsics[index];
+			return 0;
+		}
+	}
+
+	/* Succeeded: a host-specific fallback remains the explicitly supplied object. */
+	return 0;
 }
 
-/* Runs a native with scoped callee/new.target state, including reentrant calls. */
+/* Runs a native in its selected execution realm while retaining scoped callee/new.target state. */
 static int
 function_run_native(
+	struct vm_realm *realm,
 	struct vm_function *function,
 	vm_native native,
 	vm_value this_value,
@@ -1059,13 +1309,11 @@ function_run_native(
 	vm_value new_target,
 	vm_value *result)
 {
-	struct vm_realm *realm;
 	struct function_roots roots;
 	vm_value saved[2];
 	int status;
 
 	/* Retains suspended callee and new.target edges before temporarily replacing them. */
-	realm = function->realm;
 	saved[0] = realm->callee;
 	saved[1] = realm->new_target;
 	status = function_retain(realm, saved, 2, NULL, 0, &roots);
@@ -1150,6 +1398,9 @@ function_trace(
 	if (function->env != NULL)
 		vm_heap_mark(heap, &function->env->cell);
 	vm_heap_mark_value(heap, function->data);
+
+	/* BoundTargetFunction is a VM-owned immutable slot used independently of native call data. */
+	vm_heap_mark_value(heap, function->bound_target);
 
 	/* The embedding owns source interpretation; functions only retain its managed value. */
 	vm_heap_mark_value(heap, function->source);

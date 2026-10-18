@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws237-p004: host test of the Gen9 external outputs (display/gen9-outputs.c) on the hardware model
+# ws237-p004: host test of the Gen9 external outputs (display/xd9-outputs.c) on the hardware model
 # (gen9-fake-hw.c): latencies, DP and HDMI probe, lighting and darkening with the DDB order, flips, hotplug, ASan/UBSan.
 #   sh plan/ws237/tests/run-gen9-outputs-host-test.sh [OUT]   (default build/ws237-host/outputs)
 # Built with the display host library (every display source as production, host-kernel.c's stand-ins); the node

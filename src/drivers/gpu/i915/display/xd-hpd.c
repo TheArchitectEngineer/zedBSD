@@ -734,6 +734,65 @@ drv_i915_xd_hpd_status_name(
 	return "unknown";
 }
 
+/*
+ * Turns on the display 9 south display's hotplug sense of DDIs B to D.
+ */
+void
+drv_i915_xd9_hpd_enable(
+	struct i915_xd_io *io)
+{
+	uint32_t enables;
+	unsigned ddi;
+
+	/* Succeeded: each DDI's enable. */
+	enables = 0U;
+	for (ddi = I915_XD9_HPD_FIRST_DDI; ddi <= I915_XD9_HPD_LAST_DDI; ddi++)
+		enables |= I915_XD9_PORT_HOTPLUG_ENABLE(ddi);
+	(void)drv_i915_xd_io_rmw(io, I915_XD9_PORT_HOTPLUG, 0U, enables);
+}
+
+/* Reports the display 9 DDIs B to D the board has (bit per DDI, B is bit 1). */
+unsigned
+drv_i915_xd9_hpd_present(
+	struct i915_xd_io *io)
+{
+	uint32_t strap;
+	unsigned ddis;
+	unsigned ddi;
+
+	/* Each DDI the strap found. */
+	strap = drv_i915_xd_io_read(io, I915_XD_SFUSE_STRAP);
+	ddis = 0U;
+	for (ddi = I915_XD9_HPD_FIRST_DDI; ddi <= I915_XD9_HPD_LAST_DDI; ddi++) {
+		if ((strap & I915_XD9_SFUSE_DDI_DETECTED(ddi)) != 0U)
+			ddis |= 1U << ddi;
+	}
+
+	/* Succeeded: the DDIs. */
+	return ddis;
+}
+
+/* Reports the display 9 DDIs B to D a sink is attached to now (bit per DDI). */
+unsigned
+drv_i915_xd9_hpd_connected(
+	struct i915_xd_io *io)
+{
+	uint32_t live;
+	unsigned ddis;
+	unsigned ddi;
+
+	/* Each DDI's live state. */
+	live = drv_i915_xd_io_read(io, I915_XD_SDE_ISR);
+	ddis = 0U;
+	for (ddi = I915_XD9_HPD_FIRST_DDI; ddi <= I915_XD9_HPD_LAST_DDI; ddi++) {
+		if ((live & I915_XD9_SDE_HPD(ddi)) != 0U)
+			ddis |= 1U << ddi;
+	}
+
+	/* Succeeded: the attached DDIs. */
+	return ddis;
+}
+
 /* Names a connector after its kind and its number among the connectors of that kind. */
 static void
 i915_xd_hpd_names(
@@ -1196,63 +1255,4 @@ i915_xd_hpd_edid_block(
 
 	/* Succeeded: the bytes are read. */
 	return 0;
-}
-
-/*
- * Turns on the display 9 south display's hotplug sense of DDIs B to D.
- */
-void
-drv_i915_xd9_hpd_enable(
-	struct i915_xd_io *io)
-{
-	uint32_t enables;
-	unsigned ddi;
-
-	/* Succeeded: each DDI's enable. */
-	enables = 0U;
-	for (ddi = I915_XD9_HPD_FIRST_DDI; ddi <= I915_XD9_HPD_LAST_DDI; ddi++)
-		enables |= I915_XD9_PORT_HOTPLUG_ENABLE(ddi);
-	(void)drv_i915_xd_io_rmw(io, I915_XD9_PORT_HOTPLUG, 0U, enables);
-}
-
-/* Reports the display 9 DDIs B to D the board has (bit per DDI, B is bit 1). */
-unsigned
-drv_i915_xd9_hpd_present(
-	struct i915_xd_io *io)
-{
-	uint32_t strap;
-	unsigned ddis;
-	unsigned ddi;
-
-	/* Each DDI the strap found. */
-	strap = drv_i915_xd_io_read(io, I915_XD_SFUSE_STRAP);
-	ddis = 0U;
-	for (ddi = I915_XD9_HPD_FIRST_DDI; ddi <= I915_XD9_HPD_LAST_DDI; ddi++) {
-		if ((strap & I915_XD9_SFUSE_DDI_DETECTED(ddi)) != 0U)
-			ddis |= 1U << ddi;
-	}
-
-	/* Succeeded: the DDIs. */
-	return ddis;
-}
-
-/* Reports the display 9 DDIs B to D a sink is attached to now (bit per DDI). */
-unsigned
-drv_i915_xd9_hpd_connected(
-	struct i915_xd_io *io)
-{
-	uint32_t live;
-	unsigned ddis;
-	unsigned ddi;
-
-	/* Each DDI's live state. */
-	live = drv_i915_xd_io_read(io, I915_XD_SDE_ISR);
-	ddis = 0U;
-	for (ddi = I915_XD9_HPD_FIRST_DDI; ddi <= I915_XD9_HPD_LAST_DDI; ddi++) {
-		if ((live & I915_XD9_SDE_HPD(ddi)) != 0U)
-			ddis |= 1U << ddi;
-	}
-
-	/* Succeeded: the attached DDIs. */
-	return ddis;
 }

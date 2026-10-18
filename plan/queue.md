@@ -609,7 +609,7 @@ WS074 の記録の q590・q594〜q598（Codex の browser3）は main の同じ�
 | Queue | 担当 | Phase | 範囲 | 結果 |
 | --- | --- | --- | --- | --- |
 | q1254 / q1254-i01 | P3（phase-runner） | [ws261-p001](ws261/phase001/phase.md) | boot.h の PC-98・RPi の固有の構造体を除き、HAL → kernel は汎用の構造体と名前付きの object に、boot loader → HAL の固有の構造体は HAL の中に。振る舞いは変えない | 返却（2026-10-18）: PC-98（fa7c63037）・RPi の fdt・sdhci（4146469e5）、画面を値ごとの名前に（rpi4・pcat、kern_boot_framebuffer）・boot.h の RPi の構造体を除く・i915 の試験の文の直し（545525e4a）、merge dec9c8aa7・a0ae568de。kernel・driver・include の bootloader/ の include は Q1 の grep で 0 件、build 4 組 warning 0・host 試験は P3 の報告。T1-709 PASS で p001 cleared・WS261 completed。残件: rpi4 の format は firmware の pixel order のまま、payload32.elf の link の既存の失敗 |
-| q1253 / q1253-i02 | P1（phase-runner、Opus 5.5 low、子なし、新しい起動） | ws260-p011〜p015 | 同じ範囲の続き。p1 の worktree に残った p011 の途中の未 commit の変更を読んで続ける（2026-10-18 ユーザー「P1は私は止めた覚えがないので、継続していいです」） | in-progress: p011（e24adf954・5e06e654b、merge 52ff26581、golden 4 つ一致は P1 の報告）。p012（35d1a8dab、merge 065f1d055）。p013（7f536c1b3、merge 8060221d3。flip の書き込みの列は golden に無く P1 が手で照合）。p014 の参照を外した（793fec27d、merge 7986054de）、Q1 が古い gen9 の 24 file と語の試験 5 つを削除（0360c46b6、amd64 の vmunix の build warning 0・check PASS は Q1 が確かめた）。p014 の host 試験の流し直しと記録、p015 へ |
+| q1253 / q1253-i02 | P1（phase-runner、Opus 5.5 low、子なし、新しい起動） | ws260-p011〜p015 | 同じ範囲の続き。p1 の worktree に残った p011 の途中の未 commit の変更を読んで続ける（2026-10-18 ユーザー「P1は私は止めた覚えがないので、継続していいです」） | 返却（2026-10-18）: p011（e24adf954・5e06e654b、merge 52ff26581、golden 4 つ一致は P1 の報告）。p012（35d1a8dab、merge 065f1d055）。p013（7f536c1b3、merge 8060221d3。flip の書き込みの列は golden に無く P1 が手で照合）。p014 の参照を外した（793fec27d、merge 7986054de）、Q1 が古い gen9 の 24 file と語の試験 5 つを削除（0360c46b6、amd64 の vmunix の build warning 0・check PASS は Q1 が確かめた）。p014 の host 試験の流し直しと記録、p015 へ。p014 の記録と comment の直し（aba931316）・p015 の規約の直しと記録（66fbadf2c・27a59b24a）、merge 9978ce98d。golden の書き込みの列は p011〜p015 で不変、数の表は呼ばれなくなった gen9 の関数の 15,048 行を外して記録し直し（P1 の報告）。実機は T1-710 |
 
 ## 2026-10-18 夜: WS261 p002（P3）と WS262（P2）
 
@@ -617,5 +617,15 @@ WS074 の記録の q590・q594〜q598（Codex の browser3）は main の同じ�
 
 | Queue | 担当 | Phase | 範囲 | 結果 |
 | --- | --- | --- | --- | --- |
-| q1255 / q1255-i01 | P3（phase-runner） | [ws261-p002](ws261/phase002/phase.md) | boot.h の sun4u の構造体・定数を除き、HAL → kernel は汎用の構造体と名前ごとの値、boot loader → HAL の定義は HAL か bootloader/ に。振る舞いは変えない | in-progress |
-| q1256 / q1256-i01 | P2（phase-runner） | [ws262-p001](ws262/phase001/phase.md) | bootloader/ の全部を plan/coding-style.md の全文に。書き方だけ、binary の比べで動作が同じ事を確かめる。sparcv9 は P3 の q1255 と重なるので、P3 の merge の後に | in-progress |
+| q1255 / q1255-i01 | P3（phase-runner） | [ws261-p002](ws261/phase002/phase.md) | boot.h の sun4u の構造体・定数を除き、HAL → kernel は汎用の構造体と名前ごとの値、boot loader → HAL の定義は HAL か bootloader/ に。振る舞いは変えない | 返却（2026-10-18）: cbae237f7・9b32b9ec6・c7c0f5c6a、merge 49f7fc9a5。p002 cleared、WS261 completed（QEMU の起動は WS267） |
+| q1256 / q1256-i01 | P2（phase-runner） | [ws262-p001](ws262/phase001/phase.md) | bootloader/ の全部を plan/coding-style.md の全文に。書き方だけ、binary の比べで動作が同じ事を確かめる。sparcv9 は P3 の q1255 と重なるので、P3 の merge の後に | in-progress: common・bios（68fab7ee9、merge cacff93ea。code の差は common-memory-map.o・bios-fat-directory.o だけで host の同値の試験 20000 回一致、cc6aa1256 の uefi の差分は BOOTX64.EFI が基準と byte で同じ、P2 の報告）。include・pcat・pc98・tests・x68k（101050cea、merge a28d87bb7。.S・.inc・.ld は code の差なし、x68k の作れる object は byte で同じ） |
+
+## 2026-10-18 夜〜: 自走（q1257〜）
+
+承認: 2026-10-18 ユーザー「WS260, ws259, WS261, ws262, ws263, ws264, ws265, ws266, ws267, ws268 これらを完了させるまで自走してほしいです。」（N=2、判断は Master の decisions-log の同日の項目）。子のエージェントは使わない。QEMU の試験は T1。
+
+| Queue | 担当 | Phase | 範囲 | 結果 |
+| --- | --- | --- | --- | --- |
+| q1257 / q1257-i01 | P1（phase-runner、Opus 5.5 low） | WS263 → WS266 → WS264 → WS265 | 各 WS の p001 設計から framebuffer の console・VFS の段まで。HAL の API は形を限った事前の承認の範囲だけ | in-progress |
+| q1258 / q1258-i01 | P2（q1256 の後） | WS267 → WS268 → WS259 | sun4u の build と QEMU（画面の console を作る）、x68k の build（MAME は任意）、RTL8822B の表（実機は待つ） | pending |
+| q1259 / q1259-i01 | P2（q1258 の後） | WS244 の残り → WS245 の残り → WS248 → WS249 → WS251 p002 → WS252 | 2026-10-19 ユーザー「…ws244,ws245,ws248,ws249,ws251 p002, ws252も追加で、完了させて。」。実機の Phase は実機待ちで残す（2026-10-18 の決定） | pending |

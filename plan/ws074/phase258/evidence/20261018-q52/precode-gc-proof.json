@@ -1,0 +1,42 @@
+[
+  {
+    "case": "forin-gc-in-ownkeys-and-descriptor",
+    "returncode": 1,
+    "control": [
+      "console: read-proxy forin-gc-in-ownkeys-and-descriptor: FAIL",
+      "console: read-proxy controls: 0/1"
+    ]
+  },
+  {
+    "case": "forin-gc-fresh-prototype-proxy",
+    "returncode": 1,
+    "control": [
+      "console: read-proxy forin-gc-fresh-prototype-proxy: FAIL",
+      "console: read-proxy controls: 0/1"
+    ]
+  },
+  {
+    "case": "forin-gc-revocation-during-descriptor-eventually-throws",
+    "returncode": 1,
+    "control": [
+      "console: read-proxy forin-gc-revocation-during-descriptor-eventually-throws: FAIL",
+      "console: read-proxy controls: 0/1"
+    ]
+  },
+  {
+    "case": "forin-gc-fresh-name-remains-shadowed",
+    "returncode": 1,
+    "control": [
+      "console: read-proxy forin-gc-fresh-name-remains-shadowed: FAIL",
+      "console: read-proxy controls: 0/1"
+    ]
+  },
+  {
+    "case": "forin-gc-ordinary-loop-body-state",
+    "returncode": 0,
+    "control": [
+      "console: read-proxy forin-gc-ordinary-loop-body-state: PASS",
+      "console: read-proxy controls: 1/1"
+    ]
+  }
+]

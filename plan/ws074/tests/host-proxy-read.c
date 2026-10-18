@@ -16,6 +16,22 @@
 #include <stdio.h>
 #include <string.h>
 
+/* One invocation observation stores only weak addresses and actual callback counters. */
+struct invoke_observation {
+	struct vm_heap *heap;
+	uintptr_t addresses[9];
+	unsigned mode;
+	unsigned gets;
+	unsigned traps;
+};
+
+/* One for-in probe observes only integer addresses and actual callback counts during a direct API call. */
+struct for_in_observation {
+	struct vm_heap *heap;
+	uintptr_t addresses[3];
+	unsigned calls;
+};
+
 /* One direct copying probe observes live cells through integer addresses without creating collector edges. */
 struct spread_copy_observation {
 	struct vm_heap *heap;
@@ -72,6 +88,19 @@ struct extent_observation {
 	uintptr_t addresses[4];
 	unsigned collections;
 	unsigned mode;
+};
+
+/* Only invoke_pressure activates this synchronous observer; it contributes no collector edges. */
+static struct invoke_observation invoke_case;
+
+/* Only for_in_pressure activates this synchronous observer, which supplies no collector ownership. */
+static struct for_in_observation for_in_case;
+
+static int for_in_descriptor(struct vm_object *object, vm_value key, struct vm_property *property);
+
+/* This pure native descriptor policy collects and returns negative errno without running script. */
+static const struct vm_native_operations for_in_operations = {
+	for_in_descriptor, NULL, NULL, NULL, NULL
 };
 
 /* Only spread_copy_pressure activates this synchronous observation, which never retains managed input cells. */
@@ -227,11 +256,18 @@ static int proxy_set_receiver(struct vm_realm *realm, vm_value receiver, const v
 static int proxy_define_descriptor(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
 static int descriptor_roundtrip(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
 static int descriptor_pressure(struct page *page);
+static int proxy_construct(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
+static int proxy_foreign_constructor(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
+static int proxy_foreign_construct(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
+static int invoke_get_method(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
+static int invoke_trap(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
+static int invoke_pressure(struct page *page);
 static int proxy_make(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
 static int proxy_revoke(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
 static int proxy_get_receiver(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
 static int proxy_collect(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
 static int spread_copy_value(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
+static int for_in_pressure(struct page *page);
 static int spread_copy_pressure(struct page *page);
 static int proxy_parse_pressure(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
 static int proxy_script(struct vm_realm *realm, const char *source, vm_value *answer);
@@ -282,6 +318,14 @@ main(
 	if (status != 0)
 		goto cleanup;
 	status = js_builtin_method(page->realm, page->realm->global, "collectReadProxy", 0, proxy_collect);
+	if (status != 0)
+		goto cleanup;
+
+	/* Private construction and foreign-realm bridges leave the product globals unpublished. */
+	status = js_builtin_method(page->realm, page->realm->global, "constructReadProxy", 2, proxy_construct);
+	if (status != 0)
+		goto cleanup;
+	status = js_builtin_method(page->realm, page->realm->global, "makeForeignReadConstructor", 0, proxy_foreign_constructor);
 	if (status != 0)
 		goto cleanup;
 
@@ -359,7 +403,7 @@ main(
 
 	/* No partial product constructor may appear during the private foundation stage. */
 	status = proxy_script(page->realm, "typeof Proxy==='undefined'&&"
-					   "(function(){try{makeReadProxy(function(){},{});}catch(e){return e instanceof TypeError;}return false;})()&&"
+					   "(function(){var p=makeReadProxy(function(){return 7;},{});return typeof p==='function'&&p()===7;})()&&"
 					   "(function(){var p=makeReadProxy({x:1},{});return makeReadProxy(p,{}).x===1;})()",
 			      &answer);
 	if (status != 0)
@@ -388,7 +432,8 @@ main(
 	if (status != 0)
 		goto cleanup;
 	status = vm_set_receiver(page->realm, (struct vm_object *)vm_value_as_cell(answer), vm_value_int32(0), vm_value_int32(1), answer, &done);
-	if (status != 0 || !done) {
+	if (status != 0 ||
+	    !done) {
 		status = 1;
 		goto cleanup;
 	}
@@ -399,10 +444,22 @@ main(
 		goto cleanup;
 	puts("native object copy collection and reclamation: passed");
 
+	/* Direct start and next calls must own their managed caller, private state and source without embedding roots. */
+	status = for_in_pressure(page);
+	if (status != 0)
+		goto cleanup;
+	puts("native for-in collection and reclamation: passed");
+
 	/* Observe actual native graph retention after the shared protocol controls. */
 	status = proxy_lifetime(page);
 	if (status != 0)
 		goto cleanup;
+
+	/* Direct native invocation must own revoked snapshots, fresh methods and argument Arrays during actual GC. */
+	status = invoke_pressure(page);
+	if (status != 0)
+		goto cleanup;
+	puts("native proxy invocation snapshots and reclamation: passed");
 
 	/* Exercise managed realm and sole-result retention at real native collection points. */
 	status = proxy_gc_edges(page);
@@ -4995,5 +5052,658 @@ cleanup:
 		return status;
 
 	/* Succeeded: errno and refusal retained all participants only as long as the API needed them. */
+	return 0;
+}
+
+/* Collect while the private for-in state and managed direct caller are the only production owners. */
+static int
+for_in_descriptor(
+	struct vm_object *object,
+	vm_value key,
+	struct vm_property *property)
+{
+	struct vm_cell *cell;
+	unsigned index;
+
+	UNUSED_PARAMETER(object);
+	UNUSED_PARAMETER(key);
+	UNUSED_PARAMETER(property);
+
+	/* No allocation after collection can reuse a dead participant address before these liveness checks. */
+	vm_heap_collect(for_in_case.heap);
+	for (index = 0; index < 3U; index++) {
+		cell = vm_heap_find_cell(for_in_case.heap, for_in_case.addresses[index]);
+		if (cell == NULL)
+			return -EFAULT;
+	}
+
+	/* The callback count records a policy that observed all three actual live participants. */
+	for_in_case.calls++;
+
+	/* Deliberately preserve a native descriptor errno after observing successful ownership. */
+	return -EACCES;
+}
+
+/* Verify allocation-time start ownership and callback-time next ownership with all setup roots cleared. */
+static int
+for_in_pressure(
+	struct page *page)
+{
+	struct vm_realm *caller;
+	struct vm_object *source;
+	struct vm_cell *roots[3];
+	struct vm_cell *pressure;
+	struct vm_cell *cell;
+	struct vm_heap_stats before;
+	struct vm_heap_stats after;
+	vm_value iterator;
+	vm_value key;
+	vm_value value;
+	unsigned index;
+	unsigned registered;
+	int done;
+	int outcome;
+	int status;
+
+	/* Register empty setup slots before creating an independent managed caller and a source without realm backedges. */
+	memset(roots, 0, sizeof(roots));
+	memset(&for_in_case, 0, sizeof(for_in_case));
+	for_in_case.heap = page->heap;
+	registered = 0;
+	for (index = 0; index < 3U; index++) {
+		status = vm_heap_add_root(page->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+
+		/* Cleanup owns only successfully acquired registry slots. */
+		registered++;
+	}
+
+	/* The independent realm has no source-object or embedding owner after setup finishes. */
+	status = vm_realm_create_managed(page->heap, &caller);
+	if (status != 0)
+		goto cleanup;
+	roots[0] = &caller->cell;
+	source = vm_object_create(page->heap, NULL);
+	if (source == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* A plain stored own key is visible to OwnPropertyKeys without invoking the later descriptor policy. */
+	roots[1] = &source->cell;
+	key = vm_key_from_ascii(page->heap, "x");
+	if (key == VM_VALUE_EMPTY) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* The initial ordinary property creates an own-key snapshot before the pure error policy is installed. */
+	value = vm_value_int32(1);
+	status = vm_object_define(page->heap, source, key, value, VM_PROPERTY_DEFAULT);
+	if (status != 0)
+		goto cleanup;
+	source->native_operations = &for_in_operations;
+	for_in_case.addresses[0] = (uintptr_t)caller;
+	for_in_case.addresses[1] = (uintptr_t)source;
+
+	/* The next iterator-cell allocation must collect after the direct start operation accepts ownership. */
+	vm_heap_collect(page->heap);
+	pressure = vm_heap_alloc(page->heap, &proxy_pressure_type, 8U * 1024U * 1024U);
+	if (pressure == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* No embedding slot or conservative C stack can retain the bare caller and source now. */
+	for (index = 0; index < 3U; index++)
+		roots[index] = NULL;
+	vm_heap_stats(page->heap, &before);
+	status = vm_for_in_start(caller, vm_value_cell(source), &iterator);
+	vm_heap_stats(page->heap, &after);
+	if (status != 0)
+		goto cleanup;
+	/* Start must cross the real allocation threshold with its direct inputs retained. */
+	if (after.collections <= before.collections) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* The newly returned private state has no embedding root before next accepts it. */
+	for_in_case.addresses[2] = (uintptr_t)vm_value_as_cell(iterator);
+	vm_heap_stats(page->heap, &before);
+	outcome = vm_for_in_next(caller, iterator, &key, &done);
+	vm_heap_stats(page->heap, &after);
+	if (outcome != EACCES) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* The descriptor error must originate from exactly one actual native policy invocation. */
+	if (for_in_case.calls != 1U) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* Next must observe another collection while its private state is its only source owner. */
+	if (after.collections <= before.collections) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* Native descriptor failure must leave the managed caller outside any property-recursion frame. */
+	if (caller->property_depth != 0U) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* The error path leaves all three actual cells live until this post-call collection. */
+	for (index = 0; index < 3U; index++) {
+		cell = vm_heap_find_cell(page->heap, for_in_case.addresses[index]);
+		if (cell == NULL) {
+			status = 1;
+			goto cleanup;
+		}
+	}
+
+	/* The iterator finalizer releases both vectors and no root may keep any participant alive afterward. */
+	vm_heap_collect(page->heap);
+	for (index = 0; index < 3U; index++) {
+		cell = vm_heap_find_cell(page->heap, for_in_case.addresses[index]);
+		if (cell != NULL) {
+			status = 1;
+			goto cleanup;
+		}
+	}
+
+	/* Both ownership intervals and final graph reclamation were actually observed. */
+	status = 0;
+
+cleanup:
+	memset(&for_in_case, 0, sizeof(for_in_case));
+	while (registered != 0U) {
+		registered--;
+		vm_heap_remove_root(page->heap, &roots[registered]);
+	}
+
+	/* Preserve failures after retiring all temporary registry slots. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: start and next retained their direct inputs only as long as required. */
+	return 0;
+}
+
+/* Forward construction to the production VM after validating both constructor operands. */
+static int
+proxy_construct(
+	struct vm_realm *realm,
+	vm_value receiver,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	vm_value target;
+	vm_value new_target;
+	const vm_value *list;
+	unsigned length;
+	int constructor;
+	int status;
+
+	UNUSED_PARAMETER(receiver);
+
+	/* Validate new.target before a Proxy construct getter can execute. */
+	target = js_argument(args, count, 0);
+	new_target = target;
+	if (count >= 2U)
+		new_target = args[1];
+	constructor = vm_value_is_constructor(target);
+	if (!constructor) {
+		status = vm_throw_type_error(realm, "Target is not a constructor");
+		return status;
+	}
+
+	/* The second constructor operand has its own independent language check. */
+	constructor = vm_value_is_constructor(new_target);
+	if (!constructor) {
+		status = vm_throw_type_error(realm, "new.target is not a constructor");
+		return status;
+	}
+
+	/* Argument storage remains owned by the normal native call frame. */
+	list = NULL;
+	length = 0;
+	if (count > 2U) {
+		list = args + 2;
+		length = count - 2U;
+	}
+
+	/* Invoke genuine VM construction without a fixture implementation of its algorithms. */
+	status = vm_construct(realm, target, list, length, new_target, result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: return the actual constructed object. */
+	return 0;
+}
+
+/* Allocate the receiver using the actual active new.target and intrinsic fallback operation. */
+static int
+proxy_foreign_construct(
+	struct vm_realm *realm,
+	vm_value receiver,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	int status;
+
+	UNUSED_PARAMETER(receiver);
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* Native construction uses the function realm selected by vm_construct. */
+	status = vm_construct_this(realm, realm->new_target, result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: return an object allocated by the production constructor operation. */
+	return 0;
+}
+
+/* Create a real managed realm with its own intrinsic objects and error constructors. */
+static int
+proxy_foreign_constructor(
+	struct vm_realm *realm,
+	vm_value receiver,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct vm_realm *foreign;
+	struct vm_function *function;
+	struct vm_cell *roots[2];
+	vm_value key;
+	vm_value error;
+	vm_value ordinary;
+	int ordinary_requested;
+	unsigned registered;
+	unsigned index;
+	int status;
+
+	UNUSED_PARAMETER(receiver);
+
+	/* Register empty placeholders before any collectible realm or function allocation. */
+	memset(roots, 0, sizeof(roots));
+	registered = 0;
+	for (index = 0; index < 2U; index++) {
+		status = vm_heap_add_root(realm->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+		registered++;
+	}
+
+	/* Builtins are installed in the independent real realm, including its TypeError constructor. */
+	status = vm_realm_create_managed(realm->heap, &foreign);
+	if (status != 0)
+		goto cleanup;
+	roots[0] = &foreign->cell;
+	status = js_install_builtins(foreign);
+	if (status != 0)
+		goto cleanup;
+
+	/* An optional control returns a true foreign bytecode function rather than a native constructor. */
+	ordinary_requested = 0;
+	if (count > 0U)
+		ordinary_requested = vm_to_boolean(args[0]);
+	if (ordinary_requested) {
+		status = proxy_script(foreign, "(function Foreign(){})", &ordinary);
+		if (status != 0)
+			goto cleanup;
+		function = (struct vm_function *)vm_value_as_cell(ordinary);
+	} else {
+		function = vm_function_create_native(foreign, "Foreign", 0, proxy_foreign_construct);
+		if (function == NULL) {
+			status = ENOMEM;
+			goto cleanup;
+		}
+
+		/* Only the native helper uses the explicit native construction callback. */
+		function->construct = proxy_foreign_construct;
+	}
+
+	/* The function owns its managed realm after the temporary setup root retires. */
+	roots[1] = &function->object.cell;
+	key = vm_key_from_ascii(realm->heap, "prototype");
+	if (key == VM_VALUE_EMPTY) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* A writable prototype allows a genuine Proxy to expose a primitive without violating fixed-property invariants. */
+	status = vm_object_define(realm->heap, &function->object, key, vm_value_cell(foreign->object_prototype), VM_PROPERTY_WRITABLE);
+	if (status != 0)
+		goto cleanup;
+	key = vm_key_from_ascii(realm->heap, "TypeError");
+	if (key == VM_VALUE_EMPTY) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* The actual realm error constructor is exposed solely for cross-realm identity checks. */
+	status = vm_get(foreign, vm_value_cell(foreign->global), key, &error);
+	if (status != 0)
+		goto cleanup;
+	status = vm_object_define(realm->heap, &function->object, key, error, VM_PROPERTY_DEFAULT);
+	if (status != 0)
+		goto cleanup;
+	*result = vm_value_cell(function);
+
+cleanup:
+	/* Release only successfully acquired temporary roots. */
+	while (registered != 0U) {
+		registered--;
+		vm_heap_remove_root(realm->heap, &roots[registered]);
+	}
+
+	/* Preserve an installation or allocation failure. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the constructor retains its real foreign intrinsics. */
+	return 0;
+}
+
+/* Revoke during GetMethod and return a fresh trap before argument-Array allocation collects. */
+static int
+invoke_get_method(
+	struct vm_realm *realm,
+	vm_value receiver,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct vm_cell *cell;
+	struct vm_function *method;
+	struct vm_cell *pressure;
+	unsigned index;
+	int status;
+
+	UNUSED_PARAMETER(receiver);
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* Revocation removes the only record edges to the original target and handler. */
+	cell = vm_heap_find_cell(invoke_case.heap, invoke_case.addresses[1]);
+	if (cell == NULL)
+		return EFAULT;
+	status = vm_proxy_revoke(realm, vm_value_cell(cell));
+	if (status != 0)
+		return status;
+	vm_heap_collect(invoke_case.heap);
+
+	/* No allocation can reuse a dead participant address before checking the snapshots. */
+	for (index = 0; index < 6U; index++) {
+		cell = vm_heap_find_cell(invoke_case.heap, invoke_case.addresses[index]);
+		if (cell == NULL)
+			return EFAULT;
+	}
+
+	/* A fresh method has no handler or script reference after this getter frame returns. */
+	invoke_case.gets++;
+	method = vm_function_create_native(realm, "fresh-invoke-trap", 3, invoke_trap);
+	if (method == NULL)
+		return ENOMEM;
+	*result = vm_value_cell(method);
+	invoke_case.addresses[6] = (uintptr_t)method;
+	pressure = vm_heap_alloc(realm->heap, &proxy_pressure_type, 8U * 1024U * 1024U);
+	if (pressure == NULL)
+		return ENOMEM;
+
+	/* Succeeded: the following production argument-Array allocation must retain the returned method. */
+	return 0;
+}
+
+/* Observe original participants and actual argument Array through a collecting native trap. */
+static int
+invoke_trap(
+	struct vm_realm *realm,
+	vm_value receiver,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct vm_cell *cell;
+	struct vm_object *output;
+	vm_value list;
+	vm_value value;
+	unsigned index;
+	int status;
+
+	/* Check the specified trap argument positions against weak participant identities. */
+	if (count != 3U)
+		return EINVAL;
+	cell = vm_value_as_cell(receiver);
+	if ((uintptr_t)cell != invoke_case.addresses[3])
+		return EFAULT;
+	cell = vm_value_as_cell(args[0]);
+	if ((uintptr_t)cell != invoke_case.addresses[2])
+		return EFAULT;
+	if (invoke_case.mode == 0U) {
+		list = args[2];
+		value = args[1];
+	} else {
+		list = args[1];
+		value = args[2];
+	}
+
+	/* Call receiver and Construct new.target both use the independent identity function. */
+	cell = vm_value_as_cell(value);
+	if ((uintptr_t)cell != invoke_case.addresses[5])
+		return EFAULT;
+	invoke_case.addresses[7] = (uintptr_t)vm_value_as_cell(list);
+	vm_heap_collect(invoke_case.heap);
+	for (index = 0; index < 8U; index++) {
+		cell = vm_heap_find_cell(invoke_case.heap, invoke_case.addresses[index]);
+		if (cell == NULL)
+			return EFAULT;
+	}
+
+	/* Read the production Array element after collection rather than retaining the original payload in the observer. */
+	status = vm_get(realm, list, vm_value_int32(0), &value);
+	if (status != 0)
+		return status;
+	cell = vm_value_as_cell(value);
+	if ((uintptr_t)cell != invoke_case.addresses[4])
+		return EFAULT;
+	invoke_case.traps++;
+	output = vm_object_create(realm->heap, NULL);
+	if (output == NULL)
+		return ENOMEM;
+	invoke_case.addresses[8] = (uintptr_t)output;
+	*result = vm_value_cell(output);
+
+	/* Succeeded: the output has no prototype edge to the otherwise unowned direct caller. */
+	return 0;
+}
+
+/* Verify direct Call and Construct ownership across revocation, threshold collection and trap collection. */
+static int
+invoke_pressure(
+	struct page *page)
+{
+	struct vm_realm *caller;
+	struct vm_function *target;
+	struct vm_function *identity;
+	struct vm_function *getter;
+	struct vm_object *handler;
+	struct vm_object *payload;
+	struct vm_cell *roots[8];
+	struct vm_cell *cell;
+	struct vm_heap_stats before;
+	struct vm_heap_stats after;
+	const char *method_name;
+	vm_value proxy;
+	vm_value key;
+	vm_value input;
+	vm_value output;
+	unsigned registered;
+	unsigned index;
+	unsigned mode;
+	int status;
+
+	/* Only setup placeholders and the final result slot are registered by the embedding fixture. */
+	memset(roots, 0, sizeof(roots));
+	registered = 0;
+	for (index = 0; index < 8U; index++) {
+		status = vm_heap_add_root(page->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+		registered++;
+	}
+
+	/* Each invocation gets independent cells so the second mode cannot inherit ownership from the first. */
+	for (mode = 0; mode < 2U; mode++) {
+		memset(&invoke_case, 0, sizeof(invoke_case));
+		invoke_case.heap = page->heap;
+		invoke_case.mode = mode;
+		status = vm_realm_create_managed(page->heap, &caller);
+		if (status != 0)
+			goto cleanup;
+		roots[0] = &caller->cell;
+		target = vm_function_create_native(page->realm, "unreached-target", 0, proxy_collect);
+		if (target == NULL) {
+			status = ENOMEM;
+			goto cleanup;
+		}
+
+		/* The target is constructable but belongs to the permanently retained Page realm. */
+		roots[1] = &target->object.cell;
+		target->construct = proxy_collect;
+		handler = vm_object_create(page->heap, NULL);
+		if (handler == NULL) {
+			status = ENOMEM;
+			goto cleanup;
+		}
+
+		/* Handler and payload have no caller-realm prototype backedges. */
+		roots[2] = &handler->cell;
+		payload = vm_object_create(page->heap, NULL);
+		if (payload == NULL) {
+			status = ENOMEM;
+			goto cleanup;
+		}
+
+		/* A distinct identity function serves as Call thisArg or Construct new.target. */
+		roots[3] = &payload->cell;
+		identity = vm_function_create_native(page->realm, "identity", 0, proxy_collect);
+		if (identity == NULL) {
+			status = ENOMEM;
+			goto cleanup;
+		}
+
+		/* Neither identity nor getter owns the managed caller. */
+		roots[4] = &identity->object.cell;
+		identity->construct = proxy_collect;
+		getter = vm_function_create_native(page->realm, "invoke-method-getter", 0, invoke_get_method);
+		if (getter == NULL) {
+			status = ENOMEM;
+			goto cleanup;
+		}
+
+		/* Install an ordinary accessor so GetMethod exercises normal script-capable VM calls. */
+		roots[5] = &getter->object.cell;
+		method_name = "apply";
+		if (mode != 0U)
+			method_name = "construct";
+		key = vm_key_from_ascii(page->heap, method_name);
+		if (key == VM_VALUE_EMPTY) {
+			status = ENOMEM;
+			goto cleanup;
+		}
+
+		/* The handler owns its getter before any setup root can retire. */
+		status = vm_define_accessor(page->realm, vm_value_cell(handler), key, vm_value_cell(getter), 0);
+		if (status != 0)
+			goto cleanup;
+		status = vm_proxy_create(page->realm, vm_value_cell(target), vm_value_cell(handler), &proxy);
+		if (status != 0)
+			goto cleanup;
+
+		/* The original record itself has no caller-realm prototype backedge. */
+		roots[6] = vm_value_as_cell(proxy);
+		((struct vm_object *)roots[6])->prototype = NULL;
+		invoke_case.addresses[0] = (uintptr_t)caller;
+		invoke_case.addresses[1] = (uintptr_t)roots[6];
+		invoke_case.addresses[2] = (uintptr_t)target;
+		invoke_case.addresses[3] = (uintptr_t)handler;
+		invoke_case.addresses[4] = (uintptr_t)payload;
+		invoke_case.addresses[5] = (uintptr_t)identity;
+		input = vm_value_cell(payload);
+		vm_heap_stats(page->heap, &before);
+		memset(roots, 0, sizeof(roots));
+		if (mode == 0U) {
+			status = vm_call(caller, proxy, vm_value_cell(identity), &input, 1, &output);
+		} else {
+			status = vm_construct(caller, proxy, &input, 1, vm_value_cell(identity), &output);
+		}
+
+		/* Abrupt invocation cannot satisfy the lifetime gate. */
+		if (status != 0)
+			goto cleanup;
+
+		/* The method getter and actual trap must each have collected, with an intervening allocation-threshold collection. */
+		roots[7] = vm_value_as_cell(output);
+		vm_heap_stats(page->heap, &after);
+		if (invoke_case.gets != 1U ||
+		    invoke_case.traps != 1U ||
+		    after.collections < before.collections + 3U) {
+			status = 1;
+			goto cleanup;
+		}
+
+		/* Keeping only the fresh output must not retain any input or managed caller graph. */
+		vm_heap_collect(page->heap);
+		for (index = 0; index < 8U; index++) {
+			cell = vm_heap_find_cell(page->heap, invoke_case.addresses[index]);
+			if (cell != NULL) {
+				status = 1;
+				goto cleanup;
+			}
+		}
+
+		/* The sole rooted result must remain alive until its own final embedding edge retires. */
+		cell = vm_heap_find_cell(page->heap, invoke_case.addresses[8]);
+		if (cell == NULL) {
+			status = 1;
+			goto cleanup;
+		}
+
+		/* Retire the final output owner before checking actual result reclamation. */
+		roots[7] = NULL;
+		vm_heap_collect(page->heap);
+		cell = vm_heap_find_cell(page->heap, invoke_case.addresses[8]);
+		if (cell != NULL) {
+			status = 1;
+			goto cleanup;
+		}
+	}
+
+	/* Both operation modes satisfied all independent ownership and reclamation gates. */
+	status = 0;
+
+cleanup:
+	/* The weak observer and successful root registrations retire on every outcome. */
+	memset(&invoke_case, 0, sizeof(invoke_case));
+	while (registered != 0U) {
+		registered--;
+		vm_heap_remove_root(page->heap, &roots[registered]);
+	}
+
+	/* Preserve protocol errors and failed lifetime observations. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: Call and Construct retain their graph only for the duration of the direct operation. */
 	return 0;
 }

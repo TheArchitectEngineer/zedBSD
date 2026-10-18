@@ -1,0 +1,23 @@
+{
+  "old780_prefix_unchanged": true,
+  "new29_genuine_all_match": true,
+  "precode21_final_native_and_chrome_PASS": true,
+  "precode_gc_returncodes": [
+    1,
+    1,
+    1,
+    1,
+    0
+  ],
+  "all5_gc_final_PASS": true,
+  "four_precode_gc_cases_functional_fail_not_SIGSEGV": true,
+  "ordinary_gc_case_precode_already_PASS": true,
+  "native_direct_start_threshold_then_next_errno_actual_collection_and_three_participant_reclaim": true,
+  "old_independent_native_weak_gc_fixture_not_measured": true,
+  "native_step_controls": {
+    "precode": "0/3",
+    "final": "3/3",
+    "chrome": "2/3",
+    "one_legal_exotic_prototype_timing_difference": true
+  }
+}

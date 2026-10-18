@@ -1,0 +1,38 @@
+{
+  "runs": [
+    {
+      "label": "precode-native-step-traced",
+      "returncode": 1,
+      "source_sha256": "958e419aa5e03b1e5d97381eedcbfc0f66b89460e55c690a2aab2171b5459428",
+      "lines": [
+        "forin-native-step trace: ",
+        "forin-native-step per-level-lazy-trap-body-sequence: FAIL",
+        "forin-native-step absent-own-name-does-not-suppress-prototype: FAIL",
+        "forin-native-step finite-repeated-prototype-identity-is-not-rejected: FAIL",
+        "forin-native-step controls: 0/3"
+      ]
+    },
+    {
+      "label": "final-native-step",
+      "returncode": 0,
+      "source_sha256": "958e419aa5e03b1e5d97381eedcbfc0f66b89460e55c690a2aab2171b5459428",
+      "lines": [
+        "forin-native-step trace: keys,own:a,body:a,own:b,body:b,proto",
+        "forin-native-step per-level-lazy-trap-body-sequence: PASS",
+        "forin-native-step absent-own-name-does-not-suppress-prototype: PASS",
+        "forin-native-step finite-repeated-prototype-identity-is-not-rejected: PASS",
+        "forin-native-step controls: 3/3"
+      ]
+    }
+  ],
+  "chrome_lines": [
+    "forin-native-step trace: keys,proto,own:a,body:a,own:b,body:b",
+    "forin-native-step per-level-lazy-trap-body-sequence: FAIL",
+    "forin-native-step absent-own-name-does-not-suppress-prototype: PASS",
+    "forin-native-step finite-repeated-prototype-identity-is-not-rejected: PASS",
+    "forin-native-step controls: 2/3"
+  ],
+  "shared_condition": false,
+  "legal_Proxy_mechanics_difference": "ECMA EnumerateObjectProperties expressly permits divergence from CreateForInIterator for Proxy/exotic inputs; neither trace is claimed invalid",
+  "exactly_one_diagnostic_native_algorithm_expectation_not_met_by_chrome": true
+}

@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws237-p002: host test of the Gen9 flip display's arithmetic (src/drivers/gpu/i915/display/gen9-flip.c): the readout
+# ws237-p002: host test of the Gen9 flip display's arithmetic (src/drivers/gpu/i915/display/xd-takeover.c, xd9-flip.c): the readout
 # of the firmware's display registers (the SV7, the accepted variants and every refusal), the port and pixel clocks,
 # the refresh and the display window's size, ASan/UBSan.
 #   sh plan/ws237/tests/run-gen9-flip-host-test.sh [OUT]   (default build/ws237-host/test)

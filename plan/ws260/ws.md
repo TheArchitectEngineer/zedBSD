@@ -32,8 +32,8 @@
 | [p011](phase011/phase.md) | transcoder・pipe・plane の点灯と消灯を xd-pipe へ（gen9-modeset.c の残り） | in-progress（q1253、P1） |
 | [p012](phase012/phase.md) | WM・DDB の書き込みと順序、hotplug の sense を xd-dbuf・xd-hpd へ | in-progress（q1253、P1） |
 | [p013](phase013/phase.md) | firmware の点検と flip（firmware の panel の引き継ぎ、plane の flip、irq）を xd-takeover・xd-screen の display 9 の方針へ（gen9-firmware.c・gen9-flip.c） | in-progress（q1253、P1） |
-| p014 | 外の display（gen9-node・gen9-outputs・gen9-display）を xd-screen・xd-display の口へ。bootfb.c・i915.c・device.c・display.c の呼び先を xd に付け替え、殻を全部消す | planned（6 LW） |
-| p015 | 規約の全文の見直し、写しの点検（§1.2 の方法を新しい code に）、T1 に SV7 と 5330 の実機の回帰を 1 回 | planned（3 LW） |
+| [p014](phase014/phase.md) | 外の display（gen9-node・gen9-outputs・gen9-display）を xd-screen・xd-display の口へ。bootfb.c・i915.c・device.c・display.c の呼び先を xd に付け替え、殻を全部消す | in-progress（q1253、P1） |
+| [p015](phase015/phase.md) | 規約の全文の見直し、写しの点検（§1.2 の方法を新しい code に）、T1 に SV7 と 5330 の実機の回帰を 1 回 | in-progress（q1253、P1、T1 の結果待ち） |
 
 
 ## ユーザーの決定（2026-10-18、クリック）
@@ -43,3 +43,4 @@
 3. Gen9 の log の文言は xd の形に「揃える」（照合の試験も同じ段で追従）。
 4. 起動の語 `i915.gen9.display=` は「xd の語にまとめる」→ 中身は「語を廃止、常に full」（Gen9 も常に全部を駆動、切り分けは `i915.debug=display` と `i915.start=manual` だけ。src/kern/boot.c・include/kern/boot.h の変更を P1 に許可、p014。手順・試験の image の設定も追従）。
 5. SV7 に外の display は「繋げない（host 試験だけ）」（外部出力の段の実機は未実施と記録し、ユーザーの試験の一覧に載せる）。
+- 決定（2026-10-18 ユーザー、クリック）: 実機（SV7・5330、T1-710）は「実機は残して待つ」。

@@ -50,8 +50,13 @@ drv_i915_xd9_step_name(
 int
 drv_i915_xd9_step(void)
 {
-	/* Succeeded: the ceiling. */
-	return (int)atomic_load_acquire(&i915_xd9_step_ceiling);
+	unsigned ceiling;
+
+	/* The ceiling a failure may have lowered. */
+	ceiling = atomic_load_acquire(&i915_xd9_step_ceiling);
+
+	/* Succeeded: the step. */
+	return (int)ceiling;
 }
 
 /*
@@ -101,6 +106,11 @@ drv_i915_xd9_step_fail(
 void
 drv_i915_xd9_step_report(void)
 {
+	int step;
+
+	/* The step taken. */
+	step = drv_i915_xd9_step();
+
 	/* Succeeded: the line. */
-	kern_logf("i915: xd9-display: using %s\n", drv_i915_xd9_step_name(drv_i915_xd9_step()));
+	kern_logf("i915: xd9-display: using %s\n", drv_i915_xd9_step_name(step));
 }

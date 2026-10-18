@@ -3,7 +3,8 @@
 # WS261 include/kern/boot.h から PC-98・Raspberry Pi の固有の構造体を除く
 
 - ID: ws261、Master: [master.md](../master.md)、Primary Milestone: MG008
-- Status: incomplete（2026-10-18 開き直し: ユーザー「WS261ですが、sparcv9も対象にしてほしいです。」→ p002。p001 は cleared、T1-709 で Pi 4・PC-98・amd64 の起動 PASS）
+- Status: completed（2026-10-18 Q1: p001・p002 cleared。p002 の sun4u の QEMU の起動は WS267 へ移した）
+- p002 の Phase の directory と WS だけの試験も完了の規則で削除した。記録（洗い出し、名前の一覧、T1 への依頼の文面）は git の 987eb3e70 の plan/ws261/phase002/phase.md にある。
 - Phase の directory と WS だけの試験は完了の規則で削除した。洗い出し・名前の一覧・結果は git の 307f6e26b の plan/ws261/phase001/phase.md にある。
 - 残り（範囲外）: rpi4 の画面の format は firmware の pixel order のまま（汎用の値に揃えるなら bcm2711 の driver も）、PC-98 の payload32.elf の link の既存の失敗、boot.h の x68k の物、Pi 4 の CI の image（312 MiB）は QEMU raspi4b が 2 の冪でないと拒む、amd64 の BIOS の起動の確かめは別の image が要る
 - 起点（2026-10-18 ユーザー）:「HALからカーネルへは、汎用の構造体しか渡せない規約です。固有の情報は、名前文字列で取得するAPIがありますので、それを使ってください。ブートローダからHALへは、固有の構造体を使えますが、それはHAL内に定義を置きます。また、boot.hのPC98やRPiの構造体は、削除します。この削除対応を、WSを作って別なサブエージェントで進めてください。」
@@ -13,7 +14,7 @@
 
 - `include/kern/boot.h` の `struct kern_pc98_parameter_handoff`、`KERN_PC98_*`・`KERN_HANDOFF_VERSION_PC98`、`struct rpi4_boot_handoff`、`KERN_RPI4_HANDOFF_MAGIC` など（「XXX: To be removed」の印）。
 - 使っている所: `src/hal/arm64/`（cmain・bsp・page・smp・space、bsp-rpi4 の boot・fdt・gic・cons）、`src/kern/platform/rpi4.c`、`src/drivers/platform/rpi4/`（bt・audio・ethernet・sdhci）、`src/drivers/platform/pc98/`、PC-98 の HAL（`src/hal/i386/` の pc98 の部分）と boot loader（`bootloader/pc98/`）。
-- 範囲外（ユーザーの指示に無い）: 同じ印の `struct kern_sun4u_*`（sparcv9）。扱いはユーザーに聞く。
+- sparcv9（sun4u）の `struct kern_sun4u_*`・`KERN_SUN4U_*`・`KERN_HANDOFF_VERSION_SUN4U`: 2026-10-18 ユーザー「WS261ですが、sparcv9も対象にしてほしいです。」で範囲に入れた（p002）。x68k の物は範囲外のまま。
 
 ## 画面の情報（2026-10-18 ユーザー）
 
@@ -38,4 +39,4 @@
 | Phase | 目的 | 状態 |
 | --- | --- | --- |
 | p001 | 使っている所の洗い出し、名前付きの object の一覧と HAL 内の定義の置き場所の案、置き換え、build、T1 への依頼 | cleared（2026-10-18、T1-709） |
-| [p002](phase002/phase.md) | sparcv9（sun4u）: boot.h の `struct kern_sun4u_*`・`KERN_SUN4U_*` を除き、HAL → kernel は汎用の構造体と名前ごとの値、boot loader → HAL の定義は HAL か bootloader/ に（ユーザーの bootloader/sparcv9 の変更は 74e7441b0 で commit 済み） | in-progress（q1255、P3） |
+| p002 | sparcv9（sun4u）: boot.h の `struct kern_sun4u_*`・`KERN_SUN4U_*` を除き、HAL → kernel は汎用の構造体と名前ごとの値、boot loader → HAL の定義は HAL か bootloader/ に（ユーザーの bootloader/sparcv9 の変更は 74e7441b0 で commit 済み） | cleared（2026-10-18、QEMU の起動は WS267） |

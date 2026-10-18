@@ -2,16 +2,16 @@
 
 # ws074-p258: native Proxy internal methods and lifetime
 
-Status: in-progress（q52 for-in partial、whole Proxy未達）
+Status: in-progress（q53 callable/Call/Construct partial、whole Proxy未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
-Queue: ws074-q20261018-52-i01（q30〜q51 partial履歴保持）
+Queue: ws074-q20261018-53-i01（q30〜q52 partial履歴保持）
 Origin: p189/q29 original WebIDL2 parseがProxy未定義で停止。
 
 Objective / own criteria: native managed Proxyを実object internal methodsへ接続し、constructor/revocableと各internal operationのtrap/fallback/invariant/receiver/revocation/callability/GCを正しく実行する。original WebIDL2 actual parse/validatorに必要なget/set/array behaviorを通常APIで提供し、independent controls/原WPTを通す。部分read stageだけでwholeをclearしない。
 Design: vm_native_operationsはscript-free heap interfaceのまま保持。Proxyにはmanaged target/handler recordを持たせ、scriptを実行可能なrealm-aware access/internal methodからtrapを呼ぶ。opaque JS constructor公開前に必要なoperationを段階的に整える。各段階は自走承認に基づく新finite Queueで正確に選定する。
-Current state: q51 spread/rest partial clear、native780/Chrome778既知huge2差、新28一致・precode20FAILとGC3functionalFAIL改善。direct copy2 native error modes/実GC保持・4participant回収。全1508最新q49再利用・q51未測定・1482/3805。for-in/call/global/p100/whole未達、main統合・master編集無し。
+Current state: q52 for-in partial clear、native809/Chrome807既知huge2、新shared29一致・native algorithm3/3とChrome2/3は合法順序差。direct start/next実GC保持→3全回収。全1508 q49全callback/completion同一・1482/3805。call/construct/global/p100/full target/whole未達、main統合・master編集無し。
 Standards: Guardrail/C全文/browser component全文、簡約版無し。一次 https://tc39.es/ecma262/multipage/ordinary-and-exotic-objects-behaviours.html#sec-proxy-object-internal-methods-and-internal-slots-get-p-receiver 。既存p100がWS全source near-final conformanceを所有し、本partialはnew/changed scopeの全文適合を検証。
 Verification/bounds/affected components: q30 snapshotの通り。private object kind/cell/newborn/trace/revokeとactual receiver/trap/invariant/GCをnative/Chromeで確認し、ordinary whole/callback PASSを守る。target single-source compileのみとfull target runtimeを区別。未達はunclearedとresume。
 
@@ -339,3 +339,24 @@ Raw archive106 members SHA2560a8156b8c909f5104fe24903a77c5fccb48dc11cd0a241dd1ce
 [証拠](evidence/20261018-q51/README.md)。次finite scope未選定。
 
 Event ws074-p258-q52-selection: for-in eager heap/prototype snapshotをtraced per-level own/visited stateとactual OwnKeys/GetOwn/GetPrototypeOfへ置換する内部設計を選定。primaryはProxy等の順序差を許すためnative algorithm順とgenuine common要件を分ける。全1508q49比較を含む。[exact Queue](../queue.md)。whole/p100/global未達、main統合・master編集無し。
+
+## q52 for-in result / resume
+
+Event ws074-p258-q52-partial-cleared-20261018: q52 for-in scoped partial cleared。selection WIP4b2ece06b/source WIPdd5843dd3。private stateをcurrent object/native own-key vector/visited canonical names/index/loadedへ変更。each level actual OwnKeys→Symbols skip→vm_to_key canonicalization/visited check→actual GetOwn→present時だけvisited→enumerableならstring yield、own listを処理し終えた後actual GetPrototypeOfで次levelへ進む。nonenumerableはshadow、absent descriptorはvisitedに加えずprototype同名を許す。fresh non-atom nameやnumeric名もcanonical keyで重複抑止、descriptor payloadは保持不要でattrsだけ利用。null/undefinedはempty、他primitiveはToObjectしてprototype列挙。
+startは直接managed caller/inputをboxing/state allocation前にrootし、完全初期化したnative vectors2つを持つcellだけpublish。nextはcaller/stateをactual property methods/文字列allocation/error cleanupまでrootし、state tracerはcurrent object/initialized own keys/visitedをnext間も保持。fresh prototypeは後続callback前にcurrent slotへ渡す。finalizerは両native vectorsを解放。obsolete eager access_collectを除去、access_key_listed/access_is_symbolはbehavior不変・normal宣言をtables後へ、type initializer必須trace/finalizer宣言はbefore table例外。VM headers/native_operations定義/commentと他engine source不変。
+old780 prefix同一、新shared29 native/genuine Chrome結果一致。precode q51 frozen first24は783/804（新21FAIL）、隔離GC5 returncodes1,1,1,1,0。最初4はfunctional FAILでprecode crashではなく、ordinary loop-body GC1は既にPASS。final native809/Chrome807の差は既知q43huge2だけ、q36negative-zero classifier filter継承、全pure genuine equalityではない。native collect実GC/C stack scan無しとChrome no-op bridgeを区別。
+独立native algorithm3 controlsはprecode0/3→final3/3。native traceはkeys,own:a,body:a,own:b,body:b,proto、genuine Chromeはkeys,proto,own:a,body:a,own:b,body:bで同じnative順序期待には2/3。一次EnumerateObjectPropertiesはProxy等やmutation時にCreateForInIteratorとの全順序一致を義務付けないため、この1つは許容mechanics差でChrome bug/必須失敗とはしない。shared809条件へ混ぜず元assertion/source/rawtraceを保持し、oracle shimで一致を偽装しない。absent own名のprototype継承とfinite repeated Proxy identity（4回でnull）はnative/ChromeともPASS、identity-only cycle capを導入しない。
+新native direct API gateはcaller realmへbackedge無しのordinary sourceとmanaged callerのsetup rootsを全NULLにし、8MiB inert pressureからdirect start allocationでactual collect増を確認。続くbare iterator/direct nextのpure GetOwn callback実GCでcaller/source/private state3生存をobserveしnegative EACCES/property_depth0を伝播。API後3がlive、その後の実collectで3全回収、iterator finalizerがkeys/visited両native buffersを解放。callback collection後にheap allocationが無いので弱住所再利用による保持誤判定を混ぜない。旧独立native fixtureは未測定でold GC failure修復とは主張しない。
+full changed7 C functions manual＋clang-format19/checked style許可single forward cleanup67・other0、唯一cleanup/全jump前方確認。host single final build warning0、q02 literal vm/access1 Csource -oだけ変更target warning0、versions実取得。source/protocol/extra immutable native-step source込み318 hashesを凍結照合。focused proxy/delegation10/interp45/factory56/DOM41/CSSOM12+12/marks7/observer10/ErrorEvent9/ErrorReporting19/Acid全exit0、Acid3 score/inventory100/pixel0、Acid2既存873。元WebIDL4positive＋intentionalnegative source/callback q38同一、validator require-exposed2と意図的FAIL native/Chrome同一。
+固定1508全件をeligible digest82147e6edaec1b3b8d537e46eb71b64f2f03132cc12803e284c6ca72377779e7/settle5000/process20で243.9秒実測しq49全whole/callback/completion object完全同一。q50 JSON.parse/q51 spread/q52 for-inの累積変更をこのpairで検証したもので、未測定だったq50/q51各pairの単独全件測定とはしない。494 PASS/955 FAIL/13 harness_error/20 no_completion/24 no_output/2 multiple、callbacks11540 PASS/20642 FAIL/14 NOTRUN、whole gain/loss/old PASS callback loss/差0。static844/scripted105/crash39はq28証拠再利用・newpair全image/crash capture未測定。公式確認済1482/3805（38.948752%）・held0・未attempt275維持。
+general infinite Proxy prototype sequenceは既存JS nontermination/resource policyとして残し、今回無限入力を実行せず各process bounds/有限入力だけ検証。exotic trap/mutation mechanics許容幅を全engine uniform traceの受け入れへすり替えない。uint32/int32 storage幅/private excluded-array/newer JSON source-context/RawJSON/primitive Set/outer instanceof/BoundFunction/callable/call/construct/newtarget/Species/global Proxy・revocable/Reflect/typed backing/immutable prototype/p100/full target/whole p258/WS100%未達。global Proxy/Reflect非公開、ABI2/Wayland/WPT・runner・manifest・期待値/SDK/toolchain/sysroot不変。
+ユーザー「マージしながら」に従いsource dd5843dd3のmain包含・競合無し・source commitにmaster.md変更無しを実確認。owned WIPとしてmainへ統合、WS/Phaseへ記録しmaster.md編集無し。p189には全1508のvalidation outputだけ投影して新attempt/clearance無し。共有Master/Queue/cache/GitHub投影はQ1所有/pending、push無し。
+Archives: harness-all-raw 1676 members SHA2565c417eb488896982c992103268c8f4f8341a4fa65ee963eaef0de3a51e2abd0f, native-oracle-and-build-raw 134 members SHA256328745eb3da2073f3d459a380e84211224bb2cf959f20d65808255e193bf3c1aを全member順次read-back。runtime binaryはhash付きbuild保持・archive非同梱。
+
+[証拠](evidence/20261018-q52/README.md)。次finite scope未選定。
+
+Event ws074-p258-q53-selection: Call/Construct metadata/VM＋bytecode dispatchとGetFunctionRealm/BoundTargetFunction slot・generic bind/toString/instanceof安全性を一つの有限範囲へ選定。VM-owned slotでJS data layoutへの逆依存を避ける内部技術設計、global公開は後続。[exact Queue](../queue.md)。browser ABI2/native_operations契約/whole acceptance未変更、main統合・master編集無し。
+
+Event ws074-p258-q53-realm-verification-20261019: Chromium対照のnative bridgeにordinary foreign functionを当てたため新1差が発生。genuine foreign ordinaryはprototype/GetFunctionRealm errorがcaller realm、foreign native Object(bound)はforeign realmと実診断。bridgeをnative/native・ordinary/ordinaryの2実realm controlへ分け、expected assertionを維持。actual ordinary [[Construct]]はPrepareForOrdinaryCall前にOrdinaryCreateFromConstructorを実行するため、選定済vm_construct内のprototype lookupをcaller realmで行い、calleeへ入る前のerrorをcallee exceptionで上書きしない設計へ修正。updated helperを旧c602718f7 engine223 objectsだけでlinkしたcounterpartは863/864・ordinary caller error realm条件だけFAIL。scopeは既存Call/Construct/GetFunctionRealm/crossrealm/ordinary controls内、Queue/timebox/whole criteria不変。元native weak fixtureold counterpart未測定は保持。source c602718f7途中統合済・final再検証継続、master.md編集無し。
+
+Event ws074-p258-q53-bound-context-refined-20261019: ordinary realm修正pairにgenuine foreign .bind経由のCall/Construct2対照を追加し864/866・この2条件だけFAILを実確認。Bound forwardingには独自execution contextが無いため、VM-owned bound_target判定でcaller contextを選び、function_run_nativeへexplicit realmを渡す。native error transferも実際に選んだrealmから行う。通常nativeは従来のcreation realm。JS private data layoutへのVM依存無し、他source/ABI/native_operations変更無し、Queueへhelpertechnical refinement記録・90分/partial criteria不変。

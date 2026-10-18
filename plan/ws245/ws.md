@@ -174,8 +174,8 @@ Resume point: 2026-10-16 の方針（ユーザー「i915は、実装だけ先に
 | [p022](phase022/phase.md) | panel power（PPS、xd-panel） | cleared（2026-10-18 Q1、5330 の i20・i21） |
 | [p023](phase023/phase.md) | power well の操作（W1、xd-power。p006 の差分を当て直す） | cleared（2026-10-18 Q1、5330 の i20・i21） |
 | [p024](phase024/phase.md) | well の所属（W3）と refcount（xd-power） | cleared（2026-10-18 Q1、5330 の i20・i21） |
-| [p025](phase025/phase.md) | DC state と DC9（xd-power、dc9.c を消す） | in-progress（3 LW。2026-10-16 q1229-i02 で実装・host 試験・build 済み、5330 は全部の段の後に 1 回。dc9.c・dc9.h と WS052 の host-i915-dc9 の削除は Q1 に依頼） |
-| [p026](phase026/phase.md) | DMC（xd-dmc） | in-progress（4 LW。2026-10-16 q1229-i02 で実装・host 試験・build 済み、5330 は全部の段の後に 1 回。dmc.c の削除は merge の時に Q1） |
+| [p025](phase025/phase.md) | DC state と DC9（xd-power、dc9.c を消す） | cleared（2026-10-19 Q1、DC6 は BUG-334） |
+| [p026](phase026/phase.md) | DMC（xd-dmc） | cleared（2026-10-19 Q1、DC6 は BUG-334） |
 | [p027](phase027/phase.md) | CDCLK（xd-clock） | cleared（2026-10-18 Q1、5330 の i20・i21） |
 | [p028](phase028/phase.md) | combo DPLL（xd-clock） | cleared（2026-10-18 Q1、5330 の i20・i21） |
 | [p029](phase029/phase.md) | combo PHY（xd-ddi: init・lane・swing） | cleared（2026-10-18 Q1、5330 の i20・i21） |

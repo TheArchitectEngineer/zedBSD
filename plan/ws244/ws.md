@@ -48,3 +48,4 @@ Resume point: p001 の棚卸しは途中（plan/ws244/inventory.md、P7 5a352c47
 
 1. Intel の PRM に載る command・opcode の名前は「PRM の名前は使ってよい」（WS039 の ISA の mnemonic と同じ扱い）。Linux・Mesa にだけある独自の macro 名は zedBSD の名前に変える。値は block ごとに引用元を示す。
 2. 書き直しの後、`userland/base/licenses/i915-driver/` は「外す」（p009）。
+- 決定（2026-10-19 ユーザー、クリック）: p003 の出典の照合の Linux v6.19 の source は「取ってよい」（kernel.org の tarball を署名・SHA で確かめ、担当の worktree の build/ の中に置き読むだけ）。

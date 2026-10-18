@@ -44,9 +44,10 @@ static int function_to_string(struct vm_realm *realm, vm_value this_value, const
 static int function_bound_call(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int function_bound_construct(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int function_bound_arguments(struct vm_function *bound, const vm_value *args, unsigned count, vm_value **all, unsigned *all_count);
-static int function_bound_length(struct vm_realm *realm, vm_value target, unsigned bound_count, vm_value *length);
 static int function_bound_name(struct vm_realm *realm, vm_value target, vm_value *name);
 static int function_append_text(struct wb_units *units, const char *text);
+
+static int function_bound_length(struct vm_realm *realm, vm_value target, unsigned bound_count, vm_value *length);
 
 /*
  * Installs Function and Function.prototype's methods.
@@ -89,7 +90,7 @@ js_builtin_install_function(
 	if (error != 0)
 		return error;
 
-	/* Symbol.hasInstance (neither writable, enumerable nor configurable), which instanceof recognizes (ws074-p087). */
+	/* Symbol.hasInstance (neither writable, enumerable nor configurable), which instanceof recognizes. */
 	error = js_builtin_function(realm, "[Symbol.hasInstance]", 1, function_has_instance, NULL, &has_instance);
 	if (error != 0)
 		goto cleanup;
@@ -352,13 +353,14 @@ function_bind(
 	unsigned count,
 	vm_value *result)
 {
-	struct vm_function *target;
+	struct vm_object *prototype;
 	struct vm_function *bound;
-	struct vm_cell *roots[3];
+	struct vm_cell *roots[5];
 	vm_native construct;
 	vm_value *data;
 	size_t allocation_count;
 	vm_value data_array;
+	vm_value prototype_value;
 	vm_value length;
 	vm_value name;
 	unsigned bound_count;
@@ -374,9 +376,6 @@ function_bind(
 		status = vm_throw_type_error(realm, "Bind must be called on a function");
 		return status;
 	}
-
-	/* The target. */
-	target = (struct vm_function *)vm_value_as_cell(this_value);
 
 	/* The data: the target, the bound this and the bound arguments. */
 	bound_count = 0;
@@ -400,8 +399,10 @@ function_bind(
 		roots[0] = &realm->cell;
 	roots[1] = NULL;
 	roots[2] = NULL;
+	roots[3] = NULL;
+	roots[4] = NULL;
 	registered = 0;
-	for (index = 0; index < 3U; index++) {
+	for (index = 0; index < 5U; index++) {
 		status = vm_heap_add_root(realm->heap, &roots[index]);
 		if (status != 0)
 			goto cleanup;
@@ -418,6 +419,16 @@ function_bind(
 	free(data);
 	data = NULL;
 
+	/* BoundFunctionCreate observes the actual target prototype before length or name properties. */
+	status = vm_get_prototype(realm, (struct vm_object *)vm_value_as_cell(this_value), &prototype_value);
+	if (status != 0)
+		goto cleanup;
+	prototype = NULL;
+	if (prototype_value != VM_VALUE_NULL) {
+		prototype = (struct vm_object *)vm_value_as_cell(prototype_value);
+		roots[3] = &prototype->cell;
+	}
+
 	/* The bound function: a constructor when its target is one, with the target's prototype. */
 	constructor = vm_value_is_constructor(this_value);
 	construct = NULL;
@@ -428,7 +439,8 @@ function_bind(
 		goto cleanup;
 	roots[2] = &bound->object.cell;
 	bound->data = data_array;
-	bound->object.prototype = target->object.prototype;
+	bound->bound_target = this_value;
+	bound->object.prototype = prototype;
 
 	/* Its length and name from the target's. */
 	name = VM_VALUE_UNDEFINED;
@@ -443,6 +455,7 @@ function_bind(
 	status = function_bound_name(realm, this_value, &name);
 	if (status != 0)
 		goto cleanup;
+	roots[4] = vm_value_as_cell(name);
 	status = js_builtin_value(realm, &bound->object, "name", name, VM_PROPERTY_CONFIGURABLE);
 	if (status != 0)
 		goto cleanup;
@@ -478,6 +491,7 @@ function_to_string(
 	unsigned count,
 	vm_value *result)
 {
+	struct vm_object *object;
 	struct wb_buffer text;
 	struct vm_string *name;
 	vm_value key;
@@ -494,6 +508,17 @@ function_to_string(
 	if (!callable) {
 		status = vm_throw_type_error(realm, "Function.prototype.toString requires that 'this' be a Function");
 		return status;
+	}
+
+	/* A callable Proxy exposes native function syntax without consulting any user-visible property. */
+	object = (struct vm_object *)vm_value_as_cell(this_value);
+	if (object->kind == VM_KIND_PROXY) {
+		status = js_builtin_string(realm, "function () { [native code] }", result);
+		if (status != 0)
+			return status;
+
+		/* Succeeded: revoked callable Proxies have the same non-observing native form. */
+		return 0;
 	}
 
 	/* function NAME() { [native code] }, the name when it is a string. */
@@ -670,9 +695,9 @@ function_bound_length(
 	key = vm_key_from_ascii(realm->heap, "length");
 	if (key == VM_VALUE_EMPTY)
 		return ENOMEM;
-	found = vm_get_own_descriptor((struct vm_object *)vm_value_as_cell(target), key, &descriptor);
-	if (found < 0)
-		return -found;
+	status = vm_get_own_property(realm, (struct vm_object *)vm_value_as_cell(target), key, &descriptor, &found);
+	if (status != 0)
+		return status;
 
 	/* A missing descriptor follows the absence path after errors have been excluded. */
 	if (!found)

@@ -6,7 +6,7 @@
  */
 
 /*
- * The interpreter (plan/ws074/design.md §11.5, §11.6): runs checked code
+ * The interpreter: runs checked code
  * units on the realm's VM stack.
  *
  * A frame is FRAME_HEADER slots followed by the function's registers.  The
@@ -128,7 +128,7 @@ vm_interpret(
 	int suspendable;
 	int status;
 
-	/* A generator function makes its generator, an async function runs up to its first await (ws074-p086). */
+	/* A generator function makes its generator, an async function runs up to its first await. */
 	suspendable = vm_code_is_suspendable(function);
 	if (suspendable) {
 		status = vm_generator_call(realm, function, this_value, args, count, result);
@@ -478,7 +478,7 @@ interpreter_arguments(
 	if (error != 0)
 		goto cleanup;
 
-	/* Symbol.iterator: Array.prototype.values, once the built-ins exist (ws074-p087). */
+	/* Symbol.iterator: Array.prototype.values, once the built-ins exist. */
 	if (realm->intrinsics[VM_INTRINSIC_ARRAY_VALUES] != NULL) {
 		error = vm_object_define(realm->heap, object, vm_symbol_key(realm, VM_SYMBOL_ITERATOR),
 		    vm_value_cell(realm->intrinsics[VM_INTRINSIC_ARRAY_VALUES]), VM_PROPERTY_WRITABLE | VM_PROPERTY_CONFIGURABLE);
@@ -1429,6 +1429,7 @@ interpreter_call(
 	uint32_t next)
 {
 	struct vm_function *function;
+	struct vm_cell *cell;
 	vm_value callee;
 	vm_value value;
 	uint32_t base;
@@ -1444,9 +1445,23 @@ interpreter_call(
 		return status;
 	}
 
+	/* An exotic callable must reach generic dispatch before any optimized vm_function access. */
+	cell = vm_value_as_cell(callee);
+	if (cell->type != &vm_function_type) {
+		status = vm_call(run->realm, callee, registers[words[3]], &registers[words[4]], words[5], &value);
+		if (status != 0)
+			return status;
+		registers[words[1]] = value;
+		run->pc = next;
+
+		/* Succeeded: the exotic result is published before the caller resumes. */
+		return 0;
+	}
+
 	/* A class's constructor runs only with new. */
 	function = (struct vm_function *)vm_value_as_cell(callee);
-	if (function->code != NULL && (function->code->flags & VM_CODE_CLASS) != 0U) {
+	if (function->code != NULL &&
+	    (function->code->flags & VM_CODE_CLASS) != 0U) {
 		status = vm_throw_class_call(run->realm, function);
 		return status;
 	}
@@ -1469,7 +1484,7 @@ interpreter_call(
 		return 0;
 	}
 
-	/* A generator or an async function runs from C, which keeps its frame apart when it suspends (ws074-p086). */
+	/* A generator or an async function runs from C, which keeps its frame apart when it suspends. */
 	suspendable = vm_code_is_suspendable(function);
 	if (suspendable) {
 		status = vm_generator_call(function->realm, function, registers[words[3]], &registers[words[4]], words[5], &value);
@@ -1484,8 +1499,16 @@ interpreter_call(
 
 	/* A bytecode function: its frame, whose caller goes on after the call. */
 	if (function->code != NULL) {
-		status = interpreter_push(run->realm, function, registers[words[3]], &registers[words[4]], words[5], run->base + 1U, next,
-		    words[1], &base);
+		status = interpreter_push(
+		    run->realm,
+		    function,
+		    registers[words[3]],
+		    &registers[words[4]],
+		    words[5],
+		    run->base + 1U,
+		    next,
+		    words[1],
+		    &base);
 		if (status != 0)
 			return status;
 		run->base = base;
@@ -1524,6 +1547,7 @@ interpreter_construct(
 	uint32_t next)
 {
 	struct vm_function *function;
+	struct vm_cell *cell;
 	vm_value callee;
 	vm_value this_value;
 	vm_value value;
@@ -1537,6 +1561,19 @@ interpreter_construct(
 	if (!constructor) {
 		status = vm_throw_type_error(run->realm, "value is not a constructor");
 		return status;
+	}
+
+	/* An exotic callable must reach generic dispatch before any optimized vm_function access. */
+	cell = vm_value_as_cell(callee);
+	if (cell->type != &vm_function_type) {
+		status = vm_construct(run->realm, callee, &registers[words[4]], words[5], registers[words[3]], &value);
+		if (status != 0)
+			return status;
+		registers[words[1]] = value;
+		run->pc = next;
+
+		/* Succeeded: the exotic result is published before the caller resumes. */
+		return 0;
 	}
 
 	/* Constructs in a foreign realm without putting its code on our stack. */
@@ -1568,8 +1605,16 @@ interpreter_construct(
 		}
 
 		/* The frame, with new.target. */
-		status = interpreter_push(run->realm, function, this_value, &registers[words[4]], words[5], run->base + 1U, next,
-		    words[1] | FRAME_CONSTRUCT, &base);
+		status = interpreter_push(
+		    run->realm,
+		    function,
+		    this_value,
+		    &registers[words[4]],
+		    words[5],
+		    run->base + 1U,
+		    next,
+		    words[1] | FRAME_CONSTRUCT,
+		    &base);
 		if (status != 0)
 			return status;
 		run->realm->stack[base + FRAME_NEW_TARGET] = registers[words[3]];
@@ -1844,7 +1889,7 @@ interpreter_unwind(
 	}
 }
 
-/* Runs one instruction of spreading and destructuring (ws074-p079). */
+/* Runs one instruction of spreading and destructuring. */
 static int
 interpreter_spread(
 	struct interpreter *run,
@@ -1927,7 +1972,7 @@ interpreter_spread(
 	return 0;
 }
 
-/* Runs one instruction of classes (ws074-p080). */
+/* Runs one instruction of classes. */
 static int
 interpreter_class(
 	struct interpreter *run,
