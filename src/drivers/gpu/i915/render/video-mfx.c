@@ -15,9 +15,12 @@
  * slice, which the hardware decodes from the slice header on.  Everything
  * indexed by a reference -- the reference picture addresses, the DPB
  * entries, the picture IDs, the motion vector buffers and the order counts
- * -- takes the reference's place in the decode's pReferenceSlots[] (the
- * same order anv uses).  An entry no reference uses names the output's own
+ * -- takes the reference's place in the decode's pReferenceSlots[].  An
+ * entry no reference uses names the output's own
  * picture and motion vectors rather than address zero, which nothing maps.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/vulkan/genX_cmd_video.c
+ * (anv_h264_decode_video).
  */
 
 #include "video-mfx.h"
@@ -242,7 +245,10 @@ i915_mfx_zeros(
  * Writes the start of a decode: the video pipeline's cache invalidated, the
  * MFX power well held awake, and the pipeline set to an AVC VLD decode in
  * the short format with the deblocked output, between two waits for the
- * pipeline to be idle (anv's Gen12 sequence).
+ * pipeline to be idle.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/vulkan/genX_cmd_video.c
+ * (anv_h264_decode_video).
  */
 static void
 i915_mfx_head(
@@ -294,7 +300,7 @@ i915_mfx_surface(
 	    GEN12_VIDEO_SURFACE_INTERLEAVE_CHROMA |
 	    (GEN12_VIDEO_SURFACE_PLANAR_420_8 << GEN12_VIDEO_SURFACE_FORMAT_SHIFT);
 
-	/* The surface of ID 0; both chroma offsets are the CbCr plane's row (anv writes both). */
+	/* The surface of ID 0; both chroma offsets are the CbCr plane's row (both are written). */
 	drv_i915_batch_emit(batch, GEN12_VIDEO_HEADER(GEN12_VIDEO_MFX_SURFACE_STATE, GEN12_VIDEO_MFX_SURFACE_STATE_DWORDS));
 	drv_i915_batch_emit(batch, 0U);
 	drv_i915_batch_emit(batch, extent);
@@ -307,7 +313,10 @@ i915_mfx_surface(
  * Writes the pipeline's buffers: the deblocked output, the intra and the
  * deblocking filter row stores, and the sixteen reference pictures (an
  * unused one names the output).  The buffers a decode does not use have
- * address zero and still carry the MOCS, as anv writes them.
+ * address zero and still carry the MOCS.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/vulkan/genX_cmd_video.c
+ * (anv_h264_decode_video).
  */
 static void
 i915_mfx_buffers(
@@ -450,9 +459,12 @@ i915_mfx_dpb(
 /*
  * Writes the picture state: the picture's extent and size in macroblocks,
  * and the fields of its sets and of its picture information the slices
- * need (anv's mapping).  Only frame pictures of sequences of frames only
+ * need.  Only frame pictures of sequences of frames only
  * reach the builder, so the picture is a frame and
  * MBAFF is off.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/vulkan/genX_cmd_video.c
+ * (anv_h264_decode_video).
  */
 static void
 i915_mfx_picture(
@@ -649,7 +661,10 @@ i915_mfx_direct(
  * slice's address, which the decoder reads ahead; a slice starts at its NAL
  * unit header (after its start code), at an offset from the bitstream
  * object's page, and runs to the next slice's start code or the range's
- * end.  The concealment settings are anv's.
+ * end.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/vulkan/genX_cmd_video.c
+ * (anv_h264_decode_video).
  */
 static void
 i915_mfx_slices(

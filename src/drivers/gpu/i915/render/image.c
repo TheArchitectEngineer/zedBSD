@@ -48,9 +48,11 @@
 /*
  * The alignment of a mip level in the 2D mip layout, in texels, across and
  * down.  It is the Surface Horizontal and Vertical Alignment (HALIGN_4,
- * VALIGN_4) the surface state names (state.c), which isl picks for a linear
- * 32-bit colour surface on this generation (isl_gfx8.c,
- * isl_gfx8_choose_image_alignment_el()).
+ * VALIGN_4) the surface state names (state.c), the one a linear 32-bit
+ * colour surface takes on this generation.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/isl/isl_gfx8.c
+ * (isl_gfx8_choose_image_alignment_el).
  */
 #define I915_GFX_IMAGE_LEVEL_ALIGN	4U
 
@@ -415,16 +417,15 @@ drv_i915_gfx_subresource_layout(
  * Lays an image out from its format, width, height and levels: sets its
  * pitch and the bytes it occupies.
  *
- * One colour level is linear rows of width * 4 bytes, as isl leaves a
- * single-level linear surface unpadded.  A depth image is Y-tiled: a Gen9+
- * depth buffer always is (isl_emit_depth_stencil.c), whole 4 KiB tiles of
+ * One colour level is linear rows of width * 4 bytes: a single-level linear
+ * surface is unpadded.  A depth image is Y-tiled: a Gen9+ depth buffer
+ * always is, whole 4 KiB tiles of
  * 128 bytes by 32 rows; nothing reads depth texel by texel here (the clear
  * is one value), so only the extent matters.  XXX: a depth image can not be
  * copied or sampled.
  *
- * Several colour levels take the 2D mip layout the hardware samples (isl.c,
- * isl_calc_phys_slice0_extent_sa_gfx4_2d(), ISL_DIM_LAYOUT_GFX4_2D, which isl
- * uses for every 2D and 3D surface on Gen9+): level 0 at the top, level 1
+ * Several colour levels take the 2D mip layout the hardware samples, the
+ * one of every 2D and 3D surface on Gen9+: level 0 at the top, level 1
  * below it at the left edge, level 2 to the right of level 1 and every
  * further level below the one before, each level's extent rounded up to the
  * level alignment; all levels share one pitch.
@@ -432,15 +433,18 @@ drv_i915_gfx_subresource_layout(
  * Several slices (array layers, or a 3D image's depth, whose level n has
  * the depth halved n times) each take a whole mip layout, one below the
  * other, slice_rows apart: the layout's height rounded up to the vertical
- * alignment, which the surface state names as its QPitch (isl.c,
- * isl_calc_array_pitch_el_rows_gfx4_2d(), the pitch a Gen9+ surface state
- * programs).  A single slice has slice_rows 0.
+ * alignment, which the surface state names as its QPitch.  A single slice
+ * has slice_rows 0.
  *
  * A multisampled colour image is Y-tiled, each sample a slice of whole tile
- * rows (MSFMT_MSS, isl_gfx8_choose_msaa_layout() for a render target); a
- * multisampled depth or stencil image interleaves each pixel's samples in
- * planes of sample_width by sample_height (ISL_MSAA_LAYOUT_INTERLEAVED).
- * Returns EINVAL for an image the executor does not lay out.
+ * rows (MSFMT_MSS, for a render target); a multisampled depth or stencil
+ * image interleaves each pixel's samples in planes of sample_width by
+ * sample_height.  Returns EINVAL for an image the executor does not lay out.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/isl/isl.c
+ * (isl_calc_phys_slice0_extent_sa_gfx4_2d,
+ * isl_calc_array_pitch_el_rows_gfx4_2d), isl_gfx8.c
+ * (isl_gfx8_choose_msaa_layout), isl_emit_depth_stencil.c.
  */
 int
 drv_i915_gfx_image_layout(
@@ -497,8 +501,10 @@ drv_i915_gfx_image_layout(
 		/*
 		 * A multisampled depth or stencil image interleaves each pixel's
 		 * samples: two side by side, four in a square of two by two, the
-		 * extent first rounded up to whole pixel pairs
-		 * (isl_msaa_interleaved_scale_px_to_sa()).
+		 * extent first rounded up to whole pixel pairs.
+		 *
+		 * Procedure referenced: Mesa 25.0.7 src/intel/isl/isl.c
+		 * (isl_msaa_interleaved_scale_px_to_sa).
 		 */
 		image->sample_width = ((image->width + 1U) & ~1U) * 2U;
 		if (image->samples == 4U)
@@ -738,7 +744,7 @@ i915_gfx_channel(
  * Lays out an image with stencil, one level: for D32_SFLOAT_S8_UINT the
  * depth plane as a D32 image's (Y tiles), then on the next page the
  * stencil plane of bytes in Y tiles, each slice a whole number of tile
- * rows (isl on Gen12: stencil is Y-tiled); for S8_UINT the stencil plane
+ * rows (on Gen12 stencil is Y-tiled); for S8_UINT the stencil plane
  * alone.  Both planes are as large as the image's extent in samples.
  */
 static void
@@ -1177,8 +1183,11 @@ i915_gfx_level_align(
 
 /*
  * Finds where a level starts in the 2D mip layout, in texels across and
- * rows down (isl.c, get_image_offset_sa_gfx4_2d()): below level 0 for level
- * 1, and from level 2 on to the right of level 1, below the levels between.
+ * rows down: below level 0 for level 1, and from level 2 on to the right
+ * of level 1, below the levels between.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/isl/isl.c
+ * (get_image_offset_sa_gfx4_2d).
  */
 static void
 i915_gfx_level_origin(

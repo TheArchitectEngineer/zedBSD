@@ -342,8 +342,8 @@ i915_fence_status(
  * A query pool is a GPU object of its queries' counters: query q has the
  * pixel pipe's depth count at its begin at byte 16 q and at its end at
  * 16 q + 8, and its availability word at 16 count + 8 q.  vkCmdBeginQuery
- * and vkCmdEndQuery write the depth count with a PIPE_CONTROL (anv's
- * emit_ps_depth_count()); the end then writes the availability, and
+ * and vkCmdEndQuery write the depth count with a PIPE_CONTROL; the end then
+ * writes the availability, and
  * vkCmdResetQueryPool clears it.  A submission has run to its end before
  * vkQueueSubmit replies, so vkGetQueryPoolResults reads the counters on the
  * CPU.  XXX: only occlusion pools; timestamp and pipeline statistics pools
@@ -357,6 +357,9 @@ i915_fence_status(
  * decode is synchronous), and a reset of such a pool clears it on the CPU
  * in the order of the operations, whichever family runs it (a render
  * batch would run after the video walk).
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/vulkan/genX_query.c
+ * (emit_ps_depth_count).
  * ------------------------------------------------------------------------
  */
 

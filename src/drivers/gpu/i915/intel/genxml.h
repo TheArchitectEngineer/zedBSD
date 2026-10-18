@@ -1,77 +1,19 @@
 /*
  * zedBSD
  * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
  */
 
 /*
- * Copyright (C) 2016 Intel Corporation
- * Copyright (c) 2015 Intel Corporation
- *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice (including the next
- * paragraph) shall be included in all copies or substantial portions of the
- * Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
- * IN THE SOFTWARE.
- */
-
-/*
- * The Gen12 3D pipeline commands and state fields of Mesa genxml: the
- * command opcodes and packet lengths, the structure sizes, and the field
- * values and registers the render path programs.
- *
- * zedBSD — transcribed hardware definitions (values only)
- *
- * Source: Mesa main @ ab691a1cc7bcd264bec8f735deb2127861ad15ef (MIT; values are
- * Intel PRM hardware facts).  SHA-256 of the files:
- *   src/intel/genxml/gen120.xml
- *     12fea5fdac709a3587cae64c3bd2b0d187a9f81ccd573160703c69327a521164
- *   src/intel/genxml/gen110.xml (imported by gen120.xml)
- *     b5159c099b41ef9afa10578f4215ee542634d2c422d59742b9c5c54af6ac93fa
- *   src/intel/genxml/gen70.xml (the pipeline statistics registers)
- *     fd58ca141b55246826628c3d8d4a0d142b2db51d1ad7033c21c4b282916883ae
- *   src/intel/common/intel_l3_config.h (the URB deref block sizes)
- *     70450c118ffc67771a1b727f2c502f8ff8fb8b930edb1cd34a322470480ffb01
- * The index buffer, the random vertex access of 3DPRIMITIVE and the pixel
- * stage's push constant enable were added from the same file of Mesa 25.0.7
- * (Debian source package 25.0.7-2+deb13u1):
- *   src/intel/genxml/gen120.xml
- *     e2452c7dd2d19f9c506f487ce98e938984b6bdf8a3ea2504c64afdd4facd542e
- * The mip fields of RENDER_SURFACE_STATE and the SAMPLER_STATE filter, LOD
- * and bias fields come from that same gen120.xml; the LOD clamps are the
- * ones anv programs (src/intel/vulkan/genX_init_state.c
- *     716543ab781499a3079174681a90943e9a28b2c1658c2f12dbe4f15df2bead4b).
- * The point, line, strip and fan values of 3D_Prim_Topo_Type and the
- * provoking vertex fields of 3DSTATE_SF and 3DSTATE_CLIP come from the same
- * Mesa 25.0.7 (Debian source package 25.0.7-2+deb13u1):
- *   src/intel/genxml/gen70.xml (3D_Prim_Topo_Type)
- *     dd7c942fc12afd2defdc435997ccdb5b48841d344f40625dbb2b4e746eca09ef
- *   src/intel/genxml/gen120.xml (3DSTATE_SF, the file above)
- *   src/intel/genxml/gen80.xml (3DSTATE_CLIP, which gen120.xml imports through gen110.xml and gen90.xml;
- *   and VFCOMP_STORE_1_INT of 3D_Vertex_Component_Control, and 3DSTATE_VF_SGVS)
- *     2962677cf69dc947345fd88bd7010427900160eb7a7b076463e6e8d28772439d
- * The genxml files carry no notice of their own; the notice above is the one
- * Mesa's generator (src/intel/genxml/gen_pack_header.py) puts on the headers
- * it produces from them, followed by the copyright line of intel_l3_config.h.
+ * The Gen12 3D and GPGPU pipeline commands and state fields: the command
+ * opcodes and packet lengths, the structure sizes, and the field values and
+ * registers the render path programs.
  *
  * The 3D pipeline command header dword is
  *   (Command Type 3 << 29) | (Pipeline 3 << 27) | (Opcode << 24) |
  *   (Sub Opcode << 16) | (DWord Length = total dwords - 2)
- * The high sixteen bits of that dword are the opcode constants below, taken
- * from each instruction's Command Type / Pipeline / 3D Command Opcode /
- * 3D Command Sub Opcode default fields.  The assembly logic is new.
+ * The high sixteen bits of that dword are the opcode constants below.
  */
 
 #ifndef DRIVERS_GPU_I915_INTEL_GENXML_H
@@ -79,10 +21,13 @@
 
 /* Command opcodes (high sixteen bits of the header dword). */
 /*
- * PIPELINE_SELECT is CommandType 3 / CommandSubType 1 / Opcode 1 / SubOpcode 4
- * = 0x6904xxxx (Linux gt/intel_gpu_commands.h PIPELINE_SELECT, gen7_renderstate
- * literal 0x69040000, genxml).  0x6104 (SubType 0) was a transcription error:
- * the GPU never switched pipelines for any batch that used it.
+ * PIPELINE_SELECT is Command Type 3 / Command SubType 1 / Opcode 1 /
+ * SubOpcode 4, so its header is 0x6904xxxx; 0x6104xxxx (SubType 0) is a
+ * different command.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen120.xml and the files it
+ * imports (PIPELINE_SELECT, STATE_BASE_ADDRESS, 3DSTATE_VS, 3DSTATE_PS,
+ * 3DSTATE_PS_EXTRA, 3DSTATE_VERTEX_ELEMENTS, 3DPRIMITIVE).
  */
 #define GEN12_CMD_PIPELINE_SELECT		0x6904U
 #define GEN12_CMD_STATE_BASE_ADDRESS		0x6101U
@@ -95,7 +40,12 @@
 /* Builds a command header from an opcode and the packet's dword count. */
 #define GEN12_CMD_HEADER(opcode, dwords)	(((opcode) << 16) | ((dwords) - 2U))
 
-/* Packet lengths (gen120.xml instruction "length"). */
+/*
+ * Packet lengths.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen120.xml (the "length" of
+ * each instruction above).
+ */
 #define GEN12_3DSTATE_VS_DWORDS			9U
 #define GEN12_3DSTATE_PS_DWORDS			12U
 #define GEN12_3DSTATE_VERTEX_ELEMENTS_DWORDS	3U
@@ -105,8 +55,11 @@
 
 /*
  * PIPELINE_SELECT: the 3D pipeline is selection value 0.  Gen12 applies the
- * selection only when its mask bits (15:8) cover it, and Mesa also masks in
- * and sets the media sampler DOP clock gate (gen12 mask 0x13, bit 4).
+ * selection only when its mask bits (15:8) cover it; the media sampler DOP
+ * clock gate (bit 4) is masked in and set with it.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen120.xml (PIPELINE_SELECT:
+ * Pipeline Selection, Mask Bits, Media Sampler DOP Clock Gate Enable).
  */
 #define GEN12_PIPELINE_SELECT_3D		0U
 #define GEN12_PIPELINE_SELECT_MASK		(0x13U << 8)
@@ -115,8 +68,7 @@
 	((GEN12_CMD_PIPELINE_SELECT << 16) | GEN12_PIPELINE_SELECT_MASK | \
 	 GEN12_PIPELINE_SELECT_MEDIA_DOP_GATE | (pipeline))
 /*
- * Fixed reference words (not derived from the macros above): 0x6104xxxx is the
- * header of GPGPU_CSR_BASE_ADDRESS (SubType 0, 3 dwords), a different command.
+ * Fixed reference words, not derived from the macros above.
  */
 _Static_assert(GEN12_PIPELINE_SELECT_DWORD(0U) == 0x69041310U,
 	"Gen12 PIPELINE_SELECT(3D) must be 0x69041310");
@@ -125,10 +77,12 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 
 
 /*
- * The rest of the 3D pipeline, transcribed from gen120.xml resolved through its
- * <import> chain of gen110.xml.  Each opcode is the high sixteen bits of the
+ * The rest of the 3D pipeline.  Each opcode is the high sixteen bits of the
  * packet header and each DWORDS is the packet's total dword count, so
  * GEN12_CMD_HEADER() produces the header with the right DWord Length.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen120.xml and the files it
+ * imports (the opcode fields and "length" of each instruction named below).
  */
 #define GEN12_CMD_3DSTATE_VF_STATISTICS		0x680BU
 #define GEN12_CMD_3DSTATE_VF			0x780CU
@@ -199,7 +153,13 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 #define GEN12_3DSTATE_CLEAR_PARAMS_DWORDS	3U
 #define GEN12_3DSTATE_PRIMITIVE_REPLICATION_DWORDS	6U
 
-/* Structure sizes in dwords (gen120.xml struct lengths). */
+/*
+ * Structure sizes in dwords.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen120.xml (the "length" of
+ * RENDER_SURFACE_STATE, VERTEX_BUFFER_STATE, VERTEX_ELEMENT_STATE,
+ * COLOR_CALC_STATE, BLEND_STATE, BLEND_STATE_ENTRY, CC_VIEWPORT).
+ */
 #define GEN12_RENDER_SURFACE_STATE_DWORDS	16U
 #define GEN12_VERTEX_BUFFER_STATE_DWORDS	4U
 #define GEN12_VERTEX_ELEMENT_STATE_DWORDS	2U
@@ -208,7 +168,13 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 #define GEN12_BLEND_STATE_ENTRY_DWORDS		2U
 #define GEN12_CC_VIEWPORT_DWORDS		2U
 
-/* 3D_Prim_Topo_Type: a screen-space rectangle needs no vertex shader; the rest are Vulkan's list, strip and fan topologies. */
+/*
+ * 3D_Prim_Topo_Type: a screen-space rectangle needs no vertex shader; the
+ * rest are Vulkan's list, strip and fan topologies.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen70.xml
+ * (3D_Prim_Topo_Type).
+ */
 #define GEN12_3DPRIM_RECTLIST			15U
 #define GEN12_3DPRIM_TRILIST			4U
 #define GEN12_3DPRIM_POINTLIST			1U
@@ -219,10 +185,11 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 
 /*
  * 3D_Prim_Topo_Type of the topologies with adjacency, which only a draw
- * with a geometry shader takes: the line list and strip, the
- * triangle list and strip (Mesa 25.0.7 gen70.xml, sha256
- * dd7c942fc12afd2defdc435997ccdb5b48841d344f40625dbb2b4e746eca09ef,
- * 3D_Prim_Topo_Type LINELIST_ADJ .. TRISTRIP_ADJ).
+ * with a geometry shader takes: the line list and strip, the triangle list
+ * and strip.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen70.xml (3D_Prim_Topo_Type
+ * LINELIST_ADJ .. TRISTRIP_ADJ).
  */
 #define GEN12_3DPRIM_LINELIST_ADJ		9U
 #define GEN12_3DPRIM_LINESTRIP_ADJ		10U
@@ -234,101 +201,119 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
  * 26:25) and 3DSTATE_CLIP (dword 2, bits 1:0): 1 is the second vertex of
  * each triangle, Vulkan's first-vertex convention for a fan (the list and
  * strip selects stay 0, their first vertex).
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen120.xml (3DSTATE_SF
+ * Triangle Fan Provoking Vertex Select), src/intel/genxml/gen80.xml
+ * (3DSTATE_CLIP Triangle Fan Provoking Vertex Select).
  */
 #define GEN12_SF_FAN_PROVOKING_SHIFT		25U
 #define GEN12_CLIP_FAN_PROVOKING_SHIFT		0U
 #define GEN12_FAN_PROVOKING_SECOND		1U
 
 /*
- * The point fields of 3DSTATE_SF dword 3 (gen120.xml above): Point Width in
- * bits 10:0 as u8.3 (8 is 1.0), Point Width Source in bit 11 (0 the
- * vertex's, from dword 3 of its VUE header; 1 the Point Width field).
+ * The point fields of 3DSTATE_SF dword 3: Point Width in bits 10:0 as u8.3
+ * (8 is 1.0), Point Width Source in bit 11 (0 the vertex's, from dword 3 of
+ * its VUE header; 1 the Point Width field).
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen120.xml (3DSTATE_SF Point
+ * Width, Point Width Source).
  */
 #define GEN12_SF_POINT_WIDTH_ONE		8U
 #define GEN12_SF_POINT_WIDTH_FROM_STATE		(1U << 11)
 
 /*
- * 3DSTATE_WM dword 1 bits 16:11, Barycentric Interpolation Mode (gen80.xml
- * above): one bit to each of Mesa's enum intel_barycentric_mode, and the
- * payload carries the barycentrics of each mode set in that order
- * (brw_fs_thread_payload.cpp): the perspective ones at the pixel centre,
- * then the linear ones.
+ * 3DSTATE_WM dword 1 bits 16:11, Barycentric Interpolation Mode: one bit to
+ * each mode, and the pixel thread payload carries the barycentrics of each
+ * mode set in bit order: the perspective ones at the pixel centre, then the
+ * linear ones.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen80.xml (3DSTATE_WM
+ * Barycentric Interpolation Mode).
  */
 #define GEN12_WM_BARYCENTRIC_PERSPECTIVE_PIXEL	(1U << 11)
 #define GEN12_WM_BARYCENTRIC_LINEAR_PIXEL	(1U << 14)
 
 /*
- * 3DSTATE_CLIP dword 2 bit 8, Non-Perspective Barycentric Enable (gen80.xml
- * above): the clipper passes on what the linear barycentrics need, which
- * anv sets when the pixel kernel interpolates without perspective
- * (Mesa 25.0.7 src/intel/vulkan/genX_pipeline.c, sha256
- * 9bf244df1284531767529980909176d09b72db037b6fdaa7f5874d997ebf7545:
- * uses_nonperspective_interp_modes).
+ * 3DSTATE_CLIP dword 2 bit 8, Non-Perspective Barycentric Enable: the
+ * clipper passes on what the linear barycentrics need; it is set when the
+ * pixel kernel interpolates without perspective.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen80.xml (3DSTATE_CLIP
+ * Non-Perspective Barycentric Enable).
  */
 #define GEN12_CLIP_NON_PERSPECTIVE_BARYCENTRIC	(1U << 8)
 
 /*
- * 3DSTATE_CLIP dword 3 bit 5, Force Zero RTA Index Enable (Mesa 25.0.7
- * gen80.xml, sha256
- * 2962677cf69dc947345fd88bd7010427900160eb7a7b076463e6e8d28772439d, start
- * 101): every primitive goes to render target array index 0.  anv sets it
- * unless the last vertex processing stage writes the layer (genX_pipeline.c
- * above, ForceZeroRTAIndexEnable).
+ * 3DSTATE_CLIP dword 3 bit 5, Force Zero RTA Index Enable: every primitive
+ * goes to render target array index 0.  It is set unless the last vertex
+ * processing stage writes the layer.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen80.xml (3DSTATE_CLIP
+ * Force Zero RTA Index Enable).
  */
 #define GEN12_CLIP_FORCE_ZERO_RTA_INDEX		(1U << 5)
 
 /*
- * 3DSTATE_GS dword 7 bits 12:11, Dispatch Mode: SIMD8, one input
- * primitive to a channel (Mesa 25.0.7 gen110.xml, sha256
- * 6598e556ffedf4fe051c78af3bb08030a39af865c76e2784dba5374646fce35d,
- * DISPATCH_MODE_SIMD8).
+ * 3DSTATE_GS dword 7 bits 12:11, Dispatch Mode: SIMD8, one input primitive
+ * to a channel.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen110.xml (3DSTATE_GS
+ * Dispatch Mode, DISPATCH_MODE_SIMD8).
  */
 #define GEN12_GS_DISPATCH_MODE_SIMD8		3U
 
 /*
- * 3DSTATE_STREAMOUT dword 1 bit 30, API Rendering Disable (gen12.xml, start
- * 62): the primitives go no further than the stream output stage, so the
- * vertex shader runs and nothing is rasterized.  anv sets it for
- * rasterizerDiscardEnable whether or not stream output is on (Mesa 25.0.7
- * src/intel/vulkan/genX_gfx_state.c: so.RenderingDisable).
+ * 3DSTATE_STREAMOUT dword 1 bit 30, API Rendering Disable: the primitives
+ * go no further than the stream output stage, so the vertex shader runs and
+ * nothing is rasterized.  Rasterizer discard sets it whether or not stream
+ * output is on.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen120.xml
+ * (3DSTATE_STREAMOUT API Rendering Disable).
  */
 #define GEN12_STREAMOUT_RENDERING_DISABLE	(1U << 30)
 
 /*
- * 3DSTATE_PS_EXTRA dword 1 (gen110.xml below): bit 23 Pixel Shader Uses
- * Source W and bit 24 Pixel Shader Uses Source Depth, which put the
- * interpolated w and depth of each pixel into the thread payload after the
- * barycentrics.
+ * 3DSTATE_PS_EXTRA dword 1: bit 23 Pixel Shader Uses Source W and bit 24
+ * Pixel Shader Uses Source Depth, which put the interpolated w and depth of
+ * each pixel into the thread payload after the barycentrics.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen110.xml
+ * (3DSTATE_PS_EXTRA).
  */
 #define GEN12_3DSTATE_PS_EXTRA_USES_SOURCE_W	(1U << 23)
 #define GEN12_3DSTATE_PS_EXTRA_USES_SOURCE_DEPTH	(1U << 24)
 
 /*
- * 3DSTATE_SBE (Mesa 25.0.7 gen90.xml, imported by gen120.xml through
- * gen110.xml; sha256
- * d86fb566b9292280e2d6a385107711fb7ee8008e5c54bb3ba70a2c0343262ddb): dword 1
- * bit 20 Point Sprite Texture Coordinate Origin (0 the upper left, Vulkan's),
- * dword 2 Point Sprite Texture Coordinate Enable, one bit to an attribute
- * the setup replaces with the point's texture coordinate.
+ * 3DSTATE_SBE dword 1 bit 20 Point Sprite Texture Coordinate Origin (0 the
+ * upper left, Vulkan's), dword 2 Point Sprite Texture Coordinate Enable, one
+ * bit to an attribute the setup replaces with the point's texture
+ * coordinate.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen90.xml (3DSTATE_SBE).
  */
 #define GEN12_SBE_POINT_SPRITE_ORIGIN_SHIFT		20U
 #define GEN12_SBE_POINT_SPRITE_ORIGIN_UPPER_LEFT	0U
 
 /*
- * gl_PrimitiveID that no stage writes: 3DSTATE_SBE dword 1
- * bits 4:0 Primitive ID Override Attribute Select and bits 19:16 Primitive
- * ID Override Component X..W (the same gen90.xml), and the attribute's
- * SF_OUTPUT_ATTRIBUTE_DETAIL in SBE_SWIZ: Constant Source PRIM_ID (3) in
- * bits 10:9 and Component Override X..W in bits 15:12 (Mesa 25.0.7
- * gen60.xml, imported by gen120.xml; sha256
- * 30fac841448b4239bbaedf92a77424ec054629d28f266c7190b3f592f4b9185c), as
- * anv sets both (src/intel/vulkan/genX_pipeline.c, emit_3dstate_sbe();
- * sha256 9bf244df1284531767529980909176d09b72db037b6fdaa7f5874d997ebf7545).
+ * gl_PrimitiveID that no stage writes: 3DSTATE_SBE dword 1 bits 4:0
+ * Primitive ID Override Attribute Select and bits 19:16 Primitive ID
+ * Override Component X..W, and the attribute's SF_OUTPUT_ATTRIBUTE_DETAIL in
+ * SBE_SWIZ: Constant Source PRIM_ID (3) in bits 10:9 and Component Override
+ * X..W in bits 15:12.  Both are set together.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen90.xml (3DSTATE_SBE),
+ * src/intel/genxml/gen60.xml (SF_OUTPUT_ATTRIBUTE_DETAIL).
  */
 #define GEN12_SBE_PRIMITIVE_ID_OVERRIDE_XYZW		(0xFU << 16)
 #define GEN12_SBE_SWIZ_PRIMITIVE_ID			((3U << 9) | (0xFU << 12))
 
-/* 3D_Vertex_Component_Control. */
+/*
+ * 3D_Vertex_Component_Control.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen80.xml
+ * (3D_Vertex_Component_Control).
+ */
 #define GEN12_VFCOMP_NOSTORE			0U
 #define GEN12_VFCOMP_STORE_SRC			1U
 #define GEN12_VFCOMP_STORE_0			2U
@@ -336,20 +321,31 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 #define GEN12_VFCOMP_STORE_1_INT		4U
 
 /*
- * 3DSTATE_VF_SGVS dword 1: the vertex ID into component 0 of the element
- * at bits 5:0 (enable bit 15), the instance ID into component 0 of the
- * element at bits 21:16 (enable bit 31).
+ * 3DSTATE_VF_SGVS dword 1: the vertex ID into component 0 of the element at
+ * bits 5:0 (enable bit 15), the instance ID into component 0 of the element
+ * at bits 21:16 (enable bit 31).
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen80.xml (3DSTATE_VF_SGVS).
  */
 #define GEN12_SGVS_VERTEX_ID_ENABLE		(1U << 15)
 #define GEN12_SGVS_INSTANCE_ID_SHIFT		16U
 #define GEN12_SGVS_INSTANCE_ID_ENABLE		(1U << 31)
 
-/* Surface formats (isl_format numbering). */
+/*
+ * Surface formats.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen120.xml (SURFACE_FORMAT).
+ */
 #define GEN12_FORMAT_R32G32B32A32_FLOAT		0U
 #define GEN12_FORMAT_R32G32B32_FLOAT		64U
 #define GEN12_FORMAT_B8G8R8A8_UNORM		192U
 
-/* RENDER_SURFACE_STATE surface types and alignments. */
+/*
+ * RENDER_SURFACE_STATE surface types, alignments and tile modes.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen120.xml
+ * (RENDER_SURFACE_STATE Surface Type, Surface Vertical Alignment, Tile Mode).
+ */
 #define GEN12_SURFTYPE_2D			1U
 #define GEN12_SURFTYPE_3D			2U
 #define GEN12_SURFTYPE_CUBE			3U
@@ -359,7 +355,12 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 #define GEN12_TILEMODE_LINEAR			0U
 #define GEN12_TILEMODE_YMAJOR			3U
 
-/* BLEND_STATE_ENTRY colour clamp range. */
+/*
+ * BLEND_STATE_ENTRY colour clamp range.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen80.xml (BLEND_STATE_ENTRY
+ * Color Clamp Range).
+ */
 #define GEN12_COLORCLAMP_RTFORMAT		2U
 
 /* URB allocations are made in 8 KiB chunks and entries in 64-byte units. */
@@ -367,22 +368,23 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 
 /*
  * The URB the vertex stage owns past the 32 KiB of push constants on the
- * target (3576 entries of 64 bytes fill it), and the most vertex entries
- * (intel_device_info urb.max_entries[MESA_SHADER_VERTEX] of Gen12).
+ * target (3576 entries of 64 bytes fill it), and the most vertex entries.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/dev/intel_device_info.c
+ * (GFX12_HW_INFO urb.max_entries).
  */
 #define GEN12_URB_VS_BYTES			(3576U * 64U)
 #define GEN12_URB_VS_ENTRIES			3576U
 
 /*
- * With a geometry shader the vertex stage's URB is split: the
- * vertex stage keeps 21 of its chunks from chunk 4, the geometry stage the
- * next 6 (48 KiB), so the URB in use does not grow.  A geometry stage needs
- * at least 2 entries (it runs in DUAL_OBJECT mode) and has at most 1548
- * (Mesa 25.0.7 src/intel/common/intel_urb_config.c, sha256
- * e1e7ddc142f020e49c21c27085fab34b80f192afec19c03d3a4426cc8cddc414,
- * min_entries; src/intel/dev/intel_device_info.c, sha256
- * 1a3c7c6d87c4a60af5d1003096b4add0a34c4a02afc12b40a378cc060540afd8,
- * GFX12_HW_INFO urb.max_entries[MESA_SHADER_GEOMETRY]).
+ * With a geometry shader the vertex stage's URB is split: the vertex stage
+ * keeps 21 of its chunks from chunk 4, the geometry stage the next 6
+ * (48 KiB), so the URB in use does not grow.  A geometry stage needs at
+ * least 2 entries (it runs in DUAL_OBJECT mode) and has at most 1548.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/common/intel_urb_config.c
+ * (min_entries), src/intel/dev/intel_device_info.c (GFX12_HW_INFO
+ * urb.max_entries).
  */
 #define GEN12_URB_VS_START_CHUNK		4U
 #define GEN12_URB_VS_SPLIT_CHUNKS		21U
@@ -390,7 +392,12 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 #define GEN12_URB_GS_MIN_ENTRIES		2U
 #define GEN12_URB_GS_ENTRIES			1548U
 
-/* 3DSTATE_SF deref block size (intel_l3_config.h). */
+/*
+ * 3DSTATE_SF deref block size.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/common/intel_l3_config.h
+ * (intel_urb_deref_block_size).
+ */
 #define GEN12_URB_DEREF_BLOCK_SIZE_32		0U
 #define GEN12_URB_DEREF_BLOCK_SIZE_PER_POLY	1U
 
@@ -401,7 +408,13 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 #define GEN12_F32_0				0x00000000U
 #define GEN12_F32_1				0x3f800000U
 
-/* Pipeline statistics counters (gen70.xml register numbers, 64-bit each). */
+/*
+ * Pipeline statistics counters (64-bit registers).
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen70.xml
+ * (IA_VERTICES_COUNT, IA_PRIMITIVES_COUNT, VS_INVOCATION_COUNT,
+ * CL_INVOCATION_COUNT, CL_PRIMITIVES_COUNT, PS_INVOCATION_COUNT).
+ */
 #define GEN12_REG_IA_VERTICES_COUNT		0x2310U
 #define GEN12_REG_IA_PRIMITIVES_COUNT		0x2318U
 #define GEN12_REG_VS_INVOCATION_COUNT		0x2320U
@@ -410,9 +423,12 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 #define GEN12_REG_PS_INVOCATION_COUNT		0x2348U
 
 /*
- * The L3 cache is partitioned before the URB can hold a single vertex entry.
- * These are the Tiger Lake values Mesa validates: 32 ways of URB and 88 ways
- * shared, written into L3ALLOC (URB in bits 7:1, All in bits 31:25).
+ * The L3 cache is partitioned before the URB can hold a single vertex entry:
+ * 32 ways of URB and 88 ways shared, written into L3ALLOC (URB in bits 7:1,
+ * All in bits 31:25).
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen120.xml (L3ALLOC),
+ * src/intel/common/intel_l3_config.c (tgl_l3_configs).
  */
 #define GEN12_REG_L3ALLOC			0xB134U
 #define GEN12_L3ALLOC_URB_WAYS			32U
@@ -425,32 +441,50 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 #define GEN12_VF_INSTANCING_ENABLE_SHIFT	8U
 
 /*
- * A disabled depth buffer is still a typed one: Mesa's isl always pairs
- * SURFTYPE_NULL with D32_FLOAT, because format zero names a depth-stencil
- * format and makes the depth unit expect a stencil buffer that is not there.
+ * A disabled depth buffer is still a typed one: SURFTYPE_NULL is paired
+ * with D32_FLOAT, because format zero names a depth-stencil format and
+ * makes the depth unit expect a stencil buffer that is not there.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen120.xml
+ * (3DSTATE_DEPTH_BUFFER Surface Format).
  */
 #define GEN12_DEPTH_FORMAT_D32_FLOAT		1U
 #define GEN12_DEPTH_FORMAT_D16_UNORM		5U
 
-/* 3DSTATE_SBE attribute component format: all four channels active. */
+/*
+ * 3DSTATE_SBE attribute component format: all four channels active.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen90.xml (3DSTATE_SBE
+ * Attribute Active Component Format).
+ */
 #define GEN12_ACF_XYZW				3U
 
-/* Fragments that reached the depth test, whether or not a shader ran. */
+/*
+ * Fragments that reached the depth test, whether or not a shader ran.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/perf/intel_perf_regs.h
+ * (PS_DEPTH_COUNT).
+ */
 #define GEN12_REG_PS_DEPTH_COUNT		0x2350U
 
 /*
- * Every MOCS field carries the cache-table index shifted left by one; bit zero
- * of the field is reserved.  Mesa's isl programs Tiger Lake the same way
- * (internal = 2 << 1, uncached = 3 << 1), and the Linux Gen12 MOCS table gives
- * index 2 as write-back and index 3 as uncached.  Writing a raw index selects
- * the entry one bit to the right, and entries 0 and 1 are reserved.
+ * Every MOCS field carries the cache-table index shifted left by one; bit
+ * zero of the field is reserved.  Index 2 is write-back and index 3
+ * uncached in the Gen12 MOCS table; writing a raw index selects the entry
+ * one bit to the right, and entries 0 and 1 are reserved.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/isl/isl.c (isl_device_setup_mocs),
+ * Linux v6.19 drivers/gpu/drm/i915/gt/intel_mocs.c (tgl_mocs_table).
  */
 #define GEN12_MOCS(index)			((index) << 1)
 
 /*
- * 3DSTATE_RASTER cull modes.  Zero means cull both faces, so a rasterizer left
- * at its zeroed default discards every primitive; both BLORP and anv name
- * CULLMODE_NONE explicitly for that reason.
+ * 3DSTATE_RASTER cull modes.  Zero means cull both faces, so a rasterizer
+ * left at its zeroed default discards every primitive; CULLMODE_NONE is
+ * always named explicitly.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen80.xml (3DSTATE_RASTER
+ * Cull Mode).
  */
 #define GEN12_CULLMODE_BOTH			0U
 #define GEN12_CULLMODE_NONE			1U
@@ -458,10 +492,16 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 #define GEN12_CULLMODE_BACK			3U
 
 /*
- * State Mesa's anv programs once per render context before any draw: the
+ * State programmed once per render context before any draw: the
  * depth-clear override packet cleared, sample positions, depth bounds and
  * the other stages' binding table pointers.  A context that skips them runs
  * with whatever the hardware or a previous owner left behind.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen120.xml and the files it
+ * imports (the opcode fields and "length" of the instructions below).
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/vulkan/genX_init_state.c
+ * (init_render_queue_state).
  */
 #define GEN12_CMD_3DSTATE_WM_HZ_OP		0x7852U
 #define GEN12_CMD_3DSTATE_AA_LINE_PARAMETERS	0x790AU
@@ -483,31 +523,44 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 #define GEN12_3DSTATE_POLY_STIPPLE_OFFSET_DWORDS	2U
 #define GEN12_3DSTATE_LINE_STIPPLE_DWORDS	3U
 
-/* 3DSTATE_SAMPLE_PATTERN dword 8: the single sample sits at the pixel centre (u0.4 0.5). */
+/*
+ * 3DSTATE_SAMPLE_PATTERN dword 8: the single sample sits at the pixel
+ * centre (u0.4 0.5).
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/common/intel_sample_positions.h
+ * (INTEL_SAMPLE_POS_1X).
+ */
 #define GEN12_SAMPLE_PATTERN_1X_CENTRE		((8U << 20) | (8U << 16))
 
 /*
  * 3DSTATE_SAMPLE_PATTERN dword 8 bits 15:0 and dword 7: the standard two
- * and four sample positions (Mesa intel_sample_positions.h,
- * INTEL_SAMPLE_POS_2X and _4X), each sample a byte of X (bits 7:4) and Y
- * (bits 3:0) in sixteenths, sample 0 in the lowest byte: 2x (0.75, 0.75)
- * and (0.25, 0.25); 4x (0.375, 0.125), (0.875, 0.375), (0.125, 0.625) and
+ * and four sample positions, each sample a byte of X (bits 7:4) and Y (bits
+ * 3:0) in sixteenths, sample 0 in the lowest byte: 2x (0.75, 0.75) and
+ * (0.25, 0.25); 4x (0.375, 0.125), (0.875, 0.375), (0.125, 0.625) and
  * (0.625, 0.875).
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/common/intel_sample_positions.h
+ * (INTEL_SAMPLE_POS_2X, INTEL_SAMPLE_POS_4X).
  */
 #define GEN12_SAMPLE_PATTERN_2X			((0x44U << 8) | 0xccU)
 #define GEN12_SAMPLE_PATTERN_4X			((0xaeU << 24) | (0x2aU << 16) | (0xe6U << 8) | 0x62U)
 
 /*
- * Instruction fetches fill the per-subslice instruction cache through the L3,
- * so the instruction base needs a write-back entry; Mesa's isl names index 2
- * ("internal") for it on Tiger Lake and never an uncached one.
+ * Instruction fetches fill the per-subslice instruction cache through the
+ * L3, so the instruction base needs a write-back entry, never an uncached
+ * one.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/isl/isl.c (isl_device_setup_mocs).
  */
 #define I915_MOCS_WRITEBACK_INDEX		2U
 
 /*
- * Push constants.  Every Mesa path programs a 3DSTATE_CONSTANT_* for each
- * stage before its first draw even with nothing to push, and gives the pixel
- * stage the whole 32 KiB push constant region when it is the only user.
+ * Push constants.  A 3DSTATE_CONSTANT_* is programmed for each stage before
+ * its first draw even with nothing to push, and the pixel stage gets the
+ * whole 32 KiB push constant region when it is the only user.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen90.xml
+ * (3DSTATE_CONSTANT_VS and the other stages' 3DSTATE_CONSTANT_*).
  */
 #define GEN12_CMD_3DSTATE_CONSTANT_VS		0x7815U
 #define GEN12_CMD_3DSTATE_CONSTANT_GS		0x7816U
@@ -517,14 +570,23 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 #define GEN12_3DSTATE_CONSTANT_DWORDS		11U
 #define GEN12_PUSH_CONSTANT_KB			32U
 
-/* VERTEX_BUFFER_STATE: vertex fetches stay in the L3 on this generation. */
+/*
+ * VERTEX_BUFFER_STATE: vertex fetches stay in the L3 on this generation.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen120.xml
+ * (VERTEX_BUFFER_STATE L3 Bypass Disable).
+ */
 #define GEN12_VERTEX_BUFFER_L3_BYPASS_DISABLE	(1U << 25)
 
 /*
  * Coarse pixel shading state is fetched through a pointer relative to the
- * dynamic state base; anv points it at a disabled CPS_STATE at device
- * initialisation.  The binding table pool is disabled the same way, since
- * anv found that state leaking in from other contexts.
+ * dynamic state base; it points at a disabled CPS_STATE from device
+ * initialisation.  The binding table pool is disabled the same way, so no
+ * state of another context leaks in.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen120.xml
+ * (3DSTATE_CPS_POINTERS, CPS_STATE), src/intel/genxml/gen80.xml
+ * (3DSTATE_BINDING_TABLE_POOL_ALLOC).
  */
 #define GEN12_CMD_3DSTATE_CPS_POINTERS		0x7822U
 #define GEN12_CPS_STATE_DWORDS			8U
@@ -532,14 +594,22 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 #define GEN12_CMD_3DSTATE_BINDING_TABLE_POOL_ALLOC	0x7919U
 #define GEN12_3DSTATE_BINDING_TABLE_POOL_ALLOC_DWORDS	4U
 
-/* PIPE_CONTROL dw1 bit 1: stall the command streamer until the pixel scoreboard is idle. */
+/*
+ * PIPE_CONTROL dword 1 bit 1 stalls the command streamer until the pixel
+ * scoreboard is idle; bit 13 is Depth Stall Enable.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen120.xml (PIPE_CONTROL).
+ */
 #define PIPE_CONTROL_STALL_AT_SCOREBOARD	(1U << 1)
 #define PIPE_CONTROL_DEPTH_STALL_ENABLE		(1U << 13)
 
 /*
- * State pointers and the attribute swizzle the Vulkan draw path programs
- * (gen120.xml 3DSTATE_VIEWPORT_STATE_POINTERS_SF_CLIP, 3DSTATE_SCISSOR_STATE_POINTERS,
- * 3DSTATE_SAMPLER_STATE_POINTERS_PS, 3DSTATE_SBE_SWIZ).
+ * State pointers and the attribute swizzle the draw path programs.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen120.xml and the files it
+ * imports (3DSTATE_VIEWPORT_STATE_POINTERS_SF_CLIP,
+ * 3DSTATE_SCISSOR_STATE_POINTERS, 3DSTATE_SAMPLER_STATE_POINTERS_PS,
+ * 3DSTATE_SBE_SWIZ).
  */
 #define GEN12_CMD_3DSTATE_VIEWPORT_STATE_POINTERS_SF_CLIP	0x7821U
 #define GEN12_CMD_3DSTATE_SCISSOR_STATE_POINTERS	0x780FU
@@ -548,10 +618,12 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 #define GEN12_3DSTATE_SBE_SWIZ_DWORDS		11U
 
 /*
- * The index buffer of an indexed draw (gen120.xml 3DSTATE_INDEX_BUFFER):
- * dword 1 carries the MOCS in bits 6:0, the Index Format in bits 9:8 and
- * the L3 Bypass Disable in bit 11; dwords 2 and 3 the address and dword 4
- * the size in bytes.
+ * The index buffer of an indexed draw: dword 1 carries the MOCS in bits
+ * 6:0, the Index Format in bits 9:8 and the L3 Bypass Disable in bit 11;
+ * dwords 2 and 3 the address and dword 4 the size in bytes.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen120.xml
+ * (3DSTATE_INDEX_BUFFER).
  */
 #define GEN12_CMD_3DSTATE_INDEX_BUFFER		0x780AU
 #define GEN12_3DSTATE_INDEX_BUFFER_DWORDS	5U
@@ -565,20 +637,21 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
  * 3DPRIMITIVE dword 1 bit 8 (Vertex Access Type): RANDOM fetches every
  * vertex through the index buffer; SEQUENTIAL (0) numbers them in order.
  * Dword 6 is the Base Vertex Location added to every index.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen120.xml (3DPRIMITIVE).
  */
 #define GEN12_3DPRIMITIVE_VERTEX_RANDOM		(1U << 8)
 
 /*
- * 3DSTATE_VS (gen110.xml, imported by gen120.xml) and 3DSTATE_PS (gen120.xml)
- * dwords 4-5, the same in both: Per-Thread Scratch Space in bits 3:0 of
- * dword 4, the scratch memory of one thread as 1 KiB << n (n up to 11, 2
- * MiB); Scratch Space Base Pointer in bits 63:10 of the two dwords, an
- * address relative to the General State Base Address.  A thread's scratch
- * starts at the pointer plus its thread id times the per-thread space.
- * Mesa 25.0.7: gen110.xml sha256
- * 6598e556ffedf4fe051c78af3bb08030a39af865c76e2784dba5374646fce35d, gen120.xml
- * (above); anv programs them from the kernel's total_scratch
- * (src/intel/vulkan/genX_pipeline.c get_scratch_space(), gfx12.0 path).
+ * 3DSTATE_VS and 3DSTATE_PS dwords 4-5, the same in both: Per-Thread
+ * Scratch Space in bits 3:0 of dword 4, the scratch memory of one thread as
+ * 1 KiB << n (n up to 11, 2 MiB); Scratch Space Base Pointer in bits 63:10
+ * of the two dwords, an address relative to the General State Base
+ * Address.  A thread's scratch starts at the pointer plus its thread id
+ * times the per-thread space.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen110.xml (3DSTATE_VS),
+ * src/intel/genxml/gen120.xml (3DSTATE_PS).
  */
 #define GEN12_SCRATCH_SPACE_MASK		0x0000000fU
 #define GEN12_SCRATCH_POINTER_ALIGN		1024U
@@ -588,25 +661,30 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 /*
  * 3DSTATE_PS dword 6 bit 11 (Push Constant Enable): the pixel threads get
  * the push constants of 3DSTATE_CONSTANT_PS in front of their setup data.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen120.xml (3DSTATE_PS).
  */
 #define GEN12_3DSTATE_PS_PUSH_CONSTANT_ENABLE	(1U << 11)
 
 /*
  * 3DSTATE_PS_EXTRA dword 1 bit 28 (Pixel Shader Kills Pixel): the pixel
  * kernel may discard pixels, so the pixel stage must not write depth or
- * stencil for a pixel before the kernel has decided (gen110.xml, imported
- * by gen120.xml; Mesa 25.0.7 gen110.xml sha256
- * 6598e556ffedf4fe051c78af3bb08030a39af865c76e2784dba5374646fce35d).
+ * stencil for a pixel before the kernel has decided.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen110.xml
+ * (3DSTATE_PS_EXTRA).
  */
 #define GEN12_3DSTATE_PS_EXTRA_KILLS_PIXEL	(1U << 28)
 
 /*
- * The mip fields of RENDER_SURFACE_STATE dword 5 (gen120.xml): MIP Count /
- * LOD in bits 3:0, Surface Min LOD in bits 7:4, Mip Tail Start LOD in bits
- * 11:8.  A sampled surface reads levels [Surface Min LOD, Surface Min LOD +
- * MIP Count]; a render target writes level MIP Count.  Surface QPitch is
- * dword 1 bits 14:0, in units of four rows (isl_surface_state.c programs
- * the array pitch in rows shifted down by two).
+ * The mip fields of RENDER_SURFACE_STATE dword 5: MIP Count / LOD in bits
+ * 3:0, Surface Min LOD in bits 7:4, Mip Tail Start LOD in bits 11:8.  A
+ * sampled surface reads levels [Surface Min LOD, Surface Min LOD + MIP
+ * Count]; a render target writes level MIP Count.  Surface QPitch is dword
+ * 1 bits 14:0, in units of four rows.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen120.xml
+ * (RENDER_SURFACE_STATE).
  */
 #define GEN12_RSS_MIP_COUNT_SHIFT		0U
 #define GEN12_RSS_SURFACE_MIN_LOD_SHIFT		4U
@@ -615,13 +693,14 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 #define GEN12_RSS_QPITCH_MASK			0x7fffU
 
 /*
- * The array fields of RENDER_SURFACE_STATE (gen110.xml, imported by
- * gen120.xml; Mesa 25.0.7 gen110.xml sha256
- * 6598e556ffedf4fe051c78af3bb08030a39af865c76e2784dba5374646fce35d): dword 0
- * Surface Array bit 28 and the six Cube Face Enables in bits 5:0; dword 3
- * Depth in bits 31:21 (the layers less one, the cubes less one, or a 3D
- * surface's depth less one); dword 4 Minimum Array Element in bits 28:18
- * and Render Target View Extent in bits 17:7.
+ * The array fields of RENDER_SURFACE_STATE: dword 0 Surface Array bit 28
+ * and the six Cube Face Enables in bits 5:0; dword 3 Depth in bits 31:21
+ * (the layers less one, the cubes less one, or a 3D surface's depth less
+ * one); dword 4 Minimum Array Element in bits 28:18 and Render Target View
+ * Extent in bits 17:7.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen110.xml
+ * (RENDER_SURFACE_STATE).
  */
 #define GEN12_RSS_SURFACE_ARRAY			(1U << 28)
 #define GEN12_RSS_CUBE_FACES_ALL		0x3fU
@@ -631,34 +710,42 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 #define GEN12_RSS_VIEW_EXTENT_SHIFT		7U
 
 /*
- * RENDER_SURFACE_STATE dword 1 bit 31, Enable Unorm Path In Color Pipe
- * (gen120.xml); Gen9 has no such bit.
+ * RENDER_SURFACE_STATE dword 1 bit 31, Enable Unorm Path In Color Pipe;
+ * Gen9 has no such bit.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen120.xml
+ * (RENDER_SURFACE_STATE).
  */
 #define GEN12_RSS_UNORM_PATH			(1U << 31)
 
 /*
- * The multisample fields (gen120.xml): RENDER_SURFACE_STATE dword 4 Number
- * of Multisamples in bits 5:3 (the samples' log2) with Multisampled Surface
+ * The multisample fields: RENDER_SURFACE_STATE dword 4 Number of
+ * Multisamples in bits 5:3 (the samples' log2) with Multisampled Surface
  * Storage Format bit 6 left MSFMT_MSS (every sample a slice, QPitch apart);
  * 3DSTATE_MULTISAMPLE dword 1 Number of Multisamples in bits 3:1;
  * 3DSTATE_RASTER dword 1 DX Multisample Rasterization Enable bit 12, which
  * with the DX10.1 API mode rasterizes on the sample pattern.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen120.xml and the files it
+ * imports (RENDER_SURFACE_STATE, 3DSTATE_MULTISAMPLE, 3DSTATE_RASTER).
  */
 #define GEN12_RSS_MULTISAMPLES_SHIFT		3U
 #define GEN12_MULTISAMPLE_COUNT_SHIFT		1U
 #define GEN12_RASTER_DX_MULTISAMPLE_ENABLE	(1U << 12)
 
 /*
- * SAMPLER_STATE fields (gen120.xml), in dword and bit:
+ * SAMPLER_STATE fields, in dword and bit:
  *   dword 0: Texture LOD Bias 13:1 (s4.8), Min Mode Filter 16:14,
  *            Mag Mode Filter 19:17, Mip Mode Filter 21:20, LOD PreClamp
  *            Mode 28:27
  *   dword 1: Max LOD 19:8 (u4.8), Min LOD 31:20 (u4.8)
  *   dword 3: the address rounding enables 18:13 and the TCX, TCY and TCZ
  *            address control modes 8:6, 5:3 and 2:0
- * Mip Mode Filter is MIPFILTER_NONE 0, NEAREST 1, LINEAR 3.  anv
- * (genX_init_state.c) clamps the LOD bias to [-16, 15.996] and both LOD
- * limits to [0, 14].
+ * Mip Mode Filter is MIPFILTER_NONE 0, NEAREST 1, LINEAR 3.  The LOD bias
+ * is clamped to [-16, 15.996] and both LOD limits to [0, 14].
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen120.xml (SAMPLER_STATE),
+ * src/intel/vulkan/genX_init_state.c (the LOD and bias clamps).
  */
 #define GEN12_SAMPLER_LOD_BIAS_SHIFT		1U
 #define GEN12_SAMPLER_LOD_BIAS_MASK		0x1fffU
@@ -671,17 +758,17 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 #define GEN12_MAPFILTER_NEAREST			0U
 #define GEN12_MAPFILTER_LINEAR			1U
 /*
- * More SAMPLER_STATE fields (gen110.xml, imported by gen120.xml; Mesa 25.0.7
- * gen110.xml sha256
- * 6598e556ffedf4fe051c78af3bb08030a39af865c76e2784dba5374646fce35d): dword 0
- * Anisotropic Algorithm bit 0 (EWA approximation 1); dword 1 Cube Surface
- * Control Mode bit 0 (OVERRIDE 1) and Shadow Function 3:1 (PREFILTEROP_*);
- * dword 2 Border Color Pointer 31:6 (the dynamic state offset of a
- * 64-byte aligned SAMPLER_BORDER_COLOR_STATE, whose first four dwords are
- * the red, green, blue and alpha, floats or integers as the format
- * reads); dword 3 Maximum Anisotropy 21:19 (RATIO 2:1 0 .. 16:1 7),
- * Non-normalized Coordinate Enable bit 10, the address modes TCX 8:6, TCY
- * 5:3, TCZ 2:0.  Min and Mag Mode Filter take MAPFILTER_ANISOTROPIC 2.
+ * More SAMPLER_STATE fields: dword 0 Anisotropic Algorithm bit 0 (EWA
+ * approximation 1); dword 1 Cube Surface Control Mode bit 0 (OVERRIDE 1)
+ * and Shadow Function 3:1 (PREFILTEROP_*); dword 2 Border Color Pointer
+ * 31:6 (the dynamic state offset of a 64-byte aligned
+ * SAMPLER_BORDER_COLOR_STATE, whose first four dwords are the red, green,
+ * blue and alpha, floats or integers as the format reads); dword 3 Maximum
+ * Anisotropy 21:19 (RATIO 2:1 0 .. 16:1 7), Non-normalized Coordinate
+ * Enable bit 10, the address modes TCX 8:6, TCY 5:3, TCZ 2:0.  Min and Mag
+ * Mode Filter take MAPFILTER_ANISOTROPIC 2.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen110.xml (SAMPLER_STATE).
  */
 #define GEN12_SAMPLER_ANISOTROPIC_EWA		1U
 #define GEN12_SAMPLER_CUBE_OVERRIDE		1U
@@ -694,7 +781,12 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 #define GEN12_SAMPLER_TCZ_SHIFT			0U
 #define GEN12_MAPFILTER_ANISOTROPIC		2U
 
-/* The PREFILTEROP values of the Shadow Function (gen110.xml). */
+/*
+ * The PREFILTEROP values of the Shadow Function.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen110.xml (SAMPLER_STATE
+ * Shadow Function).
+ */
 #define GEN12_PREFILTEROP_ALWAYS		0U
 #define GEN12_PREFILTEROP_NEVER			1U
 #define GEN12_PREFILTEROP_LESS			2U
@@ -714,15 +806,7 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 #define GEN12_SAMPLER_LOD_BIAS_MAX		(16 * 256 - 1)
 
 /*
- * Colour blending.  gen120.xml takes these from the files it imports (Mesa
- * 25.0.7, the same Debian source package): BLEND_STATE and
- * BLEND_STATE_ENTRY from gen80.xml
- *     2962677cf69dc947345fd88bd7010427900160eb7a7b076463e6e8d28772439d,
- * 3DSTATE_PS_BLEND from gen90.xml
- *     d86fb566b9292280e2d6a385107711fb7ee8008e5c54bb3ba70a2c0343262ddb,
- * COLOR_CALC_STATE from gen90.xml, and the 3D_Color_Buffer_Blend_Factor and
- * 3D_Color_Buffer_Blend_Function enumerations from gen40.xml
- *     8fe6663fa39cdfc6cd1cc4481e464824c2dcc5ea7d7d1a4d2e4a5791aa32f206.
+ * Colour blending.
  *
  * BLEND_STATE dword 0: Independent Alpha Blend Enable in bit 30.
  * BLEND_STATE_ENTRY dword 0: Write Disable Blue, Green, Red, Alpha in bits
@@ -736,6 +820,10 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
  * Blend Enable 29, Has Writeable RT 30.
  * COLOR_CALC_STATE dwords 2..5: the blend constant colour R, G, B, A as
  * floats.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen80.xml (BLEND_STATE,
+ * BLEND_STATE_ENTRY), src/intel/genxml/gen90.xml (3DSTATE_PS_BLEND,
+ * COLOR_CALC_STATE).
  */
 #define GEN12_BLEND_INDEPENDENT_ALPHA		(1U << 30)
 #define GEN12_BLEND_WRITE_DISABLE_BLUE		(1U << 0)
@@ -750,7 +838,13 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 #define GEN12_BLEND_SRC_FACTOR_SHIFT		26U
 #define GEN12_BLEND_ENABLE			(1U << 31)
 #define GEN12_BLEND_BLENDING_BITS		0xfffffff0U
-/* BLEND_STATE_ENTRY dword 1: the logic operation's enable and function (Mesa 25.0.7 genxml gen80.xml, bits 63 and 59..62). */
+/*
+ * BLEND_STATE_ENTRY dword 1: the logic operation's enable and function
+ * (bits 63 and 62:59 of the entry).
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen80.xml (BLEND_STATE_ENTRY
+ * Logic Op Enable, Logic Op Function).
+ */
 #define GEN12_BLEND_LOGIC_OP_ENABLE		(1U << 31)
 #define GEN12_BLEND_LOGIC_OP_FUNCTION_SHIFT	27U
 #define GEN12_PS_BLEND_INDEPENDENT_ALPHA	(1U << 7)
@@ -762,7 +856,12 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 #define GEN12_PS_BLEND_HAS_WRITEABLE_RT		(1U << 30)
 #define GEN12_CC_BLEND_CONSTANT_DWORD		2U
 
-/* 3D_Color_Buffer_Blend_Factor (BLENDFACTOR_*). */
+/*
+ * 3D_Color_Buffer_Blend_Factor (BLENDFACTOR_*).
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen40.xml
+ * (3D_Color_Buffer_Blend_Factor).
+ */
 #define GEN12_BLENDFACTOR_ONE			1U
 #define GEN12_BLENDFACTOR_SRC_COLOR		2U
 #define GEN12_BLENDFACTOR_SRC_ALPHA		3U
@@ -783,43 +882,50 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 #define GEN12_BLENDFACTOR_INV_SRC1_COLOR	25U
 #define GEN12_BLENDFACTOR_INV_SRC1_ALPHA	26U
 
-/* 3D_Color_Buffer_Blend_Function (BLENDFUNCTION_*). */
+/*
+ * 3D_Color_Buffer_Blend_Function (BLENDFUNCTION_*).
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen40.xml
+ * (3D_Color_Buffer_Blend_Function).
+ */
 #define GEN12_BLENDFUNCTION_ADD			0U
 #define GEN12_BLENDFUNCTION_SUBTRACT		1U
 #define GEN12_BLENDFUNCTION_REVERSE_SUBTRACT	2U
 #define GEN12_BLENDFUNCTION_MIN			3U
 #define GEN12_BLENDFUNCTION_MAX			4U
 
-/*
- * The GPGPU pipeline's commands and the interface descriptor,
- * from Mesa 25.0.7 (MIT; Debian source package 25.0.7-2+deb13u1; values are
- * Intel PRM hardware facts).  gen120.xml imports them from:
- *   src/intel/genxml/gen110.xml (MEDIA_VFE_STATE, MEDIA_STATE_FLUSH)
- *     6598e556ffedf4fe051c78af3bb08030a39af865c76e2784dba5374646fce35d
- *   src/intel/genxml/gen80.xml (GPGPU_WALKER)
- *     2962677cf69dc947345fd88bd7010427900160eb7a7b076463e6e8d28772439d
- *   src/intel/genxml/gen60.xml (MEDIA_CURBE_LOAD, MEDIA_INTERFACE_DESCRIPTOR_LOAD)
- *     30fac841448b4239bbaedf92a77424ec054629d28f266c7190b3f592f4b9185c
- *   src/intel/genxml/gen120.xml (INTERFACE_DESCRIPTOR_DATA)
- *     e2452c7dd2d19f9c506f487ce98e938984b6bdf8a3ea2504c64afdd4facd542e
- * The values programmed follow anv (src/intel/vulkan/genX_pipeline.c
- *     9bf244df1284531767529980909176d09b72db037b6fdaa7f5874d997ebf7545,
- * genX_cmd_compute.c
- *     c0455a006e15a2b719c2545f818e3084a13fb5a959c86d213b2386d976311349)
- * and the compute test (tests/execution/eu-test.c).
- */
+/* The GPGPU pipeline's commands and the interface descriptor. */
 
-/* PIPELINE_SELECT's value for the GPGPU pipeline. */
+/*
+ * PIPELINE_SELECT's value for the GPGPU pipeline.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen120.xml (PIPELINE_SELECT
+ * Pipeline Selection).
+ */
 #define GEN12_PIPELINE_SELECT_GPGPU		2U
 
-/* The headers of the media commands, their DWord Length already in (a fixed length each). */
+/*
+ * The headers of the media commands, their DWord Length already in (a
+ * fixed length each).
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen110.xml (MEDIA_VFE_STATE,
+ * MEDIA_STATE_FLUSH), src/intel/genxml/gen80.xml (GPGPU_WALKER),
+ * src/intel/genxml/gen60.xml (MEDIA_CURBE_LOAD,
+ * MEDIA_INTERFACE_DESCRIPTOR_LOAD).
+ */
 #define GEN12_MEDIA_VFE_STATE_HEADER		0x70000007U
 #define GEN12_MEDIA_CURBE_LOAD_HEADER		0x70010002U
 #define GEN12_MEDIA_INTERFACE_DESCRIPTOR_LOAD_HEADER	0x70020002U
 #define GEN12_MEDIA_STATE_FLUSH_HEADER		0x70040000U
 #define GEN12_GPGPU_WALKER_HEADER		0x7105000dU
 
-/* Packet lengths. */
+/*
+ * Packet lengths.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen110.xml, gen80.xml,
+ * gen60.xml (the instructions above), src/intel/genxml/gen120.xml
+ * (INTERFACE_DESCRIPTOR_DATA).
+ */
 #define GEN12_MEDIA_VFE_STATE_DWORDS		9U
 #define GEN12_MEDIA_CURBE_LOAD_DWORDS		4U
 #define GEN12_MEDIA_INTERFACE_DESCRIPTOR_LOAD_DWORDS	4U
@@ -833,24 +939,36 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
  * the Maximum Number of Threads (31:16) and the Number of URB Entries
  * (15:8); dword 5 the URB Entry Allocation Size (31:16) and the CURBE
  * Allocation Size (15:0, in registers).
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen110.xml
+ * (MEDIA_VFE_STATE).
  */
 #define GEN12_VFE_MAX_THREADS_SHIFT		16U
 #define GEN12_VFE_URB_ENTRIES_SHIFT		8U
 #define GEN12_VFE_URB_ALLOCATION_SHIFT		16U
 
-/* The URB entries and their size anv and the compute test program (they carry no push data on Gen12). */
+/* The URB entries and their size (they carry no push data on Gen12). */
 #define GEN12_VFE_URB_ENTRIES			2U
 #define GEN12_VFE_URB_ALLOCATION		2U
 
-/* The threads one dual-subslice runs, the VFE's Maximum Number of Threads being that times the dual-subslices, less one. */
+/*
+ * The threads one dual-subslice runs, the VFE's Maximum Number of Threads
+ * being that times the dual-subslices, less one.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/dev/intel_device_info.c
+ * (GFX12_HW_INFO max_cs_threads).
+ */
 #define GEN12_VFE_THREADS_PER_DSS		112U
 
 /*
  * INTERFACE_DESCRIPTOR_DATA: dword 2 bit 20 Thread Preemption Disable;
  * dword 5 the Constant URB Entry Read Length (31:16, the per-thread
- * registers); dword 6 the Number of Threads in GPGPU Thread Group (9:0),
- * the Shared Local Memory Size (20:16) and Barrier Enable (21); dword 7 the
+ * registers); dword 6 the Number of Threads in GPGPU Thread Group (9:0), the
+ * Shared Local Memory Size (20:16) and Barrier Enable (21); dword 7 the
  * Cross-Thread Constant Data Read Length (7:0, registers).
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen120.xml
+ * (INTERFACE_DESCRIPTOR_DATA).
  */
 #define GEN12_IDD_PREEMPTION_DISABLE		(1U << 20)
 #define GEN12_IDD_PER_THREAD_LENGTH_SHIFT	16U
@@ -862,16 +980,19 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
  * Size (31:30, 0 for SIMD8) and the Thread Width Counter Maximum (5:0);
  * dwords 7, 10 and 12 the group counts along x, y and z; dwords 13 and 14
  * the right and the bottom execution masks.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen80.xml (GPGPU_WALKER).
  */
 #define GEN12_WALKER_INDIRECT			(1U << 10)
 #define GEN12_WALKER_SIMD8			0U
 #define GEN12_WALKER_SIMD_SHIFT			30U
 
 /*
- * The registers an indirect GPGPU_WALKER takes its group counts from:
- * GPGPU_DISPATCHDIMX, _DIMY and _DIMZ of gen120.xml's render
- * command streamer, which anv loads with MI_LOAD_REGISTER_MEM from the
- * indirect buffer (genX_cmd_compute.c, compute_load_indirect_params).
+ * The registers an indirect GPGPU_WALKER takes its group counts from,
+ * loaded with MI_LOAD_REGISTER_MEM from the indirect buffer.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/vulkan/genX_cmd_compute.c
+ * (GPGPU_DISPATCHDIMX, GPGPU_DISPATCHDIMY, GPGPU_DISPATCHDIMZ).
  */
 #define GEN12_GPGPU_DISPATCHDIMX		0x2500U
 #define GEN12_GPGPU_DISPATCHDIMY		0x2504U

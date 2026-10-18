@@ -1056,7 +1056,13 @@ i915_blit_build_batch(
 	if (gen9 == 0)
 		drv_i915_batch_pointer(batch, GEN12_CMD_3DSTATE_CPS_POINTERS, I915_GFX_DYN_CPS);
 
-	/* Disables the binding table pool, as anv does against state leaking from other contexts. */
+	/*
+	 * Disables the binding table pool, so no state of another context
+	 * leaks in.
+	 *
+	 * Procedure referenced: Mesa 25.0.7 src/intel/vulkan/genX_init_state.c
+	 * (init_render_queue_state).
+	 */
 	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_BINDING_TABLE_POOL_ALLOC, GEN12_3DSTATE_BINDING_TABLE_POOL_ALLOC_DWORDS));
 	drv_i915_batch_emit(batch, mocs);
 	drv_i915_batch_emit(batch, 0U);

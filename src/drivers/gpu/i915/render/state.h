@@ -27,8 +27,8 @@
  * Values referenced: Mesa 25.0.7 src/intel/genxml/gen120.xml (the bit
  * positions).
  *
- * Procedure referenced: Mesa 25.0.7 src/intel/vulkan (the packets anv
- * programs for an ordinary pipeline).
+ * Procedure referenced: Mesa 25.0.7 src/intel/vulkan/genX_pipeline.c and
+ * genX_gfx_state.c (the packets of an ordinary pipeline).
  */
 struct i915_gfx_batch;
 

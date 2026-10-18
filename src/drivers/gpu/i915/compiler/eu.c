@@ -646,10 +646,12 @@ drv_i915_eu_grf_d(
  * Names the low (or, with `high`, the high) 16 bits of each 32-bit channel
  * of a general register, as eight unsigned words.
  *
- * The region is <16;8,2>:uw from byte 0 or 2: how Mesa reads the halves of
- * the second source when it lowers a 32-bit integer multiply to two 32 x
- * 16-bit ones (brw_lower_integer_multiplication.cpp), which Tiger Lake needs
- * because it has no 32 x 32-bit multiply.
+ * The region is <16;8,2>:uw from byte 0 or 2: the halves of the second
+ * source of a 32-bit integer multiply lowered to two 32 x 16-bit ones,
+ * which Tiger Lake needs because it has no 32 x 32-bit multiply.
+ *
+ * Procedure referenced: Mesa 25.0.7
+ * src/intel/compiler/brw_lower_integer_multiplication.cpp.
  */
 struct i915_eu_reg
 drv_i915_eu_grf_uw_half(
@@ -835,8 +837,11 @@ drv_i915_eu_imm_ud(
  * Names an immediate of eight signed 4-bit integers (V): element n in bits
  * 4 n + 3 .. 4 n.
  *
- * Mesa adds 0x11001010 to the replicated subspan coordinates of a pixel
- * thread this way to make each pixel's x and y (brw_compile_fs.cpp).
+ * Adding 0x11001010 to the replicated subspan coordinates of a pixel
+ * thread makes each pixel's x and y.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_compile_fs.cpp (the
+ * pixel position).
  */
 struct i915_eu_reg
 drv_i915_eu_imm_v(
@@ -948,9 +953,11 @@ drv_i915_eu_alu2_masked(
  * dword the destination's subregister names.
  *
  * The operands are those of drv_i915_eu_alu2(), a source normally read as a
- * scalar region.  Mesa builds the header of a scratch message this way: the
- * two AND of generate_scratch_header() (brw_generator.cpp) copy the scratch
- * space size and base out of r0.
+ * scalar region.  The header of a scratch message is built this way: two
+ * AND copy the scratch space size and base out of r0.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_generator.cpp
+ * (generate_scratch_header).
  */
 void
 drv_i915_eu_alu2_scalar(
@@ -969,9 +976,11 @@ drv_i915_eu_alu2_scalar(
  * execution mask: a SIMD16 NoMask instruction in a SIMD8 kernel.
  *
  * The operands are those of drv_i915_eu_alu2(), read and written as sixteen
- * 16-bit words.  Mesa computes the pixel positions of a SIMD8 pixel thread
- * this way: one add of sixteen words, the x and y of both subspans
- * (brw_compile_fs.cpp).
+ * 16-bit words.  The pixel positions of a SIMD8 pixel thread are computed
+ * this way: one add of sixteen words, the x and y of both subspans.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_compile_fs.cpp (the
+ * pixel position).
  */
 void
 drv_i915_eu_alu2_sixteen(
@@ -990,8 +999,10 @@ drv_i915_eu_alu2_sixteen(
  * execution mask: a SIMD4 NoMask instruction, the destination's first
  * dword naming the quad.
  *
- * Mesa computes the fine y derivative this way on Gen11+, one add per quad
- * (generate_ddy(), brw_generator.cpp).
+ * The fine y derivative is computed this way on Gen11+, one add per quad.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_generator.cpp
+ * (generate_ddy).
  */
 void
 drv_i915_eu_alu2_four(
@@ -1008,9 +1019,11 @@ drv_i915_eu_alu2_four(
 /*
  * Encodes a move on all eight channels regardless of the execution mask.
  *
- * Mesa clears a scratch message header this way before filling it (the
- * SIMD8 NoMask MOV of generate_scratch_header(), brw_generator.cpp): a
+ * A scratch message header is cleared this way before it is filled: a
  * channel the dispatch left disabled must not keep junk in the header.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_generator.cpp
+ * (generate_scratch_header).
  */
 void
 drv_i915_eu_mov_all(
@@ -1036,8 +1049,10 @@ drv_i915_eu_mov_all(
  * Encodes a move of one dword on the first channel alone, regardless of the
  * execution mask (a SIMD1 NoMask MOV).
  *
- * Mesa writes the offset of a scratch message into dword 2 of its header
- * this way (build_legacy_scratch_header(), brw_reg_allocate.cpp).
+ * The offset of a scratch message goes into dword 2 of its header this way.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_reg_allocate.cpp
+ * (build_legacy_scratch_header).
  */
 void
 drv_i915_eu_mov_scalar(
@@ -1063,9 +1078,10 @@ drv_i915_eu_mov_scalar(
  * Encodes a one-source operation other than a move: not, round down, round
  * toward zero, round to even or fraction.
  *
- * Mesa lowers ffloor to RNDD, ftrunc to RNDZ, fround_even to RNDE, ffract
- * to FRC and inot to NOT (brw_fs_nir.cpp).  An operation outside the enum
- * poisons the buffer.
+ * An operation outside the enum poisons the buffer.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_fs_nir.cpp
+ * (fs_nir_emit_alu: ffloor, ftrunc, fround_even, ffract, inot).
  */
 void
 drv_i915_eu_alu1(
@@ -1111,7 +1127,10 @@ drv_i915_eu_alu1(
  * a register destination receives all ones for true and zero for false.
  * With `predicated`, only the channels whose bit of `flag` is already set
  * are compared, so a cleared bit stays cleared: how a discard keeps the
- * pixels it has already discarded (Mesa's demote, brw_fs_nir.cpp).
+ * pixels it has already discarded.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_fs_nir.cpp
+ * (nir_intrinsic_demote).
  */
 void
 drv_i915_eu_cmp(
@@ -1160,8 +1179,11 @@ drv_i915_eu_cmp(
 /*
  * Encodes a minimum or a maximum: SEL with a conditional modifier.
  *
- * `cond` LT keeps the smaller source and GE the larger one, as Mesa's
- * emit_minmax() lowers fmin and fmax (brw_builder.h); no flag is involved.
+ * `cond` LT keeps the smaller source and GE the larger one; no flag is
+ * involved.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_builder.h
+ * (emit_minmax).
  */
 void
 drv_i915_eu_minmax(
@@ -1244,9 +1266,11 @@ drv_i915_eu_select(
  * Loads a flag subregister from the 16-bit word at byte `subnr` of general
  * register `nr`.
  *
- * It is a SIMD1 move outside the channel mask, the way Mesa loads the
- * dispatched pixels of a fragment thread into the discard flag
- * (brw_compile_fs.cpp).
+ * It is a SIMD1 move outside the channel mask, which loads the dispatched
+ * pixels of a fragment thread into the discard flag.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_compile_fs.cpp (the
+ * discard flag).
  */
 void
 drv_i915_eu_flag_load(
@@ -1293,8 +1317,11 @@ drv_i915_eu_flag_load(
  * Clears a flag subregister: a SIMD1 move of 0 outside the channel mask.
  *
  * A comparison writes only the bits of the channels it runs on, so the bits
- * of the others stay what they were; Mesa clears the flag this way before
- * the comparison of an "any" vote (brw_lower_subgroup_ops.cpp, the "any" vote).
+ * of the others stay what they were; the flag is cleared this way before
+ * the comparison of an "any" vote.
+ *
+ * Procedure referenced: Mesa 25.0.7
+ * src/intel/compiler/brw_lower_subgroup_ops.cpp (the "any" vote).
  */
 void
 drv_i915_eu_flag_clear(
@@ -1366,9 +1393,11 @@ drv_i915_eu_mad(
  *
  * Math is out of order, so a sync.nop on its destination follows it (see the
  * scoreboard note above).  The integer division reads its operands as their
- * type says (signed D or unsigned UD) and takes no source modifier
- * (gfx6_math(), brw_eu_emit.c); a negated or absolute integer source poisons
- * the buffer.
+ * type says (signed D or unsigned UD) and takes no source modifier; a
+ * negated or absolute integer source poisons the buffer.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_eu_emit.c
+ * (gfx6_math).
  */
 void
 drv_i915_eu_math(
@@ -1476,8 +1505,10 @@ drv_i915_eu_send(
  * The operands are those of drv_i915_eu_send().  A render-target write that
  * ends the thread is sent this way when the shader discards: the pixels the
  * flag no longer holds are not written, and the thread still ends when no
- * pixel is left (Mesa predicates the FB write on the discard flag,
- * brw_compile_fs.cpp).
+ * pixel is left.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_compile_fs.cpp (the
+ * render-target write predicated on the discard flag).
  */
 void
 drv_i915_eu_send_masked(
@@ -1517,11 +1548,13 @@ drv_i915_eu_send_masked(
  * Encodes a message to a shared function on all eight channels regardless
  * of the execution mask.
  *
- * The operands are those of drv_i915_eu_send().  Mesa reads a spilled
- * register back from scratch memory this way (emit_unspill() under
- * exec_all(), brw_reg_allocate.cpp): the fill is a temporary of the
+ * The operands are those of drv_i915_eu_send().  A spilled register is
+ * read back from scratch memory this way: the fill is a temporary of the
  * instruction that needs it, so every channel of it is read, whichever are
  * enabled.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_reg_allocate.cpp
+ * (emit_unspill).
  */
 void
 drv_i915_eu_send_all(
@@ -1581,9 +1614,12 @@ drv_i915_eu_send_all_end(
  * Encodes a message to a shared function on the first channel alone,
  * regardless of the execution mask (a SIMD1 NoMask SEND).
  *
- * The operands are those of drv_i915_eu_send().  Mesa sends a memory fence
- * this way (brw_memory_fence(), brw_eu_emit.c): one message for the thread,
- * whose one-register reply says the fence is done.
+ * The operands are those of drv_i915_eu_send().  A memory fence is sent
+ * this way: one message for the thread, whose one-register reply says the
+ * fence is done.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_eu_emit.c
+ * (brw_memory_fence).
  */
 void
 drv_i915_eu_send_scalar(
@@ -1610,13 +1646,15 @@ drv_i915_eu_send_scalar(
 
 /*
  * Encodes a sync of function `function` (EU_SYNC_*) with no dependency:
- * sync.bar waits until the thread's workgroup barrier message is answered
- * (Mesa's generate_barrier() on Gfx12, brw_generator.cpp), sync.allwr until
- * every write the thread sent is done.
+ * sync.bar waits until the thread's workgroup barrier message is answered,
+ * sync.allwr until every write the thread sent is done.
  *
  * Gen9 has no SYNC.  Its barrier wait is a WAIT on the notification
- * register, which the gateway signals when the group's barrier is complete
- * (generate_barrier() before Gfx12); any other function poisons the buffer.
+ * register, which the gateway signals when the group's barrier is complete;
+ * any other function poisons the buffer.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_generator.cpp
+ * (generate_barrier).
  */
 void
 drv_i915_eu_sync_function(
@@ -1686,10 +1724,13 @@ drv_i915_eu_position(
  * set jump back to instruction `target`, the others wait after the WHILE
  * until the loop ends.
  *
- * The form is Mesa's brw_WHILE: a null signed-integer destination, SIMD8,
- * the jump in bytes from the WHILE to the target in the JIP (on Gen9 after
- * an immediate source 0, see i915_eu_branch_target()).  A target at or after the WHILE, or a poisoned buffer, encodes
- * nothing.
+ * The form is a null signed-integer destination, SIMD8, the jump in bytes
+ * from the WHILE to the target in the JIP (on Gen9 after an immediate
+ * source 0, see i915_eu_branch_target()).  A target at or after the WHILE,
+ * or a poisoned buffer, encodes nothing.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_eu_emit.c
+ * (brw_WHILE).
  */
 void
 drv_i915_eu_while(
@@ -1789,8 +1830,11 @@ drv_i915_eu_flag_store(
  * byte `subnr` of general register `nr`: one channel, outside the mask.
  *
  * Gen9's render-target write header takes the pixels a discarding shader
- * still holds this way, in its word 15 (lower_fb_write_logical_send(),
- * brw_lower_logical_sends.cpp, before Gfx11).
+ * still holds this way, in its word 15.
+ *
+ * Values referenced: Mesa 25.0.7
+ * src/intel/compiler/brw_lower_logical_sends.cpp (lower_fb_write_logical_send,
+ * before Gen11).
  */
 void
 drv_i915_eu_flag_store_word(
@@ -1831,9 +1875,11 @@ drv_i915_eu_flag_store_word(
  * jumps to the ENDIF.  Returns the IF's position; its targets are written by
  * drv_i915_eu_patch_if() once the ENDIF is placed.
  *
- * The form is Mesa's brw_IF: a null signed-integer destination, SIMD8
- * under the execution mask, the JIP and the UIP immediate (on Gen9 after an
- * immediate source 0, see i915_eu_branch_target()).
+ * The form is a null signed-integer destination, SIMD8 under the execution
+ * mask, the JIP and the UIP immediate (on Gen9 after an immediate source 0,
+ * see i915_eu_branch_target()).
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_eu_emit.c (brw_IF).
  */
 uint32_t
 drv_i915_eu_if(
@@ -1877,8 +1923,10 @@ drv_i915_eu_if(
  * Encodes the ENDIF of an IF: the channels the IF stopped run again.
  * Returns its position.  Its JIP -- where the thread goes when no channel is
  * left after it -- is the next instruction until drv_i915_eu_patch_endif()
- * points it at the end of an enclosing loop, as Mesa's brw_set_uip_jip()
- * does.
+ * points it at the end of an enclosing loop.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_eu_emit.c
+ * (brw_set_uip_jip).
  */
 uint32_t
 drv_i915_eu_endif(
@@ -1897,8 +1945,8 @@ drv_i915_eu_endif(
 
 	/*
 	 * Encodes an in-order ENDIF whose JIP is the next instruction, in bytes;
-	 * the JIP is a signed-integer immediate source, as brw_ENDIF's src0
-	 * (the immediate's value is the JIP's word, set after it).
+	 * the JIP is a signed-integer immediate source 0 (the immediate's
+	 * value is the JIP's word, set after it).
 	 */
 	i915_eu_common(buffer, inst, I915_EU_OPCODE_ENDIF, I915_EU_IN_ORDER);
 	i915_eu_src0(buffer, inst, drv_i915_eu_imm_d(0U));
@@ -1909,8 +1957,11 @@ drv_i915_eu_endif(
 }
 
 /*
- * Points an IF's JIP and UIP at its ENDIF (Mesa's patch_IF_ELSE() without
- * an ELSE).  Positions outside what the buffer holds poison it.
+ * Points an IF's JIP and UIP at its ENDIF, for an IF without an ELSE.
+ * Positions outside what the buffer holds poison it.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_eu_emit.c
+ * (patch_IF_ELSE).
  */
 void
 drv_i915_eu_patch_if(
@@ -2204,9 +2255,11 @@ i915_eu_send_gen12(
 /*
  * Encodes a Gen9 SEND's operands and descriptors: SEND with the descriptor
  * as source 1's immediate when the extended descriptor is zero, SENDS with
- * the second payload in source 1 otherwise (brw_send_indirect_message() and
- * _split_message()).  `scope` is the instruction's, as i915_eu_scope() set
- * it.
+ * the second payload in source 1 otherwise.  `scope` is the instruction's,
+ * as i915_eu_scope() set it.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_eu_emit.c
+ * (brw_send_indirect_message, brw_send_indirect_split_message).
  */
 static void
 i915_eu_send_gen9(
@@ -2242,8 +2295,11 @@ i915_eu_send_gen9(
 
 		/*
 		 * The extended descriptor, zero, overlays source 0's region and
-		 * source 1's type: written last, as brw_set_desc_ex() does, so the
-		 * message sees no stray extended bits.
+		 * source 1's type: written last, so the message sees no stray
+		 * extended bits.
+		 *
+		 * Procedure referenced: Mesa 25.0.7
+		 * src/intel/compiler/brw_eu_emit.c (brw_set_desc_ex).
 		 */
 		i915_eu_set(inst, GEN9_EU_SEND_EX_DESC_31_28_HI, GEN9_EU_SEND_EX_DESC_31_28_LO, 0U);
 		i915_eu_set(inst, GEN9_EU_SEND_EX_DESC_27_24_HI, GEN9_EU_SEND_EX_DESC_27_24_LO, 0U);
@@ -2472,7 +2528,10 @@ i915_eu_sync(
 /*
  * Encodes Gen9's barrier wait: a SIMD1 WAIT outside the channel mask on the
  * notification register n0, which the gateway signals once every thread of
- * the group has sent its barrier message (brw_WAIT(), brw_eu_emit.c).
+ * the group has sent its barrier message.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_eu_emit.c
+ * (brw_WAIT).
  */
 static void
 i915_eu_wait_notification(
@@ -2509,8 +2568,11 @@ i915_eu_wait_notification(
  * afterwards.
  *
  * Gen12 has a bit per source for it.  Gen9 has an immediate signed-integer
- * zero as source 0 (brw_IF() and brw_WHILE() before Gfx12), which also sets
- * source 1's file and type; an IF's UIP, cleared here, then overwrites those.
+ * zero as source 0, which also sets source 1's file and type; an IF's UIP,
+ * cleared here, then overwrites those.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_eu_emit.c (brw_IF,
+ * brw_WHILE, before Gen12).
  */
 static void
 i915_eu_branch_target(
@@ -2553,8 +2615,8 @@ i915_eu_dst(
 
 	/*
 	 * A destination is written with horizontal stride one, or two when it
-	 * asks for it: the 16-bit halves of 32-bit channels (Mesa writes a
-	 * packed half float that way, brw_lower_pack.cpp).
+	 * asks for it: the 16-bit halves of 32-bit channels, as a packed half
+	 * float is written.
 	 */
 	stride = EU_HSTRIDE_1;
 	if (reg.hstride == EU_HSTRIDE_2)
@@ -2572,8 +2634,11 @@ i915_eu_dst(
  * Encodes source zero, whether a register or an immediate.
  *
  * On Gen9 an immediate source 0 also says source 1 is the architecture file
- * read as the immediate's type (brw_set_src0() before Gfx12): the two type
- * fields describe the one 32-bit value.
+ * read as the immediate's type: the two type fields describe the one 32-bit
+ * value.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/compiler/brw_eu_emit.c
+ * (brw_set_src0, before Gen12).
  */
 static void
 i915_eu_src0(
