@@ -75,6 +75,8 @@ static const struct vm_cell_type access_for_in_type = {
 
 static void access_read_trace(struct vm_heap *heap, void *context);
 static int access_get_receiver(struct vm_realm *realm, vm_value base, vm_value key, vm_value receiver, vm_value *result);
+static int access_has_property(struct vm_realm *realm, struct vm_object *object, vm_value key, int *found);
+static int access_proxy_has(struct vm_realm *realm, struct vm_proxy *proxy, vm_value key, int *found);
 static int access_proxy_get(struct vm_realm *realm, struct vm_proxy *proxy, vm_value key, vm_value receiver, vm_value *result);
 
 /*
@@ -393,32 +395,95 @@ vm_in(
 	vm_value object,
 	vm_value *result)
 {
-	struct vm_property property;
+	struct access_read_roots roots;
 	vm_value property_key;
 	int is_object;
 	int found;
 	int status;
 
-	/* Only an object can be searched. */
+	/* Keep both language operands and their owner alive before property-key conversion can run script. */
 	*result = VM_VALUE_FALSE;
-	is_object = vm_value_is_object(object);
-	if (!is_object) {
-		status = vm_throw_type_error(realm, "Cannot use 'in' operator to search for a key in a primitive");
-		return status;
-	}
-
-	/* The key as a property key. */
-	status = vm_to_key(realm, key, &property_key);
+	roots.realm = realm;
+	roots.base = object;
+	roots.key = key;
+	roots.receiver = VM_VALUE_UNDEFINED;
+	status = vm_heap_add_tracer(realm->heap, access_read_trace, &roots);
 	if (status != 0)
 		return status;
 
-	/* Succeeded: whether the chain has it. */
-	found = vm_object_find((struct vm_object *)vm_value_as_cell(object), property_key, &property);
-	if (found < 0)
-		return -found;
+	/* The right operand must be an object before the left operand is converted. */
+	is_object = vm_value_is_object(object);
+	if (!is_object) {
+		status = vm_throw_type_error(realm, "Cannot use 'in' operator to search for a key in a primitive");
+		goto cleanup;
+	}
 
-	/* Successful descriptor inspection now supplies the requested presence or flag result. */
+	/* A fresh symbol returned by conversion also belongs to the active native frame. */
+	status = vm_to_key(realm, key, &property_key);
+	if (status != 0)
+		goto cleanup;
+	roots.receiver = property_key;
+	status = vm_has_property(realm, (struct vm_object *)vm_value_as_cell(object), property_key, &found);
+	if (status != 0)
+		goto cleanup;
 	*result = vm_value_boolean(found);
+
+cleanup:
+	/* No tracer may outlive the operand slots it observes. */
+	vm_heap_remove_tracer(realm->heap, access_read_trace, &roots);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the actual object's HasProperty result supplies the language Boolean. */
+	return 0;
+}
+
+/*
+ * Searches an object's property chain through realm-aware HasProperty operations.
+ * Script-free heap property hooks retain their existing contract.
+ */
+int
+vm_has_property(
+	struct vm_realm *realm,
+	struct vm_object *object,
+	vm_value key,
+	int *found)
+{
+	struct access_read_roots roots;
+	int status;
+
+	/* Bound native fallback recursion independently from interpreter call frames. */
+	*found = 0;
+	if (realm->property_depth >= ACCESS_RECURSION_MAX) {
+		status = vm_throw_range_error(realm, "Maximum property recursion exceeded");
+		return status;
+	}
+
+	/* This HasProperty frame owns one recursion count until its normal or abrupt return. */
+	realm->property_depth++;
+
+	/* Property presence may invoke a Proxy trap that collects its own input graph. */
+	roots.realm = realm;
+	roots.base = vm_value_cell(object);
+	roots.key = key;
+	roots.receiver = VM_VALUE_UNDEFINED;
+	status = vm_heap_add_tracer(realm->heap, access_read_trace, &roots);
+	if (status != 0) {
+		/* This attempted operation still owns its depth even when tracer registration failed. */
+		realm->property_depth--;
+		return status;
+	}
+
+	/* Run the actual ordinary or Proxy presence operation while its complete input graph is rooted. */
+	status = access_has_property(realm, object, key, found);
+	vm_heap_remove_tracer(realm->heap, access_read_trace, &roots);
+
+	/* Retire property-operation depth on both normal and abrupt completion. */
+	realm->property_depth--;
+	if (status != 0)
+		return status;
+
+	/* Succeeded: found reports actual property presence. */
 	return 0;
 }
 
@@ -2142,4 +2207,188 @@ access_read_trace(
 	vm_heap_mark_value(heap, roots->base);
 	vm_heap_mark_value(heap, roots->key);
 	vm_heap_mark_value(heap, roots->receiver);
+}
+
+/* Walks ordinary own descriptors until a Proxy owns the rest of the HasProperty operation. */
+static int
+access_has_property(
+	struct vm_realm *realm,
+	struct vm_object *object,
+	vm_value key,
+	int *found)
+{
+	struct vm_property property;
+	int present;
+	int status;
+
+	/* Presence never invokes an ordinary accessor's getter. */
+	*found = 0;
+	while (object != NULL) {
+		if (object->kind == VM_KIND_PROXY) {
+			status = access_proxy_has(realm, (struct vm_proxy *)object, key, found);
+			if (status != 0)
+				return status;
+
+			/* Succeeded: the Proxy supplies the remaining chain's answer. */
+			return 0;
+		}
+
+		/* Ordinary native hooks report descriptor presence without running script. */
+		present = vm_object_get_own(object, key, &property);
+		if (present < 0)
+			return -present;
+		if (present) {
+			*found = 1;
+			return 0;
+		}
+
+		/* A missing own descriptor continues on the ordinary prototype chain. */
+		object = object->prototype;
+	}
+
+	/* Succeeded: no object on the chain supplies this property. */
+	return 0;
+}
+
+/* Executes Proxy [[HasProperty]] without allowing traps to hide fixed or nonextensible own properties. */
+static int
+access_proxy_has(
+	struct vm_realm *realm,
+	struct vm_proxy *proxy,
+	vm_value key,
+	int *found)
+{
+	struct vm_cell *roots[6];
+	struct vm_descriptor descriptor;
+	struct vm_object *object;
+	struct vm_string *string;
+	vm_value target;
+	vm_value handler;
+	vm_value method;
+	vm_value method_key;
+	vm_value trap_key;
+	vm_value args[2];
+	vm_value produced;
+	unsigned index;
+	unsigned registered;
+	int is_cell;
+	int is_symbol;
+	int present;
+	int truth;
+	int status;
+
+	/* Revocation during method lookup cannot retire the operation's original protocol participants. */
+	*found = 0;
+	target = proxy->target;
+	handler = proxy->handler;
+	roots[0] = NULL;
+	if (realm->managed)
+		roots[0] = &realm->cell;
+	roots[1] = &proxy->object.cell;
+	roots[2] = NULL;
+	is_cell = vm_value_is_cell(target);
+	if (is_cell)
+		roots[2] = vm_value_as_cell(target);
+	roots[3] = NULL;
+	is_cell = vm_value_is_cell(handler);
+	if (is_cell)
+		roots[3] = vm_value_as_cell(handler);
+	roots[4] = NULL;
+	is_cell = vm_value_is_cell(key);
+	if (is_cell)
+		roots[4] = vm_value_as_cell(key);
+	roots[5] = NULL;
+	registered = 0;
+	for (index = 0; index < 6U; index++) {
+		status = vm_heap_add_root(realm->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+		registered++;
+	}
+
+	/* A revoked Proxy must fail before any handler access. */
+	if (target == VM_VALUE_NULL) {
+		status = vm_throw_type_error(realm, "Cannot search a revoked Proxy");
+		goto cleanup;
+	}
+
+	/* Fetch the current has trap using the ordinary GetMethod rules. */
+	method_key = vm_key_from_ascii(realm->heap, "has");
+	if (method_key == VM_VALUE_EMPTY) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* Read the current has method before choosing trap or target fallback. */
+	status = vm_get_method(realm, handler, method_key, &method);
+	if (status != 0)
+		goto cleanup;
+	if (method == VM_VALUE_UNDEFINED) {
+		status = vm_has_property(realm, (struct vm_object *)vm_value_as_cell(target), key, found);
+		goto cleanup;
+	}
+
+	/* The trap may be a fresh function returned only to this native frame. */
+	roots[5] = vm_value_as_cell(method);
+	trap_key = key;
+	is_symbol = access_is_symbol(key);
+	if (!is_symbol) {
+		status = vm_to_string(realm, key, &string);
+		if (status != 0)
+			goto cleanup;
+		trap_key = vm_value_cell(string);
+		roots[4] = &string->cell;
+	}
+
+	/* Has receives exactly the actual target and a string-or-symbol property key. */
+	args[0] = target;
+	args[1] = trap_key;
+	status = vm_call(realm, method, handler, args, 2, &produced);
+	if (status != 0)
+		goto cleanup;
+	truth = vm_to_boolean(produced);
+	if (truth) {
+		*found = 1;
+		status = 0;
+		goto cleanup;
+	}
+
+	/* A false result inspects the original target after the trap's changes. */
+	object = (struct vm_object *)vm_value_as_cell(target);
+	present = vm_get_own_descriptor(object, key, &descriptor);
+	if (present < 0) {
+		status = -present;
+		goto cleanup;
+	}
+
+	/* Only an existing own property constrains a false has result. */
+	if (present) {
+		if ((descriptor.attributes & VM_PROPERTY_CONFIGURABLE) == 0U) {
+			status = vm_throw_type_error(realm, "Proxy has trap hid a fixed own property");
+			goto cleanup;
+		}
+
+		/* A nonextensible target also keeps its configurable own properties visible. */
+		if ((object->flags & VM_OBJECT_NOT_EXTENSIBLE) != 0U) {
+			status = vm_throw_type_error(realm, "Proxy has trap hid a nonextensible target's own property");
+			goto cleanup;
+		}
+	}
+
+	/* The missing or legally hidden property produces an ordinary false result. */
+	status = 0;
+
+cleanup:
+	/* Unregister only slots acquired before an allocation or trap failure. */
+	while (registered != 0) {
+		registered--;
+		vm_heap_remove_root(realm->heap, &roots[registered]);
+	}
+
+	/* Propagate the original failure after releasing this native frame's roots. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the reported presence respects the target's actual invariants. */
+	return 0;
 }

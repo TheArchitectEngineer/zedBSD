@@ -47,17 +47,26 @@ static int proxy_gc_edges(struct page *page);
  */
 int
 main(
-	void)
+	int argc,
+	char **argv)
 {
 	struct page *page;
 	struct wb_buffer source;
 	struct wb_units units;
 	struct js_syntax_error syntax;
+	const char *source_path;
 	static const unsigned char html[] = "<!doctype html><html><body></body></html>";
 	vm_value answer;
 	int status;
 	int passed;
 	int printed;
+
+	/* Keep the shared control input reproducible for historical frozen fixture binaries. */
+	source_path = "plan/ws074/tests/proxy-read.js";
+	if (argc == 2)
+		source_path = argv[1];
+	if (argc > 2)
+		return 2;
 
 	/* Establish the production Page and builtins before installing fixture-only native bridges. */
 	status = page_create(&page, __builtin_frame_address(0));
@@ -81,7 +90,7 @@ main(
 
 	/* The same source reaches native Proxy or Chromium's genuine Proxy without API substitution inside the tests. */
 	wb_buffer_init(&source);
-	status = wb_file_read("plan/ws074/tests/proxy-read.js", &source);
+	status = wb_file_read(source_path, &source);
 	if (status != 0) {
 		wb_buffer_release(&source);
 		goto cleanup;
@@ -383,6 +392,7 @@ proxy_gc_edges(
 	unsigned registered;
 	int status;
 	int same;
+	int present;
 
 	/* Setup ownership is retired deliberately before each product operation takes responsibility. */
 	memset(roots, 0, sizeof(roots));
@@ -476,6 +486,17 @@ proxy_gc_edges(
 	if (status != 0)
 		goto cleanup;
 	roots[4] = vm_value_as_cell(answer);
+
+	/* Has fallback must independently retain the managed realm through the same native descriptor collector. */
+	status = vm_has_property(realm, (struct vm_object *)vm_value_as_cell(made), key, &present);
+	if (status != 0)
+		goto cleanup;
+	if (!present) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* The sole result from Get must also survive the subsequent Has collection. */
 	key = vm_key_from_ascii(page->heap, "sole");
 	if (key == VM_VALUE_EMPTY) {
 		status = 2;
@@ -488,7 +509,7 @@ proxy_gc_edges(
 		goto cleanup;
 	same = vm_same_value(answer, vm_value_int32(74));
 	if (!same ||
-	    sole_realm_alive != 1U ||
+	    sole_realm_alive != 2U ||
 	    realm->property_depth != 0U) {
 		status = 1;
 		goto cleanup;

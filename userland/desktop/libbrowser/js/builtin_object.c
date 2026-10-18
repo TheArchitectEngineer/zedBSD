@@ -1813,43 +1813,58 @@ object_to_descriptor(
 	if (status != 0)
 		goto cleanup;
 
-	/* enumerable, configurable, value, writable, get and set, in that order. */
+	/* Convert enumerable before observing any later descriptor field. */
 	field = VM_VALUE_FALSE;
 	status = object_descriptor_field(realm, value, "enumerable", VM_HAS_ENUMERABLE, descriptor, &field);
+	if (status != 0)
+		goto cleanup;
 	truth = vm_to_boolean(field);
-	if (status == 0 && truth)
+	if (truth)
 		descriptor->attributes |= VM_PROPERTY_ENUMERABLE;
+
+	/* Configurable follows enumerable and precedes the data value. */
 	field = VM_VALUE_FALSE;
-	if (status == 0)
-		status = object_descriptor_field(realm, value, "configurable", VM_HAS_CONFIGURABLE, descriptor, &field);
+	status = object_descriptor_field(realm, value, "configurable", VM_HAS_CONFIGURABLE, descriptor, &field);
+	if (status != 0)
+		goto cleanup;
 	truth = vm_to_boolean(field);
-	if (status == 0 && truth)
+	if (truth)
 		descriptor->attributes |= VM_PROPERTY_CONFIGURABLE;
-	if (status == 0)
-		status = object_descriptor_field(realm, value, "value", VM_HAS_VALUE, descriptor, &descriptor->value);
-	field = VM_VALUE_FALSE;
-	if (status == 0)
-		status = object_descriptor_field(realm, value, "writable", VM_HAS_WRITABLE, descriptor, &field);
-	truth = vm_to_boolean(field);
-	if (status == 0 && truth)
-		descriptor->attributes |= VM_PROPERTY_WRITABLE;
-	if (status == 0)
-		status = object_descriptor_field(realm, value, "get", VM_HAS_GET, descriptor, &descriptor->getter);
-	if (status == 0)
-		status = object_descriptor_field(realm, value, "set", VM_HAS_SET, descriptor, &descriptor->setter);
+
+	/* The descriptor tracer retains a fresh value through every later getter. */
+	status = object_descriptor_field(realm, value, "value", VM_HAS_VALUE, descriptor, &descriptor->value);
 	if (status != 0)
 		goto cleanup;
 
-	/* A getter and a setter must be functions or undefined. */
+	/* Writable is converted before any accessor fields are inspected. */
+	field = VM_VALUE_FALSE;
+	status = object_descriptor_field(realm, value, "writable", VM_HAS_WRITABLE, descriptor, &field);
+	if (status != 0)
+		goto cleanup;
+	truth = vm_to_boolean(field);
+	if (truth)
+		descriptor->attributes |= VM_PROPERTY_WRITABLE;
+
+	/* A bad getter fails immediately, before HasProperty or Get can inspect the setter. */
+	status = object_descriptor_field(realm, value, "get", VM_HAS_GET, descriptor, &descriptor->getter);
+	if (status != 0)
+		goto cleanup;
 	callable = vm_value_is_callable(descriptor->getter);
-	if ((descriptor->has & VM_HAS_GET) != 0U && !callable && descriptor->getter != VM_VALUE_UNDEFINED) {
+	if ((descriptor->has & VM_HAS_GET) != 0U &&
+	    !callable &&
+	    descriptor->getter != VM_VALUE_UNDEFINED) {
 		status = vm_throw_type_error(realm, "Getter must be a function");
 		goto cleanup;
 	}
 
-	/* The same for the setter. */
+	/* Validate the setter immediately after its own read. */
+	status = object_descriptor_field(realm, value, "set", VM_HAS_SET, descriptor, &descriptor->setter);
+	if (status != 0)
+		goto cleanup;
 	callable = vm_value_is_callable(descriptor->setter);
-	if ((descriptor->has & VM_HAS_SET) != 0U && !callable && descriptor->setter != VM_VALUE_UNDEFINED) {
+	if ((descriptor->has & VM_HAS_SET) != 0U &&
+	    !callable &&
+	    descriptor->setter != VM_VALUE_UNDEFINED) {
 		status = vm_throw_type_error(realm, "Setter must be a function");
 		goto cleanup;
 	}
