@@ -835,7 +835,9 @@ flex_base_size(
 		item->base = layout_from_px(basis->value) - sizing;
 
 	/* A percentage math result is clamped only after its basis becomes definite. */
-	if (basis->unit == CSS_UNIT_PERCENT && available >= 0 && tree->measuring == 0) {
+	if (basis->unit == CSS_UNIT_PERCENT &&
+	    available >= 0 &&
+	    tree->measuring == 0) {
 		resolved = flex_length(basis, available);
 
 		/* A negative used length is zero before the box frame is removed. */
@@ -861,7 +863,9 @@ flex_base_size(
 	}
 
 	/* An explicit content basis ignores the non-replaced preferred main size. */
-	if (item->base < 0 && basis->unit == CSS_UNIT_CONTENT && !child->replaced) {
+	if (item->base < 0 &&
+	    basis->unit == CSS_UNIT_CONTENT &&
+	    !child->replaced) {
 		error = flex_content_basis(tree, box, child, row, &item->base);
 		if (error != 0)
 			return error;
