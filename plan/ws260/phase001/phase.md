@@ -2,7 +2,7 @@
 
 # ws260-p001 Gen9 の display の書き直しの設計
 
-Status: in-progress（2026-10-18 q1252-i01、P1）
+Status: cleared（2026-10-18 Q1 判定: design.md（b9fe9a6d6、merge 6d8b00743）、判断 5 点はユーザーが回答（ws.md））（旧: in-progress（2026-10-18 q1252-i01、P1））
 
 - 親: [WS260](../ws.md)。Queue: q1252-i01。code は書かない。
 

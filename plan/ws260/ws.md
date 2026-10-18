@@ -19,4 +19,27 @@
 
 | Phase | 目的 | 状態 |
 | --- | --- | --- |
-| [p001](phase001/phase.md) | 設計: 今の gen9-*.c の棚卸し（写しの点検）、xd の部品をどこまで共有するか（xd に display 9 を足すか、別の層か）、段の分け方と回帰の方法 | in-progress（q1252、P1） |
+| [p001](phase001/phase.md) | 設計: 今の gen9-*.c の棚卸し（写しの点検）、xd の部品をどこまで共有するか（xd に display 9 を足すか、別の層か）、段の分け方と回帰の方法 | cleared（2026-10-18 Q1: design.md、判断 5 点はユーザーが回答） |
+| p002 | 試験の土台: golden の書き込みの列と数の計算の表を今の code で取る。gen9-fake-hw を xd-io の backend に繋ぐ口 | planned（4 LW） |
+| p003 | xd-platform に display 9 の記述（SKL・KBL・CFL・CML、PCH の SPT・KBP・CNP・CMP、port A〜E）。選ぶだけで呼ばない | planned（3 LW） |
+| p004 | 数の計算: CDCLK の読み、DP の link と M/N、DPLL の語（DP と HDMI の WRPLL）、buf trans の表を xd-clock・xd-dp・xd-ddi へ。gen9-mode.c の該当は殻 | planned（6 LW） |
+| p005 | WM・DDB の計算を xd-dbuf へ（display 9 の 1 slice・8 level・IPC） | planned（5 LW） |
+| p006 | AUX・GMBUS・EDID を xd-aux・xd-gmbus・xd-edid へ（gen9-ddc.c を殻に） | planned（3 LW） |
+| p007 | backlight: SPT/KBP の LPT の形と CNP/CMP の形を xd-panel へ（gen9-backlight.c を殻に） | planned（3 LW） |
+| p008 | power well（PW2・DDI IO・AUX）を xd-power へ | planned（4 LW） |
+| p009 | DPLL の enable/disable と DDI clock の選択を xd-clock へ | planned（3 LW） |
+| p010 | DDI buffer・signal level・iboost・DP_TP と link training を xd-ddi・xd-dp へ（gen9-link.c を殻に） | planned（5 LW） |
+| p011 | transcoder・pipe・plane の点灯と消灯を xd-pipe へ（gen9-modeset.c の残り） | planned（5 LW） |
+| p012 | WM・DDB の書き込みと順序、hotplug の sense を xd-dbuf・xd-hpd へ | planned（4 LW） |
+| p013 | firmware の点検と flip（firmware の panel の引き継ぎ、plane の flip、irq）を xd-takeover・xd-screen の display 9 の方針へ（gen9-firmware.c・gen9-flip.c） | planned（6 LW） |
+| p014 | 外の display（gen9-node・gen9-outputs・gen9-display）を xd-screen・xd-display の口へ。bootfb.c・i915.c・device.c・display.c の呼び先を xd に付け替え、殻を全部消す | planned（6 LW） |
+| p015 | 規約の全文の見直し、写しの点検（§1.2 の方法を新しい code に）、T1 に SV7 と 5330 の実機の回帰を 1 回 | planned（3 LW） |
+
+
+## ユーザーの決定（2026-10-18、クリック）
+
+1. 形は「案 A: xd に display 9 を足す」。
+2. 実機の確かめは「最後に 1 回」（全部の段の後に T1 が SV7 と 5330 で 1 回、壊れていれば段の境で二分）。
+3. Gen9 の log の文言は xd の形に「揃える」（照合の試験も同じ段で追従）。
+4. 起動の語 `i915.gen9.display=` は「xd の語にまとめる」（古い語は外す。手順・試験の image の設定も追従）。
+5. SV7 に外の display は「繋げない（host 試験だけ）」（外部出力の段の実機は未実施と記録し、ユーザーの試験の一覧に載せる）。
