@@ -2,7 +2,7 @@
 
 # ws266-p002 68040 の HAL と virt の BSP（QEMU の直の起動）
 
-Status: in-progress（2026-10-19 P1、q1257。T1 の判定待ち）
+Status: cleared（2026-10-19 Q1 判定: T1-713 で画面に M68040 HAL READY DISPLAY VIRTIO-GPU PAGING PASS TIMER TICK・M68040 CPU 1 ONLINE・VFS initialization failed（QEMU、c7af9297a、merge 9358969bf））（旧: in-progress（2026-10-19 P1、q1257。T1 の判定待ち））
 
 - 親: [WS266](../ws.md)。設計: [design.md](../design.md)。
 - HAL の API の差分（事前の承認の範囲、朝にユーザーへ報告）:
