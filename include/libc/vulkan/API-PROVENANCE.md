@@ -16,7 +16,7 @@ The ABI and numeric declarations are selected from the Khronos Vulkan
   are unmodified Khronos files and carry only the Khronos notice.
 - The copy virglrenderer 1.1.0 (commit `1aeaf5e10a9c89096e96d09599aa419d5c50712f`)
   carries as `src/venus/venus-protocol/vulkan_core.h` is the same file, byte for
-  byte (the SHA-256 above; ws219-p001); it is not a Venus declaration.
+  byte (the SHA-256 above); it is not a Venus declaration.
   The independent zedBSD selection/formatting tool and platform wrapper are Zlib.
 
 The maintained header exposes 137 Vulkan 1.0 commands and 18 Vulkan-1.0-era
@@ -44,7 +44,7 @@ Changing the API-data revision or function set requires reviewing this record,
 the public ABI and the supported runtime scope together.
 
 
-## Wayland declaration addition (q309)
+## Wayland declaration addition
 
 `vulkan_wayland.h` adds the two commands and the creation record of
 `VK_KHR_wayland_surface`, revision 6. The declaration data was checked against
@@ -59,11 +59,9 @@ reads the separate maintained Wayland header in addition to `vulkan_core.h`.
 The extra private external-image/memory chain encoding is implementation code,
 not a public advertisement of external-memory extensions or a guest dma-buf ABI.
 The [official Wayland extension](https://docs.vulkan.org/refpages/latest/refpages/source/VK_KHR_wayland_surface.html)
-requires MAILBOX support as well as the implemented FIFO path. Actual acceptance
-and limitations are recorded with WS014 p006, rather than changing WS030's closed
-historical clearance.
+requires MAILBOX support as well as the implemented FIFO path.
 
-## External allocation and fence declarations (q310)
+## External allocation and fence declarations
 
 `vulkan_external.h` selects additional declaration data from the same pinned
 `vulkan_core.h` and input hash above. The independent Noct maintenance tool is
@@ -136,9 +134,8 @@ their input descriptor, while failed imports leave it owned by the caller.
 The expanded ABI fixture checks 148 structures, 942 fields and 2394 enum constants
 against independently compiled ILP32/LP64 declarations. The full 170-command
 dispatch fixture checks extension gating against its independent command list.
-Runtime acceptance and remaining limitations belong to WS014 p007.
 
-## Memory-requirement and dedicated-allocation declarations (ws103-p003)
+## Memory-requirement and dedicated-allocation declarations
 
 `vulkan_external.h` additionally selects `VK_KHR_get_memory_requirements2` and
 `VK_KHR_dedicated_allocation` from the same pinned `vulkan_core.h` (input SHA-256
@@ -159,7 +156,7 @@ command. `maintain-dispatch.noct` regenerated `dispatch-table.inc` and
 the library from the 1.0 queries and need no wire identifier. Core Vulkan
 remains 1.0.
 
-## The command numbers (ws167-p002)
+## The command numbers
 
 The numbers of the Vulkan commands in the stream libvulkan submits are the Kei
 GPU command protocol's, declared in `include/uapi/gpu-op.h` with zedBSD's own
@@ -170,7 +167,7 @@ that a Venus renderer on a virtual machine's host accepts the stream; the file,
 its names and later numbers are zedBSD's. No virglrenderer file is read to make
 it, and libvulkan no longer carries `opcodes.h` or `LICENSE-PROTOCOL`.
 
-## Vulkan Video and synchronization2 declarations (ws083-p002)
+## Vulkan Video and synchronization2 declarations
 
 `vulkan_video.h` selects declaration data for `VK_KHR_video_queue` (revision 8),
 `VK_KHR_video_decode_queue` (8), `VK_KHR_video_decode_h264` (9) and
@@ -212,7 +209,7 @@ too: the 13 video and 6 synchronization2 commands bring the dispatch table from
 input stays the core selection), because their chains, their bit-field flags and
 the H.264 two-dimensional scaling lists need rules of their own.
 
-## Display-control and surface-counter declarations (ws113-p003)
+## Display-control and surface-counter declarations
 
 `vulkan_display_control.h` selects the declaration data of `VK_EXT_display_surface_counter`
 (revision 1) and `VK_EXT_display_control` (revision 1) verbatim from the same input as
