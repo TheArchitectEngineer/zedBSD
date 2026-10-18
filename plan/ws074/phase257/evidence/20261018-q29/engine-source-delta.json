@@ -1,0 +1,10 @@
+[
+  "userland/desktop/libbrowser/js/builtin_generator.c",
+  "userland/desktop/libbrowser/js/compile_expr.c",
+  "userland/desktop/libbrowser/vm/bytecode.h",
+  "userland/desktop/libbrowser/vm/code.c",
+  "userland/desktop/libbrowser/vm/generator.c",
+  "userland/desktop/libbrowser/vm/internal.h",
+  "userland/desktop/libbrowser/vm/interpreter.c",
+  "userland/desktop/libbrowser/vm/vm.h"
+]

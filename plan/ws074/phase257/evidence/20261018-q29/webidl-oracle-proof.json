@@ -1,0 +1,74 @@
+[
+  {
+    "label": "actual-webidl-positive",
+    "native": "fail",
+    "native_callbacks": [
+      {
+        "name": "original WebIDL2 loaded",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "original parser executes actual IDL",
+        "status": 1,
+        "message": "Proxy is not defined"
+      },
+      {
+        "name": "original validator executes delegated generators",
+        "status": 1,
+        "message": "Proxy is not defined"
+      },
+      {
+        "name": "invalid IDL is rejected by original parser",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      }
+    ],
+    "chrome": "pass",
+    "chrome_callbacks": [
+      {
+        "name": "original WebIDL2 loaded",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "original parser executes actual IDL",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "original validator executes delegated generators",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "invalid IDL is rejected by original parser",
+        "status": 0,
+        "message": ""
+      }
+    ],
+    "original_source_identical": true,
+    "original_webidl_sha256": "954444f6daf0f8068d2fce513eac8e6a5d53189a910b9a5675e8d8e8a2808070"
+  },
+  {
+    "label": "actual-webidl-negative",
+    "native": "fail",
+    "native_callbacks": [
+      {
+        "name": "parser success does not mask failure",
+        "status": 1,
+        "message": "Proxy is not defined"
+      }
+    ],
+    "chrome": "fail",
+    "chrome_callbacks": [
+      {
+        "name": "parser success does not mask failure",
+        "status": 1,
+        "message": "assert_unreached: intentional assertion after actual original parser Reached unreachable code"
+      }
+    ],
+    "original_source_identical": true,
+    "original_webidl_sha256": "954444f6daf0f8068d2fce513eac8e6a5d53189a910b9a5675e8d8e8a2808070"
+  }
+]

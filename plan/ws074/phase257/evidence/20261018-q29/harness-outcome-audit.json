@@ -1,0 +1,89 @@
+{
+  "completed": 1508,
+  "counts": {
+    "fail": 955,
+    "harness_error": 13,
+    "pass": 494,
+    "no_completion": 20,
+    "no_output": 24,
+    "multiple_completions": 2
+  },
+  "callbacks": {
+    "1": 20642,
+    "0": 11540,
+    "3": 14
+  },
+  "whole_pass_losses": [],
+  "whole_pass_gains": [],
+  "old_pass_callback_losses": [],
+  "changes": [
+    {
+      "id": "/event-timing/idlharness.any.html",
+      "old_outcome": "fail",
+      "new_outcome": "fail",
+      "old_callback_counts": {
+        "1": 1
+      },
+      "new_callback_counts": {
+        "1": 1
+      },
+      "old_completion": {
+        "tests": [
+          {
+            "name": "idl_test setup",
+            "status": 1,
+            "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: WebIDL2 is not defined\""
+          }
+        ],
+        "status": 0,
+        "message": ""
+      },
+      "new_completion": {
+        "tests": [
+          {
+            "name": "idl_test setup",
+            "status": 1,
+            "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: Proxy is not defined\""
+          }
+        ],
+        "status": 0,
+        "message": ""
+      },
+      "stdout_tail": "WS074_WPT_RESULT {\"name\":\"idl_test setup\",\"status\":1,\"message\":\"promise_test: Unhandled rejection with value: object \\\"ReferenceError: Proxy is not defined\\\"\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"idl_test setup\",\"status\":1,\"message\":\"promise_test: Unhandled rejection with value: object \\\"ReferenceError: Proxy is not defined\\\"\"}],\"status\":0,\"message\":\"\"}\n"
+    },
+    {
+      "id": "/storage-access-api/idlharness.window.html",
+      "old_outcome": "fail",
+      "new_outcome": "fail",
+      "old_callback_counts": {
+        "1": 1
+      },
+      "new_callback_counts": {
+        "1": 1
+      },
+      "old_completion": {
+        "tests": [
+          {
+            "name": "idl_test setup",
+            "status": 1,
+            "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: WebIDL2 is not defined\""
+          }
+        ],
+        "status": 0,
+        "message": ""
+      },
+      "new_completion": {
+        "tests": [
+          {
+            "name": "idl_test setup",
+            "status": 1,
+            "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: Proxy is not defined\""
+          }
+        ],
+        "status": 0,
+        "message": ""
+      },
+      "stdout_tail": "WS074_WPT_RESULT {\"name\":\"idl_test setup\",\"status\":1,\"message\":\"promise_test: Unhandled rejection with value: object \\\"ReferenceError: Proxy is not defined\\\"\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"idl_test setup\",\"status\":1,\"message\":\"promise_test: Unhandled rejection with value: object \\\"ReferenceError: Proxy is not defined\\\"\"}],\"status\":0,\"message\":\"\"}\n"
+    }
+  ]
+}

@@ -1,0 +1,52 @@
+{
+  "source_commit": "9da3cd223537fc328923b95a5deeff74d4e27fb2",
+  "harness": {
+    "fail": 955,
+    "harness_error": 13,
+    "pass": 494,
+    "no_completion": 20,
+    "no_output": 24,
+    "multiple_completions": 2
+  },
+  "callback_counts": {
+    "1": 20642,
+    "0": 11540,
+    "3": 14
+  },
+  "whole_pass_gains": [],
+  "whole_pass_losses": [],
+  "old_pass_callback_losses": [],
+  "changes": 2,
+  "protocol38": {
+    "native_returncode": 0,
+    "chrome_returncode": 0,
+    "native_matches": true,
+    "chrome_matches": true,
+    "expected_lines": 38
+  },
+  "native_gc": 10,
+  "host_target_warning": 0,
+  "raw_allowed_style_flags": 25,
+  "other_style_flags": 0,
+  "archives": {
+    "harness-all-raw": {
+      "members": 1676,
+      "sha256": "3fb3a5f26d46bbc19eb8abda02db3c41099b02f58b2c6c54dbff06a0b427325f"
+    },
+    "native-oracle-and-build-raw": {
+      "members": 114,
+      "sha256": "6ff1daad14356a0bff2482a31bb0ff47303f1c48cee32a1796fa2cac2dae31fa"
+    }
+  },
+  "static_reused_q28": 844,
+  "scripted_reused_q28": 105,
+  "crash_reused_q28": 39,
+  "old_held": 0,
+  "current_raw_lower_bound": 1482,
+  "limitations": [
+    "static/scripted/crash q28 evidence reused because render/native-script inputs unchanged except sync yield* VM scope; no new capture equality claim",
+    "same baseline denominator3805, unattempted275 retained",
+    "target5 single-source compile only; target link/runtime/full WS p100 remain unverified",
+    "all raw new whole gains require prerequisite audit before certification"
+  ]
+}

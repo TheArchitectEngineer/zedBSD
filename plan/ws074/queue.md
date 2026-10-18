@@ -2,13 +2,13 @@
 
 # ws074-q20261018-29 / synchronous generator yield* delegation
 
-Status: active（2026-10-18）
+Status: finished（2026-10-18、i01 scoped partial cleared）
 Owner: このCodex chat単独。
 Approval: [ユーザー自走指示](autonomy.md)をこのfinite partial scopeへ適用。q28 terminal e5572243e/history SHA256469ef149fce63f08789c17b76b6b7739d8a1c74bd4fef9c9e14e060b76916f13をread-back。最大90分、2026-10-18 20:35 JSTまで。
 
 | Attempt | Phase | Exact scope / criteria | State | Dependencies |
 | --- | --- | --- | --- | --- |
-| ws074-q20261018-29-i01 | [p257](phase257/phase.md) synchronous yield* partial | 通常compilerでsync yield*をnative managed iterator record/start/stepと既存suspension/return-finallyへlower。actual Symbol.iterator/next一回取得、next常に1引数（初回undefined）、throw/return動的GetMethodとmissing/null/callability/close precedence、iterator result Object/done/value順とdone falseのvalue非読出し・result identity維持、normal/throw/return completion、nested/finally/GCを実装。VM opcode/checker/tableとprivate resume contractを整合しraw resultをJS wrapperで再包装しない。独立Chrome/native protocol/abrupt/identity/GC controls、既存generator/async/DOMとhost warning0・変更source exact target warning0・full changed C review、固定1508 census/旧PASS callback保持とWebIDL2再実行を確認、原raw/hashを保存 | in-progress | q28 verified VM/Window/GC/source pair、既存generator・iterator protocol出力、TC39 yield* sync算法 |
+| ws074-q20261018-29-i01 | [p257](phase257/phase.md) synchronous yield* partial | 通常compilerでsync yield*をnative managed iterator record/start/stepと既存suspension/return-finallyへlower。actual Symbol.iterator/next一回取得、next常に1引数（初回undefined）、throw/return動的GetMethodとmissing/null/callability/close precedence、iterator result Object/done/value順とdone falseのvalue非読出し・result identity維持、normal/throw/return completion、nested/finally/GCを実装。VM opcode/checker/tableとprivate resume contractを整合しraw resultをJS wrapperで再包装しない。独立Chrome/native protocol/abrupt/identity/GC controls、既存generator/async/DOMとhost warning0・変更source exact target warning0・full changed C review、固定1508 census/旧PASS callback保持とWebIDL2再実行を確認、原raw/hashを保存 | cleared | q28 verified VM/Window/GC/source pair、既存generator・iterator protocol出力、TC39 yield* sync算法 |
 
 Dependency graph: q28 VM/GC/Window → synchronous delegation/compiler/native controls → fixed1508/native regression/WebIDL2 prerequisite audit → outcome/archive。
 Generation bounds: engine既存js/compile_expr.c/builtin_generator.c、vm/generator.c/interpreter.c/internal.h/vm.h/bytecode.h/code.c、必要な既存vm/check.c（存在するcheckerの実source）、tests/dom/generator-delegation.html/.expected、tests/host-generator-delegation.cとWS074記録だけ。既存spread iteratorのoptimized経路は変更せずgenerator-owned native iterator recordを使用。新source module/ABI2/Wayland/runner/WPT/manifest/期待値/SDK/sysroot/toolchain/共有Board/cacheを変更しない。bytecodeはcompilerから通常生成し生成後書換えをしない。private VM resume APIは実caller全件追従する。
@@ -17,6 +17,10 @@ Bounds: async generator/for-await、全ECMAScript/Test262適合、WebIDL/native 
 Timebox correction: selection commit d531ea184のactual時刻19:05:23 JSTに基づきdeadlineを20:39→20:35 JSTへ短縮。元snapshotを保持し、最大90分を越えない。scope/criteriaは不変。
 
 Upcoming Work Outlook: WebIDL2実行後のactual missing APIs、external/syntax errors、未attempt275、layout/API/target/p100。
+
+Outcome: source9da3cd223/final pairでnative同期yield*を通常compiler/VMへ実装。actual iterator/cached next、next初回undefinedの1引数、throw/return動的method取得、missing throwのnormal closeと例外優先順位、done/value順、done falseのvalue非観測とoriginal result同一性、normal/return/finallyを確認。managed recordとexplicit rootsでGC中のoperand/method/iterator/result/sentを保持し、ordinary yield/awaitは従来経路を維持。 独立Chrome/native38条件が全件一致、保守的stack無効のnative GC10、DOM41/41（既存promise/asyncを含む）、VM interpreter45・factory GC56、CSSOM12+12、producer7/observer10/ErrorEvent9/ErrorReporting19を通過。host warning0・q02 exact5source target compile warning0、C全文new/changed scopeは許可forward cleanup25以外0。full target link/runtime/p100は未達。 固定1508を237.1秒、同じsettle5000/process20で実測し494 PASS/955 FAIL/13 harness_error/20 no_completion/24 no_output/2 multiple、callbacks11540 PASS/20642 FAIL/14 NOTRUN。旧whole PASSと全PASS callbackの名前/数を保持、whole gain0。差はevent-timing/storage-accessのoriginal IDL setup2件のmessageだけで、yield*拒否/WebIDL2 undefinedからProxy未定義へ進んだ。原WebIDL2 bundleをloadしparse APIが実在することはnative/Chrome両方PASS、actual parse/validator/invalid IDL対照はChrome4/4・native1/4でProxyがblock。negative after-parserはChromeが意図assertまで到達、nativeはその前のProxy errorでありnegative-after-parser成立と主張しない。 Acid3 score/inventory100・pixel0、Acid2既存差873を再確認。static844/scripted105/strict crash39はq28の原証拠を再利用し、新pairでの全pixel/capture/crash再測定や同一性を主張しない。render sourceとrunner/manifest/WPT/fontは不変、native VM scopeだけ変更したことをsource差分/hashで保存。確認済み1482/3805（38.948752%）・held0を保持、未attempt275は分母に残す。 i01 scoped partial cleared、p257 own synchronous delegation criteriaをverifiedとしてcleared。async generator/for-await/全Test262適合は本Phase範囲外で未実装、Proxy/正規WebIDL2 parse完了はp189の次候補。whole p189/p255/p256/p100/target/WS100%は未達。全raw/元source/stdio/binary/hash/checkpointsをarchive sequential read-back済み。shared Master/Queue/next/cache/GitHub投影pending、push無し。
+
+History: [exact scope/outcome](history/ws074-q20261018-29.md)。
 
 ---
 <!-- awesome-plan project=zedbsd record=queue -->

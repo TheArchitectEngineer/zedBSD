@@ -1,0 +1,80 @@
+{
+  "scope": {
+    "js/compile_expr.c": [
+      "expr_delegate",
+      "expr_yield"
+    ],
+    "js/builtin_generator.c": [
+      "generator_step"
+    ],
+    "vm/generator.c": [
+      "vm_generator_resume",
+      "generator_create",
+      "vm_delegate_start",
+      "vm_delegate_step",
+      "generator_delegate_trace"
+    ],
+    "vm/interpreter.c": [
+      "interpreter_suspend",
+      "interpreter_spread"
+    ],
+    "planfixture": [
+      "main",
+      "delegation_collect",
+      "delegation_run"
+    ]
+  },
+  "raw_checker_flags": 25,
+  "allowed_forward_cleanup": [
+    {
+      "function": "vm_delegate_start",
+      "forward_shared_cleanup_jumps": 8,
+      "labels": [
+        "cleanup"
+      ]
+    },
+    {
+      "function": "vm_delegate_step",
+      "forward_shared_cleanup_jumps": 17,
+      "labels": [
+        "cleanup"
+      ]
+    }
+  ],
+  "other_checker_flags": 0,
+  "unresolved_changed_scope": 0,
+  "host_build_warnings": {
+    "initial-build.log": [],
+    "gc-build.log": [],
+    "final-build.log": [],
+    "verified-build.log": []
+  },
+  "manual_review": [
+    "C full standard applied to changed functions, private structures/prototypes and opcode/compiler paragraphs; unrelated legacy remains p100",
+    "generator.c table initializers retain only trace/finalize declarations before constants; other helper declarations follow every file-scope table",
+    "new record initializes both traced edges before invoking script; explicit roots retain managed realm/input/fetched method/new state/result/sent through user GC; cleanup unregisters acquired slots only",
+    "GetIterator caches actual next once; no global Symbol or JS helper substitution; step dynamically fetches throw/return, validates calls/results and preserves normal close failure precedence",
+    "done getter precedes value; false result never reads value, original object passes through direct_result; return uses existing finally propagation; next/throw/return values remain VM registers across suspension",
+    "opcode descriptor/enum order has matching two/five/three register operands; existing generic code checker validates every register including fifth and rejects truncated instructions",
+    "vm_generator_resume has one production caller, builtin_generator.c updated; direct_result initialized for every result and reset on each suspension, ordinary yield/await preserved",
+    "compiler emits unmodified normal checked code using existing emit helpers; no post-generation bytecode patch",
+    "new fixture public main header is multiline; no split-call multiple arguments, call-in-condition/boolean assignment/implicit late declaration in generated scope",
+    "no public browser ABI/source-module/Wayland/SDK/sysroot/toolchain or fixed WPT/runner input change"
+  ],
+  "limitations": [
+    "full WS conformance p100 and target full link/runtime not performed",
+    "async generators/for-await unchanged unsupported; no all-Test262 certification",
+    "VM/API tables outside changed paragraphs are legacy p100 review scope"
+  ],
+  "source_commit": "9da3cd223",
+  "selection_commit": "d531ea184",
+  "approved_snapshot_sha256": "4cb313e3265f275a6efd56dada0196be86b8f395023a54f51568bdd7f72ae767",
+  "target_sources": 5,
+  "checked_source_list": [
+    "js/compile_expr.c",
+    "js/builtin_generator.c",
+    "vm/code.c",
+    "vm/generator.c",
+    "vm/interpreter.c"
+  ]
+}

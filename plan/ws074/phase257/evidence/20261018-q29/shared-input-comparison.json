@@ -1,0 +1,10 @@
+{
+  "userland/desktop/libbrowser/vm/vm.h": {
+    "old": "f3f6e19ebc635a82fbdaaf860696f74112fddb466840254775dda5d006a8708e",
+    "new": "dba3d945a25e51422cba20af22a095428ff46f035cb585fe18555c1e801938a6"
+  },
+  "userland/desktop/libbrowser/vm/interpreter.c": {
+    "old": "22ff1923b16802fa4bd700ff9e25a2e96f4cb96c0844d76fffd28c17a6b40797",
+    "new": "9ffdc20898ea844ef03efbf753da2751b9a7d3c95fc9f8a4ed9cc5f7cf360028"
+  }
+}

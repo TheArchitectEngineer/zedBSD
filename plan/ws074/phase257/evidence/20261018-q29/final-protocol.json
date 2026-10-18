@@ -1,0 +1,7 @@
+{
+  "native_returncode": 0,
+  "chrome_returncode": 0,
+  "native_matches": true,
+  "chrome_matches": true,
+  "expected_lines": 38
+}
