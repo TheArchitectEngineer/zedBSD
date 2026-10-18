@@ -628,3 +628,4 @@ WS074 の記録の q590・q594〜q598（Codex の browser3）は main の同じ�
 | --- | --- | --- | --- | --- |
 | q1257 / q1257-i01 | P1（phase-runner、Opus 5.5 low） | WS263 → WS266 → WS264 → WS265 | 各 WS の p001 設計から framebuffer の console・VFS の段まで。HAL の API は形を限った事前の承認の範囲だけ | in-progress |
 | q1258 / q1258-i01 | P2（q1256 の後） | WS267 → WS268 → WS259 | sun4u の build と QEMU（画面の console を作る）、x68k の build（MAME は任意）、RTL8822B の表（実機は待つ） | pending |
+| q1259 / q1259-i01 | P2（q1258 の後） | WS244 の残り → WS245 の残り → WS248 → WS249 → WS251 p002 → WS252 | 2026-10-19 ユーザー「…ws244,ws245,ws248,ws249,ws251 p002, ws252も追加で、完了させて。」。実機の Phase は実機待ちで残す（2026-10-18 の決定） | pending |
