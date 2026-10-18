@@ -584,7 +584,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS262](ws262/ws.md) | MG001 | boot loader（bootloader/）をコーディング規約の全文に合わせる（2026-10-18 ユーザー） | completed（2026-10-19） | — |
 | [WS263](ws263/ws.md) | MG008 | riscv32 の virt（QEMU）への移植、framebuffer の console・VFS の段まで（2026-10-18 ユーザー） | incomplete（p001・p002 cleared、T1-711） | p003 規約 |
 | [WS264](ws264/ws.md) | MG008 | ppc32 の QEMU の machine（「virt」相当）への移植、framebuffer の console・VFS の段まで（2026-10-18 ユーザー） | incomplete（p001・p002 cleared、T1-714） | p003 規約 |
-| [WS265](ws265/ws.md) | MG008 | ppc64 の QEMU の machine（「virt」相当）への移植、framebuffer の console・VFS の段まで（2026-10-18 ユーザー） | planning（担当は未定） | p001 設計 |
+| [WS265](ws265/ws.md) | MG008 | ppc64 の QEMU の machine（「virt」相当）への移植、framebuffer の console・VFS の段まで（2026-10-18 ユーザー） | incomplete（p001・p002 cleared、T1-715） | p003 規約 |
 | [WS266](ws266/ws.md) | MG008 | m68k（68030）の virt（QEMU）への移植、framebuffer の console・VFS の段まで（2026-10-18 ユーザー） | incomplete（p001・p002 cleared、T1-713） | p003 規約 |
 | [WS267](ws267/ws.md) | MG008 | sun4u（sparcv9）を再び build できるようにし、QEMU で動かす（2026-10-18 ユーザー） | planning（担当は未定、WS261 p002 の後） | p001 |
 | [WS268](ws268/ws.md) | MG008 | x68k（X68000）を再び build できるようにする（起動は任意、2026-10-18 ユーザー） | planning（担当は未定） | p001 |
