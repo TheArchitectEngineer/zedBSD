@@ -6,9 +6,9 @@
  */
 
 /*
- * The shared execution engine of browser (plan/ws074/design.md
- * §11): the garbage-collected heap, strings and atoms, and later the
- * values, objects, bytecode and interpreter that JavaScript and Wasm share.
+ * The shared execution engine of browser: the garbage-collected heap,
+ * strings, atoms, values, objects, bytecode and interpreter that JavaScript
+ * and Wasm share.
  *
  * The heap is non-moving mark-and-sweep.  Its roots are found by scanning
  * the C stack conservatively (every word that points into a live cell
@@ -184,7 +184,7 @@ enum vm_intrinsic {
 };
 
 /*
- * The well-known symbols (ws074-p087), which every realm of a heap makes
+ * The well-known symbols, which every realm of a heap makes
  * when it is made (the engine's own operations look them up, before any
  * built-in exists).
  */
@@ -308,8 +308,7 @@ struct vm_heap_stats {
 };
 
 /*
- * A value of the engine: 64 bits, NaN-boxed as in JavaScriptCore
- * (plan/ws074/design.md §11.1).
+ * A value of the engine: 64 bits, NaN-boxed as in JavaScriptCore.
  *
  * A cell (an object, a string, a symbol) is its pointer, whose top 16 bits
  * are zero and whose low 4 bits are zero (cells are 16-byte aligned).  An
@@ -317,7 +316,7 @@ struct vm_heap_stats {
  * is its bits plus 2^49, which puts every double (NaN made canonical) above
  * the pointers and below the int32s.  undefined, null, true, false and the
  * empty value (an array's hole, a slot never written) are small constants
- * no cell can have.  Wasm keeps its values unboxed in registers (§11.1), so
+ * no cell can have.  Wasm keeps its values unboxed in registers, so
  * this form is only JavaScript's.
  */
 typedef uint64_t vm_value;
@@ -330,10 +329,10 @@ struct vm_env;
 
 /*
  * A symbol: a unique property key with a description (a string or
- * undefined).  A private name (a class's #x, ws074-p085) is a symbol too,
+ * undefined).  A private name (a class's #x) is a symbol too,
  * marked private_name: it is never listed among an object's keys, and
  * only the class's code can read it.  registered marks a symbol of the
- * global registry (Symbol.for, ws074-p087), whose key is its description.
+ * global registry (Symbol.for), whose key is its description.
  */
 struct vm_symbol {
 	struct vm_cell cell;
@@ -343,7 +342,7 @@ struct vm_symbol {
 };
 
 /*
- * A BigInt (ws074-p230): a sign and a magnitude of 32-bit limbs (least
+ * A BigInt: a sign and a magnitude of 32-bit limbs (least
  * significant first, no leading zero limb) that follow the structure.
  */
 struct vm_bigint {
@@ -489,7 +488,7 @@ struct vm_function {
  * with vm_throw_site to report an uncaught exception's place.
  * symbols are the well-known symbols (enum vm_well_known).
  * rejections lists the promises rejected while nothing handled them
- * (ws074-p086), which the end of a checkpoint reports unless a handler
+ * which the end of a checkpoint reports unless a handler
  * came meanwhile; reporting_rejection is set while the report of one runs,
  * so the embedder writes it as a promise's ("Uncaught (in promise)").
  */
@@ -559,7 +558,7 @@ extern const struct vm_cell_type vm_accessor_type;
 /* Functions (function.c). */
 extern const struct vm_cell_type vm_function_type;
 
-/* Promises (promise.c, ws074-p086). */
+/* Promises (promise.c). */
 extern const struct vm_cell_type vm_promise_type;
 extern const struct vm_cell_type vm_promise_job_type;
 
@@ -725,6 +724,10 @@ int vm_set(struct vm_realm *realm, vm_value base, vm_value key, vm_value value, 
 int vm_set_receiver(struct vm_realm *realm, struct vm_object *object, vm_value key, vm_value value, vm_value receiver, int *done);
 int vm_delete(struct vm_realm *realm, vm_value base, vm_value key, int strict, vm_value *result);
 
+/* Realm-aware extensibility operations preserve Proxy traps and pure native policy. */
+int vm_is_extensible(struct vm_realm *realm, struct vm_object *object, int *extensible);
+int vm_prevent_extensions(struct vm_realm *realm, struct vm_object *object, int *done);
+
 /* Array identity unwraps native Proxy targets and rejects revoked records. */
 int vm_is_array(struct vm_realm *realm, vm_value value, int *is_array);
 
@@ -752,7 +755,7 @@ int vm_private_define(struct vm_realm *realm, vm_value object, vm_value key, vm_
 int vm_private_copy(struct vm_realm *realm, vm_value target, vm_value source, vm_value key);
 int vm_private_in(struct vm_realm *realm, vm_value key, vm_value object, vm_value *result);
 
-/* Promises (promise.c, ws074-p086). */
+/* Promises (promise.c). */
 int vm_value_is_promise(vm_value value);
 int vm_promise_create(struct vm_realm *realm, struct vm_object *prototype, vm_value *promise);
 int vm_promise_state(vm_value promise, vm_value *result);
@@ -762,7 +765,7 @@ int vm_promise_reject(struct vm_realm *realm, vm_value promise, vm_value reason)
 int vm_promise_then(struct vm_realm *realm, vm_value promise, vm_value on_fulfilled, vm_value on_rejected, vm_value derived, vm_value resolve, vm_value reject);
 int vm_promise_run_job(struct vm_realm *realm, vm_value job, vm_value argument);
 
-/* Generators and async functions (generator.c, ws074-p086). */
+/* Generators and async functions (generator.c). */
 int vm_generator_call(struct vm_realm *realm, struct vm_function *function, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 int vm_generator_resume(struct vm_realm *realm, vm_value generator, vm_value value, int how, vm_value *result, int *done, int *direct_result);
 int vm_delegate_start(struct vm_realm *realm, vm_value iterable, vm_value *result);

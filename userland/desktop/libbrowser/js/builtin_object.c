@@ -10,9 +10,6 @@
  * integrity (defineProperty, create, keys, freeze and the rest), and
  * Object.prototype's methods (hasOwnProperty, toString, the __proto__
  * accessor and Annex B's __defineGetter__ family).
- *
- * Object.fromEntries and Object.groupBy need iteration and arrive with the
- * iterators (ws074-p028).
  */
 
 #include "js/builtin.h"
@@ -1080,8 +1077,9 @@ object_is_extensible(
 	struct vm_object *object;
 	vm_value value;
 	int is_object;
+	int extensible;
+	int status;
 
-	UNUSED_PARAMETER(realm);
 	UNUSED_PARAMETER(this_value);
 
 	/* A primitive is not. */
@@ -1091,9 +1089,14 @@ object_is_extensible(
 	if (!is_object)
 		return 0;
 
-	/* Succeeded: whether it takes new properties. */
+	/* Proxy traps and ordinary policy report actual extensibility in the current realm. */
 	object = (struct vm_object *)vm_value_as_cell(value);
-	*result = vm_value_boolean((object->flags & VM_OBJECT_NOT_EXTENSIBLE) == 0U);
+	status = vm_is_extensible(realm, object, &extensible);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: publish only the completed operation's Boolean. */
+	*result = vm_value_boolean(extensible);
 	return 0;
 }
 
@@ -1209,7 +1212,7 @@ object_prevent_extensions(
 
 	/* Native policy must permit the transition before any extensibility state changes. */
 	object = (struct vm_object *)vm_value_as_cell(value);
-	status = vm_object_prevent_extensions(object, &done);
+	status = vm_prevent_extensions(realm, object, &done);
 	if (status != 0)
 		return status;
 
@@ -1520,7 +1523,7 @@ object_to_string(
 			registered++;
 		}
 
-		/* A string Symbol.toStringTag names it instead (ws074-p087). */
+		/* A string Symbol.toStringTag names it instead. */
 		status = vm_get(realm, value, vm_symbol_key(realm, VM_SYMBOL_TO_STRING_TAG), &named);
 		if (status != 0)
 			goto cleanup;

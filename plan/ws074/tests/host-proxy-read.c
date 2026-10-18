@@ -16,6 +16,17 @@
 #include <stdio.h>
 #include <string.h>
 
+/* Integer addresses observe a single synchronous extensibility operation without retaining any managed cells. */
+struct extent_observation {
+	struct vm_heap *heap;
+	uintptr_t addresses[4];
+	unsigned collections;
+	unsigned mode;
+};
+
+/* Only extent_pressure owns this context; zero means no native policy observation is active. */
+static struct extent_observation extent_case;
+
 /* Inert storage reaches the unchanged production collection threshold during factory construction. */
 static const struct vm_cell_type proxy_pressure_type = { "proxy-read-pressure", NULL, NULL };
 
@@ -46,6 +57,13 @@ static uintptr_t typed_case_realm_address;
 /* Counts forced typed validity collections that retained their original managed owner. */
 static unsigned typed_case_collections;
 
+static int extent_collect_prevent(struct vm_object *object, int *allowed);
+
+/* This pure policy supplies only collection and native acceptance/refusal/errno, never user script. */
+static const struct vm_native_operations extent_collect_operations = {
+	NULL, NULL, NULL, NULL, extent_collect_prevent
+};
+
 static int typed_collect_get_own(struct vm_object *object, vm_value key, struct vm_property *property);
 static int typed_forward_define(struct vm_realm *realm, struct vm_object *object, vm_value key, const struct vm_descriptor *descriptor, int *handled, int *done);
 
@@ -61,6 +79,7 @@ static const struct vm_native_operations proxy_sole_operations = {
 	proxy_sole_get_own, NULL, NULL, NULL, NULL
 };
 
+static int extent_pressure(struct page *page);
 static int array_identity_pressure(struct page *page);
 static int typed_storage_pressure(struct page *page);
 static int proxy_canonical_index(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
@@ -225,6 +244,11 @@ main(
 
 	/* Revoked IsArray errors retain their otherwise unowned realm and native record during real allocation. */
 	status = array_identity_pressure(page);
+	if (status != 0)
+		goto cleanup;
+
+	/* Extensibility retains original participants after reentrant revocation and pure native policy collection. */
+	status = extent_pressure(page);
 
 cleanup:
 	/* Restore ordinary scanning before retiring the complete Page graph. */
@@ -1930,5 +1954,217 @@ cleanup:
 		return status;
 
 	/* Succeeded: the actual error path retained and then released both inputs. */
+	return 0;
+}
+
+/* Collects inside the existing pure native prevention contract and observes original operation participants. */
+static int
+extent_collect_prevent(
+	struct vm_object *object,
+	int *allowed)
+{
+	struct vm_cell *found;
+	unsigned index;
+
+	/* This callback never executes script, even though it invokes the real collector. */
+	UNUSED_PARAMETER(object);
+	vm_heap_collect(extent_case.heap);
+	for (index = 0; index < 4U; index++) {
+		found = vm_heap_find_cell(extent_case.heap, extent_case.addresses[index]);
+		if (found == NULL)
+			return EFAULT;
+	}
+
+	/* Count only collections that found every otherwise unowned participant alive. */
+	extent_case.collections++;
+	*allowed = 0;
+	if (extent_case.mode == 2U)
+		return EACCES;
+	if (extent_case.mode == 0U)
+		*allowed = 1;
+
+	/* Succeeded: native refusal and acceptance use the same unchanged Boolean policy contract. */
+	return 0;
+}
+
+/* Exercises reentrant revocation, fresh methods and native policy collection with all setup ownership retired. */
+static int
+extent_pressure(
+	struct page *page)
+{
+	struct vm_realm *realm;
+	struct vm_object *target;
+	struct vm_object *handler;
+	struct vm_cell *roots[5];
+	struct vm_cell *found;
+	struct vm_heap_stats before;
+	struct vm_heap_stats after;
+	vm_value proxy;
+	vm_value getter;
+	vm_value key;
+	unsigned mode;
+	unsigned index;
+	unsigned registered;
+	int done;
+	int status;
+
+	/* A synchronous observation context holds only integer addresses, never collector edges. */
+	memset(&extent_case, 0, sizeof(extent_case));
+	memset(roots, 0, sizeof(roots));
+	registered = 0;
+	for (index = 0; index < 5U; index++) {
+		status = vm_heap_add_root(page->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+		registered++;
+	}
+
+	/* Independent native acceptance, refusal, errno and script-trap modes must all retire their input graphs. */
+	for (mode = 0; mode < 4U; mode++) {
+		status = vm_realm_create_managed(page->heap, &realm);
+		if (status != 0)
+			goto cleanup;
+		roots[0] = &realm->cell;
+		extent_case.heap = page->heap;
+		extent_case.mode = mode;
+		extent_case.collections = 0;
+		extent_case.addresses[0] = (uintptr_t)realm;
+		target = vm_object_create(page->heap, NULL);
+		if (target == NULL) {
+			status = ENOMEM;
+			goto cleanup;
+		}
+
+		/* Pure native target policy observes the post-getter fallback collection. */
+		roots[1] = &target->cell;
+		extent_case.addresses[1] = (uintptr_t)target;
+		target->native_operations = &extent_collect_operations;
+		handler = vm_object_create(page->heap, NULL);
+		if (handler == NULL) {
+			status = ENOMEM;
+			goto cleanup;
+		}
+
+		/* The handler is retained only by the helper snapshot once its lookup revokes the record. */
+		roots[2] = &handler->cell;
+		extent_case.addresses[2] = (uintptr_t)handler;
+		if (mode == 3U) {
+			status = proxy_script(page->realm, "(function(){revokeReadProxy(this.owner);collectReadProxy();return function(target){collectReadProxy();return Object.isExtensible(target);};})", &getter);
+		} else {
+			status = proxy_script(page->realm, "(function(){revokeReadProxy(this.owner);collectReadProxy();return undefined;})", &getter);
+		}
+
+		/* The getter must be rooted before defining the ordinary handler accessor. */
+		if (status != 0)
+			goto cleanup;
+		roots[3] = vm_value_as_cell(getter);
+		if (mode == 3U)
+			key = vm_key_from_ascii(page->heap, "isExtensible");
+		else
+			key = vm_key_from_ascii(page->heap, "preventExtensions");
+		if (key == VM_VALUE_EMPTY) {
+			status = ENOMEM;
+			goto cleanup;
+		}
+
+		/* Accessor definition uses production descriptor semantics without a scripted fixture object model. */
+		status = vm_define_accessor(realm, vm_value_cell(handler), key, getter, 0);
+		if (status != 0)
+			goto cleanup;
+		roots[3] = NULL;
+		status = vm_proxy_create(realm, vm_value_cell(target), vm_value_cell(handler), &proxy);
+		if (status != 0)
+			goto cleanup;
+		roots[4] = vm_value_as_cell(proxy);
+		extent_case.addresses[3] = (uintptr_t)roots[4];
+		key = vm_key_from_ascii(page->heap, "owner");
+		if (key == VM_VALUE_EMPTY) {
+			status = ENOMEM;
+			goto cleanup;
+		}
+
+		/* The getter revokes its own Proxy, so target and handler need independent production snapshots. */
+		status = vm_object_define(page->heap, handler, key, proxy, VM_PROPERTY_DEFAULT);
+		if (status != 0)
+			goto cleanup;
+		vm_heap_stats(page->heap, &before);
+		for (index = 0; index < 5U; index++)
+			roots[index] = NULL;
+		if (mode == 3U)
+			status = vm_is_extensible(realm, (struct vm_object *)vm_value_as_cell(proxy), &done);
+		else
+			status = vm_prevent_extensions(realm, (struct vm_object *)vm_value_as_cell(proxy), &done);
+		vm_heap_stats(page->heap, &after);
+		if (mode == 2U) {
+			if (status != EACCES) {
+				status = 1;
+				goto cleanup;
+			}
+
+			/* The original native errno is expected and must not become a language exception. */
+			status = 0;
+		}
+
+		/* Every mode must collect after setup ownership ends and restore the native recursion depth. */
+		if (status != 0)
+			goto cleanup;
+		if (after.collections <= before.collections || realm->property_depth != 0U) {
+			status = 1;
+			goto cleanup;
+		}
+
+		/* A refused native policy remains distinct from actual successful prevention. */
+		if (mode == 0U || mode == 3U) {
+			if (!done) {
+				status = 1;
+				goto cleanup;
+			}
+		} else if (done) {
+			status = 1;
+			goto cleanup;
+		}
+
+		/* Native policy modes require their own collection after the scripted getter has already returned. */
+		if (mode != 3U && extent_case.collections != 1U) {
+			status = 1;
+			goto cleanup;
+		}
+
+		/* Observe every participant separately before collecting the completed frame's otherwise unreachable graph. */
+		for (index = 0; index < 4U; index++) {
+			found = vm_heap_find_cell(page->heap, extent_case.addresses[index]);
+			if (found == NULL) {
+				status = 1;
+				goto cleanup;
+			}
+		}
+
+		/* All four participants must actually disappear once their operation snapshots have retired. */
+		vm_heap_collect(page->heap);
+		for (index = 0; index < 4U; index++) {
+			found = vm_heap_find_cell(page->heap, extent_case.addresses[index]);
+			if (found != NULL) {
+				status = 1;
+				goto cleanup;
+			}
+		}
+	}
+
+	/* All independent operation outcomes preserved lifetime and native policy semantics. */
+	status = 0;
+
+cleanup:
+	/* Observation state is synchronous and must not outlive this one fixture call. */
+	memset(&extent_case, 0, sizeof(extent_case));
+	while (registered != 0U) {
+		registered--;
+		vm_heap_remove_root(page->heap, &roots[registered]);
+	}
+
+	/* Preserve any failure after retiring every temporary registration. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: both native and scripted extensibility operations retained and then released their full graph. */
 	return 0;
 }

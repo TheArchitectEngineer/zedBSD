@@ -86,6 +86,8 @@ static const struct vm_cell_type access_for_in_type = {
 	"for-in", access_for_in_trace, access_for_in_finalize
 };
 
+static int access_extensibility(struct vm_realm *realm, struct vm_object *object, int prevent, int *result);
+static int access_proxy_extensibility(struct vm_realm *realm, struct vm_proxy *proxy, int prevent, int *result);
 static int access_set_typed(struct vm_realm *realm, struct vm_object *object, vm_value key, vm_value value, vm_value receiver, int *done);
 static int access_define_typed(struct vm_realm *realm, struct vm_object *object, vm_value key, const struct vm_descriptor *descriptor, int *handled, int *done);
 static void access_write_trace(struct vm_heap *heap, void *context);
@@ -103,6 +105,46 @@ static int access_get_receiver(struct vm_realm *realm, vm_value base, vm_value k
 static int access_has_property(struct vm_realm *realm, struct vm_object *object, vm_value key, int *found);
 static int access_proxy_has(struct vm_realm *realm, struct vm_proxy *proxy, vm_value key, int *found);
 static int access_proxy_get(struct vm_realm *realm, struct vm_proxy *proxy, vm_value key, vm_value receiver, vm_value *result);
+
+/*
+ * Reports actual extensibility through ordinary policy or native Proxy internal methods.
+ */
+int
+vm_is_extensible(
+	struct vm_realm *realm,
+	struct vm_object *object,
+	int *extensible)
+{
+	int status;
+
+	/* The shared realm frame owns both input lifetime and the finite native operation depth. */
+	status = access_extensibility(realm, object, 0, extensible);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the completed operation supplied the target's actual extensibility. */
+	return 0;
+}
+
+/*
+ * Prevents extensions through realm-aware Proxy handling and the existing pure native policy.
+ */
+int
+vm_prevent_extensions(
+	struct vm_realm *realm,
+	struct vm_object *object,
+	int *done)
+{
+	int status;
+
+	/* Refusal and abrupt completion remain separate from the operation's Boolean success. */
+	status = access_extensibility(realm, object, 1, done);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: done reports whether the target accepted preventing extensions. */
+	return 0;
+}
 
 /*
  * Determines array identity through immutable Proxy targets without invoking any script operation.
@@ -677,7 +719,7 @@ vm_instanceof(
 	int is_object;
 	int status;
 
-	/* An object's Symbol.hasInstance answers for it, unless it is Function.prototype's own (ws074-p087). */
+	/* An object's Symbol.hasInstance answers for it, unless it is Function.prototype's own. */
 	*result = VM_VALUE_FALSE;
 	is_object = vm_value_is_object(constructor);
 	if (is_object) {
@@ -3957,5 +3999,167 @@ cleanup:
 		return status;
 
 	/* Succeeded: handled distinguishes integer-index policy from ordinary fallback and done preserves refusal. */
+	return 0;
+}
+
+/* Owns a realm and input across extensibility traps and script-free native policy collections. */
+static int
+access_extensibility(
+	struct vm_realm *realm,
+	struct vm_object *object,
+	int prevent,
+	int *result)
+{
+	struct access_read_roots roots;
+	int status;
+
+	/* Even a recursion-limit error may allocate while this frame is the only owner. */
+	*result = 0;
+	roots.realm = realm;
+	roots.base = vm_value_cell(object);
+	roots.key = VM_VALUE_UNDEFINED;
+	roots.receiver = VM_VALUE_UNDEFINED;
+	status = vm_heap_add_tracer(realm->heap, access_read_trace, &roots);
+	if (status != 0)
+		return status;
+	if (realm->property_depth >= ACCESS_RECURSION_MAX) {
+		status = vm_throw_range_error(realm, "Maximum property recursion exceeded");
+		vm_heap_remove_tracer(realm->heap, access_read_trace, &roots);
+		return status;
+	}
+
+	/* Every dispatch owns exactly one depth count until its normal or abrupt completion. */
+	realm->property_depth++;
+	if (object->kind == VM_KIND_PROXY) {
+		status = access_proxy_extensibility(realm, (struct vm_proxy *)object, prevent, result);
+	} else if (prevent) {
+		status = vm_object_prevent_extensions(object, result);
+	} else {
+		status = 0;
+		*result = 1;
+		if ((object->flags & VM_OBJECT_NOT_EXTENSIBLE) != 0U)
+			*result = 0;
+	}
+
+	/* Native callbacks never execute script; their collections still require this complete input frame. */
+	realm->property_depth--;
+	vm_heap_remove_tracer(realm->heap, access_read_trace, &roots);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: both operation depth and collector ownership have returned to their caller's state. */
+	return 0;
+}
+
+/* Runs the two one-target extensibility traps with original participants and post-trap invariants. */
+static int
+access_proxy_extensibility(
+	struct vm_realm *realm,
+	struct vm_proxy *proxy,
+	int prevent,
+	int *result)
+{
+	struct vm_cell *roots[3];
+	vm_value target;
+	vm_value handler;
+	vm_value method;
+	vm_value method_key;
+	vm_value produced;
+	const char *name;
+	unsigned registered;
+	unsigned index;
+	int is_cell;
+	int truth;
+	int target_extensible;
+	int status;
+
+	/* Reentrant revocation cannot discard either original protocol participant. */
+	target = proxy->target;
+	handler = proxy->handler;
+	memset(roots, 0, sizeof(roots));
+	is_cell = vm_value_is_cell(target);
+	if (is_cell)
+		roots[0] = vm_value_as_cell(target);
+	is_cell = vm_value_is_cell(handler);
+	if (is_cell)
+		roots[1] = vm_value_as_cell(handler);
+	registered = 0;
+	for (index = 0; index < 3U; index++) {
+		status = vm_heap_add_root(realm->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+		registered++;
+	}
+
+	/* Reject revocation before observing the current handler method. */
+	if (target == VM_VALUE_NULL) {
+		status = vm_throw_type_error(realm, "Cannot inspect extensibility of a revoked Proxy");
+		goto cleanup;
+	}
+
+	/* Both operations use GetMethod, including null fallback and noncallable rejection. */
+	name = "isExtensible";
+	if (prevent)
+		name = "preventExtensions";
+	method_key = vm_key_from_ascii(realm->heap, name);
+	if (method_key == VM_VALUE_EMPTY) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* GetMethod may execute a getter that revokes the original record or collects its graph. */
+	status = vm_get_method(realm, handler, method_key, &method);
+	if (status != 0)
+		goto cleanup;
+	if (method == VM_VALUE_UNDEFINED) {
+		if (prevent)
+			status = vm_prevent_extensions(realm, (struct vm_object *)vm_value_as_cell(target), result);
+		else
+			status = vm_is_extensible(realm, (struct vm_object *)vm_value_as_cell(target), result);
+		goto cleanup;
+	}
+
+	/* The trap can be fresh and otherwise owned only by this native call frame. */
+	roots[2] = vm_value_as_cell(method);
+	status = vm_call(realm, method, handler, &target, 1, &produced);
+	if (status != 0)
+		goto cleanup;
+	truth = vm_to_boolean(produced);
+	if (prevent && !truth) {
+		/* A refused prevention never queries or changes its target after the trap. */
+		status = 0;
+		goto cleanup;
+	}
+
+	/* Extensibility is observed after the trap's changes, using the target's actual internal method. */
+	status = vm_is_extensible(realm, (struct vm_object *)vm_value_as_cell(target), &target_extensible);
+	if (status != 0)
+		goto cleanup;
+	if (prevent) {
+		if (target_extensible) {
+			status = vm_throw_type_error(realm, "Proxy preventExtensions trap left its target extensible");
+			goto cleanup;
+		}
+	} else if (truth != target_extensible) {
+		status = vm_throw_type_error(realm, "Proxy isExtensible trap disagreed with its target");
+		goto cleanup;
+	}
+
+	/* Only a completed invariant check publishes the trap's Boolean result. */
+	*result = truth;
+	status = 0;
+
+cleanup:
+	/* Release only acquired root registrations on every fallback, trap and error path. */
+	while (registered != 0U) {
+		registered--;
+		vm_heap_remove_root(realm->heap, &roots[registered]);
+	}
+
+	/* Preserve the original abrupt outcome after retiring snapshots and fresh method ownership. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the result belongs to the completed extensibility operation. */
 	return 0;
 }
