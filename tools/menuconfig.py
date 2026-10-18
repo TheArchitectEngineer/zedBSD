@@ -25,6 +25,7 @@ PLATFORMS = [
     ("riscv32-virt", "riscv32", "virt", "QEMU virt RISC-V 32"),
     ("sun4u", "sparcv9", "sun4u", "SPARC V9 sun4u"),
     ("x68k", "m68k", "x68k", "Sharp X68000 MC68030"),
+    ("m68k-virt", "m68k", "virt", "QEMU virt MC68040"),
 ]
 
 BOARD_LABELS = {
@@ -53,6 +54,7 @@ BOARD_VARIANTS = {
     ("riscv32", "virt"): [("default", "Default")],
     ("sparcv9", "sun4u"): [("default", "Default")],
     ("m68k", "x68k"): [("default", "Default")],
+    ("m68k", "virt"): [("default", "Default")],
 }
 
 # The names the Packages menu gives the directories of userland/packages
