@@ -27,5 +27,5 @@ Resume point: p002（GPU ドライバ、i915 から）を P1 が q1240-i01 で�
 | Phase | 内容 | 状態 |
 | --- | --- | --- |
 | p001 | 棚卸し: 機械の検査で件数と file の一覧、log の文字列の照合先の一覧、群ごとの分け方 | planned |
-| [p002](phase002/phase.md) | GPU ドライバ（src/drivers/gpu/）の comment と log。開発・試験の運用の話も消す（2026-10-17 ユーザー） | in-progress（q1240-i01、P1） |
+| [p002](phase002/phase.md) | GPU ドライバ（src/drivers/gpu/）の comment と log。開発・試験の運用の話も消す（2026-10-17 ユーザー） | cleared（2026-10-19 Q1、全 file の通読はしていない） |
 | p003〜 | 残りの群ごとの削除（p001 で分割） | planned |

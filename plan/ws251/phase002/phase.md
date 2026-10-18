@@ -2,7 +2,7 @@
 
 # ws251-p002: GPU ドライバ（src/drivers/gpu/）の comment と log から開発の管理情報を消す
 
-Status: in-progress（2026-10-17 q1240-i01、P1。i915 display の群まで済み、ラップアップで中断）
+Status: cleared（2026-10-19 Q1 判定: 完了の条件の grep は src/drivers/gpu・include/uapi/gpu-op.h で 0 件（Q1 も数えた）。開発の段・試験の運用の語の grep の当たりを P1 が file ごとに目で見て直した（0736bcc7b、merge 731dc0a65）。制限: 全 file の通読はしていない（grep の当たりの行の目視まで）。build（Pi 4・amd64）warning 0）（旧: in-progress（2026-10-17 q1240-i01、P1。i915 display の群まで済み、ラップアップで中断））
 Disposition: normal
 Parent: [WS251](../ws.md)
 
