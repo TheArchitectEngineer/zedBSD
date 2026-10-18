@@ -1,0 +1,209 @@
+{
+  "source_commit": "d2acfd1d7a7da929dd61696f0f86b3956a44a5b2",
+  "explicit_source_commit": "d2acfd1d7",
+  "selection": "a0a1ed658",
+  "source_hash_count": 317,
+  "conditions": 501,
+  "old452_prefix_unchanged": true,
+  "oracle": "native501/501, Chrome499/501. Original452 rows all match inherited q36 qualified classifier fixture. New47 ordinary-sized OwnKeys rows match genuine Reflect; two huge-length first-getter controls use native plus primary-spec/diagnostic evidence because Chrome153 throws RangeError before index0. Original source/expectations/raw retained, no new oracle shim or all501 equality claim",
+  "native_pressure": "four independent modes: complete trap arraylike length/valueOf/getters plus accumulated never-stored Symbol survives later getter GC and post-trap pure native own_keys GC; existing fresh prefix protected only by API during call; duplicate rejection before target callback; null fallback reads real ordinary native target key; native fresh partial Symbol append followed by EACCES restores prefix/count. Caller tracer added only after API return; original realm/target/handler/Proxy actually reclaimed while output Symbols survive, rolled-back stale-capacity Symbol actually reclaimed, then output Symbol/prefix reclaimed after last output root removed. Conservative stack scan disabled; native policy never executes user script",
+  "native_gates": [
+    {
+      "label": "proxy-read",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q43/final/engine/host-proxy-read",
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q43/final/engine/proxy-read.js"
+      ],
+      "returncode": 0,
+      "seconds": 0.3
+    },
+    {
+      "label": "delegation",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q43/final/engine/host-generator-delegation"
+      ],
+      "returncode": 0,
+      "seconds": 0.4
+    },
+    {
+      "label": "interpreter",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q43/final/engine/host-interp"
+      ],
+      "returncode": 0,
+      "seconds": 0.5
+    },
+    {
+      "label": "vm-factory",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q43/final/engine/host-vm-factory"
+      ],
+      "returncode": 0,
+      "seconds": 0.6
+    },
+    {
+      "label": "dom",
+      "command": [
+        "python3",
+        "plan/ws074/tests/run-dom-tests.py",
+        "--program",
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q43/final/engine/browser"
+      ],
+      "returncode": 0,
+      "seconds": 2.9
+    },
+    {
+      "label": "cssom",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q43/final/engine/host-cssom"
+      ],
+      "returncode": 0,
+      "seconds": 3.0
+    },
+    {
+      "label": "cssom-mutation",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q43/final/engine/host-cssom-mutation"
+      ],
+      "returncode": 0,
+      "seconds": 3.1
+    },
+    {
+      "label": "marks",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q43/final/engine/host-performance-marks"
+      ],
+      "returncode": 0,
+      "seconds": 3.2
+    },
+    {
+      "label": "observer",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q43/final/engine/host-performance-observer"
+      ],
+      "returncode": 0,
+      "seconds": 3.4
+    },
+    {
+      "label": "error-events",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q43/final/engine/host-error-events"
+      ],
+      "returncode": 0,
+      "seconds": 3.6
+    },
+    {
+      "label": "error-reporting",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q43/final/engine/host-error-reporting"
+      ],
+      "returncode": 0,
+      "seconds": 3.7
+    },
+    {
+      "label": "acid",
+      "command": [
+        "python3",
+        "plan/ws074/tests/run-acid-tests.py",
+        "--program",
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q43/final/engine/browser",
+        "--out",
+        "build/ws074-20261018/q43/final/acid"
+      ],
+      "returncode": 0,
+      "seconds": 8.6
+    }
+  ],
+  "acid3_score": 100,
+  "acid3_inventory": 100,
+  "acid3_pixels": 0,
+  "acid2_existing_pixels": 873,
+  "original_webidl_same_callbacks_q38": true,
+  "public_global_proxy": false,
+  "full_changed_C": {
+    "engine_tokens_outside_new_operations_declarations_and_private_list_enum_unchanged": true,
+    "header_tokens_except_one_declaration_unchanged": true,
+    "native_operations_definition_comment_unchanged": true,
+    "product_call_sites_unchanged": true,
+    "old452_prefix_unchanged": true,
+    "added_conditions": 49,
+    "full_changed_functions": {
+      "userland/desktop/libbrowser/vm/access.c": [
+        "vm_own_property_keys",
+        "access_keys_trace",
+        "access_property_key_list",
+        "access_proxy_own_keys"
+      ],
+      "plan/ws074/tests/host-proxy-read.c": [
+        "main",
+        "proxy_key_values_trace",
+        "proxy_own_keys",
+        "proxy_note_own_key",
+        "own_collect_keys",
+        "own_keys_pressure"
+      ]
+    },
+    "raw_allowed_cleanup": 94,
+    "other_checker_findings": 0,
+    "manual_review": [
+      "ANSI declarations first; public/static order; enum/types before tables; normal prototypes after tables and initializer exception preserved",
+      "owner/input/output prefix traced before depth errors, all accumulated vectors traced across getters/target policy; current length/value root and original participants explicit",
+      "ToLength NaN/nonpositive/floor/clamp2^53-1, lazy large-index conversion, no arbitrary preemptive huge length rejection",
+      "all arraylike elements evaluated/type-checked before duplicates; canonical internal keys preserve original string/symbol identity and trap ordering",
+      "target actual extent before target key list, all target descriptors classified before any missing-key rejection, fixed/nonextensible exact-set checks correct",
+      "success append order preserved; partial native error rollback restores count before tracers retire; unused capacity never traced",
+      "pure native own-key callback can collect/allocate but never run user script",
+      "public Object/for-in consumers, other Proxy operations, factory bounds/global/API2/Wayland unchanged; full p100 remains pending"
+    ]
+  },
+  "archive": {
+    "sha256": "7b0b975906e8907c129f9bae85500dd8be5d6b374e957776ad6da7e4b7f3fc6a",
+    "members": 79,
+    "readback_all_members": true
+  },
+  "official_score": 1482,
+  "denominator": 3805,
+  "held": 0,
+  "unattempted": 275,
+  "all1508_reused": "q37",
+  "static_scripted_crash_reused": "q28",
+  "full_census_new_pair_not_measured": true,
+  "remaining": [
+    "internal concat/flatten IsArray consumers not changed",
+    "public Object/for-in consumers not connected; existing Get/Has/GetOwn/Define/Set extent sampling still direct flags until nested scope; call/construct/global/revocable remain",
+    "nested/callable factory targets still rejected",
+    "TypedArray remaining exotic/prototype/backing semantics",
+    "p258/p100/full target/WS100% incomplete",
+    "runtime binaries retained at hashed build paths, not embedded in archive"
+  ],
+  "oracle_qualification": {
+    "source_unchanged": true,
+    "official_WPT_expectations_unchanged": true,
+    "native_pass": 501,
+    "chrome_pass": 499,
+    "compared_total": 501,
+    "matching_individual_conditions": 499,
+    "known_new_differences": [
+      {
+        "native": "read-proxy ownkeys-infinite-length-first-getter-error: PASS",
+        "chrome": "read-proxy ownkeys-infinite-length-first-getter-error: FAIL"
+      },
+      {
+        "native": "read-proxy ownkeys-above-safe-length-first-getter-error: PASS",
+        "chrome": "read-proxy ownkeys-above-safe-length-first-getter-error: FAIL"
+      }
+    ],
+    "all_old452_rows_identical": true,
+    "raw_protocol_sha256": "eb9013f4e2f10972e1cea6946c1b6456ac0c84bab4a1e25bfd49ab7894e9a4ec",
+    "first_new_condition": 453,
+    "diagnostic": "huge-length-diagnostic-proof.json",
+    "classification": "Observed Chromium153 RangeError Invalid array length before index0 for Infinity and2^53; an upfront materialization/resource limit is an inference, not a native bug or universal Chrome defect claim",
+    "native_primary_basis": "CreateListFromArrayLike: LengthOfArrayLike ToLength clamp then ordered Get of each index; native reaches first getter and preserves its thrown object. No huge loop/allocation is attempted.",
+    "oracle_qualification": "499 individual conditions match existing qualified Chrome fixture; two huge-length controls are native plus primary-spec and diagnostic evidence, not Chrome equality. Original501 source and Chrome499 raw retained; no oracle shim or test deletion.",
+    "old_qualification": "q36 canonical negative-zero primitive filter inherited; do not call remaining499 a pure genuine exotic full-match oracle"
+  },
+  "chrome_pass": 499,
+  "native_pass": 501,
+  "all501_chrome_equality": false,
+  "verification_tool_initial_all_chrome_assertion_failed": true
+}

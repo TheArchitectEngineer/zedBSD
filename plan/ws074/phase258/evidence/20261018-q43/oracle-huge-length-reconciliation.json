@@ -1,0 +1,26 @@
+{
+  "source_unchanged": true,
+  "official_WPT_expectations_unchanged": true,
+  "native_pass": 501,
+  "chrome_pass": 499,
+  "compared_total": 501,
+  "matching_individual_conditions": 499,
+  "known_new_differences": [
+    {
+      "native": "read-proxy ownkeys-infinite-length-first-getter-error: PASS",
+      "chrome": "read-proxy ownkeys-infinite-length-first-getter-error: FAIL"
+    },
+    {
+      "native": "read-proxy ownkeys-above-safe-length-first-getter-error: PASS",
+      "chrome": "read-proxy ownkeys-above-safe-length-first-getter-error: FAIL"
+    }
+  ],
+  "all_old452_rows_identical": true,
+  "raw_protocol_sha256": "eb9013f4e2f10972e1cea6946c1b6456ac0c84bab4a1e25bfd49ab7894e9a4ec",
+  "first_new_condition": 453,
+  "diagnostic": "huge-length-diagnostic-proof.json",
+  "classification": "Observed Chromium153 RangeError Invalid array length before index0 for Infinity and2^53; an upfront materialization/resource limit is an inference, not a native bug or universal Chrome defect claim",
+  "native_primary_basis": "CreateListFromArrayLike: LengthOfArrayLike ToLength clamp then ordered Get of each index; native reaches first getter and preserves its thrown object. No huge loop/allocation is attempted.",
+  "oracle_qualification": "499 individual conditions match existing qualified Chrome fixture; two huge-length controls are native plus primary-spec and diagnostic evidence, not Chrome equality. Original501 source and Chrome499 raw retained; no oracle shim or test deletion.",
+  "old_qualification": "q36 canonical negative-zero primitive filter inherited; do not call remaining499 a pure genuine exotic full-match oracle"
+}

@@ -2,7 +2,7 @@
 
 # ws074-p258: native Proxy internal methods and lifetime
 
-Status: in-progress（q43 OwnPropertyKeys VM partial、whole Proxy未達）
+Status: uncleared（q43 OwnPropertyKeys VM partial cleared、whole Proxy未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
@@ -11,7 +11,7 @@ Origin: p189/q29 original WebIDL2 parseがProxy未定義で停止。
 
 Objective / own criteria: native managed Proxyを実object internal methodsへ接続し、constructor/revocableと各internal operationのtrap/fallback/invariant/receiver/revocation/callability/GCを正しく実行する。original WebIDL2 actual parse/validatorに必要なget/set/array behaviorを通常APIで提供し、independent controls/原WPTを通す。部分read stageだけでwholeをclearしない。
 Design: vm_native_operationsはscript-free heap interfaceのまま保持。Proxyにはmanaged target/handler recordを持たせ、scriptを実行可能なrealm-aware access/internal methodからtrapを呼ぶ。opaque JS constructor公開前に必要なoperationを段階的に整える。各段階は自走承認に基づく新finite Queueで正確に選定する。
-Current state: q42 Get/SetPrototypeOf/public/AnnexBまでverified、q38元parser private4/4/negative保持。keys/other invariant realm化/nested/call/construct/global、Object integrity/array/typed/p100等未達。
+Current state: q43 VM OwnPropertyKeys/private native501・Chrome499＋huge2 primary/diagnosticまでverified。public own-key callers/for-in、other invariant realm化/nested/call/construct/global、Object/array/typed/p100等未達。元parser private4/4/negative保持。
 Standards: Guardrail/C全文/browser component全文、簡約版無し。一次 https://tc39.es/ecma262/multipage/ordinary-and-exotic-objects-behaviours.html#sec-proxy-object-internal-methods-and-internal-slots-get-p-receiver 。既存p100がWS全source near-final conformanceを所有し、本partialはnew/changed scopeの全文適合を検証。
 Verification/bounds/affected components: q30 snapshotの通り。private object kind/cell/newborn/trace/revokeとactual receiver/trap/invariant/GCをnative/Chromeで確認し、ordinary whole/callback PASSを守る。target single-source compileのみとfull target runtimeを区別。未達はunclearedとresume。
 
@@ -191,3 +191,17 @@ Final raw archive73 members全read-back、SHA2561a1bf589d055203a6b6ca2f3a2c4cb60
 [証拠](evidence/20261018-q42/README.md)。次finite scope未選定。
 
 Event ws074-p258-q43-selected-20261018: VM OwnPropertyKeysとprivate controls/real GCを最大90分partialへ選定。CreateList全評価後duplicate検査、extent→ownkeys→全descriptor分類→集合検証順を固定。public consumers/for-inは次scope、global/nested bound維持。exact Queue参照、whole未達。
+
+Event ws074-p258-q43-huge-length-oracle-qualified-20261018: frozen source/native501、Chrome499。独立3-row対照でlength1は双方index0を1回呼び同一error、Infinity/2^53はnativeがindex0の元errorを保持しChrome153はindex getter0回でRangeError Invalid array length。正規CreateList/ToLength順に基づくnative2条件として保持し、Chrome全501一致とは認定しない。upfront resource/materialization limitは観測からの推論。original source/expected/Chrome rawを全保持、native/fixture/WPTの期待値やoracle shim変更無し。正規algorithm/実行範囲・criteriaは不変で、外部対照の適用限界を明示する。q36 classifier資格も継承。残499個別条件/旧452は完全一致。proofはq43 evidenceへ保存。
+
+## q43 OwnPropertyKeys VM partial result / resume
+
+Event ws074-p258-q43-partial-cleared-20261018: vm_own_property_keys realm append APIとprivate Proxy ownKeysを追加。owner/input/output prefixをdepth error前にtraceし、ordinaryは既存vm_object_own_keysへ委譲。success時append、native error/例外時は元countへrollbackする。Proxyは元target/handler/fresh method/result arraylikeをsnapshot-rootし、trap/target/fixed/configurable4 key vectorsを全GC期間traceする。dynamic GetMethod/null fallback、handler this/元target1引数、arraylike object→Get length/ToNumber/正規ToLength floor/clamp2^53-1→順次index Get/string-symbol限定→全list後duplicate拒否→actual target IsExtensible→actual targetOwnKeys snapshot→全target descriptor分類→fixed必須/nonext exact setを正規順で処理。primitive stringだけinternal int/atomへcanonicalizeし、Proxy trap順はsortしない。private Boolean/array bridgeだけ追加し、product Object/for-in/spread/JSON/integrity callersは未接続、global Proxy/Reflect非公開・nested/callable factory bounds維持。
+旧452 source prefix全bytes同一。nativeは追加49含む501/501、Chrome153は499/501。old452とnew47個別条件は一致。差はInfinityと2^53 lengthで最初のindex getterが元errorをthrowする2条件だけ。独立3-row同一sourceでlength1は双方getter1回/同一error、巨大2件はnative getter1回/同一error、Chromeはgetter0回でRangeError Invalid array lengthを確認。正規CreateListFromArrayLike/ToLengthのordered Getに基づくnative2条件として保持し、Chrome全501一致とは認定しない。upfront materialization/resource capは観測からの推論でChromeの普遍的欠陥とは断定しない。source/期待値/元Chrome rawを変更せず、oracle shim・case削除無し。最初のverification toolの全Chrome一致assertion失敗も保持。q36由来のclassifier負ゼロprimitive filterも継承し、残499をpure genuine exotic全一致とも主張しない。
+native C stack保守保持無し。4独立GC modeはcomplete arraylike/list→fresh never-stored Symbolのlater getter GCとpost-trap pure own_keys callback GC、duplicate errorでtarget callback未実行、null fallbackでreal ordinary native name列挙、native callbackがfresh Symbolをpartial appendしてEACCES返却/rollback。bare managed owner/元target/handler/Proxy、accumulated Symbolとfresh caller prefix Symbolを全setup roots/embedding vector tracer無しで保持した。API後にだけcaller output tracerを追加、元4participantsは出力Symbolsだけ保持中に実回収。rolled-back SymbolはC vectorの未使用capacityにbitsが残っていても実回収、最後のlive output count/tracer解放でfresh Symbol/prefixも実回収。native callbacksはcollector/VM cell allocation/C vector append/errnoだけでuser script無し。旧prototype/Delete/extent/IsArray/descriptor/BigInt/typed GC対照も保持。
+source WIPd2acfd1d7、final source/pair/input317 hash照合。host warning0/q02 exact access1 target warning0。全文/manual review・clang-format19・full changed Cの許可forward cleanup94/他checker0。新operations/declarations/private list enum以外のengine全tokens同一、headerは追加1宣言以外tokens同一・native_operations定義/comment/ABI不変。現在versionsはhost GCC14.2.0、formatter19.1.7、Python3.13.5、target clang23.1.0 bbbb5aec、Chromium153.0.8010.52を実取得しq42と一致。
+DOM41、VM45/factory56、CSSOM12+12、marks7/observer10/ErrorEvent9/ErrorReporting19/delegation10通過。Acid3 score/inventory100・pixel0、Acid2既存873。元WebIDL2はq38同一source bytesと全callbackを保持しbaseline Proxy undefined/private adapter positive4/4・negative元assertion到達。focused gatesのみ、all1508 q37/static/scripted/crash q28再利用、新pair全census/capture同値は未測定。公式gain0・1482/3805（38.948752%）・held0・未attempt275保持。
+i01 OwnPropertyKeys VM foundation partialだけcleared、normative native criteriaを満たし外部oracle適用限界を上記明示。whole p258/WS/p100/full target/100%未達。public Object/for-in等callers、other internal invariant realm化/nested/call/construct/global/revocable、別Object integrity/array/typed未達。private array bridgeはunsigned-count result helperの範囲であり巨大成功listをgeneric Reflect全互換とは主張しない。huge controlsは最初のgetterで終わり巨大loop/allocation無し。native all-target descriptor error-orderの専用instrumentation/post-target nested script GCは未実測、code/manual順と後続nested scopeへ残す。共有Master/Queue/cache/GitHub投影pending、push無し。
+Final raw archive79 members全read-back、SHA2567b0b975906e8907c129f9bae85500dd8be5d6b374e957776ad6da7e4b7f3fc6a。runtime binaryはhash付きbuild保持・archive未同梱。
+
+[証拠](evidence/20261018-q43/README.md)。次finite scope未選定。
