@@ -6,7 +6,7 @@
  */
 
 /*
- * The DOM binding (plan/ws074/design.md §12.4): what a page's scripts see
+ * The DOM binding: what a page's scripts see
  * of the page.  The realm's global object becomes the window, with the
  * document, the console, the timers and queueMicrotask; each DOM node a
  * script reaches gets one object whose prototype chain follows the DOM's
@@ -55,7 +55,7 @@ enum bind_console_level {
 };
 
 /*
- * The two storage areas of a window (ws074-p080): sessionStorage's and
+ * The two storage areas of a window: sessionStorage's and
  * localStorage's.
  */
 enum bind_storage_area {
@@ -84,10 +84,10 @@ struct css_style;
 
 /*
  * Where a node is on the laid out page, for the geometry scripts ask for
- * (getBoundingClientRect, clientWidth and the like; ws074-p031), in CSS
+ * (getBoundingClientRect, clientWidth and the like), in CSS
  * pixels from the document's top left: the union of the node's boxes,
  * whether its first box is a block (an inline element has no client area
- * of its own), and that box's border widths; for ws074-p082 also that
+ * of its own), and that box's border widths, together with that
  * box's used margins and paddings (getComputedStyle's resolved values).
  */
 struct bind_box {
@@ -108,10 +108,12 @@ struct bind_box {
 	double padding_right;
 	double padding_bottom;
 	double padding_left;
+	/* Successful layout proved this node generates no box; zero also covers unavailable geometry. */
+	int no_generated_box;
 };
 
 /*
- * What the window asks of its host for Web Storage (ws074-p080): the
+ * What the window asks of its host for Web Storage: the
  * items of a storage area of the page's origin, keys and values in UTF-16.
  * key reports the index-th key in the host's order (found is 0 past the
  * last); get reports a key's value (found is 0 for a key not there); set
@@ -153,7 +155,7 @@ struct bind_media {
 #define BIND_MEDIA_SEEK		3
 
 /*
- * A request a script makes (fetch and XMLHttpRequest, ws074-p232): the
+ * A request a script makes (fetch and XMLHttpRequest): the
  * method, the URL (resolved by the host against the page), the header lines
  * (each "Name: value" ending in CR LF, or NULL) and the body (NULL for none).
  */
@@ -178,19 +180,19 @@ typedef void (*bind_request_done)(void *context, int error, int status, const ch
  * navigator reports, the parts of the document's location (a
  * BIND_LOCATION_*, written as UTF-8), and document.cookie's reading and
  * writing (the cookies a script may see, and one cookie set in the form
- * of a Set-Cookie header).  For ws074-p031 it also gives the style engine
+ * of a Set-Cookie header).  It also gives the style engine
  * a script's selectors are matched with (querySelector and the like),
  * where a node is on the page laid out as it is now (node_box lays the
  * page out first when it changed, and reports whether the node has a box;
  * document_size gives the laid out document's width and height), and how
- * far the viewport is scrolled; for ws074-p080 the storage areas (NULL:
- * scripts get storage that holds nothing).  For ws074-p082 it computes an
+ * far the viewport is scrolled; the storage areas (NULL:
+ * scripts get storage that holds nothing).  It computes an
  * element's style (computed_style: the style of its box when the page is
  * laid out and the element has one, otherwise the cascade's; 0, ENOENT
  * for an element not in the document, or ENOMEM), and takes a scroll a
  * script asks for (scroll_to, in CSS pixels; the host keeps it inside the
  * document, and scroll reports where it went).  A NULL callback reads as nothing and
- * writes nothing: no engine matches nothing, and no layout has no boxes.
+ * writes nothing: no engine matches selectors, and missing layout supplies no geometry proof.
  * node_inserted is told after a script changes a DOM tree; checkpoint is
  * called after the outermost script task and its microtasks have finished.
  *
@@ -209,6 +211,7 @@ struct bind_host {
 	int (*cookie_get)(void *context, struct wb_buffer *out);
 	int (*cookie_set)(void *context, const char *text, size_t length);
 	struct css_engine *(*selector_engine)(void *context);
+	/* May copy no_generated_box proof even when the ordinary bounds query returns zero. */
 	int (*node_box)(void *context, struct dom_node *node, struct bind_box *box);
 	/* Appends used CSS-pixel Grid tracks to a caller-owned double vector; found=0 requests computed fallback. */
 	int (*grid_tracks)(void *context, struct dom_node *node, int columns, struct wb_vector *sizes, int *found);

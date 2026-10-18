@@ -1,0 +1,55 @@
+{
+  "total": 174,
+  "counts": {
+    "before": {
+      "whole": {
+        "pass": 107,
+        "fail": 67
+      },
+      "callbacks": {
+        "0": 989,
+        "1": 1516
+      }
+    },
+    "after": {
+      "whole": {
+        "pass": 109,
+        "fail": 65
+      },
+      "callbacks": {
+        "0": 993,
+        "1": 1512
+      }
+    }
+  },
+  "new_pass": [
+    "/css/css-flexbox/getcomputedstyle/flexbox_computedstyle_min-auto-size.html",
+    "/css/css-grid/grid-items/grid-item-min-auto-size-001.html"
+  ],
+  "whole_regressions": [],
+  "callback_improvements": [
+    [
+      "/css/css-flexbox/getcomputedstyle/flexbox_computedstyle_min-auto-size.html",
+      1,
+      "Computed min-width/min-height of specified auto inside display:none which would otherwise have been a flex item."
+    ],
+    [
+      "/css/css-flexbox/getcomputedstyle/flexbox_computedstyle_min-auto-size.html",
+      3,
+      "Computed min-width/min-height of specified auto with display:none which would otherwise have been a flex item."
+    ],
+    [
+      "/css/css-grid/grid-items/grid-item-min-auto-size-001.html",
+      1,
+      "Computed min-width/min-height of specified auto inside display:none which would otherwise have been a grid item."
+    ],
+    [
+      "/css/css-grid/grid-items/grid-item-min-auto-size-001.html",
+      3,
+      "Computed min-width/min-height of specified auto with display:none which would otherwise have been a grid item."
+    ]
+  ],
+  "callback_regressions": [],
+  "eligible_sha256": "6e8fdb170d3b6409974a7366ceee627b7216275a4a71e2005d48dd7f33448353",
+  "names_order_missing_extra": 0
+}

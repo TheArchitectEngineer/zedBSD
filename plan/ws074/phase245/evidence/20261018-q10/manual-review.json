@@ -1,0 +1,23 @@
+{
+  "standard": "plan/coding-style.md full; browser-component.md full; guardrail",
+  "changed_functions": [
+    "computed_write_used",
+    "page_node_box",
+    "geometry_child_box"
+  ],
+  "review": [
+    "ANSI leading declarations and multiline definitions retained",
+    "new metadata defaults to unknown; only successful layout proves box absence",
+    "scalar copied before child arena release; DOM roots and ordinary found contract preserved",
+    "auto minima only; explicit lengths and generated item values keep existing path",
+    "new conditions/calls and return paths have semantic paragraphs; no hidden switches",
+    "private bind_box only; public browser ABI and Wayland boundary unchanged",
+    "management references removed from all three touched source files",
+    "clang-format19 changed ranges; restored unchanged multiline signature affected by formatting"
+  ],
+  "style_candidates": {
+    "before": 37,
+    "after": 37
+  },
+  "legacy_limit": "unchanged full-file legacy candidates retained; no added candidates; final WS full source review remains p100"
+}

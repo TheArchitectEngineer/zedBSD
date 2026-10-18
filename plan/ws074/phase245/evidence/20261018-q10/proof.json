@@ -1,0 +1,15 @@
+{
+  "source_sha256": {
+    "bind/bind.h": "a6a6580f676538d874257557e547326f8c2aea93cd21fbcdb878847520d29b5a",
+    "bind/computed.c": "daaf8459a3ca6071720cfec6d0e8996264deae1c3b82452440ff3d6304adc549",
+    "page/geometry.c": "3c324ea788183f5006d1e1cc2dce62d00f0672f87241cbb8f797fb8786217618"
+  },
+  "binary_sha256": {
+    "browser": "25a66385edb7811c04e5e04fddd6bf3060ef2883f26d2781adbecf9d87debc02",
+    "libbrowser.so": "468fa12c325878c4f3576f61c1fdf5cfd36246ad831427780ac7763f93aab0e9"
+  },
+  "chromium_reference": "self-none 0px 0px\nancestor-none 0px 0px\ncontents-self 0px 0px\ngrid-item auto auto\nflex-row-item auto auto\nflex-column-item auto auto\nvisibility-hidden auto auto\nexplicit-none 13px 17px\nmixed-none 0px 25%\nratio-none 0px 0px\nratio-grid auto auto\ncontents-grid-item auto auto\ncontents-flex-item auto auto\nlive-grid auto auto\nlive-none 0px 0px\nlive-restored auto auto\nchild-none 0px 0px\nchild-grid-item auto auto\nchild-contents 0px 0px\n",
+  "unknown_geometry": "after byte-identical to before with no fonts",
+  "host_warnings": 0,
+  "target_warnings": 0
+}

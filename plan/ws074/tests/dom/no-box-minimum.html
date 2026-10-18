@@ -1,0 +1,60 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Automatic minimum resolved values distinguish absent and generated boxes</title>
+<body>
+<script>
+function report(name, element) {
+    var style = getComputedStyle(element);
+    console.log(name, style.minWidth, style.minHeight);
+}
+function fixture(name, parentStyle, itemStyle) {
+    var parent = document.createElement("div");
+    parent.style.cssText = parentStyle;
+    var item = document.createElement("div");
+    item.style.cssText = "min-width:auto;min-height:auto;" + itemStyle;
+    parent.appendChild(item);
+    document.body.appendChild(parent);
+    report(name, item);
+    return item;
+}
+fixture("self-none", "display:grid", "display:none");
+fixture("ancestor-none", "display:none", "display:grid");
+fixture("contents-self", "display:grid", "display:contents");
+fixture("grid-item", "display:grid", "");
+fixture("flex-row-item", "display:flex", "");
+fixture("flex-column-item", "display:flex;flex-direction:column", "");
+fixture("visibility-hidden", "display:grid;visibility:hidden", "");
+fixture("explicit-none", "display:grid", "display:none;min-width:13px;min-height:17px");
+fixture("mixed-none", "display:none", "min-height:25%");
+fixture("ratio-none", "display:grid", "display:none;aspect-ratio:2/1");
+fixture("ratio-grid", "display:grid", "aspect-ratio:2/1");
+var grid = document.createElement("div");
+grid.style.display = "grid";
+var contents = document.createElement("div");
+contents.style.display = "contents";
+var item = document.createElement("div");
+contents.appendChild(item);
+grid.appendChild(contents);
+document.body.appendChild(grid);
+report("contents-grid-item", item);
+var flex = document.createElement("div");
+flex.style.display = "flex";
+flex.appendChild(contents);
+document.body.appendChild(flex);
+report("contents-flex-item", item);
+var live = fixture("live-grid", "display:grid", "");
+live.style.display = "none";
+report("live-none", live);
+live.style.display = "block";
+report("live-restored", live);
+var frame = document.createElement("iframe");
+frame.style.cssText = "display:block;width:120px;height:80px";
+document.body.appendChild(frame);
+var child = frame.contentDocument;
+child.open();
+child.write('<style>body{display:grid}#hidden{display:none}#contents{display:contents}</style><div id="hidden"></div><div id="shown"></div><div id="contents"></div>');
+child.close();
+report("child-none", child.getElementById("hidden"));
+report("child-grid-item", child.getElementById("shown"));
+report("child-contents", child.getElementById("contents"));
+</script>

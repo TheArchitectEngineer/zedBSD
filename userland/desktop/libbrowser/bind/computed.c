@@ -6,7 +6,7 @@
  */
 
 /*
- * The computed style of elements for scripts (ws074-p082):
+ * The computed style of elements for scripts:
  * window.getComputedStyle.
  *
  * The declaration is a CSSStyleDeclaration (the prototype of the inline
@@ -838,6 +838,16 @@ computed_write_used(
 		has_used = used;
 		value = height;
 		break;
+	case COMPUTED_MIN_WIDTH:
+		/* Box absence resolves auto independently of unavailable ordinary bounds. */
+		if (box->no_generated_box && style->min_width.unit == CSS_UNIT_AUTO)
+			has_used = 1;
+		break;
+	case COMPUTED_MIN_HEIGHT:
+		/* The same proof applies to the block-axis automatic minimum. */
+		if (box->no_generated_box && style->min_height.unit == CSS_UNIT_AUTO)
+			has_used = 1;
+		break;
 	case COMPUTED_MARGIN_TOP:
 		has_used = found;
 		value = box->margin_top;
@@ -877,7 +887,11 @@ computed_write_used(
 	/* A used value, in pixels. */
 	if (has_used) {
 		error = computed_pixels(value, out);
-		return error;
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the resolved pixel value is complete. */
+		return 0;
 	}
 
 	/* Every other property's computed value. */

@@ -7,7 +7,7 @@
 
 /*
  * What a page's scripts ask the page about its layout and its selectors
- * (ws074-p031): the window's host callbacks behind querySelector,
+ * through the window's host callbacks behind querySelector,
  * getBoundingClientRect, clientWidth, scrollY and the like.
  *
  * A question about the geometry lays the page out first when the document
@@ -18,7 +18,7 @@
  * own, which lives as long as the page: the styling's engine is made anew
  * at each change of the document.
  *
- * For ws074-p082 a script also asks for an element's computed style (its
+ * A script also asks for an element's computed style (its
  * box's, or the cascade's from the root down when it has no box: display
  * none, or no layout) and moves the scroll (kept inside the laid out
  * document; the view takes it as its own).
@@ -120,6 +120,12 @@ page_node_box(
 
 	/* Resolves the first indexed box and its current native bounds. */
 	first = geometry_first_box(page, node);
+
+	/* A successful layout distinguishes absent boxes from unavailable geometry. */
+	if (first == NULL)
+		box->no_generated_box = 1;
+
+	/* Copies any ordinary bounds separately from the no-box proof. */
 	found = geometry_tree_box(&page->layout, first, node, box);
 	if (!found)
 		return 0;
@@ -522,6 +528,12 @@ geometry_child_box(
 
 		/* Copies actual child bounds before releasing the transient arena. */
 		first = layout_box_of(&tree, node);
+
+		/* Retains only a scalar absence proof after this child's arena is released. */
+		if (first == NULL)
+			box->no_generated_box = 1;
+
+		/* Copies available bounds without changing the ordinary found contract. */
 		found = geometry_tree_box(&tree, first, node, box);
 		layout_release(&tree);
 	}
@@ -530,6 +542,8 @@ release_roots:
 	/* No queried DOM or child context remains rooted by this observation. */
 	for (index = 0; index < 2U; index++)
 		vm_heap_remove_root(page->heap, &roots[index]);
+
+	/* No ordinary bounds were copied; a separate absence proof may still be present. */
 	if (!found)
 		return 0;
 

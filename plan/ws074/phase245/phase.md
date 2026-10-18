@@ -2,11 +2,11 @@
 
 # ws074-p245: boxを生成しない要素のauto minimum resolved value
 
-Status: planned
+Status: cleared（q10 no-box own acceptance、WS最終target/p100は残る）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
-Queue: 未選定（q08の後の候補）
+Queue: ws074-q20261018-10-i01
 
 ## Objective・scope・criteria
 
@@ -27,3 +27,7 @@ p243/q08で保存した公式Grid rawとgeometryの既存copy契約を前提と�
 own completionはこの確実なno-box resolved valueと影響範囲を検証したこと。WS最終の全source/target関門はp100に保持。Guardrail/C全文/browser-component全文を適用。未知のbox状態の推測や期待値の偽装でclearしない。
 
 Event ws074-p245-planning-20261018: q08のreadonly調査から追加。node_boxのfound=0はlayout未準備も含むため、それだけを根拠に0pxへ変える案は採用せず、成功したlayoutのno-box proofをcopyする。q08の実装scope/acceptanceは変更しない。Master/共有Queue/GitHub projection pending。
+
+Event ws074-p245-q10-start-20261018: ユーザー自走指示で上記no-box scope最大90分を選定。固定minimum/computed/parsing subsetはq03適格のGrid64/Flex110、計174 ID。q09の新Grid rawとq03 Flex rawに加えて同じq09 pairでbefore再測定し、新コードで全ID/全callback比較する。unknownはCLIのfont未指定で実際にlayout未準備を作り、computed autoが維持されることを確認。childは一時treeが解放された後もscalar proofだけを読む。
+
+Event ws074-p245-q10-cleared-20261018: [証拠](evidence/20261018-q10/README.md)。独立19/19 Chromium一致・unknown維持、固定174 whole107→109/callback989→993・後退0、対象Grid/Flex各4/4、DOM28/28、host/target warning0、Acid3差0/Acid2差873。own no-box acceptanceを満たしPhase/q10-i01 cleared。GitHub publish/closeはpending、共有投影pending。一般CSS2/ratio contextとWS最終target/p100を達成したとは扱わない。
