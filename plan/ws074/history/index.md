@@ -1,5 +1,9 @@
 # WS074 lane の Past Log
 
+## ws074-q20261018-47 / nested noncallable target
+
+nested target/invariant realm partial cleared、native658/Chrome656既知huge2、新36 genuine一致、sole snapshot payload/元target/graph実GC回収。最新全1508 q46再利用・q47全census未測定、確認済1482/3805。[exact history](ws074-q20261018-47.md)。
+
 ## ws074-q20261018-46 / assignment routing and array shrink
 
 object assignment/array shrink partial cleared、native622/Chrome620既知huge2、新37 genuine一致/precode22修正、実GC/partial metadata復元保持。全1508 q44全callback/completion同値・gain/loss0・1482/3805。[exact history](ws074-q20261018-46.md)。
@@ -119,9 +123,5 @@ Follow-up: q23 i01/i02 clearanceは疎checkoutのIDL未配信が判明しunclear
 ## ws074-q20261018-18（2026-10-18）
 
 [履歴](ws074-q20261018-18.md)。公開SDK first-ready clientはlate timer/DOM除去/child等9/10、required XHTMLのみ未対応。独立Chrome3 lifecycle行/native0と実sourceでp196 producer不足を確認しi01 uncleared/i02未着手uncleared。新C/target/SDK/format/style検証済み、raw全保持。engine不変・正式増分0・1369/3805維持。次はp196 output→p190 controls/413、shared projection pending。
-
-## ws074-q20261018-17（2026-10-18）
-
-[履歴](ws074-q20261018-17.md)。ordinary attributes/native empty NodeListとpost-font producerのscoped outputを検証し全3 item partial cleared。全harness1491はwhole491・callback11531 PASS/20226 FAIL/14 NOTRUNを維持し、whole/callback後退・改善・欠損・追加・順序変更0。全static1561は839 PASS/722 FAIL、全reference pixel metrics unchanged。strict48は39 PASS/9 readiness_missing。最終source f1b83fa8f/pair hash read-back一致、固定WPT tracked clean。確認済み1369/3805（35.978975%）、q14から39増。未実行292 harness/413 reftest・native crash依存9は残す。 DOM35/Chrome22/controls15・budget6/font2・host/target/C/Acid通過。次候補はstrict scripted reftest413、native API/target/p100/共有projectionは残る。
 
 以前のindex: [early 2026-10-18](early-20261018.md)。過去standing Queue投影: [原文archive](../queue-archive-through-q30.md)。

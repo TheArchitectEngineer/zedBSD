@@ -1,0 +1,40 @@
+{
+  "tokens_outside_selected_product_and_fixture_functions_identical": true,
+  "other_engine_source_and_headers_unchanged": true,
+  "native_operations_definition_comment_unchanged": true,
+  "old622_prefix_unchanged": true,
+  "added_conditions": 36,
+  "precode_failed_conditions": 36,
+  "precode_cause": "q46 rejects nested Proxy targets; 36 conditions are not 36 independent bugs",
+  "full_changed_functions": {
+    "userland/desktop/libbrowser/vm/access.c": [
+      "access_proxy_get",
+      "access_proxy_has",
+      "access_proxy_get_own",
+      "access_proxy_define"
+    ],
+    "userland/desktop/libbrowser/vm/object.c": [
+      "vm_proxy_create"
+    ],
+    "plan/ws074/tests/host-proxy-read.c": [
+      "main",
+      "nested_snapshot_extent",
+      "nested_snapshot_descriptor",
+      "nested_snapshot_value",
+      "nested_snapshot_pressure"
+    ]
+  },
+  "raw_allowed_cleanup": 125,
+  "other_checker_findings": 0,
+  "manual_review": [
+    "ANSI declarations first/multiline/public-static order/meaningful paragraphs/compound clause breaks",
+    "Get/Has real target GetOwn, Has false only configurable present target needs actual extent; no extent on true/missing/fixed",
+    "GetOwn target GetOwn then missing/fixed short circuit on undefined; otherwise actual extent before ToDescriptor/Complete/compatibility",
+    "GetOwn current descriptor zero-initialized and flagged-payload tracer registered before all new extent callbacks; result descriptor independently traced during field getters",
+    "Define original input descriptor independently traced, current zero-initialized and registered before actual target IsExtensible; false trap skips target reads",
+    "factory removes nested-kind rejection only, callable rejection retained; managed native graph and script-free hooks unchanged",
+    "new native fixture real original fixed target value, inner IsExtensible revokes inner, later outer descriptor value getter actualGC proves actualtarget reclaimed while sole snapshot payload alive; returned same live object satisfies SameValue; output-only root then graph reclamation then payload reclamation",
+    "new shared nested controls cover all existing operations and fresh GetPrototypeOf result through post-target extent actualGC; recursive fallback retains existing256 budget",
+    "no global Proxy/Reflect exposure; for-in/callable/construct/newtarget/primitive/bound and general remaining WS acceptance not claimed"
+  ]
+}

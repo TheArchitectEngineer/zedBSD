@@ -9,9 +9,9 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [ws074-q20261018-47](queue.md) active（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
+Queue: [ws074-q20261018-47](queue.md) finished（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
 
-Latest verified（q46）: all object assignment realm Set接続＋array shrink partial clear。old585＋new37 native622/Chrome620既知huge2差、precode22条件修正。direct API/strict later-error GC全4participant保持/回収とactual降順Delete/fixed拒否length復元を検証。全1508 q44全whole/callback/completion同一・gain/loss0、公式1482/3805・held0・未attempt275。images/crash q28再利用。primitive/for-in/other invariants/nested/call/global/upper-index storage/p100/full target未達。[証拠](phase258/evidence/20261018-q46/README.md)。共有投影pending。
+Latest verified（q47）: nested noncallable target/internal invariant realm照会 partial clear。old622＋new36 native658/Chrome656は既知huge2差。元target実回収後のsole current descriptor payload保持・SameValue適合・output-only graph回収→payload実回収確認。global/callable未公開。最新全1508 q46再利用・q47全census未測定、公式確認済1482/3805・held0・未attempt275、images/crash q28再利用。for-in/other consumers/call/construct/newtarget/global/p100/full target未達。[証拠](phase258/evidence/20261018-q47/README.md)。共有投影pending。
 
 Event ws074-q14-percentage-scope-reconciled-20261018: precode Chrome17条件でzero/cancelled %型の依存を確認。p251をi01、p250をi02へ改訂しglobal1491/static1561照合へ拡張、初期snapshot保存/60分deadline維持。
 
@@ -128,7 +128,7 @@ Event ws074-p217-q1188-partial-clear-20261014: [p217](phase217/phase.md) q1188-i
 Event ws074-p217-q1187-partial-clear-20261014: [p217](phase217/phase.md) q1187-i01で固定縦rl Grid直接横RTL absolute子row2/col1 top insetにstatic areaを適用。[証拠](phase217/evidence/20261014-q1187/README.md)。独立矩形Chromium一致、固定non-static007縦rl callback whole PASS、水平2 callback PASS、縦lrは4番目子でfile whole FAIL継続。旧WPT/host/Acid3差0維持。次は縦lr4番目子、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
 
 Event ws074-p217-q1186-partial-clear-20261014: [p217](phase217/phase.md) q1186-i01で固定縦lr/rl Grid直接横LTR absolute子へrow1/col2 static areaとjustify-center Yを適用。[証拠](phase217/evidence/20261014-q1186/README.md)。独立2矩形Chromium一致、固定non-static007縦2 callback先頭2子全PASS、lrは4番目子・rlは3番目子でfile whole FAIL継続。旧WPT/host/Acid3差0維持。次は縦rl Gridの3番目RTL横子、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
-Resume point: q46 object assignment/array shrink partial clear、確認済1482/3805。次finite candidateはother invariant realm化→nested、for-in、primitive Set、call/construct/global。最新全1508 q46・images/crash q28再利用、未attempt275/upper-index storage/array IsArray/typed/immutable prototype/p100/full target等保持。
+Resume point: q47 nested noncallable target partial clear、確認済1482/3805。次finite candidateはObjectToString/array internal IsArray consumers、for-in/spread/JSON、primitive Set、call/construct/newtarget→global constructor/revocable。最新全1508 q46、images/crash q28再利用。未attempt275/upper-index storage/typed/immutable prototype/p100/full target保持。
 <!-- awesome-plan-current:end -->
 
 Event ws074-p217-q1185-partial-clear-20261014: [p217](phase217/phase.md) q1185-i01で固定縦lr/rl Grid直接横LTR absolute子へrow1/col1 static areaとjustify-right Yを適用。[証拠](phase217/evidence/20261014-q1185/README.md)。独立2矩形Chromium一致、固定non-static007縦2 callback先頭子全PASS、2番目子でfile whole FAIL継続。旧WPT/host/Acid3差0維持。次は縦Grid2番目横子、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
@@ -706,7 +706,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p255](phase255/phase.md) | PerformanceObserver native mark登録・queue・task配信 | uncleared / q28 Window consumer/failure/held partial cleared・whole残り | p254 verified native mark output |
 | [ws074-p256](phase256/phase.md) | Window ErrorEvent・uncaught harness fidelity | uncleared / q28 runtime/inline source partial cleared・external/syntax等残り | 既存Event/Window/VM→p255再評価 |
 | [ws074-p257](phase257/phase.md) | synchronous generator yield* delegation | cleared / q29 sync own criteria・Chrome38/native GC10 | q28 VM/GC・p189 pinned WebIDL2 |
-| [ws074-p258](phase258/phase.md) | native Proxy internal methods・GC/revocation | in-progress / q47 nested noncallable target partial | q29 VM/GC・p189 actual Proxy blocker |
+| [ws074-p258](phase258/phase.md) | native Proxy internal methods・GC/revocation | uncleared / q47 nested noncallable target partial cleared、native658/Chrome656既知huge2 | q29 VM/GC・p189 actual Proxy blocker |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 
@@ -1365,3 +1365,5 @@ Event ws074-q46-arraylength-revision: i01 current613/615、元low-level shrink�
 Event ws074-q46-finished-20261018: p258 object assignment/array shrink partial clear、native622/Chrome620既知huge2、新37 genuine一致/precode22修正。全1508 q44全callback/completion同一・gain/loss0・1482/3805。実GC/error/降順Delete・元WebIDL/validator保持。p189へvalidation output投影。[history](history/ws074-q20261018-46.md)。共有投影pending。
 
 Event ws074-q47-selection: p258 Get/Has/GetOwn/Define target invariant realm化とprivate nested非callable factoryを選定、最新全1508 q46証拠維持・whole/global未達。[Queue](queue.md)。共有投影pending。
+
+Event ws074-q47-finished-20261018: p258 nested非callable target partial clear、native658/Chrome656既知huge2、新36 genuine一致。sole current snapshot payloadが元actualtarget実回収後GCを越えSameValue適合、output-only後graph実回収と最終payload実回収。元WebIDL/validator/gates保持、最新全1508 q46再利用・q47未測定・1482/3805保持。[history](history/ws074-q20261018-47.md)。共有投影pending。
