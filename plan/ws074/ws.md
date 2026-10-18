@@ -9,9 +9,9 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [ws074-q20261018-23](queue.md) active（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
+Queue: [ws074-q20261018-23](queue.md) finished（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
 
-Latest verified（q21 finished）: flex-basis grammar/computed/content baseをnative修正。固定3 IDは27/27 callback PASS、2 whole/7 callback改善（parsing3は5、shorthandは2）。全1491 harnessは493 PASS（+2）・11538 PASS/20219 FAIL/14 NOTRUN、old whole/callback後退・欠損・追加・順序変更0。全static1561は844 PASS/717 FAIL（+5）・old839後退0、画素変更は改善5 IDだけ。5件の旧/新16 capturesを無改変pinned comparatorでも全FAIL→PASS確認。scripted413は105 PASS/283 FAIL/5 unsupported/20 missing・805 captures全RGB不変/388 edge primary一致、strict48は39 PASS/9 missing維持。確認済み1481/3805（38.922470%）、genuine native whole改善7。未attempt harness292と環境/API/native残差は分母保持。 host scoped partial cleared、p252 wholeの受け入れは今回のhost partialだけで認定せずuncleared。replaced/一般intrinsic/縦書き・negative inner base等の既存別未実装面とtarget full link/runtimeも保持。p240/p241/p189/p190/WS全体やp100を先取りclearしない。指定calc canonical順序の既存差は未修正。shared projection/GitHub pending、push無し。
+Latest verified（q23 finished）: pinned Window/Any wrapper・META・WebIDL内部GET rewrite・generated専用ordinary headersを提供し、primary/native13＋既存分類5対照通過。全1508=old1491+new17を同じfrozen pairで実測、old1491は全ID/whole/returncode/callback・completion status/order/messages完全同値。追加17は全native attempt、raw1 PASS/10 FAIL/5 no_completion/1 harness_error、426 callbacks（2 PASS/424 FAIL）。全1783の未attempt292→275、native C/WPT/期待値/分母は不変。 新1 raw PASSは既存performance.markの記録なし・getEntries空・PerformanceObserver.observe no-opで入力が欠落しており、native/Chrome独立probeでprior/future 0/0対1/1とfuture通知の差を確認。元WPT結果は改変せずknown native prerequisite holdback1として確認済みに加算しない。raw fixed1482/3805、確認済み1481/3805（38.922470%）維持。 両item scoped coverage partial cleared、whole p189/WS・native APIs・target full/p100は未達。[p254](phase254/phase.md)実mark→[p255](phase255/phase.md)実observer→p189 holdback再評価の依存を追加。p077旧readonly/empty-entry scopeの受け入れは保持。source/pair/fonts/manifest/全ID/hash、全raw/stdout binary/生成HTML/原JS/resources/header provenance/controls tarをread-back、WPT tracked clean。shared projection/GitHub pending、push無し。
 
 Event ws074-q14-percentage-scope-reconciled-20261018: precode Chrome17条件でzero/cancelled %型の依存を確認。p251をi01、p250をi02へ改訂しglobal1491/static1561照合へ拡張、初期snapshot保存/60分deadline維持。
 
@@ -643,7 +643,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p186](phase186/phase.md) | sharp text-shadow と見出し影を調べる | cleared（q1009-i01、sharp 単一 scope、Acid3差2451減） | p172〜p185 cleared、q1008 実測出力 |
 | [ws074-p187](phase187/phase.md) | 負の padding と第6色箱の幅を調べる | cleared（q1010-i01、Acid3差900減、negative padding fixture pass） | p172〜p186 cleared、q1009 実測出力 |
 | [ws074-p188](phase188/phase.md) | 同一ページで観測した訪問履歴と :visited の paint color | cleared（q1011-i01、Acid3差801減→0、privacy fixture pass） | p172〜p187 cleared、q1010 実測出力 |
-| [ws074-p189](phase189/phase.md) | Interop 2025 testharness 1,783件の結果取得 runner | in-progress / q23 generated17・old1491同値/未attempt292 | p173 q1012 固定manifest出力 |
+| [ws074-p189](phase189/phase.md) | Interop 2025 testharness 1,783件の結果取得 runner | uncleared / q23適格1508・old493維持・native holdback1/未attempt275 | p173 q1012 固定manifest出力 |
 | [ws074-p190](phase190/phase.md) | Interop 2025 reftest 1,974件・crashtest48件のrunner coverage | uncleared / q20 partial cleared・105 scripted PASS・環境5 | p173 q1012 固定manifest出力 |
 | [ws074-p191](phase191/phase.md) | Interop 2025 textdecoration全16 testharnessのCSSOM互換 | cleared / q1023、16件16 PASS/0 FAIL | p173固定manifest、p189 q1015全16件baseline |
 | [ws074-p192](phase192/phase.md) | Interop 2025 Window named properties互換 | uncleared / q1025 partial cleared、一意id live lookup | p173固定manifest、p189 q1024 shard |
@@ -702,6 +702,8 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p251](phase251/phase.md) | linear calc zero percentage type | cleared / q14 direct linear type | q12/q13 raw、precode Chrome |
 | [ws074-p252](phase252/phase.md) | flex-basis grammar/computed・non-replaced content base | uncleared / Queue未選定 | p240/p241残り、q14 final output待ち |
 | [ws074-p253](phase253/phase.md) | ordinary attribute mutation records | uncleared / q17 scoped partial cleared・controls15/35DOM/global旧PASS維持 | p209 q16 preflight、p242 observer model |
+| [ws074-p254](phase254/phase.md) | User Timing markの実記録・取得・native entry lifecycle | planning / q23 no-op input欠落のproducer | p077既存clock、p189 q23 source/probe |
+| [ws074-p255](phase255/phase.md) | PerformanceObserver native mark登録・queue・task配信 | planning / q23 held PASSのconsumer | p254 verified native mark output |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 
@@ -1245,3 +1247,7 @@ Event ws074-p189-q23-selected-20261018: [Queue](queue.md)でpinned Window/Any wr
 
 
 Event ws074-p189-q23-wrapper-output-20261018: primary/native13/13と既存pure分類5/5を確認。Window/Any/global/script順/query/currentScript/log、実HTTP headers/原body/WebIDL内部rewrite、native failure/unsupported static fallback・duplicate/zero境界を検証。fixture準備の型注釈/CSS参照/duplicate入力時点を訂正して再実行、元のnegative期待は保持。eligible1508=old1491+new17、残275未attemptをinventory/hashで確認。i01 scoped partial cleared→i02全1508実測開始、whole p189/WSは未達。shared projection pending。
+
+Event ws074-q23-performance-prerequisite-redesign-20261018: [p189 q23](phase189/evidence/20261018-q23/native-prerequisite-holdback.json)のraw新1 PASSはno-op mark/observerで前提が欠落し、Chrome/native独立probeで確認。rawは保持し確認済み1481へ加算しない。[p254](phase254/phase.md)実mark producer→[p255](phase255/phase.md)real observer→p189再評価の構造を追加、origin/新両Phaseへ自身のscope/resumeを配送。p077受け入れは当初のreadonly/empty-entry範囲として維持、現在q23のcoverage scope/期限/固定分母は不変。shared projection pending。
+
+Event ws074-q23-finished-20261018: [exact history](history/ws074-q20261018-23.md)・[証拠](phase189/evidence/20261018-q23/README.md)。pinned Window/Any wrapper・META・WebIDL内部GET rewrite・generated専用ordinary headersを提供し、primary/native13＋既存分類5対照通過。全1508=old1491+new17を同じfrozen pairで実測、old1491は全ID/whole/returncode/callback・completion status/order/messages完全同値。追加17は全native attempt、raw1 PASS/10 FAIL/5 no_completion/1 harness_error、426 callbacks（2 PASS/424 FAIL）。全1783の未attempt292→275、native C/WPT/期待値/分母は不変。 新1 raw PASSは既存performance.markの記録なし・getEntries空・PerformanceObserver.observe no-opで入力が欠落しており、native/Chrome独立probeでprior/future 0/0対1/1とfuture通知の差を確認。元WPT結果は改変せずknown native prerequisite holdback1として確認済みに加算しない。raw fixed1482/3805、確認済み1481/3805（38.922470%）維持。 両item scoped coverage partial cleared、whole p189/WS・native APIs・target full/p100は未達。[p254](phase254/phase.md)実mark→[p255](phase255/phase.md)実observer→p189 holdback再評価の依存を追加。p077旧readonly/empty-entry scopeの受け入れは保持。source/pair/fonts/manifest/全ID/hash、全raw/stdout binary/生成HTML/原JS/resources/header provenance/controls tarをread-back、WPT tracked clean。shared projection/GitHub pending、push無し。

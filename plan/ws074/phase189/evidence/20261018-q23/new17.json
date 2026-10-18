@@ -1,0 +1,375 @@
+[
+  {
+    "test_id": "/event-timing/idlharness.any.html",
+    "outcome": "fail",
+    "native_outcome": "fail",
+    "callbacks": 1,
+    "unsupported": [],
+    "source": "event-timing/idlharness.any.js",
+    "source_sha256": "bf6aa8d694885871436fbad8febb6f62343fb61c6ae7be67c75e37865993d73c",
+    "wrapper_sha256": "e788e73b663b7dac319938ef60ef8c079cb320813abc1ac8c3e5136aa236485d",
+    "assets": {
+      "resources/testharness.js": "d2399236c2a09c429804ff2299ad6629e17e2b53f17a74dd341e936adb11ae3e",
+      "resources/testharnessreport.js": "3777176fc736b0a78cf7617b9613b220f635daae7536ec7ebb99c61dbb525aae",
+      "resources/webidl2/lib/webidl2.js": "954444f6daf0f8068d2fce513eac8e6a5d53189a910b9a5675e8d8e8a2808070",
+      "resources/idlharness.js": "93e8d18f3fe470966eaf0ac50aadc3882bf4db53c250e8f2161e1ca2a1bc7cd9",
+      "event-timing/idlharness.any.js": "bf6aa8d694885871436fbad8febb6f62343fb61c6ae7be67c75e37865993d73c",
+      "resources/testharness.js.headers": "907d5892c31682c3d05ce05b7b18d81c50a03175c731aee00c6b18a013bfd2f5",
+      "resources/testharnessreport.js.headers": "907d5892c31682c3d05ce05b7b18d81c50a03175c731aee00c6b18a013bfd2f5",
+      "resources/webidl2/lib/webidl2.js.headers": "0c458ff2f1fd1e3318475993bba7600a3d6fddc1de06905192cc9de8b60244f0",
+      "resources/idlharness.js.headers": "907d5892c31682c3d05ce05b7b18d81c50a03175c731aee00c6b18a013bfd2f5"
+    },
+    "rewrites": [
+      {
+        "incoming": "/resources/WebIDLParser.js",
+        "destination": "/resources/webidl2/lib/webidl2.js"
+      }
+    ],
+    "raw_directory": "/home/awe/zedBSD-claude1/build/ws074-20261018/q23/after-harness/shard-1024/test-1073.generated",
+    "returncode": 0
+  },
+  {
+    "test_id": "/event-timing/supported-types.window.html",
+    "outcome": "fail",
+    "native_outcome": "fail",
+    "callbacks": 1,
+    "unsupported": [],
+    "source": "event-timing/supported-types.window.js",
+    "source_sha256": "e2ff5dd40edac46d4542b1a9aec23b44b1d45de65631feff25a75ee6015403e5",
+    "wrapper_sha256": "3b30ecf3061ddd6bf41c3a953b5fe6786edf7f81f38c4a7964e6562c8144cf10",
+    "assets": {
+      "resources/testharness.js": "d2399236c2a09c429804ff2299ad6629e17e2b53f17a74dd341e936adb11ae3e",
+      "resources/testharnessreport.js": "3777176fc736b0a78cf7617b9613b220f635daae7536ec7ebb99c61dbb525aae",
+      "event-timing/supported-types.window.js": "e2ff5dd40edac46d4542b1a9aec23b44b1d45de65631feff25a75ee6015403e5",
+      "resources/testharness.js.headers": "907d5892c31682c3d05ce05b7b18d81c50a03175c731aee00c6b18a013bfd2f5",
+      "resources/testharnessreport.js.headers": "907d5892c31682c3d05ce05b7b18d81c50a03175c731aee00c6b18a013bfd2f5"
+    },
+    "rewrites": [],
+    "raw_directory": "/home/awe/zedBSD-claude1/build/ws074-20261018/q23/after-harness/shard-1024/test-1075.generated",
+    "returncode": 0
+  },
+  {
+    "test_id": "/html/semantics/scripting-1/the-script-element/import-attributes/dynamic-import-with-attributes-argument.any.html",
+    "outcome": "no_completion",
+    "native_outcome": "no_completion",
+    "callbacks": 0,
+    "unsupported": [],
+    "source": "html/semantics/scripting-1/the-script-element/import-attributes/dynamic-import-with-attributes-argument.any.js",
+    "source_sha256": "422307c78aa31885894c40d1a3c38a36099ae7ed01bfeb6fe0d59f1596053a6d",
+    "wrapper_sha256": "4ac863d3d02d5779fe1949e493d1327c872b608a02ae78340333a689e2023157",
+    "assets": {
+      "resources/testharness.js": "d2399236c2a09c429804ff2299ad6629e17e2b53f17a74dd341e936adb11ae3e",
+      "resources/testharnessreport.js": "3777176fc736b0a78cf7617b9613b220f635daae7536ec7ebb99c61dbb525aae",
+      "html/semantics/scripting-1/the-script-element/import-attributes/dynamic-import-with-attributes-argument.any.js": "422307c78aa31885894c40d1a3c38a36099ae7ed01bfeb6fe0d59f1596053a6d",
+      "resources/testharness.js.headers": "907d5892c31682c3d05ce05b7b18d81c50a03175c731aee00c6b18a013bfd2f5",
+      "resources/testharnessreport.js.headers": "907d5892c31682c3d05ce05b7b18d81c50a03175c731aee00c6b18a013bfd2f5"
+    },
+    "rewrites": [],
+    "raw_directory": "/home/awe/zedBSD-claude1/build/ws074-20261018/q23/after-harness/shard-1024/test-1089.generated",
+    "returncode": 0
+  },
+  {
+    "test_id": "/html/semantics/scripting-1/the-script-element/json-module/charset-bom.any.html",
+    "outcome": "no_completion",
+    "native_outcome": "no_completion",
+    "callbacks": 0,
+    "unsupported": [],
+    "source": "html/semantics/scripting-1/the-script-element/json-module/charset-bom.any.js",
+    "source_sha256": "8e30eef7aa1b7da2d590ff9b8a9d9c1558ad2ffc2b641b6a904c7144fb31095f",
+    "wrapper_sha256": "e395d697c099c1b0d8b537d29eba7cdef6986691b0a189105a49a0f69942bac9",
+    "assets": {
+      "resources/testharness.js": "d2399236c2a09c429804ff2299ad6629e17e2b53f17a74dd341e936adb11ae3e",
+      "resources/testharnessreport.js": "3777176fc736b0a78cf7617b9613b220f635daae7536ec7ebb99c61dbb525aae",
+      "common/utils.js": "8dd4c32ad80d3c332d62197595ca5bf57f63e6a1bd93117cf0b9dbc6a9468aca",
+      "html/semantics/scripting-1/the-script-element/json-module/charset-bom.any.js": "8e30eef7aa1b7da2d590ff9b8a9d9c1558ad2ffc2b641b6a904c7144fb31095f",
+      "resources/testharness.js.headers": "907d5892c31682c3d05ce05b7b18d81c50a03175c731aee00c6b18a013bfd2f5",
+      "resources/testharnessreport.js.headers": "907d5892c31682c3d05ce05b7b18d81c50a03175c731aee00c6b18a013bfd2f5",
+      "common/utils.js.headers": "0c458ff2f1fd1e3318475993bba7600a3d6fddc1de06905192cc9de8b60244f0"
+    },
+    "rewrites": [],
+    "raw_directory": "/home/awe/zedBSD-claude1/build/ws074-20261018/q23/after-harness/shard-1024/test-1095.generated",
+    "returncode": 0
+  },
+  {
+    "test_id": "/html/semantics/scripting-1/the-script-element/json-module/invalid-content-type.any.html",
+    "outcome": "no_completion",
+    "native_outcome": "no_completion",
+    "callbacks": 0,
+    "unsupported": [],
+    "source": "html/semantics/scripting-1/the-script-element/json-module/invalid-content-type.any.js",
+    "source_sha256": "f6a67bdbcc1ac0123941430af869a7e3e5fe5295d9124e45e1272cdf79f805b0",
+    "wrapper_sha256": "0fc0a288dd4128b2c28201c9f5503c7005949a282a984a24e0edf6941e53ea39",
+    "assets": {
+      "resources/testharness.js": "d2399236c2a09c429804ff2299ad6629e17e2b53f17a74dd341e936adb11ae3e",
+      "resources/testharnessreport.js": "3777176fc736b0a78cf7617b9613b220f635daae7536ec7ebb99c61dbb525aae",
+      "html/semantics/scripting-1/the-script-element/json-module/invalid-content-type.any.js": "f6a67bdbcc1ac0123941430af869a7e3e5fe5295d9124e45e1272cdf79f805b0",
+      "resources/testharness.js.headers": "907d5892c31682c3d05ce05b7b18d81c50a03175c731aee00c6b18a013bfd2f5",
+      "resources/testharnessreport.js.headers": "907d5892c31682c3d05ce05b7b18d81c50a03175c731aee00c6b18a013bfd2f5"
+    },
+    "rewrites": [],
+    "raw_directory": "/home/awe/zedBSD-claude1/build/ws074-20261018/q23/after-harness/shard-1024/test-1099.generated",
+    "returncode": 0
+  },
+  {
+    "test_id": "/html/semantics/scripting-1/the-script-element/json-module/non-object.any.html",
+    "outcome": "no_completion",
+    "native_outcome": "no_completion",
+    "callbacks": 0,
+    "unsupported": [],
+    "source": "html/semantics/scripting-1/the-script-element/json-module/non-object.any.js",
+    "source_sha256": "3dfef114b4c3121b2661cf7b6480adbacade6591f46aab6797b3e14fe7732532",
+    "wrapper_sha256": "0d3bdd901b8835d97560b9612f2490c08c7f7762d2fee9de988d6e3c357f68d0",
+    "assets": {
+      "resources/testharness.js": "d2399236c2a09c429804ff2299ad6629e17e2b53f17a74dd341e936adb11ae3e",
+      "resources/testharnessreport.js": "3777176fc736b0a78cf7617b9613b220f635daae7536ec7ebb99c61dbb525aae",
+      "html/semantics/scripting-1/the-script-element/json-module/non-object.any.js": "3dfef114b4c3121b2661cf7b6480adbacade6591f46aab6797b3e14fe7732532",
+      "resources/testharness.js.headers": "907d5892c31682c3d05ce05b7b18d81c50a03175c731aee00c6b18a013bfd2f5",
+      "resources/testharnessreport.js.headers": "907d5892c31682c3d05ce05b7b18d81c50a03175c731aee00c6b18a013bfd2f5"
+    },
+    "rewrites": [],
+    "raw_directory": "/home/awe/zedBSD-claude1/build/ws074-20261018/q23/after-harness/shard-1024/test-1102.generated",
+    "returncode": 0
+  },
+  {
+    "test_id": "/html/semantics/scripting-1/the-script-element/json-module/repeated-imports.any.html",
+    "outcome": "no_completion",
+    "native_outcome": "no_completion",
+    "callbacks": 0,
+    "unsupported": [],
+    "source": "html/semantics/scripting-1/the-script-element/json-module/repeated-imports.any.js",
+    "source_sha256": "8a5449001d1a69ee5d3833363c98f715704e6db1e4dbe8ba30d45d3572469c5e",
+    "wrapper_sha256": "3cac4df6e250277980bb4214150c0e7f145a31040569d506d2b7c4a2ceaebda7",
+    "assets": {
+      "resources/testharness.js": "d2399236c2a09c429804ff2299ad6629e17e2b53f17a74dd341e936adb11ae3e",
+      "resources/testharnessreport.js": "3777176fc736b0a78cf7617b9613b220f635daae7536ec7ebb99c61dbb525aae",
+      "common/utils.js": "8dd4c32ad80d3c332d62197595ca5bf57f63e6a1bd93117cf0b9dbc6a9468aca",
+      "html/semantics/scripting-1/the-script-element/json-module/repeated-imports.any.js": "8a5449001d1a69ee5d3833363c98f715704e6db1e4dbe8ba30d45d3572469c5e",
+      "resources/testharness.js.headers": "907d5892c31682c3d05ce05b7b18d81c50a03175c731aee00c6b18a013bfd2f5",
+      "resources/testharnessreport.js.headers": "907d5892c31682c3d05ce05b7b18d81c50a03175c731aee00c6b18a013bfd2f5",
+      "common/utils.js.headers": "0c458ff2f1fd1e3318475993bba7600a3d6fddc1de06905192cc9de8b60244f0"
+    },
+    "rewrites": [],
+    "raw_directory": "/home/awe/zedBSD-claude1/build/ws074-20261018/q23/after-harness/shard-1024/test-1104.generated",
+    "returncode": 0
+  },
+  {
+    "test_id": "/performance-timeline/buffered-flag-with-entryTypes-observer.tentative.any.html",
+    "outcome": "pass",
+    "native_outcome": "pass",
+    "callbacks": 1,
+    "unsupported": [],
+    "source": "performance-timeline/buffered-flag-with-entryTypes-observer.tentative.any.js",
+    "source_sha256": "427af82a2e3231c62432a40ff8ba7af4b7fed05b01472ca76a0e672d82447855",
+    "wrapper_sha256": "ec54a13a244d7fec5861b8a9ba3aa44c96797e382b9981616123b1666b075086",
+    "assets": {
+      "resources/testharness.js": "d2399236c2a09c429804ff2299ad6629e17e2b53f17a74dd341e936adb11ae3e",
+      "resources/testharnessreport.js": "3777176fc736b0a78cf7617b9613b220f635daae7536ec7ebb99c61dbb525aae",
+      "performance-timeline/buffered-flag-with-entryTypes-observer.tentative.any.js": "427af82a2e3231c62432a40ff8ba7af4b7fed05b01472ca76a0e672d82447855",
+      "resources/testharness.js.headers": "907d5892c31682c3d05ce05b7b18d81c50a03175c731aee00c6b18a013bfd2f5",
+      "resources/testharnessreport.js.headers": "907d5892c31682c3d05ce05b7b18d81c50a03175c731aee00c6b18a013bfd2f5"
+    },
+    "rewrites": [],
+    "raw_directory": "/home/awe/zedBSD-claude1/build/ws074-20261018/q23/after-harness/shard-1408/test-1497.generated",
+    "returncode": 0
+  },
+  {
+    "test_id": "/storage-access-api/idlharness.window.html",
+    "outcome": "fail",
+    "native_outcome": "fail",
+    "callbacks": 1,
+    "unsupported": [],
+    "source": "storage-access-api/idlharness.window.js",
+    "source_sha256": "3d0047fe7e6c54d6db478a9d97793b66164ef6793eb874de866a1ce858645f12",
+    "wrapper_sha256": "2e1f5c94338b3c0bec17f1201544518968a2adaf0bac100ad7272f2a7ce3dc63",
+    "assets": {
+      "resources/testharness.js": "d2399236c2a09c429804ff2299ad6629e17e2b53f17a74dd341e936adb11ae3e",
+      "resources/testharnessreport.js": "3777176fc736b0a78cf7617b9613b220f635daae7536ec7ebb99c61dbb525aae",
+      "resources/webidl2/lib/webidl2.js": "954444f6daf0f8068d2fce513eac8e6a5d53189a910b9a5675e8d8e8a2808070",
+      "resources/idlharness.js": "93e8d18f3fe470966eaf0ac50aadc3882bf4db53c250e8f2161e1ca2a1bc7cd9",
+      "storage-access-api/idlharness.window.js": "3d0047fe7e6c54d6db478a9d97793b66164ef6793eb874de866a1ce858645f12",
+      "resources/testharness.js.headers": "907d5892c31682c3d05ce05b7b18d81c50a03175c731aee00c6b18a013bfd2f5",
+      "resources/testharnessreport.js.headers": "907d5892c31682c3d05ce05b7b18d81c50a03175c731aee00c6b18a013bfd2f5",
+      "resources/webidl2/lib/webidl2.js.headers": "0c458ff2f1fd1e3318475993bba7600a3d6fddc1de06905192cc9de8b60244f0",
+      "resources/idlharness.js.headers": "907d5892c31682c3d05ce05b7b18d81c50a03175c731aee00c6b18a013bfd2f5"
+    },
+    "rewrites": [
+      {
+        "incoming": "/resources/WebIDLParser.js",
+        "destination": "/resources/webidl2/lib/webidl2.js"
+      }
+    ],
+    "raw_directory": "/home/awe/zedBSD-claude1/build/ws074-20261018/q23/after-harness/shard-1408/test-1500.generated",
+    "returncode": 0
+  },
+  {
+    "test_id": "/urlpattern/urlpattern-hasregexpgroups.any.html",
+    "outcome": "fail",
+    "native_outcome": "fail",
+    "callbacks": 1,
+    "unsupported": [],
+    "source": "urlpattern/urlpattern-hasregexpgroups.any.js",
+    "source_sha256": "3ddb2100f7b62cc0ff17d1e193cb6ded16be9cab07402bb783172a8ddeed3085",
+    "wrapper_sha256": "3783e5a3c01aded97264e413fd0ce50c106bb3bcf046bc81342faf0546cedfa2",
+    "assets": {
+      "resources/testharness.js": "d2399236c2a09c429804ff2299ad6629e17e2b53f17a74dd341e936adb11ae3e",
+      "resources/testharnessreport.js": "3777176fc736b0a78cf7617b9613b220f635daae7536ec7ebb99c61dbb525aae",
+      "urlpattern/resources/urlpattern-hasregexpgroups-tests.js": "130329152a601d2242b26eaed2b7a7837972a34c5df324ca284ab23fd986b2d4",
+      "urlpattern/urlpattern-hasregexpgroups.any.js": "3ddb2100f7b62cc0ff17d1e193cb6ded16be9cab07402bb783172a8ddeed3085",
+      "resources/testharness.js.headers": "907d5892c31682c3d05ce05b7b18d81c50a03175c731aee00c6b18a013bfd2f5",
+      "resources/testharnessreport.js.headers": "907d5892c31682c3d05ce05b7b18d81c50a03175c731aee00c6b18a013bfd2f5"
+    },
+    "rewrites": [],
+    "raw_directory": "/home/awe/zedBSD-claude1/build/ws074-20261018/q23/after-harness/shard-1408/test-1501.generated",
+    "returncode": 0
+  },
+  {
+    "test_id": "/urlpattern/urlpattern.any.html",
+    "outcome": "fail",
+    "native_outcome": "fail",
+    "callbacks": 370,
+    "unsupported": [],
+    "source": "urlpattern/urlpattern.any.js",
+    "source_sha256": "8e8f63551402b0b14ffedaba165c7d103430e705a335d744bd540db83348d174",
+    "wrapper_sha256": "62a863d126472208e615049e83cdff99a951cac25b2fec43ef655f4e20bc9fb0",
+    "assets": {
+      "resources/testharness.js": "d2399236c2a09c429804ff2299ad6629e17e2b53f17a74dd341e936adb11ae3e",
+      "resources/testharnessreport.js": "3777176fc736b0a78cf7617b9613b220f635daae7536ec7ebb99c61dbb525aae",
+      "urlpattern/resources/urlpatterntests.js": "b7f8d058e73d85827a7e5611420edbf8fe6b54a1bb451ba09f30f7f696ae9e8b",
+      "urlpattern/resources/urlpatterntestdata.json": "f52a8ba3940de7e55ad47dc58eab5bccb697d7d76335c20ed7aaef6b85b98ab9",
+      "urlpattern/urlpattern.any.js": "8e8f63551402b0b14ffedaba165c7d103430e705a335d744bd540db83348d174",
+      "resources/testharness.js.headers": "907d5892c31682c3d05ce05b7b18d81c50a03175c731aee00c6b18a013bfd2f5",
+      "resources/testharnessreport.js.headers": "907d5892c31682c3d05ce05b7b18d81c50a03175c731aee00c6b18a013bfd2f5"
+    },
+    "rewrites": [],
+    "raw_directory": "/home/awe/zedBSD-claude1/build/ws074-20261018/q23/after-harness/shard-1408/test-1502.generated",
+    "returncode": 0
+  },
+  {
+    "test_id": "/wasm/jsapi/js-string/basic.any.html",
+    "outcome": "harness_error",
+    "native_outcome": "harness_error",
+    "callbacks": 0,
+    "unsupported": [],
+    "source": "wasm/jsapi/js-string/basic.any.js",
+    "source_sha256": "640ed20c0486a458986e627d2033f45ec83574aa97a784d14d8fce7f25805562",
+    "wrapper_sha256": "48698544e7f3f9448e41b300f364c14c5a8079a95f77ea9909de1e8b314b7361",
+    "assets": {
+      "resources/testharness.js": "d2399236c2a09c429804ff2299ad6629e17e2b53f17a74dd341e936adb11ae3e",
+      "resources/testharnessreport.js": "3777176fc736b0a78cf7617b9613b220f635daae7536ec7ebb99c61dbb525aae",
+      "wasm/jsapi/assertions.js": "797868004d4d224eb015c9619255aaa6de25c381c20896d55550b901a5102e8a",
+      "wasm/jsapi/wasm-module-builder.js": "8eabf2c5fc2595dedc1fa5c1c53c548de6608300687938e409670dcecec86fd4",
+      "wasm/jsapi/js-string/polyfill.js": "9eaf751d2a33afd97d897139b2e0885b0b50f2cb1152f1fa258299a9bdfe6655",
+      "wasm/jsapi/js-string/basic.any.js": "640ed20c0486a458986e627d2033f45ec83574aa97a784d14d8fce7f25805562",
+      "resources/testharness.js.headers": "907d5892c31682c3d05ce05b7b18d81c50a03175c731aee00c6b18a013bfd2f5",
+      "resources/testharnessreport.js.headers": "907d5892c31682c3d05ce05b7b18d81c50a03175c731aee00c6b18a013bfd2f5"
+    },
+    "rewrites": [],
+    "raw_directory": "/home/awe/zedBSD-claude1/build/ws074-20261018/q23/after-harness/shard-1408/test-1503.generated",
+    "returncode": 0
+  },
+  {
+    "test_id": "/wasm/jsapi/js-string/constants.any.html",
+    "outcome": "fail",
+    "native_outcome": "fail",
+    "callbacks": 40,
+    "unsupported": [],
+    "source": "wasm/jsapi/js-string/constants.any.js",
+    "source_sha256": "3629ff2586570192d050999dfbb98bdcb4cbf1c5d73f8e9992c6a017b839238a",
+    "wrapper_sha256": "bda93008c656d4053f1d4f39c4cccac5b4f928c120347c4b249fac630735e794",
+    "assets": {
+      "resources/testharness.js": "d2399236c2a09c429804ff2299ad6629e17e2b53f17a74dd341e936adb11ae3e",
+      "resources/testharnessreport.js": "3777176fc736b0a78cf7617b9613b220f635daae7536ec7ebb99c61dbb525aae",
+      "wasm/jsapi/wasm-module-builder.js": "8eabf2c5fc2595dedc1fa5c1c53c548de6608300687938e409670dcecec86fd4",
+      "wasm/jsapi/js-string/constants.any.js": "3629ff2586570192d050999dfbb98bdcb4cbf1c5d73f8e9992c6a017b839238a",
+      "resources/testharness.js.headers": "907d5892c31682c3d05ce05b7b18d81c50a03175c731aee00c6b18a013bfd2f5",
+      "resources/testharnessreport.js.headers": "907d5892c31682c3d05ce05b7b18d81c50a03175c731aee00c6b18a013bfd2f5"
+    },
+    "rewrites": [],
+    "raw_directory": "/home/awe/zedBSD-claude1/build/ws074-20261018/q23/after-harness/shard-1408/test-1504.generated",
+    "returncode": 0
+  },
+  {
+    "test_id": "/wasm/jsapi/js-string/imports.any.html",
+    "outcome": "fail",
+    "native_outcome": "fail",
+    "callbacks": 1,
+    "unsupported": [],
+    "source": "wasm/jsapi/js-string/imports.any.js",
+    "source_sha256": "1c1349a08e5f598599c60b6c2cc806a3538e78ca0323e265537423a8abd2ad1d",
+    "wrapper_sha256": "26bd92496f84ee408fa023022e659bf6e70a5b324aad9b8b1d13842a88a0e8da",
+    "assets": {
+      "resources/testharness.js": "d2399236c2a09c429804ff2299ad6629e17e2b53f17a74dd341e936adb11ae3e",
+      "resources/testharnessreport.js": "3777176fc736b0a78cf7617b9613b220f635daae7536ec7ebb99c61dbb525aae",
+      "wasm/jsapi/wasm-module-builder.js": "8eabf2c5fc2595dedc1fa5c1c53c548de6608300687938e409670dcecec86fd4",
+      "wasm/jsapi/js-string/imports.any.js": "1c1349a08e5f598599c60b6c2cc806a3538e78ca0323e265537423a8abd2ad1d",
+      "resources/testharness.js.headers": "907d5892c31682c3d05ce05b7b18d81c50a03175c731aee00c6b18a013bfd2f5",
+      "resources/testharnessreport.js.headers": "907d5892c31682c3d05ce05b7b18d81c50a03175c731aee00c6b18a013bfd2f5"
+    },
+    "rewrites": [],
+    "raw_directory": "/home/awe/zedBSD-claude1/build/ws074-20261018/q23/after-harness/shard-1408/test-1505.generated",
+    "returncode": 0
+  },
+  {
+    "test_id": "/wasm/jsapi/memory/to-fixed-length-buffer.any.html",
+    "outcome": "fail",
+    "native_outcome": "fail",
+    "callbacks": 2,
+    "unsupported": [],
+    "source": "wasm/jsapi/memory/to-fixed-length-buffer.any.js",
+    "source_sha256": "f1ac0ed289af5f7ccb09f1995514a0e70b2f7794e3254d426e2bd5b86fdd433f",
+    "wrapper_sha256": "d64bdeddf3ff532172152b94c6cbd1e69ff42459ccd349e86426243682dfa55f",
+    "assets": {
+      "resources/testharness.js": "d2399236c2a09c429804ff2299ad6629e17e2b53f17a74dd341e936adb11ae3e",
+      "resources/testharnessreport.js": "3777176fc736b0a78cf7617b9613b220f635daae7536ec7ebb99c61dbb525aae",
+      "wasm/jsapi/wasm-module-builder.js": "8eabf2c5fc2595dedc1fa5c1c53c548de6608300687938e409670dcecec86fd4",
+      "wasm/jsapi/memory/to-fixed-length-buffer.any.js": "f1ac0ed289af5f7ccb09f1995514a0e70b2f7794e3254d426e2bd5b86fdd433f",
+      "resources/testharness.js.headers": "907d5892c31682c3d05ce05b7b18d81c50a03175c731aee00c6b18a013bfd2f5",
+      "resources/testharnessreport.js.headers": "907d5892c31682c3d05ce05b7b18d81c50a03175c731aee00c6b18a013bfd2f5"
+    },
+    "rewrites": [],
+    "raw_directory": "/home/awe/zedBSD-claude1/build/ws074-20261018/q23/after-harness/shard-1408/test-1506.generated",
+    "returncode": 0
+  },
+  {
+    "test_id": "/wasm/jsapi/memory/to-resizable-buffer-shared.any.html",
+    "outcome": "fail",
+    "native_outcome": "fail",
+    "callbacks": 3,
+    "unsupported": [],
+    "source": "wasm/jsapi/memory/to-resizable-buffer-shared.any.js",
+    "source_sha256": "0d3ac77df790bdad31bdadc2cc9b70751e21ce89159d9398e104d1c41b7be251",
+    "wrapper_sha256": "e0e06a9363c1e1c1e00ebde021dc1ff31ec11027ab2eecad6d8c11a2caae5c50",
+    "assets": {
+      "resources/testharness.js": "d2399236c2a09c429804ff2299ad6629e17e2b53f17a74dd341e936adb11ae3e",
+      "resources/testharnessreport.js": "3777176fc736b0a78cf7617b9613b220f635daae7536ec7ebb99c61dbb525aae",
+      "wasm/jsapi/wasm-module-builder.js": "8eabf2c5fc2595dedc1fa5c1c53c548de6608300687938e409670dcecec86fd4",
+      "wasm/jsapi/memory/to-resizable-buffer-shared.any.js": "0d3ac77df790bdad31bdadc2cc9b70751e21ce89159d9398e104d1c41b7be251",
+      "resources/testharness.js.headers": "907d5892c31682c3d05ce05b7b18d81c50a03175c731aee00c6b18a013bfd2f5",
+      "resources/testharnessreport.js.headers": "907d5892c31682c3d05ce05b7b18d81c50a03175c731aee00c6b18a013bfd2f5"
+    },
+    "rewrites": [],
+    "raw_directory": "/home/awe/zedBSD-claude1/build/ws074-20261018/q23/after-harness/shard-1408/test-1507.generated",
+    "returncode": 0
+  },
+  {
+    "test_id": "/wasm/jsapi/memory/to-resizable-buffer.any.html",
+    "outcome": "fail",
+    "native_outcome": "fail",
+    "callbacks": 5,
+    "unsupported": [],
+    "source": "wasm/jsapi/memory/to-resizable-buffer.any.js",
+    "source_sha256": "76f9ff3b64e6523f59e17d808ead12712524866a3f153dcf39b7f228fde82ede",
+    "wrapper_sha256": "f6b3910af7fb99d8d5b5f08fbf96c4675c8ed3aa7d29c6d609806340ca7e7297",
+    "assets": {
+      "resources/testharness.js": "d2399236c2a09c429804ff2299ad6629e17e2b53f17a74dd341e936adb11ae3e",
+      "resources/testharnessreport.js": "3777176fc736b0a78cf7617b9613b220f635daae7536ec7ebb99c61dbb525aae",
+      "wasm/jsapi/wasm-module-builder.js": "8eabf2c5fc2595dedc1fa5c1c53c548de6608300687938e409670dcecec86fd4",
+      "wasm/jsapi/memory/to-resizable-buffer.any.js": "76f9ff3b64e6523f59e17d808ead12712524866a3f153dcf39b7f228fde82ede",
+      "resources/testharness.js.headers": "907d5892c31682c3d05ce05b7b18d81c50a03175c731aee00c6b18a013bfd2f5",
+      "resources/testharnessreport.js.headers": "907d5892c31682c3d05ce05b7b18d81c50a03175c731aee00c6b18a013bfd2f5"
+    },
+    "rewrites": [],
+    "raw_directory": "/home/awe/zedBSD-claude1/build/ws074-20261018/q23/after-harness/shard-1408/test-1508.generated",
+    "returncode": 0
+  }
+]

@@ -1,0 +1,41 @@
+{
+  "source_commit": "feafc812e81f38fcd8138a79cd53b8728fff375c",
+  "eligible": 1508,
+  "eligible_sha256": "82147e6edaec1b3b8d537e46eb71b64f2f03132cc12803e284c6ca72377779e7",
+  "old_subset": 1491,
+  "new_native_attempts": 17,
+  "new_counts": {
+    "fail": 10,
+    "no_completion": 5,
+    "pass": 1,
+    "harness_error": 1
+  },
+  "raw_harness_counts": {
+    "fail": 958,
+    "no_completion": 26,
+    "pass": 494,
+    "harness_error": 4,
+    "no_output": 24,
+    "multiple_completions": 2
+  },
+  "raw_fixed_pass": 1482,
+  "verified_fixed_pass": 1481,
+  "held_false_positive_count": 1,
+  "denominator": 3805,
+  "unattempted_harness": 275,
+  "callbacks": {
+    "1": 20643,
+    "0": 11540,
+    "3": 14
+  },
+  "new_callbacks": {
+    "1": 424,
+    "0": 2
+  },
+  "native_sources_pair_unchanged": true,
+  "primary_native_controls": 13,
+  "classification_controls": 5,
+  "seconds": 232.6,
+  "archive_sha256": "ed1ccb19eb78a150a78350f2050b91a1406870002ace0cc17f79e3558e29c6a4",
+  "controls_sha256": "dbb3135b0948fee90765f6b0bb15068d49e80ff84e7bb08bc3e29e30d32bab26"
+}

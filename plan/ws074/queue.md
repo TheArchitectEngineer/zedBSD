@@ -2,7 +2,7 @@
 
 # ws074-q20261018-23 / official plain Window generated17・1508 harness
 
-Status: active（2026-10-18）
+Status: finished（2026-10-18、両scoped item cleared）
 Owner: このCodex chat単独。
 Approval: [ユーザー自走指示](autonomy.md)をこの有限scopeへ適用。q22 terminal6e6cff13d/history hash read-back済み。
 Timebox: 最大90分（17:44 JSTまで）。
@@ -10,12 +10,16 @@ Timebox: 最大90分（17:44 JSTまで）。
 | Attempt | Phase | Exact scope | State | Dependencies |
 | --- | --- | --- | --- | --- |
 | ws074-q20261018-23-i01 | [p189](phase189/phase.md) official generated Window transport partial | pinned serve.pyのWindowHandler/AnyHtmlHandler wrapper literalをruntime ASTで読取り、sourcefile.pyと同じ先頭META連続block/global exposure/順序/escaping/script importsとquery/JS source pathを提供。pinned WebIDLParser.js→resources/webidl2/lib/webidl2.js internal GET rewriteをquery保持で提供。new generated contextだけでq20 verified static header provider/unsupported判定を再利用し、original testharnessreport.js bytes＋既存REPORT_SCRIPTを保持。元source/JS/resourcesとwrapper/headers/rewrite/hash/console binaryを記録、native APIや値は補完しない。既存physical1491のprovider/report/budgetは不変。primary byte/metadata/rewrite/HTTP比較、native Window/Any/context/meta-order/query/recording positiveとglobal/missing/unsupported/duplicate等のnegative controlsを確認 | cleared（primary/native13＋分類5） | q22 same native pair/全1491 raw、pinned serve.py/sourcefile.py/server.py、q20 header source/29 controls、実17 input inventory |
-| ws074-q20261018-23-i02 | [p189](phase189/phase.md) fixed generated17 + full1508 census partial | i01 verified output後、HTTPS/worker/.sub以外で既存未attempt292中plain .window.html2/.any.html15の17 IDをcandidateへ追加し同じfrozen pair/fonts/settle5000/process20で全1508を実測。旧1491 subsetの全ID/whole/callback/status/order/欠損/追加とq22比較、new17全native attempt/各source/wrapper/requests/unsupported/stdio/bin/report保存、eligible digest/全1783 partition/残275未attemptを照合。native未実装・server unsupportedは非PASSとして分母保持、gainsを実測前に加算しない | in-progress | i01 native/primary controlsと原bytes/headers/rewriteのverified output、q22 whole493/全1491 baseline |
+| ws074-q20261018-23-i02 | [p189](phase189/phase.md) fixed generated17 + full1508 census partial | i01 verified output後、HTTPS/worker/.sub以外で既存未attempt292中plain .window.html2/.any.html15の17 IDをcandidateへ追加し同じfrozen pair/fonts/settle5000/process20で全1508を実測。旧1491 subsetの全ID/whole/callback/status/order/欠損/追加とq22比較、new17全native attempt/各source/wrapper/requests/unsupported/stdio/bin/report保存、eligible digest/全1783 partition/残275未attemptを照合。native未実装・server unsupportedは非PASSとして分母保持、gainsを実測前に加算しない | cleared（全1508/旧1491同値・native holdback保持） | i01 native/primary controlsと原bytes/headers/rewriteのverified output、q22 whole493/全1491 baseline |
 
 Dependency graph: q22 history/pair/input inventory → i01 primary/native controls → i02全1508/old1491比較/archive。
 Generation bounds: plan/ws074/tests/run-interop2025-harness.py、run-interop2025-batch.py、新test-interop2025-generated.pyとWS074記録/証拠だけ。Python専用full standard無し、Guardrail/既存tool/FS規則を直接適用。q20 scripted toolの既存Handler/static header/limit helperはgeneratedだけlazy利用し、scripted/crash/census既存tool/native C/SDK/expectations/manifest/共有board/cache/toolchainは変えない。private .headers/pipe/.sub/generated server/testdriver/HTTPS/worker/外origin等未対応は非PASS。wrapper source .headers自体はこの17で存在しないことをinventoryで確認し未対応なら拒否、通常resource headersはfaithful配信する。WPT rootファイルを追加/変更せずaliasはHTTP provider内部で処理、templateとassetのoriginal pinned bytesを使用。
 Verification bounds: positive tool prerequisiteが欠ける/old subset後退が未解消/期限内未完ならaffected item uncleared、raw/resumeを保持。0 tests/invalid/multiple/failed fixtureをPASSにしない。17に全PASSを約束せず、未実装Native APIをJSで偽装/patchしない。native源不変なのでstatic/scripted/crash/DOM/C/Acidはq21 byte同一pair証拠を再利用し不要な再測定無し。push/削除/make check/QEMU無し。
 Upcoming Work Outlook: 残るHTTPS/worker/sub/origin等275、native module/URLPattern/Wasm/performance/animation/ViewTransition/anchor、p249/target/p100。
+
+Outcome: pinned Window/Any wrapper・META・WebIDL内部GET rewrite・generated専用ordinary headersを提供し、primary/native13＋既存分類5対照通過。全1508=old1491+new17を同じfrozen pairで実測、old1491は全ID/whole/returncode/callback・completion status/order/messages完全同値。追加17は全native attempt、raw1 PASS/10 FAIL/5 no_completion/1 harness_error、426 callbacks（2 PASS/424 FAIL）。全1783の未attempt292→275、native C/WPT/期待値/分母は不変。 新1 raw PASSは既存performance.markの記録なし・getEntries空・PerformanceObserver.observe no-opで入力が欠落しており、native/Chrome独立probeでprior/future 0/0対1/1とfuture通知の差を確認。元WPT結果は改変せずknown native prerequisite holdback1として確認済みに加算しない。raw fixed1482/3805、確認済み1481/3805（38.922470%）維持。 両item scoped coverage partial cleared、whole p189/WS・native APIs・target full/p100は未達。[p254](phase254/phase.md)実mark→[p255](phase255/phase.md)実observer→p189 holdback再評価の依存を追加。p077旧readonly/empty-entry scopeの受け入れは保持。source/pair/fonts/manifest/全ID/hash、全raw/stdout binary/生成HTML/原JS/resources/header provenance/controls tarをread-back、WPT tracked clean。shared projection/GitHub pending、push無し。
+
+History: [exact scope/outcome](history/ws074-q20261018-23.md)。
 
 ---
 <!-- awesome-plan project=zedbsd record=queue -->

@@ -1,0 +1,14 @@
+{
+  "test_id": "/performance-timeline/buffered-flag-with-entryTypes-observer.tentative.any.html",
+  "raw_wpt_outcome": "pass",
+  "verified_outcome": "uncleared_native_prerequisite",
+  "reason": "performance.mark records nothing, getEntries returns empty, observer observe is a product no-op; WPT prior-entry prerequisite is absent",
+  "origin_phase": "ws074-p189",
+  "needed_outputs": [
+    "real native mark records/retrieval",
+    "real observer future-entry delivery and correct buffered behavior"
+  ],
+  "native_probe": "performance-prereq/native.out",
+  "chrome_probe": "performance-prereq/chrome.out",
+  "raw_records_unchanged": true
+}

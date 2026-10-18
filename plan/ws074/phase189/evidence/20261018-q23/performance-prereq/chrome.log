@@ -1,0 +1,7 @@
+[885781:885781:1018/163347.218651:WARNING:sandbox/policy/linux/sandbox_linux.cc:405] InitializeSandbox() called with multiple threads in process gpu-process.
+[885738:885738:1018/163347.559914:WARNING:ui/base/idle/idle_linux.cc:111] None of the known D-Bus ScreenSaver services could be used.
+[885738:885738:1018/163347.760552:INFO:CONSOLE:3] "mark-return mark:prior-probe", source: file:///home/awe/zedBSD-claude1/build/ws074-20261018/q23/performance-prereq/probe.html (3)
+[885738:885738:1018/163347.760596:INFO:CONSOLE:4] "prior-entry-count 1", source: file:///home/awe/zedBSD-claude1/build/ws074-20261018/q23/performance-prereq/probe.html (4)
+[885738:885738:1018/163347.761794:INFO:CONSOLE:11] "The PerformanceObserver does not support buffered flag with the entryTypes argument.", source: file:///home/awe/zedBSD-claude1/build/ws074-20261018/q23/performance-prereq/probe.html (11)
+[885738:885738:1018/163347.770565:INFO:CONSOLE:14] "future-entry-count 1", source: file:///home/awe/zedBSD-claude1/build/ws074-20261018/q23/performance-prereq/probe.html (14)
+[885738:885738:1018/163347.770595:INFO:CONSOLE:15] "observed future-probe", source: file:///home/awe/zedBSD-claude1/build/ws074-20261018/q23/performance-prereq/probe.html (15)

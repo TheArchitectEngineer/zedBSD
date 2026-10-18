@@ -1,0 +1,25 @@
+{
+  "old_subset": 1491,
+  "whole_status_and_returncode_changes": [],
+  "all_callback_and_completion_statuses_order_equal": true,
+  "callback_messages_changed": [],
+  "new17_counts": {
+    "fail": 10,
+    "no_completion": 5,
+    "pass": 1,
+    "harness_error": 1
+  },
+  "new17_callback_counts": {
+    "1": 424,
+    "0": 2
+  },
+  "old_subset_counts": {
+    "fail": 948,
+    "no_completion": 21,
+    "pass": 493,
+    "harness_error": 3,
+    "no_output": 24,
+    "multiple_completions": 2
+  },
+  "source_pair_fonts_unchanged": true
+}

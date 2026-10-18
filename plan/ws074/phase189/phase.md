@@ -2,7 +2,7 @@
 
 # ws074-p189: Interop 2025 testharness 結果取得
 
-Status: in-progress（q23 generated17、old1491/未対応292・whole未達）
+Status: uncleared（q23 coverage partial cleared、適格1508/未attempt275・native holdback1）
 
 ## ws074-q20261018-03 結果
 
@@ -331,3 +331,9 @@ Event ws074-p189-q23-selected-20261018: 固定未attempt292のactual plain Windo
 
 
 Event ws074-p189-q23-wrapper-output-20261018: primary/native13/13と既存pure分類5/5を確認。Window/Any/global/script順/query/currentScript/log、実HTTP headers/原body/WebIDL内部rewrite、native failure/unsupported static fallback・duplicate/zero境界を検証。fixture準備の型注釈/CSS参照/duplicate入力時点を訂正して再実行、元のnegative期待は保持。eligible1508=old1491+new17、残275未attemptをinventory/hashで確認。i01 scoped partial cleared→i02全1508実測開始、whole p189/WSは未達。shared projection pending。
+
+
+Event ws074-q23-performance-prerequisite-redesign-20261018: [known holdback](evidence/20261018-q23/native-prerequisite-holdback.json)・[native/Chrome](evidence/20261018-q23/performance-prereq/probe.html)。追加17はnative全attempt、raw1 PASSはmark/observeが何もしない既存実装で試験入力が無く、確認済みへ加算しない。raw result/期待値は改変せず、coverage own scopeとNative API受け入れを分離して記録。[p254](../phase254/phase.md)実mark state→[p255](../phase255/phase.md)future callback/past suppression→本Phase再評価を追加し、新両Phase/WSへscope/resumeを配送。old1491結果は全status/order/messages不変、p077旧scopeのclearanceも維持。current q23範囲/期限/分母不変、まだterminal清算前。shared projection pending。
+
+
+Event ws074-q23-finished-20261018: [exact history](../history/ws074-q20261018-23.md)・[証拠](evidence/20261018-q23/README.md)。pinned Window/Any wrapper・META・WebIDL内部GET rewrite・generated専用ordinary headersを提供し、primary/native13＋既存分類5対照通過。全1508=old1491+new17を同じfrozen pairで実測、old1491は全ID/whole/returncode/callback・completion status/order/messages完全同値。追加17は全native attempt、raw1 PASS/10 FAIL/5 no_completion/1 harness_error、426 callbacks（2 PASS/424 FAIL）。全1783の未attempt292→275、native C/WPT/期待値/分母は不変。 新1 raw PASSは既存performance.markの記録なし・getEntries空・PerformanceObserver.observe no-opで入力が欠落しており、native/Chrome独立probeでprior/future 0/0対1/1とfuture通知の差を確認。元WPT結果は改変せずknown native prerequisite holdback1として確認済みに加算しない。raw fixed1482/3805、確認済み1481/3805（38.922470%）維持。 両item scoped coverage partial cleared、whole p189/WS・native APIs・target full/p100は未達。[p254](../phase254/phase.md)実mark→[p255](../phase255/phase.md)実observer→p189 holdback再評価の依存を追加。p077旧readonly/empty-entry scopeの受け入れは保持。source/pair/fonts/manifest/全ID/hash、全raw/stdout binary/生成HTML/原JS/resources/header provenance/controls tarをread-back、WPT tracked clean。shared projection/GitHub pending、push無し。
