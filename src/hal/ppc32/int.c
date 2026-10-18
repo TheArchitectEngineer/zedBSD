@@ -93,6 +93,7 @@ ppc32_trap(
 	struct ppc32_trap_frame *frame)
 {
 	int from_user;
+	int reloaded;
 
 	/* The saved machine state says where the processor came from. */
 	from_user = 0;
@@ -108,16 +109,20 @@ ppc32_trap(
 		} else {
 			mac99_take_external();
 		}
+
+		/* A user context goes back through the kernel's return path. */
 		if (from_user) {
 			kernel_user_return_handler();
 			ppc32_task_leave_user_frame();
 		}
+
 		return;
 	}
 
 	/* A user page the hashed table had no room for, put back. */
 	if (frame->vector == PPC32_VECTOR_DSI || frame->vector == PPC32_VECTOR_ISI) {
-		if (take_storage_fault(frame))
+		reloaded = take_storage_fault(frame);
+		if (reloaded)
 			return;
 	}
 
@@ -132,6 +137,8 @@ ppc32_trap(
 		take_user_fault(frame);
 		return;
 	}
+
+	/* Anything else is the kernel's own fault. */
 	take_kernel_fault(frame);
 }
 
@@ -146,6 +153,7 @@ take_storage_fault(
 	uintptr_t address;
 	int store;
 	int execute;
+	int reloaded;
 
 	/* The fault's address and kind. */
 	if (frame->vector == PPC32_VECTOR_ISI) {
@@ -162,8 +170,13 @@ take_storage_fault(
 		execute = 0;
 	}
 
-	/* Only the user half has pages to reload. */
-	return ppc32_space_reload(address, store, execute);
+	/* Only the user range has pages to put back. */
+	reloaded = ppc32_space_reload(address, store, execute);
+	if (!reloaded)
+		return 0;
+
+	/* Succeeded: the access is retried. */
+	return 1;
 }
 
 /* Turns an exception into the kernel's cause, access mode and address. */
@@ -254,6 +267,8 @@ take_user_fault(
 		describe_frame(frame);
 		HAL_FATAL("ppc32 user fault handler failed");
 	}
+
+	/* The kernel's return path, then the frame is no longer the task's context. */
 	kernel_user_return_handler();
 	ppc32_task_leave_user_frame();
 }

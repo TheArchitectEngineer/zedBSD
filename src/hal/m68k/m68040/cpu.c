@@ -52,11 +52,16 @@ void
 hal_halt(
 	void)
 {
+	bool masked;
+
 	/* With the mask closed only a level-7 interrupt wakes it. */
-	if (m68040_irq_masked()) {
+	masked = m68040_irq_masked();
+	if (masked) {
 		__asm__ volatile("stop #0x2700" : : : "memory");
 		return;
 	}
+
+	/* With the mask open, the next interrupt wakes it. */
 	__asm__ volatile("stop #0x2000" : : : "memory");
 }
 
@@ -410,14 +415,23 @@ hal_cpu_notify_mask(
 	const struct hal_cpu_mask *targets)
 {
 	hal_cpu_id_t cpu;
+	bool member;
 
-	/* The set may hold processor 0 alone. */
-	if (targets == NULL || !hal_cpu_mask_test(targets, 0))
+	/* The set must hold processor 0. */
+	if (targets == NULL)
 		return HAL_ERR_INVALID;
+	member = hal_cpu_mask_test(targets, 0);
+	if (!member)
+		return HAL_ERR_INVALID;
+
+	/* The set may hold no other processor. */
 	for (cpu = 1; cpu < HAL_CPU_MAX; cpu++) {
-		if (hal_cpu_mask_test(targets, cpu))
+		member = hal_cpu_mask_test(targets, cpu);
+		if (member)
 			return HAL_ERR_INVALID;
 	}
+
+	/* Failed: notifying itself is not offered. */
 	return HAL_ERR_UNSUPPORTED;
 }
 

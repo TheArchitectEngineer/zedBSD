@@ -20,5 +20,5 @@
 | --- | --- | --- |
 | [p001](phase001/phase.md) | 設計（[design.md](design.md)）: mac99、OpenBIOS から flat image、画面は firmware の display | cleared（2026-10-19 Q1） |
 | [p002](phase002/phase.md) | HAL・mac99 の BSP・vmunix・boot-test の mode、T1 の画面で到達点 | cleared（2026-10-19 Q1、T1-714） |
-| p003 | 規約の全文の見直し（書き方だけ） | planned |
+| [p003](phase003/phase.md) | 規約の全文の見直し（書き方だけ）、kernel の platform の binding を `hal-console.c` に | in-progress |
 - 決定（2026-10-18 ユーザー）: machine は「mac99にします。」（QEMU の PowerMac G4 相当、OpenBIOS）。HAL の API は形を限った事前の承認（Guardrail の表）。

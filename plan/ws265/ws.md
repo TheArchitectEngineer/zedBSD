@@ -20,5 +20,5 @@
 | --- | --- | --- |
 | [p001](phase001/phase.md) | 設計（[design.md](design.md)）: pseries・big endian、SLOF から ELF、hypervisor の hashed table | in-progress |
 | [p002](phase002/phase.md) | HAL・pseries の BSP・vmunix・boot-test の mode、T1 の画面で到達点 | in-progress |
-| p003 | 規約の全文の見直し（書き方だけ） | planned |
+| [p003](phase003/phase.md) | 規約の全文の見直し（書き方だけ）、kernel の platform の binding を `hal-console.c` に | in-progress |
 - 決定（2026-10-18 ユーザー、クリック）: machine と endian は「pseries、big endian」。HAL の API は形を限った事前の承認（Guardrail の表）。

@@ -85,6 +85,8 @@ pseries_clock_ticked(
 	uint64_t deadline;
 	uint32_t decrementer;
 	bool masked;
+	unsigned long ticks;
+	uint64_t now;
 
 	/* A clock not started has nothing to wait for. */
 	cpu = ppc64_percpu_current();
@@ -95,12 +97,16 @@ pseries_clock_ticked(
 	masked = ppc64_irq_masked();
 	deadline = ppc64_read_timebase() + timebase_frequency / 10U;
 	do {
-		if (__atomic_load_n(&cpu->timer_ticks, __ATOMIC_RELAXED) != 0)
+		ticks = __atomic_load_n(&cpu->timer_ticks, __ATOMIC_RELAXED);
+		if (ticks != 0)
 			return true;
 		__asm__ volatile("mfdec %0" : "=r"(decrementer));
 		if (masked && (decrementer & 0x80000000U) != 0)
 			return true;
-	} while (ppc64_read_timebase() < deadline);
+		now = ppc64_read_timebase();
+	} while (now < deadline);
+
+	/* Failed: no tick in the time allowed. */
 	return false;
 }
 
@@ -113,7 +119,9 @@ hal_rtc_read_counter(
 	uint64_t *freq_hz)
 {
 	/* Refuses a caller with nowhere to put the answer, or a clock not started. */
-	if (value == NULL || freq_hz == NULL || timebase_frequency == 0)
+	if (value == NULL || freq_hz == NULL)
+		return false;
+	if (timebase_frequency == 0)
 		return false;
 	*value = ppc64_read_timebase();
 	*freq_hz = timebase_frequency;

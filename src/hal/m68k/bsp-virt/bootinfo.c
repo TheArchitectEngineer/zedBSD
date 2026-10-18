@@ -103,6 +103,7 @@ virt_bootinfo_parse(
 				board.memory_base = read_long(data);
 				board.memory_size = read_long(data + 4);
 			}
+
 			break;
 		case BI_RAMDISK:
 			board.ramdisk_base = read_long(data);
@@ -133,8 +134,12 @@ virt_bootinfo_parse(
 		default:
 			break;
 		}
+
+		/* Moves on to the next record. */
 		offset += size;
 	}
+
+	/* Counts the last record's header too. */
 	offset += 4U;
 
 	/* The named objects. */
@@ -191,23 +196,28 @@ void *
 hal_get_arch_handoff(
 	const char *name)
 {
+	int match;
+
 	/* A missing name names nothing. */
 	if (name == NULL)
 		return NULL;
 
 	/* The command line, when the loader passed one. */
-	if (name_is(name, "boot.command-line")) {
+	match = name_is(name, "boot.command-line");
+	if (match) {
 		if (boot_command_line[0] == '\0')
 			return NULL;
 		return boot_command_line;
 	}
 
 	/* The boot information. */
-	if (name_is(name, "m68k.bootinfo"))
+	match = name_is(name, "m68k.bootinfo");
+	if (match)
 		return &handoff_bootinfo;
 
 	/* The initial ramdisk, when there is one. */
-	if (name_is(name, "m68k.initrd")) {
+	match = name_is(name, "m68k.initrd");
+	if (match) {
 		if (handoff_initrd.size == 0)
 			return NULL;
 		return &handoff_initrd;
@@ -269,6 +279,8 @@ name_is(
 		if (name[index] != wanted[index])
 			return 0;
 	}
+
+	/* The names are the same only when the name ends there too. */
 	if (name[index] != '\0')
 		return 0;
 	return 1;

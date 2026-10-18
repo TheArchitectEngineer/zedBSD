@@ -213,6 +213,8 @@ hal_space_create(
 		kernel_free(space);
 		return NULL;
 	}
+
+	/* Clears the root through the kernel's view of it. */
 	space->root = hal_pmem_to_kernel(space->root_memory);
 	hal_memset(space->root, 0, PPC32_PAGE_SIZE);
 	space->magic = PPC32_SPACE_MAGIC;
@@ -268,6 +270,8 @@ hal_space_destroy(
 		if ((htab[index] & PTE_VALID) != 0 && (vsid >> 4) == space->space_id)
 			htab[index] = 0;
 	}
+
+	/* Orders the removals before the table is used again. */
 	__asm__ volatile("sync" : : : "memory");
 	ppc32_irq_restore(enabled);
 
@@ -287,6 +291,7 @@ hal_space_switch(
 {
 	struct ppc32_space *space;
 	bool enabled;
+	int locked;
 
 	/* The space already selected needs nothing. */
 	if (handle == current_space)
@@ -302,7 +307,8 @@ hal_space_switch(
 	}
 
 	/* A user space: its own ids. */
-	if (!space_lock_handle(handle, &space, &enabled))
+	locked = space_lock_handle(handle, &space, &enabled);
+	if (!locked)
 		HAL_FATAL("invalid ppc32 space switch");
 	ppc32_load_user_segments(space->segments);
 	current_space = handle;
@@ -328,17 +334,26 @@ hal_space_map(
 	uintptr_t rollback;
 	bool enabled;
 	int valid;
+	int locked;
+	bool ram;
 
 	/* Requires a user range, a page-aligned range of RAM and attributes the tables can hold. */
 	address = (uintptr_t)vaddr;
-	if (handle == HAL_SPACE_SYS || !valid_user(address, size))
+	if (handle == HAL_SPACE_SYS)
 		return HAL_ERR_INVALID;
-	if ((paddr & (PPC32_PAGE_SIZE - 1U)) != 0 || !ppc32_range_is_ram(paddr, size))
+	valid = valid_user(address, size);
+	if (!valid)
+		return HAL_ERR_INVALID;
+	if ((paddr & (PPC32_PAGE_SIZE - 1U)) != 0)
+		return HAL_ERR_INVALID;
+	ram = ppc32_range_is_ram(paddr, size);
+	if (!ram)
 		return HAL_ERR_INVALID;
 	valid = valid_attributes(attr);
 	if (valid != HAL_OK)
 		return valid;
-	if (!space_lock_handle(handle, &space, &enabled))
+	locked = space_lock_handle(handle, &space, &enabled);
+	if (!locked)
 		return HAL_ERR_STATE;
 
 	/* Refuses a range of which any page is mapped already. */
@@ -364,9 +379,13 @@ hal_space_map(
 				if (leaf != NULL)
 					*leaf = 0;
 			}
+
+			/* Turns interrupts back on as the caller had them. */
 			ppc32_irq_restore(enabled);
 			return HAL_ERR_NOMEM;
 		}
+
+		/* Writes the page's leaf. */
 		*leaf = ((uint32_t)(paddr + offset) & LEAF_PAGE_MASK) | flags;
 	}
 
@@ -393,14 +412,20 @@ hal_space_unmap(
 	uintptr_t address;
 	uintptr_t offset;
 	bool enabled;
+	int locked;
+	int valid;
 
 	/* An empty range is nothing to remove. */
 	if (size == 0)
 		return HAL_OK;
 	address = (uintptr_t)vaddr;
-	if (handle == HAL_SPACE_SYS || !valid_user(address, size))
+	if (handle == HAL_SPACE_SYS)
 		return HAL_ERR_INVALID;
-	if (!space_lock_handle(handle, &space, &enabled))
+	valid = valid_user(address, size);
+	if (!valid)
+		return HAL_ERR_INVALID;
+	locked = space_lock_handle(handle, &space, &enabled);
+	if (!locked)
 		return HAL_ERR_STATE;
 
 	/* Clears each leaf and drops its entry. */
@@ -411,6 +436,8 @@ hal_space_unmap(
 		*leaf = 0;
 		drop_entry(space, address + offset);
 	}
+
+	/* Turns interrupts back on as the caller had them. */
 	ppc32_irq_restore(enabled);
 
 	/* Succeeded: the range is unmapped; empty leaf tables stay until the space goes. */
@@ -437,15 +464,20 @@ hal_space_prot_query(
 	uintptr_t offset;
 	bool enabled;
 	int valid;
+	int locked;
 
 	/* Requires a user range and attributes the tables can hold. */
 	address = (uintptr_t)vaddr;
-	if (handle == HAL_SPACE_SYS || !valid_user(address, size))
+	if (handle == HAL_SPACE_SYS)
+		return HAL_ERR_INVALID;
+	valid = valid_user(address, size);
+	if (!valid)
 		return HAL_ERR_INVALID;
 	valid = valid_attributes(attr);
 	if (valid != HAL_OK)
 		return valid;
-	if (!space_lock_handle(handle, &space, &enabled))
+	locked = space_lock_handle(handle, &space, &enabled);
+	if (!locked)
 		return HAL_ERR_STATE;
 
 	/* Refuses a range with any page unmapped. */
@@ -475,6 +507,8 @@ hal_space_prot_query(
 		*leaf = kept;
 		drop_entry(space, address + offset);
 	}
+
+	/* Turns interrupts back on as the caller had them. */
 	ppc32_irq_restore(enabled);
 
 	/* Succeeded: reports what was recorded, when asked. */
@@ -493,8 +527,15 @@ hal_space_prot(
 	size_t size,
 	uint32_t attr)
 {
+	int error;
+
 	/* The same change without the report. */
-	return hal_space_prot_query(handle, vaddr, size, attr, NULL);
+	error = hal_space_prot_query(handle, vaddr, size, attr, NULL);
+	if (error != HAL_OK)
+		return error;
+
+	/* Succeeded: the range has the new protection. */
+	return HAL_OK;
 }
 
 /*
@@ -510,11 +551,17 @@ hal_space_query(
 	uint32_t *leaf;
 	uint32_t observed;
 	bool enabled;
+	int locked;
+	int valid;
 
 	/* Requires a user page and somewhere to report. */
-	if (handle == HAL_SPACE_SYS || flags == NULL || !valid_user((uintptr_t)vaddr, PPC32_PAGE_SIZE))
+	if (handle == HAL_SPACE_SYS || flags == NULL)
 		return HAL_ERR_INVALID;
-	if (!space_lock_handle(handle, &space, &enabled))
+	valid = valid_user((uintptr_t)vaddr, PPC32_PAGE_SIZE);
+	if (!valid)
+		return HAL_ERR_INVALID;
+	locked = space_lock_handle(handle, &space, &enabled);
+	if (!locked)
 		return HAL_ERR_STATE;
 
 	/* Reads the page's leaf. */
@@ -527,6 +574,8 @@ hal_space_query(
 		if ((*leaf & LEAF_MODIFIED) != 0)
 			observed |= HAL_SPACE_PAGE_DIRTY;
 	}
+
+	/* Turns interrupts back on as the caller had them. */
 	ppc32_irq_restore(enabled);
 
 	/* Succeeded: the page's state. */
@@ -547,13 +596,19 @@ hal_space_clear_flags(
 	struct ppc32_space *space;
 	uint32_t *leaf;
 	bool enabled;
+	int locked;
+	int valid;
 
 	/* Requires a user page and flags the table records. */
-	if (handle == HAL_SPACE_SYS || !valid_user((uintptr_t)vaddr, PPC32_PAGE_SIZE))
+	if (handle == HAL_SPACE_SYS)
+		return HAL_ERR_INVALID;
+	valid = valid_user((uintptr_t)vaddr, PPC32_PAGE_SIZE);
+	if (!valid)
 		return HAL_ERR_INVALID;
 	if ((flags & ~(uint32_t)(HAL_SPACE_PAGE_ACCESSED | HAL_SPACE_PAGE_DIRTY)) != 0)
 		return HAL_ERR_INVALID;
-	if (!space_lock_handle(handle, &space, &enabled))
+	locked = space_lock_handle(handle, &space, &enabled);
+	if (!locked)
 		return HAL_ERR_STATE;
 
 	/* Refuses a page that is not mapped. */
@@ -639,12 +694,17 @@ hal_space_map_device(
 	uint32_t attr,
 	void **vaddr)
 {
+	bool ram;
+
 	/* Requires a destination, a non-empty range and no execution. */
-	if (vaddr == NULL || size == 0 || (attr & HAL_SPACE_EXEC) != 0)
+	if (vaddr == NULL || size == 0)
+		return HAL_ERR_INVALID;
+	if ((attr & HAL_SPACE_EXEC) != 0)
 		return HAL_ERR_INVALID;
 
 	/* RAM, as it is. */
-	if (ppc32_range_is_ram(paddr, size)) {
+	ram = ppc32_range_is_ram(paddr, size);
+	if (ram) {
 		*vaddr = (void *)(uintptr_t)paddr;
 		return HAL_OK;
 	}
@@ -740,6 +800,8 @@ space_lock_handle(
 		if ((hal_space_t)space == handle)
 			break;
 	}
+
+	/* A handle that names no live space is refused. */
 	if (space == NULL || space->destroying) {
 		ppc32_irq_restore(enabled);
 		return 0;
@@ -820,6 +882,8 @@ walk_leaf(
 			kernel_free(page);
 			return NULL;
 		}
+
+		/* Clears the table and links it into the space. */
 		hal_memset(hal_pmem_to_kernel(page->memory), 0, PPC32_PAGE_SIZE);
 		page->root_index = index;
 		page->next = space->tables;
@@ -874,6 +938,8 @@ drop_entry(
 			word |= PTE_SECONDARY;
 			hash = ~hash;
 		}
+
+		/* Clears the matching entry of the group the function reaches. */
 		group = group_of(hash);
 		for (slot = 0; slot < HTAB_GROUP_ENTRIES; slot++) {
 			if (group[slot * 2U] == word)

@@ -20,6 +20,6 @@
 | --- | --- | --- |
 | [p001](phase001/phase.md) | 設計（[design.md](design.md)）: 68030 は QEMU で動かない → 68040、画面は virtio-gpu | cleared（2026-10-19 Q1） |
 | [p002](phase002/phase.md) | 68040 の HAL・virt の BSP・vmunix・boot-test の mode、T1 の画面で到達点 | cleared（2026-10-19 Q1、T1-713） |
-| p003 | 規約の全文の見直し（書き方だけ） | planned |
+| [p003](phase003/phase.md) | 規約の全文の見直し（書き方だけ）、kernel の platform の binding を `hal-console.c` に | in-progress |
 - 既知の欠け（2026-10-18 P2 の報告、Q1 の確かめ）: `bootloader/x68k/stage2.c` と `src/hal/m68k/bsp-x68k/boot.c` が使う `struct x68k_boot_handoff` の定義が、2026-10-03 のリポジトリの作り直しの時から tree のどこにも無く、x68k は build できない。p001 で扱いを決める（boot loader → HAL の構造体として HAL か bootloader/ に定義し直すか）。
 - 決定（2026-10-18 ユーザー、クリック）: QEMU の virt で 68030 の MMU が動かなければ「68040 で virt を動かす」（CPU 側に 68040 の MMU・cache・例外の frame・FPU の部品を足す。68030 の道は build だけ）。HAL の API は形を限った事前の承認（Guardrail の表）。

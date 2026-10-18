@@ -51,11 +51,16 @@ void
 hal_halt(
 	void)
 {
+	bool masked;
+
 	/* With interrupts off nothing can wake it, so it only spins once. */
-	if (ppc32_irq_masked()) {
+	masked = ppc32_irq_masked();
+	if (masked) {
 		__asm__ volatile("" : : : "memory");
 		return;
 	}
+
+	/* Waits for the next interrupt with interrupts on. */
 	ppc32_cpu_idle();
 	ppc32_write_msr(ppc32_read_msr() | PPC32_MSR_EE);
 }
@@ -410,14 +415,23 @@ hal_cpu_notify_mask(
 	const struct hal_cpu_mask *targets)
 {
 	hal_cpu_id_t cpu;
+	bool member;
 
-	/* The set may hold processor 0 alone. */
-	if (targets == NULL || !hal_cpu_mask_test(targets, 0))
+	/* The set must hold processor 0. */
+	if (targets == NULL)
 		return HAL_ERR_INVALID;
+	member = hal_cpu_mask_test(targets, 0);
+	if (!member)
+		return HAL_ERR_INVALID;
+
+	/* The set may hold no other processor. */
 	for (cpu = 1; cpu < HAL_CPU_MAX; cpu++) {
-		if (hal_cpu_mask_test(targets, cpu))
+		member = hal_cpu_mask_test(targets, cpu);
+		if (member)
 			return HAL_ERR_INVALID;
 	}
+
+	/* Failed: notifying itself is not offered. */
 	return HAL_ERR_UNSUPPORTED;
 }
 

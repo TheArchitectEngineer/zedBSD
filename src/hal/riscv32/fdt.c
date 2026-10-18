@@ -867,6 +867,7 @@ take_property(
 			node->phandle = number;
 			node->has_phandle = 1;
 		}
+
 		break;
 	case FDT_PROPERTY_SOURCES:
 		node->sources = number;
@@ -938,6 +939,7 @@ end_node(
 			info->initrd_start = read_number(node->initrd_start, node->initrd_start_length);
 			info->initrd_end = read_number(node->initrd_end, node->initrd_end_length);
 		}
+
 		break;
 	case FDT_ROLE_CPUS:
 		/* The timebase is usually given for all the harts at once. */
@@ -1015,6 +1017,8 @@ node_role(
 				return FDT_ROLE_CPU;
 			return FDT_ROLE_NONE;
 		}
+
+		/* Only the children of the reservation node are reservations. */
 		matched = string_is(parent->name, "reserved-memory");
 		if (matched)
 			return FDT_ROLE_RESERVATION;
@@ -1104,7 +1108,9 @@ read_first_reg(
 
 	/* A node without a whole entry has no address. */
 	entry_length = (node->reg_address_cells + node->reg_size_cells) * 4U;
-	if (node->reg == NULL || entry_length == 0 || node->reg_length < entry_length)
+	if (node->reg == NULL ||
+	    entry_length == 0 ||
+	    node->reg_length < entry_length)
 		return -1;
 
 	/* Succeeded: the entry's address and size. */
@@ -1170,6 +1176,8 @@ cpu_extensions(
 			if (present)
 				extensions |= extension_names[name].bit;
 		}
+
+		/* Succeeded: the extensions found. */
 		return extensions;
 	}
 
@@ -1231,7 +1239,9 @@ keep_cpu(
 	/* A hart without a whole reg has no id and is not recorded. */
 	info = walk->info;
 	entry_length = node->reg_address_cells * 4U;
-	if (node->reg == NULL || entry_length == 0 || node->reg_length < entry_length)
+	if (node->reg == NULL ||
+	    entry_length == 0 ||
+	    node->reg_length < entry_length)
 		return RISCV32_FDT_OK;
 	hart_id = read_cells(node->reg, node->reg_address_cells);
 
@@ -1258,6 +1268,8 @@ keep_cpu(
 		if (!okay)
 			disabled = 1;
 	}
+
+	/* A hart is started only when it has an MMU and is not disabled. */
 	cpu->usable = 0;
 	if (node->mmu_type != NULL && !disabled)
 		cpu->usable = 1;
@@ -1296,6 +1308,8 @@ keep_plic(
 			count++;
 		}
 	}
+
+	/* Records how many contexts were found. */
 	info->plic_context_count = count;
 
 	/* Succeeded: the PLIC is recorded. */

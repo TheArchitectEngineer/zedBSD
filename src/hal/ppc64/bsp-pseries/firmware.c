@@ -65,9 +65,12 @@ pseries_firmware_read(
 
 	/* The first RAM bank of the memory node: two cells of address, two of size. */
 	node = finddevice("/memory@0");
-	if (node != FIRMWARE_FAILED && getprop(node, "reg", cells, sizeof(cells)) >= sizeof(cells)) {
-		board.memory_base = ((uint64_t)cells[0] << 32) | cells[1];
-		board.memory_size = ((uint64_t)cells[2] << 32) | cells[3];
+	if (node != FIRMWARE_FAILED) {
+		length = getprop(node, "reg", cells, sizeof(cells));
+		if (length != FIRMWARE_FAILED && length >= sizeof(cells)) {
+			board.memory_base = ((uint64_t)cells[0] << 32) | cells[1];
+			board.memory_size = ((uint64_t)cells[2] << 32) | cells[3];
+		}
 	}
 
 	/* The time base's rate and the hashed table's size, from the first processor. */
@@ -77,7 +80,8 @@ pseries_firmware_read(
 		node = cells[0];
 		if (node != FIRMWARE_FAILED && node != 0) {
 			board.timebase_frequency = getprop_word(node, "timebase-frequency");
-			if (getprop(node, "ibm,pft-size", cells, 2U * sizeof(uint32_t)) == 2U * sizeof(uint32_t))
+			length = getprop(node, "ibm,pft-size", cells, 2U * sizeof(uint32_t));
+			if (length == 2U * sizeof(uint32_t))
 				board.htab_shift = cells[1];
 		}
 	}
@@ -136,12 +140,15 @@ void *
 hal_get_arch_handoff(
 	const char *name)
 {
+	int match;
+
 	/* A missing name names nothing. */
 	if (name == NULL)
 		return NULL;
 
 	/* The command line, when the firmware passed one. */
-	if (name_is(name, "boot.command-line") && boot_command_line[0] != '\0')
+	match = name_is(name, "boot.command-line");
+	if (match && boot_command_line[0] != '\0')
 		return boot_command_line;
 
 	/* An unknown handoff. */
@@ -215,11 +222,15 @@ getprop_word(
 	const char *name)
 {
 	uint32_t value;
+	uint32_t length;
 
 	/* A property shorter than a cell counts as missing. */
 	value = 0;
-	if (getprop(node, name, &value, sizeof(value)) != sizeof(value))
+	length = getprop(node, name, &value, sizeof(value));
+	if (length != sizeof(value))
 		return 0;
+
+	/* Succeeded: the cell. */
 	return value;
 }
 
@@ -306,6 +317,8 @@ pci_memory_window(
 			bus = ((uint64_t)assigned[index + 1U] << 32) | assigned[index + 2U];
 		}
 	}
+
+	/* A device without a memory window has no framebuffer. */
 	if (bus == 0)
 		return 0;
 
@@ -342,6 +355,8 @@ name_is(
 		if (name[index] != wanted[index])
 			return 0;
 	}
+
+	/* The names are the same only when the name ends there too. */
 	if (name[index] != '\0')
 		return 0;
 	return 1;

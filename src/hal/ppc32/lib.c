@@ -197,17 +197,21 @@ hal_printf(
 			format++;
 			continue;
 		}
+
+		/* Steps past the percent sign. */
 		format++;
 
-		/* The width, after an optional zero, and the length. */
+		/* The width, after an optional zero. */
 		width = 0;
-		long_argument = 0;
 		if (*format == '0')
 			format++;
 		while (*format >= '0' && *format <= '9') {
 			width = width * 10 + (*format - '0');
 			format++;
 		}
+
+		/* The length: l for a long, ll for 64 bits. */
+		long_argument = 0;
 		if (*format == 'l') {
 			long_argument = 1;
 			format++;
@@ -222,6 +226,8 @@ hal_printf(
 		if (conversion == '\0')
 			break;
 		format++;
+
+		/* Writes the argument the conversion names. */
 		switch (conversion) {
 		case 'c':
 			hal_putc(__builtin_va_arg(arguments, int));
@@ -234,6 +240,7 @@ hal_printf(
 			break;
 		case 'u':
 		case 'x':
+			/* The argument at its length. */
 			if (long_argument == 2) {
 				value = __builtin_va_arg(arguments, uint64_t);
 			} else if (long_argument == 1) {
@@ -241,11 +248,14 @@ hal_printf(
 			} else {
 				value = __builtin_va_arg(arguments, uint32_t);
 			}
+
+			/* Decimal or hexadecimal digits. */
 			if (conversion == 'u') {
 				put_number(value, 10, width);
 			} else {
 				put_number(value, 16, width);
 			}
+
 			break;
 		case 'p':
 			put_number((uintptr_t)__builtin_va_arg(arguments, void *), 16, 16);
@@ -258,6 +268,8 @@ hal_printf(
 			break;
 		}
 	}
+
+	/* Ends the walk of the arguments. */
 	__builtin_va_end(arguments);
 
 	/* Succeeded. */
