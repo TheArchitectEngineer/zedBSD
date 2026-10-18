@@ -21,7 +21,10 @@
  * panel on the eDP transcoder and an external sink on TC1's MG PHY; and
  * on every row of the descriptions the panel, an HDMI sink on the first
  * combo port after DDI A, and on a row with Type-C PHYs a DisplayPort
- * sink on TC1 in DisplayPort alternate and in Thunderbolt mode.
+ * sink on TC1 in DisplayPort alternate and in Thunderbolt mode; and the
+ * 5330's two screens (the panel on pipe A, a monitor on the USB-C port
+ * TC2 on pipe B) lit one after the other, whose registers must end as
+ * the machine's did under Linux.
  */
 
 #include "host-test.h"
@@ -164,6 +167,7 @@ static void i915_xd_ot_cover_run(const struct i915_xd_platform *platform, struct
 static void i915_xd_ot_cover_hdmi(const struct i915_xd_platform *platform);
 static void i915_xd_ot_cover_type_c(const struct i915_xd_platform *platform, unsigned tc_mode, const char *kind);
 static void i915_xd_ot_test_cover_ports(void);
+static void i915_xd_ot_test_end_state(void);
 
 /* The Type-C hooks of the test: each one logged. */
 static const struct i915_xd_output_tc i915_xd_ot_tc = {
@@ -194,6 +198,7 @@ main(void)
 	i915_xd_ot_test_icl();
 	i915_xd_ot_test_cover();
 	i915_xd_ot_test_cover_ports();
+	i915_xd_ot_test_end_state();
 
 	/* Reports the result. */
 	failures = i915_host_report("host_xd_output_test");
@@ -2008,5 +2013,181 @@ i915_xd_ot_test_cover_ports(void)
 		/* DisplayPort on TC1 in both modes. */
 		i915_xd_ot_cover_type_c(platform, I915_XD_OUTPUT_TC_DP_ALT, "DP-TC");
 		i915_xd_ot_cover_type_c(platform, I915_XD_OUTPUT_TC_TBT, "TBT");
+	}
+}
+
+/*
+ * One register of the 5330's two screens as the machine read under
+ * Linux: its offset, the bits compared, the value and its name.
+ */
+struct i915_xd_ot_end_reg {
+	uint32_t offset;
+	uint32_t mask;
+	uint32_t value;
+	const char *name;
+};
+
+/*
+ * The registers of the 5330 with its panel on pipe A (DDI A, DPLL 0, HBR
+ * on two lanes, 18 bits a pixel with dither) and a 1920x1280 monitor on
+ * its USB-C port TC2 on pipe B (DisplayPort alternate mode, TC PLL 2,
+ * RBR on four lanes, 30 bits a pixel), read on the machine while Linux
+ * drove both.  Only the bits the output writes are compared: of TC2's
+ * buffer not bits 12 and 8, which have no field in the Linux v6.8.12
+ * definitions (the machine ran a later Linux); of the DDI clock map only
+ * the two ports' own bits (DDI A's gate and PLL select, TC2's gate), as
+ * the other ports' gates are what the firmware and the sanitize left.
+ */
+static const struct i915_xd_ot_end_reg i915_xd_ot_end_regs[] = {
+	{ 0x60000U, 0xffffffffU, 0x081f077fU, "transcoder A HTOTAL" },
+	{ 0x60004U, 0xffffffffU, 0x081f077fU, "transcoder A HBLANK" },
+	{ 0x60008U, 0xffffffffU, 0x079f078fU, "transcoder A HSYNC" },
+	{ 0x6000cU, 0xffffffffU, 0x04670437U, "transcoder A VTOTAL" },
+	{ 0x60010U, 0xffffffffU, 0x04670000U, "transcoder A VBLANK" },
+	{ 0x60014U, 0xffffffffU, 0x0448043aU, "transcoder A VSYNC" },
+	{ 0x6001cU, 0xffffffffU, 0x077f0437U, "pipe A source size" },
+	{ 0x60030U, 0xffffffffU, 0x7e4b17e4U, "transcoder A DATA_M1" },
+	{ 0x60034U, 0xffffffffU, 0x00800000U, "transcoder A DATA_N1" },
+	{ 0x60040U, 0xffffffffU, 0x00042bfeU, "transcoder A LINK_M1" },
+	{ 0x60044U, 0xffffffffU, 0x00080000U, "transcoder A LINK_N1" },
+	{ 0x60400U, 0xffffffffU, 0x8a210002U, "transcoder A DDI function" },
+	{ 0x60410U, 0xffffffffU, 0x00000001U, "transcoder A MSA misc" },
+	{ 0x60540U, 0xffffffffU, 0x80000300U, "transcoder A DP transport" },
+	{ 0x70008U, 0xffffffffU, 0xc0000000U, "transcoder A configuration" },
+	{ 0x70030U, 0xffffffffU, 0x00800150U, "pipe A misc" },
+	{ 0x46140U, 0xffffffffU, 0x10000000U, "transcoder A clock select" },
+	{ 0x64000U, 0xffffffffU, 0x80000002U, "DDI A buffer" },
+	{ 0x46010U, 0xffffffffU, 0xcc000000U, "DPLL 0 enable" },
+	{ 0x164284U, 0xffffffffU, 0x00e001a5U, "DPLL 0 CFGCR0" },
+	{ 0x164288U, 0xffffffffU, 0x00000088U, "DPLL 0 CFGCR1" },
+	{ 0x61000U, 0xffffffffU, 0x081f077fU, "transcoder B HTOTAL" },
+	{ 0x61004U, 0xffffffffU, 0x081f077fU, "transcoder B HBLANK" },
+	{ 0x61008U, 0xffffffffU, 0x07cf07afU, "transcoder B HSYNC" },
+	{ 0x6100cU, 0xffffffffU, 0x052404ffU, "transcoder B VTOTAL" },
+	{ 0x61010U, 0xffffffffU, 0x05240000U, "transcoder B VBLANK" },
+	{ 0x61014U, 0xffffffffU, 0x050c0502U, "transcoder B VSYNC" },
+	{ 0x6101cU, 0xffffffffU, 0x077f04ffU, "pipe B source size" },
+	{ 0x61030U, 0xffffffffU, 0x7e79bf86U, "transcoder B DATA_M1" },
+	{ 0x61034U, 0xffffffffU, 0x00800000U, "transcoder B DATA_N1" },
+	{ 0x61040U, 0xffffffffU, 0x00081dd5U, "transcoder B LINK_M1" },
+	{ 0x61044U, 0xffffffffU, 0x00080000U, "transcoder B LINK_N1" },
+	{ 0x61400U, 0xffffffffU, 0xaa110006U, "transcoder B DDI function" },
+	{ 0x61410U, 0xffffffffU, 0x00000041U, "transcoder B MSA misc" },
+	{ 0x61540U, 0xffffffffU, 0x80040300U, "transcoder B DP transport" },
+	{ 0x71008U, 0xffffffffU, 0xc0000000U, "transcoder B configuration" },
+	{ 0x71030U, 0xffffffffU, 0x00800120U, "pipe B misc" },
+	{ 0x46144U, 0xffffffffU, 0x70000000U, "transcoder B clock select" },
+	{ 0x64400U, 0xffffeeffU, 0x80001146U, "DDI TC2 buffer" },
+	{ 0x46110U, 0xffffffffU, 0x80000000U, "DDI TC2 clock select" },
+	{ 0x46040U, 0xffffffffU, 0xcc000000U, "TC PLL 2 enable" },
+	{ 0x164280U, 0x00002403U, 0x01e05800U, "DDI clock map" },
+};
+
+/*
+ * Lights the 5330's two screens one after the other on the model, the
+ * panel on pipe A and the USB-C monitor on TC2 and pipe B, and compares
+ * the registers both leave with the machine's under Linux.
+ */
+static void
+i915_xd_ot_test_end_state(void)
+{
+	static char what[160];
+	const struct i915_xd_platform *platform;
+	const struct i915_xd_pll_desc *pll;
+	const struct i915_xd_ot_end_reg *reg;
+	struct i915_xd_output_env env;
+	struct i915_xd_output panel;
+	struct i915_xd_output monitor;
+	uint32_t value;
+	unsigned index;
+	int error;
+
+	/* The model, TC2's buffer (its PHY owned, as the Type-C connection leaves it) and its PLL answering. */
+	platform = i915_xd_ot_setup();
+	if (platform == NULL)
+		return;
+	pll = drv_i915_xd_dpll_desc(platform, 4U);
+	if (pll == NULL) {
+		i915_host_check(0, "end state: the platform has TC PLL 2");
+		return;
+	}
+	i915_xd_fake_rule_mirror(pll->enable, 0x08000000U, pll->enable, -1, 0U);
+	i915_xd_fake_rule_mirror(pll->enable, 0x80000000U, pll->enable, -1, 0U);
+	i915_xd_fake_rule_call(I915_XD_DDI_BUF_CTL(4U), i915_xd_ot_buffer, NULL);
+	i915_xd_fake_set(I915_XD_DDI_BUF_CTL(4U), I915_XD_DDI_BUF_IDLE | I915_XD_DDI_BUF_TC_OWNED);
+	i915_xd_fake_rule_call(0x61540U, i915_xd_ot_watch, NULL);
+	i915_xd_ot_env(&env, platform);
+	env.tc = &i915_xd_ot_tc;
+	i915_xd_ot_log.tc_mode = I915_XD_OUTPUT_TC_DP_ALT;
+
+	/* The panel on pipe A; its sink has no enhanced framing (its DPCD's third byte is 0x02). */
+	i915_xd_ot_sink.caps[2] = 0x02U;
+	i915_xd_ot_panel_output(&panel);
+	panel.enhanced = 0;
+	error = i915_xd_ot_light(&panel, &env);
+	i915_host_check(error == 0 && i915_xd_ot_log.errors == 0U && panel.trained, "end state: the panel lights on pipe A");
+
+	/* The monitor's sink: DPCD 1.4, RBR to HBR2, four lanes, enhanced framing, asleep. */
+	memset(&i915_xd_ot_sink, 0, sizeof(i915_xd_ot_sink));
+	i915_xd_ot_sink.caps[0] = 0x14U;
+	i915_xd_ot_sink.caps[1] = 0x14U;
+	i915_xd_ot_sink.caps[2] = 0x84U;
+	i915_xd_ot_sink.power = I915_XD_DPCD_POWER_D3;
+
+	/* The monitor on TC2 and pipe B: 1920x1280 at 164.36 MHz, 30 bits a pixel, RBR on four lanes, TC PLL 2. */
+	i915_xd_ot_panel_output(&monitor);
+	monitor.kind = I915_XD_SCREEN_DP;
+	monitor.ddi = 4U;
+	monitor.phy = 6U;
+	monitor.aux = 4U;
+	monitor.pipe = 1U;
+	monitor.trans = 1U;
+	monitor.tc = 1;
+	monitor.tc_port = 1U;
+	monitor.tc_pll = 4U;
+	monitor.tc_pll_words.refclkin = 0x100U;
+	monitor.tc_pll_words.coreclk = 0xa00U;
+	monitor.tc_pll_words.hsclk = 0x6200U;
+	monitor.tc_pll_words.div0 = 0x84269U;
+	monitor.tc_pll_words.div1 = 0x1c0027U;
+	monitor.tc_pll_words.ssc = 0x40002000U;
+	monitor.tc_pll_words.bias = 0x5e000000U;
+	monitor.tc_pll_words.tdc = 0x52U;
+	monitor.timing.hdisplay = 1920U;
+	monitor.timing.hblank_start = 1920U;
+	monitor.timing.hblank_end = 2080U;
+	monitor.timing.hsync_start = 1968U;
+	monitor.timing.hsync_end = 2000U;
+	monitor.timing.htotal = 2080U;
+	monitor.timing.vdisplay = 1280U;
+	monitor.timing.vblank_start = 1280U;
+	monitor.timing.vblank_end = 1317U;
+	monitor.timing.vsync_start = 1283U;
+	monitor.timing.vsync_end = 1293U;
+	monitor.timing.vtotal = 1317U;
+	monitor.src_width = 1920U;
+	monitor.src_height = 1280U;
+	monitor.bpp = 30U;
+	monitor.dither = 0;
+	monitor.rate_khz = 162000U;
+	monitor.lanes = 4U;
+	drv_i915_xd_dp_m_n(30U * 16U, 4U, 164360U, 162000U, 1000000U, &monitor.m_n);
+	monitor.linetime = 0x66U;
+	monitor.dmc_programs = 0U;
+	monitor.backlight.vbt_present = 0;
+	monitor.dbuf.slices_before = 0xfU;
+	monitor.dbuf.joined_before = 1U;
+	monitor.dbuf.joined_after = 0U;
+	monitor.dbuf.pipes_before = 0x1U;
+	monitor.dbuf.pipes_after = 0x3U;
+	error = i915_xd_ot_light(&monitor, &env);
+	i915_host_check(error == 0 && i915_xd_ot_log.errors == 0U && monitor.trained, "end state: the monitor lights on TC2 and pipe B");
+
+	/* Each register against the machine's. */
+	for (index = 0U; index < sizeof(i915_xd_ot_end_regs) / sizeof(i915_xd_ot_end_regs[0]); index++) {
+		reg = &i915_xd_ot_end_regs[index];
+		value = i915_xd_fake_get(reg->offset);
+		(void)snprintf(what, sizeof(what), "end state: %s (0x%06x) 0x%08x, the machine's 0x%08x", reg->name, reg->offset, value, reg->value);
+		i915_host_check((value & reg->mask) == (reg->value & reg->mask), what);
 	}
 }

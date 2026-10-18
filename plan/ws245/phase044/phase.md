@@ -81,3 +81,13 @@ P1 の見立て（Status は変えない。判定は Q1）: cleared にしない
   - `host-xd-takeover-test` の `i915_xd_to_test_rows_hdmi`: 全部の行で、GOP が pipe B に灯した HDMI（DDI A の後の最初の combo port、行の select の field、DPLL0）を takeover の stop で止める（デスクトップの RKL・ADL-S の GOP が monitor を灯す場合の列）: report の DDI と mode、transcoder・function・DDI buffer が off、port の clock が gate、DPLL0 off、HDMI の sink の hook が先頭、pipe が dark。11 check（88 → 99）。
 - 確かめた事: `run-xd-host-tests.sh build/p2-ws245-host` all passed（output 143・takeover 99、warning 0）。kernel の source は変えていない（試験だけ）。QEMU・実機は未実施。
 - まだ無い物: 列を Linux の手順・表の値（ADL-P 系は m3 の dump）と書き込みの 1 つずつで比べる事（足したのは各行・各 kind で通る事、on/off、参照と link の釣り合い、stop の後の状態まで）、TGL の流れ B の配線（p052）。
+
+## 追加の証拠 1: ADL-P の終わりの状態（2026-10-19 P2、Q1 の許可「案の 1…を追加の証拠として作ってよい」）
+
+- `host-xd-output-test` の `i915_xd_ot_test_end_state`: fake model の上で 5330 の 2 画面（panel: pipe A・DDI A・DPLL 0・HBR × 2・18 bpp・dither、monitor: TC2（DDI 4・PHY 6）・pipe B・TC PLL 2・RBR × 4・30 bpp・1920x1280@164.36 MHz、DP-alt）を xd-output の step で順に灯し、42 個の register の最終値を m3 の dump（`plan/ws051/tests/m3-5330-20261007/range-0x*.txt`、Linux 6.19 が 2 画面を駆動中の 5330）と比べる。transcoder A・B の timing・source size・DATA/LINK M/N・DDI function・MSA misc・DP transport・configuration・pipe misc・transcoder の clock select、DDI A と TC2 の buffer、DDI TC2 の clock select、DPLL 0 の enable と CFGCR0/1、TC PLL 2 の enable、DDI の clock map。44 check（143 → 187）、全部一致。
+- 最初の比べで食い違った 3 つと扱い:
+  1. transcoder A の DP transport の enhanced framing（xd 0x80040300、machine 0x80000300）: 試験の panel の sink の model が enhanced framing の能力（DPCD の 3 byte 目 0x82）を持っていたため。実物の panel の DPCD は 0x02（`plan/ws031/display-ref/dpcd-drm_dp_aux0-000.bin`）で、そう直すと一致（driver の不具合ではない）。
+  2. TC2 の DDI buffer（xd 0x80000006、machine 0x80001146）: bit 6（PHY の所有）は Type-C の接続（試験では hook の model）が立てる物なので、model の初期値に立てた。bit 12・8 は Linux v6.8.12 の定義に field が無い（machine は後の版の Linux）ので比べから外した（mask 0xffffeeff）。
+  3. DDI の clock map（xd 0、machine 0x01e05800）: 使っていない port の gate は firmware と sanitize が残す物で、試験の 2 つの port の bit（DDI A の gate と PLL の選び、TC2 の gate: mask 0x00002403）だけを比べる。
+- 比べていない物: DBUF・WM・DBOX・line time（plan（xd-screen）の出力を試験が入力として渡すので、output の比べにならない）、Dekel PHY の register（dump は index の窓の 1 つの面だけ）、plane（xd-picture の担当）。
+- 確かめた事: `run-xd-host-tests.sh build/p2-ws245-host` all passed（output 187）、warning 0。試験だけの変更（kernel の source は不変）。
