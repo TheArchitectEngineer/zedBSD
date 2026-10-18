@@ -83,16 +83,3 @@ x86_boot_parameter_record_copy(
 	return x86_boot_parameters_copy(destination, record->text,
 	    (size_t)record->length + 1U);
 }
-
-enum x86_pc98_handoff_form
-x86_pc98_handoff_classify(uint16_t version, uint16_t size)
-{
-	if (version == KERN_HANDOFF_VERSION_PC98 &&
-	    size == KERN_PC98_PARAMETER_HANDOFF_SIZE)
-		return X86_PC98_HANDOFF_PARAMETERS;
-	if ((version == KERN_HANDOFF_VERSION_PC98 ||
-	     version == KERN_HANDOFF_VERSION_MULTIBOOT) &&
-	    size == KERN_PC98_HANDOFF_COMMON_SIZE)
-		return X86_PC98_HANDOFF_LEGACY;
-	return X86_PC98_HANDOFF_INVALID;
-}

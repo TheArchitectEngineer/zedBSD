@@ -1,0 +1,24 @@
+{
+  "returncode": 1,
+  "conditions": 615,
+  "failed": [
+    "console: read-proxy assign-chain-proxy-set-receiver-and-args: FAIL",
+    "console: read-proxy assign-chain-proxy-accepts-without-property: FAIL",
+    "console: read-proxy assign-chain-proxy-false-sloppy: FAIL",
+    "console: read-proxy assign-chain-proxy-false-strict: FAIL",
+    "console: read-proxy assign-chain-proxy-error-identity: FAIL",
+    "console: read-proxy assign-chain-proxy-revoked: FAIL",
+    "console: read-proxy assign-chain-trap-getter-once-before-call: FAIL",
+    "console: read-proxy assign-chain-key-symbol-preserved: FAIL",
+    "console: read-proxy assign-chain-deep-middle-original-receiver: FAIL",
+    "console: read-proxy assign-chain-fresh-value-survives-getmethod-gc: FAIL",
+    "console: read-proxy assign-chain-trap-revocation-keeps-original-snapshots: FAIL",
+    "console: read-proxy assign-chain-object-assign-strict-target: FAIL",
+    "console: read-proxy assign-chain-object-assign-false-throws: FAIL",
+    "console: read-proxy assign-chain-array-proxy-prototype-index: FAIL",
+    "console: read-proxy assign-chain-typed-prototype-invalid-index-no-conversion: FAIL",
+    "console: read-proxy assign-chain-array-shrink-fixed-element-sloppy: FAIL",
+    "console: read-proxy assign-chain-array-shrink-fixed-element-strict: FAIL",
+    "console: read-proxy assign-chain-array-readonly-length-index: FAIL"
+  ]
+}

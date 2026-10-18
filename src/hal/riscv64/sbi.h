@@ -32,6 +32,7 @@ struct riscv64_sbi_result {
 
 void riscv64_sbi_probe(void);
 void riscv64_sbi_describe(void);
+void riscv64_sbi_version(unsigned long *major, unsigned long *minor);
 void riscv64_sbi_putchar(int character);
 void riscv64_sbi_set_timer(uint64_t deadline);
 int riscv64_sbi_send_ipi(unsigned long hart_mask, unsigned long hart_mask_base);

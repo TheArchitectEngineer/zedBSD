@@ -1,0 +1,38 @@
+{
+  "tokens_outside_selected_functions_and_helper_declaration_identical": true,
+  "other_engine_source_and_headers_unchanged": true,
+  "native_operations_definition_comment_unchanged": true,
+  "normal_helper_declarations_after_all_tables": [
+    "object_lookup_half"
+  ],
+  "constant_initializer_required_wrapper_declarations_preserved": true,
+  "old552_prefix_unchanged": true,
+  "added_conditions": 33,
+  "precode_failed_conditions": 21,
+  "full_changed_functions": {
+    "userland/desktop/libbrowser/js/builtin_object.c": [
+      "object_is_prototype_of",
+      "object_lookup_half"
+    ],
+    "userland/desktop/libbrowser/vm/access.c": [
+      "vm_ordinary_has_instance"
+    ],
+    "plan/ws074/tests/host-proxy-read.c": [
+      "main",
+      "object_consumers_pressure",
+      "ordinary_instance_pressure"
+    ]
+  },
+  "raw_allowed_cleanup": 77,
+  "other_checker_findings": 0,
+  "manual_review": [
+    "ANSI declarations first/multiline function headers/public-static order/semantic paragraphs/check fallible returns",
+    "single forward cleanup per function, registration counts cover partial root acquisition and every abrupt method/coercion/error exit",
+    "actual GetPrototypeOf traversal with fresh result assigned to current root before later callbacks; finite repeated identity never treated as immediate cycle",
+    "lookup own GetOwn before prototype, nearest data shadows inherited accessor, getter never called, original box/fresh key/current chain root",
+    "isPrototypeOf primitive argument returns before receiver ToObject; target box/current link owned across reentry",
+    "OrdinaryHasInstance managed realm/constructor/value retained before key allocation, retrieved prototype separately rooted and current link updated across all traps",
+    "real public lookup native negative errno + GC, direct ordinary-instance caller/constructor/value sole-owner native GC/error/reclamation controls",
+    "VM outer instanceof dispatch/BoundFunction/callable Proxy/for-in/normal Set/proxy targets/global surface/immutable proto/full p100 remain pending"
+  ]
+}

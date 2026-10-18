@@ -1,0 +1,34 @@
+{
+  "engine_tokens_outside_new_operations_and_single_operator_call_unchanged": true,
+  "vm_delete_primitive_string_and_strict_tokens_unchanged": true,
+  "header_bytes_except_one_declaration_unchanged": true,
+  "native_operations_definition_comment_unchanged": true,
+  "old372_prefix_bytes_identical": true,
+  "added_conditions": 34,
+  "full_changed_functions": {
+    "userland/desktop/libbrowser/vm/access.c": [
+      "vm_delete",
+      "vm_delete_property",
+      "access_proxy_delete"
+    ],
+    "plan/ws074/tests/host-proxy-read.c": [
+      "main",
+      "proxy_delete_property",
+      "delete_collect_participants",
+      "delete_collect_get_own",
+      "delete_collect_native",
+      "delete_pressure"
+    ]
+  },
+  "raw_allowed_cleanup": 64,
+  "other_checker_findings": 0,
+  "manual_review": [
+    "ANSI declaration-first, public/static order, ordinary prototypes after tables and initializer exceptions retained",
+    "original target/handler/key/fresh method snapshots remain through lookup/trap revocation; all roots/depth released on abrupt and normal outcomes",
+    "false trap skips target inspection; missing post-trap descriptor skips extensibility; existing configurable property queries actual realm extent",
+    "only descriptor scalar attributes read after target operation; no payload needed across later calls",
+    "native get-own and delete callback errno conventions distinct and preserved; callbacks never execute user script",
+    "ordinary array/TypedArray deletion delegated unchanged, strict/sloppy operator policy unchanged",
+    "global APIs/private target bounds/public ABI2/Wayland unchanged, full conformance p100 pending"
+  ]
+}

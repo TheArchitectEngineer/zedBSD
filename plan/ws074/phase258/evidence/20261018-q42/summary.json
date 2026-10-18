@@ -1,0 +1,182 @@
+{
+  "source_commit": "7a943134d614c84539657d87870a3ed123b73d06",
+  "explicit_source_commit": "7a943134d",
+  "selection": "36a2ca7ba",
+  "source_hash_count": 317,
+  "conditions": 452,
+  "old406_prefix_unchanged": true,
+  "oracle": "q36 negative-zero primitive filter inherited for original classifier conditions; new46 prototype cases genuine Chromium; no pure exotic full452 equality claim",
+  "native_pressure": "four independent modes: Get fresh object result, Set sole requested prototype during lookup, Set null fallback actual target mutation, Get fallback actual target prototype. Reentrant lookup revokes original record, all setup roots dropped; real script collections retain managed realm/original target/handler/Proxy and requested input. Only returned/requested prototype then rooted while original4 actually reclaimed; final prototype root removal actually reclaims it too. Get fresh output is rooted in helper for later nested target script checks, but post-trap target operation collection remains unexercised until nested scope. Conservative C stack scanning disabled",
+  "native_gates": [
+    {
+      "label": "proxy-read",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q42/final/engine/host-proxy-read",
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q42/final/engine/proxy-read.js"
+      ],
+      "returncode": 0,
+      "seconds": 0.3
+    },
+    {
+      "label": "delegation",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q42/final/engine/host-generator-delegation"
+      ],
+      "returncode": 0,
+      "seconds": 0.3
+    },
+    {
+      "label": "interpreter",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q42/final/engine/host-interp"
+      ],
+      "returncode": 0,
+      "seconds": 0.4
+    },
+    {
+      "label": "vm-factory",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q42/final/engine/host-vm-factory"
+      ],
+      "returncode": 0,
+      "seconds": 0.5
+    },
+    {
+      "label": "dom",
+      "command": [
+        "python3",
+        "plan/ws074/tests/run-dom-tests.py",
+        "--program",
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q42/final/engine/browser"
+      ],
+      "returncode": 0,
+      "seconds": 2.7
+    },
+    {
+      "label": "cssom",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q42/final/engine/host-cssom"
+      ],
+      "returncode": 0,
+      "seconds": 2.9
+    },
+    {
+      "label": "cssom-mutation",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q42/final/engine/host-cssom-mutation"
+      ],
+      "returncode": 0,
+      "seconds": 3.0
+    },
+    {
+      "label": "marks",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q42/final/engine/host-performance-marks"
+      ],
+      "returncode": 0,
+      "seconds": 3.2
+    },
+    {
+      "label": "observer",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q42/final/engine/host-performance-observer"
+      ],
+      "returncode": 0,
+      "seconds": 3.4
+    },
+    {
+      "label": "error-events",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q42/final/engine/host-error-events"
+      ],
+      "returncode": 0,
+      "seconds": 3.5
+    },
+    {
+      "label": "error-reporting",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q42/final/engine/host-error-reporting"
+      ],
+      "returncode": 0,
+      "seconds": 3.6
+    },
+    {
+      "label": "acid",
+      "command": [
+        "python3",
+        "plan/ws074/tests/run-acid-tests.py",
+        "--program",
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q42/final/engine/browser",
+        "--out",
+        "build/ws074-20261018/q42/final/acid"
+      ],
+      "returncode": 0,
+      "seconds": 8.2
+    }
+  ],
+  "acid3_score": 100,
+  "acid3_inventory": 100,
+  "acid3_pixels": 0,
+  "acid2_existing_pixels": 873,
+  "original_webidl_same_callbacks_q38": true,
+  "public_global_proxy": false,
+  "full_changed_C": {
+    "vm/access.c": "all tokens outside selected functions/declarations unchanged",
+    "js/builtin_object.c": "all tokens outside selected functions/declarations unchanged",
+    "ordinary_set_tokens_identical_except_nonordinary_proxy_cycle_stop": true,
+    "header_tokens_except_two_declarations_unchanged": true,
+    "native_operations_definition_comment_unchanged": true,
+    "old406_prefix_unchanged": true,
+    "added_conditions": 46,
+    "full_changed_functions": {
+      "userland/desktop/libbrowser/vm/access.c": [
+        "vm_get_prototype",
+        "vm_set_prototype",
+        "access_set_prototype",
+        "access_proxy_get_prototype",
+        "access_proxy_set_prototype"
+      ],
+      "userland/desktop/libbrowser/js/builtin_object.c": [
+        "object_get_prototype_of",
+        "object_set_prototype_of",
+        "object_proto_get",
+        "object_proto_set"
+      ],
+      "plan/ws074/tests/host-proxy-read.c": [
+        "main",
+        "prototype_pressure"
+      ]
+    },
+    "raw_allowed_cleanup": 70,
+    "other_checker_findings": 0,
+    "manual_review": [
+      "ANSI declaration-first, public/static order, ordinary helper prototypes after tables and initializer exception retained",
+      "realm/input/requested prototype rooted before depth error; original target/handler/fresh method/Get result explicit roots",
+      "Get output type checked before target extent; nonextensible target identity checked after target changes",
+      "Set false skips target query; true on nonextensible target compares actual prototype; ordinary policy moved to VM without VM-to-JS dependency",
+      "Object and AnnexB validation/coercion/result ordering retained; immutable-prototype exotic baseline remains a separate limitation",
+      "private factory/global/API2/Wayland/native callback contract unchanged",
+      "later nested-target script collection through target extent/Get will revalidate Get fresh-result root; not claimed exercised now"
+    ]
+  },
+  "archive": {
+    "sha256": "1a1bf589d055203a6b6ca2f3a2c4cb60cb89cdc53bba1df2d319b65e8a4a982e",
+    "members": 73,
+    "readback_all_members": true
+  },
+  "official_score": 1482,
+  "denominator": 3805,
+  "held": 0,
+  "unattempted": 275,
+  "all1508_reused": "q37",
+  "static_scripted_crash_reused": "q28",
+  "full_census_new_pair_not_measured": true,
+  "remaining": [
+    "immutable-prototype exotic baseline and Object integrity/array IsArray consumers remain separate limitations",
+    "keys/call/construct/global constructor/revocable; existing Get/Has/GetOwn/Define/Set extensibility snapshots still direct flags until nested scope",
+    "nested/callable factory targets still rejected",
+    "TypedArray remaining exotic/prototype/backing semantics",
+    "p258/p100/full target/WS100% incomplete",
+    "runtime binaries retained at hashed build paths, not embedded in archive"
+  ]
+}

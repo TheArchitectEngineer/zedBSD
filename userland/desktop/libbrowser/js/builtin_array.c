@@ -6,15 +6,10 @@
  */
 
 /*
- * Array: the constructor, Array.isArray, Array.of, Array.from (array-like
- * objects; iterables arrive with the iterators of ws074-p028) and
+ * Array: the constructor, Array.isArray, Array.of, Array.from and
  * Array.prototype's methods, written as the generic algorithms of the
  * language (they work on any object with a length) over Get, Set,
  * HasProperty and DeleteProperty.
- *
- * The methods that make a new array make a plain array (the species
- * constructor needs Symbol.species, ws074-p028).  The iterator methods
- * (keys, values, entries, Symbol.iterator) arrive with the iterators too.
  */
 
 #include "js/builtin.h"
@@ -96,8 +91,6 @@ static int array_callback(struct vm_realm *realm, const vm_value *args, unsigned
 static int array_each(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, int mode, vm_value *result);
 static int array_search(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, int backwards, int what, vm_value *result);
 static int array_relative(struct vm_realm *realm, vm_value value, uint32_t length, uint32_t fallback, uint32_t *index);
-static int array_flatten(struct vm_realm *realm, vm_value target, vm_value source, uint32_t source_length, double depth, vm_value mapper, vm_value this_arg);
-static int array_is_array_value(vm_value value);
 static int array_compare(struct vm_realm *realm, vm_value comparator, vm_value left, vm_value right, int *order);
 static int array_merge_sort(struct vm_realm *realm, vm_value comparator, vm_value *items, vm_value *scratch, uint32_t count);
 static int array_sorted_items(struct vm_realm *realm, vm_value object, uint32_t length, vm_value comparator, int skip_holes, vm_value *list, uint32_t *count);
@@ -154,6 +147,9 @@ static const struct array_entry array_methods[] = {
 	{ "with", 2, array_with },
 	{ NULL, 0, NULL }
 };
+
+static int array_flatten(struct vm_realm *realm, vm_value target, vm_value source, uint32_t source_length, double depth, vm_value mapper, vm_value this_arg);
+static int array_is_concat_spreadable(struct vm_realm *realm, vm_value value, int *spreadable);
 
 /*
  * Installs Array.
@@ -287,12 +283,16 @@ array_is_array(
 	vm_value *result)
 {
 	int is_array;
+	int status;
 
-	UNUSED_PARAMETER(realm);
 	UNUSED_PARAMETER(this_value);
 
-	/* An array object. */
-	is_array = array_is_array_value(js_argument(args, count, 0));
+	/* Native Proxy targets preserve array identity and revoked records throw. */
+	status = vm_is_array(realm, js_argument(args, count, 0), &is_array);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: publish only the completed abstract operation's Boolean. */
 	*result = vm_value_boolean(is_array);
 	return 0;
 }
@@ -471,8 +471,7 @@ array_concat(
 	unsigned count,
 	vm_value *result)
 {
-	struct vm_cell *result_root;
-	struct vm_cell *object_root;
+	struct vm_cell *roots[4];
 	vm_value object;
 	vm_value item;
 	vm_value value;
@@ -480,71 +479,99 @@ array_concat(
 	uint32_t index;
 	uint32_t next;
 	unsigned argument;
+	unsigned registered;
+	unsigned root_index;
 	int found;
-	int is_array;
+	int spreadable;
+	int is_cell;
 	int status;
 
-	/* This as an object, and the new array. */
+	/* The converted source, result, current element and current item survive all protocol callbacks. */
 	status = vm_to_object(realm, this_value, &object);
 	if (status != 0)
 		return status;
-	object_root = vm_value_as_cell(object);
-	status = vm_heap_add_root(realm->heap, &object_root);
-	if (status != 0)
-		return status;
+	memset(roots, 0, sizeof(roots));
+	roots[0] = vm_value_as_cell(object);
+	registered = 0;
+	for (root_index = 0; root_index < 4U; root_index++) {
+		status = vm_heap_add_root(realm->heap, &roots[root_index]);
+		if (status != 0)
+			goto cleanup;
+		registered++;
+	}
+
+	/* Keep the plain newly created destination alive before any item can run getters. */
 	status = array_new(realm, result);
 	if (status != 0)
-		goto release_object;
-	result_root = vm_value_as_cell(*result);
-	status = vm_heap_add_root(realm->heap, &result_root);
-	if (status != 0)
-		goto release_object;
+		goto cleanup;
+	roots[1] = vm_value_as_cell(*result);
 
-	/* This, then each item: an array's elements (holes kept), anything else itself. */
+	/* Each source item first observes its actual spreadability, then either contributes itself or its present elements. */
 	next = 0;
 	for (argument = 0; argument <= count; argument++) {
 		item = object;
 		if (argument > 0)
 			item = args[argument - 1U];
-		is_array = array_is_array_value(item);
-		if (!is_array) {
-			status = array_set(realm, *result, next, item);
+		roots[3] = NULL;
+		is_cell = vm_value_is_cell(item);
+		if (is_cell)
+			roots[3] = vm_value_as_cell(item);
+		status = array_is_concat_spreadable(realm, item, &spreadable);
+		if (status != 0)
+			goto cleanup;
+		if (!spreadable) {
+			/* A result element is an own default data property and cannot invoke an inherited setter. */
+			status = vm_object_define(realm->heap, (struct vm_object *)roots[1], vm_value_int32((int32_t)next), item, VM_PROPERTY_DEFAULT);
 			if (status != 0)
 				goto cleanup;
 			next++;
 			continue;
 		}
 
-		/* An array's length. */
+		/* Snapshot length before testing each index; absent properties retain holes in the result. */
 		status = js_builtin_length(realm, item, &length);
 		if (status != 0)
 			goto cleanup;
 		for (index = 0; index < length; index++) {
 			status = array_has(realm, item, index, &found);
-			if (status == 0 && found) {
-				status = array_get(realm, item, index, &value);
-				if (status == 0)
-					status = array_set(realm, *result, next + index, value);
-			}
+			if (status != 0)
+				goto cleanup;
+			if (!found)
+				continue;
 
-			/* A failure ends the copy. */
+			/* A newly returned element needs ownership before destination property creation may collect. */
+			status = array_get(realm, item, index, &value);
+			if (status != 0)
+				goto cleanup;
+			roots[2] = NULL;
+			is_cell = vm_value_is_cell(value);
+			if (is_cell)
+				roots[2] = vm_value_as_cell(value);
+			status = vm_object_define(realm->heap, (struct vm_object *)roots[1], vm_value_int32((int32_t)(next + index)), value, VM_PROPERTY_DEFAULT);
 			if (status != 0)
 				goto cleanup;
 		}
 
-		/* The next items go after these. */
+		/* Logical position includes skipped holes, even when no own destination element was created. */
 		next += length;
 	}
 
-	/* Succeeded: the new array with its length. */
+	/* Publish the final logical length, including any trailing holes. */
 	status = array_set_length(realm, *result, (double)next);
 
-/* The temporary array root covers getters and assignments above. */
 cleanup:
-	vm_heap_remove_root(realm->heap, &result_root);
-release_object:
-	vm_heap_remove_root(realm->heap, &object_root);
-	return status;
+	/* All partially registered roots and abrupt source operations retire through the same ownership exit. */
+	while (registered != 0U) {
+		registered--;
+		vm_heap_remove_root(realm->heap, &roots[registered]);
+	}
+
+	/* Propagate the source's original abrupt completion or allocation error. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the plain result contains own data elements with source holes preserved. */
+	return 0;
 }
 
 /* Array.prototype.copyWithin(target, start, end). */
@@ -767,36 +794,60 @@ array_flat(
 	unsigned count,
 	vm_value *result)
 {
-	struct vm_cell *result_root;
+	struct vm_cell *roots[2];
 	vm_value object;
 	vm_value depth_value;
-	uint32_t length;
 	double depth;
+	uint32_t length;
+	unsigned registered;
+	unsigned index;
 	int status;
 
-	/* The object, its length and the depth (1 by default). */
+	/* Box the receiver and read its length before depth conversion or mapper validation. */
 	status = array_this(realm, this_value, &object, &length);
 	if (status != 0)
 		return status;
+
+	/* A newly boxed source and unpublished result remain independently rooted through every later callback. */
+	roots[0] = vm_value_as_cell(object);
+	roots[1] = NULL;
+	registered = 0;
+	for (index = 0; index < 2U; index++) {
+		status = vm_heap_add_root(realm->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+		registered++;
+	}
+
+	/* Depth conversion may run arbitrary script and collect the temporary boxed source. */
 	depth = 1.0;
 	depth_value = js_argument(args, count, 0);
 	if (depth_value != VM_VALUE_UNDEFINED) {
 		status = js_builtin_integer(realm, depth_value, &depth);
 		if (status != 0)
-			return status;
+			goto cleanup;
 	}
 
-	/* The flattened array. */
+	/* Create the plain destination only after source conversions finish. */
 	status = array_new(realm, result);
 	if (status != 0)
-		return status;
-	result_root = vm_value_as_cell(*result);
-	status = vm_heap_add_root(realm->heap, &result_root);
+		goto cleanup;
+	roots[1] = vm_value_as_cell(*result);
+	status = array_flatten(realm, *result, object, length, depth, VM_VALUE_UNDEFINED, VM_VALUE_UNDEFINED);
+
+cleanup:
+	/* Neither conversion failure nor a recursive source exception may leak native source or result ownership. */
+	while (registered != 0U) {
+		registered--;
+		vm_heap_remove_root(realm->heap, &roots[registered]);
+	}
+
+	/* Preserve the original abrupt completion from conversion, mapper or nested array inspection. */
 	if (status != 0)
 		return status;
-	status = array_flatten(realm, *result, object, length, depth, VM_VALUE_UNDEFINED, VM_VALUE_UNDEFINED);
-	vm_heap_remove_root(realm->heap, &result_root);
-	return status;
+
+	/* Succeeded: the plain destination contains the requested flattened values. */
+	return 0;
 }
 
 /* Array.prototype.flatMap(mapper, thisArg). */
@@ -808,30 +859,55 @@ array_flat_map(
 	unsigned count,
 	vm_value *result)
 {
-	struct vm_cell *result_root;
+	struct vm_cell *roots[2];
 	vm_value object;
 	vm_value mapper;
 	uint32_t length;
+	unsigned registered;
+	unsigned index;
 	int status;
 
-	/* The object, its length and the mapper. */
+	/* Box the receiver and read its length before depth conversion or mapper validation. */
 	status = array_this(realm, this_value, &object, &length);
-	if (status == 0)
-		status = array_callback(realm, args, count, &mapper);
 	if (status != 0)
 		return status;
 
-	/* Each element mapped, then flattened one level. */
+	/* A newly boxed source and unpublished result remain independently rooted through every later callback. */
+	roots[0] = vm_value_as_cell(object);
+	roots[1] = NULL;
+	registered = 0;
+	for (index = 0; index < 2U; index++) {
+		status = vm_heap_add_root(realm->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+		registered++;
+	}
+
+	/* Mapper validation follows source length retrieval, while the converted source remains owned. */
+	status = array_callback(realm, args, count, &mapper);
+	if (status != 0)
+		goto cleanup;
+
+	/* Create the plain destination only after source conversions finish. */
 	status = array_new(realm, result);
 	if (status != 0)
-		return status;
-	result_root = vm_value_as_cell(*result);
-	status = vm_heap_add_root(realm->heap, &result_root);
+		goto cleanup;
+	roots[1] = vm_value_as_cell(*result);
+	status = array_flatten(realm, *result, object, length, 1.0, mapper, js_argument(args, count, 1));
+
+cleanup:
+	/* Neither conversion failure nor a recursive source exception may leak native source or result ownership. */
+	while (registered != 0U) {
+		registered--;
+		vm_heap_remove_root(realm->heap, &roots[registered]);
+	}
+
+	/* Preserve the original abrupt completion from conversion, mapper or nested array inspection. */
 	if (status != 0)
 		return status;
-	status = array_flatten(realm, *result, object, length, 1.0, mapper, js_argument(args, count, 1));
-	vm_heap_remove_root(realm->heap, &result_root);
-	return status;
+
+	/* Succeeded: the plain destination contains the requested flattened values. */
+	return 0;
 }
 
 /* Array.prototype.forEach(callback, thisArg). */
@@ -2553,8 +2629,15 @@ array_flatten(
 		}
 
 		/* An array within the depth is flattened; anything else appended. */
-		is_array = array_is_array_value(value);
-		if (is_array && depth > 0.0) {
+		is_array = 0;
+		if (depth > 0.0) {
+			status = vm_is_array(realm, value, &is_array);
+			if (status != 0)
+				goto cleanup;
+		}
+
+		/* Zero or negative depth appends even a revoked Proxy without testing its array identity. */
+		if (is_array) {
 			status = js_builtin_length(realm, value, &length);
 			if (status == 0)
 				status = array_flatten(realm, target, value, length, depth - 1.0, VM_VALUE_UNDEFINED, VM_VALUE_UNDEFINED);
@@ -2575,21 +2658,36 @@ cleanup:
 
 /* Tells whether a value is an array object. */
 static int
-array_is_array_value(
-	vm_value value)
+array_is_concat_spreadable(
+	struct vm_realm *realm,
+	vm_value value,
+	int *spreadable)
 {
-	struct vm_object *object;
+	vm_value override;
 	int is_object;
+	int status;
 
-	/* An object whose kind is array. */
+	/* Primitives contribute one item and cannot supply a spreadability override. */
+	*spreadable = 0;
 	is_object = vm_value_is_object(value);
 	if (!is_object)
 		return 0;
-	object = (struct vm_object *)vm_value_as_cell(value);
-	if ((object->flags & VM_OBJECT_ARRAY) != 0U)
-		return 1;
 
-	/* Anything else. */
+	/* A present override is converted only to Boolean, without coercing any returned object. */
+	status = vm_get(realm, value, vm_symbol_key(realm, VM_SYMBOL_IS_CONCAT_SPREADABLE), &override);
+	if (status != 0)
+		return status;
+	if (override != VM_VALUE_UNDEFINED) {
+		*spreadable = vm_to_boolean(override);
+		return 0;
+	}
+
+	/* Without an override, actual array identity unwraps nested Proxies and preserves revoked-record errors. */
+	status = vm_is_array(realm, value, spreadable);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the explicit override or actual array identity supplied spreadability. */
 	return 0;
 }
 

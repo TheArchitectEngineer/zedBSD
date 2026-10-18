@@ -12,7 +12,7 @@
  * the enumeration of for-in.
  *
  * The primitives other than strings get their prototypes (Number.prototype
- * and the rest) with the built-ins (ws074-p026); until then their
+ * and the rest) with the built-ins; until then their
  * properties read undefined.
  */
 
@@ -26,6 +26,15 @@
 
 /* Native fallback chains and script getters share a finite property-operation budget per realm. */
 #define ACCESS_RECURSION_MAX 256U
+
+/* The four distinct key lists preserve evaluation order before any Proxy own-key invariant is checked. */
+enum access_own_key_list {
+	ACCESS_OWN_TRAP_KEYS,
+	ACCESS_OWN_TARGET_KEYS,
+	ACCESS_OWN_FIXED_KEYS,
+	ACCESS_OWN_CONFIGURABLE_KEYS,
+	ACCESS_OWN_LIST_COUNT
+};
 
 /*
  * The state of one for-in loop: the keys it will visit, found when it
@@ -69,7 +78,6 @@ struct access_descriptor_roots {
 static void access_for_in_trace(struct vm_heap *heap, struct vm_cell *cell);
 static void access_for_in_finalize(struct vm_heap *heap, struct vm_cell *cell);
 static int access_string_property(struct vm_realm *realm, struct vm_string *string, vm_value key, vm_value *result, int *found);
-static int access_set_length(struct vm_realm *realm, struct vm_object *array, vm_value value, int strict);
 static int access_refuse(struct vm_realm *realm, int strict, const char *message);
 static int access_collect(struct vm_heap *heap, struct vm_object *object, struct wb_vector *keys);
 static int access_key_listed(const struct wb_vector *keys, size_t count, vm_value key);
@@ -86,6 +94,15 @@ static const struct vm_cell_type access_for_in_type = {
 	"for-in", access_for_in_trace, access_for_in_finalize
 };
 
+static void access_keys_trace(struct vm_heap *heap, void *context);
+static int access_property_key_list(struct vm_realm *realm, vm_value source, struct wb_vector *keys);
+static int access_proxy_own_keys(struct vm_realm *realm, struct vm_proxy *proxy, struct wb_vector *keys);
+static int access_set_prototype(struct vm_object *object, struct vm_object *prototype);
+static int access_proxy_get_prototype(struct vm_realm *realm, struct vm_proxy *proxy, vm_value *prototype);
+static int access_proxy_set_prototype(struct vm_realm *realm, struct vm_proxy *proxy, vm_value prototype, int *done);
+static int access_proxy_delete(struct vm_realm *realm, struct vm_proxy *proxy, vm_value key, int *deleted);
+static int access_extensibility(struct vm_realm *realm, struct vm_object *object, int prevent, int *result);
+static int access_proxy_extensibility(struct vm_realm *realm, struct vm_proxy *proxy, int prevent, int *result);
 static int access_set_typed(struct vm_realm *realm, struct vm_object *object, vm_value key, vm_value value, vm_value receiver, int *done);
 static int access_define_typed(struct vm_realm *realm, struct vm_object *object, vm_value key, const struct vm_descriptor *descriptor, int *handled, int *done);
 static void access_write_trace(struct vm_heap *heap, void *context);
@@ -103,6 +120,261 @@ static int access_get_receiver(struct vm_realm *realm, vm_value base, vm_value k
 static int access_has_property(struct vm_realm *realm, struct vm_object *object, vm_value key, int *found);
 static int access_proxy_has(struct vm_realm *realm, struct vm_proxy *proxy, vm_value key, int *found);
 static int access_proxy_get(struct vm_realm *realm, struct vm_proxy *proxy, vm_value key, vm_value receiver, vm_value *result);
+
+/*
+ * Appends actual own property keys through realm-aware Proxy handling with complete native ownership.
+ */
+int
+vm_own_property_keys(
+	struct vm_realm *realm,
+	struct vm_object *object,
+	struct wb_vector *keys)
+{
+	struct access_read_roots roots;
+	size_t beginning;
+	int status;
+
+	/* Caller prefixes and managed input ownership both survive every trap, native callback and error allocation. */
+	beginning = keys->count;
+	roots.realm = realm;
+	roots.base = vm_value_cell(object);
+	roots.key = VM_VALUE_UNDEFINED;
+	roots.receiver = VM_VALUE_UNDEFINED;
+	status = vm_heap_add_tracer(realm->heap, access_read_trace, &roots);
+	if (status != 0)
+		return status;
+	status = vm_heap_add_tracer(realm->heap, access_keys_trace, keys);
+	if (status != 0) {
+		vm_heap_remove_tracer(realm->heap, access_read_trace, &roots);
+		return status;
+	}
+
+	/* Bound fallback recursion before any target operation while both input and prefix are rooted. */
+	if (realm->property_depth >= ACCESS_RECURSION_MAX) {
+		status = vm_throw_range_error(realm, "Maximum property recursion exceeded");
+		vm_heap_remove_tracer(realm->heap, access_keys_trace, keys);
+		vm_heap_remove_tracer(realm->heap, access_read_trace, &roots);
+		return status;
+	}
+
+	/* Ordinary objects preserve their existing native policy and key order. */
+	realm->property_depth++;
+	if (object->kind == VM_KIND_PROXY)
+		status = access_proxy_own_keys(realm, (struct vm_proxy *)object, keys);
+	else
+		status = vm_object_own_keys(realm->heap, object, keys);
+
+	/* Retire the native depth and discard only this operation's partial append on failure. */
+	realm->property_depth--;
+	if (status != 0)
+		keys->count = beginning;
+	vm_heap_remove_tracer(realm->heap, access_keys_trace, keys);
+	vm_heap_remove_tracer(realm->heap, access_read_trace, &roots);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: only the completed operation's keys were appended to the preserved prefix. */
+	return 0;
+}
+
+/*
+ * Gets an object's actual prototype through ordinary storage or native Proxy internal methods.
+ */
+int
+vm_get_prototype(
+	struct vm_realm *realm,
+	struct vm_object *object,
+	vm_value *prototype)
+{
+	struct access_read_roots roots;
+	int status;
+
+	/* The managed owner and original input must survive all trap and depth-error allocations. */
+	*prototype = VM_VALUE_NULL;
+	roots.realm = realm;
+	roots.base = vm_value_cell(object);
+	roots.key = VM_VALUE_UNDEFINED;
+	roots.receiver = VM_VALUE_UNDEFINED;
+	status = vm_heap_add_tracer(realm->heap, access_read_trace, &roots);
+	if (status != 0)
+		return status;
+	if (realm->property_depth >= ACCESS_RECURSION_MAX) {
+		status = vm_throw_range_error(realm, "Maximum property recursion exceeded");
+		vm_heap_remove_tracer(realm->heap, access_read_trace, &roots);
+		return status;
+	}
+
+	/* Ordinary prototype storage never invokes a native property callback or user script. */
+	realm->property_depth++;
+	if (object->kind == VM_KIND_PROXY) {
+		status = access_proxy_get_prototype(realm, (struct vm_proxy *)object, prototype);
+	} else {
+		status = 0;
+		if (object->prototype != NULL)
+			*prototype = vm_value_cell(object->prototype);
+	}
+
+	/* Retire both native recursion depth and collector ownership on every completion path. */
+	realm->property_depth--;
+	vm_heap_remove_tracer(realm->heap, access_read_trace, &roots);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the returned object or null belongs to the completed prototype operation. */
+	return 0;
+}
+
+/*
+ * Sets an object's actual prototype while preserving original input ownership and Boolean refusal.
+ */
+int
+vm_set_prototype(
+	struct vm_realm *realm,
+	struct vm_object *object,
+	struct vm_object *prototype,
+	int *done)
+{
+	struct access_read_roots roots;
+	int status;
+
+	/* A requested prototype may otherwise be owned only by the embedding call, even during method lookup. */
+	*done = 0;
+	roots.realm = realm;
+	roots.base = vm_value_cell(object);
+	roots.key = VM_VALUE_UNDEFINED;
+	roots.receiver = VM_VALUE_NULL;
+	if (prototype != NULL)
+		roots.receiver = vm_value_cell(prototype);
+	status = vm_heap_add_tracer(realm->heap, access_read_trace, &roots);
+	if (status != 0)
+		return status;
+	if (realm->property_depth >= ACCESS_RECURSION_MAX) {
+		status = vm_throw_range_error(realm, "Maximum property recursion exceeded");
+		vm_heap_remove_tracer(realm->heap, access_read_trace, &roots);
+		return status;
+	}
+
+	/* Proxy handling is realm-aware, while ordinary prototype policy remains a pure storage operation. */
+	realm->property_depth++;
+	if (object->kind == VM_KIND_PROXY) {
+		status = access_proxy_set_prototype(realm, (struct vm_proxy *)object, roots.receiver, done);
+	} else {
+		status = 0;
+		*done = access_set_prototype(object, prototype);
+	}
+
+	/* An abrupt trap cannot leak requested-prototype ownership or native recursion depth. */
+	realm->property_depth--;
+	vm_heap_remove_tracer(realm->heap, access_read_trace, &roots);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: done reports actual acceptance without applying a caller's throwing policy. */
+	return 0;
+}
+
+/*
+ * Reports actual extensibility through ordinary policy or native Proxy internal methods.
+ */
+int
+vm_is_extensible(
+	struct vm_realm *realm,
+	struct vm_object *object,
+	int *extensible)
+{
+	int status;
+
+	/* The shared realm frame owns both input lifetime and the finite native operation depth. */
+	status = access_extensibility(realm, object, 0, extensible);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the completed operation supplied the target's actual extensibility. */
+	return 0;
+}
+
+/*
+ * Prevents extensions through realm-aware Proxy handling and the existing pure native policy.
+ */
+int
+vm_prevent_extensions(
+	struct vm_realm *realm,
+	struct vm_object *object,
+	int *done)
+{
+	int status;
+
+	/* Refusal and abrupt completion remain separate from the operation's Boolean success. */
+	status = access_extensibility(realm, object, 1, done);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: done reports whether the target accepted preventing extensions. */
+	return 0;
+}
+
+/*
+ * Determines array identity through immutable Proxy targets without invoking any script operation.
+ */
+int
+vm_is_array(
+	struct vm_realm *realm,
+	vm_value value,
+	int *is_array)
+{
+	struct access_read_roots roots;
+	struct vm_object *object;
+	struct vm_proxy *proxy;
+	int is_object;
+	int status;
+
+	/* Primitives never coerce, and ordinary array identity requires no allocation. */
+	*is_array = 0;
+	is_object = vm_value_is_object(value);
+	if (!is_object)
+		return 0;
+	object = (struct vm_object *)vm_value_as_cell(value);
+	if (object->kind != VM_KIND_PROXY) {
+		if ((object->flags & VM_OBJECT_ARRAY) != 0U)
+			*is_array = 1;
+		return 0;
+	}
+
+	/* A revoked-target error may collect both its managed realm and otherwise unowned original Proxy. */
+	roots.realm = realm;
+	roots.base = value;
+	roots.key = VM_VALUE_UNDEFINED;
+	roots.receiver = VM_VALUE_UNDEFINED;
+	status = vm_heap_add_tracer(realm->heap, access_read_trace, &roots);
+	if (status != 0)
+		return status;
+
+	/* Targets are existing objects fixed at allocation, so the chain cannot form a cycle. */
+	while (object->kind == VM_KIND_PROXY) {
+		proxy = (struct vm_proxy *)object;
+		if (proxy->target == VM_VALUE_NULL) {
+			status = vm_throw_type_error(realm, "Cannot determine array identity of a revoked Proxy");
+			break;
+		}
+
+		/* Neither handler properties nor prototype access participates in IsArray. */
+		object = (struct vm_object *)vm_value_as_cell(proxy->target);
+	}
+
+	/* Only a successfully reached target contributes its immutable array identity. */
+	if (status == 0) {
+		if ((object->flags & VM_OBJECT_ARRAY) != 0U)
+			*is_array = 1;
+	}
+
+	/* Retire the native ownership frame before propagating an abrupt outcome. */
+	vm_heap_remove_tracer(realm->heap, access_read_trace, &roots);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the original Proxy frame no longer owns any collector edge. */
+	return 0;
+}
 
 /*
  * Gets a property of any value: an object's through its chain (calling an
@@ -252,15 +524,9 @@ vm_set(
 	vm_value value,
 	int strict)
 {
-	struct vm_property property;
-	struct vm_accessor *accessor;
+	struct access_write_roots roots;
 	struct vm_object *object;
-	vm_value ignored;
-	vm_value length_key;
-	struct vm_descriptor descriptor;
-	int handled;
 	int is_object;
-	int found;
 	int done;
 	int status;
 
@@ -277,99 +543,34 @@ vm_set(
 		return status;
 	}
 
-	/* Direct Proxy and TypedArray assignment use their actual receiver-aware exotic operations. */
+	/* Every object uses its actual receiver-aware operation, including exotic prototypes of ordinary receivers. */
 	object = (struct vm_object *)vm_value_as_cell(base);
-	if (object->kind == VM_KIND_PROXY || object->kind == VM_KIND_TYPED_ARRAY) {
-		status = vm_set_receiver(realm, object, key, value, base, &done);
-		if (status != 0)
-			return status;
-		if (!done) {
-			if (object->kind == VM_KIND_PROXY) {
-				status = access_refuse(realm, strict, "Proxy set trap returned false");
-			} else {
-				status = access_refuse(realm, strict, "Cannot assign to read only property");
-			}
-
-			/* Strict refusal propagates its error while sloppy assignment remains silent. */
-			if (status != 0)
-				return status;
-
-			/* Succeeded: sloppy assignment deliberately ignores Boolean refusal. */
-			return 0;
-		}
-
-		/* Succeeded: the direct exotic operation accepted this assignment. */
-		return 0;
-	}
-
-	/* An accessor on the chain: its setter is called with the value. */
-	object = (struct vm_object *)vm_value_as_cell(base);
-	found = vm_object_find(object, key, &property);
-	if (found < 0)
-		return -found;
-
-	/* Present descriptors retain their ordinary accessor and attribute rules. */
-	if (found && (property.attributes & VM_PROPERTY_ACCESSOR) != 0U) {
-		accessor = (struct vm_accessor *)vm_value_as_cell(*property.value);
-		if (accessor->setter == VM_VALUE_UNDEFINED) {
-			status = access_refuse(realm, strict, "Cannot set property which has only a getter");
-			return status;
-		}
-
-		/* The setter, called with the value. */
-		status = vm_call(realm, accessor->setter, base, &value, 1, &ignored);
-		if (status != 0)
-			return status;
-		return 0;
-	}
-
-	/* A read-only data property refuses. */
-	if (found && (property.attributes & VM_PROPERTY_WRITABLE) == 0U) {
-		status = access_refuse(realm, strict, "Cannot assign to read only property");
-		return status;
-	}
-
-	/* An array's own length is set by its rules. */
-	length_key = vm_key_from_ascii(realm->heap, "length");
-	if (length_key == VM_VALUE_EMPTY)
-		return ENOMEM;
-	if (found &&
-	    property.holder == object &&
-	    key == length_key &&
-	    (object->flags & VM_OBJECT_ARRAY) != 0U) {
-		status = access_set_length(realm, object, value, strict);
-		if (status != 0)
-			return status;
-		return 0;
-	}
-
-	/* A typed array converts the value in the realm (a valueOf may run, a wrong BigInt type throws). */
-	if (object->kind == VM_KIND_TYPED_ARRAY &&
-	    object->native_operations != NULL &&
-	    object->native_operations->define != NULL) {
-		memset(&descriptor, 0, sizeof(descriptor));
-		descriptor.has = VM_HAS_VALUE | VM_HAS_WRITABLE | VM_HAS_ENUMERABLE | VM_HAS_CONFIGURABLE;
-		descriptor.value = value;
-		descriptor.attributes = VM_PROPERTY_DEFAULT;
-		handled = 0;
-		done = 0;
-		status = object->native_operations->define(realm, object, key, &descriptor, &handled, &done);
-		if (status != 0)
-			return status;
-		if (handled)
-			return 0;
-	}
-
-	/* Otherwise the ordinary assignment; an object that takes no new property refuses. */
-	status = vm_object_set(realm->heap, object, key, value, &done);
+	roots.read.realm = realm;
+	roots.read.base = base;
+	roots.read.key = key;
+	roots.read.receiver = base;
+	roots.value = value;
+	status = vm_heap_add_tracer(realm->heap, access_write_trace, &roots);
 	if (status != 0)
 		return status;
+	status = vm_set_receiver(realm, object, key, value, base, &done);
+	if (status != 0)
+		goto cleanup;
 	if (!done) {
-		status = access_refuse(realm, strict, "Cannot add property, object is not extensible");
-		return status;
+		/* Keep native input ownership until any strict refusal exception has finished allocating. */
+		if (object->kind == VM_KIND_PROXY)
+			status = access_refuse(realm, strict, "Proxy set trap returned false");
+		else
+			status = access_refuse(realm, strict, "Cannot assign to read only property");
 	}
 
-	/* Succeeded: the value is put. */
+cleanup:
+	/* Accepted writes, sloppy refusals and abrupt operations all retire the outer assignment owner. */
+	vm_heap_remove_tracer(realm->heap, access_write_trace, &roots);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the actual operation accepted the write, or sloppy code ignored its refusal. */
 	return 0;
 }
 
@@ -426,6 +627,49 @@ vm_set_receiver(
 }
 
 /*
+ * Deletes an own property through realm-aware Proxy handling or the existing pure native policy.
+ */
+int
+vm_delete_property(
+	struct vm_realm *realm,
+	struct vm_object *object,
+	vm_value key,
+	int *deleted)
+{
+	struct access_read_roots roots;
+	int status;
+
+	/* The input and managed owner must survive even a recursion-limit error allocation. */
+	*deleted = 0;
+	roots.realm = realm;
+	roots.base = vm_value_cell(object);
+	roots.key = key;
+	roots.receiver = VM_VALUE_UNDEFINED;
+	status = vm_heap_add_tracer(realm->heap, access_read_trace, &roots);
+	if (status != 0)
+		return status;
+	if (realm->property_depth >= ACCESS_RECURSION_MAX) {
+		status = vm_throw_range_error(realm, "Maximum property recursion exceeded");
+		vm_heap_remove_tracer(realm->heap, access_read_trace, &roots);
+		return status;
+	}
+
+	/* The ordinary path retains its exact native policy and deletion semantics. */
+	realm->property_depth++;
+	if (object->kind == VM_KIND_PROXY)
+		status = access_proxy_delete(realm, (struct vm_proxy *)object, key, deleted);
+	else
+		status = vm_object_delete(realm->heap, object, key, deleted);
+	realm->property_depth--;
+	vm_heap_remove_tracer(realm->heap, access_read_trace, &roots);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: refusal remains a Boolean for the caller's strict-mode policy to interpret. */
+	return 0;
+}
+
+/*
  * Deletes a property of any value (the delete operator) and stores whether
  * it is gone; a property that stays is a TypeError in strict code.
  */
@@ -478,7 +722,7 @@ vm_delete(
 
 	/* An object's own property, unless it is not configurable. */
 	object = (struct vm_object *)vm_value_as_cell(base);
-	status = vm_object_delete(realm->heap, object, key, &deleted);
+	status = vm_delete_property(realm, object, key, &deleted);
 	if (status != 0)
 		return status;
 	if (!deleted) {
@@ -614,7 +858,7 @@ vm_instanceof(
 	int is_object;
 	int status;
 
-	/* An object's Symbol.hasInstance answers for it, unless it is Function.prototype's own (ws074-p087). */
+	/* An object's Symbol.hasInstance answers for it, unless it is Function.prototype's own. */
 	*result = VM_VALUE_FALSE;
 	is_object = vm_value_is_object(constructor);
 	if (is_object) {
@@ -667,7 +911,8 @@ vm_ordinary_has_instance(
 	vm_value value,
 	vm_value *result)
 {
-	struct vm_object *object;
+	struct access_read_roots roots;
+	struct vm_cell *prototype_root;
 	vm_value key;
 	vm_value prototype;
 	vm_value link;
@@ -675,44 +920,72 @@ vm_ordinary_has_instance(
 	int is_object;
 	int status;
 
-	/* Only a function has instances. */
+	/* Only callable constructors and object values require a prototype lookup. */
 	*result = VM_VALUE_FALSE;
 	callable = vm_value_is_callable(constructor);
 	if (!callable)
 		return 0;
-
-	/* A primitive is an instance of nothing. */
 	is_object = vm_value_is_object(value);
 	if (!is_object)
 		return 0;
 
-	/* The constructor's prototype, which must be an object. */
-	key = vm_key_from_ascii(realm->heap, "prototype");
-	if (key == VM_VALUE_EMPTY)
-		return ENOMEM;
-	status = vm_get(realm, constructor, key, &prototype);
+	/* A managed caller, constructor and original value survive key allocation and constructor getters. */
+	roots.realm = realm;
+	roots.base = constructor;
+	roots.key = VM_VALUE_UNDEFINED;
+	roots.receiver = value;
+	status = vm_heap_add_tracer(realm->heap, access_read_trace, &roots);
 	if (status != 0)
 		return status;
+	prototype_root = NULL;
+	status = vm_heap_add_root(realm->heap, &prototype_root);
+	if (status != 0) {
+		vm_heap_remove_tracer(realm->heap, access_read_trace, &roots);
+		return status;
+	}
+
+	/* The constructor's prototype is retrieved before any value-side prototype method is called. */
+	key = vm_key_from_ascii(realm->heap, "prototype");
+	if (key == VM_VALUE_EMPTY) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* Preserve the property key through a getter that may allocate or collect. */
+	roots.key = key;
+	status = vm_get(realm, constructor, key, &prototype);
+	if (status != 0)
+		goto cleanup;
 	is_object = vm_value_is_object(prototype);
 	if (!is_object) {
 		status = vm_throw_type_error(realm, "Function has non-object prototype in instanceof check");
-		return status;
+		goto cleanup;
 	}
 
-	/* Walks the value's chain looking for it. */
-	object = ((struct vm_object *)vm_value_as_cell(value))->prototype;
-	while (object != NULL) {
-		link = vm_value_cell(object);
+	/* The target prototype and the latest returned link remain independently owned through later traps. */
+	prototype_root = vm_value_as_cell(prototype);
+	while (roots.receiver != VM_VALUE_NULL) {
+		status = vm_get_prototype(realm, (struct vm_object *)vm_value_as_cell(roots.receiver), &link);
+		if (status != 0)
+			goto cleanup;
+		roots.receiver = link;
 		if (link == prototype) {
 			*result = VM_VALUE_TRUE;
-			return 0;
+			break;
 		}
-
-		/* The next object of the chain. */
-		object = object->prototype;
 	}
 
-	/* Succeeded: not an instance. */
+	/* Reaching null without matching the prototype is a successful false result. */
+	status = 0;
+
+cleanup:
+	/* Neither abrupt chain traversal nor invalid constructor output may leak native ownership. */
+	vm_heap_remove_root(realm->heap, &prototype_root);
+	vm_heap_remove_tracer(realm->heap, access_read_trace, &roots);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the actual internal prototype methods supplied the instance result. */
 	return 0;
 }
 
@@ -1939,41 +2212,6 @@ access_string_property(
 	return 0;
 }
 
-/* Sets an array's length by assignment: a number that is a valid length, or a RangeError. */
-static int
-access_set_length(
-	struct vm_realm *realm,
-	struct vm_object *array,
-	vm_value value,
-	int strict)
-{
-	double number;
-	uint32_t length;
-	int status;
-
-	UNUSED_PARAMETER(strict);
-
-	/* The new length must be a whole number in uint32's range. */
-	status = vm_to_uint32(realm, value, &length);
-	if (status != 0)
-		return status;
-	status = vm_to_number(realm, value, &number);
-	if (status != 0)
-		return status;
-	if ((double)length != number) {
-		status = vm_throw_range_error(realm, "Invalid array length");
-		return status;
-	}
-
-	/* The array grows or loses its elements past the length. */
-	status = vm_array_set_length(realm->heap, array, length);
-	if (status != 0)
-		return status;
-
-	/* Succeeded: the length is set. */
-	return 0;
-}
-
 /* Refuses an assignment or a deletion: nothing in sloppy code, a TypeError in strict code. */
 static int
 access_refuse(
@@ -2328,9 +2566,12 @@ access_define_length(
 	int *done)
 {
 	struct vm_descriptor rest;
+	struct vm_descriptor latest;
 	vm_value length_key;
 	double number;
 	uint32_t length;
+	int refused;
+	int found;
 	int allowed;
 	int status;
 
@@ -2357,6 +2598,14 @@ access_define_length(
 		rest.value = vm_value_number((double)length);
 	}
 
+	/* Conversion may change the array or make its length read-only; inspect the actual post-conversion descriptor. */
+	found = vm_get_own_descriptor(array, length_key, &latest);
+	if (found < 0)
+		return -found;
+	if (!found)
+		return EINVAL;
+	current = &latest;
+
 	/* The change must be allowed as for any property, and a read-only length cannot change. */
 	allowed = access_descriptor_allowed(array, 1, current, &rest);
 	if (!allowed)
@@ -2364,10 +2613,13 @@ access_define_length(
 	if ((current->attributes & VM_PROPERTY_WRITABLE) == 0U && length != array->length)
 		return 0;
 
-	/* The new length (the elements past it go). */
+	/* A partial shrink preserves higher deletions and reports Boolean refusal after applying requested writability. */
+	refused = 0;
 	if (length != array->length) {
 		status = vm_array_set_length(realm->heap, array, length);
-		if (status != 0)
+		if (status == EPERM)
+			refused = 1;
+		else if (status != 0)
 			return status;
 	}
 
@@ -2377,6 +2629,10 @@ access_define_length(
 		if (status != 0)
 			return status;
 	}
+
+	/* A fixed element prevented the complete shrink even though requested read-only metadata was applied. */
+	if (refused)
+		return 0;
 
 	/* Succeeded: the length is defined. */
 	*done = 1;
@@ -2626,11 +2882,9 @@ access_proxy_get(
 		roots[7] = vm_value_as_cell(produced);
 
 	/* Invariants use the original target even if the trap revoked its Proxy. */
-	found = vm_get_own_descriptor((struct vm_object *)vm_value_as_cell(target), key, &descriptor);
-	if (found < 0) {
-		status = -found;
+	status = vm_get_own_property(realm, (struct vm_object *)vm_value_as_cell(target), key, &descriptor, &found);
+	if (status != 0)
 		goto cleanup;
-	}
 
 	/* Nonconfigurable own descriptors constrain the value a trap may report. */
 	if (found && (descriptor.attributes & VM_PROPERTY_CONFIGURABLE) == 0U) {
@@ -2752,6 +3006,7 @@ access_proxy_has(
 	int is_cell;
 	int is_symbol;
 	int present;
+	int extensible;
 	int truth;
 	int status;
 
@@ -2833,11 +3088,9 @@ access_proxy_has(
 
 	/* A false result inspects the original target after the trap's changes. */
 	object = (struct vm_object *)vm_value_as_cell(target);
-	present = vm_get_own_descriptor(object, key, &descriptor);
-	if (present < 0) {
-		status = -present;
+	status = vm_get_own_property(realm, object, key, &descriptor, &present);
+	if (status != 0)
 		goto cleanup;
-	}
 
 	/* Only an existing own property constrains a false has result. */
 	if (present) {
@@ -2847,7 +3100,10 @@ access_proxy_has(
 		}
 
 		/* A nonextensible target also keeps its configurable own properties visible. */
-		if ((object->flags & VM_OBJECT_NOT_EXTENSIBLE) != 0U) {
+		status = vm_is_extensible(realm, object, &extensible);
+		if (status != 0)
+			goto cleanup;
+		if (!extensible) {
 			status = vm_throw_type_error(realm, "Proxy has trap hid a nonextensible target's own property");
 			goto cleanup;
 		}
@@ -2993,6 +3249,9 @@ access_proxy_get_own(
 	int allowed;
 	int status;
 
+	/* Absent target descriptors have no payload slots for the snapshot tracer to inspect. */
+	memset(&current, 0, sizeof(current));
+
 	/* Preserve the original target and handler even if a getter or trap revokes the record. */
 	target = proxy->target;
 	handler = proxy->handler;
@@ -3079,23 +3338,7 @@ access_proxy_get_own(
 	status = vm_get_own_property(realm, target_object, key, &current, &present);
 	if (status != 0)
 		goto cleanup;
-	extensible = 1;
-	if ((target_object->flags & VM_OBJECT_NOT_EXTENSIBLE) != 0U)
-		extensible = 0;
-	if (produced == VM_VALUE_UNDEFINED) {
-		if (present) {
-			if ((current.attributes & VM_PROPERTY_CONFIGURABLE) == 0U || !extensible) {
-				status = vm_throw_type_error(realm, "Proxy descriptor trap cannot hide this own property");
-				goto cleanup;
-			}
-		}
-
-		/* Absence is valid only after the target's fixed-property constraints have passed. */
-		status = 0;
-		goto cleanup;
-	}
-
-	/* Descriptor conversion may delete the target property, so retain its complete snapshot payloads. */
+	/* Target extent callbacks may revoke or mutate its graph, so retain all flagged snapshot payloads first. */
 	current_roots.realm = realm;
 	current_roots.source = VM_VALUE_UNDEFINED;
 	current_roots.descriptor = &current;
@@ -3104,6 +3347,39 @@ access_proxy_get_own(
 	if (status != 0)
 		goto cleanup;
 	current_registered = 1;
+	/* Undefined output skips extent observation when the target property is absent or already fixed. */
+	if (produced == VM_VALUE_UNDEFINED) {
+		if (!present) {
+			status = 0;
+			goto cleanup;
+		}
+
+		/* A fixed own property cannot be hidden, regardless of the target's extensibility. */
+		if ((current.attributes & VM_PROPERTY_CONFIGURABLE) == 0U) {
+			status = vm_throw_type_error(realm, "Proxy descriptor trap cannot hide this own property");
+			goto cleanup;
+		}
+
+		/* Only a configurable present property requires actual target extensibility on the absence path. */
+		status = vm_is_extensible(realm, target_object, &extensible);
+		if (status != 0)
+			goto cleanup;
+		if (!extensible) {
+			status = vm_throw_type_error(realm, "Proxy descriptor trap cannot hide this own property");
+			goto cleanup;
+		}
+
+		/* The observed configurable property may be hidden on an extensible target. */
+		status = 0;
+		goto cleanup;
+	}
+
+	/* Nonundefined output observes target extensibility before any returned descriptor getter executes. */
+	status = vm_is_extensible(realm, target_object, &extensible);
+	if (status != 0)
+		goto cleanup;
+
+	/* The original trap output and every converted field survive descriptor getters independently. */
 	result_roots.realm = realm;
 	result_roots.source = produced;
 	result_roots.descriptor = descriptor;
@@ -3174,6 +3450,7 @@ access_proxy_define(
 {
 	struct vm_cell *roots[8];
 	struct access_descriptor_roots input_roots;
+	struct access_descriptor_roots current_roots;
 	struct vm_descriptor current;
 	struct vm_object *target_object;
 	struct vm_string *string;
@@ -3188,6 +3465,7 @@ access_proxy_define(
 	unsigned index;
 	unsigned registered;
 	int input_registered;
+	int current_registered;
 	int depth_owned;
 	int is_cell;
 	int is_symbol;
@@ -3197,6 +3475,9 @@ access_proxy_define(
 	int setting_fixed;
 	int allowed;
 	int status;
+
+	/* No absent target descriptor exposes uninitialized payloads to its eventual snapshot tracer. */
+	memset(&current, 0, sizeof(current));
 
 	/* Snapshot protocol participants and clear the Boolean output before any observable method read. */
 	*done = 0;
@@ -3223,6 +3504,7 @@ access_proxy_define(
 	roots[7] = NULL;
 	registered = 0;
 	input_registered = 0;
+	current_registered = 0;
 	depth_owned = 0;
 	for (index = 0; index < 8U; index++) {
 		status = vm_heap_add_root(realm->heap, &roots[index]);
@@ -3303,9 +3585,19 @@ access_proxy_define(
 	status = vm_get_own_property(realm, target_object, key, &current, &present);
 	if (status != 0)
 		goto cleanup;
-	extensible = 1;
-	if ((target_object->flags & VM_OBJECT_NOT_EXTENSIBLE) != 0U)
-		extensible = 0;
+
+	/* Extent traps may sever the target's last payload owner while compatibility still needs the original descriptor. */
+	current_roots.realm = realm;
+	current_roots.source = VM_VALUE_UNDEFINED;
+	current_roots.descriptor = &current;
+	current_roots.made = VM_VALUE_UNDEFINED;
+	status = vm_heap_add_tracer(realm->heap, access_descriptor_trace, &current_roots);
+	if (status != 0)
+		goto cleanup;
+	current_registered = 1;
+	status = vm_is_extensible(realm, target_object, &extensible);
+	if (status != 0)
+		goto cleanup;
 	setting_fixed = 0;
 	if ((descriptor->has & VM_HAS_CONFIGURABLE) != 0U && (descriptor->attributes & VM_PROPERTY_CONFIGURABLE) == 0U)
 		setting_fixed = 1;
@@ -3347,6 +3639,8 @@ cleanup:
 	/* The original descriptor pointer and depth ownership end with this native frame. */
 	if (depth_owned)
 		realm->property_depth--;
+	if (current_registered)
+		vm_heap_remove_tracer(realm->heap, access_descriptor_trace, &current_roots);
 	if (input_registered)
 		vm_heap_remove_tracer(realm->heap, access_descriptor_trace, &input_roots);
 	while (registered != 0U) {
@@ -3894,5 +4188,886 @@ cleanup:
 		return status;
 
 	/* Succeeded: handled distinguishes integer-index policy from ordinary fallback and done preserves refusal. */
+	return 0;
+}
+
+/* Owns a realm and input across extensibility traps and script-free native policy collections. */
+static int
+access_extensibility(
+	struct vm_realm *realm,
+	struct vm_object *object,
+	int prevent,
+	int *result)
+{
+	struct access_read_roots roots;
+	int status;
+
+	/* Even a recursion-limit error may allocate while this frame is the only owner. */
+	*result = 0;
+	roots.realm = realm;
+	roots.base = vm_value_cell(object);
+	roots.key = VM_VALUE_UNDEFINED;
+	roots.receiver = VM_VALUE_UNDEFINED;
+	status = vm_heap_add_tracer(realm->heap, access_read_trace, &roots);
+	if (status != 0)
+		return status;
+	if (realm->property_depth >= ACCESS_RECURSION_MAX) {
+		status = vm_throw_range_error(realm, "Maximum property recursion exceeded");
+		vm_heap_remove_tracer(realm->heap, access_read_trace, &roots);
+		return status;
+	}
+
+	/* Every dispatch owns exactly one depth count until its normal or abrupt completion. */
+	realm->property_depth++;
+	if (object->kind == VM_KIND_PROXY) {
+		status = access_proxy_extensibility(realm, (struct vm_proxy *)object, prevent, result);
+	} else if (prevent) {
+		status = vm_object_prevent_extensions(object, result);
+	} else {
+		status = 0;
+		*result = 1;
+		if ((object->flags & VM_OBJECT_NOT_EXTENSIBLE) != 0U)
+			*result = 0;
+	}
+
+	/* Native callbacks never execute script; their collections still require this complete input frame. */
+	realm->property_depth--;
+	vm_heap_remove_tracer(realm->heap, access_read_trace, &roots);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: both operation depth and collector ownership have returned to their caller's state. */
+	return 0;
+}
+
+/* Runs the two one-target extensibility traps with original participants and post-trap invariants. */
+static int
+access_proxy_extensibility(
+	struct vm_realm *realm,
+	struct vm_proxy *proxy,
+	int prevent,
+	int *result)
+{
+	struct vm_cell *roots[3];
+	vm_value target;
+	vm_value handler;
+	vm_value method;
+	vm_value method_key;
+	vm_value produced;
+	const char *name;
+	unsigned registered;
+	unsigned index;
+	int is_cell;
+	int truth;
+	int target_extensible;
+	int status;
+
+	/* Reentrant revocation cannot discard either original protocol participant. */
+	target = proxy->target;
+	handler = proxy->handler;
+	memset(roots, 0, sizeof(roots));
+	is_cell = vm_value_is_cell(target);
+	if (is_cell)
+		roots[0] = vm_value_as_cell(target);
+	is_cell = vm_value_is_cell(handler);
+	if (is_cell)
+		roots[1] = vm_value_as_cell(handler);
+	registered = 0;
+	for (index = 0; index < 3U; index++) {
+		status = vm_heap_add_root(realm->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+		registered++;
+	}
+
+	/* Reject revocation before observing the current handler method. */
+	if (target == VM_VALUE_NULL) {
+		status = vm_throw_type_error(realm, "Cannot inspect extensibility of a revoked Proxy");
+		goto cleanup;
+	}
+
+	/* Both operations use GetMethod, including null fallback and noncallable rejection. */
+	name = "isExtensible";
+	if (prevent)
+		name = "preventExtensions";
+	method_key = vm_key_from_ascii(realm->heap, name);
+	if (method_key == VM_VALUE_EMPTY) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* GetMethod may execute a getter that revokes the original record or collects its graph. */
+	status = vm_get_method(realm, handler, method_key, &method);
+	if (status != 0)
+		goto cleanup;
+	if (method == VM_VALUE_UNDEFINED) {
+		if (prevent)
+			status = vm_prevent_extensions(realm, (struct vm_object *)vm_value_as_cell(target), result);
+		else
+			status = vm_is_extensible(realm, (struct vm_object *)vm_value_as_cell(target), result);
+		goto cleanup;
+	}
+
+	/* The trap can be fresh and otherwise owned only by this native call frame. */
+	roots[2] = vm_value_as_cell(method);
+	status = vm_call(realm, method, handler, &target, 1, &produced);
+	if (status != 0)
+		goto cleanup;
+	truth = vm_to_boolean(produced);
+	if (prevent && !truth) {
+		/* A refused prevention never queries or changes its target after the trap. */
+		status = 0;
+		goto cleanup;
+	}
+
+	/* Extensibility is observed after the trap's changes, using the target's actual internal method. */
+	status = vm_is_extensible(realm, (struct vm_object *)vm_value_as_cell(target), &target_extensible);
+	if (status != 0)
+		goto cleanup;
+	if (prevent) {
+		if (target_extensible) {
+			status = vm_throw_type_error(realm, "Proxy preventExtensions trap left its target extensible");
+			goto cleanup;
+		}
+	} else if (truth != target_extensible) {
+		status = vm_throw_type_error(realm, "Proxy isExtensible trap disagreed with its target");
+		goto cleanup;
+	}
+
+	/* Only a completed invariant check publishes the trap's Boolean result. */
+	*result = truth;
+	status = 0;
+
+cleanup:
+	/* Release only acquired root registrations on every fallback, trap and error path. */
+	while (registered != 0U) {
+		registered--;
+		vm_heap_remove_root(realm->heap, &roots[registered]);
+	}
+
+	/* Preserve the original abrupt outcome after retiring snapshots and fresh method ownership. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the result belongs to the completed extensibility operation. */
+	return 0;
+}
+
+/* Executes a deletion trap without allowing it to conceal fixed or nonextensible target properties. */
+static int
+access_proxy_delete(
+	struct vm_realm *realm,
+	struct vm_proxy *proxy,
+	vm_value key,
+	int *deleted)
+{
+	struct vm_cell *roots[5];
+	struct vm_descriptor current;
+	struct vm_object *target_object;
+	struct vm_string *string;
+	vm_value target;
+	vm_value handler;
+	vm_value method;
+	vm_value method_key;
+	vm_value trap_key;
+	vm_value args[2];
+	vm_value produced;
+	unsigned registered;
+	unsigned index;
+	int is_cell;
+	int is_symbol;
+	int truth;
+	int present;
+	int extensible;
+	int status;
+
+	/* The outer operation owns realm and original input; these snapshots survive reentrant revocation. */
+	target = proxy->target;
+	handler = proxy->handler;
+	memset(roots, 0, sizeof(roots));
+	is_cell = vm_value_is_cell(target);
+	if (is_cell)
+		roots[0] = vm_value_as_cell(target);
+	is_cell = vm_value_is_cell(handler);
+	if (is_cell)
+		roots[1] = vm_value_as_cell(handler);
+	is_cell = vm_value_is_cell(key);
+	if (is_cell)
+		roots[2] = vm_value_as_cell(key);
+	registered = 0;
+	for (index = 0; index < 5U; index++) {
+		status = vm_heap_add_root(realm->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+		registered++;
+	}
+
+	/* Revocation fails before any handler lookup or target observation. */
+	if (target == VM_VALUE_NULL) {
+		status = vm_throw_type_error(realm, "Cannot delete a property of a revoked Proxy");
+		goto cleanup;
+	}
+
+	/* GetMethod preserves getter exceptions, null fallback and noncallable rejection. */
+	method_key = vm_key_from_ascii(realm->heap, "deleteProperty");
+	if (method_key == VM_VALUE_EMPTY) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* A missing current method forwards to the original target's actual internal deletion. */
+	status = vm_get_method(realm, handler, method_key, &method);
+	if (status != 0)
+		goto cleanup;
+	if (method == VM_VALUE_UNDEFINED) {
+		status = vm_delete_property(realm, (struct vm_object *)vm_value_as_cell(target), key, deleted);
+		goto cleanup;
+	}
+
+	/* Retain a fresh method before converting the internal numeric representation of a property key. */
+	roots[3] = vm_value_as_cell(method);
+	trap_key = key;
+	is_symbol = access_is_symbol(key);
+	if (!is_symbol) {
+		status = vm_to_string(realm, key, &string);
+		if (status != 0)
+			goto cleanup;
+		trap_key = vm_value_cell(string);
+		roots[4] = &string->cell;
+	}
+
+	/* The handler receives exactly its original target and string-or-symbol key. */
+	args[0] = target;
+	args[1] = trap_key;
+	status = vm_call(realm, method, handler, args, 2, &produced);
+	if (status != 0)
+		goto cleanup;
+	truth = vm_to_boolean(produced);
+	if (!truth) {
+		/* Refusal never observes the target after the trap. */
+		status = 0;
+		goto cleanup;
+	}
+
+	/* A trap may actually delete or reconfigure its target before this post-trap observation. */
+	target_object = (struct vm_object *)vm_value_as_cell(target);
+	status = vm_get_own_property(realm, target_object, key, &current, &present);
+	if (status != 0)
+		goto cleanup;
+	if (!present) {
+		*deleted = 1;
+		status = 0;
+		goto cleanup;
+	}
+
+	/* Only the descriptor's scalar attributes are needed after this point, never any unrooted payload. */
+	if ((current.attributes & VM_PROPERTY_CONFIGURABLE) == 0U) {
+		status = vm_throw_type_error(realm, "Proxy deleteProperty trap concealed a fixed own property");
+		goto cleanup;
+	}
+
+	/* Existing configurable properties of a nonextensible target cannot be concealed either. */
+	status = vm_is_extensible(realm, target_object, &extensible);
+	if (status != 0)
+		goto cleanup;
+	if (!extensible) {
+		status = vm_throw_type_error(realm, "Proxy deleteProperty trap concealed a nonextensible target's own property");
+		goto cleanup;
+	}
+
+	/* A configurable own property on an extensible target may legally remain despite a true trap result. */
+	*deleted = 1;
+	status = 0;
+
+cleanup:
+	/* Retire only acquired snapshots and transient key/method roots on all completion paths. */
+	while (registered != 0U) {
+		registered--;
+		vm_heap_remove_root(realm->heap, &roots[registered]);
+	}
+
+	/* Preserve the original error after releasing the helper's ownership. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: deleted reports the actual internal operation's Boolean. */
+	return 0;
+}
+
+/* Sets an object's prototype when allowed (OrdinarySetPrototypeOf): not for a non-extensible object, and never into a cycle. */
+static int
+access_set_prototype(
+	struct vm_object *object,
+	struct vm_object *prototype)
+{
+	struct vm_object *walk;
+
+	/* The same prototype is no change. */
+	if (object->prototype == prototype)
+		return 1;
+
+	/* A non-extensible object keeps its prototype. */
+	if ((object->flags & VM_OBJECT_NOT_EXTENSIBLE) != 0U)
+		return 0;
+
+	/* The object must not be on the new prototype's chain. */
+	for (walk = prototype; walk != NULL; walk = walk->prototype) {
+		if (walk == object)
+			return 0;
+
+		/* Ordinary cycle detection stops before any nonordinary GetPrototypeOf implementation. */
+		if (walk->kind == VM_KIND_PROXY)
+			break;
+	}
+
+	/* Succeeded: the ordinary object now uses its accepted prototype. */
+	object->prototype = prototype;
+	return 1;
+}
+
+/* Runs Proxy GetPrototypeOf while retaining fresh results through post-trap target observations. */
+static int
+access_proxy_get_prototype(
+	struct vm_realm *realm,
+	struct vm_proxy *proxy,
+	vm_value *prototype)
+{
+	struct vm_cell *roots[4];
+	vm_value target;
+	vm_value handler;
+	vm_value method;
+	vm_value method_key;
+	vm_value produced;
+	vm_value actual;
+	unsigned registered;
+	unsigned index;
+	int is_cell;
+	int is_object;
+	int extensible;
+	int same;
+	int status;
+
+	/* Original participants remain snapshots even if method lookup revokes their Proxy. */
+	target = proxy->target;
+	handler = proxy->handler;
+	memset(roots, 0, sizeof(roots));
+	is_cell = vm_value_is_cell(target);
+	if (is_cell)
+		roots[0] = vm_value_as_cell(target);
+	is_cell = vm_value_is_cell(handler);
+	if (is_cell)
+		roots[1] = vm_value_as_cell(handler);
+	registered = 0;
+	for (index = 0; index < 4U; index++) {
+		status = vm_heap_add_root(realm->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+		registered++;
+	}
+
+	/* Reject revoked input before reading its handler. */
+	if (target == VM_VALUE_NULL) {
+		status = vm_throw_type_error(realm, "Cannot get the prototype of a revoked Proxy");
+		goto cleanup;
+	}
+
+	/* Lookup follows the normal GetMethod rules, including null fallback and noncallable rejection. */
+	method_key = vm_key_from_ascii(realm->heap, "getPrototypeOf");
+	if (method_key == VM_VALUE_EMPTY) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* An absent trap forwards to the original target's actual internal method. */
+	status = vm_get_method(realm, handler, method_key, &method);
+	if (status != 0)
+		goto cleanup;
+	if (method == VM_VALUE_UNDEFINED) {
+		status = vm_get_prototype(realm, (struct vm_object *)vm_value_as_cell(target), prototype);
+		goto cleanup;
+	}
+
+	/* Both fresh methods and their sole returned object need native frame ownership. */
+	roots[2] = vm_value_as_cell(method);
+	status = vm_call(realm, method, handler, &target, 1, &produced);
+	if (status != 0)
+		goto cleanup;
+	is_object = vm_value_is_object(produced);
+	if (!is_object && produced != VM_VALUE_NULL) {
+		status = vm_throw_type_error(realm, "Proxy getPrototypeOf trap must return an object or null");
+		goto cleanup;
+	}
+
+	/* A target's own extensibility operation may execute script, so retain the sole returned object. */
+	if (is_object)
+		roots[3] = vm_value_as_cell(produced);
+	status = vm_is_extensible(realm, (struct vm_object *)vm_value_as_cell(target), &extensible);
+	if (status != 0)
+		goto cleanup;
+	if (!extensible) {
+		status = vm_get_prototype(realm, (struct vm_object *)vm_value_as_cell(target), &actual);
+		if (status != 0)
+			goto cleanup;
+		same = vm_same_value(produced, actual);
+		if (!same) {
+			status = vm_throw_type_error(realm, "Proxy getPrototypeOf trap disagreed with its nonextensible target");
+			goto cleanup;
+		}
+	}
+
+	/* An extensible target permits any object or null; fixed targets require the identity already checked. */
+	*prototype = produced;
+	status = 0;
+
+cleanup:
+	/* Release only snapshots and results whose root registrations were acquired. */
+	while (registered != 0U) {
+		registered--;
+		vm_heap_remove_root(realm->heap, &roots[registered]);
+	}
+
+	/* Preserve a failed trap or invariant after retiring native ownership. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the caller now owns the returned prototype value. */
+	return 0;
+}
+
+/* Runs Proxy SetPrototypeOf with the requested prototype rooted by its outer native operation frame. */
+static int
+access_proxy_set_prototype(
+	struct vm_realm *realm,
+	struct vm_proxy *proxy,
+	vm_value prototype,
+	int *done)
+{
+	struct vm_cell *roots[3];
+	vm_value target;
+	vm_value handler;
+	vm_value method;
+	vm_value method_key;
+	vm_value args[2];
+	vm_value produced;
+	vm_value actual;
+	unsigned registered;
+	unsigned index;
+	int is_cell;
+	int truth;
+	int extensible;
+	int same;
+	int status;
+
+	/* Reentrant lookup or trap revocation cannot replace the original target or handler. */
+	target = proxy->target;
+	handler = proxy->handler;
+	memset(roots, 0, sizeof(roots));
+	is_cell = vm_value_is_cell(target);
+	if (is_cell)
+		roots[0] = vm_value_as_cell(target);
+	is_cell = vm_value_is_cell(handler);
+	if (is_cell)
+		roots[1] = vm_value_as_cell(handler);
+	registered = 0;
+	for (index = 0; index < 3U; index++) {
+		status = vm_heap_add_root(realm->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+		registered++;
+	}
+
+	/* A revoked input fails before handler lookup. */
+	if (target == VM_VALUE_NULL) {
+		status = vm_throw_type_error(realm, "Cannot set the prototype of a revoked Proxy");
+		goto cleanup;
+	}
+
+	/* GetMethod observes the current handler and handles null fallback. */
+	method_key = vm_key_from_ascii(realm->heap, "setPrototypeOf");
+	if (method_key == VM_VALUE_EMPTY) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* Missing traps delegate the actual transition to the original target. */
+	status = vm_get_method(realm, handler, method_key, &method);
+	if (status != 0)
+		goto cleanup;
+	if (method == VM_VALUE_UNDEFINED) {
+		if (prototype == VM_VALUE_NULL)
+			status = vm_set_prototype(realm, (struct vm_object *)vm_value_as_cell(target), NULL, done);
+		else
+			status = vm_set_prototype(realm, (struct vm_object *)vm_value_as_cell(target), (struct vm_object *)vm_value_as_cell(prototype), done);
+		goto cleanup;
+	}
+
+	/* The trap receives exactly the original target and requested object-or-null prototype. */
+	roots[2] = vm_value_as_cell(method);
+	args[0] = target;
+	args[1] = prototype;
+	status = vm_call(realm, method, handler, args, 2, &produced);
+	if (status != 0)
+		goto cleanup;
+	truth = vm_to_boolean(produced);
+	if (!truth) {
+		/* A refused transition never queries its target after the trap. */
+		status = 0;
+		goto cleanup;
+	}
+
+	/* Only nonextensible targets constrain a true trap result to the actual target prototype. */
+	status = vm_is_extensible(realm, (struct vm_object *)vm_value_as_cell(target), &extensible);
+	if (status != 0)
+		goto cleanup;
+	if (!extensible) {
+		status = vm_get_prototype(realm, (struct vm_object *)vm_value_as_cell(target), &actual);
+		if (status != 0)
+			goto cleanup;
+		same = vm_same_value(prototype, actual);
+		if (!same) {
+			status = vm_throw_type_error(realm, "Proxy setPrototypeOf trap disagreed with its nonextensible target");
+			goto cleanup;
+		}
+	}
+
+	/* A true result has passed the actual target's post-trap constraints. */
+	*done = 1;
+	status = 0;
+
+cleanup:
+	/* Retire every acquired snapshot and fresh method root regardless of outcome. */
+	while (registered != 0U) {
+		registered--;
+		vm_heap_remove_root(realm->heap, &roots[registered]);
+	}
+
+	/* Preserve failures after releasing all helper ownership. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: done reports the accepted or refused transition. */
+	return 0;
+}
+
+/* Marks every meaningful key in a native vector, including existing output prefixes. */
+static void
+access_keys_trace(
+	struct vm_heap *heap,
+	void *context)
+{
+	struct wb_vector *keys;
+	size_t index;
+
+	/* Unused capacity holds no live values and must never become a collector edge. */
+	keys = context;
+	for (index = 0; index < keys->count; index++)
+		vm_heap_mark_value(heap, ((vm_value *)keys->items)[index]);
+}
+
+/* Creates a property-key list from an array-like object without coercing element values into keys. */
+static int
+access_property_key_list(
+	struct vm_realm *realm,
+	vm_value source,
+	struct wb_vector *keys)
+{
+	struct vm_cell *current_root;
+	struct vm_string *string;
+	vm_value length_key;
+	vm_value index_key;
+	vm_value value;
+	vm_value key;
+	double number;
+	uint64_t length;
+	uint64_t index;
+	int is_cell;
+	int is_object;
+	int is_string;
+	int is_symbol;
+	int status;
+
+	/* The caller retains source and the accumulated vector; this slot owns each fresh intermediate value. */
+	current_root = NULL;
+	status = vm_heap_add_root(realm->heap, &current_root);
+	if (status != 0)
+		return status;
+	is_object = vm_value_is_object(source);
+	if (!is_object) {
+		status = vm_throw_type_error(realm, "Proxy ownKeys trap must return an object");
+		goto cleanup;
+	}
+
+	/* LengthOfArrayLike gets length once before applying ToLength's number conversion. */
+	length_key = vm_key_from_ascii(realm->heap, "length");
+	if (length_key == VM_VALUE_EMPTY) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* A fresh length object must survive its own valueOf callback and any collection it performs. */
+	status = vm_get(realm, source, length_key, &value);
+	if (status != 0)
+		goto cleanup;
+	is_cell = vm_value_is_cell(value);
+	if (is_cell)
+		current_root = vm_value_as_cell(value);
+	status = vm_to_number(realm, value, &number);
+	if (status != 0)
+		goto cleanup;
+	current_root = NULL;
+
+	/* NaN and nonpositive lengths produce an empty list, including negative zero and negative infinity. */
+	length = 0;
+	if (number == number && number > 0.0) {
+		if (number >= 9007199254740991.0)
+			length = (uint64_t)9007199254740991.0;
+		else
+			length = (uint64_t)floor(number);
+	}
+
+	/* Read each actual index in order; arbitrary large lengths remain lazy so the first abrupt getter still wins. */
+	for (index = 0; index < length; index++) {
+		if (index <= 2147483647U) {
+			index_key = vm_value_int32((int32_t)index);
+		} else {
+			status = vm_to_string(realm, vm_value_number((double)index), &string);
+			if (status != 0)
+				goto cleanup;
+			current_root = &string->cell;
+			status = vm_key_from_string(realm->heap, string, &index_key);
+			if (status != 0)
+				goto cleanup;
+			current_root = NULL;
+		}
+
+		/* Property-key lists permit only String or Symbol elements, with no object or numeric element coercion. */
+		status = vm_get(realm, source, index_key, &value);
+		if (status != 0)
+			goto cleanup;
+		current_root = NULL;
+		is_cell = vm_value_is_cell(value);
+		if (is_cell)
+			current_root = vm_value_as_cell(value);
+		is_string = vm_value_is_string(value);
+		is_symbol = access_is_symbol(value);
+		if (!is_string && !is_symbol) {
+			status = vm_throw_type_error(realm, "Proxy ownKeys list elements must be strings or symbols");
+			goto cleanup;
+		}
+
+		/* Only primitive strings are canonicalized into the VM's index-or-atom representation. */
+		key = value;
+		if (is_string) {
+			status = vm_key_from_string(realm->heap, (struct vm_string *)vm_value_as_cell(value), &key);
+			if (status != 0)
+				goto cleanup;
+		}
+
+		/* The accumulated vector becomes the owner before the next getter may collect or delete earlier values. */
+		status = wb_vector_push(keys, &key);
+		if (status != 0)
+			goto cleanup;
+		current_root = NULL;
+	}
+
+	/* Every element was evaluated before the caller checks duplicate entries. */
+	status = 0;
+
+cleanup:
+	/* Neither a length object nor an element may remain retained after this list conversion frame ends. */
+	vm_heap_remove_root(realm->heap, &current_root);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: keys preserves the original array-like order as canonical internal property keys. */
+	return 0;
+}
+
+/* Executes Proxy OwnPropertyKeys with complete list evaluation and post-trap target key-set invariants. */
+static int
+access_proxy_own_keys(
+	struct vm_realm *realm,
+	struct vm_proxy *proxy,
+	struct wb_vector *keys)
+{
+	struct vm_cell *roots[4];
+	struct wb_vector lists[ACCESS_OWN_LIST_COUNT];
+	struct vm_descriptor descriptor;
+	struct vm_object *target_object;
+	vm_value target;
+	vm_value handler;
+	vm_value method;
+	vm_value method_key;
+	vm_value produced;
+	vm_value key;
+	size_t item;
+	unsigned index;
+	unsigned registered;
+	unsigned traced;
+	int is_cell;
+	int listed;
+	int extensible;
+	int found;
+	int status;
+
+	/* Original participants survive method lookup and trap revocation independently of the outer Proxy record. */
+	target = proxy->target;
+	handler = proxy->handler;
+	memset(roots, 0, sizeof(roots));
+	is_cell = vm_value_is_cell(target);
+	if (is_cell)
+		roots[0] = vm_value_as_cell(target);
+	is_cell = vm_value_is_cell(handler);
+	if (is_cell)
+		roots[1] = vm_value_as_cell(handler);
+	registered = 0;
+	traced = 0;
+	for (index = 0; index < ACCESS_OWN_LIST_COUNT; index++)
+		wb_vector_init(&lists[index], sizeof(vm_value));
+
+	/* Every acquired root registration is retired even when a later registration fails. */
+	for (index = 0; index < 4U; index++) {
+		status = vm_heap_add_root(realm->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+		registered++;
+	}
+
+	/* Accumulated keys need native vector ownership across later element getters and target policy collections. */
+	for (index = 0; index < ACCESS_OWN_LIST_COUNT; index++) {
+		status = vm_heap_add_tracer(realm->heap, access_keys_trace, &lists[index]);
+		if (status != 0)
+			goto cleanup;
+		traced++;
+	}
+
+	/* Revocation fails before the current handler method is observed. */
+	if (target == VM_VALUE_NULL) {
+		status = vm_throw_type_error(realm, "Cannot list the own keys of a revoked Proxy");
+		goto cleanup;
+	}
+
+	/* GetMethod provides the usual dynamic getter, null fallback and noncallable checks. */
+	method_key = vm_key_from_ascii(realm->heap, "ownKeys");
+	if (method_key == VM_VALUE_EMPTY) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* Missing methods delegate to the original target's actual internal key operation. */
+	status = vm_get_method(realm, handler, method_key, &method);
+	if (status != 0)
+		goto cleanup;
+	if (method == VM_VALUE_UNDEFINED) {
+		status = vm_own_property_keys(realm, (struct vm_object *)vm_value_as_cell(target), keys);
+		goto cleanup;
+	}
+
+	/* Retain both a fresh trap and its otherwise unowned array-like result. */
+	roots[2] = vm_value_as_cell(method);
+	status = vm_call(realm, method, handler, &target, 1, &produced);
+	if (status != 0)
+		goto cleanup;
+	is_cell = vm_value_is_cell(produced);
+	if (is_cell)
+		roots[3] = vm_value_as_cell(produced);
+	status = access_property_key_list(realm, produced, &lists[ACCESS_OWN_TRAP_KEYS]);
+	if (status != 0)
+		goto cleanup;
+
+	/* Duplicate rejection occurs only after the complete array-like list has been evaluated. */
+	for (item = 0; item < lists[ACCESS_OWN_TRAP_KEYS].count; item++) {
+		key = ((vm_value *)lists[ACCESS_OWN_TRAP_KEYS].items)[item];
+		listed = access_key_listed(&lists[ACCESS_OWN_TRAP_KEYS], item, key);
+		if (listed) {
+			status = vm_throw_type_error(realm, "Proxy ownKeys trap returned duplicate keys");
+			goto cleanup;
+		}
+	}
+
+	/* Extensibility is snapshotted before the target key list, after all trap-result getters. */
+	target_object = (struct vm_object *)vm_value_as_cell(target);
+	status = vm_is_extensible(realm, target_object, &extensible);
+	if (status != 0)
+		goto cleanup;
+	status = vm_own_property_keys(realm, target_object, &lists[ACCESS_OWN_TARGET_KEYS]);
+	if (status != 0)
+		goto cleanup;
+
+	/* Classify every target descriptor before checking any missing key, preserving abrupt-operation order. */
+	for (item = 0; item < lists[ACCESS_OWN_TARGET_KEYS].count; item++) {
+		key = ((vm_value *)lists[ACCESS_OWN_TARGET_KEYS].items)[item];
+		status = vm_get_own_property(realm, target_object, key, &descriptor, &found);
+		if (status != 0)
+			goto cleanup;
+		if (found && (descriptor.attributes & VM_PROPERTY_CONFIGURABLE) == 0U)
+			status = wb_vector_push(&lists[ACCESS_OWN_FIXED_KEYS], &key);
+		else
+			status = wb_vector_push(&lists[ACCESS_OWN_CONFIGURABLE_KEYS], &key);
+		if (status != 0)
+			goto cleanup;
+	}
+
+	/* Fixed keys are mandatory regardless of target extensibility. */
+	for (item = 0; item < lists[ACCESS_OWN_FIXED_KEYS].count; item++) {
+		key = ((vm_value *)lists[ACCESS_OWN_FIXED_KEYS].items)[item];
+		listed = access_key_listed(&lists[ACCESS_OWN_TRAP_KEYS], lists[ACCESS_OWN_TRAP_KEYS].count, key);
+		if (!listed) {
+			status = vm_throw_type_error(realm, "Proxy ownKeys trap omitted a fixed target key");
+			goto cleanup;
+		}
+	}
+
+	/* A nonextensible target also requires every configurable key and forbids every extra key. */
+	if (!extensible) {
+		for (item = 0; item < lists[ACCESS_OWN_CONFIGURABLE_KEYS].count; item++) {
+			key = ((vm_value *)lists[ACCESS_OWN_CONFIGURABLE_KEYS].items)[item];
+			listed = access_key_listed(&lists[ACCESS_OWN_TRAP_KEYS], lists[ACCESS_OWN_TRAP_KEYS].count, key);
+			if (!listed) {
+				status = vm_throw_type_error(realm, "Proxy ownKeys trap omitted a nonextensible target key");
+				goto cleanup;
+			}
+		}
+
+		/* Both lists are unique and every target key was matched, so equal size excludes all extras. */
+		if (lists[ACCESS_OWN_TRAP_KEYS].count != lists[ACCESS_OWN_TARGET_KEYS].count) {
+			status = vm_throw_type_error(realm, "Proxy ownKeys trap added a key to a nonextensible target");
+			goto cleanup;
+		}
+	}
+
+	/* Preserve trap order when appending; no ordinary numeric-key sorting is applied to a Proxy list. */
+	for (item = 0; item < lists[ACCESS_OWN_TRAP_KEYS].count; item++) {
+		key = ((vm_value *)lists[ACCESS_OWN_TRAP_KEYS].items)[item];
+		status = wb_vector_push(keys, &key);
+		if (status != 0)
+			goto cleanup;
+	}
+
+	/* Complete list and invariant checks supplied the successfully appended keys. */
+	status = 0;
+
+cleanup:
+	/* Stop tracing vectors before releasing their C storage; unused capacity never retains cells. */
+	while (traced != 0U) {
+		traced--;
+		vm_heap_remove_tracer(realm->heap, access_keys_trace, &lists[traced]);
+	}
+
+	/* Every vector was initialized before any fallible registration or script operation. */
+	for (index = 0; index < ACCESS_OWN_LIST_COUNT; index++)
+		wb_vector_release(&lists[index]);
+
+	/* Original participants and transient trap objects retire after all list storage. */
+	while (registered != 0U) {
+		registered--;
+		vm_heap_remove_root(realm->heap, &roots[registered]);
+	}
+
+	/* Propagate original errors after retiring snapshots, temporary lists and trap results. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the outer frame now owns the complete appended key sequence. */
 	return 0;
 }

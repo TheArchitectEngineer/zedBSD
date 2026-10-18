@@ -1,0 +1,101 @@
+{
+  "engine_sha256": "7d470d63118ad9e0465e9f47247355461ed1ae6295f8ae20c8020c3e43ac13b3",
+  "harness_sha256": "d2399236c2a09c429804ff2299ad6629e17e2b53f17a74dd341e936adb11ae3e",
+  "webidl_sha256": "954444f6daf0f8068d2fce513eac8e6a5d53189a910b9a5675e8d8e8a2808070",
+  "runs": [
+    {
+      "mode": "baseline",
+      "label": "actual-webidl-positive",
+      "returncode": 0,
+      "source_sha256": "22e0db61ea034f3b8748a19bc1c30ee0eb1ab4f9aa08c560c9626246a839b83f",
+      "tests_sha256": "20b4846eda4a4ded85270cfbc8db94d60c3ff7200b82f725be745c000022e3d3",
+      "callbacks": [
+        {
+          "name": "original WebIDL2 loaded",
+          "status": 0,
+          "message": ""
+        },
+        {
+          "name": "original parser executes actual IDL",
+          "status": 1,
+          "message": "Proxy is not defined"
+        },
+        {
+          "name": "original validator executes delegated generators",
+          "status": 1,
+          "message": "Proxy is not defined"
+        },
+        {
+          "name": "invalid IDL is rejected by original parser",
+          "status": 1,
+          "message": "assert_true: expected true got false"
+        }
+      ],
+      "ownership": true,
+      "end": true
+    },
+    {
+      "mode": "baseline",
+      "label": "actual-webidl-negative",
+      "returncode": 0,
+      "source_sha256": "f18d050b78dfe4479d358180d70d530c1915118dffd85e48ebfac725846e087a",
+      "tests_sha256": "4136069532ce3a71dc8844f596e33fcdded3dfe01bc46446505b3c043568f61b",
+      "callbacks": [
+        {
+          "name": "parser success does not mask failure",
+          "status": 1,
+          "message": "Proxy is not defined"
+        }
+      ],
+      "ownership": true,
+      "end": true
+    },
+    {
+      "mode": "adapter",
+      "label": "actual-webidl-positive",
+      "returncode": 0,
+      "source_sha256": "55541587dbfd857f680f6ea777abae9ef3aae7045b1ba6d3250eb438970a3537",
+      "tests_sha256": "20b4846eda4a4ded85270cfbc8db94d60c3ff7200b82f725be745c000022e3d3",
+      "callbacks": [
+        {
+          "name": "original WebIDL2 loaded",
+          "status": 0,
+          "message": ""
+        },
+        {
+          "name": "original parser executes actual IDL",
+          "status": 0,
+          "message": ""
+        },
+        {
+          "name": "original validator executes delegated generators",
+          "status": 0,
+          "message": ""
+        },
+        {
+          "name": "invalid IDL is rejected by original parser",
+          "status": 0,
+          "message": ""
+        }
+      ],
+      "ownership": true,
+      "end": true
+    },
+    {
+      "mode": "adapter",
+      "label": "actual-webidl-negative",
+      "returncode": 0,
+      "source_sha256": "4c9e1bca510cccebd4c432d6b569133953813316343f99092a0510387572ea3d",
+      "tests_sha256": "4136069532ce3a71dc8844f596e33fcdded3dfe01bc46446505b3c043568f61b",
+      "callbacks": [
+        {
+          "name": "parser success does not mask failure",
+          "status": 1,
+          "message": "assert_unreached: intentional assertion after actual original parser Reached unreachable code"
+        }
+      ],
+      "ownership": true,
+      "end": true
+    }
+  ]
+}

@@ -16,15 +16,30 @@
 #include "../../x86/boot-parameters.h"
 #include "../bsp.h"
 #include "../defs.h"
+#include "handoff.h"
 
 #define PC98_BOOT_DEVICE_MAX 4U
 #define PC98_IDENTITY_MAP_END 0x08000000U
+
+/*
+ * The forms of the handoff a loader may pass.
+ *
+ * The native loader passes the common record with or without the
+ * boot-parameter record after it; a Multiboot loader passes the common
+ * record alone.
+ */
+enum pc98_handoff_form {
+	PC98_HANDOFF_INVALID = 0,
+	PC98_HANDOFF_LEGACY,
+	PC98_HANDOFF_PARAMETERS
+};
 
 static struct kern_boot_handoff kernel_handoff;
 static struct kern_boot_device kernel_boot_devices[PC98_BOOT_DEVICE_MAX];
 static char boot_command_line[KERN_BOOT_PARAMETERS_STORAGE_SIZE];
 static int boot_info_valid;
 
+static enum pc98_handoff_form classify_handoff(uint16_t version, uint16_t size);
 static int handoff_name_is(const char *name, const char *expected);
 
 /*
@@ -37,7 +52,7 @@ bsp_boot_init(
 	const struct kern_boot_handoff *raw;
 	const struct kern_boot_device *devices;
 	enum x86_boot_parameters_result parameter_result;
-	enum x86_pc98_handoff_form form;
+	enum pc98_handoff_form form;
 	uintptr_t raw_address;
 	uint32_t table_bytes;
 
@@ -54,7 +69,7 @@ bsp_boot_init(
 
 	/* Validates the fixed header, version, and device-table references. */
 	if (raw == NULL || raw->magic != KERN_HANDOFF_MAGIC ||
-	    (raw->version != KERN_HANDOFF_VERSION_PC98 &&
+	    (raw->version != PC98_HANDOFF_VERSION_NATIVE &&
 	     raw->version != KERN_HANDOFF_VERSION_MULTIBOOT) ||
 	    raw->device_count == 0 ||
 	    raw->device_count > PC98_BOOT_DEVICE_MAX ||
@@ -63,12 +78,12 @@ bsp_boot_init(
 	}
 
 	/* Classifies and rejects an unsupported handoff version or extent. */
-	form = x86_pc98_handoff_classify(raw->version, raw->size);
-	if (form == X86_PC98_HANDOFF_INVALID)
+	form = classify_handoff(raw->version, raw->size);
+	if (form == PC98_HANDOFF_INVALID)
 		return;
 
 	/* Enforces the native handoff's whole-disk LBA convention. */
-	if (raw->version == KERN_HANDOFF_VERSION_PC98 &&
+	if (raw->version == PC98_HANDOFF_VERSION_NATIVE &&
 	    (raw->boot_partition_scheme != KERN_PARTITION_SCHEME_LBA ||
 	     raw->boot_partition_index != 0)) {
 		return;
@@ -98,10 +113,10 @@ bsp_boot_init(
 	devices = (const struct kern_boot_device *)(uintptr_t)raw->device_table;
 
 	/* Copies versioned boot parameters or publishes an empty parameter set. */
-	if (form == X86_PC98_HANDOFF_PARAMETERS) {
+	if (form == PC98_HANDOFF_PARAMETERS) {
 		parameter_result = x86_boot_parameter_record_copy(
 			boot_command_line,
-			&((const struct kern_pc98_parameter_handoff *)raw)->parameters,
+			&((const struct pc98_parameter_handoff *)raw)->parameters,
 			KERN_BOOT_PARAMETER_RECORD_SIZE);
 	} else {
 		parameter_result = x86_boot_parameters_copy(
@@ -118,9 +133,14 @@ bsp_boot_init(
 	kernel_handoff = *raw;
 	hal_memcpy(kernel_boot_devices, devices, table_bytes);
 
-	/* Normalizes a parameter-bearing handoff to the kernel's base record. */
-	if (form == X86_PC98_HANDOFF_PARAMETERS)
-		kernel_handoff.size = sizeof(kernel_handoff);
+	/*
+	 * Gives the kernel the common record alone, under the common version:
+	 * the loader's form stays here, and the partition scheme the loader
+	 * reported (a whole-disk LBA for the native loader, an MBR partition
+	 * for a Multiboot one) is what tells the kernel how to find its root.
+	 */
+	kernel_handoff.version = KERN_HANDOFF_VERSION_MULTIBOOT;
+	kernel_handoff.size = sizeof(kernel_handoff);
 	kernel_handoff.device_table =
 	    (uint32_t)(uintptr_t)kernel_boot_devices;
 	boot_info_valid = 1;
@@ -156,6 +176,27 @@ bsp_kernel_handoff(
 
 	/* Returns the stable copied handoff. */
 	return &kernel_handoff;
+}
+
+/* Classifies a loader's handoff by its version and size. */
+static enum pc98_handoff_form
+classify_handoff(
+	uint16_t version,
+	uint16_t size)
+{
+	/* The native loader's record followed by the boot parameters. */
+	if (version == PC98_HANDOFF_VERSION_NATIVE &&
+	    size == PC98_PARAMETER_HANDOFF_SIZE)
+		return PC98_HANDOFF_PARAMETERS;
+
+	/* The common record alone, from either loader. */
+	if ((version == PC98_HANDOFF_VERSION_NATIVE ||
+	     version == KERN_HANDOFF_VERSION_MULTIBOOT) &&
+	    size == PC98_HANDOFF_COMMON_SIZE)
+		return PC98_HANDOFF_LEGACY;
+
+	/* Any other version or extent is not a handoff the HAL knows. */
+	return PC98_HANDOFF_INVALID;
 }
 
 /* Tests one optional handoff object's stable name. */

@@ -1,0 +1,36 @@
+{
+  "engine_tokens_outside_new_operations_declarations_and_private_list_enum_unchanged": true,
+  "header_tokens_except_one_declaration_unchanged": true,
+  "native_operations_definition_comment_unchanged": true,
+  "product_call_sites_unchanged": true,
+  "old452_prefix_unchanged": true,
+  "added_conditions": 49,
+  "full_changed_functions": {
+    "userland/desktop/libbrowser/vm/access.c": [
+      "vm_own_property_keys",
+      "access_keys_trace",
+      "access_property_key_list",
+      "access_proxy_own_keys"
+    ],
+    "plan/ws074/tests/host-proxy-read.c": [
+      "main",
+      "proxy_key_values_trace",
+      "proxy_own_keys",
+      "proxy_note_own_key",
+      "own_collect_keys",
+      "own_keys_pressure"
+    ]
+  },
+  "raw_allowed_cleanup": 94,
+  "other_checker_findings": 0,
+  "manual_review": [
+    "ANSI declarations first; public/static order; enum/types before tables; normal prototypes after tables and initializer exception preserved",
+    "owner/input/output prefix traced before depth errors, all accumulated vectors traced across getters/target policy; current length/value root and original participants explicit",
+    "ToLength NaN/nonpositive/floor/clamp2^53-1, lazy large-index conversion, no arbitrary preemptive huge length rejection",
+    "all arraylike elements evaluated/type-checked before duplicates; canonical internal keys preserve original string/symbol identity and trap ordering",
+    "target actual extent before target key list, all target descriptors classified before any missing-key rejection, fixed/nonextensible exact-set checks correct",
+    "success append order preserved; partial native error rollback restores count before tracers retire; unused capacity never traced",
+    "pure native own-key callback can collect/allocate but never run user script",
+    "public Object/for-in consumers, other Proxy operations, factory bounds/global/API2/Wayland unchanged; full p100 remains pending"
+  ]
+}

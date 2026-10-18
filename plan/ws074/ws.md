@@ -9,9 +9,9 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [ws074-q20261018-37](queue.md) finished（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
+Queue: [ws074-q20261018-48](queue.md) active（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
 
-Latest verified（q37）: fixed-buffer TypedArrayの専用Set/Defineをrealm access層へ追加しq35のENOTSUPを解除。same receiverのcanonical numeric keyはToNumber/ToBigIntを先に実行しinvalid/OOBはno-op true、different receiverのinvalidはconversion無しtrue・validは元value/receiverでordinary Set。noncanonical/Symbolはordinary fallback。direct typed assignmentも新pathへ接続し、既存ordinary vm_set bodyはexotic branchを除いて全C tokens同一。Defineはindex validity→mandatory属性/accessor拒否→値変換→pure保存の正規順で、conversion後の無効化はaccepted Defineのno-op successとして扱う。 VM_OBJECT_TYPED_BIGINTを内部immutable content flagにし、VMからJS moduleの型やhelperへの依存無しに変換を選択。typed_defineの旧callback内user conversionをrealm側へ移し、native callbackはnormalized Number/BigIntのindex/属性検証とbyte storeだけ、NULL realmで呼ぶ。native_operations struct/コメント/契約は全bytes不変。既存shared typed_convertの実consumerはDataViewで、constructorの要素変換は新VM Set経由。双方が正規ToBigIntを使用する。typed_make_viewはrealm/prototype/buffer/new viewをactual allocation中rootにし、DataView pathとBigInt metadataも正しく区別してpublishする。 同じ323条件がnative/Chrome対照で通過、old272 source prefixはbyte同一。q36由来のcanonical-classification negative-zero primitive filterを継承し、pure genuine exotic全一致とは主張しない。元HTMLの公開API対照はOOB変換省略、Define OOB/readonly/accessor誤受理、BigInt OOB Number誤受理、String/boolean/constructor/DataView入力誤拒否の9差を修正し、first10行がChromeと完全一致・従来数値wrap1も保持。既知Chrome153の"-0.0"拒否だけはnative5/Chrome TypeErrorの元rawを保持し、標準ordinary keyのnative挙動を維持する。 native C stack保守保持無し。実public constructorが作るBigInt typed objectに、original immutable policyへcollect/forwardするfixture tableを一時設定。owner/source/targetのsetup rootsを落とし、pure get-own内の強制GCを少なくとも2回越えてbare managed realmとsole converted BigIntを保持。forward defineはNULL realm/actual BigIntを検証し実policyへ委譲、保存された54-bit値9007199254740993を実byte getterで独立確認。realm/source/valueOf primitiveはtyped graphだけrootに残して実回収、最後のtarget/output roots解放でTypedArray/view/public ArrayBuffer/native storage cell/loaded BigIntも実回収。既存5-hook Proxy GC/独立value・receiver/From pressure/ToBigInt post-callback parser collection対照を保持した。 source WIP0c8033f4b、final source/pair/input hash317件照合。host warning0、q02 exact access/builtin_typed2 source target compile warning0。full new/changed Cは許可forward shared cleanup73・他0。DOM41、VM45/factory56、CSSOM12+12、marks7/observer10/ErrorEvent9/ErrorReporting19/delegation10、Acid3 score/inventory100・pixel0/Acid2既存差873を維持。 固定1508 harnessを同じsettle5000/process20で236.8秒実測。q36 whole判定・全callback/completion object完全同一、494 PASS/955 FAIL/13 harness_error/20 no_completion/24 no_output/2 multiple、callbacks11540 PASS/20642 FAIL/14 NOTRUN、whole gains/losses/old PASS callback losses/差0。static844/scripted105/strict39はq28証拠再利用でcurrent pair全capture同値は未測定。確認済1482/3805（38.948752%）・held0・未attempt275を保持。 harness archive1676 members SHA25651fc5fa098a8a20d13a1d188840fa97a9ca4102e7814618e96d5878eb4495d5e、native/oracle/build archive66 members SHA256a51bc2dceb07013b1b31d87ed7637b34f84478129a1f6d11e611b371d9db99ffを全member順次read-back。i01 existing fixed-buffer Set/Define partialだけcleared。RAB/grow/detach/SAB backing、新typed Get/Has/Delete invalid-key prototype semantics、通常nonProxy assignmentのexotic prototype routing、Proxy delete/keys/prototype/extent/IsArray/call/construct/global/revocable/原WebIDL2、full target/p100/WS100%未達。constructor callerのelement Get中の新配列ownerなど本partial外のGC面も全体verifiedとは主張しない。共有Master/Queue/next/cache/GitHub投影pending、push無し。
+Latest verified（q47）: nested noncallable target/internal invariant realm照会 partial clear。old622＋new36 native658/Chrome656は既知huge2差。元target実回収後のsole current descriptor payload保持・SameValue適合・output-only graph回収→payload実回収確認。global/callable未公開。最新全1508 q46再利用・q47全census未測定、公式確認済1482/3805・held0・未attempt275、images/crash q28再利用。for-in/other consumers/call/construct/newtarget/global/p100/full target未達。[証拠](phase258/evidence/20261018-q47/README.md)。共有投影pending。
 
 Event ws074-q14-percentage-scope-reconciled-20261018: precode Chrome17条件でzero/cancelled %型の依存を確認。p251をi01、p250をi02へ改訂しglobal1491/static1561照合へ拡張、初期snapshot保存/60分deadline維持。
 
@@ -128,7 +128,7 @@ Event ws074-p217-q1188-partial-clear-20261014: [p217](phase217/phase.md) q1188-i
 Event ws074-p217-q1187-partial-clear-20261014: [p217](phase217/phase.md) q1187-i01で固定縦rl Grid直接横RTL absolute子row2/col1 top insetにstatic areaを適用。[証拠](phase217/evidence/20261014-q1187/README.md)。独立矩形Chromium一致、固定non-static007縦rl callback whole PASS、水平2 callback PASS、縦lrは4番目子でfile whole FAIL継続。旧WPT/host/Acid3差0維持。次は縦lr4番目子、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
 
 Event ws074-p217-q1186-partial-clear-20261014: [p217](phase217/phase.md) q1186-i01で固定縦lr/rl Grid直接横LTR absolute子へrow1/col2 static areaとjustify-center Yを適用。[証拠](phase217/evidence/20261014-q1186/README.md)。独立2矩形Chromium一致、固定non-static007縦2 callback先頭2子全PASS、lrは4番目子・rlは3番目子でfile whole FAIL継続。旧WPT/host/Acid3差0維持。次は縦rl Gridの3番目RTL横子、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
-Resume point: q13 variant partial cleared、候補1491/未対応292。新36は34 FAIL/2 multiple completions、old1455 whole489・static1561 whole839基準維持。次はcomputed fit-content bound、p249 margin/p246 intrinsic/p248 animation/runner等。全3,805/target/p100未達。
+Resume point: q47 nested noncallable target partial clear、確認済1482/3805。次finite candidateはObjectToString/array internal IsArray consumers、for-in/spread/JSON、primitive Set、call/construct/newtarget→global constructor/revocable。最新全1508 q46、images/crash q28再利用。未attempt275/upper-index storage/typed/immutable prototype/p100/full target保持。
 <!-- awesome-plan-current:end -->
 
 Event ws074-p217-q1185-partial-clear-20261014: [p217](phase217/phase.md) q1185-i01で固定縦lr/rl Grid直接横LTR absolute子へrow1/col1 static areaとjustify-right Yを適用。[証拠](phase217/evidence/20261014-q1185/README.md)。独立2矩形Chromium一致、固定non-static007縦2 callback先頭子全PASS、2番目子でfile whole FAIL継続。旧WPT/host/Acid3差0維持。次は縦Grid2番目横子、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
@@ -706,7 +706,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p255](phase255/phase.md) | PerformanceObserver native mark登録・queue・task配信 | uncleared / q28 Window consumer/failure/held partial cleared・whole残り | p254 verified native mark output |
 | [ws074-p256](phase256/phase.md) | Window ErrorEvent・uncaught harness fidelity | uncleared / q28 runtime/inline source partial cleared・external/syntax等残り | 既存Event/Window/VM→p255再評価 |
 | [ws074-p257](phase257/phase.md) | synchronous generator yield* delegation | cleared / q29 sync own criteria・Chrome38/native GC10 | q28 VM/GC・p189 pinned WebIDL2 |
-| [ws074-p258](phase258/phase.md) | native Proxy internal methods・GC/revocation | uncleared / q37 fixed-buffer Set/Define partial cleared・native/mixed oracle323 | q29 VM/GC・p189 actual Proxy blocker |
+| [ws074-p258](phase258/phase.md) | native Proxy internal methods・GC/revocation | in-progress / q48 Object tag/array IsArray consumer partial | q29 VM/GC・p189 actual Proxy blocker |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 
@@ -1323,3 +1323,55 @@ Event ws074-q36-finished-20261018: p258 shared conversionsと公開BigInt partia
 Event ws074-q37-selected-20261018: q35 ENOTSUPのfixed-buffer TypedArray Set/Defineをmax90分で具体化。sourceのscript-free native hook契約を守って変換をrealm層へ移し、内部content flag/factory rootsを整える。全1508/独立対照/GCを範囲へ、global/wholeWS未達、shared projections pending。
 
 Event ws074-q37-finished-20261018: p258 fixed-buffer TypedArray Set/Define partial clear、native callback内user conversionをrealmへ移しpure native契約を回復。323対照/実GC graph回収・公開9差修正、Chrome153負ゼロ例外を保持。全1508 q36全whole/callback/completion同値・1482/3805維持、p189へ検証投影。次候補は原WebIDL2 private依存probe/IsArray等、全体/global/WS100%未達。[history](history/ws074-q20261018-37.md)。共有投影pending。
+
+Event ws074-p258-q38-selected-20261018: q37の実native Proxyを元WebIDL2へprivate adapterで接続し、positive/negativeとgenuine Chromiumを対照する最大90分の有界dependency調査を選定。product/source/global Proxyは変更せず、公式PASSへ加算しない。exact範囲は[Queue](queue.md)。whole p258/WS未達を保持。
+
+Event ws074-q38-finished-20261018: private原WebIDL2調査partial cleared。native/genuine Chromium positive4/4とintentional negative完全一致、公開前8不足を特定。次candidate IsArray等、公式1482/3805維持・whole未達。[history](history/ws074-q20261018-38.md)。
+
+Event ws074-p258-q39-selected-20261018: q38のIsArray実差を元にProxy-aware VM/public Array.isArrayとGC/native/genuine対照を最大90分で選定。concat/flatten等別consumers/global公開は残件、exact範囲はQueue。whole p258/WS未達。
+
+Event ws074-q39-finished-20261018: p258 IsArray partial cleared、336対照/real error allocation GCでownerと元Proxy生存・後に実回収、原parser positive/negative保持。focused gates通過、1482/3805維持。remaining keys/delete/prototype/extent等は後続有限Queue、global/p100/WS100%未達。[history](history/ws074-q20261018-39.md)。共有投影pending。
+
+Event ws074-q40-selected-20261018: p258 extent2 operations/public wrappersの有限partialを選定、nested/global/whole残件を保持。[Queue](queue.md)。
+
+Event ws074-q40-finished-20261018: p258 extent2 partial cleared、372対照・4 native GC modesでowner/target/handler/Proxy保持と実回収、pure policy拒否/errno保持。focused gates/元parser保持、1482/3805維持。次delete等candidate、global/p100/WS100%未達。[history](history/ws074-q20261018-40.md)。共有投影pending。
+
+Event ws074-q41-selected-20261018: p258 DeleteProperty有限partialを選定、global/whole残件保持。[Queue](queue.md)。
+
+Event ws074-q41-finished-20261018: p258 DeleteProperty partial clear、406対照と4 native GC modes/sole fresh Symbol含む全5実回収、false hook省略/ordinary委譲/errno維持。shape cacheが初回試験Symbolを保持した事実とfixture修復rawを保持。focused/元parser維持、1482/3805。次prototype等candidate、global/p100/WS100%未達。[history](history/ws074-q20261018-41.md)。共有投影pending。
+
+Event ws074-q42-selected-20261018: p258 prototype2 operations/public/AnnexB wrappersの有限partialを選定、global/whole残件保持。[Queue](queue.md)。
+
+Event ws074-q42-finished-20261018: p258 prototype2/public/AnnexB partial clear、452対照・4 GC modesでprototypeと元graphの独立保持/実回収。ordinary helperをVMへ移管・cyclewalk非通常stop、focused/元parser保持、1482/3805。tool versionsはq35と現q42一致、q39〜q41記録不足をdated followupに明示。次own keys候補、global/whole未達。[history](history/ws074-q20261018-42.md)。共有投影pending。
+
+Event ws074-q43-selected-20261018: p258 OwnPropertyKeys VM foundation/private controlsを有限partial選定。public callersはverified output後の別scope、global/whole残件保持。[Queue](queue.md)。
+
+Event ws074-q43-finished-20261018: p258 OwnPropertyKeys VM foundation partial clear。native501/Chrome499、huge2は外部RangeError差をprimary/診断で保持し全一致false。4 GC modesでprefix/list Symbols保持・rollback後未使用capacity Symbol実回収。focused/元parser保持、1482/3805。次public callers候補、global/whole未達。[history](history/ws074-q20261018-43.md)。共有投影pending。
+
+Event ws074-q44-selected-20261018: p258 Object own-key/descriptor/integrity callersの有限partial＋全1508検証を選定、for-in/core/global/whole残件保持。[Queue](queue.md)。
+
+Event ws074-q44-validation-progress-20261018: private sourceの旧501保持・新51中precode42差を修正、native552/Chrome550（既知huge2のみ）、4 public GC/error modes/focused/元parser保持。追加original validator negative2とintentional assertionの同一callbackを確認、これはq43 before未測定で新gainとは認定しない。全1508測定中、own Phase/tableのactive投影を整合。terminal判定は全callback/completion比較待ち。
+
+Event ws074-q44-finished-20261018: p258 Object callers partial clear、new51 genuine一致/precode42修正・native552/Chrome550既知huge2。4 public GC/error modesでfresh Symbol boxing保持と実回収、元parser/追加validator rule検出保持。全1508 q37全callback/completion同値・gain/loss0・1482/3805、p189へvalidation出力投影。for-in/core/global/whole未達。[history](history/ws074-q20261018-44.md)。共有投影pending。
+
+Event ws074-q45-selection: p258のisPrototypeOf/AnnexB lookup/OrdinaryHasInstance consumer partial開始、q44既存検証維持、whole acceptance未変更。[Queue](queue.md)。共有投影pending。
+
+Event ws074-q45-finished-20261018: p258 chain consumers partial clear、native585/Chrome583既知huge2、新33 genuine一致/precode21修正。actual public lookup errno/GCとdirect ordinary-instance bare managed owner実保持/回収、元WebIDL/validator negative保持。q44全1508証拠再利用・q45未測定、公式確認済1482/3805保持。[history](history/ws074-q20261018-45.md)。共有投影pending。
+
+Event ws074-q46-selection: p258のordinary assignment realm dispatch partial開始、q45既存証拠を保持し全1508を再測定する。whole/global未達。[Queue](queue.md)。共有投影pending。
+
+Event ws074-q46-arraylength-revision: i01 current613/615、元low-level shrinkが削除拒否を無視する原因を確認。criteriaを維持し、同一Queue/deadlineへarray shrink low-level/realm helperと必要私有helpers・既存API commentを追加、全1508検証維持。[Phase設計改訂](phase258/phase.md)。他Phase構造変更無し・whole未達。
+
+Event ws074-q46-finished-20261018: p258 object assignment/array shrink partial clear、native622/Chrome620既知huge2、新37 genuine一致/precode22修正。全1508 q44全callback/completion同一・gain/loss0・1482/3805。実GC/error/降順Delete・元WebIDL/validator保持。p189へvalidation output投影。[history](history/ws074-q20261018-46.md)。共有投影pending。
+
+Event ws074-q47-selection: p258 Get/Has/GetOwn/Define target invariant realm化とprivate nested非callable factoryを選定、最新全1508 q46証拠維持・whole/global未達。[Queue](queue.md)。共有投影pending。
+
+Event ws074-q47-finished-20261018: p258 nested非callable target partial clear、native658/Chrome656既知huge2、新36 genuine一致。sole current snapshot payloadが元actualtarget実回収後GCを越えSameValue適合、output-only後graph実回収と最終payload実回収。元WebIDL/validator/gates保持、最新全1508 q46再利用・q47未測定・1482/3805保持。[history](history/ws074-q20261018-47.md)。共有投影pending。
+
+Event ws074-integration-direction-20261018（2026-10-18T22:35:53.785505+09:00）: ユーザー追加指示（原文）:「マージしながら作業をお願いします。ws.mdには書いていいですが、master.mdには書かないでください。phaseドキュメントには書いていいです。」
+このchatのWS074継続作業へ適用: 各有限Queueの検証済みsource/recordsをWIP commitへ保存しmain包含・競合を確認しながら統合を続ける。現在のcheckoutはmainでq44〜q47のsource/terminal commitは全てmain ancestor。既存codex/ws074-acid3はmainとの差がmain側2568/branch側0、未統合commit無し、競合無し。重複/空mergeは作らず、以後別branch成果を統合する場合は対象SHA/差分/checkを固定してWIP統合する。他担当branchの一括mergeやpushは含めない。
+ws.mdとPhaseに進捗/統合/指示根拠を記録してよい。master.mdはこのchatから編集しない。共有Master/Queue/cache/GitHub投影は従来どおりQ1所有/pendingで、必要な記録はWS074局所に残す。今回の追加指示は実装範囲/whole acceptance/scoreを変更しない。
+
+[実読戻し](phase258/evidence/20261018-integration-direction.json)。
+
+Event ws074-q48-selection: p258 ObjectToString/concat/flat IsArray consumer開始、plain @@spreadable追加のため全1508測定、Species/幅/global等whole未達。main包含確認し統合継続・master.md編集無し。[Queue](queue.md)。共有投影pending。

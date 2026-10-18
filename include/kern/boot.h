@@ -17,7 +17,6 @@
 #define KERN_BOOT_H
 
 #define KERN_HANDOFF_MAGIC				0x48323842U
-#define KERN_HANDOFF_VERSION_PC98			2U
 #define KERN_HANDOFF_VERSION_MULTIBOOT			3U
 #define KERN_HANDOFF_VERSION_SUN4U			4U
 #define KERN_HANDOFF_VERSION_X68K			5U
@@ -66,11 +65,6 @@
 #define KERN_X68K_HANDOFF_MAGIC				0x58363848U /* "X68H" */
 #define KERN_X68K_HANDOFF_VERSION			1U
 #define KERN_X68K_MAX_MEMORY_REGIONS			4U
-
-/* XXX: To be removed. Use the common one. */
-#define KERN_PC98_HANDOFF_COMMON_SIZE			24
-#define KERN_PC98_PARAMETER_RECORD_OFFSET		KERN_PC98_HANDOFF_COMMON_SIZE
-#define KERN_PC98_PARAMETER_HANDOFF_SIZE		(KERN_PC98_HANDOFF_COMMON_SIZE + KERN_BOOT_PARAMETER_RECORD_SIZE)
 
 /* XXX: To be removed. Use the common one. */
 #define KERN_RPI4_HANDOFF_MAGIC	0x34495052U
@@ -254,12 +248,6 @@ struct kern_boot_provenance {
 	struct kern_boot_partition_identity firmware;
 	struct kern_boot_partition_identity configuration;
 };
-
-/* XXX: To be removed. Use the common one. */
-struct kern_pc98_parameter_handoff {
-	struct kern_boot_handoff common;
-	struct kern_boot_parameter_record parameters;
-} __attribute__((packed));
 
 /* XXX: To be removed. Use the common one. */
 struct rpi4_boot_handoff {

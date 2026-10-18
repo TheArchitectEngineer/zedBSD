@@ -1,0 +1,217 @@
+{
+  "source_commit": "dbcb42104189e8f1d24eaa839c98d81fa08fd8ef",
+  "selection": "827443d9a",
+  "source_hash_count": 317,
+  "conditions": 585,
+  "native_pass": 585,
+  "chrome_pass": 583,
+  "new_conditions": 33,
+  "precode_fixed_conditions": 21,
+  "new33_genuine_chrome_match": true,
+  "old552_prefix_unchanged": true,
+  "all_chrome_equality": false,
+  "oracle": "q36 classifier filter inherited, q43 huge2 native primary ordered Get versus Chrome pre-index RangeError retained; new33 genuine Chrome matches; no source/oracle/expected changes",
+  "full_changed_C": {
+    "tokens_outside_selected_functions_and_helper_declaration_identical": true,
+    "other_engine_source_and_headers_unchanged": true,
+    "native_operations_definition_comment_unchanged": true,
+    "normal_helper_declarations_after_all_tables": [
+      "object_lookup_half"
+    ],
+    "constant_initializer_required_wrapper_declarations_preserved": true,
+    "old552_prefix_unchanged": true,
+    "added_conditions": 33,
+    "precode_failed_conditions": 21,
+    "full_changed_functions": {
+      "userland/desktop/libbrowser/js/builtin_object.c": [
+        "object_is_prototype_of",
+        "object_lookup_half"
+      ],
+      "userland/desktop/libbrowser/vm/access.c": [
+        "vm_ordinary_has_instance"
+      ],
+      "plan/ws074/tests/host-proxy-read.c": [
+        "main",
+        "object_consumers_pressure",
+        "ordinary_instance_pressure"
+      ]
+    },
+    "raw_allowed_cleanup": 77,
+    "other_checker_findings": 0,
+    "manual_review": [
+      "ANSI declarations first/multiline function headers/public-static order/semantic paragraphs/check fallible returns",
+      "single forward cleanup per function, registration counts cover partial root acquisition and every abrupt method/coercion/error exit",
+      "actual GetPrototypeOf traversal with fresh result assigned to current root before later callbacks; finite repeated identity never treated as immediate cycle",
+      "lookup own GetOwn before prototype, nearest data shadows inherited accessor, getter never called, original box/fresh key/current chain root",
+      "isPrototypeOf primitive argument returns before receiver ToObject; target box/current link owned across reentry",
+      "OrdinaryHasInstance managed realm/constructor/value retained before key allocation, retrieved prototype separately rooted and current link updated across all traps",
+      "real public lookup native negative errno + GC, direct ordinary-instance caller/constructor/value sole-owner native GC/error/reclamation controls",
+      "VM outer instanceof dispatch/BoundFunction/callable Proxy/for-in/normal Set/proxy targets/global surface/immutable proto/full p100 remain pending"
+    ]
+  },
+  "native_gates": [
+    {
+      "label": "proxy-read",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q45/final/engine/host-proxy-read",
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q45/final/engine/proxy-read.js"
+      ],
+      "returncode": 0,
+      "seconds": 0.4
+    },
+    {
+      "label": "delegation",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q45/final/engine/host-generator-delegation"
+      ],
+      "returncode": 0,
+      "seconds": 0.4
+    },
+    {
+      "label": "interpreter",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q45/final/engine/host-interp"
+      ],
+      "returncode": 0,
+      "seconds": 0.6
+    },
+    {
+      "label": "vm-factory",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q45/final/engine/host-vm-factory"
+      ],
+      "returncode": 0,
+      "seconds": 0.7
+    },
+    {
+      "label": "dom",
+      "command": [
+        "python3",
+        "plan/ws074/tests/run-dom-tests.py",
+        "--program",
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q45/final/engine/browser"
+      ],
+      "returncode": 0,
+      "seconds": 2.8
+    },
+    {
+      "label": "cssom",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q45/final/engine/host-cssom"
+      ],
+      "returncode": 0,
+      "seconds": 2.9
+    },
+    {
+      "label": "cssom-mutation",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q45/final/engine/host-cssom-mutation"
+      ],
+      "returncode": 0,
+      "seconds": 3.0
+    },
+    {
+      "label": "marks",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q45/final/engine/host-performance-marks"
+      ],
+      "returncode": 0,
+      "seconds": 3.1
+    },
+    {
+      "label": "observer",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q45/final/engine/host-performance-observer"
+      ],
+      "returncode": 0,
+      "seconds": 3.2
+    },
+    {
+      "label": "error-events",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q45/final/engine/host-error-events"
+      ],
+      "returncode": 0,
+      "seconds": 3.4
+    },
+    {
+      "label": "error-reporting",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q45/final/engine/host-error-reporting"
+      ],
+      "returncode": 0,
+      "seconds": 3.5
+    },
+    {
+      "label": "acid",
+      "command": [
+        "python3",
+        "plan/ws074/tests/run-acid-tests.py",
+        "--program",
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q45/final/engine/browser",
+        "--out",
+        "build/ws074-20261018/q45/final/acid"
+      ],
+      "returncode": 1,
+      "seconds": 3.7
+    },
+    {
+      "label": "acid-retry",
+      "command": [
+        "python3",
+        "plan/ws074/tests/run-acid-tests.py",
+        "--program",
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q45/final/engine/browser",
+        "--out",
+        "build/ws074-20261018/q45/final/acid-retry"
+      ],
+      "returncode": 0,
+      "seconds": 4.7,
+      "reason": "original Acid attempt could not open local socket in sandbox; original error log retained"
+    }
+  ],
+  "acid3_score": 100,
+  "acid3_inventory": 100,
+  "acid3_pixels": 0,
+  "acid2_existing_pixels": 873,
+  "acid_sandbox_socket_failure_retained_and_specific_retry": true,
+  "original_webidl_q38_same_callbacks": true,
+  "additional_validator_negative_rule_callbacks": [
+    {
+      "name": "original interface validator yields missing Exposed rule",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "original namespace validator yields missing Exposed rule",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "validator rule detection does not mask intentional failure",
+      "status": 1,
+      "message": "assert_equals: intentional failure after original validator rule expected 0 but got 1"
+    }
+  ],
+  "harness_latest_measured": "q44 1508 all callback/completion exactly q37",
+  "current_pair_full_harness_not_measured": true,
+  "official_score": 1482,
+  "denominator": 3805,
+  "held": 0,
+  "unattempted": 275,
+  "static_scripted_crash_reused": "q28",
+  "current_pair_images_crash_not_measured": true,
+  "archive": {
+    "sha256": "8313f6c311a137fd6c4bcf5d2072d4d7f048a5f37e8e8134f89dd1c8e002a4e5",
+    "members": 87,
+    "all_members_readback": true
+  },
+  "remaining": [
+    "outer vm_instanceof dispatch/BoundFunction/callable Proxy",
+    "for-in/spread/JSON/ordinary Set exotic prototype routing",
+    "other invariant realm snapshots/nested/call/construct/global constructor/revocable",
+    "array IsArray consumers/immutable prototype/typed backing/p100/full target/WS acceptance",
+    "general VM interruption/resource policy; no arbitrary chain-length limit introduced",
+    "shared Master/Queue/cache/GitHub projections pending Q1"
+  ]
+}

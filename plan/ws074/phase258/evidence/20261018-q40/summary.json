@@ -1,0 +1,179 @@
+{
+  "source_commit": "5eb0f6f119e9e193c0000dd218b6dd83e6c88b9f",
+  "explicit_source_commit": "5eb0f6f11",
+  "selection": "34168427a",
+  "source_hash_count": 317,
+  "conditions": 372,
+  "old336_prefix_unchanged": true,
+  "oracle": "q36 negative-zero primitive filter inherited for original classifier conditions; new36 extensibility cases genuine Chromium; no pure exotic full372 equality claim",
+  "native_pressure": "four independent modes: pure native Prevent policy acceptance/refusal/EACCES and IsExtensible fresh script trap; lookup revokes original record, all setup roots dropped, real script GC and post-getter native policy GC retain managed realm/original target/handler/Proxy independently, then all4 actually reclaimed; native callback never runs user script; conservative stack scan disabled",
+  "native_gates": [
+    {
+      "label": "proxy-read",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q40/final/engine/host-proxy-read",
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q40/final/engine/proxy-read.js"
+      ],
+      "returncode": 0,
+      "seconds": 0.2
+    },
+    {
+      "label": "delegation",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q40/final/engine/host-generator-delegation"
+      ],
+      "returncode": 0,
+      "seconds": 0.3
+    },
+    {
+      "label": "interpreter",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q40/final/engine/host-interp"
+      ],
+      "returncode": 0,
+      "seconds": 0.6
+    },
+    {
+      "label": "vm-factory",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q40/final/engine/host-vm-factory"
+      ],
+      "returncode": 0,
+      "seconds": 0.7
+    },
+    {
+      "label": "dom",
+      "command": [
+        "python3",
+        "plan/ws074/tests/run-dom-tests.py",
+        "--program",
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q40/final/engine/browser"
+      ],
+      "returncode": 0,
+      "seconds": 2.9
+    },
+    {
+      "label": "cssom",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q40/final/engine/host-cssom"
+      ],
+      "returncode": 0,
+      "seconds": 3.0
+    },
+    {
+      "label": "cssom-mutation",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q40/final/engine/host-cssom-mutation"
+      ],
+      "returncode": 0,
+      "seconds": 3.1
+    },
+    {
+      "label": "marks",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q40/final/engine/host-performance-marks"
+      ],
+      "returncode": 0,
+      "seconds": 3.3
+    },
+    {
+      "label": "observer",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q40/final/engine/host-performance-observer"
+      ],
+      "returncode": 0,
+      "seconds": 3.4
+    },
+    {
+      "label": "error-events",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q40/final/engine/host-error-events"
+      ],
+      "returncode": 0,
+      "seconds": 3.5
+    },
+    {
+      "label": "error-reporting",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q40/final/engine/host-error-reporting"
+      ],
+      "returncode": 0,
+      "seconds": 3.6
+    },
+    {
+      "label": "acid",
+      "command": [
+        "python3",
+        "plan/ws074/tests/run-acid-tests.py",
+        "--program",
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q40/final/engine/browser",
+        "--out",
+        "build/ws074-20261018/q40/final/acid"
+      ],
+      "returncode": 0,
+      "seconds": 8.4
+    }
+  ],
+  "acid3_score": 100,
+  "acid3_inventory": 100,
+  "acid3_pixels": 0,
+  "acid2_existing_pixels": 873,
+  "original_webidl_same_callbacks_q38": true,
+  "public_global_proxy": false,
+  "full_changed_C": {
+    "vm/access.c": "all tokens outside selected functions/declarations unchanged",
+    "js/builtin_object.c": "all tokens outside selected functions/declarations unchanged",
+    "header_tokens_except_two_declarations_unchanged": true,
+    "native_operations_definition_comment_bytes_unchanged": true,
+    "old336_source_prefix_unchanged": true,
+    "added_conditions": 36,
+    "full_changed_functions": {
+      "userland/desktop/libbrowser/vm/access.c": [
+        "vm_is_extensible",
+        "vm_prevent_extensions",
+        "access_extensibility",
+        "access_proxy_extensibility"
+      ],
+      "userland/desktop/libbrowser/js/builtin_object.c": [
+        "object_is_extensible",
+        "object_prevent_extensions"
+      ],
+      "plan/ws074/tests/host-proxy-read.c": [
+        "main",
+        "extent_collect_prevent",
+        "extent_pressure"
+      ]
+    },
+    "raw_allowed_cleanup": 52,
+    "other_checker_flags": 0,
+    "manual_review": [
+      "ANSI declaration order, meaningful paragraphs, public-before-static, table-required prototypes retained",
+      "realm/input traced before depth errors; target/handler/fresh method explicit roots; all exits retire roots/depth",
+      "Prevent false skips post-trap target observation; target extensibility uses realm-aware API after trap",
+      "ordinary pure native callback retained, no script inside callbacks; refusal and errno kept",
+      "private factory bounds/global/public ABI2/Wayland unchanged",
+      "other Proxy invariant sampling and Object integrity methods left pending",
+      "source management references removed, technical ownership comments retained"
+    ]
+  },
+  "archive": {
+    "sha256": "686b68a24cb0a90845e2c84621852b0fffbf29fb35f70c9301f68d7339311ea0",
+    "members": 71,
+    "readback_all_members": true
+  },
+  "official_score": 1482,
+  "denominator": 3805,
+  "held": 0,
+  "unattempted": 275,
+  "all1508_reused": "q37",
+  "static_scripted_crash_reused": "q28",
+  "full_census_new_pair_not_measured": true,
+  "remaining": [
+    "Object isSealed/isFrozen/seal/freeze and internal concat/flatten IsArray consumers not changed",
+    "keys/delete/prototype/call/construct/global constructor/revocable; existing Get/Has/GetOwn/Define/Set extensibility snapshots still direct flags until nested scope",
+    "nested/callable factory targets still rejected",
+    "TypedArray remaining exotic/prototype/backing semantics",
+    "p258/p100/full target/WS100% incomplete",
+    "runtime binaries retained at hashed build paths, not embedded in archive"
+  ]
+}

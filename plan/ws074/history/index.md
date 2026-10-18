@@ -1,5 +1,45 @@
 # WS074 lane の Past Log
 
+## ws074-q20261018-47 / nested noncallable target
+
+nested target/invariant realm partial cleared、native658/Chrome656既知huge2、新36 genuine一致、sole snapshot payload/元target/graph実GC回収。最新全1508 q46再利用・q47全census未測定、確認済1482/3805。[exact history](ws074-q20261018-47.md)。
+
+## ws074-q20261018-46 / assignment routing and array shrink
+
+object assignment/array shrink partial cleared、native622/Chrome620既知huge2、新37 genuine一致/precode22修正、実GC/partial metadata復元保持。全1508 q44全callback/completion同値・gain/loss0・1482/3805。[exact history](ws074-q20261018-46.md)。
+
+## ws074-q20261018-45 / chain consumers
+
+q45 chain consumers scoped partial cleared。selection WIP827443d9a/source WIPdbcb42104。object_is_prototype_of/object_lookup_half/vm_ordinary_has_instanceの3関数だけをactual GetPrototypeOf/lookup GetOwnへ接続。nearest data shadowing/アクセサ未実行/ToObject→ToKey順/primitive-before-receiver/null/SameValue/例外identityを保持。fresh current link/boxed target/key/constructor prototype/managed direct callerをcallback中にroot、単一forward cleanupで退役。normal lookup helper宣言は全table後、initializer必要wrapper例外維持。native_operations定義/comment/ABI2/Wayland/global Proxy/Reflect/factory callable・nested拒否/WPT・runner・期待値/共有Boards/cache/SDK/toolchain/sysroot不変。確認済1482/3805保持、q45全census未測定。[exact history](ws074-q20261018-45.md)。
+
+## ws074-q20261018-44（2026-10-18）
+
+[履歴](ws074-q20261018-44.md)。Object own-key/descriptor/integrity callers partial clear、new51 genuine一致/precode42修正・native552/Chrome550既知huge2。4 public GC/error modes、元parser/追加validator negative保持。全1508 q37全callback/completion同値・gain/loss0、1482/3805。次chain/for-in/core候補・global/whole未達、共有投影pending。
+
+## ws074-q20261018-43（2026-10-18）
+
+[履歴](ws074-q20261018-43.md)。VM OwnPropertyKeys/private partial clear、native501/Chrome499＋huge2 primary/diagnostic差を保持、全一致false・source/期待値不変。4 GC modesでfresh list/prefix Symbols/partial error rollback・実回収。host/target1 warning0/focused/元parser保持、1482/3805。public callers/global/whole未達、共有投影pending。
+
+## ws074-q20261018-42（2026-10-18）
+
+[履歴](ws074-q20261018-42.md)。Proxy Get/SetPrototypeOf/public/AnnexB partial clear、452対照・4 GC modesでprototype/元participants独立保持と実回収。ordinary SetをVMへ移管・cyclewalk stop、host/target2 warning0/focused/元parser維持。1482/3805、次own keys候補・global/whole未達、共有投影pending。
+
+## ws074-q20261018-41（2026-10-18）
+
+[履歴](ws074-q20261018-41.md)。Proxy DeleteProperty/operator partial clear、406対照・4 GC modes/sole never-stored Symbol含む全5実回収。false hook省略/ordinary委譲/errno保持。初回shape-cache保持のfixtureを修復、原raw保持。focused/元parser保持、1482/3805、global/whole未達・共有投影pending。
+
+## ws074-q20261018-40（2026-10-18）
+
+[履歴](ws074-q20261018-40.md)。Proxy IsExtensible/PreventExtensionsとpublic2 wrappers partial clear、372対照/4 GC modesで元participants保持と実回収、pure native拒否/errno保持。focused gates/元parser維持、1482/3805。remaining/global/p100未達、共有投影pending。
+
+## ws074-q20261018-39（2026-10-18）
+
+[履歴](ws074-q20261018-39.md)。Proxy-aware IsArray/public wrapper partial cleared、336対照・revoked errorの実GC/後にowner/input実回収。原WebIDL2 private4/4/negative保持、focused gates通過、1482/3805維持。残る内部method/global/p100未達、共有投影pending。
+
+## ws074-q20261018-38（2026-10-18）
+
+[履歴](ws074-q20261018-38.md)。private原WebIDL2 positive4/4・negative元assertion到達、native/Chrome callback完全一致。product Proxy未公開、8不足を診断。engine変更無し・1482/3805維持、次IsArray候補、共有投影pending。
+
 ## ws074-q20261018-37（2026-10-18）
 
 [履歴](ws074-q20261018-37.md)。fixed-buffer TypedArray Set/Define partial clear、pure native契約回復・content metadata/factory roots、公開9差修正・native/mixed oracle323/実GC graph回収。全1508 q36の全whole/callback/completion同値、1482/3805・held0維持。remaining typed/exotic/global未達、共有投影pending。
@@ -83,45 +123,5 @@ Follow-up: q23 i01/i02 clearanceは疎checkoutのIDL未配信が判明しunclear
 ## ws074-q20261018-18（2026-10-18）
 
 [履歴](ws074-q20261018-18.md)。公開SDK first-ready clientはlate timer/DOM除去/child等9/10、required XHTMLのみ未対応。独立Chrome3 lifecycle行/native0と実sourceでp196 producer不足を確認しi01 uncleared/i02未着手uncleared。新C/target/SDK/format/style検証済み、raw全保持。engine不変・正式増分0・1369/3805維持。次はp196 output→p190 controls/413、shared projection pending。
-
-## ws074-q20261018-17（2026-10-18）
-
-[履歴](ws074-q20261018-17.md)。ordinary attributes/native empty NodeListとpost-font producerのscoped outputを検証し全3 item partial cleared。全harness1491はwhole491・callback11531 PASS/20226 FAIL/14 NOTRUNを維持し、whole/callback後退・改善・欠損・追加・順序変更0。全static1561は839 PASS/722 FAIL、全reference pixel metrics unchanged。strict48は39 PASS/9 readiness_missing。最終source f1b83fa8f/pair hash read-back一致、固定WPT tracked clean。確認済み1369/3805（35.978975%）、q14から39増。未実行292 harness/413 reftest・native crash依存9は残す。 DOM35/Chrome22/controls15・budget6/font2・host/target/C/Acid通過。次候補はstrict scripted reftest413、native API/target/p100/共有projectionは残る。
-
-## ws074-q20261018-16（2026-10-18）
-
-[履歴](ws074-q20261018-16.md)。post-font native pumpを実装し独立7行/budget6/旧font2・DOM34・host/target/C/Acid通過。strict14/15でattribute observerの別未対応が判明、i01 uncleared/i02 unstarted uncleared。固定48は未実行、global1491/static1561はcombined final sourceへpendingとしてskipped。last full verified1330はq14 source、current candidate全体未判定。p253 attributes→p209新attempt再検証→p190を次Queue候補へ。全raw/candidate保持、共有projection pending。
-
-## ws074-q20261018-15（2026-10-18）
-
-[履歴](ws074-q20261018-15.md)。crash retained raw i01 cleared、strict wait i02 uncleared。official waitのnative6 positive controlsでfonts.ready後のRAFが未処理と確認（parser8 pass/negative1 pass）。fixed48は前提未達で本実行せず、正式crash増分0・1330/3805を維持。全raw/PPM/control保持、engine不変。p209 producerの次finite修復→p190再検証を設計し、p252は後続候補。共有projection pending。
-
-## ws074-q20261018-14（2026-10-18）
-
-[履歴](ws074-q20261018-14.md)。linear calc percentage type/fit-content computed bound own criteria cleared。全harness1491 whole489→491・old PASS後退0、callback13改善/16 animation偽陽性露出、全static1561 whole839/pixel count維持。独立20 computed/4実寸/fit17行Chromium一致、DOM33/33・host/target warning0・Acid非増加。source88713badd、最終pairで全再測定しrawを保持。確認済み1330/3805、未対応292/413/crash48正式条件、native fit/animation/target/p100等は未達。次候補はcrash正式待機/retentionを優先しp252へ、共有投影pending。
-
-## ws074-q20261018-13（2026-10-18）
-
-[履歴](ws074-q20261018-13.md)。plain URL variant36を追加実行、34 FAIL/2 multiple_completions、PASS増分0。query/fragment roundtrip/旧5対照同値、old1455維持/candidate1491・未対応292。partial cleared、native autofocus/navigation等は未達。次はcomputed fit-content bound候補。共有投影pending。
-
-## ws074-q20261018-12（2026-10-18）
-
-[履歴](ws074-q20261018-12.md)。raw retention/zero glyph own criteria cleared。native56/56/text20/20/独立14/14・DOM30/30、zero ink15→0/positive差0。全harness1455 whole489/callback11534、全static1561 whole839維持/後退0、公式whole増分0。補助0→2/3、残りmarginはp249へ。host/target warning0、Acid3差0/Acid2差873。328/413/crash48とtarget/p100等未達。次はplain variant36候補。共有投影pending。
-
-## ws074-q20261018-11（2026-10-18）
-
-[履歴](ws074-q20261018-11.md)。intrinsic/minmax/implicit parser・horizontal min-content修正で独立22/22、Grid whole248維持、static227→228/後退0。callback74改善/24後退はlossy getterが隠したnative animation欠落の露出でq11 uncleared、p248へ計画。DOM29/29、host/target warning0、Acid3差0/Acid2差873。次は独立zero fontとrunner retention。共有投影pending。
-
-## ws074-q20261018-10（2026-10-18）
-
-[履歴](ws074-q20261018-10.md)。no-box auto minimum Phase cleared。固定174 ID whole107→109/callback989→993・後退0、独立19/19 Chromium一致・unknown維持、DOM28/28、host/target warning0、Acid3差0/Acid2差873。WS全体/target/p100は残る。次はintrinsic Grid trackの区別/sizing候補。共有投影pending。
-
-## ws074-q20261018-09（2026-10-18）
-
-[履歴](ws074-q20261018-09.md)。metadata/guard修正後、公式Grid502 whole247 PASS維持、callback6,410→6,419・後退0。q08の10後退回復、静的227/529維持。両partial cleared、p243/p244 whole残りは保持。次はp245 no-box minimum。共有投影pending。
-
-## ws074-q20261018-08（2026-10-18）
-
-[履歴](ws074-q20261018-08.md)。独立7/7・静的Grid225→227は通ったが、full502でminmax(auto,0px)の10 callback後退が判明。i01 initial clearanceをinvalidateし、i02/Queueともuncleared。次はminimum rule metadataとeligibilityの修正。q07の値取得改善とknown historyは保持。共有投影pending。
 
 以前のindex: [early 2026-10-18](early-20261018.md)。過去standing Queue投影: [原文archive](../queue-archive-through-q30.md)。

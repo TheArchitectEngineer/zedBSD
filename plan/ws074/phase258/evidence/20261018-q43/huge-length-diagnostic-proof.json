@@ -1,0 +1,75 @@
+{
+  "shared_source_sha256": "a08bb2e9142c01a24454001324c67760fd833bb6d86adbab5e00690c017918a6",
+  "runs": [
+    {
+      "label": "native",
+      "returncode": 0,
+      "rows": [
+        {
+          "length": "1",
+          "same_error": true,
+          "calls": 1,
+          "name": "",
+          "message": ""
+        },
+        {
+          "length": "Infinity",
+          "same_error": true,
+          "calls": 1,
+          "name": "",
+          "message": ""
+        },
+        {
+          "length": "9007199254740992",
+          "same_error": true,
+          "calls": 1,
+          "name": "",
+          "message": ""
+        }
+      ],
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q43/final/engine/host-proxy-read",
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q43/huge-length-diagnostic.js"
+      ]
+    },
+    {
+      "label": "chrome",
+      "returncode": 0,
+      "rows": [
+        {
+          "length": "1",
+          "same_error": true,
+          "calls": 1,
+          "name": "",
+          "message": ""
+        },
+        {
+          "length": "Infinity",
+          "same_error": false,
+          "calls": 0,
+          "name": "RangeError",
+          "message": "Invalid array length"
+        },
+        {
+          "length": "9007199254740992",
+          "same_error": false,
+          "calls": 0,
+          "name": "RangeError",
+          "message": "Invalid array length"
+        }
+      ],
+      "command": [
+        "chromium",
+        "--headless",
+        "--no-sandbox",
+        "--disable-gpu",
+        "--user-data-dir=/tmp/ws074-q43-length-1792327506362710713",
+        "--enable-logging=stderr",
+        "--v=0",
+        "--virtual-time-budget=5000",
+        "--dump-dom",
+        "file:///home/awe/zedBSD-claude1/build/ws074-20261018/q43/huge-length-diagnostic.html"
+      ]
+    }
+  ]
+}

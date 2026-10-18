@@ -10,9 +10,6 @@
  * integrity (defineProperty, create, keys, freeze and the rest), and
  * Object.prototype's methods (hasOwnProperty, toString, the __proto__
  * accessor and Annex B's __defineGetter__ family).
- *
- * Object.fromEntries and Object.groupBy need iteration and arrive with the
- * iterators (ws074-p028).
  */
 
 #include "js/builtin.h"
@@ -72,17 +69,10 @@ static int object_lookup_getter(struct vm_realm *realm, vm_value this_value, con
 static int object_lookup_setter(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int object_require(struct vm_realm *realm, vm_value value, const char *message, struct vm_object **object);
 static int object_define_or_throw(struct vm_realm *realm, struct vm_object *object, vm_value key, const struct vm_descriptor *descriptor);
-static int object_own_keys(struct vm_realm *realm, struct vm_object *object, int symbols, struct wb_vector *keys);
 static int object_key_value(struct vm_realm *realm, vm_value key, vm_value *value);
-static int object_list(struct vm_realm *realm, vm_value value, int what, vm_value *result);
-static int object_set_integrity(struct vm_realm *realm, struct vm_object *object, int level);
-static int object_test_integrity(struct vm_realm *realm, struct vm_object *object, int level);
-static int object_set_prototype(struct vm_object *object, struct vm_object *prototype);
 static int object_accessor_half(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, int setter, vm_value *result);
-static int object_lookup_half(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, int setter, vm_value *result);
 static const char *object_tag(vm_value value, const struct vm_object *object);
 static void object_trace_values(struct vm_heap *heap, void *context);
-static void object_trace_descriptor(struct vm_heap *heap, void *context);
 static void object_trace_descriptors(struct vm_heap *heap, void *context);
 
 /*
@@ -135,6 +125,12 @@ static const struct object_entry object_methods[] = {
 #define OBJECT_LIST_VALUES	1
 #define OBJECT_LIST_ENTRIES	2
 
+static int object_lookup_half(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, int setter, vm_value *result);
+static int object_own_keys(struct vm_realm *realm, struct vm_object *object, int symbols, struct wb_vector *keys);
+static int object_list(struct vm_realm *realm, vm_value value, int what, vm_value *result);
+static int object_set_integrity(struct vm_realm *realm, struct vm_object *object, int level);
+static int object_test_integrity(struct vm_realm *realm, struct vm_object *object, int level, int *holds);
+static void object_trace_descriptor(struct vm_heap *heap, void *context);
 static int object_to_descriptor(struct vm_realm *realm, vm_value value, struct vm_descriptor *descriptor);
 static int object_from_descriptor(struct vm_realm *realm, const struct vm_descriptor *descriptor, vm_value *result);
 
@@ -205,19 +201,19 @@ object_trace_descriptor(
 	void *context)
 {
 	struct vm_descriptor *descriptor;
-	int is_cell;
 
-	/* A getter can collect after an earlier descriptor field was read. */
+	/* Skipped nonenumerable entries use an empty sentinel rather than a meaningful descriptor. */
 	descriptor = context;
-	is_cell = vm_value_is_cell(descriptor->value);
-	if (is_cell)
-		vm_heap_mark(heap, vm_value_as_cell(descriptor->value));
-	is_cell = vm_value_is_cell(descriptor->getter);
-	if (is_cell)
-		vm_heap_mark(heap, vm_value_as_cell(descriptor->getter));
-	is_cell = vm_value_is_cell(descriptor->setter);
-	if (is_cell)
-		vm_heap_mark(heap, vm_value_as_cell(descriptor->setter));
+	if (descriptor->has == 0xffffffffU)
+		return;
+
+	/* Presence flags alone decide which payload slots contain actual language values. */
+	if ((descriptor->has & VM_HAS_VALUE) != 0U)
+		vm_heap_mark_value(heap, descriptor->value);
+	if ((descriptor->has & VM_HAS_GET) != 0U)
+		vm_heap_mark_value(heap, descriptor->getter);
+	if ((descriptor->has & VM_HAS_SET) != 0U)
+		vm_heap_mark_value(heap, descriptor->setter);
 }
 
 /* Keeps descriptors saved before defineProperties commits them alive. */
@@ -344,20 +340,26 @@ object_assign(
 	roots[1] = NULL;
 	roots[2] = NULL;
 	registered = 0;
+
+	/* Empty native vectors make root-registration failures share the same ownership cleanup. */
+	wb_vector_init(&keys, sizeof(vm_value));
+	traced = 0;
+
+	/* Register each temporary input slot before any callback can collect it. */
 	while (registered < 3U) {
 		status = vm_heap_add_root(realm->heap, &roots[registered]);
 		if (status != 0)
-			goto roots_cleanup;
+			goto cleanup;
 		registered++;
 	}
 
-	/* Each source that is not undefined or null. */
-	wb_vector_init(&keys, sizeof(vm_value));
-	traced = 0;
+	/* Copied source key lists remain rooted while descriptor, read and write callbacks run. */
 	status = vm_heap_add_tracer(realm->heap, object_trace_values, &keys);
 	if (status != 0)
 		goto cleanup;
 	traced = 1;
+
+	/* Visit nonnull sources in argument order, with one complete key snapshot per source. */
 	for (index = 1; index < count; index++) {
 		if (args[index] == VM_VALUE_UNDEFINED || args[index] == VM_VALUE_NULL)
 			continue;
@@ -371,13 +373,11 @@ object_assign(
 		/* Each own enumerable property, read and set (strictly: a refusal throws). */
 		for (item = 0; status == 0 && item < keys.count; item++) {
 			key = *(vm_value *)wb_vector_at(&keys, item);
-			found = vm_get_own_descriptor((struct vm_object *)vm_value_as_cell(source), key, &descriptor);
-			if (found < 0) {
-				status = -found;
+			status = vm_get_own_property(realm, (struct vm_object *)vm_value_as_cell(source), key, &descriptor, &found);
+			if (status != 0)
 				break;
-			}
 
-			/* A missing descriptor follows the absence path after errors have been excluded. */
+			/* Absent or nonenumerable properties contribute no copied entry. */
 			if (!found || (descriptor.attributes & VM_PROPERTY_ENUMERABLE) == 0U)
 				continue;
 			status = vm_get(realm, source, key, &value);
@@ -402,7 +402,6 @@ cleanup:
 		vm_heap_remove_tracer(realm->heap, object_trace_values, &keys);
 	wb_vector_release(&keys);
 
-roots_cleanup:
 	/* Every registered input root is removed after the final property write. */
 	while (registered != 0U) {
 		registered--;
@@ -529,15 +528,15 @@ object_define_properties(
 		goto cleanup;
 	descriptors_traced = 1;
 	status = object_own_keys(realm, (struct vm_object *)vm_value_as_cell(properties), 1, &keys);
+
+	/* Convert every enumerable descriptor before any definition can change the target. */
 	for (item = 0; status == 0 && item < keys.count; item++) {
 		key = *(vm_value *)wb_vector_at(&keys, item);
-		found = vm_get_own_descriptor((struct vm_object *)vm_value_as_cell(properties), key, &own);
-		if (found < 0) {
-			status = -found;
+		status = vm_get_own_property(realm, (struct vm_object *)vm_value_as_cell(properties), key, &own, &found);
+		if (status != 0)
 			break;
-		}
 
-		/* A missing descriptor follows the absence path after errors have been excluded. */
+		/* Skipped keys retain an empty sentinel so snapshot positions remain aligned. */
 		if (!found || (own.attributes & VM_PROPERTY_ENUMERABLE) == 0U) {
 			memset(&descriptor, 0, sizeof(descriptor));
 			descriptor.has = 0xffffffffU;
@@ -779,30 +778,34 @@ object_get_own_property_descriptors(
 	roots[1] = &made->cell;
 	roots[2] = NULL;
 	registered = 1;
+
+	/* Empty native vectors make root-registration failures share the same ownership cleanup. */
+	wb_vector_init(&keys, sizeof(vm_value));
+	traced = 0;
+
+	/* Register each temporary input slot before any callback can collect it. */
 	while (registered < 3U) {
 		status = vm_heap_add_root(realm->heap, &roots[registered]);
 		if (status != 0)
-			goto roots_cleanup;
+			goto cleanup;
 		registered++;
 	}
 
 	/* Each own property's descriptor. */
-	wb_vector_init(&keys, sizeof(vm_value));
-	traced = 0;
 	status = vm_heap_add_tracer(realm->heap, object_trace_values, &keys);
 	if (status != 0)
 		goto cleanup;
 	traced = 1;
 	status = object_own_keys(realm, (struct vm_object *)vm_value_as_cell(object), 1, &keys);
+
+	/* Each still-existing own property contributes one independently rooted descriptor representation. */
 	for (item = 0; status == 0 && item < keys.count; item++) {
 		key = *(vm_value *)wb_vector_at(&keys, item);
-		found = vm_get_own_descriptor((struct vm_object *)vm_value_as_cell(object), key, &descriptor);
-		if (found < 0) {
-			status = -found;
+		status = vm_get_own_property(realm, (struct vm_object *)vm_value_as_cell(object), key, &descriptor, &found);
+		if (status != 0)
 			break;
-		}
 
-		/* A missing descriptor follows the absence path after errors have been excluded. */
+		/* Keys whose properties disappeared contribute no descriptor map entry. */
 		if (!found)
 			continue;
 		status = object_from_descriptor(realm, &descriptor, &value);
@@ -818,7 +821,6 @@ cleanup:
 		vm_heap_remove_tracer(realm->heap, object_trace_values, &keys);
 	wb_vector_release(&keys);
 
-roots_cleanup:
 	/* The converted source and unpublished result no longer need roots. */
 	while (registered != 0U) {
 		registered--;
@@ -999,9 +1001,9 @@ object_get_prototype_of(
 	if (status != 0)
 		return status;
 	object = (struct vm_object *)vm_value_as_cell(value);
-	*result = VM_VALUE_NULL;
-	if (object->prototype != NULL)
-		*result = vm_value_cell(object->prototype);
+	status = vm_get_prototype(realm, object, result);
+	if (status != 0)
+		return status;
 
 	/* Succeeded: the prototype. */
 	return 0;
@@ -1034,17 +1036,24 @@ object_has_own(
 	if (status != 0)
 		return status;
 	status = vm_to_key(realm, js_argument(args, count, 1), &key);
+	if (status != 0)
+		goto cleanup;
+
+	/* Ask the actual internal own-property method without invoking its value getter. */
+	status = vm_get_own_property(realm, (struct vm_object *)vm_value_as_cell(object), key, &descriptor, &found);
+	if (status != 0)
+		goto cleanup;
+
+	/* Successful descriptor inspection now supplies the requested presence or flag result. */
+	*result = vm_value_boolean(found);
+
+cleanup:
+	/* The converted source remains live through key conversion and every descriptor trap. */
 	vm_heap_remove_root(realm->heap, &object_root);
 	if (status != 0)
 		return status;
 
-	/* Succeeded: whether it has the property. */
-	found = vm_get_own_descriptor((struct vm_object *)vm_value_as_cell(object), key, &descriptor);
-	if (found < 0)
-		return -found;
-
-	/* Successful descriptor inspection now supplies the requested presence or flag result. */
-	*result = vm_value_boolean(found);
+	/* Succeeded: the completed own-property operation supplied the Boolean. */
 	return 0;
 }
 
@@ -1080,8 +1089,9 @@ object_is_extensible(
 	struct vm_object *object;
 	vm_value value;
 	int is_object;
+	int extensible;
+	int status;
 
-	UNUSED_PARAMETER(realm);
 	UNUSED_PARAMETER(this_value);
 
 	/* A primitive is not. */
@@ -1091,9 +1101,14 @@ object_is_extensible(
 	if (!is_object)
 		return 0;
 
-	/* Succeeded: whether it takes new properties. */
+	/* Proxy traps and ordinary policy report actual extensibility in the current realm. */
 	object = (struct vm_object *)vm_value_as_cell(value);
-	*result = vm_value_boolean((object->flags & VM_OBJECT_NOT_EXTENSIBLE) == 0U);
+	status = vm_is_extensible(realm, object, &extensible);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: publish only the completed operation's Boolean. */
+	*result = vm_value_boolean(extensible);
 	return 0;
 }
 
@@ -1109,6 +1124,7 @@ object_is_frozen(
 	vm_value value;
 	int is_object;
 	int frozen;
+	int status;
 
 	UNUSED_PARAMETER(this_value);
 
@@ -1119,10 +1135,10 @@ object_is_frozen(
 	if (!is_object)
 		return 0;
 
-	/* Succeeded: whether every property is read-only and fixed. */
-	frozen = object_test_integrity(realm, (struct vm_object *)vm_value_as_cell(value), OBJECT_FROZEN);
-	if (frozen < 0)
-		return -frozen;
+	/* The actual integrity operation reports status separately from its Boolean. */
+	status = object_test_integrity(realm, (struct vm_object *)vm_value_as_cell(value), OBJECT_FROZEN, &frozen);
+	if (status != 0)
+		return status;
 
 	/* Successful integrity inspection reports the requested boolean. */
 	*result = vm_value_boolean(frozen);
@@ -1141,6 +1157,7 @@ object_is_sealed(
 	vm_value value;
 	int is_object;
 	int sealed;
+	int status;
 
 	UNUSED_PARAMETER(this_value);
 
@@ -1151,10 +1168,10 @@ object_is_sealed(
 	if (!is_object)
 		return 0;
 
-	/* Succeeded: whether every property is fixed. */
-	sealed = object_test_integrity(realm, (struct vm_object *)vm_value_as_cell(value), OBJECT_SEALED);
-	if (sealed < 0)
-		return -sealed;
+	/* The actual integrity operation reports status separately from its Boolean. */
+	status = object_test_integrity(realm, (struct vm_object *)vm_value_as_cell(value), OBJECT_SEALED, &sealed);
+	if (status != 0)
+		return status;
 
 	/* Successful integrity inspection reports the requested boolean. */
 	*result = vm_value_boolean(sealed);
@@ -1209,7 +1226,7 @@ object_prevent_extensions(
 
 	/* Native policy must permit the transition before any extensibility state changes. */
 	object = (struct vm_object *)vm_value_as_cell(value);
-	status = vm_object_prevent_extensions(object, &done);
+	status = vm_prevent_extensions(realm, object, &done);
 	if (status != 0)
 		return status;
 
@@ -1297,7 +1314,9 @@ object_set_prototype_of(
 	prototype = NULL;
 	if (proto != VM_VALUE_NULL)
 		prototype = (struct vm_object *)vm_value_as_cell(proto);
-	done = object_set_prototype((struct vm_object *)vm_value_as_cell(value), prototype);
+	status = vm_set_prototype(realm, (struct vm_object *)vm_value_as_cell(value), prototype, &done);
+	if (status != 0)
+		return status;
 	if (!done) {
 		status = vm_throw_type_error(realm, "Cannot set the prototype");
 		return status;
@@ -1339,26 +1358,44 @@ object_has_own_property(
 	vm_value *result)
 {
 	struct vm_descriptor descriptor;
+	struct vm_cell *key_root;
 	vm_value object;
 	vm_value key;
 	int found;
+	int is_cell;
 	int status;
 
 	/* The key, then the object. */
 	status = vm_to_key(realm, js_argument(args, count, 0), &key);
 	if (status != 0)
 		return status;
-	status = vm_to_object(realm, this_value, &object);
+	/* A newly returned Symbol key must survive any receiver-boxing allocation. */
+	key_root = NULL;
+	is_cell = vm_value_is_cell(key);
+	if (is_cell)
+		key_root = vm_value_as_cell(key);
+	status = vm_heap_add_root(realm->heap, &key_root);
 	if (status != 0)
 		return status;
+	status = vm_to_object(realm, this_value, &object);
+	if (status != 0)
+		goto cleanup;
 
-	/* Succeeded: whether it has the property. */
-	found = vm_get_own_descriptor((struct vm_object *)vm_value_as_cell(object), key, &descriptor);
-	if (found < 0)
-		return -found;
+	/* Ask the actual internal own-property method without invoking its value getter. */
+	status = vm_get_own_property(realm, (struct vm_object *)vm_value_as_cell(object), key, &descriptor, &found);
+	if (status != 0)
+		goto cleanup;
 
 	/* Successful descriptor inspection now supplies the requested presence or flag result. */
 	*result = vm_value_boolean(found);
+
+cleanup:
+	/* The converted key stops being a native owner after the complete inspection. */
+	vm_heap_remove_root(realm->heap, &key_root);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the completed descriptor operation supplied the Boolean. */
 	return 0;
 }
 
@@ -1371,35 +1408,70 @@ object_is_prototype_of(
 	unsigned count,
 	vm_value *result)
 {
-	struct vm_object *walk;
-	struct vm_cell *target;
+	struct vm_cell *roots[2];
 	vm_value value;
 	vm_value object;
+	vm_value prototype;
+	unsigned registered;
+	unsigned index;
 	int is_object;
 	int status;
 
-	/* A primitive has no prototypes. */
+	/* Primitive arguments return before even a null receiver is coerced. */
 	value = js_argument(args, count, 0);
 	*result = VM_VALUE_FALSE;
 	is_object = vm_value_is_object(value);
 	if (!is_object)
 		return 0;
 
-	/* This as an object. */
+	/* The target receiver and the current chain link remain owned across every internal-method callback. */
+	memset(roots, 0, sizeof(roots));
+	roots[1] = vm_value_as_cell(value);
+	registered = 0;
+	for (index = 0; index < 2U; index++) {
+		status = vm_heap_add_root(realm->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+		registered++;
+	}
+
+	/* Receiver boxing happens only after the object argument is retained. */
 	status = vm_to_object(realm, this_value, &object);
 	if (status != 0)
-		return status;
+		goto cleanup;
+	roots[0] = vm_value_as_cell(object);
 
-	/* Up the value's chain. */
-	target = vm_value_as_cell(object);
-	for (walk = ((struct vm_object *)vm_value_as_cell(value))->prototype; walk != NULL; walk = walk->prototype) {
-		if (&walk->cell == target) {
+	/* Each actual prototype method decides the next link, including repeated links with changing traps. */
+	while (roots[1] != NULL) {
+		status = vm_get_prototype(realm, (struct vm_object *)roots[1], &prototype);
+		if (status != 0)
+			goto cleanup;
+		if (prototype == VM_VALUE_NULL)
+			break;
+
+		/* Retain a freshly returned object before any later trap can collect it. */
+		roots[1] = vm_value_as_cell(prototype);
+		if (prototype == object) {
 			*result = VM_VALUE_TRUE;
-			return 0;
+			break;
 		}
 	}
 
-	/* Succeeded: not on the chain. */
+	/* A chain ending without a matching prototype is a successful false result. */
+	status = 0;
+
+cleanup:
+	/* Partial root registration and abrupt prototype methods retire exactly their acquired ownership. */
+	while (registered != 0U) {
+		registered--;
+		vm_heap_remove_root(realm->heap, &roots[registered]);
+	}
+
+	/* A trap exception or allocation error remains the operation's status. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the actual prototype chain supplied the Boolean. */
 	return 0;
 }
 
@@ -1413,9 +1485,11 @@ object_property_is_enumerable(
 	vm_value *result)
 {
 	struct vm_descriptor descriptor;
+	struct vm_cell *key_root;
 	vm_value object;
 	vm_value key;
 	int found;
+	int is_cell;
 	int enumerable;
 	int status;
 
@@ -1423,20 +1497,36 @@ object_property_is_enumerable(
 	status = vm_to_key(realm, js_argument(args, count, 0), &key);
 	if (status != 0)
 		return status;
-	status = vm_to_object(realm, this_value, &object);
+	/* A newly returned Symbol key must survive any receiver-boxing allocation. */
+	key_root = NULL;
+	is_cell = vm_value_is_cell(key);
+	if (is_cell)
+		key_root = vm_value_as_cell(key);
+	status = vm_heap_add_root(realm->heap, &key_root);
 	if (status != 0)
 		return status;
+	status = vm_to_object(realm, this_value, &object);
+	if (status != 0)
+		goto cleanup;
 
-	/* Succeeded: whether it has the property and it is enumerable. */
-	found = vm_get_own_descriptor((struct vm_object *)vm_value_as_cell(object), key, &descriptor);
-	if (found < 0)
-		return -found;
+	/* Ask the actual own descriptor before inspecting its scalar enumerable flag. */
+	status = vm_get_own_property(realm, (struct vm_object *)vm_value_as_cell(object), key, &descriptor, &found);
+	if (status != 0)
+		goto cleanup;
 
 	/* Successful descriptor inspection now supplies the requested presence or flag result. */
 	enumerable = 0;
 	if (found && (descriptor.attributes & VM_PROPERTY_ENUMERABLE) != 0U)
 		enumerable = 1;
 	*result = vm_value_boolean(enumerable);
+
+cleanup:
+	/* The converted key stops being a native owner after the complete inspection. */
+	vm_heap_remove_root(realm->heap, &key_root);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the completed descriptor operation supplied the Boolean. */
 	return 0;
 }
 
@@ -1489,6 +1579,7 @@ object_to_string(
 	char text[64];
 	const char *tag;
 	unsigned registered;
+	int is_array;
 	int is_string;
 	int status;
 
@@ -1507,7 +1598,6 @@ object_to_string(
 		if (status != 0)
 			return status;
 		object = (struct vm_object *)vm_value_as_cell(value);
-		tag = object_tag(value, object);
 		roots[0] = &object->cell;
 		roots[1] = NULL;
 		roots[2] = NULL;
@@ -1520,7 +1610,16 @@ object_to_string(
 			registered++;
 		}
 
-		/* A string Symbol.toStringTag names it instead (ws074-p087). */
+		/* Actual array identity is determined before observing a custom tag, including revoked Proxy errors. */
+		status = vm_is_array(realm, value, &is_array);
+		if (status != 0)
+			goto cleanup;
+		if (is_array)
+			tag = "Array";
+		else
+			tag = object_tag(value, object);
+
+		/* A string Symbol.toStringTag names it instead. */
 		status = vm_get(realm, value, vm_symbol_key(realm, VM_SYMBOL_TO_STRING_TAG), &named);
 		if (status != 0)
 			goto cleanup;
@@ -1618,11 +1717,13 @@ object_proto_get(
 	if (status != 0)
 		return status;
 
-	/* Succeeded: its prototype, or null. */
+	/* Query the actual internal prototype, including native Proxy traps. */
 	object = (struct vm_object *)vm_value_as_cell(value);
-	*result = VM_VALUE_NULL;
-	if (object->prototype != NULL)
-		*result = vm_value_cell(object->prototype);
+	status = vm_get_prototype(realm, object, result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the object or null is its completed internal prototype. */
 	return 0;
 }
 
@@ -1661,7 +1762,9 @@ object_proto_set(
 	prototype = NULL;
 	if (proto != VM_VALUE_NULL)
 		prototype = (struct vm_object *)vm_value_as_cell(proto);
-	done = object_set_prototype((struct vm_object *)vm_value_as_cell(this_value), prototype);
+	status = vm_set_prototype(realm, (struct vm_object *)vm_value_as_cell(this_value), prototype, &done);
+	if (status != 0)
+		return status;
 	if (!done) {
 		status = vm_throw_type_error(realm, "Cannot set the prototype");
 		return status;
@@ -1854,7 +1957,7 @@ object_own_keys(
 
 	/* Every own key in order (indices, strings, symbols). */
 	wb_vector_init(&all, sizeof(vm_value));
-	status = vm_object_own_keys(realm->heap, object, &all);
+	status = vm_own_property_keys(realm, object, &all);
 
 	/* Those wanted. */
 	for (item = 0; status == 0 && item < all.count; item++) {
@@ -1937,18 +2040,22 @@ object_list(
 	roots[1] = NULL;
 	roots[2] = NULL;
 	registered = 0;
-	while (registered < 3U) {
-		status = vm_heap_add_root(realm->heap, &roots[registered]);
-		if (status != 0)
-			goto roots_cleanup;
-		registered++;
-	}
 
-	/* Native vectors retain keys and entries across property getters. */
+	/* Empty native vectors make root-registration failures share the same ownership cleanup. */
 	wb_vector_init(&keys, sizeof(vm_value));
 	wb_vector_init(&items, sizeof(vm_value));
 	keys_traced = 0;
 	items_traced = 0;
+
+	/* Register each temporary object/value slot before enumeration begins. */
+	while (registered < 3U) {
+		status = vm_heap_add_root(realm->heap, &roots[registered]);
+		if (status != 0)
+			goto cleanup;
+		registered++;
+	}
+
+	/* Native vectors retain keys and entries across property getters. */
 	status = vm_heap_add_tracer(realm->heap, object_trace_values, &keys);
 	if (status != 0)
 		goto cleanup;
@@ -1962,13 +2069,11 @@ object_list(
 	/* Each one still there and enumerable. */
 	for (index = 0; status == 0 && index < keys.count; index++) {
 		key = *(vm_value *)wb_vector_at(&keys, index);
-		found = vm_get_own_descriptor((struct vm_object *)vm_value_as_cell(object), key, &descriptor);
-		if (found < 0) {
-			status = -found;
+		status = vm_get_own_property(realm, (struct vm_object *)vm_value_as_cell(object), key, &descriptor, &found);
+		if (status != 0)
 			break;
-		}
 
-		/* A missing descriptor follows the absence path after errors have been excluded. */
+		/* Absent or nonenumerable properties contribute no copied entry. */
 		if (!found || (descriptor.attributes & VM_PROPERTY_ENUMERABLE) == 0U)
 			continue;
 		status = object_key_value(realm, key, &name);
@@ -2018,7 +2123,6 @@ cleanup:
 	wb_vector_release(&keys);
 	wb_vector_release(&items);
 
-roots_cleanup:
 	/* Converted object and temporary values leave the root set. */
 	while (registered != 0U) {
 		registered--;
@@ -2043,56 +2147,78 @@ object_set_integrity(
 	struct wb_vector keys;
 	struct vm_descriptor descriptor;
 	struct vm_descriptor change;
+	struct vm_cell *object_root;
 	vm_value key;
 	size_t item;
 	int found;
 	int done;
+	int traced;
 	int status;
 
-	/* Native refusal must leave both flags and descriptors unchanged. */
-	status = vm_object_prevent_extensions(object, &done);
+	/* The original object remains live across every separate trap and partial definition. */
+	object_root = &object->cell;
+	status = vm_heap_add_root(realm->heap, &object_root);
 	if (status != 0)
 		return status;
+	wb_vector_init(&keys, sizeof(vm_value));
+	traced = 0;
+	status = vm_heap_add_tracer(realm->heap, object_trace_values, &keys);
+	if (status != 0)
+		goto cleanup;
+	traced = 1;
 
-	/* Sealing and freezing cannot proceed when the object stays extensible. */
+	/* PreventExtensions runs before enumeration or any property definition. */
+	status = vm_prevent_extensions(realm, object, &done);
+	if (status != 0)
+		goto cleanup;
 	if (!done) {
 		status = vm_throw_type_error(realm, "The object refuses changing its integrity.");
-		return status;
+		goto cleanup;
 	}
 
-	/* Each own property. */
-	wb_vector_init(&keys, sizeof(vm_value));
+	/* Sealing defines configurable:false directly; only freezing first asks each key for its current descriptor. */
 	status = object_own_keys(realm, object, 1, &keys);
-	for (item = 0; status == 0 && item < keys.count; item++) {
-		key = *(vm_value *)wb_vector_at(&keys, item);
-		found = vm_get_own_descriptor(object, key, &descriptor);
-		if (found < 0) {
-			status = -found;
-			break;
-		}
-
-		/* A missing descriptor follows the absence path after errors have been excluded. */
-		if (!found)
-			continue;
-
-		/* Not configurable; for a frozen data property, not writable either. */
+	if (status != 0)
+		goto cleanup;
+	for (item = 0; item < keys.count; item++) {
+		key = ((vm_value *)keys.items)[item];
 		memset(&change, 0, sizeof(change));
 		change.has = VM_HAS_CONFIGURABLE;
-		if (level == OBJECT_FROZEN && (descriptor.has & VM_HAS_VALUE) != 0U)
-			change.has |= VM_HAS_WRITABLE;
+		if (level == OBJECT_FROZEN) {
+			status = vm_get_own_property(realm, object, key, &descriptor, &found);
+			if (status != 0)
+				goto cleanup;
+			if (!found)
+				continue;
+
+			/* Freezing a data property adds writable:false without copying its value or any accessor payload. */
+			if ((descriptor.has & VM_HAS_VALUE) != 0U)
+				change.has |= VM_HAS_WRITABLE;
+		}
+
+		/* Each partial definition uses actual Proxy or ordinary policy and throws on Boolean refusal. */
 		status = vm_define_own_property(realm, object, key, &change, &done);
-		if (status == 0 && !done) {
+		if (status != 0)
+			goto cleanup;
+		if (!done) {
 			status = vm_throw_type_error(realm, "A property refuses changing its integrity.");
-			break;
+			goto cleanup;
 		}
 	}
 
-	/* The list is no longer needed. */
+	/* All definitions completed in their original key order. */
+	status = 0;
+
+cleanup:
+	/* Neither copied keys nor the converted input object remain rooted after completion. */
+	if (traced)
+		vm_heap_remove_tracer(realm->heap, object_trace_values, &keys);
 	wb_vector_release(&keys);
+	vm_heap_remove_root(realm->heap, &object_root);
 	if (status != 0)
 		return status;
 
-	/* Succeeded: the object is sealed or frozen. */
+	/* Succeeded: every actual own property has the requested integrity level. */
 	return 0;
 }
 
@@ -2101,78 +2227,83 @@ static int
 object_test_integrity(
 	struct vm_realm *realm,
 	struct vm_object *object,
-	int level)
+	int level,
+	int *holds)
 {
 	struct wb_vector keys;
 	struct vm_descriptor descriptor;
+	struct vm_cell *object_root;
 	vm_value key;
 	size_t item;
 	int found;
-	int holds;
+	int extensible;
+	int traced;
 	int status;
 
-	/* An object that takes new properties is neither. */
-	if ((object->flags & VM_OBJECT_NOT_EXTENSIBLE) == 0U)
-		return 0;
-
-	/* Every own property fixed (and read-only). */
-	holds = 1;
+	/* The original input and every copied key survive reentrant extent, key and descriptor traps. */
+	*holds = 0;
+	object_root = &object->cell;
+	status = vm_heap_add_root(realm->heap, &object_root);
+	if (status != 0)
+		return status;
 	wb_vector_init(&keys, sizeof(vm_value));
+	traced = 0;
+	status = vm_heap_add_tracer(realm->heap, object_trace_values, &keys);
+	if (status != 0)
+		goto cleanup;
+	traced = 1;
+
+	/* An extensible object fails without enumerating or inspecting any property. */
+	status = vm_is_extensible(realm, object, &extensible);
+	if (status != 0)
+		goto cleanup;
+	if (extensible)
+		goto cleanup;
+
+	/* Inspect own descriptors in order and stop at the first violation of the requested level. */
+	*holds = 1;
 	status = object_own_keys(realm, object, 1, &keys);
-	for (item = 0; status == 0 && holds && item < keys.count; item++) {
-		key = *(vm_value *)wb_vector_at(&keys, item);
-		found = vm_get_own_descriptor(object, key, &descriptor);
-		if (found < 0) {
-			status = -found;
+	if (status != 0)
+		goto cleanup;
+	for (item = 0; item < keys.count; item++) {
+		key = ((vm_value *)keys.items)[item];
+		status = vm_get_own_property(realm, object, key, &descriptor, &found);
+		if (status != 0)
+			goto cleanup;
+		if (!found)
+			continue;
+
+		/* Configurable properties violate both sealing and freezing. */
+		if ((descriptor.attributes & VM_PROPERTY_CONFIGURABLE) != 0U) {
+			*holds = 0;
 			break;
 		}
 
-		/* A missing descriptor follows the absence path after errors have been excluded. */
-		if (!found)
-			continue;
-		if ((descriptor.attributes & VM_PROPERTY_CONFIGURABLE) != 0U)
-			holds = 0;
-		if (level == OBJECT_FROZEN && (descriptor.has & VM_HAS_VALUE) != 0U && (descriptor.attributes & VM_PROPERTY_WRITABLE) != 0U)
-			holds = 0;
+		/* Only freezing constrains writable data properties; accessor payloads are not inspected. */
+		if (level == OBJECT_FROZEN &&
+		    (descriptor.has & VM_HAS_VALUE) != 0U &&
+		    (descriptor.attributes & VM_PROPERTY_WRITABLE) != 0U) {
+			*holds = 0;
+			break;
+		}
 	}
 
-	/* The list is no longer needed. */
+	/* A false integrity result is a successful operation, distinct from any thrown trap or errno. */
+	status = 0;
+
+cleanup:
+	/* Copied keys and the original object cease to be native owners on every exit. */
+	if (traced)
+		vm_heap_remove_tracer(realm->heap, object_trace_values, &keys);
 	wb_vector_release(&keys);
-
-	/* Lookup and enumeration failures retain their distinct negative error outcome. */
+	vm_heap_remove_root(realm->heap, &object_root);
 	if (status != 0)
-		return -status;
+		return status;
 
-	/* Succeeded: reports whether every own descriptor has the requested integrity. */
-	return holds;
+	/* Succeeded: holds reports the completed internal integrity inspection. */
+	return 0;
 }
 
-/* Sets an object's prototype when allowed (OrdinarySetPrototypeOf): not for a non-extensible object, and never into a cycle. */
-static int
-object_set_prototype(
-	struct vm_object *object,
-	struct vm_object *prototype)
-{
-	struct vm_object *walk;
-
-	/* The same prototype is no change. */
-	if (object->prototype == prototype)
-		return 1;
-
-	/* A non-extensible object keeps its prototype. */
-	if ((object->flags & VM_OBJECT_NOT_EXTENSIBLE) != 0U)
-		return 0;
-
-	/* The object must not be on the new prototype's chain. */
-	for (walk = prototype; walk != NULL; walk = walk->prototype) {
-		if (walk == object)
-			return 0;
-	}
-
-	/* Allowed: the new prototype. */
-	object->prototype = prototype;
-	return 1;
-}
 
 /* Defines one half of an accessor (Annex B's __defineGetter__ and __defineSetter__). */
 static int
@@ -2249,47 +2380,83 @@ object_lookup_half(
 	vm_value *result)
 {
 	struct vm_descriptor descriptor;
-	struct vm_object *walk;
-	struct vm_cell *object_root;
+	struct vm_cell *roots[3];
 	vm_value object;
 	vm_value key;
+	vm_value prototype;
+	unsigned registered;
+	unsigned index;
+	int is_cell;
 	int found;
 	int status;
 
-	/* This as an object, and the key. */
+	/* The converted receiver must exist before the property key is coerced. */
 	*result = VM_VALUE_UNDEFINED;
 	status = vm_to_object(realm, this_value, &object);
 	if (status != 0)
 		return status;
-	object_root = vm_value_as_cell(object);
-	status = vm_heap_add_root(realm->heap, &object_root);
-	if (status != 0)
-		return status;
-	status = vm_to_key(realm, js_argument(args, count, 0), &key);
-	vm_heap_remove_root(realm->heap, &object_root);
-	if (status != 0)
-		return status;
 
-	/* The first object of the chain with the property decides. */
-	for (walk = (struct vm_object *)vm_value_as_cell(object); walk != NULL; walk = walk->prototype) {
-		found = vm_get_own_descriptor(walk, key, &descriptor);
-		if (found < 0)
-			return -found;
-
-		/* A missing descriptor follows the absence path after errors have been excluded. */
-		if (!found)
-			continue;
-		if ((descriptor.has & VM_HAS_GET) != 0U) {
-			*result = descriptor.getter;
-			if (setter)
-				*result = descriptor.setter;
-		}
-
-		/* The nearest property decides. */
-		return 0;
+	/* Preserve the boxed receiver, current link and any fresh key throughout descriptor and prototype traps. */
+	memset(roots, 0, sizeof(roots));
+	roots[0] = vm_value_as_cell(object);
+	roots[1] = roots[0];
+	registered = 0;
+	for (index = 0; index < 3U; index++) {
+		status = vm_heap_add_root(realm->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+		registered++;
 	}
 
-	/* Succeeded: none on the chain. */
+	/* Key conversion may run script and return a Symbol with no other remaining owner. */
+	status = vm_to_key(realm, js_argument(args, count, 0), &key);
+	if (status != 0)
+		goto cleanup;
+	is_cell = vm_value_is_cell(key);
+	if (is_cell)
+		roots[2] = vm_value_as_cell(key);
+
+	/* The nearest actual own descriptor decides without invoking its accessor or reading another prototype. */
+	while (roots[1] != NULL) {
+		status = vm_get_own_property(realm, (struct vm_object *)roots[1], key, &descriptor, &found);
+		if (status != 0)
+			goto cleanup;
+		if (found) {
+			/* Data properties shadow inherited accessors; complete accessor descriptors contain both halves. */
+			if ((descriptor.has & VM_HAS_GET) != 0U) {
+				*result = descriptor.getter;
+				if (setter)
+					*result = descriptor.setter;
+			}
+
+			/* No allocation or callback separates the selected descriptor payload from its return. */
+			break;
+		}
+
+		/* Only descriptor absence follows the actual prototype method. */
+		status = vm_get_prototype(realm, (struct vm_object *)roots[1], &prototype);
+		if (status != 0)
+			goto cleanup;
+		if (prototype == VM_VALUE_NULL)
+			break;
+		roots[1] = vm_value_as_cell(prototype);
+	}
+
+	/* Exhaustion and a nearest data descriptor both successfully return undefined. */
+	status = 0;
+
+cleanup:
+	/* Retire every acquired root even when coercion, own inspection or prototype traversal throws. */
+	while (registered != 0U) {
+		registered--;
+		vm_heap_remove_root(realm->heap, &roots[registered]);
+	}
+
+	/* Preserve the original abrupt completion or native errno. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the nearest descriptor supplied the requested half or undefined. */
 	return 0;
 }
 

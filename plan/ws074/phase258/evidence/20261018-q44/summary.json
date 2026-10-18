@@ -1,0 +1,294 @@
+{
+  "source_commit": "19b9b9ed6562ea7234a9aa77a247ed1abdfca925",
+  "explicit_source_commit": "19b9b9ed6",
+  "selection": "b7477a764",
+  "source_hash_count": 317,
+  "conditions": 552,
+  "native_pass": 552,
+  "chrome_pass": 550,
+  "new_public_conditions": 51,
+  "native_public_precode_fixed": 42,
+  "new51_genuine_chrome_match": true,
+  "old501_prefix_unchanged": true,
+  "all_chrome_equality": false,
+  "oracle": "q36 classifier primitive filter inherited; q43 huge2 native/primary versus Chrome153 pre-index RangeError retained. All new51 genuine Chrome rows match. No source/expectation/oracle shim edits.",
+  "native_pressure": [
+    "fresh never-stored Symbol returned by real native ToPrimitive string-hint method; temporary callback root removed before real receiver-boxing allocation triggers strictly later collection",
+    "actual installed hasOwnProperty/propertyIsEnumerable keep sole fresh key through boxing, return false, then actual caller/keyObject/Symbol reclamation after VM call",
+    "actual installed isFrozen/isSealed propagate native keys EACCES and descriptor negative EACCES through realm APIs while real callback GC retains managed caller/argument, then both actually reclaimed",
+    "old own-key accumulated Symbol/prefix/rollback stale-capacity, prototype independent input/output, Delete/extent/IsArray/ToBigInt/typed storage tests maintained"
+  ],
+  "full_changed_C": {
+    "tokens_outside_selected_Object_functions_and_declarations_identical": true,
+    "vm_source_and_header_all_unchanged": true,
+    "native_operations_definition_comment_unchanged": true,
+    "normal_helper_declarations_after_all_tables": [
+      "object_own_keys",
+      "object_list",
+      "object_set_integrity",
+      "object_test_integrity",
+      "object_trace_descriptor"
+    ],
+    "constant_initializer_required_wrapper_declarations_preserved": true,
+    "old501_prefix_unchanged": true,
+    "added_conditions": 51,
+    "precode_failures": [
+      "console: read-proxy object-names-symbols-use-ownkeys-order-without-descriptors: FAIL",
+      "console: read-proxy object-keys-filter-symbols-and-enumerability-before-get: FAIL",
+      "console: read-proxy object-values-descriptor-then-get-order: FAIL",
+      "console: read-proxy object-entries-proxy-order-and-values: FAIL",
+      "console: read-proxy object-values-fresh-item-survives-later-descriptor-gc: FAIL",
+      "console: read-proxy object-keys-descriptor-error-identity: FAIL",
+      "console: read-proxy object-values-get-error-identity: FAIL",
+      "console: read-proxy object-names-ownkeys-error-identity: FAIL",
+      "console: read-proxy object-descriptors-map-includes-symbol-and-nonenumerable: FAIL",
+      "console: read-proxy object-descriptors-map-fresh-values-gc: FAIL",
+      "console: read-proxy object-descriptors-map-accessor-fields: FAIL",
+      "console: read-proxy object-descriptors-error-identity: FAIL",
+      "console: read-proxy object-hasown-uses-descriptor-without-keys-or-get: FAIL",
+      "console: read-proxy object-hasownproperty-proxy-descriptor: FAIL",
+      "console: read-proxy object-propertyisenumerable-proxy-descriptor: FAIL",
+      "console: read-proxy object-own-presence-proxy-error-identity: FAIL",
+      "console: read-proxy object-own-presence-revoked-rejected: FAIL",
+      "console: read-proxy object-assign-proxy-source-symbol-and-order: FAIL",
+      "console: read-proxy object-assign-fresh-value-survives-target-set-gc: FAIL",
+      "console: read-proxy object-assign-getown-error-before-get: FAIL",
+      "console: read-proxy object-defineproperties-proxy-source-and-target: FAIL",
+      "console: read-proxy object-defineproperties-all-conversion-before-first-define: FAIL",
+      "console: read-proxy object-defineproperties-bad-later-descriptor-defines-nothing: FAIL",
+      "console: read-proxy object-defineproperties-descriptor-vector-value-gc: FAIL",
+      "console: read-proxy object-defineproperties-descriptor-vector-getter-gc: FAIL",
+      "console: read-proxy object-defineproperties-symbol-and-nonenumerable-source: FAIL",
+      "console: read-proxy object-create-properties-proxy: FAIL",
+      "console: read-proxy object-seal-proxy-order-without-getown-trap: FAIL",
+      "console: read-proxy object-freeze-proxy-order-and-partial-descriptor: FAIL",
+      "console: read-proxy object-seal-preserves-writable-data: FAIL",
+      "console: read-proxy object-freeze-accessor-still-has-setter: FAIL",
+      "console: read-proxy object-integrity-prevent-refusal-stops-keys: FAIL",
+      "console: read-proxy object-integrity-ownkeys-error-identity: FAIL",
+      "console: read-proxy object-freeze-getown-error-identity: FAIL",
+      "console: read-proxy object-seal-define-refusal-throws: FAIL",
+      "console: read-proxy object-seal-partial-before-later-refusal-preserved: FAIL",
+      "console: read-proxy object-isfrozen-extent-true-skips-keys: FAIL",
+      "console: read-proxy object-isfrozen-and-issealed-use-actual-target: FAIL",
+      "console: read-proxy object-isfrozen-ownkeys-error-preserved-not-negated: FAIL",
+      "console: read-proxy object-issealed-descriptor-error-preserved-not-negated: FAIL",
+      "console: read-proxy object-integrity-test-stops-after-first-failing-descriptor: FAIL",
+      "console: read-proxy object-integrity-revoked-rejected: FAIL"
+    ],
+    "full_changed_functions": {
+      "userland/desktop/libbrowser/js/builtin_object.c": [
+        "object_own_keys",
+        "object_list",
+        "object_assign",
+        "object_define_properties",
+        "object_get_own_property_descriptors",
+        "object_has_own",
+        "object_has_own_property",
+        "object_property_is_enumerable",
+        "object_set_integrity",
+        "object_test_integrity",
+        "object_is_frozen",
+        "object_is_sealed",
+        "object_trace_descriptor"
+      ],
+      "plan/ws074/tests/host-proxy-read.c": [
+        "main",
+        "consumer_key_primitive",
+        "consumer_error_keys",
+        "consumer_error_descriptor",
+        "object_consumers_pressure"
+      ]
+    },
+    "raw_allowed_cleanup": 83,
+    "other_checker_findings": 0,
+    "manual_review": [
+      "ANSI declarations first, public/static order, multiline definitions, meaningful paragraphs and bounded compound conditions",
+      "assign/list/map initialize vectors before root registration and share one forward cleanup label; all acquired roots/tracers retire on normal and abrupt exits",
+      "caller realm/callee.realm/this/args held by verified vm_call function_retain/function_run_native contract; converted objects/new temporaries and key/item/descriptor vectors explicitly rooted",
+      "descriptor presence flags control all vector payload tracing; nonenumerable sentinel never reads payloads",
+      "prototype presence methods retain fresh key before receiver boxing; Object.hasOwn keeps converted source until actual GetOwn completes",
+      "assign descriptor/Get/strictSet order, defineProperties all conversions before any Define, names/symbols and enumerable filtering order preserved",
+      "seal directly defines configurable:false without GetOwn; freeze GetOwn then data-only writable:false; TestIntegrity extent-before-keys and status/holds separation preserves VM_THROWN and errno",
+      "public global/factory bounds/API2/Wayland unchanged; for-in/prototype lookup/exotic ordinary Set routing and full p100 remain pending"
+    ]
+  },
+  "native_gates": [
+    {
+      "label": "proxy-read",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q44/final/engine/host-proxy-read",
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q44/final/engine/proxy-read.js"
+      ],
+      "returncode": 0,
+      "seconds": 0.3
+    },
+    {
+      "label": "delegation",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q44/final/engine/host-generator-delegation"
+      ],
+      "returncode": 0,
+      "seconds": 0.4
+    },
+    {
+      "label": "interpreter",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q44/final/engine/host-interp"
+      ],
+      "returncode": 0,
+      "seconds": 0.5
+    },
+    {
+      "label": "vm-factory",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q44/final/engine/host-vm-factory"
+      ],
+      "returncode": 0,
+      "seconds": 0.6
+    },
+    {
+      "label": "dom",
+      "command": [
+        "python3",
+        "plan/ws074/tests/run-dom-tests.py",
+        "--program",
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q44/final/engine/browser"
+      ],
+      "returncode": 0,
+      "seconds": 2.7
+    },
+    {
+      "label": "cssom",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q44/final/engine/host-cssom"
+      ],
+      "returncode": 0,
+      "seconds": 2.8
+    },
+    {
+      "label": "cssom-mutation",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q44/final/engine/host-cssom-mutation"
+      ],
+      "returncode": 0,
+      "seconds": 3.0
+    },
+    {
+      "label": "marks",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q44/final/engine/host-performance-marks"
+      ],
+      "returncode": 0,
+      "seconds": 3.1
+    },
+    {
+      "label": "observer",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q44/final/engine/host-performance-observer"
+      ],
+      "returncode": 0,
+      "seconds": 3.2
+    },
+    {
+      "label": "error-events",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q44/final/engine/host-error-events"
+      ],
+      "returncode": 0,
+      "seconds": 3.3
+    },
+    {
+      "label": "error-reporting",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q44/final/engine/host-error-reporting"
+      ],
+      "returncode": 0,
+      "seconds": 3.4
+    },
+    {
+      "label": "acid",
+      "command": [
+        "python3",
+        "plan/ws074/tests/run-acid-tests.py",
+        "--program",
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q44/final/engine/browser",
+        "--out",
+        "build/ws074-20261018/q44/final/acid"
+      ],
+      "returncode": 0,
+      "seconds": 8.0
+    }
+  ],
+  "acid3_score": 100,
+  "acid3_inventory": 100,
+  "acid3_pixels": 0,
+  "acid2_existing_pixels": 873,
+  "original_webidl_q38_same_callbacks": true,
+  "additional_validator_negative_rule_callbacks": [
+    {
+      "name": "original interface validator yields missing Exposed rule",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "original namespace validator yields missing Exposed rule",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "validator rule detection does not mask intentional failure",
+      "status": 1,
+      "message": "assert_equals: intentional failure after original validator rule expected 0 but got 1"
+    }
+  ],
+  "additional_validator_original_intentional_failure_reached": true,
+  "additional_validator_q43_before_not_measured": true,
+  "harness": {
+    "completed": 1508,
+    "counts": {
+      "fail": 955,
+      "harness_error": 13,
+      "pass": 494,
+      "no_completion": 20,
+      "no_output": 24,
+      "multiple_completions": 2
+    },
+    "callbacks": {
+      "1": 20642,
+      "0": 11540,
+      "3": 14
+    },
+    "whole_pass_losses": [],
+    "whole_pass_gains": [],
+    "old_pass_callback_losses": [],
+    "changes": []
+  },
+  "harness_seconds": 239.5,
+  "archives": {
+    "harness-all-raw": {
+      "sha256": "7ba8f2ca5aa17ef5235bed2ac29e49034a1b2bcf2e1b153e03e9b6bb85ffde94",
+      "members": 1676,
+      "readback_all_members": true
+    },
+    "native-oracle-and-build-raw": {
+      "sha256": "a0ae34c5475efaf249b6296955c6e531313327b1c0c3e166774e3a93404998da",
+      "members": 85,
+      "readback_all_members": true
+    }
+  },
+  "official_score": 1482,
+  "denominator": 3805,
+  "held": 0,
+  "unattempted": 275,
+  "static_scripted_crash_reused": "q28",
+  "all_image_crash_current_pair_not_measured": true,
+  "remaining": [
+    "for-in/spread/JSON and AnnexB lookup/isPrototypeOf/instanceof realm dispatch",
+    "normal target Set with exotic prototype routing",
+    "existing internal invariant realm-aware snapshots/nested/call/construct/global Proxy/revocable",
+    "array IsArray consumers/immutable-prototype/typed backing and remaining exotic limitations",
+    "p258/p100/full target/WS100% incomplete; shared global projections pending",
+    "runtime binaries kept at hashed build paths, not embedded in archives"
+  ]
+}
