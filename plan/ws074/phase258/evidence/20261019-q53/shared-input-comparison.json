@@ -1,0 +1,38 @@
+{
+  "userland/desktop/libbrowser/vm/internal.h": {
+    "old": "d8aea4b6d6381ed349f6a63535d527979a20696580eb0a44c2717f1e68633cd0",
+    "new": "86d0058252dbdae52e51e45c2184048c75f2ae47044590b9d0e4f0c9d6cc5dbb"
+  },
+  "userland/desktop/libbrowser/vm/vm.h": {
+    "old": "9bd6783f035d2da7460696f45223b08dc93e67e3a40c876d169f4b26e1aa5de5",
+    "new": "9eaf2400667293949a57dc24c2ec9cdd968a06758b666c1561e816cb8a75ddf9"
+  },
+  "userland/desktop/libbrowser/vm/access.c": {
+    "old": "5ba829b1a94cb9e6a477ea86ed25d4a6468aa08cf25b35d797fae86a0480d458",
+    "new": "6fc1a0a121b8585167ba67bda436e5efbf46e6261040c06d06590032b4e52a89"
+  },
+  "userland/desktop/libbrowser/vm/object.c": {
+    "old": "7b24edf1aef53556b86d32586b971df83d829ee3f63f2021bbe99bd80248a439",
+    "new": "6a9d3d85fd4258c4dea30af362dce330cd044ce4c633a43dc343662c76c48f36"
+  },
+  "userland/desktop/libbrowser/vm/interpreter.c": {
+    "old": "9ffdc20898ea844ef03efbf753da2751b9a7d3c95fc9f8a4ed9cc5f7cf360028",
+    "new": "2f7aa5177173df09a8f81fc0427950c1ae673585ec9a3b31e8626f0645d861b5"
+  },
+  "userland/desktop/libbrowser/vm/function.c": {
+    "old": "8cbac59aa2330d9989c1679b537aee54fec8d6122a50288da76264e37963d2de",
+    "new": "eef59e857cd872e7b50b1b951438e15f057160a6b6b9942a3bd1fd8b2f1a854c"
+  },
+  "userland/desktop/libbrowser/js/builtin_function.c": {
+    "old": "63621c17e014184f43842353217967c394d0f7e97cc31cd03f3286938f3433e8",
+    "new": "99d227ecfe8330e5ce794b8cc657c79463fae0758637fc8ecee629800a77384a"
+  },
+  "plan/ws074/tests/host-proxy-read.c": {
+    "old": "93e214baaffc6936febc9dc3e3b10fa45010e0ece2e28213655aeb8db51d6535",
+    "new": "cb218bbf2441e54a6960235af0c95f646a9ae5bc75b91ce7b50f7bd872c59a9d"
+  },
+  "plan/ws074/tests/proxy-read.js": {
+    "old": "8344d67404f758ab3dc9abe464bf5e0346a2c8c869970f735eb2dbc9e3b22649",
+    "new": "c35597da64c0d8c0248c30b32570bb247a9a40ebfdf8ce71ad86972689b7062b"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "returncode": 1,
+  "conditions": 866,
+  "passed": 864,
+  "failed": [
+    "invoke-foreign-bound-construct-keeps-caller-realm",
+    "invoke-foreign-bound-call-keeps-caller-realm"
+  ],
+  "binary_sha256": "70de2b85d244f2aecc2588ddae8b62081d799aa91e044424b5fef25396fad757",
+  "qualification": "Ordinary construct realm already corrected, bound wrapper still enters creation realm; exact two bound caller-realm controls FAIL"
+}

@@ -1,0 +1,71 @@
+{
+  "product_fixture_changes_bounded_to_selected_functions_and_private_slots": true,
+  "all_other_engine_source_and_headers_unchanged": true,
+  "native_operations_structure_definition_comment_unchanged": true,
+  "old809_prefix_unchanged": true,
+  "added_shared_conditions": 57,
+  "full_changed_functions": {
+    "userland/desktop/libbrowser/vm/object.c": [
+      "vm_proxy_create"
+    ],
+    "userland/desktop/libbrowser/vm/function.c": [
+      "vm_function_create_native",
+      "vm_function_create",
+      "vm_value_is_callable",
+      "vm_value_is_constructor",
+      "vm_call",
+      "vm_construct",
+      "vm_construct_prototype",
+      "function_default_prototype",
+      "function_trace",
+      "function_proxy_trace",
+      "function_proxy_invoke",
+      "function_run_native"
+    ],
+    "userland/desktop/libbrowser/vm/interpreter.c": [
+      "interpreter_call",
+      "interpreter_construct"
+    ],
+    "userland/desktop/libbrowser/js/builtin_function.c": [
+      "function_bind",
+      "function_bound_length",
+      "function_to_string"
+    ],
+    "userland/desktop/libbrowser/vm/access.c": [
+      "vm_instanceof",
+      "access_instanceof",
+      "vm_ordinary_has_instance"
+    ],
+    "plan/ws074/tests/host-proxy-read.c": [
+      "main",
+      "proxy_construct",
+      "proxy_foreign_constructor",
+      "proxy_foreign_construct",
+      "invoke_get_method",
+      "invoke_trap",
+      "invoke_pressure"
+    ]
+  },
+  "raw_allowed_cleanup": 137,
+  "only_single_forward_cleanup": true,
+  "other_checker_findings": 0,
+  "manual_review": [
+    "full C standard and browser component scope; no public ABI2 or Wayland changes",
+    "creation-time pure callable/constructor predicates before allocation; flags survive revoke; regular functions initialized before tracing can see newborns",
+    "all ordinary vm_function casts in selected VM/bytecode dispatch guarded by actual cell type or Proxy dispatch; ordinary optimized execution preserved",
+    "Proxy helper snapshots target/handler before GetMethod, owns returned fresh method and Array list; outer frame retains original input args/receiver/newTarget/managed caller; nested missing traps iteratively follow immutable targets",
+    "trap arguments and handler this follow primary Call/Construct; inherited Array setters bypassed with default own data properties; Construct primitive result refused",
+    "GetFunctionRealm follows immutable Proxy/bound chains; revoked lookup errors propagate through status/out; intrinsic fallback identity translation preserved",
+    "VM-owned bound_target traced separately from JS private data; bind actual GetPrototype before HasOwn/Get length then Get name; fresh prototype/name and unpublished bound result rooted",
+    "Bound OrdinaryHasInstance delegates before primitive input check; outer instanceof owns realm and both operands throughout user getters and callbacks",
+    "native direct Call/Construct actual GetMethod revoke+GC, argument-Array threshold GC, real trap GC; weak participants checked before any later allocation, output-only ownership then reclamation",
+    "Chrome genuine Proxy/Reflect.construct plus actual iframe function/intrinsics; q36 classifier filter and q43 huge2 qualification inherited; native-only for-in timing difference retained separately",
+    "general unbounded native recursion/argument width and global Proxy/revocable/Reflect publication deferred as explicitly selected; no official score gain without measured original corpus evidence",
+    "VM stack fixed stack_capacity rejects overflow instead of reallocating; borrowed argument register storage remains stable during reentrant calls",
+    "ordinary Construct prototype allocation runs in caller realm before callee context; native body keeps own realm; exact ordinary caller-error control failed on c602718f7 objects with same updated fixture",
+    "Bound Call/Construct has no separate execution context: explicit realm selected using VM-owned bound_target, actual native exception transferred from that selected realm; old two bound controls failed before fix",
+    "all other vm_function casts reviewed as actual native callees, pristine installed interface constructors, interpreter frames or freshly compiled class methods"
+  ],
+  "native_operations_exact_definition_and_full_comment_sha256": "77fea22ea0ef1d15a335d79dda1495ce93186a42116fad764d95881b753a7b1f",
+  "native_operations_exact_bytes_unchanged": true
+}

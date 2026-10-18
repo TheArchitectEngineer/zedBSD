@@ -376,3 +376,5 @@ Event ws074-p189-q48-validation-output-20261018: p258 array consumer検証で全
 Event ws074-p189-q49-validation-output-20261018: p258 JSON.stringify検証で全1508を同条件356.7秒実測しq48全whole/callback/completion同一、494 PASS/callback11540 PASS/20642 FAIL/14 NOTRUN・gain/loss/差0。公式1482/3805・held0・未attempt275維持。新attempt/clearance無し、validation outputだけ。[証拠](../phase258/evidence/20261018-q49/README.md)。共有投影pending・master.md編集無し。
 
 Event ws074-p189-q52-validation-output-20261018: p258 for-in検証で全1508を同条件243.9秒実測しq49全whole/callback/completion同一。q50/q51/q52累積sourceを本pairで検証・q50/q51単独全実測とはしない。494 PASS/callback11540 PASS/20642 FAIL/14 NOTRUN・gain/loss/差0。公式1482/3805・held0・未attempt275維持。新attempt/clearance無し、validation outputだけ。[証拠](../phase258/evidence/20261018-q52/README.md)。共有投影pending・master.md編集無し。
+
+Event ws074-p189-q53-validation-output-20261019: p258 callable/Call/Constructの最終pairで全1508を同条件252.2秒実測しq52全whole/callback/completion同一。494 PASS/callback11540 PASS/20642 FAIL/14 NOTRUN・gain/loss/差0。公式1482/3805・held0・未attempt275維持。新attempt/clearance無し、validation outputだけ。[証拠](../phase258/evidence/20261019-q53/README.md)。共有投影pending・master.md編集無し。

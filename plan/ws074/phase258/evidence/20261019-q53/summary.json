@@ -1,0 +1,327 @@
+{
+  "source_commit": "483b5b7ad63773793e7cf5a960702444cb6fbdee",
+  "source_commits": [
+    "c602718f7",
+    "483b5b7ad"
+  ],
+  "selection": "4afa5d301",
+  "source_hash_count": 318,
+  "conditions": 866,
+  "native_pass": 866,
+  "chrome_pass": 864,
+  "new_shared_conditions": 57,
+  "precode_diagnostic_failed": 57,
+  "ordinary_realm_precode": [
+    "invoke-foreign-ordinary-revoked-realm-is-caller"
+  ],
+  "bound_realm_precode": [
+    "invoke-foreign-bound-construct-keeps-caller-realm",
+    "invoke-foreign-bound-call-keeps-caller-realm"
+  ],
+  "final_all57_genuine_chrome_match": true,
+  "old809_prefix_unchanged": true,
+  "all_chrome_equality": false,
+  "oracle": "q36 classifier filter/q43 huge2 retained; initial native-versus-ordinary foreign helper mismatch investigated and corrected without changing assertions; actual ordinary/bound realm bugs fixed with same-input counterfactuals; Chrome collection no-op",
+  "full_changed_C": {
+    "product_fixture_changes_bounded_to_selected_functions_and_private_slots": true,
+    "all_other_engine_source_and_headers_unchanged": true,
+    "native_operations_structure_definition_comment_unchanged": true,
+    "old809_prefix_unchanged": true,
+    "added_shared_conditions": 57,
+    "full_changed_functions": {
+      "userland/desktop/libbrowser/vm/object.c": [
+        "vm_proxy_create"
+      ],
+      "userland/desktop/libbrowser/vm/function.c": [
+        "vm_function_create_native",
+        "vm_function_create",
+        "vm_value_is_callable",
+        "vm_value_is_constructor",
+        "vm_call",
+        "vm_construct",
+        "vm_construct_prototype",
+        "function_default_prototype",
+        "function_trace",
+        "function_proxy_trace",
+        "function_proxy_invoke",
+        "function_run_native"
+      ],
+      "userland/desktop/libbrowser/vm/interpreter.c": [
+        "interpreter_call",
+        "interpreter_construct"
+      ],
+      "userland/desktop/libbrowser/js/builtin_function.c": [
+        "function_bind",
+        "function_bound_length",
+        "function_to_string"
+      ],
+      "userland/desktop/libbrowser/vm/access.c": [
+        "vm_instanceof",
+        "access_instanceof",
+        "vm_ordinary_has_instance"
+      ],
+      "plan/ws074/tests/host-proxy-read.c": [
+        "main",
+        "proxy_construct",
+        "proxy_foreign_constructor",
+        "proxy_foreign_construct",
+        "invoke_get_method",
+        "invoke_trap",
+        "invoke_pressure"
+      ]
+    },
+    "raw_allowed_cleanup": 137,
+    "only_single_forward_cleanup": true,
+    "other_checker_findings": 0,
+    "manual_review": [
+      "full C standard and browser component scope; no public ABI2 or Wayland changes",
+      "creation-time pure callable/constructor predicates before allocation; flags survive revoke; regular functions initialized before tracing can see newborns",
+      "all ordinary vm_function casts in selected VM/bytecode dispatch guarded by actual cell type or Proxy dispatch; ordinary optimized execution preserved",
+      "Proxy helper snapshots target/handler before GetMethod, owns returned fresh method and Array list; outer frame retains original input args/receiver/newTarget/managed caller; nested missing traps iteratively follow immutable targets",
+      "trap arguments and handler this follow primary Call/Construct; inherited Array setters bypassed with default own data properties; Construct primitive result refused",
+      "GetFunctionRealm follows immutable Proxy/bound chains; revoked lookup errors propagate through status/out; intrinsic fallback identity translation preserved",
+      "VM-owned bound_target traced separately from JS private data; bind actual GetPrototype before HasOwn/Get length then Get name; fresh prototype/name and unpublished bound result rooted",
+      "Bound OrdinaryHasInstance delegates before primitive input check; outer instanceof owns realm and both operands throughout user getters and callbacks",
+      "native direct Call/Construct actual GetMethod revoke+GC, argument-Array threshold GC, real trap GC; weak participants checked before any later allocation, output-only ownership then reclamation",
+      "Chrome genuine Proxy/Reflect.construct plus actual iframe function/intrinsics; q36 classifier filter and q43 huge2 qualification inherited; native-only for-in timing difference retained separately",
+      "general unbounded native recursion/argument width and global Proxy/revocable/Reflect publication deferred as explicitly selected; no official score gain without measured original corpus evidence",
+      "VM stack fixed stack_capacity rejects overflow instead of reallocating; borrowed argument register storage remains stable during reentrant calls",
+      "ordinary Construct prototype allocation runs in caller realm before callee context; native body keeps own realm; exact ordinary caller-error control failed on c602718f7 objects with same updated fixture",
+      "Bound Call/Construct has no separate execution context: explicit realm selected using VM-owned bound_target, actual native exception transferred from that selected realm; old two bound controls failed before fix",
+      "all other vm_function casts reviewed as actual native callees, pristine installed interface constructors, interpreter frames or freshly compiled class methods"
+    ],
+    "native_operations_exact_definition_and_full_comment_sha256": "77fea22ea0ef1d15a335d79dda1495ce93186a42116fad764d95881b753a7b1f",
+    "native_operations_exact_bytes_unchanged": true
+  },
+  "native_gates": [
+    {
+      "label": "proxy-read",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q53/final2/engine/host-proxy-read",
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q53/final2/engine/proxy-read.js"
+      ],
+      "returncode": 0,
+      "seconds": 1.1
+    },
+    {
+      "label": "delegation",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q53/final2/engine/host-generator-delegation"
+      ],
+      "returncode": 0,
+      "seconds": 1.2
+    },
+    {
+      "label": "interpreter",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q53/final2/engine/host-interp"
+      ],
+      "returncode": 0,
+      "seconds": 1.9
+    },
+    {
+      "label": "vm-factory",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q53/final2/engine/host-vm-factory"
+      ],
+      "returncode": 0,
+      "seconds": 2.7
+    },
+    {
+      "label": "dom",
+      "command": [
+        "python3",
+        "plan/ws074/tests/run-dom-tests.py",
+        "--program",
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q53/final2/engine/browser"
+      ],
+      "returncode": 0,
+      "seconds": 7.0
+    },
+    {
+      "label": "cssom",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q53/final2/engine/host-cssom"
+      ],
+      "returncode": 0,
+      "seconds": 7.3
+    },
+    {
+      "label": "cssom-mutation",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q53/final2/engine/host-cssom-mutation"
+      ],
+      "returncode": 0,
+      "seconds": 7.8
+    },
+    {
+      "label": "marks",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q53/final2/engine/host-performance-marks"
+      ],
+      "returncode": 0,
+      "seconds": 7.9
+    },
+    {
+      "label": "observer",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q53/final2/engine/host-performance-observer"
+      ],
+      "returncode": 0,
+      "seconds": 8.0
+    },
+    {
+      "label": "error-events",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q53/final2/engine/host-error-events"
+      ],
+      "returncode": 0,
+      "seconds": 8.2
+    },
+    {
+      "label": "error-reporting",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q53/final2/engine/host-error-reporting"
+      ],
+      "returncode": 0,
+      "seconds": 8.3
+    },
+    {
+      "label": "acid",
+      "command": [
+        "python3",
+        "plan/ws074/tests/run-acid-tests.py",
+        "--program",
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q53/final2/engine/browser",
+        "--out",
+        "build/ws074-20261018/q53/final2/acid"
+      ],
+      "returncode": 0,
+      "seconds": 13.3
+    }
+  ],
+  "native_forin_steps": {
+    "returncode": 0,
+    "current_native_three_of_three": true,
+    "source_sha256": "958e419aa5e03b1e5d97381eedcbfc0f66b89460e55c690a2aab2171b5459428",
+    "chrome_comparison_reused": "q52 native-step-proof.json: Chrome2/3 versus native-specific ordering, legal exotic timing difference, not shared oracle FAIL",
+    "reused_proof_sha256": "58425acf78ee3132be08351a3a39181699e8d7fdb8e5336eb3896caf6c823769"
+  },
+  "GC": [
+    "Call and Construct each remove all embedding setup roots before direct invocation with managed caller and Page-owned leaf functions",
+    "actual GetMethod getter revokes Proxy, collects and observes original caller/proxy/target/handler/payload/receiver-or-newtarget6 alive before another allocation",
+    "fresh returned method survives subsequent unchanged8MiB-threshold argument Array allocation collection; real trap collects and observes8 original participants/method/list alive",
+    "one fresh NULL-prototype result only rooted after API return: actualGC reclaims8 input graph cells while result lives, then result root release permits result reclamation",
+    "old independent C weak fixture unmeasured; no claim of an old GC crash repair"
+  ],
+  "acid3_score": 100,
+  "acid3_inventory": 100,
+  "acid3_pixels": 0,
+  "acid2_existing_pixels": 873,
+  "original_webidl_q38_same_callbacks": true,
+  "additional_validator_negative_rule_callbacks": [
+    {
+      "name": "original interface validator yields missing Exposed rule",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "original namespace validator yields missing Exposed rule",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "validator rule detection does not mask intentional failure",
+      "status": 1,
+      "message": "assert_equals: intentional failure after original validator rule expected 0 but got 1"
+    }
+  ],
+  "harness": {
+    "completed": 1508,
+    "counts": {
+      "fail": 955,
+      "harness_error": 13,
+      "pass": 494,
+      "no_completion": 20,
+      "no_output": 24,
+      "multiple_completions": 2
+    },
+    "callbacks": {
+      "1": 20642,
+      "0": 11540,
+      "3": 14
+    },
+    "whole_pass_losses": [],
+    "whole_pass_gains": [],
+    "old_pass_callback_losses": [],
+    "changes": []
+  },
+  "harness_seconds": 252.2,
+  "harness_comparison": "q52 whole and every callback/completion object",
+  "official_score": 1482,
+  "denominator": 3805,
+  "held": 0,
+  "unattempted": 275,
+  "static_scripted_crash_reused": "q28",
+  "current_pair_images_crash_not_measured": true,
+  "archives": {
+    "harness-all-raw": {
+      "sha256": "21cf46533c4ed0f08a59a2106825265b06e632a5844d532fcc20eb85c3c588aa",
+      "members": 1676,
+      "all_members_readback": true
+    },
+    "native-oracle-and-build-raw": {
+      "sha256": "7d63a9a9c1893410b6be82a4adb45e4ec30eb97a763faf52b63d3674b0f875b1",
+      "members": 169,
+      "all_members_readback": true
+    }
+  },
+  "main_integration": {
+    "branch": "main",
+    "source_commits": {
+      "4afa5d301": {
+        "main_ancestor": true,
+        "paths": [
+          "plan/ws074/phase258/phase.md",
+          "plan/ws074/queue.md",
+          "plan/ws074/ws.md"
+        ]
+      },
+      "c602718f7": {
+        "main_ancestor": true,
+        "paths": [
+          "plan/ws074/tests/host-proxy-read.c",
+          "plan/ws074/tests/proxy-read.js",
+          "userland/desktop/libbrowser/js/builtin_function.c",
+          "userland/desktop/libbrowser/vm/access.c",
+          "userland/desktop/libbrowser/vm/function.c",
+          "userland/desktop/libbrowser/vm/internal.h",
+          "userland/desktop/libbrowser/vm/interpreter.c",
+          "userland/desktop/libbrowser/vm/object.c",
+          "userland/desktop/libbrowser/vm/vm.h"
+        ]
+      },
+      "483b5b7ad": {
+        "main_ancestor": true,
+        "paths": [
+          "plan/ws074/phase258/phase.md",
+          "plan/ws074/queue.md",
+          "plan/ws074/tests/host-proxy-read.c",
+          "plan/ws074/tests/proxy-read.js",
+          "userland/desktop/libbrowser/vm/function.c"
+        ]
+      }
+    },
+    "conflict_entries": 0,
+    "master_in_owned_commits": false,
+    "old_branch_ahead_behind": "2659\t0",
+    "no_empty_duplicate_merge": true,
+    "push": false
+  },
+  "remaining": [
+    "global Proxy constructor/revocable/Reflect publication readiness still not selected",
+    "ordinary Function.toString source text; general infinite native recursion/argument width/resource policy; uint32/int32 storage/private excluded-array/newer JSON source-context/RawJSON",
+    "Species/primitive Set/immutable prototype/typed backing/p100/full target/whole p258/WS acceptance",
+    "master.md not edited; shared projections pending Q1"
+  ]
+}

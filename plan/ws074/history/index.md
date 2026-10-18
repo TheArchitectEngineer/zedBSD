@@ -1,5 +1,9 @@
 # WS074 lane の Past Log
 
+## ws074-q20261018-53 / callable Proxy Call and Construct
+
+native866/Chrome864既知huge2・新57 genuine一致。ordinary1/bound2 realm counterfactual修正・direct native Call/Construct実GC/回収。全1508 q52全callback/completion同一・1482/3805。source main統合・master編集無し。[exact history](ws074-q20261018-53.md)。
+
 ## ws074-q20261018-52 / for-in consumer
 
 for-in partial clear、native809/Chrome807既知huge2、新shared29一致・native/Chrome別stepは合法差。direct start/next実GC/3participant回収。全1508 q49全callback/completion同値・1482/3805。main統合・master編集無し。[exact history](ws074-q20261018-52.md)。
@@ -117,11 +121,5 @@ Conformance follow-up: q25 i01のstandards判定をfixture split-call違反に�
 ## ws074-q20261018-24（2026-10-18）
 
 [履歴](ws074-q20261018-24.md)。疎checkoutに無いinterfaces/*.idlをpinned Git原blobからgenerated専用GETで配信し、5種類/2 ID計6資源の原hash・query・MIME・header metadata不在と全rawを検証。独立wire/本物404/未配信Git資源nonPASS/metadata拒否を含む15 controls通過。全1508を235.8秒で再測定、全whole/status不変、IDL2以外1506の全callback/completion objectは完全同一（旧1491を含む）。IDL2のfetch errorは解消し、native JS compilerがyield*を未実装のため公式WebIDL2 parser実行に失敗する正しい残差へ到達。 raw harness494 PASS/958 FAIL/4 harness_error/26 no_completion/24 no_output/2 multiple、callback11540 PASS/20643 FAIL/14 NOTRUN。known native prerequisite holdback1は保持し確認済1481/3805（38.922470%）、未attempt275。native C/固定WPT/期待値/分母不変、static844/scripted105/crash39/DOM/C/Acidは同一q21 pairの証拠を再利用。 q24両scoped attempt cleared、q23元uncleared履歴は保持。whole p189/WS/p100/target fullは未達、shared projection/GitHub pending、push無し。次はp254 native mark producer、p255 observerでpositive通知を検証するまでheld PASSを確認済へ加算しない。yield*は次のVM候補としてp189に残す。
-
-## ws074-q20261018-23（2026-10-18）
-
-Follow-up: q23 i01/i02 clearanceは疎checkoutのIDL未配信が判明しunclearedへ訂正。2 IDのsetup failureをnative API failureとみなさず、[追記と原履歴](ws074-q20261018-23.md)・[proof](../phase189/evidence/20261018-q23-followup/missing-idl-proof.json)を保持。元測定とold1491同値・goal1481は不変、次はIDL providerを正す。
-
-[履歴](ws074-q20261018-23.md)。pinned Window/Any wrapper・META・WebIDL内部GET rewrite・generated専用ordinary headersを提供し、primary/native13＋既存分類5対照通過。全1508=old1491+new17を同じfrozen pairで実測、old1491は全ID/whole/returncode/callback・completion status/order/messages完全同値。追加17は全native attempt、raw1 PASS/10 FAIL/5 no_completion/1 harness_error、426 callbacks（2 PASS/424 FAIL）。全1783の未attempt292→275、native C/WPT/期待値/分母は不変。 新1 raw PASSは既存performance.markの記録なし・getEntries空・PerformanceObserver.observe no-opで入力が欠落しており、native/Chrome独立probeでprior/future 0/0対1/1とfuture通知の差を確認。元WPT結果は改変せずknown native prerequisite holdback1として確認済みに加算しない。raw fixed1482/3805、確認済み1481/3805（38.922470%）維持。 両coverage partial cleared、known noop input/observerはp254/p255へ具体化し確認済みへ先取り加算しない。whole/target/p100/shared projectionは未達、全原本/生成物/stdio/primary/source hashesとnative/Chrome probeを保持。
 
 以前のindex: [early 2026-10-18](early-20261018.md)。過去standing Queue投影: [原文archive](../queue-archive-through-q30.md)。

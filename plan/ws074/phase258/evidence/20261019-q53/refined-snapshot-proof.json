@@ -1,0 +1,8 @@
+{
+  "original_selection": "4afa5d301",
+  "refined_snapshot_sha256": "20c8f7b7532ad56cb00275b35079d78923653c92b8f37ce144ccc4dbc0048a8e",
+  "authority": "plan/ws074/autonomy.md",
+  "criteria_and_timebox_unchanged": true,
+  "internal_helper_added": "function_run_native explicit execution realm for transparent bound forwarding",
+  "source": "actual pre-realm1 and pre-bound2 controls versus primary/Chrome"
+}

@@ -1,0 +1,7 @@
+{
+  "returncode": 0,
+  "current_native_three_of_three": true,
+  "source_sha256": "958e419aa5e03b1e5d97381eedcbfc0f66b89460e55c690a2aab2171b5459428",
+  "chrome_comparison_reused": "q52 native-step-proof.json: Chrome2/3 versus native-specific ordering, legal exotic timing difference, not shared oracle FAIL",
+  "reused_proof_sha256": "58425acf78ee3132be08351a3a39181699e8d7fdb8e5336eb3896caf6c823769"
+}

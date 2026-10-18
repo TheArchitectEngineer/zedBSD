@@ -1,0 +1,19 @@
+{
+  "old809_prefix_unchanged": true,
+  "added57_all_genuine_chrome_match": true,
+  "precode_q52_diagnostic_failures": 57,
+  "precode_ordinary_realm_single_failure": [
+    "invoke-foreign-ordinary-revoked-realm-is-caller"
+  ],
+  "precode_bound_realm_two_failures": [
+    "invoke-foreign-bound-construct-keeps-caller-realm",
+    "invoke-foreign-bound-call-keeps-caller-realm"
+  ],
+  "final_native866": true,
+  "chrome864_only_known_huge2": true,
+  "native_weak_direct_call_construct_gate": true,
+  "old_native_weak_counterpart_measured": false,
+  "initial_bridge_mismatch_corrected": "foreign native helper versus genuine bound foreign Object; additional foreign ordinary helper verifies separate caller realm error; initial raw mismatch retained",
+  "initial_HTTP_gate": "socket restriction before request; authorized runtime rerun exit0",
+  "validator_final_pair_checked": true
+}

@@ -1,0 +1,42 @@
+{
+  "branch": "main",
+  "source_commits": {
+    "4afa5d301": {
+      "main_ancestor": true,
+      "paths": [
+        "plan/ws074/phase258/phase.md",
+        "plan/ws074/queue.md",
+        "plan/ws074/ws.md"
+      ]
+    },
+    "c602718f7": {
+      "main_ancestor": true,
+      "paths": [
+        "plan/ws074/tests/host-proxy-read.c",
+        "plan/ws074/tests/proxy-read.js",
+        "userland/desktop/libbrowser/js/builtin_function.c",
+        "userland/desktop/libbrowser/vm/access.c",
+        "userland/desktop/libbrowser/vm/function.c",
+        "userland/desktop/libbrowser/vm/internal.h",
+        "userland/desktop/libbrowser/vm/interpreter.c",
+        "userland/desktop/libbrowser/vm/object.c",
+        "userland/desktop/libbrowser/vm/vm.h"
+      ]
+    },
+    "483b5b7ad": {
+      "main_ancestor": true,
+      "paths": [
+        "plan/ws074/phase258/phase.md",
+        "plan/ws074/queue.md",
+        "plan/ws074/tests/host-proxy-read.c",
+        "plan/ws074/tests/proxy-read.js",
+        "userland/desktop/libbrowser/vm/function.c"
+      ]
+    }
+  },
+  "conflict_entries": 0,
+  "master_in_owned_commits": false,
+  "old_branch_ahead_behind": "2659\t0",
+  "no_empty_duplicate_merge": true,
+  "push": false
+}
