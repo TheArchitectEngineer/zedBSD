@@ -19,15 +19,19 @@
 
 #include "host-test.h"
 
-#include "../../display/gen9-backlight.h"
-#include "../../display/gen9-flip.h"
 #include "../../display/xd-clock.h"
+#include "../../display/xd-dbuf.h"
+#include "../../display/xd-ddi.h"
+#include "../../display/xd-dp.h"
+#include "../../display/xd-panel.h"
+#include "../../display/xd-platform.h"
 #include "../../display/xd-takeover.h"
-#include "../../display/gen9-mode.h"
-#include "../../display/gen9-outputs.h"
+#include "../../display/xd9-flip.h"
+#include "../../display/xd9-outputs.h"
 #include "../../device-info.h"
-#include "../../intel/display-regs-gen9.h"
-#include "../../intel/display-regs-gen9-modeset.h"
+#include "../../intel/display-regs-xd9.h"
+
+#include <uapi/errno.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -35,11 +39,53 @@
 /* How many pseudo-random inputs the sampled parts of the table take. */
 #define I915_TABLE_SAMPLES	2000U
 
+/* The DisplayPort rates and the HDMI limit the rows take, the most rows a translation table has. */
+#define I915_TABLE_RBR_KHZ	162000U
+#define I915_TABLE_HBR_KHZ	270000U
+#define I915_TABLE_HBR2_KHZ	540000U
+#define I915_TABLE_HDMI_KHZ	300000U
+#define I915_TABLE_ROWS_MAX	10U
+
+/* The power classes the rows were first written with: H and S, U (ULT), and Y (ULX). */
+#define I915_TABLE_CLASS_H	0
+#define I915_TABLE_CLASS_U	1
+#define I915_TABLE_CLASS_Y	2
+
+/* The kinds of output the rows were first written with. */
+#define I915_TABLE_OUTPUT_DP	1U
+#define I915_TABLE_OUTPUT_HDMI	2U
+#define I915_TABLE_OUTPUT_EDP	3U
+
+/*
+ * One pipe of a watermark row in the form the rows were first written
+ * in: the input, the pipe's, the plane's and the cursor's ranges, the
+ * levels and the line time.
+ */
+struct i915_table_pipe {
+	int active;
+	uint32_t hdisplay;
+	uint32_t htotal;
+	uint32_t pixel_khz;
+	uint32_t plane_width;
+	uint32_t ddb_start;
+	uint32_t ddb_end;
+	uint32_t plane_start;
+	uint32_t plane_end;
+	uint32_t cursor_start;
+	uint32_t cursor_end;
+	struct {
+		int enable;
+		uint32_t blocks;
+		uint32_t lines;
+		uint32_t min_ddb;
+	} level[8];
+	uint32_t linetime;
+};
+
 static void i915_table_cdclk(FILE *out);
 static void i915_table_pick_mode(FILE *out);
 static void i915_table_dp_link(FILE *out);
 static void i915_table_dpcd_rates(FILE *out);
-static void i915_table_train_delay(FILE *out);
 static void i915_table_dpll(FILE *out);
 static void i915_table_buf_trans(FILE *out);
 static void i915_table_training(FILE *out);
@@ -49,7 +95,10 @@ static void i915_table_latency(FILE *out);
 static void i915_table_pwm(FILE *out);
 static void i915_table_readout(FILE *out);
 static void i915_table_flip_numbers(FILE *out);
-static void i915_table_print_wm(FILE *out, unsigned row, int error, const struct i915_skl_pipe_wm pipes[3]);
+static void i915_table_print_wm(FILE *out, unsigned row, int error, const struct i915_table_pipe pipes[3]);
+static const struct i915_xd_platform *i915_table_row(int power_class, int platform);
+static int i915_table_class(uint16_t device);
+static void i915_table_skip(unsigned draws);
 static void i915_table_print_readout(FILE *out, unsigned row, int error, const struct i915_xd9_fw_readout *readout);
 static void i915_table_sv7(struct i915_xd9_fw_registers *registers);
 static uint32_t i915_table_random(void);
@@ -93,7 +142,6 @@ main(
 	i915_table_pick_mode(out);
 	i915_table_dp_link(out);
 	i915_table_dpcd_rates(out);
-	i915_table_train_delay(out);
 	i915_table_dpll(out);
 	i915_table_buf_trans(out);
 	i915_table_training(out);
@@ -117,7 +165,7 @@ static void
 i915_table_cdclk(
 	FILE *out)
 {
-	static const uint32_t lcpll1[3] = { 0U, I915_SKL_DPLL_ENABLE, I915_SKL_DPLL_ENABLE | (1U << 30) };
+	static const uint32_t lcpll1[3] = { 0U, I915_XD9_LCPLL_ENABLE, I915_XD9_LCPLL_ENABLE | I915_XD9_LCPLL_LOCK };
 	uint32_t ctrl1;
 	uint32_t cdclk_ctl;
 	uint32_t khz;
@@ -133,7 +181,7 @@ i915_table_cdclk(
 				for (divider = 0U; divider < 0x800U; divider += 0x7fU) {
 					ctrl1 = (uint32_t)rate << 1;
 					cdclk_ctl = ((uint32_t)select << 26) | divider;
-					khz = drv_i915_skl_cdclk_khz(lcpll1[state], ctrl1, cdclk_ctl);
+					khz = drv_i915_xd9_cdclk_khz(lcpll1[state], ctrl1, cdclk_ctl);
 					fprintf(out, "cdclk %08x %08x %08x %u\n", lcpll1[state], ctrl1, cdclk_ctl, khz);
 				}
 			}
@@ -146,7 +194,7 @@ static void
 i915_table_pick_mode(
 	FILE *out)
 {
-	static const uint32_t limits[3] = { 0U, I915_SKL_HDMI_MAX_KHZ, 675000U };
+	static const uint32_t limits[3] = { 0U, I915_TABLE_HDMI_KHZ, 675000U };
 	struct i915_display_mode mode;
 	uint8_t edid[256];
 	unsigned sample;
@@ -166,7 +214,7 @@ i915_table_pick_mode(
 		/* The base block alone and both blocks, at each limit. */
 		for (limit = 0U; limit < 3U; limit++) {
 			memset(&mode, 0, sizeof(mode));
-			error = drv_i915_skl_pick_mode(edid, 256U, limits[limit], &mode);
+			error = drv_i915_xd9_pick_mode(edid, 256U, limits[limit], &mode);
 			fprintf(out, "mode %u %u %d %d %u %u %u %u %u %u %u %u %d %d %u %u %u %d\n",
 			    sample,
 			    limits[limit],
@@ -191,7 +239,7 @@ i915_table_pick_mode(
 
 	/* No EDID at all: the safe mode. */
 	memset(&mode, 0, sizeof(mode));
-	error = drv_i915_skl_pick_mode(NULL, 0U, I915_SKL_HDMI_MAX_KHZ, &mode);
+	error = drv_i915_xd9_pick_mode(NULL, 0U, I915_TABLE_HDMI_KHZ, &mode);
 	fprintf(out, "mode none %d %d %u %u\n", error, mode.clock_khz, mode.hdisplay, mode.vdisplay);
 }
 
@@ -200,8 +248,11 @@ static void
 i915_table_dp_link(
 	FILE *out)
 {
-	static const uint32_t sinks[4] = { I915_SKL_DP_RBR_KHZ, I915_SKL_DP_HBR_KHZ, I915_SKL_DP_HBR2_KHZ, 810000U };
-	struct i915_skl_link link;
+	static const uint32_t sinks[4] = { I915_TABLE_RBR_KHZ, I915_TABLE_HBR_KHZ, I915_TABLE_HBR2_KHZ, 810000U };
+	struct i915_xd_dp_choice choice;
+	struct i915_xd_dp_m_n m_n;
+	uint32_t rate;
+	unsigned width;
 	uint32_t pixel_khz;
 	unsigned sink;
 	unsigned lanes;
@@ -211,19 +262,25 @@ i915_table_dp_link(
 	for (sink = 0U; sink < 4U; sink++) {
 		for (lanes = 1U; lanes <= 4U; lanes++) {
 			for (pixel_khz = 20000U; pixel_khz <= 700000U; pixel_khz += 2750U) {
-				error = drv_i915_skl_dp_link(sinks[sink], lanes, pixel_khz, &link);
+				memset(&choice, 0, sizeof(choice));
+				memset(&m_n, 0, sizeof(m_n));
+				error = drv_i915_xd9_dp_link(sinks[sink], lanes, pixel_khz, &choice, &m_n);
+				if (error != 0) {
+					memset(&choice, 0, sizeof(choice));
+					memset(&m_n, 0, sizeof(m_n));
+				}
 				fprintf(out, "link %u %u %u %d %u %u %08x %08x %08x %08x %u\n",
 				    sinks[sink],
 				    lanes,
 				    pixel_khz,
 				    error,
-				    link.port_khz,
-				    link.lanes,
-				    link.data_m,
-				    link.data_n,
-				    link.link_m,
-				    link.link_n,
-				    link.tu);
+				    choice.rate_khz,
+				    choice.lanes,
+				    m_n.data_m,
+				    m_n.data_n,
+				    m_n.link_m,
+				    m_n.link_n,
+				    m_n.tu);
 			}
 		}
 	}
@@ -232,19 +289,18 @@ i915_table_dp_link(
 	for (sink = 0U; sink < 3U; sink++) {
 		for (lanes = 1U; lanes <= 4U; lanes *= 2U) {
 			for (pixel_khz = 1U; pixel_khz <= 900000U; pixel_khz = pixel_khz * 3U + 7U) {
-				memset(&link, 0, sizeof(link));
-				link.port_khz = sinks[sink];
-				link.lanes = lanes;
-				drv_i915_skl_dp_m_n(&link, pixel_khz);
+				rate = sinks[sink];
+				width = lanes;
+				drv_i915_xd_dp_m_n(24U * 16U, width, pixel_khz, rate, 1000000U, &m_n);
 				fprintf(out, "m_n %u %u %u %08x %08x %08x %08x %u\n",
-				    link.port_khz,
-				    link.lanes,
+				    rate,
+				    width,
 				    pixel_khz,
-				    link.data_m,
-				    link.data_n,
-				    link.link_m,
-				    link.link_n,
-				    link.tu);
+				    m_n.data_m,
+				    m_n.data_n,
+				    m_n.link_m,
+				    m_n.link_n,
+				    m_n.tu);
 			}
 		}
 	}
@@ -261,35 +317,11 @@ i915_table_dpcd_rates(
 
 	/* Each code byte. */
 	for (code = 0U; code < 256U; code++)
-		fprintf(out, "rate_khz %02x %u\n", code, drv_i915_skl_dpcd_rate_khz((uint8_t)code));
+		fprintf(out, "rate_khz %02x %u\n", code, drv_i915_xd9_dp_sink_rate((uint8_t)code));
 
 	/* Each port clock. */
 	for (clock = 0U; clock < 8U; clock++)
-		fprintf(out, "rate_code %u %02x\n", clocks[clock], drv_i915_skl_dpcd_rate_code(clocks[clock]));
-}
-
-/* Writes the training intervals of every DPCD revision and read interval. */
-static void
-i915_table_train_delay(
-	FILE *out)
-{
-	static const uint8_t revisions[4] = { 0x10U, 0x11U, 0x12U, 0x14U };
-	unsigned revision;
-	unsigned interval;
-	int eq;
-
-	/* Each revision, interval byte and phase. */
-	for (revision = 0U; revision < 4U; revision++) {
-		for (interval = 0U; interval < 256U; interval++) {
-			for (eq = 0; eq <= 1; eq++) {
-				fprintf(out, "train_delay %02x %02x %d %u\n",
-				    revisions[revision],
-				    interval,
-				    eq,
-				    drv_i915_skl_dp_train_delay_us(revisions[revision], (uint8_t)interval, eq));
-			}
-		}
-	}
+		fprintf(out, "rate_code %u %02x\n", clocks[clock], drv_i915_xd9_dp_rate_code(clocks[clock]));
 }
 
 /* Writes the DPLL words of every DP port clock and of HDMI clocks from 20 MHz to 650 MHz. */
@@ -299,7 +331,7 @@ i915_table_dpll(
 {
 	static const uint32_t clocks[9] = { 0U, 81000U, 162000U, 216000U, 243000U, 270000U, 324000U, 432000U, 540000U };
 	static const uint32_t references[2] = { 24000U, 19200U };
-	struct i915_skl_dpll_words words;
+	struct i915_xd9_dpll_words words;
 	uint32_t pixel_khz;
 	unsigned clock;
 	unsigned reference;
@@ -308,7 +340,7 @@ i915_table_dpll(
 	/* Each DP port clock. */
 	for (clock = 0U; clock < 9U; clock++) {
 		memset(&words, 0, sizeof(words));
-		error = drv_i915_skl_dpll_dp(clocks[clock], &words);
+		error = drv_i915_xd9_dpll_dp_words(clocks[clock], &words);
 		fprintf(out, "dpll_dp %u %d %08x %08x %08x %u\n", clocks[clock], error, words.ctrl1, words.cfgcr1, words.cfgcr2, words.port_khz);
 	}
 
@@ -316,7 +348,9 @@ i915_table_dpll(
 	for (reference = 0U; reference < 2U; reference++) {
 		for (pixel_khz = 20000U; pixel_khz <= 650000U; pixel_khz += 250U) {
 			memset(&words, 0, sizeof(words));
-			error = drv_i915_skl_dpll_hdmi(pixel_khz, references[reference], &words);
+			error = EINVAL;
+			if (references[reference] == 24000U)
+				error = drv_i915_xd9_dpll_hdmi_words(pixel_khz, &words);
 			fprintf(out, "dpll_hdmi %u %u %d %08x %08x %08x %u\n",
 			    references[reference],
 			    pixel_khz,
@@ -347,22 +381,23 @@ i915_table_buf_trans(
 	unsigned count;
 	unsigned entry;
 	unsigned set;
+	unsigned row;
 	int sku;
 
 	/* The power class of each device id on each platform. */
 	for (platform = 0U; platform < 4U; platform++) {
 		for (device = 0U; device < 16U; device++)
-			fprintf(out, "sku %d %04x %d\n", platforms[platform], devices[device], drv_i915_skl_sku(devices[device], platforms[platform]));
+			fprintf(out, "sku %d %04x %d\n", platforms[platform], devices[device], i915_table_class(devices[device]));
 	}
 
 	/* Each class, platform, output kind and port: the entries, and the HDMI default. */
-	for (sku = I915_SKL_SKU_H; sku <= I915_SKL_SKU_ULX; sku++) {
+	for (sku = I915_TABLE_CLASS_H; sku <= I915_TABLE_CLASS_Y; sku++) {
 		for (platform = 0U; platform < 4U; platform++) {
-			fprintf(out, "hdmi_level %d %d %u\n", sku, platforms[platform], drv_i915_skl_hdmi_level(sku, platforms[platform]));
-			for (output = I915_SKL_OUTPUT_DP; output <= I915_SKL_OUTPUT_EDP; output++) {
+			fprintf(out, "hdmi_level %d %d %u\n", sku, platforms[platform], drv_i915_xd9_ddi_hdmi_row(i915_table_row(I915_TABLE_CLASS_H, platforms[platform])));
+			for (output = I915_TABLE_OUTPUT_DP; output <= I915_TABLE_OUTPUT_EDP; output++) {
 				for (port = 0U; port < 5U; port++) {
 					count = 0U;
-					table = drv_i915_skl_buf_trans(sku, platforms[platform], (int)output, port, &count);
+					table = drv_i915_xd9_ddi_buf_table(i915_table_row(sku, platforms[platform]), output, port, &count);
 					fprintf(out, "buf_trans %d %d %u %u %u\n", sku, platforms[platform], output, port, count);
 					for (entry = 0U; table != NULL && entry < count; entry++)
 						fprintf(out, "  %u %08x %08x %u\n", entry, table[entry].trans1, table[entry].trans2, table[entry].iboost);
@@ -373,43 +408,30 @@ i915_table_buf_trans(
 
 	/* The table entry of every training set, and the highest swing of every table size. */
 	for (set = 0U; set < 256U; set++)
-		fprintf(out, "signal_level %02x %u\n", set, drv_i915_skl_signal_level((uint8_t)set));
-	for (count = 0U; count <= I915_SKL_BUF_TRANS_MAX + 1U; count++)
-		fprintf(out, "voltage_max %u %u\n", count, drv_i915_skl_voltage_max(count));
+	{
+		row = 0U;
+		if (drv_i915_xd_combo_level_row((uint8_t)set, &row) != 0)
+			row = 0U;
+		fprintf(out, "signal_level %02x %u\n", set, row);
+	}
+	for (count = 0U; count <= I915_TABLE_ROWS_MAX + 1U; count++)
+		fprintf(out, "voltage_max %u %u\n", count, drv_i915_xd_dp_swing_max(count));
 }
 
-/* Writes the training decisions on pseudo-random link status bytes. */
+/*
+ * Draws what the rows of the training decisions took: those decisions are
+ * the xd code's now (xd-dp.c, with their own host tests), and their rows
+ * are no longer written, but their draws keep the later rows comparable
+ * with the record.
+ */
 static void
 i915_table_training(
 	FILE *out)
 {
-	uint8_t status[6];
-	unsigned sample;
-	unsigned index;
-	unsigned lanes;
-	unsigned voltage_max;
+	(void)out;
 
-	/* Each sample's six bytes, at each lane count and swing limit. */
-	for (sample = 0U; sample < I915_TABLE_SAMPLES; sample++) {
-		for (index = 0U; index < 6U; index++)
-			status[index] = (uint8_t)i915_table_random();
-		for (lanes = 1U; lanes <= 4U; lanes *= 2U) {
-			for (voltage_max = 2U; voltage_max <= 3U; voltage_max++) {
-				fprintf(out, "train %02x%02x%02x%02x%02x%02x %u %u %02x %d %d\n",
-				    status[0],
-				    status[1],
-				    status[2],
-				    status[3],
-				    status[4],
-				    status[5],
-				    lanes,
-				    voltage_max,
-				    drv_i915_skl_adjust_train(status, lanes, (uint8_t)voltage_max),
-				    drv_i915_skl_dp_cr_ok(status, lanes),
-				    drv_i915_skl_dp_eq_ok(status, lanes));
-			}
-		}
-	}
+	/* Six bytes for each of the samples. */
+	i915_table_skip(I915_TABLE_SAMPLES * 6U);
 }
 
 /* Writes the DDB split and watermarks of pseudo-random sets of lit pipes. */
@@ -418,11 +440,13 @@ i915_table_watermarks(
 	FILE *out)
 {
 	static const uint32_t widths[6] = { 640U, 1280U, 1920U, 2560U, 3840U, 4096U };
-	struct i915_skl_pipe_wm pipes[3];
+	struct i915_xd9_pipe_plan plans[3];
+	struct i915_table_pipe pipes[3];
 	uint32_t width;
 	unsigned sample;
 	unsigned pipe;
 	unsigned latency;
+	unsigned level;
 	int error;
 
 	/* Each sample: every pipe lit or dark, its mode's width, total and clock, the plane as wide as the mode. */
@@ -441,37 +465,50 @@ i915_table_watermarks(
 
 		/* The computation on one of the latency sets. */
 		latency = sample & 1U;
-		error = drv_i915_skl_wm_compute(pipes, i915_table_latencies[latency]);
+		memset(plans, 0, sizeof(plans));
+		for (pipe = 0U; pipe < 3U; pipe++) {
+			plans[pipe].active = pipes[pipe].active;
+			plans[pipe].hdisplay = pipes[pipe].hdisplay;
+			plans[pipe].htotal = pipes[pipe].htotal;
+			plans[pipe].pixel_khz = pipes[pipe].pixel_khz;
+			plans[pipe].plane_width = pipes[pipe].plane_width;
+		}
+		error = drv_i915_xd9_dbuf_plan(i915_table_row(I915_TABLE_CLASS_H, I915_PLATFORM_KABYLAKE), i915_table_latencies[latency], plans, 3U);
+		for (pipe = 0U; pipe < 3U; pipe++) {
+			if (!plans[pipe].computed)
+				continue;
+			pipes[pipe].ddb_start = plans[pipe].pipe_ddb.start;
+			pipes[pipe].ddb_end = plans[pipe].pipe_ddb.end;
+			pipes[pipe].plane_start = plans[pipe].plane_ddb.start;
+			pipes[pipe].plane_end = plans[pipe].plane_ddb.end;
+			pipes[pipe].cursor_start = plans[pipe].cursor_ddb.start;
+			pipes[pipe].cursor_end = plans[pipe].cursor_ddb.end;
+			pipes[pipe].linetime = plans[pipe].linetime;
+			for (level = 0U; level < 8U; level++) {
+				pipes[pipe].level[level].enable = plans[pipe].wm.level[level].enable;
+				pipes[pipe].level[level].blocks = plans[pipe].wm.level[level].blocks;
+				pipes[pipe].level[level].lines = plans[pipe].wm.level[level].lines;
+				pipes[pipe].level[level].min_ddb = plans[pipe].wm.level[level].min_ddb;
+			}
+		}
 		i915_table_print_wm(out, sample, error, pipes);
 	}
 }
 
-/* Writes the register words of watermark levels and DDB entries. */
+/*
+ * Draws what the rows of the watermark and DDB words took: the words are
+ * written by the xd code now (xd-dbuf.c), and their rows are no longer
+ * written, but their draws keep the later rows comparable with the
+ * record.
+ */
 static void
 i915_table_wm_words(
 	FILE *out)
 {
-	struct i915_skl_wm_level level;
-	uint32_t start;
-	uint32_t end;
-	unsigned sample;
+	(void)out;
 
-	/* Each sample's level. */
-	for (sample = 0U; sample < I915_TABLE_SAMPLES / 4U; sample++) {
-		memset(&level, 0, sizeof(level));
-		level.enable = (int)(i915_table_random() & 1U);
-		level.blocks = i915_table_random() % 1100U;
-		level.lines = i915_table_random() % 40U;
-		level.min_ddb = i915_table_random() % 1100U;
-		fprintf(out, "wm_word %d %u %u %u %08x\n", level.enable, level.blocks, level.lines, level.min_ddb, drv_i915_skl_wm_word(&level));
-	}
-
-	/* Each sample's DDB entry, empty ones included. */
-	for (sample = 0U; sample < I915_TABLE_SAMPLES / 4U; sample++) {
-		start = i915_table_random() % 900U;
-		end = start + i915_table_random() % 64U;
-		fprintf(out, "ddb_word %u %u %08x\n", start, end, drv_i915_skl_ddb_word(start, end));
-	}
+	/* Four draws for each level, two for each range. */
+	i915_table_skip((I915_TABLE_SAMPLES / 4U) * 6U);
 }
 
 /* Writes the latencies decoded from pseudo-random PCODE words, with and without IPC. */
@@ -493,7 +530,7 @@ i915_table_latency(
 			low &= 0xffU;
 		for (ipc = 0; ipc <= 1; ipc++) {
 			memset(latency, 0, sizeof(latency));
-			drv_i915_skl_wm_latency(low, high, ipc, latency);
+			drv_i915_xd9_wm_latency(low, high, ipc, latency);
 			fprintf(out, "latency %08x %08x %d %u %u %u %u %u %u %u %u\n",
 			    low,
 			    high,
@@ -515,8 +552,11 @@ static void
 i915_table_pwm(
 	FILE *out)
 {
-	struct i915_skl_pwm_registers registers;
-	struct i915_skl_pwm pwm;
+	struct i915_xd9_pwm pwm;
+	uint32_t control;
+	uint32_t period;
+	uint32_t word;
+	int cnp;
 	uint32_t percent;
 	uint32_t duty;
 	unsigned sample;
@@ -524,34 +564,33 @@ i915_table_pwm(
 
 	/* Each sample: either PCH layout, a control, a period and a duty. */
 	for (sample = 0U; sample < I915_TABLE_SAMPLES / 4U; sample++) {
-		memset(&registers, 0, sizeof(registers));
 		memset(&pwm, 0, sizeof(pwm));
-		registers.cnp = (int)(sample & 1U);
-		registers.control = i915_table_random() & 0xa0000000U;
-		registers.period = i915_table_random();
+		cnp = (int)(sample & 1U);
+		control = i915_table_random() & 0xa0000000U;
+		period = i915_table_random();
 		if ((sample % 7U) == 0U)
-			registers.period &= 0xffffU;
-		registers.duty = i915_table_random() & 0xfffffU;
-		error = drv_i915_skl_pwm_decode(&registers, &pwm);
+			period &= 0xffffU;
+		word = i915_table_random() & 0xfffffU;
+		error = drv_i915_xd9_pwm_decode(control, period, word, !cnp, &pwm);
 		fprintf(out, "pwm %d %08x %08x %08x %d %d %d %u %u %u\n",
-		    registers.cnp,
-		    registers.control,
-		    registers.period,
-		    registers.duty,
+		    cnp,
+		    control,
+		    period,
+		    word,
 		    error,
-		    pwm.enabled,
+		    pwm.running,
 		    pwm.active_low,
-		    pwm.max,
-		    pwm.min,
+		    pwm.period,
+		    pwm.floor,
 		    pwm.duty);
 
 		/* The mapping of a usable PWM: each brightness's duty, and the brightness of a few duties. */
-		if (error != 0 || pwm.max == 0U)
+		if (error != 0 || pwm.period == 0U)
 			continue;
 		for (percent = 0U; percent <= 101U; percent += 3U)
-			fprintf(out, "  duty %u %u\n", percent, drv_i915_skl_pwm_duty(&pwm, percent));
-		for (duty = 0U; duty <= pwm.max + pwm.max / 8U; duty += pwm.max / 16U + 1U)
-			fprintf(out, "  percent %u %u\n", duty, drv_i915_skl_pwm_percent(&pwm, duty));
+			fprintf(out, "  duty %u %u\n", percent, drv_i915_xd9_pwm_duty(&pwm, percent));
+		for (duty = 0U; duty <= pwm.period + pwm.period / 8U; duty += pwm.period / 16U + 1U)
+			fprintf(out, "  percent %u %u\n", duty, drv_i915_xd9_pwm_percent(&pwm, duty));
 	}
 }
 
@@ -612,7 +651,7 @@ i915_table_flip_numbers(
 
 	/* The display window of buffers from one page to 64 MiB. */
 	for (bytes = 1U; bytes <= 64U * 1024U * 1024U; bytes = bytes * 2U + 4095U)
-		fprintf(out, "window %u %u\n", bytes, drv_i915_skl_flip_window_pages(bytes));
+		fprintf(out, "window %u %u\n", bytes, drv_i915_xd9_flip_window_pages(bytes));
 
 	/* The port clock of every DPLL_CTRL1 link rate code. */
 	for (rate = 0U; rate < 8U; rate++)
@@ -635,9 +674,9 @@ i915_table_print_wm(
 	FILE *out,
 	unsigned row,
 	int error,
-	const struct i915_skl_pipe_wm pipes[3])
+	const struct i915_table_pipe pipes[3])
 {
-	const struct i915_skl_pipe_wm *wm;
+	const struct i915_table_pipe *wm;
 	unsigned pipe;
 	unsigned level;
 
@@ -724,17 +763,17 @@ i915_table_sv7(
 	/* Power wells 1 and 2 up, no DC state, DPLL0 at link rate 1350 for DDI A. */
 	registers->power = 0xf0000000U;
 	registers->cdclk = 0x000003ffU;
-	registers->dpll_ctrl1 = (I915_SKL_LINK_RATE_1350 << 1) | 1U;
+	registers->dpll_ctrl1 = (I915_XD9_LINK_RATE_1350 << 1) | 1U;
 	registers->dpll_ctrl2 = 1U;
 
 	/* The eDP transcoder: DP SST on DDI A from pipe A, running, with its totals and link M and N. */
-	registers->transcoder_read[I915_SKL_TRANSCODER_EDP] = 1;
-	registers->ddi_func[I915_SKL_TRANSCODER_EDP] = 0x80000000U | (2U << 24) | (4U << 12);
-	registers->transconf[I915_SKL_TRANSCODER_EDP] = 0xc0000000U;
-	registers->htotal[I915_SKL_TRANSCODER_EDP] = ((2080U - 1U) << 16) | (1920U - 1U);
-	registers->vtotal[I915_SKL_TRANSCODER_EDP] = ((1235U - 1U) << 16) | (1200U - 1U);
-	registers->link_m[I915_SKL_TRANSCODER_EDP] = 299038U;
-	registers->link_n[I915_SKL_TRANSCODER_EDP] = 0x80000U;
+	registers->transcoder_read[I915_XD9_TRANS_EDP] = 1;
+	registers->ddi_func[I915_XD9_TRANS_EDP] = 0x80000000U | (2U << 24) | (4U << 12);
+	registers->transconf[I915_XD9_TRANS_EDP] = 0xc0000000U;
+	registers->htotal[I915_XD9_TRANS_EDP] = ((2080U - 1U) << 16) | (1920U - 1U);
+	registers->vtotal[I915_XD9_TRANS_EDP] = ((1235U - 1U) << 16) | (1200U - 1U);
+	registers->link_m[I915_XD9_TRANS_EDP] = 299038U;
+	registers->link_n[I915_XD9_TRANS_EDP] = 0x80000U;
 
 	/* Transcoders A to C are read and off. */
 	registers->transcoder_read[0] = 1;
@@ -764,4 +803,66 @@ i915_table_random(void)
 
 	/* Succeeded: the new state is the number. */
 	return i915_table_seed;
+}
+
+/*
+ * Reports the display 9 row of a power class the rows were first written
+ * with, on a platform: Skylake's, or Kaby Lake's, which Coffee Lake and
+ * Comet Lake share.
+ */
+static const struct i915_xd_platform *
+i915_table_row(
+	int power_class,
+	int platform)
+{
+	unsigned kind;
+	unsigned xd_class;
+
+	/* The kind. */
+	kind = I915_XD_KIND_KBL;
+	if (platform == I915_PLATFORM_SKYLAKE)
+		kind = I915_XD_KIND_SKL;
+
+	/* The class. */
+	xd_class = I915_XD_POWER_CLASS_H;
+	if (power_class == I915_TABLE_CLASS_U)
+		xd_class = I915_XD_POWER_CLASS_U;
+	else if (power_class == I915_TABLE_CLASS_Y)
+		xd_class = I915_XD_POWER_CLASS_Y;
+
+	/* Succeeded: the row. */
+	return drv_i915_xd_platform_display9_class(kind, xd_class);
+}
+
+/* Reports the power class of a device id in the form the rows were first written with. */
+static int
+i915_table_class(
+	uint16_t device)
+{
+	struct i915_xd_choice choice;
+	int error;
+
+	/* An id with no row is H and S. */
+	error = drv_i915_xd_platform_choose_display9(device, 0U, 0, 0U, &choice);
+	if (error != 0)
+		return I915_TABLE_CLASS_H;
+
+	/* Succeeded: U, Y, or H and S. */
+	if (choice.platform->power_class == I915_XD_POWER_CLASS_U)
+		return I915_TABLE_CLASS_U;
+	if (choice.platform->power_class == I915_XD_POWER_CLASS_Y)
+		return I915_TABLE_CLASS_Y;
+	return I915_TABLE_CLASS_H;
+}
+
+/* Draws from the pseudo-random sequence without using the draws. */
+static void
+i915_table_skip(
+	unsigned draws)
+{
+	unsigned draw;
+
+	/* Succeeded: each draw. */
+	for (draw = 0U; draw < draws; draw++)
+		(void)i915_table_random();
 }

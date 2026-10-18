@@ -31,10 +31,10 @@
  * console does not draw (it would draw over the frames); it is given the
  * screen back when the lease ends, also when its holder exits or crashes.
  *
- * When the firmware's plane can be flipped and the boot line asks for it
- * (i915.gen9.display=flip or a later step, gen9-display.h), the frames
+ * When the firmware's plane can be flipped and the node's step takes the
+ * flips (xd9-step.h), the frames
  * are shown by flipping that plane between two buffers of the driver's
- * instead (gen9-flip.c): no CPU copy, and no tearing.  The display
+ * instead (xd9-flip.c): no CPU copy, and no tearing.  The display
  * then reports the plane's extent and refresh.  When the flips fail (a
  * flip that does not latch, a plane fault, buffers that cannot be mapped)
  * the copies come back for the rest of the boot, and the frame that found
@@ -46,10 +46,10 @@
 #include "internal.h"
 #include "display.h"
 #include "bootfb.h"
-#include "gen9-backlight.h"
-#include "gen9-display.h"
-#include "gen9-flip.h"
-#include "gen9-node.h"
+#include "xd9-backlight.h"
+#include "xd9-step.h"
+#include "xd9-flip.h"
+#include "xd9-node.h"
 #include "present.h"
 #include "scanout.h"
 #include <kern/kcrt.h>
@@ -120,7 +120,7 @@ struct i915_bootfb {
 	struct i915_ppgtt *map_vm;
 	uint64_t map_va;
 
-	/* Nonzero while presentations are flipped (gen9-flip.c) rather than copied. */
+	/* Nonzero while presentations are flipped (xd9-flip.c) rather than copied. */
 	int flip;
 
 	/* The extent and refresh the display reports: the flipped plane's, else the framebuffer's at 60 Hz. */
@@ -266,18 +266,18 @@ drv_i915_bootfb_bind_ops(
 	bootfb->refresh_millihz = I915_BOOTFB_REFRESH_MILLIHZ;
 
 	/* Flips the firmware's plane when the boot line asks for it and the plane allows it. */
-	error = drv_i915_gen9_flip_start(device, bootfb->layout.fb_physical);
+	error = drv_i915_xd9_flip_start(device, bootfb->layout.fb_physical);
 	if (error == 0) {
 		bootfb->flip = 1;
-		drv_i915_gen9_flip_extent(&bootfb->width, &bootfb->height, &bootfb->refresh_millihz);
+		drv_i915_xd9_flip_extent(&bootfb->width, &bootfb->height, &bootfb->refresh_millihz);
 	}
 
 	/* Offers the panel's brightness when the boot line asks for it. */
-	drv_i915_gen9_backlight_start(device);
+	drv_i915_xd9_backlight_start(device);
 
 	/* Offers the external displays beside a flipped panel when the boot line asks for the mode set. */
 	if (bootfb->flip)
-		drv_i915_gen9_node_start(device);
+		drv_i915_xd9_node_start(device);
 
 	/* The display and the display-only pairing (the capture node's: the same identity and formats), with their capabilities. */
 	bootfb->bound = 1;
@@ -295,7 +295,7 @@ drv_i915_bootfb_bind_ops(
 	    (bootfb->flip != 0) ? "flipped on the firmware's plane" : "copied by the GPU and then the CPU");
 
 	/* Says which step the display runs at, after any step that failed to start. */
-	drv_i915_gen9_display_report();
+	drv_i915_xd9_step_report();
 }
 
 /*
@@ -333,8 +333,8 @@ drv_i915_bootfb_session_close(
 	if (device->display == NULL)
 		return;
 
-	/* The external displays' leases first, without the panel's lease mutex (gen9-node.h). */
-	drv_i915_gen9_node_session_close(device, session);
+	/* The external displays' leases first, without the panel's lease mutex (xd9-node.h). */
+	drv_i915_xd9_node_session_close(device, session);
 
 	rd = &device->display->rd;
 
@@ -370,9 +370,9 @@ drv_i915_bootfb_fini(
 	bootfb = &i915_bootfb_display;
 
 	/* The external displays go dark, the backlight device is withdrawn, then the flip buffers go, unless the plane still shows one. */
-	drv_i915_gen9_node_stop(device);
-	drv_i915_gen9_backlight_stop(device);
-	drv_i915_gen9_flip_fini(device);
+	drv_i915_xd9_node_stop(device);
+	drv_i915_xd9_backlight_stop(device);
+	drv_i915_xd9_flip_fini(device);
 
 	/* A mapped staging area stays, with everything else. */
 	if (bootfb->map_vm != NULL) {
@@ -645,8 +645,8 @@ i915_bootfb_query(
 	owner_device = device;
 	bootfb = &i915_bootfb_display;
 
-	/* The panel's display, and an external one for each sink attached (gen9-node.c). */
-	request->count = 1U + drv_i915_gen9_node_count();
+	/* The panel's display, and an external one for each sink attached (xd9-node.c). */
+	request->count = 1U + drv_i915_xd9_node_count();
 
 	/* Only the count was asked for. */
 	if (request->index == GPU_DISPLAY_COUNT_ONLY)
@@ -654,10 +654,10 @@ i915_bootfb_query(
 
 	/* An external display. */
 	if (request->index != 0U) {
-		error = drv_i915_gen9_node_query(device, request->index - 1U, request);
+		error = drv_i915_xd9_node_query(device, request->index - 1U, request);
 		if (error != 0)
 			return error;
-		request->count = 1U + drv_i915_gen9_node_count();
+		request->count = 1U + drv_i915_xd9_node_count();
 		return 0;
 	}
 
@@ -709,10 +709,10 @@ i915_bootfb_mode(
 
 	bootfb = &i915_bootfb_display;
 
-	/* An external display's modes are the node's (gen9-node.c). */
-	external = drv_i915_gen9_node_owns_display(request->display_id);
+	/* An external display's modes are the node's (xd9-node.c). */
+	external = drv_i915_xd9_node_owns_display(request->display_id);
 	if (external) {
-		error = drv_i915_gen9_node_mode(device, session, request);
+		error = drv_i915_xd9_node_mode(device, session, request);
 		if (error != 0)
 			return error;
 		return 0;
@@ -792,10 +792,10 @@ i915_bootfb_claim(
 	owner_device = device;
 	rd = &owner_device->display->rd;
 
-	/* An external display is the node's (gen9-node.c). */
-	external = drv_i915_gen9_node_owns_display(request->display_id);
+	/* An external display is the node's (xd9-node.c). */
+	external = drv_i915_xd9_node_owns_display(request->display_id);
 	if (external) {
-		error = drv_i915_gen9_node_claim(device, session, request);
+		error = drv_i915_xd9_node_claim(device, session, request);
 		if (error != 0)
 			return error;
 		return 0;
@@ -833,7 +833,7 @@ i915_bootfb_claim(
 	 */
 	kern_text_suspend();
 	if (i915_bootfb_display.flip) {
-		drv_i915_gen9_flip_claim(owner_device);
+		drv_i915_xd9_flip_claim(owner_device);
 	} else {
 		i915_bootfb_clear();
 	}
@@ -865,10 +865,10 @@ i915_bootfb_release(
 	owner_device = device;
 	rd = &owner_device->display->rd;
 
-	/* An external display's lease is the node's (gen9-node.c). */
-	external = drv_i915_gen9_node_owns_lease(request->lease);
+	/* An external display's lease is the node's (xd9-node.c). */
+	external = drv_i915_xd9_node_owns_lease(request->lease);
 	if (external) {
-		error = drv_i915_gen9_node_release(device, session, request);
+		error = drv_i915_xd9_node_release(device, session, request);
 		if (error != 0)
 			return error;
 		return 0;
@@ -930,10 +930,10 @@ i915_bootfb_present(
 	rd = &owner_device->display->rd;
 	bootfb = &i915_bootfb_display;
 
-	/* An external display's frame is the node's (gen9-node.c). */
-	external = drv_i915_gen9_node_owns_lease(request->lease);
+	/* An external display's frame is the node's (xd9-node.c). */
+	external = drv_i915_xd9_node_owns_lease(request->lease);
 	if (external) {
-		error = drv_i915_gen9_node_present(device, session, object, request);
+		error = drv_i915_xd9_node_present(device, session, object, request);
 		if (error != 0)
 			return error;
 		return 0;
@@ -959,7 +959,7 @@ i915_bootfb_present(
 	flipped = 0;
 	error = 0;
 	if (bootfb->flip) {
-		error = drv_i915_gen9_flip_present(owner_device, session, object, request);
+		error = drv_i915_xd9_flip_present(owner_device, session, object, request);
 		if (error == 0)
 			flipped = 1;
 	}
@@ -970,7 +970,7 @@ i915_bootfb_present(
 	 * for the rest of the boot.
 	 */
 	if (bootfb->flip && !flipped) {
-		flip_failed = drv_i915_gen9_flip_failed();
+		flip_failed = drv_i915_xd9_flip_failed();
 		if (!flip_failed) {
 			mutex_unlock(&rd->mutex);
 			return error;
@@ -999,7 +999,7 @@ i915_bootfb_present(
 	request->sequence = rd->sequence;
 	bootfb->frames++;
 
-	/* How long the two copies took, in the log now and then (gen9-flip.c logs the flips). */
+	/* How long the two copies took, in the log now and then (xd9-flip.c logs the flips). */
 	if (!flipped)
 		i915_bootfb_time(gpu_ns, cpu_ns, copy_width, copy_height);
 
@@ -1086,10 +1086,10 @@ i915_bootfb_wait(
 	owner_device = device;
 	rd = &owner_device->display->rd;
 
-	/* An external display's wait is the node's (gen9-node.c). */
-	external = drv_i915_gen9_node_owns_lease(request->lease);
+	/* An external display's wait is the node's (xd9-node.c). */
+	external = drv_i915_xd9_node_owns_lease(request->lease);
 	if (external) {
-		error = drv_i915_gen9_node_wait(device, session, request);
+		error = drv_i915_xd9_node_wait(device, session, request);
 		if (error != 0)
 			return error;
 		return 0;
@@ -1124,7 +1124,7 @@ i915_bootfb_wait(
 	/* The newest flip latches; the tick it did so at is its completion. */
 	latched_tick = rd->present_tick;
 	if (i915_bootfb_display.flip) {
-		error = drv_i915_gen9_flip_wait(&latched_tick);
+		error = drv_i915_xd9_flip_wait(&latched_tick);
 		if (error != 0) {
 			i915_bootfb_flip_failed(owner_device);
 			latched_tick = sched_ticks();
@@ -1157,7 +1157,7 @@ i915_bootfb_events(
 	int error;
 
 	/* The external displays' sequence. */
-	external = drv_i915_gen9_node_sequence();
+	external = drv_i915_xd9_node_sequence();
 	if (external != 0U) {
 		*sequence = external;
 		return 0;
@@ -1447,7 +1447,7 @@ i915_bootfb_end_lease(
 
 	/* The plane gets the firmware's surface back; one that does not come back ends the flips. */
 	if (i915_bootfb_display.flip) {
-		error = drv_i915_gen9_flip_release(device);
+		error = drv_i915_xd9_flip_release(device);
 		if (error != 0)
 			i915_bootfb_display.flip = 0;
 	}
@@ -1481,7 +1481,7 @@ i915_bootfb_flip_failed(
 	struct i915_device *device)
 {
 	/* The flips end for the rest of the boot. */
-	drv_i915_gen9_flip_stop(device);
+	drv_i915_xd9_flip_stop(device);
 	i915_bootfb_display.flip = 0;
 
 	/* The copied frames start on a cleared framebuffer. */

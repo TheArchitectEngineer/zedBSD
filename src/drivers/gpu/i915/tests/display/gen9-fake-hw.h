@@ -23,9 +23,8 @@
 
 #include "host-test.h"
 
-#include "../../display/gen9-io.h"
 #include "../../display/xd-io.h"
-#include "../../intel/display-regs-gen9-modeset.h"
+#include "gen9-fake-regs.h"
 
 #include <stdint.h>
 
@@ -85,9 +84,8 @@ struct i915_gen9_fake_hw {
 	uint64_t waited_us;
 };
 
-/* The model the tests drive, and the register access table that reaches it. */
+/* The model the tests drive. */
 extern struct i915_gen9_fake_hw i915_gen9_fake;
-extern const struct i915_skl_io i915_gen9_fake_io;
 
 /*
  * The same model behind the xd register window's hooks and behind the
@@ -96,6 +94,9 @@ extern const struct i915_skl_io i915_gen9_fake_io;
  */
 extern const struct i915_xd_io_hooks i915_gen9_fake_xd_hooks;
 extern const struct i915_host_mmio_hooks i915_gen9_fake_mmio;
+
+/* Reports the xd register window that reaches the model. */
+struct i915_xd_io *i915_gen9_fake_xd(void);
 
 /* Reports a register's stored value, 0 when never written. */
 uint32_t i915_gen9_fake_get(uint32_t offset);

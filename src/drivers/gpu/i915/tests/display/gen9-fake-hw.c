@@ -12,9 +12,7 @@
 
 #include "gen9-fake-hw.h"
 
-#include "../../display/gen9-ddc.h"
-#include "../../intel/display-regs-gen9.h"
-#include "../../intel/display-regs-gen9-modeset.h"
+#include "gen9-fake-regs.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -28,7 +26,8 @@ static void i915_fake_set(struct i915_gen9_fake_hw *hw, uint32_t offset, uint32_
 static uint32_t i915_fake_read(void *context, uint32_t offset);
 static void i915_fake_write(void *context, uint32_t offset, uint32_t value);
 static void i915_fake_udelay(void *context, unsigned microseconds);
-static void i915_fake_msleep(void *context, unsigned milliseconds);
+static uint32_t i915_fake_pack(const uint8_t *bytes, unsigned count);
+static void i915_fake_unpack(uint32_t word, uint8_t *bytes, unsigned count);
 static void i915_fake_aux(struct i915_gen9_fake_hw *hw, unsigned port, uint32_t control);
 static unsigned i915_fake_aux_native(struct i915_gen9_fake_sink *sink, unsigned request, uint32_t address, const uint8_t *message, unsigned size, uint8_t *reply);
 static unsigned i915_fake_aux_i2c(struct i915_gen9_fake_sink *sink, unsigned request, const uint8_t *message, unsigned size, uint8_t *reply);
@@ -45,15 +44,6 @@ static void i915_fake_golden_scene(void);
  * runs on one thread.
  */
 struct i915_gen9_fake_hw i915_gen9_fake;
-
-/* The register access table of the mode set, reaching the model.  It never changes. */
-const struct i915_skl_io i915_gen9_fake_io = {
-	i915_fake_read,
-	i915_fake_write,
-	i915_fake_udelay,
-	i915_fake_msleep,
-	&i915_gen9_fake
-};
 
 /* The xd register window's hooks, reaching the model.  It never changes. */
 const struct i915_xd_io_hooks i915_gen9_fake_xd_hooks = {
@@ -79,6 +69,21 @@ const struct i915_host_mmio_hooks i915_gen9_fake_mmio = {
  */
 static FILE *i915_fake_golden;
 static unsigned i915_fake_golden_scenes;
+
+/*
+ * Reports the xd register window that reaches the model, made again on
+ * every call (its record starts empty).
+ */
+struct i915_xd_io *
+i915_gen9_fake_xd(void)
+{
+	static struct i915_xd_io io;
+
+	/* Succeeded: the window on the hooks. */
+	drv_i915_xd_io_init(&io, NULL, NULL);
+	drv_i915_xd_io_set_hooks(&io, &i915_gen9_fake_xd_hooks);
+	return &io;
+}
 
 /* Reports a register's stored value, 0 when never written. */
 uint32_t
@@ -430,21 +435,6 @@ i915_fake_udelay(
 	hw->waited_us += microseconds;
 }
 
-/* Counts a sleep. */
-static void
-i915_fake_msleep(
-	void *context,
-	unsigned milliseconds)
-{
-	struct i915_gen9_fake_hw *hw;
-
-	/* The model the table reaches. */
-	hw = context;
-
-	/* Succeeded: the time is only counted. */
-	hw->waited_us += (uint64_t)milliseconds * 1000U;
-}
-
 /* Runs one AUX transfer: the message from the data registers, the sink's reply into them, the status. */
 static void
 i915_fake_aux(
@@ -476,7 +466,7 @@ i915_fake_aux(
 	/* The message. */
 	size = (control >> I915_SKL_AUX_MESSAGE_SIZE_SHIFT) & I915_SKL_AUX_MESSAGE_SIZE_MASK;
 	for (index = 0U; index < size; index += 4U)
-		drv_i915_skl_aux_unpack(i915_fake_get(hw, data + index), message + index, size - index);
+		i915_fake_unpack(i915_fake_get(hw, data + index), message + index, size - index);
 	request = message[0] >> 4;
 	address = ((uint32_t)(message[0] & 0xfU) << 16) | ((uint32_t)message[1] << 8) | message[2];
 
@@ -494,7 +484,7 @@ i915_fake_aux(
 
 	/* The reply and the status. */
 	for (index = 0U; index < replied; index += 4U)
-		i915_fake_set(hw, data + index, drv_i915_skl_aux_pack(reply + index, replied - index));
+		i915_fake_set(hw, data + index, i915_fake_pack(reply + index, replied - index));
 	i915_fake_set(hw, I915_SKL_AUX_CTL_A + port * 0x100U, I915_SKL_AUX_DONE | (replied << I915_SKL_AUX_MESSAGE_SIZE_SHIFT));
 }
 
@@ -689,4 +679,34 @@ i915_fake_golden_scene(void)
 
 	/* Succeeded: the next check is the next scene. */
 	i915_fake_golden_scenes++;
+}
+
+/* Packs up to four bytes into an AUX data register's word, the first byte highest. */
+static uint32_t
+i915_fake_pack(
+	const uint8_t *bytes,
+	unsigned count)
+{
+	uint32_t word;
+	unsigned index;
+
+	/* Succeeded: from bit 31 down. */
+	word = 0U;
+	for (index = 0U; index < count && index < 4U; index++)
+		word |= (uint32_t)bytes[index] << ((3U - index) * 8U);
+	return word;
+}
+
+/* Unpacks up to four bytes from an AUX data register's word, the first byte highest. */
+static void
+i915_fake_unpack(
+	uint32_t word,
+	uint8_t *bytes,
+	unsigned count)
+{
+	unsigned index;
+
+	/* Succeeded: from bit 31 down. */
+	for (index = 0U; index < count && index < 4U; index++)
+		bytes[index] = (uint8_t)(word >> ((3U - index) * 8U));
 }
