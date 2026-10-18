@@ -1,0 +1,2345 @@
+{
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "path": "tools/wptrunner/wptrunner/executors/base.py",
+  "source_sha256": "5e838d06466c1f2e1a1385264a44df3f8a3fe966bba39cccf4c0046241b88723",
+  "functions": [
+    "check_pass",
+    "get_differences"
+  ],
+  "diagnostics_only_stubs": [
+    "logger.info",
+    "check_if_solid_color"
+  ],
+  "edges": 388,
+  "all_verdicts_agree": true,
+  "verdicts": [
+    {
+      "test_id": "/css/css-anchor-position/anchor-center-scroll-001.html",
+      "source": "/css/css-anchor-position/anchor-center-scroll-001.html",
+      "reference": "/css/css-anchor-position/anchor-center-scroll-001-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/anchor-position-dynamic-005.html",
+      "source": "/css/css-anchor-position/anchor-position-dynamic-005.html",
+      "reference": "/css/reference/ref-filled-green-100px-square-only.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/anchor-position-top-layer-001.html",
+      "source": "/css/css-anchor-position/anchor-position-top-layer-001.html",
+      "reference": "/css/css-anchor-position/anchor-position-top-layer-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/anchor-position-top-layer-002.html",
+      "source": "/css/css-anchor-position/anchor-position-top-layer-002.html",
+      "reference": "/css/css-anchor-position/anchor-position-top-layer-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/anchor-position-top-layer-003.html",
+      "source": "/css/css-anchor-position/anchor-position-top-layer-003.html",
+      "reference": "/css/css-anchor-position/anchor-position-top-layer-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/anchor-position-top-layer-004.html",
+      "source": "/css/css-anchor-position/anchor-position-top-layer-004.html",
+      "reference": "/css/css-anchor-position/anchor-position-top-layer-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/anchor-position-top-layer-005.html",
+      "source": "/css/css-anchor-position/anchor-position-top-layer-005.html",
+      "reference": "/css/css-anchor-position/anchor-position-top-layer-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/anchor-position-top-layer-006.html",
+      "source": "/css/css-anchor-position/anchor-position-top-layer-006.html",
+      "reference": "/css/css-anchor-position/anchor-position-top-layer-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/anchor-scope-scroll.html",
+      "source": "/css/css-anchor-position/anchor-scope-scroll.html",
+      "reference": "/css/css-anchor-position/anchor-scope-scroll-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/anchor-scroll-001.html",
+      "source": "/css/css-anchor-position/anchor-scroll-001.html",
+      "reference": "/css/css-anchor-position/reference/anchor-scroll-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/anchor-scroll-chained-001.html",
+      "source": "/css/css-anchor-position/anchor-scroll-chained-001.html",
+      "reference": "/css/css-anchor-position/reference/anchor-scroll-chained-001-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/anchor-scroll-chained-002.html",
+      "source": "/css/css-anchor-position/anchor-scroll-chained-002.html",
+      "reference": "/css/css-anchor-position/reference/anchor-scroll-chained-002-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/anchor-scroll-chained-003.html",
+      "source": "/css/css-anchor-position/anchor-scroll-chained-003.html",
+      "reference": "/css/css-anchor-position/reference/anchor-scroll-chained-003-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/anchor-scroll-chained-004.html",
+      "source": "/css/css-anchor-position/anchor-scroll-chained-004.html",
+      "reference": "/css/css-anchor-position/reference/anchor-scroll-chained-004-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/anchor-scroll-chained-fallback.html",
+      "source": "/css/css-anchor-position/anchor-scroll-chained-fallback.html",
+      "reference": "/css/css-anchor-position/reference/anchor-scroll-chained-fallback-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/anchor-scroll-fixedpos-002.html",
+      "source": "/css/css-anchor-position/anchor-scroll-fixedpos-002.html",
+      "reference": "/css/css-anchor-position/reference/anchor-scroll-fixedpos-002-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/anchor-scroll-fixedpos.html",
+      "source": "/css/css-anchor-position/anchor-scroll-fixedpos.html",
+      "reference": "/css/css-anchor-position/reference/anchor-scroll-fixedpos-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/anchor-scroll-nested.html",
+      "source": "/css/css-anchor-position/anchor-scroll-nested.html",
+      "reference": "/css/css-anchor-position/reference/anchor-scroll-nested-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/anchor-scroll-overflow-hidden.html",
+      "source": "/css/css-anchor-position/anchor-scroll-overflow-hidden.html",
+      "reference": "/css/css-anchor-position/anchor-scroll-overflow-hidden-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/anchor-scroll-scrollable-anchor.html",
+      "source": "/css/css-anchor-position/anchor-scroll-scrollable-anchor.html",
+      "reference": "/css/css-anchor-position/anchor-scroll-scrollable-anchor-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/anchor-scroll-to-sticky-001.html",
+      "source": "/css/css-anchor-position/anchor-scroll-to-sticky-001.html",
+      "reference": "/css/css-anchor-position/reference/anchor-scroll-to-sticky-001-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/anchor-scroll-to-sticky-002.html",
+      "source": "/css/css-anchor-position/anchor-scroll-to-sticky-002.html",
+      "reference": "/css/css-anchor-position/reference/anchor-scroll-to-sticky-002-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/anchor-scroll-to-sticky-003.html",
+      "source": "/css/css-anchor-position/anchor-scroll-to-sticky-003.html",
+      "reference": "/css/css-anchor-position/reference/anchor-scroll-to-sticky-003-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/anchor-scroll-to-sticky-004.html",
+      "source": "/css/css-anchor-position/anchor-scroll-to-sticky-004.html",
+      "reference": "/css/css-anchor-position/reference/anchor-scroll-to-sticky-004-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/anchor-scroll-update-001.html",
+      "source": "/css/css-anchor-position/anchor-scroll-update-001.html",
+      "reference": "/css/css-anchor-position/reference/anchor-scroll-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/anchor-scroll-update-002.html",
+      "source": "/css/css-anchor-position/anchor-scroll-update-002.html",
+      "reference": "/css/css-anchor-position/reference/anchor-scroll-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/anchor-scroll-update-003.html",
+      "source": "/css/css-anchor-position/anchor-scroll-update-003.html",
+      "reference": "/css/css-anchor-position/reference/anchor-scroll-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/anchor-scroll-update-004.html",
+      "source": "/css/css-anchor-position/anchor-scroll-update-004.html",
+      "reference": "/css/css-anchor-position/reference/anchor-scroll-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/anchor-scroll-update-005.html",
+      "source": "/css/css-anchor-position/anchor-scroll-update-005.html",
+      "reference": "/css/css-anchor-position/reference/anchor-scroll-update-005-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/anchor-scroll-update-006.html",
+      "source": "/css/css-anchor-position/anchor-scroll-update-006.html",
+      "reference": "/css/css-anchor-position/reference/anchor-scroll-update-006-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/anchor-scroll-update-007.html",
+      "source": "/css/css-anchor-position/anchor-scroll-update-007.html",
+      "reference": "/css/css-anchor-position/reference/anchor-scroll-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/anchor-scroll-vlr.html",
+      "source": "/css/css-anchor-position/anchor-scroll-vlr.html",
+      "reference": "/css/css-anchor-position/reference/anchor-scroll-vlr-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/anchor-scroll-vrl.html",
+      "source": "/css/css-anchor-position/anchor-scroll-vrl.html",
+      "reference": "/css/css-anchor-position/reference/anchor-scroll-vrl-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/position-anchor-002.html",
+      "source": "/css/css-anchor-position/position-anchor-002.html",
+      "reference": "/css/css-anchor-position/position-anchor-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/position-anchor-004.html",
+      "source": "/css/css-anchor-position/position-anchor-004.html",
+      "reference": "/css/css-anchor-position/position-anchor-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/position-anchor-target-with-children.html",
+      "source": "/css/css-anchor-position/position-anchor-target-with-children.html",
+      "reference": "/css/css-anchor-position/position-anchor-target-with-children-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/position-area-scroll-adjust.html",
+      "source": "/css/css-anchor-position/position-area-scroll-adjust.html",
+      "reference": "/css/css-anchor-position/position-area-scroll-adjust-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-anchor-position/position-try-switch-from-fixed-anchor.html",
+      "source": "/css/css-anchor-position/position-try-switch-from-fixed-anchor.html",
+      "reference": "/css/css-anchor-position/position-try-switch-from-fixed-anchor-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/position-try-switch-to-fixed-anchor.html",
+      "source": "/css/css-anchor-position/position-try-switch-to-fixed-anchor.html",
+      "reference": "/css/css-anchor-position/position-try-switch-to-fixed-anchor-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/position-visibility-add-no-overflow.html",
+      "source": "/css/css-anchor-position/position-visibility-add-no-overflow.html",
+      "reference": "/css/css-anchor-position/position-visibility-no-overflow-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/position-visibility-anchors-visible-after-scroll-in.html",
+      "source": "/css/css-anchor-position/position-visibility-anchors-visible-after-scroll-in.html",
+      "reference": "/css/css-anchor-position/position-visibility-anchors-visible-after-scroll-in-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/position-visibility-anchors-visible-after-scroll-out.html",
+      "source": "/css/css-anchor-position/position-visibility-anchors-visible-after-scroll-out.html",
+      "reference": "/css/css-anchor-position/position-visibility-anchors-visible-after-scroll-out-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/position-visibility-anchors-visible-chained-001.html",
+      "source": "/css/css-anchor-position/position-visibility-anchors-visible-chained-001.html",
+      "reference": "/css/css-anchor-position/position-visibility-anchors-visible-after-scroll-out-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/position-visibility-anchors-visible-chained-002.html",
+      "source": "/css/css-anchor-position/position-visibility-anchors-visible-chained-002.html",
+      "reference": "/css/css-anchor-position/position-visibility-anchors-visible-after-scroll-out-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/position-visibility-anchors-visible-chained-003.html",
+      "source": "/css/css-anchor-position/position-visibility-anchors-visible-chained-003.html",
+      "reference": "/css/css-anchor-position/position-visibility-anchors-visible-after-scroll-out-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/position-visibility-anchors-visible-chained-004.html",
+      "source": "/css/css-anchor-position/position-visibility-anchors-visible-chained-004.html",
+      "reference": "/css/css-anchor-position/position-visibility-anchors-visible-chained-004-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/position-visibility-anchors-visible-change-anchor.html",
+      "source": "/css/css-anchor-position/position-visibility-anchors-visible-change-anchor.html",
+      "reference": "/css/css-anchor-position/position-visibility-anchors-visible-change-anchor-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/position-visibility-anchors-visible-change-css-visibility.html",
+      "source": "/css/css-anchor-position/position-visibility-anchors-visible-change-css-visibility.html",
+      "reference": "/css/css-anchor-position/position-visibility-anchors-visible-change-css-visibility-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/position-visibility-anchors-visible-non-intervening-container.html",
+      "source": "/css/css-anchor-position/position-visibility-anchors-visible-non-intervening-container.html",
+      "reference": "/css/css-anchor-position/position-visibility-anchors-visible-non-intervening-container-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-anchor-position/position-visibility-anchors-visible-stacked-child.html",
+      "source": "/css/css-anchor-position/position-visibility-anchors-visible-stacked-child.html",
+      "reference": "/css/css-anchor-position/position-visibility-anchors-visible-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/position-visibility-anchors-visible-with-position.html",
+      "source": "/css/css-anchor-position/position-visibility-anchors-visible-with-position.html",
+      "reference": "/css/css-anchor-position/position-visibility-anchors-visible-with-position-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/position-visibility-no-overflow-scroll.html",
+      "source": "/css/css-anchor-position/position-visibility-no-overflow-scroll.html",
+      "reference": "/css/css-anchor-position/position-visibility-no-overflow-scroll-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/position-visibility-remove-anchors-visible.html",
+      "source": "/css/css-anchor-position/position-visibility-remove-anchors-visible.html",
+      "reference": "/css/css-anchor-position/position-visibility-remove-anchors-visible-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/position-visibility-remove-no-overflow.html",
+      "source": "/css/css-anchor-position/position-visibility-remove-no-overflow.html",
+      "reference": "/css/css-anchor-position/position-visibility-remove-no-overflow-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-anchor-position/sticky-anchor-position-invalid.html",
+      "source": "/css/css-anchor-position/sticky-anchor-position-invalid.html",
+      "reference": "/css/css-anchor-position/reference/sticky-anchor-position-invalid-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-cascade/scope-part.html",
+      "source": "/css/css-cascade/scope-part.html",
+      "reference": "/css/css-cascade/scope-part-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-cascade/scope-shadow-sharing.html",
+      "source": "/css/css-cascade/scope-shadow-sharing.html",
+      "reference": "/css/css-cascade/scope-shadow-sharing-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-flexbox/abspos/position-absolute-005.html",
+      "source": "/css/css-flexbox/abspos/position-absolute-005.html",
+      "reference": "/css/css-flexbox/abspos/position-absolute-005-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-flexbox/align-items-008.html",
+      "source": "/css/css-flexbox/align-items-008.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-flexbox/anonymous-flex-item-001.html",
+      "source": "/css/css-flexbox/anonymous-flex-item-001.html",
+      "reference": "/css/reference/pass_if_two_words.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-flexbox/anonymous-flex-item-003.html",
+      "source": "/css/css-flexbox/anonymous-flex-item-003.html",
+      "reference": "/css/reference/pass_if_two_words.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-flexbox/anonymous-flex-item-005.html",
+      "source": "/css/css-flexbox/anonymous-flex-item-005.html",
+      "reference": "/css/css-flexbox/anonymous-flex-item-split-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-flexbox/anonymous-flex-item-006.html",
+      "source": "/css/css-flexbox/anonymous-flex-item-006.html",
+      "reference": "/css/css-flexbox/anonymous-flex-item-split-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-flexbox/aspect-ratio-intrinsic-size-002.html",
+      "source": "/css/css-flexbox/aspect-ratio-intrinsic-size-002.html",
+      "reference": "/css/reference/ref-filled-green-100px-square-only.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-flexbox/aspect-ratio-intrinsic-size-004.html",
+      "source": "/css/css-flexbox/aspect-ratio-intrinsic-size-004.html",
+      "reference": "/css/reference/ref-filled-green-100px-square-only.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-flexbox/aspect-ratio-intrinsic-size-005.html",
+      "source": "/css/css-flexbox/aspect-ratio-intrinsic-size-005.html",
+      "reference": "/css/reference/ref-filled-green-100px-square-only.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-flexbox/auto-margins-001.html",
+      "source": "/css/css-flexbox/auto-margins-001.html",
+      "reference": "/css/css-flexbox/auto-margins-001-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-flexbox/dynamic-baseline-change-nested.html",
+      "source": "/css/css-flexbox/dynamic-baseline-change-nested.html",
+      "reference": "/css/css-flexbox/dynamic-baseline-change-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-flexbox/dynamic-baseline-change.html",
+      "source": "/css/css-flexbox/dynamic-baseline-change.html",
+      "reference": "/css/css-flexbox/dynamic-baseline-change-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-flexbox/dynamic-bsize-change.html",
+      "source": "/css/css-flexbox/dynamic-bsize-change.html",
+      "reference": "/css/css-flexbox/dynamic-bsize-change-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-flexbox/dynamic-change-simplified-layout-002.html",
+      "source": "/css/css-flexbox/dynamic-change-simplified-layout-002.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-flexbox/dynamic-change-simplified-layout.html",
+      "source": "/css/css-flexbox/dynamic-change-simplified-layout.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-flexbox/dynamic-isize-change-001.html",
+      "source": "/css/css-flexbox/dynamic-isize-change-001.html",
+      "reference": "/css/css-flexbox/dynamic-isize-change-001-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-flexbox/dynamic-isize-change-002.html",
+      "source": "/css/css-flexbox/dynamic-isize-change-002.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-flexbox/dynamic-isize-change-003.html",
+      "source": "/css/css-flexbox/dynamic-isize-change-003.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-flexbox/dynamic-isize-change-004.html",
+      "source": "/css/css-flexbox/dynamic-isize-change-004.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-flexbox/dynamic-stretch-change.html",
+      "source": "/css/css-flexbox/dynamic-stretch-change.html",
+      "reference": "/css/reference/ref-filled-green-100px-square-only.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-flexbox/fieldset-as-item-dynamic.html",
+      "source": "/css/css-flexbox/fieldset-as-item-dynamic.html",
+      "reference": "/css/reference/ref-filled-green-100px-square-only.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-flexbox/flex-aspect-ratio-img-column-010.html",
+      "source": "/css/css-flexbox/flex-aspect-ratio-img-column-010.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-flexbox/flex-aspect-ratio-img-row-004.html",
+      "source": "/css/css-flexbox/flex-aspect-ratio-img-row-004.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-flexbox/flex-aspect-ratio-img-row-016.html",
+      "source": "/css/css-flexbox/flex-aspect-ratio-img-row-016.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-flexbox/flex-direction-modify.html",
+      "source": "/css/css-flexbox/flex-direction-modify.html",
+      "reference": "/css/css-flexbox/reference/flex-direction-modify.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-flexbox/flex-direction-with-element-insert.html",
+      "source": "/css/css-flexbox/flex-direction-with-element-insert.html",
+      "reference": "/css/css-flexbox/reference/flex-direction-with-element-insert.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-flexbox/flex-item-contains-size-layout-001.html",
+      "source": "/css/css-flexbox/flex-item-contains-size-layout-001.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-flexbox/flex-minimum-height-flex-items-019.html",
+      "source": "/css/css-flexbox/flex-minimum-height-flex-items-019.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-flexbox/flex-wrap-006.html",
+      "source": "/css/css-flexbox/flex-wrap-006.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-flexbox/flexbox-dyn-resize-001.html",
+      "source": "/css/css-flexbox/flexbox-dyn-resize-001.html",
+      "reference": "/css/css-flexbox/flexbox-dyn-resize-001-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-flexbox/flexible-box-float.html",
+      "source": "/css/css-flexbox/flexible-box-float.html",
+      "reference": "/css/css-flexbox/reference/flex-box-float-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-flexbox/grid-flex-item-005.html",
+      "source": "/css/css-flexbox/grid-flex-item-005.html",
+      "reference": "/css/reference/ref-filled-green-100px-square-only.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-flexbox/image-items-flake-001.html",
+      "source": "/css/css-flexbox/image-items-flake-001.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-flexbox/nested-orthogonal-flexbox-relayout.html",
+      "source": "/css/css-flexbox/nested-orthogonal-flexbox-relayout.html",
+      "reference": "/css/css-flexbox/reference/nested-orthogonal-flexbox-relayout-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-flexbox/overflow-auto-001.html",
+      "source": "/css/css-flexbox/overflow-auto-001.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-flexbox/overflow-auto-005.html",
+      "source": "/css/css-flexbox/overflow-auto-005.html",
+      "reference": "/css/css-flexbox/reference/overflow-auto-005-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-flexbox/overflow-auto-007.html",
+      "source": "/css/css-flexbox/overflow-auto-007.html",
+      "reference": "/css/css-flexbox/reference/overflow-auto-007-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-flexbox/percentage-heights-014.html",
+      "source": "/css/css-flexbox/percentage-heights-014.html",
+      "reference": "/css/reference/ref-filled-green-100px-square-only.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-flexbox/position-absolute-scrollbar-freeze.html",
+      "source": "/css/css-flexbox/position-absolute-scrollbar-freeze.html",
+      "reference": "/css/css-flexbox/position-absolute-scrollbar-freeze-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-flexbox/scrollbars-auto.html",
+      "source": "/css/css-flexbox/scrollbars-auto.html",
+      "reference": "/css/css-flexbox/scrollbars-auto-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-flexbox/scrollbars-no-margin.html",
+      "source": "/css/css-flexbox/scrollbars-no-margin.html",
+      "reference": "/css/css-flexbox/scrollbars-no-margin-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-flexbox/scrollbars.html",
+      "source": "/css/css-flexbox/scrollbars.html",
+      "reference": "/css/css-flexbox/scrollbars-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-flexbox/table-as-item-change-cell.html",
+      "source": "/css/css-flexbox/table-as-item-change-cell.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-grid/abspos/absolute-positioning-changing-containing-block-001.html",
+      "source": "/css/css-grid/abspos/absolute-positioning-changing-containing-block-001.html",
+      "reference": "/css/css-grid/abspos/absolute-positioning-changing-containing-block-001-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/abspos/grid-item-absolute-positioning-dynamic-001.html",
+      "source": "/css/css-grid/abspos/grid-item-absolute-positioning-dynamic-001.html",
+      "reference": "/css/reference/ref-filled-green-200px-square.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/abspos/grid-positioned-item-dynamic-change-001.html",
+      "source": "/css/css-grid/abspos/grid-positioned-item-dynamic-change-001.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/abspos/grid-positioned-item-dynamic-change-002.html",
+      "source": "/css/css-grid/abspos/grid-positioned-item-dynamic-change-002.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-grid/abspos/grid-positioned-item-dynamic-change-003.html",
+      "source": "/css/css-grid/abspos/grid-positioned-item-dynamic-change-003.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/abspos/grid-positioned-item-dynamic-change-004.html",
+      "source": "/css/css-grid/abspos/grid-positioned-item-dynamic-change-004.html",
+      "reference": "/css/css-grid/abspos/grid-positioned-item-dynamic-change-004-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/abspos/grid-positioned-item-dynamic-change-005.html",
+      "source": "/css/css-grid/abspos/grid-positioned-item-dynamic-change-005.html",
+      "reference": "/css/css-grid/abspos/grid-positioned-item-dynamic-change-005-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-grid/abspos/grid-positioned-item-dynamic-change-006.html",
+      "source": "/css/css-grid/abspos/grid-positioned-item-dynamic-change-006.html",
+      "reference": "/css/css-grid/abspos/grid-positioned-item-dynamic-change-006-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/abspos/grid-positioned-item-dynamic-change-007.html",
+      "source": "/css/css-grid/abspos/grid-positioned-item-dynamic-change-007.html",
+      "reference": "/css/css-grid/abspos/grid-positioned-item-dynamic-change-007-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/alignment/grid-baseline-001.html",
+      "source": "/css/css-grid/alignment/grid-baseline-001.html",
+      "reference": "/css/css-grid/alignment/references/grid-baseline-001-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/alignment/grid-container-auto-margins-scrollbars-001.html",
+      "source": "/css/css-grid/alignment/grid-container-auto-margins-scrollbars-001.html",
+      "reference": "/css/css-grid/reference/grid-container-auto-margins-scrollbars-001-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/alignment/grid-item-aspect-ratio-stretch-1.html",
+      "source": "/css/css-grid/alignment/grid-item-aspect-ratio-stretch-1.html",
+      "reference": "/css/css-grid/alignment/grid-item-aspect-ratio-stretch-1-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/alignment/grid-item-aspect-ratio-stretch-2.html",
+      "source": "/css/css-grid/alignment/grid-item-aspect-ratio-stretch-2.html",
+      "reference": "/css/css-grid/alignment/grid-item-aspect-ratio-stretch-2-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/alignment/grid-item-aspect-ratio-stretch-3.html",
+      "source": "/css/css-grid/alignment/grid-item-aspect-ratio-stretch-3.html",
+      "reference": "/css/css-grid/alignment/grid-item-aspect-ratio-stretch-3-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-grid/alignment/grid-item-aspect-ratio-stretch-4.html",
+      "source": "/css/css-grid/alignment/grid-item-aspect-ratio-stretch-4.html",
+      "reference": "/css/css-grid/alignment/grid-item-aspect-ratio-stretch-4-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/alignment/grid-item-no-aspect-ratio-stretch-2.html",
+      "source": "/css/css-grid/alignment/grid-item-no-aspect-ratio-stretch-2.html",
+      "reference": "/css/css-grid/alignment/grid-item-no-aspect-ratio-stretch-2-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/alignment/grid-item-no-aspect-ratio-stretch-3.html",
+      "source": "/css/css-grid/alignment/grid-item-no-aspect-ratio-stretch-3.html",
+      "reference": "/css/css-grid/alignment/grid-item-no-aspect-ratio-stretch-3-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/alignment/grid-item-no-aspect-ratio-stretch-4.html",
+      "source": "/css/css-grid/alignment/grid-item-no-aspect-ratio-stretch-4.html",
+      "reference": "/css/css-grid/alignment/grid-item-no-aspect-ratio-stretch-4-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/alignment/grid-item-no-aspect-ratio-stretch-5.html",
+      "source": "/css/css-grid/alignment/grid-item-no-aspect-ratio-stretch-5.html",
+      "reference": "/css/css-grid/alignment/grid-item-no-aspect-ratio-stretch-5-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/alignment/grid-item-no-aspect-ratio-stretch-6.html",
+      "source": "/css/css-grid/alignment/grid-item-no-aspect-ratio-stretch-6.html",
+      "reference": "/css/css-grid/alignment/grid-item-no-aspect-ratio-stretch-6-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/animation/grid-template-columns-001.html",
+      "source": "/css/css-grid/animation/grid-template-columns-001.html",
+      "reference": "/css/css-grid/animation/grid-template-columns-001-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-grid/animation/grid-template-rows-001.html",
+      "source": "/css/css-grid/animation/grid-template-rows-001.html",
+      "reference": "/css/css-grid/animation/grid-template-rows-001-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-grid/chrome-bug-001.html",
+      "source": "/css/css-grid/chrome-bug-001.html",
+      "reference": "/css/reference/ref-filled-green-100px-square-only.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/dynamic-grid-with-auto-fill.html",
+      "source": "/css/css-grid/dynamic-grid-with-auto-fill.html",
+      "reference": "/css/reference/ref-filled-green-100px-square-only.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/dynamic-grid-within-flexbox.html",
+      "source": "/css/css-grid/dynamic-grid-within-flexbox.html",
+      "reference": "/css/reference/ref-filled-green-100px-square-only.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-grid/grid-definition/grid-auto-repeat-dynamic-001.html",
+      "source": "/css/css-grid/grid-definition/grid-auto-repeat-dynamic-001.html",
+      "reference": "/css/reference/ref-filled-green-100px-square-only.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-grid/grid-definition/grid-auto-repeat-dynamic-002.html",
+      "source": "/css/css-grid/grid-definition/grid-auto-repeat-dynamic-002.html",
+      "reference": "/css/reference/ref-filled-green-100px-square-only.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-grid/grid-definition/grid-auto-repeat-dynamic-003.html",
+      "source": "/css/css-grid/grid-definition/grid-auto-repeat-dynamic-003.html",
+      "reference": "/css/reference/ref-filled-green-100px-square-only.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-grid/grid-definition/grid-auto-repeat-positioned-container-001.html",
+      "source": "/css/css-grid/grid-definition/grid-auto-repeat-positioned-container-001.html",
+      "reference": "/css/css-grid/grid-definition/grid-auto-repeat-positioned-container-001-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-grid/grid-definition/grid-repeat-max-width-001.html",
+      "source": "/css/css-grid/grid-definition/grid-repeat-max-width-001.html",
+      "reference": "/css/reference/ref-filled-green-100px-square-only.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-grid/grid-items/grid-auto-margin-and-replaced-item-001.html",
+      "source": "/css/css-grid/grid-items/grid-auto-margin-and-replaced-item-001.html",
+      "reference": "/css/css-grid/grid-items/grid-auto-margin-and-replaced-item-001-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-grid/grid-items/grid-item-rel-pos-001.html",
+      "source": "/css/css-grid/grid-items/grid-item-rel-pos-001.html",
+      "reference": "/css/css-grid/grid-items/grid-item-rel-pos-001-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/grid-items/grid-item-rel-pos-002.html",
+      "source": "/css/css-grid/grid-items/grid-item-rel-pos-002.html",
+      "reference": "/css/css-grid/grid-items/grid-item-rel-pos-002-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/grid-items/grid-item-script-001.html",
+      "source": "/css/css-grid/grid-items/grid-item-script-001.html",
+      "reference": "/css/css-grid/reference/grid-item-script-001-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/grid-items/grid-items-percentage-margins-003.html",
+      "source": "/css/css-grid/grid-items/grid-items-percentage-margins-003.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/grid-items/grid-items-percentage-margins-004.html",
+      "source": "/css/css-grid/grid-items/grid-items-percentage-margins-004.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/grid-items/grid-items-percentage-margins-005.html",
+      "source": "/css/css-grid/grid-items/grid-items-percentage-margins-005.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/grid-items/grid-items-percentage-margins-006.html",
+      "source": "/css/css-grid/grid-items/grid-items-percentage-margins-006.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-grid/grid-items/grid-items-percentage-margins-007.html",
+      "source": "/css/css-grid/grid-items/grid-items-percentage-margins-007.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/grid-items/grid-items-percentage-margins-008.html",
+      "source": "/css/css-grid/grid-items/grid-items-percentage-margins-008.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/grid-items/grid-items-percentage-margins-009.html",
+      "source": "/css/css-grid/grid-items/grid-items-percentage-margins-009.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/grid-items/grid-items-percentage-margins-010.html",
+      "source": "/css/css-grid/grid-items/grid-items-percentage-margins-010.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-grid/grid-items/grid-items-percentage-margins-011.html",
+      "source": "/css/css-grid/grid-items/grid-items-percentage-margins-011.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/grid-items/grid-items-percentage-margins-012.html",
+      "source": "/css/css-grid/grid-items/grid-items-percentage-margins-012.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/grid-items/grid-items-percentage-margins-013.html",
+      "source": "/css/css-grid/grid-items/grid-items-percentage-margins-013.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/grid-items/grid-items-percentage-margins-014.html",
+      "source": "/css/css-grid/grid-items/grid-items-percentage-margins-014.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/grid-items/grid-items-percentage-paddings-003.html",
+      "source": "/css/css-grid/grid-items/grid-items-percentage-paddings-003.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/grid-items/grid-items-percentage-paddings-004.html",
+      "source": "/css/css-grid/grid-items/grid-items-percentage-paddings-004.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/grid-items/grid-items-percentage-paddings-005.html",
+      "source": "/css/css-grid/grid-items/grid-items-percentage-paddings-005.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/grid-items/grid-items-percentage-paddings-006.html",
+      "source": "/css/css-grid/grid-items/grid-items-percentage-paddings-006.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/grid-items/grid-items-percentage-paddings-007.html",
+      "source": "/css/css-grid/grid-items/grid-items-percentage-paddings-007.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/grid-items/grid-items-percentage-paddings-008.html",
+      "source": "/css/css-grid/grid-items/grid-items-percentage-paddings-008.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/grid-items/grid-items-percentage-paddings-009.html",
+      "source": "/css/css-grid/grid-items/grid-items-percentage-paddings-009.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/grid-items/grid-items-percentage-paddings-010.html",
+      "source": "/css/css-grid/grid-items/grid-items-percentage-paddings-010.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/grid-items/grid-items-percentage-paddings-011.html",
+      "source": "/css/css-grid/grid-items/grid-items-percentage-paddings-011.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/grid-items/grid-items-percentage-paddings-012.html",
+      "source": "/css/css-grid/grid-items/grid-items-percentage-paddings-012.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/grid-items/grid-items-percentage-paddings-013.html",
+      "source": "/css/css-grid/grid-items/grid-items-percentage-paddings-013.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/grid-items/grid-items-percentage-paddings-014.html",
+      "source": "/css/css-grid/grid-items/grid-items-percentage-paddings-014.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/grid-items/grid-size-with-orthogonal-child-dynamic.html",
+      "source": "/css/css-grid/grid-items/grid-size-with-orthogonal-child-dynamic.html",
+      "reference": "/css/reference/ref-filled-green-100px-square-only.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-grid/grid-items/percentage-margin-dynamic.html",
+      "source": "/css/css-grid/grid-items/percentage-margin-dynamic.html",
+      "reference": "/css/reference/ref-filled-green-100px-square-only.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/grid-items/remove-svg-grid-item-001.html",
+      "source": "/css/css-grid/grid-items/remove-svg-grid-item-001.html",
+      "reference": "/css/css-grid/reference/grid-item-script-001-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/grid-items/replaced-element-015.html",
+      "source": "/css/css-grid/grid-items/replaced-element-015.html",
+      "reference": "/css/css-grid/reference/replaced-element-015-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/grid-with-content-dynamic-display-001.html",
+      "source": "/css/css-grid/grid-with-content-dynamic-display-001.html",
+      "reference": "/css/reference/ref-filled-green-100px-square-only.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/grid-with-content-dynamic-display-002.html",
+      "source": "/css/css-grid/grid-with-content-dynamic-display-002.html",
+      "reference": "/css/reference/ref-filled-green-100px-square-only.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/grid-with-dynamic-img.html",
+      "source": "/css/css-grid/grid-with-dynamic-img.html",
+      "reference": "/css/reference/ref-filled-green-100px-square-only.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-grid/implicit-grids/grid-support-grid-auto-columns-rows-003.html",
+      "source": "/css/css-grid/implicit-grids/grid-support-grid-auto-columns-rows-003.html",
+      "reference": "/css/css-grid/reference/grid-support-grid-auto-columns-rows-003-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-grid/layout-algorithm/flex-tracks-with-fractional-size.html",
+      "source": "/css/css-grid/layout-algorithm/flex-tracks-with-fractional-size.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-grid/layout-algorithm/grid-intrinsic-size-dynamic-block-size.html",
+      "source": "/css/css-grid/layout-algorithm/grid-intrinsic-size-dynamic-block-size.html",
+      "reference": "/css/reference/ref-filled-green-100px-square-only.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-grid/placement/grid-placement-using-named-grid-lines-007.html",
+      "source": "/css/css-grid/placement/grid-placement-using-named-grid-lines-007.html",
+      "reference": "/css/reference/ref-filled-green-300px-square.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/subgrid/line-names-001.html",
+      "source": "/css/css-grid/subgrid/line-names-001.html",
+      "reference": "/css/css-grid/subgrid/line-names-001-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-grid/subgrid/line-names-004.html",
+      "source": "/css/css-grid/subgrid/line-names-004.html",
+      "reference": "/css/css-grid/subgrid/line-names-004-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-grid/subgrid/line-names-005.html",
+      "source": "/css/css-grid/subgrid/line-names-005.html",
+      "reference": "/css/css-grid/subgrid/line-names-005-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-grid/subgrid/parent-repeat-auto-fit-001.html",
+      "source": "/css/css-grid/subgrid/parent-repeat-auto-fit-001.html",
+      "reference": "/css/css-grid/subgrid/parent-repeat-auto-fit-001-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-grid/subgrid/parent-repeat-auto-fit-002.html",
+      "source": "/css/css-grid/subgrid/parent-repeat-auto-fit-002.html",
+      "reference": "/css/css-grid/subgrid/parent-repeat-auto-fit-002-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-grid/subgrid/repeat-auto-fill-001.html",
+      "source": "/css/css-grid/subgrid/repeat-auto-fill-001.html",
+      "reference": "/css/css-grid/subgrid/repeat-auto-fill-001-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-grid/subgrid/repeat-auto-fill-006.html",
+      "source": "/css/css-grid/subgrid/repeat-auto-fill-006.html",
+      "reference": "/css/css-grid/subgrid/repeat-auto-fill-005-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-grid/subgrid/repeat-auto-fill-008.html",
+      "source": "/css/css-grid/subgrid/repeat-auto-fill-008.html",
+      "reference": "/css/css-grid/subgrid/repeat-auto-fill-008-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-grid/table-grid-item-dynamic-001.html",
+      "source": "/css/css-grid/table-grid-item-dynamic-001.html",
+      "reference": "/css/css-grid/table-grid-item-dynamic-001-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/table-grid-item-dynamic-002.html",
+      "source": "/css/css-grid/table-grid-item-dynamic-002.html",
+      "reference": "/css/css-grid/table-grid-item-dynamic-002-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/table-grid-item-dynamic-003.html",
+      "source": "/css/css-grid/table-grid-item-dynamic-003.html",
+      "reference": "/css/css-grid/table-grid-item-dynamic-003-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/table-grid-item-dynamic-004.html",
+      "source": "/css/css-grid/table-grid-item-dynamic-004.html",
+      "reference": "/css/css-grid/table-grid-item-dynamic-004-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-grid/whitespace-reattach.html",
+      "source": "/css/css-grid/whitespace-reattach.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-ui/compute-kind-widget-generated/grouped-kind-of-widget-fallback-background-attachment-001.html",
+      "source": "/css/css-ui/compute-kind-widget-generated/grouped-kind-of-widget-fallback-background-attachment-001.html",
+      "reference": "/css/css-ui/compute-kind-widget-fallback-all-elements-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-ui/compute-kind-widget-generated/grouped-kind-of-widget-fallback-background-color-001.html",
+      "source": "/css/css-ui/compute-kind-widget-generated/grouped-kind-of-widget-fallback-background-color-001.html",
+      "reference": "/css/css-ui/compute-kind-widget-fallback-all-elements-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-ui/compute-kind-widget-generated/grouped-kind-of-widget-fallback-border-block-start-color-001.html",
+      "source": "/css/css-ui/compute-kind-widget-generated/grouped-kind-of-widget-fallback-border-block-start-color-001.html",
+      "reference": "/css/css-ui/compute-kind-widget-fallback-all-elements-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-ui/compute-kind-widget-generated/grouped-kind-of-widget-fallback-border-block-start-style-001.html",
+      "source": "/css/css-ui/compute-kind-widget-generated/grouped-kind-of-widget-fallback-border-block-start-style-001.html",
+      "reference": "/css/css-ui/compute-kind-widget-fallback-all-elements-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-ui/compute-kind-widget-generated/grouped-kind-of-widget-fallback-border-block-start-width-001.html",
+      "source": "/css/css-ui/compute-kind-widget-generated/grouped-kind-of-widget-fallback-border-block-start-width-001.html",
+      "reference": "/css/css-ui/compute-kind-widget-fallback-all-elements-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-ui/compute-kind-widget-generated/grouped-kind-of-widget-fallback-border-image-source-001.html",
+      "source": "/css/css-ui/compute-kind-widget-generated/grouped-kind-of-widget-fallback-border-image-source-001.html",
+      "reference": "/css/css-ui/compute-kind-widget-fallback-all-elements-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-ui/compute-kind-widget-generated/grouped-kind-of-widget-fallback-border-top-color-001.html",
+      "source": "/css/css-ui/compute-kind-widget-generated/grouped-kind-of-widget-fallback-border-top-color-001.html",
+      "reference": "/css/css-ui/compute-kind-widget-fallback-all-elements-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-ui/compute-kind-widget-generated/grouped-kind-of-widget-fallback-border-top-left-radius-001.html",
+      "source": "/css/css-ui/compute-kind-widget-generated/grouped-kind-of-widget-fallback-border-top-left-radius-001.html",
+      "reference": "/css/css-ui/compute-kind-widget-fallback-all-elements-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-ui/compute-kind-widget-generated/grouped-kind-of-widget-fallback-border-top-style-001.html",
+      "source": "/css/css-ui/compute-kind-widget-generated/grouped-kind-of-widget-fallback-border-top-style-001.html",
+      "reference": "/css/css-ui/compute-kind-widget-fallback-all-elements-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-ui/compute-kind-widget-generated/grouped-kind-of-widget-fallback-border-top-width-001.html",
+      "source": "/css/css-ui/compute-kind-widget-generated/grouped-kind-of-widget-fallback-border-top-width-001.html",
+      "reference": "/css/css-ui/compute-kind-widget-fallback-all-elements-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-view-transitions/3d-transform-incoming.html",
+      "source": "/css/css-view-transitions/3d-transform-incoming.html",
+      "reference": "/css/css-view-transitions/3d-transform-incoming-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/3d-transform-outgoing.html",
+      "source": "/css/css-view-transitions/3d-transform-outgoing.html",
+      "reference": "/css/css-view-transitions/3d-transform-outgoing-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/active-view-transition-on-non-root.html",
+      "source": "/css/css-view-transitions/active-view-transition-on-non-root.html",
+      "reference": "/css/css-view-transitions/view-transition-types-one-green-square-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/active-view-transition-pseudo-class-match.html",
+      "source": "/css/css-view-transitions/active-view-transition-pseudo-class-match.html",
+      "reference": "/css/css-view-transitions/view-transition-types-one-green-square-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/animating-new-content-subset.html",
+      "source": "/css/css-view-transitions/animating-new-content-subset.html",
+      "reference": "/css/css-view-transitions/animating-new-content-subset-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/animating-new-content.html",
+      "source": "/css/css-view-transitions/animating-new-content.html",
+      "reference": "/css/css-view-transitions/animating-new-content-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/backdrop-filter-animated.html",
+      "source": "/css/css-view-transitions/backdrop-filter-animated.html",
+      "reference": "/css/css-view-transitions/backdrop-filter-animated-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/backdrop-filter-captured.html",
+      "source": "/css/css-view-transitions/backdrop-filter-captured.html",
+      "reference": "/css/css-view-transitions/backdrop-filter-captured-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/block-with-overflowing-text.html",
+      "source": "/css/css-view-transitions/block-with-overflowing-text.html",
+      "reference": "/css/css-view-transitions/block-with-overflowing-text-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/break-inside-avoid-child.html",
+      "source": "/css/css-view-transitions/break-inside-avoid-child.html",
+      "reference": "/css/css-view-transitions/break-inside-avoid-child-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/capture-old-state-error-flag-cleanup.html",
+      "source": "/css/css-view-transitions/capture-old-state-error-flag-cleanup.html",
+      "reference": "/css/reference/ref-filled-green-100px-square.xht",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/capture-with-offscreen-child-translated.html",
+      "source": "/css/css-view-transitions/capture-with-offscreen-child-translated.html",
+      "reference": "/css/css-view-transitions/capture-with-offscreen-child-translated-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/capture-with-offscreen-child.html",
+      "source": "/css/css-view-transitions/capture-with-offscreen-child.html",
+      "reference": "/css/css-view-transitions/capture-with-offscreen-child-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/capture-with-opacity-zero-child.html",
+      "source": "/css/css-view-transitions/capture-with-opacity-zero-child.html",
+      "reference": "/css/css-view-transitions/capture-with-visibility-hidden-child-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/capture-with-visibility-hidden-child.html",
+      "source": "/css/css-view-transitions/capture-with-visibility-hidden-child.html",
+      "reference": "/css/css-view-transitions/capture-with-visibility-hidden-child-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/capture-with-visibility-mixed-descendants.html",
+      "source": "/css/css-view-transitions/capture-with-visibility-mixed-descendants.html",
+      "reference": "/css/css-view-transitions/capture-with-visibility-mixed-descendants-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/class-specificity.html",
+      "source": "/css/css-view-transitions/class-specificity.html",
+      "reference": "/css/css-view-transitions/class-specificity-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/clip-path-larger-than-border-box-on-child-of-named-element.html",
+      "source": "/css/css-view-transitions/clip-path-larger-than-border-box-on-child-of-named-element.html",
+      "reference": "/css/css-view-transitions/clip-path-larger-than-border-box-on-child-of-named-element-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/content-smaller-than-box-size.html",
+      "source": "/css/css-view-transitions/content-smaller-than-box-size.html",
+      "reference": "/css/css-view-transitions/content-smaller-than-box-size-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/content-visibility-auto-shared-element.html",
+      "source": "/css/css-view-transitions/content-visibility-auto-shared-element.html",
+      "reference": "/css/css-view-transitions/content-visibility-auto-shared-element-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/content-with-child-with-transparent-background.html",
+      "source": "/css/css-view-transitions/content-with-child-with-transparent-background.html",
+      "reference": "/css/css-view-transitions/content-with-child-with-transparent-background-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/content-with-clip-root.html",
+      "source": "/css/css-view-transitions/content-with-clip-root.html",
+      "reference": "/css/css-view-transitions/content-with-clip-root-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/content-with-clip.html",
+      "source": "/css/css-view-transitions/content-with-clip.html",
+      "reference": "/css/css-view-transitions/content-with-clip-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/content-with-inline-child.html",
+      "source": "/css/css-view-transitions/content-with-inline-child.html",
+      "reference": "/css/css-view-transitions/content-with-inline-child-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/content-with-transform-new-image.html",
+      "source": "/css/css-view-transitions/content-with-transform-new-image.html",
+      "reference": "/css/css-view-transitions/content-with-transform-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/content-with-transform-old-image.html",
+      "source": "/css/css-view-transitions/content-with-transform-old-image.html",
+      "reference": "/css/css-view-transitions/content-with-transform-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/content-with-transparent-background.html",
+      "source": "/css/css-view-transitions/content-with-transparent-background.html",
+      "reference": "/css/css-view-transitions/content-with-transparent-background-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/css-tags-paint-order-with-entry.html",
+      "source": "/css/css-view-transitions/css-tags-paint-order-with-entry.html",
+      "reference": "/css/css-view-transitions/css-tags-paint-order-with-entry-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/css-tags-paint-order.html",
+      "source": "/css/css-view-transitions/css-tags-paint-order.html",
+      "reference": "/css/css-view-transitions/css-tags-paint-order-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/css-tags-shared-element.html",
+      "source": "/css/css-view-transitions/css-tags-shared-element.html",
+      "reference": "/css/css-view-transitions/css-tags-shared-element-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/dialog-in-rtl-iframe.html",
+      "source": "/css/css-view-transitions/dialog-in-rtl-iframe.html",
+      "reference": "/css/css-view-transitions/dialog-in-rtl-iframe-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/dialog-in-top-layer-during-transition-new.html",
+      "source": "/css/css-view-transitions/dialog-in-top-layer-during-transition-new.html",
+      "reference": "/css/css-view-transitions/dialog-in-top-layer-during-transition-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/dialog-in-top-layer-during-transition-old.html",
+      "source": "/css/css-view-transitions/dialog-in-top-layer-during-transition-old.html",
+      "reference": "/css/css-view-transitions/dialog-in-top-layer-during-transition-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/element-is-grouping-during-animation.html",
+      "source": "/css/css-view-transitions/element-is-grouping-during-animation.html",
+      "reference": "/css/css-view-transitions/element-is-grouping-during-animation-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/element-stops-grouping-after-animation.html",
+      "source": "/css/css-view-transitions/element-stops-grouping-after-animation.html",
+      "reference": "/css/css-view-transitions/element-stops-grouping-after-animation-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/element-with-overflow.html",
+      "source": "/css/css-view-transitions/element-with-overflow.html",
+      "reference": "/css/css-view-transitions/element-with-overflow-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/exit-transition-with-anonymous-layout-object.html",
+      "source": "/css/css-view-transitions/exit-transition-with-anonymous-layout-object.html",
+      "reference": "/css/css-view-transitions/exit-transition-with-anonymous-layout-object-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/far-away-capture.html",
+      "source": "/css/css-view-transitions/far-away-capture.html",
+      "reference": "/css/css-view-transitions/far-away-capture-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/fractional-box-new.html",
+      "source": "/css/css-view-transitions/fractional-box-new.html",
+      "reference": "/css/css-view-transitions/fractional-box-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/fractional-box-old.html",
+      "source": "/css/css-view-transitions/fractional-box-old.html",
+      "reference": "/css/css-view-transitions/fractional-box-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/fractional-box-with-overflow-children-new.html",
+      "source": "/css/css-view-transitions/fractional-box-with-overflow-children-new.html",
+      "reference": "/css/css-view-transitions/fractional-box-with-overflow-children-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/fractional-box-with-overflow-children-old.html",
+      "source": "/css/css-view-transitions/fractional-box-with-overflow-children-old.html",
+      "reference": "/css/css-view-transitions/fractional-box-with-overflow-children-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/fractional-box-with-shadow-new.html",
+      "source": "/css/css-view-transitions/fractional-box-with-shadow-new.html",
+      "reference": "/css/css-view-transitions/fractional-box-with-shadow-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/fractional-box-with-shadow-old.html",
+      "source": "/css/css-view-transitions/fractional-box-with-shadow-old.html",
+      "reference": "/css/css-view-transitions/fractional-box-with-shadow-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/fractional-translation-from-position.html",
+      "source": "/css/css-view-transitions/fractional-translation-from-position.html",
+      "reference": "/css/css-view-transitions/fractional-translation-from-position-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/fractional-translation-from-transform.html",
+      "source": "/css/css-view-transitions/fractional-translation-from-transform.html",
+      "reference": "/css/css-view-transitions/fractional-translation-from-transform-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/fragmented-at-start-ignored.html",
+      "source": "/css/css-view-transitions/fragmented-at-start-ignored.html",
+      "reference": "/css/css-view-transitions/fragmented-at-start-ignored-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/fragmented-during-transition-skips.html",
+      "source": "/css/css-view-transitions/fragmented-during-transition-skips.html",
+      "reference": "/css/css-view-transitions/fragmented-during-transition-skips-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/iframe-new-has-scrollbar.html",
+      "source": "/css/css-view-transitions/iframe-new-has-scrollbar.html",
+      "reference": "/css/css-view-transitions/iframe-new-has-scrollbar-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/iframe-old-has-scrollbar.html",
+      "source": "/css/css-view-transitions/iframe-old-has-scrollbar.html",
+      "reference": "/css/css-view-transitions/iframe-old-has-scrollbar-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/inline-child-with-filter.html",
+      "source": "/css/css-view-transitions/inline-child-with-filter.html",
+      "reference": "/css/css-view-transitions/inline-child-with-filter-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/inline-child-with-overflow-shadow.html",
+      "source": "/css/css-view-transitions/inline-child-with-overflow-shadow.html",
+      "reference": "/css/css-view-transitions/inline-child-with-overflow-shadow-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/inline-element-size.html",
+      "source": "/css/css-view-transitions/inline-element-size.html",
+      "reference": "/css/css-view-transitions/inline-element-size-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/inline-with-offset-from-containing-block.html",
+      "source": "/css/css-view-transitions/inline-with-offset-from-containing-block.html",
+      "reference": "/css/css-view-transitions/inline-with-offset-from-containing-block-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/japanese-tag.html",
+      "source": "/css/css-view-transitions/japanese-tag.html",
+      "reference": "/css/css-view-transitions/japanese-tag-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/massive-element-below-and-on-top-of-viewport-partially-onscreen-new.html",
+      "source": "/css/css-view-transitions/massive-element-below-and-on-top-of-viewport-partially-onscreen-new.html",
+      "reference": "/css/css-view-transitions/massive-element-below-and-on-top-of-viewport-partially-onscreen-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/massive-element-below-and-on-top-of-viewport-partially-onscreen-old.html",
+      "source": "/css/css-view-transitions/massive-element-below-and-on-top-of-viewport-partially-onscreen-old.html",
+      "reference": "/css/css-view-transitions/massive-element-below-and-on-top-of-viewport-partially-onscreen-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/massive-element-below-viewport-offscreen-new.html",
+      "source": "/css/css-view-transitions/massive-element-below-viewport-offscreen-new.html",
+      "reference": "/css/css-view-transitions/massive-element-below-viewport-offscreen-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/massive-element-below-viewport-offscreen-old.html",
+      "source": "/css/css-view-transitions/massive-element-below-viewport-offscreen-old.html",
+      "reference": "/css/css-view-transitions/massive-element-below-viewport-offscreen-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/massive-element-below-viewport-partially-onscreen-new.html",
+      "source": "/css/css-view-transitions/massive-element-below-viewport-partially-onscreen-new.html",
+      "reference": "/css/css-view-transitions/massive-element-below-viewport-partially-onscreen-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/massive-element-below-viewport-partially-onscreen-old.html",
+      "source": "/css/css-view-transitions/massive-element-below-viewport-partially-onscreen-old.html",
+      "reference": "/css/css-view-transitions/massive-element-below-viewport-partially-onscreen-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/massive-element-left-of-viewport-offscreen-new.html",
+      "source": "/css/css-view-transitions/massive-element-left-of-viewport-offscreen-new.html",
+      "reference": "/css/css-view-transitions/massive-element-left-of-viewport-offscreen-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/massive-element-left-of-viewport-offscreen-old.html",
+      "source": "/css/css-view-transitions/massive-element-left-of-viewport-offscreen-old.html",
+      "reference": "/css/css-view-transitions/massive-element-left-of-viewport-offscreen-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/massive-element-left-of-viewport-partially-onscreen-new.html",
+      "source": "/css/css-view-transitions/massive-element-left-of-viewport-partially-onscreen-new.html",
+      "reference": "/css/css-view-transitions/massive-element-left-of-viewport-partially-onscreen-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/massive-element-left-of-viewport-partially-onscreen-old.html",
+      "source": "/css/css-view-transitions/massive-element-left-of-viewport-partially-onscreen-old.html",
+      "reference": "/css/css-view-transitions/massive-element-left-of-viewport-partially-onscreen-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/massive-element-on-top-of-viewport-offscreen-new.html",
+      "source": "/css/css-view-transitions/massive-element-on-top-of-viewport-offscreen-new.html",
+      "reference": "/css/css-view-transitions/massive-element-on-top-of-viewport-offscreen-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/massive-element-on-top-of-viewport-offscreen-old.html",
+      "source": "/css/css-view-transitions/massive-element-on-top-of-viewport-offscreen-old.html",
+      "reference": "/css/css-view-transitions/massive-element-on-top-of-viewport-offscreen-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/massive-element-on-top-of-viewport-partially-onscreen-new.html",
+      "source": "/css/css-view-transitions/massive-element-on-top-of-viewport-partially-onscreen-new.html",
+      "reference": "/css/css-view-transitions/massive-element-on-top-of-viewport-partially-onscreen-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/massive-element-on-top-of-viewport-partially-onscreen-old.html",
+      "source": "/css/css-view-transitions/massive-element-on-top-of-viewport-partially-onscreen-old.html",
+      "reference": "/css/css-view-transitions/massive-element-on-top-of-viewport-partially-onscreen-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/massive-element-right-and-left-of-viewport-partially-onscreen-new.html",
+      "source": "/css/css-view-transitions/massive-element-right-and-left-of-viewport-partially-onscreen-new.html",
+      "reference": "/css/css-view-transitions/massive-element-right-and-left-of-viewport-partially-onscreen-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/massive-element-right-and-left-of-viewport-partially-onscreen-old.html",
+      "source": "/css/css-view-transitions/massive-element-right-and-left-of-viewport-partially-onscreen-old.html",
+      "reference": "/css/css-view-transitions/massive-element-right-and-left-of-viewport-partially-onscreen-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/massive-element-right-of-viewport-offscreen-new.html",
+      "source": "/css/css-view-transitions/massive-element-right-of-viewport-offscreen-new.html",
+      "reference": "/css/css-view-transitions/massive-element-right-of-viewport-offscreen-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/massive-element-right-of-viewport-offscreen-old.html",
+      "source": "/css/css-view-transitions/massive-element-right-of-viewport-offscreen-old.html",
+      "reference": "/css/css-view-transitions/massive-element-right-of-viewport-offscreen-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/massive-element-right-of-viewport-partially-onscreen-new.html",
+      "source": "/css/css-view-transitions/massive-element-right-of-viewport-partially-onscreen-new.html",
+      "reference": "/css/css-view-transitions/massive-element-right-of-viewport-partially-onscreen-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/massive-element-right-of-viewport-partially-onscreen-old.html",
+      "source": "/css/css-view-transitions/massive-element-right-of-viewport-partially-onscreen-old.html",
+      "reference": "/css/css-view-transitions/massive-element-right-of-viewport-partially-onscreen-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/match-element-name.html",
+      "source": "/css/css-view-transitions/match-element-name.html",
+      "reference": "/css/css-view-transitions/auto-name-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/modify-style-via-cssom.html",
+      "source": "/css/css-view-transitions/modify-style-via-cssom.html",
+      "reference": "/css/css-view-transitions/modify-style-via-cssom-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/multiline-span-with-overflowing-text-and-box-decorations.html",
+      "source": "/css/css-view-transitions/multiline-span-with-overflowing-text-and-box-decorations.html",
+      "reference": "/css/css-view-transitions/multiline-span-with-overflowing-text-and-box-decorations-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/named-element-with-fix-pos-child-new.html",
+      "source": "/css/css-view-transitions/named-element-with-fix-pos-child-new.html",
+      "reference": "/css/css-view-transitions/named-element-with-fix-pos-child-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/named-element-with-fix-pos-child-old.html",
+      "source": "/css/css-view-transitions/named-element-with-fix-pos-child-old.html",
+      "reference": "/css/css-view-transitions/named-element-with-fix-pos-child-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/names-are-tree-scoped.html",
+      "source": "/css/css-view-transitions/names-are-tree-scoped.html",
+      "reference": "/css/css-view-transitions/names-are-tree-scoped-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/nested-elements-in-overflow.html",
+      "source": "/css/css-view-transitions/nested-elements-in-overflow.html",
+      "reference": "/css/css-view-transitions/nested-elements-in-overflow-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/new-and-old-sizes-match.html",
+      "source": "/css/css-view-transitions/new-and-old-sizes-match.html",
+      "reference": "/css/css-view-transitions/new-and-old-sizes-match-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/new-content-ancestor-clipped.html",
+      "source": "/css/css-view-transitions/new-content-ancestor-clipped.html",
+      "reference": "/css/css-view-transitions/new-content-ancestor-clipped-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/new-content-captures-clip-path.html",
+      "source": "/css/css-view-transitions/new-content-captures-clip-path.html",
+      "reference": "/css/css-view-transitions/new-content-captures-clip-path-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/new-content-captures-different-size.html",
+      "source": "/css/css-view-transitions/new-content-captures-different-size.html",
+      "reference": "/css/css-view-transitions/new-content-captures-different-size-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/new-content-captures-opacity.html",
+      "source": "/css/css-view-transitions/new-content-captures-opacity.html",
+      "reference": "/css/css-view-transitions/new-content-captures-opacity-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/new-content-captures-positioned-spans.html",
+      "source": "/css/css-view-transitions/new-content-captures-positioned-spans.html",
+      "reference": "/css/css-view-transitions/new-content-captures-positioned-spans-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/new-content-captures-root.html",
+      "source": "/css/css-view-transitions/new-content-captures-root.html",
+      "reference": "/css/css-view-transitions/new-content-captures-root-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/new-content-captures-spans.html",
+      "source": "/css/css-view-transitions/new-content-captures-spans.html",
+      "reference": "/css/css-view-transitions/new-content-captures-spans-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/new-content-changes-overflow.html",
+      "source": "/css/css-view-transitions/new-content-changes-overflow.html",
+      "reference": "/css/css-view-transitions/new-content-changes-overflow-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/new-content-container-writing-modes.html",
+      "source": "/css/css-view-transitions/new-content-container-writing-modes.html",
+      "reference": "/css/css-view-transitions/new-content-container-writing-modes-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/new-content-element-writing-modes.html",
+      "source": "/css/css-view-transitions/new-content-element-writing-modes.html",
+      "reference": "/css/css-view-transitions/new-content-element-writing-modes-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/new-content-flat-transform-ancestor.html",
+      "source": "/css/css-view-transitions/new-content-flat-transform-ancestor.html",
+      "reference": "/css/css-view-transitions/new-content-flat-transform-ancestor-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/new-content-from-root-display-none.html",
+      "source": "/css/css-view-transitions/new-content-from-root-display-none.html",
+      "reference": "/css/css-view-transitions/new-content-from-root-display-none-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/new-content-has-scrollbars.html",
+      "source": "/css/css-view-transitions/new-content-has-scrollbars.html",
+      "reference": "/css/css-view-transitions/new-content-has-scrollbars-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/new-content-intrinsic-aspect-ratio.html",
+      "source": "/css/css-view-transitions/new-content-intrinsic-aspect-ratio.html",
+      "reference": "/css/css-view-transitions/intrinsic-aspect-ratio-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/new-content-is-empty-div.html",
+      "source": "/css/css-view-transitions/new-content-is-empty-div.html",
+      "reference": "/css/css-view-transitions/new-content-is-empty-div-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/new-content-is-inline.html",
+      "source": "/css/css-view-transitions/new-content-is-inline.html",
+      "reference": "/css/css-view-transitions/new-content-is-inline-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/new-content-object-fit-fill.html",
+      "source": "/css/css-view-transitions/new-content-object-fit-fill.html",
+      "reference": "/css/css-view-transitions/content-object-fit-fill-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/new-content-object-fit-none.html",
+      "source": "/css/css-view-transitions/new-content-object-fit-none.html",
+      "reference": "/css/css-view-transitions/content-object-fit-none-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/new-content-preserve-3d-ancestor.html",
+      "source": "/css/css-view-transitions/new-content-preserve-3d-ancestor.html",
+      "reference": "/css/css-view-transitions/new-content-preserve-3d-ancestor-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/new-content-scaling.html",
+      "source": "/css/css-view-transitions/new-content-scaling.html",
+      "reference": "/css/css-view-transitions/new-content-scaling-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/new-content-with-overflow-zoomed.html",
+      "source": "/css/css-view-transitions/new-content-with-overflow-zoomed.html",
+      "reference": "/css/css-view-transitions/content-with-overflow-zoomed-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/new-content-with-overflow.html",
+      "source": "/css/css-view-transitions/new-content-with-overflow.html",
+      "reference": "/css/css-view-transitions/content-with-overflow-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/new-element-on-start.html",
+      "source": "/css/css-view-transitions/new-element-on-start.html",
+      "reference": "/css/css-view-transitions/new-element-on-start-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/new-root-vertical-writing-mode.html",
+      "source": "/css/css-view-transitions/new-root-vertical-writing-mode.html",
+      "reference": "/css/css-view-transitions/new-root-vertical-writing-mode-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/no-named-elements.html",
+      "source": "/css/css-view-transitions/no-named-elements.html",
+      "reference": "/css/css-view-transitions/no-named-elements-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/no-root-capture.html",
+      "source": "/css/css-view-transitions/no-root-capture.html",
+      "reference": "/css/css-view-transitions/no-root-capture-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/nothing-captured.html",
+      "source": "/css/css-view-transitions/nothing-captured.html",
+      "reference": "/css/css-view-transitions/nothing-captured-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/offscreen-element-modified-before-coming-onscreen.html",
+      "source": "/css/css-view-transitions/offscreen-element-modified-before-coming-onscreen.html",
+      "reference": "/css/css-view-transitions/offscreen-element-modified-before-coming-onscreen-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/old-content-captures-clip-path.html",
+      "source": "/css/css-view-transitions/old-content-captures-clip-path.html",
+      "reference": "/css/css-view-transitions/old-content-captures-clip-path-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/old-content-captures-different-size.html",
+      "source": "/css/css-view-transitions/old-content-captures-different-size.html",
+      "reference": "/css/css-view-transitions/old-content-captures-different-size-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/old-content-captures-opacity.html",
+      "source": "/css/css-view-transitions/old-content-captures-opacity.html",
+      "reference": "/css/css-view-transitions/old-content-captures-opacity-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/old-content-captures-root.html",
+      "source": "/css/css-view-transitions/old-content-captures-root.html",
+      "reference": "/css/css-view-transitions/old-content-captures-root-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/old-content-container-writing-modes.html",
+      "source": "/css/css-view-transitions/old-content-container-writing-modes.html",
+      "reference": "/css/css-view-transitions/old-content-container-writing-modes-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/old-content-element-writing-modes.html",
+      "source": "/css/css-view-transitions/old-content-element-writing-modes.html",
+      "reference": "/css/css-view-transitions/old-content-element-writing-modes-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/old-content-has-scrollbars.html",
+      "source": "/css/css-view-transitions/old-content-has-scrollbars.html",
+      "reference": "/css/css-view-transitions/old-content-has-scrollbars-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/old-content-inline-with-offset-from-containing-block-clipped.html",
+      "source": "/css/css-view-transitions/old-content-inline-with-offset-from-containing-block-clipped.html",
+      "reference": "/css/css-view-transitions/inline-with-offset-from-containing-block-clipped-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/old-content-intrinsic-aspect-ratio.html",
+      "source": "/css/css-view-transitions/old-content-intrinsic-aspect-ratio.html",
+      "reference": "/css/css-view-transitions/intrinsic-aspect-ratio-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/old-content-is-empty-div.html",
+      "source": "/css/css-view-transitions/old-content-is-empty-div.html",
+      "reference": "/css/css-view-transitions/old-content-is-empty-div-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/old-content-is-inline.html",
+      "source": "/css/css-view-transitions/old-content-is-inline.html",
+      "reference": "/css/css-view-transitions/old-content-is-inline-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/old-content-object-fit-fill.html",
+      "source": "/css/css-view-transitions/old-content-object-fit-fill.html",
+      "reference": "/css/css-view-transitions/content-object-fit-fill-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/old-content-object-fit-none.html",
+      "source": "/css/css-view-transitions/old-content-object-fit-none.html",
+      "reference": "/css/css-view-transitions/content-object-fit-none-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/old-content-with-overflow-zoomed.html",
+      "source": "/css/css-view-transitions/old-content-with-overflow-zoomed.html",
+      "reference": "/css/css-view-transitions/content-with-overflow-zoomed-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/old-content-with-overflow.html",
+      "source": "/css/css-view-transitions/old-content-with-overflow.html",
+      "reference": "/css/css-view-transitions/content-with-overflow-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/old-root-vertical-writing-mode.html",
+      "source": "/css/css-view-transitions/old-root-vertical-writing-mode.html",
+      "reference": "/css/css-view-transitions/new-root-vertical-writing-mode-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/outer-padding-inner-background.html",
+      "source": "/css/css-view-transitions/outer-padding-inner-background.html",
+      "reference": "/css/css-view-transitions/outer-padding-inner-background-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/pseudo-element-overflow-hidden.html",
+      "source": "/css/css-view-transitions/pseudo-element-overflow-hidden.html",
+      "reference": "/css/css-view-transitions/pseudo-element-overflow-hidden-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/pseudo-element-preserve-3d.html",
+      "source": "/css/css-view-transitions/pseudo-element-preserve-3d.html",
+      "reference": "/css/css-view-transitions/pseudo-element-preserve-3d-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/pseudo-rendering-invalidation.html",
+      "source": "/css/css-view-transitions/pseudo-rendering-invalidation.html",
+      "reference": "/css/css-view-transitions/pseudo-rendering-invalidation-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/pseudo-with-classes-entry.html",
+      "source": "/css/css-view-transitions/pseudo-with-classes-entry.html",
+      "reference": "/css/css-view-transitions/pseudo-with-classes-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/pseudo-with-classes-exit.html",
+      "source": "/css/css-view-transitions/pseudo-with-classes-exit.html",
+      "reference": "/css/css-view-transitions/pseudo-with-classes-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/pseudo-with-classes-match-ident.html",
+      "source": "/css/css-view-transitions/pseudo-with-classes-match-ident.html",
+      "reference": "/css/css-view-transitions/pseudo-with-classes-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/pseudo-with-classes-match-multiple-wildcard.html",
+      "source": "/css/css-view-transitions/pseudo-with-classes-match-multiple-wildcard.html",
+      "reference": "/css/css-view-transitions/pseudo-with-classes-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/pseudo-with-classes-match-multiple.html",
+      "source": "/css/css-view-transitions/pseudo-with-classes-match-multiple.html",
+      "reference": "/css/css-view-transitions/pseudo-with-classes-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/pseudo-with-classes-match-wildcard-no-star.html",
+      "source": "/css/css-view-transitions/pseudo-with-classes-match-wildcard-no-star.html",
+      "reference": "/css/css-view-transitions/pseudo-with-classes-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/pseudo-with-classes-match-wildcard.html",
+      "source": "/css/css-view-transitions/pseudo-with-classes-match-wildcard.html",
+      "reference": "/css/css-view-transitions/pseudo-with-classes-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/pseudo-with-classes-mismatch-ident.html",
+      "source": "/css/css-view-transitions/pseudo-with-classes-mismatch-ident.html",
+      "reference": "/css/css-view-transitions/pseudo-with-classes-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/pseudo-with-classes-mismatch-partial.html",
+      "source": "/css/css-view-transitions/pseudo-with-classes-mismatch-partial.html",
+      "reference": "/css/css-view-transitions/pseudo-with-classes-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/pseudo-with-classes-mismatch-wildcard.html",
+      "source": "/css/css-view-transitions/pseudo-with-classes-mismatch-wildcard.html",
+      "reference": "/css/css-view-transitions/pseudo-with-classes-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/pseudo-with-classes-multiple-vt-classes.html",
+      "source": "/css/css-view-transitions/pseudo-with-classes-multiple-vt-classes.html",
+      "reference": "/css/css-view-transitions/pseudo-with-classes-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/pseudo-with-classes-new-with-class-old-without.html",
+      "source": "/css/css-view-transitions/pseudo-with-classes-new-with-class-old-without.html",
+      "reference": "/css/css-view-transitions/pseudo-with-classes-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/pseudo-with-classes-old-with-class-new-without.html",
+      "source": "/css/css-view-transitions/pseudo-with-classes-old-with-class-new-without.html",
+      "reference": "/css/css-view-transitions/pseudo-with-classes-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/pseudo-with-classes-view-transition-group.html",
+      "source": "/css/css-view-transitions/pseudo-with-classes-view-transition-group.html",
+      "reference": "/css/css-view-transitions/pseudo-with-classes-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/pseudo-with-classes-view-transition-image-pair.html",
+      "source": "/css/css-view-transitions/pseudo-with-classes-view-transition-image-pair.html",
+      "reference": "/css/css-view-transitions/pseudo-with-classes-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/root-captured-as-different-tag.html",
+      "source": "/css/css-view-transitions/root-captured-as-different-tag.html",
+      "reference": "/css/css-view-transitions/old-content-captures-root-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/root-style-change-during-animation.html",
+      "source": "/css/css-view-transitions/root-style-change-during-animation.html",
+      "reference": "/css/css-view-transitions/root-style-change-during-animation-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/root-to-shared-animation-end.html",
+      "source": "/css/css-view-transitions/root-to-shared-animation-end.html",
+      "reference": "/css/css-view-transitions/root-to-shared-animation-end-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/root-to-shared-animation-incoming.html",
+      "source": "/css/css-view-transitions/root-to-shared-animation-incoming.html",
+      "reference": "/css/css-view-transitions/root-to-shared-animation-incoming-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/root-to-shared-animation-start.html",
+      "source": "/css/css-view-transitions/root-to-shared-animation-start.html",
+      "reference": "/css/css-view-transitions/root-to-shared-animation-start-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/rotated-cat-off-top-edge.html",
+      "source": "/css/css-view-transitions/rotated-cat-off-top-edge.html",
+      "reference": "/css/css-view-transitions/rotated-cat-off-top-edge-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/rtl-with-scrollbar.html",
+      "source": "/css/css-view-transitions/rtl-with-scrollbar.html",
+      "reference": "/css/css-view-transitions/rtl-with-scrollbar-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/scroller-child-abspos.html",
+      "source": "/css/css-view-transitions/scroller-child-abspos.html",
+      "reference": "/css/css-view-transitions/scroller-child-abspos-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/scroller-child.html",
+      "source": "/css/css-view-transitions/scroller-child.html",
+      "reference": "/css/css-view-transitions/scroller-child-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/scroller.html",
+      "source": "/css/css-view-transitions/scroller.html",
+      "reference": "/css/css-view-transitions/scroller-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/set-current-time.html",
+      "source": "/css/css-view-transitions/set-current-time.html",
+      "reference": "/css/css-view-transitions/set-current-time-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/set-universal-specificity.html",
+      "source": "/css/css-view-transitions/set-universal-specificity.html",
+      "reference": "/css/css-view-transitions/set-universal-specificity-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/shadow-part-with-class-inside-shadow-important.html",
+      "source": "/css/css-view-transitions/shadow-part-with-class-inside-shadow-important.html",
+      "reference": "/css/css-view-transitions/names-are-tree-scoped-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/shadow-part-with-class-inside-shadow.html",
+      "source": "/css/css-view-transitions/shadow-part-with-class-inside-shadow.html",
+      "reference": "/css/css-view-transitions/names-are-tree-scoped-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/shadow-part-with-class.html",
+      "source": "/css/css-view-transitions/shadow-part-with-class.html",
+      "reference": "/css/css-view-transitions/names-are-tree-scoped-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/shadow-part-with-name-nested.html",
+      "source": "/css/css-view-transitions/shadow-part-with-name-nested.html",
+      "reference": "/css/css-view-transitions/names-are-tree-scoped-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/shadow-part-with-name-overridden-by-important.html",
+      "source": "/css/css-view-transitions/shadow-part-with-name-overridden-by-important.html",
+      "reference": "/css/css-view-transitions/names-are-tree-scoped-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/shadow-part-with-name.html",
+      "source": "/css/css-view-transitions/shadow-part-with-name.html",
+      "reference": "/css/css-view-transitions/names-are-tree-scoped-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/snapshot-containing-block-absolute.html",
+      "source": "/css/css-view-transitions/snapshot-containing-block-absolute.html",
+      "reference": "/css/css-view-transitions/snapshot-containing-block-absolute-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/snapshot-containing-block-includes-scrollbar-gutter.html",
+      "source": "/css/css-view-transitions/snapshot-containing-block-includes-scrollbar-gutter.html",
+      "reference": "/css/css-view-transitions/snapshot-containing-block-includes-scrollbar-gutter-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/snapshot-containing-block-static.html",
+      "source": "/css/css-view-transitions/snapshot-containing-block-static.html",
+      "reference": "/css/css-view-transitions/snapshot-containing-block-static-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/span-with-overflowing-text-and-box-decorations.html",
+      "source": "/css/css-view-transitions/span-with-overflowing-text-and-box-decorations.html",
+      "reference": "/css/css-view-transitions/span-with-overflowing-text-and-box-decorations-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/span-with-overflowing-text-hidden.html",
+      "source": "/css/css-view-transitions/span-with-overflowing-text-hidden.html",
+      "reference": "/css/css-view-transitions/span-with-overflowing-text-hidden-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/span-with-overflowing-text.html",
+      "source": "/css/css-view-transitions/span-with-overflowing-text.html",
+      "reference": "/css/css-view-transitions/span-with-overflowing-text-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/transform-origin-view-transition-group.html",
+      "source": "/css/css-view-transitions/transform-origin-view-transition-group.html",
+      "reference": "/css/css-view-transitions/transform-origin-view-transition-group-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/transformed-element-scroll-transform.html",
+      "source": "/css/css-view-transitions/transformed-element-scroll-transform.html",
+      "reference": "/css/css-view-transitions/transformed-element-scroll-transform-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-view-transitions/transition-in-empty-iframe.html",
+      "source": "/css/css-view-transitions/transition-in-empty-iframe.html",
+      "reference": "/css/css-view-transitions/transition-in-empty-iframe-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/view-transition-name-on-document-root.html",
+      "source": "/css/css-view-transitions/view-transition-name-on-document-root.html",
+      "reference": "/css/css-view-transitions/view-transition-name-on-document-root-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-view-transitions/view-transition-name-removed-mid-transition.html",
+      "source": "/css/css-view-transitions/view-transition-name-removed-mid-transition.html",
+      "reference": "/css/css-view-transitions/view-transition-name-removed-mid-transition-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/web-animations-api-parse-pseudo-argument.html?first-pseudo=::view-transition-group(      first )",
+      "source": "/css/css-view-transitions/web-animations-api-parse-pseudo-argument.html?first-pseudo=::view-transition-group(      first )",
+      "reference": "/css/css-view-transitions/web-animations-api-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/web-animations-api-parse-pseudo-argument.html?first-pseudo=::view-transition-group( first",
+      "source": "/css/css-view-transitions/web-animations-api-parse-pseudo-argument.html?first-pseudo=::view-transition-group( first",
+      "reference": "/css/css-view-transitions/web-animations-api-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/web-animations-api-parse-pseudo-argument.html?first-pseudo=::view-transition-group( first)",
+      "source": "/css/css-view-transitions/web-animations-api-parse-pseudo-argument.html?first-pseudo=::view-transition-group( first)",
+      "reference": "/css/css-view-transitions/web-animations-api-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/web-animations-api-parse-pseudo-argument.html?first-pseudo=::view-transition-group(first",
+      "source": "/css/css-view-transitions/web-animations-api-parse-pseudo-argument.html?first-pseudo=::view-transition-group(first",
+      "reference": "/css/css-view-transitions/web-animations-api-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/web-animations-api-parse-pseudo-argument.html?first-pseudo=::view-transition-group(first )",
+      "source": "/css/css-view-transitions/web-animations-api-parse-pseudo-argument.html?first-pseudo=::view-transition-group(first )",
+      "reference": "/css/css-view-transitions/web-animations-api-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/web-animations-api-parse-pseudo-argument.html?first-pseudo=::view-transition-group(first)",
+      "source": "/css/css-view-transitions/web-animations-api-parse-pseudo-argument.html?first-pseudo=::view-transition-group(first)",
+      "reference": "/css/css-view-transitions/web-animations-api-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/web-animations-api.html",
+      "source": "/css/css-view-transitions/web-animations-api.html",
+      "reference": "/css/css-view-transitions/web-animations-api-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-view-transitions/writing-mode-container-resize.html",
+      "source": "/css/css-view-transitions/writing-mode-container-resize.html",
+      "reference": "/css/css-view-transitions/writing-mode-container-resize-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/css-viewport/zoom/canvas.html",
+      "source": "/css/css-viewport/zoom/canvas.html",
+      "reference": "/css/css-viewport/zoom/canvas-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/css-viewport/zoom/iframe-zoom-nested.html",
+      "source": "/css/css-viewport/zoom/iframe-zoom-nested.html",
+      "reference": "/css/css-viewport/zoom/reference/iframe-zoom-nested-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/filter-effects/backdrop-filter-basic-blur.html",
+      "source": "/css/filter-effects/backdrop-filter-basic-blur.html",
+      "reference": "/css/filter-effects/reference/backdrop-filter-basic-blur-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/filter-effects/backdrop-filter-boundary.html",
+      "source": "/css/filter-effects/backdrop-filter-boundary.html",
+      "reference": "/css/filter-effects/reference/backdrop-filter-boundary-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/filter-effects/backdrop-filter-clip-rect-zoom.html",
+      "source": "/css/filter-effects/backdrop-filter-clip-rect-zoom.html",
+      "reference": "/css/filter-effects/backdrop-filter-clip-rect-zoom-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/filter-effects/backdrop-filter-edge-behavior.html",
+      "source": "/css/filter-effects/backdrop-filter-edge-behavior.html",
+      "reference": "/css/filter-effects/backdrop-filter-edge-behavior-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/filter-effects/backdrop-filter-edge-clipping-2.html",
+      "source": "/css/filter-effects/backdrop-filter-edge-clipping-2.html",
+      "reference": "/css/filter-effects/reference/backdrop-filter-edge-clipping-2-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/filter-effects/backdrop-filter-edge-mirror.html",
+      "source": "/css/filter-effects/backdrop-filter-edge-mirror.html",
+      "reference": "/css/filter-effects/reference/backdrop-filter-edge-mirror-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/filter-effects/backdrop-filter-edge-pixels-2.html",
+      "source": "/css/filter-effects/backdrop-filter-edge-pixels-2.html",
+      "reference": "/css/filter-effects/reference/backdrop-filter-edge-pixels-2-ref.html",
+      "passed": true
+    },
+    {
+      "test_id": "/css/filter-effects/backdrop-filter-update.html",
+      "source": "/css/filter-effects/backdrop-filter-update.html",
+      "reference": "/css/filter-effects/backdrop-filter-update-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/css/filter-effects/repaint-added-backdrop-filter.html",
+      "source": "/css/filter-effects/repaint-added-backdrop-filter.html",
+      "reference": "/css/filter-effects/reference/repaint-added-backdrop-filter-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/html/editing/the-hidden-attribute/hidden-until-found-001.html",
+      "source": "/html/editing/the-hidden-attribute/hidden-until-found-001.html",
+      "reference": "/html/editing/the-hidden-attribute/resources/container-ref.html",
+      "passed": false
+    },
+    {
+      "test_id": "/html/editing/the-hidden-attribute/hidden-until-found-007.html",
+      "source": "/html/editing/the-hidden-attribute/hidden-until-found-007.html",
+      "reference": "/html/editing/the-hidden-attribute/resources/spacer-and-container-ref.html",
+      "passed": true
+    }
+  ]
+}

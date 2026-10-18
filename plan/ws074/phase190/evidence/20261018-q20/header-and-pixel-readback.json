@@ -1,0 +1,14 @@
+{
+  "header_sources": {
+    "fonts/ahem.css.headers": "aa433e1b4eb9771b8157e95923df938c25dce888f7bf85349de52c4e53968f8d",
+    "fonts/Ahem.ttf.headers": "3d59eb29c61c1ffc8eb76ca28f567e8fae6bcb108b823d0a57c68d8d7254b0ed",
+    "common/reftest-wait.js.headers": "0c458ff2f1fd1e3318475993bba7600a3d6fddc1de06905192cc9de8b60244f0",
+    "resources/testdriver-vendor.js.headers": "907d5892c31682c3d05ce05b7b18d81c50a03175c731aee00c6b18a013bfd2f5",
+    "resources/testdriver-actions.js.headers": "907d5892c31682c3d05ce05b7b18d81c50a03175c731aee00c6b18a013bfd2f5",
+    "resources/testdriver.js.headers": "907d5892c31682c3d05ce05b7b18d81c50a03175c731aee00c6b18a013bfd2f5"
+  },
+  "common_captures_rgb_unchanged": 594,
+  "common_captures_rgb_changed": [],
+  "all_images_hash_rgb_readback": true,
+  "wpt_tracked_clean": true
+}

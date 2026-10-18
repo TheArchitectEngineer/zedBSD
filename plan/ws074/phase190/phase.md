@@ -2,7 +2,7 @@
 
 # ws074-p190: Interop 2025 reftest・crashtest runner coverage
 
-Status: in-progress（q20 static headers→scripted413 scoped attempts）
+Status: uncleared（q20両scoped partial cleared、whole environment/API coverage残り）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074を継承）
@@ -251,3 +251,6 @@ q19で環境未対応242を調べるとheader理由332 occurrenceは6普通stati
 Event ws074-p190-q20-selected-20261018: q19 real env recordsとpinned HTTP contractに基づき計測環境を忠実化する2 partialを選定。harness未attempt292も分類済みだが、現に242ケースを止めるheader providerを先に直す。源source/条件は固定し、testdriver actionsやsubstitution/HTTPS等を偽装しない。前q19全result・1451 verifiedを保持する。
 
 Event ws074-p190-q20-provider-cleared-consumer-start-20261018: generic静的headers providerを実装、独立HTTP roundtrip/無改変pinned load_headersとの一致とnative negative fallbackを含め29 controls pass。隣接dir/file順・CT既定抑制・重複・本文/HEAD/queryを確認し、.sub/malformed/pipe/表現依存headerの未対応は非PASS。i01 partial cleared、i02で同source/pairの413とold82を再測定する。producer全体/WSを完了としない。
+
+
+Event ws074-q20-finished-20261018: [exact history](../history/ws074-q20261018-20.md)・[証拠](evidence/20261018-q20/README.md)。普通のstatic response headersをpinned契約どおり配信し、独立HTTP/native 29 controlsを通過。同一native source/pairで固定scripted413全native attempt/805 captures、105 PASS・283 pixel FAIL・5 unsupported_environment・20 readiness_missing。旧82 PASS後退0、未対応242から23 PASS/210 FAIL/4 missingを新たに正しく判定。全388 edgeは無改変pinned comparatorと一致、共通594回のRGB照合は変化0。6 header sourcesはpinned git blob/hash・実配信ack/順序/値を検証。既存harness1491=491 PASS/static1561=839 PASS/strict48=39 PASSはq19のbyte同一source/pair証拠を再利用。確認済み1474/3805（38.738502%）、新規計測PASS23増。未attempt harness292・環境5・native未達は固定分母へ保持。 両partial cleared、p190 whole/API/environment/WS・target/p100未達とshared projection pendingを保持。次候補p252、user自走指示を有限scopeへ適用して継続。

@@ -1,0 +1,77 @@
+{
+  "old_counts": {
+    "fail": 73,
+    "unsupported_environment": 242,
+    "readiness_missing": 16,
+    "pass": 82
+  },
+  "new_counts": {
+    "fail": 283,
+    "readiness_missing": 20,
+    "pass": 105,
+    "unsupported_environment": 5
+  },
+  "old_pass_losses": [],
+  "transitions": [
+    {
+      "before": "fail",
+      "after": "fail",
+      "count": 73
+    },
+    {
+      "before": "unsupported_environment",
+      "after": "fail",
+      "count": 210
+    },
+    {
+      "before": "readiness_missing",
+      "after": "readiness_missing",
+      "count": 16
+    },
+    {
+      "before": "pass",
+      "after": "pass",
+      "count": 82
+    },
+    {
+      "before": "unsupported_environment",
+      "after": "pass",
+      "count": 23
+    },
+    {
+      "before": "unsupported_environment",
+      "after": "unsupported_environment",
+      "count": 5
+    },
+    {
+      "before": "unsupported_environment",
+      "after": "readiness_missing",
+      "count": 4
+    }
+  ],
+  "gains": [
+    "/css/css-grid/grid-items/grid-items-percentage-margins-003.html",
+    "/css/css-grid/grid-items/grid-items-percentage-margins-004.html",
+    "/css/css-grid/grid-items/grid-items-percentage-margins-005.html",
+    "/css/css-grid/grid-items/grid-items-percentage-margins-007.html",
+    "/css/css-grid/grid-items/grid-items-percentage-margins-008.html",
+    "/css/css-grid/grid-items/grid-items-percentage-margins-009.html",
+    "/css/css-grid/grid-items/grid-items-percentage-margins-011.html",
+    "/css/css-grid/grid-items/grid-items-percentage-margins-012.html",
+    "/css/css-grid/grid-items/grid-items-percentage-margins-013.html",
+    "/css/css-grid/grid-items/grid-items-percentage-margins-014.html",
+    "/css/css-grid/grid-items/grid-items-percentage-paddings-003.html",
+    "/css/css-grid/grid-items/grid-items-percentage-paddings-004.html",
+    "/css/css-grid/grid-items/grid-items-percentage-paddings-005.html",
+    "/css/css-grid/grid-items/grid-items-percentage-paddings-006.html",
+    "/css/css-grid/grid-items/grid-items-percentage-paddings-007.html",
+    "/css/css-grid/grid-items/grid-items-percentage-paddings-008.html",
+    "/css/css-grid/grid-items/grid-items-percentage-paddings-009.html",
+    "/css/css-grid/grid-items/grid-items-percentage-paddings-010.html",
+    "/css/css-grid/grid-items/grid-items-percentage-paddings-011.html",
+    "/css/css-grid/grid-items/grid-items-percentage-paddings-012.html",
+    "/css/css-grid/grid-items/grid-items-percentage-paddings-013.html",
+    "/css/css-grid/grid-items/grid-items-percentage-paddings-014.html",
+    "/html/editing/the-hidden-attribute/hidden-until-found-007.html"
+  ]
+}

@@ -9,9 +9,9 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [ws074-q20261018-20](queue.md) active（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
+Queue: [ws074-q20261018-20](queue.md) finished（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
 
-Latest verified（q19 finished）: 全1491 harnessは491 PASS・callback11531 PASS/20226 FAIL/14 NOTRUNを維持、whole/callback後退・追加・欠損・順序変更0。全static1561は839 PASS/722 FAIL・全reference pixel metrics unchanged。strict48は39 PASS/9 readiness_missingを全ID対応で維持。scripted413は全native attempt/568 capturesで82 PASS・73 pixel FAIL・242 unsupported_environment・16 readiness_missing。確認済み1451/3805（38.134034%）、新規計測PASS82増。harness未attempt292、環境/API/worker等の未達は分母に保持。 全3 scoped partial cleared、次候補は未attempt harness292/環境対応、p252等。whole scripting/API/WS・target full/p100/shared projectionを保持。
+Latest verified（q20 finished）: 普通のstatic response headersをpinned契約どおり配信し、独立HTTP/native 29 controlsを通過。同一native source/pairで固定scripted413全native attempt/805 captures、105 PASS・283 pixel FAIL・5 unsupported_environment・20 readiness_missing。旧82 PASS後退0、未対応242から23 PASS/210 FAIL/4 missingを新たに正しく判定。全388 edgeは無改変pinned comparatorと一致、共通594回のRGB照合は変化0。6 header sourcesはpinned git blob/hash・実配信ack/順序/値を検証。既存harness1491=491 PASS/static1561=839 PASS/strict48=39 PASSはq19のbyte同一source/pair証拠を再利用。確認済み1474/3805（38.738502%）、新規計測PASS23増。未attempt harness292・環境5・native未達は固定分母へ保持。 両partial cleared、whole Phase/WS・target/p100/shared projection pending。
 
 Event ws074-q14-percentage-scope-reconciled-20261018: precode Chrome17条件でzero/cancelled %型の依存を確認。p251をi01、p250をi02へ改訂しglobal1491/static1561照合へ拡張、初期snapshot保存/60分deadline維持。
 
@@ -1229,3 +1229,6 @@ Event ws074-q19-finished-20261018: [exact history](history/ws074-q20261018-19.md
 Event ws074-q20-selected-20261018: [p190](phase190/phase.md)でunsupported env242の6 static header filesを正確に配信→413再検証を最大60分へ選定。q19 aa0be0367/history hash read-back、pinned HTTP/duplicate/Content-Type契約を確認。prod source/pair不変・old82維持を必要とし未対応を隠さない。未attempt harness292の分類も保持、shared projection pending。
 
 Event ws074-p190-q20-header-output-20261018: 29 controlsでpinned普通headersの実配信/適用ackと未対応非PASSを確認。q20-i01 partial cleared→i02同413再検証開始、source/旧1451はbyte同一で保持。shared projection pending。
+
+
+Event ws074-q20-finished-20261018: [exact history](history/ws074-q20261018-20.md)・[証拠](phase190/evidence/20261018-q20/README.md)。普通のstatic response headersをpinned契約どおり配信し、独立HTTP/native 29 controlsを通過。同一native source/pairで固定scripted413全native attempt/805 captures、105 PASS・283 pixel FAIL・5 unsupported_environment・20 readiness_missing。旧82 PASS後退0、未対応242から23 PASS/210 FAIL/4 missingを新たに正しく判定。全388 edgeは無改変pinned comparatorと一致、共通594回のRGB照合は変化0。6 header sourcesはpinned git blob/hash・実配信ack/順序/値を検証。既存harness1491=491 PASS/static1561=839 PASS/strict48=39 PASSはq19のbyte同一source/pair証拠を再利用。確認済み1474/3805（38.738502%）、新規計測PASS23増。未attempt harness292・環境5・native未達は固定分母へ保持。 両partial cleared、p190 whole/API/environment/WS・target/p100未達とshared projection pendingを保持。次候補p252、user自走指示を有限scopeへ適用して継続。

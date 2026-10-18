@@ -1,6 +1,10 @@
 # WS074 lane の Past Log
 
-## 最新: ws074-q20261018-19（2026-10-18）
+## 最新: ws074-q20261018-20（2026-10-18）
+
+[履歴](ws074-q20261018-20.md)。普通のstatic response headersをpinned契約どおり配信し、独立HTTP/native 29 controlsを通過。同一native source/pairで固定scripted413全native attempt/805 captures、105 PASS・283 pixel FAIL・5 unsupported_environment・20 readiness_missing。旧82 PASS後退0、未対応242から23 PASS/210 FAIL/4 missingを新たに正しく判定。全388 edgeは無改変pinned comparatorと一致、共通594回のRGB照合は変化0。6 header sourcesはpinned git blob/hash・実配信ack/順序/値を検証。既存harness1491=491 PASS/static1561=839 PASS/strict48=39 PASSはq19のbyte同一source/pair証拠を再利用。確認済み1474/3805（38.738502%）、新規計測PASS23増。未attempt harness292・環境5・native未達は固定分母へ保持。 両partial cleared、whole p190/WS・p100/target/shared projectionは未達。全raw/member/hashをread-back済み。
+
+## ws074-q20261018-19（2026-10-18）
 
 [履歴](ws074-q20261018-19.md)。strict validated XHTML classic inlineをnative実装しChrome5行/GC削除安全性・client元10＋計22対照通過。scripted413を全native attempt、82 PASS/73 FAIL/242 env unsupported/16 missing、pinned画素判定155 edge一致。全1491 harnessは491 PASS・callback11531 PASS/20226 FAIL/14 NOTRUNを維持、whole/callback後退・追加・欠損・順序変更0。全static1561は839 PASS/722 FAIL・全reference pixel metrics unchanged。strict48は39 PASS/9 readiness_missingを全ID対応で維持。scripted413は全native attempt/568 capturesで82 PASS・73 pixel FAIL・242 unsupported_environment・16 readiness_missing。確認済み1451/3805（38.134034%）、新規計測PASS82増。harness未attempt292、環境/API/worker等の未達は分母に保持。 全3 scoped partial cleared、whole各Phase/WS・API/環境/target full/p100/shared projectionは残る。全raw/PNG/PPM/consoleとhash/read-backを保持。
 
