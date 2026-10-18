@@ -2,7 +2,7 @@
 
 # ws256-p001 設計: riscv64 の HAL と VisionFive 2 への移植
 
-Status: in-progress（2026-10-18 q1243-i02、P2。design.md の改訂 2 を書いた。Q1 の合格で cleared）
+Status: cleared（2026-10-18 Q1: 改訂 2 でユーザーが判断を済ませた（「今の改訂 2 で判断する」、#13・#17・#18））（旧: in-progress（2026-10-18 q1243-i02、P2。design.md の改訂 2 を書いた。Q1 の合格で cleared））
 
 - 親: [WS256](../ws.md)。Queue: q1243-i01（初版）、q1243-i02（改訂 2）。
 - 範囲: 設計の文書 `plan/ws256/design.md` を書く。code は書かない。HAL の API（include/hal/）の差分は案として plan に置くだけ。
