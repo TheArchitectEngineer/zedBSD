@@ -1,0 +1,9 @@
+{
+  "q34_history_restored_exact_committed_bytes": true,
+  "q34_history_sha256": "a3cb6ea3ceea1b25097e1b9c62de4f4eef1d66f2a202d3eec2a604d7c7706c46",
+  "q35_history_saved_to_correct_id": true,
+  "latest30_summaries_no_duplicate_cycle": true,
+  "historical_q28_heading_preserved": true,
+  "draft_before_repair": "build/ws074-20261018/q35/reconcile-numbering-before.md",
+  "reason": "copied local reconciliation script retained prior cycle numeric ID; corrected before committing records; prior history preserved exactly"
+}

@@ -1,0 +1,56 @@
+{
+  "scope": {
+    "userland/desktop/libbrowser/vm/access.c": [
+      "vm_set",
+      "vm_set_receiver",
+      "access_set_receiver",
+      "access_write_trace",
+      "access_proxy_set"
+    ],
+    "plan/ws074/tests/host-proxy-read.c": [
+      "main",
+      "proxy_set_receiver",
+      "proxy_gc_edges"
+    ]
+  },
+  "raw_checker_flags": 90,
+  "allowed_forward_cleanup": [
+    {
+      "function": "access_set_receiver",
+      "count": 9
+    },
+    {
+      "function": "access_proxy_set",
+      "count": 11
+    },
+    {
+      "function": "main",
+      "count": 18
+    },
+    {
+      "function": "proxy_gc_edges",
+      "count": 52
+    }
+  ],
+  "other_checker_flags": 0,
+  "old182_prefix_equal": true,
+  "script_free_native_operations_byte_identical": true,
+  "host_target_warnings": 0,
+  "ordinary_set_tokens_identical": true,
+  "manual_review": [
+    "VM Set preserves original receiver and separates status from Boolean done; direct Proxy vm_set dispatch alone changes production routing, ordinary C tokens unchanged",
+    "write-frame tracer retains managed realm/base/key/value/receiver before callbacks, recursion errors and typed ENOTSUP; no depth or tracer leak on any exit",
+    "ordinary fallback snapshots own descriptor, follows actual prototype Set, never invokes a getter, refuses readonly/primitive/receiver accessor/receiver readonly, uses new default4 or existing value-only Define",
+    "accessor snapshot tracer protects a sole setter, which receives original this and exactly1 original value; setter return ignored and exceptions preserved",
+    "Proxy dynamic GetMethod/null fallback uses original target/handler after revoke and exactly4 trap args; original key/value/receiver rooted by surrounding frame, fresh method/normalized key owned locally",
+    "false trap skips target read; true checks post-trap fixed data SameValue inclNaN/-0 and missing setter invariant; no erroneous nonextensible constraint",
+    "native actual target-hook collections retain managed bare realm for Get/Has/GetOwn/Define/Set5 times; original Set value and independent fresh receiver have no embedding roots until after native post-trap collection, then are actually reclaimed",
+    "native false Define/Set do not invoke target hook; TypedArray private API ENOTSUP actually checked without declaring semantic support",
+    "full changed C bodies/prototypes/type purpose/paragraph/ANSI/formatter/manual review; three-plus conditions split; helpers after tables; public header multiline; raw flags only allowed forward cleanup"
+  ],
+  "limitations": [
+    "new private Set has explicit TypedArray ENOTSUP; ordinary vm_set prototype/primitive routing remains unchanged and pending; whole p258/global Proxy incomplete",
+    "focused only; harness q31/images-crash q28 reused without current full-corpus equality claim",
+    "target access1 compile only, no full target runtime or whole-source p100 conformance"
+  ]
+}

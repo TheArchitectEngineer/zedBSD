@@ -2,7 +2,7 @@
 
 # ws074-p258: native Proxy internal methods and lifetime
 
-Status: in-progress（q35 receiver-aware Set partial、q30〜q34 verified）
+Status: uncleared（q35 receiver-aware Set partial cleared、whole Proxy未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
@@ -11,7 +11,7 @@ Origin: p189/q29 original WebIDL2 parseがProxy未定義で停止。
 
 Objective / own criteria: native managed Proxyを実object internal methodsへ接続し、constructor/revocableと各internal operationのtrap/fallback/invariant/receiver/revocation/callability/GCを正しく実行する。original WebIDL2 actual parse/validatorに必要なget/set/array behaviorを通常APIで提供し、independent controls/原WPTを通す。部分read stageだけでwholeをclearしない。
 Design: vm_native_operationsはscript-free heap interfaceのまま保持。Proxyにはmanaged target/handler recordを持たせ、scriptを実行可能なrealm-aware access/internal methodからtrapを呼ぶ。opaque JS constructor公開前に必要なoperationを段階的に整える。各段階は自走承認に基づく新finite Queueで正確に選定する。
-Current state: q34 DefineOwnPropertyまでprivateでverified。公開Object single descriptor/define APIは接続済み。Set/keys/prototype/extent/IsArray/call/construct/global constructorとoriginal WebIDL2は未達。
+Current state: q35 ordinary/Proxy receiver-aware Set partialまでverified。TypedArray Set・通常prototype/primitive assignment routing・keys/delete/prototype/extent/IsArray/call/construct/global constructorとoriginal WebIDL2は未達。
 Standards: Guardrail/C全文/browser component全文、簡約版無し。一次 https://tc39.es/ecma262/multipage/ordinary-and-exotic-objects-behaviours.html#sec-proxy-object-internal-methods-and-internal-slots-get-p-receiver 。既存p100がWS全source near-final conformanceを所有し、本partialはnew/changed scopeの全文適合を検証。
 Verification/bounds/affected components: q30 snapshotの通り。private object kind/cell/newborn/trace/revokeとactual receiver/trap/invariant/GCをnative/Chromeで確認し、ordinary whole/callback PASSを守る。target single-source compileのみとfull target runtimeを区別。未達はunclearedとresume。
 
@@ -82,3 +82,14 @@ focused gatesのみで全1508はq31、static/scripted/strictはq28原証拠再�
 [全証拠](evidence/20261018-q34/README.md)。次finite Queueでreceiver-aware Setとfallback/strict behaviorを具体化する。
 
 Event ws074-p258-q35-selected-20261018: GetOwn/Define verified後、original receiverを保つordinary/array fallbackとProxy Setをprivate partialとして具体化。TypedArray Setはnumeric same/different receiver/OOB/conversionの独立exotic規則があり、ordinaryと同一視せずnew APIではENOTSUP・global公開の残件へ明示。既存ordinary vm_set/primitive/prototype routingを先取り変更せずdirect Proxy baseだけ接続する。exact scope/max90分はq35 Queue、whole Set/p258未達。
+
+## q35 partial result / resume
+
+Event ws074-p258-q35-partial-cleared-20261018: receiver-aware vm_set_receiver(statusとdoneを分離)とoriginal value/receiverを含むwrite-frame tracerを追加。ordinary/array fallbackはown descriptor→prototypeのactual Set→original receiver GetOwn/Defineの正規順、readonly/primitive receiver/receiver accessor・readonlyを拒否し、新規はdefault4 fields・既存はvalue-onlyで定義。setterは元receiverと1引数で呼び、返却値を無視し例外を保持。getterは呼ばない。
+Proxy Setはdynamic GetMethod/null fallback、handler this・元target/string-or-symbol key/value/receiver4引数、false時はtarget read無し、true時はpost-trap fixed data SameValue（NaN/符号付き0）/fixed setter無しinvariantを検証。revoke後も元target/handler/receiverを保つ。既存vm_setのdirect Proxy baseだけ接続し、sloppy拒否無視/strict TypeErrorを確認。新分岐以外のordinary vm_set全C tokensは同一、通常prototype Proxy/primitive routingは残件として保持する。
+同じ235条件がnative/Chromium genuine Proxy/Reflect.setで全件一致、old182 source prefixはbyte同一。receiver reflection→partial Defineの順、setter this/返却値/例外、array length/index/default attrs、fixed/false/truthy/revoke/GC/有界再帰を確認。native C stack保守保持を無効にし、Set trap返却後のtarget hook内実GCで、独立したsole fresh valueとfresh receiverがembedding roots無しで生存。managed bare realmはGet/Has/GetOwn/Define/Setの5回のtarget hook collectionで生存し、false Define/Setはhook未実行。最後のembedding roots解放後にrealm/全payload/receiverが実回収。q32 From pressure/absent payload実回収も維持。
+TypedArray固有のsame/different receiver/OOB/conversion/canonical numeric index規則をordinaryと同一視せず、new private APIはENOTSUP/done0を返すことを実確認した。この明示partialはglobal非公開を維持し、TypedArray専用Setと通常assignmentのprototype/primitive routingをglobal公開前の別finite scopeへ残す。whole Set/p258のclearanceは主張しない。
+source WIP07f4783e7、最終整形済みsourceを1回のserialized host buildからimmutable pairへ固定しsource/pair/input hash317件照合。追加source変更が無かったため不要な再buildは行わず、host warning0・q02 exact access1 target compile warning0。full new/changed Cの許可forward shared cleanup90・他0。DOM41、VM45/factory56、CSSOM12+12、marks7/observer10/ErrorEvent9/ErrorReporting19/delegation10通過。Acid3 score/inventory100・pixel0、Acid2既存差873。archive49 members全read-back、sha256dd44319fd698ae19546798e0d8d316e2037ebda279d06b4259ab1a92b5230552。
+focused gatesのみ。全1508はq31、static/scripted/strictはq28原証拠再利用でq35全件同値/whole PASS増分は未測定。確認済1482/3805（38.948752%）・held0・未attempt275を維持。i01 ordinary/Proxy Set partialのみcleared。TypedArray Set/通常prototype routing/keys/delete/prototype/extent/IsArray/call/construct/global constructor/revocable/元WebIDL2、full target/p100/WS100%未達。共有Master/Queue/next/cache/GitHub投影pending、push無し。
+
+[全証拠](evidence/20261018-q35/README.md)。次finite QueueでTypedArray canonical keys/専用Set規則、通常prototype routingの不足を具体化する。

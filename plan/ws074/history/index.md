@@ -1,5 +1,9 @@
 # WS074 lane の Past Log
 
+## ws074-q20261018-35（2026-10-18）
+
+[履歴](ws074-q20261018-35.md)。ordinary/Proxy receiver-aware Set partial cleared、native/Chrome235一致・独立value/receiver実GC/回収・focused gates。全1508 q31/画像crash q28再利用、1482/3805・held0維持。TypedArray Set/通常prototype routing/global公開等未達、共有投影pending。
+
 ## ws074-q20261018-34（2026-10-18）
 
 [履歴](ws074-q20261018-34.md)。Proxy DefineOwnProperty partial cleared、元partial descriptor保持/invariant・native/Chrome182一致・実GC/回収・focused gates。全1508 q31/画像crash q28再利用、1482/3805・held0維持。Set/global公開等未達、共有投影pending。
@@ -119,9 +123,5 @@ Follow-up: q23 i01/i02 clearanceは疎checkoutのIDL未配信が判明しunclear
 ## ws074-q20261018-06（2026-10-18）
 
 [履歴](ws074-q20261018-06.md)。全静的1,561件836 PASS/725 FAIL、error/timeout0。q1062比192改善/18悪化だが、18を含む全FAIL725はこのsession開始前にもFAIL、今回sessionの後退0。未対応413/crash48の最新確認が残る。既存runner cleanupをretainへ直してからp243 Grid CSSOM等を進める。共有投影pending。
-
-## ws074-q20261018-05（2026-10-18）
-
-[履歴](ws074-q20261018-05.md)。replaceChildren observer部分cleared、Chromium24項目一致・DOM25/25、補助18/31 callback PASSで全結果取得。公式PASS増分0。source removalとbatch/rootを実装、Acid3差0/Acid2差873、host/amd64 compile warning0。factory/iterator/target等は残る。次は公式reftest census。共有投影pending。
 
 以前のindex: [early 2026-10-18](early-20261018.md)。過去standing Queue投影: [原文archive](../queue-archive-through-q30.md)。

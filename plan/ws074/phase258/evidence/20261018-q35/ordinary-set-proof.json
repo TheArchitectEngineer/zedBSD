@@ -1,0 +1,9 @@
+{
+  "prior": "bbddda9c2",
+  "ordinary_function_all_C_tokens_equal_after_removing_new_Proxy_branch": true,
+  "engine_sources": [
+    "vm/access.c",
+    "vm/vm.h"
+  ],
+  "script_free_native_operations_byte_identical": true
+}

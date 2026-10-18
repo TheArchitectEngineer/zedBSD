@@ -1,0 +1,18 @@
+{
+  "userland/desktop/libbrowser/vm/vm.h": {
+    "old": "06508e1fd167a9eb0ba2481692ebc052f349ec21fbe15306ab8cca811448a8a3",
+    "new": "fd67b43ff6f94b4cb3a5c24b4362a242808fa0776f0a54d474dde6b7bd1c7bf9"
+  },
+  "userland/desktop/libbrowser/vm/access.c": {
+    "old": "c81cd59bbc98ec377479b56fc40da95eebcaec3362d514dbe71114dbef9db577",
+    "new": "d8b824fee19ced7a2a27238c63d6e8dc66f3b5e4c7ecc9bfed94e493ef19932f"
+  },
+  "plan/ws074/tests/host-proxy-read.c": {
+    "old": "61629f2fede5a42d41f8a7c387e78f44c6bcc28da59eba7f9aaa1e99b9c39dcc",
+    "new": "390ff6823146e1aa53eede96ded4601f3869359c367fd70a9cdfe00f02386fbe"
+  },
+  "plan/ws074/tests/proxy-read.js": {
+    "old": "39ee9558edbbbd02e774901fbb73e146e2a8855bca2c6e921f1ffa984f983377",
+    "new": "081106d92d1c0055d3297e60b1b0b31b85aa7f3c0d38c1935bf1fe72a5b1227f"
+  }
+}

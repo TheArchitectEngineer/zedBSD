@@ -1,0 +1,56 @@
+{
+  "source_commit": "07f4783e7d593a80eda622f81706279760c6e4ee",
+  "protocol_conditions": 235,
+  "native_chrome_exact": true,
+  "old182_source_prefix_identical": true,
+  "ordinary_vm_set_all_C_tokens_unchanged": true,
+  "native_pressure": [
+    "original Get/Has/GetOwn/Define collections retained",
+    "Set original sole value and independent fresh receiver survive native post-trap descriptor GC with all embedding/setup roots dropped",
+    "managed bare realm alive in all five target descriptor collections; false Define and Set skip target hook",
+    "managed realm/Define input/GetOwn output/Set receiver actually reclaimed after final roots end",
+    "q32 From pressure and absent slot reclamation retained",
+    "TypedArray private vm_set_receiver ENOTSUP/done0 checked explicitly"
+  ],
+  "focused_gate_returncodes": {
+    "proxy-read": 0,
+    "delegation": 0,
+    "interpreter": 0,
+    "vm-factory": 0,
+    "dom": 0,
+    "cssom": 0,
+    "cssom-mutation": 0,
+    "marks": 0,
+    "observer": 0,
+    "error-events": 0,
+    "error-reporting": 0,
+    "acid": 0
+  },
+  "acid3_score": 100,
+  "acid3_pixel_diff": 0,
+  "acid2_existing_pixel_diff": 873,
+  "raw_allowed_cleanup": 90,
+  "other_style_flags": 0,
+  "host_target_warnings": 0,
+  "archive": {
+    "path": "focused-native-oracle-build-raw.tar.gz",
+    "sha256": "dd44319fd698ae19546798e0d8d316e2037ebda279d06b4259ab1a92b5230552",
+    "members": 49,
+    "readback_all_members": true
+  },
+  "current_certified_pass": 1482,
+  "denominator": 3805,
+  "held": 0,
+  "unattempted_harness": 275,
+  "harness_reused": "q31 all1508:494PASS/955FAIL/13harness_error/20no_completion/24no_output/2multiple; callbacks11540PASS/20642FAIL/14NOTRUN",
+  "static_scripted_crash_reused": "q28:844/105/39",
+  "whole_pass_gain": 0,
+  "limitations": [
+    "new private vm_set_receiver rejects TypedArray with ENOTSUP pending its dedicated Set rules; ordinary/array Set partial only",
+    "ordinary vm_set assignment with Proxy in prototype/primitive routing remains unchanged and pending",
+    "focused gates only; no q35 all1508 or all-image/strict crash measurement",
+    "frozen runtime binaries retained in build with source-proof hashes, not embedded in evidence archive",
+    "global Proxy unexposed; whole p258/WS074 remains incomplete",
+    "single-source target access1 only; no full target link/runtime or whole-source p100 conformance"
+  ]
+}
