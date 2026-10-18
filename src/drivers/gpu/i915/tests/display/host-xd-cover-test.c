@@ -44,6 +44,7 @@ static const struct i915_xd_port_desc *i915_xd_cover_test_combo(const struct i91
 static const struct i915_xd_port_desc *i915_xd_cover_test_type_c(const struct i915_xd_platform *platform);
 static void i915_xd_cover_test_check(int passed, const struct i915_xd_platform *platform, const char *what);
 static void i915_xd_cover_test_row(const struct i915_xd_platform *platform);
+static uint32_t i915_xd_cover_test_select(const struct i915_xd_platform *platform, unsigned ddi);
 static void i915_xd_cover_test_classify(const struct i915_xd_platform *platform);
 static void i915_xd_cover_test_unknown(void);
 
@@ -255,6 +256,20 @@ i915_xd_cover_test_row(
 	i915_xd_cover_test_check(drv_i915_xd_cdclk_lowest(platform, I915_XD_COVER_TEST_REF, 74250U) != 0U, platform, "a CD clock step for 1080p60");
 }
 
+/* A DDI in a transcoder's DDI function: display 11 names the DDI itself, later displays its index plus one. */
+static uint32_t
+i915_xd_cover_test_select(
+	const struct i915_xd_platform *platform,
+	unsigned ddi)
+{
+	/* Display 11's field. */
+	if (platform->display_ver < 12U)
+		return i915_xd_field_put(I915_XD_DDI_FUNC_SELECT_11, ddi);
+
+	/* Succeeded: the later field. */
+	return i915_xd_field_put(I915_XD_DDI_FUNC_SELECT, ddi + 1U);
+}
+
 /*
  * The firmware's output on a row: HDMI on a combo port; DisplayPort on
  * the first Type-C connector is the Type-C DisplayPort on a Dekel port
@@ -272,7 +287,7 @@ i915_xd_cover_test_classify(
 	if (port != NULL) {
 		memset(&firmware, 0, sizeof(firmware));
 		firmware.lit_pipes = 0x2U;
-		firmware.pipe[1].ddi_function = I915_XD_DDI_FUNC_ENABLE | i915_xd_field_put(I915_XD_DDI_FUNC_SELECT, port->ddi + 1U) |
+		firmware.pipe[1].ddi_function = I915_XD_DDI_FUNC_ENABLE | i915_xd_cover_test_select(platform, port->ddi) |
 			i915_xd_field_put(I915_XD_DDI_FUNC_MODE, I915_XD_DDI_FUNC_MODE_HDMI);
 		drv_i915_xd_firmware_classify(platform, 0, &firmware);
 		i915_xd_cover_test_check(firmware.output == I915_XD_FW_OUTPUT_HDMI && firmware.output_ddi == (int)port->ddi, platform,
@@ -285,7 +300,7 @@ i915_xd_cover_test_classify(
 		return;
 	memset(&firmware, 0, sizeof(firmware));
 	firmware.lit_pipes = 0x2U;
-	firmware.pipe[1].ddi_function = I915_XD_DDI_FUNC_ENABLE | i915_xd_field_put(I915_XD_DDI_FUNC_SELECT, port->ddi + 1U) |
+	firmware.pipe[1].ddi_function = I915_XD_DDI_FUNC_ENABLE | i915_xd_cover_test_select(platform, port->ddi) |
 		i915_xd_field_put(I915_XD_DDI_FUNC_MODE, I915_XD_DDI_FUNC_MODE_DP_SST);
 	drv_i915_xd_firmware_classify(platform, 0, &firmware);
 	if (port->tc != 0U) {

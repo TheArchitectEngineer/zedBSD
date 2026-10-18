@@ -96,8 +96,10 @@
 #define I915_XD9_FW_STRIDE_MASK		0x7ffU
 #define I915_XD9_FW_HEIGHT_MASK		0xfffU
 
-static int i915_xd_fw_pipe_powered(struct i915_xd_io *io, const struct i915_xd_platform *platform, unsigned pipe);
-static void i915_xd_fw_read_pipe(struct i915_xd_io *io, unsigned pipe, struct i915_xd_firmware *firmware);
+static unsigned i915_xd_fw_transcoder(struct i915_xd_io *io, const struct i915_xd_platform *platform, unsigned pipe);
+static int i915_xd_fw_function_ddi(const struct i915_xd_platform *platform, uint32_t function, unsigned *ddi);
+static int i915_xd_fw_pipe_powered(struct i915_xd_io *io, const struct i915_xd_platform *platform, unsigned pipe, unsigned trans);
+static void i915_xd_fw_read_pipe(struct i915_xd_io *io, unsigned pipe, unsigned trans, struct i915_xd_firmware *firmware);
 static void i915_xd_fw_read_pipe_a_domain(struct i915_xd_io *io, const struct i915_xd_platform *platform, struct i915_xd_firmware *firmware);
 static void i915_xd_fw_read_fb(const struct i915_xd_fw_env *env, struct i915_xd_firmware *firmware);
 static void i915_xd_fw_read_vtd(struct i915_xd_io *io, const struct i915_xd_fw_env *env, struct i915_xd_firmware *firmware);
@@ -126,7 +128,9 @@ static void i915_xd_fw_hook(void (*hook)(void *context, unsigned pipe), void *co
  * Procedure referenced: Linux v6.8.12
  * drivers/gpu/drm/i915/display/intel_modeset_setup.c
  * (intel_modeset_readout_hw_state, which reads a pipe only when its power
- * domain is on).
+ * domain is on), intel_display.c (hsw_enabled_transcoders and
+ * hsw_get_transcoder_state: display 11's eDP transcoder feeds the pipe its
+ * input names, and its power domain is not in a switched well).
  */
 int
 drv_i915_xd_firmware_read(
@@ -138,6 +142,7 @@ drv_i915_xd_firmware_read(
 {
 	unsigned pipe;
 	unsigned pipes;
+	unsigned trans;
 	int powered;
 
 	/* Starts from an empty record with what the environment says. */
@@ -181,16 +186,17 @@ drv_i915_xd_firmware_read(
 			continue;
 		}
 
-		/* A pipe whose wells are off is not read. */
-		powered = i915_xd_fw_pipe_powered(io, platform, pipe);
+		/* A pipe whose wells (and its transcoder's) are off is not read. */
+		trans = i915_xd_fw_transcoder(io, platform, pipe);
+		powered = i915_xd_fw_pipe_powered(io, platform, pipe, trans);
 		if (!powered) {
 			firmware->pipe[pipe].state = I915_XD_FW_PIPE_OFF;
 			firmware->unread_pipes |= 1U << pipe;
 			continue;
 		}
 
-		/* Reads the pipe. */
-		i915_xd_fw_read_pipe(io, pipe, firmware);
+		/* Reads the pipe and its transcoder. */
+		i915_xd_fw_read_pipe(io, pipe, trans, firmware);
 	}
 
 	/* Pipe A's domain carries the panel's parts: read only when pipe A reads. */
@@ -287,9 +293,10 @@ drv_i915_xd_firmware_classify(
 {
 	const struct i915_xd_port_desc *port;
 	uint32_t function;
-	unsigned select;
+	unsigned ddi;
 	unsigned mode;
 	unsigned pipe;
+	int drives;
 
 	/* Nothing lit until a pipe says so; the panel's DDI is kept for the takeover. */
 	firmware->panel_ddi = panel_ddi;
@@ -306,16 +313,16 @@ drv_i915_xd_firmware_classify(
 
 		/* A DDI function that is off or drives no DDI is not an output. */
 		function = firmware->pipe[pipe].ddi_function;
-		select = (function & I915_XD_DDI_FUNC_SELECT) >> I915_XD_FW_DDI_SELECT_SHIFT;
 		if ((function & I915_XD_DDI_FUNC_ENABLE) == 0U)
 			continue;
-		if (select == 0U)
+		drives = i915_xd_fw_function_ddi(platform, function, &ddi);
+		if (!drives)
 			continue;
 
 		/* The output: its pipe, DDI and mode. */
 		mode = (function & I915_XD_DDI_FUNC_MODE) >> I915_XD_FW_DDI_MODE_SHIFT;
 		firmware->output_pipe = pipe;
-		firmware->output_ddi = (int)select - 1;
+		firmware->output_ddi = (int)ddi;
 		firmware->output_mode = mode;
 		firmware->output = I915_XD_FW_OUTPUT_OTHER;
 		break;
@@ -421,8 +428,11 @@ drv_i915_xd_firmware_log(
 /*
  * Stops one lit pipe the firmware left, in the order an output is
  * disabled (see xd-takeover.h), and marks it dark in the record.  The
- * pipe's DDI, its mode and its PLL are read from the hardware; the PLL is
- * turned off unless another lit pipe still uses it.  dmc may be NULL (no
+ * transcoder that feeds the pipe (display 11's eDP transcoder when its
+ * input is the pipe), its DDI, its mode and its PLL are read from the
+ * hardware; the PLL is turned off unless another lit pipe still uses it.
+ * Display 11 takes the transcoder's clock off before the DDI buffer and
+ * stops the link on the port's own transport.  dmc may be NULL (no
  * pipe DMC is switched).  Returns 0, EINVAL for a pipe that is not lit or
  * drives no DDI, or ENODEV for a DDI the description does not have.
  *
@@ -453,10 +463,12 @@ drv_i915_xd_takeover_stop(
 	uint32_t function;
 	uint32_t islands;
 	uint32_t transport;
-	unsigned select;
+	unsigned trans;
+	unsigned ddi;
 	unsigned waits;
 	unsigned late;
 	int was_running;
+	int drives;
 	int shared;
 	int panel;
 	int dp;
@@ -471,13 +483,14 @@ drv_i915_xd_takeover_stop(
 		return EINVAL;
 	if ((firmware->lit_pipes & (1U << pipe)) == 0U)
 		return EINVAL;
-	function = drv_i915_xd_io_read(io, I915_XD_TRANS_DDI_FUNC_CTL(pipe));
-	select = (function & I915_XD_DDI_FUNC_SELECT) >> I915_XD_FW_DDI_SELECT_SHIFT;
-	if (select == 0U)
+	trans = i915_xd_fw_transcoder(io, platform, pipe);
+	function = drv_i915_xd_io_read(io, I915_XD_TRANS_DDI_FUNC_CTL(trans));
+	drives = i915_xd_fw_function_ddi(platform, function, &ddi);
+	if (!drives)
 		return EINVAL;
 
 	/* The DDI's description, its mode, and whether it is the panel. */
-	report->ddi = (int)select - 1;
+	report->ddi = (int)ddi;
 	report->mode = (function & I915_XD_DDI_FUNC_MODE) >> I915_XD_FW_DDI_MODE_SHIFT;
 	port = drv_i915_xd_platform_port(platform, (unsigned)report->ddi);
 	if (port == NULL)
@@ -499,10 +512,10 @@ drv_i915_xd_takeover_stop(
 		i915_xd_fw_hook(hooks->sink_before, hooks->context, pipe);
 
 	/* The transcoder and its DDI function. */
-	waits = drv_i915_xd_pipe_stop(io, platform, pipe, &was_running);
+	waits = drv_i915_xd_pipe_stop(io, platform, trans, &was_running);
 	if ((waits & I915_XD_PIPE_LATE_OFF) != 0U)
 		late |= I915_XD_TAKEOVER_LATE_PIPE;
-	(void)drv_i915_xd_pipe_func_disable(io, pipe, 0);
+	(void)drv_i915_xd_pipe_func_disable(io, trans, 0);
 
 	/* The scalers. */
 	drv_i915_xd_pipe_scalers_off(io, pipe);
@@ -511,27 +524,34 @@ drv_i915_xd_takeover_stop(
 	islands = I915_XD_DIP_INFOFRAMES | I915_XD_DIP_VSC;
 	if (dp)
 		islands |= I915_XD_DIP_PPS;
-	(void)drv_i915_xd_io_rmw(io, I915_XD_DIP_CTL(pipe), islands, 0U);
-	drv_i915_xd_io_posting_read(io, I915_XD_DIP_CTL(pipe));
+	(void)drv_i915_xd_io_rmw(io, I915_XD_DIP_CTL(trans), islands, 0U);
+	drv_i915_xd_io_posting_read(io, I915_XD_DIP_CTL(trans));
 
 	/* A DisplayPort sink goes to sleep before the port stops. */
 	if (dp)
 		i915_xd_fw_hook(hooks->sink_after, hooks->context, pipe);
 
-	/* The DDI buffer and the transport, with FEC when the link used it. */
+	/* Display 11 takes the clock off the transcoder before the buffer stops. */
+	if (platform->display_ver < 12U)
+		drv_i915_xd_pipe_clock_off(io, trans);
+
+	/* The DDI buffer and the transport (display 11's is the port's), with FEC when the link used it. */
 	kern_memset(&link, 0, sizeof(link));
-	link.ddi = (unsigned)report->ddi;
-	link.trans = pipe;
+	link.ddi = ddi;
+	link.trans = trans;
+	if (platform->display_ver < 12U)
+		link.trans = I915_XD_DP_TP_PORT(ddi);
 	link.tc = port->tc != 0U;
-	transport = drv_i915_xd_io_read(io, I915_XD_DP_TP_CTL(pipe));
+	transport = drv_i915_xd_io_read(io, I915_XD_DP_TP_CTL(link.trans));
 	if (dp && (transport & I915_XD_DP_TP_FEC) != 0U)
 		link.fec = 1;
 	waits = drv_i915_xd_ddi_stop(io, &link, dp);
 	if ((waits & I915_XD_DDI_LATE_IDLE) != 0U)
 		late |= I915_XD_TAKEOVER_LATE_BUFFER;
 
-	/* No clock to the transcoder. */
-	drv_i915_xd_io_write(io, I915_XD_TRANS_CLK_SEL(pipe), I915_XD_TRANS_CLK_SEL_NONE);
+	/* From display 12 the transcoder's clock goes after the buffer. */
+	if (platform->display_ver >= 12U)
+		drv_i915_xd_pipe_clock_off(io, trans);
 
 	/* The panel's power, the port's power references, then its clock. */
 	if (panel)
@@ -594,8 +614,11 @@ drv_i915_xd_firmware_sanitize(
 	unsigned used_ddis;
 	unsigned used_plls;
 	unsigned select;
+	unsigned trans;
 	unsigned index;
 	unsigned pipe;
+	unsigned ddi;
+	int drives;
 	int unknown;
 	int lit;
 	int on;
@@ -624,12 +647,13 @@ drv_i915_xd_firmware_sanitize(
 		}
 
 		/* The DDI the pipe's transcoder drives. */
-		function = drv_i915_xd_io_read(io, I915_XD_TRANS_DDI_FUNC_CTL(pipe));
-		select = (function & I915_XD_DDI_FUNC_SELECT) >> I915_XD_FW_DDI_SELECT_SHIFT;
-		if (select == 0U)
+		trans = i915_xd_fw_transcoder(io, platform, pipe);
+		function = drv_i915_xd_io_read(io, I915_XD_TRANS_DDI_FUNC_CTL(trans));
+		drives = i915_xd_fw_function_ddi(platform, function, &ddi);
+		if (!drives)
 			continue;
-		used_ddis |= 1U << (select - 1U);
-		port = drv_i915_xd_platform_port(platform, select - 1U);
+		used_ddis |= 1U << ddi;
+		port = drv_i915_xd_platform_port(platform, ddi);
 		if (port == NULL) {
 			unknown = 1;
 			continue;
@@ -1077,19 +1101,107 @@ drv_i915_xd9_fw_check(
 	return 0;
 }
 
-/* Tells whether every well of a pipe and its transcoder is on. */
-static int
-i915_xd_fw_pipe_powered(
+/*
+ * Finds the transcoder that feeds a pipe: display 11's eDP transcoder
+ * when it is on and its input is the pipe, otherwise the pipe's own.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
+ * (TRANS_DDI_EDP_INPUT_A_ON, TRANS_DDI_EDP_INPUT_A_ONOFF,
+ * TRANS_DDI_EDP_INPUT_B_ONOFF, TRANS_DDI_EDP_INPUT_C_ONOFF).
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_display.c
+ * (hsw_enabled_transcoders: an input it does not know is pipe A's).
+ */
+static unsigned
+i915_xd_fw_transcoder(
 	struct i915_xd_io *io,
 	const struct i915_xd_platform *platform,
 	unsigned pipe)
 {
+	uint32_t function;
+	unsigned input;
+	unsigned fed;
+
+	/* From display 12 a pipe's transcoder is its own. */
+	if (platform->display_ver >= 12U)
+		return pipe;
+
+	/* Display 11's eDP transcoder, when its function is on. */
+	function = drv_i915_xd_io_read(io, I915_XD_TRANS_DDI_FUNC_CTL(I915_XD_TRANS_EDP));
+	if ((function & I915_XD_DDI_FUNC_ENABLE) == 0U)
+		return pipe;
+
+	/* The pipe its input names: B, C, or else A. */
+	input = i915_xd_field_get(I915_XD_DDI_FUNC_EDP_INPUT, function);
+	fed = 0U;
+	if (input == I915_XD_DDI_FUNC_EDP_INPUT_B_ONOFF)
+		fed = 1U;
+	if (input == I915_XD_DDI_FUNC_EDP_INPUT_C_ONOFF)
+		fed = 2U;
+	if (fed != pipe)
+		return pipe;
+
+	/* Succeeded: the eDP transcoder feeds the pipe. */
+	return I915_XD_TRANS_EDP;
+}
+
+/*
+ * Takes the DDI a transcoder's DDI function drives out of its word.
+ * Display 11 names the DDI itself (DDI A is 0), so only an enabled
+ * function drives one; later displays name the DDI's index plus one, and
+ * 0 is none.  Without a description the later field is read.  Returns 1
+ * with the DDI's index, or 0 for none.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
+ * (TRANS_DDI_PORT_MASK, TGL_TRANS_DDI_PORT_MASK).
+ */
+static int
+i915_xd_fw_function_ddi(
+	const struct i915_xd_platform *platform,
+	uint32_t function,
+	unsigned *ddi)
+{
+	unsigned select;
+
+	/* Display 11: the DDI of an enabled function. */
+	if (platform != NULL && platform->display_ver < 12U) {
+		if ((function & I915_XD_DDI_FUNC_ENABLE) == 0U)
+			return 0;
+		*ddi = i915_xd_field_get(I915_XD_DDI_FUNC_SELECT_11, function);
+		return 1;
+	}
+
+	/* Later displays: the index plus one, 0 for none. */
+	select = (function & I915_XD_DDI_FUNC_SELECT) >> I915_XD_FW_DDI_SELECT_SHIFT;
+	if (select == 0U)
+		return 0;
+	*ddi = select - 1U;
+
+	/* Succeeded: the DDI. */
+	return 1;
+}
+
+/*
+ * Tells whether every well of a pipe and its transcoder is on.  Display
+ * 11's eDP transcoder is in no switched well: only the pipe's are looked
+ * at.
+ */
+static int
+i915_xd_fw_pipe_powered(
+	struct i915_xd_io *io,
+	const struct i915_xd_platform *platform,
+	unsigned pipe,
+	unsigned trans)
+{
+	uint64_t powers;
 	uint64_t wells;
 	unsigned well;
 	int powered;
 
 	/* The wells of the pipe and of its transcoder. */
-	wells = drv_i915_xd_power_wells_of(platform, I915_XD_POWERS_PIPE(pipe) | I915_XD_POWERS_TRANS(pipe));
+	powers = I915_XD_POWERS_PIPE(pipe);
+	if (trans != I915_XD_TRANS_EDP)
+		powers |= I915_XD_POWERS_TRANS(trans);
+	wells = drv_i915_xd_power_wells_of(platform, powers);
 
 	/* Each must be on. */
 	for (well = 0U; well < platform->nwells; well++) {
@@ -1106,19 +1218,20 @@ i915_xd_fw_pipe_powered(
 	return 1;
 }
 
-/* Reads one powered pipe: its transcoder, DDI function, source size and primary plane. */
+/* Reads one powered pipe: the transcoder that feeds it, its DDI function, the source size and the primary plane. */
 static void
 i915_xd_fw_read_pipe(
 	struct i915_xd_io *io,
 	unsigned pipe,
+	unsigned trans,
 	struct i915_xd_firmware *firmware)
 {
 	struct i915_xd_fw_pipe *record;
 
 	/* The transcoder, its DDI function and the pipe's source size. */
 	record = &firmware->pipe[pipe];
-	record->trans_conf = drv_i915_xd_io_read(io, I915_XD_TRANS_CONF(pipe));
-	record->ddi_function = drv_i915_xd_io_read(io, I915_XD_TRANS_DDI_FUNC_CTL(pipe));
+	record->trans_conf = drv_i915_xd_io_read(io, I915_XD_TRANS_CONF(trans));
+	record->ddi_function = drv_i915_xd_io_read(io, I915_XD_TRANS_DDI_FUNC_CTL(trans));
 	record->source_size = drv_i915_xd_io_read(io, I915_XD_PIPE_SRCSZ(pipe));
 
 	/* The primary plane. */
@@ -1406,8 +1519,10 @@ i915_xd_fw_pll_shared(
 	const struct i915_xd_port_desc *port;
 	const struct i915_xd_pll_desc *other;
 	uint32_t function;
-	unsigned select;
+	unsigned trans;
 	unsigned index;
+	unsigned ddi;
+	int drives;
 
 	/* Each other lit pipe's DDI and its PLL. */
 	for (index = 0U; index < I915_XD_FW_PIPES; index++) {
@@ -1417,11 +1532,12 @@ i915_xd_fw_pll_shared(
 			continue;
 
 		/* The DDI the pipe's transcoder drives. */
-		function = drv_i915_xd_io_read(io, I915_XD_TRANS_DDI_FUNC_CTL(index));
-		select = (function & I915_XD_DDI_FUNC_SELECT) >> I915_XD_FW_DDI_SELECT_SHIFT;
-		if (select == 0U)
+		trans = i915_xd_fw_transcoder(io, platform, index);
+		function = drv_i915_xd_io_read(io, I915_XD_TRANS_DDI_FUNC_CTL(trans));
+		drives = i915_xd_fw_function_ddi(platform, function, &ddi);
+		if (!drives)
 			continue;
-		port = drv_i915_xd_platform_port(platform, select - 1U);
+		port = drv_i915_xd_platform_port(platform, ddi);
 		if (port == NULL)
 			continue;
 		other = i915_xd_fw_pll_of(io, platform, port);
