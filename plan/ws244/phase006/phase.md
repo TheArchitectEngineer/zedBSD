@@ -2,7 +2,7 @@
 
 # ws244-p006 GT の電源と WA: gt-power・workarounds・verify-workarounds の書き直し
 
-Status: in-progress（2026-10-19 q1260 P1。範囲は済み、cleared は Q1）
+Status: cleared（2026-10-19 Q1 判定: gt-power の RC6・RPS と workarounds の rule の表への書き直し、verify-workarounds の整理。前の版との比べ gt-power 608 行・workarounds 1559 行一致、rps contract 74/0、build 4 組 warning 0（P1 の報告）。aea136585・f480a5cbe、merge 09e2996c4）（旧: in-progress（2026-10-19 q1260 P1。範囲は済み、cleared は Q1））
 
 - 親: [WS244](../ws.md)。範囲: gt-power.c・gt-power.h・workarounds.c・workarounds.h・verify-workarounds.c・verify-workarounds.h。動作は変えない。
 
