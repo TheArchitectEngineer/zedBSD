@@ -308,10 +308,100 @@ static const struct i915_xd9_ddi_buffers i915_xd9_buffers_kbl_y = {
 #undef I915_XD9_TABLE
 
 /*
+ * The power wells of display 9, all in the driver's request register
+ * (PWR_WELL_CTL2): the MISC IO well (0), the IO wells of DDI A and E (1)
+ * and of DDIs B to D (2 to 4), power well 1 (14) and power well 2 (15).
+ * Power well 1 waits for power gate 1's fuses and the DMC turns it off in
+ * DC states; power well 2 waits for power gate 2's and powers pipes B and
+ * C, the transcoders A to C, the AUX channels B to D, the VGA plane and
+ * the audio.
+ *
+ * Values referenced: Intel Kaby Lake PRM Volume 2c, Command Reference:
+ * Registers (PWR_WELL_CTL2, FUSE_STATUS), Intel Kaby Lake PRM Volume 12,
+ * Display Engine (the power wells and what each powers).
+ */
+static const struct i915_xd_well_desc i915_xd9_wells[] = {
+	{
+		"MISC_IO",
+		I915_XD_WELL_CONTROL_MAIN,
+		0U,
+		I915_XD_WELL_NO_FUSE,
+		0U,
+		0U,
+		1U,
+		0ULL
+	},
+	{
+		"DDI_A_E_IO",
+		I915_XD_WELL_CONTROL_MAIN,
+		1U,
+		I915_XD_WELL_NO_FUSE,
+		0U,
+		0U,
+		1U,
+		I915_XD_POWERS_DDI_IO(0U) | I915_XD_POWERS_DDI_IO(4U)
+	},
+	{
+		"DDI_B_IO",
+		I915_XD_WELL_CONTROL_MAIN,
+		2U,
+		I915_XD_WELL_NO_FUSE,
+		0U,
+		0U,
+		1U,
+		I915_XD_POWERS_DDI_IO(1U)
+	},
+	{
+		"DDI_C_IO",
+		I915_XD_WELL_CONTROL_MAIN,
+		3U,
+		I915_XD_WELL_NO_FUSE,
+		0U,
+		0U,
+		1U,
+		I915_XD_POWERS_DDI_IO(2U)
+	},
+	{
+		"DDI_D_IO",
+		I915_XD_WELL_CONTROL_MAIN,
+		4U,
+		I915_XD_WELL_NO_FUSE,
+		0U,
+		0U,
+		1U,
+		I915_XD_POWERS_DDI_IO(3U)
+	},
+	{
+		"PW_1",
+		I915_XD_WELL_CONTROL_MAIN,
+		14U,
+		1U,
+		I915_XD_WELL_DMC_OWNED,
+		0U,
+		1U,
+		0ULL
+	},
+	{
+		"PW_2",
+		I915_XD_WELL_CONTROL_MAIN,
+		15U,
+		2U,
+		I915_XD_WELL_VGA,
+		0x6U,
+		1U,
+		I915_XD_POWERS_PIPE(1U) | I915_XD_POWERS_PIPE(2U) | I915_XD_POWERS_TRANS(0U) | I915_XD_POWERS_TRANS(1U) | I915_XD_POWERS_TRANS(2U) |
+		I915_XD_POWERS_AUX(1U) | I915_XD_POWERS_AUX(2U) | I915_XD_POWERS_AUX(3U) |
+		I915_XD_POWERS_VGA |
+		I915_XD_POWERS_AUDIO
+	}
+};
+
+/*
  * Builds one display 9 row from the parts that differ between rows: the
- * name, the kind, the south display's kind and the PCI ids.  Every other
- * field is the same on every display 9 part: three pipes, the ports
- * above, one display buffer slice of 892 blocks, eight watermark levels.
+ * name, the kind, the south display's kind, the PCI ids, the power class
+ * and the DDI buffer tables.  Every other field is the same on every
+ * display 9 part: three pipes, the ports and the power wells above, one
+ * display buffer slice of 892 blocks, eight watermark levels.
  *
  * Values referenced: Intel Kaby Lake PRM Volume 12, Display Engine (the
  * three pipes, the display buffer's size, the eight watermark levels).
@@ -335,8 +425,8 @@ static const struct i915_xd9_ddi_buffers i915_xd9_buffers_kbl_y = {
 		0U,							\
 		I915_XD_TC_FLOW_NONE,					\
 		I915_XD_TCCOLD_NONE,					\
-		NULL,							\
-		0U,							\
+		i915_xd9_wells,						\
+		sizeof(i915_xd9_wells) / sizeof(i915_xd9_wells[0]),	\
 		NULL,							\
 		0U,							\
 		I915_XD_PLL_MAP_DPLL_CTRL2,				\

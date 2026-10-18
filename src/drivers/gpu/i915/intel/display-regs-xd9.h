@@ -109,6 +109,10 @@
  */
 #define I915_XD9_PWR_WELL_CTL2			0x45404U
 #define I915_XD9_PW1_STATE			(1U << 28)
+
+/* The indexes of display 9's power wells in PWR_WELL_CTL2: DDI A to D's IO wells, power well 2. */
+#define I915_XD9_WELL_DDI_IO(ddi)		(1U + (ddi))
+#define I915_XD9_WELL_PW_2			15U
 #define I915_XD9_TRANS_DDI_FUNC_CTL_EDP		0x6f400U
 #define I915_XD9_TRANS_DDI_FUNC_ENABLE		(1U << 31)
 

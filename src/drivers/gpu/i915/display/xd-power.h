@@ -208,6 +208,8 @@ struct i915_xd_dc_report {
 	int dc6_already;
 };
 
+int drv_i915_xd9_power_pw2_on(struct i915_xd_io *io, const struct i915_xd_platform *platform);
+int drv_i915_xd9_power_ddi_io(struct i915_xd_io *io, const struct i915_xd_platform *platform, unsigned ddi, int on);
 int drv_i915_xd_power_find(const struct i915_xd_platform *platform, unsigned control, unsigned index);
 void drv_i915_xd_power_init(struct i915_xd_power *power, const struct i915_xd_platform *platform);
 void drv_i915_xd_power_bind_work(struct i915_xd_power *power, const struct i915_xd_power_work *work);

@@ -19,6 +19,9 @@
 
 #include "gen9-modeset.h"
 #include "gen9-ddc.h"
+#include "xd-io.h"
+#include "xd-platform.h"
+#include "xd-power.h"
 #include <kern/kcrt.h>
 
 #include "../intel/display-regs-gen9.h"
@@ -26,9 +29,7 @@
 
 #include <uapi/errno.h>
 
-/* How long a power well, its fuses and a DPLL's lock may take, in microseconds. */
-#define I915_SKL_PW_WAIT_US		1000U
-#define I915_SKL_FUSE_WAIT_US		1000U
+/* How long a DPLL's lock may take, in microseconds. */
 #define I915_SKL_DPLL_LOCK_US		5000U
 
 /* How long a transcoder may take to start or stop, in microseconds. */
@@ -39,9 +40,6 @@
 
 /* The time the DDI buffer takes to leave idle on display 9, in microseconds (> 518 us). */
 #define I915_SKL_BUF_ACTIVE_US		600U
-
-/* Power gate 2, whose fuses follow power well 2. */
-#define I915_SKL_PG2			2U
 
 /* The DDI function's port field and the payload allocation bit cleared on the way back. */
 #define I915_SKL_TRANS_DDI_PORT_FIELD	(7U << 28)
@@ -61,41 +59,19 @@ static void i915_skl_hdmi_buffer_on(const struct i915_skl_io *io, const struct i
 static void i915_skl_iboost(const struct i915_skl_io *io, unsigned port, uint8_t boost);
 
 /*
- * Turns power well 2 on: the request, its state, then power gate 2's
- * fuses.  A well already up is left alone.  Returns 0, or ETIMEDOUT.
- *
- * Procedure referenced: Linux v6.8.12
- * drivers/gpu/drm/i915/display/intel_display_power_well.c
- * (hsw_power_well_enable).
+ * Turns power well 2 on; a well already up is left alone.  Returns 0, or
+ * ETIMEDOUT.
  */
 int
 drv_i915_skl_pw2_on(
 	const struct i915_skl_io *io)
 {
-	uint32_t power;
-	uint32_t dc_state;
+	const struct i915_xd_platform *platform;
 	int error;
 
-	/* The DMC may not take the display into DC5 or DC6 while power well 2 is used (gen9_set_dc_state, the "DC off" well). */
-	dc_state = drv_i915_skl_read(io, I915_SKL_DC_STATE_EN);
-	if ((dc_state & I915_SKL_DC_STATE_MASK) != 0U) {
-		drv_i915_skl_write(io, I915_SKL_DC_STATE_EN, dc_state & ~I915_SKL_DC_STATE_MASK);
-		(void)drv_i915_skl_read(io, I915_SKL_DC_STATE_EN);
-	}
-
-	/* A well already up needs nothing. */
-	power = drv_i915_skl_read(io, I915_SKL_PWR_WELL_CTL2);
-	if ((power & I915_SKL_PW_2_STATE) != 0U)
-		return 0;
-
-	/* The request, and the state. */
-	(void)drv_i915_skl_rmw(io, I915_SKL_PWR_WELL_CTL2, 0U, I915_SKL_PW_2_REQUEST);
-	error = drv_i915_skl_wait(io, I915_SKL_PWR_WELL_CTL2, I915_SKL_PW_2_STATE, I915_SKL_PW_2_STATE, I915_SKL_PW_WAIT_US, NULL);
-	if (error != 0)
-		return error;
-
-	/* Power gate 2's fuses are distributed. */
-	error = drv_i915_skl_wait(io, I915_SKL_FUSE_STATUS, I915_SKL_FUSE_PG_DIST(I915_SKL_PG2), I915_SKL_FUSE_PG_DIST(I915_SKL_PG2), I915_SKL_FUSE_WAIT_US, NULL);
+	/* The xd code's display 9 power well 2 (every display 9 part has the same wells). */
+	platform = drv_i915_xd_platform_display9_class(I915_XD_KIND_KBL, I915_XD_POWER_CLASS_H);
+	error = drv_i915_xd9_power_pw2_on(drv_i915_skl_xd_io(io), platform);
 	if (error != 0)
 		return error;
 
@@ -105,10 +81,6 @@ drv_i915_skl_pw2_on(
 
 /*
  * Turns a DDI port's IO power well on or off: 0, or ETIMEDOUT.
- *
- * Procedure referenced: Linux v6.8.12
- * drivers/gpu/drm/i915/display/intel_display_power_well.c
- * (hsw_power_well_enable).
  */
 int
 drv_i915_skl_ddi_io_power(
@@ -116,23 +88,14 @@ drv_i915_skl_ddi_io_power(
 	unsigned port,
 	int on)
 {
-	uint32_t state;
+	const struct i915_xd_platform *platform;
 	int error;
 
-	/* The well's state bit. */
-	state = I915_SKL_PW_DDI_STATE(port);
-
-	/* On: the request and the state. */
-	if (on) {
-		(void)drv_i915_skl_rmw(io, I915_SKL_PWR_WELL_CTL2, 0U, I915_SKL_PW_DDI_REQUEST(port));
-		error = drv_i915_skl_wait(io, I915_SKL_PWR_WELL_CTL2, state, state, I915_SKL_PW_WAIT_US, NULL);
-		if (error != 0)
-			return error;
-		return 0;
-	}
-
-	/* Off: the request dropped; the state may stay up for another requester. */
-	(void)drv_i915_skl_rmw(io, I915_SKL_PWR_WELL_CTL2, I915_SKL_PW_DDI_REQUEST(port), 0U);
+	/* The xd code's display 9 DDI IO well. */
+	platform = drv_i915_xd_platform_display9_class(I915_XD_KIND_KBL, I915_XD_POWER_CLASS_H);
+	error = drv_i915_xd9_power_ddi_io(drv_i915_skl_xd_io(io), platform, port, on);
+	if (error != 0)
+		return error;
 
 	/* Succeeded: the request is as asked. */
 	return 0;
