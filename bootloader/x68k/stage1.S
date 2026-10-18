@@ -1,6 +1,13 @@
-﻿/* X68000 1 KiB SCSI primary boot. */
-/* IOCS register contracts follow NetBSD/x68k stand/libiocs. */
-/* Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib */
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The X68000 1 KiB SCSI primary boot.
+ */
 
 #define _ASM_SRC_ 1
 #include "bootloader/x68k/boot-layout.h"
@@ -18,7 +25,12 @@ stage1_start:
 	lea _start,%sp
 	move.l %d4,%d7
 
-	/* IOCS S_READEXT(manifest LBA, 1, target, 512-byte blocks, buffer). */
+	/*
+	 * IOCS S_READEXT(manifest LBA, 1, target, 512-byte blocks, buffer).
+	 *
+	 * Procedure referenced: NetBSD/x68k stand/libiocs (the IOCS register
+	 * contracts).
+	 */
 	moveq #-11,%d0
 	moveq #38,%d1
 	moveq #X68K_MANIFEST_LBA,%d2

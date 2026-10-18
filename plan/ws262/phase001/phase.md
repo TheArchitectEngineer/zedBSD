@@ -49,12 +49,51 @@ Status: in-progress（2026-10-18 q1256-i01、P2）
 | bios/fat-directory.c | 全部の static 関数の前方宣言、公開の関数を先に。`for` の初期化の宣言・block の中の宣言を関数の先頭へ。条件の中の関数の呼び出し（`read_le16`・`short_name_checksum`・`ascii_fold`）を外へ（LFN の項の検査は `long_name_entry_continues` に分けた、評価の順は同じ）。`matches = … && (… \|\| …)` を if の連鎖に、`?:` の checksum を if に、`visible[length++]` を文に分けた。macro・各段落・return の comment | DIFF-CODE（全部が 1 つの関数に inline され、register の割り当てが変わる）。host の同値の試験で一致 |
 | bios/logo.h | `ws035-p096`・`ws035-p112` を消した | — |
 | bios/logo.c | `ws035-p096`・`ws035-p112` を消した。3 つ以上の節の条件を 1 行 1 節に、閉じた if の後の段落の空行と comment、`logo_contain_first` の return の comment の位置 | byte で同じ |
+| include/amd64-handoff.h | file の説明を直し、全部の struct の役の comment、macro の群ごとの comment。「The UEFI version preserve」の文法 | code の差なし |
+| include/amd64-kernel-image.h | 著作権の header を規約の形に、file の説明 | code の差なし |
+| include/mbr.inc・fat16.inc・elf.inc | 著作権の header と file の説明を足した | code の差なし |
+| include/stage2-header.inc | 著作権の header と file の説明 | code の差なし |
+| include/disk-layout.inc | 複数行の comment の区切りを独立の行に | code の差なし |
+| include/boot-parameter-record.inc・boot-parameter-handoff.h | 点検のみ | — |
+| pcat/bootzbsd.S | 複数行の comment の区切り（3 か所、[tests/comment-fix.py](../tests/comment-fix.py)）、`ws035-p096`・「p003 parser」を消した | bootzbsd.o は code の差なし |
+| pcat/stage1.S・stage2-chain.S・partition-pbr.S・vbe.inc | 点検（著作権の header・file の説明・複数行の comment の区切り [tests/comment-check.py](../tests/comment-check.py)・開発の管理情報の grep）。直す所なし。命令の行ごとの comment は C の規約の対象外として変えていない | byte で同じ |
+| pcat/*.ld（stage1・stage2・bootzbsd） | 著作権の header と説明を足した | 出力は byte で同じ |
+| pc98/bootzbsd.S | 複数行の comment の区切り（14 か所）、「p003 parser」を消した | bootzbsd.o は code の差なし |
+| pc98/disk-ipl.S | 「QEMU debug port E9」を「I/O port E9 (an emulator's debug console)」に | byte で同じ |
+| pc98/lba2.S・partition-pbr.S・bootstrap.inc | 点検（上の pcat と同じ項目）。直す所なし | byte で同じ |
+| pc98/*.ld（stage1・stage2） | 著作権の header と説明 | 出力は byte で同じ |
+| x68k/boot-layout.h | UTF-8 の BOM を消した、著作権の header、file の説明、macro の群と struct の役の comment | — |
+| x68k/stage1.S・stage2-start.S・iocs.S | BOM を消した、著作権の header、file の説明。stage1.S の file の先頭の「IOCS register contracts follow NetBSD/x68k stand/libiocs」を最初の IOCS の block の「Procedure referenced:」へ移した（guardrail「出典は該当箇所に block 単位で」） | stage1.o・stage2-start.o・iocs.o・stage1.elf は byte で同じ |
+| x68k/*.ld | BOM を消した（ld の「ignoring invalid character」の warning 3 行が消えた）、著作権の header と説明 | stage1.elf は byte で同じ |
+| x68k/stage2.c | BOM を消した。著作権の header と file の説明。file の構成の順（macro・extern・table の初期化に要る前方宣言・file-scope 変数・前方宣言・公開の関数・static 関数）、全部の static 関数の前方宣言。C99 の指示付きの初期化子を ANSI C の位置の初期化子に（`struct x68k_spc_bus` の field の順と同じ）。`(void)cookie` を局所の `UNUSED_PARAMETER`。関数の定義の形（引数を 1 行ずつ）。block の中・初期化子の中の宣言と関数の呼び出しを関数の先頭と文へ。条件の中の関数の呼び出し（`be16`・`be32`・`read_sectors`・`read_bytes`・`allowed_segment`・`drv_x68k_spc_pio_init`）を外へ（manifest の検査は `manifest_valid`、PT_LOAD の検査は `segment_acceptable`・`segment_overlaps` に分け、評価の順は同じ）。`?:` の return・Boolean の式の return を if に、`*d++ = *s++` を文に。関数の呼び出しの直の return を失敗と成功に。各段落・if・loop・return の comment | 下の「x68k の比べ」 |
+| tests/payload32-pcat.S・payload64-pcat.S・payload32-pc98.S | 著作権の header を規約の形に、file の説明 | object は code の差なし（旧の source の object と比べた） |
+| tests/*.ld | 著作権の header と説明 | — |
+| README.md | `q032`・「compatibility Phase」・`WS013 p006` を消した | — |
 
 ## 結果
 
 - 2026-10-18 common・bios: amd64・pcat・pc98 の build は warning 0。比べ（`DIFF-CODE` の object）: amd64 `uefi/common-memory-map.o`・`bootloader/common-memory-map.i386.o`・
   `bootloader/bios-fat-directory.i386.o`（と、それを含む BOOTZBSD.EXE・BOOTX64.EFI）、pcat 同じ 2 つ、pc98 `bios-fat-directory.o`。他は code の差なし。
   host の同値の試験 `diff-run.sh ed2f1b265 build/p2-ws262/diff1`: 195141 行の出力が一致（PASS）。
+
+- 2026-10-18 include・pcat・pc98・tests・README: amd64・pcat・pc98 の build は warning 0、比べの `DIFF-CODE` は上の common・bios の 3 つ
+  （とそれを含む image）のままで、include・.S・.ld の直しによる code の差は無い。tests の payload の object は旧の source の object と code が同じ。
+
+## x68k の比べ
+
+- `make -k ZEDBSD_CONFIG=plan/ws035/tests/config-x68k.mk BUILD=build/p2-ws262/x68k-after bootloader`: stage2.o は既知の欠けで作れない（前後とも）。
+  作れる stage1.o・stage2-start.o・iocs.o・mb89352.o・stage1.elf は基準と byte で同じ（compare-build.sh、OBJDUMP=m68k-linux-gnu-objdump）。
+  build の log の warning: BOM による「ignoring invalid character」3 行は消えた。ld の「stage1.elf has a LOAD segment with RWX permissions」は前後とも出る
+  （`-N` で link する platform/x68k の規則によるもの、bootloader の範囲外）。
+- stage2.c: [tests/x68k-stage2-compare.sh](../tests/x68k-stage2-compare.sh) BASE OUT で、基準と今の stage2.c を build/ の中に書いた仮の
+  `struct x68k_boot_handoff` で同じ flag（-Os -Wall -Wextra -Werror）で compile して比べた。どちらも warning なしで compile でき、
+  code は違う（`x68k_stage2_main` 0x290→0x282、`load_kernel` 0x2ae→0x2be、他の関数は同じ大きさ。text 全体 1766→1768 byte）。
+  条件の分解・関数の分割による命令の並びの差で、評価の順と結果は review で 1 つずつ照らした（SCSI の I/O を伴うので host の試験は無い）。
+
+## 既存の試験の欠け（報告のみ）
+
+- `bootloader/tests/payload*.ld` は今の ld.lld で link できない（`/DISCARD/ : { *(*) }` に「discarding .shstrtab section is not allowed」、基準でも同じ）。
+  platform/pcat・pc98 の vmunix.mk の `payload32.elf`・`payload64.elf` の規則からしか参照されず、試験の一覧から参照されていなければ削除の候補（Q1 に報告）。
 
 ## 未実施
 

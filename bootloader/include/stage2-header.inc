@@ -1,4 +1,14 @@
-/* ZBL2 header at the first byte of the raw Stage 2 image. */
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The ZBL2 header at the first byte of the raw Stage 2 image.
+ */
+
 .set ZBL2_MAGIC,          0x324c425a
 .set ZBL2_VERSION,        1
 .set ZBL2_HEADER_SIZE,    32

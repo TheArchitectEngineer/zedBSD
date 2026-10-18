@@ -1,3 +1,14 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Links BOOTZBSD.EXE, the PC-98 system loader, below its 16-bit C stack.
+ */
+
 OUTPUT_FORMAT(elf32-i386)
 ENTRY(stage2_entry)
 stage2_c_stack_top = 0x9000;

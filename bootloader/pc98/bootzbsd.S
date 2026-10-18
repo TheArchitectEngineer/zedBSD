@@ -44,8 +44,10 @@ stage2_entry:
 	mov ax, cs
 	cmp ax, 0x1000
 	je stage2_resident
-	/* DOS MZ entry: preserve the current drive and relocate the loader to
-	 * the physical address used by its protected-mode handoff tables. */
+	/*
+	 * DOS MZ entry: preserve the current drive and relocate the loader to
+	 * the physical address used by its protected-mode handoff tables.
+	 */
 	mov ds, ax
 	sti
 	mov ah, 0x19
@@ -185,8 +187,10 @@ mbr_status_ok:
 	jmp partition_ready
 
 native_partition:
-	/* NEC HDD table is always the physical sector at LBA 1.  DOS drive C:
-	 * denotes its first allocated partition, which is the first live entry. */
+	/*
+	 * NEC HDD table is always the physical sector at LBA 1.  DOS drive C:
+	 * denotes its first allocated partition, which is the first live entry.
+	 */
 	mov eax, 1
 	call disk_read_one
 	xor si, si
@@ -819,8 +823,10 @@ fat_root_not_found:
 	stc
 	ret
 
-/* Validate a data-cluster number against both the FAT reserved ranges and
- * the data-cluster count derived from this volume.  EAX is preserved. */
+/*
+ * Validate a data-cluster number against both the FAT reserved ranges and
+ * the data-cluster count derived from this volume.  EAX is preserved.
+ */
 fat_cluster_validate:
 	cmp eax, 2
 	jb 4f
@@ -845,8 +851,10 @@ fat_cluster_validate:
 4:	stc
 	ret
 
-/* Convert a validated cluster to its first physical 512-byte LBA and prove
- * that the complete cluster remains within this FAT volume. */
+/*
+ * Convert a validated cluster to its first physical 512-byte LBA and prove
+ * that the complete cluster remains within this FAT volume.
+ */
 fat_cluster_to_lba:
 	call fat_cluster_validate
 	jc 1f
@@ -869,8 +877,10 @@ fat_cluster_to_lba:
 1:	stc
 	ret
 
-/* EAX is the FAT volume serial.  Emit the canonical XXXX-XXXX spelling used
- * by every zedbsd.cfg parser. */
+/*
+ * EAX is the FAT volume serial.  Emit the canonical XXXX-XXXX spelling used
+ * by every zedbsd.cfg parser.
+ */
 fat_uuid_format:
 	pushad
 	mov edx, eax
@@ -934,9 +944,11 @@ load_config_copy:
 load_config_done:
 	ret
 
-/* Split one parser-validated path component without narrowing its character
+/*
+ * Split one parser-validated path component without narrowing its character
  * or length contract.  The shared C matcher resolves either its case-folded
- * LFN or its 8.3 alias from the on-disk directory entries. */
+ * LFN or its 8.3 alias from the on-disk directory entries.
+ */
 fat_path_component:
 	mov si, word ptr [path_cursor]
 	mov word ptr [path_component], si
@@ -974,8 +986,10 @@ fat_path_component_fail:
 	stc
 	ret
 
-/* Copy the latest physical directory sector into DS and call the shared
- * stateful LFN/8.3 matcher.  Its state persists across sector boundaries. */
+/*
+ * Copy the latest physical directory sector into DS and call the shared
+ * stateful LFN/8.3 matcher.  Its state persists across sector boundaries.
+ */
 fat_search_loaded_sector:
 	xor si, si
 	mov di, offset directory_sector_buffer
@@ -1066,8 +1080,10 @@ fat_find_root_component32:
 	mov dword ptr [directory_cluster], eax
 	jmp fat_find_cluster_component
 
-/* Scan a subdirectory cluster chain with matcher state retained across all
- * physical sectors in the chain (PC-98 FAT uses 1024-byte logical sectors). */
+/*
+ * Scan a subdirectory cluster chain with matcher state retained across all
+ * physical sectors in the chain (PC-98 FAT uses 1024-byte logical sectors).
+ */
 fat_find_cluster_component:
 	mov byte ptr [file_cache_valid], 0
 	mov byte ptr [fat_cache_valid], 0
@@ -1080,8 +1096,10 @@ fat_component_dir_cluster:
 	cmp dword ptr [scan_clusters], 0
 	je fat_component_not_found
 	dec dword ptr [scan_clusters]
-	/* Reject free, reserved, end-of-chain, and out-of-volume cluster
-	 * numbers before using one as an LBA or FAT-chain cursor. */
+	/*
+	 * Reject free, reserved, end-of-chain, and out-of-volume cluster
+	 * numbers before using one as an LBA or FAT-chain cursor.
+	 */
 	mov eax, dword ptr [dir_cluster32]
 	call fat_cluster_to_lba
 	jc fat_component_not_found
@@ -1166,9 +1184,12 @@ fat_path_not_found:
 	stc
 	ret
 
-/* Invoke the exact p003 parser compiled for the BIOS loader's 16-bit GCC
- * calling convention, then copy its versioned record into the PC-98 handoff.
- * The kernel path is the first member of parsed_configuration. */
+/*
+ * Invoke the exact configuration parser compiled for the BIOS loader's
+ * 16-bit GCC calling convention, then copy its versioned record into the
+ * PC-98 handoff.
+ * The kernel path is the first member of parsed_configuration.
+ */
 parse_bootzbsd_config:
 	movzx esp, sp
 	.code16gcc
@@ -1208,8 +1229,10 @@ fat16_read_file_sector:
 	shr edx, 9
 	cmp eax, edx
 	ja fatal_fat_chain
-	/* A corrupt size field must not make a cyclic or overlong file chain
-	 * consume more clusters than the mounted data area can contain. */
+	/*
+	 * A corrupt size field must not make a cyclic or overlong file chain
+	 * consume more clusters than the mounted data area can contain.
+	 */
 	movzx ecx, byte ptr [fat_spc]
 	xor edx, edx
 	div ecx
@@ -1426,9 +1449,11 @@ fat_cache_copy:
 	add di, 4
 	dec ecx
 	jnz fat_cache_copy
-	/* FAT16 entries never straddle a 512-byte physical sector.  A FAT12
+	/*
+	 * FAT16 entries never straddle a 512-byte physical sector.  A FAT12
 	 * entry needs one byte from the following sector only at offset 511;
-	 * reject that case if it would cross this FAT copy's own boundary. */
+	 * reject that case if it would cross this FAT copy's own boundary.
+	 */
 	cmp byte ptr [fat_type], FAT_TYPE_12
 	jne fat_cache_fill_done
 	cmp word ptr [fat_offset], 511
@@ -1562,8 +1587,10 @@ prepare_pc98_handoff:
 	mov word ptr [pc98_handoff + 6], PC98_PARAMETER_HANDOFF_SIZE
 	mov al, byte ptr [boot_drive]
 	mov byte ptr [pc98_handoff + 9], al
-	/* Version 2 selects the native PC-98 partition by LBA.  The scheme and
-	 * index bytes are reserved and must remain zero. */
+	/*
+	 * Version 2 selects the native PC-98 partition by LBA.  The scheme and
+	 * index bytes are reserved and must remain zero.
+	 */
 	mov word ptr [pc98_handoff + 10], 0
 	mov eax, offset device_table
 	add eax, 0x10000
@@ -1901,9 +1928,11 @@ long_entry:
 	mov rsp, 0x000000000009f000
 	xor rbp, rbp
 	cld
-	/* Keep this unreachable compatibility stub representable in the ELF32
+	/*
+	 * Keep this unreachable compatibility stub representable in the ELF32
 	 * container used by the active i386 loader.  These are the ordinary
-	 * x86-64 encodings with 32-bit absolute relocation fields. */
+	 * x86-64 encodings with 32-bit absolute relocation fields.
+	 */
 	.byte 0x48, 0xc7, 0xc7
 	.long long_handoff
 	add rdi, 0x10000

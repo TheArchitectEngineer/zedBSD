@@ -1,5 +1,17 @@
-/* PC/AT ELF64 long-mode native-loader payload. */
-/* Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib */
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * A PC/AT ELF64 test kernel for the native loader.
+ *
+ * It checks long mode, a cleared BSS and the handoff the loader passed,
+ * then writes its verdict to I/O port E9 and halts.
+ */
+
 #include "bootloader/include/amd64-handoff.h"
 .code64
 .section .text

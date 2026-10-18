@@ -1,9 +1,18 @@
-﻿/* zedBSD X68000 raw disk boot layout. */
-/* Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib */
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The X68000 raw disk boot layout shared by the boot stages.
+ */
 
 #ifndef KERN_BOOT_X68K_LAYOUT_H
 #define KERN_BOOT_X68K_LAYOUT_H
 
+/* Where each part of the boot chain is on the disk and in memory. */
 #define X68K_SECTOR_SIZE 512
 #define X68K_STAGE1_DISK_OFFSET 1024
 #define X68K_STAGE1_MAX_SIZE 1024
@@ -25,10 +34,12 @@
 #define X68K_KERNEL_HIGH_MIN 0x00100000
 #define X68K_ROOT_LBA 4096
 
+/* The boot manifest's identity. */
 #define X68K_MANIFEST_MAGIC 0x5a36384d
 #define X68K_MANIFEST_VERSION 1
 #define X68K_MANIFEST_SIZE 64
 
+/* Where stage 1 finds the manifest's fields. */
 #define X68K_MANIFEST_MAGIC_OFFSET 0
 #define X68K_MANIFEST_VERSION_OFFSET 4
 #define X68K_MANIFEST_HEADER_SIZE_OFFSET 6
@@ -48,6 +59,12 @@
 #ifndef _ASM_SRC_
 #include <stdint.h>
 
+/*
+ * The boot manifest the image builder writes at X68K_MANIFEST_LBA.
+ *
+ * Stage 1 reads it to find and check stage 2, and stage 2 reads it to find
+ * and check the kernel and the root file system.  Its fields are big-endian.
+ */
 struct x68k_boot_manifest {
 	uint32_t magic;
 	uint16_t version;

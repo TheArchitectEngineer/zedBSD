@@ -1,3 +1,14 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Links BOOTZBSD.EXE, the PC/AT system loader, as one flat image.
+ */
+
 OUTPUT_FORMAT(elf32-i386)
 ENTRY(stage2_entry)
 SECTIONS
