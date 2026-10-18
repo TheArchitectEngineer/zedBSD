@@ -2,11 +2,11 @@
 
 # ws074-p258: native Proxy internal methods and lifetime
 
-Status: uncleared（q36 conversions/public BigInt partial cleared、whole Proxy未達）
+Status: in-progress（q37 fixed-buffer TypedArray Set/Define partial、q30〜q36 verified）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
-Queue: ws074-q20261018-36-i01（q30〜q35 partial cleared履歴保持）
+Queue: ws074-q20261018-37-i01（q30〜q36 partial cleared履歴保持）
 Origin: p189/q29 original WebIDL2 parseがProxy未定義で停止。
 
 Objective / own criteria: native managed Proxyを実object internal methodsへ接続し、constructor/revocableと各internal operationのtrap/fallback/invariant/receiver/revocation/callability/GCを正しく実行する。original WebIDL2 actual parse/validatorに必要なget/set/array behaviorを通常APIで提供し、independent controls/原WPTを通す。部分read stageだけでwholeをclearしない。
@@ -109,3 +109,5 @@ source WIPdc2f45278、final source/pair/input hash317件を照合。host warning
 harness archive1676 members SHA256dc0144561a9fcee39bf121eb3996733645dabe17e863a4bf7acdd74832a9cd9d、native/oracle/build archive85 members SHA2564fff608736fac870313d709b6145495213e828fec05a35abe28fb1577c0e2924を全member順次read-back。i01 conversions/public BigInt partialだけcleared。actual TypedArray SetのENOTSUP・typed Define/通常prototype routing/delete/keys/prototype/extent/IsArray/call/construct/global Proxy/revocable/原WebIDL2、full target/p100/WS100%未達。共有Master/Queue/next/cache/GitHub投影pending、push無し。
 
 [全証拠](evidence/20261018-q36/README.md)。次はVM↔JS依存やnative_operations契約を変えず、typed content-type metadata/専用Set/Defineの正規順を新finite Queueで具体化する。
+
+Event ws074-p258-q37-selected-20261018: native_operations正本は全callbacks script-freeなのに旧typed_defineがrealm変換を行うことを実sourceで確認。q37はToNumericをaccess realm層へ移し、immutable BigInt content flagでVMからJS moduleへの依存無しに区別してpure hookへnormalized primitiveを渡す。fixed-buffer専用Set/Define・factory roots/shared typed_convert consumersをexact max90分に選定。RAB/SAB/detach/otherexotic/routing/global公開未達は明示保持、Chrome153 -0.0反例は標準別対照。
