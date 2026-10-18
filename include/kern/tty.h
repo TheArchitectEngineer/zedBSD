@@ -156,9 +156,9 @@ tty_controlling_poll(
 	short *revents);
 
 /*
- * The most pseudo terminals at once (BUG-175: a desktop with many Terminal
- * windows and tabs, an SSH session each; the 8 there were ran out, and a
- * new Terminal failed with ENOSPC).  Each pair is about 7 KiB of the
+ * The most pseudo terminals at once.  A desktop with many Terminal windows
+ * and tabs, each with an SSH session, needs more than 8, or a new Terminal
+ * fails with ENOSPC.  Each pair is about 7 KiB of the
  * kernel's static memory, so the 32-bit boards with little memory (PC-98,
  * X68000, i386) keep fewer.
  */
