@@ -97,6 +97,7 @@ static struct hal_cpu_mask ready_mask;
 static int start_one(hal_cpu_id_t cpu);
 static int cpu_is_ready(hal_cpu_id_t cpu);
 static int send_reason(hal_cpu_id_t cpu, unsigned long reason);
+static void describe_bringup(void);
 
 /*
  * Makes the boot hart known: its record, and its place in the ready mask.
@@ -234,6 +235,9 @@ hal_cpu_start_others(
 		if (error != HAL_OK)
 			return error;
 	}
+
+	/* Closes the HAL's part of the boot log with what the bring-up showed. */
+	describe_bringup();
 
 	/* Succeeded: every hart the kernel was told about is up. */
 	hal_printf("RISCV64 SMP %u ONLINE\n", cpu_count);
@@ -591,4 +595,51 @@ start_one(
 
 	/* Succeeded: the hart runs its initial task. */
 	return HAL_OK;
+}
+
+/*
+ * Writes one line that sums up the bring-up: the firmware's SBI version,
+ * the kernel's tables, and the boot hart's tick.
+ *
+ * Starting the harts is the HAL's last step of the boot, and the kernel
+ * prints a screenful of its own after it, which pushes the HAL's earlier
+ * lines off a small display.  This line, with the ONLINE line after it,
+ * stays in view.
+ */
+static void
+describe_bringup(
+	void)
+{
+	unsigned long major;
+	unsigned long minor;
+	const char *paging;
+	const char *timer;
+	bool checked;
+	bool ticked;
+
+	/* Reads the firmware's version. */
+	riscv64_sbi_version(&major, &minor);
+
+	/* Words the result of the table check. */
+	checked = riscv64_space_checked();
+	if (checked) {
+		paging = "PASS";
+	} else {
+		paging = "FAIL";
+	}
+
+	/* Words whether the boot hart's tick has arrived, giving it a moment. */
+	ticked = riscv64_clock_ticked();
+	if (ticked) {
+		timer = "TICK";
+	} else {
+		timer = "NO TICK";
+	}
+
+	/* Writes the line. */
+	hal_printf("RISCV64 HAL READY SBI v%lu.%lu PAGING %s TIMER %s\n",
+		   (uint64_t)major,
+		   (uint64_t)minor,
+		   paging,
+		   timer);
 }

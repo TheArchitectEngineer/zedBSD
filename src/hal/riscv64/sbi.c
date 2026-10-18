@@ -134,14 +134,8 @@ riscv64_sbi_describe(
 	unsigned long major;
 	unsigned long minor;
 
-	/*
-	 * The version packs the major number above bit 24 and the minor below.
-	 *
-	 * Values referenced: RISC-V Supervisor Binary Interface specification
-	 * (riscv-non-isa/riscv-sbi-doc), sbi_get_spec_version().
-	 */
-	major = ((unsigned long)sbi_spec_version >> 24) & 0x7fUL;
-	minor = (unsigned long)sbi_spec_version & 0xffffffUL;
+	/* Splits the specification version into its two numbers. */
+	riscv64_sbi_version(&major, &minor);
 
 	/* One line names the version, the implementation and the optional extensions. */
 	hal_printf("RISCV64 SBI v%lu.%lu impl %lu version %lx srst %u dbcn %u\n",
@@ -151,6 +145,24 @@ riscv64_sbi_describe(
 		   (uint64_t)sbi_impl_version,
 		   (uint32_t)sbi_has_srst,
 		   (uint32_t)sbi_has_dbcn);
+}
+
+/*
+ * Reports the major and minor numbers of the SBI specification the firmware follows.
+ */
+void
+riscv64_sbi_version(
+	unsigned long *major,
+	unsigned long *minor)
+{
+	/*
+	 * The version packs the major number above bit 24 and the minor below.
+	 *
+	 * Values referenced: RISC-V Supervisor Binary Interface specification
+	 * (riscv-non-isa/riscv-sbi-doc), sbi_get_spec_version().
+	 */
+	*major = ((unsigned long)sbi_spec_version >> 24) & 0x7fUL;
+	*minor = (unsigned long)sbi_spec_version & 0xffffffUL;
 }
 
 /*
