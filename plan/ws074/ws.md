@@ -1404,3 +1404,5 @@ Event ws074-q54-selected-20261019: p258 global Proxy/revocable actual builtinと
 Event ws074-q54-finished-20261019: p258 actual global Proxy/revocable partial clear・public42 genuine一致/実GC回収、原WebIDL baseline4PASSと意図的negative維持。全eligible3530 current pair・1482/3805、harness oldPASS loss0/IDL setup2修復・net+16PASS callback。p189 validation output投影、source6b6be56e0 main統合・master.md編集無し。[history](history/ws074-q20261019-54.md)。共有投影pending。
 
 Event ws074-q55-p259-added-selected-20261019: original CSS numeric failuresとnative/Chrome precision差からaccurate inline source/updating lifecycle＋factor serializationを一つのnew goal p259へ構造化、q55 finite90分で選定。既存p091 broad brief/p110 selector-only/p191 decorationと重複するaccepted outcomeを作らない。native DOM/CSS層で実装・main統合/全3530比較・master編集無し。
+
+Event ws074-q55-p259-clone-revised-20261019: p259のclone specified-source精度をgenuine boundary証拠で修正、bind/cloning.c clone_shallowを同一goal generationへ追加。immutable source共有/独立mutation/new updating0をnative GCとChromeで検証、initial pair保持→final2全3530再測定。Phase in-progress/score未更新、master編集無し。
