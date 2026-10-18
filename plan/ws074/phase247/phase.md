@@ -2,7 +2,7 @@
 
 # ws074-p247: zero font glyph advanceとink
 
-Status: in-progress（q12-i02）
+Status: cleared（q12-i02 own zero glyph/ink acceptance）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
@@ -31,3 +31,5 @@ Event ws074-p247-q12-selected-20261018: 最大90分のzero glyph scopeを選定�
 Event ws074-p247-q12-i02-start-20261018: i01のactual retained raw proofを確認しzero glyph実装を開始。beforeはfa4ac8002のq11 fixed pair、24既知animation lossを含む現状から直接比較する。
 
 Event ws074-p247-q12-native-checkpoint-20261018: native zero56/56・既存text20/20、独立DOM14/14 Chromium一致、DOM30/30、CSSOM/mutation各12/12、p185 strut PASS。zero glyph paintは黒15pixel→0、positive paintは305pixel維持/画素差0。host/target compile warning0、変更関数自動規約候補0、Acid3差0/Acid2差873。全eligible前後比較は継続中なのでclearしない。補助font-size-zero 3件は0→2 PASS、残るzero-1は次段落が16px上（test y51.20/ref67.20）になるmargin-collapseの既存残りとして別に診断し、zero inkの修復と混同しない。native fixture/DOM fixtureはactive p247/p100から参照し、再利用のTools/AAT登録・移設はQ1のshared投影へpending。
+
+Event ws074-p247-q12-cleared-20261018: [証拠](evidence/20261018-q12/README.md)。native56/56/text20/20/独立14/14・DOM30/30、zero ink15→0/positive差0、harness1455 whole489/callback11534とstatic1561 whole839を前後維持、全old PASS後退0/欠落0。Acid3差0/Acid2差873、host/target warning0。own zero glyph/ink acceptanceを満たしcleared。補助zero1はp249のmargin残り、WS全体/target/p100等未達。GitHub publish/close/共有投影pending。

@@ -273,3 +273,7 @@ Event ws074-census-retention-find-20261018: q11 auditでcensus gzip後にraw JSO
 Event ws074-p189-q12-i01-start-20261018: q11のauditを受けてcensus raw retentionを選定。gzip後に元JSONを削除せず両方を保持し、actual1 IDで同値を確認する。出力のcleanupはQ1管理。判定/固定ID/denominatorは変更しない。
 
 Event ws074-p189-q12-i01-cleared-20261018: [証拠](evidence/20261018-q12-i01/README.md)。actual1 ID PASSでraw JSON/gzip/checkpoint/report同値、new delete無し。retention部分cleared、p189 whole未達。次のi02検証がこのrunnerを使う。共有投影pending。
+
+Event ws074-p189-variant-readiness-20261018: q12中のreadonly分類で、variant80のunderlying sourceはplain candidate36/driver等43/HTTPS1。generated45のordinary window19中、source marker無し17/特殊2、残り26はworker等。次はまずplain variant36を有限Queueへ選定し、URL query保持・full selected ID照合・既存plain対照を検証する候補。window wrapperはpinned WPTのmetadata/realm/HTTP header semanticsを整えてから扱い、worker/HTTPS/driverを勝手に対象へ混ぜない。q12の1455分類は実行中のため変更しない。
+
+Event ws074-p189-q12-full-census-checkpoint-20261018: [全1455 raw](../phase247/evidence/20261018-q12/README.md)。新retained runnerでbefore/after全件489 whole/11534 callback PASS、918 FAIL/3 harness_error/21 no_completion/24 no_outputを維持。328未対応は分母内に保持。q03よりwhole485→489だがq12 font由来増分0、既存q07/q10の4件。次のplain variant36候補まで分類は不変。

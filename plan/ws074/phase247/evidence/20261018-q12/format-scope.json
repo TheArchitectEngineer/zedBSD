@@ -1,0 +1,11 @@
+{
+  "userland/desktop/libbrowser/text/font.c": [
+    "text_select_font",
+    "text_glyph"
+  ],
+  "plan/ws074/tests/host-zero-font.c": [
+    "main",
+    "zero_check",
+    "zero_case"
+  ]
+}

@@ -1,0 +1,48 @@
+{
+  "eligible": 1455,
+  "eligible_sha256": "d9b36bd0c947a35529eeb11e46b4d2038053cc0b8786a2354be87536e563dae2",
+  "reasons": {
+    "candidate": 1455,
+    "generated_context": 45,
+    "https": 44,
+    "other_type": 2022,
+    "requires_driver_origin_or_worker": 126,
+    "variant_url": 80,
+    "worker_or_substitution_path": 33
+  },
+  "counts": {
+    "before": {
+      "outcomes": {
+        "fail": 918,
+        "no_completion": 21,
+        "pass": 489,
+        "harness_error": 3,
+        "no_output": 24
+      },
+      "callbacks": {
+        "1": 20189,
+        "0": 11534
+      }
+    },
+    "after": {
+      "outcomes": {
+        "fail": 918,
+        "no_completion": 21,
+        "pass": 489,
+        "harness_error": 3,
+        "no_output": 24
+      },
+      "callbacks": {
+        "1": 20189,
+        "0": 11534
+      }
+    }
+  },
+  "new_pass": [],
+  "whole_regressions": [],
+  "callback_improvements": [],
+  "callback_regressions": [],
+  "missing": [],
+  "extra": [],
+  "name_order_changed": []
+}

@@ -1,0 +1,1 @@
+userland/desktop/libbrowser/text/font.c:82: blank-after-brace: if (paths->fallback != NULL)

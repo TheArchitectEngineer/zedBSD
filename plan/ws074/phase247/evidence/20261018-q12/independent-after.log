@@ -1,0 +1,14 @@
+regular 0 0
+bold 0 0
+monospace 0 0
+fallback 0 0
+explicit-line-height 0 20
+normal-line-height 0 0
+nested-percent 0 0
+child-box 20 10
+grid-space 70px 130px
+float-intrinsic 0 20
+live-zero 0 0
+live-positive true
+live-hidden 0
+live-restored true

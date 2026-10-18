@@ -1,0 +1,924 @@
+{
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "eligible": 1455,
+  "reason_counts": {
+    "candidate": 1455,
+    "generated_context": 45,
+    "https": 44,
+    "other_type": 2022,
+    "requires_driver_origin_or_worker": 126,
+    "variant_url": 80,
+    "worker_or_substitution_path": 33
+  },
+  "eligible_sha256": "d9b36bd0c947a35529eeb11e46b4d2038053cc0b8786a2354be87536e563dae2",
+  "offset": 0,
+  "limit": 128,
+  "font_dir": "userland/desktop/fonts",
+  "selected": [
+    "/css/css-anchor-position/anchor-center-001.html",
+    "/css/css-anchor-position/anchor-center-htb-htb.html",
+    "/css/css-anchor-position/anchor-center-htb-vrl.html",
+    "/css/css-anchor-position/anchor-center-offset-change.html",
+    "/css/css-anchor-position/anchor-center-vrl-htb.html",
+    "/css/css-anchor-position/anchor-center-vrl-vrl.html",
+    "/css/css-anchor-position/anchor-fallback-invalidation.html",
+    "/css/css-anchor-position/anchor-getComputedStyle-001.html",
+    "/css/css-anchor-position/anchor-getComputedStyle-002.html",
+    "/css/css-anchor-position/anchor-getComputedStyle-003.html",
+    "/css/css-anchor-position/anchor-inside-outside.html",
+    "/css/css-anchor-position/anchor-invalid-fallback.html",
+    "/css/css-anchor-position/anchor-name-001.html",
+    "/css/css-anchor-position/anchor-name-002.html",
+    "/css/css-anchor-position/anchor-name-003.html",
+    "/css/css-anchor-position/anchor-name-004.html",
+    "/css/css-anchor-position/anchor-name-basics.html",
+    "/css/css-anchor-position/anchor-name-cross-shadow.html",
+    "/css/css-anchor-position/anchor-name-in-shadow-002.html",
+    "/css/css-anchor-position/anchor-name-in-shadow.html",
+    "/css/css-anchor-position/anchor-name-inline-001.html",
+    "/css/css-anchor-position/anchor-name-multicol-001.html",
+    "/css/css-anchor-position/anchor-name-multicol-002.html",
+    "/css/css-anchor-position/anchor-parse-invalid.html",
+    "/css/css-anchor-position/anchor-parse-valid.html",
+    "/css/css-anchor-position/anchor-position-001.html",
+    "/css/css-anchor-position/anchor-position-002.html",
+    "/css/css-anchor-position/anchor-position-003.html",
+    "/css/css-anchor-position/anchor-position-004.html",
+    "/css/css-anchor-position/anchor-position-borders-001.html",
+    "/css/css-anchor-position/anchor-position-borders-002.html",
+    "/css/css-anchor-position/anchor-position-dynamic-001.html",
+    "/css/css-anchor-position/anchor-position-dynamic-002.html",
+    "/css/css-anchor-position/anchor-position-dynamic-003.html",
+    "/css/css-anchor-position/anchor-position-dynamic-004.html",
+    "/css/css-anchor-position/anchor-position-inline-001.html",
+    "/css/css-anchor-position/anchor-position-inline-002.html",
+    "/css/css-anchor-position/anchor-position-inline-003.html",
+    "/css/css-anchor-position/anchor-position-multicol-001.html",
+    "/css/css-anchor-position/anchor-position-multicol-005.html",
+    "/css/css-anchor-position/anchor-position-multicol-006.html",
+    "/css/css-anchor-position/anchor-position-multicol-colspan-001.html",
+    "/css/css-anchor-position/anchor-position-multicol-colspan-002.html",
+    "/css/css-anchor-position/anchor-position-principal-box.html",
+    "/css/css-anchor-position/anchor-position-top-layer-007.html",
+    "/css/css-anchor-position/anchor-position-writing-modes-001.html",
+    "/css/css-anchor-position/anchor-position-writing-modes-002.html",
+    "/css/css-anchor-position/anchor-query-custom-property-registration.html",
+    "/css/css-anchor-position/anchor-query-fallback.html",
+    "/css/css-anchor-position/anchor-scope-basic.html",
+    "/css/css-anchor-position/anchor-scope-dynamic.html",
+    "/css/css-anchor-position/anchor-scope-shadow-all.html",
+    "/css/css-anchor-position/anchor-scope-shadow-flat-tree.html",
+    "/css/css-anchor-position/anchor-scope-shadow-names.html",
+    "/css/css-anchor-position/anchor-scroll-002.html",
+    "/css/css-anchor-position/anchor-scroll-003.html",
+    "/css/css-anchor-position/anchor-scroll-004.html",
+    "/css/css-anchor-position/anchor-scroll-005.html",
+    "/css/css-anchor-position/anchor-scroll-006.html",
+    "/css/css-anchor-position/anchor-scroll-007.html",
+    "/css/css-anchor-position/anchor-scroll-cleanup.html",
+    "/css/css-anchor-position/anchor-scroll-js-expose.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-001.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-002.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-003.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-004.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-005.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-006.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-007.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-008.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-009.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-010.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-011.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-013.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-014.html",
+    "/css/css-anchor-position/anchor-size-001.html",
+    "/css/css-anchor-position/anchor-size-minmax-001.html",
+    "/css/css-anchor-position/anchor-size-parse-invalid.html",
+    "/css/css-anchor-position/anchor-size-parse-valid.html",
+    "/css/css-anchor-position/anchor-size-replaced-001.html",
+    "/css/css-anchor-position/anchor-size-writing-modes-001.html",
+    "/css/css-anchor-position/at-position-try-allowed-declarations.html",
+    "/css/css-anchor-position/at-position-try-cssom.html",
+    "/css/css-anchor-position/at-position-try-invalidation-shadow-dom.html",
+    "/css/css-anchor-position/at-position-try-invalidation.html",
+    "/css/css-anchor-position/at-position-try-parse.html",
+    "/css/css-anchor-position/base-style-invalidation.html",
+    "/css/css-anchor-position/idlharness.html",
+    "/css/css-anchor-position/last-successful-basic.html",
+    "/css/css-anchor-position/last-successful-change-fallbacks.html",
+    "/css/css-anchor-position/last-successful-change-try-rule.html",
+    "/css/css-anchor-position/last-successful-iframe.html",
+    "/css/css-anchor-position/last-successful-intermediate-ignored.html",
+    "/css/css-anchor-position/parsing/anchor-scope-computed.html",
+    "/css/css-anchor-position/parsing/anchor-scope-parsing.html",
+    "/css/css-anchor-position/parsing/position-try-computed.html",
+    "/css/css-anchor-position/parsing/position-try-fallbacks-computed.html",
+    "/css/css-anchor-position/parsing/position-try-fallbacks-parsing.html",
+    "/css/css-anchor-position/parsing/position-try-order-computed.html",
+    "/css/css-anchor-position/parsing/position-try-order-parsing.html",
+    "/css/css-anchor-position/parsing/position-try-parsing.html",
+    "/css/css-anchor-position/position-anchor-003.html",
+    "/css/css-anchor-position/position-anchor-basics.html",
+    "/css/css-anchor-position/position-area-align-justify-wm-dir.html",
+    "/css/css-anchor-position/position-area-align-justify.html",
+    "/css/css-anchor-position/position-area-anchor-outside.html",
+    "/css/css-anchor-position/position-area-anchor-partially-outside.html",
+    "/css/css-anchor-position/position-area-basic.html",
+    "/css/css-anchor-position/position-area-computed.html",
+    "/css/css-anchor-position/position-area-in-grid.html",
+    "/css/css-anchor-position/position-area-in-position-try.html",
+    "/css/css-anchor-position/position-area-interpolation.html",
+    "/css/css-anchor-position/position-area-parsing.html",
+    "/css/css-anchor-position/position-area-value.html",
+    "/css/css-anchor-position/position-area-with-insets.html",
+    "/css/css-anchor-position/position-area-wm-dir.html",
+    "/css/css-anchor-position/position-try-001.html",
+    "/css/css-anchor-position/position-try-002.html",
+    "/css/css-anchor-position/position-try-003.html",
+    "/css/css-anchor-position/position-try-004.html",
+    "/css/css-anchor-position/position-try-backdrop.html",
+    "/css/css-anchor-position/position-try-cascade-layer-reorder.html",
+    "/css/css-anchor-position/position-try-cascade.html",
+    "/css/css-anchor-position/position-try-container-query.html",
+    "/css/css-anchor-position/position-try-custom-property.html",
+    "/css/css-anchor-position/position-try-dynamic.html",
+    "/css/css-anchor-position/position-try-fallbacks-limit.html",
+    "/css/css-anchor-position/position-try-grid-001.html"
+  ],
+  "results": [
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-center-001.html",
+      "outcome": "fail",
+      "report": "test-001.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-center-htb-htb.html",
+      "outcome": "fail",
+      "report": "test-002.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-center-htb-vrl.html",
+      "outcome": "fail",
+      "report": "test-003.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-center-offset-change.html",
+      "outcome": "fail",
+      "report": "test-004.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-center-vrl-htb.html",
+      "outcome": "fail",
+      "report": "test-005.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-center-vrl-vrl.html",
+      "outcome": "fail",
+      "report": "test-006.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-fallback-invalidation.html",
+      "outcome": "fail",
+      "report": "test-007.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-getComputedStyle-001.html",
+      "outcome": "fail",
+      "report": "test-008.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-getComputedStyle-002.html",
+      "outcome": "fail",
+      "report": "test-009.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-getComputedStyle-003.html",
+      "outcome": "fail",
+      "report": "test-010.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-inside-outside.html",
+      "outcome": "fail",
+      "report": "test-011.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-invalid-fallback.html",
+      "outcome": "fail",
+      "report": "test-012.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-name-001.html",
+      "outcome": "fail",
+      "report": "test-013.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-name-002.html",
+      "outcome": "fail",
+      "report": "test-014.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-name-003.html",
+      "outcome": "fail",
+      "report": "test-015.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-name-004.html",
+      "outcome": "fail",
+      "report": "test-016.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-name-basics.html",
+      "outcome": "fail",
+      "report": "test-017.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-name-cross-shadow.html",
+      "outcome": "fail",
+      "report": "test-018.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-name-in-shadow-002.html",
+      "outcome": "no_completion",
+      "report": "test-019.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-name-in-shadow.html",
+      "outcome": "no_completion",
+      "report": "test-020.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-name-inline-001.html",
+      "outcome": "fail",
+      "report": "test-021.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-name-multicol-001.html",
+      "outcome": "pass",
+      "report": "test-022.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-name-multicol-002.html",
+      "outcome": "fail",
+      "report": "test-023.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-parse-invalid.html",
+      "outcome": "pass",
+      "report": "test-024.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-parse-valid.html",
+      "outcome": "fail",
+      "report": "test-025.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-position-001.html",
+      "outcome": "fail",
+      "report": "test-026.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-position-002.html",
+      "outcome": "fail",
+      "report": "test-027.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-position-003.html",
+      "outcome": "fail",
+      "report": "test-028.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-position-004.html",
+      "outcome": "fail",
+      "report": "test-029.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-position-borders-001.html",
+      "outcome": "fail",
+      "report": "test-030.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-position-borders-002.html",
+      "outcome": "fail",
+      "report": "test-031.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-position-dynamic-001.html",
+      "outcome": "fail",
+      "report": "test-032.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-position-dynamic-002.html",
+      "outcome": "no_completion",
+      "report": "test-033.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-position-dynamic-003.html",
+      "outcome": "no_completion",
+      "report": "test-034.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-position-dynamic-004.html",
+      "outcome": "fail",
+      "report": "test-035.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-position-inline-001.html",
+      "outcome": "fail",
+      "report": "test-036.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-position-inline-002.html",
+      "outcome": "fail",
+      "report": "test-037.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-position-inline-003.html",
+      "outcome": "fail",
+      "report": "test-038.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-position-multicol-001.html",
+      "outcome": "fail",
+      "report": "test-039.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-position-multicol-005.html",
+      "outcome": "fail",
+      "report": "test-040.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-position-multicol-006.html",
+      "outcome": "fail",
+      "report": "test-041.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-position-multicol-colspan-001.html",
+      "outcome": "fail",
+      "report": "test-042.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-position-multicol-colspan-002.html",
+      "outcome": "fail",
+      "report": "test-043.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-position-principal-box.html",
+      "outcome": "pass",
+      "report": "test-044.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-position-top-layer-007.html",
+      "outcome": "fail",
+      "report": "test-045.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-position-writing-modes-001.html",
+      "outcome": "fail",
+      "report": "test-046.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-position-writing-modes-002.html",
+      "outcome": "harness_error",
+      "report": "test-047.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-query-custom-property-registration.html",
+      "outcome": "harness_error",
+      "report": "test-048.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-query-fallback.html",
+      "outcome": "fail",
+      "report": "test-049.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-scope-basic.html",
+      "outcome": "fail",
+      "report": "test-050.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-scope-dynamic.html",
+      "outcome": "fail",
+      "report": "test-051.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-scope-shadow-all.html",
+      "outcome": "fail",
+      "report": "test-052.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-scope-shadow-flat-tree.html",
+      "outcome": "fail",
+      "report": "test-053.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-scope-shadow-names.html",
+      "outcome": "fail",
+      "report": "test-054.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-scroll-002.html",
+      "outcome": "fail",
+      "report": "test-055.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-scroll-003.html",
+      "outcome": "fail",
+      "report": "test-056.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-scroll-004.html",
+      "outcome": "fail",
+      "report": "test-057.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-scroll-005.html",
+      "outcome": "fail",
+      "report": "test-058.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-scroll-006.html",
+      "outcome": "fail",
+      "report": "test-059.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-scroll-007.html",
+      "outcome": "fail",
+      "report": "test-060.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-scroll-cleanup.html",
+      "outcome": "fail",
+      "report": "test-061.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-scroll-js-expose.html",
+      "outcome": "fail",
+      "report": "test-062.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-scroll-position-try-001.html",
+      "outcome": "fail",
+      "report": "test-063.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-scroll-position-try-002.html",
+      "outcome": "fail",
+      "report": "test-064.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-scroll-position-try-003.html",
+      "outcome": "fail",
+      "report": "test-065.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-scroll-position-try-004.html",
+      "outcome": "fail",
+      "report": "test-066.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-scroll-position-try-005.html",
+      "outcome": "fail",
+      "report": "test-067.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-scroll-position-try-006.html",
+      "outcome": "fail",
+      "report": "test-068.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-scroll-position-try-007.html",
+      "outcome": "fail",
+      "report": "test-069.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-scroll-position-try-008.html",
+      "outcome": "fail",
+      "report": "test-070.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-scroll-position-try-009.html",
+      "outcome": "fail",
+      "report": "test-071.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-scroll-position-try-010.html",
+      "outcome": "fail",
+      "report": "test-072.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-scroll-position-try-011.html",
+      "outcome": "fail",
+      "report": "test-073.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-scroll-position-try-013.html",
+      "outcome": "fail",
+      "report": "test-074.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-scroll-position-try-014.html",
+      "outcome": "fail",
+      "report": "test-075.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-size-001.html",
+      "outcome": "fail",
+      "report": "test-076.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-size-minmax-001.html",
+      "outcome": "fail",
+      "report": "test-077.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-size-parse-invalid.html",
+      "outcome": "pass",
+      "report": "test-078.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-size-parse-valid.html",
+      "outcome": "fail",
+      "report": "test-079.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-size-replaced-001.html",
+      "outcome": "fail",
+      "report": "test-080.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-size-writing-modes-001.html",
+      "outcome": "fail",
+      "report": "test-081.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/at-position-try-allowed-declarations.html",
+      "outcome": "fail",
+      "report": "test-082.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/at-position-try-cssom.html",
+      "outcome": "fail",
+      "report": "test-083.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/at-position-try-invalidation-shadow-dom.html",
+      "outcome": "fail",
+      "report": "test-084.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/at-position-try-invalidation.html",
+      "outcome": "fail",
+      "report": "test-085.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/at-position-try-parse.html",
+      "outcome": "fail",
+      "report": "test-086.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/base-style-invalidation.html",
+      "outcome": "fail",
+      "report": "test-087.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/idlharness.html",
+      "outcome": "fail",
+      "report": "test-088.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/last-successful-basic.html",
+      "outcome": "fail",
+      "report": "test-089.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/last-successful-change-fallbacks.html",
+      "outcome": "fail",
+      "report": "test-090.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/last-successful-change-try-rule.html",
+      "outcome": "fail",
+      "report": "test-091.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/last-successful-iframe.html",
+      "outcome": "fail",
+      "report": "test-092.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/last-successful-intermediate-ignored.html",
+      "outcome": "fail",
+      "report": "test-093.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/parsing/anchor-scope-computed.html",
+      "outcome": "fail",
+      "report": "test-094.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/parsing/anchor-scope-parsing.html",
+      "outcome": "fail",
+      "report": "test-095.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/parsing/position-try-computed.html",
+      "outcome": "fail",
+      "report": "test-096.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/parsing/position-try-fallbacks-computed.html",
+      "outcome": "fail",
+      "report": "test-097.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/parsing/position-try-fallbacks-parsing.html",
+      "outcome": "fail",
+      "report": "test-098.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/parsing/position-try-order-computed.html",
+      "outcome": "fail",
+      "report": "test-099.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/parsing/position-try-order-parsing.html",
+      "outcome": "fail",
+      "report": "test-100.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/parsing/position-try-parsing.html",
+      "outcome": "fail",
+      "report": "test-101.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/position-anchor-003.html",
+      "outcome": "fail",
+      "report": "test-102.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/position-anchor-basics.html",
+      "outcome": "fail",
+      "report": "test-103.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/position-area-align-justify-wm-dir.html",
+      "outcome": "fail",
+      "report": "test-104.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/position-area-align-justify.html",
+      "outcome": "fail",
+      "report": "test-105.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/position-area-anchor-outside.html",
+      "outcome": "fail",
+      "report": "test-106.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/position-area-anchor-partially-outside.html",
+      "outcome": "fail",
+      "report": "test-107.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/position-area-basic.html",
+      "outcome": "fail",
+      "report": "test-108.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/position-area-computed.html",
+      "outcome": "fail",
+      "report": "test-109.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/position-area-in-grid.html",
+      "outcome": "fail",
+      "report": "test-110.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/position-area-in-position-try.html",
+      "outcome": "fail",
+      "report": "test-111.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/position-area-interpolation.html",
+      "outcome": "fail",
+      "report": "test-112.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/position-area-parsing.html",
+      "outcome": "fail",
+      "report": "test-113.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/position-area-value.html",
+      "outcome": "pass",
+      "report": "test-114.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/position-area-with-insets.html",
+      "outcome": "fail",
+      "report": "test-115.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/position-area-wm-dir.html",
+      "outcome": "fail",
+      "report": "test-116.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/position-try-001.html",
+      "outcome": "fail",
+      "report": "test-117.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/position-try-002.html",
+      "outcome": "fail",
+      "report": "test-118.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/position-try-003.html",
+      "outcome": "fail",
+      "report": "test-119.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/position-try-004.html",
+      "outcome": "fail",
+      "report": "test-120.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/position-try-backdrop.html",
+      "outcome": "fail",
+      "report": "test-121.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/position-try-cascade-layer-reorder.html",
+      "outcome": "fail",
+      "report": "test-122.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/position-try-cascade.html",
+      "outcome": "fail",
+      "report": "test-123.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/position-try-container-query.html",
+      "outcome": "fail",
+      "report": "test-124.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/position-try-custom-property.html",
+      "outcome": "fail",
+      "report": "test-125.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/position-try-dynamic.html",
+      "outcome": "fail",
+      "report": "test-126.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/position-try-fallbacks-limit.html",
+      "outcome": "fail",
+      "report": "test-127.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/position-try-grid-001.html",
+      "outcome": "fail",
+      "report": "test-128.json.gz"
+    }
+  ],
+  "outcome_counts": {
+    "fail": 117,
+    "harness_error": 2,
+    "no_completion": 4,
+    "pass": 5
+  }
+}

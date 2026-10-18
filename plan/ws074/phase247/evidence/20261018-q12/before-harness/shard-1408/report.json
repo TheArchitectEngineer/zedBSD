@@ -1,0 +1,356 @@
+{
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "eligible": 1455,
+  "reason_counts": {
+    "candidate": 1455,
+    "generated_context": 45,
+    "https": 44,
+    "other_type": 2022,
+    "requires_driver_origin_or_worker": 126,
+    "variant_url": 80,
+    "worker_or_substitution_path": 33
+  },
+  "eligible_sha256": "d9b36bd0c947a35529eeb11e46b4d2038053cc0b8786a2354be87536e563dae2",
+  "offset": 1408,
+  "limit": 128,
+  "font_dir": "userland/desktop/fonts",
+  "selected": [
+    "/navigation-api/ordering-and-transition/transition-cross-document.html",
+    "/navigation-api/ordering-and-transition/transition-finished-mark-as-handled.html",
+    "/navigation-api/ordering-and-transition/transition-realms-and-identity.html",
+    "/navigation-api/per-entry-events/dispose-after-bfcache.html",
+    "/navigation-api/per-entry-events/dispose-cross-document.html",
+    "/navigation-api/per-entry-events/dispose-for-navigation-in-child.html",
+    "/navigation-api/per-entry-events/dispose-same-document-intercept.html",
+    "/navigation-api/per-entry-events/dispose-same-document-navigate-during.html",
+    "/navigation-api/per-entry-events/dispose-same-document-reload-with-intercept.html",
+    "/navigation-api/per-entry-events/dispose-same-document-replace-with-intercept.html",
+    "/navigation-api/per-entry-events/dispose-same-document-replaceState.html",
+    "/navigation-api/per-entry-events/dispose-same-document.html",
+    "/navigation-api/per-entry-events/dispose-skip-current-on-truncate.html",
+    "/navigation-api/scroll-behavior/after-transition-basic.html",
+    "/navigation-api/scroll-behavior/after-transition-change-history-scroll-restoration-during-promise.html",
+    "/navigation-api/scroll-behavior/after-transition-explicit-scroll.html",
+    "/navigation-api/scroll-behavior/after-transition-intercept-handler-modifies.html",
+    "/navigation-api/scroll-behavior/after-transition-push.html",
+    "/navigation-api/scroll-behavior/after-transition-reject.html",
+    "/navigation-api/scroll-behavior/after-transition-replace.html",
+    "/navigation-api/scroll-behavior/after-transition-timing.html",
+    "/navigation-api/scroll-behavior/manual-basic.html",
+    "/navigation-api/scroll-behavior/manual-immediate-scroll.html",
+    "/navigation-api/scroll-behavior/manual-scroll-after-dispatch.html",
+    "/navigation-api/scroll-behavior/manual-scroll-after-resolve.html",
+    "/navigation-api/scroll-behavior/manual-scroll-push.html",
+    "/navigation-api/scroll-behavior/manual-scroll-repeated.html",
+    "/navigation-api/scroll-behavior/manual-scroll-replace.html",
+    "/navigation-api/scroll-behavior/manual-scroll-resets-when-no-fragment.html",
+    "/navigation-api/scroll-behavior/scroll-after-preventDefault.html",
+    "/navigation-api/scroll-behavior/scroll-on-synthetic-event.html",
+    "/navigation-api/scroll-behavior/scroll-without-intercept.html",
+    "/navigation-api/state/cross-document-getState-undefined.html",
+    "/navigation-api/state/cross-document-getState.html",
+    "/navigation-api/state/same-document-away-and-back-location-api.html",
+    "/navigation-api/state/same-document-away-and-back-navigation-api.html",
+    "/navigation-api/updateCurrentEntry-method/basic.html",
+    "/navigation-api/updateCurrentEntry-method/exception-order-initial-about-blank-unserializablestate.html",
+    "/navigation-api/updateCurrentEntry-method/exception-order-not-fully-active-unserializablestate.html",
+    "/navigation-api/updateCurrentEntry-method/initial-about-blank.html",
+    "/navigation-api/updateCurrentEntry-method/no-args.html",
+    "/navigation-api/updateCurrentEntry-method/not-fully-active.html",
+    "/navigation-api/updateCurrentEntry-method/opaque-origin.html",
+    "/navigation-api/updateCurrentEntry-method/same-document-away-and-back-location-api.html",
+    "/navigation-api/updateCurrentEntry-method/unserializable.html",
+    "/pointerevents/pointerevent_constructor.html",
+    "/shadow-dom/Document-caretPositionFromPoint.tentative.html"
+  ],
+  "results": [
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/ordering-and-transition/transition-cross-document.html",
+      "outcome": "fail",
+      "report": "test-1409.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/ordering-and-transition/transition-finished-mark-as-handled.html",
+      "outcome": "fail",
+      "report": "test-1410.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/ordering-and-transition/transition-realms-and-identity.html",
+      "outcome": "fail",
+      "report": "test-1411.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/per-entry-events/dispose-after-bfcache.html",
+      "outcome": "no_completion",
+      "report": "test-1412.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/per-entry-events/dispose-cross-document.html",
+      "outcome": "no_output",
+      "report": "test-1413.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/per-entry-events/dispose-for-navigation-in-child.html",
+      "outcome": "fail",
+      "report": "test-1414.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/per-entry-events/dispose-same-document-intercept.html",
+      "outcome": "fail",
+      "report": "test-1415.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/per-entry-events/dispose-same-document-navigate-during.html",
+      "outcome": "fail",
+      "report": "test-1416.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/per-entry-events/dispose-same-document-reload-with-intercept.html",
+      "outcome": "fail",
+      "report": "test-1417.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/per-entry-events/dispose-same-document-replace-with-intercept.html",
+      "outcome": "fail",
+      "report": "test-1418.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/per-entry-events/dispose-same-document-replaceState.html",
+      "outcome": "fail",
+      "report": "test-1419.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/per-entry-events/dispose-same-document.html",
+      "outcome": "fail",
+      "report": "test-1420.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/per-entry-events/dispose-skip-current-on-truncate.html",
+      "outcome": "fail",
+      "report": "test-1421.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/scroll-behavior/after-transition-basic.html",
+      "outcome": "fail",
+      "report": "test-1422.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/scroll-behavior/after-transition-change-history-scroll-restoration-during-promise.html",
+      "outcome": "fail",
+      "report": "test-1423.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/scroll-behavior/after-transition-explicit-scroll.html",
+      "outcome": "fail",
+      "report": "test-1424.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/scroll-behavior/after-transition-intercept-handler-modifies.html",
+      "outcome": "fail",
+      "report": "test-1425.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/scroll-behavior/after-transition-push.html",
+      "outcome": "fail",
+      "report": "test-1426.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/scroll-behavior/after-transition-reject.html",
+      "outcome": "fail",
+      "report": "test-1427.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/scroll-behavior/after-transition-replace.html",
+      "outcome": "fail",
+      "report": "test-1428.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/scroll-behavior/after-transition-timing.html",
+      "outcome": "fail",
+      "report": "test-1429.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/scroll-behavior/manual-basic.html",
+      "outcome": "fail",
+      "report": "test-1430.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/scroll-behavior/manual-immediate-scroll.html",
+      "outcome": "fail",
+      "report": "test-1431.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/scroll-behavior/manual-scroll-after-dispatch.html",
+      "outcome": "fail",
+      "report": "test-1432.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/scroll-behavior/manual-scroll-after-resolve.html",
+      "outcome": "fail",
+      "report": "test-1433.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/scroll-behavior/manual-scroll-push.html",
+      "outcome": "fail",
+      "report": "test-1434.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/scroll-behavior/manual-scroll-repeated.html",
+      "outcome": "fail",
+      "report": "test-1435.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/scroll-behavior/manual-scroll-replace.html",
+      "outcome": "fail",
+      "report": "test-1436.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/scroll-behavior/manual-scroll-resets-when-no-fragment.html",
+      "outcome": "fail",
+      "report": "test-1437.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/scroll-behavior/scroll-after-preventDefault.html",
+      "outcome": "fail",
+      "report": "test-1438.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/scroll-behavior/scroll-on-synthetic-event.html",
+      "outcome": "fail",
+      "report": "test-1439.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/scroll-behavior/scroll-without-intercept.html",
+      "outcome": "fail",
+      "report": "test-1440.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/state/cross-document-getState-undefined.html",
+      "outcome": "fail",
+      "report": "test-1441.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/state/cross-document-getState.html",
+      "outcome": "fail",
+      "report": "test-1442.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/state/same-document-away-and-back-location-api.html",
+      "outcome": "no_completion",
+      "report": "test-1443.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/state/same-document-away-and-back-navigation-api.html",
+      "outcome": "no_completion",
+      "report": "test-1444.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/updateCurrentEntry-method/basic.html",
+      "outcome": "fail",
+      "report": "test-1445.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/updateCurrentEntry-method/exception-order-initial-about-blank-unserializablestate.html",
+      "outcome": "fail",
+      "report": "test-1446.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/updateCurrentEntry-method/exception-order-not-fully-active-unserializablestate.html",
+      "outcome": "fail",
+      "report": "test-1447.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/updateCurrentEntry-method/initial-about-blank.html",
+      "outcome": "fail",
+      "report": "test-1448.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/updateCurrentEntry-method/no-args.html",
+      "outcome": "fail",
+      "report": "test-1449.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/updateCurrentEntry-method/not-fully-active.html",
+      "outcome": "fail",
+      "report": "test-1450.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/updateCurrentEntry-method/opaque-origin.html",
+      "outcome": "no_completion",
+      "report": "test-1451.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/updateCurrentEntry-method/same-document-away-and-back-location-api.html",
+      "outcome": "no_completion",
+      "report": "test-1452.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/updateCurrentEntry-method/unserializable.html",
+      "outcome": "fail",
+      "report": "test-1453.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/pointerevents/pointerevent_constructor.html",
+      "outcome": "fail",
+      "report": "test-1454.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/shadow-dom/Document-caretPositionFromPoint.tentative.html",
+      "outcome": "fail",
+      "report": "test-1455.json.gz"
+    }
+  ],
+  "outcome_counts": {
+    "fail": 41,
+    "no_completion": 5,
+    "no_output": 1
+  }
+}

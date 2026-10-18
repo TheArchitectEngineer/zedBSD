@@ -1,0 +1,28 @@
+{
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "selected": [
+    {
+      "id": "/css/css-fonts/font-size-zero-1.html",
+      "source": "css/css-fonts/font-size-zero-1.html",
+      "type": "reftest",
+      "focus": []
+    },
+    {
+      "id": "/css/css-fonts/font-size-zero-2.html",
+      "source": "css/css-fonts/font-size-zero-2.html",
+      "type": "reftest",
+      "focus": []
+    },
+    {
+      "id": "/css/css-fonts/font-size-zero-3.html",
+      "source": "css/css-fonts/font-size-zero-3.html",
+      "type": "reftest",
+      "focus": []
+    }
+  ],
+  "selected_count": 3,
+  "unresolved_count": 0,
+  "unresolved": [],
+  "scope": "supplemental; outside fixed Interop2025 3805"
+}

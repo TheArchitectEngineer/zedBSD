@@ -1,0 +1,14 @@
+{
+  "total": 1561,
+  "before": {
+    "fail": 722,
+    "pass": 839
+  },
+  "after": {
+    "fail": 722,
+    "pass": 839
+  },
+  "new_pass": [],
+  "regressions": [],
+  "changed_pixel_counts": []
+}

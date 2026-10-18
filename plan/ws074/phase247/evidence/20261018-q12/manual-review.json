@@ -1,0 +1,82 @@
+{
+  "source_sha256": {
+    "userland/desktop/libbrowser/text/font.c": "fe6d9427d2d03c84ecf4b02e719f03a7917762269163888946f178bd29914cd9",
+    "plan/ws074/tests/host-zero-font.c": "8f7ae35556988a758dde7581fbf3a31c4a9ae305a85cee3eea18e215a43c6a6f"
+  },
+  "binary_sha256": {
+    "browser": "25a66385edb7811c04e5e04fddd6bf3060ef2883f26d2781adbecf9d87debc02",
+    "libbrowser.so": "ae381e800c0b760d10105456ebfb2186ae0f164fd6a3d178f808bdf8afba127c"
+  },
+  "standards": "C coding-style full + browser-component full + guardrail",
+  "review": [
+    "logical zero remains independent of positive rasterizer request; other sizes preserve prior clamps",
+    "empty glyph keeps selected face, zero advance and null bitmap; software/Vulkan skip null ink normally",
+    "positive glyph cache and font ownership remain unchanged; no new GC/native retained pointer",
+    "native metrics and character widths scale logical zero; explicit line height and child boxes remain",
+    "ANSI declarations, paragraph comments, error/return paths, public/private ABI and formatting reviewed",
+    "management comments removed from touched production source; no hidden environment test switches",
+    "new host fixture observes actual font API/positive lifetime; 14 independent DOM lines use Chromium reference",
+    "raw runner retains JSON and gzip; test-result/harness logic unchanged"
+  ],
+  "style": {
+    "before": 1,
+    "after": 1,
+    "changed_function_candidates": []
+  },
+  "warning_counts": {
+    "host-build-final.log": 0,
+    "target-compile.log": 0
+  },
+  "checks": {
+    "native_zero": "56/56",
+    "native_text": "20/20",
+    "dom": "30/30",
+    "native_cssom": "12/12",
+    "native_cssom_mutation": "12/12",
+    "zero_strut": "pass",
+    "independent": "14/14",
+    "paint": {
+      "before-zero": 15,
+      "before-positive": 305,
+      "after-zero": 0,
+      "after-positive": 305,
+      "positive_different_pixels": 0
+    }
+  },
+  "pending": [
+    "target production link/runtime; WS p100 full source conformance"
+  ],
+  "terminal_harness": {
+    "before": {
+      "outcomes": {
+        "fail": 918,
+        "no_completion": 21,
+        "pass": 489,
+        "harness_error": 3,
+        "no_output": 24
+      },
+      "callbacks": {
+        "1": 20189,
+        "0": 11534
+      }
+    },
+    "after": {
+      "outcomes": {
+        "fail": 918,
+        "no_completion": 21,
+        "pass": 489,
+        "harness_error": 3,
+        "no_output": 24
+      },
+      "callbacks": {
+        "1": 20189,
+        "0": 11534
+      }
+    }
+  },
+  "terminal_static": {
+    "before": 839,
+    "after": 839,
+    "regressions": 0
+  }
+}

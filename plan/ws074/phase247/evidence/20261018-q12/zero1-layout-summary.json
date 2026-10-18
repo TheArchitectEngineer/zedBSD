@@ -1,0 +1,16 @@
+{
+  "": [
+    "block <p> 8.00 16.00 784.00 19.20",
+    "line 8.00 16.00 height 19.20 baseline 30.59",
+    "block <p> 8.00 51.20 784.00 0.00",
+    "line 8.00 51.20 height 0.00 baseline 51.20",
+    "block <p> 8.00 51.20 784.00 19.20",
+    "line 8.00 51.20 height 19.20 baseline 65.80"
+  ],
+  "-ref": [
+    "block <p> 8.00 16.00 784.00 19.20",
+    "line 8.00 16.00 height 19.20 baseline 30.59",
+    "block <p> 8.00 67.20 784.00 19.20",
+    "line 8.00 67.20 height 19.20 baseline 81.80"
+  ]
+}

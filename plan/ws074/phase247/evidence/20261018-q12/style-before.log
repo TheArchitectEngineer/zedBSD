@@ -1,0 +1,1 @@
+build/ws074-20261018/q12/style-before-font.c:82: blank-after-brace: if (paths->fallback != NULL)

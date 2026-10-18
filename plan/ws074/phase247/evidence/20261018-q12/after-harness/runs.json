@@ -1,0 +1,372 @@
+[
+  {
+    "offset": 0,
+    "exit": 0,
+    "seconds": 95.1,
+    "counts": {
+      "fail": 117,
+      "harness_error": 2,
+      "no_completion": 4,
+      "pass": 5
+    },
+    "command": [
+      "python3",
+      "plan/ws074/tests/run-interop2025-census.py",
+      "--manifest",
+      "plan/ws074/phase173/evidence/20261013-q1012/manifest.json",
+      "--program",
+      "build/ws074-20261018/q12/after/browser",
+      "--out",
+      "build/ws074-20261018/q12/after-harness/shard-0000",
+      "--offset",
+      "0",
+      "--limit",
+      "128",
+      "--settle-ms",
+      "5000",
+      "--process-timeout",
+      "20",
+      "--font-dir",
+      "userland/desktop/fonts",
+      "--gzip-raw"
+    ]
+  },
+  {
+    "offset": 128,
+    "exit": 0,
+    "seconds": 175.6,
+    "counts": {
+      "fail": 75,
+      "no_completion": 1,
+      "pass": 52
+    },
+    "command": [
+      "python3",
+      "plan/ws074/tests/run-interop2025-census.py",
+      "--manifest",
+      "plan/ws074/phase173/evidence/20261013-q1012/manifest.json",
+      "--program",
+      "build/ws074-20261018/q12/after/browser",
+      "--out",
+      "build/ws074-20261018/q12/after-harness/shard-0128",
+      "--offset",
+      "128",
+      "--limit",
+      "128",
+      "--settle-ms",
+      "5000",
+      "--process-timeout",
+      "20",
+      "--font-dir",
+      "userland/desktop/fonts",
+      "--gzip-raw"
+    ]
+  },
+  {
+    "offset": 256,
+    "exit": 0,
+    "seconds": 251.1,
+    "counts": {
+      "fail": 26,
+      "pass": 102
+    },
+    "command": [
+      "python3",
+      "plan/ws074/tests/run-interop2025-census.py",
+      "--manifest",
+      "plan/ws074/phase173/evidence/20261013-q1012/manifest.json",
+      "--program",
+      "build/ws074-20261018/q12/after/browser",
+      "--out",
+      "build/ws074-20261018/q12/after-harness/shard-0256",
+      "--offset",
+      "256",
+      "--limit",
+      "128",
+      "--settle-ms",
+      "5000",
+      "--process-timeout",
+      "20",
+      "--font-dir",
+      "userland/desktop/fonts",
+      "--gzip-raw"
+    ]
+  },
+  {
+    "offset": 384,
+    "exit": 0,
+    "seconds": 327.6,
+    "counts": {
+      "fail": 42,
+      "no_output": 1,
+      "pass": 85
+    },
+    "command": [
+      "python3",
+      "plan/ws074/tests/run-interop2025-census.py",
+      "--manifest",
+      "plan/ws074/phase173/evidence/20261013-q1012/manifest.json",
+      "--program",
+      "build/ws074-20261018/q12/after/browser",
+      "--out",
+      "build/ws074-20261018/q12/after-harness/shard-0384",
+      "--offset",
+      "384",
+      "--limit",
+      "128",
+      "--settle-ms",
+      "5000",
+      "--process-timeout",
+      "20",
+      "--font-dir",
+      "userland/desktop/fonts",
+      "--gzip-raw"
+    ]
+  },
+  {
+    "offset": 512,
+    "exit": 0,
+    "seconds": 404.2,
+    "counts": {
+      "fail": 51,
+      "pass": 77
+    },
+    "command": [
+      "python3",
+      "plan/ws074/tests/run-interop2025-census.py",
+      "--manifest",
+      "plan/ws074/phase173/evidence/20261013-q1012/manifest.json",
+      "--program",
+      "build/ws074-20261018/q12/after/browser",
+      "--out",
+      "build/ws074-20261018/q12/after-harness/shard-0512",
+      "--offset",
+      "512",
+      "--limit",
+      "128",
+      "--settle-ms",
+      "5000",
+      "--process-timeout",
+      "20",
+      "--font-dir",
+      "userland/desktop/fonts",
+      "--gzip-raw"
+    ]
+  },
+  {
+    "offset": 640,
+    "exit": 0,
+    "seconds": 480.5,
+    "counts": {
+      "fail": 45,
+      "pass": 83
+    },
+    "command": [
+      "python3",
+      "plan/ws074/tests/run-interop2025-census.py",
+      "--manifest",
+      "plan/ws074/phase173/evidence/20261013-q1012/manifest.json",
+      "--program",
+      "build/ws074-20261018/q12/after/browser",
+      "--out",
+      "build/ws074-20261018/q12/after-harness/shard-0640",
+      "--offset",
+      "640",
+      "--limit",
+      "128",
+      "--settle-ms",
+      "5000",
+      "--process-timeout",
+      "20",
+      "--font-dir",
+      "userland/desktop/fonts",
+      "--gzip-raw"
+    ]
+  },
+  {
+    "offset": 768,
+    "exit": 0,
+    "seconds": 563.1,
+    "counts": {
+      "fail": 99,
+      "pass": 29
+    },
+    "command": [
+      "python3",
+      "plan/ws074/tests/run-interop2025-census.py",
+      "--manifest",
+      "plan/ws074/phase173/evidence/20261013-q1012/manifest.json",
+      "--program",
+      "build/ws074-20261018/q12/after/browser",
+      "--out",
+      "build/ws074-20261018/q12/after-harness/shard-0768",
+      "--offset",
+      "768",
+      "--limit",
+      "128",
+      "--settle-ms",
+      "5000",
+      "--process-timeout",
+      "20",
+      "--font-dir",
+      "userland/desktop/fonts",
+      "--gzip-raw"
+    ]
+  },
+  {
+    "offset": 896,
+    "exit": 0,
+    "seconds": 640.2,
+    "counts": {
+      "fail": 88,
+      "pass": 40
+    },
+    "command": [
+      "python3",
+      "plan/ws074/tests/run-interop2025-census.py",
+      "--manifest",
+      "plan/ws074/phase173/evidence/20261013-q1012/manifest.json",
+      "--program",
+      "build/ws074-20261018/q12/after/browser",
+      "--out",
+      "build/ws074-20261018/q12/after-harness/shard-0896",
+      "--offset",
+      "896",
+      "--limit",
+      "128",
+      "--settle-ms",
+      "5000",
+      "--process-timeout",
+      "20",
+      "--font-dir",
+      "userland/desktop/fonts",
+      "--gzip-raw"
+    ]
+  },
+  {
+    "offset": 1024,
+    "exit": 0,
+    "seconds": 716.1,
+    "counts": {
+      "fail": 96,
+      "harness_error": 1,
+      "no_completion": 6,
+      "no_output": 9,
+      "pass": 16
+    },
+    "command": [
+      "python3",
+      "plan/ws074/tests/run-interop2025-census.py",
+      "--manifest",
+      "plan/ws074/phase173/evidence/20261013-q1012/manifest.json",
+      "--program",
+      "build/ws074-20261018/q12/after/browser",
+      "--out",
+      "build/ws074-20261018/q12/after-harness/shard-1024",
+      "--offset",
+      "1024",
+      "--limit",
+      "128",
+      "--settle-ms",
+      "5000",
+      "--process-timeout",
+      "20",
+      "--font-dir",
+      "userland/desktop/fonts",
+      "--gzip-raw"
+    ]
+  },
+  {
+    "offset": 1152,
+    "exit": 0,
+    "seconds": 792.4,
+    "counts": {
+      "fail": 117,
+      "no_completion": 2,
+      "no_output": 9
+    },
+    "command": [
+      "python3",
+      "plan/ws074/tests/run-interop2025-census.py",
+      "--manifest",
+      "plan/ws074/phase173/evidence/20261013-q1012/manifest.json",
+      "--program",
+      "build/ws074-20261018/q12/after/browser",
+      "--out",
+      "build/ws074-20261018/q12/after-harness/shard-1152",
+      "--offset",
+      "1152",
+      "--limit",
+      "128",
+      "--settle-ms",
+      "5000",
+      "--process-timeout",
+      "20",
+      "--font-dir",
+      "userland/desktop/fonts",
+      "--gzip-raw"
+    ]
+  },
+  {
+    "offset": 1280,
+    "exit": 0,
+    "seconds": 867.7,
+    "counts": {
+      "fail": 121,
+      "no_completion": 3,
+      "no_output": 4
+    },
+    "command": [
+      "python3",
+      "plan/ws074/tests/run-interop2025-census.py",
+      "--manifest",
+      "plan/ws074/phase173/evidence/20261013-q1012/manifest.json",
+      "--program",
+      "build/ws074-20261018/q12/after/browser",
+      "--out",
+      "build/ws074-20261018/q12/after-harness/shard-1280",
+      "--offset",
+      "1280",
+      "--limit",
+      "128",
+      "--settle-ms",
+      "5000",
+      "--process-timeout",
+      "20",
+      "--font-dir",
+      "userland/desktop/fonts",
+      "--gzip-raw"
+    ]
+  },
+  {
+    "offset": 1408,
+    "exit": 0,
+    "seconds": 895.7,
+    "counts": {
+      "fail": 41,
+      "no_completion": 5,
+      "no_output": 1
+    },
+    "command": [
+      "python3",
+      "plan/ws074/tests/run-interop2025-census.py",
+      "--manifest",
+      "plan/ws074/phase173/evidence/20261013-q1012/manifest.json",
+      "--program",
+      "build/ws074-20261018/q12/after/browser",
+      "--out",
+      "build/ws074-20261018/q12/after-harness/shard-1408",
+      "--offset",
+      "1408",
+      "--limit",
+      "128",
+      "--settle-ms",
+      "5000",
+      "--process-timeout",
+      "20",
+      "--font-dir",
+      "userland/desktop/fonts",
+      "--gzip-raw"
+    ]
+  }
+]

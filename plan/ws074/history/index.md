@@ -1,6 +1,10 @@
 # WS074 lane の Past Log
 
-## 最新: ws074-q20261018-11（2026-10-18）
+## 最新: ws074-q20261018-12（2026-10-18）
+
+[履歴](ws074-q20261018-12.md)。raw retention/zero glyph own criteria cleared。native56/56/text20/20/独立14/14・DOM30/30、zero ink15→0/positive差0。全harness1455 whole489/callback11534、全static1561 whole839維持/後退0、公式whole増分0。補助0→2/3、残りmarginはp249へ。host/target warning0、Acid3差0/Acid2差873。328/413/crash48とtarget/p100等未達。次はplain variant36候補。共有投影pending。
+
+## ws074-q20261018-11（2026-10-18）
 
 [履歴](ws074-q20261018-11.md)。intrinsic/minmax/implicit parser・horizontal min-content修正で独立22/22、Grid whole248維持、static227→228/後退0。callback74改善/24後退はlossy getterが隠したnative animation欠落の露出でq11 uncleared、p248へ計画。DOM29/29、host/target warning0、Acid3差0/Acid2差873。次は独立zero fontとrunner retention。共有投影pending。
 
