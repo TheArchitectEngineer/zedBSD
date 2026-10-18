@@ -2,7 +2,7 @@
 
 # ws074-p190: Interop 2025 reftest・crashtest runner coverage
 
-Status: uncleared（q18履歴保持、q19 p196 output待ち）
+Status: in-progress（q19 producer独立3行を得て同10controls再検証）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074を継承）
@@ -235,3 +235,7 @@ Event ws074-p190-q18-xhtml-blocker-and-redesign-20261018: [p190 q18 evidence](ev
 p190のq18 clientと同じ10 positive/negative対照はXMLをskipせず再実行する。必要outputが成立してからfirst-ready/fuzzy/graph/pixel controls→actual413へ進む。新engine final pairの全1491/static1561/strict48でold whole491/839/39維持・全callbacksを照合し、未対応APIやtestdriverは非PASSとして保存。C全文/browser component全文/format/new logic style0/host/target/DOM/XML/Acidを適用。上限を延ばさず未達ならunclearedとresumeを残す。shared projection pending。
 
 Event ws074-p190-q19-selected-redesign-20261018: q18 XML脚本不足をscopeのあるnative producerへ分離し、必要outputのverified preflight→p190同controls→413へ実行順を確定。origin p190/foreign p196の各自身の依存・検証・resumeを同時更新。q18 mandatory criterionは弱めず、新attemptで再検証する。承認は自走契約、旧1369 PASSは新final source測定が終わるまでlast verifiedとして保持。
+
+Event ws074-p190-q19-consumer-start-20261018: p196 preflightは独立XMLでinline→DOMContentLoaded→loadのChrome同一3行をnativeから出力。同じclient/10controlsを新pairで再検証する。i01のroot/GC/global gatesはなお進行中でwhole clearanceを先取りしない。test controlsのretained出力rootは環境変数でcase分離し、native判定条件は不変。
+
+Event ws074-p190-q19-i02-cleared-i03-started-20261018: q19 final pairで元10 controls全件とcapture acknowledgement不一致/遅延色の非PASS・native pixel graphを含む計22対照が通過。i02 scoped consumer revalidation cleared、i03 pixel/fuzzy/graph runnerの実装・actual413へ進む。code着手時はi02 verified11 outputが既に成立していたがQueue i03 stateの投影が遅れたためこのcheckpointでin-progressへ補正（承認scopeと依存outputは不変）。response headers/生成server/.sub/HTTPS/testdriver等は未対応を検出した場合非PASS、native capture acknowledgement=1/正しい画面寸法も判定に必須とする。i01 full global tailは進行中。q18結果は書換えない。

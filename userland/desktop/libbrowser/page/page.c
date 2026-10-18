@@ -12,6 +12,7 @@
  */
 
 #include "page/page.h"
+#include "bind/internal.h"
 #include "net/net.h"
 #include "xml/dom.h"
 
@@ -22,7 +23,7 @@
 /* The most bytes of live cells a page's heap may hold. */
 #define PAGE_HEAP_LIMIT		((size_t)1024U * 1024U * 1024U)
 
-/* How many times more a layout is made at most for the query containers' sizes (ws074-p075). */
+/* How many times more a layout is made at most for the query containers' sizes. */
 #define PAGE_CONTAINER_PASSES	2
 
 /* The deepest element nesting the style dump descends (the parser caps nesting too). */
@@ -30,6 +31,8 @@
 
 static int page_gather_styles(struct page *page);
 static int page_load_xhtml(struct page *page, const unsigned char *bytes, size_t length);
+static int page_xhtml_inline_scripts(struct page *page);
+static int page_xhtml_script_eligible(const struct dom_node *node, const struct dom_document *document);
 static int page_load_document(struct page *page, const unsigned char *bytes, size_t length, const char *mime, size_t mime_length);
 static int page_file_xhtml(const char *path);
 static int page_link_visited(void *context, struct dom_element *element);
@@ -482,7 +485,7 @@ page_layout(
 	/*
 	 * The layout: the old one is kept while the new one is made, for the
 	 * sizes of the query containers of the container-relative units
-	 * (ws074-p075).
+	 *.
 	 */
 	if (page->laid_out) {
 		page->previous_layout = page->layout;
@@ -509,7 +512,7 @@ page_layout(
 	if (error != 0)
 		goto cleanup;
 
-	/* The media the document names, started when they are new (ws121-p004). */
+	/* The media the document names, started when they are new. */
 	error = page_load_media(page);
 	if (error != 0)
 		goto cleanup;
@@ -756,7 +759,7 @@ page_dump_style(
 
 /*
  * Tells whether a query container the styles used has another size (by
- * more than half a pixel) in the page's layout, or none (ws074-p075).
+ * more than half a pixel) in the page's layout, or none.
  */
 static int
 page_containers_moved(
@@ -793,7 +796,7 @@ page_containers_moved(
 
 /*
  * Finds a query container's content box size in the page's previous
- * layout (ws074-p075), for the container-relative units of the style
+ * layout, for the container-relative units of the style
  * engine; 0 when that layout did not have the container.
  */
 static int
@@ -840,7 +843,7 @@ page_update_styles(
 
 	/*
 	 * So do styles of the same document while more sheets are on their way:
-	 * the page is styled again once they are all here (ws074-p071).
+	 * the page is styled again once they are all here.
 	 */
 	pending = page_sheets_pending(page);
 	if (page->css != NULL && page->styled_generation == page->document->generation &&
@@ -906,7 +909,6 @@ page_record_visited(
 	return 0;
 }
 
-/* Makes the style engine anew with the document's style sheets in order. */
 /* Parses a complete XHTML resource before adding any of its nodes to the active Document. */
 static int
 page_load_xhtml(
@@ -950,15 +952,212 @@ page_load_xhtml(
 			break;
 		dom_append_child(&page->document->node, child);
 	}
+
+	/* The active Document now owns every adopted child or retains the precise adoption failure. */
 	vm_heap_remove_root(page->heap, &root);
 	if (error != 0)
 		return error;
 
-	/* Script-free XHTML has the same document completion and stylesheet steps. */
+	/* Validated connected classic inline scripts run before document completion events. */
+	error = page_xhtml_inline_scripts(page);
+	if (error != 0)
+		return error;
+
+	/* Only the still-active owning Window can publish completion after script callbacks. */
+	if (page->window->detached)
+		return 0;
+
+	/* Document readiness follows the supported inline source, as in the child XML path. */
 	error = page_fire_load(page);
 	if (error != 0)
 		return error;
-	return page_gather_styles(page);
+
+	/* Inline mutations determine the source order seen by the ordinary style gatherer. */
+	error = page_gather_styles(page);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the validated XHTML graph and supported inline lifecycle are installed. */
+	return 0;
+}
+
+/* Run a stable snapshot so self-removal, later removal and collection cannot corrupt traversal. */
+static int
+page_xhtml_inline_scripts(
+	struct page *page)
+{
+	struct wb_vector scripts;
+	struct dom_node *walk;
+	struct dom_node **entry;
+	struct dom_node *saved;
+	struct vm_cell **roots;
+	struct bind_window *window;
+	size_t index;
+	size_t registered;
+	size_t total;
+	int eligible;
+	int error;
+
+	/* Snapshot collection uses only native allocation while the active Document owns its tree. */
+	wb_vector_init(&scripts, sizeof(struct dom_node *));
+	walk = page->document->node.first_child;
+	error = 0;
+	while (walk != NULL) {
+		eligible = page_xhtml_script_eligible(walk, page->document);
+		if (eligible) {
+			error = wb_vector_push(&scripts, &walk);
+			if (error != 0)
+				break;
+		}
+
+		/* No callbacks run until every original candidate and saved context can be rooted. */
+		walk = bind_following(walk, &page->document->node);
+	}
+
+	/* Native snapshot failure never starts even the first script. */
+	if (error != 0) {
+		wb_vector_release(&scripts);
+		return error;
+	}
+
+	/* Script-free documents retain the old load path without any new root allocation. */
+	if (scripts.count == 0U) {
+		wb_vector_release(&scripts);
+		return 0;
+	}
+
+	/* Reserve one extra stable slot for a currentScript replaced during nested evaluation. */
+	if (scripts.count == SIZE_MAX) {
+		wb_vector_release(&scripts);
+		return ENOMEM;
+	}
+
+	/* calloc rejects any slot-table multiplication overflow before publication. */
+	total = scripts.count + 1U;
+	roots = calloc(total, sizeof(*roots));
+	if (roots == NULL) {
+		wb_vector_release(&scripts);
+		return ENOMEM;
+	}
+
+	/* A removed original candidate remains alive until the last earlier callback has finished. */
+	window = page->window;
+	saved = window->current_script;
+	for (index = 0; index < scripts.count; index++) {
+		entry = wb_vector_at(&scripts, index);
+		roots[index] = &(*entry)->cell;
+	}
+
+	/* Replacing the Window's traced currentScript must not lose an outer script's only edge. */
+	if (saved != NULL)
+		roots[scripts.count] = &saved->cell;
+
+	/* Each successful registration becomes an obligation for the shared cleanup path. */
+	registered = 0;
+	for (index = 0; index < total; index++) {
+		error = vm_heap_add_root(page->heap, &roots[index]);
+		if (error != 0)
+			break;
+		registered++;
+	}
+
+	/* All registered storage remains fixed throughout arbitrary inline DOM mutation and GC. */
+	if (error == 0) {
+		for (index = 0; index < scripts.count; index++) {
+			/* A script that retired this owner cannot trigger further old-document execution. */
+			if (window->detached)
+				break;
+
+			/* Prior callbacks may remove, adopt or dynamically prepare a saved candidate. */
+			entry = wb_vector_at(&scripts, index);
+			eligible = page_xhtml_script_eligible(*entry, page->document);
+			if (!eligible)
+				continue;
+
+			/* The shared inline backend excludes external/module/data source and accepts text or CDATA. */
+			bind_window_set_current_script(window, *entry);
+			error = bind_run_inline_script(window, (struct dom_element *)*entry);
+			bind_window_set_current_script(window, saved);
+			if (error != 0)
+				break;
+		}
+	}
+
+	/* Drop every successfully registered slot before releasing its native table. */
+	while (registered != 0) {
+		registered--;
+		vm_heap_remove_root(page->heap, &roots[registered]);
+	}
+
+	/* Temporary ownership ends after execution or any root/evaluation failure. */
+	free(roots);
+	wb_vector_release(&scripts);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: only still-connected supported original inline candidates were prepared once. */
+	return 0;
+}
+
+/* Recognize exact XHTML script names while rejecting inert, detached and already prepared nodes. */
+static int
+page_xhtml_script_eligible(
+	const struct dom_node *node,
+	const struct dom_document *document)
+{
+	const struct dom_node *ancestor;
+	const struct dom_element *element;
+	int same;
+	int connected;
+
+	/* Only an unprepared element belonging to this current Document is a candidate. */
+	if (node->type != DOM_ELEMENT || node->document != document)
+		return 0;
+
+	/* Dynamic insertion may already have prepared a snapshotted original node. */
+	if ((node->flags & DOM_NODE_SCRIPT_STARTED) != 0U)
+		return 0;
+
+	/* XML preserves local-name case and actual namespace identity. */
+	element = (const struct dom_element *)node;
+	if (element->ns != DOM_NS_HTML)
+		return 0;
+
+	/* Uppercase or foreign script-looking tags are not HTML script elements. */
+	same = vm_string_equal_ascii(element->local_name, "script");
+	if (!same)
+		return 0;
+
+	/* A saved node must still reach the active Document without crossing an inert template. */
+	connected = 0;
+	for (ancestor = node->parent; ancestor != NULL; ancestor = ancestor->parent) {
+		/* Reaching this root establishes the still-active ownership path. */
+		if (ancestor == &document->node) {
+			connected = 1;
+			break;
+		}
+
+		/* Non-element ancestors carry no HTML-template inertness of their own. */
+		if (ancestor->type != DOM_ELEMENT)
+			continue;
+
+		/* XML's exact lowercase HTML template name keeps its descendants inert. */
+		element = (const struct dom_element *)ancestor;
+		if (element->ns != DOM_NS_HTML)
+			continue;
+
+		/* Foreign or differently cased template-looking tags do not create this HTML boundary. */
+		same = vm_string_equal_ascii(element->local_name, "template");
+		if (same)
+			return 0;
+	}
+
+	/* A removed or adopted snapshot has no connected execution path in this Document. */
+	if (!connected)
+		return 0;
+
+	/* Succeeded: this exact unprepared HTML script remains connected outside inert templates. */
+	return 1;
 }
 
 /* Selects the actual declared top-level XHTML resource without body sniffing. */

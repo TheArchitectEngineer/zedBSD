@@ -644,7 +644,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p187](phase187/phase.md) | 負の padding と第6色箱の幅を調べる | cleared（q1010-i01、Acid3差900減、negative padding fixture pass） | p172〜p186 cleared、q1009 実測出力 |
 | [ws074-p188](phase188/phase.md) | 同一ページで観測した訪問履歴と :visited の paint color | cleared（q1011-i01、Acid3差801減→0、privacy fixture pass） | p172〜p187 cleared、q1010 実測出力 |
 | [ws074-p189](phase189/phase.md) | Interop 2025 testharness 1,783件の結果取得 runner | uncleared / q17全1491 whole491・未対応292 | p173 q1012 固定manifest出力 |
-| [ws074-p190](phase190/phase.md) | Interop 2025 reftest 1,974件・crashtest48件のrunner coverage | uncleared / q19 p196 scoped output待ち、q18履歴保持 | p173 q1012 固定manifest出力 |
+| [ws074-p190](phase190/phase.md) | Interop 2025 reftest 1,974件・crashtest48件のrunner coverage | in-progress / q19 XML独立3行→same10 controls | p173 q1012 固定manifest出力 |
 | [ws074-p191](phase191/phase.md) | Interop 2025 textdecoration全16 testharnessのCSSOM互換 | cleared / q1023、16件16 PASS/0 FAIL | p173固定manifest、p189 q1015全16件baseline |
 | [ws074-p192](phase192/phase.md) | Interop 2025 Window named properties互換 | uncleared / q1025 partial cleared、一意id live lookup | p173固定manifest、p189 q1024 shard |
 | [ws074-p193](phase193/phase.md) | Interop 2025 details/hidden until-found互換 | uncleared / q1032計測6 PASS/10 FAIL/2 no output、q1035/q1036で2件追加PASS、reftest25/crashtest3未実行 | p189 q1024 shard、p192 q1025一意id output |
@@ -1221,3 +1221,5 @@ Event ws074-p190-q18-selected-20261018: [Queue](queue.md)でpublic SDK試験clie
 Event ws074-q18-uncleared-p196-redesign-20261018: [exact history](history/ws074-q20261018-18.md)・[evidence](phase190/evidence/20261018-q18/README.md)。first-ready clientはlate timer先取り防止/SDK/C/target成立、必須10対照中XHTMLのみFAIL。最上位XMLがscriptsを実行せずloadへ進むのでp196 output→p190同対照→413へ依存改訂。origin p190/foreign p196へ自身の変更とresumeを配送済み。両q18 item uncleared、q17 verified1369維持、shared projection pending。
 
 Event ws074-q19-selected-redesign-20261018: [Queue](queue.md)でp196 strict validated XHTML classic inline producer→p190 same10 client controls→scripted413を最大90分/16:28 boundに選定。q18 WIP4090ecec6/history hash確認済み、origin/foreign両Phaseへ自身の設計/検証/resumeを配送。sourceはpage.cと既存試験3file、public ABI/他engine/shared projectionは保護。last verified1369は新final測定まで保持。
+
+Event ws074-p190-q19-controls-output-20261018: native producerのChrome5行一致/self・next removal/GC安全性を確認、元10を含む22対照が通過。i02 consumer partial cleared・i03 scripted413へ着手。engine final pairを固定して全1491/static1561/strict48も並行検証中で、whole/i01を前倒しclearしない。shared projection pending。
