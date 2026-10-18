@@ -59,6 +59,10 @@
 
 #include <hal/arch/riscv32.h>
 
+#elif defined(HAL_ARCH_PPC64)
+
+#include <hal/arch/ppc64.h>
+
 #elif defined(HAL_ARCH_PPC32)
 
 #include <hal/arch/ppc32.h>

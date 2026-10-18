@@ -18,8 +18,8 @@
 #   BOOT_TIMEOUT   seconds to wait for the login prompt (default 180)
 #   QEMU           emulator to run (default depends on BOOT_MODE)
 #   BOOT_MODE      uefi-nvme (default), uefi-usb, bios-ide, raspi4b,
-#                  riscv64-virt, riscv64-uboot, riscv32-virt, m68k-virt or
-#                  ppc32-mac99
+#                  riscv64-virt, riscv64-uboot, riscv32-virt, m68k-virt,
+#                  ppc32-mac99 or ppc64-pseries
 #   BOOT_PATTERN   what the screen must show, one regular expression per line;
 #                  every one must be seen on some screen (default the login
 #                  prompt, ^(?:\S+ )?login: ?)
@@ -70,6 +70,9 @@
 # BOOT_MODE=ppc32-mac99 boots a flat 32-bit PowerPC kernel image (default
 # build/ppc32-mac99/vmunix.bin) on qemu-system-ppc's mac99 through OpenBIOS,
 # whose display is set to 800x600 at 32 bits a pixel; 512M (BOOT_MEMORY).
+# BOOT_MODE=ppc64-pseries boots a big-endian 64-bit PowerPC kernel ELF
+# (default build/ppc64-pseries/vmunix) on qemu-system-ppc64's pseries through
+# SLOF, whose VGA display the kernel draws on; 512M (BOOT_MEMORY).
 #
 # It writes OUTPUT/login.png and prints its path.  The exit status is 0 only
 # when the login prompt was seen.
@@ -101,6 +104,10 @@ m68k-virt)
 	;;
 ppc32-mac99)
 	image=${1:-${IMAGE:-${KERNEL:-$root/build/ppc32-mac99/vmunix.bin}}}
+	boot_interval=${BOOT_INTERVAL:-0.5}
+	;;
+ppc64-pseries)
+	image=${1:-${IMAGE:-${KERNEL:-$root/build/ppc64-pseries/vmunix}}}
 	boot_interval=${BOOT_INTERVAL:-0.5}
 	;;
 *)
@@ -161,6 +168,10 @@ ppc32-mac99)
 	qemu=${QEMU:-qemu-system-ppc}
 	required=("$image")
 	;;
+ppc64-pseries)
+	qemu=${QEMU:-qemu-system-ppc64}
+	required=("$image")
+	;;
 riscv64-uboot)
 	qemu=${QEMU:-qemu-system-riscv64}
 	uboot=${UBOOT:-/usr/lib/u-boot/qemu-riscv64_smode/u-boot.bin}
@@ -206,7 +217,7 @@ screenshot=$output/login.png
 # costs little), and the firmware gets its own variable store.  A riscv64-virt
 # kernel is booted directly and has no disk.
 if [[ $boot_mode != riscv64-virt && $boot_mode != riscv32-virt && $boot_mode != m68k-virt &&
-	$boot_mode != ppc32-mac99 ]]; then
+	$boot_mode != ppc32-mac99 && $boot_mode != ppc64-pseries ]]; then
 	qemu-img create -q -f qcow2 -F raw -b "$(readlink -f -- "$image")" "$disk"
 fi
 if [[ $boot_mode == uefi-usb || $boot_mode == uefi-nvme ]]; then
@@ -286,6 +297,15 @@ elif [[ $boot_mode == ppc32-mac99 ]]; then
 	# kernel draws its console on, and the serial line on a socket.
 	read -r -a ppc_extra <<<"${QEMU_EXTRA:-}"
 	"$qemu" -machine mac99 -m "${BOOT_MEMORY:-512M}" -g 800x600x32 \
+		-display none -no-reboot \
+		-serial "unix:$serial,server,nowait" \
+		-qmp "unix:$monitor,server,nowait" \
+		-kernel "$image" "${ppc_extra[@]}" >"$output/qemu.log" 2>&1 &
+elif [[ $boot_mode == ppc64-pseries ]]; then
+	# The pseries machine through its firmware, with the VGA display the
+	# kernel draws its console on, and the serial line on a socket.
+	read -r -a ppc_extra <<<"${QEMU_EXTRA:-}"
+	"$qemu" -machine pseries -m "${BOOT_MEMORY:-512M}" \
 		-display none -no-reboot \
 		-serial "unix:$serial,server,nowait" \
 		-qmp "unix:$monitor,server,nowait" \

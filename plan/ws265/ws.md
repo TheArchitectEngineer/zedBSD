@@ -3,7 +3,7 @@
 # WS265 ppc64 の QEMU の machine（「virt」相当）への移植（framebuffer の console・VFS の段まで）
 
 - ID: ws265、Master: [master.md](../master.md)、Primary Milestone: MG008
-- Status: planning（2026-10-18 Q1 作成。担当は未定）
+- Status: incomplete（2026-10-18 Q1 作成。2026-10-19 P1 が q1257 で p001・p002 を実施中）
 - 起点（2026-10-18 ユーザー）:「さらに、virt riscv32, virt ppc32, virt ppc64, virt m68k (68030)も追加してほしいです。それぞれWSを作ってほしいです。フレームバッファでコンソールが出てVFSがマウントできないところまででいいです。」
 - 前提（Q1 の調べ）: **QEMU の PowerPC に「virt」という machine は無い**。64 bit の候補は `pseries`（sPAPR の paravirt、SLOF、virtio・VGA）と `powernv`（POWER10 の実機相当）。paravirt の `pseries` が「virt」に近い。endian（big か little か）、firmware（SLOF・OPAL）、画面の device は p001 でユーザーに案を出して決める。共有の LLVM は PowerPC の target を持つ。tree に PowerPC の HAL は無い。
 
@@ -18,5 +18,7 @@
 
 | Phase | 目的 | 状態 |
 | --- | --- | --- |
-| p001 | 設計: QEMU の machine と画面の device、firmware・起動の道、toolchain、HAL の構成（既存の HAL との共有）、HAL の API の差分の案、試験の道具、Phase の表。code は書かない | planning |
+| [p001](phase001/phase.md) | 設計（[design.md](design.md)）: pseries・big endian、SLOF から ELF、hypervisor の hashed table | in-progress |
+| [p002](phase002/phase.md) | HAL・pseries の BSP・vmunix・boot-test の mode、T1 の画面で到達点 | in-progress |
+| p003 | 規約の全文の見直し（書き方だけ） | planned |
 - 決定（2026-10-18 ユーザー、クリック）: machine と endian は「pseries、big endian」。HAL の API は形を限った事前の承認（Guardrail の表）。
