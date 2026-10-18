@@ -298,7 +298,7 @@ define ZEDBSD_LLVM_CONFIG_IDENTITY_COMMANDS
 		{ echo 'LLVM: host C/C++ compiler is unavailable' >&2; exit 1; }; \
 	host_cc_version=$$("$$host_cc" --version | sed -n '1p'); \
 	host_cxx_version=$$("$$host_cxx" --version | sed -n '1p'); \
-	identity="version=$(ZEDBSD_LLVM_VERSION) patch=$(ZEDBSD_LLVM_PATCH_LEVEL) host-cc=$$host_cc ($$host_cc_version) host-cxx=$$host_cxx ($$host_cxx_version) projects=clang,lld targets=PowerPC,AArch64,X86 build=Release compile-jobs=4 link-jobs=2 analyzer=off objc-rewriter=off distribution=$(ZEDBSD_LLVM_DISTRIBUTION_COMPONENTS)"
+	identity="version=$(ZEDBSD_LLVM_VERSION) patch=$(ZEDBSD_LLVM_PATCH_LEVEL) host-cc=$$host_cc ($$host_cc_version) host-cxx=$$host_cxx ($$host_cxx_version) projects=clang,lld targets=PowerPC,AArch64,RISCV,X86 build=Release compile-jobs=4 link-jobs=2 analyzer=off objc-rewriter=off distribution=$(ZEDBSD_LLVM_DISTRIBUTION_COMPONENTS)"
 endef
 
 # The record is compared while make reads this file, so a tree configured
@@ -358,7 +358,7 @@ $(ZEDBSD_LLVM_CONFIG_STAMP): $(ZEDBSD_LLVM_CONFIG_IDENTITY) \
 		-DLLDB_ENABLE_LZMA=OFF \
 		-DLLDB_ENABLE_LIBXML2=OFF \
 		-DLLDB_INCLUDE_TESTS=OFF \
-		-DLLVM_TARGETS_TO_BUILD='PowerPC;AArch64;X86' \
+		-DLLVM_TARGETS_TO_BUILD='PowerPC;AArch64;RISCV;X86' \
 		-DLLVM_ENABLE_TERMINFO=OFF \
 		-DLLVM_ENABLE_ZLIB=OFF \
 		-DLLVM_ENABLE_ZSTD=OFF \

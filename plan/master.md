@@ -574,7 +574,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS253](ws253/ws.md) | MG001 | 起動の時間の短縮: 通常の起動は sessiond（Wayland）を先に、network・audio・sshd などは後に。debug の起動は今のまま（2026-10-16 ユーザー） | incomplete（p001: 2 段の起動・desktop の表示を待つ late・kernel の disk の待ちの短縮を main に d454d4bd3、QEMU で約 9 s → 約 4 s。5330 の確認待ち） | 5330 の起動の記録（P1 の次の起動で） |
 | [WS254](ws254/ws.md) | MG001 | networkd: DHCP の失敗の後に 1 分おきに取り直す（2026-10-16 ユーザー） | incomplete（p001 cleared: QEMU で確認、main 5cb63ff2a。実機は未実施） | p002 規約の見直し |
 | [WS255](ws255/ws.md) | MG001 | 試験機（5330・RDNA 機）の zedBSD の試験の image を静的な IP に（2026-10-16 ユーザー） | incomplete（p001 uncleared: 手引き・QEMU で address は確認、main d2a709ba6。route と DNS は BUG-328 待ち） | BUG-328 の修正 |
-| [WS256](ws256/ws.md) | MG008 | StarFive VisionFive 2（JH7110、RISC-V）への移植（2026-10-18 ユーザー） | planning（詳細を Q1 とユーザーで決めてから P2） | 最初の到達目標は UART の login、QEMU の virt から |
+| [WS256](ws256/ws.md) | MG008 | StarFive VisionFive 2（JH7110、RISC-V）への移植（2026-10-18 ユーザー） | incomplete（p002 toolchain の RISCV は cleared、他は詳細を Q1 とユーザーで決めてから P2） | 最初の到達目標は UART の login、QEMU の virt から |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
 
@@ -620,6 +620,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-18 10:52（ユーザー）:「LLVM の作り直しはすぐやりましょう。サブエージェントを一度止めてもいいです。」→ 動いている担当は無かったので止めずに、Q1 が toolchain の lock を外して toolchain/llvm/llvm.mk の LLVM_TARGETS_TO_BUILD に RISCV を足し（cmake の引数と config の identity の 2 か所）、共有の build/llvm を作り直す（WS256 p002）。PATCH_LEVEL（zedbsd8）は変えない。Q1 の注: CI の binary cache（rev-0、zedbsd8）には RISCV が無いので、CI で riscv64 を build する前に新しい cache の asset が要る。
 - 2026-10-18 10:21（ユーザー、クリック）WS256 VisionFive 2: 最初の到達目標「UART の login」、起動の道「U-Boot の UEFI＋zedBSD の loader」、toolchain「許可、Q1 が行う」（LLVM に RISCV の target を足す）、試験の環境「これから準備」（板は未接続、最初は QEMU の virt）。詳細は [ws256/ws.md](ws256/ws.md)。
 - 2026-10-18 09:5x（ユーザー）:「main に入っていない branchは保存してキャンセルします。」→ agent/p2-bug333（05e10ffa7、BUG-333 の touch.c の試行。BUG-333 は 93bb1db8c で resolved）を tag `saved/20261018-bug333-touch`、agent/p4-bug330（c6cd2934f、BUG-330 の console のスクロール）を tag `saved/20261018-bug330-console` で保存し、q1238・q1232 を canceled。Q1 の解釈: 対象は Q1 が報告した 2 本。agent/p1（WS080 p002 の a06d5d75d・6c7c991b1）は 2026-10-14 のユーザーの保留の決定のまま残す。
 - 2026-10-18 09:5x（ユーザー）:「N=2で、P1はWS245, WS251の続きを実施します。P1はOpus 5.5 Lowで実行し、レビュー用のサブエージェントを用いません。」→ N=2。P1 は model Opus 5.5・effort low、design-reviewer などのレビューの子を使わない。
