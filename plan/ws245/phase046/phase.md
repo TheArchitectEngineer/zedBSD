@@ -144,3 +144,18 @@ P1 の見立て（Status は変えない。判定は Q1）: cleared にしない
 - 見て残した物: xd-aux.c・xd-hpd.c の最後の `return status;` は誤りの code ではなく判断の値（制御の word、connector の状態）を返すので規則 §11 の「分類を返す」形。xd-dp.c の `first_error` も値の選び。
 - 確かめた事: `sh build/tmp/kbuild.sh p046r` default rc=0 warn=0（sha256 の先頭 c5a67928fe15d677）、vke2 rc=0 warn=0、execution rc=0 warn=0。`run-xd-host-tests.sh build/p046r-host` all passed（check-sources 106 file: 旧の file を merge で消した後の数）。`git diff --check` 0。5330・QEMU は起動していない。
 - 残り: 試験の file（tests/display）と xd 以外の本番の file の目視、comment が意味を言っているかの 1 行ずつの目視、関数名の 1 対 1 の写しの目視は未実施。
+
+## 読み通しの続き 2（2026-10-18 P1、q1244）
+
+範囲: WS245 が足した行（`git diff -U0 0c25c87a7`）の、xd 以外の本番の file（display・intel・mmio-record.c・device.c の 60 file、gen9-*・bootfb は WS244・WS251 の範囲で除く）と tests/display の 44 file。style-check（足した行だけに絞る scratch の filter）と grep、目視。
+
+- 直した物（cebac0006、書き方だけ）: edp-device.c の `x != 0 ? 1 : 0` の Boolean 3 つを if に（VDD の保持 2、pps_valid）。3 つ以上の節・`&&` と `||` の混ざった 1 行の条件 39 個を 1 節 1 行に（本番: hpd.c・resident.c・survey.c・output.c・tc-port.c・mmio-record.c、試験: platform・gmbus・dpll・icl・tc・vbt・power・fake-regs）。言い直しの comment 2 つ（vbt-shell.c「Checks the copy.」、hpd.c「Checks the sink.」）を意味の comment に。
+- 見て残した物: style-check の paragraph-comment の残り 12 は全部 critical section の境（`i915_dp_ext_access_end`・`i915_mmio_record_enter/leave`、道具の限界）。call-in-condition 2 は関数の様な macro。条件演算子 38 は log の短い対称の選びと register の macro。run-log.c の hook の `return result;` 7・vga.c・dp-ext-kern.c・hpd.c の `return status;` は下の hook の答えの写し・分類の値。試験の `i915_host_check` の引数の複数の節の式（約 640 行）は条件ではなく check の述語として残した（Q1 の判断に）。
+- 確かめた事: `sh build/tmp/kbuild.sh p244a` default rc=0 warn=0（sha256 の先頭 a80a6ffcb8951d01）、vke2・execution rc=0 warn=0。`run-xd-host-tests.sh build/p244a-host` all passed（31 本、全部 0 failures を数えた）。`git diff --check` 0。gen9・bootfb の試験は触った file が無いので流していない。
+- 残り（未実施）: comment の 1 行ずつの目視（意味を言っているか）は上の grep で拾える形だけ。関数名の Linux との 1 対 1 の写しの目視は未実施。
+
+## 判定の材料（2026-10-18 P1、q1244）
+
+- 満たした: 機械で見られる規則は WS245 の行で残り 0（道具の限界と短い対称の選びを除く）、上の読み通し 2 の直し、build warning 0、host 試験 all passed。
+- 満たしていない: comment の 1 行ずつの目視と関数名の写しの目視（117,100 行の通読）。試験の check の述語の式の扱い（Q1 の判断）。
+- P1 の見立て: cleared にしない（通読が残る）。通読を範囲から外すか、conformance-reviewer に file を分けるかは Q1 の判断。

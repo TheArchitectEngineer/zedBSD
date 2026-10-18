@@ -838,10 +838,14 @@ test_opregion(void)
 		same = error == 0 && where.raw_address == cases[row].raw && where.mailbox_offset == 0x400U &&
 		    where.mailbox_size == cases[row].mailbox_size;
 		if (cases[row].raw != 0U) {
-			if (old.src != I915_OPVBT_RVDA || old.vbt_phys != where.raw_address || old.rvds != where.raw_size)
+			if (old.src != I915_OPVBT_RVDA ||
+			    old.vbt_phys != where.raw_address ||
+			    old.rvds != where.raw_size)
 				same = 0;
 		} else {
-			if (old.src != I915_OPVBT_MAILBOX4 || old.vbt_offset != where.mailbox_offset || old.vbt_max != where.mailbox_size)
+			if (old.src != I915_OPVBT_MAILBOX4 ||
+			    old.vbt_offset != where.mailbox_offset ||
+			    old.vbt_max != where.mailbox_size)
 				same = 0;
 		}
 
@@ -991,7 +995,9 @@ test_memory_map(
 	}
 
 	/* The raw VBT region, or a range inside it. */
-	if (test_raw_address != 0U && address >= test_raw_address && address - test_raw_address + size <= sizeof(test_memory_raw)) {
+	if (test_raw_address != 0U &&
+	    address >= test_raw_address &&
+	    address - test_raw_address + size <= sizeof(test_memory_raw)) {
 		*bytes = test_memory_raw + (address - test_raw_address);
 		test_maps_open++;
 		return 0;

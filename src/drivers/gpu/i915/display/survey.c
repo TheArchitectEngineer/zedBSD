@@ -415,7 +415,9 @@ drv_i915_survey_judge(
 		verdict->live_is_resident = 1;
 
 	/* Both CRCs were read and neither is zero. */
-	if (crc_read && crc[0] != 0U && crc[1] != 0U)
+	if (crc_read &&
+	    crc[0] != 0U &&
+	    crc[1] != 0U)
 		verdict->crc_nonzero = 1;
 
 	/* The interrupt handler counted no underrun. */

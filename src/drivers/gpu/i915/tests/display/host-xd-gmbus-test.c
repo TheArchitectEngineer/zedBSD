@@ -252,7 +252,10 @@ i915_xd_gmbus_test_pins(void)
 	good = 1;
 	for (pin = 0U; pin < 16U; pin++) {
 		valid = drv_i915_xd_gmbus_pin_valid(pin);
-		if ((pin >= 1U && pin <= 3U) || (pin >= 9U && pin <= 14U)) {
+		if ((pin >= 1U &&
+		     pin <= 3U) ||
+		    (pin >= 9U &&
+		     pin <= 14U)) {
 			if (valid == 0)
 				good = 0;
 		} else if (valid != 0) {
@@ -327,7 +330,9 @@ i915_xd_gmbus_test_reads(void)
 			continue;
 		if (enables % 2U == 1U && values[index] != 0U)
 			same = 0;
-		if (enables % 2U == 0U && enables < 64U && values[index] != I915_XD_GMBUS4_HW_READY)
+		if (enables % 2U == 0U &&
+		    enables < 64U &&
+		    values[index] != I915_XD_GMBUS4_HW_READY)
 			same = 0;
 		if (enables == 64U && values[index] != I915_XD_GMBUS4_WAIT_PHASE)
 			same = 0;

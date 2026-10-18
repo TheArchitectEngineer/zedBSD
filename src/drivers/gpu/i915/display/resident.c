@@ -203,7 +203,12 @@ drv_i915_resident_run(
 	rep = &display->resident_run_rep;
 
 	/* The run needs the panel, the registers, the GT memory, the interrupts and a serve loop. */
-	if (d == NULL || d->edp == NULL || d->mmio == NULL || d->gm == NULL || d->irq == NULL || serve == NULL) {
+	if (d == NULL ||
+	    d->edp == NULL ||
+	    d->mmio == NULL ||
+	    d->gm == NULL ||
+	    d->irq == NULL ||
+	    serve == NULL) {
 		kern_logf("i915: resident display: not started (a dependency is missing)\n");
 		return EINVAL;
 	}
@@ -357,7 +362,9 @@ drv_i915_resident_run(
 
 	/* Reports how the run ended. */
 	verdict = "FAIL";
-	if (passed && released && held == 0)
+	if (passed &&
+	    released &&
+	    held == 0)
 		verdict = "PASS";
 
 	/* Whether the display confirmed the stop. */
@@ -391,7 +398,10 @@ drv_i915_resident_run(
 	 */
 	unplugged = __atomic_load_n(&display->window.unplugged, __ATOMIC_ACQUIRE);
 	kern_memset(&outcome, 0, sizeof(outcome));
-	if (!passed && released && held == 0 && display->output.kind == I915_OUTPUT_KIND_DP_EXT) {
+	if (!passed &&
+	    released &&
+	    held == 0 &&
+	    display->output.kind == I915_OUTPUT_KIND_DP_EXT) {
 		fallback_error = drv_i915_resident_link_fallback(display, &display->output, rep->enable_rc);
 		if (fallback_error == 0)
 			outcome.lowered = 1;
@@ -2645,7 +2655,11 @@ resident_log_run(
 	unplugged = __atomic_load_n(&display->window.unplugged, __ATOMIC_ACQUIRE);
 
 	/* The whole log and the observer, when asked for or when the run failed for its own reasons. */
-	if (debug || ((!passed || !released || held != 0) && !unplugged)) {
+	if (debug ||
+	    ((!passed ||
+	      !released ||
+	      held != 0) &&
+	     !unplugged)) {
 		drv_i915_lcd_log_trace(rep->trace);
 		drv_i915_lcd_log_observer(&rep->obs);
 		return;

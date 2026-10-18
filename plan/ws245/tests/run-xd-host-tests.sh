@@ -50,7 +50,7 @@
 #                          not come, a refused interrupt reference, writes that cross a blank)
 #   host-xd-output-test    a screen's output: the 5330's panel lit (power uses in order, the display buffer, the
 #                          backlight from the VBT, the PLL, the port and its trained link, the pipe, the start) and
-#                          darkened in reverse; the backlight's levels; a PLL that does not lock, a link that does not
+#                          darkened in reverse; the backlight's levels; a PLL that does not lock, a link that does not (and on every row: the panel on DDI A lit and darkened, the buffer and the function on then off, every reference back)
 #                          train, a refused power reference; an HDMI sink on DDI B; a Type-C DisplayPort sink in
 #                          DisplayPort alternate and Thunderbolt mode; Ice Lake's panel on the eDP transcoder and a
 #                          TC1 sink on the MG PHY (display 11's order of the clock select and the port's transport)

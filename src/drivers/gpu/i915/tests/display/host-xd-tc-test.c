@@ -348,9 +348,13 @@ i915_xd_tc_test_words_equal(
 	const struct i915_xd_tc_pll_words *b)
 {
 	/* Word by word. */
-	if (a->refclkin != b->refclkin || a->coreclk != b->coreclk || a->hsclk != b->hsclk)
+	if (a->refclkin != b->refclkin ||
+	    a->coreclk != b->coreclk ||
+	    a->hsclk != b->hsclk)
 		return 0;
-	if (a->div0 != b->div0 || a->div1 != b->div1 || a->ssc != b->ssc)
+	if (a->div0 != b->div0 ||
+	    a->div1 != b->div1 ||
+	    a->ssc != b->ssc)
 		return 0;
 	if (a->bias != b->bias || a->tdc != b->tdc)
 		return 0;
@@ -848,7 +852,9 @@ i915_xd_tc_test_mailbox(
 	data = i915_xd_fake_get(I915_XD_GTDRIVER_DATA0);
 	i915_xd_tc_test_firmware.requests++;
 	i915_xd_tc_test_firmware.last = data;
-	if ((value & 0xffU) == I915_XD_MAILBOX_TCCOLD && data == I915_XD_MAILBOX_TCCOLD_BLOCK && i915_xd_tc_test_firmware.fail)
+	if ((value & 0xffU) == I915_XD_MAILBOX_TCCOLD &&
+	    data == I915_XD_MAILBOX_TCCOLD_BLOCK &&
+	    i915_xd_tc_test_firmware.fail)
 		i915_xd_fake_set(I915_XD_GTDRIVER_DATA0, I915_XD_MAILBOX_TCCOLD_EXIT_FAILED);
 	i915_xd_fake_set(I915_XD_GTDRIVER_MAILBOX, 0U);
 }

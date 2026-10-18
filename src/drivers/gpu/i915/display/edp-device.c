@@ -427,6 +427,7 @@ drv_i915_edp_device_fini(
 {
 	struct i915_display_power *power;
 	const struct i915_xd_power_stats *stats;
+	int vdd_held;
 
 	/* Nothing to stop when the device never started. */
 	if (dev == NULL)
@@ -449,10 +450,15 @@ drv_i915_edp_device_fini(
 	drv_i915_display_power_bind_work(power, NULL);
 	stats = &power->xd->power.stats;
 
+	/* Whether the sequencer still holds VDD after the stop. */
+	vdd_held = 0;
+	if (dev->xe.vdd_cookie != 0)
+		vdd_held = 1;
+
 	/* Reports what the stop left and what the works and the power layer did. */
 	kern_logf("i915: edp fini: vdd held=%d | vdd-off work armed=%u fired=%u ran=%d cancelled(timer/queue)=%u/%u | "
 		  "later puts=%u deferred=%u taken over=%u work runs=%u released=%u flushes=%u errors=%u | well_refs=%u\n",
-		  dev->xe.vdd_cookie != 0 ? 1 : 0,
+		  vdd_held,
 		  dev->k.vdd_off_work.armed_count, dev->k.vdd_off_work.fired_count, dev->k.vdd_off_work.work.ran_count,
 		  dev->k.vdd_off_work.cancelled_armed, dev->k.vdd_off_work.cancelled_pending,
 		  power->later_puts, stats->deferred, stats->taken_over, stats->work_runs, stats->released,
@@ -1075,6 +1081,7 @@ i915_edp_device_late(
 	int late_panel;
 	int panel_found;
 	int panel_type;
+	int vdd_held;
 
 	/* Looks the panel up again, now with its EDID. */
 	panel_found = drv_i915_vbt_init_panel(&dev->vbt->parsed, port, dev->res.edid, &late_panel_data);
@@ -1099,10 +1106,15 @@ i915_edp_device_late(
 	if (late_panel)
 		panel_type = late_panel_data.panel_type;
 
+	/* Whether VDD is still held, to be let go after five power cycles. */
+	vdd_held = 0;
+	if (dev->xe.vdd_cookie != 0)
+		vdd_held = 1;
+
 	/* Logs what the late step found. */
 	kern_logf("i915: edp late: panel_late=%d type=%d pps=%u delays(ms) up=%d down=%d cycle=%d | VDD held=%d, off in %d ms\n",
 		  late_panel, panel_type, dev->xe.pps, dev->res.delay_power_up_ms, dev->res.delay_power_down_ms,
-		  dev->res.delay_power_cycle_ms, dev->xe.vdd_cookie != 0 ? 1 : 0, dev->res.delay_power_cycle_ms * 5);
+		  dev->res.delay_power_cycle_ms, vdd_held, dev->res.delay_power_cycle_ms * 5);
 }
 
 /*
@@ -1193,7 +1205,9 @@ i915_edp_device_result(
 	/* The sequencer and its waits. */
 	res->stage = (int)xe->stage;
 	res->pps_idx = (int)xe->pps;
-	res->pps_valid = xe->stage >= I915_XD_EDP_STAGE_PPS ? 1 : 0;
+	res->pps_valid = 0;
+	if (xe->stage >= I915_XD_EDP_STAGE_PPS)
+		res->pps_valid = 1;
 	res->delay_power_up_ms = (int)xe->waits.power_up_ms;
 	res->delay_power_down_ms = (int)xe->waits.power_down_ms;
 	res->delay_power_cycle_ms = (int)xe->waits.power_cycle_ms;

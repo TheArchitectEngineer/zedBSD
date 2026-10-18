@@ -718,7 +718,9 @@ tc_port_declare(
 
 		/* A port with neither a USB-C nor a Thunderbolt receptacle has a connector wired to it. */
 		legacy = 0;
-		if (child != NULL && !child->type_c && !child->tbt)
+		if (child != NULL &&
+		    !child->type_c &&
+		    !child->tbt)
 			legacy = 1;
 
 		/* Declares the port; one the platform does not have as Type-C is skipped. */
@@ -770,7 +772,9 @@ tc_port_lcd_dkl(
 	int tc_port)
 {
 	/* A run without the display's power has no Dekel access. */
-	if (kernel->d == NULL || kernel->d->power == NULL || kernel->d->power->dkl == NULL) {
+	if (kernel->d == NULL ||
+	    kernel->d->power == NULL ||
+	    kernel->d->power->dkl == NULL) {
 		kern_logf("i915: TC: Dekel access of TC%d without the display's Dekel PHYs: nothing done\n", tc_port + 1);
 		return NULL;
 	}

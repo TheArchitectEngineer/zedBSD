@@ -197,7 +197,9 @@ i915_xd_dpll_test_words(void)
 	adlp = i915_xd_dpll_test_setup(I915_XD_DPLL_TEST_ADLP, I915_XD_DPLL_TEST_ADLP_REVID, 1);
 	tgl = i915_xd_dpll_test_setup(I915_XD_DPLL_TEST_TGL, I915_XD_DPLL_TEST_TGL_REVID, 1);
 	rkl = i915_xd_dpll_test_setup(I915_XD_DPLL_TEST_RKL, 0U, 1);
-	if (adlp == NULL || tgl == NULL || rkl == NULL) {
+	if (adlp == NULL ||
+	    tgl == NULL ||
+	    rkl == NULL) {
 		i915_host_check(0, "dpll: the descriptions are found");
 		return;
 	}
@@ -284,7 +286,9 @@ i915_xd_dpll_test_hdmi(void)
 	for (index = 0U; index < sizeof(clocks) / sizeof(clocks[0]); index++) {
 		error = drv_i915_xd_dpll_hdmi_words(adlp, 38400U, clocks[index], I915_XD_DPLL_AFC_NONE, &words);
 		port = drv_i915_xd_dpll_port_khz(adlp, 38400U, &words);
-		if (error != 0 || port + 1U < clocks[index] || port > clocks[index] + 1U)
+		if (error != 0 ||
+		    port + 1U < clocks[index] ||
+		    port > clocks[index] + 1U)
 			close = 0;
 	}
 
