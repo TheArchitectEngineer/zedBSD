@@ -10,7 +10,7 @@
  *
  * A call is put in the command queue and the GSP is told by its doorbell.
  * Its reply comes back in the status queue with the same function and the
- * caller's sequence number; the reply is matched on both (design 2.6).  While
+ * caller's sequence number; the reply is matched on both.  While
  * the driver waits, the GSP may send events: the CPU sequencer (a list of
  * register operations the driver performs at once) and others, which are
  * reported and dropped in this revision.  Only the worker calls these, one

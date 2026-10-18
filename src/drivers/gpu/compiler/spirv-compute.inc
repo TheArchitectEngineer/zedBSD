@@ -6,7 +6,7 @@
  */
 
 /*
- * The compute part of the SPIR-V parser (ws101-p002), included by spirv.c.
+ * The compute part of the SPIR-V parser, included by spirv.c.
  *
  * A GLCompute entry point is a compute shader: its workgroup size comes from
  * the LocalSize or LocalSizeId execution mode, its built-in inputs
@@ -18,7 +18,7 @@
  * DRV_GPU_IR_SYSTEM_SET, so the code generator reads them as it reads any
  * storage buffer.
  *
- * A Workgroup variable is shared memory (ws101-p006): the parser lays the
+ * A Workgroup variable is shared memory: the parser lays the
  * variables out one after the other in a natural layout of its own (a
  * scalar 4 bytes, a vector 4 n, an array its elements one after the other,
  * a structure its members in order: SPIR-V gives Workgroup variables no
@@ -107,8 +107,8 @@ drv_gpu_spirv_declare_execution_mode(
 		return EINVAL;
 
 	/*
-	 * A geometry shader's modes say what it takes and emits (ws075-p007a,
-	 * spirv-geometry.inc).
+	 * A geometry shader's modes say what it takes and emits
+	 * (spirv-geometry.inc).
 	 */
 	if (parser->ir->stage == DRV_GPU_STAGE_GEOMETRY) {
 		error = drv_gpu_spirv_geometry_mode(parser,
@@ -447,8 +447,7 @@ drv_gpu_spirv_system_component(
 
 	case BUILTIN_PRIMITIVE_ID:
 		/*
-		 * A geometry invocation's input primitive: the thread's payload
-		 * (ws075-p007a).
+		 * A geometry invocation's input primitive: the thread's payload.
 		 */
 		parser->ir->uses_primitive_id = 1U;
 		value =
@@ -584,7 +583,7 @@ drv_gpu_spirv_system_uniform(
  * The operation runs for the channels of the block it is in (its
  * predicate), in one message of the data port.  An atomic that orders other
  * accesses around it (Acquire, Release and their kind) is fenced on both
- * sides (ws101-p006).
+ * sides.
  */
 static int
 drv_gpu_spirv_lower_atomic(
@@ -677,7 +676,7 @@ drv_gpu_spirv_lower_atomic(
 	if (count < operands)
 		return EINVAL;
 
-	/* The fences the semantics ask for around the atomic (ws101-p006). */
+	/* The fences the semantics ask for around the atomic. */
 	error =
 	    drv_gpu_spirv_semantics(parser, word[5], &fences, opcode, offset);
 	if (error != 0)
@@ -779,7 +778,7 @@ drv_gpu_spirv_lower_atomic(
 	dst = record->comp[0];
 
 	/*
-	 * An ordering atomic is fenced on both sides (ws101-p006): this fence
+	 * An ordering atomic is fenced on both sides: this fence
 	 * orders the accesses before it, for a release.
 	 */
 	drv_gpu_spirv_fence(parser, fences);
@@ -876,7 +875,7 @@ drv_gpu_spirv_lower_atomic_access(
 		semantics_id = word[3];
 	}
 
-	/* The fences the semantics ask for around the access (ws101-p006). */
+	/* The fences the semantics ask for around the access. */
 	error = drv_gpu_spirv_semantics(parser,
 					semantics_id,
 					&fences,
@@ -1126,7 +1125,7 @@ drv_gpu_spirv_fence(
 }
 
 /*
- * Lowers OpControlBarrier and OpMemoryBarrier (ws101-p006).
+ * Lowers OpControlBarrier and OpMemoryBarrier.
  *
  * A control barrier of the workgroup is a BARRIER after the fences its
  * semantics ask for; one of a narrower scope (a subgroup, an invocation) is
@@ -1265,7 +1264,7 @@ drv_gpu_spirv_lower_barrier(
 }
 
 /*
- * Declares a Workgroup variable of a compute shader (ws101-p006): the next
+ * Declares a Workgroup variable of a compute shader: the next
  * bytes of the group's shared memory, as many as its natural layout takes
  * (drv_gpu_spirv_shared_bytes()).  Refuses a type the layout does not cover
  * and a total past DRV_GPU_IR_MAX_SHARED_BYTES.
@@ -1344,7 +1343,7 @@ drv_gpu_spirv_shared_bytes(
 	case ID_TYPE_FLOAT:
 		/*
 		 * A 32-bit scalar is laid out, and a 16-bit integer in a 32-bit
-		 * slot of its own (ws031-p039: shared memory's layout is the
+		 * slot of its own (shared memory's layout is the
 		 * implementation's; the word holds the 32-bit value it is
 		 * carried in).
 		 */
@@ -1408,8 +1407,8 @@ drv_gpu_spirv_shared_bytes(
 }
 
 /*
- * Steps a pointer into shared memory one index down, in the natural layout
- * (ws101-p006): a member after the members before it, an element by the
+ * Steps a pointer into shared memory one index down, in the natural layout:
+ * a member after the members before it, an element by the
  * element's bytes, a column by the column's bytes, a component by 4.  Any
  * number of dynamic indices add up to one byte offset, as a storage
  * buffer's do.
@@ -1527,8 +1526,7 @@ drv_gpu_spirv_chain_shared(
 	}
 
 	/*
-	 * A 16-bit index made whole, signed as SPIR-V's indices are
-	 * (ws031-p039).
+	 * A 16-bit index made whole, signed as SPIR-V's indices are.
 	 */
 	scalars[0] = drv_gpu_spirv_extend16(
 	    parser,
@@ -1580,7 +1578,7 @@ drv_gpu_spirv_chain_shared(
 
 /*
  * Lowers a load from (`scalars` NULL) or a store to (`scalars` the stored
- * values) shared memory (ws101-p006): one LOAD_SHARED or STORE_SHARED of
+ * values) shared memory: one LOAD_SHARED or STORE_SHARED of
  * each scalar of a scalar or a vector, 4 bytes apart from the pointer's
  * byte offset plus the dynamic index times its stride, under the block's
  * predicate.  Never forwarded: another invocation may have written the word.

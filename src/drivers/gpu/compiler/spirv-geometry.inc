@@ -6,7 +6,7 @@
  */
 
 /*
- * The geometry part of the SPIR-V parser (ws075-p007a), included by spirv.c.
+ * The geometry part of the SPIR-V parser, included by spirv.c.
  *
  * A Geometry entry point is a geometry shader.  Its execution modes say how
  * many vertices one input primitive has (points 1, lines 2, lines with

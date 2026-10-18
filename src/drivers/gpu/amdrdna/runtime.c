@@ -745,8 +745,7 @@ runtime_stop_poll(
  * stays the device's (its blobs' VRAM is kept when they are destroyed).
  * EIO for any other: the device then faults.
  *
- * Procedure referenced: plan/ws039/design.md 11.3 and 11.4 (isolate is 0
- * only for a session whose queue reset and remap succeeded).
+ * isolate is 0 only for a session whose queue reset and remap succeeded.
  */
 static int
 runtime_isolate(

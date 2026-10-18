@@ -71,6 +71,14 @@ Parent: [WS251](../ws.md)
 - 残した物: 古い試験の名前（execution/README.md の P6B-RC6・P7-IPC などの表、LCD-G）は、移植しなかった試験の名前の一覧として残した。
 - 確かめた事: `sh build/tmp/kbuild.sh ws251p002-g5` 3 組 rc=0 warning 0、`ws251-objcmp.sh ws251p002-base2 ws251p002-g5` の差は群 3 と同じ memory.o・gpu.o（行番号）だけで vmunix は 3 組とも同じ。`run-xd-host-tests.sh build/ws251p002-g5-host` all passed。`git diff --check` 0。
 
+### 群 6: compiler・venus・amdrdna・nvrtx・include/uapi/gpu-op.h — 済み（2026-10-18 q1242、P1）
+
+- comment だけ。完了の条件の grep（`\b[Ww][Ss][0-9]{3}\b|\bq[0-9]{3,4}\b|BUG-[0-9]{3}|\bT[0-9]-[0-9]+|plan/`）は src/drivers/gpu で 0 件、gpu-op.h でも 0 件。
+- 消した物: ws101・ws075・ws031・ws035・ws113・ws141・ws214 の参照、BUG-144、amdrdna の「Procedure referenced: plan/ws039/design.md 11.x」（中身の説明の文は残した）、nvrtx の「design 2.6」「as the design's first step has it」。
+- 残した物: venus の「QEMU」は guest の相手の virtio-gpu の device（QEMU の振る舞い）の事実なので残した。
+- 確かめた事: `sh build/tmp/kbuild.sh ws251p002-g6` 3 組 rc=0 warning 0、objcmp の差は群 3 の memory.o・gpu.o（行番号）だけで vmunix は 3 組とも同じ。arm64 の build はこの群では作っていない（compiler の .inc は comment だけ）: 未確認。
+- 範囲の外で見つけた物（GPU の driver の header ではない）: `include/libc/vulkan/API-PROVENANCE.md`（q309・q310・WS014・ws083 ほか 9 件）、`include/kern/tty.h`（ws035-p097）。扱いは Q1 の判断。
+
 ### 残り・再開の手順
 
 - 残り 23 件（群 5 の後。venus 6、compiler 15、amdrdna 2、`include/uapi/gpu-op.h` 3）。
