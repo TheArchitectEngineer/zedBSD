@@ -55,6 +55,10 @@
 
 #include <hal/arch/riscv64.h>
 
+#elif defined(HAL_ARCH_RISCV32)
+
+#include <hal/arch/riscv32.h>
+
 #elif defined(HAL_ARCH_M68K)
 
 #include <hal/arch/m68030.h>
