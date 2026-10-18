@@ -1,0 +1,40 @@
+{
+  "product_fixture_changes_bounded_to_selected_functions_private_state": true,
+  "obsolete_access_collect_removed": true,
+  "all_other_engine_source_and_headers_unchanged": true,
+  "VM_native_operations_structure_definition_comment_unchanged": true,
+  "old780_prefix_unchanged": true,
+  "added_shared_conditions": 29,
+  "native_specific_step_conditions": 3,
+  "full_changed_functions": {
+    "userland/desktop/libbrowser/vm/access.c": [
+      "vm_for_in_start",
+      "vm_for_in_next",
+      "access_for_in_trace",
+      "access_for_in_finalize"
+    ],
+    "plan/ws074/tests/host-proxy-read.c": [
+      "main",
+      "for_in_descriptor",
+      "for_in_pressure"
+    ]
+  },
+  "raw_allowed_cleanup": 67,
+  "only_single_forward_cleanup": true,
+  "other_checker_findings": 0,
+  "selected_normal_prototypes_after_tables": true,
+  "type_initializer_trace_finalize_declarations_before_table_exception": true,
+  "manual_review": [
+    "full C rules declaration groups/multiline functions/public-static/prototypes/semantic paragraphs/individual fallible checks/root protocol counters",
+    "start roots direct managed realm/input before ToObject/state allocation, nullish empty versus boxed primitive/prototype enumeration, fully initialized vectors before publish",
+    "next roots direct realm/state across actual OwnKeys/GetOwn/GetProto/key string/error paths; state traces current object/all initialized key and visited entries between calls",
+    "per-level keys loaded once, consume candidate before descriptor; Symbols skipped, valid names canonicalized through vm_to_key before pointer-equality visited lookup",
+    "descriptor absence not visited; present nonenumerable still shadows, each string name at most once; attributes only read before any later VM allocation, no unused descriptor payload ownership claim",
+    "completed level advances by actual GetPrototypeOf; fresh result assigned directly into traced current slot before further callback, no identity-only rejection of finite repeated Proxy prototypes",
+    "finalizer releases both native vectors; no filesystem deletion; helper functions access_key_listed/access_is_symbol bodies unchanged",
+    "native direct start forces actual8MiB threshold GC with bare managed caller/source, then direct next pure GetOwn callback actualGC observes caller/source/state3 alive and negative errno EACCES, subsequent collection reclaims3",
+    "old independent native C weak fixture unmeasured; shared old GC4 functionalFAIL/1PASS, no precode crash claim",
+    "ECMA EnumerateObjectProperties permits Proxy/exotic/mutation mechanics differences: common29 rows genuine Chrome match, separate native lazy-step controls differ legally in prototype timing; no oracle shim or official source change",
+    "general infinite Proxy prototype sequence/nontermination resource policy remains pending; finite repeated identity terminates after4 calls, width/source-context/call/global/p100/full target/whole acceptance pending"
+  ]
+}

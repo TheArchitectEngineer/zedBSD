@@ -1,0 +1,29 @@
+{
+  "returncode": 1,
+  "failed": [
+    "forin-proxy-own-enumerable-strings",
+    "forin-proxy-ownkeys-order",
+    "forin-nested-proxy",
+    "forin-symbol-keys-ignored",
+    "forin-proxy-prototype-enumerable",
+    "forin-proxy-getprototype-result",
+    "forin-nonenumerable-shadows-prototype",
+    "forin-duplicate-names-across-prototypes-once",
+    "forin-fresh-string-name-canonical-shadow",
+    "forin-numeric-name-canonical-shadow",
+    "forin-does-not-read-accessor-values",
+    "forin-string-primitive-includes-prototype",
+    "forin-number-primitive-includes-prototype",
+    "forin-boolean-primitive-includes-prototype",
+    "forin-proxy-array-keys",
+    "forin-ownkeys-error-identity",
+    "forin-descriptor-error-identity",
+    "forin-prototype-error-identity",
+    "forin-revoked-proxy-throws",
+    "forin-duplicate-ownkeys-invariant",
+    "forin-proxy-nonstring-key-rejected"
+  ],
+  "control": [
+    "read-proxy controls: 783/804"
+  ]
+}

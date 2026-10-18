@@ -1,0 +1,293 @@
+{
+  "source_commit": "dd5843dd3e794a049d9c404e406c153eb623c8d4",
+  "selection": "4b2ece06b",
+  "source_hash_count": 318,
+  "conditions": 809,
+  "native_pass": 809,
+  "chrome_pass": 807,
+  "new_shared_conditions": 29,
+  "precode_functional_conditions_failed": 21,
+  "precode_gc_isolated_returncodes": [
+    1,
+    1,
+    1,
+    1,
+    0
+  ],
+  "final_all29_genuine_chrome_match": true,
+  "old780_prefix_unchanged": true,
+  "all_chrome_equality": false,
+  "oracle": "q36 classifier filter and q43 huge2 differences retained; all new29 genuine result rows match; Chrome collection bridge no-op",
+  "full_changed_C": {
+    "product_fixture_changes_bounded_to_selected_functions_private_state": true,
+    "obsolete_access_collect_removed": true,
+    "all_other_engine_source_and_headers_unchanged": true,
+    "VM_native_operations_structure_definition_comment_unchanged": true,
+    "old780_prefix_unchanged": true,
+    "added_shared_conditions": 29,
+    "native_specific_step_conditions": 3,
+    "full_changed_functions": {
+      "userland/desktop/libbrowser/vm/access.c": [
+        "vm_for_in_start",
+        "vm_for_in_next",
+        "access_for_in_trace",
+        "access_for_in_finalize"
+      ],
+      "plan/ws074/tests/host-proxy-read.c": [
+        "main",
+        "for_in_descriptor",
+        "for_in_pressure"
+      ]
+    },
+    "raw_allowed_cleanup": 67,
+    "only_single_forward_cleanup": true,
+    "other_checker_findings": 0,
+    "selected_normal_prototypes_after_tables": true,
+    "type_initializer_trace_finalize_declarations_before_table_exception": true,
+    "manual_review": [
+      "full C rules declaration groups/multiline functions/public-static/prototypes/semantic paragraphs/individual fallible checks/root protocol counters",
+      "start roots direct managed realm/input before ToObject/state allocation, nullish empty versus boxed primitive/prototype enumeration, fully initialized vectors before publish",
+      "next roots direct realm/state across actual OwnKeys/GetOwn/GetProto/key string/error paths; state traces current object/all initialized key and visited entries between calls",
+      "per-level keys loaded once, consume candidate before descriptor; Symbols skipped, valid names canonicalized through vm_to_key before pointer-equality visited lookup",
+      "descriptor absence not visited; present nonenumerable still shadows, each string name at most once; attributes only read before any later VM allocation, no unused descriptor payload ownership claim",
+      "completed level advances by actual GetPrototypeOf; fresh result assigned directly into traced current slot before further callback, no identity-only rejection of finite repeated Proxy prototypes",
+      "finalizer releases both native vectors; no filesystem deletion; helper functions access_key_listed/access_is_symbol bodies unchanged",
+      "native direct start forces actual8MiB threshold GC with bare managed caller/source, then direct next pure GetOwn callback actualGC observes caller/source/state3 alive and negative errno EACCES, subsequent collection reclaims3",
+      "old independent native C weak fixture unmeasured; shared old GC4 functionalFAIL/1PASS, no precode crash claim",
+      "ECMA EnumerateObjectProperties permits Proxy/exotic/mutation mechanics differences: common29 rows genuine Chrome match, separate native lazy-step controls differ legally in prototype timing; no oracle shim or official source change",
+      "general infinite Proxy prototype sequence/nontermination resource policy remains pending; finite repeated identity terminates after4 calls, width/source-context/call/global/p100/full target/whole acceptance pending"
+    ]
+  },
+  "native_gates": [
+    {
+      "label": "proxy-read",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q52/final/engine/host-proxy-read",
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q52/final/engine/proxy-read.js"
+      ],
+      "returncode": 0,
+      "seconds": 0.5
+    },
+    {
+      "label": "delegation",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q52/final/engine/host-generator-delegation"
+      ],
+      "returncode": 0,
+      "seconds": 0.5
+    },
+    {
+      "label": "interpreter",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q52/final/engine/host-interp"
+      ],
+      "returncode": 0,
+      "seconds": 0.7
+    },
+    {
+      "label": "vm-factory",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q52/final/engine/host-vm-factory"
+      ],
+      "returncode": 0,
+      "seconds": 0.8
+    },
+    {
+      "label": "dom",
+      "command": [
+        "python3",
+        "plan/ws074/tests/run-dom-tests.py",
+        "--program",
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q52/final/engine/browser"
+      ],
+      "returncode": 0,
+      "seconds": 3.0
+    },
+    {
+      "label": "cssom",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q52/final/engine/host-cssom"
+      ],
+      "returncode": 0,
+      "seconds": 3.1
+    },
+    {
+      "label": "cssom-mutation",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q52/final/engine/host-cssom-mutation"
+      ],
+      "returncode": 0,
+      "seconds": 3.2
+    },
+    {
+      "label": "marks",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q52/final/engine/host-performance-marks"
+      ],
+      "returncode": 0,
+      "seconds": 3.3
+    },
+    {
+      "label": "observer",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q52/final/engine/host-performance-observer"
+      ],
+      "returncode": 0,
+      "seconds": 3.4
+    },
+    {
+      "label": "error-events",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q52/final/engine/host-error-events"
+      ],
+      "returncode": 0,
+      "seconds": 3.5
+    },
+    {
+      "label": "error-reporting",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q52/final/engine/host-error-reporting"
+      ],
+      "returncode": 0,
+      "seconds": 3.6
+    },
+    {
+      "label": "acid",
+      "command": [
+        "python3",
+        "plan/ws074/tests/run-acid-tests.py",
+        "--program",
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q52/final/engine/browser",
+        "--out",
+        "build/ws074-20261018/q52/final/acid"
+      ],
+      "returncode": 0,
+      "seconds": 8.2
+    }
+  ],
+  "native_forin_steps": {
+    "runs": [
+      {
+        "label": "precode-native-step-traced",
+        "returncode": 1,
+        "source_sha256": "958e419aa5e03b1e5d97381eedcbfc0f66b89460e55c690a2aab2171b5459428",
+        "lines": [
+          "forin-native-step trace: ",
+          "forin-native-step per-level-lazy-trap-body-sequence: FAIL",
+          "forin-native-step absent-own-name-does-not-suppress-prototype: FAIL",
+          "forin-native-step finite-repeated-prototype-identity-is-not-rejected: FAIL",
+          "forin-native-step controls: 0/3"
+        ]
+      },
+      {
+        "label": "final-native-step",
+        "returncode": 0,
+        "source_sha256": "958e419aa5e03b1e5d97381eedcbfc0f66b89460e55c690a2aab2171b5459428",
+        "lines": [
+          "forin-native-step trace: keys,own:a,body:a,own:b,body:b,proto",
+          "forin-native-step per-level-lazy-trap-body-sequence: PASS",
+          "forin-native-step absent-own-name-does-not-suppress-prototype: PASS",
+          "forin-native-step finite-repeated-prototype-identity-is-not-rejected: PASS",
+          "forin-native-step controls: 3/3"
+        ]
+      }
+    ],
+    "chrome_lines": [
+      "forin-native-step trace: keys,proto,own:a,body:a,own:b,body:b",
+      "forin-native-step per-level-lazy-trap-body-sequence: FAIL",
+      "forin-native-step absent-own-name-does-not-suppress-prototype: PASS",
+      "forin-native-step finite-repeated-prototype-identity-is-not-rejected: PASS",
+      "forin-native-step controls: 2/3"
+    ],
+    "shared_condition": false,
+    "legal_Proxy_mechanics_difference": "ECMA EnumerateObjectProperties expressly permits divergence from CreateForInIterator for Proxy/exotic inputs; neither trace is claimed invalid",
+    "exactly_one_diagnostic_native_algorithm_expectation_not_met_by_chrome": true
+  },
+  "GC": [
+    "direct start with no setup roots crosses unchanged8MiB production threshold and retains managed caller/source",
+    "direct next pure native GetOwn callback actualGC observes caller/source/private iterator3 alive, negative EACCES and property_depth0 retained",
+    "post-call collection reclaims all3; private state finalizer releases both native vectors; source has no caller-realm backedge",
+    "old independent C weak fixture unmeasured; shared old GC4 functionalFAIL/1alreadyPASS, not a precode GC crash claim"
+  ],
+  "acid3_score": 100,
+  "acid3_inventory": 100,
+  "acid3_pixels": 0,
+  "acid2_existing_pixels": 873,
+  "original_webidl_q38_same_callbacks": true,
+  "additional_validator_negative_rule_callbacks": [
+    {
+      "name": "original interface validator yields missing Exposed rule",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "original namespace validator yields missing Exposed rule",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "validator rule detection does not mask intentional failure",
+      "status": 1,
+      "message": "assert_equals: intentional failure after original validator rule expected 0 but got 1"
+    }
+  ],
+  "harness": {
+    "completed": 1508,
+    "counts": {
+      "fail": 955,
+      "harness_error": 13,
+      "pass": 494,
+      "no_completion": 20,
+      "no_output": 24,
+      "multiple_completions": 2
+    },
+    "callbacks": {
+      "1": 20642,
+      "0": 11540,
+      "3": 14
+    },
+    "whole_pass_losses": [],
+    "whole_pass_gains": [],
+    "old_pass_callback_losses": [],
+    "changes": []
+  },
+  "harness_seconds": 243.9,
+  "harness_comparison": "q49 whole and every callback/completion; cumulative q50 JSON.parse/q51 spread/q52 for-in source",
+  "official_score": 1482,
+  "denominator": 3805,
+  "held": 0,
+  "unattempted": 275,
+  "static_scripted_crash_reused": "q28",
+  "current_pair_images_crash_not_measured": true,
+  "archives": {
+    "harness-all-raw": {
+      "sha256": "5c417eb488896982c992103268c8f4f8341a4fa65ee963eaef0de3a51e2abd0f",
+      "members": 1676,
+      "all_members_readback": true
+    },
+    "native-oracle-and-build-raw": {
+      "sha256": "328745eb3da2073f3d459a380e84211224bb2cf959f20d65808255e193bf3c1a",
+      "members": 134,
+      "all_members_readback": true
+    }
+  },
+  "main_integration": {
+    "source": "dd5843dd3",
+    "main_contains_source": true,
+    "no_master_in_source": true,
+    "source_paths": [
+      "plan/ws074/tests/host-proxy-read.c",
+      "plan/ws074/tests/proxy-read.js",
+      "userland/desktop/libbrowser/vm/access.c"
+    ],
+    "no_conflicts": true,
+    "source_parents": "dd5843dd3 9782a5d53"
+  },
+  "remaining": [
+    "general infinite Proxy prototype sequence nontermination/resource policy; finite repeated identity supported",
+    "uint32/int32 storage width/private excluded-array/newer JSON source-context/RawJSON",
+    "Species/newtarget/callable Proxy/primitive Set/outer instanceof/BoundFunction/call/construct/global Proxy/revocable/Reflect",
+    "immutable prototype/typed backing/p100/full target/WS acceptance",
+    "master.md not edited; shared projections pending Q1"
+  ]
+}

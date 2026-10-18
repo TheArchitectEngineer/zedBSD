@@ -1,0 +1,67 @@
+{
+  "shared_source_sha256": "08148f88b7ecaa68db9b153f250d84bae219857f6aa7220d61eb64f583545061",
+  "test_source_sha256": "3f413c8f7134a9d7ffcbf27f05ec815973be848d94f174c12e58bcda79d1ffc4",
+  "original_library_sha256": "954444f6daf0f8068d2fce513eac8e6a5d53189a910b9a5675e8d8e8a2808070",
+  "runs": [
+    {
+      "kind": "chrome",
+      "returncode": 0,
+      "callbacks": [
+        {
+          "name": "original interface validator yields missing Exposed rule",
+          "status": 0,
+          "message": ""
+        },
+        {
+          "name": "original namespace validator yields missing Exposed rule",
+          "status": 0,
+          "message": ""
+        },
+        {
+          "name": "validator rule detection does not mask intentional failure",
+          "status": 1,
+          "message": "assert_equals: intentional failure after original validator rule expected 0 but got 1"
+        }
+      ],
+      "ownership": false,
+      "command": [
+        "chromium",
+        "--headless",
+        "--no-sandbox",
+        "--disable-gpu",
+        "--user-data-dir=/tmp/ws074-q52-validator-1792334529329281590",
+        "--enable-logging=stderr",
+        "--v=0",
+        "--virtual-time-budget=5000",
+        "--dump-dom",
+        "file:///home/awe/zedBSD-claude1/build/ws074-20261018/q52/webidl-validator.html"
+      ]
+    },
+    {
+      "kind": "native",
+      "returncode": 0,
+      "callbacks": [
+        {
+          "name": "original interface validator yields missing Exposed rule",
+          "status": 0,
+          "message": ""
+        },
+        {
+          "name": "original namespace validator yields missing Exposed rule",
+          "status": 0,
+          "message": ""
+        },
+        {
+          "name": "validator rule detection does not mask intentional failure",
+          "status": 1,
+          "message": "assert_equals: intentional failure after original validator rule expected 0 but got 1"
+        }
+      ],
+      "ownership": true,
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q52/final/engine/host-proxy-read",
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q52/webidl-validator.js"
+      ]
+    }
+  ]
+}
