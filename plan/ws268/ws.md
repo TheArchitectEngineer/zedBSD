@@ -19,4 +19,4 @@
 | Phase | 目的 | 状態 |
 | --- | --- | --- |
 | [p001](phase001/phase.md) | 壊れの洗い出しと直し、build。任意で MAME の起動の試し | cleared（2026-10-19 Q1） |
-| p002 | 規約の全文の見直し | planned |
+| [p002](phase002/phase.md) | 規約の全文の見直し | in-progress（P2 実施済み、2026-10-19） |

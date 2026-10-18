@@ -57,6 +57,7 @@ kern_platform_init(
 	const uint64_t *initiator_object;
 	struct x68k_spc_bus bus;
 	struct kern_boot_device *device;
+	struct disk *disk;
 	unsigned initiator;
 	unsigned target;
 	size_t count;
@@ -100,7 +101,9 @@ kern_platform_init(
 
 	/* Publishes every attached target that fits the table. */
 	for (target = 0; target < 7U && count < capacity; target++) {
-		if (drv_x68k_spc_disk_target(target) == NULL)
+		/* Skips a target with no disk. */
+		disk = drv_x68k_spc_disk_target(target);
+		if (disk == NULL)
 			continue;
 
 		/* Describes one present SCSI target for the boot record. */
