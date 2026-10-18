@@ -1,0 +1,16 @@
+<!doctype html><body><script>
+var target = document.createElement("div");
+target.style.gridTemplateRows = "fit-content(5px) fit-content(20px)";
+document.body.appendChild(target);
+var expected = document.createElement("div");
+expected.style.gridTemplateRows = "fit-content(15px) max-content";
+document.body.appendChild(expected);
+console.log("animate", typeof Element.prototype.animate, "Animation", typeof Animation);
+console.log("underlying", getComputedStyle(target).gridTemplateRows);
+console.log("expected-endpoint", getComputedStyle(expected).gridTemplateRows);
+var style = document.createElement("style");
+style.textContent = "@keyframes example { from {grid-template-rows:fit-content(5px) fit-content(20px)} to {grid-template-rows:fit-content(15px) max-content} }";
+document.body.appendChild(style);
+target.style.cssText += ";animation-name:example;animation-duration:100s;animation-delay:-100s;animation-fill-mode:both;animation-play-state:paused";
+console.log("animation-endpoint", getComputedStyle(target).gridTemplateRows);
+</script>

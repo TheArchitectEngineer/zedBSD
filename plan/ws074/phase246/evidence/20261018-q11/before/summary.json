@@ -1,0 +1,44 @@
+{
+  "total": 502,
+  "before_whole": {
+    "pass": 247,
+    "fail": 255
+  },
+  "after_whole": {
+    "pass": 248,
+    "fail": 254
+  },
+  "new_pass": [
+    "/css/css-grid/grid-items/grid-item-min-auto-size-001.html"
+  ],
+  "whole_regressions": [],
+  "callbacks_before": {
+    "0": 6419,
+    "1": 4586
+  },
+  "callbacks_after": {
+    "0": 6421,
+    "1": 4584
+  },
+  "callback_improvements": [
+    [
+      "/css/css-grid/grid-items/grid-item-min-auto-size-001.html",
+      [
+        "Computed min-width/min-height of specified auto inside display:none which would otherwise have been a grid item.",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/grid-items/grid-item-min-auto-size-001.html",
+      [
+        "Computed min-width/min-height of specified auto with display:none which would otherwise have been a grid item.",
+        0
+      ]
+    ]
+  ],
+  "callback_regressions": [],
+  "missing": [],
+  "extra": [],
+  "name_order_changed": [],
+  "eligible_sha256": "5fa65ed37998a0958da75da5dc9a69f85bd26a05c2f64a118072c7527f56af23"
+}

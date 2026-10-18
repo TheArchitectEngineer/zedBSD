@@ -9,7 +9,11 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [ws074-q20261018-11](queue.md) active（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
+Queue: [ws074-q20261018-11](queue.md) finished（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
+
+Event ws074-p246-q11-uncleared-p248-added-20261018: [証拠](phase246/evidence/20261018-q11/README.md)。Grid whole248維持、74 callback改善/24後退でq11 uncleared。static227→228/後退0、独立22/22、DOM29/29、host/target warning0、Acid非増加。24はnative animation欠落、p248計画を追加。次は独立zero font/runner retention。
+
+Event ws074-p247-planned-20261018: [p247](phase247/phase.md)にzero fontのglyph advance/inkを後続候補として追加。p185のstrut clearanceは維持。q11とは別Queueで選定してから実装する。
 
 Event ws074-p246-computed-floor-design-correction-20261018: existing repeat/vertical consumerのfloorを保つため、computed_maximumのscalar copyでunfloored upperを保持する設計へ確定。cascade floor移動案は撤回しp221/p243/p244/p246に反映。
 
@@ -106,7 +110,7 @@ Event ws074-p217-q1188-partial-clear-20261014: [p217](phase217/phase.md) q1188-i
 Event ws074-p217-q1187-partial-clear-20261014: [p217](phase217/phase.md) q1187-i01で固定縦rl Grid直接横RTL absolute子row2/col1 top insetにstatic areaを適用。[証拠](phase217/evidence/20261014-q1187/README.md)。独立矩形Chromium一致、固定non-static007縦rl callback whole PASS、水平2 callback PASS、縦lrは4番目子でfile whole FAIL継続。旧WPT/host/Acid3差0維持。次は縦lr4番目子、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
 
 Event ws074-p217-q1186-partial-clear-20261014: [p217](phase217/phase.md) q1186-i01で固定縦lr/rl Grid直接横LTR absolute子へrow1/col2 static areaとjustify-center Yを適用。[証拠](phase217/evidence/20261014-q1186/README.md)。独立2矩形Chromium一致、固定non-static007縦2 callback先頭2子全PASS、lrは4番目子・rlは3番目子でfile whole FAIL継続。旧WPT/host/Acid3差0維持。次は縦rl Gridの3番目RTL横子、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
-Resume point: q10 p245 cleared、Grid/Flex min-auto各4/4で固定174 whole107→109・後退0。次はGrid intrinsic track keyword/実sizing。q09全Grid502、static227/529の基準を保持。全3,805/runner/target/p100未達。
+Resume point: q11 uncleared（Grid248 whole維持、74 callback改善/24 lossはnative animation欠落、p248計画）。static228/529、独立22/22等は保持。次はp247 zero fontとp189 runner retention。全3,805/runner/target/p100未達。
 <!-- awesome-plan-current:end -->
 
 Event ws074-p217-q1185-partial-clear-20261014: [p217](phase217/phase.md) q1185-i01で固定縦lr/rl Grid直接横LTR absolute子へrow1/col1 static areaとjustify-right Yを適用。[証拠](phase217/evidence/20261014-q1185/README.md)。独立2矩形Chromium一致、固定non-static007縦2 callback先頭子全PASS、2番目子でfile whole FAIL継続。旧WPT/host/Acid3差0維持。次は縦Grid2番目横子、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
@@ -672,7 +676,9 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p243](phase243/phase.md) | Grid used trackのresolved CSSOM | uncleared / q09-i02 primary partial cleared | p221のsolver、p189 q03 raw・p190 q06診断 |
 | [ws074-p244](phase244/phase.md) | 固定Grid行spanのoverflow | uncleared / q09-i01 partial cleared、general minimum等残り | p243 q07で露出したsolver不備 |
 | [ws074-p245](phase245/phase.md) | no-boxのauto minimum resolved value | cleared / q10 no-box own acceptance | p243/q08のGrid raw、actual box proof |
-| [ws074-p246](phase246/phase.md) | intrinsic track breadth/contribution | in-progress / q11 first horizontal partial | q09 minimum rule、q10 output |
+| [ws074-p246](phase246/phase.md) | intrinsic track breadth/contribution | uncleared / q11 24 animation callback loss | q09 minimum rule、q10 output |
+| [ws074-p247](phase247/phase.md) | zero font glyph advance/ink | planned / Queue未選定 | q11診断、p185 strut |
+| [ws074-p248](phase248/phase.md) | native Grid animation/transition | planning / Queue未選定 | p246 scalar output、native timing設計 |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 

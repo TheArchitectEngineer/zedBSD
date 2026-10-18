@@ -267,3 +267,5 @@ Event ws074-p189-q1102-partial-clear-20261014: [証拠](evidence/20261014-q1102/
 Event ws074-p189-q1105-partial-clear-20261014: [証拠](evidence/20261014-q1105/README.md)。固定Grid502件を同条件全再測定し103→110 PASS、399→392 FAIL、no_output0。7 whole FAIL→PASS、旧whole PASS後退0。subtestは127 FAIL→PASS・1 PASS→FAIL（既存whole FAILのfr/gutter `.grid 17` 幅期待200/実120）。全502 ID/hash/checkpoint/gzip raw一致。q1105部分cleared、p189 whole1,783/p173全3,805件100%未達。browser/runner/WPT/ABI/Master/Acid無変更、共有投影/GitHub publication保留。
 
 Design note ws074-p242-proposed-20261018: q03の途中で、anchor/@scopeのcleanupが`replaceChildren`未定義で後続subtestをNOTRUNにしている事実を確認。[p242](../phase242/phase.md)を後続のDOM一般機能の候補として追加。q03の測定とp189の受け入れは変更せず、baselineには現行binaryのharness_errorをそのまま記録する。
+
+Event ws074-census-retention-find-20261018: q11 auditでcensus gzip後にraw JSONをunlinkする既存処理を確認。q11分はgzipから同じbytesへ復元して保持。次の有限Queueでunlinkを外し、actual one-ID report/raw/gzip equalityを確認してから再利用する。現在の測定値/圧縮raw/historyは変更しない。

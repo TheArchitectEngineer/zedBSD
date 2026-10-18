@@ -1,0 +1,22 @@
+min-fr 70.2969px 129.703px / 70.296875
+max-fr 70.2969px 129.703px / 70.296875
+auto-fr 70.2969px 129.703px / 70.296875
+min-no-stretch 200px / 200
+max-no-stretch 200px / 200
+auto-stretch 200px / 200
+bounded-max-no-stretch 200px / 200
+preferred 55px 145px / 55
+minimum 70.2969px 129.703px / 70.296875
+maximum 40px 160px / 40
+minimum-wins 40px 160px / 40
+border-box 61px 139px / 55
+frame 90.2969px 109.703px / 84.296875
+repeat-one 70.2969px 0px 129.703px / 70.296875
+repeat-two 70.2969px 30.2969px 99.4062px
+implicit 70.2969px / 70.296875
+live-before 70.2969px 129.703px / 70.296875
+live-after 80px 120px
+computed-keywords auto auto auto / auto auto auto / auto
+computed-minmax 1fr auto auto / 1fr auto auto / auto
+computed-floor 20px 2fr / 20px 2fr / auto
+computed-percent 50% auto / 50% auto / auto

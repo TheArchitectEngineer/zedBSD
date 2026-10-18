@@ -1,0 +1,763 @@
+{
+  "total": 502,
+  "before_whole": {
+    "pass": 248,
+    "fail": 254
+  },
+  "after_whole": {
+    "pass": 248,
+    "fail": 254
+  },
+  "new_pass": [],
+  "whole_regressions": [],
+  "callbacks_before": {
+    "0": 6421,
+    "1": 4584
+  },
+  "callbacks_after": {
+    "0": 6471,
+    "1": 4534
+  },
+  "callback_improvements": [
+    [
+      "/css/css-grid/grid-definition/grid-inline-support-flexible-lengths-001.html",
+      [
+        "'grid' with: grid-template-columns: min-content 1fr; and grid-template-rows: min-content 1fr;",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/grid-definition/grid-inline-support-grid-template-columns-rows-001.html",
+      [
+        "'grid' with: grid-template-columns: min-content; and grid-template-rows: min-content;",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/grid-definition/grid-inline-support-grid-template-columns-rows-001.html",
+      [
+        "'grid' with: grid-template-columns: min-content 1fr calc(20px + 10%) minmax(30em, 50em); and grid-template-rows: min-content 1fr  calc(10% + 40px) minmax(3em, 5em);",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/grid-definition/grid-inline-support-repeat-001.html",
+      [
+        "'grid' with: grid-template-columns: repeat(2, min-content 50px); and grid-template-rows: repeat(2, min-content 50px);",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/grid-definition/grid-support-flexible-lengths-001.html",
+      [
+        "'grid' with: grid-template-columns: min-content 1fr; and grid-template-rows: min-content 1fr;",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/grid-definition/grid-support-grid-template-columns-rows-001.html",
+      [
+        "'grid' with: grid-template-columns: min-content; and grid-template-rows: min-content;",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/grid-definition/grid-support-grid-template-columns-rows-001.html",
+      [
+        "'grid' with: grid-template-columns: min-content 1fr calc(20px + 10%) minmax(30em, 50em); and grid-template-rows: min-content 1fr  calc(10% + 40px) minmax(3em, 5em);",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/grid-definition/grid-support-repeat-001.html",
+      [
+        "'grid' with: grid-template-columns: repeat(2, min-content 50px); and grid-template-rows: repeat(2, min-content 50px);",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/grid-layout-properties.html",
+      [
+        "grid-template-columns.<track-size>.<track-breadth>.min-content",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/grid-layout-properties.html",
+      [
+        "grid-auto-columns.<track-size>.<track-breadth>.min-content",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/grid-layout-properties.html",
+      [
+        "grid-auto-columns.<track-size>.<track-breadth>.max-content",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/grid-layout-properties.html",
+      [
+        "grid-auto-columns.<track-size>.<track-breadth>.minmax()",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/grid-layout-properties.html",
+      [
+        "grid-auto-rows.<track-size>.<track-breadth>.min-content",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/grid-layout-properties.html",
+      [
+        "grid-auto-rows.<track-size>.<track-breadth>.max-content",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/grid-layout-properties.html",
+      [
+        "grid-auto-rows.<track-size>.<track-breadth>.minmax()",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-columns-computed.html",
+      [
+        "Property grid-auto-columns value 'min-content'",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-columns-computed.html",
+      [
+        "Property grid-auto-columns value 'max-content'",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-columns-computed.html",
+      [
+        "Property grid-auto-columns value 'minmax(1px, 5fr)'",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-columns-computed.html",
+      [
+        "Property grid-auto-columns value 'minmax(calc(10px + 0.5em), max-content)'",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-columns-computed.html",
+      [
+        "Property grid-auto-columns value 'minmax(calc(10px - 0.5em), max-content)'",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-columns-computed.html",
+      [
+        "Property grid-auto-columns value 'minmax(4%, auto)'",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-columns-computed.html",
+      [
+        "Property grid-auto-columns value 'minmax(min-content, calc(10px + 0.5em))'",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-columns-computed.html",
+      [
+        "Property grid-auto-columns value 'minmax(auto, 4%)'",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-columns-computed.html",
+      [
+        "Property grid-auto-columns value 'minmax(auto, 0%)'",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-columns-valid.html",
+      [
+        "e.style['grid-auto-columns'] = \"min-content\" should set the property value",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-columns-valid.html",
+      [
+        "e.style['grid-auto-columns'] = \"max-content\" should set the property value",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-columns-valid.html",
+      [
+        "e.style['grid-auto-columns'] = \"minmax(1px, 5fr)\" should set the property value",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-columns-valid.html",
+      [
+        "e.style['grid-auto-columns'] = \"minmax(2em, min-content)\" should set the property value",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-columns-valid.html",
+      [
+        "e.style['grid-auto-columns'] = \"minmax(calc(2em + 3ex), max-content)\" should set the property value",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-columns-valid.html",
+      [
+        "e.style['grid-auto-columns'] = \"minmax(4%, auto)\" should set the property value",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-columns-valid.html",
+      [
+        "e.style['grid-auto-columns'] = \"minmax(5vmin, 1px)\" should set the property value",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-columns-valid.html",
+      [
+        "e.style['grid-auto-columns'] = \"minmax(min-content, 2em)\" should set the property value",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-columns-valid.html",
+      [
+        "e.style['grid-auto-columns'] = \"minmax(max-content, calc(2em + 3ex))\" should set the property value",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-columns-valid.html",
+      [
+        "e.style['grid-auto-columns'] = \"minmax(auto, 4%)\" should set the property value",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-columns-valid.html",
+      [
+        "e.style['grid-auto-columns'] = \"fit-content(1px)\" should set the property value",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-columns-valid.html",
+      [
+        "e.style['grid-auto-columns'] = \"fit-content(2em)\" should set the property value",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-columns-valid.html",
+      [
+        "e.style['grid-auto-columns'] = \"fit-content(calc(2em + 3ex))\" should set the property value",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-columns-valid.html",
+      [
+        "e.style['grid-auto-columns'] = \"fit-content(4%)\" should set the property value",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-columns-valid.html",
+      [
+        "e.style['grid-auto-columns'] = \"minmax(auto, 0%)\" should set the property value",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-columns-valid.html",
+      [
+        "e.style['grid-auto-columns'] = \"fit-content(0px)\" should set the property value",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-columns-valid.html",
+      [
+        "e.style['grid-auto-columns'] = \"fit-content(1px) minmax(2px, 3px) 4px\" should set the property value",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-rows-computed.html",
+      [
+        "Property grid-auto-rows value 'min-content'",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-rows-computed.html",
+      [
+        "Property grid-auto-rows value 'max-content'",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-rows-computed.html",
+      [
+        "Property grid-auto-rows value 'minmax(1px, 5fr)'",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-rows-computed.html",
+      [
+        "Property grid-auto-rows value 'minmax(calc(10px + 0.5em), max-content)'",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-rows-computed.html",
+      [
+        "Property grid-auto-rows value 'minmax(calc(10px - 0.5em), max-content)'",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-rows-computed.html",
+      [
+        "Property grid-auto-rows value 'minmax(4%, auto)'",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-rows-computed.html",
+      [
+        "Property grid-auto-rows value 'minmax(min-content, calc(10px + 0.5em))'",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-rows-computed.html",
+      [
+        "Property grid-auto-rows value 'minmax(auto, 4%)'",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-rows-computed.html",
+      [
+        "Property grid-auto-rows value 'minmax(auto, 0%)'",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-rows-valid.html",
+      [
+        "e.style['grid-auto-rows'] = \"min-content\" should set the property value",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-rows-valid.html",
+      [
+        "e.style['grid-auto-rows'] = \"max-content\" should set the property value",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-rows-valid.html",
+      [
+        "e.style['grid-auto-rows'] = \"minmax(1px, 5fr)\" should set the property value",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-rows-valid.html",
+      [
+        "e.style['grid-auto-rows'] = \"minmax(2em, min-content)\" should set the property value",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-rows-valid.html",
+      [
+        "e.style['grid-auto-rows'] = \"minmax(calc(2em + 3ex), max-content)\" should set the property value",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-rows-valid.html",
+      [
+        "e.style['grid-auto-rows'] = \"minmax(4%, auto)\" should set the property value",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-rows-valid.html",
+      [
+        "e.style['grid-auto-rows'] = \"minmax(5vmin, 1px)\" should set the property value",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-rows-valid.html",
+      [
+        "e.style['grid-auto-rows'] = \"minmax(min-content, 2em)\" should set the property value",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-rows-valid.html",
+      [
+        "e.style['grid-auto-rows'] = \"minmax(max-content, calc(2em + 3ex))\" should set the property value",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-rows-valid.html",
+      [
+        "e.style['grid-auto-rows'] = \"minmax(auto, 4%)\" should set the property value",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-rows-valid.html",
+      [
+        "e.style['grid-auto-rows'] = \"fit-content(1px)\" should set the property value",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-rows-valid.html",
+      [
+        "e.style['grid-auto-rows'] = \"fit-content(2em)\" should set the property value",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-rows-valid.html",
+      [
+        "e.style['grid-auto-rows'] = \"fit-content(calc(2em + 3ex))\" should set the property value",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-rows-valid.html",
+      [
+        "e.style['grid-auto-rows'] = \"fit-content(4%)\" should set the property value",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-rows-valid.html",
+      [
+        "e.style['grid-auto-rows'] = \"minmax(auto, 0%)\" should set the property value",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-rows-valid.html",
+      [
+        "e.style['grid-auto-rows'] = \"fit-content(0px)\" should set the property value",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-auto-rows-valid.html",
+      [
+        "e.style['grid-auto-rows'] = \"fit-content(1px) minmax(2px, 3px) 4px\" should set the property value",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-content-sized-columns-resolution.html",
+      [
+        "Element 'gridMaxContentAndMaxContentFixed' grid-template-columns value computes to '55px 35px'",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-content-sized-columns-resolution.html",
+      [
+        "Element 'gridMaxContentAndMinContentUnsorted' grid-template-columns value computes to '0px 70px'",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-content-sized-columns-resolution.html",
+      [
+        "Element 'gridMaxContentAndMaxContentFixedAndMaxContent' grid-template-columns value computes to '70px 20px 50px'",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-content-sized-columns-resolution.html",
+      [
+        "Element 'gridAutoAndMinContentFixedAndMinContent' grid-template-columns value computes to '55px 30px 65px'",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-template-columns-computed-withcontent.html",
+      [
+        "Property grid-template-columns value 'min-content'",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-template-columns-computed-withcontent.html",
+      [
+        "Property grid-template-columns value 'max-content'",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/parsing/grid-template-columns-computed-withcontent.html",
+      [
+        "Property grid-template-columns value 'min-content repeat(5, minmax(10px, auto))'",
+        0
+      ]
+    ]
+  ],
+  "callback_regressions": [
+    [
+      "/css/css-grid/animation/grid-template-columns-composition.html",
+      [
+        "Compositing CSS Animations: property <grid-template-columns> underlying [fit-content(5px) fit-content(20px)] from add [fit-content(5px) fit-content(20px)] to add [fit-content(15px) max-content] at (0.5) should be [fit-content(15px) max-content]",
+        0
+      ],
+      "",
+      "assert_equals: expected \"auto max - content \" but got \"auto auto \""
+    ],
+    [
+      "/css/css-grid/animation/grid-template-columns-composition.html",
+      [
+        "Compositing CSS Animations: property <grid-template-columns> underlying [fit-content(5px) fit-content(20px)] from add [fit-content(5px) fit-content(20px)] to add [fit-content(15px) max-content] at (1) should be [fit-content(20px) max-content]",
+        0
+      ],
+      "",
+      "assert_equals: expected \"auto max - content \" but got \"auto auto \""
+    ],
+    [
+      "/css/css-grid/animation/grid-template-columns-composition.html",
+      [
+        "Compositing CSS Animations: property <grid-template-columns> underlying [fit-content(5px) fit-content(20px)] from add [fit-content(5px) fit-content(20px)] to add [fit-content(15px) max-content] at (1.5) should be [fit-content(25px) max-content]",
+        0
+      ],
+      "",
+      "assert_equals: expected \"auto max - content \" but got \"auto auto \""
+    ],
+    [
+      "/css/css-grid/animation/grid-template-columns-composition.html",
+      [
+        "Compositing Web Animations: property <grid-template-columns> underlying [fit-content(5px) fit-content(20px)] from add [fit-content(5px) fit-content(20px)] to add [fit-content(15px) max-content] at (0.5) should be [fit-content(15px) max-content]",
+        0
+      ],
+      "",
+      "assert_equals: expected \"auto max - content \" but got \"auto auto \""
+    ],
+    [
+      "/css/css-grid/animation/grid-template-columns-composition.html",
+      [
+        "Compositing Web Animations: property <grid-template-columns> underlying [fit-content(5px) fit-content(20px)] from add [fit-content(5px) fit-content(20px)] to add [fit-content(15px) max-content] at (1) should be [fit-content(20px) max-content]",
+        0
+      ],
+      "",
+      "assert_equals: expected \"auto max - content \" but got \"auto auto \""
+    ],
+    [
+      "/css/css-grid/animation/grid-template-columns-composition.html",
+      [
+        "Compositing Web Animations: property <grid-template-columns> underlying [fit-content(5px) fit-content(20px)] from add [fit-content(5px) fit-content(20px)] to add [fit-content(15px) max-content] at (1.5) should be [fit-content(25px) max-content]",
+        0
+      ],
+      "",
+      "assert_equals: expected \"auto max - content \" but got \"auto auto \""
+    ],
+    [
+      "/css/css-grid/animation/grid-template-columns-interpolation.html",
+      [
+        "CSS Transitions: property <grid-template-columns> from [fit-content(10px) fit-content(20px)] to [fit-content(20px) max-content] at (-1) should be [fit-content(0px) fit-content(20px)]",
+        0
+      ],
+      "",
+      "assert_equals: expected \"auto auto \" but got \"auto max - content \""
+    ],
+    [
+      "/css/css-grid/animation/grid-template-columns-interpolation.html",
+      [
+        "CSS Transitions: property <grid-template-columns> from [fit-content(10px) fit-content(20px)] to [fit-content(20px) max-content] at (0) should be [fit-content(10px) fit-content(20px)]",
+        0
+      ],
+      "",
+      "assert_equals: expected \"auto auto \" but got \"auto max - content \""
+    ],
+    [
+      "/css/css-grid/animation/grid-template-columns-interpolation.html",
+      [
+        "CSS Transitions: property <grid-template-columns> from [fit-content(10px) fit-content(20px)] to [fit-content(20px) max-content] at (0.4) should be [fit-content(14px) fit-content(20px)]",
+        0
+      ],
+      "",
+      "assert_equals: expected \"auto auto \" but got \"auto max - content \""
+    ],
+    [
+      "/css/css-grid/animation/grid-template-columns-interpolation.html",
+      [
+        "CSS Transitions with transition: all: property <grid-template-columns> from [fit-content(10px) fit-content(20px)] to [fit-content(20px) max-content] at (-1) should be [fit-content(0px) fit-content(20px)]",
+        0
+      ],
+      "",
+      "assert_equals: expected \"auto auto \" but got \"auto max - content \""
+    ],
+    [
+      "/css/css-grid/animation/grid-template-columns-interpolation.html",
+      [
+        "CSS Transitions with transition: all: property <grid-template-columns> from [fit-content(10px) fit-content(20px)] to [fit-content(20px) max-content] at (0) should be [fit-content(10px) fit-content(20px)]",
+        0
+      ],
+      "",
+      "assert_equals: expected \"auto auto \" but got \"auto max - content \""
+    ],
+    [
+      "/css/css-grid/animation/grid-template-columns-interpolation.html",
+      [
+        "CSS Transitions with transition: all: property <grid-template-columns> from [fit-content(10px) fit-content(20px)] to [fit-content(20px) max-content] at (0.4) should be [fit-content(14px) fit-content(20px)]",
+        0
+      ],
+      "",
+      "assert_equals: expected \"auto auto \" but got \"auto max - content \""
+    ],
+    [
+      "/css/css-grid/animation/grid-template-rows-composition.html",
+      [
+        "Compositing CSS Animations: property <grid-template-rows> underlying [fit-content(5px) fit-content(20px)] from add [fit-content(5px) fit-content(20px)] to add [fit-content(15px) max-content] at (0.5) should be [fit-content(15px) max-content]",
+        0
+      ],
+      "",
+      "assert_equals: expected \"auto max - content \" but got \"auto auto \""
+    ],
+    [
+      "/css/css-grid/animation/grid-template-rows-composition.html",
+      [
+        "Compositing CSS Animations: property <grid-template-rows> underlying [fit-content(5px) fit-content(20px)] from add [fit-content(5px) fit-content(20px)] to add [fit-content(15px) max-content] at (1) should be [fit-content(20px) max-content]",
+        0
+      ],
+      "",
+      "assert_equals: expected \"auto max - content \" but got \"auto auto \""
+    ],
+    [
+      "/css/css-grid/animation/grid-template-rows-composition.html",
+      [
+        "Compositing CSS Animations: property <grid-template-rows> underlying [fit-content(5px) fit-content(20px)] from add [fit-content(5px) fit-content(20px)] to add [fit-content(15px) max-content] at (1.5) should be [fit-content(25px) max-content]",
+        0
+      ],
+      "",
+      "assert_equals: expected \"auto max - content \" but got \"auto auto \""
+    ],
+    [
+      "/css/css-grid/animation/grid-template-rows-composition.html",
+      [
+        "Compositing Web Animations: property <grid-template-rows> underlying [fit-content(5px) fit-content(20px)] from add [fit-content(5px) fit-content(20px)] to add [fit-content(15px) max-content] at (0.5) should be [fit-content(15px) max-content]",
+        0
+      ],
+      "",
+      "assert_equals: expected \"auto max - content \" but got \"auto auto \""
+    ],
+    [
+      "/css/css-grid/animation/grid-template-rows-composition.html",
+      [
+        "Compositing Web Animations: property <grid-template-rows> underlying [fit-content(5px) fit-content(20px)] from add [fit-content(5px) fit-content(20px)] to add [fit-content(15px) max-content] at (1) should be [fit-content(20px) max-content]",
+        0
+      ],
+      "",
+      "assert_equals: expected \"auto max - content \" but got \"auto auto \""
+    ],
+    [
+      "/css/css-grid/animation/grid-template-rows-composition.html",
+      [
+        "Compositing Web Animations: property <grid-template-rows> underlying [fit-content(5px) fit-content(20px)] from add [fit-content(5px) fit-content(20px)] to add [fit-content(15px) max-content] at (1.5) should be [fit-content(25px) max-content]",
+        0
+      ],
+      "",
+      "assert_equals: expected \"auto max - content \" but got \"auto auto \""
+    ],
+    [
+      "/css/css-grid/animation/grid-template-rows-interpolation.html",
+      [
+        "CSS Transitions: property <grid-template-rows> from [fit-content(10px) fit-content(20px)] to [fit-content(20px) max-content] at (-1) should be [fit-content(0px) fit-content(20px)]",
+        0
+      ],
+      "",
+      "assert_equals: expected \"auto auto \" but got \"auto max - content \""
+    ],
+    [
+      "/css/css-grid/animation/grid-template-rows-interpolation.html",
+      [
+        "CSS Transitions: property <grid-template-rows> from [fit-content(10px) fit-content(20px)] to [fit-content(20px) max-content] at (0) should be [fit-content(10px) fit-content(20px)]",
+        0
+      ],
+      "",
+      "assert_equals: expected \"auto auto \" but got \"auto max - content \""
+    ],
+    [
+      "/css/css-grid/animation/grid-template-rows-interpolation.html",
+      [
+        "CSS Transitions: property <grid-template-rows> from [fit-content(10px) fit-content(20px)] to [fit-content(20px) max-content] at (0.4) should be [fit-content(14px) fit-content(20px)]",
+        0
+      ],
+      "",
+      "assert_equals: expected \"auto auto \" but got \"auto max - content \""
+    ],
+    [
+      "/css/css-grid/animation/grid-template-rows-interpolation.html",
+      [
+        "CSS Transitions with transition: all: property <grid-template-rows> from [fit-content(10px) fit-content(20px)] to [fit-content(20px) max-content] at (-1) should be [fit-content(0px) fit-content(20px)]",
+        0
+      ],
+      "",
+      "assert_equals: expected \"auto auto \" but got \"auto max - content \""
+    ],
+    [
+      "/css/css-grid/animation/grid-template-rows-interpolation.html",
+      [
+        "CSS Transitions with transition: all: property <grid-template-rows> from [fit-content(10px) fit-content(20px)] to [fit-content(20px) max-content] at (0) should be [fit-content(10px) fit-content(20px)]",
+        0
+      ],
+      "",
+      "assert_equals: expected \"auto auto \" but got \"auto max - content \""
+    ],
+    [
+      "/css/css-grid/animation/grid-template-rows-interpolation.html",
+      [
+        "CSS Transitions with transition: all: property <grid-template-rows> from [fit-content(10px) fit-content(20px)] to [fit-content(20px) max-content] at (0.4) should be [fit-content(14px) fit-content(20px)]",
+        0
+      ],
+      "",
+      "assert_equals: expected \"auto auto \" but got \"auto max - content \""
+    ]
+  ],
+  "missing": [],
+  "extra": [],
+  "name_order_changed": [],
+  "eligible_sha256": "5fa65ed37998a0958da75da5dc9a69f85bd26a05c2f64a118072c7527f56af23"
+}

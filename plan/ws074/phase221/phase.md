@@ -133,3 +133,5 @@ Event ws074-p246-interface-redesign-20261018: [p246](../phase246/phase.md)がpri
 Event ws074-p246-q11-auto-parser-20261018: [p246](../phase246/phase.md)のq11はgrid-auto intrinsic/minmaxの早期拒否を除き既存共通track-size parserへ統一する範囲に改訂。新metadataとcomputed fallbackをimplicit cycleにも伝え、全502/static529/独立例で検証する。repeat/line-nameとfit-content sizing等whole残りは維持。
 
 Event ws074-p246-computed-floor-design-correction-20261018: repeat/verticalの既存consumerもclamped sizeを読むため、先のfloor移動案をsource生成中に見直した。既存cascade floorを維持し、private css_track.computed_maximumへunfloored upper lengthをcopyしてcomputed writerがexplicit length minimumのときだけ読む。pointer/公開ABIは不変、repeatやverticalの未選定算法は変更しない。先の移動設計はsuperseded、証拠/旧historyは残す。
+
+Event ws074-p246-q11-uncleared-20261018: [証拠](../phase246/evidence/20261018-q11/README.md)。新scalar/computed outputでGrid whole248維持、74 callback改善/24後退。static227→228/後退0。animation欠落をserializerが露出したためq11 uncleared、p248 native設計へ。値の区別を捨ててfalse PASSへ戻さず、general/child/vertical/names等の既存whole残りは保持。

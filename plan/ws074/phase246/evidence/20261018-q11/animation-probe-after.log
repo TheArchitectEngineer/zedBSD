@@ -1,0 +1,4 @@
+animate undefined Animation undefined
+underlying auto auto
+expected-endpoint auto max-content
+animation-endpoint auto auto

@@ -1,0 +1,22 @@
+min-fr 70px 130px / 70
+max-fr 70px 130px / 70
+auto-fr 70px 130px / 70
+min-no-stretch 200px / 200
+max-no-stretch 200px / 200
+auto-stretch 200px / 200
+bounded-max-no-stretch 200px / 200
+preferred 55px 145px / 55
+minimum 70px 130px / 70
+maximum 40px 160px / 40
+minimum-wins 40px 160px / 40
+border-box 61px 139px / 55
+frame 90px 110px / 84
+repeat-one 70px 0px 130px / 70
+repeat-two 70px 30px 100px
+implicit 70px / 70
+live-before 70px 130px / 70
+live-after 80px 120px
+computed-keywords auto auto auto / auto auto auto / auto
+computed-minmax 1fr auto auto / 1fr auto auto / auto
+computed-floor 20px 2fr / 20px 2fr / auto
+computed-percent 50% auto / 50% auto / auto

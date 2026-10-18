@@ -1,0 +1,14 @@
+{
+  "before": {
+    "pass": 227,
+    "fail": 302
+  },
+  "after": {
+    "fail": 301,
+    "pass": 228
+  },
+  "new_pass": [
+    "css/css-grid/grid-items/table-with-infinite-max-intrinsic-width.html"
+  ],
+  "regressions": []
+}

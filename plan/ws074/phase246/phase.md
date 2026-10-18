@@ -2,7 +2,7 @@
 
 # ws074-p246: Grid intrinsic track breadthの保持とcontribution
 
-Status: in-progress（q11 first horizontal partial）
+Status: uncleared（q11: whole維持・74 callback改善/24後退、native animation未実装）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
@@ -33,3 +33,5 @@ Event ws074-p246-computed-floor-design-20261018: minmax(20px,10px)のcomputed up
 Event ws074-p246-q11-scope-reconciled-20261018: 独立例でgrid-autoだけがintrinsic keyword/minmaxを共通parserの前に拒否していると確認。ユーザー自走契約の一般CSS修正権限でq11を、grid-autoのtrack-size grammarを既存values_one_trackへ統一する範囲に改訂した。repeat/line names/new template grammarは不可、fit-contentの既存自動sizingはwhole残り。初期scope snapshot SHA256 260da4c9f31a3d0f4efc7d3f8e6e055db767fe5d16bb58b487fe3c73ebd681eb をevidenceへ保存し、90分timebox/旧PASS非悪化等のcriteriaは維持。新scopeを保存した後にsourceを変更する。
 
 Event ws074-p246-computed-floor-design-correction-20261018: repeat/verticalの既存consumerもclamped sizeを読むため、先のfloor移動案をsource生成中に見直した。既存cascade floorを維持し、private css_track.computed_maximumへunfloored upper lengthをcopyしてcomputed writerがexplicit length minimumのときだけ読む。pointer/公開ABIは不変、repeatやverticalの未選定算法は変更しない。先の移動設計はsuperseded、証拠/旧historyは残す。
+
+Event ws074-p246-q11-uncleared-20261018: [証拠](evidence/20261018-q11/README.md)。独立22/22、Grid whole248維持、74 callback改善/24後退でattempt uncleared。static227→228/後退0、DOM29/29、host/target warning0、Acid非増加。24は以前のlossy serializationが隠したanimation欠落。p248にnative timing/track interpolation計画を追加し、その実装verified output後に新attemptで再開する。一般intrinsic/fit/name等whole残りとq11 exact criterion/historyは維持。共有投影pending。

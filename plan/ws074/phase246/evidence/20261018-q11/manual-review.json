@@ -1,0 +1,48 @@
+{
+  "source_sha256": {
+    "css/css.h": "cf1faf49499bc652fb981debddd0173b30a25ce0b7daf092ac9ee5915fc8a963",
+    "css/internal.h": "aeb0da6ce9d41e2529405a349eb6ea9d5baa320a9121e62e656cc8b2b990ec44",
+    "css/values.c": "f1e874e27d11fbcda4e1091fcdeab097f18557355110c2f5bf2558a2cbc06f4a",
+    "css/cascade.c": "a81f3446da919c0bbd85ef3c919be641a88b54702a29e742e2e732041a013914",
+    "layout/grid.c": "dd5cd5bfd5d5572d0e7aaec75665babb6bf80a32a542f85f942565519f6b6dd7",
+    "bind/computed.c": "c67d9ff53c643239ea6e1bfc9a8a7feea701a058d727fc53f5dda5326433605a"
+  },
+  "binary_sha256": {
+    "browser": "25a66385edb7811c04e5e04fddd6bf3060ef2883f26d2781adbecf9d87debc02",
+    "libbrowser.so": "2c071be6973ebc17a05175211f096c3da3e9d547acfff0265993d69a4770c6ad"
+  },
+  "full_standard": "plan/coding-style.md + browser-component.md + guardrail",
+  "review": [
+    "new scalar metadata initialized by memset, copied by cascade/inheritance/repeat, requires no GC edges",
+    "computed_maximum is copied before legacy floor; all native consumers retain the previous normalized size",
+    "computed minmax writes bounds independently; automatic lower bound with fr keeps canonical bare fr",
+    "implicit cycle uses existing one-track parser; repeat/named syntax still rejected; fit-content sizing remains incomplete",
+    "non-replaced horizontal plain min-content uses existing intrinsic measurement, definite bounds, box sizing and 64-bit margin accumulation",
+    "non-eligible spanning/vertical/row/replaced contributions preserve their previous paths",
+    "native layout/child ownership and public browser ABI/Wayland boundary unchanged",
+    "all management references removed from touched engine files",
+    "ANSI leading declarations, semantic paragraphs, multiline definitions and forward declarations checked",
+    "clang-format19 applied to changed functions; complete changed-function automated candidate set empty"
+  ],
+  "style_candidates": {
+    "before": 341,
+    "after": 330
+  },
+  "changed_function_candidates": [],
+  "independent": "6/22 before -> 22/22 Chromium153 after, adjacent atomic boxes avoid font-size-zero whitespace discrepancy",
+  "warnings": {
+    "host-build-final2.log": {
+      "warnings": 0,
+      "errors": 0
+    },
+    "target-compile.log": {
+      "warnings": 0,
+      "errors": 0
+    }
+  },
+  "limits": [
+    "general intrinsic span/row/vertical/replaced sizing",
+    "fit-content bounds and line names",
+    "target production link/runtime and p100 full WS source review"
+  ]
+}
