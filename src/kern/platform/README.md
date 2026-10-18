@@ -1,7 +1,8 @@
 # Kernel platform ownership
 
 This directory contains exactly one C translation unit for each supported
-platform: `pcat.c`, `pc98.c`, `rpi4.c`, `sun4u.c`, and `x68k.c`.  The PC/AT
+platform: `pcat.c`, `pc98.c`, `rpi4.c`, `riscv-virt.c`, `sun4u.c`, and
+`x68k.c`.  The PC/AT
 translation unit serves both i386 PC/AT and amd64.
 
 Each file independently defines `kern_platform_init()` and the complete

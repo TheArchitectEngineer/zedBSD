@@ -38,6 +38,7 @@
 #define EM_SPARCV9	43
 #define EM_X86_64	62
 #define EM_AARCH64	183
+#define EM_RISCV	243
 #define PT_NULL		0
 #define PT_LOAD		1
 #define PT_DYNAMIC	2

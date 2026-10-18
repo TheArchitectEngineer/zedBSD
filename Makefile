@@ -70,7 +70,8 @@ ZEDBSD_PLATFORM_DIR := $(strip \
 	$(if $(filter i386,$(ZEDBSD_PLATFORM)),pcat,\
 	$(if $(filter rpi4,$(ZEDBSD_PLATFORM)),arm64,\
 	$(if $(filter sun4u,$(ZEDBSD_PLATFORM)),sparcv9,\
-	$(ZEDBSD_PLATFORM)))))
+	$(if $(filter riscv64-virt,$(ZEDBSD_PLATFORM)),riscv64,\
+	$(ZEDBSD_PLATFORM))))))
 PLATFORM_MAKEFILE := platform/$(ZEDBSD_PLATFORM_DIR)/Makefile
 ifeq ($(wildcard $(PLATFORM_MAKEFILE)),)
 ifneq ($(strip $(ZEDBSD_PLATFORM)),)
@@ -78,6 +79,10 @@ $(error Unsupported ZEDBSD_PLATFORM '$(ZEDBSD_PLATFORM)' in config.mk)
 endif
 endif
 BUILD := build/$(ZEDBSD_PLATFORM_DIR)
+# The riscv64 boards share one platform directory but not their build trees.
+ifeq ($(ZEDBSD_PLATFORM_DIR),riscv64)
+BUILD := build/$(ZEDBSD_PLATFORM)
+endif
 
 # Maintained target artifacts are built only by the project-owned LLVM
 # installation. HOSTCC/HOSTCXX remain independent bootstrap compilers for
@@ -92,6 +97,9 @@ ZEDBSD_TARGET_SYSROOT := $(abspath build/i386/sysroot)
 else ifeq ($(ZEDBSD_ARCHITECTURE),arm64)
 ZEDBSD_TARGET_TRIPLE := aarch64-unknown-zedbsd
 ZEDBSD_TARGET_SYSROOT := $(abspath build/arm64/sysroot)
+else ifeq ($(ZEDBSD_ARCHITECTURE),riscv64)
+ZEDBSD_TARGET_TRIPLE := riscv64-unknown-zedbsd
+ZEDBSD_TARGET_SYSROOT := $(abspath build/riscv64/sysroot)
 endif
 ifneq ($(strip $(ZEDBSD_TARGET_TRIPLE)),)
 ZEDBSD_TARGET_CLANG := $(ZEDBSD_TARGET_LLVM_BIN)/clang
@@ -150,12 +158,14 @@ ZEDBSD_VARIANTS_i386_pcat := default
 ZEDBSD_VARIANTS_amd64_pcat := native hybrid uefi bios
 ZEDBSD_VARIANTS_i386_pc98 := default
 ZEDBSD_VARIANTS_arm64_rpi4 := default
+ZEDBSD_VARIANTS_riscv64_virt := default
 ZEDBSD_VARIANTS_sparcv9_sun4u := default
 ZEDBSD_VARIANTS_m68k_x68k := default
 ZEDBSD_PLATFORM_TARGET_i386 := i386_pcat
 ZEDBSD_PLATFORM_TARGET_amd64 := amd64_pcat
 ZEDBSD_PLATFORM_TARGET_pc98 := i386_pc98
 ZEDBSD_PLATFORM_TARGET_rpi4 := arm64_rpi4
+ZEDBSD_PLATFORM_TARGET_riscv64-virt := riscv64_virt
 ZEDBSD_PLATFORM_TARGET_sun4u := sparcv9_sun4u
 ZEDBSD_PLATFORM_TARGET_x68k := m68k_x68k
 ZEDBSD_TARGET_VARIANT_KEY := $(ZEDBSD_ARCHITECTURE)_$(ZEDBSD_BOARD)
@@ -698,6 +708,8 @@ ifeq ($(ZEDBSD_ARCHITECTURE),amd64)
 ASFLAGS := -m64 -c
 else ifeq ($(ZEDBSD_ARCHITECTURE),arm64)
 ASFLAGS := -c
+else ifeq ($(ZEDBSD_ARCHITECTURE),riscv64)
+ASFLAGS := -c
 else
 ASFLAGS := -m32 -c
 endif
@@ -715,6 +727,8 @@ else ifeq ($(ZEDBSD_ARCHITECTURE),amd64)
 ZEDBSD_CPPFLAGS += -DHAL_ARCH_AMD64
 else ifeq ($(ZEDBSD_ARCHITECTURE),arm64)
 ZEDBSD_CPPFLAGS += -DHAL_ARCH_ARM64
+else ifeq ($(ZEDBSD_ARCHITECTURE),riscv64)
+ZEDBSD_CPPFLAGS += -DHAL_ARCH_RISCV64
 else ifeq ($(ZEDBSD_ARCHITECTURE),sparcv9)
 ZEDBSD_CPPFLAGS += -DHAL_ARCH_SPARCV9
 else ifeq ($(ZEDBSD_ARCHITECTURE),m68k)

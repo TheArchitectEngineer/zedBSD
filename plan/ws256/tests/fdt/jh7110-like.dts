@@ -1,0 +1,94 @@
+/dts-v1/;
+/* A hand-written tree in the shape of the JH7110: a monitor core without a MMU and four application harts. */
+/ {
+	#address-cells = <2>;
+	#size-cells = <2>;
+	memory@40000000 {
+		device_type = "memory";
+		reg = <0x0 0x40000000 0x1 0x0>;
+	};
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		timebase-frequency = <4000000>;
+		S7_0: cpu@0 {
+			device_type = "cpu";
+			reg = <0>;
+			status = "disabled";
+			riscv,isa-extensions = "i", "m", "a", "c";
+			cpu0_intc: interrupt-controller {
+				#interrupt-cells = <1>;
+				interrupt-controller;
+				compatible = "riscv,cpu-intc";
+			};
+		};
+		U74_1: cpu@1 {
+			device_type = "cpu";
+			reg = <1>;
+			mmu-type = "riscv,sv39";
+			riscv,isa-extensions = "i", "m", "a", "f", "d", "c", "zba", "zbb";
+			cpu1_intc: interrupt-controller {
+				#interrupt-cells = <1>;
+				interrupt-controller;
+				compatible = "riscv,cpu-intc";
+			};
+		};
+		U74_2: cpu@2 {
+			device_type = "cpu";
+			reg = <2>;
+			mmu-type = "riscv,sv39";
+			cpu2_intc: interrupt-controller {
+				#interrupt-cells = <1>;
+				interrupt-controller;
+				compatible = "riscv,cpu-intc";
+			};
+		};
+		U74_3: cpu@3 {
+			device_type = "cpu";
+			reg = <3>;
+			mmu-type = "riscv,sv39";
+			cpu3_intc: interrupt-controller {
+				#interrupt-cells = <1>;
+				interrupt-controller;
+				compatible = "riscv,cpu-intc";
+			};
+		};
+		U74_4: cpu@4 {
+			device_type = "cpu";
+			reg = <4>;
+			mmu-type = "riscv,sv39";
+			cpu4_intc: interrupt-controller {
+				#interrupt-cells = <1>;
+				interrupt-controller;
+				compatible = "riscv,cpu-intc";
+			};
+		};
+	};
+	soc {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+		cache-controller@2010000 {
+			compatible = "starfive,jh7110-ccache", "sifive,ccache0", "cache";
+			reg = <0x0 0x2010000 0x0 0x4000>;
+		};
+		interrupt-controller@c000000 {
+			compatible = "starfive,jh7110-plic", "sifive,plic-1.0.0";
+			reg = <0x0 0xc000000 0x0 0x4000000>;
+			riscv,ndev = <136>;
+			interrupt-controller;
+			interrupts-extended = <&cpu0_intc 11>,
+				<&cpu1_intc 11>, <&cpu1_intc 9>,
+				<&cpu2_intc 11>, <&cpu2_intc 9>,
+				<&cpu3_intc 11>, <&cpu3_intc 9>,
+				<&cpu4_intc 11>, <&cpu4_intc 9>;
+		};
+		serial@10000000 {
+			compatible = "snps,dw-apb-uart";
+			reg = <0x0 0x10000000 0x0 0x10000>;
+			reg-io-width = <4>;
+			reg-shift = <2>;
+			interrupts = <32>;
+		};
+	};
+};
