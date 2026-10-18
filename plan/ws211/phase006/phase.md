@@ -3,7 +3,7 @@
 # ws211-p006: 窓の drag の移動を 60fps に近づける
 
 Parent: [WS211](../ws.md)
-Status: planning（調べと案。2026-10-12 P3。計測は Pi の次の boot）
+Status: in-progress（2026-10-18 Q1: ws.md の表に記録済みの判定に合わせた。表: in-progress（cursor の present の間隔の直しは main、drag は計測待ち））（旧: planning（調べと案。2026-10-12 P3。計測は Pi の次の boot））
 Phase disposition: normal
 Queue: P3（2026-10-12 ユーザー「ウィンドウのドラッグ移動が60fpsにならず、30fpsくらい」）
 

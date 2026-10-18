@@ -34,7 +34,7 @@ BUG-033 の系譜（ws046-p007・p009・p012）の続き。fg010（Wayland）は
 | [ws061-p009](phase009/phase.md) | `cc t.c -o t` を host と同等以上に（2026-09-26 ユーザー指示） | cleared（q447-i01。loader の symbol の探索の hash を 1 度に、`cc`・`ld` を link に: `cc` 90〜99 → 75〜85 ms（host 83〜85）、configure 9.1〜9.4 秒（host 10.7）） | p008 |
 | [ws061-p010](phase010/phase.md) | system call の入口を `syscall`/`sysret` に、libc の lock の adaptive spin（2026-09-26 ユーザー指示「優先」） | cleared（q446-i01。入口の費用 4.65 → 1.54%、`cc` 99 → 87 ms、configure 9.8〜10.2 秒・host 11.0 秒） | p008 |
 | [ws061-p011](phase011/phase.md) | WS061 の変更の規約の適合（ユーザーの指示で最後） | planned | p009・p010 |
-| [ws061-p007](phase007/phase.md) | UFS の journal を既定に（journal の無い image でも mount の時に作る）、`nojournal` の mount option、journal と write cached の両立（2026-09-26 ユーザー指示） | in-progress（q440-i01） | p006 |
+| [ws061-p007](phase007/phase.md) | UFS の journal を既定に（journal の無い image でも mount の時に作る）、`nojournal` の mount option、journal と write cached の両立（2026-09-26 ユーザー指示） | cleared（2026-10-18 Q1: phase.md に合わせた。旧: in-progress（q440-i01）） | p006 |
 
 ## 完了（2026-10-05）
 

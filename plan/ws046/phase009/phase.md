@@ -4,7 +4,7 @@
 
 Phase ID: `ws046-p009`
 Parent: [WS046](../ws.md)
-Status: uncleared（q418-i01、2026-09-25。原因 2 つを直した。残りの最大の原因は HAL で承認待ち、次は p010）
+Status: cleared（2026-10-18 Q1: ws.md の表に記録済みの判定に合わせた。表: cleared（q418-i01 uncleared: region の page の探索の list（2 乗）と reclaim の queue の探索を直した: file の fault 145 → 25 µs、configure 129 秒。q422-i01 cleared: HAL の rdmsr を `%gs:0` に（承認済み）: syscall 1340 → 450 ns、configure 96 秒。残り（file の fault の複写・object の入れ替え）は p012））（旧: uncleared（q418-i01、2026-09-25。原因 2 つを直した。残りの最大の原因は HAL で承認待ち、次は p010））
 Queue: q418（q418-i01）
 
 ## きっかけ

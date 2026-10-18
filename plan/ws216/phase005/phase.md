@@ -3,7 +3,7 @@
 # ws216-p005: 領域の塗りつぶし（帯の画面外の描画と読み戻し、flood fill、輪郭化と上限、重なりの順、undo・journal、消しゴム D7 (c)）
 
 Parent: [WS216](../ws.md)
-Status: in-progress（2026-10-13 P1: 設計、review-1 の反映、実装と host の受け入れ F1〜F11 済み。test-wait: 画面・実機は p007 で T1、Pi 4 は p009。UI（道具の選択、tap の判定、notice の表示）は p006）
+Status: cleared（2026-10-18 Q1: ws.md の表に記録済みの判定に合わせた。表: cleared（2026-10-13 Q1: T1-580 の QEMU の AAT で機械の判定 PASS・画を Q1 が見て合格。Pi 4 は p009、5330 の感触は p007 の A5））（旧: in-progress（2026-10-13 P1: 設計、review-1 の反映、実装と host の受け入れ F1〜F11 済み。test-wait: 画面・実機は p007 で T1、Pi 4 は p009。UI（道具の選択、tap の判定、notice の表示）は p006））
 Phase disposition: normal
 Queue: q942（2026-10-13 Q1 の依頼、P1）。承認はユーザーの再開の指示（2026-10-13「N=2で、P1,P3を起動し、T1でテストする流れで、実行を再開してください。」）と ws.md の D1〜D12
 

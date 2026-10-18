@@ -2,7 +2,7 @@
 
 # ws089-p014: Network の頁を 5330 の Wi-Fi で
 
-Status: planning（WiFi の driver の成果（BUG-134 の AX211、5330 の WiFi）が要る）
+Status: cleared（2026-10-18 Q1: ws.md の表に記録済みの判定に合わせた。表: cleared（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」、5330 の実機の確かめは UAT で済み））（旧: planning（WiFi の driver の成果（BUG-134 の AX211、5330 の WiFi）が要る））
 Disposition: normal
 Parent: [WS089](../ws.md)
 Queue: なし

@@ -73,7 +73,7 @@ subgroup の操作（`subgroupAdd` 等）、image load/store、atomic counter �
 | [ws101-p017](phase017/phase.md) | **L2** 3 倍: p016 で最も大きい 1 つか 2 つを直す（例: 呼び出しごとの buffer の作り直し、readback の経路、barrier の数）。素の 5330 で GPU の中央値 ≤ CPU の中央値 / 3 | uncleared（2026-09-30。libGLESv2 の device の copy の使い回しと device の上の bytes を実装、QEMU の GPU の call 835 → 212 ms（CPU 23 ms、約 9 倍の差）。判定の 5330 は lock が使用中で未実施） | p016 |
 | ws101-p012 | **L3** 素の 5330: G1 の受け入れの残り（vkcs 21 step を素の機械で）、G3 の時間、GPU が固まったときの回復の手順。ユーザーの確認 | planned | p017 |
 | ws101-p018 | **L3** 10 倍: 素の 5330 で GPU の中央値 ≤ CPU の中央値 / 10（届かなければ到達した倍率と理由を記録して段を閉じる） | planned | p012 |
-| ws101-p013 | 規約の全文との照合（WS101 の全ての変更）と回帰（host、vkx・vke1・vke2・vkc・vkcs・GLES、boot test） | planned | 各段の終わりに部分的に、最後に全体 |
+| ws101-p013 | 規約の全文との照合（WS101 の全ての変更）と回帰（host、vkx・vke1・vke2・vkc・vkcs・GLES、boot test） | in-progress（2026-10-18 Q1: phase.md に合わせた。旧: planned） | 各段の終わりに部分的に、最後に全体 |
 
 ## 段（L1〜L3）の計画（2026-09-30 朝 ユーザーの方針「広く浅く」、main の指示）
 

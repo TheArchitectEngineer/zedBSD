@@ -29,7 +29,7 @@ WS188 p003 の検査で、動画（videoplayer/audio.c）・音楽（music）・
 | [p002](phase002/phase.md) | libkeiland・compositor・zedBSD の backend | cleared（2026-10-08 Q1、T1-444 PASS） | p001 |
 | [p003](phase003/phase.md) | app の移行（videoplayer・music）、libmedia から音を外す | cleared（2026-10-08 Q1、T1-444 PASS） | p002 |
 | [p004](phase004/phase.md) | Linux・FreeBSD の backend | cleared（2026-10-08 夜 Q1、T1-448 FreeBSD・T1-454 Linux PASS） | p002 |
-| p005 | 規約の全文の見直し | planned（ユーザーの決定でベータ 3 に回す、2026-10-08 夜） | p003・p004 |
+| p005 | 規約の全文の見直し | cleared（2026-10-18 Q1: phase.md に合わせた。旧: planned（ユーザーの決定でベータ 3 に回す、2026-10-08 夜）） | p003・p004 |
 
 ## 2026-10-13 P2 q964 の照合
 

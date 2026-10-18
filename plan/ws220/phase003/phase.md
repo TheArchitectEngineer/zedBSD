@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws220-p003 -->
 # ws220-p003: 送りの packet の不足（device が拒んでも書き手が 10 ms 眠らない、未送信を順に出す、ACK の出し直し）
 
-Status: in-progress / test-wait（2026-10-13 P3: 実装・模型・build（amd64・rpi4、warning 0）は済み。review-1（重大 G1・中 M1・M2・軽微）を同じ attempt の中で直した（§7）。QEMU は §5 の T1 の依頼待ち（番号は Q1 が付ける）。cleared は T1 の結果を Q1 が判定してから）
+Status: cleared（2026-10-18 Q1: ws.md の表に記録済みの判定に合わせた。表: cleared（2026-10-13 Q1 判定: 同じ session の基線と比べる基準（T1-581）で k2＝p003＋p004 が k1＝p002 より全部の値で良い、損失のある時は T1-577 で大きく改善。T1-577 の T1-574 との差は環境））（旧: in-progress / test-wait（2026-10-13 P3: 実装・模型・build（amd64・rpi4、warning 0）は済み。review-1（重大 G1・中 M1・M2・軽微）を同じ attempt の中で直した（§7）。QEMU は §5 の T1 の依頼待ち（番号は Q1 が付ける）。cleared は T1 の結果を Q1 が判定してから））
 Parent: [WS220](../ws.md)
 設計の出所: [p001 §4 の p003 の行](../phase001/phase.md)、[review-1](../phase001/review-1.md) の S4（1〜6）・S5、[p002](../phase002/phase.md) の結果（main に入った c13a8413f 以後の tcp.c）、ws.md の Q1 の記録とユーザーの決定（症状は受けの向き）
 

@@ -3,7 +3,7 @@
 # ws141-p013: VC6 の Keiland の描画の速さ（frame 33 ms → 16 ms）
 
 Parent: [WS141](../ws.md)
-Status: planned
+Status: in-progress（2026-10-18 Q1: ws.md の表に記録済みの判定に合わせた。表: in-progress（hardware blend・compiler の NOP 削減は実機で見た目 OK・速い、tile buffer の f16 は実機待ち））（旧: planned）
 Phase disposition: normal
 Queue: q936（[P3 の lane](../../agents/P3/queue.md)）
 Base: codex/rpi4-gpu-init d27925686（Codex の最後の commit、scene の cache と damage の調整、main に未統合）

@@ -35,5 +35,5 @@ Resume point: 2026-10-15 夜 ユーザーの即時中断で止めた。design.md
 
 | Phase | 内容 | 状態 |
 | --- | --- | --- |
-| [p001](phase001/phase.md) | 設計: GSP の RM の channel の停止・作り直しの口の調べ、session ごとの channel か共有の channel の作り直しか、isolate・reset の実装の形、期限の値、compositor の扱い、試験の道。design-reviewer を通す | planned |
+| [p001](phase001/phase.md) | 設計: GSP の RM の channel の停止・作り直しの口の調べ、session ごとの channel か共有の channel の作り直しか、isolate・reset の実装の形、期限の値、compositor の扱い、試験の道。design-reviewer を通す | in-progress（2026-10-18 Q1: phase.md に合わせた。旧: planned） |
 | p002〜 | 実装（p001 で分割） | planned |

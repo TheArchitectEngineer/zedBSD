@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws220-p004 -->
 # ws220-p004: RTT の推定と RTO（RFC 6298）
 
-Status: in-progress / test-wait（2026-10-13 P3: 設計・実装・模型・build（amd64・rpi4、warning 0）は済み。design review-1（重大 2・中 5・軽微 6）を同じ attempt で直した（§7）。§5 の T1 の QEMU 待ち。cleared は Q1 の判定）
+Status: cleared（2026-10-18 Q1: ws.md の表に記録済みの判定に合わせた。表: cleared（2026-10-13 Q1 判定: T1-581 と T1-577（features=0x22・rtt_samples・rto_ms 203〜204・backoff 0）、同じ session の基線の基準））（旧: in-progress / test-wait（2026-10-13 P3: 設計・実装・模型・build（amd64・rpi4、warning 0）は済み。design review-1（重大 2・中 5・軽微 6）を同じ attempt で直した（§7）。§5 の T1 の QEMU 待ち。cleared は Q1 の判定））
 Parent: [WS220](../ws.md)
 Queue: q943（承認: 2026-10-13 ユーザーの再開の指示「N=2で、P1,P3を起動し、T1でテストする流れで、実行を再開してください。」と WS220 ws.md のユーザーの決定「はい、推奨でいいです。」（RTO の最小 200 ms））
 設計の出所: [p001 §4 の p004 の行](../phase001/phase.md)、[p001 review-1](../phase001/review-1.md) の S4・S6、ws.md の Q1 の記録（S6: 単純な 200 ms の床でなく式に最小の項 200 ms を入れる）、[p003](../phase003/phase.md) の結果、本 Phase の [review-1](review-1.md)（design-reviewer、a52a81575 に対して）と Q1 の決め

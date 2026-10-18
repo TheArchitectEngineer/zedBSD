@@ -27,5 +27,5 @@ Settings に Apps の頁を足し、third-party の app の repository から ap
 
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
-| [ws153-p001](phase001/phase.md) | package の仕組み（third-party の app の repository）の検討 | planning | — |
+| [ws153-p001](phase001/phase.md) | package の仕組み（third-party の app の repository）の検討 | in-progress（2026-10-18 Q1: phase.md に合わせた。旧: planning） | — |
 | ws153-p002 以降 | p001 の結論で決める（repository の client・install の仕組み・Settings の Apps の頁・試験） | planning | p001 |

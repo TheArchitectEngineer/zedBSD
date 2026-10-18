@@ -5,7 +5,7 @@
 Phase ID: `ws197-p004`
 Parent: [WS197](../ws.md)
 Related: [WS170](../../ws170/ws.md)（Phone の app、保存の持ち主）
-Status: planning（2026-10-10 P1: 詳細設計の第 3.1 版。[review-1.md](review-1.md)（blocker 3・major 13）、[review-2.md](review-2.md)（blocker 0・major 6・minor 14）、review-3（major 1・minor 6、Event の行）を本文に入れた（各節の `[B1]`・`[M1]`・`[MA]`・`[MG]`・`[m]`・`[n]` の印）。残りの判断は §9 で Q1 経由でユーザーへ。p004a〜c の実装は p003 の後）
+Status: cleared（2026-10-18 Q1: ws.md の表に記録済みの判定に合わせた。表: cleared（設計、2026-10-10））（旧: planning（2026-10-10 P1: 詳細設計の第 3.1 版。[review-1.md](review-1.md)（blocker 3・major 13）、[review-2.md](review-2.md)（blocker 0・major 6・minor 14）、review-3（major 1・minor 6、Event の行）を本文に入れた（各節の `[B1]`・`[M1]`・`[MA]`・`[MG]`・`[m]`・`[n]` の印）。残りの判断は §9 で Q1 経由でユーザーへ。p004a〜c の実装は p003 の後））
 Phase disposition: normal
 Queue: Q1 の投入（2026-10-10「WS197 p004 の詳細設計として、SMS 利用における Phone app・libkeiland・libkeiland-backend・bluetoothd の流れと interface を確定し、別の session で判断の違いが出ないようにする」）
 

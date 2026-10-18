@@ -3,7 +3,7 @@
 # ws216-p006: Notes の描く道具の UI（描く道具の button と帯、Tool menu、key、色と太さの表、pen・mouse・指での選択と塗り）
 
 Parent: [WS216](../ws.md)
-Status: in-progress（2026-10-13 P1: 設計、review-1 とユーザーの決定の反映、実装と host の受け入れ U1〜U5 済み。test-wait: 画面の操作は p007 で T1（§9 の依頼）、Pi 4 は p009）
+Status: cleared（2026-10-18 Q1: ws.md の表に記録済みの判定に合わせた。表: cleared（2026-10-13 Q1: T1-580 の QEMU の AAT で機械の判定 PASS・画を Q1 が見て合格。Pi 4 は p009、5330 の感触は p007 の A5））（旧: in-progress（2026-10-13 P1: 設計、review-1 とユーザーの決定の反映、実装と host の受け入れ U1〜U5 済み。test-wait: 画面の操作は p007 で T1（§9 の依頼）、Pi 4 は p009））
 Phase disposition: normal
 Queue: q944（2026-10-13 Q1 の依頼、P1）。承認はユーザーの再開の指示（2026-10-13「N=2で、P1,P3を起動し、T1でテストする流れで、実行を再開してください。」）と ws.md の D1〜D12（UI は D3 (a)）
 

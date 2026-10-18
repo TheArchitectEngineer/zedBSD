@@ -32,7 +32,7 @@ Notes で PDF を開き、基本の編集ができて PDF として保存でき�
 | [ws175-p008](phase008/phase.md) | Notes の UI: 画像の段（Select の道具・挿入・差し替え・削除・Reset・drag・描画・log）、文字の段（Text の道具・編集の box・IME・Font/Size、ws079-p017 と一つ） | 画像の段 cleared（2026-10-06 Q1、resize の画面は p010）、文字の段は実装済み（host PASS、画面は p010）、判定待ち | p007・p004・p005 |
 | [ws175-p004](phase004/phase.md) | libpdf の文字の書き換え（移動・削除・元の font での内容の変更・正規化 [H1]・ActualText [M10]）と Notes の文字の model | cleared（2026-10-06 Q1、QEMU は p010） | p003・p007 |
 | [ws175-p005](phase005/phase.md) | 置き換えの font（subset・埋め込み・fallback・font の変更）、文字の挿入 | cleared（2026-10-06 Q1、QEMU は p010） | p004 |
-| [ws175-p010](phase010/phase.md) | T1 の QEMU で AAT 5 本（補助 `helpers_notes_edit.py`、試料 edit-basic.pdf、シナリオ active）、FAIL の直し 1 回分 | planned（準備済み、T1 の結果待ち） | p008 |
+| [ws175-p010](phase010/phase.md) | T1 の QEMU で AAT 5 本（補助 `helpers_notes_edit.py`、試料 edit-basic.pdf、シナリオ active）、FAIL の直し 1 回分 | in-progress（2026-10-18 Q1: phase.md に合わせた。旧: planned（準備済み、T1 の結果待ち）） | p008 |
 | [ws175-p009](phase009/phase.md) | Save Clean Copy: libpdf の全体の書き直し（clean.c、番号の付け直し・object stream の展開・古い版と使わない resource を落とす [M11]・edit data を落とす）と Notes の File > Save Clean Copy… | cleared（2026-10-07、T1-285） | p008 |
 | p011 | 規約は p010 の後 | 未作成 | — |
 

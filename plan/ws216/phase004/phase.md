@@ -3,7 +3,7 @@
 # ws216-p004: Notes の画面（形の列の描画、Normal・Multiply、粒の texture、遅延の pipeline と代わり、頂点の塊）
 
 Parent: [WS216](../ws.md)
-Status: in-progress（2026-10-13 P1: 実装と host の受け入れ（C1〜C8）済み。test-wait: QEMU・実機の画の確かめは p007 で T1、Q1 の判定まで cleared にしない）
+Status: cleared（2026-10-18 Q1: ws.md の表に記録済みの判定に合わせた。表: cleared（2026-10-13 Q1: T1-580 の QEMU の AAT で機械の判定 PASS・画を Q1 が見て合格。Pi 4 は p009、5330 の感触は p007 の A5））（旧: in-progress（2026-10-13 P1: 実装と host の受け入れ（C1〜C8）済み。test-wait: QEMU・実機の画の確かめは p007 で T1、Q1 の判定まで cleared にしない））
 Phase disposition: normal
 Queue: Q1 の依頼（2026-10-13、P1）。承認は ws.md の「ユーザーの決定」（D1〜D12）と review-2 の判定（p004 に当たる指摘はこの phase.md で解決してから実装）
 

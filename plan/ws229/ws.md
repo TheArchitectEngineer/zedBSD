@@ -40,6 +40,6 @@ GOP のままで GT と EU: 6〜8 LW。display controller を足して全体: 10
 | [p002](phase002/phase.md) | GT の起動（Gen9）、request.c・boot の key `i915.gen9`・suspend の拒否・N0-lite | in-progress — merge 済み（93787f2be）、host の受け入れ PASS（Gen12 の起動の書き込み 543 行が d1e743394 と同一）。5330 の回帰（T1-606）と実機は p005 | p001 |
 | [p003](phase003/phase.md) | EU の符号化（Gen9）、`drv_i915_shader_compile_gen()`、SENDS、fence の stall | in-progress — merge 済み（28d6deaae）、host の受け入れ PASS（Gen12 の 88 の kernel の byte が同一、Gen9 の 96 の往復と期待の byte）。実機は p005 | p001 |
 | [p004](phase004/phase.md) | 3D と compute の state（Gen9）、compile の呼び手の切り替え、video の gate | in-progress — merge 済み（42431971b）、host の受け入れ PASS（Gen12 の byte が同一、gen90.xml の厳密な decode）。実機は p005 | p001 |
-| [p005](phase005/phase.md) | Vulkan の通しと実機（6・7・8 世代を USB で）、5330 の回帰 | planned（q980、P1。準備から） | p002〜p004 |
+| [p005](phase005/phase.md) | Vulkan の通しと実機（6・7・8 世代を USB で）、5330 の回帰 | cleared（2026-10-18 Q1: phase.md に合わせた。旧: planned（q980、P1。準備から）） | p002〜p004 |
 | p006 | display controller（Gen9） | planned（今日の範囲外） | p005 |
 | [p007](phase007/phase.md) | 規約の全文の見直し | cleared（2026-10-14、host の試験 5 本 PASS・byte 不変。実機の試験は p005 の後に回帰が要る） | p005 |

@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws232-p001 -->
 # ws232-p001: i386 の CPU と board、Retro の menu（と pc98 の build・起動）
 
-Status: in-progress（2026-10-14 P1、q982）
+Status: cleared（2026-10-18 Q1: ws.md の表に記録済みの判定に合わせた。表: cleared（2026-10-14））（旧: in-progress（2026-10-14 P1、q982））
 Disposition: normal
 Parent: [WS232](../ws.md)
 Queue: q982

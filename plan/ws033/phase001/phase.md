@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws033-p001 -->
 # ws033-p001: USB の LAN の後挿し・抜去・carrier の変化を QEMU で通す
 
-Status: in-progress / Q1 の判定待ち（2026-10-14 P3 q958: 受け入れの 1〜4 の結果と host 試験・boot-test の証拠がそろった。cleared は Q1 の判定。旧: in-progress（q912、P1、2026-10-08 夜）、uncleared（q598-i01、中断））
+Status: cleared（2026-10-18 Q1: ws.md の表に記録済みの判定に合わせた。表: cleared（2026-10-14 Q1 判定: 後挿しの DHCP と fetch・抜き差し・networking.wait は T1-480（T1-513・517 でも）PASS、set_link の L2 は実機の p002 へ、MLAN-T001 PASS））（旧: in-progress / Q1 の判定待ち（2026-10-14 P3 q958: 受け入れの 1〜4 の結果と host 試験・boot-test の証拠がそろった。cleared は Q1 の判定。旧: in-progress（q912、P1、2026-10-08 夜）、uncleared（q598-i01、中断）））
 Disposition: normal
 Parent: [WS033](../ws.md)
 Focused goal: fg019（ベータ1）

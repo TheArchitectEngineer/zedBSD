@@ -2,7 +2,7 @@
 
 # ws074-p201: column flex auto height and min-height
 
-Status: in-progress（2026-10-14 q1051-i01）
+Status: cleared（2026-10-18 Q1: ws.md の表に記録済みの判定に合わせた。表: cleared / q1051固定vert001b pixel exact PASS）（旧: in-progress（2026-10-14 q1051-i01））
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074を継承）

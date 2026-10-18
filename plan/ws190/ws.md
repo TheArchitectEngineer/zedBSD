@@ -37,4 +37,4 @@ Queue: q899（P1、2026-10-08 午後）。2026-10-08 q902 P1 の照合: p002・p
 | [p001](phase001/phase.md) | 設計: kl_field・text area への kl_text_touch の組み込み、popup の部品（位置・画面の端・画面 keyboard との重なり）、Text Editor の popup | cleared（2026-10-08 Q1 の判定（sweep-beta2-rc §2）） | | WS189 |
 | [p002](phase002/phase.md) | libkeiland の欄 | test-wait（T1-443、未実行） | p001 |
 | [p003](phase003/phase.md) | Text Editor | test-wait（T1-445、未実行） | p002（kl_text_bar・kl_text_touch の bar） |
-| p004 | 規約の全文の見直し（WS の変えた C） | planned（ベータ3 に回す: 2026-10-08 ユーザーの決定「規約の整形はベータ3」、Q1） | p002・p003 |
+| p004 | 規約の全文の見直し（WS の変えた C） | cleared（2026-10-18 Q1: phase.md に合わせた。旧: planned（ベータ3 に回す: 2026-10-08 ユーザーの決定「規約の整形はベータ3」、Q1）） | p002・p003 |

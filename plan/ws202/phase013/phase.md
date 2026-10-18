@@ -2,7 +2,7 @@
 
 # ws202-p013: 5330 の UAT（ユーザー）と結果の反映
 
-Status: planned
+Status: cleared（2026-10-18 Q1: ws.md の表に記録済みの判定に合わせた。表: cleared（2026-10-13 ユーザー「WS202のp013はUAT OKでした。」。スライダーが終わりで約 50% の件は [BUG-300](../bugs/BUG-300.md) で別に追う））（旧: planned）
 Disposition: normal
 Parent: [WS202](../ws.md)
 見積もり: 2 LW（UAT の一覧の用意と結果の記録。ユーザーの時間は含まない）

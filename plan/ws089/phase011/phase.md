@@ -2,7 +2,7 @@
 
 # ws089-p011: 5330 の passthrough で S7
 
-Status: planned（2026-10-02。Queue なし）
+Status: cleared（2026-10-18 Q1: ws.md の表に記録済みの判定に合わせた。表: cleared（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」、5330 の実機の確かめは UAT で済み））（旧: planned（2026-10-02。Queue なし））
 Disposition: normal
 Parent: [WS089](../ws.md)
 Queue: なし

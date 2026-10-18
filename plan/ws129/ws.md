@@ -48,7 +48,7 @@ push・GitHub release の公開はユーザーの指示で行う。
 | Phase | 目的 | Status | 依存 | 目安 |
 | --- | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | release の定義（版の付け方の案、配布物、CI の release の設計、文書の置き場所、凍結と回帰と実機の日程の案）。ユーザーへの質問を出す | cleared（2026-10-05 Q1、回答は release.md §9） | なし | 2h |
-| [p002](phase002/phase.md) | license の一覧（image の全ての component、本文の収集、生成の script、audit） | planned | なし（最後に p007 で再生成） | 3〜4h |
+| [p002](phase002/phase.md) | license の一覧（image の全ての component、本文の収集、生成の script、audit） | cleared（2026-10-18 Q1: phase.md に合わせた。旧: planned） | なし（最後に p007 で再生成） | 3〜4h |
 | [p003](phase003/phase.md) | 版の一つの源（Makefile の変数 → uname・起動の表示・`/etc/os-release`、About は WS089 に依頼） | cleared（2026-10-05 Q1） | p001 とユーザーの版の名前 | 2h |
 | [p004](phase004/phase.md) | release の image の config（fg019 の成果、Settings・audiod 等、AX211 の扱い）と CI の release の job | cleared（2026-10-05 Q1） | p001 | 3h |
 | [p005](phase005/phase.md) | release notes・既知の問題の一覧・利用の手引き（USB への書き方、対象 platform、WiFi の adapter） | planning（機能の一覧は各 WS の成果を待つ、10/13 頃。今書ける手引きと既知の問題の下書きは p013 に分けた） | p001、各 WS の成果、p013 | 1〜2h |

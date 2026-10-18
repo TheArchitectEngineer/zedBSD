@@ -2,7 +2,7 @@
 
 # ws074-p202: vertical-lr writing mode Flexbox axis
 
-Status: in-progress（2026-10-14 q1052-i01）
+Status: cleared（2026-10-18 Q1: ws.md の表に記録済みの判定に合わせた。表: cleared / q1052固定wmvert pixel exact PASS）（旧: in-progress（2026-10-14 q1052-i01））
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074を継承）

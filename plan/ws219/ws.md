@@ -38,4 +38,4 @@ Related Milestones: なし
 
 | Phase | 内容 | Status |
 | --- | --- | --- |
-| [p003](phase003/phase.md) | gpu-op.h の op ごとの詳しい説明（用途・引数・reply・zedBSD の送り手と受け手・順序・未使用）と file の頭の注記、build と試験 | in-progress（2026-10-13 P2 実施。159 個の entry と頭の注記、build warning 0・host 試験 PASS、Q1 の判定待ち） |
+| [p003](phase003/phase.md) | gpu-op.h の op ごとの詳しい説明（用途・引数・reply・zedBSD の送り手と受け手・順序・未使用）と file の頭の注記、build と試験 | cleared（2026-10-18 Q1: phase.md に合わせた。旧: in-progress（2026-10-13 P2 実施。159 個の entry と頭の注記、build warning 0・host 試験 PASS、Q1 の判定待ち）） |

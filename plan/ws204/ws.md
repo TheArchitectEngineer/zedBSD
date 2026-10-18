@@ -29,6 +29,6 @@ HD Audio（Intel HDA、5330）の録音の経路（ADC・入力の pin・capture
 | --- | --- | --- |
 | [p001](phase001/phase.md) | 調査と設計（録音の経路は ws035 で既にある。足りないのは入力の選び方・mic bias・boost・log と実機の確かめ） | in-progress（設計済み、U1・U2 を Q1 へ） |
 | [p002](phase002/phase.md) | pci-hda: 入力の pin の選び直し（jack の sense）・VRef・boost・log、host の試験 | in-progress（実装・host 済み） |
-| p003 | 確かめの道具 `audio-loop`（再生しながら録り 1 kHz を測る）、host の試験、QEMU（T1） | planned |
+| p003 | 確かめの道具 `audio-loop`（再生しながら録り 1 kHz を測る）、host の試験、QEMU（T1） | in-progress（2026-10-18 Q1: phase.md に合わせた。旧: planned） |
 | p004 | 5330 の実機（T1 の `audio-loop`、ユーザーが WAV を聞く UAT） | planned |
 | p005 | 規約の全文の見直し | planned |

@@ -60,7 +60,7 @@ Resume point: main の d5296c23e（2026-10-11）。p001〜p005・p011〜p013 cle
 | [ws197-p011](phase011/phase.md) | Phoneの＋によるメディア選択とDnD・仮添付（ws157-p006 API出力に依存） | — | cleared |
 | [ws197-p012](phase012/phase.md) | 添付のdouble-click起動・draftサムネイル・captionなし写真の起動SIGSEGV修正 | — | cleared |
 | [ws197-p013](phase013/phase.md) | Bluetooth無応答の診断、daemon restartとdevice check/reopen/reset、親監視→自動restart | — | cleared |
-| [ws197-p014](phase014/phase.md) | Phone の「＋」→ 写真（libkeiland の media picker の popup）／ファイル（file chooser）の選択（2026-10-11 ユーザー） | — | planned（q926） |
+| [ws197-p014](phase014/phase.md) | Phone の「＋」→ 写真（libkeiland の media picker の popup）／ファイル（file chooser）の選択（2026-10-11 ユーザー） | — | in-progress（2026-10-18 Q1: phase.md に合わせた。旧: planned（q926）） |
 
 関連の Bug: [BUG-282](../bugs/BUG-282.md)（WS143 の hid.c の page の途中の Connection Request の取り違え、p003 i03 と同じ形で直す）。Future Work: fw-bt-goep2（ERTM・GOEP 2.0、MAP 1.4・PBAP 1.2）、F-086（SUBSCRIBE の phone の分は p003）。
 

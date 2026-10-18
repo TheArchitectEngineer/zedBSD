@@ -4,7 +4,7 @@
 
 Phase ID: `ws197-p003`
 Parent: [WS197](../ws.md)
-Status: in-progress（2026-10-10 P1: 詳細設計の第 2.1 版。[review-1.md](review-1.md) の全部に答え、[review-2.md](review-2.md) で全部閉じた。review-2 の N1・N2・n1〜n9 を本文に入れた（各節の `[N1]`・`[n1]`）。i01〜i07 は GO、実装に入る）
+Status: cleared（2026-10-18 Q1: ws.md の表に記録済みの判定に合わせた。表: cleared（main統合済み、実機UATはp008））（旧: in-progress（2026-10-10 P1: 詳細設計の第 2.1 版。[review-1.md](review-1.md) の全部に答え、[review-2.md](review-2.md) で全部閉じた。review-2 の N1・N2・n1〜n9 を本文に入れた（各節の `[N1]`・`[n1]`）。i01〜i07 は GO、実装に入る））
 Phase disposition: normal
 Queue: Q1 の投入（2026-10-10「WS197 p003 MAP（MCE の MAS と MNS）を保留の branch agent/p1-ws197 で。まず詳細設計を書き design-reviewer を通してから実装」）
 Branch: `agent/p1-ws197`（10/17 の公開まで main に merge しない。各 Phase の始めと merge 依頼の前に main を取り込む）
