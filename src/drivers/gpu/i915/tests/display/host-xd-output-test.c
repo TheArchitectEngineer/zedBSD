@@ -18,7 +18,10 @@
  * lock, a link that does not train, a pipe found running; an HDMI sink
  * on DDI B; an external DisplayPort sink on TC1 in DisplayPort
  * alternate and in Thunderbolt mode; and on an Ice Lake (display 11) the
- * panel on the eDP transcoder and an external sink on TC1's MG PHY.
+ * panel on the eDP transcoder and an external sink on TC1's MG PHY; and
+ * on every row of the descriptions the panel, an HDMI sink on the first
+ * combo port after DDI A, and on a row with Type-C PHYs a DisplayPort
+ * sink on TC1 in DisplayPort alternate and in Thunderbolt mode.
  */
 
 #include "host-test.h"
@@ -37,6 +40,7 @@
 #include <uapi/errno.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 /* The 5330's Alder Lake-P, and an Ice Lake with port F (D0). */
@@ -154,6 +158,12 @@ static void i915_xd_ot_test_type_c(void);
 static const struct i915_xd_platform *i915_xd_ot_setup_icl(void);
 static void i915_xd_ot_test_icl(void);
 static void i915_xd_ot_test_cover(void);
+static const struct i915_xd_platform *i915_xd_ot_cover_setup(const struct i915_xd_platform *platform);
+static void i915_xd_ot_cover_output(const struct i915_xd_platform *platform, struct i915_xd_output *out);
+static void i915_xd_ot_cover_run(const struct i915_xd_platform *platform, struct i915_xd_output *out, unsigned tc_mode, const char *kind);
+static void i915_xd_ot_cover_hdmi(const struct i915_xd_platform *platform);
+static void i915_xd_ot_cover_type_c(const struct i915_xd_platform *platform, unsigned tc_mode, const char *kind);
+static void i915_xd_ot_test_cover_ports(void);
 
 /* The Type-C hooks of the test: each one logged. */
 static const struct i915_xd_output_tc i915_xd_ot_tc = {
@@ -183,6 +193,7 @@ main(void)
 	i915_xd_ot_test_type_c();
 	i915_xd_ot_test_icl();
 	i915_xd_ot_test_cover();
+	i915_xd_ot_test_cover_ports();
 
 	/* Reports the result. */
 	failures = i915_host_report("host_xd_output_test");
@@ -1726,5 +1737,276 @@ i915_xd_ot_test_cover(void)
 
 		/* Checks the row's dark. */
 		i915_host_check(dark, platform->name);
+	}
+}
+
+/* Starts the model for a row: the Ice Lake's for display 11, the 5330's otherwise; returns the row. */
+static const struct i915_xd_platform *
+i915_xd_ot_cover_setup(
+	const struct i915_xd_platform *platform)
+{
+	const struct i915_xd_platform *model;
+
+	/* The model of the row's display version. */
+	if (platform->display_ver == 11U) {
+		model = i915_xd_ot_setup_icl();
+	} else {
+		model = i915_xd_ot_setup();
+	}
+	if (model == NULL)
+		return NULL;
+
+	/* Succeeded: the row itself, on that model. */
+	return platform;
+}
+
+/* Describes an external output on pipe and transcoder B for a row, its display buffer in one slice on display 11. */
+static void
+i915_xd_ot_cover_output(
+	const struct i915_xd_platform *platform,
+	struct i915_xd_output *out)
+{
+	/* The panel's mode on pipe B, with nothing of the panel's. */
+	i915_xd_ot_panel_output(out);
+	out->pipe = 1U;
+	out->trans = 1U;
+	out->dmc_programs = 0U;
+	out->backlight.vbt_present = 0;
+	out->dbuf.pipes_after = 0x2U;
+
+	/* Display 11's buffer has one slice. */
+	if (platform->display_ver == 11U) {
+		out->dbuf.slices_after = 0x1U;
+		out->dbuf.joined_after = 0U;
+	}
+}
+
+/*
+ * Lights and darkens one output on a row and checks both: the light runs
+ * through (a DisplayPort link trains), the DDI buffer and the
+ * transcoder's function are on; the dark turns both off, gives every
+ * power reference back and, on a Type-C port, the link too.
+ */
+static void
+i915_xd_ot_cover_run(
+	const struct i915_xd_platform *platform,
+	struct i915_xd_output *out,
+	unsigned tc_mode,
+	const char *kind)
+{
+	static char what[128];
+	struct i915_xd_output_env env;
+	uint32_t buffer;
+	uint32_t function;
+	unsigned index;
+	unsigned event;
+	unsigned gets;
+	unsigned puts;
+	int lit;
+	int dark;
+	int error;
+
+	/* The environment, with the Type-C hooks in the mode asked. */
+	i915_xd_ot_env(&env, platform);
+	env.tc = &i915_xd_ot_tc;
+	i915_xd_ot_log.tc_mode = tc_mode;
+
+	/* The light. */
+	error = i915_xd_ot_light(out, &env);
+	buffer = i915_xd_fake_get(I915_XD_DDI_BUF_CTL(out->ddi));
+	function = i915_xd_fake_get(I915_XD_TRANS_DDI_FUNC_CTL(out->trans));
+	lit = 1;
+	if (error != 0 || i915_xd_ot_log.errors != 0U || i915_xd_ot_log.locks != 0 || !out->lit)
+		lit = 0;
+	if (out->kind != I915_XD_SCREEN_HDMI && !out->trained)
+		lit = 0;
+	if ((buffer & I915_XD_DDI_BUF_ENABLE) == 0U || (function & I915_XD_DDI_FUNC_ENABLE) == 0U)
+		lit = 0;
+
+	/* Checks the light. */
+	(void)snprintf(what, sizeof(what), "cover: %s: %s light", platform->name, kind);
+	i915_host_check(lit, what);
+
+	/* The dark. */
+	i915_xd_ot_dark(out, &env);
+	buffer = i915_xd_fake_get(I915_XD_DDI_BUF_CTL(out->ddi));
+	function = i915_xd_fake_get(I915_XD_TRANS_DDI_FUNC_CTL(out->trans));
+
+	/* The references the light and the dark took and gave back, at once or later. */
+	gets = 0U;
+	puts = 0U;
+	for (index = 0U; index < i915_xd_ot_log.count; index++) {
+		event = i915_xd_ot_log.log[index].kind;
+		if (event == I915_XD_OT_GET)
+			gets++;
+		if (event == I915_XD_OT_PUT || event == I915_XD_OT_PUT_LATER)
+			puts++;
+	}
+
+	/* The dark ran through, the buffer and the function off, every reference and the link back. */
+	dark = 1;
+	if (i915_xd_ot_log.errors != 0U || i915_xd_ot_log.locks != 0)
+		dark = 0;
+	if ((buffer & I915_XD_DDI_BUF_ENABLE) != 0U || (function & I915_XD_DDI_FUNC_ENABLE) != 0U)
+		dark = 0;
+	if (gets == 0U || gets != puts || out->held != 0U || out->tc_linked)
+		dark = 0;
+
+	/* Checks the dark. */
+	(void)snprintf(what, sizeof(what), "cover: %s: %s dark", platform->name, kind);
+	i915_host_check(dark, what);
+}
+
+/* An HDMI sink on a row's first combo port after DDI A, on DPLL 1. */
+static void
+i915_xd_ot_cover_hdmi(
+	const struct i915_xd_platform *platform)
+{
+	const struct i915_xd_port_desc *port;
+	struct i915_xd_output out;
+	unsigned index;
+
+	/* The first combo port that is not DDI A. */
+	port = NULL;
+	for (index = 0U; index < platform->nports; index++) {
+		if (platform->ports[index].phy_kind != I915_XD_PHY_COMBO || platform->ports[index].ddi == 0U)
+			continue;
+		port = &platform->ports[index];
+		break;
+	}
+	if (port == NULL) {
+		i915_host_check(0, "cover: a row without a second combo port");
+		return;
+	}
+
+	/* The sink at 1080p's 74.25 MHz, eight bits a colour. */
+	if (i915_xd_ot_cover_setup(platform) == NULL)
+		return;
+	i915_xd_ot_cover_output(platform, &out);
+	out.kind = I915_XD_SCREEN_HDMI;
+	out.ddi = port->ddi;
+	out.phy = port->phy;
+	out.aux = port->aux;
+	out.lanes = 4U;
+	out.rate_khz = 74250U;
+	out.bpp = 24U;
+	out.dither = 0;
+	out.pll = 1U;
+	out.hdmi_level = -1;
+
+	/* Lights and darkens it. */
+	i915_xd_ot_cover_run(platform, &out, I915_XD_OUTPUT_TC_DP_ALT, "HDMI");
+}
+
+/* A DisplayPort sink on a row's TC1 (a Dekel or an MG PHY) at 1.62 GHz on four lanes, in one Type-C mode. */
+static void
+i915_xd_ot_cover_type_c(
+	const struct i915_xd_platform *platform,
+	unsigned tc_mode,
+	const char *kind)
+{
+	const struct i915_xd_port_desc *port;
+	const struct i915_xd_pll_desc *pll;
+	struct i915_xd_output out;
+	unsigned index;
+	int error;
+
+	/* TC1, and its own PLL. */
+	port = NULL;
+	for (index = 0U; index < platform->nports; index++) {
+		if (platform->ports[index].tc != 1U)
+			continue;
+		port = &platform->ports[index];
+		break;
+	}
+	pll = NULL;
+	for (index = 0U; index < platform->nplls; index++) {
+		if (platform->plls[index].kind != I915_XD_PLL_TC || platform->plls[index].tc != 1U)
+			continue;
+		pll = &platform->plls[index];
+		break;
+	}
+	if (port == NULL || pll == NULL) {
+		i915_host_check(0, "cover: a Type-C row without TC1 or its PLL");
+		return;
+	}
+
+	/* The model, the PLL's power and lock following the request. */
+	if (i915_xd_ot_cover_setup(platform) == NULL)
+		return;
+	i915_xd_fake_rule_mirror(pll->enable, 0x08000000U, pll->enable, -1, 0U);
+	i915_xd_fake_rule_mirror(pll->enable, 0x80000000U, pll->enable, -1, 0U);
+
+	/* The sink on TC1. */
+	i915_xd_ot_cover_output(platform, &out);
+	out.kind = I915_XD_SCREEN_DP;
+	out.ddi = port->ddi;
+	out.phy = port->phy;
+	out.aux = port->aux;
+	out.tc = 1;
+	out.tc_port = 0U;
+	out.tc_pll = pll->select;
+	out.rate_khz = 162000U;
+	out.lanes = 4U;
+
+	/* The PLL's words: the MG PLL's from the 38.4 MHz reference, the Dekel PLL's of the 5330's RBR. */
+	error = 0;
+	if (port->phy_kind == I915_XD_PHY_MG) {
+		error = drv_i915_xd_mg_pll_words(38400U, 162000U, 0, &out.mg_pll_words);
+	} else {
+		out.tc_pll_words.refclkin = 0x100U;
+		out.tc_pll_words.coreclk = 0xa00U;
+		out.tc_pll_words.hsclk = 0x6200U;
+		out.tc_pll_words.div0 = 0x84269U;
+		out.tc_pll_words.div1 = 0x1c0027U;
+		out.tc_pll_words.ssc = 0x40002000U;
+		out.tc_pll_words.bias = 0x5e000000U;
+		out.tc_pll_words.tdc = 0x52U;
+	}
+	if (error != 0) {
+		i915_host_check(0, "cover: the MG PLL's words at 1.62 GHz");
+		return;
+	}
+
+	/* Lights and darkens it. */
+	i915_xd_ot_cover_run(platform, &out, tc_mode, kind);
+}
+
+/*
+ * Checks every row's external outputs: HDMI on the first combo port
+ * after DDI A, and on a row whose TC1 is a Type-C PHY a DisplayPort sink
+ * there in DisplayPort alternate and in Thunderbolt mode (a row whose
+ * Type-C connectors are combo ports has no Type-C mode).
+ */
+static void
+i915_xd_ot_test_cover_ports(void)
+{
+	const struct i915_xd_platform *platform;
+	const struct i915_xd_port_desc *port;
+	unsigned rows;
+	unsigned row;
+	unsigned index;
+	int type_c;
+
+	/* Each row. */
+	rows = drv_i915_xd_platform_count();
+	for (row = 0U; row < rows; row++) {
+		/* HDMI on every row. */
+		platform = drv_i915_xd_platform_row(row);
+		i915_xd_ot_cover_hdmi(platform);
+
+		/* A row with a Type-C PHY. */
+		type_c = 0;
+		for (index = 0U; index < platform->nports; index++) {
+			port = &platform->ports[index];
+			if (port->tc == 1U && (port->phy_kind == I915_XD_PHY_DEKEL || port->phy_kind == I915_XD_PHY_MG))
+				type_c = 1;
+		}
+		if (!type_c)
+			continue;
+
+		/* DisplayPort on TC1 in both modes. */
+		i915_xd_ot_cover_type_c(platform, I915_XD_OUTPUT_TC_DP_ALT, "DP-TC");
+		i915_xd_ot_cover_type_c(platform, I915_XD_OUTPUT_TC_TBT, "TBT");
 	}
 }
