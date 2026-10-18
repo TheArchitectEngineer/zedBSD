@@ -112,6 +112,19 @@ struct i915_xd_wm_params {
 	uint32_t linetime_us;
 };
 
+/*
+ * Display 9's watermarks: the most lines a level holds, and the largest
+ * line time WM_LINETIME holds (in eighths of a microsecond).
+ *
+ * Values referenced: Intel Kaby Lake PRM Volume 2c, Command Reference:
+ * Registers (PLANE_WM, WM_LINETIME).
+ */
+#define I915_XD9_WM_MAX_LINES		31U
+#define I915_XD9_LINETIME_MAX		0x1ffU
+
+/* The slice every display 9 pipe's share of the display buffer is in. */
+#define I915_XD9_DBUF_SLICE		0x1U
+
 static uint32_t i915_xd_fixed_div(uint32_t value, uint32_t divisor);
 static void i915_xd_memory_levels(uint32_t word, uint16_t *latency);
 static uint32_t i915_xd_fixed_mul(uint32_t value, uint32_t fixed);
@@ -124,6 +137,9 @@ static void i915_xd_wm_transition(const struct i915_xd_wm_pipe *pipe, const stru
 static void i915_xd_wm_fit(struct i915_xd_wm_level *level, const struct i915_xd_ddb *ddb);
 static void i915_xd_wm_write_level(struct i915_xd_io *io, uint32_t offset, const struct i915_xd_wm_level *level);
 static void i915_xd_ddb_write(struct i915_xd_io *io, uint32_t offset, const struct i915_xd_ddb *ddb);
+static void i915_xd9_wm_level(const struct i915_xd_wm_pipe *pipe, const struct i915_xd_wm_params *params, unsigned latency, int above_zero, uint16_t floor_blocks, struct i915_xd_wm_level *level);
+static void i915_xd9_wm_levels(const struct i915_xd_wm_pipe *pipe, const struct i915_xd_wm_params *params, struct i915_xd_wm_level *levels);
+static int i915_xd9_dbuf_plan_pipe(const struct i915_xd_platform *platform, const uint16_t *latency, unsigned active, unsigned weight_before, unsigned weight_total, struct i915_xd9_pipe_plan *plan);
 
 /*
  * Tells whether a set of active pipes joins the memory bus to its one
@@ -334,6 +350,14 @@ drv_i915_xd_wm_plane(
 
 	/* The levels. */
 	i915_xd_wm_params(pipe, surface, &params);
+
+	/* Display 9 has its own levels, and no transition or SAGV watermark. */
+	if (platform->display_ver < 11U) {
+		i915_xd9_wm_levels(pipe, &params, wm->level);
+		return;
+	}
+
+	/* The levels of display 11 to 13. */
 	for (index = 0U; index < pipe->levels && index < I915_XD_WM_LEVELS; index++)
 		i915_xd_wm_level(platform, pipe, &params, pipe->latency_us[index], surface->minimal && index > 0U, &wm->level[index]);
 
@@ -365,6 +389,7 @@ drv_i915_xd_wm_cursor_blocks(
 	struct i915_xd_wm_surface cursor;
 	struct i915_xd_wm_params params;
 	struct i915_xd_wm_level level;
+	struct i915_xd_wm_level levels[I915_XD_WM_LEVELS];
 	unsigned index;
 	uint16_t needed;
 	uint16_t fixed;
@@ -377,18 +402,33 @@ drv_i915_xd_wm_cursor_blocks(
 	cursor.minimal = 0;
 	i915_xd_wm_params(pipe, &cursor, &params);
 
-	/* The deepest level the cursor can have. */
+	/* Starts with no level. */
 	needed = 0U;
 	level.enable = 0U;
 	level.ignore_lines = 0U;
 	level.blocks = 0U;
 	level.lines = 0U;
 	level.min_ddb = 0U;
-	for (index = 0U; index < pipe->levels && index < I915_XD_WM_LEVELS; index++) {
-		i915_xd_wm_level(platform, pipe, &params, pipe->latency_us[index], 0, &level);
-		if (level.min_ddb == I915_XD_WM_TOO_BIG)
-			break;
-		needed = level.min_ddb;
+	for (index = 0U; index < I915_XD_WM_LEVELS; index++)
+		levels[index] = level;
+
+	/* The deepest level the cursor can have. */
+	if (platform->display_ver < 11U) {
+		/* Display 9's levels, each no smaller than the one below. */
+		i915_xd9_wm_levels(pipe, &params, levels);
+		for (index = 0U; index < pipe->levels && index < I915_XD_WM_LEVELS; index++) {
+			if (levels[index].min_ddb == I915_XD_WM_TOO_BIG)
+				break;
+			needed = levels[index].min_ddb;
+		}
+	} else {
+		/* The levels of display 11 to 13, one at a time. */
+		for (index = 0U; index < pipe->levels && index < I915_XD_WM_LEVELS; index++) {
+			i915_xd_wm_level(platform, pipe, &params, pipe->latency_us[index], 0, &level);
+			if (level.min_ddb == I915_XD_WM_TOO_BIG)
+				break;
+			needed = level.min_ddb;
+		}
 	}
 
 	/* The fixed part. */
@@ -873,6 +913,63 @@ drv_i915_xd_memory_read(
 	return 0;
 }
 
+/*
+ * Plans the display buffer and the watermarks of display 9's lit pipes,
+ * each with one linear 32-bit plane and its cursor (which stays off).
+ *
+ * The one slice is shared by the lit pipes in the proportion of their
+ * widths.  At the end of each pipe's share the cursor keeps what its
+ * deepest level needs (at least 32 blocks alone, 8 beside other pipes);
+ * the plane takes the rest at the deepest level both it and the cursor
+ * fit at, and loses every deeper level its share cannot hold.  The line
+ * time is set beside them.  Returns 0, or ENOSPC when a pipe's share
+ * cannot hold its cursor, or its plane at level 0; the pipes planned up
+ * to that point keep what they were given, and their computed field is
+ * set.
+ *
+ * Procedure referenced: Intel Kaby Lake PRM Volume 12, Display Engine
+ * (the display buffer allocation and the watermark calculation).
+ */
+int
+drv_i915_xd9_dbuf_plan(
+	const struct i915_xd_platform *platform,
+	const uint16_t *latency,
+	struct i915_xd9_pipe_plan *pipes,
+	unsigned count)
+{
+	unsigned weight_total;
+	unsigned weight_before;
+	unsigned active;
+	unsigned pipe;
+	int error;
+
+	/* The lit pipes and the sum of their widths. */
+	weight_total = 0U;
+	active = 0U;
+	for (pipe = 0U; pipe < count; pipe++) {
+		if (!pipes[pipe].active)
+			continue;
+		weight_total += pipes[pipe].hdisplay;
+		active++;
+	}
+
+	/* Each lit pipe in order, its share starting where the last one's ended. */
+	weight_before = 0U;
+	for (pipe = 0U; pipe < count; pipe++) {
+		if (!pipes[pipe].active)
+			continue;
+
+		/* The pipe's share, its watermarks and its line time. */
+		error = i915_xd9_dbuf_plan_pipe(platform, latency, active, weight_before, weight_total, &pipes[pipe]);
+		if (error != 0)
+			return error;
+		weight_before += pipes[pipe].hdisplay;
+	}
+
+	/* Succeeded: every lit pipe fits. */
+	return 0;
+}
+
 /* Divides into 16.16 fixed point, rounding up. */
 static uint32_t
 i915_xd_fixed_div(
@@ -1183,4 +1280,226 @@ i915_xd_memory_levels(
 	/* Each byte, level by level. */
 	for (index = 0U; index < 4U; index++)
 		latency[index] = (uint16_t)((word >> (I915_XD_MAILBOX_LATENCY_LEVEL_BITS * index)) & I915_XD_MAILBOX_LATENCY_LEVEL_MASK);
+}
+
+/*
+ * Computes one display 9 watermark level from its latency.
+ *
+ * Method 1 is the plane's fetch over the latency in blocks; method 2 the
+ * lines it crosses in the latency, in blocks a line.  A line shorter
+ * than a block takes method 2; a latency of a line time or more the
+ * smaller of the two; a shorter one method 1.  The blocks are the method
+ * rounded up plus one; above level 0 they are at least a line's blocks,
+ * then one more, and never fewer than the level below's.  Level 0 has no
+ * lines.  A level of more lines than the register holds, or without a
+ * latency, is too big for any allocation; the allocation a level needs
+ * is one more than its blocks.
+ *
+ * Procedure referenced: Intel Kaby Lake PRM Volume 12, Display Engine
+ * (the watermark calculation methods).
+ */
+static void
+i915_xd9_wm_level(
+	const struct i915_xd_wm_pipe *pipe,
+	const struct i915_xd_wm_params *params,
+	unsigned latency,
+	int above_zero,
+	uint16_t floor_blocks,
+	struct i915_xd_wm_level *level)
+{
+	uint32_t method1;
+	uint32_t method2;
+	uint32_t selected;
+	uint32_t crossed;
+	uint32_t blocks;
+	uint32_t line_blocks;
+	uint32_t lines;
+
+	/* A level without a latency is never used. */
+	if (latency == 0U) {
+		level->min_ddb = I915_XD_WM_TOO_BIG;
+		return;
+	}
+
+	/* Method 1: the bytes fetched over the latency, in blocks. */
+	method1 = i915_xd_fixed_div(latency * params->pixel_rate * params->cpp, 1000U * I915_XD_WM_BLOCK_BYTES);
+
+	/* Method 2: the lines crossed over the latency, in blocks. */
+	crossed = i915_xd_div_round_up(latency * params->pixel_rate, pipe->htotal * 1000U);
+	method2 = i915_xd_fixed_mul(crossed, params->blocks_per_line);
+
+	/* The method the line's size and the latency choose. */
+	if (params->cpp * pipe->htotal / I915_XD_WM_BLOCK_BYTES < 1U &&
+	    params->bytes_per_line / I915_XD_WM_BLOCK_BYTES < 1U) {
+		selected = method2;
+	} else if (latency >= params->linetime_us) {
+		selected = method1;
+		if (method2 < method1)
+			selected = method2;
+	} else {
+		selected = method1;
+	}
+
+	/* The blocks and the lines. */
+	blocks = i915_xd_fixed_round_up(selected) + 1U;
+	lines = i915_xd_div_round_up(selected, params->blocks_per_line);
+
+	/* Above level 0: a line's blocks at least, one more, and no fewer than the level below; level 0 has no lines. */
+	if (above_zero) {
+		line_blocks = i915_xd_fixed_round_up(params->blocks_per_line);
+		if (blocks < line_blocks)
+			blocks = line_blocks;
+		blocks++;
+		if (blocks < floor_blocks)
+			blocks = floor_blocks;
+	} else {
+		lines = 0U;
+	}
+
+	/* More lines than the register holds. */
+	if (lines > I915_XD9_WM_MAX_LINES) {
+		level->min_ddb = I915_XD_WM_TOO_BIG;
+		return;
+	}
+
+	/* Succeeded: the level and the allocation it needs. */
+	level->blocks = (uint16_t)blocks;
+	level->lines = (uint16_t)lines;
+	level->min_ddb = (uint16_t)(blocks + 1U);
+	level->enable = 1U;
+}
+
+/*
+ * Computes the eight display 9 levels of a surface, each deeper level no
+ * smaller than the last one in use below it.
+ */
+static void
+i915_xd9_wm_levels(
+	const struct i915_xd_wm_pipe *pipe,
+	const struct i915_xd_wm_params *params,
+	struct i915_xd_wm_level *levels)
+{
+	uint16_t floor_blocks;
+	unsigned index;
+
+	/* Each level from its latency, the floor rising with every level in use. */
+	floor_blocks = 0U;
+	for (index = 0U; index < pipe->levels && index < I915_XD_WM_LEVELS; index++) {
+		i915_xd9_wm_level(pipe, params, pipe->latency_us[index], index > 0U, floor_blocks, &levels[index]);
+		if (levels[index].enable)
+			floor_blocks = levels[index].blocks;
+	}
+}
+
+/*
+ * Plans one lit display 9 pipe: its share of the slice, the plane's and
+ * the cursor's levels and parts, and its line time.  Returns 0, or
+ * ENOSPC when the share holds neither the cursor nor the plane's level 0.
+ */
+static int
+i915_xd9_dbuf_plan_pipe(
+	const struct i915_xd_platform *platform,
+	const uint16_t *latency,
+	unsigned active,
+	unsigned weight_before,
+	unsigned weight_total,
+	struct i915_xd9_pipe_plan *plan)
+{
+	struct i915_xd_wm_pipe timing;
+	struct i915_xd_wm_surface surface;
+	struct i915_xd_wm_params params;
+	struct i915_xd_plane_wm cursor;
+	struct i915_xd_wm_level *level;
+	uint16_t cursor_blocks;
+	uint32_t size;
+	uint32_t plane_size;
+	unsigned index;
+	int chosen;
+
+	/* The pipe's share of the slice by its width. */
+	plan->computed = 1;
+	drv_i915_xd_dbuf_pipe_range(platform, I915_XD9_DBUF_SLICE, weight_before, weight_before + plan->hdisplay, weight_total, &plan->pipe_ddb);
+	size = (uint32_t)(plan->pipe_ddb.end - plan->pipe_ddb.start);
+
+	/* The pipe's timing for the watermarks: eight levels, no priority control, no SAGV. */
+	timing.levels = I915_XD_WM_LEVELS;
+	for (index = 0U; index < I915_XD_WM_LEVELS; index++)
+		timing.latency_us[index] = latency[index];
+	timing.ipc = 0;
+	timing.sagv_block_us = 0U;
+	timing.pixel_rate_khz = plan->pixel_khz;
+	timing.htotal = plan->htotal;
+
+	/* The plane's levels: a linear surface of four bytes a pixel. */
+	surface.width = plan->plane_width;
+	surface.cpp = 4U;
+	surface.layout = I915_XD_WM_LINEAR;
+	surface.pixel_rate_khz = plan->pixel_khz;
+	surface.minimal = 0;
+	drv_i915_xd_wm_plane(platform, &timing, &surface, &plan->wm);
+
+	/* The cursor's levels, and the blocks it keeps. */
+	surface.width = I915_XD_WM_CURSOR_WIDTH;
+	surface.cpp = I915_XD_WM_CURSOR_CPP;
+	i915_xd_wm_params(&timing, &surface, &params);
+	for (index = 0U; index < I915_XD_WM_LEVELS; index++) {
+		cursor.level[index].enable = 0U;
+		cursor.level[index].ignore_lines = 0U;
+		cursor.level[index].blocks = 0U;
+		cursor.level[index].lines = 0U;
+		cursor.level[index].min_ddb = 0U;
+	}
+	i915_xd9_wm_levels(&timing, &params, cursor.level);
+	cursor_blocks = drv_i915_xd_wm_cursor_blocks(platform, &timing, active);
+
+	/* A share the cursor fills leaves nothing for the plane. */
+	if (cursor_blocks >= size)
+		return ENOSPC;
+	plan->cursor_ddb.start = (uint16_t)(plan->pipe_ddb.end - cursor_blocks);
+	plan->cursor_ddb.end = plan->pipe_ddb.end;
+
+	/* The deepest level at which both the cursor and the plane fit. */
+	plane_size = size - cursor_blocks;
+	chosen = -1;
+	for (index = I915_XD_WM_LEVELS; index > 0U; index--) {
+		if (cursor.level[index - 1U].min_ddb > cursor_blocks)
+			continue;
+		if (plan->wm.level[index - 1U].min_ddb > plane_size)
+			continue;
+		chosen = (int)(index - 1U);
+		break;
+	}
+
+	/* A plane that fits at no level does not fit. */
+	if (chosen < 0)
+		return ENOSPC;
+
+	/* The plane takes the rest of the share. */
+	plan->plane_ddb.start = plan->pipe_ddb.start;
+	plan->plane_ddb.end = (uint16_t)(plan->pipe_ddb.start + plane_size);
+
+	/* Deeper levels the share cannot hold, and levels too big for any, are off. */
+	for (index = 0U; index < I915_XD_WM_LEVELS; index++) {
+		level = &plan->wm.level[index];
+		if ((int)index > chosen && level->min_ddb > plane_size) {
+			level->enable = 0U;
+			level->blocks = 0U;
+			level->lines = 0U;
+			level->min_ddb = 0U;
+		}
+		if (level->min_ddb == I915_XD_WM_TOO_BIG) {
+			level->enable = 0U;
+			level->blocks = 0U;
+			level->lines = 0U;
+			level->min_ddb = 0U;
+		}
+	}
+
+	/* The line time in eighths of a microsecond, rounded up, as far as the register goes. */
+	plan->linetime = (plan->htotal * 1000U * 8U + plan->pixel_khz - 1U) / plan->pixel_khz;
+	if (plan->linetime > I915_XD9_LINETIME_MAX)
+		plan->linetime = I915_XD9_LINETIME_MAX;
+
+	/* Succeeded: the pipe fits. */
+	return 0;
 }

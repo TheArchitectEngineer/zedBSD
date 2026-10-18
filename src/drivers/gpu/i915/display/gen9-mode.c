@@ -20,6 +20,7 @@
 #include "gen9-mode.h"
 #include "output.h"
 #include "xd-clock.h"
+#include "xd-dbuf.h"
 #include "xd-ddi.h"
 #include "xd-dp.h"
 #include "xd-platform.h"
@@ -31,21 +32,6 @@
 
 #include <uapi/errno.h>
 #include <stddef.h>
-
-/* A fixed-point number with 16 fraction bits (Linux's uint_fixed_16_16_t). */
-#define I915_SKL_FIXED_SHIFT		16U
-
-/* A watermark level that cannot be used asks for this much DDB. */
-#define I915_SKL_WM_REJECT		0xffffU
-
-/* The DBUF block size and the bytes a pixel of the shown plane takes. */
-#define I915_SKL_DBUF_BLOCK_BYTES	512U
-#define I915_SKL_PLANE_CPP		4U
-
-/* The cursor's width the DDB is reserved for (skl_cursor_allocation), and its least reservation with one pipe or more. */
-#define I915_SKL_CURSOR_WIDTH		256U
-#define I915_SKL_CURSOR_MIN_ONE		32U
-#define I915_SKL_CURSOR_MIN_MANY	8U
 
 /* The EDID's detailed timing descriptors: the first, their size and count; and a CEA-861 extension's tag. */
 #define I915_SKL_EDID_DTD_FIRST		54U
@@ -64,10 +50,6 @@
 /* A safe mode when the sink gives none: VESA DMT 1024x768 at 60 Hz. */
 #define I915_SKL_SAFE_CLOCK_KHZ		65000
 
-static uint32_t i915_skl_fixed_div(uint32_t value, uint32_t divisor);
-static uint32_t i915_skl_fixed_mul(uint32_t value, uint32_t fixed);
-static uint32_t i915_skl_fixed_round_up(uint32_t fixed);
-static void i915_skl_plane_wm(uint32_t width, uint32_t htotal, uint32_t pixel_khz, const uint16_t latency_us[8], struct i915_skl_wm_level levels[8]);
 static int i915_skl_mode_fits(const struct i915_display_mode *mode, uint32_t max_pixel_khz);
 static void i915_skl_safe_mode(struct i915_display_mode *mode);
 
@@ -564,115 +546,57 @@ drv_i915_skl_dp_eq_ok(
 }
 
 /*
- * Computes the DDB split and the watermarks of the lit pipes.
- *
- * The DBUF is split between the lit pipes by their widths; each pipe
- * keeps the cursor's reservation at its end and gives the rest to the
- * first plane, at the highest watermark level whose blocks fit; levels
- * that do not fit the plane's share are turned off.  Returns 0, or
- * ENOSPC when even level 0 does not fit a pipe's share.
- *
- * Procedure referenced: Linux v6.8.12
- * drivers/gpu/drm/i915/display/skl_watermark.c (skl_compute_wm_params,
- * skl_compute_plane_wm, skl_cursor_allocation, skl_crtc_allocate_plane_ddb,
- * the pipes' split by width).
+ * Computes the DDB split and the watermarks of the lit pipes.  Returns 0,
+ * or ENOSPC when even level 0 does not fit a pipe's share; the pipes
+ * reached until then keep what they were given.
  */
 int
 drv_i915_skl_wm_compute(
 	struct i915_skl_pipe_wm pipes[3],
 	const uint16_t latency_us[8])
 {
-	struct i915_skl_wm_level cursor[8];
-	uint32_t total_weight;
-	uint32_t weight_before;
-	uint32_t active;
-	uint32_t size;
-	uint32_t cursor_size;
-	uint32_t plane_size;
+	struct i915_xd9_pipe_plan plan[3];
+	const struct i915_xd_platform *platform;
 	unsigned pipe;
-	int level;
-	int chosen;
+	unsigned level;
+	int error;
 
-	/* The lit pipes and their widths. */
-	total_weight = 0U;
-	active = 0U;
+	/* What the plan takes of each pipe. */
+	kern_memset(plan, 0, sizeof(plan));
 	for (pipe = 0U; pipe < 3U; pipe++) {
-		if (!pipes[pipe].active)
-			continue;
-		total_weight += pipes[pipe].hdisplay;
-		active++;
+		plan[pipe].active = pipes[pipe].active;
+		plan[pipe].hdisplay = pipes[pipe].hdisplay;
+		plan[pipe].htotal = pipes[pipe].htotal;
+		plan[pipe].pixel_khz = pipes[pipe].pixel_khz;
+		plan[pipe].plane_width = pipes[pipe].plane_width;
 	}
 
-	/* Each lit pipe: its share, the cursor's reservation, the plane's levels and its share. */
-	weight_before = 0U;
+	/* The xd code's plan on display 9 (every display 9 part has the same display buffer). */
+	platform = drv_i915_xd_platform_display9_class(I915_XD_KIND_KBL, I915_XD_POWER_CLASS_H);
+	error = drv_i915_xd9_dbuf_plan(platform, latency_us, plan, 3U);
+
+	/* What the plan gave each pipe it reached. */
 	for (pipe = 0U; pipe < 3U; pipe++) {
-		if (!pipes[pipe].active)
+		if (!plan[pipe].computed)
 			continue;
-
-		/* The pipe's share of the DBUF by its width (skl_ddb_entry_init of the weights). */
-		pipes[pipe].ddb_start = (uint32_t)((uint64_t)I915_SKL_DBUF_BLOCKS * weight_before / total_weight);
-		weight_before += pipes[pipe].hdisplay;
-		pipes[pipe].ddb_end = (uint32_t)((uint64_t)I915_SKL_DBUF_BLOCKS * weight_before / total_weight);
-		size = pipes[pipe].ddb_end - pipes[pipe].ddb_start;
-
-		/* The plane's levels, and the cursor's (a 256-pixel ARGB cursor), for this pipe's timing. */
-		i915_skl_plane_wm(pipes[pipe].plane_width, pipes[pipe].htotal, pipes[pipe].pixel_khz, latency_us, pipes[pipe].level);
-		i915_skl_plane_wm(I915_SKL_CURSOR_WIDTH, pipes[pipe].htotal, pipes[pipe].pixel_khz, latency_us, cursor);
-
-		/* The cursor keeps the highest level's need, at least 32 blocks alone or 8 with others. */
-		cursor_size = I915_SKL_CURSOR_MIN_MANY;
-		if (active == 1U)
-			cursor_size = I915_SKL_CURSOR_MIN_ONE;
-		for (level = 0; level < (int)I915_SKL_WM_LEVELS; level++) {
-			if (cursor[level].min_ddb == I915_SKL_WM_REJECT)
-				break;
-			if (cursor[level].min_ddb > cursor_size)
-				cursor_size = cursor[level].min_ddb;
+		pipes[pipe].ddb_start = plan[pipe].pipe_ddb.start;
+		pipes[pipe].ddb_end = plan[pipe].pipe_ddb.end;
+		pipes[pipe].plane_start = plan[pipe].plane_ddb.start;
+		pipes[pipe].plane_end = plan[pipe].plane_ddb.end;
+		pipes[pipe].cursor_start = plan[pipe].cursor_ddb.start;
+		pipes[pipe].cursor_end = plan[pipe].cursor_ddb.end;
+		pipes[pipe].linetime = plan[pipe].linetime;
+		for (level = 0U; level < 8U; level++) {
+			pipes[pipe].level[level].enable = plan[pipe].wm.level[level].enable;
+			pipes[pipe].level[level].blocks = plan[pipe].wm.level[level].blocks;
+			pipes[pipe].level[level].lines = plan[pipe].wm.level[level].lines;
+			pipes[pipe].level[level].min_ddb = plan[pipe].wm.level[level].min_ddb;
 		}
-
-		/* A pipe whose cursor needs its whole share does not fit. */
-		if (cursor_size >= size)
-			return ENOSPC;
-		pipes[pipe].cursor_start = pipes[pipe].ddb_end - cursor_size;
-		pipes[pipe].cursor_end = pipes[pipe].ddb_end;
-
-		/* The highest level both the plane and the cursor fit at. */
-		plane_size = size - cursor_size;
-		chosen = -1;
-		for (level = (int)I915_SKL_WM_LEVELS - 1; level >= 0; level--) {
-			if (cursor[level].min_ddb > cursor_size)
-				continue;
-			if (pipes[pipe].level[level].min_ddb > plane_size)
-				continue;
-			chosen = level;
-			break;
-		}
-
-		/* A plane that fits at no level does not fit. */
-		if (chosen < 0)
-			return ENOSPC;
-
-		/* The plane takes all the rest (its data rate is the pipe's only one). */
-		pipes[pipe].plane_start = pipes[pipe].ddb_start;
-		pipes[pipe].plane_end = pipes[pipe].ddb_start + plane_size;
-
-		/* Levels above the chosen one stay only if their blocks fit the plane's share (skl_check_wm_level). */
-		for (level = chosen + 1; level < (int)I915_SKL_WM_LEVELS; level++) {
-			if (pipes[pipe].level[level].min_ddb > plane_size)
-				kern_memset(&pipes[pipe].level[level], 0, sizeof(pipes[pipe].level[level]));
-		}
-
-		/* Levels the computation refused are off. */
-		for (level = 0; level < (int)I915_SKL_WM_LEVELS; level++) {
-			if (pipes[pipe].level[level].min_ddb == I915_SKL_WM_REJECT)
-				kern_memset(&pipes[pipe].level[level], 0, sizeof(pipes[pipe].level[level]));
-		}
-
-		/* The line time in 1/8 us (skl_linetime_wm), at most 0x1ff. */
-		pipes[pipe].linetime = (pipes[pipe].htotal * 1000U * 8U + pipes[pipe].pixel_khz - 1U) / pipes[pipe].pixel_khz;
-		if (pipes[pipe].linetime > I915_SKL_LINETIME_MASK)
-			pipes[pipe].linetime = I915_SKL_LINETIME_MASK;
 	}
+
+	/* A pipe that does not fit. */
+	if (error != 0)
+		return error;
 
 	/* Succeeded: every lit pipe fits. */
 	return 0;
@@ -708,138 +632,6 @@ drv_i915_skl_ddb_word(
 
 	/* Succeeded: the entry. */
 	return ((end - 1U) << I915_SKL_BUF_END_SHIFT) | start;
-}
-
-/* Divides into a 16.16 fixed-point number, rounded up (div_fixed16). */
-static uint32_t
-i915_skl_fixed_div(
-	uint32_t value,
-	uint32_t divisor)
-{
-	uint64_t scaled;
-
-	/* The quotient with 16 fraction bits. */
-	scaled = (uint64_t)value << I915_SKL_FIXED_SHIFT;
-	scaled = (scaled + divisor - 1U) / divisor;
-	if (scaled > 0xffffffffULL)
-		scaled = 0xffffffffULL;
-
-	/* Succeeded: the fixed-point quotient. */
-	return (uint32_t)scaled;
-}
-
-/* Multiplies a fixed-point number by an integer (mul_u32_fixed16). */
-static uint32_t
-i915_skl_fixed_mul(
-	uint32_t value,
-	uint32_t fixed)
-{
-	uint64_t product;
-
-	/* The product, clamped to 32 bits. */
-	product = (uint64_t)value * fixed;
-	if (product > 0xffffffffULL)
-		product = 0xffffffffULL;
-
-	/* Succeeded: the fixed-point product. */
-	return (uint32_t)product;
-}
-
-/* Rounds a fixed-point number up to an integer (fixed16_to_u32_round_up). */
-static uint32_t
-i915_skl_fixed_round_up(
-	uint32_t fixed)
-{
-	/* Succeeded: the integer at or above it. */
-	return (uint32_t)(((uint64_t)fixed + 0xffffU) >> I915_SKL_FIXED_SHIFT);
-}
-
-/*
- * Computes the levels of a linear 32-bit plane of a width on a pipe's
- * timing (skl_compute_wm_params() and skl_compute_plane_wm() for display
- * 9, linear, unrotated, IPC off).
- */
-static void
-i915_skl_plane_wm(
-	uint32_t width,
-	uint32_t htotal,
-	uint32_t pixel_khz,
-	const uint16_t latency_us[8],
-	struct i915_skl_wm_level levels[8])
-{
-	uint32_t bytes_per_line;
-	uint32_t blocks_per_line;
-	uint32_t linetime_us;
-	uint32_t latency;
-	uint32_t method1;
-	uint32_t method2;
-	uint32_t selected;
-	uint32_t blocks;
-	uint32_t lines;
-	uint32_t previous_blocks;
-	uint32_t line_blocks;
-	uint32_t interim;
-	unsigned level;
-
-	/* The plane's line in DBUF blocks: the bytes rounded up to blocks, and one more for a linear surface. */
-	bytes_per_line = width * I915_SKL_PLANE_CPP;
-	blocks_per_line = ((bytes_per_line + I915_SKL_DBUF_BLOCK_BYTES - 1U) / I915_SKL_DBUF_BLOCK_BYTES + 1U) << I915_SKL_FIXED_SHIFT;
-
-	/* The line time in microseconds, rounded up. */
-	linetime_us = i915_skl_fixed_round_up(i915_skl_fixed_div(htotal * 1000U, pixel_khz));
-
-	/* Each level from its latency. */
-	previous_blocks = 0U;
-	for (level = 0U; level < I915_SKL_WM_LEVELS; level++) {
-		kern_memset(&levels[level], 0, sizeof(levels[level]));
-		levels[level].min_ddb = I915_SKL_WM_REJECT;
-
-		/* A level without a latency is not used. */
-		latency = latency_us[level];
-		if (latency == 0U)
-			continue;
-
-		/* Method 1 (bytes over the latency) and method 2 (lines over the latency). */
-		method1 = i915_skl_fixed_div(latency * pixel_khz * I915_SKL_PLANE_CPP, 1000U * I915_SKL_DBUF_BLOCK_BYTES);
-		interim = (latency * pixel_khz + htotal * 1000U - 1U) / (htotal * 1000U);
-		method2 = i915_skl_fixed_mul(interim, blocks_per_line);
-
-		/* The method the line's size and the latency choose. */
-		if ((I915_SKL_PLANE_CPP * htotal / I915_SKL_DBUF_BLOCK_BYTES) < 1U && (bytes_per_line / I915_SKL_DBUF_BLOCK_BYTES) < 1U) {
-			selected = method2;
-		} else if (latency >= linetime_us) {
-			selected = method1;
-			if (method2 < method1)
-				selected = method2;
-		} else {
-			selected = method1;
-		}
-
-		/* The blocks, the lines, and display 9's rules for the levels above 0. */
-		blocks = i915_skl_fixed_round_up(selected) + 1U;
-		lines = (selected + blocks_per_line - 1U) / blocks_per_line;
-		if (level > 0U) {
-			line_blocks = i915_skl_fixed_round_up(blocks_per_line);
-			if (blocks < line_blocks)
-				blocks = line_blocks;
-			blocks++;
-			if (previous_blocks > blocks)
-				blocks = previous_blocks;
-		} else {
-			lines = 0U;
-		}
-
-		/* A level needing more lines than the register holds is not used. */
-		if (lines > I915_SKL_WM_MAX_LINES)
-			continue;
-
-		/* The level, and the DDB it needs: more than its blocks. */
-		levels[level].enable = 1;
-		levels[level].blocks = blocks;
-		levels[level].lines = lines;
-		levels[level].min_ddb = blocks + 1U;
-		previous_blocks = blocks;
-	}
 }
 
 /* Reports nonzero when a mode is progressive, at most 4096x4096 and within the pixel clock. */
