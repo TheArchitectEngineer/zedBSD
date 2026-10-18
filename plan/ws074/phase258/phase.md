@@ -2,16 +2,16 @@
 
 # ws074-p258: native Proxy internal methods and lifetime
 
-Status: uncleared（q31 Has/descriptor prerequisite partial cleared、whole Proxy operations未達）
+Status: in-progress（q32 shared descriptor conversion partial、q30/q31 verified）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
-Queue: ws074-q20261018-31-i01（q30-i01 cleared履歴保持）
+Queue: ws074-q20261018-32-i01（q30/q31-i01 cleared履歴保持）
 Origin: p189/q29 original WebIDL2 parseがProxy未定義で停止。
 
 Objective / own criteria: native managed Proxyを実object internal methodsへ接続し、constructor/revocableと各internal operationのtrap/fallback/invariant/receiver/revocation/callability/GCを正しく実行する。original WebIDL2 actual parse/validatorに必要なget/set/array behaviorを通常APIで提供し、independent controls/原WPTを通す。部分read stageだけでwholeをclearしない。
 Design: vm_native_operationsはscript-free heap interfaceのまま保持。Proxyにはmanaged target/handler recordを持たせ、scriptを実行可能なrealm-aware access/internal methodからtrapを呼ぶ。opaque JS constructor公開前に必要なoperationを段階的に整える。各段階は自走承認に基づく新finite Queueで正確に選定する。
-Current scope: [q31 exact Queue](../queue.md)のHasPropertyと既存ToPropertyDescriptor検証順。q30のnoncallable/nonProxy target・managed read/private factoryはverified outputとして保持。未選定write/descriptor internal methods/ownkeys/prototype/IsArray/function/call/constructとglobal公開はwhole Phase受入に残す。
+Current scope: [q32 exact Queue](../queue.md)のVM共有To/From/CompletePropertyDescriptorと既存Object helper接続。q30/q31のread/Has/native lifetimeをverified outputとして保持し、未選定Proxy descriptor internal methods/write/keys/prototype/extent/IsArray/call/construct/global公開をwhole受入へ残す。
 Standards: Guardrail/C全文/browser component全文、簡約版無し。一次 https://tc39.es/ecma262/multipage/ordinary-and-exotic-objects-behaviours.html#sec-proxy-object-internal-methods-and-internal-slots-get-p-receiver 。既存p100がWS全source near-final conformanceを所有し、本partialはnew/changed scopeの全文適合を検証。
 Verification/bounds/affected components: q30 snapshotの通り。private object kind/cell/newborn/trace/revokeとactual receiver/trap/invariant/GCをnative/Chromeで確認し、ordinary whole/callback PASSを守る。target single-source compileのみとfull target runtimeを区別。未達はunclearedとresume。
 
@@ -42,3 +42,5 @@ DOM41/41、interpreter45・factory GC56、CSSOM12+12、producer7/observer10/Erro
 i01 Has/descriptor prerequisite partialだけcleared。whole p258はrealm-aware getOwn/Define、FromPropertyDescriptor partial field、Set/keys/prototype/extent/IsArray/call/construct・global constructor/revocable/actual original WebIDL2未達でuncleared。元q30 read partialを維持し次finite scopeへ継続、whole p189/p255/p256/p100/full target/WS100%未達。raw/archiveを全member sequential read-back済み。共有Master/Queue/next/cache/GitHub投影pending、push無し。
 
 [Full evidence](evidence/20261018-q31/README.md)。次は必要なdescriptor internal methodsを新finite Queueで具体化し、partial FromPropertyDescriptorのpresenceとshared conversionの層/GCを確認する。global APIと全Proxy受入は未達に保つ。
+
+Event ws074-p258-q32-selected-20261018: Proxy GetOwn/Defineから標準descriptor処理を共有するため、q31でverifiedのTo順をVM-owned abstract operationへ移し、Fromのpartial field presenceとCompleteのdefaultsを提供する同一Phase内設計を具体化。既存Objectのcomplete descriptor出力を維持しprivate partialはnative/genuine Chromeで確認する。これはVM→JS依存を増やさず既存layerのVM側へ言語処理を集約する。exact source/criteria/max90分とfocused gatesはq32 Queue、全1508再実行・global公開を先取りしない。共有投影pending。
