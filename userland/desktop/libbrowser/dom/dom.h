@@ -367,6 +367,10 @@ struct dom_element {
 	size_t attribute_capacity;
 	struct dom_node *content;
 	struct dom_control *control;
+	/* Inline declaration precision survives canonical attribute serialization until an external style mutation. */
+	struct vm_string *inline_style_source;
+	/* CSSOM's updating flag prevents its own attribute commit from reparsing rounded output. */
+	int inline_style_updating;
 	/* Inline CSS state is traced opaquely; only binding state finalizes its C source model. */
 	struct vm_cell *style_sheet;
 	/* The binding owns a traced SameObject scalar SVG rect width graph. */
@@ -522,6 +526,7 @@ struct dom_attribute *dom_element_find_attribute_uri(const struct dom_element *e
 int dom_element_is(const struct dom_node *node, int ns, int tag);
 int dom_is_node(const struct vm_cell *cell);
 int dom_element_set_attribute(struct dom_element *element, struct vm_string *name, struct vm_string *value);
+int dom_element_set_style_attribute(struct dom_element *element, struct vm_string *source, struct vm_string *value);
 int dom_element_remove_attribute(struct dom_element *element, struct vm_string *name);
 int dom_text_set(struct dom_node *node, const uint16_t *units, size_t length);
 int dom_text_truncate(struct dom_node *node, size_t length);

@@ -16,8 +16,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-static void node_style_reset(struct dom_node *node);
-static void node_style_reset_tree(struct dom_node *root);
 static void node_trace(struct vm_heap *heap, struct vm_cell *cell);
 static void document_finalize(struct vm_heap *heap, struct vm_cell *cell);
 static void element_trace(struct vm_heap *heap, struct vm_cell *cell);
@@ -25,8 +23,6 @@ static void element_finalize(struct vm_heap *heap, struct vm_cell *cell);
 static void character_data_finalize(struct vm_heap *heap, struct vm_cell *cell);
 static void character_data_trace(struct vm_heap *heap, struct vm_cell *cell);
 static void doctype_trace(struct vm_heap *heap, struct vm_cell *cell);
-static struct dom_node *node_alloc(struct dom_document *document, const struct vm_cell_type *type, size_t size, int node_type);
-static struct dom_node *character_data_create(struct dom_document *document, int node_type, const uint16_t *units, size_t length);
 
 /* A document, which refers to its children like any node. */
 static const struct vm_cell_type document_type = { "document", node_trace, document_finalize };
@@ -43,6 +39,11 @@ static const struct vm_cell_type character_data_type = { "character-data", chara
 /* A DOCTYPE node, which also refers to its strings. */
 static const struct vm_cell_type doctype_type = { "document-type", doctype_trace, NULL };
 
+static void node_style_reset(struct dom_node *node);
+static void node_style_reset_tree(struct dom_node *root);
+static struct dom_node *node_alloc(struct dom_document *document, const struct vm_cell_type *type, size_t size, int node_type);
+static struct dom_node *character_data_create(struct dom_document *document, int node_type, const uint16_t *units, size_t length);
+static int node_set_attribute(struct dom_element *element, struct vm_string *name, struct vm_string *value, int *committed);
 static int node_attribute_notify(struct dom_element *element, struct vm_string *name, struct vm_string *old_value);
 
 /*
@@ -395,6 +396,7 @@ dom_element_add_attribute(
 	struct dom_attribute *attributes;
 	struct dom_attribute *attribute;
 	size_t capacity;
+	int is_style;
 
 	/* Grows the array when it is full. */
 	if (element->attribute_count == element->attribute_capacity) {
@@ -424,6 +426,14 @@ dom_element_add_attribute(
 	attribute->namespace_uri = NULL;
 	attribute->ns = ns;
 	element->attribute_count++;
+
+	/* No-namespace additions outside a CSSOM update replace any prior precise inline model. */
+	if (ns == DOM_NS_NONE &&
+	    !element->inline_style_updating) {
+		is_style = vm_string_equal_ascii(name, "style");
+		if (is_style)
+			element->inline_style_source = NULL;
+	}
 
 	/* Only no-namespace content attributes affect native select selectedness. */
 	if (ns == DOM_NS_NONE)
@@ -520,33 +530,89 @@ dom_element_set_attribute(
 	struct vm_string *name,
 	struct vm_string *value)
 {
-	struct dom_attribute *attribute;
-	struct vm_string *old_value;
-	int error;
+	int committed;
+	int status;
 
-	/* Existing attributes lend their retired value until the notification hook roots it. */
-	old_value = NULL;
-	attribute = dom_element_find_attribute(element, DOM_NS_NONE, name);
-	if (attribute != NULL) {
-		/* These native value, select-state and generation updates allocate no VM cells. */
-		old_value = attribute->value;
-		name = attribute->name;
-		attribute->value = value;
-		dom_select_attribute_changed(element, name, 1, 1);
-		element->node.document->generation++;
-	} else {
-		/* Append publishes all native attribute edges before any notification can allocate. */
-		error = dom_element_add_attribute(element, DOM_NS_NONE, NULL, name, value);
-		if (error != 0)
-			return error;
+	/* Ordinary attribute assignment shares the same commit and notification path as CSSOM. */
+	status = node_set_attribute(element, name, value, &committed);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the caller sees the committed ordinary attribute assignment. */
+	return 0;
+}
+
+/*
+ * Commits canonical inline text while preserving the exact specified declaration source.
+ * A failed notification keeps a committed model; failure before commit restores its former source.
+ */
+int
+dom_element_set_style_attribute(
+	struct dom_element *element,
+	struct vm_string *source,
+	struct vm_string *value)
+{
+	struct vm_heap *heap;
+	struct vm_string *old_source;
+	struct vm_string *name;
+	struct vm_cell *roots[5];
+	unsigned index;
+	unsigned registered;
+	int updating;
+	int committed;
+	int status;
+
+	/* Bare native callers retain the owner and both fresh strings before key creation can collect. */
+	heap = element->node.document->heap;
+	old_source = element->inline_style_source;
+	roots[0] = &element->node.cell;
+	roots[1] = &source->cell;
+	roots[2] = &value->cell;
+	roots[3] = NULL;
+	roots[4] = NULL;
+	if (old_source != NULL)
+		roots[3] = &old_source->cell;
+	registered = 0;
+	for (index = 0; index < 5U; index++) {
+		status = vm_heap_add_root(heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+
+		/* Only successful root registrations belong to cleanup. */
+		registered++;
 	}
 
-	/* The ordinary commit is complete, including a same-value assignment. */
-	error = node_attribute_notify(element, name, old_value);
-	if (error != 0)
-		return error;
+	/* The style key is owned before native mutation can allocate observer records. */
+	name = vm_atom_from_ascii(heap, "style");
+	if (name == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
 
-	/* Succeeded: the attribute and every interested observer see the committed change. */
+	/* The source is authoritative before the attribute hook observes the new serialized text. */
+	roots[4] = &name->cell;
+	updating = element->inline_style_updating;
+	element->inline_style_source = source;
+	element->inline_style_updating = 1;
+	status = node_set_attribute(element, name, value, &committed);
+	element->inline_style_updating = updating;
+
+	/* Reentrant committed CSSOM changes own their later source; only an uncommitted failure restores the old model. */
+	if (!committed)
+		element->inline_style_source = old_source;
+
+cleanup:
+	/* No native frame keeps a retired source or a registry slot after return. */
+	while (registered != 0U) {
+		registered--;
+		vm_heap_remove_root(heap, &roots[registered]);
+	}
+
+	/* Preserve the actual allocation or post-commit notification error. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: precise native declaration state and canonical DOM text were published together. */
 	return 0;
 }
 
@@ -972,6 +1038,10 @@ element_trace(
 	if (element->child_source != NULL)
 		vm_heap_mark(heap, &element->child_source->cell);
 
+	/* The exact inline source remains live with its Element, independently of the rounded attribute. */
+	if (element->inline_style_source != NULL)
+		vm_heap_mark(heap, &element->inline_style_source->cell);
+
 	/* A reachable native style element retains its current binding-owned source model. */
 	if (element->style_sheet != NULL)
 		vm_heap_mark(heap, element->style_sheet);
@@ -1129,6 +1199,48 @@ character_data_create(
 	return &text->node;
 }
 
+/* Assign one ordinary no-namespace attribute and report publication separately from notification success. */
+static int
+node_set_attribute(
+	struct dom_element *element,
+	struct vm_string *name,
+	struct vm_string *value,
+	int *committed)
+{
+	struct dom_attribute *attribute;
+	struct vm_string *old_value;
+	int error;
+
+	/* Existing attributes lend their retired value until the notification hook roots it. */
+	*committed = 0;
+	old_value = NULL;
+	attribute = dom_element_find_attribute(element, DOM_NS_NONE, name);
+	if (attribute != NULL) {
+		/* These native value, select-state and generation updates allocate no VM cells. */
+		old_value = attribute->value;
+		name = attribute->name;
+		attribute->value = value;
+		dom_select_attribute_changed(element, name, 1, 1);
+		element->node.document->generation++;
+	} else {
+		/* Append publishes all native attribute edges before any notification can allocate. */
+		error = dom_element_add_attribute(element, DOM_NS_NONE, NULL, name, value);
+		if (error != 0)
+			return error;
+	}
+
+	/* Publish commit before notifications can fail or reenter the declaration model. */
+	*committed = 1;
+
+	/* The ordinary commit is complete, including a same-value assignment. */
+	error = node_attribute_notify(element, name, old_value);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the attribute and every interested observer see the committed change. */
+	return 0;
+}
+
 /* Delivers committed ordinary attribute snapshots through an opaque binding-owner hook. */
 static int
 node_attribute_notify(
@@ -1138,6 +1250,13 @@ node_attribute_notify(
 {
 	struct dom_document *document;
 	int error;
+	int is_style;
+
+	/* External style changes reparse even when the exact serialized string object is assigned again. */
+	is_style = vm_string_equal_ascii(name, "style");
+	if (is_style &&
+	    !element->inline_style_updating)
+		element->inline_style_source = NULL;
 
 	/* Parser and standalone Documents have no attached notification owner. */
 	document = element->node.document;

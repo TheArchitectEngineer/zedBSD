@@ -1015,6 +1015,7 @@ cascade_collect(
 	const struct cascade_sheet *sheets;
 	struct css_declaration *declarations;
 	struct dom_attribute *attribute;
+	struct vm_string *inline_source;
 	struct vm_string *id;
 	struct wb_units units;
 	size_t declaration_count;
@@ -1053,17 +1054,17 @@ cascade_collect(
 	/* The style attribute, more specific than any selector (the element's own, not its pseudo-elements'). */
 	if (engine->pseudo_wanted != CSS_PSEUDO_ELEMENT_NONE)
 		return 0;
-	attribute = dom_element_find_attribute(element, DOM_NS_NONE, engine->atom_style);
-	if (attribute == NULL)
-		return 0;
-	wb_units_init(&units);
-	error = 0;
-	if ((attribute->value->flags & VM_STRING_WIDE) != 0) {
-		error = wb_units_append(&units, vm_string_units(attribute->value), attribute->value->length);
-	} else {
-		for (index = 0; index < attribute->value->length && error == 0; index++)
-			error = wb_units_append_code_point(&units, vm_string_latin1(attribute->value)[index]);
+	inline_source = element->inline_style_source;
+	if (inline_source == NULL) {
+		attribute = dom_element_find_attribute(element, DOM_NS_NONE, engine->atom_style);
+		if (attribute == NULL)
+			return 0;
+		inline_source = attribute->value;
 	}
+
+	/* The native declaration source retains precision that public serialized text may round. */
+	wb_units_init(&units);
+	error = vm_string_append_units(inline_source, &units);
 
 	/* Parses the attribute's declarations. */
 	if (error == 0)
