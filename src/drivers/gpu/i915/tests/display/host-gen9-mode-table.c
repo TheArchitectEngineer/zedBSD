@@ -337,7 +337,7 @@ i915_table_buf_trans(
 		0x1902U, 0x1906U, 0x190eU, 0x1912U, 0x1916U, 0x191eU, 0x5906U, 0x590eU,
 		0x5916U, 0x591eU, 0x5917U, 0x3e92U, 0x3ea0U, 0x9bc5U, 0x9b41U, 0x87c0U
 	};
-	const struct i915_skl_buf_trans *table;
+	const struct i915_xd9_buf_trans *table;
 	unsigned platform;
 	unsigned device;
 	unsigned output;

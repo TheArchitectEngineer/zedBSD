@@ -284,6 +284,31 @@ static const uint32_t i915_xd_dp_source_table[] = {
 /* The negative error the probe reports for a short read (EIO). */
 #define I915_XD_DP_PROBE_EIO				5
 
+/*
+ * The link rates a display 9 DDI drives (RBR, HBR and HBR2, all 8b/10b),
+ * slowest first, in the 10 kbit/s a lane of the other rates here count,
+ * and the colour depth its links are planned for (8 bits a channel).
+ *
+ * Values referenced: Intel Kaby Lake PRM Volume 12, Display Engine (the
+ * DisplayPort link rates of the DDIs).
+ */
+static const uint32_t i915_xd9_dp_rates[3] = { 162000U, 270000U, 540000U };
+#define I915_XD9_DP_BPC			8U
+#define I915_XD9_DP_MAX_LANES		4U
+
+/*
+ * The sink's MAX_LINK_RATE codes of the three rates; a sink whose code is
+ * HBR2's or above offers display 9 HBR2.
+ *
+ * Values referenced: VESA DisplayPort Standard 1.4 (DPCD MAX_LINK_RATE).
+ */
+#define I915_XD9_DP_CODE_RBR		0x06U
+#define I915_XD9_DP_CODE_HBR		0x0aU
+#define I915_XD9_DP_CODE_HBR2		0x14U
+
+/* A single stream's data rate is the mode's own: a scale of one million millionths. */
+#define I915_XD9_DP_SST_OVERHEAD	1000000U
+
 static uint32_t i915_xd_dp_div_round_up(uint64_t numerator, uint64_t denominator);
 static void i915_xd_dp_note(const struct i915_xd_dp_link *link, unsigned kind, const char *text);
 static void i915_xd_dp_sleep(const struct i915_xd_dp_link *link, unsigned wait_us);
@@ -1440,6 +1465,102 @@ drv_i915_xd_dp_probe_log(
 			 ((unsigned)e[54] | ((unsigned)e[55] << 8)) * 10u,
 			 sink->has_hdmi_sink);
 	}
+}
+
+/*
+ * Chooses a display 9 DisplayPort link for a mode at 8 bits a channel: the
+ * slowest rate the DDI and the sink share, then the fewest lanes, whose
+ * data rate holds the mode's; with its M/N values.  Returns 0, or ENOSPC
+ * when the sink offers no rate display 9 drives or no link carries the
+ * mode.
+ */
+int
+drv_i915_xd9_dp_link(
+	uint32_t sink_max_khz,
+	unsigned sink_lanes,
+	uint32_t pixel_khz,
+	struct i915_xd_dp_choice *choice,
+	struct i915_xd_dp_m_n *m_n)
+{
+	unsigned lanes;
+	int error;
+
+	/* A sink slower than RBR shares no rate with the DDI. */
+	if (sink_max_khz < i915_xd9_dp_rates[0])
+		return ENOSPC;
+
+	/* The lanes both ends have: the sink's, up to the DDI's four. */
+	lanes = sink_lanes;
+	if (lanes > I915_XD9_DP_MAX_LANES)
+		lanes = I915_XD9_DP_MAX_LANES;
+
+	/* The slowest link under the sink's rate. */
+	error = drv_i915_xd_dp_choose(
+		pixel_khz,
+		I915_XD9_DP_BPC,
+		I915_XD9_DP_BPC,
+		i915_xd9_dp_rates,
+		sizeof(i915_xd9_dp_rates) / sizeof(i915_xd9_dp_rates[0]),
+		sink_max_khz,
+		lanes,
+		choice);
+	if (error != 0)
+		return error;
+
+	/* The M/N values of a single stream on it. */
+	drv_i915_xd_dp_m_n(choice->bpp * 16U, choice->lanes, pixel_khz, choice->rate_khz, I915_XD9_DP_SST_OVERHEAD, m_n);
+
+	/* Succeeded: the link and its M/N. */
+	return 0;
+}
+
+/*
+ * Reports the fastest rate display 9 drives that a sink's MAX_LINK_RATE
+ * code offers, or 0 for a code below RBR or between the rates.
+ */
+uint32_t
+drv_i915_xd9_dp_sink_rate(
+	uint8_t code)
+{
+	/* A code of HBR2 or a faster rate offers HBR2. */
+	if (code >= I915_XD9_DP_CODE_HBR2)
+		return i915_xd9_dp_rates[2];
+
+	/* HBR. */
+	if (code == I915_XD9_DP_CODE_HBR)
+		return i915_xd9_dp_rates[1];
+
+	/* RBR. */
+	if (code == I915_XD9_DP_CODE_RBR)
+		return i915_xd9_dp_rates[0];
+
+	/* Succeeded: no rate display 9 drives. */
+	return 0U;
+}
+
+/*
+ * Reports the LINK_BW_SET code of a rate display 9 drives, or 0 for
+ * another rate.
+ */
+uint8_t
+drv_i915_xd9_dp_rate_code(
+	uint32_t rate_khz)
+{
+	unsigned index;
+	uint8_t code;
+
+	/* Only the three rates have a code here. */
+	for (index = 0U; index < sizeof(i915_xd9_dp_rates) / sizeof(i915_xd9_dp_rates[0]); index++) {
+		if (i915_xd9_dp_rates[index] != rate_khz)
+			continue;
+
+		/* Succeeded: the rate's code. */
+		code = drv_i915_xd_dp_rate_code(rate_khz);
+		return code;
+	}
+
+	/* Succeeded: no code. */
+	return 0U;
 }
 
 /* Divides, rounding up. */

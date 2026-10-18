@@ -369,6 +369,9 @@ struct i915_xd_dp_probe {
 	int has_hdmi_sink;
 };
 
+int drv_i915_xd9_dp_link(uint32_t sink_max_khz, unsigned sink_lanes, uint32_t pixel_khz, struct i915_xd_dp_choice *choice, struct i915_xd_dp_m_n *m_n);
+uint32_t drv_i915_xd9_dp_sink_rate(uint8_t code);
+uint8_t drv_i915_xd9_dp_rate_code(uint32_t rate_khz);
 uint8_t drv_i915_xd_dp_rate_code(uint32_t rate_khz);
 uint32_t drv_i915_xd_dp_code_rate(uint8_t code);
 unsigned drv_i915_xd_dp_rates(uint32_t source_max_khz, uint32_t vbt_max_khz, uint8_t sink_code, uint8_t repeater_code, struct i915_xd_dp_rates *rates);

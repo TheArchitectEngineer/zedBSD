@@ -346,6 +346,32 @@ drv_i915_xd_buddy_mask(
 	return NULL;
 }
 
+/*
+ * Reports the first display 9 description of a platform kind and power
+ * class, or NULL when the kind has no part of that class.
+ */
+const struct i915_xd_platform *
+drv_i915_xd_platform_display9_class(
+	unsigned kind,
+	unsigned power_class)
+{
+	unsigned index;
+
+	/* Looks for the kind and the class among the rows. */
+	for (index = 0U; index < sizeof(i915_xd9_platforms) / sizeof(i915_xd9_platforms[0]); index++) {
+		if (i915_xd9_platforms[index].kind != kind)
+			continue;
+		if (i915_xd9_platforms[index].power_class != power_class)
+			continue;
+
+		/* Succeeded: the row of the class. */
+		return &i915_xd9_platforms[index];
+	}
+
+	/* Succeeded: no part of the kind has the class. */
+	return NULL;
+}
+
 /* Chooses a description among the rows of one table (see drv_i915_xd_platform_choose). */
 static int
 i915_xd_platform_choose_in(

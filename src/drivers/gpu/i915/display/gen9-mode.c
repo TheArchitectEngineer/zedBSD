@@ -19,6 +19,10 @@
 
 #include "gen9-mode.h"
 #include "output.h"
+#include "xd-clock.h"
+#include "xd-ddi.h"
+#include "xd-dp.h"
+#include "xd-platform.h"
 #include <kern/kcrt.h>
 
 #include "../device-info.h"
@@ -57,199 +61,8 @@
 /* The DPCD revision from which clock recovery always waits 100 us. */
 #define I915_SKL_DPCD_REV_14		0x14U
 
-/* The WRPLL's DCO deviations it accepts above and below a central frequency, in 1/10000. */
-#define I915_SKL_DCO_MAX_PDEVIATION	100U
-#define I915_SKL_DCO_MAX_NDEVIATION	600U
-
 /* A safe mode when the sink gives none: VESA DMT 1024x768 at 60 Hz. */
 #define I915_SKL_SAFE_CLOCK_KHZ		65000
-
-/*
- * The DDI buffer translation tables of display 9: the DP ones of Skylake
- * and Kaby Lake by power class, the eDP low swing ones, and the HDMI ones.
- *
- * Values referenced: Linux v6.8.12
- * drivers/gpu/drm/i915/display/intel_ddi_buf_trans.c (the Skylake and
- * Kaby Lake DP, eDP and HDMI tables).
- */
-static const struct i915_skl_buf_trans i915_skl_trans_dp[] = {
-	{ 0x00002016U, 0x000000a0U, 0x0U },
-	{ 0x00005012U, 0x0000009bU, 0x0U },
-	{ 0x00007011U, 0x00000088U, 0x0U },
-	{ 0x80009010U, 0x000000c0U, 0x1U },
-	{ 0x00002016U, 0x0000009bU, 0x0U },
-	{ 0x00005012U, 0x00000088U, 0x0U },
-	{ 0x80007011U, 0x000000c0U, 0x1U },
-	{ 0x00002016U, 0x000000dfU, 0x0U },
-	{ 0x80005012U, 0x000000c0U, 0x1U }
-};
-
-/* Skylake U, DP. */
-static const struct i915_skl_buf_trans i915_skl_u_trans_dp[] = {
-	{ 0x0000201bU, 0x000000a2U, 0x0U },
-	{ 0x00005012U, 0x00000088U, 0x0U },
-	{ 0x80007011U, 0x000000cdU, 0x1U },
-	{ 0x80009010U, 0x000000c0U, 0x1U },
-	{ 0x0000201bU, 0x0000009dU, 0x0U },
-	{ 0x80005012U, 0x000000c0U, 0x1U },
-	{ 0x80007011U, 0x000000c0U, 0x1U },
-	{ 0x00002016U, 0x00000088U, 0x0U },
-	{ 0x80005012U, 0x000000c0U, 0x1U }
-};
-
-/* Skylake Y, DP. */
-static const struct i915_skl_buf_trans i915_skl_y_trans_dp[] = {
-	{ 0x00000018U, 0x000000a2U, 0x0U },
-	{ 0x00005012U, 0x00000088U, 0x0U },
-	{ 0x80007011U, 0x000000cdU, 0x3U },
-	{ 0x80009010U, 0x000000c0U, 0x3U },
-	{ 0x00000018U, 0x0000009dU, 0x0U },
-	{ 0x80005012U, 0x000000c0U, 0x3U },
-	{ 0x80007011U, 0x000000c0U, 0x3U },
-	{ 0x00000018U, 0x00000088U, 0x0U },
-	{ 0x80005012U, 0x000000c0U, 0x3U }
-};
-
-/* Kaby Lake H and S (and Coffee Lake, Comet Lake), DP. */
-static const struct i915_skl_buf_trans i915_kbl_trans_dp[] = {
-	{ 0x00002016U, 0x000000a0U, 0x0U },
-	{ 0x00005012U, 0x0000009bU, 0x0U },
-	{ 0x00007011U, 0x00000088U, 0x0U },
-	{ 0x80009010U, 0x000000c0U, 0x1U },
-	{ 0x00002016U, 0x0000009bU, 0x0U },
-	{ 0x00005012U, 0x00000088U, 0x0U },
-	{ 0x80007011U, 0x000000c0U, 0x1U },
-	{ 0x00002016U, 0x00000097U, 0x0U },
-	{ 0x80005012U, 0x000000c0U, 0x1U }
-};
-
-/* Kaby Lake U, DP. */
-static const struct i915_skl_buf_trans i915_kbl_u_trans_dp[] = {
-	{ 0x0000201bU, 0x000000a1U, 0x0U },
-	{ 0x00005012U, 0x00000088U, 0x0U },
-	{ 0x80007011U, 0x000000cdU, 0x3U },
-	{ 0x80009010U, 0x000000c0U, 0x3U },
-	{ 0x0000201bU, 0x0000009dU, 0x0U },
-	{ 0x80005012U, 0x000000c0U, 0x3U },
-	{ 0x80007011U, 0x000000c0U, 0x3U },
-	{ 0x00002016U, 0x0000004fU, 0x0U },
-	{ 0x80005012U, 0x000000c0U, 0x3U }
-};
-
-/* Kaby Lake Y, DP. */
-static const struct i915_skl_buf_trans i915_kbl_y_trans_dp[] = {
-	{ 0x00001017U, 0x000000a1U, 0x0U },
-	{ 0x00005012U, 0x00000088U, 0x0U },
-	{ 0x80007011U, 0x000000cdU, 0x3U },
-	{ 0x8000800fU, 0x000000c0U, 0x3U },
-	{ 0x00001017U, 0x0000009dU, 0x0U },
-	{ 0x80005012U, 0x000000c0U, 0x3U },
-	{ 0x80007011U, 0x000000c0U, 0x3U },
-	{ 0x00001017U, 0x0000004cU, 0x0U },
-	{ 0x80005012U, 0x000000c0U, 0x3U }
-};
-
-/* Skylake and Kaby Lake H and S, eDP low vswing. */
-static const struct i915_skl_buf_trans i915_skl_trans_edp[] = {
-	{ 0x00000018U, 0x000000a8U, 0x0U },
-	{ 0x00004013U, 0x000000a9U, 0x0U },
-	{ 0x00007011U, 0x000000a2U, 0x0U },
-	{ 0x00009010U, 0x0000009cU, 0x0U },
-	{ 0x00000018U, 0x000000a9U, 0x0U },
-	{ 0x00006013U, 0x000000a2U, 0x0U },
-	{ 0x00007011U, 0x000000a6U, 0x0U },
-	{ 0x00000018U, 0x000000abU, 0x0U },
-	{ 0x00007013U, 0x0000009fU, 0x0U },
-	{ 0x00000018U, 0x000000dfU, 0x0U }
-};
-
-/* Skylake and Kaby Lake U, eDP low vswing. */
-static const struct i915_skl_buf_trans i915_skl_u_trans_edp[] = {
-	{ 0x00000018U, 0x000000a8U, 0x0U },
-	{ 0x00004013U, 0x000000a9U, 0x0U },
-	{ 0x00007011U, 0x000000a2U, 0x0U },
-	{ 0x00009010U, 0x0000009cU, 0x0U },
-	{ 0x00000018U, 0x000000a9U, 0x0U },
-	{ 0x00006013U, 0x000000a2U, 0x0U },
-	{ 0x00007011U, 0x000000a6U, 0x0U },
-	{ 0x00002016U, 0x000000abU, 0x0U },
-	{ 0x00005013U, 0x0000009fU, 0x0U },
-	{ 0x00000018U, 0x000000dfU, 0x0U }
-};
-
-/* Skylake and Kaby Lake Y, eDP low vswing. */
-static const struct i915_skl_buf_trans i915_skl_y_trans_edp[] = {
-	{ 0x00000018U, 0x000000a8U, 0x0U },
-	{ 0x00004013U, 0x000000abU, 0x0U },
-	{ 0x00007011U, 0x000000a4U, 0x0U },
-	{ 0x00009010U, 0x000000dfU, 0x0U },
-	{ 0x00000018U, 0x000000aaU, 0x0U },
-	{ 0x00006013U, 0x000000a4U, 0x0U },
-	{ 0x00007011U, 0x0000009dU, 0x0U },
-	{ 0x00000018U, 0x000000a0U, 0x0U },
-	{ 0x00006012U, 0x000000dfU, 0x0U },
-	{ 0x00000018U, 0x0000008aU, 0x0U }
-};
-
-/* Skylake and Kaby Lake H, S and U, HDMI (default entry 8). */
-static const struct i915_skl_buf_trans i915_skl_trans_hdmi[] = {
-	{ 0x00000018U, 0x000000acU, 0x0U },
-	{ 0x00005012U, 0x0000009dU, 0x0U },
-	{ 0x00007011U, 0x00000088U, 0x0U },
-	{ 0x00000018U, 0x000000a1U, 0x0U },
-	{ 0x00000018U, 0x00000098U, 0x0U },
-	{ 0x00004013U, 0x00000088U, 0x0U },
-	{ 0x80006012U, 0x000000cdU, 0x1U },
-	{ 0x00000018U, 0x000000dfU, 0x0U },
-	{ 0x80003015U, 0x000000cdU, 0x1U },
-	{ 0x80003015U, 0x000000c0U, 0x1U },
-	{ 0x80000018U, 0x000000c0U, 0x1U }
-};
-
-/* Skylake and Kaby Lake Y, HDMI (default entry 8). */
-static const struct i915_skl_buf_trans i915_skl_y_trans_hdmi[] = {
-	{ 0x00000018U, 0x000000a1U, 0x0U },
-	{ 0x00005012U, 0x000000dfU, 0x0U },
-	{ 0x80007011U, 0x000000cbU, 0x3U },
-	{ 0x00000018U, 0x000000a4U, 0x0U },
-	{ 0x00000018U, 0x0000009dU, 0x0U },
-	{ 0x00004013U, 0x00000080U, 0x0U },
-	{ 0x80006013U, 0x000000c0U, 0x3U },
-	{ 0x00000018U, 0x0000008aU, 0x0U },
-	{ 0x80003015U, 0x000000c0U, 0x3U },
-	{ 0x80003015U, 0x000000c0U, 0x3U },
-	{ 0x80000018U, 0x000000c0U, 0x3U }
-};
-
-/* The HDMI tables' default entry (hdmi_default_entry). */
-#define I915_SKL_HDMI_DEFAULT_ENTRY	8U
-
-/*
- * The training set each buffer table entry stands for
- * (index_to_dp_signal_levels): voltage swing in 1:0, pre-emphasis in 4:3.
- */
-static const uint8_t i915_skl_signal_levels[10] = {
-	0x00U, 0x08U, 0x10U, 0x18U,
-	0x01U, 0x09U, 0x11U,
-	0x02U, 0x0aU,
-	0x03U
-};
-
-/* The ULT and ULX parts of Skylake, Kaby Lake, Coffee Lake and Comet Lake (subplatform_ult_ids, _ulx_ids). */
-static const uint16_t i915_skl_ult_ids[] = {
-	0x1906U, 0x1913U, 0x1916U, 0x1921U, 0x1923U, 0x1926U, 0x1927U,
-	0x5906U, 0x5913U, 0x5916U, 0x5921U, 0x5926U,
-	0x3ea9U, 0x3ea5U, 0x3ea6U, 0x3ea7U, 0x3ea8U,
-	0x3ea1U, 0x3ea4U, 0x3ea0U, 0x3ea3U, 0x3ea2U,
-	0x9b21U, 0x9baaU, 0x9bacU, 0x9b41U, 0x9bcaU, 0x9bccU
-};
-
-/* ULX parts. */
-static const uint16_t i915_skl_ulx_ids[] = {
-	0x190eU, 0x1915U, 0x191eU,
-	0x590eU, 0x5915U, 0x591eU, 0x591cU, 0x87c0U,
-	0x87caU
-};
 
 static uint32_t i915_skl_fixed_div(uint32_t value, uint32_t divisor);
 static uint32_t i915_skl_fixed_mul(uint32_t value, uint32_t fixed);
@@ -257,17 +70,10 @@ static uint32_t i915_skl_fixed_round_up(uint32_t fixed);
 static void i915_skl_plane_wm(uint32_t width, uint32_t htotal, uint32_t pixel_khz, const uint16_t latency_us[8], struct i915_skl_wm_level levels[8]);
 static int i915_skl_mode_fits(const struct i915_display_mode *mode, uint32_t max_pixel_khz);
 static void i915_skl_safe_mode(struct i915_display_mode *mode);
-static unsigned i915_skl_id_in(uint16_t device_id, const uint16_t *ids, unsigned count);
-static uint32_t i915_skl_reduce(uint32_t *m, uint32_t *n);
-static void i915_skl_m_n(uint32_t m, uint32_t n, uint32_t constant_n, uint32_t *out_m, uint32_t *out_n);
 
 /*
- * Reports the CD clock in kHz from LCPLL1_CTL, DPLL_CTRL1 and CDCLK_CTL
- * (skl_get_cdclk(), skl_dpll0_update()), or zero when DPLL0 is off or its
- * rate is not one the CD clock runs on.
- *
- * Procedure referenced: Linux v6.8.12
- * drivers/gpu/drm/i915/display/intel_cdclk.c (skl_get_cdclk).
+ * Reports the CD clock in kHz from LCPLL1_CTL, DPLL_CTRL1 and CDCLK_CTL,
+ * or zero when DPLL0 is off or not locked.
  */
 uint32_t
 drv_i915_skl_cdclk_khz(
@@ -275,39 +81,13 @@ drv_i915_skl_cdclk_khz(
 	uint32_t dpll_ctrl1,
 	uint32_t cdclk_ctl)
 {
-	uint32_t rate;
-	uint32_t select;
-	int vco_8640;
+	uint32_t khz;
 
-	/* DPLL0 must run and be locked. */
-	if ((lcpll1_ctl & I915_SKL_DPLL_ENABLE) == 0U)
-		return 0U;
-	if ((lcpll1_ctl & (1U << 30)) == 0U)
-		return 0U;
+	/* The display 9 CD clock of the xd code. */
+	khz = drv_i915_xd9_cdclk_khz(lcpll1_ctl, dpll_ctrl1, cdclk_ctl);
 
-	/* DPLL0's link rate tells its VCO: 8640 MHz for 1080 and 2160, else 8100 MHz. */
-	rate = (dpll_ctrl1 >> I915_SKL_DPLL_CTRL1_RATE_SHIFT) & I915_SKL_DPLL_CTRL1_RATE_MASK;
-	vco_8640 = 0;
-	if (rate == I915_SKL_LINK_RATE_1080 || rate == I915_SKL_LINK_RATE_2160)
-		vco_8640 = 1;
-
-	/* CDCLK_CTL's frequency select, bits 27:26. */
-	select = (cdclk_ctl >> 26) & 3U;
-
-	/* The frequency each select names on the VCO. */
-	switch (select) {
-	case 0U:
-		return vco_8640 ? 432000U : 450000U;
-	case 1U:
-		return 540000U;
-	case 2U:
-		return vco_8640 ? 308571U : 337500U;
-	default:
-		break;
-	}
-
-	/* Succeeded: the highest select. */
-	return vco_8640 ? 617143U : 675000U;
+	/* Succeeded: the clock, or zero. */
+	return khz;
 }
 
 /*
@@ -374,14 +154,9 @@ drv_i915_skl_pick_mode(
 }
 
 /*
- * Chooses the slowest DP link that carries the mode at 24 bits a pixel:
- * the rates from RBR up to the sink's (HBR2 at most), and for each the
- * lane counts from 1 up to the sink's.  Fills the M and N too.  Returns
- * 0, or ENOSPC when no link the sink takes carries the mode.
- *
- * Procedure referenced: Linux v6.8.12
- * drivers/gpu/drm/i915/display/intel_dp.c
- * (intel_dp_compute_link_config_wide).
+ * Chooses the slowest DP link that carries the mode at 24 bits a pixel,
+ * with its M and N.  Returns 0, or ENOSPC when no link the sink takes
+ * carries the mode.
  */
 int
 drv_i915_skl_dp_link(
@@ -390,66 +165,49 @@ drv_i915_skl_dp_link(
 	uint32_t pixel_khz,
 	struct i915_skl_link *link)
 {
-	static const uint32_t rates[3] = { I915_SKL_DP_RBR_KHZ, I915_SKL_DP_HBR_KHZ, I915_SKL_DP_HBR2_KHZ };
-	uint64_t needed;
-	uint64_t available;
-	unsigned rate;
-	unsigned lanes;
+	struct i915_xd_dp_choice choice;
+	struct i915_xd_dp_m_n m_n;
+	int error;
 
 	/* No link until one carries the mode. */
 	kern_memset(link, 0, sizeof(*link));
 
-	/* The data the mode needs in kB/s (intel_dp_link_required at 24 bpp). */
-	needed = ((uint64_t)pixel_khz * I915_SKL_PIPE_BPP + 7U) / 8U;
+	/* The display 9 link of the xd code. */
+	error = drv_i915_xd9_dp_link(sink_max_khz, sink_max_lanes, pixel_khz, &choice, &m_n);
+	if (error != 0)
+		return error;
 
-	/* Each rate up to the sink's, and each lane count up to the sink's. */
-	for (rate = 0U; rate < 3U; rate++) {
-		if (rates[rate] > sink_max_khz)
-			break;
-
-		/* Each lane count up to the sink's. */
-		for (lanes = 1U; lanes <= sink_max_lanes && lanes <= 4U; lanes <<= 1) {
-			/* The data a link carries in kB/s (intel_dp_max_data_rate, 8b/10b): port clock times lanes. */
-			available = (uint64_t)rates[rate] * lanes;
-			if (needed > available)
-				continue;
-
-			/* The first link that carries it, and its M and N. */
-			link->port_khz = rates[rate];
-			link->lanes = lanes;
-			drv_i915_skl_dp_m_n(link, pixel_khz);
-			return 0;
-		}
-	}
-
-	/* Succeeded in finding that nothing carries the mode. */
-	return ENOSPC;
+	/* Succeeded: the link and its M and N. */
+	link->port_khz = choice.rate_khz;
+	link->lanes = choice.lanes;
+	link->data_m = m_n.data_m;
+	link->data_n = m_n.data_n;
+	link->link_m = m_n.link_m;
+	link->link_n = m_n.link_n;
+	link->tu = m_n.tu;
+	return 0;
 }
 
 /*
- * Computes the M and N words of a link (intel_link_compute_m_n): data M
- * and N over a fixed N of 0x8000000, link M and N over 0x80000, each
- * halved until it fits 24 bits, and a transfer unit of 64.
- *
- * Procedure referenced: Linux v6.8.12
- * drivers/gpu/drm/i915/display/intel_display.c (intel_link_compute_m_n).
+ * Computes the M and N words of a link for a pixel clock at 24 bits a
+ * pixel.
  */
 void
 drv_i915_skl_dp_m_n(
 	struct i915_skl_link *link,
 	uint32_t pixel_khz)
 {
-	uint32_t data_m;
-	uint32_t data_n;
+	struct i915_xd_dp_m_n m_n;
 
-	/* The data rate the mode needs and the one the link carries, in kB/s. */
-	data_m = (uint32_t)(((uint64_t)pixel_khz * I915_SKL_PIPE_BPP + 7U) / 8U);
-	data_n = link->port_khz * link->lanes;
+	/* The M/N values of the xd code for a single stream (no overhead: one million millionths). */
+	drv_i915_xd_dp_m_n(I915_SKL_PIPE_BPP * 16U, link->lanes, pixel_khz, link->port_khz, 1000000U, &m_n);
 
-	/* The ratios. */
-	link->tu = 64U;
-	i915_skl_m_n(data_m, data_n, 0x8000000U, &link->data_m, &link->data_n);
-	i915_skl_m_n(pixel_khz, link->port_khz, 0x80000U, &link->link_m, &link->link_n);
+	/* Succeeded: the words. */
+	link->data_m = m_n.data_m;
+	link->data_n = m_n.data_n;
+	link->link_m = m_n.link_m;
+	link->link_n = m_n.link_n;
+	link->tu = m_n.tu;
 }
 
 /* Reports the port clock in kHz of a DPCD MAX_LINK_RATE code, or zero for one not taken. */
@@ -457,16 +215,13 @@ uint32_t
 drv_i915_skl_dpcd_rate_khz(
 	uint8_t code)
 {
-	/* The three rates of DP 1.2. */
-	if (code == I915_DPCD_LINK_BW_1_62)
-		return I915_SKL_DP_RBR_KHZ;
-	if (code == I915_DPCD_LINK_BW_2_7)
-		return I915_SKL_DP_HBR_KHZ;
-	if (code >= I915_DPCD_LINK_BW_5_4)
-		return I915_SKL_DP_HBR2_KHZ;
+	uint32_t khz;
 
-	/* Succeeded: a code below RBR names no rate. */
-	return 0U;
+	/* The rate display 9 drives for the code. */
+	khz = drv_i915_xd9_dp_sink_rate(code);
+
+	/* Succeeded: the rate, or zero. */
+	return khz;
 }
 
 /* Reports the DPCD LINK_BW_SET code of a port clock, or zero. */
@@ -474,16 +229,13 @@ uint8_t
 drv_i915_skl_dpcd_rate_code(
 	uint32_t port_khz)
 {
-	/* The three rates. */
-	if (port_khz == I915_SKL_DP_RBR_KHZ)
-		return I915_DPCD_LINK_BW_1_62;
-	if (port_khz == I915_SKL_DP_HBR_KHZ)
-		return I915_DPCD_LINK_BW_2_7;
-	if (port_khz == I915_SKL_DP_HBR2_KHZ)
-		return I915_DPCD_LINK_BW_5_4;
+	uint8_t code;
 
-	/* Succeeded: no code. */
-	return 0U;
+	/* The code of a rate display 9 drives. */
+	code = drv_i915_xd9_dp_rate_code(port_khz);
+
+	/* Succeeded: the code, or zero. */
+	return code;
 }
 
 /*
@@ -520,65 +272,33 @@ drv_i915_skl_dp_train_delay_us(
 }
 
 /*
- * Computes the DPLL words of a DP port clock: the override and the link
- * rate code of half the port clock (skl_ddi_dp_set_dpll_hw_state).
- * Returns 0, or EINVAL for a rate the DPLL has no code for.
- *
- * Procedure referenced: Linux v6.8.12
- * drivers/gpu/drm/i915/display/intel_dpll_mgr.c
- * (skl_ddi_dp_set_dpll_hw_state).
+ * Computes the DPLL words of a DP port clock.  Returns 0, or EINVAL for
+ * a rate the DPLL has no code for.
  */
 int
 drv_i915_skl_dpll_dp(
 	uint32_t port_khz,
 	struct i915_skl_dpll_words *words)
 {
-	uint32_t code;
+	struct i915_xd9_dpll_words xd;
+	int error;
 
-	/* No words until the rate has a code. */
-	kern_memset(words, 0, sizeof(*words));
-
-	/* The code of the link clock, half the port clock. */
-	switch (port_khz / 2U) {
-	case 81000U:
-		code = I915_SKL_LINK_RATE_810;
-		break;
-	case 135000U:
-		code = I915_SKL_LINK_RATE_1350;
-		break;
-	case 270000U:
-		code = I915_SKL_LINK_RATE_2700;
-		break;
-	case 162000U:
-		code = I915_SKL_LINK_RATE_1620;
-		break;
-	case 108000U:
-		code = I915_SKL_LINK_RATE_1080;
-		break;
-	case 216000U:
-		code = I915_SKL_LINK_RATE_2160;
-		break;
-	default:
-		return EINVAL;
-	}
-
-	/* The override and the code; no configuration words for DP. */
-	words->ctrl1 = 1U | (code << I915_SKL_DPLL_CTRL1_RATE_SHIFT);
-	words->port_khz = port_khz;
+	/* The display 9 DPLL words of the xd code. */
+	error = drv_i915_xd9_dpll_dp_words(port_khz, &xd);
+	words->ctrl1 = xd.ctrl1;
+	words->cfgcr1 = xd.cfgcr1;
+	words->cfgcr2 = xd.cfgcr2;
+	words->port_khz = xd.port_khz;
+	if (error != 0)
+		return error;
 
 	/* Succeeded: the DPLL runs the link at the rate. */
 	return 0;
 }
 
 /*
- * Computes the WRPLL words of an HDMI pixel clock (skl_ddi_calculate_wrpll):
- * the AFE clock is five times the pixel clock; the divider whose DCO
- * frequency deviates least from one of the three central frequencies
- * within +1 % and -6 % is taken, an even one before an odd one, and split
- * into P, Q and K.  Returns 0, or EINVAL when no divider fits.
- *
- * Procedure referenced: Linux v6.8.12
- * drivers/gpu/drm/i915/display/intel_dpll_mgr.c (skl_ddi_calculate_wrpll).
+ * Computes the WRPLL words of an HDMI pixel clock.  Returns 0, or EINVAL
+ * when no divider fits or the reference is not display 9's 24 MHz.
  */
 int
 drv_i915_skl_dpll_hdmi(
@@ -586,188 +306,24 @@ drv_i915_skl_dpll_hdmi(
 	uint32_t ref_khz,
 	struct i915_skl_dpll_words *words)
 {
-	static const uint64_t central[3] = { 8400000000ULL, 9000000000ULL, 9600000000ULL };
-	static const uint8_t even[] = {
-		4, 6, 8, 10, 12, 14, 16, 18, 20, 24, 28, 30, 32, 36, 40, 42, 44,
-		48, 52, 54, 56, 60, 64, 66, 68, 70, 72, 76, 78, 80, 84, 88, 90,
-		92, 96, 98
-	};
-	static const uint8_t odd[] = { 3, 5, 7, 9, 15, 21, 35 };
-	const uint8_t *list;
-	uint64_t afe;
-	uint64_t dco;
-	uint64_t deviation;
-	uint64_t best_deviation;
-	uint64_t best_central;
-	uint64_t dco_integer;
-	uint64_t dco_fraction;
-	unsigned list_count;
-	unsigned best_p;
-	unsigned set;
-	unsigned c;
-	unsigned i;
-	unsigned p0;
-	unsigned p1;
-	unsigned p2;
-	unsigned half;
-	unsigned pdiv;
-	unsigned kdiv;
-	unsigned central_code;
-	unsigned qdiv_mode;
+	struct i915_xd9_dpll_words xd;
+	int error;
 
 	/* No words until a divider fits. */
 	kern_memset(words, 0, sizeof(*words));
 
-	/* The AFE clock in Hz. */
-	afe = (uint64_t)pixel_khz * 1000U * 5U;
-
-	/* The dividers, even then odd, against each central frequency. */
-	best_deviation = ~(uint64_t)0;
-	best_central = 0U;
-	best_p = 0U;
-	for (set = 0U; set < 2U; set++) {
-		list = even;
-		list_count = (unsigned)sizeof(even);
-		if (set == 1U) {
-			list = odd;
-			list_count = (unsigned)sizeof(odd);
-		}
-
-		/* Each central frequency, until a deviation of zero. */
-		for (c = 0U; c < 3U && best_deviation != 0U; c++) {
-			for (i = 0U; i < list_count; i++) {
-				/* The DCO frequency and its deviation from the centre, in 1/10000. */
-				dco = (uint64_t)list[i] * afe;
-				if (dco >= central[c]) {
-					deviation = (10000U * (dco - central[c])) / central[c];
-					if (deviation >= I915_SKL_DCO_MAX_PDEVIATION || deviation >= best_deviation)
-						continue;
-				} else {
-					deviation = (10000U * (central[c] - dco)) / central[c];
-					if (deviation >= I915_SKL_DCO_MAX_NDEVIATION || deviation >= best_deviation)
-						continue;
-				}
-
-				/* The best divider so far. */
-				best_deviation = deviation;
-				best_central = central[c];
-				best_p = list[i];
-				if (best_deviation == 0U)
-					break;
-			}
-		}
-
-		/* An even divider is preferred. */
-		if (set == 0U && best_p != 0U)
-			break;
-	}
-
-	/* No divider keeps the DCO in range. */
-	if (best_p == 0U)
+	/* Display 9's DPLLs run from 24 MHz only. */
+	if (ref_khz != I915_SKL_REF_KHZ)
 		return EINVAL;
 
-	/* P0, P1 and P2 of the divider (skl_wrpll_get_multipliers). */
-	p0 = 0U;
-	p1 = 0U;
-	p2 = 0U;
-	if ((best_p % 2U) == 0U) {
-		half = best_p / 2U;
-		if (half == 1U || half == 2U || half == 3U || half == 5U) {
-			p0 = 2U;
-			p1 = 1U;
-			p2 = half;
-		} else if ((half % 2U) == 0U) {
-			p0 = 2U;
-			p1 = half / 2U;
-			p2 = 2U;
-		} else if ((half % 3U) == 0U) {
-			p0 = 3U;
-			p1 = half / 3U;
-			p2 = 2U;
-		} else if ((half % 7U) == 0U) {
-			p0 = 7U;
-			p1 = half / 7U;
-			p2 = 2U;
-		}
-	} else if (best_p == 3U || best_p == 9U) {
-		p0 = 3U;
-		p1 = 1U;
-		p2 = best_p / 3U;
-	} else if (best_p == 5U || best_p == 7U) {
-		p0 = best_p;
-		p1 = 1U;
-		p2 = 1U;
-	} else if (best_p == 15U) {
-		p0 = 3U;
-		p1 = 1U;
-		p2 = 5U;
-	} else if (best_p == 21U) {
-		p0 = 7U;
-		p1 = 1U;
-		p2 = 3U;
-	} else if (best_p == 35U) {
-		p0 = 7U;
-		p1 = 1U;
-		p2 = 5U;
-	}
-
-	/* P0's and P2's codes. */
-	switch (p0) {
-	case 1U:
-		pdiv = 0U;
-		break;
-	case 2U:
-		pdiv = 1U;
-		break;
-	case 3U:
-		pdiv = 2U;
-		break;
-	case 7U:
-		pdiv = 4U;
-		break;
-	default:
-		return EINVAL;
-	}
-
-	/* P2's code. */
-	switch (p2) {
-	case 5U:
-		kdiv = 0U;
-		break;
-	case 2U:
-		kdiv = 1U;
-		break;
-	case 3U:
-		kdiv = 2U;
-		break;
-	case 1U:
-		kdiv = 3U;
-		break;
-	default:
-		return EINVAL;
-	}
-
-	/* The central frequency's code. */
-	central_code = 3U;
-	if (best_central == 9600000000ULL)
-		central_code = 0U;
-	else if (best_central == 9000000000ULL)
-		central_code = 1U;
-
-	/* The DCO's integer and fraction over the reference, in MHz with 15 fraction bits. */
-	dco = (uint64_t)p0 * p1 * p2 * afe;
-	dco_integer = dco / ((uint64_t)ref_khz * 1000U);
-	dco_fraction = ((dco / (ref_khz / 1000U) - dco_integer * 1000000U) * 0x8000U) / 1000000U;
-
-	/* The words: HDMI mode with the override, then the two configurations. */
-	words->ctrl1 = 1U | (1U << I915_SKL_DPLL_CTRL1_HDMI_SHIFT);
-	words->cfgcr1 = I915_SKL_CFGCR1_FREQ_ENABLE | ((uint32_t)dco_fraction << I915_SKL_CFGCR1_DCO_FRACTION_SHIFT) | (uint32_t)dco_integer;
-	qdiv_mode = 1U;
-	if (p1 == 1U)
-		qdiv_mode = 0U;
-	words->cfgcr2 = (p1 << I915_SKL_CFGCR2_QDIV_RATIO_SHIFT) | (qdiv_mode << I915_SKL_CFGCR2_QDIV_MODE_SHIFT) |
-	    (kdiv << I915_SKL_CFGCR2_KDIV_SHIFT) | (pdiv << I915_SKL_CFGCR2_PDIV_SHIFT) | central_code;
-	words->port_khz = pixel_khz;
+	/* The display 9 WRPLL words of the xd code. */
+	error = drv_i915_xd9_dpll_hdmi_words(pixel_khz, &xd);
+	words->ctrl1 = xd.ctrl1;
+	words->cfgcr1 = xd.cfgcr1;
+	words->cfgcr2 = xd.cfgcr2;
+	words->port_khz = xd.port_khz;
+	if (error != 0)
+		return error;
 
 	/* Succeeded: the WRPLL makes the clock. */
 	return 0;
@@ -779,17 +335,21 @@ drv_i915_skl_sku(
 	uint16_t device_id,
 	int platform)
 {
-	unsigned found;
+	struct i915_xd_choice choice;
+	int error;
 
 	UNUSED_PARAMETER(platform);
 
-	/* The ULX list, then the ULT list. */
-	found = i915_skl_id_in(device_id, i915_skl_ulx_ids, (unsigned)(sizeof(i915_skl_ulx_ids) / sizeof(i915_skl_ulx_ids[0])));
-	if (found)
-		return I915_SKL_SKU_ULX;
-	found = i915_skl_id_in(device_id, i915_skl_ult_ids, (unsigned)(sizeof(i915_skl_ult_ids) / sizeof(i915_skl_ult_ids[0])));
-	if (found)
+	/* The display 9 row of the id. */
+	error = drv_i915_xd_platform_choose_display9(device_id, 0U, 0, 0U, &choice);
+	if (error != 0)
+		return I915_SKL_SKU_H;
+
+	/* The U parts and the Y parts. */
+	if (choice.platform->power_class == I915_XD_POWER_CLASS_U)
 		return I915_SKL_SKU_ULT;
+	if (choice.platform->power_class == I915_XD_POWER_CLASS_Y)
+		return I915_SKL_SKU_ULX;
 
 	/* Succeeded: every other part has the H and S tables. */
 	return I915_SKL_SKU_H;
@@ -797,14 +357,9 @@ drv_i915_skl_sku(
 
 /*
  * Reports the DDI buffer translation table of a part, a kind of output
- * and a port (intel_ddi_buf_trans_init() and the get_buf_trans functions):
- * the count is cut to 9 for DP and eDP on a port other than A.
- *
- * Procedure referenced: Linux v6.8.12
- * drivers/gpu/drm/i915/display/intel_ddi_buf_trans.c
- * (intel_ddi_buf_trans_init and the table choice).
+ * and a port; the entries' count in *count.
  */
-const struct i915_skl_buf_trans *
+const struct i915_xd9_buf_trans *
 drv_i915_skl_buf_trans(
 	int sku,
 	int platform,
@@ -812,103 +367,75 @@ drv_i915_skl_buf_trans(
 	unsigned port,
 	unsigned *count)
 {
-	const struct i915_skl_buf_trans *table;
-	unsigned entries;
-	int kaby;
+	const struct i915_xd_platform *row;
+	const struct i915_xd9_buf_trans *table;
+	unsigned kind;
+	unsigned power_class;
+	unsigned kind_of_output;
 
-	/* Kaby Lake's DP tables also serve Coffee Lake and Comet Lake; Skylake has its own. */
-	kaby = 1;
+	/* Skylake's tables, or Kaby Lake's, which Coffee Lake and Comet Lake share. */
+	kind = I915_XD_KIND_KBL;
 	if (platform == I915_PLATFORM_SKYLAKE)
-		kaby = 0;
+		kind = I915_XD_KIND_SKL;
 
-	/* HDMI: the Y table on ULX, the common one elsewhere. */
+	/* The power class. */
+	power_class = I915_XD_POWER_CLASS_H;
+	if (sku == I915_SKL_SKU_ULT) {
+		power_class = I915_XD_POWER_CLASS_U;
+	} else if (sku == I915_SKL_SKU_ULX) {
+		power_class = I915_XD_POWER_CLASS_Y;
+	}
+
+	/* The kind of output. */
+	kind_of_output = I915_XD9_OUTPUT_DP;
 	if (output == I915_SKL_OUTPUT_HDMI) {
-		if (sku == I915_SKL_SKU_ULX) {
-			*count = (unsigned)(sizeof(i915_skl_y_trans_hdmi) / sizeof(i915_skl_y_trans_hdmi[0]));
-			return i915_skl_y_trans_hdmi;
-		}
-
-		/* The common table elsewhere. */
-		*count = (unsigned)(sizeof(i915_skl_trans_hdmi) / sizeof(i915_skl_trans_hdmi[0]));
-		return i915_skl_trans_hdmi;
+		kind_of_output = I915_XD9_OUTPUT_HDMI;
+	} else if (output == I915_SKL_OUTPUT_EDP) {
+		kind_of_output = I915_XD9_OUTPUT_EDP;
 	}
 
-	/* eDP (the low swing tables), or DP by platform and power class. */
-	if (output == I915_SKL_OUTPUT_EDP) {
-		table = i915_skl_trans_edp;
-		entries = (unsigned)(sizeof(i915_skl_trans_edp) / sizeof(i915_skl_trans_edp[0]));
-		if (sku == I915_SKL_SKU_ULX) {
-			table = i915_skl_y_trans_edp;
-			entries = (unsigned)(sizeof(i915_skl_y_trans_edp) / sizeof(i915_skl_y_trans_edp[0]));
-		} else if (sku == I915_SKL_SKU_ULT) {
-			table = i915_skl_u_trans_edp;
-			entries = (unsigned)(sizeof(i915_skl_u_trans_edp) / sizeof(i915_skl_u_trans_edp[0]));
-		}
-	} else if (kaby) {
-		table = i915_kbl_trans_dp;
-		entries = (unsigned)(sizeof(i915_kbl_trans_dp) / sizeof(i915_kbl_trans_dp[0]));
-		if (sku == I915_SKL_SKU_ULX) {
-			table = i915_kbl_y_trans_dp;
-			entries = (unsigned)(sizeof(i915_kbl_y_trans_dp) / sizeof(i915_kbl_y_trans_dp[0]));
-		} else if (sku == I915_SKL_SKU_ULT) {
-			table = i915_kbl_u_trans_dp;
-			entries = (unsigned)(sizeof(i915_kbl_u_trans_dp) / sizeof(i915_kbl_u_trans_dp[0]));
-		}
-	} else {
-		table = i915_skl_trans_dp;
-		entries = (unsigned)(sizeof(i915_skl_trans_dp) / sizeof(i915_skl_trans_dp[0]));
-		if (sku == I915_SKL_SKU_ULX) {
-			table = i915_skl_y_trans_dp;
-			entries = (unsigned)(sizeof(i915_skl_y_trans_dp) / sizeof(i915_skl_y_trans_dp[0]));
-		} else if (sku == I915_SKL_SKU_ULT) {
-			table = i915_skl_u_trans_dp;
-			entries = (unsigned)(sizeof(i915_skl_u_trans_dp) / sizeof(i915_skl_u_trans_dp[0]));
-		}
-	}
+	/* The row of the kind and the class. */
+	*count = 0U;
+	row = drv_i915_xd_platform_display9_class(kind, power_class);
+	if (row == NULL)
+		return NULL;
 
-	/* Only port A selects a tenth entry (skl_buf_trans_num_entries). */
-	if (port != I915_SKL_PORT_A && entries > 9U)
-		entries = 9U;
+	/* The xd code's table of the row. */
+	table = drv_i915_xd9_ddi_buf_table(row, kind_of_output, port, count);
 
 	/* Succeeded: the table and its usable entries. */
-	*count = entries;
 	return table;
 }
 
-/* Reports the table entry for a DP lane's training set (translate_signal_level), or 0. */
+/* Reports the table entry for a DP lane's training set, or 0. */
 unsigned
 drv_i915_skl_signal_level(
 	uint8_t train_set)
 {
-	uint8_t levels;
-	unsigned index;
+	unsigned row;
+	int error;
 
-	/* The swing and the pre-emphasis without the reached flags. */
-	levels = (uint8_t)(train_set & (I915_DPCD_TRAIN_VOLTAGE_SWING_MASK | I915_DPCD_TRAIN_PRE_EMPHASIS_MASK));
+	/* The row of the xd code for the set's swing and pre-emphasis. */
+	error = drv_i915_xd_combo_level_row(train_set, &row);
+	if (error != 0)
+		return 0U;
 
-	/* The entry that stands for them. */
-	for (index = 0U; index < 10U; index++) {
-		if (i915_skl_signal_levels[index] == levels)
-			return index;
-	}
-
-	/* Succeeded: an unknown set takes the first entry. */
-	return 0U;
+	/* Succeeded: the entry. */
+	return row;
 }
 
-/* Reports the highest voltage swing a table of so many entries reaches (intel_ddi_dp_voltage_max). */
+/* Reports the highest voltage swing a table of so many entries reaches. */
 uint8_t
 drv_i915_skl_voltage_max(
 	unsigned count)
 {
-	/* The last entry's swing. */
-	if (count == 0U)
-		count = 1U;
-	if (count > 10U)
-		count = 10U;
+	uint8_t swing;
+
+	/* The highest swing of the xd code. */
+	swing = drv_i915_xd_dp_swing_max(count);
 
 	/* Succeeded: the swing. */
-	return (uint8_t)(i915_skl_signal_levels[count - 1U] & I915_DPCD_TRAIN_VOLTAGE_SWING_MASK);
+	return swing;
 }
 
 /* Reports the entry an HDMI port uses: the tables' default, without a VBT level shift. */
@@ -917,11 +444,21 @@ drv_i915_skl_hdmi_level(
 	int sku,
 	int platform)
 {
-	UNUSED_PARAMETER(sku);
-	UNUSED_PARAMETER(platform);
+	const struct i915_xd_platform *row;
+	unsigned entry;
 
-	/* Succeeded: entry 8 of every display 9 HDMI table. */
-	return I915_SKL_HDMI_DEFAULT_ENTRY;
+	UNUSED_PARAMETER(sku);
+
+	/* The platform's H and S row (every display 9 HDMI table has the same default). */
+	row = drv_i915_xd_platform_display9_class(I915_XD_KIND_KBL, I915_XD_POWER_CLASS_H);
+	if (platform == I915_PLATFORM_SKYLAKE)
+		row = drv_i915_xd_platform_display9_class(I915_XD_KIND_SKL, I915_XD_POWER_CLASS_H);
+
+	/* The xd code's default row. */
+	entry = drv_i915_xd9_ddi_hdmi_row(row);
+
+	/* Succeeded: the entry. */
+	return entry;
 }
 
 /*
@@ -1345,58 +882,4 @@ i915_skl_safe_mode(
 	mode->vsync_end = 777U;
 	mode->vtotal = 806U;
 	mode->edid_bpc = 8;
-}
-
-/* Reports nonzero when a device id is in a list. */
-static unsigned
-i915_skl_id_in(
-	uint16_t device_id,
-	const uint16_t *ids,
-	unsigned count)
-{
-	unsigned index;
-
-	/* Each id. */
-	for (index = 0U; index < count; index++) {
-		if (ids[index] == device_id)
-			return 1U;
-	}
-
-	/* Succeeded: not listed. */
-	return 0U;
-}
-
-/* Halves a ratio until both fit 24 bits (intel_reduce_m_n_ratio); reports the halvings. */
-static uint32_t
-i915_skl_reduce(
-	uint32_t *m,
-	uint32_t *n)
-{
-	uint32_t halvings;
-
-	/* Each halving. */
-	halvings = 0U;
-	while (*m > 0x00ffffffU || *n > 0x00ffffffU) {
-		*m >>= 1;
-		*n >>= 1;
-		halvings++;
-	}
-
-	/* Succeeded: the ratio fits. */
-	return halvings;
-}
-
-/* Computes one M and N over a constant N (compute_m_n). */
-static void
-i915_skl_m_n(
-	uint32_t m,
-	uint32_t n,
-	uint32_t constant_n,
-	uint32_t *out_m,
-	uint32_t *out_n)
-{
-	/* M scaled to the constant N, then reduced. */
-	*out_n = constant_n;
-	*out_m = (uint32_t)(((uint64_t)m * constant_n) / n);
-	(void)i915_skl_reduce(out_m, out_n);
 }

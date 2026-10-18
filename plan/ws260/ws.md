@@ -22,7 +22,7 @@
 | [p001](phase001/phase.md) | 設計: 今の gen9-*.c の棚卸し（写しの点検）、xd の部品をどこまで共有するか（xd に display 9 を足すか、別の層か）、段の分け方と回帰の方法 | cleared（2026-10-18 Q1: design.md、判断 5 点はユーザーが回答） |
 | [p002](phase002/phase.md) | 試験の土台: golden の書き込みの列と数の計算の表を今の code で取る。gen9-fake-hw を xd-io の backend に繋ぐ口 | in-progress（q1253、P1） |
 | [p003](phase003/phase.md) | xd-platform に display 9 の記述（SKL・KBL・CFL・CML、PCH の SPT・KBP・CNP・CMP、port A〜E）。選ぶだけで呼ばない | in-progress（q1253、P1） |
-| p004 | 数の計算: CDCLK の読み、DP の link と M/N、DPLL の語（DP と HDMI の WRPLL）、buf trans の表を xd-clock・xd-dp・xd-ddi へ。gen9-mode.c の該当は殻 | planned（6 LW） |
+| [p004](phase004/phase.md) | 数の計算: CDCLK の読み、DP の link と M/N、DPLL の語（DP と HDMI の WRPLL）、buf trans の表を xd-clock・xd-dp・xd-ddi へ。gen9-mode.c の該当は殻 | in-progress（q1253、P1） |
 | p005 | WM・DDB の計算を xd-dbuf へ（display 9 の 1 slice・8 level・IPC） | planned（5 LW） |
 | p006 | AUX・GMBUS・EDID を xd-aux・xd-gmbus・xd-edid へ（gen9-ddc.c を殻に） | planned（3 LW） |
 | p007 | backlight: SPT/KBP の LPT の形と CNP/CMP の形を xd-panel へ（gen9-backlight.c を殻に） | planned（3 LW） |

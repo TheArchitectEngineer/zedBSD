@@ -8,7 +8,8 @@
 /*
  * The descriptions of the display 9 hardware (Skylake, Kaby Lake,
  * Coffee Lake and Comet Lake) the xd display code reads: the PCI ids of
- * each part, the ports, and the platform rows that tie them together.
+ * each part, the ports, the DDI buffer tables, and the platform rows that
+ * tie them together.
  *
  * A display 9 part has four DDIs with their own buffers (A to D) and a
  * fifth (E) that shares DDI A's lanes; no combo or Type-C PHY, one
@@ -20,7 +21,8 @@
  *
  * The header holds data only and is included by display/xd-platform.c
  * alone.  Fields the rows leave empty (power wells, PLLs, CD clock steps,
- * swing tables) are those the xd code does not yet reach on display 9.
+ * combo swing tables) are those the xd code does not yet reach on
+ * display 9.
  */
 
 #ifndef DRIVERS_GPU_I915_INTEL_DISPLAY_TABLES_XD9_H
@@ -108,6 +110,204 @@ static const struct i915_xd_port_desc i915_xd9_ports[] = {
 };
 
 /*
+ * The DDI buffer translation tables of display 9, one row for each level
+ * a sink may ask for: the two DDI_BUF_TRANS words and the current boost.
+ *
+ * Values referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_ddi_buf_trans.c (the tables named
+ * with each below).
+ */
+
+/* Skylake H and S, DisplayPort (skl_ddi_translations_dp). */
+static const struct i915_xd9_buf_trans i915_xd9_buf_skl_dp[] = {
+	{ 0x00002016U, 0x000000a0U, 0x0U },
+	{ 0x00005012U, 0x0000009bU, 0x0U },
+	{ 0x00007011U, 0x00000088U, 0x0U },
+	{ 0x80009010U, 0x000000c0U, 0x1U },
+	{ 0x00002016U, 0x0000009bU, 0x0U },
+	{ 0x00005012U, 0x00000088U, 0x0U },
+	{ 0x80007011U, 0x000000c0U, 0x1U },
+	{ 0x00002016U, 0x000000dfU, 0x0U },
+	{ 0x80005012U, 0x000000c0U, 0x1U }
+};
+
+/* Skylake U, DisplayPort (skl_u_ddi_translations_dp). */
+static const struct i915_xd9_buf_trans i915_xd9_buf_skl_u_dp[] = {
+	{ 0x0000201bU, 0x000000a2U, 0x0U },
+	{ 0x00005012U, 0x00000088U, 0x0U },
+	{ 0x80007011U, 0x000000cdU, 0x1U },
+	{ 0x80009010U, 0x000000c0U, 0x1U },
+	{ 0x0000201bU, 0x0000009dU, 0x0U },
+	{ 0x80005012U, 0x000000c0U, 0x1U },
+	{ 0x80007011U, 0x000000c0U, 0x1U },
+	{ 0x00002016U, 0x00000088U, 0x0U },
+	{ 0x80005012U, 0x000000c0U, 0x1U }
+};
+
+/* Skylake Y, DisplayPort (skl_y_ddi_translations_dp). */
+static const struct i915_xd9_buf_trans i915_xd9_buf_skl_y_dp[] = {
+	{ 0x00000018U, 0x000000a2U, 0x0U },
+	{ 0x00005012U, 0x00000088U, 0x0U },
+	{ 0x80007011U, 0x000000cdU, 0x3U },
+	{ 0x80009010U, 0x000000c0U, 0x3U },
+	{ 0x00000018U, 0x0000009dU, 0x0U },
+	{ 0x80005012U, 0x000000c0U, 0x3U },
+	{ 0x80007011U, 0x000000c0U, 0x3U },
+	{ 0x00000018U, 0x00000088U, 0x0U },
+	{ 0x80005012U, 0x000000c0U, 0x3U }
+};
+
+/* Kaby Lake H and S, and Coffee Lake and Comet Lake, DisplayPort (kbl_ddi_translations_dp). */
+static const struct i915_xd9_buf_trans i915_xd9_buf_kbl_dp[] = {
+	{ 0x00002016U, 0x000000a0U, 0x0U },
+	{ 0x00005012U, 0x0000009bU, 0x0U },
+	{ 0x00007011U, 0x00000088U, 0x0U },
+	{ 0x80009010U, 0x000000c0U, 0x1U },
+	{ 0x00002016U, 0x0000009bU, 0x0U },
+	{ 0x00005012U, 0x00000088U, 0x0U },
+	{ 0x80007011U, 0x000000c0U, 0x1U },
+	{ 0x00002016U, 0x00000097U, 0x0U },
+	{ 0x80005012U, 0x000000c0U, 0x1U }
+};
+
+/* Kaby Lake U, and Coffee Lake U and Comet Lake U, DisplayPort (kbl_u_ddi_translations_dp). */
+static const struct i915_xd9_buf_trans i915_xd9_buf_kbl_u_dp[] = {
+	{ 0x0000201bU, 0x000000a1U, 0x0U },
+	{ 0x00005012U, 0x00000088U, 0x0U },
+	{ 0x80007011U, 0x000000cdU, 0x3U },
+	{ 0x80009010U, 0x000000c0U, 0x3U },
+	{ 0x0000201bU, 0x0000009dU, 0x0U },
+	{ 0x80005012U, 0x000000c0U, 0x3U },
+	{ 0x80007011U, 0x000000c0U, 0x3U },
+	{ 0x00002016U, 0x0000004fU, 0x0U },
+	{ 0x80005012U, 0x000000c0U, 0x3U }
+};
+
+/* Kaby Lake Y and Coffee Lake Y, DisplayPort (kbl_y_ddi_translations_dp). */
+static const struct i915_xd9_buf_trans i915_xd9_buf_kbl_y_dp[] = {
+	{ 0x00001017U, 0x000000a1U, 0x0U },
+	{ 0x00005012U, 0x00000088U, 0x0U },
+	{ 0x80007011U, 0x000000cdU, 0x3U },
+	{ 0x8000800fU, 0x000000c0U, 0x3U },
+	{ 0x00001017U, 0x0000009dU, 0x0U },
+	{ 0x80005012U, 0x000000c0U, 0x3U },
+	{ 0x80007011U, 0x000000c0U, 0x3U },
+	{ 0x00001017U, 0x0000004cU, 0x0U },
+	{ 0x80005012U, 0x000000c0U, 0x3U }
+};
+
+/* The H and S parts, eDP at low swing (skl_ddi_translations_edp). */
+static const struct i915_xd9_buf_trans i915_xd9_buf_edp[] = {
+	{ 0x00000018U, 0x000000a8U, 0x0U },
+	{ 0x00004013U, 0x000000a9U, 0x0U },
+	{ 0x00007011U, 0x000000a2U, 0x0U },
+	{ 0x00009010U, 0x0000009cU, 0x0U },
+	{ 0x00000018U, 0x000000a9U, 0x0U },
+	{ 0x00006013U, 0x000000a2U, 0x0U },
+	{ 0x00007011U, 0x000000a6U, 0x0U },
+	{ 0x00000018U, 0x000000abU, 0x0U },
+	{ 0x00007013U, 0x0000009fU, 0x0U },
+	{ 0x00000018U, 0x000000dfU, 0x0U }
+};
+
+/* The U parts, eDP at low swing (skl_u_ddi_translations_edp). */
+static const struct i915_xd9_buf_trans i915_xd9_buf_u_edp[] = {
+	{ 0x00000018U, 0x000000a8U, 0x0U },
+	{ 0x00004013U, 0x000000a9U, 0x0U },
+	{ 0x00007011U, 0x000000a2U, 0x0U },
+	{ 0x00009010U, 0x0000009cU, 0x0U },
+	{ 0x00000018U, 0x000000a9U, 0x0U },
+	{ 0x00006013U, 0x000000a2U, 0x0U },
+	{ 0x00007011U, 0x000000a6U, 0x0U },
+	{ 0x00002016U, 0x000000abU, 0x0U },
+	{ 0x00005013U, 0x0000009fU, 0x0U },
+	{ 0x00000018U, 0x000000dfU, 0x0U }
+};
+
+/* The Y parts, eDP at low swing (skl_y_ddi_translations_edp). */
+static const struct i915_xd9_buf_trans i915_xd9_buf_y_edp[] = {
+	{ 0x00000018U, 0x000000a8U, 0x0U },
+	{ 0x00004013U, 0x000000abU, 0x0U },
+	{ 0x00007011U, 0x000000a4U, 0x0U },
+	{ 0x00009010U, 0x000000dfU, 0x0U },
+	{ 0x00000018U, 0x000000aaU, 0x0U },
+	{ 0x00006013U, 0x000000a4U, 0x0U },
+	{ 0x00007011U, 0x0000009dU, 0x0U },
+	{ 0x00000018U, 0x000000a0U, 0x0U },
+	{ 0x00006012U, 0x000000dfU, 0x0U },
+	{ 0x00000018U, 0x0000008aU, 0x0U }
+};
+
+/* The H, S and U parts, HDMI (skl_ddi_translations_hdmi). */
+static const struct i915_xd9_buf_trans i915_xd9_buf_hdmi[] = {
+	{ 0x00000018U, 0x000000acU, 0x0U },
+	{ 0x00005012U, 0x0000009dU, 0x0U },
+	{ 0x00007011U, 0x00000088U, 0x0U },
+	{ 0x00000018U, 0x000000a1U, 0x0U },
+	{ 0x00000018U, 0x00000098U, 0x0U },
+	{ 0x00004013U, 0x00000088U, 0x0U },
+	{ 0x80006012U, 0x000000cdU, 0x1U },
+	{ 0x00000018U, 0x000000dfU, 0x0U },
+	{ 0x80003015U, 0x000000cdU, 0x1U },
+	{ 0x80003015U, 0x000000c0U, 0x1U },
+	{ 0x80000018U, 0x000000c0U, 0x1U }
+};
+
+/* The Y parts, HDMI (skl_y_ddi_translations_hdmi). */
+static const struct i915_xd9_buf_trans i915_xd9_buf_y_hdmi[] = {
+	{ 0x00000018U, 0x000000a1U, 0x0U },
+	{ 0x00005012U, 0x000000dfU, 0x0U },
+	{ 0x80007011U, 0x000000cbU, 0x3U },
+	{ 0x00000018U, 0x000000a4U, 0x0U },
+	{ 0x00000018U, 0x0000009dU, 0x0U },
+	{ 0x00004013U, 0x00000080U, 0x0U },
+	{ 0x80006013U, 0x000000c0U, 0x3U },
+	{ 0x00000018U, 0x0000008aU, 0x0U },
+	{ 0x80003015U, 0x000000c0U, 0x3U },
+	{ 0x80003015U, 0x000000c0U, 0x3U },
+	{ 0x80000018U, 0x000000c0U, 0x3U }
+};
+
+/* Builds the table field of a set from one of the tables above. */
+#define I915_XD9_TABLE(rows) { rows, sizeof(rows) / sizeof(rows[0]) }
+
+/*
+ * The DDI buffer tables of each platform and power class: Skylake's
+ * DisplayPort tables are its own, Kaby Lake's serve Coffee Lake and
+ * Comet Lake too; the eDP and HDMI tables follow the power class alone.
+ * Every HDMI table's default row is its ninth.
+ *
+ * Values referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_ddi_buf_trans.c (the table each
+ * platform and class takes, and the HDMI tables' default entry).
+ */
+static const struct i915_xd9_ddi_buffers i915_xd9_buffers_skl = {
+	I915_XD9_TABLE(i915_xd9_buf_skl_dp), I915_XD9_TABLE(i915_xd9_buf_edp), I915_XD9_TABLE(i915_xd9_buf_hdmi), 8U
+};
+
+static const struct i915_xd9_ddi_buffers i915_xd9_buffers_skl_u = {
+	I915_XD9_TABLE(i915_xd9_buf_skl_u_dp), I915_XD9_TABLE(i915_xd9_buf_u_edp), I915_XD9_TABLE(i915_xd9_buf_hdmi), 8U
+};
+
+static const struct i915_xd9_ddi_buffers i915_xd9_buffers_skl_y = {
+	I915_XD9_TABLE(i915_xd9_buf_skl_y_dp), I915_XD9_TABLE(i915_xd9_buf_y_edp), I915_XD9_TABLE(i915_xd9_buf_y_hdmi), 8U
+};
+
+static const struct i915_xd9_ddi_buffers i915_xd9_buffers_kbl = {
+	I915_XD9_TABLE(i915_xd9_buf_kbl_dp), I915_XD9_TABLE(i915_xd9_buf_edp), I915_XD9_TABLE(i915_xd9_buf_hdmi), 8U
+};
+
+static const struct i915_xd9_ddi_buffers i915_xd9_buffers_kbl_u = {
+	I915_XD9_TABLE(i915_xd9_buf_kbl_u_dp), I915_XD9_TABLE(i915_xd9_buf_u_edp), I915_XD9_TABLE(i915_xd9_buf_hdmi), 8U
+};
+
+static const struct i915_xd9_ddi_buffers i915_xd9_buffers_kbl_y = {
+	I915_XD9_TABLE(i915_xd9_buf_kbl_y_dp), I915_XD9_TABLE(i915_xd9_buf_y_edp), I915_XD9_TABLE(i915_xd9_buf_y_hdmi), 8U
+};
+
+#undef I915_XD9_TABLE
+
+/*
  * Builds one display 9 row from the parts that differ between rows: the
  * name, the kind, the south display's kind and the PCI ids.  Every other
  * field is the same on every display 9 part: three pipes, the ports
@@ -116,7 +316,7 @@ static const struct i915_xd_port_desc i915_xd9_ports[] = {
  * Values referenced: Intel Kaby Lake PRM Volume 12, Display Engine (the
  * three pipes, the display buffer's size, the eight watermark levels).
  */
-#define I915_XD9_ROW(name, kind, pch, ids) {				\
+#define I915_XD9_ROW(name, kind, pch, ids, power_class, buffers) {				\
 		name,							\
 		kind,							\
 		9U,							\
@@ -164,7 +364,9 @@ static const struct i915_xd_port_desc i915_xd9_ports[] = {
 		NULL,							\
 		I915_XD_FIA_SINGLE,					\
 		NULL,							\
-		NULL							\
+		NULL,							\
+		power_class,						\
+		buffers							\
 	}
 
 /*
@@ -173,17 +375,17 @@ static const struct i915_xd_port_desc i915_xd9_ports[] = {
  * Coffee Lake and Comet Lake with the Cannon Point family.
  */
 static const struct i915_xd_platform i915_xd9_platforms[] = {
-	I915_XD9_ROW("Skylake", I915_XD_KIND_SKL, I915_PCH_SPT, i915_xd9_ids_skl),
-	I915_XD9_ROW("Skylake U", I915_XD_KIND_SKL, I915_PCH_SPT, i915_xd9_ids_skl_u),
-	I915_XD9_ROW("Skylake Y", I915_XD_KIND_SKL, I915_PCH_SPT, i915_xd9_ids_skl_y),
-	I915_XD9_ROW("Kaby Lake", I915_XD_KIND_KBL, I915_PCH_SPT, i915_xd9_ids_kbl),
-	I915_XD9_ROW("Kaby Lake U", I915_XD_KIND_KBL, I915_PCH_SPT, i915_xd9_ids_kbl_u),
-	I915_XD9_ROW("Kaby Lake Y", I915_XD_KIND_KBL, I915_PCH_SPT, i915_xd9_ids_kbl_y),
-	I915_XD9_ROW("Coffee Lake", I915_XD_KIND_CFL, I915_PCH_CNP, i915_xd9_ids_cfl),
-	I915_XD9_ROW("Coffee Lake U", I915_XD_KIND_CFL, I915_PCH_CNP, i915_xd9_ids_cfl_u),
-	I915_XD9_ROW("Coffee Lake Y", I915_XD_KIND_CFL, I915_PCH_CNP, i915_xd9_ids_cfl_y),
-	I915_XD9_ROW("Comet Lake", I915_XD_KIND_CML, I915_PCH_CNP, i915_xd9_ids_cml),
-	I915_XD9_ROW("Comet Lake U", I915_XD_KIND_CML, I915_PCH_CNP, i915_xd9_ids_cml_u),
+	I915_XD9_ROW("Skylake", I915_XD_KIND_SKL, I915_PCH_SPT, i915_xd9_ids_skl, I915_XD_POWER_CLASS_H, &i915_xd9_buffers_skl),
+	I915_XD9_ROW("Skylake U", I915_XD_KIND_SKL, I915_PCH_SPT, i915_xd9_ids_skl_u, I915_XD_POWER_CLASS_U, &i915_xd9_buffers_skl_u),
+	I915_XD9_ROW("Skylake Y", I915_XD_KIND_SKL, I915_PCH_SPT, i915_xd9_ids_skl_y, I915_XD_POWER_CLASS_Y, &i915_xd9_buffers_skl_y),
+	I915_XD9_ROW("Kaby Lake", I915_XD_KIND_KBL, I915_PCH_SPT, i915_xd9_ids_kbl, I915_XD_POWER_CLASS_H, &i915_xd9_buffers_kbl),
+	I915_XD9_ROW("Kaby Lake U", I915_XD_KIND_KBL, I915_PCH_SPT, i915_xd9_ids_kbl_u, I915_XD_POWER_CLASS_U, &i915_xd9_buffers_kbl_u),
+	I915_XD9_ROW("Kaby Lake Y", I915_XD_KIND_KBL, I915_PCH_SPT, i915_xd9_ids_kbl_y, I915_XD_POWER_CLASS_Y, &i915_xd9_buffers_kbl_y),
+	I915_XD9_ROW("Coffee Lake", I915_XD_KIND_CFL, I915_PCH_CNP, i915_xd9_ids_cfl, I915_XD_POWER_CLASS_H, &i915_xd9_buffers_kbl),
+	I915_XD9_ROW("Coffee Lake U", I915_XD_KIND_CFL, I915_PCH_CNP, i915_xd9_ids_cfl_u, I915_XD_POWER_CLASS_U, &i915_xd9_buffers_kbl_u),
+	I915_XD9_ROW("Coffee Lake Y", I915_XD_KIND_CFL, I915_PCH_CNP, i915_xd9_ids_cfl_y, I915_XD_POWER_CLASS_Y, &i915_xd9_buffers_kbl_y),
+	I915_XD9_ROW("Comet Lake", I915_XD_KIND_CML, I915_PCH_CNP, i915_xd9_ids_cml, I915_XD_POWER_CLASS_H, &i915_xd9_buffers_kbl),
+	I915_XD9_ROW("Comet Lake U", I915_XD_KIND_CML, I915_PCH_CNP, i915_xd9_ids_cml_u, I915_XD_POWER_CLASS_U, &i915_xd9_buffers_kbl_u),
 };
 
 #undef I915_XD9_ROW

@@ -655,7 +655,7 @@ i915_skl_hdmi_buffer_on(
 	const struct i915_skl_io *io,
 	const struct i915_skl_output_config *config)
 {
-	const struct i915_skl_buf_trans *table;
+	const struct i915_xd9_buf_trans *table;
 	uint32_t trans;
 	uint32_t chicken;
 	uint32_t buf_ctl;

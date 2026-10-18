@@ -43,6 +43,7 @@ static void i915_xd9_test_pch(void);
 static void i915_xd9_test_shape(void);
 static unsigned i915_xd9_test_rows_listing(uint16_t id);
 static int i915_xd9_test_sku_of(const char *row_name);
+static int i915_xd9_test_class_sku(unsigned power_class);
 
 /*
  * Runs every check of the display 9 descriptions and reports.
@@ -87,6 +88,8 @@ i915_xd9_test_ids(
 	unsigned newer;
 	int error;
 	int sku;
+	int by_name;
+	int by_class;
 
 	/* Each id of the platform. */
 	wrong_rows = 0U;
@@ -113,7 +116,9 @@ i915_xd9_test_ids(
 		if (choice.platform->kind != kind)
 			wrong_kind++;
 		sku = drv_i915_skl_sku(ids[index], platform);
-		if (i915_xd9_test_sku_of(choice.platform->name) != sku) {
+		by_name = i915_xd9_test_sku_of(choice.platform->name);
+		by_class = i915_xd9_test_class_sku(choice.platform->power_class);
+		if (by_name != sku || by_class != sku) {
 			fprintf(stderr, "%s: 0x%04x is in \"%s\", the mode set's class is %d\n", name, ids[index], choice.platform->name, sku);
 			wrong_class++;
 		}
@@ -235,6 +240,21 @@ i915_xd9_test_sku_of(
 	if (length > 2U && strcmp(row_name + length - 2U, " U") == 0)
 		return I915_SKL_SKU_ULT;
 	if (length > 2U && strcmp(row_name + length - 2U, " Y") == 0)
+		return I915_SKL_SKU_ULX;
+
+	/* Succeeded: the H and S parts. */
+	return I915_SKL_SKU_H;
+}
+
+/* Reports the mode set's power class of a row's power class. */
+static int
+i915_xd9_test_class_sku(
+	unsigned power_class)
+{
+	/* The U parts and the Y parts. */
+	if (power_class == I915_XD_POWER_CLASS_U)
+		return I915_SKL_SKU_ULT;
+	if (power_class == I915_XD_POWER_CLASS_Y)
 		return I915_SKL_SKU_ULX;
 
 	/* Succeeded: the H and S parts. */

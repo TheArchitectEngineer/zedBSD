@@ -31,7 +31,7 @@ struct i915_skl_dp_port {
 	int edp;
 
 	/* The buffer table and its usable entries. */
-	const struct i915_skl_buf_trans *trans;
+	const struct i915_xd9_buf_trans *trans;
 	unsigned trans_count;
 
 	/* The DDI_BUF_CTL word built for the link, and the lane training set. */

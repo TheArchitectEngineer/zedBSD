@@ -87,6 +87,13 @@ struct i915_xd_ddi_link {
 	int fec;
 };
 
+/* The kinds of display 9 output a DDI buffer table is chosen for. */
+#define I915_XD9_OUTPUT_DP		1U
+#define I915_XD9_OUTPUT_HDMI		2U
+#define I915_XD9_OUTPUT_EDP		3U
+
+const struct i915_xd9_buf_trans *drv_i915_xd9_ddi_buf_table(const struct i915_xd_platform *platform, unsigned output, unsigned ddi, unsigned *count);
+unsigned drv_i915_xd9_ddi_hdmi_row(const struct i915_xd_platform *platform);
 int drv_i915_xd_combo_phy_ready(struct i915_xd_io *io, const struct i915_xd_platform *platform, unsigned phy);
 unsigned drv_i915_xd_combo_phy_init(struct i915_xd_io *io, const struct i915_xd_platform *platform);
 unsigned drv_i915_xd_combo_phy_uninit(struct i915_xd_io *io, const struct i915_xd_platform *platform);

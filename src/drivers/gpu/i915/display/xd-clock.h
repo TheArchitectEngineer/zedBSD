@@ -153,6 +153,22 @@ struct i915_xd_mg_pll_words {
 	uint32_t tdc_mask;
 };
 
+/*
+ * The DPLL words of a display 9 output: the DPLL's six-bit field of
+ * DPLL_CTRL1 (the caller shifts it to the DPLL), and in HDMI mode the
+ * DPLL's two configuration words; with the port clock they give, in kHz
+ * (the TMDS clock for HDMI).
+ */
+struct i915_xd9_dpll_words {
+	uint32_t ctrl1;
+	uint32_t cfgcr1;
+	uint32_t cfgcr2;
+	uint32_t port_khz;
+};
+
+uint32_t drv_i915_xd9_cdclk_khz(uint32_t lcpll1_ctl, uint32_t dpll_ctrl1, uint32_t cdclk_ctl);
+int drv_i915_xd9_dpll_dp_words(uint32_t port_khz, struct i915_xd9_dpll_words *words);
+int drv_i915_xd9_dpll_hdmi_words(uint32_t pixel_khz, struct i915_xd9_dpll_words *words);
 void drv_i915_xd_cdclk_read(struct i915_xd_io *io, const struct i915_xd_platform *platform, struct i915_xd_cdclk *state);
 uint8_t drv_i915_xd_cdclk_voltage(const struct i915_xd_platform *platform, uint32_t cdclk_khz);
 uint32_t drv_i915_xd_cdclk_lowest(const struct i915_xd_platform *platform, uint32_t ref_khz, uint32_t min_khz);
