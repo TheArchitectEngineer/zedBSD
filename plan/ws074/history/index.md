@@ -1,5 +1,9 @@
 # WS074 lane の Past Log
 
+## ws074-q20261018-38（2026-10-18）
+
+[履歴](ws074-q20261018-38.md)。private原WebIDL2 positive4/4・negative元assertion到達、native/Chrome callback完全一致。product Proxy未公開、8不足を診断。engine変更無し・1482/3805維持、次IsArray候補、共有投影pending。
+
 ## ws074-q20261018-37（2026-10-18）
 
 [履歴](ws074-q20261018-37.md)。fixed-buffer TypedArray Set/Define partial clear、pure native契約回復・content metadata/factory roots、公開9差修正・native/mixed oracle323/実GC graph回収。全1508 q36の全whole/callback/completion同値、1482/3805・held0維持。remaining typed/exotic/global未達、共有投影pending。
@@ -119,9 +123,5 @@ Follow-up: q23 i01/i02 clearanceは疎checkoutのIDL未配信が判明しunclear
 ## ws074-q20261018-09（2026-10-18）
 
 [履歴](ws074-q20261018-09.md)。metadata/guard修正後、公式Grid502 whole247 PASS維持、callback6,410→6,419・後退0。q08の10後退回復、静的227/529維持。両partial cleared、p243/p244 whole残りは保持。次はp245 no-box minimum。共有投影pending。
-
-## ws074-q20261018-08（2026-10-18）
-
-[履歴](ws074-q20261018-08.md)。独立7/7・静的Grid225→227は通ったが、full502でminmax(auto,0px)の10 callback後退が判明。i01 initial clearanceをinvalidateし、i02/Queueともuncleared。次はminimum rule metadataとeligibilityの修正。q07の値取得改善とknown historyは保持。共有投影pending。
 
 以前のindex: [early 2026-10-18](early-20261018.md)。過去standing Queue投影: [原文archive](../queue-archive-through-q30.md)。

@@ -125,3 +125,12 @@ harness archive1676 members SHA25651fc5fa098a8a20d13a1d188840fa97a9ca4102e781461
 [全証拠](evidence/20261018-q37/README.md)。次は原WebIDL2 blockerの正確な依存をprivate native probeで確認し、必要なIsArray/Reflect等を新finite scopeで優先具体化する候補。全操作完成/global公開/公式PASS増分を先取りしない。
 
 Event ws074-p258-q38-selected-20261018: q37の実native Proxyを元WebIDL2へprivate adapterで接続し、positive/negativeとgenuine Chromiumを対照する最大90分の有界dependency調査を選定。product/source/global Proxyは変更せず、公式PASSへ加算しない。exact範囲は[Queue](../queue.md)。whole p258/WS未達を保持。
+
+## q38 private dependency investigation result
+
+Event ws074-p258-q38-partial-cleared-20261018: frozen q37 native helper/source0c8033f4bへprivate JS constructor adapterを接続し、変更していない元pinned WebIDL2/testharnessとq29 positive4・negative1を実行。adapterはmakeReadProxyで実VM recordを返すだけでtrap/Reflect代替無し。元WebIDL2 SHA256954444f6daf0f8068d2fce513eac8e6a5d53189a910b9a5675e8d8e8a2808070を照合。adapter無しbaselineは元と同じProxy undefined、adapter有りではparse/validate/不正IDL拒否のpositive4/4が通り、negativeは元assert_unreachedの意図的assertionまで到達してFAIL。genuine Chromiumへ同じsource bytesを与え全callbackのname/status/messageが完全一致。native4実行ともprocess exit0と独立ownership GC gatesが通過したが、process成功をparser PASSとは混同していない。
+追加private診断8条件で公開前の不足を確認：Array.isArrayのProxy配列/revoked、Object.keys、delete転送、GetPrototypeOf、IsExtensible、nested/callable targetにnative/Chrome差が残る。元parserの限定4条件成功は全WebIDL2/Proxy互換性や公開条件を満たす証拠ではない。次finite実装候補はIsArray/公開Array.isArrayを先行し、remaining internal methodsとglobal constructor/revocableを順次検証する。global product Proxyは依然未公開。
+C/engine/source/既存controls/provider/WPT/expectations変更無し、host/target再build無し。全1508はq37、static/scripted/crashはq28を明示再利用。公式PASS加算0、確認済1482/3805・held0・未attempt275維持。i01は有界dependency調査としてscoped cleared、whole p258/WS/full target/p100/100%未達。共有Master/Queue/cache/GitHub投影pending、push無し。
+Raw archive 35 membersを全member read-back、SHA25699bd5f62cb9cc343215251b79b17047310caad0114d1333cfab8ace94102ad3b。凍結runtime binaryはarchiveへ含めず元build path/hashをsummaryへ固定。
+
+[証拠](evidence/20261018-q38/README.md)。
