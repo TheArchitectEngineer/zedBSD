@@ -2,7 +2,7 @@
 
 # ws074-p258: native Proxy internal methods and lifetime
 
-Status: uncleared（q44 Object callers partial cleared、whole Proxy未達）
+Status: in-progress（q45 chain consumers partial、whole Proxy未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
@@ -222,3 +222,5 @@ i01 Object callers partialだけcleared、whole p258/WS/p100/full target/100%未
 Archives: harness1676 members SHA2567ba8f2ca5aa17ef5235bed2ac29e49034a1b2bcf2e1b153e03e9b6bb85ffde94、native/oracle/build85 members SHA256a0ae34c5475efaf249b6296955c6e531313327b1c0c3e166774e3a93404998daを全member順次read-back。runtime binaryはhash付きbuild保持・archive未同梱。
 
 [証拠](evidence/20261018-q44/README.md)。次finite scope未選定。
+
+Event ws074-p258-q45-selection: q44 partial verified後、上記3functionのrealm chain traversal/GC/errorだけ選定。[exact scope](../queue.md)。wholeは未達、外部dispatch/bound/for-in等を残す。

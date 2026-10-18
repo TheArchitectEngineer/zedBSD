@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [ws074-q20261018-44](queue.md) finished（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
+Queue: [ws074-q20261018-45](queue.md) active（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
 
 Latest verified（q44）: Object own-key/descriptor/integrity callers partial clear。旧501保持＋new51 native/Chrome一致、native552/Chrome550は既知huge2のみ差、precode42条件修正。4 actual public GC/error modes・focused/元WebIDL4+negative/追加rule2検出保持。全1508 q37の全whole/callback/completion完全同一、494 PASS・差/gain/loss0、公式1482/3805・held0・未attempt275。images/crash q28再利用。for-in/chain/core routing/nested/call/global/p100/full target未達。[証拠](phase258/evidence/20261018-q44/README.md)。共有投影pending。
 
@@ -706,7 +706,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p255](phase255/phase.md) | PerformanceObserver native mark登録・queue・task配信 | uncleared / q28 Window consumer/failure/held partial cleared・whole残り | p254 verified native mark output |
 | [ws074-p256](phase256/phase.md) | Window ErrorEvent・uncaught harness fidelity | uncleared / q28 runtime/inline source partial cleared・external/syntax等残り | 既存Event/Window/VM→p255再評価 |
 | [ws074-p257](phase257/phase.md) | synchronous generator yield* delegation | cleared / q29 sync own criteria・Chrome38/native GC10 | q28 VM/GC・p189 pinned WebIDL2 |
-| [ws074-p258](phase258/phase.md) | native Proxy internal methods・GC/revocation | uncleared / q44 Object callers partial cleared・native552/Chrome550＋既知huge2、全1508同値 | q29 VM/GC・p189 actual Proxy blocker |
+| [ws074-p258](phase258/phase.md) | native Proxy internal methods・GC/revocation | in-progress / q45 chain consumers partial、q44全1508同値証拠保持 | q29 VM/GC・p189 actual Proxy blocker |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 
@@ -1353,3 +1353,5 @@ Event ws074-q44-selected-20261018: p258 Object own-key/descriptor/integrity call
 Event ws074-q44-validation-progress-20261018: private sourceの旧501保持・新51中precode42差を修正、native552/Chrome550（既知huge2のみ）、4 public GC/error modes/focused/元parser保持。追加original validator negative2とintentional assertionの同一callbackを確認、これはq43 before未測定で新gainとは認定しない。全1508測定中、own Phase/tableのactive投影を整合。terminal判定は全callback/completion比較待ち。
 
 Event ws074-q44-finished-20261018: p258 Object callers partial clear、new51 genuine一致/precode42修正・native552/Chrome550既知huge2。4 public GC/error modesでfresh Symbol boxing保持と実回収、元parser/追加validator rule検出保持。全1508 q37全callback/completion同値・gain/loss0・1482/3805、p189へvalidation出力投影。for-in/core/global/whole未達。[history](history/ws074-q20261018-44.md)。共有投影pending。
+
+Event ws074-q45-selection: p258のisPrototypeOf/AnnexB lookup/OrdinaryHasInstance consumer partial開始、q44既存検証維持、whole acceptance未変更。[Queue](queue.md)。共有投影pending。
