@@ -703,9 +703,10 @@ drv_i915_xd_pipe_start(
 
 /*
  * Stops a transcoder whose planes are off: its enable cleared, the FEC
- * stall released, and up to 100 ms for it to report itself off.  A
- * transcoder that is off is left alone (*was_running 0).  Returns the
- * I915_XD_PIPE_LATE_ bits of the wait that ran out.
+ * stall released on display 12 and later (display 11 has no such bit),
+ * and up to 100 ms for it to report itself off.  A transcoder that is off
+ * is left alone (*was_running 0).  Returns the I915_XD_PIPE_LATE_ bits of
+ * the wait that ran out.
  *
  * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_display.c
  * (intel_disable_transcoder, intel_wait_for_pipe_off).
@@ -713,6 +714,7 @@ drv_i915_xd_pipe_start(
 unsigned
 drv_i915_xd_pipe_stop(
 	struct i915_xd_io *io,
+	const struct i915_xd_platform *platform,
 	unsigned trans,
 	int *was_running)
 {
@@ -727,10 +729,11 @@ drv_i915_xd_pipe_stop(
 	if ((conf & I915_XD_TRANS_CONF_ENABLE) == 0U)
 		return 0U;
 
-	/* The enable cleared, the FEC stall released. */
+	/* The enable cleared, then the FEC stall released where the transcoder has one. */
 	*was_running = 1;
 	drv_i915_xd_io_write(io, I915_XD_TRANS_CONF(trans), conf & ~I915_XD_TRANS_CONF_ENABLE);
-	drv_i915_xd_io_rmw(io, i915_xd_pipe_chicken(trans), I915_XD_CHICKEN_TRANS_FEC_STALL, 0U);
+	if (platform->display_ver >= 12U)
+		drv_i915_xd_io_rmw(io, i915_xd_pipe_chicken(trans), I915_XD_CHICKEN_TRANS_FEC_STALL, 0U);
 
 	/* The transcoder reports itself off. */
 	error = drv_i915_xd_io_poll(io, I915_XD_TRANS_CONF(trans), I915_XD_TRANS_CONF_STATE, 0U, I915_XD_PIPE_OFF_US, &last);

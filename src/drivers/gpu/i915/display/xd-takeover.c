@@ -499,7 +499,7 @@ drv_i915_xd_takeover_stop(
 		i915_xd_fw_hook(hooks->sink_before, hooks->context, pipe);
 
 	/* The transcoder and its DDI function. */
-	waits = drv_i915_xd_pipe_stop(io, pipe, &was_running);
+	waits = drv_i915_xd_pipe_stop(io, platform, pipe, &was_running);
 	if ((waits & I915_XD_PIPE_LATE_OFF) != 0U)
 		late |= I915_XD_TAKEOVER_LATE_PIPE;
 	(void)drv_i915_xd_pipe_func_disable(io, pipe, 0);

@@ -236,7 +236,7 @@ void drv_i915_xd_pipe_clock_on(struct i915_xd_io *io, const struct i915_xd_platf
 void drv_i915_xd_pipe_clock_off(struct i915_xd_io *io, unsigned trans);
 uint32_t drv_i915_xd_pipe_func_disable(struct i915_xd_io *io, unsigned trans, int mst_master);
 int drv_i915_xd_pipe_start(struct i915_xd_io *io, const struct i915_xd_platform *platform, unsigned trans);
-unsigned drv_i915_xd_pipe_stop(struct i915_xd_io *io, unsigned trans, int *was_running);
+unsigned drv_i915_xd_pipe_stop(struct i915_xd_io *io, const struct i915_xd_platform *platform, unsigned trans, int *was_running);
 void drv_i915_xd_pipe_scalers_off(struct i915_xd_io *io, unsigned pipe);
 uint32_t drv_i915_xd_pipe_frame(struct i915_xd_io *io, unsigned pipe);
 unsigned drv_i915_xd_pipe_wait_scanline(struct i915_xd_io *io, unsigned pipe, int moving);
