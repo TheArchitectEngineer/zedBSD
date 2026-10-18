@@ -121,5 +121,6 @@
 | P1 / 2026-10-18 | phase-runner（Opus 5.5、low、レビューの子なし） | WS245（q1241）→ WS251 p002（q1242） | `/home/awe/zedBSD-worktrees/p1` / `agent/p1-q1241` | q1241 | q1242 | returned（2026-10-18） | 最後 23135a254 → main db594efb5 |
 | P2 / 2026-10-18 | kernel-and-driver-designer | WS256 p001（q1243） | `/home/awe/zedBSD-worktrees/p2` / `agent/p2-ws256` | q1243 | — | returned（2026-10-18） | 最後 f1acb25c9 → main fc8e21f8c |
 | P1 / 2026-10-18 (2) | phase-runner（Opus 5.5、low、レビューの子なし） | WS245（q1244）→ WS251（q1245） | `/home/awe/zedBSD-worktrees/p1` / `agent/p1-q1244` | q1244 | q1245 | returned（2026-10-18） | 最後 9c59634ce → main 7905ef996 |
-| P1 / 2026-10-18 (3) | phase-runner（Opus 5.5、low、子なし） | WS245（q1246）→ WS251（q1247） | `/home/awe/zedBSD-worktrees/p1` / `agent/p1-q1246` | q1246 | q1247 | running | 基点 main a781780c8 |
+| P1 / 2026-10-18 (3) | phase-runner（Opus 5.5、low、子なし） | WS245（q1246）→ WS251（q1247） | `/home/awe/zedBSD-worktrees/p1` / `agent/p1-q1246` | q1246 | q1247 | returned（2026-10-18、q1248 を済ませた） | 最後 411c13214 → main 181f43b52 |
 | P2 / 2026-10-18 (3) | phase-runner | WS256 p009 → p003（q1249） | `/home/awe/zedBSD-worktrees/p2` / `agent/p2-q1249` | q1249 | — | running | 基点 main 181f43b52 |
+| P1 / 2026-10-18 (4) | phase-runner（Opus 5.5、low、子なし） | WS244（q1250）→ WS245（q1246） | `/home/awe/zedBSD-worktrees/p1` / `agent/p1-q1250` | q1250 | q1246 | running | 基点 main 2213a7015 |

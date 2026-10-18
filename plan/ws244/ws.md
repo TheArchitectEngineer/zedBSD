@@ -3,7 +3,7 @@
 # WS244: i915 の Linux 由来の code の書き直し（データだけを引用で残す）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-15 作成、p001 を P7 が途中まで実施して中断）
+Status: incomplete（2026-10-15 作成、p001 を P7 が途中まで実施して中断。2026-10-18 ユーザーの指示で P1 が再開、q1250）
 Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)
