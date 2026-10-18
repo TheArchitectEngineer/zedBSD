@@ -44,6 +44,14 @@ enum operation_type {
 	OPERATION_OBJECT
 };
 
+/* One native ToBigInt frame owns its realm, original source and fresh primitive until conversion completes. */
+struct operation_bigint_roots {
+	struct vm_realm *realm;
+	vm_value source;
+	vm_value primitive;
+};
+
+static void operation_bigint_trace(struct vm_heap *heap, void *context);
 static int operation_type(vm_value value);
 static int operation_bigint_string(struct vm_realm *realm, const struct vm_bigint *big, struct vm_string **string);
 static int operation_string_bigint(struct vm_realm *realm, vm_value string, vm_value *big);
@@ -61,6 +69,200 @@ static int operation_throw_text(struct vm_realm *realm, const char *text);
 static double operation_power(double base, double exponent);
 static int32_t operation_shift_signed(int32_t number, uint32_t count);
 static int operation_name_message(vm_value key, const char *format, char *text, size_t size);
+
+/*
+ * Reads a primitive string as a number without invoking script or allocating VM cells.
+ * The existing StringToNumber parser owns whitespace, radix and decimal semantics.
+ */
+double
+vm_string_to_number(
+	const struct vm_string *string)
+{
+	double number;
+
+	/* Reuse the established language parser without a synthetic realm or object conversion. */
+	number = operation_parse_number(string);
+
+	/* Succeeded: the parsed number, including NaN for invalid numeric text. */
+	return number;
+}
+
+/*
+ * Classifies a valid property key by CanonicalNumericIndexString without script or VM allocation.
+ * C buffer allocation preserves the existing exact shortest-number formatter.
+ */
+int
+vm_canonical_numeric_index(
+	vm_value key,
+	double *number,
+	int *canonical)
+{
+	struct wb_buffer text;
+	const struct vm_string *string;
+	uint32_t index;
+	uint16_t unit;
+	int is_int32;
+	int is_string;
+	int special;
+	int status;
+
+	/* Internal integer keys already denote their canonical numeric index. */
+	*canonical = 0;
+	*number = 0.0;
+	is_int32 = vm_value_is_int32(key);
+	if (is_int32) {
+		*number = (double)vm_value_as_int32(key);
+		*canonical = 1;
+		return 0;
+	}
+
+	/* Symbols have no numeric index, and callers supply already converted property keys. */
+	is_string = vm_value_is_string(key);
+	if (!is_string)
+		return 0;
+	string = (const struct vm_string *)vm_value_as_cell(key);
+	special = vm_string_equal_ascii(string, "-0");
+	if (special) {
+		*number = -0.0;
+		*canonical = 1;
+		return 0;
+	}
+
+	/* Canonical spelling must equal the exact language formatter's round-trip output. */
+	*number = vm_string_to_number(string);
+	wb_buffer_init(&text);
+	status = vm_number_to_text(*number, 10, &text);
+	if (status != 0)
+		goto cleanup;
+	if (text.length != string->length)
+		goto cleanup;
+	for (index = 0; index < string->length; index++) {
+		unit = vm_string_at(string, index);
+		if (unit != (uint16_t)text.data[index])
+			goto cleanup;
+	}
+
+	/* Only identical source spelling denotes a canonical numeric index. */
+	*canonical = 1;
+
+cleanup:
+	/* The formatter's C storage never retains or allocates a VM cell. */
+	wb_buffer_release(&text);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: canonical distinguishes an actual numeric index from an ordinary property name. */
+	return 0;
+}
+
+/*
+ * Converts a language value to BigInt with ToPrimitive's number hint and ToBigInt's type rules.
+ * Native roots retain the owner and fresh primitive across parsing allocation or script collection.
+ */
+int
+vm_to_bigint(
+	struct vm_realm *realm,
+	vm_value value,
+	vm_value *result)
+{
+	struct operation_bigint_roots roots;
+	struct wb_buffer text;
+	struct vm_bigint *big;
+	struct vm_string *string;
+	uint32_t start;
+	uint32_t end;
+	uint32_t index;
+	uint16_t unit;
+	int is_string;
+	int blank;
+	int boolean;
+	int status;
+
+	/* Publish no partial conversion while its source or transient primitive may still run script. */
+	*result = VM_VALUE_UNDEFINED;
+	roots.realm = realm;
+	roots.source = value;
+	roots.primitive = VM_VALUE_UNDEFINED;
+	wb_buffer_init(&text);
+	status = vm_heap_add_tracer(realm->heap, operation_bigint_trace, &roots);
+	if (status != 0)
+		return status;
+	status = vm_to_primitive(realm, value, VM_HINT_NUMBER, &roots.primitive);
+	if (status != 0)
+		goto cleanup;
+	big = vm_value_as_bigint(roots.primitive);
+	if (big != NULL) {
+		*result = roots.primitive;
+		status = 0;
+		goto cleanup;
+	}
+
+	/* Booleans become exactly zero or one without accepting Number primitives. */
+	if (roots.primitive == VM_VALUE_TRUE || roots.primitive == VM_VALUE_FALSE) {
+		boolean = 0;
+		if (roots.primitive == VM_VALUE_TRUE)
+			boolean = 1;
+		status = vm_bigint_from_int64(realm->heap, boolean, result);
+		goto cleanup;
+	}
+
+	/* Every remaining accepted primitive is a string; Number, Symbol, null and undefined throw. */
+	is_string = vm_value_is_string(roots.primitive);
+	if (!is_string) {
+		status = vm_throw_type_error(realm, "Cannot convert the value to a BigInt");
+		goto cleanup;
+	}
+
+	/* Trim the language's complete Unicode whitespace and line-terminator set before parsing ASCII numeric grammar. */
+	string = (struct vm_string *)vm_value_as_cell(roots.primitive);
+	start = 0;
+	end = string->length;
+	while (start < end) {
+		unit = vm_string_at(string, start);
+		blank = vm_is_space(unit);
+		if (!blank)
+			break;
+		start++;
+	}
+
+	/* Trailing language whitespace is excluded independently of leading whitespace. */
+	while (end > start) {
+		unit = vm_string_at(string, end - 1U);
+		blank = vm_is_space(unit);
+		if (!blank)
+			break;
+		end--;
+	}
+
+	/* StringToBigInt's accepted digits, signs and prefixes are ASCII; other remaining code units are invalid. */
+	for (index = start; index < end; index++) {
+		unit = vm_string_at(string, index);
+		if (unit > 0x7FU) {
+			status = vm_throw_error(realm, VM_ERROR_SYNTAX, "Cannot convert the string to a BigInt");
+			goto cleanup;
+		}
+
+		/* Copy one grammar byte into noncollectible parsing storage. */
+		status = wb_buffer_append_byte(&text, (unsigned char)unit);
+		if (status != 0)
+			goto cleanup;
+	}
+
+	/* The established BigInt parser handles empty text, radix prefixes, signed decimal and exact magnitude. */
+	status = vm_bigint_from_text(realm->heap, wb_buffer_string(&text), text.length, result);
+	if (status == EINVAL)
+		status = vm_throw_error(realm, VM_ERROR_SYNTAX, "Cannot convert the string to a BigInt");
+
+cleanup:
+	/* Neither the transient primitive nor its native parsing buffer escapes this frame's conversion lifetime. */
+	wb_buffer_release(&text);
+	vm_heap_remove_tracer(realm->heap, operation_bigint_trace, &roots);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the result is the converted BigInt with its original or exact parsed value. */
+	return 0;
+}
 
 /*
  * Converts a value to a truth value (ToBoolean).
@@ -1826,4 +2028,23 @@ operation_compare_bigint(
 	if (swap && *order != 2)
 		*order = -*order;
 	return 0;
+}
+
+/* Retains the managed owner and both input stages of a live ToBigInt conversion. */
+static void
+operation_bigint_trace(
+	struct vm_heap *heap,
+	void *context)
+{
+	struct operation_bigint_roots *roots;
+
+	/* A conversion can be the only native owner of its realm or freshly returned primitive. */
+	roots = context;
+	if (roots->realm->managed)
+		vm_heap_mark(heap, &roots->realm->cell);
+	vm_heap_mark_value(heap, roots->source);
+	vm_heap_mark_value(heap, roots->primitive);
+
+	/* Succeeded: later script getters and parsing allocation can collect safely. */
+	return;
 }

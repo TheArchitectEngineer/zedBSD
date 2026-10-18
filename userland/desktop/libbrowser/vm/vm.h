@@ -670,6 +670,9 @@ double vm_number_parse_radix(const char *text, size_t length, int radix);
 int vm_to_boolean(vm_value value);
 int vm_to_primitive(struct vm_realm *realm, vm_value value, int hint, vm_value *result);
 int vm_ordinary_to_primitive(struct vm_realm *realm, vm_value value, int hint, vm_value *result);
+double vm_string_to_number(const struct vm_string *string);
+int vm_canonical_numeric_index(vm_value key, double *number, int *canonical);
+int vm_to_bigint(struct vm_realm *realm, vm_value value, vm_value *result);
 int vm_to_number(struct vm_realm *realm, vm_value value, double *number);
 int vm_to_numeric(struct vm_realm *realm, vm_value value, vm_value *numeric);
 

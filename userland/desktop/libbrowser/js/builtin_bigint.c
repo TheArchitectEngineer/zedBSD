@@ -77,10 +77,11 @@ bigint_call(
 	unsigned count,
 	vm_value *result)
 {
-	struct vm_string *string;
-	struct wb_buffer text;
 	vm_value primitive;
 	double number;
+	double whole;
+	int is_number;
+	int infinite;
 	int status;
 
 	UNUSED_PARAMETER(this_value);
@@ -90,47 +91,45 @@ bigint_call(
 	if (status != 0)
 		return status;
 
-	/* A BigInt is itself. */
-	if (vm_value_as_bigint(primitive) != NULL) {
-		*result = primitive;
-		return 0;
-	}
-
 	/* A number must be an integer. */
-	if (vm_value_is_number(primitive)) {
+	is_number = vm_value_is_number(primitive);
+	if (is_number) {
 		number = vm_value_as_number(primitive);
-		if (number != number || isinf(number) || number != floor(number)) {
+		if (number != number) {
 			status = vm_throw_range_error(realm, "The number cannot be converted to a BigInt because it is not an integer");
 			return status;
 		}
-		status = vm_bigint_from_double(realm->heap, number, result);
-		return status;
-	}
 
-	/* A boolean is 0 or 1. */
-	if (primitive == VM_VALUE_TRUE || primitive == VM_VALUE_FALSE) {
-		status = vm_bigint_from_int64(realm->heap, primitive == VM_VALUE_TRUE, result);
-		return status;
-	}
-
-	/* A string is read as a numeral. */
-	if (vm_value_is_string(primitive)) {
-		string = (struct vm_string *)vm_value_as_cell(primitive);
-		wb_buffer_init(&text);
-		status = vm_string_to_utf8(string, &text);
-		if (status == 0)
-			status = vm_bigint_from_text(realm->heap, wb_buffer_string(&text), text.length, result);
-		wb_buffer_release(&text);
-		if (status == EINVAL) {
-			status = vm_throw_error(realm, VM_ERROR_SYNTAX, "Cannot convert the string to a BigInt");
+		/* Infinity has no integer BigInt representation. */
+		infinite = isinf(number);
+		if (infinite) {
+			status = vm_throw_range_error(realm, "The number cannot be converted to a BigInt because it is not an integer");
 			return status;
 		}
-		return status;
+
+		/* A finite Number must have no fractional part. */
+		whole = floor(number);
+		if (number != whole) {
+			status = vm_throw_range_error(realm, "The number cannot be converted to a BigInt because it is not an integer");
+			return status;
+		}
+
+		/* The constructor alone accepts an exact integer Number. */
+		status = vm_bigint_from_double(realm->heap, number, result);
+		if (status != 0)
+			return status;
+
+		/* Succeeded: the constructor accepts an exact integer Number. */
+		return 0;
 	}
 
-	/* undefined, null and symbols cannot. */
-	status = vm_throw_type_error(realm, "Cannot convert the value to a BigInt");
-	return status;
+	/* Non-Number constructor inputs share ToBigInt, including complete Unicode whitespace handling. */
+	status = vm_to_bigint(realm, primitive, result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: constructor Number handling and language ToBigInt remain distinct. */
+	return 0;
 }
 
 /* The shared body of asIntN and asUintN: (bits, bigint). */
@@ -159,14 +158,18 @@ bigint_as_n(
 		return status;
 	}
 
-	/* The BigInt (converted as BigInt() does). */
+	/* ToBigInt rejects Number inputs even when the bit count is zero. */
 	argument = js_argument(args, count, 1);
-	status = bigint_call(realm, VM_VALUE_UNDEFINED, &argument, 1, &argument);
+	status = vm_to_bigint(realm, argument, &argument);
 	if (status != 0)
 		return status;
 	big = vm_value_as_bigint(argument);
 	status = vm_bigint_as_n(realm, (uint64_t)bits, is_signed, big, result);
-	return status;
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the properly converted BigInt is truncated to the requested width. */
+	return 0;
 }
 
 static int

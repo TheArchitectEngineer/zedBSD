@@ -28,6 +28,12 @@ static uintptr_t sole_realm_address;
 /* Counts actual native descriptor collections that found their original managed realm alive. */
 static unsigned sole_realm_alive;
 
+/* Records the independent conversion callback's fresh primitive address without retaining its cell. */
+static uintptr_t conversion_primitive_address;
+
+/* Records collections at callback return so the independent case can prove a later parser collection occurred. */
+static size_t conversion_primitive_collections;
+
 static int proxy_sole_get_own(struct vm_object *object, vm_value key, struct vm_property *property);
 
 /* A target-specific fixture policy collects before returning its ordinary descriptor and never runs user script. */
@@ -35,6 +41,10 @@ static const struct vm_native_operations proxy_sole_operations = {
 	proxy_sole_get_own, NULL, NULL, NULL, NULL
 };
 
+static int proxy_canonical_index(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
+static int proxy_to_bigint(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
+static int conversion_primitive(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
+static int numeric_conversion_pressure(struct page *page);
 static int proxy_set_receiver(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
 static int proxy_define_descriptor(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
 static int descriptor_roundtrip(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
@@ -109,6 +119,14 @@ main(
 	if (status != 0)
 		goto cleanup;
 
+	/* Private bridges exercise shared numeric-index and BigInt abstract operations without fixture algorithms. */
+	status = js_builtin_method(page->realm, page->realm->global, "canonicalReadIndex", 1, proxy_canonical_index);
+	if (status != 0)
+		goto cleanup;
+	status = js_builtin_method(page->realm, page->realm->global, "toBigIntRead", 1, proxy_to_bigint);
+	if (status != 0)
+		goto cleanup;
+
 	/* The same source reaches native Proxy or Chromium's genuine Proxy without API substitution inside the tests. */
 	wb_buffer_init(&source);
 	status = wb_file_read(source_path, &source);
@@ -174,6 +192,9 @@ main(
 
 	/* Direct native partial descriptors must survive real allocation pressure without caller roots. */
 	status = descriptor_pressure(page);
+	if (status != 0)
+		goto cleanup;
+	status = numeric_conversion_pressure(page);
 
 cleanup:
 	/* Restore ordinary scanning before retiring the complete Page graph. */
@@ -1157,5 +1178,315 @@ proxy_set_receiver(
 	*result = vm_value_boolean(done);
 
 	/* Succeeded: reflection exposes the actual internal operation's Boolean outcome. */
+	return 0;
+}
+
+/* Exposes only the actual VM canonical-key operation after ordinary property-key conversion. */
+static int
+proxy_canonical_index(
+	struct vm_realm *realm,
+	vm_value receiver,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	vm_value key;
+	double number;
+	int canonical;
+	int status;
+
+	UNUSED_PARAMETER(receiver);
+
+	/* The VM classifier receives an already converted property key and cannot run script itself. */
+	status = vm_to_key(realm, js_argument(args, count, 0), &key);
+	if (status != 0)
+		return status;
+	status = vm_canonical_numeric_index(key, &number, &canonical);
+	if (status != 0)
+		return status;
+	*result = VM_VALUE_UNDEFINED;
+	if (canonical)
+		*result = vm_value_number(number);
+
+	/* Succeeded: undefined distinguishes an ordinary name from every numeric result including NaN. */
+	return 0;
+}
+
+/* Calls shared ToBigInt directly so the fixture cannot substitute constructor Number semantics. */
+static int
+proxy_to_bigint(
+	struct vm_realm *realm,
+	vm_value receiver,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	int status;
+
+	UNUSED_PARAMETER(receiver);
+
+	/* The production abstract operation owns all primitive conversion and lifetime behavior. */
+	status = vm_to_bigint(realm, js_argument(args, count, 0), result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the original or converted BigInt is returned without fixture arithmetic. */
+	return 0;
+}
+
+/* Returns a fresh primitive followed by enough inert pressure to force collection during its subsequent BigInt conversion. */
+static int
+conversion_primitive(
+	struct vm_realm *realm,
+	vm_value receiver,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct vm_string *string;
+	struct vm_cell *root;
+	struct vm_cell *pressure;
+	struct vm_heap_stats stats;
+	int status;
+
+	UNUSED_PARAMETER(receiver);
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* Protect a noninterned numeric primitive only until its caller takes responsibility. */
+	root = NULL;
+	status = vm_heap_add_root(realm->heap, &root);
+	if (status != 0)
+		return status;
+	string = vm_string_from_utf8(realm->heap, "9007199254740993", 16U);
+	if (string == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* The saved address is an observation and never a collector root. */
+	root = &string->cell;
+	conversion_primitive_address = (uintptr_t)string;
+	pressure = vm_heap_alloc(realm->heap, &proxy_pressure_type, 8U * 1024U * 1024U);
+	if (pressure == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* A later collection must happen after this callback releases its own primitive root. */
+	vm_heap_stats(realm->heap, &stats);
+	conversion_primitive_collections = stats.collections;
+
+	/* The primitive must next be owned by ToPrimitive and the production ToBigInt tracer. */
+	*result = vm_value_cell(string);
+	status = 0;
+
+cleanup:
+	/* No callback root may remain when the production parser triggers its own collection. */
+	vm_heap_remove_root(realm->heap, &root);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: a sole fresh primitive and pending real allocation pressure reach the conversion. */
+	return 0;
+}
+
+/* Checks actual managed realm, source, fresh primitive and output lifetimes across Boolean and object ToBigInt allocation. */
+static int
+numeric_conversion_pressure(
+	struct page *page)
+{
+	struct vm_cell *roots[3];
+	struct vm_cell *pressure;
+	struct vm_cell *found;
+	struct vm_realm *realm;
+	struct vm_object *source;
+	struct vm_bigint *big;
+	struct vm_heap_stats before;
+	struct vm_heap_stats after;
+	struct wb_buffer text;
+	vm_value input;
+	vm_value converted;
+	uintptr_t realm_address;
+	uintptr_t source_address;
+	uintptr_t output_address;
+	unsigned registered;
+	unsigned index;
+	unsigned mode;
+	int differs;
+	int status;
+
+	/* Caller setup ownership ends before each actual product conversion begins. */
+	memset(roots, 0, sizeof(roots));
+	wb_buffer_init(&text);
+	registered = 0;
+	for (index = 0; index < 3U; index++) {
+		status = vm_heap_add_root(page->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+		registered++;
+	}
+
+	/* Boolean allocation and a fresh object-produced primitive exercise distinct source and result paths. */
+	for (mode = 0; mode < 2U; mode++) {
+		conversion_primitive_address = 0;
+		conversion_primitive_collections = 0;
+		status = vm_realm_create_managed(page->heap, &realm);
+		if (status != 0)
+			goto cleanup;
+		roots[0] = &realm->cell;
+		realm_address = (uintptr_t)realm;
+		source_address = 0;
+		input = VM_VALUE_TRUE;
+		if (mode != 0U) {
+			source = vm_object_create(page->heap, NULL);
+			if (source == NULL) {
+				status = ENOMEM;
+				goto cleanup;
+			}
+
+			/* Native valueOf returns a fresh string before arranging the actual parser collection. */
+			roots[1] = &source->cell;
+			source_address = (uintptr_t)source;
+			status = js_builtin_method(page->realm, source, "valueOf", 0, conversion_primitive);
+			if (status != 0)
+				goto cleanup;
+			input = vm_value_cell(source);
+		}
+
+		/* Start from the unchanged heap threshold with no pressure left from the previous lifetime case. */
+		vm_heap_collect(page->heap);
+		if (mode == 0U) {
+			pressure = vm_heap_alloc(page->heap, &proxy_pressure_type, 8U * 1024U * 1024U);
+			if (pressure == NULL) {
+				status = ENOMEM;
+				goto cleanup;
+			}
+		}
+
+		/* The conversion must now retain its managed realm and original input without embedding roots. */
+		roots[0] = NULL;
+		roots[1] = NULL;
+		vm_heap_stats(page->heap, &before);
+		status = vm_to_bigint(realm, input, &converted);
+		if (status != 0)
+			goto cleanup;
+		roots[2] = vm_value_as_cell(converted);
+		output_address = (uintptr_t)roots[2];
+		vm_heap_stats(page->heap, &after);
+		if (after.collections <= before.collections) {
+			status = 1;
+			goto cleanup;
+		}
+
+		/* Exclude a test that collected only while the native valueOf callback still owned its fresh primitive. */
+		if (mode != 0U && after.collections <= conversion_primitive_collections) {
+			status = 1;
+			goto cleanup;
+		}
+
+		/* A real managed owner survived the allocation performed inside conversion. */
+		found = vm_heap_find_cell(page->heap, realm_address);
+		if (found == NULL) {
+			status = 1;
+			goto cleanup;
+		}
+
+		/* The object-produced primitive remains a string rather than a reused address of a newly allocated result. */
+		if (mode != 0U) {
+			found = vm_heap_find_cell(page->heap, source_address);
+			if (found == NULL) {
+				status = 1;
+				goto cleanup;
+			}
+
+			/* The exact fresh primitive, with its actual cell type, survived the post-return parser collection. */
+			found = vm_heap_find_cell(page->heap, conversion_primitive_address);
+			if (found == NULL || found->type != &vm_string_type) {
+				status = 1;
+				goto cleanup;
+			}
+		}
+
+		/* Verify exact result magnitude with noncollectible text storage. */
+		big = vm_value_as_bigint(converted);
+		if (big == NULL) {
+			status = 1;
+			goto cleanup;
+		}
+
+		/* The Boolean and fresh string have distinct independently known exact values. */
+		status = vm_bigint_to_text(big, 10, &text);
+		if (status != 0)
+			goto cleanup;
+		differs = strcmp(wb_buffer_string(&text), "1");
+		if (mode != 0U)
+			differs = strcmp(wb_buffer_string(&text), "9007199254740993");
+		wb_buffer_release(&text);
+		wb_buffer_init(&text);
+		if (differs != 0) {
+			status = 1;
+			goto cleanup;
+		}
+
+		/* Keeping only the BigInt output must not keep its former realm or source alive. */
+		vm_heap_collect(page->heap);
+		found = vm_heap_find_cell(page->heap, realm_address);
+		if (found != NULL) {
+			status = 1;
+			goto cleanup;
+		}
+
+		/* Conversion source and fresh primitive must also be actually reclaimed once their frame ends. */
+		if (mode != 0U) {
+			found = vm_heap_find_cell(page->heap, source_address);
+			if (found != NULL) {
+				status = 1;
+				goto cleanup;
+			}
+
+			/* No output graph edge may retain the temporary numeric string. */
+			found = vm_heap_find_cell(page->heap, conversion_primitive_address);
+			if (found != NULL) {
+				status = 1;
+				goto cleanup;
+			}
+		}
+
+		/* The embedding still owns the completed output until its own root is released. */
+		found = vm_heap_find_cell(page->heap, output_address);
+		if (found == NULL) {
+			status = 1;
+			goto cleanup;
+		}
+
+		/* The last output root must be sufficient to control actual BigInt reclamation. */
+		roots[2] = NULL;
+		vm_heap_collect(page->heap);
+		found = vm_heap_find_cell(page->heap, output_address);
+		if (found != NULL) {
+			status = 1;
+			goto cleanup;
+		}
+	}
+
+	/* Both conversion kinds met the independent pressure and lifetime observations. */
+	status = 0;
+
+cleanup:
+	/* Saved addresses are observations only and never survive the bounded conversion cases. */
+	conversion_primitive_address = 0;
+	conversion_primitive_collections = 0;
+	wb_buffer_release(&text);
+	while (registered != 0U) {
+		registered--;
+		vm_heap_remove_root(page->heap, &roots[registered]);
+	}
+
+	/* Preserve failed lifetime observations after retiring every embedding registration. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: both conversion frames and their complete temporary graphs were actually retired. */
 	return 0;
 }
