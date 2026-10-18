@@ -3,9 +3,9 @@
 # ws252-p001: 調べと設計
 
 - Parent: [WS252](../ws.md)
-- Status: in-progress（2026-10-19 02:58、P1、q1262）。設計の版 1 は書いた。design-reviewer は未通過。
+- Status: in-progress（2026-10-19、P1、q1263）。設計の版 2 を書いた（レビュー 1 の全部の指摘に対応）。再レビュー待ち。
 - Disposition: normal
-- Queue: q1262（P1、2026-10-19、Q1 の指示）
+- Queue: q1262（P1、版 1）、q1263 / q1263-i01（P1、版 2）
 
 ## 範囲と受け入れ条件
 
@@ -26,5 +26,6 @@
 
 ## 未実施・残り
 
-- design-reviewer は Q1 が流した（2026-10-19、[design-review-1.md](../design-review-1.md): Blocker 1・Major 6・Minor 8）。P1 が q1263 で改訂 2 を書く。通るまで cleared にしない。
-- `build/tmp/ws252-linux/` の展開物の削除は Q1 に依頼。
+- design-reviewer は Q1 が流した（2026-10-19、[design-review-1.md](../design-review-1.md): Blocker 1・Major 6・Minor 8）。q1263 で版 2 を書いた（対応は design.md 末尾の表）。再レビューを通るまで cleared にしない。
+- 版 2 で未確認の事: Linux の位置のうち M4 の一部（design.md §6.2 で `*` の無い物）、v6.19 と 6.8.12 の PCI ID の差、WS229 の実績の LW、hardware が MOCS の index 0・1・63 を使うか、GT の失敗の時の画面、RKL の fuse の vcs2。
+- `build/tmp/ws252-linux/` は q1263 の時点で既に無い。レビューが展開した scratchpad の `lx/` の削除は Q1 に依頼。
