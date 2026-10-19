@@ -3,7 +3,7 @@
 # ws270-p001 VF2 の Keiland の設計
 
 - 親: [ws270](../ws.md)、Queue: q1335 / q1335-i01（P1、2026-10-19）
-- Status: in-progress（改訂 2.1 が出来た、Q1 の差分の確認待ち。2026-10-19 P1 q1339 / q1339-i01: [design.md](../design.md) 版 2.1、[レビュー 2](../design-review-2.md) の N1〜N4・Minor 1〜9 に対応（design 末尾の「レビュー 2 への対応」）。版 2 は q1338、版 1 は q1335）
+- Status: cleared（2026-10-20 Q1 の判定: design-review-2 の結論「N1〜N4 と Minor 1・3・4 が直った事を Q1 が diff で確かめれば cleared にしてよい」。改訂 2.1（6d43500c1、merge 6ff9f0872）で N1（sessiond が attaching の間 gpu1 を待つ）・N2（p006a/p006b）・N3（copy の道の damage）・N4（keyboard は text login、mouse は最小の program）と libcurses の PIC を Q1 が差分で確かめた。WS270-D1・D2・D3・D5 は未決。2026-10-20 の WS277（DC8200 の zero copy の scanout）で段 2 の実用の fps の道が変わり得る）
 
 ## 目的
 
