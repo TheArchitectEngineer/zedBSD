@@ -223,6 +223,8 @@ drv_vf2_pinctrl_apply_default(
 	/* Refuses a missing blob or count. */
 	if (fdt == NULL || changed == NULL)
 		return EINVAL;
+
+	/* Starts the count of changed registers at zero. */
 	*changed = 0;
 
 	/* Reads the groups the device selects. */
@@ -284,17 +286,21 @@ drv_vf2_gpio_lookup(
 	error = drv_fdt_find_phandle(fdt, phandle, &controller);
 	if (error != 0)
 		return error;
+
+	/* Finds which of the mapped controllers it is. */
 	error = bank_of(controller, &bank);
 	if (error != 0)
 		return error;
 
-	/* Fills the pin in and checks it exists. */
+	/* Fills the pin in, with its active state from the flags. */
 	gpio->bank = bank;
 	gpio->pin = (uint32_t)drv_fdt_cells_value(value, 1U, 1U);
 	flags = (uint32_t)drv_fdt_cells_value(value, 2U, 1U);
 	gpio->active_low = 0;
 	if ((flags & GPIO_FLAG_ACTIVE_LOW) != 0)
 		gpio->active_low = 1;
+
+	/* Refuses a pin the controller does not have. */
 	error = check_gpio(gpio);
 	if (error != 0)
 		return error;
@@ -504,14 +510,19 @@ bank_of(
 		/* A controller counts only once it is mapped. */
 		if (pinctrl_instances[candidate].registers == NULL)
 			continue;
-		if (pinctrl_instances[candidate].node == node) {
-			*bank = (enum drv_vf2_gpio_bank)candidate;
-			return 0;
-		}
+
+		/* Stops at the controller the node is. */
+		if (pinctrl_instances[candidate].node == node)
+			break;
 	}
 
-	/* Reports a node that is no pin controller. */
-	return ENODEV;
+	/* Refuses a node that is no pin controller. */
+	if (candidate == DRV_VF2_GPIO_BANK_COUNT)
+		return ENODEV;
+
+	/* Succeeded: the controller's bank. */
+	*bank = (enum drv_vf2_gpio_bank)candidate;
+	return 0;
 }
 
 /*
@@ -532,10 +543,12 @@ apply_group(
 	int present;
 	int error;
 
-	/* Finds the controller the group belongs to. */
+	/* Finds the controller node the group belongs to. */
 	error = drv_fdt_parent(fdt, group, &controller);
 	if (error != 0)
 		return error;
+
+	/* Finds which of the mapped controllers it is. */
 	error = bank_of(controller, &bank);
 	if (error != 0)
 		return error;
@@ -599,13 +612,15 @@ apply_pins(
 	unsigned long irq;
 	int error;
 
-	/* Reads the node's pins and the pad settings they share. */
+	/* Reads the node's pins, refusing a list of part cells. */
 	layout = &pinctrl_layouts[bank];
 	error = drv_fdt_property(fdt, pins, "pinmux", &value, &length);
 	if (error != 0)
 		return error;
 	if ((length & 3U) != 0)
 		return EINVAL;
+
+	/* Reads the pad settings the pins share. */
 	error = pad_request_of(fdt, pins, &request);
 	if (error != 0)
 		return error;
