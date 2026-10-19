@@ -6,7 +6,8 @@
  */
 
 /*
- * Host check of drv_powervr_dc_restore_fatal() on fake register windows.
+ * Host check of the DC8200's commits, vertical-blank count and fatal stop
+ * (dc8200.c) on fake register windows and a fake interrupt.
  *
  *   fatal-host-test
  */
@@ -22,7 +23,10 @@
 #include <hal/hal.h>
 #include <kern/clock.h>
 #include <kern/device-io.h>
+#include <kern/irq.h>
 #include <kern/lock.h>
+#include <kern/sched.h>
+#include <kern/waitq.h>
 #include <kern/platform.h>
 #include <uapi/errno.h>
 
@@ -38,6 +42,14 @@ static int lock_busy;
 static unsigned current_cpu;
 static int failures;
 static unsigned passes;
+static kern_irq_handler_t irq_handler;
+static void *irq_argument;
+static int irq_number;
+static unsigned eoi_count;
+static uint64_t ticks;
+static unsigned blanks_per_sleep;
+static unsigned sleeps;
+static unsigned held_irqsave;
 
 static void
 check(
@@ -124,6 +136,70 @@ kern_boot_framebuffer(
 	return 0;
 }
 
+uint64_t sched_ticks(void) { return ticks; }
+void kern_irq_send_eoi(kern_irq_ack_t acknowledge) { (void)acknowledge; eoi_count++; }
+void spin_init(struct spinlock *lock, enum lock_rank rank, const char *name) { (void)rank; (void)name; lock->held.value = 0U; }
+unsigned long spin_lock_irqsave(struct spinlock *lock) { lock->held.value = 1U; held_irqsave++; return 0; }
+void spin_unlock_irqrestore(struct spinlock *lock, unsigned long enabled) { (void)enabled; lock->held.value = 0U; held_irqsave--; }
+void waitq_init(struct wait_queue *queue, const char *name) { memset(queue, 0, sizeof(*queue)); queue->name = name; }
+uint64_t waitq_sequence(const struct wait_queue *queue) { return queue->sequence; }
+void waitq_wake_all(struct wait_queue *queue) { queue->sequence++; }
+
+static void
+raise_blank(
+	uint32_t pending,
+	uint32_t location)
+{
+	uint32_t acknowledge;
+
+	acknowledge = pending;
+	memcpy(control + 0x10, &acknowledge, 4);
+	put(0x1450U, location);
+	irq_handler(irq_number, 0, irq_argument);
+}
+
+int
+waitq_sleep(
+	struct wait_queue *queue,
+	struct spinlock *condition_lock,
+	uint64_t observed,
+	uint64_t deadline,
+	unsigned flags)
+{
+	unsigned index;
+
+	(void)queue;
+	(void)observed;
+	(void)flags;
+	sleeps++;
+
+	/* The panel either keeps counting (a blank each 16 ticks) or has stopped (time runs to the deadline). */
+	condition_lock->held.value = 0U;
+	if (blanks_per_sleep == 0) {
+		ticks = deadline;
+		condition_lock->held.value = 1U;
+		return ETIMEDOUT;
+	}
+	for (index = 0; index < blanks_per_sleep; index++) {
+		ticks += 16U;
+		raise_blank(1U, 0x400U + index);
+	}
+	condition_lock->held.value = 1U;
+	return 0;
+}
+
+int
+kern_irq_register(
+	int irq,
+	kern_irq_handler_t handler,
+	void *argument)
+{
+	irq_number = irq;
+	irq_handler = handler;
+	irq_argument = argument;
+	return 0;
+}
+
 int
 spin_trylock(
 	struct spinlock *lock)
@@ -151,6 +227,10 @@ main(
 		0x24d8U, 0x24e0U, 0x1528U, 0x2510U, 0x1cc0U, 0x2518U
 	};
 	struct drv_powervr_dc_place place = { 0x29400000ULL, 0x100ULL, 0x29400800ULL, 0x2000ULL, 95U };
+	struct drv_powervr_dc_frame frame;
+	uint64_t base;
+	uint64_t reached;
+	uint32_t enable;
 	uint32_t model;
 	unsigned index;
 	int ordered;
@@ -173,6 +253,68 @@ main(
 	error = drv_powervr_dc_probe(&place);
 	check(error == 0 && write_count == 0, "the probe writes nothing");
 	check(!drv_powervr_dc_fatal(), "not fatal before a fatal stop");
+
+	/* The blanks: off until started, then only the HDMI panel's bit counts. */
+	check(!drv_powervr_dc_scanout_ready(), "not ready before the interrupt is started");
+	write_count = 0;
+	error = drv_powervr_dc_vblank_start();
+	check(error == 0 && irq_number == 95 && irq_handler != NULL, "the interrupt 95 is registered");
+	memcpy(&enable, control + 0x14, 4);
+	check(enable == 1U, "the HDMI panel's enable bit is set");
+	check(drv_powervr_dc_vblank_start() == EALREADY, "started once");
+	check(!drv_powervr_dc_scanout_ready(), "not ready before the first blank");
+	raise_blank(2U, 0x10U);
+	check(drv_powervr_dc_sequence() == 0 && eoi_count == 1U, "the other panel's interrupt does not count");
+	raise_blank(1U, 0x123U);
+	check(drv_powervr_dc_sequence() == 1 && eoi_count == 2U, "the HDMI panel's blank counts");
+	check(drv_powervr_dc_scanout_ready(), "ready after the first blank");
+
+	/* The frames that fit the plane: the loader's extent and pitch only. */
+	check(drv_powervr_dc_frame_fits(1920U, 1080U, 7680U), "the loader's extent and pitch fit");
+	check(!drv_powervr_dc_frame_fits(1280U, 720U, 5120U), "a smaller frame does not fit");
+	check(!drv_powervr_dc_frame_fits(1920U, 1080U, 7936U), "another pitch does not fit");
+
+	/* A commit of a program's frame: the order, the address, and the byte order. */
+	frame.physical = 0x80000000ULL;
+	frame.stride = 7680U;
+	frame.width = 1920U;
+	frame.height = 1080U;
+	frame.rgba = 1;
+	write_count = 0;
+	error = drv_powervr_dc_commit(&frame, &base);
+	check(error == 0 && base == 1, "a commit reads the count after writing");
+	ordered = write_count == 12U;
+	for (index = 0; index < 12U && index < write_count; index++) {
+		if (write_offsets[index] != order[index])
+			ordered = 0;
+	}
+	check(ordered, "commit: hold, commit clear, plane, commit, release in order");
+	check(write_values[2] == 0x80000000U, "commit: the frame's address");
+	check(write_values[3] == 7680U && write_values[5] == (1920U | (1080U << 15)), "commit: the loader's pitch and extent");
+	check(write_values[4] == ((5U << 26) | (2U << 23)), "commit: XRGB with the ABGR swizzle for R G B X bytes");
+	check(write_values[0] == 0x11U && write_values[11] == 0x10U, "commit: the panel's hold set then cleared");
+	check(held_irqsave == 0, "commit: the lock is let go");
+	frame.physical = 0x100000000ULL;
+	check(drv_powervr_dc_commit(&frame, &base) == EINVAL, "commit: an address above 4 GiB is refused");
+	frame.physical = 0x80000000ULL;
+	frame.rgba = 0;
+	write_count = 0;
+	(void)drv_powervr_dc_commit(&frame, &base);
+	check(write_values[4] == (5U << 26), "commit: the ARGB swizzle for B G R X bytes");
+	write_count = 0;
+	(void)drv_powervr_dc_commit(NULL, &base);
+	check(write_values[2] == 0xfe000000U && write_values[4] == (0x4U << 26), "commit: the framebuffer back as the loader set it");
+
+	/* The wait: reached while the panel counts, ETIMEDOUT once it stopped for 100 ms. */
+	blanks_per_sleep = 1;
+	sleeps = 0;
+	error = drv_powervr_dc_wait(base + 2U, &reached);
+	check(error == 0 && reached == base + 2U && sleeps == 2U, "the wait ends two blanks later");
+	check(held_irqsave == 0, "the wait lets the lock go");
+	blanks_per_sleep = 0;
+	ticks += 1000U;
+	error = drv_powervr_dc_wait(reached + 2U, &reached);
+	check(error == ETIMEDOUT && reached == base + 2U, "a stopped panel ends the wait with ETIMEDOUT");
 
 	/* A program's buffer is on the plane when the stop comes. */
 	put(0x1400U, 0x80000000U);
@@ -202,6 +344,12 @@ main(
 	drv_powervr_dc_restore_fatal();
 	check(trylock_calls == 4096U && write_count == 12U, "a held lock is tried 4096 times and the plane written anyway");
 	lock_busy = 0;
+
+	/* After the fatal stop no commit writes. */
+	write_count = 0;
+	error = drv_powervr_dc_commit(&frame, &base);
+	check(error == ENXIO && write_count == 0, "a commit after the fatal stop writes nothing and reports ENXIO");
+	check(!drv_powervr_dc_scanout_ready(), "not ready after the fatal stop");
 
 	printf("%s fatal-host-test (%u passes, %d failures)\n", failures == 0 ? "PASS" : "FAIL", passes, failures);
 	return failures == 0 ? 0 : 1;

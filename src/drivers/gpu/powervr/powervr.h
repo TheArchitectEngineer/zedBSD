@@ -112,4 +112,69 @@ void drv_powervr_dc_restore_fatal(void);
  */
 int drv_powervr_dc_fatal(void);
 
+/*
+ * A program's frame for the display controller's plane: where it starts
+ * in physical memory (below 4 GiB, in one contiguous run), its row pitch
+ * and extent, and whether its bytes are R, G, B, X (nonzero) or B, G, R,
+ * X (zero).
+ */
+struct drv_powervr_dc_frame {
+	uint64_t physical;
+	uint32_t stride;
+	uint32_t width;
+	uint32_t height;
+	int rgba;
+};
+
+/*
+ * Turns on the HDMI panel's vertical-blank interrupt and starts counting
+ * the panel's frames for the life of the system.
+ *
+ * ENODEV unless the probe found the screen could be taken over.
+ */
+int drv_powervr_dc_vblank_start(void);
+
+/*
+ * Reports whether a program's buffer may be committed to the plane: the
+ * screen could be taken over, a vertical blank has been counted, and no
+ * fatal stop took the screen back.
+ */
+int drv_powervr_dc_scanout_ready(void);
+
+/*
+ * Reports whether a frame of this extent and row pitch is the plane's as
+ * the loader set it up; only such a frame is committed.
+ */
+int drv_powervr_dc_frame_fits(uint32_t width, uint32_t height, uint32_t stride);
+
+/*
+ * Commits a frame, or the loader's framebuffer when frame is NULL, to the
+ * plane, holding the shadowed registers back while they are written, and
+ * stores the vertical-blank count read right after the commit.
+ *
+ * The plane takes the commit at one of the next blanks; it counts as
+ * taken two blanks after the stored count.  ENXIO once a fatal stop took
+ * the screen back: nothing is written then.  Takes the commit lock with
+ * interrupts off; must not be called with it held.
+ */
+int drv_powervr_dc_commit(const struct drv_powervr_dc_frame *frame, uint64_t *base);
+
+/* Reports the HDMI panel's vertical-blank count. */
+uint64_t drv_powervr_dc_sequence(void);
+
+/*
+ * Waits until the vertical-blank count reaches target.
+ *
+ * ETIMEDOUT when no blank came for 100 ms: the panel stopped.  The count
+ * reached is stored through reached either way.  Sleeps; thread context
+ * only.
+ */
+int drv_powervr_dc_wait(uint64_t target, uint64_t *reached);
+
+/*
+ * Writes the vertical-blank count and the range of scan positions the
+ * interrupt read to the boot log.
+ */
+void drv_powervr_dc_vblank_report(void);
+
 #endif
