@@ -14,6 +14,9 @@
 /* The value OpenFirmware's client interface returns, and the handle value, for a failure. */
 #define OFW_FAILED ((ofw_cell_t)-1)
 
+/* The most arguments, and the most results, ofw_call_method() passes. */
+#define OFW_METHOD_CELLS 6U
+
 /*
  * The firmware's client interface entry.
  *
@@ -150,6 +153,103 @@ ofw_getprop(
 
 	/* Reports the property's length, or -1 when the node has none of the name. */
 	return (int)(ofw_scell_t)arguments[7];
+}
+
+/* Finds the package node of an instance handle. */
+ofw_scell_t
+ofw_instance_to_package(
+	ofw_cell_t handle)
+{
+	ofw_scell_t package;
+
+	/* Asks the firmware for the package. */
+	package = ofw_one_node("instance-to-package", handle);
+
+	/* Reports the package, or -1 when the handle names none. */
+	return package;
+}
+
+/*
+ * Calls a method of an open instance.
+ *
+ * The arguments and the results are top-of-stack first, as OpenBIOS gives
+ * them.  Returns 0, or -1 when the call or the method fails.
+ */
+int
+ofw_call_method(
+	const char *method,
+	ofw_cell_t handle,
+	unsigned int argument_count,
+	const ofw_cell_t *arguments,
+	unsigned int result_count,
+	ofw_cell_t *results)
+{
+	ofw_cell_t call[OFW_METHOD_CELLS * 2U + 6U];
+	ofw_cell_t status;
+	unsigned int index;
+
+	/* Refuses more cells than the call array holds. */
+	if (argument_count > OFW_METHOD_CELLS || result_count > OFW_METHOD_CELLS)
+		return -1;
+
+	/* Names the service, the method, the instance and the arguments. */
+	call[0] = (ofw_cell_t)"call-method";
+	call[1] = argument_count + 2U;
+	call[2] = result_count + 1U;
+	call[3] = (ofw_cell_t)method;
+	call[4] = handle;
+
+	/* Copies the arguments after the instance. */
+	for (index = 0; index < argument_count; index++)
+		call[5U + index] = arguments[index];
+
+	/* Calls the method; the first result is its catch result. */
+	status = ofw_call(call);
+	if (status != 0)
+		return -1;
+	if (call[5U + argument_count] != 0)
+		return -1;
+
+	/* Copies the method's results. */
+	for (index = 0; index < result_count; index++)
+		results[index] = call[6U + argument_count + index];
+
+	/* Succeeded: the method ran. */
+	return 0;
+}
+
+/*
+ * Finds the physical address behind a virtual one through the MMU's
+ * "translate" method: ( virt -- false | phys.lo phys.hi mode true ).
+ *
+ * Returns 0, or -1 when there is no MMU or the address is not mapped.
+ */
+int
+ofw_translate(
+	unsigned long virtual_address,
+	unsigned long long *physical)
+{
+	ofw_cell_t argument;
+	ofw_cell_t results[4];
+	int status;
+
+	/* Refuses a firmware without an MMU handle. */
+	if (ofw_mmu == OFW_FAILED)
+		return -1;
+
+	/* Asks the MMU; results are the flag, the mode and the two address cells. */
+	argument = virtual_address;
+	status = ofw_call_method("translate", ofw_mmu, 1, &argument, 4, results);
+	if (status != 0)
+		return -1;
+	if (results[0] == 0)
+		return -1;
+
+	/* Combines the two address cells. */
+	*physical = ((unsigned long long)(unsigned int)results[2] << 32) | (unsigned int)results[3];
+
+	/* Succeeded: the address is mapped. */
+	return 0;
 }
 
 /* Opens a device by its path. */

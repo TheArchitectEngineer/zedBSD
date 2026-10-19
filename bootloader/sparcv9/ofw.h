@@ -47,6 +47,24 @@ ofw_getprop(
 	unsigned long size);
 
 ofw_scell_t
+ofw_instance_to_package(
+	ofw_cell_t handle);
+
+int
+ofw_call_method(
+	const char *method,
+	ofw_cell_t handle,
+	unsigned int argument_count,
+	const ofw_cell_t *arguments,
+	unsigned int result_count,
+	ofw_cell_t *results);
+
+int
+ofw_translate(
+	unsigned long virtual_address,
+	unsigned long long *physical);
+
+ofw_scell_t
 ofw_open(
 	const char *path);
 
