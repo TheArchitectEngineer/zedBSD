@@ -566,14 +566,14 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS241](ws241/ws.md) | MG006 | nvrtx（RTX）の描画の速さ（2026-10-15 ユーザー） | incomplete（p001 in-progress、T1-697 で boost が効く） | p001 の 3 節（boost を既定に、rec submit、streams） |
 | [WS242](ws242/ws.md) | MG006 | nvrtx の RTX 20/30/40 の全モデル（2026-10-15 ユーザー） | incomplete（p001・p002 in-progress、GTX 16・RTX 30・40 を既定で有効はユーザーの決定、未実装） | p001 の再開点 1〜4 |
 | [WS243](ws243/ws.md) | MG006 | nvrtx の NVDEC で H.264（Vulkan Video）（2026-10-15 ユーザー） | incomplete（p001 を途中で一時停止、実機は WS241 の後） | p001 の再開の点（design.md） |
-| [WS244](ws244/ws.md) | MG006 | i915 の Linux 由来の code の整理（Gen9 の display を guardrail に、GT・compiler・header・license）（2026-10-15 ユーザー） | incomplete（p001 の棚卸しを中断） | p001 の「残り」 |
-| [WS245](ws245/ws.md) | MG006 | i915 の Gen12 系（display 12・13、Skylake〜Raptor Lake Refresh の方針で 5330 を特別扱いしない）の display の書き直し（2026-10-15 ユーザー） | incomplete（p001 の design.md 改訂 2 は main、レビュー 2 の反映が残る） | ws.md の Resume point |
+| [WS244](ws244/ws.md) | MG006 | i915 の Linux 由来の code の整理（Gen9 の display を guardrail に、GT・compiler・header・license）（2026-10-15 ユーザー） | incomplete（p001〜p008 cleared、p009 は code 済みで 5330・SV7 の実機の回帰待ち（T1-710 と一緒に）、2026-10-19） | T1-710 の後に p009 の判定、dev 用の *-equiv 試験の削除 |
+| [WS245](ws245/ws.md) | MG006 | i915 の Gen12 系（display 12・13、Skylake〜Raptor Lake Refresh の方針で 5330 を特別扱いしない）の display の書き直し（2026-10-15 ユーザー） | incomplete（p046 まで実装・host 試験済み、p046 cleared 2026-10-19。p041〜p045・p050d4c は 5330・SV7 の実機の回帰待ち、p044・p045 の受け入れの読み替えは判断待ち） | 実機の回帰（5330 は全部の段の後に 1 回）と判断 |
 | [WS246](ws246/ws.md) | MG006 | nvrtx の compiler を sm75.h・sm75.c にまとめて refactor（2026-10-15 ユーザー） | incomplete（p001 cleared、出典の comment は ws247-p003 で済み） | p002（latency の表、構造） |
 | [WS247](ws247/ws.md) | MG006 | nvrtx の comment・log から開発の管理情報と出典の名前を除き、出典を block ごとに（2026-10-15 ユーザー） | completed（2026-10-15） | — |
 | [WS248](ws248/ws.md) | MG005 | Intel AX211 の driver の出典の表記（block ごとの referenced:）と規約の整理（2026-10-15 ユーザー） | incomplete（p001・p002 cleared、main 285c55e39。T1-698: 5330 の VFIO で attach・firmware・scan が整理の前と同じ、T1-700: VFIO の接続は整理の前も後も失敗（差なし）） | 5330 の素の起動で接続を確かめて completed（beta2.md の U9、2026-10-15 ユーザー「実機で接続を確かめてから完了」） |
 | [WS249](ws249/ws.md) | MG005 | BCM43455（Pi 4 の WiFi）の driver の出典の表記（block ごとの referenced:）と規約の整理（2026-10-15 ユーザー） | incomplete（p001・p002 cleared、main 331d314be。Pi 4 の実機の WiFi の試験待ち） | T の Pi 4 の試験 → completed |
 | [WS250](ws250/ws.md) | MG006 | nvrtx の終わらない GPU の仕事の取り消しと復帰、system は動き続ける（2026-10-15 ユーザー） | incomplete（p001 を P4 が q1206 で設計中） | p001 |
-| [WS251](ws251/ws.md) | MG001 | source の tree 全体から開発の管理情報を削除する（2026-10-15 ユーザー） | incomplete | p002 GPU ドライバ（2026-10-17、P1） |
+| [WS251](ws251/ws.md) | MG001 | source の tree 全体から開発の管理情報を削除する（2026-10-15 ユーザー） | incomplete（p002 GPU ドライバ cleared 2026-10-19、p001・p003〜 は planned） | p001 の tree 全体の棚卸し（未割当） |
 | [WS252](ws252/ws.md) | MG006 | i915 の RKL・ADL-S/RPL-S・ICL の GT の対応（2026-10-15 ユーザー、WS245 §7 #20） | incomplete（p001 cleared 2026-10-19 q1265、design.md 版 3.1。p002〜p008 は実機まで planned。LW: RKL・ADL-S 12、全部 約 27〜29） | 判断 D2→D1-R→(D1-I)→D3→D5。p002 の時に ID の表の統合を WS245 と調整、p003 の時に共有の Makefile・kernel-options.list と MAC-T001 の追従を Q1 が調整 |
 | [WS253](ws253/ws.md) | MG001 | 起動の時間の短縮: 通常の起動は sessiond（Wayland）を先に、network・audio・sshd などは後に。debug の起動は今のまま（2026-10-16 ユーザー） | incomplete（p001: 2 段の起動・desktop の表示を待つ late・kernel の disk の待ちの短縮を main に d454d4bd3、QEMU で約 9 s → 約 4 s。5330 の確認待ち） | 5330 の起動の記録（P1 の次の起動で） |
 | [WS254](ws254/ws.md) | MG001 | networkd: DHCP の失敗の後に 1 分おきに取り直す（2026-10-16 ユーザー） | incomplete（p001 cleared: QEMU で確認、main 5cb63ff2a。実機は未実施） | p002 規約の見直し |
@@ -582,7 +582,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS257](ws257/ws.md) | MG006 | i915 を Haswell・Broadwell（Gen7.5・Gen8）に対応（2026-10-18 ユーザー） | planning（今は取り組まない） | — |
 | [WS258](ws258/ws.md) | MG001 | 全ドライバの出典の表記を guardrail に（file の先頭から block へ）（2026-10-18 ユーザー） | completed（2026-10-18、残りは WS244・WS259） | — |
 | [WS259](ws259/ws.md) | MG005 | RTL8822B の表（rtl8822b-tables.inc）を値の引用に書き換える（2026-10-18 ユーザー） | incomplete（p002 cleared、p001 は license の判断と実機の WiFi 待ち） | p001 |
-| [WS260](ws260/ws.md) | MG006 | i915 の Gen9 の display（gen9-*.c）を xd と同じく自前で書き直す（2026-10-18 ユーザー） | incomplete（p001 を P1、q1252） | p001 設計 |
+| [WS260](ws260/ws.md) | MG006 | i915 の Gen9 の display（gen9-*.c）を xd と同じく自前で書き直す（2026-10-18 ユーザー） | incomplete（p001 cleared、p002〜p015 は実装済み、T1-710 の SV7・5330 の実機の回帰の後に Q1 が判定、2026-10-19） | T1-710（機械の準備待ち、beta2.md U24・U25） |
 | [WS261](ws261/ws.md) | MG008 | include/kern/boot.h から PC-98・Raspberry Pi の固有の構造体を除く（2026-10-18 ユーザー） | completed（2026-10-18） | — |
 | [WS262](ws262/ws.md) | MG001 | boot loader（bootloader/）をコーディング規約の全文に合わせる（2026-10-18 ユーザー） | completed（2026-10-19） | — |
 | [WS263](ws263/ws.md) | MG008 | riscv32 の virt（QEMU）への移植、framebuffer の console・VFS の段まで（2026-10-18 ユーザー） | completed（2026-10-19） | — |
