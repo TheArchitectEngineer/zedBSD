@@ -110,4 +110,25 @@ drv_fdt_reg(
 	uint64_t *address,
 	uint64_t *size);
 
+int
+drv_fdt_child(
+	const struct drv_fdt *fdt,
+	uint32_t node,
+	uint32_t after,
+	uint32_t *child);
+
+int
+drv_fdt_string_index(
+	const struct drv_fdt *fdt,
+	uint32_t node,
+	const char *name,
+	const char *wanted,
+	unsigned *index);
+
+int
+drv_fdt_dma_coherent(
+	const struct drv_fdt *fdt,
+	uint32_t node,
+	int board_default);
+
 #endif

@@ -20,6 +20,12 @@
  * the hardware layer's: it draws the console there.  The binding only
  * reads the screen's named values and checks them, for the graphics
  * driver that will take the screen over.
+ *
+ * The SoC's system control blocks, clock and reset generators and pin
+ * controllers are brought up from the device tree before any device, so
+ * the devices' drivers can switch their own clocks, resets and pins.  The
+ * boot log shows the PLLs' and the SD card clock's rates and the card
+ * detect pin, for comparing with what the firmware set.
  */
 
 #include <stddef.h>
@@ -27,8 +33,12 @@
 
 #include <hal/hal.h>
 #include <drivers/disklabel/disklabel.h>
+#include <drivers/generic/fdt.h>
 #include <drivers/generic/ramdisk.h>
 #include <drivers/generic/serial-console.h>
+#include <drivers/platform/visionfive2/vf2-crg.h>
+#include <drivers/platform/visionfive2/vf2-pinctrl.h>
+#include <drivers/platform/visionfive2/vf2-syscon.h>
 #include <kern/boot.h>
 #include <kern/disk.h>
 #include <kern/klog.h>
@@ -46,6 +56,26 @@
 #define VF2_PIXEL_BYTES		4U
 
 /*
+ * Whether the board's devices snoop the CPU caches when the device tree
+ * does not say.
+ *
+ * The JH7110's device tree marks no device non-coherent, and its L2 cache
+ * controller offers no maintenance for device memory, which points to
+ * coherent DMA; the board's DMA glue passes this to drv_fdt_dma_coherent()
+ * as the default.
+ */
+#define VF2_DMA_DEFAULT_COHERENT	1
+
+/* The SD card slot's controller, whose clock and card detect are logged. */
+#define VF2_SD_REGISTERS	0x16020000ULL
+
+/* The AXI configuration bus clock's number in the SYS clock generator. */
+#define VF2_AXI_CONFIG_CLOCK	7U
+
+/* The SD card clock's number in the SYS clock generator. */
+#define VF2_SD_CARD_CLOCK	94U
+
+/*
  * The ramdisk's disk, published by kern_platform_init() and kept for the
  * life of the system; NULL when the loader read no ramdisk.
  */
@@ -53,6 +83,9 @@ static struct disk *ramdisk;
 
 static int publish_ramdisk(void);
 static void describe_framebuffer(void);
+static void probe_soc(void);
+static void describe_clocks(void);
+static void describe_card_detect(const struct drv_fdt *fdt);
 
 /*
  * Publishes the boot devices of the VisionFive 2: the ramdisk, if any.
@@ -84,6 +117,9 @@ kern_platform_init(
 
 	/* Reads and checks the screen the firmware left on, for the boot log. */
 	describe_framebuffer();
+
+	/* Brings up the SoC's clocks, resets and pins for the devices. */
+	probe_soc();
 
 	/* Selects the MBR partition scheme the ramdisk's image uses. */
 	partition_set_scheme(&drv_partition_scheme_mbr);
@@ -319,4 +355,184 @@ describe_framebuffer(
 		  framebuffer.format,
 		  (unsigned long long)framebuffer.physical_base,
 		  (unsigned long long)framebuffer.size);
+}
+
+/*
+ * Finds the system control blocks, clock and reset generators and pin
+ * controllers in the device tree, and logs the rates and the card detect
+ * pin.
+ *
+ * A tree that cannot be read, or one without the blocks, leaves the board
+ * without its devices' clocks; the boot goes on with the ramdisk.
+ */
+static void
+probe_soc(
+	void)
+{
+	const uint64_t *fdt_range;
+	struct drv_fdt fdt;
+	const void *blob;
+	int error;
+
+	/* Finds the device tree the hardware layer kept, in the direct map. */
+	fdt_range = hal_get_arch_handoff("riscv64.fdt");
+	if (fdt_range == NULL) {
+		kern_logf("visionfive2: no device tree\n");
+		return;
+	}
+	blob = kern_pmem_to_kernel((hal_physaddr_t)fdt_range[0]);
+	if (blob == NULL) {
+		kern_logf("visionfive2: device tree outside RAM\n");
+		return;
+	}
+
+	/* Refuses a tree whose header does not check out. */
+	error = drv_fdt_open(&fdt, blob, (size_t)fdt_range[1]);
+	if (error != 0) {
+		kern_logf("visionfive2: unreadable device tree (%d)\n", error);
+		return;
+	}
+
+	/* Maps the system control blocks, which hold the PLL settings. */
+	error = drv_vf2_syscon_init(&fdt);
+	if (error != 0) {
+		kern_logf("visionfive2: system control blocks unavailable (%d)\n", error);
+		return;
+	}
+
+	/* Maps the clock and reset generators. */
+	error = drv_vf2_crg_init(&fdt);
+	if (error != 0) {
+		kern_logf("visionfive2: clock generators unavailable (%d)\n", error);
+		return;
+	}
+
+	/* Maps the pin controllers. */
+	error = drv_vf2_pinctrl_init(&fdt);
+	if (error != 0) {
+		kern_logf("visionfive2: pin controllers unavailable (%d)\n", error);
+		return;
+	}
+
+	/* Logs what the firmware left the clocks and the card slot at. */
+	describe_clocks();
+	describe_card_detect(&fdt);
+}
+
+/*
+ * Writes the PLLs' rates and the SD card clock's rate to the boot log.
+ *
+ * The rates are computed from the registers, for comparing with the
+ * values the firmware's memory dump shows.  A rate that cannot be
+ * computed is logged as its error.
+ */
+static void
+describe_clocks(
+	void)
+{
+	struct drv_vf2_clock clock;
+	uint64_t pll_rates[3];
+	uint64_t bus_rate;
+	uint64_t card_rate;
+	int pll_errors[3];
+	int bus_error;
+	int card_error;
+	unsigned pll;
+
+	/* Computes the three PLLs' rates. */
+	for (pll = 0; pll < 3U; pll++) {
+		pll_errors[pll] = drv_vf2_pll_get_rate(pll, &pll_rates[pll]);
+		if (pll_errors[pll] != 0)
+			pll_rates[pll] = 0;
+	}
+
+	/* Logs them, each with its error, zero when computed. */
+	kern_logf("visionfive2: pll0 %llu Hz (%d), pll1 %llu Hz (%d), pll2 %llu Hz (%d)\n",
+		  (unsigned long long)pll_rates[0],
+		  pll_errors[0],
+		  (unsigned long long)pll_rates[1],
+		  pll_errors[1],
+		  (unsigned long long)pll_rates[2],
+		  pll_errors[2]);
+
+	/* Computes the AXI configuration bus's rate, which the card clock divides. */
+	clock.crg = DRV_VF2_CRG_SYS;
+	clock.index = VF2_AXI_CONFIG_CLOCK;
+	bus_error = drv_vf2_clock_get_rate(&clock, &bus_rate);
+	if (bus_error != 0)
+		bus_rate = 0;
+
+	/* Computes the SD card clock's rate. */
+	clock.index = VF2_SD_CARD_CLOCK;
+	card_error = drv_vf2_clock_get_rate(&clock, &card_rate);
+	if (card_error != 0)
+		card_rate = 0;
+
+	/* Logs both, each with its error, zero when computed. */
+	kern_logf("visionfive2: axi_cfg0 %llu Hz (%d), sdcard %llu Hz (%d)\n",
+		  (unsigned long long)bus_rate,
+		  bus_error,
+		  (unsigned long long)card_rate,
+		  card_error);
+}
+
+/*
+ * Writes whether a card is in the SD slot to the boot log.
+ *
+ * The slot's card detect pin is made an input and read once.
+ */
+static void
+describe_card_detect(
+	const struct drv_fdt *fdt)
+{
+	struct drv_vf2_gpio card_detect;
+	uint64_t address;
+	uint64_t size;
+	uint32_t node;
+	int present;
+	int error;
+
+	/* Finds the SD controller the slot is wired to among the controllers. */
+	node = DRV_FDT_NO_NODE;
+	for (;;) {
+		/* Moves to the next controller; none left means no slot. */
+		error = drv_fdt_find_compatible(fdt, "starfive,jh7110-mmc", node, &node);
+		if (error != 0) {
+			kern_logf("visionfive2: no SD card slot (%d)\n", error);
+			return;
+		}
+
+		/* Stops at the controller whose registers are the slot's. */
+		error = drv_fdt_reg(fdt, node, 0, &address, &size);
+		if (error == 0 && address == VF2_SD_REGISTERS)
+			break;
+	}
+
+	/* Finds the card detect pin. */
+	error = drv_vf2_gpio_lookup(fdt, node, "cd-gpios", &card_detect);
+	if (error != 0) {
+		kern_logf("visionfive2: no card detect pin (%d)\n", error);
+		return;
+	}
+
+	/* Makes the pin an input. */
+	error = drv_vf2_gpio_configure_input(&card_detect);
+	if (error != 0) {
+		kern_logf("visionfive2: card detect pin unusable (%d)\n", error);
+		return;
+	}
+
+	/* Reads whether a card is in. */
+	error = drv_vf2_gpio_read(&card_detect, &present);
+	if (error != 0) {
+		kern_logf("visionfive2: card detect unreadable (%d)\n", error);
+		return;
+	}
+
+	/* Succeeded: logs the slot's state. */
+	if (present != 0) {
+		kern_logf("visionfive2: SD card present (gpio %u)\n", card_detect.pin);
+	} else {
+		kern_logf("visionfive2: SD card absent (gpio %u)\n", card_detect.pin);
+	}
 }

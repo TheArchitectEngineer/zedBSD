@@ -53,4 +53,4 @@ CONFIG_DRIVER_BCM2711_VCHIQ := n
 CONFIG_DRIVER_BCM2711_VIDEO := n
 CONFIG_DRIVER_LGY98 := n
 
-ZEDBSD_USER_PROGRAMS := cat echo login ls sh uname
+ZEDBSD_USER_PROGRAMS := cat chmod chown cp dmesg echo id kill ln login ls mkdir mv ps pwd rm rmdir sh sleep sync touch uname
