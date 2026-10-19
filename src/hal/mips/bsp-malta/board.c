@@ -19,8 +19,11 @@
  */
 
 #include <hal/hal.h>
+#include <kern/boot.h>
 #include "../asm.h"
 #include "../bsp.h"
+#include "../cpu.h"
+#include "../io.h"
 #include "cons.h"
 #include "framebuffer.h"
 
@@ -55,6 +58,17 @@
 #define BOARD_COUNT_FREQUENCY	160000000U
 
 /*
+ * The board's software reset: the FPGA's SOFTRES register, which resets
+ * the board when the reset value is written to it.
+ *
+ * Values referenced: QEMU v10.0.11 hw/mips/malta.c (malta_fpga_write,
+ * SOFTRES at FPGA offset 0x500 and the value 0x42; the FPGA at physical
+ * 0x1f000000).
+ */
+#define BOARD_SOFT_RESET	0x1f000500U
+#define BOARD_SOFT_RESET_VALUE	0x42U
+
+/*
  * The words the loader puts before the command line for an initial RAM
  * disk.
  *
@@ -86,6 +100,14 @@ static uint32_t board_ramdisk_size;
  * the loader's fourth argument without it.  Set once by mips_board_boot().
  */
 static uint32_t board_low_memory;
+
+/*
+ * The handoff the kernel's entry reads: a single boot device, the first
+ * partition of an MBR disk, the way the kernel finds its root on the
+ * machines whose loader passes no device table.  Filled by
+ * mips_board_kernel_handoff() just before the kernel starts.
+ */
+static struct kern_boot_handoff board_handoff;
 
 /*
  * Nonzero once the display shows.  Set once by mips_board_init().
@@ -217,6 +239,20 @@ mips_board_describe(
 }
 
 /*
+ * Reports whether the display shows the console.
+ */
+bool
+mips_board_display_ready(
+	void)
+{
+	/* The display was set up by mips_board_init(). */
+	if (board_display_on)
+		return true;
+
+	return false;
+}
+
+/*
  * Reports the rate of coprocessor 0's Count on this board.
  */
 uint32_t
@@ -225,6 +261,84 @@ mips_board_count_frequency(
 {
 	/* Succeeded: the emulated board's fixed rate. */
 	return BOARD_COUNT_FREQUENCY;
+}
+
+/*
+ * Reports the bytes of RAM from physical address 0.
+ */
+uint32_t
+mips_board_memory_size(
+	void)
+{
+	/* Succeeded: what the loader reported, within the low RAM alias. */
+	return board_low_memory;
+}
+
+/*
+ * Reports the physical place and size of the initial RAM disk, both
+ * zero when the loader loaded none.
+ */
+void
+mips_board_ramdisk(
+	uint32_t *physical,
+	uint32_t *size)
+{
+	/* No RAM disk, or one whose KSEG0 address is not in the segment. */
+	*physical = 0;
+	*size = 0;
+	if (board_ramdisk_size == 0 || board_ramdisk_start < MIPS_KSEG0_BASE)
+		return;
+
+	/* Succeeded: the RAM disk's KSEG0 address less the segment's base. */
+	*physical = board_ramdisk_start - MIPS_KSEG0_BASE;
+	*size = board_ramdisk_size;
+}
+
+/*
+ * Prepares and reports the handoff the kernel's entry reads.
+ */
+const void *
+mips_board_kernel_handoff(
+	void)
+{
+	/* The common handoff: one boot device, the first MBR partition, its id 0x80. */
+	hal_memset(&board_handoff, 0, sizeof(board_handoff));
+	board_handoff.magic = KERN_HANDOFF_MAGIC;
+	board_handoff.version = KERN_HANDOFF_VERSION_MULTIBOOT;
+	board_handoff.size = sizeof(board_handoff);
+	board_handoff.device_count = 1;
+	board_handoff.boot_bios_id = 0x80;
+	board_handoff.boot_partition_scheme = KERN_PARTITION_SCHEME_MBR;
+	board_handoff.boot_partition_index = 1;
+	board_handoff.boot_partition_lba = KERN_BOOT_PARTITION_LBA_UNKNOWN;
+
+	/* Succeeded: the handoff, which lives as long as the image. */
+	return &board_handoff;
+}
+
+/*
+ * Resets the board through the FPGA's software reset.
+ */
+void
+hal_reset(
+	void)
+{
+	/* Writes the reset value; the board restarts at once. */
+	mips_io_write32(BOARD_SOFT_RESET, BOARD_SOFT_RESET_VALUE);
+
+	/* Stops, should the write not have reset the board. */
+	mips_halt_forever();
+}
+
+/*
+ * Stops the board: it has no power control the HAL drives.
+ */
+void
+hal_poweroff(
+	void)
+{
+	/* Stops with interrupts off. */
+	mips_halt_forever();
 }
 
 /*

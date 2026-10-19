@@ -10,18 +10,24 @@
  *
  * The loader's tables are copied before anything may overwrite them, the
  * board's display is set up, and what was found is printed on it.  Then
- * the trap handling, the context switch and the tick are checked one by
- * one, the board's interrupt controllers are set up with every line
- * masked, and the tick is let in.  The page tables and the kernel come
- * after this stage; until they are in place the processor stops once the
- * tick is seen.
+ * the trap handling and the context switch are checked, the caches, the
+ * floating-point unit, physical memory and the TLB are set up, the
+ * board's interrupt controllers are set up with every line masked, and
+ * the tick is let in and seen.  The kernel starts from there; it calls
+ * back into hal_cpu_start_others() once its heap and initial task exist,
+ * where the address spaces are checked and the bring-up is summed up.
  */
 
 #include <hal/hal.h>
 #include "asm.h"
 #include "bsp.h"
+#include "cache.h"
 #include "clock.h"
 #include "cpu.h"
+#include "fpu.h"
+#include "page.h"
+#include "selftest.h"
+#include "space.h"
 #include "spin.h"
 #include "task.h"
 #include "trap.h"
@@ -82,6 +88,12 @@ mips_cmain(
 	/* Checks the context switch before any task relies on it. */
 	mips_context_selftest();
 
+	/* The caches' shape, the floating-point unit, the free pages and an empty TLB. */
+	mips_cache_init();
+	mips_fpu_init();
+	mips_page_init();
+	mips_space_init();
+
 	/* Masks every external line; nothing is registered yet. */
 	mips_board_irq_init();
 
@@ -89,9 +101,45 @@ mips_cmain(
 	mips_clock_init();
 	wait_for_ticks();
 
-	/* Stops: the page tables and the kernel are not in place yet. */
-	hal_puts("MIPS32 HAL STOP AFTER TICK\n");
-	mips_halt_forever();
+	/* Hands the ticks to the kernel and enters it; it never returns. */
+	mips_clock_start_kernel();
+	kernel_entry(mips_board_kernel_handoff());
+	HAL_FATAL("mips kernel_entry returned");
+}
+
+/*
+ * Starts the other processors: there are none, so it checks the address
+ * spaces, now that the kernel's heap exists, and sums up the bring-up,
+ * which is the HAL's last step of the boot.
+ */
+int
+hal_cpu_start_others(
+	void)
+{
+	const char *display;
+	const char *timer;
+	bool shown;
+	uint32_t ticks;
+
+	/* Stops at the first check that fails; returns only when all passed. */
+	mips_paging_selftest();
+
+	/* Words the display's state and whether the tick has arrived. */
+	display = "NONE";
+	shown = mips_board_display_ready();
+	if (shown)
+		display = "VGA";
+	timer = "NO TICK";
+	ticks = mips_clock_ticks();
+	if (ticks != 0)
+		timer = "TICK";
+
+	/* The line stays in view after the kernel's own lines. */
+	hal_printf("MIPS32 HAL READY DISPLAY %s PAGING PASS TIMER %s\n", display, timer);
+	hal_puts("MIPS32 CPU 1 ONLINE\n");
+
+	/* Succeeded: the one processor is up. */
+	return HAL_OK;
 }
 
 /*

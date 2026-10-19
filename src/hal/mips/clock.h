@@ -35,4 +35,8 @@ uint32_t
 mips_clock_ticks(
 	void);
 
+void
+mips_clock_start_kernel(
+	void);
+
 #endif
