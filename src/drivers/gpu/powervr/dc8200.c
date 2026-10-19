@@ -14,8 +14,9 @@
  * plane on the HDMI panel shows exactly the loader's framebuffer, and
  * keeps what it read as the place to return the screen to.  It also
  * watches the panel's scan position and the plane's commit bit for a
- * moment, to learn how they behave.  Nothing is written: the screen stays
- * the loader's, drawn by the copying display node.
+ * moment, to learn how they behave.  Nothing is written at attach: the
+ * screen stays the loader's, drawn by the copying display node.  Only a
+ * fatal stop writes, putting the plane back as it was read.
  *
  * The outcome is one line of the boot log, which the screen shows.
  */
@@ -26,10 +27,13 @@
 
 #include "drivers/gpu/powervr/dc8200-adopt.h"
 #include "drivers/gpu/powervr/powervr.h"
+#include <hal/hal.h>
+#include <kern/atomic.h>
 #include <kern/boot.h>
 #include <kern/clock.h>
 #include <kern/device-io.h>
 #include <kern/klog.h>
+#include <kern/lock.h>
 #include <kern/platform.h>
 #include <kern/pmem.h>
 #include <uapi/errno.h>
@@ -73,6 +77,23 @@
 #define DC_PANEL_EXTRA		0x2518U
 #define DC_PANEL_LOCATION	0x1450U
 #define DC_UNIT_STEP		4U
+
+/*
+ * The panel bit that holds back the shadowed registers while it is set.
+ *
+ * Value referenced:
+ * StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
+ * drivers/gpu/drm/verisilicon/vs_dc_hw.c (dc_hw_enable_shadow_register:
+ * holding sets bit 0 of the panel's extension and clears the planes'
+ * commit bit; releasing does the reverse).
+ */
+#define DC_PANEL_EXTRA_HOLD	(1U << 0)
+
+/*
+ * How many times a fatal stop tries the commit lock before it writes
+ * without it.
+ */
+#define DC_FATAL_LOCK_TRIES	4096U
 
 /*
  * The panel the HDMI output is driven from.
@@ -133,8 +154,25 @@ struct dc_adoption {
 /* The board's one controller, as drv_powervr_dc_probe() found it. */
 static struct dc_adoption board_adoption;
 
+/*
+ * Serializes every write of the planes' registers: a commit's whole
+ * sequence and a fatal stop's.  A leaf lock, held for a few register
+ * writes with interrupts disabled.
+ */
+static struct spinlock dc_commit_lock = {
+	{ 0 }, LOCK_RANK_DEVICE, "dc8200 commit", 0, 0
+};
+
+/*
+ * Set once by a fatal stop and never cleared: from then on no commit
+ * writes the planes.  Read under dc_commit_lock by a commit.
+ */
+static volatile unsigned dc_fatal;
+
 static uint32_t read_control(const struct dc_adoption *adoption, uint32_t offset);
 static uint32_t read_display(const struct dc_adoption *adoption, uint32_t offset);
+static void write_display(const struct dc_adoption *adoption, uint32_t offset, uint32_t value);
+static int commit_held_here(void);
 static void read_state(struct dc_adoption *adoption);
 static void watch_scan(struct dc_adoption *adoption, uint32_t extra_offset);
 static void log_outcome(const struct dc_adoption *adoption);
@@ -216,6 +254,91 @@ drv_powervr_dc_probe(
 	return 0;
 }
 
+/*
+ * Returns the screen to the loader's plane for a fatal stop.
+ */
+void
+drv_powervr_dc_restore_fatal(
+	void)
+{
+	const struct dc_adoption *adoption;
+	const struct powervr_dc_plane *plane;
+	uint32_t step;
+	uint32_t panel;
+	unsigned tries;
+	int locked;
+
+	/* Stops every later commit before anything is written. */
+	atomic_raw_store_release(&dc_fatal, 1U);
+
+	/* Leaves a controller the probe did not find showing the loader's screen alone. */
+	adoption = &board_adoption;
+	if (!adoption->probed || adoption->verdict != POWERVR_DC_GO)
+		return;
+	if (adoption->plane >= POWERVR_DC_PLANES)
+		return;
+
+	/*
+	 * Waits a bounded time for a commit on another CPU to finish.  A
+	 * commit this CPU was in when it stopped is not waited for: trying a
+	 * lock this CPU holds would trap.
+	 */
+	locked = 0;
+	tries = 0;
+	if (commit_held_here())
+		tries = DC_FATAL_LOCK_TRIES;
+	for (; tries < DC_FATAL_LOCK_TRIES; tries++) {
+		/* Stops at the first try that takes the lock. */
+		if (spin_trylock(&dc_commit_lock)) {
+			locked = 1;
+			break;
+		}
+	}
+
+	/*
+	 * Holds back the shadowed registers and drops the commit bit, writes
+	 * the plane as the probe read it, commits it and lets the panel take
+	 * it at its next frame.
+	 *
+	 * Procedure referenced:
+	 * StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
+	 * drivers/gpu/drm/verisilicon/vs_dc_hw.c (dc_hw_enable_shadow_register
+	 * around the plane writes); Linux torvalds/linux master
+	 * drivers/gpu/drm/verisilicon/vs_primary_plane.c (atomic_update: the
+	 * commit bit set after the plane's registers).
+	 */
+	plane = &adoption->state.planes[adoption->plane];
+	step = DC_UNIT_STEP * adoption->plane;
+	panel = DC_PANEL_EXTRA + DC_UNIT_STEP * DC_HDMI_PANEL;
+	write_display(adoption, panel, adoption->panel_extra | DC_PANEL_EXTRA_HOLD);
+	write_display(adoption, DC_PLANE_EXTRA + step, plane->extra & ~POWERVR_DC_EXTRA_COMMIT);
+	write_display(adoption, DC_PLANE_ADDRESS + step, plane->address);
+	write_display(adoption, DC_PLANE_STRIDE + step, plane->stride);
+	write_display(adoption, DC_PLANE_CONFIG + step, plane->config);
+	write_display(adoption, DC_PLANE_SIZE + step, plane->size);
+	write_display(adoption, DC_PLANE_TOP_LEFT + step, plane->top_left);
+	write_display(adoption, DC_PLANE_BOTTOM_RIGHT + step, plane->bottom_right);
+	write_display(adoption, DC_PLANE_BACKGROUND + step, plane->background);
+	write_display(adoption, DC_PLANE_BLEND + step, plane->blend);
+	write_display(adoption, DC_PLANE_EXTRA + step, plane->extra | POWERVR_DC_EXTRA_COMMIT);
+	write_display(adoption, panel, adoption->panel_extra & ~DC_PANEL_EXTRA_HOLD);
+
+	/* Releases the lock when it was taken. */
+	if (locked)
+		spin_unlock(&dc_commit_lock);
+}
+
+/*
+ * Reports whether a fatal stop has taken the screen back.
+ */
+int
+drv_powervr_dc_fatal(
+	void)
+{
+	/* Pairs with the release store of the fatal stop. */
+	return atomic_raw_load_acquire(&dc_fatal) != 0U;
+}
+
 /* Reads one of the identity registers. */
 static uint32_t
 read_control(
@@ -234,6 +357,40 @@ read_display(
 {
 	/* The display window starts at the controller's offset of its base. */
 	return kern_mmio_read32(adoption->display + (offset - DC_DISPLAY_BASE));
+}
+
+/*
+ * Reports whether this CPU holds the commit lock.
+ *
+ * Reads the lock's owner the way spin_trylock() does before it traps on a
+ * recursive acquisition: the owner's CPU is valid once owner_valid is
+ * published with a release.
+ */
+static int
+commit_held_here(
+	void)
+{
+	/* A free lock is nobody's. */
+	if (atomic_load_acquire(&dc_commit_lock.held) == 0U)
+		return 0;
+
+	/* A held lock whose owner is not yet published is another CPU's. */
+	if (atomic_raw_load_acquire(&dc_commit_lock.owner_valid) == 0U)
+		return 0;
+
+	/* The lock is this CPU's when the published owner is this CPU. */
+	return dc_commit_lock.owner_cpu == hal_cpu_current();
+}
+
+/* Writes one of the planes' or panels' registers by its controller offset. */
+static void
+write_display(
+	const struct dc_adoption *adoption,
+	uint32_t offset,
+	uint32_t value)
+{
+	/* The display window starts at the controller's offset of its base. */
+	kern_mmio_write32(adoption->display + (offset - DC_DISPLAY_BASE), value);
 }
 
 /* Reads the controller's identity, both primary planes and the HDMI panel's settings. */

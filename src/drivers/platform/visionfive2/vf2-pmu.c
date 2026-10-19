@@ -13,7 +13,8 @@
  * command to the encourage register.  The current power mode register
  * shows the outcome.  Hardware events can switch domains too; the GPU's
  * event is masked, so its firmware cannot switch its own domain off while
- * the driver does not manage the GPU's power.
+ * the driver does not manage the GPU's power.  The display's domain has
+ * no hardware event, so only software switches it.
  */
 
 #include "drivers/platform/visionfive2/vf2-pmu.h"
@@ -132,8 +133,11 @@ drv_vf2_pmu_set_power(
 	uint32_t events;
 	unsigned poll;
 
-	/* Refuses every domain but the GPU's, which no other driver of the board owns. */
-	if (domain != DRV_VF2_PD_GPU)
+	/*
+	 * Refuses every domain but the GPU's and the display's, which their
+	 * own drivers own.
+	 */
+	if (domain != DRV_VF2_PD_GPU && domain != DRV_VF2_PD_VOUT)
 		return EPERM;
 
 	/* Refuses the call before the unit is mapped. */
@@ -141,21 +145,26 @@ drv_vf2_pmu_set_power(
 		return ENODEV;
 
 	/*
-	 * Masks the GPU's hardware events, then names the domain and writes
-	 * the command: the reset byte restarts the unit's command parser, the
-	 * two bytes after it select turning on or off.
+	 * Masks the GPU's hardware events when switching the GPU's domain,
+	 * then names the domain and writes the command: the reset byte
+	 * restarts the unit's command parser, the two bytes after it select
+	 * turning on or off.  The display's domain has no hardware event
+	 * (TRM Table 3-12 lists none for it), so nothing is masked for it.
 	 *
 	 * Procedure referenced:
 	 * StarFive JH7110 TRM Preliminary V2, section 3.6.4 (SW encourage
-	 * turn-on and turn-off sequences).
+	 * turn-on and turn-off sequences) and Tables 3-12 and 3-13 (the VOUT
+	 * domain in bit 4 of the software modes).
 	 */
 	mask = 1U << domain;
 	irq = spin_lock_irqsave(&pmu_lock);
 
-	events = kern_mmio_read32(pmu_register(PMU_EVENT_ON_MASK));
-	kern_mmio_write32(pmu_register(PMU_EVENT_ON_MASK), events | PMU_EVENT_GPU);
-	events = kern_mmio_read32(pmu_register(PMU_EVENT_OFF_MASK));
-	kern_mmio_write32(pmu_register(PMU_EVENT_OFF_MASK), events | PMU_EVENT_GPU);
+	if (domain == DRV_VF2_PD_GPU) {
+		events = kern_mmio_read32(pmu_register(PMU_EVENT_ON_MASK));
+		kern_mmio_write32(pmu_register(PMU_EVENT_ON_MASK), events | PMU_EVENT_GPU);
+		events = kern_mmio_read32(pmu_register(PMU_EVENT_OFF_MASK));
+		kern_mmio_write32(pmu_register(PMU_EVENT_OFF_MASK), events | PMU_EVENT_GPU);
+	}
 	if (on) {
 		kern_mmio_write32(pmu_register(PMU_SOFT_ON), mask);
 		kern_mmio_write32(pmu_register(PMU_ENCOURAGE), PMU_COMMAND_RESET);

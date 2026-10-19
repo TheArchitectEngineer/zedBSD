@@ -8,7 +8,8 @@
 /*
  * Host check of the VisionFive 2's SoC drivers on fake registers: the
  * PLL and clock rates, gates, dividers and resets of the clock
- * generators, the pin controllers' register values for a device's pin
+ * generators (the display's VOUT generator too), the power management
+ * unit's domain switch, the pin controllers' register values for a device's pin
  * groups and GPIO pins, the system control blocks, and the generic device
  * tree helpers they use (children, string lists, DMA coherency).
  *
@@ -23,6 +24,7 @@
 #include <drivers/generic/fdt.h>
 #include <drivers/platform/visionfive2/vf2-crg.h>
 #include <drivers/platform/visionfive2/vf2-pinctrl.h>
+#include <drivers/platform/visionfive2/vf2-pmu.h>
 #include <drivers/platform/visionfive2/vf2-syscon.h>
 #include <kern/device-io.h>
 #include <kern/klog.h>
@@ -40,6 +42,8 @@ struct fake_block {
 static uint8_t sys_crg[0x10000];
 static uint8_t stg_crg[0x10000];
 static uint8_t aon_crg[0x10000];
+static uint8_t vout_crg[0x10000];
+static uint8_t pmu[0x1000];
 static uint8_t sys_syscon[0x1000];
 static uint8_t stg_syscon[0x1000];
 static uint8_t aon_syscon[0x1000];
@@ -50,6 +54,8 @@ static struct fake_block blocks[] = {
 	{ 0x13020000ULL, sizeof(sys_crg), sys_crg },
 	{ 0x10230000ULL, sizeof(stg_crg), stg_crg },
 	{ 0x17000000ULL, sizeof(aon_crg), aon_crg },
+	{ 0x295c0000ULL, sizeof(vout_crg), vout_crg },
+	{ 0x17030000ULL, sizeof(pmu), pmu },
 	{ 0x13030000ULL, sizeof(sys_syscon), sys_syscon },
 	{ 0x10240000ULL, sizeof(stg_syscon), stg_syscon },
 	{ 0x17010000ULL, sizeof(aon_syscon), aon_syscon },
@@ -68,7 +74,8 @@ struct fake_reset {
 static const struct fake_reset resets[] = {
 	{ sys_crg, 0x2f8U, 0x308U, 4U },
 	{ stg_crg, 0x74U, 0x78U, 1U },
-	{ aon_crg, 0x38U, 0x3cU, 1U }
+	{ aon_crg, 0x38U, 0x3cU, 1U },
+	{ vout_crg, 0x48U, 0x4cU, 1U }
 };
 
 /* When set, the fake status registers stop following the assert ones. */
@@ -136,6 +143,12 @@ kern_mmio_write32(
 	target = (uint8_t *)address;
 	memcpy(target, &value, 4);
 	write_count++;
+
+	/* The power unit's state follows a software command's last byte. */
+	if (target == pmu + 0x44 && value == 0x50U)
+		put32(pmu, 0x80, get32(pmu, 0x80) | get32(pmu, 0x0c));
+	if (target == pmu + 0x44 && value == 0xa0U)
+		put32(pmu, 0x80, get32(pmu, 0x80) & ~get32(pmu, 0x10));
 
 	/* A reset assert register's status follows it: released is set. */
 	for (index = 0; index < sizeof(resets) / sizeof(resets[0]); index++) {
@@ -447,7 +460,7 @@ check_gates(
 	clock.index = 0;
 	error = drv_vf2_clock_disable(&clock);
 	check(error == ENOENT && get32(sys_crg, 0) == cpu_root, "CPU root cannot be stopped");
-	clock.index = 58;
+	clock.index = 57;
 	error = drv_vf2_clock_enable(&clock);
 	check(error == ENOENT, "a clock outside the table cannot be touched");
 	clock.crg = DRV_VF2_CRG_STG;
@@ -657,6 +670,124 @@ check_coherency(
 	check(coherent == 0, "nothing up to the root, board default 0 -> 0");
 }
 
+/* Checks the display's VOUT generator: rates, selectors, gates and resets. */
+static void
+check_vout(
+	const struct drv_fdt *fdt)
+{
+	struct drv_vf2_clock clock;
+	struct drv_vf2_clock parent;
+	struct drv_vf2_reset reset;
+	uint64_t rate;
+	int running;
+	int released;
+	int error;
+
+	(void)fdt;
+	put32(sys_crg, 58 * 4, 0x80000000U);	/* vout_src open on PLL2 */
+	put32(sys_crg, 59 * 4, 4U);		/* vout_axi: PLL2 / 4 */
+	put32(sys_crg, 61 * 4, 0x80000000U);	/* vout_top_ahb open */
+	put32(sys_crg, 62 * 4, 0U);		/* vout_top_axi closed */
+	put32(sys_crg, 10 * 4, 0x80000000U);	/* AHB1 open */
+	put32(vout_crg, 0 * 4, 2U);		/* register bus: / 2 */
+	put32(vout_crg, 1 * 4, 6U);		/* pixel divider: / 6 */
+	put32(vout_crg, 7 * 4, 1U << 24);	/* pix0 from the HDMI PHY, closed */
+	put32(vout_crg, 9 * 4, 0U);		/* LCD from pix0, closed */
+
+	rate = rate_of(DRV_VF2_CRG_VOUT, 7, &error);
+	check(error == 0 && rate == 297000000ULL, "VOUT pix0 on hdmitx0_pixelclk: 297 MHz");
+	rate = rate_of(DRV_VF2_CRG_VOUT, 1, &error);
+	check(error == 0 && rate == 198000000ULL, "VOUT pixel divider = vout_src (PLL2) / 6");
+	rate = rate_of(DRV_VF2_CRG_VOUT, 9, &error);
+	check(error == 0 && rate == 297000000ULL, "VOUT LCD from pix0");
+	rate = rate_of(DRV_VF2_CRG_VOUT, 17, &error);
+	check(error == 0 && rate == 99000000ULL, "HDMI TX sys = STG AXI/AHB / 2 through AHB1 and vout_top_ahb");
+	rate = rate_of(DRV_VF2_CRG_VOUT, 4, &error);
+	check(error == 0 && rate == 297000000ULL, "DC8200 AXI = vout_axi (PLL2 / 4)");
+
+	clock.crg = DRV_VF2_CRG_VOUT;
+	clock.index = 7;
+	parent.crg = DRV_VF2_CRG_VOUT;
+	parent.index = 1;
+	error = drv_vf2_clock_set_parent(&clock, &parent);
+	check(error == 0 && get32(vout_crg, 7 * 4) == 0U, "pix0 moved to the pixel divider");
+	rate = rate_of(DRV_VF2_CRG_VOUT, 7, &error);
+	check(error == 0 && rate == 198000000ULL, "pix0 on the pixel divider: 198 MHz");
+
+	clock.index = 1;
+	error = drv_vf2_clock_set_rate(&clock, 148500000ULL);
+	check(error == 0 && get32(vout_crg, 1 * 4) == 8U, "pixel divider 148.5 MHz: divider 8");
+	clock.index = 0;
+	error = drv_vf2_clock_set_rate(&clock, 100000000ULL);
+	check(error == ENOTSUP, "the shared register bus divider refuses set_rate");
+
+	clock.index = 4;
+	error = drv_vf2_clock_running(&clock, &running);
+	check(error == 0 && running == 0, "DC8200 AXI reads stopped");
+	error = drv_vf2_clock_enable(&clock);
+	check(error == 0 && get32(vout_crg, 4 * 4) == 0x80000000U && get32(sys_crg, 62 * 4) == 0x80000000U &&
+	      get32(sys_crg, 59 * 4) == 4U,
+	      "enable DC8200 AXI opens it and vout_top_axi above, divider kept");
+	error = drv_vf2_clock_running(&clock, &running);
+	check(error == 0 && running == 1, "DC8200 AXI reads running");
+	clock.index = 1;
+	error = drv_vf2_clock_running(&clock, &running);
+	check(error == 0 && running == 1, "a divider without a gate reads running");
+
+	clock.index = 9;
+	error = drv_vf2_clock_enable(&clock);
+	check(error == 0 && get32(vout_crg, 9 * 4) == 0x80000000U && get32(vout_crg, 7 * 4) == 0x80000000U,
+	      "enable LCD opens pix0 above it");
+	error = drv_vf2_clock_disable(&clock);
+	check(error == 0 && get32(vout_crg, 9 * 4) == 0 && get32(vout_crg, 7 * 4) == 0x80000000U,
+	      "disable LCD closes it only");
+
+	clock.crg = DRV_VF2_CRG_SYS;
+	clock.index = 61;
+	error = drv_vf2_clock_disable(&clock);
+	check(error == EBUSY && get32(sys_crg, 61 * 4) == 0x80000000U, "disable shared vout_top_ahb is EBUSY");
+
+	reset.crg = DRV_VF2_CRG_VOUT;
+	reset.index = 9;
+	error = drv_vf2_reset_assert(&reset);
+	check(error == 0 && (get32(vout_crg, 0x48) & (1U << 9)) != 0, "assert HDMI TX reset at 0x48 bit 9");
+	error = drv_vf2_reset_deassert(&reset);
+	(void)drv_vf2_reset_released(&reset, &released);
+	check(error == 0 && released == 1, "deassert HDMI TX reset, status at 0x4c follows");
+	reset.index = 12;
+	error = drv_vf2_reset_assert(&reset);
+	check(error == ERANGE, "VOUT reset 12 is out of range");
+}
+
+/* Checks the power unit's domain switch: the display's domain is accepted. */
+static void
+check_pmu(
+	const struct drv_fdt *fdt)
+{
+	int powered;
+	int error;
+
+	error = drv_vf2_pmu_init(fdt);
+	check(error == 0, "power unit found");
+	put32(pmu, 0x04, 0U);
+	put32(pmu, 0x08, 0U);
+	put32(pmu, 0x80, 0U);
+
+	error = drv_vf2_pmu_set_power(DRV_VF2_PD_VOUT, 1);
+	(void)drv_vf2_pmu_powered(DRV_VF2_PD_VOUT, &powered);
+	check(error == 0 && powered == 1 && get32(pmu, 0x0c) == 0x10U, "VOUT domain on (bit 4)");
+	check(get32(pmu, 0x04) == 0U && get32(pmu, 0x08) == 0U, "VOUT switch masks no hardware event");
+	error = drv_vf2_pmu_set_power(DRV_VF2_PD_VOUT, 0);
+	(void)drv_vf2_pmu_powered(DRV_VF2_PD_VOUT, &powered);
+	check(error == 0 && powered == 0, "VOUT domain off");
+
+	error = drv_vf2_pmu_set_power(DRV_VF2_PD_GPU, 1);
+	check(error == 0 && get32(pmu, 0x04) == 0x80U && get32(pmu, 0x08) == 0x80U,
+	      "GPU domain on masks the GPU event as before");
+	error = drv_vf2_pmu_set_power(3U, 1);
+	check(error == EPERM, "another domain is EPERM");
+}
+
 int
 main(
 	int argc,
@@ -693,6 +824,8 @@ main(
 	check_set_rate(&fdt);
 	check_gates();
 	check_lookups(&fdt);
+	check_vout(&fdt);
+	check_pmu(&fdt);
 	check_syscon(&fdt);
 	check_pins(&fdt);
 	check_coherency(&fdt);

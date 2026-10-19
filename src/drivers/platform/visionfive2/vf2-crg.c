@@ -6,7 +6,7 @@
  */
 
 /*
- * The JH7110's clock and reset generators (SYS, STG and AON).
+ * The JH7110's clock and reset generators (SYS, STG, AON and VOUT).
  *
  * Every clock of a generator has one 32-bit register at four times its
  * number.  The register holds, depending on the clock, a gate in bit 31,
@@ -18,10 +18,12 @@
  * Only the clocks in the tables below can be reached.  The tables hold
  * what the board's drivers use and the bus clocks above them; a bus clock
  * that several devices share can be started but not stopped.  Everything
- * else -- the display's clocks and power domain, the CPUs', the memory's
- * and the console's -- is outside the tables and therefore never touched,
- * so the picture the firmware left on the screen and the running system
- * stay as they are.
+ * else -- the CPUs', the memory's and the console's -- is outside the
+ * tables and therefore never touched, so the running system stays as it
+ * is.  The display's clocks are in the tables for the display's driver,
+ * but nothing else starts or stops them; the bus clocks of the display's
+ * domain are shared, so the picture the firmware left on the screen
+ * keeps its bus.
  *
  * Rates are computed lock-free from the registers.  Gate, divider and
  * reset changes are read-modify-writes under crg_lock.
@@ -227,6 +229,17 @@ static const struct crg_clock sys_clocks[] = {
 	{ 9, CLOCK_GATE | CLOCK_SHARED, 0, 0, 1,
 	  { { SOURCE_CLOCK, DRV_VF2_CRG_SYS, 8, NULL } } },
 
+	/*
+	 * The second AHB bus, which the display's register bus runs on.
+	 *
+	 * Values referenced:
+	 * StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
+	 * drivers/clk/starfive/clk-starfive-jh7110-sys.c (ahb1 below
+	 * stg_axiahb).
+	 */
+	{ 10, CLOCK_GATE | CLOCK_SHARED, 0, 0, 1,
+	  { { SOURCE_CLOCK, DRV_VF2_CRG_SYS, 8, NULL } } },
+
 	/* The APB bus. */
 	{ 11, CLOCK_DIVIDER | CLOCK_SHARED, 0, 0, 1,
 	  { { SOURCE_CLOCK, DRV_VF2_CRG_SYS, 8, NULL } } },
@@ -291,6 +304,35 @@ static const struct crg_clock sys_clocks[] = {
 	  { { SOURCE_INPUT, DRV_VF2_CRG_SYS, 0, "osc" } } },
 	{ 50, CLOCK_GATE, 0, 0, 1,
 	  { { SOURCE_CLOCK, DRV_VF2_CRG_SYS, 45, NULL } } },
+
+	/*
+	 * The display domain's clocks: the pixel source, the AXI divider and
+	 * the bus gates of the display's network-on-chip port and of the VOUT
+	 * generator's AHB and AXI side, which every clock of the VOUT
+	 * generator runs on (all shared, so never stopped from here), and the
+	 * HDMI transmitter's audio master clock.
+	 *
+	 * Values referenced:
+	 * Linux v6.12 include/dt-bindings/clock/starfive,jh7110-crg.h
+	 * (JH7110_SYSCLK_VOUT_SRC 58 to JH7110_SYSCLK_VOUT_TOP_HDMITX0_MCLK
+	 * 63); StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
+	 * drivers/clk/starfive/clk-starfive-jh7110-sys.c (vout_src gate on
+	 * PLL2, vout_axi divider of at most 7 on PLL2, noc_bus_disp_axi and
+	 * vout_top_axi gates on vout_axi, vout_top_ahb gate on ahb1,
+	 * vout_top_hdmitx0_mclk gate on mclk).
+	 */
+	{ 58, CLOCK_GATE | CLOCK_SHARED, 0, 0, 1,
+	  { { SOURCE_PLL, DRV_VF2_CRG_SYS, 2, NULL } } },
+	{ 59, CLOCK_DIVIDER | CLOCK_SHARED, 1, 7, 1,
+	  { { SOURCE_PLL, DRV_VF2_CRG_SYS, 2, NULL } } },
+	{ 60, CLOCK_GATE | CLOCK_SHARED, 0, 0, 1,
+	  { { SOURCE_CLOCK, DRV_VF2_CRG_SYS, 59, NULL } } },
+	{ 61, CLOCK_GATE | CLOCK_SHARED, 0, 0, 1,
+	  { { SOURCE_CLOCK, DRV_VF2_CRG_SYS, 10, NULL } } },
+	{ 62, CLOCK_GATE | CLOCK_SHARED, 0, 0, 1,
+	  { { SOURCE_CLOCK, DRV_VF2_CRG_SYS, 59, NULL } } },
+	{ 63, CLOCK_GATE, 0, 0, 1,
+	  { { SOURCE_NONE, DRV_VF2_CRG_SYS, 0, NULL } } },
 
 	/* The SD card controller's bus interface. */
 	{ 92, CLOCK_GATE, 0, 0, 1,
@@ -400,14 +442,82 @@ static const struct crg_clock aon_clocks[] = {
 };
 
 /*
- * The three generators, in drv_vf2_crg order.
+ * The VOUT generator's clocks: the display controller's and the HDMI
+ * transmitter's.
+ *
+ * The display controller's two pixel clocks choose between the
+ * generator's own pixel divider and the HDMI transmitter's PHY output
+ * (the hdmitx0_pixelclk input, whose rate in the device tree is a nominal
+ * one); the LCD domain clock chooses between the two pixel clocks.  The
+ * register bus divider feeds the transmitter's and the DSI's register
+ * clocks, so it is shared.
+ *
+ * Values referenced:
+ * Linux v6.12 include/dt-bindings/clock/starfive,jh7110-crg.h
+ * (JH7110_VOUTCLK_* numbers 0 to 17); StarFive Linux
+ * JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
+ * drivers/clk/starfive/clk-starfive-jh7110-vout.c (jh7110_voutclk_data:
+ * apb divider of at most 8 on vout_top_ahb, dc8200_pix divider of at most
+ * 63 on vout_src, the dc8200 axi and core gates on vout_top_axi and ahb
+ * gate on vout_top_ahb, the pix0 and pix1 gated selectors of dc8200_pix
+ * and hdmitx0_pixelclk, the dom_vout_top_lcd gated selector of pix0 and
+ * pix1, the hdmi_tx mclk, bclk and sys gates);
+ * arch/riscv/boot/dts/starfive/jh7110.dtsi (voutcrg's clock-names).
+ */
+static const struct crg_clock vout_clocks[] = {
+	/* The register bus divider. */
+	{ 0, CLOCK_DIVIDER | CLOCK_SHARED, 1, 8, 1,
+	  { { SOURCE_CLOCK, DRV_VF2_CRG_SYS, 61, NULL } } },
+
+	/* The pixel divider, whose rate the display's driver sets. */
+	{ 1, CLOCK_DIVIDER | CLOCK_SETTABLE, 1, 63, 1,
+	  { { SOURCE_CLOCK, DRV_VF2_CRG_SYS, 58, NULL } } },
+
+	/* The display controller's AXI, core and AHB clocks. */
+	{ 4, CLOCK_GATE, 0, 0, 1,
+	  { { SOURCE_CLOCK, DRV_VF2_CRG_SYS, 62, NULL } } },
+	{ 5, CLOCK_GATE, 0, 0, 1,
+	  { { SOURCE_CLOCK, DRV_VF2_CRG_SYS, 62, NULL } } },
+	{ 6, CLOCK_GATE, 0, 0, 1,
+	  { { SOURCE_CLOCK, DRV_VF2_CRG_SYS, 61, NULL } } },
+
+	/* The display controller's two pixel clocks. */
+	{ 7, CLOCK_GATE | CLOCK_MUX, 0, 0, 2,
+	  { { SOURCE_CLOCK, DRV_VF2_CRG_VOUT, 1, NULL },
+	    { SOURCE_INPUT, DRV_VF2_CRG_VOUT, 0, "hdmitx0_pixelclk" } } },
+	{ 8, CLOCK_GATE | CLOCK_MUX, 0, 0, 2,
+	  { { SOURCE_CLOCK, DRV_VF2_CRG_VOUT, 1, NULL },
+	    { SOURCE_INPUT, DRV_VF2_CRG_VOUT, 0, "hdmitx0_pixelclk" } } },
+
+	/* The LCD domain clock. */
+	{ 9, CLOCK_GATE | CLOCK_MUX, 0, 0, 2,
+	  { { SOURCE_CLOCK, DRV_VF2_CRG_VOUT, 7, NULL },
+	    { SOURCE_CLOCK, DRV_VF2_CRG_VOUT, 8, NULL } } },
+
+	/* The HDMI transmitter's audio master, audio bit and register clocks. */
+	{ 15, CLOCK_GATE, 0, 0, 1,
+	  { { SOURCE_CLOCK, DRV_VF2_CRG_SYS, 63, NULL } } },
+	{ 16, CLOCK_GATE, 0, 0, 1,
+	  { { SOURCE_NONE, DRV_VF2_CRG_VOUT, 0, NULL } } },
+	{ 17, CLOCK_GATE, 0, 0, 1,
+	  { { SOURCE_CLOCK, DRV_VF2_CRG_VOUT, 0, NULL } } }
+};
+
+/*
+ * The four generators, in drv_vf2_crg order.
  *
  * Values referenced:
  * StarFive JH7110 TRM Preliminary V2, Tables 2-240 and 2-244 (SYS reset
  * assert and status at 0x2f8 and 0x308), 2-277 and 2-278 (STG at 0x74 and
- * 0x78), 2-293 and 2-294 (AON at 0x38 and 0x3c);
+ * 0x78), 2-293 and 2-294 (AON at 0x38 and 0x3c), 5-24 (VOUT status
+ * at 0x4c; Table 5-23 prints the VOUT assert register at 0x38, which is
+ * the generator's clock 14, so its offset 0x48 comes from the StarFive
+ * Linux below);
  * Linux v6.12 include/dt-bindings/reset/starfive,jh7110-crg.h
- * (JH7110_SYSRST_END, JH7110_STGRST_END, JH7110_AONRST_END).
+ * (JH7110_SYSRST_END, JH7110_STGRST_END, JH7110_AONRST_END,
+ * JH7110_VOUTRST_END 12); StarFive Linux JH7110_VisionFive2_6.12.y_devel
+ * 4cecf169f38e drivers/reset/starfive/reset-starfive-jh7110.c
+ * (jh7110_vout_info).
  */
 static const struct crg_generator crg_generators[DRV_VF2_CRG_COUNT] = {
 	{ "starfive,jh7110-syscrg", sys_clocks, sizeof(sys_clocks) / sizeof(sys_clocks[0]),
@@ -415,7 +525,9 @@ static const struct crg_generator crg_generators[DRV_VF2_CRG_COUNT] = {
 	{ "starfive,jh7110-stgcrg", stg_clocks, sizeof(stg_clocks) / sizeof(stg_clocks[0]),
 	  0x74U, 0x78U, 23U },
 	{ "starfive,jh7110-aoncrg", aon_clocks, sizeof(aon_clocks) / sizeof(aon_clocks[0]),
-	  0x38U, 0x3cU, 8U }
+	  0x38U, 0x3cU, 8U },
+	{ "starfive,jh7110-voutcrg", vout_clocks, sizeof(vout_clocks) / sizeof(vout_clocks[0]),
+	  0x48U, 0x4cU, 12U }
 };
 
 /*
@@ -472,7 +584,7 @@ static int lookup_named(const struct drv_fdt *fdt, uint32_t node, const char *li
 static int reset_change(const struct drv_vf2_reset *reset, int assert);
 
 /*
- * Finds the three generators in the device tree and maps them.
+ * Finds the four generators in the device tree and maps them.
  */
 int
 drv_vf2_crg_init(
@@ -670,6 +782,46 @@ drv_vf2_clock_disable(
 	spin_unlock_irqrestore(&crg_lock, irq);
 
 	/* Succeeded: the clock is stopped. */
+	return 0;
+}
+
+/*
+ * Reports whether a clock's own gate is open.
+ */
+int
+drv_vf2_clock_running(
+	const struct drv_vf2_clock *clock,
+	int *running)
+{
+	const struct crg_clock *entry;
+	volatile uint32_t *address;
+	uint32_t contents;
+
+	/* Refuses a missing clock or result, or a clock outside the tables. */
+	if (clock == NULL || running == NULL)
+		return EINVAL;
+	entry = find_clock(clock->crg, clock->index);
+	if (entry == NULL)
+		return ENOENT;
+
+	/* Refuses a clock whose generator is absent. */
+	address = clock_register(clock->crg, clock->index);
+	if (address == NULL)
+		return ENODEV;
+
+	/* A clock without a gate of its own runs whenever its source does. */
+	if ((entry->flags & CLOCK_GATE) == 0) {
+		*running = 1;
+		return 0;
+	}
+
+	/* Reads the gate bit. */
+	contents = kern_mmio_read32(address);
+	*running = 0;
+	if ((contents & CRG_GATE) != 0)
+		*running = 1;
+
+	/* Succeeded: the gate's state. */
 	return 0;
 }
 
@@ -1224,7 +1376,7 @@ find_clock(
 	const struct crg_generator *generator;
 	unsigned position;
 
-	/* Refuses a generator number outside the three. */
+	/* Refuses a generator number outside the four. */
 	if ((unsigned)crg >= DRV_VF2_CRG_COUNT)
 		return NULL;
 
@@ -1248,7 +1400,7 @@ clock_register(
 {
 	volatile uint8_t *registers;
 
-	/* Refuses a generator number outside the three. */
+	/* Refuses a generator number outside the four. */
 	if ((unsigned)crg >= DRV_VF2_CRG_COUNT)
 		return NULL;
 

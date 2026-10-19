@@ -157,7 +157,8 @@ void kern_irq_unmask(int irq) { unmasked_irq = irq; }
 void kern_irq_send_eoi(kern_irq_ack_t acknowledge) { (void)acknowledge; eoi_count++; }
 void tty_console_input_byte(uint8_t byte) { typed[typed_count++ % RX_MAX] = byte; }
 void hal_putc(int character) { (void)character; }
-void kern_text_register(const struct kern_text_ops *ops) { (void)ops; }
+static const struct kern_text_ops *published_ops;
+void kern_text_register(const struct kern_text_ops *ops) { published_ops = ops; }
 
 static void
 record(uint8_t byte)
@@ -198,6 +199,12 @@ test_virt(const char *path)
 	int error;
 
 	reset_fake(0);
+	published_ops = NULL;
+	drv_serial_console_init();
+	check(published_ops != NULL && published_ops == drv_serial_console_ops(),
+	      "virt: the published table is the one drv_serial_console_ops reports");
+	check(drv_serial_console_ops()->putc != NULL && drv_serial_console_ops()->reveal_fatal == NULL,
+	      "virt: the teletype has putc and no fatal reveal of its own");
 	blob = read_file(path, &length);
 	check(drv_fdt_open(&fdt, blob, length) == 0, "virt: tree opens");
 	error = drv_ns16550_probe(&fdt, &port);

@@ -40,6 +40,11 @@
  * The display controller the loader left on is then read, from the
  * board's description of it or the tree's node, to decide whether its
  * screen can be taken over; nothing of it is changed.
+ *
+ * The console is the serial teletype with one operation added: a fatal
+ * stop puts the display controller's plane back on the loader's screen,
+ * where the hardware layer draws the console's text, in case a graphics
+ * program had the controller show a buffer of its own.
  */
 
 #include <stdbool.h>
@@ -70,6 +75,7 @@
 #include <kern/disk.h>
 #include <kern/klog.h>
 #include <kern/partition.h>
+#include <kern/text-display.h>
 #include <kern/platform.h>
 #include <kern/pmem.h>
 #include <uapi/errno.h>
@@ -144,14 +150,51 @@ static const struct drv_powervr_dc_place vf2_dc_builtin = {
 };
 
 /*
- * The power domain the display controller and the HDMI transmitter are in.
+ * The clocks the display controller's registers need, in the order a bus
+ * access passes them: the SYS generator's display bus gates, then the
+ * VOUT generator's gates of the controller and of the HDMI panel's pixel
+ * clock.
  *
- * Value referenced:
- * Linux v6.12 include/dt-bindings/power/starfive,jh7110-pmu.h
- * (JH7110_PD_VOUT 4).
+ * Values referenced:
+ * Linux v6.12 include/dt-bindings/clock/starfive,jh7110-crg.h
+ * (JH7110_SYSCLK_NOC_BUS_DISP_AXI 60, JH7110_SYSCLK_VOUT_TOP_AHB 61,
+ * JH7110_SYSCLK_VOUT_TOP_AXI 62, JH7110_VOUTCLK_DC8200_AXI 4,
+ * JH7110_VOUTCLK_DC8200_CORE 5, JH7110_VOUTCLK_DC8200_AHB 6,
+ * JH7110_VOUTCLK_DC8200_PIX0 7); StarFive Linux
+ * JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
+ * arch/riscv/boot/dts/starfive/jh7110.dtsi (dc8200's clocks).
  */
-#define VF2_PD_VOUT		4U
+struct vf2_dc_gate {
+	struct drv_vf2_clock clock;
+	const char *name;
+};
+
+static const struct vf2_dc_gate vf2_dc_gates[] = {
+	{ { DRV_VF2_CRG_SYS, 60U }, "noc_bus_disp_axi" },
+	{ { DRV_VF2_CRG_SYS, 61U }, "vout_top_ahb" },
+	{ { DRV_VF2_CRG_SYS, 62U }, "vout_top_axi" },
+	{ { DRV_VF2_CRG_VOUT, 4U }, "dc8200_axi" },
+	{ { DRV_VF2_CRG_VOUT, 5U }, "dc8200_core" },
+	{ { DRV_VF2_CRG_VOUT, 6U }, "dc8200_ahb" },
+	{ { DRV_VF2_CRG_VOUT, 7U }, "dc8200_pix0" }
+};
+
+/*
+ * What a fatal stop calls to put the display back on the loader's screen.
+ *
+ * Set once by probe_display_controller() on the boot CPU when the display
+ * driver read the controller, and not changed afterwards; NULL while no
+ * display is to be taken back.
+ */
+static void (*vf2_fatal_display)(void);
 #endif
+
+/*
+ * The console's text operations: the serial teletype's, with the fatal
+ * reveal added.  Filled once by kern_platform_init() before it publishes
+ * the table and not changed afterwards.
+ */
+static struct kern_text_ops vf2_text_ops;
 
 /*
  * The ramdisk's disk, published by kern_platform_init() and kept for the
@@ -190,8 +233,10 @@ static void describe_card_detect(const struct drv_fdt *fdt);
 static void attach_sd_card(void);
 static void attach_ethernet(void);
 static void describe_sd_partitions(void);
+static void reveal_fatal(void);
 #if CONFIG_DRIVER_POWERVR
 static void probe_display_controller(const struct drv_fdt *fdt);
+static int check_display_clocks(void);
 #endif
 
 /*
@@ -220,8 +265,13 @@ kern_platform_init(
 	if (handoff->size < sizeof(*handoff))
 		return 0;
 
-	/* Publishes the teletype as /dev/console's output. */
-	drv_serial_console_init();
+	/*
+	 * Publishes the teletype as /dev/console's output, with the fatal
+	 * reveal that takes the display back.
+	 */
+	vf2_text_ops = *drv_serial_console_ops();
+	vf2_text_ops.reveal_fatal = reveal_fatal;
+	kern_text_register(&vf2_text_ops);
 
 	/* Reads and checks the screen the firmware left on, for the boot log. */
 	describe_framebuffer();
@@ -870,7 +920,7 @@ probe_display_controller(
 	}
 
 	/* Leaves the controller alone when its power domain is off or unknown. */
-	error = drv_vf2_pmu_powered(VF2_PD_VOUT, &powered);
+	error = drv_vf2_pmu_powered(DRV_VF2_PD_VOUT, &powered);
 	if (error != 0) {
 		kern_logf("dc8200: no-go (power domain unknown, %d)\n", error);
 		return;
@@ -881,9 +931,83 @@ probe_display_controller(
 		return;
 	}
 
+	/* Leaves the controller alone when a clock its registers need is stopped. */
+	error = check_display_clocks();
+	if (error != 0)
+		return;
+
 	/* Has the display driver read the controller and log its decision. */
 	error = drv_powervr_dc_probe(&place);
-	if (error != 0 && error != ENOENT)
+	if (error != 0 && error != ENOENT) {
 		kern_logf("visionfive2: display controller unread (%d)\n", error);
+		return;
+	}
+
+	/* Lets a fatal stop take the screen back once the controller is read. */
+	if (error == 0)
+		vf2_fatal_display = drv_powervr_dc_restore_fatal;
+}
+
+/*
+ * Checks that every clock the display controller's registers need is
+ * running, logging the first stopped one as the no-go reason.
+ *
+ * The SYS gates are read first, since the VOUT generator's own registers
+ * are behind them.  A tree without the VOUT generator leaves its gates
+ * unchecked, as before the generator was known.  EBUSY means a clock is
+ * stopped; another error that a gate could not be read.
+ */
+static int
+check_display_clocks(
+	void)
+{
+	const struct vf2_dc_gate *gate;
+	unsigned index;
+	int running;
+	int error;
+
+	/* Reads each gate in bus order. */
+	for (index = 0; index < sizeof(vf2_dc_gates) / sizeof(vf2_dc_gates[0]); index++) {
+		/* Reads the gate's state. */
+		gate = &vf2_dc_gates[index];
+		error = drv_vf2_clock_running(&gate->clock, &running);
+
+		/* Skips the VOUT generator's gates when the tree does not describe it. */
+		if (error == ENODEV && gate->clock.crg == DRV_VF2_CRG_VOUT)
+			continue;
+
+		/* Refuses a gate that cannot be read. */
+		if (error != 0) {
+			kern_logf("dc8200: no-go (clock %s unknown, %d)\n", gate->name, error);
+			return error;
+		}
+
+		/* Refuses a stopped gate: the controller's registers would not answer. */
+		if (!running) {
+			kern_logf("dc8200: no-go (clock %s stopped)\n", gate->name);
+			return EBUSY;
+		}
+	}
+
+	/* Succeeded: every gate the registers need is open. */
+	return 0;
 }
 #endif
+
+/*
+ * Shows the console for a fatal stop: puts the display controller's plane
+ * back on the loader's screen, where the hardware layer draws the text.
+ *
+ * The serial teletype itself has nothing to reveal.  Runs with interrupts
+ * disabled.
+ */
+static void
+reveal_fatal(
+	void)
+{
+#if CONFIG_DRIVER_POWERVR
+	/* Takes the screen back when the display driver read the controller. */
+	if (vf2_fatal_display != NULL)
+		vf2_fatal_display();
+#endif
+}
