@@ -3,7 +3,7 @@
 # ws269-p010-compiler SPIR-V から Rogue の USC への compiler
 
 - 親: [ws269](../ws.md)、設計: [design.md](../design.md) §5（D6 A: 自前の USC の backend）、境: [design-p010.md](../design-p010.md) §5（P1、版 1）と下の「境（合意の案）」
-- Queue: q1363 / q1363-i01（P2、2026-10-20）
+- Queue: q1363 / q1363-i01（P2、2026-10-20）。design-p010.md 版 2 の分割で、この試行は [p013](../phase013/phase.md)（encoder の広げ、O-ENC）と [p014](../phase014/phase.md)（compiler、O-SHADER-ABI・O-VSFS）の両方の最初の試行として記録した（q1369）。この phase.md は詳細の記録として残す
 - Status: in-progress（2026-10-20 P2: 読み・back end・key（format・pack・blend）・encoder の広げ・compute の executor への差し替え、host 試験 PASS、VF2・riscv64-virt の build warning 0。vertex・fragment を driver が使うのは p010h・p010i）
 - 起点（2026-10-20 07:24 ユーザー）: 「PowerVRのコードは完了を目指して作業をお願いします。あとでUATにおいて、どこまで実行できたかわかるログが出れば、デバッグしやすいと思います。」
 - 前提: p008（USC・PDS の encoder）、p009（spirv-fill の固定の subset。これを置き換える）。HAL・toolchain は変えない。
@@ -116,5 +116,5 @@ host 試験の中身:
 
 ## 気付いた事（Q1 へ）
 
-- p008 の `compute-program.c` の `pass_group` は special register の inst_num（51）を s0 から mbyp で読む。Mesa の `ref_src_map_valid`（`pco_internal.h`）では special register は s1・s2・s4 にしか置けず、Mesa は `movs1`（phase 2 の movwm、s1、is0 = s1、is4 = fte）に変える。p008 の実機の試験（compute kernel の行）が FAILED なら最初に疑う所。compiler はこの形（movs1）を使うので、vkcompute の道（p009 の差し替え後）はこの点では Mesa と同じ。p008 の試験の program を直すかは Q1 の判断（直せば p008 の host 試験の期待も変わる）。
-- design-p010.md 版 2 は compiler の Phase を p013（encoder）・p014（compiler）に分けている。この記録（q1363）はその両方の最初の試行にあたる（encoder の広げも含む）。ws.md の行の付け替えは Q1 へ。
+- p008 の `compute-program.c` の `pass_group` は special register の inst_num（51）を s0 から mbyp で読む。Mesa の `ref_src_map_valid`（`pco_internal.h`）では special register は s1・s2・s4 にしか置けず、Mesa は `movs1`（phase 2 の movwm、s1、is0 = s1、is4 = fte）に変える。p008 の実機の試験（compute kernel の行）が FAILED なら最初に疑う所。compiler はこの形（movs1）を使うので、vkcompute の道（p009 の差し替え後）はこの点では Mesa と同じ。p008 の試験の program を直すかは Q1 の判断（直せば p008 の host 試験の期待も変わる）。→ q1369 で直した（compute-program.c の `special_group`、p008 の compute 70/0）。
+- design-p010.md 版 2 は compiler の Phase を p013（encoder）・p014（compiler）に分けている。この記録（q1363）はその両方の最初の試行にあたる（encoder の広げも含む）。ws.md の行の付け替えは Q1 へ。→ q1369 で p013・p014 の phase.md を作り、ws.md の行を合わせた。`shader.h` の名前は p014 で決めた（改名は Q1 に `git mv`）。

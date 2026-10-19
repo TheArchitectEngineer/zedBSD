@@ -67,6 +67,9 @@
  * s2 0b0; F_COUNT_OP byp 0b10; F_SHIFT1_OP byp 0b00).
  */
 #define USC_INSTANCE_NUMBER	51U
+#define USC_SELECT_FT0		0U
+#define USC_SELECT_FTE		3U
+#define USC_MUX_S1		4U
 #define USC_SIZE_32		2U
 #define USC_WRITE_THROUGH	0U
 #define USC_COUNT_FROM_S2	0U
@@ -111,6 +114,7 @@ static int temps_fetch(void *context, size_t index, struct powervr_usc_group *gr
 static int fill_fetch(void *context, size_t index, struct powervr_usc_group *group);
 static int immediate_group(struct powervr_usc_group *group, unsigned destination, uint32_t value);
 static int pass_group(struct powervr_usc_group *group, unsigned destination, unsigned bank, unsigned source);
+static int special_group(struct powervr_usc_group *group, unsigned destination, unsigned source);
 static int multiply_add_group(struct powervr_usc_group *group, unsigned destination, unsigned first, unsigned second, unsigned addend);
 static int store_group(struct powervr_usc_group *group, unsigned data, unsigned address);
 static int wait_group(struct powervr_usc_group *group);
@@ -544,7 +548,7 @@ store_fetch(
 	error = 0;
 	if (index == 0) {
 		/* r5: the instance number. */
-		error = pass_group(group, 5, POWERVR_USC_BANK_SPECIAL, USC_INSTANCE_NUMBER);
+		error = special_group(group, 5, USC_INSTANCE_NUMBER);
 	} else if (index == 1) {
 		/* r0: the low half of the first address. */
 		error = immediate_group(group, 0, shape->base_low);
@@ -611,7 +615,7 @@ temps_fetch(
 	error = 0;
 	if (index == 0) {
 		/* r7: the instance number. */
-		error = pass_group(group, 7, POWERVR_USC_BANK_SPECIAL, USC_INSTANCE_NUMBER);
+		error = special_group(group, 7, USC_INSTANCE_NUMBER);
 	} else if (index >= 1 && index <= 4) {
 		/* r3 to r6: values that are no instance number. */
 		error = immediate_group(group, (unsigned)index + 2U, TEMPS_FILL | ((uint32_t)index + 2U));
@@ -666,7 +670,7 @@ fill_fetch(
 	error = 0;
 	if (index == 0) {
 		/* r7: the instance number. */
-		error = pass_group(group, 7, POWERVR_USC_BANK_SPECIAL, USC_INSTANCE_NUMBER);
+		error = special_group(group, 7, USC_INSTANCE_NUMBER);
 	} else if (index == 1) {
 		/* r0: the low half of the base. */
 		error = immediate_group(group, 0, shape->base_low);
@@ -766,6 +770,43 @@ pass_group(
 
 	/* The first phase passes the source through. */
 	error = powervr_usc_single(POWERVR_USC_SINGLE_PASS, 0, 0, &group->operation[POWERVR_USC_PHASE_0]);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the group. */
+	return 0;
+}
+
+/*
+ * Builds a main group that copies a special register into a temporary.
+ *
+ * Procedure referenced:
+ * Mesa 26.2.5 src/imagination/pco/pco_map.py (group_map O_MOVS1: a
+ * special register only in s1, s2 or s4; the source in s1 through the
+ * mux, is4 from fte, the move in phase 2 with the first write enabled).
+ */
+static int
+special_group(
+	struct powervr_usc_group *group,
+	unsigned destination,
+	unsigned source)
+{
+	int error;
+
+	/* A main group from the special register in s1 to one temporary. */
+	*group = blank_group;
+	group->unit = POWERVR_USC_UNIT_MAIN;
+	group->write_0 = 1;
+	group->source[1].used = 1;
+	group->source[1].bank = POWERVR_USC_BANK_SPECIAL;
+	group->source[1].index = (uint16_t)source;
+	temporary(&group->destination[0], destination);
+	group->mux_used = 1;
+	group->mux = USC_MUX_S1;
+	group->internal[4] = USC_SELECT_FTE;
+
+	/* The third phase moves fte to the first write. */
+	error = powervr_usc_move(USC_SELECT_FT0, USC_SELECT_FTE, 0xf, 1, 1, 1, &group->operation[POWERVR_USC_PHASE_2]);
 	if (error != 0)
 		return error;
 

@@ -242,14 +242,17 @@ test_store_program(void)
 	int error;
 
 	/*
-	 * Group 0, r5 = byp(sr51), main: header da 3 | 4 half-words = 0x34;
-	 * ext | oporg p0 0 | w0p = 0x82; end 0, alutype main 0, rpt 1 = 0x00.
-	 * Phase 0 sngl: main_op 0b100 <<5 | sngl_op byp 7 = 0x87.  Lower
-	 * source one byte: bank special 0 <<6 | 51 = 0x33; upper unused 0x00;
-	 * the internal selectors with is4 ft0 = 0x00; the destination one
-	 * byte: bank temp 1 <<6 | 5 = 0x45.
+	 * Group 0, r5 = movs1(sr51), main, the compiler's MACHINE_MOVE_SPECIAL
+	 * form (a special register only in s1, s2 or s4): header da 5 | 6
+	 * half-words = 0x56; ext | oporg p2 1 <<4 | w0p = 0x92; main, rpt 1 =
+	 * 0x00.  Phase 2: the extended move 0xd3, 0x3f (as the p010-compiler
+	 * group check).  The lower sources with s1 special 51 and the mux s1
+	 * 0x80, 0xd3, 0x81, 0x10 as the encoder lays them out (checked
+	 * against the field tables in the p008 encoder test, not by hand
+	 * here); the upper sources unused 0x00; is4 fte 3 <<4 = 0x30; the
+	 * destination bank temp 1 <<6 | 5 = 0x45.
 	 */
-	static const uint8_t pass_r5[] = { 0x34, 0x82, 0x00, 0x87, 0x33, 0x00, 0x00, 0x45 };
+	static const uint8_t pass_r5[] = { 0x56, 0x92, 0x00, 0xd3, 0x3f, 0x80, 0xd3, 0x81, 0x10, 0x00, 0x30, 0x45 };
 
 	/*
 	 * Group 1, r0 = 0x00100000, bitwise: header da 3+5 = 8 | 6
@@ -301,7 +304,7 @@ test_store_program(void)
 	if (count != 9U + 512U * 4U + 1U)
 		return;
 
-	check_bytes(program + starts[0], pass_r5, sizeof(pass_r5), "store group 0, r5 = sr51");
+	check_bytes(program + starts[0], pass_r5, sizeof(pass_r5), "store group 0, r5 = movs1 sr51");
 	check_bytes(program + starts[1], immediate_r0, sizeof(immediate_r0), "store group 1, r0 = base low");
 	check_bytes(program + starts[9] + 1, store_head, sizeof(store_head), "store group 9, st");
 	check_bytes(program + starts[10], wait, sizeof(wait), "store group 10, wdf");
@@ -326,8 +329,8 @@ test_temps_program(void)
 	size_t count;
 	int error;
 
-	/* Group 0, r7 = byp(sr51): as the store's group 0 with destination 0x47. */
-	static const uint8_t pass_r7[] = { 0x34, 0x82, 0x00, 0x87, 0x33, 0x00, 0x00, 0x47 };
+	/* Group 0, r7 = movs1(sr51): as the store's group 0 with destination 0x47. */
+	static const uint8_t pass_r7[] = { 0x56, 0x92, 0x00, 0xd3, 0x3f, 0x80, 0xd3, 0x81, 0x10, 0x00, 0x30, 0x47 };
 
 	/* Group 1, r3 = 0xdead0003: immediate low byte first, destination 0x43. */
 	static const uint8_t fill_r3[] = { 0x86, 0x92, 0x40, 0x13, 0x03, 0x00, 0xad, 0xde, 0x00, 0x00, 0x43, 0xff };
@@ -346,7 +349,7 @@ test_temps_program(void)
 	if (count != 13)
 		return;
 
-	check_bytes(program + starts[0], pass_r7, sizeof(pass_r7), "temps group 0, r7 = sr51");
+	check_bytes(program + starts[0], pass_r7, sizeof(pass_r7), "temps group 0, r7 = movs1 sr51");
 	check_bytes(program + starts[1], fill_r3, sizeof(fill_r3), "temps group 1, r3 fill");
 	check_bytes(program + starts[9], pass_r2, sizeof(pass_r2), "temps group 9, r2 = r7");
 	check(program[starts[10] + 1] == 0xa0 && program[starts[10] + 3] == 0xf2, "temps group 10, st");
