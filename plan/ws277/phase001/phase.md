@@ -2,12 +2,13 @@
 
 # ws277-p001 DC8200 の display driver の設計
 
-- 親: [ws277](../ws.md)、Queue: q1341 / q1341-i01（P1、2026-10-20）
-- Status: in-progress（設計の文書が出来た、design-reviewer 待ち）
+- 親: [ws277](../ws.md)、Queue: q1341 / q1341-i01、q1343 / q1343-i01（P1、2026-10-20）
+- Status: in-progress（改訂 2 が出来た、design-reviewer の差分の確認待ち）
 
 ## 結果（2026-10-20 P1）
 
 - [design.md](../design.md) 版 1。PBE は LINEAR を書ける（Mesa の値）、DC8200 は線形・32 bit の address・MMU 無しで読む。最小の道は U-Boot の mode を引き継ぎ plane の address だけを書き換える（D1 (a)）。判断 D1〜D6、Phase の案 p002〜p007。HAL の変更は無し。コードは無し。
+- 2026-10-20 q1343-i01: [design.md](../design.md) 版 2。[レビュー 1](../design-review-1.md) の B1〜B3・M1〜M9・Minor 1〜11 に対応（§12 の表）。present は latch の後に返る、shareable の SLC_BYPASS、mode と同じ大きさだけ zero copy、panic は `reveal_fatal`（HAL 変更無し）、判断 D1〜D9、他 WS への依頼 R1〜R7（§9、Q1 が各 WS の Phase へ渡す）、実機の試験の一覧 U0〜U10、LW 52〜83。
 
 ## 目的
 
