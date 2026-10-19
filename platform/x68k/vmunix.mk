@@ -107,7 +107,7 @@ X68K_KERNEL_SOURCES := \
 	src/kern/main.c \
 	$(KERN_FAT_SOURCES) \
 	src/kern/inode.c src/kern/file.c src/kern/namecache.c src/kern/namei.c \
-	src/kern/mount.c src/kern/vfs.c src/kern/swap.c \
+	src/kern/mount.c src/kern/vfs.c \
 	src/kern/tmpfs.c src/kern/tmpfs-pages.c src/drivers/fs/overlayfs.c src/drivers/generic/loop.c \
 	src/kern/backing-claim.c \
 	src/kern/disk.c src/kern/device-io.c src/kern/irq.c src/kern/pmem.c \

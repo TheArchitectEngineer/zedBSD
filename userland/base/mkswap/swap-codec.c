@@ -6,8 +6,8 @@
  */
 
 /*
- * Userland copy of the swap header codec in src/kern/swap.c.
- * Keeps mkswap independent of the consolidated kernel implementation.
+ * Userland copy of the swap header codec in src/kern/vm/swap-header.c.
+ * Keeps mkswap independent of the kernel implementation.
  */
 #include <kern/swap.h>
 #include <errno.h>

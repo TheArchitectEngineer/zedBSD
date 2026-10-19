@@ -816,6 +816,10 @@ KERN_NET_SOURCES := \
 KERN_NET_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(KERN_NET_SOURCES))
 
 KERN_VM_SOURCES := \
+	src/kern/vm/swap.c \
+	src/kern/vm/swap-control.c \
+	src/kern/vm/swap-header.c \
+	src/kern/vm/swap-source.c \
 	src/kern/vm/vmspace.c \
 	src/kern/vm/device.c \
 	src/kern/vm/vm.c \

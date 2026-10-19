@@ -37,8 +37,8 @@ when a non-x86 architecture supplies a NULL parameter-source pointer; Section
 | --- | --- |
 | Limits, record, names, grammar, defaults | [`include/kern/boot.h`](../../include/kern/boot.h), [`include/kern/boot.h`](../../include/kern/boot.h), [`include/kern/boot.h`](../../include/kern/boot.h), [`src/kern/boot.c`](../../src/kern/boot.c) |
 | Selectors, boot slots, and root modes | [`src/kern/block-identity.c`](../../src/kern/block-identity.c), [`src/kern/boot.c`](../../src/kern/boot.c), [`src/kern/vfs.c`](../../src/kern/vfs.c) |
-| Boot-time swap sources | [`src/kern/swap.c`](../../src/kern/swap.c), [`src/kern/swap.c`](../../src/kern/swap.c), [`src/kern/swap.c`](../../src/kern/swap.c) |
-| Runtime swap separation | [`include/uapi/system.h`](../../include/uapi/system.h), [`src/kern/swap.c`](../../src/kern/swap.c), [`src/drivers/generic/system-device.c`](../../src/drivers/generic/system-device.c) |
+| Boot-time swap sources | [`src/kern/vm/swap-control.c`](../../src/kern/vm/swap-control.c), [`src/kern/vm/swap-source.c`](../../src/kern/vm/swap-source.c), [`src/kern/vm/swap-header.c`](../../src/kern/vm/swap-header.c) |
+| Runtime swap separation | [`include/uapi/system.h`](../../include/uapi/system.h), [`src/kern/vm/swap-control.c`](../../src/kern/vm/swap-control.c), [`src/drivers/generic/system-device.c`](../../src/drivers/generic/system-device.c) |
 | PID 1 selection | [`src/kern/main.c`](../../src/kern/main.c), [`src/kern/init.c`](../../src/kern/init.c) |
 | Common configured-loader language | [`bootloader/uefi/zedbsd-config.c`](../../bootloader/uefi/zedbsd-config.c), [`bootloader/uefi/zedbsd-config.h`](../../bootloader/uefi/zedbsd-config.h) |
 | Four current x86 loader paths | [`bootloader/uefi/bootx64.c`](../../bootloader/uefi/bootx64.c), [`bootloader/pcat/bootzbsd.S`](../../bootloader/pcat/bootzbsd.S), [`bootloader/pc98/bootzbsd.S`](../../bootloader/pc98/bootzbsd.S), [`src/hal/x86/boot-parameters.c`](../../src/hal/x86/boot-parameters.c) |
