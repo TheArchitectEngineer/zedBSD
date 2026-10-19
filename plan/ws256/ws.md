@@ -50,7 +50,7 @@
 | p020 | PLDA の PCIe の host（実機）: `pci-plda.c`（ATR の outbound、link、PERST、PHY、INTx は p021 の hook、bridge をまたぐ swizzle、root の DMA は 32 bit から）、VL805 の xHCI と USB keyboard で login（[design-peripherals.md](design-peripherals.md) §3.5） | p013・p022・p021・p016・p023 | 8〜12 | in-progress（板の前の code と host 試験 137 PASS は済み（72bea29bc、merge 0398b03d4）、実機の確かめ（ユーザーの目視）を待つ） |
 | [p021](phase021/phase.md) | PCI core の host の INTx の hook: `drv_pci_bus_ops` に省略可能な intx の 4 つ、EOI を送らない `intx_line_run`、線の鍵を (host, vector)、lock の順と drain。amd64・Pi 4・riscv64 virt の回帰（§3.5） | p012 | 5〜7 | cleared（2026-10-19 Q1、T1-727） |
 | p022 | p013 の実機の確かめ: clock の rate（U-Boot の `md` と照合）、card detect、PERST（§3.2） | p013・p005・#15 | 1〜2 | planning |
-| [p023](phase023/phase.md) | DMA の coherency の確かめ（陽性の対照、64 KiB の buffer、8 回）、非 coherent なら予備 (i)（確保ごとの uncached の別名、HAL の BSP）（§2.4・§3.9） | p013・p022・#15 | 3〜7 | in-progress（q1294、P1。板の前の code・試験の cdev `/dev/vf2-dmatest`・host 試験 10 PASS は済み、実機の確かめ（ユーザーの目視）を待つ、2026-10-19。[phase.md](phase023/phase.md)） |
+| [p023](phase023/phase.md) | DMA の coherency の確かめ（陽性の対照、64 KiB の buffer、8 回）、非 coherent なら予備 (i)（確保ごとの uncached の別名、HAL の BSP）（§2.4・§3.9） | p013・p022・#15 | 3〜7 | in-progress（試験の cdev と core は済み（86e86aa07、merge 2e9779837）、実機で cat /dev/vf2-dmatest の答えをユーザーが読むのを待つ） |
 | p024 | NVMe の実機と NVMe の root（p017 から分けた）: M.2 の SSD の読み書き、pcat の形の root の選び方（§3.11） | p017・p020・p015 | 3〜4 | planning |
 | [p025](phase025/phase.md) | VF2 の skeleton（p005 から分けた、板の前）: `visionfive2.c` の最小、`platform/riscv64/vmunix.mk` の vf2 の枝、config・menuconfig、bsp-visionfive2 の最小（`hal_dcache_*` は ccache の FLUSH64）、build（§3.10） | p004 | 2〜3 | cleared（2026-10-19 Q1、build） |
 
