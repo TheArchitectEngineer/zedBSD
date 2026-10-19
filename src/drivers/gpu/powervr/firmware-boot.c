@@ -327,14 +327,28 @@ make_program(
 {
 	struct powervr_firmware *firmware;
 	const struct powervr_fw_section *private_data;
+	const struct powervr_fw_section *boot_code;
+	const struct powervr_fw_section *exceptions;
 	uint32_t data_offset;
 	int error;
 
-	/* Finds where the data must go. */
+	/* Refuses a layout without code or data. */
 	firmware = &core->firmware;
-	private_data = powervr_fw_image_section(&firmware->image, POWERVR_SECTION_MIPS_PRIVATE);
-	if (private_data == NULL || firmware->image.code_size == 0U || firmware->image.data_size == 0U)
+	if (firmware->image.code_size == 0U || firmware->image.data_size == 0U)
 		return EINVAL;
+
+	/* Refuses a layout that lacks a section the boot needs. */
+	private_data = powervr_fw_image_section(&firmware->image, POWERVR_SECTION_MIPS_PRIVATE);
+	boot_code = powervr_fw_image_section(&firmware->image, POWERVR_SECTION_MIPS_BOOT_CODE);
+	exceptions = powervr_fw_image_section(&firmware->image, POWERVR_SECTION_MIPS_EXCEPTIONS);
+	if (private_data == NULL || boot_code == NULL || exceptions == NULL)
+		return EINVAL;
+
+	/* Refuses boot code or exception vectors outside the code. */
+	if (boot_code->memory != POWERVR_MEMORY_CODE || exceptions->memory != POWERVR_MEMORY_CODE)
+		return EINVAL;
+
+	/* The data's place is its private section's base within the heap. */
 	data_offset = private_data->base & (POWERVR_HEAP_BYTES - 1U);
 
 	/* The code goes first, at the bottom of the heap. */
@@ -376,11 +390,13 @@ load_program(
 	uint32_t page;
 	int error;
 
-	/* Finds the boot data page and the stack. */
+	/* Finds the boot data page and the stack, both of which live in the data. */
 	firmware = &core->firmware;
 	boot_data = powervr_fw_image_section(&firmware->image, POWERVR_SECTION_MIPS_BOOT_DATA);
 	stack = powervr_fw_image_section(&firmware->image, POWERVR_SECTION_MIPS_STACK);
 	if (boot_data == NULL || stack == NULL)
+		return EINVAL;
+	if (boot_data->memory != POWERVR_MEMORY_DATA || stack->memory != POWERVR_MEMORY_DATA)
 		return EINVAL;
 
 	/* Takes a cleared buffer for the code. */
