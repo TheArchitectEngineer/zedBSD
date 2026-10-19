@@ -149,8 +149,11 @@ kern_platform_init(
 	/* Brings up the SoC's clocks, resets and pins for the devices. */
 	probe_soc();
 
-	/* Selects the MBR partition scheme the ramdisk's image uses. */
-	partition_set_scheme(&drv_partition_scheme_mbr);
+	/*
+	 * Selects the partition scheme that tells GPT from MBR: the ramdisk's
+	 * image is an MBR disk, the SD card's UEFI image a GPT disk.
+	 */
+	partition_set_scheme(&drv_partition_scheme_pcat_auto);
 	disk_registry_reset();
 
 	/* Publishes the ramdisk, the boot device. */
