@@ -23,8 +23,19 @@
 | Phase | 中身 | 依存 | Status |
 | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | 設計（driver の構成・firmware・userland の Vulkan の道・Phase の分割）。コードは書かない | — | cleared（2026-10-19 Q1、改訂 3.1。D は未決） |
+| [p002](phase002/phase.md) | 資料の固定（FW の版と sha256、mainline の tag、Mesa の版、BRN、vendor の DT・DDK）。コードなし | p001 | cleared 待ち（Q1 の判定、q1326） |
+| p003 | firmware の package（mirror、sha256、license・WHENCE・manifest、initrd） | p002、D3 | planned |
+| p004 | PMU（PD_GPUA）・CRG の GPU の行・組み込みの記述・riscv64 の uncached の別名（予備 (i)）・attach の早い段 | WS256 p013・p015・p022、p002 | planned |
+| p005 | 遅い段: FW の parser・MIPS の page table・FW の起動・health の kick・IRQ | p003、p004、WS256 p020 | planned |
+| p006 | coherency の確かめ（MIPS の道）・GPU の MMU・resource・CCB・fence・recovery・render の node | p005 | planned |
+| p007 | display の node（claim・present）と `scanout` の import | WS256 p011、p004、import は p006 | planned |
+| p008 | Rogue の USC・PDS の encoder、kernel の中の試験の道、data master の道の coherency | p006 | planned |
+| p009 | 最小の Venus の decode（compute） | p008 | planned |
+| p010 | graphics（TA・3D・transfer・render pass・WSI） | p009、p007 | planned |
+| p011 | Keiland の要る範囲の残り（WS270 と合わせる） | p010 | planned |
+| p012 | 規約の全文の見直し | p003〜p011 | planned |
 
-残りの Phase は p001 の設計から作る。
+中身・LW・確かめは [design.md](design.md) §6。
 
 ## 決定（2026-10-19 22:04 ユーザー、クリック）
 
