@@ -2,7 +2,7 @@
 
 # ws256-p008 kernel 側: serial の console、ramdisk、MBR の root.img
 
-Status: in-progress、test-wait（T1 の番号は Q1。2026-10-19 q1269-i01、P2。実装・build（warning 0）・host 試験は済み。T1 の結果を Q1 が判定するまで cleared にしない）
+Status: cleared（2026-10-19 Q1 の判定、T1-720。走り A は boot-test の pattern の 1 行目「riscv-virt: ramdisk ram0」が 80x25 の画面から流れて FAIL と出たが、最後の画面（build/review/t1-720/rvA-login-3.png）に「vfs: native boot disk=ram0 physical disks=1」「ram0 partition 1・2」「runtime filesystems mounted」「init /sbin/init not started (6)」があり、ramdisk の root の受け入れを満たす。init は p007 の範囲。amd64 の既定の image の回帰は PASS。UART の RX（走り B）は未確認で p007 の T1 に持ち越す。次の走りの pattern は「vfs: native boot disk=ram0」を使う）
 
 - 親: [WS256](../ws.md)。Queue: q1269 / q1269-i01（承認: 2026-10-19 ユーザー「WS256を実施してください。」、Q1 の dispatch: p008 → p007 → p004）。
 - 範囲: [design.md](../design.md) §6 の p008。platform の残り（console・ramdisk・device の表）、`ns16550.c`（RX）、`serial-console.c`、`ramdisk.c`、MBR の root.img の `rootfs.mk`、FDT・initrd の名前付き handoff（#9 の (a)、p003 の HAL がすでに出している物を kernel 側で使う）、kernel の arch の `#if` の棚卸し。
