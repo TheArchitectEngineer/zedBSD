@@ -380,13 +380,6 @@ ZEDBSD_USER_PROGRAMS_DEPS_2 := $(sort $(ZEDBSD_USER_PROGRAMS_DEPS_1) \
 ZEDBSD_USER_PROGRAMS_DEPS_3 := $(sort $(ZEDBSD_USER_PROGRAMS_DEPS_2) \
 	$(call user_program_dependency_names,$(ZEDBSD_USER_PROGRAMS_DEPS_2)))
 override ZEDBSD_USER_PROGRAMS := $(ZEDBSD_USER_PROGRAMS_DEPS_3)
-# The RTL8822B initialization tables are BSD-3-Clause data embedded in the
-# kernel. Binary images containing that driver must carry the corresponding
-# notice even when the separately licensed firmware package is not selected.
-ifeq ($(strip $(CONFIG_DRIVER_USB_RTL8822BU)),y)
-override ZEDBSD_USER_PROGRAMS := $(sort \
-	$(ZEDBSD_USER_PROGRAMS) rtl8822b-tables-license)
-endif
 ifneq ($(strip $(ZEDBSD_TARGET_TRIPLE)),)
 override ZEDBSD_USER_PROGRAMS := $(sort \
 	$(ZEDBSD_USER_PROGRAMS) llvm-runtime-license)

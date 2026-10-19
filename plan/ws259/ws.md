@@ -3,7 +3,7 @@
 # WS259 RTL8822B の表（rtl8822b-tables.inc）を値の引用に書き換える
 
 - ID: ws259、Master: [master.md](../master.md)、Primary Milestone: MG005
-- Status: incomplete（2026-10-19 P2 q1258。p001 の書き換え・値の比べ・build は済み、license の package は判断待ち、実機の WiFi は実機待ち）
+- Status: incomplete（2026-10-19 P2 q1267。p001 の書き換え・値の比べ・build・license の package の取り外しは済み、package の directory の削除は Q1、実機の WiFi は実機待ち）
 - 起点（2026-10-18 ユーザー、クリック）: WS258 の監査で、`src/drivers/wifi/rtl8822b/rtl8822b-tables.inc` の先頭に上流の著作権表示と抜粋の宣言があった件に「WS244 と同じく書き換える」。
 - 規則: [Guardrail](../guardrail.md) の「MIT・GPL の出典のデータの引用」。値はデータとして block ごとに `Values referenced:` で引用し、上流の名前は zedBSD の名前に、file の先頭の表示・出典の一覧を外す。AGENTS.md の「RTL8822B の `.inc` は license を分けるために独立させており、別の file のまま保つ」は守る（file は分けたまま）。
 
@@ -18,6 +18,7 @@
 
 | Phase | 目的 | 状態 |
 | --- | --- | --- |
-| [p001](phase001/phase.md) | 書き換えと表の値の比べ | in-progress（2026-10-19 P2: 表の書き換えと値の比べ（13 配列とも同一、全配列の byte の SHA-256 一致）は済み、merge ee2de1f9d。残り: license の package の扱い（ユーザーの判断待ち）と実機の WiFi（実機待ち）。license の package の判断待ち・実機待ち） |
+| [p001](phase001/phase.md) | 書き換えと表の値の比べ | in-progress（2026-10-19 P2: 表の書き換えと値の比べ（13 配列とも同一、全配列の byte の SHA-256 一致）は済み、merge ee2de1f9d。license の package は外した（q1267、ユーザーの決定「外す」、Makefile の自動の選びと license-components.json の項目、directory の削除は Q1）。残り: 実機の WiFi（実機待ち）） |
 | [p002](phase002/phase.md) | 規約の全文の見直し（tables.inc の comment と名前） | cleared（2026-10-19 Q1） |
+- 決定（2026-10-19 ユーザー、クリック）: license の package は「外す」（WS244 の i915-driver と同じ。firmware の license は残す）。
 - 決定（2026-10-18 ユーザー、クリック）: 実機の WiFi の確かめは「実機は残して待つ」（host の表の比べと build まで済ませ、実機の Phase は in-progress（実機待ち））。

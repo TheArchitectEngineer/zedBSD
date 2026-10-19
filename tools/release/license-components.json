@@ -43,21 +43,6 @@
    "note": "src/libc/regex/LICENSE holds TRE's BSD-2-Clause and musl's MIT texts; the zedbsd-license package installs it, as libc is in every image."
   },
   {
-   "id": "rtl8822b-tables",
-   "name": "RTL8822B initialization tables",
-   "when": "driver:CONFIG_DRIVER_USB_RTL8822BU",
-   "license": "BSD-3-Clause",
-   "upstream": "Linux rtw88 tables",
-   "version": "",
-   "notices": [
-    "/usr/share/licenses/rtl8822b-tables/LICENSE"
-   ],
-   "paths": [
-    "src/drivers/wifi/rtl8822b/"
-   ],
-   "note": ""
-  },
-  {
    "id": "khronos-headers",
    "name": "Khronos headers (EGL, GLES, Vulkan) in /usr/include",
    "when": "always",
