@@ -45,3 +45,7 @@ Status: in-progress（2026-10-19 q1270-i02、P1。改訂 2（レビュー 1 の�
 - 改訂 2 の design-reviewer（Q1 が回す）。
 - Q1 への依頼: HAL の承認（#29）、design.md の直し 4 件（§8）、p020〜p023 の番号、tools（#28）。
 - ユーザーの判断: design-peripherals.md §6（#15・#10・#2・#20〜#31）。
+
+## レビュー 2（2026-10-19 Q1）
+
+[design-peripherals-review-2.md](../design-peripherals-review-2.md): Blocker 1（p021 の hook の EOI）・Major 7・Minor 13。p016 はそのまま進めてよい、p017 の virt は Minor 1 を当てて進めてよい。改訂 3 は P1 が q1271 の後に書く。
