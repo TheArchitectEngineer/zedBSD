@@ -1,7 +1,8 @@
 #!/bin/sh
 # Host check of ws269-p010a and p010c: the stage lines and hw.gpu.powervr.stages
 # text (stage.c), gpu-selftest's run of its stages against stand-in programs,
-# and the image formats, layouts and state words (image-state.c).
+# the image formats, layouts and state words (image-state.c), and (p010d) the
+# render targets' sizes, records and free list frames (render-target-layout.c).
 #   plan/ws269/tests/p010/run.sh OUTDIR
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
@@ -15,4 +16,7 @@ cc -std=c11 -O2 -Wall -Wextra -Werror -I"$root/include" -I"$root/src" \
 cc -std=c11 -O2 -Wall -Wextra -Werror -I"$root/include" -I"$root/src" \
 	"$root/src/drivers/gpu/powervr/image-state.c" "$here/image-host-test.c" -o "$out/image-host-test"
 "$out/image-host-test"
+cc -std=c11 -O2 -Wall -Wextra -Werror -I"$root/include" -I"$root/src" \
+	"$root/src/drivers/gpu/powervr/render-target-layout.c" "$here/target-host-test.c" -o "$out/target-host-test"
+"$out/target-host-test"
 sh "$here/selftest-host.sh" "$out"

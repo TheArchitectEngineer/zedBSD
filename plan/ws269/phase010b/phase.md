@@ -125,4 +125,23 @@ fe54c1cad7a9c5383b09607c64421a70631226a4 drivers/gpu/drm/imagination/pvr_rogue_f
 ccf6c2112468f3f53b093bc298dac2bbbfd35e6e include/uapi/drm/pvr_drm.h
 ```
 
+p010d（2026-10-20 P1 q1373）で足した（必須項目、raw を取って `git hash-object`、ref は上と同じ。置き場所は scratchpad の `p010d/`、plan/ には置かない）:
+
+```
+467d1d2073a1e10703b30dc402518977cc079afb drivers/gpu/drm/imagination/pvr_rogue_fwif_client_check.h
+5048866359b9dcbfed905b13924c095cecedecaf drivers/gpu/drm/imagination/pvr_rogue_fwif_check.h
+59ef0a9aa3950e3026f7b68c9ab29cb96ad30bf0 drivers/gpu/drm/imagination/pvr_rogue_fwif_shared_check.h
+b702d122d7918a6e60992c761db28e9b8a662995 drivers/gpu/drm/imagination/pvr_ccb.c
+850a3ec8e7750fd88fc73c3991df5c4b7eb60079 drivers/gpu/drm/imagination/pvr_fw.c
+5c33b342dda5d8d2222329e39437c5f783851214 drivers/gpu/drm/imagination/pvr_rogue_heap_config.h
+cbdd15ed74fdbb4bed1ce32ceaf651a44c13ee2b drivers/gpu/drm/imagination/pvr_vm.c
+24a8645aa9130b57a1c9adfda24c5542c102169d drivers/gpu/drm/imagination/pvr_queue.c
+4fabab41bea79016d9cc596149d18811f4e2e20b drivers/gpu/drm/imagination/pvr_cccb.c
+932b0168600896639216c5d2787a99fab28e760d drivers/gpu/drm/imagination/pvr_rogue_defs.h
+46186b56effc97b47c9671431de8515c4174f2e3 drivers/gpu/drm/imagination/pvr_rogue_cr_defs_client.h
+6ebb95ba98a60fc29d4c3bd1ed1219cc097b64d8 drivers/gpu/drm/imagination/pvr_rogue_fwif_common.h
+```
+
+Mesa 26.2.5（ddaf85e3…、GitLab の raw）: `ff9f131ccb7382cbb8b48b1413582d3741d79112 src/imagination/include/hwdef/pvr_hw_utils.h`、`61a6284867a5c5c86981c27cb65794dcca5e8a5e src/imagination/include/hwdef/rogue_hw_defs.h`、`a859059e9b6f7f296644266036dbde7cb4ff8977 src/imagination/include/hwdef/rogue_hw_utils.h`（cr.xml は上の M1 と同じ 823026654a0f…）。
+
 struct の位置: `pvr_rogue_fwif.h` fwrendercontext 734・fwtransfercontext 779・rta_ctl 2042・freelist 2061・hwrtdata_common 2117・hwrtdata 2141。`pvr_rogue_fwif_client.h` geom_regs 98・cmd_geom 136・frag_regs 171・cmd_frag 246・transfer_regs 317・cmd_transfer 360。`pvr_rogue_fwif_shared.h` static_rendercontext_state 180。

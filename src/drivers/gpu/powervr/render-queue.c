@@ -118,6 +118,11 @@ powervr_session_firmware_create(
 {
 	int error;
 
+	/* The program windows, with the executor's places held. */
+	error = powervr_session_heaps_init(session);
+	if (error != 0)
+		return error;
+
 	/* The tables come from runs below the core's limit; the callbacks find the limit through the node. */
 	session->mmu.memory = NULL;
 	error = powervr_gpu_mmu_init(&session->mmu, &render->table_memory);
@@ -172,7 +177,8 @@ void
 powervr_session_firmware_discard(
 	struct powervr_session *session)
 {
-	/* Returns each record's run. */
+	/* The render targets and free lists first, then each record's run. */
+	powervr_session_targets_discard(session);
 	powervr_object_drop(&session->context);
 	powervr_object_drop(&session->timeline);
 	powervr_object_drop(&session->client);
@@ -1483,7 +1489,8 @@ deliver(
  * Acts on one notice of the firmware; the core's lock is held.
  *
  * A context reset loses that session; a page fault of the firmware's own
- * or a request to restart loses the device.
+ * or a request to restart loses the device; a free list's request is
+ * answered.
  */
 static void
 handle_notice(
@@ -1508,9 +1515,11 @@ handle_notice(
 		return;
 	}
 
-	/* Other notices need nothing of the host yet. */
-	if (type != POWERVR_NOTICE_CONTEXT_RESET)
+	/* Other notices go to the render targets, which answer the free lists' requests and keep their statistics. */
+	if (type != POWERVR_NOTICE_CONTEXT_RESET) {
+		powervr_targets_notice(render, type, buffer, offset);
 		return;
+	}
 
 	/* A context the firmware reset: finds its session and marks it lost. */
 	identity = powervr_object_get32(buffer, offset + POWERVR_COMMAND_DATA + POWERVR_NOTICE_CONTEXT_ID);

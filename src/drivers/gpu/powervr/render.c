@@ -652,9 +652,20 @@ render_close(
 
 	spin_unlock_irqrestore(&render->queue_lock, enabled);
 
+	/* Work that ran out of time may still run: the firmware is not asked to clean up under it. */
+	if (session->abandoned)
+		keep = 1;
+
 	/* A context that ran is cleaned up by the firmware before its records go. */
 	if (!keep && session->kicked) {
 		error = powervr_session_cleanup(render, session);
+		if (error != 0)
+			keep = 1;
+	}
+
+	/* Then its render targets and free lists, which the context used. */
+	if (!keep) {
+		error = powervr_session_targets_cleanup(render, session);
 		if (error != 0)
 			keep = 1;
 	}
@@ -671,7 +682,8 @@ render_close(
 		return;
 	}
 
-	/* Returns its tables and records, then the bookkeeping. */
+	/* Returns its render targets, its tables and records, then the bookkeeping. */
+	powervr_session_targets_destroy(render, session);
 	powervr_session_firmware_destroy(render, session);
 	kern_free(session);
 }

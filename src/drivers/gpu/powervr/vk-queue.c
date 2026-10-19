@@ -70,6 +70,9 @@
 #define QUEUE_STREAM_BYTES		0x10000U
 #define QUEUE_STREAM_FIRST		0x1000U
 
+_Static_assert(QUEUE_USC_OFFSET == POWERVR_PROGRAM_HEAP_START && QUEUE_USC_BYTES <= POWERVR_EXECUTOR_USC_BYTES, "the executor's programs are in the place the session holds for them");
+_Static_assert(QUEUE_PDS_OFFSET == POWERVR_PROGRAM_HEAP_START && QUEUE_PDS_BYTES <= POWERVR_EXECUTOR_PDS_BYTES, "the executor's programs are in the place the session holds for them");
+
 /* The data sequencer temporaries a compute kernel's inputs take, and the fence kernel's task size. */
 #define QUEUE_PDS_INPUTS		3U
 #define QUEUE_FENCE_INSTANCES		8U
@@ -986,6 +989,7 @@ run(
 	error = powervr_session_wait(owner, value, QUEUE_WAIT_MS);
 	if (error != 0) {
 		build->session->abandoned = true;
+		owner->abandoned = 1;
 		powervr_stage_fail(POWERVR_STAGE_COMPUTE, powervr_stage_reason_of(error));
 		return error;
 	}
