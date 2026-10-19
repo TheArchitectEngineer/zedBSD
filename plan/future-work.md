@@ -119,3 +119,5 @@ Future Work は実行を許可しない。
 
 2026-10-05 Q1（WS140 の結果の反映）: F-070（ld.so の上限の動的化）は WS140 で実装した（0484201b・360c7dbe・a555c47a、T1-164 PASS、amd64）。ws115-p010 の手順 1（定数を上げる）は不要になったので、再開の時は gtk4-widget-factory の起動から確かめる。
 
+
+| FW-LLVM-MIPS64-SYM32 | LLVM の n64＋sym32 で compiler の libcall（memcpy など）が `jalr memcpy` になり object の出力で「expected an immediate」で止まる。WS272 p003 は -mlong-calls（LTO は +long-calls）で避けた（call ごとに 2 命令増える） | WS272 p003（2026-10-19 P1） | 上流の LLVM の直りを見て -mlong-calls を外す | 未着手 |
