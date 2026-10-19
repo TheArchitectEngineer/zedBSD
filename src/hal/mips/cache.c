@@ -161,14 +161,14 @@ mips_cache_init(
 		cache_alias = 1;
 
 	/* Reports the shape of both caches and whether pages have colors. */
-	hal_printf(MIPS_HAL_NAME " CACHE I %ux%ux%u D %ux%ux%u alias=%d\n",
+	hal_printf(MIPS_HAL_NAME " CACHE I %ux%ux%u D %ux%ux%u alias=%u\n",
 		   cache_instruction.line,
 		   cache_instruction.way_bytes,
 		   cache_instruction.ways,
 		   cache_data.line,
 		   cache_data.way_bytes,
 		   cache_data.ways,
-		   cache_alias);
+		   (unsigned)cache_alias);
 
 	/* The secondary cache and the virtual tags, only where they are. */
 	if (cache_secondary.line != 0) {
@@ -178,7 +178,7 @@ mips_cache_init(
 			   cache_secondary.ways);
 	}
 	if (cache_virtual_tags)
-		hal_printf(MIPS_HAL_NAME " CACHE I VIRTUAL TAGS forced=%d\n", CACHE_FORCED);
+		hal_printf(MIPS_HAL_NAME " CACHE I VIRTUAL TAGS forced=%u\n", (unsigned)CACHE_FORCED);
 }
 
 /*
