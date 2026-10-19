@@ -602,6 +602,82 @@ test_groups(void)
 		check_program(groups, 1, expected, sizeof(expected), "conditional branch group");
 	}
 
+	/*
+	 * The context store and resume burst (design-p010.md 5.4): index
+	 * register 0 set from a temporary, then a load and a store of a
+	 * register-given burst whose shared registers are named through it.
+	 *
+	 * Values referenced:
+	 * Mesa 26.2.5 src/imagination/pco/pco_trans_nir.c
+	 * (dma_ld_shregs_pco, dma_st_shregs_pco: the offset moved into index
+	 * register 0, shared register 0 named through it), pco_map.py
+	 * (O_LD_REGBL: address s0, burst s1, the shared registers as s3;
+	 * O_ST32_REGBL: data s0, burst s2, address s3; F_IDXBANK shared 0b011,
+	 * idx 0b101) and pco_map.h.py (pco_map_reg_index: the index bank
+	 * and the offset shifted by 3, in the 11-bit form).
+	 *
+	 * The index register is bank idx0 110, index idx 101 offset 0; the
+	 * shared registers through it bank 110, index shared 011 offset 0.
+	 * In the 11-bit destination form: ext0 1 db 0 d 000101, then rsvd 0
+	 * d 000 db 11 d 00.  In the 11-bit upper source form: ext0 1 sbA 0
+	 * sA 000011, then 00 00 sbA 11 sA 00, then 00000 000.
+	 */
+	{
+		static const uint8_t expected[] = {
+			0x38, 0x82, 0x00, 0x87, 0xc2, 0x00, 0x00, 0x00,
+			0x30, 0x85, 0x0c, 0xff, 0xf2, 0xff, 0xff, 0xff
+		};
+
+		group_start(&groups[0], POWERVR_USC_UNIT_MAIN);
+		groups[0].write_0 = 1;
+		groups[0].internal[4] = 3;
+		groups[0].mux_used = 1;
+		groups[0].mux = 0;
+		powervr_usc_single(POWERVR_USC_SINGLE_PASS, 0, 0, &groups[0].operation[POWERVR_USC_PHASE_0]);
+		set_register(&groups[0].source[0], POWERVR_USC_BANK_TEMPORARY, 2);
+		set_register(&groups[0].destination[0], POWERVR_USC_BANK_INDEXED_0, 5);
+		check_program(groups, 1, expected, sizeof(expected), "index register 0 from a temporary");
+	}
+
+	/*
+	 * ld regbl: header oporg be 010, no writes; the load 111 0 0 001,
+	 * then add s0 000 bl s1 001 cache 00; temporaries 4 and 6 in the
+	 * short two-source form; the shared registers through index 0 as s3.
+	 */
+	{
+		static const uint8_t expected[] = {
+			0x58, 0xa0, 0x00, 0xe1, 0x04, 0xc4, 0xa6, 0x83,
+			0x0c, 0x00, 0x00, 0xff, 0xf2, 0xff, 0xff, 0xff
+		};
+
+		group_start(&groups[0], POWERVR_USC_UNIT_MAIN);
+		powervr_usc_load(0, 0, 1, 0, 0, &groups[0].operation[POWERVR_USC_PHASE_BACKEND]);
+		set_register(&groups[0].source[0], POWERVR_USC_BANK_TEMPORARY, 4);
+		set_register(&groups[0].source[1], POWERVR_USC_BANK_TEMPORARY, 6);
+		set_register(&groups[0].source[3], POWERVR_USC_BANK_INDEXED_0, 3);
+		check_program(groups, 1, expected, sizeof(expected), "shared register burst load");
+	}
+
+	/*
+	 * st regbl: the store 111 0 0 010, then add s3 011 bl s2 010 cache 00,
+	 * then tiled 0 data s0 000 dsize 32 10 0 burst3 0; the shared
+	 * registers through index 0 as s0, the burst in temporary 6 as s2,
+	 * the address pair in temporary 4 as s3.
+	 */
+	{
+		static const uint8_t expected[] = {
+			0x68, 0xa0, 0x00, 0xe2, 0x68, 0x08, 0x83, 0x40,
+			0x90, 0x46, 0x0c, 0x00, 0x44, 0x00, 0xf1, 0xff
+		};
+
+		group_start(&groups[0], POWERVR_USC_UNIT_MAIN);
+		powervr_usc_store(3, 0, 2, 0, 2, 0, 0, &groups[0].operation[POWERVR_USC_PHASE_BACKEND]);
+		set_register(&groups[0].source[0], POWERVR_USC_BANK_INDEXED_0, 3);
+		set_register(&groups[0].source[2], POWERVR_USC_BANK_TEMPORARY, 6);
+		set_register(&groups[0].source[3], POWERVR_USC_BANK_TEMPORARY, 4);
+		check_program(groups, 1, expected, sizeof(expected), "shared register burst store");
+	}
+
 	/* The refusals of whole groups. */
 	group_start(&groups[0], POWERVR_USC_UNIT_MAIN);
 	powervr_usc_bit_logic(0, 0, 0, &groups[0].operation[POWERVR_USC_PHASE_1]);
