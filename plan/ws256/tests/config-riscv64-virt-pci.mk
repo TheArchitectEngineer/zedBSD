@@ -53,4 +53,4 @@ CONFIG_DRIVER_BCM2711_VCHIQ := n
 CONFIG_DRIVER_BCM2711_VIDEO := n
 CONFIG_DRIVER_LGY98 := n
 
-ZEDBSD_USER_PROGRAMS := cat dd echo login ls mkdir mkfs mount sh sync uname
+ZEDBSD_USER_PROGRAMS := cat cmp dd dmesg echo grep login ls mkdir mkfs mount od sh sync uname

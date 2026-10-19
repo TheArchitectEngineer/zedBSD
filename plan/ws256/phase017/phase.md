@@ -21,10 +21,24 @@ Status: in-progress（virt の部分の実装・build は済み。QEMU は T1 �
 - host の単体試験: pci-nvme の INTx の枝には無し（短い host の試験で偽の PCI core を組むと大きいので、T1 の QEMU の回帰で確かめる）。
 - 未実施: QEMU（T1、下）、実機（p020 の後）、NVMe の root（p015 の後）。
 
-## T1 への依頼（Q1 経由、p016 の依頼と 1 つの QEMU の枠にまとめてよい）
+## T1-723 の結果の解析（P1、2026-10-19、source を読んだだけ。build・QEMU は未実施）
 
-1. riscv64 virt の NVMe（INTx）: image は p016 と同じ。disk は `truncate -s 64M build/tmp/p017-nvme.img`（host、T1 の dir）。
-   `BOOT_MODE=riscv64-virt INITRD=build/riscv64-virt/root.img QEMU_EXTRA='-drive file=…/p017-nvme.img,if=none,id=nv,format=raw -device nvme,drive=nv,serial=zt17' BOOT_PATTERN=$'nvme: PCI controller\nlogin:' …`。合格: 画面に `nvme: PCI controller … INTx` と namespace の公開。続けて serial の `type:` で（login の後）: disk の名前を `ls /dev` で確かめ、`mkfs -t ufs /dev/<disk>`、`mkdir /mnt`、`mount -t ufs <disk> /mnt`、`echo p017 > /mnt/a`、`sync`、`cat /mnt/a` → 画面に `p017`。可能なら umount して mount し直して `cat` も。合格: mkfs・mount が成功し、書いた文字列が読める（I/O の完了は割り込みの道なので、INTx が動いた証拠）。
-2. 回帰 amd64 の NVMe（MSI-X）: main の amd64 の image を `boot-test.sh` の NVMe の起動（既定の `-device nvme` の道）で起動し login prompt まで。合格: login prompt、可能なら画面の `nvme: PCI controller … MSI-X` の行。
-3. 回帰 Pi 4 の build: `make ZEDBSD_CONFIG=config/ci/config-rpi4.mk -j16 vmunix` が warning 0（host で P1 が確かめ済み。実機・QEMU の起動は不要、pci.c と pci-brcmstb.c は無変更）。
+- `vfs: scan nvme0n1 geometry error=21`: 21 は `EOPNOTSUPP`（`include/uapi/errno.h`）。vfs の scan は `DISK_IOCTL_GET_GEOMETRY`（CHS の H/S）を聞くが、pci-nvme は disk の ioctl を持たない（実装は ahci・ide・usb-storage・uas だけ）。amd64 の NVMe でも同じ行が出る。害は無く、続く `partition_scan` が LBA 0 を読んでいる（行末の `N entries` が 0 以上なら、その読みは完了している）。
+- `mkfs -t ufs /dev/nvme0n1` の Invalid argument: tool の仕様。`--profile=native` の無い `-t ufs` は image の file を作る道（`userland/base/common/format-file.c` の `format_file_run`）で、`S_ISREG` でない物を `EINVAL` で拒む。device を format するのは `mkfs -t ufs --profile=native DEVICE`（`block-command.c`）で、`Type FORMAT nvme0n1:<registration> to continue:` に同じ文字列を打って答える。
+- `mount -t ufs nvme0n1 /mnt` の Operation not supported: format されていない disk の superblock の magic が合わない時の `EOPNOTSUPP`（`src/drivers/fs/ufs.c` の superblock の解読）。superblock の読みが完了したので出る error で、I/O が返らなければ mount は返らないか EIO になる。よって INTx の I/O の完了は、読みについては来ている見込みが高い（未確認、下の試験で確かめる）。
+- source の不具合: 見つからなかった。pci-nvme.c は変えていない。
+- 早い起動の行: 試験の config（`plan/ws256/tests/config-riscv64-virt-pci.mk`）の programs に `dmesg`・`grep`・`cmp`・`od` を足した（`dmesg` は sysctl の `kern.msgbuf` を読む）。riscv64 の build は LLVM の作り直しの後に未確認。
+
+## T1 への依頼（改訂、Q1 経由）
+
+image は `ZEDBSD_CONFIG=plan/ws256/tests/config-riscv64-virt-pci.mk` で作り直す（programs が増えた）。disk は `truncate -s 64M`（host、T1 の dir）、起動は前回と同じ `-device nvme,drive=nv,serial=zt17`。
+
+1. riscv64 virt の NVMe（INTx）、login の後に serial の `type:` で:
+   1. `dmesg | grep -e nvme -e 'scan nvme'` → 画面に `nvme: PCI controller … INTx` と `vfs: scan nvme0n1 … N entries`（N ≥ 0）。
+   2. 生の device の読み書き: `dd if=/dev/nvme0n1 of=/dev/null bs=512 count=64` が返る。`echo p017raw > /tmp/s`、`dd if=/tmp/s of=/dev/nvme0n1 bs=512 count=1 conv=sync`、`dd if=/dev/nvme0n1 bs=512 count=1 | od -c | grep p017raw` → 画面に `p 0 1 7 r a w`（od の表示）。`/tmp` が無ければ `/` 以外の書ける所に置き換える。
+   3. format と mount: `mkfs -t ufs --profile=native /dev/nvme0n1`、表示された `Type FORMAT nvme0n1:<n> to continue:` の文字列をそのまま打つ → `initialized and verified`。`mkdir /mnt`、`mount -t ufs nvme0n1 /mnt`、`echo p017 > /mnt/a`、`sync`、`cat /mnt/a` → `p017`。可能なら umount → mount → `cat`。
+   合格: 1〜3 が画面で全部見える（書き込みと読み戻しの完了は割り込みの道なので INTx が動いた証拠）。
+2. 回帰 amd64 の NVMe（MSI-X）: 前回と同じ（main の amd64 の image を `boot-test.sh` の NVMe の起動で login prompt まで、可能なら `nvme: PCI controller … MSI-X`）。
+3. 回帰 Pi 4 の build: 前回と同じ（warning 0）。
 - 判定は画面。serial・console の log は判定に使わない。
+- 失敗した時（I/O が返らない・hang）に要る gdbstub の調べ: `nvme_irq` と INTx の dispatch（`pci_intx_dispatch`）に breakpoint、PLIC の該当の source の pending・enable、NVMe の CSTS と CQ の head、command register の INTx Disable の bit。
