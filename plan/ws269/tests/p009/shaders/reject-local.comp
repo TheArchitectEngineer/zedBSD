@@ -1,0 +1,5 @@
+#version 450
+// Another builtin (the local invocation id): outside the subset.
+layout(local_size_x = 32) in;
+layout(std430, binding = 0) buffer Data { uint data[]; };
+void main() { data[gl_GlobalInvocationID.x] = gl_LocalInvocationID.x; }
