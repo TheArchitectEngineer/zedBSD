@@ -7,6 +7,8 @@ AWK ?= awk
 # The board the HAL is built for.
 RISCV64_BOARD_DEFINE_virt := -DHAL_BOARD_VIRT
 RISCV64_BSP_DIR_virt := bsp-virt
+RISCV64_BOARD_DEFINE_visionfive2 := -DHAL_BOARD_VISIONFIVE2
+RISCV64_BSP_DIR_visionfive2 := bsp-visionfive2
 
 # The kernel and the HAL read the compiler's freestanding headers and the
 # tree's include/ and src/, never the C library (as on the other ports).
@@ -31,6 +33,9 @@ RISCV64_KERNEL_LTO_CFLAGS := $(ZEDBSD_KERNEL_LTO_CFLAGS)
 RISCV64_BSP := src/hal/riscv64/$(RISCV64_BSP_DIR_$(ZEDBSD_BOARD))
 RISCV64_BSP_C_virt := $(RISCV64_BSP)/board.c $(RISCV64_BSP)/cons.c \
 	$(RISCV64_BSP)/fwcfg.c $(RISCV64_BSP)/framebuffer.c $(RISCV64_BSP)/font.c
+# The VisionFive 2's board: the shared L2 cache controller's maintenance
+# (ws256-p025).
+RISCV64_BSP_C_visionfive2 := $(RISCV64_BSP)/board.c
 
 RISCV64_BOOT_C := src/hal/riscv64/cmain.c src/hal/riscv64/bootinfo.c \
 	src/hal/riscv64/fdt.c src/hal/riscv64/sbi.c src/hal/riscv64/percpu.c \
@@ -50,6 +55,11 @@ RISCV64_BOOT_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(RISCV64_BOOT_C)) \
 RISCV64_PLATFORM_SOURCES_virt := src/kern/platform/riscv-virt.c \
 	src/drivers/serial/ns16550.c src/drivers/generic/serial-console.c \
 	src/drivers/generic/ramdisk.c
+# The VisionFive 2's binding (ws256-p025): the teletype console on the
+# hardware layer's output and the initial ramdisk as the boot device.  The
+# board's devices come with later phases.
+RISCV64_PLATFORM_SOURCES_visionfive2 := src/kern/platform/visionfive2.c \
+	src/drivers/generic/serial-console.c src/drivers/generic/ramdisk.c
 
 RISCV64_KERNEL_SOURCES := \
 	src/kern/main.c \
