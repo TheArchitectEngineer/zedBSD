@@ -22,6 +22,7 @@
 | Phase | 中身 | 依存 | Status |
 | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | 設計（起動の道・LCD・SD・入力・Phase の分割）。コードは書かない | WS271 | cleared（2026-10-19 Q1、改訂 2.1。D1〜D8 は未決） |
+| [p002](phase002/phase.md) | MIPS の共通の層の変更（Cause・0x200、PageCtrl、入口の cache、early mark、timer の bsp 化、VTAG・L2、console の共通化、試験の切り替え）。malta は不変 | p001 | 実装済み・T1 の結果待ち（2026-10-19 P1 q1327、commit 8b44436a0。build 4 種 warning 0、host 試験 PASS） |
 
 残りの Phase は p001 の設計から作る。
 
