@@ -24,7 +24,7 @@
 
 ## Phase
 
-[design.md](design.md) §6 の表の写し（2026-10-18 改訂 2）。実行の順は ID の順ではない: p009 ∥ p003 → p008 → p007（p010 が途中）→ p004 → p005 → p006。LW は 1 LW ≈ 実時間 15〜25 分、±50%。
+[design.md](design.md) §6 の表の写し（2026-10-18 改訂 2、2026-10-19 に p005 から p025 を分けた: design.md §12）。実行の順は ID の順ではない: p009 ∥ p003 → p008 → p007（p010 が途中）→ p004 → p025 → p005 → p006。LW は 1 LW ≈ 実時間 15〜25 分、±50%。
 
 | Phase | 目的・範囲 | 依存 | LW | 状態 |
 | --- | --- | --- | --- | --- |
@@ -59,7 +59,7 @@
 ## 未決（Q1 がユーザーに聞く。詳細と既定の案は [design.md](design.md) §7.2）
 
 - 板の版（v1.2A・v1.3B）と memory の大きさ（2・4・8 GB）（#2）。
-- 実機の試験の接続（USB-UART・電源の制御・LAN）（#10）と、**実機の判定の方法**（画面が無い。serial.py の対話を実機に限る例外にするか: #15）。
+- 実機の試験の接続（USB-UART・電源の制御・LAN）（#10）と、**実機の判定の方法**（p011 (2) の前は画面が無い。serial.py の対話を実機に限る例外にするか: #15）。
 - root の媒体（initrd か SD: #4）と #3（周辺を後の WS にするか）は 2026-10-19 のユーザーの指示で決着: framebuffer・SD・rootfs・USB keyboard・LAN・sound・NVMe はこの WS（p011〜p019）。eMMC は未定。GPU は [WS269](../ws269/ws.md)、Keiland は [WS270](../ws270/ws.md)。
 - `include/kern/boot.h` を変えるか（#9: 既定は変えず HAL の名前付き handoff object）、HAL の差分 2 件＋名前付き object の承認（#13、p003 の前）、toolchain の p010（#14）。
 - sifive_u の走りを gdbstub の読み取りで判定に数えるか（#17）、p009 の tools の変更の担当（#18）。
