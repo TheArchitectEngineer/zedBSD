@@ -1,0 +1,14 @@
+案（未適用、HAL の API の file。適用には差分ごとのユーザーの承認が要る。design.md 版 2 の §2.4・Minor 10）
+意味は変えず comment だけ。RG350（JZ4770）は CP0 の Count が無く、SoC の timer で tick を作るため。
+
+--- a/include/hal/arch/mips32.h
++++ b/include/hal/arch/mips32.h
+@@ -11,6 +11,6 @@
+ /*
+  * The periodic tick, in hertz.  As on the other ports the kernel keeps a
+- * millisecond tick; the coprocessor 0 counter runs at a rate the board
+- * knows, and the HAL derives the interval from this value.
++ * millisecond tick; the HAL programs the board's timer source (the
++ * coprocessor 0 counter, or a SoC timer where the core has none) from it.
+  */
+ #define HAL_TIMER_FREQUENCY	(1000U)

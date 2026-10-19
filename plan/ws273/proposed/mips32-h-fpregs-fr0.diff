@@ -1,0 +1,20 @@
+案（未適用、この WS では使わない。design.md 版 2 の D3。userland の WS で FR=0 に対応すると決めた時の叩き台）
+FR=0（XBurst1 の FPU が FIR.F64=0 の時）の hal_fpregs の意味を定める。適用には差分ごとのユーザーの承認が要る。
+kernel 側の影響: src/kern/ptrace.c の fpreg の写し（FR=0 では偶奇の対の上位を含めて f[2n] に 64 bit で詰める案）。
+
+--- a/include/hal/arch/mips32.h
++++ b/include/hal/arch/mips32.h
+@@ -133,9 +133,13 @@
+ /*
+- * The floating-point state: the thirty-two 64-bit registers the unit has
+- * with Status.FR set, its control and status register and its
+- * implementation register.
++ * The floating-point state, its control and status register and its
++ * implementation register.  With Status.FR set each of the thirty-two
++ * entries holds one 64-bit register.  With Status.FR clear (a unit
++ * without 64-bit registers) each entry holds one 32-bit register in its
++ * low half, the high half is zero, and an even/odd pair forms one
++ * double; fir tells the two forms apart.
+  */
+ struct hal_fpregs {
+ 	uint64_t f[32];
