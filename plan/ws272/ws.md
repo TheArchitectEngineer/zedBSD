@@ -3,7 +3,7 @@
 # WS272 MIPS64（mips64el）の QEMU malta への移植（framebuffer の console・VFS の段まで）
 
 - ID: ws272、Master: [master.md](../master.md)、Primary Milestone: MG008
-- Status: planning（2026-10-19 14:13 Q1 作成）
+- Status: incomplete（p001 cleared 2026-10-19。旧: planning（2026-10-19 14:13 Q1 作成）
 - 起点（2026-10-19 ユーザー）: 「MIP32とMIPS64のカーネルも作りたいです。ただ、ボードがないなあ。virtで作れそうですか？Anbernic RG 350と、Cobalt Qube 初代、EdgeRouter X はあります。MIPS Creatorは購入できそう。」→（クリック）始め方「malta の little endian」、toolchain「許可する」（LLVM に Mips の target、Q1 が行う）、最初の実機「RG350」
 - 前提: QEMU の `qemu-system-mips64el -M malta（MIPS64r2 の CPU、little endian）`。画面は malta の PCI の VGA（Bochs の linear framebuffer）を HAL が設定して console を描く案（p001 で確かめる）。共有の LLVM に Mips の target が要る（Q1、ユーザーの許可 2026-10-19）。WS263〜WS266（riscv32・ppc32・ppc64・m68k）と同じ到達点と規則。
 - 実機の候補（2026-10-19 14:14 ユーザー）: 「ちなみにQubeはPCI USBボードが使える状態です。DisplayLinkでX11が動いた実績はあります。今回は画面はスコープ外でいいですが。」 → Cobalt Qube（初代、QED RM5230、MIPS IV、little endian、Q1 の覚えで未確認）は PCI の USB の板が使える。Qube の画面（DisplayLink）は範囲外。Qube の実機の WS は着手の時に立てる。

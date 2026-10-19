@@ -594,7 +594,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS269](ws269/ws.md) | MG008 | VisionFive 2 の GPU（PowerVR BXE-4-32）の driver（2026-10-19 ユーザー） | planning（WS256 の後） | — |
 | [WS270](ws270/ws.md) | MG008 | VisionFive 2 で Keiland の desktop を動かし、OS を完全に動かす（2026-10-19 ユーザー） | planning（WS256・WS269 の後） | — |
 | [WS271](ws271/ws.md) | MG008 | MIPS32（mipsel）の QEMU malta への移植、framebuffer の console・VFS の段まで（2026-10-19 ユーザー） | incomplete（p001 は改訂 2、p002 を P1 が q1279） | p002 → p003 → p004 → p005 |
-| [WS272](ws272/ws.md) | MG008 | MIPS64（mips64el）の QEMU malta への移植、framebuffer の console・VFS の段まで（2026-10-19 ユーザー） | planning | LLVM の Mips の target（Q1）→ p001 |
+| [WS272](ws272/ws.md) | MG008 | MIPS64（mips64el）の QEMU malta への移植、framebuffer の console・VFS の段まで（2026-10-19 ユーザー） | incomplete（p001 cleared 2026-10-19） | WS271 p002 の後に p002 |
 | [WS273](ws273/ws.md) | MG008 | Anbernic RG350（JZ4770、MIPS32）の実機への移植（2026-10-19 ユーザー） | planning（WS271 の後） | — |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
