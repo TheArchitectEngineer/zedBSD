@@ -202,8 +202,8 @@ endef
 $(foreach command,$(USERLAND_SELECTED_NETWORK_PROGRAMS),\
 	$(eval $(call RISCV64_APP_NET_COMMAND,$(command))))
 
-# The static objects: libcurses for programs built on or for the target,
-# and the static programs (the sandboxed helpers), as on arm64.  The kernel
+# The static objects for the static programs (the sandboxed helpers), as on
+# arm64.  The kernel
 # gives a static image no TLS block on this processor, so such a program
 # must carry no PT_TLS; check-user-elf.py refuses one that does.
 RISCV64_USER_CPPFLAGS := -nostdinc -isystem $(RISCV64_SYSROOT)/usr/include \
@@ -221,7 +221,12 @@ $(BUILD)/user/%.o: %.c $(RISCV64_SYSROOT)/.zedbsd-sysroot-complete
 	$(RISCV64_CC) $(RISCV64_USER_CPPFLAGS) $(RISCV64_USER_CFLAGS) \
  -fno-strict-aliasing -MMD -MP -c $< -o $@
 
-RISCV64_USER_CURSES_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(BUILD)/user,curses)
+# /lib/libcurses.a is what a program built on or for the target links, and
+# those programs are position independent, so the archive holds the
+# position-independent objects the shared libraries are built from, as on
+# amd64.  The medlow non-PIC code would use absolute addresses.
+RISCV64_USER_CURSES_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,\
+	$(DYNAMIC_DIR)/obj,curses)
 $(BUILD)/lib/libcurses.a: $(RISCV64_USER_CURSES_OBJS)
 	@mkdir -p $(dir $@)
 	$(AR) rcs $@ $^
