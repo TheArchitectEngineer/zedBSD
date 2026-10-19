@@ -1140,11 +1140,14 @@ wait_register(
 	/* Polls in short sleeps until the bits match or the bound is spent. */
 	deadline = ms_deadline(IDLE_WAIT_MS);
 	for (;;) {
+		/* Reads the register at its width. */
 		if (wide) {
 			current = powervr_read64(core, offset);
 		} else {
 			current = powervr_read32(core, offset);
 		}
+
+		/* Stops once the masked bits read as asked. */
 		if ((current & mask) == value)
 			break;
 
