@@ -63,6 +63,12 @@ _Static_assert(__builtin_offsetof(struct smp_boot_block, stack_top) == RISCV64_B
 _Static_assert(__builtin_offsetof(struct smp_boot_block, cpu) == RISCV64_BOOT_BLOCK_CPU,
 	       "locore.S reads the logical number at this offset");
 
+/*
+ * The secondary hart's way in.
+ *
+ * locore.S defines the entry, which the firmware starts a hart at, and
+ * calls the main below from it; neither has a header of its own.
+ */
 void riscv64_secondary_entry(void);
 void riscv64_secondary_main(uint64_t cpu, uint64_t hart_id);
 
@@ -106,6 +112,8 @@ void
 riscv64_smp_bootstrap(
 	uint64_t hart_id)
 {
+	struct riscv64_percpu *record;
+
 	/* Makes the record the boot hart's own before any lock is taken. */
 	riscv64_percpu_bootstrap(0, hart_id);
 	cpu_hart_id[0] = hart_id;
@@ -113,7 +121,8 @@ riscv64_smp_bootstrap(
 	/* The boot hart is up from here on. */
 	hal_cpu_mask_zero(&ready_mask);
 	hal_cpu_mask_set(&ready_mask, 0);
-	__atomic_store_n(&riscv64_percpu_get(0)->ready, 1U, __ATOMIC_RELEASE);
+	record = riscv64_percpu_get(0);
+	__atomic_store_n(&record->ready, 1U, __ATOMIC_RELEASE);
 }
 
 /*
@@ -142,6 +151,7 @@ riscv64_smp_configure(
 	info = riscv64_boot_fdt();
 	usable = 0;
 	for (index = 0; index < info->cpu_count; index++) {
+		/* Counts only the harts the tree marks as usable. */
 		entry = &info->cpus[index];
 		if (!entry->usable)
 			continue;
@@ -158,6 +168,8 @@ riscv64_smp_configure(
 		/* Stops at the limit. */
 		if (cpu_count >= limit)
 			break;
+
+		/* Gives the hart the next logical number. */
 		cpu_hart_id[cpu_count] = entry->hart_id;
 		cpu_count++;
 	}
@@ -232,6 +244,7 @@ hal_cpu_start_others(
 
 	/* Starts each hart and waits until it is up. */
 	for (cpu = 1; cpu < cpu_count; cpu++) {
+		/* Stops at the first hart that cannot be started. */
 		error = start_one(cpu);
 		if (error != HAL_OK)
 			return error;
@@ -240,8 +253,10 @@ hal_cpu_start_others(
 	/* Closes the HAL's part of the boot log with what the bring-up showed. */
 	describe_bringup();
 
-	/* Succeeded: every hart the kernel was told about is up. */
+	/* Reports that every hart is online. */
 	hal_printf("RISCV64 SMP %u ONLINE\n", cpu_count);
+
+	/* Succeeded: every hart the kernel was told about is up. */
 	return HAL_OK;
 }
 
@@ -286,6 +301,8 @@ riscv64_secondary_main(
 
 	/* Joins the kernel's scheduler; this never returns. */
 	kernel_secondary_entry((hal_cpu_id_t)cpu);
+
+	/* A return from the scheduler leaves the hart with nothing to run. */
 	HAL_FATAL("kernel_secondary_entry returned");
 }
 
@@ -336,6 +353,7 @@ hal_cpu_notify_mask(
 
 	/* Refuses a mask that names a hart the kernel was not told about. */
 	for (cpu = cpu_count; cpu < HAL_CPU_MAX; cpu++) {
+		/* A bit past the told harts makes the whole mask invalid. */
 		named = hal_cpu_mask_test(targets, cpu);
 		if (named)
 			return HAL_ERR_INVALID;
@@ -344,12 +362,17 @@ hal_cpu_notify_mask(
 	/* Every named hart must be up before any is notified. */
 	any = 0;
 	for (cpu = 0; cpu < cpu_count; cpu++) {
+		/* A hart the mask leaves out is not looked at. */
 		named = hal_cpu_mask_test(targets, cpu);
 		if (!named)
 			continue;
+
+		/* Refuses the request while a named hart is not up. */
 		ready = cpu_is_ready(cpu);
 		if (!ready)
 			return HAL_ERR_STATE;
+
+		/* The mask names at least one hart. */
 		any = 1;
 	}
 
@@ -359,9 +382,12 @@ hal_cpu_notify_mask(
 
 	/* Notifies each named hart. */
 	for (cpu = 0; cpu < cpu_count; cpu++) {
+		/* A hart the mask leaves out is not notified. */
 		named = hal_cpu_mask_test(targets, cpu);
 		if (!named)
 			continue;
+
+		/* Raises the notification on the named hart. */
 		error = send_reason(cpu, RISCV64_IPI_NOTIFY);
 		if (error != HAL_OK)
 			return error;
@@ -388,6 +414,7 @@ riscv64_smp_take_ipi(
 	/* Serves the reasons until a pass finds none. */
 	cpu = riscv64_percpu_current();
 	for (;;) {
+		/* Clears the pending bit, then takes every reason set so far. */
 		riscv64_clear_sip(RISCV64_SIE_SSIE);
 		reasons = __atomic_exchange_n(&cpu->ipi_reasons, 0UL, __ATOMIC_ACQ_REL);
 		if (reasons == 0)
@@ -579,6 +606,7 @@ start_one(
 	now = riscv64_read_time();
 	deadline = now + frequency * SMP_SECONDARY_WAIT_MS / 1000U;
 	for (;;) {
+		/* Leaves the wait once the hart has published itself. */
 		ready = cpu_is_ready(cpu);
 		if (ready)
 			break;
