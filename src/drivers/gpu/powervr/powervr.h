@@ -94,6 +94,40 @@ struct drv_powervr_dc_place {
 int drv_powervr_dc_probe(const struct drv_powervr_dc_place *place);
 
 /*
+ * Where the parts the driver sets when it lights the output itself are:
+ * the controller, the HDMI transmitter's window, and the display
+ * subsystem's control block (subsystem 0 when the loader powered the
+ * output and its bits are left alone).
+ */
+struct drv_powervr_dc_own_place {
+	struct drv_powervr_dc_place controller;
+	uint64_t hdmi;
+	uint64_t hdmi_size;
+	uint64_t subsystem;
+	uint64_t subsystem_size;
+};
+
+/*
+ * Lights the HDMI output at the mode the boot line names with
+ * display.mode= (1920x1080 at 60 Hz without one) and shows a framebuffer
+ * on the HDMI panel's plane: the loader's when it holds the mode, so the
+ * early console stays visible, otherwise one allocated below 4 GiB and
+ * painted with colour bars.
+ *
+ * The plane and the framebuffer become the place a takeover and a fatal
+ * stop return the screen to.  The output's power domain, clocks and
+ * resets must be on.  One line of the boot log reports the outcome.
+ */
+int drv_powervr_dc_own_mode(const struct drv_powervr_dc_own_place *place);
+
+/*
+ * Reports whether the driver lights the output itself: when the loader
+ * left no screen, or when the boot line names display.mode=.  The loader's
+ * screen is taken over otherwise.
+ */
+int drv_powervr_dc_own_wanted(void);
+
+/*
  * Returns the screen to the loader's plane for a fatal stop.
  *
  * Marks the controller fatal first, so no later commit is written, then
