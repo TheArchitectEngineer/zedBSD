@@ -4,7 +4,7 @@
 
 - 親: [ws269](../ws.md)、設計: [design.md](../design.md) 改訂 3.1 の §6 の p010、追補 [design-p010.md](../design-p010.md) 版 2.1
 - Queue: q1362 / q1362-i01（P1、2026-10-20、追補 版 1）、q1367 / q1367-i01（P1、2026-10-20、版 2: review 1 と p010b の反映）。q1370 / q1370-i01（P1、2026-10-20、版 2.1: review 2 の反映）。どれもコードなし
-- Status: in-progress（版 2.1 が出来た、Q1 の差分の確認待ち。2026-10-20 P1 q1370: [design-p010-review-2.md](../design-p010-review-2.md) の M-1〜M-6・Minor 1〜11 を入れ、§5.4 に O-ENC の中身を固定した。review 2 の結論で design-reviewer の再レビューは要らず、Q1 の差分の確認と P2 との O-ENC の合意で p010d・p010n・p010e・p010f を始められる。実装は p010a〜p010o の各 Phase で、Queue の承認の後）
+- Status: in-progress（設計の追補 design-p010.md 版 2.1 を 2026-10-20 Q1 が差分で確かめて受け入れた（design-p010-review-2 の結論「Q1 が差分を見るだけで足りる」、67ac336aa、merge 1a57f1153）。p010d 以降の実装に入る。O-ENC の SR の burst の ld・st の 1 点は P2 の p013 で確かめる）
 - 起点（2026-10-20 07:24 ユーザー）: 「PowerVRのコードは完了を目指して作業をお願いします。あとでUATにおいて、どこまで実行できたかわかるログが出れば、デバッグしやすいと思います。」
 
 ## 分割（版 2）
