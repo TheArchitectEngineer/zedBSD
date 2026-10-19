@@ -17,7 +17,7 @@
 
 | Phase | 中身 | 依存 | Status |
 | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 設計（起動の道・LCD・SD・入力・Phase の分割）。コードは書かない | WS271 | in-progress（2026-10-19 P2、q1317） |
+| [p001](phase001/phase.md) | 設計（起動の道・LCD・SD・入力・Phase の分割）。コードは書かない | WS271 | in-progress（設計の文書が出来た、design-reviewer 待ち。2026-10-19 P2、q1317） |
 
 残りの Phase は p001 の設計から作る。
 
