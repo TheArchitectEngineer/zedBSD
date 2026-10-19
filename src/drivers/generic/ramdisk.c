@@ -36,6 +36,9 @@
  */
 #define RAMDISK_MAX_TRANSFER_BLOCKS	2048U
 
+/* Marks a parameter the disk operations' signatures carry but a memory disk does not need. */
+#define UNUSED_PARAMETER(parameter)	((void)(parameter))
+
 /*
  * The memory one published disk reads and writes.
  *
@@ -48,13 +51,19 @@ struct ramdisk_unit {
 };
 
 /*
- * The one ramdisk a boot can have.
+ * The memory of the one ramdisk a boot can have.
  *
- * A boot hands over a single initial ramdisk, so one unit is enough.  The
- * disk pointer is NULL until the unit has been published and is kept for
- * the life of the system.
+ * A boot hands over a single initial ramdisk, so one unit is enough.  It
+ * is filled before the disk is published and kept for the life of the
+ * system.
  */
 static struct ramdisk_unit ramdisk_unit;
+
+/*
+ * The published disk of the unit, NULL until drv_ramdisk_create() has
+ * published it; kept for the life of the system, so a second creation is
+ * refused.
+ */
 static struct disk *ramdisk_disk;
 
 static int ramdisk_submit(struct disk *disk, struct bio *bio);
@@ -85,7 +94,9 @@ drv_ramdisk_create(
 	int error;
 
 	/* Refuses a missing or empty range, and one that is not whole blocks. */
-	if (name == NULL || base == NULL || disk_out == NULL)
+	if (name == NULL ||
+	    base == NULL ||
+	    disk_out == NULL)
 		return EINVAL;
 	if (size == 0)
 		return EINVAL;
@@ -110,9 +121,11 @@ drv_ramdisk_create(
 	ramdisk_unit.base = (uint8_t *)base;
 	ramdisk_unit.size = size;
 
-	/* Describes the disk: its name, its blocks and how it is served. */
+	/* Names the disk, its terminator included. */
 	for (index = 0; index <= length; index++)
 		disk->d_name[index] = name[index];
+
+	/* Describes the disk's blocks and how it is served. */
 	disk->d_flags = 0;
 	disk->d_block_size = RAMDISK_BLOCK_SIZE;
 	disk->d_block_count = size / RAMDISK_BLOCK_SIZE;
@@ -131,8 +144,10 @@ drv_ramdisk_create(
 	/* Keeps the disk, so that a second creation is refused. */
 	ramdisk_disk = disk;
 
-	/* Succeeded: the memory is a disk. */
+	/* Hands the disk to the caller. */
 	*disk_out = disk;
+
+	/* Succeeded: the memory is a disk. */
 	return 0;
 }
 
@@ -194,9 +209,9 @@ ramdisk_ioctl(
 	unsigned long request,
 	void *argument)
 {
-	(void)disk;
-	(void)request;
-	(void)argument;
+	UNUSED_PARAMETER(disk);
+	UNUSED_PARAMETER(request);
+	UNUSED_PARAMETER(argument);
 
 	/* No control request is known. */
 	return EOPNOTSUPP;

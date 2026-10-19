@@ -5004,6 +5004,8 @@ apply_value(
 		/* A relative relocation names no symbol. */
 		if (symbol_index != 0)
 			rtld_fatal("invalid relative relocation");
+
+		/* The object's load address plus the addend. */
 		value = object->base + addend;
 		break;
 	case R_RISCV_64:
@@ -5017,25 +5019,28 @@ apply_value(
 		break;
 	case R_RISCV_TLS_DTPMOD64:
 		/* The module of the object itself, or of the symbol's owner. */
-		if (symbol_index == 0)
+		if (symbol_index == 0) {
 			tls_owner = object;
-		else
-			tls_symbol = resolve_tls_symbol(object, symbol_index,
-							&tls_owner);
+		} else {
+			tls_symbol = resolve_tls_symbol(object, symbol_index, &tls_owner);
+		}
 
 		/* Refuses an owner without a TLS module. */
 		if (tls_owner == NULL || tls_owner->tls_module_id == 0)
 			rtld_fatal("TLS module is unavailable");
+
+		/* The owner's module number. */
 		value = tls_owner->tls_module_id;
 		break;
 	case R_RISCV_TLS_DTPREL64:
-		/* The symbol's offset in its module's block. */
-		tls_symbol =
-		    resolve_tls_symbol(object, symbol_index, &tls_owner);
+		/* Finds the symbol and the module that owns it. */
+		tls_symbol = resolve_tls_symbol(object, symbol_index, &tls_owner);
 
 		/* Refuses a symbol without a TLS module. */
 		if (tls_symbol == NULL || tls_owner->tls_module_id == 0)
 			rtld_fatal("TLS symbol is unavailable");
+
+		/* The symbol's offset in its module's block, less the bias. */
 		value = (uintptr_t)tls_symbol->st_value + addend - RTLD_DTV_OFFSET;
 		break;
 	default:

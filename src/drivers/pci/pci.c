@@ -3174,6 +3174,8 @@ find_intx_line(
 		/* Skips a line of another host, or of the controller for a hooked host. */
 		if (line->ops != ops)
 			continue;
+
+		/* Skips a line of another host that the same driver runs. */
 		if (line->host != host)
 			continue;
 
@@ -3224,9 +3226,11 @@ intx_host_hooks(
 	if (hooks != 4)
 		return EINVAL;
 
-	/* Succeeded: the host's own pin numbers. */
+	/* Reports the host's hooks and the host they are called with. */
 	*ops = bus->ops;
 	*host = bus->host;
+
+	/* Succeeded: the host's own pin numbers. */
 	return 0;
 }
 
@@ -3851,6 +3855,8 @@ intx_line_run(
 
 		/* Lets the device's handler serve its own interrupt. */
 		(void)handler(handler_argument);
+
+		/* Moves on to the handler that followed it. */
 		cookie = next;
 	}
 

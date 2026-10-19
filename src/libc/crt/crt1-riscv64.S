@@ -38,11 +38,13 @@ _start:
 	add	s4, s3, t0
 	addi	s4, s4, 8
 
-	/* Sets the C library up, then runs the program. */
+	/* Sets the C library up. */
 	mv	a0, s2
 	mv	a1, s3
 	mv	a2, s4
 	call	__libc_init
+
+	/* Runs the program with the same three arguments. */
 	mv	a0, s2
 	mv	a1, s3
 	mv	a2, s4

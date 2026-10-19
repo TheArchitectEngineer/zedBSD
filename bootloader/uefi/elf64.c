@@ -20,6 +20,9 @@
  * start on riscv64.  A riscv64 segment need not start on a page: the HAL
  * maps the image's whole range in one window, so only the image's start
  * is aligned.
+ *
+ * Values referenced: the System V ABI's ELF machine numbers, 243 for
+ * RISC-V and 62 for x86-64.
  */
 #if defined(__riscv)
 #include "bootloader/include/riscv64-kernel-image.h"
@@ -93,9 +96,9 @@ static int segment_acceptable(const struct elf64_program_header *ph, uint32_t se
 /*
  * Validates a kernel's headers and builds its load plan.
  *
- * Returns 1 when the kernel is an executable of the loader's machine it can place,
- * with its PT_LOAD segments ascending, inside the link window and its entry
- * point in an executable segment; returns 0 otherwise.
+ * Returns 1 when the kernel is an executable of the loader's machine that
+ * it can place, with its PT_LOAD segments ascending, inside the link window
+ * and its entry point in an executable segment; returns 0 otherwise.
  */
 int
 zbl_elf64_plan(
