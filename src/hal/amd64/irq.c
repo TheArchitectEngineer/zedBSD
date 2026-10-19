@@ -169,14 +169,21 @@ hal_irq_set_wake(
 	if (irq <= IRQ_TIMER || !valid)
 		return HAL_ERR_INVALID;
 
-	/* The set of wake sources is fixed while a suspension holds the others. */
-	held = __atomic_load_n(&irq_suspension, __ATOMIC_ACQUIRE);
-	if (held != 0U)
-		return HAL_ERR_STATE;
-
-	/* The flag, under the IRQ's lock. */
+	/*
+	 * The set of wake sources is fixed while a suspension holds the others.
+	 * Checked under the IRQ's lock: hal_irq_suspend() raises the flag
+	 * before it takes each IRQ's lock, so a 0 seen here means it has not
+	 * handled this IRQ yet and will see the new flag.
+	 */
 	service = &irq_service[irq];
 	enabled = service_lock(service);
+	held = __atomic_load_n(&irq_suspension, __ATOMIC_ACQUIRE);
+	if (held != 0U) {
+		service_unlock(service, enabled);
+		return HAL_ERR_STATE;
+	}
+
+	/* The flag, under the IRQ's lock. */
 	service->wake = 0U;
 	if (enable)
 		service->wake = 1U;
@@ -319,17 +326,16 @@ irq_set_handler(
 			return HAL_ERR_BUSY;
 		}
 
+		/* Keeps task-wait ownership until its waiter releases it; nothing is changed. */
+		if (service->mode == IRQ_MODE_TASK) {
+			service_unlock(service, enabled);
+			return HAL_ERR_BUSY;
+		}
+
 		/* Blocks new delivery and masks hardware before draining. */
 		service->removing = 1;
 		service->masked = 1;
 		hardware_mask(irq);
-
-		/* Keeps task-wait ownership until its waiter releases it. */
-		if (service->mode == IRQ_MODE_TASK) {
-			service->removing = 0;
-			service_unlock(service, enabled);
-			return HAL_ERR_BUSY;
-		}
 
 		/* Waits without the lock for every active delivery to leave. */
 		service_unlock(service, enabled);
@@ -718,9 +724,21 @@ irq_handler(
 		return;
 	}
 
-	/* Marks this interrupt in flight under its service lock. */
+	/*
+	 * Another delivery of this IRQ still owns the in-flight and handler
+	 * flags (one value each): this one is acknowledged and dropped without
+	 * touching them, so the owner's drain stays correct.
+	 */
 	service = &irq_service[irq];
 	(void)service_lock(service);
+	if (__atomic_load_n(&service->in_flight, __ATOMIC_ACQUIRE) != 0U ||
+	    __atomic_load_n(&service->in_handler, __ATOMIC_ACQUIRE) != 0U) {
+		service_unlock(service, false);
+		hal_irq_send_eoi(acknowledge);
+		return;
+	}
+
+	/* Marks this interrupt in flight under its service lock. */
 	__atomic_store_n(&service->in_flight, 1U, __ATOMIC_RELEASE);
 
 	/*

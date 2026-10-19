@@ -257,12 +257,14 @@ hal_irq_unregister(
 	valid = valid_source(irq);
 	if (!valid)
 		return HAL_ERR_INVALID;
-	hal_irq_mask(irq);
 	enabled = m68040_spin_lock(&slots_lock);
 	if (slots[irq].handler != handler || slots[irq].argument != argument) {
 		m68040_spin_unlock(&slots_lock, enabled);
 		return HAL_ERR_INVALID;
 	}
+
+	/* Masked only once the removal is known to succeed. */
+	hal_irq_mask(irq);
 
 	/* Forgets the handler. */
 	slots[irq].handler = NULL;

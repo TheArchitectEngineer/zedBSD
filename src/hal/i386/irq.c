@@ -239,15 +239,14 @@ hal_irq_set_handler(
 
 	/* Removes a handler or installs a handler into an unused service. */
 	if (handler == NULL) {
-		i386_interrupt_mask(irq);
-
-		/* Keeps a task-owned service registered until its waiter exits. */
+		/* Keeps a task-owned service registered, line untouched, until its waiter exits. */
 		if (service->mode == IRQ_MODE_TASK) {
 			/* Restores interrupts before reporting task ownership. */
 			if (enabled)
 				hal_irq_enable();
 			return HAL_ERR_BUSY;
 		}
+		i386_interrupt_mask(irq);
 		service->mode = IRQ_MODE_NONE;
 		service->handler = NULL;
 		service->argument = NULL;
