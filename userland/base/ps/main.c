@@ -693,6 +693,9 @@ ps_snapshot(
 	int status;
 	int error;
 
+	/* Starts with no process, so the count is set on every return. */
+	*count = 0;
+
 	/* Opens the system's device. */
 	descriptor = open("/dev/system", O_RDONLY);
 	if (descriptor < 0)
@@ -701,7 +704,6 @@ ps_snapshot(
 	/* Asks for each process after the one before, until there is none. */
 	error = 0;
 	cursor = -1;
-	*count = 0;
 	while (*count < PS_MAX_PROCESSES) {
 		process = &ps_processes[*count];
 		memset(process, 0, sizeof(*process));
