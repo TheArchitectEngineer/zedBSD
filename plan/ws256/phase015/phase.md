@@ -2,7 +2,7 @@
 
 # ws256-p015 rootfs からの起動（SD の root、板の前の code）
 
-Status: in-progress（2026-10-19 P2、q1295-i01。板の前の code と host 試験・build は済み。T1 の QEMU の確かめ（下の依頼文）と実機の確かめ（ユーザーの目視）を待つ）
+Status: in-progress（2026-10-20: ユーザーの VF2 の実機（2026-10-20 06:11「画面がつきました！」「HDMIで画面を見ながら、USBキーボードでログインしてコマンド操作できました。」、image main d1ef60e39 の native-dtb.img、U-Boot の prompt から mainline の v1.3b の DTB で bootefi） で SD の root から initrd 無しで起動し画面で login できた（SD は 24.75 MHz の fallback、BUG-340）。残り: design §3.4 の 10 回の起動と p015.txt の reboot の後の読み、U-Boot の自動起動（今は prompt で mmc rescan・load・bootefi、BUG-339））
 
 - 親: [WS256](../ws.md)。Queue: q1295-i01（P2）。
 - 範囲: [design-peripherals.md](../design-peripherals.md) 改訂 4 §3.4 と [design.md](../design.md) §3.2 の SD の image。SD の image の ESP（`EFI/BOOT/BOOTRISCV64.EFI`・`zedbsd.cfg`・`vmunix`）と root の partition、loader の `boot0=UUID=` と `rootpart=` で SD の root を見つけて mount し initrd 無しで起動する道（p014 の pcat_auto と mmcblk0）、image を作る build の規則（`disk-image.mk`）。HAL（hal.h）は変えない。

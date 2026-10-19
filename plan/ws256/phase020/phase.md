@@ -2,7 +2,7 @@
 
 # ws256-p020 PLDA の PCIe の host
 
-Status: in-progress（板の前の code は済み、2026-10-19 17:04。実機の確かめ（p022・p023 の後、ユーザーが framebuffer を目で見る）と Q1 の判定が残り）
+Status: cleared（2026-10-20 Q1: ユーザーの VF2 の実機（2026-10-20 06:11「画面がつきました！」「HDMIで画面を見ながら、USBキーボードでログインしてコマンド操作できました。」、image main d1ef60e39 の native-dtb.img、U-Boot の prompt から mainline の v1.3b の DTB で bootefi）。PCIe0 の VL805 の xHCI と USB hub、USB keyboard で login と command の操作）
 
 - 親: [WS256](../ws.md)。Queue: q1291-i01（P1、板の前の code）。
 - 範囲: [design-peripherals.md](../design-peripherals.md) §3.5 の p020（改訂 4、Minor 9・11・12）。`pci-plda.c`（apb の register、ATR の outbound（cfg・32 bit・64 bit）、PHY の値、link の train、PERST、p021 の hook での INTx の demux、swizzle）、visionfive2.c からの 2 つの host の attach、pci-xhci・usb-hid・usb-hub・pci-nvme への繋ぎ。HAL（hal.h）は変えない。

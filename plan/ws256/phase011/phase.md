@@ -2,7 +2,7 @@
 
 # ws256-p011 VisionFive 2 の framebuffer
 
-Status: in-progress（(1) の loader の変更は T1-728 待ち。(2) の土台（handoff 版 2・予約・console の共通化・VF2 の画面と名前）の code・host 試験・build を 2026-10-19 に P2 q1284 が済ませ、T1 の回帰（virt 2 mode と bochs-display の新 mode の案）と Q1 の判定を待つ。(1) の実機の調べと実機の受け入れ（ユーザーの目視）は未実施）
+Status: cleared（2026-10-20 Q1: ユーザーの VF2 の実機（2026-10-20 06:11「画面がつきました！」「HDMIで画面を見ながら、USBキーボードでログインしてコマンド操作できました。」、image main d1ef60e39 の native-dtb.img、U-Boot の prompt から mainline の v1.3b の DTB で bootefi）。U-Boot の GOP の framebuffer を受け取り、U-Boot が ExitBootServices で消した表示を WS277 p005 の自前の点灯で出し直して画面が出た）
 
 - 親: [WS256](../ws.md)。Queue: q1282 / q1282-i01（P2、(1) の loader の変更だけ）、q1284 / q1284-i01（P2、(2) の土台: 下の「(2) の土台」）。
 - 範囲（この試行）: [design-peripherals.md](../design-peripherals.md) 改訂 4 §3.1 (1) の「loader の小さな変更」: `bootloader/uefi/bootriscv64.c` で、`RISCV_EFI_BOOT_PROTOCOL` が無い時に EFI の DT の `/chosen/boot-hartid` を読み、どちらを使ったかを `RV64 HART …` で console に出す。GOP の今の mode を読むだけで（`SetMode` は呼ばない）console に 1 行で出す。`riscv64-handoff.h` は版 1 のまま、kernel・HAL は変えない。
