@@ -3,7 +3,7 @@
 # ws272-p003 MIPS64（mips64el）の例外・XTLB refill・3 段の table・atomic・M8、kernel の link（VFS の段まで）
 
 - 親: [WS272](../ws.md)、設計: [WS271 の design.md](../../ws271/design.md) §3.3〜§3.7・§6.1・§8（M1〜M5・M8・M9）、Queue: q1287 / q1287-i01（P1、2026-10-19）、disposition: normal
-- Status: uncleared（2026-10-19 Q1、T1-732: MIPS64 の 256M・512M とも XKPHYS PASS の後に `fatal: src/hal/mips/int.c:173: mips trap selftest answer` で止まる（cause=00000420、mips_cmain から hal_fatal、gdb の情報は t1 の build/review/t1-732/gdb.out）。512M でも画面は memory=262144 KiB で M8 の high の alias は未確認。MIPS32 の回帰は PASS。再開: P1 が q1289 で gdbstub で解析して直す）
+- Status: uncleared（2026-10-19 Q1、T1-732: MIPS64 の 256M・512M とも XKPHYS PASS の後に `fatal: src/hal/mips/int.c:173: mips trap selftest answer` で止まる（cause=00000420、mips_cmain から hal_fatal、gdb の情報は t1 の build/review/t1-732/gdb.out）。512M でも画面は memory=262144 KiB で M8 の high の alias は未確認。MIPS32 の回帰は PASS。再開: P1 が q1289 で gdbstub で解析して直す）。q1289-i01（P1、2026-10-19）で原因を直した（下の「q1289 の解析と直し」）。T1 の再試験待ち
 - 前提: ws272-p002（入口・console、T1-731 で試験中）、ws271-p003・p004（共通の層 `src/hal/mips/` の trap・TLB・space・FPU・self-test）。hal.h は不変。HAL の API の差分は無い（`include/hal/arch/mips64.h` は p002 のまま）。
 
 ## 範囲と受け入れ条件
@@ -42,11 +42,17 @@
 - host: `plan/ws271/tests/pte-host-test.c`（`-m32 -DHAL_ARCH_MIPS32` と `-DHAL_ARCH_MIPS64` の両方）→ PASS、`status-host-test.c`（既定と `-DHAL_ARCH_MIPS64`）→ PASS。
 - QEMU: **未実施**（自分で起動しない規則）。下の T1 の依頼。共通の file の変更は mips32 の回帰も同じ依頼に入れる。
 
+## q1289 の解析と直し（P1、2026-10-19）
+- 原因: `trap_kernel_system_call()` が答え 0xa5e83f21（bit 31 が 1）を 64 bit の `frame->r[V0]` へ零拡張で書いていた。n64 では 32 bit の値は register の中で符号拡張の形であることを compiler が前提にし、`trap_selftest_call()` の `uint32_t` の v0 を 64 bit の定数 0xffffffffa5e83f21 と比べるので不一致になった（MIPS32 は register が 32 bit なので出ない）。trap frame・EPC・`sd`/`ld` の並びは正しく、syscall は戻っていた。
+- 直し（`src/hal/mips/int.c`）: 答えを `(uintptr_t)(intptr_t)(int32_t)` で符号拡張して書く。番号の比較も `(uint32_t)` で下 32 bit を比べる。
+- 512M: ememsize の読み取りは正しかった。画面の `MALTA memory=` は low（memsize、最大 256 MiB）だけを出していた。`src/hal/mips/bsp-malta/board.c` の行に `total=` を足した（`MIPS64 MALTA memory=262144 KiB total=524288 KiB ramdisk=...`）。
+- 確認: mips64・mips32 の `make -B` は rc=0・warning 0。自分の gdbstub の短い起動（QEMU は 1 つずつ、各 30 秒以内に止めた）で、256M・512M とも hal_fatal に止まらず `kernel_main` まで進む（bt: kernel_main ← kernel_entry ← mips_cmain ← _start）。`board_total_memory` は 256M で 0x10000000、512M で 0x20000000、`board_low_memory` は 0x10000000。判定は T1 の画面（下の依頼、image は commit e1166de60 以降）。PASS 2 の `MALTA memory=` の行は `total=524288 KiB` も読めること。
+
 ## T1 への依頼（Q1 経由）
 ```
 依頼: ws272-p003（MIPS64 malta の例外・XTLB refill・3 段の table・atomic・M8、kernel の link、VFS の段まで）
       と、共通の層の変更による ws271（MIPS32 malta）の回帰
-image: worktree p1（agent/p1）の commit 81e42c1c1 以降を main に merge した後、
+image: worktree p1（agent/p1）の commit e1166de60 以降（q1289 の直し）を main に merge した後、
   make ZEDBSD_CONFIG=plan/ws272/tests/config-mips64-malta.mk vmunix   → build/mips64-malta/vmunix
   make ZEDBSD_CONFIG=plan/ws271/tests/config-mips32-malta.mk vmunix   → build/mips32-malta/vmunix
 起動 1（MIPS64）: BOOT_MODE=mips64-malta BOOT_MEMORY=256M BOOT_PATTERN='VFS initialization failed'
@@ -63,7 +69,7 @@ PASS 1: screendump の PNG に次の行が読める（上の行は流れて消�
   MIPS64 CPU 1 ONLINE
   VFS initialization failed (...); entering idle.
 起動 2（MIPS64、M8 の high の alias）: 起動 1 と同じで BOOT_MEMORY=512M
-PASS 2: 起動 1 と同じ最後の 4 行。MEMORY の行が読めれば `low=256 MiB high=256 MiB total=512 MiB` であること
+PASS 2: 起動 1 と同じ最後の 4 行。`MIPS64 MALTA memory=262144 KiB total=524288 KiB` が読めれば記す。MEMORY の行が読めれば `low=256 MiB high=256 MiB total=512 MiB` であること
   （流れて消えていれば未確認と書く）。
 起動 3（MIPS32 の回帰）: BOOT_MODE=mips32-malta BOOT_MEMORY=256M BOOT_PATTERN='VFS initialization failed'
   plan/tools/boot-test.sh build/mips32-malta/vmunix
