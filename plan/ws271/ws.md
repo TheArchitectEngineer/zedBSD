@@ -7,6 +7,7 @@
 - 起点（2026-10-19 ユーザー）: 「MIP32とMIPS64のカーネルも作りたいです。ただ、ボードがないなあ。virtで作れそうですか？Anbernic RG 350と、Cobalt Qube 初代、EdgeRouter X はあります。MIPS Creatorは購入できそう。」→（クリック）始め方「malta の little endian」、toolchain「許可する」（LLVM に Mips の target、Q1 が行う）、最初の実機「RG350」
 - 前提: QEMU の `qemu-system-mipsel -M malta（MIPS32r2 の CPU、little endian）`。画面は malta の PCI の VGA（Bochs の linear framebuffer）を HAL が設定して console を描く案（p001 で確かめる）。共有の LLVM に Mips の target が要る（Q1、ユーザーの許可 2026-10-19）。WS263〜WS266（riscv32・ppc32・ppc64・m68k）と同じ到達点と規則。
 - 浮動小数点（2026-10-19 14:15 ユーザー）: 「Octeonも入手可能です。softfloatをオプションで選べるようにしたいですね。まずはhardfloatでOKです。」 → まず hardfloat（FPU を使う ABI）。softfloat は後で build の option として選べる形にする（p001 の設計で option の置き場所を決めておく）。
+- 決定（2026-10-19 14:29 ユーザー、クリック）: WS271 の判断（クリック）: U1 HAL の差分は「同じ形で事前承認」（WS263〜266 と同じ形、plan/ws271/proposed/hal-mips.md）、U2 toolchain は「LLVM の Mips を待つ」、U3 MIPS32 の hardfloat の ABI は「FPXX（FR=1）」、U4 MIPS64 の QEMU の CPU は「MIPS64R2-generic」。U5 画面は Q1 が既定の 640x480。
 - 担当: 未割当（WS256 の後か、手の空いた時）。
 
 ## 完了の条件（案、p001 の設計で確定）

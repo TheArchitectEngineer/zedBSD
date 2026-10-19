@@ -2,7 +2,7 @@
 
 # ws256-p016 QEMU virt の ECAM の FDT host と virt の繋ぎ
 
-Status: in-progress（実装・host の確かめは済み。QEMU は T1 の結果待ち。cleared は Q1 の判定の後）
+Status: cleared（2026-10-19 14:29 Q1 の判定、T1-723: 走り B（keys: で USB keyboard から login、`uname -m` の `riscv64`）PASS。xHCI の port の reset・usb0 の configured・`/dev/input/event0: QEMU USB Keyboard` が画面に出ており、xHCI は ECAM の host の下の PCI の device なので ECAM の host の動作もこれで示される。走り A の「pci: ECAM host」の行は起動が速く（約 220 ms）最初の撮影の前に scroll で消えて未確認。PNG build/review/t1-723/usb-kbd-and-nvme.png）
 
 - 親: [WS256](../ws.md)。Queue: q1271 / q1271-i01（P1、2026-10-19）。設計: [design-peripherals.md](../design-peripherals.md) 改訂 2 §3.5（再レビュー 2 で「今の設計のままでよい」、Q1 2026-10-19）。
 - 範囲: `src/drivers/pci/pci-ecam-fdt.c`（`pci-host-ecam-generic`）、virt の繋ぎ（ECAM の host・xHCI・usb-hid・keyboard の input）。

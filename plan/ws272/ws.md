@@ -11,6 +11,7 @@
 - 実機の候補（2026-10-19 14:15 ユーザー）: Cavium Octeon も入手できる（MIPS64、big endian が多い。機種と endian は未確認）。
 - Octeon の機種（2026-10-19 14:17 ユーザー）: 「Octeon は EdgeRouter Lite-3が入手できそうです。OcteonはTLB操作のSDKがありますが、そんなに非互換が強いんですかねえ。」 → Q1 の覚え（未確認）: EdgeRouter Lite-3 は Cavium Octeon Plus CN5020（cnMIPS64 の 2 core、big endian、U-Boot、内部の USB 記憶）。TLB は MIPS64r2 の標準の命令で扱える見込み。訂正（2026-10-19 14:19 ユーザー 「Linux も FreeBSD も、10年前に私が確認したときにはCaviumのSDKをマージしてました。今はどうかわかりません。」）: Linux は arch/mips/cavium-octeon/executive/ に Cavium の SDK（cvmx-bootmem・cvmx-sysinfo・cvmx-l2c・helper・PKO など、SoC の資源の調整と network）を取り込んでいた（v3.1 などの tree で確認）。今の mainline と FreeBSD の現状は未確認。SDK に頼る範囲と出典の license は着手の時の設計で確かめる。差の大きい所は FPU が無い（hardfloat の userland には kernel の FPU の emulation か softfloat の build が要る）、big endian、CIU の割り込み・Ethernet などの Octeon 固有の周辺、U-Boot の起動の情報の形。
 - 設計（2026-10-19 P1、ws271-p001）: 共通の部分（QEMU malta の事実、toolchain、HAL の共通の層 `src/hal/mips/`、試験）と WS272 の差分は [WS271 の design.md](../ws271/design.md) の §1〜§6・§8。p001 は §8 の確認の計画だけ（LW 2）。QEMU の CPU は `MIPS64R2-generic` を案に（既定の 20Kc は R1、U4 でユーザーに聞く）。
+- 決定（2026-10-19 14:29 ユーザー、クリック）: WS271 の判断（クリック）: U1 HAL の差分は「同じ形で事前承認」（WS263〜266 と同じ形、plan/ws271/proposed/hal-mips.md）、U2 toolchain は「LLVM の Mips を待つ」、U3 MIPS32 の hardfloat の ABI は「FPXX（FR=1）」、U4 MIPS64 の QEMU の CPU は「MIPS64R2-generic」。U5 画面は Q1 が既定の 640x480。
 - 担当: 未割当（WS256 の後か、手の空いた時）。
 
 ## 完了の条件（案、p001 の設計で確定）
