@@ -3,7 +3,7 @@
 # ws275-p002 loader の firmware framebuffer・i8042、boot.h、HAL の名前付きの値と早期の console
 
 - 親: [ws275](../ws.md)、Queue: q1311 / q1311-i01（P1、2026-10-19）
-- Status: in-progress（実装と build・host 試験は済み、2026-10-19 P1。p002b の T1 の観察と、merge の前のユーザーへの sparcv9 の差分の提示を待つ）
+- Status: cleared 待ち（ユーザーの sparcv9 の差分の確認の後、Q1 が merge して cleared。実装・build・host 試験済み、p002b の T1-743 観察済み 2026-10-19）
 - 設計: [design.md](../design.md) §4.2・§4.4・§4.5・§6、HAL の差分 [proposed/hal-sun4u-names.md](../proposed/hal-sun4u-names.md)（2026-10-19 19:12 ユーザー「改訂 3 で承認」）
 
 ## 受け入れの条件
@@ -62,6 +62,15 @@ qext の値と合い、文字の色が正しい（赤と青が入れ替わらな
 monitor か gdb で読めれば添える）。
 返して欲しい物: 3 条件の値の表、xp の値、PNG の path。判定は Q1。
 ```
+
+## p002b の結果（T1-743、2026-10-19 19:33〜19:35、QEMU のみ・実機は未実施）
+
+- tree: P1 の 8bf4911c3 と main 26f43269d を merge。sun4u build rc 0、boot/kernel/image check PASS。
+- gdb（init の入口）で handoff 版 3: A `-g 1024x768x8`・C 既定は phys 0x1ff22000000・1024x768・pitch 1024・format 4（RGB332）、
+  B x32 は pitch 4096・format 3（XRGB8888）。3 条件とも PCI 1234:1111・i8042 0x60/0x64。`sun4u_framebuffer_shown` も同じ値（Bochs の fallback に落ちない）。
+- `info mtree` に i8042-data 0x60・i8042-cmd 0x64。3 条件とも login prompt（boot-test rc 0）: `build/review/t1-743-{A,B,C}.png`（Q1 が B を目視）。
+- 未確認: qext の実値（xp は 0xbebebebe で MMIO を読めていない）、B の赤と青の順（画面に色が無い）、translate・`color!` の直接の観察。
+- Q1 の判定: 「条件 1〜6 は満たす。色の順（B の赤と青）と qext の実値は未確認で、p004 以降の色のある画面で確かめる」。
 
 ## 残り・再開の条件
 
