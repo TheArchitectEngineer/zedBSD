@@ -13,7 +13,7 @@ separates implemented declarations from conformance claims.
 | --- | --- |
 | Loader | Select a configured kernel and retain boot information; [UEFI loader](../../bootloader/uefi/bootx64.c) and [boot parameters](../reference/kernel-boot-parameters.md) |
 | HAL | Architecture-dependent address spaces, interrupts, CPU and display primitives; [HAL interface](../../include/hal/hal.h), [amd64 address spaces](../../src/hal/amd64/space.c) |
-| Kernel | Process/thread lifetime, VM, descriptors, VFS and I/O; [process](../../src/kern/process.c), [thread](../../src/kern/thread.c), [VM](../../src/kern/vm.c), [file descriptors](../../src/kern/filedesc.c) |
+| Kernel | Process/thread lifetime, VM, descriptors, VFS and I/O; [process](../../src/kern/process.c), [thread](../../src/kern/thread.c), [VM](../../src/kern/vm/), [file descriptors](../../src/kern/filedesc.c) |
 | Drivers | Device discovery and device/filesystem operations; [generic devices](../../src/drivers/generic), [PCI](../../src/drivers/pci), [USB](../../src/drivers/usb), [filesystems](../../src/drivers/fs) |
 | Userland | Administration policy and applications; [init](../../userland/base/init), [networkd](../../userland/base/networkd), [libc implementations](../../userland/base/libc) |
 
