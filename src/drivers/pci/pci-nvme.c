@@ -3948,15 +3948,31 @@ nvme_irq(
 {
 	struct nvme_controller *controller = argument;
 	unsigned consumed;
+	unsigned pass;
 	unsigned long irq;
 	uint32_t status;
 
-	/* Drains both completion queues and samples the status. */
+	/* Marks the handler running, so a teardown waits it out, and locks. */
 	(void)atomic_raw_fetch_add_relaxed(&controller->irq_busy, 1U);
 	irq = spin_lock_irqsave(&controller->command_lock);
 
-	consumed = nvme_irq_admin_locked(controller);
-	consumed += nvme_irq_io_locked(controller);
+	/*
+	 * Drains both completion queues until a pass finds nothing.  A legacy
+	 * pin stays asserted while a queue holds an entry past the head the
+	 * doorbell reported, so an entry posted after the last read of a pass
+	 * keeps the line high across the claim.  An interrupt controller that
+	 * takes only the rising edge (QEMU's PLIC) then never sees the line
+	 * rise again, and the command times out.  The pass that finds both
+	 * queues empty follows the last doorbell write, so the line has fallen
+	 * and the next entry raises it anew.  A submitter needs the command
+	 * lock held here, so the passes end within the queues' depths.
+	 */
+	consumed = 0;
+	do {
+		pass = nvme_irq_admin_locked(controller);
+		pass += nvme_irq_io_locked(controller);
+		consumed += pass;
+	} while (pass != 0U);
 
 	/* Checks the operation status. */
 	status = controller->controller_enabled
