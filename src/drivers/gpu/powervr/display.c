@@ -36,6 +36,22 @@
  * request carries no damage, so the whole frame (clipped) is copied.  A
  * buffer the lookup does not know (another driver's) is refused.
  *
+ * When the display controller's screen could be taken over (dc8200.c) and
+ * the boot parameter dc8200.zerocopy=test is given, a shared frame of the
+ * loader's extent and row pitch, in a contiguous buffer below 4 GiB, is
+ * not copied: the controller's plane is pointed at the buffer itself.
+ * Such a presentation returns once the plane counts as taken, two
+ * vertical blanks after the commit.  A buffer stays held while the
+ * controller reads it or may still read it (the front and the pending
+ * commit), also after its owner destroyed it; it is freed by the thread
+ * that drops its last hold.  Any other frame is copied onto the
+ * framebuffer as before, and when a buffer was on the plane the copy is
+ * made first and the plane is pointed back at the framebuffer after.  A
+ * commit not taken because the blanks stopped for 100 ms puts the front
+ * back and reports ENXIO, as does every presentation after a fatal stop
+ * took the screen back.  The release points the plane back at the
+ * framebuffer before the console draws again.
+ *
  * The node is registered before the render node, so it is gpu0 and the
  * render node gpu1.  It does not depend on the GPU core: it stays when the
  * core fails to come up.
@@ -46,6 +62,9 @@
  * on a boot framebuffer).
  */
 
+#include <stddef.h>
+
+#include "drivers/gpu/powervr/dc8200-flip.h"
 #include "drivers/gpu/powervr/powervr.h"
 #include "drivers/gpu/powervr/render.h"
 #include <drivers/gpu/gpu.h>
@@ -62,6 +81,7 @@
 #include <kern/pmem.h>
 #include <kern/sched.h>
 #include <kern/text-display.h>
+#include <kern/waitq.h>
 #include <uapi/errno.h>
 #include <uapi/gpu.h>
 #include <uapi/gpu-display.h>
@@ -83,6 +103,23 @@
 
 /* The bytes of one pixel of the screen and of a frame. */
 #define POWERVR_DISPLAY_PIXEL_BYTES	4U
+
+/*
+ * What the display controller needs of a buffer it scans directly: rows
+ * starting on 32-byte boundaries, a row pitch its 16-bit register holds,
+ * and every byte below 4 GiB.
+ *
+ * Values referenced:
+ * StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
+ * drivers/gpu/drm/verisilicon/vs_drv.c (pitch_alignment 32) and
+ * vs_dc_hw.h (struct dc_hw_fb: the stride is 16 bits; the address 32).
+ */
+#define POWERVR_DISPLAY_SCAN_ALIGNMENT	32U
+#define POWERVR_DISPLAY_SCAN_STRIDE_MAX	65535U
+#define POWERVR_DISPLAY_SCAN_LIMIT	0x100000000ULL
+
+/* How many buffers one presentation or release can let go of: two for each of up to four plane changes. */
+#define POWERVR_DISPLAY_FREED_MAX	8U
 
 /* The name a query reports, and the driver name of the node. */
 #define POWERVR_DISPLAY_NAME		"powervr bootfb"
@@ -111,6 +148,21 @@ struct powervr_display_session {
  * memory and its address do not change in between.
  */
 struct powervr_display_resource {
+	/*
+	 * The display controller's holds on the resource (kept under the
+	 * node's mutex).  While any is left the resource outlives its
+	 * destruction by the session; its owner is then never looked at
+	 * again, as the session may be gone.
+	 */
+	struct powervr_flip_hold hold;
+
+	/*
+	 * Nonzero when the controller may scan the imported buffer itself;
+	 * frame then says where and how.  Fixed at import.
+	 */
+	int direct;
+	struct drv_powervr_dc_frame frame;
+
 	struct powervr_display_session *owner;
 	struct kern_pmem run;
 	uint8_t *address;
@@ -160,6 +212,21 @@ struct powervr_display {
 
 	/* The core's handle of the registered node. */
 	struct drv_gpu_device *gpu;
+
+	/* Nonzero when the display controller counts vertical blanks: its plane can be changed. */
+	int scanout;
+
+	/* Nonzero when the lease may scan buffers directly (dc8200.zerocopy=test, read at claim). */
+	int zero_copy;
+
+	/*
+	 * The plane's buffers, under the mutex.  Flipping is set while a
+	 * thread waits, without the mutex, for a commit to be taken; another
+	 * change waits on flip_done until it is over.
+	 */
+	struct powervr_flip flip;
+	int flipping;
+	struct wait_queue flip_done;
 };
 
 /* Declared before the operation tables that name them. */
@@ -228,7 +295,18 @@ static void flush_screen(struct powervr_display *display, uint32_t rows);
 static void show_frame(struct powervr_display *display, const struct powervr_display_resource *resource, const struct gpu_display_present *request);
 static void show_shared_frame(struct powervr_display *display, const struct powervr_display_resource *resource, const struct gpu_display_present *request);
 static int shared_frame_valid(const struct powervr_display_resource *resource, const struct gpu_display_present *request);
-static void end_lease(struct powervr_display *display);
+static void end_lease(struct powervr_display *display, struct powervr_display_resource **freed, unsigned *count);
+static int scan_directly(const struct powervr_display *display, const struct powervr_display_resource *resource, const struct gpu_display_present *request);
+static int change_plane(struct powervr_display *display, struct powervr_display_resource *resource, struct powervr_display_resource **freed, unsigned *count);
+static int await_plane(struct powervr_display *display, struct powervr_display_resource **freed, unsigned *count);
+static int settle_lost(struct powervr_display *display, struct powervr_display_resource **freed, unsigned *count);
+static void wait_flip_over(struct powervr_display *display);
+static void collect_freed(struct powervr_flip_hold **taken, unsigned taken_count, struct powervr_display_resource **freed, unsigned *count);
+static struct powervr_display_resource *resource_of_hold(struct powervr_flip_hold *hold);
+static void free_resource(struct powervr_display_resource *resource);
+static void free_resources(struct powervr_display_resource **freed, unsigned count);
+static void check_direct_scan(struct powervr_display_resource *resource, const struct gpu_image_descriptor *image, const struct drv_gpu_scanout_backing *backing);
+static int zero_copy_requested(void);
 
 /*
  * Registers the display node on the loader's screen.
@@ -287,6 +365,12 @@ drv_powervr_display_attach(
 	display->lease = 0U;
 	display->next_lease = 1U;
 
+	/* The plane starts on the loader's framebuffer, with no change under way. */
+	powervr_flip_init(&display->flip);
+	display->flipping = 0;
+	waitq_init(&display->flip_done, "powervr-display flip");
+	display->zero_copy = 0;
+
 	/* Publishes the node; before the render node, so it is the first GPU device. */
 	error = drv_gpu_register(&node_operations, display, &display->gpu);
 	if (error != 0) {
@@ -295,10 +379,20 @@ drv_powervr_display_attach(
 		return error;
 	}
 
+	/*
+	 * Starts counting the display controller's frames when its screen can
+	 * be taken over; the plane is changed only by frames that were counted.
+	 */
+	display->scanout = 0;
+	error = drv_powervr_dc_vblank_start();
+	if (error == 0)
+		display->scanout = 1;
+
 	display->ready = 1;
-	kern_logf("powervr: display %ux%u on the boot framebuffer\n",
+	kern_logf("powervr: display %ux%u on the boot framebuffer, scanout %d\n",
 		  display->screen.width,
-		  display->screen.height);
+		  display->screen.height,
+		  display->scanout);
 
 	/* Succeeded: the screen is a display node. */
 	return 0;
@@ -334,19 +428,28 @@ display_close(
 {
 	struct powervr_display *display;
 	struct powervr_display_session *session;
+	struct powervr_display_resource *freed[POWERVR_DISPLAY_FREED_MAX];
+	unsigned count;
 
 	display = device;
 	session = private_session;
 
 	/* A holder that did not release its lease loses it here. */
+	count = 0;
 	mutex_lock(&display->mutex);
 
 	if (display->owner == session)
-		end_lease(display);
+		end_lease(display, freed, &count);
 
 	mutex_unlock(&display->mutex);
 
-	/* The core destroyed every resource of the session before closing it. */
+	/* Frees the destroyed buffers the plane let go of. */
+	free_resources(freed, count);
+
+	/*
+	 * The core destroyed every resource of the session before closing it;
+	 * one the plane still holds no longer refers to the session.
+	 */
 	kern_free(session);
 }
 
@@ -450,25 +553,32 @@ resource_destroy(
 	struct powervr_display *display;
 	struct powervr_display_session *session;
 	struct powervr_display_resource *resource;
+	uint64_t sequence;
+	int now;
 
 	display = device;
 	session = private_session;
 	resource = private_resource;
 
-	/* Gives the resource's place in the session's limit back. */
+	/*
+	 * Gives the resource's place in the session's limit back, and frees
+	 * it now unless the display controller reads it or may still read it;
+	 * then the thread that drops the last hold frees it.
+	 */
+	sequence = 0;
+	if (display->scanout)
+		sequence = drv_powervr_dc_sequence();
 	mutex_lock(&display->mutex);
 
 	if (session->resources != 0U)
 		session->resources--;
+	now = powervr_flip_destroy(&display->flip, &resource->hold, sequence);
 
 	mutex_unlock(&display->mutex);
 
-	/* A presentation copies and returns, so nothing on the screen still reads the memory. */
-	if (resource->buffer != NULL)
-		powervr_buffer_release(resource->buffer);
-	else
-		(void)kern_pmem_free(&resource->run);
-	kern_free(resource);
+	/* Frees a resource nothing on the screen reads. */
+	if (now)
+		free_resource(resource);
 }
 
 /* Copies bytes out of a resource. */
@@ -700,14 +810,20 @@ output_claim(
 	display->sequence = 0U;
 	request->lease = display->lease;
 
+	/* Lets the lease scan buffers directly only when the boot asked for the test. */
+	display->zero_copy = 0;
+	if (display->scanout)
+		display->zero_copy = zero_copy_requested();
+
 	/* The console stops drawing before the screen is cleared for the frames. */
 	kern_text_suspend();
 	clear_screen(display);
 
 	mutex_unlock(&display->mutex);
 
-	kern_logf("powervr: display lease %llu claimed; the text console is suspended\n",
-		  (unsigned long long)request->lease);
+	kern_logf("powervr: display lease %llu claimed; the text console is suspended, zero copy %d\n",
+		  (unsigned long long)request->lease,
+		  display->zero_copy);
 
 	/* Succeeded: the session holds the screen. */
 	return 0;
@@ -721,10 +837,13 @@ output_release(
 	const struct gpu_display_release *request)
 {
 	struct powervr_display *display;
+	struct powervr_display_resource *freed[POWERVR_DISPLAY_FREED_MAX];
+	unsigned count;
 
 	display = device;
 
 	/* Only the holder releases its own lease. */
+	count = 0;
 	mutex_lock(&display->mutex);
 
 	if (display->owner != session || display->lease != request->lease) {
@@ -732,18 +851,23 @@ output_release(
 		return EINVAL;
 	}
 
-	end_lease(display);
+	end_lease(display, freed, &count);
 
 	mutex_unlock(&display->mutex);
+
+	/* Frees the destroyed buffers the plane let go of. */
+	free_resources(freed, count);
 
 	/* Succeeded: the console draws the screen again. */
 	return 0;
 }
 
 /*
- * Shows a frame of the lease holder: the CPU copies it from the session's
- * run, or for a shared (BLOB) frame from an imported render buffer, onto
- * the screen, and it is on the screen when this returns.
+ * Shows a frame of the lease holder, and it is on the screen when this
+ * returns: the display controller scans a shared (BLOB) frame's buffer
+ * directly when it can, and otherwise the CPU copies the frame from the
+ * session's run or the imported render buffer onto the framebuffer.
+ * ENXIO when the output was lost or a fatal stop took the screen back.
  */
 static int
 output_present(
@@ -754,11 +878,15 @@ output_present(
 {
 	struct powervr_display *display;
 	struct powervr_display_resource *resource;
+	struct powervr_display_resource *freed[POWERVR_DISPLAY_FREED_MAX];
+	unsigned count;
 	int shared;
+	int direct;
 	int error;
 
 	display = device;
 	resource = private_resource;
+	count = 0;
 
 	/* Only the session's own resource; the core checked the frame lies inside it. */
 	if (resource->owner != session)
@@ -774,9 +902,13 @@ output_present(
 		return EINVAL;
 	}
 
-	/* Checks the lease and shows the frame under the mutex. */
+	/*
+	 * Shows the frame under the mutex, after any plane change under way;
+	 * the lease is checked once that is over.
+	 */
 	mutex_lock(&display->mutex);
 
+	wait_flip_over(display);
 	if (display->owner != session || display->lease != request->lease) {
 		mutex_unlock(&display->mutex);
 		return EBUSY;
@@ -787,15 +919,45 @@ output_present(
 		return ESTALE;
 	}
 
-	if (shared)
-		show_shared_frame(display, resource, request);
-	else
-		show_frame(display, resource, request);
-	display->sequence++;
-	display->present_tick = sched_ticks();
-	request->sequence = display->sequence;
+	/* Refuses the frame while the output stays lost; a taken write-back ends that. */
+	error = settle_lost(display, freed, &count);
+	if (error == 0) {
+		/*
+		 * Points the plane at the buffer itself when it can scan it;
+		 * otherwise copies the frame onto the framebuffer first and then
+		 * points the plane back at the framebuffer, when a buffer was on
+		 * it, so the old framebuffer is never shown.
+		 */
+		direct = 0;
+		if (shared)
+			direct = scan_directly(display, resource, request);
+		if (direct) {
+			error = change_plane(display, resource, freed, &count);
+		} else {
+			if (shared)
+				show_shared_frame(display, resource, request);
+			else
+				show_frame(display, resource, request);
+			if (display->flip.front != NULL)
+				error = change_plane(display, NULL, freed, &count);
+		}
+	}
+
+	/* Counts the frame shown. */
+	if (error == 0) {
+		display->sequence++;
+		display->present_tick = sched_ticks();
+		request->sequence = display->sequence;
+	}
 
 	mutex_unlock(&display->mutex);
+
+	/* Frees the destroyed buffers the plane let go of, outside the mutex. */
+	free_resources(freed, count);
+
+	/* Reports a lost output or a fatal stop. */
+	if (error != 0)
+		return ENXIO;
 
 	/* Succeeded: the frame is on the screen. */
 	return 0;
@@ -952,6 +1114,9 @@ import_image(
 	resource->buffer = buffer;
 	resource->image = *image;
 	resource->bytes = bytes;
+
+	/* Notes whether the display controller could scan the buffer itself. */
+	check_direct_scan(resource, image, backing);
 
 	/* Counts the import against the session's limit. */
 	mutex_lock(&display->mutex);
@@ -1220,12 +1385,46 @@ show_shared_frame(
 
 /*
  * Ends the lease and lets the text console draw its retained text again.
- * The caller holds the mutex.
+ *
+ * The plane is pointed back at the framebuffer first, after any change
+ * under way, and buffers the plane lets go of are stored through freed
+ * for the caller to free.  When the plane does not take the framebuffer
+ * back, its buffers stay held: leaking them is safer than freeing what
+ * the controller may read.  The caller holds the mutex.
  */
 static void
 end_lease(
-	struct powervr_display *display)
+	struct powervr_display *display,
+	struct powervr_display_resource **freed,
+	unsigned *count)
 {
+	int error;
+
+	/* Lets a change under way, and a lost output's write-back, finish first. */
+	error = 0;
+	wait_flip_over(display);
+	if (display->flip.committing)
+		error = await_plane(display, freed, count);
+
+	/* Points the plane back at the framebuffer, which the console draws on. */
+	if (error == 0 && display->flip.front != NULL)
+		error = change_plane(display, NULL, freed, count);
+
+	/* Keeps the buffers held when the controller did not take the framebuffer back. */
+	if (error != 0) {
+		kern_logf("powervr: display lease %llu: the plane kept a buffer; it stays held\n",
+			  (unsigned long long)display->lease);
+	}
+
+	/* Writes what the flips did, for a test to check. */
+	if (display->scanout) {
+		kern_logf("powervr: display flips %llu, mismatches %u, lost %d\n",
+			  (unsigned long long)display->flip.recorded,
+			  display->flip.mismatches,
+			  display->flip.lost);
+		drv_powervr_dc_vblank_report();
+	}
+
 	kern_logf("powervr: display lease %llu released after %llu frame(s); the text console resumes\n",
 		  (unsigned long long)display->lease,
 		  (unsigned long long)display->sequence);
@@ -1234,7 +1433,340 @@ end_lease(
 	display->owner = NULL;
 	display->lease = 0U;
 	display->sequence = 0U;
+	display->zero_copy = 0;
 
 	/* The console repaints the whole screen from its grid. */
 	kern_text_resume();
+}
+
+/*
+ * Reports whether the display controller can scan a shared frame's buffer
+ * itself: the lease asked for it, the controller counts frames, the
+ * buffer passed the import's checks, and the frame has the plane's extent
+ * and row pitch.  The caller holds the mutex.
+ */
+static int
+scan_directly(
+	const struct powervr_display *display,
+	const struct powervr_display_resource *resource,
+	const struct gpu_display_present *request)
+{
+	int ready;
+	int fits;
+
+	/* Only under a lease that asked for it. */
+	if (!display->zero_copy)
+		return 0;
+
+	/* Only a buffer the controller can reach in one run with its rows aligned. */
+	if (!resource->direct)
+		return 0;
+
+	/* Only while the controller counts frames and no fatal stop took the screen. */
+	ready = drv_powervr_dc_scanout_ready();
+	if (!ready)
+		return 0;
+
+	/* Only a frame the plane shows unscaled at the loader's extent and pitch. */
+	fits = drv_powervr_dc_frame_fits(request->width, request->height, request->stride);
+	if (!fits)
+		return 0;
+
+	return 1;
+}
+
+/*
+ * Points the plane at a resource's buffer, or at the framebuffer when
+ * resource is NULL, and waits for the plane to take it.  The caller holds
+ * the mutex and no change is under way; the mutex is let go during the
+ * wait.  ENXIO when a fatal stop took the screen back or the output was
+ * lost.
+ */
+static int
+change_plane(
+	struct powervr_display *display,
+	struct powervr_display_resource *resource,
+	struct powervr_display_resource **freed,
+	unsigned *count)
+{
+	const struct drv_powervr_dc_frame *frame;
+	struct powervr_flip_hold *hold;
+	uint64_t base;
+	int error;
+
+	/* The framebuffer is the loader's plane and takes no hold. */
+	frame = NULL;
+	hold = NULL;
+	if (resource != NULL) {
+		frame = &resource->frame;
+		hold = &resource->hold;
+	}
+
+	/* Writes the commit; a fatal stop refuses it. */
+	error = drv_powervr_dc_commit(frame, &base);
+	if (error != 0)
+		return ENXIO;
+
+	/* Holds the buffer from now until the commit after it is taken. */
+	powervr_flip_commit(&display->flip, hold, base);
+
+	/* Waits for the plane to take it. */
+	error = await_plane(display, freed, count);
+	return error;
+}
+
+/*
+ * Waits, without the mutex, for the plane to take the pending commit,
+ * then makes it the front and lets go of the former one.  When the blanks
+ * stop, the output counts as lost: the pending buffer stays held, the
+ * front is written back, and ENXIO is reported.  The caller holds the
+ * mutex and has a commit pending.
+ */
+static int
+await_plane(
+	struct powervr_display *display,
+	struct powervr_display_resource **freed,
+	unsigned *count)
+{
+	const struct drv_powervr_dc_frame *frame;
+	struct powervr_flip_hold *taken[2];
+	struct powervr_flip_hold *front;
+	uint64_t target;
+	uint64_t reached;
+	uint64_t base;
+	unsigned taken_count;
+	int error;
+
+	/*
+	 * Waits for the blanks with the mutex let go, so other sessions'
+	 * resources come and go meanwhile; flipping keeps every other plane
+	 * change out until this one is over.
+	 */
+	target = display->flip.base + POWERVR_FLIP_LATCH_BLANKS;
+	display->flipping = 1;
+	mutex_unlock(&display->mutex);
+
+	error = drv_powervr_dc_wait(target, &reached);
+
+	mutex_lock(&display->mutex);
+	display->flipping = 0;
+	waitq_wake_all(&display->flip_done);
+
+	/* Makes the taken commit the front and collects the buffers that went with the former one. */
+	if (error == 0) {
+		taken_count = powervr_flip_taken(&display->flip, reached, taken);
+		collect_freed(taken, taken_count, freed, count);
+		return 0;
+	}
+
+	/* Marks the output lost, keeping the pending buffer held. */
+	kern_logf("powervr: display output lost: no vertical blank for 100 ms at %llu\n",
+		  (unsigned long long)reached);
+	powervr_flip_lose(&display->flip, reached);
+
+	/* Writes the front back, so the plane does not stay on a buffer that was not taken. */
+	front = display->flip.front;
+	frame = NULL;
+	if (front != NULL)
+		frame = &resource_of_hold(front)->frame;
+	error = drv_powervr_dc_commit(frame, &base);
+	if (error == 0)
+		powervr_flip_commit(&display->flip, front, base);
+
+	return ENXIO;
+}
+
+/*
+ * Ends a lost output once the front's write-back was taken, letting go of
+ * the buffers that went with it; ENXIO while it was not.  Nothing to do
+ * while the output is not lost.  The caller holds the mutex.
+ */
+static int
+settle_lost(
+	struct powervr_display *display,
+	struct powervr_display_resource **freed,
+	unsigned *count)
+{
+	struct powervr_flip_hold *taken[2];
+	uint64_t sequence;
+	unsigned taken_count;
+	int due;
+
+	/* An output that is not lost needs nothing. */
+	if (!display->flip.lost)
+		return 0;
+
+	/* A write-back that could not be written never ends the loss. */
+	if (!display->flip.committing)
+		return ENXIO;
+
+	/* Stays lost until the write-back counts as taken. */
+	sequence = drv_powervr_dc_sequence();
+	due = powervr_flip_due(display->flip.base, sequence);
+	if (!due)
+		return ENXIO;
+
+	/* The plane took the write-back: the output is back. */
+	taken_count = powervr_flip_taken(&display->flip, sequence, taken);
+	collect_freed(taken, taken_count, freed, count);
+	return 0;
+}
+
+/* Waits for a plane change under way to finish.  The caller holds the mutex. */
+static void
+wait_flip_over(
+	struct powervr_display *display)
+{
+	uint64_t observed;
+
+	/* Sleeps until the change's thread is back under the mutex and done. */
+	while (display->flipping) {
+		observed = waitq_sequence(&display->flip_done);
+		(void)mutex_wait(&display->mutex, &display->flip_done, observed, 0, 0);
+	}
+}
+
+/* Adds the buffers a taken commit let go of to the caller's list of resources to free. */
+static void
+collect_freed(
+	struct powervr_flip_hold **taken,
+	unsigned taken_count,
+	struct powervr_display_resource **freed,
+	unsigned *count)
+{
+	unsigned index;
+
+	/* Appends each one while the list has room; the list is sized for the worst case. */
+	for (index = 0; index < taken_count; index++) {
+		if (*count >= POWERVR_DISPLAY_FREED_MAX)
+			break;
+
+		freed[*count] = resource_of_hold(taken[index]);
+		(*count)++;
+	}
+}
+
+/* Finds the resource a hold is embedded in. */
+static struct powervr_display_resource *
+resource_of_hold(
+	struct powervr_flip_hold *hold)
+{
+	/* The hold is a member of the resource at a fixed offset. */
+	return (struct powervr_display_resource *)(void *)((uint8_t *)hold - offsetof(struct powervr_display_resource, hold));
+}
+
+/* Frees a resource: its run, or its reference on the imported buffer, and the record. */
+static void
+free_resource(
+	struct powervr_display_resource *resource)
+{
+	/* An import gives its reference back; a run its memory. */
+	if (resource->buffer != NULL)
+		powervr_buffer_release(resource->buffer);
+	else
+		(void)kern_pmem_free(&resource->run);
+
+	kern_free(resource);
+}
+
+/* Frees every resource of a list; thread context, without the mutex. */
+static void
+free_resources(
+	struct powervr_display_resource **freed,
+	unsigned count)
+{
+	unsigned index;
+
+	/* Frees each one in turn. */
+	for (index = 0; index < count; index++)
+		free_resource(freed[index]);
+}
+
+/*
+ * Decides at import whether the display controller could scan the buffer
+ * itself, and where: one contiguous run of pages wholly below 4 GiB, the
+ * image at its start, and rows aligned and short enough for the plane's
+ * pitch register.  An import that fails is still shown, by copying.
+ */
+static void
+check_direct_scan(
+	struct powervr_display_resource *resource,
+	const struct gpu_image_descriptor *image,
+	const struct drv_gpu_scanout_backing *backing)
+{
+	uint64_t index;
+	uint64_t first;
+	uint64_t end;
+
+	/* Starts as copied. */
+	resource->direct = 0;
+
+	/* The image must start at the buffer's first byte. */
+	if (image->offset != 0U)
+		return;
+
+	/* Rows the plane's pitch register holds, on 32-byte boundaries. */
+	if ((image->stride % POWERVR_DISPLAY_SCAN_ALIGNMENT) != 0U)
+		return;
+	if (image->stride > POWERVR_DISPLAY_SCAN_STRIDE_MAX)
+		return;
+
+	/* Pages the controller reads as one run. */
+	if (backing->pages == NULL || backing->page_count == 0U || backing->page_bytes == 0U)
+		return;
+
+	first = backing->pages[0];
+	for (index = 1; index < backing->page_count; index++) {
+		if (backing->pages[index] != first + index * backing->page_bytes)
+			return;
+	}
+
+	/* Every row below 4 GiB, which the plane's address register reaches. */
+	end = first + (uint64_t)image->stride * image->height;
+	if (end > POWERVR_DISPLAY_SCAN_LIMIT || end < first)
+		return;
+
+	/* Every row inside the run. */
+	if ((uint64_t)image->stride * image->height > backing->page_count * backing->page_bytes)
+		return;
+
+	/* The plane can scan the buffer at its first page. */
+	resource->frame.physical = first;
+	resource->frame.stride = image->stride;
+	resource->frame.width = image->width;
+	resource->frame.height = image->height;
+	resource->frame.rgba = 0;
+	if (image->format == GPU_PIXEL_RGBA8888)
+		resource->frame.rgba = 1;
+	resource->direct = 1;
+}
+
+/*
+ * Reports whether the boot asked for direct scanning (dc8200.zerocopy=test).
+ *
+ * Until the render node refuses to export buffers the GPU writes through
+ * its cache, only a test program that presents buffers which bypass it
+ * may be scanned directly, and the boot parameter says one runs.
+ */
+static int
+zero_copy_requested(
+	void)
+{
+	const struct kern_boot_parameters *parameters;
+	const char *value;
+
+	/* Without the boot's parameters nothing was asked. */
+	parameters = kern_boot_parameters_current();
+	if (parameters == NULL)
+		return 0;
+
+	value = kern_boot_parameters_value(parameters, KERN_BOOT_PARAMETER_DC8200_ZEROCOPY);
+	if (value == NULL)
+		return 0;
+
+	/* Only the word test asks for it. */
+	if (kern_strcmp(value, "test") != 0)
+		return 0;
+
+	return 1;
 }
