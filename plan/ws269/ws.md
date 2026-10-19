@@ -42,7 +42,7 @@
 | p010o | transfer の blit（FAST_SCALE） | O-p010f | planning（同） |
 | p010g | render pass・framebuffer・load/store・clear・job の列 | O-p010e | planning（同） |
 | [p010-compiler](phase010-compiler/phase.md) | SPIR-V から USC への compiler（spirv-fill の置き換え、compute・vertex・fragment、color の pack・blend は D-P3 (b) で compiler） | p008、p009 | in-progress（2026-10-20 P2 q1363、p013・p014 の最初の試行の詳細の記録: 読み・back end・key（format・blend）・compute の executor への差し替え、host 試験 PASS、VF2・riscv64-virt の build warning 0） |
-| p010h | descriptor と compiler の境（`shader.h` の使用、PDS の data の program） | O-p010c、O-SHADER-ABI | planning（同） |
+| [p010h](phase010h/phase.md) | descriptor と compiler の境（`shader.h` の使用、PDS の data の program） | O-p010c、O-SHADER-ABI | in-progress（2026-10-20 P2 q1374: descriptor-set.c（set の並び・buffer 16・image 32（meta と PCK_INFO）・sampler 48（gather）・combined 80）、data-program.c（要求の表から shared の DOUTD/DOUTW の program、vertex の DDMAD と index の DOUTW の program）、set の memory は CPU の写し（heap は p010i で P1 の API に）、compute の inline は据え置き（理由は phase.md）。host 試験 data 83/0・executor 162/0、VF2・riscv64-virt・amd64 の build warning 0。Q1 の判定待ち） |
 | p010i | graphics の pipeline と draw | O-p010g、O-p010h、O-VSFS | planning（同） |
 | p010j | depth と vkdemo の offscreen | O-p010i | planning（同） |
 | p010k1 | WSI の readback の道（clear だけ、compiler なし） | O-p010f、O-P007 | planning（同） |
