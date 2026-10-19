@@ -28,4 +28,21 @@ void
 riscv64_board_describe(
 	void);
 
+/*
+ * The distance from RAM to the board's uncached alias of it, or zero when
+ * the board has no alias it can keep coherent with the caches.
+ */
+uint64_t
+riscv64_board_uncached_offset(
+	void);
+
+/*
+ * Writes back and discards every cached line of a physical range; nothing
+ * on a board whose devices snoop the caches.
+ */
+void
+riscv64_board_flush_physical(
+	uint64_t physical,
+	uint64_t size);
+
 #endif

@@ -25,12 +25,14 @@
 #include <hal/hal.h>
 #include "asm.h"
 #include "bootinfo.h"
+#include "bsp.h"
 #include "defs.h"
 #include "page.h"
 #include "percpu.h"
 #include "sbi.h"
 #include "space.h"
 #include "spin.h"
+#include "window.h"
 
 /* The flags of every kernel leaf: valid, global, already accessed and written. */
 #define KERNEL_LEAF		(RISCV64_PTE_V | RISCV64_PTE_G | RISCV64_PTE_A | RISCV64_PTE_D)
@@ -132,6 +134,8 @@ static void build_kernel_window(void);
 static uint64_t kernel_page_flags(uintptr_t address);
 static void map_hal_devices(void);
 static void map_device_blocks(uint64_t physical, uint64_t size);
+static void free_table(hal_physaddr_t physical);
+static bool leaf_is_uncached(uint64_t entry);
 static unsigned long other_ready_harts(void);
 static unsigned long harts_selecting(hal_space_t handle, bool *self);
 static void flush_space(hal_space_t handle);
@@ -356,6 +360,84 @@ riscv64_tlb_flush_everywhere(
 }
 
 /*
+ * Makes the device window reach some pages of a megapage-sized region
+ * that must not be reached whole: the uncached alias of RAM a driver owns.
+ *
+ * Each megapage the range touches gets a table of page leaves the first
+ * time, and a leaf for each page of the range; its other pages stay
+ * unreachable.  A megapage that is already one leaf (a whole-megapage
+ * mapping made earlier) is left as it is.  Leaves are never removed.
+ */
+int
+riscv64_space_map_alias(
+	uint64_t physical,
+	uint64_t size)
+{
+	hal_physaddr_t spare_physical;
+	uint64_t *spare;
+	uint64_t *table;
+	uint64_t block;
+	uint64_t end;
+	uint64_t entry;
+	unsigned root;
+	unsigned index;
+	bool enabled;
+	int error;
+
+	/* Requires a non-empty range the window reaches. */
+	if (size == 0 || physical >= RISCV64_DEVICE_LIMIT)
+		return HAL_ERR_INVALID;
+	if (size > RISCV64_DEVICE_LIMIT - physical)
+		return HAL_ERR_INVALID;
+
+	/* Gives every megapage the range touches the leaves of its pages. */
+	end = physical + size;
+	for (block = physical & ~((uint64_t)RISCV64_MEGAPAGE_SIZE - 1U); block < end; block += RISCV64_MEGAPAGE_SIZE) {
+		root = (unsigned)(block >> RISCV64_GIGAPAGE_SHIFT);
+		index = (unsigned)((block % RISCV64_GIGAPAGE_SIZE) / RISCV64_MEGAPAGE_SIZE);
+
+		/* Makes a table outside the lock when the megapage has none yet; entries are never cleared. */
+		spare = NULL;
+		spare_physical = 0;
+		entry = __atomic_load_n(&device_tables[root][index], __ATOMIC_RELAXED);
+		if (entry == 0) {
+			error = alloc_table(&spare, &spare_physical);
+			if (error != HAL_OK)
+				return HAL_ERR_NOMEM;
+		}
+
+		/* Links the table if the megapage still has none, then writes the range's leaves. */
+		enabled = riscv64_spin_lock(&kernel_table_lock);
+
+		entry = device_tables[root][index];
+		if (entry == 0 && spare != NULL) {
+			hal_wmb();
+			device_tables[root][index] = pointer_entry(spare_physical);
+			entry = device_tables[root][index];
+			spare = NULL;
+		}
+
+		if ((entry & RISCV64_PTE_V) != 0 && (entry & PERMISSIONS) == 0) {
+			table = riscv64_phys_to_direct((entry & PTE_PPN_MASK) >> RISCV64_PTE_PPN_SHIFT << RISCV64_PAGE_SHIFT);
+			(void)riscv64_window_fill_pages(table, block, physical, size, KERNEL_LEAF | RISCV64_PTE_R | RISCV64_PTE_W);
+		}
+
+		riscv64_spin_unlock(&kernel_table_lock, enabled);
+
+		/* Returns a table another caller's link made unnecessary. */
+		if (spare != NULL)
+			free_table(spare_physical);
+	}
+
+	/* Publishes the leaves, then drops stale entries everywhere. */
+	hal_wmb();
+	riscv64_tlb_flush_everywhere();
+
+	/* Succeeded: every page of the range is reachable in the window. */
+	return HAL_OK;
+}
+
+/*
  * Creates an empty user space.
  */
 hal_space_t
@@ -555,6 +637,7 @@ hal_space_map(
 	uintptr_t offset;
 	uintptr_t rollback;
 	uint64_t leaf_flags;
+	uint64_t target;
 	bool enabled;
 	bool ram;
 	int valid;
@@ -595,6 +678,17 @@ hal_space_map(
 	/* Code in the pages is fetched correctly once they are executable. */
 	sync_executable((uint64_t)paddr, size, attr);
 
+	/*
+	 * An uncached mapping points at the board's alias of the pages, after
+	 * their cached lines are written back and discarded so none can later
+	 * overwrite what is stored through the alias.
+	 */
+	target = (uint64_t)paddr;
+	if ((attr & HAL_SPACE_NOCACHE) != 0) {
+		riscv64_board_flush_physical((uint64_t)paddr, (uint64_t)size);
+		target += riscv64_board_uncached_offset();
+	}
+
 	/* Writes a leaf for each page, unwinding them all if a table cannot be made. */
 	leaf_flags = user_leaf_flags(attr);
 	for (offset = 0; offset < size; offset += RISCV64_PAGE_SIZE) {
@@ -617,8 +711,8 @@ hal_space_map(
 			return HAL_ERR_NOMEM;
 		}
 
-		/* Points the leaf at the page. */
-		*leaf = leaf_entry((uint64_t)paddr + offset, leaf_flags);
+		/* Points the leaf at the page or its alias. */
+		*leaf = leaf_entry(target + offset, leaf_flags);
 	}
 
 	/* Publishes the leaves to the table walkers of every hart that has the space. */
@@ -714,6 +808,7 @@ hal_space_prot_query(
 	uint64_t leaf_flags;
 	uint32_t observed;
 	bool enabled;
+	bool uncached;
 	int valid;
 	int locked;
 
@@ -739,6 +834,16 @@ hal_space_prot_query(
 		if (leaf == NULL || (*leaf & RISCV64_PTE_V) == 0) {
 			space_unlock(space, enabled);
 			return HAL_ERR_INVALID;
+		}
+
+		/*
+		 * A page keeps its cache behaviour, which a protection change
+		 * does not choose; an uncached page is never made executable.
+		 */
+		uncached = leaf_is_uncached(*leaf);
+		if (uncached && (attr & HAL_SPACE_EXEC) != 0) {
+			space_unlock(space, enabled);
+			return HAL_ERR_UNSUPPORTED;
 		}
 	}
 
@@ -1520,8 +1625,10 @@ map_device_blocks(
 	uint64_t physical,
 	uint64_t size)
 {
+	uint64_t *table;
 	uint64_t block;
 	uint64_t end;
+	uint64_t entry;
 	unsigned root;
 	unsigned index;
 
@@ -1534,6 +1641,16 @@ map_device_blocks(
 	for (block = physical & ~((uint64_t)RISCV64_MEGAPAGE_SIZE - 1U); block < end; block += RISCV64_MEGAPAGE_SIZE) {
 		root = (unsigned)(block >> RISCV64_GIGAPAGE_SHIFT);
 		index = (unsigned)((block % RISCV64_GIGAPAGE_SIZE) / RISCV64_MEGAPAGE_SIZE);
+
+		/* A megapage that holds page leaves gets all of them, which is the whole megapage. */
+		entry = device_tables[root][index];
+		if ((entry & RISCV64_PTE_V) != 0 && (entry & PERMISSIONS) == 0) {
+			table = riscv64_phys_to_direct((entry & PTE_PPN_MASK) >> RISCV64_PTE_PPN_SHIFT << RISCV64_PAGE_SHIFT);
+			(void)riscv64_window_fill_pages(table, block, block, RISCV64_MEGAPAGE_SIZE, KERNEL_LEAF | RISCV64_PTE_R | RISCV64_PTE_W);
+			continue;
+		}
+
+		/* Any other megapage becomes one leaf. */
 		device_tables[root][index] = leaf_entry(block, KERNEL_LEAF | RISCV64_PTE_R | RISCV64_PTE_W);
 	}
 }
@@ -1767,6 +1884,8 @@ static int
 valid_attributes(
 	uint32_t attr)
 {
+	uint64_t offset;
+
 	/* A mapping must allow some access. */
 	if ((attr & (HAL_SPACE_READ | HAL_SPACE_WRITE | HAL_SPACE_EXEC)) == 0)
 		return HAL_ERR_INVALID;
@@ -1776,8 +1895,17 @@ valid_attributes(
 		return HAL_ERR_INVALID;
 
 	/* The cache behaviour of memory is the platform's, and device pages are not offered to users. */
-	if ((attr & (HAL_SPACE_NOCACHE | HAL_SPACE_WRITETHRU | HAL_SPACE_WC | HAL_SPACE_DEVICE)) != 0)
+	if ((attr & (HAL_SPACE_WRITETHRU | HAL_SPACE_WC | HAL_SPACE_DEVICE)) != 0)
 		return HAL_ERR_UNSUPPORTED;
+
+	/* Uncached memory is the board's alias, which only some boards have and nothing runs from. */
+	if ((attr & HAL_SPACE_NOCACHE) != 0) {
+		offset = riscv64_board_uncached_offset();
+		if (offset == 0)
+			return HAL_ERR_UNSUPPORTED;
+		if ((attr & HAL_SPACE_EXEC) != 0)
+			return HAL_ERR_UNSUPPORTED;
+	}
 
 	/* Succeeded: the attributes can be represented. */
 	return HAL_OK;
@@ -2010,4 +2138,35 @@ sync_executable(
 	/* Its bytes through the kernel's direct map. */
 	direct = riscv64_phys_to_direct(physical);
 	hal_sync_instruction_stream(direct, size);
+}
+
+/* Returns a kernel table page that was never linked. */
+static void
+free_table(
+	hal_physaddr_t physical)
+{
+	hal_physaddr_t block;
+
+	/* Gives the page back and stops counting it. */
+	block = physical;
+	(void)hal_pmem_free(&block, RISCV64_PAGE_SIZE);
+	(void)__atomic_fetch_sub(&page_table_count, 1U, __ATOMIC_RELAXED);
+}
+
+/* Reports whether a user leaf points at the board's uncached alias rather than RAM. */
+static bool
+leaf_is_uncached(
+	uint64_t entry)
+{
+	uint64_t physical;
+	bool ram;
+
+	/* The page the leaf points at; RAM is reached cached, the alias is not RAM. */
+	physical = (entry & PTE_PPN_MASK) >> RISCV64_PTE_PPN_SHIFT << RISCV64_PAGE_SHIFT;
+	ram = riscv64_range_is_ram(physical, RISCV64_PAGE_SIZE);
+	if (ram)
+		return false;
+
+	/* Succeeded: the leaf reaches the alias. */
+	return true;
 }

@@ -104,4 +104,9 @@ void
 riscv64_tlb_flush_everywhere(
 	void);
 
+int
+riscv64_space_map_alias(
+	uint64_t physical,
+	uint64_t size);
+
 #endif
