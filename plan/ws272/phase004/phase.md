@@ -2,7 +2,7 @@
 
 - 親: [WS272](../ws.md)。[ws271-p005](../../ws271/phase005/phase.md) と一緒に行った（共通の層 `src/hal/mips/` は同じ file）。
 - Queue: q1290 / q1290-i01（P1、worktree p1 / agent/p1、2026-10-19）。
-- Status: in-progress（実装・build・host 試験は済み。T1 の回帰の結果を Q1 が判定するまで cleared にしない）。
+- Status: cleared（2026-10-19 Q1 の判定、T1-734）
 
 ## 範囲と受け入れ条件
 WS272 が足した・変えた code（`include/hal/arch/mips64.h`、`platform/mips64-malta/`、共通の層の 64 bit の枝、kernel の elf の MIPS64 の枝、`plan/ws272/tests`）を coding-style.md の全文と Guardrail の出典の規則に照らして書き方だけを直す。hal.h は不変。

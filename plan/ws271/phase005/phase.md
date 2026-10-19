@@ -2,7 +2,7 @@
 
 - 親: [WS271](../ws.md)。一緒に行う: [ws272-p004](../../ws272/phase004/phase.md)（MIPS64、共通の層は同じ file）。
 - Queue: q1290 / q1290-i01（P1、worktree p1 / agent/p1、2026-10-19）。
-- Status: in-progress（実装・build・host 試験は済み。T1 の回帰の結果を Q1 が判定するまで cleared にしない）。
+- Status: cleared（2026-10-19 Q1 の判定、T1-734: MIPS32・MIPS64 の VFS の段の回帰 PASS、VFS の行は 1 回）
 
 ## 範囲と受け入れ条件
 WS271・WS272 が足した・変えた code（`src/hal/mips/`、`include/hal/arch/mips32.h`・`mips64.h` と `arch.h` の節、`platform/mips32-malta/`・`mips64-malta/`、kernel の elf・stat の枝、Makefile・menuconfig の追加、`plan/ws271/tests`・`plan/ws272/tests`）を [coding-style.md](../../coding-style.md) の全文と [Guardrail](../../guardrail.md) の出典の規則に照らし、書き方だけを直す（動作は変えない）。hal.h は不変。build warning 0（mips32・mips64）、host 試験 PASS、T1 の VFS の段の回帰。
