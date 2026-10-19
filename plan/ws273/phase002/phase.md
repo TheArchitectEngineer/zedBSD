@@ -3,7 +3,7 @@
 # ws273-p002 MIPS の共通の層の変更（RG350 の前の準備、malta は不変）
 
 - 親: [ws273](../ws.md)、Queue: q1327 / q1327-i01（P1、2026-10-19）
-- Status: planned → 実装済み・T1 の結果待ち（2026-10-19 P1。cleared は T1 の結果を Q1 が判定してから）
+- Status: cleared（2026-10-19 Q1 の判定: T1-748 で mips32・mips64 malta の回帰 PASS、`?` の直し（ea3a89dc0）の後の T1-750 で切り替え on の `forced=1` と通常の `alias=` の数字を画面で確認。QEMU のみ、VTAG・L2 の整合は QEMU では見えず実機の p006 で）
 - 設計: [design.md](../design.md) 改訂 2.1 の §2.2・§2.3・§3.1 の p002。ユーザーの判断は [ws.md](../ws.md) の「決定」節（D8 A: mips32.h の comment の差分を承認）。
 
 ## 範囲と受け入れの条件
