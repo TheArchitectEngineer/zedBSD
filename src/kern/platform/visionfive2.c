@@ -73,6 +73,7 @@
 #include <drivers/platform/visionfive2/vf2-syscon.h>
 #include <kern/boot.h>
 #include <kern/disk.h>
+#include <kern/kcrt.h>
 #include <kern/klog.h>
 #include <kern/partition.h>
 #include <kern/text-display.h>
@@ -205,7 +206,7 @@ static const struct vf2_dc_gate vf2_dc_gates[] = {
  * (JH7110_SYSCLK_VOUT_SRC 58, JH7110_SYSCLK_NOC_BUS_DISP_AXI 60,
  * JH7110_SYSCLK_VOUT_TOP_AHB 61, JH7110_SYSCLK_VOUT_TOP_AXI 62,
  * JH7110_SYSCLK_VOUT_TOP_HDMITX0_MCLK 63, JH7110_VOUTCLK_DC8200_AXI 4 to
- * JH7110_VOUTCLK_DC8200_PIX0 7, JH7110_VOUTCLK_DOM_VOUT_TOP_LCD 9,
+ * JH7110_VOUTCLK_DC8200_PIX1 8, JH7110_VOUTCLK_DOM_VOUT_TOP_LCD 9,
  * JH7110_VOUTCLK_HDMI_TX_MCLK 15 to JH7110_VOUTCLK_HDMI_TX_SYS 17);
  * StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
  * arch/riscv/boot/dts/starfive/jh7110.dtsi (dc8200's and hdmi's clocks).
@@ -220,6 +221,7 @@ static const struct vf2_dc_gate vf2_dc_start_gates[] = {
 	{ { DRV_VF2_CRG_VOUT, 5U }, "dc8200_core" },
 	{ { DRV_VF2_CRG_VOUT, 6U }, "dc8200_ahb" },
 	{ { DRV_VF2_CRG_VOUT, 7U }, "dc8200_pix0" },
+	{ { DRV_VF2_CRG_VOUT, 8U }, "dc8200_pix1" },
 	{ { DRV_VF2_CRG_VOUT, 9U }, "vout_top_lcd" },
 	{ { DRV_VF2_CRG_VOUT, 15U }, "hdmi_tx_mclk" },
 	{ { DRV_VF2_CRG_VOUT, 16U }, "hdmi_tx_bclk" },
@@ -305,6 +307,9 @@ static void reveal_fatal(void);
 static void probe_display_controller(const struct drv_fdt *fdt);
 static int check_display_clocks(void);
 static void light_display(const struct drv_powervr_dc_place *place);
+static int start_display_gates(enum drv_vf2_crg crg);
+static int release_display_resets(enum drv_vf2_crg crg);
+static void describe_display_power(void);
 static int power_display(void);
 #endif
 
@@ -1104,6 +1109,8 @@ light_display(
 
 	/* Has the display driver set the mode and show its framebuffer. */
 	error = drv_powervr_dc_own_mode(&own);
+	if (error == ENODEV)
+		describe_display_power();
 	if (error != 0) {
 		kern_logf("visionfive2: display not lit (%d)\n", error);
 		return;
@@ -1111,6 +1118,105 @@ light_display(
 
 	/* Lets a fatal stop take the screen back to the driver's framebuffer. */
 	vf2_fatal_display = drv_powervr_dc_restore_fatal;
+}
+
+/*
+ * Starts, in table order, the display gates of one clock generator.
+ */
+static int
+start_display_gates(
+	enum drv_vf2_crg crg)
+{
+	const struct vf2_dc_gate *gate;
+	unsigned index;
+	int error;
+
+	/* Starts each of the generator's gates in order. */
+	for (index = 0; index < sizeof(vf2_dc_start_gates) / sizeof(vf2_dc_start_gates[0]); index++) {
+		gate = &vf2_dc_start_gates[index];
+		if (gate->clock.crg != crg)
+			continue;
+		error = drv_vf2_clock_enable(&gate->clock);
+		if (error != 0) {
+			kern_logf("dc8200: own mode: clock %s not started (%d)\n", gate->name, error);
+			return error;
+		}
+	}
+
+	/* Succeeded: every gate of the generator is open. */
+	return 0;
+}
+
+/*
+ * Releases, in table order, the display reset lines of one clock
+ * generator.
+ */
+static int
+release_display_resets(
+	enum drv_vf2_crg crg)
+{
+	const struct drv_vf2_reset *reset;
+	unsigned index;
+	int error;
+
+	/* Releases each of the generator's lines in order. */
+	for (index = 0; index < sizeof(vf2_dc_start_resets) / sizeof(vf2_dc_start_resets[0]); index++) {
+		reset = &vf2_dc_start_resets[index];
+		if (reset->crg != crg)
+			continue;
+		error = drv_vf2_reset_deassert(reset);
+		if (error != 0) {
+			kern_logf("dc8200: own mode: reset %u/%u not released (%d)\n",
+				  (unsigned)reset->crg,
+				  reset->index,
+				  error);
+			return error;
+		}
+	}
+
+	/* Succeeded: every line of the generator is released. */
+	return 0;
+}
+
+/*
+ * Logs, on one line, each display gate's and reset line's state, after the
+ * controller read back an unknown model: '+' open or released, '-' stopped
+ * or held, '?' unreadable.
+ */
+static void
+describe_display_power(
+	void)
+{
+	char line[256];
+	size_t used;
+	unsigned index;
+	int state;
+	int error;
+	char mark;
+
+	used = 0;
+	line[0] = '\0';
+
+	/* Lists each gate. */
+	for (index = 0; index < sizeof(vf2_dc_start_gates) / sizeof(vf2_dc_start_gates[0]); index++) {
+		error = drv_vf2_clock_running(&vf2_dc_start_gates[index].clock, &state);
+		mark = error != 0 ? '?' : (state ? '+' : '-');
+		used += (size_t)kern_snprintf(line + used, sizeof(line) - used, " %s%c",
+					 vf2_dc_start_gates[index].name, mark);
+		if (used >= sizeof(line))
+			break;
+	}
+
+	/* Lists each reset line. */
+	for (index = 0; index < sizeof(vf2_dc_start_resets) / sizeof(vf2_dc_start_resets[0]) && used < sizeof(line); index++) {
+		error = drv_vf2_reset_released(&vf2_dc_start_resets[index], &state);
+		mark = error != 0 ? '?' : (state ? '+' : '-');
+		used += (size_t)kern_snprintf(line + used, sizeof(line) - used, " rst%u/%u%c",
+					 (unsigned)vf2_dc_start_resets[index].crg,
+					 vf2_dc_start_resets[index].index, mark);
+	}
+
+	kern_logf("dc8200: display power:%s\n", line);
 }
 
 /*
@@ -1133,10 +1239,8 @@ static int
 power_display(
 	void)
 {
-	const struct vf2_dc_gate *gate;
 	struct drv_vf2_clock lcd;
 	struct drv_vf2_clock pixel;
-	unsigned index;
 	int powered;
 	int error;
 
@@ -1155,15 +1259,23 @@ power_display(
 		}
 	}
 
-	/* Starts each clock in order. */
-	for (index = 0; index < sizeof(vf2_dc_start_gates) / sizeof(vf2_dc_start_gates[0]); index++) {
-		gate = &vf2_dc_start_gates[index];
-		error = drv_vf2_clock_enable(&gate->clock);
-		if (error != 0) {
-			kern_logf("dc8200: own mode: clock %s not started (%d)\n", gate->name, error);
-			return error;
-		}
-	}
+	/*
+	 * Starts the SYS generator's display gates, then releases its display
+	 * resets: SYSRST_VOUT_TOP_SRC holds the VOUT generator itself in
+	 * reset, so its gates are opened only after that line is released, as
+	 * in the vendor's U-Boot (sf_vop.c vout_probe_resources_jh7110).
+	 */
+	error = start_display_gates(DRV_VF2_CRG_SYS);
+	if (error != 0)
+		return error;
+	error = release_display_resets(DRV_VF2_CRG_SYS);
+	if (error != 0)
+		return error;
+
+	/* Starts the VOUT generator's gates once it is out of reset. */
+	error = start_display_gates(DRV_VF2_CRG_VOUT);
+	if (error != 0)
+		return error;
 
 	/* Runs the LCD clock from the HDMI panel's pixel clock. */
 	lcd.crg = DRV_VF2_CRG_VOUT;
@@ -1183,17 +1295,10 @@ power_display(
 		return error;
 	}
 
-	/* Releases each reset line in order. */
-	for (index = 0; index < sizeof(vf2_dc_start_resets) / sizeof(vf2_dc_start_resets[0]); index++) {
-		error = drv_vf2_reset_deassert(&vf2_dc_start_resets[index]);
-		if (error != 0) {
-			kern_logf("dc8200: own mode: reset %u/%u not released (%d)\n",
-				  (unsigned)vf2_dc_start_resets[index].crg,
-				  vf2_dc_start_resets[index].index,
-				  error);
-			return error;
-		}
-	}
+	/* Releases the VOUT generator's controller and HDMI lines. */
+	error = release_display_resets(DRV_VF2_CRG_VOUT);
+	if (error != 0)
+		return error;
 
 	/* Succeeded: the output is powered, clocked and out of reset. */
 	return 0;
