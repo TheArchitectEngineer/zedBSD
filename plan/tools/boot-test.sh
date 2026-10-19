@@ -25,7 +25,10 @@
 #                  prompt, ^(?:\S+ )?login: ?)
 #   BOOT_THEN      steps after the patterns were seen, one per line:
 #                  "type:TEXT" types TEXT and a return on the guest's serial
-#                  line, "expect:REGEX" waits for the screen to show REGEX;
+#                  line, "keys:TEXT" types TEXT and a return on the emulated
+#                  keyboard through QMP send-key (US layout; the guest's own
+#                  keyboard such as -device usb-kbd), "expect:REGEX" waits for
+#                  the screen to show REGEX;
 #                  the last screen is OUTPUT/login-after.png
 #   BOOT_INTERVAL  seconds between two looks at the screen (default 2, 0.5 in
 #                  the riscv64 modes)
@@ -364,6 +367,7 @@ if [[ -n ${BOOT_THEN:-} ]]; then
 	while IFS= read -r line; do
 		case $line in
 		type:*) watch+=(--then-type "${line#type:}") ;;
+		keys:*) watch+=(--then-keys "${line#keys:}") ;;
 		expect:*) watch+=(--then-expect "${line#expect:}") ;;
 		'') ;;
 		*)
