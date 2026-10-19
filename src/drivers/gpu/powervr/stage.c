@@ -23,7 +23,7 @@
 
 /* The stages as the lines name them. */
 static const char *const stage_line_names[POWERVR_STAGE_COUNT] = {
-	"firmware", "render node", "compute", "ta", "3d", "transfer", "present",
+	"firmware", "render-node", "compute", "ta", "3d", "transfer", "present",
 };
 
 /* The stages as the sysctl text names them (one word each). */
