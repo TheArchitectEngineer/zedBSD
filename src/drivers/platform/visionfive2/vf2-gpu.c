@@ -126,6 +126,15 @@ drv_vf2_gpu_attach(
 	if (fdt == NULL || builtin == NULL)
 		return EINVAL;
 
+	/*
+	 * Publishes the screen as the display node first (gpu0); the board
+	 * keeps its text console when there is no screen, and the core is
+	 * brought up either way.
+	 */
+	error = drv_powervr_display_attach();
+	if (error != 0 && error != ENOENT)
+		kern_logf("vf2-gpu: display node unavailable (%d)\n", error);
+
 	/* Maps the power management unit, which turns the core's domain on. */
 	error = drv_vf2_pmu_init(fdt);
 	if (error != 0) {
