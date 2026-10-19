@@ -22,7 +22,7 @@
 
 | Phase | 中身 | 依存 | Status |
 | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 設計（driver の構成・firmware・userland の Vulkan の道・Phase の分割）。コードは書かない | — | in-progress（改訂 3.1 が出来た、Q1 の差分の確認待ち。2026-10-19 P2、q1316・q1319・q1321・q1324、[design.md](design.md)、[レビュー 1](design-review-1.md)・[レビュー 2](design-review-2.md)・[レビュー 3](design-review-3.md)） |
+| [p001](phase001/phase.md) | 設計（driver の構成・firmware・userland の Vulkan の道・Phase の分割）。コードは書かない | — | cleared（2026-10-19 Q1、改訂 3.1。D は未決） |
 
 残りの Phase は p001 の設計から作る。
 
