@@ -16,12 +16,20 @@
 #include <stdint.h>
 #include <uapi/graphics.h>
 
+/*
+ * One image the front end hands to the blit operation.
+ *
+ * pattern_y is the row of the image's first row relative to the user's
+ * request, so a BLIT_PATTERN drawn one row at a time keeps the pattern's
+ * vertical phase.
+ */
 struct pcat_graphics_image {
 	unsigned format, width, height;
 	size_t stride;
 	const uint8_t *pixels;
 	const uint32_t *palette;
 	unsigned palette_size;
+	unsigned pattern_y;
 };
 
 int drv_pcat_graphics_backend_ready(void);
