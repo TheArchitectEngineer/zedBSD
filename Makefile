@@ -280,11 +280,11 @@ CONFIG_DRIVER_PCI_AHCI ?= $(if $(filter amd64,$(ZEDBSD_PLATFORM)),y,n)
 CONFIG_DRIVER_PCI_VENUS ?= $(if $(filter amd64,$(ZEDBSD_PLATFORM)),y,n)
 CONFIG_DRIVER_PCI_I915 ?= $(if $(filter amd64,$(ZEDBSD_PLATFORM)),y,n)
 
-# The NVIDIA Turing-and-later driver is on by default.
-CONFIG_DRIVER_PCI_NVRTX ?= y
+# The NVIDIA Turing-and-later driver is on by default where it builds (amd64).
+CONFIG_DRIVER_PCI_NVRTX ?= $(if $(filter amd64,$(ZEDBSD_PLATFORM)),y,n)
 
-# The AMD RDNA driver is on by default.
-CONFIG_DRIVER_PCI_AMDRDNA ?= y
+# The AMD RDNA driver is on by default where it builds (amd64).
+CONFIG_DRIVER_PCI_AMDRDNA ?= $(if $(filter amd64,$(ZEDBSD_PLATFORM)),y,n)
 CONFIG_AMDRDNA_CONTROL ?= y
 
 # HD Audio is on by default where its driver builds (amd64); a config written
