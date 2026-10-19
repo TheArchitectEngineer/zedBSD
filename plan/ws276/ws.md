@@ -3,7 +3,9 @@
 # WS276 m68k（x68k・m68k-virt）の静的な program の TLS を kernel と libc で支える
 
 - ID: ws276、Master: [master.md](../master.md)、Primary Milestone: MG008
-- Status: incomplete（2026-10-19 18:26 Q1 作成、p001 を P2 が q1304）
+- Status: completed（2026-10-19 Q1: p001 cleared。m68k の静的な program の TLS（variant I）を include/uapi/tls.h の共有の計算で kernel の elf.c と libc の static-tls.c に、amd64・i386 は元と同じ計算。T1-741 の回帰 PASS）
+- Phase の directory は完了の規則で削除した（記録は git の 23f88e168 の plan/ws276/phase001/phase.md）。host 試験は回帰に使うので plan/tools/tls-layout/ に移し、Master の Tools に登録した。
+- 残り: x68k の MAME・実機での実行は未確認。ZEDBSD_STATIC_TLS は誰も読まないので消す案（sysroot.mk は Q1、sparcv9 はユーザー、x68k の 1 行）は未適用。
 - 起点: 2026-10-19 ユーザー「x68kにもNICは実在するらしいので、lp,lpr,ntpdateもビルドが通るようにしましょう。」の後の P2 の所見（q1301）: x68k の user の runtime に __m68k_read_tp と user.ld の PT_TLS を足して lp・lpr・ntpdate が link できるようになったが、kernel の elf.c の load_static_tls は amd64・i386 だけで、他の arch の静的な TLS の program は ENOEXEC で拒まれる。x68k で動かすには、elf.c が m68k の TLS の配置（TCB の後 0x7000 の thread pointer、m68k-read-tp.c と同じ）を作り、static-tls.c の __rtld_thread_alloc が m68k の配置を扱う必要がある。
 - 担当: P2（q1304）。
 
@@ -18,4 +20,4 @@
 
 | Phase | 目的 | 状態 |
 | --- | --- | --- |
-| [p001](phase001/phase.md) | 設計と実装（elf.c・static-tls.c の m68k の配置、host 試験、名前の食い違いの調べ） | in-progress（code と host 試験は済み（a90464074）、amd64・pcat の起動の回帰（T1-740 に含める）を待つ） |
+| p001 | 設計と実装（elf.c・static-tls.c の m68k の配置、host 試験、名前の食い違いの調べ） | in-progress（code と host 試験は済み（a90464074）、amd64・pcat の起動の回帰（T1-740 に含める）を待つ） |

@@ -1,11 +1,11 @@
 #!/bin/sh
 # Host test of the static TLS placement (ws276-p001).
-# Usage: plan/ws276/tests/tls-layout/run.sh [output-directory]
+# Usage: plan/tools/tls-layout/run.sh [output-directory]
 # Runs from the repository root.  Output defaults to build/ws276-p001.
 set -eu
 
 out=${1:-build/ws276-p001}
-here=plan/ws276/tests/tls-layout
+here=plan/tools/tls-layout
 mkdir -p "$out"
 
 # The placement for 64-bit and 32-bit pointers (amd64 and i386 sizes).

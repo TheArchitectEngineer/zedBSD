@@ -3,7 +3,9 @@
 # WS274 仮想メモリの code を src/kern/vm/ に分けて整理する
 
 - ID: ws274、Master: [master.md](../master.md)、Primary Milestone: MG001
-- Status: incomplete（2026-10-19 設計の承認、着手。旧: planning（2026-10-19 15:45 Q1 作成。案の段）
+- Status: completed（2026-10-19 Q1: p001〜p008 cleared。src/kern/vm.c・vmspace.c・vm-device.c・swap.c を src/kern/vm/ の 26 の file と内部の header 3 つに分け、死んだ code と重複を除き、helper 65 に接頭辞を付けた。起動の回帰は T1-736・737・738・740・741）
+- Phase の directory と WS だけの試験（tests/body-compare.py・p008-rename.txt）は完了の規則で削除した（記録は git の 23f88e168 の plan/ws274/）。設計は [design.md](design.md) に残す。
+- 残り（別の段・別の WS）: 長い関数（vmspace_fault 770 行など）の分割と slab の allocator の統一は、swap の圧力の試験を用意してから（design.md §4）。
 - 起点（2026-10-19 ユーザー）:「vm.cが長すぎて複雑すぎるという指摘を受けました。そういえばあとで整理しようとして未着手でした。src/kern/vm/以下に分割して整理する案を作れますか？まだ案でいいです。vm.c, vmspace.cなど、仮想メモリ系統をvm/に分割して整理して入れる案です。」
 - 案: [design.md](design.md)（vm.c 10350 行・vmspace.c 7481 行を、object・content・fault・sync・cache・prefetch・page・commit・metadata lock・private page・page の追跡・reclaim・pageout と、vmspace の寿命・metadata・fault・copy・fork・map・region・unmap、device、swap に分ける。中心 約 33 LW、任意を含め 約 50 LW）。
 - 担当: 未割当。
@@ -26,7 +28,7 @@ design.md §3 の段。各段は build（amd64 の LTO・gcc の LTO 無しの p
 | p003 | S4 object の群（A〜G）と object-internal.h（必要なら S4a・S4b） | 10 | cleared（2026-10-19 Q1、T1-737・738・740） |
 | p004 | S5 vmspace の群と vmspace-internal.h、pin-host-test の追従 | 8 | cleared（2026-10-19 Q1、T1-737・738・740） |
 | p005 | S6 swap.c を vm/ へ移して 4 つに（判断③） | 4 | cleared（2026-10-19 Q1、T1-737・738・740） |
-| [p006](phase006/phase.md) | 死んだ code と重複（判断⑦、約 5 LW） | 5 | cleared（2026-10-19 Q1、T1-737・738・740） |
-| [p007](phase007/phase.md) | S9 最後の確かめ（全 platform の build、T1 の起動の回帰）と規約の全文の見直し（S8 の接頭辞を含むかは p006 の後に判断） | 3〜10 | cleared（2026-10-19 Q1、T1-737・738・740） |
+| p006 | 死んだ code と重複（判断⑦、約 5 LW） | 5 | cleared（2026-10-19 Q1、T1-737・738・740） |
+| p007 | S9 最後の確かめ（全 platform の build、T1 の起動の回帰）と規約の全文の見直し（S8 の接頭辞を含むかは p006 の後に判断） | 3〜10 | cleared（2026-10-19 Q1、T1-737・738・740） |
 | p008 | 接頭辞の無い helper 65 に vm_・vmspace_ などの接頭辞（2026-10-19 ユーザーの決定: 内部の header に内部の API で将来は保証されないと書く、公開の header には宣言しない）、試験の名前の一覧の追従 | 3〜4 | in-progress（T1-741 待ち） |
 
