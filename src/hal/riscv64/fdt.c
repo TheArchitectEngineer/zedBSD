@@ -239,6 +239,35 @@ static const struct fdt_extension_name extension_names[] = {
 	{"zkr", RISCV64_FDT_EXT_ZKR}
 };
 
+/*
+ * The base extensions a hart needs to run the system, by their letters: the
+ * kernel is built for rv64imac and the userland for rv64gc, that is imafdc.
+ *
+ * Values referenced: the -march of platform/riscv64/vmunix.mk and of
+ * platform/riscv64/userland.mk.
+ */
+static const char system_base_letters[] = "imafdc";
+
+/*
+ * The width a riscv,isa string must start with, and the letters its
+ * single-letter g stands for.
+ *
+ * Values referenced: RISC-V unprivileged ISA (riscv/riscv-isa-manual), ISA
+ * extension naming conventions: g abbreviates imafd with Zicsr and Zifencei.
+ */
+static const char isa_width_prefix[] = "rv64";
+static const char isa_general_letters[] = "imafd";
+
+/*
+ * The letters that start a multi-letter name, which ends a riscv,isa
+ * string's single letters when no underscore comes first; every base
+ * extension the system needs comes before them in the canonical order.
+ *
+ * Values referenced: RISC-V unprivileged ISA (riscv/riscv-isa-manual), ISA
+ * extension naming conventions, the canonical order of the names.
+ */
+static const char isa_multi_letter_starts[] = "hsxz";
+
 static uint32_t read_be32(const uint8_t *bytes);
 static uint64_t read_be64(const uint8_t *bytes);
 static uint64_t read_cells(const uint8_t *bytes, uint32_t cells);
@@ -260,6 +289,8 @@ static int add_range(struct riscv64_fdt_range *ranges, unsigned *count, unsigned
 static int read_first_reg(const struct fdt_node *node, uint64_t *base, uint64_t *size);
 static int add_reg_ranges(const struct fdt_node *node, struct riscv64_fdt_range *ranges, unsigned *count, unsigned capacity);
 static uint32_t cpu_extensions(const struct fdt_node *node);
+static uint32_t letter_bits(const char *letters);
+static int cpu_runs_system(const struct fdt_node *node);
 static uint64_t read_number(const uint8_t *value, uint32_t length);
 static int keep_cpu(struct fdt_walk *walk, const struct fdt_node *node);
 static int keep_plic(struct fdt_walk *walk, const struct fdt_node *node);
@@ -1294,6 +1325,111 @@ cpu_extensions(
 	return extensions;
 }
 
+/* Gives each lowercase letter of a string its bit, a as bit 0. */
+static uint32_t
+letter_bits(
+	const char *letters)
+{
+	uint32_t bits;
+	size_t index;
+
+	/* Sets the bit of each letter; anything but a lowercase letter has none. */
+	bits = 0;
+	for (index = 0; letters[index] != '\0'; index++) {
+		if (letters[index] >= 'a' && letters[index] <= 'z')
+			bits |= 1U << (uint32_t)(letters[index] - 'a');
+	}
+
+	/* Succeeded: the set of the string's letters. */
+	return bits;
+}
+
+/*
+ * Reports whether a hart has every base extension the system is built for.
+ *
+ * A tree of the current binding lists each base extension by its letter in
+ * riscv,isa-extensions; an older one has only the riscv,isa string, whose
+ * single letters follow the width up to the first multi-letter name.  A
+ * monitor core such as the JH7110's S7 (rv64imac) lacks F and D.  A hart
+ * whose tree says neither cannot be shown to have them.
+ */
+static int
+cpu_runs_system(
+	const struct fdt_node *node)
+{
+	const char *isa;
+	uint32_t required;
+	uint32_t general;
+	uint32_t ends;
+	uint32_t seen;
+	uint32_t bit;
+	uint32_t index;
+	size_t wanted;
+	char name[2];
+	int present;
+
+	/* The list of the current binding names each base extension on its own. */
+	if (node->isa_extensions != NULL) {
+		/* Looks for each wanted letter as a name of the list. */
+		name[1] = '\0';
+		for (wanted = 0; system_base_letters[wanted] != '\0'; wanted++) {
+			name[0] = system_base_letters[wanted];
+			present = list_has(node->isa_extensions, node->isa_extensions_length, name);
+			if (!present)
+				return 0;
+		}
+
+		/* Succeeded: the list names every base extension the system needs. */
+		return 1;
+	}
+
+	/* A tree without the list: nothing can be said without a terminated string. */
+	if (node->isa == NULL || node->isa_length == 0)
+		return 0;
+	if (node->isa[node->isa_length - 1U] != 0)
+		return 0;
+
+	/* A hart of another width cannot run the system. */
+	isa = (const char *)node->isa;
+	present = string_has_prefix(isa, isa_width_prefix);
+	if (!present)
+		return 0;
+
+	/* Notes the single letters after the width, up to the first multi-letter name. */
+	general = letter_bits(isa_general_letters);
+	ends = letter_bits(isa_multi_letter_starts);
+	seen = 0;
+	for (index = sizeof(isa_width_prefix) - 1U; isa[index] != '\0'; index++) {
+		/* A digit belongs to a version number and names nothing. */
+		if (isa[index] >= '0' && isa[index] <= '9')
+			continue;
+
+		/* An underscore, or anything but a lowercase letter, ends the single letters. */
+		if (isa[index] < 'a' || isa[index] > 'z')
+			break;
+
+		/* A multi-letter name without an underscore before it ends them too. */
+		bit = 1U << (uint32_t)(isa[index] - 'a');
+		if ((ends & bit) != 0)
+			break;
+
+		/* Notes the letter as an extension the hart has. */
+		seen |= bit;
+
+		/* A g has the letters it stands for as well. */
+		if (isa[index] == 'g')
+			seen |= general;
+	}
+
+	/* Refuses a hart without every base extension the system needs. */
+	required = letter_bits(system_base_letters);
+	if ((seen & required) != required)
+		return 0;
+
+	/* Succeeded: the string names every base extension the system needs. */
+	return 1;
+}
+
 /* Reads a property of one or two cells as a number. */
 static uint64_t
 read_number(
@@ -1329,6 +1465,7 @@ keep_cpu(
 	struct riscv64_fdt_cpu *cpu;
 	uint64_t hart_id;
 	uint32_t entry_length;
+	int runs_system;
 	int disabled;
 	int okay;
 
@@ -1369,9 +1506,19 @@ keep_cpu(
 			disabled = 1;
 	}
 
-	/* A hart is usable when it has an MMU and is not disabled; it is counted either way. */
+	/* Decides whether the hart has the base extensions the system is built for. */
+	runs_system = cpu_runs_system(node);
+
+	/*
+	 * A hart is usable when it has an MMU, has those extensions and is not
+	 * disabled; it is counted either way.  A firmware's tree may enable a
+	 * monitor core and give it an mmu-type, as U-Boot's control tree does for
+	 * the JH7110's S7, so the MMU alone does not make a hart usable.
+	 */
 	cpu->usable = 0;
-	if (node->mmu_type != NULL && !disabled)
+	if (node->mmu_type != NULL &&
+	    runs_system &&
+	    !disabled)
 		cpu->usable = 1;
 
 	/* Counts the hart in the table. */

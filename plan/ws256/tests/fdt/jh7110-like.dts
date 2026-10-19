@@ -36,6 +36,7 @@
 		U74_2: cpu@2 {
 			device_type = "cpu";
 			reg = <2>;
+			riscv,isa = "rv64imafdc_zba_zbb";
 			mmu-type = "riscv,sv39";
 			cpu2_intc: interrupt-controller {
 				#interrupt-cells = <1>;
@@ -46,6 +47,7 @@
 		U74_3: cpu@3 {
 			device_type = "cpu";
 			reg = <3>;
+			riscv,isa = "rv64gc";
 			mmu-type = "riscv,sv39";
 			cpu3_intc: interrupt-controller {
 				#interrupt-cells = <1>;
@@ -56,6 +58,7 @@
 		U74_4: cpu@4 {
 			device_type = "cpu";
 			reg = <4>;
+			riscv,isa = "rv64i2p1m2p0a2p1f2p2d2p2c2p0_zicsr2p0";
 			mmu-type = "riscv,sv39";
 			cpu4_intc: interrupt-controller {
 				#interrupt-cells = <1>;
