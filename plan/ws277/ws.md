@@ -11,14 +11,15 @@
 ## 完了の条件（案、設計で確定）
 
 1. VF2 の DC8200 と HDMI（inno_hdmi）を zedBSD の driver で初期化し、WS269 の display の node（gpu0）を置き換えて、PowerVR が線形で書いた render の buffer を CPU の copy 無しで scanout する（import・page flip・vblank）。
-2. Keiland の desktop の実用の fps（WS270 §2.3 の段 2）を実機で測る。注記（設計 版 2）: この測定は GPU が線形で描く frame と capset（WS269 p010・p011、WS270 の該当 Phase、[design.md](design.md) §9 の R3・R5〜R7）に依るので、WS277 の完了はそれらが main に入るまで閉じられない。
+2. Keiland の desktop の実用の fps（WS270 §2.3 の段 2）を実機で測る。注記（設計 版 2）: この測定は GPU が線形で描く frame と capset（WS269 p010・p011、WS270 の該当 Phase、[design.md](design.md) §9 の R3・R5〜R7、版 3 では p007）に依るので、WS277 の完了はそれらが main に入るまで閉じられない。
 
 ## 依存
 
 - WS256 p011（boot framebuffer、U-Boot の GOP）、WS269 p006・p007（render の share・lookup、display の node の ops）。
+- 設計 版 3（[design.md](design.md) §7・§9）の依存: p002 は WS269 p007 の display の node の code（merge 済み、出力の範囲）。p003 は WS269 の lookup の code（merge 済み、出力の範囲）と R4（WS256、`src/kern/platform/visionfive2.c` の DC8200・HDMI の記述と wrapper の text の ops）、R3 の照会の口（無ければ試験の blob だけ）。p005 は R1（voutcrg の provider）・R2（PD_VOUT）。p007 は R3（SLC 迂回を buffer の属性に）・R5（`blob_create_placed`、任意）・R6（linear の rowPitch 32 byte・transfer の LINEAR）・R7（capset、1.3.269 を推奨）と WS269 p010・p011、WS270 の該当 Phase。R8 は要らない。
 
 ## Phase
 
 | Phase | 中身 | 依存 | Status |
 | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 設計（DC8200・HDMI の初期化、clock・reset・PD、MMU、plane・modifier、vblank・IRQ、WS269 の display の node の置き換え、PowerVR の PBE の線形の書き出し、coherency） | — | in-progress（2026-10-20 P1、改訂 2 が出来た、design-reviewer の差分の確認待ち） |
+| [p001](phase001/phase.md) | 設計（DC8200・HDMI の初期化、clock・reset・PD、MMU、plane・modifier、vblank・IRQ、WS269 の display の node の置き換え、PowerVR の PBE の線形の書き出し、coherency） | — | in-progress（2026-10-20 P1、改訂 3 が出来た、design-reviewer の差分の確認待ち） |
