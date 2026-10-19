@@ -202,6 +202,65 @@ endef
 $(foreach command,$(USERLAND_SELECTED_NETWORK_PROGRAMS),\
 	$(eval $(call RISCV64_APP_NET_COMMAND,$(command))))
 
+# The static objects: libcurses for programs built on or for the target,
+# and the static programs (the sandboxed helpers), as on arm64.  The kernel
+# gives a static image no TLS block on this processor, so such a program
+# must carry no PT_TLS; check-user-elf.py refuses one that does.
+RISCV64_USER_CPPFLAGS := -nostdinc -isystem $(RISCV64_SYSROOT)/usr/include \
+	-Iinclude -Isrc -I. -DHAL_ARCH_RISCV64 -DKERN_USER_ABI_RISCV64 \
+	-DKERN_USER_ABI_LP64
+RISCV64_USER_CFLAGS := $(RISCV64_USER_ARCH_FLAGS) -ffreestanding \
+	-fno-pic -fno-pie -fno-stack-protector -fno-asynchronous-unwind-tables \
+	-fno-unwind-tables -fno-builtin -fno-common -ffunction-sections \
+	-fdata-sections -Os -Wall -Wextra -Werror
+RISCV64_USER_RUNTIME_OBJS := $(RISCV64_SYSROOT)/usr/lib/crt0.o \
+	$(RISCV64_SYSROOT)/usr/lib/libc.o
+
+$(BUILD)/user/%.o: %.c $(RISCV64_SYSROOT)/.zedbsd-sysroot-complete
+	@mkdir -p $(dir $@)
+	$(RISCV64_CC) $(RISCV64_USER_CPPFLAGS) $(RISCV64_USER_CFLAGS) \
+ -fno-strict-aliasing -MMD -MP -c $< -o $@
+
+RISCV64_USER_CURSES_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(BUILD)/user,curses)
+$(BUILD)/lib/libcurses.a: $(RISCV64_USER_CURSES_OBJS)
+	@mkdir -p $(dir $@)
+	$(AR) rcs $@ $^
+
+USER_STATIC_COMMANDS := $(foreach program,$(filter $(ZEDBSD_USER_PROGRAMS),$(USERLAND_PACKAGES)),\
+	$(if $(filter static,$(USERLAND_$(program)_CLASS)),$(program)))
+
+# The sandboxed preview includes math and number parsing without loading a DSO.
+RISCV64_USER_FLOAT_OBJS := $(patsubst src/libc/%.c,$(BUILD)/user-float/%.o,\
+	$(ZEDBSD_LIBM_SOURCES) src/libc/softfloat.c src/libc/compiler-runtime.c \
+	src/libc/softfloat128.c src/libc/compiler-runtime128.c src/libc/float-parse.c)
+RISCV64_USER_STATIC_EXTRA_keiland-preview := $(RISCV64_USER_FLOAT_OBJS)
+
+$(RISCV64_USER_FLOAT_OBJS): $(BUILD)/user-float/%.o: src/libc/%.c \
+	$(ZEDBSD_LIBM_HEADERS) src/libc/softfloat.h src/libc/softfloat128.h \
+	$(RISCV64_SYSROOT)/.zedbsd-sysroot-complete
+	@mkdir -p $(dir $@)
+	$(RISCV64_CC) $(RISCV64_USER_CPPFLAGS) $(RISCV64_USER_CFLAGS) -c $< -o $@
+
+define RISCV64_USER_STATIC_COMMAND
+$(BUILD)/bin/$(1): $(RISCV64_USER_RUNTIME_OBJS) \
+	$(call ZEDBSD_USERLAND_OBJECTS,$(BUILD)/user,$(1)) \
+	$(RISCV64_USER_STATIC_EXTRA_$(1)) \
+	$(RISCV64_SYSROOT)/usr/lib/libclang_rt.builtins.a \
+	$(RISCV64_PLATFORM)/user.ld tools/build/check-user-elf.py
+	@mkdir -p $$(dir $$@)
+	$(RISCV64_LD) $(RISCV64_USER_LDFLAGS) --gc-sections -nostdlib -static \
+ -z stack-size=0x100000 -T $(RISCV64_PLATFORM)/user.ld \
+ $(RISCV64_USER_RUNTIME_OBJS) \
+ $(call ZEDBSD_USERLAND_OBJECTS,$(BUILD)/user,$(1)) \
+ $(RISCV64_USER_STATIC_EXTRA_$(1)) \
+ $(RISCV64_SYSROOT)/usr/lib/libclang_rt.builtins.a -o $$@
+	$(PYTHON) tools/build/check-user-elf.py --machine riscv64 $$@
+endef
+$(foreach command,$(USER_STATIC_COMMANDS),\
+	$(eval $(call RISCV64_USER_STATIC_COMMAND,$(command))))
+# No substitute-font file can be opened by the sandboxed preview helper.
+$(call ZEDBSD_USERLAND_OBJECTS,$(BUILD)/user,keiland-preview): RISCV64_USER_CPPFLAGS += -DPDF_FONT_FILES=0
+
 # The root tree: the base programs, the accounts, the base data and the
 # runtime, staged by the common rule.
 include platform/common/userland-rootfs.mk
@@ -210,4 +269,5 @@ RISCV64_ROOTFS_FILES := $(ZEDBSD_ROOTFS_FILES)
 $(eval $(call ZEDBSD_ROOTFS_TREE_RULE,riscv64,$(RISCV64_ROOTFS_INPUTS),$(RISCV64_ROOTFS_FILES)))
 rootfs: $(BUILD)/rootfs/.stamp
 
+-include $(wildcard $(BUILD)/user/*/*/*.d $(BUILD)/user/*/*/*/*.d $(BUILD)/user/*/*/*/*/*.d)
 -include $(wildcard $(DYNAMIC_DIR)/obj/*/*/*.d $(DYNAMIC_DIR)/obj/*/*/*/*.d $(DYNAMIC_DIR)/obj/*/*/*/*/*.d)

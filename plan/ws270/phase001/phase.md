@@ -3,7 +3,7 @@
 # ws270-p001 VF2 の Keiland の設計
 
 - 親: [ws270](../ws.md)、Queue: q1335 / q1335-i01（P1、2026-10-19）
-- Status: in-progress（設計の文書が出来た、design-reviewer 待ち。2026-10-19 P1: [design.md](../design.md) 版 1。build の試し（build/ws270-p001/、QEMU なし）で riscv64 の desktop の穴（userland-dynamic.mk の未 include、外部 package の triple、kwl_cycles、libcurses、Noct）を確かめた。D1〜D5 はユーザーの判断待ち）
+- Status: in-progress（改訂 2 が出来た、design-reviewer 待ち。2026-10-19 P1 q1338: [design.md](../design.md) 版 2、[レビュー 1](../design-review-1.md) の B1・M1〜M7・Minor 1〜12 に対応（design 末尾の表）。判断は WS270-D1・D2・D3・D5（D4 は外した）。版 1 は q1335）
 
 ## 目的
 
