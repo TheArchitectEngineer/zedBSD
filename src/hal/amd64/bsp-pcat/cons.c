@@ -13,7 +13,7 @@
  * This is output only, and only until the kernel publishes kernel_putc.
  * It exists so the HAL and the earliest kernel initialization can report
  * diagnostics through hal_printf() before /dev/graphics and /dev/console
- * are up. The keyboard belongs to drivers/platform/pcat/ps2-8042.c and
+ * are up. The keyboard belongs to drivers/isa/ps2-8042.c and
  * the text grid to drivers/platform/pcat/graphics/text.c.
  */
 
@@ -480,7 +480,7 @@ quiet_panel_locked(
  * Leaves the PC/AT keyboard line to the kernel-side 8042 driver.
  *
  * The early console is output only, so the HAL no longer claims IRQ1 or
- * programs the controller. drivers/platform/pcat/ps2-8042.c owns the single
+ * programs the controller. drivers/isa/ps2-8042.c owns the single
  * controller and publishes both evdev devices.
  */
 void

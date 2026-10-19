@@ -155,7 +155,7 @@ VMUNIX_OBJS := $(BUILD)/src/kern/main.o \
 	$(PCAT_NVME_OBJS) \
 	$(BUILD)/drivers/platform/pcat/pcat-ide.o $(BUILD)/drivers/ethernet/dp8390.o \
 	$(BUILD)/drivers/isa/ne2000.o \
-	$(BUILD)/drivers/platform/pcat/ps2-8042.o \
+	$(BUILD)/drivers/isa/ps2-8042.o \
 	$(BUILD)/drivers/disklabel/mbr.o \
 	$(BUILD)/drivers/disklabel/gpt.o \
 	$(BUILD)/drivers/disklabel/pcat.o \
