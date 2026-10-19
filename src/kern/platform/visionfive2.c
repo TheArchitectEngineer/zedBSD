@@ -26,6 +26,10 @@
  * the devices' drivers can switch their own clocks, resets and pins.  The
  * boot log shows the PLLs' and the SD card clock's rates and the card
  * detect pin, for comparing with what the firmware set.
+ *
+ * The SD card slot's card is published as the disk mmcblk0 beside the
+ * ramdisk; the boot device stays the ramdisk.  Once interrupts are on,
+ * the boot log lists the card's partitions.
  */
 
 #include <stddef.h>
@@ -37,6 +41,7 @@
 #include <drivers/generic/ramdisk.h>
 #include <drivers/generic/serial-console.h>
 #include <drivers/platform/visionfive2/vf2-crg.h>
+#include <drivers/platform/visionfive2/vf2-mmc.h>
 #include <drivers/platform/visionfive2/vf2-pinctrl.h>
 #include <drivers/platform/visionfive2/vf2-syscon.h>
 #include <kern/boot.h>
@@ -81,11 +86,34 @@
  */
 static struct disk *ramdisk;
 
+/*
+ * The device tree, kept once probe_soc() has brought the SoC's blocks up
+ * from it; soc_ready is nonzero from then on.  The tree's blob is the
+ * hardware layer's and lives as long as the system.
+ */
+static struct drv_fdt soc_tree;
+static int soc_ready;
+
+/*
+ * The SD card's disk, published by kern_platform_init() and kept for the
+ * life of the system; NULL when the slot is empty or the card failed.
+ */
+static struct disk *sd_card;
+
+/*
+ * The SD card's partitions as the boot log lists them.  Used only by
+ * describe_sd_partitions(), once, during the boot; it is file-scope to
+ * keep the table off the stack.
+ */
+static struct partition sd_partitions[PARTITION_MAX];
+
 static int publish_ramdisk(void);
 static void describe_framebuffer(void);
 static void probe_soc(void);
 static void describe_clocks(void);
 static void describe_card_detect(const struct drv_fdt *fdt);
+static void attach_sd_card(void);
+static void describe_sd_partitions(void);
 
 /*
  * Publishes the boot devices of the VisionFive 2: the ramdisk, if any.
@@ -121,12 +149,20 @@ kern_platform_init(
 	/* Brings up the SoC's clocks, resets and pins for the devices. */
 	probe_soc();
 
-	/* Selects the MBR partition scheme the ramdisk's image uses. */
-	partition_set_scheme(&drv_partition_scheme_mbr);
+	/*
+	 * Selects the partition scheme that tells GPT from MBR: the ramdisk's
+	 * image is an MBR disk, the SD card's UEFI image a GPT disk.
+	 */
+	partition_set_scheme(&drv_partition_scheme_pcat_auto);
 	disk_registry_reset();
 
-	/* Publishes the ramdisk; without one the board has no boot device. */
+	/* Publishes the ramdisk, the boot device. */
 	error = publish_ramdisk();
+
+	/* Publishes the SD card beside it. */
+	attach_sd_card();
+
+	/* Without the ramdisk the board has no boot device. */
 	if (error != 0)
 		return 0;
 
@@ -152,7 +188,8 @@ kern_platform_init(
 
 /*
  * Finishes device discovery once interrupts are enabled; the board has no
- * device that waits for them yet.
+ * device that waits for them yet, and the boot log lists the SD card's
+ * partitions.
  */
 void
 kern_platform_refresh_devices(
@@ -161,6 +198,9 @@ kern_platform_refresh_devices(
 {
 	(void)devices;
 	(void)count;
+
+	/* Lists the SD card's partitions. */
+	describe_sd_partitions();
 }
 
 /*
@@ -417,6 +457,10 @@ probe_soc(
 	/* Logs what the firmware left the clocks and the card slot at. */
 	describe_clocks();
 	describe_card_detect(&fdt);
+
+	/* Keeps the tree for the devices brought up after the disk registry is reset. */
+	soc_tree = fdt;
+	soc_ready = 1;
 }
 
 /*
@@ -534,5 +578,84 @@ describe_card_detect(
 		kern_logf("visionfive2: SD card present (gpio %u)\n", card_detect.pin);
 	} else {
 		kern_logf("visionfive2: SD card absent (gpio %u)\n", card_detect.pin);
+	}
+}
+
+/*
+ * Brings up the SD card slot and publishes its card as mmcblk0.
+ *
+ * A board whose SoC blocks did not come up, an empty slot or a card that
+ * fails leaves the board without the disk; the boot goes on.
+ */
+static void
+attach_sd_card(
+	void)
+{
+	int error;
+
+	/* Needs the clocks, resets and pins the slot's glue switches. */
+	if (!soc_ready) {
+		kern_logf("visionfive2: SD card slot not brought up: SoC blocks unavailable\n");
+		return;
+	}
+
+	/* Brings the slot and its card up. */
+	error = drv_vf2_mmc_attach(&soc_tree, &sd_card);
+	if (error != 0) {
+		sd_card = NULL;
+		kern_logf("visionfive2: no SD card disk (%d)\n", error);
+		return;
+	}
+
+	/* Succeeded: the card is a disk. */
+	kern_logf("visionfive2: SD card is %s\n", sd_card->d_name);
+}
+
+/*
+ * Writes the SD card's partitions to the boot log: each one's number,
+ * first block and size, its label when the table gives one, and whether
+ * it is the EFI system partition.
+ */
+static void
+describe_sd_partitions(
+	void)
+{
+	const struct partition *entry;
+	const char *label;
+	const char *kind;
+	int count;
+	int index;
+
+	/* A board without the card has nothing to list. */
+	if (sd_card == NULL)
+		return;
+
+	/* Reads the card's partition table. */
+	count = partition_scan(sd_card, sd_partitions, PARTITION_MAX);
+	if (count < 0) {
+		kern_logf("visionfive2: %s partition table unreadable (%d)\n", sd_card->d_name, count);
+		return;
+	}
+
+	/* Writes how many partitions there are. */
+	kern_logf("visionfive2: %s has %d partitions\n", sd_card->d_name, count);
+
+	/* Writes each partition. */
+	for (index = 0; index < count; index++) {
+		entry = &sd_partitions[index];
+		label = "";
+		if ((entry->p_flags & PARTITION_HAS_LABEL) != 0)
+			label = entry->p_label;
+		kind = "";
+		if ((entry->p_flags & PARTITION_EFI_SYSTEM) != 0)
+			kind = ", EFI system";
+		kern_logf("visionfive2: %s partition %u start %llu blocks %llu (%llu MiB) \"%s\"%s\n",
+			  sd_card->d_name,
+			  entry->p_index + 1U,
+			  (unsigned long long)entry->p_start_block,
+			  (unsigned long long)entry->p_block_count,
+			  (unsigned long long)(entry->p_block_count / 2048ULL),
+			  label,
+			  kind);
 	}
 }
