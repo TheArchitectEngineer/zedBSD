@@ -1,0 +1,9 @@
+/dts-v1/;
+/* No /chosen; a node named chosen deeper down is not /chosen. */
+/ {
+	soc {
+		chosen {
+			boot-hartid = <5>;
+		};
+	};
+};

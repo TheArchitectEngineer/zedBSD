@@ -8,16 +8,18 @@
 /*
  * The riscv64 UEFI loader.
  *
- * It reads zedbsd.cfg from the volume it was loaded from, then the kernel
- * the file names and the initial ramdisk root.img beside it.  It copies the
- * firmware's device tree, asks the firmware for the boot hart, fills the
- * handoff, exits boot services and enters the kernel at its physical entry
- * with translation off.  The kernel builds its own page tables, so the
- * loader builds none.
+ * It copies the firmware's device tree, asks the firmware for the boot hart
+ * (through the RISC-V boot protocol, or the tree's /chosen without it) and
+ * reports the screen the firmware left on.  It then reads zedbsd.cfg from
+ * the volume it was loaded from, the kernel the file names and the initial
+ * ramdisk root.img beside it, fills the handoff, exits boot services and
+ * enters the kernel at its physical entry with translation off.  The kernel
+ * builds its own page tables, so the loader builds none.
  */
 
 #include "include/uefi.h"
 #include "elf64.h"
+#include "fdt-hartid.h"
 #include "volume-discovery.h"
 #include "zedbsd-config.h"
 #include "bootloader/include/riscv64-handoff.h"
@@ -112,7 +114,9 @@ static void byte_zero(void *pointer, UINTN size);
 static void byte_copy(void *destination, const void *source, UINTN size);
 static int guid_equal(const EFI_GUID *left, const EFI_GUID *right);
 static void console_ascii(struct loader_context *context, const char *string);
+static void console_hex(struct loader_context *context, uint64_t value);
 static void console_hex64(struct loader_context *context, const char *label, uint64_t value);
+static void console_decimal(struct loader_context *context, uint64_t value);
 static EFI_STATUS report_failure(struct loader_context *context, const char *operation, EFI_STATUS status);
 static uint32_t read_be32(const uint8_t *bytes);
 static EFI_STATUS read_exact(EFI_FILE_PROTOCOL *file, UINT64 position, void *buffer, UINTN size);
@@ -121,7 +125,9 @@ static int path_utf16(const char *source, CHAR16 output[PATH_CHAR16_STORAGE]);
 static EFI_STATUS open_volume(struct loader_context *context);
 static EFI_STATUS read_volume_serial(struct loader_context *context, EFI_HANDLE device);
 static EFI_STATUS load_configuration(struct loader_context *context);
-static EFI_STATUS find_boot_hart(struct loader_context *context, uint64_t *boot_hart);
+static EFI_STATUS find_boot_hart(struct loader_context *context, const struct page_run *tree, uint64_t tree_size, uint64_t *boot_hart);
+static EFI_STATUS ask_boot_protocol(struct loader_context *context, uint64_t *boot_hart);
+static void report_graphics(struct loader_context *context);
 static EFI_STATUS copy_device_tree(struct loader_context *context, struct page_run *run, uint64_t *size);
 static EFI_STATUS allocate_kernel(struct loader_context *context, UINTN pages, EFI_PHYSICAL_ADDRESS *base);
 static EFI_STATUS load_kernel(struct loader_context *context, struct zbl_elf64_plan *plan, struct page_run *run);
@@ -165,12 +171,25 @@ efi_main(
 	context.volume_uuid[0] = 0;
 	console_ascii(&context, "RV64 UEFI ENTRY\n");
 
+	/*
+	 * Copies the firmware's device tree where it outlives boot services;
+	 * the boot hart may be named in it.
+	 */
+	status = copy_device_tree(&context, &fdt_run, &fdt_size);
+	if (EFI_ERROR(status)) {
+		reported = report_failure(&context, "Copy device tree", status);
+		return reported;
+	}
+
 	/* Asks the firmware which hart it booted on, which the kernel must start on. */
-	status = find_boot_hart(&context, &boot_hart);
+	status = find_boot_hart(&context, &fdt_run, fdt_size, &boot_hart);
 	if (EFI_ERROR(status)) {
 		reported = report_failure(&context, "Boot hart", status);
 		return reported;
 	}
+
+	/* Reports the screen the firmware left on; the loader does not change it. */
+	report_graphics(&context);
 
 	/* Opens the volume the loader came from and reads its serial. */
 	status = open_volume(&context);
@@ -197,13 +216,6 @@ efi_main(
 	status = load_initrd(&context, &initrd_run, &initrd_size);
 	if (EFI_ERROR(status)) {
 		reported = report_failure(&context, "Load root.img", status);
-		return reported;
-	}
-
-	/* Copies the firmware's device tree where it outlives boot services. */
-	status = copy_device_tree(&context, &fdt_run, &fdt_size);
-	if (EFI_ERROR(status)) {
-		reported = report_failure(&context, "Copy device tree", status);
 		return reported;
 	}
 
@@ -237,8 +249,7 @@ efi_main(
 	 */
 	entry = plan.entry - RISCV64_KERNEL_LINK_VIRT_BASE + plan.physical_start;
 
-	/* Reports what the kernel will find. */
-	console_hex64(&context, "RV64 HART ", boot_hart);
+	/* Reports what the kernel will find; the hart was reported when it was found. */
 	console_hex64(&context, "RV64 KERNEL ", plan.physical_start);
 	console_hex64(&context, "RV64 ENTRY ", entry);
 	console_hex64(&context, "RV64 FDT ", fdt_run.base);
@@ -398,15 +409,14 @@ console_ascii(
 	}
 }
 
-/* Writes a label and a 64-bit value in hexadecimal, then a line end. */
+/* Writes a 64-bit value in hexadecimal with sixteen digits after 0x. */
 static void
-console_hex64(
+console_hex(
 	struct loader_context *context,
-	const char *label,
 	uint64_t value)
 {
 	static const char digits[] = "0123456789abcdef";
-	char text[20];
+	char text[19];
 	unsigned index;
 
 	/* Spells the value with sixteen digits after 0x. */
@@ -414,12 +424,45 @@ console_hex64(
 	text[1] = 'x';
 	for (index = 0; index < 16U; index++)
 		text[2U + index] = digits[(value >> (60U - index * 4U)) & 0xfU];
-	text[18] = '\n';
-	text[19] = 0;
+	text[18] = 0;
 
-	/* Writes the label and the value. */
-	console_ascii(context, label);
+	/* Writes the value. */
 	console_ascii(context, text);
+}
+
+/* Writes a label and a 64-bit value in hexadecimal, then a line end. */
+static void
+console_hex64(
+	struct loader_context *context,
+	const char *label,
+	uint64_t value)
+{
+	/* Writes the label, the value and the line end. */
+	console_ascii(context, label);
+	console_hex(context, value);
+	console_ascii(context, "\n");
+}
+
+/* Writes a 64-bit value in decimal without leading zeros. */
+static void
+console_decimal(
+	struct loader_context *context,
+	uint64_t value)
+{
+	char text[21];
+	unsigned position;
+
+	/* Spells the digits from the last one backwards; zero is one digit. */
+	position = sizeof(text) - 1U;
+	text[position] = 0;
+	do {
+		position--;
+		text[position] = (char)('0' + (value % 10U));
+		value /= 10U;
+	} while (value != 0);
+
+	/* Writes the digits. */
+	console_ascii(context, &text[position]);
 }
 
 /* Reports a failed step on the console and passes its status on. */
@@ -698,14 +741,69 @@ load_configuration(
 }
 
 /*
- * Asks the firmware for the boot hart's id.
+ * Finds the boot hart's id: from the firmware's RISC-V boot protocol, or
+ * from the device tree's /chosen when the firmware has no protocol.
  *
  * Only the boot hart runs after the firmware: the others wait in the
  * machine-mode firmware until the kernel starts them, so a wrong id would
- * leave the kernel unable to start them.
+ * leave the kernel unable to start them.  The console says which way the
+ * id came, and a tree that names another hart than the protocol is
+ * recorded there without changing the choice.
+ *
+ * Procedure referenced: Linux v6.12 drivers/firmware/efi/libstub/riscv.c
+ * (check_platform_features, get_boot_hartid_from_efi and
+ * get_boot_hartid_from_fdt: the protocol first, the tree's /chosen when
+ * the protocol gives no id).
  */
 static EFI_STATUS
 find_boot_hart(
+	struct loader_context *context,
+	const struct page_run *tree,
+	uint64_t tree_size,
+	uint64_t *boot_hart)
+{
+	enum zbl_fdt_hartid_result chosen;
+	const char *reason;
+	uint64_t protocol_hart;
+	uint64_t chosen_hart;
+	EFI_STATUS status;
+
+	/* Asks the firmware's boot protocol, the way the firmware is meant to name the hart. */
+	status = ask_boot_protocol(context, &protocol_hart);
+
+	/* Reads the tree's /chosen too, the older way, which the copy is checked to hold. */
+	chosen_hart = 0;
+	chosen = zbl_fdt_boot_hartid((const uint8_t *)(uintptr_t)tree->base, (uint32_t)tree_size, &chosen_hart);
+
+	/* Takes the protocol's id when it gave one, otherwise the tree's. */
+	if (!EFI_ERROR(status)) {
+		/* The protocol's id is used; a tree that disagrees is only recorded. */
+		console_hex64(context, "RV64 HART protocol ", protocol_hart);
+		if (chosen == ZBL_FDT_HARTID_FOUND && chosen_hart != protocol_hart)
+			console_hex64(context, "RV64 HART chosen ", chosen_hart);
+		*boot_hart = protocol_hart;
+	} else {
+		/* Without the protocol, refuses a tree that names no hart, saying why. */
+		if (chosen != ZBL_FDT_HARTID_FOUND) {
+			reason = zbl_fdt_hartid_result_name(chosen);
+			console_ascii(context, "RV64 HART chosen ");
+			console_ascii(context, reason);
+			console_ascii(context, "\n");
+			return status;
+		}
+
+		/* The tree's id is used. */
+		console_hex64(context, "RV64 HART chosen ", chosen_hart);
+		*boot_hart = chosen_hart;
+	}
+
+	/* Succeeded: the boot hart, reported on the console with where it came from. */
+	return EFI_SUCCESS;
+}
+
+/* Asks the firmware's RISC-V boot protocol for the boot hart's id. */
+static EFI_STATUS
+ask_boot_protocol(
 	struct loader_context *context,
 	uint64_t *boot_hart)
 {
@@ -730,6 +828,67 @@ find_boot_hart(
 	/* Succeeded: the boot hart. */
 	*boot_hart = hart;
 	return EFI_SUCCESS;
+}
+
+/*
+ * Reports on one console line the graphics mode the firmware left on: its
+ * number and the count of modes, the resolution, the pixel format, the
+ * pixels in a scan line, and the framebuffer's base and size.
+ *
+ * It only reads the mode and never sets one; nothing of it reaches the
+ * handoff yet.  A firmware without graphics output reports "none".
+ *
+ * Values referenced: UEFI Specification 2.10, section 12.9
+ * (EFI_GRAPHICS_OUTPUT_PROTOCOL.Mode and its Mode, MaxMode, Info,
+ * FrameBufferBase and FrameBufferSize; the information's
+ * HorizontalResolution, VerticalResolution, PixelFormat and
+ * PixelsPerScanLine).
+ */
+static void
+report_graphics(
+	struct loader_context *context)
+{
+	EFI_GRAPHICS_OUTPUT_PROTOCOL *graphics;
+	EFI_GRAPHICS_OUTPUT_PROTOCOL_MODE *mode;
+	EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *info;
+	EFI_STATUS status;
+
+	/* Finds the firmware's graphics output; a firmware without a screen has none. */
+	graphics = 0;
+	status = context->boot->LocateProtocol(&EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID, 0, (void **)&graphics);
+	if (EFI_ERROR(status) || graphics == 0) {
+		console_ascii(context, "RV64 GOP none\n");
+		return;
+	}
+
+	/* Refuses an output that describes no current mode. */
+	mode = graphics->Mode;
+	if (mode == 0 || mode->Info == 0) {
+		console_ascii(context, "RV64 GOP no mode\n");
+		return;
+	}
+
+	/* Reports the mode's number, resolution and pixel layout. */
+	info = mode->Info;
+	console_ascii(context, "RV64 GOP mode ");
+	console_decimal(context, mode->Mode);
+	console_ascii(context, " of ");
+	console_decimal(context, mode->MaxMode);
+	console_ascii(context, " ");
+	console_decimal(context, info->HorizontalResolution);
+	console_ascii(context, "x");
+	console_decimal(context, info->VerticalResolution);
+	console_ascii(context, " format ");
+	console_decimal(context, info->PixelFormat);
+	console_ascii(context, " scanline ");
+	console_decimal(context, info->PixelsPerScanLine);
+
+	/* Reports where the framebuffer is and how large the firmware says it is. */
+	console_ascii(context, " base ");
+	console_hex(context, mode->FrameBufferBase);
+	console_ascii(context, " size ");
+	console_hex(context, mode->FrameBufferSize);
+	console_ascii(context, "\n");
 }
 
 /*
