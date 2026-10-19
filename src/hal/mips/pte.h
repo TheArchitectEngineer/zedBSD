@@ -23,15 +23,21 @@
 #define MIPS_PTE_CACHED		3U
 
 /*
+ * A table entry: a word on the 32-bit processor, a doubleword on the
+ * 64-bit one, whose physical addresses go past 32 bits.
+ */
+typedef uintptr_t mips_pte_t;
+
+/*
  * Reports the software bits of a mapped page with the given access:
  * present, and what may be done with it.  Execution is only recorded:
  * the processor reads and runs the same pages.
  */
-static __inline uint32_t
+static __inline mips_pte_t
 mips_pte_software_bits(
 	uint32_t attr)
 {
-	uint32_t bits;
+	mips_pte_t bits;
 
 	/* Mapped, then each access the attributes give. */
 	bits = MIPS_PTE_PRESENT;
@@ -53,16 +59,16 @@ mips_pte_software_bits(
  * writable to the TLB once it is also written and may be.  The cache
  * attribute is always the cached one.
  */
-static __inline uint32_t
+static __inline mips_pte_t
 mips_pte_compose(
-	uint32_t entry)
+	mips_pte_t entry)
 {
-	uint32_t composed;
+	mips_pte_t composed;
 	bool usable;
 
 	/* Keeps the frame and the software bits, with the cache attribute. */
 	composed = entry & (MIPS_PTE_FRAME_MASK | MIPS_PTE_SOFTWARE_MASK);
-	composed |= MIPS_PTE_CACHED << MIPS_PTE_CACHE_SHIFT;
+	composed |= (mips_pte_t)MIPS_PTE_CACHED << MIPS_PTE_CACHE_SHIFT;
 
 	/* Valid: mapped, used, and with some access. */
 	usable = false;

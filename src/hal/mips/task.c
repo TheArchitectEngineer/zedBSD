@@ -310,7 +310,7 @@ hal_task_fork_current(
 		return NULL;
 	copy = child->initial_user_frame;
 	*copy = *source;
-	copy->r[MIPS_REGISTER_V0] = (uint32_t)child_result;
+	copy->r[MIPS_REGISTER_V0] = (uintptr_t)child_result;
 	copy->r[MIPS_REGISTER_A3] = 0;
 	child->tls = parent->tls;
 
@@ -435,7 +435,7 @@ hal_task_get_user_context(
 	if (stack_pointer != NULL)
 		*stack_pointer = (uintptr_t)frame->r[MIPS_REGISTER_SP];
 	if (return_value != NULL)
-		*return_value = (intptr_t)(int32_t)frame->r[MIPS_REGISTER_V0];
+		*return_value = (intptr_t)frame->r[MIPS_REGISTER_V0];
 
 	/* Succeeded: every value asked for is filled. */
 	return 0;
@@ -490,7 +490,7 @@ hal_task_signal_enter(
 	/* Enters the handler with its three arguments and the restorer as the return. */
 	frame->exception_pc = handler;
 	frame->r[MIPS_REGISTER_SP] = stack;
-	frame->r[MIPS_REGISTER_A0] = (uint32_t)signal_number;
+	frame->r[MIPS_REGISTER_A0] = (uintptr_t)(intptr_t)signal_number;
 	frame->r[MIPS_REGISTER_A1] = information;
 	frame->r[MIPS_REGISTER_A2] = context;
 	frame->r[MIPS_REGISTER_T9] = handler;
@@ -531,7 +531,7 @@ hal_task_signal_return(
 
 	/* Restores the interrupted frame and floating-point state. */
 	*frame = task->signal_frame[depth];
-	*value = (intptr_t)(int32_t)frame->r[MIPS_REGISTER_V0];
+	*value = (intptr_t)frame->r[MIPS_REGISTER_V0];
 	task->fpregs = task->signal_fpregs[depth];
 	mips_fpu_forget(task);
 	task->signal_token[depth] = 0;
@@ -637,7 +637,7 @@ hal_task_context_switch(
 
 	/* A trap from the arriving task's user code starts at the top of its kernel stack. */
 	if (to->sys_stack != NULL)
-		mips_kernel_stack_pointer = (uint32_t)to->sys_stack_top;
+		mips_kernel_stack_pointer = (uintptr_t)to->sys_stack_top;
 
 	/* Switches the stack and the callee-saved registers. */
 	mips_task_dispatch(&from->resume_sp, &to->resume_sp);
@@ -1053,8 +1053,8 @@ reset_user_frame(
 	hal_memset(frame, 0, sizeof(*frame));
 
 	/* The entry, the stack, and the user's machine state. */
-	frame->exception_pc = (uint32_t)entry;
-	frame->r[MIPS_REGISTER_SP] = (uint32_t)user_stack_pointer;
+	frame->exception_pc = (uintptr_t)entry;
+	frame->r[MIPS_REGISTER_SP] = (uintptr_t)user_stack_pointer;
 	frame->status = MIPS_STATUS_MODE_USER;
 }
 

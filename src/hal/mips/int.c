@@ -61,7 +61,7 @@ struct trap_fault {
  * Read by trap.S at every entry from user mode; set by the task switch
  * for the task it resumes.  Zero while no task has entered user mode.
  */
-uint32_t mips_kernel_stack_pointer;
+uintptr_t mips_kernel_stack_pointer;
 
 /*
  * The interrupts the dispatch found no source for, since boot.  Kept for
@@ -319,7 +319,7 @@ trap_user_system_call(
 	/* The kernel serves the call with the frame as the user context. */
 	mips_task_enter_user_frame(frame);
 	result = kernel_syscall_handler(frame->r[MIPS_REGISTER_V0], arguments);
-	frame->r[MIPS_REGISTER_V0] = (uint32_t)result;
+	frame->r[MIPS_REGISTER_V0] = (uintptr_t)result;
 	frame->r[MIPS_REGISTER_A3] = 0;
 	kernel_user_return_handler();
 	mips_task_leave_user_frame();
@@ -512,24 +512,24 @@ describe_frame(
 	unsigned index;
 
 	/* The exception's registers first. */
-	hal_printf(MIPS_HAL_NAME " TRAP FAULT code=%u cause=%08x epc=%08x badvaddr=%08x status=%08x\n",
+	hal_printf(MIPS_HAL_NAME " TRAP FAULT code=%u cause=%08x epc=%08llx badvaddr=%08llx status=%08x\n",
 		   code,
-		   frame->cause,
-		   frame->exception_pc,
-		   frame->bad_address,
-		   frame->status);
+		   (uint32_t)frame->cause,
+		   (unsigned long long)frame->exception_pc,
+		   (unsigned long long)frame->bad_address,
+		   (uint32_t)frame->status);
 
 	/* Then the general registers, four to a line. */
 	for (index = 0; index < 32U; index += 4U) {
-		hal_printf("r%u=%08x r%u=%08x r%u=%08x r%u=%08x\n",
+		hal_printf("r%u=%08llx r%u=%08llx r%u=%08llx r%u=%08llx\n",
 			   index,
-			   frame->r[index],
+			   (unsigned long long)frame->r[index],
 			   index + 1U,
-			   frame->r[index + 1U],
+			   (unsigned long long)frame->r[index + 1U],
 			   index + 2U,
-			   frame->r[index + 2U],
+			   (unsigned long long)frame->r[index + 2U],
 			   index + 3U,
-			   frame->r[index + 3U]);
+			   (unsigned long long)frame->r[index + 3U]);
 	}
 }
 

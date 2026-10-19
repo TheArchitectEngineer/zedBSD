@@ -9,16 +9,14 @@
  * The MIPS exception vectors, which EBase points at.
  *
  * The TLB refill walks the page tables of the space selected now and
- * writes the pair of pages the missed address is in.  The general
- * exception goes to the trap handling of trap.S.  The 64-bit refill and
- * the cache error, which nothing on a 32-bit processor expects, report
- * the exception on the console and stop: the processor's state is passed
- * to C on a stack of its own, since the stack pointer of the code that
- * faulted may be what failed.
- *
- * An image built with MIPS_HAL_CONSOLE_ONLY (the 64-bit port's first
- * stage, which has no trap handling and no page tables yet) sends every
- * exception to that report.
+ * writes the pair of pages the missed address is in.  The 32-bit
+ * processor takes it at EBase + 0x000 and walks two levels; the 64-bit
+ * one, whose user segment is xuseg (Status.UX), takes it at EBase +
+ * 0x080 and walks three.  The general exception goes to the trap
+ * handling of trap.S.  The refill the processor does not use and the
+ * cache error report the exception on the console and stop: the
+ * processor's state is passed to C on a stack of its own, since the
+ * stack pointer of the code that faulted may be what failed.
  */
 
 #include "asm.h"
@@ -47,7 +45,7 @@ mips_vectors:
 	 * for a pair the TLB does not hold, so tlbwr makes no duplicate.
 	 */
 	.org MIPS_VECTOR_REFILL
-#if defined(MIPS_HAL_CONSOLE_ONLY)
+#if defined(HAL_ARCH_MIPS64)
 	j mips_early_vector
 	nop
 #else
@@ -87,20 +85,89 @@ mips_tlb_refill:
 #endif
 
 	.org MIPS_VECTOR_REFILL64
+#if defined(HAL_ARCH_MIPS64)
+	j mips_xtlb_refill
+	nop
+#else
 	j mips_early_vector
 	nop
+#endif
 
 	.org MIPS_VECTOR_CACHE_ERROR
 	j mips_early_vector
 	nop
 
 	.org MIPS_VECTOR_GENERAL
-#if defined(MIPS_HAL_CONSOLE_ONLY)
-	j mips_early_vector
-#else
 	j mips_trap_entry
-#endif
 	nop
+
+#if defined(HAL_ARCH_MIPS64)
+	/*
+	 * The 64-bit TLB refill, with k0 and k1 alone, the vector's 128
+	 * bytes being too few for the walk.
+	 *
+	 * It counts itself for the self-test.  A miss at or above the 512
+	 * GiB the tables reach (a kernel address of xkseg among them) writes
+	 * nothing and goes to the general exception, where it is a fault.
+	 * Otherwise it walks the root and the middle table of the selected
+	 * space: an empty entry on the way writes an invalid pair, so that
+	 * the retried access takes a TLB invalid exception, which the
+	 * general handler reports as a fault.  The leaf's even and odd
+	 * entries, shifted right by six, are EntryLo0 and EntryLo1; the
+	 * hardware already put the pair's VPN2 and the space's ASID into
+	 * EntryHi.  BadVAddr is read again at each level rather than kept,
+	 * since only k0 and k1 are free.
+	 */
+	.text
+	.balign 4
+	.type mips_xtlb_refill, %function
+mips_xtlb_refill:
+	LOAD_ADDRESS($26, mips_tlb_refill_count)
+	lw $27, 0($26)
+	addiu $27, $27, 1
+	sw $27, 0($26)
+	dmfc0 $26, MIPS_CP0_BAD_ADDRESS
+	dsrl $26, $26, MIPS_USER_SHIFT
+	bnez $26, 2f
+	nop
+	LOAD_ADDRESS($27, mips_tlb_root)
+	ld $27, 0($27)
+	dmfc0 $26, MIPS_CP0_BAD_ADDRESS
+	dsrl $26, $26, MIPS_ROOT_SHIFT - MIPS_TABLE_ENTRY_SHIFT
+	andi $26, $26, (MIPS_TABLE_ENTRIES - 1) << MIPS_TABLE_ENTRY_SHIFT
+	daddu $27, $27, $26
+	ld $27, 0($27)
+	beqz $27, 1f
+	dmfc0 $26, MIPS_CP0_BAD_ADDRESS
+	dsrl $26, $26, MIPS_MIDDLE_SHIFT - MIPS_TABLE_ENTRY_SHIFT
+	andi $26, $26, (MIPS_TABLE_ENTRIES - 1) << MIPS_TABLE_ENTRY_SHIFT
+	daddu $27, $27, $26
+	ld $27, 0($27)
+	beqz $27, 1f
+	dmfc0 $26, MIPS_CP0_BAD_ADDRESS
+	dsrl $26, $26, MIPS_PAGE_SHIFT - MIPS_TABLE_ENTRY_SHIFT
+	andi $26, $26, (MIPS_TABLE_ENTRIES - 2) << MIPS_TABLE_ENTRY_SHIFT
+	daddu $27, $27, $26
+	ld $26, 0($27)
+	ld $27, 8($27)
+	dsrl $26, $26, MIPS_PTE_HARDWARE_SHIFT
+	dmtc0 $26, MIPS_CP0_ENTRY_LO0
+	dsrl $27, $27, MIPS_PTE_HARDWARE_SHIFT
+	dmtc0 $27, MIPS_CP0_ENTRY_LO1
+	ehb
+	tlbwr
+	eret
+1:
+	dmtc0 $0, MIPS_CP0_ENTRY_LO0
+	dmtc0 $0, MIPS_CP0_ENTRY_LO1
+	ehb
+	tlbwr
+	eret
+2:
+	j mips_trap_entry
+	nop
+	.size mips_xtlb_refill, . - mips_xtlb_refill
+#endif
 
 	/*
 	 * Reports an exception the trap handling does not take:

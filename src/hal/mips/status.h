@@ -27,8 +27,9 @@
  * debugger wrote may hold any bit, and CU0, the kernel mode or a cleared
  * exception level would let user code run privileged.  The value is user
  * mode at the exception level with interrupts on, the interrupt mask the
- * kernel runs with now, CU1 only for the task that owns the
- * floating-point unit and FR whenever the unit is used.
+ * kernel runs with now, the 64-bit processor's addressing bits, CU1 only
+ * for the task that owns the floating-point unit and FR whenever the
+ * unit is used.
  */
 static __inline uint32_t
 mips_user_status(
@@ -41,6 +42,13 @@ mips_user_status(
 	/* User mode at the exception level, interrupts on, under the kernel's mask. */
 	status = MIPS_STATUS_MODE_USER | MIPS_STATUS_EXCEPTION_LEVEL | MIPS_STATUS_INTERRUPTS;
 	status |= current & MIPS_STATUS_INTERRUPT_MASK;
+
+	/*
+	 * The 64-bit processor's addressing (KX and UX): the user's segment
+	 * is xuseg, and the next exception enters the kernel with xkphys in
+	 * reach.  Zero on the 32-bit processor.
+	 */
+	status |= MIPS_STATUS_KERNEL_ADDRESSING;
 
 	/* The unit's register model is the same for every task that may use it. */
 	if (float_usable)

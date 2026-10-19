@@ -9,11 +9,13 @@
  * The MIPS address spaces.
  *
  * The kernel runs in KSEG0 and KSEG1, which the TLB does not translate,
- * so it has no pages of its own.  The user segment, kuseg, goes through
- * the TLB, which software fills: each space keeps a two-level table (a
- * root of 1024 words, leaf tables of 1024 entries), and the refill
- * handler of vectors.S writes the pair of pages a missed address is in
- * from the selected space's table.
+ * so it has no pages of its own (on the 64-bit processor CKSEG0, CKSEG1
+ * and xkphys).  The user segment, kuseg (xuseg on the 64-bit processor),
+ * goes through the TLB, which software fills: each space keeps a table
+ * of pages (two levels of 1024 words on the 32-bit processor, three of
+ * 512 doublewords on the 64-bit one), and the refill handler of
+ * vectors.S writes the pair of pages a missed address is in from the
+ * selected space's table.
  *
  * A pair entry of the TLB holds an even and an odd page, so an entry may
  * hold one page of a pair while the other is still invalid.  Every change
@@ -33,8 +35,8 @@
  * ASID when it is next selected; an ASID is never given to a second
  * space in the generation that gave it out.
  *
- * Values referenced: MIPS32 Architecture for Programmers Volume III (the
- * TLB instructions tlbp, tlbwi and tlbwr, the EntryHi, EntryLo, Index,
+ * Values referenced: MIPS32 and MIPS64 Architecture for Programmers
+ * Volume III (the TLB instructions tlbp, tlbwi and tlbwr, the EntryHi, EntryLo, Index,
  * PageMask and Wired registers, the TLB refill, invalid and modified
  * exceptions, and the execution hazards of their writes).
  */
@@ -43,6 +45,7 @@
 #include "asm.h"
 #include "cache.h"
 #include "cpu.h"
+#include "io.h"
 #include "page.h"
 #include "pte.h"
 #include "space.h"
@@ -55,11 +58,11 @@
 #define SPACE_PAIR_BYTES	0x2000U
 
 /*
- * The KSEG0 address of the root the TLB refill walks: the selected
+ * The kernel's address of the root the TLB refill walks: the selected
  * space's root, or the kernel's empty one.  Read by the refill handler at
  * every TLB miss; changed with interrupts off when a space is selected.
  */
-uint32_t mips_tlb_root;
+uintptr_t mips_tlb_root;
 
 /*
  * The refills taken since boot, counted by the refill handler itself for
@@ -72,7 +75,7 @@ uint32_t mips_tlb_refill_count;
  * no user space is selected writes an invalid pair and the access faults.
  * Never written.
  */
-static uint32_t system_root[MIPS_TABLE_ENTRIES] __attribute__((aligned(MIPS_PAGE_SIZE)));
+static uintptr_t system_root[MIPS_TABLE_ENTRIES] __attribute__((aligned(MIPS_PAGE_SIZE)));
 
 /* The space selected now, HAL_SPACE_SYS for the kernel alone.  Changed with interrupts off. */
 static hal_space_t current_space;
@@ -112,13 +115,15 @@ static uint32_t tlb_modified_count;
 static int space_lock_handle(hal_space_t handle, struct mips_space **result, bool *irq_enabled);
 static int valid_user(uintptr_t address, size_t size);
 static int valid_attributes(uint32_t attr, int none_allowed);
-static uint32_t *walk_leaf(struct mips_space *space, uintptr_t address, int create);
+static mips_pte_t *walk_leaf(struct mips_space *space, uintptr_t address, int create);
+static uintptr_t *table_below(struct mips_space *space, uintptr_t *table, unsigned index, int create);
 static void tlb_sync(struct mips_space *space, uintptr_t address, int rewrite);
-static void tlb_update(uint32_t entry_hi, int rewrite, uint32_t low0, uint32_t low1);
-static void tlb_write_index(uint32_t index, uint32_t entry_hi, uint32_t low0, uint32_t low1);
+static void tlb_update(uintptr_t entry_hi, int rewrite, uintptr_t low0, uintptr_t low1);
+static void tlb_write_index(uint32_t index, uintptr_t entry_hi, uintptr_t low0, uintptr_t low1);
+static uintptr_t invalid_entry_hi(uint32_t index);
 static void tlb_flush_all(void);
-static uint32_t read_entry_hi(void);
-static void write_entry_hi(uint32_t value);
+static uintptr_t read_entry_hi(void);
+static void write_entry_hi(uintptr_t value);
 static void asid_assign(struct mips_space *space);
 static void flush_pair_range(struct mips_space *space, uintptr_t address, size_t size);
 static void free_tables(struct mips_space *space);
@@ -141,7 +146,7 @@ mips_space_init(
 	tlb_flush_all();
 
 	/* The kernel alone: the empty root and ASID 0. */
-	mips_tlb_root = (uint32_t)(uintptr_t)system_root;
+	mips_tlb_root = (uintptr_t)system_root;
 	write_entry_hi(0);
 	current_space = HAL_SPACE_SYS;
 	hal_printf(MIPS_HAL_NAME " HAL TLB entries=%u asid=%u\n", tlb_entries, asid_limit);
@@ -161,8 +166,8 @@ mips_space_fault(
 	int access)
 {
 	struct mips_space *space;
-	uint32_t *leaf;
-	uint32_t entry;
+	mips_pte_t *leaf;
+	mips_pte_t entry;
 
 	/* Only the user segment of a user space has pages. */
 	if (address < MIPS_USER_MINIMUM || address >= MIPS_USER_LIMIT)
@@ -309,7 +314,7 @@ hal_space_switch(
 	/* The kernel alone: the empty root and ASID 0. */
 	if (handle == HAL_SPACE_SYS) {
 		enabled = mips_irq_save();
-		mips_tlb_root = (uint32_t)(uintptr_t)system_root;
+		mips_tlb_root = (uintptr_t)system_root;
 		write_entry_hi(0);
 		current_space = handle;
 		mips_irq_restore(enabled);
@@ -321,7 +326,7 @@ hal_space_switch(
 	if (!locked)
 		HAL_FATAL("invalid mips space switch");
 	asid_assign(space);
-	mips_tlb_root = (uint32_t)(uintptr_t)space->root;
+	mips_tlb_root = (uintptr_t)space->root;
 	write_entry_hi(space->asid);
 	current_space = handle;
 	mips_irq_restore(enabled);
@@ -340,8 +345,8 @@ hal_space_map(
 	uint32_t attr)
 {
 	struct mips_space *space;
-	uint32_t *leaf;
-	uint32_t software;
+	mips_pte_t *leaf;
+	mips_pte_t software;
 	uintptr_t address;
 	uintptr_t offset;
 	uintptr_t rollback;
@@ -398,7 +403,7 @@ hal_space_map(
 		}
 
 		/* Writes the page's entry, unused and clean. */
-		*leaf = mips_pte_compose(((uint32_t)(paddr + offset) & MIPS_PTE_FRAME_MASK) | software);
+		*leaf = mips_pte_compose(((mips_pte_t)(paddr + offset) & MIPS_PTE_FRAME_MASK) | software);
 	}
 
 	/* A pair the TLB holds with one page invalid takes the new page at once. */
@@ -434,8 +439,8 @@ hal_space_unmap(
 	size_t size)
 {
 	struct mips_space *space;
-	uint32_t *leaf;
-	uint32_t frame;
+	mips_pte_t *leaf;
+	hal_physaddr_t frame;
 	uintptr_t address;
 	uintptr_t offset;
 	bool enabled;
@@ -495,9 +500,9 @@ hal_space_prot_query(
 	uint32_t *flags)
 {
 	struct mips_space *space;
-	uint32_t *leaf;
+	mips_pte_t *leaf;
 	uint32_t observed;
-	uint32_t kept;
+	mips_pte_t kept;
 	uintptr_t address;
 	uintptr_t offset;
 	bool enabled;
@@ -582,7 +587,7 @@ hal_space_query(
 	uint32_t *flags)
 {
 	struct mips_space *space;
-	uint32_t *leaf;
+	mips_pte_t *leaf;
 	uint32_t observed;
 	bool enabled;
 	int locked;
@@ -629,8 +634,8 @@ hal_space_clear_flags(
 	uint32_t flags)
 {
 	struct mips_space *space;
-	uint32_t *leaf;
-	uint32_t entry;
+	mips_pte_t *leaf;
+	mips_pte_t entry;
 	bool enabled;
 	int locked;
 	int valid;
@@ -657,9 +662,9 @@ hal_space_clear_flags(
 	/* Clears the records, and the TLB's bits that would not set them again. */
 	entry = *leaf;
 	if ((flags & HAL_SPACE_PAGE_ACCESSED) != 0)
-		entry &= ~(uint32_t)MIPS_PTE_ACCESSED;
+		entry &= ~(mips_pte_t)MIPS_PTE_ACCESSED;
 	if ((flags & HAL_SPACE_PAGE_DIRTY) != 0)
-		entry &= ~(uint32_t)MIPS_PTE_DIRTY;
+		entry &= ~(mips_pte_t)MIPS_PTE_DIRTY;
 	*leaf = mips_pte_compose(entry);
 	tlb_sync(space, (uintptr_t)vaddr, 1);
 	mips_irq_restore(enabled);
@@ -760,7 +765,7 @@ hal_space_get_user_range(
 	uintptr_t *minimum,
 	uintptr_t *limit)
 {
-	/* kuseg, without its first page. */
+	/* kuseg (the reach of the tables in xuseg), without its first page. */
 	if (minimum != NULL)
 		*minimum = MIPS_USER_MINIMUM;
 	if (limit != NULL)
@@ -768,8 +773,9 @@ hal_space_get_user_range(
 }
 
 /*
- * Reports where the kernel reaches a device range: in KSEG1, uncached,
- * for anything in the low 512 MiB of physical space.
+ * Reports where the kernel reaches a device range, uncached: in KSEG1 for
+ * anything in the low 512 MiB of physical space on the 32-bit processor,
+ * in xkphys for any physical address on the 64-bit one.
  */
 int
 hal_space_map_device(
@@ -784,12 +790,14 @@ hal_space_map_device(
 	if ((attr & HAL_SPACE_EXEC) != 0)
 		return HAL_ERR_INVALID;
 
+#if !defined(HAL_ARCH_MIPS64)
 	/* Only the low 512 MiB has a fixed uncached window. */
 	if ((uint64_t)paddr >= MIPS_KSEG_SIZE || (uint64_t)size > MIPS_KSEG_SIZE - (uint64_t)paddr)
 		return HAL_ERR_UNSUPPORTED;
+#endif
 
 	/* Succeeded: the range in the uncached segment. */
-	*vaddr = (void *)(uintptr_t)(MIPS_KSEG1_BASE + (uint32_t)paddr);
+	*vaddr = (void *)mips_uncached_address(paddr);
 	return HAL_OK;
 }
 
@@ -991,48 +999,78 @@ valid_attributes(
 }
 
 /*
- * Finds the space's entry of a user address, making its leaf table when
- * asked to.  Reports NULL when the table is missing and not to be made,
- * or cannot be made.
+ * Finds the space's entry of a user address, making the tables on the
+ * way when asked to.  Reports NULL when a table is missing and not to be
+ * made, or cannot be made.
  */
-static uint32_t *
+static mips_pte_t *
 walk_leaf(
 	struct mips_space *space,
 	uintptr_t address,
 	int create)
 {
-	struct mips_table_page *page;
-	uint32_t *table;
+	uintptr_t *table;
+	unsigned level;
+	unsigned shift;
 	unsigned index;
-	int error;
 
-	/* The root entry: the leaf table's KSEG0 address, or zero. */
-	index = (unsigned)(address >> MIPS_ROOT_SHIFT);
-	if (space->root[index] == 0) {
-		if (!create)
+	/* Each level above the leaves: the root, and on the 64-bit processor a middle table. */
+	table = space->root;
+	for (level = 0; level + 1U < MIPS_TABLE_LEVELS; level++) {
+		shift = MIPS_PAGE_SHIFT + MIPS_TABLE_INDEX_BITS * (MIPS_TABLE_LEVELS - 1U - level);
+		index = (unsigned)((address >> shift) & (MIPS_TABLE_ENTRIES - 1U));
+		table = table_below(space, table, index, create);
+		if (table == NULL)
 			return NULL;
-		page = kernel_alloc(sizeof(*page));
-		if (page == NULL)
-			return NULL;
-		error = hal_pmem_alloc(MIPS_PAGE_SIZE, MIPS_PAGE_SIZE, &page->memory);
-		if (error != HAL_OK) {
-			kernel_free(page);
-			return NULL;
-		}
-
-		/* Clears the table and links it into the space, where the refill finds it. */
-		table = hal_pmem_to_kernel(page->memory);
-		hal_memset(table, 0, MIPS_PAGE_SIZE);
-		page->root_index = index;
-		page->next = space->tables;
-		space->tables = page;
-		space->root[index] = (uint32_t)(uintptr_t)table;
-		page_table_count++;
 	}
 
 	/* Succeeded: the page's entry. */
-	table = (uint32_t *)(uintptr_t)space->root[index];
-	return &table[(address >> MIPS_PAGE_SHIFT) & (MIPS_TABLE_ENTRIES - 1U)];
+	return (mips_pte_t *)&table[(address >> MIPS_PAGE_SHIFT) & (MIPS_TABLE_ENTRIES - 1U)];
+}
+
+/*
+ * Reports the table an entry of a table above the leaves points to,
+ * making it when the entry is empty and asked to.  Reports NULL when it
+ * is missing and not to be made, or cannot be made.
+ */
+static uintptr_t *
+table_below(
+	struct mips_space *space,
+	uintptr_t *table,
+	unsigned index,
+	int create)
+{
+	struct mips_table_page *page;
+	uintptr_t *below;
+	int error;
+
+	/* An entry already made is the kernel's address of the table. */
+	if (table[index] != 0)
+		return (uintptr_t *)table[index];
+	if (!create)
+		return NULL;
+
+	/* A page for the table, with its record. */
+	page = kernel_alloc(sizeof(*page));
+	if (page == NULL)
+		return NULL;
+	error = hal_pmem_alloc(MIPS_PAGE_SIZE, MIPS_PAGE_SIZE, &page->memory);
+	if (error != HAL_OK) {
+		kernel_free(page);
+		return NULL;
+	}
+
+	/* Clears the table and links it into the space, where the refill finds it. */
+	below = hal_pmem_to_kernel(page->memory);
+	hal_memset(below, 0, MIPS_PAGE_SIZE);
+	page->root_index = index;
+	page->next = space->tables;
+	space->tables = page;
+	table[index] = (uintptr_t)below;
+	page_table_count++;
+
+	/* Succeeded: the new, empty table. */
+	return below;
 }
 
 /*
@@ -1048,10 +1086,10 @@ tlb_sync(
 	uintptr_t address,
 	int rewrite)
 {
-	uint32_t *even;
-	uint32_t low0;
-	uint32_t low1;
-	uint32_t entry_hi;
+	mips_pte_t *even;
+	uintptr_t low0;
+	uintptr_t low1;
+	uintptr_t entry_hi;
 
 	/* Without a current ASID the TLB holds nothing of the space. */
 	if (space->generation != asid_generation)
@@ -1071,7 +1109,7 @@ tlb_sync(
 	}
 
 	/* Probes for the pair under the space's ASID and updates what is found. */
-	entry_hi = ((uint32_t)address & MIPS_ENTRY_HI_VPN2_MASK) | space->asid;
+	entry_hi = (address & (uintptr_t)MIPS_ENTRY_HI_VPN2_MASK) | space->asid;
 	tlb_update(entry_hi, rewrite, low0, low1);
 }
 
@@ -1087,20 +1125,19 @@ tlb_sync(
  */
 static void
 tlb_update(
-	uint32_t entry_hi,
+	uintptr_t entry_hi,
 	int rewrite,
-	uint32_t low0,
-	uint32_t low1)
+	uintptr_t low0,
+	uintptr_t low1)
 {
-	uint32_t saved;
+	uintptr_t saved;
 	uint32_t index;
-	uint32_t invalid_hi;
 
 	/* Keeps the EntryHi of the space selected now. */
 	saved = read_entry_hi();
 
 	/* Probes; Index has its top bit set when nothing matches. */
-	__asm__ volatile("mtc0 %1, $10\n\t"
+	__asm__ volatile(MIPS_WIDE_MTC0_STRING " %1, $10\n\t"
 			 "ehb\n\t"
 			 "tlbp\n\t"
 			 "ehb\n\t"
@@ -1114,8 +1151,7 @@ tlb_update(
 		if (rewrite) {
 			tlb_write_index(index, entry_hi, low0, low1);
 		} else {
-			invalid_hi = MIPS_KSEG0_BASE + index * SPACE_PAIR_BYTES;
-			tlb_write_index(index, invalid_hi, 0, 0);
+			tlb_write_index(index, invalid_entry_hi(index), 0, 0);
 		}
 	}
 
@@ -1127,21 +1163,34 @@ tlb_update(
 static void
 tlb_write_index(
 	uint32_t index,
-	uint32_t entry_hi,
-	uint32_t low0,
-	uint32_t low1)
+	uintptr_t entry_hi,
+	uintptr_t low0,
+	uintptr_t low1)
 {
 	/* The index, the pair's tag and pages, then the write once they are in place. */
 	__asm__ volatile("mtc0 %0, $0\n\t"
-			 "mtc0 %1, $10\n\t"
-			 "mtc0 %2, $2\n\t"
-			 "mtc0 %3, $3\n\t"
+			 MIPS_WIDE_MTC0_STRING " %1, $10\n\t"
+			 MIPS_WIDE_MTC0_STRING " %2, $2\n\t"
+			 MIPS_WIDE_MTC0_STRING " %3, $3\n\t"
 			 "ehb\n\t"
 			 "tlbwi\n\t"
 			 "ehb"
 			 :
 			 : "r"(index), "r"(entry_hi), "r"(low0), "r"(low1)
 			 : "memory");
+}
+
+/*
+ * Reports the EntryHi of an entry that matches nothing, unique to its
+ * index: a pair of KSEG0 (on the 64-bit processor CKSEG0), which the TLB
+ * never translates, under ASID 0.
+ */
+static uintptr_t
+invalid_entry_hi(
+	uint32_t index)
+{
+	/* Succeeded: the index's own pair of the unmapped segment. */
+	return mips_segment_pointer(MIPS_KSEG0_BASE + index * SPACE_PAIR_BYTES);
 }
 
 /*
@@ -1153,7 +1202,7 @@ static void
 tlb_flush_all(
 	void)
 {
-	uint32_t saved;
+	uintptr_t saved;
 	uint32_t index;
 
 	/* Keeps the EntryHi of the space selected now. */
@@ -1161,21 +1210,21 @@ tlb_flush_all(
 
 	/* Writes each entry. */
 	for (index = 0; index < tlb_entries; index++)
-		tlb_write_index(index, MIPS_KSEG0_BASE + index * SPACE_PAIR_BYTES, 0, 0);
+		tlb_write_index(index, invalid_entry_hi(index), 0, 0);
 
 	/* Puts the selected space's EntryHi back. */
 	write_entry_hi(saved);
 }
 
 /* Reads EntryHi. */
-static uint32_t
+static uintptr_t
 read_entry_hi(
 	void)
 {
-	uint32_t value;
+	uintptr_t value;
 
 	/* The register. */
-	__asm__ volatile("mfc0 %0, $10" : "=r"(value));
+	__asm__ volatile(MIPS_WIDE_MFC0_STRING " %0, $10" : "=r"(value));
 
 	/* Succeeded: its value. */
 	return value;
@@ -1184,10 +1233,10 @@ read_entry_hi(
 /* Writes EntryHi and clears the hazard before the TLB is used with it. */
 static void
 write_entry_hi(
-	uint32_t value)
+	uintptr_t value)
 {
 	/* The write, then the hazard barrier. */
-	__asm__ volatile("mtc0 %0, $10\n\tehb" : : "r"(value) : "memory");
+	__asm__ volatile(MIPS_WIDE_MTC0_STRING " %0, $10\n\tehb" : : "r"(value) : "memory");
 }
 
 /*

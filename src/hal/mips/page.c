@@ -8,27 +8,51 @@
 /*
  * The MIPS physical page allocator.
  *
- * Memory is the board's RAM from physical address 0, one bit per page,
- * set when the page is in use.  The loader's tables, the memory below the
- * image and the image itself, and the initial ramdisk are set at boot and
- * never freed.  The kernel reaches every page through KSEG0, cached, and
- * a device sees it at its physical address.
+ * Memory is the board's RAM, one bit per page, set when the page is in
+ * use.  The loader's tables, the memory below the image and the image
+ * itself, and the initial ramdisk are set at boot and never freed.
+ *
+ * The malta board shows its first 256 MiB of RAM at physical address 0
+ * (the low alias) and all of it again at 0x80000000 (the high alias).
+ * Each page has one physical address here, so that no page is handed out
+ * twice under two names: the low alias for the first 256 MiB, where the
+ * image, the loader's tables and the ramdisk are, and the high alias for
+ * the RAM past it.  Page number i, counted from the start of RAM, is at
+ * physical address i * 4 KiB below 256 MiB and at 0x80000000 + i * 4 KiB
+ * from there; a block never spans the two.  The 32-bit processor reaches
+ * only the low alias (through KSEG0) and manages that alone; the 64-bit
+ * one reaches both through xkphys.  A device sees a page at its physical
+ * address.
+ *
+ * Values referenced: QEMU v10.0.11 hw/mips/malta.c (the RAM region at
+ * 0x80000000, the low alias of at most 256 MiB, the environment's memsize
+ * and ememsize, and the 2 GiB limit of RAM).
  */
 
 #include <hal/hal.h>
 #include "asm.h"
 #include "bsp.h"
 #include "cache.h"
+#include "io.h"
 #include "page.h"
 #include "space.h"
 #include "spin.h"
 #include "task.h"
 
 /*
- * The most RAM the bitmap can describe: 256 MiB, the low RAM alias the
- * board maps at physical address 0, all of it inside KSEG0.
+ * The size of the low RAM alias, and the most RAM the bitmap describes:
+ * the low alias alone on the 32-bit processor, which reaches it through
+ * KSEG0, and the board's largest RAM, 2 GiB, on the 64-bit one.  The high
+ * alias holds RAM offset o at physical address PAGE_HIGH_ALIAS + o.
  */
-#define PAGE_MAX_BYTES		(256ULL * 1024ULL * 1024ULL)
+#define PAGE_LOW_BYTES		(256ULL * 1024ULL * 1024ULL)
+#define PAGE_LOW_PAGES		((uint32_t)(PAGE_LOW_BYTES / MIPS_PAGE_SIZE))
+#define PAGE_HIGH_ALIAS		0x80000000ULL
+#if defined(HAL_ARCH_MIPS64)
+#define PAGE_MAX_BYTES		(2048ULL * 1024ULL * 1024ULL)
+#else
+#define PAGE_MAX_BYTES		PAGE_LOW_BYTES
+#endif
 #define PAGE_MAX_PAGES		(PAGE_MAX_BYTES / MIPS_PAGE_SIZE)
 #define PAGE_BITMAP_WORDS	(PAGE_MAX_PAGES / 32U)
 
@@ -44,11 +68,12 @@ static uint32_t page_bitmap[PAGE_BITMAP_WORDS];
 static uint32_t reserved_bitmap[PAGE_BITMAP_WORDS];
 
 /*
- * The span's first physical address and its length in pages.  Set once by
- * mips_page_init() before any allocation and constant afterwards.
+ * The pages of RAM, and those of them in the low alias: the first
+ * low_pages are at their offset in RAM, the rest in the high alias.  Set
+ * once by mips_page_init() before any allocation and constant afterwards.
  */
-static uint64_t ram_base;
 static uint32_t ram_pages;
+static uint32_t low_pages;
 
 /*
  * The pages that were never available and the pages allocated now, for
@@ -76,12 +101,15 @@ static uint32_t next_occupied(uint32_t page, uint32_t end);
 static void claim_run(uint32_t first, uint32_t count);
 static int alloc_ram(size_t size, size_t alignment, hal_physaddr_t max_paddr, size_t boundary, hal_physaddr_t *block);
 static int free_ram(hal_physaddr_t *block, size_t size);
+static uint64_t page_physical(uint32_t page);
+static bool page_of(uint64_t physical, uint32_t *page);
 
 /*
  * Builds the page bitmap from the board's memory.
  *
- * Every page starts in use; the RAM from physical address 0 is released,
- * then everything below the image's end and the ramdisk are taken again.
+ * Every page starts in use; the RAM is released, then everything below
+ * the image's end and the ramdisk are taken again.  Those are in the low
+ * alias, where a physical address is the offset in RAM.
  */
 void
 mips_page_init(
@@ -92,14 +120,16 @@ mips_page_init(
 	uint64_t highest;
 	uint64_t kernel_end;
 
-	/* The RAM from physical address 0, kept page-aligned and within the bitmap. */
-	highest = (uint64_t)mips_board_memory_size() & ~((uint64_t)MIPS_PAGE_SIZE - 1U);
+	/* The RAM, kept page-aligned and within the bitmap. */
+	highest = (uint64_t)mips_board_memory_total() & ~((uint64_t)MIPS_PAGE_SIZE - 1U);
 	if (highest == 0)
 		HAL_FATAL("mips board reports no memory");
 	if (highest > PAGE_MAX_BYTES)
 		highest = PAGE_MAX_BYTES;
-	ram_base = 0;
 	ram_pages = (uint32_t)(highest / MIPS_PAGE_SIZE);
+	low_pages = ram_pages;
+	if (low_pages > PAGE_LOW_PAGES)
+		low_pages = PAGE_LOW_PAGES;
 
 	/* Starts with every page unavailable, then releases the RAM. */
 	hal_memset(page_bitmap, 0xff, sizeof(page_bitmap));
@@ -109,7 +139,7 @@ mips_page_init(
 	release_range(0, highest);
 
 	/* Takes back the loader's tables, the memory below the image, the image and the ramdisk. */
-	kernel_end = (uint64_t)((uintptr_t)__kernel_vma_end - MIPS_KSEG0_BASE);
+	kernel_end = mips_image_physical((uintptr_t)__kernel_vma_end);
 	reserve_range(0, kernel_end);
 	mips_board_ramdisk(&ramdisk_phys, &ramdisk_size);
 	if (ramdisk_size != 0)
@@ -117,55 +147,42 @@ mips_page_init(
 
 	/* The first allocation looks from the span's start. */
 	first_free_candidate = 0;
-	hal_printf(MIPS_HAL_NAME " MEMORY base=%llx total=%llu MiB free=%llu MiB\n",
-		   ram_base,
+	hal_printf(MIPS_HAL_NAME " MEMORY low=%llu MiB high=%llu MiB total=%llu MiB free=%llu MiB\n",
+		   (uint64_t)low_pages * MIPS_PAGE_SIZE / (1024U * 1024U),
+		   (uint64_t)(ram_pages - low_pages) * MIPS_PAGE_SIZE / (1024U * 1024U),
 		   (uint64_t)ram_pages * MIPS_PAGE_SIZE / (1024U * 1024U),
 		   ((uint64_t)ram_pages - reserved_pages) * MIPS_PAGE_SIZE / (1024U * 1024U));
 }
 
 /*
- * Reports the first physical address of managed RAM.
- */
-uint64_t
-mips_ram_base(
-	void)
-{
-	/* Succeeded: the span's start, fixed at boot. */
-	return ram_base;
-}
-
-/*
- * Reports the end of managed RAM: the first address past the span.
- */
-uint64_t
-mips_ram_end(
-	void)
-{
-	/* Succeeded: the span's end, fixed at boot. */
-	return ram_base + (uint64_t)ram_pages * MIPS_PAGE_SIZE;
-}
-
-/*
- * Reports whether a physical range lies entirely inside one RAM bank.
+ * Reports whether a physical range lies entirely inside one RAM alias's
+ * managed part.
  */
 bool
 mips_range_is_ram(
 	uint64_t physical,
 	uint64_t size)
 {
-	uint64_t end;
+	uint32_t first;
+	uint32_t last;
+	bool found;
 
-	/* The range lies inside the managed span. */
-	end = ram_base + (uint64_t)ram_pages * MIPS_PAGE_SIZE;
-	if (physical < ram_base || physical >= end)
+	/* Both ends are managed pages, of the same alias. */
+	if (size == 0 || physical + size < physical)
 		return false;
-	if (end - physical < size)
+	found = page_of(physical, &first);
+	if (!found)
+		return false;
+	found = page_of(physical + size - 1U, &last);
+	if (!found)
+		return false;
+	if ((first < low_pages) != (last < low_pages))
 		return false;
 	return true;
 }
 
 /*
- * Reports whether a physical range overlaps RAM.
+ * Reports whether a physical range overlaps managed RAM.
  */
 bool
 mips_range_touches_ram(
@@ -173,14 +190,20 @@ mips_range_touches_ram(
 	uint64_t size)
 {
 	uint64_t end;
+	uint64_t high_start;
+	uint64_t high_end;
 
-	/* The range and the span overlap. */
-	end = ram_base + (uint64_t)ram_pages * MIPS_PAGE_SIZE;
-	if (physical >= end)
+	/* The range against the low alias's part, then the high alias's. */
+	end = physical + size;
+	if (size == 0)
 		return false;
-	if (physical + size <= ram_base)
-		return false;
-	return true;
+	if (physical < (uint64_t)low_pages * MIPS_PAGE_SIZE)
+		return true;
+	high_start = PAGE_HIGH_ALIAS + (uint64_t)low_pages * MIPS_PAGE_SIZE;
+	high_end = PAGE_HIGH_ALIAS + (uint64_t)ram_pages * MIPS_PAGE_SIZE;
+	if (high_start < high_end && physical < high_end && end > high_start)
+		return true;
+	return false;
 }
 
 /*
@@ -285,15 +308,16 @@ hal_pmem_to_kernel(
 	hal_physaddr_t paddr)
 {
 	void *address;
+	uint32_t page;
+	bool found;
 
 	/* Reports no alias for an address outside managed RAM. */
-	if ((uint64_t)paddr < ram_base)
-		return NULL;
-	if ((uint64_t)paddr - ram_base >= (uint64_t)ram_pages * MIPS_PAGE_SIZE)
+	found = page_of(paddr, &page);
+	if (!found)
 		return NULL;
 
-	/* The kernel reaches RAM through KSEG0, cached. */
-	address = (void *)(uintptr_t)(MIPS_KSEG0_BASE + (uint32_t)paddr);
+	/* The kernel reaches RAM cached: through KSEG0, or xkphys. */
+	address = (void *)mips_cached_address(paddr);
 
 	/* Succeeded: the alias. */
 	return address;
@@ -311,7 +335,8 @@ hal_pmem_get_total_size(
 }
 
 /*
- * Reports an uncached view of a RAM range: its KSEG1 alias.
+ * Reports an uncached view of a RAM range: its KSEG1 alias, or on the
+ * 64-bit processor its uncached xkphys alias.
  *
  * The range's lines are written back and dropped first, so that no line
  * of the cached view later overwrites what is written through this one.
@@ -332,10 +357,10 @@ hal_pmem_map_uncached(
 		return HAL_ERR_INVALID;
 
 	/* Empties the cached view's lines of the range. */
-	hal_dcache_clean_invalidate_range((uintptr_t)(MIPS_KSEG0_BASE + (uint32_t)paddr), size);
+	hal_dcache_clean_invalidate_range(mips_cached_address(paddr), size);
 
 	/* Succeeded: the uncached segment's alias of the range. */
-	*vaddr = (void *)(uintptr_t)(MIPS_KSEG1_BASE + (uint32_t)paddr);
+	*vaddr = (void *)mips_uncached_address(paddr);
 	return HAL_OK;
 }
 
@@ -353,8 +378,13 @@ hal_pmem_unmap_uncached(
 	address = (uintptr_t)vaddr;
 	if (size == 0)
 		return HAL_ERR_INVALID;
+#if defined(HAL_ARCH_MIPS64)
+	if (address < (uintptr_t)MIPS_XKPHYS_UNCACHED || address - (uintptr_t)MIPS_XKPHYS_UNCACHED >= PAGE_HIGH_ALIAS + PAGE_MAX_BYTES)
+		return HAL_ERR_INVALID;
+#else
 	if (address < MIPS_KSEG1_BASE || address - MIPS_KSEG1_BASE >= MIPS_KSEG_SIZE)
 		return HAL_ERR_INVALID;
+#endif
 
 	/* Succeeded: nothing was mapped for the view. */
 	return HAL_OK;
@@ -404,19 +434,17 @@ release_range(
 	uint64_t page;
 	int reserved;
 
-	/* Clips the range to the span. */
-	span_end = ram_base + (uint64_t)ram_pages * MIPS_PAGE_SIZE;
+	/* Clips the range to the RAM, by offset. */
+	span_end = (uint64_t)ram_pages * MIPS_PAGE_SIZE;
 	end = base + size;
-	if (base < ram_base)
-		base = ram_base;
 	if (end > span_end)
 		end = span_end;
 	if (size == 0 || base >= end)
 		return;
 
 	/* Releases each page wholly inside the range. */
-	first = (base - ram_base + MIPS_PAGE_SIZE - 1U) / MIPS_PAGE_SIZE;
-	last = (end - ram_base) / MIPS_PAGE_SIZE;
+	first = (base + MIPS_PAGE_SIZE - 1U) / MIPS_PAGE_SIZE;
+	last = end / MIPS_PAGE_SIZE;
 	for (page = first; page < last; page++) {
 		reserved = page_is_set(reserved_bitmap, (uint32_t)page);
 		if (!reserved)
@@ -440,19 +468,17 @@ reserve_range(
 	uint64_t page;
 	int in_use;
 
-	/* Clips the range to the span. */
-	span_end = ram_base + (uint64_t)ram_pages * MIPS_PAGE_SIZE;
+	/* Clips the range to the RAM, by offset. */
+	span_end = (uint64_t)ram_pages * MIPS_PAGE_SIZE;
 	end = base + size;
-	if (base < ram_base)
-		base = ram_base;
 	if (end > span_end)
 		end = span_end;
 	if (size == 0 || base >= end)
 		return;
 
 	/* Reserves each page the range touches. */
-	first = (base - ram_base) / MIPS_PAGE_SIZE;
-	last = (end - ram_base + MIPS_PAGE_SIZE - 1U) / MIPS_PAGE_SIZE;
+	first = base / MIPS_PAGE_SIZE;
+	last = (end + MIPS_PAGE_SIZE - 1U) / MIPS_PAGE_SIZE;
 	for (page = first; page < last; page++) {
 		in_use = page_is_set(page_bitmap, (uint32_t)page);
 		if (in_use)
@@ -600,7 +626,7 @@ alloc_ram(
 {
 	uint64_t first_byte;
 	uint64_t last_byte;
-	uint64_t base_page;
+	uint64_t limit;
 	uint64_t aligned;
 	uint32_t need;
 	uint32_t end;
@@ -627,12 +653,19 @@ alloc_ram(
 	need = (uint32_t)((size + MIPS_PAGE_SIZE - 1) / MIPS_PAGE_SIZE);
 	align_pages = (uint32_t)(alignment / MIPS_PAGE_SIZE);
 
-	/* Limits the search to the pages the caller can address. */
+	/*
+	 * Limits the search to the pages the caller can address: a limit
+	 * below the high alias's part leaves the low alias's pages up to it.
+	 */
 	end = ram_pages;
-	if ((uint64_t)max_paddr < ram_base)
-		return HAL_ERR_NOMEM;
-	if ((uint64_t)max_paddr - ram_base + 1U < (uint64_t)ram_pages * MIPS_PAGE_SIZE)
-		end = (uint32_t)(((uint64_t)max_paddr - ram_base + 1U) / MIPS_PAGE_SIZE);
+	limit = (uint64_t)max_paddr;
+	if (limit < (uint64_t)low_pages * MIPS_PAGE_SIZE) {
+		end = (uint32_t)((limit + 1U) / MIPS_PAGE_SIZE);
+	} else if (limit < PAGE_HIGH_ALIAS + (uint64_t)low_pages * MIPS_PAGE_SIZE) {
+		end = low_pages;
+	} else if (limit - PAGE_HIGH_ALIAS + 1U < (uint64_t)ram_pages * MIPS_PAGE_SIZE) {
+		end = (uint32_t)((limit - PAGE_HIGH_ALIAS + 1U) / MIPS_PAGE_SIZE);
+	}
 	if (need > end)
 		return HAL_ERR_NOMEM;
 
@@ -648,27 +681,34 @@ alloc_ram(
 	first_free_candidate = next_free(first_free_candidate, ram_pages);
 
 	/*
-	 * Finds the lowest fitting run.  The alignment is of the physical
-	 * address, so the span's first page is taken into account.
+	 * Finds the lowest fitting run.  The alignment and the boundary are
+	 * of the physical address; a page's number and its address in
+	 * either alias agree in every bit below the high alias's 2 GiB, so
+	 * the number is aligned and bounded instead.
 	 */
-	base_page = ram_base / MIPS_PAGE_SIZE;
 	start = first_free_candidate;
 	for (;;) {
 		/* The lowest free page, moved up to the alignment of its physical address. */
 		start = next_free(start, end);
-		aligned = (base_page + start + align_pages - 1U) & ~((uint64_t)align_pages - 1U);
-		if (aligned - base_page >= end)
+		aligned = ((uint64_t)start + align_pages - 1U) & ~((uint64_t)align_pages - 1U);
+		if (aligned >= end)
 			break;
-		start = (uint32_t)(aligned - base_page);
+		start = (uint32_t)aligned;
 		if (need > end - start)
 			break;
 
+		/* A run does not go from the low alias's pages into the high alias's. */
+		if (start < low_pages && need > low_pages - start && end > low_pages) {
+			start = low_pages;
+			continue;
+		}
+
 		/* A run crossing a boundary moves to the next boundary block. */
 		if (boundary_pages != 0) {
-			first_byte = ram_base + (uint64_t)start * MIPS_PAGE_SIZE;
+			first_byte = (uint64_t)start * MIPS_PAGE_SIZE;
 			last_byte = first_byte + (uint64_t)need * MIPS_PAGE_SIZE - 1U;
 			if (first_byte / boundary != last_byte / boundary) {
-				start = (uint32_t)(((first_byte / boundary + 1U) * boundary - ram_base) / MIPS_PAGE_SIZE);
+				start = (uint32_t)(((first_byte / boundary + 1U) * boundary) / MIPS_PAGE_SIZE);
 				continue;
 			}
 		}
@@ -681,7 +721,7 @@ alloc_ram(
 	}
 
 	/* Reports that no run fits. */
-	if (aligned - base_page >= end)
+	if (aligned >= end)
 		return HAL_ERR_NOMEM;
 	if (need > end - start)
 		return HAL_ERR_NOMEM;
@@ -689,7 +729,7 @@ alloc_ram(
 	/* Succeeded: the run is the caller's. */
 	claim_run(start, need);
 	allocated_pages += need;
-	*block = (hal_physaddr_t)(ram_base + (uint64_t)start * MIPS_PAGE_SIZE);
+	*block = (hal_physaddr_t)page_physical(start);
 	return HAL_OK;
 }
 
@@ -704,28 +744,27 @@ free_ram(
 	hal_physaddr_t *block,
 	size_t size)
 {
-	uint64_t offset;
 	uint32_t first;
 	uint32_t count;
 	uint32_t index;
 	int in_use;
 	int reserved;
+	bool found;
 
 	/* Refuses an empty, unaligned or foreign release. */
 	if (block == NULL || size == 0)
 		return HAL_ERR_INVALID;
 	if (((uint64_t)*block & (MIPS_PAGE_SIZE - 1U)) != 0)
 		return HAL_ERR_INVALID;
-	if ((uint64_t)*block < ram_base)
+	found = page_of(*block, &first);
+	if (!found)
 		return HAL_ERR_INVALID;
 
-	/* Repeats the rounding the allocation applied. */
-	offset = (uint64_t)*block - ram_base;
-	if (offset / MIPS_PAGE_SIZE >= ram_pages)
-		return HAL_ERR_INVALID;
-	first = (uint32_t)(offset / MIPS_PAGE_SIZE);
+	/* Repeats the rounding the allocation applied; a block stays in its alias. */
 	count = (uint32_t)((size + MIPS_PAGE_SIZE - 1) / MIPS_PAGE_SIZE);
 	if (count > ram_pages - first)
+		return HAL_ERR_INVALID;
+	if (first < low_pages && count > low_pages - first)
 		return HAL_ERR_INVALID;
 
 	/* Checks that every page was allocated, before any changes. */
@@ -750,4 +789,50 @@ free_ram(
 	/* Succeeded: clears the caller's address so a double free shows. */
 	*block = 0;
 	return HAL_OK;
+}
+
+/* Reports the physical address of a page by its number from the start of RAM. */
+static uint64_t
+page_physical(
+	uint32_t page)
+{
+	uint64_t offset;
+
+	/* The low alias's pages are at their offset, the rest in the high alias. */
+	offset = (uint64_t)page * MIPS_PAGE_SIZE;
+	if (page < low_pages)
+		return offset;
+
+	/* Succeeded: the page in the high alias. */
+	return PAGE_HIGH_ALIAS + offset;
+}
+
+/*
+ * Finds the number of the managed page a physical address is in.
+ * Reports false for an address of no managed page, including the high
+ * alias of the low alias's pages.
+ */
+static bool
+page_of(
+	uint64_t physical,
+	uint32_t *page)
+{
+	uint64_t offset;
+
+	/* The low alias's part. */
+	if (physical < (uint64_t)low_pages * MIPS_PAGE_SIZE) {
+		*page = (uint32_t)(physical / MIPS_PAGE_SIZE);
+		return true;
+	}
+
+	/* The high alias's part, past the pages the low alias shows. */
+	if (physical < PAGE_HIGH_ALIAS)
+		return false;
+	offset = physical - PAGE_HIGH_ALIAS;
+	if (offset < (uint64_t)low_pages * MIPS_PAGE_SIZE || offset >= (uint64_t)ram_pages * MIPS_PAGE_SIZE)
+		return false;
+
+	/* Succeeded: the page's number. */
+	*page = (uint32_t)(offset / MIPS_PAGE_SIZE);
+	return true;
 }

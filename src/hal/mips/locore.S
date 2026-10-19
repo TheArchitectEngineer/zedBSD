@@ -13,7 +13,8 @@
  * vectors and nothing would report it.  The first step therefore points
  * EBase at the image's own vectors and clears BEV, before any instruction
  * that may fault.  Then Status is set to its kernel value (on the 64-bit
- * processor with KX, so that the kernel may reach xkphys), KSEG0 is made
+ * processor with KX, so that the kernel may reach xkphys, and UX, so that
+ * the user's 64-bit segment takes the 64-bit TLB refill), KSEG0 is made
  * cacheable, the bss is cleared and C is entered on the boot stack with
  * the loader's four arguments as they came: the argument count, the
  * argument table, the environment table and the size of low memory.

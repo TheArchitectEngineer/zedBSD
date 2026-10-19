@@ -38,16 +38,18 @@
  *
  * One frame lives on the stack the exception moved to, from the entry to
  * the eret; the handler may change it, and the return loads what it
- * holds, except that Status is replaced before every return.
+ * holds, except that Status is replaced before every return.  Each
+ * member is a whole register (Status and Cause sign-extended on the
+ * 64-bit processor).
  */
 struct mips_trap_frame {
-	uint32_t r[32];
-	uint32_t hi;
-	uint32_t lo;
-	uint32_t exception_pc;
-	uint32_t status;
-	uint32_t cause;
-	uint32_t bad_address;
+	uintptr_t r[32];
+	uintptr_t hi;
+	uintptr_t lo;
+	uintptr_t exception_pc;
+	uintptr_t status;
+	uintptr_t cause;
+	uintptr_t bad_address;
 };
 
 _Static_assert(__builtin_offsetof(struct mips_trap_frame, hi) == MIPS_FRAME_HI, "trap frame hi");
@@ -57,14 +59,14 @@ _Static_assert(__builtin_offsetof(struct mips_trap_frame, status) == MIPS_FRAME_
 _Static_assert(__builtin_offsetof(struct mips_trap_frame, cause) == MIPS_FRAME_CAUSE, "trap frame cause");
 _Static_assert(__builtin_offsetof(struct mips_trap_frame, bad_address) == MIPS_FRAME_BAD_ADDRESS, "trap frame badvaddr");
 _Static_assert(sizeof(struct mips_trap_frame) == MIPS_FRAME_SIZE, "trap frame size");
-_Static_assert((MIPS_TRAP_STACK_BYTES % 8) == 0, "trap frame alignment");
+_Static_assert((MIPS_TRAP_STACK_BYTES % (2 * MIPS_REGISTER_BYTES)) == 0, "trap frame alignment");
 
 /*
  * The top of the kernel stack an exception from user mode moves to.  The
  * processor runs one task at a time, so one word serves; the task switch
  * sets it.  Zero until a task that enters user mode runs.
  */
-extern uint32_t mips_kernel_stack_pointer;
+extern uintptr_t mips_kernel_stack_pointer;
 
 void
 mips_trap(

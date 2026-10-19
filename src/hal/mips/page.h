@@ -18,14 +18,6 @@ void
 mips_page_init(
 	void);
 
-uint64_t
-mips_ram_base(
-	void);
-
-uint64_t
-mips_ram_end(
-	void);
-
 bool
 mips_range_is_ram(
 	uint64_t physical,

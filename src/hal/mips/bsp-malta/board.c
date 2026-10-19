@@ -48,6 +48,14 @@
 #define BOARD_LOW_MEMORY_MAX	0x10000000U
 
 /*
+ * The most RAM the board has, which the environment's ememsize gives.
+ *
+ * Values referenced: QEMU v10.0.11 hw/mips/malta.c (mips_malta_init, at
+ * most 2 GiB of RAM; the environment's ememsize, the whole RAM).
+ */
+#define BOARD_MEMORY_MAX	0x80000000U
+
+/*
  * The rate of coprocessor 0's Count: the processor's 320 MHz clock
  * divided by the two cycles of CCRes.
  *
@@ -100,6 +108,12 @@ static uint32_t board_ramdisk_size;
  * the loader's fourth argument without it.  Set once by mips_board_boot().
  */
 static uint32_t board_low_memory;
+
+/*
+ * The bytes of the whole RAM: the environment's ememsize, or low memory
+ * without it.  Never less than low memory.  Set once by mips_board_boot().
+ */
+static uint32_t board_total_memory;
 
 /*
  * The handoff the kernel's entry reads: a single boot device, the first
@@ -159,7 +173,8 @@ mips_board_boot(
 	}
 
 
-	/* Without an environment, low memory is the loader's fourth argument. */
+	/* Without an environment, low memory is the loader's fourth argument and all of RAM. */
+	board_total_memory = board_low_memory;
 	environment = (const uint32_t *)table_string(environment_table);
 	if (environment == NULL)
 		return;
@@ -173,19 +188,21 @@ mips_board_boot(
 		if (value == NULL)
 			break;
 
-		/* Only the size of low memory, in decimal, is used. */
-		matched = strings_equal(name, "memsize");
-		if (!matched)
-			continue;
-
-		/* Takes a size that is a number within the low RAM alias. */
+		/* Only the sizes of low memory and of all RAM, in decimal, are used. */
 		end = parse_number(value, &memory);
-		if (end == NULL)
+		if (end == NULL || memory == 0)
 			continue;
-		if (memory == 0 || memory > BOARD_LOW_MEMORY_MAX)
-			continue;
-		board_low_memory = memory;
+		matched = strings_equal(name, "memsize");
+		if (matched && memory <= BOARD_LOW_MEMORY_MAX)
+			board_low_memory = memory;
+		matched = strings_equal(name, "ememsize");
+		if (matched && memory <= BOARD_MEMORY_MAX)
+			board_total_memory = memory;
 	}
+
+	/* All of RAM holds low memory at least. */
+	if (board_total_memory < board_low_memory)
+		board_total_memory = board_low_memory;
 }
 
 /*
@@ -272,6 +289,17 @@ mips_board_memory_size(
 {
 	/* Succeeded: what the loader reported, within the low RAM alias. */
 	return board_low_memory;
+}
+
+/*
+ * Reports the bytes of the whole RAM, low memory and what is past it.
+ */
+uint32_t
+mips_board_memory_total(
+	void)
+{
+	/* Succeeded: what the loader reported, at most the board's largest RAM. */
+	return board_total_memory;
 }
 
 /*

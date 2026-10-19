@@ -27,22 +27,44 @@
  * lui and addiu reach it, and a pointer is added to with the doubleword
  * instructions.  MIPS_HAL_NAME begins the lines the HAL prints.
  *
+ * The 64-bit kernel runs with Status.KX and UX set: the kernel reaches
+ * xkphys, and the user's 64-bit segment takes the 64-bit TLB refill.
+ * REG_S and REG_L store and load a whole register, and MFC0_WIDE and
+ * MTC0_WIDE move the coprocessor 0 registers that hold an address
+ * (EntryHi, EntryLo, BadVAddr, EPC) at their full width.
+ *
  * Values referenced: MIPS64 Architecture for Programmers Volume III, the
- * Privileged Resource Architecture (Status: KX bit 7; the xkphys segment
+ * Privileged Resource Architecture (Status: UX bit 5, KX bit 7; the xkphys segment
  * at 0x8000000000000000 with the cache attribute in bits 59-61, 2
  * uncached and 3 cacheable noncoherent).
  */
 #if defined(HAL_ARCH_MIPS64)
 #define MIPS_HAL_NAME			"MIPS64"
+#define MIPS_REGISTER_BYTES		8
+#define REG_S				sd
+#define REG_L				ld
 #define PTR_ADDU			daddu
 #define PTR_ADDIU			daddiu
-#define MIPS_STATUS_KERNEL_ADDRESSING	0x00000080
+#define PTR_SRL				dsrl
+#define MFC0_WIDE			dmfc0
+#define MTC0_WIDE			dmtc0
+#define MIPS_WIDE_MFC0_STRING		"dmfc0"
+#define MIPS_WIDE_MTC0_STRING		"dmtc0"
+#define MIPS_STATUS_KERNEL_ADDRESSING	0x000000a0
 #define MIPS_XKPHYS_CACHED		0x9800000000000000
 #define MIPS_XKPHYS_UNCACHED		0x9000000000000000
 #else
 #define MIPS_HAL_NAME			"MIPS32"
+#define MIPS_REGISTER_BYTES		4
+#define REG_S				sw
+#define REG_L				lw
 #define PTR_ADDU			addu
 #define PTR_ADDIU			addiu
+#define PTR_SRL				srl
+#define MFC0_WIDE			mfc0
+#define MTC0_WIDE			mtc0
+#define MIPS_WIDE_MFC0_STRING		"mfc0"
+#define MIPS_WIDE_MTC0_STRING		"mtc0"
 #define MIPS_STATUS_KERNEL_ADDRESSING	0x00000000
 #endif
 
@@ -188,21 +210,25 @@
  * attribute and the page frame number from bit 6.
  *
  * Values referenced: MIPS32 Architecture for Programmers Volume III
- * (Index P bit 31; EntryHi ASID bits 0-7, VPN2 bits 13-31; EntryLo G
- * bit 0, V bit 1, D bit 2, C bits 3-5, PFN from bit 6).
+ * (Index P bit 31; EntryHi ASID bits 0-7, VPN2 from bit 13 (its mask is
+ * with the page tables below); EntryLo G bit 0, V bit 1, D bit 2, C bits
+ * 3-5, PFN from bit 6).
  */
 #define MIPS_INDEX_PROBE_FAILED		0x80000000
 #define MIPS_ENTRY_HI_ASID_MASK		0xff
-#define MIPS_ENTRY_HI_VPN2_MASK		0xffffe000
 #define MIPS_ENTRY_LO_GLOBAL		0x01
 #define MIPS_ENTRY_LO_VALID		0x02
 #define MIPS_ENTRY_LO_DIRTY		0x04
 #define MIPS_ENTRY_LO_CACHE_SHIFT	3
 
 /*
- * The page tables the TLB refill walks: 4 KiB pages, a root of 1024
- * words indexed by the address's top ten bits, each the KSEG0 address
- * of a leaf table of 1024 entries or zero.
+ * The page tables the TLB refill walks: 4 KiB pages and tables of one
+ * page each.  The 32-bit processor has two levels: a root of 1024 words
+ * indexed by the address's top ten bits, each the KSEG0 address of a
+ * leaf table of 1024 entries or zero.  The 64-bit processor has three
+ * levels of 512 doublewords (9 + 9 + 9 bits above the page offset, 512
+ * GiB of user space): a root, middle tables and leaf tables, each
+ * nonzero entry the xkphys address of the table below.
  *
  * A leaf entry is the page's physical address from bit 12, the six
  * EntryLo bits shifted up by MIPS_PTE_HARDWARE_SHIFT (bit 6 global, bit
@@ -210,11 +236,32 @@
  * the software's own bits.  The refill shifts an entry right by six:
  * the frame number lands where EntryLo has it, and the software's bits
  * fall out.
+ *
+ * Values referenced: MIPS64 Architecture for Programmers Volume III
+ * (EntryLo PFN from bit 6; EntryHi VPN2 bits 13 to SEGBITS-1, which is 42
+ * on QEMU's MIPS64R2-generic, ws272-p001); QEMU v10.0.11
+ * target/mips/cpu-defs.c.inc (PABITS 36).
  */
 #define MIPS_PAGE_SIZE			4096
 #define MIPS_PAGE_SHIFT			12
-#define MIPS_ROOT_SHIFT			22
+#if defined(HAL_ARCH_MIPS64)
+#define MIPS_TABLE_LEVELS		3
+#define MIPS_TABLE_INDEX_BITS		9
+#define MIPS_TABLE_ENTRIES		512
+#define MIPS_TABLE_ENTRY_SHIFT		3
+#define MIPS_ROOT_SHIFT			30
+#define MIPS_MIDDLE_SHIFT		21
+#define MIPS_PTE_FRAME_MASK		0x0000000ffffff000
+#define MIPS_ENTRY_HI_VPN2_MASK		0x000003ffffffe000
+#else
+#define MIPS_TABLE_LEVELS		2
+#define MIPS_TABLE_INDEX_BITS		10
 #define MIPS_TABLE_ENTRIES		1024
+#define MIPS_TABLE_ENTRY_SHIFT		2
+#define MIPS_ROOT_SHIFT			22
+#define MIPS_PTE_FRAME_MASK		0xfffff000
+#define MIPS_ENTRY_HI_VPN2_MASK		0xffffe000
+#endif
 #define MIPS_PTE_HARDWARE_SHIFT		6
 #define MIPS_PTE_PRESENT		0x001
 #define MIPS_PTE_ACCESSED		0x002
@@ -226,15 +273,22 @@
 #define MIPS_PTE_VALID			0x080
 #define MIPS_PTE_WRITE_ENABLE		0x100
 #define MIPS_PTE_CACHE_SHIFT		9
-#define MIPS_PTE_FRAME_MASK		0xfffff000
 
 /*
- * The user segment: kuseg below 2 GiB, the first page never mapped.
- * Its root entries are the low half of the root; the high half stays
- * zero, so that a refill for the kernel's mapped segments finds nothing.
+ * The user segment, the first page never mapped: kuseg below 2 GiB on the
+ * 32-bit processor, whose root entries are the low half of the root (the
+ * high half stays zero, so that a refill for the kernel's mapped segments
+ * finds nothing); on the 64-bit processor the low 512 GiB of xuseg, all
+ * the three levels reach (MIPS_USER_SHIFT is its width in bits; the
+ * 64-bit refill sends a miss above it to the general exception).
  */
 #define MIPS_USER_MINIMUM		0x00001000
+#if defined(HAL_ARCH_MIPS64)
+#define MIPS_USER_SHIFT			39
+#define MIPS_USER_LIMIT			0x0000008000000000
+#else
 #define MIPS_USER_LIMIT			0x80000000
+#endif
 
 /*
  * The fixed segments of the 32-bit address space: KSEG0 maps the low
@@ -265,24 +319,26 @@
 
 /*
  * The trap frame, as offsets from its start: the 32 general registers,
- * hi, lo, and the exception's EPC, Status, Cause and BadVAddr.  The trap
- * entry places it above the 16-byte argument home of the C handler it
- * calls; the whole takes 168 bytes, a multiple of eight.
+ * hi, lo, and the exception's EPC, Status, Cause and BadVAddr, each a
+ * whole register.  The 32-bit trap entry places it above the 16-byte
+ * argument home of the C handler it calls, 168 bytes in all; the n64
+ * ABI has no home, and the 64-bit frame is 304 bytes.  Both keep the
+ * stack aligned as the ABI asks (8 and 16 bytes).
  */
-#define MIPS_FRAME_REGISTER_BYTES	4
-#define MIPS_FRAME_HI			128
-#define MIPS_FRAME_LO			132
-#define MIPS_FRAME_EXCEPTION_PC		136
-#define MIPS_FRAME_STATUS		140
-#define MIPS_FRAME_CAUSE		144
-#define MIPS_FRAME_BAD_ADDRESS		148
-#define MIPS_FRAME_SIZE			152
+#define MIPS_FRAME_REGISTER_BYTES	MIPS_REGISTER_BYTES
+#define MIPS_FRAME_HI			(32 * MIPS_REGISTER_BYTES)
+#define MIPS_FRAME_LO			(33 * MIPS_REGISTER_BYTES)
+#define MIPS_FRAME_EXCEPTION_PC		(34 * MIPS_REGISTER_BYTES)
+#define MIPS_FRAME_STATUS		(35 * MIPS_REGISTER_BYTES)
+#define MIPS_FRAME_CAUSE		(36 * MIPS_REGISTER_BYTES)
+#define MIPS_FRAME_BAD_ADDRESS		(37 * MIPS_REGISTER_BYTES)
+#define MIPS_FRAME_SIZE			(38 * MIPS_REGISTER_BYTES)
 #define MIPS_TRAP_STACK_BYTES		(MIPS_ARGUMENT_HOME_SIZE + MIPS_FRAME_SIZE)
 
 /*
- * The words mips_task_dispatch() keeps on a stack it leaves: s0 to s7,
- * fp and ra, and two words that keep the stack eight-byte aligned with a
- * free home slot.
+ * The registers mips_task_dispatch() keeps on a stack it leaves: s0 to
+ * s7, fp and ra, and two that keep the stack aligned (on the 32-bit
+ * processor with a free home slot).
  */
 #define MIPS_DISPATCH_WORDS		12
 #define MIPS_DISPATCH_FP		8
@@ -296,8 +352,12 @@
 
 /*
  * The bytes an o32 caller reserves below its outgoing arguments for the
- * callee to keep a0 to a3 in.
+ * callee to keep a0 to a3 in.  An n64 caller reserves none.
  */
+#if defined(HAL_ARCH_MIPS64)
+#define MIPS_ARGUMENT_HOME_SIZE		0
+#else
 #define MIPS_ARGUMENT_HOME_SIZE		16
+#endif
 
 #endif

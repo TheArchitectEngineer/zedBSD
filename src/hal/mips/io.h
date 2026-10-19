@@ -35,6 +35,55 @@ mips_segment_pointer(
 }
 
 /*
+ * Reports the kernel's cached address of a physical RAM address: KSEG0
+ * on the 32-bit processor, which reaches the low 512 MiB, and the
+ * cached window of xkphys on the 64-bit one, which reaches all of it.
+ */
+static __inline uintptr_t
+mips_cached_address(
+	uint64_t physical)
+{
+#if defined(HAL_ARCH_MIPS64)
+	/* xkphys holds every physical address at a fixed offset. */
+	return (uintptr_t)(MIPS_XKPHYS_CACHED + physical);
+#else
+	/* KSEG0 holds the low 512 MiB at a fixed offset. */
+	return mips_segment_pointer((uint32_t)MIPS_KSEG0_BASE + (uint32_t)physical);
+#endif
+}
+
+/*
+ * Reports the kernel's uncached address of a physical address: KSEG1 on
+ * the 32-bit processor and the uncached window of xkphys on the 64-bit
+ * one.
+ */
+static __inline uintptr_t
+mips_uncached_address(
+	uint64_t physical)
+{
+#if defined(HAL_ARCH_MIPS64)
+	/* xkphys holds every physical address at a fixed offset. */
+	return (uintptr_t)(MIPS_XKPHYS_UNCACHED + physical);
+#else
+	/* KSEG1 holds the low 512 MiB at a fixed offset. */
+	return mips_segment_pointer((uint32_t)MIPS_KSEG1_BASE + (uint32_t)physical);
+#endif
+}
+
+/*
+ * Reports the physical address of an address of the image, which runs in
+ * KSEG0 (on the 64-bit processor CKSEG0, whose low 32 bits are the same):
+ * the address less the segment's base, in the low RAM alias.
+ */
+static __inline uint64_t
+mips_image_physical(
+	uintptr_t address)
+{
+	/* The segment maps the low 512 MiB from its base. */
+	return (uint64_t)((uint32_t)address - (uint32_t)MIPS_KSEG0_BASE);
+}
+
+/*
  * Reports the uncached address of a device's physical address.
  */
 static __inline uintptr_t
