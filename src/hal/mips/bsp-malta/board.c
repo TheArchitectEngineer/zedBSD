@@ -243,8 +243,9 @@ mips_board_describe(
 	void)
 {
 	/* The memory and the command line the loader passed. */
-	hal_printf(MIPS_HAL_NAME " MALTA memory=%u KiB ramdisk=%08x+%u\n",
+	hal_printf(MIPS_HAL_NAME " MALTA memory=%u KiB total=%u KiB ramdisk=%08x+%u\n",
 		   board_low_memory / 1024U,
+		   board_total_memory / 1024U,
 		   board_ramdisk_start,
 		   board_ramdisk_size);
 	if (board_has_command_line)

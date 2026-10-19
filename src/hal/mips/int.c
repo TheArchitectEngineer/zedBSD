@@ -337,13 +337,17 @@ trap_kernel_system_call(
 	struct mips_trap_frame *frame)
 {
 	/* Refuses a call nothing answers. */
-	if (frame->r[MIPS_REGISTER_V0] != TRAP_SELFTEST_CALL) {
+	if ((uint32_t)frame->r[MIPS_REGISTER_V0] != TRAP_SELFTEST_CALL) {
 		trap_kernel_fault(frame, MIPS_EXCEPTION_SYSTEM_CALL, MIPS_TRAP_NOT_SPACE);
 		return;
 	}
 
-	/* Answers the self-test and moves past the instruction. */
-	frame->r[MIPS_REGISTER_V0] = TRAP_SELFTEST_ANSWER;
+	/*
+	 * Answers the self-test and moves past the instruction. A 32-bit value
+	 * lives sign-extended in a 64-bit register, which the caller's compare
+	 * assumes, so the answer is widened through int32_t.
+	 */
+	frame->r[MIPS_REGISTER_V0] = (uintptr_t)(intptr_t)(int32_t)TRAP_SELFTEST_ANSWER;
 	frame->r[MIPS_REGISTER_A3] = 0;
 	frame->exception_pc += TRAP_INSTRUCTION_BYTES;
 }
