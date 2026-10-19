@@ -6,7 +6,8 @@
  */
 
 /*
- * The minimal UEFI x64 declarations used by the zedBSD loader.
+ * The minimal UEFI declarations used by the zedBSD loaders (x64 and
+ * riscv64).
  *
  * Only the services and fields the loader uses are typed; every other table
  * slot keeps its place as an untyped pointer.
@@ -18,8 +19,16 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* The firmware's calling convention. */
+/*
+ * The firmware's calling convention: the Microsoft one on x64, and the
+ * processor's own on RISC-V, where UEFI uses the standard calling
+ * convention unchanged.
+ */
+#if defined(__x86_64__)
 #define EFIAPI __attribute__((ms_abi))
+#else
+#define EFIAPI
+#endif
 
 /* KeyShiftState: the other bits are meaningful only with this one. */
 #define EFI_SHIFT_STATE_VALID 0x80000000U
@@ -493,6 +502,38 @@ static const EFI_GUID EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID = {
     0x23dc,
     0x4a38,
     {0x96, 0xfb, 0x7a, 0xde, 0xd0, 0x80, 0x51, 0x6a}};
+
+/*
+ * The protocol a RISC-V firmware reports the boot hart's id through: the
+ * application's entry has no register for it.
+ */
+struct riscv_efi_boot_protocol;
+typedef EFI_STATUS(EFIAPI *RISCV_EFI_GET_BOOT_HARTID)(
+    struct riscv_efi_boot_protocol *, UINTN *);
+typedef struct riscv_efi_boot_protocol {
+	UINT64 Revision;
+	RISCV_EFI_GET_BOOT_HARTID GetBootHartId;
+} RISCV_EFI_BOOT_PROTOCOL;
+
+/*
+ * The RISC-V boot protocol, and the configuration table that holds the
+ * flattened device tree a firmware passes on a board without ACPI.
+ *
+ * Values referenced: riscv-non-isa/riscv-uefi boot_protocol.adoc
+ * (RISCV_EFI_BOOT_PROTOCOL_GUID), Linux 6.8.12 include/linux/efi.h
+ * (RISCV_EFI_BOOT_PROTOCOL_GUID, DEVICE_TREE_GUID).
+ */
+static const EFI_GUID RISCV_EFI_BOOT_PROTOCOL_GUID = {
+    0xccd15fec,
+    0x6f73,
+    0x4eec,
+    {0x83, 0x95, 0x3e, 0x69, 0xe4, 0xb9, 0x40, 0xbf}};
+
+static const EFI_GUID EFI_DEVICE_TREE_GUID = {
+    0xb1b621d5,
+    0xf19c,
+    0x41a5,
+    {0x83, 0x0b, 0xd9, 0x15, 0x2c, 0x69, 0xaa, 0xe0}};
 
 static const EFI_GUID EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL_GUID = {
     0xdd9e7534,

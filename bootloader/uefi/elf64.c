@@ -10,7 +10,40 @@
  */
 
 #include "elf64.h"
+
+/*
+ * The placement contract of the kernel the loader is built for.
+ *
+ * The window physical address is the linked physical address that the
+ * virtual base corresponds to: zero on amd64, whose kernel's virtual
+ * address is the base plus the physical one, and the linked physical
+ * start on riscv64.  A riscv64 segment need not start on a page: the HAL
+ * maps the image's whole range in one window, so only the image's start
+ * is aligned.
+ */
+#if defined(__riscv)
+#include "bootloader/include/riscv64-kernel-image.h"
+#define KERNEL_MACHINE			243U
+#define KERNEL_LINK_VIRT_BASE		RISCV64_KERNEL_LINK_VIRT_BASE
+#define KERNEL_LINK_PHYS_START		RISCV64_KERNEL_LINK_PHYS_START
+#define KERNEL_WINDOW_PHYS		RISCV64_KERNEL_LINK_PHYS_START
+#define KERNEL_MAX_BYTES		RISCV64_KERNEL_MAX_BYTES
+#define KERNEL_PHYS_ALIGN		RISCV64_KERNEL_PHYS_ALIGN
+#define KERNEL_PHYS_MINIMUM		RISCV64_KERNEL_PHYS_ALIGN
+#define KERNEL_PHYS_LIMIT		RISCV64_KERNEL_PHYS_LIMIT
+#define KERNEL_SEGMENT_PAGE_ALIGNED	0
+#else
 #include "bootloader/include/amd64-kernel-image.h"
+#define KERNEL_MACHINE			62U
+#define KERNEL_LINK_VIRT_BASE		AMD64_KERNEL_LINK_VIRT_BASE
+#define KERNEL_LINK_PHYS_START		AMD64_KERNEL_LINK_PHYS_START
+#define KERNEL_WINDOW_PHYS		0ULL
+#define KERNEL_MAX_BYTES		AMD64_KERNEL_MAX_BYTES
+#define KERNEL_PHYS_ALIGN		AMD64_KERNEL_PHYS_ALIGN
+#define KERNEL_PHYS_MINIMUM		AMD64_KERNEL_LINK_PHYS_START
+#define KERNEL_PHYS_LIMIT		AMD64_KERNEL_PHYS_LIMIT
+#define KERNEL_SEGMENT_PAGE_ALIGNED	1
+#endif
 
 /* The program header type of a loadable segment. */
 #define PT_LOAD		1U
@@ -18,14 +51,11 @@
 /* The program header flag of an executable segment. */
 #define PF_X		1U
 
-/* The ELF machine of amd64. */
-#define EM_X86_64	62U
-
 /* The ELF type of an executable. */
 #define ET_EXEC		2U
 
 /* The image must be linked inside [link start, link start + max bytes). */
-#define KERNEL_LINK_PHYS_LIMIT	(AMD64_KERNEL_LINK_PHYS_START + AMD64_KERNEL_MAX_BYTES)
+#define KERNEL_LINK_PHYS_LIMIT	(KERNEL_LINK_PHYS_START + KERNEL_MAX_BYTES)
 
 /* The ELF64 file header as it is in the kernel file. */
 struct elf64_header {
@@ -63,7 +93,7 @@ static int segment_acceptable(const struct elf64_program_header *ph, uint32_t se
 /*
  * Validates a kernel's headers and builds its load plan.
  *
- * Returns 1 when the kernel is an amd64 executable the loader can place,
+ * Returns 1 when the kernel is an executable of the loader's machine it can place,
  * with its PT_LOAD segments ascending, inside the link window and its entry
  * point in an executable segment; returns 0 otherwise.
  */
@@ -93,7 +123,7 @@ zbl_elf64_plan(
 	if (buffer == 0 || plan == 0)
 		return 0;
 
-	/* Refuses a file that is not an amd64 executable with its program headers in reach. */
+	/* Refuses a file that is not the machine's executable with its program headers in reach. */
 	acceptable = header_acceptable(header);
 	if (!acceptable)
 		return 0;
@@ -158,7 +188,7 @@ zbl_elf64_plan(
 		return 0;
 
 	/* Refuses a kernel that does not start at the linked physical address. */
-	if (plan->link_physical_start != AMD64_KERNEL_LINK_PHYS_START)
+	if (plan->link_physical_start != KERNEL_LINK_PHYS_START)
 		return 0;
 
 	/* Succeeded: the plan describes a kernel the loader can place. */
@@ -185,16 +215,16 @@ zbl_elf64_place(
 	/* Refuses a plan that zbl_elf64_plan() did not accept. */
 	if (plan == 0 ||
 	    plan->segment_count == 0 ||
-	    plan->link_physical_start != AMD64_KERNEL_LINK_PHYS_START ||
+	    plan->link_physical_start != KERNEL_LINK_PHYS_START ||
 	    plan->link_physical_end <= plan->link_physical_start)
 		return 0;
 
 	/* Refuses a base that is unaligned or leaves the image outside the bootstrap window. */
 	bytes = plan->link_physical_end - plan->link_physical_start;
-	if ((load_base & (AMD64_KERNEL_PHYS_ALIGN - 1U)) != 0 ||
-	    load_base < AMD64_KERNEL_LINK_PHYS_START ||
-	    load_base > AMD64_KERNEL_PHYS_LIMIT ||
-	    bytes > AMD64_KERNEL_PHYS_LIMIT - load_base)
+	if ((load_base & (KERNEL_PHYS_ALIGN - 1U)) != 0 ||
+	    load_base < KERNEL_PHYS_MINIMUM ||
+	    load_base > KERNEL_PHYS_LIMIT ||
+	    bytes > KERNEL_PHYS_LIMIT - load_base)
 		return 0;
 
 	/* Moves the extent to the base. */
@@ -206,14 +236,14 @@ zbl_elf64_place(
 	for (index = 0; index < plan->segment_count; index++) {
 		/* Recovers the linked address from the virtual one, then rebases. */
 		segment = &plan->segment[index];
-		segment->physical = segment->virtual_address - AMD64_KERNEL_LINK_VIRT_BASE + delta;
+		segment->physical = segment->virtual_address - KERNEL_LINK_VIRT_BASE + KERNEL_WINDOW_PHYS + delta;
 	}
 
 	/* Succeeded: the plan is placed at the base. */
 	return 1;
 }
 
-/* Reports whether a file header is an amd64 executable's with its program headers in reach. */
+/* Reports whether a file header is the machine's executable's with its program headers in reach. */
 static int
 header_acceptable(
 	const struct elf64_header *header)
@@ -228,9 +258,9 @@ header_acceptable(
 	    header->ident[6] != 1)
 		return 0;
 
-	/* The file is not an amd64 executable. */
+	/* The file is not an executable of the machine. */
 	if (header->type != ET_EXEC ||
-	    header->machine != EM_X86_64 ||
+	    header->machine != KERNEL_MACHINE ||
 	    header->version != 1 ||
 	    header->ehsize != sizeof(*header))
 		return 0;
@@ -264,18 +294,21 @@ segment_acceptable(
 		return 0;
 
 	/* The segment is not linked inside the kernel's physical window. */
-	if (ph->paddr < AMD64_KERNEL_LINK_PHYS_START ||
+	if (ph->paddr < KERNEL_LINK_PHYS_START ||
 	    ph->paddr >= KERNEL_LINK_PHYS_LIMIT ||
 	    ph->memsz > KERNEL_LINK_PHYS_LIMIT - ph->paddr)
 		return 0;
 
 	/* The segment's virtual address is not its physical one in the kernel's window. */
-	if (ph->vaddr != AMD64_KERNEL_LINK_VIRT_BASE + ph->paddr)
+	if (ph->vaddr != KERNEL_LINK_VIRT_BASE + (ph->paddr - KERNEL_WINDOW_PHYS))
 		return 0;
 
-	/* The segment is not page aligned, or its alignment is not a power of two. */
-	if ((ph->paddr & 0xfffU) != 0 ||
-	    ph->align < 0x1000U ||
+	/* The segment is not page aligned where the contract needs it. */
+	if (KERNEL_SEGMENT_PAGE_ALIGNED && (ph->paddr & 0xfffU) != 0)
+		return 0;
+
+	/* The segment's alignment is less than a page or not a power of two. */
+	if (ph->align < 0x1000U ||
 	    (ph->align & (ph->align - 1U)) != 0)
 		return 0;
 
