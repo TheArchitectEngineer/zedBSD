@@ -3,9 +3,9 @@
 # WS270 VisionFive 2 で Keiland の desktop を動かし、OS を完全に動かす
 
 - ID: ws270、Master: [master.md](../master.md)、Primary Milestone: MG008
-- Status: planning（2026-10-19 Q1 作成。2026-10-19 22:04 ユーザーの WS269 D5「(a) 画面なしで先行」: WS269 p010 までは service・seat・input・display の node の claim だけを進め、描画は WS269 p010（GPU の Vulkan）の後。Keiland は GPU の Vulkan 無しで描けない）
+- Status: incomplete（2026-10-19 設計 p001 を P1 が開始（q1335、fg020）。旧: planning（2026-10-19 Q1 作成。2026-10-19 22:04 ユーザーの WS269 D5「(a) 画面なしで先行」: WS269 p010 までは service・seat・input・display の node の claim だけを進め、描画は WS269 p010（GPU の Vulkan）の後。Keiland は GPU の Vulkan 無しで描けない）
 - 起点（2026-10-19 ユーザー）: 「VisionFive2はまずフレームバッファ、SDカードを実装して、rootfsから起動できるところまで持って行きます。USBキーボードで操作できるようにします。LANとサウンドとNVMeも使えるようにします。NVMe SSDがボードにつけてあり、テスト可能です。ここまでのphaseを作ってください。そのあと、PowerVRのドライバを独立WSで作ります。最終的に、VF2でkeilandを動かして、OSを完全に動作させます。」
-- 担当: 未割当。
+- 担当: P1（設計 p001、2026-10-19 q1335）。
 
 ## 完了の条件（案、着手の時に確定する）
 
@@ -19,4 +19,8 @@
 
 ## Phase
 
-未定。
+| Phase | 中身 | 依存 | Status |
+| --- | --- | --- | --- |
+| [p001](phase001/phase.md) | 設計（riscv64 の desktop の package の build、service・seat・input・display の claim の画面なしの立ち上げ、描画は WS269 p010 の後、Phase の分割）。コードは書かない | — | in-progress（2026-10-19 P1、q1335） |
+
+残りの Phase は p001 の設計から作る。
