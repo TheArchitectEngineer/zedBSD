@@ -50,8 +50,8 @@
 | p010l | WSI の shared の道と p007 の import の試験（WS277 R6）、dc8200 の zero copy | O-p010k2、O-p010o | planning（同） |
 | p010m | 仕上げ、T1 の回帰、p010 の受け入れ（vkdemo と gpu-selftest の clear・copy・draw、D-P7） | O-p010l | planning（同） |
 | p011 | Keiland が使う Vulkan の機能の不足を driver 側で埋める（受け入れは機能の試験。desktop の目視は WS270 p006、WS269 p011 → WS270 p006） | p010m | planned |
-| [p013](phase013/phase.md) | USC の encoder（`usc-encode.c`）の広げ: SMP・FITR/FITRP・EMITPIX・EOT・SR/PT・transfer に要る命令（持ち主は P2）。出力 O-ENC（main に merge 済みで host 試験 PASS。**完了の条件は暫定**: 固定の program の命令の一覧は P1 の design-p010 版 2.1 で決まる） | p008 | in-progress（2026-10-20 P2: 最初の試行 q1363（記録は p010-compiler）で compiler の命令を追加、host 試験 PASS。q1369 で phase.md） |
-| [p014](phase014/phase.md) | SPIR-V から USC の compiler（compute の一般、vertex・fragment、pack と blend、compile の入力は design-p010.md §5.1）。出力 O-SHADER-ABI（`shader.h`、最初の出力、O-ENC に依らない）・O-VSFS（vkdemo・gpu-selftest の vertex・fragment） | p009（O-VSFS は O-ENC も） | in-progress（2026-10-20 P2: 最初の試行 q1363（記録は p010-compiler）、host 試験 PASS。q1369 で phase.md。q1371 で `shader.h` に改名、host 試験 PASS、P1 の合意と gpu-selftest の shader が残り） |
+| [p013](phase013/phase.md) | USC の encoder（`usc-encode.c`）の広げ: SMP・FITR/FITRP・EMITPIX・EOT・SR/PT・transfer に要る命令（持ち主は P2）。出力 O-ENC（main に merge 済みで host 試験 PASS。中身は design-p010 版 2.1 §5.4 で確定） | p008 | in-progress（2026-10-20 P2: 最初の試行 q1363（記録は p010-compiler）で compiler の命令を追加、host 試験 PASS。q1369 で phase.md。q1372 で SR の shared register の burst が今の encoder で書けることを host 試験で確認、O-ENC の判定は Q1） |
+| [p014](phase014/phase.md) | SPIR-V から USC の compiler（compute の一般、vertex・fragment、pack と blend、compile の入力は design-p010.md §5.1）。出力 O-SHADER-ABI（`shader.h`、最初の出力、O-ENC に依らない）・O-VSFS（vkdemo・gpu-selftest の vertex・fragment） | p009（O-VSFS は O-ENC も） | in-progress（2026-10-20 P2: 最初の試行 q1363（記録は p010-compiler）、host 試験 PASS。q1369 で phase.md。q1371 で `shader.h` に改名。q1372 で VertexIndex・InstanceIndex、shader-spirv.c を 4 つに分割、未実装の要否の表（残りは p011 へ記録）、host 試験 PASS、build warning 0。gpu-selftest の shader が残り） |
 | p012 | 規約の全文の見直し | p003〜p011・p013・p014 | planned |
 
 中身・LW・確かめは [design.md](design.md) §6。

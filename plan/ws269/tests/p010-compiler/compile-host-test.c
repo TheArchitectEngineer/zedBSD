@@ -152,12 +152,20 @@ run_store(
 	memory[(address - MEMORY_BASE) / 4U] = word;
 }
 
-/* A vertex input: lane-dependent floats. */
+/* The registers a test gives the vertex and instance index, if any. */
+static uint32_t vertex_index_reg = POWERVR_SHADER_NO_REG;
+static uint32_t instance_index_reg = POWERVR_SHADER_NO_REG;
+
+/* A vertex input: lane-dependent floats, or the integer indices. */
 static uint32_t
 input_word(
 	unsigned lane,
 	uint32_t reg)
 {
+	if (reg == vertex_index_reg)
+		return lane + 5U;
+	if (reg == instance_index_reg)
+		return 2U;
 	return as_word((float)lane * 0.125f + (float)reg * 0.5f - 1.0f);
 }
 
@@ -650,6 +658,51 @@ test_quad_vertex(void)
 	machine_compare(kwl_quad_vert, sizeof(kwl_quad_vert) / 4U, POWERVR_SHADER_VERTEX, "kwl quad.vert");
 }
 
+/* The vertex and instance index: each in its own register after the attributes. */
+static void
+test_index_vertex(
+	const uint32_t *words,
+	size_t count,
+	const char *name)
+{
+	struct powervr_shader_program program;
+	struct powervr_ir_shader *shader;
+	float expected[4];
+	char label[128];
+	unsigned lane;
+	unsigned k;
+	int ok;
+
+	/* Learns the registers first, so the inputs give integers there. */
+	if (read_module(words, count, POWERVR_SHADER_VERTEX, &program, &shader) != 0) {
+		check(0, name);
+		return;
+	}
+	snprintf(label, sizeof(label), "%s places the indices", name);
+	check(program.input_count == 0 && program.vertex_index_reg != program.instance_index_reg &&
+	      program.vertex_index_reg < 2 && program.instance_index_reg < 2 && program.vertex_inputs == 2, label);
+	vertex_index_reg = program.vertex_index_reg;
+	instance_index_reg = program.instance_index_reg;
+	if (prepare(words, count, POWERVR_SHADER_VERTEX, &program, name, 0xffffffffU) == 0) {
+		ok = 1;
+		for (lane = 0; lane < 32; lane++) {
+			expected[0] = (float)((lane + 5U) & 3U) * 0.5f - 0.5f + 2.0f * 0.125f;
+			expected[1] = (float)((lane + 5U) >> 2) * 0.25f;
+			expected[2] = 0.5f;
+			expected[3] = 1.0f;
+			for (k = 0; k < 4; k++) {
+				if (fabsf(as_float(run->outputs[k][lane]) - expected[k]) > 1e-6f)
+					ok = 0;
+			}
+		}
+		snprintf(label, sizeof(label), "%s positions by the indices", name);
+		check(ok, label);
+		machine_compare(words, count, POWERVR_SHADER_VERTEX, name);
+	}
+	vertex_index_reg = POWERVR_SHADER_NO_REG;
+	instance_index_reg = POWERVR_SHADER_NO_REG;
+}
+
 /* vkdemo's vertex shader: the rotated cuboid's clip position. */
 static void
 test_vkdemo_vertex(void)
@@ -908,6 +961,16 @@ main(
 			test_math(words, count, name);
 		if (strcmp(compute[index][1], "call") == 0)
 			test_call(words, count, name);
+		free(words);
+	}
+
+	/* The vertex and instance index, optimized and not. */
+	for (index = 0; index < 2; index++) {
+		words = load_file(argv[1], index == 0 ? "index-vert-o.spv" : "index-vert-0.spv", &count);
+		check(words != NULL, "index.vert");
+		if (words == NULL)
+			continue;
+		test_index_vertex(words, count, index == 0 ? "index.vert (-O)" : "index.vert (-O0)");
 		free(words);
 	}
 
