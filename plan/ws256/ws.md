@@ -92,3 +92,5 @@
 → p012〜p019 を planning で足した（p011 は同日の framebuffer）。順は p004 → p005 → p011 → p013 → p014 → p015、p016 → p017、p018、p019（p012 の設計は今から可）。GPU は WS269、Keiland は WS270。
 
 > 2026-10-20 Q1 の記録: WS277（DC8200 の display driver）の依頼 R1・R2・R4 で P1 が WS256 の source を変えた（q1350、1592e5f3c、merge 5a64ce750）: `vf2-crg.h/.c`（voutcrg の generator と VOUT・SYS の表示の clock、`drv_vf2_clock_running`）、`vf2-pmu.h/.c`（PD_VOUT を受ける）、`serial-console.h/.c`（追加だけの `drv_serial_console_ops`）、`src/kern/platform/visionfive2.c`（wrapper の text の ops、DC8200 の記述と probe）、試験 `plan/ws256/tests/vf2-soc/`・`serial/`。TRM の表 5-23 の VOUT の reset の assert 0x38 は clock 14 の register と重なり、StarFive Linux の 0x48 を使った。
+
+> 2026-10-20 Q1 の記録: WS277 の依頼 R1b で P1 が WS256 の `vf2-crg.c/.h`（`drv_vf2_clock_set_input_parent`、CRG の外の入力を mux の親に）と `plan/ws256/tests/vf2-soc/vf2-soc-host-test.c` を変えた（q1354、196c94e8c）。
