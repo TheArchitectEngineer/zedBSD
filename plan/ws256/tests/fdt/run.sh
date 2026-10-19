@@ -9,6 +9,7 @@ out=$1
 mkdir -p "$out"
 dtc -q -I dts -O dtb -o "$out/virt.dtb" "$here/virt-like.dts"
 dtc -q -I dts -O dtb -o "$out/jh7110.dtb" "$here/jh7110-like.dts"
+dtc -q -I dts -O dtb -o "$out/jh7110-uboot.dtb" "$here/jh7110-uboot-like.dts"
 cc -std=c99 -O2 -Wall -Wextra -Werror -I"$root/include" -I"$root/src/hal/riscv64" \
 	"$root/src/hal/riscv64/fdt.c" "$here/fdt-host-test.c" -o "$out/fdt-host-test"
-"$out/fdt-host-test" "$out/virt.dtb" "$out/jh7110.dtb"
+"$out/fdt-host-test" "$out/virt.dtb" "$out/jh7110.dtb" "$out/jh7110-uboot.dtb"

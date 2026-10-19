@@ -96,6 +96,9 @@ RISCV64_PLATFORM_SOURCES_visionfive2 += src/drivers/platform/visionfive2/vf2-pmu
 	src/drivers/gpu/powervr/display.c \
 	src/drivers/gpu/powervr/dc8200.c \
 	src/drivers/gpu/powervr/dc8200-adopt.c \
+	src/drivers/gpu/powervr/dc8200-flip.c \
+	src/drivers/gpu/powervr/dc8200-hdmi.c \
+	src/drivers/gpu/powervr/dc8200-mode.c \
 	src/drivers/gpu/powervr/firmware-image.c \
 	src/drivers/gpu/powervr/mips-table.c \
 	src/drivers/gpu/powervr/retry.c \

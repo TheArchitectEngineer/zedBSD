@@ -713,6 +713,18 @@ check_vout(
 	check(error == 0 && get32(vout_crg, 7 * 4) == 0U, "pix0 moved to the pixel divider");
 	rate = rate_of(DRV_VF2_CRG_VOUT, 7, &error);
 	check(error == 0 && rate == 198000000ULL, "pix0 on the pixel divider: 198 MHz");
+	error = drv_vf2_clock_set_input_parent(&clock, "hdmitx0_pixelclk");
+	check(error == 0 && get32(vout_crg, 7 * 4) == (1U << 24), "pix0 moved back to hdmitx0_pixelclk");
+	rate = rate_of(DRV_VF2_CRG_VOUT, 7, &error);
+	check(error == 0 && rate == 297000000ULL, "pix0 on hdmitx0_pixelclk again: 297 MHz");
+	error = drv_vf2_clock_set_input_parent(&clock, "osc");
+	check(error == ENOENT, "pix0 refuses an input that is not its source");
+	error = drv_vf2_clock_set_parent(&clock, &parent);
+	check(error == 0 && get32(vout_crg, 7 * 4) == 0U, "pix0 on the pixel divider again");
+	clock.index = 0;
+	error = drv_vf2_clock_set_input_parent(&clock, "hdmitx0_pixelclk");
+	check(error == ENOTSUP, "a clock without a selector refuses an input parent");
+	clock.index = 7;
 
 	clock.index = 1;
 	error = drv_vf2_clock_set_rate(&clock, 148500000ULL);

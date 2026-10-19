@@ -28,5 +28,6 @@ WS270-D1 (c)（config-visionfive2.mk を desktop、最小は config-visionfive2-
 | [p001](phase001/phase.md) | 設計（riscv64 の desktop の package の build、service・seat・input・display の claim の画面なしの立ち上げ、描画は WS269 p010 の後、Phase の分割）。コードは書かない | — | cleared（2026-10-20 Q1、改訂 2.1。D は未決） |
 | [p002](phase002/phase.md) | riscv64 の desktop の build の不足のうち設計に依らない物（userland-dynamic の include、package の arch の表、kwl_cycles、machine 名） | — | in-progress（2026-10-19 P1、q1336・q1338。試しの build は rc=0（noct・emacs を config から外し、libcurses・keiland-preview の static の規則を足した）、amd64・rpi4 の rootfs rc=0） |
 | [p003](phase003/phase.md) | QEMU riscv64-virt の画面なしの確かめ（service・USB keyboard の login・mouse の event・display が無い時の道・`keiland-preview` の static の実行）。試験の config、rootfs 73 MiB（256 MiB の root に入る）、riscv64 の native の cfg に `login=graphical` | p002 | cleared（2026-10-20 Q1、T1-752） |
+| [p004](phase004/phase.md) | VF2 の実機の画面なしの確かめ（graphical login の失敗の道 E → `gpu-bars`・`display-inventory` D、USB keyboard・mouse C）。試験の config（graphical login y、firmware なし）、native.img 404,750,336 B、rootfs 73 MiB、`display-inventory` の platform に visionfive2 | p003 | in-progress（2026-10-20 P1、q1355。image と手順は準備済み、実機待ち） |
 
 残りの Phase は p001 の設計から作る。

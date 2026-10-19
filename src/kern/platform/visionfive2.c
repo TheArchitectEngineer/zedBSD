@@ -180,6 +180,73 @@ static const struct vf2_dc_gate vf2_dc_gates[] = {
 };
 
 /*
+ * Where the HDMI transmitter and the display subsystem's control block
+ * are, for a boot whose display driver lights the output itself.
+ *
+ * Values referenced:
+ * StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
+ * arch/riscv/boot/dts/starfive/jh7110.dtsi (hdmi@29590000, 0x4000 bytes;
+ * dssctrl@295b0000, 0x90 bytes).
+ */
+#define VF2_HDMI_BASE		0x29590000ULL
+#define VF2_HDMI_SIZE		0x4000ULL
+#define VF2_DSS_BASE		0x295b0000ULL
+#define VF2_DSS_SIZE		0x90ULL
+
+/*
+ * The clocks the display controller and the HDMI transmitter run on when
+ * the board powers the output up itself, in the order they are started:
+ * the SYS generator's display source and bus gates and the HDMI audio
+ * master clock, then the VOUT generator's controller, pixel, LCD and HDMI
+ * gates.
+ *
+ * Values referenced:
+ * Linux v6.12 include/dt-bindings/clock/starfive,jh7110-crg.h
+ * (JH7110_SYSCLK_VOUT_SRC 58, JH7110_SYSCLK_NOC_BUS_DISP_AXI 60,
+ * JH7110_SYSCLK_VOUT_TOP_AHB 61, JH7110_SYSCLK_VOUT_TOP_AXI 62,
+ * JH7110_SYSCLK_VOUT_TOP_HDMITX0_MCLK 63, JH7110_VOUTCLK_DC8200_AXI 4 to
+ * JH7110_VOUTCLK_DC8200_PIX0 7, JH7110_VOUTCLK_DOM_VOUT_TOP_LCD 9,
+ * JH7110_VOUTCLK_HDMI_TX_MCLK 15 to JH7110_VOUTCLK_HDMI_TX_SYS 17);
+ * StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
+ * arch/riscv/boot/dts/starfive/jh7110.dtsi (dc8200's and hdmi's clocks).
+ */
+static const struct vf2_dc_gate vf2_dc_start_gates[] = {
+	{ { DRV_VF2_CRG_SYS, 58U }, "vout_src" },
+	{ { DRV_VF2_CRG_SYS, 60U }, "noc_bus_disp_axi" },
+	{ { DRV_VF2_CRG_SYS, 61U }, "vout_top_ahb" },
+	{ { DRV_VF2_CRG_SYS, 62U }, "vout_top_axi" },
+	{ { DRV_VF2_CRG_SYS, 63U }, "hdmitx0_mclk" },
+	{ { DRV_VF2_CRG_VOUT, 4U }, "dc8200_axi" },
+	{ { DRV_VF2_CRG_VOUT, 5U }, "dc8200_core" },
+	{ { DRV_VF2_CRG_VOUT, 6U }, "dc8200_ahb" },
+	{ { DRV_VF2_CRG_VOUT, 7U }, "dc8200_pix0" },
+	{ { DRV_VF2_CRG_VOUT, 9U }, "vout_top_lcd" },
+	{ { DRV_VF2_CRG_VOUT, 15U }, "hdmi_tx_mclk" },
+	{ { DRV_VF2_CRG_VOUT, 16U }, "hdmi_tx_bclk" },
+	{ { DRV_VF2_CRG_VOUT, 17U }, "hdmi_tx_sys" }
+};
+
+/*
+ * The reset lines released when the board powers the output up itself:
+ * the SYS generator's display source and bus, then the VOUT generator's
+ * controller lines and the HDMI transmitter's.
+ *
+ * Values referenced:
+ * Linux v6.12 include/dt-bindings/reset/starfive,jh7110-crg.h
+ * (JH7110_SYSRST_VOUT_TOP_SRC 43, JH7110_SYSRST_NOC_BUS_DISP_AXI 26,
+ * JH7110_VOUTRST_DC8200_AXI 0, _AHB 1, _CORE 2,
+ * JH7110_VOUTRST_HDMI_TX_HDMI 9).
+ */
+static const struct drv_vf2_reset vf2_dc_start_resets[] = {
+	{ DRV_VF2_CRG_SYS, 43U },
+	{ DRV_VF2_CRG_SYS, 26U },
+	{ DRV_VF2_CRG_VOUT, 0U },
+	{ DRV_VF2_CRG_VOUT, 1U },
+	{ DRV_VF2_CRG_VOUT, 2U },
+	{ DRV_VF2_CRG_VOUT, 9U }
+};
+
+/*
  * What a fatal stop calls to put the display back on the loader's screen.
  *
  * Set once by probe_display_controller() on the boot CPU when the display
@@ -237,6 +304,8 @@ static void reveal_fatal(void);
 #if CONFIG_DRIVER_POWERVR
 static void probe_display_controller(const struct drv_fdt *fdt);
 static int check_display_clocks(void);
+static void light_display(const struct drv_powervr_dc_place *place);
+static int power_display(void);
 #endif
 
 /*
@@ -919,6 +988,12 @@ probe_display_controller(
 			place.interrupt = (uint32_t)drv_fdt_cells_value(cells, 0, 1U);
 	}
 
+	/* Lights the output itself when the loader left no screen or the boot line names a mode. */
+	if (drv_powervr_dc_own_wanted()) {
+		light_display(&place);
+		return;
+	}
+
 	/* Leaves the controller alone when its power domain is off or unknown. */
 	error = drv_vf2_pmu_powered(DRV_VF2_PD_VOUT, &powered);
 	if (error != 0) {
@@ -946,6 +1021,147 @@ probe_display_controller(
 	/* Lets a fatal stop take the screen back once the controller is read. */
 	if (error == 0)
 		vf2_fatal_display = drv_powervr_dc_restore_fatal;
+}
+
+/*
+ * Has the display driver light the HDMI output at its own mode.
+ *
+ * When the loader left a screen, the output is already powered and
+ * clocked and is only set to the mode; otherwise the board powers it up
+ * first.  Either way the plane becomes the screen a fatal stop returns to.
+ */
+static void
+light_display(
+	const struct drv_powervr_dc_place *place)
+{
+	struct drv_powervr_dc_own_place own;
+	struct kern_boot_framebuffer framebuffer;
+	int loader_screen;
+	int error;
+
+	own.controller = *place;
+	own.hdmi = VF2_HDMI_BASE;
+	own.hdmi_size = VF2_HDMI_SIZE;
+	own.subsystem = 0;
+	own.subsystem_size = 0;
+
+	/* Finds whether the loader lit the output. */
+	error = kern_boot_framebuffer("riscv64.framebuffer", &framebuffer);
+	loader_screen = 0;
+	if (error == 0)
+		loader_screen = 1;
+
+	/* A lit output only needs its registers' clocks checked. */
+	if (loader_screen) {
+		error = check_display_clocks();
+		if (error != 0)
+			return;
+	}
+
+	/* An unlit one is powered, clocked and released from reset first. */
+	if (!loader_screen) {
+		error = power_display();
+		if (error != 0)
+			return;
+		own.subsystem = VF2_DSS_BASE;
+		own.subsystem_size = VF2_DSS_SIZE;
+	}
+
+	/* Has the display driver set the mode and show its framebuffer. */
+	error = drv_powervr_dc_own_mode(&own);
+	if (error != 0) {
+		kern_logf("visionfive2: display not lit (%d)\n", error);
+		return;
+	}
+
+	/* Lets a fatal stop take the screen back to the driver's framebuffer. */
+	vf2_fatal_display = drv_powervr_dc_restore_fatal;
+}
+
+/*
+ * Powers the display output up: its power domain, its clocks, the LCD
+ * clock's source and its reset lines.
+ *
+ * The HDMI panel's pixel clock runs from the HDMI PHY's output (the VOUT
+ * generator's hdmitx0_pixelclk input), as for display 0 in the vendor
+ * driver; the PHY drives it once the HDMI PLL locks.
+ *
+ * Procedure referenced:
+ * StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
+ * drivers/gpu/drm/verisilicon/vs_dc.c (dc_init and vs_dc_enable: the
+ * clocks enabled, the controller's resets released, the LCD clock on
+ * display 0's pixel clock, display 0's pixel clock on hdmitx0_pixelclk)
+ * and inno_hdmi.c
+ * (inno_hdmi_enable_clk_deassert_rst).
+ */
+static int
+power_display(
+	void)
+{
+	const struct vf2_dc_gate *gate;
+	struct drv_vf2_clock lcd;
+	struct drv_vf2_clock pixel;
+	unsigned index;
+	int powered;
+	int error;
+
+	/* Turns the display's power domain on when it is off. */
+	error = drv_vf2_pmu_powered(DRV_VF2_PD_VOUT, &powered);
+	if (error != 0) {
+		kern_logf("dc8200: own mode: power domain unknown (%d)\n", error);
+		return error;
+	}
+
+	if (!powered) {
+		error = drv_vf2_pmu_set_power(DRV_VF2_PD_VOUT, 1);
+		if (error != 0) {
+			kern_logf("dc8200: own mode: power domain not on (%d)\n", error);
+			return error;
+		}
+	}
+
+	/* Starts each clock in order. */
+	for (index = 0; index < sizeof(vf2_dc_start_gates) / sizeof(vf2_dc_start_gates[0]); index++) {
+		gate = &vf2_dc_start_gates[index];
+		error = drv_vf2_clock_enable(&gate->clock);
+		if (error != 0) {
+			kern_logf("dc8200: own mode: clock %s not started (%d)\n", gate->name, error);
+			return error;
+		}
+	}
+
+	/* Runs the LCD clock from the HDMI panel's pixel clock. */
+	lcd.crg = DRV_VF2_CRG_VOUT;
+	lcd.index = 9U;
+	pixel.crg = DRV_VF2_CRG_VOUT;
+	pixel.index = 7U;
+	error = drv_vf2_clock_set_parent(&lcd, &pixel);
+	if (error != 0) {
+		kern_logf("dc8200: own mode: LCD clock source not set (%d)\n", error);
+		return error;
+	}
+
+	/* Runs the HDMI panel's pixel clock from the HDMI PHY's output. */
+	error = drv_vf2_clock_set_input_parent(&pixel, "hdmitx0_pixelclk");
+	if (error != 0) {
+		kern_logf("dc8200: own mode: pixel clock source not set (%d)\n", error);
+		return error;
+	}
+
+	/* Releases each reset line in order. */
+	for (index = 0; index < sizeof(vf2_dc_start_resets) / sizeof(vf2_dc_start_resets[0]); index++) {
+		error = drv_vf2_reset_deassert(&vf2_dc_start_resets[index]);
+		if (error != 0) {
+			kern_logf("dc8200: own mode: reset %u/%u not released (%d)\n",
+				  (unsigned)vf2_dc_start_resets[index].crg,
+				  vf2_dc_start_resets[index].index,
+				  error);
+			return error;
+		}
+	}
+
+	/* Succeeded: the output is powered, clocked and out of reset. */
+	return 0;
 }
 
 /*

@@ -55,6 +55,7 @@ static const struct parameter_name parameter_names[KERN_BOOT_PARAMETER_COUNT] = 
 	PARAMETER_NAME("i915.start"),
 	PARAMETER_NAME("i915.debug"),
 	PARAMETER_NAME("i915.gen9"),
+	PARAMETER_NAME("dc8200.zerocopy"),
 };
 
 static char firmware_source[KERN_BOOT_SOURCE_SELECTOR_SIZE];
@@ -291,16 +292,17 @@ kern_boot_parameters_parse(
 		}
 
 		/*
-		 * kmsg=, login=, display=, i915.start=, i915.debug= and
-		 * i915.gen9= take one of their words (ws035-p097, ws075-p012,
-		 * ws118-p005, ws229-p002).
+		 * kmsg=, login=, display=, i915.start=, i915.debug=,
+		 * i915.gen9= and dc8200.zerocopy= take one of their words
+		 * (ws035-p097, ws075-p012, ws118-p005, ws229-p002, ws277-p003).
 		 */
 		if (key == KERN_BOOT_PARAMETER_KMSG ||
 		    key == KERN_BOOT_PARAMETER_LOGIN ||
 		    key == KERN_BOOT_PARAMETER_DISPLAY ||
 		    key == KERN_BOOT_PARAMETER_I915_START ||
 		    key == KERN_BOOT_PARAMETER_I915_DEBUG ||
-		    key == KERN_BOOT_PARAMETER_I915_GEN9) {
+		    key == KERN_BOOT_PARAMETER_I915_GEN9 ||
+		    key == KERN_BOOT_PARAMETER_DC8200_ZEROCOPY) {
 			error = parameter_word(key, parameters->storage + value_start, value_length);
 			if (error != 0) {
 				error = parse_error(parameters, error);
@@ -335,7 +337,8 @@ kern_boot_parameters_parse(
 /*
  * Checks the word of kmsg= (quiet or console), login= (graphical or console),
  * display= (auto, hdmi, edp or panel), i915.start= (auto or manual),
- * i915.debug= (off or display) or i915.gen9= (on or off).
+ * i915.debug= (off or display), i915.gen9= (on or off) or
+ * dc8200.zerocopy= (off or test).
  */
 static int
 parameter_word(
@@ -412,6 +415,23 @@ parameter_word(
 			return EINVAL;
 
 		/* Succeeded: one of i915.gen9='s words. */
+		return 0;
+	}
+
+	/*
+	 * dc8200.zerocopy= lets the VisionFive 2's display scan a program's
+	 * render buffer directly (test) while only test programs are known to
+	 * present buffers that bypass the GPU's cache, or keeps every frame
+	 * copied (off, the default when absent).
+	 */
+	if (key == KERN_BOOT_PARAMETER_DC8200_ZEROCOPY) {
+		other = parameter_text_is(value, length, "off");
+		if (!other)
+			other = parameter_text_is(value, length, "test");
+		if (!other)
+			return EINVAL;
+
+		/* Succeeded: one of dc8200.zerocopy='s words. */
 		return 0;
 	}
 

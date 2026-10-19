@@ -6,11 +6,12 @@
  */
 
 /*
- * Host check of the riscv64 HAL's device tree reader against two trees:
+ * Host check of the riscv64 HAL's device tree reader against three trees:
  * one in the shape of the emulator's virt machine, one in the shape of the
- * JH7110.
+ * JH7110 as Linux describes it, one in the shape of U-Boot's control tree
+ * for the JH7110.
  *
- *   fdt-host-test virt.dtb jh7110.dtb
+ *   fdt-host-test virt.dtb jh7110.dtb jh7110-uboot.dtb
  */
 
 #include <stdio.h>
@@ -170,18 +171,49 @@ check_jh7110(
 	free(blob);
 }
 
+/* Checks the tree in the shape of U-Boot's control tree for the JH7110. */
+static void
+check_jh7110_uboot(
+	const char *path)
+{
+	static struct riscv64_fdt_info info;
+	unsigned char *blob;
+	unsigned usable;
+	unsigned index;
+	size_t size;
+	int error;
+
+	/* Parses the tree. */
+	blob = read_file(path, &size);
+	error = riscv64_fdt_parse(blob, size, &info);
+	check("jh7110-uboot: parse", error == RISCV64_FDT_OK);
+
+	/* The enabled S7 with an mmu-type is listed but, without F and D, not usable. */
+	usable = 0;
+	for (index = 0; index < info.cpu_count; index++) {
+		if (info.cpus[index].usable)
+			usable++;
+	}
+	check("jh7110-uboot: five harts, four usable", info.cpu_count == 5 && usable == 4);
+	check("jh7110-uboot: S7 hart 0 not usable", info.cpus[0].hart_id == 0 && !info.cpus[0].usable);
+	check("jh7110-uboot: U74 harts 1 to 4 usable", info.cpus[1].usable && info.cpus[2].usable &&
+	      info.cpus[3].usable && info.cpus[4].usable);
+	free(blob);
+}
+
 int
 main(
 	int argc,
 	char **argv)
 {
-	/* Two trees are needed. */
-	if (argc != 3) {
-		fprintf(stderr, "usage: %s virt.dtb jh7110.dtb\n", argv[0]);
+	/* Three trees are needed. */
+	if (argc != 4) {
+		fprintf(stderr, "usage: %s virt.dtb jh7110.dtb jh7110-uboot.dtb\n", argv[0]);
 		return 2;
 	}
 	check_virt(argv[1]);
 	check_jh7110(argv[2]);
+	check_jh7110_uboot(argv[3]);
 
 	/* One summary line. */
 	printf("%s %d failed\n", failures ? "FAIL" : "PASS", failures);

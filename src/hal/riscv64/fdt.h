@@ -54,8 +54,9 @@ struct riscv64_fdt_range {
  * One processor the tree lists under /cpus.
  *
  * usable says whether the HAL may run the kernel on it: the processor has
- * a translation mode (mmu-type) and is not disabled.  A monitor core
- * without a translation mode is listed but not usable.
+ * a translation mode (mmu-type), the base extensions the system is built
+ * for (imafdc) and is not disabled.  A monitor core, which lacks the
+ * translation mode or the float extensions, is listed but not usable.
  */
 struct riscv64_fdt_cpu {
 	uint64_t hart_id;
