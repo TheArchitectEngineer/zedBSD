@@ -260,6 +260,9 @@
 /* How many controllers the driver serves. */
 #define EQOS_MAX_DEVICES		2U
 
+/* Marks a parameter that the interrupt layer passes but the handler does not need. */
+#define UNUSED_PARAMETER(parameter)	((void)(parameter))
+
 /*
  * One DMA descriptor as the controller reads and writes it.
  *
@@ -386,7 +389,9 @@ drv_dw_eqos_attach(
 	int error;
 
 	/* Refuses a missing description, or one without registers or a name. */
-	if (config == NULL || config->registers == NULL || config->name == NULL)
+	if (config == NULL ||
+	    config->registers == NULL ||
+	    config->name == NULL)
 		return EINVAL;
 
 	/* Refuses a PHY address beyond the MDIO bus's 32. */
@@ -413,7 +418,11 @@ drv_dw_eqos_attach(
 	kern_memset(device, 0, sizeof(*device));
 	device->config = *config;
 	device->registers = config->registers;
+
+	/* Readies the lock that serializes the rings and the registers. */
 	spin_init(&device->lock, LOCK_RANK_DEVICE, "dw-eqos");
+
+	/* Wires the MDIO bus the PHY drivers talk through. */
 	device->mdio.context = device;
 	device->mdio.read = mdio_read;
 	device->mdio.write = mdio_write;
@@ -487,6 +496,8 @@ drv_dw_eqos_attach(
 	error = kern_irq_register((int)config->irq, eqos_interrupt, device);
 	if (error != 0)
 		goto fail;
+
+	/* Records the binding, which a failed attach undoes. */
 	device->irq_registered = 1;
 
 	/* Publishes the network interface. */
@@ -498,7 +509,7 @@ drv_dw_eqos_attach(
 	/* Starts the link and missed-interrupt service. */
 	start_service(device);
 
-	/* Succeeded: networkd can open the interface. */
+	/* Reports the controller ready, with its address and its DMA. */
 	kern_logf("dw-eqos: %s ready, MAC %02x:%02x:%02x:%02x:%02x:%02x, DMA %u bit%s\n",
 		  config->name,
 		  device->mac[0],
@@ -509,6 +520,8 @@ drv_dw_eqos_attach(
 		  device->mac[5],
 		  device->address_bits,
 		  config->dma_coherent ? ", coherent" : ", uncached");
+
+	/* Succeeded: networkd can open the interface. */
 	return 0;
 
 fail:
@@ -779,10 +792,12 @@ choose_mac(
 	device->mac[4] = (uint8_t)high;
 	device->mac[5] = (uint8_t)(high >> 8);
 
-	/* Keeps it when it is a real unicast address rather than the reset value. */
+	/* Notes whether any byte of it is set. */
 	nonzero = 0;
 	for (index = 0; index < sizeof(device->mac); index++)
 		nonzero |= device->mac[index];
+
+	/* Keeps it when it is a real unicast address rather than the reset value. */
 	if (nonzero != 0 &&
 	    (device->mac[0] & 1U) == 0 &&
 	    !(low == 0xffffffffU && (high & 0xffffU) == 0xffffU))
@@ -795,8 +810,9 @@ choose_mac(
 
 	/* Marks it locally administered and unicast, so it cannot clash with a vendor's. */
 	device->mac[0] = (uint8_t)((device->mac[0] & 0xfeU) | 0x02U);
-	kern_logf("dw-eqos: %s has no address from the board, using a random one\n",
-		  device->config.name);
+
+	/* Says the address is made up. */
+	kern_logf("dw-eqos: %s has no address from the board, using a random one\n", device->config.name);
 
 	/* Succeeded: the made-up address. */
 	return 0;
@@ -987,6 +1003,8 @@ bring_up_phy(
 	device->phy_is_yt8531 = 0;
 	if (identity == DRV_YT8531_IDENTITY)
 		device->phy_is_yt8531 = 1;
+
+	/* Reports the PHY found. */
 	kern_logf("dw-eqos: %s PHY %u id %08x%s\n",
 		  device->config.name,
 		  phy,
@@ -1481,6 +1499,8 @@ prepare_rings(
 	/* Gives every receive descriptor but the last to the controller. */
 	for (slot = 0; slot < EQOS_RX_COUNT - 1U; slot++)
 		arm_rx_slot(device, slot);
+
+	/* Records the last descriptor as the one kept back. */
 	device->rx_producer = EQOS_RX_COUNT - 1U;
 
 	/* Describes the transmit ring, empty: its tail is its head. */
@@ -1794,8 +1814,7 @@ eqos_interrupt(
 	uint32_t status;
 	unsigned schedule;
 
-	/* The acknowledgement token already names the delivery. */
-	(void)irq;
+	UNUSED_PARAMETER(irq);
 
 	/* Reads and clears what the channel and the MAC report. */
 	device = argument;
