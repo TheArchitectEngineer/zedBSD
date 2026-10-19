@@ -56,6 +56,18 @@ struct drv_dw_mmc_config {
 	int (*card_present)(void *context, int *present);
 	void *context;
 
+	/*
+	 * The controller's sample phase as the glue found it, how many
+	 * phases the glue can set, and the hook that sets one; a count of 0
+	 * or a NULL hook leaves the phase alone.  The driver moves the phase
+	 * only when a read at high speed fails with a data CRC, start bit or
+	 * end bit error (see the driver's adapt_bus()).
+	 */
+	uint32_t sample_phase;
+	uint32_t sample_phase_count;
+	void (*set_sample_phase)(void *context, uint32_t phase);
+	void *phase_context;
+
 	/* The unit number, which names the disk mmcblk<unit>. */
 	unsigned unit;
 };
@@ -91,6 +103,10 @@ struct drv_dw_mmc_card {
 	uint32_t bus_width;
 	uint64_t card_clock;
 	int high_speed;
+
+	/* The sample phase in use, and whether data errors moved the bus to the default speed. */
+	uint32_t sample_phase;
+	int slowed;
 };
 
 int drv_dw_mmc_attach(const struct drv_dw_mmc_config *config, struct disk **disk);

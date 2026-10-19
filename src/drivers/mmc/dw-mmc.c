@@ -16,7 +16,11 @@
  * request is moved with one single-block or multiple-block command per run
  * of up to DW_MMC_RUN_BLOCKS blocks, the controller ending a multiple-block
  * run with its automatic stop.  A run that fails is stopped, the card is
- * brought back to the transfer state, and the run is tried again.
+ * brought back to the transfer state, and the run is tried again.  A run
+ * that fails at high speed with an error of the data lines' signal (a bad
+ * CRC, a missing start or end bit) first moves the controller's sample
+ * phase to the middle of the phases that read the run, when the glue can
+ * set the phase, and then the clock down to the default speed.
  *
  * The board's glue switches the controller's clocks, reset and pins on and
  * hands over the mapped registers (struct drv_dw_mmc_config).
@@ -137,6 +141,13 @@
  */
 #define DW_MMC_STATUS_DATA_ERRORS	(DW_MMC_STATUS_END_BIT | DW_MMC_STATUS_START_BIT | \
 					 DW_MMC_STATUS_HARDWARE_LOCKED | DW_MMC_STATUS_FIFO_OVERRUN | \
+					 DW_MMC_STATUS_DATA_CRC)
+
+/*
+ * The data errors that say the controller sampled the data lines at the
+ * wrong time: a bad CRC, a missing start bit or a missing end bit.
+ */
+#define DW_MMC_STATUS_SIGNAL_ERRORS	(DW_MMC_STATUS_END_BIT | DW_MMC_STATUS_START_BIT | \
 					 DW_MMC_STATUS_DATA_CRC)
 
 /*
@@ -273,6 +284,24 @@
 #define DW_MMC_DEFAULT_HZ		25000000ULL
 #define DW_MMC_HIGH_SPEED_HZ		50000000ULL
 
+/*
+ * How long a new sample phase takes to settle, in microseconds.
+ *
+ * Value referenced: Linux v6.12 drivers/mmc/host/dw_mmc-starfive.c
+ * (dw_mci_starfive_set_sample_phase, mdelay(1)).
+ */
+#define DW_MMC_PHASE_SETTLE_US		1000ULL
+
+/*
+ * How far the bus has been adapted to data errors: not at all, the sample
+ * phase tuned, or the clock down to the default speed.
+ */
+enum dw_mmc_bus_step {
+	DW_MMC_BUS_AS_SET = 0,
+	DW_MMC_BUS_PHASE_TUNED,
+	DW_MMC_BUS_SLOWED
+};
+
 /* The largest divider of the card clock (the register's eight bits). */
 #define DW_MMC_DIVIDER_MAX		255U
 
@@ -359,6 +388,14 @@ struct dw_mmc_unit {
 	uint32_t slot_bus_width;
 	int high_speed_allowed;
 
+	/* The glue's hook for the sample phase, how many phases it has, and its context. */
+	void (*set_sample_phase)(void *context, uint32_t phase);
+	uint32_t sample_phase_count;
+	void *phase_context;
+
+	/* How far data errors have adapted the bus.  Under the lock. */
+	enum dw_mmc_bus_step bus_step;
+
 	/* What the attach found; card.rca is the card's address. */
 	struct drv_dw_mmc_card card;
 
@@ -424,6 +461,9 @@ static int wait_card_ready(struct dw_mmc_unit *unit);
 static int transfer_run(struct dw_mmc_unit *unit, int write, uint64_t block, uint32_t count, uint8_t *data);
 static int transfer_run_recovering(struct dw_mmc_unit *unit, int write, uint64_t block, uint32_t count, uint8_t *data);
 static int recover_card(struct dw_mmc_unit *unit);
+static int adapt_bus(struct dw_mmc_unit *unit, int write, uint64_t block, uint32_t count, uint8_t *data);
+static int tune_sample_phase(struct dw_mmc_unit *unit, uint64_t block, uint32_t count, uint8_t *data);
+static void set_sample_phase(struct dw_mmc_unit *unit, uint32_t phase);
 static int publish_disk(struct dw_mmc_unit *unit, unsigned unit_number);
 static void log_card(const struct dw_mmc_unit *unit);
 static const char *card_kind(const struct drv_dw_mmc_card *card);
@@ -486,6 +526,7 @@ drv_dw_mmc_attach(
 	unit->failed = 0;
 	unit->last_status = 0;
 	unit->command_classes = 0;
+	unit->bus_step = DW_MMC_BUS_AS_SET;
 	memset(&unit->card, 0, sizeof(unit->card));
 
 	/* Resets the controller and powers the card with its clock at 400 kHz. */
@@ -666,6 +707,14 @@ setup_controller(
 	unit->max_frequency = config->max_frequency;
 	unit->slot_bus_width = config->bus_width;
 	unit->high_speed_allowed = config->high_speed;
+
+	/* Records the glue's sample phase hook; without a hook there is no phase to tune. */
+	unit->set_sample_phase = config->set_sample_phase;
+	unit->sample_phase_count = config->sample_phase_count;
+	unit->phase_context = config->phase_context;
+	if (unit->set_sample_phase == NULL)
+		unit->sample_phase_count = 0;
+	unit->card.sample_phase = config->sample_phase;
 
 	/* Learns the FIFO's width from the controller; only 32 and 64 bits are served. */
 	hardware = read_register(unit, DW_MMC_HARDWARE);
@@ -2076,6 +2125,15 @@ transfer_run_recovering(
 			unit->failed = 1;
 			break;
 		}
+
+		/* An error of the data lines' signal adapts the bus before the next try. */
+		if ((unit->last_status & DW_MMC_STATUS_SIGNAL_ERRORS) != 0) {
+			recovered = adapt_bus(unit, write, block, count, data);
+			if (recovered != 0) {
+				unit->failed = 1;
+				break;
+			}
+		}
 	}
 
 	/* Reports why the run did not move. */
@@ -2114,6 +2172,149 @@ recover_card(
 
 	/* Succeeded: the card is back in the transfer state. */
 	return 0;
+}
+
+/*
+ * Adapts the bus to a run that failed with an error of the data lines'
+ * signal, one step per call: first the sample phase is tuned on the
+ * failed run when it is a read and the glue can set the phase, then the
+ * card clock goes down to the default speed.  A bus that has taken every
+ * step, or runs at the default speed already, is left as it is.
+ *
+ * The card stays in its high speed mode at the lower clock, which the
+ * mode allows: high speed only raises the highest clock to 50 MHz.
+ *
+ * Returns 0, or the errno of a card that could not be brought back to the
+ * transfer state.
+ *
+ * Procedure referenced: Linux v6.12 drivers/mmc/host/dw_mmc-starfive.c
+ * (dw_mci_starfive_execute_tuning: every phase tried, the middle of the
+ * phases that pass taken) and drivers/mmc/core/core.c
+ * (mmc_set_clock lowering the clock is what the core does for a card
+ * whose tuning fails).
+ */
+static int
+adapt_bus(
+	struct dw_mmc_unit *unit,
+	int write,
+	uint64_t block,
+	uint32_t count,
+	uint8_t *data)
+{
+	int tuned;
+	int error;
+
+	/* A bus at the default speed already has nothing left to adapt. */
+	if (unit->card.card_clock <= DW_MMC_DEFAULT_HZ)
+		return 0;
+
+	/* Tunes the sample phase on the failed read, once. */
+	if (unit->bus_step == DW_MMC_BUS_AS_SET) {
+		unit->bus_step = DW_MMC_BUS_PHASE_TUNED;
+		if (!write && unit->sample_phase_count != 0) {
+			tuned = tune_sample_phase(unit, block, count, data);
+			if (tuned < 0)
+				return EIO;
+			if (tuned > 0)
+				return 0;
+		}
+	}
+
+	/* Moves the card clock down to the default speed, once. */
+	if (unit->bus_step == DW_MMC_BUS_SLOWED)
+		return 0;
+	unit->bus_step = DW_MMC_BUS_SLOWED;
+	error = set_card_clock(unit, DW_MMC_DEFAULT_HZ);
+	if (error != 0)
+		return error;
+	unit->card.slowed = 1;
+	kern_logf("dw-mmc: data errors at high speed, card clock down to %llu Hz\n",
+		  (unsigned long long)unit->card.card_clock);
+
+	/* Succeeded: the next try runs at the default speed. */
+	return 0;
+}
+
+/*
+ * Reads the failed run at every sample phase and keeps the middle of the
+ * longest stretch of phases that read it without an error.
+ *
+ * Returns 1 when a phase read the run, 0 when none did (the phase is put
+ * back as it was), or -1 when the card could not be brought back to the
+ * transfer state after a failed read.
+ */
+static int
+tune_sample_phase(
+	struct dw_mmc_unit *unit,
+	uint64_t block,
+	uint32_t count,
+	uint8_t *data)
+{
+	uint32_t phase;
+	uint32_t start;
+	uint32_t length;
+	uint32_t best_start;
+	uint32_t best_length;
+	int error;
+
+	/* Tries every phase, measuring the stretches of phases that pass. */
+	start = 0;
+	length = 0;
+	best_start = 0;
+	best_length = 0;
+	for (phase = 0; phase < unit->sample_phase_count; phase++) {
+		/* Reads the run at this phase. */
+		set_sample_phase(unit, phase);
+		error = transfer_run(unit, 0, block, count, data);
+
+		/* A phase that passes extends the stretch it is in. */
+		if (error == 0) {
+			if (length == 0)
+				start = phase;
+			length++;
+			if (length > best_length) {
+				best_start = start;
+				best_length = length;
+			}
+			continue;
+		}
+
+		/* A phase that fails ends the stretch, and the card is brought back. */
+		length = 0;
+		error = recover_card(unit);
+		if (error != 0)
+			return -1;
+	}
+
+	/* No phase read the run: the phase goes back as it was. */
+	if (best_length == 0) {
+		set_sample_phase(unit, unit->card.sample_phase);
+		kern_logf("dw-mmc: no sample phase reads at %llu Hz\n",
+			  (unsigned long long)unit->card.card_clock);
+		return 0;
+	}
+
+	/* Takes the middle of the longest stretch. */
+	phase = best_start + (best_length - 1U) / 2U;
+	set_sample_phase(unit, phase);
+	unit->card.sample_phase = phase;
+	kern_logf("dw-mmc: sample phase %u (phases %u-%u read)\n",
+		  phase,
+		  best_start,
+		  best_start + best_length - 1U);
+
+	/* Succeeded: the run reads at the new phase. */
+	return 1;
+}
+
+/* Has the glue set the controller's sample phase and waits for it to settle. */
+static void
+set_sample_phase(
+	struct dw_mmc_unit *unit,
+	uint32_t phase)
+{
+	unit->set_sample_phase(unit->phase_context, phase);
+	pause_microseconds(DW_MMC_PHASE_SETTLE_US);
 }
 
 /* Publishes the card as the disk mmcblk<unit>. */
