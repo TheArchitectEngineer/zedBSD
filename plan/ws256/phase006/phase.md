@@ -72,3 +72,7 @@ df62e19b8（loader）、fdf69e96c（HAL の変数・pci・dmatest など）、15
 
 - 前半: T1 の 1〜3 の結果を Q1 が判定（それまで cleared にしない）。
 - 後半: Q1 が次の i を割り当てた時。上の「後半」の一覧から始める。
+
+## 前半の T1 の結果（2026-10-19 Q1）
+
+T1-742: riscv64-virt・riscv64-uboot・riscv64-uboot-gop（VF2 の kernel）・virt の PCI 入りが全部 PASS（QEMU だけ）。前半の書き方の直しで振る舞いは変わっていない。後半（q1310）の後に p006 を判定する。
