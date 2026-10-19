@@ -27,7 +27,7 @@
 | Phase | 目的 | 状態 |
 | --- | --- | --- |
 | p001 | 設計: malta の memory map・PCI（GT-64120）・PIIX4・VGA、firmware（YAMON 相当の -kernel の直の起動）と handoff、mips64el の toolchain の triple と linker の emulation、HAL の構成、HAL の API の差分、試験の道具（boot-test.sh の mode）、Phase の表 | cleared（2026-10-19 Q1） |
-| p002 | 64 bit の入口と console（共通の層を `HAL_ARCH_MIPS64` で、XKPHYS・CKSEG0、design.md §8 の正の物理の範囲（low の alias ＋ `0x80000000+256MiB` 以上）。依存: WS271 p002、LLVM の Mips。HAL の差分 D1・D3 は U1 で承認済み）、LW 8 | planning |
+| p002 | 64 bit の入口と console（共通の層を `HAL_ARCH_MIPS64` で、XKPHYS・CKSEG0、design.md §8 の正の物理の範囲（low の alias ＋ `0x80000000+256MiB` 以上）。依存: WS271 p002、LLVM の Mips。HAL の差分 D1・D3 は U1 で承認済み）、LW 8 | in-progress（q1286、P1、2026-10-19） |
 | p003 | XTLB refill・3 段の table・native atomic、self-test の 64 bit の版、VFS の段まで（依存: WS271 p004）、LW 10 | planning |
 | p004 | 規約の全文の見直し、LW 3 | planning |
 
