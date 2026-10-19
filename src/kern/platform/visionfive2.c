@@ -42,6 +42,7 @@
 #include <drivers/generic/serial-console.h>
 #include <drivers/platform/visionfive2/vf2-crg.h>
 #include <drivers/platform/visionfive2/vf2-mmc.h>
+#include <drivers/platform/visionfive2/vf2-pcie.h>
 #include <drivers/platform/visionfive2/vf2-pinctrl.h>
 #include <drivers/platform/visionfive2/vf2-syscon.h>
 #include <kern/boot.h>
@@ -50,6 +51,7 @@
 #include <kern/partition.h>
 #include <kern/platform.h>
 #include <kern/pmem.h>
+#include <uapi/errno.h>
 
 /* The block size the ramdisk is cut into; a disk image is laid out in it. */
 #define VF2_BLOCK_SIZE		512U
@@ -187,9 +189,8 @@ kern_platform_init(
 }
 
 /*
- * Finishes device discovery once interrupts are enabled; the board has no
- * device that waits for them yet, and the boot log lists the SD card's
- * partitions.
+ * Finishes device discovery once interrupts are enabled: lists the SD
+ * card's partitions and looks behind the PCIe root ports.
  */
 void
 kern_platform_refresh_devices(
@@ -201,6 +202,9 @@ kern_platform_refresh_devices(
 
 	/* Lists the SD card's partitions. */
 	describe_sd_partitions();
+
+	/* Looks behind the USB root ports and publishes the NVMe namespaces. */
+	drv_vf2_pcie_refresh();
 }
 
 /*
@@ -210,7 +214,10 @@ int
 kern_platform_input_init(
 	void)
 {
-	/* Succeeded: the console is output only. */
+	/* Lets USB keyboards type into the console. */
+	drv_vf2_pcie_input_ready();
+
+	/* Succeeded: the UART does not type yet; USB keyboards do. */
 	return 0;
 }
 
@@ -461,6 +468,11 @@ probe_soc(
 	/* Keeps the tree for the devices brought up after the disk registry is reset. */
 	soc_tree = fdt;
 	soc_ready = 1;
+
+	/* Starts the PCIe root complexes and the USB and NVMe drivers behind them. */
+	error = drv_vf2_pcie_init(&fdt, VF2_DMA_DEFAULT_COHERENT);
+	if (error != 0 && error != ENODEV)
+		kern_logf("visionfive2: PCIe unavailable (%d)\n", error);
 }
 
 /*
