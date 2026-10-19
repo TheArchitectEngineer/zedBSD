@@ -9,13 +9,16 @@
  * The host check of the MIPS console's grid (src/hal/mips/cons.c): the
  * bring-up's summary breaks between words at the grid's width, stays one
  * line on the malta's 80 columns, and a display of another size starts
- * from a blank grid that its cells are drawn from.
+ * from a blank grid that its cells are drawn from.  The cache's lines
+ * name only conversions the HAL's hal_printf() has (it has no %d, which
+ * printed alias=? and forced=?).  Run from the top of the tree.
  *
  * cc -std=c11 -Wall -Wextra -Werror -m32 -DHAL_ARCH_MIPS32 -Iinclude -Isrc \
  *    plan/ws273/tests/cons-host-test.c -o <out> && <out>
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define KERN_HAL_MIPS_SPIN_H
@@ -102,6 +105,41 @@ check(
 	}
 }
 
+/* Checks that each conversion in a file's formats is one hal_printf() has. */
+static void
+check_conversions(
+	const char *path)
+{
+	char line[512];
+	const char *at;
+	FILE *file;
+
+	file = fopen(path, "r");
+	check(file != NULL, path);
+	if (file == NULL)
+		return;
+	while (fgets(line, sizeof(line), file) != NULL) {
+		/* Only the formats: the lines that call hal_printf(). */
+		if (strstr(line, "hal_printf(") == NULL)
+			continue;
+		for (at = strchr(line, '%'); at != NULL; at = strchr(at + 1, '%')) {
+			/* Steps past the width and the length to the conversion. */
+			at++;
+			while (*at >= '0' && *at <= '9')
+				at++;
+			while (*at == 'l')
+				at++;
+			if (strchr("csuxp%", *at) == NULL) {
+				printf("FAIL %s: %s", path, line);
+				failures++;
+			}
+			if (*at == '\0')
+				break;
+		}
+	}
+	fclose(file);
+}
+
 int
 main(void)
 {
@@ -131,6 +169,9 @@ main(void)
 	printed_length = 0;
 	mips_cons_print_words(pieces, 2);
 	check(strcmp(printed, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\nDISPLAY\n") == 0, "a long word");
+
+	/* The cache's lines print their numbers, not a question mark. */
+	check_conversions(getenv("CACHE_C") != NULL ? getenv("CACHE_C") : "src/hal/mips/cache.c");
 
 	if (failures != 0)
 		return 1;

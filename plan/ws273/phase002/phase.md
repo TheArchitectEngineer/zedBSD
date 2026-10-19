@@ -47,6 +47,22 @@ tree は p002 の commit 8b44436a0 を含む main。QEMU のみ。
 3. 切り替え on の起動 1 回（mips32）: `ZEDBSD_CONFIG=plan/ws273/tests/config-mips32-malta-force.mk`、`BUILD=build/t1-ws273p002/m32-force`、boot-test は 1 と同じ判定に加えて画面に `MIPS32 CACHE I VIRTUAL TAGS forced=1` が出る事。hang・例外（`EARLY EXCEPTION`・`FATAL`）が無い事だけを見る（整合の誤りは QEMU では見つからない）。
 4. 余裕があれば 3 を mips64（`config-mips64-malta-force.mk`）でも 1 回。
 
+## T1-748 の結果と直し（2026-10-19、q1331-i01）
+
+- 観測（T1-748、QEMU）: 切り替え on の mips32 malta で `MIPS32 CACHE I VIRTUAL TAGS forced=?`、通常の malta で `CACHE I … alias=?`。
+- 原因: `mips_cons_print_words` ではない。MIPS の `hal_printf`（src/hal/mips/lib.c）は `%c %s %u %x %p %%` だけを持ち、それ以外は `?` を出す。src/hal/mips/cache.c の 2 行が `%d` を使っていた（`alias=%d`・`forced=%d`）。
+- 直し: cache.c の 2 行を `%u` と `(unsigned)` の cast に（値は 0 か 1）。hal_printf は変えない。
+- host 試験: cons-host-test.c に、cache.c の `hal_printf(` の行の変換が hal_printf の持つ物だけかを見る試験を足した（`CACHE_C=<file>` で別の file を指せる）。直した cache.c で `PASS cons`、直す前の cache.c（`git show HEAD~:src/hal/mips/cache.c`）では 2 行を FAIL と出す事を確かめた。
+- build: mips32・mips64 malta の切り替え off・on の 4 つ（`BUILD=build/ws273-p002b/{m32,m64,m32f,m64f}`）rc 0、warning 0。QEMU は未実施。
+
+### T1 への再試験の依頼（T1-748 の後）
+
+tree は本 commit を含む main。QEMU のみ。上の「T1 への依頼」の手順と同じ。
+
+1. (3) 切り替え on の mips32 malta（`plan/ws273/tests/config-mips32-malta-force.mk`）: 画面に `MIPS32 CACHE I VIRTUAL TAGS forced=1` と `CACHE I … alias=0` または `alias=1`（`?` でない数字）。
+2. (4) 切り替え on の mips64 malta（`config-mips64-malta-force.mk`）: `MIPS64 CACHE I VIRTUAL TAGS forced=1` と数字の `alias=`。
+3. (1) 通常の mips32 malta（`plan/tools/ports/config-mips32-malta.mk`）: `alias=` が数字で、`VIRTUAL TAGS` の行は出ない。ほかの判定は上の 1 と同じ。
+
 ## 残り
 
 - T1 の結果を Q1 が判定するまで cleared にしない。
