@@ -145,7 +145,7 @@ VMUNIX_OBJS := $(BUILD)/src/kern/main.o \
 	$(BUILD)/src/kern/tmpfs.o \
 	$(BUILD)/src/kern/tmpfs-pages.o \
 	$(BUILD)/src/drivers/fs/overlayfs.o \
-	$(BUILD)/src/kern/vfs.o $(BUILD)/src/kern/swap.o \
+	$(BUILD)/src/kern/vfs.o \
 	$(BUILD)/src/kern/backing-claim.o \
 	$(BUILD)/src/kern/disk.o $(BUILD)/src/kern/partition.o \
 	$(BUILD)/drivers/generic/loop.o $(BUILD)/drivers/generic/dma.o \

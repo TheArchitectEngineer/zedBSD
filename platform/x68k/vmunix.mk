@@ -107,7 +107,7 @@ X68K_KERNEL_SOURCES := \
 	src/kern/main.c \
 	$(KERN_FAT_SOURCES) \
 	src/kern/inode.c src/kern/file.c src/kern/namecache.c src/kern/namei.c \
-	src/kern/mount.c src/kern/vfs.c src/kern/swap.c \
+	src/kern/mount.c src/kern/vfs.c \
 	src/kern/tmpfs.c src/kern/tmpfs-pages.c src/drivers/fs/overlayfs.c src/drivers/generic/loop.c \
 	src/kern/backing-claim.c \
 	src/kern/disk.c src/kern/device-io.c src/kern/irq.c src/kern/pmem.c \
@@ -375,11 +375,20 @@ $(BUILD)/zedbsd-x68k.hd: $(BUILD)/stage1.bin $(BUILD)/stage2.bin \
  --stage1 $(BUILD)/stage1.bin --stage2 $(BUILD)/stage2.bin \
  --kernel $(BUILD)/vmunix --shell $(BUILD)/bin/sh $@
 
-# X68k currently implements only the static user ABI.
+# X68k currently implements only the static user ABI.  The root holds the
+# base programs; the network programs are left out, as nothing here drives a
+# network device and no rule above builds them (as on sparcv9).
 ZEDBSD_ROOTFS_DYNAMIC := n
 include platform/common/userland-rootfs.mk
-X68K_ROOTFS_FILES := $(ZEDBSD_ROOTFS_FILES)
-$(eval $(call ZEDBSD_ROOTFS_TREE_RULE,m68k,$(ZEDBSD_ROOTFS_INPUTS),$(X68K_ROOTFS_FILES)))
+X68K_ROOTFS_COMMANDS := $(sort sh sysctl mount umount $(USER_BASIC_COMMANDS))
+X68K_ROOTFS_INPUTS := $(addprefix $(BUILD)/bin/,$(X68K_ROOTFS_COMMANDS)) \
+	$(ZEDBSD_ACCOUNT_INPUTS) $(ZEDBSD_BASE_DATA_INPUTS)
+X68K_ROOTFS_FILES := $(foreach command,$(X68K_ROOTFS_COMMANDS),\
+ --file $(if $(filter umount,$(command)),/sbin/umount,$(call zedbsd_userland_destination,$(command)))=$(BUILD)/bin/$(command)) \
+	$(foreach program,$(X68K_ROOTFS_COMMANDS),$(if $(USERLAND_$(program)_MODE),\
+ --mode $(call zedbsd_userland_destination,$(program))=$(USERLAND_$(program)_MODE))) \
+	$(ZEDBSD_ACCOUNT_FILES) $(ZEDBSD_BASE_DATA_FILES)
+$(eval $(call ZEDBSD_ROOTFS_TREE_RULE,m68k,$(X68K_ROOTFS_INPUTS),$(X68K_ROOTFS_FILES)))
 
 rootfs: $(BUILD)/rootfs/.stamp
 
