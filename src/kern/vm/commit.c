@@ -254,26 +254,3 @@ vm_commit_get_stats(
 
 	spin_unlock_irqrestore(&commit_lock, irq);
 }
-
-/*
- * Tests whether swap can be shut down without stranding committed pages.
- */
-int
-vm_commit_can_shutdown_swap(
-	void)
-{
-	unsigned long irq;
-	int safe;
-
-	/* Swap is safe to remove while nothing depends on its capacity. */
-	irq = spin_lock_irqsave(&commit_lock);
-
-	safe = !commit_initialized ||
-		commit_stats.swap_pages == 0 ||
-		commit_stats.used_pages == 0;
-
-	spin_unlock_irqrestore(&commit_lock, irq);
-
-	/* Reports the verdict. */
-	return safe;
-}

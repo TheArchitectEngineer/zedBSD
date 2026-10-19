@@ -311,14 +311,6 @@ vmspace_fork(
 	struct vmspace **result);
 
 int
-vmspace_map_anon(
-	struct vmspace *vm,
-	uintptr_t start,
-	size_t size,
-	uint32_t prot,
-	struct vm_region **result);
-
-int
 vmspace_map_anon_fixed_noreplace(
 	struct vmspace *vm,
 	uintptr_t start,
@@ -516,19 +508,6 @@ vmspace_unpin_user_pages(
 	size_t page_count);
 
 int
-vmspace_wire_range(
-	struct vmspace *vm,
-	uintptr_t address,
-	size_t size,
-	uint32_t required);
-
-void
-vmspace_unwire_range(
-	struct vmspace *vm,
-	uintptr_t address,
-	size_t size);
-
-int
 vmspace_copy_to(
 	struct vmspace *vm,
 	uintptr_t destination,
@@ -596,10 +575,6 @@ vm_page_effective_prot(
 
 int
 vm_private_page_is_resident(
-	const struct vm_page *page);
-
-uintptr_t
-vm_private_page_vaddr(
 	const struct vm_page *page);
 
 void

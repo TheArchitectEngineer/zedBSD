@@ -51,7 +51,4 @@ void
 vm_commit_get_stats(
 	struct vm_commit_stats *output);
 
-int
-vm_commit_can_shutdown_swap(void);
-
 #endif

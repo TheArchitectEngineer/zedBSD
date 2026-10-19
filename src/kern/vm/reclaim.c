@@ -39,6 +39,7 @@
 #include <uapi/signal.h>
 #include <kern/kcrt.h>
 #include "reclaim-internal.h"
+#include "vmspace-internal.h"
 
 #define VM_OBJECT_FAULT_RESERVE_PAGES	4U
 
@@ -107,7 +108,6 @@ static void backing_clear_accessed(struct vm_private_page *backing);
 static int backing_hold_spaces(struct vm_private_page *backing);
 static void backing_release_spaces(struct vm_private_page *backing);
 static int reclaim_take_candidate(struct vm_private_page *backing);
-static void vmspace_fault_wake(struct vmspace *vm);
 static void pin_backing_mappings(struct vm_private_page *backing);
 static void unpin_backing_mappings(struct vm_private_page *backing);
 static int unmap_backing_ptes(struct vm_private_page *backing, uint32_t *pte_flags);
@@ -929,20 +929,6 @@ backing_pte_flags(
 	return combined;
 }
 
-/* Wakes the faults waiting on an address space. */
-static void
-vmspace_fault_wake(
-	struct vmspace *vm)
-{
-	unsigned long irq;
-
-	irq = spin_lock_irqsave(&vm->lock.guard);
-
-	waitq_wake_all(&vm->fault_waitq);
-
-	spin_unlock_irqrestore(&vm->lock.guard, irq);
-}
-
 /* Marks every mapping busy and holds its region; called with the metadata and reclaim locks held. */
 static void
 pin_backing_mappings(
@@ -1021,7 +1007,7 @@ unpin_backing_mappings(
 		if (vm->generation == 0)
 			vm->generation++;
 
-		vmspace_fault_wake(vm);
+		vmspace_fault_wake_locked(vm);
 
 		mutex_unlock(&vm->lock);
 
@@ -1324,7 +1310,7 @@ discard_file_backing_owned(
 		if (vm->generation == 0)
 			vm->generation++;
 
-		vmspace_fault_wake(vm);
+		vmspace_fault_wake_locked(vm);
 
 		mutex_unlock(&vm->lock);
 

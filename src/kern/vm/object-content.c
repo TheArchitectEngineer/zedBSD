@@ -51,7 +51,6 @@ extern void writeback_ticket_commit(struct writeback_ticket *, size_t) __attribu
 extern int disk_cache_acquire(struct disk *, struct disk **) __attribute__((weak));
 extern void disk_cache_release(struct disk *) __attribute__((weak));
 extern int vmspace_object_page_revoke(struct vm_object_page *, uint32_t *) __attribute__((weak));
-extern void vm_object_read_checkpoint(struct inode *, size_t, size_t) __attribute__((weak));
 
 static void vm_object_content_finish(struct vm_object_content *content, const void *buffer, size_t committed, int commit);
 static void vm_object_resize_finish(struct vm_object_resize *resize, off_t logical_size, int commit);
@@ -693,8 +692,6 @@ retry_lookup:
 			break;
 		if (handled) {
 			done += (size_t)populated;
-			if (populated > 0 && vm_object_read_checkpoint != NULL)
-				vm_object_read_checkpoint(inode, done, length);
 			if (stop || populated == 0)
 				break;
 			continue;
@@ -720,8 +717,6 @@ retry_lookup:
 		waitq_wake_all(&object->page_waitq);
 		spin_unlock_irqrestore(&object->lock, irq);
 		done += chunk;
-		if (vm_object_read_checkpoint != NULL)
-			vm_object_read_checkpoint(inode, done, length);
 	}
 
 	/* Releases the device admission and the object this read held. */

@@ -88,40 +88,6 @@ vm_private_page_is_resident(
 }
 
 /*
- * Reports the kernel virtual address of a resident private page, or
- * zero.
- */
-uintptr_t
-vm_private_page_vaddr(
-	const struct vm_page *page)
-{
-	struct vm_private_page *backing;
-	unsigned long irq;
-	uintptr_t address;
-
-	/* A page without a private backing has no address. */
-	if (page == NULL)
-		return 0;
-
-	backing = page->private_page;
-	if (backing == NULL)
-		return 0;
-
-	irq = spin_lock_irqsave(&backing->state_lock);
-
-	/* Reads the address only while the backing is resident. */
-	if ((backing->flags & VM_PAGE_RESIDENT) != 0)
-		address = (uintptr_t)hal_pmem_to_kernel(backing->pmem.paddr);
-	else
-		address = 0;
-
-	spin_unlock_irqrestore(&backing->state_lock, irq);
-
-	/* Reports the resident address, or zero. */
-	return address;
-}
-
-/*
  * Resolves a page fault by mapping the page an address belongs to.
  *
  * An existing private page is brought back from swap or copied for a
@@ -1142,7 +1108,7 @@ prepare_cow_copy(
 	return 0;
 }
 
-/* Wakes every waiter on the fault queue; the caller holds the VM lock. */
+/* Wakes every waiter on the fault queue; takes only the guard spinlock. */
 void
 vmspace_fault_wake_locked(
 	struct vmspace *vm)

@@ -128,41 +128,6 @@ vmspace_sync(
 }
 
 /*
- * Maps anonymous memory at a fixed address that must be free.
- */
-int
-vmspace_map_anon(
-	struct vmspace *vm,
-	uintptr_t start,
-	size_t size,
-	uint32_t prot,
-	struct vm_region **result)
-{
-	int error;
-
-	if (vm == NULL || vm == &kernel_vmspace)
-		return EINVAL;
-
-	/* Runs the mapping under the metadata and space locks. */
-	vm_metadata_enter();
-	mutex_lock(&vm->lock);
-
-	error = vmspace_map_anon_locked(vm, start, size, prot, result);
-	if (error == 0)
-		vmspace_generation_advance_locked(vm);
-
-	mutex_unlock(&vm->lock);
-	vm_metadata_leave();
-
-	/* Reports the failure. */
-	if (error != 0)
-		return error;
-
-	/* Succeeded. */
-	return 0;
-}
-
-/*
  * Maps anonymous memory at a fixed address, failing with EEXIST when the
  * range is in use.
  */
