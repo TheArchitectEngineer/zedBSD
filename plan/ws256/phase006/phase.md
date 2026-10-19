@@ -3,7 +3,7 @@
 # ws256-p006 規約の全文の見直し（WS256 の code）
 
 - ID: ws256-p006、親: [WS256](../ws.md)
-- Status: in-progress（前半: 2026-10-19 P2、q1307 / q1307-i01。後半: 2026-10-19 P2、q1310 / q1310-i01。どちらも T1 の回帰を待つ）
+- Status: cleared（2026-10-19 Q1 の判定: 前半 T1-742、後半 T1-744 の QEMU の回帰が全部 PASS。実機は未実施。WS256 の他の Phase で code が変わったら、その差分だけ同じ見直しを足す）
 - Disposition: normal
 - 範囲: WS256 で足した・変えた code を [plan/coding-style.md](../../coding-style.md) の全文と [Guardrail](../../guardrail.md) の出典の規則（block ごとに「Value(s) referenced:」「Procedure referenced:」、file の頭に出典を書かない）に照らして直す。書き方だけで、動作は変えない。`include/hal/hal.h` は変えない。`src/kern/vm/` は P1 の作業中なので触らない。
 - 道具: `python3 plan/tools/style-check.py`（機械的な規則）。加えて P2 の scratchpad の走査（split した呼び出しの 1 行に引数 2 つ、`return f(...)`、file scope の変数の comment、禁止の comment の形）。
@@ -123,3 +123,9 @@ T1-742: riscv64-virt・riscv64-uboot・riscv64-uboot-gop（VF2 の kernel）・v
 
 - 後半: T1 の 1〜5 の結果を Q1 が判定（それまで cleared にしない）。前半・後半の両方が合格なら p006 を cleared にできる（WS256 の他の Phase で code が変わったら、その差分だけ同じ見直しを足す）。
 - `include/hal/arch/riscv64.h` の書き方（上の判断）と `src/kern/elf.c` の riscv64 の `ELF32_EXPECTED_MACHINE` は Q1 の判断を待つ（p006 の clearance を塞がない）。
+
+## 後半の T1 の結果（2026-10-19 Q1）
+
+T1-744（tree は main 8fa6c5e5b を含む t1 の 6bb5b6db4、QEMU だけ）: 1 riscv64-virt 直・2 riscv64-uboot・3 riscv64-uboot-gop（VF2 の kernel、Q1 が PNG で画面の中央の login を目視）・4 virt-pci の NVMe の INTx（`dmesg` に INTx）・5 amd64 の uefi-nvme が全部 PASS。build warning 0（amd64 は perl の locale のみ）。p017 の dd の書き読みは未実施。
+
+Q1 の判断（P2 の挙げた 3 点）: 1 `include/hal/arch/riscv64.h` の書き方は HAL の API の差分なので今は直さない（ユーザーに報告）。2 `src/kern/elf.c` の riscv64・arm64 の `ELF32_EXPECTED_MACHINE` は q1313 で 0xffffU に直した（aca163bbe、merge 5a282592a）。sparcv9 の枝はユーザーの担当で残す。3 pci.c の `(void)irq;` はそのまま。
