@@ -1,20 +1,40 @@
 #!/usr/bin/env python3
-"""Build the riscv64 UEFI disk image: a GPT disk with one EFI system partition.
+"""Build a riscv64 UEFI disk image: a GPT disk with an EFI system partition.
 
   make-riscv64-disk-image.py --efi BOOTRISCV64.EFI --kernel vmunix \\
       --config zedbsd.cfg [--root-image root.img] OUTPUT
+  make-riscv64-disk-image.py --efi BOOTRISCV64.EFI --kernel vmunix \\
+      --config zedbsd-native.cfg --root-ufs root.ufs [--scratch-mib N] \\
+      [--spl u-boot-spl.bin.normal.out --uboot-itb u-boot.itb] OUTPUT
 
 The EFI system partition (FAT32) holds the loader as the firmware's default
-removable-media path, EFI/BOOT/BOOTRISCV64.EFI, with zedbsd.cfg, the kernel
-and the root disk image beside it; the loader reads the root image into
-memory as the kernel's initial ramdisk.  The disk has no root partition of
-its own yet: the kernel reads no disk on these boards so far.
+removable-media path, EFI/BOOT/BOOTRISCV64.EFI, with zedbsd.cfg and the
+kernel beside it.  With --root-image the root disk image is there too, and
+the loader reads it into memory as the kernel's initial ramdisk.
+
+With --root-ufs the disk carries its root itself: a UFS partition labelled
+zedBSD-root after the EFI system partition, which the configuration names
+with rootpart=PARTLABEL=zedBSD-root; no ramdisk is read.  --scratch-mib
+adds an unused partition labelled zedBSD-scratch at the end, for raw read
+and write tests of the medium that must not touch a file system.
+
+--spl and --uboot-itb put the VisionFive 2's firmware first on the disk,
+for booting from the SD card: the SPL in partition 1, of the type its boot
+ROM looks for, and the U-Boot image in partition 2, which the SPL reads.
+The EFI system partition is then partition 3 and the root partition 4.
 
 Values referenced: UEFI Specification 2.10 section 5 (the protective MBR,
 the GPT header and partition entry layout, the EFI system partition type
 C12A7328-F81F-11D2-BA4B-00A0C93EC93B) and section 3.5.1.1 (the removable
 media boot path); the RISC-V file name BOOTRISCV64.EFI is the one U-Boot
-v2025.01 lib/efi_loader/efi_helper.c looks for.
+v2025.01 lib/efi_loader/efi_helper.c looks for.  The FreeBSD UFS partition
+type 516E7CB6-6ECF-11D6-8FF8-00022D09712B is the one the amd64 native image
+gives its root.  The SPL and U-Boot partition types
+2E54B353-1271-4842-806F-E436D6AF6985 and BC13C2FF-59E6-4262-A352-B275FD6F7172,
+their sectors 4096 to 8191 and 8192 to 16383, and the SPL reading U-Boot
+from partition 2: U-Boot v2025.01 doc/board/starfive/visionfive2.rst and
+configs/starfive_visionfive2_defconfig
+(CONFIG_SYS_MMCSD_RAW_MODE_U_BOOT_PARTITION).
 """
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
@@ -34,11 +54,33 @@ ENTRY_SIZE = 128
 ENTRY_SECTORS = ENTRY_COUNT * ENTRY_SIZE // SECTOR
 ESP_LBA = 2048
 ESP_TYPE = uuid.UUID("c12a7328-f81f-11d2-ba4b-00a0c93ec93b")
+ROOT_TYPE = uuid.UUID("516e7cb6-6ecf-11d6-8ff8-00022d09712b")
+ROOT_LABEL = "zedBSD-root"
+SCRATCH_LABEL = "zedBSD-scratch"
+
+# The VisionFive 2's firmware partitions: the SPL where the boot ROM looks
+# for it, and U-Boot in partition 2, where the SPL reads it.
+SPL_TYPE = uuid.UUID("2e54b353-1271-4842-806f-e436d6af6985")
+SPL_LBA = 4096
+SPL_LAST = 8191
+UBOOT_TYPE = uuid.UUID("bc13c2ff-59e6-4262-a352-b275fd6f7172")
+UBOOT_LBA = 8192
+UBOOT_LAST = 16383
+
+# The partitions after the firmware start on the next MiB.
+FIRMWARE_END_LBA = 16384
 
 # Fixed identities, so the same inputs give the same disk.
 DISK_GUID = uuid.UUID("7a656442-5244-4b76-a172-697363763634")
 ESP_GUID = uuid.UUID("7a656442-5244-4b76-a172-697363763645")
 ESP_SERIAL = "5a454253"
+ROOT_GUID = uuid.UUID("7a656442-5244-4b76-a172-697363763652")
+SCRATCH_GUID = uuid.UUID("7a656442-5244-4b76-a172-697363763653")
+SPL_GUID = uuid.UUID("7a656442-5244-4b76-a172-697363763631")
+UBOOT_GUID = uuid.UUID("7a656442-5244-4b76-a172-697363763632")
+
+# The scratch partition's type: zedBSD's own, which no system mounts.
+SCRATCH_TYPE = uuid.UUID("7a656442-5244-4b76-a172-736372617463")
 
 
 def run(*args: str) -> None:
@@ -68,6 +110,17 @@ def header_bytes(current: int, backup: int, first_usable: int, last_usable: int,
     return pack(crc).ljust(SECTOR, b"\0")
 
 
+def copy_into(image, source: Path, lba: int) -> None:
+    """Copies a file into the image at a sector, in pieces."""
+    image.seek(lba * SECTOR)
+    with source.open("rb") as data:
+        while True:
+            chunk = data.read(1024 * 1024)
+            if not chunk:
+                break
+            image.write(chunk)
+
+
 def build(args: argparse.Namespace) -> None:
     files = [("EFI/BOOT/BOOTRISCV64.EFI", args.efi), ("zedbsd.cfg", args.config),
              ("vmunix", args.kernel)]
@@ -76,6 +129,27 @@ def build(args: argparse.Namespace) -> None:
     for _, path in files:
         if not path.is_file():
             raise SystemExit(f"missing input: {path}")
+    if args.root_ufs is not None:
+        if args.root_image is not None:
+            raise SystemExit("--root-ufs and --root-image name two roots")
+        if not args.root_ufs.is_file():
+            raise SystemExit(f"missing input: {args.root_ufs}")
+        if args.root_ufs.stat().st_size == 0 or args.root_ufs.stat().st_size % SECTOR:
+            raise SystemExit("the UFS root is not a whole number of sectors")
+    if args.scratch_mib < 0:
+        raise SystemExit("--scratch-mib must not be negative")
+    if (args.spl is None) != (args.uboot_itb is None):
+        raise SystemExit("--spl and --uboot-itb go together")
+    firmware = []
+    if args.spl is not None:
+        firmware = [(SPL_TYPE, SPL_GUID, SPL_LBA, SPL_LAST, "spl", args.spl),
+                    (UBOOT_TYPE, UBOOT_GUID, UBOOT_LBA, UBOOT_LAST, "uboot",
+                     args.uboot_itb)]
+        for _, _, first, last, _, path in firmware:
+            if not path.is_file():
+                raise SystemExit(f"missing input: {path}")
+            if path.stat().st_size > (last - first + 1) * SECTOR:
+                raise SystemExit(f"too large for its partition: {path}")
     if args.output.exists() and not args.force:
         raise SystemExit(f"output exists (use --force): {args.output}")
 
@@ -84,15 +158,37 @@ def build(args: argparse.Namespace) -> None:
     payload = sum(path.stat().st_size for _, path in files)
     esp_bytes = max(64 * 1024 * 1024, mib_up(payload + payload // 8 + 16 * 1024 * 1024))
     esp_sectors = esp_bytes // SECTOR
-    esp_last = ESP_LBA + esp_sectors - 1
-    total = esp_last + 1 + 2048
+    esp_lba = FIRMWARE_END_LBA if firmware else ESP_LBA
+    esp_last = esp_lba + esp_sectors - 1
+
+    # The root and the scratch partitions follow, each on a whole MiB.
+    partitions = [(kind, unique, first, last, name)
+                  for kind, unique, first, last, name, _ in firmware]
+    partitions.append((ESP_TYPE, ESP_GUID, esp_lba, esp_last, "EFI system"))
+    next_lba = esp_last + 1
+    root_lba = None
+    if args.root_ufs is not None:
+        root_lba = next_lba
+        root_sectors = mib_up(args.root_ufs.stat().st_size) // SECTOR
+        partitions.append((ROOT_TYPE, ROOT_GUID, root_lba,
+                           root_lba + root_sectors - 1, ROOT_LABEL))
+        next_lba = root_lba + root_sectors
+    if args.scratch_mib > 0:
+        scratch_sectors = args.scratch_mib * 1024 * 1024 // SECTOR
+        partitions.append((SCRATCH_TYPE, SCRATCH_GUID, next_lba,
+                           next_lba + scratch_sectors - 1, SCRATCH_LABEL))
+        next_lba += scratch_sectors
+
+    total = next_lba + 2048
     backup_header = total - 1
     backup_entries = backup_header - ENTRY_SECTORS
     first_usable = 2 + ENTRY_SECTORS
     last_usable = backup_entries - 1
 
     entries = bytearray(ENTRY_COUNT * ENTRY_SIZE)
-    entries[0:ENTRY_SIZE] = entry_bytes(ESP_TYPE, ESP_GUID, ESP_LBA, esp_last, "EFI system")
+    for index, (kind, unique, first, last, name) in enumerate(partitions):
+        entries[index * ENTRY_SIZE:(index + 1) * ENTRY_SIZE] = \
+            entry_bytes(kind, unique, first, last, name)
     entries_crc = zlib.crc32(bytes(entries)) & 0xFFFFFFFF
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -110,9 +206,13 @@ def build(args: argparse.Namespace) -> None:
         image.write(entries)
         image.write(header_bytes(backup_header, 1, first_usable, last_usable,
                                  backup_entries, entries_crc))
+        for _, _, first, _, _, path in firmware:
+            copy_into(image, path, first)
+        if root_lba is not None:
+            copy_into(image, args.root_ufs, root_lba)
 
-    spec = f"{partial}@@{ESP_LBA * SECTOR}"
-    run("mformat", "-i", spec, "-F", "-T", str(esp_sectors), "-H", str(ESP_LBA),
+    spec = f"{partial}@@{esp_lba * SECTOR}"
+    run("mformat", "-i", spec, "-F", "-T", str(esp_sectors), "-H", str(esp_lba),
         "-h", "64", "-s", "32", "-N", ESP_SERIAL, "-v", "ZEDBSD", "::")
     run("mmd", "-i", spec, "::/EFI", "::/EFI/BOOT")
     for destination, source in files:
@@ -126,6 +226,10 @@ def main() -> None:
     parser.add_argument("--kernel", type=Path, required=True)
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--root-image", type=Path)
+    parser.add_argument("--root-ufs", type=Path)
+    parser.add_argument("--scratch-mib", type=int, default=0)
+    parser.add_argument("--spl", type=Path)
+    parser.add_argument("--uboot-itb", type=Path)
     parser.add_argument("--force", action="store_true")
     parser.add_argument("output", type=Path)
     build(parser.parse_args())

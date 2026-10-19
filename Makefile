@@ -400,10 +400,15 @@ override ZEDBSD_USER_PROGRAMS := $(foreach program,$(ZEDBSD_USER_PROGRAMS),\
 	$(if $(filter * $(ZEDBSD_USER_PLATFORM),\
  $(USERLAND_$(program)_PLATFORMS)),$(program)))
 # Essential administrative tools are present even when an older config.mk
-# predates their package registration.
+# predates their package registration.  The commands the base services run
+# come with them: networkd configures interfaces through /sbin/ifconfig,
+# /sbin/route and /sbin/dhcpc, and the homes service makes each home with
+# mkdir and chown; a short program list must not leave the loopback down
+# (ws256-p015).
 override ZEDBSD_USER_PROGRAMS := $(sort $(ZEDBSD_USER_PROGRAMS) at batch \
 	blkid diskpart mkfs mkswap crontab getty gettext halt hostname init logger login lp lpr mailx msgfmt ngettext \
-	cron net networkd ntpdate poweroff reboot service shutdown swapoff swapon syslogd talk wifi)
+	cron net networkd ntpdate poweroff reboot service shutdown swapoff swapon syslogd talk wifi \
+	chown dhcpc ifconfig mkdir route)
 # The checker init runs on a read-only root (BUG-312), linked statically.  Only
 # the platforms whose build links the class static carry it.
 ifneq ($(filter amd64 arm64,$(ZEDBSD_PLATFORM_DIR)),)

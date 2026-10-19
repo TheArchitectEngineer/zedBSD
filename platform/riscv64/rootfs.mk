@@ -20,3 +20,12 @@ $(BUILD)/root.img: $(BUILD)/rootfs/.stamp $(RISCV64_ROOT_IMAGE_TOOL) \
 	@mkdir -p $(dir $@)
 	$(PYTHON) $(RISCV64_ROOT_IMAGE_TOOL) --force --ufs-tree $(BUILD)/rootfs \
  --ufs-size-mib 64 $@
+
+# The root of the base system alone, for the root partition of the native
+# disk image (platform/riscv64/disk-image.mk), with room to write in.
+RISCV64_NATIVE_ROOT_MIB ?= 256
+$(BUILD)/root.ufs: $(BUILD)/rootfs/.stamp $(RISCV64_ROOT_IMAGE_TOOL) \
+	tools/build/ufs_format.py tools/build/check-ufs-image.py
+	@mkdir -p $(dir $@)
+	$(PYTHON) $(RISCV64_ROOT_IMAGE_TOOL) --force --raw --ufs-tree $(BUILD)/rootfs \
+ --ufs-size-mib $(RISCV64_NATIVE_ROOT_MIB) $@

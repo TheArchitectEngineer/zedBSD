@@ -10,11 +10,13 @@
  *
  * The console is a teletype whose output the hardware layer writes to the
  * firmware's console; the board's UART does not type into it yet.  The
- * board publishes one boot device, the initial ramdisk the loader read,
- * when there is one.  It holds a disk image laid out like a Raspberry Pi
- * 4's SD card, a FAT boot partition first and the UFS root beside it, so
- * the kernel's root search finds the root as it does there.  Halting,
- * rebooting and powering off go through the hardware layer.
+ * board publishes one boot device: the initial ramdisk the loader read,
+ * when there is one, and otherwise the SD card.  The ramdisk holds a disk
+ * image laid out like a Raspberry Pi 4's SD card, a FAT boot partition
+ * first and the UFS root beside it, so the kernel's root search finds the
+ * root as it does there.  An SD card booted without a ramdisk carries its
+ * root as a UFS partition of its own, which the boot parameters name.
+ * Halting, rebooting and powering off go through the hardware layer.
  *
  * The screen the firmware left on, when the loader handed one over, is
  * the hardware layer's: it draws the console there.  The binding only
@@ -28,8 +30,8 @@
  * detect pin, for comparing with what the firmware set.
  *
  * The SD card slot's card is published as the disk mmcblk0 beside the
- * ramdisk; the boot device stays the ramdisk.  Once interrupts are on,
- * the boot log lists the card's partitions.
+ * ramdisk, and is the boot device when there is no ramdisk.  Once
+ * interrupts are on, the boot log lists the card's partitions.
  *
  * The first Ethernet port is published as the network interface en0.
  */
@@ -126,7 +128,8 @@ static void attach_ethernet(void);
 static void describe_sd_partitions(void);
 
 /*
- * Publishes the boot devices of the VisionFive 2: the ramdisk, if any.
+ * Publishes the boot device of the VisionFive 2: the ramdisk, or the SD
+ * card when the loader read no ramdisk.
  *
  * Returns the number of devices published.
  */
@@ -175,11 +178,14 @@ kern_platform_init(
 	/* Publishes the Ethernet port. */
 	attach_ethernet();
 
-	/* Without the ramdisk the board has no boot device. */
-	if (error != 0)
+	/* Without the ramdisk the SD card is the boot device, if there is one. */
+	if (error != 0 && sd_card == NULL)
 		return 0;
+	if (error != 0)
+		kern_logf("visionfive2: no ramdisk; the boot device is %s\n",
+		    sd_card->d_name);
 
-	/* Describes the ramdisk as the boot device the handoff names. */
+	/* Describes the boot device the handoff names. */
 	device = &devices[0];
 	device->device_class = KERN_DEV_SD;
 	device->display_index = 0;
@@ -233,18 +239,23 @@ kern_platform_input_init(
 }
 
 /*
- * Resolves the published boot device to the ramdisk.
+ * Resolves the published boot device to the ramdisk, or to the SD card
+ * when there is no ramdisk.
  */
 struct disk *
 kern_platform_block_device(
 	const struct kern_boot_device *device)
 {
-	/* Only the ramdisk's device has a disk. */
+	/* Only the boot device has a disk. */
 	if (device == NULL || device->device_class != KERN_DEV_SD)
 		return NULL;
 
-	/* Succeeded: the ramdisk, or none when the loader read none. */
-	return ramdisk;
+	/* The ramdisk, when the loader read one. */
+	if (ramdisk != NULL)
+		return ramdisk;
+
+	/* Succeeded: the SD card, or none when the slot is empty. */
+	return sd_card;
 }
 
 /*

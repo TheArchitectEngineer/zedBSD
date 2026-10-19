@@ -52,11 +52,13 @@ RISCV64_BOOT_S := src/hal/riscv64/locore.S src/hal/riscv64/trap.S \
 RISCV64_BOOT_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(RISCV64_BOOT_C)) \
 	$(patsubst %.S,$(BUILD)/%.o,$(RISCV64_BOOT_S))
 
-# The platform binding of the board: the teletype console on the UART and
-# the initial ramdisk as the boot device.
+# The platform binding of the board: the teletype console on the UART, the
+# initial ramdisk as the boot device, and the GPT reader the native disk
+# image needs.
 RISCV64_PLATFORM_SOURCES_virt := src/kern/platform/riscv-virt.c \
 	src/drivers/serial/ns16550.c src/drivers/generic/serial-console.c \
-	src/drivers/generic/ramdisk.c
+	src/drivers/generic/ramdisk.c \
+	src/drivers/disklabel/gpt.c src/drivers/disklabel/pcat.c
 # The VisionFive 2's binding: the teletype console on the hardware layer's
 # output, the initial ramdisk as the boot device, the SoC's system control
 # blocks, clock and reset generators and pin controllers, and the SD card

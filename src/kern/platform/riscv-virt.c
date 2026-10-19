@@ -16,7 +16,10 @@
  * loaded, when there is one.  It holds a disk image partitioned like a
  * Raspberry Pi 4's SD card: a FAT boot partition first and the UFS root
  * beside it, so the kernel's root search finds the root as it does there.
- * Halting, rebooting and powering off go through the hardware layer.
+ * A GPT disk behind the PCI host, such as the native disk image on an
+ * NVMe drive, has its partitions read too, so the boot parameters can name
+ * a root there instead.  Halting, rebooting and powering off go through
+ * the hardware layer.
  */
 
 #include <stddef.h>
@@ -101,8 +104,11 @@ kern_platform_init(
 	/* Starts the PCI host and binds the devices behind it. */
 	probe_pci();
 
-	/* Selects the MBR partition scheme the ramdisk's image uses. */
-	partition_set_scheme(&drv_partition_scheme_mbr);
+	/*
+	 * Selects the partition scheme that tells GPT from MBR: the ramdisk's
+	 * image is an MBR disk, the native disk image a GPT disk.
+	 */
+	partition_set_scheme(&drv_partition_scheme_pcat_auto);
 	disk_registry_reset();
 
 	/* Publishes the ramdisk; without one the board has no boot device. */
