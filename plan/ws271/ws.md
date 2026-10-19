@@ -20,9 +20,10 @@
 
 | Phase | 目的 | 状態 |
 | --- | --- | --- |
-| p001 | 設計: malta の memory map・PCI（GT-64120）・PIIX4・VGA、firmware（YAMON 相当の -kernel の直の起動）と handoff、mipsel の toolchain の triple と linker の emulation、HAL の構成、HAL の API の差分、試験の道具（boot-test.sh の mode）、Phase の表 | in-progress（q1273、P1、2026-10-19） |
-| p002 | HAL の芯と vmunix、T1 の画面で到達点 | planning |
-| p003 | 規約の全文の見直し | planning |
+| [p001](phase001/phase.md) | 設計（[design.md](design.md)、WS272 と共通）: malta の memory map・GT-64120・PIIX4・VGA、`-kernel` の受け渡し、toolchain、HAL の構成、HAL の API の差分の案、試験の道具、Phase の表 | in-progress（q1273、P1、2026-10-19 14:22 設計を書き終えた、Q1 の判定待ち） |
+| p002 | 入口と console の画面（共通の層 `src/hal/mips/` の入口、bsp-malta の PCI・VGA・console、build の配線）、LW 12 | planning |
+| p003 | 例外・TLB・page・space・task・timer・FPU・atomic、VFS の段まで（T1 の画面）、LW 20 | planning |
+| p004 | 規約の全文の見直し、LW 4 | planning |
 
 ## 依存
 

@@ -10,6 +10,7 @@
 - 浮動小数点（2026-10-19 14:15 ユーザー）: 「Octeonも入手可能です。softfloatをオプションで選べるようにしたいですね。まずはhardfloatでOKです。」 → まず hardfloat（FPU を使う ABI）。softfloat は後で build の option として選べる形にする（p001 の設計で option の置き場所を決めておく）。
 - 実機の候補（2026-10-19 14:15 ユーザー）: Cavium Octeon も入手できる（MIPS64、big endian が多い。機種と endian は未確認）。
 - Octeon の機種（2026-10-19 14:17 ユーザー）: 「Octeon は EdgeRouter Lite-3が入手できそうです。OcteonはTLB操作のSDKがありますが、そんなに非互換が強いんですかねえ。」 → Q1 の覚え（未確認）: EdgeRouter Lite-3 は Cavium Octeon Plus CN5020（cnMIPS64 の 2 core、big endian、U-Boot、内部の USB 記憶）。TLB は MIPS64r2 の標準の命令で扱える見込み。訂正（2026-10-19 14:19 ユーザー 「Linux も FreeBSD も、10年前に私が確認したときにはCaviumのSDKをマージしてました。今はどうかわかりません。」）: Linux は arch/mips/cavium-octeon/executive/ に Cavium の SDK（cvmx-bootmem・cvmx-sysinfo・cvmx-l2c・helper・PKO など、SoC の資源の調整と network）を取り込んでいた（v3.1 などの tree で確認）。今の mainline と FreeBSD の現状は未確認。SDK に頼る範囲と出典の license は着手の時の設計で確かめる。差の大きい所は FPU が無い（hardfloat の userland には kernel の FPU の emulation か softfloat の build が要る）、big endian、CIU の割り込み・Ethernet などの Octeon 固有の周辺、U-Boot の起動の情報の形。
+- 設計（2026-10-19 P1、ws271-p001）: 共通の部分（QEMU malta の事実、toolchain、HAL の共通の層 `src/hal/mips/`、試験）と WS272 の差分は [WS271 の design.md](../ws271/design.md) の §1〜§6・§8。p001 は §8 の確認の計画だけ（LW 2）。QEMU の CPU は `MIPS64R2-generic` を案に（既定の 20Kc は R1、U4 でユーザーに聞く）。
 - 担当: 未割当（WS256 の後か、手の空いた時）。
 
 ## 完了の条件（案、p001 の設計で確定）
@@ -24,8 +25,9 @@
 | Phase | 目的 | 状態 |
 | --- | --- | --- |
 | p001 | 設計: malta の memory map・PCI（GT-64120）・PIIX4・VGA、firmware（YAMON 相当の -kernel の直の起動）と handoff、mips64el の toolchain の triple と linker の emulation、HAL の構成、HAL の API の差分、試験の道具（boot-test.sh の mode）、Phase の表 | planning |
-| p002 | HAL の芯と vmunix、T1 の画面で到達点 | planning |
-| p003 | 規約の全文の見直し | planning |
+| p002 | 64 bit の入口と console（共通の層を `HAL_ARCH_MIPS64` で、XKPHYS・CKSEG0）、LW 8 | planning |
+| p003 | XTLB refill・3 段の table・native atomic、VFS の段まで、LW 10 | planning |
+| p004 | 規約の全文の見直し、LW 3 | planning |
 
 ## 依存
 
