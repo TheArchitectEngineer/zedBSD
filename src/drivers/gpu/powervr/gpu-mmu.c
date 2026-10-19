@@ -519,3 +519,43 @@ clear_table(
 	for (index = 0; index < POWERVR_GPU_TABLE_ENTRIES; index++)
 		entries[index] = 0;
 }
+
+/* The mapping flags for a buffer: a host-visible or shareable one bypasses the SLC. */
+unsigned
+powervr_gpu_buffer_flags(
+	int mappable,
+	int shareable)
+{
+	/* The processor and the display read memory, not the core's cache. */
+	if (mappable || shareable)
+		return POWERVR_GPU_MAP_SLC_BYPASS;
+
+	/* A private buffer keeps the cache. */
+	return 0;
+}
+
+/* Checks a contiguous run against an address limit and a base alignment. */
+int
+powervr_gpu_run_fits(
+	uint64_t paddr,
+	uint64_t size,
+	uint64_t limit,
+	uint64_t alignment)
+{
+	/* Refuses an empty run and an alignment that is not a power of two. */
+	if (size == 0U || paddr + size < paddr)
+		return EINVAL;
+	if (alignment > 1U && (alignment & (alignment - 1U)) != 0U)
+		return EINVAL;
+
+	/* The last byte must be at or below the limit. */
+	if (limit != 0U && paddr + size - 1U > limit)
+		return ENOTSUP;
+
+	/* The base must be on the alignment. */
+	if (alignment > 1U && (paddr & (alignment - 1U)) != 0U)
+		return ENOTSUP;
+
+	/* Succeeded: the run fits. */
+	return 0;
+}

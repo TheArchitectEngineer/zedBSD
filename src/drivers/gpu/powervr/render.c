@@ -59,6 +59,8 @@ static int render_info(void *device, void *session, struct gpu_info *info);
 static int render_resource_create(void *device, void *session, const struct gpu_resource_create *request, void **result);
 static void render_resource_destroy(void *device, void *session, void *resource);
 static int render_blob_create(void *device, void *session, const struct gpu_blob_create *request, void **result, uint32_t *identifier);
+static int render_blob_create_placed(void *device, void *session, const struct gpu_blob_create_placed *request, void **result, uint32_t *identifier);
+static int blob_make(struct powervr_render *render, struct powervr_session *session, const struct gpu_blob_create *request, const struct gpu_placement *placement, void **result, uint32_t *identifier);
 static int render_read(void *device, void *session, void *resource, uint64_t offset, void *bytes, uint32_t length);
 static int render_write(void *device, void *session, void *resource, uint64_t offset, const void *bytes, uint32_t length);
 static int render_map(void *device, void *session, void *resource, struct drv_gpu_mapping *mapping);
@@ -67,7 +69,7 @@ static void render_release(void *device, void *shared);
 static int render_import(void *device, void *session, void *shared, void **result, uint32_t *identifier);
 static int render_backing(void *device, void *shared, struct drv_gpu_scanout_backing *backing);
 static int render_query(void *device, void *session, struct gpu_device_info *info);
-static int resource_make(struct powervr_session *session, struct powervr_buffer *buffer, int mappable, struct powervr_resource **result);
+static int resource_make(struct powervr_session *session, struct powervr_buffer *buffer, int mappable, int shareable, struct powervr_resource **result);
 static void resource_unmake(struct powervr_session *session, struct powervr_resource *resource);
 static int check_image(const struct powervr_buffer *buffer, const struct gpu_image_descriptor *image);
 static int make_pages(struct powervr_buffer *buffer);
@@ -154,6 +156,7 @@ powervr_render_start(
 	render->ops.resource_create = render_resource_create;
 	render->ops.resource_destroy = render_resource_destroy;
 	render->ops.blob_create = render_blob_create;
+	render->ops.blob_create_placed = render_blob_create_placed;
 	render->ops.resource_read = render_read;
 	render->ops.resource_write = render_write;
 	render->ops.resource_map = render_map;
@@ -624,7 +627,7 @@ render_resource_create(
 		return error;
 
 	/* The session's handle on it, mapped; the handle takes the creation reference. */
-	error = resource_make(session, buffer, 1, &resource);
+	error = resource_make(session, buffer, 1, 0, &resource);
 	powervr_buffer_put(render, buffer);
 	if (error != 0)
 		return error;
@@ -660,16 +663,48 @@ render_blob_create(
 	void **result,
 	uint32_t *identifier)
 {
-	struct powervr_render *render;
-	struct powervr_session *session;
+	/* No placement condition. */
+	return blob_make(device, opaque, request, NULL, result, identifier);
+}
+
+/*
+ * Makes one blob that meets a placement.  Every buffer is one contiguous
+ * run below the core's DMA limit, so the run is only checked.
+ */
+static int
+render_blob_create_placed(
+	void *device,
+	void *opaque,
+	const struct gpu_blob_create_placed *request,
+	void **result,
+	uint32_t *identifier)
+{
+	/* The blob part carries the placed request's size; the rest of it is the plain request. */
+	struct gpu_blob_create blob;
+
+	blob = request->blob;
+	blob.size = sizeof(blob);
+	return blob_make(device, opaque, &blob, &request->placement, result, identifier);
+}
+
+/* Makes one blob, checking its run against a placement when one is given. */
+static int
+blob_make(
+	struct powervr_render *render,
+	struct powervr_session *session,
+	const struct gpu_blob_create *request,
+	const struct gpu_placement *placement,
+	void **result,
+	uint32_t *identifier)
+{
 	struct powervr_buffer *buffer;
 	struct powervr_resource *resource;
+	uint64_t limit;
 	int mappable;
+	int shareable;
 	int error;
 
 	/* Native blobs only, with the defined flags; a cross-device blob must be shareable. */
-	render = device;
-	session = opaque;
 	*result = NULL;
 	*identifier = 0;
 	if (request->blob_id != 0U)
@@ -679,16 +714,38 @@ render_blob_create(
 	if ((request->flags & GPU_BLOB_CROSS_DEVICE) != 0U && (request->flags & GPU_BLOB_SHAREABLE) == 0U)
 		return EINVAL;
 
+	/* A coherent placement is not offered: the buffers are only reached through uncached views. */
+	limit = 0;
+	if (placement != NULL) {
+		if ((placement->flags & GPU_PLACEMENT_COHERENT) != 0U)
+			return ENOTSUP;
+		limit = placement->max_dma_address;
+		if ((placement->flags & GPU_PLACEMENT_DMA32) != 0U && (limit == 0U || limit > 0xffffffffULL))
+			limit = 0xffffffffULL;
+	}
+
 	/* The allocation. */
 	error = powervr_buffer_create(render, request->bytes, &buffer);
 	if (error != 0)
 		return error;
 
+	/* The run must meet the placement; the buffer goes if it does not. */
+	if (placement != NULL) {
+		error = powervr_gpu_run_fits(buffer->run.paddr, buffer->run.size, limit, placement->alignment);
+		if (error != 0) {
+			powervr_buffer_put(render, buffer);
+			return error;
+		}
+	}
+
 	/* The session's handle on it, mapped; the handle takes the creation reference. */
 	mappable = 0;
 	if ((request->flags & GPU_BLOB_MAPPABLE) != 0U)
 		mappable = 1;
-	error = resource_make(session, buffer, mappable, &resource);
+	shareable = 0;
+	if ((request->flags & GPU_BLOB_SHAREABLE) != 0U)
+		shareable = 1;
+	error = resource_make(session, buffer, mappable, shareable, &resource);
 	powervr_buffer_put(render, buffer);
 	if (error != 0)
 		return error;
@@ -894,7 +951,7 @@ render_import(
 
 	/* A new handle, mapped into this session, holding the buffer on its own. */
 	powervr_buffer_retain(render, shared->buffer);
-	error = resource_make(session, shared->buffer, 1, &resource);
+	error = resource_make(session, shared->buffer, 1, 1, &resource);
 	powervr_buffer_put(render, shared->buffer);
 	if (error != 0)
 		return error;
@@ -957,6 +1014,7 @@ resource_make(
 	struct powervr_session *session,
 	struct powervr_buffer *buffer,
 	int mappable,
+	int shareable,
 	struct powervr_resource **result)
 {
 	struct powervr_render *render;
@@ -978,10 +1036,11 @@ resource_make(
 	resource->buffer = buffer;
 	resource->mappable = mappable;
 
-	/* Host-visible memory goes around the core's system level cache, so the processor reads what the core wrote. */
-	flags = 0;
-	if (mappable)
-		flags = POWERVR_GPU_MAP_SLC_BYPASS;
+	/*
+	 * Host-visible and shareable memory goes around the core's system level
+	 * cache, so the processor and the display read what the core wrote.
+	 */
+	flags = powervr_gpu_buffer_flags(mappable, shareable);
 
 	/* Takes a device address and maps the run there, then has the core drop stale table entries. */
 	mutex_lock(&render->core->lock);

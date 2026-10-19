@@ -83,6 +83,24 @@ void powervr_buffer_release(struct powervr_buffer *buffer);
 
 未実施: QEMU（起動しない指示、QEMU に PowerVR は無い）。実機（下の文面）。render の ops（open・blob・share・submit・recovery）は kernel の中でしか動かず、host 試験は無い（実機の自己試験の行で確かめる）。recovery の各 op は実機でも自然には起きないので、自己試験は通常の道（empty job・fence・memory・close の cleanup）だけを通す。stop・isolate・reset の実機の確かめは、hang を起こせる job（p008 の compute）ができてから。
 
+## 追加: WS277 の依頼 R3・R5（2026-10-20 P2、q1344 / q1344-i01）
+
+[WS277 の設計 改訂 2](../../ws277/design.md) の §9「他 WS への依頼」の R3（B2・D8）と R5（M1）を p006 の追加として実装した。HAL の API は変えていない。
+
+| 依頼 | 実装 |
+| --- | --- |
+| R3 | `GPU_BLOB_SHAREABLE` の blob は作成の時から常に SLC_BYPASS で GPU の MMU に写す（mappable でなくても）。`resource_make` に shareable の引数を足し、写像の flag は `powervr_gpu_buffer_flags(mappable, shareable)`（`gpu-mmu.c`、host で試せる）で決める。import した resource（他の session の export）も shareable として扱う（従来どおり bypass）。storage の resource（mappable）は変わらない |
+| R5 | render の node に `blob_create_placed`（`render_blob_create_placed`）を足した。`render_blob_create` と共通の `blob_make` で確保し、確保した run を `powervr_gpu_run_fits` で検査する: `DMA32` は上限 0xffffffff（`max_dma_address` が 0 か大きい時）、`max_dma_address` は含む上限、`alignment` は base の揃い、`CONTIGUOUS` は常に満たす（1 本の連続の run）。満たさなければ buffer を返して ENOTSUP。`COHERENT` は ENOTSUP（CPU の view は uncached の alias だけで coherent の確保を持たない）。core の検査（`gpu.c:2697-2705`: 未知の flag・reserved・2 冪でない alignment は core が EINVAL、条件があって op が無ければ ENOTSUP）に合わせ、成功はすべての条件を満たす |
+
+| 確かめ（worktree /home/awe/zedBSD-worktrees/p2） | コマンド | 結果 |
+| --- | --- | --- |
+| VF2 の kernel | `timeout 3600 make ZEDBSD_CONFIG=config/ci/config-visionfive2.mk BUILD=build/ws269-p006-vf2 vmunix`（log `build/q1344-vf2.log`） | rc=0、`warning:`・`error:` 0 件。`gpu-mmu.c`・`render.c` が compile された |
+| riscv64-virt の kernel | 同上 `config-riscv64-virt.mk`、`build/ws269-p006-virt` | rc=0、`warning:`・`error:` 0 件 |
+| amd64 の kernel | 同上 `config-amd64.mk`、`build/ws269-p006-amd64` | rc=0、`warning:`・`error:` 0 件 |
+| host 試験（p006 を拡張） | `timeout 120 sh plan/ws269/tests/p006/run.sh build/ws269-p006-host` | `PASS 68 FAIL 0`（追加 14: SLC の選択 4 通り（private・mappable・shareable・両方）、run の検査 10 通り（DMA32 の内・境・跨ぎ、上限なし、揃い・不揃い・1、2 冪でない、空、wrap）） |
+
+未実施: QEMU（起動しない指示）、実機。R3 の効果（GPU が書いた non-mappable な shareable の image で古い画が出ない事）は WS277 p006 の実機（U9）で確かめる。render の ops の中の分岐（placed の確保・解放の道）は host 試験が無く、実機で確かめる。
+
 ## 実機の試験の文面（今は頼まない。p005 の実機で `running, health check ok` が出た後）
 
 - **WS269 p006（VisionFive 2、GPU の render の node）**: main の `config/ci/config-visionfive2.mk` で作った image を SD card で起動し、画面の boot の log で、p005 の行 `powervr: firmware 1.1 build 6976702 running, health check ok, ...` の後に続く 3 行を控える: (1) `powervr: coherency (firmware writes): <判定>, control <OK|INCONCLUSIVE>, <n>/8 rounds, <s> stale, <m> missing`、(2) `powervr: coherency (firmware reads of cached writes): <seen without a clean | seen after a clean only>`、(3) `powervr: render node ready (self-test ok: empty job, fence, memory)`。(3) の代わりに `powervr: render self-test <段> failed (<番号>)` か `powervr: render node not registered ...` が出たら、その行をそのまま控える。login の後に `ls /dev/gpu*` で `/dev/gpu0`（display）と `/dev/gpu1`（render）がある事も見る。
@@ -94,5 +112,5 @@ void powervr_buffer_release(struct powervr_buffer *buffer);
 - page ごとの backing（map を持たない大きな blob、Minor 8 の残り）を Future Work の候補に（Q1 に登録を依頼）。
 - service は IRQ と tick で起きる。pending の無い時は 100 ms ごとに FWCCB を読む（負荷は小さいが、APM を使う時に見直す）。
 - p007 の後半（P1）: display.c の `import_image` から `powervr_render_lookup` を使う。constraints に SHARED・FOREIGN を足すのは P1。
-- 片付け（Q1 に依頼）: worktree /home/awe/zedBSD-worktrees/p2 の `build/ws269-p006-vf2/`・`build/ws269-p006-virt/`・`build/ws269-p006-amd64/`・`build/ws269-p006-host/`・`build/ws269-p006-p005host/`・`build/ws269-p006-p004host/`・`build/ws269-p006-p007host/`・`build/ws269-p006-vf2.log`・`build/ws269-p006-virt.log`・`build/ws269-p006-amd64.log`・`build/ws269-p006-rc.txt`。
+- 片付け（Q1 に依頼）: worktree /home/awe/zedBSD-worktrees/p2 の `build/q1344-vf2.log`・`build/q1344-virt.log`・`build/q1344-amd64.log`（q1344）。worktree /home/awe/zedBSD-worktrees/p2 の `build/ws269-p006-vf2/`・`build/ws269-p006-virt/`・`build/ws269-p006-amd64/`・`build/ws269-p006-host/`・`build/ws269-p006-p005host/`・`build/ws269-p006-p004host/`・`build/ws269-p006-p007host/`・`build/ws269-p006-vf2.log`・`build/ws269-p006-virt.log`・`build/ws269-p006-amd64.log`・`build/ws269-p006-rc.txt`。
 - **誤って main の checkout に出した物（Q1 に片付けを依頼）**: 並行の build の shell の書き方の誤り（`cd … && (A) & (B) &` の B が元の cwd で動いた）で、amd64 の build が 1 回 `/home/awe/zedBSD-claude1` の中で走り、`/home/awe/zedBSD-claude1/build/ws269-p006-amd64/`・`/home/awe/zedBSD-claude1/build/ws269-p006-amd64.log`・`/home/awe/zedBSD-claude1/build/ws269-p006-rc.txt` を作った（main の source は変えていない、`git status` は clean のまま）。表の amd64 の結果は worktree で流し直した物。
