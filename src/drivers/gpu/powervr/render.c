@@ -80,7 +80,6 @@ static void copy_in(volatile uint8_t *view, const uint8_t *bytes, uint32_t lengt
 static int register_attempt(void *context);
 static void register_pause(void *context);
 static int self_test(struct powervr_render *render, const char **step);
-static int wait_timeline(struct powervr_session *session, uint32_t value, unsigned milliseconds);
 
 /*
  * The board's one render node.  Filled by powervr_render_start() on the
@@ -186,6 +185,10 @@ powervr_render_start(
 		core->render = NULL;
 		return error;
 	}
+
+	/* A test kernel runs the driver's own compute work and reports it; it only reports. */
+	if (powervr_compute_check != NULL)
+		powervr_compute_check(render);
 
 	/* Registers the node, trying again a bounded number of times while registration is busy. */
 	retry.attempt = register_attempt;
@@ -460,6 +463,39 @@ powervr_render_abandon(
 	spin_unlock_irqrestore(&render->queue_lock, enabled);
 
 	powervr_buffers_free(list);
+}
+
+/*
+ * Waits, bounded, for a session's timeline to reach a value.
+ */
+int
+powervr_session_wait(
+	struct powervr_session *session,
+	uint32_t value,
+	unsigned milliseconds)
+{
+	uint64_t deadline;
+	uint64_t now;
+	uint32_t current;
+
+	/* Reads the timeline once a tick until it reaches the value or the bound is spent. */
+	deadline = sched_ticks() + ((uint64_t)milliseconds * KERN_CLOCK_HZ + 999U) / 1000U;
+	for (;;) {
+		current = powervr_session_timeline(session);
+		if ((int32_t)(current - value) >= 0)
+			break;
+
+		/* The bound is spent. */
+		now = sched_ticks();
+		if (now >= deadline)
+			return ETIMEDOUT;
+
+		/* Sleeps one tick. */
+		sched_sleep(now + 1U);
+	}
+
+	/* Succeeded: the timeline reached the value. */
+	return 0;
 }
 
 /* Opens a session with a memory context and a compute context of its own. */
@@ -1351,7 +1387,7 @@ self_test(
 
 	mutex_unlock(&render->core->lock);
 	if (error == 0)
-		error = wait_timeline(session, session->submitted, SELF_TEST_WAIT_MS);
+		error = powervr_session_wait(session, session->submitted, SELF_TEST_WAIT_MS);
 	if (error != 0)
 		goto destroy;
 
@@ -1381,7 +1417,7 @@ self_test(
 	/* Whether the firmware saw the uncleaned write; if not, cleaning the line must let the job go. */
 	seen = 1;
 	if (error == 0)
-		error = wait_timeline(session, session->submitted, SELF_TEST_HOLD_MS);
+		error = powervr_session_wait(session, session->submitted, SELF_TEST_HOLD_MS);
 	if (error == ETIMEDOUT) {
 		seen = 0;
 		kern_dcache_clean_range((const void *)word, sizeof(*word));
@@ -1391,7 +1427,7 @@ self_test(
 
 		mutex_unlock(&render->core->lock);
 		if (error == 0)
-			error = wait_timeline(session, session->submitted, SELF_TEST_WAIT_MS);
+			error = powervr_session_wait(session, session->submitted, SELF_TEST_WAIT_MS);
 	}
 
 	/*
@@ -1427,36 +1463,5 @@ close:
 		return error;
 
 	/* Succeeded: the queue, the fence and the memory work. */
-	return 0;
-}
-
-/* Waits, bounded, for a session's timeline to reach a value. */
-static int
-wait_timeline(
-	struct powervr_session *session,
-	uint32_t value,
-	unsigned milliseconds)
-{
-	uint64_t deadline;
-	uint64_t now;
-	uint32_t current;
-
-	/* Reads the timeline once a tick until it reaches the value or the bound is spent. */
-	deadline = sched_ticks() + ((uint64_t)milliseconds * KERN_CLOCK_HZ + 999U) / 1000U;
-	for (;;) {
-		current = powervr_session_timeline(session);
-		if ((int32_t)(current - value) >= 0)
-			break;
-
-		/* The bound is spent. */
-		now = sched_ticks();
-		if (now >= deadline)
-			return ETIMEDOUT;
-
-		/* Sleeps one tick. */
-		sched_sleep(now + 1U);
-	}
-
-	/* Succeeded: the timeline reached the value. */
 	return 0;
 }

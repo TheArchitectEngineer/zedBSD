@@ -414,6 +414,25 @@
 #define POWERVR_SYNC_VALUE		4U
 
 /*
+ * A compute command in a context's command buffer: the command's type,
+ * and where the control stream and the context's resume buffer go in it.
+ *
+ * Values referenced:
+ * StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
+ * drivers/gpu/drm/imagination/pvr_rogue_fwif.h
+ * (ROGUE_FWIF_CCB_CMD_TYPE_CDM 205 with ROGUE_CCB_TYPE_TASK and the
+ * magic); pvr_rogue_fwif_client_check.h (struct rogue_fwif_cmd_compute,
+ * 96 bytes: the registers at 8, the flags 80, the temporary regions 84,
+ * the stream start 88, the execute count 92; struct
+ * rogue_fwif_compute_regs, 72 bytes: the control stream base 32 and the
+ * context state base 40 in it).
+ */
+#define POWERVR_CLIENT_COMPUTE		(POWERVR_COMMAND_MAGIC | 0x8000U | 205U)
+#define POWERVR_COMPUTE_BYTES		96U
+#define POWERVR_COMPUTE_STREAM		40U
+#define POWERVR_COMPUTE_RESUME		48U
+
+/*
  * The device address window a render context's buffers are mapped in.
  *
  * Values referenced:
