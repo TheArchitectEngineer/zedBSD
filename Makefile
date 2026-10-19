@@ -60,7 +60,7 @@ ZEDBSD_CONFIG_OPTIONAL_GOALS := menuconfig help list-user-programs \
 	menuconfig-host-test rtl8822b-firmware-fixture-cache \
 	intelax211-firmware-fixture-cache i915-firmware-fixture-cache \
 	intelbt-firmware-fixture-cache brcmbt-firmware-fixture-cache \
-	bcm43455-firmware-fixture-cache \
+	bcm43455-firmware-fixture-cache powervr-firmware-fixture-cache \
 	download toolchain \
 	noct-toolchain-smoke noct-download noct-source \
 	noct-target-source-verify noct-host-source noct-host-source-verify \
@@ -301,6 +301,11 @@ CONFIG_DRIVER_BCM2711_GENET ?= $(if $(filter rpi4,$(ZEDBSD_PLATFORM)),y,n)
 # The BCM2711 graphics driver is on by default on the Raspberry Pi 4,
 # where it builds; it changes nothing until its later stages exist.
 CONFIG_DRIVER_BCM2711_GPU ?= $(if $(filter rpi4,$(ZEDBSD_PLATFORM)),y,n)
+
+# The VisionFive 2's PowerVR BXE-4-32 GPU (ws269): on by default on that
+# board, which also selects the GPU's firmware package; the driver brings
+# the core up as far as its identity until its later stages exist.
+CONFIG_DRIVER_POWERVR ?= $(if $(filter visionfive2,$(ZEDBSD_PLATFORM)),y,n)
 
 # The Pi 4's headphone jack (ws207-p002): PWM1 fed by a legacy DMA channel.
 CONFIG_DRIVER_BCM2711_AUDIO ?= $(if $(filter rpi4,$(ZEDBSD_PLATFORM)),y,n)
@@ -764,6 +769,7 @@ ZEDBSD_CONFIG_CPPFLAGS := \
 	-DCONFIG_DRIVER_PCI_INTEL_AX211=$(if $(filter y,$(CONFIG_DRIVER_PCI_INTEL_AX211)),1,0) \
 	-DCONFIG_DRIVER_BCM2711_GENET=$(if $(filter y,$(CONFIG_DRIVER_BCM2711_GENET)),1,0) \
 	-DCONFIG_DRIVER_BCM2711_GPU=$(if $(filter y,$(CONFIG_DRIVER_BCM2711_GPU)),1,0) \
+	-DCONFIG_DRIVER_POWERVR=$(if $(filter y,$(CONFIG_DRIVER_POWERVR)),1,0) \
 	-DCONFIG_DRIVER_BCM2711_AUDIO=$(if $(filter y,$(CONFIG_DRIVER_BCM2711_AUDIO)),1,0) \
 	-DCONFIG_DRIVER_BCM2711_WIFI=$(if $(filter y,$(CONFIG_DRIVER_BCM2711_WIFI)),1,0) \
 	-DCONFIG_DRIVER_BCM2711_BT=$(if $(filter y,$(CONFIG_DRIVER_BCM2711_BT)),1,0) \

@@ -44,6 +44,16 @@
 #define VF2_CCACHE_FLUSH64_END		(VF2_CCACHE_FLUSH64 + 8U)
 
 /*
+ * The distance from the memory port's DRAM to the same DRAM seen through
+ * the system port, which the processor reaches without caching.
+ *
+ * Values referenced: StarFive JH7110 TRM Preliminary V2, Table 2-4
+ * System Memory Map (DDR for memory port at 0x00_4000_0000, DDR for
+ * system port at 0x04_4000_0000).
+ */
+#define VF2_UNCACHED_ALIAS_OFFSET	0x400000000ULL
+
+/*
  * The boot parameter that has the early console draw on the screen without
  * flushing, to find out whether the display sees the processor's cache.
  */
@@ -285,6 +295,37 @@ hal_dcache_clean_invalidate_range(
 {
 	/* Writes back and discards every line of the range. */
 	flush_range(address, size);
+}
+
+/*
+ * Reports the distance from RAM to its uncached alias.
+ *
+ * The alias is offered only with the cache controller: a view that is
+ * kept apart from the caches needs the lines written back and discarded
+ * around it, which only the controller can do.
+ */
+uint64_t
+riscv64_board_uncached_offset(
+	void)
+{
+	/* Without the controller the alias cannot be kept coherent. */
+	if (board_flush64 == NULL)
+		return 0;
+
+	/* Succeeded: the system port's alias. */
+	return VF2_UNCACHED_ALIAS_OFFSET;
+}
+
+/*
+ * Writes back and discards every cached line of a physical range.
+ */
+void
+riscv64_board_flush_physical(
+	uint64_t physical,
+	uint64_t size)
+{
+	/* Each line through the controller's flush register. */
+	flush_physical(physical, size);
 }
 
 /*

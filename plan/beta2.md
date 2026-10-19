@@ -31,6 +31,8 @@
 | U23 | 5320（Tiger Lake） | main の WS245 の merge（2026-10-17）以降の amd64 の image | 起動、backlight、suspend と戻り | 今までと同じに動く（Tiger Lake の Type-C も新しい code で動かすようにした） |
 | U24 | SV7（Gen9、10.0.10.27） | T1 が main 7f48ed5b2 以降で作る（T1-710） | USB の zedBSD で起動して電源を入れておく（ssh が届くように） | T1 が Gen9 の display の書き直し（WS260）の回帰を自動で流す。画面は撮れないので、desktop が内蔵の画面に出るかの目視があれば |
 | U25 | 5330（10.0.30.3） | 同上（T1-710） | ZEDBSD の区画の USB 記憶を挿しておく（今は外れている） | T1 が display 13 の回帰を自動で流す（WS260 で xd に display 9 を足した後に壊れていないか） |
+| U26 | RG350（OpenDingux の microSD） | `build/uat/rg350/UZIMAGE.BAK`（main 7adce0d6d、WS273 p003、6,133,704 byte、sha256 12a5d7b9c34bc8f4…） | 先に card の第 1 区画が FAT32 か、既存の `UZIMAGE.BAK`・`VMLINUZ.BAK` があれば退避。`UZIMAGE.BAK` を第 1 区画に置き、**Y ボタン（PE28）を押しながら**電源を入れる（Select は押さない）。X で OpenDingux が起動したら X も試す | backlight が点き、PB30 の LED が 1・2・3 回の点滅を順に繰り返す（その後は止まったままで正常、timer・LCD は未実装）。点滅の間隔、長い 1 回＋短い n 回の点滅（例外の印、n を数える）が出たらその n。OpenDingux が普通に起動したら zedBSD は読まれていない。写真か動画で返す（2026-10-19 ユーザー D7「承認する」） |
+| U27 | VisionFive 2（SD 起動、framebuffer で目視） | main 41dd20993 以降で `make ZEDBSD_CONFIG=config/ci/config-visionfive2.mk` の image（powervr の driver と firmware 入り、build の時に LICENSE.powervr に同意） | 起動して画面を見る | 画面に `powervr: BXE 36.50.54.182 at <rate> Hz, ALIAS OK` の 1 行（ALIAS MISMATCH・UNAVAILABLE や BVNC の違いならその行をそのまま）、その後 login prompt まで進む（WS269 p004） |
 
 ## 日程
 

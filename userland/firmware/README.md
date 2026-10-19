@@ -19,7 +19,7 @@ driver is turned on, and drops it when no driver that is on needs it any more
 image is built.
 
 The entries are `rtl8822b/`, `intelax211/`, `intelbt/`, `i915/`, `brcmbt/`,
-`bcm43455/`, and `nvidia-gsp/`; future
+`bcm43455/`, `nvidia-gsp/`, and `powervr/`; future
 RTL8822C support owns a separate `rtl8822c/` entry. RTL8822B uses its frozen GitHub
 acquisition mirror. AX211 uses the official `linux-firmware` tag `20260410`
 dereferenced commit and installs the exact `-89.ucode`, PNVM, complete Intel
@@ -85,6 +85,26 @@ binaries solely for use on an operating system under an OSI-approved open
 source license, with a copy of the license, and forbids reverse engineering
 and translation; nvrtx reads only the container headers needed to place the
 images.
+`powervr/` (package `powervr-firmware`) installs Imagination's PowerVR Rogue
+firmware 1.1.OS@6976702 for the BXE-4-32 (BVNC 36.50.54.182) of the
+VisionFive 2's StarFive JH7110, which the powervr driver loads
+(`CONFIG_DRIVER_POWERVR`, plan/ws269/design.md sections 3.3 and 4):
+`powervr/rogue_36.50.54.182_v1.fw`, together with the complete
+`LICENSE.powervr`, WHENCE, and manifest. The file is not in kernel.org's
+linux-firmware; the upstream is Imagination's fork
+`gitlab.freedesktop.org/imagination/linux-firmware`, branch `powervr`, pinned
+to commit `8a58f81883f7be458daa34e418cc4079f995b279`, and the zedBSD firmware
+repository keeps the same bytes below `powervr/`. `LICENSE.powervr` permits
+redistribution of the unmodified binary with its notice and disclaimer, only
+for use with products licensed by Imagination. **It forbids reverse
+engineering, decompilation and disassembly: do not disassemble this firmware.**
+The driver is developed from the firmware's trace buffer, its interface's
+replies and register values alone. The driver is not built yet; when its catalog
+row is added (plan/ws269, p004, on by default for the VisionFive 2), its
+`config/drivers/firmware.list` row makes selecting it select the package.
+Until then the package is chosen in the Firmware menu. The license is accepted
+when the image is built. The kernel reads the file from the root file system, which is built from the
+same tree for every root image.
 Every entry is default-off, and ordinary builds perform no firmware fetch.
 
 Every file a package fetches is also kept, byte for byte and with its license

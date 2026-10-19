@@ -88,6 +88,31 @@ riscv64_board_describe(
 }
 
 /*
+ * Reports that the board has no uncached alias of RAM: its devices snoop
+ * the caches, so nothing needs one.
+ */
+uint64_t
+riscv64_board_uncached_offset(
+	void)
+{
+	/* No alias exists. */
+	return 0;
+}
+
+/*
+ * Writes back and discards the lines of a physical range: nothing, as the
+ * board's devices snoop the caches.
+ */
+void
+riscv64_board_flush_physical(
+	uint64_t physical,
+	uint64_t size)
+{
+	UNUSED_PARAMETER(physical);
+	UNUSED_PARAMETER(size);
+}
+
+/*
  * Writes cached lines of a range back to memory; the board's devices
  * snoop the caches, so there is nothing to do.
  */

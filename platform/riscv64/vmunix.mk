@@ -41,7 +41,8 @@ RISCV64_BOOT_C := src/hal/riscv64/cmain.c src/hal/riscv64/bootinfo.c \
 	src/hal/riscv64/fdt.c src/hal/riscv64/sbi.c src/hal/riscv64/percpu.c \
 	src/hal/riscv64/smp.c src/hal/riscv64/int.c src/hal/riscv64/irq.c \
 	src/hal/riscv64/plic.c src/hal/riscv64/clock.c src/hal/riscv64/page.c \
-	src/hal/riscv64/space.c src/hal/riscv64/task.c src/hal/riscv64/debug.c \
+	src/hal/riscv64/space.c src/hal/riscv64/window.c src/hal/riscv64/task.c \
+	src/hal/riscv64/debug.c \
 	src/hal/riscv64/asm.c src/hal/riscv64/lib.c \
 	src/hal/riscv64/loader.c src/hal/riscv64/cons.c \
 	src/hal/riscv64/fbcons.c src/hal/riscv64/font.c \
@@ -79,6 +80,14 @@ RISCV64_PLATFORM_SOURCES_visionfive2 := src/kern/platform/visionfive2.c \
 ifeq ($(CONFIG_VF2_DMA_TEST),y)
 RISCV64_PLATFORM_SOURCES_visionfive2 += src/drivers/platform/visionfive2/vf2-dmatest.c \
 	src/drivers/platform/visionfive2/vf2-dmatest-core.c
+endif
+
+# The VisionFive 2's PowerVR GPU core: the power management unit, the
+# core's glue and the driver's early stage.
+ifeq ($(CONFIG_DRIVER_POWERVR),y)
+RISCV64_PLATFORM_SOURCES_visionfive2 += src/drivers/platform/visionfive2/vf2-pmu.c \
+	src/drivers/platform/visionfive2/vf2-gpu.c \
+	src/drivers/gpu/powervr/powervr.c
 endif
 
 # The VisionFive 2's first Ethernet port: the DesignWare Ethernet QoS

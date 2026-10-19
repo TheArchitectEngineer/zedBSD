@@ -3,7 +3,7 @@
 # ws275-p002 loader の firmware framebuffer・i8042、boot.h、HAL の名前付きの値と早期の console
 
 - 親: [ws275](../ws.md)、Queue: q1311 / q1311-i01（P1、2026-10-19）
-- Status: cleared 待ち（ユーザーの sparcv9 の差分の確認の後、Q1 が merge して cleared。実装・build・host 試験済み、p002b の T1-743 観察済み 2026-10-19）
+- Status: cleared（2026-10-19 Q1 の判定: T1-743 で handoff の値と 3 条件の画面を観察、Q1 の判定で条件 1〜6 を満たす。ユーザーの「全部 merge する」で main に merge（50bd10c5f）。QEMU のみ・実機は未実施）
 - 設計: [design.md](../design.md) §4.2・§4.4・§4.5・§6、HAL の差分 [proposed/hal-sun4u-names.md](../proposed/hal-sun4u-names.md)（2026-10-19 19:12 ユーザー「改訂 3 で承認」）
 
 ## 受け入れの条件

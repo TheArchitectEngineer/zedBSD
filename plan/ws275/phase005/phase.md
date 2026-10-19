@@ -3,7 +3,7 @@
 # ws275-p005 userland の config・Makefile・vmunix.mk・libX11 の BE、build
 
 - 親: [ws275](../ws.md)、Queue: q1318 / q1318-i01（P1、2026-10-19）
-- Status: cleared 待ち（実装・build warning 0・host 試験 PASS、2026-10-19 P1。QEMU の確認は p006 の T1 の依頼（下）。sparcv9 の差分はユーザーに見せてから merge）
+- Status: cleared（2026-10-19 Q1 の判定: build warning 0・host 試験 PASS（X の動作は p006、BUG-337）。ユーザーの「全部 merge する」で main に merge（50bd10c5f）。QEMU のみ・実機は未実施）
 - 設計: [design.md](../design.md) §4.6・§4.7・§5・§6・§7、決定 D6
 
 ## 受け入れの条件

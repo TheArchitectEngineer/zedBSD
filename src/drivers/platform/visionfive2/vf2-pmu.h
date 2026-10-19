@@ -1,0 +1,51 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The JH7110's power management unit.
+ *
+ * The unit switches the SoC's power domains.  Only the GPU's outer domain
+ * is switched from here; every other domain (the CPUs', the display's,
+ * the codecs') stays as the firmware left it.
+ */
+
+#ifndef KERN_DRIVERS_VF2_PMU_H
+#define KERN_DRIVERS_VF2_PMU_H
+
+#include <drivers/generic/fdt.h>
+
+/*
+ * The GPU's outer power domain, as the device tree's power-domains
+ * property numbers it.  The inner domain is the GPU's own firmware's.
+ *
+ * Value referenced:
+ * Linux v6.12 include/dt-bindings/power/starfive,jh7110-pmu.h
+ * (JH7110_PD_GPUA 2).
+ */
+#define DRV_VF2_PD_GPU	2U
+
+/*
+ * Finds the power management unit in the device tree and maps it.
+ *
+ * Touches no register.  ENODEV means the tree has no unit.
+ */
+int drv_vf2_pmu_init(const struct drv_fdt *fdt);
+
+/*
+ * Turns a power domain on or off and waits until the unit reports it so.
+ *
+ * Only DRV_VF2_PD_GPU is accepted (EPERM for the others).  ETIMEDOUT
+ * means the unit's state did not follow.
+ */
+int drv_vf2_pmu_set_power(unsigned domain, int on);
+
+/*
+ * Reports whether a power domain is on.
+ */
+int drv_vf2_pmu_powered(unsigned domain, int *on);
+
+#endif

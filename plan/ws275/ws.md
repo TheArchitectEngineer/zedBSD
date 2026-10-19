@@ -3,7 +3,7 @@
 # WS275 sun4u（sparcv9）に /dev/graphics を実装し、Xzed を動かす
 
 - ID: ws275、Master: [master.md](../master.md)、Primary Milestone: MG008
-- Status: incomplete（p001 を P1、q1303。旧: planning（2026-10-19 18:18 Q1 作成）
+- Status: incomplete（2026-10-19 停止: ユーザー「sun4uはバグの原因がわからなければBUGチケットに積んでいったんやめます。」。p001〜p005 cleared、ユーザーの「全部 merge する」で main に merge（50bd10c5f）。p006 は BUG-337 で uncleared、p007 planned）
 - 起点（2026-10-19 ユーザー）:「では、sun4uでも/dev/graphicsを実装して、Xzedが動くようにします。」（WS267 で入れた QEMU sun4u の VGA の framebuffer の console の上に）
 - 前提（Q1 の調べ）: /dev/graphics は今 pcat（src/drivers/platform/pcat/graphics/）と pc98 にある（include/uapi/graphics.h、docs/reference/control-devices.md）。Xzed は userland/x11/xzed（platform は *、既定は n）。sun4u の HAL は bsp-sun4u の framebuffer.c（std VGA）。sparcv9 は big endian の 64 bit で、pixel の並びと入力（keyboard・mouse）の道を設計で確かめる。sparcv9 はユーザーの担当の領域なので、変える file は設計で示す。
 - 決定（2026-10-19 18:25 ユーザー）: 「私のSunBlade 150にはXVR-500か600がついているようです。大したアクセラレーションがついたボードとは思えないので、OpenBootが用意したframebufferを使うのがコンソールとしてはいいですね。/dev/graphicsはfirmware framebufferにします。」 → console と /dev/graphics は OpenBoot が用意した firmware framebuffer（OBP の screen の node の property）を使う。QEMU sun4u も OpenBIOS の property から読む形に揃える。card の driver（XVR-500/600 など）は範囲外。実機の候補は Sun Blade 150。
@@ -25,10 +25,10 @@
 | Phase | 目的 | 依存 | 状態 |
 | --- | --- | --- | --- |
 | p001 | 設計（[design.md](design.md)）と design-reviewer | — | cleared（改訂 3.1、2026-10-19 P1 q1311、Q1 の判定: design-review-3 の結論） |
-| p002 | loader（display の node・property・qext・`color!`・i8042、`ofw.h`）、boot.h と HAL の名前付きの値（fallback の時も）、HAL の早期の console | p001、HAL の承認（改訂 3 の文面）、D4・D6・D7 | cleared 待ち（[phase.md](phase002/phase.md)、条件 1〜6 は満たす（Q1 判定、T1-743）。ユーザーの sparcv9 の差分の確認の後、Q1 が merge して cleared） |
+| p002 | loader（display の node・property・qext・`color!`・i8042、`ofw.h`）、boot.h と HAL の名前付きの値（fallback の時も）、HAL の早期の console | p001、HAL の承認（改訂 3 の文面）、D4・D6・D7 | cleared（2026-10-19、T1-743） |
 | p002b | T1 の観察（gdbstub で handoff の値、`-g` x8・x32・既定の 3 条件の PNG） | p002 | 観察済み（T1-743、2026-10-19、QEMU のみ。qext の実値・色の順は未確認で p004 以降） |
-| p003 | generic の前段（登録・優先度・行の分割）と host 試験 | p002b、D1 | cleared 待ち（[phase.md](phase003/phase.md)、host 試験 PASS・build warning 0、P1 q1312） |
-| p004 | firmware fb の backend、text の console と出力の道、8042 の共有と sun4u の poll、evdev、sun4u.c | p003、D2・D5・D6 | cleared 待ち（[phase.md](phase004/phase.md)、build warning 0・host 試験 PASS、P1 q1314。T1 の依頼あり、sparcv9 の差分はユーザーの確認の後に merge） |
-| p005 | userland の config・Makefile・vmunix.mk・libX11 の BE、build（warning 0） | p004、D6 | cleared 待ち（[phase.md](phase005/phase.md)、build warning 0・host 試験 PASS、P1 q1318。T1 の依頼文は p006 用、sparcv9 の差分はユーザーの確認の後に merge） |
-| p006 | T1 の試験（sun4u 8・32 bpp・既定の X、色の画素、mouse、回帰）。T1-746 (2) の client が出ない件の観察 | p005（boot-test の `QEMU_EXTRA`・`mouse:`・`BOOT_TEXT_ORIGINS` は main に入済み） | uncleared（[phase.md](phase006/phase.md)、q1325 P1: code の読みで byte 順の誤りは無し、T1 の観察の依頼文あり） |
+| p003 | generic の前段（登録・優先度・行の分割）と host 試験 | p002b、D1 | cleared（2026-10-19） |
+| p004 | firmware fb の backend、text の console と出力の道、8042 の共有と sun4u の poll、evdev、sun4u.c | p003、D2・D5・D6 | cleared（2026-10-19、T1-745・T1-746 (1)） |
+| p005 | userland の config・Makefile・vmunix.mk・libX11 の BE、build（warning 0） | p004、D6 | cleared（2026-10-19、build・host） |
+| p006 | T1 の試験（sun4u 8・32 bpp・既定の X、色の画素、mouse、回帰）。T1-746 (2) の client が出ない件の観察 | p005（boot-test の `QEMU_EXTRA`・`mouse:`・`BOOT_TEXT_ORIGINS` は main に入済み） | uncleared（BUG-337、2026-10-19 停止） |
 | p007 | 規約の全文の見直し | p006 | planned |

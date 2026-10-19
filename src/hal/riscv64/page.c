@@ -18,6 +18,7 @@
 #include <hal/hal.h>
 #include "asm.h"
 #include "bootinfo.h"
+#include "bsp.h"
 #include "defs.h"
 #include "page.h"
 #include "space.h"
@@ -78,6 +79,7 @@ static uint32_t next_occupied(uint32_t page, uint32_t end);
 static void claim_run(uint32_t first, uint32_t count);
 static int alloc_ram(size_t size, size_t alignment, hal_physaddr_t max_paddr, size_t boundary, hal_physaddr_t *block);
 static int free_ram(hal_physaddr_t *block, size_t size);
+static bool range_is_managed(uint64_t physical, uint64_t size);
 
 /*
  * Builds the page bitmap from the device tree's memory and reservations.
@@ -401,8 +403,18 @@ hal_pmem_get_total_size(
 }
 
 /*
- * Refuses an uncached view of RAM: the cache behaviour of memory is fixed
- * by the platform here, not by the page tables.
+ * Maps managed RAM a second time, uncached, through the board's alias.
+ *
+ * A board whose memory is also reached uncached at a fixed offset (the
+ * JH7110's system port) offers the view: the range's cached lines are
+ * written back and discarded first, then the alias of each of its pages
+ * is made reachable in the device window, page by page, so no other
+ * memory's alias becomes reachable with it.  A board without such an
+ * alias refuses the view.
+ *
+ * The view is uncached memory, not ordinary memory: a caller uses plain
+ * loads and stores on it, never LR/SC or AMO, whose behaviour on the
+ * alias the platform does not promise.
  */
 int
 hal_pmem_map_uncached(
@@ -410,27 +422,95 @@ hal_pmem_map_uncached(
 	size_t size,
 	void **vaddr)
 {
-	UNUSED_PARAMETER(paddr);
-	UNUSED_PARAMETER(size);
-	UNUSED_PARAMETER(vaddr);
+	uint64_t offset;
+	uint64_t alias;
+	bool managed;
+	int error;
 
-	/* Failed: no such view exists on this port. */
-	return HAL_ERR_UNSUPPORTED;
+	/* Refuses the view on a board without an uncached alias. */
+	offset = riscv64_board_uncached_offset();
+	if (offset == 0)
+		return HAL_ERR_UNSUPPORTED;
+
+	/* Requires a destination and a non-empty page-aligned range. */
+	if (vaddr == NULL || size == 0)
+		return HAL_ERR_INVALID;
+	if (((uint64_t)paddr & (RISCV64_PAGE_SIZE - 1U)) != 0)
+		return HAL_ERR_INVALID;
+	if (((uint64_t)size & (RISCV64_PAGE_SIZE - 1U)) != 0)
+		return HAL_ERR_INVALID;
+
+	/* Refuses a range that is not managed RAM. */
+	managed = range_is_managed((uint64_t)paddr, (uint64_t)size);
+	if (!managed)
+		return HAL_ERR_INVALID;
+
+	/* Refuses an alias the device window does not reach. */
+	alias = (uint64_t)paddr + offset;
+	if (alias >= RISCV64_DEVICE_LIMIT || (uint64_t)size > RISCV64_DEVICE_LIMIT - alias)
+		return HAL_ERR_INVALID;
+
+	/* Writes back and discards the range's lines, so none can overwrite the alias's stores. */
+	riscv64_board_flush_physical((uint64_t)paddr, (uint64_t)size);
+
+	/* Makes the alias of each page of the range reachable. */
+	error = riscv64_space_map_alias(alias, (uint64_t)size);
+	if (error != HAL_OK)
+		return error;
+
+	/* Succeeded: the range is reachable uncached in the device window. */
+	*vaddr = (void *)(uintptr_t)(RISCV64_DEVICE_BASE + alias);
+	return HAL_OK;
 }
 
 /*
- * Refuses to remove an uncached view, which this port never makes.
+ * Ends the use of an uncached view made by hal_pmem_map_uncached().
+ *
+ * The range's lines are written back and discarded, so a line the direct
+ * map brought in speculatively while the view was used is gone and the
+ * direct map reads what is in RAM.  The alias's page leaves stay: they
+ * reach only this RAM, which holds no cache state through them, so no
+ * TLB shootdown is needed.
  */
 int
 hal_pmem_unmap_uncached(
 	void *vaddr,
 	size_t size)
 {
-	UNUSED_PARAMETER(vaddr);
-	UNUSED_PARAMETER(size);
+	uint64_t address;
+	uint64_t offset;
+	uint64_t physical;
+	bool managed;
 
-	/* Failed: no such view exists on this port. */
-	return HAL_ERR_UNSUPPORTED;
+	/* Refuses the call on a board that never makes the view. */
+	offset = riscv64_board_uncached_offset();
+	if (offset == 0)
+		return HAL_ERR_UNSUPPORTED;
+
+	/* Requires a non-empty range. */
+	address = (uint64_t)(uintptr_t)vaddr;
+	if (size == 0)
+		return HAL_ERR_INVALID;
+
+	/* Refuses an address outside the device window. */
+	if (address < RISCV64_DEVICE_BASE || address - RISCV64_DEVICE_BASE >= RISCV64_DEVICE_LIMIT)
+		return HAL_ERR_INVALID;
+
+	/* Turns the alias back into the RAM it shows. */
+	if (address - RISCV64_DEVICE_BASE < offset)
+		return HAL_ERR_INVALID;
+	physical = address - RISCV64_DEVICE_BASE - offset;
+
+	/* Refuses an address that is not the alias of managed RAM. */
+	managed = range_is_managed(physical, (uint64_t)size);
+	if (!managed)
+		return HAL_ERR_INVALID;
+
+	/* Writes back and discards the range's lines. */
+	riscv64_board_flush_physical(physical, (uint64_t)size);
+
+	/* Succeeded: the range is reachable through the direct map alone. */
+	return HAL_OK;
 }
 
 /*
@@ -868,4 +948,25 @@ free_ram(
 
 	/* Succeeded: the pages are free. */
 	return HAL_OK;
+}
+
+/* Reports whether a range lies wholly in the span of managed RAM. */
+static bool
+range_is_managed(
+	uint64_t physical,
+	uint64_t size)
+{
+	uint64_t span;
+
+	/* Refuses a range below the span or one that wraps. */
+	if (physical < ram_base || physical > ~0ULL - size)
+		return false;
+
+	/* Refuses a range that runs past the span's end. */
+	span = (uint64_t)ram_pages * RISCV64_PAGE_SIZE;
+	if (physical - ram_base > span || size > span - (physical - ram_base))
+		return false;
+
+	/* Succeeded: the range is managed RAM. */
+	return true;
 }
