@@ -71,6 +71,7 @@
 
 static void put32(volatile uint8_t *bytes, uint32_t value);
 static void put64(volatile uint8_t *bytes, uint64_t value);
+static int page_held(const uint64_t *map, uint32_t page);
 
 /*
  * Reports the processor's address of a heap offset.
@@ -240,6 +241,116 @@ powervr_mips_remap_target(
 
 	/* Succeeded: the register value. */
 	return target;
+}
+
+/*
+ * Takes the first run of free pages of the general part long enough for
+ * a block, and reports its first page.
+ */
+int
+powervr_heap_pages_take(
+	uint64_t map[POWERVR_HEAP_MAP_WORDS],
+	uint32_t pages,
+	uint32_t *first)
+{
+	uint32_t start;
+	uint32_t length;
+	uint32_t page;
+	int held;
+
+	/* Refuses an empty run and one longer than the general part. */
+	if (pages == 0U || pages > POWERVR_HEAP_GENERAL_PAGES)
+		return EINVAL;
+
+	/* Walks the pages, growing a run of free ones and restarting it after each held page. */
+	start = 0;
+	length = 0;
+	for (page = 0; page < POWERVR_HEAP_GENERAL_PAGES; page++) {
+		held = page_held(map, page);
+		if (held) {
+			start = page + 1U;
+			length = 0;
+			continue;
+		}
+
+		/* Stops once the run is long enough. */
+		length++;
+		if (length == pages)
+			break;
+	}
+
+	/* No run is long enough. */
+	if (length != pages)
+		return ENOMEM;
+
+	/* Marks the run held. */
+	for (page = start; page < start + pages; page++)
+		map[page / 64U] |= 1ULL << (page % 64U);
+
+	/* Succeeded: the run's first page. */
+	*first = start;
+	return 0;
+}
+
+/*
+ * Takes a given run of pages of the general part.
+ */
+int
+powervr_heap_pages_claim(
+	uint64_t map[POWERVR_HEAP_MAP_WORDS],
+	uint32_t first,
+	uint32_t pages)
+{
+	uint32_t page;
+	int held;
+
+	/* Refuses a run outside the general part. */
+	if (first >= POWERVR_HEAP_GENERAL_PAGES || pages > POWERVR_HEAP_GENERAL_PAGES - first)
+		return EINVAL;
+
+	/* Refuses the run when any page of it is held, before marking anything. */
+	for (page = first; page < first + pages; page++) {
+		held = page_held(map, page);
+		if (held)
+			return EEXIST;
+	}
+
+	/* Marks the run held. */
+	for (page = first; page < first + pages; page++)
+		map[page / 64U] |= 1ULL << (page % 64U);
+
+	/* Succeeded: the run is the caller's. */
+	return 0;
+}
+
+/*
+ * Gives back a run of pages taken earlier.
+ */
+void
+powervr_heap_pages_give(
+	uint64_t map[POWERVR_HEAP_MAP_WORDS],
+	uint32_t first,
+	uint32_t pages)
+{
+	uint32_t page;
+
+	/* Clears the run's bits; pages past the general part were never tracked. */
+	for (page = first; page < first + pages && page < POWERVR_HEAP_GENERAL_PAGES; page++)
+		map[page / 64U] &= ~(1ULL << (page % 64U));
+}
+
+/* Reports whether a page of the general part is held. */
+static int
+page_held(
+	const uint64_t *map,
+	uint32_t page)
+{
+	/* The page's bit. */
+	if ((map[page / 64U] & (1ULL << (page % 64U))) != 0U)
+		return 1;
+
+	/* The page is free. */
+	return 0;
 }
 
 /* Stores a little-endian 32-bit field a byte at a time. */

@@ -25,6 +25,7 @@ static int make_run(struct powervr_heap *heap, uint32_t size, struct powervr_obj
 static void drop_run(struct powervr_object *object);
 static void clear_view(volatile uint8_t *view, uint32_t size);
 static int place_block(struct powervr_heap *heap, uint32_t size, uint32_t heap_offset, uint32_t *placed);
+static void release_place(struct powervr_heap *heap, uint32_t heap_offset, uint32_t size);
 
 /*
  * Sets up the heap and its empty page table.
@@ -60,7 +61,6 @@ powervr_heap_fini(
 {
 	/* Returns the table's run. */
 	drop_run(&heap->table);
-	heap->next_offset = 0;
 }
 
 /*
@@ -84,26 +84,25 @@ powervr_object_create(
 		return EINVAL;
 	rounded = (size + POWERVR_MIPS_PAGE_BYTES - 1U) & ~(POWERVR_MIPS_PAGE_BYTES - 1U);
 
-	/* Finds the block's place in the heap. */
+	/* Finds the block's place in the heap, and holds it. */
 	error = place_block(heap, rounded, heap_offset, &placed);
 	if (error != 0)
 		return error;
 
 	/* Takes a contiguous run the core can reach, and its cleared uncached view. */
 	error = make_run(heap, rounded, object);
-	if (error != 0)
+	if (error != 0) {
+		release_place(heap, placed, rounded);
 		return error;
+	}
 
 	/* Maps the run at its place; the processor caches only what the caller allows. */
 	error = powervr_mips_map((volatile uint32_t *)heap->table.view, placed, object->run.paddr, rounded, caching, heap->bus_bits);
 	if (error != 0) {
 		drop_run(object);
+		release_place(heap, placed, rounded);
 		return error;
 	}
-
-	/* Moves the cursor past a block placed at or above it in the general part. */
-	if (placed < POWERVR_HEAP_GENERAL_BYTES && placed + rounded > heap->next_offset)
-		heap->next_offset = placed + rounded;
 
 	/* Succeeded: the block is mapped and zeroed. */
 	object->heap_offset = placed;
@@ -119,12 +118,31 @@ powervr_object_destroy(
 	struct powervr_heap *heap,
 	struct powervr_object *object)
 {
+	uint32_t heap_offset;
+	uint32_t size;
+
 	/* A block with no view holds nothing. */
 	if (object->view == NULL)
 		return;
 
-	/* Removes the block from the processor's table, then returns the run. */
-	powervr_mips_unmap((volatile uint32_t *)heap->table.view, object->heap_offset, object->size);
+	/* Removes the block from the processor's table, returns the run, then frees its place. */
+	heap_offset = object->heap_offset;
+	size = object->size;
+	powervr_mips_unmap((volatile uint32_t *)heap->table.view, heap_offset, size);
+	drop_run(object);
+	release_place(heap, heap_offset, size);
+}
+
+/*
+ * Returns a block's memory without touching the page table it was mapped
+ * in, for a block outliving its heap: the firmware is stopped and the
+ * table gone or made anew.
+ */
+void
+powervr_object_drop(
+	struct powervr_object *object)
+{
+	/* Ends the view and returns the run; a block with no view holds nothing. */
 	drop_run(object);
 }
 
@@ -282,7 +300,10 @@ clear_view(
 		words[index] = 0;
 }
 
-/* Finds a block's place: the one asked for, or the next free one of the general part. */
+/*
+ * Finds a block's place: the one asked for, or the first free run of the
+ * general part; a place in the general part is held until released.
+ */
 static int
 place_block(
 	struct powervr_heap *heap,
@@ -290,11 +311,17 @@ place_block(
 	uint32_t heap_offset,
 	uint32_t *placed)
 {
-	/* A block anywhere follows the cursor and must end inside the general part. */
+	uint32_t first;
+	uint32_t pages;
+	int error;
+
+	/* A block anywhere takes the first run of the general part that fits. */
+	pages = size / POWERVR_MIPS_PAGE_BYTES;
 	if (heap_offset == POWERVR_HEAP_ANYWHERE) {
-		if (size > POWERVR_HEAP_GENERAL_BYTES - heap->next_offset)
-			return ENOMEM;
-		*placed = heap->next_offset;
+		error = powervr_heap_pages_take(heap->pages, pages, &first);
+		if (error != 0)
+			return error;
+		*placed = first * POWERVR_MIPS_PAGE_BYTES;
 		return 0;
 	}
 
@@ -304,11 +331,31 @@ place_block(
 	if (heap_offset >= POWERVR_HEAP_BYTES || size > POWERVR_HEAP_BYTES - heap_offset)
 		return EINVAL;
 
-	/* Refuses a place in the general part below the cursor, which may be taken. */
-	if (heap_offset < POWERVR_HEAP_GENERAL_BYTES && heap_offset < heap->next_offset)
-		return EEXIST;
+	/* A place in the general part must be free, and is held from here. */
+	if (heap_offset < POWERVR_HEAP_GENERAL_BYTES) {
+		if (size > POWERVR_HEAP_GENERAL_BYTES - heap_offset)
+			return EINVAL;
+		error = powervr_heap_pages_claim(heap->pages, heap_offset / POWERVR_MIPS_PAGE_BYTES, pages);
+		if (error != 0)
+			return error;
+	}
 
 	/* Succeeded: the block goes where it was asked to. */
 	*placed = heap_offset;
 	return 0;
+}
+
+/* Frees a block's place in the general part; places above it were never held. */
+static void
+release_place(
+	struct powervr_heap *heap,
+	uint32_t heap_offset,
+	uint32_t size)
+{
+	/* Only the general part is tracked. */
+	if (heap_offset >= POWERVR_HEAP_GENERAL_BYTES)
+		return;
+
+	/* Gives back the place's pages. */
+	powervr_heap_pages_give(heap->pages, heap_offset / POWERVR_MIPS_PAGE_BYTES, size / POWERVR_MIPS_PAGE_BYTES);
 }
