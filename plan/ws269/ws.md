@@ -22,9 +22,13 @@
 
 | Phase | 中身 | 依存 | Status |
 | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 設計（driver の構成・firmware・userland の Vulkan の道・Phase の分割）。コードは書かない | — | in-progress（改訂 3 が出来た、design-reviewer の差分の確認待ち。2026-10-19 P2、q1316・q1319・q1321、[design.md](design.md)、[レビュー 1](design-review-1.md)・[レビュー 2](design-review-2.md)） |
+| [p001](phase001/phase.md) | 設計（driver の構成・firmware・userland の Vulkan の道・Phase の分割）。コードは書かない | — | cleared（2026-10-19 Q1、改訂 3.1。D は未決） |
 
 残りの Phase は p001 の設計から作る。
+
+## 決定（2026-10-19 22:04 ユーザー、クリック）
+
+D1 (a)、D2 (a)、D3 (a)、D5 (a)、D6 A、D7 (a)（D4 は Guardrail で決まっている）。原文は Master の decisions-log。
 
 ## 資料
 

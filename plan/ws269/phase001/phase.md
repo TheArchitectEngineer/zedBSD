@@ -2,8 +2,8 @@
 
 # ws269-p001 PowerVR BXE-4-32 の driver の設計
 
-- 親: [ws269](../ws.md)、Queue: q1316 / q1316-i01（P2、2026-10-19、版 1）、q1319 / q1319-i01（P2、2026-10-19、改訂 2）
-- Status: in-progress（改訂 3 が出来た、design-reviewer の差分の確認待ち。2026-10-19 P2、q1321、[design.md](../design.md)、レビュー 1 は [design-review-1.md](../design-review-1.md)、レビュー 2 は [design-review-2.md](../design-review-2.md)）
+- 親: [ws269](../ws.md)、Queue: q1316 / q1316-i01（P2、2026-10-19、版 1）、q1319 / q1319-i01（P2、2026-10-19、改訂 2）、q1321（改訂 3）、q1324 / q1324-i01（P2、2026-10-19、改訂 3.1）
+- Status: cleared（2026-10-19 Q1 の判定: design-review-3 の結論「改訂 3.1 で M1・M2・Minor 1・Minor 2 を直せば、Q1 が差分を見るだけで cleared にしてよい」。改訂 3.1（f5840d9dc、merge 10a63b052）で直った事を Q1 が差分で確かめた: display の node は同じ driver の private な lookup（HAL の API は不変）、p006 の試験は MIPS の UFO の道と名付け属性を mainline に揃えた、§3.2 の表、HOST_CACHED を外した（F-113）。ユーザーの判断 D は未決で、p002 の前に聞く）
 
 ## 目的
 

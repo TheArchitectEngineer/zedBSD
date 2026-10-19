@@ -3,7 +3,7 @@
 # WS270 VisionFive 2 で Keiland の desktop を動かし、OS を完全に動かす
 
 - ID: ws270、Master: [master.md](../master.md)、Primary Milestone: MG008
-- Status: planning（2026-10-19 Q1 作成。WS256・WS269 の後）
+- Status: planning（2026-10-19 Q1 作成。2026-10-19 22:04 ユーザーの WS269 D5「(a) 画面なしで先行」: WS269 p010 までは service・seat・input・display の node の claim だけを進め、描画は WS269 p010（GPU の Vulkan）の後。Keiland は GPU の Vulkan 無しで描けない）
 - 起点（2026-10-19 ユーザー）: 「VisionFive2はまずフレームバッファ、SDカードを実装して、rootfsから起動できるところまで持って行きます。USBキーボードで操作できるようにします。LANとサウンドとNVMeも使えるようにします。NVMe SSDがボードにつけてあり、テスト可能です。ここまでのphaseを作ってください。そのあと、PowerVRのドライバを独立WSで作ります。最終的に、VF2でkeilandを動かして、OSを完全に動作させます。」
 - 担当: 未割当。
 

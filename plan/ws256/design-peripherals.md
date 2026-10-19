@@ -354,7 +354,7 @@
 
 ### 3.9 p023 coherency の確かめ
 
-- §2.4 の手順（陽性の対照 → 64 KiB の 8 回 → 逆向き）を、最小の DW AXI DMAC の mem→mem の転送（`dw-axi-dmac.c` の先取り）と試験の cdev `/dev/vf2-dmatest` で流す。結果で `VF2_DMA_DEFAULT_COHERENT` を決め、非 coherent なら同じ Phase で予備 (i)（確保ごとの別名の写像＋FLUSH64、HAL の BSP の実装の変更、hal.h・design.md §2.5 不変）を実装する。
+- §2.4 の手順（陽性の対照 → 64 KiB の 8 回 → 逆向き）を、最小の DW AXI DMAC の mem→mem の転送（`dw-axi-dmac.c` の先取り）と試験の cdev `/dev/vf2-dmatest` で流す。結果で `VF2_DMA_DEFAULT_COHERENT` を決め、非 coherent なら同じ Phase で予備 (i)（確保ごとの別名の写像＋FLUSH64、HAL の BSP の実装の変更、hal.h・design.md §2.5 不変）を実装する。 （予備 (i) の code は WS269 p004 が作って持ち、WS256 は要れば使う。2026-10-19 Q1、q1321）
 - **依存**: p013・p022・#15。**LW**: 3〜4（(i) を実装する時 +2〜3）。
 
 ### 3.10 p025 VF2 の skeleton（p005 から分けた、Minor 6）
