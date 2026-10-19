@@ -9,7 +9,7 @@ Disposition: normal
 
 - 試験の kernel の config（`plan/ws256/tests/vf2-dmatest/`、通常の image には入らない）と `/dev/vf2-dmatest` の cdev。
 - 読むと §2.4 の 0a（別名が同じ DRAM）・0b（stale の検出）・主の試験（64 KiB、offset を 128 KiB ずつ 8 回、両方向）を流し、text で答える。
-- 予備 (i)（非 coherent の時の確保ごとの uncached の別名）は作らない（p023 で非 coherent と出た後の段）。
+- 予備 (i)（非 coherent の時の確保ごとの uncached の別名）は作らない（p023 で非 coherent と出た後の段）。2026-10-19 Q1 の判断: 予備 (i) の code（src/hal/riscv64 の uncached の別名）は WS269 p004 が作って持つ。DMAC が非 coherent なら WS256 はその物を使う（ws269 design.md 改訂 3 §6）。
 
 ## 作った物
 

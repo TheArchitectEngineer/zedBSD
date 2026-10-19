@@ -15,13 +15,14 @@
 
 ## 依存
 
-- [WS256](../ws256/ws.md) の p011（framebuffer の実機）・p013（clock・reset の基盤）・p015（rootfs からの起動の実機）・p020（USB keyboard、画面での試験の操作）・p022（CRG の実機の確かめ）・p023（DMA の coherency と予備 (i) の uncached の別名。GPU は非 coherent を既定にする、[design.md](design.md) §3.2）。
+- [WS256](../ws256/ws.md) の p011（framebuffer の実機）・p013（clock・reset の基盤）・p015（rootfs からの起動の実機）・p020（USB keyboard、画面での試験の操作。p005 以降の実機の判定）・p022（CRG の実機の確かめ）。p004 は p013・p015・p022、p007 は p011 の後（[design.md](design.md) §6）。
+- 予備 (i)（uncached の別名の写像）は WS269 p004 が作って持つ（2026-10-19 Q1 の判断、q1321）。WS256 p023 は DMAC の確かめで要れば WS269 p004 の物を使う。WS256 p023 は WS269 の依存ではない（GPU は非 coherent を既定にする、[design.md](design.md) §3.2）。
 
 ## Phase
 
 | Phase | 中身 | 依存 | Status |
 | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 設計（driver の構成・firmware・userland の Vulkan の道・Phase の分割）。コードは書かない | — | in-progress（改訂 2 が出来た、design-reviewer の差分の確認待ち。2026-10-19 P2、q1316・q1319、[design.md](design.md)、[レビュー 1](design-review-1.md)） |
+| [p001](phase001/phase.md) | 設計（driver の構成・firmware・userland の Vulkan の道・Phase の分割）。コードは書かない | — | in-progress（改訂 3 が出来た、design-reviewer の差分の確認待ち。2026-10-19 P2、q1316・q1319・q1321、[design.md](design.md)、[レビュー 1](design-review-1.md)・[レビュー 2](design-review-2.md)） |
 
 残りの Phase は p001 の設計から作る。
 

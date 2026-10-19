@@ -427,10 +427,10 @@ if [[ -n ${BOOT_THEN:-} ]]; then
 	watch+=(--serial "$serial")
 	while IFS= read -r line; do
 		case $line in
-		type:*) watch+=(--then-type "${line#type:}") ;;
-		keys:*) watch+=(--then-keys "${line#keys:}") ;;
-		mouse:*) watch+=(--then-mouse "${line#mouse:}") ;;
-		expect:*) watch+=(--then-expect "${line#expect:}") ;;
+		type:*) watch+=("--then-type=${line#type:}") ;;
+		keys:*) watch+=("--then-keys=${line#keys:}") ;;
+		mouse:*) watch+=("--then-mouse=${line#mouse:}") ;;
+		expect:*) watch+=("--then-expect=${line#expect:}") ;;
 		'') ;;
 		*)
 			echo "boot-test: unknown BOOT_THEN step: $line" >&2

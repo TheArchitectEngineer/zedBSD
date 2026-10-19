@@ -1,20 +1,28 @@
-案（未適用、この WS では使わない。design.md 版 2 の D3。userland の WS で FR=0 に対応すると決めた時の叩き台）
+案（未適用、この WS では使わない。design.md 版 2.1 の D3。userland の WS で FR=0 に対応すると決めた時の叩き台）
 FR=0（XBurst1 の FPU が FIR.F64=0 の時）の hal_fpregs の意味を定める。適用には差分ごとのユーザーの承認が要る。
-kernel 側の影響: src/kern/ptrace.c の fpreg の写し（FR=0 では偶奇の対の上位を含めて f[2n] に 64 bit で詰める案）。
+形は 1 つに決める: FR=0 では各 entry の下半分に 32 bit の register、上半分は 0。double は偶奇の対（偶数が下の word）。
+FR=0 の save は今の fpregs.S（.set fp=64 の sdc1 を全 32 本）ではなく、32 本を swc1 で各 entry の下半分へ書く別の経路が要る（実装の時に決める）。
+どちらの形かは保存した時の Status.FR で決まる。FIR.F64 は FR=1 にできるかの能力の bit で、kernel は F64 が立つ時は必ず FR=1 で動かす、という約束で fir から形が分かる。
+kernel 側の影響: 今の MIPS の build には src/kern/ptrace.c が入っていない（platform/amd64・arm64 の vmunix.mk だけ）。将来 MIPS で ptrace を build する時、struct fpreg への写しはこの形に従う。
+2026-10-19 版 2.1: レビュー 2 の Minor 3 で hunk の header（旧 7 行・新 11 行で壊れていた）と記述の食い違いを直した。`git apply --check` で確かめた。
 
 --- a/include/hal/arch/mips32.h
 +++ b/include/hal/arch/mips32.h
-@@ -133,9 +133,13 @@
+@@ -130,9 +130,14 @@
+ };
+ 
  /*
 - * The floating-point state: the thirty-two 64-bit registers the unit has
 - * with Status.FR set, its control and status register and its
 - * implementation register.
 + * The floating-point state, its control and status register and its
-+ * implementation register.  With Status.FR set each of the thirty-two
-+ * entries holds one 64-bit register.  With Status.FR clear (a unit
-+ * without 64-bit registers) each entry holds one 32-bit register in its
-+ * low half, the high half is zero, and an even/odd pair forms one
-+ * double; fir tells the two forms apart.
++ * implementation register.  The form of f follows the mode the unit ran
++ * in, Status.FR, which the kernel sets whenever fir reports 64-bit
++ * registers (FIR.F64).  With Status.FR set each of the thirty-two
++ * entries holds one 64-bit register.  With Status.FR clear each entry
++ * holds one 32-bit register in its low half with the high half zero,
++ * and a double lives in an even/odd pair, its low word in the even
++ * entry and its high word in the odd one.
   */
  struct hal_fpregs {
  	uint64_t f[32];

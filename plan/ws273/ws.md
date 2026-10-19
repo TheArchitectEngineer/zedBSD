@@ -13,11 +13,15 @@
 1. RG350 の実機で kernel が起動し、内蔵の LCD に console が出る。
 2. 範囲（SD の root、login、入力のボタン）は p001 の設計で決める。
 
+## 決定（2026-10-19 21:00 ユーザー、クリック）
+
+機種 RG350（320×240）。D1 A（UZIMAGE.BAK）、D2 A、D3 A、D4 A、D5 B、D6 A、D7 承認（実機の目視・写真を証拠、Guardrail の表）、D8 A（mips32.h の comment の差分を承認、Guardrail の表）。原文は Master の decisions-log。
+
 ## Phase
 
 | Phase | 中身 | 依存 | Status |
 | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 設計（起動の道・LCD・SD・入力・Phase の分割）。コードは書かない | WS271 | in-progress（改訂 2 が出来た、design-reviewer の差分の確認待ち。版 1 2026-10-19 P2 q1317、改訂 2 2026-10-19 P1 q1320） |
+| [p001](phase001/phase.md) | 設計（起動の道・LCD・SD・入力・Phase の分割）。コードは書かない | WS271 | cleared（2026-10-19 Q1、改訂 2.1。D1〜D8 は未決） |
 
 残りの Phase は p001 の設計から作る。
 
