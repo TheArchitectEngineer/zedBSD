@@ -101,7 +101,12 @@ mips_cmain(
 	mips_clock_init();
 	wait_for_ticks();
 
-	/* Hands the ticks to the kernel and enters it; it never returns. */
+	/*
+	 * Hands the ticks to the kernel and enters it with interrupts off:
+	 * the kernel turns them on once what a tick reaches is set up.  It
+	 * never returns.
+	 */
+	(void)mips_irq_save();
 	mips_clock_start_kernel();
 	kernel_entry(mips_board_kernel_handoff());
 	HAL_FATAL("mips kernel_entry returned");
