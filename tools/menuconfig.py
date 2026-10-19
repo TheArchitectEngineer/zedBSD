@@ -31,6 +31,7 @@ PLATFORMS = [
     ("ppc64-pseries", "ppc64", "pseries", "QEMU pseries PowerPC 64"),
     ("mips32-malta", "mips32", "malta", "QEMU malta MIPS32 little-endian"),
     ("mips64-malta", "mips64", "malta", "QEMU malta MIPS64 little-endian"),
+    ("mips32-rg350", "mips32", "rg350", "Anbernic RG350 (Ingenic JZ4770)"),
 ]
 
 BOARD_LABELS = {
@@ -44,6 +45,7 @@ BOARD_LABELS = {
     "mac99": "QEMU mac99",
     "pseries": "QEMU pseries",
     "malta": "QEMU malta",
+    "rg350": "Anbernic RG350",
 }
 
 # Variant is a board-owned image-layout choice.  It deliberately does not
@@ -69,6 +71,7 @@ BOARD_VARIANTS = {
     ("ppc64", "pseries"): [("default", "Default")],
     ("mips32", "malta"): [("default", "Default")],
     ("mips64", "malta"): [("default", "Default")],
+    ("mips32", "rg350"): [("default", "Default")],
 }
 
 # The names the Packages menu gives the directories of userland/packages
