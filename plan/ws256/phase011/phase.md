@@ -113,3 +113,7 @@ T1-728: riscv64-uboot で login・`uname -m` の `riscv64` PASS（loader の変�
 - T1 の回帰の結果を Q1 が判定（それまで (1) の loader の変更と (2) の土台は cleared にしない）。走り C は Q1 が boot-test.sh の案を入れるかの判断の後。
 - (1) の実機の調べ（板の接続の後）: 配布の U-Boot で `RV64 HART protocol|chosen`、`RV64 GOP …`、ExitBootServices の後の画、`bootefi <img> <fdt>` の DTB への fixup。
 - (2) の実機の受け入れ（ユーザーの目視、#10・#15）: HDMI の画面に grid と login、`vf2.fb=nocache` で flush を外した時の画（DC8200 が snoop するか）、GOP の範囲が allocator に渡らない事（design の試験の cdev は作っていない: `RISCV64 LOADER layout=2 … kept=` と `RISCV64 MEMORY … free=` の行で代わりに見る）。(β) で足りなければ (α)（system port の別名、nomap と `riscv64_range_is_ram` の直し）を足す。
+
+## (2) の T1 の結果（2026-10-19 Q1）
+
+T1-729: A（riscv64-virt）・B（riscv64-uboot、handoff 版 2）は login と uname -m で PASS。C（riscv64-uboot-gop、build/visionfive2/disk.img）は bochs-display の画面の中央に 80x25 の console が出て login prompt まで届いた（build/review/t1-729/vf2-gop-login.png）。U-Boot の GOP → loader → handoff 版 2 → HAL の VF2 の framebuffer → 共通の console → kernel の console の道が QEMU で通ったと Q1 が判定（boot-test は LOADER・FRAMEBUFFER の行が scroll で消えて exit 1、login は saw）。cache の書き出し、DC8200・HDMI、VF2 の DT は未確認で、実機の目視（ユーザー）を待つ。見つけた事: VF2 の root に mkdir が無く make-homes が失敗、oneshot networking が失敗（config の program の不足、P2 に直させる）。

@@ -3,7 +3,7 @@
 # ws271-p004 TLB・space・lazy FPU・atomic と self-test、kernel の link、VFS の段まで（MIPS32 mipsel、QEMU malta）
 
 - 親: [WS271](../ws.md)、設計: [design.md](../design.md)（改訂 2）§2.3・§3.2〜§3.7・§6・§6.1・§7、Queue: q1283 / q1283-i01（P1、2026-10-19）
-- Status: in-progress（実装・build・host の試験は済み。T1 の QEMU の画面の確認待ち。Q1 の判定まで cleared にしない）
+- Status: cleared（2026-10-19 Q1 の判定、T1-730: QEMU malta の画面に `MIPS32 HAL PAGING PASS refills=18 invalids=11 modifies=1 generation=3`・`READY DISPLAY VGA PAGING PASS TIMER TICK`・`CPU 1 ONLINE`・`VFS initialization failed (12); entering idle.`（TRAP・CONTEXT・FPU F64 も）、build/review/t1-730/mips32-vfs.png。QEMU だけ）
 - 前提: [p003](../phase003/phase.md)（T1-728 で試験中、2026-10-19 時点で結果は未着）。p004 は p003 の commit の上に積んだ。p003 が FAIL なら p004 の画面にも同じ所で出る。
 - HAL の API: `include/hal/hal.h` は変えていない。`include/hal/arch/mips32.h` も変えていない（U1 の事前承認の形のまま、p002 で入った物）。
 
