@@ -130,6 +130,13 @@ int drv_vf2_clock_apply_assigned(const struct drv_fdt *fdt, uint32_t node);
 int drv_vf2_reset_lookup(const struct drv_fdt *fdt, uint32_t node, const char *name, struct drv_vf2_reset *reset);
 
 /*
+ * Finds a reset line of a device by its position in the resets property,
+ * for a device whose node names none of them.  ENOENT means the device
+ * has fewer lines.
+ */
+int drv_vf2_reset_lookup_index(const struct drv_fdt *fdt, uint32_t node, unsigned position, struct drv_vf2_reset *reset);
+
+/*
  * Holds a device in reset.
  */
 int drv_vf2_reset_assert(const struct drv_vf2_reset *reset);

@@ -269,6 +269,7 @@ set_clocks(
 	put32(sys_crg, 11 * 4, 4U);		/* APB bus: / 4 */
 	put32(sys_crg, 94 * 4, 2U);		/* SD card clock: / 2, gate closed */
 	put32(sys_crg, 108 * 4, 12U);		/* GMAC0 GTX source: / 12 */
+	put32(sys_crg, 16 * 4, 2U);		/* audio root: PLL2 / 2 */
 	put32(sys_crg, 158 * 4, 12U);		/* PWM DAC core: / 12 */
 	put32(aon_crg, 4 * 4, 2U);		/* RMII RTX: / 2 */
 	put32(aon_crg, 5 * 4, 0U);		/* GMAC0 TX from SYS GTX */
@@ -341,7 +342,7 @@ check_rates(
 	put32(sys_crg, 5 * 4, 1U << 24);
 
 	rate = rate_of(DRV_VF2_CRG_SYS, 158, &error);
-	check(error == ENOTSUP, "PWM DAC core: unknown source is ENOTSUP");
+	check(error == 0 && rate == 49500000ULL, "PWM DAC core = PLL2 / 2 (audio root) / 12");
 	rate = rate_of(DRV_VF2_CRG_SYS, 0, &error);
 	check(error == ENOENT, "CPU root is outside the table");
 	rate = rate_of(DRV_VF2_CRG_STG, 10, &error);

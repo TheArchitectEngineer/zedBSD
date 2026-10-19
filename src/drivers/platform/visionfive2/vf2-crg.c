@@ -223,6 +223,19 @@ static const struct crg_clock sys_clocks[] = {
 	{ 12, CLOCK_GATE | CLOCK_SHARED, 0, 0, 1,
 	  { { SOURCE_CLOCK, DRV_VF2_CRG_SYS, 11, NULL } } },
 
+	/*
+	 * The audio root, PLL2 divided by 2 to 8.
+	 *
+	 * Values referenced:
+	 * StarFive JH7110 TRM Preliminary V2, Figure 2-4 Clock Structure
+	 * (clk_audio_root below PLL2) and Table 2-66 Clock Audio Root
+	 * (offset 0x40, divider 2 to 8); Linux v6.12
+	 * drivers/clk/starfive/clk-starfive-jh7110-sys.c (PLL2 as its
+	 * source).
+	 */
+	{ 16, CLOCK_DIVIDER | CLOCK_SHARED, 2, 8, 1,
+	  { { SOURCE_PLL, DRV_VF2_CRG_SYS, 2, NULL } } },
+
 	/* The SD card controller's bus interface. */
 	{ 92, CLOCK_GATE, 0, 0, 1,
 	  { { SOURCE_CLOCK, DRV_VF2_CRG_SYS, 9, NULL } } },
@@ -255,9 +268,17 @@ static const struct crg_clock sys_clocks[] = {
 	{ 157, CLOCK_GATE, 0, 0, 1,
 	  { { SOURCE_NONE, DRV_VF2_CRG_SYS, 0, NULL } } },
 
-	/* The audio PWM converter's sample clock. */
-	{ 158, CLOCK_GATE | CLOCK_DIVIDER, 12, 256, 1,
-	  { { SOURCE_NONE, DRV_VF2_CRG_SYS, 0, NULL } } }
+	/*
+	 * The audio PWM converter's sample clock, whose rate its driver sets.
+	 *
+	 * Values referenced:
+	 * StarFive JH7110 TRM Preliminary V2, Table 2-208 Clock PWMDAC Core
+	 * (divider 12 to 256); Linux v6.12
+	 * drivers/clk/starfive/clk-starfive-jh7110-sys.c (the audio root as
+	 * its source).
+	 */
+	{ 158, CLOCK_GATE | CLOCK_DIVIDER | CLOCK_SETTABLE, 12, 256, 1,
+	  { { SOURCE_CLOCK, DRV_VF2_CRG_SYS, 16, NULL } } }
 };
 
 /*
@@ -777,6 +798,39 @@ drv_vf2_reset_lookup(
 
 	/* Decodes the resets entry the name selects. */
 	error = lookup_named(fdt, node, "resets", "reset-names", "#reset-cells", name, &crg, &index);
+	if (error != 0)
+		return error;
+
+	/* Refuses a line the generator does not have. */
+	if (index >= crg_generators[crg].reset_count)
+		return ERANGE;
+
+	/* Succeeded: the generator and its number for the line. */
+	reset->crg = crg;
+	reset->index = index;
+	return 0;
+}
+
+/*
+ * Finds a reset line of a device by its position in the resets property.
+ */
+int
+drv_vf2_reset_lookup_index(
+	const struct drv_fdt *fdt,
+	uint32_t node,
+	unsigned position,
+	struct drv_vf2_reset *reset)
+{
+	enum drv_vf2_crg crg;
+	uint32_t index;
+	int error;
+
+	/* Refuses a missing blob or result. */
+	if (fdt == NULL || reset == NULL)
+		return EINVAL;
+
+	/* Decodes the resets entry at that position. */
+	error = lookup_specifier(fdt, node, "resets", "#reset-cells", position, &crg, &index);
 	if (error != 0)
 		return error;
 
