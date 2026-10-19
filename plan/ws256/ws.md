@@ -48,7 +48,7 @@
 | p018 | LAN: DW Ethernet QoS と PHY（MDIO で id を読む、YT8531 の推定）、gmac0、DHCP・ssh | p013・p022・p023 | 10〜14 | planning |
 | p019 | sound: 3.5 mm の PWMDAC と DW AXI DMAC の cyclic を既存の audio の層に繋ぎ、音を鳴らす（#23・#24） | p013・p022・p023 | 7〜11 | planning |
 | p020 | PLDA の PCIe の host（実機）: `pci-plda.c`（ATR の outbound、link、PERST、PHY、INTx は p021 の hook、bridge をまたぐ swizzle、root の DMA は 32 bit から）、VL805 の xHCI と USB keyboard で login（[design-peripherals.md](design-peripherals.md) §3.5） | p013・p022・p021・p016・p023 | 8〜12 | planning |
-| p021 | PCI core の host の INTx の hook: `drv_pci_bus_ops` に省略可能な intx の 4 つ、EOI を送らない `intx_line_run`、線の鍵を (host, vector)、lock の順と drain。amd64・Pi 4 の回帰（§3.5） | p012 | 5〜7 | planning |
+| [p021](phase021/phase.md) | PCI core の host の INTx の hook: `drv_pci_bus_ops` に省略可能な intx の 4 つ、EOI を送らない `intx_line_run`、線の鍵を (host, vector)、lock の順と drain。amd64・Pi 4・riscv64 virt の回帰（§3.5） | p012 | 5〜7 | in-progress（test-wait: 2026-10-19 q1278-i01 P2、code 5eaebdff9、host の試験 PASS、amd64・rpi4・riscv64 の vmunix warning 0。T1 の依頼は phase.md） |
 | p022 | p013 の実機の確かめ: clock の rate（U-Boot の `md` と照合）、card detect、PERST（§3.2） | p013・p005・#15 | 1〜2 | planning |
 | p023 | DMA の coherency の確かめ（陽性の対照、64 KiB の buffer、8 回）、非 coherent なら予備 (i)（確保ごとの uncached の別名、HAL の BSP）（§2.4・§3.9） | p013・p022・#15 | 3〜7 | planning |
 | p024 | NVMe の実機と NVMe の root（p017 から分けた）: M.2 の SSD の読み書き、pcat の形の root の選び方（§3.11） | p017・p020・p015 | 3〜4 | planning |
