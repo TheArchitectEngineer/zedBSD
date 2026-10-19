@@ -47,7 +47,7 @@ Status: in-progress（(1) の loader の変更は T1-728 待ち。(2) の土台�
 
 - 範囲: [design-peripherals.md](../design-peripherals.md) 改訂 4 §3.1 (2) の (a)〜(e) のうち、描き方 (β)（direct map で描き FLUSH64）。ユーザーの決定（2026-10-19、クリック）: #29「両方を承認」（[Guardrail](../../guardrail.md) の 2026-10-19 の WS256 の行、[proposed/hal-riscv64-framebuffer.md](../proposed/hal-riscv64-framebuffer.md) の形）、#15「画面が出るまで待つ」、#10「SD boot, framebufferで目視」（実機の受け入れはユーザーが framebuffer を目で見る）。
 - `include/hal/hal.h` は変えていない（承認の形のまま: 名前 6 つは VF2 の BSP だけが返し、console は riscv64 の共通）。
-- code の commit（agent/p2）: HAL と handoff の header c14bfbb8e、loader 7c06d189a、kernel の読み手 0f1c25ab6、host 試験 1de2aa8e1、no-map の RAM の画面を device の窓で 2dee74f67（記録は e57163c79 と同じ commit）。
+- code の commit（agent/p2）: HAL と handoff の header c14bfbb8e、loader 7c06d189a、kernel の読み手 0f1c25ab6、host 試験 1de2aa8e1、no-map の RAM の画面を device の窓で 2dee74f67。記録は e57163c79・2dee74f67・この後の commit。
 
 ### 実装
 
