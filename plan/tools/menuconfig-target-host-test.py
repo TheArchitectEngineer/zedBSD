@@ -271,7 +271,7 @@ def check_i386_and_retro() -> None:
     the defaults as they are and with Retro, are then resolved by make -n."""
     values = menu.defaults()
     shown = walk(menu.select_cpu_board, ["CPU: x86_64", "i386", "Back"], values)
-    if shown[1] != ("CPU", ["x86_64", "arm64", "i386", "RISC-V 64"]):
+    if shown[1] != ("CPU", ["x86_64", "arm64", "i386", "RISC-V 64", "RISC-V 32"]):
         fail(f"the CPU menu is {shown[1]}")
     if values["ZEDBSD_PLATFORM"] != "pc98" or values["ZEDBSD_VARIANT"] != "default":
         fail(f"choosing i386 selected {values['ZEDBSD_PLATFORM']}/{values['ZEDBSD_VARIANT']}")
@@ -290,6 +290,19 @@ def check_i386_and_retro() -> None:
     shown = walk(menu.select_cpu_board, ["Board: UEFI + ACPI", "Back"], other)
     if shown[1][0] != "Board" or "The board follows the CPU." not in shown[1][1]:
         fail(f"x86_64's one board was offered as a choice: {shown[1]}")
+    # RISC-V 64 boots on two boards (WS256 p025): its first board, the
+    # emulator's virt, is chosen with the CPU, and the VisionFive 2 is
+    # offered beside it under Board.
+    riscv = menu.defaults()
+    walk(menu.select_cpu_board, ["CPU: x86_64", "RISC-V 64", "Back"], riscv)
+    if riscv["ZEDBSD_PLATFORM"] != "riscv64-virt":
+        fail(f"choosing RISC-V 64 selected {riscv['ZEDBSD_PLATFORM']}")
+    shown = walk(menu.select_cpu_board,
+                 ["Board: QEMU virt", "StarFive VisionFive 2", "Back"], riscv)
+    if shown[1] != ("Board", ["QEMU virt", "StarFive VisionFive 2"]):
+        fail(f"the RISC-V 64 Board menu is {shown[1]}")
+    if riscv["ZEDBSD_PLATFORM"] != "visionfive2":
+        fail(f"choosing StarFive VisionFive 2 selected {riscv['ZEDBSD_PLATFORM']}")
 
     for platform in ("amd64", "rpi4", "i386", "pc98"):
         values = menu.defaults()
