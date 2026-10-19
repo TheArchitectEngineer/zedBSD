@@ -83,11 +83,18 @@ RISCV64_PLATFORM_SOURCES_visionfive2 += src/drivers/platform/visionfive2/vf2-dma
 endif
 
 # The VisionFive 2's PowerVR GPU core: the power management unit, the
-# core's glue and the driver's early stage.
+# core's glue, the driver's early stage and the later stage that loads
+# and starts the firmware.
 ifeq ($(CONFIG_DRIVER_POWERVR),y)
 RISCV64_PLATFORM_SOURCES_visionfive2 += src/drivers/platform/visionfive2/vf2-pmu.c \
 	src/drivers/platform/visionfive2/vf2-gpu.c \
-	src/drivers/gpu/powervr/powervr.c
+	src/drivers/gpu/powervr/powervr.c \
+	src/drivers/gpu/powervr/firmware-image.c \
+	src/drivers/gpu/powervr/mips-table.c \
+	src/drivers/gpu/powervr/retry.c \
+	src/drivers/gpu/powervr/firmware-memory.c \
+	src/drivers/gpu/powervr/firmware-file.c \
+	src/drivers/gpu/powervr/firmware-boot.c
 endif
 
 # The VisionFive 2's first Ethernet port: the DesignWare Ethernet QoS
