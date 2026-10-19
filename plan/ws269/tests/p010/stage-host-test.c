@@ -76,7 +76,7 @@ main(void)
 	printed = powervr_stage_note_ok(&record, POWERVR_STAGE_FIRMWARE, line, sizeof(line));
 	expect_line(printed, line, NULL, "firmware ok twice");
 	printed = powervr_stage_note_ok(&record, POWERVR_STAGE_RENDER_NODE, line, sizeof(line));
-	expect_line(printed, line, "powervr: render node: ok", "render node ok");
+	expect_line(printed, line, "powervr: render-node: ok", "render-node ok");
 
 	/* Three failures shown, the fourth says the rest are not, then silence. */
 	for (i = 0; i < 3; i++) {

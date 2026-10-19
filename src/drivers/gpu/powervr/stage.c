@@ -6,7 +6,7 @@
  */
 
 /*
- * The rules of the PowerVR stage lines (ws269-p010a, design-p010.md §8.1):
+ * The rules of the PowerVR stage lines:
  * a stage's ok is printed once a boot, its failures the first three times
  * and then one "further failures not shown"; the sysctl text names each
  * stage's latest state.  Nothing here locks or prints, so the host test
@@ -23,7 +23,7 @@
 
 /* The stages as the lines name them. */
 static const char *const stage_line_names[POWERVR_STAGE_COUNT] = {
-	"firmware", "render node", "compute", "ta", "3d", "transfer", "present",
+	"firmware", "render-node", "compute", "ta", "3d", "transfer", "present",
 };
 
 /* The stages as the sysctl text names them (one word each). */

@@ -6,7 +6,7 @@
  */
 
 /*
- * The stage lines of the PowerVR driver (ws269-p010a): one short line a
+ * The stage lines of the PowerVR driver: one short line a
  * stage on the console, "powervr: <stage>: ok" or "fail(<reason>)", that
  * says how far the driver has come since boot, and the same as the text of
  * hw.gpu.powervr.stages.  This part holds only the rules (what to print,
