@@ -10,16 +10,18 @@
  *
  * It copies the firmware's device tree, asks the firmware for the boot hart
  * (through the RISC-V boot protocol, or the tree's /chosen without it) and
- * reports the screen the firmware left on.  It then reads zedbsd.cfg from
- * the volume it was loaded from, the kernel the file names and the initial
- * ramdisk root.img beside it, fills the handoff, exits boot services and
- * enters the kernel at its physical entry with translation off.  The kernel
- * builds its own page tables, so the loader builds none.
+ * takes the screen the firmware left on, without changing its mode.  It
+ * then reads zedbsd.cfg from the volume it was loaded from, the kernel the
+ * file names and the initial ramdisk root.img beside it, fills the handoff,
+ * lists the RAM the firmware keeps from its memory map, exits boot services
+ * and enters the kernel at its physical entry with translation off.  The
+ * kernel builds its own page tables, so the loader builds none.
  */
 
 #include "include/uefi.h"
 #include "elf64.h"
 #include "fdt-hartid.h"
+#include "riscv64-reserved.h"
 #include "volume-discovery.h"
 #include "zedbsd-config.h"
 #include "bootloader/include/riscv64-handoff.h"
@@ -56,6 +58,9 @@
 /* How many times ExitBootServices is tried when the map changed in between. */
 #define EXIT_ATTEMPTS			3U
 
+/* The bytes of one pixel of a screen the handoff passes on. */
+#define SCREEN_PIXEL_BYTES		4U
+
 /*
  * What every step of the loader needs: the firmware's tables and the
  * volume the loader came from.
@@ -77,6 +82,19 @@ struct loader_context {
 struct page_run {
 	EFI_PHYSICAL_ADDRESS base;
 	UINTN pages;
+};
+
+/*
+ * The screen the firmware's graphics output left on, as the handoff passes
+ * it on: all zero when there is none the kernel can take.
+ */
+struct loader_screen {
+	uint64_t phys;
+	uint64_t size;
+	uint32_t width;
+	uint32_t height;
+	uint32_t pitch;
+	uint32_t format;
 };
 
 /* The transition into the kernel, in riscv64-transition.S. */
@@ -127,12 +145,15 @@ static EFI_STATUS read_volume_serial(struct loader_context *context, EFI_HANDLE 
 static EFI_STATUS load_configuration(struct loader_context *context);
 static EFI_STATUS find_boot_hart(struct loader_context *context, const struct page_run *tree, uint64_t tree_size, uint64_t *boot_hart);
 static EFI_STATUS ask_boot_protocol(struct loader_context *context, uint64_t *boot_hart);
-static void report_graphics(struct loader_context *context);
+static void report_graphics(struct loader_context *context, struct loader_screen *screen);
+static const char *take_screen(const EFI_GRAPHICS_OUTPUT_PROTOCOL_MODE *mode, struct loader_screen *screen);
 static EFI_STATUS copy_device_tree(struct loader_context *context, struct page_run *run, uint64_t *size);
 static EFI_STATUS allocate_kernel(struct loader_context *context, UINTN pages, EFI_PHYSICAL_ADDRESS *base);
 static EFI_STATUS load_kernel(struct loader_context *context, struct zbl_elf64_plan *plan, struct page_run *run);
 static EFI_STATUS load_initrd(struct loader_context *context, struct page_run *run, uint64_t *size);
-static EFI_STATUS exit_boot_services(struct loader_context *context);
+static EFI_STATUS exit_boot_services(struct loader_context *context, struct zbl6_riscv64_handoff *handoff, const struct loader_screen *screen);
+static void list_reserved(struct zbl6_riscv64_handoff *handoff, const struct loader_screen *screen, const EFI_MEMORY_DESCRIPTOR *map, UINTN map_size, UINTN descriptor_size);
+static void report_reserved(struct loader_context *context, const struct zbl6_riscv64_handoff *handoff);
 
 /*
  * Loads the configured kernel and the ramdisk and enters the kernel.
@@ -152,6 +173,7 @@ efi_main(
 	struct page_run fdt_run;
 	struct page_run handoff_run;
 	struct zbl6_riscv64_handoff *handoff;
+	struct loader_screen screen;
 	uint64_t boot_hart;
 	uint64_t fdt_size;
 	uint64_t initrd_size;
@@ -188,8 +210,8 @@ efi_main(
 		return reported;
 	}
 
-	/* Reports the screen the firmware left on; the loader does not change it. */
-	report_graphics(&context);
+	/* Takes the screen the firmware left on, which the loader does not change. */
+	report_graphics(&context, &screen);
 
 	/* Opens the volume the loader came from and reads its serial. */
 	status = open_volume(&context);
@@ -227,7 +249,11 @@ efi_main(
 		return reported;
 	}
 
-	/* Fills the handoff: the hart, the tree, the ramdisk, the kernel and the parameters. */
+	/*
+	 * Fills the handoff: the hart, the tree, the ramdisk, the kernel, the
+	 * parameters and the screen.  The firmware's RAM is listed when boot
+	 * services are left.
+	 */
 	handoff = (struct zbl6_riscv64_handoff *)(uintptr_t)handoff_run.base;
 	byte_zero(handoff, sizeof(*handoff));
 	handoff->magic = ZBL6_HANDOFF_MAGIC;
@@ -242,6 +268,12 @@ efi_main(
 	handoff->kernel_phys_start = plan.physical_start;
 	handoff->kernel_phys_end = plan.physical_end;
 	byte_copy(&handoff->parameters, &configuration.parameter_record, sizeof(handoff->parameters));
+	handoff->framebuffer_phys = screen.phys;
+	handoff->framebuffer_size = screen.size;
+	handoff->framebuffer_width = screen.width;
+	handoff->framebuffer_height = screen.height;
+	handoff->framebuffer_pitch = screen.pitch;
+	handoff->framebuffer_format = screen.format;
 
 	/*
 	 * Works out the physical entry: the image keeps the same distance from
@@ -257,8 +289,8 @@ efi_main(
 	console_hex64(&context, "RV64 INITRD SIZE ", initrd_size);
 	console_hex64(&context, "RV64 HANDOFF ", handoff_run.base);
 
-	/* Leaves the firmware; nothing can be reported after this. */
-	status = exit_boot_services(&context);
+	/* Lists the firmware's RAM and leaves the firmware; nothing can be reported after this. */
+	status = exit_boot_services(&context, handoff, &screen);
 	if (EFI_ERROR(status)) {
 		reported = report_failure(&context, "ExitBootServices", status);
 		return reported;
@@ -833,10 +865,12 @@ ask_boot_protocol(
 /*
  * Reports on one console line the graphics mode the firmware left on: its
  * number and the count of modes, the resolution, the pixel format, the
- * pixels in a scan line, and the framebuffer's base and size.
+ * pixels in a scan line, and the framebuffer's base and size; then takes
+ * it for the handoff when the kernel can draw on it, saying so on a second
+ * line.
  *
- * It only reads the mode and never sets one; nothing of it reaches the
- * handoff yet.  A firmware without graphics output reports "none".
+ * It only reads the mode and never sets one.  A firmware without graphics
+ * output reports "none", and the screen is all zero then.
  *
  * Values referenced: UEFI Specification 2.10, section 12.9
  * (EFI_GRAPHICS_OUTPUT_PROTOCOL.Mode and its Mode, MaxMode, Info,
@@ -846,12 +880,17 @@ ask_boot_protocol(
  */
 static void
 report_graphics(
-	struct loader_context *context)
+	struct loader_context *context,
+	struct loader_screen *screen)
 {
 	EFI_GRAPHICS_OUTPUT_PROTOCOL *graphics;
 	EFI_GRAPHICS_OUTPUT_PROTOCOL_MODE *mode;
 	EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *info;
+	const char *refusal;
 	EFI_STATUS status;
+
+	/* Starts with no screen, which is what every refusal leaves. */
+	byte_zero(screen, sizeof(*screen));
 
 	/* Finds the firmware's graphics output; a firmware without a screen has none. */
 	graphics = 0;
@@ -889,6 +928,75 @@ report_graphics(
 	console_ascii(context, " size ");
 	console_hex(context, mode->FrameBufferSize);
 	console_ascii(context, "\n");
+
+	/* Takes the screen for the handoff, or says why the kernel cannot draw on it. */
+	refusal = take_screen(mode, screen);
+	if (refusal != 0) {
+		console_ascii(context, "RV64 GOP not handed over: ");
+		console_ascii(context, refusal);
+		console_ascii(context, "\n");
+		return;
+	}
+	console_ascii(context, "RV64 GOP handed over\n");
+}
+
+/*
+ * Takes the current graphics mode for the handoff when the kernel can draw
+ * on it: four bytes a pixel, red or blue first, rows at least as long as
+ * the width, and a framebuffer that holds every row.
+ *
+ * Returns 0 with the screen filled, or why the mode was refused, leaving
+ * the screen all zero.
+ *
+ * The two pixel formats are the ones the x64 loader's video.c takes; the
+ * pitch in bytes is the scan line's pixels times four.
+ */
+static const char *
+take_screen(
+	const EFI_GRAPHICS_OUTPUT_PROTOCOL_MODE *mode,
+	struct loader_screen *screen)
+{
+	const EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *info;
+	uint64_t pitch;
+	uint64_t needed;
+	uint32_t format;
+
+	/* Names the pixel format in the kernel's code, refusing any other layout. */
+	info = mode->Info;
+	if (info->PixelFormat == PixelRedGreenBlueReserved8BitPerColor) {
+		format = KERN_BOOT_FRAMEBUFFER_RGBX8888;
+	} else if (info->PixelFormat == PixelBlueGreenRedReserved8BitPerColor) {
+		format = KERN_BOOT_FRAMEBUFFER_BGRX8888;
+	} else {
+		return "pixel format";
+	}
+
+	/* Refuses an empty mode, or rows shorter than the width. */
+	if (info->HorizontalResolution == 0 || info->VerticalResolution == 0)
+		return "empty mode";
+	if (info->PixelsPerScanLine < info->HorizontalResolution)
+		return "scan line shorter than width";
+
+	/* Refuses a row whose bytes the handoff's pitch cannot hold. */
+	pitch = (uint64_t)info->PixelsPerScanLine * SCREEN_PIXEL_BYTES;
+	if (pitch > 0xffffffffULL)
+		return "scan line too long";
+
+	/* Refuses a framebuffer that does not hold every row, or that wraps. */
+	needed = pitch * info->VerticalResolution;
+	if (mode->FrameBufferSize == 0 || mode->FrameBufferSize < needed)
+		return "framebuffer smaller than the mode";
+	if (mode->FrameBufferSize > ~0ULL - mode->FrameBufferBase)
+		return "framebuffer wraps";
+
+	/* Succeeded: the screen as the handoff passes it on. */
+	screen->phys = mode->FrameBufferBase;
+	screen->size = mode->FrameBufferSize;
+	screen->width = info->HorizontalResolution;
+	screen->height = info->VerticalResolution;
+	screen->pitch = (uint32_t)pitch;
+	screen->format = format;
+	return 0;
 }
 
 /*
@@ -1133,12 +1241,19 @@ load_initrd(
 }
 
 /*
- * Takes the memory map and exits boot services, retrying when the map
- * changed in between.
+ * Takes the memory map, lists the RAM the firmware keeps in the handoff and
+ * exits boot services, retrying when the map changed in between.
+ *
+ * The first map is listed while the console still works, so a firmware
+ * that keeps more ranges than the handoff holds is refused with a message;
+ * the map taken for each attempt is listed again without the console, and
+ * a list that comes out short then is flagged in the handoff for the HAL.
  */
 static EFI_STATUS
 exit_boot_services(
-	struct loader_context *context)
+	struct loader_context *context,
+	struct zbl6_riscv64_handoff *handoff,
+	const struct loader_screen *screen)
 {
 	EFI_MEMORY_DESCRIPTOR *map;
 	EFI_STATUS status;
@@ -1169,14 +1284,27 @@ exit_boot_services(
 	if (EFI_ERROR(status))
 		return status;
 
+	/* Lists the firmware's RAM from a first map, while the console can still say what was found. */
+	map_size = capacity;
+	status = context->boot->GetMemoryMap(&map_size, map, &map_key, &descriptor_size, &descriptor_version);
+	if (EFI_ERROR(status))
+		return status;
+	list_reserved(handoff, screen, map, map_size, descriptor_size);
+	report_reserved(context, handoff);
+
+	/* Refuses a firmware that keeps more ranges than the handoff holds. */
+	if ((handoff->reserved_flags & ZBL6_RISCV64_RESERVED_OVERFLOW) != 0)
+		return EFI_OUT_OF_RESOURCES;
+
 	/* Exits with the key of a fresh map, retrying a stale one. */
 	console_ascii(context, "RV64 UEFI EXIT\n");
 	for (attempt = 0; attempt < EXIT_ATTEMPTS; attempt++) {
-		/* Takes the map whose key ExitBootServices consumes. */
+		/* Takes the map whose key ExitBootServices consumes, and lists its firmware RAM. */
 		map_size = capacity;
 		status = context->boot->GetMemoryMap(&map_size, map, &map_key, &descriptor_size, &descriptor_version);
 		if (EFI_ERROR(status))
 			return status;
+		list_reserved(handoff, screen, map, map_size, descriptor_size);
 
 		/* Exits; only a stale key is retried. */
 		status = context->boot->ExitBootServices(context->image, map_key);
@@ -1188,4 +1316,53 @@ exit_boot_services(
 
 	/* Every retry found the map changed. */
 	return status;
+}
+
+/*
+ * Lists in the handoff the RAM the firmware keeps: the screen's range
+ * first, whatever type the firmware gives it, then each kept range of the
+ * map.  Calls nothing of the firmware, so it may run between the last map
+ * and ExitBootServices.
+ */
+static void
+list_reserved(
+	struct zbl6_riscv64_handoff *handoff,
+	const struct loader_screen *screen,
+	const EFI_MEMORY_DESCRIPTOR *map,
+	UINTN map_size,
+	UINTN descriptor_size)
+{
+	/* Starts an empty list, so a retried map replaces the one before. */
+	handoff->reserved_count = 0;
+	handoff->reserved_flags = 0;
+
+	/* Lists the screen, which the firmware's map may not mark as its own. */
+	zbl_riscv64_reserved_add(handoff, screen->phys, screen->size);
+
+	/* Lists the firmware's own RAM. */
+	zbl_riscv64_reserved_collect(handoff, map, map_size, descriptor_size);
+}
+
+/* Writes the listed firmware ranges to the console, or that there are too many. */
+static void
+report_reserved(
+	struct loader_context *context,
+	const struct zbl6_riscv64_handoff *handoff)
+{
+	uint32_t index;
+
+	/* Says the firmware keeps more ranges than the handoff holds. */
+	if ((handoff->reserved_flags & ZBL6_RISCV64_RESERVED_OVERFLOW) != 0) {
+		console_ascii(context, "RV64 RESERVED too many firmware ranges\n");
+		return;
+	}
+
+	/* Writes each range's start and size. */
+	for (index = 0; index < handoff->reserved_count; index++) {
+		console_ascii(context, "RV64 RESERVED ");
+		console_hex(context, handoff->reserved[index].phys);
+		console_ascii(context, " size ");
+		console_hex(context, handoff->reserved[index].size);
+		console_ascii(context, "\n");
+	}
 }

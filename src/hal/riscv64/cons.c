@@ -6,20 +6,21 @@
  */
 
 /*
- * The virt board's early text console.
+ * The riscv64 early text console.
  *
  * The HAL and the early kernel print through hal_putc(), which writes each
  * character to the firmware's console and here.  The console keeps an
  * 80 by 25 grid of cells from the first character on, so that the lines
- * printed before the framebuffer is shown appear on it once it is; from
- * then on each change is drawn as it is made.  Once the kernel publishes
- * its own console, hal_putc() no longer comes here.
+ * printed before a board's screen is attached appear on it once it is;
+ * from then on each change is drawn as it is made and written through to
+ * the display.  Once the kernel publishes its own console, hal_putc() no
+ * longer comes here.
  */
 
 #include <hal/hal.h>
-#include "../spin.h"
+#include "spin.h"
 #include "cons.h"
-#include "framebuffer.h"
+#include "fbcons.h"
 
 /* Light grey on black, the default text attribute. */
 #define CONS_ATTRIBUTE	0x07U
@@ -36,13 +37,14 @@ struct cons_cell {
  * The grid as it should look, and the cursor.  Kept under cons_lock; a
  * zero character is a cell never written, drawn as a blank.
  */
-static struct cons_cell cons_grid[VIRT_CONSOLE_ROWS][VIRT_CONSOLE_COLUMNS];
+static struct cons_cell cons_grid[RISCV64_CONSOLE_ROWS][RISCV64_CONSOLE_COLUMNS];
 static unsigned cons_row;
 static unsigned cons_column;
 
 /* Guards the grid, the cursor and the drawing; zero when free. */
 static volatile unsigned cons_lock;
 
+static void paint_cell_locked(unsigned row, unsigned column);
 static void draw_cell_locked(unsigned row, unsigned column);
 static void draw_all_locked(void);
 static void newline_locked(void);
@@ -53,7 +55,7 @@ static void putc_locked(int character);
  * Writes one character to the console.
  */
 void
-virt_cons_putc(
+riscv64_cons_putc(
 	int character)
 {
 	bool enabled;
@@ -67,11 +69,11 @@ virt_cons_putc(
 }
 
 /*
- * Draws the whole grid once the framebuffer is shown, so the lines printed
+ * Draws the whole grid once a screen is attached, so the lines printed
  * before it appear.
  */
 void
-virt_cons_attach(
+riscv64_cons_redraw(
 	void)
 {
 	bool enabled;
@@ -84,9 +86,9 @@ virt_cons_attach(
 	riscv64_spin_unlock(&cons_lock, enabled);
 }
 
-/* Draws one cell of the grid, a blank for one never written. */
+/* Paints one cell of the grid, a blank for one never written, without writing it through. */
 static void
-draw_cell_locked(
+paint_cell_locked(
 	unsigned row,
 	unsigned column)
 {
@@ -104,12 +106,23 @@ draw_cell_locked(
 	}
 
 	/* Draws the cell, with the cursor on it when it is the cursor's. */
-	virt_framebuffer_cell(row, column, character, attribute);
+	riscv64_fbcons_cell(row, column, character, attribute);
 	if (row == cons_row && column == cons_column)
-		virt_framebuffer_cursor(row, column);
+		riscv64_fbcons_cursor(row, column);
 }
 
-/* Draws every cell of the grid. */
+/* Draws one cell of the grid and writes it through to the display. */
+static void
+draw_cell_locked(
+	unsigned row,
+	unsigned column)
+{
+	/* Paints the cell, then writes its pixel rows through. */
+	paint_cell_locked(row, column);
+	riscv64_fbcons_flush_cell(row, column);
+}
+
+/* Draws every cell of the grid and writes the grid through once. */
 static void
 draw_all_locked(
 	void)
@@ -117,11 +130,14 @@ draw_all_locked(
 	unsigned row;
 	unsigned column;
 
-	/* Each row, left to right. */
-	for (row = 0; row < VIRT_CONSOLE_ROWS; row++) {
-		for (column = 0; column < VIRT_CONSOLE_COLUMNS; column++)
-			draw_cell_locked(row, column);
+	/* Paints each row, left to right. */
+	for (row = 0; row < RISCV64_CONSOLE_ROWS; row++) {
+		for (column = 0; column < RISCV64_CONSOLE_COLUMNS; column++)
+			paint_cell_locked(row, column);
 	}
+
+	/* Writes every pixel row of the grid through, each once. */
+	riscv64_fbcons_flush_grid();
 }
 
 /* Moves the cursor to the start of the next line, scrolling at the bottom. */
@@ -137,12 +153,12 @@ newline_locked(
 	old_column = cons_column;
 	cons_column = 0;
 	cons_row++;
-	if (old_column < VIRT_CONSOLE_COLUMNS)
+	if (old_column < RISCV64_CONSOLE_COLUMNS)
 		draw_cell_locked(old_row, old_column);
 
 	/* Scrolls instead of leaving the last row. */
-	if (cons_row >= VIRT_CONSOLE_ROWS) {
-		cons_row = VIRT_CONSOLE_ROWS - 1U;
+	if (cons_row >= RISCV64_CONSOLE_ROWS) {
+		cons_row = RISCV64_CONSOLE_ROWS - 1U;
 		scroll_locked();
 		return;
 	}
@@ -160,15 +176,15 @@ scroll_locked(
 	unsigned column;
 
 	/* Shifts the rows up. */
-	for (row = 1; row < VIRT_CONSOLE_ROWS; row++) {
-		for (column = 0; column < VIRT_CONSOLE_COLUMNS; column++)
+	for (row = 1; row < RISCV64_CONSOLE_ROWS; row++) {
+		for (column = 0; column < RISCV64_CONSOLE_COLUMNS; column++)
 			cons_grid[row - 1U][column] = cons_grid[row][column];
 	}
 
 	/* Blanks the row exposed at the bottom. */
-	for (column = 0; column < VIRT_CONSOLE_COLUMNS; column++) {
-		cons_grid[VIRT_CONSOLE_ROWS - 1U][column].character = 0;
-		cons_grid[VIRT_CONSOLE_ROWS - 1U][column].attribute = 0;
+	for (column = 0; column < RISCV64_CONSOLE_COLUMNS; column++) {
+		cons_grid[RISCV64_CONSOLE_ROWS - 1U][column].character = 0;
+		cons_grid[RISCV64_CONSOLE_ROWS - 1U][column].attribute = 0;
 	}
 
 	/* Repaints the moved screen. */
@@ -192,7 +208,7 @@ putc_locked(
 	if (character == '\r') {
 		column = cons_column;
 		cons_column = 0;
-		if (column < VIRT_CONSOLE_COLUMNS)
+		if (column < RISCV64_CONSOLE_COLUMNS)
 			draw_cell_locked(cons_row, column);
 		draw_cell_locked(cons_row, cons_column);
 		return;
@@ -205,7 +221,7 @@ putc_locked(
 			cons_column--;
 		cons_grid[cons_row][cons_column].character = ' ';
 		cons_grid[cons_row][cons_column].attribute = CONS_ATTRIBUTE;
-		if (column < VIRT_CONSOLE_COLUMNS)
+		if (column < RISCV64_CONSOLE_COLUMNS)
 			draw_cell_locked(cons_row, column);
 		draw_cell_locked(cons_row, cons_column);
 		return;
@@ -215,9 +231,9 @@ putc_locked(
 	if (character == '\t') {
 		column = cons_column;
 		cons_column = (cons_column + 8U) & ~7U;
-		if (column < VIRT_CONSOLE_COLUMNS)
+		if (column < RISCV64_CONSOLE_COLUMNS)
 			draw_cell_locked(cons_row, column);
-		if (cons_column >= VIRT_CONSOLE_COLUMNS) {
+		if (cons_column >= RISCV64_CONSOLE_COLUMNS) {
 			newline_locked();
 			return;
 		}
@@ -226,7 +242,7 @@ putc_locked(
 	}
 
 	/* Wraps before writing past the end of the row. */
-	if (cons_column >= VIRT_CONSOLE_COLUMNS)
+	if (cons_column >= RISCV64_CONSOLE_COLUMNS)
 		newline_locked();
 
 	/* Stores a printable character, or a question mark for anything else. */
@@ -239,6 +255,6 @@ putc_locked(
 	column = cons_column;
 	cons_column++;
 	draw_cell_locked(cons_row, column);
-	if (cons_column < VIRT_CONSOLE_COLUMNS)
+	if (cons_column < RISCV64_CONSOLE_COLUMNS)
 		draw_cell_locked(cons_row, cons_column);
 }

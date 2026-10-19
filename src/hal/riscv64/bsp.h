@@ -20,9 +20,9 @@ void
 riscv64_board_init(
 	const struct riscv64_fdt_info *info);
 
-void
-riscv64_board_putc(
-	int character);
+void *
+riscv64_board_handoff(
+	const char *name);
 
 void
 riscv64_board_describe(

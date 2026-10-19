@@ -16,7 +16,7 @@
 
 #include <hal/hal.h>
 #include "asm.h"
-#include "bsp.h"
+#include "cons.h"
 #include "sbi.h"
 
 static void cons_puts(const char *string);
@@ -142,8 +142,8 @@ hal_putc(
 	/* The firmware's console, which ends its lines itself. */
 	riscv64_sbi_putchar(c);
 
-	/* And the board's screen, when it has one. */
-	riscv64_board_putc(c);
+	/* And the early console, which draws on the board's screen once it has one. */
+	riscv64_cons_putc(c);
 }
 
 /*

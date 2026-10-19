@@ -10,8 +10,9 @@
  *
  * Memory is a span from the lowest RAM bank's start to the highest one's
  * end, one bit per page, set when the page is in use or not RAM at all.
- * The kernel image, the device tree, the initial ramdisk and every
- * reservation the tree names are set at boot and never freed.
+ * The kernel image, the device tree, the initial ramdisk, every
+ * reservation the tree names and the RAM the UEFI firmware keeps are set
+ * at boot and never freed.
  */
 
 #include <hal/hal.h>
@@ -84,6 +85,8 @@ riscv64_page_init(
 	void)
 {
 	const struct riscv64_fdt_info *info;
+	const struct riscv64_fdt_range *firmware;
+	unsigned firmware_count;
 	uint64_t lowest;
 	uint64_t highest;
 	uint64_t end;
@@ -138,6 +141,11 @@ riscv64_page_init(
 		reserve_range(info->reserved[index].base, info->reserved[index].size);
 	for (index = 0; index < info->nomap_count; index++)
 		reserve_range(info->nomap[index].base, info->nomap[index].size);
+
+	/* Takes back the RAM the UEFI firmware still uses, the screen it left on among it. */
+	firmware = riscv64_boot_firmware_reserved(&firmware_count);
+	for (index = 0; index < firmware_count; index++)
+		reserve_range(firmware[index].base, firmware[index].size);
 
 	/* The first allocation looks from the span's start. */
 	first_free_candidate = 0;

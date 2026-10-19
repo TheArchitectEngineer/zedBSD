@@ -12,13 +12,14 @@
  * the screen once the guest writes the block's address and format to the
  * device's configuration file.  The block lives in the kernel image, 640
  * by 400 pixels of 32 bits, so that 80 by 25 cells of the 8x16 font fill
- * it exactly and a text console needs no margin.
+ * it exactly and the early console, which draws on it, needs no margin.
  */
 
 #include <hal/hal.h>
+#include <kern/boot.h>
+#include "../fbcons.h"
 #include "../space.h"
 #include "fwcfg.h"
-#include "font.h"
 #include "framebuffer.h"
 
 /* The screen: its size in pixels, the bytes of a row, and of the whole. */
@@ -73,31 +74,18 @@ static uint32_t framebuffer_pixels[FRAMEBUFFER_PIXELS] __attribute__((aligned(40
 static struct framebuffer_config framebuffer_config_block __attribute__((aligned(16)));
 
 /*
- * Nonzero once the device shows the memory; until then nothing is drawn.
- * Set once on the boot hart before any other hart starts.
+ * Nonzero once the device shows the memory and the early console draws on
+ * it.  Set once on the boot hart before any other hart starts.
  */
 static int framebuffer_on;
 
-/*
- * The colours of the sixteen text attributes, as XRGB8888 values.
- *
- * Values referenced: the IBM VGA text-mode palette, the sixteen default
- * attribute colours.
- */
-static const uint32_t framebuffer_palette[16] = {
-	0x000000U, 0x0000aaU, 0x00aa00U, 0x00aaaaU,
-	0xaa0000U, 0xaa00aaU, 0xaa5500U, 0xaaaaaaU,
-	0x555555U, 0x5555ffU, 0x55ff55U, 0x55ffffU,
-	0xff5555U, 0xff55ffU, 0xffff55U, 0xffffffU
-};
-
-static void fill_black(void);
+static int attach_console(void);
 
 /*
  * Points the RAM framebuffer device at the screen's memory.
  *
- * Returns HAL_OK once the device shows it, or why it does not: there is no
- * configuration interface, or no such device.
+ * Returns HAL_OK once the device shows it and the early console draws on
+ * it, or why not: there is no configuration interface, or no such device.
  */
 int
 virt_framebuffer_init(
@@ -114,9 +102,6 @@ virt_framebuffer_init(
 	if (size != sizeof(framebuffer_config_block))
 		return HAL_ERR_UNSUPPORTED;
 
-	/* Starts from a black screen before the device shows it. */
-	fill_black();
-
 	/* Describes the memory: where it is, its format, size and row length. */
 	framebuffer_config_block.address = __builtin_bswap64(riscv64_virt_to_phys(framebuffer_pixels));
 	framebuffer_config_block.fourcc = __builtin_bswap32(FRAMEBUFFER_FOURCC_XRGB8888);
@@ -130,89 +115,14 @@ virt_framebuffer_init(
 	if (error != HAL_OK)
 		return error;
 
+	/* Hands the shown memory to the early console, which clears it and draws its text. */
+	error = attach_console();
+	if (error != HAL_OK)
+		return error;
+
 	/* Succeeded: drawing reaches the screen. */
 	framebuffer_on = 1;
 	return HAL_OK;
-}
-
-/*
- * Reports whether the screen is shown.
- */
-int
-virt_framebuffer_ready(
-	void)
-{
-	/* Succeeded: whether virt_framebuffer_init() succeeded. */
-	return framebuffer_on;
-}
-
-/*
- * Draws one text cell: a glyph in the attribute's colours.
- */
-void
-virt_framebuffer_cell(
-	unsigned row,
-	unsigned column,
-	int character,
-	uint8_t attribute)
-{
-	const uint8_t *glyph;
-	uint32_t foreground;
-	uint32_t background;
-	uint32_t value;
-	unsigned line;
-	unsigned bit;
-	uint8_t bits;
-	size_t first;
-
-	/* Nothing to draw before the screen is shown, or off the grid. */
-	if (!framebuffer_on)
-		return;
-	if (row >= VIRT_CONSOLE_ROWS || column >= VIRT_CONSOLE_COLUMNS)
-		return;
-
-	/* The glyph of the character (the font covers every byte value) and its colours. */
-	glyph = &virt_font8x16[((unsigned)character & 0xffU) * VIRT_FONT_HEIGHT];
-	foreground = framebuffer_palette[attribute & 15U];
-	background = framebuffer_palette[(attribute >> 4) & 15U];
-	first = (size_t)row * VIRT_FONT_HEIGHT * FRAMEBUFFER_WIDTH + (size_t)column * 8U;
-
-	/* Each row of the glyph, from its leftmost pixel in the high bit. */
-	for (line = 0; line < VIRT_FONT_HEIGHT; line++) {
-		bits = glyph[line];
-		for (bit = 0; bit < 8U; bit++) {
-			value = background;
-			if ((bits & (0x80U >> bit)) != 0)
-				value = foreground;
-			framebuffer_pixels[first + (size_t)line * FRAMEBUFFER_WIDTH + bit] = value;
-		}
-	}
-}
-
-/*
- * Draws the cursor: the two bottom pixel rows of a cell in white.
- */
-void
-virt_framebuffer_cursor(
-	unsigned row,
-	unsigned column)
-{
-	unsigned line;
-	unsigned bit;
-	size_t first;
-
-	/* Nothing to draw before the screen is shown, or off the grid. */
-	if (!framebuffer_on)
-		return;
-	if (row >= VIRT_CONSOLE_ROWS || column >= VIRT_CONSOLE_COLUMNS)
-		return;
-
-	/* Whitens rows 14 and 15 of the cell. */
-	first = (size_t)row * VIRT_FONT_HEIGHT * FRAMEBUFFER_WIDTH + (size_t)column * 8U;
-	for (line = VIRT_FONT_HEIGHT - 2U; line < VIRT_FONT_HEIGHT; line++) {
-		for (bit = 0; bit < 8U; bit++)
-			framebuffer_pixels[first + (size_t)line * FRAMEBUFFER_WIDTH + bit] = framebuffer_palette[15];
-	}
 }
 
 /*
@@ -231,14 +141,31 @@ virt_framebuffer_describe(
 		   (uint64_t)riscv64_virt_to_phys(framebuffer_pixels));
 }
 
-/* Paints the whole screen black. */
-static void
-fill_black(
+/*
+ * Describes the screen to the early console: the memory in the image, its
+ * size, row length and the XRGB8888 layout, which is blue first in memory.
+ * The emulator reads guest memory as it is, so nothing is written through.
+ */
+static int
+attach_console(
 	void)
 {
-	size_t index;
+	struct riscv64_fbcons_screen screen;
+	int error;
 
-	/* Clears every pixel. */
-	for (index = 0; index < FRAMEBUFFER_PIXELS; index++)
-		framebuffer_pixels[index] = 0;
+	/* Describes the memory the device shows. */
+	screen.address = (uintptr_t)framebuffer_pixels;
+	screen.width = FRAMEBUFFER_WIDTH;
+	screen.height = FRAMEBUFFER_HEIGHT;
+	screen.pitch = FRAMEBUFFER_STRIDE;
+	screen.format = KERN_BOOT_FRAMEBUFFER_BGRX8888;
+	screen.flush = NULL;
+
+	/* Attaches the console, which draws what it printed so far. */
+	error = riscv64_fbcons_attach(&screen);
+	if (error != HAL_OK)
+		return error;
+
+	/* Succeeded: the console draws on the screen. */
+	return HAL_OK;
 }

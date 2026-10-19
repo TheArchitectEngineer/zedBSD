@@ -18,7 +18,6 @@
 #include <hal/hal.h>
 #include "../bsp.h"
 #include "../defs.h"
-#include "cons.h"
 #include "fwcfg.h"
 #include "framebuffer.h"
 
@@ -47,25 +46,27 @@ riscv64_board_init(
 		return;
 	}
 
-	/* Points the framebuffer device at the screen's memory. */
+	/* Shows the screen's memory and draws what the console printed before it. */
 	error = virt_framebuffer_init();
 	board_display_error = error;
-	if (error != HAL_OK)
-		return;
-
-	/* Draws what the console printed before the screen was shown. */
-	virt_cons_attach();
 }
 
 /*
- * Writes one early-console character to the board's screen.
+ * Answers a handoff name the common names do not cover; the board has
+ * none of its own.
+ *
+ * The screen is the hardware layer's RAM framebuffer, not one the
+ * firmware left on, so the board names no framebuffer to the kernel even
+ * when a loader handed one over.
  */
-void
-riscv64_board_putc(
-	int character)
+void *
+riscv64_board_handoff(
+	const char *name)
 {
-	/* The console keeps the character whether or not the screen is shown yet. */
-	virt_cons_putc(character);
+	UNUSED_PARAMETER(name);
+
+	/* An unknown handoff. */
+	return NULL;
 }
 
 /*

@@ -15,7 +15,7 @@ RISCV64_EFI_CFLAGS := -std=c11 -march=rv64imac_zicsr_zifencei -mabi=lp64 \
 	-nostdlibinc -Iinclude -I.
 RISCV64_EFI_C := bootloader/uefi/bootriscv64.c bootloader/uefi/elf64.c \
 	bootloader/uefi/volume-discovery.c bootloader/uefi/zedbsd-config.c \
-	bootloader/uefi/fdt-hartid.c
+	bootloader/uefi/fdt-hartid.c bootloader/uefi/riscv64-reserved.c
 RISCV64_EFI_S := bootloader/uefi/riscv64/start.S bootloader/uefi/riscv64/transition.S
 RISCV64_EFI_OBJS := $(patsubst bootloader/uefi/%.c,$(RISCV64_EFI_DIR)/%.o,$(RISCV64_EFI_C)) \
 	$(patsubst bootloader/uefi/%.S,$(RISCV64_EFI_DIR)/%.o,$(RISCV64_EFI_S))

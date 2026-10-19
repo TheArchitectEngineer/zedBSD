@@ -31,10 +31,10 @@ RISCV64_CFLAGS := -march=rv64imac_zicsr_zifencei -mabi=lp64 -mcmodel=medany -mno
 RISCV64_KERNEL_LTO_CFLAGS := $(ZEDBSD_KERNEL_LTO_CFLAGS)
 
 RISCV64_BSP := src/hal/riscv64/$(RISCV64_BSP_DIR_$(ZEDBSD_BOARD))
-RISCV64_BSP_C_virt := $(RISCV64_BSP)/board.c $(RISCV64_BSP)/cons.c \
-	$(RISCV64_BSP)/fwcfg.c $(RISCV64_BSP)/framebuffer.c $(RISCV64_BSP)/font.c
+RISCV64_BSP_C_virt := $(RISCV64_BSP)/board.c \
+	$(RISCV64_BSP)/fwcfg.c $(RISCV64_BSP)/framebuffer.c
 # The VisionFive 2's board: the shared L2 cache controller's maintenance
-# (ws256-p025).
+# (ws256-p025) and the screen the firmware left on (ws256-p011).
 RISCV64_BSP_C_visionfive2 := $(RISCV64_BSP)/board.c
 
 RISCV64_BOOT_C := src/hal/riscv64/cmain.c src/hal/riscv64/bootinfo.c \
@@ -43,6 +43,8 @@ RISCV64_BOOT_C := src/hal/riscv64/cmain.c src/hal/riscv64/bootinfo.c \
 	src/hal/riscv64/plic.c src/hal/riscv64/clock.c src/hal/riscv64/page.c \
 	src/hal/riscv64/space.c src/hal/riscv64/task.c src/hal/riscv64/debug.c \
 	src/hal/riscv64/asm.c src/hal/riscv64/lib.c \
+	src/hal/riscv64/loader.c src/hal/riscv64/cons.c \
+	src/hal/riscv64/fbcons.c src/hal/riscv64/font.c \
 	src/hal/idle-suspend-unsupported.c \
 	$(RISCV64_BSP_C_$(ZEDBSD_BOARD))
 RISCV64_BOOT_S := src/hal/riscv64/locore.S src/hal/riscv64/trap.S \

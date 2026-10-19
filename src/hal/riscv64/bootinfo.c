@@ -12,13 +12,17 @@
  * keeps what it read from the tree, copies the command line out of it
  * while the tree is known to be intact, and gives the kernel the common
  * handoff and the named objects of hal_get_arch_handoff(): the command
- * line, the tree, the initial ramdisk and the boot hart.
+ * line, the tree, the initial ramdisk and the boot hart, and the board's
+ * own names.  It also keeps what the UEFI loader's handoff adds: the
+ * screen the firmware left on and the RAM the firmware keeps.
  */
 
 #include <hal/hal.h>
 #include <kern/boot.h>
 #include "bootinfo.h"
+#include "bsp.h"
 #include "defs.h"
+#include "loader.h"
 
 /*
  * The facts read from the device tree, the tree's physical address and the
@@ -52,6 +56,14 @@ static struct kern_boot_handoff kernel_handoff;
  * is no line.
  */
 static char boot_command_line[KERN_BOOT_PARAMETERS_STORAGE_SIZE];
+
+/*
+ * What the UEFI loader's handoff added to the first layout: empty when the
+ * firmware entered the kernel directly or the loader wrote the first
+ * layout.  Filled once by riscv64_boot_take_loader() on the boot hart
+ * before the board is set up, and read without a lock afterwards.
+ */
+static struct riscv64_loader_extras boot_loader_extras;
 
 static void copy_command_line(const struct riscv64_fdt_info *info, uintptr_t fdt_phys);
 static void keep_command_line(const char *line, size_t available);
@@ -114,6 +126,82 @@ riscv64_boot_set_command_line(
 }
 
 /*
+ * Takes what a UEFI loader's handoff adds to the first layout, once the
+ * device tree's facts are recorded.
+ *
+ * Returns RISCV64_LOADER_OK, or why the firmware's RAM cannot all be kept
+ * from the allocator; the caller stops the boot then, once the screen can
+ * show why.
+ */
+int
+riscv64_boot_take_loader(
+	const struct zbl6_riscv64_handoff *handoff)
+{
+	const struct riscv64_framebuffer *framebuffer;
+	int error;
+
+	/* Takes the screen and the firmware's RAM against the tree's banks and reservations. */
+	error = riscv64_loader_take(handoff, &boot_fdt, &boot_loader_extras);
+
+	/* Describes what the second layout gave, for the boot log. */
+	if (boot_loader_extras.layout >= 2U) {
+		hal_printf("RISCV64 LOADER layout=2 reserved=%u kept=%u\n",
+			   boot_loader_extras.reserved_given,
+			   boot_loader_extras.reserved_count);
+	}
+
+	/* Describes the screen, or why it was not taken. */
+	framebuffer = &boot_loader_extras.framebuffer;
+	if (boot_loader_extras.screen == RISCV64_LOADER_SCREEN_TAKEN) {
+		hal_printf("RISCV64 LOADER framebuffer %ux%u pitch=%u format=%u phys=%lx size=%lx\n",
+			   framebuffer->width,
+			   framebuffer->height,
+			   framebuffer->pitch,
+			   framebuffer->format,
+			   framebuffer->phys,
+			   framebuffer->size);
+	} else if (boot_loader_extras.screen == RISCV64_LOADER_SCREEN_REFUSED) {
+		hal_printf("RISCV64 LOADER framebuffer refused\n");
+	}
+
+	/* Reports why the firmware's RAM cannot all be kept. */
+	if (error != RISCV64_LOADER_OK)
+		return error;
+
+	/* Succeeded: the extras are kept. */
+	return RISCV64_LOADER_OK;
+}
+
+/*
+ * Reports the screen the loader handed over, or NULL when there is none
+ * the console and the kernel can draw on.
+ */
+const struct riscv64_framebuffer *
+riscv64_boot_framebuffer(
+	void)
+{
+	/* Only a screen that passed the checks is reported. */
+	if (boot_loader_extras.screen != RISCV64_LOADER_SCREEN_TAKEN)
+		return NULL;
+
+	/* Succeeded: the screen taken at boot. */
+	return &boot_loader_extras.framebuffer;
+}
+
+/*
+ * Reports the ranges of RAM the firmware keeps that the device tree does
+ * not reserve, and how many there are.
+ */
+const struct riscv64_fdt_range *
+riscv64_boot_firmware_reserved(
+	unsigned *count)
+{
+	/* Succeeded: the ranges taken at boot, none without a loader's second layout. */
+	*count = boot_loader_extras.reserved_count;
+	return boot_loader_extras.reserved;
+}
+
+/*
  * Reports the facts read from the device tree.
  */
 const struct riscv64_fdt_info *
@@ -155,6 +243,50 @@ riscv64_boot_command_line(
 {
 	/* Succeeded: the copy made at boot. */
 	return boot_command_line;
+}
+
+/*
+ * Reports whether a word stands on its own on the command line.
+ */
+bool
+riscv64_boot_parameter_given(
+	const char *word)
+{
+	const char *line;
+	unsigned position;
+	unsigned matched;
+	int at_word;
+
+	/* Looks for the word at the start of a word of the line. */
+	line = boot_command_line;
+	at_word = 1;
+	for (position = 0; line[position] != '\0'; position++) {
+		/* A space starts the next word. */
+		if (line[position] == ' ') {
+			at_word = 1;
+			continue;
+		}
+
+		/* Inside a word the wanted one cannot start. */
+		if (!at_word)
+			continue;
+		at_word = 0;
+
+		/* Compares the word. */
+		for (matched = 0; word[matched] != '\0'; matched++) {
+			if (line[position + matched] != word[matched])
+				break;
+		}
+		if (word[matched] != '\0')
+			continue;
+
+		/* The word is given only when the line's word ends with it. */
+		if (line[position + matched] == ' ' || line[position + matched] == '\0')
+			return true;
+	}
+
+	/* The word is absent. */
+	return false;
 }
 
 /*
@@ -230,12 +362,15 @@ riscv64_kernel_handoff(
  * "boot.command-line" is the firmware's command line; "riscv64.fdt" and
  * "riscv64.initrd" are physical ranges (struct riscv64_handoff_range, two
  * 64-bit words), the second only when the firmware loaded a ramdisk; and
- * "riscv64.boot-hart" is the boot hart's id as a 64-bit word.
+ * "riscv64.boot-hart" is the boot hart's id as a 64-bit word.  Every other
+ * name is the board's: the VisionFive 2 names the screen the firmware left
+ * on ("riscv64.framebuffer.*").
  */
 void *
 hal_get_arch_handoff(
 	const char *name)
 {
+	void *object;
 	int match;
 
 	/* A missing name names nothing. */
@@ -268,8 +403,31 @@ hal_get_arch_handoff(
 	if (match)
 		return &handoff_boot_hart;
 
-	/* An unknown handoff. */
-	return NULL;
+	/* Any other name is the board's to answer, NULL when it has no such object. */
+	object = riscv64_board_handoff(name);
+
+	/* Succeeded: the board's object, or NULL for an unknown name. */
+	return object;
+}
+
+/*
+ * Reports whether a handoff name is the one wanted, for the board's own
+ * names.
+ */
+bool
+riscv64_boot_name_is(
+	const char *name,
+	const char *wanted)
+{
+	int match;
+
+	/* Compares the names as hal_get_arch_handoff() does. */
+	match = name_is(name, wanted);
+	if (!match)
+		return false;
+
+	/* Succeeded: the names are the same. */
+	return true;
 }
 
 /*
