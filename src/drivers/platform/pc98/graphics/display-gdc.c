@@ -428,7 +428,7 @@ gdc_draw_image_common(
 		/* Process each element required by the operation. */
 		for (x = 0; x < image->width; x++) {
 			/* Checks the pattern bit result. */
-			if (!pattern_bit(pattern, x, y))
+			if (!pattern_bit(pattern, x, image->pattern_y + y))
 				continue;
 
 			/* Handles the image condition. */

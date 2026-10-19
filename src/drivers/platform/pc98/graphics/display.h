@@ -36,6 +36,7 @@ struct pc98_display_image {
 	const uint8_t *pixels;
 	uint32_t palette[256];
 	unsigned palette_size;
+	unsigned pattern_y; /* pattern row of the image's first row */
 };
 
 struct pc98_display_ops {

@@ -549,6 +549,9 @@ graphics_blit(
 				return error;
 		}
 
+		/* Keeps the pattern's vertical phase on this row. */
+		image.pattern_y = row;
+
 		/* Checks the drv pc98 graphics backend blit result. */
 		if (!drv_pc98_graphics_backend_blit(request.x, request.y + row,
 						    &image, request.pattern,
