@@ -18,4 +18,4 @@
 
 | Phase | 目的 | 状態 |
 | --- | --- | --- |
-| p001 | 設計と実装（elf.c・static-tls.c の m68k の配置、host 試験、名前の食い違いの調べ） | in-progress（q1304、P2、2026-10-19 18:26） |
+| [p001](phase001/phase.md) | 設計と実装（elf.c・static-tls.c の m68k の配置、host 試験、名前の食い違いの調べ） | in-progress（q1304、P2。2026-10-19 18:50 実装 73fde3c30・host 試験 PASS・build warning 0、Q1 の判定待ち。T1 は m68k なし（host 試験だけ）、amd64・pcat の起動の回帰は任意） |
