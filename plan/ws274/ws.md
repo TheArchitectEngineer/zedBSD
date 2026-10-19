@@ -21,7 +21,7 @@ design.md §3 の段。各段は build（amd64 の LTO・gcc の LTO 無しの p
 
 | Phase | 段 | LW | 状態 |
 | --- | --- | --- | --- |
-| p001 | S0 準備（KERN_VM_SOURCES・KERN_VM_OBJS、11 の platform、本文の照合の script）＋S1 移動（git mv で vm/vm.c・vm/vmspace.c・vm/device.c、試験の path・docs）＋S2 commit と metadata lock の切り出し | 7 | in-progress（code と host の確かめは済み、T1-736 待ち） |
+| p001 | S0 準備（KERN_VM_SOURCES・KERN_VM_OBJS、11 の platform、本文の照合の script）＋S1 移動（git mv で vm/vm.c・vm/vmspace.c・vm/device.c、試験の path・docs）＋S2 commit と metadata lock の切り出し | 7 | cleared（2026-10-19 Q1、T1-736） |
 | p002 | S3 匿名 page の群（J・K・L・M）と reclaim-internal.h | 5 | in-progress（q1297、P1、2026-10-19） |
 | p003 | S4 object の群（A〜G）と object-internal.h（必要なら S4a・S4b） | 10 | planned |
 | p004 | S5 vmspace の群と vmspace-internal.h、pin-host-test の追従 | 8 | planned |

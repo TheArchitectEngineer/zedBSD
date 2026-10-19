@@ -3,7 +3,7 @@
 # ws274-p001 S0 準備・S1 移動・S2 commit と metadata lock の切り出し
 
 - 親: [ws274](../ws.md)、設計: [design.md](../design.md) §3 の S0〜S2
-- Status: in-progress（q1296 / q1296-i01、P1、2026-10-19）。T1 の起動の回帰の結果を Q1 が判定するまで cleared にしない。
+- Status: cleared（2026-10-19 Q1 の判定、T1-736: amd64 の uefi-usb・pcat の bios-ide・PC-98・sun4u の起動の回帰 PASS。guest-vfork は任意で未実施）
 - 規約: ユーザーの決定（2026-10-19、design.md §6 は既定）により、移動の段は WS106 と同じ「配置の変更だけの例外」（[ws106-relocation.md](../../standards/ws106-relocation.md) の考え）。関数の本文・評価順・lock の順は変えない。規約の全文は p007。
 
 ## 行った事（worktree `/home/awe/zedBSD-worktrees/p1`、agent/p1）

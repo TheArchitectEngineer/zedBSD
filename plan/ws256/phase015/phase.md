@@ -78,3 +78,11 @@ Status: in-progress（2026-10-19 P2、q1295-i01。板の前の code と host 試
 - 実機の確かめ（上の手順、板の接続・#10・#15・#27 の後）。firmware 付きの image は本物の SPL・itb で確かめていない。
 - `rootpart=` の無い SD（legacy の autoroot の予備）は試していない。
 - 試験 `plan/ws256/tests/native-image/` の扱い（Q1）。
+
+## T1-735 の結果（2026-10-19 Q1）
+
+- A（virt の直の起動）PASS: login・uname -m・lo0 の 127.0.0.1・/home/kei の 0700、net: UP・networking failed・homes の失敗は出ない（net UP の直しが効いた）。
+- C（VF2 の kernel の GOP）PASS。amd64 の既定の image PASS。pcat・pc98 の build PASS。
+- D（virt の native.img を NVMe で U-Boot から）FAIL（2 回）: `vfs: rootpart selector PARTLABEL=zedBSD-root resolved to /dev/nvme0n1p2` の後に `ufs: nvme0n1p2: the volume refuses writes … a j3 transaction could not be committed (error 42)`、`nvme: I/O recovery failed (42); disk unavailable, DMA retained`、`kern: pid 1 killed by signal 10`。`native boot disk=none` も。未解析。
+- x68k の build が FAIL: Makefile の必須の program に足した dhcpc の規則が x68k に無い（P2 に直しを頼んだ）。
+- 再開: D の解析（NVMe の I/O の回復の失敗、U-Boot が NVMe を動かしたまま渡す件と INTx の道を疑う）と x68k の回帰の直し。
