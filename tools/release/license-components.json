@@ -375,6 +375,20 @@
    "note": "Binary form only, unmodified, with the licence's notice and disclaimers; the licence forbids reverse engineering, decompilation and disassembly."
   },
   {
+   "id": "powervr-firmware",
+   "name": "Imagination PowerVR Rogue GPU firmware (BXE-4-32, VisionFive 2)",
+   "when": "program:powervr-firmware",
+   "license": "LicenseRef-powervr-firmware (redistribution allowed)",
+   "upstream": "imagination/linux-firmware (powervr branch)",
+   "version": "1.1.OS@6976702",
+   "notices": [
+    "/usr/share/licenses/powervr-firmware/LICENSE.powervr",
+    "/usr/share/licenses/powervr-firmware/WHENCE"
+   ],
+   "paths": [],
+   "note": "Binary form only, unmodified, with the licence's notice and disclaimer; the licence forbids reverse engineering, decompilation and disassembly, and limits use to products licensed by Imagination."
+  },
+  {
    "id": "nvidia-gsp-firmware",
    "name": "NVIDIA GSP-RM firmware (Turing, Ampere, Ada)",
    "when": "program:nvidia-gsp-firmware",
