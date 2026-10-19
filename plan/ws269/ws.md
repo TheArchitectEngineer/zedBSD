@@ -3,7 +3,7 @@
 # WS269 VisionFive 2 の GPU（Imagination PowerVR BXE-4-32）の driver
 
 - ID: ws269、Master: [master.md](../master.md)、Primary Milestone: MG008（関係: MG006）
-- Status: planning（2026-10-19 Q1 作成。WS256 の後に着手）
+- Status: incomplete（2026-10-19 Q1 作成。設計 p001 を 2026-10-19 に P2 が開始、実装は WS256 の実機の確認の後）
 - 起点（2026-10-19 ユーザー）: 「VisionFive2はまずフレームバッファ、SDカードを実装して、rootfsから起動できるところまで持って行きます。USBキーボードで操作できるようにします。LANとサウンドとNVMeも使えるようにします。NVMe SSDがボードにつけてあり、テスト可能です。ここまでのphaseを作ってください。そのあと、PowerVRのドライバを独立WSで作ります。最終的に、VF2でkeilandを動かして、OSを完全に動作させます。」
 - 担当: P2（設計 p001、2026-10-19 q1316）。
 
