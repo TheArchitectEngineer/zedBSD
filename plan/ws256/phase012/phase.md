@@ -2,15 +2,15 @@
 
 # ws256-p012 周辺の設計（VisionFive 2）
 
-Status: in-progress（2026-10-19 q1270-i02、P1。改訂 2（レビュー 1 の全部を反映）を書いた。再レビューと Q1 の合格の前）
+Status: in-progress（2026-10-19 q1272-i01、P2。改訂 3（レビュー 2 の全部を反映）を書いた。再レビューと Q1 の合格の前）
 
-- 親: [WS256](../ws.md)。Queue: q1270-i01、q1270-i02。
+- 親: [WS256](../ws.md)。Queue: q1270-i01、q1270-i02（P1）、q1272-i01（P2）。
 - 範囲: p011（framebuffer の調べ）と p013〜p019（clock・reset・pinctrl/GPIO・PMIC、SD、rootfs からの起動、PCIe と USB・keyboard、NVMe、GbE と PHY、sound）の設計を `plan/ws256/design-peripherals.md` に書く。code は書かない。HAL の API の差分は案だけ。toolchain は変えない。
 - 完了の条件: 部品と register の事実を StarFive の公開資料で確かめ（URL・SHA-256 を記録、確かめられない事は未確認）、各 Phase の既存／新規・HAL・DT・試験・依存・LW・並行の組、実機の判定（#15）と接続（#10）の選択肢と既定の案がそろい、design-reviewer を通り、Q1 が合格とする。
 
 ## 成果物
 
-- [design-peripherals.md](../design-peripherals.md)（改訂 2）。[レビュー 1](../design-peripherals-review-1.md)。HAL の差分の案 [proposed/hal-riscv64-framebuffer.md](../proposed/hal-riscv64-framebuffer.md)（適用しない）。
+- [design-peripherals.md](../design-peripherals.md)（改訂 3）。[レビュー 1](../design-peripherals-review-1.md)、[レビュー 2](../design-peripherals-review-2.md)。HAL の差分の案 [proposed/hal-riscv64-framebuffer.md](../proposed/hal-riscv64-framebuffer.md)（適用しない）。
 
 ## 実行した事（q1270-i01、2026-10-19）
 
@@ -49,3 +49,16 @@ Status: in-progress（2026-10-19 q1270-i02、P1。改訂 2（レビュー 1 の�
 ## レビュー 2（2026-10-19 Q1）
 
 [design-peripherals-review-2.md](../design-peripherals-review-2.md): Blocker 1（p021 の hook の EOI）・Major 7・Minor 13。p016 はそのまま進めてよい、p017 の virt は Minor 1 を当てて進めてよい。改訂 3 は P1 が q1271 の後に書く。
+
+## 実行した事（q1272-i01、2026-10-19、P2）
+
+- worktree `/home/awe/zedBSD-worktrees/p2`（agent/p2）に main を取り込んだ（`git log -1 --format='%h %p'` = 3e3e053ed 19dd4f767、fast-forward）。子のエージェントは起動していない。新しい資料は取得していない（P1 の `build/tmp/ws256-docs/` を読むだけ）。
+- 照合した code: `include/hal/hal.h:1284-1292`（`hal_get_arch_handoff`）、`src/hal/riscv64/bootinfo.c`・`cmain.c`・`page.c`・`space.c`・`fdt.h`・`irq.c`・`bsp.h`・`bsp-virt/`、`bootloader/include/riscv64-handoff.h`（p004、版 1）、`bootloader/uefi/video.c`、`include/kern/boot.h`・`platform.h`、`src/kern/pmem.c`、`src/hal/arm64/bsp-rpi4/boot.c`・`src/hal/amd64/bsp-pcat/boot.c`、`src/drivers/pci/pci.c`（establish・disestablish・dispatch）・`pci.h`、`pci-nvme.c`、`pci-brcmstb.c`、`src/drivers/generic/dma.c`。資料: jh7110.dtsi の ccache・pcie の node、mainline の U-Boot の defconfig、obsd-stfpcie.c。
+- レビュー 2 の BL1・MJ1〜MJ7・Minor 1〜13 を全部当てた（対応の表は design-peripherals.md §10）。主な変更: p021 の hook を EOI を送らない `intx_line_run`・(host, vector) の鍵・lock の順と drain・戻り値で作り直した。p011 の土台を「描画は HAL（console を riscv64 の共通に）」「handoff 版 2（framebuffer と `reserved[]`）」「HAL が予約を外す」にし LW を 10〜14 に。proposed/hal-riscv64-framebuffer.md を hal.h の実際の形に直した。#20 を「配布の U-Boot で GOP が出た時に主をどちらにするか」に。coherency の確かめを 64 KiB・陽性の対照・8 回に、予備 (i) を確保ごとの別名の写像に（design.md §2.5 不変）、`vf2_dma_coherent()`。p024（p017 の実機）と p025（p005 の skeleton）を分けた。ws.md の表に p020〜p025 を planning で足し、p016・p017 の中身と他の行の依存・LW を合わせた（p016・p017 の状態の欄は変えていない）。
+- QEMU・実機・build は使っていない（code 無し）。
+
+## 残り（q1272-i01 の後）
+
+- 改訂 3 の design-reviewer（Q1 が回す）。
+- Q1 への依頼: HAL の承認 #29（文面は design-peripherals.md §6.3）、design.md の直し 7 件（§8）、tools（#28）、範囲外の観察（`hal_irq_unregister` が drain しない、§8）。
+- ユーザーの判断: design-peripherals.md §6.2（#15・#10・#20・#21〜#31）。
