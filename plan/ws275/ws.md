@@ -3,7 +3,7 @@
 # WS275 sun4u（sparcv9）に /dev/graphics を実装し、Xzed を動かす
 
 - ID: ws275、Master: [master.md](../master.md)、Primary Milestone: MG008
-- Status: planning（2026-10-19 18:18 Q1 作成）
+- Status: incomplete（p001 を P1、q1303。旧: planning（2026-10-19 18:18 Q1 作成）
 - 起点（2026-10-19 ユーザー）:「では、sun4uでも/dev/graphicsを実装して、Xzedが動くようにします。」（WS267 で入れた QEMU sun4u の VGA の framebuffer の console の上に）
 - 前提（Q1 の調べ）: /dev/graphics は今 pcat（src/drivers/platform/pcat/graphics/）と pc98 にある（include/uapi/graphics.h、docs/reference/control-devices.md）。Xzed は userland/x11/xzed（platform は *、既定は n）。sun4u の HAL は bsp-sun4u の framebuffer.c（std VGA）。sparcv9 は big endian の 64 bit で、pixel の並びと入力（keyboard・mouse）の道を設計で確かめる。sparcv9 はユーザーの担当の領域なので、変える file は設計で示す。
 - 担当: 未割当（手の空いた担当から p001）。
@@ -19,4 +19,4 @@
 
 | Phase | 目的 | 状態 |
 | --- | --- | --- |
-| p001 | 設計: /dev/graphics の契約と pcat の実装の読み、sun4u の VGA での実装の形（kernel の driver の置き場所、HAL との境界、mode の設定、framebuffer の user への写像、big endian の pixel の並び）、入力（QEMU sun4u の keyboard・mouse の device と driver の有無）、Xzed の sparcv9 での build（X11 の package、userland の X の group）、boot-test の判定、Phase の表と LW。design-reviewer を通す | planning |
+| p001 | 設計: /dev/graphics の契約と pcat の実装の読み、sun4u の VGA での実装の形（kernel の driver の置き場所、HAL との境界、mode の設定、framebuffer の user への写像、big endian の pixel の並び）、入力（QEMU sun4u の keyboard・mouse の device と driver の有無）、Xzed の sparcv9 での build（X11 の package、userland の X の group）、boot-test の判定、Phase の表と LW。design-reviewer を通す | in-progress（q1303、P1、2026-10-19） |
