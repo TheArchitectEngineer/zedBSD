@@ -229,6 +229,7 @@ drv_pc98_graphics_backend_blit(
 	native.stride = image->stride;
 	native.pixels = image->pixels;
 	native.palette_size = image->palette_size;
+	native.pattern_y = image->pattern_y;
 	/* Process each remaining element. */
 	for (i = 0; i < image->palette_size; i++)
 		native.palette[i] = image->palette[i];
