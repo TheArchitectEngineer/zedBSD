@@ -613,13 +613,15 @@ attach_sd_card(
 
 /*
  * Writes the SD card's partitions to the boot log: each one's number,
- * first block and size, and whether it is the EFI system partition.
+ * first block and size, its label when the table gives one, and whether
+ * it is the EFI system partition.
  */
 static void
 describe_sd_partitions(
 	void)
 {
 	const struct partition *entry;
+	const char *label;
 	const char *kind;
 	int count;
 	int index;
@@ -641,15 +643,19 @@ describe_sd_partitions(
 	/* Writes each partition. */
 	for (index = 0; index < count; index++) {
 		entry = &sd_partitions[index];
+		label = "";
+		if ((entry->p_flags & PARTITION_HAS_LABEL) != 0)
+			label = entry->p_label;
 		kind = "";
 		if ((entry->p_flags & PARTITION_EFI_SYSTEM) != 0)
 			kind = ", EFI system";
-		kern_logf("visionfive2: %s partition %u start %llu blocks %llu (%llu MiB)%s\n",
+		kern_logf("visionfive2: %s partition %u start %llu blocks %llu (%llu MiB) \"%s\"%s\n",
 			  sd_card->d_name,
 			  entry->p_index + 1U,
 			  (unsigned long long)entry->p_start_block,
 			  (unsigned long long)entry->p_block_count,
 			  (unsigned long long)(entry->p_block_count / 2048ULL),
+			  label,
 			  kind);
 	}
 }
