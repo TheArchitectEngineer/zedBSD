@@ -645,7 +645,10 @@ retry_lookup:
 	return 0;
 }
 
-/* Takes the registry lock with interrupts disabled, reporting whether they were enabled. */
+/*
+ * Takes the registry lock with interrupts disabled, reporting whether they
+ * were enabled.
+ */
 bool
 registry_lock(
 	void)
@@ -666,7 +669,9 @@ registry_lock(
 	return enabled;
 }
 
-/* Releases the registry lock and restores the interrupt state. */
+/*
+ * Releases the registry lock and restores the interrupt state.
+ */
 void
 registry_unlock(
 	bool enabled)
@@ -676,7 +681,9 @@ registry_unlock(
 		hal_irq_enable();
 }
 
-/* Finds the object of an inode; the caller holds the registry lock. */
+/*
+ * Finds the object of an inode; the caller holds the registry lock.
+ */
 struct vm_object *
 find_object_by_inode_locked(
 	struct inode *inode)
@@ -694,30 +701,10 @@ find_object_by_inode_locked(
 	return NULL;
 }
 
-/* Sleeps on an object's registry queue for the sequence observed. */
-static int
-object_wait_registry_sequence(
-	struct vm_object *object,
-	uint64_t sequence)
-{
-	unsigned long irq;
-	int error;
-
-	irq = spin_lock_irqsave(&object->lock);
-
-	error = waitq_sleep(&object->registry_waitq, &object->lock, sequence, 0, 0);
-
-	spin_unlock_irqrestore(&object->lock, irq);
-
-	/* Reports the failure. */
-	if (error != 0)
-		return error;
-
-	/* Succeeded. */
-	return 0;
-}
-
-/* Waits for a teardown transition, then drops the waiter's pin taken under the registry lock. */
+/*
+ * Waits for a teardown transition, then drops the waiter's pin taken under
+ * the registry lock.
+ */
 int
 object_wait_registry_transition(
 	struct vm_object *object,
@@ -750,7 +737,9 @@ object_wait_registry_transition(
 	return 0;
 }
 
-/* Wakes everyone waiting on an object's registry state. */
+/*
+ * Wakes everyone waiting on an object's registry state.
+ */
 void
 object_wake_registry_waiters(
 	struct vm_object *object)
@@ -764,34 +753,9 @@ object_wake_registry_waiters(
 	spin_unlock_irqrestore(&object->lock, irq);
 }
 
-/* Waits until no registry waiter still pins an unlinked object. */
-static void
-object_wait_registry_waiters(
-	struct vm_object *object)
-{
-	uint64_t sequence;
-	int error;
-	bool enabled;
-
-	/* Sleeps until the object has no registry waiter left. */
-	for (;;) {
-		/* Returns as soon as the waiter count reaches zero. */
-		enabled = registry_lock();
-		if (object->registry_waiters == 0) {
-			registry_unlock(enabled);
-			return;
-		}
-
-		/* Waits for the registry to report progress on this object. */
-		sequence = waitq_sequence(&object->registry_waitq);
-		registry_unlock(enabled);
-		error = object_wait_registry_sequence(object, sequence);
-		if (error != 0 && error != EAGAIN)
-			HAL_FATAL("VM object registry waiter drain failed");
-	}
-}
-
-/* Counts an operation on an object that is not detaching. */
+/*
+ * Counts an operation on an object that is not detaching.
+ */
 int
 object_operation_begin(
 	struct vm_object *object)
@@ -815,7 +779,9 @@ object_operation_begin(
 	return 0;
 }
 
-/* Counts an operation down, waking a final put waiting for the last. */
+/*
+ * Counts an operation down, waking a final put waiting for the last.
+ */
 void
 object_operation_end(
 	struct vm_object *object)
@@ -844,7 +810,10 @@ object_operation_end(
 	}
 }
 
-/* Advances an object's generation, skipping zero; the caller holds the object lock. */
+/*
+ * Advances an object's generation, skipping zero; the caller holds the
+ * object lock.
+ */
 uint64_t
 next_generation(
 	struct vm_object *object)
@@ -857,7 +826,9 @@ next_generation(
 	return object->generation;
 }
 
-/* Advances an inode's resize generation, skipping zero. */
+/*
+ * Advances an inode's resize generation, skipping zero.
+ */
 uint64_t
 next_inode_resize_generation_locked(
 	struct inode *inode)
@@ -870,7 +841,9 @@ next_inode_resize_generation_locked(
 	return inode->i_vm_resize_generation;
 }
 
-/* Advances an inode's content generation, skipping zero. */
+/*
+ * Advances an inode's content generation, skipping zero.
+ */
 uint64_t
 next_inode_content_generation_locked(
 	struct inode *inode)
@@ -883,7 +856,9 @@ next_inode_content_generation_locked(
 	return inode->i_vm_content_generation;
 }
 
-/* Tests whether an unmapped object is clean and idle enough to destroy. */
+/*
+ * Tests whether an unmapped object is clean and idle enough to destroy.
+ */
 int
 object_can_destroy(
 	struct vm_object *object)
@@ -906,7 +881,10 @@ object_can_destroy(
 	return result;
 }
 
-/* Removes a destroyable object from the registry; the caller holds the registry lock. */
+/*
+ * Removes a destroyable object from the registry; the caller holds the
+ * registry lock.
+ */
 int
 unlink_object_locked(
 	struct vm_object *object)
@@ -981,7 +959,9 @@ object_hash_index(
 	return (unsigned)(spread >> (32U - VM_OBJECT_HASH_BITS));
 }
 
-/* Frees an object, its pages, its files, and its commitment. */
+/*
+ * Frees an object, its pages, its files, and its commitment.
+ */
 void
 destroy_object(
 	struct vm_object *object)
@@ -1017,7 +997,9 @@ destroy_object(
 	kern_free(object);
 }
 
-/* Keeps an unmapped object in the registry until its writeback succeeds. */
+/*
+ * Keeps an unmapped object in the registry until its writeback succeeds.
+ */
 void
 retain_object(
 	struct vm_object *object,
@@ -1045,6 +1027,95 @@ retain_object(
 	spin_unlock_irqrestore(&object->lock, irq);
 
 	object->flags |= VM_OBJECT_RETAINED_WRITEBACK;
+}
+
+/*
+ * Tests the bounded clean retention policy under the registry lock.
+ */
+int
+object_cache_retainable(
+	struct vm_object *object)
+{
+	int retainable;
+
+	/*
+	 * Shared physical credits now bound clean retention across all objects.
+	 */
+	if ((object->flags & VM_OBJECT_CACHE_REFERENCE) == 0)
+		return 0;
+
+	retainable = object_can_destroy(object);
+
+	return retainable;
+}
+
+/*
+ * Tests whether a file has lost its last name.  Its storage goes back when
+ * the last holder lets go, so an optional cache of it must not be one.
+ */
+int
+inode_unnamed(
+	const struct inode *inode)
+{
+	/* An object without an inode names nothing to keep. */
+	if (inode == NULL)
+		return 0;
+
+	/*
+	 * Reports a removed inode.  The filesystems mark the last name's
+	 * removal DEAD; the link count is not kept by all of them (FAT).
+	 */
+	return (inode->i_flags & INODE_DEAD) != 0;
+}
+
+/* Sleeps on an object's registry queue for the sequence observed. */
+static int
+object_wait_registry_sequence(
+	struct vm_object *object,
+	uint64_t sequence)
+{
+	unsigned long irq;
+	int error;
+
+	irq = spin_lock_irqsave(&object->lock);
+
+	error = waitq_sleep(&object->registry_waitq, &object->lock, sequence, 0, 0);
+
+	spin_unlock_irqrestore(&object->lock, irq);
+
+	/* Reports the failure. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/* Waits until no registry waiter still pins an unlinked object. */
+static void
+object_wait_registry_waiters(
+	struct vm_object *object)
+{
+	uint64_t sequence;
+	int error;
+	bool enabled;
+
+	/* Sleeps until the object has no registry waiter left. */
+	for (;;) {
+		/* Returns as soon as the waiter count reaches zero. */
+		enabled = registry_lock();
+		if (object->registry_waiters == 0) {
+			registry_unlock(enabled);
+			return;
+		}
+
+		/* Waits for the registry to report progress on this object. */
+		sequence = waitq_sequence(&object->registry_waitq);
+		registry_unlock(enabled);
+		error = object_wait_registry_sequence(object, sequence);
+		if (error != 0 && error != EAGAIN)
+			HAL_FATAL("VM object registry waiter drain failed");
+	}
 }
 
 /* Adds an operation or mapping reference while the registry lock is held. */
@@ -1100,41 +1171,4 @@ object_reference_locked(
 
 	/* Reports the reference published with its registry ownership. */
 	return 0;
-}
-
-/* Tests the bounded clean retention policy under the registry lock. */
-int
-object_cache_retainable(
-	struct vm_object *object)
-{
-	int retainable;
-
-	/*
-	 * Shared physical credits now bound clean retention across all objects.
-	 */
-	if ((object->flags & VM_OBJECT_CACHE_REFERENCE) == 0)
-		return 0;
-
-	retainable = object_can_destroy(object);
-
-	return retainable;
-}
-
-/*
- * Tests whether a file has lost its last name.  Its storage goes back when
- * the last holder lets go, so an optional cache of it must not be one.
- */
-int
-inode_unnamed(
-	const struct inode *inode)
-{
-	/* An object without an inode names nothing to keep. */
-	if (inode == NULL)
-		return 0;
-
-	/*
-	 * Reports a removed inode.  The filesystems mark the last name's
-	 * removal DEAD; the link count is not kept by all of them (FAT).
-	 */
-	return (inode->i_flags & INODE_DEAD) != 0;
 }

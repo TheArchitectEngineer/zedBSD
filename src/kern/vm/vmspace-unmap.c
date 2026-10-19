@@ -463,6 +463,246 @@ vmspace_set_stack_limit(
 }
 
 /*
+ * Removes a page's reverse mappings, keeping a reference on its private
+ * backing as a retire token for release_detached_region_pages(); the
+ * caller holds the VM locks.
+ */
+void
+detach_vm_page(
+	struct vm_page *page)
+{
+	struct vm_private_page *backing;
+
+	/*
+	 * An object mapping only leaves the object's reverse mapping list,
+	 * once a writable one has left its stores to be written back (a space
+	 * torn down at exit comes here with its hardware mappings kept).
+	 */
+	if (page->object_page != NULL) {
+		object_mapping_note_dirty(page);
+		vm_object_mapping_remove(page->object_page, page);
+		page->object_page = NULL;
+		page->object_next = NULL;
+		return;
+	}
+
+	/*
+	 * A private backing can own physical memory or a swap slot.  Take a
+	 * temporary reference before vm_page_untrack() so that the
+	 * reverse-map detach cannot be the operation which frees those
+	 * resources.  The detached vm_page retains that reference solely as
+	 * a retire token; release_detached_region_pages() drops it after
+	 * the address has been unpublished and both locks are gone.
+	 */
+	backing = page->private_page;
+	if (backing == NULL)
+		return;
+	vm_private_page_ref(backing);
+	vm_page_untrack(page);
+	page->private_page = backing;
+	page->private_next = NULL;
+}
+
+/*
+ * Frees the detached pages of a retired region outside the locks.
+ */
+void
+release_detached_region_pages(
+	struct vm_region *region)
+{
+	struct vm_page *page;
+
+	/* Drops the index; the pages go one by one. */
+	region_page_index_free(region);
+	region->page_count = 0;
+	page = region->pages;
+	while (page != NULL) {
+		region->pages = page->next;
+		/* Drops the private-backing retire token, if there is one. */
+		if (page->private_page != NULL)
+			vm_private_page_put(page->private_page);
+		vm_page_free_metadata(page);
+		page = region->pages;
+	}
+}
+
+/*
+ * Publishes a prepared region at an exact address, retiring what it overlaps.
+ */
+int
+vmspace_replace_prepared(
+	struct vmspace *vm,
+	struct vm_region *prepared,
+	struct vm_region **result)
+{
+	struct vm_region *split_first;
+	struct vm_region *split_second;
+	struct vm_region *retired;
+	struct vm_region *region;
+	struct vm_region **link;
+	uintptr_t start;
+	uintptr_t end;
+	size_t removed;
+	int error;
+	struct vm_page *page;
+	uintptr_t overlap_start;
+	uintptr_t overlap_end;
+	struct vm_region *split;
+	uint64_t mapped_bytes;
+
+	retired = NULL;
+	removed = 0;
+	error = 0;
+
+	/*
+	 * Two preallocated split records make the metadata commit
+	 * failure-free after the first old region is changed.
+	 */
+	if (vm == NULL ||
+	    vm == &kernel_vmspace ||
+	    prepared == NULL ||
+	    !range_valid(prepared->start, prepared->size))
+		return EINVAL;
+
+	/* Preallocates both possible splits, because the commit may not fail. */
+	split_first = kern_calloc(1, sizeof(*split_first));
+	split_second = kern_calloc(1, sizeof(*split_second));
+	if (split_first == NULL || split_second == NULL) {
+		kern_free(split_first);
+		kern_free(split_second);
+		return ENOMEM;
+	}
+
+	start = prepared->start;
+	end = start + prepared->size;
+	vm_metadata_enter();
+	mutex_lock(&vm->lock);
+
+	vmspace_wait_faults_locked(vm);
+
+	/* Validates every overlapped region and sums the bytes removed. */
+	for (region = vm->regions; region != NULL; region = region->next) {
+		if (region->start >= end || region->start + region->size <= start)
+			continue;
+		if ((region->flags & VM_REGION_IMMUTABLE) != 0) {
+			error = EINVAL;
+			goto out_locked;
+		}
+
+		if (region->hold_count != 0) {
+			error = EAGAIN;
+			goto out_locked;
+		}
+
+		/* Refuses the replacement while any page of the range is wired. */
+		for (page = region->pages; page != NULL; page = page->next) {
+			if (page->address < end &&
+			    page->address + PAGE_SIZE > start &&
+			    page->wire_count != 0) {
+				error = EAGAIN;
+				goto out_locked;
+			}
+		}
+
+		/* Counts how much mapped address space the replacement frees. */
+		if (region->start > start)
+			overlap_start = region->start;
+		else
+			overlap_start = start;
+		if (region->start + region->size < end)
+			overlap_end = region->start + region->size;
+		else
+			overlap_end = end;
+		removed += overlap_end - overlap_start;
+	}
+
+	if (removed > vm->mapped_virtual_bytes) {
+		error = ENOMEM;
+		goto out_locked;
+	}
+
+	/* Refuses a replacement that would exceed the address-space limit. */
+	mapped_bytes = vm->mapped_virtual_bytes - removed;
+	if (mapped_bytes > vm->address_limit)
+		mapped_bytes = vm->address_limit;
+	if ((uint64_t)prepared->size > vm->address_limit - mapped_bytes) {
+		error = ENOMEM;
+		goto out_locked;
+	}
+
+	/* Splits the regions that straddle either end of the range. */
+	region = find_region_locked(vm, end - 1U, 1);
+	if (region != NULL && end < region->start + region->size) {
+		error = split_region_prepared(region, end, split_first);
+		if (error != 0)
+			goto out_locked;
+		split_first = NULL;
+	}
+
+	/* Splits the region that straddles the start of the range. */
+	region = find_region_locked(vm, start, 1);
+	if (region != NULL && start > region->start) {
+		if (split_first != NULL)
+			split = split_first;
+		else
+			split = split_second;
+		error = split_region_prepared(region, start, split);
+		if (error != 0)
+			HAL_FATAL("prepared VM split commit failed");
+		if (split == split_first)
+			split_first = NULL;
+		else
+			split_second = NULL;
+	}
+
+	/* Detaches the old mappings, unlinks the old regions, and links the new one. */
+	for (region = vm->regions; region != NULL && region->start < end;
+	     region = region->next) {
+		if (region->start >= start)
+			detach_region_pages_for_unmap(vm, region);
+	}
+
+	for (link = &vm->regions; *link != NULL; link = &(*link)->next) {
+		if ((*link)->start >= start)
+			break;
+	}
+
+	region = *link;
+	while (region != NULL && region->start < end) {
+		*link = region->next;
+		vm->mapped_virtual_bytes -= region->size;
+		region->next = retired;
+		retired = region;
+		region = *link;
+	}
+
+	insert_region(vm, prepared);
+	vm->mapped_virtual_bytes += prepared->size;
+	vmspace_generation_advance_locked(vm);
+	if (result != NULL)
+		*result = prepared;
+
+out_locked:
+	/* Leaves the locks and frees the split records the pass reserved. */
+
+	mutex_unlock(&vm->lock);
+	vm_metadata_leave();
+
+	kern_free(split_first);
+	kern_free(split_second);
+
+	/* Retires the replaced regions outside every lock. */
+	release_retired_regions(retired);
+
+	/* Reports why the replacement failed. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
  * Frees one page record during teardown, unmapping it when asked.
  *
  * A space about to be destroyed keeps its hardware mappings: the HAL
@@ -561,47 +801,6 @@ object_mapping_note_dirty(
 	vm_object_mark_dirty(page->object_page);
 }
 
-/*
- * Removes a page's reverse mappings, keeping a reference on its private
- * backing as a retire token for release_detached_region_pages(); the
- * caller holds the VM locks.
- */
-void
-detach_vm_page(
-	struct vm_page *page)
-{
-	struct vm_private_page *backing;
-
-	/*
-	 * An object mapping only leaves the object's reverse mapping list,
-	 * once a writable one has left its stores to be written back (a space
-	 * torn down at exit comes here with its hardware mappings kept).
-	 */
-	if (page->object_page != NULL) {
-		object_mapping_note_dirty(page);
-		vm_object_mapping_remove(page->object_page, page);
-		page->object_page = NULL;
-		page->object_next = NULL;
-		return;
-	}
-
-	/*
-	 * A private backing can own physical memory or a swap slot.  Take a
-	 * temporary reference before vm_page_untrack() so that the
-	 * reverse-map detach cannot be the operation which frees those
-	 * resources.  The detached vm_page retains that reference solely as
-	 * a retire token; release_detached_region_pages() drops it after
-	 * the address has been unpublished and both locks are gone.
-	 */
-	backing = page->private_page;
-	if (backing == NULL)
-		return;
-	vm_private_page_ref(backing);
-	vm_page_untrack(page);
-	page->private_page = backing;
-	page->private_next = NULL;
-}
-
 /* Detaches every page of a region for unmap; the caller holds the VM locks. */
 static void
 detach_region_pages_for_unmap(
@@ -615,27 +814,6 @@ detach_region_pages_for_unmap(
 	     page != NULL;
 	     page = page->next) {
 		detach_vm_page_for_unmap(vm, page);
-	}
-}
-
-/* Frees the detached pages of a retired region outside the locks. */
-void
-release_detached_region_pages(
-	struct vm_region *region)
-{
-	struct vm_page *page;
-
-	/* Drops the index; the pages go one by one. */
-	region_page_index_free(region);
-	region->page_count = 0;
-	page = region->pages;
-	while (page != NULL) {
-		region->pages = page->next;
-		/* Drops the private-backing retire token, if there is one. */
-		if (page->private_page != NULL)
-			vm_private_page_put(page->private_page);
-		vm_page_free_metadata(page);
-		page = region->pages;
 	}
 }
 
@@ -832,180 +1010,6 @@ release_retired_regions(
 		kern_free(region);
 		region = retired;
 	}
-}
-
-/* Publishes a prepared region at an exact address, retiring what it overlaps. */
-int
-vmspace_replace_prepared(
-	struct vmspace *vm,
-	struct vm_region *prepared,
-	struct vm_region **result)
-{
-	struct vm_region *split_first;
-	struct vm_region *split_second;
-	struct vm_region *retired;
-	struct vm_region *region;
-	struct vm_region **link;
-	uintptr_t start;
-	uintptr_t end;
-	size_t removed;
-	int error;
-	struct vm_page *page;
-	uintptr_t overlap_start;
-	uintptr_t overlap_end;
-	struct vm_region *split;
-	uint64_t mapped_bytes;
-
-	retired = NULL;
-	removed = 0;
-	error = 0;
-
-	/*
-	 * Two preallocated split records make the metadata commit
-	 * failure-free after the first old region is changed.
-	 */
-	if (vm == NULL ||
-	    vm == &kernel_vmspace ||
-	    prepared == NULL ||
-	    !range_valid(prepared->start, prepared->size))
-		return EINVAL;
-
-	/* Preallocates both possible splits, because the commit may not fail. */
-	split_first = kern_calloc(1, sizeof(*split_first));
-	split_second = kern_calloc(1, sizeof(*split_second));
-	if (split_first == NULL || split_second == NULL) {
-		kern_free(split_first);
-		kern_free(split_second);
-		return ENOMEM;
-	}
-
-	start = prepared->start;
-	end = start + prepared->size;
-	vm_metadata_enter();
-	mutex_lock(&vm->lock);
-
-	vmspace_wait_faults_locked(vm);
-
-	/* Validates every overlapped region and sums the bytes removed. */
-	for (region = vm->regions; region != NULL; region = region->next) {
-		if (region->start >= end || region->start + region->size <= start)
-			continue;
-		if ((region->flags & VM_REGION_IMMUTABLE) != 0) {
-			error = EINVAL;
-			goto out_locked;
-		}
-
-		if (region->hold_count != 0) {
-			error = EAGAIN;
-			goto out_locked;
-		}
-
-		/* Refuses the replacement while any page of the range is wired. */
-		for (page = region->pages; page != NULL; page = page->next) {
-			if (page->address < end &&
-			    page->address + PAGE_SIZE > start &&
-			    page->wire_count != 0) {
-				error = EAGAIN;
-				goto out_locked;
-			}
-		}
-
-		/* Counts how much mapped address space the replacement frees. */
-		if (region->start > start)
-			overlap_start = region->start;
-		else
-			overlap_start = start;
-		if (region->start + region->size < end)
-			overlap_end = region->start + region->size;
-		else
-			overlap_end = end;
-		removed += overlap_end - overlap_start;
-	}
-
-	if (removed > vm->mapped_virtual_bytes) {
-		error = ENOMEM;
-		goto out_locked;
-	}
-
-	/* Refuses a replacement that would exceed the address-space limit. */
-	mapped_bytes = vm->mapped_virtual_bytes - removed;
-	if (mapped_bytes > vm->address_limit)
-		mapped_bytes = vm->address_limit;
-	if ((uint64_t)prepared->size > vm->address_limit - mapped_bytes) {
-		error = ENOMEM;
-		goto out_locked;
-	}
-
-	/* Splits the regions that straddle either end of the range. */
-	region = find_region_locked(vm, end - 1U, 1);
-	if (region != NULL && end < region->start + region->size) {
-		error = split_region_prepared(region, end, split_first);
-		if (error != 0)
-			goto out_locked;
-		split_first = NULL;
-	}
-
-	/* Splits the region that straddles the start of the range. */
-	region = find_region_locked(vm, start, 1);
-	if (region != NULL && start > region->start) {
-		if (split_first != NULL)
-			split = split_first;
-		else
-			split = split_second;
-		error = split_region_prepared(region, start, split);
-		if (error != 0)
-			HAL_FATAL("prepared VM split commit failed");
-		if (split == split_first)
-			split_first = NULL;
-		else
-			split_second = NULL;
-	}
-
-	/* Detaches the old mappings, unlinks the old regions, and links the new one. */
-	for (region = vm->regions; region != NULL && region->start < end;
-	     region = region->next) {
-		if (region->start >= start)
-			detach_region_pages_for_unmap(vm, region);
-	}
-
-	for (link = &vm->regions; *link != NULL; link = &(*link)->next) {
-		if ((*link)->start >= start)
-			break;
-	}
-
-	region = *link;
-	while (region != NULL && region->start < end) {
-		*link = region->next;
-		vm->mapped_virtual_bytes -= region->size;
-		region->next = retired;
-		retired = region;
-		region = *link;
-	}
-
-	insert_region(vm, prepared);
-	vm->mapped_virtual_bytes += prepared->size;
-	vmspace_generation_advance_locked(vm);
-	if (result != NULL)
-		*result = prepared;
-
-out_locked:
-	/* Leaves the locks and frees the split records the pass reserved. */
-
-	mutex_unlock(&vm->lock);
-	vm_metadata_leave();
-
-	kern_free(split_first);
-	kern_free(split_second);
-
-	/* Retires the replaced regions outside every lock. */
-	release_retired_regions(retired);
-
-	/* Reports why the replacement failed. */
-	if (error != 0)
-		return error;
-
-	/* Succeeded. */
-	return 0;
 }
 
 /* Records the program break start; the caller holds the VM locks. */

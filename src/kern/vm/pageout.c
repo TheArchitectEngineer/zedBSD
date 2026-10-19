@@ -128,24 +128,6 @@ vm_free_bytes_estimate(
 	return pages * PAGE_SIZE;
 }
 
-/* Reads the allocator's free page count and starts a fresh estimate from it. */
-static size_t
-vm_free_pages_exact(
-	void)
-{
-	struct hal_memstat stats;
-
-	/* Reads the allocator's free count. */
-	hal_get_memstat(&stats);
-
-	/* The reading becomes the snapshot the estimate counts down from. */
-	free_snapshot_pages = stats.physical_free / PAGE_SIZE;
-	free_snapshot_taken = 0;
-
-	/* Reports the exact count. */
-	return free_snapshot_pages;
-}
-
 /*
  * Reports the free physical pages for one frame the caller is about to take.
  *
@@ -181,7 +163,9 @@ vm_free_pages(
 	return exact;
 }
 
-/* Reports the reserve of free pages a user frame may not take. */
+/*
+ * Reports the reserve of free pages a user frame may not take.
+ */
 size_t
 vm_free_min_pages(
 	void)
@@ -203,7 +187,9 @@ vm_free_min_pages(
 	return minimum;
 }
 
-/* Wakes the page-out worker, starting it on first use. */
+/*
+ * Wakes the page-out worker, starting it on first use.
+ */
 void
 pageout_kick(
 	void)
@@ -235,6 +221,73 @@ pageout_kick(
 
 	/* Lets the worker run. */
 	thread_start(thread);
+}
+
+/*
+ * Kills the process with the most mapped memory, sparing init and the
+ * kernel.  Reports whether one was killed.
+ */
+int
+vm_oom_kill(
+	void)
+{
+	struct process *process;
+	struct process *victim;
+	uint64_t largest;
+	uint64_t mapped;
+	pid_t cursor;
+
+	/* Walks every process for the largest address space. */
+	victim = NULL;
+	largest = 0;
+	cursor = 1;
+	process = process_find_next_ref(cursor);
+	while (process != NULL) {
+		cursor = process->pid;
+		mapped = 0;
+		if (process->vmspace != NULL)
+			mapped = process->vmspace->mapped_virtual_bytes;
+		if (mapped > largest) {
+			if (victim != NULL)
+				process_release(victim);
+			victim = process;
+			largest = mapped;
+		} else {
+			process_release(process);
+		}
+
+		/* Moves to the next process by PID. */
+		process = process_find_next_ref(cursor);
+	}
+
+	/* Reports that no process could be chosen. */
+	if (victim == NULL)
+		return 0;
+
+	/* Kills the victim and says so. */
+	kern_logf("kern: out of memory: killed pid %ld (%llu bytes mapped)\n",
+	    (long)victim->pid, (unsigned long long)largest);
+	(void)signal_send_process(victim, SIGKILL);
+	process_release(victim);
+	return 1;
+}
+
+/* Reads the allocator's free page count and starts a fresh estimate from it. */
+static size_t
+vm_free_pages_exact(
+	void)
+{
+	struct hal_memstat stats;
+
+	/* Reads the allocator's free count. */
+	hal_get_memstat(&stats);
+
+	/* The reading becomes the snapshot the estimate counts down from. */
+	free_snapshot_pages = stats.physical_free / PAGE_SIZE;
+	free_snapshot_taken = 0;
+
+	/* Reports the exact count. */
+	return free_snapshot_pages;
 }
 
 /*
@@ -303,53 +356,4 @@ pageout_worker(
 		if (failed)
 			kern_usleep_range(5000U, 10000U);
 	}
-}
-
-/*
- * Kills the process with the most mapped memory, sparing init and the
- * kernel.  Reports whether one was killed.
- */
-int
-vm_oom_kill(
-	void)
-{
-	struct process *process;
-	struct process *victim;
-	uint64_t largest;
-	uint64_t mapped;
-	pid_t cursor;
-
-	/* Walks every process for the largest address space. */
-	victim = NULL;
-	largest = 0;
-	cursor = 1;
-	process = process_find_next_ref(cursor);
-	while (process != NULL) {
-		cursor = process->pid;
-		mapped = 0;
-		if (process->vmspace != NULL)
-			mapped = process->vmspace->mapped_virtual_bytes;
-		if (mapped > largest) {
-			if (victim != NULL)
-				process_release(victim);
-			victim = process;
-			largest = mapped;
-		} else {
-			process_release(process);
-		}
-
-		/* Moves to the next process by PID. */
-		process = process_find_next_ref(cursor);
-	}
-
-	/* Reports that no process could be chosen. */
-	if (victim == NULL)
-		return 0;
-
-	/* Kills the victim and says so. */
-	kern_logf("kern: out of memory: killed pid %ld (%llu bytes mapped)\n",
-	    (long)victim->pid, (unsigned long long)largest);
-	(void)signal_send_process(victim, SIGKILL);
-	process_release(victim);
-	return 1;
 }

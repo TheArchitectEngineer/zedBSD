@@ -692,6 +692,36 @@ vm_object_mark_dirty(
 	vm_metadata_leave();
 }
 
+/*
+ * Tests whether any page in a range has a wired mapping.
+ */
+int
+range_has_wired_mapping(
+	struct vm_object *object,
+	uint64_t start,
+	uint64_t end)
+{
+	struct vm_object_page *page;
+	struct vm_page *mapping;
+
+	/* Looks for a wired mapping on any page of the range. */
+	for (page = object->pages; page != NULL; page = page->next) {
+		if (!page_overlaps(page, start, end))
+			continue;
+
+		/* Reports the first mapping of this page that is wired. */
+		for (mapping = page->mappings;
+		     mapping != NULL;
+		     mapping = mapping->object_next) {
+			if (mapping->wire_count != 0)
+				return 1;
+		}
+	}
+
+	/* Reports a range nothing wires down. */
+	return 0;
+}
+
 /* Copies into or out of a pinned page once it is not busy. */
 static int
 vm_object_page_pin_copy(
@@ -768,33 +798,5 @@ vm_object_page_pin_copy(
 
 	spin_unlock_irqrestore(&object->lock, irq);
 
-	return 0;
-}
-
-/* Tests whether any page in a range has a wired mapping. */
-int
-range_has_wired_mapping(
-	struct vm_object *object,
-	uint64_t start,
-	uint64_t end)
-{
-	struct vm_object_page *page;
-	struct vm_page *mapping;
-
-	/* Looks for a wired mapping on any page of the range. */
-	for (page = object->pages; page != NULL; page = page->next) {
-		if (!page_overlaps(page, start, end))
-			continue;
-
-		/* Reports the first mapping of this page that is wired. */
-		for (mapping = page->mappings;
-		     mapping != NULL;
-		     mapping = mapping->object_next) {
-			if (mapping->wire_count != 0)
-				return 1;
-		}
-	}
-
-	/* Reports a range nothing wires down. */
 	return 0;
 }

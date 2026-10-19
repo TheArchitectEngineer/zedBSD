@@ -97,26 +97,9 @@ static struct vm_object_page *page_index_insert(struct vm_object_page *root, str
 static struct vm_object_page *page_index_extract_min(struct vm_object_page *root, struct vm_object_page **minimum);
 static struct vm_object_page *page_index_remove(struct vm_object_page *root, struct vm_object_page *page);
 
-/* Allocates one page of physical memory. */
-static int
-alloc_vm_page(
-	struct kern_pmem *memory)
-{
-	int error;
-
-	/* Asks the HAL for one page of ordinary memory. */
-	kern_memset(memory, 0, sizeof(*memory));
-	error = vm_private_page_alloc(memory);
-
-	/* Reports why the allocation failed. */
-	if (error != 0)
-		return error;
-
-	/* Succeeded. */
-	return 0;
-}
-
-/* Finds the cached page at an offset. */
+/*
+ * Finds the cached page at an offset.
+ */
 struct vm_object_page *
 find_page(
 	struct vm_object *object,
@@ -138,7 +121,9 @@ find_page(
 	return NULL;
 }
 
-/* Unlinks a page from a list; the caller holds the object lock. */
+/*
+ * Unlinks a page from a list; the caller holds the object lock.
+ */
 int
 unlink_page_locked(
 	struct vm_object_page **head,
@@ -157,7 +142,9 @@ unlink_page_locked(
 	return 0;
 }
 
-/* Tests whether a page overlaps a byte range. */
+/*
+ * Tests whether a page overlaps a byte range.
+ */
 int
 page_overlaps(
 	const struct vm_object_page *page,
@@ -183,7 +170,9 @@ page_overlaps(
 	return 1;
 }
 
-/* Tests indexed dirty ownership; the caller holds the object lock. */
+/*
+ * Tests indexed dirty ownership; the caller holds the object lock.
+ */
 int
 object_has_dirty_pages_locked(
 	struct vm_object *object)
@@ -191,7 +180,10 @@ object_has_dirty_pages_locked(
 	return object->dirty_pages != NULL;
 }
 
-/* Tests whether any page or orphan is busy or held; the caller holds the object lock. */
+/*
+ * Tests whether any page or orphan is busy or held; the caller holds the
+ * object lock.
+ */
 int
 object_has_busy_pages_locked(
 	const struct vm_object *object)
@@ -224,7 +216,9 @@ object_has_busy_pages_locked(
 	return 0;
 }
 
-/* Tests whether any page or orphan is busy or held. */
+/*
+ * Tests whether any page or orphan is busy or held.
+ */
 int
 object_has_busy_pages(
 	struct vm_object *object)
@@ -241,7 +235,9 @@ object_has_busy_pages(
 	return busy;
 }
 
-/* Clears a page's dirty state; the caller holds the object lock. */
+/*
+ * Clears a page's dirty state; the caller holds the object lock.
+ */
 void
 clear_page_dirty_locked(
 	struct vm_object_page *page)
@@ -262,7 +258,9 @@ clear_page_dirty_locked(
 	page->dirty_generation = 0;
 }
 
-/* Frees an unmapped, unheld page and its memory. */
+/*
+ * Frees an unmapped, unheld page and its memory.
+ */
 void
 free_object_page(
 	struct vm_object_page *page)
@@ -284,6 +282,131 @@ free_object_page(
 		HAL_FATAL("VM object page counter underflow");
 
 	(void)atomic_fetch_add_relaxed(&object_pages, (unsigned)-1);
+}
+
+/*
+ * Allocates a fully charged private frame before any page index publication.
+ */
+struct vm_object_page *
+alloc_object_page(
+	struct vm_object *object,
+	off_t offset,
+	int optional)
+{
+	struct vm_object_page *page;
+
+	/*
+	 * Reserves optional cache growth or records mandatory mapping
+	 * commitment.
+	 */
+	if (object_memory_reserve(CACHE_MEMORY_FILE_DATA, optional) != 0)
+		return NULL;
+
+	/* Returns the reservation when no descriptor is free. */
+	page = object_descriptor_alloc(optional);
+	if (page == NULL) {
+		if (cache_memory_cancel != NULL)
+			cache_memory_cancel(CACHE_MEMORY_FILE_DATA, PAGE_SIZE);
+		return NULL;
+	}
+
+	/* Returns the descriptor and the reservation when no frame is free. */
+	if (alloc_vm_page(&page->pmem) != HAL_OK) {
+		object_descriptor_free(page);
+		if (cache_memory_cancel != NULL)
+			cache_memory_cancel(CACHE_MEMORY_FILE_DATA, PAGE_SIZE);
+		return NULL;
+	}
+
+	if (page->pmem.size != PAGE_SIZE || hal_pmem_to_kernel(page->pmem.paddr) == NULL)
+		HAL_FATAL("unexpected VM object frame allocation");
+
+	/*
+	 * Publishes resident ownership while the initialized descriptor stays
+	 * private.
+	 */
+	page->owner = object;
+	page->offset = offset;
+	page->flags = VM_OBJECT_PAGE_BUSY;
+
+	if (cache_memory_commit != NULL)
+		cache_memory_commit(CACHE_MEMORY_FILE_DATA, PAGE_SIZE);
+
+	return page;
+}
+
+/*
+ * Frees private or detached frame storage without changing publication counts.
+ */
+void
+release_object_page_storage(
+	struct vm_object_page *page)
+{
+	/*
+	 * Ends optional attribution before the descriptor or its storage can be
+	 * reused.
+	 */
+	object_prefetch_retire(page);
+
+	/* Returns data credits only after the physical frame has retired. */
+	if (hal_pmem_free(&page->pmem.paddr, page->pmem.size) != HAL_OK)
+		HAL_FATAL("VM object frame retirement failed");
+
+	if (cache_memory_release != NULL)
+		cache_memory_release(CACHE_MEMORY_FILE_DATA, PAGE_SIZE);
+
+	object_descriptor_free(page);
+}
+
+/*
+ * Publishes a descriptor under the already held object lock.
+ */
+void
+object_page_index_insert(
+	struct vm_object *object,
+	struct vm_object_page *page)
+{
+	/* Starts with an independent leaf before linking it into the object. */
+	page->index_left = NULL;
+	page->index_right = NULL;
+	page->index_height = 1;
+	object->page_index = page_index_insert(object->page_index, page);
+}
+
+/*
+ * Detaches a descriptor before it becomes an orphan or is retired.
+ */
+void
+object_page_index_remove(
+	struct vm_object *object,
+	struct vm_object_page *page)
+{
+	/*
+	 * Removes the key and clears links before another owner can reuse them.
+	 */
+	object->page_index = page_index_remove(object->page_index, page);
+	page->index_left = NULL;
+	page->index_right = NULL;
+	page->index_height = 0;
+}
+
+/* Allocates one page of physical memory. */
+static int
+alloc_vm_page(
+	struct kern_pmem *memory)
+{
+	int error;
+
+	/* Asks the HAL for one page of ordinary memory. */
+	kern_memset(memory, 0, sizeof(*memory));
+	error = vm_private_page_alloc(memory);
+
+	/* Reports why the allocation failed. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
+	return 0;
 }
 
 /*
@@ -532,78 +655,6 @@ object_descriptor_free(
 	}
 }
 
-/* Allocates a fully charged private frame before any page index publication. */
-struct vm_object_page *
-alloc_object_page(
-	struct vm_object *object,
-	off_t offset,
-	int optional)
-{
-	struct vm_object_page *page;
-
-	/*
-	 * Reserves optional cache growth or records mandatory mapping
-	 * commitment.
-	 */
-	if (object_memory_reserve(CACHE_MEMORY_FILE_DATA, optional) != 0)
-		return NULL;
-
-	/* Returns the reservation when no descriptor is free. */
-	page = object_descriptor_alloc(optional);
-	if (page == NULL) {
-		if (cache_memory_cancel != NULL)
-			cache_memory_cancel(CACHE_MEMORY_FILE_DATA, PAGE_SIZE);
-		return NULL;
-	}
-
-	/* Returns the descriptor and the reservation when no frame is free. */
-	if (alloc_vm_page(&page->pmem) != HAL_OK) {
-		object_descriptor_free(page);
-		if (cache_memory_cancel != NULL)
-			cache_memory_cancel(CACHE_MEMORY_FILE_DATA, PAGE_SIZE);
-		return NULL;
-	}
-
-	if (page->pmem.size != PAGE_SIZE || hal_pmem_to_kernel(page->pmem.paddr) == NULL)
-		HAL_FATAL("unexpected VM object frame allocation");
-
-	/*
-	 * Publishes resident ownership while the initialized descriptor stays
-	 * private.
-	 */
-	page->owner = object;
-	page->offset = offset;
-	page->flags = VM_OBJECT_PAGE_BUSY;
-
-	if (cache_memory_commit != NULL)
-		cache_memory_commit(CACHE_MEMORY_FILE_DATA, PAGE_SIZE);
-
-	return page;
-}
-
-/*
- * Frees private or detached frame storage without changing publication counts.
- */
-void
-release_object_page_storage(
-	struct vm_object_page *page)
-{
-	/*
-	 * Ends optional attribution before the descriptor or its storage can be
-	 * reused.
-	 */
-	object_prefetch_retire(page);
-
-	/* Returns data credits only after the physical frame has retired. */
-	if (hal_pmem_free(&page->pmem.paddr, page->pmem.size) != HAL_OK)
-		HAL_FATAL("VM object frame retirement failed");
-
-	if (cache_memory_release != NULL)
-		cache_memory_release(CACHE_MEMORY_FILE_DATA, PAGE_SIZE);
-
-	object_descriptor_free(page);
-}
-
 /* Reports the empty subtree height without dereferencing a missing child. */
 static unsigned
 page_index_height(
@@ -796,32 +847,4 @@ page_index_remove(
 	root = page_index_balance(root);
 
 	return root;
-}
-
-/* Publishes a descriptor under the already held object lock. */
-void
-object_page_index_insert(
-	struct vm_object *object,
-	struct vm_object_page *page)
-{
-	/* Starts with an independent leaf before linking it into the object. */
-	page->index_left = NULL;
-	page->index_right = NULL;
-	page->index_height = 1;
-	object->page_index = page_index_insert(object->page_index, page);
-}
-
-/* Detaches a descriptor before it becomes an orphan or is retired. */
-void
-object_page_index_remove(
-	struct vm_object *object,
-	struct vm_object_page *page)
-{
-	/*
-	 * Removes the key and clears links before another owner can reuse them.
-	 */
-	object->page_index = page_index_remove(object->page_index, page);
-	page->index_left = NULL;
-	page->index_right = NULL;
-	page->index_height = 0;
 }

@@ -868,6 +868,143 @@ release_region:
 }
 
 /*
+ * Reports whether a backing is held only by pins, with its page in memory.
+ *
+ * Such a page cannot be shared copy-on-write, because whoever pinned it
+ * may still write into it; but it can be copied outright, since a pin
+ * keeps the page in memory and keeps reclaim away from it.
+ */
+int
+private_page_pinned_resident(
+	struct vm_private_page *backing)
+{
+	unsigned long irq;
+	int result;
+
+	irq = spin_lock_irqsave(&backing->state_lock);
+	result = backing->pin_count != 0 &&
+	    backing->active_operations == 0 &&
+	    (backing->flags & (VM_PAGE_BUSY | VM_PAGE_RESIDENT)) ==
+	    VM_PAGE_RESIDENT;
+	spin_unlock_irqrestore(&backing->state_lock, irq);
+	return result;
+}
+
+/*
+ * Sleeps until the fault wait queue advances past an observed sequence.
+ */
+void
+vmspace_wait_fault_event(
+	struct vmspace *vm,
+	uint64_t sequence)
+{
+	unsigned long irq;
+
+	irq = spin_lock_irqsave(&vm->lock.guard);
+
+	(void)waitq_sleep(&vm->fault_waitq, &vm->lock.guard, sequence, 0, 0);
+
+	spin_unlock_irqrestore(&vm->lock.guard, irq);
+}
+
+/*
+ * Waits until no region is held and no page is BUSY; the caller holds the VM
+ * locks.
+ */
+void
+vmspace_wait_faults_locked(
+	struct vmspace *vm)
+{
+	struct vm_region *region;
+	int busy;
+	uint64_t sequence;
+
+	for (;;) {
+		/*
+		 * Scans for any fault in progress.  Every mapping marked BUSY
+		 * also holds its region, so the region holds alone say whether
+		 * one is; the pages need not be walked.
+		 */
+		busy = 0;
+		for (region = vm->regions; region != NULL; region = region->next) {
+			if (region->hold_count != 0) {
+				busy = 1;
+				break;
+			}
+		}
+
+		if (!busy)
+			return;
+
+		/* Fault completion needs the outer cross-vm metadata lock. */
+		sequence = waitq_sequence(&vm->fault_waitq);
+		mutex_unlock(&vm->lock);
+		vm_metadata_leave();
+		vmspace_wait_fault_event(vm, sequence);
+		vm_metadata_enter();
+		mutex_lock(&vm->lock);
+	}
+}
+
+/*
+ * Builds an unlinked copy of a private page while the fault owns the old one.
+ */
+int
+prepare_cow_copy(
+	struct vm_page *page,
+	struct vm_private_page *old,
+	struct vm_private_page **result)
+{
+	struct vm_private_page *fresh;
+	unsigned long irq;
+
+	if (page == NULL || old == NULL || result == NULL)
+		return EINVAL;
+	/* Allocates a backing and a frame for the private copy. */
+	fresh = private_page_alloc();
+	if (fresh == NULL)
+		return ENOMEM;
+
+	if (allocate_page_frame(fresh, page) != 0) {
+		vm_private_page_put(fresh);
+		return ENOMEM;
+	}
+
+	/* Copies the shared page and publishes the copy as resident and dirty. */
+	kern_memcpy((void *)hal_pmem_to_kernel(fresh->pmem.paddr), (const void *)hal_pmem_to_kernel(old->pmem.paddr),
+	    PAGE_SIZE);
+	irq = spin_lock_irqsave(&fresh->state_lock);
+
+	fresh->flags = VM_PAGE_RESIDENT | VM_PAGE_DIRTY;
+	fresh->generation++;
+	if (fresh->generation == 0)
+		fresh->generation++;
+
+	spin_unlock_irqrestore(&fresh->state_lock, irq);
+
+	*result = fresh;
+
+	/* Reports the prepared copy. */
+	return 0;
+}
+
+/*
+ * Wakes every waiter on the fault queue; takes only the guard spinlock.
+ */
+void
+vmspace_fault_wake_locked(
+	struct vmspace *vm)
+{
+	unsigned long irq;
+
+	irq = spin_lock_irqsave(&vm->lock.guard);
+
+	waitq_wake_all(&vm->fault_waitq);
+
+	spin_unlock_irqrestore(&vm->lock.guard, irq);
+}
+
+/*
  * Reclaims a small reserve of private pages for page-table growth.
  *
  * Reports nonzero when the fault should try again.  A reclaim that finds
@@ -907,80 +1044,6 @@ reclaim_page_map_reserve(
 
 	/* Reports the reserve taken. */
 	return reclaimed;
-}
-
-/*
- * Reports whether a backing is held only by pins, with its page in memory.
- *
- * Such a page cannot be shared copy-on-write, because whoever pinned it
- * may still write into it; but it can be copied outright, since a pin
- * keeps the page in memory and keeps reclaim away from it.
- */
-int
-private_page_pinned_resident(
-	struct vm_private_page *backing)
-{
-	unsigned long irq;
-	int result;
-
-	irq = spin_lock_irqsave(&backing->state_lock);
-	result = backing->pin_count != 0 &&
-	    backing->active_operations == 0 &&
-	    (backing->flags & (VM_PAGE_BUSY | VM_PAGE_RESIDENT)) ==
-	    VM_PAGE_RESIDENT;
-	spin_unlock_irqrestore(&backing->state_lock, irq);
-	return result;
-}
-
-/* Sleeps until the fault wait queue advances past an observed sequence. */
-void
-vmspace_wait_fault_event(
-	struct vmspace *vm,
-	uint64_t sequence)
-{
-	unsigned long irq;
-
-	irq = spin_lock_irqsave(&vm->lock.guard);
-
-	(void)waitq_sleep(&vm->fault_waitq, &vm->lock.guard, sequence, 0, 0);
-
-	spin_unlock_irqrestore(&vm->lock.guard, irq);
-}
-
-/* Waits until no region is held and no page is BUSY; the caller holds the VM locks. */
-void
-vmspace_wait_faults_locked(
-	struct vmspace *vm)
-{
-	struct vm_region *region;
-	int busy;
-	uint64_t sequence;
-
-	for (;;) {
-		/*
-		 * Scans for any fault in progress.  Every mapping marked BUSY
-		 * also holds its region, so the region holds alone say whether
-		 * one is; the pages need not be walked.
-		 */
-		busy = 0;
-		for (region = vm->regions; region != NULL; region = region->next) {
-			if (region->hold_count != 0) {
-				busy = 1;
-				break;
-			}
-		}
-
-		if (!busy)
-			return;
-
-		/* Fault completion needs the outer cross-vm metadata lock. */
-		sequence = waitq_sequence(&vm->fault_waitq);
-		mutex_unlock(&vm->lock);
-		vm_metadata_leave();
-		vmspace_wait_fault_event(vm, sequence);
-		vm_metadata_enter();
-		mutex_lock(&vm->lock);
-	}
 }
 
 /* Allocates a frame for a private backing, reclaiming one page on failure. */
@@ -1066,60 +1129,6 @@ fill_file_page(
 	/* A short read is a device error and leaves a zero page. */
 	kern_memset(frame, 0, PAGE_SIZE);
 	return EIO;
-}
-
-/* Builds an unlinked copy of a private page while the fault owns the old one. */
-int
-prepare_cow_copy(
-	struct vm_page *page,
-	struct vm_private_page *old,
-	struct vm_private_page **result)
-{
-	struct vm_private_page *fresh;
-	unsigned long irq;
-
-	if (page == NULL || old == NULL || result == NULL)
-		return EINVAL;
-	/* Allocates a backing and a frame for the private copy. */
-	fresh = private_page_alloc();
-	if (fresh == NULL)
-		return ENOMEM;
-
-	if (allocate_page_frame(fresh, page) != 0) {
-		vm_private_page_put(fresh);
-		return ENOMEM;
-	}
-
-	/* Copies the shared page and publishes the copy as resident and dirty. */
-	kern_memcpy((void *)hal_pmem_to_kernel(fresh->pmem.paddr), (const void *)hal_pmem_to_kernel(old->pmem.paddr),
-	    PAGE_SIZE);
-	irq = spin_lock_irqsave(&fresh->state_lock);
-
-	fresh->flags = VM_PAGE_RESIDENT | VM_PAGE_DIRTY;
-	fresh->generation++;
-	if (fresh->generation == 0)
-		fresh->generation++;
-
-	spin_unlock_irqrestore(&fresh->state_lock, irq);
-
-	*result = fresh;
-
-	/* Reports the prepared copy. */
-	return 0;
-}
-
-/* Wakes every waiter on the fault queue; takes only the guard spinlock. */
-void
-vmspace_fault_wake_locked(
-	struct vmspace *vm)
-{
-	unsigned long irq;
-
-	irq = spin_lock_irqsave(&vm->lock.guard);
-
-	waitq_wake_all(&vm->fault_waitq);
-
-	spin_unlock_irqrestore(&vm->lock.guard, irq);
 }
 
 /* Caller reserved BUSY page/region ownership and released both VM locks. */

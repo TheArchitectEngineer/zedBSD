@@ -672,22 +672,10 @@ vm_reclaim_private_one(
 	return EAGAIN;
 }
 
-/* Reports the protection a mapping should carry, read-only when copy-on-write. */
-static uint32_t
-mapping_prot(
-	const struct vm_page *page)
-{
-	uint32_t prot;
-
-	prot = page->region->prot;
-
-	if (page->flags & VM_MAPPING_COW)
-		prot &= ~HAL_SPACE_WRITE;
-
-	return prot;
-}
-
-/* Puts a backing at the head of the reclaim queue; the caller holds the reclaim lock. */
+/*
+ * Puts a backing at the head of the reclaim queue; the caller holds the
+ * reclaim lock.
+ */
 void
 queue_insert(
 	struct vm_private_page *backing)
@@ -711,7 +699,10 @@ queue_insert(
 		page_queue_tail = backing;
 }
 
-/* Puts a backing at the head of the swapped list; the caller holds the reclaim lock. */
+/*
+ * Puts a backing at the head of the swapped list; the caller holds the
+ * reclaim lock.
+ */
 void
 swapped_insert(
 	struct vm_private_page *backing)
@@ -763,6 +754,45 @@ queue_remove(
 	backing->queue_kind = VM_QUEUE_NONE;
 	backing->queue_next = NULL;
 	backing->queue_prev = NULL;
+}
+
+/*
+ * Reclaims a few private pages so a fault's backend read has scratch memory.
+ */
+unsigned
+reclaim_object_fault_reserve(
+	void)
+{
+	unsigned reclaimed;
+
+	/*
+	 * A filesystem page read may need page-backed scratch storage after
+	 * the object frame itself has consumed the page obtained by normal
+	 * reclaim.  Reclaim a small bounded reserve only from the lockless
+	 * fault-I/O boundary; the current object page is BUSY and therefore
+	 * cannot be selected.
+	 */
+	for (reclaimed = 0; reclaimed < VM_OBJECT_FAULT_RESERVE_PAGES; reclaimed++) {
+		if (vm_reclaim_private_one(NULL) != 0)
+			break;
+	}
+
+	return reclaimed;
+}
+
+/* Reports the protection a mapping should carry, read-only when copy-on-write. */
+static uint32_t
+mapping_prot(
+	const struct vm_page *page)
+{
+	uint32_t prot;
+
+	prot = page->region->prot;
+
+	if (page->flags & VM_MAPPING_COW)
+		prot &= ~HAL_SPACE_WRITE;
+
+	return prot;
 }
 
 /* Tests whether any mapping is wired, busy, or the one to avoid. */
@@ -1401,28 +1431,6 @@ private_page_targets_source(
 
 	/* Succeeded: the page is on the source the caller named. */
 	return 1;
-}
-
-/* Reclaims a few private pages so a fault's backend read has scratch memory. */
-unsigned
-reclaim_object_fault_reserve(
-	void)
-{
-	unsigned reclaimed;
-
-	/*
-	 * A filesystem page read may need page-backed scratch storage after
-	 * the object frame itself has consumed the page obtained by normal
-	 * reclaim.  Reclaim a small bounded reserve only from the lockless
-	 * fault-I/O boundary; the current object page is BUSY and therefore
-	 * cannot be selected.
-	 */
-	for (reclaimed = 0; reclaimed < VM_OBJECT_FAULT_RESERVE_PAGES; reclaimed++) {
-		if (vm_reclaim_private_one(NULL) != 0)
-			break;
-	}
-
-	return reclaimed;
 }
 
 /* Unpins a drained backing's mappings under the locks. */

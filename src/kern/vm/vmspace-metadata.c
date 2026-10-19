@@ -310,6 +310,49 @@ vm_private_page_free_metadata(
 	}
 }
 
+/*
+ * Allocates and initializes a private backing without a frame.
+ */
+struct vm_private_page *
+private_page_alloc(
+	void)
+{
+	struct vm_private_page *backing;
+
+	backing = vm_private_page_alloc_metadata();
+	if (backing == NULL)
+		return NULL;
+	vm_private_page_init(backing);
+	return backing;
+}
+
+/*
+ * Attaches a fresh private backing to its first mapping.
+ */
+void
+private_page_attach_new(
+	struct vm_page *page,
+	struct vm_private_page *backing)
+{
+	unsigned long irq;
+
+	/*
+	 * Makes the page the first and only mapping of a fresh backing.
+	 */
+
+	irq = spin_lock_irqsave(&backing->state_lock);
+
+	if (backing->mapping_count != 0 || backing->mappings != NULL)
+		HAL_FATAL("attaching initialized VM private backing twice");
+
+	backing->mapping_count = 1;
+	page->private_page = backing;
+	page->private_next = backing->mappings;
+	backing->mappings = page;
+
+	spin_unlock_irqrestore(&backing->state_lock, irq);
+}
+
 /* Allocates one physical page for user memory. */
 static int
 alloc_vm_page(
@@ -549,43 +592,4 @@ vm_private_page_alloc_metadata(
 	if (fresh != NULL && hal_pmem_free(&memory.paddr, memory.size) != HAL_OK)
 		HAL_FATAL("unused VM private metadata slab free failed");
 	return backing;
-}
-
-/* Allocates and initializes a private backing without a frame. */
-struct vm_private_page *
-private_page_alloc(
-	void)
-{
-	struct vm_private_page *backing;
-
-	backing = vm_private_page_alloc_metadata();
-	if (backing == NULL)
-		return NULL;
-	vm_private_page_init(backing);
-	return backing;
-}
-
-/* Attaches a fresh private backing to its first mapping. */
-void
-private_page_attach_new(
-	struct vm_page *page,
-	struct vm_private_page *backing)
-{
-	unsigned long irq;
-
-	/*
-	 * Makes the page the first and only mapping of a fresh backing.
-	 */
-
-	irq = spin_lock_irqsave(&backing->state_lock);
-
-	if (backing->mapping_count != 0 || backing->mappings != NULL)
-		HAL_FATAL("attaching initialized VM private backing twice");
-
-	backing->mapping_count = 1;
-	page->private_page = backing;
-	page->private_next = backing->mappings;
-	backing->mappings = page;
-
-	spin_unlock_irqrestore(&backing->state_lock, irq);
 }
