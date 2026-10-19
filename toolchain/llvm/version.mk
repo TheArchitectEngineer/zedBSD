@@ -10,7 +10,7 @@ override ZEDBSD_LLVM_ARCHIVE_SIZE := 179140728
 override ZEDBSD_LLVM_ARCHIVE_SHA256 := ab1f0e3ec52448c33e8782eaf0422504b87c7b016b22514653ee0d8fcee479ff
 override ZEDBSD_LLVM_PATCH_LEVEL := zedbsd10
 override ZEDBSD_LLVM_CACHE_TAG := rev-0
-override ZEDBSD_LLVM_CACHE_ASSET := zedbsd-llvm-23.1.0-zedbsd9-x86_64-linux.tar.gz
+override ZEDBSD_LLVM_CACHE_ASSET := zedbsd-llvm-23.1.0-zedbsd10-x86_64-linux.tar.gz
 # Filled from the accepted deterministic archive before the release asset is
 # uploaded. A cache download must never run with this sentinel value.
-override ZEDBSD_LLVM_CACHE_SHA256 := e971118c9832d3910eec9d31b727c2211bc2f04ae751fb216de48b849dbd1820
+override ZEDBSD_LLVM_CACHE_SHA256 := dfc539a66104d9ef6a27d73f1a0a80429403fd6a3ddf1c0ba7f5c80702dc408b
