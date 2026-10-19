@@ -12,7 +12,7 @@
  * Cause bit.
  *
  * cc -std=c11 -Wall -Wextra -Werror -Iinclude -Isrc/hal/mips \
- *    plan/ws271/tests/status-host-test.c -o <out> && <out>
+ *    plan/tools/ports/mips-status-host-test.c -o <out> && <out>
  */
 
 #include <stdio.h>

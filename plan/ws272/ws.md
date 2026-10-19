@@ -3,7 +3,9 @@
 # WS272 MIPS64（mips64el）の QEMU malta への移植（framebuffer の console・VFS の段まで）
 
 - ID: ws272、Master: [master.md](../master.md)、Primary Milestone: MG008
-- Status: incomplete（p001 cleared 2026-10-19。旧: planning（2026-10-19 14:13 Q1 作成）
+- Status: completed（2026-10-19 Q1: 全 Phase cleared。MIPS64 の QEMU malta で VFS の段まで、規約の見直しの後の回帰は T1-734）
+- Phase の directory は完了の規則で削除した（記録は git の 4860f91d7 の plan/ws272/phase00*/phase.md）。試験の config と host 試験は回帰に使うので plan/tools/ports/ に移し（config-mips32-malta.mk・config-mips64-malta.mk・mips-pte-host-test.c・mips-status-host-test.c）、Master の Tools に登録した。設計は WS271 の [design.md](../ws271/design.md) に残す。
+- 制限・移管: 実機（RG350 は WS273、Qube・EdgeRouter Lite は未作成）、page coloring・RI/XI・UserLocal・8259 の line の提供・FPU の Unimplemented Operation は実機の WS へ。LLVM の n64＋sym32 の libcall の不具合は -mlong-calls で避けた（Future Work F-106）。
 - 起点（2026-10-19 ユーザー）: 「MIP32とMIPS64のカーネルも作りたいです。ただ、ボードがないなあ。virtで作れそうですか？Anbernic RG 350と、Cobalt Qube 初代、EdgeRouter X はあります。MIPS Creatorは購入できそう。」→（クリック）始め方「malta の little endian」、toolchain「許可する」（LLVM に Mips の target、Q1 が行う）、最初の実機「RG350」
 - 前提: QEMU の `qemu-system-mips64el -M malta（MIPS64r2 の CPU、little endian）`。画面は malta の PCI の VGA（Bochs の linear framebuffer）を HAL が設定して console を描く案（p001 で確かめる）。共有の LLVM に Mips の target が要る（Q1、ユーザーの許可 2026-10-19）。WS263〜WS266（riscv32・ppc32・ppc64・m68k）と同じ到達点と規則。
 - 実機の候補（2026-10-19 14:14 ユーザー）: 「ちなみにQubeはPCI USBボードが使える状態です。DisplayLinkでX11が動いた実績はあります。今回は画面はスコープ外でいいですが。」 → Cobalt Qube（初代、QED RM5230、MIPS IV、little endian、Q1 の覚えで未確認）は PCI の USB の板が使える。Qube の画面（DisplayLink）は範囲外。Qube の実機の WS は着手の時に立てる。
@@ -29,7 +31,7 @@
 | p001 | 設計: malta の memory map・PCI（GT-64120）・PIIX4・VGA、firmware（YAMON 相当の -kernel の直の起動）と handoff、mips64el の toolchain の triple と linker の emulation、HAL の構成、HAL の API の差分、試験の道具（boot-test.sh の mode）、Phase の表 | cleared（2026-10-19 Q1） |
 | p002 | 64 bit の入口と console（共通の層を `HAL_ARCH_MIPS64` で、XKPHYS・CKSEG0、design.md §8 の正の物理の範囲（low の alias ＋ `0x80000000+256MiB` 以上）。依存: WS271 p002、LLVM の Mips。HAL の差分 D1・D3 は U1 で承認済み）、LW 8 | cleared（2026-10-19 Q1、T1-731） |
 | p003 | XTLB refill・3 段の table・native atomic、self-test の 64 bit の版、VFS の段まで（依存: WS271 p004）、LW 10 | cleared（2026-10-19 Q1、T1-733） |
-| [p004](phase004/phase.md) | 規約の全文の見直し、LW 3 | in-progress（q1290、P1、commit 166780446、T1 の回帰待ち、2026-10-19） |
+| p004 | 規約の全文の見直し、LW 3 | in-progress（q1290、P1、commit 166780446、T1 の回帰待ち、2026-10-19） |
 
 ## 依存
 

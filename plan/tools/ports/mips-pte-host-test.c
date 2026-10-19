@@ -14,7 +14,7 @@
  * drops the software bits.
  *
  * cc -m32 -std=c11 -Wall -Wextra -Werror -Iinclude -Isrc/hal/mips -DHAL_ARCH_MIPS32 \
- *    plan/ws271/tests/pte-host-test.c -o <out> && <out>
+ *    plan/tools/ports/mips-pte-host-test.c -o <out> && <out>
  */
 
 #include <stdio.h>
