@@ -385,3 +385,5 @@ VF2 の板の接続と実機の判定の方法は WS256 の #10・#15 で未決�
 
 - p005 の依存: R1・R2（main にある）、**R1b（新、pixel clock の入力の選択、GOP が無い時だけ）**。HAL の口（15.1 の 3）は p005 の必須でなく、確保した framebuffer に文字を出す時だけ。
 - U7 の手順: GOP のある配布の U-Boot で `display.mode=1280x720@60` を boot の行に足して起動し、HDMI に 1280x720 の画（左上に HAL の文字）が出る事。GOP が無い時の画（色の帯）は R1b の後。
+
+> 2026-10-20 Q1 の追記（WS269 p009 の P2 の発見、R7 の直し）: 今の libvulkan は strict_queue と native_quiescence と GPU_CAP_JOB|JOB_CAPACITY の無い node を捨てる（instance.c:731-736、device.c:278-281）。それは 168 byte の capset で vendor の flag 3 か 7 の時だけ出る（context.c:184-208）。よって R7 は「1.3.269 で、168 byte・flag 7（OPAQUE|STRICT_QUEUE|QUIESCE）、STRICT_QUEUE と QUIESCE の義務を満たす」と読む。HOST_SCANOUT は 1.4.343 の時だけ。WS269 p009（a6d567d99）はこの形で出している。
