@@ -218,13 +218,13 @@ src/hal/mips/bsp-malta/  board.c（handoff・環境の表・reset/poweroff）、
 
 | 項目 | MIPS32（WS271） | MIPS64（WS272） |
 | --- | --- | --- |
-| QEMU | `qemu-system-mipsel -M malta`（24Kf） | `qemu-system-mips64el -M malta -cpu MIPS64R2-generic`（MIPS64R2、FPU、TLB 64 entry、SEGBITS 42・PABITS 36、CCRes 2 → Count 160 MHz。既定の 20Kc は R1 で EBase・`ext` が無いので使わない） |
+| QEMU | `qemu-system-mipsel -M malta`（24Kf） | `qemu-system-mips64el -M malta -cpu MIPS64R2-generic`（MIPS64R2、FPU、TLB 64 entry、SEGBITS 42・PABITS 36、CCRes 2 → Count 160 MHz（cpu-defs.c.inc で確認、ws272-p001）。既定の 20Kc は R1 で EBase・`ext` が無いので使わない） |
 | ABI | o32、`-mabi=32` | n64、`-mabi=64`、`-march=mips64r2`、`-msym32`（kernel の symbol は CKSEG0 の 32 bit の符号拡張） |
 | linker | `elf32ltsmip` | `elf64ltsmip` |
 | link | `0x80100000` | `0xffffffff80100000`（CKSEG0）。QEMU の `cpu_mips_kseg0_to_phys` は 64 bit でも同じ物理 `0x00100000` に置く（*） |
-| 受け渡し | a0〜a3 は 32 bit | 同じ値を 64 bit に符号拡張（bootloader の `bl_gen_jump_kernel` が 64 bit の build では `dli`、*）。表の pointer は 32 bit の KSEG0 のまま（`ENVP_VADDR`）なので、表の entry は 32 bit で読み符号拡張する |
-| Status | — | UX=1（user の 64 bit の address）、KX=1、SX=0、FR=1 |
-| direct map | KSEG0（256 MiB まで） | XKPHYS（`0x9800000000000000 + P` cached、`0x9000000000000000 + P` uncached）で RAM の全体（物理 `0x80000000` の 2 GiB）。kernel の image は CKSEG0 |
+| 受け渡し | a0〜a3 は 32 bit | 同じ値を 64 bit に符号拡張（bootloader の `bl_gen_load_ulong` が ISA_MIPS3 で `dli`、bootloader.c で確認。`ENVP_VADDR` 自体が符号拡張の形かは *）。表の pointer は 32 bit の KSEG0 のまま（`ENVP_VADDR`）なので、表の entry は 32 bit で読み符号拡張する |
+| Status | — | UX=1（user の 64 bit の address）、KX=1、SX=0、FR=1。entry では KX=0（bootloader は Status を書かない、*）なので XKPHYS に触れる前に KX を立てる |
+| direct map | KSEG0（256 MiB まで） | XKPHYS（`0x9800000000000000 + P` cached、`0x9000000000000000 + P` uncached）で RAM の全体（物理 `0x80000000` の 2 GiB）。Config3.LPA=1 だが RAM は 32 bit の物理の中なので PageGrain.ELPA は立てない。kernel の image は CKSEG0 |
 | user | kuseg 2 GiB | xuseg（SEGBITS 42 = 4 TiB。user は下の 512 GiB だけ使い、3 段の table（9 + 9 + 9 + 12）、PTE 64 bit） |
 | refill | EBase+0x000、`tlb32.S` | EBase+0x080 の XTLB refill、`tlb64.S`（XContext の BadVPN2 は使わず BadVAddr から歩く） |
 | atomic | enter の style | native（`lld`/`scd`） |
