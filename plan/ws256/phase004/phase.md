@@ -2,7 +2,7 @@
 
 # ws256-p004 riscv64 の UEFI loader（U-Boot → BOOTRISCV64.EFI → vmunix）
 
-Status: in-progress、test-wait（T1 の番号は Q1。2026-10-19 q1269-i01、P2。実装・build（warning 0）・host 試験は済み。U-Boot `qemu-riscv64_smode` の host への導入（Q1、apt）と T1 の結果を Q1 が判定するまで cleared にしない）
+Status: cleared（2026-10-19 Q1 の判定、T1-722: QEMU virt で U-Boot → BOOTRISCV64.EFI → vmunix → login・`uname -m` の `riscv64` を画面で確認（build/review/t1-722/rv64-uboot-login-after.png）、amd64 の既定の image（BOOTX64.EFI を含む）の回帰 PASS。build warning 0）
 
 - 親: [WS256](../ws.md)。Queue: q1269 / q1269-i01（承認: 2026-10-19 ユーザー「WS256を実施してください。」）。
 - 範囲: [design.md](../design.md) §3.3・§6 の p004。loader の riscv64（PE の header の自作、`.rela.dyn` の自己 relocation、RISCV_EFI_BOOT_PROTOCOL、DTB の複写、ZBL6 の handoff、`satp`=0 で物理の入口へ）、`riscv64-handoff.h`、`bootloader.mk`・`disk-image.mk`、`run.mk` の uboot の行、`elf64.c` の arch の書き分け。
