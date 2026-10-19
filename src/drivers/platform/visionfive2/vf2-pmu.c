@@ -19,6 +19,7 @@
 
 #include "drivers/platform/visionfive2/vf2-pmu.h"
 #include <kern/device-io.h>
+#include <kern/klog.h>
 #include <kern/lock.h>
 #include <kern/pmem.h>
 #include <uapi/errno.h>
@@ -130,6 +131,7 @@ drv_vf2_pmu_set_power(
 	unsigned long irq;
 	uint32_t mask;
 	uint32_t state;
+	uint32_t before;
 	uint32_t events;
 	unsigned poll;
 
@@ -158,6 +160,7 @@ drv_vf2_pmu_set_power(
 	 */
 	mask = 1U << domain;
 	irq = spin_lock_irqsave(&pmu_lock);
+	before = kern_mmio_read32(pmu_register(PMU_POWER_STATE));
 
 	if (domain == DRV_VF2_PD_GPU) {
 		events = kern_mmio_read32(pmu_register(PMU_EVENT_ON_MASK));
@@ -183,13 +186,18 @@ drv_vf2_pmu_set_power(
 	for (poll = 0; poll < PMU_POLLS; poll++) {
 		/* Stops once the state matches the request. */
 		state = kern_mmio_read32(pmu_register(PMU_POWER_STATE));
-		if (on && (state & mask) != 0)
+		if ((on && (state & mask) != 0) || (!on && (state & mask) == 0)) {
+			/*
+			 * Records every domain's state around the switch, so a
+			 * switch that dropped another domain shows on the screen.
+			 */
+			kern_logf("vf2-pmu: domain %u %s, state %x -> %x\n", domain, on ? "on" : "off", before, state);
 			return 0;
-		if (!on && (state & mask) == 0)
-			return 0;
+		}
 	}
 
 	/* Failed: the unit did not switch the domain. */
+	kern_logf("vf2-pmu: domain %u %s timed out, state %x -> %x\n", domain, on ? "on" : "off", before, state);
 	return ETIMEDOUT;
 }
 

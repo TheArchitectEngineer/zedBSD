@@ -51,6 +51,20 @@ no-go の時は `dc8200: no-go (<理由>) …`。理由: unknown model / no enab
 - 記録する値（p003・p004 の入力）: model・rev・cid、plane の番号（HDMI が panel 0 で plane 0 か）、cfg（format・swizzle）、ex、panel の 2 語（PANEL_CONFIG_EX bit 0 の今の値）、`loc` の first・min-max・wraps（40 ms で wraps が 2 前後なら行の counter。上位 16 bit・下位 16 bit のどちらが行かは min-max から読む）、`commit`（1 なら COMMIT は自己 clear しない、0 なら自己 clear するか元から立っていない）、fb の物理・pitch と addr・stride の一致。
 - 注意: 判定は画面の行だけで行う。行が出ない・起動が止まる時は DC の窓の読みで bus が止まった疑い（PD_VOUT は on でも voutcrg の clock が切られている場合）。その時は画面で `dc8200` の行の直前で止まったかを見て記録する。
 
+## PD_VOUT の no-go の調べ（q1359 / q1359-i01、2026-10-20 P1）
+
+発端: [BUG-340](../../bugs/BUG-340.md) の「別の気づき」。ユーザーの VF2 で U-Boot 2021.10 の bootefi の GOP（1920x1080、0xfe000000）が出ていたのに `dc8200: no-go (power domain off)`。ユーザーの目視（Q1 経由）:「カーネルがブートした瞬間に、GOPのスキャンアウトは止まってるように見えましたね。」
+
+- **PD の読みは正しい**: `vf2-pmu.c` は status を 0x80（CURR_POWER_MODE）の bit 4（VOUT）で読む。vendor Linux `~/visionfive-linux/drivers/pmdomain/starfive/jh71xx-pmu.c`（`JH71XX_PMU_CURR_POWER_MODE 0x80`、`JH7110_PD_VOUT` bit 4、`pmu_status`）、vendor U-Boot `drivers/power/domain/starfive-power-domain.c`（`CURR_POWER_MODE 0x80`、`BIT(id)` で poll）と一致。誤りは無く直していない。
+- **GOP は DC8200 で、U-Boot が自分で消している**（gh api で vendor U-Boot `starfive-tech/u-boot` branch `JH7110_VisionFive2_devel` を読んだ）: `drivers/video/starfive/sf_vop.c` の `starfive_dc8200`（compatible `starfive,sf-dc8200`、UCLASS_VIDEO = GOP の元）は `.flags = DM_FLAG_OS_PREPARE` で、`sf_vop_remove()` が plane・panel の register（0x1400・0x1518・0x1810 ほか）を 0 にし、DC8200 の reset を assert、clock を止め、最後に `sf_vop_power_off()` で PMU domain 4（VOUT）を off にする。`lib/efi_loader/efi_boottime.c` の ExitBootServices が `dm_remove_devices_flags(DM_REMOVE_ACTIVE_ALL)` を呼ぶので、kernel に入る時点で画面は消え PD_VOUT は off。ユーザーの目視と一致する（疑い (a)）。plane・panel の番号は remove の書く register から panel 0 の primary（0x1400/0x1518/0x1810）と推測、未確認（DC は既に off で読めない）。
+- 疑い (b)（zedBSD の PMU の GPU の手順が VOUT を落とす）: 手順は `SOFT_ON` に GPU の bit だけを書き vendor と同じなので可能性は低いが、手がかりとして `drv_vf2_pmu_set_power()` が切り替えの前後の 0x80 の全 bit を画面に出す（`vf2-pmu: domain 2 on, state <前> -> <後>`）。<前> に bit 4（0x10）が既に無ければ (a)、<前> にあって <後> で消えれば (b)。
+- 扱いの変更（判定の理由の細分と自前の点灯）: `probe_display_controller()` は PD_VOUT off で loader の framebuffer がある時 `dc8200: no-go (power domain off, loader removed its output at exit)` を出し、`light_display()`（p005 の自前の初期化: `power_display()` で PD・clock・reset、`drv_powervr_dc_own_mode()` が bootfb の memory をそのまま scanout、既定 1920x1080@60）に入る。clock が止まっていた時（`no-go (clock … stopped)`）も同じ。`light_display()` は「loader の画が生きている」を framebuffer あり・PD_VOUT on・clock 動作の全部で判定し、どれか欠ければ GOP が無い時と同じ道を通る。framebuffer が無く PD off の時は従来どおり `no-go (power domain off)` で止まる（`display.mode=` か GOP 無しなら元から `light_display()` 側）。
+- 確認: build VF2（`BUILD=build/ws277-p002-vf2`）0・warning 0。host 試験 `plan/ws256/tests/vf2-soc/run.sh build/ws277-p002-soc` PASS 0 failure、`plan/ws277/tests/p002/run.sh build/ws277-p002-host` PASS 16/0。QEMU・実機: 未実施。
+
+### 実機の確かめ（U0 に追加）
+
+配布の U-Boot・HDMI の monitor で起動し、画面を撮る。見る行: `vf2-pmu: domain 2 on, state X -> Y`（X の bit 4）、`dc8200: no-go (power domain off, loader removed its output at exit)`、その後に画面が戻り（bootfb の console が再び出る）`visionfive2: display not lit` が無いこと。戻らなければ直前の `dc8200: own mode: …` の行を記録する。
+
 ## 残り・未確認
 
 - HDMI が panel 0 である事（推測、U0 で確かめる）。

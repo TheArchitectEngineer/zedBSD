@@ -962,6 +962,7 @@ probe_display_controller(
 	const uint8_t *cells;
 	uint32_t length;
 	uint32_t node;
+	struct kern_boot_framebuffer framebuffer;
 	bool enabled;
 	int powered;
 	int error;
@@ -1001,15 +1002,40 @@ probe_display_controller(
 		return;
 	}
 
+	/*
+	 * An off domain under a loader's screen means the loader tore the
+	 * output down when the kernel took the machine: StarFive's U-Boot
+	 * removes its DC8200 video device on ExitBootServices, clearing the
+	 * planes, stopping the clocks and turning PD_VOUT off, so the handed
+	 * framebuffer is no longer shown.
+	 *
+	 * Procedure referenced:
+	 * StarFive U-Boot JH7110_VisionFive2_devel drivers/video/starfive/
+	 * sf_vop.c (DM_FLAG_OS_PREPARE, the remove hook ending in the VOUT
+	 * domain's power-off) and lib/efi_loader/efi_boottime.c
+	 * (dm_remove_devices_flags(DM_REMOVE_ACTIVE_ALL) on exit).
+	 */
 	if (!powered) {
+		if (kern_boot_framebuffer("riscv64.framebuffer", &framebuffer) == 0) {
+			kern_logf("dc8200: no-go (power domain off, loader removed its output at exit)\n");
+			light_display(&place);
+			return;
+		}
 		kern_logf("dc8200: no-go (power domain off)\n");
 		return;
 	}
 
-	/* Leaves the controller alone when a clock its registers need is stopped. */
+	/*
+	 * Leaves the controller alone when a clock its registers need is
+	 * stopped; a loader's screen whose clocks were stopped is lit again
+	 * by the board.
+	 */
 	error = check_display_clocks();
-	if (error != 0)
+	if (error != 0) {
+		if (kern_boot_framebuffer("riscv64.framebuffer", &framebuffer) == 0)
+			light_display(&place);
 		return;
+	}
 
 	/* Has the display driver read the controller and log its decision. */
 	error = drv_powervr_dc_probe(&place);
@@ -1037,6 +1063,7 @@ light_display(
 	struct drv_powervr_dc_own_place own;
 	struct kern_boot_framebuffer framebuffer;
 	int loader_screen;
+	int powered;
 	int error;
 
 	own.controller = *place;
@@ -1045,17 +1072,25 @@ light_display(
 	own.subsystem = 0;
 	own.subsystem_size = 0;
 
-	/* Finds whether the loader lit the output. */
+	/*
+	 * Finds whether the loader's output is still lit: a framebuffer was
+	 * handed, the power domain is on and the registers' clocks run.  A
+	 * loader that tore its output down at exit leaves the framebuffer's
+	 * memory, which the driver shows again after powering the output.
+	 */
 	error = kern_boot_framebuffer("riscv64.framebuffer", &framebuffer);
 	loader_screen = 0;
 	if (error == 0)
 		loader_screen = 1;
-
-	/* A lit output only needs its registers' clocks checked. */
+	if (loader_screen) {
+		error = drv_vf2_pmu_powered(DRV_VF2_PD_VOUT, &powered);
+		if (error != 0 || !powered)
+			loader_screen = 0;
+	}
 	if (loader_screen) {
 		error = check_display_clocks();
 		if (error != 0)
-			return;
+			loader_screen = 0;
 	}
 
 	/* An unlit one is powered, clocked and released from reset first. */
