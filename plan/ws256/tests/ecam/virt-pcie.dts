@@ -1,0 +1,50 @@
+/dts-v1/;
+
+/*
+ * A virt-like PCIe host for the host check of pci-ecam-fdt.c.  The layout
+ * follows the emulators' RISC-V virt board, but the configuration window
+ * holds two buses so that the check can back it with an array.
+ */
+/ {
+	#address-cells = <2>;
+	#size-cells = <2>;
+
+	soc {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		compatible = "simple-bus";
+		ranges;
+
+		plic: interrupt-controller@c000000 {
+			compatible = "sifive,plic-1.0.0", "riscv,plic0";
+			reg = <0x0 0x0c000000 0x0 0x600000>;
+			#address-cells = <0>;
+			#interrupt-cells = <1>;
+			interrupt-controller;
+		};
+
+		pci@30000000 {
+			compatible = "pci-host-ecam-generic";
+			device_type = "pci";
+			reg = <0x0 0x30000000 0x0 0x200000>;
+			bus-range = <0x0 0x1>;
+			#address-cells = <3>;
+			#size-cells = <2>;
+			#interrupt-cells = <1>;
+			dma-coherent;
+			ranges = <0x01000000 0x0 0x0 0x0 0x03000000 0x0 0x10000>,
+				 <0x02000000 0x0 0x40000000 0x0 0x40000000 0x0 0x40000000>,
+				 <0x03000000 0x4 0x0 0x4 0x0 0x4 0x0>;
+			interrupt-map-mask = <0x1800 0x0 0x0 0x7>;
+			interrupt-map =
+				<0x0000 0 0 1 &plic 32>, <0x0000 0 0 2 &plic 33>,
+				<0x0000 0 0 3 &plic 34>, <0x0000 0 0 4 &plic 35>,
+				<0x0800 0 0 1 &plic 33>, <0x0800 0 0 2 &plic 34>,
+				<0x0800 0 0 3 &plic 35>, <0x0800 0 0 4 &plic 32>,
+				<0x1000 0 0 1 &plic 34>, <0x1000 0 0 2 &plic 35>,
+				<0x1000 0 0 3 &plic 32>, <0x1000 0 0 4 &plic 33>,
+				<0x1800 0 0 1 &plic 35>, <0x1800 0 0 2 &plic 32>,
+				<0x1800 0 0 3 &plic 33>, <0x1800 0 0 4 &plic 34>;
+		};
+	};
+};

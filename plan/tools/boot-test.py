@@ -61,6 +61,17 @@ def load_font(source: Path) -> dict[bytes, str]:
     return table
 
 
+# The QEMU key names (qcodes) of the characters other than letters and digits
+# that a keys step may type, on a US layout.
+KEY_NAMES = {
+    " ": ["spc"], "-": ["minus"], "_": ["shift", "minus"], "/": ["slash"],
+    ".": ["dot"], ",": ["comma"], "=": ["equal"], ":": ["shift", "semicolon"],
+    ";": ["semicolon"], "'": ["apostrophe"], "\"": ["shift", "apostrophe"],
+    "|": ["shift", "backslash"], ">": ["shift", "dot"], "<": ["shift", "comma"],
+    "~": ["shift", "grave_accent"], "$": ["shift", "4"], "*": ["shift", "8"],
+}
+
+
 class Monitor:
     """One QMP session."""
 
@@ -108,6 +119,26 @@ class Monitor:
             answer = self.read_object()
             if "return" in answer or "error" in answer:
                 return answer
+
+    def send_keys(self, text: str) -> None:
+        """Presses each character's key and then return on the keyboard."""
+        for character in text:
+            names = KEY_NAMES.get(character)
+            if names is None and character.isalpha() and character.isupper():
+                names = ["shift", character.lower()]
+            elif names is None and (character.isalpha() or
+                                    character.isdigit()):
+                names = [character]
+
+            # Refuses a character that has no key in the table.
+            if names is None:
+                raise SystemExit(f"boot-test: no key for {character!r}")
+            keys = [{"type": "qcode", "data": name} for name in names]
+            answer = self.command("send-key", keys=keys)
+            if "error" in answer:
+                raise SystemExit(f"boot-test: send-key: {answer['error']}")
+            time.sleep(0.05)
+        self.command("send-key", keys=[{"type": "qcode", "data": "ret"}])
 
     def screendump(self, path: Path) -> None:
         """Writes the screen to a file in PPM form."""
@@ -324,7 +355,8 @@ class StepAction(argparse.Action):
 
     def __call__(self, parser, namespace, values, option_string=None):
         steps = getattr(namespace, "steps", None) or []
-        kind = "type" if option_string == "--then-type" else "expect"
+        kind = {"--then-type": "type", "--then-keys": "keys"}.get(
+            option_string, "expect")
         steps.append((kind, values))
         namespace.steps = steps
 
@@ -349,6 +381,9 @@ def main() -> int:
     parser.add_argument("--then-type", action=StepAction, dest="steps",
                         help="after the patterns, types a line on the "
                              "serial socket")
+    parser.add_argument("--then-keys", action=StepAction, dest="steps",
+                        help="after the patterns, types a line on the "
+                             "emulated keyboard through the monitor")
     parser.add_argument("--then-expect", action=StepAction, dest="steps",
                         help="after the patterns, waits for a line on the "
                              "screen")
@@ -367,7 +402,7 @@ def main() -> int:
         frame = Path(arguments.frame)
 
     # Refuses steps that have nowhere to type.
-    if steps and arguments.serial is None:
+    if any(kind == "type" for kind, _ in steps) and arguments.serial is None:
         raise SystemExit("boot-test: --then-* needs --serial")
     monitor = Monitor(arguments.monitor, timeout=30.0)
 
@@ -390,11 +425,16 @@ def main() -> int:
         return 0
 
     # Types each step's line and waits for each step's screen.
-    line = SerialLine(arguments.serial, timeout=30.0)
+    line = None
+    if arguments.serial is not None:
+        line = SerialLine(arguments.serial, timeout=30.0)
     after = screenshot.with_name(f"{screenshot.stem}-after.png")
     for kind, text in steps:
         if kind == "type":
             line.type_line(text)
+            continue
+        if kind == "keys":
+            monitor.send_keys(text)
             continue
         deadline = time.monotonic() + arguments.then_timeout
         found, last = watch_patterns(monitor, frame, font,

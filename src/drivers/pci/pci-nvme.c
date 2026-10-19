@@ -60,6 +60,7 @@
 #define NVME_PCI_MSI_ENABLE 0x0001U
 #define NVME_PCI_MSIX_ENABLE 0x8000U
 #define NVME_PCI_MSIX_FUNCTION_MASK 0x4000U
+#define NVME_PCI_COMMAND_INTX_DISABLE 0x0400U
 
 /*
  * Controller enable happens during platform discovery, before the platform
@@ -449,6 +450,8 @@ static int nvme_message_irq_save_and_mask(struct nvme_controller *controller);
 static int nvme_message_irq_restore(struct nvme_controller *controller);
 static int nvme_runtime_irq_mask(struct nvme_controller *controller, unsigned *capability_out, uint16_t *control_out);
 static int nvme_runtime_irq_restore(struct nvme_controller *controller, unsigned capability, uint16_t control);
+static int nvme_runtime_intx_mask(struct nvme_controller *controller, unsigned *register_out, uint16_t *command_out);
+static int nvme_runtime_intx_restore(struct nvme_controller *controller, unsigned offset, uint16_t command);
 static int nvme_controller_disable(struct nvme_controller *controller);
 static int nvme_controller_shutdown_normal(struct nvme_controller *controller);
 static int nvme_stop_admission(struct nvme_controller *controller);
@@ -1736,7 +1739,10 @@ nvme_attach(
 
 	/* Checks the operation status. */
 	error = drv_pci_device_allocate_irqs(
-		device, DRV_PCI_IRQ_ALLOW_MSIX | DRV_PCI_IRQ_ALLOW_MSI, 1, 1,
+		device,
+		DRV_PCI_IRQ_ALLOW_MSIX | DRV_PCI_IRQ_ALLOW_MSI |
+			DRV_PCI_IRQ_ALLOW_INTX,
+		1, 1,
 		&controller->irq, &irq_count);
 	if (error != 0)
 		goto fail;
@@ -1804,7 +1810,12 @@ nvme_attach(
 
 	controller->stopping = 0;
 	nvme_publish_controller(controller);
-	irq_name = controller->irq.type == DRV_PCI_IRQ_MSIX ? "MSI-X" : "MSI";
+	if (controller->irq.type == DRV_PCI_IRQ_MSIX)
+		irq_name = "MSI-X";
+	else if (controller->irq.type == DRV_PCI_IRQ_MSI)
+		irq_name = "MSI";
+	else
+		irq_name = "INTx";
 	kern_logf("nvme: PCI controller %04x:%02x:%02x.%u version=%x queue=%u "
 		   "timeout=%ums %s\n",
 		   address.segment, address.bus, address.device,
@@ -2754,6 +2765,85 @@ nvme_message_irq_restore(
 	return 0;
 }
 
+/*
+ * Masks a legacy pin while the driver is running.
+ *
+ * The pin is the controller's alone to silence: the command register's
+ * INTx Disable stops it asserting the shared line, whatever INTMS holds.
+ * The register's offset stands in for the message capability, so that a
+ * caller's nonzero check holds, and the command for its control.
+ */
+static int
+nvme_runtime_intx_mask(
+	struct nvme_controller *controller,
+	unsigned *register_out,
+	uint16_t *command_out)
+{
+	uint16_t command, readback;
+	int error;
+
+	/* Reads the command and sets INTx Disable. */
+	error = drv_pci_device_config_read16(controller->pci,
+					     NVME_PCI_COMMAND, &command);
+	if (error != 0)
+		return error;
+	error = drv_pci_device_config_write16(
+		controller->pci, NVME_PCI_COMMAND,
+		(uint16_t)(command | NVME_PCI_COMMAND_INTX_DISABLE));
+	if (error != 0)
+		return error;
+
+	/* Confirms the bit stuck. */
+	error = drv_pci_device_config_read16(controller->pci,
+					     NVME_PCI_COMMAND, &readback);
+	if (error != 0)
+		return error;
+	if ((readback & NVME_PCI_COMMAND_INTX_DISABLE) == 0U)
+		return EIO;
+
+	/* Succeeded. */
+	*register_out = NVME_PCI_COMMAND;
+	*command_out = command;
+	return 0;
+}
+
+/* Gives a legacy pin back the INTx Disable it had before the mask. */
+static int
+nvme_runtime_intx_restore(
+	struct nvme_controller *controller,
+	unsigned offset,
+	uint16_t command)
+{
+	uint16_t current, readback;
+	int error;
+
+	/* Refuses a record that the INTx mask did not fill. */
+	if (offset != NVME_PCI_COMMAND)
+		return EINVAL;
+
+	/* Changes only INTx Disable; the other bits may have moved since. */
+	error = drv_pci_device_config_read16(controller->pci,
+					     NVME_PCI_COMMAND, &current);
+	if (error != 0)
+		return error;
+	current = (uint16_t)((current & ~NVME_PCI_COMMAND_INTX_DISABLE) |
+			     (command & NVME_PCI_COMMAND_INTX_DISABLE));
+	error = drv_pci_device_config_write16(controller->pci,
+					      NVME_PCI_COMMAND, current);
+	if (error != 0)
+		return error;
+
+	/* Confirms the bit holds what it held. */
+	error = drv_pci_device_config_read16(controller->pci,
+					     NVME_PCI_COMMAND, &readback);
+	if (error != 0)
+		return error;
+	return (readback & NVME_PCI_COMMAND_INTX_DISABLE) ==
+			       (command & NVME_PCI_COMMAND_INTX_DISABLE)
+		       ? 0
+		       : EIO;
+}
+
 /* Masks the interrupt while the driver is running. */
 static int
 nvme_runtime_irq_mask(
@@ -2769,6 +2859,11 @@ nvme_runtime_irq_mask(
 	/* Handles the capability out availability. */
 	if (capability_out == NULL || control_out == NULL)
 		return EINVAL;
+
+	/* Masks a legacy pin with the command register's INTx Disable. */
+	if (controller->irq.type == DRV_PCI_IRQ_INTX)
+		return nvme_runtime_intx_mask(controller, capability_out,
+					      control_out);
 	capability_id = controller->irq.type == DRV_PCI_IRQ_MSIX
 				? NVME_PCI_MSIX_CAPABILITY
 				: NVME_PCI_MSI_CAPABILITY;
@@ -2832,6 +2927,11 @@ nvme_runtime_irq_restore(
 {
 	uint16_t readback;
 	int error;
+
+	/* Gives a legacy pin back the INTx Disable it had. */
+	if (controller->irq.type == DRV_PCI_IRQ_INTX)
+		return nvme_runtime_intx_restore(controller, capability,
+						 control);
 
 	/* Checks the operation status. */
 	error = drv_pci_device_config_write16(
