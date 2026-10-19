@@ -31,8 +31,21 @@
 | [p007](phase007/phase.md) | display の node（claim・present）と `scanout` の import | WS256 p011、p004、import は p006 | in-progress（2026-10-19 P1 q1333 前半、P2 q1340 後半: import（p006 の lookup で retain、uncached の view から全面の CPU の copy、SHARED・FOREIGN、BLOB の present）の実装・build・host 試験 PASS。damage は ABI に欄が無く全面。残り: 実機の目視（未依頼）） |
 | [p008](phase008/phase.md) | Rogue の USC・PDS の encoder、kernel の中の試験の道、data master の道の coherency | p006 | in-progress（2026-10-20 P2、q1345 前半: USC・PDS の encoder と host 試験 PASS。q1349 後半: driver の compute の program（`compute-program.c`）と試験の kernel の check（`compute-check.c`、`CONFIG_POWERVR_COMPUTE_CHECK`）、host 試験 PASS 91+70、VF2（試験・通常）・riscv64-virt の build warning 0。実機の 3 行（kernel・data master の coherency・temps の単位）は U29 の続きで実機待ち） |
 | [p009](phase009/phase.md) | 最小の Venus の decode（compute） | p008 | in-progress（2026-10-20 P2、q1352: capset（1.3.269、flags 7、job の caps）・frame・job・executor（instance〜submit）・SPIR-V の subset（`data[x+k] = a·x + c`）・fill の USC の program、host 試験 PASS 69+109、VF2・riscv64-virt・amd64 の build warning 0。q1357: 試験の program `vkcompute`（host の lavapipe で PASS）と VF2 の試験の image の config（`tests/p009/config-visionfive2-vkcompute.mk`、build warning 0、libvulkan は config で選ぶだけで入った）。**実機待ち**。WS277 R7 の文面に食い違い（Q1 へ）） |
-| p010 | graphics（TA・3D・transfer・render pass・WSI） | p009、p007 | planned |
-| p011 | Keiland が使う Vulkan の機能の不足を driver 側で埋める（受け入れは機能の試験。desktop の目視は WS270 p006、WS269 p011 → WS270 p006） | p010 | planned |
+| [p010](phase010/phase.md) | graphics の設計の追補（[design-p010.md](design-p010.md) 版 1、分割と境と UAT の行）。実装は下の p010a〜m | p009、p007 | planning（2026-10-20 P1 q1362: 追補 版 1、design-reviewer 待ち） |
+| p010a | UAT の段の行（`powervr: <段>: ok\|fail(<理由>)`、sysctl）と `gpu-selftest` の骨 | p009 | planning（設計は design-reviewer 待ち） |
+| p010b | 資料の固定（Mesa・mainline の path と SHA、BXE の feature の分岐）。コードなし | p002 | planning（同） |
+| p010c | image（LINEAR rowPitch 32・twiddled）・format・view・sampler | p010b | planning（同） |
+| p010d | render の FW の object（context・free list・HWRT）と geometry・fragment の kick | p010b、p006 | planning（同） |
+| p010e | PBE の store・固定の program・kernel の render check | p010c、p010d | planning（同） |
+| p010f | transfer（copy・blit・clear、3D の道） | p010c、p010d | planning（同） |
+| p010g | render pass・framebuffer・load/store・clear・job の列 | p010e | planning（同） |
+| p010h | descriptor と compiler の境（`shader.h`、PDS の data の program） | p010c、q1363 | planning（同） |
+| p010i | graphics の pipeline と draw | p010g、p010h、q1363 | planning（同） |
+| p010j | depth と vkdemo の offscreen | p010i | planning（同） |
+| p010k | WSI の readback の道（vkdemo が画面に） | p010f、p010j、p007 | planning（同） |
+| p010l | WSI の shared の道と p007 の import の試験（WS277 R6） | p010k | planning（同） |
+| p010m | venus-frame と仕上げ、T1 の回帰、p010 の受け入れ | p010k | planning（同） |
+| p011 | Keiland が使う Vulkan の機能の不足を driver 側で埋める（受け入れは機能の試験。desktop の目視は WS270 p006、WS269 p011 → WS270 p006） | p010m | planned |
 | p012 | 規約の全文の見直し | p003〜p011 | planned |
 
 中身・LW・確かめは [design.md](design.md) §6。
