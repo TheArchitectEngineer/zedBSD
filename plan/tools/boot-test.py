@@ -70,6 +70,12 @@ KEY_NAMES = {
     ";": ["semicolon"], "'": ["apostrophe"], "\"": ["shift", "apostrophe"],
     "|": ["shift", "backslash"], ">": ["shift", "dot"], "<": ["shift", "comma"],
     "~": ["shift", "grave_accent"], "$": ["shift", "4"], "*": ["shift", "8"],
+    "&": ["shift", "7"], "?": ["shift", "slash"], "!": ["shift", "1"],
+    "@": ["shift", "2"], "#": ["shift", "3"], "%": ["shift", "5"],
+    "^": ["shift", "6"], "(": ["shift", "9"], ")": ["shift", "0"],
+    "+": ["shift", "equal"], "[": ["bracket_left"], "]": ["bracket_right"],
+    "{": ["shift", "bracket_left"], "}": ["shift", "bracket_right"],
+    "\\": ["backslash"], "`": ["grave_accent"],
 }
 
 
