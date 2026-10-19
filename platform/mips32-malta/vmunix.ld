@@ -23,6 +23,7 @@ SECTIONS
 		KEEP(*(.text.boot))
 		. = ALIGN(4096);
 		KEEP(*(.text.vectors))
+		*(.hightext)
 		*(.text .text.*)
 		__kernel_text_end = .;
 	}

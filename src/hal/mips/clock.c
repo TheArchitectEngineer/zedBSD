@@ -19,6 +19,7 @@
 #include "asm.h"
 #include "bsp.h"
 #include "clock.h"
+#include "irq.h"
 #include "spin.h"
 
 /*
@@ -48,6 +49,13 @@ static uint32_t clock_wraps;
  * it; any context reads it.
  */
 static volatile uint32_t clock_tick_count;
+
+/*
+ * Nonzero once the kernel takes the ticks: set by
+ * mips_clock_start_kernel() just before the kernel starts.  Until then a
+ * tick is only counted, since nothing of the kernel is set up.
+ */
+static int clock_kernel_running;
 
 static uint32_t read_count(void);
 static void write_compare(uint32_t value);
@@ -110,6 +118,56 @@ mips_clock_interrupt(
 
 	/* The tick is what the boot waits on and, later, what the kernel schedules on. */
 	clock_tick_count++;
+
+	/* The kernel ends the tick, which needs no controller, and schedules. */
+	if (clock_kernel_running) {
+		mips_irq_begin_local();
+		kernel_timer_handler(0, MIPS_ACK_LOCAL);
+	}
+}
+
+/*
+ * Hands the ticks to the kernel from the next one on.
+ */
+void
+mips_clock_start_kernel(
+	void)
+{
+	/* Every later tick goes to kernel_timer_handler(). */
+	clock_kernel_running = 1;
+}
+
+/*
+ * Reads the free-running counter and its rate.
+ */
+bool
+hal_rtc_read_counter(
+	uint64_t *value,
+	uint64_t *freq_hz)
+{
+	/* Refuses a caller with nowhere to put the answer, or a clock not started. */
+	if (value == NULL || freq_hz == NULL)
+		return false;
+	if (clock_frequency == 0)
+		return false;
+
+	/* Succeeded: Count with its wraps, at Count's rate. */
+	*value = mips_clock_read_counter();
+	*freq_hz = clock_frequency;
+	return true;
+}
+
+/*
+ * Refuses the time of day: the board's real-time clock is not read yet.
+ */
+bool
+hal_rtc_read_epoch_time(
+	uint64_t *unix_seconds)
+{
+	UNUSED_PARAMETER(unix_seconds);
+
+	/* Failed: there is no clock the HAL reads. */
+	return false;
 }
 
 /*

@@ -28,7 +28,8 @@ MIPS32_CFLAGS := -march=mips32r2 -mabi=32 -msoft-float -mno-abicalls -fno-pic -f
 	-ffunction-sections -fdata-sections -Os -Wall -Wextra -Werror
 
 # Link-time optimization of vmunix: ZEDBSD_KERNEL_LTO_CFLAGS (from the top
-# Makefile) goes to every C object of the HAL; the assembly stays native.
+# Makefile) goes to every C object of the kernel and the HAL; the assembly
+# stays native.
 MIPS32_KERNEL_LTO_CFLAGS := $(ZEDBSD_KERNEL_LTO_CFLAGS)
 
 # The code generation of link-time optimization runs in the linker, which
@@ -39,19 +40,62 @@ MIPS32_LTO_LDFLAGS := -mllvm -mattr=+noabicalls -mllvm -mips-ssection-threshold=
 MIPS32_BSP := src/hal/mips/bsp-malta
 MIPS32_HAL_C := src/hal/mips/cmain.c src/hal/mips/lib.c \
 	src/hal/mips/int.c src/hal/mips/clock.c src/hal/mips/task.c \
+	src/hal/mips/cpu.c src/hal/mips/atomic.c src/hal/mips/irq.c \
+	src/hal/mips/cache.c src/hal/mips/fpu.c src/hal/mips/page.c \
+	src/hal/mips/space.c src/hal/mips/debug.c src/hal/mips/selftest.c \
+	src/hal/idle-suspend-unsupported.c \
 	$(MIPS32_BSP)/board.c $(MIPS32_BSP)/irq.c \
 	$(MIPS32_BSP)/pci.c $(MIPS32_BSP)/framebuffer.c \
 	$(MIPS32_BSP)/cons.c $(MIPS32_BSP)/font.c
 MIPS32_HAL_S := src/hal/mips/locore.S src/hal/mips/vectors.S src/hal/mips/trap.S \
-	src/hal/mips/dispatch.S
+	src/hal/mips/dispatch.S src/hal/mips/fpregs.S
 MIPS32_HAL_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(MIPS32_HAL_C)) \
 	$(patsubst %.S,$(BUILD)/%.o,$(MIPS32_HAL_S))
 
-# The image is the HAL alone until the page tables are in place: it links
-# no kernel object, and the platform supplies the one kernel symbol the
-# HAL reads.
-MIPS32_STANDALONE_SOURCES := $(MIPS32_PLATFORM)/standalone.c
-MIPS32_STANDALONE_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(MIPS32_STANDALONE_SOURCES))
+# The kernel, and the platform binding that hands it the HAL's console
+# (as on the other ports without a device tree).
+MIPS32_KERNEL_SOURCES := \
+	src/kern/main.c \
+	$(KERN_FAT_SOURCES) \
+	src/kern/inode.c src/kern/file.c src/kern/namecache.c src/kern/namei.c \
+	src/kern/mount.c src/kern/tmpfs.c src/kern/tmpfs-pages.c src/drivers/fs/overlayfs.c \
+	src/kern/vfs.c src/kern/swap.c src/kern/backing-claim.c \
+	src/kern/buf.c src/kern/cache.c src/kern/readahead.c src/kern/writeback.c src/kern/io.c \
+	src/kern/sysctl.c src/kern/resource.c src/kern/poll.c src/kern/usync.c src/kern/disk.c \
+	src/kern/device-io.c src/kern/irq.c src/kern/pmem.c \
+	src/kern/test-checkpoint.c src/kern/text-display.c \
+	src/drivers/generic/loop.c \
+	src/kern/partition.c src/drivers/disklabel/mbr.c \
+	src/kern/platform/hal-console.c \
+	src/kern/dcache.c src/kern/uncached.c \
+	src/drivers/generic/dma.c \
+	src/kern/panic.c src/kern/entry.c src/kern/clock.c \
+	src/kern/timer.c src/kern/klog.c \
+	src/kern/lock.c src/kern/waitq.c \
+	src/kern/process.c src/kern/thread.c src/kern/sched.c src/kern/sleep.c src/kern/freeze.c \
+	src/kern/vmspace.c src/kern/vm-device.c \
+	src/kern/vm.c src/kern/filedesc.c src/kern/handle.c src/kern/fd-object.c \
+	src/kern/record-lock.c \
+	src/kern/pipe.c src/kern/cred.c \
+	src/kern/signal.c \
+	src/kern/cwdinfo.c \
+	src/kern/elf.c src/kern/exec.c src/kern/sandbox.c src/kern/user-probe.c src/kern/syscall.c \
+	src/kern/uaccess.c src/kern/cdev.c src/kern/devfs.c \
+	src/drivers/generic/console.c src/drivers/generic/input.c \
+	$(KERN_GPU_SOURCES) \
+	$(KERN_AUDIO_SOURCES) \
+	src/kern/kcrt.c src/kern/heap.c \
+	src/kern/random.c src/kern/random-crypto.c \
+	src/kern/tty.c src/kern/tty-csi.c \
+	src/drivers/generic/system-device.c src/kern/system-event.c src/drivers/generic/memory-device.c \
+	src/kern/shutdown.c \
+	src/kern/init.c
+MIPS32_KERNEL_SOURCES += $(KERN_NET_SOURCES) $(KERN_BLOCK_IDENTITY_SOURCES) \
+	$(KERN_UFS_SOURCES)
+MIPS32_KERNEL_SOURCES += $(KERN_BOOT_SOURCES)
+MIPS32_KERNEL_SOURCES += $(KERN_ACL_SOURCES)
+MIPS32_KERNEL_SOURCES += $(KERN_QUOTA_SOURCES)
+MIPS32_KERNEL_OBJS := $(patsubst %.c,$(BUILD)/kernel/%.o,$(MIPS32_KERNEL_SOURCES))
 
 # A 32-bit processor divides and shifts 64-bit integers through the
 # compiler's helper calls.  Their object stays native: link-time
@@ -60,7 +104,7 @@ MIPS32_STANDALONE_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(MIPS32_STANDALONE_SOURCE
 MIPS32_HELPER_SOURCES := src/libc/int64.c
 MIPS32_HELPER_OBJS := $(patsubst %.c,$(BUILD)/kernel-helper/%.o,$(MIPS32_HELPER_SOURCES))
 
-MIPS32_VMUNIX_OBJS := $(MIPS32_HAL_OBJS) $(MIPS32_STANDALONE_OBJS) $(MIPS32_HELPER_OBJS)
+MIPS32_VMUNIX_OBJS := $(MIPS32_HAL_OBJS) $(MIPS32_KERNEL_OBJS) $(MIPS32_HELPER_OBJS)
 $(MIPS32_VMUNIX_OBJS): $(ZEDBSD_PLATFORM_CONFIG_STAMP)
 $(MIPS32_VMUNIX_OBJS): $(ZEDBSD_KERNEL_LTO_STAMP)
 
@@ -82,6 +126,10 @@ $(BUILD)/vmunix: $(MIPS32_VMUNIX_OBJS) $(MIPS32_PLATFORM)/vmunix.ld
 	@test -z "$$($(MIPS32_OBJDUMP) -d $@ | $(AWK) '/[$$]gp/ && !/[sl]w[ \t]+[$$]gp, 0x[0-9a-f]+\([$$]sp\)/')" || \
 		{ echo "vmunix has an instruction that uses gp"; exit 1; }
 
+$(BUILD)/src/hal/idle-suspend-unsupported.o: src/hal/idle-suspend-unsupported.c
+	@mkdir -p $(dir $@)
+	$(MIPS32_CC) $(MIPS32_CPPFLAGS) $(MIPS32_CFLAGS) $(MIPS32_KERNEL_LTO_CFLAGS) -MMD -MP -c $< -o $@
+
 $(BUILD)/src/hal/mips/%.o: src/hal/mips/%.c
 	@mkdir -p $(dir $@)
 	$(MIPS32_CC) $(MIPS32_CPPFLAGS) $(MIPS32_CFLAGS) $(MIPS32_KERNEL_LTO_CFLAGS) -MMD -MP -c $< -o $@
@@ -90,9 +138,10 @@ $(BUILD)/src/hal/mips/%.o: src/hal/mips/%.S
 	@mkdir -p $(dir $@)
 	$(MIPS32_CC) $(MIPS32_CPPFLAGS) $(MIPS32_CFLAGS) -D_ASM_SRC_ -c $< -o $@
 
-$(BUILD)/$(MIPS32_PLATFORM)/%.o: $(MIPS32_PLATFORM)/%.c
+$(BUILD)/kernel/%.o: %.c
 	@mkdir -p $(dir $@)
-	$(MIPS32_CC) $(MIPS32_CPPFLAGS) $(MIPS32_CFLAGS) $(MIPS32_KERNEL_LTO_CFLAGS) -MMD -MP -c $< -o $@
+	$(MIPS32_CC) $(MIPS32_CPPFLAGS) $(MIPS32_CFLAGS) -fno-builtin \
+ -fno-strict-aliasing $(MIPS32_KERNEL_LTO_CFLAGS) -MMD -MP -c $< -o $@
 
 $(BUILD)/kernel-helper/%.o: %.c
 	@mkdir -p $(dir $@)
@@ -104,4 +153,4 @@ toolchain:
 	@command -v $(MIPS32_LD) >/dev/null
 	@echo "MIPS32 toolchain: $(MIPS32_CC), $(MIPS32_LD)"
 
--include $(MIPS32_HAL_OBJS:.o=.d) $(MIPS32_STANDALONE_OBJS:.o=.d) $(MIPS32_HELPER_OBJS:.o=.d)
+-include $(MIPS32_HAL_OBJS:.o=.d) $(MIPS32_KERNEL_OBJS:.o=.d) $(MIPS32_HELPER_OBJS:.o=.d)

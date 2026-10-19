@@ -150,3 +150,18 @@ mips_trap_return:
 	lw $29, MIPS_ARGUMENT_HOME_SIZE + 29 * MIPS_FRAME_REGISTER_BYTES($29)
 	eret
 	.size mips_trap_entry, . - mips_trap_entry
+
+	/*
+	 * The first entry of a user task.  The task's first switch pops into
+	 * here with sp at the argument home below the frame it was built
+	 * with; the C side finishes the switch and builds the frame's Status,
+	 * and the return path enters user mode through that frame.
+	 */
+	.global mips_user_frame_entry
+	.type mips_user_frame_entry, %function
+mips_user_frame_entry:
+	jal mips_task_first_user_entry
+	nop
+	j mips_trap_return
+	nop
+	.size mips_user_frame_entry, . - mips_user_frame_entry

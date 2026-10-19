@@ -18,12 +18,20 @@
 /*
  * The general register numbers the trap handling reads or writes in a
  * frame: v0 and a3, which carry a system call's result and its error
- * mark, and the stack pointer.
+ * mark, the argument registers a0 to a3 and t0, t1, which carry its
+ * arguments, t9, which holds a called function's own address in
+ * position-independent code, the stack pointer and the return address.
  */
 #define MIPS_REGISTER_V0		2
 #define MIPS_REGISTER_A0		4
+#define MIPS_REGISTER_A1		5
+#define MIPS_REGISTER_A2		6
 #define MIPS_REGISTER_A3		7
+#define MIPS_REGISTER_T0		8
+#define MIPS_REGISTER_T1		9
+#define MIPS_REGISTER_T9		25
 #define MIPS_REGISTER_SP		29
+#define MIPS_REGISTER_RA		31
 
 /*
  * The state of the code an exception interrupted, as trap.S saves it.
@@ -65,5 +73,23 @@ mips_trap(
 void
 mips_trap_selftest(
 	void);
+
+/*
+ * What the trap handling passes for a fault that is not a TLB exception,
+ * where the selected space's finding (MIPS_SPACE_FAULT_*) would be.
+ */
+#define MIPS_TRAP_NOT_SPACE	(-1)
+
+/*
+ * A handler the paging self-test installs for the kernel's own faults
+ * while it runs, given the frame and what the space found: it reports
+ * nonzero when it took the fault, which then goes past the faulting
+ * instruction.  NULL outside the test.
+ */
+typedef int (*mips_trap_fault_hook_t)(const struct mips_trap_frame *frame, int fault);
+
+void
+mips_trap_set_fault_hook(
+	mips_trap_fault_hook_t hook);
 
 #endif

@@ -58,13 +58,16 @@ mips_task_dispatch:
 
 	/*
 	 * The first entry of a kernel task: s0 is its function and s1 its
-	 * argument.  It starts with interrupts on, since a new task has no
-	 * suspended switch that would turn them back on, and stops if the
-	 * function returns.
+	 * argument.  It first releases the task it was switched from, whose
+	 * stack it no longer uses.  It starts the function with interrupts
+	 * on, since a new task has no suspended switch that would turn them
+	 * back on, and stops if the function returns.
 	 */
 	.global mips_kernel_task_entry
 	.type mips_kernel_task_entry, %function
 mips_kernel_task_entry:
+	jal mips_task_finish_switch
+	nop
 	ei
 	ehb
 	move $4, $17

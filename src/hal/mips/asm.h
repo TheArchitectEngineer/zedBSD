@@ -22,11 +22,18 @@
  *
  * Values referenced: MIPS32 Architecture for Programmers Volume III, the
  * Privileged Resource Architecture (the coprocessor 0 register numbers
- * and selects of BadVAddr, Count, Compare, Status, Cause, EPC, PRId,
- * EBase, Config and Config1).
+ * and selects of Index, EntryLo0, EntryLo1, PageMask, Wired, BadVAddr,
+ * Count, EntryHi, Compare, Status, Cause, EPC, PRId, EBase, Config and
+ * Config1).
  */
+#define MIPS_CP0_INDEX			$0
+#define MIPS_CP0_ENTRY_LO0		$2
+#define MIPS_CP0_ENTRY_LO1		$3
+#define MIPS_CP0_PAGE_MASK		$5
+#define MIPS_CP0_WIRED			$6
 #define MIPS_CP0_BAD_ADDRESS		$8
 #define MIPS_CP0_COUNT			$9
+#define MIPS_CP0_ENTRY_HI		$10
 #define MIPS_CP0_COMPARE		$11
 #define MIPS_CP0_STATUS			$12
 #define MIPS_CP0_CAUSE			$13
@@ -61,13 +68,15 @@
  * The fields of Cause and Config the HAL reads.
  *
  * Values referenced: MIPS32 Architecture for Programmers Volume III
- * (Cause: ExcCode bits 2-6, BD bit 31; Config: K0 bits 0-2, the value 2
- * uncached and 3 cacheable noncoherent).
+ * (Cause: ExcCode bits 2-6, CE bits 28-29, BD bit 31; Config: K0 bits
+ * 0-2, the value 2 uncached and 3 cacheable noncoherent).
  */
 #define MIPS_CAUSE_CODE_SHIFT		2
 #define MIPS_CAUSE_CODE_MASK		0x1f
 #define MIPS_CAUSE_BRANCH_DELAY		0x80000000
 #define MIPS_CAUSE_PENDING_MASK		0x0000ff00
+#define MIPS_CAUSE_COPROCESSOR_SHIFT	28
+#define MIPS_CAUSE_COPROCESSOR_MASK	0x3
 
 /*
  * The interrupt lines of Cause.IP and Status.IM the malta board wires:
@@ -112,8 +121,82 @@
  * Cause bits 12-17, Enables bits 7-11).
  */
 #define MIPS_FCSR_CAUSE_MASK		0x0003f000
+#define MIPS_FCSR_ENABLE_SHIFT		5
+
+/* The offsets of FCSR and FIR in struct hal_fpregs, after the 32 registers. */
+#define MIPS_FPREGS_FCSR		256
+#define MIPS_FPREGS_FIR			260
 #define MIPS_CONFIG_K0_MASK		0x00000007
 #define MIPS_CONFIG_K0_CACHED		3
+
+/*
+ * The fields of Config1 and of the floating-point implementation
+ * register (FIR, control register 0) the HAL reads: the TLB size less
+ * one, the presence of the floating-point unit, and its 64-bit
+ * registers.
+ *
+ * Values referenced: MIPS32 Architecture for Programmers Volume III
+ * (Config1: MMU Size bits 25-30, FP bit 0); Volume I (FIR: F64 bit 22).
+ */
+#define MIPS_CONFIG1_TLB_SHIFT		25
+#define MIPS_CONFIG1_TLB_MASK		0x3f
+#define MIPS_CONFIG1_FLOAT		0x00000001
+#define MIPS_FIR_FLOAT_64		0x00400000
+
+/*
+ * The TLB's fields: Index's probe failure bit, the 8-bit address space
+ * identifier of EntryHi and its 8 KiB pair of pages (VPN2), and the
+ * bits of EntryLo: global, valid, dirty (writable), the cache
+ * attribute and the page frame number from bit 6.
+ *
+ * Values referenced: MIPS32 Architecture for Programmers Volume III
+ * (Index P bit 31; EntryHi ASID bits 0-7, VPN2 bits 13-31; EntryLo G
+ * bit 0, V bit 1, D bit 2, C bits 3-5, PFN from bit 6).
+ */
+#define MIPS_INDEX_PROBE_FAILED		0x80000000
+#define MIPS_ENTRY_HI_ASID_MASK		0xff
+#define MIPS_ENTRY_HI_VPN2_MASK		0xffffe000
+#define MIPS_ENTRY_LO_GLOBAL		0x01
+#define MIPS_ENTRY_LO_VALID		0x02
+#define MIPS_ENTRY_LO_DIRTY		0x04
+#define MIPS_ENTRY_LO_CACHE_SHIFT	3
+
+/*
+ * The page tables the TLB refill walks: 4 KiB pages, a root of 1024
+ * words indexed by the address's top ten bits, each the KSEG0 address
+ * of a leaf table of 1024 entries or zero.
+ *
+ * A leaf entry is the page's physical address from bit 12, the six
+ * EntryLo bits shifted up by MIPS_PTE_HARDWARE_SHIFT (bit 6 global, bit
+ * 7 valid, bit 8 dirty, bits 9-11 the cache attribute) and below them
+ * the software's own bits.  The refill shifts an entry right by six:
+ * the frame number lands where EntryLo has it, and the software's bits
+ * fall out.
+ */
+#define MIPS_PAGE_SIZE			4096
+#define MIPS_PAGE_SHIFT			12
+#define MIPS_ROOT_SHIFT			22
+#define MIPS_TABLE_ENTRIES		1024
+#define MIPS_PTE_HARDWARE_SHIFT		6
+#define MIPS_PTE_PRESENT		0x001
+#define MIPS_PTE_ACCESSED		0x002
+#define MIPS_PTE_WRITABLE		0x004
+#define MIPS_PTE_DIRTY			0x008
+#define MIPS_PTE_EXEC			0x010
+#define MIPS_PTE_READABLE		0x020
+#define MIPS_PTE_SOFTWARE_MASK		0x03f
+#define MIPS_PTE_VALID			0x080
+#define MIPS_PTE_WRITE_ENABLE		0x100
+#define MIPS_PTE_CACHE_SHIFT		9
+#define MIPS_PTE_FRAME_MASK		0xfffff000
+
+/*
+ * The user segment: kuseg below 2 GiB, the first page never mapped.
+ * Its root entries are the low half of the root; the high half stays
+ * zero, so that a refill for the kernel's mapped segments finds nothing.
+ */
+#define MIPS_USER_MINIMUM		0x00001000
+#define MIPS_USER_LIMIT			0x80000000
 
 /*
  * The fixed segments of the 32-bit address space: KSEG0 maps the low

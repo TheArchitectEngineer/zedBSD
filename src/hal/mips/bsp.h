@@ -34,8 +34,25 @@ void
 mips_board_describe(
 	void);
 
+bool
+mips_board_display_ready(
+	void);
+
 uint32_t
 mips_board_count_frequency(
+	void);
+
+uint32_t
+mips_board_memory_size(
+	void);
+
+void
+mips_board_ramdisk(
+	uint32_t *physical,
+	uint32_t *size);
+
+const void *
+mips_board_kernel_handoff(
 	void);
 
 void
