@@ -16,9 +16,9 @@
   - P2（q1256 → q1258）: WS262 の uefi・sparcv9 → WS267 sun4u → WS268 x68k → WS259。
   - T1: QEMU の試験を都度。実機（WS260 の T1-710、WS259 の WiFi）は機械の準備待ち（beta2.md の U24・U25）。
   - WS261 は completed。朝の報告: 事前の承認で入れた HAL の差分の一覧、bootloader/tests/payload*.ld の削除の可否、Pi 4 の CI の image の大きさ（2 の冪）。
-  - 朝の判断（追加）: WS259 の license の package（userland/base/licenses/rtl8822b-tables/ と tools/release/license-components.json の項目）を WS244 の i915-driver と同じく外すか（ユーザーの明示の決定が RTL8822B には無い）。
-  - 朝の判断（追加）: WS245 p044・p045 の受け入れの読み替え（Linux との書き込み単位の完全一致は oracle が無い。値は表の比べ＋ADL-P の終わりの状態、順は版ごとの anchor に）。
-  - 朝の判断（追加）: WS252（i915 の RKL・ADL-S/RPL-S・ICL の GT）の設計 版 3.1（p001 cleared）。聞く順: D2 ICL を WS252 でやるか（既定 Future Work へ。全部なら ICL 約 15〜17 LW、WS 全体 約 27〜29 LW、外せば約 12 LW）→ D1-R RKL・ADL-S/RPL-S の attach（既定 A=既定の image では付けず、試験の config.mk の build option で ID）→（D2=全部の時だけ）D1-I ICL の attach → D3 GuC/HuC（既定 使わない）→ D5 実機（既定 無いまま、決定の解釈）。D6 は 10-19「設計まで」で決定済み、D4 は WS の外（BUG-335）。
+  - WS259 の license の package は「外す」（2026-10-19 ユーザー、P2 q1267）。
+  - WS245 p044・p045 の受け入れの読み替えは不要に（2026-10-19 ユーザー「WS245は5330で自動テスト合格ならそれでいいです。」）。
+  - WS252 の判断は 2026-10-19 12:46 にユーザーが回答済み（decisions-log）。
   - push はしていない。
 <!-- master:agents:end -->
 
@@ -574,7 +574,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS249](ws249/ws.md) | MG005 | BCM43455（Pi 4 の WiFi）の driver の出典の表記（block ごとの referenced:）と規約の整理（2026-10-15 ユーザー） | incomplete（p001・p002 cleared、main 331d314be。Pi 4 の実機の WiFi の試験待ち） | T の Pi 4 の試験 → completed |
 | [WS250](ws250/ws.md) | MG006 | nvrtx の終わらない GPU の仕事の取り消しと復帰、system は動き続ける（2026-10-15 ユーザー） | incomplete（p001 を P4 が q1206 で設計中） | p001 |
 | [WS251](ws251/ws.md) | MG001 | source の tree 全体から開発の管理情報を削除する（2026-10-15 ユーザー） | incomplete（p002 GPU ドライバ cleared 2026-10-19、p001・p003〜 は planned） | p001 の tree 全体の棚卸し（未割当） |
-| [WS252](ws252/ws.md) | MG006 | i915 の RKL・ADL-S/RPL-S・ICL の GT の対応（2026-10-15 ユーザー、WS245 §7 #20） | incomplete（p001 cleared 2026-10-19 q1265、design.md 版 3.1。p002〜p008 は実機まで planned。LW: RKL・ADL-S 12、全部 約 27〜29） | 判断 D2→D1-R→(D1-I)→D3→D5。p002 の時に ID の表の統合を WS245 と調整、p003 の時に共有の Makefile・kernel-options.list と MAC-T001 の追従を Q1 が調整 |
+| [WS252](ws252/ws.md) | MG006 | i915 の RKL・ADL-S/RPL-S・ICL の GT の対応（2026-10-15 ユーザー、WS245 §7 #20） | incomplete（p001 cleared 2026-10-19 q1265、design.md 版 3.1。p002〜p008 は実機まで planned。LW: RKL・ADL-S 12、全部 約 27〜29） | 判断は回答済み（D2 全部・D1 C・D3 Meteor Lake の時・D5 無いまま）。実機ができたら p002 から |
 | [WS253](ws253/ws.md) | MG001 | 起動の時間の短縮: 通常の起動は sessiond（Wayland）を先に、network・audio・sshd などは後に。debug の起動は今のまま（2026-10-16 ユーザー） | incomplete（p001: 2 段の起動・desktop の表示を待つ late・kernel の disk の待ちの短縮を main に d454d4bd3、QEMU で約 9 s → 約 4 s。5330 の確認待ち） | 5330 の起動の記録（P1 の次の起動で） |
 | [WS254](ws254/ws.md) | MG001 | networkd: DHCP の失敗の後に 1 分おきに取り直す（2026-10-16 ユーザー） | incomplete（p001 cleared: QEMU で確認、main 5cb63ff2a。実機は未実施） | p002 規約の見直し |
 | [WS255](ws255/ws.md) | MG001 | 試験機（5330・RDNA 機）の zedBSD の試験の image を静的な IP に（2026-10-16 ユーザー） | incomplete（p001 uncleared: 手引き・QEMU で address は確認、main d2a709ba6。route と DNS は BUG-328 待ち） | BUG-328 の修正 |
@@ -636,6 +636,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-19 12:46（ユーザー、クリック）: WS252 の D2 ICL は「実機ができたら全部」、D1-R RKL・ADL-S/RPL-S は「C 既定で付ける」、D1-I ICL も「C 既定で付ける」、D3 GuC・HuC は「Meteor Lake対応のときに入れます。」（WS252 では使わない）、D5 実機は「無いまま」。実装（p002〜）は「設計まで」のとおり実機ができるまで planned。
 - 2026-10-19 12:44（ユーザー、クリック）: fonts/ は「全部削除」（build・image は使っていない Mahora の制作の素材。WS213・WS216 の試験の参照は userland/desktop/fonts/ へ向け直した）。RTL8822B の license の package（userland/base/licenses/rtl8822b-tables/ と license-components.json の rtl8822b-tables）は「外す」（WS244 の i915-driver と同じ。firmware の license は残す）。
 - 2026-10-19 12:28（ユーザー）: 「5330は 10.0.30.3 で使えます。作業スペースの関係で、5330でのテストが終わった後、入れ替わりでSV7を起動します。5330は今から使ってよいです。私にUAT依頼があれば、機種ごとに検証項目を表にしてください。」「WS245は5330で自動テスト合格ならそれでいいです。合格後、マージをお願いします。」→ WS245 の実機待ちの Phase（p041〜p045・p050d4c など）は T1 の 5330 の自動の回帰の合格で cleared にする（p044・p045 の受け入れの読み替えの判断はこれで不要。SV7 の分は除く）。WS245 の段は既に main にある。「fonts/ って使われてますか？使われてなければ削除してください」「bootloader/README.md はx86以外のことも書いておいてください。Piでは我々のブートローダを用いないとかも」（P2 q1266）。ユーザーが bootloader/ ほかを整形して commit・push（ab9a886d2）。
 - 2026-10-19 02:32（Q1 の技術判断、自走の範囲）: WS245 p046 で Linux と核が一致した関数名 26 のうち、Linux 特有の言い回しに近い 5 つ（cdclk_pll_crawl・cdclk_decimal・tc_port_update_mode・tc_port_connected・gmbus_wait、全部 static）だけ改名する。他の 21 は hardware の部品名＋動詞の自然な重なりで写しと見ない。p044・p045 の受け入れの「Linux の手順と表の値に一致」を「値は表の比べ＋ADL-P の終わりの状態、順は版ごとの anchor」に読み替える案は受け入れの変更なので朝にユーザーへ聞く。それまで P2 は案の 1・2 を追加の証拠として作ってよい（受け入れは変えない）。
