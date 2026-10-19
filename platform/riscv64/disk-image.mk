@@ -30,6 +30,19 @@ RISCV64_NATIVE_SCRATCH_MIB ?= 64
 RISCV64_SPL ?=
 RISCV64_UBOOT_ITB ?=
 
+# The VisionFive 2's card also carries the mainline device trees and the
+# vendor U-Boot's boot files (visionfive2/dtb.mk, BUG-339), and keeps the
+# EFI system partition at partition 3 when the firmware is in SPI flash.
+ifeq ($(ZEDBSD_PLATFORM),visionfive2)
+include platform/riscv64/visionfive2/dtb.mk
+RISCV64_NATIVE_ESP_INPUTS := $(VF2_ESP_INPUTS)
+RISCV64_NATIVE_ESP_ARGS := $(addprefix --esp-file ,$(VF2_ESP_FILES)) \
+ $(if $(RISCV64_SPL),,--reserve-firmware)
+else
+RISCV64_NATIVE_ESP_INPUTS :=
+RISCV64_NATIVE_ESP_ARGS :=
+endif
+
 # The native image's boot configuration (ws270-p003): the source, and
 # login=graphical when ZEDBSD_GRAPHICAL_LOGIN is y, as the other ports put
 # it on the boot line.  Rechecked on every invocation; the mtime is kept
@@ -48,9 +61,10 @@ native-image: $(BUILD)/native.img
 
 $(BUILD)/native.img: $(BUILD)/uefi/BOOTRISCV64.EFI $(BUILD)/vmunix \
 	$(BUILD)/root.ufs $(RISCV64_NATIVE_CONFIG) $(RISCV64_DISK_IMAGE_TOOL) \
-	$(RISCV64_SPL) $(RISCV64_UBOOT_ITB)
+	$(RISCV64_SPL) $(RISCV64_UBOOT_ITB) $(RISCV64_NATIVE_ESP_INPUTS)
 	$(PYTHON) $(RISCV64_DISK_IMAGE_TOOL) --force --efi $(BUILD)/uefi/BOOTRISCV64.EFI \
  --kernel $(BUILD)/vmunix --config $(RISCV64_NATIVE_CONFIG) \
  --root-ufs $(BUILD)/root.ufs --scratch-mib $(RISCV64_NATIVE_SCRATCH_MIB) \
  $(if $(RISCV64_SPL),--spl $(RISCV64_SPL)) \
- $(if $(RISCV64_UBOOT_ITB),--uboot-itb $(RISCV64_UBOOT_ITB)) $@
+ $(if $(RISCV64_UBOOT_ITB),--uboot-itb $(RISCV64_UBOOT_ITB)) \
+ $(RISCV64_NATIVE_ESP_ARGS) $@

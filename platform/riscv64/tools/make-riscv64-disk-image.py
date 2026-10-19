@@ -22,6 +22,12 @@ and write tests of the medium that must not touch a file system.
 for booting from the SD card: the SPL in partition 1, of the type its boot
 ROM looks for, and the U-Boot image in partition 2, which the SPL reads.
 The EFI system partition is then partition 3 and the root partition 4.
+
+--reserve-firmware keeps those two partitions' sectors, empty and of
+zedBSD's reserved type, when the firmware is elsewhere (the VisionFive 2's
+SPI flash), so the EFI system partition is still partition 3, where the
+vendor U-Boot looks for its boot files.  --esp-file DEST=SRC adds a file
+to the EFI system partition (repeatable).
 """
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
@@ -81,6 +87,10 @@ UBOOT_GUID = uuid.UUID("7a656442-5244-4b76-a172-697363763632")
 # The scratch partition's type: zedBSD's own, which no system mounts.
 SCRATCH_TYPE = uuid.UUID("7a656442-5244-4b76-a172-736372617463")
 
+# The reserved firmware partitions' type: zedBSD's own, which no boot ROM
+# or system reads.
+RESERVED_TYPE = uuid.UUID("7a656442-5244-4b76-a172-726573657276")
+
 
 def run(*args: str) -> None:
     subprocess.run(args, check=True)
@@ -130,6 +140,12 @@ def build(args: argparse.Namespace) -> None:
              ("vmunix", args.kernel)]
     if args.root_image is not None:
         files.append(("root.img", args.root_image))
+    for extra in args.esp_file:
+        destination, separator, source = extra.partition("=")
+        if not separator or not destination or destination.startswith("/") \
+                or ".." in destination.split("/"):
+            raise SystemExit(f"bad --esp-file: {extra}")
+        files.append((destination, Path(source)))
     for _, path in files:
         if not path.is_file():
             raise SystemExit(f"missing input: {path}")
@@ -144,8 +160,13 @@ def build(args: argparse.Namespace) -> None:
         raise SystemExit("--scratch-mib must not be negative")
     if (args.spl is None) != (args.uboot_itb is None):
         raise SystemExit("--spl and --uboot-itb go together")
+    if args.reserve_firmware and args.spl is not None:
+        raise SystemExit("--reserve-firmware and --spl exclude each other")
     firmware = []
-    if args.spl is not None:
+    if args.reserve_firmware:
+        firmware = [(RESERVED_TYPE, SPL_GUID, SPL_LBA, SPL_LAST, "reserved", None),
+                    (RESERVED_TYPE, UBOOT_GUID, UBOOT_LBA, UBOOT_LAST, "reserved", None)]
+    elif args.spl is not None:
         firmware = [(SPL_TYPE, SPL_GUID, SPL_LBA, SPL_LAST, "spl", args.spl),
                     (UBOOT_TYPE, UBOOT_GUID, UBOOT_LBA, UBOOT_LAST, "uboot",
                      args.uboot_itb)]
@@ -211,14 +232,22 @@ def build(args: argparse.Namespace) -> None:
         image.write(header_bytes(backup_header, 1, first_usable, last_usable,
                                  backup_entries, entries_crc))
         for _, _, first, _, _, path in firmware:
-            copy_into(image, path, first)
+            if path is not None:
+                copy_into(image, path, first)
         if root_lba is not None:
             copy_into(image, args.root_ufs, root_lba)
 
     spec = f"{partial}@@{esp_lba * SECTOR}"
     run("mformat", "-i", spec, "-F", "-T", str(esp_sectors), "-H", str(esp_lba),
         "-h", "64", "-s", "32", "-N", ESP_SERIAL, "-v", "ZEDBSD", "::")
-    run("mmd", "-i", spec, "::/EFI", "::/EFI/BOOT")
+    directories = []
+    for destination, _ in files:
+        parts = destination.split("/")[:-1]
+        for depth in range(1, len(parts) + 1):
+            directory = "/".join(parts[:depth])
+            if directory not in directories:
+                directories.append(directory)
+    run("mmd", "-i", spec, *[f"::/{directory}" for directory in directories])
     for destination, source in files:
         run("mcopy", "-i", spec, str(source), f"::/{destination}")
     os.replace(partial, args.output)
@@ -234,6 +263,8 @@ def main() -> None:
     parser.add_argument("--scratch-mib", type=int, default=0)
     parser.add_argument("--spl", type=Path)
     parser.add_argument("--uboot-itb", type=Path)
+    parser.add_argument("--reserve-firmware", action="store_true")
+    parser.add_argument("--esp-file", action="append", default=[])
     parser.add_argument("--force", action="store_true")
     parser.add_argument("output", type=Path)
     build(parser.parse_args())
