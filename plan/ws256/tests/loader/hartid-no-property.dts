@@ -1,0 +1,10 @@
+/dts-v1/;
+/* /chosen exists without boot-hartid; only a child of /chosen has one. */
+/ {
+	chosen {
+		bootargs = "console=ttyS0";
+		inner {
+			boot-hartid = <7>;
+		};
+	};
+};

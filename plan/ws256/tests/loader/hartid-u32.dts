@@ -1,0 +1,13 @@
+/dts-v1/;
+/* /chosen names hart 3 in one 32-bit cell, after another property. */
+/ {
+	#address-cells = <2>;
+	#size-cells = <2>;
+	chosen {
+		bootargs = "console=ttyS0";
+		boot-hartid = <3>;
+	};
+	cpus {
+		cpu@3 { reg = <3>; };
+	};
+};

@@ -1,0 +1,7 @@
+/dts-v1/;
+/* boot-hartid of two bytes, which is neither cell width. */
+/ {
+	chosen {
+		boot-hartid = [01 02];
+	};
+};

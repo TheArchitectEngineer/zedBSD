@@ -1,0 +1,7 @@
+/dts-v1/;
+/* /chosen names a hart in one 64-bit value; the high cell is not zero. */
+/ {
+	chosen {
+		boot-hartid = /bits/ 64 <0x100000002>;
+	};
+};
