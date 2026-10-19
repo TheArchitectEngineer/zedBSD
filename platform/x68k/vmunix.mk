@@ -284,7 +284,12 @@ $(BUILD)/bin/sh: $(X68K_USER_OBJS) $(X68K_USER_READLINE_LIB) \
  exit 1; \
 	fi
 
-USER_BASIC_COMMANDS := $(filter $(ZEDBSD_USER_PROGRAMS),$(USERLAND_BASIC_PROGRAMS))
+# lp, lpr and ntpdate reach the network through the resolver, whose
+# thread-local state the X68k static runtime cannot read yet; nothing on X68k
+# drives a network device, so they are not built.
+X68K_NETWORK_CLIENTS := lp lpr ntpdate
+USER_BASIC_COMMANDS := $(filter-out $(X68K_NETWORK_CLIENTS),\
+	$(filter $(ZEDBSD_USER_PROGRAMS),$(USERLAND_BASIC_PROGRAMS)))
 USER_BASIC_TARGETS := $(addprefix $(BUILD)/bin/,$(USER_BASIC_COMMANDS))
 X68K_USER_BASIC_COMMON_OBJ := $(BUILD)/user/userland/base/common/command.o $(BUILD)/user/userland/base/common/pager.o
 
