@@ -3,7 +3,7 @@
 # WS273 Anbernic RG350（Ingenic JZ4770、MIPS32）の実機への移植
 
 - ID: ws273、Master: [master.md](../master.md)、Primary Milestone: MG008
-- Status: incomplete（2026-10-19 14:13 Q1 作成。WS271 は完了、設計 p001 を 2026-10-19 に P2 が開始）
+- Status: incomplete（2026-10-19 22:22 ユーザー「RG350はきりのいいところでラップアップしましょう。途中までのコードをコミットしてOKです。」で中断。p001・p002（T1-748 待ち）・p003 の途中（bsp の最小・platform・uImage、main 7adce0d6d）まで。実機 1 は beta2.md の U26。再開は phase003/phase.md の手順から）
 - 起点（2026-10-19 ユーザー）: 「MIP32とMIPS64のカーネルも作りたいです。ただ、ボードがないなあ。virtで作れそうですか？Anbernic RG 350と、Cobalt Qube 初代、EdgeRouter X はあります。MIPS Creatorは購入できそう。」→（クリック）始め方「malta の little endian」、toolchain「許可する」（LLVM に Mips の target、Q1 が行う）、最初の実機「RG350」
 - 前提（Q1 の覚え、未確認）: JZ4770 は MIPS32r2 の XBurst の 1 core、little endian。内蔵の LCD、SD。起動の道（SD の boot loader）と資料は p001 で確かめる。
 - 担当: P2（設計 p001、2026-10-19 q1317）。
