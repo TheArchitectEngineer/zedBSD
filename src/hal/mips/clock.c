@@ -225,6 +225,7 @@ read_count(
 {
 	uint32_t value;
 
+	/* Moves the register from coprocessor 0. */
 	__asm__ volatile("mfc0 %0, $9" : "=r"(value));
 
 	/* Succeeded: the register's value. */

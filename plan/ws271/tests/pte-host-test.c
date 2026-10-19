@@ -79,6 +79,8 @@ main(
 		printf("FAIL %d\n", failures);
 		return 1;
 	}
+
+	/* Succeeded: every check held. */
 	printf("PASS\n");
 	return 0;
 }

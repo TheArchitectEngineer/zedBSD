@@ -33,12 +33,14 @@ mips_irq_save(
 {
 	uint32_t status;
 
+	/* Turns interrupts off and takes the old Status. */
 	__asm__ volatile("di %0\n\tehb" : "=r"(status) : : "memory");
 
 	/* Reports whether interrupts were on. */
 	if ((status & MIPS_STATUS_INTERRUPTS) != 0)
 		return true;
 
+	/* Interrupts were already off. */
 	return false;
 }
 
@@ -53,6 +55,7 @@ mips_irq_restore(
 	if (!enabled)
 		return;
 
+	/* Turns interrupts on and waits out the hazard. */
 	__asm__ volatile("ei\n\tehb" : : : "memory");
 }
 

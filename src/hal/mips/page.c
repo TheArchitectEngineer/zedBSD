@@ -23,10 +23,6 @@
  * only the low alias (through KSEG0) and manages that alone; the 64-bit
  * one reaches both through xkphys.  A device sees a page at its physical
  * address.
- *
- * Values referenced: QEMU v10.0.11 hw/mips/malta.c (the RAM region at
- * 0x80000000, the low alias of at most 256 MiB, the environment's memsize
- * and ememsize, and the 2 GiB limit of RAM).
  */
 
 #include <hal/hal.h>
@@ -44,6 +40,10 @@
  * the low alias alone on the 32-bit processor, which reaches it through
  * KSEG0, and the board's largest RAM, 2 GiB, on the 64-bit one.  The high
  * alias holds RAM offset o at physical address PAGE_HIGH_ALIAS + o.
+ *
+ * Values referenced: QEMU v10.0.11 hw/mips/malta.c (the RAM region at
+ * 0x80000000, the low alias of at most 256 MiB, the environment's memsize
+ * and ememsize, and the 2 GiB limit of RAM).
  */
 #define PAGE_LOW_BYTES		(256ULL * 1024ULL * 1024ULL)
 #define PAGE_LOW_PAGES		((uint32_t)(PAGE_LOW_BYTES / MIPS_PAGE_SIZE))
@@ -666,6 +666,8 @@ alloc_ram(
 	} else if (limit - PAGE_HIGH_ALIAS + 1U < (uint64_t)ram_pages * MIPS_PAGE_SIZE) {
 		end = (uint32_t)((limit - PAGE_HIGH_ALIAS + 1U) / MIPS_PAGE_SIZE);
 	}
+
+	/* Refuses a run longer than the addressable pages. */
 	if (need > end)
 		return HAL_ERR_NOMEM;
 

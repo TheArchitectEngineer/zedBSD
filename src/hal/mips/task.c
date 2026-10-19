@@ -932,6 +932,7 @@ mips_context_selftest(
 	(void)mips_irq_save();
 	mips_irq_restore(enabled);
 
+	/* Reports the passed check. */
 	hal_puts(MIPS_HAL_NAME " HAL CONTEXT PASS\n");
 }
 

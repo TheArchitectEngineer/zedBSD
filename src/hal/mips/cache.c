@@ -17,13 +17,6 @@
  * the address it is given; mips_cache_flush_page_colors() then empties a
  * page in every color with the Index operations.  The emulator does not
  * model caches, so there every operation is accepted and does nothing.
- *
- * Values referenced: MIPS32 Architecture for Programmers Volume III
- * (Config1: IS bits 22-24, IL bits 19-21, IA bits 16-18, DS bits 13-15,
- * DL bits 10-12, DA bits 7-9; the cache instruction's operations
- * Index_Invalidate_I 0x00, Index_Writeback_Inv_D 0x01, Hit_Invalidate_I
- * 0x10, Hit_Invalidate_D 0x11, Hit_Writeback_Inv_D 0x15 and
- * Hit_Writeback_D 0x19).
  */
 
 #include <hal/hal.h>
@@ -32,7 +25,13 @@
 #include "cpu.h"
 #include "io.h"
 
-/* The fields of Config1 that describe each cache. */
+/*
+ * The fields of Config1 that describe each cache.
+ *
+ * Values referenced: MIPS32 Architecture for Programmers Volume III
+ * (Config1: IS bits 22-24, IL bits 19-21, IA bits 16-18, DS bits 13-15,
+ * DL bits 10-12, DA bits 7-9).
+ */
 #define CACHE_I_SETS_SHIFT	22
 #define CACHE_I_LINE_SHIFT	19
 #define CACHE_I_WAYS_SHIFT	16
@@ -96,6 +95,7 @@ mips_cache_init(
 	if (cache_instruction.way_bytes > MIPS_PAGE_SIZE || cache_data.way_bytes > MIPS_PAGE_SIZE)
 		cache_alias = 1;
 
+	/* Reports the shape of both caches and whether pages have colors. */
 	hal_printf(MIPS_HAL_NAME " CACHE I %ux%ux%u D %ux%ux%u alias=%d\n",
 		   cache_instruction.line,
 		   cache_instruction.way_bytes,
@@ -117,6 +117,7 @@ mips_cache_aliases(
 	if (cache_alias)
 		return true;
 
+	/* A page has one color. */
 	return false;
 }
 
@@ -151,6 +152,9 @@ mips_cache_flush_page_colors(
 	 * can take: the page's offset in any of the way's page-sized
 	 * colors.  The index operations write back and drop whatever line
 	 * is there, which includes the page's own.
+	 *
+	 * Value referenced: MIPS32 Architecture for Programmers Volume III
+	 * (the cache instruction's Index_Writeback_Inv_D, 0x01).
 	 */
 	step = step_of(&cache_data);
 	for (way = 0; way < cache_data.ways; way++) {
@@ -160,7 +164,12 @@ mips_cache_flush_page_colors(
 		}
 	}
 
-	/* The same for the instruction cache, when the page is to run. */
+	/*
+	 * The same for the instruction cache, when the page is to run.
+	 *
+	 * Value referenced: MIPS32 Architecture for Programmers Volume III
+	 * (the cache instruction's Index_Invalidate_I, 0x00).
+	 */
 	if (instructions) {
 		step = step_of(&cache_instruction);
 		for (way = 0; way < cache_instruction.ways; way++) {
@@ -199,11 +208,18 @@ hal_dcache_clean_range(
 	uintptr_t end;
 	uint32_t step;
 
-	/* Each line of the range, then the ordering. */
+	/*
+	 * Works on each line of the range.
+	 *
+	 * Value referenced: MIPS32 Architecture for Programmers Volume III
+	 * (the cache instruction's Hit_Writeback_D, 0x19).
+	 */
 	step = step_of(&cache_data);
 	end = address + size;
 	for (line = address & ~(uintptr_t)(step - 1U); line < end; line += step)
 		__asm__ volatile("cache 0x19, 0(%0)" : : "r"(line) : "memory");
+
+	/* Orders the operations before what follows. */
 	__asm__ volatile("sync" : : : "memory");
 }
 
@@ -219,11 +235,18 @@ hal_dcache_invalidate_range(
 	uintptr_t end;
 	uint32_t step;
 
-	/* Each line of the range, then the ordering. */
+	/*
+	 * Works on each line of the range.
+	 *
+	 * Value referenced: MIPS32 Architecture for Programmers Volume III
+	 * (the cache instruction's Hit_Invalidate_D, 0x11).
+	 */
 	step = step_of(&cache_data);
 	end = address + size;
 	for (line = address & ~(uintptr_t)(step - 1U); line < end; line += step)
 		__asm__ volatile("cache 0x11, 0(%0)" : : "r"(line) : "memory");
+
+	/* Orders the operations before what follows. */
 	__asm__ volatile("sync" : : : "memory");
 }
 
@@ -239,11 +262,18 @@ hal_dcache_clean_invalidate_range(
 	uintptr_t end;
 	uint32_t step;
 
-	/* Each line of the range, then the ordering. */
+	/*
+	 * Works on each line of the range.
+	 *
+	 * Value referenced: MIPS32 Architecture for Programmers Volume III
+	 * (the cache instruction's Hit_Writeback_Inv_D, 0x15).
+	 */
 	step = step_of(&cache_data);
 	end = address + size;
 	for (line = address & ~(uintptr_t)(step - 1U); line < end; line += step)
 		__asm__ volatile("cache 0x15, 0(%0)" : : "r"(line) : "memory");
+
+	/* Orders the operations before what follows. */
 	__asm__ volatile("sync" : : : "memory");
 }
 
@@ -262,7 +292,12 @@ hal_sync_instruction_stream(
 	/* Writes the range back from the data cache. */
 	hal_dcache_clean_range((uintptr_t)addr, size);
 
-	/* Drops the range's lines from the instruction cache. */
+	/*
+	 * Drops the range's lines from the instruction cache.
+	 *
+	 * Value referenced: MIPS32 Architecture for Programmers Volume III
+	 * (the cache instruction's Hit_Invalidate_I, 0x10).
+	 */
 	step = step_of(&cache_instruction);
 	end = (uintptr_t)addr + size;
 	for (line = (uintptr_t)addr & ~(uintptr_t)(step - 1U); line < end; line += step)

@@ -79,6 +79,7 @@ main(
 		return 1;
 	}
 
+	/* Succeeded: every check held. */
 	printf("PASS\n");
 	return 0;
 }
@@ -93,6 +94,7 @@ check(
 	if (condition)
 		return;
 
+	/* Names the failed check and counts it. */
 	printf("failed: %s\n", what);
 	failures++;
 }
