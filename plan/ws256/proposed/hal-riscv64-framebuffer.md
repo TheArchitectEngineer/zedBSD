@@ -36,7 +36,7 @@
 ### 承認の要らない付随の変更（src/hal の実装と loader → HAL の構造体、参考）
 
 - `bootloader/include/riscv64-handoff.h` の版 2（framebuffer の field と、firmware が使う RAM の範囲 `reserved[]` 16 個。framebuffer の範囲を必ず含む）。loader → HAL の固有の構造体は guardrail「HAL と kernel・boot loader と HAL の受け渡し」の範囲。
-- HAL が `reserved[]` を page の allocator から外し、framebuffer を uncached の別名で描く時は direct map からも外す（`page.c` の `reserved`、`space.c` の `nomap`）。
+- HAL が `reserved[]` を page の allocator から外し（DT の予約とは別の配列 `firmware_reserved[16]`、DT の予約に含まれる物は飛ばす）、framebuffer を uncached の別名で描く時は direct map からも外す（`page.c` の `reserved`、`space.c` の `nomap`）。HAL の handoff の判定を `version < 1` と版 1 の終わりに直し、版 1 の loader の handoff も受ける（design-peripherals.md §3.1 (2) (a)・(b)、改訂 4: レビュー 3 Minor 1・2）。
 
 ## 理由
 

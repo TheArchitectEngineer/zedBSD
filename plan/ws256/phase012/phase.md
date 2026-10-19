@@ -2,15 +2,15 @@
 
 # ws256-p012 周辺の設計（VisionFive 2）
 
-Status: in-progress（2026-10-19 q1272-i01、P2。改訂 3（レビュー 2 の全部を反映）を書いた。再レビューと Q1 の合格の前）
+Status: in-progress（改訂 4、Q1 の判定待ち。2026-10-19 q1278-i01、P2。[レビュー 3](../design-peripherals-review-3.md) の Major 1・2 と Minor 1〜13 を全部当てた。レビュー 3 の結論は「この 2 つを直す小さな改訂の後なら受け入れてよい」）
 
-- 親: [WS256](../ws.md)。Queue: q1270-i01、q1270-i02（P1）、q1272-i01（P2）。
+- 親: [WS256](../ws.md)。Queue: q1270-i01、q1270-i02（P1）、q1272-i01、q1278-i01（P2）。
 - 範囲: p011（framebuffer の調べ）と p013〜p019（clock・reset・pinctrl/GPIO・PMIC、SD、rootfs からの起動、PCIe と USB・keyboard、NVMe、GbE と PHY、sound）の設計を `plan/ws256/design-peripherals.md` に書く。code は書かない。HAL の API の差分は案だけ。toolchain は変えない。
 - 完了の条件: 部品と register の事実を StarFive の公開資料で確かめ（URL・SHA-256 を記録、確かめられない事は未確認）、各 Phase の既存／新規・HAL・DT・試験・依存・LW・並行の組、実機の判定（#15）と接続（#10）の選択肢と既定の案がそろい、design-reviewer を通り、Q1 が合格とする。
 
 ## 成果物
 
-- [design-peripherals.md](../design-peripherals.md)（改訂 3）。[レビュー 1](../design-peripherals-review-1.md)、[レビュー 2](../design-peripherals-review-2.md)。HAL の差分の案 [proposed/hal-riscv64-framebuffer.md](../proposed/hal-riscv64-framebuffer.md)（適用しない）。
+- [design-peripherals.md](../design-peripherals.md)（改訂 4）。[レビュー 1](../design-peripherals-review-1.md)、[レビュー 2](../design-peripherals-review-2.md)、[レビュー 3](../design-peripherals-review-3.md)。HAL の差分の案 [proposed/hal-riscv64-framebuffer.md](../proposed/hal-riscv64-framebuffer.md)（適用しない）。
 
 ## 実行した事（q1270-i01、2026-10-19）
 
@@ -62,3 +62,19 @@ Status: in-progress（2026-10-19 q1272-i01、P2。改訂 3（レビュー 2 の�
 - 改訂 3 の design-reviewer（Q1 が回す）。
 - Q1 への依頼: HAL の承認 #29（文面は design-peripherals.md §6.3）、design.md の直し 7 件（§8）、tools（#28）、範囲外の観察（`hal_irq_unregister` が drain しない、§8）。
 - ユーザーの判断: design-peripherals.md §6.2（#15・#10・#20・#21〜#31）。
+
+## レビュー 3（2026-10-19 Q1）
+
+[design-peripherals-review-3.md](../design-peripherals-review-3.md): Blocker 0・Major 2・Minor 13。結論「Major 1（p011 (1) の loader の前提）と Major 2（system port の別名の前提と 2 MiB の粒度）を直す小さな改訂の後なら受け入れてよい。p021・p025・p013 は今の設計で着手してよい（Minor 3・4・5・8 を当てる）」。
+
+## 実行した事（q1278-i01 の 1、2026-10-19、P2、改訂 4）
+
+- worktree `/home/awe/zedBSD-worktrees/p2`（agent/p2）に main 96ace9cfc を取り込んだ（`git log -1 --format='%h %p'` = 96ace9cfc 5318ccba0、fast-forward）。子のエージェントは起動していない。新しい資料は取得していない。
+- 照合した code: `bootloader/uefi/bootriscv64.c`（`find_boot_hart` 708-733、`efi_main` 169-173、FDT の検査 770-773、`GetMemoryMap`・`ExitBootServices` 1001-1027）、`platform/riscv64/bootloader.mk:16-17`、`src/hal/riscv64/cmain.c:153-162`、`space.c`（`hal_space_map_device` 916-975、unmap 990-1010、`map_hal_devices`・`map_device_blocks` 1350-1389）、`bsp-virt/board.c:85-138`、`fdt.c`（ccache）、`include/hal/hal.h` の `HAL_ERR_*`、`include/drivers/generic/dma.h`、`src/drivers/generic/fdt.c`（`drv_fdt_parent`）、`pci.c:3520-3533`、`pci-nvme.c:1741-1746・5555-5558・2978-2980`、`riscv-virt.c`。
+- 当てた物（対応の表は design-peripherals.md §11）: Major 1 → p011 (1) に loader の boot hart の代わりの道（`/chosen/boot-hartid`）と GOP の答え（LW +1〜2）。Major 2 → 陽性の対照に「別名が同じ DRAM である事」の 0a、INCONCLUSIVE・MISMATCH の時は主の試験だけで判定、予備 (i) は device の窓の別名の範囲に 4 KiB の段。Minor 1〜13 を全部。ws.md の p006・p011・p012 の行、表の見出し・実行の順・合計。
+- QEMU・実機・build は使っていない（plan だけ）。
+
+## 残り（q1278-i01 の 1 の後）
+
+- Q1 の判定（改訂 4 を受け入れるか、再レビューを回すか）。
+- Q1 への依頼とユーザーの判断は design-peripherals.md §8・§6.2 のまま（#15 に (D) JTAG を足した）。
