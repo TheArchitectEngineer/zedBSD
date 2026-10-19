@@ -8,16 +8,24 @@
 /*
  * The StarFive VisionFive 2 board (JH7110).
  *
- * The board has no display the hardware layer sets up yet, so the early
- * console is the firmware's alone.  The shared L2 cache controller is the
- * one board device the hardware layer drives: cache maintenance writes
- * each line's physical address to its flush register, which writes the
- * line back and discards it.
+ * The shared L2 cache controller is the one board device the hardware
+ * layer drives: cache maintenance writes each line's physical address to
+ * its flush register, which writes the line back and discards it.
+ *
+ * The board's display is the one the firmware left on, when the UEFI
+ * loader handed its graphics output over.  The early console draws on it
+ * through the direct map, cached, and flushes each range it drew, since
+ * the display controller is not known to see the processor's cache; a
+ * screen outside RAM is drawn through the device window instead.  The
+ * board names the screen to the kernel as "riscv64.framebuffer.*".
  */
 
 #include <hal/hal.h>
+#include "../bootinfo.h"
 #include "../bsp.h"
 #include "../defs.h"
+#include "../fbcons.h"
+#include "../page.h"
 #include "../space.h"
 
 /* The offset of the cache controller's register that flushes one line by its physical address. */
@@ -28,6 +36,20 @@
 
 /* The cache controller's line size in bytes. */
 #define VF2_CCACHE_LINE_SIZE		64U
+
+/*
+ * The boot parameter that has the early console draw on the screen without
+ * flushing, to find out whether the display sees the processor's cache.
+ */
+#define VF2_SCREEN_NOCACHE_PARAMETER	"vf2.fb=nocache"
+
+/* How the early console reaches the screen, for the boot log. */
+enum board_screen_window {
+	BOARD_SCREEN_NONE = 0,
+	BOARD_SCREEN_RAM_FLUSHED,
+	BOARD_SCREEN_RAM_UNFLUSHED,
+	BOARD_SCREEN_DEVICE
+};
 
 /*
  * The cache controller's flush register in the device window, or NULL
@@ -43,46 +65,106 @@ static volatile uint64_t *board_flush64;
  */
 static uint64_t board_ccache_base;
 
+/*
+ * The screen's named values, each a 64-bit word as hal_get_arch_handoff()
+ * hands it over: the physical address and size of its memory, its width
+ * and height in pixels, the bytes from one row to the next and its
+ * KERN_BOOT_FRAMEBUFFER_* format.  Filled once by riscv64_board_init() on
+ * the boot hart when the loader handed a screen over, and not changed
+ * afterwards; board_screen_named says they are.
+ */
+static uint64_t board_framebuffer_phys;
+static uint64_t board_framebuffer_size;
+static uint64_t board_framebuffer_width;
+static uint64_t board_framebuffer_height;
+static uint64_t board_framebuffer_pitch;
+static uint64_t board_framebuffer_format;
+static int board_screen_named;
+
+/*
+ * How the early console reaches the screen, and why it does not when it
+ * does not (HAL_OK when it does).  Set with the named values, for the
+ * boot log.
+ */
+static enum board_screen_window board_screen_window;
+static int board_screen_error = HAL_ERR_UNSUPPORTED;
+
+static void find_ccache(const struct riscv64_fdt_info *info);
+static void show_screen(void);
+static int screen_address(const struct riscv64_framebuffer *framebuffer, uintptr_t *address, enum board_screen_window *window);
 static void flush_range(uintptr_t address, size_t size);
 static int kernel_to_physical(uintptr_t address, uint64_t *physical);
 static void fence_all(void);
 
 /*
- * Finds the board's cache controller.
+ * Finds the board's cache controller and shows the screen the firmware
+ * left on.
  *
- * A tree without one, or with a range too small for the flush register,
- * leaves cache maintenance doing nothing: the board's devices are then
- * taken to snoop the caches.
+ * The cache controller comes first: the screen is flushed through it.
  */
 void
 riscv64_board_init(
 	const struct riscv64_fdt_info *info)
 {
-	/* Leaves maintenance off for a tree without the controller. */
-	if (info->ccache_size < VF2_CCACHE_FLUSH64_END)
-		return;
+	/* Finds the flush register, which drawing on the screen needs. */
+	find_ccache(info);
 
-	/* Refuses a controller the device window does not reach. */
-	if (info->ccache_base >= RISCV64_DEVICE_LIMIT - VF2_CCACHE_FLUSH64_END)
-		return;
-
-	/* Reaches the flush register through the device window. */
-	board_ccache_base = info->ccache_base;
-	board_flush64 = (volatile uint64_t *)(uintptr_t)(RISCV64_DEVICE_BASE + info->ccache_base + VF2_CCACHE_FLUSH64);
+	/* Names the screen and draws the early console on it. */
+	show_screen();
 }
 
 /*
- * Writes one early-console character to the board's screen; the board has none yet.
+ * Answers the board's own handoff names: the screen the firmware left on,
+ * as six 64-bit words under "riscv64.framebuffer.".
+ *
+ * Every name is NULL when the loader handed no screen over.
  */
-void
-riscv64_board_putc(
-	int character)
+void *
+riscv64_board_handoff(
+	const char *name)
 {
-	UNUSED_PARAMETER(character);
+	bool match;
+
+	/* A board without a screen names none of it. */
+	if (!board_screen_named)
+		return NULL;
+
+	/* The physical address of the screen's memory. */
+	match = riscv64_boot_name_is(name, "riscv64.framebuffer.phys");
+	if (match)
+		return &board_framebuffer_phys;
+
+	/* The bytes of the screen's memory. */
+	match = riscv64_boot_name_is(name, "riscv64.framebuffer.size");
+	if (match)
+		return &board_framebuffer_size;
+
+	/* The width in pixels. */
+	match = riscv64_boot_name_is(name, "riscv64.framebuffer.width");
+	if (match)
+		return &board_framebuffer_width;
+
+	/* The height in pixels. */
+	match = riscv64_boot_name_is(name, "riscv64.framebuffer.height");
+	if (match)
+		return &board_framebuffer_height;
+
+	/* The bytes from one row to the next. */
+	match = riscv64_boot_name_is(name, "riscv64.framebuffer.pitch");
+	if (match)
+		return &board_framebuffer_pitch;
+
+	/* The pixel format, a KERN_BOOT_FRAMEBUFFER_* code. */
+	match = riscv64_boot_name_is(name, "riscv64.framebuffer.format");
+	if (match)
+		return &board_framebuffer_format;
+
+	/* An unknown handoff. */
+	return NULL;
 }
 
 /*
- * Writes the board's cache controller to the boot log.
+ * Writes the board's cache controller and screen to the boot log.
  */
 void
 riscv64_board_describe(
@@ -91,9 +173,35 @@ riscv64_board_describe(
 	/* Names the board and its cache controller, or says there is none. */
 	if (board_flush64 != NULL) {
 		hal_printf("RISCV64 BOARD visionfive2 ccache=%lx\n", board_ccache_base);
-		return;
+	} else {
+		hal_printf("RISCV64 BOARD visionfive2 ccache unavailable; no cache maintenance\n");
 	}
-	hal_printf("RISCV64 BOARD visionfive2 ccache unavailable; no cache maintenance\n");
+
+	/* Names how the console reaches the screen, or why there is none. */
+	switch (board_screen_window) {
+	case BOARD_SCREEN_RAM_FLUSHED:
+		hal_printf("RISCV64 FRAMEBUFFER %lux%lu phys=%lx ram flush\n",
+			   board_framebuffer_width,
+			   board_framebuffer_height,
+			   board_framebuffer_phys);
+		break;
+	case BOARD_SCREEN_RAM_UNFLUSHED:
+		hal_printf("RISCV64 FRAMEBUFFER %lux%lu phys=%lx ram nocache\n",
+			   board_framebuffer_width,
+			   board_framebuffer_height,
+			   board_framebuffer_phys);
+		break;
+	case BOARD_SCREEN_DEVICE:
+		hal_printf("RISCV64 FRAMEBUFFER %lux%lu phys=%lx device\n",
+			   board_framebuffer_width,
+			   board_framebuffer_height,
+			   board_framebuffer_phys);
+		break;
+	case BOARD_SCREEN_NONE:
+		hal_printf("RISCV64 FRAMEBUFFER unavailable (%u); firmware console only\n",
+			   (uint32_t)board_screen_error);
+		break;
+	}
 }
 
 /*
@@ -136,6 +244,135 @@ hal_dcache_clean_invalidate_range(
 {
 	/* Writes back and discards every line of the range. */
 	flush_range(address, size);
+}
+
+/*
+ * Finds the board's cache controller.
+ *
+ * A tree without one, or with a range too small for the flush register,
+ * leaves cache maintenance doing nothing: the board's devices are then
+ * taken to snoop the caches.
+ */
+static void
+find_ccache(
+	const struct riscv64_fdt_info *info)
+{
+	/* Leaves maintenance off for a tree without the controller. */
+	if (info->ccache_size < VF2_CCACHE_FLUSH64_END)
+		return;
+
+	/* Refuses a controller the device window does not reach. */
+	if (info->ccache_base >= RISCV64_DEVICE_LIMIT - VF2_CCACHE_FLUSH64_END)
+		return;
+
+	/* Reaches the flush register through the device window. */
+	board_ccache_base = info->ccache_base;
+	board_flush64 = (volatile uint64_t *)(uintptr_t)(RISCV64_DEVICE_BASE + info->ccache_base + VF2_CCACHE_FLUSH64);
+}
+
+/*
+ * Names the screen the loader handed over and attaches the early console
+ * to it.
+ *
+ * The names stand whether or not the console can draw there: they
+ * describe the firmware's screen, which the kernel may take over.
+ */
+static void
+show_screen(
+	void)
+{
+	const struct riscv64_framebuffer *framebuffer;
+	struct riscv64_fbcons_screen screen;
+	enum board_screen_window window;
+	uintptr_t address;
+	bool unflushed;
+	int error;
+
+	/* A boot without the loader's screen keeps the firmware's console alone. */
+	framebuffer = riscv64_boot_framebuffer();
+	if (framebuffer == NULL)
+		return;
+
+	/* Names the screen to the kernel. */
+	board_framebuffer_phys = framebuffer->phys;
+	board_framebuffer_size = framebuffer->size;
+	board_framebuffer_width = framebuffer->width;
+	board_framebuffer_height = framebuffer->height;
+	board_framebuffer_pitch = framebuffer->pitch;
+	board_framebuffer_format = framebuffer->format;
+	board_screen_named = 1;
+
+	/* Finds where the console reaches the screen's memory. */
+	error = screen_address(framebuffer, &address, &window);
+	if (error != HAL_OK) {
+		board_screen_error = error;
+		return;
+	}
+
+	/* Describes the screen to the console. */
+	screen.address = address;
+	screen.width = framebuffer->width;
+	screen.height = framebuffer->height;
+	screen.pitch = framebuffer->pitch;
+	screen.format = framebuffer->format;
+	screen.flush = NULL;
+
+	/* Writes RAM through the cache controller, unless the boot asked to see the screen without. */
+	unflushed = riscv64_boot_parameter_given(VF2_SCREEN_NOCACHE_PARAMETER);
+	if (window == BOARD_SCREEN_RAM_FLUSHED && unflushed) {
+		window = BOARD_SCREEN_RAM_UNFLUSHED;
+	} else if (window == BOARD_SCREEN_RAM_FLUSHED) {
+		screen.flush = flush_range;
+	}
+
+	/* Attaches the console, which clears the screen and draws its text. */
+	error = riscv64_fbcons_attach(&screen);
+	board_screen_error = error;
+	if (error != HAL_OK)
+		return;
+
+	/* Succeeded: the console draws on the screen. */
+	board_screen_window = window;
+}
+
+/*
+ * Finds the kernel address the console draws a screen's memory at: the
+ * direct map for RAM, the device window for anything else below its
+ * limit.
+ *
+ * Returns HAL_OK, or HAL_ERR_UNSUPPORTED for memory neither reaches.
+ */
+static int
+screen_address(
+	const struct riscv64_framebuffer *framebuffer,
+	uintptr_t *address,
+	enum board_screen_window *window)
+{
+	bool in_ram;
+
+	/* RAM is drawn through the direct map, the same cached memory the allocator would hand out. */
+	in_ram = riscv64_range_is_ram(framebuffer->phys, framebuffer->size);
+	if (in_ram) {
+		/* Refuses RAM above what the direct map holds. */
+		if (framebuffer->phys >= RISCV64_DIRECT_LIMIT ||
+		    framebuffer->size > RISCV64_DIRECT_LIMIT - framebuffer->phys)
+			return HAL_ERR_UNSUPPORTED;
+
+		/* Succeeded: the screen's RAM in the direct map. */
+		*address = (uintptr_t)(RISCV64_DIRECT_BASE + framebuffer->phys);
+		*window = BOARD_SCREEN_RAM_FLUSHED;
+		return HAL_OK;
+	}
+
+	/* Refuses device memory above what the device window holds. */
+	if (framebuffer->phys >= RISCV64_DEVICE_LIMIT ||
+	    framebuffer->size > RISCV64_DEVICE_LIMIT - framebuffer->phys)
+		return HAL_ERR_UNSUPPORTED;
+
+	/* Succeeded: the screen's device memory in the device window. */
+	*address = (uintptr_t)(RISCV64_DEVICE_BASE + framebuffer->phys);
+	*window = BOARD_SCREEN_DEVICE;
+	return HAL_OK;
 }
 
 /*

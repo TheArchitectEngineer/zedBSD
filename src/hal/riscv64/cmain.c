@@ -16,6 +16,7 @@
 #include "defs.h"
 #include "fdt.h"
 #include "int.h"
+#include "loader.h"
 #include "page.h"
 #include "percpu.h"
 #include "sbi.h"
@@ -43,6 +44,7 @@ static struct riscv64_fdt_info cmain_fdt;
 
 static uintptr_t take_loader_handoff(uint64_t hart_id, uintptr_t handoff_phys);
 static void check_device_tree(uintptr_t fdt_phys);
+static void check_firmware_reserved(int error);
 
 /*
  * Brings the boot hart from locore.S to kernel_entry().
@@ -50,8 +52,8 @@ static void check_device_tree(uintptr_t fdt_phys);
  * The firmware passes the hart's id and the physical address of its
  * device tree, or the UEFI loader the hart's id and its handoff, which
  * names the tree; locore.S adds where the image was loaded.  The tree is
- * read, the display set up, then the memory map, the tables, interrupts
- * and the tick, in that order.
+ * read, the loader's additions taken, the display set up, then the memory
+ * map, the tables, interrupts and the tick, in that order.
  */
 void
 riscv64_cmain(
@@ -63,6 +65,7 @@ riscv64_cmain(
 	const struct zbl6_riscv64_handoff *handoff;
 	uintptr_t fdt_phys;
 	uint32_t magic;
+	int loader_error;
 	int error;
 
 	/* The image's place and the boot hart's record come first: everything after may take a lock. */
@@ -108,8 +111,16 @@ riscv64_cmain(
 	if (handoff != NULL)
 		riscv64_boot_set_command_line(handoff->parameters.text, handoff->parameters.length);
 
+	/* Takes the screen and the firmware's RAM a loader of the second layout names. */
+	loader_error = RISCV64_LOADER_OK;
+	if (handoff != NULL)
+		loader_error = riscv64_boot_take_loader(handoff);
+
 	/* Shows the display, which then holds what the console printed. */
 	riscv64_board_init(riscv64_boot_fdt());
+
+	/* Stops, now that the screen shows why, when the firmware's RAM cannot all be kept. */
+	check_firmware_reserved(loader_error);
 
 	/* Describes what was found. */
 	hal_printf("RISCV64 ENTRY hart=%lu image=%lx\n", hart_id, kernel_phys_start);
@@ -147,6 +158,7 @@ take_loader_handoff(
 	uintptr_t handoff_phys)
 {
 	const struct zbl6_riscv64_handoff *handoff;
+	int readable;
 
 	/* Views the record through the direct map of the boot table. */
 	handoff = (const struct zbl6_riscv64_handoff *)riscv64_phys_to_direct((uint64_t)handoff_phys);
@@ -154,11 +166,12 @@ take_loader_handoff(
 	/*
 	 * Refuses a record older than the first layout or shorter than it.  A
 	 * later layout only appends fields, so the ones read here stay where
-	 * they are.
+	 * they are, and a loader of the first layout still boots this kernel.
 	 */
-	if (handoff->version < ZBL6_RISCV64_HANDOFF_VERSION)
+	readable = riscv64_loader_check(handoff);
+	if (readable == RISCV64_LOADER_OLD_VERSION)
 		HAL_FATAL("riscv64 loader handoff of an unknown version");
-	if (handoff->size < sizeof(*handoff))
+	if (readable == RISCV64_LOADER_TOO_SHORT)
 		HAL_FATAL("riscv64 loader handoff is too short");
 
 	/* Refuses a record for another hart: the others are still in the firmware. */
@@ -199,4 +212,34 @@ check_device_tree(
 	magic = *first_word;
 	if (magic != CMAIN_FDT_MAGIC_LE)
 		HAL_FATAL("riscv64 boot argument is not a device tree");
+}
+
+/*
+ * Stops the boot when the firmware's RAM could not all be kept from the
+ * allocator, rather than hand firmware memory to the kernel.
+ */
+static void
+check_firmware_reserved(
+	int error)
+{
+	/* Names why, one message for each reason. */
+	switch (error) {
+	case RISCV64_LOADER_OK:
+		return;
+	case RISCV64_LOADER_BAD_COUNT:
+		HAL_FATAL("riscv64 loader handoff counts more firmware ranges than it holds");
+		break;
+	case RISCV64_LOADER_BAD_RANGE:
+		HAL_FATAL("riscv64 loader handoff names a firmware range that wraps");
+		break;
+	case RISCV64_LOADER_OVERFLOW:
+		HAL_FATAL("riscv64 firmware keeps more ranges than the loader handed over");
+		break;
+	case RISCV64_LOADER_TOO_MANY:
+		HAL_FATAL("riscv64 firmware keeps more ranges than the HAL holds");
+		break;
+	default:
+		HAL_FATAL("riscv64 loader handoff could not be read");
+		break;
+	}
 }

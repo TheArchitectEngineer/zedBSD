@@ -1344,13 +1344,17 @@ kernel_page_flags(
 
 /*
  * Maps the devices the HAL itself reaches: the interrupt controller, the
- * firmware configuration interface, the UART and the cache controller.
+ * firmware configuration interface, the UART, the cache controller and a
+ * screen the firmware left on outside RAM, which the early console draws
+ * on through the device window.
  */
 static void
 map_hal_devices(
 	void)
 {
 	const struct riscv64_fdt_info *info;
+	const struct riscv64_framebuffer *framebuffer;
+	bool in_ram;
 
 	/* Each device the tree names, in the window the kernel's root now holds. */
 	info = riscv64_boot_fdt();
@@ -1362,6 +1366,17 @@ map_hal_devices(
 		map_device_blocks(info->uart_base, info->uart_size);
 	if (info->ccache_size != 0)
 		map_device_blocks(info->ccache_base, info->ccache_size);
+
+	/* A screen in RAM is drawn through the direct map, which holds it already. */
+	framebuffer = riscv64_boot_framebuffer();
+	if (framebuffer == NULL)
+		return;
+	in_ram = riscv64_range_is_ram(framebuffer->phys, framebuffer->size);
+	if (in_ram)
+		return;
+
+	/* Reaches a screen outside RAM through the device window. */
+	map_device_blocks(framebuffer->phys, framebuffer->size);
 }
 
 /* Writes the device window's leaves for every megapage a range touches. */
