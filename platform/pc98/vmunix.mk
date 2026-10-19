@@ -67,12 +67,10 @@ KERN_OBJS := $(BUILD)/src/kern/entry.o $(BUILD)/src/kern/clock.o \
 	$(BUILD)/src/kern/poll.o \
 	$(BUILD)/src/kern/usync.o \
 	$(BUILD)/src/kern/process.o $(BUILD)/src/kern/thread.o \
-	$(BUILD)/src/kern/vm-device.o \
 	$(BUILD)/src/kern/sched.o \
 	$(BUILD)/src/kern/sleep.o \
 	$(BUILD)/src/kern/freeze.o \
-	$(BUILD)/src/kern/vmspace.o \
-	$(BUILD)/src/kern/vm.o \
+	$(KERN_VM_OBJS) \
 	$(BUILD)/src/kern/filedesc.o $(BUILD)/src/kern/handle.o $(BUILD)/src/kern/fd-object.o $(BUILD)/src/kern/pipe.o \
 	$(BUILD)/src/kern/record-lock.o \
 	$(BUILD)/src/kern/cred.o $(BUILD)/src/kern/signal.o \
