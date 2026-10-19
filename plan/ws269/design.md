@@ -309,3 +309,5 @@ LW は粗い（8 LW ≈ 実時間 2〜3 h）。p008〜p011 は bcm2711（52,772 
 | Minor 10 EBUSY が尽きた時 | §3.1 の失敗の道を通す | §3.3、§6 の p005 の必須項目 |
 
 > 2026-10-19 Q1 の追記（WS270 design 改訂 2 §2.2・§2.3）: VF2 の desktop の最初の描画は libvulkan の WSI の copy の道（gpu1 → gpu0 の GPU_RESOURCE_WRITE）。p007 の import と damage は性能のため（実用の fps）で、描画の開始の前提ではない。
+
+> 2026-10-19 Q1 の追記（WS270 design-review-2 N1）: p005 の必須項目に「powervr の遅い段の worker が、render の node（gpu1）を登録するまで `hw.gpu.attaching` を数える」を足す（sessiond は attaching の間は gpu0 があっても待つ、WS270 が持つ）。
