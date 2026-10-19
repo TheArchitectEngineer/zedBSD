@@ -2,8 +2,8 @@
 
 # ws269-p001 PowerVR BXE-4-32 の driver の設計
 
-- 親: [ws269](../ws.md)、Queue: q1316 / q1316-i01（P2、2026-10-19）
-- Status: in-progress（設計の文書が出来た、design-reviewer 待ち。2026-10-19 P2、[design.md](../design.md)）
+- 親: [ws269](../ws.md)、Queue: q1316 / q1316-i01（P2、2026-10-19、版 1）、q1319 / q1319-i01（P2、2026-10-19、改訂 2）
+- Status: in-progress（改訂 2 が出来た、design-reviewer の差分の確認待ち。2026-10-19 P2、q1319、[design.md](../design.md)、レビュー 1 は [design-review-1.md](../design-review-1.md)）
 
 ## 目的
 
