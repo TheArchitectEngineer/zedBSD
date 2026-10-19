@@ -22,5 +22,6 @@
 | Phase | 中身 | 依存 | Status |
 | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | 設計（riscv64 の desktop の package の build、service・seat・input・display の claim の画面なしの立ち上げ、描画は WS269 p010 の後、Phase の分割）。コードは書かない | — | in-progress（設計の文書が出来た、design-reviewer 待ち。2026-10-19 P1、q1335、[design.md](design.md) 版 1、D1〜D5） |
+| [p002](phase002/phase.md) | riscv64 の desktop の build の不足のうち設計に依らない物（userland-dynamic の include、package の arch の表、kwl_cycles、machine 名） | — | in-progress（2026-10-19 P1、q1336。試しの build の残り 3 件: keiland-preview（static）、libcurses・noct（toolchain）） |
 
 残りの Phase は p001 の設計から作る。

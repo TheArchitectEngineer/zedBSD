@@ -26,6 +26,7 @@
 #include <poll.h>
 #include <signal.h>
 #include <fcntl.h>
+#include <time.h>
 #include <unistd.h>
 
 /* How long a login session goes without input before it locks, unless --lock-idle says. */
@@ -1291,7 +1292,8 @@ service_cleanup(
 /*
  * Reads the processor's cycle counter (the millisecond clock has only tick
  * resolution).  On arm64 (the Linux arm64 package) the virtual
- * counter of the generic timer.
+ * counter of the generic timer; on riscv64 the monotonic clock in
+ * nanoseconds.
  */
 uint64_t
 kwl_cycles(
@@ -1305,6 +1307,14 @@ kwl_cycles(
 
 	/* Succeeded: the counter. */
 	return value;
+#elif defined(__riscv)
+	struct timespec now;
+
+	/* The monotonic clock in nanoseconds (the cycle counter is not readable from user mode on every hart). */
+	clock_gettime(CLOCK_MONOTONIC, &now);
+
+	/* Succeeded: the count. */
+	return (uint64_t)now.tv_sec * 1000000000u + (uint64_t)now.tv_nsec;
 #else
 	uint32_t low;
 	uint32_t high;

@@ -28,7 +28,8 @@ ZEDBSD_EXT_openssl_PATCHES := $(sort $(wildcard $(abspath $(ZEDBSD_OPENSSL_DIR))
 ZEDBSD_OPENSSL_TARGET := $(strip \
 	$(if $(filter amd64,$(ZEDBSD_ARCHITECTURE)),zedbsd-x86_64,\
 	$(if $(filter i386,$(ZEDBSD_ARCHITECTURE)),zedbsd-x86,\
-	$(if $(filter arm64,$(ZEDBSD_ARCHITECTURE)),zedbsd-aarch64,))))
+	$(if $(filter arm64,$(ZEDBSD_ARCHITECTURE)),zedbsd-aarch64,\
+	$(if $(filter riscv64,$(ZEDBSD_ARCHITECTURE)),zedbsd-riscv64,)))))
 
 $(eval $(call ZEDBSD_EXTERNAL_SOURCE,openssl))
 

@@ -46,11 +46,13 @@ ZEDBSD_EXTERNAL_WORKROOT := $(abspath $(ZEDBSD_EXTERNAL_ROOT)/build/packages$(if
 ZEDBSD_EXTERNAL_TRIPLE := $(strip \
 	$(if $(filter amd64,$(ZEDBSD_ARCHITECTURE)),x86_64-unknown-zedbsd,\
 	$(if $(filter i386,$(ZEDBSD_ARCHITECTURE)),i386-unknown-zedbsd,\
-	$(if $(filter arm64,$(ZEDBSD_ARCHITECTURE)),aarch64-unknown-zedbsd,))))
+	$(if $(filter arm64,$(ZEDBSD_ARCHITECTURE)),aarch64-unknown-zedbsd,\
+	$(if $(filter riscv64,$(ZEDBSD_ARCHITECTURE)),riscv64-unknown-zedbsd,)))))
 
 # The LLVM backend of the configured target, for the packages built from LLVM.
 ZEDBSD_EXTERNAL_LLVM_TARGET := $(strip \
-	$(if $(filter arm64,$(ZEDBSD_ARCHITECTURE)),AArch64,X86))
+	$(if $(filter arm64,$(ZEDBSD_ARCHITECTURE)),AArch64,\
+	$(if $(filter riscv64,$(ZEDBSD_ARCHITECTURE)),RISCV,X86)))
 ZEDBSD_EXTERNAL_LLVM_BIN := $(abspath $(ZEDBSD_EXTERNAL_ROOT)/build/llvm/bin)
 ZEDBSD_EXTERNAL_SYSROOT := \
 	$(abspath $(ZEDBSD_EXTERNAL_ROOT)/build/$(ZEDBSD_ARCHITECTURE)/sysroot)
@@ -84,7 +86,7 @@ ZEDBSD_EXTERNAL_CROSS_INPUTS := $(ZEDBSD_EXTERNAL_GEN_CROSS) \
 # have to exist before a package links, and a new C library does not
 # configure the packages again.
 ZEDBSD_EXTERNAL_LINK_DIR := $(ZEDBSD_EXTERNAL_CROSS_DIR)/lib
-ZEDBSD_EXTERNAL_LINK_LIBS := libc.so $(if $(filter amd64 arm64,$(ZEDBSD_ARCHITECTURE)),libutil.so)
+ZEDBSD_EXTERNAL_LINK_LIBS := libc.so $(if $(filter amd64 arm64 riscv64,$(ZEDBSD_ARCHITECTURE)),libutil.so)
 ZEDBSD_EXTERNAL_LINK_SOURCE := $(if $(ZEDBSD_TOPLEVEL_BUILD),\
 	$(BUILD)/dynamic,$(ZEDBSD_EXTERNAL_DYNAMIC))
 

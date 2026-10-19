@@ -85,7 +85,13 @@ $(DYNAMIC_DIR)/libc.so: $(DYNAMIC_LIBC_OBJS) tools/build/check-dynamic-elf.py
  --allow-shlib-undefined $(DYNAMIC_LIBC_OBJS) -o $@
 	$(PYTHON) tools/build/check-dynamic-elf.py --machine riscv64 --role libc $@
 
-$(eval $(call ZEDBSD_LIBUTIL_RULE,$(DYNAMIC_DIR),$(RISCV64_LD),$(RISCV64_USER_LDFLAGS),riscv64))
+# The portable libraries and applications (libutil among them) use the
+# same graph as amd64 and arm64.
+DYNAMIC_SYSROOT := $(RISCV64_SYSROOT)
+DYNAMIC_LINK_CFLAGS := $(RISCV64_USER_ARCH_FLAGS)
+DYNAMIC_LINK_LDFLAGS := $(RISCV64_USER_LDFLAGS)
+DYNAMIC_ELF_MACHINE := riscv64
+include platform/common/userland-dynamic.mk
 
 # The runtime's test objects the root carries on every LP64 processor: a
 # TLS module with an $$ORIGIN run path, a versioned pair and a program.
@@ -182,7 +188,7 @@ $(BUILD)/bin/$(1): $(RISCV64_APP_INPUTS) $(RISCV64_APP_COMMON_OBJS) \
  $(call ZEDBSD_USERLAND_OBJECTS,$(RISCV64_APP_OBJ),$(1)) $(RISCV64_APP_LIBS) -o $$@
 	$(RISCV64_APP_CHECK) $$@
 endef
-$(foreach command,$(USERLAND_SELECTED_BASIC_PROGRAMS),\
+$(foreach command,$(filter-out $(DYNAMIC_PORTABLE_PROGRAMS),$(USERLAND_SELECTED_BASIC_PROGRAMS)),\
 	$(eval $(call RISCV64_APP_BASIC_COMMAND,$(command))))
 
 define RISCV64_APP_NET_COMMAND

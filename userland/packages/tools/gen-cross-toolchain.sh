@@ -42,6 +42,9 @@ mkdir -p "$bin"
 # size and layout of struct stat for the ABI it thinks it is compiling for.
 case $triple in
 x86_64-*|aarch64-*) abi_flags='-DKERN_USER_ABI_LP64' ;;
+# riscv64 builds nothing with linker relaxation, so no code is addressed
+# through the global pointer (platform/riscv64/userland.mk).
+riscv64-*) abi_flags='-DKERN_USER_ABI_LP64 -mno-relax' ;;
 *) abi_flags='' ;;
 esac
 
