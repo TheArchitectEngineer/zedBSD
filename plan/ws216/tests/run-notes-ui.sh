@@ -34,6 +34,6 @@ for variant in plain asan ubsan; do
 	done
 	# shellcheck disable=SC2086
 	"$cc" $flags -Iuserland/desktop/notes userland/desktop/notes/ui.c plan/ws216/tests/host-notes-ui.c $objects -lm -o "$out/host-notes-ui-$variant"
-	timeout 300 "$out/host-notes-ui-$variant" fonts/keiland/Mahora-Regular.ttf "$out/ui-$variant.log"
+	timeout 300 "$out/host-notes-ui-$variant" userland/desktop/fonts/Mahora-Regular.ttf "$out/ui-$variant.log"
 done
 echo "run-notes-ui: ok"

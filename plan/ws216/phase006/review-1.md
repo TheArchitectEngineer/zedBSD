@@ -24,7 +24,7 @@ source は 244091c0b と main 4f87ce7ba で同じことを確かめ main で読�
 
 **C-6. 帯・道具の状態の遷移が main.c にしか無く host で検出できない（U6）。** DRAW の押し、帯の button、頁の press、key・menu で閉じる、最後の描く道具の更新、8 px の判定は全部 main.c で p007 まで確かめられない。案: 純粋な関数（例 notes_ui_draw_press(state, action)）として ui.c に置き host-notes-ui.c で表の試験。
 
-**C-7. U2 の「label が変わっても後ろの x が同じ」が font が無いと必ず通る。** face が無い時は button の幅が一律 44 px で slack 0（ui.c:972-974・1083-1084）。案: 試験は tree の fonts/keiland/Mahora-Regular.ttf を開き ui->face != NULL を確かめてから比べる。
+**C-7. U2 の「label が変わっても後ろの x が同じ」が font が無いと必ず通る。** face が無い時は button の幅が一律 44 px で slack 0（ui.c:972-974・1083-1084）。案: 試験は tree の userland/desktop/fonts/Mahora-Regular.ttf を開き ui->face != NULL を確かめてから比べる。
 
 **C-8. 依存の書き方と Phase の状態の投影。** ws.md:36 は p006 の依存を「p004、p005」、p004・p005 は test-wait で clearance は p007 を待ち p007 は p006 に依存して輪。ws.md の p006 の行は planned、phase.md は in-progress。案: 「main に入った p004・p005 の出力（notes_fill_page()・notes_fill_notice()・頂点の塊）」の出力の依存に直し ws.md の行も直す。
 

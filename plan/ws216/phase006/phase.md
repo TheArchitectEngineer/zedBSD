@@ -36,7 +36,7 @@ review-1 への決定（Q1: 全部案どおり、技術の範囲）:
 | C-4 | 塗りでは幅の欄を描かずに、その幅の余りを残す（card と button が道具の間で動かない） |
 | C-5 | tap の点で見えている一番上が同じ色の塗りなら塗らずに `EEXIST`（notice "Already filled"、log `reason=same`） |
 | C-6 | 道具・最後の描く道具・帯の遷移を `notes_ui_tools_press()`（ui.c、純粋な関数）にし、host で表の試験 |
-| C-7 | UI の試験は tree の `fonts/keiland/Mahora-Regular.ttf` を開き、face があることを確かめてから比べる（font 無しでももう一度流す） |
+| C-7 | UI の試験は tree の `userland/desktop/fonts/Mahora-Regular.ttf` を開き、face があることを確かめてから比べる（font 無しでももう一度流す） |
 | C-8 | 依存を「main に入った p003〜p005 の出力」と書き、ws.md の行を直した |
 | C-9 | p001 §8 との差: `touch.c` は変えず、double tap の停止は WS081 の `plan/ws081/tests/run-notestouch.sh`（Finger on の double tap は拡大しない）で確かめる。`host-notes-fill-touch.c` は作らない |
 | L-1 | 消しゴムの時の色は最後の描く道具に戻す。最後の描く道具は帯・key・menu・描く道具の button で替わる |

@@ -81,7 +81,7 @@ main(
 	void)
 {
 	/* The regular font. */
-	regular_data = read_file("fonts/keiland/Mahora-Regular.ttf", &regular_size);
+	regular_data = read_file("userland/desktop/fonts/Mahora-Regular.ttf", &regular_size);
 	if (regular_data == NULL) {
 		printf("glyph-worker-host-test: FAIL (no font)\n");
 		return 1;
@@ -291,7 +291,7 @@ order_and_results(void)
 	memset(&font, 0, sizeof(font));
 	font.data = regular_data;
 	font.size = regular_size;
-	font.bold_path = "fonts/keiland/Mahora-Bold.ttf";
+	font.bold_path = "userland/desktop/fonts/Mahora-Bold.ttf";
 	kwl_glyph_worker_font(&worker, 0U, &font);
 
 	/* The glyphs of 'A' to 'z' at each size, numbered in the order asked. */
