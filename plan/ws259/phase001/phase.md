@@ -2,9 +2,9 @@
 
 # ws259-p001 rtl8822b-tables.inc を値の引用に書き換え、表の値を比べる
 
-Status: in-progress（2026-10-19 q1258-i01、P2。書き換え・比べ・build は済み。license の package の扱いは判断待ち、実機の WiFi は実機待ち）
+Status: in-progress（2026-10-19 q1267-i01、P2。書き換え・比べ・build・license の package の取り外しは済み。package の directory の削除は Q1、実機の WiFi は実機待ち）
 
-- 親: [WS259](../ws.md)。Queue: q1258-i01。
+- 親: [WS259](../ws.md)。Queue: q1258-i01、q1267-i01。
 - 規則: [Guardrail](../../guardrail.md)「MIT・GPL の出典のデータの引用」。AGENTS.md の「RTL8822B の `.inc` は別の file のまま保つ」は守った。
 
 ## したこと
@@ -22,8 +22,22 @@ Status: in-progress（2026-10-19 q1258-i01、P2。書き換え・比べ・build 
 
 - amd64（`config/ci/config-amd64.mk`、CONFIG_DRIVER_USB_RTL8822BU=y）の vmunix: rc=0、warning 0、amd64 vmunix check: PASS。
 
-## 判断待ち・残件
+## license の package を外す（2026-10-19 q1267-i01）
 
-- license の package（完了の条件 4）: `userland/base/licenses/rtl8822b-tables/`（Realtek の BSD-3-Clause の LICENSE、CONFIG_DRIVER_USB_RTL8822BU で Makefile が自動で選ぶ）と `tools/release/license-components.json` の rtl8822b-tables の項目。Guardrail の規則（値の引用は出典の著作権表示と許諾の文を付けない）に合わせるなら、WS244 の i915-driver（ユーザーの決定「外す」）と同じく外すのが筋。ただし RTL8822B についてユーザーの明示の決定は無いので、変えずに Q1 に判断を求める。
-- 使われていない検査の道具 `tools/build/check-rtl8822b-tables.noct`（どこからも呼ばれず、旧 file の先頭の出典の一覧と LICENSE を検める）: 削除の候補（Q1 に path を送る）。
+- ユーザーの決定（2026-10-19、クリック）: RTL8822B の license の package（`userland/base/licenses/rtl8822b-tables/` と license-components.json の `rtl8822b-tables`）を「外す」（WS244 の i915-driver と同じ。firmware の license は残す）。
+- `Makefile`: `CONFIG_DRIVER_USB_RTL8822BU=y` で `rtl8822b-tables-license` を選ぶ block（comment と ifeq の 7 行）を外した。ほかに選ぶ所（*.mk・config・kernel の規則）は grep で 0 件。
+- `tools/release/license-components.json`: `rtl8822b-tables` の項目を外した（JSON として読める）。
+- `plan/ws129/tests/license-inventory-test.sh`（WS218 の受け入れ・WS129 の release の手順で使う回帰の試験）: case 2 は「rtl8822b-tables と musl-regex を外した表で src/drivers/wifi/rtl8822b/ の BSD-3-Clause が uncovered」を確かめていたが、p001 で tables.inc が Zlib になり成り立たないので、musl-regex だけを外す形にし、case 1 に「RTL8822B の source が第三者として報告されない」を足した。
+- 確かめ（CI の config `config/ci/config-amd64.mk`、CONFIG_DRIVER_USB_RTL8822BU=y）:
+  - 選ばれる package（`ZEDBSD_USER_PROGRAMS`）: 変更前 255（`rtl8822b-tables-license` を含む）→ 変更後 254（含まない）。`rtl8822b-firmware` は残る。
+  - rootfs の recipe が複写する data の file の一覧（`ZEDBSD_USERLAND_DATA_FILES`）: 変更前は `/usr/share/licenses/rtl8822b-tables/LICENSE` と `/usr/share/licenses/rtl8822b-firmware/LICENCE.rtlwifi_firmware.txt`、変更後は firmware の 1 つだけ。rootfs の全体の build（全 package）は時間が掛かるので未実施で、staging の実物は見ていない（一覧で確かめた）。
+  - `python3 -I tools/release/license-inventory.py --config config/ci/config-amd64.mk`: open items は変更の前後とも同じ 2 件（amd-navi-firmware・nvidia-gsp-firmware の未登録、この Phase の外、前から）。RTL8822B の source の報告は 0 件。
+  - `sh plan/ws129/tests/license-inventory-test.sh`: case 1 の「open item 0」だけ FAIL（上の前からの 2 件）、ほかの確かめ（RTL8822B・AX211 の source が第三者でない、case 2〜5）は ok。
+  - build: `make -j8 ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/ws259-p001 vmunix` rc=0、warning 0、amd64 vmunix check: PASS。
+- 使われていない検査の道具 `tools/build/check-rtl8822b-tables.noct` は既に tree から消えている（fec7f1d17）。
+
+## 残件
+
+- **削除は Q1 へ**: `userland/base/licenses/rtl8822b-tables/`（LICENSE・Makefile）。どこからも選ばれなくなった。
+- 写しの記録 `plan/ws129/`（licenses-index.txt・licenses-generated.md）に rtl8822b-tables の行が残る（WS244 の i915-intel と同じく、WS129 の記録なので触っていない。Q1 の判断）。`plan/ws004/tests/README.md` の 216 行目・`plan/ws004/phase028/phase.md` は今は無い runner（run-rtl8822b-core-test.sh）の説明で、表の license の install に触れる。WS004 の記録なので触っていない（試験の整理の基準では参照を外す候補、Q1 の判断）。
 - 実機の WiFi の確かめ: 実機待ち（ユーザーの決定「実機は残して待つ」）。ユーザーの一覧に載せる。
