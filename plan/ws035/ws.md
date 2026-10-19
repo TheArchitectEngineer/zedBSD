@@ -459,7 +459,7 @@ WS005 p016の受け入れ条件（秘密情報を含まない、閲覧から制�
 ## p001の結果と、refactor前に決めること（2026-09-23）
 
 [ws035-p001の結果](phase001/results.md)。移動対応表は [refactor-map.md](refactor-map.md)、参照一覧は
-`refactor-refs/`（`plan/ws035/tests/refactor-refs.py` で再生成できる）。
+`refactor-refs/`（再生成の script は 2026-10-19 に削除、git の履歴に残る）。
 
 - **移動の規模**: 248ファイル（p002 38、p003 56、p023 148、p004 6）。書き換えが要る行（計画の記録を除く）は
   p002 231、p003 116、p023 137、p004 37。名前の衝突は無い。
