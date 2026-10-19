@@ -61,3 +61,7 @@ D1 (a)、D2 (a)、D3 (a)、D5 (a)、D6 A、D7 (a)（D4 は Guardrail で決ま�
 ## 未決
 
 - GPU の firmware の入手と license、userland の Vulkan の道（Mesa の imagination の driver の範囲と、BXE-4-32 の対応の状況は未確認）。
+
+## ユーザーの判断（推奨で進めている、2026-10-20 07:24 のユーザーの不在の指示による）
+
+design-p010.md §9 の D-P1〜D-P5: D-P1 free list は固定 16 MiB で grow しない（尽きた時の SPM は p011）、D-P2 gpu-selftest は VF2 の試験の image だけ・起動で自動に流すかは config で選ぶ、D-P3 blend と color の pack は仮に driver が fragment の末尾に足す、D-P4 submit は ioctl の中で待つ（2 秒）、D-P5 段の行は英語の短い語。ユーザーが戻ったら確かめる。
