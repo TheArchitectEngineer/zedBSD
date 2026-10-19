@@ -7,6 +7,7 @@ from pathlib import Path
 
 PT_GNU_STACK = 0x6474E551
 PT_LOAD = 1
+PT_TLS = 7
 PF_X = 1
 PF_W = 2
 PF_R = 4
@@ -23,7 +24,12 @@ MACHINES = {
     "amd64": (2, 62, 64, 56, "<", "little"),
     "aarch64": (2, 183, 64, 56, "<", "little"),
     "sparcv9": (2, 43, 64, 56, ">", "big"),
+    "riscv64": (2, 243, 64, 56, "<", "little"),
 }
+
+# Processors whose kernel gives a static image no initial TLS block: a
+# static program there must carry no thread-local storage.
+NO_STATIC_TLS = ("riscv64",)
 
 
 def check(path: Path, machine: str) -> None:
@@ -52,6 +58,7 @@ def check(path: Path, machine: str) -> None:
         fail(path, "program-header table is outside the file")
     stacks = []
     loads = []
+    tls_sizes = []
     for index in range(e_phnum):
         program_format = (endian + "IIIIIIII" if elf_class == 1 else
                           endian + "IIQQQQQQ")
@@ -61,6 +68,8 @@ def check(path: Path, machine: str) -> None:
             stacks.append(program)
         elif program[0] == PT_LOAD:
             loads.append(program)
+        elif program[0] == PT_TLS:
+            tls_sizes.append(program[5] if elf_class == 1 else program[6])
     if len(stacks) != 1:
         fail(path, f"expected one PT_GNU_STACK, found {len(stacks)}")
     if elf_class == 1:
@@ -73,7 +82,9 @@ def check(path: Path, machine: str) -> None:
         fail(path, f"PT_GNU_STACK size is 0x{p_memsz:x}, expected 0x100000")
     if p_flags != PF_R | PF_W or p_flags & PF_X:
         fail(path, f"PT_GNU_STACK flags are 0x{p_flags:x}, expected RW")
-    if machine in ("amd64", "aarch64", "sparcv9"):
+    if machine in NO_STATIC_TLS and any(size != 0 for size in tls_sizes):
+        fail(path, "a static program here carries no thread-local storage")
+    if machine in ("amd64", "aarch64", "sparcv9", "riscv64"):
         if not loads:
             fail(path, "expected at least one PT_LOAD")
         for index, program in enumerate(loads):
@@ -83,6 +94,7 @@ def check(path: Path, machine: str) -> None:
             minimum = 0x2000 if machine == "sparcv9" else 0x1000
             limit = (0x0000080000000000 if machine == "sparcv9" else
                      0x0000800000000000 if machine == "amd64" else
+                     0x0000004000000000 if machine == "riscv64" else
                      0x0001000000000000)
             required_alignment = 8192 if machine == "sparcv9" else 4096
             if alignment < required_alignment or alignment & (alignment - 1):
