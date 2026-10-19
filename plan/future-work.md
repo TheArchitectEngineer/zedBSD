@@ -112,6 +112,7 @@ Future Work は実行を許可しない。
 | F-103 | libc の wcwidth の表を Keiland の terminal の幅と揃える | libc（`src/libc/wide.c`）は結合文字を 0、`0x2e80-0xa4cf` を全部 2 とするが、terminal（`userland/desktop/terminal/width.c`）は結合文字を 1 桁、Ambiguous を 2 桁にする設定も持つ。vi・less などの cursor が 1 行の中でずれる | ws228-p001 review-1 M5（2026-10-14） | deferred | 結合文字・Ambiguous の文字で vi の cursor のずれの報告、または libc の Unicode の表の更新 | [WS228](ws228/ws.md)（ws228-p001、git の履歴） |
 | F-104 | node を開いた時に既に範囲にあるペンを拾う | compositor の tablet.c は node を開く時に軸（EVIOCGABS）は読むが key の状態（EVIOCGKEY）を読まないので、開く前に BTN_TOOL_PEN が来たペン（compositor の起動・遅れた hotplug の open・seat の pause の後）は範囲を出るまで何も届かない。3 つの backend（zedBSD・Linux・FreeBSD）に key の状態を読む関数が要る | ws217-p003 の T1-592 の P3-3 の解析（P1、2026-10-14） | deferred | 実機でペンを当てたまま起動・切り替えした時に効かない報告 | [ws217-p003](ws217/phase003/phase.md) §16.6 |
 | F-105 | Intel WiFi の他の世代への対応（driver を世代ごとに統合するか分割するか） | 今の driver は AX211 だけを対象にした名前と実装（`src/drivers/wifi/intel-ax211/`、firmware の API 89 に固定）。Q1 の見立て（未照合）: AX210・AX411・12 世代以降の AX201 は同じ世代で device の表と firmware の選び方で済む見込み、AX200・古い AX201 は起動情報の形式が 1 世代古い、BE200 系は新しい MAC と API の版、9000 系以前は transport が別。名前に Linux の iwl 系の語は使わない | 2026-10-15 ユーザー「ax211はそのままの名前でそのままの実装にしておき、いずれ世代ごとのドライバを統合実装するか分割実装するか、後日考えます。future workに入れておけばいいです。」 | deferred | 他の世代の Intel WiFi の機械を支える要求、または WS248 の後に driver の構成を見直す時 | [WS248](ws248/ws.md) |
+| F-106 | LLVM の MIPS n64＋sym32 の libcall | compiler の libcall（memcpy など）が `jalr memcpy` になり object の出力で「expected an immediate」で止まる。WS272 p003 は -mlong-calls（LTO は +long-calls）で避けた（call ごとに 2 命令増える） | WS272 p003（2026-10-19 P1） | 未着手 | 上流の LLVM の直り、または toolchain の更新の時 | [WS272](ws272/ws.md) |
 
 | fw-docs-ids | docs/ の本文に残る Plan の ID（WS・BUG・q の番号、2026-10-05 で 58 箇所、docs/agent は対象外）を消し、必要なら中身を言葉で書く | docs は目標の設計で plan に依らない規則 | 2026-10-05 ユーザー「消します。ただし後回しでいいです。」 | 決定済み・後回し | 空いた枠、または ws129-p005（RC）の文書の見直し | — |
 | fw-audiod-client | video player（ws122-p002）に内蔵した audiod の client（48 kHz S16 stereo）を共有の library に移し、音楽の app（WS120）や通知の音でも使う | 同じ client の重複を避ける | 2026-10-05 ws122-p002（P2） | 後回し | WS120 の着手、または 2 つ目の audiod の client が要る時 | ws122-p002 の phase.md（git の履歴、2026-10-08 の WS の完了で削除） |
@@ -119,5 +120,3 @@ Future Work は実行を許可しない。
 
 2026-10-05 Q1（WS140 の結果の反映）: F-070（ld.so の上限の動的化）は WS140 で実装した（0484201b・360c7dbe・a555c47a、T1-164 PASS、amd64）。ws115-p010 の手順 1（定数を上げる）は不要になったので、再開の時は gtk4-widget-factory の起動から確かめる。
 
-
-| FW-LLVM-MIPS64-SYM32 | LLVM の n64＋sym32 で compiler の libcall（memcpy など）が `jalr memcpy` になり object の出力で「expected an immediate」で止まる。WS272 p003 は -mlong-calls（LTO は +long-calls）で避けた（call ごとに 2 命令増える） | WS272 p003（2026-10-19 P1） | 上流の LLVM の直りを見て -mlong-calls を外す | 未着手 |
