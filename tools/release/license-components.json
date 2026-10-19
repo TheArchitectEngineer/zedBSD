@@ -361,6 +361,34 @@
    "note": ""
   },
   {
+   "id": "amd-navi-firmware",
+   "name": "AMD Navi10 GPU firmware (PSP, SMU, GFX, SDMA)",
+   "when": "program:amd-navi-firmware",
+   "license": "LicenseRef-amdgpu-firmware (redistribution allowed)",
+   "upstream": "linux-firmware",
+   "version": "",
+   "notices": [
+    "/usr/share/licenses/amd-navi-firmware/LICENSE.amdgpu",
+    "/usr/share/licenses/amd-navi-firmware/WHENCE"
+   ],
+   "paths": [],
+   "note": "Binary form only, unmodified, with the licence's notice and disclaimers; the licence forbids reverse engineering, decompilation and disassembly."
+  },
+  {
+   "id": "nvidia-gsp-firmware",
+   "name": "NVIDIA GSP-RM firmware (Turing, Ampere, Ada)",
+   "when": "program:nvidia-gsp-firmware",
+   "license": "LicenseRef-nvidia-firmware (redistribution allowed)",
+   "upstream": "linux-firmware",
+   "version": "",
+   "notices": [
+    "/usr/share/licenses/nvidia-gsp-firmware/LICENCE.nvidia",
+    "/usr/share/licenses/nvidia-gsp-firmware/WHENCE"
+   ],
+   "paths": [],
+   "note": "Redistributed under the licence's open source exception (section 2.1.2): unmodified, for use on an operating system under an OSI-approved licence, with a copy of the licence; the licence forbids reverse engineering and translation and limits use to NVIDIA processors."
+  },
+  {
    "id": "gtk4",
    "name": "GTK 4",
    "when": "program:gtk4",
