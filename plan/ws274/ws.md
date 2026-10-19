@@ -23,8 +23,8 @@ design.md §3 の段。各段は build（amd64 の LTO・gcc の LTO 無しの p
 | --- | --- | --- | --- |
 | p001 | S0 準備（KERN_VM_SOURCES・KERN_VM_OBJS、11 の platform、本文の照合の script）＋S1 移動（git mv で vm/vm.c・vm/vmspace.c・vm/device.c、試験の path・docs）＋S2 commit と metadata lock の切り出し | 7 | cleared（2026-10-19 Q1、T1-736） |
 | p002 | S3 匿名 page の群（J・K・L・M）と reclaim-internal.h | 5 | in-progress（code と host の確かめは済み（92fd627a2）、main への merge と T1 待ち） |
-| p003 | S4 object の群（A〜G）と object-internal.h（必要なら S4a・S4b） | 10 | in-progress（q1299、P1、2026-10-19） |
-| p004 | S5 vmspace の群と vmspace-internal.h、pin-host-test の追従 | 8 | planned |
+| p003 | S4 object の群（A〜G）と object-internal.h（必要なら S4a・S4b） | 10 | in-progress（code と host の確かめは済み（aedc6c074）、main への merge と T1 待ち） |
+| p004 | S5 vmspace の群と vmspace-internal.h、pin-host-test の追従 | 8 | in-progress（q1300、P1、2026-10-19） |
 | p005 | S6 swap.c を vm/ へ移して 4 つに（判断③） | 4 | in-progress（q1298、P2、2026-10-19） |
 | p006 | 死んだ code と重複（判断⑦、約 5 LW） | 5 | planned |
 | p007 | S9 最後の確かめ（全 platform の build、T1 の起動の回帰）と規約の全文の見直し（S8 の接頭辞を含むかは p006 の後に判断） | 3〜10 | planned |
