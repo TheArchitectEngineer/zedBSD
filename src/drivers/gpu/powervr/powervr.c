@@ -22,6 +22,7 @@
  */
 
 #include "drivers/gpu/powervr/powervr.h"
+#include "drivers/gpu/powervr/powervr-private.h"
 #include <kern/dcache.h>
 #include <kern/device-io.h>
 #include <kern/klog.h>
@@ -84,24 +85,11 @@ enum powervr_alias_result {
 };
 
 /*
- * The board's one core.
- *
- * Filled by drv_powervr_attach(), which the board runs once on the boot
- * CPU; registers is NULL until the core is kept, and the record is not
- * changed afterwards until the later stage takes it over.
- */
-struct powervr_core {
-	struct drv_powervr_description description;
-	volatile uint8_t *registers;
-	uint64_t core_rate;
-	uint32_t branch;
-	uint32_t version;
-	uint32_t units;
-	uint32_t config;
-};
-
-/*
  * The board's one core, kept for the later stage.
+ *
+ * The early stage fills it once on the boot CPU; from the moment the
+ * later stage's thread starts, that thread alone changes it.  It lives as
+ * long as the system.
  */
 static struct powervr_core board_core;
 
@@ -110,7 +98,6 @@ static int identity_known(const struct powervr_core *core);
 static enum powervr_alias_result check_alias(int *error);
 static void fill_pattern(volatile uint64_t *words, size_t count, uint64_t tag);
 static int pattern_matches(const volatile uint64_t *words, size_t count, uint64_t tag);
-static void power_down(struct powervr_core *core);
 
 /*
  * Brings the core up as far as reading its identity, and checks the
@@ -151,7 +138,7 @@ drv_powervr_attach(
 	/* Maps the core's registers. */
 	error = kern_device_map(description->registers, (size_t)description->register_size, KERN_DEVICE_UNCACHED, &mapped);
 	if (error != 0) {
-		power_down(core);
+		powervr_power_down(core);
 		kern_logf("powervr: register map failed (%d); powered down\n", error);
 		return error;
 	}
@@ -162,7 +149,7 @@ drv_powervr_attach(
 	read_identity(core);
 	known = identity_known(core);
 	if (!known) {
-		power_down(core);
+		powervr_power_down(core);
 		kern_logf("powervr: unknown core %u.%u.%u.%u; powered down\n",
 			  (unsigned)core->branch,
 			  (unsigned)core->version,
@@ -200,8 +187,98 @@ drv_powervr_attach(
 			  alias_error);
 	}
 
-	/* Succeeded: the core is up and kept for the later stage. */
+	/* Without a working uncached view the firmware's memory cannot be shared; the core stays idle. */
+	if (alias != POWERVR_ALIAS_OK)
+		return 0;
+
+	/* Starts the later stage, which loads the firmware once the root is live. */
+	error = powervr_late_start(core);
+	if (error != 0) {
+		powervr_power_down(core);
+		kern_logf("powervr: later stage not started (%d); powered down\n", error);
+		return error;
+	}
+
+	/* Succeeded: the core is up and the later stage owns it. */
 	return 0;
+}
+
+/*
+ * Reads a 32-bit register of the core.
+ */
+uint32_t
+powervr_read32(
+	const struct powervr_core *core,
+	uint32_t offset)
+{
+	uint32_t value;
+
+	/* One read of the register window. */
+	value = kern_mmio_read32((const volatile void *)(core->registers + offset));
+
+	/* Succeeded: the register's value. */
+	return value;
+}
+
+/*
+ * Reads a 64-bit register of the core.
+ */
+uint64_t
+powervr_read64(
+	const struct powervr_core *core,
+	uint32_t offset)
+{
+	uint64_t value;
+
+	/* One read of the register window. */
+	value = kern_mmio_read64((const volatile void *)(core->registers + offset));
+
+	/* Succeeded: the register's value. */
+	return value;
+}
+
+/*
+ * Writes a 32-bit register of the core.
+ */
+void
+powervr_write32(
+	struct powervr_core *core,
+	uint32_t offset,
+	uint32_t value)
+{
+	/* One write of the register window. */
+	kern_mmio_write32((volatile void *)(core->registers + offset), value);
+}
+
+/*
+ * Writes a 64-bit register of the core.
+ */
+void
+powervr_write64(
+	struct powervr_core *core,
+	uint32_t offset,
+	uint64_t value)
+{
+	/* One write of the register window. */
+	kern_mmio_write64((volatile void *)(core->registers + offset), value);
+}
+
+/*
+ * Releases the core's registers and powers it down: the resets held, the
+ * clocks stopped in reverse and the domain off.
+ */
+void
+powervr_power_down(
+	struct powervr_core *core)
+{
+	/* Releases the register window when it was made. */
+	if (core->registers != NULL) {
+		(void)kern_device_unmap((void *)core->registers, (size_t)core->description.register_size);
+		core->registers = NULL;
+	}
+
+	/* Powers the core down through the SoC's glue. */
+	core->description.power->power_down(core->description.context);
 }
 
 /* Reads the four fields of the core's identity register. */
@@ -340,23 +417,4 @@ pattern_matches(
 
 	/* Succeeded: the whole run holds the pattern. */
 	return 1;
-}
-
-/*
- * Undoes the early stage after a failure: the registers are released and
- * the core is powered down (resets held, clocks stopped in reverse,
- * domain off).
- */
-static void
-power_down(
-	struct powervr_core *core)
-{
-	/* Releases the register window when it was made. */
-	if (core->registers != NULL) {
-		(void)kern_device_unmap((void *)core->registers, (size_t)core->description.register_size);
-		core->registers = NULL;
-	}
-
-	/* Powers the core down through the SoC's glue. */
-	core->description.power->power_down(core->description.context);
 }

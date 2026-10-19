@@ -83,12 +83,19 @@ RISCV64_PLATFORM_SOURCES_visionfive2 += src/drivers/platform/visionfive2/vf2-dma
 endif
 
 # The VisionFive 2's PowerVR GPU core: the power management unit, the
-# core's glue, the driver's early stage and its display node.
+# core's glue, the driver's early stage, its display node and the later
+# stage that loads and starts the firmware.
 ifeq ($(CONFIG_DRIVER_POWERVR),y)
 RISCV64_PLATFORM_SOURCES_visionfive2 += src/drivers/platform/visionfive2/vf2-pmu.c \
 	src/drivers/platform/visionfive2/vf2-gpu.c \
 	src/drivers/gpu/powervr/powervr.c \
-	src/drivers/gpu/powervr/display.c
+	src/drivers/gpu/powervr/display.c \
+	src/drivers/gpu/powervr/firmware-image.c \
+	src/drivers/gpu/powervr/mips-table.c \
+	src/drivers/gpu/powervr/retry.c \
+	src/drivers/gpu/powervr/firmware-memory.c \
+	src/drivers/gpu/powervr/firmware-file.c \
+	src/drivers/gpu/powervr/firmware-boot.c
 # The display node needs the common GPU core even without a PCI GPU.
 RISCV64_PLATFORM_SOURCES_visionfive2 += $(filter-out $(KERN_GPU_SOURCES),src/drivers/gpu/gpu.c src/drivers/gpu/gpu-fence.c)
 endif

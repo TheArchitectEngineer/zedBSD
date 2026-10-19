@@ -1,0 +1,276 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The records the host shares with the PowerVR firmware, and the core's
+ * registers the driver programs around it.
+ *
+ * The records are the firmware's binary interface: the host writes them
+ * at the byte offsets the firmware reads, and reads the fields the
+ * firmware fills.  They are named here by offset and size only; the
+ * driver keeps no structure of its own for them.
+ */
+
+#ifndef KERN_DRIVERS_GPU_POWERVR_INTERFACE_H
+#define KERN_DRIVERS_GPU_POWERVR_INTERFACE_H
+
+/*
+ * The circular command buffers and their control blocks.
+ *
+ * Values referenced:
+ * Linux v7.3 drivers/gpu/drm/imagination/pvr_rogue_fwif_check.h
+ * (struct rogue_fwif_ccb_ctl: write offset 0, read offset 128, wrap mask
+ * 132, command size 136, 144 bytes; struct rogue_fwif_kccb_cmd and
+ * struct rogue_fwif_fwccb_cmd: type 0, flags 4, 88 bytes); pvr_fw.h
+ * (ROGUE_FWIF_KCCB_NUMCMDS_LOG2_DEFAULT 7, ROGUE_FWIF_FWCCB_NUMCMDS_LOG2
+ * 5).
+ */
+#define POWERVR_CCB_WRITE		0U
+#define POWERVR_CCB_READ		128U
+#define POWERVR_CCB_WRAP_MASK		132U
+#define POWERVR_CCB_COMMAND_BYTES	136U
+#define POWERVR_CCB_CONTROL_BYTES	144U
+#define POWERVR_COMMAND_TYPE		0U
+#define POWERVR_COMMAND_FLAGS		4U
+#define POWERVR_COMMAND_BYTES		88U
+#define POWERVR_KERNEL_CCB_SLOTS	128U
+#define POWERVR_FIRMWARE_CCB_SLOTS	32U
+
+/*
+ * Command types, and the answer the firmware leaves in a kernel command's
+ * return slot.
+ *
+ * Values referenced:
+ * Linux v7.3 drivers/gpu/drm/imagination/pvr_rogue_fwif.h
+ * (ROGUE_CMD_MAGIC_DWORD 0x2ABC in the upper 16 bits,
+ * ROGUE_FWIF_KCCB_CMD_HEALTH_CHECK 115, ROGUE_FWIF_KCCB_RTN_SLOT_CMD_EXECUTED
+ * bit 0, ROGUE_FWIF_KCCB_RTN_SLOT_NO_RESPONSE 0).
+ */
+#define POWERVR_COMMAND_MAGIC		0x2abc0000U
+#define POWERVR_COMMAND_MAGIC_MASK	0xffff0000U
+#define POWERVR_COMMAND_HEALTH_CHECK	(POWERVR_COMMAND_MAGIC | 115U)
+#define POWERVR_RETURN_EXECUTED		0x1U
+#define POWERVR_RETURN_NONE		0x0U
+
+/*
+ * The per-OS initialisation record.
+ *
+ * Values referenced:
+ * Linux v7.3 drivers/gpu/drm/imagination/pvr_rogue_fwif_check.h
+ * (struct rogue_fwif_osinit, 104 bytes; struct rogue_fwif_compchecks at
+ * 40 with its hardware and firmware identity records of 16 bytes each,
+ * their layout version first); pvr_rogue_fwif.h
+ * (ROGUE_FWIF_COMPCHECKS_LAYOUT_VERSION 3).
+ */
+#define POWERVR_OS_INIT_KCCB_CONTROL	0U
+#define POWERVR_OS_INIT_KCCB		4U
+#define POWERVR_OS_INIT_KCCB_RETURNS	8U
+#define POWERVR_OS_INIT_FWCCB_CONTROL	12U
+#define POWERVR_OS_INIT_FWCCB		16U
+#define POWERVR_OS_INIT_HWR_INFO	28U
+#define POWERVR_OS_INIT_OS_DATA		36U
+#define POWERVR_OS_INIT_HW_IDENTITY	40U
+#define POWERVR_OS_INIT_FW_IDENTITY	56U
+#define POWERVR_OS_INIT_BYTES		104U
+#define POWERVR_IDENTITY_LAYOUT		3U
+
+/*
+ * The system initialisation record.
+ *
+ * Values referenced:
+ * Linux v7.3 drivers/gpu/drm/imagination/pvr_rogue_fwif_check.h
+ * (struct rogue_fwif_sysinit, 544 bytes: the fault page's physical
+ * address 0, the PDS and USC execution bases 8 and 16, the core memory
+ * data store's firmware address 296, the runtime configuration 316, the
+ * trace control 320, the system data 324, the utilisation buffer 328,
+ * the initial core clock 344, firmware started 352, the marker 356);
+ * pvr_rogue_heap_config.h (ROGUE_PDSCODEDATA_HEAP_BASE 0xDA00000000,
+ * ROGUE_USCCODE_HEAP_BASE 0xE000000000).
+ */
+#define POWERVR_SYSTEM_INIT_FAULT_PAGE	0U
+#define POWERVR_SYSTEM_INIT_PDS_BASE	8U
+#define POWERVR_SYSTEM_INIT_USC_BASE	16U
+#define POWERVR_SYSTEM_INIT_RUNTIME	316U
+#define POWERVR_SYSTEM_INIT_TRACE	320U
+#define POWERVR_SYSTEM_INIT_SYSTEM_DATA	324U
+#define POWERVR_SYSTEM_INIT_UTILISATION	328U
+#define POWERVR_SYSTEM_INIT_CORE_CLOCK	344U
+#define POWERVR_SYSTEM_INIT_STARTED	352U
+#define POWERVR_SYSTEM_INIT_MARKER	356U
+#define POWERVR_SYSTEM_INIT_BYTES	544U
+#define POWERVR_PDS_HEAP_BASE		0xda00000000ULL
+#define POWERVR_USC_HEAP_BASE		0xe000000000ULL
+
+/*
+ * The per-OS and system data records the firmware keeps up to date.
+ *
+ * Values referenced:
+ * Linux v7.3 drivers/gpu/drm/imagination/pvr_rogue_fwif_check.h
+ * (struct rogue_fwif_osdata, 584 bytes: kernel commands executed 568,
+ * the power synchronisation object 572; struct rogue_fwif_sysdata, 3624
+ * bytes: configuration flags 0); pvr_rogue_fwif.h
+ * (ROGUE_FWIF_INICFG_DISABLE_DM_OVERLAP bit 19); pvr_fw.c
+ * (ROGUE_FWIF_SLC_MIN_SIZE_FOR_DM_OVERLAP_KB 4).
+ */
+#define POWERVR_OS_DATA_KCCB_EXECUTED	568U
+#define POWERVR_OS_DATA_POWER_SYNC	572U
+#define POWERVR_OS_DATA_BYTES		584U
+#define POWERVR_SYSTEM_DATA_FLAGS	0U
+#define POWERVR_SYSTEM_DATA_BYTES	3624U
+#define POWERVR_FLAG_NO_DM_OVERLAP	0x80000U
+#define POWERVR_DM_OVERLAP_MIN_KB	4U
+
+/*
+ * The runtime configuration, the utilisation buffer, the recovery
+ * information buffer and the connection control.
+ *
+ * Values referenced:
+ * Linux v7.3 drivers/gpu/drm/imagination/pvr_rogue_fwif_check.h
+ * (struct rogue_fwif_runtime_cfg, 72 bytes: the persistent latency flag
+ * 8, the core clock 12, the default cluster count 16, the watchdog period
+ * 28; struct rogue_fwif_gpu_util_fwcb, 10280 bytes, its last word at
+ * 10248; struct rogue_fwif_hwrinfobuf, 2336 bytes; struct
+ * rogue_fwif_connection_ctl, 16 bytes); pvr_rogue_fwif_common.h
+ * (PVR_FWIF_GPU_UTIL_STATE_IDLE 0).
+ */
+#define POWERVR_RUNTIME_PERSISTENT	8U
+#define POWERVR_RUNTIME_CORE_CLOCK	12U
+#define POWERVR_RUNTIME_CLUSTERS	16U
+#define POWERVR_RUNTIME_WATCHDOG	28U
+#define POWERVR_RUNTIME_BYTES		72U
+#define POWERVR_UTILISATION_BYTES	10280U
+#define POWERVR_HWR_INFO_BYTES		2336U
+#define POWERVR_CONNECTION_BYTES	16U
+
+/*
+ * The firmware's trace: its control block and the one thread's buffer.
+ *
+ * Values referenced:
+ * Linux v7.3 drivers/gpu/drm/imagination/pvr_rogue_fwif_check.h
+ * (struct rogue_fwif_tracebuf, 864 bytes: the log type 0, the first
+ * thread's space at 8 whose buffer's firmware address is at 4 within it,
+ * the size in words 856); pvr_rogue_fwif.h
+ * (ROGUE_FW_TRACE_BUF_DEFAULT_SIZE_IN_DWORDS 12000, ROGUE_FW_THREAD_NUM 1,
+ * ROGUE_FWIF_LOG_TYPE_NONE 0).
+ */
+#define POWERVR_TRACE_LOG_TYPE		0U
+#define POWERVR_TRACE_BUFFER_ADDRESS	12U
+#define POWERVR_TRACE_WORDS_FIELD	856U
+#define POWERVR_TRACE_CONTROL_BYTES	864U
+#define POWERVR_TRACE_WORDS		12000U
+#define POWERVR_FAULT_PAGE_FILL		0xdeadbee0U
+
+/*
+ * The core's registers the firmware's start and stop program.
+ *
+ * Values referenced:
+ * Linux v7.3 drivers/gpu/drm/imagination/pvr_rogue_cr_defs.h
+ * (ROGUE_CR_SOFT_RESET 0x0100 with ..._MASKFULL, ..._PBE2_XE__MASKFULL,
+ * ..._GARTEN_EN, ..._RASCAL_CORE_EN and ..._DUST_A_CORE_EN to
+ * ..._DUST_H_CORE_EN; ROGUE_CR_SOFT_RESET2 0x0108 with its full mask;
+ * ROGUE_CR_SYS_BUS_SECURE 0xA100; ROGUE_CR_SLC_CTRL_MISC 0x3800 with
+ * ..._ENABLE_PSG_HAZARD_CHECK_EN, ..._ADDR_DECODE_MODE_PVR_HASH1 and
+ * ..._BYPASS_BURST_COMBINER_EN; ROGUE_CR_AXI_ACE_LITE_CONFIGURATION
+ * 0x38C0; ROGUE_CR_MTS_SCHEDULE 0x0B00).
+ */
+#define POWERVR_SOFT_RESET		0x0100U
+#define POWERVR_SOFT_RESET_ALL		0x00e7fffffffffc3dULL
+#define POWERVR_SOFT_RESET_ALL_PBE2	0xffeffffffffffc3dULL
+#define POWERVR_SOFT_RESET_GARTEN	0x0000000100000000ULL
+#define POWERVR_SOFT_RESET_RASCAL_DUSTS	0x000001f8e0000000ULL
+#define POWERVR_SOFT_RESET2		0x0108U
+#define POWERVR_SOFT_RESET2_ALL		0x00000000001fffffULL
+#define POWERVR_SYSTEM_BUS_SECURE	0xa100U
+#define POWERVR_SLC_CONTROL		0x3800U
+#define POWERVR_SLC_HAZARD_CHECK	0x00000002U
+#define POWERVR_SLC_HASH_DECODE		0x00200000U
+#define POWERVR_SLC_BYPASS_COMBINER	0x00000001U
+#define POWERVR_SLC_COMBINER_MIN_BITS	1024U
+#define POWERVR_AXI_ACE_LITE		0x38c0U
+#define POWERVR_MTS_SCHEDULE		0x0b00U
+
+/*
+ * The ACE-Lite domains and cache attributes of the core's bus requests:
+ * outer shareable for non-snooping requests, inner shareable and
+ * cacheable for coherent ones and for cache maintenance.
+ *
+ * Values referenced:
+ * Linux v7.3 drivers/gpu/drm/imagination/pvr_rogue_cr_defs.h
+ * (the ROGUE_CR_AXI_ACE_LITE_CONFIGURATION_*_SHIFT fields) and
+ * pvr_fw_startstop.c (rogue_axi_ace_list_init: 3 for the non-snooping
+ * domains, 2 for the rest).
+ */
+#define POWERVR_AXI_ACE_LITE_VALUE	((3ULL << 8) | (3ULL << 10) | (2ULL << 12) | (2ULL << 14) | \
+					 (2ULL << 16) | (2ULL << 22) | (2ULL << 26) | (2ULL << 30))
+
+/*
+ * The MIPS wrapper: its configuration, its four remap windows, the
+ * Garten idle control, the debug probe and the interrupt to the host.
+ *
+ * Values referenced:
+ * Linux v7.3 drivers/gpu/drm/imagination/pvr_rogue_cr_defs.h
+ * (ROGUE_CR_MIPS_WRAPPER_CONFIG 0x0810 with ..._BOOT_ISA_MODE_MICROMIPS,
+ * ROGUE_CR_MIPS_ADDR_REMAP1_CONFIG1 0x0818 to
+ * ROGUE_CR_MIPS_ADDR_REMAP5_CONFIG2 0x0860 with ..._MODE_ENABLE_EN,
+ * ROGUE_CR_MTS_GARTEN_WRAPPER_CONFIG 0x0B50 with ..._IDLE_CTRL_META 0,
+ * ROGUE_CR_MIPS_DEBUG_CONFIG 0x08C8, ROGUE_CR_MIPS_WRAPPER_IRQ_STATUS
+ * 0x08A8 and ROGUE_CR_MIPS_WRAPPER_IRQ_CLEAR 0x08B0 with their event bit);
+ * pvr_rogue_mips.h (ROGUE_MIPSFW_REGISTERS_VIRTUAL_BASE 0xCF800000,
+ * ROGUE_MIPSFW_WRAPPER_CONFIG_REGBANK_ADDR_ALIGN 16, the boot, data and
+ * code remap input addresses 0x1FC00000, 0x1FC01000 and 0x1FC02000).
+ */
+#define POWERVR_MIPS_WRAPPER		0x0810U
+#define POWERVR_MIPS_MICROMIPS_BOOT	0x00010000U
+#define POWERVR_MIPS_REGISTER_WINDOW	0xcf800000U
+#define POWERVR_MIPS_REGISTER_ALIGN	16U
+#define POWERVR_MIPS_REMAP1_INPUT	0x0818U
+#define POWERVR_MIPS_REMAP1_OUTPUT	0x0820U
+#define POWERVR_MIPS_REMAP2_INPUT	0x0828U
+#define POWERVR_MIPS_REMAP2_OUTPUT	0x0830U
+#define POWERVR_MIPS_REMAP3_INPUT	0x0838U
+#define POWERVR_MIPS_REMAP3_OUTPUT	0x0840U
+#define POWERVR_MIPS_REMAP5_INPUT	0x0858U
+#define POWERVR_MIPS_REMAP5_OUTPUT	0x0860U
+#define POWERVR_MIPS_REMAP_ENABLE	0x1ULL
+#define POWERVR_MIPS_BOOT_INPUT		0x1fc00000ULL
+#define POWERVR_MIPS_DATA_INPUT		0x1fc01000ULL
+#define POWERVR_MIPS_CODE_INPUT		0x1fc02000ULL
+#define POWERVR_GARTEN_WRAPPER		0x0b50U
+#define POWERVR_GARTEN_IDLE_BY_FIRMWARE	0x0ULL
+#define POWERVR_MIPS_DEBUG		0x08c8U
+#define POWERVR_MIPS_IRQ_STATUS		0x08a8U
+#define POWERVR_MIPS_IRQ_CLEAR		0x08b0U
+#define POWERVR_MIPS_IRQ_EVENT		0x1U
+
+/*
+ * The registers the stop waits on before it holds the core in reset.
+ *
+ * Values referenced:
+ * Linux v7.3 drivers/gpu/drm/imagination/pvr_rogue_cr_defs.h
+ * (ROGUE_CR_MTS_INTCTX_THREAD0_DM_ASSOC 0x0B40 and
+ * ROGUE_CR_MTS_BGCTX_THREAD0_DM_ASSOC 0x0B30, ROGUE_CR_BIF_STATUS_MMU
+ * 0x1358, ROGUE_CR_BIFPM_STATUS_MMU 0x1350, ROGUE_CR_BIF_READS_EXT_STATUS
+ * 0x1320, ROGUE_CR_BIFPM_READS_EXT_STATUS 0x1338, ROGUE_CR_SLC_STATUS1
+ * 0x3870, ROGUE_CR_MARS_IDLE 0x08F8 with ..._CPU_EN and
+ * ..._MH_SYSARB0_EN, and each one's full mask).
+ */
+#define POWERVR_MTS_INTERRUPT_ASSOC	0x0b40U
+#define POWERVR_MTS_BACKGROUND_ASSOC	0x0b30U
+#define POWERVR_BIF_MMU_STATUS		0x1358U
+#define POWERVR_BIF_MMU_STATUS_MASK	0xffU
+#define POWERVR_BIFPM_MMU_STATUS	0x1350U
+#define POWERVR_BIFPM_MMU_STATUS_MASK	0xffU
+#define POWERVR_BIF_READS_STATUS	0x1320U
+#define POWERVR_BIF_READS_STATUS_MASK	0x0fffffffU
+#define POWERVR_BIFPM_READS_STATUS	0x1338U
+#define POWERVR_BIFPM_READS_STATUS_MASK	0xffffU
+#define POWERVR_SLC_STATUS		0x3870U
+#define POWERVR_SLC_STATUS_MASK		0x800003ff03ffffffULL
+#define POWERVR_MARS_IDLE		0x08f8U
+#define POWERVR_MARS_IDLE_FIRMWARE	0x00000006U
+
+#endif
