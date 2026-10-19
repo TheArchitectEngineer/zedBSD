@@ -159,7 +159,8 @@ RISC-V
 ------
 
 On the `virt` machine (riscv64 and riscv32) there is no zedBSD loader.
-QEMU loads the kernel ELF (`-kernel vmunix`) at `0x80200000`, and its
+QEMU loads the kernel ELF (`-kernel vmunix`) at its physical load address
+(`0x80200000` on riscv64, `0x80400000` on riscv32), and its
 default firmware, OpenSBI, enters it in supervisor mode with translation
 off, the boot hart's id in `a0` and the device tree in `a1`.  The kernel
 parameters come from the device tree's command line (`-append`), an
