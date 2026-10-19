@@ -47,7 +47,7 @@ Status: in-progress（(1) の loader の変更は T1-728 待ち。(2) の土台�
 
 - 範囲: [design-peripherals.md](../design-peripherals.md) 改訂 4 §3.1 (2) の (a)〜(e) のうち、描き方 (β)（direct map で描き FLUSH64）。ユーザーの決定（2026-10-19、クリック）: #29「両方を承認」（[Guardrail](../../guardrail.md) の 2026-10-19 の WS256 の行、[proposed/hal-riscv64-framebuffer.md](../proposed/hal-riscv64-framebuffer.md) の形）、#15「画面が出るまで待つ」、#10「SD boot, framebufferで目視」（実機の受け入れはユーザーが framebuffer を目で見る）。
 - `include/hal/hal.h` は変えていない（承認の形のまま: 名前 6 つは VF2 の BSP だけが返し、console は riscv64 の共通）。
-- code の commit（agent/p2）: HAL と handoff の header c14bfbb8e、loader 7c06d189a、kernel の読み手 0f1c25ab6、host 試験 1de2aa8e1。
+- code の commit（agent/p2）: HAL と handoff の header c14bfbb8e、loader 7c06d189a、kernel の読み手 0f1c25ab6、host 試験 1de2aa8e1、no-map の RAM の画面を device の窓で 2dee74f67（記録は e57163c79 と同じ commit）。
 
 ### 実装
 
@@ -94,7 +94,7 @@ Status: in-progress（(1) の loader の変更は T1-728 待ち。(2) の土台�
 
 ### T1 への依頼文（Q1 が番号を付けて送る）
 
-> WS256 p011 (2) の riscv64 の framebuffer の土台（P2 q1284、2026-10-19）。tree は P2 の commit 1de2aa8e1 以降（Q1 の merge の後の main）。走り C は Q1 が [proposed/boot-test-riscv64-uboot-gop.diff](../proposed/boot-test-riscv64-uboot-gop.diff) を `plan/tools/boot-test.sh` に入れた後。
+> WS256 p011 (2) の riscv64 の framebuffer の土台（P2 q1284、2026-10-19）。tree は P2 の commit 2dee74f67 以降（Q1 の merge の後の main）。走り C は Q1 が [proposed/boot-test-riscv64-uboot-gop.diff](../proposed/boot-test-riscv64-uboot-gop.diff) を `plan/tools/boot-test.sh` に入れた後。
 > 1. 走り A（virt の直の起動の回帰、console の共通化で画が変わらない事）: `make ZEDBSD_CONFIG=plan/ws256/tests/config-riscv64-virt.mk -j16 build/riscv64-virt/vmunix build/riscv64-virt/root.img`、`BOOT_MODE=riscv64-virt INITRD=build/riscv64-virt/root.img BOOT_THEN=$'type:root\nexpect:[Pp]assword\ntype:root\nexpect:^root@\\S+:~\\$\ntype:uname -m\nexpect:^riscv64\\s*$' plan/tools/boot-test.sh build/riscv64-virt/vmunix`。合格: login prompt・login・`uname -m` の `riscv64`（grid は左上から、前と同じ位置）。
 > 2. 走り B（virt の U-Boot の道の回帰、loader の handoff 版 2）: 同じ config で `build/riscv64-virt/uefi/BOOTRISCV64.EFI build/riscv64-virt/disk.img` も作り、`BOOT_MODE=riscv64-uboot BOOT_THEN=（走り A と同じ） plan/tools/boot-test.sh build/riscv64-virt/disk.img`（T1-722 と同じ）。合格: 同じ。loader が予約の一覧を作れずに止まると login に届かない（その時は画面の PNG を添えて FAIL）。
 > 3. 走り C（GOP の道、新 mode）: `make ZEDBSD_CONFIG=config/ci/config-visionfive2.mk -j16 build/visionfive2/vmunix build/visionfive2/root.img build/visionfive2/uefi/BOOTRISCV64.EFI build/visionfive2/disk.img`、`BOOT_MODE=riscv64-uboot-gop BOOT_PATTERN=$'RISCV64 LOADER framebuffer [0-9]+x[0-9]+\nRISCV64 FRAMEBUFFER [0-9]+x[0-9]+ phys=[0-9a-f]+ device\n^(?:\\S+ )?login: ?' plan/tools/boot-test.sh build/visionfive2/disk.img`（VF2 の kernel は入力が無いので BOOT_THEN は使わない）。合格（Q1 が判定）: bochs の画面の中央の 80x25 の grid に login prompt。2 つの HAL の行は scroll で消える前に写れば keep-1.png・keep-2.png に残る（写らずに "never saw" でも login が写れば記録だけ）。**見込みの外れ**: U-Boot が bochs で GOP を出さないと画面は U-Boot の黒のまま（loader の `RV64 GOP none` は serial だけ）で login は写らない → PNG を添えて「GOP 無し」と書く（FAIL の解析はしない）。U-Boot の画（`RV64 GOP mode …`・`RV64 GOP handed over`・`RV64 RESERVED …` の行）が写った PNG があれば添える。
