@@ -87,3 +87,36 @@ graphics（X）と色の点は p005 の後の p006（`/dev/graphics` は sun4u �
    合わない時は PNG と、gdbstub で `screen_on`・`i8042_polled`・`fb_format`・`fb_width` の値（`vmunix` の symbol）を返してほしい。
    x8・x32 の画面の字が灰色（0xaaaaaa）で読めること。色の R と B の順はこの画面では見えない（灰色と白だけ）ので p006。
 2. pcat の回帰: bios-ide の login と `keys:` の 1 本、`plan/ws081/tests/ps2-wheel-qemu.sh`（T1-015 で使用）。
+
+## T1-745 の欠陥の修正（q1322-i01、2026-10-19 P1）
+
+- 欠陥（T1-745、PNG `build/review/t1-745-x32-crop.png`）: 全部の行の先頭の字に白い下線（cursor）が残る。
+- 原因: `src/drivers/platform/sun4u/sun4u-console.c` の `screen_newline()` が、`screen_row` を進める前に旧の位置の cell を描き直していた。
+  `\r` の後の `\n` では旧の位置が (行, 0) で、行がまだ進んでいないので `screen_draw_cell()` がそこを cursor の位置と見て cursor 付きで描き、
+  そのまま残った。直し: 行を先に進めてから旧の cell を描き、次に新しい cell を描く。scroll の道は `screen_draw_all()` が描いた印
+  （`SUN4U_CONSOLE_DRAWN_CURSOR`）との差で旧の cursor を消すので変えない。復帰・後退・tab・字の道はもとから位置を変えてから旧の cell を描いていた。
+  clear（`console_clear`）は何もしない。repaint は全部の cell を消してから描く。HAL の `bsp-sun4u/console.c` の newline は行を先に進めていて正しい。
+- pcat: pcat の console（`src/hal/amd64/bsp-pcat/cons.c` の `update_cursor_locked`）はこの file と道を共有しない（描いた位置を覚えて消す別の作り）ので変更なし、画面は今と同じ。
+- host 試験 `plan/ws275/tests/host-console-cursor.sh`（新規。`sun4u-console.c` を 640x400 の偽の framebuffer で compile）: 字・`\r\n`・`\n`・
+  `\r`・後退・tab・`\r\r\n\n`・40 行で scroll・最後の行の字・repaint の各段で cursor の cell がちょうど 1 つで cursor の位置にあること、
+  列 0 に古い cursor が無いことを見る。`PASS`（12 の check）。直す前の file で compile すると FAIL 7（欠陥を捉えることを確認）。
+- build warning 0（`BUILD=build/ws275-p004/<名前>`）: `config-sun4u.mk vmunix bootloader`・`config/ci/config-pcat.mk vmunix`・
+  `config/ci/config-amd64.mk vmunix`、rc 0・`warning:`/`error:` 0 件。
+- 未実施: QEMU（下の再試験の依頼）。
+
+### T1 への再試験の依頼（T1-745 の再試験、QEMU のみ）
+
+sun4u の 3 本（`QEMU_EXTRA` 無し・`'-g 1024x768x8'`・`'-g 1024x768x32'`）、image は `plan/tools/ports/config-sun4u.mk` と q1322 の merge 後の tree。各本:
+
+```
+BOOT_PATTERN: ^(?:\S+ )?login: ?
+BOOT_THEN:
+  type:root
+  expect:Password:
+  type:root
+  expect:root@kei
+  keys:echo ws275-''ok
+  expect:^ws275-ok(\s|$)
+```
+
+判定: `expect` が全部合い、PNG で各行の先頭の字に白い下線が無く、cursor（白い 2 行の下線）が最後の prompt の位置の 1 か所だけにあること。

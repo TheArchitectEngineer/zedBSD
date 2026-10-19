@@ -656,16 +656,15 @@ screen_newline(
 	unsigned row;
 	unsigned column;
 
-	/* The cell the cursor leaves loses its cursor. */
+	/* Moves down when there is a row below. */
 	old_row = screen_row;
 	old_column = screen_column;
 	screen_column = 0;
-	if (old_column < screen_columns)
-		screen_draw_cell(old_row, old_column);
-
-	/* Moves down when there is a row below. */
 	if (screen_row + 1U < screen_rows) {
+		/* The cell the cursor left loses its cursor, then the new one gains it. */
 		screen_row++;
+		if (old_column < screen_columns)
+			screen_draw_cell(old_row, old_column);
 		screen_draw_cell(screen_row, screen_column);
 		return;
 	}
