@@ -46,13 +46,15 @@ static uint64_t handoff_boot_hart;
 static struct kern_boot_handoff kernel_handoff;
 
 /*
- * The firmware's command line (/chosen/bootargs), copied out of the tree
- * and handed to the kernel as "boot.command-line".  The first byte is zero
- * when the firmware passed no line.
+ * The command line handed to the kernel as "boot.command-line": the
+ * firmware's (/chosen/bootargs), copied out of the tree, or the boot
+ * parameters the loader passed instead.  The first byte is zero when there
+ * is no line.
  */
 static char boot_command_line[KERN_BOOT_PARAMETERS_STORAGE_SIZE];
 
 static void copy_command_line(const struct riscv64_fdt_info *info, uintptr_t fdt_phys);
+static void keep_command_line(const char *line, size_t available);
 static int name_is(const char *name, const char *wanted);
 
 /*
@@ -94,6 +96,21 @@ riscv64_boot_record(
 
 	/* The command line, out of the tree while it is intact. */
 	copy_command_line(info, fdt_phys);
+}
+
+/*
+ * Replaces the command line with the boot parameters the loader passed.
+ *
+ * The loader's parameters are the zedbsd.cfg lines; the firmware's own
+ * line in the tree is not the kernel's when a loader ran.
+ */
+void
+riscv64_boot_set_command_line(
+	const char *text,
+	size_t available)
+{
+	/* Keeps the loader's line in place of the tree's. */
+	keep_command_line(text, available);
 }
 
 /*
@@ -256,10 +273,8 @@ hal_get_arch_handoff(
 }
 
 /*
- * Copies the firmware's command line out of the device tree.
- *
- * A line longer than the kernel keeps is cut at the last separator that
- * fits, so no parameter is handed over in part.
+ * Copies the firmware's command line out of the device tree, while the
+ * tree is known to be intact.
  */
 static void
 copy_command_line(
@@ -267,8 +282,6 @@ copy_command_line(
 	uintptr_t fdt_phys)
 {
 	const char *line;
-	size_t length;
-	size_t limit;
 
 	/* Starts with no line, which is what an absent one leaves. */
 	boot_command_line[0] = '\0';
@@ -277,10 +290,29 @@ copy_command_line(
 	if (info->bootargs_offset == 0U || info->bootargs_length == 0U)
 		return;
 
-	/* Measures the line up to its terminator, within the property. */
+	/* Keeps the property's line. */
 	line = (const char *)(RISCV64_DIRECT_BASE + fdt_phys + info->bootargs_offset);
+	keep_command_line(line, info->bootargs_length);
+}
+
+/*
+ * Keeps a command line of at most available bytes, ending at its
+ * terminator if it has one.
+ *
+ * A line longer than the kernel keeps is cut at the last separator that
+ * fits, so no parameter is handed over in part.
+ */
+static void
+keep_command_line(
+	const char *line,
+	size_t available)
+{
+	size_t length;
+	size_t limit;
+
+	/* Measures the line up to its terminator, within what is available. */
 	length = 0;
-	while (length < info->bootargs_length && line[length] != '\0')
+	while (length < available && line[length] != '\0')
 		length++;
 
 	/* Cuts a line the kernel cannot keep at its last separator. */

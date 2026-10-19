@@ -6,7 +6,7 @@
  */
 
 /*
- * The restricted ELF64 loader contract for the amd64 kernel.
+ * The restricted ELF64 loader contract for the amd64 and riscv64 kernels.
  */
 
 #ifndef KERN_BOOTLOADER_UEFI_ELF64_H

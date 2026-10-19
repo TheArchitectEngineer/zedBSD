@@ -51,3 +51,26 @@ four-level bootstrap page tables, and enters the kernel using the System V
 AMD64 ABI.  Firmware disk services are not used after `ExitBootServices()`;
 the kernel resolves the selected FAT and configured root through its native
 storage drivers.
+
+# The riscv64 UEFI loader
+
+`BOOTRISCV64.EFI` (`bootriscv64.c`, `riscv64/`) is the same kind of
+fallback-path application for 64-bit RISC-V firmware (U-Boot's UEFI, edk2).
+It reads `/zedbsd.cfg` from the volume it was loaded from only, with the same
+grammar and the same synthesized `boot0=`, then the configured kernel and,
+when the volume has one, `/root.img`, which the kernel takes as its initial
+ramdisk.  It asks the firmware for the boot hart through
+`RISCV_EFI_BOOT_PROTOCOL` (a firmware without it is refused), copies the
+flattened device tree from the configuration table, fills the riscv64
+handoff (`bootloader/include/riscv64-handoff.h`), exits boot services and
+enters the kernel at its physical entry with translation off.  It builds no
+page tables: the kernel builds its own.
+
+LLVM writes no PE/COFF object for RISC-V, so the loader is linked as a
+position-independent ELF for address 0 (`riscv64/loader.ld`) that carries
+only relative relocations.  `platform/riscv64/tools/make-bootriscv64.py`
+puts a PE32+ header with two sections in front of its flat image, and the
+entry (`riscv64/start.S`) applies the relocations for the address the
+firmware loaded the image at.  `platform/riscv64/tools/check-bootriscv64.py`
+checks the result.  The kernel placement contract is
+`bootloader/include/riscv64-kernel-image.h`; `elf64.c` serves both machines.

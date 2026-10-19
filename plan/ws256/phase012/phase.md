@@ -2,15 +2,15 @@
 
 # ws256-p012 周辺の設計（VisionFive 2）
 
-Status: in-progress（2026-10-19 q1270-i01、P1。初版の設計を書いた。design-reviewer と Q1 の合格の前）
+Status: in-progress（2026-10-19 q1270-i02、P1。改訂 2（レビュー 1 の全部を反映）を書いた。再レビューと Q1 の合格の前）
 
-- 親: [WS256](../ws.md)。Queue: q1270-i01。
+- 親: [WS256](../ws.md)。Queue: q1270-i01、q1270-i02。
 - 範囲: p011（framebuffer の調べ）と p013〜p019（clock・reset・pinctrl/GPIO・PMIC、SD、rootfs からの起動、PCIe と USB・keyboard、NVMe、GbE と PHY、sound）の設計を `plan/ws256/design-peripherals.md` に書く。code は書かない。HAL の API の差分は案だけ。toolchain は変えない。
 - 完了の条件: 部品と register の事実を StarFive の公開資料で確かめ（URL・SHA-256 を記録、確かめられない事は未確認）、各 Phase の既存／新規・HAL・DT・試験・依存・LW・並行の組、実機の判定（#15）と接続（#10）の選択肢と既定の案がそろい、design-reviewer を通り、Q1 が合格とする。
 
 ## 成果物
 
-- [design-peripherals.md](../design-peripherals.md)（初版）。
+- [design-peripherals.md](../design-peripherals.md)（改訂 2）。[レビュー 1](../design-peripherals-review-1.md)。HAL の差分の案 [proposed/hal-riscv64-framebuffer.md](../proposed/hal-riscv64-framebuffer.md)（適用しない）。
 
 ## 実行した事（q1270-i01、2026-10-19）
 
@@ -31,3 +31,21 @@ Status: in-progress（2026-10-19 q1270-i01、P1。初版の設計を書いた。
 - design-reviewer（Q1 が回す）、その結果の反映（改訂）。
 - ユーザーの判断（Q1 経由）: design-peripherals.md §6 の #15・#10・#2・#20〜#26。
 - `build/tmp/ws256-docs/starfive,jh7110-crg.h`（重複の取得の残り）の片付けは Q1。
+
+## 実行した事（q1270-i02、2026-10-19）
+
+- worktree に main d89292d83 を取り込んだ（`git log -1 --format='%h %p'` = d89292d83 e4418e2ef、fast-forward）。子のエージェントは起動していない。
+- 取得（`build/tmp/ws256-docs/`、SHA-256 は §0.1 と `SHA256SUMS`）: OpenBSD `sys/arch/riscv64/dev/sfcc.c`（jh7110 に attach しない）、Linux v6.12 の `arch/riscv/Kconfig`（`select ARCH_DMA_DEFAULT_COHERENT`）・`kernel/dma/Kconfig`・`drivers/of/address.c`（`of_dma_is_coherent`）・`drivers/of/device.c`。TRM の text で Table 2-5 の system port `RW A` を確かめた。
+- 照合した code: `pci.c` の `establish_intx`（3037）と line の解除（3550）、`pci.h` の `drv_pci_bus_ops`・`drv_pci_irq`、`pci-nvme.c` の IRQ の許可（1738）と INTMS/INTMC、`design.md` §2.5。
+- レビュー 1 の B1・B2・M1〜M8・Minor 1〜17 を全部当てた（対応の表は design-peripherals.md §9）。主な変更: PCI core の host の INTx の hook（新 Phase p021 仮）、pci-nvme の INTx の道（p017）、framebuffer の名前付き handoff の HAL の差分の案、coherency の確かめの Phase（p023 仮）と予備 (i) の具体化、p013 の code と実機（p022 仮）の分割、p016a/b を p016・p020（仮）に、mainline の U-Boot を主に。
+- QEMU・実機・build は使っていない（code 無し）。
+
+## 残り（q1270-i02 の後）
+
+- 改訂 2 の design-reviewer（Q1 が回す）。
+- Q1 への依頼: HAL の承認（#29）、design.md の直し 4 件（§8）、p020〜p023 の番号、tools（#28）。
+- ユーザーの判断: design-peripherals.md §6（#15・#10・#2・#20〜#31）。
+
+## レビュー 2（2026-10-19 Q1）
+
+[design-peripherals-review-2.md](../design-peripherals-review-2.md): Blocker 1（p021 の hook の EOI）・Major 7・Minor 13。p016 はそのまま進めてよい、p017 の virt は Minor 1 を当てて進めてよい。改訂 3 は P1 が q1271 の後に書く。

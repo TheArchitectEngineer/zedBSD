@@ -2,7 +2,7 @@
 
 # ws256-p007 userland の riscv64
 
-Status: in-progress、test-wait（T1 の番号は Q1。2026-10-19 q1269-i01、P2。実装・build（warning 0）・host の確かめは済み。T1 の結果を Q1 が判定するまで cleared にしない。Noct は toolchain の path なので差分の案を Q1 に渡した）
+Status: cleared（2026-10-19 Q1 の判定、T1-721: riscv64 virt で login・`uname -m` の `riscv64`・dyntest の最後の行 DL:06:PLUGIN-TLS を画面で確認（UART の RX も兼ねる、build/review/t1-721/riscv-login-after.png）、amd64 の既定の image の回帰 PASS（build の warning は外部 package の openssh と host の locale の既存の物）。Noct の riscv64 は proposed/noct-riscv64.diff の案のまま p010 の残りへ（login に不要、Q1 が要る時に適用））
 
 - 親: [WS256](../ws.md)。Queue: q1269 / q1269-i01（承認: 2026-10-19 ユーザー「WS256を実施してください。」）。
 - 範囲: [design.md](../design.md) §6 の p007、§4.3。(a) crt0/crt1/setjmp/syscall の .S と user.ld、(b) libc・rtld の枝と relocation、Noct の cmake、`check-dynamic-elf.py`、最小の user program と root.img。
