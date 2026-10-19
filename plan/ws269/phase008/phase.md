@@ -155,6 +155,16 @@ image: `make ZEDBSD_CONFIG=plan/ws269/tests/p008/config-visionfive2-compute.mk B
 
 - amd64 は触れた file を build しないので流していない。QEMU は起動していない。実機の 3 行は未実施（U29 の続き、上の文面）。
 
+q1369（2026-10-20 P2）: 書き込み・temps の program の instance number（special register 51）の読みを、s0 からの `mbyp` から、compiler と同じ `movs1` の形（s1 に special register、mux s1、is4 fte、phase 2 の move）に直した（Mesa は special register を s1・s2・s4 でしか許さない）。新しい `special_group`（`src/drivers/gpu/powervr/compute-program.c`）。
+
+| 確かめ | コマンド | 結果 |
+| --- | --- | --- |
+| host 試験 | `timeout 120 sh plan/ws269/tests/p008/run.sh build/q1369/p008` | encode 91 passed 0 failed、compute 70 passed 0 failed（group 0 の期待を movs1 の 12 byte に。header・phase 2・is4・destination は手で、source の 4 byte は encoder の配置のまま） |
+| p009・p010-compiler の host 試験 | `sh plan/ws269/tests/p009/run.sh build/q1369/p009`・`.../p010-compiler/run.sh build/q1369/p010-compiler` | executor 112/0、compiler 298/0、group 20/0 |
+| kernel | `make ZEDBSD_CONFIG=config/ci/config-{visionfive2,riscv64-virt,amd64}.mk BUILD=build/q1369-<c> vmunix -j16` | 3 つとも rc=0、`warning:` 0 件 |
+
+- 実機の compute check（U35）は未実施。片付け: `build/q1369/`・`build/q1369-visionfive2/`・`build/q1369-riscv64-virt/`・`build/q1369-amd64/`・`build/q1369-*.log`。
+
 ## 残り
 
 1. 実機（T1・ユーザー、U29 の続き）: 上の「実機の試験の文面」の 3 行。期待と違えば、kernel の行が FAILED なら program・kick の誤り（gdbstub は無いので、画面の数と FW の notice の行から）、時間切れなら FW の context の static state（0 のまま）や CDM の register の値を疑う。
