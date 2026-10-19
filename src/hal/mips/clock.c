@@ -8,11 +8,12 @@
 /*
  * The MIPS scheduling tick and counter.
  *
- * Count runs at a rate the board gives, and Compare raises the timer
- * interrupt when Count reaches it; writing Compare also takes the
- * interrupt down.  Each tick arms the next boundary one interval ahead.
- * Count is 32 bits wide, so the 64-bit counter counts its wraps; it is
- * read at least once a tick, far more often than Count wraps.
+ * The board owns the timer: it arms a tick of HAL_TIMER_FREQUENCY, takes
+ * its interrupt down and calls mips_clock_tick() for each, and reads a
+ * free-running 64-bit counter at a rate it reports.  The malta board
+ * uses coprocessor 0's Count and Compare; a processor without them uses
+ * a timer of its SoC.  This file counts the ticks and hands them to the
+ * kernel once it runs.
  */
 
 #include <hal/hal.h>
@@ -20,29 +21,12 @@
 #include "bsp.h"
 #include "clock.h"
 #include "irq.h"
-#include "spin.h"
 
 /*
- * Count's rate and the Count cycles between two ticks.  Set once by
- * mips_clock_init() before the timer interrupt is let in; a zero rate
- * means the tick is not set up.
+ * The counter's rate.  Set once by mips_clock_init() before the tick's
+ * interrupt is let in; zero means the tick is not set up.
  */
 static uint32_t clock_frequency;
-static uint32_t clock_interval;
-
-/*
- * The Compare value of the next tick.  Written by the tick alone after
- * the first one is armed.
- */
-static uint32_t clock_deadline;
-
-/*
- * The 64-bit counter's state: Count when it was last read, and the wraps
- * of Count before that reading.  Both change together with interrupts
- * off, so that a reading never sees one without the other.
- */
-static uint32_t clock_last_count;
-static uint32_t clock_wraps;
 
 /*
  * The ticks served since the tick was set up.  Only the tick increases
@@ -57,65 +41,29 @@ static volatile uint32_t clock_tick_count;
  */
 static int clock_kernel_running;
 
-static uint32_t read_count(void);
-static void write_compare(uint32_t value);
-
 /*
- * Sets up the scheduling tick and arms the first one.
+ * Sets up the scheduling tick and the counter, and arms the first tick.
  *
- * The caller lets the timer's line in through Status.IM afterwards.
+ * The caller lets the tick's line in through Status.IM afterwards.
  */
 void
 mips_clock_init(
 	void)
 {
-	uint32_t now;
-
-	/* The interval of a tick, from the board's Count rate. */
-	clock_frequency = mips_board_count_frequency();
+	/* The board arms its timer and reports the counter's rate. */
+	clock_frequency = mips_board_timer_init(HAL_TIMER_FREQUENCY);
 	if (clock_frequency == 0)
-		HAL_FATAL("mips board gives no Count rate");
-	clock_interval = clock_frequency / HAL_TIMER_FREQUENCY;
-	if (clock_interval == 0)
-		clock_interval = 1;
-
-	/* Starts the 64-bit counter from Count as it is now. */
-	now = read_count();
-	clock_last_count = now;
-	clock_wraps = 0;
-
-	/* Arms the first tick one interval from now. */
-	clock_deadline = now + clock_interval;
-	write_compare(clock_deadline);
+		HAL_FATAL("mips board gives no counter rate");
 }
 
 /*
- * Serves the timer interrupt: counts the tick and arms the next one.
- *
- * A boundary already behind Count would only come again after Count
- * wraps, so a late tick moves the deadline one interval past now
- * instead.
+ * Serves one tick, which the board's timer interrupt has already taken
+ * down.  Called by the board with interrupts off.
  */
 void
-mips_clock_interrupt(
+mips_clock_tick(
 	void)
 {
-	uint32_t now;
-	int32_t ahead;
-
-	/* Keeps the 64-bit counter's wraps counted. */
-	(void)mips_clock_read_counter();
-
-	/* Moves the deadline on by one interval, or past now when that is already behind. */
-	now = read_count();
-	clock_deadline += clock_interval;
-	ahead = (int32_t)(clock_deadline - now);
-	if (ahead <= 0)
-		clock_deadline = now + clock_interval;
-
-	/* Arms the next tick, which also takes this one's interrupt down. */
-	write_compare(clock_deadline);
-
 	/* The tick is what the boot waits on and, later, what the kernel schedules on. */
 	clock_tick_count++;
 
@@ -151,8 +99,8 @@ hal_rtc_read_counter(
 	if (clock_frequency == 0)
 		return false;
 
-	/* Succeeded: Count with its wraps, at Count's rate. */
-	*value = mips_clock_read_counter();
+	/* Succeeded: the board's counter at its rate. */
+	*value = mips_board_counter_read();
 	*freq_hz = clock_frequency;
 	return true;
 }
@@ -177,23 +125,8 @@ uint64_t
 mips_clock_read_counter(
 	void)
 {
-	uint32_t now;
-	uint32_t wraps;
-	bool enabled;
-
-	/* Counts a wrap when Count went below its last reading. */
-	enabled = mips_irq_save();
-
-	now = read_count();
-	if (now < clock_last_count)
-		clock_wraps++;
-	clock_last_count = now;
-	wraps = clock_wraps;
-
-	mips_irq_restore(enabled);
-
-	/* Succeeded: the wraps above Count. */
-	return ((uint64_t)wraps << 32) | now;
+	/* Succeeded: the board's counter. */
+	return mips_board_counter_read();
 }
 
 /*
@@ -203,7 +136,7 @@ uint64_t
 mips_clock_frequency(
 	void)
 {
-	/* Succeeded: Count's rate. */
+	/* Succeeded: the counter's rate. */
 	return clock_frequency;
 }
 
@@ -216,27 +149,4 @@ mips_clock_ticks(
 {
 	/* Succeeded: the tick count. */
 	return clock_tick_count;
-}
-
-/* Reads Count (coprocessor 0 register 9). */
-static uint32_t
-read_count(
-	void)
-{
-	uint32_t value;
-
-	/* Moves the register from coprocessor 0. */
-	__asm__ volatile("mfc0 %0, $9" : "=r"(value));
-
-	/* Succeeded: the register's value. */
-	return value;
-}
-
-/* Writes Compare (coprocessor 0 register 11), which also clears the timer interrupt. */
-static void
-write_compare(
-	uint32_t value)
-{
-	/* The barrier keeps the interrupt from being seen still pending after the write. */
-	__asm__ volatile("mtc0 %0, $11\n\tehb" : : "r"(value) : "memory");
 }

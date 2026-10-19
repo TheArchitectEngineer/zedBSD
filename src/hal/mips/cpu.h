@@ -98,6 +98,23 @@ mips_read_config1(
 	return value;
 }
 
+/*
+ * Reads Config2 (coprocessor 0 register 16, select 2), which describes
+ * the secondary cache.  It exists when Config1.M is set.
+ */
+static __inline uint32_t
+mips_read_config2(
+	void)
+{
+	uint32_t value;
+
+	/* Moves the register from coprocessor 0. */
+	__asm__ volatile("mfc0 %0, $16, 2" : "=r"(value));
+
+	/* Succeeded: the register's value. */
+	return value;
+}
+
 void mips_halt_forever(void) __attribute__((noreturn));
 
 void

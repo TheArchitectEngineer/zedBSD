@@ -8,8 +8,9 @@
 /*
  * The MIPS processor's first C code, from locore.S on.
  *
- * The loader's tables are copied before anything may overwrite them, the
- * board's display is set up, and what was found is printed on it.  Then
+ * The caches the loader leaves are emptied, the loader's tables are
+ * copied before anything may overwrite them, the board's display is set
+ * up, and what was found is printed on it.  Then
  * the trap handling and the context switch are checked, the caches, the
  * floating-point unit, physical memory and the TLB are set up, the
  * board's interrupt controllers are set up with every line masked, and
@@ -26,6 +27,7 @@
 #include "bsp.h"
 #include "cache.h"
 #include "clock.h"
+#include "cons.h"
 #include "cpu.h"
 #include "fpu.h"
 #include "io.h"
@@ -40,10 +42,13 @@
 #define CMAIN_TICKS_WANTED	10U
 
 /*
- * How long the boot waits for those ticks, in Count cycles per tick:
+ * How long the boot waits for those ticks, in counter cycles per tick:
  * ten intervals' worth for each, so that a slow host does not fail it.
  */
 #define CMAIN_TICK_WAIT_FACTOR	10U
+
+/* The pieces of the bring-up's summary line. */
+#define CMAIN_READY_PIECES	6U
 
 #if defined(HAL_ARCH_MIPS64)
 static void check_direct_map(void);
@@ -69,10 +74,18 @@ mips_cmain(
 	uint32_t processor_id;
 	uint32_t config;
 
+	/*
+	 * Writes back and empties what the loader left in the caches, so
+	 * that none of its lines is written over memory the HAL uses later.
+	 */
+	mips_cache_flush_all_early();
+	mips_board_early_mark(MIPS_EARLY_MARK_C);
+
 	/* Keeps the loader's tables while the memory they are in is untouched. */
 	mips_board_boot(argument_count, argument_table, environment_table, low_memory_size);
 
 	/* Shows the display, which then holds what the console printed. */
+	mips_board_early_mark(MIPS_EARLY_MARK_DISPLAY);
 	mips_board_init();
 
 	/* Describes the processor as locore.S left it. */
@@ -135,6 +148,7 @@ hal_cpu_start_others(
 {
 	const char *display;
 	const char *timer;
+	const char *pieces[CMAIN_READY_PIECES];
 	bool shown;
 	uint32_t ticks;
 
@@ -145,14 +159,23 @@ hal_cpu_start_others(
 	display = "NONE";
 	shown = mips_board_display_ready();
 	if (shown)
-		display = "VGA";
+		display = mips_board_display_name();
 	timer = "NO TICK";
 	ticks = mips_clock_ticks();
 	if (ticks != 0)
 		timer = "TICK";
 
-	/* The line stays in view after the kernel's own lines. */
-	hal_printf(MIPS_HAL_NAME " HAL READY DISPLAY %s PAGING PASS TIMER %s\n", display, timer);
+	/*
+	 * The line stays in view after the kernel's own lines; on a narrow
+	 * display it breaks between words.
+	 */
+	pieces[0] = MIPS_HAL_NAME " HAL READY";
+	pieces[1] = "DISPLAY";
+	pieces[2] = display;
+	pieces[3] = "PAGING PASS";
+	pieces[4] = "TIMER";
+	pieces[5] = timer;
+	mips_cons_print_words(pieces, CMAIN_READY_PIECES);
 	hal_puts(MIPS_HAL_NAME " CPU 1 ONLINE\n");
 
 	/* Succeeded: the one processor is up. */
@@ -181,6 +204,9 @@ mips_early_exception(
 		   exception_pc,
 		   bad_address,
 		   status);
+
+	/* Shows the code on a board whose console may not show yet. */
+	mips_board_early_fault(code);
 
 	/* Stops for good. */
 	mips_halt_forever();
@@ -217,9 +243,9 @@ wait_for_ticks(
 	uint32_t ticks;
 	uint32_t frequency;
 
-	/* Opens the timer's and the board's lines, then interrupts. */
+	/* Opens the lines the board's tick and interrupts come on, then interrupts. */
 	status = mips_read_status();
-	status |= MIPS_INTERRUPT_TIMER | MIPS_INTERRUPT_BOARD;
+	status |= mips_board_interrupt_mask();
 	__asm__ volatile("mtc0 %0, $12\n\tehb" : : "r"(status) : "memory");
 	mips_irq_restore(true);
 

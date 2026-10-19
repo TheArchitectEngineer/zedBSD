@@ -7,7 +7,8 @@
 
 /*
  * What the MIPS HAL asks of its board: the loader's tables, the display
- * and its console, the rate of Count and the external interrupts.
+ * and its console, the marks of the boot before the console shows, the
+ * tick and the counter, and the interrupts.
  */
 
 #ifndef KERN_HAL_MIPS_BSP_H
@@ -38,8 +39,28 @@ bool
 mips_board_display_ready(
 	void);
 
+const char *
+mips_board_display_name(
+	void);
+
+void
+mips_board_early_mark(
+	unsigned stage);
+
+void
+mips_board_early_fault(
+	uint32_t code);
+
 uint32_t
-mips_board_count_frequency(
+mips_board_timer_init(
+	uint32_t hz);
+
+uint64_t
+mips_board_counter_read(
+	void);
+
+uint32_t
+mips_board_interrupt_mask(
 	void);
 
 uint32_t
@@ -70,8 +91,8 @@ mips_board_irq_register(
 	void (*handler)(void *),
 	void *argument);
 
-void
+bool
 mips_board_interrupt(
-	void);
+	uint32_t pending);
 
 #endif
