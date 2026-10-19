@@ -4,7 +4,7 @@
 
 - 親: [ws269](../ws.md)、設計: [design.md](../design.md) §3.3・§4・§6 の p003・§8 の D3
 - Queue: q1328 / q1328-i01（P2、2026-10-19）
-- Status: in-progress（2026-10-19 P2 が実装と確かめを終えた。clearance は Q1 の判定）
+- Status: cleared（2026-10-19 Q1 の判定: package・mirror の sha256・license の同意・VF2 の rootfs への install・menuconfig の host 試験 6 target が PASS。CONFIG_DRIVER_POWERVR の既定は driver が出来るまで n（D3 (a) の既定 on は p004 で driver を作る時に y にする、引き継ぎは本文）。VF2 の disk image・QEMU・実機は未実施）
 - 前提: p002（cleared）、D3 (a)（決定済み）、mirror（[phase002](../phase002/phase.md) の「mirror」節、awemorris/zedBSD-firmware df57bb4）
 
 ## 目的と受け入れの条件
