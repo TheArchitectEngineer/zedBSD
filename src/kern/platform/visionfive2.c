@@ -30,6 +30,8 @@
  * The SD card slot's card is published as the disk mmcblk0 beside the
  * ramdisk; the boot device stays the ramdisk.  Once interrupts are on,
  * the boot log lists the card's partitions.
+ *
+ * The first Ethernet port is published as the network interface en0.
  */
 
 #include <stddef.h>
@@ -41,6 +43,7 @@
 #include <drivers/generic/ramdisk.h>
 #include <drivers/generic/serial-console.h>
 #include <drivers/platform/visionfive2/vf2-crg.h>
+#include <drivers/platform/visionfive2/vf2-ethernet.h>
 #include <drivers/platform/visionfive2/vf2-mmc.h>
 #include <drivers/platform/visionfive2/vf2-pcie.h>
 #include <drivers/platform/visionfive2/vf2-pinctrl.h>
@@ -115,6 +118,7 @@ static void probe_soc(void);
 static void describe_clocks(void);
 static void describe_card_detect(const struct drv_fdt *fdt);
 static void attach_sd_card(void);
+static void attach_ethernet(void);
 static void describe_sd_partitions(void);
 
 /*
@@ -163,6 +167,9 @@ kern_platform_init(
 
 	/* Publishes the SD card beside it. */
 	attach_sd_card();
+
+	/* Publishes the Ethernet port. */
+	attach_ethernet();
 
 	/* Without the ramdisk the board has no boot device. */
 	if (error != 0)
@@ -621,6 +628,35 @@ attach_sd_card(
 
 	/* Succeeded: the card is a disk. */
 	kern_logf("visionfive2: SD card is %s\n", sd_card->d_name);
+}
+
+/*
+ * Brings up the first Ethernet port and publishes it as en0.
+ *
+ * A board whose SoC blocks did not come up, or a port that fails, leaves
+ * the board without the interface; the boot goes on.
+ */
+static void
+attach_ethernet(
+	void)
+{
+	int error;
+
+	/* Needs the clocks, resets and pins the port's glue switches. */
+	if (!soc_ready) {
+		kern_logf("visionfive2: Ethernet not brought up: SoC blocks unavailable\n");
+		return;
+	}
+
+	/* Brings the port and its PHY up. */
+	error = drv_vf2_ethernet_attach(&soc_tree, VF2_DMA_DEFAULT_COHERENT);
+	if (error != 0) {
+		kern_logf("visionfive2: no Ethernet (%d)\n", error);
+		return;
+	}
+
+	/* Succeeded: the port is a network interface. */
+	kern_logf("visionfive2: Ethernet is en0\n");
 }
 
 /*

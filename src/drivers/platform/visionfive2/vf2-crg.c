@@ -235,8 +235,11 @@ static const struct crg_clock sys_clocks[] = {
 	{ 96, CLOCK_GATE | CLOCK_SHARED, 0, 0, 1,
 	  { { SOURCE_NONE, DRV_VF2_CRG_SYS, 0, NULL } } },
 
-	/* The first Ethernet controller's transmit clock source. */
-	{ 108, CLOCK_GATE | CLOCK_DIVIDER, 1, 15, 1,
+	/*
+	 * The first Ethernet controller's transmit clock source, whose rate
+	 * its driver sets on a board that takes the transmit clock from it.
+	 */
+	{ 108, CLOCK_GATE | CLOCK_DIVIDER | CLOCK_SETTABLE, 1, 15, 1,
 	  { { SOURCE_PLL, DRV_VF2_CRG_SYS, 0, NULL } } },
 
 	/* The first Ethernet controller's time-stamp clock. */
@@ -754,6 +757,131 @@ drv_vf2_clock_apply_assigned(
 	}
 
 	/* Succeeded: every assigned rate is set. */
+	return 0;
+}
+
+/*
+ * Makes a multiplexed clock run from one of its sources.
+ */
+int
+drv_vf2_clock_set_parent(
+	const struct drv_vf2_clock *clock,
+	const struct drv_vf2_clock *parent)
+{
+	const struct crg_clock *entry;
+	const struct crg_source *source;
+	volatile uint32_t *address;
+	unsigned long irq;
+	uint32_t contents;
+	unsigned selector;
+
+	/* Refuses a missing clock or parent, or a clock outside the tables. */
+	if (clock == NULL || parent == NULL)
+		return EINVAL;
+	entry = find_clock(clock->crg, clock->index);
+	if (entry == NULL)
+		return ENOENT;
+
+	/* Refuses a clock without a selector, or one several devices run on. */
+	if ((entry->flags & CLOCK_MUX) == 0)
+		return ENOTSUP;
+	if ((entry->flags & CLOCK_SHARED) != 0)
+		return ENOTSUP;
+	address = clock_register(clock->crg, clock->index);
+	if (address == NULL)
+		return ENODEV;
+
+	/* Finds the parent among the clock's sources. */
+	for (selector = 0; selector < entry->source_count; selector++) {
+		/* Stops at the source that is the parent clock. */
+		source = &entry->sources[selector];
+		if (source->kind == SOURCE_CLOCK &&
+		    source->crg == parent->crg &&
+		    source->number == parent->index)
+			break;
+	}
+
+	/* Refuses a parent the clock cannot run from. */
+	if (selector == entry->source_count)
+		return ENOENT;
+
+	/* Writes the selector, keeping the gate and the other fields. */
+	irq = spin_lock_irqsave(&crg_lock);
+
+	contents = kern_mmio_read32(address);
+	contents &= ~(CRG_MUX_MASK << CRG_MUX_SHIFT);
+	contents |= (uint32_t)selector << CRG_MUX_SHIFT;
+	kern_mmio_write32(address, contents);
+
+	spin_unlock_irqrestore(&crg_lock, irq);
+
+	/* Succeeded: the clock runs from the parent. */
+	return 0;
+}
+
+/*
+ * Applies a device's assigned-clocks and assigned-clock-parents.
+ */
+int
+drv_vf2_clock_apply_assigned_parents(
+	const struct drv_fdt *fdt,
+	uint32_t node)
+{
+	struct drv_vf2_clock clock;
+	struct drv_vf2_clock parent;
+	const uint8_t *parents;
+	uint32_t parents_length;
+	unsigned position;
+	int error;
+
+	/* Refuses a missing blob. */
+	if (fdt == NULL)
+		return EINVAL;
+
+	/* Reads the parents; a device without them has nothing to apply. */
+	error = drv_fdt_property(fdt, node, "assigned-clock-parents", &parents, &parents_length);
+	if (error != 0)
+		return error;
+
+	/* Moves every clock the list names a parent for. */
+	position = 0;
+	for (;;) {
+		/* Finds the parent at this position; the list ends where its entries do. */
+		error = lookup_specifier(fdt,
+					 node,
+					 "assigned-clock-parents",
+					 "#clock-cells",
+					 position,
+					 &parent.crg,
+					 &parent.index);
+		if (error == ENOENT)
+			break;
+
+		/* Refuses a parent that is not a generator's clock. */
+		if (error != 0)
+			return error;
+
+		/* Finds the clock the same position of assigned-clocks names. */
+		error = lookup_specifier(fdt,
+					 node,
+					 "assigned-clocks",
+					 "#clock-cells",
+					 position,
+					 &clock.crg,
+					 &clock.index);
+		if (error != 0)
+			return error;
+
+		/* Makes the clock run from the parent. */
+		error = drv_vf2_clock_set_parent(&clock, &parent);
+		if (error != 0)
+			return error;
+
+		/* Goes on to the next entry. */
+		position++;
+	}
+
+	/* Succeeded: every assigned parent is set. */
 	return 0;
 }
 

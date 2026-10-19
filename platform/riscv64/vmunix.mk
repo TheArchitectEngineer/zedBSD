@@ -71,6 +71,13 @@ RISCV64_PLATFORM_SOURCES_visionfive2 := src/kern/platform/visionfive2.c \
 	src/drivers/mmc/dw-mmc.c \
 	src/drivers/disklabel/gpt.c src/drivers/disklabel/pcat.c
 
+# The VisionFive 2's first Ethernet port: the DesignWare Ethernet QoS
+# controller, its JH7110 glue, and the PHY drivers for its MDIO bus.
+RISCV64_PLATFORM_SOURCES_visionfive2 += \
+	src/drivers/platform/visionfive2/vf2-ethernet.c \
+	src/drivers/ethernet/dw-eqos.c src/drivers/ethernet/mii-phy.c \
+	src/drivers/ethernet/yt8531.c
+
 RISCV64_KERNEL_SOURCES := \
 	src/kern/main.c \
 	$(KERN_FAT_SOURCES) \

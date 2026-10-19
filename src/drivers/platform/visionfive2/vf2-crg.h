@@ -123,6 +123,21 @@ int drv_vf2_clock_set_rate(const struct drv_vf2_clock *clock, uint64_t rate);
 int drv_vf2_clock_apply_assigned(const struct drv_fdt *fdt, uint32_t node);
 
 /*
+ * Makes a multiplexed clock run from one of its sources.
+ *
+ * ENOTSUP means the clock has no selector or other devices share it;
+ * ENOENT that the parent is not one of its sources.
+ */
+int drv_vf2_clock_set_parent(const struct drv_vf2_clock *clock, const struct drv_vf2_clock *parent);
+
+/*
+ * Applies a device's assigned-clocks and assigned-clock-parents.
+ *
+ * ENOENT means the device has no assigned parents.
+ */
+int drv_vf2_clock_apply_assigned_parents(const struct drv_fdt *fdt, uint32_t node);
+
+/*
  * Finds a reset line of a device by its reset-names entry.
  *
  * A NULL name takes the first entry of the resets property.
