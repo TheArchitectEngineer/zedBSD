@@ -673,19 +673,24 @@ drv_dw_axi_dmac_cyclic_stop(
 	if (channel == NULL)
 		return;
 
-	/* Disarms the interrupt's restart and stops the channel. */
+	/*
+	 * Disarms the interrupt's restart, silences the channel's interrupt
+	 * first (the interrupt skips a channel no longer running, so a
+	 * period ending now must not hold the shared line raised), and stops
+	 * the channel.
+	 */
 	enabled = spin_lock_irqsave(&channel->controller->lock);
 
 	channel->running = 0;
+	write_channel(channel, AXI_CH_SIGNAL_ENABLE, 0);
 	switch_channel(channel, 0);
 
 	spin_unlock_irqrestore(&channel->controller->lock, enabled);
 
-	/* Waits for the channel's last beats, then silences it. */
+	/* Waits for the channel's last beats, then clears what it reported. */
 	error = wait_idle(channel);
 	if (error != 0)
 		kern_logf("dw-axi-dmac: channel %u did not stop\n", channel->index);
-	write_channel(channel, AXI_CH_SIGNAL_ENABLE, 0);
 	write_channel(channel, AXI_CH_STATUS_ENABLE, 0);
 	write_channel(channel, AXI_CH_CLEAR, AXI_EVENT_ALL);
 }
