@@ -17,7 +17,8 @@
  *
  * and last "gpu-selftest: N ok, M fail, K skip".  The kernel stage reads
  * hw.gpu.powervr.stages and copies it on a line "gpu-selftest: stages: ...".
- * instance, device and compute come from one run of vkcompute.  The stages
+ * instance, device and compute come from one run of vkcompute, image
+ * from a run of vkimage.  The stages
  * of later phases print skip(not built) until those phases add them.
  *
  * Options (the host test uses them in place of the board's):
@@ -25,6 +26,7 @@
  *   -s FILE     read the stages text from FILE, not the sysctl
  *   -n NODE     a render node to open (more than one -n tries each)
  *   -v PATH     the vkcompute program
+ *   -i PATH     the vkimage program
  *   -t SECONDS  the time limit of each stage (default 10)
  *
  * The exit status is 0 when no stage failed.
@@ -66,6 +68,7 @@ struct selftest {
 	const char *nodes[SELFTEST_NODES_MAX];
 	int node_count;
 	const char *vkcompute;
+	const char *vkimage;
 	int limit;
 	int counts[3];
 };
@@ -83,6 +86,8 @@ static int read_stages(struct selftest *test, char *text, size_t capacity);
 static int stage_kernel(struct selftest *test, char *reason, size_t capacity);
 static int stage_node(struct selftest *test, char *reason, size_t capacity);
 static int stage_vkcompute(struct selftest *test, char *reason, size_t capacity);
+static int stage_image(struct selftest *test, char *reason, size_t capacity);
+static int run_program(const char *path, char *line, size_t capacity);
 static int is_vkcompute_stage(const char *name);
 static void vkcompute_outcomes(int status, const char *line, enum outcome *results, char reasons[3][SELFTEST_TEXT_MAX]);
 
@@ -93,7 +98,7 @@ static const struct stage stages[] = {
 	{ "instance", "node", NULL },
 	{ "device", "instance", NULL },
 	{ "compute", "device", NULL },
-	{ "image", "device", NULL },
+	{ "image", "device", stage_image },
 	{ "clear", "image", NULL },
 	{ "copy", "image", NULL },
 	{ "draw", "image", NULL },
@@ -341,27 +346,70 @@ stage_vkcompute(
 	size_t capacity)
 {
 	char line[SELFTEST_TEXT_MAX];
+	int status;
+
+	/* Always "fails" to the parent so the line comes back; the parent reads the status in it. */
+	status = run_program(test->vkcompute, line, sizeof(line));
+	snprintf(reason, capacity, "%d %s", status, line);
+	return 1;
+}
+
+/* The child of the image stage: vkimage's exit 0 is ok, else its line is the reason. */
+static int
+stage_image(
+	struct selftest *test,
+	char *reason,
+	size_t capacity)
+{
+	char line[SELFTEST_TEXT_MAX];
+	int status;
+
+	/* One run of vkimage. */
+	status = run_program(test->vkimage, line, sizeof(line));
+	if (status == 0)
+		return 0;
+
+	/* Failed: its line, or its status when it printed none. */
+	if (line[0] != '\0')
+		snprintf(reason, capacity, "%s", line);
+	else
+		snprintf(reason, capacity, "exit %d", status);
+	return 1;
+}
+
+/*
+ * Runs a program with its first output line in line; reports its exit
+ * status (128 when it did not exit, 127 when it could not run).
+ */
+static int
+run_program(
+	const char *path,
+	char *line,
+	size_t capacity)
+{
 	size_t length;
 	pid_t child;
 	int pipes[2];
 	int status;
 	ssize_t got;
 
-	/* vkcompute's standard output comes back through a pipe. */
+	/* Its standard output comes back through a pipe. */
+	line[0] = '\0';
 	if (pipe(pipes) != 0) {
-		snprintf(reason, capacity, "1 pipe");
+		snprintf(line, capacity, "pipe");
 		return 1;
 	}
 	child = fork();
 	if (child < 0) {
-		snprintf(reason, capacity, "1 fork");
+		snprintf(line, capacity, "fork");
 		return 1;
 	}
 	if (child == 0) {
 		close(pipes[0]);
 		dup2(pipes[1], STDOUT_FILENO);
-		execl(test->vkcompute, test->vkcompute, (char *)NULL);
-		printf("vkcompute: not run (exec %d)\n", errno);
+		execl(path, path, (char *)NULL);
+		printf("%s: not run (exec %d)\n", path, errno);
+		fflush(stdout);
 		_exit(127);
 	}
 
@@ -369,11 +417,11 @@ stage_vkcompute(
 	close(pipes[1]);
 	length = 0;
 	for (;;) {
-		got = read(pipes[0], line + length, sizeof(line) - 1U - length);
+		got = read(pipes[0], line + length, capacity - 1U - length);
 		if (got <= 0)
 			break;
 		length += (size_t)got;
-		if (length == sizeof(line) - 1U)
+		if (length == capacity - 1U)
 			break;
 	}
 	line[length] = '\0';
@@ -381,9 +429,10 @@ stage_vkcompute(
 	waitpid(child, &status, 0);
 	line[strcspn(line, "\n")] = '\0';
 
-	/* Always "fails" to the parent so the line comes back; the parent reads the status in it. */
-	snprintf(reason, capacity, "%d %s", WIFEXITED(status) ? WEXITSTATUS(status) : 128, line);
-	return 1;
+	/* Succeeded: its exit status. */
+	if (!WIFEXITED(status))
+		return 128;
+	return WEXITSTATUS(status);
 }
 
 /* Says whether name is one of the stages the vkcompute run decides. */
@@ -465,8 +514,9 @@ main(
 	/* The board's defaults, then the options. */
 	memset(&test, 0, sizeof(test));
 	test.vkcompute = "/bin/vkcompute";
+	test.vkimage = "/bin/vkimage";
 	test.limit = 10;
-	while ((option = getopt(argc, argv, "cs:n:v:t:")) != -1) {
+	while ((option = getopt(argc, argv, "cs:n:v:i:t:")) != -1) {
 		if (option == 'c') {
 			test.console = 1;
 		} else if (option == 's') {
@@ -475,10 +525,12 @@ main(
 			test.nodes[test.node_count++] = optarg;
 		} else if (option == 'v') {
 			test.vkcompute = optarg;
+		} else if (option == 'i') {
+			test.vkimage = optarg;
 		} else if (option == 't') {
 			test.limit = atoi(optarg);
 		} else {
-			fprintf(stderr, "usage: gpu-selftest [-c] [-s file] [-n node]... [-v vkcompute] [-t seconds]\n");
+			fprintf(stderr, "usage: gpu-selftest [-c] [-s file] [-n node]... [-v vkcompute] [-i vkimage] [-t seconds]\n");
 			return 2;
 		}
 	}

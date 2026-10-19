@@ -20,9 +20,11 @@
 size_t frame_setup(uint32_t reply_blob, uint8_t **bytes);
 size_t frame_memory(uint32_t reply_blob, uint64_t memory_bytes, uint8_t **bytes);
 size_t frame_compute(uint32_t reply_blob, const uint32_t *spirv, size_t spirv_words, const uint32_t *bad_spirv, size_t bad_words, uint32_t groups, uint8_t **bytes);
+size_t frame_image(uint32_t reply_blob, uint8_t **bytes);
 void replies_setup(uint8_t *reply);
 void replies_memory(uint8_t *reply);
 void replies_compute(uint8_t *reply);
+void replies_image(uint8_t *reply);
 void frame_counts(int *passed, int *failed);
 
 #endif

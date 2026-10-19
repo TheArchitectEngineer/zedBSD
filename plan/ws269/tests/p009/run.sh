@@ -30,7 +30,7 @@ done
 cc -std=c11 -O1 -Wall -Wextra -Werror -I"$root/include" -I"$out/inc" -I"$root/userland/desktop/libvulkan" \
 	-c "$here/frame-host.c" -o "$out/vk/frame-host.o"
 objects=""
-for file in vk-object vk-stream vk-device vk-memory vk-layout vk-command vk-queue spirv-fill compute-program usc-encode pds-encode; do
+for file in vk-object vk-stream vk-device vk-memory vk-image image-state vk-layout vk-command vk-queue spirv-fill compute-program usc-encode pds-encode; do
 	cc -std=c11 -O1 -Wall -Wextra -Werror -I"$root/include" -I"$root/src" \
 		-c "$root/src/drivers/gpu/powervr/$file.c" -o "$out/vk/$file.o"
 	objects="$objects $out/vk/$file.o"

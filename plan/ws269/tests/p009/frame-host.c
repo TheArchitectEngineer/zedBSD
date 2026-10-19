@@ -44,6 +44,14 @@
 #define ID_FENCE		20U
 #define ID_BAD_SHADER		21U
 #define ID_BAD_PIPELINE		22U
+#define ID_SHARED_IMAGE		23U
+#define ID_EXPORT_MEMORY	24U
+#define ID_IMPORT_MEMORY	25U
+#define ID_LINEAR_IMAGE		26U
+#define ID_IMAGE_MEMORY		27U
+#define ID_IMAGE		28U
+#define ID_VIEW			29U
+#define ID_SAMPLER		30U
 
 /* Local objects whose pointers are the handles libvulkan's encoders turn into wire identities. */
 static struct vulkan_object objects[32];
@@ -278,6 +286,188 @@ frame_memory(
 	vulkan_write_u64(&w, 1);
 	vulkan_write_u64(&w, ID_MEMORY);
 	append(&frame, &w);
+	return frame_end(&frame, bytes);
+}
+
+/* Appends a vkAllocateMemory of bytes; chain_type 0 for none, else one record of that sType and value. */
+static void
+allocate_memory(
+	struct vulkan_writer *frame,
+	uint64_t identity,
+	uint64_t bytes,
+	uint32_t chain_type,
+	uint32_t chain_value)
+{
+	struct vulkan_writer w;
+
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_ALLOCATE_MEMORY);
+	vulkan_write_u64(&w, ID_DEVICE);
+	vulkan_write_u64(&w, 1);
+	vulkan_write_u32(&w, VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO);
+	vulkan_write_u64(&w, chain_type != 0 ? 1 : 0);
+	if (chain_type != 0) {
+		vulkan_write_u32(&w, chain_type);
+		vulkan_write_u64(&w, 0);
+		vulkan_write_u32(&w, chain_value);
+	}
+	vulkan_write_u64(&w, bytes);
+	vulkan_write_u32(&w, 0);
+	create_tail(&w, identity);
+	append(frame, &w);
+}
+
+/* Appends a vkCreateImage of a 2D colour image, with libvulkan's external declaration when external. */
+static void
+create_image(
+	struct vulkan_writer *frame,
+	uint64_t identity,
+	VkFormat format,
+	uint32_t width,
+	uint32_t height,
+	VkImageTiling tiling,
+	VkImageUsageFlags usage,
+	int external)
+{
+	VkExternalMemoryImageCreateInfo declaration;
+	VkImageCreateInfo image;
+	struct vulkan_writer w;
+
+	memset(&declaration, 0, sizeof(declaration));
+	declaration.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO;
+	declaration.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
+	memset(&image, 0, sizeof(image));
+	image.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	if (external)
+		image.pNext = &declaration;
+	image.imageType = VK_IMAGE_TYPE_2D;
+	image.format = format;
+	image.extent.width = width;
+	image.extent.height = height;
+	image.extent.depth = 1;
+	image.mipLevels = 1;
+	image.arrayLayers = 1;
+	image.samples = VK_SAMPLE_COUNT_1_BIT;
+	image.tiling = tiling;
+	image.usage = usage;
+	image.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	image.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_CREATE_IMAGE);
+	vulkan_write_u64(&w, ID_DEVICE);
+	vulkan_write_u64(&w, 1);
+	vulkan_encode_VkImageCreateInfo(&w, &image);
+	create_tail(&w, identity);
+	append(frame, &w);
+}
+
+/*
+ * The image frame: the format queries, the refusals that keep a window
+ * system off the shared path (an image declaring external memory, an
+ * export and an import), a linear image and its layout, and an optimal
+ * image bound to memory with a view and a sampler.
+ */
+size_t
+frame_image(
+	uint32_t reply_blob,
+	uint8_t **bytes)
+{
+	VkImageSubresource subresource;
+	VkImageViewCreateInfo view;
+	VkSamplerCreateInfo sampler;
+	struct vulkan_writer frame;
+	struct vulkan_writer w;
+	int pass;
+
+	frame_begin(&frame, reply_blob);
+
+	/* The format's features, then the image queries of each tiling. */
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_GET_PHYSICAL_DEVICE_FORMAT_PROPERTIES);
+	vulkan_write_u64(&w, ID_PHYSICAL);
+	vulkan_write_u32(&w, VK_FORMAT_R8G8B8A8_UNORM);
+	vulkan_write_u64(&w, 1);
+	append(&frame, &w);
+	for (pass = 0; pass < 2; pass++) {
+		vulkan_writer_init(&w);
+		vulkan_command_begin(&w, GPU_OP_GET_PHYSICAL_DEVICE_IMAGE_FORMAT_PROPERTIES);
+		vulkan_write_u64(&w, ID_PHYSICAL);
+		vulkan_write_u32(&w, VK_FORMAT_B8G8R8A8_UNORM);
+		vulkan_write_u32(&w, VK_IMAGE_TYPE_2D);
+		vulkan_write_u32(&w, pass == 0 ? VK_IMAGE_TILING_LINEAR : VK_IMAGE_TILING_OPTIMAL);
+		vulkan_write_u32(&w, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+		vulkan_write_u32(&w, 0);
+		vulkan_write_u64(&w, 1);
+		append(&frame, &w);
+	}
+
+	/* The shared path's three refusals. */
+	create_image(&frame, ID_SHARED_IMAGE, VK_FORMAT_B8G8R8A8_UNORM, 64, 64, VK_IMAGE_TILING_LINEAR, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, 1);
+	allocate_memory(&frame, ID_EXPORT_MEMORY, 16384, VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO, VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT);
+	allocate_memory(&frame, ID_IMPORT_MEMORY, 16384, GPU_OP_RECORD_IMPORT_RESOURCE, 7);
+
+	/* A linear image of 100 texels a row and its layout. */
+	create_image(&frame, ID_LINEAR_IMAGE, VK_FORMAT_R8G8B8A8_UNORM, 100, 10, VK_IMAGE_TILING_LINEAR, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, 0);
+	memset(&subresource, 0, sizeof(subresource));
+	subresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_GET_IMAGE_SUBRESOURCE_LAYOUT);
+	vulkan_write_u64(&w, ID_DEVICE);
+	vulkan_encode_handle(&w, handle(ID_LINEAR_IMAGE));
+	vulkan_write_u64(&w, 1);
+	vulkan_encode_VkImageSubresource(&w, &subresource);
+	vulkan_write_u64(&w, 1);
+	append(&frame, &w);
+
+	/* An optimal image, its requirements, its memory and binding. */
+	allocate_memory(&frame, ID_IMAGE_MEMORY, 8192, 0, 0);
+	create_image(&frame, ID_IMAGE, VK_FORMAT_R8G8B8A8_UNORM, 30, 20, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, 0);
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_GET_IMAGE_MEMORY_REQUIREMENTS);
+	vulkan_write_u64(&w, ID_DEVICE);
+	vulkan_encode_handle(&w, handle(ID_IMAGE));
+	vulkan_write_u64(&w, 1);
+	append(&frame, &w);
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_BIND_IMAGE_MEMORY);
+	vulkan_write_u64(&w, ID_DEVICE);
+	vulkan_encode_handle(&w, handle(ID_IMAGE));
+	vulkan_encode_handle(&w, handle(ID_IMAGE_MEMORY));
+	vulkan_write_u64(&w, 4096);
+	append(&frame, &w);
+
+	/* Its view and a sampler. */
+	memset(&view, 0, sizeof(view));
+	view.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	view.image = (VkImage)(uintptr_t)handle(ID_IMAGE);
+	view.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	view.format = VK_FORMAT_R8G8B8A8_UNORM;
+	view.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	view.subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
+	view.subresourceRange.layerCount = 1;
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_CREATE_IMAGE_VIEW);
+	vulkan_write_u64(&w, ID_DEVICE);
+	vulkan_write_u64(&w, 1);
+	vulkan_encode_VkImageViewCreateInfo(&w, &view);
+	create_tail(&w, ID_VIEW);
+	append(&frame, &w);
+	memset(&sampler, 0, sizeof(sampler));
+	sampler.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+	sampler.magFilter = VK_FILTER_LINEAR;
+	sampler.minFilter = VK_FILTER_LINEAR;
+	sampler.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	sampler.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	sampler.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	sampler.maxLod = 0.25f;
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_CREATE_SAMPLER);
+	vulkan_write_u64(&w, ID_DEVICE);
+	vulkan_write_u64(&w, 1);
+	vulkan_encode_VkSamplerCreateInfo(&w, &sampler);
+	create_tail(&w, ID_SAMPLER);
+	append(&frame, &w);
+
 	return frame_end(&frame, bytes);
 }
 
@@ -769,6 +959,66 @@ replies_compute(
 	expect_result(&reader, GPU_OP_QUEUE_SUBMIT, VK_SUCCESS, "submit");
 	expect_result(&reader, GPU_OP_GET_FENCE_STATUS, VK_SUCCESS, "the fence is signaled after the submission");
 	check(reader.error == VK_SUCCESS, "compute replies read");
+	expect_trailer(reply);
+}
+
+/* Checks the replies of the image frame. */
+void
+replies_image(
+	uint8_t *reply)
+{
+	VkFormatProperties format;
+	VkImageFormatProperties limits;
+	VkSubresourceLayout layout;
+	VkMemoryRequirements requirements;
+	struct vulkan_reader reader;
+	uint32_t result;
+
+	vulkan_reader_init(&reader, NULL, 0);
+	reader.data = reply;
+	reader.bytes = FRAME_REPLY_BYTES - REPLY_TRAILER_BYTES;
+
+	expect_opcode(&reader, GPU_OP_GET_PHYSICAL_DEVICE_FORMAT_PROPERTIES, "format");
+	check(vulkan_reply_pointer(&reader), "format present");
+	memset(&format, 0, sizeof(format));
+	vulkan_decode_VkFormatProperties(&reader, &format);
+	check((format.linearTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) == 0 && (format.linearTilingFeatures & VK_FORMAT_FEATURE_TRANSFER_DST_BIT) != 0, "RGBA8 linear: copies but no sampling (no shared path yet)");
+	check((format.optimalTilingFeatures & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT) != 0 && (format.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) != 0, "RGBA8 optimal draws and samples");
+	check(format.bufferFeatures == VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT, "RGBA8 is a vertex format");
+	expect_opcode(&reader, GPU_OP_GET_PHYSICAL_DEVICE_IMAGE_FORMAT_PROPERTIES, "linear image query");
+	result = vulkan_read_u32(&reader);
+	check(result == (uint32_t)VK_ERROR_FORMAT_NOT_SUPPORTED, "a linear sampled BGRA8 image query is FORMAT_NOT_SUPPORTED");
+	check(vulkan_reply_pointer(&reader), "linear limits present");
+	vulkan_decode_VkImageFormatProperties(&reader, &limits);
+	expect_opcode(&reader, GPU_OP_GET_PHYSICAL_DEVICE_IMAGE_FORMAT_PROPERTIES, "optimal image query");
+	result = vulkan_read_u32(&reader);
+	check(result == VK_SUCCESS, "an optimal BGRA8 image query succeeds");
+	check(vulkan_reply_pointer(&reader), "optimal limits present");
+	memset(&limits, 0, sizeof(limits));
+	vulkan_decode_VkImageFormatProperties(&reader, &limits);
+	check(limits.maxExtent.width == 4096 && limits.maxArrayLayers == 256 && limits.sampleCounts == VK_SAMPLE_COUNT_1_BIT, "optimal limits");
+
+	expect_result(&reader, GPU_OP_CREATE_IMAGE, (uint32_t)VK_ERROR_FEATURE_NOT_PRESENT, "an image declaring external memory is FEATURE_NOT_PRESENT");
+	expect_result(&reader, GPU_OP_ALLOCATE_MEMORY, (uint32_t)VK_ERROR_FEATURE_NOT_PRESENT, "an export is FEATURE_NOT_PRESENT");
+	expect_result(&reader, GPU_OP_ALLOCATE_MEMORY, (uint32_t)VK_ERROR_FEATURE_NOT_PRESENT, "an import is FEATURE_NOT_PRESENT");
+
+	expect_created(&reader, GPU_OP_CREATE_IMAGE, ID_LINEAR_IMAGE, "linear image");
+	expect_opcode(&reader, GPU_OP_GET_IMAGE_SUBRESOURCE_LAYOUT, "subresource layout");
+	check(vulkan_reply_pointer(&reader), "layout present");
+	memset(&layout, 0, sizeof(layout));
+	vulkan_decode_VkSubresourceLayout(&reader, &layout);
+	check(layout.offset == 0 && layout.rowPitch == 416 && layout.size == 4160 && layout.rowPitch % 32U == 0, "100 RGBA8 texels: rows of 416 bytes");
+
+	expect_created(&reader, GPU_OP_ALLOCATE_MEMORY, ID_IMAGE_MEMORY, "image memory");
+	expect_created(&reader, GPU_OP_CREATE_IMAGE, ID_IMAGE, "optimal image");
+	expect_opcode(&reader, GPU_OP_GET_IMAGE_MEMORY_REQUIREMENTS, "image requirements");
+	check(vulkan_reply_pointer(&reader), "image requirements present");
+	vulkan_decode_VkMemoryRequirements(&reader, &requirements);
+	check(requirements.size == 4096 && requirements.alignment == 4096 && requirements.memoryTypeBits == 3U, "30x20 twiddled is 32x32: one page on the page");
+	expect_result(&reader, GPU_OP_BIND_IMAGE_MEMORY, VK_SUCCESS, "image bind");
+	expect_created(&reader, GPU_OP_CREATE_IMAGE_VIEW, ID_VIEW, "image view");
+	expect_created(&reader, GPU_OP_CREATE_SAMPLER, ID_SAMPLER, "sampler");
+	check(reader.error == VK_SUCCESS, "image replies read");
 	expect_trailer(reply);
 }
 

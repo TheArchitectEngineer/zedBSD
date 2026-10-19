@@ -451,6 +451,9 @@ main(
 	struct powervr_resource *reply;
 	struct powervr_resource *memory_blob;
 	struct powervr_vk_memory *memory;
+	struct powervr_vk_memory *image_memory;
+	struct powervr_vk_image_view *view;
+	struct powervr_vk_sampler *sampler;
 	uint32_t *spirv;
 	uint32_t *bad_spirv;
 	uint8_t *frame;
@@ -512,6 +515,24 @@ main(
 	replies_compute((uint8_t *)reply->buffer->view);
 	if (memory != NULL)
 		check_stream(memory->storage->address);
+
+	/* The image frame: the shared path refused, the linear and optimal images, the view's words. */
+	bytes = frame_image(reply->identifier, &frame);
+	error = powervr_vk_execute(session.vk, frame, (uint32_t)bytes);
+	free(frame);
+	check(error == 0, "image frame runs");
+	replies_image((uint8_t *)reply->buffer->view);
+	image_memory = powervr_vk_payload(session.vk, I915_VK_OBJ_MEMORY, 27);
+	view = powervr_vk_payload(session.vk, I915_VK_OBJ_IMAGE_VIEW, 29);
+	sampler = powervr_vk_payload(session.vk, I915_VK_OBJ_SAMPLER, 30);
+	check(image_memory != NULL && view != NULL && sampler != NULL, "the image memory, view and sampler are published");
+	if (image_memory != NULL && view != NULL) {
+		check(view->words[0] == 0x0013007460000a61ULL, "the view's first word: 2D, RGBA8, edges 30x20");
+		check(((view->words[1] >> 16) & 0x3FFFFFFFFFULL) << 2 == image_memory->storage->address + 4096U, "the view's address is the memory's plus the bind offset");
+		check((view->words[1] & 0xF) == 1 && ((view->words[1] >> 4) & 0x7FF) == 0, "one level, one layer");
+	}
+	if (sampler != NULL)
+		check(sampler->words[0] == 0x0200245008000fffULL, "the sampler's word: linear, clamp to edge, levels 0 to 0.25");
 
 	/* A frame cut in the middle of a command is refused. */
 	bytes = frame_setup(reply->identifier, &frame);
