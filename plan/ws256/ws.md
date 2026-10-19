@@ -37,8 +37,16 @@
 | p010 | toolchain（Q1、ユーザーの許可）: (a) LLVM の patch zedbsd9（riscv64 の `__ZEDBSD__`、linker の emulation）、(b) `sysroot.mk` の riscv64、(c) CI の cache | (a) いつでも、(b) は p007 の .S の後 | 2〜3 | in-progress（2026-10-18 Q1: (a)・(c) 済み。patch に riscv64（ZedBSDTargetInfo<RISCV64TargetInfo>・elf64lriscv・試験）、PATCH_LEVEL zedbsd9 で共有の LLVM を作り直し、`riscv64-unknown-zedbsd` で `__ZEDBSD__`・`-m elf64lriscv` を確認、amd64 の vmunix の build と check PASS。cache は rev-0 の asset zedbsd-llvm-23.1.0-zedbsd9-x86_64-linux.tar.gz（sha256 e971118c…、download して一致）。(b) sysroot.mk は p007 の時） |
 | p004 | loader の riscv64（PE の header の自作、`.rela.dyn` の自己 relocation、RISCV_EFI_BOOT_PROTOCOL、DTB の複写、ZBL6 の handoff、`satp`=0 で物理の入口へ）、`riscv64-handoff.h`、`bootloader.mk`・`disk-image.mk`（ESP＋root の GPT）、U-Boot `qemu-riscv64_smode` の導入（Q1、apt）、`elf64.c` の arch の書き分け。受け入れは U-Boot → BOOTRISCV64.EFI → vmunix → 画面の login と `uname -m` | p007、p009 | 10〜14 | planning |
 | p005 | VisionFive 2: bsp-visionfive2（ccache の dcache、mimpid・marchid の log、errata）、`visionfive2.c`、DW UART の RX の癖、platform/config/menuconfig、SD の 4 partition の image（SPL・itb・ESP・root）、U-Boot の SD からの起動の手順、実機の試験の道具、実機の login（10 回） | p004、板の接続・電源・UART（#10）、#15（実機の判定）、#2・#8 | 8〜12 ＋ debug 4〜8 | planning |
-| p006 | 規約の全文の見直し | 全部の後 | 2〜3 | planning |
+| p006 | 規約の全文の見直し（p011〜p019 を含む） | 全部の後 | 2〜3 | planning |
 | p011 | VisionFive 2 の framebuffer（2026-10-19 ユーザー「VisionFive2ってGPUもあるからまずはフレームバッファがあるとうれしい」→「WS256 に Phase を足す」）: (1) 調べ: 使う U-Boot（StarFive の配布版・mainline）が JH7110 の HDMI を初期化して UEFI の GOP を出すか、出すなら p004 の loader が GOP から ZBL6 の framebuffer を渡し、kernel は汎用の framebuffer の console で済む。(2) 出さない時は自前の display の driver の設計（VOUT の PMU・syscrg/voutcrg の clock・reset、Verisilicon DC8200、Innosilicon の HDMI の送信器と EDID。出典は StarFive の JH7110 の TRM、Linux の driver は値の引用だけ）を design-reviewer に通し、Phase に分ける。GPU（PowerVR BXE-4-32）は範囲外 | p004・p005（UART の login の後）、実機 | (1) 1〜2、(2) は設計の後に見積もる | planning |
+| p012 | 周辺の設計（改訂 3）: 下の p013〜p019 の調べと設計。JH7110 の clock（syscrg・aoncrg・stgcrg）・reset・pinctrl/GPIO・PMIC（AXP15060、I2C）、SD の controller（DesignWare MMC）、PCIe の host（PLDA XpressRICH）と USB の VL805（xHCI）、NVMe の M.2、GbE（Synopsys の Ethernet QoS と PHY）、sound の道（3.5mm・HDMI のどちらか、codec）を、StarFive の JH7110 の TRM・VisionFive 2 の回路図で確かめる（ここに書いた部品の名前は Q1 の覚えで、未確認）。既存の driver（pci-xhci・pci-nvme・usb-hid・audio、Pi 4 の pci-brcmstb の前例）を使う所を分ける。design-reviewer に通す | p001（今から可、実機は要らない） | 4〜6 | planning |
+| p013 | 周辺の基盤: clock・reset・pinctrl/GPIO・PMIC（I2C）の driver を bsp-visionfive2 か drivers/ に（p012 の設計の形） | p005・p012 | 未見積（p012 で） | planning |
+| p014 | SD カード: SD の controller の driver と block の device（既存の MBR・FAT の層に繋ぐ） | p013 | 未見積 | planning |
+| p015 | rootfs からの起動: SD の image（ESP・root）の root を mount して initrd 無しで起動し、画面（p011）で login | p011・p014 | 未見積 | planning |
+| p016 | PCIe の host と USB: PCIe の host の driver、VL805 の xHCI（既存の pci-xhci）、USB の keyboard（usb-hid）で console・login を操作 | p013 | 未見積 | planning |
+| p017 | NVMe: M.2 の NVMe SSD（ボードに付いている、試験できる）を既存の pci-nvme で読み書きし、NVMe の rootfs からの起動も確かめる | p016 | 未見積 | planning |
+| p018 | LAN: GbE の driver と PHY、DHCP・ssh | p013 | 未見積 | planning |
+| p019 | sound: p012 で決めた道（I2S と codec、または HDMI の audio）を既存の audio の層に繋ぎ、音を鳴らす | p013（HDMI なら p011） | 未見積 | planning |
 
 合計 76〜106 LW（うち Q1 の p009・p010 4〜6、実機の debug 4〜8）。
 
@@ -46,7 +54,7 @@
 
 - 板の版（v1.2A・v1.3B）と memory の大きさ（2・4・8 GB）（#2）。
 - 実機の試験の接続（USB-UART・電源の制御・LAN）（#10）と、**実機の判定の方法**（画面が無い。serial.py の対話を実機に限る例外にするか: #15）。
-- root の媒体（initrd か SD: #4、既定 initrd）、SD・eMMC・GbE・USB を後の WS にするか（#3。display は 2026-10-19 に p011 としてこの WS に入れた）。
+- root の媒体（initrd か SD: #4）と #3（周辺を後の WS にするか）は 2026-10-19 のユーザーの指示で決着: framebuffer・SD・rootfs・USB keyboard・LAN・sound・NVMe はこの WS（p011〜p019）。eMMC は未定。GPU は [WS269](../ws269/ws.md)、Keiland は [WS270](../ws270/ws.md)。
 - `include/kern/boot.h` を変えるか（#9: 既定は変えず HAL の名前付き handoff object）、HAL の差分 2 件＋名前付き object の承認（#13、p003 の前）、toolchain の p010（#14）。
 - sifive_u の走りを gdbstub の読み取りで判定に数えるか（#17）、p009 の tools の変更の担当（#18）。
 - 決定済み: 参照の方針（6、WS245 と同じ）、virt の判定（5、画面）。
@@ -71,3 +79,8 @@
 
 11. #9 は (a): HAL → kernel は汎用の構造体と `hal_get_arch_handoff` の名前付きの object だけ（2026-10-18 ユーザーの規約、[Guardrail](../guardrail.md)「HAL と kernel・boot loader と HAL の受け渡し」）。[proposed/boot-h-riscv64.md](proposed/boot-h-riscv64.md) の案 (b) は採らない。
 12. `bootloader/include/amd64-kernel-image.h` と同じ種類の riscv64 の約束（kernel の置き場所）を p004 で足す時に、arch ごとの命名と置き場所を揃える（2026-10-18 ユーザー「名前は riscv64 の時に揃える」）。
+
+## ユーザーの指示（2026-10-19 13:00）
+
+「VisionFive2はまずフレームバッファ、SDカードを実装して、rootfsから起動できるところまで持って行きます。USBキーボードで操作できるようにします。LANとサウンドとNVMeも使えるようにします。NVMe SSDがボードにつけてあり、テスト可能です。ここまでのphaseを作ってください。そのあと、PowerVRのドライバを独立WSで作ります。最終的に、VF2でkeilandを動かして、OSを完全に動作させます。」
+→ p012〜p019 を planning で足した（p011 は同日の framebuffer）。順は p004 → p005 → p011 → p013 → p014 → p015、p016 → p017、p018、p019（p012 の設計は今から可）。GPU は WS269、Keiland は WS270。
