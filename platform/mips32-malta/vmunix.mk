@@ -1,7 +1,15 @@
 # zedBSD mips32 malta kernel.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
-MIPS32_PLATFORM := platform/mips32-malta
+# A board's platform directory sets the four below before it includes this
+# file; the malta board is the default.
+MIPS32_PLATFORM ?= platform/mips32-malta
+MIPS32_BOARD_CPPFLAGS ?= -DHAL_BOARD_MALTA
+MIPS32_BSP ?= src/hal/mips/bsp-malta
+MIPS32_BSP_C ?= $(MIPS32_BSP)/board.c $(MIPS32_BSP)/irq.c \
+	$(MIPS32_BSP)/pci.c $(MIPS32_BSP)/framebuffer.c \
+	$(MIPS32_BSP)/timer.c
+MIPS32_BSP_S ?= $(MIPS32_BSP)/early.S
 AWK ?= awk
 
 # The project's LLVM has no zedBSD target for MIPS, so the kernel is built
@@ -16,7 +24,7 @@ MIPS32_OBJDUMP ?= $(ZEDBSD_TARGET_LLVM_BIN)/llvm-objdump
 # The kernel and the HAL read the compiler's freestanding headers and the
 # tree's include/ and src/, never the C library (as on the other ports).
 MIPS32_CPPFLAGS := -nostdlibinc -Iinclude -Isrc -I. -Isrc/hal/mips \
-	-DHAL_ARCH_MIPS32 -DHAL_BOARD_MALTA -DKERN_USER_ABI_MIPS32
+	-DHAL_ARCH_MIPS32 $(MIPS32_BOARD_CPPFLAGS) -DKERN_USER_ABI_MIPS32
 MIPS32_CPPFLAGS += $(ZEDBSD_CONFIG_CPPFLAGS)
 
 # A test build of the HAL takes the paths of a virtually tagged
@@ -45,7 +53,6 @@ MIPS32_KERNEL_LTO_CFLAGS := $(ZEDBSD_KERNEL_LTO_CFLAGS)
 # again, so that the optimized object is absolute code without small data.
 MIPS32_LTO_LDFLAGS := -mllvm -mattr=+noabicalls -mllvm -mips-ssection-threshold=0
 
-MIPS32_BSP := src/hal/mips/bsp-malta
 MIPS32_HAL_C := src/hal/mips/cmain.c src/hal/mips/lib.c \
 	src/hal/mips/int.c src/hal/mips/clock.c src/hal/mips/task.c \
 	src/hal/mips/cpu.c src/hal/mips/atomic.c src/hal/mips/irq.c \
@@ -53,12 +60,10 @@ MIPS32_HAL_C := src/hal/mips/cmain.c src/hal/mips/lib.c \
 	src/hal/mips/space.c src/hal/mips/debug.c src/hal/mips/selftest.c \
 	src/hal/mips/cons.c src/hal/mips/font.c \
 	src/hal/idle-suspend-unsupported.c \
-	$(MIPS32_BSP)/board.c $(MIPS32_BSP)/irq.c \
-	$(MIPS32_BSP)/pci.c $(MIPS32_BSP)/framebuffer.c \
-	$(MIPS32_BSP)/timer.c
+	$(MIPS32_BSP_C)
 MIPS32_HAL_S := src/hal/mips/locore.S src/hal/mips/vectors.S src/hal/mips/trap.S \
 	src/hal/mips/dispatch.S src/hal/mips/fpregs.S \
-	$(MIPS32_BSP)/early.S
+	$(MIPS32_BSP_S)
 MIPS32_HAL_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(MIPS32_HAL_C)) \
 	$(patsubst %.S,$(BUILD)/%.o,$(MIPS32_HAL_S))
 
