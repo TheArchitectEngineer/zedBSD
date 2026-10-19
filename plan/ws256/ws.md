@@ -52,7 +52,7 @@
 | p022 | p013 の実機の確かめ: clock の rate（U-Boot の `md` と照合）、card detect、PERST（§3.2） | p013・p005・#15 | 1〜2 | planning |
 | p023 | DMA の coherency の確かめ（陽性の対照、64 KiB の buffer、8 回）、非 coherent なら予備 (i)（確保ごとの uncached の別名、HAL の BSP）（§2.4・§3.9） | p013・p022・#15 | 3〜7 | planning |
 | p024 | NVMe の実機と NVMe の root（p017 から分けた）: M.2 の SSD の読み書き、pcat の形の root の選び方（§3.11） | p017・p020・p015 | 3〜4 | planning |
-| p025 | VF2 の skeleton（p005 から分けた、板の前）: `visionfive2.c` の最小、`platform/riscv64/vmunix.mk` の vf2 の枝、config・menuconfig、空の bsp-visionfive2、build（§3.10） | p004 | 2〜3 | planning |
+| [p025](phase025/phase.md) | VF2 の skeleton（p005 から分けた、板の前）: `visionfive2.c` の最小、`platform/riscv64/vmunix.mk` の vf2 の枝、config・menuconfig、bsp-visionfive2 の最小（`hal_dcache_*` は ccache の FLUSH64）、build（§3.10） | p004 | 2〜3 | in-progress（2026-10-19 q1278-i01 P2、code 6933d2fee、vf2・virt の vmunix warning 0。Q1 の判定待ち） |
 
 合計: p001〜p010 は 76〜106 LW（うち Q1 の p009・p010 4〜6、実機の debug 4〜8。[design.md](design.md) §6）。p011・p013〜p024 は 69〜108 LW（[design-peripherals.md](design-peripherals.md) §4.1、改訂 4。p025 の 2〜3 は p005 から移した分）。
 
