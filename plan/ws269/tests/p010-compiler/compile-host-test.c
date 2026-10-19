@@ -48,6 +48,7 @@ static uint32_t memory[MEMORY_WORDS];
 static uint32_t machine_memory[MEMORY_WORDS];
 static uint32_t push_words[32];
 static uint32_t workgroup_id;
+static const struct powervr_shader_key *current_key;
 
 /* The mask of the first count lanes. */
 static uint32_t
@@ -221,6 +222,20 @@ run_sample(
 	sample_words(image, sampler, u, v, result);
 }
 
+/* Fills the pixel outputs with the colours already in the tile. */
+static void
+pixels_prepare(
+	uint32_t pixels[4][32])
+{
+	unsigned index;
+	unsigned lane;
+
+	for (index = 0; index < 4; index++) {
+		for (lane = 0; lane < 32; lane++)
+			pixels[index][lane] = 0x10203040U * (index + 1U) + lane * 0x01070b0dU;
+	}
+}
+
 /* Reads a module into the intermediate form, reporting the result. */
 static int
 read_module(
@@ -230,7 +245,7 @@ read_module(
 	struct powervr_shader_program *program,
 	struct powervr_ir_shader **shader)
 {
-	return powervr_shader_read(words, count, stage, workspace, program, shader);
+	return powervr_shader_read(words, count, stage, current_key, workspace, program, shader);
 }
 
 /* Loads a glslc module from the SPIR-V directory. */
@@ -270,6 +285,7 @@ run_prepare(
 {
 	memset(run->values, 0, sizeof(run->values));
 	memset(run->outputs, 0, sizeof(run->outputs));
+	pixels_prepare(run->pixels);
 	run->shared = run_shared;
 	run->input = run_input;
 	run->iterate = run_iterate;
@@ -302,7 +318,7 @@ machine_compare(
 	/* The interpreter's memory is in memory[]; the machine starts from what it started from. */
 	memcpy(saved, memory, sizeof(saved));
 	memcpy(memory, machine_memory, sizeof(memory));
-	error = powervr_shader_compile(words, count, stage, workspace, &program, code, sizeof(code));
+	error = powervr_shader_compile(words, count, stage, current_key, workspace, &program, code, sizeof(code));
 	snprintf(label, sizeof(label), "%s compiles (%d)", name, error);
 	check(error == 0, label);
 	if (error != 0) {
@@ -312,6 +328,7 @@ machine_compare(
 
 	/* Runs the machine form with the same inputs. */
 	memset(machine, 0, sizeof(*machine));
+	pixels_prepare(machine->pixels);
 	machine->program = &program;
 	machine->shared_word = shared_word;
 	machine->input_word = input_word;
@@ -349,6 +366,11 @@ machine_compare(
 		}
 	}
 	snprintf(label, sizeof(label), "%s machine outputs match the interpreter", name);
+	check(same, label);
+
+	/* The same pixel outputs. */
+	same = memcmp(machine->pixels, run->pixels, sizeof(run->pixels)) == 0;
+	snprintf(label, sizeof(label), "%s machine pixel outputs match the interpreter", name);
 	check(same, label);
 	memcpy(memory, saved, sizeof(memory));
 }
@@ -707,6 +729,116 @@ test_vkdemo_fragment(void)
 	machine_compare(vkdemo_fragment_shader, sizeof(vkdemo_fragment_shader) / 4U, POWERVR_SHADER_FRAGMENT, "vkdemo fragment");
 }
 
+/* Packs four floats as the test expects the core to, rounding to nearest. */
+static uint32_t
+pack_expected(
+	const float colour[4])
+{
+	uint32_t words[4];
+	unsigned channel;
+
+	for (channel = 0; channel < 4; channel++)
+		words[channel] = as_word(colour[channel]);
+	return ir_run_pack(words);
+}
+
+/*
+ * The keyed fragment shaders: vkdemo's sample written to an R8G8B8A8
+ * attachment without blending, and the compositor's quad.frag to a
+ * B8G8R8A8 attachment with its premultiplied blend (one, one minus
+ * source alpha) and a write mask without alpha.
+ */
+static void
+test_keyed(void)
+{
+	static struct powervr_shader_key key;
+	struct powervr_shader_program program;
+	uint32_t sampled[4];
+	uint32_t before[4];
+	float colour[4];
+	unsigned lane;
+	unsigned channel;
+	int ok;
+
+	/* vkdemo: the sample, packed. */
+	memset(&key, 0, sizeof(key));
+	key.output_formats[0] = 37;
+	key.blend[0].write_mask = 0xf;
+	current_key = &key;
+	if (prepare(vkdemo_fragment_shader, sizeof(vkdemo_fragment_shader) / 4U, POWERVR_SHADER_FRAGMENT, &program, "keyed vkdemo fragment", 0xffffffffU) == 0) {
+		ok = program.output_count == 1 && program.outputs[0].reg == 0 && program.outputs[0].format == 37;
+		for (lane = 0; lane < 32; lane++) {
+			sample_words(0, 1, iterate_word(lane, 4, 0), iterate_word(lane, 8, 0), sampled);
+			for (channel = 0; channel < 4; channel++)
+				colour[channel] = as_float(sampled[channel]);
+			if (run->pixels[0][lane] != pack_expected(colour))
+				ok = 0;
+		}
+		check(ok, "keyed vkdemo fragment packs its sample");
+		machine_compare(vkdemo_fragment_shader, sizeof(vkdemo_fragment_shader) / 4U, POWERVR_SHADER_FRAGMENT, "keyed vkdemo fragment");
+	}
+
+	/* quad.frag: premultiplied over, alpha kept. */
+	memset(&key, 0, sizeof(key));
+	key.output_formats[0] = 44;
+	key.blend[0].enable = 1;
+	key.blend[0].source_color = 1;
+	key.blend[0].destination_color = 7;
+	key.blend[0].source_alpha = 1;
+	key.blend[0].destination_alpha = 7;
+	key.blend[0].write_mask = 0x7;
+	if (prepare(kwl_quad_frag, sizeof(kwl_quad_frag) / 4U, POWERVR_SHADER_FRAGMENT, &program, "keyed kwl quad.frag", 0xffffffffU) == 0) {
+		uint32_t start[4][32];
+
+		ok = 1;
+		pixels_prepare(start);
+		for (lane = 0; lane < 32; lane++) {
+			sample_words(0, 1, iterate_word(lane, 4, 0), iterate_word(lane, 8, 0), sampled);
+			ir_run_unpack(start[0][lane], before);
+			for (channel = 0; channel < 4; channel++) {
+				float s;
+				float d;
+
+				s = as_float(sampled[channel]);
+				s = s < 0.0f ? 0.0f : (s > 1.0f ? 1.0f : s);
+				d = as_float(before[channel]);
+				colour[channel] = s + d * (1.0f - (as_float(sampled[3]) > 1.0f ? 1.0f : as_float(sampled[3])));
+				if (colour[channel] > 1.0f)
+					colour[channel] = 1.0f;
+				if (channel == 3)
+					colour[channel] = d;
+			}
+			if (run->pixels[0][lane] != pack_expected(colour)) {
+				if (ok)
+					printf("  lane %u: %08x, expected %08x\n", lane, run->pixels[0][lane], pack_expected(colour));
+				ok = 0;
+			}
+		}
+		check(ok, "keyed kwl quad.frag blends over the tile");
+		machine_compare(kwl_quad_frag, sizeof(kwl_quad_frag) / 4U, POWERVR_SHADER_FRAGMENT, "keyed kwl quad.frag");
+	}
+
+	/* panel.frag's eight modes, the same blend, all channels. */
+	key.blend[0].write_mask = 0xf;
+	for (channel = 0; channel < 8; channel++) {
+		char name[64];
+
+		snprintf(name, sizeof(name), "keyed kwl panel.frag mode %u", channel);
+		if (prepare(kwl_panel_variants[channel].words, kwl_panel_variants[channel].bytes / 4U, POWERVR_SHADER_FRAGMENT, &program, name, 0xffffffffU) == 0)
+			machine_compare(kwl_panel_variants[channel].words, kwl_panel_variants[channel].bytes / 4U, POWERVR_SHADER_FRAGMENT, name);
+	}
+
+	/* vkdemo's vertex shader with its attribute formats: three floats and two. */
+	memset(&key, 0, sizeof(key));
+	key.attribute_formats[0] = 106;
+	key.attribute_formats[1] = 103;
+	if (prepare(vkdemo_vertex_shader, sizeof(vkdemo_vertex_shader) / 4U, POWERVR_SHADER_VERTEX, &program, "keyed vkdemo vertex", 0xffffffffU) == 0) {
+		check(program.input_count == 2 && program.inputs[0].components == 3 && program.inputs[1].reg == 3, "keyed vkdemo vertex places its attributes");
+		machine_compare(vkdemo_vertex_shader, sizeof(vkdemo_vertex_shader) / 4U, POWERVR_SHADER_VERTEX, "keyed vkdemo vertex");
+	}
+	current_key = NULL;
+}
+
 int
 main(
 	int argc,
@@ -793,6 +925,8 @@ main(
 		snprintf(name, sizeof(name), "kwl panel.frag mode %u", index);
 		test_graphics(kwl_panel_variants[index].words, kwl_panel_variants[index].bytes / 4U, POWERVR_SHADER_FRAGMENT, name);
 	}
+
+	test_keyed();
 
 	printf("powervr compiler host test: %u passed, %u failed\n", passed, failed);
 	return failed == 0 ? 0 : 1;

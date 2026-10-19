@@ -249,6 +249,20 @@ ir_run(
 			case POWERVR_IR_SAMPLE:
 				run->sample(run, instruction->immediate, instruction->immediate_2, a, b, result);
 				break;
+			case POWERVR_IR_PIXEL_LOAD:
+				ir_run_unpack(run->pixels[instruction->immediate & 3U][lane], result);
+				break;
+			case POWERVR_IR_PIXEL_STORE:
+				result[0] = a;
+				result[1] = b;
+				result[2] = c;
+				result[3] = d;
+				run->pixels[instruction->immediate & 3U][lane] = ir_run_pack(result);
+				result[0] = 0;
+				result[1] = 0;
+				result[2] = 0;
+				result[3] = 0;
+				break;
 			default:
 				result[0] = float_op(instruction->opcode, a, b, c);
 				break;
@@ -380,4 +394,37 @@ as_word(
 
 	memcpy(&word, &value, sizeof(word));
 	return word;
+}
+
+/* Packs four floats to 8-bit unsigned normalised channels, red lowest, rounding to nearest. */
+uint32_t
+ir_run_pack(
+	const uint32_t words[4])
+{
+	uint32_t packed;
+	unsigned channel;
+	float value;
+
+	packed = 0;
+	for (channel = 0; channel < 4; channel++) {
+		value = as_float(words[channel]);
+		if (!(value > 0.0f))
+			value = 0.0f;
+		if (value > 1.0f)
+			value = 1.0f;
+		packed |= (uint32_t)(value * 255.0f + 0.5f) << (channel * 8U);
+	}
+	return packed;
+}
+
+/* Unpacks 8-bit unsigned normalised channels to floats. */
+void
+ir_run_unpack(
+	uint32_t packed,
+	uint32_t words[4])
+{
+	unsigned channel;
+
+	for (channel = 0; channel < 4; channel++)
+		words[channel] = as_word((float)((packed >> (channel * 8U)) & 0xffU) / 255.0f);
 }

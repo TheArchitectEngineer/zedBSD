@@ -24,6 +24,7 @@
 struct ir_run {
 	uint32_t values[POWERVR_IR_VALUES][4][32];
 	uint32_t outputs[IR_RUN_OUTPUTS][32];
+	uint32_t pixels[4][32];
 	uint32_t (*shared)(struct ir_run *run, uint32_t request, uint32_t word);
 	uint32_t (*input)(struct ir_run *run, unsigned lane, uint32_t reg);
 	uint32_t (*iterate)(struct ir_run *run, unsigned lane, uint32_t coefficient, unsigned flags);
@@ -33,6 +34,8 @@ struct ir_run {
 	void *context;
 };
 
+uint32_t ir_run_pack(const uint32_t words[4]);
+void ir_run_unpack(uint32_t packed, uint32_t words[4]);
 int ir_run(struct ir_run *run, const struct powervr_ir_shader *shader, uint32_t lanes);
 
 #endif /* WS269_P010_IR_RUN_H */

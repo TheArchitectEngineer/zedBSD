@@ -62,6 +62,7 @@ struct shader_spirv_id {
 	uint32_t offset;
 	uint32_t index_stride;
 	uint32_t interface;
+	uint32_t words;
 	struct powervr_ir_operand index;
 	uint32_t word;
 	uint32_t merge;
@@ -125,6 +126,7 @@ struct shader_spirv_reader {
 	uint32_t output_values[POWERVR_SHADER_OUTPUTS * 4U];
 	struct powervr_ir_shader *shader;
 	struct powervr_shader_program *program;
+	const struct powervr_shader_key *key;
 };
 
 /*

@@ -28,6 +28,7 @@ struct machine_run {
 	uint32_t temps[SHADER_MACHINE_TEMPORARIES][32];
 	uint32_t predicate[32];
 	uint32_t outputs[MACHINE_RUN_OUTPUTS][32];
+	uint32_t pixels[4][32];
 	uint32_t (*shared_word)(const struct powervr_shader_program *program, uint32_t request, uint32_t word);
 	uint32_t (*input_word)(unsigned lane, uint32_t reg);
 	uint32_t (*iterate_word)(unsigned lane, uint32_t coefficient, unsigned flags);

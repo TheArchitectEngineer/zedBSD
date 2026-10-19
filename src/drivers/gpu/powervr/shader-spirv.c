@@ -201,6 +201,46 @@
 #define GLSL_DISTANCE			67U
 #define GLSL_NORMALIZE			69U
 
+/*
+ * The Vulkan formats the key may name, the blend factors and operations.
+ *
+ * Values referenced:
+ * The Khronos Vulkan 1.3 specification (VkFormat R8G8B8A8_UNORM 37,
+ * B8G8R8A8_UNORM 44, R32_SFLOAT 100, R32G32_SFLOAT 103,
+ * R32G32B32_SFLOAT 106, R32G32B32A32_SFLOAT 109; VkBlendFactor ZERO 0
+ * to SRC_ALPHA_SATURATE 14; VkBlendOp ADD 0, SUBTRACT 1,
+ * REVERSE_SUBTRACT 2, MIN 3, MAX 4).
+ */
+#define FORMAT_R8G8B8A8_UNORM		37U
+#define FORMAT_B8G8R8A8_UNORM		44U
+#define FORMAT_R32_SFLOAT		100U
+#define FORMAT_R32G32_SFLOAT		103U
+#define FORMAT_R32G32B32_SFLOAT		106U
+#define FORMAT_R32G32B32A32_SFLOAT	109U
+#define FACTOR_ZERO			0U
+#define FACTOR_ONE			1U
+#define FACTOR_SOURCE_COLOR		2U
+#define FACTOR_ONE_MINUS_SOURCE_COLOR	3U
+#define FACTOR_DESTINATION_COLOR	4U
+#define FACTOR_ONE_MINUS_DESTINATION_COLOR 5U
+#define FACTOR_SOURCE_ALPHA		6U
+#define FACTOR_ONE_MINUS_SOURCE_ALPHA	7U
+#define FACTOR_DESTINATION_ALPHA	8U
+#define FACTOR_ONE_MINUS_DESTINATION_ALPHA 9U
+#define FACTOR_CONSTANT_COLOR		10U
+#define FACTOR_ONE_MINUS_CONSTANT_COLOR	11U
+#define FACTOR_CONSTANT_ALPHA		12U
+#define FACTOR_ONE_MINUS_CONSTANT_ALPHA	13U
+#define FACTOR_SOURCE_ALPHA_SATURATE	14U
+#define OPERATION_ADD			0U
+#define OPERATION_SUBTRACT		1U
+#define OPERATION_REVERSE_SUBTRACT	2U
+#define OPERATION_MINIMUM		3U
+#define OPERATION_MAXIMUM		4U
+
+/* The pixel output registers a fragment shader may fill. */
+#define PIXEL_OUTPUTS_MAX		4U
+
 /* What an id stands for. */
 #define ID_NONE				0U
 #define ID_TYPE				1U
@@ -275,6 +315,11 @@ static void reader_decorate(struct shader_spirv_reader *reader, uint32_t target,
 static int reader_layout_interface(struct shader_spirv_reader *reader);
 static int reader_entry_prologue(struct shader_spirv_reader *reader);
 static int reader_entry_epilogue(struct shader_spirv_reader *reader);
+static int reader_pixel_output(struct shader_spirv_reader *reader, const struct shader_spirv_id *variable, uint32_t words);
+static struct powervr_ir_operand blend_factor(struct shader_spirv_reader *reader, uint32_t factor, uint32_t channel, const struct powervr_ir_operand *source, const struct powervr_ir_operand *destination, uint32_t constants, int *error);
+static struct powervr_ir_operand saturate(struct shader_spirv_reader *reader, struct powervr_ir_operand x);
+static int attribute_words(struct shader_spirv_reader *reader, uint32_t location, uint32_t words, uint32_t *format_words);
+static uint32_t color_format_known(uint32_t format);
 static int reader_function(struct shader_spirv_reader *reader, uint32_t function, uint32_t *result);
 static int reader_region(struct shader_spirv_reader *reader, uint32_t start, uint32_t stop, uint32_t through_first, uint32_t *returned);
 static int reader_loop(struct shader_spirv_reader *reader, uint32_t header);
@@ -339,6 +384,7 @@ powervr_shader_read(
 	const uint32_t *words,
 	size_t count,
 	uint32_t stage,
+	const struct powervr_shader_key *key,
 	struct powervr_shader_workspace *workspace,
 	struct powervr_shader_program *program,
 	struct powervr_ir_shader **shader)
@@ -379,6 +425,7 @@ powervr_shader_read(
 	reader->bound = words[3];
 	reader->shader = &workspace->shader;
 	reader->program = program;
+	reader->key = key;
 	reader->push_request = POWERVR_SHADER_REQUESTS;
 	program->stage = stage;
 	program->workgroup[0] = 1;
@@ -390,8 +437,10 @@ powervr_shader_read(
 	if (error != 0)
 		return error;
 
-	/* Refuses a module without an entry point of the stage. */
+	/* Refuses a module without an entry point of the stage, and more than one sample. */
 	if (reader->entry == 0)
+		return ENOTSUP;
+	if (key != NULL && key->samples > 1)
 		return ENOTSUP;
 
 	/* Places the interface: vertex inputs, varyings and requests known up front. */
@@ -903,6 +952,8 @@ reader_layout_interface(
 	uint32_t any_smooth;
 	uint32_t done[SHADER_SPIRV_IDS / 32U];
 	uint32_t entry;
+	uint32_t next_pixel;
+	int error;
 
 	/* Gives every register-class global its words as values. */
 	program = reader->program;
@@ -947,6 +998,7 @@ reader_layout_interface(
 		done[index] = 0;
 	next_input = 0;
 	next_output = 4;
+	next_pixel = 0;
 	for (;;) {
 		/* Finds the unplaced located interface variable of the lowest location. */
 		best = 0;
@@ -973,11 +1025,15 @@ reader_layout_interface(
 			if (program->input_count >= POWERVR_SHADER_INPUTS)
 				return ENOTSUP;
 			entry = program->input_count++;
+			id->words = words;
+			error = attribute_words(reader, id->location, words, &id->words);
+			if (error != 0)
+				return error;
 			program->inputs[entry].location = id->location;
-			program->inputs[entry].components = words;
+			program->inputs[entry].components = id->words;
 			program->inputs[entry].reg = next_input;
 			id->interface = next_input;
-			next_input += words;
+			next_input += id->words;
 		} else if (id->storage == STORAGE_OUTPUT && reader->stage == POWERVR_SHADER_VERTEX) {
 			if (program->varying_count >= POWERVR_SHADER_VARYINGS)
 				return ENOTSUP;
@@ -1001,9 +1057,27 @@ reader_layout_interface(
 		} else if (id->storage == STORAGE_OUTPUT && reader->stage == POWERVR_SHADER_FRAGMENT) {
 			if (program->output_count >= POWERVR_SHADER_OUTPUTS || words > 4)
 				return ENOTSUP;
-			entry = program->output_count++;
-			program->outputs[entry].location = id->location;
-			id->interface = id->location * 4U;
+			if (reader->key == NULL) {
+				/* Floats in temporaries, by location. */
+				entry = program->output_count++;
+				program->outputs[entry].location = id->location;
+				id->interface = id->location * 4U;
+			} else if (id->location >= POWERVR_SHADER_OUTPUTS || reader->key->output_formats[id->location] == 0) {
+				/* No attachment: the colour is dropped. */
+				id->interface = UINT32_MAX;
+			} else {
+				/* A packed colour in the next pixel output register. */
+				if (color_format_known(reader->key->output_formats[id->location]) == 0)
+					return ENOTSUP;
+				entry = program->output_count++;
+				program->outputs[entry].location = id->location;
+				program->outputs[entry].format = reader->key->output_formats[id->location];
+				program->outputs[entry].reg = next_pixel;
+				id->interface = next_pixel;
+				next_pixel++;
+				if (next_pixel > PIXEL_OUTPUTS_MAX)
+					return ENOTSUP;
+			}
 		} else {
 			/* A located compute variable is not a thing. */
 			return ENOTSUP;
@@ -1051,7 +1125,11 @@ reader_entry_prologue(
 		/* A located input: a vertex input register or an iterated varying. */
 		if ((id->flags & FLAG_LOCATION) != 0) {
 			for (component = 0; component < words; component++) {
-				if (reader->stage == POWERVR_SHADER_VERTEX) {
+				if (reader->stage == POWERVR_SHADER_VERTEX && component >= id->words) {
+					/* A word the attribute's format lacks: 0, or 1 for w. */
+					word = constant_operand(component == 3 ? FLOAT_ONE : 0);
+					emit(reader, POWERVR_IR_MOVE, id->first + component, &word, NULL, NULL, 0, 0);
+				} else if (reader->stage == POWERVR_SHADER_VERTEX) {
 					emit(reader, POWERVR_IR_INPUT, id->first + component, NULL, NULL, NULL, id->interface + component, 0);
 				} else {
 					emit(reader, POWERVR_IR_ITERATE, id->first + component, NULL, NULL, NULL, id->interface + component * 4U, 0);
@@ -1143,6 +1221,7 @@ reader_entry_epilogue(
 	uint32_t member_index;
 	uint32_t component;
 	uint32_t words;
+	int error;
 
 	/* Each output variable. */
 	for (index = 1; index < reader->bound; index++) {
@@ -1150,6 +1229,16 @@ reader_entry_epilogue(
 		if (id->kind != ID_POINTER || id->variable != index || id->storage != STORAGE_OUTPUT)
 			continue;
 		words = scalar_count(reader, id->type);
+
+		/* A colour packed into its attachment's pixel output, blended. */
+		if ((id->flags & FLAG_LOCATION) != 0 && reader->stage == POWERVR_SHADER_FRAGMENT && reader->key != NULL) {
+			if (id->interface == UINT32_MAX)
+				continue;
+			error = reader_pixel_output(reader, id, words);
+			if (error != 0)
+				return error;
+			continue;
+		}
 
 		/* A located output: a varying's or a colour's words. */
 		if ((id->flags & FLAG_LOCATION) != 0) {
@@ -1190,6 +1279,259 @@ reader_entry_epilogue(
 
 	/* Reports what the hand-over came to. */
 	return reader->error;
+}
+
+/*
+ * Writes one colour output into its pixel output register: clamped to
+ * the attachment's range, blended with the colour already there, its
+ * unwritten channels kept, packed.
+ *
+ * Procedure referenced:
+ * Mesa 26.2.5 src/imagination/pco/pco_nir_pvfio.c (lower_pfo_store,
+ * to_pbe_format, pack_to_format: a B8G8R8A8 attachment is packed as
+ * R8G8B8A8, the channels' float values packed to 8-bit unsigned
+ * normalised) and the Vulkan 1.3 specification's blending equations
+ * (the source and destination factors, the five operations, unsigned
+ * normalised values clamped to [0, 1]).
+ */
+static int
+reader_pixel_output(
+	struct shader_spirv_reader *reader,
+	const struct shader_spirv_id *variable,
+	uint32_t words)
+{
+	const struct powervr_shader_blend *blend;
+	struct powervr_ir_operand source[4];
+	struct powervr_ir_operand destination[4];
+	struct powervr_ir_operand result[4];
+	struct powervr_ir_operand a;
+	struct powervr_ir_operand b;
+	struct powervr_ir_instruction *store;
+	uint32_t channel;
+	uint32_t factor;
+	uint32_t operation;
+	uint32_t constants;
+	uint32_t loaded;
+	uint32_t needs_destination;
+	int error;
+
+	/* The shader's colour, clamped; a missing channel is 0, a missing alpha 1. */
+	blend = &reader->key->blend[variable->location];
+	for (channel = 0; channel < 4; channel++) {
+		if (channel < words) {
+			source[channel] = saturate(reader, value_operand(variable->first + channel, 0));
+		} else {
+			source[channel] = constant_operand(channel == 3 ? FLOAT_ONE : 0);
+		}
+	}
+
+	/* The colour already there, when blending or a write mask needs it. */
+	needs_destination = 0;
+	if (blend->enable != 0 || (blend->write_mask & 0xfU) != 0xfU)
+		needs_destination = 1;
+	loaded = 0;
+	if (needs_destination != 0) {
+		loaded = new_value(reader, 4);
+		emit(reader, POWERVR_IR_PIXEL_LOAD, loaded, NULL, NULL, NULL, variable->interface, 0);
+	}
+	for (channel = 0; channel < 4; channel++)
+		destination[channel] = value_operand(loaded, channel);
+
+	/* The blend constants, asked for only when a factor names them. */
+	constants = POWERVR_SHADER_REQUESTS;
+	if (blend->enable != 0) {
+		if ((blend->source_color >= FACTOR_CONSTANT_COLOR && blend->source_color <= FACTOR_ONE_MINUS_CONSTANT_ALPHA) ||
+		    (blend->destination_color >= FACTOR_CONSTANT_COLOR && blend->destination_color <= FACTOR_ONE_MINUS_CONSTANT_ALPHA) ||
+		    (blend->source_alpha >= FACTOR_CONSTANT_COLOR && blend->source_alpha <= FACTOR_ONE_MINUS_CONSTANT_ALPHA) ||
+		    (blend->destination_alpha >= FACTOR_CONSTANT_COLOR && blend->destination_alpha <= FACTOR_ONE_MINUS_CONSTANT_ALPHA)) {
+			error = request_add(reader, POWERVR_SHADER_REQUEST_BLEND_CONSTANTS, 0, 0, 0, 4, &constants);
+			if (error != 0)
+				return error;
+		}
+	}
+
+	/* Each channel: the blend, then the write mask. */
+	for (channel = 0; channel < 4; channel++) {
+		result[channel] = source[channel];
+		if (blend->enable != 0) {
+			/* The operation of the colour or the alpha. */
+			operation = channel < 3 ? blend->color_operation : blend->alpha_operation;
+			if (operation == OPERATION_MINIMUM) {
+				result[channel] = emit_value(reader, POWERVR_IR_FLOAT_MINIMUM, &source[channel], &destination[channel], NULL);
+			} else if (operation == OPERATION_MAXIMUM) {
+				result[channel] = emit_value(reader, POWERVR_IR_FLOAT_MAXIMUM, &source[channel], &destination[channel], NULL);
+			} else if (operation <= OPERATION_REVERSE_SUBTRACT) {
+				/* The source and destination terms, each its value times its factor. */
+				error = 0;
+				factor = channel < 3 ? blend->source_color : blend->source_alpha;
+				a = blend_factor(reader, factor, channel, source, destination, constants, &error);
+				a = emit_value(reader, POWERVR_IR_FLOAT_MULTIPLY, &source[channel], &a, NULL);
+				factor = channel < 3 ? blend->destination_color : blend->destination_alpha;
+				b = blend_factor(reader, factor, channel, source, destination, constants, &error);
+				b = emit_value(reader, POWERVR_IR_FLOAT_MULTIPLY, &destination[channel], &b, NULL);
+				if (error != 0)
+					return error;
+				if (operation == OPERATION_SUBTRACT)
+					b = float_negate(b);
+				if (operation == OPERATION_REVERSE_SUBTRACT)
+					a = float_negate(a);
+				result[channel] = emit_value(reader, POWERVR_IR_FLOAT_ADD, &a, &b, NULL);
+				result[channel] = saturate(reader, result[channel]);
+			} else {
+				return ENOTSUP;
+			}
+		}
+		if ((blend->write_mask & (1U << channel)) == 0)
+			result[channel] = destination[channel];
+	}
+
+	/* The packed colour into its register. */
+	emit(reader, POWERVR_IR_PIXEL_STORE, 0, &result[0], &result[1], &result[2], variable->interface, 0);
+	if (reader->error != 0)
+		return reader->error;
+	store = &reader->shader->instructions[reader->shader->instruction_count - 1U];
+	store->source[3] = result[3];
+
+	/* Reports what the colour came to. */
+	return reader->error;
+}
+
+/* Works out one channel's blend factor. */
+static struct powervr_ir_operand
+blend_factor(
+	struct shader_spirv_reader *reader,
+	uint32_t factor,
+	uint32_t channel,
+	const struct powervr_ir_operand *source,
+	const struct powervr_ir_operand *destination,
+	uint32_t constants,
+	int *error)
+{
+	struct powervr_ir_operand one;
+	struct powervr_ir_operand value;
+	struct powervr_ir_operand other;
+
+	/* The factor's value before any one-minus. */
+	one = constant_operand(FLOAT_ONE);
+	switch (factor) {
+	case FACTOR_ZERO:
+		return constant_operand(0);
+	case FACTOR_ONE:
+		return one;
+	case FACTOR_SOURCE_COLOR:
+	case FACTOR_ONE_MINUS_SOURCE_COLOR:
+		value = source[channel];
+		break;
+	case FACTOR_DESTINATION_COLOR:
+	case FACTOR_ONE_MINUS_DESTINATION_COLOR:
+		value = destination[channel];
+		break;
+	case FACTOR_SOURCE_ALPHA:
+	case FACTOR_ONE_MINUS_SOURCE_ALPHA:
+		value = source[3];
+		break;
+	case FACTOR_DESTINATION_ALPHA:
+	case FACTOR_ONE_MINUS_DESTINATION_ALPHA:
+		value = destination[3];
+		break;
+	case FACTOR_CONSTANT_COLOR:
+	case FACTOR_ONE_MINUS_CONSTANT_COLOR:
+		value = shared_word(reader, constants, channel);
+		break;
+	case FACTOR_CONSTANT_ALPHA:
+	case FACTOR_ONE_MINUS_CONSTANT_ALPHA:
+		value = shared_word(reader, constants, 3);
+		break;
+	case FACTOR_SOURCE_ALPHA_SATURATE:
+		/* min(As, 1 - Ad) for the colour, 1 for the alpha. */
+		if (channel == 3)
+			return one;
+		other = float_negate(destination[3]);
+		other = emit_value(reader, POWERVR_IR_FLOAT_ADD, &one, &other, NULL);
+		return emit_value(reader, POWERVR_IR_FLOAT_MINIMUM, &source[3], &other, NULL);
+	default:
+		*error = ENOTSUP;
+		return one;
+	}
+
+	/* The one-minus factors are the odd ones from 3 to 13. */
+	if ((factor & 1U) != 0) {
+		value = float_negate(value);
+		value = emit_value(reader, POWERVR_IR_FLOAT_ADD, &one, &value, NULL);
+	}
+	return value;
+}
+
+/* Clamps a float to [0, 1]. */
+static struct powervr_ir_operand
+saturate(
+	struct shader_spirv_reader *reader,
+	struct powervr_ir_operand x)
+{
+	struct powervr_ir_operand bound;
+	struct powervr_ir_operand result;
+
+	/* The maximum with zero, then the minimum with one. */
+	bound = constant_operand(0);
+	result = emit_value(reader, POWERVR_IR_FLOAT_MAXIMUM, &x, &bound, NULL);
+	bound = constant_operand(FLOAT_ONE);
+	result = emit_value(reader, POWERVR_IR_FLOAT_MINIMUM, &result, &bound, NULL);
+	return result;
+}
+
+/*
+ * Works out how many words of a vertex input its attribute's format
+ * gives: all the shader reads without a key or a format, else the
+ * format's float words (the rest are filled in by the shader).
+ */
+static int
+attribute_words(
+	struct shader_spirv_reader *reader,
+	uint32_t location,
+	uint32_t words,
+	uint32_t *format_words)
+{
+	uint32_t format;
+
+	/* No key, no format: the words as the shader reads them. */
+	*format_words = words;
+	if (reader->key == NULL || location >= POWERVR_SHADER_INPUTS)
+		return 0;
+	format = reader->key->attribute_formats[location];
+	if (format == 0)
+		return 0;
+
+	/* The 32-bit float formats, one word a channel. */
+	if (format == FORMAT_R32_SFLOAT) {
+		*format_words = 1;
+	} else if (format == FORMAT_R32G32_SFLOAT) {
+		*format_words = 2;
+	} else if (format == FORMAT_R32G32B32_SFLOAT) {
+		*format_words = 3;
+	} else if (format == FORMAT_R32G32B32A32_SFLOAT) {
+		*format_words = 4;
+	} else {
+		/* Other formats need the shader to convert them; outside the subset for now. */
+		return ENOTSUP;
+	}
+
+	/* The shader never reads past its own words. */
+	if (*format_words > words)
+		*format_words = words;
+	return 0;
+}
+
+/* Reports whether a colour attachment format is one the compiler packs. */
+static uint32_t
+color_format_known(
+	uint32_t format)
+{
+	/* The 8-bit unsigned normalised four-channel formats. */
+	if (format == FORMAT_R8G8B8A8_UNORM)
+		return 1;
+	if (format == FORMAT_B8G8R8A8_UNORM)
+		return 1;
+	return 0;
 }
 
 /*

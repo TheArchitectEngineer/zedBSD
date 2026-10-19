@@ -26,6 +26,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "ir-run.h"
 #include "machine-run.h"
 
 /* The operations the simulator knows, in the back end's order. */
@@ -250,6 +251,13 @@ machine_run_program(
 				write_register(run, operation->destination[0], lane, result);
 				break;
 			case KIND_PACK:
+				if (operation->variant == 0 && operation->immediate == 4) {
+					/* The four registers from the source on, packed. */
+					for (word = 0; word < 4; word++)
+						words[word] = run->temps[operation->source[0].index + word][lane];
+					write_register(run, operation->destination[0], lane, ir_run_pack(words));
+					break;
+				}
 				if (operation->variant == 7) {
 					if (!(as_float(a) > -2147483648.0f)) {
 						result = 0x80000000U;
@@ -270,6 +278,13 @@ machine_run_program(
 				write_register(run, operation->destination[0], lane, result);
 				break;
 			case KIND_UNPACK:
+				if (operation->variant == 0 && operation->immediate == 4) {
+					/* Into the four registers from the destination on. */
+					ir_run_unpack(a, words);
+					for (word = 0; word < 4; word++)
+						run->temps[operation->destination[0].index + word][lane] = words[word];
+					break;
+				}
 				if (operation->variant == 7) {
 					result = as_word((float)(int32_t)a);
 				} else {
@@ -376,6 +391,8 @@ machine_run_program(
 	/* Collects a fragment shader's colours from their temporaries. */
 	if (run->program->stage == POWERVR_SHADER_FRAGMENT) {
 		for (index = 0; index < run->program->output_count; index++) {
+			if (run->program->outputs[index].format != 0)
+				continue;
 			for (word = 0; word < 4; word++) {
 				for (lane = 0; lane < 32; lane++) {
 					if (run->program->outputs[index].location * 4U + word < MACHINE_RUN_OUTPUTS)
@@ -414,6 +431,8 @@ read_register(
 			return 0xffffffffU;
 		if (reg.index == 51)
 			return lane;
+		if (reg.index >= 32 && reg.index < 36)
+			return run->pixels[reg.index - 32U][lane];
 		return 0xdead0000U;
 	case 1:
 		if (reg.index >= SHADER_MACHINE_TEMPORARIES)
@@ -455,6 +474,10 @@ write_register(
 	unsigned lane,
 	uint32_t word)
 {
+	if (reg.bank == 0 && reg.index >= 32 && reg.index < 36) {
+		run->pixels[reg.index - 32U][lane] = word;
+		return;
+	}
 	if (reg.bank != 1 || reg.index >= SHADER_MACHINE_TEMPORARIES)
 		return;
 	run->temps[reg.index][lane] = word;

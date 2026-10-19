@@ -197,7 +197,7 @@ create_shader(
 		workspace = kern_malloc(powervr_shader_workspace_size());
 		program = kern_malloc(sizeof(*program));
 		if (workspace != NULL && program != NULL)
-			shader->status = powervr_shader_read(shader->words, shader->word_count, POWERVR_SHADER_COMPUTE, workspace, program, &ir);
+			shader->status = powervr_shader_read(shader->words, shader->word_count, POWERVR_SHADER_COMPUTE, NULL, workspace, program, &ir);
 		kern_free(program);
 		kern_free(workspace);
 		if (shader->status != 0)

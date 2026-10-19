@@ -377,7 +377,7 @@ check_stream(
 
 	/* fill.comp: data[x] = 3x + 7, local size 32, its requests' shared words. */
 	workspace = calloc(1, powervr_shader_workspace_size());
-	if (workspace == NULL || powervr_shader_read(spirv, spirv_words, POWERVR_SHADER_COMPUTE, workspace, &program, &shader) != 0 || program.shareds > 32) {
+	if (workspace == NULL || powervr_shader_read(spirv, spirv_words, POWERVR_SHADER_COMPUTE, NULL, workspace, &program, &shader) != 0 || program.shareds > 32) {
 		check(0, "the fill shader reads");
 		free(workspace);
 		return;
@@ -393,7 +393,7 @@ check_stream(
 				values[program.requests[request].shared] = group;
 			}
 		}
-		check(powervr_shader_compile_inline(spirv, spirv_words, POWERVR_SHADER_COMPUTE, values, program.shareds, workspace, &program, expected, sizeof(expected)) == 0, "the fill shader compiles for a workgroup");
+		check(powervr_shader_compile_inline(spirv, spirv_words, POWERVR_SHADER_COMPUTE, NULL, values, program.shareds, workspace, &program, expected, sizeof(expected)) == 0, "the fill shader compiles for a workgroup");
 		length = program.length;
 		powervr_compute_temporaries_field(program.temps, 2, &field);
 

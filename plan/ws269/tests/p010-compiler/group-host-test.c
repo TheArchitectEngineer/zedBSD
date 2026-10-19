@@ -427,6 +427,53 @@ main(void)
 			dump(&group);
 	}
 
+	/*
+	 * A colour's pack: phase 2's pck (main_op sngl 0b100, ext0 1,
+	 * sngl_op pck 0b1100 = 0x9c; scale 1:5, format u8888 0 = 0x20),
+	 * repeated over the four registers from s2, which reaches it
+	 * through the source selector (s2, 0b101) and is3 fte; is4 ft2.
+	 * Its unpack: upck (0x9c; scale_rtz 1:5, element 0, format 0 =
+	 * 0x20) in phase 0, repeated over four destinations.  The pixel
+	 * output's move sets the overlap check.
+	 */
+	{
+		static const uint8_t pack[] = { 0x9c, 0x20 };
+		static const uint8_t pass[] = { 0x87 };
+
+		operation = blank(MACHINE_PACK);
+		operation.destination[0] = reg(1, 1);
+		operation.source[0] = reg(1, 4);
+		operation.variant = 0;
+		operation.immediate = 4;
+		operation.immediate_2 = 1;
+		ok = shader_backend_group(&operation, 0, &group) == 0;
+		ok = ok && group.repeat == 4 && slot_is(&group.source[2], 1, 4) && group.mux_used == 1 && group.mux == 5;
+		ok = ok && group.internal[3] == 3 && group.internal[4] == 2 && phase_is(&group, 2, pack, 2);
+		check(ok, "colour pack");
+		if (!ok)
+			dump(&group);
+
+		operation = blank(MACHINE_UNPACK);
+		operation.destination[0] = reg(1, 12);
+		operation.source[0] = reg(1, 1);
+		operation.variant = 0;
+		operation.immediate = 4;
+		operation.immediate_2 = 1;
+		ok = shader_backend_group(&operation, 0, &group) == 0;
+		ok = ok && group.repeat == 4 && slot_is(&group.source[0], 1, 1) && phase_is(&group, 0, pack, 2);
+		check(ok, "colour unpack");
+		if (!ok)
+			dump(&group);
+
+		operation = blank(MACHINE_MOVE);
+		operation.destination[0] = reg(0, 32);
+		operation.source[0] = reg(1, 1);
+		operation.variant = 1;
+		ok = shader_backend_group(&operation, 0, &group) == 0;
+		ok = ok && group.overlap_check == 1 && slot_is(&group.destination[0], 0, 32) && phase_is(&group, 0, pass, 1);
+		check(ok, "pixel output move with the overlap check");
+	}
+
 	printf("powervr compiler group host test: %u passed, %u failed\n", passed, failed);
 	return failed == 0 ? 0 : 1;
 }

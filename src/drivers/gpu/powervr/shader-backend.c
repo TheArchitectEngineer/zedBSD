@@ -56,6 +56,7 @@
 #define SPECIAL_FLOAT_ONE	64U
 #define SPECIAL_TRUE		143U
 #define SPECIAL_INSTANCE	51U
+#define SPECIAL_PIXEL_OUTPUT	32U
 
 /*
  * The fields of the operations the back end builds.
@@ -79,9 +80,12 @@
 #define TYPE_F32		0U
 #define TYPE_U32		5U
 #define TYPE_S32		6U
+#define PACK_U8888		0U
 #define PACK_U32		6U
 #define PACK_S32		7U
 #define PACK_ZERO		30U
+#define PACK_SCALE		1U
+#define PACK_ROUND_TO_ZERO	2U
 #define LOGIC_OR		0U
 #define LOGIC_AND		1U
 #define LOGIC_XOR		2U
@@ -203,6 +207,8 @@ shader_backend_build(
 	select.output_base = backend->temps;
 	if (program->stage == POWERVR_SHADER_FRAGMENT) {
 		for (index = 0; index < program->output_count; index++) {
+			if (program->outputs[index].format != 0)
+				continue;
 			program->outputs[index].reg = select.output_base + program->outputs[index].location * 4U;
 			if (program->outputs[index].reg + 4U > backend->temps)
 				backend->temps = program->outputs[index].reg + 4U;
@@ -257,13 +263,14 @@ powervr_shader_compile(
 	const uint32_t *words,
 	size_t count,
 	uint32_t stage,
+	const struct powervr_shader_key *key,
 	struct powervr_shader_workspace *workspace,
 	struct powervr_shader_program *program,
 	uint8_t *code,
 	size_t room)
 {
 	/* The shared registers stay registers. */
-	return powervr_shader_compile_inline(words, count, stage, NULL, 0, workspace, program, code, room);
+	return powervr_shader_compile_inline(words, count, stage, key, NULL, 0, workspace, program, code, room);
 }
 
 /*
@@ -279,6 +286,7 @@ powervr_shader_compile_inline(
 	const uint32_t *words,
 	size_t count,
 	uint32_t stage,
+	const struct powervr_shader_key *key,
 	const uint32_t *shared_values,
 	uint32_t value_count,
 	struct powervr_shader_workspace *workspace,
@@ -291,7 +299,7 @@ powervr_shader_compile_inline(
 	int error;
 
 	/* Reads the module into the intermediate form. */
-	error = powervr_shader_read(words, count, stage, workspace, program, &shader);
+	error = powervr_shader_read(words, count, stage, key, workspace, program, &shader);
 	if (error != 0)
 		return error;
 
@@ -767,6 +775,8 @@ select_instruction(
 			operation->destination[0] = destination;
 			operation->source[0] = source;
 			operation->variant = opcode == POWERVR_IR_FLOAT_TO_SIGNED ? PACK_S32 : PACK_U32;
+			operation->immediate = 1;
+			operation->immediate_2 = PACK_ROUND_TO_ZERO;
 		}
 		break;
 	case POWERVR_IR_SIGNED_TO_FLOAT:
@@ -778,6 +788,7 @@ select_instruction(
 			operation->destination[0] = destination;
 			operation->source[0] = source;
 			operation->variant = opcode == POWERVR_IR_SIGNED_TO_FLOAT ? PACK_S32 : PACK_U32;
+			operation->immediate = 1;
 		}
 		break;
 	case POWERVR_IR_SHARED:
@@ -908,6 +919,57 @@ select_instruction(
 				operation->source[2] = bank_register(POWERVR_USC_BANK_SHARED, sampler->shared);
 			}
 			(void)append(select, MACHINE_WAIT);
+		}
+		break;
+	case POWERVR_IR_PIXEL_LOAD:
+		/* The pixel output, under the overlap check, unpacked into the four words. */
+		if (instruction->immediate >= 4)
+			return ENOTSUP;
+		operation = append(select, MACHINE_MOVE);
+		if (operation != NULL) {
+			operation->destination[0] = temp_register(TEMP_SCRATCH);
+			operation->source[0] = bank_register(POWERVR_USC_BANK_SPECIAL, SPECIAL_PIXEL_OUTPUT + instruction->immediate);
+			operation->variant = 1;
+		}
+		operation = append(select, MACHINE_UNPACK);
+		if (operation != NULL) {
+			operation->destination[0] = destination_of(select, instruction);
+			operation->source[0] = temp_register(TEMP_SCRATCH);
+			operation->variant = PACK_U8888;
+			operation->immediate = 4;
+			operation->immediate_2 = PACK_SCALE;
+		}
+		break;
+	case POWERVR_IR_PIXEL_STORE:
+		/* The four words side by side, packed, into the pixel output under the overlap check. */
+		{
+			unsigned channel;
+
+			if (instruction->immediate >= 4)
+				return ENOTSUP;
+			for (channel = 0; channel < 4; channel++) {
+				select->scratch = 0;
+				source = operand_plain(select, &instruction->source[channel], 0);
+				operation = append(select, MACHINE_MOVE);
+				if (operation != NULL) {
+					operation->destination[0] = temp_register(TEMP_COORDINATES + channel);
+					operation->source[0] = source;
+				}
+			}
+			operation = append(select, MACHINE_PACK);
+			if (operation != NULL) {
+				operation->destination[0] = temp_register(TEMP_SCRATCH);
+				operation->source[0] = temp_register(TEMP_COORDINATES);
+				operation->variant = PACK_U8888;
+				operation->immediate = 4;
+				operation->immediate_2 = PACK_SCALE;
+			}
+			operation = append(select, MACHINE_MOVE);
+			if (operation != NULL) {
+				operation->destination[0] = bank_register(POWERVR_USC_BANK_SPECIAL, SPECIAL_PIXEL_OUTPUT + instruction->immediate);
+				operation->source[0] = temp_register(TEMP_SCRATCH);
+				operation->variant = 1;
+			}
 		}
 		break;
 	default:
@@ -1487,6 +1549,7 @@ shader_backend_group(
 		group_register(&group->source[0], operation->source[0]);
 		group_register(&group->destination[0], operation->destination[0]);
 		group->internal[4] = SELECT_FT0;
+		group->overlap_check = operation->variant;
 		error = powervr_usc_single(POWERVR_USC_SINGLE_PASS, negate_0, absolute_0, &group->operation[POWERVR_USC_PHASE_0]);
 		break;
 	case MACHINE_MOVE_SPECIAL:
@@ -1682,7 +1745,8 @@ shader_backend_group(
 		group->mux = MUX_S2;
 		group->internal[3] = SELECT_FTE;
 		group->internal[4] = SELECT_FT2;
-		error = powervr_usc_pack(operation->variant, 0, 1, 0, &group->operation[POWERVR_USC_PHASE_2]);
+		group->repeat = (uint8_t)operation->immediate;
+		error = powervr_usc_pack(operation->variant, 0, (operation->immediate_2 & PACK_ROUND_TO_ZERO) != 0, operation->immediate_2 & PACK_SCALE, &group->operation[POWERVR_USC_PHASE_2]);
 		break;
 	case MACHINE_UNPACK:
 		group->unit = POWERVR_USC_UNIT_MAIN;
@@ -1690,7 +1754,8 @@ shader_backend_group(
 		group_register(&group->source[0], operation->source[0]);
 		group_register(&group->destination[0], operation->destination[0]);
 		group->internal[4] = SELECT_FT0;
-		error = powervr_usc_unpack(operation->variant, 0, 0, &group->operation[POWERVR_USC_PHASE_0]);
+		group->repeat = (uint8_t)operation->immediate;
+		error = powervr_usc_unpack(operation->variant, 0, operation->immediate_2 & PACK_SCALE, &group->operation[POWERVR_USC_PHASE_0]);
 		break;
 	case MACHINE_LOAD:
 		/* The address pair in s0, the word returned into the register s3 names. */

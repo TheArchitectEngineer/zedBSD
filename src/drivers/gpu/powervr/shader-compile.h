@@ -47,7 +47,8 @@ enum powervr_shader_request_kind {
 	POWERVR_SHADER_REQUEST_PUSH_CONSTANTS,
 	POWERVR_SHADER_REQUEST_LITERAL,
 	POWERVR_SHADER_REQUEST_WORKGROUP_ID,
-	POWERVR_SHADER_REQUEST_NUM_WORKGROUPS
+	POWERVR_SHADER_REQUEST_NUM_WORKGROUPS,
+	POWERVR_SHADER_REQUEST_BLEND_CONSTANTS
 };
 
 /* The parts of a descriptor a request may name. */
@@ -106,10 +107,46 @@ struct powervr_shader_varying {
 	uint32_t reg;
 };
 
-/* One fragment colour output: its location and the first of its four float temporaries. */
+/*
+ * One fragment colour output: its location, its attachment's format,
+ * and where the program leaves it: with a key, the pixel output
+ * register holding the packed colour; without one, the first of four
+ * float temporaries.
+ */
 struct powervr_shader_output {
 	uint32_t location;
+	uint32_t format;
 	uint32_t reg;
+};
+
+/*
+ * One colour attachment's blend: the Vulkan factors and operations of
+ * the colour and the alpha, and the channels written (bit 0 red to bit 3
+ * alpha).  Enable 0 writes the shader's colour as it is.
+ */
+struct powervr_shader_blend {
+	uint8_t enable;
+	uint8_t source_color;
+	uint8_t destination_color;
+	uint8_t color_operation;
+	uint8_t source_alpha;
+	uint8_t destination_alpha;
+	uint8_t alpha_operation;
+	uint8_t write_mask;
+};
+
+/*
+ * What the pipeline tells the compiler beyond the SPIR-V: each vertex
+ * input location's format (0 for words as the shader reads them), each
+ * colour location's attachment format (0 for none, the output dropped),
+ * its blend, and the sample count.  A compile without a key leaves
+ * fragment colours as floats in temporaries.
+ */
+struct powervr_shader_key {
+	uint32_t attribute_formats[POWERVR_SHADER_INPUTS];
+	uint32_t output_formats[POWERVR_SHADER_OUTPUTS];
+	struct powervr_shader_blend blend[POWERVR_SHADER_OUTPUTS];
+	uint32_t samples;
 };
 
 /*
@@ -149,8 +186,8 @@ struct powervr_shader_program {
 struct powervr_shader_workspace;
 
 size_t powervr_shader_workspace_size(void);
-int powervr_shader_read(const uint32_t *words, size_t count, uint32_t stage, struct powervr_shader_workspace *workspace, struct powervr_shader_program *program, struct powervr_ir_shader **shader);
-int powervr_shader_compile(const uint32_t *words, size_t count, uint32_t stage, struct powervr_shader_workspace *workspace, struct powervr_shader_program *program, uint8_t *code, size_t room);
-int powervr_shader_compile_inline(const uint32_t *words, size_t count, uint32_t stage, const uint32_t *shared_values, uint32_t value_count, struct powervr_shader_workspace *workspace, struct powervr_shader_program *program, uint8_t *code, size_t room);
+int powervr_shader_read(const uint32_t *words, size_t count, uint32_t stage, const struct powervr_shader_key *key, struct powervr_shader_workspace *workspace, struct powervr_shader_program *program, struct powervr_ir_shader **shader);
+int powervr_shader_compile(const uint32_t *words, size_t count, uint32_t stage, const struct powervr_shader_key *key, struct powervr_shader_workspace *workspace, struct powervr_shader_program *program, uint8_t *code, size_t room);
+int powervr_shader_compile_inline(const uint32_t *words, size_t count, uint32_t stage, const struct powervr_shader_key *key, const uint32_t *shared_values, uint32_t value_count, struct powervr_shader_workspace *workspace, struct powervr_shader_program *program, uint8_t *code, size_t room);
 
 #endif /* KERN_DRIVERS_GPU_POWERVR_SHADER_COMPILE_H */

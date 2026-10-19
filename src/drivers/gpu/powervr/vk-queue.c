@@ -708,7 +708,7 @@ build_dispatch(
 
 	/* What the shader asks for, and a workgroup the task holds. */
 	if (error == 0)
-		error = powervr_shader_read(pipeline->words, pipeline->word_count, POWERVR_SHADER_COMPUTE, workspace, program, &shader);
+		error = powervr_shader_read(pipeline->words, pipeline->word_count, POWERVR_SHADER_COMPUTE, NULL, workspace, program, &shader);
 	if (error == 0 && (program->workgroup[0] == 0 || program->workgroup[0] > POWERVR_COMPUTE_INSTANCES))
 		error = ENOTSUP;
 	if (error == 0 && program->shareds > POWERVR_SHADER_REQUESTS * 4U)
@@ -722,7 +722,7 @@ build_dispatch(
 			if (program->requests[index].kind == POWERVR_SHADER_REQUEST_WORKGROUP_ID)
 				values[program->requests[index].shared] = group;
 		}
-		error = powervr_shader_compile_inline(pipeline->words, pipeline->word_count, POWERVR_SHADER_COMPUTE, values, program->shareds, workspace, program, code, QUEUE_USC_ROOM);
+		error = powervr_shader_compile_inline(pipeline->words, pipeline->word_count, POWERVR_SHADER_COMPUTE, NULL, values, program->shareds, workspace, program, code, QUEUE_USC_ROOM);
 		if (error != 0) {
 			kern_logf("powervr: vk: the compute shader did not compile (%d)\n", error);
 			break;
