@@ -1,0 +1,409 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The malta board: what the emulator's loader passes, and the display.
+ *
+ * The loader runs a small bootloader of its own instead of the board's
+ * firmware.  It enters the kernel with the number of entries of an
+ * argument table, the table, an environment table of name and value
+ * strings and the size of low memory, all in the RAM below the image.
+ * The board copies the strings it uses at once, so that the memory they
+ * are in can be given out later.  The second argument is the command
+ * line; when an initial RAM disk was loaded its place and size come first
+ * on it, and the board takes them off.
+ */
+
+#include <hal/hal.h>
+#include "../asm.h"
+#include "../bsp.h"
+#include "cons.h"
+#include "framebuffer.h"
+
+/*
+ * The longest string of the loader's tables, with its terminator.
+ *
+ * Values referenced: QEMU v10.0.11 hw/mips/malta.c (ENVP_ENTRY_SIZE, the
+ * 256 bytes of each entry).
+ */
+#define BOARD_STRING_SIZE	256U
+
+/* The most environment entries read: the loader writes at most sixteen strings. */
+#define BOARD_ENVIRONMENT_MAX	16U
+
+/*
+ * The largest low memory the loader reports: the RAM mapped at physical
+ * address 0, at most 256 MiB.
+ *
+ * Values referenced: QEMU v10.0.11 hw/mips/malta.c (mips_malta_init, the
+ * low RAM alias of at most 256 MiB).
+ */
+#define BOARD_LOW_MEMORY_MAX	0x10000000U
+
+/*
+ * The words the loader puts before the command line for an initial RAM
+ * disk.
+ *
+ * Values referenced: QEMU v10.0.11 hw/mips/malta.c (load_kernel, the
+ * "rd_start=0x... rd_size=... " prefix).
+ */
+#define BOARD_RAMDISK_START	"rd_start="
+#define BOARD_RAMDISK_SIZE	"rd_size="
+
+/*
+ * The command line as the kernel receives it, without the RAM disk's
+ * words, and whether there is one.
+ *
+ * Filled once by mips_board_boot() before anything else runs; read-only
+ * from then on.
+ */
+static char board_command_line[BOARD_STRING_SIZE];
+static int board_has_command_line;
+
+/*
+ * The initial RAM disk's KSEG0 address and size in bytes from the command
+ * line, both zero when none was loaded.  Set once by mips_board_boot().
+ */
+static uint32_t board_ramdisk_start;
+static uint32_t board_ramdisk_size;
+
+/*
+ * The bytes of RAM from physical address 0: the environment's memsize, or
+ * the loader's fourth argument without it.  Set once by mips_board_boot().
+ */
+static uint32_t board_low_memory;
+
+/*
+ * Nonzero once the display shows.  Set once by mips_board_init().
+ */
+static int board_display_on;
+
+static const char *table_string(uint32_t address);
+static void copy_string(char *destination, const char *source);
+static int strings_equal(const char *left, const char *right);
+static int starts_with(const char *string, const char *prefix);
+static const char *parse_number(const char *string, uint32_t *value);
+static const char *skip_spaces(const char *string);
+static void take_command_line(const char *line);
+
+/*
+ * Copies what the board uses from the loader's tables.
+ *
+ * The tables hold KSEG0 addresses of strings in low memory; an address
+ * outside it is not read.
+ */
+void
+mips_board_boot(
+	uint32_t argument_count,
+	uint32_t argument_table,
+	uint32_t environment_table,
+	uint32_t low_memory_size)
+{
+	const uint32_t *arguments;
+	const uint32_t *environment;
+	const char *name;
+	const char *value;
+	const char *line;
+	const char *end;
+	uint32_t memory;
+	unsigned index;
+	int matched;
+
+	/* Low memory as the loader passed it, which bounds every address read below. */
+	board_low_memory = low_memory_size;
+	if (board_low_memory > BOARD_LOW_MEMORY_MAX)
+		board_low_memory = BOARD_LOW_MEMORY_MAX;
+
+	/* The command line is the second argument, when the loader gave one. */
+	arguments = (const uint32_t *)table_string(argument_table);
+	if (arguments != NULL && argument_count >= 2) {
+		line = table_string(arguments[1]);
+		if (line != NULL)
+			take_command_line(line);
+	}
+
+
+	/* Without an environment, low memory is the loader's fourth argument. */
+	environment = (const uint32_t *)table_string(environment_table);
+	if (environment == NULL)
+		return;
+
+	/* Reads the environment's pairs of name and value up to its empty name. */
+	for (index = 0; index + 1U < BOARD_ENVIRONMENT_MAX; index += 2U) {
+		name = table_string(environment[index]);
+		if (name == NULL)
+			break;
+		value = table_string(environment[index + 1U]);
+		if (value == NULL)
+			break;
+
+		/* Only the size of low memory, in decimal, is used. */
+		matched = strings_equal(name, "memsize");
+		if (!matched)
+			continue;
+
+		/* Takes a size that is a number within the low RAM alias. */
+		end = parse_number(value, &memory);
+		if (end == NULL)
+			continue;
+		if (memory == 0 || memory > BOARD_LOW_MEMORY_MAX)
+			continue;
+		board_low_memory = memory;
+	}
+}
+
+/*
+ * Sets up the display and draws on it what the console has printed.
+ */
+void
+mips_board_init(
+	void)
+{
+	int error;
+
+	/* Sets the standard VGA up; without it the console only keeps its grid. */
+	error = malta_framebuffer_init();
+	if (error != HAL_OK)
+		return;
+
+	/* Shows the lines printed before the display was set up. */
+	board_display_on = 1;
+	malta_cons_attach();
+}
+
+/*
+ * Writes one character to the board's console.
+ */
+void
+mips_board_putc(
+	int character)
+{
+	/* The console keeps the grid before the display shows and draws it after. */
+	malta_cons_putc(character);
+}
+
+/*
+ * Prints what the board found.
+ */
+void
+mips_board_describe(
+	void)
+{
+	/* The memory and the command line the loader passed. */
+	hal_printf("MIPS32 MALTA memory=%u KiB ramdisk=%08x+%u\n",
+		   board_low_memory / 1024U,
+		   board_ramdisk_start,
+		   board_ramdisk_size);
+	if (board_has_command_line)
+		hal_printf("MIPS32 MALTA command line: %s\n", board_command_line);
+
+	/* The display, when it shows. */
+	if (board_display_on)
+		malta_framebuffer_describe();
+}
+
+/*
+ * Reports a named value of the boot handoff.
+ *
+ * The board holds boot.command-line, the command line without the
+ * initial RAM disk's words; it is NULL when the loader gave none.  Any
+ * other name is NULL.
+ */
+void *
+hal_get_arch_handoff(
+	const char *name)
+{
+	int matched;
+
+	/* Refuses a missing name. */
+	if (name == NULL)
+		return NULL;
+
+	/* The command line, when there is one. */
+	matched = strings_equal(name, "boot.command-line");
+	if (matched) {
+		if (!board_has_command_line)
+			return NULL;
+
+		/* Succeeded: the board's copy of the command line. */
+		return board_command_line;
+	}
+
+	/* Failed: the board holds no value of that name. */
+	return NULL;
+}
+
+/*
+ * Reports a KSEG0 address of the loader's tables as a pointer, or NULL
+ * when it is not in low memory.
+ */
+static const char *
+table_string(
+	uint32_t address)
+{
+	/* Below KSEG0, or past low memory, is not the loader's. */
+	if (address < MIPS_KSEG0_BASE)
+		return NULL;
+	if (address - MIPS_KSEG0_BASE >= board_low_memory)
+		return NULL;
+
+	/* Succeeded: the address, which KSEG0 maps as it is. */
+	return (const char *)(uintptr_t)address;
+}
+
+/* Copies a string of the loader's into a buffer of BOARD_STRING_SIZE bytes. */
+static void
+copy_string(
+	char *destination,
+	const char *source)
+{
+	unsigned index;
+
+	/* Copies up to the terminator or the buffer's last byte, then terminates. */
+	for (index = 0; index + 1U < BOARD_STRING_SIZE && source[index] != '\0'; index++)
+		destination[index] = source[index];
+	destination[index] = '\0';
+}
+
+/* Reports whether two strings are the same. */
+static int
+strings_equal(
+	const char *left,
+	const char *right)
+{
+	unsigned index;
+
+	/* Compares byte by byte up to the first terminator. */
+	for (index = 0; left[index] == right[index]; index++) {
+		if (left[index] == '\0')
+			return 1;
+	}
+
+	/* The strings differ at index. */
+	return 0;
+}
+
+/* Reports whether a string begins with a prefix. */
+static int
+starts_with(
+	const char *string,
+	const char *prefix)
+{
+	unsigned index;
+
+	/* Compares the prefix's bytes. */
+	for (index = 0; prefix[index] != '\0'; index++) {
+		if (string[index] != prefix[index])
+			return 0;
+	}
+
+	/* Every byte of the prefix matched. */
+	return 1;
+}
+
+/*
+ * Reads a decimal number, or a hexadecimal one after 0x, and reports
+ * where it ends, or NULL when no digit is there.
+ */
+static const char *
+parse_number(
+	const char *string,
+	uint32_t *value)
+{
+	uint32_t base;
+	uint32_t number;
+	uint32_t digit;
+	int digits;
+
+	/* A 0x prefix makes the number hexadecimal. */
+	base = 10;
+	if (string[0] == '0' && (string[1] == 'x' || string[1] == 'X')) {
+		base = 16;
+		string += 2;
+	}
+
+	/* Collects the digits of the base. */
+	number = 0;
+	digits = 0;
+	for (;;) {
+		if (*string >= '0' && *string <= '9') {
+			digit = (uint32_t)(*string - '0');
+		} else if (base == 16 && *string >= 'a' && *string <= 'f') {
+			digit = (uint32_t)(*string - 'a') + 10U;
+		} else if (base == 16 && *string >= 'A' && *string <= 'F') {
+			digit = (uint32_t)(*string - 'A') + 10U;
+		} else {
+			break;
+		}
+		number = number * base + digit;
+		digits++;
+		string++;
+	}
+
+	/* Refuses a number without a digit. */
+	if (digits == 0)
+		return NULL;
+
+	/* Succeeded: the number and the byte after it. */
+	*value = number;
+	return string;
+}
+
+/* Reports the first byte of a string that is not a space. */
+static const char *
+skip_spaces(
+	const char *string)
+{
+	/* Steps over the spaces. */
+	while (*string == ' ')
+		string++;
+
+	/* Succeeded: the first other byte. */
+	return string;
+}
+
+/*
+ * Keeps the command line, without the initial RAM disk's words in front
+ * of it.
+ */
+static void
+take_command_line(
+	const char *line)
+{
+	const char *rest;
+	uint32_t number;
+	int matched;
+
+	/* The RAM disk's place, in hexadecimal. */
+	line = skip_spaces(line);
+	matched = starts_with(line, BOARD_RAMDISK_START);
+	if (matched) {
+		rest = parse_number(line + sizeof(BOARD_RAMDISK_START) - 1U, &number);
+		if (rest != NULL) {
+			board_ramdisk_start = number;
+			line = skip_spaces(rest);
+		}
+	}
+
+	/* The RAM disk's size, in decimal. */
+	matched = starts_with(line, BOARD_RAMDISK_SIZE);
+	if (matched) {
+		rest = parse_number(line + sizeof(BOARD_RAMDISK_SIZE) - 1U, &number);
+		if (rest != NULL) {
+			board_ramdisk_size = number;
+			line = skip_spaces(rest);
+		}
+	}
+
+	/* An empty remainder is no command line. */
+	if (*line == '\0')
+		return;
+
+	/* Keeps the remainder. */
+	copy_string(board_command_line, line);
+	board_has_command_line = 1;
+}
