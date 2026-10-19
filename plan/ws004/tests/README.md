@@ -63,15 +63,7 @@ and one EOI per line, delivery to every PCI subscriber, non-final removal
 without masking a peer, in-flight `EBUSY` retention, and final checked-removal
 failure followed by retry:
 
-```sh
-mkdir -p build/q047-tmp
-TMPDIR="$PWD/build/q047-tmp" \
-  cc -std=c11 -Iinclude -I. -Wall -Wextra -Werror \
-  src/drivers/pci.c \
-  plan/ws004/tests/pci-shared-intx-test.c \
-  -o build/q047-tmp/pci-shared-intx-test
-build/q047-tmp/pci-shared-intx-test
-```
+(The host fixture `pci-shared-intx-test.c` was removed on 2026-10-19: it no longer linked after the PCI core changes, and the INTx dispatch is now covered by `plan/ws256/tests/pci-intx-hook/run.sh`.)
 
 Scope note: this fixture covers dispatcher/list/drain lifetime, not a live
 function which remains asserted after unsubscribe.  EHCI and UHCI mask their
@@ -445,16 +437,6 @@ cc -std=c11 -Iinclude -Wall -Wextra -Werror \
   src/drivers/dma.c plan/ws004/tests/dma-constraints-test.c \
   -o /tmp/ws004-dma-test
 /tmp/ws004-dma-test
-
-cc -std=c11 -Iinclude -Wall -Wextra -Werror \
-  src/drivers/pci.c plan/ws004/tests/pci-rescan-test.c \
-  -o /tmp/ws004-pci-test
-/tmp/ws004-pci-test
-
-cc -std=c11 -Iinclude -Wall -Wextra -Werror \
-  src/drivers/pci.c plan/ws004/tests/pcie-capability-test.c \
-  -o /tmp/ws004-pcie-test
-/tmp/ws004-pcie-test
 ```
 
 ## HW-T01 evidence
@@ -486,12 +468,7 @@ ownership remains). It also covers halt and bus-master-disable failures,
 persistent checked-removal errors, stop/DMA release only after completed
 quiesce, successful retry, and idempotent final detach without double-free:
 
-```sh
-cc -std=c11 -Wall -Wextra -Werror \
-  plan/ws004/tests/pci-hcd-irq-teardown-test.c \
-  -o /tmp/ws004-pci-hcd-irq-teardown-test
-/tmp/ws004-pci-hcd-irq-teardown-test
-```
+(The host fixture `pci-hcd-irq-teardown-test.c` was removed on 2026-10-19: it no longer linked; it was a development check of a completed WS.)
 
 ## HW-T03 checked legacy-HCD request retirement
 
