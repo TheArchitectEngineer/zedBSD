@@ -1,6 +1,6 @@
 #!/bin/sh
 # Host test of the kernel's latency diagnostic (ws213-p007 K-D, kern.perf=1).
-# The accounting functions are cut out of src/kern/sched.c and src/kern/vm/vm.c
+# The accounting functions are cut out of src/kern/sched.c and src/kern/vm/metadata-lock.c
 # and compiled with the real struct thread and struct process against a fake
 # counter, a fake tick and a fake mutex:
 #  - a woken thread's wait to run, and how many threads its CPU ran first;
@@ -40,7 +40,7 @@ for name in sched_perf_counts_to_us sched_perf_identify perf_mark_runnable_locke
 	cut_function src/kern/sched.c "$name"
 done > "$out/sched-functions.inc"
 for name in vm_metadata_perf_take metadata_lock_measured metadata_hold_end; do
-	cut_function src/kern/vm/vm.c "$name"
+	cut_function src/kern/vm/metadata-lock.c "$name"
 done > "$out/vm-functions.inc"
 
 cat > "$out/main.c" <<'EOT'
