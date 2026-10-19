@@ -65,6 +65,7 @@
 ### Focus
 
 <!-- master:focus:start -->
+- **fg020 VisionFive 2（2026-10-19 22:58 ユーザー「VisionFive 2にフォーカスします.」）**: WS256（移植、残りは実機）→ WS269（PowerVR）→ WS270（Keiland、D5 (a) で画面なしの立ち上げを先行）。WS275（sun4u、BUG-337 で停止）・WS273（RG350、中断）は止めたまま。
 - （達成 2026-10-15）前のゴール「RTXでデスクトップが描画できること。」（R9k・方法 A）と Pi の再生（720p30 を遅れなく、T1-690。1080p・60 fps は要件から外した）。今の焦点は fg019 ベータ2 の公開（期限 2026-10-16 夕、10-17 OSC）と、ユーザーが指示する WS（WS245・WS247 など）。
 - **fg019 ベータ2 の公開（10/17、RC 10/13）**。優先順（2026-10-07 ユーザー）: Settings Display（WS113）→ USB-C/DP Alt（WS051・WS050、BUG-256）→ Vulkan Video（WS083）→ widget（WS090）→ 通知（WS156）→ touchpad の割り込み・タップ（WS183）→ YubiKey（WS161）→ 写真（WS157）→ カレンダー（WS155）→ Bluetooth（WS143）→ 残り。空き時間だけ: IME（WS095）・RTL8822C（WS186）・Vulkan executor（WS031）・i915 の高度化（WS075、shader の compiler を含む）。ベータ3 と 10/13 以降の物は decisions-log。
 <!-- master:focus:end -->
@@ -118,6 +119,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 
 | Goal | 当面の成果 | Milestone | 担当の WS | 出典 |
 | --- | --- | --- | --- | --- |
+| **fg020** | VisionFive 2 で OS を完全に動かす（framebuffer・SD・rootfs・USB keyboard・LAN・sound・NVMe の実機、PowerVR の driver、Keiland） | MG008 | [WS256](ws256/ws.md)、[WS269](ws269/ws.md)、[WS270](ws270/ws.md) | 2026-10-19 22:58 ユーザー「VisionFive 2にフォーカスします.」 |
 | **fg019** | **最初の公開ベータ＝ベータ2 のリリース（目標 2026-10-17、2026-10-06 夜 ユーザー「ベータ1は難なく前倒しできるので、実際には最初のベータはベータ2で、2026年10月17日に公開するのはベータ2に変更です。」）**。旧: ベータ1 のリリース。凍結なし、できた所までをベータ1 にし、安定化は後のベータの版で。版と tag は `zedbsd-0.1.0-beta1`、CI が Prerelease を作りユーザーが動作確認して Latest に手で昇格、配布物は USB の image と Windows の QEMU/Venus の zip | MG003・MG006・MG007・MG002 | 下の「fg019 の内容」 | 2026-10-02 user「次のFeature Goalはベータ1のリリースにします」ほか |
 | **fg018** | Linux 標準 GTK4 の実測と互換性の改善 | MG006 | [WS114](ws114/ws.md) | 2026-10-02 user。p007・p008 まで達成 |
 
@@ -158,6 +160,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 依存による実行の順とは別のもの。Queue の権限は変えない。古い順位（2026-10-03〜04）は付録の history-log。
 
 <!-- master:priority:start -->
+2026-10-19 22:58 ユーザー「VisionFive 2にフォーカスします.」→ 最優先は WS256 → WS269 → WS270（fg020）。
 2026-10-06 夜 ユーザーの作業の順（原文の要旨）:「ベータ1のWS＋ベータ2の一部実装をまずすべて実装してください。P1,P2でフルに実装してしまってください。デバッグ項目としてカウントされているものを除きます。正常系が通ればいいです。準正常系と異常系で未実装な部分は、そういった積み残しを管理するWSを作って、そこにPhaseとして積みましょう。それはすべての実装が1パス通って疎通確認できてからでいいです。」「そのあとで、デバッグに専念して、すべてのバグを消化します。」
 
 - **規則**: 正常系だけを実装して疎通を確かめる。準正常系・異常系の未実装は各 phase.md の「積み残し」の節に書いておき、全ての実装の 1 パスの後に、積み残しを管理する新しい WS に Phase として集める。デバッグとして数えた項目（Bug・実機の確認）は除く。
@@ -644,6 +647,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-19 22:58（ユーザー）: 「VisionFive 2にフォーカスします.」→ fg020 を立て、WS256・WS269・WS270 を最優先に。
 - 2026-10-19（ユーザー、クリック）: WS275 の P1 の branch（4aa7a753d、p002〜p005 と cursor の直し、sun4u・sparcv9・boot.h・Makefile の 15 file を含む）を「全部 merge する」→ main 50bd10c5f。X は BUG-337 のまま。
 - 2026-10-19 22:22（ユーザー）: 「sun4uはバグの原因がわからなければBUGチケットに積んでいったんやめます。RG350はきりのいいところでラップアップしましょう。途中までのコードをコミットしてOKです。」→ WS275 p006（startx 後に client が出ない）は T1-747 で原因が分からなければ BUG にして WS275 を止める。WS273 は p003 をきりのいい所で止め、途中の code を commit して中断。
 - 2026-10-19（ユーザー、クリック）: WS269 の PowerVR の firmware は「mirror する（Q1 が push）」、差分を見て「push する」→ awemorris/zedBSD-firmware の df57bb4 に powervr/ を足して push した。
