@@ -3,7 +3,7 @@
 # ws275-p006 T1 の試験（sun4u の X）と startx で client が出ない件の観察
 
 - 親: [ws275](../ws.md)、Queue: q1325 / q1325-i01（P1、2026-10-19、T1-746 (2) の解析）
-- Status: uncleared（code の読みでは原因が見つからず、T1 の観察待ち）
+- Status: uncleared（2026-10-19 T1-746 (2)・T1-747 で startx の後に client が出ない、原因不明 → BUG-337。ユーザーの指示で WS275 を停止）
 
 ## 症状（T1-746 (2)、QEMU）
 

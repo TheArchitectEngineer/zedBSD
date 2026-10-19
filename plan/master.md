@@ -597,7 +597,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS272](ws272/ws.md) | MG008 | MIPS64（mips64el）の QEMU malta への移植、framebuffer の console・VFS の段まで（2026-10-19 ユーザー） | completed（2026-10-19、QEMU malta の MIPS64R2-generic で VFS の段まで、512M の high の alias も、T1-731・733・734） | — |
 | [WS273](ws273/ws.md) | MG008 | Anbernic RG350（JZ4770、MIPS32）の実機への移植（2026-10-19 ユーザー） | incomplete（2026-10-19 22:22 ユーザーの指示で中断: p001 cleared、p002 は T1-748 待ち、p003 途中（main 7adce0d6d）。実機 1 は beta2.md U26） | 再開は ws273/phase003/phase.md |
 | [WS274](ws274/ws.md) | MG001 | 仮想メモリの code（vm.c・vmspace.c など）を src/kern/vm/ に分けて整理する（2026-10-19 ユーザー） | completed（2026-10-19、src/kern/vm/ の 26 file、T1-741 まで PASS） | — |
-| [WS275](ws275/ws.md) | MG008 | sun4u に /dev/graphics を実装し Xzed を動かす（2026-10-19 ユーザー） | incomplete（2026-10-19 停止、BUG-337。p002〜p005 は P1 の branch 4aa7a753d に未 merge） | merge の判断（ユーザー）と BUG-337 |
+| [WS275](ws275/ws.md) | MG008 | sun4u に /dev/graphics を実装し Xzed を動かす（2026-10-19 ユーザー） | incomplete（2026-10-19 停止、BUG-337。p001〜p005 cleared・main に merge 50bd10c5f） | BUG-337 |
 | [WS276](ws276/ws.md) | MG008 | m68k（x68k・m68k-virt）の静的な program の TLS を kernel と libc で支える（2026-10-19、q1301 の所見） | completed（2026-10-19、m68k の静的な TLS、T1-741） | — |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
@@ -644,6 +644,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-19（ユーザー、クリック）: WS275 の P1 の branch（4aa7a753d、p002〜p005 と cursor の直し、sun4u・sparcv9・boot.h・Makefile の 15 file を含む）を「全部 merge する」→ main 50bd10c5f。X は BUG-337 のまま。
 - 2026-10-19 22:22（ユーザー）: 「sun4uはバグの原因がわからなければBUGチケットに積んでいったんやめます。RG350はきりのいいところでラップアップしましょう。途中までのコードをコミットしてOKです。」→ WS275 p006（startx 後に client が出ない）は T1-747 で原因が分からなければ BUG にして WS275 を止める。WS273 は p003 をきりのいい所で止め、途中の code を commit して中断。
 - 2026-10-19（ユーザー、クリック）: WS269 の PowerVR の firmware は「mirror する（Q1 が push）」、差分を見て「push する」→ awemorris/zedBSD-firmware の df57bb4 に powervr/ を足して push した。
 - 2026-10-19 22:04（ユーザー、クリック）: WS269（VF2 の PowerVR）の判断。D1「(a) debug 16 LW」（共有の道を確かめた後、FW を初めて起動した後の debug に 16 LW、通らなければ止めて報告、FW の逆アセンブルはしない）。D5「(a) 画面なしで先行」（WS270 は WS269 p010 まで service・seat・input・display の claim だけ進め、描画は GPU の後）。D7「(a) uncached の別名」（riscv64 の HAL の実装で NOCACHE を別名で出し、HOST_CACHED は出さない、F-113）。D2・D3・D6「全部推奨どおり」（D2 visionfive2.c の組み込みの記述・DT の node があれば優先、D3 powervr の driver を firmware.list に載せ VF2 で既定 on・LICENSE.powervr に build の時に同意・逆アセンブルの禁止を README に、D6 自前の Rogue の USC の backend）。

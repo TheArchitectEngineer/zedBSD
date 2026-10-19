@@ -4,7 +4,7 @@
 
 - WS: [ws275](../ws.md)、設計 [design.md](../design.md) §4.1・§4.2b・§7
 - Queue: q1312 / q1312-i01（P1）
-- Status: cleared 待ち（実装・host 試験・build 済み 2026-10-19 P1。Q1 の判定と merge を待つ）
+- Status: cleared（2026-10-19 Q1 の判定: host 試験 PASS、build warning 0。ユーザーの「全部 merge する」で main に merge（50bd10c5f）。QEMU のみ・実機は未実施）
 
 ## 受け入れの条件
 
