@@ -17,6 +17,8 @@
  * that moved, and the recovery from injected errors.
  *
  *   dw-mmc-host-test driver
+ *   dw-mmc-host-test phase
+ *   dw-mmc-host-test no-hook
  *   dw-mmc-host-test glue vf2-mmc.dtb
  */
 
@@ -123,6 +125,15 @@ struct model {
 
 	/* Errors to inject: data CRC errors on the next data commands. */
 	int crc_errors;
+
+	/*
+	 * A slot whose multiple-block reads at the bypassed clock (high
+	 * speed) fail with a data CRC error outside the sample phases
+	 * good_low..good_high; good_low above good_high makes every phase fail.
+	 */
+	int phase_window;
+	uint32_t good_low;
+	uint32_t good_high;
 
 	/* What happened. */
 	struct sent log[256];
@@ -390,6 +401,14 @@ run_command(
 		if (!card.high_capacity)
 			block = argument / 512U;
 		card.block = block;
+		if (card.phase_window && index == 18 && get32(card.registers, R_CLKDIV) == 0) {
+			uint32_t phase = (get32(card.registers, R_UHS_EXT) >> 16) & 0x1fU;
+
+			if (phase < card.good_low || phase > card.good_high) {
+				raise(S_DCRC);
+				return;
+			}
+		}
 		if (card.crc_errors > 0) {
 			card.crc_errors--;
 			raise(S_DCRC);
@@ -1041,6 +1060,135 @@ check_glue(
 	check(error == 0 && !info.high_speed && info.card_clock == 24750000ULL, "no switch class: 24.75 MHz default speed");
 }
 
+/* The glue's hook for the sample phase, as the JH7110 glue sets it. */
+static void
+set_phase(
+	void *context,
+	uint32_t phase)
+{
+	uint8_t *registers;
+	uint32_t value;
+
+	registers = context;
+	value = kern_mmio_read32(registers + R_UHS_EXT);
+	value &= ~(0x1fU << 16);
+	value |= (phase & 0x1fU) << 16;
+	kern_mmio_write32(registers + R_UHS_EXT, value);
+}
+
+/* Attaches a high-speed SDXC-shaped card with the phase hook, on a unit. */
+static struct disk *
+attach_phase_card(
+	unsigned unit,
+	int hook)
+{
+	struct drv_dw_mmc_config config;
+	struct disk *disk;
+	int error;
+
+	reset_model(1, 4, 0x290aU);
+	memset(&config, 0, sizeof(config));
+	config.registers = card.registers;
+	config.clock_rate = 49500000U;
+	config.fifo_depth = 32U;
+	config.bus_width = 4U;
+	config.max_frequency = 100000000U;
+	config.high_speed = 1;
+	config.unit = unit;
+	if (hook) {
+		config.sample_phase = 0;
+		config.sample_phase_count = 32U;
+		config.set_sample_phase = set_phase;
+		config.phase_context = card.registers;
+	}
+	error = drv_dw_mmc_attach(&config, &disk);
+	if (error != 0)
+		return NULL;
+	return disk;
+}
+
+/*
+ * BUG-340: data CRC errors at high speed tune the sample phase, and when
+ * no phase reads, move the clock to the default speed.
+ */
+static void
+check_phase(
+	void)
+{
+	static uint8_t data[32U * 512U];
+	struct drv_dw_mmc_card info;
+	struct disk *disk;
+	unsigned before;
+	int error;
+
+	/* Phases 10 to 20 read; the firmware's phase 0 does not. */
+	disk = attach_phase_card(0, 1);
+	check(disk != NULL, "phase: card attaches at high speed");
+	if (disk == NULL)
+		return;
+	card.phase_window = 1;
+	card.good_low = 10U;
+	card.good_high = 20U;
+	error = submit(disk, BIO_READ, 100, 1, data);
+	check(error == 0 && memcmp(data, card.memory + 100U * 512U, 512) == 0,
+	      "phase: a single block reads at phase 0");
+	error = submit(disk, BIO_READ, 137, 32, data);
+	check(error == 0 && memcmp(data, card.memory + 137U * 512U, sizeof(data)) == 0,
+	      "phase: 32 blocks read after the tuning, data matches");
+	check(((get32(card.registers, R_UHS_EXT) >> 16) & 0x1fU) == 15U, "phase: the middle of 10-20, 15, is set");
+	error = drv_dw_mmc_card_info(0, &info);
+	check(error == 0 && info.sample_phase == 15U && !info.slowed && info.card_clock == 49500000ULL,
+	      "phase: card info phase 15, still 49.5 MHz");
+	before = card.sent_count;
+	error = submit(disk, BIO_READ, 500, 32, data);
+	check(error == 0 && card.sent_count == before + 1U && memcmp(data, card.memory + 500U * 512U, sizeof(data)) == 0,
+	      "phase: the next 32 blocks read at once");
+
+	/* No phase reads at high speed: the clock goes down to 24.75 MHz. */
+	disk = attach_phase_card(1, 1);
+	check(disk != NULL, "slow: card attaches at high speed");
+	if (disk == NULL)
+		return;
+	card.phase_window = 1;
+	card.good_low = 1U;
+	card.good_high = 0U;
+	error = submit(disk, BIO_READ, 137, 32, data);
+	check(error == 0 && memcmp(data, card.memory + 137U * 512U, sizeof(data)) == 0,
+	      "slow: 32 blocks read at the default speed, data matches");
+	check(((get32(card.registers, R_UHS_EXT) >> 16) & 0x1fU) == 0U, "slow: the phase goes back to 0");
+	check(get32(card.registers, R_CLKDIV) == 1U, "slow: divider 1, 24.75 MHz");
+	error = drv_dw_mmc_card_info(1, &info);
+	check(error == 0 && info.slowed && info.card_clock == 24750000ULL && info.sample_phase == 0U,
+	      "slow: card info slowed, 24.75 MHz");
+}
+
+/* Without a phase hook, data CRC errors at high speed move the clock down at once. */
+static void
+check_no_hook(
+	void)
+{
+	static uint8_t data[32U * 512U];
+	struct drv_dw_mmc_card info;
+	struct disk *disk;
+	unsigned before;
+	int error;
+
+	disk = attach_phase_card(0, 0);
+	check(disk != NULL, "no hook: card attaches at high speed");
+	if (disk == NULL)
+		return;
+	card.phase_window = 1;
+	card.good_low = 10U;
+	card.good_high = 20U;
+	before = card.sent_count;
+	error = submit(disk, BIO_READ, 137, 32, data);
+	check(error == 0 && memcmp(data, card.memory + 137U * 512U, sizeof(data)) == 0,
+	      "no hook: 32 blocks read at the default speed, data matches");
+	check(sequence_is(before, (const uint32_t[]){ 18, 12, 13, 18 }, 4U), "no hook: stop, status, one more try");
+	error = drv_dw_mmc_card_info(0, &info);
+	check(error == 0 && info.slowed && info.card_clock == 24750000ULL, "no hook: 24.75 MHz");
+}
+
 int
 main(
 	int argc,
@@ -1048,10 +1196,14 @@ main(
 {
 	if (argc >= 2 && strcmp(argv[1], "driver") == 0) {
 		check_driver();
+	} else if (argc >= 2 && strcmp(argv[1], "phase") == 0) {
+		check_phase();
+	} else if (argc >= 2 && strcmp(argv[1], "no-hook") == 0) {
+		check_no_hook();
 	} else if (argc >= 3 && strcmp(argv[1], "glue") == 0) {
 		check_glue(argv[2]);
 	} else {
-		fprintf(stderr, "usage: %s driver | glue vf2-mmc.dtb\n", argv[0]);
+		fprintf(stderr, "usage: %s driver | phase | no-hook | glue vf2-mmc.dtb\n", argv[0]);
 		return 2;
 	}
 

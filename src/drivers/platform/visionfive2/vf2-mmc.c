@@ -15,9 +15,12 @@
  * to the card.
  *
  * The card runs at high speed at most, which needs no tuning, so the
- * controller's sample phase is left as the firmware set it; the glue only
- * writes it to the boot log, with the system control block's field the
- * node's starfive,sysreg names, for a board whose card fails at speed.
+ * controller's sample phase starts as the firmware set it, as Linux leaves
+ * it; the glue writes it to the boot log with the system control block's
+ * field the node's starfive,sysreg names, and hands the DesignWare driver
+ * a hook that sets it, which the driver uses when a read at high speed
+ * fails with a data CRC error (BUG-340).  The controller has no drive
+ * phase that Linux sets for the slot, so the glue sets none.
  */
 
 #include <drivers/platform/visionfive2/vf2-mmc.h>
@@ -51,6 +54,14 @@
 #define VF2_MMC_PHASE_SHIFT		16U
 #define VF2_MMC_PHASE_MASK		0x1fU
 
+/*
+ * How many sample phases the controller has: the field's five bits.
+ *
+ * Value referenced: Linux v6.12 drivers/mmc/host/dw_mmc-starfive.c
+ * (MAX_DELAY_CHAIN).
+ */
+#define VF2_MMC_PHASE_COUNT		32U
+
 /* The unit number of the slot's card, which names its disk mmcblk0. */
 #define VF2_MMC_UNIT			0U
 
@@ -68,7 +79,8 @@ static int prepare_card_detect(const struct drv_fdt *fdt, uint32_t node, int *ha
 static int card_present(void *context, int *present);
 static uint32_t read_number(const struct drv_fdt *fdt, uint32_t node, const char *name, uint32_t fallback);
 static int has_property(const struct drv_fdt *fdt, uint32_t node, const char *name);
-static void describe_sample_phase(const struct drv_fdt *fdt, uint32_t node, volatile uint8_t *registers);
+static uint32_t describe_sample_phase(const struct drv_fdt *fdt, uint32_t node, volatile uint8_t *registers);
+static void set_sample_phase(void *context, uint32_t phase);
 
 /*
  * Brings up the SD card slot and publishes its card.
@@ -80,6 +92,7 @@ drv_vf2_mmc_attach(
 {
 	struct drv_dw_mmc_config config;
 	uint64_t clock_rate;
+	uint32_t phase;
 	uint64_t address;
 	uint64_t size;
 	uint32_t node;
@@ -108,7 +121,7 @@ drv_vf2_mmc_attach(
 		return error;
 
 	/* Writes the sample phase the firmware left to the boot log. */
-	describe_sample_phase(fdt, node, mapped);
+	phase = describe_sample_phase(fdt, node, mapped);
 
 	/* Describes the controller and the slot to the DesignWare driver. */
 	config.registers = mapped;
@@ -118,6 +131,10 @@ drv_vf2_mmc_attach(
 	config.max_frequency = read_number(fdt, node, "max-frequency", 0);
 	config.high_speed = has_property(fdt, node, "cap-sd-highspeed");
 	config.power_on_delay_ms = read_number(fdt, node, "post-power-on-delay-ms", 0);
+	config.sample_phase = phase;
+	config.sample_phase_count = VF2_MMC_PHASE_COUNT;
+	config.set_sample_phase = set_sample_phase;
+	config.phase_context = mapped;
 	config.card_present = NULL;
 	config.context = NULL;
 	if (has_detect) {
@@ -341,14 +358,15 @@ has_property(
 
 /*
  * Writes the controller's sample phase and the field of the system
- * control block that starfive,sysreg names to the boot log.
+ * control block that starfive,sysreg names to the boot log, and reports
+ * the phase.
  *
  * The property's three arguments are the field's offset, shift and mask.
  *
  * Values referenced: Linux v6.12 arch/riscv/boot/dts/starfive/jh7110.dtsi
  * (mmc1, starfive,sysreg = <&sys_syscon 0x9c 0x1 0x3e>).
  */
-static void
+static uint32_t
 describe_sample_phase(
 	const struct drv_fdt *fdt,
 	uint32_t node,
@@ -371,14 +389,14 @@ describe_sample_phase(
 	    count < 3U ||
 	    arguments[1] >= 32U) {
 		kern_logf("vf2-mmc: sample phase %u\n", phase);
-		return;
+		return phase;
 	}
 
 	/* Reads the field. */
 	error = drv_vf2_syscon_read(syscon, arguments[0], &field);
 	if (error != 0) {
 		kern_logf("vf2-mmc: sample phase %u, sysreg unreadable (%d)\n", phase, error);
-		return;
+		return phase;
 	}
 
 	/* Takes the phase's bits out of the field. */
@@ -386,4 +404,28 @@ describe_sample_phase(
 
 	/* Succeeded: logs both. */
 	kern_logf("vf2-mmc: sample phase %u, sysreg %x field %x\n", phase, arguments[0], field);
+	return phase;
+}
+
+/*
+ * Sets the controller's sample phase, keeping the register's other bits;
+ * the DesignWare driver waits for it to settle.
+ *
+ * Procedure referenced: Linux v6.12 drivers/mmc/host/dw_mmc-starfive.c
+ * (dw_mci_starfive_set_sample_phase).
+ */
+static void
+set_sample_phase(
+	void *context,
+	uint32_t phase)
+{
+	volatile uint8_t *registers;
+	uint32_t value;
+
+	/* Replaces the phase's five bits of the register. */
+	registers = context;
+	value = kern_mmio_read32(registers + VF2_MMC_PHASE_REGISTER);
+	value &= ~(VF2_MMC_PHASE_MASK << VF2_MMC_PHASE_SHIFT);
+	value |= (phase & VF2_MMC_PHASE_MASK) << VF2_MMC_PHASE_SHIFT;
+	kern_mmio_write32(registers + VF2_MMC_PHASE_REGISTER, value);
 }
