@@ -74,8 +74,7 @@ int drv_vf2_crg_init(const struct drv_fdt *fdt);
  * A NULL name takes the first entry of the clocks property.  ENOENT means
  * the device lacks the clock; ENODEV that its phandle names no generator.
  */
-int drv_vf2_clock_lookup(const struct drv_fdt *fdt, uint32_t node, const char *name,
-			 struct drv_vf2_clock *clock);
+int drv_vf2_clock_lookup(const struct drv_fdt *fdt, uint32_t node, const char *name, struct drv_vf2_clock *clock);
 
 /*
  * Starts a clock and every gate above it on its current path.
@@ -128,8 +127,7 @@ int drv_vf2_clock_apply_assigned(const struct drv_fdt *fdt, uint32_t node);
  *
  * A NULL name takes the first entry of the resets property.
  */
-int drv_vf2_reset_lookup(const struct drv_fdt *fdt, uint32_t node, const char *name,
-			 struct drv_vf2_reset *reset);
+int drv_vf2_reset_lookup(const struct drv_fdt *fdt, uint32_t node, const char *name, struct drv_vf2_reset *reset);
 
 /*
  * Holds a device in reset.

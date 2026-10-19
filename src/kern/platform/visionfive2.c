@@ -69,6 +69,9 @@
 /* The SD card slot's controller, whose clock and card detect are logged. */
 #define VF2_SD_REGISTERS	0x16020000ULL
 
+/* The AXI configuration bus clock's number in the SYS clock generator. */
+#define VF2_AXI_CONFIG_CLOCK	7U
+
 /* The SD card clock's number in the SYS clock generator. */
 #define VF2_SD_CARD_CLOCK	94U
 
@@ -454,7 +457,7 @@ describe_clocks(
 
 	/* Computes the AXI configuration bus's rate, which the card clock divides. */
 	clock.crg = DRV_VF2_CRG_SYS;
-	clock.index = 7U;
+	clock.index = VF2_AXI_CONFIG_CLOCK;
 	bus_error = drv_vf2_clock_get_rate(&clock, &bus_rate);
 	if (bus_error != 0)
 		bus_rate = 0;

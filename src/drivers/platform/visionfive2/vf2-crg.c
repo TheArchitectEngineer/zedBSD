@@ -737,8 +737,13 @@ drv_vf2_clock_apply_assigned(
 			continue;
 
 		/* Finds the clock the same position of assigned-clocks names. */
-		error = lookup_specifier(fdt, node, "assigned-clocks", "#clock-cells", position,
-					 &clock.crg, &clock.index);
+		error = lookup_specifier(fdt,
+					 node,
+					 "assigned-clocks",
+					 "#clock-cells",
+					 position,
+					 &clock.crg,
+					 &clock.index);
 		if (error != 0)
 			return error;
 

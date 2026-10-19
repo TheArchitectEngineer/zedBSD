@@ -653,8 +653,12 @@ apply_pins(
 
 		/* Points the device's input signal at the pin. */
 		if (input != PINMUX_NO_INPUT) {
-			update_field(bank, layout->input_base, input, layout->input_bits,
-				     pin + INPUT_PIN_OFFSET, changed);
+			update_field(bank,
+				     layout->input_base,
+				     input,
+				     layout->input_bits,
+				     pin + INPUT_PIN_OFFSET,
+				     changed);
 		}
 	}
 

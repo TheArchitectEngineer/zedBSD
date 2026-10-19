@@ -67,8 +67,7 @@ int drv_vf2_pinctrl_apply_default(const struct drv_fdt *fdt, uint32_t node, unsi
  *
  * Name is the whole property name, such as "cd-gpios".
  */
-int drv_vf2_gpio_lookup(const struct drv_fdt *fdt, uint32_t node, const char *name,
-			struct drv_vf2_gpio *gpio);
+int drv_vf2_gpio_lookup(const struct drv_fdt *fdt, uint32_t node, const char *name, struct drv_vf2_gpio *gpio);
 
 /*
  * Makes a pin an input: its output driver off and its receiver on.

@@ -67,8 +67,6 @@ int drv_vf2_syscon_update(enum drv_vf2_syscon syscon, uint32_t offset, uint32_t 
  * how many there were.  ENOENT means the node lacks the property; ENODEV
  * that the phandle names no block found by drv_vf2_syscon_init().
  */
-int drv_vf2_syscon_lookup(const struct drv_fdt *fdt, uint32_t node, const char *name,
-			  enum drv_vf2_syscon *syscon, uint32_t *arguments, unsigned capacity,
-			  unsigned *count);
+int drv_vf2_syscon_lookup(const struct drv_fdt *fdt, uint32_t node, const char *name, enum drv_vf2_syscon *syscon, uint32_t *arguments, unsigned capacity, unsigned *count);
 
 #endif
