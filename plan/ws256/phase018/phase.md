@@ -2,7 +2,7 @@
 
 # ws256-p018 VF2 の GbE（DW Ethernet QoS と PHY、gmac0）
 
-Status: in-progress（2026-10-19 P2: 板の前の code と host 試験を終えた。Q1 の判定と、実機の確かめ（ユーザーの目視と SSH、p022・p023 の後）が残る）
+Status: in-progress（2026-10-20 ユーザーの VF2 の実機: link up 1000 Mbps・DHCP で 10.0.30.2/16・「pingはOKです。」。残り: ssh（UAT の image に sshd が無い）。前: 板の前の code と host 試験 210 PASS（1881a2540））
 
 - 親: [WS256](../ws.md)。Queue: q1292-i01（P2）。
 - 範囲: [design-peripherals.md](../design-peripherals.md) §3.7（改訂 4）、§2.4 の `drv_fdt_dma_coherent` と板の既定、Minor 4（v1.3B は `starfive,tx-use-rgmii-clk` で TX の set_rate が要らない、YT8531 は推定なので MDIO で id を読む、AON SYSCON の gmac0 の interface の field）。板の前の code: DMA の ring、MAC・MTL・DMA の初期化、MDIO と PHY、link、送受信、割り込み、VF2 の glue、network の層への登録、visionfive2.c からの attach。hal.h は変えない。
