@@ -22,10 +22,14 @@ extern "C" {
  * whose buffer is five words. clang has no such builtin for AArch64, so
  * that target saves the callee-saved registers itself: x19 through x28,
  * the frame pointer, the link register, the stack pointer, and the low
- * halves of v8 to v15.
+ * halves of v8 to v15.  Nor has it one for RISC-V, where the saved
+ * registers are s0 through s11, the return address, the stack pointer and
+ * fs0 to fs11.
  */
 #if defined(__aarch64__)
 #define __ZED_JMP_BUF_WORDS 21
+#elif defined(__riscv)
+#define __ZED_JMP_BUF_WORDS 26
 #else
 #define __ZED_JMP_BUF_WORDS 5
 #endif
@@ -35,7 +39,7 @@ typedef struct {
 	int result;
 } jmp_buf[1];
 
-#if defined(__aarch64__)
+#if defined(__aarch64__) || defined(__riscv)
 int __zed_setjmp(void *context);
 
 #define setjmp(environment)                                                    \

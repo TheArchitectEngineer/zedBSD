@@ -54,7 +54,7 @@ ZEDBSD_CONFIG_OPTIONAL_GOALS := menuconfig help list-user-programs \
 	noct-target-source-verify noct-host-source noct-host-source-verify \
 	llvm-download llvm-source llvm-source-verify llvm-configure llvm-build llvm-toolchain \
 	llvm-host-archive toolchain-cache \
-	sysroot-amd64 sysroot-i386 sysroot-arm64 sysroots \
+	sysroot-amd64 sysroot-i386 sysroot-arm64 sysroot-riscv64 sysroots \
 	patch openssl-download openssl-source openssh-download openssh-source \
 	release-info
 ifeq ($(strip $(ZEDBSD_PLATFORM)),)

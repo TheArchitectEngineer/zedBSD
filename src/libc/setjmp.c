@@ -11,7 +11,7 @@
 
 #include <setjmp.h>
 
-#if defined(__aarch64__)
+#if defined(__aarch64__) || defined(__riscv)
 void __zed_longjmp(void *context, int value) __attribute__((__noreturn__));
 #endif
 
@@ -20,7 +20,7 @@ longjmp(jmp_buf environment, int value)
 {
 	/* A zero value becomes one, so the jump is always distinguishable. */
 	environment[0].result = value == 0 ? 1 : value;
-#if defined(__aarch64__)
+#if defined(__aarch64__) || defined(__riscv)
 	__zed_longjmp(environment[0].context, 1);
 #else
 	__builtin_longjmp(environment[0].context, 1);

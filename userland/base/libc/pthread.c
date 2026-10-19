@@ -3736,6 +3736,12 @@ lock_spin(
 		__asm__ volatile("pause" ::: "memory");
 #elif defined(__aarch64__)
 		__asm__ volatile("yield" ::: "memory");
+#elif defined(__riscv)
+		/*
+		 * The pause hint is a fence encoding, so a hart without the
+		 * Zihintpause extension runs it as an ordinary fence.
+		 */
+		__asm__ volatile("pause" ::: "memory");
 #endif
 	}
 }

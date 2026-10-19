@@ -1,0 +1,104 @@
+--- a/toolchain/llvm/sysroot.mk	2026-10-19 13:31:38.451340323 +0900
++++ b/toolchain/llvm/sysroot.mk	2026-10-19 13:34:47.011091408 +0900
+@@ -1,10 +1,11 @@
+-# Deterministic zedBSD target sysroots (amd64, i386 and arm64).
++# Deterministic zedBSD target sysroots (amd64, i386, arm64 and riscv64).
+ # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
+ 
+ ZEDBSD_SYSROOT_MAKEFILE := $(lastword $(MAKEFILE_LIST))
+ ZEDBSD_SYSROOT_AMD64 := $(abspath $(ZEDBSD_LLVM_ROOT)/build/amd64/sysroot)
+ ZEDBSD_SYSROOT_I386 := $(abspath $(ZEDBSD_LLVM_ROOT)/build/i386/sysroot)
+ ZEDBSD_SYSROOT_ARM64 := $(abspath $(ZEDBSD_LLVM_ROOT)/build/arm64/sysroot)
++ZEDBSD_SYSROOT_RISCV64 := $(abspath $(ZEDBSD_LLVM_ROOT)/build/riscv64/sysroot)
+ ZEDBSD_SYSROOT_CLANG := $(ZEDBSD_LLVM_INSTALL)/bin/clang
+ ZEDBSD_SYSROOT_AR := $(ZEDBSD_LLVM_INSTALL)/bin/llvm-ar
+ ZEDBSD_SYSROOT_LD := $(ZEDBSD_LLVM_INSTALL)/bin/ld.lld
+@@ -48,6 +49,12 @@
+ ZEDBSD_SYSROOT_ARM64_COMPILER_RT_SOURCES := \
+ 	src/libc/softfloat128.c src/libc/compiler-runtime128.c
+ 
++# 64-bit RISC-V is like AArch64 in both places: setjmp is in assembly, and
++# long double is IEEE binary128 in software.
++ZEDBSD_SYSROOT_RISCV64_LIBC_SOURCES := src/libc/setjmp-riscv64.S
++ZEDBSD_SYSROOT_RISCV64_COMPILER_RT_SOURCES := \
++	src/libc/softfloat128.c src/libc/compiler-runtime128.c
++
+ # zedBSD owns its floating-point compiler ABI so i386 kernels do not acquire
+ # an x87 dependency. Integer compiler builtins come from the same verified LLVM
+ # release used to build Clang. This explicit manifest is the supported ABI and
+@@ -105,7 +112,7 @@
+ 	platform/amd64/user.ld platform/amd64/vmunix.ld \
+ 	platform/pcat/user.ld platform/pcat/vmunix.ld \
+ 	platform/pc98/noct-user.ld platform/pc98/user-init.ld \
+-	platform/pc98/stage2.ld platform/arm64/user.ld \
++	platform/pc98/stage2.ld platform/arm64/user.ld platform/riscv64/user.ld \
+ 	bootloader/pcat/stage1.ld bootloader/pcat/stage2.ld \
+ 	bootloader/pcat/bootzbsd.ld \
+ 	bootloader/pc98/stage1.ld bootloader/pc98/stage2.ld
+@@ -113,14 +120,16 @@
+ 	$(ZEDBSD_SYSROOT_COMPILER_RT_SOURCES) $(ZEDBSD_LIBM_HEADERS) \
+ 	$(ZEDBSD_SYSROOT_ARM64_LIBC_SOURCES) \
+ 	$(ZEDBSD_SYSROOT_ARM64_COMPILER_RT_SOURCES) \
++	$(ZEDBSD_SYSROOT_RISCV64_LIBC_SOURCES) \
+ 	$(ZEDBSD_SYSROOT_LLVM_BUILTIN_SOURCES) \
+ 	$(ZEDBSD_SYSROOT_ARM64_LLVM_BUILTIN_SOURCES) \
+ 	$(ZEDBSD_SYSROOT_PUBLIC_HEADERS) $(ZEDBSD_SYSROOT_LINKER_SCRIPTS) \
+ 	src/libc/crt/crt0-amd64.S src/libc/crt/crt1-amd64.S \
+ 	src/libc/crt/crt0-i386.S src/libc/crt/crt1-i386.S \
+ 	src/libc/crt/crt0-aarch64.S src/libc/crt/crt1-aarch64.S \
++	src/libc/crt/crt0-riscv64.S src/libc/crt/crt1-riscv64.S \
+ 	include/hal/arch.h include/hal/arch/amd64.h include/hal/arch/i386.h \
+-	include/hal/arch/aarch64.h
++	include/hal/arch/aarch64.h include/hal/arch/riscv64.h
+ 
+ # $(1) sysroot, $(2) its name, $(3) target triple, $(4) code generation
+ # flags, $(5) HAL architecture macro, $(6) crt0 and $(7) crt1 sources,
+@@ -143,7 +152,8 @@
+ 		"$$$$temporary/usr/lib/zedbsd/amd64" \
+ 		"$$$$temporary/usr/lib/zedbsd/pcat" \
+ 		"$$$$temporary/usr/lib/zedbsd/pc98" \
+-		"$$$$temporary/usr/lib/zedbsd/arm64" "$$$$temporary/obj"; \
++		"$$$$temporary/usr/lib/zedbsd/arm64" \
++		"$$$$temporary/usr/lib/zedbsd/riscv64" "$$$$temporary/obj"; \
+ 	for header in $$(ZEDBSD_SYSROOT_PUBLIC_HEADERS); do \
+ 		case "$$$$header" in \
+ 		include/libc/*) relative=$$$${header#include/libc/} ;; \
+@@ -225,6 +235,7 @@
+ 	cp platform/pc98/stage2.ld \
+ 		"$$$$temporary/usr/lib/zedbsd/pc98/platform-stage2.ld"; \
+ 	cp platform/arm64/user.ld "$$$$temporary/usr/lib/zedbsd/arm64/"; \
++	cp platform/riscv64/user.ld "$$$$temporary/usr/lib/zedbsd/riscv64/"; \
+ 	cp bootloader/pc98/stage2.ld \
+ 		"$$$$temporary/usr/lib/zedbsd/pc98/bootloader-stage2.ld"; \
+ 	printf '%s\n' 'arch=$(2)' 'triple=$(3)' \
+@@ -267,12 +278,14 @@
+ $(eval $(call ZEDBSD_BUILD_SYSROOT,$(ZEDBSD_SYSROOT_AMD64),amd64,x86_64-unknown-zedbsd,-m64 -march=x86-64 -mno-red-zone,HAL_ARCH_AMD64,src/libc/crt/crt0-amd64.S,src/libc/crt/crt1-amd64.S,amd64,user.ld,Advanced Micro Devices X86-64,-DKERN_USER_ABI_LP64,,-mlong-double-64,))
+ $(eval $(call ZEDBSD_BUILD_SYSROOT,$(ZEDBSD_SYSROOT_I386),i386,i386-unknown-zedbsd,-m32 -march=i386 -msoft-float -mno-mmx -mno-sse -mno-sse2,HAL_ARCH_I386,src/libc/crt/crt0-i386.S,src/libc/crt/crt1-i386.S,pcat,user.ld,Intel 80386,,,-mlong-double-64,))
+ $(eval $(call ZEDBSD_BUILD_SYSROOT,$(ZEDBSD_SYSROOT_ARM64),arm64,aarch64-unknown-zedbsd,-march=armv8-a -mno-outline-atomics,HAL_ARCH_ARM64,src/libc/crt/crt0-aarch64.S,src/libc/crt/crt1-aarch64.S,arm64,user.ld,AArch64,-DKERN_USER_ABI_AARCH64 -DKERN_USER_ABI_LP64,$(ZEDBSD_SYSROOT_ARM64_LIBC_SOURCES),,$(ZEDBSD_SYSROOT_ARM64_COMPILER_RT_SOURCES),$(ZEDBSD_SYSROOT_ARM64_LLVM_BUILTIN_SOURCES)))
++$(eval $(call ZEDBSD_BUILD_SYSROOT,$(ZEDBSD_SYSROOT_RISCV64),riscv64,riscv64-unknown-zedbsd,-march=rv64gc -mabi=lp64d -mno-relax,HAL_ARCH_RISCV64,src/libc/crt/crt0-riscv64.S,src/libc/crt/crt1-riscv64.S,riscv64,user.ld,RISC-V,-DKERN_USER_ABI_RISCV64 -DKERN_USER_ABI_LP64,$(ZEDBSD_SYSROOT_RISCV64_LIBC_SOURCES),,$(ZEDBSD_SYSROOT_RISCV64_COMPILER_RT_SOURCES),))
+ 
+-.PHONY: sysroot-amd64 sysroot-i386 sysroot-arm64 sysroots
++.PHONY: sysroot-amd64 sysroot-i386 sysroot-arm64 sysroot-riscv64 sysroots
+ sysroot-amd64: $(ZEDBSD_SYSROOT_AMD64)/.zedbsd-sysroot-complete
+ sysroot-i386: $(ZEDBSD_SYSROOT_I386)/.zedbsd-sysroot-complete
+ sysroot-arm64: $(ZEDBSD_SYSROOT_ARM64)/.zedbsd-sysroot-complete
+-sysroots: sysroot-amd64 sysroot-i386 sysroot-arm64
++sysroot-riscv64: $(ZEDBSD_SYSROOT_RISCV64)/.zedbsd-sysroot-complete
++sysroots: sysroot-amd64 sysroot-i386 sysroot-arm64 sysroot-riscv64
+ 
+ $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt0.o \
+ $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
+@@ -303,3 +316,13 @@
+ $(ZEDBSD_SYSROOT_ARM64)/usr/lib/libclang_rt.builtins.a: \
+ 	$(ZEDBSD_SYSROOT_ARM64)/.zedbsd-sysroot-complete
+ 	@test -f '$@'
++
++$(ZEDBSD_SYSROOT_RISCV64)/usr/lib/crt0.o \
++$(ZEDBSD_SYSROOT_RISCV64)/usr/lib/crt1.o \
++$(ZEDBSD_SYSROOT_RISCV64)/usr/lib/libc.a \
++$(ZEDBSD_SYSROOT_RISCV64)/usr/lib/libc.o \
++$(ZEDBSD_SYSROOT_RISCV64)/usr/lib/libzedbsd-compiler-rt.a \
++$(ZEDBSD_SYSROOT_RISCV64)/usr/lib/libzedbsd-compiler-rt.o \
++$(ZEDBSD_SYSROOT_RISCV64)/usr/lib/libclang_rt.builtins.a: \
++	$(ZEDBSD_SYSROOT_RISCV64)/.zedbsd-sysroot-complete
++	@test -f '$@'
