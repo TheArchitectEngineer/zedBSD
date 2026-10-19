@@ -6,6 +6,7 @@
 - Status: incomplete（p001 を P1、q1303。旧: planning（2026-10-19 18:18 Q1 作成）
 - 起点（2026-10-19 ユーザー）:「では、sun4uでも/dev/graphicsを実装して、Xzedが動くようにします。」（WS267 で入れた QEMU sun4u の VGA の framebuffer の console の上に）
 - 前提（Q1 の調べ）: /dev/graphics は今 pcat（src/drivers/platform/pcat/graphics/）と pc98 にある（include/uapi/graphics.h、docs/reference/control-devices.md）。Xzed は userland/x11/xzed（platform は *、既定は n）。sun4u の HAL は bsp-sun4u の framebuffer.c（std VGA）。sparcv9 は big endian の 64 bit で、pixel の並びと入力（keyboard・mouse）の道を設計で確かめる。sparcv9 はユーザーの担当の領域なので、変える file は設計で示す。
+- 決定（2026-10-19 18:25 ユーザー）: 「私のSunBlade 150にはXVR-500か600がついているようです。大したアクセラレーションがついたボードとは思えないので、OpenBootが用意したframebufferを使うのがコンソールとしてはいいですね。/dev/graphicsはfirmware framebufferにします。」 → console と /dev/graphics は OpenBoot が用意した firmware framebuffer（OBP の screen の node の property）を使う。QEMU sun4u も OpenBIOS の property から読む形に揃える。card の driver（XVR-500/600 など）は範囲外。実機の候補は Sun Blade 150。
 - 担当: 未割当（手の空いた担当から p001）。
 
 ## 完了の条件（案、p001 で確定）
@@ -13,7 +14,7 @@
 1. QEMU sun4u で /dev/graphics が開け、pcat と同じ契約（include/uapi/graphics.h）で mode・framebuffer の写像・描画ができる。
 2. QEMU sun4u で Xzed が起動し、画面に X の client（例 zterm）が出て、keyboard と mouse で操作できる。判定は boot-test.sh の画面。
 3. userland/base と X11 の program は arch ごとに有無を分けない（2026-10-19 の Guardrail）。
-4. 実機（本物の sun4u）は範囲外（framebuffer の device が機種ごとに違う）。
+4. 実機（Sun Blade 150、XVR-500 か 600）は firmware framebuffer の道で動く見込み。実機の確かめはユーザーの目視で、着手の時に決める。
 
 ## Phase（案）
 
