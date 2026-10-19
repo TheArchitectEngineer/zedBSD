@@ -42,6 +42,7 @@
 #include "drivers/gpu/powervr/render-private.h"
 #include "drivers/gpu/powervr/interface.h"
 #include "drivers/gpu/powervr/retry.h"
+#include "drivers/gpu/powervr/vk.h"
 
 /*
  * How often, and how far apart, a refused registration is tried again.
@@ -71,6 +72,7 @@ static int render_backing(void *device, void *shared, struct drv_gpu_scanout_bac
 static int render_query(void *device, void *session, struct gpu_device_info *info);
 static int resource_make(struct powervr_session *session, struct powervr_buffer *buffer, int mappable, int shareable, struct powervr_resource **result);
 static void resource_unmake(struct powervr_session *session, struct powervr_resource *resource);
+static void blob_list(struct powervr_session *session, struct powervr_resource *resource, uint32_t *identifier);
 static int check_image(const struct powervr_buffer *buffer, const struct gpu_image_descriptor *image);
 static int make_pages(struct powervr_buffer *buffer);
 static int same_image(const struct gpu_image_descriptor *first, const struct gpu_image_descriptor *second);
@@ -163,6 +165,7 @@ powervr_render_start(
 	render->ops.scanout = &scanout_operations;
 	render->ops.commands = &command_operations;
 	render->ops.recovery = &recovery_operations;
+	powervr_render_runtime_bind(render);
 	render->running = 1;
 
 	/* Lets the interrupt handler wake the service from here on. */
@@ -498,6 +501,60 @@ powervr_session_wait(
 	return 0;
 }
 
+/*
+ * Makes a session's handle on a buffer, mapped at a device address of the
+ * session's own, for the Vulkan executor's memory; the handle takes a
+ * reference of its own.
+ */
+int
+powervr_resource_make(
+	struct powervr_session *session,
+	struct powervr_buffer *buffer,
+	int mappable,
+	int shareable,
+	struct powervr_resource **result)
+{
+	int error;
+
+	/* The handle, mapped. */
+	error = resource_make(session, buffer, mappable, shareable, result);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the handle holds the buffer. */
+	return 0;
+}
+
+/* Undoes a handle the Vulkan executor made. */
+void
+powervr_resource_unmake(
+	struct powervr_session *session,
+	struct powervr_resource *resource)
+{
+	/* Unmaps it, unless the core may still reach it, and drops its buffer. */
+	resource_unmake(session, resource);
+}
+
+/* Finds a blob or an import of a session by the identifier the renderer names it by, or NULL. */
+struct powervr_resource *
+powervr_session_blob(
+	struct powervr_session *session,
+	uint32_t identifier)
+{
+	struct powervr_resource *resource;
+
+	/* The session's list, newest first; zero names nothing. */
+	if (identifier == 0)
+		return NULL;
+	for (resource = session->blobs; resource != NULL; resource = resource->next_blob) {
+		if (resource->identifier == identifier)
+			return resource;
+	}
+
+	/* No such blob. */
+	return NULL;
+}
+
 /* Opens a session with a memory context and a compute context of its own. */
 static int
 render_open(
@@ -581,6 +638,10 @@ render_close(
 		*position = session->next;
 
 	mutex_unlock(&render->core->lock);
+
+	/* The Vulkan executor's objects and memory go first; the core destroyed the session's blobs already. */
+	powervr_vk_close(session->vk);
+	session->vk = NULL;
 
 	/* Reads whether the session or the device may still be reached by the core. */
 	enabled = spin_lock_irqsave(&render->queue_lock);
@@ -740,11 +801,9 @@ blob_make(
 	int shareable;
 	int error;
 
-	/* Native blobs only, with the defined flags; a cross-device blob must be shareable. */
+	/* The defined flags; a cross-device blob must be shareable. */
 	*result = NULL;
 	*identifier = 0;
-	if (request->blob_id != 0U)
-		return EINVAL;
 	if ((request->flags & ~(GPU_BLOB_MAPPABLE | GPU_BLOB_SHAREABLE | GPU_BLOB_CROSS_DEVICE)) != 0U)
 		return EINVAL;
 	if ((request->flags & GPU_BLOB_CROSS_DEVICE) != 0U && (request->flags & GPU_BLOB_SHAREABLE) == 0U)
@@ -760,8 +819,19 @@ blob_make(
 			limit = 0xffffffffULL;
 	}
 
-	/* The allocation. */
-	error = powervr_buffer_create(render, request->bytes, &buffer);
+	/*
+	 * The allocation: a blob of a VkDeviceMemory (its blob id is the
+	 * memory's identity) maps the memory's own buffer; any other blob has
+	 * a buffer of its own.
+	 */
+	if (request->blob_id != 0U) {
+		if (session->vk == NULL)
+			return EINVAL;
+		error = powervr_vk_memory_buffer(session->vk, request->blob_id, request->bytes, &buffer);
+	} else {
+		error = powervr_buffer_create(render, request->bytes, &buffer);
+	}
+
 	if (error != 0)
 		return error;
 
@@ -786,9 +856,9 @@ blob_make(
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the blob, named for the renderer by the session's next number. */
+	/* Succeeded: the blob, named for the renderer by the session's next number and listed by it. */
+	blob_list(session, resource, identifier);
 	*result = resource;
-	*identifier = ++session->next_resource;
 	return 0;
 }
 
@@ -992,9 +1062,9 @@ render_import(
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the resource is the session's, under the session's next number. */
+	/* Succeeded: the resource is the session's, under the session's next number, listed by it. */
+	blob_list(session, resource, identifier);
 	*result = resource;
-	*identifier = ++session->next_resource;
 	return 0;
 }
 
@@ -1115,8 +1185,19 @@ resource_unmake(
 	struct powervr_resource *resource)
 {
 	struct powervr_render *render;
+	struct powervr_resource **link;
 	unsigned long enabled;
 	unsigned keep;
+
+	/* A listed blob leaves its session's list. */
+	if (resource->identifier != 0) {
+		for (link = &session->blobs; *link != NULL; link = &(*link)->next_blob) {
+			if (*link == resource) {
+				*link = resource->next_blob;
+				break;
+			}
+		}
+	}
 
 	/* Reads whether the device or the session is in quarantine. */
 	render = session->render;
@@ -1143,6 +1224,20 @@ resource_unmake(
 	powervr_buffer_put(render, resource->buffer);
 	session->resources--;
 	kern_free(resource);
+}
+
+/* Names a new blob or import by the session's next number and lists it by that number. */
+static void
+blob_list(
+	struct powervr_session *session,
+	struct powervr_resource *resource,
+	uint32_t *identifier)
+{
+	/* The next number, at the head of the session's list. */
+	resource->identifier = ++session->next_resource;
+	resource->next_blob = session->blobs;
+	session->blobs = resource;
+	*identifier = resource->identifier;
 }
 
 /* Checks a linear four-byte image fits the buffer and the core can reach it. */

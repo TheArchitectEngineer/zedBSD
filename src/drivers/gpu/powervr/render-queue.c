@@ -67,6 +67,7 @@ struct delivery {
 	int error[DELIVER_MAX];
 	struct powervr_session *session[DELIVER_MAX];
 	unsigned count;
+	unsigned markers_freed;
 };
 
 /* What the notices the firmware queued asked of the host. */
@@ -89,6 +90,7 @@ static int send_waiting(struct powervr_core *core, const uint32_t command[POWERV
 static void cleanup_command(const struct powervr_session *session, uint32_t command[POWERVR_COMMAND_WORDS]);
 static void service_thread(void *argument);
 static int service_pass(struct powervr_render *render, uint64_t now);
+static void take_entry(struct powervr_session *session, int error, struct delivery *delivery);
 static void take_reached(struct powervr_session *session, struct delivery *delivery);
 static void take_all(struct powervr_session *session, int error, struct delivery *delivery);
 static void deliver(struct powervr_render *render, struct delivery *delivery);
@@ -438,6 +440,7 @@ powervr_session_fail_pending(
 
 	/* Takes every pending command of the session. */
 	delivery.count = 0;
+	delivery.markers_freed = 0;
 	enabled = spin_lock_irqsave(&render->queue_lock);
 
 	take_all(session, error, &delivery);
@@ -478,6 +481,7 @@ powervr_render_quarantine(
 
 	for (session = render->sessions; session != NULL; session = session->next) {
 		delivery.count = 0;
+		delivery.markers_freed = 0;
 		enabled = spin_lock_irqsave(&render->queue_lock);
 
 		take_all(session, error, &delivery);
@@ -509,21 +513,26 @@ powervr_render_submit(
 	unsigned long enabled;
 	uint32_t opcode;
 	uint32_t reserved;
-	unsigned slot;
 	int refused;
 	int error;
 
-	/* Only the empty job, on the session's one timeline. */
+	/* A frame that is not the empty job is a command frame of the Vulkan transport. */
 	render = device;
 	session = opaque;
-	if (bytes != POWERVR_NATIVE_BYTES || timeline != 0U)
+	opcode = 0;
+	reserved = 0;
+	if (bytes == POWERVR_NATIVE_BYTES && command != NULL) {
+		words = command;
+		kern_memcpy(&opcode, words, sizeof(opcode));
+		kern_memcpy(&reserved, words + 4, sizeof(reserved));
+	}
+	if (opcode != POWERVR_NATIVE_EMPTY_JOB || reserved != 0U)
+		return powervr_render_frame(render, session, command, bytes, flags, timeline, completion);
+
+	/* The empty job, on the session's one timeline. */
+	if (timeline != 0U)
 		return EINVAL;
 	if ((flags & ~GPU_COMMAND_CONTEXT_FENCE) != 0U)
-		return EINVAL;
-	words = command;
-	kern_memcpy(&opcode, words, sizeof(opcode));
-	kern_memcpy(&reserved, words + 4, sizeof(reserved));
-	if (opcode != POWERVR_NATIVE_EMPTY_JOB || reserved != 0U)
 		return EINVAL;
 
 	/* Refuses work on a device or session that is stopping or lost, and a full ring. */
@@ -534,7 +543,7 @@ powervr_render_submit(
 	refused = 0;
 	if (render->faulted || session->stopping || session->lost || session->isolated) {
 		refused = EIO;
-	} else if (session->pending_count == POWERVR_RENDER_PENDING) {
+	} else if (session->pending_count + session->reserved >= POWERVR_RENDER_PENDING) {
 		refused = EBUSY;
 	}
 
@@ -545,23 +554,11 @@ powervr_render_submit(
 		return refused;
 	}
 
-	/* Kicks the job with the session's next timeline value. */
+	/* Kicks the job with the session's next timeline value, and records it pending for the service. */
 	error = powervr_session_kick(render, session, session->submitted + 1U, 0, 0);
 	if (error == 0) {
 		session->submitted++;
-
-		/* Records it pending, for the service to retire. */
-		enabled = spin_lock_irqsave(&render->queue_lock);
-
-		slot = (session->pending_head + session->pending_count) % POWERVR_RENDER_PENDING;
-		session->pending[slot].value = session->submitted;
-		session->pending[slot].submitted = sched_ticks();
-		session->pending[slot].completion = completion;
-		session->pending_count++;
-		session->outstanding++;
-		waitq_wake_all(&render->service);
-
-		spin_unlock_irqrestore(&render->queue_lock, enabled);
+		powervr_session_pend(render, session, session->submitted, completion, 0, POWERVR_NO_MARKER);
 	}
 
 	mutex_unlock(&render->core->lock);
@@ -572,6 +569,39 @@ powervr_render_submit(
 
 	/* Succeeded: the callback is held until the job retires. */
 	return 0;
+}
+
+/*
+ * Puts a callback in a session's ring: retired in order once the
+ * session's timeline reaches value, delivered with the error, freeing the
+ * job marker when it names one.  The caller checked the ring has room.
+ */
+void
+powervr_session_pend(
+	struct powervr_render *render,
+	struct powervr_session *session,
+	uint32_t value,
+	struct drv_gpu_completion *completion,
+	int error,
+	unsigned marker)
+{
+	unsigned long enabled;
+	unsigned slot;
+
+	/* The entry after the last one, and the service woken to look at it. */
+	enabled = spin_lock_irqsave(&render->queue_lock);
+
+	slot = (session->pending_head + session->pending_count) % POWERVR_RENDER_PENDING;
+	session->pending[slot].value = value;
+	session->pending[slot].submitted = sched_ticks();
+	session->pending[slot].completion = completion;
+	session->pending[slot].error = error;
+	session->pending[slot].marker = marker;
+	session->pending_count++;
+	session->outstanding++;
+	waitq_wake_all(&render->service);
+
+	spin_unlock_irqrestore(&render->queue_lock, enabled);
 }
 
 /*
@@ -717,6 +747,7 @@ powervr_render_stop_poll(
 
 	/* Retires what reached the timeline, then ends the rest with an error: their jobs no longer run. */
 	delivery.count = 0;
+	delivery.markers_freed = 0;
 	enabled = spin_lock_irqsave(&render->queue_lock);
 
 	take_reached(session, &delivery);
@@ -1304,6 +1335,7 @@ service_pass(
 
 	/* Each session's retired commands, a bounded number per pass; and whether one is overdue. */
 	delivery.count = 0;
+	delivery.markers_freed = 0;
 	for (session = render->sessions; session != NULL; session = session->next) {
 		enabled = spin_lock_irqsave(&render->queue_lock);
 
@@ -1356,20 +1388,13 @@ take_reached(
 	struct powervr_pending *entry;
 	uint32_t current;
 
-	/* Reads the timeline once, then retires in order up to it. */
+	/* Reads the timeline once, then retires in order up to it, each with its own error. */
 	current = powervr_session_timeline(session);
 	while (session->pending_count != 0U && delivery->count < DELIVER_MAX) {
 		entry = &session->pending[session->pending_head];
 		if ((int32_t)(current - entry->value) < 0)
 			break;
-
-		/* The command is done. */
-		delivery->completion[delivery->count] = entry->completion;
-		delivery->error[delivery->count] = 0;
-		delivery->session[delivery->count] = session;
-		delivery->count++;
-		session->pending_head = (session->pending_head + 1U) % POWERVR_RENDER_PENDING;
-		session->pending_count--;
+		take_entry(session, entry->error, delivery);
 	}
 }
 
@@ -1380,18 +1405,40 @@ take_all(
 	int error,
 	struct delivery *delivery)
 {
+	/* Every one, in order, as far as one delivery holds. */
+	while (session->pending_count != 0U && delivery->count < DELIVER_MAX)
+		take_entry(session, error, delivery);
+}
+
+/*
+ * Takes, under the queue lock, the session's first pending command into
+ * the delivery with an error, and frees the job marker it names.
+ */
+static void
+take_entry(
+	struct powervr_session *session,
+	int error,
+	struct delivery *delivery)
+{
 	struct powervr_pending *entry;
 
-	/* Every one, in order, as far as one delivery holds. */
-	while (session->pending_count != 0U && delivery->count < DELIVER_MAX) {
-		entry = &session->pending[session->pending_head];
-		delivery->completion[delivery->count] = entry->completion;
-		delivery->error[delivery->count] = error;
-		delivery->session[delivery->count] = session;
-		delivery->count++;
-		session->pending_head = (session->pending_head + 1U) % POWERVR_RENDER_PENDING;
-		session->pending_count--;
+	/* The callback and its error. */
+	entry = &session->pending[session->pending_head];
+	delivery->completion[delivery->count] = entry->completion;
+	delivery->error[delivery->count] = error;
+	delivery->session[delivery->count] = session;
+	delivery->count++;
+
+	/* A committed marker is free again; its capacity is announced after the delivery. */
+	if (entry->marker != POWERVR_NO_MARKER) {
+		session->markers[entry->marker].state = POWERVR_MARKER_FREE;
+		session->markers[entry->marker].completion = NULL;
+		delivery->markers_freed++;
 	}
+
+	/* The entry leaves the ring. */
+	session->pending_head = (session->pending_head + 1U) % POWERVR_RENDER_PENDING;
+	session->pending_count--;
 }
 
 /*
@@ -1407,8 +1454,10 @@ deliver(
 	unsigned index;
 
 	/* Nothing taken. */
-	if (delivery->count == 0U)
+	if (delivery->count == 0U) {
+		delivery->markers_freed = 0;
 		return;
+	}
 
 	/* Each callback, outside every lock. */
 	for (index = 0; index < delivery->count; index++)
@@ -1423,6 +1472,11 @@ deliver(
 
 	spin_unlock_irqrestore(&render->queue_lock, enabled);
 	delivery->count = 0;
+
+	/* Freed markers are capacity a waiting producer may take. */
+	if (delivery->markers_freed != 0U && render->device != NULL)
+		drv_gpu_capacity_changed(render->device);
+	delivery->markers_freed = 0;
 }
 
 /*

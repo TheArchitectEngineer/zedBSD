@@ -1,0 +1,5 @@
+#version 450
+// data[x + 4] = (x << 2) - 1: a shift, a subtraction and an index offset.
+layout(local_size_x = 32) in;
+layout(std430, binding = 0) buffer Data { uint data[]; };
+void main() { uint x = gl_GlobalInvocationID.x; data[x + 4u] = (x << 2) - 1u; }

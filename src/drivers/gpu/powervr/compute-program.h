@@ -46,6 +46,7 @@
  */
 #define POWERVR_COMPUTE_STORE_TEMPORARIES	7U
 #define POWERVR_COMPUTE_TEMPS_TEMPORARIES	8U
+#define POWERVR_COMPUTE_FILL_TEMPORARIES	8U
 #define POWERVR_COMPUTE_STORE_STRIDE		(POWERVR_COMPUTE_INSTANCES * 4U)
 
 /*
@@ -80,6 +81,7 @@ int powervr_compute_kick_program(uint64_t usc_offset, unsigned temporaries_field
 int powervr_compute_fence_program(uint32_t data[POWERVR_COMPUTE_PDS_DATA_WORDS], uint32_t code[POWERVR_COMPUTE_PDS_CODE_MAX], unsigned *code_words);
 int powervr_compute_store_program(uint64_t base, unsigned steps, uint8_t *output, size_t room, size_t *length);
 int powervr_compute_temps_program(uint64_t base, uint8_t *output, size_t room, size_t *length);
+int powervr_compute_fill_program(uint64_t base, unsigned instances, uint32_t multiplier, uint32_t addend, uint8_t *output, size_t room, size_t *length);
 void powervr_compute_command(uint64_t stream, uint64_t resume, uint32_t words[POWERVR_COMPUTE_COMMAND_WORDS]);
 
 #endif /* KERN_DRIVERS_GPU_POWERVR_COMPUTE_PROGRAM_H */

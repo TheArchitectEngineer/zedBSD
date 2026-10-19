@@ -53,13 +53,17 @@ struct powervr_buffer {
 
 /*
  * One session's handle on a buffer, mapped at a device address of the
- * session's memory context.
+ * session's memory context.  A blob or an import also has the identifier
+ * the renderer names it by, and is listed in its session's blobs through
+ * next_blob.
  */
 struct powervr_resource {
 	struct powervr_session *session;
 	struct powervr_buffer *buffer;
 	uint64_t address;
 	int mappable;
+	uint32_t identifier;
+	struct powervr_resource *next_blob;
 };
 
 /*
@@ -74,12 +78,38 @@ struct powervr_shared {
 	int has_image;
 };
 
-/* One native command in flight: the timeline value that retires it, and whom to tell. */
+/*
+ * One native command in flight: the timeline value that retires it, and
+ * whom to tell with which error.  Marker is the job marker slot it frees
+ * when it is delivered, or POWERVR_NO_MARKER.
+ */
 struct powervr_pending {
 	uint32_t value;
 	uint64_t submitted;
 	struct drv_gpu_completion *completion;
+	int error;
+	unsigned marker;
 };
+
+/* No job marker. */
+#define POWERVR_NO_MARKER	0xffffffffU
+
+/*
+ * One job marker of a session: a reservation libvulkan makes before it
+ * submits a supervised job.  Free, reserved (held by the core, counted
+ * against the ring), or committed (in the ring until delivered); the
+ * completion is the one the reservation was made with.
+ */
+#define POWERVR_MARKER_FREE		0U
+#define POWERVR_MARKER_RESERVED		1U
+#define POWERVR_MARKER_COMMITTED	2U
+
+struct powervr_marker {
+	unsigned state;
+	struct drv_gpu_completion *completion;
+};
+
+struct powervr_vk_session;
 
 /*
  * One open of the render node.
@@ -89,8 +119,12 @@ struct powervr_pending {
  * command buffer and control, and the timeline word the firmware
  * advances) are blocks of the firmware's heap, changed under the core's
  * lock.  Client_write is the host's write offset into the context's
- * buffer.  The pending ring, its count of callbacks not yet delivered
- * and the stop flags are under the render node's queue lock.
+ * buffer.  The pending ring, its count of callbacks not yet delivered,
+ * the job markers and their reserved count, and the stop flags are under
+ * the render node's queue lock.  Blobs lists the session's blobs and
+ * imports by identifier, and vk is the Vulkan executor's session (made
+ * by the first command frame); both change only in the session's own
+ * ioctls, which the GPU core serializes.
  */
 struct powervr_session {
 	struct powervr_session *next;
@@ -122,6 +156,10 @@ struct powervr_session {
 	unsigned lost;
 	unsigned isolated;
 	unsigned retained;
+	struct powervr_resource *blobs;
+	struct powervr_marker markers[POWERVR_RENDER_PENDING];
+	unsigned reserved;
+	struct powervr_vk_session *vk;
 };
 
 /*
@@ -170,6 +208,32 @@ void powervr_buffer_put(struct powervr_render *render, struct powervr_buffer *bu
 
 /* Frees a list of buffers kept for a reset, linked through next. */
 void powervr_buffers_free(struct powervr_buffer *list);
+
+/* Makes a session's handle on a buffer, mapped at a device address of its own; the handle takes a reference. */
+int powervr_resource_make(struct powervr_session *session, struct powervr_buffer *buffer, int mappable, int shareable, struct powervr_resource **result);
+
+/* Undoes a handle: unmaps it and drops its buffer, unless the core may still reach the session. */
+void powervr_resource_unmake(struct powervr_session *session, struct powervr_resource *resource);
+
+/* Finds a blob or an import of a session by the identifier the renderer names it by, or NULL. */
+struct powervr_resource *powervr_session_blob(struct powervr_session *session, uint32_t identifier);
+
+/*
+ * Puts a callback in a session's ring, retired once the timeline reaches
+ * value, with an error and the job marker it frees; the caller checked
+ * the ring has room.
+ */
+void powervr_session_pend(struct powervr_render *render, struct powervr_session *session, uint32_t value, struct drv_gpu_completion *completion, int error, unsigned marker);
+
+/*
+ * Takes one command frame of the Vulkan transport (or an empty marker
+ * frame): runs it at once and puts its callback in the ring after the
+ * session's work.
+ */
+int powervr_render_frame(struct powervr_render *render, struct powervr_session *session, const void *command, uint32_t bytes, uint32_t flags, uint32_t timeline, struct drv_gpu_completion *completion);
+
+/* Binds the Vulkan transport, the capset and the supervised jobs to the node's table. */
+void powervr_render_runtime_bind(struct powervr_render *render);
 
 /* Makes a session's memory context and firmware records; the core's lock is held. */
 int powervr_session_firmware_create(struct powervr_render *render, struct powervr_session *session);
