@@ -68,19 +68,24 @@ drv_vf2_dmac_get(
 		return 0;
 	}
 
-	/* Runs the controller's core and configuration clocks. */
+	/* Runs the controller's core clock. */
 	error = start_clock(fdt, node, "core-clk");
 	if (error != 0)
 		return error;
+
+	/* Runs the controller's configuration clock. */
 	error = start_clock(fdt, node, "cfgr-clk");
 	if (error != 0)
 		return error;
 
 	/* Releases each of its reset lines. */
 	for (position = 0; position < VF2_DMAC_RESETS; position++) {
+		/* Finds the reset line at the position. */
 		error = drv_vf2_reset_lookup_index(fdt, node, position, &reset);
 		if (error != 0)
 			return error;
+
+		/* Releases it. */
 		error = drv_vf2_reset_deassert(&reset);
 		if (error != 0) {
 			kern_logf("vf2-dmac: reset %u stays asserted (%d)\n", position, error);
@@ -93,7 +98,7 @@ drv_vf2_dmac_get(
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the board's controller is up. */
+	/* Succeeded: the board's controller is up and kept for later callers. */
 	vf2_dmac_node = node;
 	*controller = vf2_dmac;
 	return 0;
