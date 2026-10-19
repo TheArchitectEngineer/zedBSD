@@ -1,0 +1,163 @@
+/*
+ * A device tree in the shape of the VisionFive 2's (Linux v6.12
+ * jh7110.dtsi and jh7110-common.dtsi) for the SD slot's glue: the clock
+ * generators, system control blocks, pin controllers, the eMMC
+ * controller (mmc0, which the glue must pass over) and the SD slot's
+ * controller (mmc1) with the board's properties.  GPIOMUX numbers are
+ * written out: din << 24 | dout << 16 | doen << 10 | pin.
+ */
+/dts-v1/;
+
+/ {
+	#address-cells = <2>;
+	#size-cells = <2>;
+
+	osc: oscillator {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <24000000>;
+	};
+
+	gmac0_rmii_refin: gmac0-rmii-refin-clock {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <50000000>;
+	};
+
+	gmac0_rgmii_rxin: gmac0-rgmii-rxin-clock {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <125000000>;
+	};
+
+	soc {
+		compatible = "simple-bus";
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		stgcrg: clock-controller@10230000 {
+			compatible = "starfive,jh7110-stgcrg";
+			reg = <0x0 0x10230000 0x0 0x10000>;
+			clocks = <&osc>, <&syscrg 8>;
+			clock-names = "osc", "stg_axiahb";
+			#clock-cells = <1>;
+			#reset-cells = <1>;
+		};
+
+		stg_syscon: syscon@10240000 {
+			compatible = "starfive,jh7110-stg-syscon", "syscon";
+			reg = <0x0 0x10240000 0x0 0x1000>;
+		};
+
+		syscrg: clock-controller@13020000 {
+			compatible = "starfive,jh7110-syscrg";
+			reg = <0x0 0x13020000 0x0 0x10000>;
+			clocks = <&osc>, <&gmac0_rmii_refin>, <&pllclk 0>, <&pllclk 1>, <&pllclk 2>;
+			clock-names = "osc", "gmac1_rmii_refin", "pll0_out", "pll1_out", "pll2_out";
+			#clock-cells = <1>;
+			#reset-cells = <1>;
+		};
+
+		sys_syscon: syscon@13030000 {
+			compatible = "starfive,jh7110-sys-syscon", "syscon", "simple-mfd";
+			reg = <0x0 0x13030000 0x0 0x1000>;
+
+			pllclk: clock-controller {
+				compatible = "starfive,jh7110-pll";
+				clocks = <&osc>;
+				#clock-cells = <1>;
+			};
+		};
+
+		sysgpio: pinctrl@13040000 {
+			compatible = "starfive,jh7110-sys-pinctrl";
+			reg = <0x0 0x13040000 0x0 0x10000>;
+			clocks = <&syscrg 112>;
+			resets = <&syscrg 2>;
+			gpio-controller;
+			#gpio-cells = <2>;
+
+			mmc1_pins: mmc1-0 {
+				clk-pins {
+					pinmux = <0xff37000a>;
+					bias-pull-up;
+					drive-strength = <12>;
+					input-disable;
+					input-schmitt-disable;
+					slew-rate = <0>;
+				};
+
+				mmc-pins {
+					pinmux = <0x2c394c09>, <0x2d3a500b>, <0x2e3b540c>,
+						 <0x2f3c5807>, <0x303d5c08>;
+					bias-pull-up;
+					drive-strength = <12>;
+					input-enable;
+					input-schmitt-enable;
+					slew-rate = <0>;
+				};
+			};
+		};
+
+		mmc0: mmc@16010000 {
+			compatible = "starfive,jh7110-mmc";
+			reg = <0x0 0x16010000 0x0 0x10000>;
+			clocks = <&syscrg 91>, <&syscrg 93>;
+			clock-names = "biu", "ciu";
+			bus-width = <8>;
+		};
+
+		mmc_off: mmc@16030000 {
+			compatible = "starfive,jh7110-mmc";
+			reg = <0x0 0x16020000 0x0 0x10000>;
+			status = "disabled";
+		};
+
+		mmc1: mmc@16020000 {
+			compatible = "starfive,jh7110-mmc";
+			reg = <0x0 0x16020000 0x0 0x10000>;
+			clocks = <&syscrg 92>, <&syscrg 94>;
+			clock-names = "biu", "ciu";
+			resets = <&syscrg 65>;
+			reset-names = "reset";
+			assigned-clocks = <&syscrg 94>;
+			assigned-clock-rates = <50000000>;
+			cd-gpios = <&sysgpio 41 1>;
+			starfive,sysreg = <&sys_syscon 0x9c 0x1 0x3e>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&mmc1_pins>;
+			interrupts = <75>;
+			fifo-depth = <32>;
+			max-frequency = <100000000>;
+			bus-width = <4>;
+			no-sdio;
+			no-mmc;
+			disable-wp;
+			cap-sd-highspeed;
+			post-power-on-delay-ms = <200>;
+			status = "okay";
+		};
+
+		aoncrg: clock-controller@17000000 {
+			compatible = "starfive,jh7110-aoncrg";
+			reg = <0x0 0x17000000 0x0 0x10000>;
+			clocks = <&osc>, <&gmac0_rmii_refin>, <&gmac0_rgmii_rxin>, <&syscrg 8>;
+			clock-names = "osc", "gmac0_rmii_refin", "gmac0_rgmii_rxin", "stg_axiahb";
+			#clock-cells = <1>;
+			#reset-cells = <1>;
+		};
+
+		aon_syscon: syscon@17010000 {
+			compatible = "starfive,jh7110-aon-syscon", "syscon";
+			reg = <0x0 0x17010000 0x0 0x1000>;
+		};
+
+		aongpio: pinctrl@17020000 {
+			compatible = "starfive,jh7110-aon-pinctrl";
+			reg = <0x0 0x17020000 0x0 0x10000>;
+			gpio-controller;
+			#gpio-cells = <2>;
+		};
+	};
+};

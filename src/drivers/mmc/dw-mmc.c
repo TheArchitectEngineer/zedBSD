@@ -27,6 +27,7 @@
 #include <kern/clock.h>
 #include <kern/device-io.h>
 #include <kern/disk.h>
+#include <kern/kcrt.h>
 #include <kern/klog.h>
 #include <kern/lock.h>
 #include <uapi/errno.h>
@@ -358,6 +359,9 @@ struct dw_mmc_unit {
 	/* What the attach found; card.rca is the card's address. */
 	struct drv_dw_mmc_card card;
 
+	/* The command classes the card's CSD lists. */
+	uint32_t command_classes;
+
 	/* The published disk, or NULL before the attach finished. */
 	struct disk *disk;
 
@@ -471,11 +475,13 @@ drv_dw_mmc_attach(
 	if (present == 0)
 		return ENODEV;
 
-	/* Takes the unit and resets what an earlier failed attach left. */
+	/* Takes the unit and clears what an earlier failed attach left. */
 	unit->in_use = 1;
 	unit->disk = NULL;
 	unit->failed = 0;
 	unit->last_status = 0;
+	unit->command_classes = 0;
+	memset(&unit->card, 0, sizeof(unit->card));
 
 	/* Resets the controller and powers the card with its clock at 400 kHz. */
 	error = setup_controller(unit, config);
@@ -700,8 +706,8 @@ setup_controller(
 	/*
 	 * Masks every interrupt and clears the raw status.  The raw status
 	 * still records every event, which is what the driver polls; the
-	 * global enable stays on with everything masked, as the firmware's
-	 * successor expects to find it.
+	 * global enable is on, but with every source masked the interrupt
+	 * line stays quiet.
 	 */
 	write_register(unit, DW_MMC_INTERRUPT_MASK, 0);
 	write_register(unit, DW_MMC_RAW_STATUS, DW_MMC_STATUS_ALL);
@@ -1174,12 +1180,14 @@ move_data(
 	struct dw_mmc_unit *unit,
 	struct dw_mmc_command *command)
 {
+	uint64_t deadline;
 	uint32_t remaining;
 	uint32_t ready;
 	uint32_t entries;
 	uint32_t bytes;
 	uint32_t status;
 	uint8_t *data;
+	int passed;
 	int error;
 
 	/*
@@ -1193,6 +1201,11 @@ move_data(
 	} else {
 		ready |= DW_MMC_STATUS_RX_READY;
 	}
+
+	/* Sets how long the FIFO may go without any data moving. */
+	error = start_deadline(DW_MMC_FIFO_WAIT_US, &deadline);
+	if (error != 0)
+		return error;
 
 	/* Serves the FIFO until every byte has moved. */
 	data = command->data;
@@ -1224,8 +1237,30 @@ move_data(
 		data += bytes;
 		remaining -= bytes;
 
-		/* Acknowledges the threshold, which the controller raises again while it holds. */
-		write_register(unit, DW_MMC_RAW_STATUS, DW_MMC_STATUS_TX_READY | DW_MMC_STATUS_RX_READY);
+		/*
+		 * Acknowledges the threshold and the host timeout, which the
+		 * controller raises again while they hold.
+		 */
+		write_register(unit,
+			       DW_MMC_RAW_STATUS,
+			       DW_MMC_STATUS_TX_READY |
+			       DW_MMC_STATUS_RX_READY |
+			       DW_MMC_STATUS_HOST_TIMEOUT);
+
+		/* Data that moved gives the FIFO its time again. */
+		if (bytes != 0) {
+			error = start_deadline(DW_MMC_FIFO_WAIT_US, &deadline);
+			if (error != 0)
+				return error;
+			continue;
+		}
+
+		/* A FIFO that stays without anything to move, the end of the data included, is given up on. */
+		passed = deadline_passed(deadline);
+		if (passed) {
+			unit->last_status = read_register(unit, DW_MMC_RAW_STATUS);
+			return ETIMEDOUT;
+		}
 	}
 
 	/* Waits for the end of the data. */
@@ -1602,6 +1637,7 @@ decode_csd(
 	/* Reads the CSD's version and the card's command classes. */
 	structure = response_bits(csd, SD_CSD_VERSION_BIT, 2U);
 	unit->card.csd_version = structure + 1U;
+	unit->command_classes = response_bits(csd, SD_CSD_CCC_BIT, 12U);
 
 	/* Computes the capacity the way the version describes it. */
 	if (structure == 0) {
@@ -1746,9 +1782,15 @@ configure_bus(
 			return error;
 	}
 
-	/* Moves to high speed only when the slot allows it and the card has the switch function. */
+	/*
+	 * Moves to high speed only when the slot allows it and the card has
+	 * the switch function: a card of specification 1.10 or later that
+	 * lists the switch class.
+	 */
 	switched = 0;
-	if (unit->high_speed_allowed && specification >= SD_SCR_SPEC_1_10) {
+	if (unit->high_speed_allowed &&
+	    specification >= SD_SCR_SPEC_1_10 &&
+	    (unit->command_classes & SD_CSD_CCC_SWITCH) != 0) {
 		error = switch_high_speed(unit, &switched);
 		if (error != 0)
 			return error;
