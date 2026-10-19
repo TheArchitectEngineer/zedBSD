@@ -17,6 +17,10 @@
 
 - [WS256](../ws256/ws.md)（周辺の driver まで）、[WS269](../ws269/ws.md)（GPU）。
 
+## 決定（2026-10-20 03:25 ユーザー、クリック）
+
+WS270-D1 (c)（config-visionfive2.mk を desktop、最小は config-visionfive2-server.mk、p007 で切り替え）、WS270-D2 (b)、WS270-D3 (a)、WS270-D5 (a)。D4 は欠番（riscv64 の Noct は F-114）。原文は Master の decisions-log。
+
 ## Phase
 
 | Phase | 中身 | 依存 | Status |

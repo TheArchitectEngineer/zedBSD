@@ -18,6 +18,10 @@
 - WS256 p011（boot framebuffer、U-Boot の GOP）、WS269 p006・p007（render の share・lookup、display の node の ops）。
 - 設計 版 3.1（[design.md](design.md) §7・§9）の依存: p002 は WS269 p007 の display の node の code（merge 済み、出力の範囲）と R4 の記述の部分（WS256、`src/kern/platform/visionfive2.c` の DC8200・HDMI の address・IRQ。無ければ driver の既定の address で始め後で置き換える、版 3.1）。p003 は WS269 の lookup の code（merge 済み、出力の範囲）と R4 の text の部分（serial-console に汎用で追加だけの口と VF2 の wrapper の text の ops、版 3.1）、R3 の照会の口（無ければ試験の blob だけ）。p005 は R1（voutcrg の provider）・R2（PD_VOUT）。p004 は p003 と U11 の結果。p007 は R3（版 3.1 で縮めた: `render_export` が非 mappable・非 shareable の blob の image の export を拒む）・R5（`blob_create_placed`、任意）・R6（linear の rowPitch 32 byte・transfer の LINEAR）・R7（capset、1.3.269 を推奨）と WS269 p010・p011、WS270 の該当 Phase。R8 は要らない。
 
+## 決定（2026-10-20 03:25 ユーザー、クリック）
+
+D1〜D11 は全部 (a)（推奨どおり）。原文は Master の decisions-log。
+
 ## Phase
 
 | Phase | 中身 | 依存 | Status |
