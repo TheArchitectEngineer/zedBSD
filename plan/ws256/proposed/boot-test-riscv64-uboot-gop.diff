@@ -1,0 +1,67 @@
+--- a/plan/tools/boot-test.sh	2026-10-19 15:50:45.504082886 +0900
++++ b/plan/tools/boot-test.sh	2026-10-19 15:50:45.536082799 +0900
+@@ -18,7 +18,7 @@
+ #   BOOT_TIMEOUT   seconds to wait for the login prompt (default 180)
+ #   QEMU           emulator to run (default depends on BOOT_MODE)
+ #   BOOT_MODE      uefi-nvme (default), uefi-usb, bios-ide, raspi4b,
+-#                  riscv64-virt, riscv64-uboot, riscv32-virt, m68k-virt,
++#                  riscv64-virt, riscv64-uboot, riscv64-uboot-gop, riscv32-virt, m68k-virt,
+ #                  ppc32-mac99, ppc64-pseries, mips32-malta, mips64-malta
+ #                  or sun4u
+ #   BOOT_PATTERN   what the screen must show, one regular expression per line;
+@@ -65,7 +65,11 @@
+ # virtio-blk through U-Boot (UBOOT, default the Debian u-boot-qemu
+ # qemu-riscv64_smode build), with the same display.  Both run on TCG.  The
+ # serial line is a socket only typed into by BOOT_THEN; what the guest writes
+-# there is drained and not kept.  BOOT_MODE=riscv32-virt is riscv64-virt for
++# there is drained and not kept.  BOOT_MODE=riscv64-uboot-gop is riscv64-uboot
++# with a bochs-display in place of the ramfb: U-Boot drives it and hands it to
++# the loader as the graphics output, so a VisionFive 2 kernel (operand default
++# build/visionfive2/disk.img), whose console draws on the screen the firmware
++# left on, is read from it; the virt kernel draws only on a ramfb.  BOOT_MODE=riscv32-virt is riscv64-virt for
+ # a 32-bit kernel (default build/riscv32-virt/vmunix) on qemu-system-riscv32,
+ # with BOOT_MEMORY defaulting to 512M.  BOOT_MODE=m68k-virt boots an m68k
+ # kernel (default build/m68k-virt/vmunix) directly in qemu-system-m68k's virt
+@@ -109,6 +113,10 @@
+ 	image=${1:-${IMAGE:-$root/build/riscv64-virt/hdd-image.img}}
+ 	boot_interval=${BOOT_INTERVAL:-0.5}
+ 	;;
++riscv64-uboot-gop)
++	image=${1:-${IMAGE:-$root/build/visionfive2/disk.img}}
++	boot_interval=${BOOT_INTERVAL:-0.5}
++	;;
+ riscv32-virt)
+ 	image=${1:-${IMAGE:-${KERNEL:-$root/build/riscv32-virt/vmunix}}}
+ 	boot_interval=${BOOT_INTERVAL:-0.5}
+@@ -208,7 +216,7 @@
+ 	qemu=${QEMU:-qemu-system-ppc64}
+ 	required=("$image")
+ 	;;
+-riscv64-uboot)
++riscv64-uboot|riscv64-uboot-gop)
+ 	qemu=${QEMU:-qemu-system-riscv64}
+ 	uboot=${UBOOT:-/usr/lib/u-boot/qemu-riscv64_smode/u-boot.bin}
+ 	required=("$image" "$uboot")
+@@ -297,15 +305,20 @@
+ 		-device usb-kbd,bus=xhci.0,port=2 \
+ 		-vga std -display none -no-reboot \
+ 		-qmp "unix:$monitor,server,nowait" >"$output/qemu.log" 2>&1 &
+-elif [[ $boot_mode == riscv64-virt || $boot_mode == riscv64-uboot || $boot_mode == riscv32-virt ]]; then
++elif [[ $boot_mode == riscv64-virt || $boot_mode == riscv64-uboot || $boot_mode == riscv64-uboot-gop ||
++	$boot_mode == riscv32-virt ]]; then
+ 	# The virt machine with a ramfb display, the console the kernel draws,
+ 	# and its first serial line on a socket for typing into.
+ 	riscv_memory=2G
+ 	if [[ $boot_mode == riscv32-virt ]]; then
+ 		riscv_memory=512M
+ 	fi
++	riscv_display=(-device ramfb)
++	if [[ $boot_mode == riscv64-uboot-gop ]]; then
++		riscv_display=(-device bochs-display)
++	fi
+ 	riscv_machine=(-machine virt -smp "${BOOT_SMP:-4}" -m "${BOOT_MEMORY:-$riscv_memory}"
+-		-device ramfb -display none -no-reboot
++		"${riscv_display[@]}" -display none -no-reboot
+ 		-serial "unix:$serial,server,nowait"
+ 		-qmp "unix:$monitor,server,nowait")
+ 	if [[ $boot_mode == riscv64-virt || $boot_mode == riscv32-virt ]]; then
