@@ -79,6 +79,22 @@ mips_io_write16(
 }
 
 /*
+ * Reads an 8-bit device register.
+ */
+static __inline uint8_t
+mips_io_read8(
+	uint32_t physical)
+{
+	const volatile uint8_t *byte;
+
+	/* The register through the uncached segment. */
+	byte = (const volatile uint8_t *)mips_device_address(physical);
+
+	/* Succeeded: the register's value. */
+	return *byte;
+}
+
+/*
  * Writes an 8-bit device register.
  */
 static __inline void

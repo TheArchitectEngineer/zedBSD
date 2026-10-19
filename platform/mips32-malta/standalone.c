@@ -9,10 +9,10 @@
  * What the kernel provides to the HAL, while the mips32 image is the HAL
  * alone.
  *
- * Until the trap handling, the tables and the tick are in place the image
- * links no kernel object and stops after its console.  The HAL's console
- * still reads the kernel's console hook, which this file supplies; it is
- * removed from the build when the kernel is linked in.
+ * Until the page tables are in place the image links no kernel object and
+ * stops once its tick runs.  The HAL's console still reads the kernel's
+ * console hook, which this file supplies; it is removed from the build
+ * when the kernel is linked in.
  */
 
 #include <hal/hal.h>

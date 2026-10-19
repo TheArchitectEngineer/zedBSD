@@ -1,0 +1,152 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The MIPS general exception entry and return.
+ *
+ * Every exception but the TLB refill and the cache error comes here from
+ * EBase + 0x180, interrupts too, since the processor has no vectored
+ * interrupts.  k0 and k1 are the entry's alone.  An exception from user
+ * mode moves to the kernel stack the HAL keeps for the running task; one
+ * from the kernel stays on the stack it interrupted.  The frame keeps
+ * every register the interrupted code may hold, and the handler runs in
+ * kernel mode with Status.EXL clear and interrupts off.
+ *
+ * The way back writes the Status the handler left in the frame with EXL
+ * set first, so that nothing interrupts the restore and the mode it
+ * names takes effect only at eret.  The handler builds that Status: the
+ * saved value is never trusted for a return to user.
+ */
+
+#include "asm.h"
+
+	.set noreorder
+	.set noat
+
+	.text
+	.balign 4
+	.global mips_trap_entry
+	.type mips_trap_entry, %function
+mips_trap_entry:
+	/* From user, the kernel stack; from the kernel, the stack that was interrupted. */
+	mfc0 $26, MIPS_CP0_STATUS
+	andi $26, $26, MIPS_STATUS_MODE_MASK
+	beqz $26, 1f
+	move $27, $29
+	la $26, mips_kernel_stack_pointer
+	lw $29, 0($26)
+1:
+	addiu $29, $29, -MIPS_TRAP_STACK_BYTES
+
+	/* The general registers; sp is the one that was interrupted, k0 and k1 are not kept. */
+	sw $0, MIPS_ARGUMENT_HOME_SIZE + 0 * MIPS_FRAME_REGISTER_BYTES($29)
+	sw $1, MIPS_ARGUMENT_HOME_SIZE + 1 * MIPS_FRAME_REGISTER_BYTES($29)
+	sw $2, MIPS_ARGUMENT_HOME_SIZE + 2 * MIPS_FRAME_REGISTER_BYTES($29)
+	sw $3, MIPS_ARGUMENT_HOME_SIZE + 3 * MIPS_FRAME_REGISTER_BYTES($29)
+	sw $4, MIPS_ARGUMENT_HOME_SIZE + 4 * MIPS_FRAME_REGISTER_BYTES($29)
+	sw $5, MIPS_ARGUMENT_HOME_SIZE + 5 * MIPS_FRAME_REGISTER_BYTES($29)
+	sw $6, MIPS_ARGUMENT_HOME_SIZE + 6 * MIPS_FRAME_REGISTER_BYTES($29)
+	sw $7, MIPS_ARGUMENT_HOME_SIZE + 7 * MIPS_FRAME_REGISTER_BYTES($29)
+	sw $8, MIPS_ARGUMENT_HOME_SIZE + 8 * MIPS_FRAME_REGISTER_BYTES($29)
+	sw $9, MIPS_ARGUMENT_HOME_SIZE + 9 * MIPS_FRAME_REGISTER_BYTES($29)
+	sw $10, MIPS_ARGUMENT_HOME_SIZE + 10 * MIPS_FRAME_REGISTER_BYTES($29)
+	sw $11, MIPS_ARGUMENT_HOME_SIZE + 11 * MIPS_FRAME_REGISTER_BYTES($29)
+	sw $12, MIPS_ARGUMENT_HOME_SIZE + 12 * MIPS_FRAME_REGISTER_BYTES($29)
+	sw $13, MIPS_ARGUMENT_HOME_SIZE + 13 * MIPS_FRAME_REGISTER_BYTES($29)
+	sw $14, MIPS_ARGUMENT_HOME_SIZE + 14 * MIPS_FRAME_REGISTER_BYTES($29)
+	sw $15, MIPS_ARGUMENT_HOME_SIZE + 15 * MIPS_FRAME_REGISTER_BYTES($29)
+	sw $16, MIPS_ARGUMENT_HOME_SIZE + 16 * MIPS_FRAME_REGISTER_BYTES($29)
+	sw $17, MIPS_ARGUMENT_HOME_SIZE + 17 * MIPS_FRAME_REGISTER_BYTES($29)
+	sw $18, MIPS_ARGUMENT_HOME_SIZE + 18 * MIPS_FRAME_REGISTER_BYTES($29)
+	sw $19, MIPS_ARGUMENT_HOME_SIZE + 19 * MIPS_FRAME_REGISTER_BYTES($29)
+	sw $20, MIPS_ARGUMENT_HOME_SIZE + 20 * MIPS_FRAME_REGISTER_BYTES($29)
+	sw $21, MIPS_ARGUMENT_HOME_SIZE + 21 * MIPS_FRAME_REGISTER_BYTES($29)
+	sw $22, MIPS_ARGUMENT_HOME_SIZE + 22 * MIPS_FRAME_REGISTER_BYTES($29)
+	sw $23, MIPS_ARGUMENT_HOME_SIZE + 23 * MIPS_FRAME_REGISTER_BYTES($29)
+	sw $24, MIPS_ARGUMENT_HOME_SIZE + 24 * MIPS_FRAME_REGISTER_BYTES($29)
+	sw $25, MIPS_ARGUMENT_HOME_SIZE + 25 * MIPS_FRAME_REGISTER_BYTES($29)
+	sw $0, MIPS_ARGUMENT_HOME_SIZE + 26 * MIPS_FRAME_REGISTER_BYTES($29)
+	sw $0, MIPS_ARGUMENT_HOME_SIZE + 27 * MIPS_FRAME_REGISTER_BYTES($29)
+	sw $28, MIPS_ARGUMENT_HOME_SIZE + 28 * MIPS_FRAME_REGISTER_BYTES($29)
+	sw $27, MIPS_ARGUMENT_HOME_SIZE + 29 * MIPS_FRAME_REGISTER_BYTES($29)
+	sw $30, MIPS_ARGUMENT_HOME_SIZE + 30 * MIPS_FRAME_REGISTER_BYTES($29)
+	sw $31, MIPS_ARGUMENT_HOME_SIZE + 31 * MIPS_FRAME_REGISTER_BYTES($29)
+
+	/* The multiply unit and the exception's coprocessor 0 registers. */
+	mfhi $8
+	sw $8, MIPS_ARGUMENT_HOME_SIZE + MIPS_FRAME_HI($29)
+	mflo $8
+	sw $8, MIPS_ARGUMENT_HOME_SIZE + MIPS_FRAME_LO($29)
+	mfc0 $8, MIPS_CP0_EXCEPTION_PC
+	sw $8, MIPS_ARGUMENT_HOME_SIZE + MIPS_FRAME_EXCEPTION_PC($29)
+	mfc0 $8, MIPS_CP0_CAUSE
+	sw $8, MIPS_ARGUMENT_HOME_SIZE + MIPS_FRAME_CAUSE($29)
+	mfc0 $8, MIPS_CP0_BAD_ADDRESS
+	sw $8, MIPS_ARGUMENT_HOME_SIZE + MIPS_FRAME_BAD_ADDRESS($29)
+	mfc0 $8, MIPS_CP0_STATUS
+	sw $8, MIPS_ARGUMENT_HOME_SIZE + MIPS_FRAME_STATUS($29)
+
+	/* Runs the handler in kernel mode, out of the exception level, with interrupts off. */
+	li $9, ~(MIPS_STATUS_MODE_MASK | MIPS_STATUS_EXCEPTION_LEVEL | MIPS_STATUS_INTERRUPTS)
+	and $8, $8, $9
+	mtc0 $8, MIPS_CP0_STATUS
+	ehb
+	jal mips_trap
+	addiu $4, $29, MIPS_ARGUMENT_HOME_SIZE
+
+	/*
+	 * Returns through the frame at sp.  Status goes back first, with
+	 * the exception level set, so that no interrupt is taken from here
+	 * to eret and the frame's mode starts only there.
+	 */
+	.global mips_trap_return
+mips_trap_return:
+	di
+	ehb
+	lw $8, MIPS_ARGUMENT_HOME_SIZE + MIPS_FRAME_STATUS($29)
+	ori $8, $8, MIPS_STATUS_EXCEPTION_LEVEL
+	mtc0 $8, MIPS_CP0_STATUS
+	ehb
+	lw $8, MIPS_ARGUMENT_HOME_SIZE + MIPS_FRAME_EXCEPTION_PC($29)
+	mtc0 $8, MIPS_CP0_EXCEPTION_PC
+	lw $8, MIPS_ARGUMENT_HOME_SIZE + MIPS_FRAME_HI($29)
+	mthi $8
+	lw $8, MIPS_ARGUMENT_HOME_SIZE + MIPS_FRAME_LO($29)
+	mtlo $8
+
+	/* The general registers but sp, which comes last; k0 and k1 are not restored. */
+	lw $1, MIPS_ARGUMENT_HOME_SIZE + 1 * MIPS_FRAME_REGISTER_BYTES($29)
+	lw $2, MIPS_ARGUMENT_HOME_SIZE + 2 * MIPS_FRAME_REGISTER_BYTES($29)
+	lw $3, MIPS_ARGUMENT_HOME_SIZE + 3 * MIPS_FRAME_REGISTER_BYTES($29)
+	lw $4, MIPS_ARGUMENT_HOME_SIZE + 4 * MIPS_FRAME_REGISTER_BYTES($29)
+	lw $5, MIPS_ARGUMENT_HOME_SIZE + 5 * MIPS_FRAME_REGISTER_BYTES($29)
+	lw $6, MIPS_ARGUMENT_HOME_SIZE + 6 * MIPS_FRAME_REGISTER_BYTES($29)
+	lw $7, MIPS_ARGUMENT_HOME_SIZE + 7 * MIPS_FRAME_REGISTER_BYTES($29)
+	lw $8, MIPS_ARGUMENT_HOME_SIZE + 8 * MIPS_FRAME_REGISTER_BYTES($29)
+	lw $9, MIPS_ARGUMENT_HOME_SIZE + 9 * MIPS_FRAME_REGISTER_BYTES($29)
+	lw $10, MIPS_ARGUMENT_HOME_SIZE + 10 * MIPS_FRAME_REGISTER_BYTES($29)
+	lw $11, MIPS_ARGUMENT_HOME_SIZE + 11 * MIPS_FRAME_REGISTER_BYTES($29)
+	lw $12, MIPS_ARGUMENT_HOME_SIZE + 12 * MIPS_FRAME_REGISTER_BYTES($29)
+	lw $13, MIPS_ARGUMENT_HOME_SIZE + 13 * MIPS_FRAME_REGISTER_BYTES($29)
+	lw $14, MIPS_ARGUMENT_HOME_SIZE + 14 * MIPS_FRAME_REGISTER_BYTES($29)
+	lw $15, MIPS_ARGUMENT_HOME_SIZE + 15 * MIPS_FRAME_REGISTER_BYTES($29)
+	lw $16, MIPS_ARGUMENT_HOME_SIZE + 16 * MIPS_FRAME_REGISTER_BYTES($29)
+	lw $17, MIPS_ARGUMENT_HOME_SIZE + 17 * MIPS_FRAME_REGISTER_BYTES($29)
+	lw $18, MIPS_ARGUMENT_HOME_SIZE + 18 * MIPS_FRAME_REGISTER_BYTES($29)
+	lw $19, MIPS_ARGUMENT_HOME_SIZE + 19 * MIPS_FRAME_REGISTER_BYTES($29)
+	lw $20, MIPS_ARGUMENT_HOME_SIZE + 20 * MIPS_FRAME_REGISTER_BYTES($29)
+	lw $21, MIPS_ARGUMENT_HOME_SIZE + 21 * MIPS_FRAME_REGISTER_BYTES($29)
+	lw $22, MIPS_ARGUMENT_HOME_SIZE + 22 * MIPS_FRAME_REGISTER_BYTES($29)
+	lw $23, MIPS_ARGUMENT_HOME_SIZE + 23 * MIPS_FRAME_REGISTER_BYTES($29)
+	lw $24, MIPS_ARGUMENT_HOME_SIZE + 24 * MIPS_FRAME_REGISTER_BYTES($29)
+	lw $25, MIPS_ARGUMENT_HOME_SIZE + 25 * MIPS_FRAME_REGISTER_BYTES($29)
+	lw $28, MIPS_ARGUMENT_HOME_SIZE + 28 * MIPS_FRAME_REGISTER_BYTES($29)
+	lw $30, MIPS_ARGUMENT_HOME_SIZE + 30 * MIPS_FRAME_REGISTER_BYTES($29)
+	lw $31, MIPS_ARGUMENT_HOME_SIZE + 31 * MIPS_FRAME_REGISTER_BYTES($29)
+	lw $29, MIPS_ARGUMENT_HOME_SIZE + 29 * MIPS_FRAME_REGISTER_BYTES($29)
+	eret
+	.size mips_trap_entry, . - mips_trap_entry

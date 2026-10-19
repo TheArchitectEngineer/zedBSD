@@ -7,7 +7,7 @@
 
 /*
  * What the MIPS HAL asks of its board: the loader's tables, the display
- * and its console.
+ * and its console, the rate of Count and the external interrupts.
  */
 
 #ifndef KERN_HAL_MIPS_BSP_H
@@ -32,6 +32,25 @@ mips_board_putc(
 
 void
 mips_board_describe(
+	void);
+
+uint32_t
+mips_board_count_frequency(
+	void);
+
+void
+mips_board_irq_init(
+	void);
+
+int
+mips_board_irq_register(
+	unsigned line,
+	bool level,
+	void (*handler)(void *),
+	void *argument);
+
+void
+mips_board_interrupt(
 	void);
 
 #endif

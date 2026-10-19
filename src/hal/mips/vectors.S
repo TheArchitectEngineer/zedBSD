@@ -8,10 +8,11 @@
 /*
  * The MIPS exception vectors, which EBase points at.
  *
- * Until the trap handling of the HAL is in place every vector reports the
- * exception on the console and stops: the processor's state is passed to
- * C on a stack of its own, since the stack pointer of the code that
- * faulted may be what failed.
+ * The general exception goes to the trap handling of trap.S.  The TLB
+ * refills and the cache error, which nothing maps or expects before the
+ * page tables are in place, report the exception on the console and stop:
+ * the processor's state is passed to C on a stack of its own, since the
+ * stack pointer of the code that faulted may be what failed.
  */
 
 #include "asm.h"
@@ -40,11 +41,11 @@ mips_vectors:
 	nop
 
 	.org MIPS_VECTOR_GENERAL
-	j mips_early_vector
+	j mips_trap_entry
 	nop
 
 	/*
-	 * Reports an exception taken before the trap handling exists:
+	 * Reports an exception the trap handling does not take:
 	 * Cause, EPC, BadVAddr and Status go to mips_early_exception(), which
 	 * does not return.
 	 */
