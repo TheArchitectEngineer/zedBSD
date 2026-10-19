@@ -108,28 +108,36 @@ RISCV64_KERNEL_SOURCES += $(KERN_BOOT_SOURCES)
 RISCV64_KERNEL_SOURCES += $(KERN_ACL_SOURCES)
 RISCV64_KERNEL_SOURCES += $(KERN_QUOTA_SOURCES)
 
-# The virt board's PCI host (ws256-p016) and the drivers behind it that
-# the configuration selects: xHCI with USB keyboards, and NVMe.
-RISCV64_PCI_SOURCES_virt := src/drivers/platform/riscv-virt/virt-pci.c \
-	src/drivers/pci/pci.c src/drivers/pci/pci-ecam-fdt.c
+# The drivers behind a board's PCI hosts that the configuration selects:
+# xHCI with USB keyboards, and NVMe.
+RISCV64_PCI_DEVICE_SOURCES :=
 ifneq ($(filter y,$(CONFIG_DRIVER_PCI_XHCI) $(CONFIG_DRIVER_USB_HID) $(CONFIG_DRIVER_USB_HUB)),)
-RISCV64_PCI_SOURCES_virt += src/drivers/usb/usb.c
+RISCV64_PCI_DEVICE_SOURCES += src/drivers/usb/usb.c
 endif
 ifeq ($(CONFIG_DRIVER_PCI_XHCI),y)
-RISCV64_PCI_SOURCES_virt += src/drivers/pci/pci-xhci.c src/drivers/pci/pci-xhci-isoch.c
+RISCV64_PCI_DEVICE_SOURCES += src/drivers/pci/pci-xhci.c src/drivers/pci/pci-xhci-isoch.c
 endif
 ifeq ($(CONFIG_DRIVER_USB_HID),y)
-RISCV64_PCI_SOURCES_virt += src/drivers/usb/usb-hid.c src/drivers/generic/hidraw.c \
+RISCV64_PCI_DEVICE_SOURCES += src/drivers/usb/usb-hid.c src/drivers/generic/hidraw.c \
 	src/drivers/generic/hidraw-describe.c src/drivers/generic/hid-report.c \
 	src/drivers/generic/hid-digitizer.c src/drivers/generic/hid-touch.c \
 	src/drivers/generic/hid-input.c
 endif
 ifeq ($(CONFIG_DRIVER_USB_HUB),y)
-RISCV64_PCI_SOURCES_virt += src/drivers/usb/usb-hub.c
+RISCV64_PCI_DEVICE_SOURCES += src/drivers/usb/usb-hub.c
 endif
 ifeq ($(CONFIG_DRIVER_PCI_NVME),y)
-RISCV64_PCI_SOURCES_virt += src/drivers/pci/pci-nvme.c
+RISCV64_PCI_DEVICE_SOURCES += src/drivers/pci/pci-nvme.c
 endif
+
+# The virt board's ECAM host (ws256-p016) and the VisionFive 2's two PLDA
+# root complexes (ws256-p020).
+RISCV64_PCI_SOURCES_virt := src/drivers/platform/riscv-virt/virt-pci.c \
+	src/drivers/pci/pci.c src/drivers/pci/pci-ecam-fdt.c \
+	$(RISCV64_PCI_DEVICE_SOURCES)
+RISCV64_PCI_SOURCES_visionfive2 := src/drivers/platform/visionfive2/vf2-pcie.c \
+	src/drivers/pci/pci.c src/drivers/pci/pci-plda.c \
+	$(RISCV64_PCI_DEVICE_SOURCES)
 RISCV64_KERNEL_SOURCES += $(RISCV64_PCI_SOURCES_$(ZEDBSD_BOARD))
 RISCV64_KERNEL_OBJS := $(patsubst %.c,$(BUILD)/kernel/%.o,$(RISCV64_KERNEL_SOURCES))
 
