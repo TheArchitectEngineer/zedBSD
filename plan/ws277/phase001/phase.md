@@ -3,7 +3,7 @@
 # ws277-p001 DC8200 の display driver の設計
 
 - 親: [ws277](../ws.md)、Queue: q1341 / q1341-i01、q1343 / q1343-i01、q1346 / q1346-i01、q1347 / q1347-i01（P1、2026-10-20）
-- Status: in-progress（改訂 3.1 が出来た、Q1 の差分の確認待ち）
+- Status: cleared（2026-10-20 Q1 の判定: design-review-3 の結論「Blocker 無し…Q1 が差分を見るだけで足りる局所の直し」。改訂 3.1（be1b3f36c、merge 3e9be687e）で M1（s0+2 の前提・s0 を取る点・throughput・U11・p004 で 60 fps へ）・M2（serial-console の追加だけの口、R4 を 2 つに）・M3（p002 の依存に R4 の記述）と Minor 1・5・6 を Q1 が差分で確かめた。R3 は render_export が mappable でも shareable でもない blob の image を拒む形に縮めた。ユーザーの判断 D1〜D11 は未決）
 
 ## 結果（2026-10-20 P1）
 

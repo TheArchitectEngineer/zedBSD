@@ -22,4 +22,4 @@
 
 | Phase | 中身 | 依存 | Status |
 | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 設計（DC8200・HDMI の初期化、clock・reset・PD、MMU、plane・modifier、vblank・IRQ、WS269 の display の node の置き換え、PowerVR の PBE の線形の書き出し、coherency） | — | in-progress（2026-10-20 P1、改訂 3.1 が出来た、Q1 の差分の確認待ち） |
+| [p001](phase001/phase.md) | 設計（DC8200・HDMI の初期化、clock・reset・PD、MMU、plane・modifier、vblank・IRQ、WS269 の display の node の置き換え、PowerVR の PBE の線形の書き出し、coherency） | — | cleared（2026-10-20 Q1、改訂 3.1。D1〜D11 は未決） |
