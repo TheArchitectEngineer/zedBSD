@@ -6,12 +6,18 @@
  */
 
 /*
- * The sun4u console: /dev/console over the HAL's screen and serial port.
+ * The sun4u console: /dev/console over the screen and the serial port.
  *
- * The console is a teletype: each character goes to hal_putc(), which
- * writes it to the serial port and draws it on the screen.  A positioned
- * write has no teletype meaning and is dropped; the grid only answers the
- * size and cursor queries that programs make.
+ * The console is a teletype.  When the firmware framebuffer can be mapped
+ * (WS275) the console owns the screen: it keeps an 80-column grid of the
+ * framebuffer's height, draws it with the 8x16 font, writes each character
+ * to the serial port itself, and publishes the same output as the
+ * kernel's console (kernel_putc), so the HAL stops touching the display
+ * and the kernel's own records and the terminal share one cursor.  The
+ * grid stops being drawn while /dev/graphics owns the screen and is drawn
+ * again, over a cleared screen, when it is given back.  Without a
+ * framebuffer each character goes to hal_putc() as before.  A positioned
+ * write has no teletype meaning and is dropped.
  *
  * Input is read from the serial port, a 16550, by a kernel thread that
  * looks at it every few milliseconds, so the console needs no interrupt
@@ -21,6 +27,8 @@
 #include <stdint.h>
 
 #include "drivers/platform/sun4u/sun4u-console.h"
+#include "drivers/platform/sun4u/sun4u-firmware-fb.h"
+#include "drivers/platform/pcat/graphics/vgafont.h"
 
 #include <hal/hal.h>
 
@@ -39,12 +47,32 @@
  * register offsets and the data-ready bit of the line status register).
  */
 #define SUN4U_UART_RBR		0U
+#define SUN4U_UART_THR		0U
 #define SUN4U_UART_LSR		5U
 #define SUN4U_UART_LSR_DR	0x01U
+#define SUN4U_UART_LSR_THRE	0x20U
 
-/* The grid the console reports, the HAL's screen's. */
+/* How long a write waits for the transmitter before dropping the byte. */
+#define SUN4U_UART_SPIN_LIMIT	100000U
+
+/*
+ * The grid the console reports: the HAL's screen's without a framebuffer,
+ * 80 columns by as many 16-pixel rows as the framebuffer holds with one
+ * (at most SUN4U_CONSOLE_MAX_ROWS).
+ */
 #define SUN4U_CONSOLE_COLUMNS	80U
 #define SUN4U_CONSOLE_ROWS	25U
+#define SUN4U_CONSOLE_MAX_ROWS	128U
+#define SUN4U_CONSOLE_CELL_WIDTH	8U
+#define SUN4U_CONSOLE_CELL_HEIGHT	16U
+
+/* The grid's colors: light gray on black, and the cursor's white. */
+#define SUN4U_CONSOLE_FOREGROUND	0xaaaaaaU
+#define SUN4U_CONSOLE_BACKGROUND	0x000000U
+#define SUN4U_CONSOLE_CURSOR		0xffffffU
+
+/* A drawn cell's mark for the cursor, beside its character. */
+#define SUN4U_CONSOLE_DRAWN_CURSOR	0x100U
 
 /* How often the serial port is read, and how many bytes at a time. */
 #define SUN4U_CONSOLE_POLL_MS	10U
@@ -64,11 +92,24 @@ static void console_get_cursor(unsigned *row, unsigned *column, int *visible);
 static void console_show_cursor(int visible);
 static void console_nothing(void);
 static void console_input_worker(void *argument);
+static void console_reveal_fatal(void);
+static void console_suspend(void);
+static void console_resume(void);
+static void console_kernel_putc(int character);
+static void serial_write(int character);
+static unsigned long screen_enter(int *owned);
+static void screen_leave(unsigned long enabled, int owned);
+static void screen_putc(int character);
+static void screen_newline(void);
+static void screen_draw_cell(unsigned row, unsigned column);
+static void screen_draw_all(void);
+static void screen_repaint(void);
 
 /*
  * The console's text operations, registered once at start-up and never
  * changed.  Everything but a character goes nowhere, because the console
- * is a teletype.
+ * is a teletype; suspend, resume and reveal_fatal matter only when the
+ * console draws the framebuffer.
  */
 static const struct kern_text_ops sun4u_console_ops = {
 	.get_size = console_get_size,
@@ -79,8 +120,9 @@ static const struct kern_text_ops sun4u_console_ops = {
 	.get_cursor = console_get_cursor,
 	.show_cursor = console_show_cursor,
 	.update_cursor = console_nothing,
-	.suspend = console_nothing,
-	.resume = console_nothing
+	.suspend = console_suspend,
+	.resume = console_resume,
+	.reveal_fatal = console_reveal_fatal
 };
 
 /*
@@ -88,6 +130,46 @@ static const struct kern_text_ops sun4u_console_ops = {
  * started.
  */
 static uint16_t serial_port;
+
+/*
+ * Whether the console draws the framebuffer, set once by
+ * drv_sun4u_console_init() before kernel_putc is published.
+ */
+static int screen_on;
+
+/*
+ * The grid as it should look, its size, and the cursor.  Changed only
+ * inside screen_enter() and screen_leave(): interrupts off, which is
+ * enough on the port's one processor, and screen_busy set.  A zero
+ * character is a cell never written, drawn as a blank.
+ */
+static uint8_t screen_grid[SUN4U_CONSOLE_MAX_ROWS][SUN4U_CONSOLE_COLUMNS];
+static unsigned screen_rows;
+static unsigned screen_columns;
+static unsigned screen_row;
+static unsigned screen_column;
+
+/*
+ * What each cell of the screen shows now: its character, with
+ * SUN4U_CONSOLE_DRAWN_CURSOR when the cursor is drawn on it.  A cell is drawn only when it differs from
+ * the grid, so a scroll redraws only the cells that changed.  Guarded as
+ * the grid is.
+ */
+static uint16_t screen_drawn[SUN4U_CONSOLE_MAX_ROWS][SUN4U_CONSOLE_COLUMNS];
+
+/*
+ * Whether /dev/graphics owns the screen: the grid is still kept, but not
+ * drawn.  Set and cleared inside screen_enter() (and by a fatal stop
+ * without it).
+ */
+static int screen_suspended;
+
+/*
+ * Set while a writer changes the grid.  A writer that finds it set is the
+ * same processor coming back in (an interrupt handler's record, a fatal
+ * stop): it writes anyway rather than waiting for itself.
+ */
+static unsigned screen_busy;
 
 /*
  * The kernel thread that reads the serial port, or NULL before input was
@@ -103,8 +185,49 @@ void
 drv_sun4u_console_init(
 	void)
 {
+	const uint64_t *port;
+	unsigned width;
+	unsigned height;
+	unsigned row;
+	unsigned column;
+	int error;
+
 	/* Makes the teletype the console's text output. */
 	kern_text_register(&sun4u_console_ops);
+
+	/* Without the framebuffer the HAL keeps drawing the screen. */
+	error = drv_sun4u_fb_init();
+	if (error != 0)
+		return;
+
+	/* Finds the serial port the console writes itself, when there is one. */
+	port = hal_get_arch_handoff("sun4u.serial.port");
+	if (port != NULL && *port <= UINT16_MAX)
+		serial_port = (uint16_t)*port;
+
+	/* Sizes the grid to the framebuffer. */
+	drv_sun4u_fb_get_size(&width, &height);
+	screen_columns = width / SUN4U_CONSOLE_CELL_WIDTH;
+	if (screen_columns > SUN4U_CONSOLE_COLUMNS)
+		screen_columns = SUN4U_CONSOLE_COLUMNS;
+	screen_rows = height / SUN4U_CONSOLE_CELL_HEIGHT;
+	if (screen_rows > SUN4U_CONSOLE_MAX_ROWS)
+		screen_rows = SUN4U_CONSOLE_MAX_ROWS;
+	if (screen_columns == 0 || screen_rows == 0)
+		return;
+
+	/* Starts from a blank grid at the top of a cleared screen. */
+	for (row = 0; row < screen_rows; row++) {
+		for (column = 0; column < screen_columns; column++)
+			screen_grid[row][column] = 0;
+	}
+	screen_row = 0;
+	screen_column = 0;
+	screen_repaint();
+	screen_on = 1;
+
+	/* Takes the kernel's output over from the HAL. */
+	__atomic_store_n(&kernel_putc, console_kernel_putc, __ATOMIC_RELEASE);
 }
 
 /*
@@ -121,7 +244,7 @@ drv_sun4u_console_start_input(
 	if (input_worker != NULL)
 		return 0;
 
-	/* Without the port's name from the HAL, the console stays output only. */
+	/* Without the port's name from the HAL, the console reads no input. */
 	port = hal_get_arch_handoff("sun4u.serial.port");
 	if (port == NULL || *port > UINT16_MAX)
 		return 0;
@@ -146,12 +269,18 @@ console_get_size(
 	unsigned *rows)
 {
 	/* Reports the width when the caller asked for it. */
-	if (columns != NULL)
+	if (columns != NULL) {
 		*columns = SUN4U_CONSOLE_COLUMNS;
+		if (screen_on)
+			*columns = screen_columns;
+	}
 
 	/* Reports the height when the caller asked for it. */
-	if (rows != NULL)
+	if (rows != NULL) {
 		*rows = SUN4U_CONSOLE_ROWS;
+		if (screen_on)
+			*rows = screen_rows;
+	}
 }
 
 /* Sends one character to the serial port and the screen. */
@@ -159,8 +288,14 @@ static void
 console_putc(
 	int character)
 {
-	/* Writes the character wherever the hardware layer shows the console. */
-	hal_putc(character);
+	/* Without the framebuffer, the hardware layer shows the console. */
+	if (!screen_on) {
+		hal_putc(character);
+		return;
+	}
+
+	/* Writes the grid and the serial port directly. */
+	console_kernel_putc(character);
 }
 
 /* Drops a positioned write, which a teletype cannot place. */
@@ -190,12 +325,18 @@ console_set_cursor(
 	unsigned row,
 	unsigned column)
 {
+	unsigned rows;
+	unsigned columns;
+
+	/* Reads the grid's size. */
+	console_get_size(&columns, &rows);
+
 	/* Refuses a row below the grid. */
-	if (row >= SUN4U_CONSOLE_ROWS)
+	if (row >= rows)
 		return 0;
 
 	/* Refuses a column right of the grid. */
-	if (column >= SUN4U_CONSOLE_COLUMNS)
+	if (column >= columns)
 		return 0;
 
 	/* Succeeded: the position is inside the grid. */
@@ -280,4 +421,349 @@ console_input_worker(
 		wake = sched_ticks() + kern_ms_to_ticks(SUN4U_CONSOLE_POLL_MS);
 		sched_sleep(wake);
 	}
+}
+
+/*
+ * Shows the console for a fatal stop, even over a graphics owner.
+ *
+ * Interrupts are off and the stopping code may hold any lock, so the grid
+ * is drawn without waiting for a writer.
+ */
+static void
+console_reveal_fatal(
+	void)
+{
+	/* Nothing to show without the framebuffer: the serial port has it all. */
+	if (!screen_on)
+		return;
+
+	/* Takes the screen back and draws the grid over a cleared screen. */
+	screen_suspended = 0;
+	screen_repaint();
+}
+
+/* Stops drawing the grid while /dev/graphics owns the screen. */
+static void
+console_suspend(
+	void)
+{
+	unsigned long enabled;
+	int owned;
+
+	/* Nothing is drawn without the framebuffer. */
+	if (!screen_on)
+		return;
+
+	/* Marks the screen taken, apart from a writer. */
+	enabled = screen_enter(&owned);
+
+	screen_suspended = 1;
+
+	screen_leave(enabled, owned);
+}
+
+/* Draws the grid again, over a cleared screen, once graphics are left. */
+static void
+console_resume(
+	void)
+{
+	unsigned long enabled;
+	int owned;
+
+	/* Nothing is drawn without the framebuffer. */
+	if (!screen_on)
+		return;
+
+	/* Gives the screen back to the grid and repaints all of it. */
+	enabled = screen_enter(&owned);
+
+	screen_suspended = 0;
+	screen_repaint();
+
+	screen_leave(enabled, owned);
+}
+
+/*
+ * Writes one character of the console or of the kernel to the serial
+ * port and the grid.
+ *
+ * This is the published kernel_putc: it calls neither the log nor the HAL,
+ * so nothing comes back into it.
+ */
+static void
+console_kernel_putc(
+	int character)
+{
+	unsigned long enabled;
+	int owned;
+
+	/* Writes the serial port and the grid as one step. */
+	enabled = screen_enter(&owned);
+
+	serial_write(character);
+	screen_putc(character);
+
+	screen_leave(enabled, owned);
+}
+
+/*
+ * Writes one byte to the serial port, a newline after a carriage return;
+ * a byte the transmitter never takes is dropped.
+ */
+static void
+serial_write(
+	int character)
+{
+	unsigned spins;
+	uint8_t status;
+
+	/* Nothing to write without the port. */
+	if (serial_port == 0)
+		return;
+
+	/* A newline is preceded by a carriage return. */
+	if (character == '\n')
+		serial_write('\r');
+
+	/* Waits for room in the transmitter. */
+	for (spins = 0; spins < SUN4U_UART_SPIN_LIMIT; spins++) {
+		status = kern_io_in8(serial_port + SUN4U_UART_LSR);
+		if ((status & SUN4U_UART_LSR_THRE) != 0)
+			break;
+	}
+
+	/* Drops the byte on a port that never drains. */
+	if (spins == SUN4U_UART_SPIN_LIMIT)
+		return;
+
+	/* Hands the byte to the transmitter. */
+	kern_io_out8(serial_port + SUN4U_UART_THR, (uint8_t)character);
+}
+
+/*
+ * Starts a change of the grid: interrupts off, and the writer's mark set.
+ * Reports whether interrupts were on, and in owned whether this call set
+ * the mark (a nested writer did not).
+ */
+static unsigned long
+screen_enter(
+	int *owned)
+{
+	unsigned long enabled;
+	unsigned busy;
+
+	/* Keeps interrupt handlers out; the port has one processor. */
+	enabled = hal_irq_disable();
+
+	/* Sets the mark; one already set is this processor coming back in. */
+	busy = __atomic_exchange_n(&screen_busy, 1U, __ATOMIC_ACQUIRE);
+	*owned = 0;
+	if (busy == 0)
+		*owned = 1;
+
+	/* Succeeded: the caller may change the grid. */
+	return enabled;
+}
+
+/* Ends a change of the grid started by screen_enter(). */
+static void
+screen_leave(
+	unsigned long enabled,
+	int owned)
+{
+	/* Clears the mark only when this writer set it. */
+	if (owned)
+		__atomic_store_n(&screen_busy, 0U, __ATOMIC_RELEASE);
+
+	/* Lets interrupts in again when they were on. */
+	if (enabled)
+		hal_irq_enable();
+}
+
+/* Puts one character at the cursor. */
+static void
+screen_putc(
+	int character)
+{
+	unsigned column;
+
+	/* A newline moves to the next line. */
+	if (character == '\n') {
+		screen_newline();
+		return;
+	}
+
+	/* A carriage return moves to the line's start. */
+	if (character == '\r') {
+		column = screen_column;
+		screen_column = 0;
+		if (column < screen_columns)
+			screen_draw_cell(screen_row, column);
+		screen_draw_cell(screen_row, screen_column);
+		return;
+	}
+
+	/* A backspace steps back and erases within the line. */
+	if (character == '\b') {
+		column = screen_column;
+		if (screen_column > 0)
+			screen_column--;
+		screen_grid[screen_row][screen_column] = ' ';
+		if (column < screen_columns)
+			screen_draw_cell(screen_row, column);
+		screen_draw_cell(screen_row, screen_column);
+		return;
+	}
+
+	/* A tab moves to the next eight-column stop, wrapping past the row's end. */
+	if (character == '\t') {
+		column = screen_column;
+		screen_column = (screen_column + 8U) & ~7U;
+		if (column < screen_columns)
+			screen_draw_cell(screen_row, column);
+		if (screen_column >= screen_columns) {
+			screen_newline();
+			return;
+		}
+		screen_draw_cell(screen_row, screen_column);
+		return;
+	}
+
+	/* Wraps before writing past the end of the row. */
+	if (screen_column >= screen_columns)
+		screen_newline();
+
+	/* Stores a printable character, or a question mark for anything else. */
+	screen_grid[screen_row][screen_column] = '?';
+	if (character >= 0x20 && character < 0x7f)
+		screen_grid[screen_row][screen_column] = (uint8_t)character;
+
+	/* Moves the cursor on and draws the written cell and the cursor's. */
+	column = screen_column;
+	screen_column++;
+	screen_draw_cell(screen_row, column);
+	if (screen_column < screen_columns)
+		screen_draw_cell(screen_row, screen_column);
+}
+
+/* Moves the cursor to the start of the next line, scrolling at the bottom. */
+static void
+screen_newline(
+	void)
+{
+	unsigned old_row;
+	unsigned old_column;
+	unsigned row;
+	unsigned column;
+
+	/* The cell the cursor leaves loses its cursor. */
+	old_row = screen_row;
+	old_column = screen_column;
+	screen_column = 0;
+	if (old_column < screen_columns)
+		screen_draw_cell(old_row, old_column);
+
+	/* Moves down when there is a row below. */
+	if (screen_row + 1U < screen_rows) {
+		screen_row++;
+		screen_draw_cell(screen_row, screen_column);
+		return;
+	}
+
+	/* Shifts the rows up and blanks the bottom one. */
+	for (row = 1; row < screen_rows; row++) {
+		for (column = 0; column < screen_columns; column++)
+			screen_grid[row - 1U][column] = screen_grid[row][column];
+	}
+	for (column = 0; column < screen_columns; column++)
+		screen_grid[screen_rows - 1U][column] = 0;
+
+	/* Draws the cells the scroll changed. */
+	screen_draw_all();
+}
+
+/* Draws one cell when it differs from what the screen shows. */
+static void
+screen_draw_cell(
+	unsigned row,
+	unsigned column)
+{
+	const uint8_t *glyph;
+	uint16_t wanted;
+	uint8_t character;
+	unsigned x;
+	unsigned y;
+
+	/* A cell never written is a blank; the cursor's cell carries its mark. */
+	character = screen_grid[row][column];
+	if (character == 0)
+		character = ' ';
+	wanted = character;
+	if (row == screen_row && column == screen_column)
+		wanted |= SUN4U_CONSOLE_DRAWN_CURSOR;
+
+	/* Draws nothing while graphics own the screen, or for an unchanged cell. */
+	if (screen_suspended || screen_drawn[row][column] == wanted)
+		return;
+
+	/* Draws the glyph, and the cursor's two bottom lines over it. */
+	x = column * SUN4U_CONSOLE_CELL_WIDTH;
+	y = row * SUN4U_CONSOLE_CELL_HEIGHT;
+	glyph = &drv_pcat_vgafont16[(unsigned)character * PCAT_VGAFONT_HEIGHT];
+	drv_sun4u_fb_glyph(x, y, glyph, SUN4U_CONSOLE_FOREGROUND, SUN4U_CONSOLE_BACKGROUND);
+	if ((wanted & SUN4U_CONSOLE_DRAWN_CURSOR) != 0) {
+		drv_sun4u_fb_fill(x, y + SUN4U_CONSOLE_CELL_HEIGHT - 2U,
+				  SUN4U_CONSOLE_CELL_WIDTH, 2U, SUN4U_CONSOLE_CURSOR);
+	}
+
+	/* Records what the cell shows now. */
+	screen_drawn[row][column] = wanted;
+}
+
+/* Draws every cell that differs from what the screen shows. */
+static void
+screen_draw_all(
+	void)
+{
+	unsigned row;
+	unsigned column;
+
+	/* Each row, left to right. */
+	for (row = 0; row < screen_rows; row++) {
+		for (column = 0; column < screen_columns; column++)
+			screen_draw_cell(row, column);
+	}
+}
+
+/*
+ * Clears the whole screen and draws the grid on it, unless graphics own
+ * the screen.
+ */
+static void
+screen_repaint(
+	void)
+{
+	unsigned width;
+	unsigned height;
+	unsigned row;
+	unsigned column;
+	uint16_t blank;
+
+	/* Leaves a screen graphics own alone. */
+	if (screen_suspended)
+		return;
+
+	/* Paints the whole framebuffer the background color. */
+	drv_sun4u_fb_get_size(&width, &height);
+	drv_sun4u_fb_fill(0, 0, width, height, SUN4U_CONSOLE_BACKGROUND);
+
+	/* Every cell now shows a blank without the cursor. */
+	blank = ' ';
+	for (row = 0; row < screen_rows; row++) {
+		for (column = 0; column < screen_columns; column++)
+			screen_drawn[row][column] = blank;
+	}
+
+	/* Draws the cells that are not blank, and the cursor. */
+	screen_draw_all();
 }
