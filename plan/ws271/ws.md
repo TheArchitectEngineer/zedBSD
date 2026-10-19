@@ -28,4 +28,6 @@
 
 ## 依存
 
+- 2026-10-19 Q1: 共有の LLVM に Mips の target を足した（toolchain/llvm/llvm.mk の targets に Mips、patch level zedbsd10、build/llvm を作り直し rc=0。`clang --print-targets` に mips・mipsel・mips64・mips64el、mipsel の object を `ld.lld -m elf32ltsmip` で link でき ELF32 little endian MIPS、mips64el の compile も可。sysroots も作り直した）。zedBSD の mips の triple（userland 用）はまだ。
+
 - LLVM の Mips の target（Q1、[WS273](../ws273/ws.md) と共通）。
