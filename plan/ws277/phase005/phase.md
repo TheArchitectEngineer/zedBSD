@@ -3,7 +3,7 @@
 # ws277-p005 自前の mode（HDMI の PHY・PLL、DC8200 の panel・plane）
 
 - 親: [ws277](../ws.md)、Queue: q1353 / q1353-i01（P1、2026-10-20）
-- Status: in-progress（追補 版 3.2・実装・build（VF2・riscv64-virt・amd64、warning 0）・host 試験 PASS。実機 U7 待ち、GOP の無い時は R1b 待ち）
+- Status: in-progress（追補 版 3.2・実装・build（VF2・riscv64-virt・amd64、warning 0）・host 試験 PASS。実機 U7 待ち、GOP の無い時の R1b は実装済み、実機未確認）
 - 設計: [design.md](../design.md) 版 3.2 §15（追補）、§2.2・§2.3、§4.4・§4.7。D3・D6・D7 は (a)。
 
 ## 道の優先（§15.1、2026-10-20 Q1 の事実による）
@@ -45,9 +45,17 @@
 - 手順 3（GOP 無し、R1b の後）: GOP を出さない firmware（または loader の GOP の受け渡しを切った試験の image）で、HDMI に赤・緑・青・白の縦の帯が出る事。
 - 失敗の見方: 画が出ない時は monitor の「信号なし」か「範囲外」かを記録する。起動が止まる時は gdbstub は使えない（実機）ので、画面の最後の行を撮る。
 
+## R1b: VOUT 7 の親に hdmitx0_pixelclk（2026-10-20 P1、q1354-i01）
+
+- `vf2-crg` に `drv_vf2_clock_set_input_parent(clock, input)` を足した（既存の `drv_vf2_clock_set_parent` は形も動作も同じ。共通部を static の `find_mux`・`write_mux` に分けた）。表の SOURCE_INPUT の源のうち、名前（generator の node の clock-names）が一致する物の selector を書く。ENOTSUP（selector 無し・共有）・ENOENT（その入力は源でない）・ENODEV は set_parent と同じ。HAL は不変。
+- VOUT 7 の源の表は既存（selector 0 = dc8200_pix（VOUT 1）、1 = `hdmitx0_pixelclk`）。Values referenced: StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e `clk-starfive-jh7110-vout.c`（pix0 の gated selector の親）・`vs_dc.c` vs_dc_enable（display 0 = HDMI で `clk_set_parent(dc8200_clk_pix0, hdmitx0_pixelclk)`）、Linux v6.12 `jh7110.dtsi`（voutcrg の clock-names）。
+- 使う所: `src/kern/platform/visionfive2.c` の `power_display`（GOP が無い時だけの道）で、LCD の親を pix0 にした後に pix0 の親を `hdmitx0_pixelclk` にする（vendor と同じく crtc の enable の時点、HDMI の PLL の lock より前）。失敗は `dc8200: own mode: pixel clock source not set (<errno>)`。dc8200-mode.c・dc8200-hdmi.c は変更不要だった。
+- 変えた WS256 の file: `src/drivers/platform/visionfive2/vf2-crg.c`・`vf2-crg.h`、`plan/ws256/tests/vf2-soc/vf2-soc-host-test.c`（5 件の確認を追加）。
+- 確認: build（VF2・riscv64-virt・amd64、`BUILD=build/ws277-p005-<c>`）rc 0・warning 0。host 試験 `plan/ws256/tests/vf2-soc/run.sh build/r1b-soc` → 124 PASS・0 failure（新しい 4 行: hdmitx0_pixelclk へ戻す・297 MHz・osc は ENOENT・selector 無しは ENOTSUP）。`plan/ws277/tests/p005/run.sh build/r1b-p005` → mode 100・own 23・own 20、failure 0。QEMU・実機: 未実施。
+
 ## 残り・未確認
 
-- **R1b（新、WS256）**: HDMI の panel の pixel clock（VOUT 7）の親に外の入力 `hdmitx0_pixelclk` を選ぶ口が `vf2-crg` に無い（`drv_vf2_clock_set_parent` は CRG の clock の親だけ）。GOP がある時は U-Boot が選び済みと推測して触らない。GOP が無い時の画は R1b まで未確認。
+- R1b は 2026-10-20 に実装（下の節）。GOP が無い時の画は実機 U7 の手順 3 まで未確認。
 - HDMI の regulator（AXP15060 の ALDO3・ALDO5）は firmware が on にしている事に頼る（PMIC の driver は無い）。
 - DSS の syscon の 2 bit の意味（TRM 未照合）。
 - GOP があり bootfb を使う時、display.c の COPY の道の screen は bootfb の 1920x1080 のままなので、copy の画は左上の W×H だけが見える（試験の手段としては許す）。GOP が無い時は display の node が出ない（display.c の screen を driver の framebuffer にするのは p003 の側、§15.3）。

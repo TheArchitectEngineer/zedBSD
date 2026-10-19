@@ -1082,15 +1082,16 @@ light_display(
  * Powers the display output up: its power domain, its clocks, the LCD
  * clock's source and its reset lines.
  *
- * The HDMI panel's pixel clock is left on the source it has: its other
- * source, the HDMI PHY's output, is an input the clock driver cannot
- * select yet.
+ * The HDMI panel's pixel clock runs from the HDMI PHY's output (the VOUT
+ * generator's hdmitx0_pixelclk input), as for display 0 in the vendor
+ * driver; the PHY drives it once the HDMI PLL locks.
  *
  * Procedure referenced:
  * StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
  * drivers/gpu/drm/verisilicon/vs_dc.c (dc_init and vs_dc_enable: the
  * clocks enabled, the controller's resets released, the LCD clock on
- * display 0's pixel clock) and inno_hdmi.c
+ * display 0's pixel clock, display 0's pixel clock on hdmitx0_pixelclk)
+ * and inno_hdmi.c
  * (inno_hdmi_enable_clk_deassert_rst).
  */
 static int
@@ -1137,6 +1138,13 @@ power_display(
 	error = drv_vf2_clock_set_parent(&lcd, &pixel);
 	if (error != 0) {
 		kern_logf("dc8200: own mode: LCD clock source not set (%d)\n", error);
+		return error;
+	}
+
+	/* Runs the HDMI panel's pixel clock from the HDMI PHY's output. */
+	error = drv_vf2_clock_set_input_parent(&pixel, "hdmitx0_pixelclk");
+	if (error != 0) {
+		kern_logf("dc8200: own mode: pixel clock source not set (%d)\n", error);
 		return error;
 	}
 
