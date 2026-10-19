@@ -58,9 +58,11 @@ X68K_USER_CONTRACT_OBJ := $(BUILD)/user/userland/x68k-contract.o
 X68K_CRT0_OBJ := $(BUILD)/user/src/libc/crt/crt0-m68k.o
 # The C library of the sysroots (toolchain/llvm/sysroot.mk), from the same
 # sources, with the compiler runtime; libgcc supplies what the MC68030's
-# extended long double needs.
+# extended long double needs.  The MC68030 has no thread-pointer register,
+# so the compiler calls __m68k_read_tp for a thread-local access (the
+# resolver's state), which m68k-read-tp.c supplies.
 X68K_USER_RUNTIME_SOURCES := $(sort $(ZEDBSD_SYSROOT_LIBC_SOURCES) \
-	$(ZEDBSD_SYSROOT_COMPILER_RT_SOURCES))
+	$(ZEDBSD_SYSROOT_COMPILER_RT_SOURCES) userland/base/libc/m68k-read-tp.c)
 X68K_USER_SH_SOURCES := $(USERLAND_sh_SOURCES)
 X68K_USER_RUNTIME_OBJS := \
 	$(patsubst %.c,$(BUILD)/user/%.o,$(X68K_USER_RUNTIME_SOURCES))
@@ -303,6 +305,27 @@ $(BUILD)/bin/$(1): $(X68K_CRT0_OBJ) $(X68K_USER_RUNTIME_OBJS) \
 endef
 $(foreach command,$(sort $(USER_BASIC_COMMANDS) sysctl mount),\
 	$(eval $(call X68K_USER_BASIC_COMMAND,$(command))))
+
+# A network program has the network helpers in place of the command ones.
+X68K_USER_NET_COMMANDS := $(USERLAND_SELECTED_NETWORK_PROGRAMS)
+X68K_USER_NET_COMMON_OBJS := $(BUILD)/user/userland/base/net/netutil.o \
+	$(BUILD)/user/userland/base/net/dhcp.o
+
+define X68K_USER_NET_COMMAND
+$(BUILD)/bin/$(1): $(X68K_CRT0_OBJ) $(X68K_USER_RUNTIME_OBJS) \
+	$(X68K_USER_NET_COMMON_OBJS) $(call ZEDBSD_USERLAND_OBJECTS,$(BUILD)/user,$(1)) \
+	$(X68K_PLATFORM)/user.ld tools/build/check-user-elf.py
+	@mkdir -p $$(dir $$@)
+	$(M68K_LD) --gc-sections -nostdlib -static -z max-page-size=4096 \
+ -z stack-size=0x100000 -T $(X68K_PLATFORM)/user.ld \
+ $(X68K_CRT0_OBJ) $(X68K_USER_RUNTIME_OBJS) \
+ $(X68K_USER_NET_COMMON_OBJS) \
+ $(call ZEDBSD_USERLAND_OBJECTS,$(BUILD)/user,$(1)) $(M68K_LIBGCC) -o $$@
+	@test -z "$$$$($(M68K_NM) -u $$@)" || { $(M68K_NM) -u $$@; exit 1; }
+	$(PYTHON) tools/build/check-user-elf.py --machine m68k $$@
+endef
+$(foreach command,$(X68K_USER_NET_COMMANDS),\
+	$(eval $(call X68K_USER_NET_COMMAND,$(command))))
 $(BUILD)/bin/umount: $(BUILD)/bin/mount
 	cp $< $@
 
@@ -376,19 +399,11 @@ $(BUILD)/zedbsd-x68k.hd: $(BUILD)/stage1.bin $(BUILD)/stage2.bin \
  --kernel $(BUILD)/vmunix --shell $(BUILD)/bin/sh $@
 
 # X68k currently implements only the static user ABI.  The root holds the
-# base programs; the network programs are left out, as nothing here drives a
-# network device and no rule above builds them (as on sparcv9).
+# same base programs, accounts and data as on the other platforms.
 ZEDBSD_ROOTFS_DYNAMIC := n
 include platform/common/userland-rootfs.mk
-X68K_ROOTFS_COMMANDS := $(sort sh sysctl mount umount $(USER_BASIC_COMMANDS))
-X68K_ROOTFS_INPUTS := $(addprefix $(BUILD)/bin/,$(X68K_ROOTFS_COMMANDS)) \
-	$(ZEDBSD_ACCOUNT_INPUTS) $(ZEDBSD_BASE_DATA_INPUTS)
-X68K_ROOTFS_FILES := $(foreach command,$(X68K_ROOTFS_COMMANDS),\
- --file $(if $(filter umount,$(command)),/sbin/umount,$(call zedbsd_userland_destination,$(command)))=$(BUILD)/bin/$(command)) \
-	$(foreach program,$(X68K_ROOTFS_COMMANDS),$(if $(USERLAND_$(program)_MODE),\
- --mode $(call zedbsd_userland_destination,$(program))=$(USERLAND_$(program)_MODE))) \
-	$(ZEDBSD_ACCOUNT_FILES) $(ZEDBSD_BASE_DATA_FILES)
-$(eval $(call ZEDBSD_ROOTFS_TREE_RULE,m68k,$(X68K_ROOTFS_INPUTS),$(X68K_ROOTFS_FILES)))
+X68K_ROOTFS_FILES := $(ZEDBSD_ROOTFS_FILES)
+$(eval $(call ZEDBSD_ROOTFS_TREE_RULE,m68k,$(ZEDBSD_ROOTFS_INPUTS),$(X68K_ROOTFS_FILES)))
 
 rootfs: $(BUILD)/rootfs/.stamp
 
