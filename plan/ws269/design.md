@@ -2,7 +2,7 @@
 
 # WS269 設計: VisionFive 2（JH7110）の PowerVR BXE-4-32 の driver
 
-- 版: 2（2026-10-19、P2、ws269-p001、q1319-i01）。版 1（q1316-i01）を [design-review-1.md](design-review-1.md) に合わせて直した。対応の表は末尾の §10。コードは書いていない。
+- 版: 3（2026-10-19、P2、ws269-p001、q1321-i01）。版 2（q1319-i01）を [design-review-2.md](design-review-2.md) に合わせて直した。対応の表は末尾の §11（レビュー 1 への対応は §10）。版 2 は版 1（q1316-i01）を [design-review-1.md](design-review-1.md) に合わせて直した物。コードは書いていない。
 - 範囲: kernel の driver の構成、CPU と GPU の memory の共有（coherency）、表示の道、firmware、userland の Vulkan の道、実装の Phase の分割、ユーザーの判断（D1〜D3・D5〜D7、D4 は欠番）。
 - 印: **事実**（出典あり）、**推測**（出典なし、確かめる Phase を書く）、**未確認**。
 - 出典の規則は [Guardrail](../guardrail.md) の「MIT・GPL の出典のデータの引用」に従う（§0.2）。
@@ -22,13 +22,16 @@
 | S7 | `LICENSE.powervr`（同じ fork、レビュー 1 が文面を確認） | 同上 | 改変しない binary の再配布は可。**reverse engineering・decompile・disassemble は禁止**。Imagination が license した製品でだけ使う。特許の許諾は OSI の承認した OS と組み合わせる時だけ |
 | S8 | Linux mainline `drivers/gpu/drm/imagination/`（レビュー 1 が `gh api` で読んだ最新）と、vendor の clone の同じ directory（v6.12 相当） | 最新 mainline、`~/visionfive-linux` 4cecf169f38e | SPDX は `GPL-2.0-only OR MIT`（`pvr_fw_mips.c` の 1 行目を clone で確認）。`pvr_fw_mips.c`・`pvr_vm_mips.c`・`pvr_rogue_mips.h` がある（**MIPS の firmware processor を扱う**、clone で確認）。v6.12 の match は `img,img-axe` だけ（clone の `pvr_drv.c:1477`）。最新 mainline では 36.52.104.182（BXM-4-64）が SUPPORTED（レビュー 1、`pvr_device.c:534`）。FW の major 版 1（clone の `pvr_device.c:34`） |
 | S9 | StarFive の vendor kernel の clone（2026-10-19 ユーザーの clone、ws.md の資料） | `~/visionfive-linux`、branch `JH7110_VisionFive2_6.12.y_devel` 4cecf169f38e（2025-09-29） | 下の S9a〜S9d |
-| S9a | vendor の JH7110 の glue（Dual MIT/GPLv2） | `drivers/gpu/drm/img/img-rogue/services/system/rogue/sf_7110/sysconfig.c`・`sysconfig.h` | cache の扱い: snoop の mode を **EMULATED**（179-183 行。CPU_ONLY は `SUPPORT_AXI_ACE_TEST` の時だけ）、host の cache の保守は全部 ccache の FLUSH64 の range（186-222 行）、DMA の mask は **32 bit**（425 行）。clock は `clk_bv` を 594 MHz、BIN2 の板（`/opp-table-0/opp-1250000000` がある板）は 396 MHz に set_rate し（`sysconfig.h:88-89`、`sysconfig.c:303-305・319`）、その値を FW の core clock に渡す（503 行）。順は apb・rtc の clock → rate → core・sys の clock → reset apb → doma の解除（316-325 行）、axi の clock は runtime resume で別に（224-229 行）。PMU の hw event の mask を resume で 0、suspend で全部（226・236 行）。IRQ 82 =「77 + 5」（`sysconfig.h:51`） |
+| S9a | vendor の JH7110 の glue（Dual MIT/GPLv2） | `drivers/gpu/drm/img/img-rogue/services/system/rogue/sf_7110/sysconfig.c`・`sysconfig.h` | cache の扱い: snoop の mode を **EMULATED**（174-183 行。CPU_ONLY は `SUPPORT_AXI_ACE_TEST` の時だけ）、host の cache の保守は全部 ccache の FLUSH64 の range（186-222 行）、DMA の mask は **32 bit**（425 行）。clock は `clk_bv` を 594 MHz、BIN2 の板（`/opp-table-0/opp-1250000000` がある板）は 396 MHz に set_rate し（`sysconfig.h:88-89`、`sysconfig.c:303-305・319`）、その値を FW の core clock に渡す（503 行）。順は apb・rtc の clock → rate → core・sys の clock → reset apb → doma の解除（316-325 行）、axi の clock は runtime resume で apb より先に（227 行の axi → 228 行の `u0_img_gpu_enable`）。invalidate は `do_invalid_range`（106-124 行）: 2 MiB の zero page を書いて FLUSH64 し、**L2 を丸ごと追い出す**（`dma_support.c:143`・`rgxlayer_impl.c:1021` が kernel の写像を作る時に呼ぶ）。PMU の hw event の mask を resume で 0、suspend で全部（226・236 行）。IRQ 82 =「77 + 5」（`sysconfig.h:51`） |
 | S9b | vendor の DT | `arch/riscv/boot/dts/starfive/jh7110.dtsi:1403-1422` | compatible `img-gpu`、reg `0x18000000/0x100000` と `0x130C000/0x10000`、clocks GPU_CORE・GPU_APB・GPU_RTC_TOGGLE・GPU_CORE_CLK・GPU_SYS_CLK・NOC_BUS_GPU_AXI（names clk_bv・clk_apb・clk_rtc・clk_core・clk_sys・clk_axi）、resets GPU_APB・GPU_DOMA だけ（**27 の NOC_BUS_GPU_AXI の reset には触らない**）、power-domains PD_GPUA、interrupts 82、`current-clock = <8000000>`、status disabled |
-| S9c | vendor の core の定義 | `hwdefs/rogue/km/cores/rgxcore_km_36.50.54.182.h:60-61`、`hwdefs/rogue/km/configs/rgxconfig_km_36.V.54.182.h` | BRN 63553・71317。feature: AXI_ACELITE（57 行）、FBCDC 50・architecture 7（62-64 行）、MIPS（71 行）、NUM_CLUSTERS 1、PHYS_BUS_WIDTH 36、SLC 16 KiB、VIRTUAL_ADDRESS_SPACE_BITS 40 |
+| S9c | vendor の core の定義 | `hwdefs/rogue/km/cores/rgxcore_km_36.50.54.182.h:60-61`、`hwdefs/rogue/km/configs/rgxconfig_km_36.V.54.182.h` | BRN 63553・71317。feature: AXI_ACELITE（57 行）、FBCDC 50・architecture 7（62-64 行）、MIPS（72 行）、NUM_CLUSTERS 1、PHYS_BUS_WIDTH 36、SLC 16 KiB、VIRTUAL_ADDRESS_SPACE_BITS 40 |
 | S9d | vendor の PMU と ccache | `drivers/pmdomain/starfive/jh71xx-pmu.c:88`、`drivers/cache/sifive_ccache.c:234` | hw event の mask、FLUSH64 の range（手順の参照先） |
 | S10 | firmware の header（レビュー 1 が header の 4 KiB と device info だけを読んだ。逆アセンブルなし） | S6 の file | firmware processor MIPS、BRN 63553・71242、feature は BXM-4-64 と同じで大きさだけ違う（COMMON_STORE 16384/19456、ISP の tile 4/6、MAX_PARTITIONS 10/12、IPP pipe 4/6）、BRN44079 が無い。**BRN の組が S9c（71317）と違う**: FW の版と DDK の版の違いと推測、p002 で照合 |
 | S11 | Mesa `src/imagination/`（レビュー 1） | Mesa main | `common/device_info/bxe-4-32.h` がある。compiler は `pco`（MIT）。encoding は `pco/pco_isa.py`、control stream は `csbgen` の XML（license の行は未確認） |
 | S12 | 既存の zedBSD | `include/drivers/gpu/gpu.h`、`src/drivers/gpu/`（bcm2711・amdrdna・compiler・venus）、`userland/desktop/libvulkan/`、`userland/desktop/libkeiland-backend-zedbsd/scanout-zedbsd.c`、`src/hal/riscv64/space.c:1778-1780`・`page.c`、`src/drivers/generic/dma.c`、`src/hal/riscv64/bsp-visionfive2/board.c`（ccache の FLUSH64） | 合わせる形と、今ある制限 |
+| S9e | vendor の SLC の保守 | `rogue/rgxinit.c:3651`、`rogue/rgxcompute.c:1102` | `RGXFWIF_KCCB_CMD_SLCFLUSHINVAL`（GPU の SLC の flush・invalidate を FW に頼む KCCB の命令） |
+| S9f | DDK 1.19 の host 側の BRN | `rogue/rgxinit.c:4413-4421・4912-4920` | BRN71317: GPU の MMU の 1 MiB・2 MiB の page は fault する（最大 256 KiB） |
+| S8a | mainline の FW の device info の enum | `drivers/gpu/drm/imagination/pvr_rogue_fwif_dev_info.h:8-19`（最新 mainline も同じ、レビュー 2） | FW の header が表せる BRN は 12 個だけ。**71317 は無い** |
 | S13 | WS256 | `plan/ws256/design-peripherals.md` §2.4（bus master ごとの coherency の確かめ）・§3.2、ws.md の p011・p013・p015・p020・p022・p023 | 電源・clock・reset・DMA の基盤と実機の確かめ |
 
 ### 0.2 参照の規則（Guardrail の適用）
@@ -37,14 +40,23 @@
 - 手順（電源・clock・reset の順、MIPS の起動、cache の保守の仕方）は `Procedure referenced: <版> <path> (<関数の名前>)`。
 - code・comment・構造・symbol の名前は写さない（MIT・Dual の file でも）。zedBSD の名前は独自に付ける。file の上部に出典・notice を書かない。
 - firmware は逆アセンブルしない（S7）。FW の挙動は FW の trace の buffer、FWIF の応答、register の値だけで調べる。
-- phase.md の受け入れ 4「GPL の source は手順の参照だけ」は Guardrail（値の引用も可）より狭い。この設計は Guardrail に合わせる。phase.md の文面の揃え方は Q1 に依頼する（§9）。
+- phase.md の受け入れ 4 は Q1 が add4ed7d9 で Guardrail（値の引用も可）に揃えた。**解決済み**。
 
 ### 0.3 まだ確かめていない事（p002 で固定する）
 
 - 最新 mainline の imagination の tag（FWIF の値を取る版）と、S6 の FW の版の対。
 - Mesa の `bxe-4-32.h`・`pco_isa.py`・csbgen の XML の版と license の行。
-- S10 と S9c の BRN の違い。
+- S10 と S9c の BRN の違い: 説明は付いた（§0.4）。p002 は版の対を記録するだけ。
+- 実機の DTB に GPU の node（vendor の `img-gpu` か mainline の `img,img-rogue` 系）が入っているか。
 - vendor の DT の 2 つ目の reg `0x130C000`（GPU timer 0x130C_0000 の書き間違いに見える、推測）と FW の SOC_TIMER の関係。
+
+### 0.4 BRN の組（レビュー 2 Minor 1）
+
+- **事実**: FW の file の device info が表せる BRN は mainline の enum の 12 個だけ（S8a）。71317 はこの enum に無いので、FW の header には原理的に出ない。
+- **事実**: 71317 は DDK 1.19 の host 側の BRN で、GPU の MMU の 1 MiB・2 MiB の page が fault する（S9f）。DDK 1.19 の 36.x の core は全部これを持つ。
+- **推測**: 71242 は DDK 1.19 の 36.x の定義に無く、後の errata のデータで足された。mainline での効果は `!gpu_multicore_support` の時に SLC_CTRL_MISC の LAZYWB を足す事だけで（`pvr_fw_startstop.c:80`）、BXE の FW の header は GPU_MULTICORE_SUPPORT を持つので適用されない（レビュー 2 の header の再解析）。
+- よって組は「FW の header の 63553・71242」と「host 側の 71317」の和。GPU の MMU は 4 KiB の page だけを使う（§3.5）。
+- FW の header には DDK 1.19 の config に無い XE_TPU2 もある。feature は DDK の hwdefs から取らず、reset の手順（XE_TPU2 の時の SOFT_RESET2、`pvr_fw_startstop.c:99-135`）は mainline を参照する（§3.4）。
 
 ## 1. 対応の状況のまとめ
 
@@ -72,12 +84,13 @@
 
 ### 3.1 発見・電源・clock・reset
 
-- **発見（D2）**: mainline の DT に gpu の node が無い（S4）。推奨は `visionfive2.c` の組み込みの記述: reg 0x1800_0000/1 MiB、IRQ 82（S9a、S9b、WS256 の n + 5 の規則と一致）、PD_GPUA、clock・reset。DT に `img,img-rogue` 系の node があればそちらを優先する。
-- **CRG の API**: DT の node が無くても `struct drv_vf2_clock`・`drv_vf2_reset` を `{crg, index}` で直接作れる（`vf2-crg.h`）。clock の表に GPU の行（S3 の 3・45〜50）と**親の行**（gpu_root の mux の親の PLL、gpu_sys_clk の親 ISP_AXI、gpu_rtc_toggle の親 OSC と分周、noc_bus_gpu_axi の親 gpu_core、apb の親 APB_BUS）を足す。足さないと rate を計算できない（レビュー M9、mainline の `clk-starfive-jh7110-sys.c` の定義）。
-- **順（必須）**: PD_GPUA on → clock（apb・rtc → gpu_core の rate → core・sys → axi）→ reset の解除（apb → doma）。reset の解除は status を待つので、PD と clock が先でないと待ちが終わらない。reset 27（NOC_BUS_GPU_AXI）には触らない（S9b）。Procedure referenced: S9a の enable の関数。
-- **rate**: gpu_core を 396 MHz に設定して始める（S9a の BIN2 の値、どの板でも安全と推測）。594 MHz への引き上げは p005 で FW が起きた後に試す。FW に渡す core clock は `drv_vf2_clock_get_rate` で**実際に読んだ値**。rtc の分周は vendor の DT の `current-clock = <8000000>`（8 MHz）を目安に OSC（24 MHz）÷ 3 とし、p004 で TRM と照合する（推測）。
+- **発見（D2）**: mainline の DT に gpu の node が無い（S4）。推奨は `visionfive2.c` の組み込みの記述: reg 0x1800_0000/1 MiB、IRQ 82（S9a、S9b、WS256 の n + 5 の規則と一致）、PD_GPUA、clock・reset。DT に node があればそちらを優先する。優先する compatible は mainline 系の `img,img-rogue`・`img,img-bxe-4-32` 系と、vendor の `img-gpu`（S9b。vendor の DT では status disabled なので、status が okay の時だけ）。**DT の道でも coherency は `drv_fdt_dma_coherent(…, 0)` で既定を非 coherent にする**（VF2 の既定 `VF2_DMA_DEFAULT_COHERENT` は 1 なので、それを渡すと `dma-noncoherent` の無い node が coherent に倒れる、`visionfive2.c:86`）。実機の DTB に node があるかは未確認（§0.3）。
+- **CRG の API**: DT の node が無くても `struct drv_vf2_clock`・`drv_vf2_reset` を `{crg, index}` で直接作れる（`vf2-crg.h`）。clock の表に GPU の行（S3 の 3・45〜50）と**親の行**（gpu_root の mux の親の PLL、gpu_sys_clk の親 ISP_AXI とその親の ISP_2X の mux（ISP_AXI は ISP_2X の divider、`clk-starfive-jh7110-sys.c:72`）、gpu_rtc_toggle の親 OSC と分周、noc_bus_gpu_axi の親 gpu_core、apb の親 APB_BUS）を足す。足さないと rate を計算できない（レビュー M9、mainline の `clk-starfive-jh7110-sys.c` の定義）。
+- **順（必須）**: PD_GPUA on → clock（axi → apb・rtc → gpu_core の rate → core・sys）→ reset の解除（apb → doma）。axi を先にするのは vendor の resume の順（S9a、227 → 228 行）に合わせるためで、apb の register の access が AXI の bus を通る前提と推測する（参照先と順を揃え、ずれの理由を作らない）。reset の解除は status を待つので、PD と clock が先でないと待ちが終わらない。reset 27（NOC_BUS_GPU_AXI）には触らない（S9b）。Procedure referenced: S9a の enable の関数。
+- **rate**: gpu_root の mux を PLL2 に固定し、gpu_core を 396 MHz（= 1188 / 3）に設定する。vendor の branch の `jh7110.dtsi:235` は `opp-1250000000` を常に持つので、vendor の kernel は実際にはどの板でも 396 MHz で動く（S9a、`sysconfig.c:302-303`）。**594 MHz には vendor の前例が無いので WS269 の範囲から外し、Future Work の候補にする**（Q1 に登録を依頼、§9）。FW に渡す core clock は `drv_vf2_clock_get_rate` で**実際に読んだ値**。rtc の分周は vendor の DT の `current-clock = <8000000>`（8 MHz）を目安に OSC（24 MHz）÷ 3 とし、p004 で TRM と照合する（推測）。
 - **PMU**（新規 `vf2-pmu.c`）: PD_GPUA だけを software の turn-on で入れる。他の PD に触らない。hw event の mask は GPU の event（hard event 7、S1）だけを扱い、vendor の「全部 0 / 全部 1」は写さない。
 - **power-domain b**: mainline の binding は B-series に PD「a」「b」を要求するが、JH7110 では b を FW の MIPS が管理する（S1）。host は b を持たない前提とし、mainline の手順で b を触る所は飛ばす（未確認、p005 で FW の応答で確かめる）。
+- **attach の失敗の道（レビュー 2 Minor 10）**: 早い段で BVNC が違う・reset の待ちが時間切れの時、遅い段で FW が無い（ENOENT）・root の待ちや FW の起動が時間切れ（ETIMEDOUT）の時は、reset を入れ直し、clock を逆順に落とし、PD_GPUA を off にしてから 1 行を出す。display の node（§3.5）は GPU の core と独立なので残す。
 - **Active Power Management**: 最初は FW の APM・idle の要求を無効にする（FW の init の設定で）。有効にするのは p006 の後の任意の作業。
 
 ### 3.2 CPU と GPU の memory の共有（レビュー B1）
@@ -92,27 +105,39 @@
 
 | memory | 使い方 | 共有の仕方 |
 | --- | --- | --- |
-| FW の code・data（MIPS の page table で写す） | CPU が一度書き、FW が読む | 書いた後に FLUSH64 の range |
-| KCCB・FWCCB・FW の init・trace の buffer など、CPU と FW が両方書く構造 | 頻繁な往復 | **uncached の別名**（WS256 の予備 (i)、0x4_0000_0000 + pa の窓）で CPU が読み書き。予備 (i) が無い間は「kick の前に FLUSH64、読む前ごとに FLUSH64」（invalidate は S9a と同じく FLUSH64 で代える。ccache の FLUSH64 は書き戻しと追い出しを兼ねる） |
-| GPU の page table（context ごと） | CPU が書き、GPU が読む | 書いた後に FLUSH64、その後に GPU の MMU の cache の invalidate を FW に要求 |
+| FW の code・data（MIPS の page table で写す） | CPU が一度書き、FW が読む | **uncached の別名**で CPU が書く |
+| KCCB・FWCCB・FW の init・trace の buffer など、CPU と FW が両方書く構造 | 頻繁な往復 | **uncached の別名**（予備 (i)、0x4_0000_0000 + pa の窓、p004 で作る）で CPU が読み書き |
+| GPU の page table（context ごと）、MIPS の page table | CPU が書き、GPU が読む | **uncached の別名**で CPU が書き、その後に GPU の MMU の cache の invalidate を FW に要求 |
+| render の target・transfer の結果（GPU が書き CPU が読む） | present の copy（§3.5） | **uncached の別名**（`drv_dma_alloc_coherent` の写像）で CPU が読む。direct map では触らない |
+
+- **GPU に渡す address は常に memory port の PA**（DDR の下の 32 bit）。別名（0x4_0000_0000 + pa）は CPU だけが使う。
+- **fallback は p004 の 0a が `ALIAS MISMATCH` の時だけ**: 別名が同じ DRAM を指さないなら、予備 (i) を前提にした §3.2 と D7 (a) は成り立たない。その時は FLUSH64 だけで保つ道を WS256 design-peripherals.md:153 と同じく改めて設計し、p005 に入らず Q1 に返す。
+- **CPU の側の invalidate（GPU → CPU の向き）は uncached の別名を原則にする**。vendor は range の FLUSH64 のほかに、kernel の写像を作る時に 2 MiB の zero page で L2 を丸ごと追い出している（S9a の `do_invalid_range`）。range の FLUSH64 だけで L1 や投機の読みが残らないかは未確認（WS256 も inclusive と推測、design-peripherals.md:483）。cacheable の invalidate に頼る所（D7 の HOST_CACHED の type だけ）は、その前に下の 4 の 0b 型の確かめを付ける。
+- **GPU の SLC（16 KiB、S9c）**: GPU の書き込みが SLC に残ると別名の読みも古い。GPU → CPU の受け渡し（FWCCB の読み、fence の後の buffer の読み）の前に、FW の完了の通知が SLC の書き出しを含むかを p006 の 4 の確かめで調べ、含まなければ SLC の flush・invalidate の KCCB の命令（S9e、Value(s) referenced）を前に入れる。
 | user の blob（Vulkan の memory） | アプリが読み書き | D7 |
 
-4. **確かめ（陽性の対照の形、WS256 §2.4）**: p005 の FW の起動は、最初から上の表の安全な道（uncached の別名か FLUSH64）で行う。FW が起きた後、p006 の最初で「CPU が cacheable で古い模様を cache に持ったまま、GPU（FW の sync の書き込み）が DRAM に書く → CPU が別名で読む値と cacheable で読む値を比べる」を 8 回流し、coherent か非 coherent かを決める。陽性の対照は「FLUSH64 を省いた時に古い値が見える事」。
-5. **依存**: WS256 p023（DMAC の coherency）の結果に関係なく、予備 (i) の uncached の別名を GPU のために作る。これは `src/hal/riscv64/`（page.c の kernel の uncached の写像、bsp-visionfive2 の別名の窓）の実装で、§3.6 の分析のとおり hal.h は変えない。p004 の範囲に入れる（WS256 p023 が先に作れば使う）。
-6. **D1 の試行の数え方**: 4 の前提（共有の道が正しい事）が成り立った後の試行だけを数える。p005 では、FW の構造を全部 uncached の別名で置いた状態を「共有の道が正しい」とみなす（別名の写像そのものは p004 の host 試験と、CPU の書き込みが別名の読みで DRAM の値として見える事の実機の確かめで保証する）。
+4. **確かめ（WS256 design-peripherals.md §2.4 の 0a・0b・判定の規則をそのまま使う）**: p005 の FW の起動は、最初から上の表の安全な道（uncached の別名）で行う。p006 の最初で、GPU を bus master として次を流す。
+   - **0a（p004 で済ませる）**: 別名が同じ DRAM である事。`ALIAS OK` でなければ上の fallback。
+   - **0b（陽性の対照）**: dst を cacheable で読んで L2 に clean の line を載せ、別名から違う模様を書き、cacheable で読み直して古い模様が見える事（`CONTROL OK`）。device と独立に CPU だけで stale を作れる事を示す。「FLUSH64 を省いた時に古い値が見える」は非 coherent の観測そのもので対照ではないので使わない。
+   - **主の試験**: CPU が dst を cacheable で読んで clean の line を載せた直後に、GPU に src → dst を書かせる（FW の書ける最大の量、少なくとも **64 KiB の組を 8 回**、2 MiB の中で 128 KiB ずつずらす。WS256 と同じ大きさで、L2 からの追い出しによる偽の合格を避ける。道具は最初は FW の transfer か、無ければ FW の memory の書き込みの命令の繰り返し。4 byte の UFO だけでは足りない）。書かせた後、読む前に SLC の flush・invalidate の FW の命令を入れる（S9e）。
+   - **判定**: **cacheable の view の読みが期待の模様と全部一致する事**。別名の読みは食い違った時の向きの分類だけに使い、判定には使わない。逆向き（CPU が cacheable で書き flush せず、GPU が読む）も 1 回流す。
+   - **切り替えの条件**: 8 回とも一致し、かつ 0b が `CONTROL OK` の時だけ coherent とみなして既定を切り替えてよい（切り替えは別の Phase で Q1 の承認を得て）。**0b が `CONTROL INCONCLUSIVE` の時は、一致しても切り替えない**（非 coherent の既定のまま）。後始末は WS256 の 6 と同じく範囲を FLUSH64 で捨てる。
+5. **依存（Q1 の判断、2026-10-19、q1321）**: 予備 (i) の uncached の別名の写像（`src/hal/riscv64/` の page.c の kernel の uncached の写像、bsp-visionfive2 の別名の窓、space.c の user の NOCACHE）は **WS269 p004 が作って持つ**。WS256 p023 は DMAC の coherency の確かめで要れば WS269 p004 の物を使う（WS256 p023 は予備 (i) を作らない）。§3.6 の分析のとおり hal.h は変えない。
+6. **D1 の試行の数え方**: 共有の道が正しい事が成り立った後の試行だけを数える。p005 では、FW の構造を全部 uncached の別名で置き、p004 の 0a が `ALIAS OK` の状態を「共有の道が正しい」とみなす（別名の写像そのものは p004 の host 試験と 0a の実機の確かめで保証する）。
 
 ### 3.3 attach の 2 段と firmware を読む時期（レビュー M8）
 
 - VF2 の attach は `probe_soc` の中で root の mount の前に走る。既存の amdrdna・i915 は thread の中で root を上限付きで待って FW を読む（`amdrdna/firmware.c:39-57`、`i915/firmware.c:11-17`）。
 - 早い段（attach）: PD・clock・reset、register の窓、CORE_ID の BVNC を読む。36.50.54.182 以外なら attach しない。ここでは render の node を出さない。
-- 遅い段（worker の thread）: root を上限付き（例 60 s）で待ち、`/lib/firmware/powervr/rogue_36.50.54.182_v1.fw` を読み、FW を起こし、成功したら render の node を登録する。失敗は ETIMEDOUT・ENOENT を画面の console に 1 行で出し、node を出さない。
+- 遅い段（worker の thread）: root を上限付き（例 60 s）で待ち、`/lib/firmware/powervr/rogue_36.50.54.182_v1.fw` を読み、**FW の image を kernel の memory に保持し**（recovery の reset で使う、§3.5）、FW を起こし、成功したら render の node を登録する。失敗は ETIMEDOUT・ENOENT を画面の console に 1 行で出し、node を出さず、§3.1 の失敗の道で電源を落とす。
+- 遅い登録の EBUSY: `drv_gpu_register` は他の登録・削除と重なると EBUSY を返す（`gpu.c:604-606`）。worker からの登録は EBUSY の時だけ上限付き（例 100 ms 間隔で 50 回）で再試行し、尽きたら 1 行を出して node を出さない。
 - initrd が root の時: FW を initrd の `/lib/firmware/powervr/` に入れる（firmware の package を選んだ時に initrd にも入る既存の流儀か、p003 で確かめる）。
 - Keiland の起動時の probe との競合: display の node（§3.5）は早い段で出す。render の node は遅れて出る。libvulkan は render の node が無い時に失敗するので、Keiland の起動は render の node を上限付きで待つ（WS270 と調整、p010）。
 
 ### 3.4 core の識別と firmware の起動
 
 1. CORE_ID の BVNC を読む（Value(s) referenced: mainline の `pvr_rogue_cr_defs.h`）。
-2. FW の file を検査する parser（header、section の表、**device info の BRN・feature の表**）を host 試験付きで書く。BRN・feature は FW の file から取り、表は手で持たない。
+2. FW の file を検査する parser（header、section の表、**device info の BRN・feature の表**）を host 試験付きで書く。BRN・feature は FW の file から取り、表は手で持たない。**例外は host 側の BRN**: FW の header が表せない BRN（mainline の enum の外、S8a）は host の定数として持つ。今は BRN71317 だけ（§0.4、Value referenced: S9f）。feature は DDK 1.19 の hwdefs から取らない（XE_TPU2 のように DDK に無い物がある）。reset の手順は mainline の `pvr_fw_startstop.c` を参照する（Procedure referenced）。
 3. **MIPS の場合、kernel 用の GPU の VM context は作らない**。FW の memory は MIPS の page table で写し（共有の仕方は §3.2）、boot data に register の物理 address を入れる（Procedure referenced: mainline の `pvr_fw_mips.c`、`pvr_vm_mips.c`）。
 4. MIPS を reset から出し、FW の init の完了を上限付きで待つ。
 5. health の kick を KCCB に送り、FWCCB の応答と IRQ 82 を確かめる。
@@ -121,13 +146,18 @@ QEMU に PowerVR は無いので実機だけで確かめる。判定は §7。
 
 ### 3.5 MMU・memory・command の queue・表示
 
-- **GPU の MMU**: Rogue の 3 段の page table、session ごとに FW の memory context。VA は 40 bit（S9c）、物理は 32 bit に限る（§3.2）。
+- **GPU の MMU**: Rogue の 3 段の page table、session ごとに FW の memory context。VA は 40 bit（S9c）、物理は 32 bit に限る（§3.2）。**page は 4 KiB だけを使い、1 MiB・2 MiB の page は使わない**（BRN71317、Value referenced: S9f、§0.4）。
 - **queue**: context ごとに geometry・fragment・compute・transfer の CCB、kick は KCCB。完了は FW の sync を `gpu-fence` に結ぶ。
 - **parameter buffer**: context ごとの freelist、FW の grow の要求に応える。
-- **recovery（レビュー m7）**: `drv_gpu_recovery_ops` の契約（stop_begin・poll・fault・reset・isolate、`gpu.h:59-88`）に当てる: stop_begin = 新しい kick を止める、poll = FW の hang・fault の通知と health の kick の応答、fault = FW の fault の情報を context に結ぶ、reset = PD_GPUA の off/on と FW の再起動（遅い段をもう一度）、isolate = fault の context の session に EIO。
+- **recovery（レビュー 2 Major 3、`gpu.h:59-88` の契約の文に沿う）**: hang・fault の検出（FW の通知、health の kick の応答の時間切れ）は core に recovery を始めさせる入口で、ops そのものではない。
+  - `stop_begin(ctx)`: その context の新しい kick を止め、FW にその context の停止（cleanup）を KCCB で要求する。待たない。
+  - `stop_poll(ctx)`: FW の cleanup の完了が FWCCB に届き、その session の posted の descriptor と callback が全部 retire するまで EAGAIN。そこまで済んだ時だけ 0。FW が応答しない・cleanup が失敗した時は EAGAIN 以外の error を返し、device 全体の fault に上げる。
+  - `fault(int)`: device 全体に対して冪等。新しい publication（kick・登録）を止め、全部の destroy・close の道を「不確かな DMA の backing を解放せず保持する」状態にする。hardware が止まったとは主張しない。
+  - `isolate(ctx)`: Rogue の context ごとの reset の通知で guilty と分かった context だけを隔離する。その context の callback を error で終え、descriptor と allocation（GPU の page table、CCB、その context が触れ得る blob の backing）を checked reset まで device の所有として残し、以後の host の traffic を断る。その後の resource_destroy・close は hardware に触らずに retire する。guilty が分からない時は実装せず（error を返し）、device 全体の fault に上げる。
+  - `reset()`: 古い外の所有者が全部 retire した後だけ呼ばれる。PD_GPUA の off/on、clock・reset を入れ直し、**遅い段で保持した FW の image**で FW を再起動し、health の kick が通った時だけ 0（root を待たず file も読まない）。保持していた backing はここで初めて解放する。
 - **IRQ と lock**: 上半分は IRQ の status を読んで clear し、下半分（worker）に FWCCB の処理を任せる。lock の順は「device → context → CCB」。上半分は lock を取らない。
 - **圧縮（レビュー m14）**: FBCDC（TFBC）は最初は使わない（S9c で feature はある）。
-- **表示（レビュー M1）**: VF2 の display（DC8200）は WS256 p011 の boot framebuffer だけ。**display の node を別に作る**: boot framebuffer を `drv_gpu_display_ops`（query・mode・claim・release・present・wait）で出す display の device（kernel の console からの引き継ぎ、Keiland の release で console に戻す）。render の node（powervr）は `share`（export・import）を持ち、display の node は `scanout` の import で render の buffer を受ける。present は CPU の copy（非 coherent なので copy の前に render の buffer を FLUSH64）で boot framebuffer に写す。順と role は **gpu0 = display（早い段）、gpu1 = render（遅い段）**（Pi 4 と同じ分け方）。自前の DC8200 の driver ができたら display の node だけを置き換える。
+- **表示（レビュー M1）**: VF2 の display（DC8200）は WS256 p011 の boot framebuffer だけ。**display の node を別に作る**: boot framebuffer を `drv_gpu_display_ops`（query・mode・claim・release・present・wait）で出す display の device（kernel の console からの引き継ぎ、Keiland の release で console に戻す）。render の node（powervr）は `share`（export・import）を持ち、display の node は `scanout` の import で render の buffer を受ける。present は CPU の copy で boot framebuffer に写す（レビュー 2 Major 2）: render の target は `drv_dma_alloc_coherent` で取る uncached の写像（§3.2 の表）で、copy はその写像から読む（hal.h:653-662 の「uncached の写像がある間は direct map で触らない」に従い、FLUSH64 + direct map の読みはしない）。uncached の読みは遅い（1080p で 1 frame 8 MB、未計測）ので、**copy は damage の矩形だけ**にする。boot framebuffer への書き込みの扱い（WS256 p011 の (α)・(β)）は p011 の決定に従う。p010 の後の候補（p011 の範囲で検討）: GPU の transfer で boot framebuffer へ直接書く（条件: framebuffer が GPU の 32 bit の範囲にある事と、DC8200 の読みの coherency）。順と role は **gpu0 = display（早い段）、gpu1 = render（遅い段）**（Pi 4 と同じ分け方）。自前の DC8200 の driver ができたら display の node だけを置き換える。
 
 ### 3.6 HAL（レビュー M7）
 
@@ -160,17 +190,18 @@ LW は粗い（8 LW ≈ 実時間 2〜3 h）。p008〜p011 は bcm2711（52,772 
 | --- | --- | --- | --- | --- |
 | p002 | 資料の固定（コードなし）: mainline の tag、Mesa の `bxe-4-32.h`・`pco_isa.py`・csbgen、FW と LICENSE の mirror、§0.3 の未確認、BRN の照合 | p001 の確認 | 4 | 文書 |
 | p003 | firmware の package（mirror から、sha256 の検証、license・WHENCE・manifest、initrd への入れ方） | p002、D3 | 4 | build、package の host 試験 |
-| p004 | `vf2-pmu.c`（PD_GPUA）、`vf2-crg.c` の GPU と親の行、組み込みの記述（D2、非 coherent・32 bit）、**riscv64 の uncached の別名の写像**（kernel・user、§3.6）、attach の早い段（BVNC） | WS256 p013・p015・p022、p002 | 8〜12 | host 試験（PMU・CRG の値、別名の写像の PTE）、build warning 0、実機: 画面の console に PD_GPUA on・rate・BVNC・別名の読みの確かめの行 |
+| p004 | `vf2-pmu.c`（PD_GPUA）、`vf2-crg.c` の GPU と親の行（ISP_2X を含む）、組み込みの記述（D2、非 coherent・32 bit）、**riscv64 の uncached の別名の写像（予備 (i)、WS269 が持つ、WS256 p023 も使う）**（kernel・user、§3.6）、attach の早い段（BVNC）と失敗の道 | WS256 p013・p015・p022、p002 | 8〜12 | host 試験（PMU・CRG の値、別名の写像の PTE）、build warning 0、実機: 画面の console に PD_GPUA on・rate・BVNC・**0a（`ALIAS OK`）**の行 |
 | p005 | 遅い段: root を待つ worker、FW の parser（host 試験）、MIPS の page table、FW の起動、health の kick、IRQ | p003、p004 | 16〜24 | host 試験（parser・page table）、実機: 画面に FW の応答の行 |
-| p006 | coherency の確かめ（§3.2 の 4）、GPU の MMU（context）、resource・blob・map（D7）、CCB・kick・fence、null の kick、recovery、render の node の登録、`share` | p005、D7 | 16〜24 | 実機: coherency の判定の行、`userland/tests/gpu-*` の資源・fence の試験の PASS の行を画面で |
-| p007 | display の node（boot framebuffer の `drv_gpu_display_ops`、console の引き継ぎ、`scanout` の import、CPU の copy の present）。GPU の core と独立なので p004 の後なら p005・p006 と並行できる | WS256 p011 の実機、p004 | 8〜12 | 実機: 試験の program が claim して色を出し、release で console に戻るのをユーザーが目で見る |
+| p006 | coherency の確かめ（§3.2 の 4、0b・主の試験・SLC）、GPU の MMU（context）、resource・blob・map（D7）、CCB・kick・fence、null の kick、recovery、render の node の登録、`share` | p005、D7 | 16〜24 | 実機: coherency の判定の行、`userland/tests/gpu-*` の資源・fence の試験の PASS の行を画面で |
+| p007 | display の node（boot framebuffer の `drv_gpu_display_ops`、console の引き継ぎ、`scanout` の import、uncached の写像からの damage の矩形の CPU の copy の present、§3.5）。GPU の core と独立なので p004 の後なら p005・p006 と並行できる | WS256 p011 の実機、p004 | 8〜12 | 実機: 試験の program が claim して色を出し、release で console に戻るのをユーザーが目で見る |
 | p008 | Rogue の USC・PDS の encoder（共有の IR から）、kernel の中の試験の道（compute の kernel を直接 kick して buffer を読み返す、Venus を通さない） | p006 | 40〜60 | host 試験（encoding の golden を `pco_isa.py` の値から）、実機: 自己試験の PASS の行 |
 | p009 | 最小の Venus の decode（instance・device・memory・buffer・compute の pipeline・dispatch） | p008 | 30〜50 | 実機: compute の Vulkan の試験の PASS の行 |
 | p010 | graphics: TA・3D の job、vertex・fragment、transfer、render pass、WSI の display の node への受け渡し、Keiland の起動の待ち（§3.3） | p009、p007 | 60〜100 | 実機: `vkdemo`・`venus-frame` の画をユーザーが目で見る |
 | p011 | Keiland の要る範囲の残り（WS270 と合わせる） | p010 | 30〜50 | 実機: Keiland の desktop をユーザーが目で見る |
 | p012 | 規約の全文の見直し | p003〜p011 | 4〜6 | build warning 0、host 試験 |
 
-順の要: p004 は WS256 の p013（cleared）・p022（CRG の実機）・p015（rootfs からの起動の実機）の後。p007 は WS256 p011 の実機の後。p005 で FW が起きなければ D1。
+順の要: p004 は WS256 の p013（cleared）・p022（CRG の実機）・p015（rootfs からの起動の実機）の後。p007 は WS256 p011 の実機の後。p005 で FW が起きなければ D1。WS256 の p020（USB keyboard）は §7 の判定の操作の依存（p005 以降の実機の試験で、試験の program を打つ時）。WS256 p023 は WS269 の依存ではない（逆に p023 が要れば WS269 p004 の予備 (i) を使う、§3.2 の 5）。
+- p002・p004 の phase.md に入れる事（レビュー 2）: p002 は §0.4 の BRN の組と XE_TPU2 の記録、p004 は §3.2 の表と fallback（0a）、§3.1 の clock の順・ISP_2X・PLL2 の固定。
 
 ## 7. 実機の判定の方法（レビュー M3）
 
@@ -183,18 +214,19 @@ LW は粗い（8 LW ≈ 実時間 2〜3 h）。p008〜p011 は bcm2711（52,772 
 
 | # | 問い | 選択肢 | 推奨 |
 | --- | --- | --- | --- |
-| D1 | FW が起きない時の打ち切りの線 | (a) 共有の道が正しいと分かった後（§3.2 の 6）、p005 の FW の起動に **16 LW** を使い、それでも health の kick が通らなければ止めて報告。使う診断は FW の trace の buffer、FWIF の応答、MIPS・GPU の register、BVNC・BRN の照合、clock の rate（396 MHz）だけで、FW の逆アセンブルはしない / (b) 上限なしで続ける / (c) WS269 を p005 までに縮める | (a) |
-| D2 | GPU の発見 | (a) `visionfive2.c` の組み込みの記述（DT の node があれば優先） / (b) DT の overlay・別の DTB（WS256 の「DTB を差し替えない」に反する） / (c) vendor の DT | (a) |
-| D3 | `powervr-firmware` を VF2 の image に既定で入れるか | (a) VF2 の config で既定 y、build の時に `LICENSE.powervr` の同意 / (b) 既定 n、menu で選ぶ | (a)（S7 の文面を確かめた。逆アセンブルの禁止は README に書く） |
+| D1 | FW が起きない時の打ち切りの線 | (a) 共有の道が正しいと分かった後（§3.2 の 6）、**FW を初めて起動した後の debug に 16 LW** を使い（parser・page table の実装と host 試験の LW は数えない。p005 の見積もり 16〜24 LW の全体とは別）、それでも health の kick が通らなければ止めて報告。使う診断は FW の trace の buffer、FWIF の応答、MIPS・GPU の register、BVNC・BRN の照合、clock の rate（396 MHz）だけで、FW の逆アセンブルはしない / (b) 上限なしで続ける / (c) WS269 を p005 までに縮める | (a) |
+| D2 | GPU の発見 | (a) `visionfive2.c` の組み込みの記述（DT の node があれば優先、§3.1 の compatible の一覧、DT の道でも非 coherent を既定） / (b) DT の overlay・別の DTB（WS256 の「DTB を差し替えない」に反する） / (c) vendor の DT | (a) |
+| D3 | `powervr-firmware` を VF2 の image に既定で入れるか | 既存の流儀（`userland/firmware/README.md`: driver を on にすると menuconfig が firmware を選ぶ `config/drivers/firmware.list`、license は image の build の時に同意）に載せる。(a) powervr の driver を `firmware.list` に載せ、VF2 の config で driver を既定 on にする（結果として FW が入り、build の時に `LICENSE.powervr` の同意） / (b) driver を既定 off、menu で選ぶ | (a)（S7 の文面を確かめた。逆アセンブルの禁止は README に書く） |
 | D5 | WS270（VF2 の Keiland）との関係（Keiland は GPU の Vulkan 無しで描けない、§2） | (a) WS270 は p010 まで画面なしの立ち上げ（service・seat・input・display の node の claim）だけ進め、描画は p010 の後 / (b) WS270 を p010 まで待つ / (c) CPU の Vulkan（lavapipe 相当）か CPU の描画の backend を別の WS で作る（大きい） | (a)（WS270 と Q1 が調整） |
 | D6 | userland の Vulkan の道 | §5 の A / B / C | A |
-| D7 | user の blob の HOST_COHERENT の memory（Vulkan の必須の memory type）をどう出すか | (a) riscv64 の HAL の実装で HAL_SPACE_NOCACHE を uncached の別名で出し、HOST_VISIBLE\|HOST_COHERENT を uncached で出す（CPU の読みは遅い。HOST_CACHED の type は submit の時の FLUSH64 と別に出す） / (b) uncached を作らず、全部を cacheable にして submit・map の時に FLUSH64 し、HOST_COHERENT を名乗る（仕様に反し、アプリの非同期の読み書きで壊れ得る） | (a)（hal.h は変えない、§3.6） |
+| D7 | user の blob の HOST_COHERENT の memory（Vulkan の必須の memory type）をどう出すか | (a) riscv64 の HAL の実装で HAL_SPACE_NOCACHE を uncached の別名で出し、HOST_VISIBLE\|HOST_COHERENT を uncached で出す（CPU の読みは遅い。HOST_CACHED の type は submit の時の FLUSH64 と別に出し、§3.2 の 0b 型の確かめを付ける）。注: vendor の user の写像は `pgprot_writecombine`（`pmr_os.c:378・388`）で、Svpbmt の無い U74 では cacheable になると推測（未確認）。vendor は実質 (b) に近い道で動いている可能性がある。(a) は Pi 4 の前例（`bcm2711/render-device.c:484`、`gpu.c:3271`）と同じ形だが、uncached の CPU の読みは性能の危険がある / (b) uncached を作らず、全部を cacheable にして submit・map の時に FLUSH64 し、HOST_COHERENT を名乗る（仕様に反し、アプリの非同期の読み書きで壊れ得る） | (a)（hal.h は変えない、§3.6） |
 
 ## 9. 危険と未確認、Q1 への依頼
 
 - 危険: cache の扱いを誤ると「FW が起きない」に見える（§3.2 で先に潰す）。USC の backend と Venus の decode の規模（p008〜p011 で 160〜260 LW）。power-domain b の扱い（§3.1）。BRN の違い（S10 と S9c）。
 - 未確認: §0.3、rtc の分周、594 MHz で安定するか、GPU の bus が本当に非 coherent か（p006 で確かめる）、TQ（transfer）が USC を要するか（Mesa の構造からの推測。p010 に置いたので順は崩れない）。
-- Q1 への依頼: phase.md の受け入れ 4 の文面を Guardrail に揃えるか（§0.2）。WS270 との D5 の調整。ws.md の依存の行は本 Phase で直した（WS256 p011・p013・p015・p020・p022・p023）。
+- 危険（版 3 で追加）: present の uncached の読みの帯域（未計測）、range の FLUSH64 の invalidate の確かさ（vendor は L2 を丸ごと追い出す）、FW の書き込みと SLC。
+- Q1 への依頼: WS270 との D5 の調整。594 MHz を Future Work に登録する事（§3.1）。受け入れ 4（解決済み、add4ed7d9）。予備 (i) の持ち主は Q1 の判断で WS269 p004（§3.2 の 5）。ws.md の依存の行を §6 に揃えた。
 
 ## 10. レビュー 1 への対応
 
@@ -224,3 +256,23 @@ LW は粗い（8 LW ≈ 実時間 2〜3 h）。p008〜p011 は bcm2711（52,772 
 | m12 Mesa の資料 | `bxe-4-32.h`・`pco` を p002 の一覧に | S11、§6 p002 |
 | m13 p004 の依存 | WS256 p022・p015 を足した、p007 に p011、ws.md の依存も直した | §6、ws.md |
 | m14 圧縮 | 最初は使わない | §3.5 |
+
+## 11. レビュー 2 への対応
+
+| 指摘 | 対応 | 場所 |
+| --- | --- | --- |
+| Major 1 coherency の判定と陽性の対照・SLC | WS256 §2.4 の 0a・0b・判定の規則をそのまま使う。判定は cacheable の読み == 期待値、別名は分類だけ。対照は 0b（CPU だけで stale を作る）。量は 64 KiB × 8 回、読む前に SLC の flush・invalidate の FW の命令。0b が INCONCLUSIVE なら切り替えない | §3.2 の 4、S9e、§6 p006 |
+| Major 2 present の道と invalidate・L2 の追い出し | render の target は uncached の写像で取り、copy はそこから（hal.h:653-662 に従う）。damage の矩形だけ。GPU の transfer で直接書く案を p011 の候補に。vendor の `do_invalid_range`（L2 の全体の追い出し）を事実として記録し、GPU → CPU は別名を原則、cacheable の invalidate には 0b 型の確かめ | §3.2 の表と注、§3.5 表示、S9a、D7、§9 |
+| Major 3 recovery の ops の契約 | stop_begin = FW の context の cleanup の要求、stop_poll = cleanup の完了と callback の retire、fault = device 全体で publication を止め backing を保持、isolate = context ごとの reset の通知で guilty の backing を保持、reset = 保持した FW の image で再起動 | §3.5 recovery、§3.3 |
+| Minor 1 BRN | §0.4 を新設（FW の enum の 12 個、71317 は host 側、71242 は適用されない、XE_TPU2）。host 側の BRN の例外、GPU の MMU は 4 KiB だけ、reset は mainline 参照 | §0.4、S8a・S9f、§3.4 の 2、§3.5 |
+| Minor 2 表と 6 の矛盾 | 表を別名に一本化、fallback は 0a の MISMATCH の時だけで、その時は改めて設計して Q1 に返す。GPU には常に PA | §3.2 |
+| Minor 3 DT の道の coherency | DT の道でも既定 0、優先する compatible の一覧、実機の DTB は未確認 | §3.1、D2、§0.3 |
+| Minor 4 clock | axi を先（vendor の順）と理由、ISP_2X の親の行、PLL2 に固定、594 MHz は Future Work の候補 | §3.1、§9 |
+| Minor 5 D1 の数え方 | 「FW を初めて起動した後の debug の LW」と明記 | D1 |
+| Minor 6 依存の写し | Q1 の判断: 予備 (i) は WS269 p004 が作って持ち、WS256 p023 は要れば使う。§6 と ws.md を揃えた（p020 は判定の操作の依存、p023 は依存から外した） | §3.2 の 5、§6、ws.md |
+| Minor 7 受け入れ 4 | 解決済み（add4ed7d9）と直した | §0.2、§9 |
+| Minor 8 D3 | 既存の `firmware.list` の流儀に言い換えた | D3 |
+| Minor 9 D7 (b) の注記 | vendor の `pgprot_writecombine` と U74 の推測、uncached の読みの性能の危険 | D7 |
+| Minor 10 attach の失敗の道 | reset・clock・PD_GPUA を落とす、display の node は残す | §3.1、§3.3 |
+| Minor 11 late register の EBUSY | 上限付きの再試行 | §3.3 |
+| Minor 12 行番号 | MIPS 72 行、snoop 174-183 行 | S9c、S9a |
