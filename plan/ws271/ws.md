@@ -22,7 +22,7 @@
 | Phase | 目的 | 状態 |
 | --- | --- | --- |
 | [p001](phase001/phase.md) | 設計（[design.md](design.md)、WS272 と共通）: malta の memory map・GT-64120・PIIX4・VGA、`-kernel` の受け渡し、toolchain、HAL の構成、HAL の API の差分の案、試験の道具、Phase の表 | cleared（2026-10-19 Q1） |
-| p002 | 入口と console の画面（共通の層 `src/hal/mips/` の入口、bsp-malta の PCI・VGA・console、build の配線）、LW 12 | in-progress（q1279、P1、2026-10-19） |
+| [p002](phase002/phase.md) | 入口と console の画面（共通の層 `src/hal/mips/` の入口、bsp-malta の PCI・VGA・console、build の配線）、LW 12 | in-progress（q1279、P1、2026-10-19。実装と build を終えた 4a5d4885f、[phase.md](phase002/phase.md)。T1 の画面の確認待ち） |
 | p003 | 例外・timer・8259・task（user の Status の組み立てを含む）、到達点は `TIMER TICK`（T1）、LW 10 | planning |
 | p004 | TLB・space・FPU・atomic と self-test（design.md §6.1）、VFS の段まで（T1 の画面）、LW 12 | planning |
 | p005 | 規約の全文の見直し、LW 4 | planning |

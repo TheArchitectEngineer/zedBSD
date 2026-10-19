@@ -67,6 +67,14 @@
 
 #include <hal/arch/ppc32.h>
 
+#elif defined(HAL_ARCH_MIPS64)
+
+#include <hal/arch/mips64.h>
+
+#elif defined(HAL_ARCH_MIPS32)
+
+#include <hal/arch/mips32.h>
+
 #elif defined(HAL_ARCH_M68K) && defined(HAL_ARCH_M68040)
 
 #include <hal/arch/m68040.h>

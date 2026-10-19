@@ -28,6 +28,7 @@ PLATFORMS = [
     ("m68k-virt", "m68k", "virt", "QEMU virt MC68040"),
     ("ppc32-mac99", "ppc32", "mac99", "QEMU mac99 PowerPC 32"),
     ("ppc64-pseries", "ppc64", "pseries", "QEMU pseries PowerPC 64"),
+    ("mips32-malta", "mips32", "malta", "QEMU malta MIPS32 little-endian"),
 ]
 
 BOARD_LABELS = {
@@ -39,6 +40,7 @@ BOARD_LABELS = {
     "x68k": "Sharp X68000",
     "mac99": "QEMU mac99",
     "pseries": "QEMU pseries",
+    "malta": "QEMU malta",
 }
 
 # Variant is a board-owned image-layout choice.  It deliberately does not
@@ -61,6 +63,7 @@ BOARD_VARIANTS = {
     ("m68k", "virt"): [("default", "Default")],
     ("ppc32", "mac99"): [("default", "Default")],
     ("ppc64", "pseries"): [("default", "Default")],
+    ("mips32", "malta"): [("default", "Default")],
 }
 
 # The names the Packages menu gives the directories of userland/packages
@@ -119,7 +122,7 @@ RETRO_PROGRAMS = ("Xzed", "zwm", "zshell", "zterm")
 # the Desktop's selection while i386 is chosen, so switching back to x86_64
 # or arm64 in the same session writes it again.  RISC-V 64 is treated the
 # same way: its port builds the base system only.
-NO_DESKTOP_ARCHITECTURES = ("i386", "riscv64", "riscv32")
+NO_DESKTOP_ARCHITECTURES = ("i386", "riscv64", "riscv32", "mips32")
 
 
 def package_categories(rows: list[list[str]]) -> list[tuple[str, str]]:
