@@ -206,7 +206,7 @@ LW は粗い（8 LW ≈ 実時間 2〜3 h）。p008〜p011 は bcm2711（52,772 
 | p008 | Rogue の USC・PDS の encoder（共有の IR から）、kernel の中の試験の道（compute の kernel を直接 kick して buffer を読み返す、Venus を通さない）、**GPU の data master の道の coherency の確かめ**（§3.2 の 4 と同じ手順） | p006 | 40〜60 | host 試験（encoding の golden を `pco_isa.py` の値から）、実機: 自己試験と data master の道の判定の行 |
 | p009 | 最小の Venus の decode（instance・device・memory・buffer・compute の pipeline・dispatch） | p008 | 30〜50 | 実機: compute の Vulkan の試験の PASS の行 |
 | p010 | graphics: TA・3D の job、vertex・fragment、transfer、render pass、WSI の display の node への受け渡し（render の buffer の import の試験を含む）、Keiland の起動の待ち（§3.3） | p009、p007 | 60〜100 | 実機: `vkdemo`・`venus-frame` の画をユーザーが目で見る |
-| p011 | Keiland の要る範囲の残り（WS270 と合わせる） | p010 | 30〜50 | 実機: Keiland の desktop をユーザーが目で見る |
+| p011 | Keiland が使う Vulkan の機能の不足を driver 側で埋める（WS270 p006 の desktop の起動と目視の前提。2026-10-19 Q1 の判断、WS270 design-review-1 M5） | p010 | 30〜50 | 機能の試験（Keiland が使う Vulkan の機能の試験 program が通る）。desktop の目視は WS270 p006（WS269 p011 → WS270 p006） |
 | p012 | 規約の全文の見直し | p003〜p011 | 4〜6 | build warning 0、host 試験 |
 
 順の要: p004 は WS256 の p013（cleared）・p022（CRG の実機）・p015（rootfs からの起動の実機）の後。p007 は WS256 p011 の実機の後。p005 で FW が起きなければ D1。WS256 の p020（USB keyboard）は §7 の判定の操作の依存（p005 以降の実機の試験で、試験の program を打つ時）。WS256 p023 は WS269 の依存ではない（逆に p023 が要れば WS269 p004 の予備 (i) を使う、§3.2 の 5）。
@@ -307,3 +307,5 @@ LW は粗い（8 LW ≈ 実時間 2〜3 h）。p008〜p011 は bcm2711（52,772 
 | Minor 8 backing の連続性 | p006 の決める事として必須項目に | §6 の p006 の必須項目 |
 | Minor 9 p005 の依存 | 表の p005 の行に WS256 p020 | §6 |
 | Minor 10 EBUSY が尽きた時 | §3.1 の失敗の道を通す | §3.3、§6 の p005 の必須項目 |
+
+> 2026-10-19 Q1 の追記（WS270 design 改訂 2 §2.2・§2.3）: VF2 の desktop の最初の描画は libvulkan の WSI の copy の道（gpu1 → gpu0 の GPU_RESOURCE_WRITE）。p007 の import と damage は性能のため（実用の fps）で、描画の開始の前提ではない。

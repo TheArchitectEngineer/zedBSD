@@ -32,7 +32,7 @@
 | p008 | Rogue の USC・PDS の encoder、kernel の中の試験の道、data master の道の coherency | p006 | planned |
 | p009 | 最小の Venus の decode（compute） | p008 | planned |
 | p010 | graphics（TA・3D・transfer・render pass・WSI） | p009、p007 | planned |
-| p011 | Keiland の要る範囲の残り（WS270 と合わせる） | p010 | planned |
+| p011 | Keiland が使う Vulkan の機能の不足を driver 側で埋める（受け入れは機能の試験。desktop の目視は WS270 p006、WS269 p011 → WS270 p006） | p010 | planned |
 | p012 | 規約の全文の見直し | p003〜p011 | planned |
 
 中身・LW・確かめは [design.md](design.md) §6。
