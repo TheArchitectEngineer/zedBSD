@@ -1,7 +1,7 @@
 #!/bin/sh
-# Host check of ws269-p009: the PowerVR driver's SPIR-V subset on modules
-# glslc compiles from shaders/*.comp, the fill program built for it, and
-# the Vulkan executor decoding frames that libvulkan's own encoders write.
+# Host check of ws269-p009: the Vulkan executor decoding frames that
+# libvulkan's own encoders write, its compute dispatch compiled by the
+# shader compiler (p010-compiler) from shaders/fill.comp.
 #   plan/ws269/tests/p009/run.sh OUTDIR
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
@@ -13,13 +13,6 @@ for shader in "$here"/shaders/*.comp; do
 	name=$(basename "$shader" .comp)
 	glslc --target-env=vulkan1.0 -o "$out/$name.spv" "$shader"
 done
-cc -std=c11 -D_GNU_SOURCE -O2 -Wall -Wextra -Werror -I"$root/include" -I"$root/src" \
-	"$root/src/drivers/gpu/powervr/spirv-fill.c" \
-	"$root/src/drivers/gpu/powervr/usc-encode.c" \
-	"$root/src/drivers/gpu/powervr/pds-encode.c" \
-	"$root/src/drivers/gpu/powervr/compute-program.c" \
-	"$here/spirv-host-test.c" -o "$out/spirv-host-test"
-"$out/spirv-host-test" "$out"
 # The executor: the kernel side (with host stand-ins) and libvulkan's encoders.
 mkdir -p "$out/vk"
 ln -sfn "$root/include/libc/vulkan" "$out/inc/vulkan"
@@ -30,7 +23,7 @@ done
 cc -std=c11 -O1 -Wall -Wextra -Werror -I"$root/include" -I"$out/inc" -I"$root/userland/desktop/libvulkan" \
 	-c "$here/frame-host.c" -o "$out/vk/frame-host.o"
 objects=""
-for file in vk-object vk-stream vk-device vk-memory vk-layout vk-command vk-queue spirv-fill compute-program usc-encode pds-encode; do
+for file in vk-object vk-stream vk-device vk-memory vk-layout vk-command vk-queue shader-spirv shader-backend compute-program usc-encode pds-encode; do
 	cc -std=c11 -O1 -Wall -Wextra -Werror -I"$root/include" -I"$root/src" \
 		-c "$root/src/drivers/gpu/powervr/$file.c" -o "$out/vk/$file.o"
 	objects="$objects $out/vk/$file.o"

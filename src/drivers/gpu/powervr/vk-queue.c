@@ -52,7 +52,7 @@
 #define QUEUE_ITEMS_MAX			32U
 
 /* The most kernels (workgroups) one submission runs. */
-#define QUEUE_KERNELS_MAX		128U
+#define QUEUE_KERNELS_MAX		64U
 
 /*
  * The executor's memory: the shading cluster programs (one 512-byte room
@@ -61,7 +61,7 @@
  * heap, and the stream buffer (the resume area first, then the stream).
  */
 #define QUEUE_USC_OFFSET		0x10000U
-#define QUEUE_USC_ROOM			0x200U
+#define QUEUE_USC_ROOM			0x400U
 #define QUEUE_USC_BYTES			(QUEUE_USC_ROOM * QUEUE_KERNELS_MAX)
 #define QUEUE_PDS_OFFSET		0x10000U
 #define QUEUE_PDS_SLOT			0x40U
@@ -114,7 +114,8 @@ static int executor_make(struct powervr_vk_session *session);
 static int map_program_buffer(struct powervr_session *owner, uint64_t bytes, uint64_t address, struct powervr_buffer **result);
 static int build_command_buffer(struct submission *build, const struct powervr_vk_command_buffer *command);
 static int build_dispatch(struct submission *build, uint32_t groups);
-static int build_kernel(struct submission *build, uint64_t base, uint32_t multiplier, uint32_t addend, uint32_t instances);
+static int build_shared(struct submission *build, const struct powervr_shader_program *program, uint32_t groups, uint32_t *values);
+static int build_kernel(struct submission *build, const uint8_t *code, size_t length, uint32_t temps, uint32_t instances);
 static int build_fence(struct submission *build);
 static void put_stream_words(struct submission *build, const uint32_t *words, unsigned count);
 static void put_word(struct powervr_buffer *buffer, uint32_t offset, uint32_t word);
@@ -662,73 +663,79 @@ build_command_buffer(
 }
 
 /*
- * Adds one dispatch: a kernel per workgroup writing its words of the
- * bound buffer, then a fence kernel.  The buffer is the pipeline's
- * binding in the bound set; every word written must lie in its range.
+ * Adds one dispatch: a kernel per workgroup running the pipeline's
+ * shader compiled for that workgroup, then a fence kernel.
+ *
+ * The executor has no data sequencer program that fills shared
+ * registers yet, so each workgroup's program is compiled with its
+ * shared register words (the bound buffers' addresses, the workgroup's
+ * id and count) as constants.  A shader that reads past its buffers
+ * faults on the core's MMU rather than being refused here.
  */
 static int
 build_dispatch(
 	struct submission *build,
 	uint32_t groups)
 {
-	const struct powervr_spirv_fill *fill;
-	const struct powervr_vk_descriptor_set *set;
-	const struct powervr_vk_descriptor_slot *slot;
-	const struct powervr_vk_buffer *buffer;
-	uint64_t address;
-	uint64_t range;
-	uint64_t last;
+	struct powervr_shader_workspace *workspace;
+	struct powervr_shader_program *program;
+	struct powervr_ir_shader *shader;
+	const struct powervr_vk_pipeline *pipeline;
+	uint32_t values[POWERVR_SHADER_REQUESTS * 4U];
+	uint8_t *code;
 	uint32_t group;
-	uint32_t first;
+	uint32_t index;
 	int error;
 
 	/* No workgroup, no work. */
 	if (groups == 0)
 		return 0;
 
-	/* A bound pipeline and the set and binding its shader writes. */
-	if (build->pipeline == NULL)
+	/* A bound pipeline, and room for its workgroups. */
+	pipeline = build->pipeline;
+	if (pipeline == NULL)
 		return EINVAL;
-	fill = &build->pipeline->fill;
-	if (fill->set >= POWERVR_VK_SETS_MAX || fill->binding >= POWERVR_VK_BINDINGS_MAX)
-		return ENOTSUP;
-	set = build->sets[fill->set];
-	if (set == NULL)
-		return EINVAL;
-	slot = &set->slots[fill->binding];
-	if (slot->buffer == NULL)
-		return EINVAL;
-	buffer = slot->buffer->payload;
-
-	/* The range the binding names (the whole size asks for the rest of the buffer). */
-	if (slot->offset > buffer->size)
-		return EINVAL;
-	range = slot->range;
-	if (range == VK_WHOLE_SIZE)
-		range = buffer->size - slot->offset;
-	if (range > buffer->size - slot->offset)
-		return EINVAL;
-
-	/* Every word written, the last group's last word included, lies in the range. */
 	if (groups > QUEUE_KERNELS_MAX - build->kernels)
 		return E2BIG;
-	last = ((uint64_t)groups * fill->local_x + fill->index_addend) * 4U;
-	if (last > range)
-		return EINVAL;
 
-	/* The binding's first word on the core. */
-	error = powervr_vk_buffer_address(buffer, &address);
+	/* The compiler's working memory, the program's description and the code's room. */
+	workspace = kern_malloc(powervr_shader_workspace_size());
+	program = kern_malloc(sizeof(*program));
+	code = kern_malloc(QUEUE_USC_ROOM);
+	error = 0;
+	if (workspace == NULL || program == NULL || code == NULL)
+		error = ENOMEM;
+
+	/* What the shader asks for, and a workgroup the task holds. */
+	if (error == 0)
+		error = powervr_shader_read(pipeline->words, pipeline->word_count, POWERVR_SHADER_COMPUTE, workspace, program, &shader);
+	if (error == 0 && (program->workgroup[0] == 0 || program->workgroup[0] > POWERVR_COMPUTE_INSTANCES))
+		error = ENOTSUP;
+	if (error == 0 && program->shareds > POWERVR_SHADER_REQUESTS * 4U)
+		error = ENOTSUP;
+	if (error == 0)
+		error = build_shared(build, program, groups, values);
+
+	/* One kernel per workgroup, its id in the program. */
+	for (group = 0; error == 0 && group < groups; group++) {
+		for (index = 0; index < program->request_count; index++) {
+			if (program->requests[index].kind == POWERVR_SHADER_REQUEST_WORKGROUP_ID)
+				values[program->requests[index].shared] = group;
+		}
+		error = powervr_shader_compile_inline(pipeline->words, pipeline->word_count, POWERVR_SHADER_COMPUTE, values, program->shareds, workspace, program, code, QUEUE_USC_ROOM);
+		if (error != 0) {
+			kern_logf("powervr: vk: the compute shader did not compile (%d)\n", error);
+			break;
+		}
+		error = build_kernel(build, code, program->length, program->temps, program->workgroup[0]);
+	}
+
+	/* The working memory goes. */
+	kern_free(code);
+	kern_free(program);
+	kern_free(workspace);
 	if (error != 0)
 		return error;
-	address += slot->offset;
-
-	/* One kernel per workgroup, each with its words and its value's addend. */
-	for (group = 0; group < groups; group++) {
-		first = group * fill->local_x;
-		error = build_kernel(build, address + ((uint64_t)first + fill->index_addend) * 4U, fill->multiplier, fill->multiplier * first + fill->addend, fill->local_x);
-		if (error != 0)
-			return error;
-	}
 
 	/* The fence: the next dispatch starts after this one's work. */
 	error = build_fence(build);
@@ -741,6 +748,74 @@ build_dispatch(
 }
 
 /*
+ * Works out the shared register words a program asks for: the bound
+ * buffers' addresses, the workgroup count (and zero for the workgroup
+ * id, which the caller sets per workgroup).
+ */
+static int
+build_shared(
+	struct submission *build,
+	const struct powervr_shader_program *program,
+	uint32_t groups,
+	uint32_t *values)
+{
+	const struct powervr_shader_request *request;
+	const struct powervr_vk_descriptor_set *set;
+	const struct powervr_vk_descriptor_slot *slot;
+	const struct powervr_vk_buffer *buffer;
+	uint64_t address;
+	uint32_t index;
+	uint32_t word;
+	int error;
+
+	/* Each request's words. */
+	for (index = 0; index < program->request_count; index++) {
+		request = &program->requests[index];
+		for (word = 0; word < request->words; word++)
+			values[request->shared + word] = 0;
+
+		switch (request->kind) {
+		case POWERVR_SHADER_REQUEST_DESCRIPTOR:
+			/* Only a buffer's address: the bound set's binding, its first byte. */
+			if (request->part != POWERVR_SHADER_PART_BUFFER_ADDRESS)
+				return ENOTSUP;
+			if (request->set >= POWERVR_VK_SETS_MAX || request->binding >= POWERVR_VK_BINDINGS_MAX)
+				return ENOTSUP;
+			set = build->sets[request->set];
+			if (set == NULL)
+				return EINVAL;
+			slot = &set->slots[request->binding];
+			if (slot->buffer == NULL)
+				return EINVAL;
+			buffer = slot->buffer->payload;
+			if (slot->offset > buffer->size)
+				return EINVAL;
+			error = powervr_vk_buffer_address(buffer, &address);
+			if (error != 0)
+				return error;
+			address += slot->offset;
+			values[request->shared] = (uint32_t)address;
+			values[request->shared + 1U] = (uint32_t)(address >> 32);
+			break;
+		case POWERVR_SHADER_REQUEST_WORKGROUP_ID:
+			/* Set per workgroup; one deep in y and z. */
+			break;
+		case POWERVR_SHADER_REQUEST_NUM_WORKGROUPS:
+			values[request->shared] = groups;
+			for (word = 1; word < request->words; word++)
+				values[request->shared + word] = 1;
+			break;
+		default:
+			/* Push constants and the rest wait for the data sequencer's shared loads. */
+			return ENOTSUP;
+		}
+	}
+
+	/* Succeeded: the words. */
+	return 0;
+}
+
+/*
  * Adds one kernel: its shading cluster program in its room, the data
  * sequencer program that issues it in its slot, and its control stream
  * words.
@@ -748,13 +823,12 @@ build_dispatch(
 static int
 build_kernel(
 	struct submission *build,
-	uint64_t base,
-	uint32_t multiplier,
-	uint32_t addend,
+	const uint8_t *code,
+	size_t length,
+	uint32_t temps,
 	uint32_t instances)
 {
 	struct powervr_compute_kernel kernel;
-	uint8_t code[QUEUE_USC_ROOM];
 	uint32_t data[POWERVR_COMPUTE_PDS_DATA_WORDS];
 	uint32_t pds[POWERVR_COMPUTE_PDS_CODE_MAX];
 	uint32_t words[POWERVR_COMPUTE_KERNEL_WORDS];
@@ -762,14 +836,12 @@ build_kernel(
 	uint32_t slot;
 	unsigned field;
 	unsigned count;
-	size_t length;
 	size_t index;
 	int error;
 
 	/* The program, written through the uncached view into the kernel's room. */
-	error = powervr_compute_fill_program(base, instances, multiplier, addend, code, sizeof(code), &length);
-	if (error != 0)
-		return error;
+	if (length > QUEUE_USC_ROOM)
+		return E2BIG;
 	room = build->kernels * QUEUE_USC_ROOM;
 	for (index = 0; index < length; index++)
 		build->executor->usc->view[room + index] = code[index];
@@ -779,7 +851,7 @@ build_kernel(
 	 * temporaries are counted in twos: if the core counts in fours, that
 	 * only gives more than the program uses (plan/ws269 p008).
 	 */
-	error = powervr_compute_temporaries_field(POWERVR_COMPUTE_FILL_TEMPORARIES, 2, &field);
+	error = powervr_compute_temporaries_field(temps, 2, &field);
 	if (error != 0)
 		return error;
 	error = powervr_compute_kick_program(QUEUE_USC_OFFSET + room, field, data, pds, &count);
@@ -797,7 +869,7 @@ build_kernel(
 	kernel.code_offset = QUEUE_PDS_OFFSET + slot + QUEUE_PDS_CODE;
 	kernel.data_words = POWERVR_COMPUTE_PDS_DATA_WORDS;
 	kernel.pds_temporaries = QUEUE_PDS_INPUTS;
-	kernel.usc_temporaries = POWERVR_COMPUTE_FILL_TEMPORARIES;
+	kernel.usc_temporaries = temps;
 	kernel.instances = instances;
 	kernel.max_instances = 0;
 	kernel.any_cluster = 1;

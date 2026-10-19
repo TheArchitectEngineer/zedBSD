@@ -9,9 +9,11 @@
  * The executor's shader modules, layouts, descriptors and compute
  * pipelines.
  *
- * A shader module is read once, when it is created, against the SPIR-V
- * subset of spirv-fill.c; a module outside it is kept with the reason,
- * and a pipeline made from it is refused.  A descriptor set binds
+ * A shader module keeps its SPIR-V and is read once, when it is created,
+ * by the shader compiler's reader; a module without a compute entry the
+ * compiler takes is kept with the reason, and a compute pipeline made
+ * from it is refused.  A pipeline keeps its own copy of the SPIR-V and
+ * is compiled for each workgroup when it is dispatched.  A descriptor set binds
  * storage buffers; other descriptors are read and refused when a
  * pipeline would need them.
  *
@@ -56,6 +58,7 @@ static int slot_buffer(struct powervr_vk_descriptor_slot *slot, struct powervr_v
 static int set_destroy(struct powervr_vk_session *session, void *payload);
 static int create_pipelines(struct powervr_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int decode_pipeline(struct powervr_vk_session *session, struct i915_wire_reader *reader, struct powervr_vk_pipeline *pipeline);
+static int pipeline_destroy(struct powervr_vk_session *session, void *payload);
 
 /*
  * Runs a shader module, layout, descriptor or pipeline command; *handled
@@ -149,9 +152,12 @@ create_shader(
 	struct i915_wire_writer *reply)
 {
 	VkShaderModuleCreateInfo info;
-	struct powervr_spirv_value *values;
+	struct powervr_shader_workspace *workspace;
+	struct powervr_shader_program *program;
+	struct powervr_ir_shader *ir;
 	struct powervr_vk_shader *shader;
 	uint64_t identity;
+	uint32_t index;
 	int error;
 
 	/* The create info behind the device and its presence word. */
@@ -171,22 +177,31 @@ create_shader(
 		error = ENOTSUP;
 	}
 
-	/* The module. */
+	/* The module, its words after it in the same allocation. */
 	shader = NULL;
 	if (error == 0) {
-		shader = kern_calloc(1, sizeof(*shader));
+		shader = kern_calloc(1, sizeof(*shader) + info.codeSize);
 		if (shader == NULL)
 			error = ENOMEM;
 	}
-
-	/* What the SPIR-V does, read with a table of the scratch's. */
 	if (error == 0) {
-		values = powervr_vk_arena_take(session, POWERVR_SPIRV_FILL_IDS * sizeof(*values));
+		shader->words = (uint32_t *)(void *)(shader + 1);
+		shader->word_count = (uint32_t)(info.codeSize / 4U);
+		for (index = 0; index < shader->word_count; index++)
+			shader->words[index] = info.pCode[index];
+	}
+
+	/* Whether the compiler reads a compute entry from it, in a workspace of its own. */
+	if (error == 0) {
 		shader->status = ENOMEM;
-		if (values != NULL)
-			shader->status = powervr_spirv_fill_parse(info.pCode, info.codeSize / 4U, values, &shader->fill);
+		workspace = kern_malloc(powervr_shader_workspace_size());
+		program = kern_malloc(sizeof(*program));
+		if (workspace != NULL && program != NULL)
+			shader->status = powervr_shader_read(shader->words, shader->word_count, POWERVR_SHADER_COMPUTE, workspace, program, &ir);
+		kern_free(program);
+		kern_free(workspace);
 		if (shader->status != 0)
-			kern_logf("powervr: vk: a shader module of %u words is outside the subset (%d)\n", (unsigned)(info.codeSize / 4U), shader->status);
+			kern_logf("powervr: vk: a shader module of %u words has no compute entry the compiler takes (%d)\n", shader->word_count, shader->status);
 	}
 
 	/* Publishes the module and answers. */
@@ -842,7 +857,7 @@ create_pipelines(
 	/* A command that could not be read to its end fails the frame. */
 	if (error != 0) {
 		for (index = 0; index < count; index++)
-			kern_free(pipelines[index]);
+			(void)pipeline_destroy(session, pipelines[index]);
 		return error;
 	}
 
@@ -850,7 +865,7 @@ create_pipelines(
 	error = refused;
 	published = 0;
 	for (index = 0; error == 0 && index < count; index++) {
-		error = powervr_vk_object_publish(session, I915_VK_OBJ_PIPELINE, identities[index], pipelines[index], powervr_vk_free_payload);
+		error = powervr_vk_object_publish(session, I915_VK_OBJ_PIPELINE, identities[index], pipelines[index], pipeline_destroy);
 		if (error != 0)
 			break;
 		pipelines[index] = NULL;
@@ -865,7 +880,7 @@ create_pipelines(
 
 	/* What was not published goes. */
 	for (index = 0; index < count; index++)
-		kern_free(pipelines[index]);
+		(void)pipeline_destroy(session, pipelines[index]);
 
 	/* The result and the count, then each identity, or null for each when the create failed. */
 	result = powervr_vk_result(error);
@@ -911,7 +926,33 @@ decode_pipeline(
 	if (shader == NULL || shader->status != 0)
 		return ENOTSUP;
 
-	/* Succeeded: the pipeline does what its module does. */
-	pipeline->fill = shader->fill;
+	/* The pipeline's own copy of the module's words. */
+	pipeline->words = kern_malloc((size_t)shader->word_count * 4U);
+	if (pipeline->words == NULL)
+		return ENOMEM;
+	kern_memcpy(pipeline->words, shader->words, (size_t)shader->word_count * 4U);
+	pipeline->word_count = shader->word_count;
+
+	/* Succeeded: the pipeline runs its module's compute entry. */
+	return 0;
+}
+
+/* Destroys a pipeline and its copy of the SPIR-V; a missing one is nothing to do. */
+static int
+pipeline_destroy(
+	struct powervr_vk_session *session,
+	void *payload)
+{
+	struct powervr_vk_pipeline *pipeline;
+
+	/* Its words, then itself. */
+	(void)session;
+	pipeline = payload;
+	if (pipeline == NULL)
+		return 0;
+	kern_free(pipeline->words);
+	kern_free(pipeline);
+
+	/* Succeeded: the pipeline is gone. */
 	return 0;
 }

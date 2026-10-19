@@ -114,7 +114,8 @@ RISCV64_PLATFORM_SOURCES_visionfive2 += src/drivers/platform/visionfive2/vf2-pmu
 	src/drivers/gpu/powervr/pds-encode.c \
 	src/drivers/gpu/powervr/compute-program.c \
 	src/drivers/gpu/powervr/render-runtime.c \
-	src/drivers/gpu/powervr/spirv-fill.c \
+	src/drivers/gpu/powervr/shader-spirv.c \
+	src/drivers/gpu/powervr/shader-backend.c \
 	src/drivers/gpu/powervr/vk-object.c \
 	src/drivers/gpu/powervr/vk-stream.c \
 	src/drivers/gpu/powervr/vk-device.c \

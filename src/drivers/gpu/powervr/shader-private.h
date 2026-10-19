@@ -31,7 +31,7 @@
 #define SHADER_SPIRV_LOOPS		16U
 
 /* The most machine operations, temporaries and labels of the back end. */
-#define SHADER_MACHINE_OPERATIONS	8192U
+#define SHADER_MACHINE_OPERATIONS	4096U
 #define SHADER_MACHINE_TEMPORARIES	96U
 
 /*
@@ -195,6 +195,8 @@ struct shader_backend {
 	uint32_t free_after[SHADER_MACHINE_TEMPORARIES];
 	uint32_t temps;
 	uint32_t control_flow;
+	const uint32_t *inline_values;
+	uint32_t inline_count;
 	int error;
 };
 

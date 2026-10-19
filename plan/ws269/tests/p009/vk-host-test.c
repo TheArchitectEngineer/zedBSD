@@ -11,10 +11,10 @@
  * the render node's memory, mappings and kick replaced by host stand-ins
  * below.  The check reads the replies with libvulkan's decoders, and the
  * compute stream the submission handed the core: its kernels, their
- * programs (compared with the fill program for the expected address and
- * values), the fence after the dispatch and the end.
+ * programs (compared with the shader compiled for the workgroup with the
+ * expected address), the fence after the dispatch and the end.
  *
- *   vk-host-test DIR    (DIR holds fill.spv and reject-read.spv)
+ *   vk-host-test DIR    (DIR holds fill.spv and reject-size.spv)
  */
 
 #include <stdarg.h>
@@ -28,6 +28,7 @@
 #include "drivers/gpu/powervr/render-private.h"
 #include "drivers/gpu/powervr/interface.h"
 #include "drivers/gpu/powervr/compute-program.h"
+#include "drivers/gpu/powervr/shader-compile.h"
 #include "drivers/gpu/powervr/vk.h"
 #include "frame-host.h"
 
@@ -331,13 +332,20 @@ word_at(
  */
 static void
 check_stream(
-	uint64_t memory_address)
+	uint64_t memory_address,
+	const uint32_t *spirv,
+	size_t spirv_words)
 {
+	static struct powervr_shader_program program;
+	struct powervr_shader_workspace *workspace;
+	struct powervr_ir_shader *shader;
+	uint32_t values[32];
+	unsigned request;
 	const volatile uint8_t *usc;
 	const volatile uint8_t *pds;
 	struct powervr_resource *stream;
 	struct powervr_compute_kernel expected_kernel;
-	uint8_t expected[0x200];
+	uint8_t expected[0x400];
 	uint32_t expected_words[POWERVR_COMPUTE_KERNEL_WORDS];
 	uint32_t data[POWERVR_COMPUTE_PDS_DATA_WORDS];
 	uint32_t code[POWERVR_COMPUTE_PDS_CODE_MAX];
@@ -367,16 +375,35 @@ check_stream(
 		return;
 	at = stream_address - stream->address;
 
-	/* fill.comp: data[x] = 3x + 7, local size 32. */
-	powervr_compute_temporaries_field(POWERVR_COMPUTE_FILL_TEMPORARIES, 2, &field);
+	/* fill.comp: data[x] = 3x + 7, local size 32, its requests' shared words. */
+	workspace = calloc(1, powervr_shader_workspace_size());
+	if (workspace == NULL || powervr_shader_read(spirv, spirv_words, POWERVR_SHADER_COMPUTE, workspace, &program, &shader) != 0 || program.shareds > 32) {
+		check(0, "the fill shader reads");
+		free(workspace);
+		return;
+	}
 	for (group = 0; group < HOST_GROUPS; group++) {
+		/* The buffer's address and the workgroup's id as the executor gives them. */
+		memset(values, 0, sizeof(values));
+		for (request = 0; request < program.request_count; request++) {
+			if (program.requests[request].kind == POWERVR_SHADER_REQUEST_DESCRIPTOR) {
+				values[program.requests[request].shared] = (uint32_t)memory_address;
+				values[program.requests[request].shared + 1U] = (uint32_t)(memory_address >> 32);
+			} else if (program.requests[request].kind == POWERVR_SHADER_REQUEST_WORKGROUP_ID) {
+				values[program.requests[request].shared] = group;
+			}
+		}
+		check(powervr_shader_compile_inline(spirv, spirv_words, POWERVR_SHADER_COMPUTE, values, program.shareds, workspace, &program, expected, sizeof(expected)) == 0, "the fill shader compiles for a workgroup");
+		length = program.length;
+		powervr_compute_temporaries_field(program.temps, 2, &field);
+
 		/* The kernel's words. */
 		memset(&expected_kernel, 0, sizeof(expected_kernel));
 		expected_kernel.data_offset = 0x10000U + (group + 1U) * 0x40U;
 		expected_kernel.code_offset = expected_kernel.data_offset + 0x10U;
 		expected_kernel.data_words = POWERVR_COMPUTE_PDS_DATA_WORDS;
 		expected_kernel.pds_temporaries = 3;
-		expected_kernel.usc_temporaries = POWERVR_COMPUTE_FILL_TEMPORARIES;
+		expected_kernel.usc_temporaries = program.temps;
 		expected_kernel.instances = 32;
 		expected_kernel.any_cluster = 1;
 		powervr_compute_kernel_words(&expected_kernel, expected_words);
@@ -389,12 +416,11 @@ check_stream(
 		check(same, "a workgroup's kernel words");
 		at += POWERVR_COMPUTE_KERNEL_WORDS * 4U;
 
-		/* Its shading cluster program: the group's 32 words, value 3(32g + i) + 7. */
-		powervr_compute_fill_program(memory_address + (uint64_t)group * 32U * 4U, 32, 3, 3U * 32U * group + 7U, expected, sizeof(expected), &length);
-		check(memcmp((const void *)(usc + (size_t)group * 0x200U), expected, length) == 0, "a workgroup's program writes its words with its values");
+		/* Its shading cluster program: the shader compiled with the group's id and the buffer's address. */
+		check(memcmp((const void *)(usc + (size_t)group * 0x400U), expected, length) == 0, "a workgroup's program is the shader compiled for it");
 
 		/* The data sequencer program that issues it. */
-		powervr_compute_kick_program(0x10000U + group * 0x200U, field, data, code, &count);
+		powervr_compute_kick_program(0x10000U + group * 0x400U, field, data, code, &count);
 		same = word_at(pds, (group + 1U) * 0x40U) == data[0] && word_at(pds, (group + 1U) * 0x40U + 4U) == data[1];
 		for (index = 0; index < count; index++) {
 			if (word_at(pds, (group + 1U) * 0x40U + 0x10U + index * 4U) != code[index])
@@ -402,6 +428,8 @@ check_stream(
 		}
 		check(same, "a workgroup's issuing program");
 	}
+
+	free(workspace);
 
 	/* The fence kernel after the dispatch, then the end. */
 	memset(&expected_kernel, 0, sizeof(expected_kernel));
@@ -462,7 +490,7 @@ main(
 	}
 
 	spirv = load(argv[1], "fill", &spirv_words);
-	bad_spirv = load(argv[1], "reject-read", &bad_words);
+	bad_spirv = load(argv[1], "reject-size", &bad_words);
 	if (spirv == NULL || bad_spirv == NULL) {
 		fprintf(stderr, "vk-host-test: shaders missing\n");
 		return 2;
@@ -506,7 +534,7 @@ main(
 	check(error == 0, "compute frame runs");
 	replies_compute((uint8_t *)reply->buffer->view);
 	if (memory != NULL)
-		check_stream(memory->storage->address);
+		check_stream(memory->storage->address, spirv, spirv_words);
 
 	/* A frame cut in the middle of a command is refused. */
 	bytes = frame_setup(reply->identifier, &frame);

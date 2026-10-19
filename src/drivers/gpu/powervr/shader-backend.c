@@ -262,6 +262,30 @@ powervr_shader_compile(
 	uint8_t *code,
 	size_t room)
 {
+	/* The shared registers stay registers. */
+	return powervr_shader_compile_inline(words, count, stage, NULL, 0, workspace, program, code, room);
+}
+
+/*
+ * Compiles a SPIR-V module's entry point with the shared register words
+ * given up front: each read of one becomes the constant, so the program
+ * runs without a data sequencer program filling shared registers.  The
+ * values are indexed like the shared registers the requests would fill
+ * (the program's request table says which is which); a value table of
+ * NULL compiles the ordinary program.
+ */
+int
+powervr_shader_compile_inline(
+	const uint32_t *words,
+	size_t count,
+	uint32_t stage,
+	const uint32_t *shared_values,
+	uint32_t value_count,
+	struct powervr_shader_workspace *workspace,
+	struct powervr_shader_program *program,
+	uint8_t *code,
+	size_t room)
+{
 	struct powervr_ir_shader *shader;
 	size_t length;
 	int error;
@@ -271,7 +295,13 @@ powervr_shader_compile(
 	if (error != 0)
 		return error;
 
+	/* Refuses a value table too short for the shared registers. */
+	if (shared_values != NULL && value_count < program->shareds)
+		return EINVAL;
+
 	/* Selects and allocates the machine operations. */
+	workspace->backend.inline_values = shared_values;
+	workspace->backend.inline_count = value_count;
 	error = shader_backend_build(shader, program, &workspace->backend);
 	if (error != 0)
 		return error;
@@ -757,6 +787,15 @@ select_instruction(
 		request = &select->program->requests[instruction->immediate];
 		if (instruction->immediate_2 >= request->words)
 			return EINVAL;
+		if (select->backend->inline_values != NULL) {
+			/* The word given up front, as a constant. */
+			operation = append(select, MACHINE_IMMEDIATE);
+			if (operation != NULL) {
+				operation->destination[0] = destination_of(select, instruction);
+				operation->immediate = select->backend->inline_values[request->shared + instruction->immediate_2];
+			}
+			break;
+		}
 		operation = append(select, MACHINE_MOVE);
 		if (operation != NULL) {
 			operation->destination[0] = destination_of(select, instruction);

@@ -151,5 +151,6 @@ struct powervr_shader_workspace;
 size_t powervr_shader_workspace_size(void);
 int powervr_shader_read(const uint32_t *words, size_t count, uint32_t stage, struct powervr_shader_workspace *workspace, struct powervr_shader_program *program, struct powervr_ir_shader **shader);
 int powervr_shader_compile(const uint32_t *words, size_t count, uint32_t stage, struct powervr_shader_workspace *workspace, struct powervr_shader_program *program, uint8_t *code, size_t room);
+int powervr_shader_compile_inline(const uint32_t *words, size_t count, uint32_t stage, const uint32_t *shared_values, uint32_t value_count, struct powervr_shader_workspace *workspace, struct powervr_shader_program *program, uint8_t *code, size_t room);
 
 #endif /* KERN_DRIVERS_GPU_POWERVR_SHADER_COMPILE_H */
