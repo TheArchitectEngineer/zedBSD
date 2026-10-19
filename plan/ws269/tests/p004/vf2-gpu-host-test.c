@@ -164,6 +164,28 @@ kern_mmio_write32(
 	}
 }
 
+void
+kern_mmio_write64(
+	volatile void *address,
+	uint64_t value)
+{
+	memcpy((void *)address, &value, 8);
+}
+
+/* The later stage: counted, not run (its own host test covers its parts). */
+static int late_starts;
+struct powervr_core;
+int powervr_late_start(struct powervr_core *core);
+
+int
+powervr_late_start(
+	struct powervr_core *core)
+{
+	(void)core;
+	late_starts++;
+	return 0;
+}
+
 int
 kern_device_map(
 	uint64_t address,
@@ -368,10 +390,13 @@ main(
 		core_reset = first_write(sys_crg, 0x2f8, 1U << 22, 0);
 		check(axi >= 0 && axi < apb && apb < core, "bus master, then register bus, then core clock");
 		check(core >= 0 && core < bus_reset && bus_reset < core_reset, "clocks, then the register bus reset, then the core's");
-		if (strcmp(mode, "ok") == 0)
+		if (strcmp(mode, "ok") == 0) {
 			check(strcmp(last_line, "powervr: BXE 36.50.54.182 at 396000000 Hz, ALIAS OK\n") == 0, "the boot log line");
-		else
+			check(late_starts == 1, "the later stage starts after ALIAS OK");
+		} else {
 			check(strcmp(last_line, "powervr: BXE 36.50.54.182 at 396000000 Hz, ALIAS MISMATCH\n") == 0, "the boot log line names the mismatch");
+			check(late_starts == 0, "no later stage without a working uncached view");
+		}
 	} else {
 		check(error == ENODEV, "an unknown core is refused");
 		check((get32(pmu, 0x80) & 0x4U) == 0, "the GPU domain is off again");
