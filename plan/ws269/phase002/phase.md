@@ -4,7 +4,7 @@
 
 - 親: [ws269](../ws.md)、設計: [design.md](../design.md) 改訂 3.1 の §6 の p002・§0.3・§0.4・§4
 - Queue: q1326 / q1326-i01（P2、2026-10-19）
-- Status: cleared 待ち（Q1 の判定）。コードは書かない Phase。
+- Status: cleared（2026-10-19 Q1 の判定: 資料の版と SHA（firmware 8a58f81883f7・rogue_36.50.54.182_v1.fw の sha256 が S6 と一致、mainline v7.3、Mesa 26.2.5）と BRN・feature・vendor の値を記録した。mirror の要否はユーザーに聞く）
 - ユーザーの判断: 決定済み（ws.md の「決定」節、D1 (a)・D2 (a)・D3 (a)・D5 (a)・D6 A・D7 (a)）。
 
 ## 目的と受け入れの条件
