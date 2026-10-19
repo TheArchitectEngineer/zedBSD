@@ -311,3 +311,5 @@ LW は粗い（8 LW ≈ 実時間 2〜3 h）。p008〜p011 は bcm2711（52,772 
 > 2026-10-19 Q1 の追記（WS270 design 改訂 2 §2.2・§2.3）: VF2 の desktop の最初の描画は libvulkan の WSI の copy の道（gpu1 → gpu0 の GPU_RESOURCE_WRITE）。p007 の import と damage は性能のため（実用の fps）で、描画の開始の前提ではない。
 
 > 2026-10-19 Q1 の追記（WS270 design-review-2 N1）: p005 の必須項目に「powervr の遅い段の worker が、render の node（gpu1）を登録するまで `hw.gpu.attaching` を数える」を足す（sessiond は attaching の間は gpu0 があっても待つ、WS270 が持つ）。
+
+> 2026-10-20 Q1 の追記（design-p010.md 版 2、review 1 の Minor 10・M5）: §3.5 の「FW の grow の要求に応える」は D-P1 で置き換える（free list は固定、grow の要求には GROW_UPDATE を delta 0 で返し、RECONSTRUCTION に応える）。§6 の p010 の受け入れは venus-frame を外し、vkdemo と gpu-selftest の clear・copy・draw にする（D-P7、ユーザーに確かめる）。

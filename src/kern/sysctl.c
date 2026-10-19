@@ -53,6 +53,7 @@ static const struct sysctl_leaf leaves[] = {
 	{{ CTL_HW, HW_DISKSTATS, 0 }, 2, "hw.diskstats"},
 	{{ CTL_HW, HW_GPUTELEMETRY, 0 }, 2, "hw.gputelemetry"},
 	{{ CTL_HW, HW_THERMAL, 0 }, 2, "hw.thermal"},
+	{{ CTL_HW, HW_GPU_STAGES, 0 }, 2, "hw.gpu.powervr.stages"},
 	{{ CTL_KERN, KERN_MSGBUF, 0 }, 2, "kern.msgbuf"},
 	{{ CTL_KERN, KERN_MSGBUF_SIZE, 0 }, 2, "kern.msgbuf_size"},
 	{{ CTL_KERN, KERN_MSGBUF_DROPPED, 0 }, 2, "kern.msgbuf_dropped"},
@@ -104,6 +105,13 @@ static atomic_uint_t gpu_attaching;
  * stay for the whole kernel lifetime.
  */
 static const struct kern_gpu_start_ops *gpu_start_ops;
+
+/*
+ * The function behind hw.gpu.powervr.stages, or NULL without the driver.
+ * Installed once on the boot thread before user space runs, like
+ * gpu_start_ops.
+ */
+static kern_gpu_stages_read_t gpu_stages_read;
 
 /*
  * The HW_USB_TRACE_ bits of hw.usb.trace: which USB transfers the drivers
@@ -165,6 +173,7 @@ static int sysctl_writeback(const int *name, void *oldp, size_t *oldlenp, const 
 static int oid_compare(const int *a, unsigned alen, const int *b, unsigned blen);
 static const struct sysctl_leaf *find_oid(const int *oid, unsigned oidlen);
 static int sysctl_output(void *oldp, size_t *oldlenp, const void *value, size_t size);
+static int sysctl_gpu_stages(void *oldp, size_t *oldlenp, const void *newp, size_t newlen);
 static int sysctl_boot_parameter(enum kern_boot_parameter_key key, void *oldp, size_t *oldlenp, const void *newp, size_t newlen);
 static int sysctl_meta(int operation, void *oldp, size_t *oldlenp, const void *newp, size_t newlen);
 
@@ -357,6 +366,17 @@ kern_gpu_start_ops_set(
 }
 
 /*
+ * Installs the function behind hw.gpu.powervr.stages.
+ */
+void
+kern_gpu_stages_set(
+	kern_gpu_stages_read_t read)
+{
+	/* Publishes the driver's function for every later sysctl call. */
+	gpu_stages_read = read;
+}
+
+/*
  * Reads or writes one sysctl leaf.
  *
  * Reads follow the usual protocol: with oldp NULL the required size is
@@ -460,6 +480,12 @@ kern_sysctl(
 	/* Reports each GPU's work as its driver keeps it. */
 	if (namelen == 2 && name[0] == CTL_HW && name[1] == HW_GPUTELEMETRY) {
 		error = sysctl_gputelemetry(oldp, oldlenp, newp, newlen);
+		return error;
+	}
+
+	/* Reports how far the PowerVR driver has come, as its text. */
+	if (namelen == 2 && name[0] == CTL_HW && name[1] == HW_GPU_STAGES) {
+		error = sysctl_gpu_stages(oldp, oldlenp, newp, newlen);
 		return error;
 	}
 
@@ -1202,6 +1228,39 @@ sysctl_usb_trace(
 
 	/* Succeeded: the bits are reported. */
 	return 0;
+}
+
+/*
+ * Reads hw.gpu.powervr.stages: the driver's text with its terminating NUL.
+ */
+static int
+sysctl_gpu_stages(
+	void *oldp,
+	size_t *oldlenp,
+	const void *newp,
+	size_t newlen)
+{
+	char text[KERN_GPU_STAGES_MAX];
+	size_t length;
+	int error;
+
+	/* The leaf is read only. */
+	if (newp != NULL || newlen != 0)
+		return EPERM;
+
+	/* Without the driver there is no text. */
+	if (gpu_stages_read == NULL)
+		return ENOENT;
+
+	/* The driver writes its text, always terminated. */
+	length = gpu_stages_read(text, sizeof(text));
+	if (length >= sizeof(text))
+		length = sizeof(text) - 1U;
+	text[length] = '\0';
+
+	/* Reports the text and its NUL. */
+	error = sysctl_output(oldp, oldlenp, text, length + 1U);
+	return error;
 }
 
 /*

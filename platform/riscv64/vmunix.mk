@@ -102,6 +102,8 @@ RISCV64_PLATFORM_SOURCES_visionfive2 += src/drivers/platform/visionfive2/vf2-pmu
 	src/drivers/gpu/powervr/firmware-image.c \
 	src/drivers/gpu/powervr/mips-table.c \
 	src/drivers/gpu/powervr/retry.c \
+	src/drivers/gpu/powervr/stage.c \
+	src/drivers/gpu/powervr/stage-log.c \
 	src/drivers/gpu/powervr/firmware-memory.c \
 	src/drivers/gpu/powervr/firmware-file.c \
 	src/drivers/gpu/powervr/firmware-boot.c \
