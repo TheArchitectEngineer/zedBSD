@@ -48,6 +48,9 @@
 #include <drivers/platform/visionfive2/vf2-pcie.h>
 #include <drivers/platform/visionfive2/vf2-pinctrl.h>
 #include <drivers/platform/visionfive2/vf2-pwmdac.h>
+#ifdef CONFIG_VF2_DMA_TEST
+#include <drivers/platform/visionfive2/vf2-dmatest.h>
+#endif
 #include <drivers/platform/visionfive2/vf2-syscon.h>
 #include <kern/boot.h>
 #include <kern/disk.h>
@@ -486,6 +489,13 @@ probe_soc(
 	error = drv_vf2_pwmdac_attach(&fdt, VF2_DMA_DEFAULT_COHERENT);
 	if (error != 0 && error != ENODEV)
 		kern_logf("visionfive2: sound unavailable (%d)\n", error);
+#ifdef CONFIG_VF2_DMA_TEST
+
+	/* The test kernel's DMA coherency check (ws256-p023). */
+	error = drv_vf2_dmatest_publish(&soc_tree);
+	if (error != 0)
+		kern_logf("visionfive2: DMA test unavailable (%d)\n", error);
+#endif
 }
 
 /*
