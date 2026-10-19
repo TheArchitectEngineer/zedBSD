@@ -66,7 +66,7 @@ df62e19b8（loader）、fdf69e96c（HAL の変数・pci・dmatest など）、15
 - 上の「機械的な規則だけ直した file」と、全文を読んでいない HAL の file・`.S`・header を全文で読む。
 - WS256 が変えた共有・周辺の code で、この依頼の一覧に無かった物（範囲を Q1 と確かめる）: `src/drivers/serial/ns16550.c`（RX）・`src/drivers/generic/serial-console.c`・`ramdisk.c`・`drivers/generic/fdt.c` の `drv_fdt_dma_coherent`・`drivers/pci/pci.c` の INTx の hook・`pci-nvme.c` の INTx と irq の pass（d0869aca7）・`src/kern/elf.c` の `EM_RISCV`・userland の riscv64 の `.S`（crt0・crt1・setjmp・syscall）・libc・rtld の riscv64 の枝・`check-dynamic-elf.py`・`bootloader/include/riscv64-*.h`・`bootloader/uefi/elf64.c` の arch の書き分け。共有の file を触ったら amd64 の build も。
 - 後半の後に T1 の回帰（今回と同じ 1〜3、共有の file を変えたら amd64 の既定の image も）。
-- `plan/ws256/tests/plic/` の扱い（Q1、上）。
+- `plan/ws256/tests/plic/` の扱い: 2026-10-19 Q1 が試験の整理の基準で削除した（前から FAIL、どこからも参照されない）。
 
 ## 再開の条件
 
