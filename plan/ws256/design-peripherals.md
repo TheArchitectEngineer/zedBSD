@@ -45,6 +45,9 @@
 | SYS/STG/AON CRG・SYSCON・IOMUX・PMU | TRM | OpenBSD stfclock.c・stfpinctrl.c | 不要 |
 | DW MMC（基本） | OpenBSD dwmmc.c の値、Linux dw_mmc の値 | OpenBSD dwmmc.c（PIO・IDMAC とも） | 不要 |
 | DW MMC の JH7110 の sample phase（`starfive,sysreg`） | Linux dw_mmc-starfive | **Linux**（OpenBSD の glue に tuning は無い） | **許す（決定）** |
+
+> 2026-10-19 Q1 の注（p014 の P2 の所見）: Linux v6.12 の dw_mmc-starfive.c は `starfive,sysreg` を使わず、UHS_REG_EXT（0x108）の bit 20:16 を UHS の tuning の時だけ書く。この slot は UHS を使わないので、p014 の glue は phase を書かず log だけにした。§3.3 の「sysreg で sample phase を設定」はこの注のとおりに読む。
+
 | PLDA PCIe・PHY | OpenBSD stfpcie.c・stfpciephy.c | OpenBSD | 不要（MSI は使わない。後で MSI を足す時は出典の扱いを改めて聞く: Minor 3） |
 | DW Ethernet QoS | OpenBSD dwqe.c・if_dwqe_fdt.c | OpenBSD | 不要 |
 | YT8531 の拡張 register | Linux motorcomm.c | **Linux**（OpenBSD ytphy.c は YT8521 だけ） | **許す（決定）** |

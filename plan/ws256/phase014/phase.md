@@ -2,7 +2,7 @@
 
 # ws256-p014 SD カード（DW MMC の PIO と JH7110 の glue、板の前の code）
 
-Status: in-progress（2026-10-19 P2: 板の前の code と host 試験は済み、Q1 の判定待ち。実機の確かめは p015 の時に下の「p015 で画面に出る行」で行う。IDMAC は未着手（下の「残り」））
+Status: cleared（2026-10-19 Q1 の判定: 板の前の code の Phase。DW MMC の PIO の SD の driver と VF2 の glue、host 試験 60 PASS、vf2-soc の回帰 94 PASS、VF2・virt の build warning 0。VF2 の partition の scheme を pcat_auto に（SD の GPT の ESP が見える）。実機の確かめは p015（ユーザーの目視、画面に出る行は「p015 で画面に出る行」））
 
 - 親: [WS256](../ws.md)。Queue: q1288-i01（P2）。
 - 範囲: [design-peripherals.md](../design-peripherals.md) §3.3（改訂 4）。`src/drivers/mmc/dw-mmc.c` の SD の初期化（CMD0・8・ACMD41・2・3・9・7・16、ACMD51・ACMD6、high speed の CMD6）と CMD17/18/24/25、FIFO の PIO、JH7110 の glue（`vf2-mmc.c`）、block の device（mmcblk0）として publish、`visionfive2.c` からの attach。host 試験（fake の register の model で command の順と FIFO の読み書き）、build warning 0（VF2・virt）。HAL（hal.h）は変えない。rpi4-sdhci.c は読むだけ（切り出さない、design の既定）。
