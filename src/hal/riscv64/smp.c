@@ -151,15 +151,20 @@ riscv64_smp_configure(
 	info = riscv64_boot_fdt();
 	usable = 0;
 	for (index = 0; index < info->cpu_count; index++) {
-		/* Counts only the harts the tree marks as usable. */
+		/*
+		 * The boot hart is already logical 0 and runs the kernel, so it
+		 * is counted whatever the tree says of it.
+		 */
 		entry = &info->cpus[index];
+		if (entry->hart_id == cpu_hart_id[0]) {
+			usable++;
+			continue;
+		}
+
+		/* Counts only the other harts the tree marks as usable. */
 		if (!entry->usable)
 			continue;
 		usable++;
-
-		/* The boot hart is already logical 0. */
-		if (entry->hart_id == cpu_hart_id[0])
-			continue;
 
 		/* A hart a mask cannot name is left alone. */
 		if (entry->hart_id >= SMP_HART_ID_LIMIT)
