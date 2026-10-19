@@ -29,14 +29,19 @@
 #include "../page.h"
 #include "../space.h"
 
-/* The offset of the cache controller's register that flushes one line by its physical address. */
+/*
+ * The offset of the cache controller's register that flushes one line by
+ * its physical address, and the controller's line size in bytes.
+ *
+ * Values referenced: OpenBSD sys/arch/riscv64/dev/sfcc.c (SFCC_FLUSH64
+ * 0x200) and Linux v6.12 arch/riscv/boot/dts/starfive/jh7110.dtsi (the
+ * cache-controller node: cache-block-size 64).
+ */
 #define VF2_CCACHE_FLUSH64		0x200U
+#define VF2_CCACHE_LINE_SIZE		64U
 
 /* The register's end: the controller's range must reach past it. */
 #define VF2_CCACHE_FLUSH64_END		(VF2_CCACHE_FLUSH64 + 8U)
-
-/* The cache controller's line size in bytes. */
-#define VF2_CCACHE_LINE_SIZE		64U
 
 /*
  * The boot parameter that has the early console draw on the screen without
@@ -464,11 +469,7 @@ flush_range(
 	if (address > UINTPTR_MAX - size)
 		return;
 
-	/*
-	 * Values referenced: Linux v6.12 arch/riscv/boot/dts/starfive/jh7110.dtsi
-	 * (the cache-controller node: cache-block-size 64) and OpenBSD
-	 * sys/arch/riscv64/dev/sfcc.c (SFCC_FLUSH64 0x200).
-	 */
+	/* Starts at the line that holds the first byte. */
 	line = address & ~((uintptr_t)VF2_CCACHE_LINE_SIZE - 1U);
 	end = address + size;
 

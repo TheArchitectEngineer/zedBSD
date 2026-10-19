@@ -233,14 +233,19 @@ putc_locked(
 
 	/* A tab moves to the next eight-column stop, wrapping past the row's end. */
 	if (character == '\t') {
+		/* Takes the cursor off its cell and moves it to the stop. */
 		column = cons_column;
 		cons_column = (cons_column + 8U) & ~7U;
 		if (column < RISCV64_CONSOLE_COLUMNS)
 			draw_cell_locked(cons_row, column);
+
+		/* A stop past the row's end starts the next line. */
 		if (cons_column >= RISCV64_CONSOLE_COLUMNS) {
 			newline_locked();
 			return;
 		}
+
+		/* Shows the cursor at the stop. */
 		draw_cell_locked(cons_row, cons_column);
 		return;
 	}

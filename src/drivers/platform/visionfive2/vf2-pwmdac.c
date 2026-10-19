@@ -6,7 +6,7 @@
  */
 
 /*
- * The VisionFive 2's headphone jack (ws256-p019).
+ * The VisionFive 2's headphone jack.
  *
  * The JH7110's PWM audio converter drives the jack's two channels from
  * GPIO 33 and 34.  Each 32-bit word written to its data register is one

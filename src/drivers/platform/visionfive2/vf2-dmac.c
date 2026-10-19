@@ -6,7 +6,7 @@
  */
 
 /*
- * The JH7110's AXI DMA controller as the board wires it (ws256-p019).
+ * The JH7110's AXI DMA controller as the board wires it.
  *
  * The controller's two clocks come from the STG generator, and it has two
  * reset lines there, which its node lists without names.  Once both run

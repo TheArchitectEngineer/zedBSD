@@ -180,6 +180,8 @@ riscv64_plic_enable(
 	} else {
 		bits &= ~(1U << (source % 32U));
 	}
+
+	/* Writes the word back. */
 	hal_mmio_write32(word, bits);
 
 	riscv64_spin_unlock(&plic_enable_lock, enabled);

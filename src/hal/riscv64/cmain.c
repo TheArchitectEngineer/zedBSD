@@ -75,9 +75,11 @@ riscv64_cmain(
 	/* Learns which firmware calls exist before the console uses them. */
 	riscv64_sbi_probe();
 
-	/* The boot argument is the loader's handoff or the firmware's device tree. */
+	/* Refuses a boot without an argument. */
 	if (boot_argument == 0)
 		HAL_FATAL("riscv64 firmware passed no device tree");
+
+	/* Reads the argument's first word: it is the loader's handoff or the firmware's device tree. */
 	first_word = (const volatile uint32_t *)riscv64_phys_to_direct((uint64_t)boot_argument);
 	magic = *first_word;
 
@@ -89,6 +91,8 @@ riscv64_cmain(
 	} else {
 		fdt_phys = boot_argument;
 	}
+
+	/* Stops unless the tree is where the argument says. */
 	check_device_tree(fdt_phys);
 
 	/* Reads the tree through the direct map of the boot table. */
@@ -107,6 +111,8 @@ riscv64_cmain(
 		cmain_fdt.initrd_start = handoff->initrd_phys;
 		cmain_fdt.initrd_end = handoff->initrd_phys + handoff->initrd_size;
 	}
+
+	/* Keeps the tree's facts and the boot hart, with the loader's parameter line when there is one. */
 	riscv64_boot_record(hart_id, fdt_phys, &cmain_fdt);
 	if (handoff != NULL)
 		riscv64_boot_set_command_line(handoff->parameters.text, handoff->parameters.length);

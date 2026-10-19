@@ -7,7 +7,7 @@
 
 /*
  * /dev/vf2-dmatest: the board's DMA coherency check on the AXI DMA
- * controller, for the test kernel only (ws256-p023).
+ * controller, for the test kernel only.
  *
  * Reading the device from its start runs the check once and reads its
  * answer as text lines (vf2-dmatest-core.h).

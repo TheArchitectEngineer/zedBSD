@@ -71,6 +71,9 @@
 /* The bytes of one pixel of the screen the hardware layer names. */
 #define VF2_PIXEL_BYTES		4U
 
+/* Marks a parameter that the kernel's platform interface passes but this board does not need. */
+#define UNUSED_PARAMETER(parameter)	((void)(parameter))
+
 /*
  * Whether the board's devices snoop the CPU caches when the device tree
  * does not say.
@@ -169,6 +172,8 @@ kern_platform_init(
 	 * image is an MBR disk, the SD card's UEFI image a GPT disk.
 	 */
 	partition_set_scheme(&drv_partition_scheme_pcat_auto);
+
+	/* Starts the disk registry empty, before any disk is published. */
 	disk_registry_reset();
 
 	/* Publishes the ramdisk, the boot device. */
@@ -183,9 +188,10 @@ kern_platform_init(
 	/* Without the ramdisk the SD card is the boot device, if there is one. */
 	if (error != 0 && sd_card == NULL)
 		return 0;
+
+	/* Says which disk the boot device is when there is no ramdisk. */
 	if (error != 0)
-		kern_logf("visionfive2: no ramdisk; the boot device is %s\n",
-		    sd_card->d_name);
+		kern_logf("visionfive2: no ramdisk; the boot device is %s\n", sd_card->d_name);
 
 	/* Describes the boot device the handoff names. */
 	device = &devices[0];
@@ -200,6 +206,8 @@ kern_platform_init(
 	device->heads = 0;
 	device->sectors = 0;
 	device->controller_location = 0;
+
+	/* Clears the record's reserved bytes. */
 	for (index = 0; index < sizeof(device->reserved); index++)
 		device->reserved[index] = 0;
 
@@ -216,8 +224,8 @@ kern_platform_refresh_devices(
 	const struct kern_boot_device *devices,
 	size_t count)
 {
-	(void)devices;
-	(void)count;
+	UNUSED_PARAMETER(devices);
+	UNUSED_PARAMETER(count);
 
 	/* Lists the SD card's partitions. */
 	describe_sd_partitions();
@@ -366,10 +374,12 @@ publish_ramdisk(
 		return error;
 	}
 
-	/* Succeeded: the ramdisk is a disk. */
+	/* Reports the ramdisk's size and place. */
 	kern_logf("visionfive2: ramdisk ram0 %llu KiB at %llx\n",
 		  (unsigned long long)(size / 1024U),
 		  (unsigned long long)physical);
+
+	/* Succeeded: the ramdisk is a disk. */
 	return 0;
 }
 
@@ -445,12 +455,14 @@ probe_soc(
 	const void *blob;
 	int error;
 
-	/* Finds the device tree the hardware layer kept, in the direct map. */
+	/* Finds the device tree's range the hardware layer kept. */
 	fdt_range = hal_get_arch_handoff("riscv64.fdt");
 	if (fdt_range == NULL) {
 		kern_logf("visionfive2: no device tree\n");
 		return;
 	}
+
+	/* Finds the tree's bytes in the direct map, refusing a tree outside RAM. */
 	blob = kern_pmem_to_kernel((hal_physaddr_t)fdt_range[0]);
 	if (blob == NULL) {
 		kern_logf("visionfive2: device tree outside RAM\n");
@@ -504,7 +516,7 @@ probe_soc(
 		kern_logf("visionfive2: sound unavailable (%d)\n", error);
 #ifdef CONFIG_VF2_DMA_TEST
 
-	/* The test kernel's DMA coherency check (ws256-p023). */
+	/* The test kernel's DMA coherency check. */
 	error = drv_vf2_dmatest_publish(&soc_tree);
 	if (error != 0)
 		kern_logf("visionfive2: DMA test unavailable (%d)\n", error);
@@ -719,13 +731,18 @@ describe_sd_partitions(
 
 	/* Writes each partition. */
 	for (index = 0; index < count; index++) {
+		/* Takes the partition's label, empty when the table gives none. */
 		entry = &sd_partitions[index];
 		label = "";
 		if ((entry->p_flags & PARTITION_HAS_LABEL) != 0)
 			label = entry->p_label;
+
+		/* Marks the EFI system partition. */
 		kind = "";
 		if ((entry->p_flags & PARTITION_EFI_SYSTEM) != 0)
 			kind = ", EFI system";
+
+		/* Writes the partition's line. */
 		kern_logf("visionfive2: %s partition %u start %llu blocks %llu (%llu MiB) \"%s\"%s\n",
 			  sd_card->d_name,
 			  entry->p_index + 1U,

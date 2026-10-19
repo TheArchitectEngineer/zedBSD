@@ -110,6 +110,8 @@ riscv64_trap(
 		take_user_fault(frame);
 		return;
 	}
+
+	/* A kernel fault. */
 	take_kernel_fault(frame);
 }
 
@@ -273,6 +275,8 @@ take_user_fault(
 		describe_frame(frame);
 		HAL_FATAL("riscv64 user fault handler failed");
 	}
+
+	/* Runs the kernel's work due before the return to user. */
 	kernel_user_return_handler();
 	riscv64_task_leave_user_frame();
 }

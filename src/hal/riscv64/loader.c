@@ -80,18 +80,21 @@ riscv64_loader_take(
 	/* A handoff of the first layout has nothing more to give. */
 	if (handoff->version < 2U || handoff->size < ZBL6_RISCV64_HANDOFF_V2_SIZE)
 		return RISCV64_LOADER_OK;
+
+	/* Records that the handoff has the second layout's fields. */
 	extras->layout = 2;
 
 	/* Takes the screen, when the loader handed one over that can be drawn on. */
 	extras->screen = take_screen(handoff, &extras->framebuffer);
 
-	/* Refuses a count the record's array cannot hold. */
+	/* Records how many ranges the loader gave, refusing a count the record's array cannot hold. */
 	extras->reserved_given = handoff->reserved_count;
 	if (handoff->reserved_count > ZBL6_RISCV64_RESERVED_MAX)
 		return RISCV64_LOADER_BAD_COUNT;
 
 	/* Keeps each range of the firmware's RAM the tree does not reserve already. */
 	for (index = 0; index < handoff->reserved_count; index++) {
+		/* Keeps the range, stopping on one that cannot be kept. */
 		base = handoff->reserved[index].phys;
 		size = handoff->reserved[index].size;
 		error = keep_range(info, extras, base, size);
@@ -197,6 +200,8 @@ keep_range(
 	covered = range_inside(info->reserved, info->reserved_count, base, end);
 	if (covered)
 		return RISCV64_LOADER_OK;
+
+	/* A range the tree leaves out of the map is kept from the allocator too. */
 	covered = range_inside(info->nomap, info->nomap_count, base, end);
 	if (covered)
 		return RISCV64_LOADER_OK;
@@ -204,6 +209,7 @@ keep_range(
 	/* Absorbs every kept range the new one touches, so the kept ones never touch each other. */
 	index = 0;
 	while (index < extras->reserved_count) {
+		/* Takes the bounds of the kept range in this slot. */
 		kept = &extras->reserved[index];
 		kept_end = kept->base + kept->size;
 

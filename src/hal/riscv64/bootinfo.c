@@ -34,7 +34,7 @@ static struct riscv64_fdt_info boot_fdt;
 /* The device tree's physical address, recorded with boot_fdt. */
 static uintptr_t boot_fdt_phys;
 
-/* The id of the hart the loader entered the kernel on, recorded with boot_fdt. */
+/* The id of the boot hart, which entered the kernel first; recorded with boot_fdt. */
 static uint64_t boot_hart_id;
 
 /*
@@ -101,6 +101,8 @@ riscv64_boot_record(
 		handoff_initrd.phys = info->initrd_start;
 		handoff_initrd.size = info->initrd_end - info->initrd_start;
 	}
+
+	/* Names the boot hart. */
 	handoff_boot_hart = hart_id;
 
 	/* The common handoff: one boot device, the first MBR partition, its id 0x80. */
@@ -285,6 +287,8 @@ riscv64_boot_parameter_given(
 			if (line[position + matched] != word[matched])
 				break;
 		}
+
+		/* Skips a word that differs from the wanted one before the wanted one ends. */
 		if (word[matched] != '\0')
 			continue;
 
@@ -332,6 +336,8 @@ riscv64_boot_parameter_number(
 			if (line[position + matched] != key[matched])
 				break;
 		}
+
+		/* Skips a word that does not start with the whole key. */
 		if (key[matched] != '\0')
 			continue;
 

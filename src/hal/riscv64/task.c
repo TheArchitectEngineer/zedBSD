@@ -535,6 +535,8 @@ hal_task_destroy(
 		task_stack_record_depth(task);
 		kernel_free(task->sys_stack_allocation);
 	}
+
+	/* Frees the record. */
 	kernel_free(task);
 }
 
@@ -893,6 +895,7 @@ riscv64_context_selftest(
 	if (self_count != 2)
 		HAL_FATAL("riscv64 context selftest second switch");
 
+	/* Reports that both switches came back. */
 	hal_puts("RISCV64 CONTEXT PASS\n");
 }
 

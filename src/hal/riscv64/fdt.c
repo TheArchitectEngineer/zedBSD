@@ -867,6 +867,7 @@ take_property(
 			node->phandle = number;
 			node->has_phandle = 1;
 		}
+
 		break;
 	case FDT_PROPERTY_SOURCES:
 		node->sources = number;
@@ -938,6 +939,7 @@ end_node(
 			info->initrd_start = read_number(node->initrd_start, node->initrd_start_length);
 			info->initrd_end = read_number(node->initrd_end, node->initrd_end_length);
 		}
+
 		break;
 	case FDT_ROLE_CPUS:
 		/* The timebase is usually given for all the harts at once. */
@@ -1015,6 +1017,8 @@ node_role(
 				return FDT_ROLE_CPU;
 			return FDT_ROLE_NONE;
 		}
+
+		/* A child of /reserved-memory is a reservation. */
 		matched = string_is(parent->name, "reserved-memory");
 		if (matched)
 			return FDT_ROLE_RESERVATION;
@@ -1170,6 +1174,8 @@ cpu_extensions(
 			if (present)
 				extensions |= extension_names[name].bit;
 		}
+
+		/* Succeeded: the extensions the list names. */
 		return extensions;
 	}
 
@@ -1258,6 +1264,8 @@ keep_cpu(
 		if (!okay)
 			disabled = 1;
 	}
+
+	/* A hart is usable when it has an MMU and is not disabled; it is counted either way. */
 	cpu->usable = 0;
 	if (node->mmu_type != NULL && !disabled)
 		cpu->usable = 1;
@@ -1296,6 +1304,8 @@ keep_plic(
 			count++;
 		}
 	}
+
+	/* Records how many contexts were read. */
 	info->plic_context_count = count;
 
 	/* Succeeded: the PLIC is recorded. */

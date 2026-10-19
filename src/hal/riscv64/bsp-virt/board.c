@@ -81,6 +81,8 @@ riscv64_board_describe(
 		virt_framebuffer_describe();
 		return;
 	}
+
+	/* Says why there is no screen. */
 	hal_printf("RISCV64 FRAMEBUFFER unavailable (%u); firmware console only\n",
 		   (uint32_t)board_display_error);
 }
