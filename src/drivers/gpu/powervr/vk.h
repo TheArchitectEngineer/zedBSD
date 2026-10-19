@@ -32,6 +32,7 @@
 #include <stdint.h>
 
 #include "drivers/gpu/i915/render/codec.h"
+#include "drivers/gpu/powervr/descriptor-set.h"
 #include "drivers/gpu/powervr/image-state.h"
 #include "drivers/gpu/powervr/shader.h"
 
@@ -167,10 +168,16 @@ struct powervr_vk_shader {
 	uint32_t *words;
 };
 
-/* A VkDescriptorSetLayout and a VkPipelineLayout: only their counts are kept. */
+/*
+ * A VkDescriptorSetLayout: its binding count, and where each binding
+ * lies in a set's memory.
+ */
 struct powervr_vk_set_layout {
 	uint32_t count;
+	struct powervr_set_layout layout;
 };
+
+/* A VkPipelineLayout: only its set count is kept. */
 
 struct powervr_vk_pipeline_layout {
 	uint32_t set_count;
@@ -188,10 +195,17 @@ struct powervr_vk_descriptor_slot {
 	uint64_t range;
 };
 
-/* A VkDescriptorSet: the pool it came from (only compared) and its bindings by number. */
+/*
+ * A VkDescriptorSet: the pool it came from (only compared), its storage
+ * buffers by binding number for the compute path, and its memory's bytes
+ * as its layout places the descriptors (a copy the executor puts in the
+ * core's memory when a draw reads it).
+ */
 struct powervr_vk_descriptor_set {
 	const void *pool;
 	struct powervr_vk_descriptor_slot slots[POWERVR_VK_BINDINGS_MAX];
+	struct powervr_set_layout layout;
+	uint8_t *bytes;
 };
 
 /*

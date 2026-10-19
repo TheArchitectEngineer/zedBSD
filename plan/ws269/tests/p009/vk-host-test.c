@@ -479,6 +479,11 @@ main(
 	struct powervr_resource *reply;
 	struct powervr_resource *memory_blob;
 	struct powervr_vk_memory *memory;
+	struct powervr_vk_descriptor_set *set;
+	const struct powervr_vk_buffer *bound;
+	uint64_t set_address;
+	uint64_t descriptor_address;
+	uint32_t descriptor_size;
 	struct powervr_vk_memory *image_memory;
 	struct powervr_vk_image_view *view;
 	struct powervr_vk_sampler *sampler;
@@ -543,6 +548,16 @@ main(
 	replies_compute((uint8_t *)reply->buffer->view);
 	if (memory != NULL)
 		check_stream(memory->storage->address, spirv, spirv_words);
+
+	/* The set's memory: binding 0's buffer descriptor holds the buffer's address and whole size (p010h). */
+	set = powervr_vk_payload(session.vk, I915_VK_OBJ_DESCRIPTOR_SET, 17);
+	bound = powervr_vk_payload(session.vk, I915_VK_OBJ_BUFFER, 11);
+	check(set != NULL && bound != NULL && set->layout.bytes == 16 && set->bytes != NULL, "the set has 16 bytes of memory");
+	if (set != NULL && bound != NULL && set->bytes != NULL && powervr_vk_buffer_address(bound, &set_address) == 0) {
+		memcpy(&descriptor_address, &set->bytes[0], 8);
+		memcpy(&descriptor_size, &set->bytes[8], 4);
+		check(descriptor_address == set_address && descriptor_size == bound->size, "the buffer descriptor's address and size");
+	}
 
 	/* The image frame: the shared path refused, the linear and optimal images, the view's words. */
 	bytes = frame_image(reply->identifier, &frame);

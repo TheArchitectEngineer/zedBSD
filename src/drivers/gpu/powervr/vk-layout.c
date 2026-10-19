@@ -55,6 +55,8 @@ static int free_sets(struct powervr_vk_session *session, struct i915_wire_reader
 static int update_sets(struct powervr_vk_session *session, struct i915_wire_reader *reader);
 static int update_write(struct powervr_vk_session *session, struct i915_wire_reader *reader);
 static int slot_buffer(struct powervr_vk_descriptor_slot *slot, struct powervr_vk_object *buffer, uint64_t offset, uint64_t range);
+static void set_buffer(struct powervr_vk_session *session, struct powervr_vk_descriptor_set *set, uint32_t binding, uint32_t element, const VkDescriptorBufferInfo *info);
+static void set_image(struct powervr_vk_session *session, struct powervr_vk_descriptor_set *set, uint32_t binding, uint32_t element, uint64_t sampler_id, uint64_t view_id);
 static int set_destroy(struct powervr_vk_session *session, void *payload);
 static int create_pipelines(struct powervr_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int decode_pipeline(struct powervr_vk_session *session, struct i915_wire_reader *reader, struct powervr_vk_pipeline *pipeline);
@@ -223,6 +225,7 @@ create_set_layout(
 	struct i915_wire_writer *reply)
 {
 	VkDescriptorSetLayoutCreateInfo info;
+	struct powervr_set_binding_info bindings[POWERVR_SET_BINDINGS_MAX];
 	struct powervr_vk_set_layout *layout;
 	uint64_t identity;
 	uint32_t index;
@@ -241,17 +244,30 @@ create_set_layout(
 	error = 0;
 	if (info.bindingCount != 0 && info.pBindings == NULL)
 		error = EINVAL;
+	if (info.bindingCount > POWERVR_SET_BINDINGS_MAX)
+		error = ENOTSUP;
 	for (index = 0; error == 0 && index < info.bindingCount; index++) {
 		if (info.pBindings[index].binding >= POWERVR_VK_BINDINGS_MAX)
 			error = ENOTSUP;
+		bindings[index].binding = info.pBindings[index].binding;
+		bindings[index].type = info.pBindings[index].descriptorType;
+		bindings[index].count = info.pBindings[index].descriptorCount;
 	}
 
-	/* The layout keeps its count. */
+	/* The layout keeps its count and the bindings' places in a set's memory. */
 	layout = NULL;
 	if (error == 0) {
 		layout = kern_calloc(1, sizeof(*layout));
-		if (layout != NULL)
-			layout->count = info.bindingCount;
+		if (layout == NULL)
+			error = ENOMEM;
+	}
+	if (error == 0) {
+		layout->count = info.bindingCount;
+		error = powervr_set_layout_build(bindings, info.bindingCount, &layout->layout);
+		if (error != 0) {
+			kern_free(layout);
+			layout = NULL;
+		}
 	}
 
 	/* Publishes the layout and answers. */
@@ -499,6 +515,7 @@ allocate_sets(
 	VkDescriptorSetAllocateInfo info;
 	uint64_t identities[LAYOUT_ITEMS_MAX];
 	const struct powervr_vk_descriptor_pool *pool;
+	const struct powervr_vk_set_layout *layout;
 	struct powervr_vk_descriptor_set *set;
 	uint64_t count;
 	uint64_t index;
@@ -526,10 +543,18 @@ allocate_sets(
 	pool = powervr_vk_payload(session, I915_VK_OBJ_DESCRIPTOR_POOL, (uint64_t)(uintptr_t)info.descriptorPool);
 	if (pool == NULL)
 		error = EINVAL;
+	if (error == 0 && count != 0 && info.pSetLayouts == NULL)
+		error = EINVAL;
 
-	/* Publishes each set, up to the first failure. */
+	/* Publishes each set with its layout's memory, up to the first failure. */
 	published = 0;
 	for (index = 0; error == 0 && index < count; index++) {
+		layout = powervr_vk_payload(session, I915_VK_OBJ_DESCRIPTOR_SET_LAYOUT, (uint64_t)(uintptr_t)info.pSetLayouts[index]);
+		if (layout == NULL) {
+			error = EINVAL;
+			break;
+		}
+
 		set = kern_calloc(1, sizeof(*set));
 		if (set == NULL) {
 			error = ENOMEM;
@@ -537,8 +562,19 @@ allocate_sets(
 		}
 
 		set->pool = pool;
+		set->layout = layout->layout;
+		if (layout->layout.bytes != 0) {
+			set->bytes = kern_calloc(1, layout->layout.bytes);
+			if (set->bytes == NULL) {
+				kern_free(set);
+				error = ENOMEM;
+				break;
+			}
+		}
+
 		error = powervr_vk_object_publish(session, I915_VK_OBJ_DESCRIPTOR_SET, identities[index], set, set_destroy);
 		if (error != 0) {
+			kern_free(set->bytes);
 			kern_free(set);
 			break;
 		}
@@ -654,10 +690,12 @@ update_sets(
 }
 
 /*
- * Reads one descriptor write and applies its storage buffers:
+ * Reads one descriptor write, writes its descriptors into the set's
+ * memory and binds its storage buffers for the compute path:
  * [sType][pNext][set][binding][element][count][type][images]
  * {[sampler][view][layout]}[buffers]{VkDescriptorBufferInfo}[texel
- * views]{identity}.  Element 0 of each binding is the one bound.
+ * views]{identity}.  Element 0 of each binding is the one the compute
+ * path binds.
  */
 static int
 update_write(
@@ -667,6 +705,8 @@ update_write(
 	VkDescriptorBufferInfo buffer;
 	struct powervr_vk_descriptor_set *set;
 	struct powervr_vk_object *bound;
+	uint64_t sampler_id;
+	uint64_t view_id;
 	uint64_t set_id;
 	uint64_t count;
 	uint64_t item;
@@ -688,14 +728,16 @@ update_write(
 		return EINVAL;
 	set = powervr_vk_payload(session, I915_VK_OBJ_DESCRIPTOR_SET, set_id);
 
-	/* The image descriptors are read; none is bound. */
+	/* The image descriptors, written into the set's memory from the element on. */
 	for (item = 0; item < count; item++) {
-		(void)drv_i915_wire_read_u64(reader);
-		(void)drv_i915_wire_read_u64(reader);
+		sampler_id = drv_i915_wire_read_u64(reader);
+		view_id = drv_i915_wire_read_u64(reader);
 		(void)drv_i915_wire_read_u32(reader);
+		if (reader->error != 0)
+			return EINVAL;
+		if (set != NULL)
+			set_image(session, set, binding, element + (uint32_t)item, sampler_id, view_id);
 	}
-	if (reader->error != 0)
-		return EINVAL;
 
 	/* The buffer descriptors; the storage buffers are bound from the element on. */
 	count = drv_i915_wire_read_u64(reader);
@@ -706,6 +748,10 @@ update_write(
 		i915_vkc_dec_VkDescriptorBufferInfo(reader, &session->arena, &buffer);
 		if (reader->error != 0)
 			return EINVAL;
+
+		/* The buffer descriptor in the set's memory. */
+		if (set != NULL)
+			set_buffer(session, set, binding, element + (uint32_t)item, &buffer);
 
 		/* Only a storage buffer of a known set at a binding the set has; others stay unbound. */
 		if (set == NULL || type != VK_DESCRIPTOR_TYPE_STORAGE_BUFFER || element != 0)
@@ -762,6 +808,97 @@ slot_buffer(
 	return 0;
 }
 
+/*
+ * Writes a buffer descriptor into a set's memory: the range's address
+ * and size, or zeros for a null buffer or one not bound to memory.  A
+ * binding or element the set's layout does not have is left alone, as
+ * is a descriptor that is not a buffer's.
+ *
+ * Procedure referenced:
+ * Mesa 26.2.5 src/imagination/vulkan/pvr_arch_descriptor_set.c
+ * (write_buffer: zeros for VK_NULL_HANDLE, else the buffer's address
+ * moved by the offset and vk_buffer_range's size).
+ */
+static void
+set_buffer(
+	struct powervr_vk_session *session,
+	struct powervr_vk_descriptor_set *set,
+	uint32_t binding,
+	uint32_t element,
+	const VkDescriptorBufferInfo *info)
+{
+	const struct powervr_vk_buffer *buffer;
+	uint64_t address;
+	uint64_t range;
+	uint32_t offset;
+	int error;
+
+	/* The descriptor's place; nothing to write where the layout has none. */
+	error = powervr_set_descriptor_offset(&set->layout, binding, element, POWERVR_SHADER_PART_BUFFER_ADDRESS, &offset);
+	if (error != 0)
+		return;
+
+	/* The buffer's range: VK_WHOLE_SIZE reaches its end. */
+	address = 0;
+	range = 0;
+	buffer = powervr_vk_payload(session, I915_VK_OBJ_BUFFER, (uint64_t)(uintptr_t)info->buffer);
+	if (buffer != NULL && info->offset <= buffer->size) {
+		error = powervr_vk_buffer_address(buffer, &address);
+		if (error != 0) {
+			address = 0;
+		} else {
+			address += info->offset;
+			range = info->range == VK_WHOLE_SIZE ? buffer->size - info->offset : info->range;
+			if (range > UINT32_MAX)
+				range = UINT32_MAX;
+		}
+	}
+
+	/* The descriptor's bytes. */
+	powervr_descriptor_buffer(&set->bytes[offset], address, (uint32_t)range);
+}
+
+/*
+ * Writes an image, sampler or combined image and sampler descriptor into
+ * a set's memory, by the binding's type: the view's state words and the
+ * words the shader reads, the sampler's words.  A view or sampler that is
+ * not known is left as it was, as is a binding the layout does not have.
+ *
+ * Procedure referenced:
+ * Mesa 26.2.5 src/imagination/vulkan/pvr_arch_descriptor_set.c
+ * (write_sampled_image, write_sampler, write_image_sampler: the image's
+ * descriptor, then the sampler's at 32 bytes for a combined one).
+ */
+static void
+set_image(
+	struct powervr_vk_session *session,
+	struct powervr_vk_descriptor_set *set,
+	uint32_t binding,
+	uint32_t element,
+	uint64_t sampler_id,
+	uint64_t view_id)
+{
+	const struct powervr_vk_image_view *view;
+	const struct powervr_vk_sampler *sampler;
+	const struct powervr_vk_image *image;
+	uint32_t offset;
+	int error;
+
+	/* The view's descriptor, where the binding has one. */
+	error = powervr_set_descriptor_offset(&set->layout, binding, element, POWERVR_SHADER_PART_IMAGE_STATE, &offset);
+	view = powervr_vk_payload(session, I915_VK_OBJ_IMAGE_VIEW, view_id);
+	if (error == 0 && view != NULL && view->image != NULL) {
+		image = view->image->payload;
+		powervr_descriptor_image(&set->bytes[offset], view->words, (uint32_t)image->layout.layer_bytes, powervr_pack_info(image->format->vk_format));
+	}
+
+	/* The sampler's descriptor, where the binding has one; no comparison. */
+	error = powervr_set_descriptor_offset(&set->layout, binding, element, POWERVR_SHADER_PART_SAMPLER_STATE, &offset);
+	sampler = powervr_vk_payload(session, I915_VK_OBJ_SAMPLER, sampler_id);
+	if (error == 0 && sampler != NULL)
+		powervr_descriptor_sampler(&set->bytes[offset], sampler->words, VK_COMPARE_OP_NEVER);
+}
+
 /* Destroys a set nothing holds: its bindings let their buffers go. */
 static int
 set_destroy(
@@ -783,6 +920,7 @@ set_destroy(
 			first_error = error;
 	}
 
+	kern_free(set->bytes);
 	kern_free(set);
 	if (first_error != 0)
 		return first_error;
