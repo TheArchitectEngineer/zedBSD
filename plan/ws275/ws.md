@@ -11,7 +11,7 @@
 - 決定（2026-10-19 18:29 ユーザー）: 「まずAのフレームバッファだけ実装して、Sun PGX64とかはあとで対応できるように口だけ残しておきます。」 → 今回は firmware framebuffer だけを実装し、既知の card の driver が引き取る口（登録・優先度・引き取りの順）は作るが card の driver そのもの（PGX64・XVR-500/600 など）は後の WS。D8 は今は選ばない。
 - 決定（2026-10-19 19:06 ユーザー、クリック）: D6 sparcv9 の file は「P の担当が変える」（merge の前に差分を見せる）。HAL の差分は「承認する」。
 - 決定（2026-10-19 19:12 ユーザー、クリック）: HAL の差分は「改訂 3 で承認」。D4「(a) loader が tree から」。D1 (a)・D2 (a)・D5 (a)・D7 (b) は「既定のまま」。
-- 担当: P1（p001 cleared、p002 は q1311）。
+- 担当: P1（p001 cleared、p002 は q1311、p003 は q1312、p004 は q1314）。
 
 ## 完了の条件（改訂 3）
 
@@ -28,7 +28,7 @@
 | p002 | loader（display の node・property・qext・`color!`・i8042、`ofw.h`）、boot.h と HAL の名前付きの値（fallback の時も）、HAL の早期の console | p001、HAL の承認（改訂 3 の文面）、D4・D6・D7 | cleared 待ち（[phase.md](phase002/phase.md)、条件 1〜6 は満たす（Q1 判定、T1-743）。ユーザーの sparcv9 の差分の確認の後、Q1 が merge して cleared） |
 | p002b | T1 の観察（gdbstub で handoff の値、`-g` x8・x32・既定の 3 条件の PNG） | p002 | 観察済み（T1-743、2026-10-19、QEMU のみ。qext の実値・色の順は未確認で p004 以降） |
 | p003 | generic の前段（登録・優先度・行の分割）と host 試験 | p002b、D1 | cleared 待ち（[phase.md](phase003/phase.md)、host 試験 PASS・build warning 0、P1 q1312） |
-| p004 | firmware fb の backend、text の console と出力の道、8042 の共有と sun4u の poll、evdev、sun4u.c | p003、D2・D5・D6 | planned |
+| p004 | firmware fb の backend、text の console と出力の道、8042 の共有と sun4u の poll、evdev、sun4u.c | p003、D2・D5・D6 | cleared 待ち（[phase.md](phase004/phase.md)、build warning 0・host 試験 PASS、P1 q1314。T1 の依頼あり、sparcv9 の差分はユーザーの確認の後に merge） |
 | p005 | userland の config・Makefile・vmunix.mk・libX11 の BE、build（warning 0） | p004、D6 | planned |
 | p006 | T1 の試験（sun4u 8・32 bpp・既定の X、色の画素、mouse、回帰） | p005（boot-test の `QEMU_EXTRA`・`mouse:`・`BOOT_TEXT_ORIGINS` は main に入済み） | planned |
 | p007 | 規約の全文の見直し | p006 | planned |
