@@ -278,7 +278,7 @@
  * the cleanup's busy answer in a return slot.
  *
  * Values referenced:
- * StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
+ * Linux v7.3
  * drivers/gpu/drm/imagination/pvr_rogue_fwif.h
  * (ROGUE_FWIF_KCCB_CMD_KICK 101, ROGUE_FWIF_KCCB_CMD_MMUCACHE 102,
  * ROGUE_FWIF_KCCB_CMD_CLEANUP 106, each with the magic in the upper 16
@@ -306,7 +306,7 @@
  * word the firmware writes once it has.
  *
  * Values referenced:
- * StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
+ * Linux v7.3
  * drivers/gpu/drm/imagination/pvr_rogue_fwif.h
  * (struct rogue_fwif_mmucachedata: the flags 0, the sync word's firmware
  * address 4, its value 8; ROGUE_FWIF_MMUCACHEDATA_FLAGS_PT 1, ..._PD 2,
@@ -321,7 +321,7 @@
  * The firmware's notices the host acts on.
  *
  * Values referenced:
- * StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
+ * Linux v7.3
  * drivers/gpu/drm/imagination/pvr_rogue_fwif.h
  * (ROGUE_FWIF_FWCCB_CMD_CONTEXT_RESET_NOTIFICATION 105,
  * ROGUE_FWIF_FWCCB_CMD_REQUEST_GPU_RESTART 109,
@@ -338,7 +338,7 @@
  * One memory context as the firmware sees it.
  *
  * Values referenced:
- * StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
+ * Linux v7.3
  * drivers/gpu/drm/imagination/pvr_rogue_fwif_check.h
  * (struct rogue_fwif_fwmemcontext, 32 bytes: the catalogue's physical
  * address 0, the catalogue register set 8); pvr_rogue_fwif.h
@@ -354,7 +354,7 @@
  * data master first, then the static state, then counters and flags.
  *
  * Values referenced:
- * StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
+ * Linux v7.3
  * drivers/gpu/drm/imagination/pvr_rogue_fwif_check.h
  * (struct rogue_fwif_fwcommoncontext, 152 bytes: the command buffer's
  * control 0 and base 4, the state 24, the priority 32, the data master
@@ -386,7 +386,7 @@
  * a fence waits for or an update writes.
  *
  * Values referenced:
- * StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
+ * Linux v7.3
  * drivers/gpu/drm/imagination/pvr_rogue_fwif_shared_check.h
  * (struct rogue_fwif_cccb_ctl, 32 bytes: the write offset 0, the read
  * offset 4, the dependency offset 8, the wrap mask 12; struct
@@ -418,7 +418,7 @@
  * and where the control stream and the context's resume buffer go in it.
  *
  * Values referenced:
- * StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
+ * Linux v7.3
  * drivers/gpu/drm/imagination/pvr_rogue_fwif.h
  * (ROGUE_FWIF_CCB_CMD_TYPE_CDM 205 with ROGUE_CCB_TYPE_TASK and the
  * magic); pvr_rogue_fwif_client_check.h (struct rogue_fwif_cmd_compute,
@@ -436,12 +436,87 @@
  * The device address window a render context's buffers are mapped in.
  *
  * Values referenced:
- * StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
+ * Linux v7.3
  * drivers/gpu/drm/imagination/pvr_rogue_heap_config.h
  * (ROGUE_GENERAL_HEAP_BASE 0x8000000000, ROGUE_GENERAL_HEAP_SIZE
  * 128 GiB).
  */
 #define POWERVR_GENERAL_HEAP_BASE	0x8000000000ULL
 #define POWERVR_GENERAL_HEAP_BYTES	0x2000000000ULL
+
+/*
+ * The free list requests and the statistics the firmware sends, the
+ * kernel commands that answer the requests, and where their fields lie
+ * after a command's type and flags.
+ *
+ * Values referenced:
+ * Linux v7.3 drivers/gpu/drm/imagination/pvr_rogue_fwif.h
+ * (ROGUE_FWIF_FWCCB_CMD_FREELIST_GROW 103,
+ * ROGUE_FWIF_FWCCB_CMD_FREELISTS_RECONSTRUCTION 104,
+ * ROGUE_FWIF_FWCCB_CMD_UPDATE_STATS 107,
+ * ROGUE_FWIF_KCCB_CMD_FREELIST_GROW_UPDATE 110,
+ * ROGUE_FWIF_KCCB_CMD_FREELISTS_RECONSTRUCTION_UPDATE 112, each with the
+ * magic; struct rogue_fwif_fwccb_cmd_freelist_gs_data: the list's
+ * identity 0; struct rogue_fwif_fwccb_cmd_freelists_reconstruction_data:
+ * the count 0, the recovery count 4, the identities 8; struct
+ * rogue_fwif_fwccb_cmd_update_stats_data: the counter 0, the process 4,
+ * the adjustment 8; ROGUE_FWIF_FWCCB_CMD_UPDATE_NUM_PARTIAL_RENDERS 1,
+ * ..._NUM_OUT_OF_MEMORY 2); pvr_rogue_fwif_check.h (struct
+ * rogue_fwif_freelist_gs_data: the list's firmware address 0, the pages
+ * added 4, the pages in all 8, the pages held ready 12, 16 bytes; struct
+ * rogue_fwif_freelists_reconstruction_data: the count 0, the identities
+ * 4, 76 bytes).
+ */
+#define POWERVR_NOTICE_FREE_LIST_GROW	(POWERVR_COMMAND_MAGIC | 103U)
+#define POWERVR_NOTICE_FREE_LIST_REBUILD	(POWERVR_COMMAND_MAGIC | 104U)
+#define POWERVR_NOTICE_STATISTICS	(POWERVR_COMMAND_MAGIC | 107U)
+#define POWERVR_COMMAND_GROW_ANSWER	(POWERVR_COMMAND_MAGIC | 110U)
+#define POWERVR_COMMAND_REBUILD_ANSWER	(POWERVR_COMMAND_MAGIC | 112U)
+#define POWERVR_GROW_REQUEST_LIST	0U
+#define POWERVR_REBUILD_REQUEST_COUNT	0U
+#define POWERVR_REBUILD_REQUEST_LISTS	8U
+#define POWERVR_STATISTICS_COUNTER	0U
+#define POWERVR_STATISTICS_ADJUSTMENT	8U
+#define POWERVR_STATISTICS_PARTIAL	1U
+#define POWERVR_STATISTICS_OUT_OF_MEMORY	2U
+#define POWERVR_GROW_ANSWER_LIST	0U
+#define POWERVR_GROW_ANSWER_ADDED	4U
+#define POWERVR_GROW_ANSWER_PAGES	8U
+#define POWERVR_GROW_ANSWER_READY	12U
+#define POWERVR_REBUILD_ANSWER_COUNT	0U
+#define POWERVR_REBUILD_ANSWER_LISTS	4U
+
+/*
+ * The firmware objects a cleanup command names beyond a context: one
+ * half of a render target data set, and a free list.
+ *
+ * Values referenced:
+ * Linux v7.3 drivers/gpu/drm/imagination/pvr_rogue_fwif.h
+ * (enum rogue_fwif_cleanup_type: ROGUE_FWIF_CLEANUP_HWRTDATA 1,
+ * ROGUE_FWIF_CLEANUP_FREELIST 2).
+ */
+#define POWERVR_CLEANUP_TARGET_DATA	1U
+#define POWERVR_CLEANUP_FREE_LIST	2U
+
+/*
+ * The device address windows of the data sequencer's and the shading
+ * cluster's programs and of the transfer queue's fragment streams, and
+ * the part at the start of the first two that the firmware's own static
+ * programs take (one page each).
+ *
+ * Values referenced:
+ * Linux v7.3 drivers/gpu/drm/imagination/pvr_rogue_heap_config.h
+ * (ROGUE_PDSCODEDATA_HEAP_BASE 0xDA00000000 and its size 4 GiB,
+ * ROGUE_USCCODE_HEAP_BASE 0xE000000000 and its size 4 GiB,
+ * ROGUE_TRANSFER_FRAG_HEAP_BASE 0xE400000000 and its size 16 GiB);
+ * pvr_vm.c (static_data_areas: the VDM sync program at 0 and the end of
+ * tile program at 128 of the first, the VDM sync program at 0 of the
+ * second, each heap's reserved part rounded to a page).
+ */
+#define POWERVR_PDS_HEAP_BYTES		0x100000000ULL
+#define POWERVR_USC_HEAP_BYTES		0x100000000ULL
+#define POWERVR_TRANSFER_HEAP_BASE	0xe400000000ULL
+#define POWERVR_TRANSFER_HEAP_BYTES	0x400000000ULL
+#define POWERVR_STATIC_AREA_BYTES	0x1000U
 
 #endif

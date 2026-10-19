@@ -23,6 +23,7 @@
 #include "drivers/gpu/powervr/powervr-private.h"
 #include "drivers/gpu/powervr/gpu-mmu.h"
 #include "drivers/gpu/powervr/render.h"
+#include "drivers/gpu/powervr/render-target-layout.h"
 
 /*
  * The most a session holds, the largest allocation, and how many native
@@ -110,6 +111,44 @@ struct powervr_marker {
 };
 
 struct powervr_vk_session;
+struct powervr_free_list;
+struct powervr_targets;
+struct powervr_target;
+
+/*
+ * The program windows of a session beyond the general one: the data
+ * sequencer's, the shading cluster's and the transfer queue's fragment
+ * streams.
+ */
+enum powervr_program_heap {
+	POWERVR_PROGRAM_PDS,
+	POWERVR_PROGRAM_USC,
+	POWERVR_PROGRAM_TRANSFER
+};
+
+/*
+ * Where the session's own programs start in the data sequencer's and the
+ * shading cluster's windows: past the firmware's static programs, at the
+ * place the Vulkan executor's programs have, which the first range of
+ * each window holds for them.
+ */
+#define POWERVR_PROGRAM_HEAP_START	0x10000U
+#define POWERVR_EXECUTOR_PDS_BYTES	0x2000U
+#define POWERVR_EXECUTOR_USC_BYTES	0x10000U
+
+/*
+ * What the firmware reported of the render targets' free lists since the
+ * node started: the grow requests it made (each answered with nothing
+ * added), the rebuilds after a recovery, and the partial renders and
+ * out-of-memory events its statistics counted.  A render compares them
+ * before and after it runs to learn whether its free lists ran out.
+ */
+struct powervr_target_events {
+	unsigned grow_requests;
+	unsigned rebuilds;
+	unsigned partial_renders;
+	unsigned out_of_memory;
+};
 
 /*
  * One open of the render node.
@@ -124,13 +163,19 @@ struct powervr_vk_session;
  * the render node's queue lock.  Blobs lists the session's blobs and
  * imports by identifier, and vk is the Vulkan executor's session (made
  * by the first command frame); both change only in the session's own
- * ioctls, which the GPU core serializes.
+ * ioctls, which the GPU core serializes.  So do targets, the render
+ * targets and free lists made by the first render, and abandoned, set
+ * once a submission ran out of time while the core may still run it.
+ * The program windows' spaces change under the core's lock.
  */
 struct powervr_session {
 	struct powervr_session *next;
 	struct powervr_render *render;
 	struct powervr_gpu_mmu mmu;
 	struct powervr_gpu_space space;
+	struct powervr_gpu_space pds_space;
+	struct powervr_gpu_space usc_space;
+	struct powervr_gpu_space transfer_space;
 	struct powervr_object memory_context;
 	struct powervr_object context;
 	struct powervr_object context_state;
@@ -160,6 +205,8 @@ struct powervr_session {
 	struct powervr_marker markers[POWERVR_RENDER_PENDING];
 	unsigned reserved;
 	struct powervr_vk_session *vk;
+	struct powervr_targets *targets;
+	unsigned abandoned;
 };
 
 /*
@@ -175,7 +222,10 @@ struct powervr_session {
  * the core's lock, says a restart failed and the firmware is gone.
  * Table_memory is where sessions' page tables come from.  Running and
  * service_done, under the queue lock, tell the service thread to end and
- * say it has.
+ * say it has.  Free_lists lists every session's free lists by the
+ * identity the firmware names them by, next_free_list is the identity
+ * the next one takes, and target_events counts what the firmware
+ * reported of them; all three are under the core's lock.
  */
 struct powervr_render {
 	struct powervr_core *core;
@@ -190,6 +240,9 @@ struct powervr_render {
 	struct powervr_session *sessions;
 	struct powervr_buffer *kept_buffers;
 	struct powervr_session *kept_sessions;
+	struct powervr_free_list *free_lists;
+	struct powervr_target_events target_events;
+	uint32_t next_free_list;
 	unsigned faulted;
 	unsigned lost;
 	unsigned running;
@@ -320,5 +373,50 @@ int powervr_render_isolate(void *device, void *session);
  */
 #define POWERVR_NATIVE_EMPTY_JOB	0x4e4a4250U
 #define POWERVR_NATIVE_BYTES		8U
+
+/* Sets up a session's program windows and holds the Vulkan executor's places in them. */
+int powervr_session_heaps_init(struct powervr_session *session);
+
+/*
+ * Maps a buffer at a place of its own in one of a session's program
+ * windows; the core's lock is not held.
+ */
+int powervr_session_program_map(struct powervr_session *session, enum powervr_program_heap heap, struct powervr_buffer *buffer, uint64_t *address);
+
+/* Unmaps a buffer mapped by powervr_session_program_map() and gives its place back. */
+void powervr_session_program_unmap(struct powervr_session *session, enum powervr_program_heap heap, struct powervr_buffer *buffer, uint64_t address);
+
+/*
+ * Finds or makes a session's render target for a frame shape, with the
+ * session's global free list made first; the core's lock is not held.
+ */
+int powervr_session_target(struct powervr_render *render, struct powervr_session *session, const struct powervr_target_shape *shape, struct powervr_target **result);
+
+/* Reports the firmware address of one half (0 or 1) of a render target's data set. */
+uint32_t powervr_target_data_address(const struct powervr_target *target, unsigned half);
+
+/* Reports the firmware address of the cleanup count of one half of a render target, which a kick names. */
+uint32_t powervr_target_cleanup_address(const struct powervr_target *target, unsigned half);
+
+/*
+ * Has the firmware clean up every render target and free list of a
+ * session, bounded; EBUSY when one stays busy.
+ */
+int powervr_session_targets_cleanup(struct powervr_render *render, struct powervr_session *session);
+
+/* Returns a session's render targets and free lists once the firmware no longer uses them. */
+void powervr_session_targets_destroy(struct powervr_render *render, struct powervr_session *session);
+
+/*
+ * Returns a kept session's render targets and free lists once the
+ * firmware that knew them is gone; the core's lock is held.
+ */
+void powervr_session_targets_discard(struct powervr_session *session);
+
+/* Acts on a free list notice of the firmware; the core's lock is held. */
+void powervr_targets_notice(struct powervr_render *render, uint32_t type, const struct powervr_object *buffer, uint32_t offset);
+
+/* Copies what the firmware reported of the free lists; the core's lock is held. */
+void powervr_render_target_events(const struct powervr_render *render, struct powervr_target_events *events);
 
 #endif
