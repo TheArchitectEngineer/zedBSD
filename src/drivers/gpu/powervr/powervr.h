@@ -59,4 +59,14 @@ struct drv_powervr_description {
  */
 int drv_powervr_attach(const struct drv_powervr_description *description);
 
+/*
+ * Publishes the loader's screen as the driver's display node.
+ *
+ * Runs before drv_powervr_attach(), so the display node is the first GPU
+ * device and the render node the second; it does not depend on the core.
+ * ENOENT means the loader left no screen.  Each outcome is one line of
+ * the boot log.
+ */
+int drv_powervr_display_attach(void);
+
 #endif

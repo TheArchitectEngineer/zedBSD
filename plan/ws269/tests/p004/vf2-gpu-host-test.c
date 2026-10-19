@@ -234,6 +234,8 @@ kern_pmem_map_uncached(
 
 int kern_pmem_unmap_uncached(void *mapped, size_t size) { (void)mapped; (void)size; return 0; }
 void kern_dcache_clean_range(const void *address, size_t size) { (void)address; (void)size; }
+/* The display node (ws269-p007) is checked by its own test; here the board has no screen. */
+int drv_powervr_display_attach(void) { return ENOENT; }
 void kern_dcache_invalidate_range(const void *address, size_t size) { (void)address; (void)size; }
 
 /* Reads a whole file into memory. */
