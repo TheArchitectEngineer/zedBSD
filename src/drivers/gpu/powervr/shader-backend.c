@@ -573,10 +573,20 @@ select_instruction(
 	const struct powervr_ir_instruction *instruction)
 {
 	const struct powervr_shader_request *request;
+	const struct powervr_shader_request *image;
+	const struct powervr_shader_request *sampler;
 	struct shader_machine_operation *operation;
 	struct shader_machine_register destination;
 	struct shader_machine_register source;
+	struct shader_machine_register condition;
+	struct shader_machine_register a;
+	struct shader_machine_register b;
+	struct shader_machine_register c;
 	unsigned modifiers;
+	unsigned ma;
+	unsigned mb;
+	unsigned mc;
+	unsigned channel;
 	unsigned opcode;
 
 	/* Structure has its own selection. */
@@ -615,27 +625,18 @@ select_instruction(
 		break;
 	case POWERVR_IR_FLOAT_MULTIPLY_ADD:
 		destination = destination_of(select, instruction);
-		{
-			struct shader_machine_register a;
-			struct shader_machine_register b;
-			struct shader_machine_register c;
-			unsigned ma;
-			unsigned mb;
-			unsigned mc;
-
-			a = operand_register(select, &instruction->source[0], &ma);
-			b = operand_register(select, &instruction->source[1], &mb);
-			c = operand_register(select, &instruction->source[2], &mc);
-			operation = append(select, MACHINE_FLOAT_MULTIPLY_ADD);
-			if (operation != NULL) {
-				operation->destination[0] = destination;
-				operation->source[0] = a;
-				operation->source[1] = b;
-				operation->source[2] = c;
-				operation->modifiers[0] = (uint8_t)ma;
-				operation->modifiers[1] = (uint8_t)mb;
-				operation->modifiers[2] = (uint8_t)mc;
-			}
+		a = operand_register(select, &instruction->source[0], &ma);
+		b = operand_register(select, &instruction->source[1], &mb);
+		c = operand_register(select, &instruction->source[2], &mc);
+		operation = append(select, MACHINE_FLOAT_MULTIPLY_ADD);
+		if (operation != NULL) {
+			operation->destination[0] = destination;
+			operation->source[0] = a;
+			operation->source[1] = b;
+			operation->source[2] = c;
+			operation->modifiers[0] = (uint8_t)ma;
+			operation->modifiers[1] = (uint8_t)mb;
+			operation->modifiers[2] = (uint8_t)mc;
 		}
 		break;
 	case POWERVR_IR_FLOAT_RECIPROCAL:
@@ -710,49 +711,36 @@ select_instruction(
 		break;
 	case POWERVR_IR_SELECT:
 		destination = destination_of(select, instruction);
-		{
-			struct shader_machine_register condition;
-			struct shader_machine_register a;
-			struct shader_machine_register b;
-			unsigned ma;
-			unsigned mb;
-
-			condition = operand_plain(select, &instruction->source[0], 0);
-			a = operand_register(select, &instruction->source[1], &ma);
-			b = operand_register(select, &instruction->source[2], &mb);
-			operation = append(select, MACHINE_SELECT);
-			if (operation != NULL) {
-				operation->destination[0] = destination;
-				operation->source[0] = condition;
-				operation->source[1] = a;
-				operation->source[2] = b;
-				operation->modifiers[1] = (uint8_t)ma;
-				operation->modifiers[2] = (uint8_t)mb;
-			}
+		condition = operand_plain(select, &instruction->source[0], 0);
+		a = operand_register(select, &instruction->source[1], &ma);
+		b = operand_register(select, &instruction->source[2], &mb);
+		operation = append(select, MACHINE_SELECT);
+		if (operation != NULL) {
+			operation->destination[0] = destination;
+			operation->source[0] = condition;
+			operation->source[1] = a;
+			operation->source[2] = b;
+			operation->modifiers[1] = (uint8_t)ma;
+			operation->modifiers[2] = (uint8_t)mb;
 		}
 		break;
 	case POWERVR_IR_INTEGER_ADD:
 	case POWERVR_IR_INTEGER_MULTIPLY:
 		destination = destination_of(select, instruction);
-		{
-			struct shader_machine_register a;
-			struct shader_machine_register b;
-
-			a = operand_plain(select, &instruction->source[0], 0);
-			b = operand_plain(select, &instruction->source[1], 0);
-			operation = append(select, MACHINE_INTEGER);
-			if (operation != NULL) {
-				operation->destination[0] = destination;
-				operation->source[0] = a;
-				if (opcode == POWERVR_IR_INTEGER_ADD) {
-					/* a times one plus b. */
-					operation->source[1] = bank_register(POWERVR_USC_BANK_SPECIAL, SPECIAL_ONE);
-					operation->source[2] = b;
-				} else {
-					/* a times b plus zero. */
-					operation->source[1] = b;
-					operation->source[2] = bank_register(POWERVR_USC_BANK_SPECIAL, SPECIAL_ZERO);
-				}
+		a = operand_plain(select, &instruction->source[0], 0);
+		b = operand_plain(select, &instruction->source[1], 0);
+		operation = append(select, MACHINE_INTEGER);
+		if (operation != NULL) {
+			operation->destination[0] = destination;
+			operation->source[0] = a;
+			if (opcode == POWERVR_IR_INTEGER_ADD) {
+				/* a times one plus b. */
+				operation->source[1] = bank_register(POWERVR_USC_BANK_SPECIAL, SPECIAL_ONE);
+				operation->source[2] = b;
+			} else {
+				/* a times b plus zero. */
+				operation->source[1] = b;
+				operation->source[2] = bank_register(POWERVR_USC_BANK_SPECIAL, SPECIAL_ZERO);
 			}
 		}
 		break;
@@ -889,37 +877,30 @@ select_instruction(
 		break;
 	case POWERVR_IR_SAMPLE:
 		/* The coordinates side by side, the sample, the wait for it. */
-		{
-			struct shader_machine_register u;
-			struct shader_machine_register v;
-			const struct powervr_shader_request *image;
-			const struct powervr_shader_request *sampler;
-
-			if (instruction->immediate >= select->program->request_count || instruction->immediate_2 >= select->program->request_count)
-				return EINVAL;
-			image = &select->program->requests[instruction->immediate];
-			sampler = &select->program->requests[instruction->immediate_2];
-			u = operand_plain(select, &instruction->source[0], 0);
-			operation = append(select, MACHINE_MOVE);
-			if (operation != NULL) {
-				operation->destination[0] = temp_register(TEMP_COORDINATES);
-				operation->source[0] = u;
-			}
-			v = operand_plain(select, &instruction->source[1], 0);
-			operation = append(select, MACHINE_MOVE);
-			if (operation != NULL) {
-				operation->destination[0] = temp_register(TEMP_COORDINATES + 1U);
-				operation->source[0] = v;
-			}
-			operation = append(select, MACHINE_SAMPLE);
-			if (operation != NULL) {
-				operation->destination[0] = destination_of(select, instruction);
-				operation->source[0] = bank_register(POWERVR_USC_BANK_SHARED, image->shared);
-				operation->source[1] = temp_register(TEMP_COORDINATES);
-				operation->source[2] = bank_register(POWERVR_USC_BANK_SHARED, sampler->shared);
-			}
-			(void)append(select, MACHINE_WAIT);
+		if (instruction->immediate >= select->program->request_count || instruction->immediate_2 >= select->program->request_count)
+			return EINVAL;
+		image = &select->program->requests[instruction->immediate];
+		sampler = &select->program->requests[instruction->immediate_2];
+		a = operand_plain(select, &instruction->source[0], 0);
+		operation = append(select, MACHINE_MOVE);
+		if (operation != NULL) {
+			operation->destination[0] = temp_register(TEMP_COORDINATES);
+			operation->source[0] = a;
 		}
+		b = operand_plain(select, &instruction->source[1], 0);
+		operation = append(select, MACHINE_MOVE);
+		if (operation != NULL) {
+			operation->destination[0] = temp_register(TEMP_COORDINATES + 1U);
+			operation->source[0] = b;
+		}
+		operation = append(select, MACHINE_SAMPLE);
+		if (operation != NULL) {
+			operation->destination[0] = destination_of(select, instruction);
+			operation->source[0] = bank_register(POWERVR_USC_BANK_SHARED, image->shared);
+			operation->source[1] = temp_register(TEMP_COORDINATES);
+			operation->source[2] = bank_register(POWERVR_USC_BANK_SHARED, sampler->shared);
+		}
+		(void)append(select, MACHINE_WAIT);
 		break;
 	case POWERVR_IR_PIXEL_LOAD:
 		/* The pixel output, under the overlap check, unpacked into the four words. */
@@ -942,34 +923,30 @@ select_instruction(
 		break;
 	case POWERVR_IR_PIXEL_STORE:
 		/* The four words side by side, packed, into the pixel output under the overlap check. */
-		{
-			unsigned channel;
-
-			if (instruction->immediate >= 4)
-				return ENOTSUP;
-			for (channel = 0; channel < 4; channel++) {
-				select->scratch = 0;
-				source = operand_plain(select, &instruction->source[channel], 0);
-				operation = append(select, MACHINE_MOVE);
-				if (operation != NULL) {
-					operation->destination[0] = temp_register(TEMP_COORDINATES + channel);
-					operation->source[0] = source;
-				}
-			}
-			operation = append(select, MACHINE_PACK);
-			if (operation != NULL) {
-				operation->destination[0] = temp_register(TEMP_SCRATCH);
-				operation->source[0] = temp_register(TEMP_COORDINATES);
-				operation->variant = PACK_U8888;
-				operation->immediate = 4;
-				operation->immediate_2 = PACK_SCALE;
-			}
+		if (instruction->immediate >= 4)
+			return ENOTSUP;
+		for (channel = 0; channel < 4; channel++) {
+			select->scratch = 0;
+			source = operand_plain(select, &instruction->source[channel], 0);
 			operation = append(select, MACHINE_MOVE);
 			if (operation != NULL) {
-				operation->destination[0] = bank_register(POWERVR_USC_BANK_SPECIAL, SPECIAL_PIXEL_OUTPUT + instruction->immediate);
-				operation->source[0] = temp_register(TEMP_SCRATCH);
-				operation->variant = 1;
+				operation->destination[0] = temp_register(TEMP_COORDINATES + channel);
+				operation->source[0] = source;
 			}
+		}
+		operation = append(select, MACHINE_PACK);
+		if (operation != NULL) {
+			operation->destination[0] = temp_register(TEMP_SCRATCH);
+			operation->source[0] = temp_register(TEMP_COORDINATES);
+			operation->variant = PACK_U8888;
+			operation->immediate = 4;
+			operation->immediate_2 = PACK_SCALE;
+		}
+		operation = append(select, MACHINE_MOVE);
+		if (operation != NULL) {
+			operation->destination[0] = bank_register(POWERVR_USC_BANK_SPECIAL, SPECIAL_PIXEL_OUTPUT + instruction->immediate);
+			operation->source[0] = temp_register(TEMP_SCRATCH);
+			operation->variant = 1;
 		}
 		break;
 	default:
@@ -1283,8 +1260,11 @@ select_float_pair(
 	struct shader_machine_operation *operation;
 	struct shader_machine_register first;
 	struct shader_machine_register second;
+	struct shader_machine_register held;
+	struct shader_machine_register moved;
 	unsigned first_modifiers;
 	unsigned second_modifiers;
+	unsigned held_modifiers;
 	unsigned swap;
 
 	/* The sources; a floor adds zero. */
@@ -1308,9 +1288,6 @@ select_float_pair(
 		if ((first_modifiers & POWERVR_IR_NEGATE) == 0 && floor == 0)
 			swap = 1;
 		if (swap != 0) {
-			struct shader_machine_register held;
-			unsigned held_modifiers;
-
 			held = first;
 			held_modifiers = first_modifiers;
 			first = second;
@@ -1318,8 +1295,6 @@ select_float_pair(
 			second = held;
 			second_modifiers = held_modifiers;
 		} else {
-			struct shader_machine_register moved;
-
 			moved = scratch_register(select);
 			operation = append(select, MACHINE_MOVE);
 			if (operation != NULL) {

@@ -727,6 +727,8 @@ build_dispatch(
 			kern_logf("powervr: vk: the compute shader did not compile (%d)\n", error);
 			break;
 		}
+		if (group == 0)
+			kern_logf("powervr: vk: dispatch of %u workgroups: the compute shader compiled to %u bytes, %u temps, %u shared words\n", groups, (unsigned)program->length, program->temps, program->shareds);
 		error = build_kernel(build, code, program->length, program->temps, program->workgroup[0]);
 	}
 
