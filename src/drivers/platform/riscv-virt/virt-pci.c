@@ -57,10 +57,12 @@ drv_riscv_virt_pci_init(
 	if (error != 0)
 		return ENODEV;
 
-	/* Reads the host's windows and interrupt map; the record is large, so it is not on the stack. */
+	/* Allocates the host's description, which is too large for the stack. */
 	config = kern_malloc(sizeof(*config));
 	if (config == NULL)
 		return ENOMEM;
+
+	/* Reads the host's windows and interrupt map. */
 	error = drv_pci_ecam_fdt_describe(fdt, node, config);
 	if (error != 0) {
 		kern_logf("pci: unusable ECAM host node (%d)\n", error);

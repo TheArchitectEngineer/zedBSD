@@ -86,10 +86,13 @@ drv_vf2_dmatest_run(
 	result->alias = check_alias(ops, DRV_VF2_DMATEST_BUFFER);
 	if (result->alias == DRV_VF2_DMATEST_ALIAS_OK)
 		result->control = check_control(ops, DRV_VF2_DMATEST_BUFFER);
+
+	/* Drops the lines the controls left in the cache. */
 	ops->flush(ops->context, 0, DRV_VF2_DMATEST_REGION);
 
 	/* Runs both directions with the buffers moved a step further each time. */
 	for (run = 0; run < DRV_VF2_DMATEST_RUNS; run++) {
+		/* Places the run's source, destination and reverse destination side by side. */
 		source = run * DRV_VF2_DMATEST_STEP;
 		destination = source + DRV_VF2_DMATEST_BUFFER;
 		reverse = destination + DRV_VF2_DMATEST_BUFFER;
@@ -187,6 +190,8 @@ drv_vf2_dmatest_format(
 		put_number(&out, result->mismatches, 10U);
 		break;
 	}
+
+	/* Ends the line. */
 	put_string(&out, "\n");
 
 	/* Terminates the text, cut to the capacity. */
@@ -394,8 +399,10 @@ copy_and_compare(
 	if (!differs)
 		return 0;
 
-	/* Counts the mismatch; the first one names the answer. */
+	/* Counts the mismatch. */
 	result->mismatches++;
+
+	/* Only the first mismatch names the answer. */
 	if (result->verdict == DRV_VF2_DMATEST_NONCOHERENT)
 		return 0;
 	result->verdict = DRV_VF2_DMATEST_NONCOHERENT;

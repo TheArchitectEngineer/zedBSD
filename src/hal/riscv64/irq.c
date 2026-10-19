@@ -178,6 +178,8 @@ hal_irq_unregister(
 		riscv64_spin_unlock(&slots_lock, enabled);
 		return HAL_ERR_INVALID;
 	}
+
+	/* Empties the slot. */
 	slots[irq].handler = NULL;
 	slots[irq].argument = NULL;
 

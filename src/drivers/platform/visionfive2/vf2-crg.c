@@ -499,6 +499,8 @@ drv_vf2_clock_enable(
 	entry = find_clock(clock->crg, clock->index);
 	if (entry == NULL)
 		return ENOENT;
+
+	/* Refuses a clock whose generator is absent. */
 	address = clock_register(clock->crg, clock->index);
 	if (address == NULL)
 		return ENODEV;
@@ -587,6 +589,8 @@ drv_vf2_clock_disable(
 		entry = find_clock(crg, entry->sources[0].number);
 		if (entry == NULL)
 			return ENOENT;
+
+		/* Refuses to stop that clock too when other devices run on it. */
 		if ((entry->flags & CLOCK_SHARED) != 0)
 			return EBUSY;
 	}
@@ -691,15 +695,19 @@ drv_vf2_clock_set_rate(
 	/* Refuses a clock whose divider no single driver owns. */
 	if ((entry->flags & CLOCK_SETTABLE) == 0)
 		return ENOTSUP;
+
+	/* Refuses a clock whose generator is absent. */
 	address = clock_register(clock->crg, clock->index);
 	if (address == NULL)
 		return ENODEV;
 
-	/* Computes the source's rate the divider works from. */
+	/* Finds the source the clock runs on now. */
 	contents = kern_mmio_read32(address);
 	error = current_source(entry, contents, &source);
 	if (error != 0)
 		return error;
+
+	/* Computes the source's rate the divider works from. */
 	error = source_rate(source, 1, &parent);
 	if (error != 0)
 		return error;
@@ -808,6 +816,8 @@ drv_vf2_clock_set_parent(
 		return ENOTSUP;
 	if ((entry->flags & CLOCK_SHARED) != 0)
 		return ENOTSUP;
+
+	/* Refuses a clock whose generator is absent. */
 	address = clock_register(clock->crg, clock->index);
 	if (address == NULL)
 		return ENODEV;
@@ -1181,19 +1191,23 @@ clock_rate(
 	if (depth >= CRG_MAX_DEPTH)
 		return ELOOP;
 
-	/* Finds the clock and its register. */
+	/* Finds the clock in its table. */
 	entry = find_clock(crg, index);
 	if (entry == NULL)
 		return ENOENT;
+
+	/* Finds the clock's register, refusing one whose generator is absent. */
 	address = clock_register(crg, index);
 	if (address == NULL)
 		return ENODEV;
 
-	/* Computes the rate of the source the register selects. */
+	/* Finds the source the register selects. */
 	contents = kern_mmio_read32(address);
 	error = current_source(entry, contents, &source);
 	if (error != 0)
 		return error;
+
+	/* Computes the source's rate. */
 	error = source_rate(source, depth + 1U, &parent);
 	if (error != 0)
 		return error;
@@ -1289,16 +1303,22 @@ pll_rate(
 		return EINVAL;
 	layout = &pll_layouts[pll];
 
-	/* Reads the four registers that hold the PLL's settings. */
+	/* Reads the register with the integer and fractional mode bits. */
 	error = drv_vf2_syscon_read(DRV_VF2_SYSCON_SYS, layout->mode_offset, &mode);
 	if (error != 0)
 		return error;
+
+	/* Reads the register with the feedback divider. */
 	error = drv_vf2_syscon_read(DRV_VF2_SYSCON_SYS, layout->feedback_offset, &feedback);
 	if (error != 0)
 		return error;
+
+	/* Reads the register with the fraction, the power-down and the post-divider. */
 	error = drv_vf2_syscon_read(DRV_VF2_SYSCON_SYS, layout->fraction_offset, &fraction);
 	if (error != 0)
 		return error;
+
+	/* Reads the register with the pre-divider. */
 	error = drv_vf2_syscon_read(DRV_VF2_SYSCON_SYS, layout->prediv_offset, &prediv);
 	if (error != 0)
 		return error;
@@ -1328,6 +1348,8 @@ pll_rate(
 	error = input_rate(DRV_VF2_CRG_SYS, "osc", &reference);
 	if (error != 0)
 		return error;
+
+	/* Refuses a reference the arithmetic below cannot take. */
 	if (reference == 0 || reference > PLL_MAX_REFERENCE)
 		return ERANGE;
 
@@ -1413,6 +1435,8 @@ input_rate(
 	/* Refuses an input that is not a fixed clock. */
 	if (cells != 0)
 		return ENOTSUP;
+
+	/* Reads the fixed clock's rate, refusing a provider without one. */
 	error = drv_fdt_property(&crg_tree, provider, "clock-frequency", &value, &length);
 	if (error != 0)
 		return ENOTSUP;
@@ -1437,14 +1461,19 @@ generator_of(
 		/* A generator counts only once it is mapped. */
 		if (crg_instances[candidate].registers == NULL)
 			continue;
-		if (crg_instances[candidate].node == node) {
-			*crg = (enum drv_vf2_crg)candidate;
-			return 0;
-		}
+
+		/* Stops at the generator the node is. */
+		if (crg_instances[candidate].node == node)
+			break;
 	}
 
-	/* Reports a node that is no generator. */
-	return ENODEV;
+	/* Refuses a node that is no generator. */
+	if (candidate == DRV_VF2_CRG_COUNT)
+		return ENODEV;
+
+	/* Succeeded: the generator's number. */
+	*crg = (enum drv_vf2_crg)candidate;
+	return 0;
 }
 
 /*
@@ -1506,10 +1535,12 @@ lookup_specifier(
 		entry++;
 	}
 
-	/* Refuses a provider that is not a generator, or a cell count it lacks. */
+	/* Refuses a provider that is not a generator. */
 	error = generator_of(provider, crg);
 	if (error != 0)
 		return error;
+
+	/* Refuses an entry of other than one cell, or one that runs off the list. */
 	if (cells != 1U)
 		return EINVAL;
 	if ((cell + 2U) * 4U > length)
@@ -1599,6 +1630,8 @@ reset_change(
 	} else {
 		contents &= ~bit;
 	}
+
+	/* Writes the register back with the reset line changed. */
 	kern_mmio_write32(address, contents);
 
 	spin_unlock_irqrestore(&crg_lock, irq);
@@ -1612,11 +1645,15 @@ reset_change(
 
 		/* Stops once the status agrees with the request. */
 		if (assert != 0 && released == 0)
-			return 0;
+			break;
 		if (assert == 0 && released != 0)
-			return 0;
+			break;
 	}
 
 	/* Reports a status that never followed. */
-	return ETIMEDOUT;
+	if (poll == CRG_RESET_POLLS)
+		return ETIMEDOUT;
+
+	/* Succeeded: the line is in the requested state. */
+	return 0;
 }

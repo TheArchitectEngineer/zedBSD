@@ -199,6 +199,8 @@ hal_printf(
 			format++;
 			continue;
 		}
+
+		/* Steps past the percent sign. */
 		format++;
 
 		/* The width, after an optional zero, and the length. */
@@ -210,6 +212,8 @@ hal_printf(
 			width = width * 10 + (*format - '0');
 			format++;
 		}
+
+		/* A lowercase l asks for a 64-bit argument. */
 		if (*format == 'l') {
 			long_argument = 1;
 			format++;
@@ -234,16 +238,20 @@ hal_printf(
 			break;
 		case 'u':
 		case 'x':
+			/* Takes the argument at its width. */
 			if (long_argument) {
 				value = __builtin_va_arg(arguments, uint64_t);
 			} else {
 				value = __builtin_va_arg(arguments, uint32_t);
 			}
+
+			/* Spells the number in decimal or hexadecimal. */
 			if (conversion == 'u') {
 				put_number(value, 10, width);
 			} else {
 				put_number(value, 16, width);
 			}
+
 			break;
 		case 'p':
 			put_number((uintptr_t)__builtin_va_arg(arguments, void *), 16, 16);
@@ -256,6 +264,8 @@ hal_printf(
 			break;
 		}
 	}
+
+	/* Ends the reading of the arguments. */
 	__builtin_va_end(arguments);
 
 	/* Succeeded. */

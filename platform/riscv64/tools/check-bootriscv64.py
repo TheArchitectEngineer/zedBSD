@@ -8,11 +8,6 @@ the file where their relative virtual addresses say, page aligned, with the
 entry in the code and the zero-filled data inside .data's memory size.  The
 ELF must hold only R_RISCV_RELATIVE dynamic relocations, which the image's
 entry applies, and no undefined symbol.
-
-Values referenced: Microsoft PE/COFF specification (header layout,
-IMAGE_SUBSYSTEM_EFI_APPLICATION); Linux 6.8.12 include/linux/pe.h
-(IMAGE_FILE_MACHINE_RISCV64); riscv-non-isa/riscv-elf-psabi-doc
-riscv-elf.adoc (R_RISCV_RELATIVE).
 """
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
@@ -22,7 +17,16 @@ import argparse
 import struct
 from pathlib import Path
 
+# The header fields and values the image and the ELF are checked against.
+#
+# Values referenced: Microsoft PE/COFF specification (header layout,
+# IMAGE_SUBSYSTEM_EFI_APPLICATION); Linux 6.8.12 include/linux/pe.h
+# (IMAGE_FILE_MACHINE_RISCV64); riscv-non-isa/riscv-elf-psabi-doc
+# riscv-elf.adoc (R_RISCV_RELATIVE).
 PAGE = 0x1000
+MACHINE_RISCV64 = 0x5064
+OPTIONAL_MAGIC_PE32PLUS = 0x20B
+SUBSYSTEM_EFI_APPLICATION = 10
 SHT_SYMTAB = 2
 SHT_RELA = 4
 SHT_DYNSYM = 11
@@ -41,20 +45,20 @@ def check_pe(path: Path) -> None:
     if data[pe:pe + 4] != b"PE\0\0":
         fail(path, "no PE signature")
     machine, count, _, _, _, optional_size, _ = struct.unpack_from("<HHIIIHH", data, pe + 4)
-    if machine != 0x5064:
+    if machine != MACHINE_RISCV64:
         fail(path, f"machine is 0x{machine:x}, not RISC-V 64")
     if count != 2:
         fail(path, "expected two sections")
     optional = pe + 24
     magic, _, _, _, _, _, entry, _ = struct.unpack_from("<HBBIIIII", data, optional)
-    if magic != 0x20B:
+    if magic != OPTIONAL_MAGIC_PE32PLUS:
         fail(path, "not PE32+")
     (_, section_alignment, file_alignment, _, _, _, _, _, _, _, image_size,
      headers_size, _, subsystem, _, _, _, _, _, _, directories) = struct.unpack_from(
         "<QIIHHHHHHIIIIHHQQQQII", data, optional + 24)
     if section_alignment != PAGE or file_alignment != PAGE or headers_size != PAGE:
         fail(path, "alignment or header size is not a page")
-    if subsystem != 10:
+    if subsystem != SUBSYSTEM_EFI_APPLICATION:
         fail(path, "not an EFI application")
     if directories < 6:
         fail(path, "too few data directories")

@@ -40,12 +40,13 @@
  */
 #define TASK_STACK_GUARD_BYTES	128U
 
-/*
- * Every task the HAL has made, for the memory statistics.  The list and
- * the two counters beside it are kept under task_list_lock.
- */
+/* Every task the HAL has made, for the memory statistics; kept under task_list_lock. */
 static struct riscv64_task *task_list;
+
+/* How many tasks task_list holds; kept under task_list_lock. */
 static uint32_t task_count;
+
+/* The bytes of kernel stack the tasks of task_list hold; kept under task_list_lock. */
 static size_t task_stack_bytes;
 
 /* Guards task_list, task_count and task_stack_bytes; zero when free. */
@@ -65,13 +66,18 @@ static size_t task_stack_high_water;
 static struct hal_fpregs initial_fpregs;
 
 /*
- * The context self-test's own stack, the two saved stack pointers and the
- * turn counter.  They are used once, by the boot hart before the kernel
- * starts.
+ * The context self-test's own stack.  It and the three variables below are
+ * used once, by the boot hart before the kernel starts.
  */
 static uint8_t self_stack[4096] __attribute__((aligned(16)));
+
+/* The self-test's saved stack pointer of the boot hart's own context. */
 static uintptr_t self_main_sp;
+
+/* The self-test's saved stack pointer of the context on self_stack. */
 static uintptr_t self_task_sp;
+
+/* The self-test's count of turns between the two contexts. */
 static unsigned self_count;
 
 static void task_add(struct riscv64_task *task);
@@ -529,6 +535,8 @@ hal_task_destroy(
 		task_stack_record_depth(task);
 		kernel_free(task->sys_stack_allocation);
 	}
+
+	/* Frees the record. */
 	kernel_free(task);
 }
 
@@ -887,6 +895,7 @@ riscv64_context_selftest(
 	if (self_count != 2)
 		HAL_FATAL("riscv64 context selftest second switch");
 
+	/* Reports that both switches came back. */
 	hal_puts("RISCV64 CONTEXT PASS\n");
 }
 

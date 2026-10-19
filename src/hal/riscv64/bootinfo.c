@@ -25,21 +25,29 @@
 #include "loader.h"
 
 /*
- * The facts read from the device tree, the tree's physical address and the
- * boot hart's id.  Filled once by riscv64_boot_record() on the boot hart
- * before any other hart starts, and read without a lock afterwards.
+ * The facts read from the device tree.  Filled once by
+ * riscv64_boot_record() on the boot hart before any other hart starts, and
+ * read without a lock afterwards, like the two variables below.
  */
 static struct riscv64_fdt_info boot_fdt;
+
+/* The device tree's physical address, recorded with boot_fdt. */
 static uintptr_t boot_fdt_phys;
+
+/* The id of the boot hart, which entered the kernel first; recorded with boot_fdt. */
 static uint64_t boot_hart_id;
 
 /*
- * The named objects of hal_get_arch_handoff(), filled with the record and
- * not changed afterwards.  The ramdisk's size is zero when the firmware
- * loaded none.
+ * The device tree's range, the first named object of
+ * hal_get_arch_handoff().  The three named objects are filled with the
+ * record and not changed afterwards.
  */
 static struct riscv64_handoff_range handoff_fdt;
+
+/* The ramdisk's range, a named object; its size is zero when the firmware loaded none. */
 static struct riscv64_handoff_range handoff_initrd;
+
+/* The boot hart's id, a named object. */
 static uint64_t handoff_boot_hart;
 
 /*
@@ -93,6 +101,8 @@ riscv64_boot_record(
 		handoff_initrd.phys = info->initrd_start;
 		handoff_initrd.size = info->initrd_end - info->initrd_start;
 	}
+
+	/* Names the boot hart. */
 	handoff_boot_hart = hart_id;
 
 	/* The common handoff: one boot device, the first MBR partition, its id 0x80. */
@@ -277,6 +287,8 @@ riscv64_boot_parameter_given(
 			if (line[position + matched] != word[matched])
 				break;
 		}
+
+		/* Skips a word that differs from the wanted one before the wanted one ends. */
 		if (word[matched] != '\0')
 			continue;
 
@@ -324,6 +336,8 @@ riscv64_boot_parameter_number(
 			if (line[position + matched] != key[matched])
 				break;
 		}
+
+		/* Skips a word that does not start with the whole key. */
 		if (key[matched] != '\0')
 			continue;
 

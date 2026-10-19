@@ -34,14 +34,19 @@
 #define FBCONS_GRID_HEIGHT	(RISCV64_CONSOLE_ROWS * RISCV64_FONT_HEIGHT)
 
 /*
- * The screen the console draws on, its grid's top-left pixel and the
- * sixteen colours as pixel values in the screen's format.  Written once by
- * riscv64_fbcons_attach() on the boot hart before any other hart runs and
- * read only afterwards, under the console's lock.
+ * The screen the console draws on.  It and the three variables below are
+ * written once by riscv64_fbcons_attach() on the boot hart before any
+ * other hart runs and read only afterwards, under the console's lock.
  */
 static struct riscv64_fbcons_screen fbcons_screen;
+
+/* The column of the grid's top-left pixel, which centres the grid on the screen. */
 static uint32_t fbcons_origin_x;
+
+/* The row of the grid's top-left pixel. */
 static uint32_t fbcons_origin_y;
+
+/* The sixteen colours as pixel values in the screen's format. */
 static uint32_t fbcons_colours[16];
 
 /*
@@ -102,7 +107,10 @@ riscv64_fbcons_attach(
 	/* Starts from a black screen, the firmware's last picture gone. */
 	clear_screen();
 
-	/* Draws the text printed before the screen was attached. */
+	/*
+	 * Lets every later drawing reach the screen, then draws the text printed
+	 * before the screen was attached.
+	 */
 	fbcons_on = 1;
 	riscv64_cons_redraw();
 
@@ -159,8 +167,11 @@ riscv64_fbcons_cell(
 
 	/* Each row of the glyph, from its leftmost pixel in the high bit. */
 	for (line = 0; line < RISCV64_FONT_HEIGHT; line++) {
+		/* Takes the screen row and the glyph's bits for it. */
 		pixels = row_pixels(y + line);
 		bits = glyph[line];
+
+		/* Paints the row's pixels of the cell. */
 		for (bit = 0; bit < FBCONS_CELL_WIDTH; bit++) {
 			/* A set bit is the glyph's ink, a clear one its background. */
 			value = background;
@@ -197,6 +208,7 @@ riscv64_fbcons_cursor(
 	x = fbcons_origin_x + (uint32_t)column * FBCONS_CELL_WIDTH;
 	y = fbcons_origin_y + (uint32_t)row * RISCV64_FONT_HEIGHT;
 	for (line = RISCV64_FONT_HEIGHT - 2U; line < RISCV64_FONT_HEIGHT; line++) {
+		/* Whitens the row's pixels of the cell. */
 		pixels = row_pixels(y + line);
 		for (bit = 0; bit < FBCONS_CELL_WIDTH; bit++)
 			pixels[x + bit] = fbcons_colours[15];
@@ -341,6 +353,7 @@ clear_screen(
 
 	/* Clears each row's visible pixels, then writes the row through. */
 	for (y = 0; y < fbcons_screen.height; y++) {
+		/* Blackens the row's visible pixels. */
 		pixels = row_pixels(y);
 		for (x = 0; x < fbcons_screen.width; x++)
 			pixels[x] = 0;

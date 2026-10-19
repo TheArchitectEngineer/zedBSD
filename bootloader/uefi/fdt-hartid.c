@@ -320,24 +320,30 @@ fdt_name_is(
 	uint32_t index;
 	int same;
 
-	/* Measures the name, comparing it with the wanted one on the way. */
+	/* Measures the name up to its NUL, comparing it with the wanted one on the way. */
 	same = 1;
 	for (index = 0; index < available; index++) {
-		/* The NUL ends the name: it is the wanted one if that ends here too. */
-		if (bytes[index] == 0) {
-			*length = index;
-			if (same && name[index] == 0)
-				return 1;
-			return 0;
-		}
+		/* The NUL ends the name. */
+		if (bytes[index] == 0)
+			break;
 
 		/* A differing byte, or a name longer than the wanted one, is another name. */
 		if (same && (uint8_t)name[index] != bytes[index])
 			same = 0;
 	}
 
-	/* No NUL within the bytes. */
-	return -1;
+	/* Refuses a name with no NUL within the bytes. */
+	if (index == available)
+		return -1;
+
+	/*
+	 * Succeeded: the name's length, and whether it is the wanted one, which
+	 * it is when the wanted name ends where this one does.
+	 */
+	*length = index;
+	if (same && name[index] == 0)
+		return 1;
+	return 0;
 }
 
 /* Rounds an offset up to the structure block's 4-byte alignment. */

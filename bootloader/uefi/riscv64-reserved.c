@@ -119,6 +119,8 @@ zbl_riscv64_reserved_collect(
 		size = ~0ULL;
 		if (descriptor->NumberOfPages <= ~0ULL / RESERVED_PAGE_SIZE)
 			size = descriptor->NumberOfPages * RESERVED_PAGE_SIZE;
+
+		/* Lists the descriptor's range. */
 		zbl_riscv64_reserved_add(handoff, descriptor->PhysicalStart, size);
 	}
 }
@@ -141,6 +143,7 @@ add_range(
 	/* Absorbs each listed range the new one touches, taking the last slot's range into its place. */
 	index = 0;
 	while (index < handoff->reserved_count) {
+		/* Takes the bounds of the listed range in this slot. */
 		listed_base = handoff->reserved[index].phys;
 		listed_end = listed_base + handoff->reserved[index].size;
 
@@ -150,11 +153,16 @@ add_range(
 			continue;
 		}
 
-		/* Widens the new range over the listed one and frees its slot. */
+		/* Widens the new range over the listed one. */
 		if (listed_base < base)
 			base = listed_base;
 		if (listed_end > end)
 			end = listed_end;
+
+		/*
+		 * Frees the slot by moving the last slot's range into it; the moved
+		 * range is looked at next, in this same slot.
+		 */
 		last = handoff->reserved_count - 1U;
 		handoff->reserved[index].phys = handoff->reserved[last].phys;
 		handoff->reserved[index].size = handoff->reserved[last].size;

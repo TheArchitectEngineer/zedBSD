@@ -147,8 +147,10 @@ drv_vf2_ethernet_attach(
 	if (error != 0)
 		return error;
 
-	/* Reads the PHY's address and settings before touching the hardware. */
+	/* Starts the controller's description empty. */
 	kern_memset(&config, 0, sizeof(config));
+
+	/* Reads the PHY's address and settings before touching the hardware. */
 	error = describe_phy(fdt, node, &config);
 	if (error != 0)
 		return error;
@@ -307,10 +309,12 @@ switch_port_on(
 	if (error != 0)
 		return error;
 
-	/* Holds the controller in reset, whatever the firmware left it in. */
+	/* Holds the bus interface in reset, whatever the firmware left it in. */
 	error = drv_vf2_reset_assert(&bus_reset);
 	if (error != 0)
 		return error;
+
+	/* Holds the register interface in reset too. */
 	error = drv_vf2_reset_assert(&register_reset);
 	if (error != 0)
 		return error;
@@ -320,11 +324,13 @@ switch_port_on(
 	if (error != 0)
 		return error;
 
-	/* Releases the controller from reset. */
+	/* Releases the register interface from reset after the reset has lasted long enough. */
 	pause_microseconds(VF2_ETHERNET_RESET_PAUSE_US);
 	error = drv_vf2_reset_deassert(&register_reset);
 	if (error != 0)
 		return error;
+
+	/* Releases the bus interface. */
 	error = drv_vf2_reset_deassert(&bus_reset);
 	if (error != 0)
 		return error;
@@ -332,12 +338,18 @@ switch_port_on(
 	/* Lets it settle before its registers are used. */
 	pause_microseconds(VF2_ETHERNET_RESET_PAUSE_US);
 
-	/* Reads the bus clock's rate, which the MDIO clock is divided from; the first clock is it. */
+	/*
+	 * Reads the bus clock's rate, which the MDIO clock is divided from; the
+	 * first clock is it.  A rate that cannot be computed is zero.
+	 */
+	*csr_rate = 0;
 	error = drv_vf2_clock_lookup(fdt, node, clock_names[0], &clock);
-	if (error == 0)
+	if (error == 0) {
+		/* Computes the rate of the clock found. */
 		error = drv_vf2_clock_get_rate(&clock, csr_rate);
-	if (error != 0)
-		*csr_rate = 0;
+		if (error != 0)
+			*csr_rate = 0;
+	}
 
 	/* Writes the rate to the boot log, zero when it could not be computed. */
 	kern_logf("vf2-ethernet: bus clock %llu Hz (%d)\n", (unsigned long long)*csr_rate, error);
@@ -378,6 +390,8 @@ select_interface(
 	error = drv_vf2_syscon_lookup(fdt, node, "starfive,syscon", &syscon, arguments, 2U, &count);
 	if (error != 0)
 		return error;
+
+	/* Refuses a field without its offset and shift, or one that does not fit the register. */
 	if (count < 2U || arguments[1] > 29U)
 		return EINVAL;
 
@@ -416,12 +430,14 @@ describe_phy(
 	if (error != 0)
 		return error;
 
-	/* Resolves the PHY's node. */
+	/* Reads the phandle of the PHY's node. */
 	error = drv_fdt_property(fdt, node, "phy-handle", &value, &length);
 	if (error != 0)
 		return error;
 	if (length != 4U)
 		return EINVAL;
+
+	/* Resolves the PHY's node. */
 	phandle = (uint32_t)drv_fdt_cells_value(value, 0, 1U);
 	error = drv_fdt_find_phandle(fdt, phandle, &phy_node);
 	if (error != 0)
@@ -433,6 +449,8 @@ describe_phy(
 		return error;
 	if (length != 4U)
 		return EINVAL;
+
+	/* Refuses an address beyond the bus's 32. */
 	config->phy_address = (unsigned)drv_fdt_cells_value(value, 0, 1U);
 	if (config->phy_address > 31U)
 		return EINVAL;
@@ -472,6 +490,7 @@ describe_dma(
 	uint32_t phandle;
 	uint32_t axi;
 	unsigned index;
+	int no_burst_x8;
 	int error;
 
 	/* Reads the FIFO sizes; zero lets the driver use the controller's. */
@@ -482,7 +501,12 @@ describe_dma(
 	burst = read_number(fdt, node, "snps,pbl", 8U);
 	config->tx_burst = read_number(fdt, node, "snps,txpbl", burst);
 	config->rx_burst = read_number(fdt, node, "snps,rxpbl", burst);
-	config->burst_x8 = !has_property(fdt, node, "snps,no-pbl-x8");
+
+	/* Multiplies the burst lengths by eight unless the node says not to. */
+	no_burst_x8 = has_property(fdt, node, "snps,no-pbl-x8");
+	config->burst_x8 = 1;
+	if (no_burst_x8)
+		config->burst_x8 = 0;
 
 	/* Reads the burst kinds and whether the queues pass frames on a threshold. */
 	config->fixed_burst = has_property(fdt, node, "snps,fixed-burst");
@@ -495,6 +519,8 @@ describe_dma(
 	error = drv_fdt_property(fdt, node, "snps,axi-config", &value, &length);
 	if (error != 0 || length != 4U)
 		return;
+
+	/* Resolves the node; a phandle that names none keeps the defaults. */
 	phandle = (uint32_t)drv_fdt_cells_value(value, 0, 1U);
 	error = drv_fdt_find_phandle(fdt, phandle, &axi);
 	if (error != 0)
@@ -510,6 +536,8 @@ describe_dma(
 	error = drv_fdt_property(fdt, axi, "snps,blen", &value, &length);
 	if (error != 0)
 		return;
+
+	/* Keeps each length the property lists, up to the driver's table. */
 	for (index = 0; index < DRV_DW_EQOS_BURST_LENGTHS && (index + 1U) * 4U <= length; index++)
 		config->axi_burst_lengths[index] = (uint32_t)drv_fdt_cells_value(value, index, 1U);
 }

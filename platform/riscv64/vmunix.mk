@@ -34,7 +34,7 @@ RISCV64_BSP := src/hal/riscv64/$(RISCV64_BSP_DIR_$(ZEDBSD_BOARD))
 RISCV64_BSP_C_virt := $(RISCV64_BSP)/board.c \
 	$(RISCV64_BSP)/fwcfg.c $(RISCV64_BSP)/framebuffer.c
 # The VisionFive 2's board: the shared L2 cache controller's maintenance
-# (ws256-p025) and the screen the firmware left on (ws256-p011).
+# and the screen the firmware left on.
 RISCV64_BSP_C_visionfive2 := $(RISCV64_BSP)/board.c
 
 RISCV64_BOOT_C := src/hal/riscv64/cmain.c src/hal/riscv64/bootinfo.c \
@@ -75,7 +75,7 @@ RISCV64_PLATFORM_SOURCES_visionfive2 := src/kern/platform/visionfive2.c \
 	src/drivers/disklabel/gpt.c src/drivers/disklabel/pcat.c \
 	src/drivers/dma/dw-axi-dmac.c src/drivers/platform/visionfive2/vf2-dmac.c \
 	src/drivers/platform/visionfive2/vf2-pwmdac.c
-# The test kernel's DMA coherency check (/dev/vf2-dmatest, ws256-p023).
+# The test kernel's DMA coherency check (/dev/vf2-dmatest).
 ifeq ($(CONFIG_VF2_DMA_TEST),y)
 RISCV64_PLATFORM_SOURCES_visionfive2 += src/drivers/platform/visionfive2/vf2-dmatest.c \
 	src/drivers/platform/visionfive2/vf2-dmatest-core.c
@@ -152,8 +152,8 @@ ifeq ($(CONFIG_DRIVER_PCI_NVME),y)
 RISCV64_PCI_DEVICE_SOURCES += src/drivers/pci/pci-nvme.c
 endif
 
-# The virt board's ECAM host (ws256-p016) and the VisionFive 2's two PLDA
-# root complexes (ws256-p020).
+# The virt board's ECAM host and the VisionFive 2's two PLDA
+# root complexes.
 RISCV64_PCI_SOURCES_virt := src/drivers/platform/riscv-virt/virt-pci.c \
 	src/drivers/pci/pci.c src/drivers/pci/pci-ecam-fdt.c \
 	$(RISCV64_PCI_DEVICE_SOURCES)

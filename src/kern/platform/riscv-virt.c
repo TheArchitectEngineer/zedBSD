@@ -51,13 +51,20 @@
 /* The BIOS-style id the boot device has, the one the handoff names. */
 #define RISCV_VIRT_BOOT_ID		0x80U
 
+/* Marks a parameter that the kernel's platform interface passes but this board does not need. */
+#define UNUSED_PARAMETER(parameter)	((void)(parameter))
+
 /*
  * The UART the console reads, filled by kern_platform_init() before any
  * interrupt is on and kept for the life of the system, since its interrupt
- * handler reads it.  uart_present says whether the device tree described
- * one; without it the console is output only.
+ * handler reads it.
  */
 static struct drv_ns16550 uart;
+
+/*
+ * Nonzero when the device tree described the UART and uart was filled;
+ * without it the console is output only.  Set with uart.
+ */
 static int uart_present;
 
 /*
@@ -109,6 +116,8 @@ kern_platform_init(
 	 * image is an MBR disk, the native disk image a GPT disk.
 	 */
 	partition_set_scheme(&drv_partition_scheme_pcat_auto);
+
+	/* Starts the disk registry empty, before any disk is published. */
 	disk_registry_reset();
 
 	/* Publishes the ramdisk; without one the board has no boot device. */
@@ -129,23 +138,26 @@ kern_platform_init(
 	device->heads = 0;
 	device->sectors = 0;
 	device->controller_location = 0;
+
+	/* Clears the record's reserved bytes. */
 	for (index = 0; index < sizeof(device->reserved); index++)
 		device->reserved[index] = 0;
 
-	/* Reports the single published device. */
+	/* Succeeded: the single published device. */
 	return 1;
 }
 
 /*
- * Finishes device discovery once interrupts are enabled; nothing to do.
+ * Finishes device discovery once interrupts are enabled: looks behind the
+ * PCI host's USB root ports and publishes the NVMe namespaces.
  */
 void
 kern_platform_refresh_devices(
 	const struct kern_boot_device *devices,
 	size_t count)
 {
-	(void)devices;
-	(void)count;
+	UNUSED_PARAMETER(devices);
+	UNUSED_PARAMETER(count);
 
 	/* Looks behind the USB root ports and publishes the NVMe namespaces. */
 	drv_riscv_virt_pci_refresh();
@@ -189,7 +201,7 @@ kern_platform_block_device(
 	if (device == NULL || device->device_class != KERN_DEV_SD)
 		return NULL;
 
-	/* The ramdisk, or none when the firmware loaded none. */
+	/* Succeeded: the ramdisk, or none when the firmware loaded none. */
 	return ramdisk;
 }
 
@@ -289,7 +301,7 @@ probe_uart(
 		return;
 	}
 
-	/* Keeps the UART for the input start. */
+	/* Keeps the UART for the input start and reports where it is. */
 	uart_present = 1;
 	kern_logf("riscv-virt: serial port at %llx, interrupt %d\n",
 		  (unsigned long long)uart.physical,
@@ -345,10 +357,12 @@ publish_ramdisk(
 		return error;
 	}
 
-	/* Succeeded: the ramdisk is a disk. */
+	/* Reports the ramdisk's size and place. */
 	kern_logf("riscv-virt: ramdisk ram0 %llu KiB at %llx\n",
 		  (unsigned long long)(size / 1024U),
 		  (unsigned long long)physical);
+
+	/* Succeeded: the ramdisk is a disk. */
 	return 0;
 }
 
@@ -367,13 +381,17 @@ probe_pci(
 	const void *blob;
 	int error;
 
-	/* Finds the device tree the hardware layer kept, in the direct map. */
+	/* Finds the device tree's physical range the hardware layer kept. */
 	fdt_range = hal_get_arch_handoff("riscv64.fdt");
 	if (fdt_range == NULL)
 		return;
+
+	/* Finds the tree in the direct map. */
 	blob = kern_pmem_to_kernel((hal_physaddr_t)fdt_range[0]);
 	if (blob == NULL)
 		return;
+
+	/* Refuses a tree whose header does not check out. */
 	error = drv_fdt_open(&fdt, blob, RISCV_VIRT_FDT_READ_LIMIT);
 	if (error != 0)
 		return;

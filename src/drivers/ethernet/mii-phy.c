@@ -241,6 +241,8 @@ drv_mii_phy_start_autonegotiation(
 		gigabit_control = 0;
 		if (gigabit && (extended & MII_EXTENDED_1000T_FULL) != 0)
 			gigabit_control = MII_GIGABIT_ADVERTISE_FULL;
+
+		/* Writes the gigabit advertisement, none when gigabit is not offered. */
 		error = bus->write(bus->context, phy, MII_GIGABIT_CONTROL, gigabit_control);
 		if (error != 0)
 			return error;

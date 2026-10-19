@@ -464,16 +464,21 @@ read_cells(
 	const uint8_t *bytes,
 	uint32_t cells)
 {
-	/* One cell is a 32-bit number. */
-	if (cells == 1U)
-		return read_be32(bytes);
+	uint64_t number;
 
 	/* No cells is the number zero. */
 	if (cells == 0U)
 		return 0;
 
-	/* Two or more: the last two cells are the low 64 bits. */
-	return read_be64(bytes + (cells - 2U) * 4U);
+	/* One cell is a 32-bit number; of two or more, the last two cells are the low 64 bits. */
+	if (cells == 1U) {
+		number = read_be32(bytes);
+	} else {
+		number = read_be64(bytes + (cells - 2U) * 4U);
+	}
+
+	/* Succeeded: the number. */
+	return number;
 }
 
 /* Empties the record before a parse. */
@@ -867,6 +872,7 @@ take_property(
 			node->phandle = number;
 			node->has_phandle = 1;
 		}
+
 		break;
 	case FDT_PROPERTY_SOURCES:
 		node->sources = number;
@@ -938,6 +944,7 @@ end_node(
 			info->initrd_start = read_number(node->initrd_start, node->initrd_start_length);
 			info->initrd_end = read_number(node->initrd_end, node->initrd_end_length);
 		}
+
 		break;
 	case FDT_ROLE_CPUS:
 		/* The timebase is usually given for all the harts at once. */
@@ -1015,6 +1022,8 @@ node_role(
 				return FDT_ROLE_CPU;
 			return FDT_ROLE_NONE;
 		}
+
+		/* A child of /reserved-memory is a reservation. */
 		matched = string_is(parent->name, "reserved-memory");
 		if (matched)
 			return FDT_ROLE_RESERVATION;
@@ -1170,6 +1179,8 @@ cpu_extensions(
 			if (present)
 				extensions |= extension_names[name].bit;
 		}
+
+		/* Succeeded: the extensions the list names. */
 		return extensions;
 	}
 
@@ -1201,16 +1212,21 @@ read_number(
 	const uint8_t *value,
 	uint32_t length)
 {
-	/* Two cells are a 64-bit number. */
-	if (length >= 8U)
-		return read_be64(value);
+	uint64_t number;
 
-	/* One cell is a 32-bit number. */
-	if (length >= 4U)
-		return read_be32(value);
+	/* A value shorter than a cell is no number. */
+	if (length < 4U)
+		return 0;
 
-	/* A shorter value is no number. */
-	return 0;
+	/* Two cells are a 64-bit number, one cell a 32-bit number. */
+	if (length >= 8U) {
+		number = read_be64(value);
+	} else {
+		number = read_be32(value);
+	}
+
+	/* Succeeded: the number. */
+	return number;
 }
 
 /*
@@ -1258,6 +1274,8 @@ keep_cpu(
 		if (!okay)
 			disabled = 1;
 	}
+
+	/* A hart is usable when it has an MMU and is not disabled; it is counted either way. */
 	cpu->usable = 0;
 	if (node->mmu_type != NULL && !disabled)
 		cpu->usable = 1;
@@ -1296,6 +1314,8 @@ keep_plic(
 			count++;
 		}
 	}
+
+	/* Records how many contexts were read. */
 	info->plic_context_count = count;
 
 	/* Succeeded: the PLIC is recorded. */

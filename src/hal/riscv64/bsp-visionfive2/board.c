@@ -29,14 +29,19 @@
 #include "../page.h"
 #include "../space.h"
 
-/* The offset of the cache controller's register that flushes one line by its physical address. */
+/*
+ * The offset of the cache controller's register that flushes one line by
+ * its physical address, and the controller's line size in bytes.
+ *
+ * Values referenced: OpenBSD sys/arch/riscv64/dev/sfcc.c (SFCC_FLUSH64
+ * 0x200) and Linux v6.12 arch/riscv/boot/dts/starfive/jh7110.dtsi (the
+ * cache-controller node: cache-block-size 64).
+ */
 #define VF2_CCACHE_FLUSH64		0x200U
+#define VF2_CCACHE_LINE_SIZE		64U
 
 /* The register's end: the controller's range must reach past it. */
 #define VF2_CCACHE_FLUSH64_END		(VF2_CCACHE_FLUSH64 + 8U)
-
-/* The cache controller's line size in bytes. */
-#define VF2_CCACHE_LINE_SIZE		64U
 
 /*
  * The boot parameter that has the early console draw on the screen without
@@ -72,27 +77,41 @@ static volatile uint64_t *board_flush64;
 static uint64_t board_ccache_base;
 
 /*
- * The screen's named values, each a 64-bit word as hal_get_arch_handoff()
- * hands it over: the physical address and size of its memory, its width
- * and height in pixels, the bytes from one row to the next and its
- * KERN_BOOT_FRAMEBUFFER_* format.  Filled once by riscv64_board_init() on
- * the boot hart when the loader handed a screen over, and not changed
- * afterwards; board_screen_named says they are.
+ * The physical address of the screen's memory, the first of the screen's
+ * named values.  Each is a 64-bit word as hal_get_arch_handoff() hands it
+ * over; all six are filled once by riscv64_board_init() on the boot hart
+ * when the loader handed a screen over, and not changed afterwards.
  */
 static uint64_t board_framebuffer_phys;
+
+/* The size of the screen's memory in bytes, a named value. */
 static uint64_t board_framebuffer_size;
+
+/* The screen's width in pixels, a named value. */
 static uint64_t board_framebuffer_width;
+
+/* The screen's height in pixels, a named value. */
 static uint64_t board_framebuffer_height;
+
+/* The bytes from one row of the screen to the next, a named value. */
 static uint64_t board_framebuffer_pitch;
+
+/* The screen's KERN_BOOT_FRAMEBUFFER_* format, a named value. */
 static uint64_t board_framebuffer_format;
+
+/* Nonzero once the six named values above are filled; set with them. */
 static int board_screen_named;
 
 /*
- * How the early console reaches the screen, and why it does not when it
- * does not (HAL_OK when it does).  Set with the named values, for the
- * boot log.
+ * How the early console reaches the screen.  Set with the named values,
+ * for the boot log.
  */
 static enum board_screen_window board_screen_window;
+
+/*
+ * Why the early console does not reach the screen, or HAL_OK when it
+ * does.  Set with the named values, for the boot log.
+ */
 static int board_screen_error = HAL_ERR_UNSUPPORTED;
 
 /*
@@ -450,11 +469,7 @@ flush_range(
 	if (address > UINTPTR_MAX - size)
 		return;
 
-	/*
-	 * Values referenced: Linux v6.12 arch/riscv/boot/dts/starfive/jh7110.dtsi
-	 * (the cache-controller node: cache-block-size 64) and OpenBSD
-	 * sys/arch/riscv64/dev/sfcc.c (SFCC_FLUSH64 0x200).
-	 */
+	/* Starts at the line that holds the first byte. */
 	line = address & ~((uintptr_t)VF2_CCACHE_LINE_SIZE - 1U);
 	end = address + size;
 

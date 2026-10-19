@@ -130,6 +130,8 @@ drv_vf2_pcie_init(
 
 	/* Registers the drivers, so enumeration binds the devices. */
 	register_drivers();
+
+	/* A board without a tree has no root complex to start. */
 	if (fdt == NULL)
 		return ENODEV;
 
@@ -152,6 +154,8 @@ drv_vf2_pcie_init(
 			kern_logf("visionfive2: PCIe root complex unavailable (%d)\n", error);
 			continue;
 		}
+
+		/* Counts the root complex that came up. */
 		started++;
 	}
 
@@ -268,10 +272,12 @@ start_host(
 	int coherent;
 	int error;
 
-	/* Reads the root complex's windows and pins; the record is large, so it is not on the stack. */
+	/* Allocates the root complex's description, which is too large for the stack. */
 	config = kern_malloc(sizeof(*config));
 	if (config == NULL)
 		return ENOMEM;
+
+	/* Reads the root complex's windows and pins. */
 	error = drv_pci_plda_describe(fdt, node, config);
 	if (error != 0) {
 		kern_free(config);
@@ -282,8 +288,10 @@ start_host(
 	coherent = drv_fdt_dma_coherent(fdt, node, dma_default_coherent);
 	config->coherent = coherent != 0;
 
-	/* Finds the root complex's register group in the STG block. */
+	/* Starts the board's record empty, PERST# not yet configured. */
 	kern_memset(board, 0, sizeof(*board));
+
+	/* Finds the root complex's register group in the STG block. */
 	error = choose_group(config->config_base, &board->group);
 	if (error != 0) {
 		kern_free(config);
@@ -296,14 +304,29 @@ start_host(
 	if (error != 0 && error != ENOENT)
 		kern_logf("pcie%u: pins not applied (%d)\n", config->segment, error);
 
-	/* Sets the bus, turns the clocks on, releases the resets and tunes the PHY. */
+	/* Sets the root complex's bus settings. */
 	error = set_bus(fdt, node, board->group);
-	if (error == 0)
-		error = enable_clocks(fdt, node);
-	if (error == 0)
-		error = release_resets(fdt, node);
-	if (error == 0)
-		error = tune_phy(fdt, node);
+	if (error != 0) {
+		kern_free(config);
+		return error;
+	}
+
+	/* Turns the clocks on. */
+	error = enable_clocks(fdt, node);
+	if (error != 0) {
+		kern_free(config);
+		return error;
+	}
+
+	/* Releases the resets. */
+	error = release_resets(fdt, node);
+	if (error != 0) {
+		kern_free(config);
+		return error;
+	}
+
+	/* Tunes the PHY. */
+	error = tune_phy(fdt, node);
 	if (error != 0) {
 		kern_free(config);
 		return error;
@@ -316,11 +339,13 @@ start_host(
 		return error;
 	}
 
-	/* Configures the root complex, resets the endpoint and trains the link. */
+	/* Hands the PLDA driver the board's operations on PERST#, the link and the function selection. */
 	operations.context = board;
 	operations.perst = board_perst;
 	operations.link_active = board_link_active;
 	operations.select_function = board_select_function;
+
+	/* Configures the root complex, resets the endpoint and trains the link. */
 	error = drv_pci_plda_start(config, &operations, &board->host);
 	kern_free(config);
 	if (error != 0)
@@ -346,20 +371,20 @@ choose_group(
 	uint64_t config_base,
 	uint32_t *group)
 {
-	/* The first root complex. */
+	/* Tells the board's two root complexes apart by their windows. */
 	if (config_base == VF2_PCIE0_CONFIG) {
+		/* The first root complex. */
 		*group = VF2_STG_PCIE0_GROUP;
-		return 0;
-	}
-
-	/* The second root complex. */
-	if (config_base == VF2_PCIE1_CONFIG) {
+	} else if (config_base == VF2_PCIE1_CONFIG) {
+		/* The second root complex. */
 		*group = VF2_STG_PCIE1_GROUP;
-		return 0;
+	} else {
+		/* Refuses a root complex the board does not have. */
+		return ENODEV;
 	}
 
-	/* Refuses a root complex the board does not have. */
-	return ENODEV;
+	/* Succeeded: the root complex's group. */
+	return 0;
 }
 
 /*
@@ -383,6 +408,8 @@ set_bus(
 	error = drv_vf2_syscon_lookup(fdt, node, "starfive,stg-syscon", &syscon, arguments, 1U, &count);
 	if (error != 0)
 		return error;
+
+	/* Refuses a property that names another block. */
 	if (syscon != DRV_VF2_SYSCON_STG)
 		return ENODEV;
 
@@ -474,6 +501,7 @@ tune_phy(
 {
 	const uint8_t *value;
 	uint32_t length;
+	uint32_t phandle;
 	uint32_t phy;
 	uint64_t base;
 	uint64_t size;
@@ -481,15 +509,20 @@ tune_phy(
 	void *mapping;
 	int error;
 
-	/* Finds the PHY the root complex names. */
+	/* Reads the property that names the PHY, refusing one without a phandle. */
 	error = drv_fdt_property(fdt, node, "phys", &value, &length);
 	if (error != 0)
 		return error;
 	if (length < 4U)
 		return EINVAL;
-	error = drv_fdt_find_phandle(fdt, (uint32_t)drv_fdt_cells_value(value, 0, 1U), &phy);
+
+	/* Finds the PHY's node by its phandle. */
+	phandle = (uint32_t)drv_fdt_cells_value(value, 0, 1U);
+	error = drv_fdt_find_phandle(fdt, phandle, &phy);
 	if (error != 0)
 		return error;
+
+	/* Reads where the PHY's registers are. */
 	error = drv_fdt_reg(fdt, phy, 0, &base, &size);
 	if (error != 0)
 		return error;

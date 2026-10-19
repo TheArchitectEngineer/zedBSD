@@ -192,6 +192,8 @@ drv_vf2_syscon_lookup(
 	error = drv_fdt_property(fdt, node, name, &value, &length);
 	if (error != 0)
 		return error;
+
+	/* Refuses a value that is not whole cells, or more cells than are read. */
 	if (length < 4U || (length & 3U) != 0)
 		return EINVAL;
 	cells = length / 4U;
@@ -249,6 +251,8 @@ map_block(
 	error = drv_fdt_reg(fdt, node, 0, &address, &size);
 	if (error != 0)
 		return error;
+
+	/* Refuses a block smaller than a register or larger than any of the three. */
 	if (size < 4U || size > 0x10000U)
 		return EINVAL;
 

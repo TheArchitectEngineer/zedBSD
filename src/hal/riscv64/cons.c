@@ -34,11 +34,15 @@ struct cons_cell {
 };
 
 /*
- * The grid as it should look, and the cursor.  Kept under cons_lock; a
- * zero character is a cell never written, drawn as a blank.
+ * The grid as it should look.  Kept under cons_lock; a zero character is a
+ * cell never written, drawn as a blank.
  */
 static struct cons_cell cons_grid[RISCV64_CONSOLE_ROWS][RISCV64_CONSOLE_COLUMNS];
+
+/* The cursor's row in cons_grid, kept under cons_lock. */
 static unsigned cons_row;
+
+/* The cursor's column in cons_grid, kept under cons_lock. */
 static unsigned cons_column;
 
 /* Guards the grid, the cursor and the drawing; zero when free. */
@@ -229,14 +233,19 @@ putc_locked(
 
 	/* A tab moves to the next eight-column stop, wrapping past the row's end. */
 	if (character == '\t') {
+		/* Takes the cursor off its cell and moves it to the stop. */
 		column = cons_column;
 		cons_column = (cons_column + 8U) & ~7U;
 		if (column < RISCV64_CONSOLE_COLUMNS)
 			draw_cell_locked(cons_row, column);
+
+		/* A stop past the row's end starts the next line. */
 		if (cons_column >= RISCV64_CONSOLE_COLUMNS) {
 			newline_locked();
 			return;
 		}
+
+		/* Shows the cursor at the stop. */
 		draw_cell_locked(cons_row, cons_column);
 		return;
 	}

@@ -124,6 +124,8 @@ drv_vf2_mmc_attach(
 		config.card_present = card_present;
 		config.context = &vf2_mmc_card_detect;
 	}
+
+	/* Names the slot's disk mmcblk0. */
 	config.unit = VF2_MMC_UNIT;
 
 	/* Brings the card up and publishes it. */
@@ -200,10 +202,12 @@ switch_slot_on(
 	if (error != 0 && error != ENOENT)
 		return error;
 
-	/* Finds the bus clock and the card interface clock. */
+	/* Finds the bus clock. */
 	error = drv_vf2_clock_lookup(fdt, node, "biu", &bus_clock);
 	if (error != 0)
 		return error;
+
+	/* Finds the card interface clock. */
 	error = drv_vf2_clock_lookup(fdt, node, "ciu", &card_clock);
 	if (error != 0)
 		return error;
@@ -213,18 +217,22 @@ switch_slot_on(
 	if (error != 0 && error != ENOENT)
 		return error;
 
-	/* Switches both clocks on. */
+	/* Switches the bus clock on. */
 	error = drv_vf2_clock_enable(&bus_clock);
 	if (error != 0)
 		return error;
+
+	/* Switches the card interface clock on. */
 	error = drv_vf2_clock_enable(&card_clock);
 	if (error != 0)
 		return error;
 
-	/* Releases the controller's reset. */
+	/* Finds the controller's reset. */
 	error = drv_vf2_reset_lookup(fdt, node, "reset", &reset);
 	if (error != 0)
 		return error;
+
+	/* Releases the controller's reset. */
 	error = drv_vf2_reset_deassert(&reset);
 	if (error != 0)
 		return error;
@@ -372,6 +380,8 @@ describe_sample_phase(
 		kern_logf("vf2-mmc: sample phase %u, sysreg unreadable (%d)\n", phase, error);
 		return;
 	}
+
+	/* Takes the phase's bits out of the field. */
 	field = (field & arguments[2]) >> arguments[1];
 
 	/* Succeeded: logs both. */

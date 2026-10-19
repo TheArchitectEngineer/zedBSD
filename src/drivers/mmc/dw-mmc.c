@@ -287,6 +287,9 @@
 /* The capacity above which a version 2 card is an SDXC card. */
 #define DW_MMC_SDHC_MAX_BLOCKS		(32ULL * 1024ULL * 1024ULL * 2ULL)
 
+/* Marks a parameter that the disk layer passes but this driver does not need. */
+#define UNUSED_PARAMETER(parameter)	((void)(parameter))
+
 /*
  * The kinds of response a command expects, which decide how the command
  * register asks for it and how it is read back.
@@ -461,6 +464,8 @@ drv_dw_mmc_attach(
 	unit = &dw_mmc_units[config->unit];
 	if (unit->in_use)
 		return EBUSY;
+
+	/* Starts without a disk, which every failure below leaves. */
 	*disk = NULL;
 
 	/* Asks the slot whether a card is in; a slot without a detect pin has one. */
@@ -1044,11 +1049,12 @@ send_command(
 			return error;
 	}
 
-	/* Describes the data, and empties the FIFO of whatever an earlier transfer left. */
+	/* Describes the data of a command that moves any. */
 	if (command->length != 0) {
 		write_register(unit, DW_MMC_BYTE_COUNT, command->length);
 		write_register(unit, DW_MMC_BLOCK_SIZE, command->block_size);
 
+		/* Empties the FIFO of whatever an earlier transfer left. */
 		error = reset_controller(unit, DW_MMC_CONTROL_FIFO_RESET);
 		if (error != 0)
 			return error;
@@ -1234,6 +1240,8 @@ move_data(
 		} else {
 			read_fifo(unit, data, bytes);
 		}
+
+		/* Moves past the bytes the FIFO took or gave. */
 		data += bytes;
 		remaining -= bytes;
 
@@ -1529,6 +1537,8 @@ identify_card(
 	error = wait_card_powered(unit, request, &ocr);
 	if (error != 0)
 		return error;
+
+	/* Records the conditions and whether the card is a high-capacity one. */
 	unit->card.ocr = ocr;
 	unit->card.high_capacity = 0;
 	if ((ocr & SD_OCR_HIGH_CAPACITY) != 0)
@@ -1539,6 +1549,8 @@ identify_card(
 	error = send_command(unit, &command);
 	if (error != 0)
 		return error;
+
+	/* Keeps the identity for decoding once the capacity is read. */
 	for (word = 0; word < 4U; word++)
 		cid[word] = command.response[word];
 
@@ -1547,6 +1559,8 @@ identify_card(
 	error = send_command(unit, &command);
 	if (error != 0)
 		return error;
+
+	/* Records the address, which every later command names the card by. */
 	unit->card.rca = command.response[0] >> 16;
 
 	/* Reads the card's capacity. */
@@ -1555,10 +1569,12 @@ identify_card(
 	if (error != 0)
 		return error;
 
-	/* Decodes the capacity and the identity. */
+	/* Decodes the capacity. */
 	error = decode_csd(unit, command.response);
 	if (error != 0)
 		return error;
+
+	/* Decodes the identity. */
 	decode_cid(unit, cid);
 
 	/* Succeeded: the card is identified and waits to be selected. */
@@ -1699,6 +1715,8 @@ decode_cid(
 			character = '.';
 		unit->card.product[index] = (char)character;
 	}
+
+	/* Terminates the name. */
 	unit->card.product[5] = '\0';
 
 	/* Replaces an OEM character that cannot be printed. */
@@ -1777,6 +1795,7 @@ configure_bus(
 		if (error != 0)
 			return error;
 
+		/* Then widens the controller's side. */
 		error = set_bus_width(unit, 4U);
 		if (error != 0)
 			return error;
@@ -1805,9 +1824,12 @@ configure_bus(
 		/* Gives the card eight clocks at the old rate to finish the switch. */
 		pause_microseconds(25ULL);
 
+		/* Moves the card clock to the higher rate. */
 		error = set_card_clock(unit, target);
 		if (error != 0)
 			return error;
+
+		/* Records the speed for the boot log. */
 		unit->card.high_speed = 1;
 	}
 
@@ -1997,6 +2019,8 @@ transfer_run(
 	command.write = write;
 	if (count > 1U)
 		command.auto_stop = 1;
+
+	/* Sends the command and moves its data. */
 	error = send_command(unit, &command);
 	if (error != 0)
 		return error;
@@ -2224,11 +2248,15 @@ disk_submit(
 	uint32_t done;
 	uint32_t run;
 	size_t transferred;
+	int write;
 	int error;
 
-	/* Picks the requests the card serves. */
+	/* Picks the requests the card serves, and the direction of a read or a write. */
 	unit = disk->d_data;
 	data = bio->b_data;
+	write = 0;
+	if (bio->b_op == BIO_WRITE)
+		write = 1;
 	error = 0;
 	if (bio->b_op == BIO_FLUSH) {
 		/* A flush has nothing left to write. */
@@ -2260,7 +2288,7 @@ disk_submit(
 
 			/* Moves the run, recovering the card if it fails. */
 			error = transfer_run_recovering(unit,
-							bio->b_op == BIO_WRITE,
+							write,
 							bio->b_mapped_block + done,
 							run,
 							data + (size_t)done * DW_MMC_BLOCK_BYTES);
@@ -2286,9 +2314,9 @@ disk_control(
 	unsigned long request,
 	void *argument)
 {
-	(void)disk;
-	(void)request;
-	(void)argument;
+	UNUSED_PARAMETER(disk);
+	UNUSED_PARAMETER(request);
+	UNUSED_PARAMETER(argument);
 
 	/* Refuses every request. */
 	return EOPNOTSUPP;

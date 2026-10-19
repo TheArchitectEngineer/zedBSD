@@ -17,7 +17,7 @@ $(BUILD)/disk.img: $(BUILD)/uefi/BOOTRISCV64.EFI $(BUILD)/vmunix \
 
 # The native disk image: the root is a UFS partition of the disk itself,
 # named by rootpart= in zedbsd-native.cfg, and no ramdisk is read.  It is
-# the VisionFive 2's SD card image (ws256-p015); on the virt board the same
+# the VisionFive 2's SD card image; on the virt board the same
 # image is an NVMe disk.  An unused 64 MiB partition at the end is for raw
 # read and write tests of the medium.  RISCV64_SPL and RISCV64_UBOOT_ITB,
 # when both are set (the VisionFive 2's u-boot-spl.bin.normal.out and

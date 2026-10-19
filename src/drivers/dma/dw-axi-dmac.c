@@ -6,7 +6,7 @@
  */
 
 /*
- * The DesignWare AXI DMA controller (ws256-p019).
+ * The DesignWare AXI DMA controller.
  *
  * Every transfer is a chain of 64-byte descriptors the channel fetches
  * from memory, one block each.  A copy chains as many blocks as its size
@@ -163,6 +163,9 @@
 /* The fewest bytes of registers a controller must have. */
 #define AXI_REGISTER_BYTES		0x1000U
 
+/* Marks a parameter that the interrupt layer passes but the handler does not need. */
+#define UNUSED_PARAMETER(parameter)	((void)(parameter))
+
 /*
  * One channel of a controller.
  *
@@ -254,6 +257,8 @@ drv_dw_axi_dmac_attach(
 	dmac = kern_calloc(1, sizeof(*dmac));
 	if (dmac == NULL)
 		return ENOMEM;
+
+	/* Readies the lock that guards the channels' marks. */
 	spin_init(&dmac->lock, LOCK_RANK_DEVICE, "dw axi dmac");
 
 	/* Reads the controller's shape from its node. */
@@ -263,21 +268,27 @@ drv_dw_axi_dmac_attach(
 		return error;
 	}
 
-	/* Maps the registers. */
+	/* Finds the registers. */
 	error = drv_fdt_reg(fdt, node, 0, &dmac->physical, &size);
 	if (error != 0) {
 		kern_free(dmac);
 		return error;
 	}
+
+	/* Refuses a register block smaller than the channels' registers need. */
 	if (size < AXI_REGISTER_BYTES) {
 		kern_free(dmac);
 		return ERANGE;
 	}
+
+	/* Maps the registers. */
 	error = kern_device_map(dmac->physical, (size_t)size, KERN_DEVICE_UNCACHED, &mapped);
 	if (error != 0) {
 		kern_free(dmac);
 		return error;
 	}
+
+	/* Keeps the mapping. */
 	dmac->registers = mapped;
 
 	/*
@@ -297,25 +308,34 @@ drv_dw_axi_dmac_attach(
 
 	/* Gives each channel its registers and its descriptors. */
 	for (index = 0; index < dmac->channel_count; index++) {
+		/* Names the channel and its register block. */
 		channel = &dmac->channels[index];
 		channel->controller = dmac;
 		channel->index = index;
 		channel->registers = dmac->registers + AXI_CHANNEL_BASE + index * AXI_CHANNEL_STRIDE;
-		error = drv_dma_alloc_coherent(dmac->dma, AXI_CHAIN_MAX * AXI_DESCRIPTOR_BYTES, AXI_DESCRIPTOR_BYTES,
+
+		/* Allocates the channel's descriptors. */
+		error = drv_dma_alloc_coherent(dmac->dma,
+					       AXI_CHAIN_MAX * AXI_DESCRIPTOR_BYTES,
+					       AXI_DESCRIPTOR_BYTES,
 					       &channel->chain);
 		if (error != 0)
 			return error;
+
+		/* Starts every descriptor empty and not valid. */
 		kern_memset(channel->chain.address, 0, AXI_CHAIN_MAX * AXI_DESCRIPTOR_BYTES);
 	}
 
 	/* Leaves every channel stopped and silent. */
 	reset_channels(dmac);
 
-	/* Takes the interrupt line while nothing can raise it. */
+	/* Masks the interrupt line and sets it level-triggered, active high. */
 	kern_irq_mask((int)dmac->irq);
 	error = kern_irq_set_mode((int)dmac->irq, KERN_IRQ_TRIGGER_LEVEL, KERN_IRQ_POLARITY_HIGH);
 	if (error != 0)
 		return error;
+
+	/* Takes the interrupt line while nothing can raise it. */
 	error = kern_irq_register((int)dmac->irq, controller_interrupt, dmac);
 	if (error != 0)
 		return error;
@@ -324,9 +344,14 @@ drv_dw_axi_dmac_attach(
 	write_register(dmac, AXI_GLOBAL_CONFIG, AXI_GLOBAL_ENABLE | AXI_GLOBAL_INTERRUPTS);
 	kern_irq_unmask((int)dmac->irq);
 
+	/* Reports the controller. */
+	kern_logf("dw-axi-dmac: %llx, %u channels, irq %u, %s\n",
+		  (unsigned long long)dmac->physical,
+		  dmac->channel_count,
+		  dmac->irq,
+		  coherent ? "coherent" : "non-coherent");
+
 	/* Succeeded: the controller hands out channels. */
-	kern_logf("dw-axi-dmac: %llx, %u channels, irq %u, %s\n", (unsigned long long)dmac->physical,
-		  dmac->channel_count, dmac->irq, coherent ? "coherent" : "non-coherent");
 	*controller = dmac;
 	return 0;
 }
@@ -368,6 +393,8 @@ drv_dw_axi_dmac_channel_get(
 		if (controller->channels[index].taken == 0)
 			break;
 	}
+
+	/* The mark keeps every other user off the channel until it is put back. */
 	if (index < controller->channel_count)
 		controller->channels[index].taken = 1;
 
@@ -459,16 +486,27 @@ drv_dw_axi_dmac_copy(
 	/* Writes one descriptor a block, each linked to the next and the last marked and unlinked. */
 	count = 0;
 	while (size > 0) {
+		/* Takes a block's bytes, or what is left. */
 		piece = size;
 		if (piece > block_bytes)
 			piece = block_bytes;
 		size -= (size_t)piece;
+
+		/* Links the descriptor to the next one, or marks it the last. */
 		next = descriptor_address(channel, count + 1U);
 		if (size == 0) {
 			control_high |= AXI_CONTROL_LAST;
 			next = 0;
 		}
-		put_descriptor(channel, count, source, destination, (uint32_t)(piece >> width), control_low, control_high,
+
+		/* Writes the descriptor and moves past its block. */
+		put_descriptor(channel,
+			       count,
+			       source,
+			       destination,
+			       (uint32_t)(piece >> width),
+			       control_low,
+			       control_high,
 			       next);
 		source += piece;
 		destination += piece;
@@ -489,11 +527,16 @@ drv_dw_axi_dmac_copy(
 	/* Waits for the end of the chain or an error. */
 	status = 0;
 	for (polls = 0; polls < AXI_COPY_POLLS; polls++) {
+		/* Stops polling once the channel reports the end or an error. */
 		status = read_channel(channel, AXI_CH_STATUS);
 		if ((status & (AXI_EVENT_TRANSFER_DONE | AXI_EVENT_ERRORS)) != 0)
 			break;
+
+		/* Gives the channel time to move more data. */
 		kern_usleep_range(20U, 40U);
 	}
+
+	/* Clears what the channel reported and stops it reporting. */
 	write_channel(channel, AXI_CH_CLEAR, AXI_EVENT_ALL);
 	write_channel(channel, AXI_CH_STATUS_ENABLE, 0);
 
@@ -588,8 +631,14 @@ drv_dw_axi_dmac_cyclic_prepare(
 	/* Writes one descriptor a period, each ending its chain and linked to the next, the last to the first. */
 	for (index = 0; index < cyclic->period_count; index++) {
 		next = descriptor_address(channel, (index + 1U) % cyclic->period_count);
-		put_descriptor(channel, index, cyclic->ring_address + (uint64_t)index * cyclic->period_bytes,
-			       cyclic->device_address, beats, control_low, control_high, next);
+		put_descriptor(channel,
+			       index,
+			       cyclic->ring_address + (uint64_t)index * cyclic->period_bytes,
+			       cyclic->device_address,
+			       beats,
+			       control_low,
+			       control_high,
+			       next);
 	}
 
 	/* Records the transfer for the start and the interrupt. */
@@ -687,10 +736,12 @@ drv_dw_axi_dmac_cyclic_stop(
 
 	spin_unlock_irqrestore(&channel->controller->lock, enabled);
 
-	/* Waits for the channel's last beats, then clears what it reported. */
+	/* Waits for the channel's last beats. */
 	error = wait_idle(channel);
 	if (error != 0)
 		kern_logf("dw-axi-dmac: channel %u did not stop\n", channel->index);
+
+	/* Clears what the channel reported and stops it reporting. */
 	write_channel(channel, AXI_CH_STATUS_ENABLE, 0);
 	write_channel(channel, AXI_CH_CLEAR, AXI_EVENT_ALL);
 }
@@ -754,6 +805,8 @@ describe(
 	error = read_cells(fdt, node, "snps,block-size", cells, controller->channel_count);
 	if (error != 0)
 		return error;
+
+	/* Keeps each channel's block size, refusing an empty one. */
 	for (index = 0; index < controller->channel_count; index++) {
 		if (cells[index] == 0)
 			return EINVAL;
@@ -764,6 +817,8 @@ describe(
 	error = read_cells(fdt, node, "snps,priority", cells, controller->channel_count);
 	if (error != 0)
 		return error;
+
+	/* Keeps each channel's priority, refusing one outside the channels. */
 	for (index = 0; index < controller->channel_count; index++) {
 		if (cells[index] >= controller->channel_count)
 			return EINVAL;
@@ -829,13 +884,18 @@ reset_channels(
 
 	/* Silences and stops each channel the firmware may have left running. */
 	for (index = 0; index < controller->channel_count; index++) {
+		/* Masks the channel's events and stops it. */
 		channel = &controller->channels[index];
 		write_channel(channel, AXI_CH_SIGNAL_ENABLE, 0);
 		write_channel(channel, AXI_CH_STATUS_ENABLE, 0);
 		switch_channel(channel, 0);
+
+		/* Waits for the channel to go idle. */
 		error = wait_idle(channel);
 		if (error != 0)
 			kern_logf("dw-axi-dmac: channel %u stays busy\n", index);
+
+		/* Clears what the channel had raised. */
 		write_channel(channel, AXI_CH_CLEAR, AXI_EVENT_ALL);
 	}
 }
@@ -1097,15 +1157,23 @@ wait_idle(
 	int busy;
 
 	/* Polls the enable register for the channel's bit to fall. */
+	busy = 1;
 	for (polls = 0; polls < AXI_STOP_POLLS; polls++) {
+		/* Stops polling once the channel is idle. */
 		busy = channel_enabled(channel);
 		if (busy == 0)
-			return 0;
+			break;
+
+		/* Gives the channel time to finish its beats. */
 		kern_usleep_range(20U, 40U);
 	}
 
-	/* The channel kept moving data. */
-	return ETIMEDOUT;
+	/* Reports a channel that kept moving data. */
+	if (busy != 0)
+		return ETIMEDOUT;
+
+	/* Succeeded: the channel is idle. */
+	return 0;
 }
 
 /*
@@ -1167,13 +1235,16 @@ controller_interrupt(
 	unsigned finished;
 	unsigned index;
 
-	(void)irq;
+	UNUSED_PARAMETER(irq);
+
+	/* Takes the controller the line was registered with. */
 	controller = argument;
 
 	/* Serves every channel's events with the restart decisions under the lock. */
 	enabled = spin_lock_irqsave(&controller->lock);
 
 	for (index = 0; index < controller->channel_count; index++) {
+		/* Starts with no period to report for the channel. */
 		channel = &controller->channels[index];
 		callbacks[index] = NULL;
 		arguments[index] = NULL;
@@ -1189,6 +1260,8 @@ controller_interrupt(
 		status = read_channel(channel, AXI_CH_STATUS);
 		if (status == 0)
 			continue;
+
+		/* Clears the events that were taken. */
 		write_channel(channel, AXI_CH_CLEAR, status);
 
 		/* An error stops the cyclic transfer for good. */

@@ -71,6 +71,11 @@ static uint64_t kernel_phys_start;
  * kernel_root_sealed says so from then on.
  */
 static uint64_t kernel_root[RISCV64_TABLE_ENTRIES] __attribute__((aligned(RISCV64_PAGE_SIZE)));
+
+/*
+ * Nonzero once riscv64_space_init() has written kernel_root's upper half,
+ * which is never written again from then on.  Written once by the boot hart.
+ */
 static int kernel_root_sealed;
 
 /*
@@ -92,12 +97,16 @@ static uint64_t *device_tables[RISCV64_DEVICE_ROOT_COUNT];
 static volatile unsigned kernel_table_lock;
 
 /*
- * Every user space that exists, the number the next one gets and how many
- * there are.  Kept under space_registry_lock; a space is looked up here
- * before its own lock is taken, so a destroyed space is never locked.
+ * Every user space that exists.  Kept under space_registry_lock; a space is
+ * looked up here before its own lock is taken, so a destroyed space is
+ * never locked.
  */
 static struct riscv64_space *space_registry;
+
+/* The number the next user space gets; kept under space_registry_lock, it starts at one. */
 static int next_space_id = 1;
+
+/* How many user spaces space_registry holds; kept under space_registry_lock. */
 static uint32_t space_count;
 
 /* Guards space_registry, next_space_id and space_count; zero when free. */
@@ -437,6 +446,8 @@ hal_space_destroy(
 		kernel_free(page);
 		(void)__atomic_fetch_sub(&page_table_count, 1U, __ATOMIC_RELAXED);
 	}
+
+	/* Marks the record dead for a stale handle, then frees the root and the record. */
 	space->magic = 0;
 	(void)hal_pmem_free(&space->root_memory, RISCV64_PAGE_SIZE);
 	kernel_free(space);
@@ -561,6 +572,7 @@ hal_space_map(
 
 	/* Writes a leaf for each page, unwinding them all if a table cannot be made. */
 	for (offset = 0; offset < size; offset += RISCV64_PAGE_SIZE) {
+		/* Finds or makes the page's leaf; without a table, clears the leaves written so far. */
 		leaf = walk_leaf(space, address + offset, 1);
 		if (leaf == NULL) {
 			for (rollback = 0; rollback < offset; rollback += RISCV64_PAGE_SIZE) {
@@ -568,6 +580,8 @@ hal_space_map(
 				if (leaf != NULL)
 					*leaf = 0;
 			}
+
+			/* Unlinks the tables left empty, drops their translations and fails. */
 			detached = detach_empty_tables(space);
 			hal_wmb();
 			flush_space(handle);
@@ -575,6 +589,8 @@ hal_space_map(
 			space_unlock(space, enabled);
 			return HAL_ERR_NOMEM;
 		}
+
+		/* Points the leaf at the page. */
 		*leaf = leaf_entry((uint64_t)paddr + offset, user_leaf_flags(attr));
 	}
 
@@ -623,12 +639,14 @@ hal_space_unmap(
 	if (!locked)
 		return HAL_ERR_STATE;
 
-	/* Clears each leaf, then unlinks the tables that became empty. */
+	/* Clears each leaf. */
 	for (offset = 0; offset < size; offset += RISCV64_PAGE_SIZE) {
 		leaf = walk_leaf(space, address + offset, 0);
 		if (leaf != NULL)
 			*leaf = 0;
 	}
+
+	/* Unlinks the tables that became empty. */
 	detached = detach_empty_tables(space);
 
 	/* Drops the stale translations before the tables are reused. */
@@ -710,6 +728,8 @@ hal_space_prot_query(
 			observed |= HAL_SPACE_PAGE_DIRTY;
 		*leaf = old & ~(uint64_t)RISCV64_PTE_V;
 	}
+
+	/* Drops the old translations on every hart that has the space. */
 	hal_wmb();
 	flush_space(handle);
 
@@ -725,6 +745,8 @@ hal_space_prot_query(
 		old = *leaf;
 		*leaf = (old & PTE_PPN_MASK) | user_leaf_flags(attr) | (old & RISCV64_PTE_SW_DIRTY);
 	}
+
+	/* Publishes the new leaves and drops the old translations. */
 	hal_wmb();
 	flush_space(handle);
 
@@ -1014,12 +1036,16 @@ hal_space_unmap_device(
 	address = (uint64_t)(uintptr_t)vaddr;
 	if (size == 0)
 		return HAL_ERR_INVALID;
+
+	/* A range in the device window leaves the shared entries in place. */
 	if (address >= RISCV64_DEVICE_BASE && address < RISCV64_DEVICE_BASE + RISCV64_DEVICE_LIMIT) {
 		offset = address - RISCV64_DEVICE_BASE;
 		if ((uint64_t)size > RISCV64_DEVICE_LIMIT - offset)
 			return HAL_ERR_INVALID;
 		return HAL_OK;
 	}
+
+	/* A range in the direct map was never mapped for the caller. */
 	if (address >= RISCV64_DIRECT_BASE && address < RISCV64_DIRECT_BASE + RISCV64_DIRECT_LIMIT)
 		return HAL_OK;
 
@@ -1270,6 +1296,8 @@ build_direct_megapage(
 		if (mappable)
 			pages[page_index] = leaf_entry(page, KERNEL_LEAF | RISCV64_PTE_R | RISCV64_PTE_W);
 	}
+
+	/* Links the page table into the root's entry. */
 	table[index] = pointer_entry(pages_physical);
 }
 
@@ -1341,6 +1369,8 @@ build_kernel_window(
 		} else if (address >= (uintptr_t)__kernel_rodata_start && address < (uintptr_t)__kernel_rodata_end) {
 			flags = KERNEL_LEAF | RISCV64_PTE_R;
 		}
+
+		/* Maps the page with those permissions. */
 		pages[page] = leaf_entry(riscv64_virt_to_phys((const void *)address), flags);
 	}
 }
@@ -1484,14 +1514,19 @@ harts_selecting(
 	*self = false;
 	mask = 0;
 	for (cpu = 0; cpu < RISCV64_CPU_MAX; cpu++) {
+		/* Skips a hart that has another space selected. */
 		record = riscv64_percpu_get(cpu);
 		selected = __atomic_load_n(&record->current_space, __ATOMIC_ACQUIRE);
 		if (selected != handle)
 			continue;
+
+		/* The calling hart drops its own translations without an interrupt. */
 		if (record == current) {
 			*self = true;
 			continue;
 		}
+
+		/* Adds a hart that is up to the ones to interrupt. */
 		ready = __atomic_load_n(&record->ready, __ATOMIC_ACQUIRE);
 		if (ready != 0)
 			mask |= 1UL << record->hart_id;
@@ -1573,6 +1608,8 @@ space_lock_handle(
 			break;
 		hal_atomic_relax();
 	}
+
+	/* Records the hart that holds the space's lock. */
 	space->lock_owner = me;
 
 	/* Leaves the registry with interrupts still off for the space's operation. */
@@ -1763,6 +1800,7 @@ detach_empty_tables(
 	struct riscv64_table_page **link;
 	struct riscv64_table_page *page;
 	uint64_t parent_entry;
+	uint64_t expected_entry;
 	int again;
 	int empty;
 
@@ -1783,8 +1821,9 @@ detach_empty_tables(
 
 			/* The parent entry must point at this very table. */
 			parent_entry = page->parent[page->parent_index];
+			expected_entry = pointer_entry(page->memory);
 			if ((parent_entry & RISCV64_PTE_V) == 0 ||
-			    pointer_entry(page->memory) != parent_entry)
+			    expected_entry != parent_entry)
 				HAL_FATAL("detaching an unlinked riscv64 page table");
 
 			/* Unlinks the table from its parent and from the space's list. */

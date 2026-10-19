@@ -162,6 +162,7 @@ riscv64_smp_configure(
 		cpu_count++;
 	}
 
+	/* Reports how many harts the kernel will use. */
 	hal_printf("RISCV64 SMP %u CPUs (device tree %u usable of %u, limit %u)\n",
 		   cpu_count,
 		   usable,
@@ -480,6 +481,8 @@ hal_cpu_panic_all(
 		if (ready)
 			(void)send_reason(cpu, RISCV64_IPI_STOP);
 	}
+
+	/* Stops this hart too. */
 	hal_cpu_park();
 }
 
@@ -589,8 +592,12 @@ start_one(
 				   cpu_hart_id[cpu]);
 			HAL_FATAL("riscv64 secondary hart did not come up");
 		}
+
+		/* Waits a moment before looking again. */
 		hal_atomic_relax();
 	}
+
+	/* Reports that the hart is online. */
 	hal_printf("RISCV64 SMP cpu %u online (hart %lu)\n", (uint32_t)cpu, cpu_hart_id[cpu]);
 
 	/* Succeeded: the hart runs its initial task. */

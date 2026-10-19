@@ -120,10 +120,12 @@ static uint8_t kernel_header[ZBL_ELF_HEADER_BYTES] __attribute__((aligned(8)));
 /* The configuration parsed from zedbsd.cfg; too large for the firmware's stack. */
 static struct zbl_uefi_kern_config configuration;
 
-/* The paths of the configuration file and the ramdisk on the volume, in UTF-16. */
+/* The path of the configuration file on the volume, in UTF-16. */
 static const CHAR16 config_path[] = {
 	'\\', 'Z', 'E', 'D', 'B', 'S', 'D', '.', 'C', 'F', 'G', 0
 };
+
+/* The path of the initial ramdisk on the volume, in UTF-16; it may be absent. */
 static const CHAR16 initrd_path[] = {
 	'\\', 'R', 'O', 'O', 'T', '.', 'I', 'M', 'G', 0
 };
@@ -732,12 +734,14 @@ load_configuration(
 	if (EFI_ERROR(status))
 		return status;
 
-	/* Refuses a file larger than the parser takes. */
+	/* Measures the file. */
 	status = file_size(file, &size);
 	if (EFI_ERROR(status)) {
 		(void)file->Close(file);
 		return status;
 	}
+
+	/* Refuses an empty file, or one larger than the parser takes. */
 	if (size == 0 || size >= sizeof(config_buffer)) {
 		(void)file->Close(file);
 		return EFI_BAD_BUFFER_SIZE;
@@ -937,6 +941,8 @@ report_graphics(
 		console_ascii(context, "\n");
 		return;
 	}
+
+	/* Says that the kernel will draw on the screen. */
 	console_ascii(context, "RV64 GOP handed over\n");
 }
 
@@ -1075,7 +1081,8 @@ allocate_kernel(
 	}
 
 	/* Takes any pages with room to round the start up to a megapage. */
-	status = context->boot->AllocatePages(AllocateAnyPages, EfiLoaderData,
+	status = context->boot->AllocatePages(AllocateAnyPages,
+					      EfiLoaderData,
 					      pages + (UINTN)(RISCV64_KERNEL_PHYS_ALIGN / PAGE_SIZE),
 					      &address);
 	if (EFI_ERROR(status))
@@ -1114,12 +1121,14 @@ load_kernel(
 	if (EFI_ERROR(status))
 		return status;
 
-	/* Refuses a kernel file too small for its headers or too large to be one. */
+	/* Measures the kernel file. */
 	status = file_size(file, &size);
 	if (EFI_ERROR(status)) {
 		(void)file->Close(file);
 		return status;
 	}
+
+	/* Refuses a kernel file too small for its headers or too large to be one. */
 	if (size < ZBL_ELF_HEADER_BYTES || size > MAX_KERNEL_FILE) {
 		(void)file->Close(file);
 		return EFI_BAD_BUFFER_SIZE;
@@ -1153,6 +1162,8 @@ load_kernel(
 		(void)file->Close(file);
 		return status;
 	}
+
+	/* Records where the pages start, which the image is placed at. */
 	run->base = base;
 
 	/* Rebases the plan onto the pages. */
@@ -1210,12 +1221,14 @@ load_initrd(
 	if (EFI_ERROR(status))
 		return status;
 
-	/* Refuses an empty or oversized ramdisk. */
+	/* Measures the ramdisk. */
 	status = file_size(file, &bytes);
 	if (EFI_ERROR(status)) {
 		(void)file->Close(file);
 		return status;
 	}
+
+	/* Refuses an empty or oversized ramdisk. */
 	if (bytes == 0 || bytes > MAX_INITRD_FILE) {
 		(void)file->Close(file);
 		return EFI_BAD_BUFFER_SIZE;
@@ -1306,16 +1319,18 @@ exit_boot_services(
 			return status;
 		list_reserved(handoff, screen, map, map_size, descriptor_size);
 
-		/* Exits; only a stale key is retried. */
+		/* Exits; only a stale key, which the firmware reports as an invalid parameter, is retried. */
 		status = context->boot->ExitBootServices(context->image, map_key);
-		if (status == EFI_SUCCESS)
-			return EFI_SUCCESS;
 		if (status != EFI_INVALID_PARAMETER)
-			return status;
+			break;
 	}
 
-	/* Every retry found the map changed. */
-	return status;
+	/* Reports a firmware that refused to exit, or a map that changed on every attempt. */
+	if (status != EFI_SUCCESS)
+		return status;
+
+	/* Succeeded: boot services are gone and the handoff lists the firmware's RAM. */
+	return EFI_SUCCESS;
 }
 
 /*
