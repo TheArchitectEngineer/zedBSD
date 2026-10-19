@@ -35,7 +35,12 @@ QEMU v10.0.11（一部 v10.0.3 と同一）、worktree p1 の `build/tmp/ws271-d
 6. 3 段の page table（9+9+9+12）は設計だけ。SEGBITS 42 の xuseg の下 512 GiB だけを使う範囲で破綻が無い事は p003 で。
 7. HAL の `mips64.h` の案は [proposed/hal-mips.md](../../ws271/proposed/hal-mips.md) の形（U1 で事前承認）。中身は p002 で書く。
 
-## 設計の修正
+## 設計の修正（改訂 2、2026-10-19 P1、q1277）
+
+design-review-1 の M8 に合わせ、design.md §8 に「物理の範囲」の行を足した: 正の物理の範囲を low の alias（物理 0〜`min(RAM, 256 MiB)`）と `0x80000000 + 256 MiB`〜`0x80000000 + RAM` に決め、物理 `0x80000000`〜`+256 MiB` と `0x20000000` の alias は memory map に入れない。kernel の image（物理 `0x00100000`〜）と ENVP（`0x2000`）は low の側で予約する。direct map（XKPHYS）と CKSEG0 の virt→phys はどちらもこの範囲に入る。上の「memory map」の行の「XKPHYS の direct map」は、この範囲の上で読む。
+MIPS64R2-generic の cache（256 set × 32 byte × 4 way、way 8 KiB）は色がある（design.md §3.5、M7）。QEMU では表に出ない。
+
+## 設計の修正（版 1）
 
 design.md §8 の表に「Status の KX は entry で 0、XKPHYS の前に立てる」と「Config3.LPA=1 だが PageGrain.ELPA は立てない（RAM は 32 bit の物理の中）」を足し、確認の水準（*）を source で確かめた所から外した。WS271 の部分は変えていない。
 

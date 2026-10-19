@@ -12,6 +12,7 @@
 - Octeon の機種（2026-10-19 14:17 ユーザー）: 「Octeon は EdgeRouter Lite-3が入手できそうです。OcteonはTLB操作のSDKがありますが、そんなに非互換が強いんですかねえ。」 → Q1 の覚え（未確認）: EdgeRouter Lite-3 は Cavium Octeon Plus CN5020（cnMIPS64 の 2 core、big endian、U-Boot、内部の USB 記憶）。TLB は MIPS64r2 の標準の命令で扱える見込み。訂正（2026-10-19 14:19 ユーザー 「Linux も FreeBSD も、10年前に私が確認したときにはCaviumのSDKをマージしてました。今はどうかわかりません。」）: Linux は arch/mips/cavium-octeon/executive/ に Cavium の SDK（cvmx-bootmem・cvmx-sysinfo・cvmx-l2c・helper・PKO など、SoC の資源の調整と network）を取り込んでいた（v3.1 などの tree で確認）。今の mainline と FreeBSD の現状は未確認。SDK に頼る範囲と出典の license は着手の時の設計で確かめる。差の大きい所は FPU が無い（hardfloat の userland には kernel の FPU の emulation か softfloat の build が要る）、big endian、CIU の割り込み・Ethernet などの Octeon 固有の周辺、U-Boot の起動の情報の形。
 - 設計（2026-10-19 P1、ws271-p001）: 共通の部分（QEMU malta の事実、toolchain、HAL の共通の層 `src/hal/mips/`、試験）と WS272 の差分は [WS271 の design.md](../ws271/design.md) の §1〜§6・§8。p001 は §8 の確認の計画だけ（LW 2）。QEMU の CPU は `MIPS64R2-generic` を案に（既定の 20Kc は R1、U4 でユーザーに聞く）。
 - 決定（2026-10-19 14:29 ユーザー、クリック）: WS271 の判断（クリック）: U1 HAL の差分は「同じ形で事前承認」（WS263〜266 と同じ形、plan/ws271/proposed/hal-mips.md）、U2 toolchain は「LLVM の Mips を待つ」、U3 MIPS32 の hardfloat の ABI は「FPXX（FR=1）」、U4 MIPS64 の QEMU の CPU は「MIPS64R2-generic」。U5 画面は Q1 が既定の 640x480。
+- 設計の改訂 2（2026-10-19 P1、q1277）: design-review-1 の M8（同じ RAM が物理 0 と `0x80000000` の 2 つを持つ）を [design.md](../ws271/design.md) §8 で確定: 正の物理の範囲は low の alias（0〜min(RAM,256MiB)）と `0x80000000+256MiB`〜`0x80000000+RAM`、image と ENVP は low 側で予約。
 - 担当: 未割当（WS256 の後か、手の空いた時）。
 
 ## 完了の条件（案、p001 の設計で確定）
@@ -26,8 +27,8 @@
 | Phase | 目的 | 状態 |
 | --- | --- | --- |
 | p001 | 設計: malta の memory map・PCI（GT-64120）・PIIX4・VGA、firmware（YAMON 相当の -kernel の直の起動）と handoff、mips64el の toolchain の triple と linker の emulation、HAL の構成、HAL の API の差分、試験の道具（boot-test.sh の mode）、Phase の表 | in-progress（q1276、P1、2026-10-19）: 確認済み、レビュー待ち（[phase.md](phase001/phase.md)） |
-| p002 | 64 bit の入口と console（共通の層を `HAL_ARCH_MIPS64` で、XKPHYS・CKSEG0）、LW 8 | planning |
-| p003 | XTLB refill・3 段の table・native atomic、VFS の段まで、LW 10 | planning |
+| p002 | 64 bit の入口と console（共通の層を `HAL_ARCH_MIPS64` で、XKPHYS・CKSEG0、design.md §8 の正の物理の範囲（low の alias ＋ `0x80000000+256MiB` 以上）。依存: WS271 p002、LLVM の Mips。HAL の差分 D1・D3 は U1 で承認済み）、LW 8 | planning |
+| p003 | XTLB refill・3 段の table・native atomic、self-test の 64 bit の版、VFS の段まで（依存: WS271 p004）、LW 10 | planning |
 | p004 | 規約の全文の見直し、LW 3 | planning |
 
 ## 依存
