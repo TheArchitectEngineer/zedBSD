@@ -751,8 +751,9 @@ load_configuration(
  * recorded there without changing the choice.
  *
  * Procedure referenced: Linux v6.12 drivers/firmware/efi/libstub/riscv.c
- * (get_boot_hartid_from_efi and get_boot_hartid_from_fdt: the protocol
- * first, the tree's /chosen when the protocol gives no id).
+ * (check_platform_features, get_boot_hartid_from_efi and
+ * get_boot_hartid_from_fdt: the protocol first, the tree's /chosen when
+ * the protocol gives no id).
  */
 static EFI_STATUS
 find_boot_hart(
