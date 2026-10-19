@@ -15,13 +15,13 @@
 
 ## 依存
 
-- [WS256](../ws256/ws.md) の p011（framebuffer）・p013（clock・reset の基盤）・p015（rootfs からの起動）。
+- [WS256](../ws256/ws.md) の p011（framebuffer の実機）・p013（clock・reset の基盤）・p015（rootfs からの起動の実機）・p020（USB keyboard、画面での試験の操作）・p022（CRG の実機の確かめ）・p023（DMA の coherency と予備 (i) の uncached の別名。GPU は非 coherent を既定にする、[design.md](design.md) §3.2）。
 
 ## Phase
 
 | Phase | 中身 | 依存 | Status |
 | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 設計（driver の構成・firmware・userland の Vulkan の道・Phase の分割）。コードは書かない | — | in-progress（設計の文書が出来た、design-reviewer 待ち。2026-10-19 P2、q1316、[design.md](design.md)） |
+| [p001](phase001/phase.md) | 設計（driver の構成・firmware・userland の Vulkan の道・Phase の分割）。コードは書かない | — | in-progress（改訂 2 が出来た、design-reviewer の差分の確認待ち。2026-10-19 P2、q1316・q1319、[design.md](design.md)、[レビュー 1](design-review-1.md)） |
 
 残りの Phase は p001 の設計から作る。
 
