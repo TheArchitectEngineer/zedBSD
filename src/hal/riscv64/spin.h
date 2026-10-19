@@ -38,9 +38,12 @@ riscv64_spin_lock(
 
 	/* Spins until the word goes from free to held under this hart. */
 	for (;;) {
+		/* Leaves the spin once the word is taken. */
 		acquired = hal_atomic_uint_try_acquire(lock);
 		if (acquired)
 			break;
+
+		/* Lets the hart rest before trying again. */
 		hal_atomic_relax();
 	}
 

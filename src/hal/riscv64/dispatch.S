@@ -12,6 +12,7 @@
  * The kernel's C code is built without floating point; the save and
  * restore below tell the assembler that they may use the F and D
  * extensions.
+ *
  * The thread pointer is not switched: in the kernel it names the hart, and
  * a task resumed on another hart finds that hart's record in it.
  */
@@ -31,6 +32,7 @@
 	.global asm_task_dispatch
 	.type asm_task_dispatch, %function
 asm_task_dispatch:
+	/* Keeps the departing context's callee-saved registers and return address. */
 	addi sp, sp, -112
 	sd s0, 0(sp)
 	sd s1, 8(sp)
@@ -45,8 +47,12 @@ asm_task_dispatch:
 	sd s10, 80(sp)
 	sd s11, 88(sp)
 	sd ra, 96(sp)
+
+	/* Leaves the departing stack and takes the arriving one. */
 	sd sp, 0(a0)
 	ld sp, 0(a1)
+
+	/* Pops the arriving context's registers and returns into it. */
 	ld s0, 0(sp)
 	ld s1, 8(sp)
 	ld s2, 16(sp)
@@ -73,8 +79,11 @@ asm_task_dispatch:
 	.global riscv64_kernel_task_entry
 	.type riscv64_kernel_task_entry, %function
 riscv64_kernel_task_entry:
+	/* Releases the departed task, then turns interrupts on. */
 	call riscv64_task_finish_switch
 	csrsi sstatus, 2
+
+	/* Runs the function with its argument; a system task never returns from it. */
 	mv a0, s1
 	jalr s0
 	call riscv64_task_returned
@@ -88,6 +97,7 @@ riscv64_kernel_task_entry:
 	.global riscv64_user_frame_entry
 	.type riscv64_user_frame_entry, %function
 riscv64_user_frame_entry:
+	/* Releases the departed task, marks the first frame used and returns to user. */
 	call riscv64_task_finish_switch
 	call riscv64_task_first_user_entry
 	csrci sstatus, 2

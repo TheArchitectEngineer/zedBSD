@@ -168,12 +168,17 @@ riscv64_high_entry:
 	.global riscv64_secondary_entry
 	.type riscv64_secondary_entry, %function
 riscv64_secondary_entry:
+	/* Makes the image's instructions visible to this hart's fetch. */
 	fence.i
+
+	/* Interrupts off and nothing pending through sscratch; early traps stop. */
 	csrw sie, zero
 	csrci sstatus, 2
 	csrw sscratch, zero
 	lla t0, riscv64_early_trap
 	csrw stvec, t0
+
+	/* No user access from the kernel and no vector unit; the FP unit on, initial. */
 	li t0, RISCV64_SSTATUS_SUM | RISCV64_SSTATUS_VS | RISCV64_SSTATUS_FS
 	csrc sstatus, t0
 	li t0, RISCV64_SSTATUS_FS_INITIAL
@@ -194,6 +199,7 @@ riscv64_secondary_entry:
 	jr t0
 
 riscv64_secondary_high:
+	/* The hart's boot stack and the early trap at their linked addresses, then C. */
 	mv sp, s1
 	lla t0, riscv64_early_trap
 	csrw stvec, t0
@@ -226,6 +232,11 @@ riscv64_high_entry_address:
 riscv64_secondary_high_address:
 	.dword riscv64_secondary_high
 
+	/*
+	 * The boot table's root and the image window's table below it, which
+	 * space.c also reads for the secondary harts' satp, and the boot hart's
+	 * stack.  They are zeroed with the rest of the BSS before use.
+	 */
 	.section .bss.boot, "aw", %nobits
 	.balign 4096
 	.global riscv64_boot_root

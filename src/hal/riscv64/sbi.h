@@ -82,7 +82,8 @@ riscv64_sbi_reset(
 __attribute__((noreturn));
 
 void
-riscv64_sbi_shutdown(void)
+riscv64_sbi_shutdown(
+	void)
 __attribute__((noreturn));
 
 uint64_t
