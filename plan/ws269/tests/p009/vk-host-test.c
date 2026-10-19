@@ -28,7 +28,7 @@
 #include "drivers/gpu/powervr/render-private.h"
 #include "drivers/gpu/powervr/interface.h"
 #include "drivers/gpu/powervr/compute-program.h"
-#include "drivers/gpu/powervr/shader-compile.h"
+#include "drivers/gpu/powervr/shader.h"
 #include "drivers/gpu/powervr/vk.h"
 #include "frame-host.h"
 
