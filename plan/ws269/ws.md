@@ -39,6 +39,7 @@
 | p010e | PBE の store・固定の program・kernel の render check | p010c、p010d | planning（同） |
 | p010f | transfer（copy・blit・clear、3D の道） | p010c、p010d | planning（同） |
 | p010g | render pass・framebuffer・load/store・clear・job の列 | p010e | planning（同） |
+| [p010-compiler](phase010-compiler/phase.md) | SPIR-V から USC への compiler（spirv-fill の置き換え、compute・vertex・fragment、pack・blend・EOT は D-P3 (b) で compiler） | p008、p009 | in-progress（2026-10-20 P2 q1363: 読みと中間形の interpreter の host 試験まで） |
 | p010h | descriptor と compiler の境（`shader.h`、PDS の data の program） | p010c、q1363 | planning（同） |
 | p010i | graphics の pipeline と draw | p010g、p010h、q1363 | planning（同） |
 | p010j | depth と vkdemo の offscreen | p010i | planning（同） |

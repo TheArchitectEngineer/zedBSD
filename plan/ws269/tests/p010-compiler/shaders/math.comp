@@ -1,0 +1,12 @@
+#version 450
+// The lowered functions, eight results per invocation.
+layout(local_size_x = 32) in;
+layout(std430, set = 0, binding = 1) buffer Data { vec4 data[]; };
+void main()
+{
+	uint x = gl_GlobalInvocationID.x;
+	float f = float(x) * 0.37 - 5.0;
+	vec2 p = vec2(f, 1.5);
+	data[2u * x] = vec4(sin(f), cos(f), abs(f), clamp(f, -1.0, 2.0));
+	data[2u * x + 1u] = vec4(mix(f, 3.0, 0.25), length(p), smoothstep(-2.0, 2.0, f), max(min(f, 1.0), -3.0) + inversesqrt(abs(f) + 1.0));
+}

@@ -1,0 +1,21 @@
+#version 450
+// Nested divergent ifs on floats and integers, with a select.
+layout(local_size_x = 32) in;
+layout(std430, set = 0, binding = 0) buffer Data { float data[]; };
+layout(push_constant) uniform Push { float scale; uint limit; } push;
+void main()
+{
+	uint x = gl_GlobalInvocationID.x;
+	float f = float(x) * push.scale;
+	float r;
+	if (f < 4.0) {
+		r = f * 2.0;
+		if (x == 1u)
+			r = -1.0;
+	} else if (x < push.limit) {
+		r = sqrt(f);
+	} else {
+		r = x > 20u ? floor(f * 0.3) : fract(f * 0.3);
+	}
+	data[x] = r;
+}
