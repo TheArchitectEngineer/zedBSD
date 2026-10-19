@@ -271,3 +271,9 @@ user「AX211のpassthruは、きちんとLinuxドライバをblacklistして再�
 ユーザー:「PI4のような低消費電力のモバイルSoCでは、画像をCPUで触ると、体験を損ないます。すべてGPUで処理する必要があります。5330のCPUは強力なので、CPUでも問題なかったんだと思います。スマホのゲーム移植ではよくあることです。」→ compositor・libkeiland・desktop の app・GPU の driver（kernel）は、描画の毎 frame の経路で画素を CPU で触らない（縮小・合成・blur・色の変換・tiling の並べ替え（raster→UIF など）・写し）。GPU の command（描画の pass・vkCmdBlitImage・vkCmdCopyImage・TLB copy・TFU など）で行う。CPU で画素を触るのは、file の decode（jail の中）と、起動の時・内容が変わった時の一度だけの用意に限り、その時も結果を GPU の側で使い回す。5330 で速くても Pi 4 で確かめる。既存の CPU の経路は WS141 p013 と以後の Phase で順に GPU へ移す。
 
 補い（2026-10-12 ユーザー）:「GPUでglassをやってほしかったのですが、以前あなたがCPUでやりたいと言ってそういう実装にしたのです。GPUでできるならそれがいいです。」→ glass（backdrop の blur・合成）は GPU だけで行う（画面外の texture に描く → fragment shader で縮小と blur の段 → blur した texture を sample して板を合成）。CPU への書き戻しはしない。Pi 4 では WS141 の案 (A)（GPU の描画の出力を UIF で持つ）がその前提。
+
+## userland/base の program の有無（2026-10-19 ユーザー）
+
+「userland/base/はよほどのことがない限りアーキごとに存在する・しないで分けたくないです。32-bitでNICがないアーキテクチャは、ESP32とかPIC32MXとかでないかぎり、たぶんないのでは。」
+- userland/base の program は、arch・platform ごとに「有る・無い」を分けない。新しい port も、userland を build する段では base の全部を build して root に入れる。link が通らない時は runtime・libc の側で直す。
+- 例外（NIC の無い microcontroller 級の target など）はユーザーの判断で決める。kernel だけの段（VFS の段まで）の port は userland を build しないので対象外。
