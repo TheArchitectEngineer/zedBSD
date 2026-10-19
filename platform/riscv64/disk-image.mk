@@ -24,10 +24,24 @@ $(BUILD)/disk.img: $(BUILD)/uefi/BOOTRISCV64.EFI $(BUILD)/vmunix \
 # u-boot.itb, as Debian's u-boot-starfive installs them), put the firmware
 # in partitions 1 and 2, so the board boots the card with its boot switch
 # set to SD.
-RISCV64_NATIVE_CONFIG := platform/riscv64/zedbsd-native.cfg
+RISCV64_NATIVE_CONFIG_SOURCE := platform/riscv64/zedbsd-native.cfg
+RISCV64_NATIVE_CONFIG := $(BUILD)/zedbsd-native.cfg
 RISCV64_NATIVE_SCRATCH_MIB ?= 64
 RISCV64_SPL ?=
 RISCV64_UBOOT_ITB ?=
+
+# The native image's boot configuration (ws270-p003): the source, and
+# login=graphical when ZEDBSD_GRAPHICAL_LOGIN is y, as the other ports put
+# it on the boot line.  Rechecked on every invocation; the mtime is kept
+# when the text is unchanged, so only a changed choice rebuilds the image.
+.PHONY: riscv64-native-config
+riscv64-native-config:
+
+$(RISCV64_NATIVE_CONFIG): $(RISCV64_NATIVE_CONFIG_SOURCE) riscv64-native-config
+	@mkdir -p $(dir $@)
+	@cp $(RISCV64_NATIVE_CONFIG_SOURCE) $@.tmp
+	$(if $(filter y,$(ZEDBSD_GRAPHICAL_LOGIN)),@printf '%s\n' login=graphical >> $@.tmp)
+	@if cmp -s $@.tmp $@; then rm -f $@.tmp; else mv -f $@.tmp $@; fi
 
 .PHONY: native-image
 native-image: $(BUILD)/native.img
