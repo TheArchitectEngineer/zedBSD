@@ -37,8 +37,12 @@
  *
  * The GPU core is brought up as far as reading its identity, from the
  * board's own description of it unless the device tree enables a node.
+ * The display controller the loader left on is then read, from the
+ * board's description of it or the tree's node, to decide whether its
+ * screen can be taken over; nothing of it is changed.
  */
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -51,6 +55,8 @@
 #include <drivers/platform/visionfive2/vf2-ethernet.h>
 #if CONFIG_DRIVER_POWERVR
 #include <drivers/platform/visionfive2/vf2-gpu.h>
+#include <drivers/platform/visionfive2/vf2-pmu.h>
+#include "drivers/gpu/powervr/powervr.h"
 #endif
 #include <drivers/platform/visionfive2/vf2-mmc.h>
 #include <drivers/platform/visionfive2/vf2-pcie.h>
@@ -118,6 +124,33 @@ static const struct drv_vf2_gpu_place vf2_gpu_builtin = {
 	0x100000ULL,
 	82U
 };
+
+/*
+ * Where the display controller is: the board's device tree usually has no
+ * enabled node for it, so the board describes it itself.
+ *
+ * Values referenced:
+ * StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
+ * arch/riscv/boot/dts/starfive/jh7110.dtsi (dc8200@29400000: the
+ * identity window 0x2940_0000 of 0x100 bytes, the display window
+ * 0x2940_0800 of 0x2000 bytes, interrupts 95).
+ */
+static const struct drv_powervr_dc_place vf2_dc_builtin = {
+	0x29400000ULL,
+	0x100ULL,
+	0x29400800ULL,
+	0x2000ULL,
+	95U
+};
+
+/*
+ * The power domain the display controller and the HDMI transmitter are in.
+ *
+ * Value referenced:
+ * Linux v6.12 include/dt-bindings/power/starfive,jh7110-pmu.h
+ * (JH7110_PD_VOUT 4).
+ */
+#define VF2_PD_VOUT		4U
 #endif
 
 /*
@@ -157,6 +190,9 @@ static void describe_card_detect(const struct drv_fdt *fdt);
 static void attach_sd_card(void);
 static void attach_ethernet(void);
 static void describe_sd_partitions(void);
+#if CONFIG_DRIVER_POWERVR
+static void probe_display_controller(const struct drv_fdt *fdt);
+#endif
 
 /*
  * Publishes the boot device of the VisionFive 2: the ramdisk, or the SD
@@ -546,6 +582,9 @@ probe_soc(
 	error = drv_vf2_gpu_attach(&fdt, &vf2_gpu_builtin);
 	if (error != 0)
 		kern_logf("visionfive2: GPU unavailable (%d)\n", error);
+
+	/* Reads the display controller the loader left on and decides on its takeover. */
+	probe_display_controller(&fdt);
 #endif
 #ifdef CONFIG_VF2_DMA_TEST
 
@@ -786,3 +825,65 @@ describe_sd_partitions(
 			  kind);
 	}
 }
+#if CONFIG_DRIVER_POWERVR
+
+/*
+ * Reads the display controller the loader left on, from the tree's
+ * enabled node when there is one and the board's description otherwise,
+ * and has the display driver decide whether its screen can be taken over.
+ *
+ * The controller is read only when its power domain is on; reading a
+ * powered-down block would stop the bus.
+ */
+static void
+probe_display_controller(
+	const struct drv_fdt *fdt)
+{
+	struct drv_powervr_dc_place place;
+	const uint8_t *cells;
+	uint32_t length;
+	uint32_t node;
+	bool enabled;
+	int powered;
+	int error;
+
+	/* Starts from the board's own description of the controller. */
+	place = vf2_dc_builtin;
+
+	/* Takes the windows and the interrupt from a node the tree enables, when there is one. */
+	error = drv_fdt_find_compatible(fdt, "starfive,jh7110-dc8200", DRV_FDT_NO_NODE, &node);
+	enabled = false;
+	if (error == 0)
+		enabled = drv_fdt_node_enabled(fdt, node);
+	if (enabled) {
+		error = drv_fdt_reg(fdt, node, 0, &place.control, &place.control_size);
+		if (error == 0)
+			error = drv_fdt_reg(fdt, node, 1, &place.display, &place.display_size);
+		if (error != 0) {
+			kern_logf("dc8200: no-go (unreadable device tree node, %d)\n", error);
+			return;
+		}
+
+		error = drv_fdt_property(fdt, node, "interrupts", &cells, &length);
+		if (error == 0 && length >= 4U)
+			place.interrupt = (uint32_t)drv_fdt_cells_value(cells, 0, 1U);
+	}
+
+	/* Leaves the controller alone when its power domain is off or unknown. */
+	error = drv_vf2_pmu_powered(VF2_PD_VOUT, &powered);
+	if (error != 0) {
+		kern_logf("dc8200: no-go (power domain unknown, %d)\n", error);
+		return;
+	}
+
+	if (!powered) {
+		kern_logf("dc8200: no-go (power domain off)\n");
+		return;
+	}
+
+	/* Has the display driver read the controller and log its decision. */
+	error = drv_powervr_dc_probe(&place);
+	if (error != 0 && error != ENOENT)
+		kern_logf("visionfive2: display controller unread (%d)\n", error);
+}
+#endif
