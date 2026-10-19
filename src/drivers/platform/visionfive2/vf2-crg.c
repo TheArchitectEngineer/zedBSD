@@ -32,6 +32,7 @@
 #include "drivers/platform/visionfive2/vf2-crg.h"
 #include "drivers/platform/visionfive2/vf2-syscon.h"
 #include <kern/device-io.h>
+#include <kern/kcrt.h>
 #include <kern/lock.h>
 #include <kern/pmem.h>
 #include <uapi/errno.h>
@@ -998,6 +999,58 @@ drv_vf2_clock_apply_assigned(
 }
 
 /*
+ * Finds a multiplexed clock that one driver may steer.
+ */
+static int
+find_mux(
+	const struct drv_vf2_clock *clock,
+	const struct crg_clock **entry,
+	volatile uint32_t **address)
+{
+	/* Refuses a clock outside the tables. */
+	*entry = find_clock(clock->crg, clock->index);
+	if (*entry == NULL)
+		return ENOENT;
+
+	/* Refuses a clock without a selector, or one several devices run on. */
+	if (((*entry)->flags & CLOCK_MUX) == 0)
+		return ENOTSUP;
+	if (((*entry)->flags & CLOCK_SHARED) != 0)
+		return ENOTSUP;
+
+	/* Refuses a clock whose generator is absent. */
+	*address = clock_register(clock->crg, clock->index);
+	if (*address == NULL)
+		return ENODEV;
+
+	/* Succeeded: the clock may be steered. */
+	return 0;
+}
+
+/*
+ * Writes a multiplexed clock's selector, keeping the gate and the other
+ * fields.
+ */
+static void
+write_mux(
+	volatile uint32_t *address,
+	unsigned selector)
+{
+	unsigned long irq;
+	uint32_t contents;
+
+	/* Rewrites only the selector field under the lock. */
+	irq = spin_lock_irqsave(&crg_lock);
+
+	contents = kern_mmio_read32(address);
+	contents &= ~(CRG_MUX_MASK << CRG_MUX_SHIFT);
+	contents |= (uint32_t)selector << CRG_MUX_SHIFT;
+	kern_mmio_write32(address, contents);
+
+	spin_unlock_irqrestore(&crg_lock, irq);
+}
+
+/*
  * Makes a multiplexed clock run from one of its sources.
  */
 int
@@ -1008,27 +1061,15 @@ drv_vf2_clock_set_parent(
 	const struct crg_clock *entry;
 	const struct crg_source *source;
 	volatile uint32_t *address;
-	unsigned long irq;
-	uint32_t contents;
 	unsigned selector;
+	int error;
 
-	/* Refuses a missing clock or parent, or a clock outside the tables. */
+	/* Refuses a missing clock or parent. */
 	if (clock == NULL || parent == NULL)
 		return EINVAL;
-	entry = find_clock(clock->crg, clock->index);
-	if (entry == NULL)
-		return ENOENT;
-
-	/* Refuses a clock without a selector, or one several devices run on. */
-	if ((entry->flags & CLOCK_MUX) == 0)
-		return ENOTSUP;
-	if ((entry->flags & CLOCK_SHARED) != 0)
-		return ENOTSUP;
-
-	/* Refuses a clock whose generator is absent. */
-	address = clock_register(clock->crg, clock->index);
-	if (address == NULL)
-		return ENODEV;
+	error = find_mux(clock, &entry, &address);
+	if (error != 0)
+		return error;
 
 	/* Finds the parent among the clock's sources. */
 	for (selector = 0; selector < entry->source_count; selector++) {
@@ -1044,17 +1085,48 @@ drv_vf2_clock_set_parent(
 	if (selector == entry->source_count)
 		return ENOENT;
 
-	/* Writes the selector, keeping the gate and the other fields. */
-	irq = spin_lock_irqsave(&crg_lock);
-
-	contents = kern_mmio_read32(address);
-	contents &= ~(CRG_MUX_MASK << CRG_MUX_SHIFT);
-	contents |= (uint32_t)selector << CRG_MUX_SHIFT;
-	kern_mmio_write32(address, contents);
-
-	spin_unlock_irqrestore(&crg_lock, irq);
-
 	/* Succeeded: the clock runs from the parent. */
+	write_mux(address, selector);
+	return 0;
+}
+
+/*
+ * Makes a multiplexed clock run from one of its generator's inputs.
+ */
+int
+drv_vf2_clock_set_input_parent(
+	const struct drv_vf2_clock *clock,
+	const char *input)
+{
+	const struct crg_clock *entry;
+	const struct crg_source *source;
+	volatile uint32_t *address;
+	unsigned selector;
+	int error;
+
+	/* Refuses a missing clock or input name. */
+	if (clock == NULL || input == NULL)
+		return EINVAL;
+	error = find_mux(clock, &entry, &address);
+	if (error != 0)
+		return error;
+
+	/* Finds the input among the clock's sources. */
+	for (selector = 0; selector < entry->source_count; selector++) {
+		/* Stops at the source that is the named input. */
+		source = &entry->sources[selector];
+		if (source->kind == SOURCE_INPUT &&
+		    source->input != NULL &&
+		    kern_strcmp(source->input, input) == 0)
+			break;
+	}
+
+	/* Refuses an input the clock cannot run from. */
+	if (selector == entry->source_count)
+		return ENOENT;
+
+	/* Succeeded: the clock runs from the input. */
+	write_mux(address, selector);
 	return 0;
 }
 

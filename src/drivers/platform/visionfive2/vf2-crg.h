@@ -145,6 +145,16 @@ int drv_vf2_clock_apply_assigned(const struct drv_fdt *fdt, uint32_t node);
 int drv_vf2_clock_set_parent(const struct drv_vf2_clock *clock, const struct drv_vf2_clock *parent);
 
 /*
+ * Makes a multiplexed clock run from an input of its generator, a clock
+ * from outside the generators named by the generator node's clock-names
+ * (for example the HDMI transmitter's hdmitx0_pixelclk).
+ *
+ * ENOTSUP means the clock has no selector or other devices share it;
+ * ENOENT that the input is not one of its sources.
+ */
+int drv_vf2_clock_set_input_parent(const struct drv_vf2_clock *clock, const char *input);
+
+/*
  * Makes a multiplexed clock run from one of the three PLLs (0 to 2).
  *
  * ENOTSUP means the clock has no selector or other devices share it;
