@@ -426,7 +426,7 @@ def main() -> int:
 
     # Types each step's line and waits for each step's screen.
     line = None
-    if arguments.serial is not None:
+    if any(kind == "type" for kind, _ in steps):
         line = SerialLine(arguments.serial, timeout=30.0)
     after = screenshot.with_name(f"{screenshot.stem}-after.png")
     for kind, text in steps:

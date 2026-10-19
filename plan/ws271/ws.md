@@ -23,8 +23,8 @@
 | --- | --- | --- |
 | [p001](phase001/phase.md) | 設計（[design.md](design.md)、WS272 と共通）: malta の memory map・GT-64120・PIIX4・VGA、`-kernel` の受け渡し、toolchain、HAL の構成、HAL の API の差分の案、試験の道具、Phase の表 | cleared（2026-10-19 Q1） |
 | [p002](phase002/phase.md) | 入口と console の画面（共通の層 `src/hal/mips/` の入口、bsp-malta の PCI・VGA・console、build の配線）、LW 12 | cleared（2026-10-19 Q1、T1-725） |
-| [p003](phase003/phase.md) | 例外・timer・8259・task（user の Status の組み立てを含む）、到達点は `TIMER TICK`（T1）、LW 10 | in-progress（q1281、P1、2026-10-19。実装 1d9d4bfa2、T1 の確認待ち） |
-| p004 | TLB・space・FPU・atomic と self-test（design.md §6.1）、VFS の段まで（T1 の画面）、LW 12 | planning |
+| [p003](phase003/phase.md) | 例外・timer・8259・task（user の Status の組み立てを含む）、到達点は `TIMER TICK`（T1）、LW 10 | in-progress（T1-728 待ち） |
+| p004 | TLB・space・FPU・atomic と self-test（design.md §6.1）、VFS の段まで（T1 の画面）、LW 12 | in-progress（q1283、P1、2026-10-19） |
 | p005 | 規約の全文の見直し、LW 4 | planning |
 
 設計の改訂 2（2026-10-19 P1、q1277）: design-review-1 の Minor 13 を採り、版 1 の p003（20 LW）を p003・p004 に分け、規約の見直しを p005 にした（[design.md](design.md) §9・§12）。

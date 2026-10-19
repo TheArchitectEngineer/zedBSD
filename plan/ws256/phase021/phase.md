@@ -2,7 +2,7 @@
 
 # ws256-p021 PCI core の host の INTx の hook
 
-Status: in-progress（test-wait: T1 の回帰の依頼を下に書いた。T1 の番号は Q1 が付ける。2026-10-19 q1278-i01、P2）
+Status: cleared（2026-10-19 Q1 の判定、T1-727: riscv64 virt の usb-kbd で login と uname -m PASS（hook の無い道）、amd64 の xHCI と NVMe の起動は login prompt まで PASS（nvme0n1・input の ls は boot-test の道具の不具合で未確認、Q1 が直した）、Pi 4 の build warning 0。host 試験 PASS。PLDA の hook の道の実機は p020）
 
 - 親: [WS256](../ws.md)。Queue: q1278-i01（P2）。
 - 範囲: [design-peripherals.md](../design-peripherals.md) §3.5 の p021（改訂 4、レビュー 3 Minor 3・4・10・11 を当てた形）。`include/drivers/pci/pci.h` の `drv_pci_bus_ops` に省略可能な INTx の 4 つの hook、EOI を送らない `intx_line_run`、線の鍵を (host, vector)、lock の順と drain・戻り値。PLDA の host（`pci-plda.c`）は p020 で、ここでは書かない。HAL の API（hal.h）は変えない。
