@@ -385,9 +385,11 @@ drv_dw_eqos_attach(
 	unsigned index;
 	int error;
 
-	/* Refuses a missing description or one without registers and a PHY address. */
+	/* Refuses a missing description, or one without registers or a name. */
 	if (config == NULL || config->registers == NULL || config->name == NULL)
 		return EINVAL;
+
+	/* Refuses a PHY address beyond the MDIO bus's 32. */
 	if (config->phy_address > 31U)
 		return EINVAL;
 
@@ -472,12 +474,16 @@ drv_dw_eqos_attach(
 	if (error != 0)
 		goto fail;
 
-	/* Registers the interrupt, held off at the controller and the PLIC. */
+	/* Holds the interrupt off at the PLIC; the controller's are off since the reset. */
 	stage = "interrupt";
 	kern_irq_mask((int)config->irq);
+
+	/* Asks for the level-triggered, active-high line the controller drives. */
 	error = kern_irq_set_mode((int)config->irq, KERN_IRQ_TRIGGER_LEVEL, KERN_IRQ_POLARITY_HIGH);
 	if (error != 0)
 		goto fail;
+
+	/* Binds the handler; the flag tells a failed attach to unbind it. */
 	error = kern_irq_register((int)config->irq, eqos_interrupt, device);
 	if (error != 0)
 		goto fail;
@@ -856,11 +862,15 @@ configure_bus(
 	bus &= ~(EQOS_DMA_BUS_FIXED_BURST | EQOS_DMA_BUS_MIXED_BURST | EQOS_DMA_BUS_ALIGNED);
 	bus &= ~EQOS_DMA_BUS_EXTENDED_ADDRESS;
 
-	/* Sets the burst kind and alignment the board asks for. */
+	/* Uses only the burst lengths the bus allows when the board asks for fixed bursts. */
 	if (config->fixed_burst)
 		bus |= EQOS_DMA_BUS_FIXED_BURST;
+
+	/* Mixes fixed and undefined-length bursts when the board asks for it. */
 	if (config->mixed_burst)
 		bus |= EQOS_DMA_BUS_MIXED_BURST;
+
+	/* Aligns bursts to their addresses when the board asks for it. */
 	if (config->address_aligned)
 		bus |= EQOS_DMA_BUS_ALIGNED;
 
@@ -870,15 +880,24 @@ configure_bus(
 
 	/* Sets the AXI master's outstanding requests, bursts and low-power idle as the board says. */
 	if (config->axi_present) {
+		/* Starts the AXI fields from nothing. */
 		bus &= ~(EQOS_DMA_BUS_LPI | EQOS_DMA_BUS_WRITE_LIMIT_MASK | EQOS_DMA_BUS_READ_LIMIT_MASK);
 		bus &= ~EQOS_DMA_BUS_BURST_MASK;
+
+		/* Lets the AXI master idle in low power when the board says so. */
 		if (config->axi_lpi)
 			bus |= EQOS_DMA_BUS_LPI;
+
+		/* Limits the outstanding writes and reads. */
 		bus |= (config->axi_write_limit << EQOS_DMA_BUS_WRITE_LIMIT_SHIFT) & EQOS_DMA_BUS_WRITE_LIMIT_MASK;
 		bus |= (config->axi_read_limit << EQOS_DMA_BUS_READ_LIMIT_SHIFT) & EQOS_DMA_BUS_READ_LIMIT_MASK;
+
+		/* Allows each burst length the board lists. */
 		for (index = 0; index < DRV_DW_EQOS_BURST_LENGTHS; index++)
 			bus |= burst_bit(config->axi_burst_lengths[index]);
 	}
+
+	/* Writes the bus mode. */
 	write_register(device, EQOS_DMA_BUS, bus);
 
 	/* Multiplies the burst lengths by eight unless the board says not to. */
