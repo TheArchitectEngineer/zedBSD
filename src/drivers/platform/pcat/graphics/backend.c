@@ -432,7 +432,8 @@ drv_pcat_graphics_backend_blit(
 		/* Process each element required by the operation. */
 		for (x = 0; x < image->width; x++) {
 			/* Checks the pattern bit result. */
-			if (patterned && !pattern_bit(pattern, x, y))
+			if (patterned &&
+			    !pattern_bit(pattern, x, image->pattern_y + y))
 				continue;
 
 			/* Handles the image condition. */

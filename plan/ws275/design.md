@@ -294,7 +294,7 @@ BOOT_THEN:
 | `src/drivers/generic/graphics-device.c`（新）・`include/kern/graphics-backend.h`（新） | generic の前段、backend の登録と優先度、行の分割 | いいえ |
 | `src/drivers/isa/ps2-8042.c`（移動）・`src/drivers/platform/pcat/ps2-8042.c`・`.h` | 共有の 8042（D5） | いいえ（pcat） |
 | `platform/pcat/vmunix.mk`・`platform/amd64/vmunix.mk` | ps2 の移動の path | いいえ |
-| `plan/ws081/tests/host-ps2-wheel.sh`・`host-ps2-wheel.c`・`plan/ws035/tests/refactor-refs.py`（l.63）の ps2 の path | 移動に追従（他の WS なので Q1 に依頼、参照が無ければ削除の基準を当てる） | いいえ（m10、m-5） |
+| `plan/ws081/tests/host-ps2-wheel.sh`・`host-ps2-wheel.c`・`plan/ws035/tests/refactor-refs.py`（l.63）の ps2 の path | 削除（2026-10-19 Q1、回帰の一覧に無い） | いいえ（m10、m-5） |
 | top の `Makefile` | `ZEDBSD_GRAPHICS_BACKEND` に sun4u、注記 | いいえ |
 | `userland/x11/libX11/xlib.c` | property の endian（潜在の欠陥） | いいえ |
 | `docs/reference/control-devices.md` | sun4u の driver を足す（l.43〜46） | いいえ |

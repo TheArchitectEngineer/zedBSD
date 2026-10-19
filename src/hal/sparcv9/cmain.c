@@ -56,10 +56,7 @@ sparcv9_cmain(
 	sparcv9_io_init(handoff->pci_io_base);
 
 	/* Shows the screen, which then holds what the console printed. */
-	shown = sun4u_framebuffer_init(handoff->pci_memory_base,
-				       handoff->display_framebuffer,
-				       handoff->display_framebuffer_size,
-				       handoff->display_registers);
+	shown = sun4u_framebuffer_init(handoff);
 	if (shown == HAL_OK)
 		sun4u_console_attach();
 	hal_printf("SPARCV9 ENTRY tick=%lu display=%x\n", handoff->tick_frequency, (uint32_t)handoff->display_vendor);

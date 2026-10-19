@@ -24,10 +24,11 @@
 
 /*
  * The magic and the version of the sun4u part that follows the common
- * record.  Version 2 adds the PCI memory space and the display.
+ * record.  Version 2 adds the PCI memory space and the display; version 3
+ * adds the firmware framebuffer and the 8042 keyboard controller.
  */
 #define SUN4U_HANDOFF_EXTENSION_MAGIC	0x53345548U /* "S4UH" */
-#define SUN4U_HANDOFF_EXTENSION_VERSION	2U
+#define SUN4U_HANDOFF_EXTENSION_VERSION	3U
 
 /* How many installed and how many available memory ranges a handoff holds. */
 #define SUN4U_MAX_MEMORY_RANGES		16U
@@ -52,6 +53,14 @@ struct sun4u_memory_range {
  * registers are PCI memory addresses, which lie at pci_memory_base in the
  * processor's physical space; a zero display_vendor means no display was
  * found.
+ *
+ * The firmware framebuffer is the display OpenFirmware drew on, as its
+ * node describes it: a physical address, the size in pixels, the bytes of
+ * a row and a KERN_BOOT_FRAMEBUFFER_* format, with the display's PCI IDs,
+ * zero for a display that is not on PCI.  A zero framebuffer_phys means the
+ * loader found none it can hand over; the standard VGA above remains for
+ * the HAL to set up itself.  The 8042's data and command ports are offsets
+ * in the PCI I/O space, zero when there is no 8042.
  */
 struct sun4u_boot_handoff {
 	struct kern_boot_handoff common;
@@ -79,6 +88,15 @@ struct sun4u_boot_handoff {
 	uint32_t display_framebuffer;
 	uint32_t display_framebuffer_size;
 	uint32_t display_registers;
+	uint64_t framebuffer_phys;
+	uint32_t framebuffer_width;
+	uint32_t framebuffer_height;
+	uint32_t framebuffer_pitch;
+	uint32_t framebuffer_format;
+	uint16_t framebuffer_vendor;
+	uint16_t framebuffer_device;
+	uint16_t i8042_data;
+	uint16_t i8042_command;
 	char bootpath[SUN4U_BOOTPATH_SIZE];
 } __attribute__((packed));
 

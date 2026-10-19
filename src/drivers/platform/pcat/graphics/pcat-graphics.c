@@ -550,6 +550,9 @@ graphics_blit(
 				return error;
 		}
 
+		/* Keeps the pattern's vertical phase on this row. */
+		image.pattern_y = row;
+
 		/* Checks the drv pcat graphics backend blit result. */
 		if (!drv_pcat_graphics_backend_blit(request.x, request.y + row,
 						    &image, request.pattern,

@@ -6,7 +6,15 @@
  */
 
 /*
- * IBM PC/AT i8042 PS/2 mouse driver
+ * The i8042 PS/2 keyboard and mouse controller, wherever its two I/O ports
+ * are (WS275: moved from the PC/AT platform so sun4u shares it).
+ *
+ * The board names the data and status/command ports and either the two
+ * interrupt lines or none.  Without interrupts a kernel thread looks at the
+ * controller every few milliseconds, and the driver writes the
+ * configuration byte itself: scan-code translation on, both interrupt
+ * bits off, so the set 1 table below holds on a controller that was not
+ * set up by a BIOS.
  *
  * The mouse is asked for the IntelliMouse protocols when it is started
  * (BUG-156): the sample-rate knock 200, 100, 80 turns a wheel mouse (and
@@ -17,7 +25,7 @@
  * that answers neither stays ID 0 with three-byte packets.
  */
 
-#include "drivers/platform/pcat/ps2-8042.h"
+#include "drivers/isa/ps2-8042.h"
 #include "kern/input-device.h"
 #include "kern/input-keymap.h"
 #include "kern/klog.h"
@@ -28,9 +36,13 @@
 #include <stdint.h>
 #include "kern/irq.h"
 
-#define I8042_DATA 0x60U
-#define I8042_STATUS 0x64U
-#define I8042_COMMAND 0x64U
+#ifndef WS018_INPUT_HID_HOST_TEST
+#include "kern/clock.h"
+#include "kern/device-io.h"
+#include "kern/sched.h"
+#include "kern/thread.h"
+#endif
+
 #define I8042_STATUS_OUTPUT 0x01U
 #define I8042_STATUS_INPUT 0x02U
 #define I8042_STATUS_AUX 0x20U
@@ -42,6 +54,9 @@
 #define I8042_WRITE_AUX 0xd4U
 #define I8042_CONFIG_AUX_IRQ 0x02U
 #define I8042_CONFIG_AUX_OFF 0x20U
+#define I8042_CONFIG_KEYBOARD_OFF 0x10U
+#define I8042_CONFIG_TRANSLATE 0x40U
+#define I8042_ENABLE_KEYBOARD 0xaeU
 
 #define PS2_SET_DEFAULTS 0xf6U
 #define PS2_SET_SAMPLE_RATE 0xf3U
@@ -50,8 +65,6 @@
 #define PS2_ENABLE_STREAM 0xf4U
 #define PS2_ACK 0xfaU
 #define PS2_RESEND 0xfeU
-#define PS2_MOUSE_IRQ 12
-#define PS2_KEYBOARD_IRQ 1
 #define I8042_CONFIG_KEYBOARD_IRQ 0x01U
 #define I8042_SCAN_RELEASE 0x80U
 #define I8042_SCAN_EXTENDED 0xe0U
@@ -70,6 +83,22 @@
 
 /* The sample rate a mouse runs at once it is identified (the rate SET_DEFAULTS gives). */
 #define PS2_SAMPLE_RATE_DEFAULT 100U
+
+/* How often a controller without interrupts is looked at. */
+#define I8042_POLL_MS 10U
+
+/* The most bytes one look takes from the controller. */
+#define I8042_POLL_DRAIN 32U
+
+/*
+ * The controller's ports and interrupt lines, set once by
+ * drv_isa_ps2_8042_init() before anything touches the controller.
+ */
+static uint16_t i8042_data_port;
+static uint16_t i8042_status_port;
+static int i8042_keyboard_irq;
+static int i8042_mouse_irq;
+static int i8042_polled;
 
 static struct spinlock controller_lock;
 static struct mutex lifecycle_lock;
@@ -223,6 +252,11 @@ static const char *scan_symbol(uint8_t scan, int extended);
 static void keyboard_interrupt(int interrupt, kern_irq_ack_t acknowledge,
 			       void *argument);
 static void keyboard_build_capabilities(void);
+static int polled_configure(void);
+static int poll_start(void);
+#ifndef WS018_INPUT_HID_HOST_TEST
+static void poll_worker(void *argument);
+#endif
 static void mouse_input_close(void *context);
 
 #ifdef WS018_INPUT_HID_HOST_TEST
@@ -249,26 +283,28 @@ outb(
 	ws018_input_hid_test_outb(port, value);
 }
 #else
-/* Supports the inb operation. */
+/* Reads one port of the controller. */
 static uint8_t
 inb(
 	uint16_t port)
 {
 	uint8_t value;
 
-	__asm__ volatile("inb %w1,%0" : "=a"(value) : "Nd"(port));
+	/* Reads through the kernel's port access. */
+	value = kern_io_in8(port);
 
-	/* Returns the computed result. */
+	/* Returns the byte read. */
 	return value;
 }
 
-/* Supports the outb operation. */
+/* Writes one port of the controller. */
 static void
 outb(
 	uint16_t port,
 	uint8_t value)
 {
-	__asm__ volatile("outb %0,%w1" : : "a"(value), "Nd"(port));
+	/* Writes through the kernel's port access. */
+	kern_io_out8(port, value);
 }
 #endif
 
@@ -282,9 +318,8 @@ wait_input_empty(
 	/* Process each element required by the operation. */
 	for (spin = 0; spin < PS2_WAIT_LOOPS; spin++) {
 		/* Checks the inb result. */
-		if ((inb(I8042_STATUS) & I8042_STATUS_INPUT) == 0)
+		if ((inb(i8042_status_port) & I8042_STATUS_INPUT) == 0)
 			return 0;
-		__asm__ volatile("pause");
 	}
 
 	/* Failed. */
@@ -301,7 +336,7 @@ write_command(
 	/* Checks the operation status. */
 	if (error != 0)
 		return error;
-	outb(I8042_COMMAND, command);
+	outb(i8042_status_port, command);
 
 	/* Succeeded. */
 	return 0;
@@ -317,7 +352,7 @@ write_data(
 	/* Checks the operation status. */
 	if (error != 0)
 		return error;
-	outb(I8042_DATA, value);
+	outb(i8042_data_port, value);
 
 	/* Succeeded. */
 	return 0;
@@ -336,10 +371,10 @@ read_output(
 	/* Process each element required by the operation. */
 	for (spin = 0; spin < PS2_WAIT_LOOPS; spin++) {
 		/* Checks the operation status. */
-		status = inb(I8042_STATUS);
+		status = inb(i8042_status_port);
 		if ((status & I8042_STATUS_OUTPUT) != 0) {
 			/* Checks the operation status. */
-			data = inb(I8042_DATA);
+			data = inb(i8042_data_port);
 			if (((status & I8042_STATUS_AUX) != 0) == auxiliary) {
 				*value = data;
 				/* Succeeded. */
@@ -354,7 +389,6 @@ read_output(
 			 */
 		}
 
-		__asm__ volatile("pause");
 	}
 
 	/* Failed. */
@@ -371,9 +405,9 @@ flush_output(
 	/* Process each remaining element. */
 	for (count = 0; count < 64U; count++) {
 		/* Checks the inb result. */
-		if ((inb(I8042_STATUS) & I8042_STATUS_OUTPUT) == 0)
+		if ((inb(i8042_status_port) & I8042_STATUS_OUTPUT) == 0)
 			break;
-		(void)inb(I8042_DATA);
+		(void)inb(i8042_data_port);
 	}
 }
 
@@ -768,10 +802,10 @@ mouse_interrupt(
 	irq = spin_lock_irqsave(&controller_lock);
 
 	/* Checks the operation status. */
-	status = inb(I8042_STATUS);
+	status = inb(i8042_status_port);
 	if ((status & (I8042_STATUS_OUTPUT | I8042_STATUS_AUX)) ==
 	    (I8042_STATUS_OUTPUT | I8042_STATUS_AUX)) {
-		value = inb(I8042_DATA);
+		value = inb(i8042_data_port);
 
 		/* Handles the complete condition. */
 		complete = mouse_active
@@ -796,7 +830,8 @@ mouse_interrupt(
 	 * buffer is read, allowing the next packet byte to create a fresh edge
 	 * after EOI instead of being stranded while a task IRQ is masked.
 	 */
-	kern_irq_send_eoi(acknowledge);
+	if (!i8042_polled)
+		kern_irq_send_eoi(acknowledge);
 
 	/* Handles the report condition. */
 	if (report)
@@ -815,7 +850,8 @@ mouse_start(
 	int error;
 
 	/* Enables the auxiliary port with the interrupt held off. */
-	kern_irq_mask(PS2_MOUSE_IRQ);
+	if (!i8042_polled)
+		kern_irq_mask(i8042_mouse_irq);
 	irq = spin_lock_irqsave(&controller_lock);
 
 	mouse_active = 0;
@@ -839,7 +875,7 @@ mouse_start(
 		error = mouse_identify();
 	if (error == 0)
 		error = mouse_command(PS2_ENABLE_STREAM);
-	if (error == 0) {
+	if (error == 0 && !i8042_polled) {
 		configuration |= I8042_CONFIG_AUX_IRQ;
 		error = write_config(configuration);
 	}
@@ -860,7 +896,8 @@ mouse_start(
 	/* The protocol found, for a machine's log (BUG-156). */
 	if (error == 0) {
 		kern_logf("i8042: mouse id=%u packet=%u\n", (unsigned)mouse_protocol, packet_size);
-		kern_irq_unmask(PS2_MOUSE_IRQ);
+		if (!i8042_polled)
+			kern_irq_unmask(i8042_mouse_irq);
 	}
 
 	/* Reports the failure. */
@@ -879,7 +916,8 @@ mouse_stop(
 	unsigned long irq;
 	uint8_t configuration;
 
-	kern_irq_mask(PS2_MOUSE_IRQ);
+	if (!i8042_polled)
+		kern_irq_mask(i8042_mouse_irq);
 	irq = spin_lock_irqsave(&controller_lock);
 
 	mouse_active = 0;
@@ -1116,10 +1154,10 @@ keyboard_interrupt(
 	irq = spin_lock_irqsave(&controller_lock);
 
 	/* Takes the byte only when it belongs to the keyboard channel. */
-	status = inb(I8042_STATUS);
+	status = inb(i8042_status_port);
 	if ((status & (I8042_STATUS_OUTPUT | I8042_STATUS_AUX)) ==
 	    I8042_STATUS_OUTPUT) {
-		value = inb(I8042_DATA);
+		value = inb(i8042_data_port);
 
 		/* Remembers an E0 prefix for the position that follows. */
 		if (value == I8042_SCAN_EXTENDED) {
@@ -1143,7 +1181,8 @@ keyboard_interrupt(
 	 * The 8042 lowers IRQ1 once its output buffer is read, so the next
 	 * byte can create a fresh edge as soon as this acknowledgement lands.
 	 */
-	kern_irq_send_eoi(acknowledge);
+	if (!i8042_polled)
+		kern_irq_send_eoi(acknowledge);
 
 	/* A make code of a key already down is the typematic's repeat. */
 	if (publish && code <= KEY_MAX) {
@@ -1165,20 +1204,134 @@ keyboard_interrupt(
 	spin_unlock_irqrestore(&controller_lock, irq);
 }
 
-int
-drv_pcat_ps2_8042_init(
+/*
+ * Sets up a controller without interrupts: both channels on, scan-code
+ * translation on and both interrupt bits off, whatever the firmware left.
+ */
+static int
+polled_configure(
 	void)
 {
+	uint8_t configuration;
+	unsigned long irq;
+	int error;
+
+	irq = spin_lock_irqsave(&controller_lock);
+
+	/* Drops what the firmware left in the output buffer. */
+	flush_output();
+
+	/* Turns the keyboard channel on. */
+	error = write_command(I8042_ENABLE_KEYBOARD);
+
+	/* Reads the configuration byte the firmware left. */
+	if (error == 0)
+		error = read_config(&configuration);
+
+	/* Rewrites it for polling and set 1. */
+	if (error == 0) {
+		configuration &= (uint8_t)~(I8042_CONFIG_KEYBOARD_IRQ |
+					    I8042_CONFIG_AUX_IRQ |
+					    I8042_CONFIG_KEYBOARD_OFF);
+		configuration |= I8042_CONFIG_TRANSLATE;
+		error = write_config(configuration);
+	}
+
+	spin_unlock_irqrestore(&controller_lock, irq);
+
+	/* Reports a controller that did not answer. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the controller is set up for polling. */
+	return 0;
+}
+
+#ifndef WS018_INPUT_HID_HOST_TEST
+/*
+ * Takes what a controller without interrupts received, for the life of
+ * the system.
+ *
+ * Each byte goes to the handler of its channel, which reads it again under
+ * the controller's lock; a byte that changed channel in between is taken
+ * by the next turn.
+ */
+static void
+poll_worker(
+	void *argument)
+{
+	unsigned drained;
+	uint8_t status;
+	uint64_t wake;
+
+	/* The worker is given no argument. */
+	(void)argument;
+
+	/* Looks at the controller for the life of the system. */
+	for (;;) {
+		/* Hands at most one batch of bytes to their channels. */
+		for (drained = 0; drained < I8042_POLL_DRAIN; drained++) {
+			/* Stops when nothing was received. */
+			status = inb(i8042_status_port);
+			if ((status & I8042_STATUS_OUTPUT) == 0)
+				break;
+
+			/* Gives the byte to the mouse or the keyboard. */
+			if ((status & I8042_STATUS_AUX) != 0)
+				mouse_interrupt(-1, KERN_IRQ_ACK_NONE, NULL);
+			else
+				keyboard_interrupt(-1, KERN_IRQ_ACK_NONE, NULL);
+		}
+
+		/* Waits until the next look. */
+		wake = sched_ticks() + kern_ms_to_ticks(I8042_POLL_MS);
+		sched_sleep(wake);
+	}
+}
+
+/* Starts the thread that looks at a controller without interrupts. */
+static int
+poll_start(
+	void)
+{
+	struct thread *worker;
+	int error;
+
+	/* Creates the worker. */
+	error = kthread_create(poll_worker, NULL, SCHED_PRIORITY_DEFAULT, &worker);
+	if (error != 0)
+		return error;
+
+	/* Lets it run. */
+	thread_start(worker);
+
+	/* Succeeded. */
+	return 0;
+}
+#else
+/* The host test drives the handlers itself. */
+static int
+poll_start(
+	void)
+{
+	/* Succeeded: nothing to start. */
+	return 0;
+}
+#endif
+
+/*
+ * Registers one controller's keyboard and mouse.
+ */
+int
+drv_isa_ps2_8042_init(
+	const struct drv_isa_ps2_8042_config *config)
+{
 	struct input_device_info keyboard_info = {
-		.name = "PC/AT PS/2 keyboard",
-		.physical_path = "pcat/i8042/kbd0",
 		.id = {.bustype = BUS_HOST, .product = 1, .version = 1},
 		.capabilities = keyboard_capabilities,
 		.capability_count = 0,
 	};
-	const struct input_device_info mouse_info = {
-		.name = "PC/AT PS/2 mouse",
-		.physical_path = "pcat/i8042/aux0",
+	struct input_device_info mouse_info = {
 		.id = {.bustype = BUS_HOST, .product = 2, .version = 1},
 		.capabilities = mouse_capabilities,
 		.capability_count = sizeof(mouse_capabilities) /
@@ -1188,33 +1341,67 @@ drv_pcat_ps2_8042_init(
 	};
 	unsigned long irq;
 	size_t index;
+	int mouse_irq_taken;
+	int keyboard_irq_taken;
+	int registered;
 	int error;
+
+	/* Refuses a missing description. */
+	if (config == NULL)
+		return EINVAL;
+
+	/* Records where the controller is and how it reports. */
+	i8042_data_port = config->data_port;
+	i8042_status_port = config->status_port;
+	i8042_keyboard_irq = config->keyboard_irq;
+	i8042_mouse_irq = config->mouse_irq;
+	i8042_polled = 0;
+	if (config->keyboard_irq < 0 || config->mouse_irq < 0)
+		i8042_polled = 1;
+	keyboard_info.name = config->keyboard_name;
+	keyboard_info.physical_path = config->keyboard_path;
+	mouse_info.name = config->mouse_name;
+	mouse_info.physical_path = config->mouse_path;
 
 	/* Starts every lock and counter out empty. */
 	spin_init(&controller_lock, LOCK_RANK_DEVICE, "i8042");
 	(void)mutex_init(&lifecycle_lock, LOCK_RANK_DEVICE,
 			 "i8042 mouse lifecycle");
 	mouse_input = NULL;
+	keyboard_input = NULL;
 	packet_index = 0;
 	mouse_protocol = PS2_ID_STANDARD;
 	packet_size = 3U;
 	last_buttons = 0;
 	reader_count = 0;
 	mouse_active = 0;
-	kern_irq_mask(PS2_MOUSE_IRQ);
+	mouse_irq_taken = 0;
+	keyboard_irq_taken = 0;
+	registered = 0;
 
-	/* Checks the hal irq set handler result. */
-	if (kern_irq_register(PS2_MOUSE_IRQ, mouse_interrupt, NULL) != 0)
-		return EBUSY;
-
-	/* Checks the operation status. */
-	error = drv_input_device_register(&mouse_info, &mouse_input);
-	if (error != 0) {
-		(void)kern_irq_unregister(PS2_MOUSE_IRQ, mouse_interrupt, NULL);
-
-		/* Reports the failure. */
-		return error;
+	/* A controller without interrupts is set up by the driver itself. */
+	if (i8042_polled) {
+		error = polled_configure();
+		if (error == ETIMEDOUT)
+			error = ENODEV;
+		if (error != 0)
+			return error;
 	}
+
+	/* Takes the mouse's interrupt. */
+	if (!i8042_polled) {
+		kern_irq_mask(i8042_mouse_irq);
+		error = kern_irq_register(i8042_mouse_irq, mouse_interrupt, NULL);
+		if (error != 0)
+			return EBUSY;
+		mouse_irq_taken = 1;
+	}
+
+	/* Publishes the mouse channel. */
+	error = drv_input_device_register(&mouse_info, &mouse_input);
+	if (error != 0)
+		goto fail;
+	registered = 1;
 
 	/* Publishes the keyboard channel of the same controller, no key down. */
 	keyboard_extended = 0;
@@ -1222,30 +1409,26 @@ drv_pcat_ps2_8042_init(
 		keyboard_down[index] = 0;
 	keyboard_build_capabilities();
 	keyboard_info.capability_count = keyboard_capability_count;
-	kern_irq_mask(PS2_KEYBOARD_IRQ);
-	if (kern_irq_register(PS2_KEYBOARD_IRQ, keyboard_interrupt, NULL) !=
-	    0) {
-		drv_input_device_unregister(mouse_input);
-		(void)kern_irq_unregister(PS2_MOUSE_IRQ, mouse_interrupt, NULL);
 
-		/* Reports the failure. */
-		return EBUSY;
+	/* Takes the keyboard's interrupt. */
+	if (!i8042_polled) {
+		kern_irq_mask(i8042_keyboard_irq);
+		error = kern_irq_register(i8042_keyboard_irq, keyboard_interrupt, NULL);
+		if (error != 0) {
+			error = EBUSY;
+			goto fail;
+		}
+		keyboard_irq_taken = 1;
 	}
 
-	/* Checks the operation status. */
+	/* Publishes the keyboard. */
 	error = drv_input_device_register(&keyboard_info, &keyboard_input);
-	if (error != 0) {
-		(void)kern_irq_unregister(PS2_KEYBOARD_IRQ, keyboard_interrupt,
-					 NULL);
-		drv_input_device_unregister(mouse_input);
-		(void)kern_irq_unregister(PS2_MOUSE_IRQ, mouse_interrupt, NULL);
-
-		/* Reports the failure. */
-		return error;
-	}
+	if (error != 0)
+		goto fail;
 
 	/* Lets the controller raise keyboard interrupts. */
-	kern_irq_unmask(PS2_KEYBOARD_IRQ);
+	if (!i8042_polled)
+		kern_irq_unmask(i8042_keyboard_irq);
 
 	/*
 	 * Empties the output buffer of the bytes typed before the handler was
@@ -1264,6 +1447,25 @@ drv_pcat_ps2_8042_init(
 
 	spin_unlock_irqrestore(&controller_lock, irq);
 
-	/* Succeeded. */
+	/* Starts looking at a controller without interrupts. */
+	if (i8042_polled) {
+		error = poll_start();
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: the keyboard and the mouse are published. */
 	return 0;
+
+fail:
+	/* Gives back what was taken before the failure. */
+	if (keyboard_irq_taken)
+		(void)kern_irq_unregister(i8042_keyboard_irq, keyboard_interrupt, NULL);
+	if (registered)
+		drv_input_device_unregister(mouse_input);
+	if (mouse_irq_taken)
+		(void)kern_irq_unregister(i8042_mouse_irq, mouse_interrupt, NULL);
+
+	/* Reports why the controller could not be published. */
+	return error;
 }

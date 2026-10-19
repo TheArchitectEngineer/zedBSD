@@ -64,6 +64,9 @@ SPARCV9_KERNEL_SOURCES := \
 	src/kern/platform/sun4u.c \
 	src/drivers/platform/sun4u/sun4u-cmd646.c \
 	src/drivers/platform/sun4u/sun4u-console.c src/kern/panic.c \
+	src/drivers/platform/sun4u/sun4u-firmware-fb.c \
+	src/drivers/platform/pcat/graphics/vgafont.c \
+	src/drivers/isa/ps2-8042.c \
 	src/kern/entry.c src/kern/clock.c src/kern/timer.c src/kern/klog.c \
 	src/kern/lock.c src/kern/waitq.c \
 	src/kern/process.c src/kern/thread.c \
@@ -86,12 +89,17 @@ SPARCV9_KERNEL_SOURCES += $(KERN_NET_SOURCES) \
 SPARCV9_KERNEL_SOURCES += $(KERN_BOOT_SOURCES)
 SPARCV9_KERNEL_SOURCES += $(KERN_ACL_SOURCES)
 SPARCV9_KERNEL_SOURCES += $(KERN_QUOTA_SOURCES)
+# /dev/graphics over the firmware framebuffer (WS275).
+ifeq ($(CONFIG_DRIVER_GRAPHICS_DEVICE),y)
+SPARCV9_KERNEL_SOURCES += src/drivers/generic/graphics-device.c
+endif
 SPARCV9_KERNEL_OBJS := $(patsubst %.c,$(BUILD)/kernel/%.o,$(SPARCV9_KERNEL_SOURCES))
 
 # The kernel links no C library object: kcrt and the kernel heap supply
 # what it used from libc.
 SPARCV9_VMUNIX_OBJS := $(SPARCV9_EARLY_OBJS) $(SPARCV9_KERNEL_OBJS)
-$(SPARCV9_VMUNIX_OBJS): $(ZEDBSD_PLATFORM_CONFIG_STAMP)
+$(SPARCV9_VMUNIX_OBJS): $(ZEDBSD_PLATFORM_CONFIG_STAMP) \
+	$(ZEDBSD_GRAPHICS_CONFIG_STAMP)
 
 SPARCV9_BOOT_CFLAGS := $(SPARCV9_CFLAGS) -fno-builtin \
 	-ffunction-sections -fdata-sections
@@ -186,7 +194,8 @@ $(BUILD)/boot/stage2/%.o: bootloader/sparcv9/%.c
 	$(SPARCV9_CC) $(SPARCV9_CPPFLAGS) $(SPARCV9_BOOT_CFLAGS) \
  -MMD -MP -c $< -o $@
 
-$(BUILD)/vmunix: $(SPARCV9_VMUNIX_OBJS) $(SPARCV9_PLATFORM)/vmunix.ld \
+$(BUILD)/vmunix: $(SPARCV9_VMUNIX_OBJS) $(ZEDBSD_GRAPHICS_CONFIG_STAMP) \
+	$(SPARCV9_PLATFORM)/vmunix.ld \
 	platform/sparcv9/tools/check-sparcv9-vmunix.py
 	$(SPARCV9_LD) -m elf64_sparc --gc-sections \
  -z max-page-size=8192 -T $(SPARCV9_PLATFORM)/vmunix.ld \
