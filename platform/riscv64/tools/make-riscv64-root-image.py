@@ -14,7 +14,8 @@ boot partition and whose second is the UFS root that carries the
 --ufs-size-mib says otherwise).  --bare-root makes a root that holds
 nothing but the marker (a kernel check
 without any user program).  --boot-file DEST=SOURCE puts a file on the boot
-partition.
+partition.  --raw writes the UFS root alone, without the MBR and the boot
+partition, for a disk image that gives the root a partition of its own.
 """
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
@@ -100,6 +101,17 @@ def build(args: argparse.Namespace) -> None:
             raise SystemExit(f"invalid --boot-file: {specification}")
         files.append((destination.lstrip("/"), Path(source)))
 
+    # The UFS root alone, for the partition of a disk image.
+    if args.raw:
+        if files:
+            raise SystemExit("--raw has no boot partition for --boot-file")
+        check_root(root)
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        partial = args.output.with_name(args.output.name + ".partial")
+        partial.write_bytes(root)
+        os.replace(partial, args.output)
+        return
+
     root_blocks = len(root) // SECTOR
     total_blocks = ROOT_LBA + root_blocks
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -135,6 +147,7 @@ def main() -> None:
     source.add_argument("--bare-root", action="store_true")
     parser.add_argument("--ufs-size-mib", type=int, default=64)
     parser.add_argument("--boot-file", action="append", default=[])
+    parser.add_argument("--raw", action="store_true")
     parser.add_argument("--force", action="store_true")
     parser.add_argument("output", type=Path)
     build(parser.parse_args())

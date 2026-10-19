@@ -14,3 +14,29 @@ $(BUILD)/disk.img: $(BUILD)/uefi/BOOTRISCV64.EFI $(BUILD)/vmunix \
 	$(PYTHON) $(RISCV64_DISK_IMAGE_TOOL) --force --efi $(BUILD)/uefi/BOOTRISCV64.EFI \
  --kernel $(BUILD)/vmunix --config platform/riscv64/zedbsd.cfg \
  --root-image $(BUILD)/root.img $@
+
+# The native disk image: the root is a UFS partition of the disk itself,
+# named by rootpart= in zedbsd-native.cfg, and no ramdisk is read.  It is
+# the VisionFive 2's SD card image (ws256-p015); on the virt board the same
+# image is an NVMe disk.  An unused 64 MiB partition at the end is for raw
+# read and write tests of the medium.  RISCV64_SPL and RISCV64_UBOOT_ITB,
+# when both are set (the VisionFive 2's u-boot-spl.bin.normal.out and
+# u-boot.itb, as Debian's u-boot-starfive installs them), put the firmware
+# in partitions 1 and 2, so the board boots the card with its boot switch
+# set to SD.
+RISCV64_NATIVE_CONFIG := platform/riscv64/zedbsd-native.cfg
+RISCV64_NATIVE_SCRATCH_MIB ?= 64
+RISCV64_SPL ?=
+RISCV64_UBOOT_ITB ?=
+
+.PHONY: native-image
+native-image: $(BUILD)/native.img
+
+$(BUILD)/native.img: $(BUILD)/uefi/BOOTRISCV64.EFI $(BUILD)/vmunix \
+	$(BUILD)/root.ufs $(RISCV64_NATIVE_CONFIG) $(RISCV64_DISK_IMAGE_TOOL) \
+	$(RISCV64_SPL) $(RISCV64_UBOOT_ITB)
+	$(PYTHON) $(RISCV64_DISK_IMAGE_TOOL) --force --efi $(BUILD)/uefi/BOOTRISCV64.EFI \
+ --kernel $(BUILD)/vmunix --config $(RISCV64_NATIVE_CONFIG) \
+ --root-ufs $(BUILD)/root.ufs --scratch-mib $(RISCV64_NATIVE_SCRATCH_MIB) \
+ $(if $(RISCV64_SPL),--spl $(RISCV64_SPL)) \
+ $(if $(RISCV64_UBOOT_ITB),--uboot-itb $(RISCV64_UBOOT_ITB)) $@
