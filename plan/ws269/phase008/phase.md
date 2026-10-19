@@ -3,8 +3,8 @@
 # ws269-p008 Rogue の USC・PDS の encoder、kernel の中の試験の道、data master の道の coherency
 
 - 親: [ws269](../ws.md)、設計: [design.md](../design.md) 改訂 3.1 の §5（D6 A: 自前の USC の backend）・§6 の p008・§3.2 の 4（data master の道）
-- Queue: q1345 / q1345-i01（P2、2026-10-20、前半: encoder と host 試験）
-- Status: in-progress（2026-10-20 P2: 前半（USC・PDS の encoder、host 試験、VF2 の build）まで。後半（kernel の中の試験の道、data master の道の coherency）は実機が要るので未着手。clearance は Q1 の判定）
+- Queue: q1345 / q1345-i01（P2、2026-10-20、前半: encoder と host 試験）、q1349 / q1349-i01（P2、2026-10-20、後半: kernel の中の試験の道と data master の道の coherency の code）
+- Status: in-progress（2026-10-20 P2: 前半・後半の code、host 試験、VF2 の build まで。実機の 3 行は U29（firmware 入りの image）の続きで未実施。clearance は Q1 の判定）
 - 前提: p006（実装済み・実機待ち）。HAL の API は変えない。toolchain は変えない。
 
 ## 目的と受け入れの条件
@@ -16,7 +16,12 @@
 3. host 試験: Mesa の disassembler などに頼らず、Mesa の field の表から手で組んだ期待の bit 列と比べる。
 4. 関係する platform（VF2）の build が warning 0。QEMU は起動しない。
 
-後半（未着手、実機が要る）: kernel の中の試験の道（compute の kernel を直接 kick して buffer を読み返す、Venus を通さない）、GPU の data master の道の coherency の確かめ（§3.2 の 4 と同じ手順、p006 の MIPS の道の試験の data master 版）。
+後半（q1349、code まで。判定は実機）:
+
+5. kernel の中の試験の道: 前半の encoder で compute の USC・PDS の program を組み、p006 の compute の FW の context に CDM の kick を出し、buffer を読み戻して期待値と比べ、画面に 1 行（Venus を通さない）。
+6. GPU の data master の道の coherency の確かめ（§3.2 の 4 と同じ手順: 0b の対照、64 KiB × 8 回、2 MiB の中で 128 KiB ずつずらす、SLC の flush を入れない、判定は cacheable の view だけ、INCONCLUSIVE なら切り替えない）を compute の書き込みで流し、1 行を出す。
+7. DOUTU の temps の単位（4 か 2）を実機の結果から判別できる形にする。
+8. 製品の起動を遅くしない（試験の kernel の時だけ有効）。HAL の API は変えない。host 試験（組んだ program の bit 列）。VF2 の build が warning 0。
 
 ## 置き場所（決めた事）
 
@@ -55,6 +60,63 @@ encoder は libc に依らず（`stdint.h`・`stddef.h`・`uapi/errno.h` だけ�
 - DOUTU の temps の単位: `pds.xml` は `UNIT_SIZE 2`、`pvr_rogue_pds_defs.h` は `_TEMPS_ALIGNSIZE 4`。実際に使われる `pvr_pds.c` の `pvr_pds_setup_doutu` は 4 で割る。encoder は 4 の単位（`pvr_pds.c` の手順）。実機で確かめる（p008 後半の compute の kick）。
 - DOUTD の SLC mode の field: `pds.xml` は bit 60..61、`pvr_rogue_pds_defs.h` は shift 62。BXE には無い field なので使わない。
 
+## 後半の設計（q1349）
+
+### 置き場所と有効にする条件
+
+| file | 中身 |
+| --- | --- |
+| `src/drivers/gpu/powervr/compute-program.h`・`.c`（新規、host でも build できる） | driver 自身の compute の program: 書き込みの USC の program（`powervr_compute_store_program`）、temps の単位の USC の program（`powervr_compute_temps_program`）、task を出す PDS の program（`powervr_compute_kick_program`）と stream の終わりの fence の PDS の program（`powervr_compute_fence_program`）、CDM の control stream の kernel の 7 語（`powervr_compute_kernel_words`）と終端の語、FW の compute の命令（`powervr_compute_command`、96 byte） |
+| `src/drivers/gpu/powervr/compute-check.c`（新規、試験の kernel だけ） | `powervr_compute_check`: session を開き、buffer を写し、program を書き、kick して読み戻し、画面に 3 行 |
+| `src/drivers/gpu/powervr/usc-encode.h`・`.c` | `powervr_usc_program_build`（group を callback で 1 つずつ受ける形。2,058 group の program を配列なしで組む）。`powervr_usc_program_encode` はその包み |
+| `src/drivers/gpu/powervr/render-queue.c`・`render-private.h` | `powervr_session_kick_compute`（CDM の命令と timeline の update を client CCB に置いて kick）、`powervr_session_wait`（render.c の `wait_timeline` を公開にした物）、`powervr_compute_check` の weak の宣言 |
+| `src/drivers/gpu/powervr/render.c` | self-test の後、node の登録の前に `powervr_compute_check` があれば呼ぶ（weak、通常の kernel では NULL で何もしない） |
+| `src/drivers/gpu/powervr/interface.h` | `POWERVR_CLIENT_COMPUTE`（205 \| TASK \| magic）、命令の 96 byte と stream・resume の位置 |
+| `platform/riscv64/vmunix.mk` | `compute-program.c` を常に（powervr と一緒に）、`compute-check.c` を `CONFIG_POWERVR_COMPUTE_CHECK=y` の時だけ |
+| `plan/ws269/tests/p008/config-visionfive2-compute.mk`（新規） | 試験の kernel の構成（CI の VF2 の構成 + `CONFIG_POWERVR_COMPUTE_CHECK := y`）。WS256 p023 の `vf2-dmatest` と同じ流儀 |
+| `plan/ws269/tests/p008/compute-host-test.c`（新規）・`run.sh` | 組んだ program の bit 列の host 試験 |
+
+通常の image（`config/ci/config-visionfive2.mk`）は check を含まず、起動の時間は変わらない。
+
+### program（Mesa 26.2.5 の手順を Procedure referenced で採った）
+
+- **CDM の control stream**（1 kick に 1 本、15 語）: 主の kernel（KERNEL0・1・2・3・4・5・8、間接と global offset なし、`pvr_compute_generate_control_stream` の順）、fence の kernel（`pvr_arch_compute_generate_fence`: fence 1、sd_type PDS、usc_common_shared 1、usc_target ANY、1 instance、max_instances 8（`pvr_compute_flat_slot_size(0, false, 1)`、BXE に BRN 49032 なし））、STREAM_TERMINATE。主の kernel は workgroup 1 つ、大きさ 32（1 task = 32 instance、max_instances 0 = 32）、usc_target ANY、sd_type NONE、共有 register なし、pds_temp_size は compute の入力の 3 register 分（`PVR_PDS_NUM_COMPUTE_INPUT_REGS`）、usc_unified_size は temps × 4 byte の 16 byte 単位。
+- **PDS**（data 2 語 + code、heap の中の 64 byte の slot）: 主は `pvr_pds_compute_shader` の kick_usc だけの形: `BRA IF1 neg → 2`（係数の更新の pass を飛ばす）、`HALT`、`DOUTU end`（data の 64 bit の task の語）、`HALT`。fence は `BRA`、`HALT`、`ADD64 ptemp64[0] = 0 + 0`（clear_pds_barrier）、`DOUTC`、`HALT`。Mesa は compute の DOUTU を cc=1 で出すが、ここは cc=0（無条件）にした（cc=1 の述語の状態に依らないため）。
+- **USC の書き込みの program**（7 temps、2,058 group、約 20 KiB）: r5 = sr51（instance 番号、`load_instance_num_pco`）、r0 = base の下位 + 4 × r5、r1 = base の上位、r2 = r0（data = その語の device address の下位 32 bit）、r3 = 128、r4 = 1。512 回: `st r2 → [r0:r1]`（burst 1、32 bit、write-through、drc 0。Mesa の `trans_store_global` と同じく address の対の直後の register に data）、`wdf drc0`（`pco_schedule` の通り）、r0 += 128、r2 += 128（madd32 r × 1 + r3）。最後に `nop` に end（`pco_end`）。32 instance が 32 語おきに書き、64 KiB の窓を埋める。下位 32 bit だけ進めるので、窓が 4 GiB の境を跨がない事を build の時に確かめる。
+- **USC の temps の program**（8 temps、13 group）: r7 = sr51 を最初に置き、r3〜r6 に別の値を入れ、r0・r1・r2 で address を作り、r2 = r7 を `base + 4 × instance` に書く。
+- **FW の命令**: `rogue_fwif_cmd_compute`（96 byte）の control stream の base（40）と context の resume の area（48、4 KiB の stream の buffer の先頭）だけを入れ、他は 0（border colour の table、CDM の item、cluster、tpu_tag、flags、execute_count）。client CCB に CDM の命令（205 \| TASK）と timeline の update を置き、KCCB の kick を出す（`pvr_queue_submit_job_to_cccb` の順）。
+
+### 写し方
+
+session の GPU の address に直に写す（`powervr_gpu_mmu_map`、写した後に MMU の cache の flush、閉じる前に unmap と flush）。属性は全部「CPU が見る buffer」の既定（`powervr_gpu_buffer_flags(1, 0)` = SLC_BYPASS、CC=0）:
+
+| buffer | GPU の address | 大きさ |
+| --- | --- | --- |
+| 書き込みの run | general heap + 1 MiB | 2 MiB |
+| control stream と resume の area | general heap + 4 MiB | 64 KiB |
+| PDS の program | PDS heap + 64 KiB（KERNEL1・2 の offset は heap の中） | 4 KiB |
+| USC の program | USC heap + 64 KiB（DOUTU の address は heap の中） | 9 × 32 KiB |
+
+### 試験の流れと画面の 3 行
+
+1. **kernel の中の試験の道**: 窓 0 を別の値で埋め、窓 0 の program を kick し、uncached の別名で 16,384 語を数える。
+2. **data master の道の coherency**（1 が全部書けた時だけ）: coherency.c と同じ 0b の対照（CPU だけで古い line を見せられるか）、8 回の round（各 round の窓を別名で `before` = 期待値の反転で埋め、cacheable の view を invalidate してから読んで clean の line を載せ、その窓の program を kick、SLC の flush なし、cacheable の view で一致・古い値を数え、別名で届かなかった語を数える）。判定の語は coherency.c と同じ（COHERENT は 8/8 かつ control OK の時だけ。INCONCLUSIVE・MATCHED WITHOUT CONTROL・NOT COHERENT では切り替えない。切り替えは別の Phase で Q1 の承認）。
+3. **temps の単位**: 同じ temps の program を DOUTU の temps の field = 2（4 の単位で 8 register）と 4（2 の単位で 8 register）で 2 回 kick。2 の単位なら field 2 は 4 register しか取らず、instance の register が隣り合って並ぶ時は隣の instance の r3 の値が r7 に入り、語が instance 番号でなくなる。field 4 は単位がどちらでも足りるので、これが失敗したら試験そのものが壊れている。
+
+kick の待ちは 1 回 2 秒。時間切れの時は buffer と session を GPU に残して止める（後で書かれ得るので解放しない）。GPU の page fault は p006 の fault の道（render の node の quarantine）に入る（試験の kernel だけ）。
+
+### 実機の試験の文面（T1・ユーザー向け、beta2 の U29 の続き）
+
+image: `make ZEDBSD_CONFIG=plan/ws269/tests/p008/config-visionfive2-compute.mk BUILD=build/uat/vf2-compute -j16 build/uat/vf2-compute/native.img`（U29 と同じく firmware の LICENSE.powervr の同意の後。通常の U29 の image では下の 3 行は出ない）。起動は U27・U29 と同じ。U29 の p006 の 3 行の `render node ready` の直前に次の 3 行が出る:
+
+| 行 | 期待 | 読み方 |
+| --- | --- | --- |
+| `powervr: compute kernel: OK, 16384/16384 words written` | OK | `FAILED, <n>/16384 words written`（program か kick の誤り）、`FAILED (<番号>)`（42 = 時間切れ、その後 `compute check: stopped`）、`not run, <段> (<番号>)` |
+| `powervr: coherency (data master writes, slc bypass): <判定>, control <OK\|INCONCLUSIVE>, <n>/8 rounds, <s> stale, <m> missing` | 判定の語をそのまま記録（期待は決めない） | COHERENT だけが切り替えの候補。kernel が FAILED の時は出ない |
+| `powervr: compute temporaries: fours <a>/32 wrong (<e>), twos <b>/32 wrong (<f>): <読み>` | 読みをそのまま記録 | `BLOCKS OF 2`（単位は 2）、`INCONCLUSIVE, no clobber seen (blocks of 4 not excluded)`（4 と矛盾しない。並びが隣り合わないと区別できない）、`BROKEN …`（試験の誤り）、`NOT RUN` |
+
+この 3 行と、その後に `render node ready` が出て login できる事を画面で見る。
+
 ## 出典
 
 値・手順は Mesa 26.2.5（`ddaf85e353442d9d7f192fdcf1823e652e3f2ee3`、MIT、p002 の記録）から取り、plan/guardrail.md の「MIT・GPL の出典のデータの引用」の通り、block ごとに複数行の comment で `Value(s) referenced:` / `Procedure referenced:` を書いた。file の上部には書いていない。code・構造・symbol の名前は写していない（名前は独自: 例 `POWERVR_USC_FLOAT_MULTIPLY_ADD` でなく `powervr_usc_float_multiply_add`、form の表は「piece の表 + field の値の配列」の独自の形）。参照した file と blob:
@@ -79,13 +141,24 @@ encoder は libc に依らず（`stdint.h`・`stddef.h`・`uapi/errno.h` だけ�
 | VF2 の kernel | `timeout 3600 make ZEDBSD_CONFIG=config/ci/config-visionfive2.mk BUILD=build/ws269-p006-vf2 vmunix`（log `build/ws269-p008/vf2.log`、BUILD の名前は p006 の物を使った） | rc=0、`warning:`・`error:` 0 件（-Werror）。`usc-encode.c`・`pds-encode.c` が compile・link された |
 | 開発中の照合（commit しない、試験ではない） | Mesa の generator（`pco_isa.h.py`・`pco_common.h.py`、mako）で作った `pco_isa.h` の encode 関数と、`pvr_rogue_pds_encode.h` の関数を host で呼び、同じ field の値で encoder の出力と比べた（`build/ws269-p008/dev/xcheck.c`・`xpds.c`） | USC: 全部の operation の形の全組合せ・乱数の main の group 200,000 本（使えた物）・control の header で 91,646 件一致、0 件不一致。PDS: 13 命令 × 200,000 の乱数で 2,600,000 件一致、0 件不一致。この照合で、destination の配列の範囲外の読み（修正済み）と、未定義の ctrlop を受けていた事（修正済み）を見つけた |
 
-- riscv64-virt・amd64 の build は流していない（変更は `CONFIG_DRIVER_POWERVR` の VF2 の source の list だけで、他の platform は build しない file）。
+- 前半では riscv64-virt・amd64 の build は流していない（変更は `CONFIG_DRIVER_POWERVR` の VF2 の source の list だけで、他の platform は build しない file）。
 - QEMU・実機の試験は無い（encoder は hardware に触れない。実機の確かめは後半の kernel の中の試験の道で行う）。
 
-## 残り（後半、実機が要る）
+後半（q1349、2026-10-20 P2）:
 
-1. kernel の中の試験の道: この encoder で「buffer の address を受け、64 KiB を書く」compute の USC の program と、それを issue する PDS の program（DOUTD で定数を common store へ、DOUTU で task）を組み、p006 の compute の FW の context に CDM の kick を出し、buffer を読み返す（Venus を通さない）。CDM の control stream の形は Mesa の `cdm.xml`（p002 の blob の記録あり）から取る。
-2. data master の道の coherency: §3.2 の 4 と同じ手順（64 KiB × 8 回、2 MiB の中で 128 KiB ずつずらす、SLC の flush なし、0b の対照、INCONCLUSIVE なら切り替えない）を compute の書き込みで流し、1 行を出す。
-3. 実機の試験の文面（T1 向け）は後半で書く。
-4. 2 byte の main header・DOUTU の temps の単位は、後半の実機の compute の kick で確かめられる範囲で確かめる（前者は使わないので必須ではない）。
-5. Q1 への片付けの依頼: `build/ws269-p008/`（`mesa/` は Mesa の raw の file、`gen/`・`dev/` は開発中の照合の道具、`host/` は試験の出力）と `build/ws269-p006-vf2/`（この worktree の build の出力）。
+| 確かめ | コマンド | 結果 |
+| --- | --- | --- |
+| host 試験 | `timeout 120 sh plan/ws269/tests/p008/run.sh build/ws269-p008/host` | `powervr encode host test: 91 passed, 0 failed`（`powervr_usc_program_encode` を `powervr_usc_program_build` の包みにした後も同じ）、`powervr compute host test: 70 passed, 0 failed`（control stream の 7 語 × 2 と終端、PDS の data・code の語、temps の field、書き込みの program の group の数（2,058）・8 byte の終わり・group 0・1・9〜11・13・最後の st・end の bytes、temps の program の group 0・1・9 の bytes、FW の命令の語、拒否の case。期待は cdm.xml・pvr_rogue_pds_defs.h・pco_isa.py の field から手で組み、各 case の comment に field を書いた） |
+| VF2 の試験の kernel | `timeout 3600 make ZEDBSD_CONFIG=plan/ws269/tests/p008/config-visionfive2-compute.mk BUILD=build/ws269-p008-vf2 vmunix`（log `build/ws269-p008/vf2-compute.log`、名前の定数の整理の後に `vf2-compute2.log` で再 build、同じく rc=0・0 件） | rc=0、`warning:` 0 件（-Werror）。`compute-program.c`・`compute-check.c` が compile・link、`nm` で `powervr_compute_check` が定義済み |
+| VF2 の通常の kernel | `timeout 3600 make ZEDBSD_CONFIG=config/ci/config-visionfive2.mk BUILD=build/ws269-p008-vf2b vmunix`（log `build/ws269-p008/vf2-plain.log`） | rc=0、`warning:` 0 件。`compute-check.c` は build されず、`nm` で `powervr_compute_check` は weak の未定義（`w`、呼ばれない） |
+| riscv64-virt の kernel（共有の `platform/riscv64/vmunix.mk` に触れたため） | `timeout 3600 make ZEDBSD_CONFIG=config/ci/config-riscv64-virt.mk BUILD=build/ws269-p008-virt vmunix`（log `build/ws269-p008/virt.log`） | rc=0、`warning:` 0 件、`error:` 0 件 |
+
+- amd64 は触れた file を build しないので流していない。QEMU は起動していない。実機の 3 行は未実施（U29 の続き、上の文面）。
+
+## 残り
+
+1. 実機（T1・ユーザー、U29 の続き）: 上の「実機の試験の文面」の 3 行。期待と違えば、kernel の行が FAILED なら program・kick の誤り（gdbstub は無いので、画面の数と FW の notice の行から）、時間切れなら FW の context の static state（0 のまま）や CDM の register の値を疑う。
+2. temps の単位: 実機で `BLOCKS OF 2` なら p009 以降の DOUTU は 2 の単位（今の試験の program の store は 2 の単位で組み、どちらでも足りる）。`INCONCLUSIVE` なら 4 は否定されないが確定もしない（並びが隣り合わない構造では区別できない）。その時は 2 の単位（多めに取る）を既定に保つ。
+3. 逆向き（CPU が cacheable で書き flush せず、GPU が読む）の data master の道は作っていない。USC の load（`ld` の data の返り先の routing）が要り、p009 の compute の load と一緒に確かめる（p006 は FW の fence で逆向きを確かめ済み）。
+4. coherency の判定が COHERENT でも、既定（非 coherent）の切り替えは別の Phase で Q1 の承認を得て（design §3.2 の 4）。
+5. Q1 への片付けの依頼: `build/ws269-p008/`（`mesa2/` は Mesa の raw の file、`host/` は試験の出力、`*.log`）、`build/ws269-p008-vf2/`・`build/ws269-p008-vf2b/`・`build/ws269-p008-virt/`（この worktree の build の出力）。前半の依頼の `build/ws269-p006-vf2/` は既に無い。

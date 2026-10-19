@@ -197,6 +197,24 @@ int powervr_session_cleanup(struct powervr_render *render, struct powervr_sessio
 int powervr_session_kick(struct powervr_render *render, struct powervr_session *session, uint32_t value, uint32_t fence_address, uint32_t fence_value);
 
 /*
+ * Kicks one compute command of words 32-bit words on a session's context
+ * that advances its timeline to value once done; the core's lock is held.
+ */
+int powervr_session_kick_compute(struct powervr_render *render, struct powervr_session *session, uint32_t value, const uint32_t *command, uint32_t words);
+
+/* Waits, bounded, for a session's timeline to reach a value; ETIMEDOUT when it does not. */
+int powervr_session_wait(struct powervr_session *session, uint32_t value, unsigned milliseconds);
+
+/*
+ * Runs the driver's own compute work on the core and reports, one line
+ * each, whether it wrote what it should, what the processor's cached
+ * view sees of it, and how the task issue counts temporaries.
+ * Weak: only a test kernel built with CONFIG_POWERVR_COMPUTE_CHECK has
+ * it, so the ordinary start does not spend the time.
+ */
+extern void powervr_compute_check(struct powervr_render *render) __attribute__((weak));
+
+/*
  * Kicks a session's context again without new commands, so the firmware
  * looks again at a fence it waits on; the core's lock is held.
  */

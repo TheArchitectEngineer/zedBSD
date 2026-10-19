@@ -297,6 +297,50 @@ powervr_session_kick(
 }
 
 /*
+ * Kicks one compute command on a session's context that advances its
+ * timeline to value once done; the core's lock is held.
+ *
+ * Procedure referenced:
+ * StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
+ * drivers/gpu/drm/imagination/pvr_queue.c
+ * (pvr_queue_submit_job_to_cccb: the job's command, then the update of
+ * the queue's timeline).
+ */
+int
+powervr_session_kick_compute(
+	struct powervr_render *render,
+	struct powervr_session *session,
+	uint32_t value,
+	const uint32_t *command,
+	uint32_t words)
+{
+	uint32_t sync[2];
+	uint32_t bytes;
+	int error;
+
+	/* Room for the command and the update, each behind a header. */
+	bytes = 2U * POWERVR_HEADER_BYTES + ((words * 4U + 7U) & ~7U) + POWERVR_SYNC_BYTES;
+	error = client_space(session, bytes);
+	if (error != 0)
+		return error;
+
+	/* The compute command, then the update of the timeline once it is done. */
+	client_put(session, POWERVR_CLIENT_COMPUTE, words * 4U, command, words);
+	sync[0] = powervr_object_address(&session->timeline, 0);
+	sync[1] = value;
+	client_put(session, POWERVR_CLIENT_UPDATE, POWERVR_SYNC_BYTES, sync, 2);
+
+	/* Tells the firmware the buffer grew. */
+	error = send_kick(render, session);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the command is the firmware's. */
+	session->kicked = 1;
+	return 0;
+}
+
+/*
  * Kicks a session's context again without new commands; the core's lock
  * is held.
  */

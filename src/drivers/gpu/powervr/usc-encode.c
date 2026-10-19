@@ -382,6 +382,7 @@ static int group_write(const struct powervr_usc_group *group, const struct usc_g
 static void header_write(const struct powervr_usc_group *group, const struct usc_group_plan *plan, unsigned halfwords, uint8_t *output);
 static int operation_build(const struct usc_layout *layout, const uint32_t *values, struct powervr_usc_operation *operation);
 static int flag_check(unsigned flag);
+static int array_fetch(void *context, size_t index, struct powervr_usc_group *group);
 
 /*
  * Reports how many bytes a group takes before any program alignment.
@@ -424,6 +425,39 @@ powervr_usc_program_encode(
 	size_t room,
 	size_t *length)
 {
+	int error;
+
+	/* Refuses a missing group array. */
+	if (groups == NULL)
+		return EINVAL;
+
+	/* Encodes the array through the fetching form. */
+	error = powervr_usc_program_build(count, array_fetch, (void *)(uintptr_t)groups, output, room, length);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the program is encoded. */
+	return 0;
+}
+
+/*
+ * Encodes a program whose groups a callback hands over one at a time.
+ *
+ * The callback is asked for each group twice, once to measure and once
+ * to write, and must give the same group both times.  A long program
+ * whose groups repeat needs no array this way.  Padding and failure are
+ * as for powervr_usc_program_encode().
+ */
+int
+powervr_usc_program_build(
+	size_t count,
+	int (*fetch)(void *context, size_t index, struct powervr_usc_group *group),
+	void *context,
+	uint8_t *output,
+	size_t room,
+	size_t *length)
+{
+	struct powervr_usc_group group;
 	struct usc_group_plan plan;
 	size_t offset;
 	size_t last_offset;
@@ -435,7 +469,7 @@ powervr_usc_program_encode(
 	int error;
 
 	/* Refuses a missing or empty program. */
-	if (groups == NULL || count == 0 || output == NULL || length == NULL)
+	if (fetch == NULL || count == 0 || output == NULL || length == NULL)
 		return EINVAL;
 
 	/* Measures every group to find where the last one starts. */
@@ -443,7 +477,11 @@ powervr_usc_program_encode(
 	last_offset = 0;
 	last_padding = 0;
 	for (i = 0; i < count; i++) {
-		error = group_plan(&groups[i], &plan);
+		error = fetch(context, i, &group);
+		if (error != 0)
+			return error;
+
+		error = group_plan(&group, &plan);
 		if (error != 0)
 			return error;
 
@@ -472,7 +510,11 @@ powervr_usc_program_encode(
 	/* Writes each group with the padding it carries. */
 	offset = 0;
 	for (i = 0; i < count; i++) {
-		error = group_plan(&groups[i], &plan);
+		error = fetch(context, i, &group);
+		if (error != 0)
+			return error;
+
+		error = group_plan(&group, &plan);
 		if (error != 0)
 			return error;
 
@@ -482,7 +524,7 @@ powervr_usc_program_encode(
 		else if (i + 2 == count)
 			padding = previous_padding;
 
-		error = group_write(&groups[i], &plan, padding, output + offset);
+		error = group_write(&group, &plan, padding, output + offset);
 		if (error != 0)
 			return error;
 
@@ -2364,5 +2406,22 @@ flag_check(
 		return EINVAL;
 
 	/* Succeeded: the flag is a bit. */
+	return 0;
+}
+
+/* Hands over one group of an array for powervr_usc_program_encode(). */
+static int
+array_fetch(
+	void *context,
+	size_t index,
+	struct powervr_usc_group *group)
+{
+	const struct powervr_usc_group *groups;
+
+	/* Copies the indexed group. */
+	groups = context;
+	*group = groups[index];
+
+	/* Succeeded: the group is handed over. */
 	return 0;
 }

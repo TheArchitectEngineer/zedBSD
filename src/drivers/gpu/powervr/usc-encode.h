@@ -243,6 +243,7 @@ struct powervr_usc_group {
 
 int powervr_usc_group_size(const struct powervr_usc_group *group, size_t *size);
 int powervr_usc_program_encode(const struct powervr_usc_group *groups, size_t count, uint8_t *output, size_t room, size_t *length);
+int powervr_usc_program_build(size_t count, int (*fetch)(void *context, size_t index, struct powervr_usc_group *group), void *context, uint8_t *output, size_t room, size_t *length);
 
 int powervr_usc_float_pair(enum powervr_usc_float_pair kind, unsigned saturate, unsigned negate_0, unsigned absolute_0, unsigned absolute_1, unsigned floor_0, struct powervr_usc_operation *operation);
 int powervr_usc_float_multiply_add(unsigned saturate, unsigned negate_0, unsigned absolute_0, unsigned negate_1, unsigned absolute_1, unsigned negate_2, unsigned absolute_2, unsigned floor_2, unsigned low_precision, struct powervr_usc_operation *operation);
