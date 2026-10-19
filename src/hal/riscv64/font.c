@@ -6,19 +6,19 @@
  */
 
 /*
- * The riscv64 early console's font: the public-domain IBM PC-compatible
- * 8x16 VGA font, 256 glyphs of 16 rows, one byte per row with the leftmost
- * pixel in the high bit.
- *
- * It is the same font as the PC/AT and Raspberry Pi 4 consoles, so that
- * every console looks the same.  The HAL does not use driver sources or
- * another architecture's, so it keeps its own copy.
+ * The riscv64 early console's font: 256 glyphs of 16 rows, one byte per
+ * row with the leftmost pixel in the high bit.
  */
 
 #include "font.h"
 
 /*
  * The glyphs, character 0 first.
+ *
+ * They are the public-domain IBM PC-compatible 8x16 VGA font, the same as
+ * the PC/AT and Raspberry Pi 4 consoles', so that every console looks the
+ * same.  The HAL does not use driver sources or another architecture's, so
+ * it keeps its own copy.
  */
 const uint8_t riscv64_font8x16[RISCV64_FONT_GLYPHS * RISCV64_FONT_HEIGHT] = {
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,

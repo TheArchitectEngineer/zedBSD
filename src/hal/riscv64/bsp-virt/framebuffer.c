@@ -91,6 +91,7 @@ int
 virt_framebuffer_init(
 	void)
 {
+	uint64_t pixels_phys;
 	uint16_t selector;
 	uint32_t size;
 	int error;
@@ -99,11 +100,14 @@ virt_framebuffer_init(
 	error = virt_fwcfg_find(FRAMEBUFFER_CONFIG_FILE, &selector, &size);
 	if (error != HAL_OK)
 		return error;
+
+	/* Refuses a configuration of another layout than the one written here. */
 	if (size != sizeof(framebuffer_config_block))
 		return HAL_ERR_UNSUPPORTED;
 
 	/* Describes the memory: where it is, its format, size and row length. */
-	framebuffer_config_block.address = __builtin_bswap64(riscv64_virt_to_phys(framebuffer_pixels));
+	pixels_phys = riscv64_virt_to_phys(framebuffer_pixels);
+	framebuffer_config_block.address = __builtin_bswap64(pixels_phys);
 	framebuffer_config_block.fourcc = __builtin_bswap32(FRAMEBUFFER_FOURCC_XRGB8888);
 	framebuffer_config_block.flags = 0;
 	framebuffer_config_block.width = __builtin_bswap32(FRAMEBUFFER_WIDTH);
@@ -120,8 +124,10 @@ virt_framebuffer_init(
 	if (error != HAL_OK)
 		return error;
 
-	/* Succeeded: drawing reaches the screen. */
+	/* The screen is on for the boot log. */
 	framebuffer_on = 1;
+
+	/* Succeeded: drawing reaches the screen. */
 	return HAL_OK;
 }
 
@@ -132,13 +138,18 @@ void
 virt_framebuffer_describe(
 	void)
 {
+	uint64_t pixels_phys;
+
 	/* Describes a shown screen; a missing one was reported when it was looked for. */
 	if (!framebuffer_on)
 		return;
+
+	/* Writes the screen's size and where its memory is. */
+	pixels_phys = riscv64_virt_to_phys(framebuffer_pixels);
 	hal_printf("RISCV64 FRAMEBUFFER %ux%u phys=%lx\n",
 		   FRAMEBUFFER_WIDTH,
 		   FRAMEBUFFER_HEIGHT,
-		   (uint64_t)riscv64_virt_to_phys(framebuffer_pixels));
+		   pixels_phys);
 }
 
 /*

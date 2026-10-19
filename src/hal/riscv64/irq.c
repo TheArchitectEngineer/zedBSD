@@ -211,6 +211,8 @@ hal_irq_send_eoi(
 	/* A source is completed; it carries the source number plus one. */
 	if (acknowledge != RISCV64_ACK_LOCAL)
 		riscv64_plic_complete((uint32_t)(acknowledge - 1U));
+
+	/* The hart holds no interrupt from here on. */
 	cpu->active_ack = HAL_IRQ_ACK_NONE;
 }
 
@@ -234,8 +236,10 @@ hal_irq_set_affinity(
 	if (!boot_hart)
 		return HAL_ERR_INVALID;
 
-	/* Succeeded: the request is kept for hal_irq_get_affinity(). */
+	/* Keeps the request for hal_irq_get_affinity(). */
 	slots[irq].requested = *requested;
+
+	/* Succeeded: the source still goes to the boot hart. */
 	return HAL_OK;
 }
 
@@ -255,9 +259,11 @@ hal_irq_get_affinity(
 	if (!valid)
 		return HAL_ERR_INVALID;
 
-	/* The request, when wanted, and the boot hart as the one that takes it. */
+	/* The request, when wanted. */
 	if (requested != NULL)
 		*requested = slots[irq].requested;
+
+	/* The boot hart as the one that takes the source, when wanted. */
 	if (effective != NULL) {
 		hal_cpu_mask_zero(effective);
 		hal_cpu_mask_set(effective, 0);
@@ -313,6 +319,8 @@ riscv64_irq_take_external(
 		source = riscv64_plic_claim();
 		if (source == 0)
 			return;
+
+		/* Hands the claimed source to its handler. */
 		dispatch(source);
 	}
 }
@@ -455,6 +463,8 @@ dispatch(
 	cpu = riscv64_percpu_current();
 	if (cpu->active_ack != HAL_IRQ_ACK_NONE)
 		HAL_FATAL("nested riscv64 IRQ acknowledgement");
+
+	/* The hart holds the source's acknowledgement, its number plus one. */
 	acknowledge = (hal_irq_ack_t)source + 1U;
 	cpu->active_ack = acknowledge;
 
@@ -470,14 +480,14 @@ dispatch(
 		riscv64_spin_unlock(&slots_lock, enabled);
 	}
 
-	/* A source with a handler is that handler's to end. */
-	if (handler != NULL) {
-		handler((int)source, acknowledge, argument);
+	/* A source nobody serves is masked so it does not come back, and ended. */
+	if (handler == NULL) {
+		riscv64_plic_set_priority(source, 0);
+		hal_irq_send_eoi(acknowledge);
+		hal_printf("unexpected riscv64 IRQ %u\n", source);
 		return;
 	}
 
-	/* A source nobody serves is masked so it does not come back, and ended. */
-	riscv64_plic_set_priority(source, 0);
-	hal_irq_send_eoi(acknowledge);
-	hal_printf("unexpected riscv64 IRQ %u\n", source);
+	/* The source is its handler's to end. */
+	handler((int)source, acknowledge, argument);
 }
