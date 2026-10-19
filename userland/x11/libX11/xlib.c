@@ -1950,6 +1950,9 @@ XChangeProperty(
 	uint8_t *q;
 	size_t bytes;
 	size_t size;
+	size_t index;
+	uint16_t unit16;
+	uint32_t unit32;
 	int error;
 
 	/* The data's bytes, and the request padded to words. */
@@ -1971,7 +1974,24 @@ XChangeProperty(
 	w32(q + 12, type);
 	q[16] = (uint8_t)format;
 	w32(q + 20, (uint32_t)nelements);
-	memcpy(q + 24, data, bytes);
+
+	/*
+	 * The data: 16- and 32-bit units are in the client's order, which
+	 * this library always names little-endian, whatever the CPU's order.
+	 */
+	if (format == 8) {
+		memcpy(q + 24, data, bytes);
+	} else if (format == 16) {
+		for (index = 0; index < (size_t)nelements; index++) {
+			memcpy(&unit16, data + index * 2U, sizeof(unit16));
+			w16(q + 24 + index * 2U, unit16);
+		}
+	} else {
+		for (index = 0; index < (size_t)nelements; index++) {
+			memcpy(&unit32, data + index * 4U, sizeof(unit32));
+			w32(q + 24 + index * 4U, unit32);
+		}
+	}
 	error = req(d, q, size);
 	free(q);
 	if (error != 0)
@@ -2007,6 +2027,9 @@ XGetWindowProperty(
 	unsigned char *data;
 	size_t extra;
 	size_t bytes;
+	size_t index;
+	uint16_t unit16;
+	uint32_t unit32;
 	int error;
 
 	/* Nothing yet. */
@@ -2058,6 +2081,19 @@ XGetWindowProperty(
 		bytes = (size_t)*nitems * (size_t)(*actual_format / 8);
 	if (bytes > extra)
 		bytes = extra;
+
+	/* 16- and 32-bit units from the little-endian wire to the CPU's order. */
+	if (*actual_format == 16) {
+		for (index = 0; index + 2U <= bytes; index += 2U) {
+			unit16 = r16(data + index);
+			memcpy(data + index, &unit16, sizeof(unit16));
+		}
+	} else if (*actual_format == 32) {
+		for (index = 0; index + 4U <= bytes; index += 4U) {
+			unit32 = r32(data + index);
+			memcpy(data + index, &unit32, sizeof(unit32));
+		}
+	}
 	data[bytes] = 0;
 	*prop = data;
 	return 0;

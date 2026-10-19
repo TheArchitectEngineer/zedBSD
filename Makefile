@@ -518,8 +518,8 @@ override CONFIG_DRIVER_GRAPHICS := y
 endif
 
 #
-# Only PC/AT and PC-98 currently provide a /dev/graphics
-# implementation.  Keep this derived capability internal: an
+# PC/AT, PC-98 and sun4u (the firmware framebuffer) provide a
+# /dev/graphics implementation.  Keep this derived capability internal: an
 # unsupported target may still carry an old CONFIG_DRIVER_GRAPHICS=y
 # setting without acquiring a generic node or an unresolved
 # registration symbol.
@@ -527,7 +527,8 @@ endif
 
 ZEDBSD_GRAPHICS_BACKEND := $(strip \
 	$(if $(filter pcat amd64,$(ZEDBSD_PLATFORM_DIR)),pcat,\
-	$(if $(filter pc98,$(ZEDBSD_PLATFORM_DIR)),pc98)))
+	$(if $(filter pc98,$(ZEDBSD_PLATFORM_DIR)),pc98,\
+	$(if $(filter sparcv9,$(ZEDBSD_PLATFORM_DIR)),sun4u))))
 
 override CONFIG_DRIVER_GRAPHICS_DEVICE := $(if $(and \
 	$(filter y,$(CONFIG_DRIVER_GRAPHICS)),$(ZEDBSD_GRAPHICS_BACKEND)),y,n)
