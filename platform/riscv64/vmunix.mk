@@ -58,13 +58,16 @@ RISCV64_PLATFORM_SOURCES_virt := src/kern/platform/riscv-virt.c \
 	src/drivers/serial/ns16550.c src/drivers/generic/serial-console.c \
 	src/drivers/generic/ramdisk.c
 # The VisionFive 2's binding: the teletype console on the hardware layer's
-# output, the initial ramdisk as the boot device, and the SoC's system
-# control blocks, clock and reset generators and pin controllers.
+# output, the initial ramdisk as the boot device, the SoC's system control
+# blocks, clock and reset generators and pin controllers, and the SD card
+# slot (the DesignWare controller and its JH7110 glue).
 RISCV64_PLATFORM_SOURCES_visionfive2 := src/kern/platform/visionfive2.c \
 	src/drivers/generic/serial-console.c src/drivers/generic/ramdisk.c \
 	src/drivers/platform/visionfive2/vf2-syscon.c \
 	src/drivers/platform/visionfive2/vf2-crg.c \
-	src/drivers/platform/visionfive2/vf2-pinctrl.c
+	src/drivers/platform/visionfive2/vf2-pinctrl.c \
+	src/drivers/platform/visionfive2/vf2-mmc.c \
+	src/drivers/mmc/dw-mmc.c
 
 RISCV64_KERNEL_SOURCES := \
 	src/kern/main.c \
