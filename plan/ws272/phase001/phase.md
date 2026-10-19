@@ -2,7 +2,8 @@
 
 # ws272-p001 MIPS64（mips64el）の QEMU malta の差分の確認
 
-- 親: [WS272](../ws.md)、Queue: q1276 / q1276-i01（P1）、Status: in-progress（確認済み、design-reviewer のレビュー待ち）、disposition: normal
+- 親: [WS272](../ws.md)、Queue: q1276 / q1276-i01（P1）、disposition: normal
+- Status: cleared（2026-10-19 Q1: WS271 の design-review-1 は「条件付きで受け入れ」、§8 の M8 は q1277 の改訂 2 で当てた）
 - 設計の本体: [WS271 の design.md](../../ws271/design.md) の §1〜§6（共通）と §8（WS272 の差分）。この Phase は §8 を QEMU の source で確かめる。
 - 決定: U3（FPXX は MIPS32 の話、MIPS64 は n64）、U4（CPU は `MIPS64R2-generic`）（[ws.md](../ws.md)、2026-10-19 14:29 ユーザー）。
 - 範囲: 文書だけ。code・build・QEMU の起動はしない（2026-10-19 Q1: 共有の LLVM の作り直しの間）。

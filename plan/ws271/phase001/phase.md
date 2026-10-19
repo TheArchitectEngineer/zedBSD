@@ -3,7 +3,7 @@
 # ws271-p001 設計: MIPS32（mipsel）・MIPS64（mips64el）の QEMU malta
 
 - 親: [WS271](../ws.md)（WS272 の共通の部分も含む）、Queue: q1273 / q1273-i01（P1、2026-10-19）
-- Status: in-progress → 設計の文書を書き終えた（2026-10-19 14:22 P1）。clearance は Q1 の判定（ユーザーの判断 U1〜U5 と design-reviewer の要否）。
+- Status: cleared（2026-10-19 Q1: design-review-1 は「条件付きで受け入れ」、条件の M1〜M9・Minor 1〜14 は改訂 2（q1277、3be80c9a7）で当てた。U1〜U5 は決定済み）
 - 成果: [design.md](../design.md)、[proposed/llvm-mips.md](../proposed/llvm-mips.md)（toolchain の案、Q1 が適用）、[proposed/hal-mips.md](../proposed/hal-mips.md)（HAL の API の差分の案、未適用・承認待ち）、[proposed/boot-test-mips.md](../proposed/boot-test-mips.md)（boot-test の mode の案、Q1 が適用）。code は書いていない。
 
 ## 範囲と受け入れ条件
