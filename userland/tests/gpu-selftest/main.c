@@ -6,8 +6,7 @@
  */
 
 /*
- * gpu-selftest: the PowerVR stage test of the VisionFive 2 test image
- * (ws269-p010a, design-p010.md §8.2).  It runs the stages in order, each in
+ * gpu-selftest: the PowerVR stage test.  It runs the stages in order, each in
  * a child of its own with a time limit, so a hung GPU or a crash still lets
  * the report go on, and prints one line a stage:
  *
@@ -87,7 +86,7 @@ static int stage_vkcompute(struct selftest *test, char *reason, size_t capacity)
 static int is_vkcompute_stage(const char *name);
 static void vkcompute_outcomes(int status, const char *line, enum outcome *results, char reasons[3][SELFTEST_TEXT_MAX]);
 
-/* The stages of design-p010.md §8.2, in order; NULL run is "not built". */
+/* The stages, in order; a NULL run is "not built". */
 static const struct stage stages[] = {
 	{ "kernel", NULL, stage_kernel },
 	{ "node", "kernel", stage_node },

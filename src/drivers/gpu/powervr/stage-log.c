@@ -6,7 +6,7 @@
  */
 
 /*
- * The one stage record of the boot (ws269-p010a): the driver's paths note
+ * The one stage record of the boot: the driver's paths note
  * a stage's ok or failure here, the line goes to the console through
  * kern_logf, and hw.gpu.powervr.stages reads the record.
  */

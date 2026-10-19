@@ -1,6 +1,6 @@
 include $(dir $(lastword $(MAKEFILE_LIST)))../package.mk
 
-# ws269-p010a: the PowerVR stage test (one line a stage, each in a child with a time limit).
+# The PowerVR stage test (one line a stage, each in a child with a time limit).
 # gpu-selftest-boot adds the oneshot service that runs it at boot with its lines on the
 # console; a test image selects it to run the test on its own (rc.conf names it optional).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
