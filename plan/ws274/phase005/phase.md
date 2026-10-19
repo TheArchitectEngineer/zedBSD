@@ -33,7 +33,8 @@ commit 469702ce8（code・Makefile・13 の platform・docs・mkswap の注記�
 - 照合: `python3 -I plan/ws274/tests/body-compare.py 4660a2fb5 src/kern/swap.c -- src/kern/vm/swap.c src/kern/vm/swap-control.c src/kern/vm/swap-header.c src/kern/vm/swap-source.c` → functions 89 names 89 differences 0、PASS。加えて空行を除いた行の多重集合を元と比べ、違いは include の重複・著作権の頭・冒頭の注記だけ。
 - nm: `build/llvm/bin/llvm-nm vmunix` の大文字の型の symbol（amd64 56・pcat 58・sun4u 1442）が base と同じ（diff 0、増えた global は無い）。小文字の local では amd64 に `t kern_swap_source_init`・`r swap_header_uuid_format.digits` が増え、sun4u で `t kern_swap_source_init.part.0` が消えた（翻訳単位が分かれて inline・分割の判断が変わっただけ）。vmunix の大きさは amd64 −120・pcat +120・sun4u +64 byte。
 - host の試験: swap に関わる登録済みの host の試験は無い（master.md の Tools・tests/ のシナリオ）。ws073 の swap-slot-host.sh は削除の候補（下）なので流していない。
-- 未実施: 残り 10 の platform の build（p007 で全部）、QEMU の起動（下の T1 の依頼）。
+- 追加の build（p015 の x68k の直しの確かめと同時、merge の後の efd5456bd 以降）: m68k-virt・mips32-malta・mips64-malta・ppc32-mac99・ppc64-pseries・riscv32-virt の `vmunix` と x68k の `vmunix`・`zedbsd-x68k.hd` が exit 0・warning 0、各 log に vm/swap の 4 つの object（`m68k kernel check: PASS`）。
+- 未実施: arm64・riscv64・pc98・mips の image の build（p007 で全部）、QEMU の起動（下の T1 の依頼）。
 
 ## T1 への依頼（WS274 p005、design.md §5 の一部）
 
