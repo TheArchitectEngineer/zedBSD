@@ -21,6 +21,7 @@ _start:
 	.byte 0xea
 	.word start
 	.word 0x07c0
+
 start:
 	cli
 	cld
@@ -83,12 +84,14 @@ start:
 	jz loaded
 	mov ax, ZBL_STAGE2_SEG + 0x20
 	inc dword ptr [dap_lba]
+
 load_loop:
 	mov word ptr [dap_segment], ax
 	call read_one
 	add ax, 0x20
 	inc dword ptr [dap_lba]
 	loop load_loop
+
 loaded:
 	/* A dword additive checksum over the padded image must be zero. */
 	push ds
@@ -98,6 +101,7 @@ loaded:
 	shl ecx, 7
 	xor esi, esi
 	xor eax, eax
+
 checksum_loop:
 	add eax, dword ptr [esi]
 	add esi, 4
@@ -118,15 +122,19 @@ error_header_ds:
 	pop ds
 	mov al, 'H'
 	jmp fatal
+
 error_checksum_ds:
 	pop ds
 	mov al, 'C'
 	jmp fatal
+
 error_edd:
 	mov al, 'E'
 	jmp fatal
+
 error_disk:
 	mov al, 'D'
+
 fatal:
 	call putc
 	cli
@@ -180,8 +188,10 @@ dap_segment:
 	.word 0
 dap_lba:
 	.quad 0
-boot_drive: .byte 0
-retry:      .byte 0
+boot_drive:
+	.byte 0
+retry:
+	.byte 0
 
 .org ZBL1_METADATA_OFFSET
 stage1_metadata:

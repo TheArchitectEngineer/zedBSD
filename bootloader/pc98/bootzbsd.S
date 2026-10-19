@@ -44,6 +44,7 @@ stage2_entry:
 	mov ax, cs
 	cmp ax, 0x1000
 	je stage2_resident
+
 	/*
 	 * DOS MZ entry: preserve the current drive and relocate the loader to
 	 * the physical address used by its protected-mode handoff tables.
@@ -72,16 +73,19 @@ stage2_entry:
 	mov cx, word ptr [ZBL2_SECTOR_COUNT]
 	shl cx, 8
 	rep movsw
+
 	/* 16:16 immediate far jump (EA offset16 segment16). */
 	.byte 0xea
 	.word stage2_entry
 	.word 0x1000
+
 stage2_resident:
 	mov ds, ax
 	movzx ecx, word ptr [ZBL2_SECTOR_COUNT]
 	shl ecx, 7
 	xor esi, esi
 	xor eax, eax
+
 stage2_checksum_loop:
 	add eax, dword ptr [si]
 	add si, 4
@@ -149,6 +153,7 @@ stage2_checksum_loop:
 	mov si, MBR_TABLE_OFFSET
 	xor bx, bx
 	mov cx, 4
+
 mbr_loop:
 	mov al, byte ptr es:[si]
 	cmp al, 0
@@ -165,6 +170,7 @@ mbr_loop:
 	je mbr_type_ok
 	cmp al, MBR_TYPE_FAT16_LBA
 	jne fatal_partition
+
 mbr_type_ok:
 	mov eax, dword ptr es:[si + 8]
 	test eax, eax
@@ -179,6 +185,7 @@ mbr_type_ok:
 	mov ax, 5
 	sub ax, cx
 	mov byte ptr [partition_index], al
+
 mbr_status_ok:
 	add si, MBR_ENTRY_SIZE
 	loop mbr_loop
@@ -195,12 +202,14 @@ native_partition:
 	call disk_read_one
 	xor si, si
 	mov cx, 16
+
 native_loop:
 	cmp byte ptr es:[si], 0
 	jne native_found
 	add si, 32
 	loop native_loop
 	jmp fatal_partition
+
 native_found:
 	movzx eax, word ptr es:[si + 10] /* data-start cylinder */
 	movzx edx, byte ptr es:[si + 9] /* head */
@@ -212,6 +221,7 @@ native_found:
 	mov dword ptr [partition_lba], eax
 	mov dword ptr [partition_blocks], 0xffffffff
 	mov byte ptr [partition_index], 1
+
 partition_ready:
 	mov si, offset msg_partition
 	call puts
@@ -248,6 +258,7 @@ partition_ready:
 	jmp fatal_elf
 
 /* ------------------------------------------------------------------ */
+
 /* ELF32/i386. */
 parse_elf32:
 	cmp word ptr es:[18], EM_386
@@ -283,6 +294,7 @@ parse_elf32:
 	mov byte ptr [elf_entry_executable], 0
 	mov word ptr [ph_load_count], 0
 	mov di, offset ph_table
+
 elf32_ph_loop:
 	cmp dword ptr es:[si], PT_LOAD
 	jne elf32_ph_next
@@ -330,11 +342,13 @@ elf32_ph_loop:
 1:
 	add di, PH_RECORD_SIZE
 	inc word ptr [ph_load_count]
+
 elf32_ph_next:
 	add si, 32
 	dec cx
 	jz elf32_ph_done
 	jmp elf32_ph_loop
+
 elf32_ph_done:
 	cmp word ptr [ph_load_count], 0
 	je fatal_elf
@@ -345,6 +359,7 @@ elf32_ph_done:
 	jmp load_all_segments
 
 /* ------------------------------------------------------------------ */
+
 /* ELF64/x86-64, deliberately restricted to a small bootstrap subset. */
 parse_elf64:
 	cmp word ptr es:[18], EM_X86_64
@@ -377,6 +392,7 @@ parse_elf64:
 	mov byte ptr [elf_class], ELFCLASS64
 	mov word ptr [ph_load_count], 0
 	mov di, offset ph_table
+
 elf64_ph_loop:
 	cmp dword ptr es:[si], PT_LOAD
 	jne elf64_ph_next
@@ -414,6 +430,7 @@ elf64_ph_loop:
 	mov dword ptr [di + 24], eax
 	add di, PH_RECORD_SIZE
 	inc word ptr [ph_load_count]
+
 elf64_ph_next:
 	add si, 56
 	dec ecx
@@ -424,12 +441,14 @@ elf64_ph_next:
 	call puts
 
 /* ------------------------------------------------------------------ */
+
 load_all_segments:
 	call enable_a20_pc98
 	call unreal_fs
 	mov word ptr [ph_cursor], offset ph_table
 	mov ax, word ptr [ph_load_count]
 	mov word ptr [ph_remaining], ax
+
 load_ph_loop:
 	cmp word ptr [ph_remaining], 0
 	je load_complete
@@ -441,6 +460,7 @@ load_ph_loop:
 	mov dword ptr [load_destination], eax
 	mov eax, dword ptr [si + 8]
 	mov dword ptr [load_remaining], eax
+
 load_file_loop:
 	mov eax, dword ptr [load_remaining]
 	test eax, eax
@@ -454,10 +474,12 @@ load_file_loop:
 1:	mov dword ptr [copy_count], ecx
 	xor bx, bx
 	mov edi, dword ptr [load_destination]
+
 copy_sector_loop:
 	mov edx, ecx
 	shr ecx, 2
 	jz copy_sector_tail
+
 copy_sector_dword:
 	mov eax, dword ptr es:[bx]
 	mov dword ptr fs:[edi], eax
@@ -465,10 +487,12 @@ copy_sector_dword:
 	add edi, 4
 	dec ecx
 	jnz copy_sector_dword
+
 copy_sector_tail:
 	mov ecx, edx
 	and ecx, 3
 	jz copy_sector_done
+
 copy_sector_byte:
 	mov al, byte ptr es:[bx]
 	mov byte ptr fs:[edi], al
@@ -476,41 +500,49 @@ copy_sector_byte:
 	inc edi
 	dec ecx
 	jnz copy_sector_byte
+
 copy_sector_done:
 	mov eax, dword ptr [copy_count]
 	add dword ptr [load_destination], eax
 	sub dword ptr [load_remaining], eax
 	inc dword ptr [load_file_sector]
 	jmp load_file_loop
+
 zero_bss:
 	mov si, word ptr [ph_cursor]
 	mov ecx, dword ptr [si + 12]
 	sub ecx, dword ptr [si + 8]
 	mov edi, dword ptr [si + 4]
 	add edi, dword ptr [si + 8]
+
 zero_bss_loop:
 	mov edx, ecx
 	shr ecx, 2
 	xor eax, eax
 	jz zero_bss_tail
+
 zero_bss_dword:
 	mov dword ptr fs:[edi], eax
 	add edi, 4
 	dec ecx
 	jnz zero_bss_dword
+
 zero_bss_tail:
 	mov ecx, edx
 	and ecx, 3
 	jz next_ph
+
 zero_bss_byte:
 	mov byte ptr fs:[edi], 0
 	inc edi
 	dec ecx
 	jnz zero_bss_byte
+
 next_ph:
 	add word ptr [ph_cursor], PH_RECORD_SIZE
 	dec word ptr [ph_remaining]
 	jmp load_ph_loop
+
 load_complete:
 	mov si, offset msg_loaded
 	call puts
@@ -519,6 +551,7 @@ load_complete:
 	jmp enter_protected_mode
 
 /* ------------------------------------------------------------------ */
+
 /* FAT16. */
 fat16_mount:
 	mov eax, dword ptr [partition_lba]
@@ -692,6 +725,7 @@ fat16_find_root_file:
 	mov dword ptr [scan_lba], eax
 	mov eax, dword ptr [root_entries]
 	mov dword ptr [scan_entries], eax
+
 fat_root_sector:
 	cmp dword ptr [scan_entries], 0
 	je fat_root_not_found
@@ -699,6 +733,7 @@ fat_root_sector:
 	call disk_read_one
 	xor bx, bx
 	mov cx, 16
+
 fat_root_entry:
 	cmp dword ptr [scan_entries], 0
 	je fat_root_not_found
@@ -714,6 +749,7 @@ fat_root_entry:
 	mov si, word ptr [lookup_name]
 	mov di, bx
 	mov cx, 11
+
 fat_name_loop:
 	mov al, byte ptr [si]
 	cmp al, byte ptr es:[di]
@@ -734,9 +770,11 @@ fat_name_loop:
 	mov dword ptr [file_size], eax
 	clc
 	ret
+
 fat_name_no:
 	pop cx
 	pop bx
+
 fat_root_next:
 	add bx, 32
 	dec dword ptr [scan_entries]
@@ -749,11 +787,13 @@ fat32_find_root_file:
 	mov dword ptr [dir_cluster32], eax
 	mov eax, dword ptr [fat_cluster_count]
 	mov dword ptr [scan_clusters], eax
+
 fat32_root_cluster:
 	cmp dword ptr [scan_clusters], 0
 	je fat_root_not_found
 	dec dword ptr [scan_clusters]
 	mov byte ptr [dir_sector], 0
+
 fat32_root_sector:
 	mov eax, dword ptr [dir_cluster32]
 	call fat_cluster_to_lba
@@ -767,6 +807,7 @@ fat32_root_sector:
 	call disk_read_one
 	xor bx, bx
 	mov cx, 16
+
 fat32_root_entry:
 	mov al, byte ptr es:[bx]
 	test al, al
@@ -780,6 +821,7 @@ fat32_root_entry:
 	mov si, word ptr [lookup_name]
 	mov di, bx
 	mov cx, 11
+
 fat32_name_loop:
 	mov al, byte ptr [si]
 	cmp al, byte ptr es:[di]
@@ -802,9 +844,11 @@ fat32_name_loop:
 	mov dword ptr [file_size], eax
 	clc
 	ret
+
 fat32_name_no:
 	pop cx
 	pop bx
+
 fat32_root_next:
 	add bx, 32
 	loop fat32_root_entry
@@ -887,6 +931,7 @@ fat_uuid_format:
 	mov di, offset selected_uuid
 	mov cx, 8
 	xor bx, bx
+
 fat_uuid_digit:
 	rol edx, 4
 	mov al, dl
@@ -919,6 +964,7 @@ load_config_file:
 	mov dword ptr [config_remaining], eax
 	mov dword ptr [config_sector], 0
 	mov di, offset config_source
+
 load_config_sector:
 	cmp dword ptr [config_remaining], 0
 	je load_config_done
@@ -930,6 +976,7 @@ load_config_sector:
 	mov ecx, 512
 1:	mov dword ptr [copy_count], ecx
 	xor bx, bx
+
 load_config_copy:
 	mov al, byte ptr es:[bx]
 	mov byte ptr [di], al
@@ -941,6 +988,7 @@ load_config_copy:
 	sub dword ptr [config_remaining], eax
 	inc dword ptr [config_sector]
 	jmp load_config_sector
+
 load_config_done:
 	ret
 
@@ -953,6 +1001,7 @@ fat_path_component:
 	mov si, word ptr [path_cursor]
 	mov word ptr [path_component], si
 	xor cx, cx
+
 fat_path_character:
 	mov al, byte ptr [si]
 	test al, al
@@ -964,10 +1013,12 @@ fat_path_character:
 	cmp cx, 255
 	ja fat_path_component_fail
 	jmp fat_path_character
+
 fat_path_more:
 	mov byte ptr [path_has_more], 1
 	inc si
 	jmp 1f
+
 fat_path_component_done:
 	mov byte ptr [path_has_more], 0
 1:	cmp cx, 0
@@ -982,6 +1033,7 @@ fat_path_component_done:
 	loop 2b
 	clc
 	ret
+
 fat_path_component_fail:
 	stc
 	ret
@@ -1027,12 +1079,14 @@ fat_capture_entry:
 	mov word ptr [file_first_cluster], ax
 	mov dword ptr [file_first_cluster32], eax
 	jmp fat_capture_entry_size
+
 fat_capture_entry32:
 	movzx eax, word ptr [di + directory_sector_buffer + 20]
 	shl eax, 16
 	mov ax, word ptr [di + directory_sector_buffer + 26]
 	and eax, 0x0fffffff
 	mov dword ptr [file_first_cluster32], eax
+
 fat_capture_entry_size:
 	mov eax, dword ptr [di + directory_sector_buffer + 28]
 	mov dword ptr [file_size], eax
@@ -1054,6 +1108,7 @@ fat_find_root_component:
 	mov dword ptr [scan_lba], eax
 	mov eax, dword ptr [root_entries]
 	mov dword ptr [scan_entries], eax
+
 fat_component_root_sector:
 	cmp dword ptr [scan_entries], 0
 	je fat_component_not_found
@@ -1075,6 +1130,7 @@ fat_component_root_sector:
 	add dword ptr [scan_lba], 1
 	sub dword ptr [scan_entries], 16
 	jmp fat_component_root_sector
+
 fat_find_root_component32:
 	mov eax, dword ptr [root_cluster32]
 	mov dword ptr [directory_cluster], eax
@@ -1092,6 +1148,7 @@ fat_find_cluster_component:
 	mov dword ptr [dir_cluster32], eax
 	mov eax, dword ptr [fat_cluster_count]
 	mov dword ptr [scan_clusters], eax
+
 fat_component_dir_cluster:
 	cmp dword ptr [scan_clusters], 0
 	je fat_component_not_found
@@ -1105,6 +1162,7 @@ fat_component_dir_cluster:
 	jc fat_component_not_found
 	mov dword ptr [scan_lba], eax
 	mov byte ptr [dir_sector], 0
+
 fat_component_dir_sector:
 	/* scan_lba is the checked first physical sector of this cluster. */
 	mov eax, dword ptr [scan_lba]
@@ -1133,16 +1191,20 @@ fat_component_dir_sector:
 	cmp ax, 0xfff8
 	jae fat_component_not_found
 	jmp fat_component_dir_next_ready
+
 fat_component_dir_next32:
 	call fat32_next_cluster
 	cmp eax, 0x0ffffff8
 	jae fat_component_not_found
+
 fat_component_dir_next_ready:
 	mov dword ptr [dir_cluster32], eax
 	jmp fat_component_dir_cluster
+
 fat_component_found:
 	call fat_capture_entry
 	ret
+
 fat_component_not_found:
 	stc
 	ret
@@ -1151,6 +1213,7 @@ fat_component_not_found:
 fat16_find_path:
 	mov word ptr [path_cursor], si
 	mov byte ptr [path_at_root], 1
+
 fat_path_next:
 	call fat_path_component
 	jc fat_path_not_found
@@ -1173,6 +1236,7 @@ fat_path_next:
 	jb fat_path_not_found
 	mov byte ptr [path_at_root], 0
 	jmp fat_path_next
+
 fat_path_final:
 	test byte ptr [file_attributes], 0x10
 	jnz fat_path_not_found
@@ -1180,6 +1244,7 @@ fat_path_final:
 	je fat_path_not_found
 	clc
 	ret
+
 fat_path_not_found:
 	stc
 	ret
@@ -1241,6 +1306,7 @@ fat16_read_file_sector:
 	mov eax, dword ptr [desired_sector]
 	cmp byte ptr [fat_type], FAT_TYPE_32
 	je fat32_read_file_sector
+
 fat_file_next_request:
 	cmp byte ptr [file_cache_valid], 0
 	je fat_file_request_selected
@@ -1251,6 +1317,7 @@ fat_file_next_request:
 	jb fat_file_request_selected
 	/* Keep BIOS disk access sequential even across gaps between PT_LOADs. */
 	mov eax, edx
+
 fat_file_request_selected:
 	mov dword ptr [requested_sector], eax
 	cmp byte ptr [file_cache_valid], 0
@@ -1267,12 +1334,14 @@ fat_file_request_selected:
 	xor dl, dl
 	call fat16_next_cluster
 	xor dl, dl
+
 fat_file_cache_ready:
 	mov word ptr [cached_cluster], ax
 	mov byte ptr [cached_sector_in_cluster], dl
 	mov eax, dword ptr [requested_sector]
 	mov dword ptr [cached_file_sector], eax
 	jmp fat_cluster_cached
+
 fat_file_walk_from_start:
 	mov eax, dword ptr [requested_sector]
 	movzx ecx, byte ptr [fat_spc]
@@ -1283,12 +1352,14 @@ fat_file_walk_from_start:
 	jae fatal_fat_chain
 	mov dword ptr [sector_in_cluster], edx
 	mov ax, word ptr [file_first_cluster]
+
 fat_cluster_walk:
 	cmp dword ptr [cluster_steps], 0
 	je fat_cluster_found
 	call fat16_next_cluster
 	dec dword ptr [cluster_steps]
 	jmp fat_cluster_walk
+
 fat_cluster_found:
 	cmp ax, 2
 	jb fatal_fat_chain
@@ -1300,6 +1371,7 @@ fat_cluster_found:
 	mov eax, dword ptr [requested_sector]
 	mov dword ptr [cached_file_sector], eax
 	mov byte ptr [file_cache_valid], 1
+
 fat_cluster_cached:
 	mov ax, word ptr [cached_cluster]
 	movzx eax, ax
@@ -1316,6 +1388,7 @@ fat_cluster_cached:
 	jae fat_file_read_done
 	inc eax
 	jmp fat_file_next_request
+
 fat_file_read_done:
 	ret
 
@@ -1336,6 +1409,7 @@ fat32_read_file_sector:
 	call fat32_next_cluster
 	cmp eax, 0x0ffffff8
 	jae fatal_fat_chain
+
 fat32_file_cache_ready:
 	mov dword ptr [cached_cluster32], eax
 	mov byte ptr [cached_sector_in_cluster], bl
@@ -1344,6 +1418,7 @@ fat32_file_cache_ready:
 	mov edx, dword ptr [desired_sector]
 	mov dword ptr [cached_file_sector], edx
 	jmp fat32_file_cluster_cached
+
 fat32_file_from_start:
 	mov eax, dword ptr [desired_sector]
 	movzx ecx, byte ptr [fat_spc]
@@ -1354,6 +1429,7 @@ fat32_file_from_start:
 	jae fatal_fat_chain
 	mov dword ptr [sector_in_cluster], edx
 	mov eax, dword ptr [file_first_cluster32]
+
 fat32_file_walk:
 	cmp dword ptr [cluster_steps], 0
 	je fat32_file_cluster_ready
@@ -1362,6 +1438,7 @@ fat32_file_walk:
 	jae fatal_fat_chain
 	dec dword ptr [cluster_steps]
 	jmp fat32_file_walk
+
 fat32_file_cluster_ready:
 	cmp eax, 2
 	jb fatal_fat_chain
@@ -1371,6 +1448,7 @@ fat32_file_cluster_ready:
 	mov edx, dword ptr [desired_sector]
 	mov dword ptr [cached_file_sector], edx
 	mov byte ptr [file_cache_valid], 1
+
 fat32_file_cluster_cached:
 	call fat_cluster_to_lba
 	jc fatal_fat_chain
@@ -1417,10 +1495,12 @@ fat16_next_cluster:
 	je fat12_next_cluster
 	shl eax, 1
 	jmp fat_entry_offset_ready
+
 fat12_next_cluster:
 	mov edx, eax
 	shr edx, 1
 	add eax, edx
+
 fat_entry_offset_ready:
 	mov dx, ax
 	and dx, 511
@@ -1436,12 +1516,14 @@ fat_entry_offset_ready:
 	je fat_cache_fill
 	cmp eax, dword ptr [fat_cache_lba]
 	je fat_cache_ready
+
 fat_cache_fill:
 	mov dword ptr [fat_cache_lba], eax
 	call disk_read_one
 	xor bx, bx
 	mov di, offset fat_cache
 	mov ecx, 512 / 4
+
 fat_cache_copy:
 	mov eax, dword ptr es:[bx]
 	mov dword ptr [di], eax
@@ -1449,6 +1531,7 @@ fat_cache_copy:
 	add di, 4
 	dec ecx
 	jnz fat_cache_copy
+
 	/*
 	 * FAT16 entries never straddle a 512-byte physical sector.  A FAT12
 	 * entry needs one byte from the following sector only at offset 511;
@@ -1472,6 +1555,7 @@ fat_cache_copy:
 	xor bx, bx
 	mov di, offset fat_cache + 512
 	mov ecx, 512 / 4
+
 fat_cache_copy_second:
 	mov eax, dword ptr es:[bx]
 	mov dword ptr [di], eax
@@ -1479,8 +1563,10 @@ fat_cache_copy_second:
 	add di, 4
 	dec ecx
 	jnz fat_cache_copy_second
+
 fat_cache_fill_done:
 	mov byte ptr [fat_cache_valid], 1
+
 fat_cache_ready:
 	movzx ebx, word ptr [fat_offset]
 	mov ax, word ptr [bx + fat_cache]
@@ -1494,12 +1580,14 @@ fat_cache_ready:
 2:	cmp ax, 0x0ff8
 	jb fat_next_value_ready
 	mov ax, 0xfff8
+
 fat_next_value_ready:
 	cmp ax, 2
 	jb fatal_fat_chain
 	ret
 
 /* ------------------------------------------------------------------ */
+
 disk_read_one:
 	mov dword ptr [disk_lba], eax
 	pushad
@@ -1543,6 +1631,7 @@ disk_read_one:
 	mov ax, ZBL_BOUNCE_SEG
 	mov es, ax
 	ret
+
 pc98_disk_fail:
 	pop bp
 	pop es
@@ -1581,12 +1670,14 @@ unreal_fs:
 	ret
 
 /* ------------------------------------------------------------------ */
+
 prepare_pc98_handoff:
 	mov dword ptr [pc98_handoff + 0], 0x48323842
 	mov word ptr [pc98_handoff + 4], PC98_HANDOFF_VERSION_NATIVE
 	mov word ptr [pc98_handoff + 6], PC98_PARAMETER_HANDOFF_SIZE
 	mov al, byte ptr [boot_drive]
 	mov byte ptr [pc98_handoff + 9], al
+
 	/*
 	 * Version 2 selects the native PC-98 partition by LBA.  The scheme and
 	 * index bytes are reserved and must remain zero.
@@ -1637,6 +1728,7 @@ enumerate_ide_devices:
 	and bl, 0x0f
 	mov al, 0x80
 	mov cx, 4
+
 enumerate_ide_loop:
 	test bl, 1
 	jz enumerate_ide_next
@@ -1689,16 +1781,19 @@ enumerate_ide_loop:
 	mov dl, byte ptr [sense_status]
 	mov byte ptr [device_table + edi + 10], dl
 	inc byte ptr [device_count]
+
 enumerate_ide_next:
 	shr bl, 1
 	inc al
 	dec cx
 	jnz enumerate_ide_loop
+
 enumerate_ide_done:
 	popad
 	ret
 
 /* ------------------------------------------------------------------ */
+
 .code32
 bios_gateway32:
 	push ebp
@@ -1736,6 +1831,7 @@ bios_gateway32:
 	.att_syntax prefix
 	ljmp $0x18, $gateway16_pm
 	.intel_syntax noprefix
+
 gateway32_invalid:
 	mov eax, 0xffffffff
 	pop ebx
@@ -1758,6 +1854,7 @@ gateway32_return:
 	mov ecx, 512 / 4
 	cld
 	rep movsd
+
 gateway32_finish:
 	lgdt [0x10000 + gateway_saved_gdtr]
 	mov esp, dword ptr [0x10000 + gateway_saved_esp]
@@ -1820,11 +1917,14 @@ gateway_real:
 	jae gateway_disk_error_cs
 	mov dword ptr cs:[gateway_result], 0
 	jmp gateway_real_return
+
 gateway_disk_error:
 	mov dword ptr [gateway_result], 0xffffffff
 	jmp gateway_real_return
+
 gateway_disk_error_cs:
 	mov dword ptr cs:[gateway_result], 0xffffffff
+
 gateway_real_return:
 	cli
 	push cs
@@ -1837,6 +1937,7 @@ gateway_real_return:
 	.intel_syntax noprefix
 
 /* ------------------------------------------------------------------ */
+
 enter_protected_mode:
 	call prepare_pc98_handoff
 	mov si, offset msg_go
@@ -1919,6 +2020,9 @@ protected_entry:
 	add ebx, 0x10000
 	jmp dword ptr [0x10000 + elf_entry_low]
 
+/*
+ * Of course, no real PC-98 machine has a 64-bit CPU, but we use this on QEMU.
+ */
 .code64
 long_entry:
 	mov ax, 0x10
@@ -1928,6 +2032,7 @@ long_entry:
 	mov rsp, 0x000000000009f000
 	xor rbp, rbp
 	cld
+
 	/*
 	 * Keep this unreachable compatibility stub representable in the ELF32
 	 * container used by the active i386 loader.  These are the ordinary
@@ -1993,18 +2098,53 @@ fatal_bootinfo_ds:
 	mov al, 'B'
 	jmp fatal
 
-fatal_mbr:       mov al, 'M'; jmp fatal
-fatal_partition: mov al, 'P'; jmp fatal
-fatal_fat:       mov al, 'F'; jmp fatal
-fatal_fat_chain: mov al, 'K'; jmp fatal
-fatal_config_missing:  mov al, 'Q'; jmp fatal
-fatal_config_too_long: mov al, 'L'; jmp fatal
-fatal_config_invalid:  mov al, 'G'; jmp fatal
-fatal_kernel_missing:  mov al, 'V'; jmp fatal
-fatal_elf:       mov al, 'E'; jmp fatal
-fatal_elf64:     mov al, '6'; jmp fatal
-fatal_stage2_checksum: mov al, 'C'; jmp fatal
-fatal_disk:      mov al, 'D'
+fatal_mbr:
+	mov al, 'M'
+	jmp fatal
+
+fatal_partition:
+	mov al, 'P'
+	jmp fatal
+
+fatal_fat:
+	mov al, 'F'
+	jmp fatal
+
+fatal_fat_chain:
+	mov al, 'K'
+	jmp fatal
+
+fatal_config_missing:
+	mov al, 'Q'
+	jmp fatal
+
+fatal_config_too_long:
+	mov al, 'L'
+	jmp fatal
+
+fatal_config_invalid:
+	mov al, 'G'
+	jmp fatal
+
+fatal_kernel_missing:
+	mov al, 'V'
+	jmp fatal
+
+fatal_elf:
+	mov al, 'E'
+	jmp fatal
+
+fatal_elf64:
+	mov al, '6'
+	jmp fatal
+
+fatal_stage2_checksum:
+	mov al, 'C'
+	jmp fatal
+
+fatal_disk:
+	mov al, 'D'
+
 fatal:
 	push ax
 	mov si, offset msg_error
@@ -2017,19 +2157,19 @@ fatal:
 1:	hlt
 	jmp 1b
 
-msg_start:     .asciz "S4 "
-msg_mbr:       .asciz "MB "
-msg_partition: .asciz "P1 "
-msg_config_found:  .asciz "CF "
-msg_config_read:   .asciz "CR "
-msg_config_parsed: .asciz "CP "
-msg_vmunix:    .asciz "VF "
-msg_elf32:     .asciz "E3 "
-msg_elf64:     .asciz "E6 "
-msg_loaded:    .asciz "LD "
-msg_go:        .asciz "GO\n"
-msg_error:     .asciz "ERR "
-config_name:   .ascii "BOOTZBSDCFG"
+msg_start:		.asciz "S4 "
+msg_mbr:		.asciz "MB "
+msg_partition:		.asciz "P1 "
+msg_config_found:	.asciz "CF "
+msg_config_read:	.asciz "CR "
+msg_config_parsed:	.asciz "CP "
+msg_vmunix:		.asciz "VF "
+msg_elf32:		.asciz "E3 "
+msg_elf64:		.asciz "E6 "
+msg_loaded:		.asciz "LD "
+msg_go:			.asciz "GO\n"
+msg_error:		.asciz "ERR "
+config_name:		.ascii "BOOTZBSDCFG"
 
 .balign 8
 gdt:
@@ -2046,113 +2186,114 @@ gateway_pm_return:
 	.long 0x10000 + gateway32_return
 	.word 0x08
 
+
 .balign 4
-dap:
-	.byte 0x10, 0
-	.word 1
-dap_offset:  .word 0
-dap_segment: .word 0
-dap_lba:     .quad 0
+dap:			.byte 0x10, 0
+			.word 1
+dap_offset:		.word 0
+dap_segment:		.word 0
+dap_lba:		.quad 0
+ph_table:		.space PH_RECORD_SIZE * 8
+boot_drive:		.byte 0
+boot_heads:		.byte 0
+boot_sectors:		.byte 0
+partition_index:	.byte 0
+elf_class:		.byte 0
+elf_entry_executable:	.byte 0
+fat_spc:		.byte 0
+fat_sector_scale:	.byte 1
+fat_type:		.byte FAT_TYPE_16
+fat_cluster_odd:	.byte 0
+dir_sector:		.byte 0
+disk_retry:		.byte 0
+pbr_boot:		.byte 0
+dos_boot:		.byte 0
+file_cache_valid:	.byte 0
+fat_cache_valid:	.byte 0
+device_count:		.byte 0
+sense_bios_id:		.byte 0
+sense_heads:		.byte 0
+sense_sectors:		.byte 0
+sense_status:		.byte 0
+file_attributes:	.byte 0
+path_at_root:		.byte 0
+path_has_more:		.byte 0
 
-ph_table: .space PH_RECORD_SIZE * 8
+.balign 2
+cached_cluster:			.word 0
+cached_sector_in_cluster:	.byte 0
 
-boot_drive:       .byte 0
-boot_heads:       .byte 0
-boot_sectors:     .byte 0
-partition_index:  .byte 0
-elf_class:        .byte 0
-elf_entry_executable: .byte 0
-fat_spc:          .byte 0
-fat_sector_scale: .byte 1
-fat_type:         .byte FAT_TYPE_16
-fat_cluster_odd:  .byte 0
-dir_sector:       .byte 0
-disk_retry:       .byte 0
-pbr_boot:         .byte 0
-dos_boot:         .byte 0
-file_cache_valid: .byte 0
-fat_cache_valid:  .byte 0
-device_count:     .byte 0
-sense_bios_id:    .byte 0
-sense_heads:      .byte 0
-sense_sectors:    .byte 0
-sense_status:     .byte 0
-file_attributes:  .byte 0
-path_at_root:     .byte 0
-path_has_more:    .byte 0
 .balign 2
-cached_cluster:     .word 0
-cached_sector_in_cluster: .byte 0
-.balign 2
-boot_cylinders:     .word 0
-sense_cylinders:    .word 0
-bios_si:            .word 0
-bios_di:            .word 0
-text_cursor:        .word 0
-file_first_cluster: .word 0
-fat_offset:         .word 0
-fat_offset32:       .word 0
-ph_load_count:      .word 0
-ph_cursor:          .word 0
-ph_remaining:       .word 0
-lookup_name:         .word 0
-path_cursor:         .word 0
-path_component:      .word 0
-path_component_length: .word 0
-directory_search_size: .word 0
-	.balign 4
-partition_lba:      .long 0
-root_cluster32:     .long 0
-dir_cluster32:      .long 0
-file_first_cluster32: .long 0
-cached_cluster32:   .long 0
-partition_blocks:   .long 0
-fat_lba:            .long 0
-fat_sectors:        .long 0
-fat_cluster_count:  .long 0
-root_lba:           .long 0
-root_sectors:       .long 0
-root_entries:       .long 0
-data_lba:           .long 0
-fat_volume_end_lba: .long 0
-scan_lba:           .long 0
-scan_entries:       .long 0
-scan_clusters:      .long 0
-file_size:          .long 0
-requested_sector:   .long 0
-desired_sector:     .long 0
-cached_file_sector:  .long 0
-fat_cache_lba:       .long 0
-cluster_steps:      .long 0
-sector_in_cluster:  .long 0
-elf_entry_low:      .long 0
-elf_entry_high:     .long 0
-load_file_sector:   .long 0
-load_destination:   .long 0
-load_remaining:     .long 0
-copy_count:         .long 0
-disk_lba:           .long 0
-gateway_request:    .long 0
-gateway_saved_esp:  .long 0
-gateway_saved_cr0:  .long 0
-gateway_result:     .long 0
-gateway_lba:        .long 0
-gateway_buffer:     .long 0
-config_size:        .long 0
-config_remaining:   .long 0
-config_sector:      .long 0
-directory_cluster:  .long 0
-gateway_saved_gdtr: .space 6
-gateway_bios_id:    .byte 0
-gateway_heads:      .byte 0
-gateway_sectors:    .byte 0
+boot_cylinders:		.word 0
+sense_cylinders:	.word 0
+bios_si:		.word 0
+bios_di:		.word 0
+text_cursor:		.word 0
+file_first_cluster:	.word 0
+fat_offset:		.word 0
+fat_offset32:		.word 0
+ph_load_count:		.word 0
+ph_cursor:		.word 0
+ph_remaining:		.word 0
+lookup_name:		.word 0
+path_cursor:		.word 0
+path_component:		.word 0
+path_component_length:	.word 0
+directory_search_size:	.word 0
+
+.balign 4
+partition_lba:		.long 0
+root_cluster32:		.long 0
+dir_cluster32:		.long 0
+file_first_cluster32:	.long 0
+cached_cluster32:	.long 0
+partition_blocks:	.long 0
+fat_lba:		.long 0
+fat_sectors:		.long 0
+fat_cluster_count:	.long 0
+root_lba:		.long 0
+root_sectors:		.long 0
+root_entries:		.long 0
+data_lba:		.long 0
+fat_volume_end_lba:	.long 0
+scan_lba:		.long 0
+scan_entries:		.long 0
+scan_clusters:		.long 0
+file_size:		.long 0
+requested_sector:	.long 0
+desired_sector:		.long 0
+cached_file_sector:	.long 0
+fat_cache_lba:		.long 0
+cluster_steps:		.long 0
+sector_in_cluster:	.long 0
+elf_entry_low:		.long 0
+elf_entry_high:		.long 0
+load_file_sector:	.long 0
+load_destination:	.long 0
+load_remaining:		.long 0
+copy_count:		.long 0
+disk_lba:		.long 0
+gateway_request:	.long 0
+gateway_saved_esp:	.long 0
+gateway_saved_cr0:	.long 0
+gateway_result:		.long 0
+gateway_lba:		.long 0
+gateway_buffer:		.long 0
+config_size:		.long 0
+config_remaining:	.long 0
+config_sector:		.long 0
+directory_cluster:	.long 0
+gateway_saved_gdtr:	.space 6
+gateway_bios_id:	.byte 0
+gateway_heads:		.byte 0
+gateway_sectors:	.byte 0
 
 .balign 8
 mbi:
-mbi_flags:       .long 3
-mbi_mem_lower:   .long 640
-mbi_mem_upper:   .long 0
-mbi_boot_device: .long 0
+mbi_flags:		.long 3
+mbi_mem_lower:		.long 640
+mbi_mem_upper:		.long 0
+mbi_boot_device:	.long 0
 
 long_handoff:
 	.long 0x364c425a                 /* ZBL6 */
@@ -2164,13 +2305,19 @@ long_handoff:
 pc98_handoff:
 	.space PC98_HANDOFF_COMMON_SIZE
 	.space KERN_BOOT_PARAMETER_RECORD_SIZE
-device_table: .space 16 * 4
-fat_cache: .space 1024
+device_table:
+	.space 16 * 4
+fat_cache:
+	.space 1024
 
 .balign 4
-selected_uuid: .space 10
-config_source: .space ZBL_KERN_CONFIG_FILE_MAX
+selected_uuid:
+	.space 10
+config_source:
+	.space ZBL_KERN_CONFIG_FILE_MAX
 parsed_configuration:
 	.space ZBL_KERN_CONFIG_RESULT_SIZE
-directory_sector_buffer: .space 512
-fat_directory_state: .space ZBL_BIOS_FAT_DIRECTORY_STATE_SIZE
+directory_sector_buffer:
+	.space 512
+fat_directory_state:
+	.space ZBL_BIOS_FAT_DIRECTORY_STATE_SIZE

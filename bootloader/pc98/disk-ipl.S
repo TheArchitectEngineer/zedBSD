@@ -56,6 +56,7 @@ relocated:
 	movw	%cs, %ax
 	movw	%ax, %ds
 	sti
+
 #if KERN_PC98_IPL_DIAGNOSTIC
 	/*
 	 * One bounded tone means that the ROM entered LBA 0 and this IPL now
@@ -65,6 +66,7 @@ relocated:
 	movw	$1, %cx
 	call	diagnostic_checkpoint
 #endif
+
 	/* The fixed-disk IPL has one job: enter the installed LBA 2 loader. */
 	xorw	%ax, %ax
 	movw	%ax, %ds
@@ -110,9 +112,11 @@ prepare_target:
 	ret
 boot_failure_read:
 	movw	$0x5231, %dx	/* "1R": LBA 2 read failed. */
+
 #if KERN_PC98_IPL_DIAGNOSTIC
 	movw	$3, %cx
 #endif
+
 boot_failure:
 	/*
  	 * Failure-only physical diagnostic.  PC-98 text characters and their
@@ -130,6 +134,7 @@ boot_failure:
 	movw	%ax, %es
 	movw	$0x00e1, %es:(%bx)
 	movw	$0x00e1, %es:2(%bx)
+
 #if KERN_PC98_IPL_DIAGNOSTIC
 	call	diagnostic_checkpoint
 #else
@@ -140,6 +145,7 @@ boot_failure:
 	movb	$0x06, %al
 	outb	%al, $0x37
 #endif
+
 1:
 	hlt
 	jmp	1b
@@ -226,4 +232,4 @@ boot_id:
 	.org	0x01fc
 	.byte	9		/* PC-98 boot-menu version. */
 	.byte	0		/* Reserved. */
-	.word	0xaa55		/* Required by later PC-9821 firmware before it will execute the IPL. */
+	.word	0xaa55		/* Required by later PC-9821 firmware before it will execute the IPL. (Ra43) */

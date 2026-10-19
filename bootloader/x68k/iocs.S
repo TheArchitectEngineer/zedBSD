@@ -9,6 +9,9 @@
  * Minimal IOCS wrappers used only before the kernel takes over the machine.
  */
 
+/*
+ * x68k_iocs_read_ext()
+ */
 	.text
 	.globl x68k_iocs_read_ext
 	.type x68k_iocs_read_ext,@function
@@ -26,6 +29,9 @@ x68k_iocs_read_ext:
 	rts
 	.size x68k_iocs_read_ext,.-x68k_iocs_read_ext
 
+/*
+ * x68k_iocs_print()
+ */
 	.globl x68k_iocs_print
 	.type x68k_iocs_print,@function
 x68k_iocs_print:
@@ -35,6 +41,9 @@ x68k_iocs_print:
 	rts
 	.size x68k_iocs_print,.-x68k_iocs_print
 
+/*
+ * x68k_iocs_fatal()
+ */
 	.globl x68k_iocs_fatal
 	.type x68k_iocs_fatal,@function
 x68k_iocs_fatal:

@@ -25,12 +25,34 @@ struct riscv32_handoff_range {
 	uint64_t size;
 };
 
-void riscv32_boot_record(uint64_t hart_id, uintptr_t fdt_phys, const struct riscv32_fdt_info *info);
-const struct riscv32_fdt_info *riscv32_boot_fdt(void);
-uintptr_t riscv32_boot_fdt_phys(void);
-uint64_t riscv32_boot_hart(void);
-const char *riscv32_boot_command_line(void);
-unsigned riscv32_boot_parameter_number(const char *key);
-const void *riscv32_kernel_handoff(void);
+void
+riscv32_boot_record(
+	uint64_t hart_id,
+	uintptr_t fdt_phys,
+	const struct riscv32_fdt_info *info);
+
+const struct riscv32_fdt_info *
+riscv32_boot_fdt(
+	void);
+
+uintptr_t
+riscv32_boot_fdt_phys(
+	void);
+
+uint64_t
+riscv32_boot_hart(
+	void);
+
+const char *
+riscv32_boot_command_line(
+	void);
+
+unsigned
+riscv32_boot_parameter_number(
+	const char *key);
+
+const void *
+riscv32_kernel_handoff(
+	void);
 
 #endif

@@ -48,8 +48,16 @@ _Static_assert(__builtin_offsetof(struct riscv64_trap_frame, scause) == RISCV64_
 _Static_assert(__builtin_offsetof(struct riscv64_trap_frame, stval) == RISCV64_FRAME_STVAL,
 	       "trap.S saves stval at this offset");
 
-void riscv64_int_init(void);
-void riscv64_int_init_secondary(void);
-void riscv64_trap(struct riscv64_trap_frame *frame);
+void
+riscv64_int_init(
+	void);
+
+void
+riscv64_int_init_secondary(
+	void);
+
+void
+riscv64_trap(
+	struct riscv64_trap_frame *frame);
 
 #endif

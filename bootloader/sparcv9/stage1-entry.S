@@ -14,6 +14,7 @@
 	.align 4
 	.global _start
 	.type _start, #function
+
 _start:
 	save	%sp, -176, %sp
 	setx	0x000000000000c000, %g1, %sp

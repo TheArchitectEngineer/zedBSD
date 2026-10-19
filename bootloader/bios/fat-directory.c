@@ -12,28 +12,28 @@
 #include "fat-directory.h"
 
 /* The size of one FAT directory entry. */
-#define FAT_ENTRY_SIZE 32U
+#define FAT_ENTRY_SIZE		32U
 
 /* The offset of an entry's attribute byte. */
-#define FAT_ATTRIBUTE_OFFSET 11U
+#define FAT_ATTRIBUTE_OFFSET	11U
 
 /* The attribute value that marks a long-file-name entry. */
-#define FAT_ATTRIBUTE_LFN 0x0fU
+#define FAT_ATTRIBUTE_LFN	0x0fU
 
 /* The attribute bit that marks a volume label. */
-#define FAT_ATTRIBUTE_VOLUME 0x08U
+#define FAT_ATTRIBUTE_VOLUME	0x08U
 
 /* The first name byte of a deleted entry. */
-#define FAT_DELETED 0xe5U
+#define FAT_DELETED		0xe5U
 
 /* The ordinal bit that marks the last (first stored) entry of a long name. */
-#define FAT_LFN_LAST 0x40U
+#define FAT_LFN_LAST		0x40U
 
 /* The bits of an LFN ordinal that number the entry. */
-#define FAT_LFN_ORDINAL_MASK 0x1fU
+#define FAT_LFN_ORDINAL_MASK	0x1fU
 
 /* The UCS-2 characters one LFN entry holds. */
-#define FAT_LFN_CHARACTERS 13U
+#define FAT_LFN_CHARACTERS	13U
 
 static unsigned char ascii_fold(unsigned char value);
 static int ascii_equal(const unsigned char *left, size_t left_length, const char *right, size_t right_length);

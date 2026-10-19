@@ -12,6 +12,9 @@
 #define _ASM_SRC_ 1
 #include "bootloader/x68k/boot-layout.h"
 
+/*
+ * _start()
+ */
 	.text
 	.globl _start
 	.type _start,@function
@@ -101,19 +104,28 @@ crc32:
 stage1_read_error:
 	lea read_error(%pc),%a1
 	bra stage1_fatal
+
 stage1_manifest_error:
 	lea manifest_error(%pc),%a1
 	bra stage1_fatal
+
 stage1_crc_error:
 	lea crc_error(%pc),%a1
+
 stage1_fatal:
 	moveq #0x21,%d0
 	trap #15
 5:	stop #0x2700
 	bra 5b
 
-read_error:	.asciz "zedBSD E1 READ\r\n"
-manifest_error:	.asciz "zedBSD E2 MANIFEST\r\n"
-crc_error:	.asciz "zedBSD E3 CRC\r\n"
-	.even
+read_error:
+	.asciz "zedBSD E1 READ\r\n"
+
+manifest_error:
+	.asciz "zedBSD E2 MANIFEST\r\n"
+
+crc_error:
+	.asciz "zedBSD E3 CRC\r\n"
+
+.even
 	.size _start,.-_start

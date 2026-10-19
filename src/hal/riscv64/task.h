@@ -85,19 +85,63 @@ struct riscv64_task {
 	unsigned signal_depth;
 };
 
-void asm_task_dispatch(uintptr_t *save, const uintptr_t *load);
-void riscv64_fp_save(struct hal_fpregs *state);
-void riscv64_fp_restore(const struct hal_fpregs *state);
-void riscv64_kernel_task_entry(void);
-void riscv64_user_frame_entry(void);
-void riscv64_task_returned(void) __attribute__((noreturn));
-void riscv64_context_selftest(void);
-void riscv64_task_enter_user_frame(struct riscv64_trap_frame *frame);
-void riscv64_task_leave_user_frame(void);
-struct riscv64_task *riscv64_task_running(void);
-void riscv64_task_finish_switch(void);
-void riscv64_task_first_user_entry(void);
-struct riscv64_trap_frame *riscv64_task_user_frame(struct riscv64_task *task);
-void riscv64_task_memory_stats(uint32_t *count, size_t *bytes);
+void
+asm_task_dispatch(
+	uintptr_t *save,
+	const uintptr_t *load);
+
+void
+riscv64_fp_save(
+	struct hal_fpregs *state);
+
+void
+riscv64_fp_restore(
+	const struct hal_fpregs *state);
+
+void
+riscv64_kernel_task_entry(
+	void);
+
+void
+riscv64_user_frame_entry(
+	void);
+
+void
+riscv64_task_returned(
+	void)
+__attribute__((noreturn));
+
+void
+riscv64_context_selftest(
+	void);
+
+void
+riscv64_task_enter_user_frame(
+	struct riscv64_trap_frame *frame);
+
+void
+riscv64_task_leave_user_frame(
+	void);
+
+struct riscv64_task *
+riscv64_task_running(
+	void);
+
+void
+riscv64_task_finish_switch(
+	void);
+
+void
+riscv64_task_first_user_entry(
+	void);
+
+struct riscv64_trap_frame *
+riscv64_task_user_frame(
+	struct riscv64_task *task);
+
+void
+riscv64_task_memory_stats(
+	uint32_t *count,
+	size_t *bytes);
 
 #endif

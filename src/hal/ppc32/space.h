@@ -34,8 +34,20 @@ struct ppc32_space {
 	uint32_t segments[4];
 };
 
-void ppc32_space_init(uint32_t framebuffer_base, uint32_t framebuffer_size);
-int ppc32_space_reload(uintptr_t address, int store, int execute);
-void ppc32_space_memory_stats(uint32_t *spaces, uint32_t *tables);
+void
+ppc32_space_init(
+	uint32_t framebuffer_base,
+	uint32_t framebuffer_size);
+
+int
+ppc32_space_reload(
+	uintptr_t address,
+	int store,
+	int execute);
+
+void
+ppc32_space_memory_stats(
+	uint32_t *spaces,
+	uint32_t *tables);
 
 #endif

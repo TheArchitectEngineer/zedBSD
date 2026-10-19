@@ -12,7 +12,12 @@
 #ifndef KERN_HAL_RISCV32_BSP_VIRT_CONS_H
 #define KERN_HAL_RISCV32_BSP_VIRT_CONS_H
 
-void virt_cons_putc(int character);
-void virt_cons_attach(void);
+void
+virt_cons_putc(
+	int character);
+
+void
+virt_cons_attach(
+	void);
 
 #endif

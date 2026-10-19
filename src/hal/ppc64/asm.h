@@ -109,14 +109,39 @@ ppc64_halt_forever(
 
 struct hal_fpregs;
 
-void ppc64_firmware_call(void *arguments);
-long ppc64_hcall(uint64_t call, uint64_t *arguments);
-void ppc64_trap_return(void);
-void ppc64_task_dispatch(uintptr_t *save, const uintptr_t *load);
-void ppc64_kernel_task_entry(void);
-void ppc64_user_frame_entry(void);
-void ppc64_fp_save(struct hal_fpregs *state);
-void ppc64_fp_restore(const struct hal_fpregs *state);
+void
+ppc64_firmware_call(
+	void *arguments);
+
+long
+ppc64_hcall(
+	uint64_t call,
+	uint64_t *arguments);
+
+void
+ppc64_trap_return(
+	void);
+
+void
+ppc64_task_dispatch(
+	uintptr_t *save,
+	const uintptr_t *load);
+
+void
+ppc64_kernel_task_entry(
+	void);
+
+void
+ppc64_user_frame_entry(
+	void);
+
+void
+ppc64_fp_save(
+	struct hal_fpregs *state);
+
+void
+ppc64_fp_restore(
+	const struct hal_fpregs *state);
 
 extern const uint32_t ppc64_vector_stub[];
 extern const uint32_t ppc64_vector_stub_li[];

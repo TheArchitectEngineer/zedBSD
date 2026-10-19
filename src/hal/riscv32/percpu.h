@@ -88,16 +88,34 @@ struct riscv32_percpu {
 	int has_plic_context;
 };
 
+void
+riscv32_percpu_bootstrap(
+	hal_cpu_id_t cpu,
+	unsigned long hart_id);
+
+struct riscv32_percpu *
+riscv32_percpu_current(
+	void);
+
+struct riscv32_percpu *
+riscv32_percpu_get(
+	hal_cpu_id_t cpu);
+
+void
+riscv32_smp_bootstrap(
+	unsigned long hart_id);
+
+void
+riscv32_smp_configure(
+	void);
+
+void
+riscv32_smp_take_ipi(
+	void);
+
 _Static_assert(__builtin_offsetof(struct riscv32_percpu, kernel_sp) == RISCV32_PERCPU_KERNEL_SP,
 	       "trap.S reads the kernel stack top at this offset");
 _Static_assert(__builtin_offsetof(struct riscv32_percpu, user_sp) == RISCV32_PERCPU_USER_SP,
 	       "trap.S keeps the user stack pointer at this offset");
-
-void riscv32_percpu_bootstrap(hal_cpu_id_t cpu, unsigned long hart_id);
-struct riscv32_percpu *riscv32_percpu_current(void);
-struct riscv32_percpu *riscv32_percpu_get(hal_cpu_id_t cpu);
-void riscv32_smp_bootstrap(unsigned long hart_id);
-void riscv32_smp_configure(void);
-void riscv32_smp_take_ipi(void);
 
 #endif

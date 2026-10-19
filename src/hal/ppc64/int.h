@@ -41,7 +41,12 @@ _Static_assert(__builtin_offsetof(struct ppc64_trap_frame, msr) == PPC64_FRAME_M
 _Static_assert(__builtin_offsetof(struct ppc64_trap_frame, dsisr) == PPC64_FRAME_DSISR, "entry.S saves dsisr here");
 _Static_assert(__builtin_offsetof(struct ppc64_trap_frame, vector) == PPC64_FRAME_VECTOR, "entry.S saves the vector here");
 
-void ppc64_int_init(void);
-void ppc64_trap(struct ppc64_trap_frame *frame);
+void
+ppc64_int_init(
+	void);
+
+void
+ppc64_trap(
+	struct ppc64_trap_frame *frame);
 
 #endif

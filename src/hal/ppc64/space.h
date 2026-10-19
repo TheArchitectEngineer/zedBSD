@@ -32,8 +32,22 @@ struct ppc64_space {
 	struct ppc64_table_page *tables;
 };
 
-void ppc64_space_init(uint64_t memory_size, uint64_t framebuffer_base, uint64_t framebuffer_size, uint32_t htab_shift);
-int ppc64_space_reload(uintptr_t address, int store, int execute);
-void ppc64_space_memory_stats(uint32_t *spaces, uint32_t *tables);
+void
+ppc64_space_init(
+	uint64_t memory_size,
+	uint64_t framebuffer_base,
+	uint64_t framebuffer_size,
+	uint32_t htab_shift);
+
+int
+ppc64_space_reload(
+	uintptr_t address,
+	int store,
+	int execute);
+
+void
+ppc64_space_memory_stats(
+	uint32_t *spaces,
+	uint32_t *tables);
 
 #endif

@@ -1,7 +1,8 @@
-# zedBSD BIOS bootloaders
+zedBSD BIOS bootloaders
+=======================
 
-The PC/AT and PC-98 BIOS loaders now share the same four-stage contract while
-retaining machine-specific firmware I/O:
+The PC/AT and PC-98 BIOS loaders now share the same four-stage
+contract while retaining machine-specific firmware I/O:
 
 1. Stage 1 is the MBR/disk IPL.  It loads the reserved-area Stage 2.
 2. Stage 2 selects the active FAT12/16/32 partition and chain-loads its PBR.

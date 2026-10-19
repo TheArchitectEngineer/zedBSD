@@ -119,8 +119,20 @@ struct riscv32_fdt_info {
 	uint64_t initrd_end;
 };
 
-int riscv32_fdt_parse(const void *blob, size_t limit, struct riscv32_fdt_info *info);
-const char *riscv32_fdt_error(int error);
-int riscv32_fdt_s_context(const struct riscv32_fdt_info *info, uint64_t hart_id, unsigned *context);
+int
+riscv32_fdt_parse(
+	const void *blob,
+	size_t limit,
+	struct riscv32_fdt_info *info);
+
+const char *
+riscv32_fdt_error(
+	int error);
+
+int
+riscv32_fdt_s_context(
+	const struct riscv32_fdt_info *info,
+	uint64_t hart_id,
+	unsigned *context);
 
 #endif

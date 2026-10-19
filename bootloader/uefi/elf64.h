@@ -48,9 +48,16 @@ struct zbl_elf64_plan {
 };
 
 /* Validates a kernel's headers and builds its load plan. */
-int zbl_elf64_plan(const void *header, uint64_t file_size_limit, struct zbl_elf64_plan *plan);
+int
+zbl_elf64_plan(
+	const void *header,
+	uint64_t file_size_limit,
+	struct zbl_elf64_plan *plan);
 
 /* Rebases a validated plan onto the physical home the loader obtained. */
-int zbl_elf64_place(struct zbl_elf64_plan *plan, uint64_t load_base);
+int
+zbl_elf64_place(
+	struct zbl_elf64_plan *plan,
+	uint64_t load_base);
 
 #endif

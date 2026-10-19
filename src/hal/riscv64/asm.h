@@ -260,6 +260,8 @@ riscv64_write_tp(
 	__asm__ volatile("mv tp, %0" : : "r"(value) : "memory");
 }
 
-void riscv64_halt_forever(void) __attribute__((noreturn));
+void
+riscv64_halt_forever(void)
+__attribute__((noreturn));
 
 #endif

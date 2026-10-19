@@ -12,6 +12,9 @@
 #define _ASM_SRC_ 1
 #include "bootloader/x68k/boot-layout.h"
 
+/*
+ * _start()
+ */
 	.text
 	.globl _start
 	.type _start,@function
@@ -26,6 +29,9 @@ _start:
 1:	bra 1b
 	.size _start,.-_start
 
+/*
+ * x68k_stage2_enter_kernel()
+ */
 	.globl x68k_stage2_enter_kernel
 	.type x68k_stage2_enter_kernel,@function
 x68k_stage2_enter_kernel:

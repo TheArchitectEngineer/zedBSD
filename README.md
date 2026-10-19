@@ -258,21 +258,29 @@ how Windows and macOS work—and it is something that Linux lacks.
 
 ## Status
 
-zedBSD runs on modern computers. Supported development targets:
+zedBSD runs on modern computers.
 
-| Target                      | Role                                    |
-|-----------------------------|-----------------------------------------|
-| amd64 (64-bit x86 PC)       | Primary. Default image is UEFI + ACPI.  |
-| Raspberry Pi series         | Primary ARM target.                     |
+Keiland desktop targets:
 
-The zedBSD kernel supports some retro computers.
+| Target                      | HAL    | Kernel   | Drivers          | Desktop                  |
+|-----------------------------|--------|----------|------------------|--------------------------|
+| PC (64-bit x86 UEFI+ACPI)   | OK     | OK (SMP) | Many             | Keiland                  |
+| Raspberry Pi 4              | OK     | OK (SMP) | Many             | Keiland                  |
 
-| Target                      | Role                                    |
-|-----------------------------|-----------------------------------------|
-| NEC PC-9800 (i386)          | Partial, compatibility demonstration.   |
-| IBM PC/AT (i386)            | Partial, compatibility demonstration.   |
-| sun4u (sparcv9)             | Partial, compatibility demonstration.   |
-| Sharp X68000 (m68k)         | Partial, compatibility demonstration.   |
+Retro X11 desktop targets:
+
+| Target                      | HAL    | Kernel   | Drivers          | Desktop                  |
+|-----------------------------|--------|----------|------------------|--------------------------|
+| NEC PC-9800 (i386)          | OK     | OK (UP)  | Some             | X11 (Xzed)               |
+| IBM PC/AT (i386)            | OK     | OK (UP)  | Few              | X11 (Xzed)               |
+
+CLI-only targets:
+
+| Target                      | HAL    | Kernel   | Drivers          | Desktop                  |
+|-----------------------------|--------|----------|------------------|--------------------------|
+| Sun SPARC V9 (sun4u)        | OK     | OK (UP)  | Few              | No                       |
+| Sharp X68000 (m68k)         | OK     | OK (UP)  | Few              | No                       |
+| virt-riscv64                | OK     | OK (SMP) | No               | No                       |
 
 ---
 

@@ -15,8 +15,21 @@
 
 #include <hal/types.h>
 
-int virt_fwcfg_init(uint64_t base_phys, uint64_t size);
-int virt_fwcfg_find(const char *name, uint16_t *selector, uint32_t *size);
-int virt_fwcfg_write(uint16_t selector, const void *data, uint32_t length);
+int
+virt_fwcfg_init(
+	uint64_t base_phys,
+	uint64_t size);
+
+int
+virt_fwcfg_find(
+	const char *name,
+	uint16_t *selector,
+	uint32_t *size);
+
+int
+virt_fwcfg_write(
+	uint16_t selector,
+	const void *data,
+	uint32_t length);
 
 #endif

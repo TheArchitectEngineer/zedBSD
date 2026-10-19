@@ -41,6 +41,8 @@ struct ppc64_percpu {
 	unsigned long timer_ticks;
 };
 
-struct ppc64_percpu *ppc64_percpu_current(void);
+struct ppc64_percpu *
+ppc64_percpu_current(
+	void);
 
 #endif

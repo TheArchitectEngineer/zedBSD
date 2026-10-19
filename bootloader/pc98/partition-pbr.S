@@ -648,5 +648,5 @@ root_sectors:    .word 0
 sector_scale:    .byte 2
 fat32_volume:    .byte 0
 
-	.org	0x07fe
+.org	0x07fe
 	.word	0xaa55

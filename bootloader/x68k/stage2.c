@@ -22,25 +22,25 @@
 #include <stdint.h>
 
 /* The most program headers a kernel may have. */
-#define PT_LOAD_LIMIT 8U
+#define PT_LOAD_LIMIT			8U
 
 /* The program header flag of an executable segment. */
-#define PF_X 1U
+#define PF_X				1U
 
 /* The physical address of the MB89352 SCSI protocol controller's registers. */
-#define X68K_SPC_PHYSICAL_BASE 0x00e96020U
+#define X68K_SPC_PHYSICAL_BASE		0x00e96020U
 
 /* The address of one SPC register; the registers sit on odd bytes. */
-#define X68K_SPC_REG_ADDRESS(reg) (X68K_SPC_PHYSICAL_BASE + 1U + (uintptr_t)(reg) * 2U)
+#define X68K_SPC_REG_ADDRESS(reg)	(X68K_SPC_PHYSICAL_BASE + 1U + (uintptr_t)(reg) * 2U)
 
 /* The SRAM byte that holds the machine's own SCSI ID. */
-#define X68K_SRAM_SCSI_ID 0x00ed0070U
+#define X68K_SRAM_SCSI_ID		0x00ed0070U
 
 /* How many times a wait on the SPC polls before it gives up. */
-#define X68K_SPC_POLL_LIMIT 10000000U
+#define X68K_SPC_POLL_LIMIT		10000000U
 
 /* Marks a parameter that this function does not use. */
-#define UNUSED_PARAMETER(parameter) ((void)(parameter))
+#define UNUSED_PARAMETER(parameter)	((void)(parameter))
 
 /*
  * The assembly helpers.

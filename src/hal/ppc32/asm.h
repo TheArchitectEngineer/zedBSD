@@ -115,17 +115,52 @@ ppc32_halt_forever(
 
 struct hal_fpregs;
 
-void ppc32_firmware_call(void *arguments);
-void ppc32_trap_return(void);
-void ppc32_task_dispatch(uintptr_t *save, const uintptr_t *load);
-void ppc32_kernel_task_entry(void);
-void ppc32_user_frame_entry(void);
-void ppc32_cpu_idle(void);
-void ppc32_mmu_load(const uint32_t *bats, const uint32_t *segments, uint32_t sdr1);
-void ppc32_load_user_segments(const uint32_t *segments);
-void ppc32_tlbie(uintptr_t address);
-void ppc32_fp_save(struct hal_fpregs *state);
-void ppc32_fp_restore(const struct hal_fpregs *state);
+void
+ppc32_firmware_call(
+	void *arguments);
+
+void
+ppc32_trap_return(
+	void);
+
+void
+ppc32_task_dispatch(
+	uintptr_t *save,
+	const uintptr_t *load);
+
+void
+ppc32_kernel_task_entry(
+	void);
+
+void
+ppc32_user_frame_entry(
+	void);
+
+void
+ppc32_cpu_idle(
+	void);
+
+void
+ppc32_mmu_load(
+	const uint32_t *bats,
+	const uint32_t *segments,
+	uint32_t sdr1);
+
+void
+ppc32_load_user_segments(
+	const uint32_t *segments);
+
+void
+ppc32_tlbie(
+	uintptr_t address);
+
+void
+ppc32_fp_save(
+	struct hal_fpregs *state);
+
+void
+ppc32_fp_restore(
+	const struct hal_fpregs *state);
 
 extern const uint32_t ppc32_vector_stub[];
 extern const uint32_t ppc32_vector_stub_li[];

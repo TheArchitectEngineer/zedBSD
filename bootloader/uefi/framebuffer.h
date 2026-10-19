@@ -31,6 +31,14 @@ struct zbl_uefi_framebuffer_mapping {
  * Validates both the visible pixel geometry and the complete firmware mapping
  * span.  On success, mapping contains values safe to use in page-table loops.
  */
-int zbl_uefi_framebuffer_mapping_plan(uint64_t base, uint64_t size, uint32_t width, uint32_t height, uint32_t stride, uint32_t bytes_per_pixel, struct zbl_uefi_framebuffer_mapping *mapping);
+int
+zbl_uefi_framebuffer_mapping_plan(
+	uint64_t base,
+	uint64_t size,
+	uint32_t width,
+	uint32_t height,
+	uint32_t stride,
+	uint32_t bytes_per_pixel,
+	struct zbl_uefi_framebuffer_mapping *mapping);
 
 #endif

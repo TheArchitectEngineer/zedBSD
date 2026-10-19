@@ -25,11 +25,13 @@ _start:
 	.ascii "ZEDBSD  "
 	/* FAT16 ends its extended BPB at 0x3e; FAT32 extends it to 0x5a. */
 	.fill 0x005a - (. - _start), 1, 0
+
 pbr_start:
 	/* 16:16 immediate far jump (EA offset16 segment16). */
 	.byte 0xea
 	.word pbr_rebased
 	.word 0x07c0
+
 pbr_rebased:
 	cli
 	cld
@@ -114,13 +116,12 @@ read_volume_one:
 	jmp read_one
 
 .balign 4
-dap:
-	.byte 0x10, 0
-	.word 1
-dap_offset: .word 0
-dap_segment: .word 0
-dap_lba: .quad 0
-boot_drive: .byte 0
+dap:		.byte 0x10, 0
+		.word 1
+dap_offset:	.word 0
+dap_segment:	.word 0
+dap_lba:	.quad 0
+boot_drive:	.byte 0
 
 .org 0x01fe
 	.word 0xaa55
@@ -229,11 +230,12 @@ fat32_layout:
 	movzx ecx, byte ptr [0x000d]
 	mov word ptr [root_sectors], cx
 	mov byte ptr [fat32_volume], 1
-root_layout_ready:
 
+root_layout_ready:
 	mov eax, dword ptr [root_lba]
 	mov dword ptr [root_scan_lba], eax
 	mov dx, word ptr [root_sectors]
+
 root_sector:
 	test dx, dx
 	jz root_cluster_next
@@ -245,6 +247,7 @@ root_sector:
 	mov es, ax
 	xor di, di
 	mov cx, 16
+
 root_entry:
 	cmp byte ptr es:[di], 0
 	je fatal
@@ -260,6 +263,7 @@ root_entry:
 	pop di
 	pop cx
 	je loader_found
+
 next_entry:
 	add di, 32
 	loop root_entry
@@ -365,6 +369,7 @@ loader_found:
 	ja fatal
 	mov word ptr [dap_offset], 0
 	mov word ptr [dap_segment], LOAD_SEG
+
 load_file:
 	call read_volume_one
 	inc eax
@@ -441,23 +446,23 @@ load_file:
 	/* LLVM IAS otherwise selects the ELF32 operand size (66 CB). */
 	.byte 0xcb
 
-loader_name: .ascii "BOOTZBSDEXE"
-root_lba: .long 0
-root_scan_lba: .long 0
-data_lba: .long 0
-fat_lba: .long 0
-fat_sectors: .long 0
-root_cluster: .long 0
-root_cluster_budget: .long 0
-cluster_count: .long 0
-cluster_limit: .long 0
-volume_end_lba: .long 0
-fat_entry_offset: .word 0
-root_sectors: .word 0
-entry_off: .word 0
-entry_seg: .word 0
-loader_size: .long 0
-fat32_volume: .byte 0
+loader_name:		.ascii "BOOTZBSDEXE"
+root_lba:		.long 0
+root_scan_lba:		.long 0
+data_lba:		.long 0
+fat_lba:		.long 0
+fat_sectors:		.long 0
+root_cluster:		.long 0
+root_cluster_budget:	.long 0
+cluster_count:		.long 0
+cluster_limit:		.long 0
+volume_end_lba:		.long 0
+fat_entry_offset:	.word 0
+root_sectors:		.word 0
+entry_off:		.word 0
+entry_seg:		.word 0
+loader_size:		.long 0
+fat32_volume:		.byte 0
 
 .org 0x07fe
 	.word 0xaa55

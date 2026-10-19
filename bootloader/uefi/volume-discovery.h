@@ -173,12 +173,26 @@ enum zbl_uefi_volume_selection_result {
 	ZBL_UEFI_VOLUME_SELECTION_MULTIPLE
 };
 
-void zbl_uefi_volume_selection_init(struct zbl_uefi_volume_selection *selection);
+void
+zbl_uefi_volume_selection_init(
+	struct zbl_uefi_volume_selection *selection);
 
-enum zbl_uefi_volume_match_action zbl_uefi_volume_selection_record_match(struct zbl_uefi_volume_selection *selection, void *handle, size_t order, const struct zbl_uefi_fat_info *fat, void *root, void *config);
+enum zbl_uefi_volume_match_action
+zbl_uefi_volume_selection_record_match(
+	struct zbl_uefi_volume_selection *selection,
+	void *handle,
+	size_t order,
+	const struct zbl_uefi_fat_info *fat,
+	void *root,
+	void *config);
 
-enum zbl_uefi_volume_selection_result zbl_uefi_volume_selection_finish(const struct zbl_uefi_volume_selection *selection);
+enum zbl_uefi_volume_selection_result
+zbl_uefi_volume_selection_finish(
+	const struct zbl_uefi_volume_selection *selection);
 
-int zbl_uefi_volume_selection_take(struct zbl_uefi_volume_selection *selection, struct zbl_uefi_volume_match *match);
+int
+zbl_uefi_volume_selection_take(
+	struct zbl_uefi_volume_selection *selection,
+	struct zbl_uefi_volume_match *match);
 
 #endif

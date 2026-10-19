@@ -17,54 +17,53 @@
 #include <uapi/errno.h>
 
 /* DP8390 page-zero registers. */
-#define DP_CR 0x00U
-#define DP_PSTART 0x01U
-#define DP_PSTOP 0x02U
-#define DP_BNRY 0x03U
-#define DP_TPSR 0x04U
-#define DP_TBCR0 0x05U
-#define DP_TBCR1 0x06U
-#define DP_ISR 0x07U
-#define DP_RSAR0 0x08U
-#define DP_RSAR1 0x09U
-#define DP_RBCR0 0x0aU
-#define DP_RBCR1 0x0bU
-#define DP_RCR 0x0cU
-#define DP_TCR 0x0dU
-#define DP_DCR 0x0eU
-#define DP_IMR 0x0fU
+#define DP_CR		0x00U
+#define DP_PSTART	0x01U
+#define DP_PSTOP	0x02U
+#define DP_BNRY		0x03U
+#define DP_TPSR		0x04U
+#define DP_TBCR0	0x05U
+#define DP_TBCR1	0x06U
+#define DP_ISR		0x07U
+#define DP_RSAR0	0x08U
+#define DP_RSAR1	0x09U
+#define DP_RBCR0	0x0aU
+#define DP_RBCR1	0x0bU
+#define DP_RCR		0x0cU
+#define DP_TCR		0x0dU
+#define DP_DCR		0x0eU
+#define DP_IMR		0x0fU
 
 /* Page-one registers. */
-#define DP_PAR0 0x01U
-#define DP_CURR 0x07U
-#define DP_MAR0 0x08U
+#define DP_PAR0		0x01U
+#define DP_CURR		0x07U
+#define DP_MAR0		0x08U
 
-#define DP_CR_STOP 0x01U
-#define DP_CR_START 0x02U
-#define DP_CR_TXP 0x04U
-#define DP_CR_RREAD 0x08U
-#define DP_CR_RWRITE 0x10U
-#define DP_CR_NODMA 0x20U
-#define DP_CR_PAGE0 0x00U
-#define DP_CR_PAGE1 0x40U
+#define DP_CR_STOP	0x01U
+#define DP_CR_START	0x02U
+#define DP_CR_TXP	0x04U
+#define DP_CR_RREAD	0x08U
+#define DP_CR_RWRITE	0x10U
+#define DP_CR_NODMA	0x20U
+#define DP_CR_PAGE0	0x00U
+#define DP_CR_PAGE1	0x40U
 
-#define DP_ISR_PRX 0x01U
-#define DP_ISR_PTX 0x02U
-#define DP_ISR_RXE 0x04U
-#define DP_ISR_TXE 0x08U
-#define DP_ISR_OVW 0x10U
-#define DP_ISR_CNT 0x20U
-#define DP_ISR_RDC 0x40U
-#define DP_ISR_RST 0x80U
+#define DP_ISR_PRX	0x01U
+#define DP_ISR_PTX	0x02U
+#define DP_ISR_RXE	0x04U
+#define DP_ISR_TXE	0x08U
+#define DP_ISR_OVW	0x10U
+#define DP_ISR_CNT	0x20U
+#define DP_ISR_RDC	0x40U
+#define DP_ISR_RST	0x80U
 
-#define DP_RCR_AB 0x04U
-#define DP_RCR_MON 0x20U
-#define DP_TCR_LB0 0x02U
-#define DP_IMR_RUN                                                             \
-	(DP_ISR_PRX | DP_ISR_PTX | DP_ISR_RXE | DP_ISR_TXE | DP_ISR_OVW)
-#define DP_DMA_SPINS 100000U
-#define DP_MIN_FRAME 60U
-#define DP_MAX_FRAME 1518U
+#define DP_RCR_AB	0x04U
+#define DP_RCR_MON	0x20U
+#define DP_TCR_LB0	0x02U
+#define DP_IMR_RUN      (DP_ISR_PRX | DP_ISR_PTX | DP_ISR_RXE | DP_ISR_TXE | DP_ISR_OVW)
+#define DP_DMA_SPINS	100000U
+#define DP_MIN_FRAME	60U
+#define DP_MAX_FRAME	1518U
 
 struct dp_receive_header {
 	uint8_t status;

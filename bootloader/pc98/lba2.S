@@ -45,6 +45,7 @@ relocated:
 	movw	%cs, %ax
 	movw	%ax, %ds
 	sti
+
 #if KERN_PC98_IPL_DIAGNOSTIC
 	/* Four bounded tones prove that LBA 0 transferred control to LBA 2. */
 	movw	$0x4532, %dx	/* "2E": Stage 2 entry. */
@@ -75,6 +76,7 @@ relocated:
 	movw	%ax, %ds
 	xorw	%si, %si
 	movw	$16, %cx
+
 find_partition:
 	cmpb	$0, (%si)
 	je	next_partition
@@ -83,6 +85,7 @@ find_partition:
 	addw	$16, %si
 	xorw	%bx, %bx
 	movw	$16, %cx
+
 compare_name:
 	lodsb
 	cmpb	%cs:boot_name(%bx), %al
@@ -92,9 +95,11 @@ compare_name:
 	popw	%si
 	popw	%cx
 	jmp	partition_found
+
 name_mismatch:
 	popw	%si
 	popw	%cx
+
 next_partition:
 	addw	$32, %si
 	loop	find_partition
@@ -139,23 +144,32 @@ read_sector:
 	pushw	%cs:read_flags
 	popfw
 	ret
+
 boot_failure_table:
 	movw	$0x5432, %dx	/* "2T": partition-table read failed. */
+
 #if KERN_PC98_IPL_DIAGNOSTIC
 	movw	$5, %cx
 #endif
+
 	jmp	boot_failure
+
 boot_failure_name:
 	movw	$0x4e32, %dx	/* "2N": BOOT partition name not found. */
+
 #if KERN_PC98_IPL_DIAGNOSTIC
 	movw	$6, %cx
 #endif
+
 	jmp	boot_failure
+
 boot_failure_pbr:
 	movw	$0x5032, %dx	/* "2P": partition boot-record read failed. */
+
 #if KERN_PC98_IPL_DIAGNOSTIC
 	movw	$7, %cx
 #endif
+
 boot_failure:
 	movw	$0xa000, %ax
 	movw	%ax, %es
@@ -169,6 +183,7 @@ boot_failure:
 	movw	%ax, %es
 	movw	$0x00e1, %es:(%bx)
 	movw	$0x00e1, %es:2(%bx)
+
 #if KERN_PC98_IPL_DIAGNOSTIC
 	call	diagnostic_checkpoint
 #else
@@ -179,6 +194,7 @@ boot_failure:
 	movb	$0x06, %al
 	outb	%al, $0x37
 #endif
+
 1:
 	hlt
 	jmp	1b
@@ -241,14 +257,12 @@ diagnostic_wait_ticks:
 	ret
 #endif
 
-saved_si: .word 0
-saved_di: .word 0
-read_flags: .word 0
-boot_id: .byte 0
-boot_name: .ascii "BOOT            "
+saved_si:	.word 0
+saved_di:	.word 0
+read_flags:	.word 0
+boot_id:	.byte 0
+boot_name:	.ascii "BOOT            "
 
-	.org	0x01fe
+.org	0x01fe
 	.word	0xaa55
-
-	/* LBA 2 through 15 are distributed and replaced as one binary. */
-	.org	(14 * 512)
+	.org	(14 * 512)	/* LBA 2 through 15 are distributed and replaced as one binary. */

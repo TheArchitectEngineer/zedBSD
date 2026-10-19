@@ -93,11 +93,29 @@ _Static_assert(__builtin_offsetof(struct riscv64_percpu, kernel_sp) == RISCV64_P
 _Static_assert(__builtin_offsetof(struct riscv64_percpu, user_sp) == RISCV64_PERCPU_USER_SP,
 	       "trap.S keeps the user stack pointer at this offset");
 
-void riscv64_percpu_bootstrap(hal_cpu_id_t cpu, uint64_t hart_id);
-struct riscv64_percpu *riscv64_percpu_current(void);
-struct riscv64_percpu *riscv64_percpu_get(hal_cpu_id_t cpu);
-void riscv64_smp_bootstrap(uint64_t hart_id);
-void riscv64_smp_configure(void);
-void riscv64_smp_take_ipi(void);
+void
+riscv64_percpu_bootstrap(
+	hal_cpu_id_t cpu,
+	uint64_t hart_id);
+
+struct riscv64_percpu *
+riscv64_percpu_current(
+	void);
+
+struct riscv64_percpu *
+riscv64_percpu_get(
+	hal_cpu_id_t cpu);
+
+void
+riscv64_smp_bootstrap(
+	uint64_t hart_id);
+
+void
+riscv64_smp_configure(
+	void);
+
+void
+riscv64_smp_take_ipi(
+	void);
 
 #endif

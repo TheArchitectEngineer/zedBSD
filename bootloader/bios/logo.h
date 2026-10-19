@@ -14,7 +14,7 @@
 #define KERN_BOOTLOADER_BIOS_LOGO_H
 
 /* The most pixel writes one 512-byte sector can give (a pixel is 3 bytes, one may be split). */
-#define ZBL_BIOS_LOGO_WRITES	172
+#define ZBL_BIOS_LOGO_WRITES		172
 
 /* Where bootzbsd.S finds the results in struct zbl_bios_logo (checked in logo.c). */
 #define ZBL_BIOS_LOGO_FILL_NOW		84
@@ -78,8 +78,19 @@ struct zbl_bios_logo {
 	uint32_t scaled_height;
 };
 
-void zbl_bios_logo_begin(struct zbl_bios_logo *logo, uint32_t screen_width, uint32_t screen_height, uint32_t stride, uint32_t format);
-int zbl_bios_logo_feed(struct zbl_bios_logo *logo, const uint8_t *bytes, uint32_t size);
+void
+zbl_bios_logo_begin(
+	struct zbl_bios_logo *logo,
+	uint32_t screen_width,
+	uint32_t screen_height,
+	uint32_t stride,
+	uint32_t format);
+
+int
+zbl_bios_logo_feed(
+	struct zbl_bios_logo *logo,
+	const uint8_t *bytes,
+	uint32_t size);
 
 #endif
 #endif

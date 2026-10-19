@@ -76,14 +76,42 @@ struct ppc32_task {
 	unsigned signal_depth;
 };
 
-void ppc32_task_returned(void) __attribute__((noreturn));
-void ppc32_context_selftest(void);
-void ppc32_task_enter_user_frame(struct ppc32_trap_frame *frame);
-void ppc32_task_leave_user_frame(void);
-struct ppc32_task *ppc32_task_running(void);
-void ppc32_task_finish_switch(void);
-void ppc32_task_first_user_entry(void);
-struct ppc32_trap_frame *ppc32_task_user_frame(struct ppc32_task *task);
-void ppc32_task_memory_stats(uint32_t *count, size_t *bytes);
+void
+ppc32_task_returned(
+	void)
+__attribute__((noreturn));
+
+void
+ppc32_context_selftest(
+	void);
+
+void
+ppc32_task_enter_user_frame(
+	struct ppc32_trap_frame *frame);
+
+void
+ppc32_task_leave_user_frame(
+	void);
+
+struct ppc32_task *
+ppc32_task_running(
+	void);
+
+void
+ppc32_task_finish_switch(
+	void);
+
+void
+ppc32_task_first_user_entry(
+	void);
+
+struct ppc32_trap_frame *
+ppc32_task_user_frame(
+	struct ppc32_task *task);
+
+void
+ppc32_task_memory_stats(
+	uint32_t *count,
+	size_t *bytes);
 
 #endif

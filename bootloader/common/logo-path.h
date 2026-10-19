@@ -18,8 +18,18 @@
 #ifndef __ASSEMBLER__
 #include <stddef.h>
 
-int zbl_logo_path(const char *text, size_t length, char *path, size_t capacity);
-int zbl_parameter_present(const char *text, size_t length, const char *token);
+int
+zbl_logo_path(
+	const char *text,
+	size_t length,
+	char *path,
+	size_t capacity);
+
+int
+zbl_parameter_present(
+	const char *text,
+	size_t length,
+	const char *token);
 
 #endif
 #endif

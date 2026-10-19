@@ -21,6 +21,8 @@
  */
 #define RISCV64_ACK_LOCAL	((hal_irq_ack_t)~(uintptr_t)0)
 
-void riscv64_irq_take_external(void);
+void
+riscv64_irq_take_external(
+	void);
 
 #endif

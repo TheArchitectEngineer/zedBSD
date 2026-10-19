@@ -14,11 +14,31 @@
 
 #include <hal/types.h>
 
-void ppc32_page_init(uint32_t kernel_end);
-uint64_t ppc32_ram_base(void);
-uint64_t ppc32_ram_end(void);
-bool ppc32_range_is_ram(uint64_t physical, uint64_t size);
-bool ppc32_range_touches_ram(uint64_t physical, uint64_t size);
-void ppc32_task_memory_stats(uint32_t *count, size_t *bytes);
+void
+ppc32_page_init(
+	uint32_t kernel_end);
+
+uint64_t
+ppc32_ram_base(
+	void);
+
+uint64_t
+ppc32_ram_end(
+	void);
+
+bool
+ppc32_range_is_ram(
+	uint64_t physical,
+	uint64_t size);
+
+bool
+ppc32_range_touches_ram(
+	uint64_t physical,
+	uint64_t size);
+
+void
+ppc32_task_memory_stats(
+	uint32_t *count,
+	size_t *bytes);
 
 #endif

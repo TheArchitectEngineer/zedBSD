@@ -37,6 +37,18 @@ struct riscv32_trap_frame {
 	unsigned long stval;
 };
 
+void
+riscv32_int_init(
+	void);
+
+void
+riscv32_int_init_secondary(
+	void);
+
+void
+riscv32_trap(
+	struct riscv32_trap_frame *frame);
+
 _Static_assert(sizeof(struct riscv32_trap_frame) == RISCV32_FRAME_SIZE,
 	       "trap.S builds frames of this size");
 _Static_assert(__builtin_offsetof(struct riscv32_trap_frame, sepc) == RISCV32_FRAME_SEPC,
@@ -47,9 +59,5 @@ _Static_assert(__builtin_offsetof(struct riscv32_trap_frame, scause) == RISCV32_
 	       "trap.S saves scause at this offset");
 _Static_assert(__builtin_offsetof(struct riscv32_trap_frame, stval) == RISCV32_FRAME_STVAL,
 	       "trap.S saves stval at this offset");
-
-void riscv32_int_init(void);
-void riscv32_int_init_secondary(void);
-void riscv32_trap(struct riscv32_trap_frame *frame);
 
 #endif

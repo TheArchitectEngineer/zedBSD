@@ -50,12 +50,14 @@ stage2_entry:
 	jne fatal
 	mov si, 0x01be
 	mov cx, 4
+
 find_active:
 	cmp byte ptr es:[si], 0x80
 	je active_found
 	add si, 16
 	loop find_active
 	jmp fatal
+
 active_found:
 	mov eax, dword ptr es:[si + 8]
 	test eax, eax
@@ -96,8 +98,12 @@ putc:
 dap:
 	.byte 0x10, 0
 	.word 1
-dap_offset: .word 0
-dap_segment: .word 0
-dap_lba: .quad 0
-boot_drive: .byte 0
+dap_offset:
+	.word 0
+dap_segment:
+	.word 0
+dap_lba:
+	.quad 0
+boot_drive:
+	.byte 0
 stage2_end:

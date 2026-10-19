@@ -16,8 +16,16 @@
 #include <hal/types.h>
 #include "fdt.h"
 
-void riscv64_board_init(const struct riscv64_fdt_info *info);
-void riscv64_board_putc(int character);
-void riscv64_board_describe(void);
+void
+riscv64_board_init(
+	const struct riscv64_fdt_info *info);
+
+void
+riscv64_board_putc(
+	int character);
+
+void
+riscv64_board_describe(
+	void);
 
 #endif

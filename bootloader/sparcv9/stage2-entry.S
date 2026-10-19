@@ -15,6 +15,7 @@
 	.align 4
 	.global _start
 	.type _start, #function
+
 _start:
 	save	%sp, -176, %sp
 	setx	stage2_stack_top, %g1, %sp
@@ -39,6 +40,7 @@ _start:
 
 	.global sparcv9_loader_enable_mmu
 	.type sparcv9_loader_enable_mmu, #function
+
 sparcv9_loader_enable_mmu:
 	mov	0xf, %o0
 	stxa	%o0, [%g0] 0x45
@@ -49,8 +51,10 @@ sparcv9_loader_enable_mmu:
 
 	.section ".bss.stack", #alloc, #write
 	.align 4
+
 stage2_stack:
 	.skip 32768
+
 stage2_stack_top:
 	/* Keep ABI register-window spill slots away from the following BSS. */
 	.skip 4096

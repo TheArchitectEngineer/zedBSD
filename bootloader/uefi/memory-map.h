@@ -32,10 +32,26 @@ enum zbl_uefi_map_result {
 	ZBL_UEFI_MAP_EMPTY,
 };
 
-enum zbl_uefi_map_result zbl_uefi_normalize_memory_map(const void *raw_map, UINTN map_size, UINTN descriptor_size, struct zbl6_memory_range *ranges, uint32_t range_capacity, uint32_t *range_count);
+enum zbl_uefi_map_result
+zbl_uefi_normalize_memory_map(
+	const void *raw_map,
+	UINTN map_size,
+	UINTN descriptor_size,
+	struct zbl6_memory_range *ranges,
+	uint32_t range_capacity,
+	uint32_t *range_count);
 
-const char *zbl_uefi_map_result_name(enum zbl_uefi_map_result result);
+const char *
+zbl_uefi_map_result_name(
+	enum zbl_uefi_map_result result);
 
-enum zbl_memory_result zbl_uefi_normalize_memory_map_v6(const void *raw_map, UINTN map_size, UINTN descriptor_size, struct zbl6_memory_range_v6 *ranges, uint32_t capacity, uint32_t *range_count);
+enum zbl_memory_result
+zbl_uefi_normalize_memory_map_v6(
+	const void *raw_map,
+	UINTN map_size,
+	UINTN descriptor_size,
+	struct zbl6_memory_range_v6 *ranges,
+	uint32_t capacity,
+	uint32_t *range_count);
 
 #endif

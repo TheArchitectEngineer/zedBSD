@@ -28,14 +28,6 @@
 
 #include <stddef.h>
 
-_Static_assert(offsetof(struct zbl_bios_logo, fill_now) == ZBL_BIOS_LOGO_FILL_NOW, "logo fill_now offset");
-_Static_assert(offsetof(struct zbl_bios_logo, background) == ZBL_BIOS_LOGO_BACKGROUND, "logo background offset");
-_Static_assert(offsetof(struct zbl_bios_logo, count) == ZBL_BIOS_LOGO_COUNT, "logo count offset");
-_Static_assert(offsetof(struct zbl_bios_logo, offsets) == ZBL_BIOS_LOGO_OFFSETS, "logo offsets offset");
-_Static_assert(offsetof(struct zbl_bios_logo, pixels) == ZBL_BIOS_LOGO_PIXELS, "logo pixels offset");
-_Static_assert(offsetof(struct zbl_bios_logo, contain) == ZBL_BIOS_LOGO_TAIL, "logo contain offset");
-_Static_assert(sizeof(struct zbl_bios_logo) == ZBL_BIOS_LOGO_SIZE, "logo size");
-
 /* The largest logo side the loader draws. */
 #define LOGO_SIDE_MAX		4096U
 
@@ -471,3 +463,11 @@ logo_space(
 	/* Refuses anything else as a blank. */
 	return 0;
 }
+
+_Static_assert(offsetof(struct zbl_bios_logo, fill_now) == ZBL_BIOS_LOGO_FILL_NOW, "logo fill_now offset");
+_Static_assert(offsetof(struct zbl_bios_logo, background) == ZBL_BIOS_LOGO_BACKGROUND, "logo background offset");
+_Static_assert(offsetof(struct zbl_bios_logo, count) == ZBL_BIOS_LOGO_COUNT, "logo count offset");
+_Static_assert(offsetof(struct zbl_bios_logo, offsets) == ZBL_BIOS_LOGO_OFFSETS, "logo offsets offset");
+_Static_assert(offsetof(struct zbl_bios_logo, pixels) == ZBL_BIOS_LOGO_PIXELS, "logo pixels offset");
+_Static_assert(offsetof(struct zbl_bios_logo, contain) == ZBL_BIOS_LOGO_TAIL, "logo contain offset");
+_Static_assert(sizeof(struct zbl_bios_logo) == ZBL_BIOS_LOGO_SIZE, "logo size");

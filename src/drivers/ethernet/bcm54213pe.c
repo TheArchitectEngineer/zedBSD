@@ -17,19 +17,19 @@
 #include <stddef.h>
 
 /* Standard clause-22 controls and BCM54xx vendor shadow registers. */
-#define BCM54213_CONTROL 0U
-#define BCM54213_STATUS 1U
-#define BCM54213_ID_HIGH 2U
-#define BCM54213_ID_LOW 3U
-#define BCM54213_ADVERTISEMENT 4U
-#define BCM54213_GIGABIT 9U
-#define BCM54213_AUX_CONTROL 0x18U
-#define BCM54213_AUX_STATUS 0x19U
-#define BCM54213_CLOCK_SHADOW 0x1cU
-#define BCM54213_RESET 0x8000U
-#define BCM54213_AUTONEG 0x1200U
-#define BCM54213_LINK_READY 0x0024U
-#define BCM54213_FAMILY 0x600d84a0U
+#define BCM54213_CONTROL	0U
+#define BCM54213_STATUS		1U
+#define BCM54213_ID_HIGH	2U
+#define BCM54213_ID_LOW		3U
+#define BCM54213_ADVERTISEMENT	4U
+#define BCM54213_GIGABIT	9U
+#define BCM54213_AUX_CONTROL	0x18U
+#define BCM54213_AUX_STATUS	0x19U
+#define BCM54213_CLOCK_SHADOW	0x1cU
+#define BCM54213_RESET		0x8000U
+#define BCM54213_AUTONEG	0x1200U
+#define BCM54213_LINK_READY	0x0024U
+#define BCM54213_FAMILY		0x600d84a0U
 
 static int reset_phy(const struct drv_bcm54213pe *phy);
 static int configure_delays(const struct drv_bcm54213pe *phy);

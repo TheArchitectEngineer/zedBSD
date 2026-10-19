@@ -13,20 +13,19 @@
 #include "bootloader/include/amd64-kernel-image.h"
 
 /* The program header type of a loadable segment. */
-#define PT_LOAD 1U
+#define PT_LOAD		1U
 
 /* The program header flag of an executable segment. */
-#define PF_X    1U
+#define PF_X		1U
 
 /* The ELF machine of amd64. */
-#define EM_X86_64 62U
+#define EM_X86_64	62U
 
 /* The ELF type of an executable. */
-#define ET_EXEC 2U
+#define ET_EXEC		2U
 
 /* The image must be linked inside [link start, link start + max bytes). */
-#define KERNEL_LINK_PHYS_LIMIT \
-	(AMD64_KERNEL_LINK_PHYS_START + AMD64_KERNEL_MAX_BYTES)
+#define KERNEL_LINK_PHYS_LIMIT	(AMD64_KERNEL_LINK_PHYS_START + AMD64_KERNEL_MAX_BYTES)
 
 /* The ELF64 file header as it is in the kernel file. */
 struct elf64_header {

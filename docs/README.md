@@ -1,4 +1,5 @@
-# zedBSD documentation
+zedBSD documentation
+====================
 
 This tree holds the design of zedBSD and Keiland and the interfaces that
 programs and people rely on. Documents come first and the implementation

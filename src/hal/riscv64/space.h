@@ -58,15 +58,45 @@ struct riscv64_space {
 	struct riscv64_table_page *tables;
 };
 
-void riscv64_kernel_image_init(uint64_t kernel_phys_start);
-uint64_t riscv64_kernel_phys_start(void);
-uint64_t riscv64_virt_to_phys(const void *address);
-void *riscv64_phys_to_direct(uint64_t physical);
-uint64_t riscv64_boot_satp(void);
-void riscv64_space_init(void);
-bool riscv64_space_checked(void);
-void riscv64_space_select_system(void);
-void riscv64_space_memory_stats(uint32_t *spaces, uint32_t *tables);
-void riscv64_tlb_flush_everywhere(void);
+void
+riscv64_kernel_image_init(
+	uint64_t kernel_phys_start);
+
+uint64_t
+riscv64_kernel_phys_start(
+	void);
+
+uint64_t
+riscv64_virt_to_phys(
+	const void *address);
+
+void *
+riscv64_phys_to_direct(
+	uint64_t physical);
+
+uint64_t
+riscv64_boot_satp(
+	void);
+
+void
+riscv64_space_init(
+	void);
+
+bool
+riscv64_space_checked(
+	void);
+
+void
+riscv64_space_select_system(
+	void);
+
+void
+riscv64_space_memory_stats(
+	uint32_t *spaces,
+	uint32_t *tables);
+
+void
+riscv64_tlb_flush_everywhere(
+	void);
 
 #endif

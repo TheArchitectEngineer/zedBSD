@@ -21,18 +21,16 @@
 /* The firmware's calling convention. */
 #define EFIAPI __attribute__((ms_abi))
 
-/* The UEFI specification's scalar types. */
-typedef uint8_t BOOLEAN;
-typedef uint16_t CHAR16;
-typedef int16_t INT16;
-typedef uint64_t EFI_STATUS;
-typedef void *EFI_HANDLE;
-typedef void *EFI_EVENT;
-typedef uint64_t EFI_PHYSICAL_ADDRESS;
-typedef uint64_t EFI_VIRTUAL_ADDRESS;
-typedef uintptr_t UINTN;
-typedef uint32_t UINT32;
-typedef uint64_t UINT64;
+/* KeyShiftState: the other bits are meaningful only with this one. */
+#define EFI_SHIFT_STATE_VALID 0x80000000U
+#define EFI_RIGHT_SHIFT_PRESSED 0x00000001U
+#define EFI_LEFT_SHIFT_PRESSED 0x00000002U
+#define EFI_RIGHT_CONTROL_PRESSED 0x00000004U
+#define EFI_LEFT_CONTROL_PRESSED 0x00000008U
+
+/* KeyToggleState: valid, and modifier keys alone reported as events. */
+#define EFI_TOGGLE_STATE_VALID 0x80U
+#define EFI_KEY_STATE_EXPOSED 0x40U
 
 /* The status codes the loader tells apart; an error has the top bit set. */
 #define EFI_SUCCESS ((EFI_STATUS)0)
@@ -89,6 +87,19 @@ enum efi_locate_search_type {
 	ByRegisterNotify,
 	ByProtocol
 };
+
+/* The UEFI specification's scalar types. */
+typedef uint8_t BOOLEAN;
+typedef uint16_t CHAR16;
+typedef int16_t INT16;
+typedef uint64_t EFI_STATUS;
+typedef void *EFI_HANDLE;
+typedef void *EFI_EVENT;
+typedef uint64_t EFI_PHYSICAL_ADDRESS;
+typedef uint64_t EFI_VIRTUAL_ADDRESS;
+typedef uintptr_t UINTN;
+typedef uint32_t UINT32;
+typedef uint64_t UINT64;
 
 /* A protocol or table identifier. */
 typedef struct {
@@ -200,17 +211,6 @@ typedef struct {
 	EFI_INPUT_KEY Key;
 	EFI_KEY_STATE KeyState;
 } EFI_KEY_DATA;
-
-/* KeyShiftState: the other bits are meaningful only with this one. */
-#define EFI_SHIFT_STATE_VALID 0x80000000U
-#define EFI_RIGHT_SHIFT_PRESSED 0x00000001U
-#define EFI_LEFT_SHIFT_PRESSED 0x00000002U
-#define EFI_RIGHT_CONTROL_PRESSED 0x00000004U
-#define EFI_LEFT_CONTROL_PRESSED 0x00000008U
-
-/* KeyToggleState: valid, and modifier keys alone reported as events. */
-#define EFI_TOGGLE_STATE_VALID 0x80U
-#define EFI_KEY_STATE_EXPOSED 0x40U
 
 /* The extended console input, which its own function pointers refer to. */
 struct efi_simple_text_input_ex_protocol;
@@ -445,46 +445,55 @@ typedef struct efi_graphics_output_protocol {
  * for.  Each translation unit that includes this header has its own copy;
  * they are constants and never change.
  */
+
 static const EFI_GUID EFI_LOADED_IMAGE_PROTOCOL_GUID = {
     0x5b1b31a1,
     0x9562,
     0x11d2,
     {0x8e, 0x3f, 0x00, 0xa0, 0xc9, 0x69, 0x72, 0x3b}};
+
 static const EFI_GUID EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_GUID = {
     0x964e5b22,
     0x6459,
     0x11d2,
     {0x8e, 0x39, 0x00, 0xa0, 0xc9, 0x69, 0x72, 0x3b}};
+
 static const EFI_GUID EFI_BLOCK_IO_PROTOCOL_GUID = {
     0x964e5b21,
     0x6459,
     0x11d2,
     {0x8e, 0x39, 0x00, 0xa0, 0xc9, 0x69, 0x72, 0x3b}};
+
 static const EFI_GUID EFI_DEVICE_PATH_PROTOCOL_GUID = {
     0x09576e91,
     0x6d3f,
     0x11d2,
     {0x8e, 0x39, 0x00, 0xa0, 0xc9, 0x69, 0x72, 0x3b}};
+
 static const EFI_GUID EFI_FILE_INFO_ID = {
     0x09576e92,
     0x6d3f,
     0x11d2,
     {0x8e, 0x39, 0x00, 0xa0, 0xc9, 0x69, 0x72, 0x3b}};
+
 static const EFI_GUID EFI_ACPI_TABLE_GUID = {
     0xeb9d2d30,
     0x2d88,
     0x11d3,
     {0x9a, 0x16, 0x00, 0x90, 0x27, 0x3f, 0xc1, 0x4d}};
+
 static const EFI_GUID EFI_ACPI_20_TABLE_GUID = {
     0x8868e871,
     0xe4f1,
     0x11d3,
     {0xbc, 0x22, 0x00, 0x80, 0xc7, 0x3c, 0x88, 0x81}};
+
 static const EFI_GUID EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID = {
     0x9042a9de,
     0x23dc,
     0x4a38,
     {0x96, 0xfb, 0x7a, 0xde, 0xd0, 0x80, 0x51, 0x6a}};
+
 static const EFI_GUID EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL_GUID = {
     0xdd9e7534,
     0x7762,

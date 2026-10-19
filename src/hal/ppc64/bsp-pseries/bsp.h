@@ -33,14 +33,32 @@ struct pseries_board_info {
 	uint32_t framebuffer_depth;
 };
 
-const struct pseries_board_info *pseries_board(void);
-void pseries_firmware_read(void);
-const struct kern_boot_handoff *pseries_kernel_handoff(void);
+const struct pseries_board_info *
+pseries_board(
+	void);
 
-void pseries_clock_init(void);
-void pseries_clock_interrupt(void);
-bool pseries_clock_ticked(void);
+void
+pseries_firmware_read(
+	void);
 
-void pseries_take_external(void);
+const struct kern_boot_handoff *
+pseries_kernel_handoff(
+	void);
+
+void
+pseries_clock_init(
+	void);
+
+void
+pseries_clock_interrupt(
+	void);
+
+bool
+pseries_clock_ticked(
+	void);
+
+void
+pseries_take_external(
+	void);
 
 #endif

@@ -22,7 +22,10 @@
 #ifndef __ASSEMBLER__
 #include "../include/boot-parameter-handoff.h"
 
-int zbl_boot_override_apply(struct kern_boot_parameter_record *record, unsigned keys);
+int
+zbl_boot_override_apply(
+	struct kern_boot_parameter_record *record,
+	unsigned keys);
 
 #endif
 #endif

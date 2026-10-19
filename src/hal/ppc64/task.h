@@ -76,14 +76,42 @@ struct ppc64_task {
 	unsigned signal_depth;
 };
 
-void ppc64_task_returned(void) __attribute__((noreturn));
-void ppc64_context_selftest(void);
-void ppc64_task_enter_user_frame(struct ppc64_trap_frame *frame);
-void ppc64_task_leave_user_frame(void);
-struct ppc64_task *ppc64_task_running(void);
-void ppc64_task_finish_switch(void);
-void ppc64_task_first_user_entry(void);
-struct ppc64_trap_frame *ppc64_task_user_frame(struct ppc64_task *task);
-void ppc64_task_memory_stats(uint32_t *count, size_t *bytes);
+void
+ppc64_task_returned(
+	void)
+__attribute__((noreturn));
+
+void
+ppc64_context_selftest(
+	void);
+
+void
+ppc64_task_enter_user_frame(
+	struct ppc64_trap_frame *frame);
+
+void
+ppc64_task_leave_user_frame(
+	void);
+
+struct ppc64_task *
+ppc64_task_running(
+	void);
+
+void
+ppc64_task_finish_switch(
+	void);
+
+void
+ppc64_task_first_user_entry(
+	void);
+
+struct ppc64_trap_frame *
+ppc64_task_user_frame(
+	struct ppc64_task *task);
+
+void
+ppc64_task_memory_stats(
+	uint32_t *count,
+	size_t *bytes);
 
 #endif

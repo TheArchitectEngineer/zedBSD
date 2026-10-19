@@ -22,7 +22,13 @@
 /* The largest logo file the loader takes. */
 #define ZBL_UEFI_LOGO_FILE_MAX		(16U * 1024U * 1024U)
 
-/* Draws a binary PPM on the framebuffer; returns 1 when it was drawn. */
-int zbl_uefi_logo_draw(const uint8_t *data, size_t size, const struct zbl6_framebuffer *framebuffer);
+/*
+ * Draws a binary PPM on the framebuffer; returns 1 when it was drawn.
+ */
+int
+zbl_uefi_logo_draw(
+	const uint8_t *data,
+	size_t size,
+	const struct zbl6_framebuffer *framebuffer);
 
 #endif
