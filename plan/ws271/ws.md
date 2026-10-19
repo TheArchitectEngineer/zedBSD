@@ -25,7 +25,7 @@
 | [p002](phase002/phase.md) | 入口と console の画面（共通の層 `src/hal/mips/` の入口、bsp-malta の PCI・VGA・console、build の配線）、LW 12 | cleared（2026-10-19 Q1、T1-725） |
 | [p003](phase003/phase.md) | 例外・timer・8259・task（user の Status の組み立てを含む）、到達点は `TIMER TICK`（T1）、LW 10 | cleared（2026-10-19 Q1、T1-728） |
 | [p004](phase004/phase.md) | TLB・space・FPU・atomic と self-test（design.md §6.1）、kernel の link、VFS の段まで（T1 の画面）、LW 12 | cleared（2026-10-19 Q1、T1-730） |
-| p005 | 規約の全文の見直し、LW 4 | planning |
+| p005 | 規約の全文の見直し、LW 4 | in-progress（q1290、P1、WS272 p004 と一緒に、2026-10-19） |
 
 設計の改訂 2（2026-10-19 P1、q1277）: design-review-1 の Minor 13 を採り、版 1 の p003（20 LW）を p003・p004 に分け、規約の見直しを p005 にした（[design.md](design.md) §9・§12）。
 

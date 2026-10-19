@@ -3,7 +3,7 @@
 # ws272-p003 MIPS64（mips64el）の例外・XTLB refill・3 段の table・atomic・M8、kernel の link（VFS の段まで）
 
 - 親: [WS272](../ws.md)、設計: [WS271 の design.md](../../ws271/design.md) §3.3〜§3.7・§6.1・§8（M1〜M5・M8・M9）、Queue: q1287 / q1287-i01（P1、2026-10-19）、disposition: normal
-- Status: uncleared（2026-10-19 Q1、T1-732: MIPS64 の 256M・512M とも XKPHYS PASS の後に `fatal: src/hal/mips/int.c:173: mips trap selftest answer` で止まる（cause=00000420、mips_cmain から hal_fatal、gdb の情報は t1 の build/review/t1-732/gdb.out）。512M でも画面は memory=262144 KiB で M8 の high の alias は未確認。MIPS32 の回帰は PASS。再開: P1 が q1289 で gdbstub で解析して直す）。q1289-i01（P1、2026-10-19）で原因を直した（下の「q1289 の解析と直し」）。T1 の再試験待ち
+- Status: cleared（2026-10-19 Q1 の判定、T1-733: MIPS64 の 256M で TRAP・CONTEXT・FPU F64・TIMER TICK・PAGING PASS・READY・CPU 1 ONLINE・VFS initialization failed、512M で MEMORY low=256 MiB high=256 MiB total=512 MiB（M8 の high の alias が使われる）、MIPS32 の回帰 PASS。build/review/t1-733/mips64-512m-vfs.png。QEMU だけ。VFS initialization failed が 2 回出るのは MIPS32 も同じで p005・p004 の見直しで見る）
 - 前提: ws272-p002（入口・console、T1-731 で試験中）、ws271-p003・p004（共通の層 `src/hal/mips/` の trap・TLB・space・FPU・self-test）。hal.h は不変。HAL の API の差分は無い（`include/hal/arch/mips64.h` は p002 のまま）。
 
 ## 範囲と受け入れ条件
