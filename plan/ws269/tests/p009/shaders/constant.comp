@@ -1,5 +1,0 @@
-#version 450
-// data[x] = 42: a constant value (multiplier 0).
-layout(local_size_x = 8) in;
-layout(std430, binding = 0) buffer Data { uint data[]; };
-void main() { data[gl_GlobalInvocationID.x] = 42u; }

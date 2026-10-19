@@ -1,5 +1,0 @@
-#version 450
-// data[x] = x through a component load of the invocation id (multiplier 1, addend 0), set 1 binding 2.
-layout(local_size_x = 16) in;
-layout(std430, set = 1, binding = 2) buffer Data { uint data[]; };
-void main() { data[gl_GlobalInvocationID.x] = gl_GlobalInvocationID.x; }

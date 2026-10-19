@@ -41,6 +41,7 @@
 | p010f | transfer（copy・clear、IPF・FAST_2D） | O-p010c、O-p010d、O-ENC | planning（同） |
 | p010o | transfer の blit（FAST_SCALE） | O-p010f | planning（同） |
 | p010g | render pass・framebuffer・load/store・clear・job の列 | O-p010e | planning（同） |
+| [p010-compiler](phase010-compiler/phase.md) | SPIR-V から USC への compiler（spirv-fill の置き換え、compute・vertex・fragment、color の pack・blend は D-P3 (b) で compiler） | p008、p009 | in-progress（2026-10-20 P2 q1363: 読み・back end・key（format・blend）・compute の executor への差し替え、host 試験 PASS、VF2・riscv64-virt の build warning 0） |
 | p010h | descriptor と compiler の境（`shader.h` の使用、PDS の data の program） | O-p010c、O-SHADER-ABI | planning（同） |
 | p010i | graphics の pipeline と draw | O-p010g、O-p010h、O-VSFS | planning（同） |
 | p010j | depth と vkdemo の offscreen | O-p010i | planning（同） |

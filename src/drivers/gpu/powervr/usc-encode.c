@@ -778,6 +778,207 @@ powervr_usc_pack(
 }
 
 /*
+ * Encodes the main unit's unpack of a storage format into a float.
+ */
+int
+powervr_usc_unpack(
+	unsigned format,
+	unsigned element,
+	unsigned scale_round,
+	struct powervr_usc_operation *operation)
+{
+	/*
+	 * Values referenced:
+	 * Mesa 26.2.5 src/imagination/pco/pco_isa.py
+	 * (I_MAIN pieces main_op 0:7..5 with sngl 0b100, ext0 0:4 set,
+	 * sngl_op 0:3..0 with pck 0b1100, upck_elem 1:7..6, scale_rtz 1:5,
+	 * pck_format 1:4..0; I_UPCK).
+	 */
+	static const struct usc_piece pieces[] = {
+		{ 0, 5, 3, 0, 0 },
+		{ 0, 4, 1, USC_FIELD_ONE, 0 },
+		{ 0, 0, 4, 1, 0 },
+		{ 1, 6, 2, 2, 0 },
+		{ 1, 5, 1, 3, 0 },
+		{ 1, 0, 5, 4, 0 }
+	};
+	static const struct usc_layout layout = { 2, 5, 6, { 3, 4, 2, 1, 5 }, pieces };
+	uint32_t values[5];
+	int error;
+
+	/* Collects the fields in the layout's order. */
+	values[0] = 4;
+	values[1] = 12;
+	values[2] = element;
+	values[3] = scale_round;
+	values[4] = format;
+
+	/* Places the fields after checking each fits. */
+	error = operation_build(&layout, values, operation);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the two-byte unpack. */
+	return 0;
+}
+
+/*
+ * Encodes the back end's texture sample in its brief form: no
+ * extensions, the coordinates as floats, normalised or not.
+ */
+int
+powervr_usc_sample(
+	unsigned normalised,
+	unsigned data_return,
+	unsigned dimensions,
+	unsigned channels,
+	unsigned lod_mode,
+	struct powervr_usc_operation *operation)
+{
+	/*
+	 * Values referenced:
+	 * Mesa 26.2.5 src/imagination/pco/pco_isa.py
+	 * (I_BACKEND pieces backend_op 0:7..5 with dma 0b111, fcnorm 0:4,
+	 * drc 0:3, dma_op 0:2..0 with smp 0b100, extb 1:7, dmn 1:6..5
+	 * (1d 0b01, 2d 0b10, 3d 0b11), exta 1:4, chan 1:3..2 sent less one
+	 * (F_UINT2_POS_INC), lodm 1:1..0; I_SMP_BRIEF).
+	 */
+	static const struct usc_piece pieces[] = {
+		{ 0, 5, 3, 0, 0 },
+		{ 0, 4, 1, 1, 0 },
+		{ 0, 3, 1, 2, 0 },
+		{ 0, 0, 3, 3, 0 },
+		{ 1, 5, 2, 4, 0 },
+		{ 1, 2, 2, 5, 0 },
+		{ 1, 0, 2, 6, 0 }
+	};
+	static const struct usc_layout layout = { 2, 7, 7, { 3, 1, 1, 3, 2, 2, 2 }, pieces };
+	uint32_t values[7];
+	int error;
+
+	/* Refuses a dimension or a channel count the fields cannot carry. */
+	if (dimensions < 1 || dimensions > 3 || channels < 1 || channels > 4)
+		return EINVAL;
+
+	/* Collects the fields in the layout's order, the channels less one. */
+	values[0] = 7;
+	values[1] = normalised;
+	values[2] = data_return;
+	values[3] = 4;
+	values[4] = dimensions;
+	values[5] = channels - 1U;
+	values[6] = lod_mode;
+
+	/* Places the fields after checking each fits. */
+	error = operation_build(&layout, values, operation);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the two-byte sample. */
+	return 0;
+}
+
+/*
+ * Encodes the back end's emission of the pixel the shader has written
+ * to the pixel output registers.
+ */
+int
+powervr_usc_emit_pixel(
+	unsigned free_partition,
+	struct powervr_usc_operation *operation)
+{
+	/*
+	 * Values referenced:
+	 * Mesa 26.2.5 src/imagination/pco/pco_isa.py
+	 * (I_BACKEND pieces backend_op 0:7..5 with emit 0b110, freep 0:1,
+	 * the reserved bits 0:4..2 and 0:0; I_EMITPIX).
+	 */
+	static const struct usc_piece pieces[] = {
+		{ 0, 5, 3, 0, 0 },
+		{ 0, 1, 1, 1, 0 }
+	};
+	static const struct usc_layout layout = { 1, 2, 2, { 3, 1 }, pieces };
+	uint32_t values[2];
+	int error;
+
+	/* Collects the fields in the layout's order. */
+	values[0] = 6;
+	values[1] = free_partition;
+
+	/* Places the fields after checking each fits. */
+	error = operation_build(&layout, values, operation);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the one-byte emission. */
+	return 0;
+}
+
+/*
+ * Encodes the control unit's direct iteration of fragment varyings
+ * from coefficient registers into temporaries.
+ *
+ * Coefficient and w_coefficient are coefficient register numbers, each
+ * a multiple of four; perspective multiplies by the iterated 1/w.
+ */
+int
+powervr_usc_iterate(
+	unsigned destination,
+	unsigned coefficient,
+	unsigned perspective,
+	unsigned w_coefficient,
+	unsigned mode,
+	unsigned count,
+	unsigned data_return,
+	struct powervr_usc_operation *operation)
+{
+	/*
+	 * Values referenced:
+	 * Mesa 26.2.5 src/imagination/pco/pco_isa.py
+	 * (I_CTRL pieces dest_7_0 0:7..0, coff_7_2 1:7..2, p_itr 1:1..0,
+	 * woff_b2_7_2 2:7..2, ditr_mode 2:1..0, itr_count_b3 3:7..4 sent
+	 * modulo 16, coff_idx_ctrl_b3 3:3..2, woff_idx_ctrl_b3 3:1..0,
+	 * f16_b4 4:6, sched_ctrl_b4 4:3..2, drc_b4 4:1, sat 4:0;
+	 * F_UINT6MUL4 sending a multiple of four quartered; F_PERSP_CTL
+	 * none 0b00, iter_mul 0b01; I_DITR) and src/imagination/pco/pco_map.py
+	 * (encode_map O_DITRP: p iter_mul).
+	 */
+	static const struct usc_piece pieces[] = {
+		{ 0, 0, 8, 0, 0 },
+		{ 1, 2, 6, 1, 0 },
+		{ 1, 0, 2, 2, 0 },
+		{ 2, 2, 6, 3, 0 },
+		{ 2, 0, 2, 4, 0 },
+		{ 3, 4, 4, 5, 0 },
+		{ 4, 1, 1, 6, 0 }
+	};
+	static const struct usc_layout layout = { 5, 7, 7, { 8, 6, 2, 6, 2, 4, 1 }, pieces };
+	uint32_t values[7];
+	int error;
+
+	/* Refuses coefficient numbers off the multiple of four and a count outside one to sixteen. */
+	if ((coefficient & 3U) != 0 || (w_coefficient & 3U) != 0 || count < 1 || count > 16)
+		return EINVAL;
+
+	/* Collects the fields in the layout's order. */
+	values[0] = destination;
+	values[1] = coefficient >> 2;
+	values[2] = perspective;
+	values[3] = w_coefficient >> 2;
+	values[4] = mode;
+	values[5] = count % 16U;
+	values[6] = data_return;
+
+	/* Places the fields after checking each fits. */
+	error = operation_build(&layout, values, operation);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the five-byte iteration. */
+	return 0;
+}
+
+/*
  * Encodes the main unit's 32- and 64-bit integer add and multiply-add.
  *
  * The short form carries the signedness, the addend's negation and the
