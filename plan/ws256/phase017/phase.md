@@ -2,7 +2,7 @@
 
 # ws256-p017 NVMe の INTx の道と NVMe の root
 
-Status: in-progress（virt の部分の実装・build は済み。QEMU は T1 の結果待ち。実機の部分（p020・p015 の後）は未着手）
+Status: cleared（2026-10-19 Q1 の判定、T1-724: riscv64 virt で `nvme: PCI controller … INTx` と namespace、dd の生の読み書きと od での読み戻し、native の mkfs・mount・書き込み・cat、起動し直して mount し直しで `p017` が残る事を画面で確認（build/review/t1-724/nvme-remount.png）。amd64 の NVMe の回帰は login prompt で PASS（MSI-X の行は画面に出ず未確認）。scan の「-1 entries」は partition の表の無い生の disk の答えで、I/O の失敗ではない（Q1 の読み、ram0 は MBR があり 4 entries）。実機の NVMe と root は p024）
 
 - 親: [WS256](../ws.md)。Queue: q1271 / q1271-i01 の virt の部分（P1、2026-10-19）。設計: [design-peripherals.md](../design-peripherals.md) 改訂 2 §3.6（B2 の選択: INTx の道を足す）と再レビュー 2 の Minor 1（Q1 2026-10-19: 「INTx の許可だけを足し、ISR で INTMS → INTMC の往復はしない」）。
 - 範囲（この試行）: pci-nvme に INTx の道。MSI-X・MSI の道は変えない。QEMU virt の `-device nvme` で読み書きと mount。
