@@ -140,7 +140,7 @@ static uint32_t segment_prot(uint32_t flags);
 static int read_headers(struct file_content_lease *lease, unsigned elf_class, struct normalized_header *header, struct normalized_program **programs_out, uint64_t *file_size_out);
 static int copy_segment_snapshot(struct file_content_lease *lease, struct vmspace *vm, uintptr_t destination, off_t source, size_t size);
 static int load_segment_snapshot(struct file_content_lease *lease, struct vmspace *vm, uintptr_t destination, off_t source, size_t size, uint32_t prot);
-#if defined(HAL_ARCH_AMD64) || defined(HAL_ARCH_I386)
+#if defined(HAL_ARCH_AMD64) || defined(HAL_ARCH_I386) || defined(HAL_ARCH_M68K)
 static int load_static_tls(struct file_content_lease *, struct vmspace *, const struct normalized_program *, uintptr_t *);
 #endif
 static int validate_and_load(struct file_content_lease *lease, struct vmspace *vm, unsigned elf_class, enum elf_load_role role, struct normalized_image *image);
@@ -863,8 +863,7 @@ load_segment_snapshot(
 	return 0;
 }
 
-/* Validates an image of one class and role and maps its segments. */
-#if defined(HAL_ARCH_AMD64) || defined(HAL_ARCH_I386)
+#if defined(HAL_ARCH_AMD64) || defined(HAL_ARCH_I386) || defined(HAL_ARCH_M68K)
 /* Builds a private initial block and a VM-owned immutable thread template. */
 static int
 load_static_tls(
@@ -874,12 +873,11 @@ load_static_tls(
 	uintptr_t *thread_pointer)
 {
 	struct kern_tls_prefix prefix;
+	struct kern_tls_static_layout layout;
 	uintptr_t template_address;
 	uintptr_t mapping;
-	uintptr_t tp;
+	uintptr_t control;
 	size_t template_size;
-	size_t payload_size;
-	size_t mapping_size;
 	size_t alignment;
 	size_t distance;
 	int error;
@@ -887,10 +885,22 @@ load_static_tls(
 	alignment = (size_t)tls->align;
 	if (alignment == 0)
 		alignment = 1;
-	distance = (size_t)tls->memsz +
-	    (size_t)((0U - tls->vaddr - tls->memsz) & (alignment - 1U));
-	payload_size = (distance + PAGE_SIZE - 1U) & ~(size_t)(PAGE_SIZE - 1U);
-	mapping_size = payload_size + KERN_TLS_TCB_RESERVE;
+
+#if KERN_TLS_STATIC_VARIANT == KERN_TLS_VARIANT_I
+	/*
+	 * The block starts on a page boundary and the compiled accesses offset
+	 * from the segment's own start, so a segment placed off its alignment
+	 * would leave its variables misaligned.
+	 */
+	if ((tls->vaddr & (uint64_t)(alignment - 1U)) != 0)
+		return ENOEXEC;
+
+#endif
+	/* Places the control block and the block the way the C library does. */
+	distance = kern_tls_static_distance(tls->vaddr, tls->memsz, alignment,
+	    KERN_TLS_STATIC_VARIANT);
+	kern_tls_static_layout(distance, PAGE_SIZE, KERN_TLS_STATIC_VARIANT,
+	    &layout);
 	template_size = ((size_t)tls->filesz + PAGE_SIZE - 1U) &
 	    ~(size_t)(PAGE_SIZE - 1U);
 	template_address = 0;
@@ -910,34 +920,34 @@ load_static_tls(
 			goto free_template;
 	}
 
-	error = vmspace_map_find(vm, vm_layout.mmap_base, mapping_size,
+	error = vmspace_map_find(vm, vm_layout.mmap_base, layout.mapping_size,
 	    HAL_SPACE_READ | HAL_SPACE_WRITE, &mapping);
 	if (error != 0)
 		goto free_template;
-	tp = mapping + payload_size;
-	error = copy_segment_snapshot(lease, vm, tp - distance,
+	control = mapping + layout.control_offset;
+	error = copy_segment_snapshot(lease, vm, mapping + layout.block_offset,
 	    (off_t)tls->offset, (size_t)tls->filesz);
 	if (error != 0)
 		goto free_mapping;
 
 	/* Only the shared prefix is known to the loader; the tail remains zero. */
 	kern_memset(&prefix, 0, sizeof(prefix));
-	prefix.self = tp;
+	prefix.self = control;
 	prefix.mapping_base = mapping;
-	prefix.mapping_size = mapping_size;
+	prefix.mapping_size = layout.mapping_size;
 	prefix.template_address = template_address;
 	prefix.template_size = (size_t)tls->filesz;
 	prefix.memory_size = (size_t)tls->memsz;
 	prefix.alignment = alignment;
 	prefix.distance = distance;
-	error = vmspace_copy_to(vm, tp, &prefix, sizeof(prefix));
+	error = vmspace_copy_to(vm, control, &prefix, sizeof(prefix));
 	if (error != 0)
 		goto free_mapping;
-	*thread_pointer = tp;
+	*thread_pointer = control;
 	return 0;
 
 free_mapping:
-	(void)vmspace_unmap(vm, mapping, mapping_size);
+	(void)vmspace_unmap(vm, mapping, layout.mapping_size);
 free_template:
 	if (template_size != 0)
 		(void)vmspace_unmap(vm, template_address, template_size);
@@ -946,6 +956,7 @@ free_template:
 
 #endif
 
+/* Validates an image of one class and role and maps its segments. */
 static int
 validate_and_load(
 	struct file_content_lease *lease,
@@ -1369,7 +1380,7 @@ validate_and_load(
 
 	/* The runtime linker owns dynamic TLS; static images start with a ready TP. */
 	if (tls != NULL && role == ELF_LOAD_MAIN && interp_count == 0) {
-#if defined(HAL_ARCH_AMD64) || defined(HAL_ARCH_I386)
+#if defined(HAL_ARCH_AMD64) || defined(HAL_ARCH_I386) || defined(HAL_ARCH_M68K)
 		error = load_static_tls(lease, vm, tls, &image->thread_pointer);
 #else
 		error = ENOEXEC;

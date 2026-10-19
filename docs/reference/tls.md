@@ -1,8 +1,15 @@
-# x86 executable TLS
+# Static executable TLS (x86, m68k)
 
 zedBSDの静的amd64/i386実行ファイルはELF `PT_TLS`を使う。
 コンパイラのlocal-exec TLSは、amd64でFS、i386でGSを使うVariant II配置に従う。
 TPの直前に各スレッド専用のTLSデータがあり、TP先頭wordはTP自身である。
+
+静的m68k（X68000）実行ファイルはVariant I配置に従う。TCBがmapping先頭の
+4096bytes予約にあり、TLS本体はその直後（ページ境界）から始まる。
+MC68030にはthread pointerのレジスタが無いので、コンパイラは`__m68k_read_tp`を呼び、
+libcは`thread_self`のTCBアドレス＋4096＋0x7000をthread pointerとして返す。
+PT_TLSの`p_vaddr`は自身の整列に揃っている必要がある（揃わない場合は`ENOEXEC`）。
+両配置の計算はloaderとlibcで共有する（[uapi/tls.h](../../include/uapi/tls.h)）。
 
 `exec`は新しいアドレス空間内に初回TLSとTCBを用意してから切り替える。
 不正なTLSヘッダは`ENOEXEC`、割当失敗は通常のメモリ不足として失敗し、

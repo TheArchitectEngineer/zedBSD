@@ -41,11 +41,10 @@ __rtld_thread_alloc(
 	struct __rtld_tcb **out)
 {
 	struct kern_tls_prefix prefix;
+	struct kern_tls_static_layout layout;
 	struct __rtld_tcb *tcb;
 	intptr_t current;
 	void *mapping;
-	size_t payload;
-	size_t size;
 
 	if (out == NULL)
 		return -1;
@@ -70,23 +69,24 @@ __rtld_thread_alloc(
 	if (prefix.template_size != 0 && prefix.template_address == 0)
 		return -1;
 
-	payload = (prefix.distance + STATIC_TLS_PAGE_SIZE - 1U) &
-	    ~(size_t)(STATIC_TLS_PAGE_SIZE - 1U);
-	size = payload + KERN_TLS_TCB_RESERVE;
-	mapping = mmap(NULL, size, PROT_READ | PROT_WRITE,
+	/* Places the control block and the block the way exec placed the first. */
+	kern_tls_static_layout(prefix.distance, STATIC_TLS_PAGE_SIZE,
+	    KERN_TLS_STATIC_VARIANT, &layout);
+	mapping = mmap(NULL, layout.mapping_size, PROT_READ | PROT_WRITE,
 	    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (mapping == MAP_FAILED)
 		return -1;
 
 	/* Anonymous zero-fill initializes .tbss and the unused TCB tail. */
-	tcb = (struct __rtld_tcb *)((unsigned char *)mapping + payload);
+	tcb = (struct __rtld_tcb *)((unsigned char *)mapping +
+	    layout.control_offset);
 	if (prefix.template_size != 0)
-		memcpy((unsigned char *)tcb - prefix.distance,
+		memcpy((unsigned char *)mapping + layout.block_offset,
 		    (const void *)prefix.template_address, prefix.template_size);
 	tcb->tls = prefix;
 	tcb->tls.self = (uintptr_t)tcb;
 	tcb->tls.mapping_base = (uintptr_t)mapping;
-	tcb->tls.mapping_size = size;
+	tcb->tls.mapping_size = layout.mapping_size;
 	tcb->pthread_private = pthread_private;
 	*out = tcb;
 	return 0;
