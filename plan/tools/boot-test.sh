@@ -28,7 +28,9 @@
 #                  "type:TEXT" types TEXT and a return on the guest's serial
 #                  line, "keys:TEXT" types TEXT and a return on the emulated
 #                  keyboard through QMP send-key (US layout; the guest's own
-#                  keyboard such as -device usb-kbd), "expect:REGEX" waits for
+#                  keyboard such as -device usb-kbd), "mouse:DX,DY[,BUTTON]"
+#                  moves the emulated mouse and clicks left, middle or right
+#                  through QMP input-send-event, "expect:REGEX" waits for
 #                  the screen to show REGEX;
 #                  the last screen is OUTPUT/login-after.png
 #   BOOT_TEXT_ORIGINS  more "x,y" pixel origins of 8x16 text to read, separated
@@ -386,11 +388,14 @@ elif [[ $boot_mode == ppc64-pseries ]]; then
 		-kernel "$image" "${ppc_extra[@]}" >"$output/qemu.log" 2>&1 &
 elif [[ $boot_mode == sun4u ]]; then
 	# OpenBIOS boots the IDE disk; the standard VGA is the machine's own.
+	# QEMU_EXTRA adds options such as -g 1024x768x32 (ws275).
+	read -r -a sun4u_extra <<<"${QEMU_EXTRA:-}"
 	"$qemu" -machine sun4u -m "${BOOT_MEMORY:-256}" \
 		-drive "if=ide,format=qcow2,file=$disk" -boot c \
 		-display none -no-reboot \
 		-serial "unix:$serial,server,nowait" \
-		-qmp "unix:$monitor,server,nowait" >"$output/qemu.log" 2>&1 &
+		-qmp "unix:$monitor,server,nowait" "${sun4u_extra[@]}" \
+		>"$output/qemu.log" 2>&1 &
 elif [[ $boot_mode == raspi4b ]]; then
 	"$qemu" -machine raspi4b -m 2G -kernel "$kernel" -dtb "$dtb" \
 		-drive "if=sd,format=qcow2,file=$disk" \
@@ -424,6 +429,7 @@ if [[ -n ${BOOT_THEN:-} ]]; then
 		case $line in
 		type:*) watch+=(--then-type "${line#type:}") ;;
 		keys:*) watch+=(--then-keys "${line#keys:}") ;;
+		mouse:*) watch+=(--then-mouse "${line#mouse:}") ;;
 		expect:*) watch+=(--then-expect "${line#expect:}") ;;
 		'') ;;
 		*)

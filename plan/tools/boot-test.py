@@ -141,6 +141,28 @@ class Monitor:
             time.sleep(0.05)
         self.command("send-key", keys=[{"type": "qcode", "data": "ret"}])
 
+    def send_mouse(self, text: str) -> None:
+        """Moves the emulated mouse by "DX,DY" and clicks ",BUTTON" if named."""
+        parts = text.split(",")
+        events = [
+            {"type": "rel", "data": {"axis": "x", "value": int(parts[0])}},
+            {"type": "rel", "data": {"axis": "y", "value": int(parts[1])}},
+        ]
+        answer = self.command("input-send-event", events=events)
+        if "error" in answer:
+            raise SystemExit(f"boot-test: input-send-event: {answer['error']}")
+
+        # Presses and releases the named button (left, middle or right).
+        if len(parts) > 2:
+            for down in (True, False):
+                button = {"type": "btn",
+                          "data": {"button": parts[2], "down": down}}
+                answer = self.command("input-send-event", events=[button])
+                if "error" in answer:
+                    raise SystemExit(
+                        f"boot-test: input-send-event: {answer['error']}")
+                time.sleep(0.05)
+
     def screendump(self, path: Path) -> None:
         """Writes the screen to a file in PPM form."""
         answer = self.command("screendump", filename=str(path), format="ppm")
@@ -365,8 +387,8 @@ class StepAction(argparse.Action):
 
     def __call__(self, parser, namespace, values, option_string=None):
         steps = getattr(namespace, "steps", None) or []
-        kind = {"--then-type": "type", "--then-keys": "keys"}.get(
-            option_string, "expect")
+        kind = {"--then-type": "type", "--then-keys": "keys",
+                "--then-mouse": "mouse"}.get(option_string, "expect")
         steps.append((kind, values))
         namespace.steps = steps
 
@@ -394,6 +416,9 @@ def main() -> int:
     parser.add_argument("--then-keys", action=StepAction, dest="steps",
                         help="after the patterns, types a line on the "
                              "emulated keyboard through the monitor")
+    parser.add_argument("--then-mouse", action=StepAction, dest="steps",
+                        help="after the patterns, moves the emulated mouse "
+                             "by DX,DY and clicks BUTTON if given")
     parser.add_argument("--then-expect", action=StepAction, dest="steps",
                         help="after the patterns, waits for a line on the "
                              "screen")
@@ -445,6 +470,9 @@ def main() -> int:
             continue
         if kind == "keys":
             monitor.send_keys(text)
+            continue
+        if kind == "mouse":
+            monitor.send_mouse(text)
             continue
         deadline = time.monotonic() + arguments.then_timeout
         found, last = watch_patterns(monitor, frame, font,
