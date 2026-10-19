@@ -3,7 +3,7 @@
 # ws273-p001 RG350（Ingenic JZ4770）の移植の設計
 
 - 親: [ws273](../ws.md)、Queue: q1317 / q1317-i01（P2、版 1、2026-10-19）、q1320 / q1320-i01（P1、改訂 2、2026-10-19）、q1323 / q1323-i01（P2、改訂 2.1、2026-10-19）
-- Status: in-progress（改訂 2.1 が出来た、Q1 の差分の確認待ち）
+- Status: cleared（2026-10-19 Q1 の判定: design-review-2 の結論「Major 1 件（M-a）を直せば受け入れてよい…Q1 がその差分を見れば足りる」。改訂 2.1（7c87a62d3、merge 96bb99756）で M-a を直した事を Q1 が差分で確かめた: framebuffer・descriptor を NOLOAD の .uncached へ、入口の全体の cache の操作を新しい関数に。proposed の 2 つの diff は git apply --check が通る。ユーザーの判断 D1〜D8 は未決で、p002 の前に聞く）
 
 ## 目的
 
