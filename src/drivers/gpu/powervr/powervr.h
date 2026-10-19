@@ -93,4 +93,23 @@ struct drv_powervr_dc_place {
  */
 int drv_powervr_dc_probe(const struct drv_powervr_dc_place *place);
 
+/*
+ * Returns the screen to the loader's plane for a fatal stop.
+ *
+ * Marks the controller fatal first, so no later commit is written, then
+ * writes the plane registers drv_powervr_dc_probe() read back and commits
+ * them, without waiting for the frame to take them.  The commit lock is
+ * tried a bounded number of times and the registers are written even
+ * when it stays held, since the CPU holding it may be the one stopping.
+ * Does nothing unless the probe found the screen could be taken over.
+ * Runs with interrupts disabled and takes no other lock.
+ */
+void drv_powervr_dc_restore_fatal(void);
+
+/*
+ * Reports whether a fatal stop has taken the screen back; a commit checks
+ * it under the commit lock and writes nothing once it is set.
+ */
+int drv_powervr_dc_fatal(void);
+
 #endif

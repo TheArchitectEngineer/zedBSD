@@ -81,6 +81,17 @@ drv_serial_console_init(
 }
 
 /*
+ * Reports the console's text operations without publishing them.
+ */
+const struct kern_text_ops *
+drv_serial_console_ops(
+	void)
+{
+	/* The same table drv_serial_console_init() publishes. */
+	return &serial_console_ops;
+}
+
+/*
  * Types one received byte into the console.
  *
  * A terminal sends a carriage return for Enter and a delete for backspace;

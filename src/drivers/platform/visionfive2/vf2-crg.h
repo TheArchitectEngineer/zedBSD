@@ -6,15 +6,16 @@
  */
 
 /*
- * The JH7110's clock and reset generators (SYS, STG and AON).
+ * The JH7110's clock and reset generators (SYS, STG, AON and VOUT).
  *
  * A device's node names its clocks and resets by the phandle of a
  * generator and the generator's number, as the clocks and resets
  * properties do.  The calls here look those up and switch the gates, set
  * the dividers and move the resets of the clocks and resets the board's
  * drivers use.  A clock the table does not know is refused, so a driver
- * cannot stop a clock it does not own, in particular the display's, the
- * CPUs', the memory's or the console's.
+ * cannot stop a clock it does not own, in particular the CPUs', the
+ * memory's or the console's.  The display's bus clocks in the SYS
+ * generator are known but shared, so they are never stopped from here.
  *
  * Rates are computed from the PLL settings in the SYS system control
  * block and the dividers and multiplexers on the way; the PLLs are only
@@ -29,7 +30,10 @@
 #include <drivers/generic/fdt.h>
 
 /*
- * One of the three generators.
+ * One of the four generators.
+ *
+ * The VOUT generator sits in the display's power domain; its registers
+ * answer only while that domain is on.
  *
  * The numbers index the generators' records; COUNT is not a generator.
  */
@@ -37,7 +41,8 @@ enum drv_vf2_crg {
 	DRV_VF2_CRG_SYS = 0,
 	DRV_VF2_CRG_STG = 1,
 	DRV_VF2_CRG_AON = 2,
-	DRV_VF2_CRG_COUNT = 3
+	DRV_VF2_CRG_VOUT = 3,
+	DRV_VF2_CRG_COUNT = 4
 };
 
 /*
@@ -61,7 +66,7 @@ struct drv_vf2_reset {
 };
 
 /*
- * Finds the three generators in the device tree and maps them.
+ * Finds the four generators in the device tree and maps them.
  *
  * Touches no register.  drv_vf2_syscon_init() must have run, for the PLL
  * settings.  Reports ENODEV when the SYS generator is missing.
@@ -90,6 +95,15 @@ int drv_vf2_clock_enable(const struct drv_vf2_clock *clock);
  * refused with EBUSY.
  */
 int drv_vf2_clock_disable(const struct drv_vf2_clock *clock);
+
+/*
+ * Reports whether a clock's own gate is open.
+ *
+ * Only reads.  A clock without a gate of its own reports running.  ENODEV
+ * means its generator is absent; a generator in a powered-down domain
+ * must not be asked.
+ */
+int drv_vf2_clock_running(const struct drv_vf2_clock *clock, int *running);
 
 /*
  * Computes a clock's rate in hertz from the registers.
