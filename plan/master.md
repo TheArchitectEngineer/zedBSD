@@ -648,6 +648,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-20 06:11（ユーザー、VF2 の実機）: 「画面がつきました！」→ U-Boot の prompt から DTB 入りの image（main d1ef60e39）で起動し、zedBSD が自前で DC8200・HDMI を点け直して画面が出た。SD（24.75 MHz の fallback）・init・Ethernet・DHCP も動いている（BUG-340・BUG-341 は resolved）。
 - 2026-10-20 03:25（ユーザー、クリック）: WS277（DC8200 の display driver）の D1〜D11 は「全部推奨どおり」（すべて (a)）。WS270 の D1 は「(c) 慣習に合わせる」（config-visionfive2.mk を desktop、最小を config-visionfive2-server.mk に、p007 で切り替え）、D2・D3・D5 は「推奨どおり」（D2 (b) QEMU の Venus はしない、D3 (a) app は rpi4 と同じ全部・noct と emacs を除く、D5 (a) root は SD）。
 - 2026-10-20 01:13（ユーザー）: 「PowerVRはタイルとRGBAと両方の書き出しができると思いますが、VF2のLinuxドライバはもしかするとタイルしかないかも？だからスキャンアウトのバッファにCPUでコピーしてて、GNOMEがむちゃくちゃ遅くて使い物にならなかったと思います。」→（クリック）DC8200 の自前の driver を「新しい WS で設計から」→ WS277。
 - 2026-10-19 22:58（ユーザー）: 「VisionFive 2にフォーカスします.」→ fg020 を立て、WS256・WS269・WS270 を最優先に。

@@ -32,3 +32,5 @@ D1〜D11 は全部 (a)（推奨どおり）。原文は Master の decisions-log
 | [p005](phase005/phase.md) | 自前の mode: 追補（design 版 3.2 §15、道の優先・`display.mode=`・戻し先）、HDMI の PHY・PLL、DC8200 の panel・timing・plane、GOP の無い時の電源・clock・reset と確保した framebuffer | p002（D1 no-go の順）・R1・R2、R1b（GOP の無い時） | in-progress（2026-10-20 P1 q1353-i01: 実装・build（VF2・riscv64-virt・amd64、warning 0）・host 試験 PASS。実機 U7 待ち、GOP 無しは R1b 待ち） |
 
 > 2026-10-20 Q1 の記録: ユーザーの VF2 の serial の log（U-Boot SPL 2021.10、`U-Boot 2021.10 (Oct 10 2025) Build: jenkins-github_visionfive2_6.12-16`、`In: serial / Out: serial / Err: serial`）。配布の U-Boot は console を HDMI に出しておらず、GOP の framebuffer を渡さない見込み（未確認）。D1 は no-go の見込みなので、§7 の no-go の順（p005 を先に、その後に p003 の code を使う）で進める。同じ log で SD（mmc1）が `Card did not respond to voltage select! : -110` で認識されていない。
+
+> 2026-10-20 06:11 Q1 の記録: ユーザーの VF2 の実機で、U-Boot が ExitBootServices で消した表示を p005 の自前の点灯（PD_VOUT・SYS と VOUT の clock・reset の順、bootfb の memory を 1920x1080@60 で scanout）で点け直し、画面が出た（「画面がつきました！」、BUG-341）。p005 の U7 の主の部分の実機の確認。
