@@ -837,7 +837,9 @@ KERN_GPU_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(KERN_GPU_SOURCES))
 
 # The audio framework is built only when an audio hardware backend selects it.
 # Add audio backends to this list.
-KERN_AUDIO_BACKENDS ?= $(CONFIG_DRIVER_PCI_HDA) $(CONFIG_DRIVER_BCM2711_AUDIO)
+# The VisionFive 2's headphone jack (ws256-p019) is part of that board's binding.
+KERN_AUDIO_BACKENDS ?= $(CONFIG_DRIVER_PCI_HDA) $(CONFIG_DRIVER_BCM2711_AUDIO) \
+	$(if $(filter visionfive2,$(ZEDBSD_BOARD)),y,n)
 KERN_AUDIO_SOURCES :=
 ifneq ($(filter y,$(KERN_AUDIO_BACKENDS)),)
 KERN_AUDIO_SOURCES := src/drivers/audio/audio.c

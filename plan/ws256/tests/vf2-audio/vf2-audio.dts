@@ -1,0 +1,113 @@
+/*
+ * A device tree in the shape of the VisionFive 2's sound path (Linux
+ * v6.12 jh7110.dtsi and jh7110-common.dtsi): the clock generators, the
+ * SYS system control block, the SYS pin controller with the converter's
+ * pins, the AXI DMA controller and the PWM audio converter.  GPIOMUX
+ * numbers are written out: din << 24 | dout << 16 | doen << 10 | pin.
+ */
+/dts-v1/;
+
+/ {
+	#address-cells = <2>;
+	#size-cells = <2>;
+
+	osc: oscillator {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <24000000>;
+	};
+
+	soc {
+		compatible = "simple-bus";
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		pwmdac: pwmdac@100b0000 {
+			compatible = "starfive,jh7110-pwmdac";
+			reg = <0x0 0x100b0000 0x0 0x1000>;
+			clocks = <&syscrg 157>, <&syscrg 158>;
+			clock-names = "apb", "core";
+			resets = <&syscrg 96>;
+			dmas = <&dma 22>;
+			dma-names = "tx";
+			pinctrl-names = "default";
+			pinctrl-0 = <&pwmdac_pins>;
+			status = "okay";
+		};
+
+		stgcrg: clock-controller@10230000 {
+			compatible = "starfive,jh7110-stgcrg";
+			reg = <0x0 0x10230000 0x0 0x10000>;
+			clocks = <&osc>, <&syscrg 8>;
+			clock-names = "osc", "stg_axiahb";
+			#clock-cells = <1>;
+			#reset-cells = <1>;
+		};
+
+		syscrg: clock-controller@13020000 {
+			compatible = "starfive,jh7110-syscrg";
+			reg = <0x0 0x13020000 0x0 0x10000>;
+			clocks = <&osc>, <&pllclk 0>, <&pllclk 1>, <&pllclk 2>;
+			clock-names = "osc", "pll0_out", "pll1_out", "pll2_out";
+			#clock-cells = <1>;
+			#reset-cells = <1>;
+		};
+
+		sys_syscon: syscon@13030000 {
+			compatible = "starfive,jh7110-sys-syscon", "syscon", "simple-mfd";
+			reg = <0x0 0x13030000 0x0 0x1000>;
+
+			pllclk: clock-controller {
+				compatible = "starfive,jh7110-pll";
+				clocks = <&osc>;
+				#clock-cells = <1>;
+			};
+		};
+
+		sysgpio: pinctrl@13040000 {
+			compatible = "starfive,jh7110-sys-pinctrl";
+			reg = <0x0 0x13040000 0x0 0x10000>;
+			clocks = <&syscrg 112>;
+			resets = <&syscrg 2>;
+			gpio-controller;
+			#gpio-cells = <2>;
+
+			pwmdac_pins: pwmdac-0 {
+				pwmdac-pins {
+					pinmux = <0xff1c0021>, <0xff1d0022>;
+					bias-disable;
+					drive-strength = <2>;
+					input-disable;
+					input-schmitt-disable;
+					slew-rate = <0>;
+				};
+			};
+		};
+
+		dma: dma-controller@16050000 {
+			compatible = "starfive,jh7110-axi-dma";
+			reg = <0x0 0x16050000 0x0 0x10000>;
+			clocks = <&stgcrg 27>, <&stgcrg 28>;
+			clock-names = "core-clk", "cfgr-clk";
+			resets = <&stgcrg 5>, <&stgcrg 6>;
+			interrupts = <73>;
+			#dma-cells = <1>;
+			dma-channels = <4>;
+			snps,dma-masters = <1>;
+			snps,data-width = <3>;
+			snps,block-size = <65536 65536 65536 65536>;
+			snps,priority = <0 1 2 3>;
+			snps,axi-max-burst-len = <16>;
+		};
+
+		aoncrg: clock-controller@17000000 {
+			compatible = "starfive,jh7110-aoncrg";
+			reg = <0x0 0x17000000 0x0 0x10000>;
+			clocks = <&osc>, <&syscrg 8>;
+			clock-names = "osc", "stg_axiahb";
+			#clock-cells = <1>;
+			#reset-cells = <1>;
+		};
+	};
+};
