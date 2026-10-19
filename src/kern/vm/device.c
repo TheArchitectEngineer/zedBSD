@@ -18,6 +18,23 @@
 #include <kern/kcrt.h>
 
 #include <uapi/errno.h>
+#include "kern/vmspace.h"
+#include "kern/vm-device.h"
+#include "kern/file.h"
+#include "kern/kmem.h"
+#include "kern/lock.h"
+#include "kern/page.h"
+#include "kern/sched.h"
+#include "kern/swap.h"
+#include "kern/vm-commit.h"
+#include "kern/vm-lock.h"
+#include "kern/vm-object.h"
+#include "kern/vm-reclaim.h"
+#include <uapi/errno.h>
+#include <uapi/mman.h>
+#include <kern/kcrt.h>
+#include "kern/clock.h"
+#include "vmspace-internal.h"
 
 /*
  * Creates one immutable mapping owner without allocating or freeing its storage.
@@ -258,5 +275,158 @@ vm_device_write(
 	kern_io_write_barrier();
 
 	/* Succeeded: every requested byte is written before releasing the pin. */
+	return 0;
+}
+
+/*
+ * Publishes a driver-owned shared extent without charging or allocating RAM pages.
+ */
+int
+vmspace_map_device(
+	struct vmspace *vm,
+	uintptr_t hint,
+	size_t size,
+	uint32_t prot,
+	struct vm_device_mapping *mapping,
+	int exact,
+	uintptr_t *mapped)
+{
+	struct vm_region *region;
+	uintptr_t start;
+	size_t rounded;
+	int error;
+	int valid;
+	int occupied;
+
+	/* Requires a retained backing and a user address space with an output owner. */
+	if (vm == NULL || vm == &kernel_vmspace)
+		return EINVAL;
+
+	/* Both the backing and the final mapped address need an explicit owner. */
+	if (mapping == NULL || mapped == NULL)
+		return EINVAL;
+
+	/* Refuses empty or unroundable extents before any VM allocation. */
+	if (size == 0 || size > SIZE_MAX - (PAGE_SIZE - 1U))
+		return EINVAL;
+
+	/* Neither initial nor later access rights may exceed the driver's original open authority. */
+	if ((prot & ~mapping->max_prot) != 0)
+		return EACCES;
+
+	/* Partial final pages are already included in the driver's retained extent. */
+	rounded = (size + PAGE_SIZE - 1U) & ~(size_t)(PAGE_SIZE - 1U);
+	if (rounded > mapping->bytes)
+		return EINVAL;
+
+	/* Address selection and region publication share the usual VM serializer. */
+	vm_metadata_enter();
+	mutex_lock(&vm->lock);
+
+	/* Resolves an exact unoccupied placement or searches the ordinary user address range. */
+	start = hint;
+	error = 0;
+	if (exact) {
+		/* Exact placement must satisfy user range bounds before overlap can be examined. */
+		valid = range_valid(start, rounded);
+		if (!valid) {
+			error = EINVAL;
+		} else {
+			/* Existing regions remain untouched by MAP_FIXED_NOREPLACE semantics. */
+			occupied = overlaps(vm, start, rounded);
+			if (occupied)
+				error = EEXIST;
+		}
+	} else {
+		error = vmspace_find_free_range_locked(vm, hint, rounded, PAGE_SIZE, &start);
+	}
+
+	/* Device ownership supplies storage; no anonymous commitment is reserved. */
+	if (error == 0) {
+		error = map_region(
+			vm,
+			start,
+			rounded,
+			prot,
+			VM_BACKING_DEVICE,
+			NULL,
+			0,
+			start,
+			rounded,
+			VM_REGION_SHARED,
+			0,
+			&region);
+	}
+
+	/* A published region retains the immutable backing until final region or pin retirement. */
+	if (error == 0) {
+		vm_device_ref(mapping);
+		region->device = mapping;
+		region->max_prot = mapping->max_prot;
+		*mapped = start;
+		vmspace_generation_advance_locked(vm);
+	}
+
+	mutex_unlock(&vm->lock);
+	vm_metadata_leave();
+
+	/* The caller keeps its initial backing reference on both success and failure. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: faults can now publish the retained device pages lazily. */
+	return 0;
+}
+
+/* Maps retained device storage while unmap and protection wait on its region hold. */
+int
+vmspace_device_fault(
+	struct vmspace *vm,
+	struct vm_region *region,
+	struct vm_page *page)
+{
+	hal_physaddr_t physical;
+	uint32_t attributes;
+	int status;
+	int error;
+
+	/* Immutable mapping geometry stays valid through the entire HAL operation. */
+	physical = (hal_physaddr_t)(region->device->physical +
+	    region->device_offset + page->address - region->start);
+	attributes = region->prot | vm_device_page_attributes(region->device);
+	status = hal_space_map(
+		vm->space,
+		(void *)page->address,
+		physical,
+		PAGE_SIZE,
+		attributes);
+	error = 0;
+	if (status == HAL_ERR_NOMEM)
+		error = ENOMEM;
+	else if (status != HAL_OK)
+		error = EFAULT;
+
+	/* Publish completion before releasing the hold which excluded VM mutation. */
+	vm_metadata_enter();
+	mutex_lock(&vm->lock);
+
+	/* Only a successful HAL operation makes the retained device page visible to user access. */
+	if (error == 0)
+		page->flags |= VM_PAGE_RESIDENT | VM_MAPPING_MAPPED;
+
+	/* Clearing BUSY and the hold lets unmap, protect and waiting faults observe one completed attempt. */
+	page->flags &= ~VM_MAPPING_BUSY;
+	region->hold_count--;
+	vmspace_generation_advance_locked(vm);
+	vmspace_fault_wake_locked(vm);
+
+	mutex_unlock(&vm->lock);
+	vm_metadata_leave();
+
+	/* An allocation failure retains only harmless page metadata for a later retry. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the user page shares the driver's original device storage. */
 	return 0;
 }

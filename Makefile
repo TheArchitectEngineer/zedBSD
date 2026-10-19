@@ -817,6 +817,13 @@ KERN_NET_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(KERN_NET_SOURCES))
 
 KERN_VM_SOURCES := \
 	src/kern/vm/vmspace.c \
+	src/kern/vm/vmspace-metadata.c \
+	src/kern/vm/vmspace-fault.c \
+	src/kern/vm/vmspace-copy.c \
+	src/kern/vm/vmspace-fork.c \
+	src/kern/vm/vmspace-map.c \
+	src/kern/vm/vmspace-region.c \
+	src/kern/vm/vmspace-unmap.c \
 	src/kern/vm/device.c \
 	src/kern/vm/object.c \
 	src/kern/vm/object-content.c \
