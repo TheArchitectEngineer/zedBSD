@@ -21,6 +21,7 @@
 #include "sbi.h"
 #include "space.h"
 #include "task.h"
+#include "bootloader/include/riscv64-handoff.h"
 
 /* The most bytes of the firmware's device tree the parser may read. */
 #define CMAIN_FDT_READ_LIMIT	(2U * 1024U * 1024U)
@@ -40,11 +41,15 @@
  */
 static struct riscv64_fdt_info cmain_fdt;
 
+static uintptr_t take_loader_handoff(uint64_t hart_id, uintptr_t handoff_phys);
+static void check_device_tree(uintptr_t fdt_phys);
+
 /*
  * Brings the boot hart from locore.S to kernel_entry().
  *
  * The firmware passes the hart's id and the physical address of its
- * device tree; locore.S adds where the image was loaded.  The tree is
+ * device tree, or the UEFI loader the hart's id and its handoff, which
+ * names the tree; locore.S adds where the image was loaded.  The tree is
  * read, the display set up, then the memory map, the tables, interrupts
  * and the tick, in that order.
  */
@@ -55,6 +60,8 @@ riscv64_cmain(
 	uint64_t kernel_phys_start)
 {
 	const volatile uint32_t *first_word;
+	const struct zbl6_riscv64_handoff *handoff;
+	uintptr_t fdt_phys;
 	uint32_t magic;
 	int error;
 
@@ -65,21 +72,41 @@ riscv64_cmain(
 	/* Learns which firmware calls exist before the console uses them. */
 	riscv64_sbi_probe();
 
-	/* The boot argument must be a device tree: this entry is the firmware's own. */
+	/* The boot argument is the loader's handoff or the firmware's device tree. */
 	if (boot_argument == 0)
 		HAL_FATAL("riscv64 firmware passed no device tree");
 	first_word = (const volatile uint32_t *)riscv64_phys_to_direct((uint64_t)boot_argument);
 	magic = *first_word;
-	if (magic != CMAIN_FDT_MAGIC_LE)
-		HAL_FATAL("riscv64 boot argument is not a device tree");
+
+	/* Finds the tree: the loader names its copy, the firmware passes its own. */
+	handoff = NULL;
+	if (magic == ZBL6_HANDOFF_MAGIC) {
+		fdt_phys = take_loader_handoff(hart_id, boot_argument);
+		handoff = (const struct zbl6_riscv64_handoff *)riscv64_phys_to_direct((uint64_t)boot_argument);
+	} else {
+		fdt_phys = boot_argument;
+	}
+	check_device_tree(fdt_phys);
 
 	/* Reads the tree through the direct map of the boot table. */
-	error = riscv64_fdt_parse(riscv64_phys_to_direct((uint64_t)boot_argument), CMAIN_FDT_READ_LIMIT, &cmain_fdt);
+	error = riscv64_fdt_parse(riscv64_phys_to_direct((uint64_t)fdt_phys), CMAIN_FDT_READ_LIMIT, &cmain_fdt);
 	if (error != RISCV64_FDT_OK) {
 		hal_printf("riscv64 device tree: %s\n", riscv64_fdt_error(error));
 		HAL_FATAL("invalid riscv64 device tree");
 	}
-	riscv64_boot_record(hart_id, boot_argument, &cmain_fdt);
+
+	/*
+	 * The loader's ramdisk and parameters stand in for the tree's: the
+	 * firmware's tree describes no ramdisk the loader read, and its line is
+	 * not the kernel's.
+	 */
+	if (handoff != NULL) {
+		cmain_fdt.initrd_start = handoff->initrd_phys;
+		cmain_fdt.initrd_end = handoff->initrd_phys + handoff->initrd_size;
+	}
+	riscv64_boot_record(hart_id, fdt_phys, &cmain_fdt);
+	if (handoff != NULL)
+		riscv64_boot_set_command_line(handoff->parameters.text, handoff->parameters.length);
 
 	/* Shows the display, which then holds what the console printed. */
 	riscv64_board_init(riscv64_boot_fdt());
@@ -88,7 +115,7 @@ riscv64_cmain(
 	hal_printf("RISCV64 ENTRY hart=%lu image=%lx\n", hart_id, kernel_phys_start);
 	riscv64_sbi_describe();
 	hal_printf("RISCV64 FDT PASS phys=%lx size=%u timebase=%lu\n",
-		   (uint64_t)boot_argument,
+		   (uint64_t)fdt_phys,
 		   cmain_fdt.totalsize,
 		   cmain_fdt.timebase_frequency);
 	riscv64_board_describe();
@@ -106,4 +133,70 @@ riscv64_cmain(
 	/* Enters the kernel, which never returns. */
 	kernel_entry(riscv64_kernel_handoff());
 	HAL_FATAL("kernel_entry returned");
+}
+
+/*
+ * Checks the UEFI loader's handoff and reports the device tree it names.
+ *
+ * The record is read here and not kept: the tree and the ramdisk it names
+ * stay where the loader put them, and the parameters are copied out.
+ */
+static uintptr_t
+take_loader_handoff(
+	uint64_t hart_id,
+	uintptr_t handoff_phys)
+{
+	const struct zbl6_riscv64_handoff *handoff;
+
+	/* Views the record through the direct map of the boot table. */
+	handoff = (const struct zbl6_riscv64_handoff *)riscv64_phys_to_direct((uint64_t)handoff_phys);
+
+	/*
+	 * Refuses a record older than the first layout or shorter than it.  A
+	 * later layout only appends fields, so the ones read here stay where
+	 * they are.
+	 */
+	if (handoff->version < ZBL6_RISCV64_HANDOFF_VERSION)
+		HAL_FATAL("riscv64 loader handoff of an unknown version");
+	if (handoff->size < sizeof(*handoff))
+		HAL_FATAL("riscv64 loader handoff is too short");
+
+	/* Refuses a record for another hart: the others are still in the firmware. */
+	if (handoff->boot_hart != hart_id)
+		HAL_FATAL("riscv64 loader handoff names another boot hart");
+
+	/* Refuses a parameter line longer than its record. */
+	if (handoff->parameters.length >= sizeof(handoff->parameters.text))
+		HAL_FATAL("riscv64 loader parameters are too long");
+
+	/* Refuses a ramdisk whose end does not fit. */
+	if (handoff->initrd_size > ~0ULL - handoff->initrd_phys)
+		HAL_FATAL("riscv64 loader ramdisk range overflows");
+
+	/* Succeeded: the loader's copy of the device tree. */
+	hal_printf("RISCV64 LOADER handoff=%lx fdt=%lx initrd=%lx+%lx\n",
+		   (uint64_t)handoff_phys,
+		   handoff->fdt_phys,
+		   handoff->initrd_phys,
+		   handoff->initrd_size);
+	return (uintptr_t)handoff->fdt_phys;
+}
+
+/* Stops on a boot argument that does not lead to a device tree. */
+static void
+check_device_tree(
+	uintptr_t fdt_phys)
+{
+	const volatile uint32_t *first_word;
+	uint32_t magic;
+
+	/* Refuses a missing tree. */
+	if (fdt_phys == 0)
+		HAL_FATAL("riscv64 firmware passed no device tree");
+
+	/* Refuses memory that does not start with the tree's magic. */
+	first_word = (const volatile uint32_t *)riscv64_phys_to_direct((uint64_t)fdt_phys);
+	magic = *first_word;
+	if (magic != CMAIN_FDT_MAGIC_LE)
+		HAL_FATAL("riscv64 boot argument is not a device tree");
 }

@@ -31,6 +31,11 @@ riscv64_boot_record(
 	uintptr_t fdt_phys,
 	const struct riscv64_fdt_info *info);
 
+void
+riscv64_boot_set_command_line(
+	const char *text,
+	size_t available);
+
 const struct riscv64_fdt_info *
 riscv64_boot_fdt(
 	void);
