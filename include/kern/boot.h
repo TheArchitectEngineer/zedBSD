@@ -54,11 +54,20 @@
 #define KERN_IMAGE_BOOT_PARAMETERS_TEXT 		"overlay-root=boot0:rootfs.img overlay-data=boot0:data.img swap0=boot0:swapfile"
 
 /*
- * Pixel formats a platform's boot framebuffer format value may name: four
- * bytes per pixel, red first or blue first, the fourth byte unused.
+ * Pixel formats a platform's boot framebuffer format value may name.  Each
+ * name lists the bytes of one pixel in increasing address order.  The
+ * first three use four bytes per pixel, one byte unused: red, green, blue,
+ * unused; blue, green, red, unused; or unused, red, green, blue.  The last
+ * is the reverse of the DRM format of the same name, which BGRX8888 here
+ * matches.  RGB332 uses one byte per pixel, an index into a palette the
+ * loader set before it left the firmware: red in bits 7-5, green in bits
+ * 4-2 and blue in bits 1-0, index i showing red ((i >> 5) & 7) * 255 / 7,
+ * green ((i >> 2) & 7) * 255 / 7 and blue (i & 3) * 255 / 3, rounded down.
  */
 #define KERN_BOOT_FRAMEBUFFER_RGBX8888			1U
 #define KERN_BOOT_FRAMEBUFFER_BGRX8888			2U
+#define KERN_BOOT_FRAMEBUFFER_XRGB8888			3U
+#define KERN_BOOT_FRAMEBUFFER_RGB332			4U
 
 #define KERN_MEMORY_AVAILABLE				1U
 #define KERN_MEMORY_RESERVED				2U
