@@ -43,8 +43,8 @@
 | p013 | 周辺の基盤: clock・reset・pinctrl/GPIO・PMIC（I2C）の driver を bsp-visionfive2 か drivers/ に（p012 の設計の形） | p005・p012 | 未見積（p012 で） | planning |
 | p014 | SD カード: SD の controller の driver と block の device（既存の MBR・FAT の層に繋ぐ） | p013 | 未見積 | planning |
 | p015 | rootfs からの起動: SD の image（ESP・root）の root を mount して initrd 無しで起動し、画面（p011）で login | p011・p014 | 未見積 | planning |
-| p016 | PCIe の host と USB: PCIe の host の driver、VL805 の xHCI（既存の pci-xhci）、USB の keyboard（usb-hid）で console・login を操作 | p013 | 未見積 | planning |
-| p017 | NVMe: M.2 の NVMe SSD（ボードに付いている、試験できる）を既存の pci-nvme で読み書きし、NVMe の rootfs からの起動も確かめる | p016 | 未見積 | planning |
+| p016 | PCIe の host と USB: PCIe の host の driver、VL805 の xHCI（既存の pci-xhci）、USB の keyboard（usb-hid）で console・login を操作 | p013 | 未見積 | in-progress（q1271、P1、virt の部分、2026-10-19） |
+| p017 | NVMe: M.2 の NVMe SSD（ボードに付いている、試験できる）を既存の pci-nvme で読み書きし、NVMe の rootfs からの起動も確かめる | p016 | 未見積 | in-progress（q1271、P1、virt の部分、2026-10-19） |
 | p018 | LAN: GbE の driver と PHY、DHCP・ssh | p013 | 未見積 | planning |
 | p019 | sound: p012 で決めた道（I2S と codec、または HDMI の audio）を既存の audio の層に繋ぎ、音を鳴らす | p013（HDMI なら p011） | 未見積 | planning |
 
