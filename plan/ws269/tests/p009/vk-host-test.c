@@ -222,6 +222,11 @@ void powervr_gpu_mmu_unmap(struct powervr_gpu_mmu *mmu, uint64_t address, uint64
 unsigned powervr_gpu_buffer_flags(int mappable, int shareable) { (void)mappable; (void)shareable; return 0; }
 int powervr_command_mmu_flush(struct powervr_core *core) { (void)core; return 0; }
 
+/* The stage lines are not part of this test. */
+void powervr_stage_ok(enum powervr_stage stage) { (void)stage; }
+void powervr_stage_fail(enum powervr_stage stage, enum powervr_stage_reason reason) { (void)stage; (void)reason; }
+enum powervr_stage_reason powervr_stage_reason_of(int error) { (void)error; return POWERVR_REASON_ERROR; }
+
 /* The kick records the compute command; the wait finds the work done. */
 int
 powervr_session_kick_compute(

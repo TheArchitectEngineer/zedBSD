@@ -188,9 +188,14 @@ drv_powervr_attach(
 			  alias_error);
 	}
 
+	/* The stage lines and hw.gpu.powervr.stages from here on. */
+	powervr_stage_init();
+
 	/* Without a working uncached view the firmware's memory cannot be shared; the core stays idle. */
-	if (alias != POWERVR_ALIAS_OK)
+	if (alias != POWERVR_ALIAS_OK) {
+		powervr_stage_fail(POWERVR_STAGE_FIRMWARE, POWERVR_REASON_COHERENCY);
 		return 0;
+	}
 
 	/*
 	 * Starts the later stage, which loads the firmware once the root is
@@ -204,6 +209,7 @@ drv_powervr_attach(
 		kern_gpu_attach_end();
 		powervr_power_down(core);
 		kern_logf("powervr: later stage not started (%d); powered down\n", error);
+		powervr_stage_fail(POWERVR_STAGE_FIRMWARE, powervr_stage_reason_of(error));
 		return error;
 	}
 

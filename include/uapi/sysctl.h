@@ -258,6 +258,14 @@ _Static_assert(sizeof(struct gpu_telemetry_entry) == 72U,
  */
 #define HW_USB_TRACE	10
 #define HW_USB_TRACE_STORAGE	1U
+/*
+ * hw.gpu.powervr.stages (string, read only): how far the PowerVR driver has
+ * come since boot, one "<stage>=<state>" word a stage separated by spaces,
+ * where the state is "ok", "-" (not reached) or "fail:<reason>", for
+ * example "firmware=ok render-node=ok compute=- ...".  ENOENT without the
+ * driver.
+ */
+#define HW_GPU_STAGES	11
 
 /* The version of the hw.thermal layout. */
 #define THERMAL_VERSION	1U
