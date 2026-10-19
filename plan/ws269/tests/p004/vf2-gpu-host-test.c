@@ -186,6 +186,14 @@ powervr_late_start(
 	return 0;
 }
 
+/* hw.gpu.attaching: the early stage counts the GPU, the later stage uncounts it. */
+static int attach_begins;
+static int attach_ends;
+void kern_gpu_attach_begin(void);
+void kern_gpu_attach_end(void);
+void kern_gpu_attach_begin(void) { attach_begins++; }
+void kern_gpu_attach_end(void) { attach_ends++; }
+
 int
 kern_device_map(
 	uint64_t address,
@@ -395,9 +403,11 @@ main(
 		if (strcmp(mode, "ok") == 0) {
 			check(strcmp(last_line, "powervr: BXE 36.50.54.182 at 396000000 Hz, ALIAS OK\n") == 0, "the boot log line");
 			check(late_starts == 1, "the later stage starts after ALIAS OK");
+			check(attach_begins == 1 && attach_ends == 0, "the GPU counts as attaching until the later stage ends");
 		} else {
 			check(strcmp(last_line, "powervr: BXE 36.50.54.182 at 396000000 Hz, ALIAS MISMATCH\n") == 0, "the boot log line names the mismatch");
 			check(late_starts == 0, "no later stage without a working uncached view");
+			check(attach_begins == 0 && attach_ends == 0, "the GPU never counts as attaching without the later stage");
 		}
 	} else {
 		check(error == ENODEV, "an unknown core is refused");
@@ -407,6 +417,7 @@ main(
 		check((get32(sys_crg, 0xb8) & 0x80000000U) == 0, "the core clock is stopped");
 		check((get32(sys_crg, 0xc8) & 0x80000000U) == 0, "the bus master clock is stopped");
 		check(strcmp(last_line, "powervr: unknown core 36.52.104.182; powered down\n") == 0, "the boot log line");
+		check(attach_begins == 0 && attach_ends == 0, "an unknown core never counts as attaching");
 	}
 
 	printf("%s vf2-gpu-host-test %s (%d failures)\n", failures == 0 ? "PASS" : "FAIL", mode, failures);

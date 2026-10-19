@@ -27,6 +27,7 @@
 #include <kern/device-io.h>
 #include <kern/klog.h>
 #include <kern/pmem.h>
+#include <kern/sysctl.h>
 #include <uapi/errno.h>
 
 /*
@@ -191,9 +192,16 @@ drv_powervr_attach(
 	if (alias != POWERVR_ALIAS_OK)
 		return 0;
 
-	/* Starts the later stage, which loads the firmware once the root is live. */
+	/*
+	 * Starts the later stage, which loads the firmware once the root is
+	 * live.  Until it has published the render node or given up, the GPU
+	 * counts as attaching (hw.gpu.attaching), so the graphical login waits
+	 * for both nodes; the later stage ends the count on every way out.
+	 */
+	kern_gpu_attach_begin();
 	error = powervr_late_start(core);
 	if (error != 0) {
+		kern_gpu_attach_end();
 		powervr_power_down(core);
 		kern_logf("powervr: later stage not started (%d); powered down\n", error);
 		return error;

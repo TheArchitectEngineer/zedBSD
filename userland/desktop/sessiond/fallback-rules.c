@@ -83,3 +83,33 @@ sessiond_console_due(
 	/* Succeeded: another greeter is tried. */
 	return 0;
 }
+
+/*
+ * Decides the next step of the wait for the display before the greeter
+ * starts: present says /dev/gpu0 is there, attaching is hw.gpu.attaching,
+ * waited_ms how long the wait has run and limit_ms its bound.
+ *
+ * The display alone is not enough while a GPU device is attaching: a
+ * driver may publish its display node before its render node (PowerVR's
+ * gpu0, then gpu1 from its later stage), and the greeter's Vulkan fixes
+ * its set of nodes when it starts.  A machine where no device is
+ * attaching gets its answer at once.
+ */
+enum sessiond_display_step
+sessiond_display_next(
+	int present,
+	unsigned attaching,
+	long long waited_ms,
+	long long limit_ms)
+{
+	/* No device is on its way: the display is there or will not come. */
+	if (attaching == 0U)
+		return present ? SESSIOND_DISPLAY_READY : SESSIOND_DISPLAY_NONE;
+
+	/* The wait is bounded: a driver that never settles gives its answer up. */
+	if (waited_ms >= limit_ms)
+		return SESSIOND_DISPLAY_TIMEOUT;
+
+	/* Succeeded: a device is still attaching, so the wait goes on. */
+	return SESSIOND_DISPLAY_WAIT;
+}
