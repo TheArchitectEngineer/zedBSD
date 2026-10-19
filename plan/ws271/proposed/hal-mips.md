@@ -1,7 +1,7 @@
-# 案: HAL の API の差分（MIPS32・MIPS64、WS271・WS272）— **未適用、ユーザーの承認待ち**
+# 案: HAL の API の差分（MIPS32・MIPS64、WS271・WS272）— **U1 で事前承認済み、未適用（p002 で入れる）**
 
 2026-10-19 P1（q1273、設計 [design.md](../design.md) §4）。hal.h と `include/kern/boot.h` は変えない。
-形は 2026-10-18 の「新しい port の事前の承認（形を限る）」（WS263〜266）と同じ。その承認を WS271・WS272 に広げるかは design.md §10 U1。
+形は 2026-10-18 の「新しい port の事前の承認（形を限る）」（WS263〜266）と同じ。U1（2026-10-19 14:29 ユーザー、クリック）「同じ形で事前承認」で承認済み。適用は ws271-p002。
 
 ## D1. `include/hal/arch.h`（`HAL_ARCH_PPC32` の節の後）
 ```c
@@ -48,7 +48,7 @@ hal_atomic_relax(void)
 	__asm__ volatile("nop" ::: "memory");
 }
 ```
-（comment は本番では複数行の形にする。R2 の `pause` は MT の CPU だけで 24Kf では RI になるか未確認のため使わない。）
+（comment は本番では複数行の形にする。R2 の `pause` は R2 の基本の命令で、符号化が `sll $0,$0,5` なので古い CPU では nop になる。ただし `pause` は LLbit が落ちるまで待つ意味で、spin の hint（他の hart に譲る）の意味ではないので、`nop` を選ぶ（design-review-1 Minor 8 で版 1 の理由を直した）。）
 - debugging:
 ```c
 struct hal_gpregs {
@@ -82,4 +82,5 @@ struct hal_vregs {
 
 ## D4. `hal_get_arch_handoff` の名前付きの値（hal.h は不変、HAL の責務の追加）
 - `boot.command-line`: `-append` の文字列（ppc32 と同じ名前・形）。
-- `mips.initrd`: initrd の物理の範囲（`rd_start`・`rd_size` から、無ければ HAL_ERR_NOT_FOUND）。riscv32 の `riscv32.initrd` と同じ形。
+- 戻り値は hal.h 1284〜1291 行の契約どおり pointer（HAL が持つ object）で、無い名前・値の無い時は NULL（版 1 の「HAL_ERR_NOT_FOUND」は誤り、design-review-1 Minor 4）。`boot.command-line` は `-append` が無い時 NULL。
+- 版 1 の `mips.initrd` は使う側が無いので外した。initrd を kernel に渡す時に、riscv32 の `riscv32.initrd` と同じ形（2 つの uint64）で `mips32.initrd`・`mips64.initrd` の名前を改めて案にする。
