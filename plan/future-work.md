@@ -117,7 +117,7 @@ Future Work は実行を許可しない。
 | F-108 | sun4u の PCI の config と PCI core | sabre・IIe の config の access と PCI core。card の driver が BAR・mode を扱う時に要る | WS275 design.md §9（2026-10-19） | 未着手 | 実機の入手、またはユーザーの指示 | [WS275](ws275/design.md) |
 | F-109 | sun4u の既知の card の driver | onboard の PGX64（Rage XL の可能性）、XVR-100・500・600。WS275 の backend の登録の口を使う（2026-10-19 ユーザー「Sun PGX64とかはあとで対応できるように口だけ残しておきます。」） | WS275 design.md §9（2026-10-19） | 未着手 | 実機の入手、またはユーザーの指示 | [WS275](ws275/design.md) |
 | F-110 | sun4u の depth 24 の packed の framebuffer | 3 byte の packed の firmware framebuffer。該当の firmware が出るまで不要 | WS275 design.md §9（2026-10-19） | 未着手 | 実機の入手、またはユーザーの指示 | [WS275](ws275/design.md) |
-| F-111 | /dev/graphics の前段の generic への移行 | pcat・pc98 の前段を WS275 の generic な前段へ移す | WS275 design.md §9（2026-10-19） | 未着手 | 実機の入手、またはユーザーの指示 | [WS275](ws275/design.md) |
+| F-111 | /dev/graphics の前段の generic への移行 | pcat・pc98 の前段を WS275 の generic な前段へ移す | WS275 design.md §9（2026-10-19） | 未着手 | pcat の graphics を次に触る WS、遅くとも Beta 2 の後 | [WS275](ws275/design.md) |
 
 | fw-docs-ids | docs/ の本文に残る Plan の ID（WS・BUG・q の番号、2026-10-05 で 58 箇所、docs/agent は対象外）を消し、必要なら中身を言葉で書く | docs は目標の設計で plan に依らない規則 | 2026-10-05 ユーザー「消します。ただし後回しでいいです。」 | 決定済み・後回し | 空いた枠、または ws129-p005（RC）の文書の見直し | — |
 | fw-audiod-client | video player（ws122-p002）に内蔵した audiod の client（48 kHz S16 stereo）を共有の library に移し、音楽の app（WS120）や通知の音でも使う | 同じ client の重複を避ける | 2026-10-05 ws122-p002（P2） | 後回し | WS120 の着手、または 2 つ目の audiod の client が要る時 | ws122-p002 の phase.md（git の履歴、2026-10-08 の WS の完了で削除） |
