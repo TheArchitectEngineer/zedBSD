@@ -98,7 +98,7 @@ retry:
 	fault_size = object->logical_size;
 
 	/* A cached page is held once it is not busy and still current. */
-	page = find_page(object, offset);
+	page = vm_object_find_page(object, offset);
 	if (page != NULL) {
 		while ((page->flags & VM_OBJECT_PAGE_BUSY) != 0) {
 			sequence = waitq_sequence(&object->page_waitq);
@@ -151,7 +151,7 @@ retry:
 	 * Allocates a new busy page, reclaiming and then waiting while memory
 	 * is short.  A caller inside the metadata lock cannot wait.
 	 */
-	page = alloc_object_page(object, offset, 0);
+	page = vm_object_alloc_page(object, offset, 0);
 	for (waits = 0; page == NULL; waits++) {
 		reclaimed = vm_reclaim_one(NULL);
 		if (reclaimed != 0) {
@@ -160,7 +160,7 @@ retry:
 				return ENOMEM;
 			vm_reclaim_wait_free();
 		}
-		page = alloc_object_page(object, offset, 0);
+		page = vm_object_alloc_page(object, offset, 0);
 	}
 
 	/* Publishes it unless the world changed or another fault won. */
@@ -173,15 +173,15 @@ retry:
 	if ((object->flags & (VM_OBJECT_RESIZING | VM_OBJECT_CONTENT)) != 0 ||
 	    object->size_generation != fault_generation ||
 	    object->content_generation != fault_content_generation ||
-	    find_page(object, offset) != NULL) {
+	    vm_object_find_page(object, offset) != NULL) {
 		spin_unlock_irqrestore(&object->lock, irq);
-		release_object_page_storage(page);
+		vm_object_release_page_storage(page);
 		goto retry;
 	}
 
 	page->next = object->pages;
 	object->pages = page;
-	object_page_index_insert(object, page);
+	vm_object_page_index_insert(object, page);
 	(void)atomic_fetch_add_relaxed(&object_pages, 1);
 
 	spin_unlock_irqrestore(&object->lock, irq);
@@ -232,7 +232,7 @@ read_io_retry:
 	/* A read that ran out of memory retries after reclaiming a reserve. */
 	if (count == -(ssize_t)ENOMEM &&
 	    read_retries < VM_OBJECT_FAULT_RECLAIM_RETRIES &&
-	    reclaim_object_fault_reserve() != 0) {
+	    vm_reclaim_object_fault_reserve() != 0) {
 		read_retries++;
 		goto read_io_retry;
 	}
@@ -302,10 +302,10 @@ vm_object_page_pin(
 	 * VM metadata).  Registry -> object is the same lifetime order as
 	 * detach.
 	 */
-	enabled = registry_lock();
+	enabled = vm_object_registry_lock();
 
 	if ((object->flags & VM_OBJECT_DETACHING) != 0) {
-		registry_unlock(enabled);
+		vm_object_registry_unlock(enabled);
 		return EBUSY;
 	}
 
@@ -315,7 +315,7 @@ vm_object_page_pin(
 	    page->hold_count == UINT_MAX ||
 	    page->pin_count == UINT_MAX) {
 		spin_unlock_irqrestore(&object->lock, irq);
-		registry_unlock(enabled);
+		vm_object_registry_unlock(enabled);
 
 		if (page->owner == object)
 			return EOVERFLOW;
@@ -334,7 +334,7 @@ vm_object_page_pin(
 
 	spin_unlock_irqrestore(&object->lock, irq);
 
-	registry_unlock(enabled);
+	vm_object_registry_unlock(enabled);
 
 	/* Reports the pinned page. */
 	return 0;
@@ -458,7 +458,7 @@ vm_object_page_unpin(
 	    page->hold_count == 0) {
 		if (page->pin_count != 0 ||
 		    page->mapping_count != 0 ||
-		    !unlink_page_locked(&object->orphan_pages, page))
+		    !vm_object_unlink_page_locked(&object->orphan_pages, page))
 			HAL_FATAL("lost VM object resize orphan");
 		page->flags &= ~VM_OBJECT_PAGE_ORPHANED;
 		free_page = page;
@@ -470,8 +470,8 @@ vm_object_page_unpin(
 
 	/* Frees the unlinked orphan and ends the pin's operation. */
 	if (free_page != NULL)
-		free_object_page(free_page);
-	object_operation_end(object);
+		vm_object_free_page(free_page);
+	vm_object_operation_end(object);
 
 	/*
 	 * A concurrent final put may have unlinked the object after the
@@ -479,7 +479,7 @@ vm_object_page_unpin(
 	 * final-destroy point.
 	 */
 	if (refcount_put(&object->refs))
-		destroy_object(object);
+		vm_object_destroy(object);
 }
 
 /*
@@ -546,7 +546,7 @@ vm_object_fault_resident(
 
 	/* Finds the cached page. */
 	if (error == 0) {
-		page = find_page(object, offset);
+		page = vm_object_find_page(object, offset);
 		if (page == NULL)
 			error = ENOENT;
 	}
@@ -686,7 +686,7 @@ vm_object_mark_dirty(
 	vm_metadata_enter();
 	irq = spin_lock_irqsave(&page->owner->lock);
 
-	object_page_dirty_mark(page);
+	vm_object_page_dirty_mark(page);
 
 	spin_unlock_irqrestore(&page->owner->lock, irq);
 	vm_metadata_leave();
@@ -696,7 +696,7 @@ vm_object_mark_dirty(
  * Tests whether any page in a range has a wired mapping.
  */
 int
-range_has_wired_mapping(
+vm_object_range_has_wired_mapping(
 	struct vm_object *object,
 	uint64_t start,
 	uint64_t end)
@@ -706,7 +706,7 @@ range_has_wired_mapping(
 
 	/* Looks for a wired mapping on any page of the range. */
 	for (page = object->pages; page != NULL; page = page->next) {
-		if (!page_overlaps(page, start, end))
+		if (!vm_object_page_overlaps(page, start, end))
 			continue;
 
 		/* Reports the first mapping of this page that is wired. */
@@ -791,7 +791,7 @@ vm_object_page_pin_copy(
 	 */
 	if (write) {
 		kern_memcpy((uint8_t *)hal_pmem_to_kernel(page->pmem.paddr) + offset, buffer, length);
-		object_page_dirty_mark(page);
+		vm_object_page_dirty_mark(page);
 	} else {
 		kern_memcpy(buffer, (const uint8_t *)hal_pmem_to_kernel(page->pmem.paddr) + offset, length);
 	}

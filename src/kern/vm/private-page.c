@@ -150,7 +150,7 @@ vm_private_page_io_acquire(
 		    backing->active_operations == 0 &&
 		    backing->pin_count == 0) {
 			backing->flags |= VM_PAGE_BUSY;
-			private_page_advance_locked(backing);
+			vm_reclaim_private_page_advance_locked(backing);
 			spin_unlock_irqrestore(&backing->state_lock, irq);
 			return 0;
 		}
@@ -195,7 +195,7 @@ vm_private_page_io_try_acquire(
 	/* The returned I/O ownership includes an explicit lifetime hold. */
 	refcount_get(&backing->refs);
 	backing->flags |= VM_PAGE_BUSY;
-	private_page_advance_locked(backing);
+	vm_reclaim_private_page_advance_locked(backing);
 
 	spin_unlock_irqrestore(&backing->state_lock, irq);
 
@@ -224,7 +224,7 @@ vm_private_page_io_release(
 
 	backing->flags &= ~VM_PAGE_BUSY;
 
-	private_page_advance_locked(backing);
+	vm_reclaim_private_page_advance_locked(backing);
 
 	waitq_wake_all(&backing->state_waitq);
 
@@ -327,7 +327,7 @@ vm_private_page_operation_end(
 
 	backing->active_operations--;
 
-	private_page_advance_locked(backing);
+	vm_reclaim_private_page_advance_locked(backing);
 	if (backing->active_operations == 0)
 		waitq_wake_all(&backing->state_waitq);
 
@@ -353,7 +353,7 @@ vm_private_page_mark_dirty(
 	irq = spin_lock_irqsave(&backing->state_lock);
 
 	backing->flags |= VM_PAGE_DIRTY;
-	private_page_advance_locked(backing);
+	vm_reclaim_private_page_advance_locked(backing);
 
 	spin_unlock_irqrestore(&backing->state_lock, irq);
 }
@@ -418,7 +418,7 @@ vm_private_page_unpin(
 		HAL_FATAL("VM private backing pin counter underflow");
 	backing->pin_count--;
 
-	private_page_advance_locked(backing);
+	vm_reclaim_private_page_advance_locked(backing);
 	if (backing->pin_count == 0)
 		waitq_wake_all(&backing->state_waitq);
 
@@ -508,7 +508,7 @@ vm_private_page_in_owned(
 	 * dirty until a later reclaim writes it to an active source.
 	 */
 	backing->flags |= VM_PAGE_RESIDENT | VM_PAGE_DIRTY;
-	private_page_advance_locked(backing);
+	vm_reclaim_private_page_advance_locked(backing);
 
 	/* Notes whether the reclaim lists hold the backing. */
 	tracked = 0;
@@ -522,8 +522,8 @@ vm_private_page_in_owned(
 		vm_metadata_enter();
 		mutex_lock(&reclaim_lock);
 
-		queue_remove(backing);
-		queue_insert(backing);
+		vm_reclaim_queue_remove(backing);
+		vm_reclaim_queue_insert(backing);
 
 		mutex_unlock(&reclaim_lock);
 		vm_metadata_leave();
@@ -557,7 +557,7 @@ vm_private_page_alloc(
  * Advances a backing's generation, skipping zero.
  */
 void
-private_page_advance_locked(
+vm_reclaim_private_page_advance_locked(
 	struct vm_private_page *backing)
 {
 	backing->generation++;

@@ -39,13 +39,13 @@ grep -E '^#define (PAGE_SIZE|VM_COPY_STACK_PAGES)[[:space:]]' $vm/vmspace-intern
 {
 	for name in vmspace_check_locked vmspace_pin_mapping_ready vmspace_pin_mapping_ready_locked \
 		vmspace_pin_first_unready_locked vmspace_pin_fault_from copy_backing vmspace_copy_to_locked \
-		vmspace_copy_from_locked find_region_locked vmspace_find_page; do
+		vmspace_copy_from_locked vmspace_find_region_locked vmspace_find_page; do
 		grep -hE "^(static )?[a-z_ ]+\*? ?$name\(.*\);$" $vm/vmspace-copy.c $vm/vmspace-region.c $vm/vmspace-internal.h
 	done
 	for name in vmspace_check vmspace_pin_user_pages vmspace_unpin_user_pages vmspace_copy_to vmspace_copy_from \
 		vmspace_check_locked vmspace_pin_mapping_ready vmspace_pin_mapping_ready_locked \
 		vmspace_pin_first_unready_locked vmspace_pin_fault_from copy_backing vmspace_copy_to_locked \
-		vmspace_copy_from_locked find_region_locked vmspace_find_page; do
+		vmspace_copy_from_locked vmspace_find_region_locked vmspace_find_page; do
 		cut_function $vm/vmspace-copy.c "$name"
 		cut_function $vm/vmspace-region.c "$name"
 	done

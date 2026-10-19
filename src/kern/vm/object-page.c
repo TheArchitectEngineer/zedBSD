@@ -101,7 +101,7 @@ static struct vm_object_page *page_index_remove(struct vm_object_page *root, str
  * Finds the cached page at an offset.
  */
 struct vm_object_page *
-find_page(
+vm_object_find_page(
 	struct vm_object *object,
 	off_t offset)
 {
@@ -125,7 +125,7 @@ find_page(
  * Unlinks a page from a list; the caller holds the object lock.
  */
 int
-unlink_page_locked(
+vm_object_unlink_page_locked(
 	struct vm_object_page **head,
 	struct vm_object_page *page)
 {
@@ -146,7 +146,7 @@ unlink_page_locked(
  * Tests whether a page overlaps a byte range.
  */
 int
-page_overlaps(
+vm_object_page_overlaps(
 	const struct vm_object_page *page,
 	uint64_t start,
 	uint64_t end)
@@ -174,7 +174,7 @@ page_overlaps(
  * Tests indexed dirty ownership; the caller holds the object lock.
  */
 int
-object_has_dirty_pages_locked(
+vm_object_has_dirty_pages_locked(
 	struct vm_object *object)
 {
 	return object->dirty_pages != NULL;
@@ -185,7 +185,7 @@ object_has_dirty_pages_locked(
  * object lock.
  */
 int
-object_has_busy_pages_locked(
+vm_object_has_busy_pages_locked(
 	const struct vm_object *object)
 {
 	const struct vm_object_page *page;
@@ -220,7 +220,7 @@ object_has_busy_pages_locked(
  * Tests whether any page or orphan is busy or held.
  */
 int
-object_has_busy_pages(
+vm_object_has_busy_pages(
 	struct vm_object *object)
 {
 	unsigned long irq;
@@ -228,7 +228,7 @@ object_has_busy_pages(
 
 	irq = spin_lock_irqsave(&object->lock);
 
-	busy = object_has_busy_pages_locked(object);
+	busy = vm_object_has_busy_pages_locked(object);
 
 	spin_unlock_irqrestore(&object->lock, irq);
 
@@ -239,11 +239,11 @@ object_has_busy_pages(
  * Clears a page's dirty state; the caller holds the object lock.
  */
 void
-clear_page_dirty_locked(
+vm_object_clear_page_dirty_locked(
 	struct vm_object_page *page)
 {
 	/* Takes the page out of the object's dirty index. */
-	object_page_dirty_unlink(page);
+	vm_object_page_dirty_unlink(page);
 
 	/* Gives the delayed write credit back to the budget that granted it. */
 	if (page->writeback_budget != NULL) {
@@ -262,7 +262,7 @@ clear_page_dirty_locked(
  * Frees an unmapped, unheld page and its memory.
  */
 void
-free_object_page(
+vm_object_free_page(
 	struct vm_object_page *page)
 {
 	/* Region teardown must remove every mapping before the final object ref. */
@@ -274,9 +274,9 @@ free_object_page(
 
 	/* A committed orphan/anonymous discard also retires optional ownership. */
 	if (page->writeback_budget != NULL)
-		clear_page_dirty_locked(page);
+		vm_object_clear_page_dirty_locked(page);
 
-	release_object_page_storage(page);
+	vm_object_release_page_storage(page);
 
 	if (atomic_load_acquire(&object_pages) == 0)
 		HAL_FATAL("VM object page counter underflow");
@@ -288,7 +288,7 @@ free_object_page(
  * Allocates a fully charged private frame before any page index publication.
  */
 struct vm_object_page *
-alloc_object_page(
+vm_object_alloc_page(
 	struct vm_object *object,
 	off_t offset,
 	int optional)
@@ -339,14 +339,14 @@ alloc_object_page(
  * Frees private or detached frame storage without changing publication counts.
  */
 void
-release_object_page_storage(
+vm_object_release_page_storage(
 	struct vm_object_page *page)
 {
 	/*
 	 * Ends optional attribution before the descriptor or its storage can be
 	 * reused.
 	 */
-	object_prefetch_retire(page);
+	vm_object_prefetch_retire(page);
 
 	/* Returns data credits only after the physical frame has retired. */
 	if (hal_pmem_free(&page->pmem.paddr, page->pmem.size) != HAL_OK)
@@ -362,7 +362,7 @@ release_object_page_storage(
  * Publishes a descriptor under the already held object lock.
  */
 void
-object_page_index_insert(
+vm_object_page_index_insert(
 	struct vm_object *object,
 	struct vm_object_page *page)
 {
@@ -377,7 +377,7 @@ object_page_index_insert(
  * Detaches a descriptor before it becomes an orphan or is retired.
  */
 void
-object_page_index_remove(
+vm_object_page_index_remove(
 	struct vm_object *object,
 	struct vm_object_page *page)
 {

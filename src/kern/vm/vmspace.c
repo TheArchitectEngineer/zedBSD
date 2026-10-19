@@ -397,12 +397,12 @@ vmspace_destroy(
 		for (page = region->pages;
 		     page != NULL;
 		     page = page->next) {
-			detach_vm_page(page);
+			vmspace_detach_page(page);
 		}
 
 		/* Frees the pages and the region's resources outside the lock. */
 		vm_metadata_leave();
-		release_detached_region_pages(region);
+		vmspace_release_detached_region_pages(region);
 		if (region->file != NULL)
 			(void)file_close(region->file);
 		if (region->object != NULL)
@@ -413,7 +413,7 @@ vmspace_destroy(
 			vm_device_put(region->device);
 		if (region->commit_size != 0)
 			vm_commit_release(region->commit_size);
-		region_page_index_free(region);
+		vmspace_region_page_index_free(region);
 		kern_free(region);
 
 		/* Takes the lock back for the next region. */

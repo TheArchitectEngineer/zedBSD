@@ -119,9 +119,9 @@ vm_page_track(
 
 	/* Puts a resident backing on the reclaim queue, a swapped one on the swapped list. */
 	if (resident)
-		queue_insert(backing);
+		vm_reclaim_queue_insert(backing);
 	else if (swapped)
-		swapped_insert(backing);
+		vm_reclaim_swapped_insert(backing);
 
 	/* Counts a resident page towards what reclaim can free. */
 	if (resident)
@@ -192,7 +192,7 @@ vm_page_untrack(
 
 	/* Discharges the untracked backing from the reclaim counters. */
 	if (last_mapping && tracked) {
-		queue_remove(backing);
+		vm_reclaim_queue_remove(backing);
 
 		/* Takes a page that was in memory off the resident count. */
 		if (resident && stats.resident)
@@ -302,7 +302,7 @@ vm_page_replace_private(
 
 	/* Puts a resident fresh backing at the head of the reclaim queue. */
 	if (fresh_resident)
-		queue_insert(fresh);
+		vm_reclaim_queue_insert(fresh);
 
 	/* Counts a resident page towards what reclaim can free. */
 	if (fresh_resident)
@@ -310,7 +310,7 @@ vm_page_replace_private(
 
 	/* An old backing without mappings leaves the queue. */
 	if (old_last) {
-		queue_remove(old);
+		vm_reclaim_queue_remove(old);
 		if (old_resident && stats.resident)
 			stats.resident--;
 		if (old_swapped && stats.swapped)

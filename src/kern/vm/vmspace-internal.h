@@ -12,6 +12,10 @@
  * device mapping part of device.c, and are not part of the kernel's public
  * VM API.
  *
+ * Internal VM API: used only between the files in src/kern/vm/.  Its
+ * compatibility is not guaranteed and it may change at any time.  None of
+ * these declarations belongs in the public headers under include/kern.
+ *
  * Function bodies and the order they take the locks are as they were in
  * the single vmspace.c: the metadata lock (kern/vm-lock.h) before
  * vm->lock, and the slab spinlocks below innermost.
@@ -77,15 +81,15 @@ int vmspace_device_fault(struct vmspace *vm, struct vm_region *region, struct vm
  * space: range checks, insertion and lookup, the per-region page index,
  * and the search for free ranges.
  */
-int range_valid(uintptr_t start, size_t size);
-int overlaps(struct vmspace *vm, uintptr_t start, size_t size);
-void insert_region(struct vmspace *vm, struct vm_region *region);
-struct vm_region *find_region_locked(struct vmspace *vm, uintptr_t address, size_t size);
+int vmspace_range_valid(uintptr_t start, size_t size);
+int vmspace_overlaps(struct vmspace *vm, uintptr_t start, size_t size);
+void vmspace_insert_region(struct vmspace *vm, struct vm_region *region);
+struct vm_region *vmspace_find_region_locked(struct vmspace *vm, uintptr_t address, size_t size);
 struct vm_page *vmspace_find_page(struct vm_region *region, uintptr_t address);
-void region_page_index_insert(struct vm_region *region, struct vm_page *page);
-void region_page_index_remove(struct vm_region *region, struct vm_page *page);
-int region_page_index_rebuild(struct vm_region *region, int keep);
-void region_page_index_free(struct vm_region *region);
+void vmspace_region_page_index_insert(struct vm_region *region, struct vm_page *page);
+void vmspace_region_page_index_remove(struct vm_region *region, struct vm_page *page);
+int vmspace_region_page_index_rebuild(struct vm_region *region, int keep);
+void vmspace_region_page_index_free(struct vm_region *region);
 int vmspace_find_free_range_bounded_locked(struct vmspace *vm, uintptr_t minimum, uintptr_t maximum, size_t size, size_t alignment, uintptr_t *mapped);
 int vmspace_find_free_range_locked(struct vmspace *vm, uintptr_t hint, size_t size, size_t alignment, uintptr_t *mapped);
 int vmspace_map_find_locked(struct vmspace *vm, uintptr_t hint, size_t size, uint32_t prot, uintptr_t *mapped);
@@ -97,14 +101,14 @@ int vmspace_map_file_shared_find_locked(struct vmspace *vm, uintptr_t hint, size
  * page metadata of address spaces: the mapping descriptors (struct
  * vm_page) and the private page backings.
  */
-struct vm_private_page *private_page_alloc(void);
-void private_page_attach_new(struct vm_page *page, struct vm_private_page *backing);
+struct vm_private_page *vmspace_private_page_alloc(void);
+void vmspace_private_page_attach_new(struct vm_page *page, struct vm_private_page *backing);
 
 /*
  * Defined in vmspace-map.c, part of mapping of anonymous, file, shared and
  * stack regions, the lookup of free ranges for them, and msync.
  */
-int map_region(struct vmspace *vm, uintptr_t start, size_t size, uint32_t prot, enum vm_region_backing backing, struct file *file, off_t file_offset, uintptr_t data_start, size_t data_size, unsigned flags, size_t commit_size, struct vm_region **result);
+int vmspace_map_region(struct vmspace *vm, uintptr_t start, size_t size, uint32_t prot, enum vm_region_backing backing, struct file *file, off_t file_offset, uintptr_t data_start, size_t data_size, unsigned flags, size_t commit_size, struct vm_region **result);
 int vmspace_map_anon_locked(struct vmspace *vm, uintptr_t start, size_t size, uint32_t prot, struct vm_region **result);
 int vmspace_map_file_locked(struct vmspace *vm, uintptr_t start, size_t size, uint32_t prot, struct file *file, off_t file_offset, uintptr_t data_start, size_t data_size, struct vm_object *object, struct vm_region **result);
 int vmspace_map_file_shared_locked(struct vmspace *vm, uintptr_t start, size_t size, uint32_t prot, struct file *file, off_t file_offset, size_t data_size, struct vm_object *object, struct vm_region **result);
@@ -116,8 +120,8 @@ int vmspace_map_file_shared_locked(struct vmspace *vm, uintptr_t start, size_t s
  */
 void vmspace_wait_fault_event(struct vmspace *vm, uint64_t sequence);
 void vmspace_wait_faults_locked(struct vmspace *vm);
-int prepare_cow_copy(struct vm_page *page, struct vm_private_page *old, struct vm_private_page **result);
-int private_page_pinned_resident(struct vm_private_page *backing);
+int vmspace_prepare_cow_copy(struct vm_page *page, struct vm_private_page *old, struct vm_private_page **result);
+int vmspace_private_page_pinned_resident(struct vm_private_page *backing);
 void vmspace_fault_wake_locked(struct vmspace *vm);
 
 /*
@@ -125,8 +129,8 @@ void vmspace_fault_wake_locked(struct vmspace *vm);
  * unmap, protect, brk, the address, data and stack limits, and the
  * revocation of object pages.
  */
-void detach_vm_page(struct vm_page *page);
-void release_detached_region_pages(struct vm_region *region);
+void vmspace_detach_page(struct vm_page *page);
+void vmspace_release_detached_region_pages(struct vm_region *region);
 int vmspace_replace_prepared(struct vmspace *vm, struct vm_region *prepared, struct vm_region **result);
 
 /*

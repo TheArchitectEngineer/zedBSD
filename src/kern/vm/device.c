@@ -321,12 +321,12 @@ vmspace_map_device(
 	error = 0;
 	if (exact) {
 		/* Exact placement must satisfy user range bounds before overlap can be examined. */
-		valid = range_valid(start, rounded);
+		valid = vmspace_range_valid(start, rounded);
 		if (!valid) {
 			error = EINVAL;
 		} else {
 			/* Existing regions remain untouched by MAP_FIXED_NOREPLACE semantics. */
-			occupied = overlaps(vm, start, rounded);
+			occupied = vmspace_overlaps(vm, start, rounded);
 			if (occupied)
 				error = EEXIST;
 		}
@@ -336,7 +336,7 @@ vmspace_map_device(
 
 	/* Device ownership supplies storage; no anonymous commitment is reserved. */
 	if (error == 0) {
-		error = map_region(
+		error = vmspace_map_region(
 			vm,
 			start,
 			rounded,

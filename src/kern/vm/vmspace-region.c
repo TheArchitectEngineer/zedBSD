@@ -32,7 +32,7 @@
  * Tests whether a page-aligned range lies inside the user address range.
  */
 int
-range_valid(
+vmspace_range_valid(
 	uintptr_t start,
 	size_t size)
 {
@@ -63,7 +63,7 @@ range_valid(
  * Tests whether a range intersects any region.
  */
 int
-overlaps(
+vmspace_overlaps(
 	struct vmspace *vm,
 	uintptr_t start,
 	size_t size)
@@ -86,7 +86,7 @@ overlaps(
  * Links a region into the address-sorted list.
  */
 void
-insert_region(
+vmspace_insert_region(
 	struct vmspace *vm,
 	struct vm_region *region)
 {
@@ -103,7 +103,7 @@ insert_region(
  * Finds the region that contains a whole range; the caller holds the VM lock.
  */
 struct vm_region *
-find_region_locked(
+vmspace_find_region_locked(
 	struct vmspace *vm,
 	uintptr_t address,
 	size_t size)
@@ -176,7 +176,7 @@ vmspace_find_page(
  * The caller holds the VM lock.
  */
 int
-region_page_index_rebuild(
+vmspace_region_page_index_rebuild(
 	struct vm_region *region,
 	int keep)
 {
@@ -194,7 +194,7 @@ region_page_index_rebuild(
 
 	/* A region with few pages keeps to its list. */
 	if (count < VM_REGION_INDEX_MINIMUM) {
-		region_page_index_free(region);
+		vmspace_region_page_index_free(region);
 		region->page_index_retry = 0;
 		return 0;
 	}
@@ -212,12 +212,12 @@ region_page_index_rebuild(
 
 		/* A valid old index serves on; otherwise the list does. */
 		if (!keep)
-			region_page_index_free(region);
+			vmspace_region_page_index_free(region);
 		return 0;
 	}
 
 	/* The old index goes. */
-	region_page_index_free(region);
+	vmspace_region_page_index_free(region);
 	region->page_index_retry = 0;
 
 	/* Chains every page into its bucket. */
@@ -243,7 +243,7 @@ region_page_index_rebuild(
  * the page joins the old index.  The caller holds the VM lock.
  */
 void
-region_page_index_insert(
+vmspace_region_page_index_insert(
 	struct vm_region *region,
 	struct vm_page *page)
 {
@@ -257,7 +257,7 @@ region_page_index_insert(
 	if (region->page_index == NULL) {
 		if (region->page_count >= VM_REGION_INDEX_MINIMUM &&
 		    region->page_count >= region->page_index_retry)
-			(void)region_page_index_rebuild(region, 0);
+			(void)vmspace_region_page_index_rebuild(region, 0);
 		return;
 	}
 
@@ -265,7 +265,7 @@ region_page_index_insert(
 	if (region->page_count > region->page_index_size &&
 	    region->page_index_size < VM_REGION_INDEX_MAXIMUM &&
 	    region->page_count >= region->page_index_retry) {
-		rebuilt = region_page_index_rebuild(region, 1);
+		rebuilt = vmspace_region_page_index_rebuild(region, 1);
 		if (rebuilt)
 			return;
 	}
@@ -280,7 +280,7 @@ region_page_index_insert(
  * Takes a page the caller is unlinking from a region's list out of the index.
  */
 void
-region_page_index_remove(
+vmspace_region_page_index_remove(
 	struct vm_region *region,
 	struct vm_page *page)
 {
@@ -313,7 +313,7 @@ region_page_index_remove(
  * Frees a region's page index; the pages stay on the list.
  */
 void
-region_page_index_free(
+vmspace_region_page_index_free(
 	struct vm_region *region)
 {
 	/* Gives the buckets back and leaves the region without an index. */

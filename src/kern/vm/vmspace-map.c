@@ -59,7 +59,7 @@ vmspace_sync(
 	/* Rejects a malformed range or an inconsistent flag combination. */
 	if (vm == NULL ||
 	    vm == &kernel_vmspace ||
-	    !range_valid(start, size) ||
+	    !vmspace_range_valid(start, size) ||
 	    (flags & ~(MS_ASYNC | MS_INVALIDATE | MS_SYNC)) != 0 ||
 	    (flags & (MS_ASYNC | MS_SYNC)) == 0 ||
 	    (flags & (MS_ASYNC | MS_SYNC)) == (MS_ASYNC | MS_SYNC))
@@ -76,7 +76,7 @@ vmspace_sync(
 		mutex_lock(&vm->lock);
 
 		/* Refuses a range that reaches a hole in the address space. */
-		region = find_region_locked(vm, current, 1);
+		region = vmspace_find_region_locked(vm, current, 1);
 		if (region == NULL) {
 			mutex_unlock(&vm->lock);
 			vm_metadata_leave();
@@ -282,7 +282,7 @@ vmspace_map_anon_shared_find(
 	/* Places the mapping in the first free range that fits. */
 	error = vmspace_find_free_range_locked(vm, hint, rounded, PAGE_SIZE, &start);
 	if (error == 0) {
-		error = map_region(vm,
+		error = vmspace_map_region(vm,
 				   start,
 				   rounded,
 				   prot,
@@ -539,7 +539,7 @@ vmspace_find_region(
 	vm_metadata_enter();
 	mutex_lock(&vm->lock);
 
-	region = find_region_locked(vm, address, size);
+	region = vmspace_find_region_locked(vm, address, size);
 
 	mutex_unlock(&vm->lock);
 	vm_metadata_leave();
@@ -573,7 +573,7 @@ vmspace_shared_mapping_key(
 	vm_metadata_enter();
 	mutex_lock(&vm->lock);
 
-	region = find_region_locked(vm, address, size);
+	region = vmspace_find_region_locked(vm, address, size);
 	if (region != NULL &&
 	    (region->flags & VM_REGION_SHARED) != 0 &&
 	    region->object != NULL &&
@@ -820,7 +820,7 @@ vmspace_map_exec_snapshot(
 	vm_metadata_enter();
 	mutex_lock(&vm->lock);
 
-	error = map_region(vm, start, snapshot->length, prot, VM_BACKING_FILE,
+	error = vmspace_map_region(vm, start, snapshot->length, prot, VM_BACKING_FILE,
 	    snapshot->input.file, snapshot->offset, start, snapshot->length,
 	    0, 0, &region);
 	if (error == 0) {
@@ -845,7 +845,7 @@ vmspace_map_exec_snapshot(
  * holds the VM locks.
  */
 int
-map_region(
+vmspace_map_region(
 	struct vmspace *vm,
 	uintptr_t start,
 	size_t size,
@@ -869,8 +869,8 @@ map_region(
 	/* Validates the range, the address limit, and the file description. */
 	if (vm == NULL ||
 	    vm == &kernel_vmspace ||
-	    !range_valid(start, size) ||
-	    overlaps(vm, start, size) ||
+	    !vmspace_range_valid(start, size) ||
+	    vmspace_overlaps(vm, start, size) ||
 	    (prot & ~(HAL_SPACE_READ | HAL_SPACE_WRITE | HAL_SPACE_EXEC)) != 0)
 		return EINVAL;
 
@@ -922,7 +922,7 @@ map_region(
 	if (file != NULL)
 		file_ref(file);
 
-	insert_region(vm, region);
+	vmspace_insert_region(vm, region);
 	vm->mapped_virtual_bytes += size;
 
 	if (result != NULL)
@@ -952,7 +952,7 @@ vmspace_map_anon_locked(
 		commit_size = 0;
 
 	/* Reports the failure. */
-	error = map_region(vm, start, size, prot, VM_BACKING_ANON, NULL, 0, start, 0, 0, commit_size, result);
+	error = vmspace_map_region(vm, start, size, prot, VM_BACKING_ANON, NULL, 0, start, 0, 0, commit_size, result);
 	if (error != 0)
 		return error;
 
@@ -993,7 +993,7 @@ vmspace_map_file_locked(
 		flags = VM_REGION_PRIVATE_OBJECT;
 
 	/* Maps the region. */
-	error = map_region(vm, start, size, prot, VM_BACKING_FILE, file, file_offset, data_start, data_size, flags, commit_size, &region);
+	error = vmspace_map_region(vm, start, size, prot, VM_BACKING_FILE, file, file_offset, data_start, data_size, flags, commit_size, &region);
 	if (error != 0)
 		return error;
 
@@ -1033,7 +1033,7 @@ vmspace_map_file_shared_locked(
 		return EINVAL;
 
 	/* Creates the region while its address-space metadata is locked. */
-	error = map_region(vm,
+	error = vmspace_map_region(vm,
 			   start,
 			   size,
 			   prot,
@@ -1085,7 +1085,7 @@ prepare_region(
 	 * detaches an old mapping.
 	 */
 	if (result == NULL ||
-	    !range_valid(start, size) ||
+	    !vmspace_range_valid(start, size) ||
 	    (prot & ~(HAL_SPACE_READ | HAL_SPACE_WRITE | HAL_SPACE_EXEC)) != 0)
 		return EINVAL;
 	if (backing == VM_BACKING_FILE &&
@@ -1148,7 +1148,7 @@ discard_prepared_region(
 		vm_device_put(region->device);
 	if (region->commit_size != 0)
 		vm_commit_release(region->commit_size);
-	region_page_index_free(region);
+	vmspace_region_page_index_free(region);
 	kern_free(region);
 }
 
@@ -1164,9 +1164,9 @@ vmspace_map_anon_fixed_noreplace_locked(
 	int error;
 
 	/* Refuses a malformed range, or one an existing region covers. */
-	if (vm == NULL || !range_valid(start, size))
+	if (vm == NULL || !vmspace_range_valid(start, size))
 		return EINVAL;
-	if (overlaps(vm, start, size))
+	if (vmspace_overlaps(vm, start, size))
 		return EEXIST;
 
 	/* Maps the range as ordinary anonymous memory. */
@@ -1241,8 +1241,8 @@ vmspace_map_stack_locked(
 
 	bottom = top - size;
 	guard_bottom = bottom - guard_size;
-	if (!range_valid(guard_bottom, size + guard_size) ||
-	    overlaps(vm, guard_bottom, size + guard_size))
+	if (!vmspace_range_valid(guard_bottom, size + guard_size) ||
+	    vmspace_overlaps(vm, guard_bottom, size + guard_size))
 		return EINVAL;
 
 	/* Allocates both regions and the stack's commit charge. */
@@ -1280,8 +1280,8 @@ vmspace_map_stack_locked(
 	stack->backing = VM_BACKING_ANON;
 	stack->data_start = bottom;
 
-	insert_region(vm, guard);
-	insert_region(vm, stack);
+	vmspace_insert_region(vm, guard);
+	vmspace_insert_region(vm, stack);
 
 	vm->mapped_virtual_bytes += size + guard_size;
 	vm->stack_guard_bottom = guard_bottom;

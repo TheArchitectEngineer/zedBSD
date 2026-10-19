@@ -95,12 +95,12 @@ vm_object_inode_io_wait(
 		 * the DETACHING transition.  Wait here, outside
 		 * inode->i_io_lock.
 		 */
-		enabled = registry_lock();
+		enabled = vm_object_registry_lock();
 
-		object = find_object_by_inode_locked(inode);
+		object = vm_object_find_by_inode_locked(inode);
 		if (object == NULL ||
 		    (object->flags & VM_OBJECT_DETACHING) == 0) {
-			registry_unlock(enabled);
+			vm_object_registry_unlock(enabled);
 
 			/* Succeeded: no teardown stands in the way. */
 			return 0;
@@ -113,9 +113,9 @@ vm_object_inode_io_wait(
 			HAL_FATAL("VM object registry waiter overflow");
 
 		refcount_get(&object->refs);
-		registry_unlock(enabled);
+		vm_object_registry_unlock(enabled);
 
-		error = object_wait_registry_transition(object, sequence);
+		error = vm_object_wait_registry_transition(object, sequence);
 		if (error != 0 && error != EAGAIN)
 			return error;
 	}
@@ -230,10 +230,10 @@ vm_object_cache_published(
 		return -EINVAL;
 
 	/* Classifies the registry entry. */
-	enabled = registry_lock();
+	enabled = vm_object_registry_lock();
 
 	/* Classifies the registry entry the inode has, if it has one. */
-	object = find_object_by_inode_locked(inode);
+	object = vm_object_find_by_inode_locked(inode);
 	if (object == NULL)
 		result = 0;
 	else if ((object->flags & VM_OBJECT_DETACHING) != 0)
@@ -241,7 +241,7 @@ vm_object_cache_published(
 	else
 		result = 1;
 
-	registry_unlock(enabled);
+	vm_object_registry_unlock(enabled);
 
 	/* Reports a teardown in progress as a refusal. */
 	if (result < 0)
@@ -291,12 +291,12 @@ vm_object_content_begin(
 		return EINVAL;
 
 	/* Only one content transaction runs, and never under a read lease. */
-	enabled = registry_lock();
+	enabled = vm_object_registry_lock();
 	inode_irq = spin_lock_irqsave(&inode->i_vm_lock);
 
 	if (inode->i_vm_content_active || inode->i_vm_content_readers != 0) {
 		spin_unlock_irqrestore(&inode->i_vm_lock, inode_irq);
-		registry_unlock(enabled);
+		vm_object_registry_unlock(enabled);
 		return EBUSY;
 	}
 
@@ -308,25 +308,25 @@ vm_object_content_begin(
 		    !inode->i_vm_resize_active ||
 		    inode->i_vm_resize_generation != resize_owner->generation) {
 			spin_unlock_irqrestore(&inode->i_vm_lock, inode_irq);
-			registry_unlock(enabled);
+			vm_object_registry_unlock(enabled);
 			return EINVAL;
 		}
 	} else if (inode->i_vm_resize_active) {
 		spin_unlock_irqrestore(&inode->i_vm_lock, inode_irq);
-		registry_unlock(enabled);
+		vm_object_registry_unlock(enabled);
 		return EBUSY;
 	}
 
 	/* Refuses an object that is already tearing down. */
-	object = find_object_by_inode_locked(inode);
+	object = vm_object_find_by_inode_locked(inode);
 	if (object != NULL && (object->flags & VM_OBJECT_DETACHING) != 0) {
 		spin_unlock_irqrestore(&inode->i_vm_lock, inode_irq);
-		registry_unlock(enabled);
+		vm_object_registry_unlock(enabled);
 		return EAGAIN;
 	}
 
 	/* Publishes the transaction on the inode and the object. */
-	generation = next_inode_content_generation_locked(inode);
+	generation = vm_object_next_inode_content_generation_locked(inode);
 	inode->i_vm_content_active = 1;
 	inode->i_vm_content_start = offset;
 	inode->i_vm_content_end = offset + (off_t)length;
@@ -351,7 +351,7 @@ vm_object_content_begin(
 
 	spin_unlock_irqrestore(&inode->i_vm_lock, inode_irq);
 
-	registry_unlock(enabled);
+	vm_object_registry_unlock(enabled);
 
 	/* Describes the transaction to its caller. */
 	content->inode = inode;
@@ -400,8 +400,8 @@ vm_object_content_prepare(
 	end = start + content->length;
 
 	/* Holds the object across the page work; none means nothing cached. */
-	enabled = registry_lock();
-	object = find_object_by_inode_locked(content->inode);
+	enabled = vm_object_registry_lock();
+	object = vm_object_find_by_inode_locked(content->inode);
 	if (object != NULL) {
 		irq = spin_lock_irqsave(&object->lock);
 		if ((object->flags & VM_OBJECT_CONTENT) == 0 ||
@@ -411,7 +411,7 @@ vm_object_content_prepare(
 		refcount_get(&object->refs);
 	}
 
-	registry_unlock(enabled);
+	vm_object_registry_unlock(enabled);
 
 	/* An uncached inode has no page to prepare. */
 	if (object == NULL) {
@@ -429,7 +429,7 @@ vm_object_content_prepare(
 			wait = 0;
 			for (scan = object->pages; scan != NULL; scan = scan->next) {
 				/* Skips a page outside the range or already taken. */
-				if (!page_overlaps(scan, start, end) ||
+				if (!vm_object_page_overlaps(scan, start, end) ||
 				    scan->content_generation == content->generation)
 					continue;
 
@@ -467,7 +467,7 @@ vm_object_content_prepare(
 
 		/* Takes the page out of service for this transaction. */
 		page->flags |= VM_OBJECT_PAGE_BUSY | VM_OBJECT_PAGE_WRITEBACK;
-		object_prefetch_retire(page);
+		vm_object_prefetch_retire(page);
 		page->content_generation = content->generation;
 		has_mappings = page->mapping_count != 0;
 		spin_unlock_irqrestore(&object->lock, irq);
@@ -486,7 +486,7 @@ vm_object_content_prepare(
 		/* Folds the revoked state into the page's dirty record. */
 		irq = spin_lock_irqsave(&object->lock);
 		if ((observed & HAL_SPACE_PAGE_DIRTY) != 0) {
-			object_page_dirty_mark(page);
+			vm_object_page_dirty_mark(page);
 		}
 
 		dirty = (page->flags & VM_OBJECT_PAGE_DIRTY) != 0;
@@ -495,16 +495,16 @@ vm_object_content_prepare(
 
 		/* Writes a dirty page back before the caller overwrites it. */
 		if (error == 0 && dirty)
-			error = write_page_data(object, page,
+			error = vm_object_write_page_data(object, page,
 			    object->logical_size, 0);
 
 		/* Clears the dirty record only for a write nothing raced. */
 		irq = spin_lock_irqsave(&object->lock);
 		if (error == 0 && dirty &&
 		    page->dirty_generation == page->write_dirty_generation) {
-			clear_page_dirty_locked(page);
+			vm_object_clear_page_dirty_locked(page);
 		} else if (error != 0) {
-			object_record_writeback_error_locked(object, error);
+			vm_object_record_writeback_error_locked(object, error);
 			first_error = error;
 		}
 
@@ -516,7 +516,7 @@ vm_object_content_prepare(
 	/* A failure releases the pages taken so far. */
 	if (first_error != 0) {
 		irq = spin_lock_irqsave(&object->lock);
-		content_release_pages_locked(object, content->generation);
+		vm_object_content_release_pages_locked(object, content->generation);
 		spin_unlock_irqrestore(&object->lock, irq);
 	} else {
 		content->prepared = 1;
@@ -626,10 +626,10 @@ vm_object_read_coherent_useful(
 
 retry_lookup:
 	/* Holds the object as an operation, waiting out a teardown. */
-	enabled = registry_lock();
-	object = find_object_by_inode_locked(inode);
+	enabled = vm_object_registry_lock();
+	object = vm_object_find_by_inode_locked(inode);
 	if (object == NULL) {
-		registry_unlock(enabled);
+		vm_object_registry_unlock(enabled);
 		return ENOENT;
 	}
 
@@ -640,8 +640,8 @@ retry_lookup:
 		if (object->registry_waiters == 0)
 			HAL_FATAL("VM object registry waiter overflow");
 		refcount_get(&object->refs);
-		registry_unlock(enabled);
-		error = object_wait_registry_transition(object, sequence);
+		vm_object_registry_unlock(enabled);
+		error = vm_object_wait_registry_transition(object, sequence);
 		if (error == 0 || error == EAGAIN)
 			goto retry_lookup;
 		return error;
@@ -652,7 +652,7 @@ retry_lookup:
 	if (object->active_operations == 0)
 		HAL_FATAL("VM object read operation counter overflow");
 	refcount_get(&object->refs);
-	registry_unlock(enabled);
+	vm_object_registry_unlock(enabled);
 
 	/* Covers cache hits with the same detach barrier as device-backed reads. */
 	cache_disk = NULL;
@@ -662,9 +662,9 @@ retry_lookup:
 
 	/* Reports device retirement as an error rather than the fault EOF sentinel. */
 	if (error != 0) {
-		object_operation_end(object);
+		vm_object_operation_end(object);
 		if (refcount_put(&object->refs))
-			destroy_object(object);
+			vm_object_destroy(object);
 		return error;
 	}
 
@@ -686,7 +686,7 @@ retry_lookup:
 			chunk = (size_t)(logical_size - current);
 
 		/* Serves an absent run through one bounded internal backend request. */
-		error = object_cache_read_missing(object, current, bytes + done,
+		error = vm_object_cache_read_missing(object, current, bytes + done,
 		    length - done, &populated, &handled, &stop);
 		if (error != 0)
 			break;
@@ -708,7 +708,7 @@ retry_lookup:
 		    chunk);
 
 		/* Credits the prefetch that made this page resident. */
-		consumed = object_prefetch_consume(page, in_page, chunk);
+		consumed = vm_object_prefetch_consume(page, in_page, chunk);
 		if (useful != NULL)
 			*useful += consumed;
 
@@ -722,9 +722,9 @@ retry_lookup:
 	/* Releases the device admission and the object this read held. */
 	if (cache_disk != NULL)
 		disk_cache_release(cache_disk);
-	object_operation_end(object);
+	vm_object_operation_end(object);
 	if (refcount_put(&object->refs))
-		destroy_object(object);
+		vm_object_destroy(object);
 
 	/* Data, a clean end, or the end of file is a success. */
 	if (done != 0 || error == 0 || error == ENXIO) {
@@ -764,7 +764,7 @@ vm_object_resize_begin(
 	kern_memset(resize, 0, sizeof(*resize));
 
 	/* Only one transaction runs, and never under a read lease. */
-	enabled = registry_lock();
+	enabled = vm_object_registry_lock();
 
 	/* Refuses a resize while another transaction or a reader owns the inode. */
 	inode_irq = spin_lock_irqsave(&inode->i_vm_lock);
@@ -772,15 +772,15 @@ vm_object_resize_begin(
 	    inode->i_vm_content_active ||
 	    inode->i_vm_content_readers != 0) {
 		spin_unlock_irqrestore(&inode->i_vm_lock, inode_irq);
-		registry_unlock(enabled);
+		vm_object_registry_unlock(enabled);
 		return EBUSY;
 	}
 
 	/* Refuses an object that is already tearing down. */
-	object = find_object_by_inode_locked(inode);
+	object = vm_object_find_by_inode_locked(inode);
 	if (object != NULL && (object->flags & VM_OBJECT_DETACHING) != 0) {
 		spin_unlock_irqrestore(&inode->i_vm_lock, inode_irq);
-		registry_unlock(enabled);
+		vm_object_registry_unlock(enabled);
 		return EAGAIN;
 	}
 
@@ -802,12 +802,12 @@ vm_object_resize_begin(
 	resize->target_size = target_size;
 	if (resize->old_size == target_size) {
 		spin_unlock_irqrestore(&inode->i_vm_lock, inode_irq);
-		registry_unlock(enabled);
+		vm_object_registry_unlock(enabled);
 		return 0;
 	}
 
 	/* Publishes the transaction on the inode and the object. */
-	generation = next_inode_resize_generation_locked(inode);
+	generation = vm_object_next_inode_resize_generation_locked(inode);
 	inode->i_vm_resize_active = 1;
 	inode->i_vm_resize_old_size = resize->old_size;
 	inode->i_vm_resize_target_size = target_size;
@@ -827,7 +827,7 @@ vm_object_resize_begin(
 
 	spin_unlock_irqrestore(&inode->i_vm_lock, inode_irq);
 
-	registry_unlock(enabled);
+	vm_object_registry_unlock(enabled);
 
 	/* Reports the begun transaction. */
 	return 0;
@@ -854,8 +854,8 @@ vm_object_resize_prepare(
 		return EINVAL;
 
 	/* Holds the object across the page work; none means nothing cached. */
-	enabled = registry_lock();
-	object = find_object_by_inode_locked(resize->inode);
+	enabled = vm_object_registry_lock();
+	object = vm_object_find_by_inode_locked(resize->inode);
 	if (object != NULL) {
 		if ((object->flags & VM_OBJECT_RESIZING) == 0 ||
 		    object->resize_generation != resize->generation)
@@ -863,7 +863,7 @@ vm_object_resize_prepare(
 		refcount_get(&object->refs);
 	}
 
-	registry_unlock(enabled);
+	vm_object_registry_unlock(enabled);
 	if (object == NULL) {
 		resize->prepared = 1;
 		return 0;
@@ -938,7 +938,7 @@ vm_object_resize_abort(
  * progress.
  */
 void
-object_initialize_eof_locked(
+vm_object_initialize_eof_locked(
 	struct vm_object *object,
 	struct inode *inode)
 {
@@ -993,7 +993,7 @@ object_initialize_eof_locked(
  * Waits until no resize or content transaction is active on an object.
  */
 int
-object_wait_resize(
+vm_object_wait_resize(
 	struct vm_object *object)
 {
 	unsigned long irq;
@@ -1025,7 +1025,7 @@ object_wait_resize(
  * lock.
  */
 void
-content_release_pages_locked(
+vm_object_content_release_pages_locked(
 	struct vm_object *object,
 	uint64_t generation)
 {
@@ -1089,7 +1089,7 @@ vm_object_content_finish(
 
 	/* Enters the inode under the registry, refusing a lost transaction. */
 	inode = content->inode;
-	enabled = registry_lock();
+	enabled = vm_object_registry_lock();
 	inode_irq = spin_lock_irqsave(&inode->i_vm_lock);
 
 	if (!inode->i_vm_content_active ||
@@ -1097,7 +1097,7 @@ vm_object_content_finish(
 		HAL_FATAL("inode lost VM content transaction");
 
 	/* Updates the taken pages from the committed bytes and releases them. */
-	object = find_object_by_inode_locked(inode);
+	object = vm_object_find_by_inode_locked(inode);
 	if (object != NULL) {
 		write_start = (uint64_t)content->offset;
 		write_end = write_start + committed;
@@ -1167,13 +1167,13 @@ vm_object_content_finish(
 			}
 
 			/* Publishes the page as dirty for the syncer. */
-			object_page_dirty_mark(page);
+			vm_object_page_dirty_mark(page);
 		}
 
 		/* Releases the taken pages and closes the transaction on the object. */
-		content_release_pages_locked(object, content->generation);
+		vm_object_content_release_pages_locked(object, content->generation);
 		object->flags &= ~VM_OBJECT_CONTENT;
-		object->content_generation = next_generation(object);
+		object->content_generation = vm_object_next_generation(object);
 		waitq_wake_all(&object->page_waitq);
 		spin_unlock_irqrestore(&object->lock, object_irq);
 
@@ -1193,21 +1193,21 @@ vm_object_content_finish(
 	inode->i_vm_content_start = 0;
 	inode->i_vm_content_end = 0;
 
-	(void)next_inode_content_generation_locked(inode);
+	(void)vm_object_next_inode_content_generation_locked(inode);
 	waitq_wake_all(&inode->i_vm_waitq);
 
 	spin_unlock_irqrestore(&inode->i_vm_lock, inode_irq);
 
-	registry_unlock(enabled);
+	vm_object_registry_unlock(enabled);
 
 	/*
 	 * Releases the object outside every lock, waking whoever waited on
 	 * the registry for this transaction to end.
 	 */
 	if (wake_registry) {
-		object_wake_registry_waiters(object);
+		vm_object_wake_registry_waiters(object);
 		if (refcount_put(&object->refs))
-			destroy_object(object);
+			vm_object_destroy(object);
 	}
 
 	/* Empties the descriptor so a second finish does nothing. */
@@ -1249,7 +1249,7 @@ vm_object_resize_finish(
 
 	inode = resize->inode;
 
-	enabled = registry_lock();
+	enabled = vm_object_registry_lock();
 	inode_irq = spin_lock_irqsave(&inode->i_vm_lock);
 
 	/* Traps when the inode no longer carries this resize. */
@@ -1258,10 +1258,10 @@ vm_object_resize_finish(
 		HAL_FATAL("inode lost VM object resize transaction");
 
 	/* Takes the generation the settled size is published under. */
-	stable_generation = next_inode_resize_generation_locked(inode);
+	stable_generation = vm_object_next_inode_resize_generation_locked(inode);
 
 	/* Finds the object this resize has to settle, if one exists. */
-	object = find_object_by_inode_locked(inode);
+	object = vm_object_find_by_inode_locked(inode);
 
 	if (object != NULL) {
 		object_irq = spin_lock_irqsave(&object->lock);
@@ -1306,8 +1306,8 @@ vm_object_resize_finish(
 				page->flags &= ~VM_OBJECT_PAGE_ORPHANED;
 				page->next = object->pages;
 				object->pages = page;
-				object_page_index_insert(object, page);
-				object_page_dirty_link(page);
+				vm_object_page_index_insert(object, page);
+				vm_object_page_dirty_link(page);
 				page = object->orphan_pages;
 			}
 		}
@@ -1337,23 +1337,23 @@ vm_object_resize_finish(
 
 	spin_unlock_irqrestore(&inode->i_vm_lock, inode_irq);
 
-	registry_unlock(enabled);
+	vm_object_registry_unlock(enabled);
 
 	/*
 	 * Releases the object outside every lock, waking whoever waited on
 	 * the registry for this resize to end.
 	 */
 	if (wake_registry) {
-		object_wake_registry_waiters(object);
+		vm_object_wake_registry_waiters(object);
 		if (refcount_put(&object->refs))
-			destroy_object(object);
+			vm_object_destroy(object);
 	}
 
 	/* Frees the orphans the resize left behind, outside every lock. */
 	while (free_pages != NULL) {
 		page = free_pages;
 		free_pages = page->next;
-		free_object_page(page);
+		vm_object_free_page(page);
 	}
 
 	/* Empties the descriptor so a second finish does nothing. */

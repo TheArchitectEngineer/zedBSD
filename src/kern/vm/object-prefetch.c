@@ -107,10 +107,10 @@ vm_object_prefetch_prepare(
 	 * Leaves absent or transitioning objects to demand-driven cache
 	 * construction.
 	 */
-	enabled = registry_lock();
-	object = find_object_by_inode_locked(inode);
+	enabled = vm_object_registry_lock();
+	object = vm_object_find_by_inode_locked(inode);
 	if (object == NULL || (object->flags & VM_OBJECT_DETACHING) != 0) {
-		registry_unlock(enabled);
+		vm_object_registry_unlock(enabled);
 		return EAGAIN;
 	}
 
@@ -123,7 +123,7 @@ vm_object_prefetch_prepare(
 		HAL_FATAL("private prefetch counter overflow");
 
 	refcount_get(&object->refs);
-	registry_unlock(enabled);
+	vm_object_registry_unlock(enabled);
 
 	fill->object = object;
 	fill->offset = offset;
@@ -164,7 +164,7 @@ vm_object_prefetch_prepare(
 	if ((object->flags & VM_OBJECT_CACHE_REFERENCE) == 0 ||
 	    (object->flags & (VM_OBJECT_CONTENT | VM_OBJECT_RESIZING | VM_OBJECT_ANONYMOUS)) != 0 ||
 	    offset >= object->logical_size ||
-	    find_page(object, offset) != NULL) {
+	    vm_object_find_page(object, offset) != NULL) {
 		spin_unlock_irqrestore(&object->lock, irq);
 		vm_object_prefetch_abort(fill);
 		return EAGAIN;
@@ -176,7 +176,7 @@ vm_object_prefetch_prepare(
 
 	/* Stops the run at the first page that is already resident. */
 	for (index = 1; (size_t)index * PAGE_SIZE < length; index++) {
-		if (find_page(object, offset + (off_t)index * PAGE_SIZE) != NULL) {
+		if (vm_object_find_page(object, offset + (off_t)index * PAGE_SIZE) != NULL) {
 			length = (size_t)index * PAGE_SIZE;
 			break;
 		}
@@ -201,7 +201,7 @@ vm_object_prefetch_prepare(
 
 	/* Allocates a private frame for every page of the run. */
 	while (fill->count < needed) {
-		page = alloc_object_page(object,
+		page = vm_object_alloc_page(object,
 		    offset + (off_t)fill->count * PAGE_SIZE, 1);
 		if (page == NULL) {
 			vm_object_prefetch_abort(fill);
@@ -288,7 +288,7 @@ vm_object_prefetch_complete(
 
 	/* Yields to a demand fault that already published one of these pages. */
 	for (index = 0; index < fill->count && error == 0; index++) {
-		if (find_page(object, fill->pages[index]->offset) != NULL)
+		if (vm_object_find_page(object, fill->pages[index]->offset) != NULL)
 			error = EAGAIN;
 	}
 
@@ -306,7 +306,7 @@ vm_object_prefetch_complete(
 			page->prefetch_used = 0;
 			page->next = object->pages;
 			object->pages = page;
-			object_page_index_insert(object, page);
+			vm_object_page_index_insert(object, page);
 
 			(void)atomic_fetch_add_relaxed(&object_pages, 1);
 		}
@@ -351,7 +351,7 @@ vm_object_prefetch_abort(
 	object = fill->object;
 
 	/* Returns every frame the fill prepared but never published. */
-	object_cache_discard_prepared(fill->pages, fill->count);
+	vm_object_cache_discard_prepared(fill->pages, fill->count);
 
 	/* Releases the disk admission the fill pinned. */
 	if (fill->disk != NULL)
@@ -361,18 +361,18 @@ vm_object_prefetch_abort(
 	kern_memset(fill, 0, sizeof(*fill));
 
 	/* Stops qualifying this owner for clean reclaim before dropping its pin. */
-	enabled = registry_lock();
+	enabled = vm_object_registry_lock();
 	if (object->prefetch_operations == 0)
 		HAL_FATAL("private prefetch counter underflow");
 	object->prefetch_operations--;
-	registry_unlock(enabled);
+	vm_object_registry_unlock(enabled);
 
 	/* Retires the operation this prefetch counted against the object. */
-	object_operation_end(object);
+	vm_object_operation_end(object);
 
 	/* Destroys the object when this was the last reference to it. */
 	if (refcount_put(&object->refs))
-		destroy_object(object);
+		vm_object_destroy(object);
 }
 
 /*
@@ -380,7 +380,7 @@ vm_object_prefetch_abort(
  * readers.
  */
 size_t
-object_prefetch_consume(
+vm_object_prefetch_consume(
 	struct vm_object_page *page,
 	size_t start,
 	size_t length)
@@ -399,7 +399,7 @@ object_prefetch_consume(
 	if (page->mapping_count != 0 ||
 	    page->prefetch_size_generation != page->owner->size_generation ||
 	    (page->flags & VM_OBJECT_PAGE_DIRTY) != 0) {
-		object_prefetch_retire(page);
+		vm_object_prefetch_retire(page);
 		return 0;
 	}
 
@@ -430,7 +430,7 @@ object_prefetch_consume(
  * release.
  */
 void
-object_prefetch_retire(
+vm_object_prefetch_retire(
 	struct vm_object_page *page)
 {
 	size_t unused;

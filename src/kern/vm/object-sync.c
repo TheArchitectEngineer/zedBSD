@@ -73,15 +73,15 @@ vm_object_sync_range(
 		return EINVAL;
 
 	/* Runs the sync as an operation once no transaction is active. */
-	error = object_wait_resize(object);
+	error = vm_object_wait_resize(object);
 	if (error != 0)
 		return error;
-	error = object_operation_begin(object);
+	error = vm_object_operation_begin(object);
 	if (error != 0)
 		return error;
 	error = vm_object_sync_range_internal(object, offset, size, flags, 0, 0,
 	    0);
-	object_operation_end(object);
+	vm_object_operation_end(object);
 
 	/* Reports why the sync failed. */
 	if (error != 0)
@@ -135,8 +135,8 @@ vm_object_sync_inode_buffer(
 retry_lookup:
 	/* Holds the object as an operation, waiting out teardown and resize. */
 	object = NULL;
-	enabled = registry_lock();
-	for (object = object_hash[object_hash_index(inode)]; object != NULL;
+	enabled = vm_object_registry_lock();
+	for (object = object_hash[vm_object_hash_index(inode)]; object != NULL;
 	     object = object->hash_next) {
 		if (object->inode != inode)
 			continue;
@@ -148,9 +148,9 @@ retry_lookup:
 				HAL_FATAL("VM object registry waiter overflow");
 
 			refcount_get(&object->refs);
-			registry_unlock(enabled);
+			vm_object_registry_unlock(enabled);
 
-			error = object_wait_registry_transition(object, sequence);
+			error = vm_object_wait_registry_transition(object, sequence);
 			if (error != 0 && error != EAGAIN)
 				return error;
 
@@ -160,12 +160,12 @@ retry_lookup:
 		/* Waits out a resize and looks the object up again. */
 		if ((object->flags & VM_OBJECT_RESIZING) != 0) {
 			refcount_get(&object->refs);
-			registry_unlock(enabled);
+			vm_object_registry_unlock(enabled);
 
-			error = object_wait_resize(object);
+			error = vm_object_wait_resize(object);
 
 			if (refcount_put(&object->refs))
-				destroy_object(object);
+				vm_object_destroy(object);
 
 			if (error != 0)
 				return error;
@@ -181,7 +181,7 @@ retry_lookup:
 		break;
 	}
 
-	registry_unlock(enabled);
+	vm_object_registry_unlock(enabled);
 
 	/* An uncached inode has nothing to write back. */
 	if (object == NULL)
@@ -192,11 +192,11 @@ retry_lookup:
 	    0, scratch, capacity);
 
 	/* Retires a resolved failure independently of optional clean retention. */
-	enabled = registry_lock();
+	enabled = vm_object_registry_lock();
 	if (error == 0) {
 		irq = spin_lock_irqsave(&object->lock);
 		if (object->writeback_error == 0 &&
-		    !object_has_dirty_pages_locked(object))
+		    !vm_object_has_dirty_pages_locked(object))
 			object->flags &= ~VM_OBJECT_RETAINED_WRITEBACK;
 		spin_unlock_irqrestore(&object->lock, irq);
 	}
@@ -205,24 +205,24 @@ retry_lookup:
 	if (object->mapping_count == 0 &&
 	    object->active_operations == 1 &&
 	    (object->flags & VM_OBJECT_DETACHING) == 0) {
-		if (error == 0 && object_cache_retainable(object)) {
+		if (error == 0 && vm_object_cache_retainable(object)) {
 			write_file = object->write_file;
 			object->write_file = NULL;
-		} else if (error == 0 && object_can_destroy(object)) {
-			removed = unlink_object_locked(object);
+		} else if (error == 0 && vm_object_can_destroy(object)) {
+			removed = vm_object_unlink_locked(object);
 		} else {
-			retain_object(object, error);
+			vm_object_retain(object, error);
 		}
 	}
 
-	registry_unlock(enabled);
+	vm_object_registry_unlock(enabled);
 
 	/* Ends the operation and drops the reference this sync took. */
 	if (removed && refcount_put(&object->refs))
 		HAL_FATAL("VM object registry reference was last unexpectedly");
-	object_operation_end(object);
+	vm_object_operation_end(object);
 	if (refcount_put(&object->refs))
-		destroy_object(object);
+		vm_object_destroy(object);
 
 	/* Releases the recovered writer without delaying the caller's last close. */
 	if (write_file != NULL)
@@ -282,14 +282,14 @@ vm_object_writeback_prepare(
 
 	writer = NULL;
 
-	enabled = registry_lock();
+	enabled = vm_object_registry_lock();
 	if (object->write_file != NULL) {
-		registry_unlock(enabled);
+		vm_object_registry_unlock(enabled);
 		*result = object;
 		return 0;
 	}
 
-	registry_unlock(enabled);
+	vm_object_registry_unlock(enabled);
 
 	/*
 	 * The caller already owns write access; the clone never reaches
@@ -299,13 +299,13 @@ vm_object_writeback_prepare(
 	if (error == 0 && file_vm_inode(writer) != inode)
 		error = EAGAIN;
 	if (error == 0) {
-		enabled = registry_lock();
+		enabled = vm_object_registry_lock();
 		if (object->write_file == NULL) {
 			object->write_file = writer;
 			writer = NULL;
 		}
 
-		registry_unlock(enabled);
+		vm_object_registry_unlock(enabled);
 	}
 
 	if (writer != NULL)
@@ -334,10 +334,10 @@ vm_object_writeback_release(
 	if (object == NULL)
 		return;
 
-	object_operation_end(object);
+	vm_object_operation_end(object);
 
 	if (refcount_put(&object->refs))
-		destroy_object(object);
+		vm_object_destroy(object);
 }
 
 /*
@@ -403,7 +403,7 @@ vm_object_content_prepare_delayed(
 		HAL_FATAL("delayed write lost content gate");
 
 	for (index = 0; index < count; index++) {
-		pages[index] = find_page(object, (off_t)(base + index * PAGE_SIZE));
+		pages[index] = vm_object_find_page(object, (off_t)(base + index * PAGE_SIZE));
 
 		/*
 		 * Refuses the whole transaction when a page this write would
@@ -444,7 +444,7 @@ vm_object_content_prepare_delayed(
 		/* Allocates a page for a hole this transaction covers. */
 		current = base + (uint64_t)index * PAGE_SIZE;
 		if (pages[index] == NULL) {
-			pages[index] = alloc_object_page(object, (off_t)current, 1);
+			pages[index] = vm_object_alloc_page(object, (off_t)current, 1);
 			if (pages[index] == NULL) {
 				error = EAGAIN;
 				goto failed;
@@ -490,7 +490,7 @@ vm_object_content_prepare_delayed(
 		irq = spin_lock_irqsave(&object->lock);
 
 		if ((observed & HAL_SPACE_PAGE_DIRTY) != 0)
-			object_page_dirty_mark(pages[index]);
+			vm_object_page_dirty_mark(pages[index]);
 
 		spin_unlock_irqrestore(&object->lock, irq);
 
@@ -504,7 +504,7 @@ vm_object_content_prepare_delayed(
 	/* Refuses the transaction when a fault published one of these pages first. */
 	for (index = 0; index < count; index++) {
 		if (fresh[index]) {
-			if (find_page(object, pages[index]->offset) != NULL) {
+			if (vm_object_find_page(object, pages[index]->offset) != NULL) {
 				spin_unlock_irqrestore(&object->lock, irq);
 				error = EAGAIN;
 				goto failed;
@@ -517,7 +517,7 @@ vm_object_content_prepare_delayed(
 		if (fresh[index]) {
 			pages[index]->next = object->pages;
 			object->pages = pages[index];
-			object_page_index_insert(object, pages[index]);
+			vm_object_page_index_insert(object, pages[index]);
 			(void)atomic_fetch_add_relaxed(&object_pages, 1);
 		}
 	}
@@ -532,13 +532,13 @@ vm_object_content_prepare_delayed(
 failed:
 	irq = spin_lock_irqsave(&object->lock);
 
-	content_release_pages_locked(object, content->generation);
+	vm_object_content_release_pages_locked(object, content->generation);
 
 	spin_unlock_irqrestore(&object->lock, irq);
 
 	for (index = 0; index < count; index++) {
 		if (fresh[index])
-			release_object_page_storage(pages[index]);
+			vm_object_release_page_storage(pages[index]);
 	}
 
 	/* Reports the failure. */
@@ -569,9 +569,9 @@ vm_object_sync_mount_buffer(
 	int first_error;
 
 	/* Captures a finite publication frontier before any sleeping I/O. */
-	enabled = registry_lock();
+	enabled = vm_object_registry_lock();
 	cutoff = object_registry_generation;
-	registry_unlock(enabled);
+	vm_object_registry_unlock(enabled);
 	cursor = 0;
 	first_error = 0;
 
@@ -582,7 +582,7 @@ vm_object_sync_mount_buffer(
 	for (;;) {
 		inode = NULL;
 		next = UINT64_MAX;
-		enabled = registry_lock();
+		enabled = vm_object_registry_lock();
 		for (object = shared_objects; object != NULL; object = object->next) {
 			/* Skips what this pass has done, or published too late. */
 			if (object->registry_generation <= cursor ||
@@ -593,7 +593,7 @@ vm_object_sync_mount_buffer(
 			/* Skips an object outside the mount the caller named. */
 			if (mount != NULL && object->inode->i_mount != mount)
 				continue;
-			if (mount == NULL && object_mount_reserved(object))
+			if (mount == NULL && vm_object_mount_reserved(object))
 				continue;
 			next = object->registry_generation;
 			inode = object->inode;
@@ -602,7 +602,7 @@ vm_object_sync_mount_buffer(
 		/* Pins the chosen inode, and stops when none is left. */
 		if (inode != NULL)
 			inode_ref(inode);
-		registry_unlock(enabled);
+		vm_object_registry_unlock(enabled);
 		if (inode == NULL)
 			break;
 
@@ -627,7 +627,7 @@ vm_object_sync_mount_buffer(
  * Remembers the first writeback error; the caller holds the object lock.
  */
 void
-object_record_writeback_error_locked(
+vm_object_record_writeback_error_locked(
 	struct vm_object *object,
 	int error)
 {
@@ -652,7 +652,7 @@ object_record_writeback_error_locked(
  * Writes a page's data to the backend through the writeback file.
  */
 int
-write_page_data(
+vm_object_write_page_data(
 	struct vm_object *object,
 	struct vm_object_page *page,
 	off_t logical_size,
@@ -729,7 +729,7 @@ vm_object_sync_range_internal(
  * Indexes resident dirty data, excluding resize-orphaned storage.
  */
 void
-object_page_dirty_link(
+vm_object_page_dirty_link(
 	struct vm_object_page *page)
 {
 	/*
@@ -762,7 +762,7 @@ object_page_dirty_link(
  * Removes writeback membership before a clean transition, orphan or retirement.
  */
 void
-object_page_dirty_unlink(
+vm_object_page_dirty_unlink(
 	struct vm_object_page *page)
 {
 	/*
@@ -796,20 +796,20 @@ object_page_dirty_unlink(
  * transition.
  */
 void
-object_page_dirty_mark(
+vm_object_page_dirty_mark(
 	struct vm_object_page *page)
 {
 	/* A page that has been written is no longer a prefetch of the file. */
-	object_prefetch_retire(page);
+	vm_object_prefetch_retire(page);
 
 	/* Records the new contents as not yet written back. */
 	page->flags |= VM_OBJECT_PAGE_DIRTY;
 
 	/* Stamps the change, so a write-back knows what it cleaned. */
-	page->dirty_generation = next_generation(page->owner);
+	page->dirty_generation = vm_object_next_generation(page->owner);
 
 	/* Publishes the page to the owner's dirty list. */
-	object_page_dirty_link(page);
+	vm_object_page_dirty_link(page);
 }
 
 /* Drains the captured range while using the supplied worker reserve when present. */
@@ -902,7 +902,7 @@ vm_object_sync_range_buffer(
 			mutex_unlock(&object->inode->i_io_lock);
 
 			/* Waits out the transaction and takes the lock again. */
-			error = object_wait_resize(object);
+			error = vm_object_wait_resize(object);
 			if (error != 0)
 				return error;
 		}
@@ -918,7 +918,7 @@ vm_object_sync_range_buffer(
 	if (!detaching && !resize_owner && (flags & MS_INVALIDATE) != 0) {
 		vm_metadata_enter();
 		irq = spin_lock_irqsave(&object->lock);
-		if (range_has_wired_mapping(object, start, end)) {
+		if (vm_object_range_has_wired_mapping(object, start, end)) {
 			spin_unlock_irqrestore(&object->lock, irq);
 			vm_metadata_leave();
 			if (held_inode_io)
@@ -947,7 +947,7 @@ vm_object_sync_range_buffer(
 	}
 
 	/* Stamps this pass, so a page is taken at most once by it. */
-	sync_generation = next_generation(object);
+	sync_generation = vm_object_next_generation(object);
 
 	spin_unlock_irqrestore(&object->lock, irq);
 
@@ -968,7 +968,7 @@ vm_object_sync_range_buffer(
 		irq = spin_lock_irqsave(&object->lock);
 		for (page = object->pages; page != NULL; page = page->next) {
 			/* Skips a page outside the range this call names. */
-			if (!page_overlaps(page, start, end))
+			if (!vm_object_page_overlaps(page, start, end))
 				continue;
 
 			/* Skips a page this pass has already taken. */
@@ -1053,7 +1053,7 @@ vm_object_sync_range_buffer(
 		irq = spin_lock_irqsave(&object->lock);
 
 		if ((observed & HAL_SPACE_PAGE_DIRTY) != 0) {
-			object_page_dirty_mark(candidate);
+			vm_object_page_dirty_mark(candidate);
 		}
 
 		dirty = (candidate->flags & VM_OBJECT_PAGE_DIRTY) != 0;
@@ -1122,7 +1122,7 @@ vm_object_sync_range_buffer(
 	irq = spin_lock_irqsave(&object->lock);
 
 	if (first_error != 0)
-		object_record_writeback_error_locked(object, first_error);
+		vm_object_record_writeback_error_locked(object, first_error);
 
 	/*
 	 * Walks the page list once, releasing every page this pass took and
@@ -1145,7 +1145,7 @@ vm_object_sync_range_buffer(
 		if (first_error == 0 &&
 		    page->write_dirty_generation != 0 &&
 		    page->dirty_generation == page->write_dirty_generation)
-			clear_page_dirty_locked(page);
+			vm_object_clear_page_dirty_locked(page);
 
 		/* Puts the page back into service. */
 		page->write_generation = 0;
@@ -1168,8 +1168,8 @@ vm_object_sync_range_buffer(
 			*link = page->next;
 
 			/* Moves it to the orphan list, out of the indexes. */
-			object_page_index_remove(object, page);
-			object_page_dirty_unlink(page);
+			vm_object_page_index_remove(object, page);
+			vm_object_page_dirty_unlink(page);
 			page->flags |= VM_OBJECT_PAGE_ORPHANED;
 			page->next = object->orphan_pages;
 			object->orphan_pages = page;
@@ -1193,7 +1193,7 @@ vm_object_sync_range_buffer(
 			*link = page->next;
 
 			/* Moves it to the list this call frees on the way out. */
-			object_page_index_remove(object, page);
+			vm_object_page_index_remove(object, page);
 			page->next = retired;
 			retired = page;
 
@@ -1210,7 +1210,7 @@ vm_object_sync_range_buffer(
 	 * remembered write-back error, because there is no longer any data
 	 * the error could still apply to.
 	 */
-	if (first_error == 0 && !object_has_dirty_pages_locked(object))
+	if (first_error == 0 && !vm_object_has_dirty_pages_locked(object))
 		object->writeback_error = 0;
 
 	spin_unlock_irqrestore(&object->lock, irq);
@@ -1219,7 +1219,7 @@ vm_object_sync_range_buffer(
 	while (retired != NULL) {
 		page = retired;
 		retired = page->next;
-		free_object_page(page);
+		vm_object_free_page(page);
 	}
 
 	if (held_inode_io)
@@ -1331,7 +1331,7 @@ write_dirty_pages(
 		 * occupied.
 		 */
 		if (scratch == NULL || capacity < PAGE_SIZE) {
-			error = write_page_data(object, page, logical_size, inode_io_owned);
+			error = vm_object_write_page_data(object, page, logical_size, inode_io_owned);
 			if (error != 0)
 				break;
 			continue;

@@ -181,7 +181,7 @@ vm_object_backing_busy(
 	/* Pins each content inode while its shared object remains registered. */
 	count = 0;
 	error = 0;
-	enabled = registry_lock();
+	enabled = vm_object_registry_lock();
 	for (object = shared_objects; object != NULL; object = object->next) {
 		/* Refuses an oversized snapshot instead of overlooking an alias. */
 		if (count == VM_OBJECT_BACKING_SNAPSHOT_MAX) {
@@ -194,7 +194,7 @@ vm_object_backing_busy(
 		count++;
 	}
 
-	registry_unlock(enabled);
+	vm_object_registry_unlock(enabled);
 
 	/* Resolves sleeping FAT identities after dropping the registry spinlock. */
 	for (index = 0; index < count && error == 0; index++) {
@@ -282,12 +282,12 @@ vm_object_ref(
 		return;
 
 	/* Only a mapped object can be shared further. */
-	enabled = registry_lock();
+	enabled = vm_object_registry_lock();
 	if (object->mapping_count == 0)
 		HAL_FATAL("referencing detached VM object");
 	object->mapping_count++;
 	refcount_get(&object->refs);
-	registry_unlock(enabled);
+	vm_object_registry_unlock(enabled);
 }
 
 /*
@@ -328,14 +328,14 @@ retry_mapping:
 	 * object; in that case the retried put becomes an ordinary non-final
 	 * reference drop.
 	 */
-	enabled = registry_lock();
+	enabled = vm_object_registry_lock();
 	if (object->mapping_count == 0)
 		HAL_FATAL("VM object mapping reference underflow");
 
 	/* Waits for the operations in flight before releasing the last mapping. */
 	if (object->mapping_count == 1 && object->active_operations != 0) {
 		sequence = waitq_sequence(&object->registry_waitq);
-		registry_unlock(enabled);
+		vm_object_registry_unlock(enabled);
 		error = object_wait_registry_sequence(object, sequence);
 		if (error != 0 && error != EAGAIN)
 			HAL_FATAL("VM object operation drain wait failed");
@@ -345,7 +345,7 @@ retry_mapping:
 	/* An ordinary drop leaves the object mapped and alive. */
 	object->mapping_count--;
 	if (object->mapping_count != 0) {
-		registry_unlock(enabled);
+		vm_object_registry_unlock(enabled);
 		if (refcount_put(&object->refs))
 			HAL_FATAL("mapped VM object lost registry reference");
 		return;
@@ -361,7 +361,7 @@ retry_mapping:
 	 */
 	object->flags |= VM_OBJECT_DETACHING;
 	refcount_get(&object->refs);
-	registry_unlock(enabled);
+	vm_object_registry_unlock(enabled);
 	if (refcount_put(&object->refs))
 		HAL_FATAL("VM object teardown lost registry reference");
 
@@ -373,8 +373,8 @@ retry_mapping:
 	 * that only read a large library would otherwise pay for every page.
 	 */
 	irq = spin_lock_irqsave(&object->lock);
-	dirty = object_has_dirty_pages_locked(object);
-	busy = object_has_busy_pages_locked(object);
+	dirty = vm_object_has_dirty_pages_locked(object);
+	busy = vm_object_has_busy_pages_locked(object);
 	spin_unlock_irqrestore(&object->lock, irq);
 	clean = 1;
 	if (dirty || busy)
@@ -393,48 +393,48 @@ retry_mapping:
 	    (object->flags & VM_OBJECT_CACHE_REFERENCE) == 0 &&
 	    object->file != NULL &&
 	    cache_objects >= VM_OBJECT_CACHE_OBJECTS)
-		(void)object_cache_evict_one(NULL);
+		(void)vm_object_cache_evict_one(NULL);
 
 	/* Unlinks a clean object, or retains one that still has dirty pages. */
-	enabled = registry_lock();
+	enabled = vm_object_registry_lock();
 	if (object->mapping_count != 0 ||
 	    (object->flags & VM_OBJECT_DETACHING) == 0)
 		HAL_FATAL("VM object teardown state changed during writeback");
 
 	/* Admits the leaving object to the cache when there is room for it. */
-	destroyable = object_can_destroy(object);
+	destroyable = vm_object_can_destroy(object);
 	if (!anonymous && error == 0 &&
 	    (object->flags & VM_OBJECT_CACHE_REFERENCE) == 0 &&
 	    object->file != NULL &&
 	    cache_objects < VM_OBJECT_CACHE_OBJECTS &&
-	    destroyable && !inode_unnamed(object->inode)) {
+	    destroyable && !vm_object_inode_unnamed(object->inode)) {
 		object->flags |= VM_OBJECT_CACHE_REFERENCE;
 		cache_objects++;
 		object->last_use = ++object_use_generation;
 	}
-	if (!anonymous && error == 0 && object_cache_retainable(object)) {
+	if (!anonymous && error == 0 && vm_object_cache_retainable(object)) {
 		object->flags &= ~VM_OBJECT_DETACHING;
 		write_file = object->write_file;
 		object->write_file = NULL;
-	} else if (error == 0 && object_can_destroy(object)) {
+	} else if (error == 0 && vm_object_can_destroy(object)) {
 		if (anonymous) {
 			removed = 1;
 		} else {
-			removed = unlink_object_locked(object);
+			removed = vm_object_unlink_locked(object);
 			if (!removed)
 				HAL_FATAL("detaching VM object left registry unexpectedly");
 		}
 	} else {
 		if (anonymous)
 			HAL_FATAL("anonymous VM object teardown could not complete");
-		retain_object(object, error);
+		vm_object_retain(object, error);
 		object->flags &= ~VM_OBJECT_DETACHING;
 	}
 
-	registry_unlock(enabled);
+	vm_object_registry_unlock(enabled);
 
 	/* Releases the waiters, and drains them before the object disappears. */
-	object_wake_registry_waiters(object);
+	vm_object_wake_registry_waiters(object);
 	if (removed)
 		object_wait_registry_waiters(object);
 	if (removed && !anonymous && refcount_put(&object->refs))
@@ -446,7 +446,7 @@ retry_mapping:
 
 	/* Drop the explicit teardown lifetime reference. */
 	if (refcount_put(&object->refs))
-		destroy_object(object);
+		vm_object_destroy(object);
 }
 
 /*
@@ -488,8 +488,8 @@ vm_object_get_shared_internal(
 
 retry_lookup:
 	/* Joins a published object, waiting out one that is detaching. */
-	enabled = registry_lock();
-	for (object = object_hash[object_hash_index(inode)]; object != NULL;
+	enabled = vm_object_registry_lock();
+	for (object = object_hash[vm_object_hash_index(inode)]; object != NULL;
 	     object = object->hash_next) {
 		if (object->inode != inode)
 			continue;
@@ -503,9 +503,9 @@ retry_lookup:
 
 			refcount_get(&object->refs);
 
-			registry_unlock(enabled);
+			vm_object_registry_unlock(enabled);
 
-			error = object_wait_registry_transition(object, sequence);
+			error = vm_object_wait_registry_transition(object, sequence);
 			if (error != 0 && error != EAGAIN)
 				return error;
 
@@ -516,12 +516,12 @@ retry_lookup:
 		if (error == 0)
 			*result = object;
 
-		registry_unlock(enabled);
+		vm_object_registry_unlock(enabled);
 
 		return error;
 	}
 
-	registry_unlock(enabled);
+	vm_object_registry_unlock(enabled);
 
 	/* Builds a new object holding the registry and the caller's references. */
 	object = kern_calloc(1, sizeof(*object));
@@ -540,19 +540,19 @@ retry_lookup:
 	/* An optional cache opens its own read handle on the same inode. */
 	if (cache_only) {
 		if (file->f_path.p_inode == NULL) {
-			destroy_object(object);
+			vm_object_destroy(object);
 			return EOPNOTSUPP;
 		}
 
 		error = file_open_resolved(&file->f_path, O_RDONLY | O_NOFOLLOW, &object->file);
 		if (error != 0) {
-			destroy_object(object);
+			vm_object_destroy(object);
 			return error;
 		}
 
 		/* Restarts when the handle no longer names the inode it did. */
 		if (file_vm_inode(object->file) != inode) {
-			destroy_object(object);
+			vm_object_destroy(object);
 			return EAGAIN;
 		}
 	} else {
@@ -567,8 +567,8 @@ retry_lookup:
 	}
 
 	/* Another CPU may have published the inode while allocation slept. */
-	enabled = registry_lock();
-	for (existing = object_hash[object_hash_index(inode)]; existing != NULL;
+	enabled = vm_object_registry_lock();
+	for (existing = object_hash[vm_object_hash_index(inode)]; existing != NULL;
 	     existing = existing->hash_next) {
 		if (existing->inode != inode)
 			continue;
@@ -581,9 +581,9 @@ retry_lookup:
 
 			/* Waits out the transition the existing object is in, then looks again. */
 			refcount_get(&existing->refs);
-			registry_unlock(enabled);
-			destroy_object(object);
-			error = object_wait_registry_transition(existing, sequence);
+			vm_object_registry_unlock(enabled);
+			vm_object_destroy(object);
+			error = vm_object_wait_registry_transition(existing, sequence);
 			if (error != 0 && error != EAGAIN)
 				return error;
 
@@ -591,8 +591,8 @@ retry_lookup:
 		}
 
 		error = object_reference_locked(existing, file, cache_only);
-		registry_unlock(enabled);
-		destroy_object(object);
+		vm_object_registry_unlock(enabled);
+		vm_object_destroy(object);
 
 		if (error == 0)
 			*result = existing;
@@ -602,15 +602,15 @@ retry_lookup:
 
 	/* Refuses optional admission before publishing any registry ownership. */
 	if (cache_only && cache_objects == VM_OBJECT_CACHE_OBJECTS) {
-		registry_unlock(enabled);
-		destroy_object(object);
+		vm_object_registry_unlock(enabled);
+		vm_object_destroy(object);
 		return ENOMEM;
 	}
 
 	/* Refuses an unrepresentable registry identity before publication. */
 	if (object_registry_generation == UINT64_MAX) {
-		registry_unlock(enabled);
-		destroy_object(object);
+		vm_object_registry_unlock(enabled);
+		vm_object_destroy(object);
 		return EOVERFLOW;
 	}
 
@@ -618,7 +618,7 @@ retry_lookup:
 	object->last_use = ++object_use_generation;
 
 	/* Publishes the new object with the inode's current end of file. */
-	object_initialize_eof_locked(object, inode);
+	vm_object_initialize_eof_locked(object, inode);
 	if (cache_only) {
 		object->flags |= VM_OBJECT_CACHE_REFERENCE;
 		object->active_operations++;
@@ -626,7 +626,7 @@ retry_lookup:
 	}
 
 	/* Links the object into the registry list. */
-	bucket = object_hash_index(inode);
+	bucket = vm_object_hash_index(inode);
 	object->previous = NULL;
 	object->next = shared_objects;
 	if (shared_objects != NULL)
@@ -638,7 +638,7 @@ retry_lookup:
 	object_hash[bucket] = object;
 	object->flags |= VM_OBJECT_REGISTERED;
 	object_count++;
-	registry_unlock(enabled);
+	vm_object_registry_unlock(enabled);
 	*result = object;
 
 	/* Reports the new object. */
@@ -650,7 +650,7 @@ retry_lookup:
  * were enabled.
  */
 bool
-registry_lock(
+vm_object_registry_lock(
 	void)
 {
 	bool enabled;
@@ -673,7 +673,7 @@ registry_lock(
  * Releases the registry lock and restores the interrupt state.
  */
 void
-registry_unlock(
+vm_object_registry_unlock(
 	bool enabled)
 {
 	atomic_store_release(&object_registry_lock, 0);
@@ -685,13 +685,13 @@ registry_unlock(
  * Finds the object of an inode; the caller holds the registry lock.
  */
 struct vm_object *
-find_object_by_inode_locked(
+vm_object_find_by_inode_locked(
 	struct inode *inode)
 {
 	struct vm_object *object;
 
 	/* Walks the inode's hash chain to its object. */
-	for (object = object_hash[object_hash_index(inode)]; object != NULL;
+	for (object = object_hash[vm_object_hash_index(inode)]; object != NULL;
 	     object = object->hash_next) {
 		if (object->inode == inode)
 			return object;
@@ -706,7 +706,7 @@ find_object_by_inode_locked(
  * the registry lock.
  */
 int
-object_wait_registry_transition(
+vm_object_wait_registry_transition(
 	struct vm_object *object,
 	uint64_t sequence)
 {
@@ -715,19 +715,19 @@ object_wait_registry_transition(
 	bool enabled;
 
 	error = object_wait_registry_sequence(object, sequence);
-	enabled = registry_lock();
+	enabled = vm_object_registry_lock();
 	if (object->registry_waiters == 0)
 		HAL_FATAL("VM object registry waiter counter underflow");
 
 	/* Keeps the waiter's lifetime pin through its final wakeup. */
 	object->registry_waiters--;
 	wake = object->registry_waiters == 0;
-	registry_unlock(enabled);
+	vm_object_registry_unlock(enabled);
 
 	if (wake)
-		object_wake_registry_waiters(object);
+		vm_object_wake_registry_waiters(object);
 	if (refcount_put(&object->refs))
-		destroy_object(object);
+		vm_object_destroy(object);
 
 	/* Reports the failure. */
 	if (error != 0)
@@ -741,7 +741,7 @@ object_wait_registry_transition(
  * Wakes everyone waiting on an object's registry state.
  */
 void
-object_wake_registry_waiters(
+vm_object_wake_registry_waiters(
 	struct vm_object *object)
 {
 	unsigned long irq;
@@ -757,15 +757,15 @@ object_wake_registry_waiters(
  * Counts an operation on an object that is not detaching.
  */
 int
-object_operation_begin(
+vm_object_operation_begin(
 	struct vm_object *object)
 {
 	bool enabled;
 
 	/* Refuses to start work on an object that is tearing down. */
-	enabled = registry_lock();
+	enabled = vm_object_registry_lock();
 	if ((object->flags & VM_OBJECT_DETACHING) != 0) {
-		registry_unlock(enabled);
+		vm_object_registry_unlock(enabled);
 		return EBUSY;
 	}
 
@@ -773,7 +773,7 @@ object_operation_begin(
 	object->active_operations++;
 	if (object->active_operations == 0)
 		HAL_FATAL("VM object operation counter overflow");
-	registry_unlock(enabled);
+	vm_object_registry_unlock(enabled);
 
 	/* Reports the started operation. */
 	return 0;
@@ -783,14 +783,14 @@ object_operation_begin(
  * Counts an operation down, waking a final put waiting for the last.
  */
 void
-object_operation_end(
+vm_object_operation_end(
 	struct vm_object *object)
 {
 	int wake;
 	bool enabled;
 
 	/* Drops the operation, pinning the object when it was the last one. */
-	enabled = registry_lock();
+	enabled = vm_object_registry_lock();
 	if (object->active_operations == 0)
 		HAL_FATAL("VM object operation counter underflow");
 
@@ -800,13 +800,13 @@ object_operation_end(
 	if (wake)
 		refcount_get(&object->refs);
 
-	registry_unlock(enabled);
+	vm_object_registry_unlock(enabled);
 
 	/* Releases whoever waited for the object to fall idle. */
 	if (wake) {
-		object_wake_registry_waiters(object);
+		vm_object_wake_registry_waiters(object);
 		if (refcount_put(&object->refs))
-			destroy_object(object);
+			vm_object_destroy(object);
 	}
 }
 
@@ -815,7 +815,7 @@ object_operation_end(
  * object lock.
  */
 uint64_t
-next_generation(
+vm_object_next_generation(
 	struct vm_object *object)
 {
 	object->generation++;
@@ -830,7 +830,7 @@ next_generation(
  * Advances an inode's resize generation, skipping zero.
  */
 uint64_t
-next_inode_resize_generation_locked(
+vm_object_next_inode_resize_generation_locked(
 	struct inode *inode)
 {
 	inode->i_vm_resize_generation++;
@@ -845,7 +845,7 @@ next_inode_resize_generation_locked(
  * Advances an inode's content generation, skipping zero.
  */
 uint64_t
-next_inode_content_generation_locked(
+vm_object_next_inode_content_generation_locked(
 	struct inode *inode)
 {
 	inode->i_vm_content_generation++;
@@ -860,7 +860,7 @@ next_inode_content_generation_locked(
  * Tests whether an unmapped object is clean and idle enough to destroy.
  */
 int
-object_can_destroy(
+vm_object_can_destroy(
 	struct vm_object *object)
 {
 	unsigned long irq;
@@ -873,7 +873,7 @@ object_can_destroy(
 	/* Requires every page to be clean and idle. */
 	irq = spin_lock_irqsave(&object->lock);
 
-	result = !object_has_dirty_pages_locked(object) && !object_has_busy_pages_locked(object);
+	result = !vm_object_has_dirty_pages_locked(object) && !vm_object_has_busy_pages_locked(object);
 
 	spin_unlock_irqrestore(&object->lock, irq);
 
@@ -886,14 +886,14 @@ object_can_destroy(
  * registry lock.
  */
 int
-unlink_object_locked(
+vm_object_unlink_locked(
 	struct vm_object *object)
 {
 	struct vm_object **link;
 	unsigned bucket;
 
 	/* Refuses to unlink an object that still owns work. */
-	if (!object_can_destroy(object))
+	if (!vm_object_can_destroy(object))
 		HAL_FATAL("destroying unsynchronized VM object");
 
 	/* Reports an object the registry does not hold. */
@@ -911,7 +911,7 @@ unlink_object_locked(
 	object->previous = NULL;
 
 	/* Finds the link in the inode's hash chain that holds the object. */
-	bucket = object_hash_index(object->inode);
+	bucket = vm_object_hash_index(object->inode);
 	link = &object_hash[bucket];
 	while (*link != NULL && *link != object)
 		link = &(*link)->hash_next;
@@ -945,7 +945,7 @@ unlink_object_locked(
  * nothing; the rest is spread by Knuth's multiplicative constant.
  */
 unsigned
-object_hash_index(
+vm_object_hash_index(
 	const struct inode *inode)
 {
 	uint32_t key;
@@ -963,7 +963,7 @@ object_hash_index(
  * Frees an object, its pages, its files, and its commitment.
  */
 void
-destroy_object(
+vm_object_destroy(
 	struct vm_object *object)
 {
 	struct vm_object_page *page;
@@ -972,8 +972,8 @@ destroy_object(
 	page = object->pages;
 	while (page != NULL) {
 		object->pages = page->next;
-		object_page_dirty_unlink(page);
-		free_object_page(page);
+		vm_object_page_dirty_unlink(page);
+		vm_object_free_page(page);
 		page = object->pages;
 	}
 
@@ -981,7 +981,7 @@ destroy_object(
 	page = object->orphan_pages;
 	while (page != NULL) {
 		object->orphan_pages = page->next;
-		free_object_page(page);
+		vm_object_free_page(page);
 		page = object->orphan_pages;
 	}
 
@@ -1001,7 +1001,7 @@ destroy_object(
  * Keeps an unmapped object in the registry until its writeback succeeds.
  */
 void
-retain_object(
+vm_object_retain(
 	struct vm_object *object,
 	int error)
 {
@@ -1013,7 +1013,7 @@ retain_object(
 
 	/* Names a reason when the caller had none. */
 	if (error == 0) {
-		if (object_has_busy_pages(object))
+		if (vm_object_has_busy_pages(object))
 			error = EBUSY;
 		else
 			error = EIO;
@@ -1022,7 +1022,7 @@ retain_object(
 	/* Records the failure and marks the object as retained. */
 	irq = spin_lock_irqsave(&object->lock);
 
-	object_record_writeback_error_locked(object, error);
+	vm_object_record_writeback_error_locked(object, error);
 
 	spin_unlock_irqrestore(&object->lock, irq);
 
@@ -1033,7 +1033,7 @@ retain_object(
  * Tests the bounded clean retention policy under the registry lock.
  */
 int
-object_cache_retainable(
+vm_object_cache_retainable(
 	struct vm_object *object)
 {
 	int retainable;
@@ -1044,7 +1044,7 @@ object_cache_retainable(
 	if ((object->flags & VM_OBJECT_CACHE_REFERENCE) == 0)
 		return 0;
 
-	retainable = object_can_destroy(object);
+	retainable = vm_object_can_destroy(object);
 
 	return retainable;
 }
@@ -1054,7 +1054,7 @@ object_cache_retainable(
  * the last holder lets go, so an optional cache of it must not be one.
  */
 int
-inode_unnamed(
+vm_object_inode_unnamed(
 	const struct inode *inode)
 {
 	/* An object without an inode names nothing to keep. */
@@ -1103,15 +1103,15 @@ object_wait_registry_waiters(
 	/* Sleeps until the object has no registry waiter left. */
 	for (;;) {
 		/* Returns as soon as the waiter count reaches zero. */
-		enabled = registry_lock();
+		enabled = vm_object_registry_lock();
 		if (object->registry_waiters == 0) {
-			registry_unlock(enabled);
+			vm_object_registry_unlock(enabled);
 			return;
 		}
 
 		/* Waits for the registry to report progress on this object. */
 		sequence = waitq_sequence(&object->registry_waitq);
-		registry_unlock(enabled);
+		vm_object_registry_unlock(enabled);
 		error = object_wait_registry_sequence(object, sequence);
 		if (error != 0 && error != EAGAIN)
 			HAL_FATAL("VM object registry waiter drain failed");

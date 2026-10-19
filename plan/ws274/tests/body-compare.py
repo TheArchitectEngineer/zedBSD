@@ -8,7 +8,9 @@ tree.  Every function definition (an opening brace in column 0) is keyed by
 its name.  For each name the set of definitions must be equal; the only
 difference allowed is a leading "static" in the header.  Each --rename
 replaces the identifier old by new in the old files before comparing (a
-helper renamed because its name clashed at link time).  Exits 1 on any
+helper renamed because its name clashed at link time, or given a prefix);
+inside a comment only a call-like use "old(" is replaced, so prose that
+happens to contain the word stays as it was.  Exits 1 on any
 difference and prints the names involved.
 """
 
@@ -61,6 +63,21 @@ def collect(texts):
     return table
 
 
+COMMENT = re.compile(r"(/\*.*?\*/|//[^\n]*)", re.S)
+
+
+def rename(text, renames):
+    parts = COMMENT.split(text)
+    for index, part in enumerate(parts):
+        for pattern, new_name in renames:
+            if index % 2 == 0:
+                part = pattern.sub(new_name, part)
+            else:
+                part = re.sub(pattern.pattern + r"(?=\()", new_name, part)
+        parts[index] = part
+    return "".join(parts)
+
+
 def main(argv):
     renames = []
     while len(argv) > 2 and argv[1] == "--rename":
@@ -77,8 +94,7 @@ def main(argv):
     old_texts = [subprocess.run(["git", "show", ref + ":" + p],
                                 check=True, capture_output=True,
                                 text=True).stdout for p in old_paths]
-    for pattern, new_name in renames:
-        old_texts = [pattern.sub(new_name, t) for t in old_texts]
+    old_texts = [rename(t, renames) for t in old_texts]
     new_texts = [open(p, encoding="utf-8").read() for p in new_paths]
     old = collect(old_texts)
     new = collect(new_texts)
