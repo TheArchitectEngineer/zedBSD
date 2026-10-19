@@ -1,0 +1,22 @@
+#version 450
+// A function with an out parameter and a local array, for the unoptimized form.
+layout(local_size_x = 32) in;
+layout(std430, set = 0, binding = 0) buffer Data { uint data[]; };
+void split(uint v, out uint high, out uint low)
+{
+	high = v >> 2;
+	low = v & 3u;
+}
+uint weigh(uint a, uint b)
+{
+	uint w[3] = uint[3](5u, 7u, 11u);
+	return a * w[0] + b * w[2];
+}
+void main()
+{
+	uint x = gl_GlobalInvocationID.x;
+	uint h;
+	uint l;
+	split(x, h, l);
+	data[x] = weigh(h, l) ^ (x << 3);
+}

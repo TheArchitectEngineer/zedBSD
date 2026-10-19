@@ -13,8 +13,9 @@
  * the core.  The wire's readers and writers and the generated record
  * codec are the i915 executor's, used unchanged.  The executor covers the
  * smallest compute path: the instance, the one physical device and its
- * queue, memory and buffers, descriptor sets, compute pipelines of the
- * SPIR-V subset of spirv-fill.c, command buffers that bind and dispatch,
+ * queue, memory and buffers, descriptor sets, compute pipelines whose
+ * SPIR-V the shader compiler takes (shader-compile.h), command buffers
+ * that bind and dispatch,
  * and their submission.
  *
  * One executor session belongs to one open of the node.  It holds the
@@ -31,7 +32,7 @@
 #include <stdint.h>
 
 #include "drivers/gpu/i915/render/codec.h"
-#include "drivers/gpu/powervr/spirv-fill.h"
+#include "drivers/gpu/powervr/shader-compile.h"
 
 struct powervr_session;
 struct powervr_resource;
@@ -125,10 +126,15 @@ struct powervr_vk_buffer {
 	uint64_t offset;
 };
 
-/* A VkShaderModule: what its SPIR-V does, or why it is outside the subset. */
+/*
+ * A VkShaderModule: its SPIR-V words (held in the same allocation, after
+ * the structure), and whether the compiler reads a compute entry from
+ * them (0) or why not.
+ */
 struct powervr_vk_shader {
 	int status;
-	struct powervr_spirv_fill fill;
+	uint32_t word_count;
+	uint32_t *words;
 };
 
 /* A VkDescriptorSetLayout and a VkPipelineLayout: only their counts are kept. */
@@ -158,9 +164,13 @@ struct powervr_vk_descriptor_set {
 	struct powervr_vk_descriptor_slot slots[POWERVR_VK_BINDINGS_MAX];
 };
 
-/* A VkPipeline: a compute pipeline and what its shader does. */
+/*
+ * A VkPipeline: a compute pipeline's own copy of its module's SPIR-V
+ * (the module may go first), compiled for each workgroup it runs.
+ */
 struct powervr_vk_pipeline {
-	struct powervr_spirv_fill fill;
+	uint32_t word_count;
+	uint32_t *words;
 };
 
 /* A VkCommandPool: its queue family. */
