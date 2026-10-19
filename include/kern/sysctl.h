@@ -99,6 +99,23 @@ kern_thermal_register(
 	kern_thermal_read_t read,
 	void *context);
 
+/* The most bytes of hw.gpu.powervr.stages, its NUL included. */
+#define KERN_GPU_STAGES_MAX	256U
+
+/*
+ * Writes the text of hw.gpu.powervr.stages into text (capacity bytes) and
+ * returns its length without a NUL.
+ */
+typedef size_t (*kern_gpu_stages_read_t)(char *text, size_t capacity);
+
+/*
+ * Installs the function behind hw.gpu.powervr.stages; called once, on the
+ * boot thread, before user space runs.
+ */
+void
+kern_gpu_stages_set(
+	kern_gpu_stages_read_t read);
+
 int
 kern_sysctl(
 	const int *name,

@@ -85,6 +85,7 @@ enum late_stage {
 };
 
 static void late_thread(void *argument);
+static enum powervr_stage_reason firmware_reason(const char *step, int error);
 static int bring_up(struct powervr_core *core, enum late_stage *reached, const char **step);
 static int check_processor(const struct powervr_fw_image *image, unsigned *bus_bits);
 static int lay_out(struct powervr_core *core, unsigned bus_bits);
@@ -160,6 +161,7 @@ late_thread(
 	if (error != 0) {
 		tear_down(core, reached);
 		kern_logf("powervr: firmware %s failed (%d); powered down\n", step, error);
+		powervr_stage_fail(POWERVR_STAGE_FIRMWARE, firmware_reason(step, error));
 		kern_gpu_attach_end();
 		return;
 	}
@@ -175,6 +177,7 @@ late_thread(
 		  (unsigned)image->version_build,
 		  (unsigned)core->firmware.interrupts,
 		  replies);
+	powervr_stage_ok(POWERVR_STAGE_FIRMWARE);
 
 	/* Publishes the render node over the running firmware; on failure the core goes down the same way. */
 	error = powervr_render_start(core);
@@ -182,12 +185,34 @@ late_thread(
 		tear_down(core, LATE_STARTED);
 		powervr_render_abandon(core);
 		kern_logf("powervr: render node failed (%d); powered down\n", error);
+		powervr_stage_fail(POWERVR_STAGE_RENDER_NODE, powervr_stage_reason_of(error));
 		kern_gpu_attach_end();
 		return;
 	}
 
 	/* The render node is published: the GPU no longer counts as attaching. */
+	powervr_stage_ok(POWERVR_STAGE_RENDER_NODE);
 	kern_gpu_attach_end();
+}
+
+/*
+ * The stage line's reason for a firmware that did not come up at step:
+ * an image that does not parse is "bad image", otherwise the error's own.
+ */
+static enum powervr_stage_reason
+firmware_reason(
+	const char *step,
+	int error)
+{
+	int image_step;
+
+	/* The image step fails only on what the file holds. */
+	image_step = kern_strcmp(step, "image") == 0;
+	if (image_step && error != ENOENT && error != ETIMEDOUT)
+		return POWERVR_REASON_BAD_IMAGE;
+
+	/* Otherwise the error says why. */
+	return powervr_stage_reason_of(error);
 }
 
 /*

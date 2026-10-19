@@ -903,16 +903,20 @@ run(
 		owner->submitted = value;
 
 	mutex_unlock(&render->core->lock);
-	if (error != 0)
+	if (error != 0) {
+		powervr_stage_fail(POWERVR_STAGE_COMPUTE, powervr_stage_reason_of(error));
 		return error;
+	}
 
 	/* Waits for the timeline to reach it; the core may still run work that did not. */
 	error = powervr_session_wait(owner, value, QUEUE_WAIT_MS);
 	if (error != 0) {
 		build->session->abandoned = true;
+		powervr_stage_fail(POWERVR_STAGE_COMPUTE, powervr_stage_reason_of(error));
 		return error;
 	}
 
-	/* Succeeded: the core finished the stream. */
+	/* Succeeded: the core finished the stream; the first time is the compute stage's ok. */
+	powervr_stage_ok(POWERVR_STAGE_COMPUTE);
 	return 0;
 }

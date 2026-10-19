@@ -22,6 +22,7 @@
 #include "drivers/gpu/powervr/powervr.h"
 #include "drivers/gpu/powervr/firmware-image.h"
 #include "drivers/gpu/powervr/mips-table.h"
+#include "drivers/gpu/powervr/stage.h"
 
 /*
  * One block of memory the firmware's processor sees.
@@ -242,5 +243,14 @@ uint32_t powervr_object_get32(const struct powervr_object *object, uint32_t offs
 
 /* Copies bytes of the kernel's into a block. */
 void powervr_object_fill(struct powervr_object *object, uint32_t offset, const uint8_t *bytes, size_t length);
+
+/* Readies the stage record and hw.gpu.powervr.stages (stage-log.c); once, while attaching. */
+void powervr_stage_init(void);
+
+/* Notes that a stage succeeded; its line "powervr: <stage>: ok" is printed once a boot. */
+void powervr_stage_ok(enum powervr_stage stage);
+
+/* Notes that a stage failed; "powervr: <stage>: fail(<reason>)" is printed the first three times. */
+void powervr_stage_fail(enum powervr_stage stage, enum powervr_stage_reason reason);
 
 #endif
