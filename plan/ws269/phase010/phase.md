@@ -2,9 +2,9 @@
 
 # ws269-p010 graphics（TA・3D・transfer・render pass・WSI）
 
-- 親: [ws269](../ws.md)、設計: [design.md](../design.md) 改訂 3.1 の §6 の p010、追補 [design-p010.md](../design-p010.md) 版 2
-- Queue: q1362 / q1362-i01（P1、2026-10-20、追補 版 1）、q1367 / q1367-i01（P1、2026-10-20、版 2: review 1 と p010b の反映）。どちらもコードなし
-- Status: planning（2026-10-20 P1 q1367: 追補 版 2。**design-reviewer の再レビュー待ち**。実装は p010a〜p010o の各 Phase で、Queue の承認の後）
+- 親: [ws269](../ws.md)、設計: [design.md](../design.md) 改訂 3.1 の §6 の p010、追補 [design-p010.md](../design-p010.md) 版 2.1
+- Queue: q1362 / q1362-i01（P1、2026-10-20、追補 版 1）、q1367 / q1367-i01（P1、2026-10-20、版 2: review 1 と p010b の反映）。q1370 / q1370-i01（P1、2026-10-20、版 2.1: review 2 の反映）。どれもコードなし
+- Status: in-progress（設計の追補 design-p010.md 版 2.1 を 2026-10-20 Q1 が差分で確かめて受け入れた（design-p010-review-2 の結論「Q1 が差分を見るだけで足りる」、67ac336aa、merge 1a57f1153）。p010d 以降の実装に入る。O-ENC の SR の burst の ld・st の 1 点は P2 の p013 で確かめる）
 - 起点（2026-10-20 07:24 ユーザー）: 「PowerVRのコードは完了を目指して作業をお願いします。あとでUATにおいて、どこまで実行できたかわかるログが出れば、デバッグしやすいと思います。」
 
 ## 分割（版 2）
@@ -31,7 +31,8 @@ design-p010.md §9 の D-P1〜D-P7。D-P3 は (b)（Q1 の判断）。新しく 
 | --- | --- |
 | 追補の文書 | 版 2 を書いた（2026-10-20 q1367）。末尾 §12 にレビュー 1 の全指摘への対応の表 |
 | p010a の code の comment | Guardrail の開発の管理情報（`ws269-p010a`・`design-p010.md`）を stage.c・stage-log.c・stage.h・gpu-selftest の main.c・Makefile から消した（cbb9bc09e）。段の名前の console の行を `render-node` に揃え、host 試験 `plan/ws269/tests/p010/run.sh build/p010a/host4` で `stage-host-test: 24 passed, 0 failed`、`selftest-host: 0 failed`（1a5d6a3e9） |
-| design-reviewer | 版 1 はレビュー 1（[design-p010-review-1.md](../design-p010-review-1.md)）。版 2 の再レビューは未実施（Q1 が依頼する） |
+| design-reviewer | 版 1 はレビュー 1（[design-p010-review-1.md](../design-p010-review-1.md)）。版 2 はレビュー 2（[design-p010-review-2.md](../design-p010-review-2.md)、Blocker なし）。版 2.1 は Q1 の差分の確認（再レビューは要らない、review 2 の結論） |
+| 版 2.1 | 2026-10-20 q1370。末尾 §13 にレビュー 2 の全指摘への対応の表。主な変更: 時間切れの後は HWRT・free list を core に残す、PBE の clip を必須に、combined kick・FENCE_PR・`pds_pr_bgnd`・cleanup ctl、static data area（BUG-342）、105/112 の扱い、p010n の実機を p010e へ、p010f に transfer の context の recovery、§5.4 の O-ENC の固定、LW 105〜107 |
 
 ## 残り
 
