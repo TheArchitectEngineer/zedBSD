@@ -17,7 +17,7 @@
 | L1 | zedBSD の `userland/desktop/libvulkan/`（`wsi-display.c`・`wsi-swapchain.c`・`wsi-image.c`） | WSI の 2 つの道（§6） |
 | L2 | `userland/tests/vkdemo`・`userland/tests/venus-frame`・`userland/tests/vkcompute` | 受け入れの program が呼ぶ Vulkan の命令（§7） |
 
-- **確定（p010b、2026-10-20）**: M1〜M3 の path と blob SHA は GitLab API・gh api で確かめた（[phase010b](phase010b/phase.md)）。26.x で Mesa は `pvr_arch_*` に分かれていた。**未確認のまま**: BXE（36.50.54.182）で効く feature の分岐（`tpu_parallel_instances`・`isp_max_tiles_in_flight`・`roguexe`・`s8xe`・`gpu_multicore_support`、TLA・FASTRENDER の有無）は file の中身を読んでいない（p010b は path と SHA の固定まで）。
+- **確定（p010b、2026-10-20）**: M1〜M3 の path と blob SHA は GitLab API・gh api で確かめた（[phase010b](phase010b/phase.md)）。26.x で Mesa は `pvr_arch_*` に分かれていた。**確定（p010b の q1366、2026-10-20）**: BXE（36.50.54.182）の feature の分岐（TLA なし、PBE の linestride の単位 2 pixel、twiddled の 2 の冪の padding、texture・sampler の word の大きさ）は file の中身で確かめた（値は [phase010b](phase010b/phase.md) の表）。blend・pack の置き場所（§5.3 の 2・D-P3）は Mesa では compiler の側で、設計の変更が要る（phase010b、版 2 で扱う）。
 - 事実（L1、2026-10-20 に読んだ）: libvulkan は scanout の image を `VK_IMAGE_TILING_LINEAR`、usage TRANSFER_SRC|TRANSFER_DST|SAMPLED、external（DMABUF か OPAQUE）で作る（`wsi-image.c:60-80`）。import の前に `stride` を `stride_alignment` で検査し、外れたら `VK_ERROR_FORMAT_NOT_SUPPORTED`（`wsi-display.c:1290-1293`）、その時は readback の道に落ちる（`wsi-swapchain.c:1095-1120`）。readback の道は `vkCmdCopyImageToBuffer`（`wsi-swapchain.c:2791-2831`）、shared の道は `present_copy_shared` が `vkCmdClearColorImage`・`vkCmdBlitImage`（NEAREST）・`vkCmdCopyImage` を使う（`wsi-swapchain.c:3211-3333`）。
 - 事実（L2）: vkdemo は `vkCreateRenderPass`・`vkCreateFramebuffer`・`vkCreateGraphicsPipelines`・`vkCmdBeginRenderPass`・`vkCmdBindVertexBuffers`・`vkCmdDraw`・`vkCmdPushConstants`・`vkCmdClearColorImage`・`vkCmdCopyBufferToImage`・`vkCmdCopyImageToBuffer`・`vkCreateSampler`・combined の descriptor を使い、format は `R8G8B8A8_UNORM`（optimal の COLOR_ATTACHMENT と SAMPLED）、`D32_SFLOAT`、`B8G8R8A8_UNORM`（display）を照会する（`renderer.c:170-183`、`display.c:675-700`）。dynamic rendering は使わない。
 
@@ -54,16 +54,16 @@ render-queue.c ──FW の CCB──▶ FW（geometry・fragment・compute・tr
 | tiling | 使う所 | layout |
 | --- | --- | --- |
 | LINEAR | libvulkan の scanout・readback の image、`VK_IMAGE_TILING_LINEAR` の全部 | 行の順。`rowPitch` は **32 byte の倍数かつ 2 pixel の倍数**の最小（WS277 の R6 (1)）。mip は LINEAR では 1 段だけ受ける（他は `VK_ERROR_FORMAT_NOT_SUPPORTED`、image の format の照会でも出さない）。array は 1 層 |
-| twiddled | `VK_IMAGE_TILING_OPTIMAL` の 2D の color・depth | Morton の順。幅・高さを 2 の冪に切り上げる（Value(s) referenced: M2 `pvr_image.c` の twiddled の padding、p010b で確かめる）。mip の各段と層を順に並べ、各段の始まりを揃える |
+| twiddled | `VK_IMAGE_TILING_OPTIMAL` の 2D の color・depth | Morton の順。幅・高さを 2 の冪に切り上げる（事実、p010b。Value(s) referenced: M2 `pvr_image.c` の physical extent、twiddled と mip 2 段以上の時に幅・高さ・深さを next power of two、BXE の feature の分岐なし）。mip の各段と層を順に並べ、各段の始まりを揃える |
 
 - strided の 3D の image、cube・3D の image は p011（vkdemo・venus-frame は 2D だけ）。
 - `vkGetImageSubresourceLayout` は LINEAR だけ答える（offset 0、rowPitch 上記、size = rowPitch·height）。
-- memory の requirements: alignment は 256 byte（p009 の `POWERVR_VK_RESOURCE_ALIGN`）と PBE・TPU の要る値の大きい方（未確認、p010b）。memory type は p009 の 2 つ（D7 (a)）のどちらでも可。
+- memory の requirements: alignment は 256 byte（p009 の `POWERVR_VK_RESOURCE_ALIGN`）と PBE・TPU の要る値の大きい方（p010b: Mesa は image の alignment を winsys の page の大きさにする。事実）。memory type は p009 の 2 つ（D7 (a)）のどちらでも可。
 - depth: `D32_SFLOAT`・`D16_UNORM` を optimal で。depth は ISP の内部の buffer で持ち、load・store は ZLS（§4.4）。stencil の format（`D24S8`・`S8`）は p011。
 
 ### 3.2 format の表
 
-最小の表（p010c）。各行に PBE の pack の format、TPU の texture の format、swizzle を持つ（Value(s) referenced: M2 `pvr_formats.c`、M1 `rogue_texstate.xml`・`rogue_pbestate.xml`）:
+最小の表（p010c）。各行に PBE の pack の format、TPU の texture の format、swizzle を持つ（Value(s) referenced: M2 `pvr_formats.c`・`pvr_arch_formats.c`、M1 `csbgen/rogue/texstate.xml`・`pbestate.xml`）:
 
 | Vulkan の format | optimal の features | linear の features |
 | --- | --- | --- |
@@ -76,8 +76,8 @@ buffer の features: vertex の `R32G32(B32A32)_SFLOAT`・`R8G8B8A8_UNORM`。表
 
 ### 3.3 image view・sampler
 
-- image view: texture state の word（TEXSTATE の 128 bit 前後、M1）を view の作成の時に組んで持つ（descriptor の update で写す）。PBE の state は render pass の begin の時に組む。
-- sampler: sampler の word（TEXSTATE の sampler 部、64 bit × 2 前後、M1）を作成の時に組む。filter NEAREST・LINEAR、mipmap mode、address mode REPEAT・CLAMP_TO_EDGE・MIRRORED_REPEAT、border は透明の黒だけ、anisotropy なし、compare なし。
+- image view: texture state の word（事実、p010b: TEXSTATE の IMAGE_WORD0・1 の 2 × 64 bit = 128 bit、M1 `texstate.xml`）を view の作成の時に組んで持つ（descriptor の update で写す）。PBE の state は render pass の begin の時に組む。
+- sampler: sampler の word（事実、p010b: SAMPLER_WORD0・1 の 2 × 64 bit、M1 `texstate.xml`）を作成の時に組む。filter NEAREST・LINEAR、mipmap mode、address mode REPEAT・CLAMP_TO_EDGE・MIRRORED_REPEAT、border は透明の黒だけ、anisotropy なし、compare なし。
 
 ## 4. render（TA と 3D）
 
@@ -87,19 +87,19 @@ Procedure・Value(s) referenced: M3（`pvr_context.c`・`pvr_free_list.c`・`pvr
 
 - render context: session ごとに 1 つ。geometry と fragment の FW の context（CCB を各 1 つ）。p006 の compute の context の作り方（FW の memory、CCCB、priority）と同じ形で 2 本。
 - free list: session ごとに 1 つ、**固定の大きさ（D-P1、推奨 16 MiB）、grow しない**。FW の free list の object と、page の表（parameter buffer の page の物理の列）を kernel が作る。FW の「free list が尽きた」の通知（grow の要求）には応えず、その render を失敗にし `fail(free list)` の行を出す（§8）。partial render（SPM: 尽きた時の途中の store と load の program）は p011（D-P1）。
-- HWRT data set: framebuffer の大きさと sample の数ごとに 1 つ。session の中で「幅・高さ・layer」を key に最大 4 個を cache（vkdemo・WSI の窓の大きさは 1〜2 種）。macrotile・tile の設定・TE・ISP の screen の値は M2 `pvr_job_render.c`（rt dataset の作成）の手順で。tile は 16×16（p002 の feature）。
+- HWRT data set: framebuffer の大きさと sample の数ごとに 1 つ。session の中で「幅・高さ・layer」を key に最大 4 個を cache（vkdemo・WSI の窓の大きさは 1〜2 種）。macrotile・tile の設定・TE・ISP の screen の値は M2 `pvr_arch_job_render.c`（rt dataset の作成）の手順で。tile は 16×16（p002 の feature）。
 
 ### 4.2 1 つの render の job
 
 - 1 つの render pass の instance（subpass 1 つ、§4.3）= 1 つの render job = geometry の kick（VDM の control stream）1 つ + fragment の kick 1 つ。fragment は geometry の完了を FW の中で待つ（mainline の geometry→fragment の依存の形、M3 `pvr_job.c`）。
 - draw の 0 個の render pass（clear だけ）も geometry の空の stream（終わりの word だけ）と fragment で出す（M2 の「empty geometry」の手順、未確認）。
-- geometry の command: VDM の control stream の address、TA の state（PPP の screen・TE の値）。fragment の command: ISP の background object（clear）、PBE の state（attachment の store）、ZLS（depth の load・store）、tile の数。値の組み方は M2 `pvr_job_render.c`（geometry・fragment の job の作成）、FW の struct は M3 `rogue_fwif_cmd_geom`・`rogue_fwif_cmd_frag` の field の順に kernel が自分の型で書く。
+- geometry の command: VDM の control stream の address、TA の state（PPP の screen・TE の値）。fragment の command: ISP の background object（clear）、PBE の state（attachment の store）、ZLS（depth の load・store）、tile の数。値の組み方は M2 `pvr_arch_job_render.c`（geometry・fragment の job の作成）、FW の struct は M3 `rogue_fwif_cmd_geom`・`rogue_fwif_cmd_frag` の field の順に kernel が自分の型で書く。
 
 ### 4.3 render pass・attachment・clear・load/store
 
 - `vkCreateRenderPass`（と 2）: attachment ≤ 4 color + 1 depth、subpass は 1 つだけ（2 つ以上は `VK_ERROR_FEATURE_NOT_PRESENT`、p011 で要れば。vkdemo は 1 つ）。subpass の dependency は記録しない（job の境で全部を待つ）。
 - framebuffer: image view の列と幅・高さ。HWRT data set（§4.1）を選ぶ key。
-- load op: CLEAR は ISP の background object の clear の値（PDS の program が USC の固定の「色を出す」program を走らせる、M2 `pvr_clear.c` の手順）。LOAD は color なら「attachment を texture として読み tile に出す」background の program（driver の固定の USC、§5.4）、depth なら ZLS の load。DONT_CARE は何もしない。
+- load op: CLEAR は ISP の background object の clear の値（PDS の program が USC の固定の「色を出す」program を走らせる、M2 `rogue/pvr_clear.c` の手順）。LOAD は color なら「attachment を texture として読み tile に出す」background の program（driver の固定の USC、§5.4）、depth なら ZLS の load。DONT_CARE は何もしない。
 - store op: STORE は PBE（color、LINEAR・twiddled の書き出し、R6 (2)）と ZLS（depth）。DONT_CARE は PBE を出さない。
 - `vkCmdClearAttachments`（render pass の中の clear）: 全面なら load op の CLEAR と同じ、部分なら固定の program で矩形を描く。p010g で全面だけ、部分は p011。
 - render area: 全面だけを受け、部分は scissor で同じ結果にする（推測: tile の数は全面で数える）。
@@ -108,7 +108,7 @@ Procedure・Value(s) referenced: M3（`pvr_context.c`・`pvr_free_list.c`・`pvr
 
 - pipeline の作成: compiler（§5）の vertex と fragment の出力を受け、driver が PDS の program（vertex: 属性の DMA と USC の起動、fragment: varying の補間（coefficient の DOUTI）と texture の state・shared register の DMA と USC の起動）を組む（PDS の encoder は p008）。
 - 固定の state: input assembly は TRIANGLE_LIST・TRIANGLE_STRIP、primitive restart なし。rasterization: cull・front face・polygon mode FILL だけ、depth bias なし、line width 1。depth: test・write・compare op。blend: attachment ごと、一般の factor と op（ISP・PBE か USC の program の中の blend、M2 で BXE の分岐を p010b で確かめる。推測: Rogue は blend を fragment の USC の末尾で行う → compiler に「blend の末尾」を足す依頼が要る、§5.3）。viewport・scissor は pipeline の固定か dynamic（`VK_DYNAMIC_STATE_VIEWPORT`・`SCISSOR`、Keiland が使うので p010i で両方）。
-- draw: `vkCmdDraw`（index なし）と `vkCmdDrawIndexed`（16・32 bit の index）。VDM の control stream に state の update（PPP の state の block、vertex の PDS、viewport・scissor の表）と index list の word を書く（M1 `rogue_vdm.xml`・`rogue_ppp.xml`、M2 `pvr_cmd_buffer.c` の draw の手順）。instance の数 1 だけ（vkdemo は 1）、多いのは p011。
+- draw: `vkCmdDraw`（index なし）と `vkCmdDrawIndexed`（16・32 bit の index）。VDM の control stream に state の update（PPP の state の block、vertex の PDS、viewport・scissor の表）と index list の word を書く（M1 `csbgen/rogue/vdm.xml`・`ppp.xml`、M2 `pvr_arch_cmd_buffer.c` の draw の手順）。instance の数 1 だけ（vkdemo は 1）、多いのは p011。
 - push constant: 128 byte まで。記録の時に command buffer の memory に写し、PDS がその address を shared register に DMA する（§5.2）。
 
 ## 5. compiler と driver の境（q1363 の P2 と共有）
@@ -132,8 +132,8 @@ compiler は SPIR-V の module と entry point と stage を受け、次を返�
 
 - descriptor set は GPU の memory の中の 1 つの buffer。binding の並びは set layout の作成で driver が決め、各 binding の offset と 1 つの descriptor の大きさを固定する:
   - storage・uniform buffer: 16 byte（address 64 bit、range 32 bit、予備 32 bit）
-  - sampled image: image view の texture state の word（§3.3、大きさは p010b で M1 から確定、推定 16 byte）
-  - sampler: sampler の word（推定 16 byte）
+  - sampled image: image view の texture state の word（§3.3。事実、p010b: 硬の word は 16 byte。Mesa は compiler が読む meta の 4 × 32 bit を足して 32 byte）
+  - sampler: sampler の word（事実、p010b: 硬の word は 16 byte。Mesa は meta 16 byte と gather 用の word 16 byte を足して 48 byte）
   - combined image sampler: image の word の後に sampler の word
 - compiler は shader が使う資源を「shared register の要求の表」で頼み、driver の PDS の data の program がその値を shared register に入れてから USC を起動する。要求の種類:
   1. `SET_BASE(set)`: set の buffer の GPU の address（64 bit、2 register）
@@ -161,7 +161,7 @@ compiler の無い段で要る物（p008 の encoder で直に書く、p009 の 
 
 ## 6. transfer（TQ）
 
-- FW の transfer context（M3 の transfer の command）で 3D の job として行う（Procedure referenced: M2 `pvr_job_transfer.c`）。BXE で TLA（2D の core）が無ければ（p010b で確かめる、推測: 無い）全部 3D の道。
+- FW の transfer context（M3 の transfer の command）で 3D の job として行う（Procedure referenced: M2 `pvr_arch_job_transfer.c`）。BXE に TLA（2D の core）は無い（事実、p010b: `bxe-4-32.h` に `has_tla` が無く、26.2.5 の `pvr_device_info.h` にも TLA の feature が無い）ので全部 3D の道。
 - 受ける命令: `vkCmdCopyBuffer`、`vkCmdCopyBufferToImage`・`vkCmdCopyImageToBuffer`（image の 1 段・1 層ずつ）、`vkCmdCopyImage`（同じ format の大きさ）、`vkCmdBlitImage`（NEAREST・LINEAR、拡大縮小、同じ format か表の中の 8 bit の RGBA の間）、`vkCmdClearColorImage`、`vkCmdFillBuffer`・`vkCmdUpdateBuffer`（compute の固定の program でもよい、p010f で選ぶ）。
 - 書き出しは PBE で、LINEAR の image には `MEMLAYOUT_LINEAR`（R6 (2)）、buffer にも LINEAR。読みは TPU（texture state を transfer の source に組む）。buffer↔buffer の copy は compute の固定の program（p008 の load・store）でもよい（推奨: compute、簡単）。
 - 1 つの transfer の命令 = 1 つの transfer job（矩形が tile の上限を超えたら分ける）。
