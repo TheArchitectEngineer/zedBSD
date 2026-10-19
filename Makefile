@@ -818,7 +818,13 @@ KERN_NET_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(KERN_NET_SOURCES))
 KERN_VM_SOURCES := \
 	src/kern/vm/vmspace.c \
 	src/kern/vm/device.c \
-	src/kern/vm/vm.c \
+	src/kern/vm/object.c \
+	src/kern/vm/object-content.c \
+	src/kern/vm/object-fault.c \
+	src/kern/vm/object-sync.c \
+	src/kern/vm/object-cache.c \
+	src/kern/vm/object-prefetch.c \
+	src/kern/vm/object-page.c \
 	src/kern/vm/commit.c \
 	src/kern/vm/metadata-lock.c \
 	src/kern/vm/private-page.c \

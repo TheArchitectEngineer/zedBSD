@@ -8,8 +8,8 @@
 /*
  * Declarations private to the anonymous-page side of the VM: the private
  * pages, their mapping tracking, reclaim and page-out.  These connect
- * private-page.c, page-track.c, reclaim.c, pageout.c and vm.c and are not
- * part of the kernel's public VM API.
+ * private-page.c, page-track.c, reclaim.c, pageout.c and the object-*.c
+ * files and are not part of the kernel's public VM API.
  *
  * reclaim_lock guards the reclaim queue; pageout_lock guards the page-out
  * worker's state and its two wait queues.  Function bodies and the order
