@@ -3,7 +3,7 @@
 # ws275-p001 設計: sun4u の /dev/graphics と Xzed
 
 - 親: [ws275](../ws.md)、Queue: q1303 / q1303-i01（P1、2026-10-19）
-- Status: in-progress（改訂 3 を書いた、2026-10-19 P1 q1309。レビュー 2 の M-1〜M-6・m-1〜m-12 を design.md §13 で対応。差分の確認と、改訂 3 の HAL の文面のユーザーへの再提示待ち）
+- Status: **cleared**（2026-10-19、Q1 の判定: design-review-3 の結論「N-1 を直せば受け入れてよい」。改訂 3.1 で N-1 と m-A〜m-G を design.md §14 で対応、P1 q1311。HAL の文面は 19:12 ユーザー「改訂 3 で承認」、D4 (a)・D1 (a)・D2 (a)・D5 (a)・D6・D7 (b) 決定済み）
 - 成果: [design.md](../design.md)、HAL の案 [proposed/hal-sun4u-names.md](../proposed/hal-sun4u-names.md)（未適用）
 
 ## 受け入れの条件
@@ -46,4 +46,5 @@
 
 ## 残り・再開の条件
 
-- Q1 が design-reviewer を通し、ユーザーに D1〜D6 と HAL の承認を聞く。D7・D8 も。答えで design.md を直して p001 を cleared にする。
+- 無し（cleared）。design-reviewer は 3 回（review 1〜3）、判断はユーザーの 19:06・19:12 の決定。次は p002。
+- Q1 への依頼: pcat の `BLIT_PATTERN` の y の位相が 1 行ずつの呼び出しで常に 0 になる既存の欠陥（review 3 の m-A）を Bug の候補に。

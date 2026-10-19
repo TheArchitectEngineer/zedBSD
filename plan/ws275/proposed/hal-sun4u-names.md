@@ -1,4 +1,4 @@
-# 案: sun4u の HAL の名前付きの値と boot.h の定数（WS275、未適用・承認待ち、改訂 3）
+# 案: sun4u の HAL の名前付きの値と boot.h の定数（WS275、承認済み 2026-10-19 19:12、改訂 3）
 
 2026-10-19 19:06 ユーザーは改訂 2 の差分を「承認する」とした。改訂 3 でレビュー 2 の M-3・M-6・m-12 により定義文と名前の意味が
 変わったので、改めて示す（変える前と後は末尾の「改訂 2 から改訂 3 の変化」）。
@@ -55,7 +55,7 @@ hal.h は変えない。承認を求める差分は (1) と (2) の 2 つ。
 計 10 の名前（framebuffer 8、i8042 2）。
 
 ```c
-	/* Exposes the firmware framebuffer, when the loader found one. */
+	/* Exposes the framebuffer the HAL shows, from the loader or the fallback. */
 	match = handoff_name_is(name, "sun4u.framebuffer.phys");
 	if (match)
 		return framebuffer_shown ? &framebuffer_phys : NULL;
@@ -64,8 +64,8 @@ hal.h は変えない。承認を求める差分は (1) と (2) の 2 つ。
 値は `sun4u_boot_init` で handoff から一度だけ埋め、fallback の値は `sun4u_framebuffer_init` が画面を出した時に埋める
 （`framebuffer_shown` を立てる）。どちらも既存の `serial_port` と同じ形。
 
-D4 は p002 の前にユーザーに聞く（m-12）。ここは D4 (a) の差分だけ。(b)（HAL が ISA の固定値を返す）を選ばれたら、この表と code を
-書き直して改めて示す。
+D4 は 2026-10-19 19:12 ユーザーが (a) に決定済み。この差分は同時刻に「改訂 3 で承認」（改訂 3.1 では code の例の comment だけ直した、
+review 3 の m-C）。
 
 ## 改訂 2 から改訂 3 の変化
 

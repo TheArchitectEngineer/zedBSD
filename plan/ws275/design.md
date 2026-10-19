@@ -1,14 +1,14 @@
 <!-- awesome-plan project=zedbsd record=ws275-design -->
 
-# WS275 設計: sun4u の /dev/graphics と Xzed（改訂 3）
+# WS275 設計: sun4u の /dev/graphics と Xzed（改訂 3.1）
 
-- 親: [ws.md](ws.md)、Phase: [p001](phase001/phase.md)（版 1: 2026-10-19 P1 q1303、改訂 2: 2026-10-19 P1 q1308、改訂 3: 2026-10-19 P1 q1309）
+- 親: [ws.md](ws.md)、Phase: [p001](phase001/phase.md)（版 1: 2026-10-19 P1 q1303、改訂 2: 2026-10-19 P1 q1308、改訂 3: 2026-10-19 P1 q1309、改訂 3.1: 2026-10-19 P1 q1311）
 - 起点（2026-10-19 ユーザー）:「では、sun4uでも/dev/graphicsを実装して、Xzedが動くようにします。」
 - 範囲（2026-10-19 18:29 ユーザー「まずAのフレームバッファだけ実装して、Sun PGX64とかはあとで対応できるように口だけ残しておきます。」）:
   OBP（OpenBoot・OpenBIOS）の firmware framebuffer を受け皿にした /dev/graphics と Xzed（QEMU の `-machine sun4u` で判定）、
   既知の card の driver が後で引き取れる**口**（backend の登録と優先度）。個々の card の driver（PGX64・XVR-500/600 など）と実機
   （Sun Blade 150）への道は本 WS の外（§9）。
-- 版 1 のレビュー [design-review-1.md](design-review-1.md)（Blocker 1・Major 8・Minor 12）への対応は §12、再レビュー [design-review-2.md](design-review-2.md)（Blocker 0・Major 6・Minor 12）への対応は §13。
+- 版 1 のレビュー [design-review-1.md](design-review-1.md)（Blocker 1・Major 8・Minor 12）への対応は §12、再レビュー [design-review-2.md](design-review-2.md)（Blocker 0・Major 6・Minor 12）への対応は §13、差分の確認 [design-review-3.md](design-review-3.md)（Blocker 0・Major 1・Minor 7）への対応は §14。
 - 未確定の点は §11 の判断。既定で書き、判断で変わる所に印（→D*）を付けた。
 
 ## 1. /dev/graphics の契約（変えない）
@@ -65,13 +65,18 @@ generic は実質 3 つ目の前段である。時期は pcat の graphics を�
 - 本 WS で登録する backend は firmware framebuffer の 1 つだけ。card の driver を後で足す時の手順（§4.2b）を header の comment に書く。
 - **行の分割（M5、M-1）**: 前段は user の 1 行を chunk に分けて backend の blit を呼ぶ。chunk の pixel 数は **copyin の buffer と
   展開後の buffer（`row_buffer`、4096 byte）の両方**に入る数で決める:
-  - RGB24: 展開しない（3 byte/pixel のまま渡す）。1365 pixel（1365×3＝4095 ≤ 4096）。
+  - RGB24: 展開しない（3 byte/pixel のまま渡す）。**1360 pixel**（1360×3＝4080 ≤ 4096、8 の倍数なので `BLIT_PATTERN` の x の位相が
+    chunk の境界でずれない、m-A）。
   - INDEX8: 1 byte/pixel。4096 pixel。
   - MONO1: copyin の `packed` を 512 byte にし、展開後は 1 pixel 1 byte なので **4096 pixel**（packed 512 byte＝4096 bit と
-    `row_buffer` 4096 byte の両方に入る）。chunk の境界は **8 の倍数**（src の bit offset を byte で進めるため。行の頭の bit の offset が
-    0 でない時は、最初の chunk を次の 8 の倍数の境界で切る）。
-  - 各 chunk で src の offset と dst の x を進める。幅による `EINVAL` は無くなり、上限は mode の幅で検証する。`packed` を
-    `row_buffer` より大きくしない（展開で越えて書くため、header の comment に書く）。
+    `row_buffer` 4096 byte の両方に入る）。chunk の境界は **8 の倍数**（src を byte で進めるため。UAPI に行の頭の bit の offset は無い、m-B）。
+  - 各 chunk で src の offset と dst の x を進める。幅による `EINVAL` は無くなり、上限は mode の幅で検証する。
+  - **不変条件（m-B）**: chunk ≤ min(8 × sizeof packed, sizeof row_buffer)（RGB24 は chunk × 3 ≤ sizeof row_buffer）を
+    `_Static_assert` にする。`packed`（512 byte）は stack に置かず、`row_buffer` と同じ `.vfs_bss` に置く。
+  - **pattern の原点（m-A）**: generic の口では、`BLIT_PATTERN` の pattern の位相を **request の左上からの相対の (x, row)** と定義し、
+    前段が chunk の x の offset と行の番号を backend に渡す。pcat が 1 行ずつ height 1 で呼んで y の位相が常に 0 になる既存の欠陥は本 WS の
+    外（Bug の候補として Q1 に報告）。
+  - p003 の host 試験に、pattern 付きの RGB24 の幅 1366（2 つ目の chunk の位相）を足す。
 
 ### 4.2 後段: firmware framebuffer（本 WS で唯一の backend）
 
@@ -106,7 +111,9 @@ generic は実質 3 つ目の前段である。時期は pcat の graphics を�
 - **fallback の時も名前を返す（M-3、案 (i)）**: `sun4u.framebuffer.*` の意味を「**HAL が表示している framebuffer**」とする。HAL が
   Bochs の fallback で画面を出した時も、HAL は同じ名前で phys＝`pci_memory_base`＋BAR0、640x400、pitch 2560、format `BGRX8888`
   （HAL が qext を LE に書くので）を返す。kernel は名前の出所を区別せず、両方の道で kernel_putc を publish して画面に login を出す。
-  HAL が画面を出せなかった時だけ名前は NULL で、その時 kernel は kernel_putc を publish せず、今の `console_putc`→`hal_putc` の道を残す
+  HAL の早期の console は handoff の 3 形（BGRX8888・XRGB8888・RGB332）と任意の width・pitch を描く（描けない形だと名前が NULL になり
+  /dev/graphics が無くなるため、m-C）。handoff 版 3 でも今の `display_framebuffer`・`display_registers`（`handoff.h:77-81`）は fallback
+  のために残す。`framebuffer_shown` は両方の道で `sun4u_framebuffer_init` が立てる。HAL が画面を出せなかった時だけ名前は NULL で、その時 kernel は kernel_putc を publish せず、今の `console_putc`→`hal_putc` の道を残す
   （案 (ii) を「画面が無い時」に限って併用）。
 
 ### 4.2b card の driver の口（driver は今回は作らない、ユーザーの決定）
@@ -149,7 +156,7 @@ generic は実質 3 つ目の前段である。時期は pcat の graphics を�
 ### 4.4 HAL の承認の差分（M6、→ [proposed/hal-sun4u-names.md](proposed/hal-sun4u-names.md)）
 
 hal.h は変えない。承認を求めるのは (1) `include/kern/boot.h` の定数 2 つと定義文、(2) bsp-sun4u の `hal_get_arch_handoff` の名前 10。
-具体的な差分は proposed に置いた（未適用、改訂 3 で定義文と名前の意味を変えたので、改めてユーザーに示す）。要点:
+具体的な差分は proposed に置いた（**2026-10-19 19:12 ユーザー「改訂 3 で承認」**、p002 で適用）。要点:
 
 - 定義文に「bytes in increasing address order」と書く（M-6）。`KERN_BOOT_FRAMEBUFFER_XRGB8888 = 3U` は memory で X,R,G,B の順
   （DRM の `XRGB8888`＝zedBSD の `BGRX8888` とは**逆**であることも定義文に書く）。`KERN_BOOT_FRAMEBUFFER_RGB332 = 4U` は 1 byte、
@@ -157,7 +164,8 @@ hal.h は変えない。承認を求めるのは (1) `include/kern/boot.h` の�
   blue＝(i&3)×255/3（pcat の `rgb332()` と DAC の ramp `backend.c:824-826` と同じ並び）。
 - `sun4u.framebuffer.*` は「HAL が表示している framebuffer」（M-3、fallback の時も返す）。
 - sun4u の framebuffer.c を触る時に、tree の「XRGB8888」の comment（l.94・l.251、DRM の意味）を「LE の word、memory では blue が先」と
-  明記する（M-6）。
+  明記する（M-6）。l.94 の palette は数値の 0xRRGGBB なので「0xRRGGBB values」、l.251 だけ「a little-endian word, blue
+  first in memory」（m-E）。
 - `color!` の失敗は framebuffer を渡さない。`sun4u.framebuffer.size` は `linebytes × height`。
 
 ### 4.5 入力（→D4・D5）
@@ -165,7 +173,7 @@ hal.h は変えない。承認を求めるのは (1) `include/kern/boot.h` の�
 - QEMU sun4u の i8042 を **poll**（kthread で 10 ms ごと）。
 - 既定 D5(a): pcat の [ps2-8042.c](../../src/drivers/platform/pcat/ps2-8042.c) を `src/drivers/isa/ps2-8042.c` へ移し、port の I/O を
   `kern_io_in8`/`kern_io_out8`、port の番号を引数、IRQ か poll かを選べる形にする。host 試験の hook（l.190〜198）は保つ。
-- D4 は p002 の前にユーザーに聞く（m-12）。proposed には (a) の差分だけを置き、(b) を選ばれたら差分を書き直して改めて示す。
+- D4 は決定済み（2026-10-19 19:12 ユーザー「(a) loader が tree から」）。i8042 の port は loader が OpenBIOS の tree から取り handoff 版 3 で渡す。
 - **初期化（m1）**: reset 直後の translate の有無に頼らず、driver が config byte を自分で書く（translate の bit を立て、poll の時は
   IRQ の bit を落とす）。pcat の set 1 の表をそのまま使う。
 - keyboard と mouse は evdev（`drv_input_device_register`）に出す。kernel と user は同じ endian なので変換は要らない。
@@ -179,7 +187,7 @@ hal.h は変えない。承認を求めるのは (1) `include/kern/boot.h` の�
   zshell は class basic・platform `*`・既定 n で、config で選べば build の対象になる。startx・Xzedrc・zwm.conf は zwm を選ぶと
   `ZEDBSD_PACKAGE_FILES` で rootfs に入る。
 - **arch の分岐を足さない（M8）**: X11 の program は platform `*` のまま、arch の分岐を足さない。base の全部を sparcv9 で build する
-  のはユーザーの担当（`plan/master.md` l.652）で、本 WS の外部の条件。
+  のはユーザーの担当（`plan/master.md` の 2026-10-19 18:17 の決定）で、本 WS の外部の条件。
 - 試験の config は `plan/ws275/tests/config-sun4u-x11.mk`（[config-sun4u.mk](../tools/ports/config-sun4u.mk) の写しに Xzed・zterm・
   zwm・zshell）。image は config の build と個別の file の複写だけで作る（2026-10-04 の規則）。
 - top の Makefile: `ZEDBSD_GRAPHICS_BACKEND` に sparcv9 → sun4u、「Only PC/AT and PC-98」の注記（l.519〜526）を直す（m12）。
@@ -227,29 +235,39 @@ BOOT_THEN:
   type:root
   type:startx &
   expect:<zterm の prompt の正規表現（p005 で zterm の画面で決める）>
-  keys:echo ws275-ok | tr a-z A-Z
-  expect:^WS275-OK$
+  keys:echo ws275-''ok
+  expect:^ws275-ok(\s|$)
   mouse:-2000,-2000
-  mouse:<DX>,<DY>              （左上から zterm の「WS275-OK」の行の語の上へ。DX・DY は p005 で原点と行から計算）
+  mouse:<DX>,<DY>              （左上から zterm の「ws275-ok」の出力の行の語の上へ。DX・DY は p005 で原点と行から計算）
   mouse:0,0,left
   mouse:0,0,left               （double click、zterm の DOUBLE_CLICK_MS は 400）
   mouse:0,0,middle             （PRIMARY を貼る、zterm/main.c:1458-1485。貼る先は pointer の位置に依らず shell の入力）
-  keys:<Enter>
-  expect:<WS275-OK を command として打った shell のエラーの行（例 `WS275-OK: not found`、p005 で zterm の shell の文言に合わせる）>
+  keys:                        （空。`keys:TEXT` は TEXT を打ってから Enter を押すので、空で Enter だけ、N-1 (d)）
+  expect:<ws275-ok を command として打った shell のエラーの行（例 `ws275-ok: not found`、行末に `$` を使わず `(\s|$)` か語の後ろを開けた形、p005 で zterm の shell の文言に合わせる）>
 ```
 
-  - `expect:^WS275-OK$` は打った行（`echo ws275-ok | tr …`、小文字）に合わず、出力の行にだけ合う（m-8）。
+  - 試験の image の program は `config-sun4u.mk` の `cat chown echo login ls mkdir sh uname` と X の 4 つだけで、`tr` は無い（N-1 (a)）。
+    打つ行は `echo ws275-''ok` にし、出力の行 `ws275-ok` だけが `^ws275-ok(\s|$)` に合う（打った行は `echo` で始まり、shell が `''` を
+    取り除いた後の語は出力にしか現れない）。
+  - **行末の `$` を使わない（N-1 (b)）**: zwm は 1024x768 の root に `/usr/share/zwm/backgrounds/1024x768.ppm` を描き、zterm（幅 984）の
+    右の x≈1006 から先は wallpaper である。boot-test.py の `read_cells` は画面の幅いっぱいまで読むので、行の末尾に記号か「�」が付く。
+    期待の正規表現（prompt を含む）は行末の `$` を使わず、`(\s|$)` か語の後ろの文字を問わない形にする。
   - mouse の判定（M-2）: double click で選んだ語を中の click で貼り、shell がその語を command として実行した行で確かめる。zwm に
     menu は無いので menu は使わない。`mouse:-2000,-2000` で Xzed が座標を左上に clamp すること、加速が無いこと、2 回の click が 400 ms に
     入ることは未確認（§8）。
 - **既知の色の画素の判定（M-4）**: 各本の PNG（T1 の最後の画面）で、T1 が既知の色の画素を読む（`python3 -I` の小さな script で PNG を
   解き、値で比べる。目視ではない）:
-  - Xzed の root（0x203040）: zterm の frame の外、例えば (1016,400)。
-  - zshell の bar（0x17212b）: bar の中の文字の無い点（p005 で座標を決める）。
-  - 32 bpp は各色の R・G・B が完全一致。8 bpp は RGB332 に量子化し ramp で戻した期待値と一致（0x203040 → index 0x25 →
-    (0x24,0x24,0x55)、0x17212b → index 0x04 → (0x00,0x24,0x00)。式は §4.4。値は p005 で script の出力と照らす）。
+  - **zshell の bar（0x17212b）**: 色の基準（N-1 (c)、root の 0x203040 は zwm の wallpaper に覆われて見えない）。bar（高さ 24、
+    `zshell/main.c:28,40`）の中の文字の無い点を p005 で決める。
+  - **wallpaper の R と B の違う点**: (1016,400) は wallpaper の 0xff7fff で R＝B なので使わない。例えば (1016,200) は PPM で 0xff7f00
+    （`python3 -I` で `userland/x11/zwm/backgrounds/1024x768.ppm` を読んだ値、2026-10-19 P1）。wallpaper は 1 画素ごとに色が変わる
+    ので、期待値は T1 の script が**同じ座標の PPM の値**を読んで作り、zwm が wallpaper を (0,0) から等倍で描く事を前提にする（ずれたら
+    PNG と PPM を照らして p006 で直す）。
+  - 32 bpp は R・G・B が完全一致。8 bpp は RGB332 に量子化し ramp で戻した期待値（0x17212b → index 0x04 → (0x00,0x24,0x00)、
+    0xff7f00 → index 0xec → (0xff,0x6d,0x00)。式は §4.4）と、**各成分 ±4 の許容**で比べる（m-D: QEMU の VGA の DAC が 6 bit なら
+    0x24 は 0x27、0x55 は 0x57 に見える。OpenBIOS の `color!` が DAC にどう書くかは未確認）。
     R と B の入れ替わり・X の byte の混入はここで見える。
-- **代わりの判定**: 原点が合わない・認識が不安定な時は、T1 が撮った PNG を Q1 が目視し、zterm の窓・`WS275-OK`、mouse の結果として
+- **代わりの判定**: 原点が合わない・認識が不安定な時は、T1 が撮った PNG を Q1 が目視し、zterm の窓・出力の行 `ws275-ok`、mouse の結果として
   (1) double click で反転した語（選択の表示）、(2) 貼られて実行された行、(3) Xzed の pointer が移動前と後の PNG で動いたこと、の
   どれが見えるかで判定する（PNG はユーザーにも見せる）。色の判定は目視に代えない。
 - 回帰（T1、1 つの QEMU ずつ）: pcat の bios-ide の login、pcat の PS/2（D5 で ps2 を移すため。bios-ide の login の試験は `type:` が
@@ -258,10 +276,13 @@ BOOT_THEN:
 
 ## 6. 変える file（sparcv9 はユーザーの担当、→D6）
 
+ユーザーの D6 の決定の時は「7 つ」だったが、レビュー 2 の m-5 で cmain.c と framebuffer.h が増え 9 行になった（m-F）。merge の前に差分を
+見せる時にこの差を添える。
+
 | file | 変更 | sparcv9 |
 | --- | --- | --- |
 | `bootloader/sparcv9/handoff.h`・`handoff.c`・stage2・`ofw.h` | display の node（stdout・`screen` の fallback と open）、property・`translate`・BAR、qext の読み、`color!`、i8042 の discover（D4）、handoff 版 3 | はい |
-| `src/hal/sparcv9/bsp-sun4u/framebuffer.c` | handoff の framebuffer に描く、Bochs の直の設定は fallback（D7） | はい |
+| `src/hal/sparcv9/bsp-sun4u/framebuffer.c` | handoff の framebuffer に描く（3 形 BGRX8888・XRGB8888・RGB332 と任意の width・pitch、m-C）、Bochs の直の設定は fallback（D7）、l.94・l.251 の comment（m-E） | はい |
 | `src/hal/sparcv9/bsp-sun4u/boot.c` | 名前付きの値 10（承認後、fallback の時も返す） | はい |
 | `src/hal/sparcv9/bsp-sun4u/framebuffer.h` | handoff の framebuffer と fallback の値を boot.c に渡す宣言 | はい |
 | `src/hal/sparcv9/cmain.c` | framebuffer の初期化の呼び出し、handoff の版の完全一致の確かめ（l.113-128）を 3 に | はい |
@@ -336,8 +357,8 @@ BOOT_THEN:
 | ID | 問い | 選択肢 | 既定と理由 |
 | --- | --- | --- | --- |
 | D6 | sparcv9 の file（§6 の「はい」の 9 つ）を誰が変えるか | — | **決定（2026-10-19 19:06 ユーザー）: 「P の担当が変える」**（merge の前に差分をユーザーに見せる） |
-| HAL | boot.h の 2 定数と bsp-sun4u の名前 10（proposed の差分） | — | **決定（同 19:06）: 「承認する」**。ただし改訂 3 で boot.h の定義文と名前の意味（fallback の時も返す）が変わったので、改めてユーザーに示す（ws.md の条件「文面が変われば改めて示す」） |
-| D4 | i8042 の port の出所 | (a) loader が OpenBIOS の tree から取り handoff 版 3 (b) HAL が ISA の固定値を名前で返す | (a)。serial と同じ形で機種差に備える |
+| HAL | boot.h の 2 定数と bsp-sun4u の名前 10（proposed の差分） | — | **決定（同 19:06）: 「承認する」、（19:12）「改訂 3 で承認」**。改訂 3.1 は承認の文面（boot.h の定義文と名前の意味）を変えていない |
+| D4 | i8042 の port の出所 | (a) loader が OpenBIOS の tree から取り handoff 版 3 (b) HAL が ISA の固定値を名前で返す | **決定（19:12）: (a)** |
 | D5 | 8042 の driver | (a) pcat の driver を `src/drivers/isa/` へ移す（pcat の PS/2 の回帰が要る） (b) sun4u 用に新しく書く（約 600 行の重複） | (a)。重複を作らない。回帰は T1 の 1 本 |
 | D7 | QEMU での Bochs の直の設定 | (a) やめる (b) handoff に framebuffer が無い時の fallback に残す | (b)。OpenBIOS の property が揃う事を T1 で確かめたら (a) に |
 | D1 | /dev/graphics の前段 | (a) generic を作り sun4u だけ使う（pcat・pc98 は Future Work） (b) pcat の前段を写す (c) generic にして pcat・pc98 も今移す | (a)。backend の口を置く場所が要り、pcat の graphics の回帰を本 WS に入れない |
@@ -394,3 +415,21 @@ BOOT_THEN:
 | m-10 platform の境界 | vgafont.c の compile を Guardrail の例外として Q1 に記録を依頼、F-111 で移す | §4.6 |
 | m-11 PS/2 の回帰 | `keys:` を含む試験と `ps2-wheel-qemu.sh` を回帰に | §5 |
 | m-12 D4 の 2 案 | D4 を p002 の前に聞く。proposed は (a) の差分だけ、(b) なら書き直して改めて示す | §4.5、proposed |
+
+## 14. レビュー 3 への対応（改訂 3.1）
+
+HAL の承認済みの文面（proposed の boot.h の定義文と名前付きの値の意味）は変えていない。proposed は comment の例（m-C）と古い記録（m-F）だけ直した。
+
+| 指摘 | 対応 | 所 |
+| --- | --- | --- |
+| N-1 (a) `tr` が無い | 打つ行を `echo ws275-''ok`、期待を `^ws275-ok(\s|$)` に | §5 |
+| N-1 (b) 行末の `$` | wallpaper の上を読む事を明記し、期待の正規表現に行末の `$` を使わない | §5 |
+| N-1 (c) 色の基準の点 | 基準を zshell の bar（0x17212b）に。2 つ目は wallpaper の R≠B の点（例 (1016,200)＝0xff7f00）で、期待値は同じ座標の PPM から | §5 |
+| N-1 (d) `keys:<Enter>` | Enter だけは `keys:`（空） | §5 |
+| m-A chunk と pattern | RGB24 の chunk を 1360 に、pattern の原点を request からの相対の (x, row)、pcat の y の位相は本 WS の外（Bug の候補）、幅 1366 の pattern の host 試験 | §4.1 |
+| m-B 不変条件 | chunk ≤ min(8×sizeof packed, sizeof row_buffer) を `_Static_assert`、packed は `.vfs_bss`、bit offset の文を削除 | §4.1 |
+| m-C 名前の帰結 | 早期の console が 3 形と任意の width・pitch を描く、`display_framebuffer`・`display_registers` を版 3 でも残す、proposed の comment を `framebuffer_shown` の意味に | §4.2、§6、proposed |
+| m-D 8 bpp の期待値 | 各成分 ±4 の許容 | §5 |
+| m-E comment | l.94 は「0xRRGGBB values」、l.251 だけ LE の word | §4.4、§6 |
+| m-F 古い記録 | D4・HAL を決定済みに、D6 の 7 と 9 の差を §6 に、master.md は日時で引用 | §4.4、§4.5、§4.6、§6、§11、proposed |
+| m-G 定義文の言い回し | 承認済みの文面なので変えない（他の理由で文面を変える時に直す） | — |
