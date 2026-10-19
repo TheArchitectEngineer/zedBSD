@@ -8,25 +8,36 @@
 /*
  * The sun4u board's framebuffer.
  *
- * The emulator's standard VGA has a linear framebuffer and the Bochs
- * display interface, which sets its resolution and depth.  The screen is
- * set to 640 by 400 pixels of 32 bits, so that 80 by 25 cells of the 8x16
- * font fill it exactly and a text console needs no margin.  The pixels and
- * the registers are PCI memory, little-endian, reached through the
- * physical bypass; on a big-endian machine the emulator reads the pixels
- * big-endian unless told otherwise, so the byte order is set first.
+ * The screen is the firmware framebuffer the loader handed over: the
+ * display OpenFirmware drew on, at its own size and depth, with pixels of
+ * one of three formats.  The text grid of 80 by 25 cells of the 8x16 font
+ * fills its top left corner.
+ *
+ * When the loader handed none over, the emulator's standard VGA is set up
+ * directly: its Bochs display interface sets 640 by 400 pixels of 32 bits,
+ * so that the grid fills it exactly.  The pixels and the registers are PCI
+ * memory, little-endian, reached through the physical bypass; on a
+ * big-endian machine the emulator reads the pixels big-endian unless told
+ * otherwise, so the byte order is set first.
+ *
+ * Either way, the screen shown is what the HAL names to the kernel.
  */
 
 #include <hal/hal.h>
 #include "../asi.h"
+#include "../bsp.h"
 #include "font.h"
 #include "framebuffer.h"
 
-/* The screen: its size in pixels, and the bytes of a row. */
+/* The screen the HAL sets up itself: its size in pixels, and the bytes of a row. */
 #define FRAMEBUFFER_WIDTH	640U
 #define FRAMEBUFFER_HEIGHT	400U
 #define FRAMEBUFFER_DEPTH	32U
 #define FRAMEBUFFER_STRIDE	(FRAMEBUFFER_WIDTH * 4U)
+
+/* The PCI IDs of the emulator's standard VGA, the display the HAL sets up itself. */
+#define FRAMEBUFFER_QEMU_VENDOR	0x1234U
+#define FRAMEBUFFER_QEMU_DEVICE	0x1111U
 
 /*
  * The register window of the standard VGA: the VGA ports from 0x3c0 at
@@ -76,13 +87,26 @@
 #define FRAMEBUFFER_BOCHS_LINEAR	0x40U
 
 /*
- * The physical addresses of the first pixel and of the register window.
+ * The physical addresses of the first pixel and of the register window,
+ * the screen's size in pixels, the bytes of a row and the
+ * KERN_BOOT_FRAMEBUFFER_* format of a pixel.
  *
  * Set once by sun4u_framebuffer_init() on the boot processor; zero until
  * then.
  */
 static uint64_t framebuffer_pixels;
 static uint64_t framebuffer_registers;
+static unsigned framebuffer_width;
+static unsigned framebuffer_height;
+static uint64_t framebuffer_pitch;
+static uint32_t framebuffer_format;
+
+/*
+ * The screen shown, as the HAL names it to the kernel.  Filled once by
+ * sun4u_framebuffer_init() when the screen shows, and not changed
+ * afterwards.
+ */
+static struct sun4u_framebuffer_names framebuffer_shown;
 
 /*
  * Nonzero once the screen shows; until then nothing is drawn.  Set once
@@ -91,7 +115,7 @@ static uint64_t framebuffer_registers;
 static int framebuffer_on;
 
 /*
- * The colours of the sixteen text attributes, as XRGB8888 values.
+ * The colours of the sixteen text attributes, as 0xRRGGBB values.
  *
  * Values referenced: the IBM VGA text-mode palette, the sixteen default
  * attribute colours.
@@ -103,29 +127,124 @@ static const uint32_t framebuffer_palette[16] = {
 	0xff5555U, 0xff55ffU, 0xffff55U, 0xffffffU
 };
 
+static int firmware_init(const struct sun4u_boot_handoff *handoff);
+static int bochs_init(const struct sun4u_boot_handoff *handoff);
 static void bochs_write(unsigned index, uint16_t value);
+static uint8_t rgb332(uint32_t value);
 static void put_pixel(unsigned x, unsigned y, uint32_t value);
 static void fill_black(void);
 
 /*
- * Sets the display to its linear mode and clears it.
+ * Shows the screen and clears it: the firmware framebuffer, or else the
+ * standard VGA set to its linear mode.
  */
 int
 sun4u_framebuffer_init(
-	uint64_t pci_memory_base,
-	uint32_t framebuffer,
-	uint32_t framebuffer_size,
-	uint32_t registers)
+	const struct sun4u_boot_handoff *handoff)
 {
-	/* Refuses a display the loader did not find, or one too small for the screen. */
-	if (framebuffer == 0 || registers == 0)
+	int status;
+
+	/* The firmware framebuffer comes first. */
+	status = firmware_init(handoff);
+
+	/* Without one, the HAL sets up the standard VGA itself. */
+	if (status != HAL_OK)
+		status = bochs_init(handoff);
+	if (status != HAL_OK)
+		return status;
+
+	/* Names the screen shown. */
+	framebuffer_shown.phys = framebuffer_pixels;
+	framebuffer_shown.size = framebuffer_pitch * framebuffer_height;
+	framebuffer_shown.width = framebuffer_width;
+	framebuffer_shown.height = framebuffer_height;
+	framebuffer_shown.pitch = framebuffer_pitch;
+	framebuffer_shown.format = framebuffer_format;
+
+	/* Clears the screen; from now on the console draws to it. */
+	fill_black();
+	framebuffer_on = 1;
+
+	/* Succeeded: the screen shows. */
+	return HAL_OK;
+}
+
+/*
+ * Reports the screen shown, or NULL when there is none.
+ */
+struct sun4u_framebuffer_names *
+sun4u_framebuffer_shown(
+	void)
+{
+	/* Nothing is named before the screen shows. */
+	if (!framebuffer_on)
+		return NULL;
+
+	/* Succeeded: the screen sun4u_framebuffer_init() showed. */
+	return &framebuffer_shown;
+}
+
+/* Takes the firmware framebuffer the loader handed over, as it is. */
+static int
+firmware_init(
+	const struct sun4u_boot_handoff *handoff)
+{
+	uint64_t row_bytes;
+
+	/* Refuses a missing framebuffer or one without pixels. */
+	if (handoff->framebuffer_phys == 0)
 		return HAL_ERR_UNSUPPORTED;
-	if (framebuffer_size < FRAMEBUFFER_STRIDE * FRAMEBUFFER_HEIGHT)
+	if (handoff->framebuffer_width == 0 || handoff->framebuffer_height == 0)
 		return HAL_ERR_UNSUPPORTED;
 
-	/* The PCI addresses as the processor sees them. */
-	framebuffer_pixels = pci_memory_base + framebuffer;
-	framebuffer_registers = pci_memory_base + registers;
+	/* Refuses a format the HAL cannot draw, and rows shorter than their pixels. */
+	if (handoff->framebuffer_format == KERN_BOOT_FRAMEBUFFER_RGB332) {
+		/* One byte a pixel. */
+		row_bytes = handoff->framebuffer_width;
+	} else if (handoff->framebuffer_format == KERN_BOOT_FRAMEBUFFER_BGRX8888 ||
+		   handoff->framebuffer_format == KERN_BOOT_FRAMEBUFFER_XRGB8888) {
+		/* Four bytes a pixel. */
+		row_bytes = (uint64_t)handoff->framebuffer_width * 4U;
+	} else {
+		/* Any other format is not drawn. */
+		return HAL_ERR_UNSUPPORTED;
+	}
+	if (handoff->framebuffer_pitch < row_bytes)
+		return HAL_ERR_UNSUPPORTED;
+
+	/* Keeps the screen as the firmware left it. */
+	framebuffer_pixels = handoff->framebuffer_phys;
+	framebuffer_width = handoff->framebuffer_width;
+	framebuffer_height = handoff->framebuffer_height;
+	framebuffer_pitch = handoff->framebuffer_pitch;
+	framebuffer_format = handoff->framebuffer_format;
+	framebuffer_shown.vendor = handoff->framebuffer_vendor;
+	framebuffer_shown.device = handoff->framebuffer_device;
+
+	/* Succeeded: the firmware framebuffer is the screen. */
+	return HAL_OK;
+}
+
+/* Sets the standard VGA to 640 by 400 pixels of 32 bits, read little-endian. */
+static int
+bochs_init(
+	const struct sun4u_boot_handoff *handoff)
+{
+	/* Refuses a display the loader did not find, or one too small for the screen. */
+	if (handoff->display_framebuffer == 0 || handoff->display_registers == 0)
+		return HAL_ERR_UNSUPPORTED;
+	if (handoff->display_framebuffer_size < FRAMEBUFFER_STRIDE * FRAMEBUFFER_HEIGHT)
+		return HAL_ERR_UNSUPPORTED;
+
+	/* The PCI addresses as the processor sees them, and the screen. */
+	framebuffer_pixels = handoff->pci_memory_base + handoff->display_framebuffer;
+	framebuffer_registers = handoff->pci_memory_base + handoff->display_registers;
+	framebuffer_width = FRAMEBUFFER_WIDTH;
+	framebuffer_height = FRAMEBUFFER_HEIGHT;
+	framebuffer_pitch = FRAMEBUFFER_STRIDE;
+	framebuffer_format = KERN_BOOT_FRAMEBUFFER_BGRX8888;
+	framebuffer_shown.vendor = FRAMEBUFFER_QEMU_VENDOR;
+	framebuffer_shown.device = FRAMEBUFFER_QEMU_DEVICE;
 
 	/* Turns the display off while its mode is set, and reads the pixels little-endian. */
 	bochs_write(FRAMEBUFFER_BOCHS_ENABLE, 0);
@@ -145,11 +264,7 @@ sun4u_framebuffer_init(
 	bochs_write(FRAMEBUFFER_BOCHS_ENABLE, FRAMEBUFFER_BOCHS_ENABLED | FRAMEBUFFER_BOCHS_LINEAR);
 	sparcv9_phys_write8(framebuffer_registers + FRAMEBUFFER_VGA_PORTS + FRAMEBUFFER_VGA_ATTRIBUTE, FRAMEBUFFER_VGA_UNBLANK);
 
-	/* Clears the screen; from now on the console draws to it. */
-	fill_black();
-	framebuffer_on = 1;
-
-	/* Succeeded: the screen shows. */
+	/* Succeeded: the standard VGA shows its linear mode. */
 	return HAL_OK;
 }
 
@@ -239,7 +354,24 @@ bochs_write(
 	sparcv9_phys_write16_le(framebuffer_registers + FRAMEBUFFER_BOCHS_REGISTERS + index * 2U, value);
 }
 
-/* Stores one pixel of the screen. */
+/*
+ * Reduces a 0xRRGGBB colour to its KERN_BOOT_FRAMEBUFFER_RGB332 index: the
+ * top three bits of red and of green and the top two of blue.
+ */
+static uint8_t
+rgb332(
+	uint32_t value)
+{
+	uint8_t index;
+
+	/* Packs red in bits 7-5, green in bits 4-2 and blue in bits 1-0. */
+	index = (uint8_t)(((value >> 16) & 0xe0U) | ((value >> 11) & 0x1cU) | ((value >> 6) & 3U));
+
+	/* Succeeded: the palette index. */
+	return index;
+}
+
+/* Stores one pixel of the screen; a pixel off the screen is not stored. */
 static void
 put_pixel(
 	unsigned x,
@@ -247,10 +379,30 @@ put_pixel(
 	uint32_t value)
 {
 	uint64_t address;
+	uint32_t swapped;
 
-	/* The pixel's place in the framebuffer, a little-endian XRGB8888 word. */
-	address = framebuffer_pixels + (uint64_t)y * FRAMEBUFFER_STRIDE + (uint64_t)x * 4U;
-	sparcv9_phys_write32_le(address, value);
+	/* The text grid may reach beyond a small screen. */
+	if (x >= framebuffer_width || y >= framebuffer_height)
+		return;
+
+	/* A palette index is one byte. */
+	address = framebuffer_pixels + (uint64_t)y * framebuffer_pitch;
+	if (framebuffer_format == KERN_BOOT_FRAMEBUFFER_RGB332) {
+		sparcv9_phys_write8(address + x, rgb332(value));
+		return;
+	}
+
+	/* A little-endian word is blue first in memory. */
+	address += (uint64_t)x * 4U;
+	if (framebuffer_format == KERN_BOOT_FRAMEBUFFER_BGRX8888) {
+		sparcv9_phys_write32_le(address, value);
+		return;
+	}
+
+	/* The unused byte, red, green and blue: the word with its bytes reversed. */
+	swapped = ((value & 0xffU) << 24) | ((value & 0xff00U) << 8) |
+		((value >> 8) & 0xff00U) | (value >> 24);
+	sparcv9_phys_write32_le(address, swapped);
 }
 
 /* Paints the whole screen black. */
@@ -262,8 +414,8 @@ fill_black(
 	unsigned y;
 
 	/* Clears every pixel, row by row. */
-	for (y = 0; y < FRAMEBUFFER_HEIGHT; y++) {
-		for (x = 0; x < FRAMEBUFFER_WIDTH; x++)
+	for (y = 0; y < framebuffer_height; y++) {
+		for (x = 0; x < framebuffer_width; x++)
 			put_pixel(x, y, 0);
 	}
 }

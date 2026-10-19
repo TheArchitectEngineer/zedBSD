@@ -12,6 +12,7 @@
 
 #include <hal/hal.h>
 #include "../bsp.h"
+#include "framebuffer.h"
 
 /*
  * The HAL's copy of the loader's handoff.
@@ -41,7 +42,17 @@ static uint64_t cmd646_primary_command;
 static uint64_t cmd646_primary_control;
 static uint64_t serial_port;
 
+/*
+ * The 8042 keyboard controller's data ("sun4u.i8042.data") and command
+ * ("sun4u.i8042.command") port offsets, each a 64-bit word, zero when the
+ * loader found no 8042.  Filled once with boot_handoff, and not changed
+ * afterwards.
+ */
+static uint64_t i8042_data;
+static uint64_t i8042_command;
+
 static int handoff_name_is(const char *name, const char *wanted);
+static void *framebuffer_named(const char *name);
 
 /*
  * Keeps a copy of the loader's handoff and builds the kernel's from it.
@@ -68,6 +79,10 @@ sun4u_boot_init(
 
 	/* Keeps the serial console's port for its name. */
 	serial_port = boot_handoff.serial_io_offset;
+
+	/* Keeps the 8042's ports for their names. */
+	i8042_data = boot_handoff.i8042_data;
+	i8042_command = boot_handoff.i8042_command;
 }
 
 /*
@@ -99,11 +114,21 @@ sun4u_kernel_handoff(
  * I/O port offsets of the CMD646 IDE controller's primary channel, and
  * "sun4u.serial.port" the I/O port offset of the serial console, each a
  * 64-bit word.
+ *
+ * "sun4u.framebuffer.phys", ".size", ".width", ".height", ".pitch" and
+ * ".format" describe the framebuffer the HAL shows, from the loader or the
+ * HAL's own setting of the standard VGA, its format a
+ * KERN_BOOT_FRAMEBUFFER_* value, and ".pci.vendor" and ".pci.device" the
+ * display's PCI IDs; all are NULL when the HAL shows no framebuffer, and
+ * the PCI IDs when the display is not on PCI.  "sun4u.i8042.data" and
+ * "sun4u.i8042.command" are the I/O port offsets of the 8042 keyboard
+ * controller, NULL when there is none.  Each is a 64-bit word.
  */
 void *
 hal_get_arch_handoff(
 	const char *name)
 {
+	void *framebuffer;
 	int match;
 
 	/* Exposes the IDE controller's primary command block. */
@@ -121,7 +146,82 @@ hal_get_arch_handoff(
 	if (match)
 		return &serial_port;
 
+	/* Exposes the 8042's data port, when the loader found one. */
+	match = handoff_name_is(name, "sun4u.i8042.data");
+	if (match && i8042_data != 0)
+		return &i8042_data;
+
+	/* Exposes the 8042's command port, when the loader found one. */
+	match = handoff_name_is(name, "sun4u.i8042.command");
+	if (match && i8042_command != 0)
+		return &i8042_command;
+
+	/* Exposes the framebuffer the HAL shows. */
+	framebuffer = framebuffer_named(name);
+	if (framebuffer != NULL)
+		return framebuffer;
+
 	/* Reports an unavailable or unknown architecture handoff. */
+	return NULL;
+}
+
+/*
+ * Returns one value of the framebuffer the HAL shows, by name, or NULL
+ * when the name is not one of them or the value is unavailable.
+ */
+static void *
+framebuffer_named(
+	const char *name)
+{
+	struct sun4u_framebuffer_names *shown;
+	int match;
+
+	/* Nothing is named when the HAL shows no framebuffer. */
+	shown = sun4u_framebuffer_shown();
+	if (shown == NULL)
+		return NULL;
+
+	/* Exposes the physical address of the first pixel. */
+	match = handoff_name_is(name, "sun4u.framebuffer.phys");
+	if (match)
+		return &shown->phys;
+
+	/* Exposes the bytes of the screen. */
+	match = handoff_name_is(name, "sun4u.framebuffer.size");
+	if (match)
+		return &shown->size;
+
+	/* Exposes the width in pixels. */
+	match = handoff_name_is(name, "sun4u.framebuffer.width");
+	if (match)
+		return &shown->width;
+
+	/* Exposes the height in pixels. */
+	match = handoff_name_is(name, "sun4u.framebuffer.height");
+	if (match)
+		return &shown->height;
+
+	/* Exposes the bytes of a row. */
+	match = handoff_name_is(name, "sun4u.framebuffer.pitch");
+	if (match)
+		return &shown->pitch;
+
+	/* Exposes the pixel format. */
+	match = handoff_name_is(name, "sun4u.framebuffer.format");
+	if (match)
+		return &shown->format;
+
+	/* Exposes the display's PCI vendor, when it is on PCI. */
+	match = handoff_name_is(name, "sun4u.framebuffer.pci.vendor");
+	if (match && shown->vendor != 0)
+		return &shown->vendor;
+
+	/* Exposes the display's PCI device, when it is on PCI. */
+	match = handoff_name_is(name, "sun4u.framebuffer.pci.device");
+	if (match && shown->vendor != 0)
+		return &shown->device;
+
+	/* Reports a name that is not the framebuffer's, or an unavailable value. */
 	return NULL;
 }
 
