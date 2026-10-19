@@ -21,7 +21,8 @@
  * a window of tens of kilobytes, a packet for each segment of it (BUG-222);
  * the 32-bit boards keep the small pool their memory map was laid out for.
  */
-#if defined(HAL_ARCH_AMD64) || defined(HAL_ARCH_ARM64)
+#if defined(HAL_ARCH_AMD64) || defined(HAL_ARCH_ARM64) || \
+    defined(HAL_ARCH_RISCV64)
 #define PACKET_BUF_POOL_COUNT	256U
 #else
 #define PACKET_BUF_POOL_COUNT	32U

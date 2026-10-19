@@ -7,8 +7,8 @@
 
 /*
  * The binding of a board whose console is the HAL's and that publishes
- * no boot device: the emulators' RISC-V and m68k virt boards, the mac99
- * and the pseries.
+ * no boot device: the emulators' 32-bit RISC-V and m68k virt boards, the
+ * mac99 and the pseries.
  *
  * The kernel starts and finds no root.  Its console is the HAL's early
  * console, which writes to the board's screen; halting, rebooting and
