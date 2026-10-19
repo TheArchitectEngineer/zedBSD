@@ -106,13 +106,7 @@ alloc_vm_page(
 
 	/* Asks the HAL for one page of ordinary memory. */
 	kern_memset(memory, 0, sizeof(*memory));
-
-	/* Returns a short allocation rather than leaving it behind. */
 	error = vm_private_page_alloc(memory);
-	if (error != HAL_OK && memory->size != 0) {
-		if (hal_pmem_free(&memory->paddr, memory->size) != HAL_OK)
-			HAL_FATAL("VM page allocation rollback failed");
-	}
 
 	/* Reports why the allocation failed. */
 	if (error != 0)

@@ -238,8 +238,6 @@ int vm_object_content_prepare_delayed(struct vm_object_content *content, struct 
 unsigned vm_object_cache_drain(struct mount *mount);
 /* Drops an inode's idle cache-only object, as a removal leaves the inode without names. */
 int vm_object_cache_discard_inode(struct inode *inode);
-/* Non-destructive preflight; caller excludes new mount users through later commit. */
-int vm_object_discard_mount_check(struct mount *mount);
 /* Closed admission required. NULL inode counts mount paths; otherwise inode paths. */
 int vm_object_discard_mount_refs(struct mount *, struct inode *, unsigned *);
 /* Commit only after closed admission and complete cross-layer preflight. */
@@ -435,15 +433,6 @@ void
 vm_object_resize_abort(
 	struct vm_object_resize *resize);
 
-/*
- * Transitional test/helper entry point.  Production EOF mutations use the
- * begin/prepare/commit transaction through inode_truncate/file I/O.
- */
-void
-vm_object_truncate_inode(
-	struct inode *inode,
-	off_t size);
-
 int
 vm_object_reclaim_one(void);
 
@@ -452,9 +441,6 @@ vm_object_count(void);
 
 unsigned
 vm_object_page_count(void);
-
-unsigned
-vm_object_retained_count(void);
 
 /* Allocates one page-sized physical run for the VM layer. */
 int vm_private_page_alloc(struct kern_pmem *memory);

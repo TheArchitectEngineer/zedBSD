@@ -28,16 +28,6 @@
 #include "kern/clock.h"
 #include "vmspace-internal.h"
 
-/*
- * Test checkpoints.
- *
- * The test build defines these to observe a step that leaves no other
- * trace.  They are weak so that a production kernel links without them and
- * every call site is a null test the compiler removes.
- */
-extern void vmspace_unmap_retire_checkpoint(struct vmspace *vm, uintptr_t start, size_t size) __attribute__((weak));
-extern void vmspace_object_revoke_checkpoint(struct vmspace *vm, uintptr_t address) __attribute__((weak));
-
 static void free_vm_page(struct vmspace *vm, struct vm_page *page, int unmap);
 static void detach_vm_page_for_unmap(struct vmspace *vm, struct vm_page *page);
 static void object_mapping_note_dirty(struct vm_page *page);
@@ -170,9 +160,6 @@ vmspace_object_page_revoke(
 		spin_unlock_irqrestore(&object->lock, irq);
 		mutex_unlock(&vm->lock);
 		vm_metadata_leave();
-
-		if (vmspace_object_revoke_checkpoint != NULL)
-			vmspace_object_revoke_checkpoint(vm, mapping->address);
 
 		/* Revokes the hardware mapping with no lock held. */
 		if (was_mapped) {
@@ -345,15 +332,6 @@ vmspace_unmap(
 
 	mutex_unlock(&vm->lock);
 	vm_metadata_leave();
-
-	/*
-	 * Test-only weak checkpoint: VA is free and old mappings are
-	 * detached, while heavyweight backing/object retirement has not
-	 * started yet.
-	 */
-	if (error == 0 && retired != NULL &&
-	    vmspace_unmap_retire_checkpoint != NULL)
-		vmspace_unmap_retire_checkpoint(vm, start, size);
 
 	release_retired_regions(retired);
 
@@ -1020,9 +998,6 @@ out_locked:
 	kern_free(split_second);
 
 	/* Retires the replaced regions outside every lock. */
-	if (error == 0 && retired != NULL &&
-	    vmspace_unmap_retire_checkpoint != NULL)
-		vmspace_unmap_retire_checkpoint(vm, start, prepared->size);
 	release_retired_regions(retired);
 
 	/* Reports why the replacement failed. */

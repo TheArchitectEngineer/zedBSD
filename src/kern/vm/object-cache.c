@@ -91,31 +91,6 @@ vm_object_page_count(
 }
 
 /*
- * Counts the objects retained for a later writeback.
- */
-unsigned
-vm_object_retained_count(
-	void)
-{
-	struct vm_object *object;
-	unsigned count;
-	bool enabled;
-
-	/* Counts the registered objects a failed writeback retained. */
-	count = 0;
-	enabled = registry_lock();
-	for (object = shared_objects; object != NULL; object = object->next) {
-		if (object->flags & VM_OBJECT_RETAINED_WRITEBACK)
-			count++;
-	}
-
-	registry_unlock(enabled);
-
-	/* Reports the sampled count. */
-	return count;
-}
-
-/*
  * Prepares optional read ownership before the caller takes I/O locks.
  */
 void
@@ -414,21 +389,6 @@ object_discard_mount_check_locked(struct mount *mount)
 		if (error != 0)
 			break;
 	}
-	return error;
-}
-
-/* Caller retains the mount and excludes fresh users through a later commit. */
-int
-vm_object_discard_mount_check(struct mount *mount)
-{
-	bool enabled;
-	int error;
-
-	if (mount == NULL || mount->m_disk == NULL || disk_media_status(mount->m_disk) == 0)
-		return EINVAL;
-	enabled = registry_lock();
-	error = object_discard_mount_check_locked(mount);
-	registry_unlock(enabled);
 	return error;
 }
 

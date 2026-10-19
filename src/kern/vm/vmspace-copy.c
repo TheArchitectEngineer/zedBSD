@@ -42,7 +42,6 @@ static int vmspace_pin_mapping_ready(struct vmspace *vm, uintptr_t address, uint
 static int vmspace_pin_mapping_ready_locked(struct vmspace *vm, uintptr_t address, uint32_t required);
 static size_t vmspace_pin_first_unready_locked(struct vmspace *vm, uintptr_t first, size_t page_count, uint32_t required);
 static int vmspace_pin_fault_from(struct vmspace *vm, uintptr_t start, uintptr_t last, uint32_t required, uint32_t fault_access);
-static void vmspace_unwire_range_locked(struct vmspace *vm, uintptr_t address, size_t size);
 static int copy_backing(struct vmspace *vm, uintptr_t user_address, void *kernel, size_t size, uint32_t required, int to_user);
 static int vmspace_copy_to_locked(struct vmspace *vm, uintptr_t destination, const void *source, size_t size);
 static int vmspace_copy_from_locked(struct vmspace *vm, void *destination, uintptr_t source, size_t size);
@@ -376,127 +375,6 @@ retry_faults:
 }
 
 /*
- * Faults in and wires every page of a user range, undoing the wires on
- * failure.
- */
-int
-vmspace_wire_range(
-	struct vmspace *vm,
-	uintptr_t address,
-	size_t size,
-	uint32_t required)
-{
-	uintptr_t page;
-	uintptr_t first;
-	uintptr_t last;
-	uint32_t fault_access;
-	int error;
-	struct vm_region *region;
-	struct vm_page *entry;
-	uint64_t sequence;
-	int resident;
-
-	error = vmspace_check(vm, address, size, required);
-	if (error != 0)
-		return error;
-
-	/*
-	 * vmspace_check() accepts a protection mask, while vmspace_fault()
-	 * describes one concrete access.  A bidirectional uaccess pin asks
-	 * for READ|WRITE and must not pass that mask through as though it
-	 * were an individual fault access.
-	 */
-	if ((required & HAL_SPACE_WRITE) != 0)
-		fault_access = HAL_SPACE_WRITE;
-	else if ((required & HAL_SPACE_READ) != 0)
-		fault_access = HAL_SPACE_READ;
-	else
-		fault_access = HAL_SPACE_EXEC;
-	page = address & ~(uintptr_t)(PAGE_SIZE - 1U);
-	first = page;
-	last = (address + size - 1U) & ~(uintptr_t)(PAGE_SIZE - 1U);
-
-	/* Faults and wires one page at a time, waiting out BUSY pages. */
-	for (;;) {
-		error = vmspace_fault(vm, page, fault_access);
-		if (error != 0)
-			break;
-
-		/* Takes the locks the mapping below is inspected under. */
-		vm_metadata_enter();
-		mutex_lock(&vm->lock);
-
-		/* Looks up the mapping the fault just published. */
-		region = find_region_locked(vm, page, 1);
-		if (region != NULL)
-			entry = vmspace_find_page(region, page);
-		else
-			entry = NULL;
-
-		/* Waits out a mapping another pass owns. */
-		if (entry != NULL && (entry->flags & VM_MAPPING_BUSY) != 0) {
-			sequence = waitq_sequence(&vm->fault_waitq);
-			mutex_unlock(&vm->lock);
-			vm_metadata_leave();
-			vmspace_wait_fault_event(vm, sequence);
-			continue;
-		}
-
-		/* Classifies the page through its actual retained device, object or private backing. */
-		resident = 0;
-		if (entry != NULL) {
-			/* Device and object storage remain retained independently of ordinary private RAM residency. */
-			if (region->device != NULL || entry->object_page != NULL) {
-				resident = 1;
-			} else {
-				/* Only a private backing needs the ordinary RAM residency query. */
-				resident = vm_private_page_is_resident(entry);
-			}
-		}
-
-		/* Refuses a page the completed fault did not leave resident in its own backing domain. */
-		if (!resident) {
-			error = EFAULT;
-			mutex_unlock(&vm->lock);
-			vm_metadata_leave();
-			break;
-		}
-
-		/* Wires the page and moves on to the next one. */
-		entry->wire_count++;
-		vmspace_generation_advance_locked(vm);
-		mutex_unlock(&vm->lock);
-		vm_metadata_leave();
-		if (page == last)
-			return 0;
-		page += PAGE_SIZE;
-	}
-
-	/* Unwires the pages wired before the failure. */
-	while (page != first) {
-		page -= PAGE_SIZE;
-		vm_metadata_enter();
-		mutex_lock(&vm->lock);
-		region = find_region_locked(vm, page, 1);
-		if (region != NULL)
-			entry = vmspace_find_page(region, page);
-		else
-			entry = NULL;
-		if (entry != NULL && entry->wire_count != 0)
-			entry->wire_count--;
-		mutex_unlock(&vm->lock);
-		vm_metadata_leave();
-	}
-
-	/* Reports the failure. */
-	if (error != 0)
-		return error;
-
-	/* Succeeded. */
-	return 0;
-}
-
-/*
  * Checks that a user range is mapped with the required protection.
  */
 int
@@ -525,28 +403,6 @@ vmspace_check(
 
 	/* Succeeded. */
 	return 0;
-}
-
-/*
- * Unwires every page of a user range.
- */
-void
-vmspace_unwire_range(
-	struct vmspace *vm,
-	uintptr_t address,
-	size_t size)
-{
-	if (vm == NULL || vm == &kernel_vmspace)
-		return;
-
-	vm_metadata_enter();
-	mutex_lock(&vm->lock);
-
-	vmspace_unwire_range_locked(vm, address, size);
-	vmspace_generation_advance_locked(vm);
-
-	mutex_unlock(&vm->lock);
-	vm_metadata_leave();
 }
 
 /*
@@ -790,38 +646,6 @@ vmspace_pin_fault_from(
 
 	/* Succeeded: every page went through the fault path or was ready. */
 	return 0;
-}
-
-/* Unwires every page of a range; the caller holds the VM lock. */
-static void
-vmspace_unwire_range_locked(
-	struct vmspace *vm,
-	uintptr_t address,
-	size_t size)
-{
-	uintptr_t page;
-	uintptr_t last;
-	struct vm_region *region;
-	struct vm_page *entry;
-
-	if (vm == NULL || size == 0 || address > UINTPTR_MAX - size)
-		return;
-
-	/* Drops one wire from every mapped page of the range. */
-	page = address & ~(uintptr_t)(PAGE_SIZE - 1U);
-	last = (address + size - 1U) & ~(uintptr_t)(PAGE_SIZE - 1U);
-	for (;;) {
-		region = find_region_locked(vm, page, 1);
-		if (region != NULL)
-			entry = vmspace_find_page(region, page);
-		else
-			entry = NULL;
-		if (entry != NULL && entry->wire_count != 0)
-			entry->wire_count--;
-		if (page == last)
-			break;
-		page += PAGE_SIZE;
-	}
 }
 
 /* Copies between kernel memory and a pinned user range in either direction. */
