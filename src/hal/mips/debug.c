@@ -23,7 +23,7 @@
 #include "task.h"
 #include "trap.h"
 
-static int user_address_valid(uint32_t value);
+static int user_address_valid(uintptr_t value);
 
 /*
  * Reads a task's user integer registers and its next instruction.
@@ -276,7 +276,7 @@ hal_task_get_debug_points(
 /* Reports whether a value is an address in the user half. */
 static int
 user_address_valid(
-	uint32_t value)
+	uintptr_t value)
 {
 	/* The user segment ends below the kernel's addresses. */
 	if (value >= MIPS_USER_LIMIT)

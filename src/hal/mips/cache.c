@@ -30,6 +30,7 @@
 #include "asm.h"
 #include "cache.h"
 #include "cpu.h"
+#include "io.h"
 
 /* The fields of Config1 that describe each cache. */
 #define CACHE_I_SETS_SHIFT	22
@@ -154,7 +155,7 @@ mips_cache_flush_page_colors(
 	step = step_of(&cache_data);
 	for (way = 0; way < cache_data.ways; way++) {
 		for (offset = 0; offset < cache_data.way_bytes; offset += step) {
-			address = MIPS_KSEG0_BASE + way * cache_data.way_bytes + offset;
+			address = mips_segment_pointer(MIPS_KSEG0_BASE + way * cache_data.way_bytes + offset);
 			__asm__ volatile("cache 0x01, 0(%0)" : : "r"(address) : "memory");
 		}
 	}
@@ -164,7 +165,7 @@ mips_cache_flush_page_colors(
 		step = step_of(&cache_instruction);
 		for (way = 0; way < cache_instruction.ways; way++) {
 			for (offset = 0; offset < cache_instruction.way_bytes; offset += step) {
-				address = MIPS_KSEG0_BASE + way * cache_instruction.way_bytes + offset;
+				address = mips_segment_pointer(MIPS_KSEG0_BASE + way * cache_instruction.way_bytes + offset);
 				__asm__ volatile("cache 0x00, 0(%0)" : : "r"(address) : "memory");
 			}
 		}
@@ -331,13 +332,17 @@ instruction_hazard(
 {
 	uintptr_t target;
 
-	/* Jumps to the label that follows with jr.hb. */
+	/*
+	 * Jumps to the label that follows with jr.hb.  The label's address
+	 * is built from its halves, which both widths sign-extend alike.
+	 */
 	__asm__ volatile(".set push\n\t"
 			 ".set noreorder\n\t"
-			 "la %0, 1f\n\t"
+			 "lui %0, %%hi(.Lhazard%=)\n\t"
+			 "addiu %0, %0, %%lo(.Lhazard%=)\n\t"
 			 "jr.hb %0\n\t"
 			 "nop\n"
-			 "1:\n\t"
+			 ".Lhazard%=:\n\t"
 			 ".set pop"
 			 : "=r"(target)
 			 :

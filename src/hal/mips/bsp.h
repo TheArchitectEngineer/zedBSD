@@ -46,6 +46,10 @@ uint32_t
 mips_board_memory_size(
 	void);
 
+uint32_t
+mips_board_memory_total(
+	void);
+
 void
 mips_board_ramdisk(
 	uint32_t *physical,

@@ -8,8 +8,10 @@
 /*
  * The MIPS context switch and the first entry of a kernel task.
  *
- * A switch keeps only what the o32 calling convention makes the callee
- * save: s0 to s7, fp and ra, with sp itself in the save slot.  Status is
+ * A switch keeps only what the o32 and n64 calling conventions make the
+ * callee save: s0 to s7, fp and ra, a whole register each, with sp
+ * itself in the save slot.  (n64 also has gp callee-saved; the kernel
+ * never uses gp, which the link of vmunix checks.)  Status is
  * neither saved nor loaded, so the interrupt mask and the interrupt
  * enable go on as they are; the caller's interrupt save and restore
  * bring IE back on each side.
@@ -29,31 +31,31 @@
 	.global mips_task_dispatch
 	.type mips_task_dispatch, %function
 mips_task_dispatch:
-	addiu $29, $29, -(MIPS_DISPATCH_WORDS * 4)
-	sw $16, 0($29)
-	sw $17, 4($29)
-	sw $18, 8($29)
-	sw $19, 12($29)
-	sw $20, 16($29)
-	sw $21, 20($29)
-	sw $22, 24($29)
-	sw $23, 28($29)
-	sw $30, MIPS_DISPATCH_FP * 4($29)
-	sw $31, MIPS_DISPATCH_RA * 4($29)
-	sw $29, 0($4)
-	lw $29, 0($5)
-	lw $16, 0($29)
-	lw $17, 4($29)
-	lw $18, 8($29)
-	lw $19, 12($29)
-	lw $20, 16($29)
-	lw $21, 20($29)
-	lw $22, 24($29)
-	lw $23, 28($29)
-	lw $30, MIPS_DISPATCH_FP * 4($29)
-	lw $31, MIPS_DISPATCH_RA * 4($29)
+	PTR_ADDIU $29, $29, -(MIPS_DISPATCH_WORDS * MIPS_REGISTER_BYTES)
+	REG_S $16, 0 * MIPS_REGISTER_BYTES($29)
+	REG_S $17, 1 * MIPS_REGISTER_BYTES($29)
+	REG_S $18, 2 * MIPS_REGISTER_BYTES($29)
+	REG_S $19, 3 * MIPS_REGISTER_BYTES($29)
+	REG_S $20, 4 * MIPS_REGISTER_BYTES($29)
+	REG_S $21, 5 * MIPS_REGISTER_BYTES($29)
+	REG_S $22, 6 * MIPS_REGISTER_BYTES($29)
+	REG_S $23, 7 * MIPS_REGISTER_BYTES($29)
+	REG_S $30, MIPS_DISPATCH_FP * MIPS_REGISTER_BYTES($29)
+	REG_S $31, MIPS_DISPATCH_RA * MIPS_REGISTER_BYTES($29)
+	REG_S $29, 0($4)
+	REG_L $29, 0($5)
+	REG_L $16, 0 * MIPS_REGISTER_BYTES($29)
+	REG_L $17, 1 * MIPS_REGISTER_BYTES($29)
+	REG_L $18, 2 * MIPS_REGISTER_BYTES($29)
+	REG_L $19, 3 * MIPS_REGISTER_BYTES($29)
+	REG_L $20, 4 * MIPS_REGISTER_BYTES($29)
+	REG_L $21, 5 * MIPS_REGISTER_BYTES($29)
+	REG_L $22, 6 * MIPS_REGISTER_BYTES($29)
+	REG_L $23, 7 * MIPS_REGISTER_BYTES($29)
+	REG_L $30, MIPS_DISPATCH_FP * MIPS_REGISTER_BYTES($29)
+	REG_L $31, MIPS_DISPATCH_RA * MIPS_REGISTER_BYTES($29)
 	jr $31
-	addiu $29, $29, MIPS_DISPATCH_WORDS * 4
+	PTR_ADDIU $29, $29, MIPS_DISPATCH_WORDS * MIPS_REGISTER_BYTES
 	.size mips_task_dispatch, . - mips_task_dispatch
 
 	/*
@@ -72,7 +74,7 @@ mips_kernel_task_entry:
 	ehb
 	move $4, $17
 	jalr $16
-	addiu $29, $29, -MIPS_ARGUMENT_HOME_SIZE
+	PTR_ADDIU $29, $29, -MIPS_ARGUMENT_HOME_SIZE
 	jal mips_task_returned
 	nop
 1:

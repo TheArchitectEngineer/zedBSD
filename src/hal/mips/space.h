@@ -37,9 +37,10 @@
 #define MIPS_SPACE_FAULT_MISSING	2
 
 /*
- * One leaf table of a user space: its page, its root index and the next
- * one.  It lives from the mapping that needed it to the space's
- * destruction.
+ * One table below the root of a user space (a leaf table, or on the
+ * 64-bit processor a middle one): its page, its index in the table above
+ * it and the next one.  It lives from the mapping that needed it to the
+ * space's destruction.
  */
 struct mips_table_page {
 	hal_physaddr_t memory;
@@ -48,7 +49,7 @@ struct mips_table_page {
 };
 
 /*
- * One user address space: its root table, the leaf tables below it and
+ * One user address space: its root table, the tables below it and
  * the TLB's identifier for it.
  *
  * A space lives from hal_space_create() to hal_space_destroy(); it is
@@ -62,7 +63,7 @@ struct mips_space {
 	unsigned destroying;
 	struct mips_space *registry_next;
 	hal_physaddr_t root_memory;
-	uint32_t *root;
+	uintptr_t *root;
 	struct mips_table_page *tables;
 	uint32_t asid;
 	uint64_t generation;
