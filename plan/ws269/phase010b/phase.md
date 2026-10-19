@@ -1,7 +1,7 @@
 # ws269-p010b: 資料の固定（M1〜M3 の path と blob SHA）
 
 - ID: ws269-p010b（親 [ws269](../ws.md)）
-- Status: cleared 待ち（Q1 の判定）
+- Status: cleared（2026-10-20 Q1 の判定: 参照の file の path・blob の SHA と BXE の feature の分岐・review 1 の B3・M2〜M4 の確かめを記録した（99c53dd48）。FW の中の挙動 3 点（FRAG_PR が無い時の OOM、context switch の state が 0 の時、TRANSFER_FRAG の base の設定）は source から確かめられず、版 2 では Mesa と mainline と同じ形を採って避ける）
 - Disposition: normal
 - Queue: q1365 / q1365-i01（2026-10-20 P1、path・SHA）、q1366 / q1366-i01（2026-10-20 P1、BXE の分岐と review 1 の B3・M2・M3・M4・Minor 1・2）
 - 設計: [design-p010.md](../design-p010.md) 版 1 の §0・§10 の p010b。コードなし

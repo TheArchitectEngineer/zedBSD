@@ -33,7 +33,7 @@
 | [p009](phase009/phase.md) | 最小の Venus の decode（compute） | p008 | in-progress（2026-10-20 P2、q1352: capset（1.3.269、flags 7、job の caps）・frame・job・executor（instance〜submit）・SPIR-V の subset（`data[x+k] = a·x + c`）・fill の USC の program、host 試験 PASS 69+109、VF2・riscv64-virt・amd64 の build warning 0。q1357: 試験の program `vkcompute`（host の lavapipe で PASS）と VF2 の試験の image の config（`tests/p009/config-visionfive2-vkcompute.mk`、build warning 0、libvulkan は config で選ぶだけで入った）。**実機待ち**。WS277 R7 の文面に食い違い（Q1 へ）） |
 | [p010](phase010/phase.md) | graphics の設計の追補（[design-p010.md](design-p010.md) 版 1、分割と境と UAT の行）。実装は下の p010a〜m | p009、p007 | planning（2026-10-20 P1 q1362: 追補 版 1、design-reviewer 待ち） |
 | [p010a](phase010a/phase.md) | UAT の段の行（`powervr: <段>: ok\|fail(<理由>)`、sysctl）と `gpu-selftest` の骨 | p009 | in-progress（2026-10-20 P1 q1364: stage.c・stage-log.c、sysctl `hw.gpu.powervr.stages`、firmware・render node・compute の段、gpu-selftest（kernel・node・vkcompute の 3 段、残り skip(not built)）、VF2 の試験の image の config。host 試験 PASS、VF2・riscv64-virt・amd64 の build warning 0。**実機待ち**） |
-| [p010b](phase010b/phase.md) | 資料の固定（Mesa・mainline の path と SHA、BXE の feature の分岐）。コードなし | p002 | cleared 待ち（Q1 の判定）。path・SHA・BXE の feature の分岐・review 1 の B3・M2〜M4 を確定（FW の中の 3 点は未確認、D-P3 は設計の変更が要る） |
+| [p010b](phase010b/phase.md) | 資料の固定（Mesa・mainline の path と SHA、BXE の feature の分岐）。コードなし | p002 | cleared（2026-10-20 Q1、q1365・q1366） |
 | p010c | image（LINEAR rowPitch 32・twiddled）・format・view・sampler | p010b | planning（同） |
 | p010d | render の FW の object（context・free list・HWRT）と geometry・fragment の kick | p010b、p006 | planning（同） |
 | p010e | PBE の store・固定の program・kernel の render check | p010c、p010d | planning（同） |
