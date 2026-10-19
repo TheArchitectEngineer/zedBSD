@@ -15,9 +15,10 @@
  * The board's display is the one the firmware left on, when the UEFI
  * loader handed its graphics output over.  The early console draws on it
  * through the direct map, cached, and flushes each range it drew, since
- * the display controller is not known to see the processor's cache; a
- * screen outside RAM is drawn through the device window instead.  The
- * board names the screen to the kernel as "riscv64.framebuffer.*".
+ * the display controller is not known to see the processor's cache.  A
+ * screen the direct map leaves out (no-map RAM, or device memory) is drawn
+ * through the device window instead, RAM still flushed.  The board names
+ * the screen to the kernel as "riscv64.framebuffer.*".
  */
 
 #include <hal/hal.h>
@@ -43,10 +44,15 @@
  */
 #define VF2_SCREEN_NOCACHE_PARAMETER	"vf2.fb=nocache"
 
-/* How the early console reaches the screen, for the boot log. */
+/*
+ * How the early console reaches the screen: RAM through the direct map,
+ * RAM the direct map leaves out through the device window, either without
+ * the flush when the boot asked for that, or device memory.
+ */
 enum board_screen_window {
 	BOARD_SCREEN_NONE = 0,
-	BOARD_SCREEN_RAM_FLUSHED,
+	BOARD_SCREEN_RAM_DIRECT,
+	BOARD_SCREEN_RAM_WINDOW,
 	BOARD_SCREEN_RAM_UNFLUSHED,
 	BOARD_SCREEN_DEVICE
 };
@@ -89,10 +95,20 @@ static int board_screen_named;
 static enum board_screen_window board_screen_window;
 static int board_screen_error = HAL_ERR_UNSUPPORTED;
 
+/*
+ * The kernel address the console draws the screen's first byte at, which
+ * the screen's flush turns back into physical addresses.  Set by
+ * show_screen() before the console is attached, and not changed
+ * afterwards.
+ */
+static uintptr_t board_screen_address;
+
 static void find_ccache(const struct riscv64_fdt_info *info);
 static void show_screen(void);
 static int screen_address(const struct riscv64_framebuffer *framebuffer, uintptr_t *address, enum board_screen_window *window);
+static void flush_screen(uintptr_t address, size_t size);
 static void flush_range(uintptr_t address, size_t size);
+static void flush_physical(uint64_t physical, uint64_t size);
 static int kernel_to_physical(uintptr_t address, uint64_t *physical);
 static void fence_all(void);
 
@@ -179,8 +195,14 @@ riscv64_board_describe(
 
 	/* Names how the console reaches the screen, or why there is none. */
 	switch (board_screen_window) {
-	case BOARD_SCREEN_RAM_FLUSHED:
+	case BOARD_SCREEN_RAM_DIRECT:
 		hal_printf("RISCV64 FRAMEBUFFER %lux%lu phys=%lx ram flush\n",
+			   board_framebuffer_width,
+			   board_framebuffer_height,
+			   board_framebuffer_phys);
+		break;
+	case BOARD_SCREEN_RAM_WINDOW:
+		hal_printf("RISCV64 FRAMEBUFFER %lux%lu phys=%lx ram-nomap flush\n",
 			   board_framebuffer_width,
 			   board_framebuffer_height,
 			   board_framebuffer_phys);
@@ -309,7 +331,8 @@ show_screen(
 		return;
 	}
 
-	/* Describes the screen to the console. */
+	/* Describes the screen to the console, keeping its address for the flush. */
+	board_screen_address = address;
 	screen.address = address;
 	screen.width = framebuffer->width;
 	screen.height = framebuffer->height;
@@ -319,10 +342,15 @@ show_screen(
 
 	/* Writes RAM through the cache controller, unless the boot asked to see the screen without. */
 	unflushed = riscv64_boot_parameter_given(VF2_SCREEN_NOCACHE_PARAMETER);
-	if (window == BOARD_SCREEN_RAM_FLUSHED && unflushed) {
+	if (window == BOARD_SCREEN_DEVICE) {
+		/* Device memory is not cached, so there is nothing to write through. */
+		screen.flush = NULL;
+	} else if (unflushed) {
+		/* The boot asked to see whether the display sees the cache. */
 		window = BOARD_SCREEN_RAM_UNFLUSHED;
-	} else if (window == BOARD_SCREEN_RAM_FLUSHED) {
-		screen.flush = flush_range;
+	} else {
+		/* RAM in either window is cached and written through after each drawing. */
+		screen.flush = flush_screen;
 	}
 
 	/* Attaches the console, which clears the screen and draws its text. */
@@ -337,8 +365,9 @@ show_screen(
 
 /*
  * Finds the kernel address the console draws a screen's memory at: the
- * direct map for RAM, the device window for anything else below its
- * limit.
+ * direct map when it holds the whole screen, otherwise the device window,
+ * which the hardware layer maps the screen into (space.c,
+ * map_hal_devices).
  *
  * Returns HAL_OK, or HAL_ERR_UNSUPPORTED for memory neither reaches.
  */
@@ -348,31 +377,52 @@ screen_address(
 	uintptr_t *address,
 	enum board_screen_window *window)
 {
+	bool direct;
 	bool in_ram;
 
-	/* RAM is drawn through the direct map, the same cached memory the allocator would hand out. */
-	in_ram = riscv64_range_is_ram(framebuffer->phys, framebuffer->size);
-	if (in_ram) {
-		/* Refuses RAM above what the direct map holds. */
-		if (framebuffer->phys >= RISCV64_DIRECT_LIMIT ||
-		    framebuffer->size > RISCV64_DIRECT_LIMIT - framebuffer->phys)
-			return HAL_ERR_UNSUPPORTED;
-
-		/* Succeeded: the screen's RAM in the direct map. */
+	/* RAM the direct map holds is drawn there, the same cached memory the allocator would hand out. */
+	direct = riscv64_space_in_direct_map(framebuffer->phys, framebuffer->size);
+	if (direct) {
 		*address = (uintptr_t)(RISCV64_DIRECT_BASE + framebuffer->phys);
-		*window = BOARD_SCREEN_RAM_FLUSHED;
+		*window = BOARD_SCREEN_RAM_DIRECT;
 		return HAL_OK;
 	}
 
-	/* Refuses device memory above what the device window holds. */
+	/* Refuses memory above what the device window holds. */
 	if (framebuffer->phys >= RISCV64_DEVICE_LIMIT ||
 	    framebuffer->size > RISCV64_DEVICE_LIMIT - framebuffer->phys)
 		return HAL_ERR_UNSUPPORTED;
 
-	/* Succeeded: the screen's device memory in the device window. */
+	/* Anything else is reached through the device window; RAM there is still cached. */
 	*address = (uintptr_t)(RISCV64_DEVICE_BASE + framebuffer->phys);
 	*window = BOARD_SCREEN_DEVICE;
+	in_ram = riscv64_range_touches_ram(framebuffer->phys, framebuffer->size);
+	if (in_ram)
+		*window = BOARD_SCREEN_RAM_WINDOW;
+
+	/* Succeeded: the screen's memory in the device window. */
 	return HAL_OK;
+}
+
+/*
+ * Writes a drawn range of the screen through the cache controller to the
+ * display, from the screen's own kernel address, which may be in the
+ * device window where the general translation does not look.
+ */
+static void
+flush_screen(
+	uintptr_t address,
+	size_t size)
+{
+	uint64_t physical;
+
+	/* Refuses a range that does not start inside the screen. */
+	if (address < board_screen_address || address - board_screen_address >= board_framebuffer_size)
+		return;
+
+	/* The screen is one run of physical memory from its first byte. */
+	physical = board_framebuffer_phys + (uint64_t)(address - board_screen_address);
+	flush_physical(physical, size);
 }
 
 /*
@@ -421,6 +471,48 @@ flush_range(
 
 		/* Stops at the top of the address space. */
 		if (line > UINTPTR_MAX - VF2_CCACHE_LINE_SIZE)
+			break;
+		line += VF2_CCACHE_LINE_SIZE;
+	}
+}
+
+/*
+ * Flushes every cache-controller line of a physical range.
+ *
+ * Procedure referenced: OpenBSD sys/arch/riscv64/dev/sfcc.c
+ * (sfcc_cache_wbinv_range): a full fence, then each line's physical
+ * address written to the flush register with a full fence after each.
+ */
+static void
+flush_physical(
+	uint64_t physical,
+	uint64_t size)
+{
+	uint64_t line;
+	uint64_t end;
+
+	/* A board without the controller has nothing to flush. */
+	if (board_flush64 == NULL || size == 0)
+		return;
+
+	/* Refuses a range that wraps the address space. */
+	if (physical > ~0ULL - size)
+		return;
+
+	/* Starts at the line that holds the first byte. */
+	line = physical & ~((uint64_t)VF2_CCACHE_LINE_SIZE - 1U);
+	end = physical + size;
+
+	/* Orders the earlier memory accesses before the first flush. */
+	fence_all();
+
+	/* Flushes each line. */
+	while (line < end) {
+		hal_mmio_write64(board_flush64, line);
+		fence_all();
+
+		/* Stops at the top of the address space. */
+		if (line > ~0ULL - VF2_CCACHE_LINE_SIZE)
 			break;
 		line += VF2_CCACHE_LINE_SIZE;
 	}

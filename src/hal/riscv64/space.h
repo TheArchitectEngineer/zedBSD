@@ -86,6 +86,11 @@ bool
 riscv64_space_checked(
 	void);
 
+bool
+riscv64_space_in_direct_map(
+	uint64_t physical,
+	uint64_t size);
+
 void
 riscv64_space_select_system(
 	void);

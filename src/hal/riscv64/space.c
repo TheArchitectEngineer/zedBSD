@@ -264,6 +264,32 @@ riscv64_space_init(
 }
 
 /*
+ * Reports whether the kernel's direct map holds a whole physical range:
+ * RAM throughout and clear of the no-map reservations, which the direct
+ * map leaves out.  It holds from the boot table on, and in the kernel's
+ * own tables once riscv64_space_init() has built them.
+ */
+bool
+riscv64_space_in_direct_map(
+	uint64_t physical,
+	uint64_t size)
+{
+	bool mappable;
+
+	/* Refuses a range past the direct map's reach. */
+	if (physical >= RISCV64_DIRECT_LIMIT || size > RISCV64_DIRECT_LIMIT - physical)
+		return false;
+
+	/* Refuses a range that is not RAM throughout or that a no-map reservation touches. */
+	mappable = range_is_mappable_ram(physical, size);
+	if (!mappable)
+		return false;
+
+	/* Succeeded: the direct map holds the range. */
+	return true;
+}
+
+/*
  * Reports whether the kernel's tables were switched to and found right.
  */
 bool
@@ -1345,8 +1371,8 @@ kernel_page_flags(
 /*
  * Maps the devices the HAL itself reaches: the interrupt controller, the
  * firmware configuration interface, the UART, the cache controller and a
- * screen the firmware left on outside RAM, which the early console draws
- * on through the device window.
+ * screen the firmware left on that the direct map does not hold, which the
+ * early console draws on through the device window.
  */
 static void
 map_hal_devices(
@@ -1354,7 +1380,7 @@ map_hal_devices(
 {
 	const struct riscv64_fdt_info *info;
 	const struct riscv64_framebuffer *framebuffer;
-	bool in_ram;
+	bool direct;
 
 	/* Each device the tree names, in the window the kernel's root now holds. */
 	info = riscv64_boot_fdt();
@@ -1367,15 +1393,15 @@ map_hal_devices(
 	if (info->ccache_size != 0)
 		map_device_blocks(info->ccache_base, info->ccache_size);
 
-	/* A screen in RAM is drawn through the direct map, which holds it already. */
+	/* A screen the direct map holds is drawn through it. */
 	framebuffer = riscv64_boot_framebuffer();
 	if (framebuffer == NULL)
 		return;
-	in_ram = riscv64_range_is_ram(framebuffer->phys, framebuffer->size);
-	if (in_ram)
+	direct = riscv64_space_in_direct_map(framebuffer->phys, framebuffer->size);
+	if (direct)
 		return;
 
-	/* Reaches a screen outside RAM through the device window. */
+	/* Reaches any other screen, device memory or no-map RAM, through the device window. */
 	map_device_blocks(framebuffer->phys, framebuffer->size);
 }
 
