@@ -2,7 +2,8 @@
 
 # WS277 設計: VisionFive 2 の DC8200 の display driver（zero copy の scanout）
 
-- 版: 3（2026-10-20、P1、ws277-p001、q1346-i01）。[レビュー 2](design-review-2.md) の新 B1・新 M1〜M6・Minor 1〜11・D10・D11 に対応（末尾 §13 の表）。Q1 の判断（`plan/queue.md` の q1346 の行）を反映: 新 B1 は display.c の中の保持の数、U0 の go/no-go は小さい Phase、R4 は VF2 の platform の wrapper の ops、M1 は推奨 (a)（D10）、M6 は p005 の前の追補。コードは書いていない。design-reviewer の差分の確認待ち。
+- 版: 3.1（2026-10-20、P1、ws277-p001、q1347-i01）。[レビュー 3](design-review-3.md)（差分の確認、Blocker 無し）の M1〜M3・Minor 1〜10 に対応（末尾 §14 の表）。Q1 の判断: M2 は serial-console に汎用で追加だけの口を足す事を許す。Q1 の差分の確認待ち。
+- 版 3（2026-10-20、P1、ws277-p001、q1346-i01）。[レビュー 2](design-review-2.md) の新 B1・新 M1〜M6・Minor 1〜11・D10・D11 に対応（末尾 §13 の表）。Q1 の判断（`plan/queue.md` の q1346 の行）を反映: 新 B1 は display.c の中の保持の数、U0 の go/no-go は小さい Phase、R4 は VF2 の platform の wrapper の ops、M1 は推奨 (a)（D10）、M6 は p005 の前の追補。コードは書いていない。design-reviewer の差分の確認待ち。
 - 版 2（q1343-i01、[レビュー 1](design-review-1.md) への対応）と版 1（q1341-i01）は git の履歴。
 - 目的: PowerVR（BXE-4-32）が線形で書いた render の buffer を、CPU の copy 無しで DC8200 が直接 scanout する。WS269 の display の node（gpu0、boot framebuffer への CPU の copy）を、DC8200 を自分で操作する node に置き換える。
 - 版 3 での Phase の番号: go/no-go の小さい Phase を p002 として足したので、版 2 の p002〜p007 は p003〜p008 になった（§7）。
@@ -77,17 +78,24 @@
 
 ### 2.6 commit・shadow・latch・vblank（新 M1・新 M2・新 M3、D10・D11）
 
-- **書く手順（常に、新 M3）**（S1 `vs_dc_hw.c:1519-1547`、`vs_dc.c:1352・1359`、Procedure referenced）: (1) panel の `PANEL_CONFIG_EX` の bit 0 で shadow の更新を止める → (2) plane の ADDRESS・STRIDE・CONFIG・SIZE・TOP_LEFT・BOTTOM_RIGHT・BLEND_CONFIG を書く → (3) `CONFIG_EX` の COMMIT（bit 12、S3 mainline atomic_update）を set → (4) bit 0 を戻す。害は無いので「要らなければ書かない」の分岐は置かない。bit 0 の向き（止めるのが 1 か 0 か）は vendor から Values referenced で取る。
+- **書く手順（常に、新 M3）**（S1 `vs_dc_hw.c:1519-1547`、`vs_dc.c:1352・1359`、Procedure referenced）: (1) panel の `PANEL_CONFIG_EX` の bit 0 で shadow の更新を止め、`FRAMEBUFFER_CONFIG_EX` の COMMIT（bit 12）を **clear** する（vendor と同じ。bit 12 が level の bit でも edge が出る、レビュー 3 Minor 1） → (2) plane の ADDRESS・STRIDE・CONFIG・SIZE・TOP_LEFT・BOTTOM_RIGHT・BLEND_CONFIG を書く → (3) `CONFIG_EX` の COMMIT（bit 12、S3 mainline atomic_update）を set → (4) bit 0 を戻す。害は無いので「要らなければ書かない」の分岐は置かない。bit 0 の向き（止めるのが 1 か 0 か）は vendor から Values referenced で取る。mainline は同じ bit 0 を `VSDC_DISP_PANEL_CONFIG_EX_COMMIT` と名付け set するだけ（S3 `vs_bridge_regs.h:51-52`、`vs_bridge.c:172・237`）で、vendor の「set で止める」と意味が食い違う（§11、p002 の読み戻しで記録）。
+- **書く区間の排他（レビュー 3 Minor 5）**: 手順 (1)〜(4) と s0 の取得は、IRQ を禁じた短い spinlock（display の `commit_lock`）の中で行い、区間の中で fatal の印（§4.6）を見直す。印が立っていれば書かずに ENXIO。panic の戻し（§4.6）は同じ spinlock を上限付き（数千回の試み）で取りに行き、取れなくても書く。
 - **二重の守り**: p003 の zero copy は **stride が snapshot の STRIDE と等しい時だけ**（SIZE も等しい、§4.2）。shadow の止め方が効かなくても、ADDRESS だけが先に採られた frame は新しい buffer の範囲の中を読む（stride・高さが同じで、import で `stride × height` ≤ 大きさを検査済み）。
 - **latch の知り方（D10、推奨 (a) を採る）**: vblank の IRQ 95（`AQ_INTR_ENBL` の display ごとの bit、`vs_dc_hw.c:1501-1512`）を p003 に繰り上げる。polling は使わない（1 kHz の tick と busy の `kern_usleep_range` では 0.67 ms の帰線を観測できない、`include/hal/arch.h:100`、`clock.h:196-201`）。
-  - 判定: commit を書いた時点の IRQ の sequence を s0 とし、**s0 + 2 の vblank を観測した時に latch 済み**とする。commit が帰線の中・latch の点の後に書かれた場合は s0 + 1 の vblank では採られておらず次で採られる。s0 + 1 の IRQ が commit の直前に発火の途中だった競合も s0 + 2 で吸収する。代価は present の返りが最大 1 frame 遅れる事（p007 の測定項目、Minor 11）。
-  - COMMIT bit の自己 clear は p002 で読み戻して記録するが、判定には使わない。自己 clear が latch と一致すると実機で確かめられたら、p004 で s0 + 1 に縮める候補（未確認）。
-  - IRQ の handler は ack（`AQ_INTR_ACKNOWLEDGE` を読むのは handler だけ）・sequence と時刻の記録・待ち手の起床だけを行う。保持の数は触らない（§4.5）。
+  - **前提（レビュー 3 M1）**: vblank の IRQ は latch の点と同じか、その後に出る。これが外れる（IRQ が帰線の始め・latch が帰線の終わりで、handler の遅れが帰線を超える）と、s0 + 2 の IRQ が latch の前に来て、前の front を解放した後に DC が読む。前提は p003 の IRQ handler が `CURRENT_LOCATION`（bit の並びは p002 で決める）の行の位置を記録し、実機の U11 で確かめる。**前提が外れたら s0 + 3 にする**。
+  - **s0 の取り方**: s0 は手順 (4)（shadow の更新を戻した後）の直後に、同じ spinlock の中で読んだ sequence とする。(1) の前に取ると書く間に来た vblank を数えてしまう。
+  - 判定: **s0 + 2 の vblank を観測した時に latch 済み**とする。commit が帰線の中・latch の点の後に書かれた場合は s0 + 1 の vblank では採られておらず次で採られる。s0 + 1 の IRQ が commit の直前に発火の途中だった競合も s0 + 2 で吸収する。
+  - **代価（throughput）**: libvulkan は PRESENT の ioctl の間 global の `display_mutex` を持つので present は直列（`wsi-display.c:1455-1489`）。前の present が IRQ k+2 で返り直後に次の commit を書くと s0 = k+2、latch は k+3、返りは k+4 になる。定常では 2 frame に 1 回で、**最大 refresh/2（60 Hz で 30 fps）**。今の copy の道（即時に返る）より遅くなり得る。p004 で 60 fps に戻す（§7 の p004 の範囲）。p007 の比較ではこの制限の有無を記録する。
+  - COMMIT bit の自己 clear と `CURRENT_LOCATION` は p002 で読み戻して記録する。p003 の判定には使わない。p004 で、`CURRENT_LOCATION`（commit を書いた時の行の位置）か COMMIT の自己 clear で **commit の後の最初の vsync を判定し**、s0 + 1 相当で返して 60 fps に戻す（p004 の範囲。U11 の結果と U6 で確かめる）。
+  - IRQ の handler は ack（`AQ_INTR_ACKNOWLEDGE` を読むのは handler だけ）・sequence と時刻（p003 から `CURRENT_LOCATION` の行も）の記録・待ち手の起床だけを行う。保持の数は触らない（§4.5）。
+  - **数え方（レビュー 3 Minor 7）**: `AQ_INTR_ACKNOWLEDGE` は両方の panel の共有（vendor は全 panel を vblank として扱う、`vs_dc.c:1335-1338`）。sequence は **HDMI の panel（§2.4 で特定した panel）の bit が立った時だけ** 進める。IRQ は **attach の時に有効にし常に有効**とする（claim の時からにすると、有効にする前に取った s0 が意味を持たない）。attach で有効にした後、最初の vblank を観測するまで zero copy を出さない。
 - **上限と出力の喪失（D11、新 M2）**: 上限は時計の待ちでなく vblank の進みで判定する。
   - commit の後 vblank の sequence が 100 ms（60 Hz の 6 frame、refresh が測れたら 6 frame）進まない: DC が止まった・HDMI が抜けたと見なす。register を前の front へ書き戻して commit し（上の手順）、**ENXIO**（libvulkan で `VK_ERROR_SURFACE_LOST_KHR`、`wsi-display.c:1634-1635`）を返す。新しい buffer の保持は外さず「未確定」に残す（DC が後で読むかもしれない。次の確かな latch か release・close の latch で外し、そこでも latch が来なければ leak を選ぶ、§4.5）。
-  - vblank が進んでいる限り s0 + 2 は必ず来るので、それ以外の失敗の道は無い。
+  - vblank が進んでいる限り s0 + 2 は必ず来るので、latch の待ちの失敗の道はこの上限だけ。ほかに present が ENXIO を返すのは fatal の印（§4.6）が立っている時だけ（レビュー 3 Minor 8）。
   - EIO・ETIMEDOUT は使わない（libvulkan で DEVICE_LOST、`wsi-display.c:1637-1639`）。
   - ENXIO の後は display を「出力喪失」の状態にし、書き戻しの latch（s0' + 2）を確かめるまで次の present も ENXIO を返す。新しい buffer が後から採られる恐れは、libvulkan が swapchain を作り直すまでの間に限られる（崩れは出得るが、memory は保持の数で守る）。
+  - **回復の制限（レビュー 3 Minor 3）**: Keiland は SURFACE_LOST で `output_lost` にし（`compose.c:4064-4068`）、回復を hotplug の fence に頼る。window mode でない時や `register_device_event` が無い時は回復しない（`output-switch.c:93-95・148`）。DC8200 の node は hotplug を通知しない（Future Work）ので、**ENXIO の後 desktop は止まったままになり得る**。WS277 はこれを許し、hotplug（IRQ 99）は Future Work の候補に残す。
+  - HDMI を抜いても DC は timing の発生源なので vblank は続くと推測する（PHY の PLL を止める操作は zedBSD に無い）。その場合 ENXIO は起きない（U6 の合格はこの両方を許す）。
 - underflow は `FRAMEBUFFER_CONFIG` の bit 5（`:1514-1517`）を記録（p004）。
 - refresh: DT の 297 MHz は使わない。p003 から vblank の間隔の実測（数 frame の平均）、測る前は 60 Hz。
 
@@ -108,13 +116,13 @@
 ### 3.2 coherency（新 M4）
 
 - CPU: render の buffer は確保の時に uncached の別名で零埋め済み（`render.c:322-333`）で、host は uncached の別名でしか触らないので、CPU の L2 に dirty な line は残らない。
-- GPU の SLC: 今の SLC_BYPASS は写像ごとに付き、mappable な blob だけ（`render.c:981-985`、`:688-691`）。export（`src/drivers/gpu/gpu.c:4853-4903`、`render_export` `render.c:786-840`）は blob が SHAREABLE で作られたかを見ず、`render_import` は import の側を常に mappable=1 で写す（`render.c:897`）。作った側（非 mappable、SLC 経由）と import の側で属性が混ざり得る。
+- GPU の SLC（レビュー 3 Minor 4 で main の現状に合わせた）: e4d7edbd7 で `powervr_gpu_buffer_flags(mappable, shareable)` が入り（`gpu-mmu.c:524-535`、`render.c:1043`）、写像は mappable **か** shareable なら SLC_BYPASS。SHAREABLE の blob と storage の resource（mappable=1、`render.c:629-630`）は作った側も迂回している。`render_import` は import の側を mappable=1 で写すので迂回。
+- 残る穴は **mappable でも shareable でもない blob** だけで（作った側が SLC 経由）、`render_export`（`render.c:843-`）はそれの image の export を拒まない。
 - 選ぶ道（D8 (a) を直した形、R3）:
-  1. **SLC の迂回を buffer の属性にする**: buffer の作成の時に決め（`GPU_BLOB_SHAREABLE` の blob は迂回）、その buffer の **全部の GPU MMU の写像**（作った側・import の側・export の後の写像）を同じ属性にする。
-  2. **照会の口**: `render.h` に「この buffer は SLC を迂回しているか」を返す関数を足す（R3 に含める）。
-  3. display の import は、迂回の印の無い buffer（SHAREABLE でない blob、storage の resource の export など）を zero copy にせず copy の道に回す。
-  4. R3 が main に入るまでは照会の口が無いので、p003 の zero copy は既定で off とし、試験の program の mappable な blob（今の SLC_BYPASS の写像だけを持つ）に限って有効にする内部の印で確かめる。
-- D8 (a) の費用: SHAREABLE・CROSS_DEVICE の全部の buffer（libvulkan の 1.3.269 の外部 memory の blob、`wsi-image.c:63`、`memory.c:1249-1251`）が GPU の書き込みに SLC を使わなくなる。app と compositor の共有の buffer にも及ぶかは推測（未確認）。測定は p007。
+  1. **R3 を小さくした形（推奨）**: `render_export` が image の export を「mappable でも shareable でもない blob」に限って拒む（EINVAL）。これで export された buffer は全部の写像が迂回になり、**照会の口は要らない**。
+  2. 代わり（1 が受け入れられない時）: `render.h` に「この buffer は SLC を迂回しているか」を返す照会の口を足し、display の import は迂回の無い buffer を copy の道に回す。
+  3. R3 が main に入るまでの p003 の扱い: zero copy は既定で off とし、内部の印 `dc8200_zero_copy_test`（boot parameter `dc8200.zerocopy=test`、display.c の static な int）が立つ時だけ有効にする。立てた時に zero copy に使うのは import の resource の全部で、**試験の program が mappable な blob（作った側も迂回）だけを present する事を試験の手順で守る**（display からは照会の口なしに判別できないので、判別を試験の側の責任にする）。R3 (1) が入ったら印を外し、常に有効にする。
+- D8 (a) の費用: SHAREABLE・CROSS_DEVICE の全部の buffer が SLC を使わない事は、e4d7edbd7 で **既に main で払われている**。WS277 が新たに足す費用は無い。測定は p007 の記録だけ。
 - 代わりの (b) flip の前の `SLCFLUSHINVAL` は、display から render の FW の command の道へ依存が入るので採らない（(a) が出来ないと分かったら R3 の代替として WS269 と調整）。
 - DC8200 自身は cache を持たず、CPU は buffer を cacheable に書かないので L2 の snoop の有無（WS256 p011 の未確認）は関係しない。
 - 順序: flip は render の完了の後（libvulkan の worker が fence を待ってから present、`wsi-display.c:1459`）。
@@ -133,8 +141,8 @@
 | --- | --- | --- |
 | query・mode | loader の extent、60 Hz | p002: 引き継いだ plane の SIZE と panel の timing から extent。p003: vblank の実測。p006: EDID（§4.4） |
 | claim・release | console を止める・戻す | claim は同じ。release は §4.5 の順 |
-| present（COPY） | CPU の copy を boot framebuffer へ | 残す。zero copy の front が出ている時は、先に plane を snapshot（bootfb）へ戻す commit と latch の待ち（§2.6）を行ってから copy する |
-| present（BLOB） | import の uncached の view から CPU の copy | **frame の幅・高さ・stride が snapshot の SIZE・STRIDE と一致し、import の検査に受かり、SLC 迂回の buffer の時だけ** zero copy（§2.6 の手順 → s0 + 2 の latch で返る）。それ以外（小さい frame など）は今の CPU の copy の道。**その時 zero copy の front が出ていれば、COPY と同じく先に plane を bootfb へ戻す commit と latch の待ちを行ってから copy する**（Minor 3） |
+| present（COPY） | CPU の copy を boot framebuffer へ | 残す。zero copy の front が出ている時は、**先に bootfb へ copy し、それから** plane を snapshot（bootfb）へ戻す commit と latch の待ち（§2.6）を行う（レビュー 3 Minor 6: zero copy の間 bootfb は scanout されていないので、先に書いても見えない。逆の順では古い bootfb が 1〜2 frame 見える）。latch の後に前の front の `holds--` |
+| present（BLOB） | import の uncached の view から CPU の copy | **frame の幅・高さ・stride が snapshot の SIZE・STRIDE と一致し、import の検査に受かり、SLC 迂回の buffer の時だけ** zero copy（§2.6 の手順 → s0 + 2 の latch で返る）。それ以外（小さい frame など）は今の CPU の copy の道。**その時 zero copy の front が出ていれば、COPY と同じく先に bootfb へ copy してから plane を戻す commit と latch の待ち**を行う（Minor 3、レビュー 3 Minor 6） |
 | wait | 即時 | latch の後の sequence を返す（present が既に latch を待つので、記録の参照） |
 | constraints | `COPY|SHARED|FOREIGN`、placement 0 | `COPY|SHARED|FOREIGN`（render は gpu1 で core は foreign と扱う、`src/drivers/gpu/gpu.c:5008`）。**`stride_alignment` は今の値のまま**で、R6 が main に入った後に 32 にする（Minor 4: 32 を先に出すと libvulkan が 32 の倍数でない image を import の前に拒み、readback の道に落ちて今より遅くなる、`wsi-display.c:1290-1293`、`wsi-swapchain.c:1104-1120`）。32 の検査は import の側で行い、外れたら copy の道。placement は R5 が main に入るまで 0、入った後に `GPU_PLACEMENT_CONTIGUOUS|GPU_PLACEMENT_DMA32`・`max_dma_address = 0xffffffff` |
 | import_image | lookup して uncached の view を保持 | lookup で retain。加えて検査: backing の page が連続、末尾 ≤ 0xffffffff、offset 0、stride が 32 の倍数かつ ≤ 65535、`stride × image.height` ≤ 大きさ、SLC 迂回（R3 の照会、§3.2）。外れた import は zero copy に使わない印を付け、copy の道で出す（EINVAL にしない） |
@@ -148,7 +156,8 @@
 - よって **present（BLOB）は、新しい buffer が DC8200 に latch された後（s0 + 2、§2.6）にだけ成功を返す**。
 - lock（Minor 6）: display の mutex は全部の session の `resource_create`・`resource_destroy`・`import_image`・close の数え上げにも使われる（`display.c`）ので、**mutex を持ったまま待たない**。p003 の present は mutex の中で「flip 中」の状態（pending の resource・s0）を作り、register を書き、mutex を外して vblank の起床を待つ。「flip 中」の間の次の present は flip の完了を待つ（同時に 1 つ）。release・close も「flip 中」なら完了（または ENXIO の確定）を待ってから §4.5 の順に入る。
 - p004 で `DRV_GPU_DISPLAY_UNGATED` と `adoption_wait` の形（bcm2711、`gpu-display.h:60-75`）に移す: present は commit を記録して返り、core が lock 無しで adoption_wait を呼び、IRQ の latch で起きる。libvulkan の見る成功は adoption_wait の後なので契約は同じ。UNGATED では core の pin は callback の間だけなので、寿命は §4.5 の保持の数が守る。
-- 性能（推測、Minor 11）: libvulkan は PRESENT の ioctl の間 global の `display_mutex` を持つ（`wsi-display.c:1414` 付近）ので、acquire の `image_available` も最大 1〜2 frame 待つ。bcm2711 と同じ形なので許すが、p007 の測定項目にする。
+  - **UNGATED と pending（レビュー 3 Minor 9）**: UNGATED の present は refresh の境を待たずに記録する（`gpu-display.h:60-75`）ので、「flip 中は次の present が完了を待つ」とぶつかる。p004 の設計で次のどちらかに決める: (i) 待つ形を保つ（adoption_wait の前の present を UNGATED でも直列にする）、(ii) pending を置き換える（まだ commit を書いていない pending だけ。置き換えられた resource の `holds--` はその場で行い、保持の数は front・pending・置き換えの途中の最大 3）。
+- 性能（Minor 11、レビュー 3 M1）: libvulkan は PRESENT の ioctl の間 global の `display_mutex` を持つ（`wsi-display.c:1455-1489`）ので present は直列で、p003 の形では **最大 refresh/2**（§2.6）。acquire の `image_available` も最大 1〜2 frame 待つ。p004 で 60 fps に戻し、p007 の測定項目にする。
 
 ### 4.4 mode の選び方
 
@@ -167,14 +176,18 @@
   - ENXIO（§2.6）の時: pending の `holds` は外さず「未確定」に残し、次の確かな latch か release で外す。
 - release・close の順: (0)「flip 中」なら完了を待つ → (1) snapshot の plane の register を全部戻す（§2.6 の手順、戻し先が有効な時だけ、§4.7） → (2) commit → (3) s0 + 2 の latch を待つ（上限は §2.6） → (4) front・pending の `holds` を外し、`destroyed` の物を解放 → (5) console の resume。**描き直しは呼ばない**（Minor 2: VF2 の text の ops は serial で resume は何もしない。HAL の `riscv64_cons_redraw` は hal.h に無く、呼ぶと HAL の API の変更になる）。(3) が上限を超えたら `holds` を外さず残して記録する（leak を選ぶ）。
 - `end_lease` が resource の destroy の後に来ても、保持中の resource は display が持つので解放の順は守られる。
+- destroy を遅らせた resource の `owner`（session）は `display_close` の `kern_free(session)`（`display.c:350`）の後に無効になる。遅らせた resource の最後の解放は `owner` を参照しない（レビュー 3 Minor 8）。
 
-### 4.6 panic の画面（Minor 1・Minor 2、Q1 の判断の R4）
+### 4.6 panic の画面（Minor 1・Minor 2、Q1 の判断の R4、レビュー 3 M2）
 
 - VF2 の text の ops は今、汎用の `src/drivers/generic/serial-console.c`（riscv-virt も使う、`src/kern/platform/riscv-virt.c`）で `reveal_fatal` が無い。panic の文字は HAL の fbcons が `hal_putc` から bootfb に描くが、zero copy 中の DC8200 は render の buffer を出している。
-- 解き方: **`src/kern/platform/visionfive2.c` に wrapper の text の ops を置く**。serial-console の ops を包み、`reveal_fatal` だけを足す。serial-console は汎用のまま変えない（層の向き: VF2 の platform が汎用の serial と DC の driver を結ぶ）。
+- 解き方: **`src/kern/platform/visionfive2.c` に wrapper の text の ops を置く**。serial-console の ops を包み、`reveal_fatal` だけを足す。
+  - `serial_console_ops` は static で（`serial-console.c:59-70`）、`kern_text_*` は登録中の ops へ渡すだけ（`text-display.c` の static な `ops()`）なので、今の公開の口では wrapper から serial の op を呼べない（レビュー 3 M2）。
+  - そこで **serial-console に汎用で追加だけの口を足す**（Q1 の判断、2026-10-20）: 例えば `serial-console.h` に「serial-console の text の ops の表を返す関数」（と、登録をせずに初期化だけする版、名前は実装で決める）を足す。既存の関数・ops・riscv-virt の動作は変えない。層の向きは汎用の側への追加なので保たれる（VF2 の platform が汎用の serial と DC の driver を結ぶ）。
+  - VF2 の platform は、その表の各 op を呼ぶ wrapper の ops を `kern_text_register` に登録する。
   - DC8200 の driver が attach の時に「致命の時の戻し」の関数を VF2 の platform の中の小さい登録口に登録する。wrapper の `reveal_fatal` はそれを呼ぶ。
-  - 戻しの関数: 割り込み禁止・lock 無しで snapshot の plane の register を §2.6 の手順で書き、COMMIT を立てる。latch は待たない（数 ms の上限付きの polling は可）。**描き直しは呼ばない**（文字は `hal_putc` が bootfb に描き、bootfb は HAL が持ち続けるので、それより前の分も bootfb に残っている）。
-  - **fatal の印**: 戻しの関数は最初に display の「fatal」の印を立てる（atomic）。present・release の側は register を書く前と commit の前にこの印を見て、立っていれば書かずに ENXIO で返る（他の hart の present が reveal_fatal の後に commit し直さない）。
+  - 戻しの関数: 割り込み禁止で、§2.6 の `commit_lock` を上限付きで取りに行き（取れなくても書く）、snapshot の plane の register を §2.6 の手順で書き、COMMIT を立てる。latch は待たない。待つなら数 ms の上限付きで **`CURRENT_LOCATION` の行の位置が一度 wrap する（帰線を越える）事**を polling する（`AQ_INTR_ACKNOWLEDGE` は読むと clear し handler 専用なので読まない、レビュー 3 Minor 8）。**描き直しは呼ばない**（文字は `hal_putc` が bootfb に描き、bootfb は HAL が持ち続けるので、それより前の分も bootfb に残っている）。
+  - **fatal の印**: 戻しの関数は最初に display の「fatal」の印を立てる（atomic）。present・release の側は `commit_lock` の中（§2.6）でこの印を見て、立っていれば書かずに ENXIO で返る。`panic.c:58-71` は他の hart を止めずに `reveal_fatal` を呼ぶが、印の確認と書く区間が同じ spinlock の中なので、他の hart の present が reveal_fatal の後に commit し直す事は無い（レビュー 3 Minor 5）。
   - snapshot は attach の時に作った不変の値なので lock は要らない。戻し先が無効の時（§4.7）は何もしない。
 - **HAL（hal.h・fbcons）は変えない**。
 - 確かめ: p003 の host 試験（偽の窓で戻しの書き込みの順、fatal の印の後の present が書かない事）と、実機の項目 U5。
@@ -209,8 +222,8 @@
 | D7 | mode を選ぶ経路（p005・p006）と自前の mode の後の戻し先（§4.7） | (a) p005 は boot parameter、UAPI の経路と戻し先は p005 の前の追補で決める / (b) 今 UAPI に op を足す / (c) present の frame の大きさで選ぶ | (a) |
 | D8 | GPU の SLC | (a) buffer の属性として迂回し全部の写像を揃え、照会の口で display が判定（R3）。費用は SHAREABLE・CROSS_DEVICE の全 buffer が SLC を使わない事 / (b) flip の前に SLCFLUSHINVAL | (a) |
 | D9 | 小さい frame | (a) snapshot と同じ大きさ・stride だけ zero copy、ほかは copy の道 / (b) SIZE・位置・背景色を設定して小さい frame も | (a)（(b) は Future Work の候補） |
-| D10 | p003 で latch をどう知るか（新 M1） | (a) vblank の IRQ を p003（版 2 の p002）に繰り上げ、s0 + 2 で latch と判定 / (b) 厳密な polling（commit 直後の標本が active の中、wrap を待つ、帰線の中なら次の帰線まで。`CURRENT_LOCATION` の bit の並びを先に確かめる） | **(a)**（Q1 の判断。busy の待ちの CPU も、未確認の register への依存も避ける） |
-| D11 | latch の上限を超えた時・HDMI を抜いた時（新 M2） | (a) vblank が 100 ms 進まなければ出力喪失: 前の front へ書き戻して commit、ENXIO（SURFACE_LOST）、pending の保持は残す / (b) EIO（DEVICE_LOST） / (c) ESTALE（OUT_OF_DATE、swapchain の作り直し） | (a)（DEVICE_LOST にしない。DC が止まったのは surface の喪失に近い） |
+| D10 | p003 で latch をどう知るか（新 M1） | (a) vblank の IRQ を p003（版 2 の p002）に繰り上げ、s0 + 2 で latch と判定 / (b) 厳密な polling（commit 直後の標本が active の中、wrap を待つ、帰線の中なら次の帰線まで。`CURRENT_LOCATION` の bit の並びを先に確かめる） | **(a)**（Q1 の判断。busy の待ちの CPU も、未確認の register への依存も避ける）。代価は直列の present で **最大 refresh/2**（§2.6、レビュー 3 M1）。前提「IRQ は latch と同じ点か後」を U11 で確かめ、外れたら s0 + 3。p004 で `CURRENT_LOCATION` か COMMIT の自己 clear により 60 fps に戻す |
+| D11 | latch の上限を超えた時・HDMI を抜いた時（新 M2） | (a) vblank が 100 ms 進まなければ出力喪失: 前の front へ書き戻して commit、ENXIO（SURFACE_LOST）、pending の保持は残す / (b) EIO（DEVICE_LOST） / (c) ESTALE（OUT_OF_DATE、swapchain の作り直し） | (a)（DEVICE_LOST にしない。DC が止まったのは surface の喪失に近い）。制限: hotplug の通知が無いので ENXIO の後 Keiland は回復しないことがある（§2.6、レビュー 3 Minor 3） |
 
 ## 7. Phase の分割（案、LW の見積もり直し）
 
@@ -218,15 +231,16 @@ LW は 1 LW ≈ 実時間 15〜25 分、±50%。
 
 | Phase | 中身 | 依存（出力の範囲） | LW | 確認の点 |
 | --- | --- | --- | --- | --- |
-| p002 | **go/no-go**: DC の窓の写像、model・revision・CID、plane・panel の特定と §2.4 の判定・snapshot、COMMIT・`CURRENT_LOCATION` の読み戻しの記録、結果の記録（kernel の記録と画面への表示）。zero copy は出さない | WS269 p007 の display の node の code（merge 済み） | 2〜4 | build（warning 0）、host 試験（偽の窓で判定）。実機 U0 |
-| p003 | 引き継ぎの zero copy: vblank の IRQ 95（D10 (a)）、query、import の検査（§4.2）、present（BLOB）: format・swizzle・blend 無効・shadow を止めた書き込み・commit・s0 + 2 の latch・「flip 中」で mutex を外した待ち、D11 の ENXIO と書き戻し、保持の数（§4.5）、release・close の順、COPY・小さい BLOB との行き来、flip の記録の環（§10）、VF2 の wrapper の text の ops の `reveal_fatal` の戻しと fatal の印（§4.6、wrapper の側は R4） | p002 が go、WS269 の lookup の code（merge 済み、出力の範囲）、R4（wrapper の ops）、R3 の照会の口（無ければ試験の blob だけ、§3.2） | 18〜26 | build（warning 0）、host 試験（偽の窓と偽の IRQ: 判定・書き込みの順・s0 + 2・範囲の検査・保持の数（二度目の present、destroy の遅延、最後の解放の文脈）・release の順・panic の戻し・ENXIO）。実機 U1〜U5 |
-| p004 | UNGATED と adoption_wait（§4.3）、refresh の実測、underflow の記録 | p003 | 5〜8 | host 試験。実機 U6 |
+| p002 | **go/no-go**: DC の窓の写像、model・revision・CID、plane・panel の特定と §2.4 の判定・snapshot、COMMIT・`CURRENT_LOCATION` の読み戻しの記録、結果の記録（kernel の記録と画面への表示）。zero copy は出さない | WS269 p007 の display の node の code（merge 済み）、R4 の **記述の部分**（DC8200・HDMI の address・IRQ、出力の範囲。レビュー 3 M3）。R4 の記述が main に無ければ、p002 は driver の中の既定の address（0x29400000・0x29400800、IRQ 95）で始め、記述が入ったら置き換える | 2〜4 | build（warning 0）、host 試験（偽の窓で判定）。実機 U0 |
+| p003 | 引き継ぎの zero copy: vblank の IRQ 95（D10 (a)）、query、import の検査（§4.2）、present（BLOB）: format・swizzle・blend 無効・shadow を止めた書き込み・commit・s0 + 2 の latch・「flip 中」で mutex を外した待ち、D11 の ENXIO と書き戻し、保持の数（§4.5）、release・close の順、COPY・小さい BLOB との行き来、flip の記録の環（§10）、VF2 の wrapper の text の ops の `reveal_fatal` の戻しと fatal の印（§4.6、wrapper の側は R4） | p002 が go、WS269 の lookup の code（merge 済み、出力の範囲）、R4（serial-console の追加の口と wrapper の ops）、R3 の照会の口（無ければ試験の blob だけ、§3.2） | 18〜26 | build（warning 0）、host 試験（偽の窓と偽の IRQ: 判定・書き込みの順・s0 + 2・範囲の検査・保持の数（二度目の present、destroy の遅延、最後の解放の文脈）・release の順・panic の戻し・ENXIO）。実機 U1〜U5 |
+| p004 | UNGATED と adoption_wait（§4.3、pending の扱いの決定）、`CURRENT_LOCATION` か COMMIT の自己 clear で commit の後の最初の vsync を判定して **60 fps に戻す**（§2.6、レビュー 3 M1）、refresh の実測、underflow の記録 | p003、U11 の結果 | 6〜10 | host 試験。実機 U6・U11 |
 | p005 | **前に追補**: §4.7 の戻し先と D7。自前の mode の設定（voutcrg・PD_VOUT、clock・reset、DSS の syscon、timing、HDMI の PHY の PLL、boot parameter の mode） | p004（D1 が no-go なら p002）、R1・R2、D3・D7、§4.7 の追補 | 14〜22 | 実機 U7 |
 | p006 | DDC・EDID、mode の一覧（ENUMERATE・VALIDATE）、D7 の UAPI の経路（決まれば） | p005、D7 | 8〜14 | 実機 U8 |
 | p007 | zero copy の通し: GPU が書いた non-mappable な線形の image で古い画が出ない事、Keiland の desktop の fps（copy の道と比較）、acquire の遅れと SLC 迂回の費用の測定、`stride_alignment = 32` への切り替え | p004、R3・R5・R6・R7、WS269 p010・p011、WS270 の該当 Phase | 4〜8 | 実機 U9・U10 |
 | p008 | 規約の全文の見直し | 全部 | 2〜3 | build（warning 0）、host 試験 |
 
-- 合計 53〜85 LW（版 2 は 52〜83）。増分は go/no-go の分離、IRQ の繰り上げ（p004 から p003 へ移し、p004 は 5〜8 に減る）、保持の数・ENXIO・fatal の印・flip の記録の環の分。
+- D1 が no-go の時の順（レビュー 3 Minor 10）: p002 → §4.7 の追補 → p005（自前の mode） → p003（IRQ・present・保持の数。依存は p002 でなく p005） → p004 → p006 → p007 → p008。
+- 合計 54〜87 LW（版 3 は 53〜85。p004 に 60 fps に戻す分を足した）。増分は go/no-go の分離、IRQ の繰り上げ（p004 から p003 へ移し、p004 は 5〜8 に減る）、保持の数・ENXIO・fatal の印・flip の記録の環の分。
 - 実機の確認は VF2 で、T1 への依頼か §10 の一覧で行う（QEMU に DC8200 は無い。QEMU で通るのは host 試験と fallback の道だけ）。serial・console の log では判定しない。
 
 ## 8. HAL
@@ -239,8 +253,8 @@ LW は 1 LW ≈ 実時間 15〜25 分、±50%。
 | --- | --- | --- | --- | --- | --- |
 | R1 | WS256 | `src/drivers/platform/visionfive2/vf2-crg.*` | voutcrg（0x295C0000）の provider（DC8200・HDMI の clock・reset、`hdmitx0_pixelclk` の外の clock の扱い） | p005 | D3、§2.2 |
 | R2 | WS256 | `vf2-pmu.*` | `DRV_VF2_PD_VOUT` を EPERM でなく受ける（今は PD_GPU だけ、`vf2-pmu.h:41`） | p005 | D3 |
-| R3 | WS269（render.c、p010 の前か中） | `src/drivers/gpu/powervr/render.c`・`render.h` | (1) SLC の迂回を **buffer の属性**にし（`GPU_BLOB_SHAREABLE` の blob は作成の時から迂回）、その buffer の **全部の GPU MMU の写像**（作った側・`render_import` の側・export の後）を同じ属性にする。(2) `render.h` に「迂回しているか」（と mappable か）を返す照会の口を足す。不可なら代替の SLCFLUSHINVAL の道を WS277 と調整 | p003（照会の口。無ければ試験の blob だけ）・p007 | 新 M4、D8 |
-| R4 | WS256（VF2 の platform。持ち主は WS256 p008 cleared の後で Q1 が決める） | `src/kern/platform/visionfive2.c`（`src/drivers/generic/serial-console.c` は変えない） | DC8200（0x29400000・0x29400800、IRQ 95）・HDMI（0x29590000、IRQ 99）の組み込みの記述。VF2 の platform に serial-console の ops を包む **wrapper の text の ops** を置き、`reveal_fatal` で display の driver が登録する「致命の時の戻し」を呼ぶ（登録口も platform の中） | p003（記述は p002 から） | D2、§4.6、Minor 1 |
+| R3 | WS269（render.c、p010 の前か中） | `src/drivers/gpu/powervr/render.c` | （レビュー 3 Minor 4 で縮めた）写像の迂回は e4d7edbd7 で main に入っている。残りは **`render_export` が image の export を mappable でも shareable でもない blob に限って拒む**事だけ。受け入れられなければ代わりに `render.h` に迂回の照会の口。どちらも不可なら SLCFLUSHINVAL の道を WS277 と調整 | p003（無ければ試験の印だけ、§3.2）・p007 | 新 M4、D8 |
+| R4 | WS256（VF2 の platform。持ち主は WS256 p008 cleared の後で Q1 が決める） | `src/kern/platform/visionfive2.c`、`src/drivers/generic/serial-console.c`・`.h`（汎用で追加だけ） | (1) **記述の部分**: DC8200（0x29400000・0x29400800、IRQ 95）・HDMI（0x29590000、IRQ 99）の組み込みの記述。(2) **text の部分**: serial-console に汎用で追加だけの口（text の ops の表を返す関数など。既存の関数・動作・riscv-virt は変えない、Q1 の判断）を足し、VF2 の platform にその表を呼ぶ **wrapper の text の ops** を置き、`reveal_fatal` で display の driver が登録する「致命の時の戻し」を呼ぶ（登録口も platform の中） | (1) は p002（無ければ既定の address で始める）、(2) は p003 | D2、§4.6、Minor 1、レビュー 3 M2・M3 |
 | R5 | WS269 | `render.c`（render node の ops） | `blob_create_placed`（`CONTIGUOUS|DMA32`・上限 0xffffffff を検査して受ける） | p007（任意） | — |
 | R6 | WS269 p010・p011 | PowerVR の Vulkan の image・transfer | (1) linear の image の `rowPitch` を 32 byte の倍数（かつ 2 pixel）にする、(2) transfer（`present_copy_shared` の GPU の copy）の書き出しを PBE `MEMLAYOUT_LINEAR` にする。入った後に WS277 が `stride_alignment = 32` を出す | p007 | §3.1、§5、Minor 4・10 |
 | R7 | WS269 p010・WS270 | PowerVR の native の renderer の capset | 共通の必須（wire_version 1、capset ≥ 156 byte、timelines ≠ 0、`GPU_CAP_SHARE`、linear の SAMPLED）を満たし、版を選ぶ: **1.3.269**（推奨、vendor の flag の義務無し）か、1.4.343 なら flag がちょうど `OPAQUE|STRICT_QUEUE|QUIESCE|HOST_SCANOUT` と STRICT_QUEUE・QUIESCE の義務 | p007 | D4、§5、新 M5 |
@@ -257,17 +271,18 @@ VF2 の板の接続と実機の判定の方法は WS256 の #10・#15 で未決�
 
 | ID | Phase | 手順 | 合格 |
 | --- | --- | --- | --- |
-| U0 | p002 | 配布の U-Boot で起動し、DC の model・revision・CID・plane の判定・COMMIT と `CURRENT_LOCATION` の読み戻しを画面に出す | HDMI に GOP の画が出ていて、判定が「引き継げる」（go）。外れたら no-go を記録 |
+| U0 | p002 | 配布の U-Boot で起動し、DC の model・revision・CID・plane の判定・COMMIT と `CURRENT_LOCATION` の読み戻し（bit の並びを決める）を画面に出す | HDMI に GOP の画が出ていて、判定が「引き継げる」（go）。外れたら no-go を記録 |
 | U1 | p003 | 試験の program が mappable な blob に色の帯を書き present。その後 present せずに CPU が blob を書き換える | 書き換えが present 無しで画面に出る（zero copy の時だけ） |
 | U2 | p003 | 赤・緑・青の帯で BGRA と RGBA | 色が合う |
 | U3 | p003 | 2 つの buffer を交互に present し、返った直後に前の buffer へ別の模様を書く | flip の記録の環の照合が全部合う。目視で崩れが無い（補助） |
 | U4 | p003 | release で console に戻る。小さい frame・stride の違う frame は copy の道で出る。同じ image を何度も present し、途中で destroy する | 照合が合う、範囲外の画が出ない、二度目の present が出来る、destroy の後も表示中の buffer が解放されない（記録の保持の数） |
 | U5 | p003 | zero copy 中に panic を起こす（試験用の手段） | panic の文字が画面に出る。fatal の後に present が commit しない |
-| U6 | p004 | 交互の flip で wait の間隔を画面に出す。HDMI を抜く | 60 Hz 前後。抜いた時に ENXIO（SURFACE_LOST）で、DEVICE_LOST にならない |
+| U6 | p004 | 交互の flip で wait の間隔を画面に出す。HDMI を抜く | 60 Hz 前後（p004 の後は 60 fps の present）。抜いた時に DEVICE_LOST と hang にならない。vblank が止まった時だけ ENXIO。どちらが起きたか（vblank が続いたか・ENXIO か）を記録する（レビュー 3 Minor 2） |
 | U7 | p005 | boot parameter で 720p | 720p の画が出る |
 | U8 | p006 | EDID の mode の一覧と選んだ mode | 一覧が出て、その mode で画 |
 | U9 | p007 | GPU が描いた non-mappable な image を続けて present | 古い画が混ざらない |
-| U10 | p007 | Keiland の desktop の fps と acquire の遅れを copy の道と比べる | 数値の記録（ws.md 完了の条件 2） |
+| U11 | p003 | IRQ の handler が記録した `CURRENT_LOCATION` の行の位置（flip の記録の環）を読み、IRQ が frame のどこで出るかを数百 frame 分見る（レビュー 3 M1） | IRQ の点が latch の点（帰線の中の位置）と同じか後で、遅れが帰線に収まる。外れたら s0 + 3 にして記録 |
+| U10 | p007 | Keiland の desktop の fps と acquire の遅れを copy の道と比べる | 数値の記録（ws.md 完了の条件 2）。refresh/2 の制限の有無（p004 の前か後か）も記録 |
 
 ## 11. 未確認の一覧
 
@@ -276,7 +291,9 @@ VF2 の板の接続と実機の判定の方法は WS256 の #10・#15 で未決�
 - plane の address の上位 bit（vendor の 40 bit の DMA の mask との矛盾）。
 - stride の 32 byte・先頭の揃えが HW の必須か、stride の register の幅。
 - COMMIT bit の自己 clear、latch の時点、`CURRENT_LOCATION` の bit の並び、ADDRESS の読み戻しが shadow か latch の値か、`PANEL_CONFIG_EX` bit 0 の向き。
-- vblank の IRQ が s0 + 1 と s0 + 2 のどちらで latch に一致するか（s0 + 2 は安全の側）。
+- vblank の IRQ が latch と同じ点か後か（s0 + 2 の前提、U11。外れたら s0 + 3）。IRQ の点と s0 + 1 で足りるか（p004）。
+- `FRAMEBUFFER_CONFIG_EX` bit 12 と `PANEL_CONFIG_EX` bit 0 の真の意味（vendor は bit 0 を shadow の停止、mainline は `VSDC_DISP_PANEL_CONFIG_EX_COMMIT` と名付け set するだけ、レビュー 3 Minor 1）。
+- HDMI を抜いた時に vblank が止まるか（U6）。Keiland が VF2 で window mode か（ENXIO の後の回復、D11）。
 - FW が完了時に SLC を書き出すか（R3 で迂回すれば関係しない）。SHAREABLE の blob が app と compositor の共有にも使われるか（D8 の費用）。
 - DSS の syscon の bit の意味（TRM）。i915 などが mode をどう選ぶか（D7）。§4.7 の戻し先（未定、p005 の前の追補）。
 - mainline の `verisilicon,dc` が JH7110 で動くか。vendor の Linux の GNOME が遅かった原因。
@@ -309,3 +326,23 @@ VF2 の板の接続と実機の判定の方法は WS256 の #10・#15 で未決�
 | Minor 10 R6 の補足 | rowPitch と transfer の 2 つに | §5、§9 R6 |
 | Minor 11 acquire の遅れ | p007 の測定項目 | §4.3、§7、U10 |
 | D10・D11 の追加 | 足した | §6 |
+
+## 14. レビュー 3 への対応（版 3.1）
+
+| 指摘 | 対応 | 場所 |
+| --- | --- | --- |
+| M1 (a) 速さ: 直列の present で最大 refresh/2 | 代価を「最大 refresh/2」に直した。p004 の範囲に `CURRENT_LOCATION` か COMMIT の自己 clear で commit の後の最初の vsync を判定して 60 fps に戻す事を入れた（候補の扱いをやめた）。p007・U10 で制限の有無を記録 | §2.6、§4.3、§6 D10、§7 p004、U10 |
+| M1 (b) 正しさの前提・s0 の取り方 | 前提「IRQ は latch と同じ点か後」を明記。外れたら s0 + 3。s0 は手順 (4) の後に spinlock の中で取る | §2.6、§6 D10 |
+| M1 (c) 試験で HW の latch の遅れを検出できない | IRQ handler が `CURRENT_LOCATION` の行を記録し、U11 で IRQ の位置を実機で確かめる。bit の並びは p002（U0） | §2.6、§10 U0・U11、§11 |
+| M2 R4 の wrapper は作れない | Q1 の判断: serial-console に汎用で追加だけの口（ops の表を返す関数など）を足す事を許す。R4 の文言と §4.6 をそう書き換えた | §4.6、§9 R4 |
+| M3 p002 の依存に R4 | p002 の依存に R4 の記述の部分（出力の範囲）。無ければ driver の中の既定の address で始め、後で置き換える。R4 を記述と text の 2 つに分けた | §7 p002、§9 R4、ws.md |
+| Minor 1 bit 12 の clear、mainline の bit 0 の名前 | 手順 (1) で bit 12 を clear。mainline との意味の食い違いを §11 に | §2.6、§11 |
+| Minor 2 U6 の合格 | DEVICE_LOST と hang にならない事。vblank が止まった時だけ ENXIO、どちらかを記録 | §2.6、U6 |
+| Minor 3 D11 の回復の制限 | Keiland は hotplug に頼るので ENXIO の後 desktop が止まったままになり得る、と書いた | §2.6、§6 D11 |
+| Minor 4 §3.2 の「今」 | e4d7edbd7 の現状に直し、R3 を「`render_export` が非 mappable・非 shareable の blob の image の export を拒む」に縮めた（照会の口は代わり）。試験の印の中身（boot parameter、判別は試験の側）を定めた。古い行番号を直した | §3.2、§6 D8、§9 R3 |
+| Minor 5 fatal の印の競合 | 書く区間を IRQ 禁止の spinlock に入れ、区間の中で印を見直す。panic は上限付きで取り、取れなくても書く | §2.6、§4.6 |
+| Minor 6 戻しの順 | 先に bootfb へ copy してから plane を戻し latch を待つ | §4.2 |
+| Minor 7 IRQ の数え方 | HDMI の panel の bit の時だけ sequence を進める。IRQ は attach で有効にし常に有効 | §2.6 |
+| Minor 8 細かい不整合 | 「失敗の道は無い」を fatal の印と整合させた。panic の polling は `CURRENT_LOCATION` の wrap（ACK は読まない）。遅らせた解放は `owner` を参照しない | §2.6、§4.5、§4.6 |
+| Minor 9 p004 の UNGATED と pending | 待つ形を保つか pending を置き換えるか（保持の数は最大 3）を p004 の設計で決める事として書いた | §4.3、§7 p004 |
+| Minor 10 D1 が no-go の時の順 | p002 → §4.7 の追補 → p005 → p003 → p004 … と書いた | §7 |
