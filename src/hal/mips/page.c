@@ -117,7 +117,7 @@ mips_page_init(
 
 	/* The first allocation looks from the span's start. */
 	first_free_candidate = 0;
-	hal_printf("MIPS32 MEMORY base=%llx total=%llu MiB free=%llu MiB\n",
+	hal_printf(MIPS_HAL_NAME " MEMORY base=%llx total=%llu MiB free=%llu MiB\n",
 		   ram_base,
 		   (uint64_t)ram_pages * MIPS_PAGE_SIZE / (1024U * 1024U),
 		   ((uint64_t)ram_pages - reserved_pages) * MIPS_PAGE_SIZE / (1024U * 1024U));

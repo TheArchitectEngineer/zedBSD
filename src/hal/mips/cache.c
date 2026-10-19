@@ -95,7 +95,7 @@ mips_cache_init(
 	if (cache_instruction.way_bytes > MIPS_PAGE_SIZE || cache_data.way_bytes > MIPS_PAGE_SIZE)
 		cache_alias = 1;
 
-	hal_printf("MIPS32 CACHE I %ux%ux%u D %ux%ux%u alias=%d\n",
+	hal_printf(MIPS_HAL_NAME " CACHE I %ux%ux%u D %ux%ux%u alias=%d\n",
 		   cache_instruction.line,
 		   cache_instruction.way_bytes,
 		   cache_instruction.ways,

@@ -7,8 +7,9 @@
 
 /*
  * The MIPS HAL's processor definitions, shared by its C and its assembly:
- * the coprocessor 0 registers it uses and their bits, and the fixed
- * segments of the 32-bit address space.
+ * the coprocessor 0 registers it uses and their bits, the fixed segments
+ * of the address space, and the width of a register and of a pointer,
+ * which is all the 32-bit and the 64-bit processor differ in here.
  */
 
 #ifndef KERN_HAL_MIPS_ASM_H
@@ -16,6 +17,43 @@
 
 /* Marks a parameter a function does not use. */
 #define UNUSED_PARAMETER(parameter) ((void)(parameter))
+
+/*
+ * The width of the processor.
+ *
+ * The 64-bit kernel is built for the n64 ABI with its symbols in the
+ * 32-bit compatibility segments (the compiler's sym32 feature), so that an
+ * address of the image is still a sign-extended 32-bit value: the same
+ * lui and addiu reach it, and a pointer is added to with the doubleword
+ * instructions.  MIPS_HAL_NAME begins the lines the HAL prints.
+ *
+ * Values referenced: MIPS64 Architecture for Programmers Volume III, the
+ * Privileged Resource Architecture (Status: KX bit 7; the xkphys segment
+ * at 0x8000000000000000 with the cache attribute in bits 59-61, 2
+ * uncached and 3 cacheable noncoherent).
+ */
+#if defined(HAL_ARCH_MIPS64)
+#define MIPS_HAL_NAME			"MIPS64"
+#define PTR_ADDU			daddu
+#define PTR_ADDIU			daddiu
+#define MIPS_STATUS_KERNEL_ADDRESSING	0x00000080
+#define MIPS_XKPHYS_CACHED		0x9800000000000000
+#define MIPS_XKPHYS_UNCACHED		0x9000000000000000
+#else
+#define MIPS_HAL_NAME			"MIPS32"
+#define PTR_ADDU			addu
+#define PTR_ADDIU			addiu
+#define MIPS_STATUS_KERNEL_ADDRESSING	0x00000000
+#endif
+
+/*
+ * Loads the address of a symbol of the image: its high half and then the
+ * sign-extended low half, which both widths take the same way, since the
+ * image is in KSEG0 (on the 64-bit processor CKSEG0).
+ */
+#define LOAD_ADDRESS(target, symbol) \
+	lui target, %hi(symbol); \
+	addiu target, target, %lo(symbol)
 
 /*
  * The coprocessor 0 registers, as register number and select.
@@ -201,7 +239,9 @@
 /*
  * The fixed segments of the 32-bit address space: KSEG0 maps the low
  * 512 MiB of physical space cached and KSEG1 the same uncached, both
- * without the TLB.
+ * without the TLB.  The 64-bit processor has them as CKSEG0 and CKSEG1,
+ * at the same addresses sign-extended; the values here are the 32-bit
+ * ones, which mips_segment_pointer() of io.h extends.
  *
  * Values referenced: MIPS32 Architecture for Programmers Volume III (the
  * kseg0 and kseg1 segments).

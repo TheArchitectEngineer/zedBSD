@@ -226,12 +226,12 @@ mips_board_describe(
 	void)
 {
 	/* The memory and the command line the loader passed. */
-	hal_printf("MIPS32 MALTA memory=%u KiB ramdisk=%08x+%u\n",
+	hal_printf(MIPS_HAL_NAME " MALTA memory=%u KiB ramdisk=%08x+%u\n",
 		   board_low_memory / 1024U,
 		   board_ramdisk_start,
 		   board_ramdisk_size);
 	if (board_has_command_line)
-		hal_printf("MIPS32 MALTA command line: %s\n", board_command_line);
+		hal_printf(MIPS_HAL_NAME " MALTA command line: %s\n", board_command_line);
 
 	/* The display, when it shows. */
 	if (board_display_on)
@@ -386,8 +386,8 @@ table_string(
 	if (address - MIPS_KSEG0_BASE >= board_low_memory)
 		return NULL;
 
-	/* Succeeded: the address, which KSEG0 maps as it is. */
-	return (const char *)(uintptr_t)address;
+	/* Succeeded: the address, which KSEG0 (on 64 bits CKSEG0) maps as it is. */
+	return (const char *)mips_segment_pointer(address);
 }
 
 /* Copies a string of the loader's into a buffer of BOARD_STRING_SIZE bytes. */

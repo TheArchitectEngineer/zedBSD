@@ -144,7 +144,7 @@ mips_space_init(
 	mips_tlb_root = (uint32_t)(uintptr_t)system_root;
 	write_entry_hi(0);
 	current_space = HAL_SPACE_SYS;
-	hal_printf("MIPS32 HAL TLB entries=%u asid=%u\n", tlb_entries, asid_limit);
+	hal_printf(MIPS_HAL_NAME " HAL TLB entries=%u asid=%u\n", tlb_entries, asid_limit);
 }
 
 /*

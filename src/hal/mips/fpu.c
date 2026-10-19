@@ -74,7 +74,7 @@ mips_fpu_init(
 	/* A processor without the unit leaves it off. */
 	config1 = mips_read_config1();
 	if ((config1 & MIPS_CONFIG1_FLOAT) == 0) {
-		hal_puts("MIPS32 HAL FPU NONE\n");
+		hal_puts(MIPS_HAL_NAME " HAL FPU NONE\n");
 		return;
 	}
 
@@ -85,7 +85,7 @@ mips_fpu_init(
 
 	/* A unit without 64-bit registers cannot run the FR=1 model; it stays off. */
 	if ((implementation & MIPS_FIR_FLOAT_64) == 0) {
-		hal_printf("MIPS32 HAL FPU NONE fir=%08x\n", implementation);
+		hal_printf(MIPS_HAL_NAME " HAL FPU NONE fir=%08x\n", implementation);
 		return;
 	}
 
@@ -93,7 +93,7 @@ mips_fpu_init(
 	fpu_usable = 1;
 	status = mips_read_status();
 	write_status(status | MIPS_STATUS_FLOAT_64);
-	hal_printf("MIPS32 HAL FPU F64 fir=%08x\n", implementation);
+	hal_printf(MIPS_HAL_NAME " HAL FPU F64 fir=%08x\n", implementation);
 }
 
 /*

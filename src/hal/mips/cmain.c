@@ -16,6 +16,10 @@
  * the tick is let in and seen.  The kernel starts from there; it calls
  * back into hal_cpu_start_others() once its heap and initial task exist,
  * where the address spaces are checked and the bring-up is summed up.
+ *
+ * An image built with MIPS_HAL_CONSOLE_ONLY (the 64-bit port's first
+ * stage, with no trap handling, tables or tick yet) stops after the
+ * board's description, once it has checked the 64-bit direct map.
  */
 
 #include <hal/hal.h>
@@ -41,7 +45,13 @@
  */
 #define CMAIN_TICK_WAIT_FACTOR	10U
 
+#if defined(MIPS_HAL_CONSOLE_ONLY)
+#if defined(HAL_ARCH_MIPS64)
+static void check_direct_map(void);
+#endif
+#else
 static void wait_for_ticks(void);
+#endif
 
 /*
  * Brings the processor from locore.S to the console.
@@ -73,7 +83,7 @@ mips_cmain(
 	exception_base = mips_read_exception_base();
 	processor_id = mips_read_processor_id();
 	config = mips_read_config();
-	hal_printf("MIPS32 HAL ENTRY prid=%08x status=%08x ebase=%08x config=%08x\n",
+	hal_printf(MIPS_HAL_NAME " HAL ENTRY prid=%08x status=%08x ebase=%08x config=%08x\n",
 		   processor_id,
 		   status,
 		   exception_base,
@@ -81,6 +91,17 @@ mips_cmain(
 
 	/* Describes the board. */
 	mips_board_describe();
+
+#if defined(MIPS_HAL_CONSOLE_ONLY)
+#if defined(HAL_ARCH_MIPS64)
+	/* Reads the image through xkphys, which Status.KX lets the kernel reach. */
+	check_direct_map();
+#endif
+
+	/* The first stage ends here: nothing past the console exists yet. */
+	hal_puts(MIPS_HAL_NAME " HAL STOP AFTER CONSOLE\n");
+	mips_halt_forever();
+#else
 
 	/* Checks that an exception enters and leaves the trap handling. */
 	mips_trap_selftest();
@@ -110,7 +131,10 @@ mips_cmain(
 	mips_clock_start_kernel();
 	kernel_entry(mips_board_kernel_handoff());
 	HAL_FATAL("mips kernel_entry returned");
+#endif
 }
+
+#if !defined(MIPS_HAL_CONSOLE_ONLY)
 
 /*
  * Starts the other processors: there are none, so it checks the address
@@ -140,12 +164,13 @@ hal_cpu_start_others(
 		timer = "TICK";
 
 	/* The line stays in view after the kernel's own lines. */
-	hal_printf("MIPS32 HAL READY DISPLAY %s PAGING PASS TIMER %s\n", display, timer);
-	hal_puts("MIPS32 CPU 1 ONLINE\n");
+	hal_printf(MIPS_HAL_NAME " HAL READY DISPLAY %s PAGING PASS TIMER %s\n", display, timer);
+	hal_puts(MIPS_HAL_NAME " CPU 1 ONLINE\n");
 
 	/* Succeeded: the one processor is up. */
 	return HAL_OK;
 }
+#endif
 
 /*
  * Reports an exception taken before the trap handling exists, and stops.
@@ -163,7 +188,7 @@ mips_early_exception(
 	code = (cause >> MIPS_CAUSE_CODE_SHIFT) & MIPS_CAUSE_CODE_MASK;
 
 	/* Prints the processor's state at the exception. */
-	hal_printf("MIPS32 EARLY EXCEPTION code=%u cause=%08x epc=%08x badvaddr=%08x status=%08x\n",
+	hal_printf(MIPS_HAL_NAME " EARLY EXCEPTION code=%u cause=%08x epc=%08x badvaddr=%08x status=%08x\n",
 		   code,
 		   cause,
 		   exception_pc,
@@ -193,6 +218,7 @@ mips_halt_forever(
 		__asm__ volatile("wait" ::: "memory");
 }
 
+#if !defined(MIPS_HAL_CONSOLE_ONLY)
 /* Lets the tick in and waits a bounded time for the first ticks. */
 static void
 wait_for_ticks(
@@ -221,11 +247,51 @@ wait_for_ticks(
 			break;
 		now = mips_clock_read_counter();
 		if (now - start > limit) {
-			hal_printf("MIPS32 HAL TIMER FAIL ticks=%u\n", ticks);
+			hal_printf(MIPS_HAL_NAME " HAL TIMER FAIL ticks=%u\n", ticks);
 			mips_halt_forever();
 		}
 	}
 
 	/* Reports the tick with the rate it runs on. */
-	hal_printf("MIPS32 HAL TIMER TICK ticks=%u count=%u Hz\n", ticks, frequency);
+	hal_printf(MIPS_HAL_NAME " HAL TIMER TICK ticks=%u count=%u Hz\n", ticks, frequency);
 }
+#endif
+
+#if defined(MIPS_HAL_CONSOLE_ONLY) && defined(HAL_ARCH_MIPS64)
+/* The first word of the exception vectors, which the image holds. */
+extern const uint32_t mips_vectors[];
+
+/*
+ * Reads the first word of the vectors through CKSEG0, where the image
+ * runs, and through the cached and the uncached window of xkphys at its
+ * physical address, and prints whether the three agree.
+ */
+static void
+check_direct_map(
+	void)
+{
+	uint32_t physical;
+	uint32_t linked;
+	uint32_t cached;
+	uint32_t uncached;
+
+	/* The image's CKSEG0 address less the segment's base is its physical address. */
+	physical = (uint32_t)(uintptr_t)mips_vectors - (uint32_t)MIPS_KSEG0_BASE;
+
+	/* The same word through each segment. */
+	linked = *(const volatile uint32_t *)mips_vectors;
+	cached = *(const volatile uint32_t *)(MIPS_XKPHYS_CACHED + (uintptr_t)physical);
+	uncached = *(const volatile uint32_t *)(MIPS_XKPHYS_UNCACHED + (uintptr_t)physical);
+
+	/* Reports the physical address and whether the reads agree. */
+	if (cached == linked && uncached == linked) {
+		hal_printf(MIPS_HAL_NAME " XKPHYS PASS physical=%08x word=%08x\n", physical, linked);
+		return;
+	}
+	hal_printf(MIPS_HAL_NAME " XKPHYS FAIL physical=%08x ckseg0=%08x cached=%08x uncached=%08x\n",
+		   physical,
+		   linked,
+		   cached,
+		   uncached);
+}
+#endif

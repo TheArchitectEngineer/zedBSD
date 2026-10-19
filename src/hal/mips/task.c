@@ -932,7 +932,7 @@ mips_context_selftest(
 	(void)mips_irq_save();
 	mips_irq_restore(enabled);
 
-	hal_puts("MIPS32 HAL CONTEXT PASS\n");
+	hal_puts(MIPS_HAL_NAME " HAL CONTEXT PASS\n");
 }
 
 /* Lists a new task and counts its kernel stack. */

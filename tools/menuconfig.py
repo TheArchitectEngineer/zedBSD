@@ -30,6 +30,7 @@ PLATFORMS = [
     ("ppc32-mac99", "ppc32", "mac99", "QEMU mac99 PowerPC 32"),
     ("ppc64-pseries", "ppc64", "pseries", "QEMU pseries PowerPC 64"),
     ("mips32-malta", "mips32", "malta", "QEMU malta MIPS32 little-endian"),
+    ("mips64-malta", "mips64", "malta", "QEMU malta MIPS64 little-endian"),
 ]
 
 BOARD_LABELS = {
@@ -67,6 +68,7 @@ BOARD_VARIANTS = {
     ("ppc32", "mac99"): [("default", "Default")],
     ("ppc64", "pseries"): [("default", "Default")],
     ("mips32", "malta"): [("default", "Default")],
+    ("mips64", "malta"): [("default", "Default")],
 }
 
 # The names the Packages menu gives the directories of userland/packages
@@ -126,7 +128,7 @@ RETRO_PROGRAMS = ("Xzed", "zwm", "zshell", "zterm")
 # the Desktop's selection while i386 is chosen, so switching back to x86_64
 # or arm64 in the same session writes it again.  RISC-V 64 is treated the
 # same way: its port builds the base system only.
-NO_DESKTOP_ARCHITECTURES = ("i386", "riscv64", "riscv32", "mips32")
+NO_DESKTOP_ARCHITECTURES = ("i386", "riscv64", "riscv32", "mips32", "mips64")
 
 
 def package_categories(rows: list[list[str]]) -> list[tuple[str, str]]:
