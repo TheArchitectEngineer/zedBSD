@@ -46,11 +46,11 @@
 | p016 | PCIe の virt の部分: QEMU virt の ECAM の FDT host（`pci-ecam-fdt.c`、INTx は PLIC の線ごと）と `riscv-virt.c` の繋ぎ（xHCI・usb-hid・keyboard）、virt の `-device qemu-xhci -device usb-kbd` で login。PLDA の実機は p020、core の hook は p021（[design-peripherals.md](design-peripherals.md) §3.5） | p007 | 4〜6 | cleared（2026-10-19 14:29 Q1、T1-723 の走り B） |
 | p017 | NVMe の INTx の道（virt）: pci-nvme の IRQ の許可に INTx を足す（ISR で INTMS/INTMC の往復はしない）、QEMU virt の `-device nvme` で読み書きと mount、amd64 の NVMe の回帰。M.2 の実機と NVMe の root は p024（[design-peripherals.md](design-peripherals.md) §3.6） | p016 | 3〜4 | cleared（2026-10-19 Q1、T1-724） |
 | p018 | LAN: DW Ethernet QoS と PHY（MDIO で id を読む、YT8531 の推定）、gmac0、DHCP・ssh | p013・p022・p023 | 10〜14 | in-progress（q1292、P2、板の前の code、2026-10-19） |
-| [p019](phase019/phase.md) | sound: 3.5 mm の PWMDAC と DW AXI DMAC の cyclic を既存の audio の層に繋ぎ、音を鳴らす（#23・#24） | p013・p022・p023 | 7〜11 | in-progress（q1293、P1、2026-10-19: 板の前の code は済み、host 試験 ALL PASS・VF2/virt build warning 0。実機の耳の確かめは p022・p023 の後） |
+| [p019](phase019/phase.md) | sound: 3.5 mm の PWMDAC と DW AXI DMAC の cyclic を既存の audio の層に繋ぎ、音を鳴らす（#23・#24） | p013・p022・p023 | 7〜11 | in-progress（板の前の code と host 試験 58 PASS は済み（82e4c2f99、merge 109a2eece）、実機の確かめ（ユーザーの耳）を待つ） |
 | p020 | PLDA の PCIe の host（実機）: `pci-plda.c`（ATR の outbound、link、PERST、PHY、INTx は p021 の hook、bridge をまたぐ swizzle、root の DMA は 32 bit から）、VL805 の xHCI と USB keyboard で login（[design-peripherals.md](design-peripherals.md) §3.5） | p013・p022・p021・p016・p023 | 8〜12 | in-progress（板の前の code と host 試験 137 PASS は済み（72bea29bc、merge 0398b03d4）、実機の確かめ（ユーザーの目視）を待つ） |
 | [p021](phase021/phase.md) | PCI core の host の INTx の hook: `drv_pci_bus_ops` に省略可能な intx の 4 つ、EOI を送らない `intx_line_run`、線の鍵を (host, vector)、lock の順と drain。amd64・Pi 4・riscv64 virt の回帰（§3.5） | p012 | 5〜7 | cleared（2026-10-19 Q1、T1-727） |
 | p022 | p013 の実機の確かめ: clock の rate（U-Boot の `md` と照合）、card detect、PERST（§3.2） | p013・p005・#15 | 1〜2 | planning |
-| p023 | DMA の coherency の確かめ（陽性の対照、64 KiB の buffer、8 回）、非 coherent なら予備 (i)（確保ごとの uncached の別名、HAL の BSP）（§2.4・§3.9） | p013・p022・#15 | 3〜7 | planning |
+| p023 | DMA の coherency の確かめ（陽性の対照、64 KiB の buffer、8 回）、非 coherent なら予備 (i)（確保ごとの uncached の別名、HAL の BSP）（§2.4・§3.9） | p013・p022・#15 | 3〜7 | in-progress（q1294、P1、板の前の code と試験の cdev、2026-10-19） |
 | p024 | NVMe の実機と NVMe の root（p017 から分けた）: M.2 の SSD の読み書き、pcat の形の root の選び方（§3.11） | p017・p020・p015 | 3〜4 | planning |
 | [p025](phase025/phase.md) | VF2 の skeleton（p005 から分けた、板の前）: `visionfive2.c` の最小、`platform/riscv64/vmunix.mk` の vf2 の枝、config・menuconfig、bsp-visionfive2 の最小（`hal_dcache_*` は ccache の FLUSH64）、build（§3.10） | p004 | 2〜3 | cleared（2026-10-19 Q1、build） |
 
