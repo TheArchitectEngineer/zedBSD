@@ -47,6 +47,7 @@
 #include <drivers/platform/visionfive2/vf2-mmc.h>
 #include <drivers/platform/visionfive2/vf2-pcie.h>
 #include <drivers/platform/visionfive2/vf2-pinctrl.h>
+#include <drivers/platform/visionfive2/vf2-pwmdac.h>
 #include <drivers/platform/visionfive2/vf2-syscon.h>
 #include <kern/boot.h>
 #include <kern/disk.h>
@@ -480,6 +481,11 @@ probe_soc(
 	error = drv_vf2_pcie_init(&fdt, VF2_DMA_DEFAULT_COHERENT);
 	if (error != 0 && error != ENODEV)
 		kern_logf("visionfive2: PCIe unavailable (%d)\n", error);
+
+	/* Publishes the headphone jack; the board boots without sound when it fails. */
+	error = drv_vf2_pwmdac_attach(&fdt, VF2_DMA_DEFAULT_COHERENT);
+	if (error != 0 && error != ENODEV)
+		kern_logf("visionfive2: sound unavailable (%d)\n", error);
 }
 
 /*
