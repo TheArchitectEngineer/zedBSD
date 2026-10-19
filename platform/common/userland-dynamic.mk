@@ -3,7 +3,7 @@
 # The platform provides DYNAMIC_SYSROOT, DYNAMIC_LINK_CFLAGS,
 # DYNAMIC_LINK_LDFLAGS and DYNAMIC_ELF_MACHINE. Source and link dependencies
 # stay identical on amd64, arm64 and riscv64; libc, rtld and assembly stay platform-owned.
-DYNAMIC_PORTABLE_PROGRAMS := vkdemo vkquad vkvideo-probe media-probe display-events wayland wltest acquire-fence-test gpu-forge-test menu-probe keiland-settings keiland-system printtest keiland-notify mediastorage fidoctl passkey-fido2 titlebar-probe popup-probe subsurface-probe seat-probe tablet-probe data-probe extras-probe wlshm keiland-ime ime-probe mview terminal files settings monitor notes pdfviewer imageview videoplayer music photos phone calendar mailer textedit kuidemo browser browser-probe glxtest zgears egltest glescompute xserver gpu-fence-test gpu-share-test hvs-load
+DYNAMIC_PORTABLE_PROGRAMS := vkdemo vkcompute vkquad vkvideo-probe media-probe display-events wayland wltest acquire-fence-test gpu-forge-test menu-probe keiland-settings keiland-system printtest keiland-notify mediastorage fidoctl passkey-fido2 titlebar-probe popup-probe subsurface-probe seat-probe tablet-probe data-probe extras-probe wlshm keiland-ime ime-probe mview terminal files settings monitor notes pdfviewer imageview videoplayer music photos phone calendar mailer textedit kuidemo browser browser-probe glxtest zgears egltest glescompute xserver gpu-fence-test gpu-share-test hvs-load
 
 $(eval $(call ZEDBSD_LIBUTIL_RULE,$(DYNAMIC_DIR),$(LD),$(DYNAMIC_LINK_LDFLAGS),$(DYNAMIC_ELF_MACHINE)))
 
@@ -176,6 +176,23 @@ $(BUILD)/bin/vkdemo: $(DYNAMIC_SYSROOT)/usr/lib/crt1.o \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(DYNAMIC_SYSROOT)/usr/lib/crt1.o $(DYNAMIC_VKDEMO_OBJS) \
+ -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
+ -l:libvulkan.so -l:libc.so -o $@
+	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine $(DYNAMIC_ELF_MACHINE) --role application \
+ --needed libvulkan.so --needed libc.so $@
+
+# The Vulkan compute test (ws269-p009) is a plain Vulkan client like vkdemo.
+DYNAMIC_VKCOMPUTE_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,vkcompute)
+
+$(BUILD)/bin/vkcompute: $(DYNAMIC_SYSROOT)/usr/lib/crt1.o \
+	$(DYNAMIC_VKCOMPUTE_OBJS) $(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libc.so \
+	$(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
+	@mkdir -p $(dir $@)
+	$(CC) $(DYNAMIC_LINK_CFLAGS) -nostdlib -pie -Wl,--no-relax \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
+ -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
+ -Wl,--dynamic-linker=/lib/ld.so \
+ $(DYNAMIC_SYSROOT)/usr/lib/crt1.o $(DYNAMIC_VKCOMPUTE_OBJS) \
  -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
  -l:libvulkan.so -l:libc.so -o $@
 	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine $(DYNAMIC_ELF_MACHINE) --role application \
