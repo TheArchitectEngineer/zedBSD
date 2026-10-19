@@ -24,8 +24,8 @@
 
 | Phase | 目的 | 依存 | 状態 |
 | --- | --- | --- | --- |
-| p001 | 設計（[design.md](design.md)）と design-reviewer | — | in-progress（改訂 3、2026-10-19 P1 q1309。レビュー 2 の差分の確認待ち、改訂 3 の HAL の文面をユーザーに改めて示す） |
-| p002 | loader（display の node・property・qext・`color!`・i8042、`ofw.h`）、boot.h と HAL の名前付きの値（fallback の時も）、HAL の早期の console | p001、HAL の承認（改訂 3 の文面）、D4・D6・D7 | planned |
+| p001 | 設計（[design.md](design.md)）と design-reviewer | — | cleared（改訂 3.1、2026-10-19 P1 q1311、Q1 の判定: design-review-3 の結論） |
+| p002 | loader（display の node・property・qext・`color!`・i8042、`ofw.h`）、boot.h と HAL の名前付きの値（fallback の時も）、HAL の早期の console | p001、HAL の承認（改訂 3 の文面）、D4・D6・D7 | in-progress（P1 q1311） |
 | p002b | T1 の観察（gdbstub で handoff の値、`-g` x8・x32・既定の 3 条件の PNG） | p002 | planned |
 | p003 | generic の前段（登録・優先度・行の分割）と host 試験 | p002b、D1 | planned |
 | p004 | firmware fb の backend、text の console と出力の道、8042 の共有と sun4u の poll、evdev、sun4u.c | p003、D2・D5・D6 | planned |
