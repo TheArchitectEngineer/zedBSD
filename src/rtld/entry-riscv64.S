@@ -18,11 +18,16 @@
 	.global _rtld_start
 	.type _rtld_start, %function
 _rtld_start:
+	/* No frame and no return address: a stack walk stops here. */
 	mv	s0, zero
 	mv	ra, zero
+
+	/* Loads the program, keeping the stack it is to start on. */
 	mv	s1, sp
 	mv	a0, s1
 	call	rtld_main
+
+	/* Enters the program's entry with the kernel's stack. */
 	mv	sp, s1
 	jr	a0
 	.size _rtld_start, .-_rtld_start

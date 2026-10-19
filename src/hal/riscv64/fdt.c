@@ -305,6 +305,8 @@ riscv64_fdt_parse(
 	totalsize = read_be32(bytes + FDT_OFF_TOTALSIZE);
 	if (totalsize < FDT_HEADER_SIZE || (size_t)totalsize > limit)
 		return RISCV64_FDT_BAD_SIZE;
+
+	/* Records how many bytes the tree takes. */
 	info->totalsize = totalsize;
 
 	/* Refuses a format older than the one with the block sizes. */
@@ -320,10 +322,14 @@ riscv64_fdt_parse(
 	struct_size = read_be32(bytes + FDT_OFF_STRUCT_SIZE);
 	walk.strings_offset = read_be32(bytes + FDT_OFF_STRINGS);
 	strings_size = read_be32(bytes + FDT_OFF_STRINGS_SIZE);
+
+	/* Refuses a block that lies outside the tree. */
 	if (walk.struct_offset > totalsize || struct_size > totalsize - walk.struct_offset)
 		return RISCV64_FDT_BAD_STRUCTURE;
 	if (walk.strings_offset > totalsize || strings_size > totalsize - walk.strings_offset)
 		return RISCV64_FDT_BAD_STRUCTURE;
+
+	/* Notes where each block ends. */
 	walk.struct_end = walk.struct_offset + struct_size;
 	walk.strings_end = walk.strings_offset + strings_size;
 
@@ -398,10 +404,15 @@ riscv64_fdt_s_context(
 
 	/* Finds the hart's controller. */
 	for (index = 0; index < info->cpu_count; index++) {
+		/* Another hart's record is not the one. */
 		if (info->cpus[index].hart_id != hart_id)
 			continue;
+
+		/* A record without a controller is not either. */
 		if (!info->cpus[index].has_intc)
 			continue;
+
+		/* Takes the controller's phandle. */
 		phandle = info->cpus[index].intc_phandle;
 		found = 1;
 		break;
@@ -412,17 +423,28 @@ riscv64_fdt_s_context(
 		return -1;
 
 	/* Finds the context that delivers the hart's supervisor external interrupt. */
+	found = 0;
 	for (index = 0; index < info->plic_context_count; index++) {
+		/* A context of another hart's controller is not the one. */
 		if (info->plic_context_phandle[index] != phandle)
 			continue;
+
+		/* A context for another interrupt, the machine-mode one, is not either. */
 		if (info->plic_context_irq[index] != FDT_INTC_S_EXTERNAL)
 			continue;
-		*context = index;
-		return 0;
+
+		/* Takes the context. */
+		found = 1;
+		break;
 	}
 
 	/* The PLIC does not reach the hart in supervisor mode. */
-	return -1;
+	if (!found)
+		return -1;
+
+	/* Succeeded: reports the context. */
+	*context = index;
+	return 0;
 }
 
 /* Reads a big-endian 32-bit value at any alignment. */
@@ -526,6 +548,8 @@ string_is(
 	/* Equal only when the string ends there too. */
 	if (string[index] != '\0')
 		return 0;
+
+	/* Succeeded: the strings are equal. */
 	return 1;
 }
 
@@ -573,6 +597,8 @@ bytes_are(
 		return 0;
 	if (bytes[index] != 0)
 		return 0;
+
+	/* Succeeded: the value is the string. */
 	return 1;
 }
 
@@ -594,6 +620,7 @@ list_has(
 	/* Compares each terminated string of the list. */
 	start = 0;
 	while (start < length) {
+		/* Finds the terminator of the string that starts here. */
 		end = start;
 		while (end < length && list[end] != 0)
 			end++;
@@ -601,9 +628,13 @@ list_has(
 		/* Stops at a list whose last string has no terminator. */
 		if (end >= length)
 			return 0;
+
+		/* Reports the list as holding the string when this one is it. */
 		equal = bytes_are(list + start, end + 1U - start, wanted);
 		if (equal)
 			return 1;
+
+		/* Steps past the terminator to the next string. */
 		start = end + 1U;
 	}
 
@@ -631,6 +662,8 @@ read_reservations(
 		/* Refuses a block that runs past the tree. */
 		if (offset > totalsize || totalsize - offset < 16U)
 			return RISCV64_FDT_BAD_STRUCTURE;
+
+		/* Reads the pair's address and size. */
 		base = read_be64(blob + offset);
 		size = read_be64(blob + offset + 8U);
 		offset += 16U;
@@ -638,6 +671,8 @@ read_reservations(
 		/* The pair of zeros ends the block. */
 		if (base == 0 && size == 0)
 			break;
+
+		/* Records the reservation. */
 		error = add_range(info->reserved, &info->reserved_count, RISCV64_FDT_MAX_RESERVED, base, size);
 		if (error != RISCV64_FDT_OK)
 			return error;
@@ -670,6 +705,8 @@ walk_structure(
 		/* Refuses a block that ends without the end token. */
 		if (offset > walk->struct_end || walk->struct_end - offset < 4U)
 			return RISCV64_FDT_BAD_STRUCTURE;
+
+		/* Reads the next token. */
 		token = read_be32(blob + offset);
 		offset += 4U;
 
@@ -681,14 +718,19 @@ walk_structure(
 			end = offset;
 			while (end < walk->struct_end && blob[end] != 0)
 				end++;
+
+			/* Refuses a name without a terminator inside the block. */
 			if (end >= walk->struct_end)
 				return RISCV64_FDT_BAD_STRUCTURE;
+
+			/* Opens the node and steps past its padded name. */
 			offset = (end + 1U + 3U) & ~3U;
 			error = begin_node(walk, name);
 			if (error != RISCV64_FDT_OK)
 				return error;
 			break;
 		case FDT_END_NODE:
+			/* Closes the node and records what it describes. */
 			error = end_node(walk);
 			if (error != RISCV64_FDT_OK)
 				return error;
@@ -700,6 +742,8 @@ walk_structure(
 			length = read_be32(blob + offset);
 			name_offset = read_be32(blob + offset + 4U);
 			offset += 8U;
+
+			/* Refuses a value or a name outside its block. */
 			if (length > walk->struct_end - offset)
 				return RISCV64_FDT_BAD_STRUCTURE;
 			if (name_offset >= walk->strings_end - walk->strings_offset)
@@ -708,18 +752,24 @@ walk_structure(
 			/* A property outside any node is malformed. */
 			if (walk->depth == 0)
 				return RISCV64_FDT_BAD_STRUCTURE;
+
+			/* Keeps the property and steps past its padded value. */
 			name = (const char *)(blob + walk->strings_offset + name_offset);
 			take_property(walk, name, blob + offset, length);
 			offset = (offset + length + 3U) & ~3U;
 			break;
 		case FDT_NOP:
+			/* A no-op token carries nothing. */
 			break;
 		case FDT_END:
 			/* Every node must have ended. */
 			if (walk->depth != 0)
 				return RISCV64_FDT_BAD_STRUCTURE;
+
+			/* Succeeded: the whole structure block is read. */
 			return RISCV64_FDT_OK;
 		default:
+			/* Any other token is malformed. */
 			return RISCV64_FDT_BAD_STRUCTURE;
 		}
 	}
@@ -757,8 +807,10 @@ begin_node(
 		node->reg_size_cells = parent->size_cells;
 	}
 
-	/* Succeeded: the node is open. */
+	/* Pushes the node on the stack of open nodes. */
 	walk->depth++;
+
+	/* Succeeded: the node is open. */
 	return RISCV64_FDT_OK;
 }
 
@@ -772,6 +824,7 @@ property_kind(
 
 	/* Compares the name with each kept one. */
 	for (index = 0; index < sizeof(property_names) / sizeof(property_names[0]); index++) {
+		/* Reports the kind of the first kept name that matches. */
 		equal = string_is(name, property_names[index].name);
 		if (equal)
 			return property_names[index].kind;
@@ -952,9 +1005,11 @@ end_node(
 			info->timebase_frequency = read_number(node->timebase, node->timebase_length);
 		break;
 	case FDT_ROLE_CPU:
+		/* A hart: its id, its controller and its extensions. */
 		error = keep_cpu(walk, node);
 		break;
 	case FDT_ROLE_MEMORY:
+		/* The RAM ranges. */
 		error = add_reg_ranges(node, info->memory, &info->memory_count, RISCV64_FDT_MAX_MEMORY);
 		break;
 	case FDT_ROLE_RESERVATION:
@@ -964,18 +1019,23 @@ end_node(
 			error = add_reg_ranges(node, info->nomap, &info->nomap_count, RISCV64_FDT_MAX_RESERVED);
 		break;
 	case FDT_ROLE_PLIC:
+		/* The interrupt controller and its contexts. */
 		error = keep_plic(walk, node);
 		break;
 	case FDT_ROLE_UART_DW_APB:
+		/* A DesignWare UART, a candidate for the console. */
 		keep_uart(walk, node, RISCV64_FDT_UART_DW_APB);
 		break;
 	case FDT_ROLE_UART_NS16550A:
+		/* A 16550 UART, a candidate for the console. */
 		keep_uart(walk, node, RISCV64_FDT_UART_NS16550A);
 		break;
 	case FDT_ROLE_FWCFG:
+		/* The firmware configuration interface's registers, when the tree gives them. */
 		(void)read_first_reg(node, &info->fwcfg_base, &info->fwcfg_size);
 		break;
 	case FDT_ROLE_CCACHE:
+		/* The cache controller's registers, when the tree gives them. */
 		(void)read_first_reg(node, &info->ccache_base, &info->ccache_size);
 		break;
 	default:
@@ -986,8 +1046,10 @@ end_node(
 	if (error != RISCV64_FDT_OK)
 		return error;
 
-	/* Succeeded: the node is closed. */
+	/* Pops the node off the stack of open nodes. */
 	walk->depth--;
+
+	/* Succeeded: the node is closed. */
 	return RISCV64_FDT_OK;
 }
 
@@ -1005,9 +1067,12 @@ node_role(
 
 	/* The nodes directly under the root that the HAL reads by name. */
 	if (depth == 2U) {
+		/* The firmware's choices: the command line and the ramdisk. */
 		matched = string_is(node->name, "chosen");
 		if (matched)
 			return FDT_ROLE_CHOSEN;
+
+		/* The parent of the harts. */
 		matched = string_is(node->name, "cpus");
 		if (matched)
 			return FDT_ROLE_CPUS;
@@ -1017,9 +1082,12 @@ node_role(
 	if (depth == 3U) {
 		matched = string_is(parent->name, "cpus");
 		if (matched) {
+			/* A child of /cpus whose type is cpu is a hart. */
 			matched = bytes_are(node->device_type, node->device_type_length, "cpu");
 			if (matched)
 				return FDT_ROLE_CPU;
+
+			/* Any other child of /cpus, such as a cpu-map, is not read. */
 			return FDT_ROLE_NONE;
 		}
 
@@ -1034,22 +1102,30 @@ node_role(
 	if (matched)
 		return FDT_ROLE_MEMORY;
 
-	/* The devices, by their compatible strings. */
+	/* The PLIC, under either of its two names. */
 	matched = list_has(node->compatible, node->compatible_length, "sifive,plic-1.0.0");
 	if (matched)
 		return FDT_ROLE_PLIC;
 	matched = list_has(node->compatible, node->compatible_length, "riscv,plic0");
 	if (matched)
 		return FDT_ROLE_PLIC;
+
+	/* A DesignWare UART. */
 	matched = list_has(node->compatible, node->compatible_length, "snps,dw-apb-uart");
 	if (matched)
 		return FDT_ROLE_UART_DW_APB;
+
+	/* A 16550 UART. */
 	matched = list_has(node->compatible, node->compatible_length, "ns16550a");
 	if (matched)
 		return FDT_ROLE_UART_NS16550A;
+
+	/* The firmware configuration interface. */
 	matched = list_has(node->compatible, node->compatible_length, "qemu,fw-cfg-mmio");
 	if (matched)
 		return FDT_ROLE_FWCFG;
+
+	/* The cache controller. */
 	matched = list_has(node->compatible, node->compatible_length, "sifive,ccache0");
 	if (matched)
 		return FDT_ROLE_CCACHE;
@@ -1075,6 +1151,8 @@ node_is_cpu_intc(
 	compatible = list_has(node->compatible, node->compatible_length, "riscv,cpu-intc");
 	if (!compatible)
 		return 0;
+
+	/* Succeeded: the node is a hart's controller. */
 	return 1;
 }
 
@@ -1095,10 +1173,12 @@ add_range(
 	if (*count >= capacity)
 		return RISCV64_FDT_TOO_MANY;
 
-	/* Succeeded: the range is the table's last. */
+	/* Appends the range and counts it. */
 	ranges[*count].base = base;
 	ranges[*count].size = size;
 	(*count)++;
+
+	/* Succeeded: the range is the table's last. */
 	return RISCV64_FDT_OK;
 }
 
@@ -1113,12 +1193,16 @@ read_first_reg(
 
 	/* A node without a whole entry has no address. */
 	entry_length = (node->reg_address_cells + node->reg_size_cells) * 4U;
-	if (node->reg == NULL || entry_length == 0 || node->reg_length < entry_length)
+	if (node->reg == NULL ||
+	    entry_length == 0 ||
+	    node->reg_length < entry_length)
 		return -1;
 
-	/* Succeeded: the entry's address and size. */
+	/* Reads the entry's address and size. */
 	*base = read_cells(node->reg, node->reg_address_cells);
 	*size = read_cells(node->reg + node->reg_address_cells * 4U, node->reg_size_cells);
+
+	/* Succeeded: the caller has the first entry. */
 	return 0;
 }
 
@@ -1174,6 +1258,7 @@ cpu_extensions(
 	/* The list of the current binding. */
 	extensions = 0;
 	if (node->isa_extensions != NULL) {
+		/* Looks for each recorded name in the list. */
 		for (name = 0; name < sizeof(extension_names) / sizeof(extension_names[0]); name++) {
 			present = list_has(node->isa_extensions, node->isa_extensions_length, extension_names[name].name);
 			if (present)
@@ -1193,8 +1278,11 @@ cpu_extensions(
 	/* Looks at each underscore-led name of the string. */
 	isa = (const char *)node->isa;
 	for (index = 0; isa[index] != '\0'; index++) {
+		/* Only an underscore starts a multi-letter name. */
 		if (isa[index] != '_')
 			continue;
+
+		/* Compares the name with each recorded one. */
 		for (name = 0; name < sizeof(extension_names) / sizeof(extension_names[0]); name++) {
 			present = string_has_prefix(isa + index + 1U, extension_names[name].name);
 			if (present)
@@ -1247,8 +1335,12 @@ keep_cpu(
 	/* A hart without a whole reg has no id and is not recorded. */
 	info = walk->info;
 	entry_length = node->reg_address_cells * 4U;
-	if (node->reg == NULL || entry_length == 0 || node->reg_length < entry_length)
+	if (node->reg == NULL ||
+	    entry_length == 0 ||
+	    node->reg_length < entry_length)
 		return RISCV64_FDT_OK;
+
+	/* The hart id is the reg's address. */
 	hart_id = read_cells(node->reg, node->reg_address_cells);
 
 	/* Refuses a table that is full. */
@@ -1259,12 +1351,14 @@ keep_cpu(
 	if (info->timebase_frequency == 0 && node->timebase != NULL)
 		info->timebase_frequency = read_number(node->timebase, node->timebase_length);
 
-	/* Records the hart, usable when it translates addresses and is not disabled. */
+	/* Records the hart's id, its controller and its extensions. */
 	cpu = &info->cpus[info->cpu_count];
 	cpu->hart_id = hart_id;
 	cpu->intc_phandle = node->child_intc_phandle;
 	cpu->has_intc = node->has_child_intc;
 	cpu->extensions = cpu_extensions(node);
+
+	/* Decides whether the tree disables the hart. */
 	disabled = 0;
 	if (node->status != NULL) {
 		/* A status other than okay (or its old spelling ok) disables the hart. */
@@ -1279,6 +1373,8 @@ keep_cpu(
 	cpu->usable = 0;
 	if (node->mmu_type != NULL && !disabled)
 		cpu->usable = 1;
+
+	/* Counts the hart in the table. */
 	info->cpu_count++;
 
 	/* Succeeded: the hart is in the table. */
@@ -1305,10 +1401,13 @@ keep_plic(
 	/* The contexts: pairs of a hart controller's phandle and its interrupt. */
 	count = 0;
 	if (node->interrupts_extended != NULL) {
+		/* Reads each pair in the list's order, which numbers the contexts. */
 		for (offset = 0; offset + 8U <= node->interrupts_extended_length; offset += 8U) {
 			/* Refuses more contexts than the record keeps. */
 			if (count >= RISCV64_FDT_MAX_CONTEXTS)
 				return RISCV64_FDT_TOO_MANY;
+
+			/* Records the context's controller and interrupt. */
 			info->plic_context_phandle[count] = read_be32(node->interrupts_extended + offset);
 			info->plic_context_irq[count] = read_be32(node->interrupts_extended + offset + 4U);
 			count++;
@@ -1344,9 +1443,13 @@ keep_uart(
 	error = read_first_reg(node, &info->uart_base, &info->uart_size);
 	if (error != 0)
 		return;
+
+	/* Records the UART's kind and its register layout. */
 	info->uart_kind = kind;
 	info->uart_reg_shift = node->reg_shift;
 	info->uart_reg_io_width = node->reg_io_width;
+
+	/* Records its interrupt, when the tree gives one. */
 	if (node->interrupts != NULL && node->interrupts_length >= 4U)
 		info->uart_irq = read_be32(node->interrupts);
 }

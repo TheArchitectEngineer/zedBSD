@@ -622,7 +622,9 @@ drv_fdt_child(
 	int error;
 
 	/* Refuses a missing blob, node or result. */
-	if (fdt == NULL || child == NULL || node == DRV_FDT_NO_NODE)
+	if (fdt == NULL ||
+	    child == NULL ||
+	    node == DRV_FDT_NO_NODE)
 		return EINVAL;
 
 	/* Starts just after the node's name. */
@@ -653,10 +655,8 @@ drv_fdt_child(
 		/* Enters a node, which is a candidate when it is a direct child. */
 		if (token.kind == FDT_TOKEN_BEGIN_NODE) {
 			/* A direct child after the starting one is the answer. */
-			if (depth == 0 && passed) {
-				*child = offset;
-				return 0;
-			}
+			if (depth == 0 && passed)
+				break;
 
 			/* The starting child itself is passed over. */
 			if (depth == 0 && offset == after)
@@ -680,6 +680,12 @@ drv_fdt_child(
 		/* Moves on to the token after this one. */
 		offset = token.next;
 	}
+
+	/* Reports the child the walk stopped at. */
+	*child = offset;
+
+	/* Succeeded: the next child is found. */
+	return 0;
 }
 
 /*
@@ -706,9 +712,13 @@ drv_fdt_string_index(
 	unsigned position;
 	int difference;
 	int error;
+	bool found;
 
 	/* Refuses a missing blob, name, string or result. */
-	if (fdt == NULL || name == NULL || wanted == NULL || index == NULL)
+	if (fdt == NULL ||
+	    name == NULL ||
+	    wanted == NULL ||
+	    index == NULL)
 		return EINVAL;
 
 	/* Reads the string list. */
@@ -720,6 +730,7 @@ drv_fdt_string_index(
 	wanted_length = (uint32_t)kern_strlen(wanted);
 	position = 0;
 	start = 0;
+	found = false;
 	while (start < length) {
 		/* Finds the end of the current string. */
 		end = start;
@@ -731,8 +742,8 @@ drv_fdt_string_index(
 			/* The bytes decide once the lengths agree. */
 			difference = kern_memcmp(value + start, wanted, wanted_length);
 			if (difference == 0) {
-				*index = position;
-				return 0;
+				found = true;
+				break;
 			}
 		}
 
@@ -742,7 +753,14 @@ drv_fdt_string_index(
 	}
 
 	/* Reports that the list does not hold the string. */
-	return ENOENT;
+	if (!found)
+		return ENOENT;
+
+	/* Reports the string's position. */
+	*index = position;
+
+	/* Succeeded: the string is in the list. */
+	return 0;
 }
 
 /*
@@ -779,6 +797,8 @@ drv_fdt_dma_coherent(
 		error = drv_fdt_property(fdt, current, "dma-coherent", &value, &length);
 		if (error == 0)
 			return 1;
+
+		/* A tree that cannot be read gives the safe answer. */
 		if (error != ENOENT)
 			return 0;
 
@@ -786,15 +806,21 @@ drv_fdt_dma_coherent(
 		error = drv_fdt_property(fdt, current, "dma-noncoherent", &value, &length);
 		if (error == 0)
 			return 0;
+
+		/* A tree that cannot be read gives the safe answer. */
 		if (error != ENOENT)
 			return 0;
 
-		/* Moves to the node above; past the root the board decides. */
+		/* Finds the node above; past the root the board decides. */
 		error = drv_fdt_parent(fdt, current, &above);
 		if (error == ENOENT)
 			break;
+
+		/* A tree that cannot be walked gives the safe answer. */
 		if (error != 0)
 			return 0;
+
+		/* Moves up to the node above. */
 		current = above;
 	}
 

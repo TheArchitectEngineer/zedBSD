@@ -218,6 +218,8 @@ hal_io_inp8(
 
 	/* A driver that uses ports does not belong on this port. */
 	port_io_fatal();
+
+	/* A value for the compiler; the stop above does not return. */
 	return 0;
 }
 
@@ -232,6 +234,8 @@ hal_io_inp16(
 
 	/* A driver that uses ports does not belong on this port. */
 	port_io_fatal();
+
+	/* A value for the compiler; the stop above does not return. */
 	return 0;
 }
 
@@ -246,6 +250,8 @@ hal_io_inp32(
 
 	/* A driver that uses ports does not belong on this port. */
 	port_io_fatal();
+
+	/* A value for the compiler; the stop above does not return. */
 	return 0;
 }
 

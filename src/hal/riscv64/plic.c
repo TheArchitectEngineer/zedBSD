@@ -87,7 +87,11 @@ riscv64_plic_init(
 	info = riscv64_boot_fdt();
 	if (info->plic_size == 0)
 		HAL_FATAL("riscv64 device tree names no PLIC");
+
+	/* Reaches its registers through the device window. */
 	plic_registers = (volatile uint8_t *)(RISCV64_DEVICE_BASE + info->plic_base);
+
+	/* Takes its number of sources, no more than the layout can have. */
 	plic_sources = info->plic_sources;
 	if (plic_sources > PLIC_SOURCE_LIMIT)
 		plic_sources = PLIC_SOURCE_LIMIT;
@@ -97,6 +101,8 @@ riscv64_plic_init(
 	error = find_context(cpu->hart_id, &plic_boot_context);
 	if (error != 0)
 		HAL_FATAL("riscv64 PLIC has no supervisor context for the boot hart");
+
+	/* Records the context in the hart's record. */
 	cpu->plic_context = plic_boot_context;
 	cpu->has_plic_context = 1;
 
@@ -106,6 +112,8 @@ riscv64_plic_init(
 
 	/* Opens the boot hart's context with nothing enabled. */
 	open_context(plic_boot_context, PLIC_THRESHOLD_OPEN);
+
+	/* Reports the controller's size and the context that takes the sources. */
 	hal_printf("RISCV64 PLIC sources=%u context=%u\n", plic_sources, plic_boot_context);
 }
 
@@ -126,6 +134,8 @@ riscv64_plic_init_hart(
 	error = find_context(cpu->hart_id, &context);
 	if (error != 0)
 		return;
+
+	/* Records the context in the hart's record. */
 	cpu->plic_context = context;
 	cpu->has_plic_context = 1;
 
@@ -241,9 +251,12 @@ open_context(
 
 	/* Completes anything the firmware left claimed, so its source is not stuck. */
 	for (drained = 0; drained <= plic_sources; drained++) {
+		/* Claims the next pending source; none left ends the drain. */
 		source = hal_mmio_read32(control + PLIC_CLAIM);
 		if (source == 0)
 			break;
+
+		/* Completes it. */
 		hal_mmio_write32(control + PLIC_CLAIM, source);
 	}
 }
@@ -254,10 +267,12 @@ find_context(
 	uint64_t hart_id,
 	unsigned *context)
 {
+	const struct riscv64_fdt_info *info;
 	int error;
 
 	/* The context whose entry names the hart's controller and its supervisor interrupt. */
-	error = riscv64_fdt_s_context(riscv64_boot_fdt(), hart_id, context);
+	info = riscv64_boot_fdt();
+	error = riscv64_fdt_s_context(info, hart_id, context);
 	if (error != 0)
 		return -1;
 

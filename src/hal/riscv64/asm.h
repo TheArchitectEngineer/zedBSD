@@ -261,7 +261,8 @@ riscv64_write_tp(
 }
 
 void
-riscv64_halt_forever(void)
+riscv64_halt_forever(
+	void)
 __attribute__((noreturn));
 
 #endif

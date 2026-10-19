@@ -186,6 +186,7 @@ hal_printf(
 	__builtin_va_list arguments;
 	const char *string;
 	uint64_t value;
+	int character;
 	int width;
 	int long_argument;
 	char conversion;
@@ -203,37 +204,48 @@ hal_printf(
 		/* Steps past the percent sign. */
 		format++;
 
-		/* The width, after an optional zero, and the length. */
-		width = 0;
-		long_argument = 0;
+		/* Skips the optional zero; every width pads with zeros. */
 		if (*format == '0')
 			format++;
+
+		/* Reads the width's digits. */
+		width = 0;
 		while (*format >= '0' && *format <= '9') {
 			width = width * 10 + (*format - '0');
 			format++;
 		}
 
 		/* A lowercase l asks for a 64-bit argument. */
+		long_argument = 0;
 		if (*format == 'l') {
 			long_argument = 1;
 			format++;
+
+			/* A second l asks for the same. */
 			if (*format == 'l')
 				format++;
 		}
 
-		/* The conversion. */
+		/* A format that ends inside a conversion ends the output. */
 		conversion = *format;
 		if (conversion == '\0')
 			break;
 		format++;
+
+		/* Converts the argument as the conversion character asks. */
 		switch (conversion) {
 		case 'c':
-			hal_putc(__builtin_va_arg(arguments, int));
+			/* One character. */
+			character = __builtin_va_arg(arguments, int);
+			hal_putc(character);
 			break;
 		case 's':
+			/* A string, with a missing one spelled out. */
 			string = __builtin_va_arg(arguments, const char *);
 			if (string == NULL)
 				string = "(null)";
+
+			/* Writes the string. */
 			cons_puts(string);
 			break;
 		case 'u':
@@ -254,12 +266,16 @@ hal_printf(
 
 			break;
 		case 'p':
-			put_number((uintptr_t)__builtin_va_arg(arguments, void *), 16, 16);
+			/* A pointer, as sixteen hexadecimal digits. */
+			value = (uintptr_t)__builtin_va_arg(arguments, void *);
+			put_number(value, 16, 16);
 			break;
 		case '%':
+			/* A percent sign. */
 			hal_putc('%');
 			break;
 		default:
+			/* A conversion this printf does not know. */
 			hal_putc('?');
 			break;
 		}
@@ -350,19 +366,24 @@ put_number(
 	/* Collects the digits, least significant first. */
 	count = 0;
 	do {
+		/* Spells the lowest digit, a letter unless it is below ten. */
 		digit = (unsigned)(value % base);
 		digits[count] = (char)('a' + digit - 10U);
 		if (digit < 10U)
 			digits[count] = (char)('0' + digit);
+
+		/* Moves on to the next digit. */
 		count++;
 		value /= base;
 	} while (value != 0);
 
-	/* Pads, then writes the digits most significant first. */
+	/* Pads with zeros up to the width. */
 	while (width > count) {
 		hal_putc('0');
 		width--;
 	}
+
+	/* Writes the digits most significant first. */
 	while (count != 0) {
 		count--;
 		hal_putc(digits[count]);

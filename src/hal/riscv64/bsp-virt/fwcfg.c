@@ -95,23 +95,32 @@ virt_fwcfg_init(
 	/* A board without the interface has nothing to set up. */
 	if (base_phys == 0 || size < FWCFG_DMA_LOW + 4U)
 		return HAL_ERR_UNSUPPORTED;
+
+	/* Reaches the registers through the device window. */
 	fwcfg_registers = (volatile uint8_t *)(RISCV64_DEVICE_BASE + base_phys);
 
-	/* Reads the signature, which is the four bytes "QEMU". */
+	/* Reads the signature. */
 	select_item(FWCFG_KEY_SIGNATURE);
 	for (index = 0; index < 4U; index++)
 		signature[index] = read_byte();
-	if (signature[0] != 'Q' || signature[1] != 'E' || signature[2] != 'M' || signature[3] != 'U') {
+
+	/* Refuses a device whose signature is not the four bytes "QEMU". */
+	if (signature[0] != 'Q' ||
+	    signature[1] != 'E' ||
+	    signature[2] != 'M' ||
+	    signature[3] != 'U') {
 		fwcfg_registers = NULL;
 		return HAL_ERR_UNSUPPORTED;
 	}
 
-	/* Reads the features, little-endian; a file can be written only through DMA. */
+	/* Reads the features, little-endian. */
 	select_item(FWCFG_KEY_FEATURES);
 	features = read_byte();
 	features |= (uint32_t)read_byte() << 8;
 	features |= (uint32_t)read_byte() << 16;
 	features |= (uint32_t)read_byte() << 24;
+
+	/* Refuses a device without DMA, the only way a file can be written. */
 	if ((features & FWCFG_FEATURE_DMA) == 0) {
 		fwcfg_registers = NULL;
 		return HAL_ERR_UNSUPPORTED;
@@ -141,6 +150,7 @@ virt_fwcfg_find(
 	uint16_t entry_selector;
 	unsigned index;
 	int equal;
+	int found;
 
 	/* Nothing can be found without the interface. */
 	if (fwcfg_registers == NULL)
@@ -151,10 +161,14 @@ virt_fwcfg_find(
 	count = read_be32();
 
 	/* Reads each entry: size, selector, a reserved word and the name. */
+	found = 0;
 	for (entry = 0; entry < count; entry++) {
+		/* The size and the selector; the reserved word is skipped. */
 		entry_size = read_be32();
 		entry_selector = read_be16();
 		(void)read_be16();
+
+		/* The name, terminated even when the device fills every byte. */
 		for (index = 0; index < FWCFG_FILE_NAME_SIZE; index++)
 			entry_name[index] = (char)read_byte();
 		entry_name[FWCFG_FILE_NAME_SIZE - 1U] = '\0';
@@ -162,14 +176,21 @@ virt_fwcfg_find(
 		/* Stops at the entry with the name. */
 		equal = name_equal(entry_name, name);
 		if (equal) {
-			*selector = entry_selector;
-			*size = entry_size;
-			return HAL_OK;
+			found = 1;
+			break;
 		}
 	}
 
 	/* The directory has no such file. */
-	return HAL_ERR_INVALID;
+	if (!found)
+		return HAL_ERR_INVALID;
+
+	/* Reports the file's selector and size. */
+	*selector = entry_selector;
+	*size = entry_size;
+
+	/* Succeeded: the file can be written. */
+	return HAL_OK;
 }
 
 /*
@@ -188,6 +209,9 @@ virt_fwcfg_write(
 {
 	uint64_t request_phys;
 	uint64_t data_phys;
+	uint32_t address_high;
+	uint32_t address_low;
+	uint32_t raw_control;
 	uint32_t control;
 	uint32_t polls;
 
@@ -211,26 +235,36 @@ virt_fwcfg_write(
 	 * half, and the control field cleared by the device when it is done).
 	 */
 	request_phys = riscv64_virt_to_phys(&fwcfg_request);
+	address_high = __builtin_bswap32((uint32_t)(request_phys >> 32));
+	address_low = __builtin_bswap32((uint32_t)request_phys);
 	hal_mb();
-	hal_mmio_write32(fwcfg_registers + FWCFG_DMA_HIGH, __builtin_bswap32((uint32_t)(request_phys >> 32)));
-	hal_mmio_write32(fwcfg_registers + FWCFG_DMA_LOW, __builtin_bswap32((uint32_t)request_phys));
+	hal_mmio_write32(fwcfg_registers + FWCFG_DMA_HIGH, address_high);
+	hal_mmio_write32(fwcfg_registers + FWCFG_DMA_LOW, address_low);
 
 	/* Waits for the device to clear the control field, or to report an error. */
 	for (polls = 0; polls < FWCFG_DMA_POLLS; polls++) {
-		control = __builtin_bswap32(__atomic_load_n(&fwcfg_request.control, __ATOMIC_ACQUIRE));
+		/* Reads the control field as the device left it. */
+		raw_control = __atomic_load_n(&fwcfg_request.control, __ATOMIC_ACQUIRE);
+		control = __builtin_bswap32(raw_control);
 
 		/* Reports a transfer the device refused. */
 		if ((control & FWCFG_DMA_ERROR) != 0)
 			return HAL_ERR_IO;
 
-		/* Succeeded: the device took the whole file. */
+		/* A cleared field means the device took the whole file. */
 		if (control == 0)
-			return HAL_OK;
+			break;
+
+		/* Waits a moment before looking again. */
 		hal_atomic_relax();
 	}
 
 	/* The device never finished. */
-	return HAL_ERR_TIMEOUT;
+	if (polls >= FWCFG_DMA_POLLS)
+		return HAL_ERR_TIMEOUT;
+
+	/* Succeeded: the device took the whole file. */
+	return HAL_OK;
 }
 
 /* Selects an item, which also rewinds its data to the start. */
@@ -238,8 +272,11 @@ static void
 select_item(
 	uint16_t selector)
 {
+	uint16_t value;
+
 	/* The selector register takes the item big-endian. */
-	hal_mmio_write16(fwcfg_registers + FWCFG_SELECTOR, __builtin_bswap16(selector));
+	value = __builtin_bswap16(selector);
+	hal_mmio_write16(fwcfg_registers + FWCFG_SELECTOR, value);
 }
 
 /* Reads the selected item's next byte. */
@@ -298,8 +335,11 @@ name_equal(
 
 	/* Compares up to the wanted name's terminator. */
 	for (index = 0; wanted[index] != '\0'; index++) {
+		/* A wanted name longer than a directory name cannot match. */
 		if (index >= FWCFG_FILE_NAME_SIZE - 1U)
 			return 0;
+
+		/* A differing character ends the comparison. */
 		if (name[index] != wanted[index])
 			return 0;
 	}
@@ -307,5 +347,7 @@ name_equal(
 	/* Equal only when the directory name ends there too. */
 	if (name[index] != '\0')
 		return 0;
+
+	/* Succeeded: the names are equal. */
 	return 1;
 }

@@ -33,9 +33,11 @@ hal_task_get_user_gpregs(
 	struct riscv64_trap_frame *frame;
 	unsigned index;
 
-	/* Requires a task with a user frame and somewhere to put the registers. */
+	/* Requires a task and somewhere to put the registers. */
 	if (task == NULL || registers == NULL)
 		return HAL_ERR_INVALID;
+
+	/* A task without a user frame has no user registers. */
 	frame = riscv64_task_user_frame(task);
 	if (frame == NULL)
 		return HAL_ERR_STATE;
@@ -44,6 +46,8 @@ hal_task_get_user_gpregs(
 	registers->x[0] = 0;
 	for (index = 1; index < 32U; index++)
 		registers->x[index] = frame->x[index];
+
+	/* The next instruction is where the return to user resumes. */
 	registers->pc = frame->sepc;
 
 	/* Succeeded: the registers are copied. */
@@ -62,9 +66,11 @@ hal_task_set_user_gpregs(
 	unsigned index;
 	int valid;
 
-	/* Requires a task with a user frame and registers to write. */
+	/* Requires a task and registers to write. */
 	if (task == NULL || registers == NULL)
 		return HAL_ERR_INVALID;
+
+	/* A task without a user frame has no user registers. */
 	frame = riscv64_task_user_frame(task);
 	if (frame == NULL)
 		return HAL_ERR_STATE;
@@ -74,9 +80,11 @@ hal_task_set_user_gpregs(
 	if (!valid)
 		return HAL_ERR_INVALID;
 
-	/* Writes every register but x0, then the next instruction. */
+	/* Writes every register but x0. */
 	for (index = 1; index < 32U; index++)
 		frame->x[index] = registers->x[index];
+
+	/* The return to user resumes at the new next instruction. */
 	frame->sepc = registers->pc;
 
 	/* Succeeded: the task returns to user with the registers. */
@@ -209,8 +217,10 @@ hal_task_get_single_step(
 	if (task == NULL || enable == NULL)
 		return HAL_ERR_INVALID;
 
-	/* Succeeded: stepping is always off. */
+	/* Stepping is always off. */
 	*enable = 0;
+
+	/* Succeeded: the state is reported. */
 	return HAL_OK;
 }
 
@@ -254,8 +264,10 @@ hal_task_get_debug_points(
 	if (task == NULL || count == NULL)
 		return HAL_ERR_INVALID;
 
-	/* Succeeded: no points. */
+	/* The task has no points. */
 	*count = 0;
+
+	/* Succeeded: the count is reported. */
 	return HAL_OK;
 }
 

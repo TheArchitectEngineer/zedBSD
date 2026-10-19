@@ -31,6 +31,16 @@ MACHINES = {
     "riscv64": (2, 243, "<", {0, 2, 3, 5, 7, 9}),
 }
 
+# The relative relocation of each machine, the only kind ld.so's own
+# bootstrap may carry before it can resolve symbols.
+BOOTSTRAP_RELATIVE = {
+    "i386": 8,
+    "amd64": 8,
+    "aarch64": 1027,
+    "sparcv9": 22,
+    "riscv64": 3,
+}
+
 PRIVATE_RTLD = {
 	"__rtld_exports",
     "__rtld_dlclose", "__rtld_dlerror",
@@ -281,7 +291,7 @@ def check(path, machine_name, role, expected_needed=None, expected_soname=None, 
             if ((machine_name == "amd64" and kind == 36) or
                     (machine_name == "aarch64" and kind == 1031)):
                 seen_tlsdesc = True
-            if role == "interpreter" and kind not in ({8} if machine_name in ("i386", "amd64") else {22} if machine_name == "sparcv9" else {3} if machine_name == "riscv64" else {1027}):
+            if role == "interpreter" and kind != BOOTSTRAP_RELATIVE[machine_name]:
                 fail(path, f"ld.so bootstrap relocation {kind} is not relative")
 
     if role == "module" and machine_name in ("amd64", "aarch64") and not seen_tlsdesc:

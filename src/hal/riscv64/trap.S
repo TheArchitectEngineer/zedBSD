@@ -31,6 +31,7 @@
 	.global riscv64_trap_entry
 	.type riscv64_trap_entry, %function
 riscv64_trap_entry:
+	/* Swaps tp with sscratch; a nonzero value is the record of a trap from user. */
 	csrrw tp, sscratch, tp
 	bnez tp, riscv64_trap_from_user
 
@@ -100,6 +101,7 @@ riscv64_trap_save:
 	li t0, RISCV64_SSTATUS_SUM
 	csrc sstatus, t0
 
+	/* Hands the frame to C. */
 	mv a0, sp
 	call riscv64_trap
 
@@ -109,6 +111,7 @@ riscv64_trap_save:
 	 */
 	.global riscv64_trap_return
 riscv64_trap_return:
+	/* Restores the return address and the state; the previous mode picks the way back. */
 	csrci sstatus, 2
 	ld t0, RISCV64_FRAME_SEPC(sp)
 	csrw sepc, t0

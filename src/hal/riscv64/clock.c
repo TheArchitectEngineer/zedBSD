@@ -41,21 +41,28 @@ void
 riscv64_clock_init(
 	void)
 {
+	const struct riscv64_fdt_info *info;
 	struct riscv64_percpu *cpu;
+	uint64_t now;
 
 	/* The boot hart derives the tick's length from the timebase. */
 	cpu = riscv64_percpu_current();
 	if (cpu->logical_id == 0) {
-		timer_frequency = riscv64_boot_fdt()->timebase_frequency;
+		/* The counter's frequency, without which there is no tick. */
+		info = riscv64_boot_fdt();
+		timer_frequency = info->timebase_frequency;
 		if (timer_frequency == 0)
 			HAL_FATAL("riscv64 device tree gives no timebase");
+
+		/* The counter ticks per scheduling tick, at least one. */
 		timer_interval = timer_frequency / HAL_TIMER_FREQUENCY;
 		if (timer_interval == 0)
 			timer_interval = 1;
 	}
 
 	/* Arms the first tick one interval from now and lets its interrupt in. */
-	cpu->timer_deadline = riscv64_read_time() + timer_interval;
+	now = riscv64_read_time();
+	cpu->timer_deadline = now + timer_interval;
 	riscv64_sbi_set_timer(cpu->timer_deadline);
 	riscv64_set_sie(RISCV64_SIE_STIE);
 }
@@ -79,10 +86,12 @@ riscv64_clock_interrupt(
 	now = riscv64_read_time();
 	cpu->timer_ticks++;
 
-	/* Moves the deadline past now in whole intervals and arms it. */
+	/* Moves the deadline past now in whole intervals. */
 	do {
 		cpu->timer_deadline += timer_interval;
 	} while (cpu->timer_deadline <= now);
+
+	/* Arms the next tick. */
 	riscv64_sbi_set_timer(cpu->timer_deadline);
 
 	/* Refuses a tick while this hart still holds another interrupt. */
@@ -130,15 +139,22 @@ riscv64_clock_ticked(
 	now = riscv64_read_time();
 	deadline = now + timer_frequency / CLOCK_TICK_WAIT_DIVISOR;
 	while (now < deadline) {
+		/* Leaves the wait once the count has moved. */
 		ticks = __atomic_load_n(&boot_cpu->timer_ticks, __ATOMIC_RELAXED);
 		if (ticks != 0U)
-			return true;
+			break;
+
+		/* Waits a moment before looking again. */
 		hal_atomic_relax();
 		now = riscv64_read_time();
 	}
 
-	/* Failed: the boot hart saw no tick in the time allowed. */
-	return false;
+	/* The boot hart saw no tick in the time allowed. */
+	if (ticks == 0U)
+		return false;
+
+	/* Succeeded: the first tick came. */
+	return true;
 }
 
 /*
@@ -157,9 +173,11 @@ hal_rtc_read_counter(
 	if (timer_frequency == 0U)
 		return false;
 
-	/* Succeeded: the counter now and its frequency. */
+	/* Reads the counter now, with its frequency. */
 	*value = riscv64_read_time();
 	*freq_hz = timer_frequency;
+
+	/* Succeeded: both are the caller's. */
 	return true;
 }
 
