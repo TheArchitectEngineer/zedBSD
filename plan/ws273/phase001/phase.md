@@ -2,8 +2,8 @@
 
 # ws273-p001 RG350（Ingenic JZ4770）の移植の設計
 
-- 親: [ws273](../ws.md)、Queue: q1317 / q1317-i01（P2、版 1、2026-10-19）、q1320 / q1320-i01（P1、改訂 2、2026-10-19）
-- Status: in-progress（改訂 2 が出来た、design-reviewer の差分の確認待ち）
+- 親: [ws273](../ws.md)、Queue: q1317 / q1317-i01（P2、版 1、2026-10-19）、q1320 / q1320-i01（P1、改訂 2、2026-10-19）、q1323 / q1323-i01（P2、改訂 2.1、2026-10-19）
+- Status: in-progress（改訂 2.1 が出来た、Q1 の差分の確認待ち）
 
 ## 目的
 
@@ -31,3 +31,12 @@ Anbernic RG350 の実機で zedBSD を起動する道を決め、`plan/ws273/des
 - 受け入れの条件 2 の path を `src/hal/mips/` に直した（Minor 8）。
 - 出典の確かめ: レビュー 1 が `gh api` で取った複写で B1・M2・M4・M5・M6・Minor 9 の根拠を読み直した。他は「確（レビュー 1）」と記した。
 - 未実施: design-reviewer の差分の確認、実機の確認（全部）、build・試験（設計なので不要）。
+
+## 結果（2026-10-19 P2、改訂 2.1、q1323 / q1323-i01）
+
+- [design-review-2.md](../design-review-2.md)（Major M-a、Minor 1〜12）の全部に対応し、[design.md](../design.md) を版 2.1 にした。対応の表は design.md §10。
+- M-a: framebuffer・descriptor を bss から外し `__bss_end` の後の NOLOAD の `.uncached` に置いて KSEG1 でだけ触れる。入口の全体の cache の操作は既存に無いので新しい関数（Config1・Config2 をその場で読み L1 D・L1 I・L2 を Index、bss の消去の後・`mips_board_init` の前）を p002 に。
+- Minor 4〜12 は §3.1 の Phase の項（p002〜p006）に取り込んだ。D7 は AGENTS.md の `boot-test.sh` だけの規則の例外としてユーザーの明示の承認が要ると書いた。
+- [proposed/mips32-h-fpregs-fr0.diff](../proposed/mips32-h-fpregs-fr0.diff) を作り直し、`git apply --check` が通ることを確かめた（timer-comment の diff も通る）。
+- 出典は新たに取得していない（レビュー 2 の行番号の根拠は locore.S・cmain.c・vmunix.ld・mips32.h・fpregs.S を worktree で読んで確かめた。DT の RG350M の panel は「確（レビュー 2）」）。
+- 未実施: Q1 の差分の確認、実機の確認（全部）、build・試験（設計なので不要）。
