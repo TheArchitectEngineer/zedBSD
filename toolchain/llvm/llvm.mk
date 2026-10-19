@@ -510,13 +510,17 @@ llvm-toolchain: $(ZEDBSD_LLVM_INSTALLED_TOOLS) $(ZEDBSD_LLVM_INSTALLED_LICENSE)
 	@'$(ZEDBSD_LLVM_INSTALL)/bin/ld.lld' --version | grep -F 'LLD $(ZEDBSD_LLVM_VERSION)'
 
 .PHONY: llvm-host-archive
+# The archive's modes are made owner-writable, so a locked shared tree
+# (plan/tools/toolchain-lock.sh makes its directories read-only) does not
+# leave read-only directories that the cache's extraction cannot move.
 llvm-host-archive: llvm-toolchain
 	@set -eu; \
 		mkdir -p '$(@D)' '$(dir $(ZEDBSD_LLVM_CACHE_ARCHIVE))'; \
 		temporary=$$(mktemp '$(dir $(ZEDBSD_LLVM_CACHE_ARCHIVE)).$(ZEDBSD_LLVM_CACHE_ASSET).XXXXXX'); \
 		trap 'find "'"'$$temporary'"'" -delete' EXIT HUP INT TERM; \
 		tar -C '$(dir $(ZEDBSD_LLVM_INSTALL))' --sort=name --mtime='@0' \
-			--owner=0 --group=0 --numeric-owner -cf - '$(notdir $(ZEDBSD_LLVM_INSTALL))' | \
+			--owner=0 --group=0 --numeric-owner --mode='u+w' \
+			-cf - '$(notdir $(ZEDBSD_LLVM_INSTALL))' | \
 			gzip -n > "$$temporary"; \
 		mv -- "$$temporary" '$(ZEDBSD_LLVM_CACHE_ARCHIVE)'; \
 		trap - EXIT HUP INT TERM; \
