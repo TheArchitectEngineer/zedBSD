@@ -1,7 +1,7 @@
 # ws274-p006 死んだ code と重複を除く（判断⑦）
 
 - 親: [WS274](../ws.md)、Queue: q1302 / q1302-i01（P1、2026-10-19）
-- Status: in-progress（実装と build・host 試験は済み、T1 の起動の回帰の結果待ち）
+- Status: cleared（2026-10-19 Q1 の判定、T1-737・738・740: amd64 の uefi-usb・nvme、pcat の bios-ide、pc98、sun4u、riscv32・m68k-virt・ppc32・ppc64・mips32・mips64 の VFS の段、rpi4 の login が PASS。QEMU だけ）
 - 範囲: [design.md](../design.md) §4 の死んだ code・中身の無い weak の hook・重複。slab の allocator の統一と長い関数の分割は範囲外。振る舞いは変えない。hal.h は変えない。
 
 ## 確かめた事（参照が無い）

@@ -3,7 +3,7 @@
 # ws274-p004 S5 vmspace の群と vmspace-internal.h
 
 - 親: [ws274](../ws.md)、設計: [design.md](../design.md) §1.2、§2 の vmspace-internal.h、§3 の S5
-- Status: in-progress（q1300 / q1300-i01、P1、2026-10-19）。T1 の起動の回帰の結果を Q1 が判定するまで cleared にしない。
+- Status: cleared（2026-10-19 Q1 の判定、T1-737・738・740: amd64 の uefi-usb・nvme、pcat の bios-ide、pc98、sun4u、riscv32・m68k-virt・ppc32・ppc64・mips32・mips64 の VFS の段、rpi4 の login が PASS。QEMU だけ）
 - 規約: p001〜p003 と同じ「配置の変更だけの例外」（[ws106-relocation.md](../../standards/ws106-relocation.md) の考え）。関数の本文・評価順・lock の順は変えない。
 
 ## 行った事（worktree `/home/awe/zedBSD-worktrees/p1`、agent/p1、commit f083264c5、親 aedc6c074 = p003 の S4）

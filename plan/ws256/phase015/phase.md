@@ -129,3 +129,7 @@ Status: in-progress（2026-10-19 P2、q1295-i01。板の前の code と host 試
 > 2. 回帰: amd64 の既定の image の起動（NVMe の irq の handler を変えたため）と、走り A（T1-735 の A と同じ command）。
 > 3. x68k の build だけ: `make -j16 ZEDBSD_CONFIG=plan/tools/ports/config-x68k.mk BUILD=build/t1-x68k` が exit 0・warning 0、`X68k image check: PASS`、`build/t1-x68k/rootfs/sbin/networkd` と `build/t1-x68k/rootfs/bin/lp` がある事。
 > 結果: 各 PNG・PASS/FAIL・image の commit。
+
+## T1-739 の結果（2026-10-19 Q1）
+
+D（virt の native.img を NVMe で U-Boot から）2 回とも PASS: `/dev/nvme0n1p2 on / type ufs (rw)`、書いて sync して読み戻し。A・amd64 の NVMe の回帰 PASS、x68k の build PASS。QEMU の部分は済み、実機の SD の起動はユーザーの目視を待つ。

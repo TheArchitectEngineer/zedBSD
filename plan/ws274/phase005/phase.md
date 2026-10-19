@@ -3,7 +3,7 @@
 # ws274-p005 S6 swap.c を vm/ へ移して 4 つに分ける
 
 - 親: [ws274](../ws.md)、設計: [design.md](../design.md) §1.4・§2・§3 の S6（判断③ ★(a)）
-- Status: in-progress（q1298 / q1298-i01、P2、2026-10-19）。T1 の起動の回帰の結果を Q1 が判定するまで cleared にしない。
+- Status: cleared（2026-10-19 Q1 の判定、T1-737・738・740: amd64 の uefi-usb・nvme、pcat の bios-ide、pc98、sun4u、riscv32・m68k-virt・ppc32・ppc64・mips32・mips64 の VFS の段、rpi4 の login が PASS。QEMU だけ）
 - 規約: ユーザーの決定（2026-10-19 17:43、design.md §6 は既定）により、移動の段は WS106 と同じ「配置の変更だけの例外」（[ws106-relocation.md](../../standards/ws106-relocation.md) の考え）。関数の本文・評価順・lock の順は変えない。規約の全文は p007。
 
 ## 行った事（worktree `/home/awe/zedBSD-worktrees/p2`、agent/p2）

@@ -1,7 +1,7 @@
 # ws274-p007 最後の確かめと規約の全文（S9）
 
 - 親: [WS274](../ws.md)、Queue: q1305 / q1305-i01（P1、2026-10-19）
-- Status: in-progress（実装・全 platform の build・host 試験は済み、T1 の起動の回帰の結果待ち）
+- Status: cleared（2026-10-19 Q1 の判定、T1-737・738・740: amd64 の uefi-usb・nvme、pcat の bios-ide、pc98、sun4u、riscv32・m68k-virt・ppc32・ppc64・mips32・mips64 の VFS の段、rpi4 の login が PASS。QEMU だけ）
 - 範囲: 13 の platform の vmunix の build（warning 0）、src/kern/vm/ の全 file を規約の全文に合わせる（書き方だけ、動作は変えない）。helper の接頭辞（判断⑥）は名前を変えず一覧だけ（下）。hal.h は変えない。
 
 ## 変更（42bf53226）

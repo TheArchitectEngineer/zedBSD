@@ -3,7 +3,7 @@
 # ws274-p002 S3 匿名 page の群（J・K・L・M）と reclaim-internal.h
 
 - 親: [ws274](../ws.md)、設計: [design.md](../design.md) §1.1 の J〜M、§2 の reclaim-internal.h、§3 の S3
-- Status: in-progress（q1297 / q1297-i01、P1、2026-10-19）。T1 の起動の回帰の結果を Q1 が判定するまで cleared にしない。
+- Status: cleared（2026-10-19 Q1 の判定、T1-737・738・740: amd64 の uefi-usb・nvme、pcat の bios-ide、pc98、sun4u、riscv32・m68k-virt・ppc32・ppc64・mips32・mips64 の VFS の段、rpi4 の login が PASS。QEMU だけ）
 - 規約: p001 と同じ「配置の変更だけの例外」（[ws106-relocation.md](../../standards/ws106-relocation.md) の考え）。関数の本文・評価順・lock の順は変えない。
 
 ## 行った事（worktree `/home/awe/zedBSD-worktrees/p1`、agent/p1、commit 2e5d05d9a、親 4660a2fb5 = main 8c15a82e1 の merge）
