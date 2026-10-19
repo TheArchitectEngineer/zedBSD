@@ -92,8 +92,23 @@ struct store_shape {
 /* The groups of the temporaries program. */
 #define TEMPS_GROUPS		13U
 
+/* The groups of the fill program. */
+#define FILL_GROUPS		11U
+
+/*
+ * What a fill program writes: the word of instance 0's address, and the
+ * multiplier and addend that make an instance's number its value.
+ */
+struct fill_shape {
+	uint32_t base_low;
+	uint32_t base_high;
+	uint32_t multiplier;
+	uint32_t addend;
+};
+
 static int store_fetch(void *context, size_t index, struct powervr_usc_group *group);
 static int temps_fetch(void *context, size_t index, struct powervr_usc_group *group);
+static int fill_fetch(void *context, size_t index, struct powervr_usc_group *group);
 static int immediate_group(struct powervr_usc_group *group, unsigned destination, uint32_t value);
 static int pass_group(struct powervr_usc_group *group, unsigned destination, unsigned bank, unsigned source);
 static int multiply_add_group(struct powervr_usc_group *group, unsigned destination, unsigned first, unsigned second, unsigned addend);
@@ -431,6 +446,56 @@ powervr_compute_temps_program(
 }
 
 /*
+ * Builds the shading cluster program of one workgroup of a fill kernel.
+ *
+ * Each instance writes the word at base plus four times its instance
+ * number, with the value instance * multiplier + addend (modulo 2^32).
+ * The words of the workgroup must not cross a 4 GiB boundary, as only
+ * the low half of the address is computed.
+ *
+ * Procedure referenced:
+ * Mesa 26.2.5 src/imagination/pco/pco_trans_nir.c (trans_store_global
+ * and nir_intrinsic_load_instance_num_pco, as for the store program);
+ * pco_schedule.c and pco_end.c (the wait after the store, the end).
+ */
+int
+powervr_compute_fill_program(
+	uint64_t base,
+	unsigned instances,
+	uint32_t multiplier,
+	uint32_t addend,
+	uint8_t *output,
+	size_t room,
+	size_t *length)
+{
+	struct fill_shape shape;
+	uint64_t last;
+	int error;
+
+	/* Refuses an empty or oversized workgroup, a misaligned base, or words whose low half would wrap. */
+	if (instances == 0 || instances > POWERVR_COMPUTE_INSTANCES || (base & 3U) != 0)
+		return EINVAL;
+
+	last = (base & 0xffffffffULL) + (uint64_t)instances * 4U;
+	if (last > 0x100000000ULL)
+		return EINVAL;
+
+	/* The shape the groups are built from. */
+	shape.base_low = (uint32_t)base;
+	shape.base_high = (uint32_t)(base >> 32);
+	shape.multiplier = multiplier;
+	shape.addend = addend;
+
+	/* Encodes the groups one at a time. */
+	error = powervr_usc_program_build(FILL_GROUPS, fill_fetch, &shape, output, room, length);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the program. */
+	return 0;
+}
+
+/*
  * Builds the firmware's compute command for a control stream and a
  * context resume buffer; every other field is zero.
  *
@@ -569,6 +634,64 @@ temps_fetch(
 		/* The store. */
 		error = store_group(group, 2, 0);
 	} else if (index == 11) {
+		/* The wait for it. */
+		error = wait_group(group);
+	} else {
+		/* The end. */
+		error = end_group(group);
+	}
+
+	/* A group the encoders refused. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the group. */
+	return 0;
+}
+
+/*
+ * Hands over one group of the fill program.
+ */
+static int
+fill_fetch(
+	void *context,
+	size_t index,
+	struct powervr_usc_group *group)
+{
+	const struct fill_shape *shape;
+	int error;
+
+	/* The number, the address, the value, then the store. */
+	shape = context;
+	error = 0;
+	if (index == 0) {
+		/* r7: the instance number. */
+		error = pass_group(group, 7, POWERVR_USC_BANK_SPECIAL, USC_INSTANCE_NUMBER);
+	} else if (index == 1) {
+		/* r0: the low half of the base. */
+		error = immediate_group(group, 0, shape->base_low);
+	} else if (index == 2) {
+		/* r1: the high half. */
+		error = immediate_group(group, 1, shape->base_high);
+	} else if (index == 3) {
+		/* r2: four, the bytes of a word. */
+		error = immediate_group(group, 2, 4);
+	} else if (index == 4) {
+		/* r0: the instance's word. */
+		error = multiply_add_group(group, 0, 7, 2, 0);
+	} else if (index == 5) {
+		/* r3: the multiplier. */
+		error = immediate_group(group, 3, shape->multiplier);
+	} else if (index == 6) {
+		/* r4: the addend. */
+		error = immediate_group(group, 4, shape->addend);
+	} else if (index == 7) {
+		/* r2: the value. */
+		error = multiply_add_group(group, 2, 7, 3, 4);
+	} else if (index == 8) {
+		/* The store. */
+		error = store_group(group, 2, 0);
+	} else if (index == 9) {
 		/* The wait for it. */
 		error = wait_group(group);
 	} else {

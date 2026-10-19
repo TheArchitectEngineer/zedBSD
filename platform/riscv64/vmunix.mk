@@ -86,8 +86,9 @@ endif
 # core's glue, the driver's early stage, its display node and the display
 # controller's takeover decision, the later stage that loads and starts
 # the firmware, the render node over it, the shading cluster and data
-# sequencer instruction encoders, and the driver's own compute programs
-# built with them.
+# sequencer instruction encoders, the driver's own compute programs built
+# with them, and the Vulkan executor of the render node (with the shared
+# wire codec of the i915 executor).
 ifeq ($(CONFIG_DRIVER_POWERVR),y)
 RISCV64_PLATFORM_SOURCES_visionfive2 += src/drivers/platform/visionfive2/vf2-pmu.c \
 	src/drivers/platform/visionfive2/vf2-gpu.c \
@@ -108,7 +109,17 @@ RISCV64_PLATFORM_SOURCES_visionfive2 += src/drivers/platform/visionfive2/vf2-pmu
 	src/drivers/gpu/powervr/render-queue.c \
 	src/drivers/gpu/powervr/usc-encode.c \
 	src/drivers/gpu/powervr/pds-encode.c \
-	src/drivers/gpu/powervr/compute-program.c
+	src/drivers/gpu/powervr/compute-program.c \
+	src/drivers/gpu/powervr/render-runtime.c \
+	src/drivers/gpu/powervr/spirv-fill.c \
+	src/drivers/gpu/powervr/vk-object.c \
+	src/drivers/gpu/powervr/vk-stream.c \
+	src/drivers/gpu/powervr/vk-device.c \
+	src/drivers/gpu/powervr/vk-memory.c \
+	src/drivers/gpu/powervr/vk-layout.c \
+	src/drivers/gpu/powervr/vk-command.c \
+	src/drivers/gpu/powervr/vk-queue.c \
+	src/drivers/gpu/i915/render/codec.c
 # The test kernel's check of the core's compute path (ws269-p008).
 ifeq ($(CONFIG_POWERVR_COMPUTE_CHECK),y)
 RISCV64_PLATFORM_SOURCES_visionfive2 += src/drivers/gpu/powervr/compute-check.c

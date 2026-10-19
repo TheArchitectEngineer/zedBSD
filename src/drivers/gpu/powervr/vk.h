@@ -1,0 +1,242 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The PowerVR render node's Vulkan executor.
+ *
+ * libvulkan sends the Kei GPU command protocol (uapi/gpu-op.h) to the
+ * render node; the executor decodes it in the kernel and does the work on
+ * the core.  The wire's readers and writers and the generated record
+ * codec are the i915 executor's, used unchanged.  The executor covers the
+ * smallest compute path: the instance, the one physical device and its
+ * queue, memory and buffers, descriptor sets, compute pipelines of the
+ * SPIR-V subset of spirv-fill.c, command buffers that bind and dispatch,
+ * and their submission.
+ *
+ * One executor session belongs to one open of the node.  It holds the
+ * session's typed objects by their wire identity and the scratch one
+ * command decodes its records into.  The open's ioctls are serialized by
+ * the GPU core, which is what serializes everything here.
+ */
+
+#ifndef KERN_DRIVERS_GPU_POWERVR_VK_H
+#define KERN_DRIVERS_GPU_POWERVR_VK_H
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#include "drivers/gpu/i915/render/codec.h"
+#include "drivers/gpu/powervr/spirv-fill.h"
+
+struct powervr_session;
+struct powervr_resource;
+struct powervr_buffer;
+struct powervr_vk_executor;
+
+/* The scratch one command decodes its records into, and the most live objects of a session. */
+#define POWERVR_VK_ARENA_BYTES		(128U * 1024U)
+#define POWERVR_VK_OBJECT_LIMIT		1024U
+
+/*
+ * The memory types: device local only (type 0) and host visible and
+ * coherent (type 1), both the same uncached system memory of one heap
+ * (plan/ws269/design.md D7 (a)).
+ */
+#define POWERVR_VK_MEMORY_DEVICE	0U
+#define POWERVR_VK_MEMORY_HOST		1U
+#define POWERVR_VK_MEMORY_TYPES		2U
+
+/* The boundary a buffer starts on in its memory, the bindings of a set, the sets of a layout. */
+#define POWERVR_VK_RESOURCE_ALIGN	256U
+#define POWERVR_VK_BINDINGS_MAX		8U
+#define POWERVR_VK_SETS_MAX		4U
+
+/* A command buffer's states. */
+#define POWERVR_VK_COMMAND_INITIAL	0U
+#define POWERVR_VK_COMMAND_RECORDING	1U
+#define POWERVR_VK_COMMAND_EXECUTABLE	2U
+#define POWERVR_VK_COMMAND_INVALID	3U
+
+struct powervr_vk_object;
+
+/*
+ * One executor session.
+ *
+ * owner is the render node's session.  objects lists every published
+ * identity, newest first; live_objects counts the payloads not yet
+ * destroyed.  closing is set once the close has begun.  abandoned says a
+ * submission's work did not finish in time: the core may still run it,
+ * so the executor's own memory stays with the core.  timelines has bit n
+ * set once a queue completes jobs on timeline n (read by the job
+ * operations, written by vkGetDeviceQueue2).
+ */
+struct powervr_vk_session {
+	struct powervr_session *owner;
+	struct powervr_vk_object *objects;
+	uint32_t live_objects;
+	bool closing;
+	bool abandoned;
+	uint32_t last_opcode;
+	uint32_t failed_opcode;
+	struct i915_wire_arena arena;
+	uint64_t timelines;
+	struct powervr_vk_executor *executor;
+};
+
+/*
+ * One published wire identity of a kind and the payload it stands for.
+ *
+ * references counts the holders: the registry while published, and
+ * every dependent object that retained it; the payload is destroyed when
+ * the count reaches zero.
+ */
+struct powervr_vk_object {
+	struct powervr_vk_object *next;
+	struct powervr_vk_session *session;
+	enum i915_vk_object_kind kind;
+	uint64_t identity;
+	uint32_t references;
+	bool published;
+	void *payload;
+	int (*destroy)(struct powervr_vk_session *session, void *payload);
+};
+
+/*
+ * A VkDeviceMemory: its bytes and type, and its storage, a resource of
+ * the session over a buffer of its own (mapped for the core).  A blob
+ * libvulkan makes for it maps the same buffer once more.
+ */
+struct powervr_vk_memory {
+	uint64_t bytes;
+	uint32_t type;
+	struct powervr_resource *storage;
+};
+
+/* A VkBuffer: its size and usage, and once bound the memory object it holds and its offset there. */
+struct powervr_vk_buffer {
+	uint64_t size;
+	uint32_t usage;
+	struct powervr_vk_object *memory;
+	uint64_t offset;
+};
+
+/* A VkShaderModule: what its SPIR-V does, or why it is outside the subset. */
+struct powervr_vk_shader {
+	int status;
+	struct powervr_spirv_fill fill;
+};
+
+/* A VkDescriptorSetLayout and a VkPipelineLayout: only their counts are kept. */
+struct powervr_vk_set_layout {
+	uint32_t count;
+};
+
+struct powervr_vk_pipeline_layout {
+	uint32_t set_count;
+};
+
+/* A VkDescriptorPool: the most sets it hands out. */
+struct powervr_vk_descriptor_pool {
+	uint32_t max_sets;
+};
+
+/* One binding of a descriptor set: a storage buffer's range, the buffer held. */
+struct powervr_vk_descriptor_slot {
+	struct powervr_vk_object *buffer;
+	uint64_t offset;
+	uint64_t range;
+};
+
+/* A VkDescriptorSet: the pool it came from (only compared) and its bindings by number. */
+struct powervr_vk_descriptor_set {
+	const void *pool;
+	struct powervr_vk_descriptor_slot slots[POWERVR_VK_BINDINGS_MAX];
+};
+
+/* A VkPipeline: a compute pipeline and what its shader does. */
+struct powervr_vk_pipeline {
+	struct powervr_spirv_fill fill;
+};
+
+/* A VkCommandPool: its queue family. */
+struct powervr_vk_command_pool {
+	uint32_t family;
+};
+
+/*
+ * One recorded command: a bound pipeline, bound sets from first (objects
+ * i is set first + i), or a dispatch's counts in values.
+ */
+struct powervr_vk_record {
+	uint32_t opcode;
+	struct powervr_vk_object *objects[POWERVR_VK_SETS_MAX];
+	uint32_t object_count;
+	uint32_t first;
+	uint32_t values[3];
+};
+
+/*
+ * A VkCommandBuffer: its pool (only compared), its state, its records in
+ * order (a growing array) and the first error its recording met.
+ */
+struct powervr_vk_command_buffer {
+	const void *pool;
+	uint32_t state;
+	struct powervr_vk_record *records;
+	uint32_t record_count;
+	uint32_t record_capacity;
+	int error;
+};
+
+/* A VkFence: whether it is signaled. */
+struct powervr_vk_fence {
+	bool signaled;
+};
+
+/* A command's handler: sets *handled when the opcode is its own. */
+typedef int (*powervr_vk_route)(struct powervr_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
+
+/* The session, its objects and the shared parts of creates and destroys (vk-object.c). */
+int powervr_vk_open(struct powervr_session *owner, struct powervr_vk_session **result);
+void powervr_vk_close(struct powervr_vk_session *session);
+int powervr_vk_object_publish(struct powervr_vk_session *session, enum i915_vk_object_kind kind, uint64_t identity, void *payload, int (*destroy)(struct powervr_vk_session *, void *));
+struct powervr_vk_object *powervr_vk_object_find(struct powervr_vk_session *session, enum i915_vk_object_kind kind, uint64_t identity);
+int powervr_vk_object_retain(struct powervr_vk_object *object);
+int powervr_vk_object_release(struct powervr_vk_object *object);
+int powervr_vk_object_remove(struct powervr_vk_session *session, enum i915_vk_object_kind kind, uint64_t identity);
+void *powervr_vk_payload(struct powervr_vk_session *session, enum i915_vk_object_kind kind, uint64_t identity);
+void *powervr_vk_arena_take(struct powervr_vk_session *session, size_t bytes);
+uint32_t powervr_vk_result(int error);
+uint64_t powervr_vk_create_tail(struct i915_wire_reader *reader);
+void powervr_vk_create_reply(struct powervr_vk_session *session, struct i915_wire_writer *reply, enum i915_vk_object_kind kind, uint64_t identity, void *payload, int (*destroy)(struct powervr_vk_session *, void *), int error);
+int powervr_vk_destroy_plain(struct powervr_vk_session *session, struct i915_wire_reader *reader, enum i915_vk_object_kind kind);
+int powervr_vk_free_payload(struct powervr_vk_session *session, void *payload);
+
+/* The transport: one frame of commands (vk-stream.c). */
+int powervr_vk_execute(struct powervr_vk_session *session, const void *wire, uint32_t bytes);
+
+/* The handlers of each group of commands. */
+int powervr_vk_device_route(struct powervr_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
+int powervr_vk_memory_route(struct powervr_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
+int powervr_vk_layout_route(struct powervr_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
+int powervr_vk_command_route(struct powervr_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
+int powervr_vk_queue_route(struct powervr_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
+
+/* A command buffer emptied of its records (vk-command.c). */
+void powervr_vk_command_reset(struct powervr_vk_command_buffer *command);
+
+/* The buffer of a VkDeviceMemory, for the blob libvulkan creates for it (vk-memory.c). */
+int powervr_vk_memory_buffer(struct powervr_vk_session *session, uint64_t identity, uint64_t bytes, struct powervr_buffer **buffer);
+
+/* A buffer's device address, from its memory (vk-memory.c). */
+int powervr_vk_buffer_address(const struct powervr_vk_buffer *buffer, uint64_t *address);
+
+/* The executor's own memory on the core, and its release (vk-queue.c). */
+void powervr_vk_executor_free(struct powervr_vk_session *session);
+
+#endif /* KERN_DRIVERS_GPU_POWERVR_VK_H */
