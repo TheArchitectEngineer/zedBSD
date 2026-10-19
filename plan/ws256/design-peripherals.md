@@ -50,7 +50,7 @@
 
 | PLDA PCIe・PHY | OpenBSD stfpcie.c・stfpciephy.c | OpenBSD | 不要（MSI は使わない。後で MSI を足す時は出典の扱いを改めて聞く: Minor 3） |
 | DW Ethernet QoS | OpenBSD dwqe.c・if_dwqe_fdt.c | OpenBSD | 不要 |
-| YT8531 の拡張 register | Linux motorcomm.c | **Linux**（OpenBSD ytphy.c は YT8521 だけ） | **許す（決定）** |
+| YT8531 の拡張 register | Linux motorcomm.c | **Linux**（2026-10-19 P2 の訂正: 今の OpenBSD master の ytphy.c は YT8531 の初期化も持つ。p018 は両方を引いた） | **許す（決定）** |
 | PWMDAC | Linux jh7110_pwmdac.c | **Linux** | **許す（決定）** |
 | DW AXI DMAC | Linux dw-axi-dmac | **Linux** | **許す（決定）** |
 | DC8200・HDMI TX（p011 (b)） | 配布の U-Boot sf_vop.c・sf_hdmi.c、vendor Linux | **GPL** | **許す（決定）** |
