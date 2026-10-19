@@ -34,6 +34,7 @@ Status: cleared（2026-10-19 Q1 の判定: VF2 の skeleton の build（config-v
 ## 見つけた事（範囲の外）
 
 - `plan/tools/menuconfig-target-host-test.py`（Master の Tools の一覧 1289 行、`make menuconfig-host-test`）は **p025 の前から FAIL**: `check_i386_and_retro` が CPU の menu を `['x86_64', 'arm64', 'i386', 'RISC-V 64']` と期待するが、今の menu には `RISC-V 32` もある（riscv32 の追加の後に試験が追従していない）。p025 の変更は CPU の列を変えない（RISC-V 64 の board が 2 つになるだけ）。plan/tools は Q1 の path なので、試験を直すのは Q1 に頼む（期待に `RISC-V 32` を足し、RISC-V 64 の Board の menu に `QEMU virt`・`StarFive VisionFive 2` があることを足す）。
+  - 追従（2026-10-19、P2 q1282、Q1 の依頼、commit db3639ac6）: CPU の menu の期待に `RISC-V 32` を足し、RISC-V 64 を選ぶと `riscv64-virt`、Board の menu が `QEMU virt`・`StarFive VisionFive 2` で後者が `visionfive2` を選ぶ事を足した。`python3 -I plan/tools/menuconfig-target-host-test.py` は exit 0、全節 PASS。MIPS32（mips32-malta）は PLATFORMS にあるが MENU_CPUS（CPU の menu）には無いので、CPU の列の期待には入れない。
 
 ## 残り
 
