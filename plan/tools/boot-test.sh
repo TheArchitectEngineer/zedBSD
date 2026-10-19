@@ -31,6 +31,9 @@
 #                  keyboard such as -device usb-kbd), "expect:REGEX" waits for
 #                  the screen to show REGEX;
 #                  the last screen is OUTPUT/login-after.png
+#   BOOT_TEXT_ORIGINS  more "x,y" pixel origins of 8x16 text to read, separated
+#                  by spaces, for text off the console's grid (a terminal in
+#                  an X window); the reading that recognises most is kept
 #   BOOT_INTERVAL  seconds between two looks at the screen (default 2, 0.5 in
 #                  the modes that boot a kernel directly)
 #   QEMU_NO_KVM    1 runs the amd64 guest on TCG (-cpu max) even when /dev/kvm

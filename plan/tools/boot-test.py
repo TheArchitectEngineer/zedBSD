@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import socket
 import struct
@@ -224,6 +225,15 @@ def read_text(path: Path, font: dict[bytes, str]) -> list[str]:
     margins = ((width % GLYPH_WIDTH) // 2, (height % GLYPH_HEIGHT) // 2)
     if margins not in origins:
         origins.append(margins)
+
+    # A text a window system draws (a terminal in an X window, ws275) sits at
+    # an origin of its own that is on none of the grids above; the caller
+    # names it in BOOT_TEXT_ORIGINS as "x,y" pairs separated by spaces.
+    for pair in os.environ.get("BOOT_TEXT_ORIGINS", "").split():
+        left_text, _, top_text = pair.partition(",")
+        origin = (int(left_text), int(top_text))
+        if origin not in origins:
+            origins.append(origin)
     # Keeps the reading with the most recognised glyphs over unrecognised
     # cells: a blank part of a large screen (the centred grid on a 1920x1080
     # console that writes from the corner, ws035-p112) recognises nothing.
