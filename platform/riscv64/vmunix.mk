@@ -73,6 +73,11 @@ RISCV64_PLATFORM_SOURCES_visionfive2 := src/kern/platform/visionfive2.c \
 	src/drivers/disklabel/gpt.c src/drivers/disklabel/pcat.c \
 	src/drivers/dma/dw-axi-dmac.c src/drivers/platform/visionfive2/vf2-dmac.c \
 	src/drivers/platform/visionfive2/vf2-pwmdac.c
+# The test kernel's DMA coherency check (/dev/vf2-dmatest, ws256-p023).
+ifeq ($(CONFIG_VF2_DMA_TEST),y)
+RISCV64_PLATFORM_SOURCES_visionfive2 += src/drivers/platform/visionfive2/vf2-dmatest.c \
+	src/drivers/platform/visionfive2/vf2-dmatest-core.c
+endif
 
 RISCV64_KERNEL_SOURCES := \
 	src/kern/main.c \
