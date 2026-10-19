@@ -3,7 +3,7 @@
 # ws272-p002 MIPS64（mips64el）の入口と console の画面（QEMU malta）
 
 - 親: [WS272](../ws.md)、設計: [WS271 の design.md](../../ws271/design.md) §3.1・§7.1・§8、Queue: q1286 / q1286-i01（P1、2026-10-19）、disposition: normal
-- Status: in-progress（実装と build は済み、T1 の画面の確認待ち。Q1 の判定まで cleared にしない）
+- Status: cleared（2026-10-19 Q1 の判定、T1-731: QEMU malta（MIPS64R2-generic）の画面に ENTRY status=00000080 ebase=80101000・MALTA memory=262144 KiB・DISPLAY VGA 640x480x32・XKPHYS PASS・STOP AFTER CONSOLE、build/review/t1-731/mips64-console.png。MIPS32 の VFS の段の回帰も PASS。QEMU だけ）
 - 前提: 共有の LLVM の Mips（`mips64el-unknown-elf`）、boot-test.sh の `mips64-malta` の mode（main にある）。HAL の差分は U1「同じ形で事前承認」（Guardrail 2026-10-19 の行）: 新しい `include/hal/arch/mips64.h`（D3）。`arch.h` の節（D1）は ws271-p002 で入済み。hal.h は不変。
 
 ## 範囲と受け入れ条件
