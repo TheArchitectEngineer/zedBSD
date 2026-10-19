@@ -92,6 +92,30 @@ RISCV64_KERNEL_SOURCES += $(KERN_NET_SOURCES) $(KERN_BLOCK_IDENTITY_SOURCES) \
 RISCV64_KERNEL_SOURCES += $(KERN_BOOT_SOURCES)
 RISCV64_KERNEL_SOURCES += $(KERN_ACL_SOURCES)
 RISCV64_KERNEL_SOURCES += $(KERN_QUOTA_SOURCES)
+
+# The virt board's PCI host (ws256-p016) and the drivers behind it that
+# the configuration selects: xHCI with USB keyboards, and NVMe.
+RISCV64_PCI_SOURCES_virt := src/drivers/platform/riscv-virt/virt-pci.c \
+	src/drivers/pci/pci.c src/drivers/pci/pci-ecam-fdt.c
+ifneq ($(filter y,$(CONFIG_DRIVER_PCI_XHCI) $(CONFIG_DRIVER_USB_HID) $(CONFIG_DRIVER_USB_HUB)),)
+RISCV64_PCI_SOURCES_virt += src/drivers/usb/usb.c
+endif
+ifeq ($(CONFIG_DRIVER_PCI_XHCI),y)
+RISCV64_PCI_SOURCES_virt += src/drivers/pci/pci-xhci.c src/drivers/pci/pci-xhci-isoch.c
+endif
+ifeq ($(CONFIG_DRIVER_USB_HID),y)
+RISCV64_PCI_SOURCES_virt += src/drivers/usb/usb-hid.c src/drivers/generic/hidraw.c \
+	src/drivers/generic/hidraw-describe.c src/drivers/generic/hid-report.c \
+	src/drivers/generic/hid-digitizer.c src/drivers/generic/hid-touch.c \
+	src/drivers/generic/hid-input.c
+endif
+ifeq ($(CONFIG_DRIVER_USB_HUB),y)
+RISCV64_PCI_SOURCES_virt += src/drivers/usb/usb-hub.c
+endif
+ifeq ($(CONFIG_DRIVER_PCI_NVME),y)
+RISCV64_PCI_SOURCES_virt += src/drivers/pci/pci-nvme.c
+endif
+RISCV64_KERNEL_SOURCES += $(RISCV64_PCI_SOURCES_$(ZEDBSD_BOARD))
 RISCV64_KERNEL_OBJS := $(patsubst %.c,$(BUILD)/kernel/%.o,$(RISCV64_KERNEL_SOURCES))
 
 # The kernel links no C library object: kcrt and the kernel heap supply

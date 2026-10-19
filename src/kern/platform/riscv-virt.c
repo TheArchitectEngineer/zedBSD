@@ -27,6 +27,7 @@
 #include <drivers/generic/fdt.h>
 #include <drivers/generic/ramdisk.h>
 #include <drivers/generic/serial-console.h>
+#include <drivers/platform/riscv-virt/virt-pci.h>
 #include <drivers/serial/ns16550.h>
 #include <kern/boot.h>
 #include <kern/disk.h>
@@ -63,6 +64,7 @@ static int uart_present;
 static struct disk *ramdisk;
 
 static void probe_uart(void);
+static void probe_pci(void);
 static int publish_ramdisk(void);
 
 /*
@@ -95,6 +97,9 @@ kern_platform_init(
 
 	/* Finds the UART the console will read once input starts. */
 	probe_uart();
+
+	/* Starts the PCI host and binds the devices behind it. */
+	probe_pci();
 
 	/* Selects the MBR partition scheme the ramdisk's image uses. */
 	partition_set_scheme(&drv_partition_scheme_mbr);
@@ -135,6 +140,9 @@ kern_platform_refresh_devices(
 {
 	(void)devices;
 	(void)count;
+
+	/* Looks behind the USB root ports and publishes the NVMe namespaces. */
+	drv_riscv_virt_pci_refresh();
 }
 
 /*
@@ -145,6 +153,9 @@ kern_platform_input_init(
 	void)
 {
 	int error;
+
+	/* Lets USB keyboards type into the console. */
+	drv_riscv_virt_pci_input_ready();
 
 	/* A board without a UART in its tree has no input. */
 	if (!uart_present)
@@ -333,4 +344,36 @@ publish_ramdisk(
 		  (unsigned long long)(size / 1024U),
 		  (unsigned long long)physical);
 	return 0;
+}
+
+/*
+ * Starts the PCI host the device tree describes.
+ *
+ * A tree that cannot be read, or one without a host, leaves the board
+ * without PCI devices; the boot goes on.
+ */
+static void
+probe_pci(
+	void)
+{
+	const uint64_t *fdt_range;
+	struct drv_fdt fdt;
+	const void *blob;
+	int error;
+
+	/* Finds the device tree the hardware layer kept, in the direct map. */
+	fdt_range = hal_get_arch_handoff("riscv64.fdt");
+	if (fdt_range == NULL)
+		return;
+	blob = kern_pmem_to_kernel((hal_physaddr_t)fdt_range[0]);
+	if (blob == NULL)
+		return;
+	error = drv_fdt_open(&fdt, blob, RISCV_VIRT_FDT_READ_LIMIT);
+	if (error != 0)
+		return;
+
+	/* Starts the host; a board without one is not an error. */
+	error = drv_riscv_virt_pci_init(&fdt);
+	if (error != 0 && error != ENODEV)
+		kern_logf("riscv-virt: PCI unavailable (%d)\n", error);
 }
