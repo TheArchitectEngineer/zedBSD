@@ -174,7 +174,7 @@ mips_trap_selftest(
 	if (error != 0)
 		HAL_FATAL("mips trap selftest error mark");
 
-	hal_puts("MIPS32 HAL TRAP PASS\n");
+	hal_puts(MIPS_HAL_NAME " HAL TRAP PASS\n");
 }
 
 /*
@@ -512,7 +512,7 @@ describe_frame(
 	unsigned index;
 
 	/* The exception's registers first. */
-	hal_printf("MIPS32 TRAP FAULT code=%u cause=%08x epc=%08x badvaddr=%08x status=%08x\n",
+	hal_printf(MIPS_HAL_NAME " TRAP FAULT code=%u cause=%08x epc=%08x badvaddr=%08x status=%08x\n",
 		   code,
 		   frame->cause,
 		   frame->exception_pc,

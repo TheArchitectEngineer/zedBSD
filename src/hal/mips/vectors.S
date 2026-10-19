@@ -15,6 +15,10 @@
  * the exception on the console and stop: the processor's state is passed
  * to C on a stack of its own, since the stack pointer of the code that
  * faulted may be what failed.
+ *
+ * An image built with MIPS_HAL_CONSOLE_ONLY (the 64-bit port's first
+ * stage, which has no trap handling and no page tables yet) sends every
+ * exception to that report.
  */
 
 #include "asm.h"
@@ -43,6 +47,10 @@ mips_vectors:
 	 * for a pair the TLB does not hold, so tlbwr makes no duplicate.
 	 */
 	.org MIPS_VECTOR_REFILL
+#if defined(MIPS_HAL_CONSOLE_ONLY)
+	j mips_early_vector
+	nop
+#else
 	.global mips_tlb_refill
 mips_tlb_refill:
 	la $26, mips_tlb_refill_count
@@ -76,6 +84,7 @@ mips_tlb_refill:
 	ehb
 	tlbwr
 	eret
+#endif
 
 	.org MIPS_VECTOR_REFILL64
 	j mips_early_vector
@@ -86,7 +95,11 @@ mips_tlb_refill:
 	nop
 
 	.org MIPS_VECTOR_GENERAL
+#if defined(MIPS_HAL_CONSOLE_ONLY)
+	j mips_early_vector
+#else
 	j mips_trap_entry
+#endif
 	nop
 
 	/*
@@ -97,8 +110,8 @@ mips_tlb_refill:
 	.balign 4
 	.type mips_early_vector, %function
 mips_early_vector:
-	la $29, mips_trap_stack_top
-	addiu $29, $29, -MIPS_ARGUMENT_HOME_SIZE
+	LOAD_ADDRESS($29, mips_trap_stack_top)
+	PTR_ADDIU $29, $29, -MIPS_ARGUMENT_HOME_SIZE
 	mfc0 $4, MIPS_CP0_CAUSE
 	mfc0 $5, MIPS_CP0_EXCEPTION_PC
 	mfc0 $6, MIPS_CP0_BAD_ADDRESS

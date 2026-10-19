@@ -22,6 +22,19 @@
 #include "asm.h"
 
 /*
+ * Reports the pointer of an address in KSEG0 or KSEG1 given as its 32
+ * bits.  The 64-bit processor reaches the segments at the sign-extended
+ * address (CKSEG0 and CKSEG1); on the 32-bit one the value is the same.
+ */
+static __inline uintptr_t
+mips_segment_pointer(
+	uint32_t address)
+{
+	/* Extends bit 31 through the upper half of a 64-bit pointer. */
+	return (uintptr_t)(intptr_t)(int32_t)address;
+}
+
+/*
  * Reports the uncached address of a device's physical address.
  */
 static __inline uintptr_t
@@ -29,7 +42,7 @@ mips_device_address(
 	uint32_t physical)
 {
 	/* KSEG1 holds the low 512 MiB of physical space at a fixed offset. */
-	return (uintptr_t)MIPS_KSEG1_BASE + (uintptr_t)physical;
+	return mips_segment_pointer((uint32_t)MIPS_KSEG1_BASE + physical);
 }
 
 /*

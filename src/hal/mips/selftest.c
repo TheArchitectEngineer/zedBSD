@@ -172,7 +172,7 @@ mips_paging_selftest(
 
 	/* Reports what the checks made the TLB do. */
 	mips_space_counters(&counters);
-	hal_printf("MIPS32 HAL PAGING PASS refills=%u invalids=%u modifies=%u generation=%llu\n",
+	hal_printf(MIPS_HAL_NAME " HAL PAGING PASS refills=%u invalids=%u modifies=%u generation=%llu\n",
 		   counters.refills,
 		   counters.invalids,
 		   counters.modifies,
@@ -185,7 +185,7 @@ fail(
 	unsigned check)
 {
 	/* The number tells which check of mips_paging_selftest() failed; 0 is its setup. */
-	hal_printf("MIPS32 HAL PAGING FAIL %u\n", check);
+	hal_printf(MIPS_HAL_NAME " HAL PAGING FAIL %u\n", check);
 	mips_halt_forever();
 }
 
@@ -672,7 +672,7 @@ check_float(
 	/* A processor without a usable unit has nothing to check. */
 	usable = mips_fpu_usable();
 	if (!usable) {
-		hal_puts("MIPS32 HAL PAGING FPU NONE\n");
+		hal_puts(MIPS_HAL_NAME " HAL PAGING FPU NONE\n");
 		return;
 	}
 

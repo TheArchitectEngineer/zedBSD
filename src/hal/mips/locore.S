@@ -12,7 +12,8 @@
  * with Status.BEV set, so that an exception would go to the boot ROM's
  * vectors and nothing would report it.  The first step therefore points
  * EBase at the image's own vectors and clears BEV, before any instruction
- * that may fault.  Then Status is set to its kernel value, KSEG0 is made
+ * that may fault.  Then Status is set to its kernel value (on the 64-bit
+ * processor with KX, so that the kernel may reach xkphys), KSEG0 is made
  * cacheable, the bss is cleared and C is entered on the boot stack with
  * the loader's four arguments as they came: the argument count, the
  * argument table, the environment table and the size of low memory.
@@ -29,10 +30,11 @@
 	.type _start, %function
 _start:
 	/* Points the exceptions at the image's vectors, then leaves the boot vectors. */
-	la $8, mips_vectors
+	LOAD_ADDRESS($8, mips_vectors)
 	mtc0 $8, MIPS_CP0_EXCEPTION_BASE, MIPS_CP0_EXCEPTION_BASE_SELECT
 	ehb
-	mtc0 $0, MIPS_CP0_STATUS
+	li $8, MIPS_STATUS_KERNEL_ADDRESSING
+	mtc0 $8, MIPS_CP0_STATUS
 	ehb
 
 	/* Keeps the loader's four arguments in callee-saved registers. */
@@ -46,9 +48,9 @@ _start:
 	 * KSEG1, so that no instruction is fetched through KSEG0 while it
 	 * changes; the return to KSEG0 clears the instruction hazard.
 	 */
-	la $8, 1f
+	LOAD_ADDRESS($8, 1f)
 	li $9, MIPS_KSEG1_BASE - MIPS_KSEG0_BASE
-	addu $8, $8, $9
+	PTR_ADDU $8, $8, $9
 	jr $8
 	nop
 1:
@@ -58,23 +60,23 @@ _start:
 	ori $8, $8, MIPS_CONFIG_K0_CACHED
 	mtc0 $8, MIPS_CP0_CONFIG, MIPS_CP0_CONFIG_SELECT
 	ehb
-	la $8, 2f
+	LOAD_ADDRESS($8, 2f)
 	jr.hb $8
 	nop
 2:
 	/* Clears the bss, a word at a time; the link script aligns both ends to eight bytes. */
-	la $8, __bss_start
-	la $9, __bss_end
+	LOAD_ADDRESS($8, __bss_start)
+	LOAD_ADDRESS($9, __bss_end)
 3:
 	beq $8, $9, 4f
 	nop
 	sw $0, 0($8)
 	b 3b
-	addiu $8, $8, 4
+	PTR_ADDIU $8, $8, 4
 4:
 	/* Enters C on the boot stack, below the home of its four arguments. */
-	la $29, mips_boot_stack_top
-	addiu $29, $29, -MIPS_ARGUMENT_HOME_SIZE
+	LOAD_ADDRESS($29, mips_boot_stack_top)
+	PTR_ADDIU $29, $29, -MIPS_ARGUMENT_HOME_SIZE
 	move $4, $16
 	move $5, $17
 	move $6, $18

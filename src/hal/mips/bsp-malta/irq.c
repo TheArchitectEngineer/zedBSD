@@ -139,7 +139,7 @@ mips_board_irq_init(
 	port_write(IRQ_MASTER_DATA, irq_master_mask);
 	port_write(IRQ_SLAVE_DATA, irq_slave_mask);
 
-	hal_printf("MIPS32 MALTA PIC 8259 mask=%02x%02x\n", irq_slave_mask, irq_master_mask);
+	hal_printf(MIPS_HAL_NAME " MALTA PIC 8259 mask=%02x%02x\n", irq_slave_mask, irq_master_mask);
 }
 
 /*

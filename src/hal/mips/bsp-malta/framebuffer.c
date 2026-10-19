@@ -149,7 +149,7 @@ malta_framebuffer_init(
 	/* Finds the display on the board's PCI bus. */
 	error = malta_pci_find(FRAMEBUFFER_PCI_VENDOR, FRAMEBUFFER_PCI_PRODUCT, &device);
 	if (error != HAL_OK) {
-		hal_puts("MIPS32 DISPLAY NONE: no standard VGA on PCI bus 0\n");
+		hal_puts(MIPS_HAL_NAME " DISPLAY NONE: no standard VGA on PCI bus 0\n");
 		return HAL_ERR_UNSUPPORTED;
 	}
 
@@ -270,7 +270,7 @@ malta_framebuffer_describe(
 	/* Describes a shown screen; a missing one was reported when it was looked for. */
 	if (!framebuffer_on)
 		return;
-	hal_printf("MIPS32 DISPLAY VGA %ux%ux%u pci=0:%u fb=%08x mmio=%08x\n",
+	hal_printf(MIPS_HAL_NAME " DISPLAY VGA %ux%ux%u pci=0:%u fb=%08x mmio=%08x\n",
 		   FRAMEBUFFER_WIDTH,
 		   FRAMEBUFFER_HEIGHT,
 		   FRAMEBUFFER_DEPTH,
@@ -296,7 +296,7 @@ place_ranges(
 	pixels_size = malta_pci_bar_size(device, FRAMEBUFFER_BAR_PIXELS);
 	registers_size = malta_pci_bar_size(device, FRAMEBUFFER_BAR_REGISTERS);
 	if (pixels_size < FRAMEBUFFER_STRIDE * FRAMEBUFFER_HEIGHT || registers_size == 0) {
-		hal_printf("MIPS32 DISPLAY NONE: VGA ranges %08x %08x\n", pixels_size, registers_size);
+		hal_printf(MIPS_HAL_NAME " DISPLAY NONE: VGA ranges %08x %08x\n", pixels_size, registers_size);
 		return HAL_ERR_UNSUPPORTED;
 	}
 
@@ -307,7 +307,7 @@ place_ranges(
 	 */
 	registers_base = FRAMEBUFFER_WINDOW_BASE + pixels_size;
 	if (pixels_size > FRAMEBUFFER_WINDOW_SIZE - registers_size) {
-		hal_printf("MIPS32 DISPLAY NONE: VGA ranges %08x %08x do not fit\n", pixels_size, registers_size);
+		hal_printf(MIPS_HAL_NAME " DISPLAY NONE: VGA ranges %08x %08x do not fit\n", pixels_size, registers_size);
 		return HAL_ERR_UNSUPPORTED;
 	}
 
