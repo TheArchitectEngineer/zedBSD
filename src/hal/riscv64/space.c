@@ -184,13 +184,14 @@ riscv64_virt_to_phys(
 	if (value >= (uintptr_t)RISCV64_KERNEL_VIRT_BASE)
 		return (uint64_t)(value - (uintptr_t)RISCV64_KERNEL_VIRT_BASE) + kernel_phys_start;
 
-	/* An address in the direct map is an offset from its base. */
-	if (value >= (uintptr_t)RISCV64_DIRECT_BASE && value < (uintptr_t)RISCV64_DIRECT_BASE + RISCV64_DIRECT_LIMIT)
-		return (uint64_t)(value - (uintptr_t)RISCV64_DIRECT_BASE);
+	/* Any address outside the direct map is not the kernel's to translate. */
+	if (value < (uintptr_t)RISCV64_DIRECT_BASE || value >= (uintptr_t)RISCV64_DIRECT_BASE + RISCV64_DIRECT_LIMIT) {
+		HAL_FATAL("riscv64 address outside the image and the direct map");
+		return 0;
+	}
 
-	/* Any other address is not the kernel's to translate. */
-	HAL_FATAL("riscv64 address outside the image and the direct map");
-	return 0;
+	/* Succeeded: an address in the direct map is an offset from its base. */
+	return (uint64_t)(value - (uintptr_t)RISCV64_DIRECT_BASE);
 }
 
 /*
@@ -234,7 +235,9 @@ riscv64_space_init(
 	uint64_t text_page;
 	uint64_t rodata_page;
 	uint64_t data_page;
+	uint64_t root_physical;
 	uint64_t satp;
+	struct riscv64_percpu *cpu;
 
 	/* Starts from an empty root; the user half stays empty for good. */
 	hal_memset(kernel_root, 0, sizeof(kernel_root));
@@ -252,9 +255,11 @@ riscv64_space_init(
 	map_hal_devices();
 
 	/* Switches to the kernel's own root, with the kernel alone selected. */
-	satp = ((uint64_t)RISCV64_SATP_MODE_SV39 << 60) | (riscv64_virt_to_phys(kernel_root) >> RISCV64_PAGE_SHIFT);
+	root_physical = riscv64_virt_to_phys(kernel_root);
+	satp = ((uint64_t)RISCV64_SATP_MODE_SV39 << 60) | (root_physical >> RISCV64_PAGE_SHIFT);
 	riscv64_write_satp(satp);
-	riscv64_percpu_current()->current_space = HAL_SPACE_SYS;
+	cpu = riscv64_percpu_current();
+	cpu->current_space = HAL_SPACE_SYS;
 
 	/* Checks W^X on the three kinds of section the kernel runs from. */
 	text_page = kernel_page_flags((uintptr_t)__kernel_text_start);
@@ -322,13 +327,15 @@ riscv64_space_select_system(
 	void)
 {
 	struct riscv64_percpu *cpu;
+	uint64_t root_physical;
 	uint64_t satp;
 
 	/* Publishes the selection, then installs the kernel's root. */
 	cpu = riscv64_percpu_current();
 	__atomic_store_n(&cpu->current_space, HAL_SPACE_SYS, __ATOMIC_RELEASE);
 	hal_mb();
-	satp = ((uint64_t)RISCV64_SATP_MODE_SV39 << 60) | (riscv64_virt_to_phys(kernel_root) >> RISCV64_PAGE_SHIFT);
+	root_physical = riscv64_virt_to_phys(kernel_root);
+	satp = ((uint64_t)RISCV64_SATP_MODE_SV39 << 60) | (root_physical >> RISCV64_PAGE_SHIFT);
 	riscv64_write_satp(satp);
 }
 
@@ -368,6 +375,8 @@ hal_space_create(
 	space = kernel_alloc(sizeof(*space));
 	if (space == NULL)
 		return NULL;
+
+	/* Starts from an empty record. */
 	hal_memset(space, 0, sizeof(*space));
 
 	/* Allocates the root table. */
@@ -377,12 +386,18 @@ hal_space_create(
 		return NULL;
 	}
 
-	/* Empties the user half and copies the kernel's. */
+	/* Reaches the root table through the direct map. */
 	space->root = hal_pmem_to_kernel(space->root_memory);
+
+	/* Empties the user half. */
 	for (index = 0; index < RISCV64_USER_ROOT_COUNT; index++)
 		space->root[index] = 0;
+
+	/* Copies the kernel's half, which never changes again. */
 	for (index = RISCV64_USER_ROOT_COUNT; index < RISCV64_TABLE_ENTRIES; index++)
 		space->root[index] = kernel_root[index];
+
+	/* Marks the record as a live space for the handle checks. */
 	space->magic = RISCV64_SPACE_MAGIC;
 
 	/* Numbers the space and makes it live. */
@@ -421,16 +436,23 @@ hal_space_destroy(
 	/* Takes the space out of the registry, so nothing can lock it any more. */
 	enabled = riscv64_spin_lock(&space_registry_lock);
 
+	/* Finds the space's link; a space not listed or already going is a fault. */
 	link = &space_registry;
 	while (*link != NULL && *link != space)
 		link = &(*link)->registry_next;
 	if (*link == NULL || space->destroying)
 		HAL_FATAL("invalid riscv64 space destroy");
+
+	/* A space some hart still has selected cannot go. */
 	selecting = harts_selecting(handle, &self);
 	if (selecting != 0 || self)
 		HAL_FATAL("destroying an active riscv64 space");
+
+	/* A space an operation holds cannot go. */
 	if (space->lock != 0)
 		HAL_FATAL("destroying a busy riscv64 space");
+
+	/* Marks the space as going, unlinks it and stops counting it. */
 	space->destroying = 1U;
 	*link = space->registry_next;
 	if (space_count != 0)
@@ -438,7 +460,7 @@ hal_space_destroy(
 
 	riscv64_spin_unlock(&space_registry_lock, enabled);
 
-	/* Frees every table, then the root and the record. */
+	/* Frees every table the space made, and stops counting it. */
 	while (space->tables != NULL) {
 		page = space->tables;
 		space->tables = page->next;
@@ -468,6 +490,7 @@ hal_space_switch(
 {
 	struct riscv64_percpu *cpu;
 	struct riscv64_space *space;
+	uint64_t root_physical;
 	uint64_t satp;
 	bool enabled;
 	bool space_enabled;
@@ -491,7 +514,8 @@ hal_space_switch(
 	if (handle == HAL_SPACE_SYS) {
 		__atomic_store_n(&cpu->current_space, handle, __ATOMIC_RELEASE);
 		hal_mb();
-		satp = ((uint64_t)RISCV64_SATP_MODE_SV39 << 60) | (riscv64_virt_to_phys(kernel_root) >> RISCV64_PAGE_SHIFT);
+		root_physical = riscv64_virt_to_phys(kernel_root);
+		satp = ((uint64_t)RISCV64_SATP_MODE_SV39 << 60) | (root_physical >> RISCV64_PAGE_SHIFT);
 		riscv64_write_satp(satp);
 		riscv64_irq_restore(enabled);
 		return;
@@ -530,6 +554,7 @@ hal_space_map(
 	uintptr_t address;
 	uintptr_t offset;
 	uintptr_t rollback;
+	uint64_t leaf_flags;
 	bool enabled;
 	bool ram;
 	int valid;
@@ -571,10 +596,12 @@ hal_space_map(
 	sync_executable((uint64_t)paddr, size, attr);
 
 	/* Writes a leaf for each page, unwinding them all if a table cannot be made. */
+	leaf_flags = user_leaf_flags(attr);
 	for (offset = 0; offset < size; offset += RISCV64_PAGE_SIZE) {
-		/* Finds or makes the page's leaf; without a table, clears the leaves written so far. */
+		/* Finds or makes the page's leaf. */
 		leaf = walk_leaf(space, address + offset, 1);
 		if (leaf == NULL) {
+			/* Without a table, clears the leaves written so far. */
 			for (rollback = 0; rollback < offset; rollback += RISCV64_PAGE_SIZE) {
 				leaf = walk_leaf(space, address + rollback, 0);
 				if (leaf != NULL)
@@ -591,7 +618,7 @@ hal_space_map(
 		}
 
 		/* Points the leaf at the page. */
-		*leaf = leaf_entry((uint64_t)paddr + offset, user_leaf_flags(attr));
+		*leaf = leaf_entry((uint64_t)paddr + offset, leaf_flags);
 	}
 
 	/* Publishes the leaves to the table walkers of every hart that has the space. */
@@ -684,6 +711,7 @@ hal_space_prot_query(
 	uint64_t old;
 	uintptr_t address;
 	uintptr_t offset;
+	uint64_t leaf_flags;
 	uint32_t observed;
 	bool enabled;
 	int valid;
@@ -724,8 +752,12 @@ hal_space_prot_query(
 		/* A writable page may have been written through the old translation. */
 		if ((old & RISCV64_PTE_W) != 0)
 			old |= RISCV64_PTE_SW_DIRTY;
+
+		/* Reports a page the software dirty bit records as written. */
 		if ((old & RISCV64_PTE_SW_DIRTY) != 0)
 			observed |= HAL_SPACE_PAGE_DIRTY;
+
+		/* Leaves the leaf invalid, its page and dirty record kept. */
 		*leaf = old & ~(uint64_t)RISCV64_PTE_V;
 	}
 
@@ -740,10 +772,11 @@ hal_space_prot_query(
 	}
 
 	/* Writes the new leaves, keeping each page's dirty record. */
+	leaf_flags = user_leaf_flags(attr);
 	for (offset = 0; offset < size; offset += RISCV64_PAGE_SIZE) {
 		leaf = walk_leaf(space, address + offset, 0);
 		old = *leaf;
-		*leaf = (old & PTE_PPN_MASK) | user_leaf_flags(attr) | (old & RISCV64_PTE_SW_DIRTY);
+		*leaf = (old & PTE_PPN_MASK) | leaf_flags | (old & RISCV64_PTE_SW_DIRTY);
 	}
 
 	/* Publishes the new leaves and drops the old translations. */
@@ -752,9 +785,11 @@ hal_space_prot_query(
 
 	space_unlock(space, enabled);
 
-	/* Succeeded: reports what the old translations recorded, when asked. */
+	/* Reports what the old translations recorded, when asked. */
 	if (flags != NULL)
 		*flags = observed;
+
+	/* Succeeded: the range has the new protection. */
 	return HAL_OK;
 }
 
@@ -816,8 +851,10 @@ hal_space_query(
 
 	space_unlock(space, enabled);
 
-	/* Succeeded: the page's state. */
+	/* Reports the page's state. */
 	*flags = observed;
+
+	/* Succeeded: the state is the caller's. */
 	return HAL_OK;
 }
 
@@ -861,9 +898,11 @@ hal_space_clear_flags(
 		return HAL_ERR_INVALID;
 	}
 
-	/* A read-only page can be called clean; then the stale entries go. */
+	/* A read-only page can be called clean. */
 	if ((flags & HAL_SPACE_PAGE_DIRTY) != 0 && (*leaf & RISCV64_PTE_W) == 0)
 		*leaf &= ~(uint64_t)RISCV64_PTE_SW_DIRTY;
+
+	/* Publishes the leaf and drops the stale entries. */
 	hal_wmb();
 	flush_space(handle);
 
@@ -896,7 +935,9 @@ hal_space_flush_tlb(
 	locked = space_lock_handle(handle, &space, &enabled);
 	if (!locked)
 		HAL_FATAL("invalid riscv64 space flush");
+
 	flush_space(handle);
+
 	space_unlock(space, enabled);
 }
 
@@ -1013,8 +1054,10 @@ hal_space_map_device(
 
 	riscv64_spin_unlock(&kernel_table_lock, enabled);
 
-	/* Succeeded: the device is reachable in the window. */
+	/* Reports where the window reaches the device. */
 	*vaddr = (void *)(uintptr_t)(RISCV64_DEVICE_BASE + (uint64_t)paddr);
+
+	/* Succeeded: the device is reachable in the window. */
 	return HAL_OK;
 }
 
@@ -1039,9 +1082,12 @@ hal_space_unmap_device(
 
 	/* A range in the device window leaves the shared entries in place. */
 	if (address >= RISCV64_DEVICE_BASE && address < RISCV64_DEVICE_BASE + RISCV64_DEVICE_LIMIT) {
+		/* Refuses a range that runs past the window's end. */
 		offset = address - RISCV64_DEVICE_BASE;
 		if ((uint64_t)size > RISCV64_DEVICE_LIMIT - offset)
 			return HAL_ERR_INVALID;
+
+		/* Succeeded: nothing to undo in the shared window. */
 		return HAL_OK;
 	}
 
@@ -1168,11 +1214,16 @@ range_is_nomap(
 	info = riscv64_boot_fdt();
 	end = physical + size;
 	for (index = 0; index < info->nomap_count; index++) {
+		/* A reservation that ends before the range does not overlap it. */
 		reserved_end = info->nomap[index].base + info->nomap[index].size;
 		if (reserved_end <= physical)
 			continue;
+
+		/* A reservation that starts after the range does not either. */
 		if (info->nomap[index].base >= end)
 			continue;
+
+		/* Any other reservation overlaps the range. */
 		return true;
 	}
 
@@ -1225,6 +1276,8 @@ build_direct_map(
 		touches = riscv64_range_touches_ram(physical, RISCV64_GIGAPAGE_SIZE);
 		if (!touches)
 			continue;
+
+		/* Maps the gigapage below its root entry. */
 		root_index = RISCV64_DIRECT_ROOT_FIRST + (unsigned)(physical >> RISCV64_GIGAPAGE_SHIFT);
 		build_direct_gigapage(root_index, physical);
 	}
@@ -1253,8 +1306,12 @@ build_direct_gigapage(
 	error = alloc_table(&table, &table_physical);
 	if (error != HAL_OK)
 		HAL_FATAL("riscv64 direct map table allocation failed");
+
+	/* Maps each megapage of the gigapage as far as it can be. */
 	for (index = 0; index < RISCV64_TABLE_ENTRIES; index++)
 		build_direct_megapage(table, index, physical + (uint64_t)index * RISCV64_MEGAPAGE_SIZE);
+
+	/* Links the table of megapages into the root's entry. */
 	kernel_root[root_index] = pointer_entry(table_physical);
 }
 
@@ -1286,11 +1343,14 @@ build_direct_megapage(
 		return;
 	}
 
-	/* Otherwise a table of pages, mapping each mappable page. */
+	/* Otherwise a table of pages. */
 	error = alloc_table(&pages, &pages_physical);
 	if (error != HAL_OK)
 		HAL_FATAL("riscv64 direct map table allocation failed");
+
+	/* Maps each page of the megapage that is mappable RAM. */
 	for (page_index = 0; page_index < RISCV64_TABLE_ENTRIES; page_index++) {
+		/* Maps the page only when it is mappable RAM. */
 		page = physical + (uint64_t)page_index * RISCV64_PAGE_SIZE;
 		mappable = range_is_mappable_ram(page, RISCV64_PAGE_SIZE);
 		if (mappable)
@@ -1315,9 +1375,12 @@ build_device_window(
 
 	/* One table per root entry of the window. */
 	for (index = 0; index < RISCV64_DEVICE_ROOT_COUNT; index++) {
+		/* Allocates the empty table. */
 		error = alloc_table(&device_tables[index], &physical);
 		if (error != HAL_OK)
 			HAL_FATAL("riscv64 device window table allocation failed");
+
+		/* Links it into the window's root entry. */
 		kernel_root[RISCV64_DEVICE_ROOT_FIRST + index] = pointer_entry(physical);
 	}
 }
@@ -1337,6 +1400,7 @@ build_kernel_window(
 	uintptr_t address;
 	uintptr_t end;
 	uint64_t flags;
+	uint64_t page_physical;
 	unsigned megapage;
 	unsigned page;
 	int error;
@@ -1345,6 +1409,8 @@ build_kernel_window(
 	error = alloc_table(&table, &table_physical);
 	if (error != HAL_OK)
 		HAL_FATAL("riscv64 kernel window table allocation failed");
+
+	/* Links it into the window's root entry. */
 	kernel_root[RISCV64_KERNEL_ROOT_INDEX] = pointer_entry(table_physical);
 
 	/* Maps each page of the image through a table per megapage. */
@@ -1359,6 +1425,8 @@ build_kernel_window(
 			error = alloc_table(&pages, &pages_physical);
 			if (error != HAL_OK)
 				HAL_FATAL("riscv64 kernel window table allocation failed");
+
+			/* Links the table into the megapage's entry. */
 			table[megapage] = pointer_entry(pages_physical);
 		}
 
@@ -1370,8 +1438,9 @@ build_kernel_window(
 			flags = KERNEL_LEAF | RISCV64_PTE_R;
 		}
 
-		/* Maps the page with those permissions. */
-		pages[page] = leaf_entry(riscv64_virt_to_phys((const void *)address), flags);
+		/* Maps the page, where the image was loaded, with those permissions. */
+		page_physical = riscv64_virt_to_phys((const void *)address);
+		pages[page] = leaf_entry(page_physical, flags);
 	}
 }
 
@@ -1414,19 +1483,29 @@ map_hal_devices(
 
 	/* Each device the tree names, in the window the kernel's root now holds. */
 	info = riscv64_boot_fdt();
+
+	/* The interrupt controller. */
 	if (info->plic_size != 0)
 		map_device_blocks(info->plic_base, info->plic_size);
+
+	/* The firmware configuration interface. */
 	if (info->fwcfg_size != 0)
 		map_device_blocks(info->fwcfg_base, info->fwcfg_size);
+
+	/* The UART. */
 	if (info->uart_size != 0)
 		map_device_blocks(info->uart_base, info->uart_size);
+
+	/* The cache controller. */
 	if (info->ccache_size != 0)
 		map_device_blocks(info->ccache_base, info->ccache_size);
 
-	/* A screen the direct map holds is drawn through it. */
+	/* Without a screen there is nothing more to map. */
 	framebuffer = riscv64_boot_framebuffer();
 	if (framebuffer == NULL)
 		return;
+
+	/* A screen the direct map holds is drawn through it. */
 	direct = riscv64_space_in_direct_map(framebuffer->phys, framebuffer->size);
 	if (direct)
 		return;
@@ -1474,12 +1553,17 @@ other_ready_harts(
 	self = riscv64_percpu_current();
 	mask = 0;
 	for (cpu = 0; cpu < RISCV64_CPU_MAX; cpu++) {
+		/* The caller's own hart is left out. */
 		record = riscv64_percpu_get(cpu);
 		if (record == self)
 			continue;
+
+		/* A hart that is not up is left out. */
 		ready = __atomic_load_n(&record->ready, __ATOMIC_ACQUIRE);
 		if (ready == 0)
 			continue;
+
+		/* Adds the hart by its hart id. */
 		mask |= 1UL << record->hart_id;
 	}
 
@@ -1560,6 +1644,8 @@ flush_space(
 	others = harts_selecting(handle, &self);
 	if (self)
 		riscv64_sfence_vma_all();
+
+	/* The other harts that have it selected, through the firmware. */
 	if (others != 0)
 		(void)riscv64_sbi_remote_sfence_vma(others, 0);
 }
@@ -1585,6 +1671,8 @@ space_lock_handle(
 
 	/* Looks the handle up among the live spaces. */
 	enabled = riscv64_spin_lock(&space_registry_lock);
+
+	/* Walks the registry to the space the handle names, or to its end. */
 	for (space = space_registry; space != NULL; space = space->registry_next) {
 		if ((hal_space_t)space == handle)
 			break;
@@ -1603,9 +1691,12 @@ space_lock_handle(
 
 	/* Waits for another hart's operation on the space to end. */
 	for (;;) {
+		/* Leaves the wait once the lock is taken. */
 		acquired = hal_atomic_uint_try_acquire(&space->lock);
 		if (acquired)
 			break;
+
+		/* Waits a moment before trying again. */
 		hal_atomic_relax();
 	}
 
@@ -1615,9 +1706,11 @@ space_lock_handle(
 	/* Leaves the registry with interrupts still off for the space's operation. */
 	__atomic_store_n(&space_registry_lock, 0U, __ATOMIC_RELEASE);
 
-	/* Succeeded: the caller holds the space. */
+	/* Hands the space and the interrupt state to the caller. */
 	*result = space;
 	*irq_enabled = enabled;
+
+	/* Succeeded: the caller holds the space. */
 	return 1;
 }
 
@@ -1698,6 +1791,7 @@ allocate_table(
 	unsigned index)
 {
 	struct riscv64_table_page *page;
+	uint64_t *table;
 	int error;
 
 	/* Allocates the record of the table. */
@@ -1712,8 +1806,11 @@ allocate_table(
 		return NULL;
 	}
 
-	/* Clears the table and remembers the entry that will point at it. */
-	hal_memset(hal_pmem_to_kernel(page->memory), 0, RISCV64_PAGE_SIZE);
+	/* Clears the table through the direct map. */
+	table = hal_pmem_to_kernel(page->memory);
+	hal_memset(table, 0, RISCV64_PAGE_SIZE);
+
+	/* Remembers the entry that will point at the table. */
 	page->parent = parent;
 	page->parent_index = index;
 
@@ -1752,11 +1849,16 @@ walk_leaf(
 
 		/* A missing table is made only when asked to. */
 		if ((entry & RISCV64_PTE_V) == 0) {
+			/* A walk that only looks makes nothing. */
 			if (!create)
 				return NULL;
+
+			/* Allocates the table; without memory the walk fails. */
 			page = allocate_table(space, table, index);
 			if (page == NULL)
 				return NULL;
+
+			/* Links the new table into its parent's entry. */
 			entry = pointer_entry(page->memory);
 			table[index] = entry;
 		}
@@ -1764,6 +1866,8 @@ walk_leaf(
 		/* A leaf where a table should be ends the walk. */
 		if ((entry & PERMISSIONS) != 0)
 			return NULL;
+
+		/* Steps down into the table the entry points at. */
 		table = riscv64_phys_to_direct((entry & PTE_PPN_MASK) >> RISCV64_PTE_PPN_SHIFT << RISCV64_PAGE_SHIFT);
 	}
 
@@ -1799,6 +1903,7 @@ detach_empty_tables(
 	struct riscv64_table_page *detached;
 	struct riscv64_table_page **link;
 	struct riscv64_table_page *page;
+	const uint64_t *table;
 	uint64_t parent_entry;
 	uint64_t expected_entry;
 	int again;
@@ -1813,7 +1918,8 @@ detach_empty_tables(
 			page = *link;
 
 			/* A table that still maps something stays. */
-			empty = table_empty(hal_pmem_to_kernel(page->memory));
+			table = hal_pmem_to_kernel(page->memory);
+			empty = table_empty(table);
 			if (!empty) {
 				link = &page->next;
 				continue;
@@ -1872,8 +1978,12 @@ user_leaf_flags(
 
 	/* A readable page; a writable or executable one is readable too. */
 	flags |= RISCV64_PTE_R;
+
+	/* A writable page is born dirty, in the hardware's bit and the kernel's record. */
 	if ((attr & HAL_SPACE_WRITE) != 0)
 		flags |= RISCV64_PTE_W | RISCV64_PTE_D | RISCV64_PTE_SW_DIRTY;
+
+	/* An executable page. */
 	if ((attr & HAL_SPACE_EXEC) != 0)
 		flags |= RISCV64_PTE_X;
 
@@ -1891,10 +2001,13 @@ sync_executable(
 	size_t size,
 	uint32_t attr)
 {
+	void *direct;
+
 	/* Only memory that is to be executed. */
 	if ((attr & HAL_SPACE_EXEC) == 0)
 		return;
 
 	/* Its bytes through the kernel's direct map. */
-	hal_sync_instruction_stream(riscv64_phys_to_direct(physical), size);
+	direct = riscv64_phys_to_direct(physical);
+	hal_sync_instruction_stream(direct, size);
 }

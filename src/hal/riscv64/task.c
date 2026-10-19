@@ -152,13 +152,17 @@ hal_task_create(
 	if (start == NULL)
 		return NULL;
 
-	/* A system task has no user stack, and a user task must have one. */
+	/* Tells a system task from a user task by its space. */
 	system = 0;
 	if (space == HAL_SPACE_SYS)
 		system = 1;
+
+	/* Notes whether the caller gave a user stack. */
 	has_stack = 0;
 	if (user_stack_pointer != NULL)
 		has_stack = 1;
+
+	/* A system task has no user stack, and a user task must have one. */
 	if (system == has_stack)
 		return NULL;
 
@@ -166,6 +170,8 @@ hal_task_create(
 	task = kernel_alloc(sizeof(*task));
 	if (task == NULL)
 		return NULL;
+
+	/* Starts from an empty record. */
 	hal_memset(task, 0, sizeof(*task));
 
 	/* Allocates the kernel stack, aligned to 16 bytes inside a larger block. */
@@ -274,7 +280,7 @@ hal_task_fork_current(
 	if (source == NULL)
 		return NULL;
 
-	/* Makes the child as a user task, then replaces its first frame with a copy of the parent's. */
+	/* Makes the child as a user task at the parent's place and stack. */
 	child = hal_task_create(
 		child_space,
 		(void (*)(void *))(uintptr_t)source->sepc,
@@ -282,6 +288,8 @@ hal_task_fork_current(
 		(void *)(uintptr_t)source->x[RISCV64_FRAME_SP]);
 	if (child == NULL)
 		return NULL;
+
+	/* Replaces the child's first frame with a copy of the parent's, its own result in a0. */
 	copy = child->initial_user_frame;
 	*copy = *source;
 	copy->x[RISCV64_FRAME_A0] = (uint64_t)child_result;
@@ -529,8 +537,10 @@ hal_task_destroy(
 	if (run_cpu >= 0)
 		HAL_FATAL("destroy current riscv64 task");
 
-	/* Unlists the task, then measures and frees its stack, then frees its record. */
+	/* Takes the task out of the statistics. */
 	task_del(task);
+
+	/* Measures and frees the kernel stack of a task that has one. */
 	if (task->sys_stack != NULL) {
 		task_stack_record_depth(task);
 		kernel_free(task->sys_stack_allocation);
@@ -910,11 +920,14 @@ task_add(
 	/* Appends the task at the end of the list. */
 	enabled = riscv64_spin_lock(&task_list_lock);
 
+	/* Walks to the last link and puts the task there. */
 	link = &task_list;
 	while (*link != NULL)
 		link = &(*link)->next;
 	*link = task;
 	task->next = NULL;
+
+	/* Counts the task, and its kernel stack when it has one. */
 	task_count++;
 	if (task->sys_stack != NULL)
 		task_stack_bytes += RISCV64_SYS_STACK_SIZE;
@@ -933,9 +946,12 @@ task_del(
 	/* Finds the task's link and takes it out, if it is listed. */
 	enabled = riscv64_spin_lock(&task_list_lock);
 
+	/* Walks to the link that names the task, or to the list's end. */
 	link = &task_list;
 	while (*link != NULL && *link != task)
 		link = &(*link)->next;
+
+	/* Unlinks a listed task and stops counting it and its stack. */
 	if (*link != NULL) {
 		*link = task->next;
 		if (task_count != 0)
@@ -994,8 +1010,10 @@ build_user_stack(
 	stack_pointer[RISCV64_DISPATCH_RA] = (uintptr_t)riscv64_user_frame_entry;
 	task->resume_sp = (uintptr_t)stack_pointer;
 
-	/* Succeeded: the frame the task first returns through. */
+	/* The frame is the task's user context until its first trap. */
 	task->initial_user_frame = frame;
+
+	/* Succeeded: the frame the task first returns through. */
 	return frame;
 }
 
@@ -1035,8 +1053,10 @@ running_task(
 	 * hart's task, another thread's.
 	 */
 	enabled = riscv64_irq_save();
+
 	cpu = riscv64_percpu_current();
 	task = cpu->running_task;
+
 	riscv64_irq_restore(enabled);
 
 	/* Succeeded: the running task, or NULL before the hart's initial task. */

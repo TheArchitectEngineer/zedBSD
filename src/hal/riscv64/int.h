@@ -15,7 +15,11 @@
 #include <hal/types.h>
 #include "defs.h"
 
-/* The register slots of the frame that hold the stack and thread pointers. */
+/*
+ * The register slots of the frame the HAL reads by name: the return
+ * address, the stack and thread pointers, the first argument (and result)
+ * and the system call number.
+ */
 #define RISCV64_FRAME_SP	2U
 #define RISCV64_FRAME_TP	4U
 #define RISCV64_FRAME_A0	10U

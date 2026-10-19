@@ -97,37 +97,51 @@ riscv64_page_init(
 	uint64_t end;
 	uint64_t kernel_start;
 	uint64_t kernel_size;
+	uint64_t fdt_phys;
 	unsigned index;
 
-	/* Finds the span the RAM banks cover. */
+	/* The HAL cannot run on a machine the tree gives no memory. */
 	info = riscv64_boot_fdt();
 	if (info->memory_count == 0)
 		HAL_FATAL("riscv64 device tree describes no memory");
+
+	/* Finds the span the RAM banks cover, widening an empty span to each bank. */
 	lowest = ~0ULL;
 	highest = 0;
 	for (index = 0; index < info->memory_count; index++) {
+		/* A bank that starts lower moves the span's start down. */
 		end = info->memory[index].base + info->memory[index].size;
 		if (info->memory[index].base < lowest)
 			lowest = info->memory[index].base;
+
+		/* A bank that ends higher moves the span's end up. */
 		if (end > highest)
 			highest = end;
 	}
 
-	/* Keeps the span page-aligned and within what the bitmap can describe. */
+	/* Keeps the span page-aligned. */
 	lowest &= ~((uint64_t)RISCV64_PAGE_SIZE - 1U);
 	highest &= ~((uint64_t)RISCV64_PAGE_SIZE - 1U);
+
+	/* Keeps it within what the bitmap can describe. */
 	if (highest - lowest > PAGE_MAX_BYTES)
 		highest = lowest + PAGE_MAX_BYTES;
+
+	/* The kernel reaches managed RAM only through the direct map. */
 	if (highest > RISCV64_DIRECT_LIMIT)
 		HAL_FATAL("riscv64 memory beyond the direct map");
+
+	/* Records the span. */
 	ram_base = lowest;
 	ram_pages = (uint32_t)((highest - lowest) / RISCV64_PAGE_SIZE);
 
-	/* Starts with every page unavailable, then releases the banks. */
+	/* Starts with every page unavailable and none allocated. */
 	hal_memset(page_bitmap, 0xff, sizeof(page_bitmap));
 	hal_memset(reserved_bitmap, 0xff, sizeof(reserved_bitmap));
 	reserved_pages = ram_pages;
 	allocated_pages = 0;
+
+	/* Releases the banks. */
 	for (index = 0; index < info->memory_count; index++)
 		release_range(info->memory[index].base, info->memory[index].size);
 
@@ -136,14 +150,19 @@ riscv64_page_init(
 	kernel_size = (uint64_t)(uintptr_t)(__kernel_vma_end - __kernel_vma_start);
 	reserve_range(kernel_start, kernel_size);
 
-	/* Takes back the device tree and the initial ramdisk the firmware loaded. */
-	reserve_range(riscv64_boot_fdt_phys(), info->totalsize);
+	/* Takes back the device tree. */
+	fdt_phys = riscv64_boot_fdt_phys();
+	reserve_range(fdt_phys, info->totalsize);
+
+	/* Takes back the initial ramdisk the firmware loaded, when there is one. */
 	if (info->initrd_end > info->initrd_start)
 		reserve_range(info->initrd_start, info->initrd_end - info->initrd_start);
 
 	/* Takes back every reservation, the firmware's own memory among them. */
 	for (index = 0; index < info->reserved_count; index++)
 		reserve_range(info->reserved[index].base, info->reserved[index].size);
+
+	/* Takes back every no-map reservation too. */
 	for (index = 0; index < info->nomap_count; index++)
 		reserve_range(info->nomap[index].base, info->nomap[index].size);
 
@@ -154,6 +173,8 @@ riscv64_page_init(
 
 	/* The first allocation looks from the span's start. */
 	first_free_candidate = 0;
+
+	/* Reports the span and what of it is free. */
 	hal_printf("RISCV64 MEMORY base=%lx total=%lu MiB free=%lu MiB\n",
 		   ram_base,
 		   (uint64_t)ram_pages * RISCV64_PAGE_SIZE / (1024U * 1024U),
@@ -209,6 +230,8 @@ riscv64_range_is_ram(
 		/* Skips a bank that holds the start but not the rest. */
 		if (bank_end - physical < size)
 			continue;
+
+		/* This bank holds the whole range. */
 		return true;
 	}
 
@@ -241,6 +264,8 @@ riscv64_range_touches_ram(
 		/* Skips a bank that starts after the range ends. */
 		if (info->memory[index].base >= end)
 			continue;
+
+		/* This bank overlaps the range. */
 		return true;
 	}
 
@@ -420,6 +445,8 @@ hal_get_memstat(
 	/* A caller with nowhere to put the answer asked for nothing. */
 	if (stat == NULL)
 		return;
+
+	/* Starts from an empty report. */
 	hal_memset(stat, 0, sizeof(*stat));
 
 	/* Samples the page counters together. */
@@ -459,6 +486,8 @@ release_range(
 		base = ram_base;
 	if (end > span_end)
 		end = span_end;
+
+	/* A range with nothing inside the span releases nothing. */
 	if (size == 0 || base >= end)
 		return;
 
@@ -466,9 +495,12 @@ release_range(
 	first = (base - ram_base + RISCV64_PAGE_SIZE - 1U) / RISCV64_PAGE_SIZE;
 	last = (end - ram_base) / RISCV64_PAGE_SIZE;
 	for (page = first; page < last; page++) {
+		/* A page released already, by an overlapping bank, stays as it is. */
 		reserved = page_is_set(reserved_bitmap, (uint32_t)page);
 		if (!reserved)
 			continue;
+
+		/* Makes the page free and stops counting it as reserved. */
 		page_clear(page_bitmap, (uint32_t)page);
 		page_clear(reserved_bitmap, (uint32_t)page);
 		reserved_pages--;
@@ -495,6 +527,8 @@ reserve_range(
 		base = ram_base;
 	if (end > span_end)
 		end = span_end;
+
+	/* A range with nothing inside the span reserves nothing. */
 	if (size == 0 || base >= end)
 		return;
 
@@ -502,9 +536,12 @@ reserve_range(
 	first = (base - ram_base) / RISCV64_PAGE_SIZE;
 	last = (end - ram_base + RISCV64_PAGE_SIZE - 1U) / RISCV64_PAGE_SIZE;
 	for (page = first; page < last; page++) {
+		/* A page already out of use stays as it is. */
 		in_use = page_is_set(page_bitmap, (uint32_t)page);
 		if (in_use)
 			continue;
+
+		/* Takes the page out of use for good and counts it as reserved. */
 		page_set(page_bitmap, (uint32_t)page);
 		page_set(reserved_bitmap, (uint32_t)page);
 		reserved_pages++;
@@ -517,10 +554,12 @@ page_is_set(
 	const uint32_t *bitmap,
 	uint32_t page)
 {
-	/* The bit of the page in its word. */
-	if ((bitmap[page >> 5] & (1U << (page & 31U))) != 0)
-		return 1;
-	return 0;
+	/* A clear bit is a page that is not set. */
+	if ((bitmap[page >> 5] & (1U << (page & 31U))) == 0)
+		return 0;
+
+	/* Succeeded: the page's bit is set. */
+	return 1;
 }
 
 /* Sets a page's bit. */
@@ -552,9 +591,11 @@ next_free(
 	uint32_t word;
 	uint32_t found;
 
-	/* Bits below the page in its first word count as in use. */
+	/* An empty interval has no free page. */
 	if (page >= end)
 		return end;
+
+	/* Bits below the page in its first word count as in use. */
 	word = page_bitmap[page >> 5] | ((1U << (page & 31U)) - 1U);
 	page &= ~31U;
 
@@ -584,9 +625,11 @@ next_occupied(
 	uint32_t word;
 	uint32_t found;
 
-	/* Bits below the page in its first word count as free. */
+	/* An empty interval has no page in use. */
 	if (page >= end)
 		return end;
+
+	/* Bits below the page in its first word count as free. */
 	word = page_bitmap[page >> 5] & ~((1U << (page & 31U)) - 1U);
 	page &= ~31U;
 
@@ -615,16 +658,20 @@ claim_run(
 {
 	uint32_t end;
 
-	/* Single pages up to a word boundary, whole words, then the tail's pages. */
+	/* Single pages up to a word boundary. */
 	end = first + count;
 	while (first < end && (first & 31U) != 0) {
 		page_set(page_bitmap, first);
 		first++;
 	}
+
+	/* Whole words. */
 	while (end - first >= 32U) {
 		page_bitmap[first >> 5] = UINT32_MAX;
 		first += 32U;
 	}
+
+	/* The tail's pages. */
 	while (first < end) {
 		page_set(page_bitmap, first);
 		first++;
@@ -675,12 +722,16 @@ alloc_ram(
 	need = (uint32_t)((size + RISCV64_PAGE_SIZE - 1) / RISCV64_PAGE_SIZE);
 	align_pages = (uint32_t)(alignment / RISCV64_PAGE_SIZE);
 
-	/* Limits the search to the pages the caller can address. */
-	end = ram_pages;
+	/* A caller that cannot address the span's start gets nothing. */
 	if ((uint64_t)max_paddr < ram_base)
 		return HAL_ERR_NOMEM;
+
+	/* Limits the search to the pages the caller can address. */
+	end = ram_pages;
 	if ((uint64_t)max_paddr - ram_base + 1U < (uint64_t)ram_pages * RISCV64_PAGE_SIZE)
 		end = (uint32_t)(((uint64_t)max_paddr - ram_base + 1U) / RISCV64_PAGE_SIZE);
+
+	/* Refuses a run longer than the pages left to search. */
 	if (need > end)
 		return HAL_ERR_NOMEM;
 
@@ -689,6 +740,8 @@ alloc_ram(
 	if (boundary != 0) {
 		if ((uint64_t)need * RISCV64_PAGE_SIZE > boundary)
 			return HAL_ERR_NOMEM;
+
+		/* The boundary block in pages, for the search. */
 		boundary_pages = (uint32_t)(boundary / RISCV64_PAGE_SIZE);
 	}
 
@@ -707,6 +760,8 @@ alloc_ram(
 		aligned = (base_page + start + align_pages - 1U) & ~((uint64_t)align_pages - 1U);
 		if (aligned - base_page >= end)
 			break;
+
+		/* Stops when the run no longer fits before the end. */
 		start = (uint32_t)(aligned - base_page);
 		if (need > end - start)
 			break;
@@ -725,6 +780,8 @@ alloc_ram(
 		occupied = next_occupied(start, start + need);
 		if (occupied == start + need)
 			break;
+
+		/* Looks again past the page in use. */
 		start = occupied + 1U;
 	}
 
@@ -734,10 +791,14 @@ alloc_ram(
 	if (need > end - start)
 		return HAL_ERR_NOMEM;
 
-	/* Succeeded: the run is the caller's. */
+	/* Claims the run and counts its pages. */
 	claim_run(start, need);
 	allocated_pages += need;
+
+	/* Reports the run's physical address. */
 	*block = (hal_physaddr_t)(ram_base + (uint64_t)start * RISCV64_PAGE_SIZE);
+
+	/* Succeeded: the run is the caller's. */
 	return HAL_OK;
 }
 
@@ -767,10 +828,12 @@ free_ram(
 	if ((uint64_t)*block < ram_base)
 		return HAL_ERR_INVALID;
 
-	/* Repeats the rounding the allocation applied. */
+	/* Refuses a block past the span. */
 	offset = (uint64_t)*block - ram_base;
 	if (offset / RISCV64_PAGE_SIZE >= ram_pages)
 		return HAL_ERR_INVALID;
+
+	/* Repeats the rounding the allocation applied; the pages must lie in the span. */
 	first = (uint32_t)(offset / RISCV64_PAGE_SIZE);
 	count = (uint32_t)((size + RISCV64_PAGE_SIZE - 1) / RISCV64_PAGE_SIZE);
 	if (count > ram_pages - first)
@@ -778,9 +841,12 @@ free_ram(
 
 	/* Checks that every page was allocated, before any changes. */
 	for (index = 0; index < count; index++) {
+		/* A free page was not allocated. */
 		in_use = page_is_set(page_bitmap, first + index);
 		if (!in_use)
 			return HAL_ERR_STATE;
+
+		/* A reserved page was never allocated either. */
 		reserved = page_is_set(reserved_bitmap, first + index);
 		if (reserved)
 			return HAL_ERR_STATE;
@@ -789,13 +855,17 @@ free_ram(
 	/* Releases the pages. */
 	for (index = 0; index < count; index++)
 		page_clear(page_bitmap, first + index);
+
+	/* Stops counting them as allocated. */
 	allocated_pages -= count;
 
 	/* A later allocation looks at the released pages again. */
 	if (first < first_free_candidate)
 		first_free_candidate = first;
 
-	/* Succeeded: clears the caller's address so a double free shows. */
+	/* Clears the caller's address so a double free shows. */
 	*block = 0;
+
+	/* Succeeded: the pages are free. */
 	return HAL_OK;
 }

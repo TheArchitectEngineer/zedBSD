@@ -39,6 +39,9 @@
 #define SERIAL_CONSOLE_NEWLINE		0x0aU
 #define SERIAL_CONSOLE_BACKSPACE	0x08U
 
+/* Marks a parameter the text operations' signatures carry but a teletype does not need. */
+#define UNUSED_PARAMETER(parameter)	((void)(parameter))
+
 static void console_get_size(unsigned *columns, unsigned *rows);
 static void console_putc(int character);
 static void console_write(unsigned row, unsigned column, uint8_t attribute, const char *utf8);
@@ -130,10 +133,10 @@ console_write(
 	uint8_t attribute,
 	const char *utf8)
 {
-	(void)row;
-	(void)column;
-	(void)attribute;
-	(void)utf8;
+	UNUSED_PARAMETER(row);
+	UNUSED_PARAMETER(column);
+	UNUSED_PARAMETER(attribute);
+	UNUSED_PARAMETER(utf8);
 }
 
 /* Leaves the terminal as it is: the teletype has nothing to blank. */
@@ -186,7 +189,7 @@ static void
 console_show_cursor(
 	int visible)
 {
-	(void)visible;
+	UNUSED_PARAMETER(visible);
 }
 
 /* Does nothing for an operation a teletype does not have. */

@@ -44,6 +44,7 @@ __syscall6:
 	.global __signal_restorer
 	.type __signal_restorer, %function
 __signal_restorer:
+	/* Names the frame by its token and context, and asks for the return. */
 	lwu	a0, HAL_TASK_SIGNAL_RESTORER_TOKEN_OFFSET(sp)
 	ld	a1, HAL_TASK_SIGNAL_RESTORER_CONTEXT_OFFSET(sp)
 	li	a7, 80

@@ -1740,10 +1740,11 @@ nvme_attach(
 	/* Checks the operation status. */
 	error = drv_pci_device_allocate_irqs(
 		device,
-		DRV_PCI_IRQ_ALLOW_MSIX | DRV_PCI_IRQ_ALLOW_MSI |
-			DRV_PCI_IRQ_ALLOW_INTX,
-		1, 1,
-		&controller->irq, &irq_count);
+		DRV_PCI_IRQ_ALLOW_MSIX | DRV_PCI_IRQ_ALLOW_MSI | DRV_PCI_IRQ_ALLOW_INTX,
+		1,
+		1,
+		&controller->irq,
+		&irq_count);
 	if (error != 0)
 		goto fail;
 
@@ -1810,12 +1811,15 @@ nvme_attach(
 
 	controller->stopping = 0;
 	nvme_publish_controller(controller);
+
+	/* Names the kind of interrupt the controller got, for the log. */
 	if (controller->irq.type == DRV_PCI_IRQ_MSIX)
 		irq_name = "MSI-X";
 	else if (controller->irq.type == DRV_PCI_IRQ_MSI)
 		irq_name = "MSI";
 	else
 		irq_name = "INTx";
+
 	kern_logf("nvme: PCI controller %04x:%02x:%02x.%u version=%x queue=%u "
 		   "timeout=%ums %s\n",
 		   address.segment, address.bus, address.device,
@@ -2779,31 +2783,43 @@ nvme_runtime_intx_mask(
 	unsigned *register_out,
 	uint16_t *command_out)
 {
-	uint16_t command, readback;
+	uint16_t command;
+	uint16_t readback;
 	int error;
 
-	/* Reads the command and sets INTx Disable. */
-	error = drv_pci_device_config_read16(controller->pci,
-					     NVME_PCI_COMMAND, &command);
+	/* Reads the command register as it is. */
+	error = drv_pci_device_config_read16(
+		controller->pci,
+		NVME_PCI_COMMAND,
+		&command);
 	if (error != 0)
 		return error;
+
+	/* Sets INTx Disable, leaving the other bits. */
 	error = drv_pci_device_config_write16(
-		controller->pci, NVME_PCI_COMMAND,
+		controller->pci,
+		NVME_PCI_COMMAND,
 		(uint16_t)(command | NVME_PCI_COMMAND_INTX_DISABLE));
 	if (error != 0)
 		return error;
 
-	/* Confirms the bit stuck. */
-	error = drv_pci_device_config_read16(controller->pci,
-					     NVME_PCI_COMMAND, &readback);
+	/* Reads the register back. */
+	error = drv_pci_device_config_read16(
+		controller->pci,
+		NVME_PCI_COMMAND,
+		&readback);
 	if (error != 0)
 		return error;
+
+	/* Refuses a function whose INTx Disable did not stick. */
 	if ((readback & NVME_PCI_COMMAND_INTX_DISABLE) == 0U)
 		return EIO;
 
-	/* Succeeded. */
+	/* Reports the register and the command it held before the mask. */
 	*register_out = NVME_PCI_COMMAND;
 	*command_out = command;
+
+	/* Succeeded: the pin no longer asserts the line. */
 	return 0;
 }
 
@@ -2814,34 +2830,46 @@ nvme_runtime_intx_restore(
 	unsigned offset,
 	uint16_t command)
 {
-	uint16_t current, readback;
+	uint16_t current;
+	uint16_t readback;
 	int error;
 
 	/* Refuses a record that the INTx mask did not fill. */
 	if (offset != NVME_PCI_COMMAND)
 		return EINVAL;
 
-	/* Changes only INTx Disable; the other bits may have moved since. */
-	error = drv_pci_device_config_read16(controller->pci,
-					     NVME_PCI_COMMAND, &current);
-	if (error != 0)
-		return error;
-	current = (uint16_t)((current & ~NVME_PCI_COMMAND_INTX_DISABLE) |
-			     (command & NVME_PCI_COMMAND_INTX_DISABLE));
-	error = drv_pci_device_config_write16(controller->pci,
-					      NVME_PCI_COMMAND, current);
+	/* Reads the command register; its other bits may have moved since the mask. */
+	error = drv_pci_device_config_read16(
+		controller->pci,
+		NVME_PCI_COMMAND,
+		&current);
 	if (error != 0)
 		return error;
 
-	/* Confirms the bit holds what it held. */
-	error = drv_pci_device_config_read16(controller->pci,
-					     NVME_PCI_COMMAND, &readback);
+	/* Writes back INTx Disable as it was before the mask, and nothing else. */
+	current = (uint16_t)((current & ~NVME_PCI_COMMAND_INTX_DISABLE) |
+			     (command & NVME_PCI_COMMAND_INTX_DISABLE));
+	error = drv_pci_device_config_write16(
+		controller->pci,
+		NVME_PCI_COMMAND,
+		current);
 	if (error != 0)
 		return error;
-	return (readback & NVME_PCI_COMMAND_INTX_DISABLE) ==
-			       (command & NVME_PCI_COMMAND_INTX_DISABLE)
-		       ? 0
-		       : EIO;
+
+	/* Reads the register back. */
+	error = drv_pci_device_config_read16(
+		controller->pci,
+		NVME_PCI_COMMAND,
+		&readback);
+	if (error != 0)
+		return error;
+
+	/* Refuses a function whose INTx Disable does not hold what it held. */
+	if ((readback & NVME_PCI_COMMAND_INTX_DISABLE) != (command & NVME_PCI_COMMAND_INTX_DISABLE))
+		return EIO;
+
+	/* Succeeded: the pin is as it was before the mask. */
+	return 0;
 }
 
 /* Masks the interrupt while the driver is running. */
@@ -2861,9 +2889,15 @@ nvme_runtime_irq_mask(
 		return EINVAL;
 
 	/* Masks a legacy pin with the command register's INTx Disable. */
-	if (controller->irq.type == DRV_PCI_IRQ_INTX)
-		return nvme_runtime_intx_mask(controller, capability_out,
-					      control_out);
+	if (controller->irq.type == DRV_PCI_IRQ_INTX) {
+		error = nvme_runtime_intx_mask(controller, capability_out, control_out);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the pin is masked. */
+		return 0;
+	}
+
 	capability_id = controller->irq.type == DRV_PCI_IRQ_MSIX
 				? NVME_PCI_MSIX_CAPABILITY
 				: NVME_PCI_MSI_CAPABILITY;
@@ -2929,9 +2963,14 @@ nvme_runtime_irq_restore(
 	int error;
 
 	/* Gives a legacy pin back the INTx Disable it had. */
-	if (controller->irq.type == DRV_PCI_IRQ_INTX)
-		return nvme_runtime_intx_restore(controller, capability,
-						 control);
+	if (controller->irq.type == DRV_PCI_IRQ_INTX) {
+		error = nvme_runtime_intx_restore(controller, capability, control);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the pin is as it was. */
+		return 0;
+	}
 
 	/* Checks the operation status. */
 	error = drv_pci_device_config_write16(
@@ -3961,8 +4000,8 @@ nvme_irq(
 	 * pin stays asserted while a queue holds an entry past the head the
 	 * doorbell reported, so an entry posted after the last read of a pass
 	 * keeps the line high across the claim.  An interrupt controller that
-	 * takes only the rising edge (QEMU's PLIC) then never sees the line
-	 * rise again, and the command times out.  The pass that finds both
+	 * takes only the rising edge, as some PLIC implementations do, then
+	 * never sees the line rise again, and the command times out.  The pass that finds both
 	 * queues empty follows the last doorbell write, so the line has fallen
 	 * and the next entry raises it anew.  A submitter needs the command
 	 * lock held here, so the passes end within the queues' depths.

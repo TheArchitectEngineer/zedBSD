@@ -23,6 +23,10 @@
 /* The width of a virtual address, whose top bit an address is sign-extended from. */
 #define INT_VA_SIGN_BIT		((uint64_t)1 << (RISCV64_VA_BITS - 1))
 
+/*
+ * The trap entry in trap.S, which saves the frame and calls riscv64_trap();
+ * stvec points at it.
+ */
 void riscv64_trap_entry(void);
 
 /*
@@ -55,9 +59,13 @@ riscv64_int_init(
 	/* The controller, with every source off. */
 	riscv64_plic_init();
 
-	/* Lets the notifications and the PLIC's interrupts reach the hart; the tick enables its own. */
+	/* Lets the notifications and the PLIC's interrupts reach the hart. */
 	riscv64_set_sie(RISCV64_SIE_SSIE | RISCV64_SIE_SEIE);
+
+	/* Starts the boot hart's tick, which enables its own interrupt. */
 	riscv64_clock_init();
+
+	/* Reports that traps are taken from here on. */
 	hal_puts("RISCV64 TRAP READY\n");
 }
 
@@ -204,15 +212,19 @@ take_interrupt(
 	/* Hands the interrupt to the code that serves its kind. */
 	switch (code) {
 	case RISCV64_IRQ_SOFTWARE:
+		/* Another hart's notification or stop. */
 		riscv64_smp_take_ipi();
 		break;
 	case RISCV64_IRQ_TIMER:
+		/* The hart's tick. */
 		riscv64_clock_interrupt();
 		break;
 	case RISCV64_IRQ_EXTERNAL:
+		/* The PLIC's sources. */
 		riscv64_irq_take_external();
 		break;
 	default:
+		/* An interrupt this port never enables. */
 		hal_printf("unexpected riscv64 interrupt %lu\n", code);
 		break;
 	}
@@ -236,15 +248,24 @@ take_syscall(
 	intptr_t result;
 	unsigned index;
 
-	/* Collects the arguments and returns past the instruction. */
+	/* Collects the arguments. */
 	for (index = 0; index < HAL_SYSCALL_ARGS; index++)
 		arguments[index] = (uintptr_t)frame->x[RISCV64_FRAME_A0 + index];
+
+	/* Returns past the ecall instruction. */
 	frame->sepc += 4U;
 
-	/* The kernel owns accounting and its interruptible window. */
+	/*
+	 * Records the user context, then lets the kernel serve the call; the
+	 * kernel owns accounting and its interruptible window.
+	 */
 	riscv64_task_enter_user_frame(frame);
 	result = kernel_syscall_handler((uint32_t)frame->x[RISCV64_FRAME_A7], arguments);
+
+	/* Puts the result where the caller reads it. */
 	frame->x[RISCV64_FRAME_A0] = (uint64_t)result;
+
+	/* Runs the kernel's work due before the return to user. */
 	kernel_user_return_handler();
 	riscv64_task_leave_user_frame();
 }
@@ -259,8 +280,10 @@ take_user_fault(
 	struct int_fault fault;
 	int handled;
 
-	/* Describes the fault and reports it with the frame recorded. */
+	/* Describes the fault in the kernel's words. */
 	classify(frame, &fault);
+
+	/* Reports it with the frame recorded. */
 	riscv64_task_enter_user_frame(frame);
 	handled = kernel_user_fault_handler(fault.cause,
 					    fault.mode,
@@ -301,13 +324,11 @@ take_kernel_fault(
 					   (uintptr_t)frame->scause,
 					   (uintptr_t)frame->stval);
 
-	/* A resolved fault resumes the interrupted code. */
-	if (handled == HAL_TRAP_RET_SUCCESS)
-		return;
-
-	/* An unresolved one is shown and stops the hart. */
-	describe_frame(frame);
-	HAL_FATAL("unhandled riscv64 kernel exception");
+	/* An unresolved fault is shown and stops the hart. */
+	if (handled != HAL_TRAP_RET_SUCCESS) {
+		describe_frame(frame);
+		HAL_FATAL("unhandled riscv64 kernel exception");
+	}
 }
 
 /* Prints a trap frame's registers for a fault that stops the hart. */
@@ -326,6 +347,7 @@ describe_frame(
 
 	/* Then the general registers, four to a line. */
 	for (index = 1; index < 32U; index += 4U) {
+		/* The first three registers of the line. */
 		hal_printf("x%u=%lx x%u=%lx x%u=%lx",
 			   index,
 			   frame->x[index],
@@ -333,8 +355,12 @@ describe_frame(
 			   frame->x[index + 1U],
 			   index + 2U,
 			   frame->x[index + 2U]);
+
+		/* The fourth, which the last line does not have. */
 		if (index + 3U < 32U)
 			hal_printf(" x%u=%lx", index + 3U, frame->x[index + 3U]);
+
+		/* Ends the line. */
 		hal_puts("\n");
 	}
 }

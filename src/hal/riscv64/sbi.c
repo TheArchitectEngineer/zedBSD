@@ -35,6 +35,7 @@
 #define SBI_LEGACY_CONSOLE_PUTCHAR	0x01
 #define SBI_LEGACY_SHUTDOWN		0x08
 
+/* The function numbers inside each extension, from the same specification. */
 #define SBI_BASE_SPEC_VERSION		0
 #define SBI_BASE_IMPL_ID		1
 #define SBI_BASE_IMPL_VERSION		2
@@ -82,11 +83,15 @@ static int sbi_has_srst;
 static int sbi_has_dbcn;
 
 /*
- * The specification version, implementation and implementation version
- * the firmware reports, kept for the boot log.  Zero until probed.
+ * The specification version the firmware reports, which the boot log and
+ * riscv64_sbi_version() read.  Zero until probed.
  */
 static long sbi_spec_version;
+
+/* The firmware's implementation id, kept for the boot log.  Zero until probed. */
 static long sbi_impl_id;
+
+/* The firmware's implementation version, kept for the boot log.  Zero until probed. */
 static long sbi_impl_version;
 
 static struct riscv64_sbi_result sbi_call(long extension, long function, unsigned long argument0, unsigned long argument1, unsigned long argument2);
@@ -109,12 +114,16 @@ riscv64_sbi_probe(
 	result = sbi_call(SBI_EXT_BASE, SBI_BASE_SPEC_VERSION, 0, 0, 0);
 	if (result.error != 0)
 		HAL_FATAL("riscv64 firmware has no SBI base extension");
+
+	/* Keeps the version. */
 	sbi_spec_version = result.value;
 
-	/* The implementation and its version, for the log. */
+	/* The implementation, for the log. */
 	result = sbi_call(SBI_EXT_BASE, SBI_BASE_IMPL_ID, 0, 0, 0);
 	if (result.error == 0)
 		sbi_impl_id = result.value;
+
+	/* The implementation's version, for the log. */
 	result = sbi_call(SBI_EXT_BASE, SBI_BASE_IMPL_VERSION, 0, 0, 0);
 	if (result.error == 0)
 		sbi_impl_version = result.value;
@@ -367,9 +376,11 @@ riscv64_sbi_shutdown(
 	/* Interrupts stay off: nothing should run after the request. */
 	(void)riscv64_irq_save();
 
-	/* The system reset extension, or else the legacy call. */
+	/* The system reset extension, when the firmware has it. */
 	if (sbi_has_srst)
 		(void)sbi_call(SBI_EXT_SRST, SBI_SRST_RESET, SBI_SRST_SHUTDOWN, 0, 0);
+
+	/* Else, or when that returned, the legacy call. */
 	(void)sbi_call(SBI_LEGACY_SHUTDOWN, 0, 0, 0, 0);
 
 	/* A firmware that cannot power off leaves the hart halted. */
@@ -455,9 +466,11 @@ sbi_call(
 			 : "r"(a2), "r"(a3), "r"(a6), "r"(a7)
 			 : "memory");
 
-	/* Succeeded: what the firmware answered. */
+	/* Takes the error and the value the firmware answered. */
 	result.error = (long)a0;
 	result.value = (long)a1;
+
+	/* Succeeded: what the firmware answered. */
 	return result;
 }
 

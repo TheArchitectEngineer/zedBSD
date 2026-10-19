@@ -79,6 +79,9 @@
  */
 #define NS16550_DEFAULT_WINDOW		0x100U
 
+/* Marks a parameter the interrupt handler's signature carries but the driver does not need. */
+#define UNUSED_PARAMETER(parameter)	((void)(parameter))
+
 /*
  * The device-tree compatible strings of the UARTs the driver takes, in the
  * order they are looked for.  The second field says whether the UART is a
@@ -136,6 +139,8 @@ drv_ns16550_probe(
 	error = drv_fdt_reg(fdt, node, 0, &physical, &window);
 	if (error != 0)
 		return error;
+
+	/* A tree that gives no size gets the whole window. */
 	if (window == 0)
 		window = NS16550_DEFAULT_WINDOW;
 
@@ -143,6 +148,8 @@ drv_ns16550_probe(
 	shift = read_cell_property(fdt, node, "reg-shift", 0, &error);
 	if (error != 0)
 		return error;
+
+	/* Refuses a spacing wider than a 32-bit register's. */
 	if (shift > 4)
 		return EINVAL;
 
@@ -150,6 +157,8 @@ drv_ns16550_probe(
 	width = read_cell_property(fdt, node, "reg-io-width", 1, &error);
 	if (error != 0)
 		return error;
+
+	/* Refuses a width the driver cannot access with. */
 	if (width != 1 && width != 4)
 		return EINVAL;
 
@@ -157,6 +166,8 @@ drv_ns16550_probe(
 	irq = read_cell_property(fdt, node, "interrupts", 0, &error);
 	if (error != 0)
 		return error;
+
+	/* A UART without an interrupt cannot be read by interrupt. */
 	if (irq == 0)
 		return ENOENT;
 
@@ -237,9 +248,11 @@ find_uart(
 	uint32_t candidate;
 	size_t index;
 	bool present;
+	bool found;
 	int error;
 
 	/* Looks for each recognized kind in turn. */
+	found = false;
 	for (index = 0;
 	     index < sizeof(ns16550_compatibles) / sizeof(ns16550_compatibles[0]);
 	     index++) {
@@ -250,6 +263,8 @@ find_uart(
 			error = drv_fdt_find_compatible(fdt, ns16550_compatibles[index].name, candidate, &candidate);
 			if (error == ENOENT)
 				break;
+
+			/* Reports a tree the search could not read. */
 			if (error != 0)
 				return error;
 
@@ -258,15 +273,26 @@ find_uart(
 			if (!present)
 				continue;
 
-			/* Succeeded: the first present UART of this kind. */
-			*node = candidate;
-			*busy_detect = ns16550_compatibles[index].busy_detect;
-			return 0;
+			/* Takes the first present UART of this kind. */
+			found = true;
+			break;
 		}
+
+		/* Stops at the first kind that has a present UART. */
+		if (found)
+			break;
 	}
 
 	/* The tree describes no present UART the driver knows. */
-	return ENOENT;
+	if (!found)
+		return ENOENT;
+
+	/* Reports the node and whether it is a DesignWare UART. */
+	*node = candidate;
+	*busy_detect = ns16550_compatibles[index].busy_detect;
+
+	/* Succeeded: the first present UART the driver knows. */
+	return 0;
 }
 
 /* Reads the first cell of a property, or the fallback when it is absent. */
@@ -393,9 +419,10 @@ uart_interrupt(
 	void *argument)
 {
 	struct drv_ns16550 *port;
+	uint32_t raw_identity;
 	uint32_t identity;
 
-	(void)irq;
+	UNUSED_PARAMETER(irq);
 
 	/* Finds the port the handler was installed for. */
 	port = (struct drv_ns16550 *)argument;
@@ -404,7 +431,8 @@ uart_interrupt(
 	 * Reading the status register is what ends a busy-detect interrupt;
 	 * left alone, it would be raised again for ever.
 	 */
-	identity = read_register(port, NS16550_INTERRUPT_IDENTITY) & NS16550_IDENTITY_MASK;
+	raw_identity = read_register(port, NS16550_INTERRUPT_IDENTITY);
+	identity = raw_identity & NS16550_IDENTITY_MASK;
 	if (port->busy_detect && identity == DW_UART_IDENTITY_BUSY)
 		(void)read_register(port, DW_UART_STATUS);
 
