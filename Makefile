@@ -816,9 +816,9 @@ KERN_NET_SOURCES := \
 KERN_NET_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(KERN_NET_SOURCES))
 
 KERN_VM_SOURCES := \
-	src/kern/vmspace.c \
-	src/kern/vm-device.c \
-	src/kern/vm.c
+	src/kern/vm/vmspace.c \
+	src/kern/vm/device.c \
+	src/kern/vm/vm.c
 KERN_VM_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(KERN_VM_SOURCES))
 
 KERN_BLOCK_IDENTITY_SOURCES := src/kern/block-identity.c

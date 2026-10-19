@@ -12,7 +12,7 @@ out=${1:-$repo/build/ws214-p003a-host}
 mkdir -p "$out"
 core="$repo/plan/ws014/tests/gpu-test-fd.c $repo/src/drivers/gpu/gpu.c $repo/src/kern/cdev.c \
     $repo/src/drivers/gpu/gpu-fence.c $repo/src/kern/handle.c $repo/src/kern/fd-object.c \
-    $repo/src/kern/filedesc.c $repo/src/kern/vm-device.c $repo/src/drivers/pci/pci.c"
+    $repo/src/kern/filedesc.c $repo/src/kern/vm/device.c $repo/src/drivers/pci/pci.c"
 flip="$repo/plan/ws141/tests/display-lock-host.c $repo/plan/ws141/tests/display-wait-host.c $repo/src/drivers/gpu/bcm2711/display-flip.c $repo/src/drivers/gpu/bcm2711/display-irq.c"
 for mode in ordinary sanitize; do
 	extra=
