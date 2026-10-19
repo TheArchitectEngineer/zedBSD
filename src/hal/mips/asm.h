@@ -50,6 +50,7 @@
 #define MIPS_STATUS_EXCEPTION_LEVEL	0x00000002
 #define MIPS_STATUS_ERROR_LEVEL		0x00000004
 #define MIPS_STATUS_MODE_MASK		0x00000018
+#define MIPS_STATUS_MODE_USER		0x00000010
 #define MIPS_STATUS_INTERRUPT_MASK	0x0000ff00
 #define MIPS_STATUS_BOOT_VECTORS	0x00400000
 #define MIPS_STATUS_FLOAT_64		0x04000000
@@ -66,6 +67,51 @@
 #define MIPS_CAUSE_CODE_SHIFT		2
 #define MIPS_CAUSE_CODE_MASK		0x1f
 #define MIPS_CAUSE_BRANCH_DELAY		0x80000000
+#define MIPS_CAUSE_PENDING_MASK		0x0000ff00
+
+/*
+ * The interrupt lines of Cause.IP and Status.IM the malta board wires:
+ * the PIIX4's 8259 pair on hardware line 0 (IP2) and the timer of
+ * coprocessor 0 on hardware line 5 (IP7).
+ *
+ * Values referenced: MIPS32 Architecture for Programmers Volume III (IP2
+ * bit 10, IP7 bit 15); QEMU v10.0.11 target/mips/cpu.c (the IntCtl reset
+ * value 0xe0000000, IPTI 7) and hw/mips/malta.c (the 8259 output on the
+ * processor's interrupt 2).
+ */
+#define MIPS_INTERRUPT_BOARD		0x00000400
+#define MIPS_INTERRUPT_TIMER		0x00008000
+
+/*
+ * The exception codes of Cause.ExcCode the trap handling tells apart.
+ *
+ * Values referenced: MIPS32 Architecture for Programmers Volume III (Int
+ * 0, Mod 1, TLBL 2, TLBS 3, AdEL 4, AdES 5, Sys 8, Bp 9, RI 10, CpU 11,
+ * Ov 12, Tr 13, FPE 15).
+ */
+#define MIPS_EXCEPTION_INTERRUPT	0
+#define MIPS_EXCEPTION_TLB_MODIFIED	1
+#define MIPS_EXCEPTION_TLB_LOAD		2
+#define MIPS_EXCEPTION_TLB_STORE	3
+#define MIPS_EXCEPTION_ADDRESS_LOAD	4
+#define MIPS_EXCEPTION_ADDRESS_STORE	5
+#define MIPS_EXCEPTION_SYSTEM_CALL	8
+#define MIPS_EXCEPTION_BREAKPOINT	9
+#define MIPS_EXCEPTION_RESERVED		10
+#define MIPS_EXCEPTION_COPROCESSOR	11
+#define MIPS_EXCEPTION_OVERFLOW		12
+#define MIPS_EXCEPTION_TRAP		13
+#define MIPS_EXCEPTION_FLOAT		15
+
+/*
+ * The Cause field of the floating-point control and status register,
+ * whose bits raise an exception as soon as a write sets one together
+ * with its Enable bit.
+ *
+ * Values referenced: MIPS32 Architecture for Programmers Volume I (FCSR:
+ * Cause bits 12-17, Enables bits 7-11).
+ */
+#define MIPS_FCSR_CAUSE_MASK		0x0003f000
 #define MIPS_CONFIG_K0_MASK		0x00000007
 #define MIPS_CONFIG_K0_CACHED		3
 
@@ -93,6 +139,31 @@
 #define MIPS_VECTOR_REFILL64		0x080
 #define MIPS_VECTOR_CACHE_ERROR		0x100
 #define MIPS_VECTOR_GENERAL		0x180
+
+/*
+ * The trap frame, as offsets from its start: the 32 general registers,
+ * hi, lo, and the exception's EPC, Status, Cause and BadVAddr.  The trap
+ * entry places it above the 16-byte argument home of the C handler it
+ * calls; the whole takes 168 bytes, a multiple of eight.
+ */
+#define MIPS_FRAME_REGISTER_BYTES	4
+#define MIPS_FRAME_HI			128
+#define MIPS_FRAME_LO			132
+#define MIPS_FRAME_EXCEPTION_PC		136
+#define MIPS_FRAME_STATUS		140
+#define MIPS_FRAME_CAUSE		144
+#define MIPS_FRAME_BAD_ADDRESS		148
+#define MIPS_FRAME_SIZE			152
+#define MIPS_TRAP_STACK_BYTES		(MIPS_ARGUMENT_HOME_SIZE + MIPS_FRAME_SIZE)
+
+/*
+ * The words mips_task_dispatch() keeps on a stack it leaves: s0 to s7,
+ * fp and ra, and two words that keep the stack eight-byte aligned with a
+ * free home slot.
+ */
+#define MIPS_DISPATCH_WORDS		12
+#define MIPS_DISPATCH_FP		8
+#define MIPS_DISPATCH_RA		9
 
 /* The bytes of the boot stack, which ends with the image's bss. */
 #define MIPS_BOOT_STACK_SIZE		16384

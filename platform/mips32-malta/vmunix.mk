@@ -38,15 +38,18 @@ MIPS32_LTO_LDFLAGS := -mllvm -mattr=+noabicalls -mllvm -mips-ssection-threshold=
 
 MIPS32_BSP := src/hal/mips/bsp-malta
 MIPS32_HAL_C := src/hal/mips/cmain.c src/hal/mips/lib.c \
-	$(MIPS32_BSP)/board.c $(MIPS32_BSP)/pci.c $(MIPS32_BSP)/framebuffer.c \
+	src/hal/mips/int.c src/hal/mips/clock.c src/hal/mips/task.c \
+	$(MIPS32_BSP)/board.c $(MIPS32_BSP)/irq.c \
+	$(MIPS32_BSP)/pci.c $(MIPS32_BSP)/framebuffer.c \
 	$(MIPS32_BSP)/cons.c $(MIPS32_BSP)/font.c
-MIPS32_HAL_S := src/hal/mips/locore.S src/hal/mips/vectors.S
+MIPS32_HAL_S := src/hal/mips/locore.S src/hal/mips/vectors.S src/hal/mips/trap.S \
+	src/hal/mips/dispatch.S
 MIPS32_HAL_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(MIPS32_HAL_C)) \
 	$(patsubst %.S,$(BUILD)/%.o,$(MIPS32_HAL_S))
 
-# The image is the HAL alone until the trap handling, the tables and the
-# tick are in place: it links no kernel object, and the platform supplies
-# the one kernel symbol the HAL reads.
+# The image is the HAL alone until the page tables are in place: it links
+# no kernel object, and the platform supplies the one kernel symbol the
+# HAL reads.
 MIPS32_STANDALONE_SOURCES := $(MIPS32_PLATFORM)/standalone.c
 MIPS32_STANDALONE_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(MIPS32_STANDALONE_SOURCES))
 
@@ -72,10 +75,11 @@ $(BUILD)/vmunix: $(MIPS32_VMUNIX_OBJS) $(MIPS32_PLATFORM)/vmunix.ld
 	@test -z "$$($(MIPS32_NM) -u $@ | $(AWK) '$$1 == "U"')" || \
 		{ $(MIPS32_NM) -u $@; exit 1; }
 	@# No small-data section and no instruction through gp: nothing sets
-	@# gp up.  (The linker keeps the two reserved words of its .got.)
+	@# gp up.  (The linker keeps the two reserved words of its .got, and the
+	@# trap frame saves and restores gp on the stack like any register.)
 	@test -z "$$($(MIPS32_READELF) -S -W $@ | $(AWK) '/ \.(sdata|sbss|lit4|lit8)( |$$)/')" || \
 		{ $(MIPS32_READELF) -S -W $@; echo "vmunix has a small-data section"; exit 1; }
-	@test -z "$$($(MIPS32_OBJDUMP) -d $@ | $(AWK) '/[$$]gp/')" || \
+	@test -z "$$($(MIPS32_OBJDUMP) -d $@ | $(AWK) '/[$$]gp/ && !/[sl]w[ \t]+[$$]gp, 0x[0-9a-f]+\([$$]sp\)/')" || \
 		{ echo "vmunix has an instruction that uses gp"; exit 1; }
 
 $(BUILD)/src/hal/mips/%.o: src/hal/mips/%.c

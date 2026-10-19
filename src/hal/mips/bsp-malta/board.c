@@ -45,6 +45,16 @@
 #define BOARD_LOW_MEMORY_MAX	0x10000000U
 
 /*
+ * The rate of coprocessor 0's Count: the processor's 320 MHz clock
+ * divided by the two cycles of CCRes.
+ *
+ * Values referenced: QEMU v10.0.11 hw/mips/malta.c (cpu-refclk, 320 MHz)
+ * and target/mips/cpu-defs.c.inc (24Kf, CCRes 2); target/mips/cpu.c
+ * (mips_cp0_period_set, Count at the clock divided by CCRes).
+ */
+#define BOARD_COUNT_FREQUENCY	160000000U
+
+/*
  * The words the loader puts before the command line for an initial RAM
  * disk.
  *
@@ -204,6 +214,17 @@ mips_board_describe(
 	/* The display, when it shows. */
 	if (board_display_on)
 		malta_framebuffer_describe();
+}
+
+/*
+ * Reports the rate of coprocessor 0's Count on this board.
+ */
+uint32_t
+mips_board_count_frequency(
+	void)
+{
+	/* Succeeded: the emulated board's fixed rate. */
+	return BOARD_COUNT_FREQUENCY;
 }
 
 /*
