@@ -1,6 +1,6 @@
 --- a/Configurations/50-zedbsd.conf
 +++ b/Configurations/50-zedbsd.conf
-@@ -0,0 +1,52 @@
+@@ -0,0 +1,58 @@
 +# -*- mode: perl; -*-
 +# zedBSD cross-build target for OpenSSL.
 +#
@@ -43,6 +43,12 @@
 +        lib_cppflags     => add("-DL_ENDIAN"),
 +        bn_ops           => "SIXTY_FOUR_BIT_LONG",
 +        asm_arch         => 'aarch64',
++        perlasm_scheme   => "linux64",
++    },
++    "zedbsd-riscv64" => {
++        inherit_from     => [ "zedbsd-generic" ],
++        lib_cppflags     => add("-DL_ENDIAN"),
++        bn_ops           => "SIXTY_FOUR_BIT_LONG RC4_CHAR",
 +        perlasm_scheme   => "linux64",
 +    },
 +    "zedbsd-x86" => {

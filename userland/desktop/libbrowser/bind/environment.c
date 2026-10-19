@@ -37,6 +37,8 @@
 #define ENVIRONMENT_MACHINE	"x86_64"
 #elif defined(__aarch64__)
 #define ENVIRONMENT_MACHINE	"aarch64"
+#elif defined(__riscv) && __riscv_xlen == 64
+#define ENVIRONMENT_MACHINE	"riscv64"
 #elif defined(__i386__)
 #define ENVIRONMENT_MACHINE	"i686"
 #else
