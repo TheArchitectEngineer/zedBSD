@@ -30,5 +30,5 @@
 | p003 | generic の前段（登録・優先度・行の分割）と host 試験 | p002b、D1 | cleared 待ち（[phase.md](phase003/phase.md)、host 試験 PASS・build warning 0、P1 q1312） |
 | p004 | firmware fb の backend、text の console と出力の道、8042 の共有と sun4u の poll、evdev、sun4u.c | p003、D2・D5・D6 | cleared 待ち（[phase.md](phase004/phase.md)、build warning 0・host 試験 PASS、P1 q1314。T1 の依頼あり、sparcv9 の差分はユーザーの確認の後に merge） |
 | p005 | userland の config・Makefile・vmunix.mk・libX11 の BE、build（warning 0） | p004、D6 | cleared 待ち（[phase.md](phase005/phase.md)、build warning 0・host 試験 PASS、P1 q1318。T1 の依頼文は p006 用、sparcv9 の差分はユーザーの確認の後に merge） |
-| p006 | T1 の試験（sun4u 8・32 bpp・既定の X、色の画素、mouse、回帰） | p005（boot-test の `QEMU_EXTRA`・`mouse:`・`BOOT_TEXT_ORIGINS` は main に入済み） | planned |
+| p006 | T1 の試験（sun4u 8・32 bpp・既定の X、色の画素、mouse、回帰）。T1-746 (2) の client が出ない件の観察 | p005（boot-test の `QEMU_EXTRA`・`mouse:`・`BOOT_TEXT_ORIGINS` は main に入済み） | uncleared（[phase.md](phase006/phase.md)、q1325 P1: code の読みで byte 順の誤りは無し、T1 の観察の依頼文あり） |
 | p007 | 規約の全文の見直し | p006 | planned |
