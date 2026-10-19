@@ -25,12 +25,14 @@
 #define VF2_DMAC_RESETS		2U
 
 /*
- * The controller once brought up, and its node.
+ * The controller once brought up.
  *
  * Set by the first successful drv_vf2_dmac_get() during the board's
  * single-threaded bring-up and never cleared.
  */
 static struct drv_dw_axi_dmac *vf2_dmac;
+
+/* The controller's node in the device tree; set with vf2_dmac. */
 static uint32_t vf2_dmac_node;
 
 static int start_clock(const struct drv_fdt *fdt, uint32_t node, const char *name);

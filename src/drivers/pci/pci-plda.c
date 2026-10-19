@@ -158,6 +158,9 @@
 /* The space below 4 GiB, where the BARs are placed. */
 #define PLDA_32BIT_LIMIT		(UINT64_C(1) << 32)
 
+/* Marks a parameter that an operation of the PCI core passes but this host does not need. */
+#define UNUSED_PARAMETER(parameter)	((void)(parameter))
+
 /*
  * One pin's entry in the host's table.
  *
@@ -275,6 +278,8 @@ drv_pci_plda_describe(
 	enabled = drv_fdt_node_enabled(fdt, node);
 	if (!enabled)
 		return ENODEV;
+
+	/* Starts with an empty configuration: no segment, window or pin. */
 	kern_memset(config, 0, sizeof(*config));
 
 	/* Finds the configuration window and the register block by name, or in that order. */
@@ -353,10 +358,12 @@ drv_pci_plda_start(
 	if (error != 0)
 		return error;
 
-	/* Allocates the host record with every pin empty and masked. */
+	/* Allocates the host record. */
 	host = kern_malloc(sizeof(*host));
 	if (host == NULL)
 		return ENOMEM;
+
+	/* Starts the record with the configuration, the board and every pin empty and masked. */
 	kern_memset(host, 0, sizeof(*host));
 	host->config = *config;
 	host->board = *board;
@@ -368,6 +375,8 @@ drv_pci_plda_start(
 		kern_free(host);
 		return error;
 	}
+
+	/* Keeps the register block's mapping. */
 	host->registers = registers;
 
 	/* Maps the configuration space of the root port's bus and the one below. */
@@ -377,6 +386,8 @@ drv_pci_plda_start(
 		kern_free(host);
 		return error;
 	}
+
+	/* Keeps the configuration space's mapping and reports where the block is. */
 	host->config_space = config_space;
 	kern_logf("pcie%u: PLDA at %llx, configuration %llx, interrupt %u\n",
 		  config->segment,
@@ -512,6 +523,8 @@ describe_windows(
 		space = (flags >> FDT_PCI_SPACE_SHIFT) & FDT_PCI_SPACE_MASK;
 		if (space != FDT_PCI_SPACE_MEMORY32 && space != FDT_PCI_SPACE_MEMORY64)
 			continue;
+
+		/* Refuses more memory windows than the configuration holds. */
 		if (config->window_count == DRV_PCI_PLDA_WINDOW_MAX)
 			return ENOSPC;
 
@@ -527,6 +540,8 @@ describe_windows(
 		error = drv_fdt_translate(fdt, node, parent_address, &window->cpu_base);
 		if (error != 0)
 			return error;
+
+		/* Keeps the window. */
 		config->window_count++;
 	}
 
@@ -592,6 +607,7 @@ describe_interrupts(
 		error = drv_fdt_find_phandle(fdt, phandle, &controller);
 		if (error != 0)
 			return error;
+		/* Refuses a controller whose specifier is not one cell, or an entry that runs off the map. */
 		controller_address_cells = drv_fdt_node_cells(fdt, controller, "#address-cells", 0);
 		controller_interrupt_cells = drv_fdt_node_cells(fdt, controller, "#interrupt-cells", 0);
 		if (controller_interrupt_cells != 1U)
@@ -796,6 +812,7 @@ report_endpoint(
 	struct drv_pci_address address;
 	const struct drv_pci_plda_window *window;
 	volatile uint8_t *probe;
+	uint32_t buses;
 	uint32_t identity;
 	uint32_t class_code;
 	uint32_t command;
@@ -821,10 +838,10 @@ report_endpoint(
 	host->link_up = true;
 	kern_memset(&address, 0, sizeof(address));
 	address.bus = PLDA_ROOT_BUS;
-	(void)host_config_write(host, &address, PCI_BRIDGE_BUSES, 4U,
-				(uint32_t)PLDA_ROOT_BUS |
-				((uint32_t)PLDA_SECONDARY_BUS << 8) |
-				((uint32_t)PLDA_SECONDARY_BUS << 16));
+	buses = (uint32_t)PLDA_ROOT_BUS;
+	buses |= (uint32_t)PLDA_SECONDARY_BUS << 8;
+	buses |= (uint32_t)PLDA_SECONDARY_BUS << 16;
+	(void)host_config_write(host, &address, PCI_BRIDGE_BUSES, 4U, buses);
 
 	/* Reads the endpoint's identity, kind, decoding and first BAR. */
 	address.bus = PLDA_SECONDARY_BUS;
@@ -839,14 +856,27 @@ report_endpoint(
 	(void)host_config_read(host, &address, PCI_BAR0, 4U, &bar);
 	if ((bar & PCI_BAR_TYPE) == PCI_BAR_TYPE_64)
 		(void)host_config_read(host, &address, PCI_BAR0 + 4U, 4U, &bar_high);
+
+	/*
+	 * Closes the bus below again until the link is trained, and keeps the
+	 * class code's upper three bytes.
+	 */
 	host->link_up = false;
 	class_code >>= 8;
+
+	/* Reports a live link with no endpoint behind it. */
 	if ((identity & 0xffffU) == 0xffffU) {
 		kern_logf("pcie%u: firmware left the link up with no endpoint\n", host->config.segment);
 		return;
 	}
+
+	/* Reports the endpoint the firmware left. */
 	kern_logf("pcie%u: firmware left %04x:%04x class %06x, command %04x\n",
-		  host->config.segment, identity & 0xffffU, identity >> 16, class_code, command);
+		  host->config.segment,
+		  identity & 0xffffU,
+		  identity >> 16,
+		  class_code,
+		  command);
 
 	/* Only a decoding USB or NVMe controller has a state worth reading. */
 	if (class_code != PCI_CLASS_XHCI && class_code != PCI_CLASS_NVME)
@@ -867,9 +897,11 @@ report_endpoint(
 		break;
 	}
 
+	/* Reports a BAR that lies outside every window, which cannot be read. */
 	if (cpu_address == 0) {
 		kern_logf("pcie%u: firmware's BAR %llx is outside the windows\n",
-			  host->config.segment, (unsigned long long)bus_address);
+			  host->config.segment,
+			  (unsigned long long)bus_address);
 		return;
 	}
 
@@ -884,12 +916,16 @@ report_endpoint(
 		value = kern_mmio_read8(probe);
 		value = kern_mmio_read32(probe + value + XHCI_USBSTS);
 		kern_logf("pcie%u: xHCI USBSTS %08x, HCHalted %u\n",
-			  host->config.segment, value, value & XHCI_HALTED);
+			  host->config.segment,
+			  value,
+			  value & XHCI_HALTED);
 	} else {
 		value = kern_mmio_read32(probe + NVME_CC);
 		ready = kern_mmio_read32(probe + NVME_CSTS);
 		kern_logf("pcie%u: NVMe CC.EN %u, CSTS.RDY %u\n",
-			  host->config.segment, value & NVME_ENABLE, ready & NVME_ENABLE);
+			  host->config.segment,
+			  value & NVME_ENABLE,
+			  ready & NVME_ENABLE);
 	}
 
 	/* Releases the probe's mapping. */
@@ -1145,6 +1181,7 @@ assign_resources(
 {
 	const struct drv_pci_plda_window *window;
 	struct drv_pci_address address;
+	uint32_t buses;
 	bool multifunction;
 	unsigned function;
 	unsigned index;
@@ -1160,6 +1197,7 @@ assign_resources(
 		break;
 	}
 
+	/* Refuses a host without such a window; the BARs start at its base. */
 	if (host->bar_window == NULL)
 		return ENOSPC;
 	host->window_next = host->bar_window->pci_base;
@@ -1167,10 +1205,10 @@ assign_resources(
 	/* Makes bus 1 the root port's secondary and subordinate bus. */
 	kern_memset(&address, 0, sizeof(address));
 	address.bus = PLDA_ROOT_BUS;
-	(void)host_config_write(host, &address, PCI_BRIDGE_BUSES, 4U,
-				(uint32_t)PLDA_ROOT_BUS |
-				((uint32_t)PLDA_SECONDARY_BUS << 8) |
-				((uint32_t)PLDA_SECONDARY_BUS << 16));
+	buses = (uint32_t)PLDA_ROOT_BUS;
+	buses |= (uint32_t)PLDA_SECONDARY_BUS << 8;
+	buses |= (uint32_t)PLDA_SECONDARY_BUS << 16;
+	(void)host_config_write(host, &address, PCI_BRIDGE_BUSES, 4U, buses);
 
 	/* Places the BARs of every function of the device on bus 1. */
 	address.bus = PLDA_SECONDARY_BUS;
@@ -1227,7 +1265,10 @@ assign_function(
 		*multifunction = true;
 	if ((header & PCI_HEADER_LAYOUT) != PCI_HEADER_ENDPOINT) {
 		kern_logf("pcie%u: %02x:%02x.%u is not an endpoint, left unassigned\n",
-			  host->config.segment, address->bus, address->device, address->function);
+			  host->config.segment,
+			  address->bus,
+			  address->device,
+			  address->function);
 		return 0;
 	}
 
@@ -1315,7 +1356,11 @@ assign_bar(
 	    placed > window_end ||
 	    size > window_end - placed) {
 		kern_logf("pcie%u: BAR%u of %02x:%02x.%u does not fit the window\n",
-			  host->config.segment, index, address->bus, address->device, address->function);
+			  host->config.segment,
+			  index,
+			  address->bus,
+			  address->device,
+			  address->function);
 		return ENOSPC;
 	}
 
@@ -1326,9 +1371,16 @@ assign_bar(
 
 	/* Records the space as used. */
 	host->window_next = placed + size;
+
+	/* Reports where the BAR went. */
 	kern_logf("pcie%u: %02x:%02x.%u BAR%u at %llx (%llu bytes)\n",
-		  host->config.segment, address->bus, address->device, address->function, index,
-		  (unsigned long long)placed, (unsigned long long)size);
+		  host->config.segment,
+		  address->bus,
+		  address->device,
+		  address->function,
+		  index,
+		  (unsigned long long)placed,
+		  (unsigned long long)size);
 
 	/* Succeeded: the BAR decodes its place in the window. */
 	return 0;
@@ -1397,9 +1449,8 @@ host_map_bar(
 	void *address;
 	int error;
 
-	/* Every BAR of this host is mapped the same way, whatever the flags ask. */
-	(void)device;
-	(void)flags;
+	UNUSED_PARAMETER(device);
+	UNUSED_PARAMETER(flags);
 
 	/* Refuses an I/O BAR, an empty one and missing storage. */
 	host = context;
@@ -1451,7 +1502,7 @@ host_unmap_bar(
 	void *context,
 	struct drv_pci_mapping *mapping)
 {
-	(void)context;
+	UNUSED_PARAMETER(context);
 
 	/* Ignores storage that holds no mapping of ours. */
 	if (mapping == NULL || mapping->private_data[0] != 1U)
@@ -1551,10 +1602,10 @@ host_free_irqs(
 	struct drv_pci_irq *irqs,
 	unsigned count)
 {
-	(void)context;
-	(void)device;
-	(void)irqs;
-	(void)count;
+	UNUSED_PARAMETER(context);
+	UNUSED_PARAMETER(device);
+	UNUSED_PARAMETER(irqs);
+	UNUSED_PARAMETER(count);
 }
 
 /*
@@ -1637,6 +1688,8 @@ host_intx_disestablish(
 		spin_unlock_irqrestore(&host->lock, enabled);
 		return EINVAL;
 	}
+
+	/* Keeps the enabled pins to put back if the drain times out. */
 	enabled_before = host->enabled_pins;
 	host->enabled_pins &= ~(1U << (vector - 1U));
 	write_interrupt_mask(host);
@@ -1656,25 +1709,33 @@ host_intx_disestablish(
 
 		/* Drained: no hart runs the line and none will. */
 		if (in_flight == 0)
-			return 0;
+			break;
 
 		/* Lets the other hart finish. */
 		kern_usleep_range(PLDA_DRAIN_POLL_US, PLDA_DRAIN_POLL_US);
 	}
 
-	/* Puts the entry and the pin back as they were before the call. */
-	enabled = spin_lock_irqsave(&host->lock);
+	/*
+	 * Puts the entry and the pin back as they were before the call when an
+	 * interrupt did not come back within the bound.
+	 */
+	if (in_flight != 0) {
+		enabled = spin_lock_irqsave(&host->lock);
 
-	pin->run = run;
-	pin->line = line;
-	host->enabled_pins = enabled_before;
-	write_interrupt_mask(host);
+		pin->run = run;
+		pin->line = line;
+		host->enabled_pins = enabled_before;
+		write_interrupt_mask(host);
 
-	spin_unlock_irqrestore(&host->lock, enabled);
+		spin_unlock_irqrestore(&host->lock, enabled);
 
-	/* Failed: an interrupt did not come back within the bound. */
-	kern_logf("pcie%u: pin %u still running after a second\n", host->config.segment, vector);
-	return EBUSY;
+		/* Reports the pin whose interrupt did not come back. */
+		kern_logf("pcie%u: pin %u still running after a second\n", host->config.segment, vector);
+		return EBUSY;
+	}
+
+	/* Succeeded: the entry is empty and no interrupt runs the line. */
+	return 0;
 }
 
 /* Stops a pin from interrupting; called with interrupts off. */
@@ -1764,7 +1825,9 @@ host_interrupt(
 	unsigned vector;
 	void *line;
 
-	(void)irq;
+	UNUSED_PARAMETER(irq);
+
+	/* Takes the host the line was registered with. */
 	host = argument;
 
 	/* Reads what the block raised. */
@@ -1772,6 +1835,7 @@ host_interrupt(
 
 	/* Runs each raised pin that is enabled and owned by a line. */
 	for (vector = 1; vector <= DRV_PCI_PLDA_INTX_COUNT; vector++) {
+		/* Skips a pin the status did not raise. */
 		pin_bit = 1U << (PLDA_INTERRUPT_PIN_SHIFT + vector - 1U);
 		if ((status & pin_bit) == 0)
 			continue;

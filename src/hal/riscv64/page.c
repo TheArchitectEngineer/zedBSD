@@ -33,25 +33,30 @@ extern char __kernel_vma_start[];
 extern char __kernel_vma_end[];
 
 /*
- * One bit per page of the span: set in page_bitmap when the page is in use
- * or not available, and in reserved_bitmap when it was never available.
- * Kept under pmem_lock after boot.
+ * One bit per page of the span, set when the page is in use or not
+ * available.  Kept under pmem_lock after boot.
  */
 static uint32_t page_bitmap[PAGE_BITMAP_WORDS];
+
+/*
+ * One bit per page of the span, set when the page was never available, so
+ * a free cannot return it.  Kept under pmem_lock after boot.
+ */
 static uint32_t reserved_bitmap[PAGE_BITMAP_WORDS];
 
 /*
- * The span's first physical address and its length in pages.  Set once by
- * riscv64_page_init() before any allocation and constant afterwards.
+ * The span's first physical address.  Set once by riscv64_page_init()
+ * before any allocation and constant afterwards, like ram_pages.
  */
 static uint64_t ram_base;
+
+/* The span's length in pages, set with ram_base. */
 static uint32_t ram_pages;
 
-/*
- * The pages that were never available and the pages allocated now, for
- * the memory statistics.  Kept under pmem_lock.
- */
+/* The pages that were never available, for the memory statistics.  Kept under pmem_lock. */
 static uint32_t reserved_pages;
+
+/* The pages allocated now, for the memory statistics.  Kept under pmem_lock. */
 static uint32_t allocated_pages;
 
 /*

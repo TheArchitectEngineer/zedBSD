@@ -124,6 +124,8 @@ drv_vf2_mmc_attach(
 		config.card_present = card_present;
 		config.context = &vf2_mmc_card_detect;
 	}
+
+	/* Names the slot's disk mmcblk0. */
 	config.unit = VF2_MMC_UNIT;
 
 	/* Brings the card up and publishes it. */
@@ -372,6 +374,8 @@ describe_sample_phase(
 		kern_logf("vf2-mmc: sample phase %u, sysreg unreadable (%d)\n", phase, error);
 		return;
 	}
+
+	/* Takes the phase's bits out of the field. */
 	field = (field & arguments[2]) >> arguments[1];
 
 	/* Succeeded: logs both. */

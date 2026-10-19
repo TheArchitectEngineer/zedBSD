@@ -99,10 +99,12 @@ static struct disk *ramdisk;
 
 /*
  * The device tree, kept once probe_soc() has brought the SoC's blocks up
- * from it; soc_ready is nonzero from then on.  The tree's blob is the
- * hardware layer's and lives as long as the system.
+ * from it.  The tree's blob is the hardware layer's and lives as long as
+ * the system.
  */
 static struct drv_fdt soc_tree;
+
+/* Nonzero once probe_soc() has filled soc_tree; never cleared. */
 static int soc_ready;
 
 /*

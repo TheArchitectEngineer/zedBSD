@@ -64,8 +64,10 @@ static struct drv_dw_axi_dmac *dmatest_controller;
  */
 static unsigned dmatest_busy;
 
-/* The last answer and its length; written only by the reader holding dmatest_busy. */
+/* The last answer; written only by the reader holding dmatest_busy. */
 static char dmatest_text[DMATEST_TEXT];
+
+/* The bytes of dmatest_text the last answer used; written with it. */
 static size_t dmatest_length;
 
 static ssize_t dmatest_read(struct file *file, void *buffer, size_t size);
@@ -138,11 +140,13 @@ dmatest_read(
 	if (!taken)
 		return -EBUSY;
 
-	/* A read from the start runs a new check. */
+	/* Refuses a negative offset, letting the next reader in. */
 	if (file->f_offset < 0) {
 		__atomic_store_n(&dmatest_busy, 0U, __ATOMIC_RELEASE);
 		return -EINVAL;
 	}
+
+	/* A read from the start runs a new check. */
 	if (file->f_offset == 0)
 		dmatest_length = run_check();
 
@@ -156,6 +160,8 @@ dmatest_read(
 			chunk = size;
 		kern_memcpy(buffer, dmatest_text + offset, chunk);
 	}
+
+	/* Moves the file's offset past the bytes read. */
 	file->f_offset = (off_t)(offset + chunk);
 
 	/* Lets the next reader in. */
@@ -185,15 +191,18 @@ run_check(
 
 	/* Takes a channel. */
 	error = drv_dw_axi_dmac_channel_get(dmatest_controller, &memory.channel);
-	if (error != 0)
-		return put_failure("channel", error);
+	if (error != 0) {
+		length = put_failure("channel", error);
+		return length;
+	}
 
 	/* Takes the run from the controller's DMA owner. */
 	device = drv_dw_axi_dmac_dma_device(dmatest_controller);
 	error = drv_dma_alloc_coherent(device, DRV_VF2_DMATEST_REGION, DRV_VF2_DMATEST_REGION, &run);
 	if (error != 0) {
 		drv_dw_axi_dmac_channel_put(memory.channel);
-		return put_failure("alloc", error);
+		length = put_failure("alloc", error);
+		return length;
 	}
 
 	/* The alias needs the run's physical address: the device's must be it. */
@@ -201,16 +210,20 @@ run_check(
 	if (direct != run.address) {
 		drv_dma_free_coherent(device, &run);
 		drv_dw_axi_dmac_channel_put(memory.channel);
-		return put_failure("physical", EINVAL);
+		length = put_failure("physical", EINVAL);
+		return length;
 	}
 
 	/* Maps the run's 2 MiB of the uncached system port. */
-	error = kern_device_map(run.device_address + DMATEST_ALIAS_OFFSET, DRV_VF2_DMATEST_REGION, KERN_DEVICE_UNCACHED,
+	error = kern_device_map(run.device_address + DMATEST_ALIAS_OFFSET,
+				DRV_VF2_DMATEST_REGION,
+				KERN_DEVICE_UNCACHED,
 				&alias);
 	if (error != 0) {
 		drv_dma_free_coherent(device, &run);
 		drv_dw_axi_dmac_channel_put(memory.channel);
-		return put_failure("alias", error);
+		length = put_failure("alias", error);
+		return length;
 	}
 
 	/* The memory the procedure sees. */
@@ -309,7 +322,9 @@ memory_copy(
 
 	/* Copies with the device's addresses. */
 	memory = context;
-	error = drv_dw_axi_dmac_copy(memory->channel, memory->device_address + destination, memory->device_address + source,
+	error = drv_dw_axi_dmac_copy(memory->channel,
+				     memory->device_address + destination,
+				     memory->device_address + source,
 				     size);
 	if (error != 0)
 		return error;
@@ -329,7 +344,10 @@ put_failure(
 	int length;
 
 	/* One line naming what failed. */
-	length = kern_snprintf(dmatest_text, sizeof(dmatest_text), "DMATEST " DMATEST_MASTER " FAIL %s error=%d\n", reason,
+	length = kern_snprintf(dmatest_text,
+			       sizeof(dmatest_text),
+			       "DMATEST " DMATEST_MASTER " FAIL %s error=%d\n",
+			       reason,
 			       error);
 	if (length < 0)
 		length = 0;

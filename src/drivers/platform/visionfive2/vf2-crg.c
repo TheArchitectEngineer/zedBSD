@@ -1599,6 +1599,8 @@ reset_change(
 	} else {
 		contents &= ~bit;
 	}
+
+	/* Writes the register back with the reset line changed. */
 	kern_mmio_write32(address, contents);
 
 	spin_unlock_irqrestore(&crg_lock, irq);

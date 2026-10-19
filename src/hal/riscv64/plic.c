@@ -49,13 +49,16 @@
 #define PLIC_THRESHOLD_CLOSED	7U
 
 /*
- * The controller's registers through the device window, its number of
- * sources and the boot hart's supervisor context, which every source is
- * routed to.  Set by riscv64_plic_init() on the boot hart before any
- * other hart starts, and constant afterwards.
+ * The controller's registers through the device window.  It and the two
+ * variables below are set by riscv64_plic_init() on the boot hart before
+ * any other hart starts, and constant afterwards.
  */
 static volatile uint8_t *plic_registers;
+
+/* The controller's number of interrupt sources. */
 static uint32_t plic_sources;
+
+/* The boot hart's supervisor context, which every source is routed to. */
 static unsigned plic_boot_context;
 
 /*

@@ -1044,11 +1044,12 @@ send_command(
 			return error;
 	}
 
-	/* Describes the data, and empties the FIFO of whatever an earlier transfer left. */
+	/* Describes the data of a command that moves any. */
 	if (command->length != 0) {
 		write_register(unit, DW_MMC_BYTE_COUNT, command->length);
 		write_register(unit, DW_MMC_BLOCK_SIZE, command->block_size);
 
+		/* Empties the FIFO of whatever an earlier transfer left. */
 		error = reset_controller(unit, DW_MMC_CONTROL_FIFO_RESET);
 		if (error != 0)
 			return error;
@@ -1234,6 +1235,8 @@ move_data(
 		} else {
 			read_fifo(unit, data, bytes);
 		}
+
+		/* Moves past the bytes the FIFO took or gave. */
 		data += bytes;
 		remaining -= bytes;
 
@@ -1699,6 +1702,8 @@ decode_cid(
 			character = '.';
 		unit->card.product[index] = (char)character;
 	}
+
+	/* Terminates the name. */
 	unit->card.product[5] = '\0';
 
 	/* Replaces an OEM character that cannot be printed. */
@@ -1777,6 +1782,7 @@ configure_bus(
 		if (error != 0)
 			return error;
 
+		/* Then widens the controller's side. */
 		error = set_bus_width(unit, 4U);
 		if (error != 0)
 			return error;
@@ -1805,6 +1811,7 @@ configure_bus(
 		/* Gives the card eight clocks at the old rate to finish the switch. */
 		pause_microseconds(25ULL);
 
+		/* Moves the card clock to the higher rate. */
 		error = set_card_clock(unit, target);
 		if (error != 0)
 			return error;

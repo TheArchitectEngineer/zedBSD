@@ -187,6 +187,8 @@ drv_vf2_dmatest_format(
 		put_number(&out, result->mismatches, 10U);
 		break;
 	}
+
+	/* Ends the line. */
 	put_string(&out, "\n");
 
 	/* Terminates the text, cut to the capacity. */

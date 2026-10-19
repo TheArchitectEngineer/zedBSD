@@ -1554,6 +1554,8 @@ configure_queues(
 	} else {
 		mode |= EQOS_MTL_RX_STORE_FORWARD;
 	}
+
+	/* Writes the receive queue's new mode. */
 	write_register(device, EQOS_MTL_RX_MODE, mode);
 
 	/* Finds the transmit FIFO's size: the board's, else the controller's. */
@@ -1571,6 +1573,8 @@ configure_queues(
 	} else {
 		mode |= EQOS_MTL_TX_STORE_FORWARD;
 	}
+
+	/* Writes the transmit queue's new mode with the queue enabled. */
 	mode |= EQOS_MTL_TX_QUEUE_ENABLED;
 	write_register(device, EQOS_MTL_TX_MODE, mode);
 
@@ -1901,21 +1905,23 @@ check_link(
 						     device->config.phy_address,
 						     &device->config.yt8531,
 						     link.speed_mbps);
-			if (error != 0)
+			if (error != 0) {
 				kern_logf("dw-eqos: %s PHY clock for %u Mbps failed (%d)\n",
 					  device->config.name,
 					  link.speed_mbps,
 					  error);
+			}
 		}
 
 		/* Lets the board move its transmit clock. */
 		if (device->config.set_speed != NULL) {
 			error = device->config.set_speed(device->config.context, link.speed_mbps);
-			if (error != 0)
+			if (error != 0) {
 				kern_logf("dw-eqos: %s board clock for %u Mbps failed (%d)\n",
 					  device->config.name,
 					  link.speed_mbps,
 					  error);
+			}
 		}
 	}
 
@@ -1929,11 +1935,13 @@ check_link(
 
 	spin_unlock_irqrestore(&device->lock, irq);
 
-	/* Announces the carrier and writes the change to the boot log. */
+	/* Announces the carrier, which a link of any speed carries. */
 	carrier = 0;
 	if (link.speed_mbps != 0)
 		carrier = 1;
 	(void)net_device_set_carrier(device->net, (int)carrier);
+
+	/* Writes the change to the boot log. */
 	if (carrier) {
 		kern_logf("dw-eqos: %s link up %u Mbps %s duplex\n",
 			  device->config.name,

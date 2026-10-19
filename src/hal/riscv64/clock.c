@@ -25,11 +25,13 @@
 #define CLOCK_TICK_WAIT_DIVISOR	10U
 
 /*
- * The counter's frequency and the counter ticks between two scheduling
- * ticks.  The boot hart sets both once, before any other hart starts; a
- * zero frequency means the tick is not set up.
+ * The counter's frequency.  The boot hart sets it once, with
+ * timer_interval, before any other hart starts; zero means the tick is not
+ * set up.
  */
 static uint64_t timer_frequency;
+
+/* The counter ticks between two scheduling ticks, set with timer_frequency. */
 static uint64_t timer_interval;
 
 /*

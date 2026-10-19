@@ -54,17 +54,31 @@
 #define SBI_DBCN_WRITE_BYTE		2
 
 /*
- * The extensions the firmware has, as found by riscv64_sbi_probe().
+ * Nonzero when the firmware has the timer extension, which arms each
+ * hart's tick.
  *
- * Set once by the boot hart before any other hart starts and read without
- * a lock afterwards.  Zero means the extension is absent (or not probed
- * yet), which sends the console to the legacy call.
+ * This flag and the five below are found by riscv64_sbi_probe(), set once
+ * by the boot hart before any other hart starts and read without a lock
+ * afterwards.  Zero means the extension is absent or not probed yet.
  */
 static int sbi_has_time;
+
+/* Nonzero when the firmware has the IPI extension, which sends inter-hart interrupts. */
 static int sbi_has_ipi;
+
+/* Nonzero when the firmware has the remote fence extension, which flushes other harts' TLBs. */
 static int sbi_has_rfence;
+
+/* Nonzero when the firmware has the hart state management extension, which starts harts. */
 static int sbi_has_hsm;
+
+/* Nonzero when the firmware has the system reset extension. */
 static int sbi_has_srst;
+
+/*
+ * Nonzero when the firmware has the debug console extension, which the
+ * console prefers; zero sends the console to the legacy call.
+ */
 static int sbi_has_dbcn;
 
 /*

@@ -34,14 +34,19 @@
 #define FBCONS_GRID_HEIGHT	(RISCV64_CONSOLE_ROWS * RISCV64_FONT_HEIGHT)
 
 /*
- * The screen the console draws on, its grid's top-left pixel and the
- * sixteen colours as pixel values in the screen's format.  Written once by
- * riscv64_fbcons_attach() on the boot hart before any other hart runs and
- * read only afterwards, under the console's lock.
+ * The screen the console draws on.  It and the three variables below are
+ * written once by riscv64_fbcons_attach() on the boot hart before any
+ * other hart runs and read only afterwards, under the console's lock.
  */
 static struct riscv64_fbcons_screen fbcons_screen;
+
+/* The column of the grid's top-left pixel, which centres the grid on the screen. */
 static uint32_t fbcons_origin_x;
+
+/* The row of the grid's top-left pixel. */
 static uint32_t fbcons_origin_y;
+
+/* The sixteen colours as pixel values in the screen's format. */
 static uint32_t fbcons_colours[16];
 
 /*

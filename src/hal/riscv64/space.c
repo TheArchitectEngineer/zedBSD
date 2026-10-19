@@ -71,6 +71,11 @@ static uint64_t kernel_phys_start;
  * kernel_root_sealed says so from then on.
  */
 static uint64_t kernel_root[RISCV64_TABLE_ENTRIES] __attribute__((aligned(RISCV64_PAGE_SIZE)));
+
+/*
+ * Nonzero once riscv64_space_init() has written kernel_root's upper half,
+ * which is never written again from then on.  Written once by the boot hart.
+ */
 static int kernel_root_sealed;
 
 /*
@@ -92,12 +97,16 @@ static uint64_t *device_tables[RISCV64_DEVICE_ROOT_COUNT];
 static volatile unsigned kernel_table_lock;
 
 /*
- * Every user space that exists, the number the next one gets and how many
- * there are.  Kept under space_registry_lock; a space is looked up here
- * before its own lock is taken, so a destroyed space is never locked.
+ * Every user space that exists.  Kept under space_registry_lock; a space is
+ * looked up here before its own lock is taken, so a destroyed space is
+ * never locked.
  */
 static struct riscv64_space *space_registry;
+
+/* The number the next user space gets; kept under space_registry_lock, it starts at one. */
 static int next_space_id = 1;
+
+/* How many user spaces space_registry holds; kept under space_registry_lock. */
 static uint32_t space_count;
 
 /* Guards space_registry, next_space_id and space_count; zero when free. */

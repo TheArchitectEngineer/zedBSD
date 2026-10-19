@@ -75,6 +75,9 @@
 /* The space below 4 GiB, where the memory window must lie. */
 #define ECAM_32BIT_LIMIT		(UINT64_C(1) << 32)
 
+/* Marks a parameter that an operation of the PCI core passes but this host does not need. */
+#define UNUSED_PARAMETER(parameter)	((void)(parameter))
+
 /*
  * One host the driver has started.
  *
@@ -144,8 +147,10 @@ drv_pci_ecam_fdt_describe(
 	if (!enabled)
 		return ENODEV;
 
-	/* Reads where the configuration window is. */
+	/* Starts with an empty configuration: bus 0, no window and no route. */
 	kern_memset(config, 0, sizeof(*config));
+
+	/* Reads where the configuration window is. */
 	error = drv_fdt_reg(fdt, node, 0, &config->config_base, &config->config_size);
 	if (error != 0)
 		return error;
@@ -199,10 +204,12 @@ drv_pci_ecam_fdt_start(
 	if (buses > 256U - config->first_bus)
 		buses = 256U - config->first_bus;
 
-	/* Allocates the host record; the memory window is still empty. */
+	/* Allocates the host record. */
 	host = kern_malloc(sizeof(*host));
 	if (host == NULL)
 		return ENOMEM;
+
+	/* Starts the record with the configuration and the memory window still empty. */
 	kern_memset(host, 0, sizeof(*host));
 	host->config = *config;
 	host->bus_count = (unsigned)buses;
@@ -214,10 +221,13 @@ drv_pci_ecam_fdt_start(
 		kern_free(host);
 		return error;
 	}
+
+	/* Keeps the mapping and reports where the host is. */
 	host->window = window;
 	kern_logf("pci: ECAM host at %llx, buses %u-%u, memory %llx (%llu MiB)\n",
 		  (unsigned long long)config->config_base,
-		  config->first_bus, config->first_bus + host->bus_count - 1U,
+		  config->first_bus,
+		  config->first_bus + host->bus_count - 1U,
 		  (unsigned long long)config->memory_cpu_base,
 		  (unsigned long long)(config->memory_size >> 20));
 
@@ -303,6 +313,7 @@ describe_memory(
 	uint32_t space;
 	uint64_t parent_address;
 	uint64_t end;
+	bool found;
 	int error;
 
 	/* Reads the ranges and the widths of the parent's addresses and the sizes. */
@@ -318,6 +329,7 @@ describe_memory(
 		return ERANGE;
 
 	/* Takes the first 32-bit memory window. */
+	found = false;
 	entry_cells = FDT_PCI_ADDRESS_CELLS + parent_cells + size_cells;
 	for (entry = 0; (entry + 1U) * entry_cells * 4U <= length; entry++) {
 		/* Skips anything but 32-bit memory space. */
@@ -333,7 +345,9 @@ describe_memory(
 
 		/* Requires a non-empty window that 32-bit BARs can address. */
 		end = config->memory_pci_base + config->memory_size;
-		if (config->memory_size == 0 || end < config->memory_pci_base || end > ECAM_32BIT_LIMIT)
+		if (config->memory_size == 0 ||
+		    end < config->memory_pci_base ||
+		    end > ECAM_32BIT_LIMIT)
 			return ERANGE;
 
 		/* Moves the parent-bus address into the CPU's space. */
@@ -341,12 +355,17 @@ describe_memory(
 		if (error != 0)
 			return error;
 
-		/* Succeeded: the window is recorded. */
-		return 0;
+		/* The window is recorded; later ones are not used. */
+		found = true;
+		break;
 	}
 
-	/* Reports a host without a 32-bit memory window. */
-	return ENOENT;
+	/* Refuses a host without a 32-bit memory window. */
+	if (!found)
+		return ENOENT;
+
+	/* Succeeded: the window is recorded. */
+	return 0;
 }
 
 /*
@@ -401,6 +420,11 @@ describe_interrupts(
 		error = drv_fdt_find_phandle(fdt, phandle, &controller);
 		if (error != 0)
 			return error;
+		/*
+		 * Refuses a controller whose specifier is not one cell, an entry
+		 * that runs off the map, and more entries than the configuration
+		 * holds.
+		 */
 		controller_address_cells = drv_fdt_node_cells(fdt, controller, "#address-cells", 0);
 		controller_interrupt_cells = drv_fdt_node_cells(fdt, controller, "#interrupt-cells", 0);
 		if (controller_interrupt_cells != 1U)
@@ -561,6 +585,7 @@ assign_resources(
 	kern_memset(&address, 0, sizeof(address));
 	address.bus = (uint8_t)host->config.first_bus;
 	for (device = 0; device < 32U; device++) {
+		/* Starts at the device's function 0, not knowing yet whether it has more. */
 		address.device = (uint8_t)device;
 		multifunction = false;
 		for (function = 0; function < 8U; function++) {
@@ -613,7 +638,9 @@ assign_function(
 		*multifunction = true;
 	if ((header & PCI_HEADER_LAYOUT) != PCI_HEADER_ENDPOINT) {
 		kern_logf("pci: ECAM %02x:%02x.%u is not an endpoint, left unassigned\n",
-			  address->bus, address->device, address->function);
+			  address->bus,
+			  address->device,
+			  address->function);
 		return 0;
 	}
 
@@ -701,7 +728,10 @@ assign_bar(
 	    placed > window_end ||
 	    size > window_end - placed) {
 		kern_logf("pci: ECAM BAR%u of %02x:%02x.%u does not fit the window\n",
-			  index, address->bus, address->device, address->function);
+			  index,
+			  address->bus,
+			  address->device,
+			  address->function);
 		return ENOSPC;
 	}
 
@@ -712,9 +742,15 @@ assign_bar(
 
 	/* Records the space as used. */
 	host->window_next = placed + size;
+
+	/* Reports where the BAR went. */
 	kern_logf("pci: ECAM %02x:%02x.%u BAR%u at %llx (%llu bytes)\n",
-		  address->bus, address->device, address->function, index,
-		  (unsigned long long)placed, (unsigned long long)size);
+		  address->bus,
+		  address->device,
+		  address->function,
+		  index,
+		  (unsigned long long)placed,
+		  (unsigned long long)size);
 
 	/* Succeeded: the BAR decodes its place in the window. */
 	return 0;
@@ -740,9 +776,8 @@ host_map_bar(
 	void *address;
 	int error;
 
-	/* Every BAR of this host is mapped the same way, whatever the flags ask. */
-	(void)device;
-	(void)flags;
+	UNUSED_PARAMETER(device);
+	UNUSED_PARAMETER(flags);
 
 	/* Refuses an I/O BAR, an empty one and missing storage. */
 	host = context;
@@ -784,7 +819,7 @@ host_unmap_bar(
 	void *context,
 	struct drv_pci_mapping *mapping)
 {
-	(void)context;
+	UNUSED_PARAMETER(context);
 
 	/* Ignores storage that holds no mapping of ours. */
 	if (mapping == NULL || mapping->private_data[0] != 1U)
@@ -863,30 +898,38 @@ host_allocate_irqs(
 		walk = drv_pci_bus_bridge(bus);
 	}
 
-	/* Builds the root-bus function's key and looks it up. */
+	/* Builds the root-bus function's key. */
 	drv_pci_device_address(walk, &address);
-	devfn = ((uint32_t)address.bus << FDT_PCI_BUS_SHIFT) |
-		((uint32_t)address.device << (FDT_PCI_DEVFN_SHIFT + 3U)) |
-		((uint32_t)address.function << FDT_PCI_DEVFN_SHIFT);
+	devfn = (uint32_t)address.bus << FDT_PCI_BUS_SHIFT;
+	devfn |= (uint32_t)address.device << (FDT_PCI_DEVFN_SHIFT + 3U);
+	devfn |= (uint32_t)address.function << FDT_PCI_DEVFN_SHIFT;
 	devfn &= host->config.devfn_mask;
 	key = (uint32_t)pin & host->config.pin_mask;
-	for (index = 0; index < host->config.route_count; index++) {
-		route = &host->config.routes[index];
-		if (route->devfn != devfn || route->pin != key)
-			continue;
 
-		/* Succeeded: the device's line is the mapped interrupt. */
-		irqs[0].type = DRV_PCI_IRQ_INTX;
-		irqs[0].index = 0;
-		irqs[0].vector = route->irq;
-		irqs[0].private_data[0] = 0;
-		irqs[0].private_data[1] = 0;
-		*count = 1U;
-		return 0;
+	/* Looks the key up in the interrupt map. */
+	route = NULL;
+	for (index = 0; index < host->config.route_count; index++) {
+		/* Takes the first entry with the function's key and pin. */
+		if (host->config.routes[index].devfn != devfn)
+			continue;
+		if (host->config.routes[index].pin != key)
+			continue;
+		route = &host->config.routes[index];
+		break;
 	}
 
 	/* Refuses a pin the interrupt map does not route. */
-	return ENODEV;
+	if (route == NULL)
+		return ENODEV;
+
+	/* Succeeded: the device's line is the mapped interrupt. */
+	irqs[0].type = DRV_PCI_IRQ_INTX;
+	irqs[0].index = 0;
+	irqs[0].vector = route->irq;
+	irqs[0].private_data[0] = 0;
+	irqs[0].private_data[1] = 0;
+	*count = 1U;
+	return 0;
 }
 
 /* Releases interrupts from host_allocate_irqs(), which hold nothing. */
@@ -897,8 +940,8 @@ host_free_irqs(
 	struct drv_pci_irq *irqs,
 	unsigned count)
 {
-	(void)context;
-	(void)device;
-	(void)irqs;
-	(void)count;
+	UNUSED_PARAMETER(context);
+	UNUSED_PARAMETER(device);
+	UNUSED_PARAMETER(irqs);
+	UNUSED_PARAMETER(count);
 }

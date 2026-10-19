@@ -25,21 +25,29 @@
 #include "loader.h"
 
 /*
- * The facts read from the device tree, the tree's physical address and the
- * boot hart's id.  Filled once by riscv64_boot_record() on the boot hart
- * before any other hart starts, and read without a lock afterwards.
+ * The facts read from the device tree.  Filled once by
+ * riscv64_boot_record() on the boot hart before any other hart starts, and
+ * read without a lock afterwards, like the two variables below.
  */
 static struct riscv64_fdt_info boot_fdt;
+
+/* The device tree's physical address, recorded with boot_fdt. */
 static uintptr_t boot_fdt_phys;
+
+/* The id of the hart the loader entered the kernel on, recorded with boot_fdt. */
 static uint64_t boot_hart_id;
 
 /*
- * The named objects of hal_get_arch_handoff(), filled with the record and
- * not changed afterwards.  The ramdisk's size is zero when the firmware
- * loaded none.
+ * The device tree's range, the first named object of
+ * hal_get_arch_handoff().  The three named objects are filled with the
+ * record and not changed afterwards.
  */
 static struct riscv64_handoff_range handoff_fdt;
+
+/* The ramdisk's range, a named object; its size is zero when the firmware loaded none. */
 static struct riscv64_handoff_range handoff_initrd;
+
+/* The boot hart's id, a named object. */
 static uint64_t handoff_boot_hart;
 
 /*

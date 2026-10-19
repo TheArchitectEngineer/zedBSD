@@ -54,10 +54,14 @@
 /*
  * The UART the console reads, filled by kern_platform_init() before any
  * interrupt is on and kept for the life of the system, since its interrupt
- * handler reads it.  uart_present says whether the device tree described
- * one; without it the console is output only.
+ * handler reads it.
  */
 static struct drv_ns16550 uart;
+
+/*
+ * Nonzero when the device tree described the UART and uart was filled;
+ * without it the console is output only.  Set with uart.
+ */
 static int uart_present;
 
 /*

@@ -148,12 +148,14 @@ drv_vf2_pwmdac_attach(
 	if (error != 0)
 		return error;
 
-	/* Brings up the DMA controller and takes a channel of it. */
+	/* Brings up the DMA controller. */
 	error = drv_vf2_dmac_get(fdt, controller_node, board_default_coherent, &pwmdac->dmac);
 	if (error != 0) {
 		kern_logf("vf2-pwmdac: no DMA controller (%d)\n", error);
 		return error;
 	}
+
+	/* Takes a channel of the controller. */
 	error = drv_dw_axi_dmac_channel_get(pwmdac->dmac, &pwmdac->channel);
 	if (error != 0)
 		return error;

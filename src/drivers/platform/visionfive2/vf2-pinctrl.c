@@ -718,6 +718,8 @@ pad_request_of(
 		request->mask |= PAD_INPUT_ENABLE;
 		request->value |= PAD_INPUT_ENABLE;
 	}
+
+	/* A disable clears the receiver's bit. */
 	present = has_property(fdt, pins, "input-disable");
 	if (present)
 		request->mask |= PAD_INPUT_ENABLE;
@@ -728,6 +730,8 @@ pad_request_of(
 		request->mask |= PAD_SCHMITT;
 		request->value |= PAD_SCHMITT;
 	}
+
+	/* A disable clears the trigger's bit. */
 	present = has_property(fdt, pins, "input-schmitt-disable");
 	if (present)
 		request->mask |= PAD_SCHMITT;

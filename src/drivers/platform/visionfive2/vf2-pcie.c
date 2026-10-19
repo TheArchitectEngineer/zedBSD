@@ -152,6 +152,8 @@ drv_vf2_pcie_init(
 			kern_logf("visionfive2: PCIe root complex unavailable (%d)\n", error);
 			continue;
 		}
+
+		/* Counts the root complex that came up. */
 		started++;
 	}
 
