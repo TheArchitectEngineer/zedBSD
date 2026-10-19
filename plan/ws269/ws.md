@@ -34,7 +34,7 @@
 | [p010](phase010/phase.md) | graphics の設計の追補（[design-p010.md](design-p010.md) 版 2、分割と境と UAT の行）。実装は下の p010a〜o。依存は名前を付けた出力（O-P006 等、design-p010.md §10） | p009、p007 | planning（2026-10-20 P1 q1367: 追補 版 2、design-reviewer の再レビュー待ち） |
 | [p010a](phase010a/phase.md) | UAT の段の行（`powervr: <段>: ok\|fail(<理由>)`、sysctl）と `gpu-selftest` の骨 | p009 | in-progress（2026-10-20 P1 q1364: stage.c・stage-log.c、sysctl `hw.gpu.powervr.stages`、firmware・render node・compute の段、gpu-selftest（kernel・node・vkcompute の 3 段、残り skip(not built)）、VF2 の試験の image の config。host 試験 PASS、VF2・riscv64-virt・amd64 の build warning 0。**実機待ち**） |
 | [p010b](phase010b/phase.md) | 資料の固定（Mesa・mainline の path と SHA、BXE の feature の分岐）。コードなし | p002 | cleared（2026-10-20 Q1、q1365・q1366） |
-| p010c | image（LINEAR rowPitch 32・twiddled）・format・view・sampler、shared の道に入らせない host 試験、M9 の照合 | p010b、O-P009 | planning（2026-10-20 P1 q1367: 追補 版 2、再レビュー待ち） |
+| [p010c](phase010c/phase.md) | image（LINEAR rowPitch 32・twiddled）・format・view・sampler、shared の道に入らせない host 試験、M9 の照合 | p010b、O-P009 | in-progress（2026-10-20 P1 q1368: image-state.c・vk-image.c・format の照会・vkimage と gpu-selftest の image の段。linear は SAMPLED だけ外す（review 2 Minor 2）。host 試験 PASS（executor 157・image 55）、M9 0 mismatches、VF2・riscv64-virt・amd64 の build warning 0。**実機待ち**） |
 | p010d | render の FW の object（前半）: heap、global・local の free list、HWRT、GROW・RECONSTRUCTION の応答、CLEANUP | p010b、O-P006 | planning（同） |
 | p010n | render の FW の object（後半）: render context の static state と SR・PT、4 つの context の identity・recovery、geometry・FRAG_PR・fragment の kick、render check の clear | O-p010d、O-ENC | planning（同） |
 | p010e | PBE の store・EOT・固定の program・kernel の render check の三角形 | O-p010c、O-p010n、O-ENC | planning（同） |

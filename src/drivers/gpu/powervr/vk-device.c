@@ -78,6 +78,7 @@ static int memory_properties(struct powervr_vk_session *session, struct i915_wir
 static int families(struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int format(struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int image_format(struct i915_wire_reader *reader, struct i915_wire_writer *reply);
+static bool usage_allowed(uint32_t usage, uint32_t features);
 static int create_device(struct powervr_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int device_queue(struct powervr_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int destroy(struct powervr_vk_session *session, enum i915_vk_object_kind kind, struct i915_wire_reader *reader);
@@ -282,10 +283,10 @@ limits(
 {
 	/* Allocations, buffers and descriptors. */
 	limit->maxImageDimension1D = 4096;
-	limit->maxImageDimension2D = 4096;
+	limit->maxImageDimension2D = POWERVR_VK_IMAGE_EDGE;
 	limit->maxImageDimension3D = 256;
 	limit->maxImageDimensionCube = 4096;
-	limit->maxImageArrayLayers = 256;
+	limit->maxImageArrayLayers = POWERVR_VK_IMAGE_LAYERS;
 	limit->maxTexelBufferElements = 65536;
 	limit->maxUniformBufferRange = 16384;
 	limit->maxStorageBufferRange = 1U << 27;
@@ -500,23 +501,35 @@ families(
 	return 0;
 }
 
-/* vkGetPhysicalDeviceFormatProperties: [physical][format][present] -> [present][properties]; no format has features yet. */
+/*
+ * vkGetPhysicalDeviceFormatProperties: [physical][format][present] ->
+ * [present][properties]; the features of the format table, none for a
+ * format outside it.
+ */
 static int
 format(
 	struct i915_wire_reader *reader,
 	struct i915_wire_writer *reply)
 {
 	VkFormatProperties record;
+	const struct powervr_format *entry;
+	uint32_t vk_format;
 
 	/* The physical device, the format and the presence word. */
 	(void)drv_i915_wire_read_u64(reader);
-	(void)drv_i915_wire_read_u32(reader);
+	vk_format = drv_i915_wire_read_u32(reader);
 	(void)drv_i915_wire_read_u64(reader);
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* No features. */
+	/* The format's features on each tiling and on buffers. */
 	kern_memset(&record, 0, sizeof(record));
+	entry = powervr_format_find(vk_format);
+	if (entry != NULL) {
+		record.optimalTilingFeatures = entry->optimal_features;
+		record.linearTilingFeatures = powervr_format_linear_features(entry);
+		record.bufferFeatures = entry->buffer_features;
+	}
 	drv_i915_wire_reply_u64(reply, 1);
 	i915_vkc_enc_VkFormatProperties(reply, &record);
 
@@ -526,8 +539,9 @@ format(
 
 /*
  * vkGetPhysicalDeviceImageFormatProperties: [physical][format][type]
- * [tiling][usage][flags][present] -> [result][present][properties]; no
- * image is supported yet.
+ * [tiling][usage][flags][present] -> [result][present][properties].  A
+ * plain two-dimensional image of one sample whose every usage the
+ * format's features on the tiling allow.
  */
 static int
 image_format(
@@ -535,26 +549,95 @@ image_format(
 	struct i915_wire_writer *reply)
 {
 	VkImageFormatProperties record;
+	const struct powervr_format *entry;
+	uint32_t vk_format;
+	uint32_t type;
+	uint32_t tiling;
+	uint32_t usage;
+	uint32_t flags;
+	uint32_t features;
+	uint32_t result;
 
 	/* The physical device, the format, type, tiling, usage and flags, and the presence word. */
 	(void)drv_i915_wire_read_u64(reader);
-	(void)drv_i915_wire_read_u32(reader);
-	(void)drv_i915_wire_read_u32(reader);
-	(void)drv_i915_wire_read_u32(reader);
-	(void)drv_i915_wire_read_u32(reader);
-	(void)drv_i915_wire_read_u32(reader);
+	vk_format = drv_i915_wire_read_u32(reader);
+	type = drv_i915_wire_read_u32(reader);
+	tiling = drv_i915_wire_read_u32(reader);
+	usage = drv_i915_wire_read_u32(reader);
+	flags = drv_i915_wire_read_u32(reader);
 	(void)drv_i915_wire_read_u64(reader);
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* Not supported. */
+	/* The format's features on the tiling. */
+	features = 0;
+	entry = powervr_format_find(vk_format);
+	if (entry != NULL && tiling == VK_IMAGE_TILING_OPTIMAL)
+		features = entry->optimal_features;
+	else if (entry != NULL && tiling == VK_IMAGE_TILING_LINEAR)
+		features = powervr_format_linear_features(entry);
+
+	/* A plain image whose usages its features allow. */
+	result = (uint32_t)VK_SUCCESS;
+	if (type != VK_IMAGE_TYPE_2D || flags != 0 || !usage_allowed(usage, features))
+		result = (uint32_t)VK_ERROR_FORMAT_NOT_SUPPORTED;
+
+	/* The limits of such an image: a linear one is one level and one layer. */
 	kern_memset(&record, 0, sizeof(record));
-	drv_i915_wire_reply_u32(reply, (uint32_t)VK_ERROR_FORMAT_NOT_SUPPORTED);
+	if (result == (uint32_t)VK_SUCCESS) {
+		record.maxExtent.width = POWERVR_VK_IMAGE_EDGE;
+		record.maxExtent.height = POWERVR_VK_IMAGE_EDGE;
+		record.maxExtent.depth = 1;
+		record.maxMipLevels = 13;
+		record.maxArrayLayers = POWERVR_VK_IMAGE_LAYERS;
+		if (tiling == VK_IMAGE_TILING_LINEAR) {
+			record.maxMipLevels = 1;
+			record.maxArrayLayers = 1;
+		}
+		record.sampleCounts = VK_SAMPLE_COUNT_1_BIT;
+		record.maxResourceSize = POWERVR_RENDER_MAX_BYTES;
+	}
+	drv_i915_wire_reply_u32(reply, result);
 	drv_i915_wire_reply_u64(reply, 1);
 	i915_vkc_enc_VkImageFormatProperties(reply, &record);
 
 	/* Succeeded: the format is reported. */
 	return 0;
+}
+
+/* Says whether every usage of an image needs only features the format has; none at all is refused. */
+static bool
+usage_allowed(
+	uint32_t usage,
+	uint32_t features)
+{
+	uint32_t known;
+
+	/* Some usage, all of them known, and a format with features. */
+	known = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+	if (usage == 0 || (usage & ~known) != 0 || features == 0)
+		return false;
+
+	/* Each usage against the feature it needs. */
+	if ((usage & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) != 0 && (features & VK_FORMAT_FEATURE_TRANSFER_SRC_BIT) == 0) {
+		/* A copy from the image. */
+		return false;
+	} else if ((usage & VK_IMAGE_USAGE_TRANSFER_DST_BIT) != 0 && (features & VK_FORMAT_FEATURE_TRANSFER_DST_BIT) == 0) {
+		/* A copy or clear into the image. */
+		return false;
+	} else if ((usage & VK_IMAGE_USAGE_SAMPLED_BIT) != 0 && (features & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) == 0) {
+		/* A shader's sampling. */
+		return false;
+	} else if ((usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) != 0 && (features & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT) == 0) {
+		/* A render pass's colour. */
+		return false;
+	} else if ((usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) != 0 && (features & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) == 0) {
+		/* A render pass's depth. */
+		return false;
+	}
+
+	/* Succeeded: every usage is allowed. */
+	return true;
 }
 
 /*

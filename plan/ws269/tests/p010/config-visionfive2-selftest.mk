@@ -1,4 +1,4 @@
-# The VisionFive 2 test image of ws269-p010a (design-p010.md §8.2, D-P2): the
+# The VisionFive 2 test image of ws269-p010a and p010c (design-p010.md §8.2, D-P2): the
 # CI board configuration with libvulkan, vkcompute and gpu-selftest.  Not for
 # the ordinary image.
 #
@@ -16,5 +16,5 @@ include config/ci/config-visionfive2.mk
 SELFTEST_FIRMWARE ?=
 GPU_SELFTEST_BOOT ?= y
 ZEDBSD_USER_PROGRAMS := $(filter-out powervr-firmware,$(ZEDBSD_USER_PROGRAMS)) \
-	libwayland-client libvulkan vkcompute gpu-selftest \
+	libwayland-client libvulkan vkcompute vkimage gpu-selftest \
 	$(if $(filter y,$(GPU_SELFTEST_BOOT)),gpu-selftest-boot) $(SELFTEST_FIRMWARE)

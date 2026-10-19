@@ -1,7 +1,7 @@
 #!/bin/sh
-# Host check of gpu-selftest (ws269-p010a): the stages' order, the skips
+# Host check of gpu-selftest (ws269-p010a, p010c): the stages' order, the skips
 # after a failure, the time limit, and the total, with stand-ins for the
-# stages text, the render node and vkcompute.
+# stages text, the render node, vkcompute and vkimage.
 #   sh plan/ws269/tests/p010/selftest-host.sh OUTDIR
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
@@ -17,7 +17,9 @@ printf '#!/bin/sh\necho "vkcompute: PowerVR B-Series BXE-4-32: PASS, 4096/4096 w
 printf '#!/bin/sh\necho "vkcompute: no Vulkan device (vkEnumeratePhysicalDevices 0)"\nexit 1\n' > "$out/vk-nodev"
 printf '#!/bin/sh\necho "vkcompute: X: FAIL, vkWaitForFences -4"\nexit 1\n' > "$out/vk-compute"
 printf '#!/bin/sh\nsleep 30\n' > "$out/vk-hang"
-chmod +x "$out"/vk-*
+printf '#!/bin/sh\necho "vkimage: X: PASS"\n' > "$out/vki-pass"
+printf '#!/bin/sh\necho "vkimage: X: FAIL, external image -3"\nexit 1\n' > "$out/vki-fail"
+chmod +x "$out"/vk-* "$out"/vki-*
 fails=0
 # check NAME EXPECTED-FILE ARGS...: the output must be exactly the expected lines.
 check() {
@@ -29,8 +31,7 @@ check() {
 		echo "FAIL $name"; fails=$((fails + 1))
 	fi
 }
-tail_lines='gpu-selftest: image: skip(not built)
-gpu-selftest: clear: skip(not built)
+rest_lines='gpu-selftest: clear: skip(not built)
 gpu-selftest: copy: skip(not built)
 gpu-selftest: draw: skip(not built)
 gpu-selftest: sample: skip(not built)
@@ -44,10 +45,11 @@ gpu-selftest: node: ok
 gpu-selftest: instance: ok
 gpu-selftest: device: ok
 gpu-selftest: compute: ok
-$tail_lines
-gpu-selftest: 5 ok, 0 fail, 8 skip
+gpu-selftest: image: ok
+$rest_lines
+gpu-selftest: 6 ok, 0 fail, 7 skip
 END
-check pass -s "$out/stages-ok" -n "$out/node" -v "$out/vk-pass"
+check pass -s "$out/stages-ok" -n "$out/node" -i "$out/vki-pass" -v "$out/vk-pass"
 cat > "$out/firmware.expect" <<END
 gpu-selftest: stages: firmware=fail:enoent render-node=- compute=- ta=- 3d=- transfer=- present=-
 gpu-selftest: kernel: fail(firmware=fail:enoent)
@@ -55,10 +57,11 @@ gpu-selftest: node: skip(kernel)
 gpu-selftest: instance: skip(node)
 gpu-selftest: device: skip(instance)
 gpu-selftest: compute: skip(device)
-$tail_lines
+gpu-selftest: image: skip(device)
+$rest_lines
 gpu-selftest: 0 ok, 1 fail, 12 skip
 END
-check firmware -s "$out/stages-fw" -n "$out/node" -v "$out/vk-pass"
+check firmware -s "$out/stages-fw" -n "$out/node" -i "$out/vki-pass" -v "$out/vk-pass"
 cat > "$out/nonode.expect" <<END
 gpu-selftest: stages: firmware=ok render-node=ok compute=- ta=- 3d=- transfer=- present=-
 gpu-selftest: kernel: ok
@@ -66,10 +69,11 @@ gpu-selftest: node: fail(enoent)
 gpu-selftest: instance: skip(node)
 gpu-selftest: device: skip(instance)
 gpu-selftest: compute: skip(device)
-$tail_lines
+gpu-selftest: image: skip(device)
+$rest_lines
 gpu-selftest: 1 ok, 1 fail, 11 skip
 END
-check nonode -s "$out/stages-ok" -n "$out/missing-node" -v "$out/vk-pass"
+check nonode -s "$out/stages-ok" -n "$out/missing-node" -i "$out/vki-pass" -v "$out/vk-pass"
 cat > "$out/nodev.expect" <<END
 gpu-selftest: stages: firmware=ok render-node=ok compute=- ta=- 3d=- transfer=- present=-
 gpu-selftest: kernel: ok
@@ -77,10 +81,11 @@ gpu-selftest: node: ok
 gpu-selftest: instance: ok
 gpu-selftest: device: fail(vkcompute: no Vulkan device (vkEnumeratePhysicalDevices 0))
 gpu-selftest: compute: skip(device)
-$tail_lines
+gpu-selftest: image: skip(device)
+$rest_lines
 gpu-selftest: 3 ok, 1 fail, 9 skip
 END
-check nodev -s "$out/stages-ok" -n "$out/node" -v "$out/vk-nodev"
+check nodev -s "$out/stages-ok" -n "$out/node" -i "$out/vki-pass" -v "$out/vk-nodev"
 cat > "$out/compute.expect" <<END
 gpu-selftest: stages: firmware=ok render-node=ok compute=- ta=- 3d=- transfer=- present=-
 gpu-selftest: kernel: ok
@@ -88,10 +93,11 @@ gpu-selftest: node: ok
 gpu-selftest: instance: ok
 gpu-selftest: device: ok
 gpu-selftest: compute: fail(vkcompute: X: FAIL, vkWaitForFences -4)
-$tail_lines
-gpu-selftest: 4 ok, 1 fail, 8 skip
+gpu-selftest: image: ok
+$rest_lines
+gpu-selftest: 5 ok, 1 fail, 7 skip
 END
-check compute -s "$out/stages-ok" -n "$out/node" -v "$out/vk-compute"
+check compute -s "$out/stages-ok" -n "$out/node" -i "$out/vki-pass" -v "$out/vk-compute"
 cat > "$out/hang.expect" <<END
 gpu-selftest: stages: firmware=ok render-node=ok compute=- ta=- 3d=- transfer=- present=-
 gpu-selftest: kernel: ok
@@ -99,11 +105,12 @@ gpu-selftest: node: ok
 gpu-selftest: instance: fail(timeout)
 gpu-selftest: device: skip(instance)
 gpu-selftest: compute: skip(device)
-$tail_lines
+gpu-selftest: image: skip(device)
+$rest_lines
 gpu-selftest: 2 ok, 1 fail, 10 skip
 END
 start=$(date +%s)
-check hang -t 1 -s "$out/stages-ok" -n "$out/node" -v "$out/vk-hang"
+check hang -t 1 -s "$out/stages-ok" -n "$out/node" -i "$out/vki-pass" -v "$out/vk-hang"
 echo "hang took $(( $(date +%s) - start )) s (limit 1 s)"
 cat > "$out/nosysctl.expect" <<END
 gpu-selftest: kernel: fail(no stages)
@@ -111,9 +118,22 @@ gpu-selftest: node: skip(kernel)
 gpu-selftest: instance: skip(node)
 gpu-selftest: device: skip(instance)
 gpu-selftest: compute: skip(device)
-$tail_lines
+gpu-selftest: image: skip(device)
+$rest_lines
 gpu-selftest: 0 ok, 1 fail, 12 skip
 END
-check nosysctl -n "$out/node" -v "$out/vk-pass"
+check nosysctl -n "$out/node" -i "$out/vki-pass" -v "$out/vk-pass"
+cat > "$out/image.expect" <<END
+gpu-selftest: stages: firmware=ok render-node=ok compute=- ta=- 3d=- transfer=- present=-
+gpu-selftest: kernel: ok
+gpu-selftest: node: ok
+gpu-selftest: instance: ok
+gpu-selftest: device: ok
+gpu-selftest: compute: ok
+gpu-selftest: image: fail(vkimage: X: FAIL, external image -3)
+$rest_lines
+gpu-selftest: 5 ok, 1 fail, 7 skip
+END
+check image -s "$out/stages-ok" -n "$out/node" -i "$out/vki-fail" -v "$out/vk-pass"
 echo "selftest-host: $fails failed"
 [ "$fails" -eq 0 ]

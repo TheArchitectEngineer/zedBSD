@@ -15,8 +15,8 @@
  * smallest compute path: the instance, the one physical device and its
  * queue, memory and buffers, descriptor sets, compute pipelines whose
  * SPIR-V the shader compiler takes (shader-compile.h), command buffers
- * that bind and dispatch,
- * and their submission.
+ * that bind and dispatch, and their submission; and the images, image
+ * views and samplers of the formats of image-state.c.
  *
  * One executor session belongs to one open of the node.  It holds the
  * session's typed objects by their wire identity and the scratch one
@@ -32,6 +32,7 @@
 #include <stdint.h>
 
 #include "drivers/gpu/i915/render/codec.h"
+#include "drivers/gpu/powervr/image-state.h"
 #include "drivers/gpu/powervr/shader-compile.h"
 
 struct powervr_session;
@@ -56,6 +57,10 @@ struct powervr_vk_executor;
 #define POWERVR_VK_RESOURCE_ALIGN	256U
 #define POWERVR_VK_BINDINGS_MAX		8U
 #define POWERVR_VK_SETS_MAX		4U
+
+/* The largest edge and the most layers of an image the device reports and takes. */
+#define POWERVR_VK_IMAGE_EDGE		4096U
+#define POWERVR_VK_IMAGE_LAYERS		256U
 
 /* A command buffer's states. */
 #define POWERVR_VK_COMMAND_INITIAL	0U
@@ -124,6 +129,31 @@ struct powervr_vk_buffer {
 	uint32_t usage;
 	struct powervr_vk_object *memory;
 	uint64_t offset;
+};
+
+/*
+ * A VkImage: its format, shape and layout, its usage, and once bound the
+ * memory object it holds and its offset there.
+ */
+struct powervr_vk_image {
+	const struct powervr_format *format;
+	struct powervr_image_shape shape;
+	struct powervr_image_layout layout;
+	uint32_t usage;
+	struct powervr_vk_object *memory;
+	uint64_t offset;
+};
+
+/* A VkImageView: the image it holds, the aspect it shows and the texture unit's two words of it. */
+struct powervr_vk_image_view {
+	struct powervr_vk_object *image;
+	uint32_t aspect;
+	uint64_t words[2];
+};
+
+/* A VkSampler: the texture unit's two words of it. */
+struct powervr_vk_sampler {
+	uint64_t words[2];
 };
 
 /*
@@ -233,6 +263,7 @@ int powervr_vk_execute(struct powervr_vk_session *session, const void *wire, uin
 /* The handlers of each group of commands. */
 int powervr_vk_device_route(struct powervr_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
 int powervr_vk_memory_route(struct powervr_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
+int powervr_vk_image_route(struct powervr_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
 int powervr_vk_layout_route(struct powervr_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
 int powervr_vk_command_route(struct powervr_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
 int powervr_vk_queue_route(struct powervr_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
@@ -245,6 +276,9 @@ int powervr_vk_memory_buffer(struct powervr_vk_session *session, uint64_t identi
 
 /* A buffer's device address, from its memory (vk-memory.c). */
 int powervr_vk_buffer_address(const struct powervr_vk_buffer *buffer, uint64_t *address);
+
+/* An image's device address, from its memory (vk-image.c). */
+int powervr_vk_image_address(const struct powervr_vk_image *image, uint64_t *address);
 
 /* The executor's own memory on the core, and its release (vk-queue.c). */
 void powervr_vk_executor_free(struct powervr_vk_session *session);
