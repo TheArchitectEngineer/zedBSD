@@ -601,6 +601,211 @@ drv_fdt_reg(
 	return 0;
 }
 
+/*
+ * Finds the next child of a node.
+ *
+ * The search starts after the child named by after, or at the first child
+ * when after is DRV_FDT_NO_NODE.  Only the node's own children are
+ * visited, not their descendants.  ENOENT means no later child exists.
+ */
+int
+drv_fdt_child(
+	const struct drv_fdt *fdt,
+	uint32_t node,
+	uint32_t after,
+	uint32_t *child)
+{
+	struct fdt_token token;
+	uint32_t depth;
+	uint32_t offset;
+	bool passed;
+	int error;
+
+	/* Refuses a missing blob, node or result. */
+	if (fdt == NULL || child == NULL || node == DRV_FDT_NO_NODE)
+		return EINVAL;
+
+	/* Starts just after the node's name. */
+	error = node_content(fdt, node, &offset);
+	if (error != 0)
+		return error;
+
+	/*
+	 * Walks the node's contents.  Depth counts the nodes the walk is
+	 * inside below the node itself, so a begin-node token at depth zero
+	 * is one of its children.  Passed says the child named by after has
+	 * been seen, so the next child at depth zero is the answer.
+	 */
+	depth = 0;
+	passed = false;
+	if (after == DRV_FDT_NO_NODE)
+		passed = true;
+	for (;;) {
+		/* Decodes the token at the walk's position. */
+		error = read_token(fdt, offset, &token);
+		if (error != 0)
+			return error;
+
+		/* Reports a structure that ends inside the node. */
+		if (token.kind == FDT_TOKEN_END)
+			return EINVAL;
+
+		/* Enters a node, which is a candidate when it is a direct child. */
+		if (token.kind == FDT_TOKEN_BEGIN_NODE) {
+			/* A direct child after the starting one is the answer. */
+			if (depth == 0 && passed) {
+				*child = offset;
+				return 0;
+			}
+
+			/* The starting child itself is passed over. */
+			if (depth == 0 && offset == after)
+				passed = true;
+
+			/* Refuses nesting deeper than any real device tree has. */
+			if (depth == FDT_MAX_DEPTH)
+				return ERANGE;
+
+			/* Goes one level down. */
+			depth++;
+		} else if (token.kind == FDT_TOKEN_END_NODE) {
+			/* The end of the node itself means no child is left. */
+			if (depth == 0)
+				return ENOENT;
+
+			/* Leaves the innermost node. */
+			depth--;
+		}
+
+		/* Moves on to the token after this one. */
+		offset = token.next;
+	}
+}
+
+/*
+ * Finds the position of a string in a node's string-list property.
+ *
+ * Names such as clock-names and reset-names give each entry of a matching
+ * list property a name; the position found here selects that entry.
+ * ENOENT means the node lacks the property or the property lacks the
+ * string.
+ */
+int
+drv_fdt_string_index(
+	const struct drv_fdt *fdt,
+	uint32_t node,
+	const char *name,
+	const char *wanted,
+	unsigned *index)
+{
+	const uint8_t *value;
+	uint32_t length;
+	uint32_t wanted_length;
+	uint32_t start;
+	uint32_t end;
+	unsigned position;
+	int difference;
+	int error;
+
+	/* Refuses a missing blob, name, string or result. */
+	if (fdt == NULL || name == NULL || wanted == NULL || index == NULL)
+		return EINVAL;
+
+	/* Reads the string list. */
+	error = drv_fdt_property(fdt, node, name, &value, &length);
+	if (error != 0)
+		return error;
+
+	/* Compares each string of the list in turn, counting positions. */
+	wanted_length = (uint32_t)kern_strlen(wanted);
+	position = 0;
+	start = 0;
+	while (start < length) {
+		/* Finds the end of the current string. */
+		end = start;
+		while (end < length && value[end] != 0)
+			end++;
+
+		/* Stops at a string of the same length and bytes. */
+		if (end - start == wanted_length) {
+			/* The bytes decide once the lengths agree. */
+			difference = kern_memcmp(value + start, wanted, wanted_length);
+			if (difference == 0) {
+				*index = position;
+				return 0;
+			}
+		}
+
+		/* Moves on to the string after this one's zero byte. */
+		start = end + 1U;
+		position++;
+	}
+
+	/* Reports that the list does not hold the string. */
+	return ENOENT;
+}
+
+/*
+ * Reports whether the DMA of a device snoops the CPU caches.
+ *
+ * The node and then each node above it is asked in turn: the first one that
+ * says dma-coherent makes the answer 1, the first one that says
+ * dma-noncoherent makes it 0.  When no node up to the root says either, the
+ * board's own default decides; a board passes 1 when its interconnect keeps
+ * device accesses coherent.  A tree that cannot be walked gives 0, which
+ * makes the device's driver use uncached memory or fail visibly rather than
+ * share stale cache lines with the device.
+ */
+int
+drv_fdt_dma_coherent(
+	const struct drv_fdt *fdt,
+	uint32_t node,
+	int board_default)
+{
+	const uint8_t *value;
+	uint32_t length;
+	uint32_t current;
+	uint32_t above;
+	int error;
+
+	/* Refuses a missing blob or node as not coherent. */
+	if (fdt == NULL || node == DRV_FDT_NO_NODE)
+		return 0;
+
+	/* Asks every node from the device up to the root. */
+	current = node;
+	for (;;) {
+		/* A node that says its DMA is coherent decides. */
+		error = drv_fdt_property(fdt, current, "dma-coherent", &value, &length);
+		if (error == 0)
+			return 1;
+		if (error != ENOENT)
+			return 0;
+
+		/* A node that says its DMA is not coherent decides. */
+		error = drv_fdt_property(fdt, current, "dma-noncoherent", &value, &length);
+		if (error == 0)
+			return 0;
+		if (error != ENOENT)
+			return 0;
+
+		/* Moves to the node above; past the root the board decides. */
+		error = drv_fdt_parent(fdt, current, &above);
+		if (error == ENOENT)
+			break;
+		if (error != 0)
+			return 0;
+		current = above;
+	}
+
+	/* Reports the board's default when no node of the path says. */
+	if (board_default == 0)
+		return 0;
+
+	/* Succeeded: the board says its device accesses are coherent. */
+	return 1;
+}
+
 /* Reads a big-endian 32-bit number. */
 static uint32_t
 read_be32(

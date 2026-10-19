@@ -57,11 +57,14 @@ RISCV64_BOOT_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(RISCV64_BOOT_C)) \
 RISCV64_PLATFORM_SOURCES_virt := src/kern/platform/riscv-virt.c \
 	src/drivers/serial/ns16550.c src/drivers/generic/serial-console.c \
 	src/drivers/generic/ramdisk.c
-# The VisionFive 2's binding (ws256-p025): the teletype console on the
-# hardware layer's output and the initial ramdisk as the boot device.  The
-# board's devices come with later phases.
+# The VisionFive 2's binding: the teletype console on the hardware layer's
+# output, the initial ramdisk as the boot device, and the SoC's system
+# control blocks, clock and reset generators and pin controllers.
 RISCV64_PLATFORM_SOURCES_visionfive2 := src/kern/platform/visionfive2.c \
-	src/drivers/generic/serial-console.c src/drivers/generic/ramdisk.c
+	src/drivers/generic/serial-console.c src/drivers/generic/ramdisk.c \
+	src/drivers/platform/visionfive2/vf2-syscon.c \
+	src/drivers/platform/visionfive2/vf2-crg.c \
+	src/drivers/platform/visionfive2/vf2-pinctrl.c
 
 RISCV64_KERNEL_SOURCES := \
 	src/kern/main.c \
