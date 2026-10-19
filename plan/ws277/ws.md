@@ -27,3 +27,4 @@ D1〜D11 は全部 (a)（推奨どおり）。原文は Master の decisions-log
 | Phase | 中身 | 依存 | Status |
 | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | 設計（DC8200・HDMI の初期化、clock・reset・PD、MMU、plane・modifier、vblank・IRQ、WS269 の display の node の置き換え、PowerVR の PBE の線形の書き出し、coherency） | — | cleared（2026-10-20 Q1、改訂 3.1。D1〜D11 は未決） |
+| [p002](phase002/phase.md) | go/no-go: DC8200 の attach、U-Boot の plane の引き継ぎの判定・snapshot、COMMIT・CURRENT_LOCATION の読み戻しの記録、画面に 1 行。R4 の記述の部分（visionfive2.c） | p001、WS269 p007 | in-progress（2026-10-20 P1 q1348-i01: 実装・build（VF2・riscv64-virt・amd64、warning 0）・host 試験 PASS。実機 U0 待ち） |

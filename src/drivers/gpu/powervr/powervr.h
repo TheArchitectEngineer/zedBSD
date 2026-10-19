@@ -69,4 +69,28 @@ int drv_powervr_attach(const struct drv_powervr_description *description);
  */
 int drv_powervr_display_attach(void);
 
+/*
+ * Where the board's display controller is.
+ *
+ * Control holds the identity and interrupt registers; display holds the
+ * planes and panels, at the controller's offsets from control's base.
+ */
+struct drv_powervr_dc_place {
+	uint64_t control;
+	uint64_t control_size;
+	uint64_t display;
+	uint64_t display_size;
+	uint32_t interrupt;
+};
+
+/*
+ * Reads the display controller the loader left on and decides whether its
+ * screen can be taken over, without changing any of its registers.
+ *
+ * The decision, the controller's identity and the plane's settings are one
+ * line of the boot log, which the screen shows.  The controller's power
+ * domain and clocks must be on.  ENOENT means the loader left no screen.
+ */
+int drv_powervr_dc_probe(const struct drv_powervr_dc_place *place);
+
 #endif
