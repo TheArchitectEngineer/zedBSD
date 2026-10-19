@@ -51,13 +51,21 @@ Procedure referenced: `src/drivers/gpu/bcm2711/display-device.c`（device の op
 VisionFive 2、SD の image（WS256 p015 の rootfs からの起動、framebuffer は p011）。この Phase の kernel（CONFIG_DRIVER_POWERVR=y）。
 
 1. 起動して画面の text console に login prompt が出るのを見る。boot log（画面）に `powervr: display <幅>x<高さ> on the boot framebuffer` の 1 行があり、`ls /dev/gpu*` で `/dev/gpu0` がある事（render の node は p005 まで出ない）。
-2. 自分の resource で claim して色を出す試験の program（後で用意: `/dev/gpu0` を開き、GPU_RESOURCE_CREATE で画面の大きさの resource を作り、赤・緑・青・白の 4 本の縦の帯を GPU_RESOURCE_WRITE で書き、GPU_DISPLAY_QUERY → GPU_DISPLAY_CLAIM → GPU_DISPLAY_PRESENT（RGBA と BGRA の両方を 1 回ずつ、各 3 秒）→ GPU_DISPLAY_RELEASE）を走らせる。**目視**: 帯が左から赤・緑・青・白で出る（RGBA・BGRA のどちらでも同じ色。色が入れ替わったら swap の誤り）。
-3. release の後、画面が text console に戻り、それまでの文字が描き直されて、keyboard の入力が console に効く事を**目視**。
-4. 同じ program を claim の後で Ctrl-C で殺し（release しない）、画面が console に戻る事を**目視**。
+2. `gpu-bars` を走らせる（`userland/tests/gpu-bars/`。`/dev/gpu0` を開き、display の index 0 を query、画面の大きさの resource に赤・緑・青・白の 4 本の縦の帯を GPU_RESOURCE_WRITE で書き、claim → RGBA で present（3 秒）→ BGRA で書き直して present（3 秒）→ release）。claim の前に `GPU-BARS claim WxH: ...` の 1 行が出る。**目視**: 帯が左から赤・緑・青・白で、RGBA・BGRA の 2 回とも同じ色（入れ替わったら swap の誤り）。`--seconds=N` で 1 枚の時間を変えられる。
+3. release の後、画面が text console に戻り、それまでの文字が描き直され、最後に `GPU-BARS PASS rgba=1 bgra=1 WxH` の 1 行が出て、keyboard の入力が console に効く事を**目視**。失敗なら `GPU-BARS FAIL step=<open|query|size|create|claim|rgba|bgra|release> error=<errno>`（claim より後の失敗も release してから出す）。
+4. `gpu-bars --hold` を走らせ、帯が出た後に Ctrl-C（または別の端末から `kill`）で殺す（release しない）。画面が console に戻る事を**目視**（この場合 PASS の行は出ない）。
 
-判定: 1〜4 が全部そのとおりなら前半の実機の受け入れ。試験の program は Q1 が依頼する時に作る（今は無い）。
+image: `plan/ws269/tests/config-p007.mk`（`config/ci/config-visionfive2.mk` の形に `CONFIG_DRIVER_POWERVR := y` と `powervr-firmware gpu-bars` を足した物。`powervr-firmware` は p003 と同じく先に `yes | make ZEDBSD_CONFIG=plan/ws269/tests/config-p007.mk BUILD=<dir> firmware-licenses` が要る）で build した SD の image。
+
+判定: 1〜4 が全部そのとおりなら前半の実機の受け入れ。
+
+### 試験の program（q1334、2026-10-19 P1）
+
+- `userland/tests/gpu-bars/`（`main.c`・`Makefile`、platform は `amd64 visionfive2`。visionfive2 を足さないと riscv64 の選択から落ちる）。
+- build: `make ZEDBSD_CONFIG=plan/ws269/tests/config-p007.mk BUILD=build/ws269-p007-bars-vf2 "ZEDBSD_USER_PROGRAMS=cat ls sh gpu-bars" rootfs` rc=0・warning 0、`rootfs/bin/gpu-bars` は riscv64 の PIE（firmware の license の同意は P1 では行わず、firmware を外して確かめた）。amd64: `make ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/ws269-p007-bars-amd64 ZEDBSD_USER_PROGRAMS=gpu-bars build/ws269-p007-bars-amd64/bin/gpu-bars` rc=0・warning 0。
+- host: `cc -Wall -Wextra -Werror` で host 向けに build、`--node=/nonexistent` で `GPU-BARS FAIL step=open error=2`、不正な引数で usage と rc=2。帯の画素の byte の順（RGBA は R,G,B,A、BGRA は B,G,R,A、4 色）を `main.c` を include した一時の試験で PASS。ioctl の経路は実機（未実施）。
 
 ## 残り・再開の条件
 
 - 後半: `scanout` の import（render の buffer の object を driver の中の private な lookup で retain し、uncached の VA から damage の矩形だけを copy、constraints に SHARED・FOREIGN、BLOB の present）。条件: p006（render の node の `share`）が main に入った後。import の試験は p010。
-- 実機の上の 1〜4。
+- 実機の上の 1〜4（program は用意済み、未依頼）。
