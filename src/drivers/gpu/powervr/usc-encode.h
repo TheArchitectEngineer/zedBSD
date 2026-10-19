@@ -249,6 +249,7 @@ int powervr_usc_float_pair(enum powervr_usc_float_pair kind, unsigned saturate, 
 int powervr_usc_float_multiply_add(unsigned saturate, unsigned negate_0, unsigned absolute_0, unsigned negate_1, unsigned absolute_1, unsigned negate_2, unsigned absolute_2, unsigned floor_2, unsigned low_precision, struct powervr_usc_operation *operation);
 int powervr_usc_single(enum powervr_usc_single kind, unsigned negate, unsigned absolute, struct powervr_usc_operation *operation);
 int powervr_usc_pack(unsigned format, unsigned programmable, unsigned round_to_zero, unsigned scale, struct powervr_usc_operation *operation);
+int powervr_usc_unpack(unsigned format, unsigned element, unsigned scale_round, struct powervr_usc_operation *operation);
 int powervr_usc_integer(enum powervr_usc_integer kind, unsigned is_signed, unsigned carry_in, unsigned negate_0, unsigned absolute_0, unsigned negate_1, unsigned absolute_1, unsigned negate_2, unsigned absolute_2, struct powervr_usc_operation *operation);
 int powervr_usc_test(unsigned comparison, unsigned type, unsigned element, unsigned predicate_write, unsigned phase_2_end, unsigned extended, struct powervr_usc_operation *operation);
 int powervr_usc_move(unsigned select_1, unsigned select_0, unsigned mask_0, unsigned all_write, unsigned phase_2_end, unsigned extended, struct powervr_usc_operation *operation);
@@ -256,6 +257,9 @@ int powervr_usc_load(unsigned address_source, unsigned burst, unsigned burst_sou
 int powervr_usc_store(unsigned address_source, unsigned burst, unsigned burst_source, unsigned data_source, unsigned data_size, unsigned cache_mode, unsigned data_return, struct powervr_usc_operation *operation);
 int powervr_usc_fence(unsigned address_source, unsigned data_return, struct powervr_usc_operation *operation);
 int powervr_usc_atomic(unsigned kind, unsigned source, unsigned destination, unsigned data_return, struct powervr_usc_operation *operation);
+int powervr_usc_sample(unsigned normalised, unsigned data_return, unsigned dimensions, unsigned channels, unsigned lod_mode, struct powervr_usc_operation *operation);
+int powervr_usc_emit_pixel(unsigned free_partition, struct powervr_usc_operation *operation);
+int powervr_usc_iterate(unsigned destination, unsigned coefficient, unsigned perspective, unsigned w_coefficient, unsigned mode, unsigned count, unsigned data_return, struct powervr_usc_operation *operation);
 int powervr_usc_vertex_output(unsigned kind, unsigned write_select, unsigned source, unsigned immediate, unsigned address, struct powervr_usc_operation *operation);
 int powervr_usc_bit_count_shift(unsigned count_source, unsigned count_kind, unsigned mask_from_source, unsigned shift_kind, struct powervr_usc_operation *operation);
 int powervr_usc_bit_immediate(uint32_t value, unsigned wide, unsigned count_source, unsigned count_kind, unsigned shift_kind, struct powervr_usc_operation *operation);

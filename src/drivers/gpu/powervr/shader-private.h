@@ -18,6 +18,7 @@
 
 #include "drivers/gpu/powervr/shader-compile.h"
 #include "drivers/gpu/powervr/shader-ir.h"
+#include "drivers/gpu/powervr/usc-encode.h"
 
 /* The highest id bound, struct member, and pooled operand a module may use. */
 #define SHADER_SPIRV_IDS		4096U
@@ -151,10 +152,42 @@ struct shader_machine_operation {
 	uint32_t target;
 };
 
+/* The machine operations, one instruction group each. */
+enum machine_kind {
+	MACHINE_IMMEDIATE = 0,
+	MACHINE_MOVE,
+	MACHINE_MOVE_SPECIAL,
+	MACHINE_FLOAT_ADD,
+	MACHINE_FLOAT_MULTIPLY,
+	MACHINE_FLOAT_MULTIPLY_ADD,
+	MACHINE_SINGLE,
+	MACHINE_MINMAX,
+	MACHINE_COMPARE,
+	MACHINE_SELECT,
+	MACHINE_INTEGER,
+	MACHINE_ADD64,
+	MACHINE_LOGIC,
+	MACHINE_SHIFT,
+	MACHINE_PACK,
+	MACHINE_UNPACK,
+	MACHINE_LOAD,
+	MACHINE_STORE,
+	MACHINE_WAIT,
+	MACHINE_ITERATE,
+	MACHINE_SAMPLE,
+	MACHINE_VERTEX_WRITE,
+	MACHINE_VERTEX_END,
+	MACHINE_END,
+	MACHINE_TEST_ZERO,
+	MACHINE_CONDITION,
+	MACHINE_BRANCH
+};
+
 /* The back end's state for one shader. */
 struct shader_backend {
 	struct shader_machine_operation operations[SHADER_MACHINE_OPERATIONS];
 	unsigned operation_count;
+	uint32_t offsets[SHADER_MACHINE_OPERATIONS];
 	uint16_t value_register[POWERVR_IR_VALUES];
 	uint32_t first_use[POWERVR_IR_VALUES];
 	uint32_t last_use[POWERVR_IR_VALUES];
@@ -173,6 +206,7 @@ struct powervr_shader_workspace {
 };
 
 int shader_backend_build(const struct powervr_ir_shader *shader, struct powervr_shader_program *program, struct shader_backend *backend);
-int shader_backend_encode(const struct shader_backend *backend, uint8_t *code, size_t room, size_t *length);
+int shader_backend_group(const struct shader_machine_operation *operation, int32_t offset, struct powervr_usc_group *group);
+int shader_backend_encode(struct shader_backend *backend, uint8_t *code, size_t room, size_t *length);
 
 #endif /* KERN_DRIVERS_GPU_POWERVR_SHADER_PRIVATE_H */

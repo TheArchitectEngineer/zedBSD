@@ -746,8 +746,18 @@ main(
 
 		memset(memory, 0, sizeof(memory));
 		workgroup_id = 0;
-		if (prepare(words, count, POWERVR_SHADER_COMPUTE, &program, "p009 offset", (1U << 8) - 1U) == 0)
+		if (prepare(words, count, POWERVR_SHADER_COMPUTE, &program, "p009 offset", 0xffffffffU) == 0) {
+			unsigned x;
+			int ok;
+
+			ok = 1;
+			for (x = 0; x < 32; x++) {
+				if (memory[x + 4] != (x << 2) - 1U)
+					ok = 0;
+			}
+			check(ok, "p009 offset writes its words");
 			machine_compare(words, count, POWERVR_SHADER_COMPUTE, "p009 offset");
+		}
 		free(words);
 	}
 
