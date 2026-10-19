@@ -27,7 +27,7 @@
 | [p003](phase003/phase.md) | firmware の package（mirror、sha256、license・WHENCE・manifest、initrd） | p002、D3 | cleared（2026-10-19 Q1、q1328。driver の既定 on は p004） |
 | [p004](phase004/phase.md) | PMU（PD_GPUA）・CRG の GPU の行・組み込みの記述・riscv64 の uncached の別名（予備 (i)）・attach の早い段 | WS256 p013・p015・p022、p002 | in-progress（2026-10-19 P2、q1330。実装・build・host 試験 PASS、実機の 1 行は未実施） |
 | [p005](phase005/phase.md) | 遅い段: FW の parser・MIPS の page table・FW の起動・health の kick・IRQ | p003、p004、WS256 p020 | in-progress（2026-10-19 P2、q1332 前半。実装・build・host 試験 PASS、実機は p004 の `ALIAS OK` の後） |
-| [p006](phase006/phase.md) | coherency の確かめ（MIPS の道）・GPU の MMU・resource・CCB・fence・recovery・render の node・`share` | p005 | in-progress（2026-10-19 P2、q1337。実装・build・host 試験 PASS、実機は p005 の実機の後。display の node 向けの lookup の API は `render.h`） |
+| [p006](phase006/phase.md) | coherency の確かめ（MIPS の道）・GPU の MMU・resource・CCB・fence・recovery・render の node・`share` | p005 | in-progress（2026-10-19 P2、q1337。実装・build・host 試験 PASS、実機は p005 の実機の後。display の node 向けの lookup の API は `render.h`。2026-10-20 P2 q1344: WS277 の R3（shareable の blob を常に SLC_BYPASS）・R5（`blob_create_placed`）を追加、build・host 試験 PASS、実機待ち） |
 | [p007](phase007/phase.md) | display の node（claim・present）と `scanout` の import | WS256 p011、p004、import は p006 | in-progress（2026-10-19 P1 q1333 前半、P2 q1340 後半: import（p006 の lookup で retain、uncached の view から全面の CPU の copy、SHARED・FOREIGN、BLOB の present）の実装・build・host 試験 PASS。damage は ABI に欄が無く全面。残り: 実機の目視（未依頼）） |
 | p008 | Rogue の USC・PDS の encoder、kernel の中の試験の道、data master の道の coherency | p006 | planned |
 | p009 | 最小の Venus の decode（compute） | p008 | planned |

@@ -186,4 +186,18 @@ int powervr_gpu_space_take(struct powervr_gpu_space *space, uint64_t bytes, uint
 /* Gives back the range that starts at an address; EINVAL when none does. */
 int powervr_gpu_space_give(struct powervr_gpu_space *space, uint64_t address);
 
+/*
+ * The mapping flags for a buffer: one the processor can see, or one another
+ * device (the display) may read, goes around the core's system level cache.
+ */
+unsigned powervr_gpu_buffer_flags(int mappable, int shareable);
+
+/*
+ * Checks that a contiguous run lies at or below an inclusive address limit
+ * (zero means none) and starts on an alignment (zero or one means any, else
+ * a power of two).  Zero when it does, ENOTSUP when it does not, EINVAL for
+ * an empty run or a bad alignment.
+ */
+int powervr_gpu_run_fits(uint64_t paddr, uint64_t size, uint64_t limit, uint64_t alignment);
+
 #endif

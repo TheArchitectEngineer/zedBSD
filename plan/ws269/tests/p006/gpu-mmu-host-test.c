@@ -267,6 +267,26 @@ test_heap_pages(void)
 	check(POWERVR_HEAP_GENERAL_PAGES * 4096U + 0x30000U + 0x100000U == 0x1000000U, "the general part, the config area and the reserve fill the heap");
 }
 
+/* The SLC choice per buffer (WS277 R3) and the placement check of a run (R5). */
+static void
+test_buffer_rules(void)
+{
+	check(powervr_gpu_buffer_flags(0, 0) == 0U, "a private buffer keeps the SLC");
+	check(powervr_gpu_buffer_flags(1, 0) == POWERVR_GPU_MAP_SLC_BYPASS, "a mappable buffer bypasses the SLC");
+	check(powervr_gpu_buffer_flags(0, 1) == POWERVR_GPU_MAP_SLC_BYPASS, "a shareable, not mappable buffer bypasses the SLC");
+	check(powervr_gpu_buffer_flags(1, 1) == POWERVR_GPU_MAP_SLC_BYPASS, "a mappable shareable buffer bypasses the SLC");
+	check(powervr_gpu_run_fits(0x80000000ULL, 0x1000U, 0xffffffffULL, 0) == 0, "a run below 4 GiB fits DMA32");
+	check(powervr_gpu_run_fits(0xfffff000ULL, 0x1000U, 0xffffffffULL, 0) == 0, "a run ending at the limit fits");
+	check(powervr_gpu_run_fits(0xfffff000ULL, 0x2000U, 0xffffffffULL, 0) == ENOTSUP, "a run crossing the limit is refused");
+	check(powervr_gpu_run_fits(0x100000000ULL, 0x1000U, 0, 0) == 0, "no limit takes any address");
+	check(powervr_gpu_run_fits(0x80010000ULL, 0x1000U, 0, 0x10000U) == 0, "an aligned base fits");
+	check(powervr_gpu_run_fits(0x80011000ULL, 0x1000U, 0, 0x10000U) == ENOTSUP, "an unaligned base is refused");
+	check(powervr_gpu_run_fits(0x80011000ULL, 0x1000U, 0, 1U) == 0, "alignment one means any");
+	check(powervr_gpu_run_fits(0x80000000ULL, 0x1000U, 0, 0x3000U) == EINVAL, "a non power of two alignment is refused");
+	check(powervr_gpu_run_fits(0x80000000ULL, 0, 0, 0) == EINVAL, "an empty run is refused");
+	check(powervr_gpu_run_fits(~0ULL - 0xfffU, 0x2000U, 0, 0) == EINVAL, "a wrapping run is refused");
+}
+
 int
 main(void)
 {
@@ -274,6 +294,7 @@ main(void)
 	test_map();
 	test_space();
 	test_heap_pages();
+	test_buffer_rules();
 	printf("PASS %d FAIL %d\n", passes, failures);
 	return failures == 0 ? 0 : 1;
 }
