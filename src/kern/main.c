@@ -217,8 +217,6 @@ boot_start(
 	if (error != 0) {
 		kern_logf("VFS initialization failed (%d); entering idle.\n",
 		    error);
-		kern_logf("VFS initialization failed (%d); entering idle.\n",
-		    error);
 		return;
 	}
 
