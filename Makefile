@@ -70,7 +70,7 @@ ZEDBSD_PLATFORM_DIR := $(strip \
 	$(if $(filter i386,$(ZEDBSD_PLATFORM)),pcat,\
 	$(if $(filter rpi4,$(ZEDBSD_PLATFORM)),arm64,\
 	$(if $(filter sun4u,$(ZEDBSD_PLATFORM)),sparcv9,\
-	$(if $(filter riscv64-virt,$(ZEDBSD_PLATFORM)),riscv64,\
+	$(if $(filter riscv64-virt visionfive2,$(ZEDBSD_PLATFORM)),riscv64,\
 	$(if $(filter riscv32-virt,$(ZEDBSD_PLATFORM)),riscv32,\
 	$(ZEDBSD_PLATFORM)))))))
 PLATFORM_MAKEFILE := platform/$(ZEDBSD_PLATFORM_DIR)/Makefile
@@ -163,6 +163,7 @@ ZEDBSD_VARIANTS_amd64_pcat := native hybrid uefi bios
 ZEDBSD_VARIANTS_i386_pc98 := default
 ZEDBSD_VARIANTS_arm64_rpi4 := default
 ZEDBSD_VARIANTS_riscv64_virt := default
+ZEDBSD_VARIANTS_riscv64_visionfive2 := default
 ZEDBSD_VARIANTS_riscv32_virt := default
 ZEDBSD_VARIANTS_sparcv9_sun4u := default
 ZEDBSD_VARIANTS_m68k_x68k := default
@@ -175,6 +176,7 @@ ZEDBSD_PLATFORM_TARGET_amd64 := amd64_pcat
 ZEDBSD_PLATFORM_TARGET_pc98 := i386_pc98
 ZEDBSD_PLATFORM_TARGET_rpi4 := arm64_rpi4
 ZEDBSD_PLATFORM_TARGET_riscv64-virt := riscv64_virt
+ZEDBSD_PLATFORM_TARGET_visionfive2 := riscv64_visionfive2
 ZEDBSD_PLATFORM_TARGET_riscv32-virt := riscv32_virt
 ZEDBSD_PLATFORM_TARGET_sun4u := sparcv9_sun4u
 ZEDBSD_PLATFORM_TARGET_x68k := m68k_x68k

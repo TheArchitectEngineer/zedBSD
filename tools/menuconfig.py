@@ -22,6 +22,7 @@ PLATFORMS = [
     ("pc98", "i386", "pc98", "NEC PC-9800"),
     ("rpi4", "arm64", "rpi4", "Raspberry Pi 4 Arm64"),
     ("riscv64-virt", "riscv64", "virt", "QEMU virt RISC-V 64"),
+    ("visionfive2", "riscv64", "visionfive2", "StarFive VisionFive 2"),
     ("riscv32-virt", "riscv32", "virt", "QEMU virt RISC-V 32"),
     ("sun4u", "sparcv9", "sun4u", "SPARC V9 sun4u"),
     ("x68k", "m68k", "x68k", "Sharp X68000 MC68030"),
@@ -36,6 +37,7 @@ BOARD_LABELS = {
     "pc98": "NEC PC-9800",
     "rpi4": "Raspberry Pi 4",
     "virt": "QEMU virt",
+    "visionfive2": "StarFive VisionFive 2",
     "sun4u": "sun4u",
     "x68k": "Sharp X68000",
     "mac99": "QEMU mac99",
@@ -57,6 +59,7 @@ BOARD_VARIANTS = {
     ("i386", "pc98"): [("default", "Default")],
     ("arm64", "rpi4"): [("default", "Default")],
     ("riscv64", "virt"): [("default", "Default")],
+    ("riscv64", "visionfive2"): [("default", "Default")],
     ("riscv32", "virt"): [("default", "Default")],
     ("sparcv9", "sun4u"): [("default", "Default")],
     ("m68k", "x68k"): [("default", "Default")],
@@ -92,6 +95,7 @@ MENU_CPUS = [
     ("i386", "i386", "pc98", "PC-9800"),
     ("i386", "i386", "i386", "PC/AT"),
     ("riscv64", "RISC-V 64", "riscv64-virt", "QEMU virt"),
+    ("riscv64", "RISC-V 64", "visionfive2", "StarFive VisionFive 2"),
     ("riscv32", "RISC-V 32", "riscv32-virt", "QEMU virt"),
 ]
 
