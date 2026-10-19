@@ -119,3 +119,7 @@ firmware は逆アセンブルしていない（header も今回は読み直し�
 
 - mirror: `awemorris/zedBSD-firmware` に `powervr/` を足す（Q1・ユーザー）。p003 はこれを待つか、mirror が出来るまで fork の commit `8a58f818…` の raw URL を sha256 で検証して使う（どちらにするかは Q1）。
 - `build/ws269-p002/` は使い捨て（P2 の worktree の中）。片付けは Q1。
+
+## mirror（2026-10-19 Q1）
+
+ユーザーのクリック「mirror する（Q1 が push）」「push する」で、awemorris/zedBSD-firmware の commit df57bb4（親 b6ae441）に `powervr/`（rogue_36.50.54.182_v1.fw・LICENSE.powervr・WHENCE・README.md）、最上位の README の表、SHA256SUMS を足して push した（origin/main = df57bb4 を確かめた）。firmware の sha256 は上流の commit 8a58f818 の raw から取り直して一致。p003 はこの mirror を使う。
