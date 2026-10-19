@@ -8,6 +8,7 @@
 - 前提（Q1 の調べ）: /dev/graphics は今 pcat（src/drivers/platform/pcat/graphics/）と pc98 にある（include/uapi/graphics.h、docs/reference/control-devices.md）。Xzed は userland/x11/xzed（platform は *、既定は n）。sun4u の HAL は bsp-sun4u の framebuffer.c（std VGA）。sparcv9 は big endian の 64 bit で、pixel の並びと入力（keyboard・mouse）の道を設計で確かめる。sparcv9 はユーザーの担当の領域なので、変える file は設計で示す。
 - 決定（2026-10-19 18:25 ユーザー）: 「私のSunBlade 150にはXVR-500か600がついているようです。大したアクセラレーションがついたボードとは思えないので、OpenBootが用意したframebufferを使うのがコンソールとしてはいいですね。/dev/graphicsはfirmware framebufferにします。」 → console と /dev/graphics は OpenBoot が用意した firmware framebuffer（OBP の screen の node の property）を使う。QEMU sun4u も OpenBIOS の property から読む形に揃える。card の driver（XVR-500/600 など）は範囲外。実機の候補は Sun Blade 150。
 - 訂正（2026-10-19 18:26 ユーザー）: 「あ、待って。firmware framebufferを使うけど、XVR-500などの既知のデバイスがあるなら、そっちを初期化することにします。」 → 既定は firmware framebuffer、既知の device（XVR-500 など）が見つかればその driver が初期化して /dev/graphics を受け持つ。上の「card の driver は範囲外」は取り消し、card の driver は Phase に分ける。
+- 決定（2026-10-19 18:29 ユーザー）: 「まずAのフレームバッファだけ実装して、Sun PGX64とかはあとで対応できるように口だけ残しておきます。」 → 今回は firmware framebuffer だけを実装し、既知の card の driver が引き取る口（登録・優先度・引き取りの順）は作るが card の driver そのもの（PGX64・XVR-500/600 など）は後の WS。D8 は今は選ばない。
 - 担当: 未割当（手の空いた担当から p001）。
 
 ## 完了の条件（案、p001 で確定）
