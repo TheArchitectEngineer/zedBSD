@@ -12,6 +12,8 @@ mkdir -p "$out"
 cc -std=c99 -D_POSIX_C_SOURCE=200809L -O2 -Wall -Wextra -Werror -I"$root/include" -I"$root/src" \
 	"$root/src/drivers/gpu/powervr/dc8200-adopt.c" \
 	"$root/src/drivers/gpu/powervr/dc8200.c" \
+	"$root/src/drivers/gpu/powervr/dc8200-mode.c" \
+	"$root/src/drivers/gpu/powervr/dc8200-hdmi.c" \
 	"$here/fatal-host-test.c" -o "$out/fatal-host-test"
 cc -std=c99 -O2 -Wall -Wextra -Werror -I"$root/include" -I"$root/src" \
 	"$root/src/drivers/gpu/powervr/dc8200-flip.c" \

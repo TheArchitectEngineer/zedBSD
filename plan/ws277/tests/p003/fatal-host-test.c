@@ -28,6 +28,7 @@
 #include <kern/sched.h>
 #include <kern/waitq.h>
 #include <kern/platform.h>
+#include <kern/pmem.h>
 #include <uapi/errno.h>
 
 #define WRITES_MAX	64U
@@ -136,6 +137,11 @@ kern_boot_framebuffer(
 	return 0;
 }
 
+void *hal_get_arch_handoff(const char *name) { (void)name; return NULL; }
+int kern_pmem_alloc_limited(size_t size, size_t alignment, uint64_t max_address, size_t boundary, struct kern_pmem *run) { (void)size; (void)alignment; (void)max_address; (void)boundary; (void)run; return ENOMEM; }
+int kern_pmem_map_uncached(const struct kern_pmem *run, void **mapped) { (void)run; (void)mapped; return ENOMEM; }
+int kern_pmem_free(struct kern_pmem *run) { (void)run; return 0; }
+void kern_usleep_range(unsigned min_us, unsigned max_us) { (void)min_us; (void)max_us; }
 uint64_t sched_ticks(void) { return ticks; }
 void kern_irq_send_eoi(kern_irq_ack_t acknowledge) { (void)acknowledge; eoi_count++; }
 void spin_init(struct spinlock *lock, enum lock_rank rank, const char *name) { (void)rank; (void)name; lock->held.value = 0U; }

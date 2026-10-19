@@ -34,6 +34,8 @@
 #include <stdint.h>
 
 #include "drivers/gpu/powervr/dc8200-adopt.h"
+#include "drivers/gpu/powervr/dc8200-hdmi.h"
+#include "drivers/gpu/powervr/dc8200-mode.h"
 #include "drivers/gpu/powervr/powervr.h"
 #include <hal/hal.h>
 #include <kern/atomic.h>
@@ -102,6 +104,86 @@
 #define DC_PANEL_EXTRA		0x2518U
 #define DC_PANEL_LOCATION	0x1450U
 #define DC_UNIT_STEP		4U
+
+/*
+ * The panel registers the driver sets when it lights the output itself:
+ * the dither, the DPI and DP output formats, the four timing words, and
+ * the word that starts the panels.
+ *
+ * Values referenced:
+ * Linux torvalds/linux master drivers/gpu/drm/verisilicon/vs_crtc_regs.h
+ * (VSDC_DISP_DITHER_CONFIG 0x1410, VSDC_DISP_HSIZE 0x1430,
+ * VSDC_DISP_HSYNC 0x1438, VSDC_DISP_VSIZE 0x1440, VSDC_DISP_VSYNC 0x1448)
+ * and vs_bridge_regs.h (VSDC_DISP_DPI_CONFIG 0x14b8, its RGB888 5;
+ * VSDC_DISP_PANEL_START 0x1ccc, a panel's running bit n and the
+ * multi-display sync bit 3; VSDC_DISP_DP_CONFIG 0x1cd0, its RGB888 2 and
+ * enable bit 3; the panel configuration's data-enable bit 0 and its
+ * polarity bit 1, data bit 4 and polarity bit 5, clock bit 8 and polarity
+ * bit 9, running bit 12, YUV bit 16).
+ */
+#define DC_PANEL_DITHER		0x1410U
+#define DC_PANEL_HORIZONTAL	0x1430U
+#define DC_PANEL_HSYNC		0x1438U
+#define DC_PANEL_VERTICAL	0x1440U
+#define DC_PANEL_VSYNC		0x1448U
+#define DC_PANEL_DPI		0x14b8U
+#define DC_PANEL_DPI_RGB888	5U
+#define DC_PANEL_START		0x1cccU
+#define DC_PANEL_START_SYNC	(1U << 3)
+#define DC_PANEL_DP		0x1cd0U
+#define DC_PANEL_DP_RGB888	2U
+#define DC_PANEL_DP_ENABLE	(1U << 3)
+#define DC_PANEL_CONFIG_DE		(1U << 0)
+#define DC_PANEL_CONFIG_DE_LOW		(1U << 1)
+#define DC_PANEL_CONFIG_DATA		(1U << 4)
+#define DC_PANEL_CONFIG_DATA_LOW	(1U << 5)
+#define DC_PANEL_CONFIG_CLOCK		(1U << 8)
+#define DC_PANEL_CONFIG_CLOCK_LOW	(1U << 9)
+#define DC_PANEL_CONFIG_RUNNING		(1U << 12)
+#define DC_PANEL_CONFIG_YUV		(1U << 16)
+
+/*
+ * The plane bits the driver clears when it sets a plane up itself: the
+ * clear colour, the rotation, the YUV space, the tile mode, the scaler,
+ * the UV swizzle, the region of interest, the compression and the depth
+ * order; and the blend word that turns blending off.
+ *
+ * Values referenced:
+ * Linux torvalds/linux master
+ * drivers/gpu/drm/verisilicon/vs_primary_plane_regs.h
+ * (VSDC_FB_CONFIG_CLEAR_EN bit 8, ROT bits 11-13, YUV_SPACE bits 14-16,
+ * TILE_MODE bits 17-21, SCALE_EN bit 22, UV_SWIZZLE_EN bit 25;
+ * VSDC_FB_CONFIG_EX_ZPOS bits 16-18; VSDC_FB_BLEND_CONFIG_BLEND_DISABLE
+ * bit 1); StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
+ * drivers/gpu/drm/verisilicon/vs_dc_hw.c (plane_commit: the region of
+ * interest at bit 0 of the extension).
+ */
+#define DC_CONFIG_OWN_CLEAR	((1U << 8) | (0x7U << 11) | (0x7U << 14) | (0x1fU << 17) | (1U << 22) | (1U << 25))
+#define DC_EXTRA_OWN_CLEAR	((1U << 0) | (1U << 1) | (0x7U << 16) | (1U << 19))
+#define DC_BLEND_DISABLE	(1U << 1)
+
+/*
+ * The display subsystem's control block and the two bits the vendor's
+ * driver sets before it starts a panel; their meaning is not documented
+ * to the driver.
+ *
+ * Values referenced:
+ * StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
+ * arch/riscv/boot/dts/starfive/jh7110.dtsi (dssctrl@295b0000, 0x90
+ * bytes) and drivers/gpu/drm/verisilicon/vs_dc.c (vs_dc_enable: bit 20
+ * of 0x4 and bit 3 of 0x8).
+ */
+#define DC_SUBSYSTEM_FIRST	0x4U
+#define DC_SUBSYSTEM_FIRST_BIT	(1U << 20)
+#define DC_SUBSYSTEM_SECOND	0x8U
+#define DC_SUBSYSTEM_SECOND_BIT	(1U << 3)
+
+/* The bytes of one pixel, and the alignment of a framebuffer the driver allocates. */
+#define DC_PIXEL_BYTES		4U
+#define DC_OWN_ALIGNMENT	0x10000U
+
+/* The highest address the controller can scan: its address registers are 32 bits. */
+#define DC_ADDRESS_LIMIT	0xffffffffULL
 
 /*
  * The panel bit that holds back the shadowed registers while it is set.
@@ -202,6 +284,7 @@ struct dc_adoption {
 	uint32_t panel_config;
 	uint32_t panel_extra;
 	struct dc_watch watch;
+	int own;
 };
 
 /*
@@ -260,6 +343,10 @@ static void log_outcome(const struct dc_adoption *adoption);
 static void write_control(const struct dc_adoption *adoption, uint32_t offset, uint32_t value);
 static void write_plane(const struct dc_adoption *adoption, const struct powervr_dc_plane *plane);
 static void blank_interrupt(int irq, kern_irq_ack_t acknowledge, void *argument);
+static const struct powervr_dc_mode *choose_mode(void);
+static int own_screen(const struct powervr_dc_mode *mode, struct powervr_dc_screen *screen, uint32_t *format);
+static void draw_bars(volatile uint32_t *pixels, const struct powervr_dc_screen *screen);
+static void start_panel(const struct dc_adoption *adoption, const struct powervr_dc_mode *mode);
 
 /*
  * Reads the display controller the loader left on and decides whether its
@@ -336,6 +423,182 @@ drv_powervr_dc_probe(
 	log_outcome(adoption);
 
 	/* Succeeded: the controller is read and the decision recorded, go or not. */
+	return 0;
+}
+
+/*
+ * Lights the HDMI output at a mode the driver chooses and shows a
+ * framebuffer on it, for a boot whose loader left no screen or whose line
+ * names display.mode=.
+ */
+int
+drv_powervr_dc_own_mode(
+	const struct drv_powervr_dc_own_place *place)
+{
+	struct dc_adoption *adoption;
+	const struct powervr_dc_mode *mode;
+	struct powervr_dc_plane *plane;
+	struct powervr_dc_screen screen;
+	volatile uint8_t *hdmi;
+	volatile uint8_t *subsystem;
+	void *mapped;
+	unsigned long enabled;
+	uint32_t format;
+	uint32_t swizzle;
+	uint32_t value;
+	int error;
+
+	/* Refuses a missing place, a controller already read, or windows too small. */
+	adoption = &board_adoption;
+	if (place == NULL)
+		return EINVAL;
+	if (adoption->probed)
+		return EALREADY;
+	if (place->controller.display_size < DC_PANEL_EXTRA + DC_UNIT_STEP * 2U - DC_DISPLAY_BASE)
+		return EINVAL;
+	if (place->controller.control_size < DC_CUSTOMER + DC_UNIT_STEP)
+		return EINVAL;
+
+	/* Picks the mode and the memory the plane will show. */
+	mode = choose_mode();
+	error = own_screen(mode, &screen, &format);
+	if (error != 0) {
+		kern_logf("dc8200: own mode: no framebuffer (%d)\n", error);
+		return error;
+	}
+
+	/* Maps the identity, the display and the HDMI transmitter's registers. */
+	error = kern_device_map(place->controller.control, (size_t)place->controller.control_size, KERN_DEVICE_UNCACHED, &mapped);
+	if (error != 0) {
+		kern_logf("dc8200: own mode: control map failed (%d)\n", error);
+		return error;
+	}
+	adoption->control = mapped;
+
+	error = kern_device_map(place->controller.display, (size_t)place->controller.display_size, KERN_DEVICE_UNCACHED, &mapped);
+	if (error != 0) {
+		kern_logf("dc8200: own mode: display map failed (%d)\n", error);
+		return error;
+	}
+	adoption->display = mapped;
+	adoption->interrupt = place->controller.interrupt;
+
+	error = kern_device_map(place->hdmi, (size_t)place->hdmi_size, KERN_DEVICE_UNCACHED, &mapped);
+	if (error != 0) {
+		kern_logf("dc8200: own mode: HDMI map failed (%d)\n", error);
+		return error;
+	}
+	hdmi = mapped;
+
+	/* Refuses a controller whose registers the driver does not know. */
+	read_state(adoption);
+	if (adoption->state.model != POWERVR_DC_MODEL) {
+		kern_logf("dc8200: own mode: unknown model %x\n", adoption->state.model);
+		return ENODEV;
+	}
+
+	/* Sets the two subsystem bits the vendor's driver sets, when the board powered the output up itself. */
+	if (place->subsystem != 0) {
+		error = kern_device_map(place->subsystem, (size_t)place->subsystem_size, KERN_DEVICE_UNCACHED, &mapped);
+		if (error != 0) {
+			kern_logf("dc8200: own mode: subsystem map failed (%d)\n", error);
+			return error;
+		}
+		subsystem = mapped;
+		value = kern_mmio_read32(subsystem + DC_SUBSYSTEM_FIRST);
+		kern_mmio_write32(subsystem + DC_SUBSYSTEM_FIRST, value | DC_SUBSYSTEM_FIRST_BIT);
+		value = kern_mmio_read32(subsystem + DC_SUBSYSTEM_SECOND);
+		kern_mmio_write32(subsystem + DC_SUBSYSTEM_SECOND, value | DC_SUBSYSTEM_SECOND_BIT);
+	}
+
+	/* Starts the HDMI transmitter first: its PHY makes the panel's pixel clock. */
+	error = powervr_dc_hdmi_start(hdmi, mode);
+	if (error != 0 && error != ETIMEDOUT) {
+		kern_logf("dc8200: own mode: HDMI not set (%d)\n", error);
+		return error;
+	}
+	if (error == ETIMEDOUT)
+		kern_logf("dc8200: own mode: HDMI PLL not locked\n");
+
+	/* Sets the HDMI panel's output and timing and starts it. */
+	start_panel(adoption, mode);
+
+	/* The plane: the framebuffer's first pixel and row pitch, 32-bit pixels without alpha, at the mode's size. */
+	swizzle = DC_CONFIG_SWIZZLE_ARGB;
+	if (format == KERN_BOOT_FRAMEBUFFER_RGBX8888)
+		swizzle = DC_CONFIG_SWIZZLE_ABGR;
+	adoption->plane = 0;
+	plane = &adoption->state.planes[0];
+	plane->address = (uint32_t)screen.physical;
+	plane->stride = screen.pitch;
+	plane->config = plane->config & ~DC_CONFIG_OWN_CLEAR;
+	plane->config &= ~((DC_CONFIG_FORMAT_MASK << DC_CONFIG_FORMAT_SHIFT) | (DC_CONFIG_SWIZZLE_MASK << DC_CONFIG_SWIZZLE_SHIFT));
+	plane->config |= (DC_CONFIG_FORMAT_XRGB << DC_CONFIG_FORMAT_SHIFT) | (swizzle << DC_CONFIG_SWIZZLE_SHIFT);
+	plane->extra = plane->extra & ~(DC_EXTRA_OWN_CLEAR | POWERVR_DC_EXTRA_COMMIT);
+	plane->extra |= POWERVR_DC_EXTRA_ENABLED | (DC_HDMI_PANEL << POWERVR_DC_EXTRA_PANEL_SHIFT);
+	plane->size = mode->width | (mode->height << POWERVR_DC_SIZE_HEIGHT_SHIFT);
+	plane->top_left = 0;
+	plane->bottom_right = mode->width | (mode->height << POWERVR_DC_SIZE_HEIGHT_SHIFT);
+	plane->background = 0;
+	plane->blend = DC_BLEND_DISABLE;
+
+	/* The place a takeover and a fatal stop return the screen to, for the life of the system. */
+	adoption->screen = screen;
+	adoption->screen.width = mode->width;
+	adoption->screen.height = mode->height;
+	adoption->verdict = POWERVR_DC_GO;
+	adoption->own = 1;
+
+	/* Commits the plane with the shadowed registers held back. */
+	enabled = spin_lock_irqsave(&dc_commit_lock);
+	write_plane(adoption, plane);
+	spin_unlock_irqrestore(&dc_commit_lock, enabled);
+
+	/* Records the outcome, which the screen shows when the loader's console draws on it. */
+	adoption->probed = 1;
+	kern_logf("dc8200: own mode %ux%u@%u clock %u kHz model %x rev %x cid %x fb %llx/%u format %u\n",
+		  mode->width,
+		  mode->height,
+		  mode->refresh,
+		  mode->clock_khz,
+		  adoption->state.model,
+		  adoption->state.revision,
+		  adoption->state.customer,
+		  (unsigned long long)screen.physical,
+		  screen.pitch,
+		  format);
+
+	/* Succeeded: the output runs at the mode and shows the framebuffer. */
+	return 0;
+}
+
+/*
+ * Reports whether the driver lights the output itself rather than take
+ * the loader's screen over.
+ */
+int
+drv_powervr_dc_own_wanted(
+	void)
+{
+	struct kern_boot_framebuffer framebuffer;
+	const char *line;
+	uint32_t width;
+	uint32_t height;
+	uint32_t refresh;
+	int error;
+
+	/* A loader that left no screen leaves the output to the driver. */
+	error = kern_boot_framebuffer("riscv64.framebuffer", &framebuffer);
+	if (error != 0)
+		return 1;
+
+	/* A boot line that names a mode, readable or not, asks for the driver's own. */
+	line = hal_get_arch_handoff("boot.command-line");
+	error = powervr_dc_mode_from_line(line, &width, &height, &refresh);
+	if (error != ENOENT)
+		return 1;
+
+	/* Otherwise the loader's screen is taken over. */
 	return 0;
 }
 
@@ -1014,4 +1277,176 @@ blank_interrupt(
 
 	/* Hands the interrupt back to the controller of interrupts. */
 	kern_irq_send_eoi(acknowledge);
+}
+
+/*
+ * Chooses the mode the boot line names with display.mode=, or the default
+ * when it names none the driver knows.
+ */
+static const struct powervr_dc_mode *
+choose_mode(
+	void)
+{
+	const struct powervr_dc_mode *mode;
+	const char *line;
+	uint32_t width;
+	uint32_t height;
+	uint32_t refresh;
+	int error;
+
+	/* The boot parameters are not parsed yet, so the line is read here. */
+	line = hal_get_arch_handoff("boot.command-line");
+	error = powervr_dc_mode_from_line(line, &width, &height, &refresh);
+	if (error == ENOENT)
+		return powervr_dc_mode_default();
+	if (error != 0) {
+		kern_logf("dc8200: display.mode= unreadable (%d); default mode\n", error);
+		return powervr_dc_mode_default();
+	}
+
+	/* Takes the named mode when the table has it. */
+	error = powervr_dc_mode_find(width, height, refresh, &mode);
+	if (error != 0) {
+		kern_logf("dc8200: no mode %ux%u@%u; default mode\n", width, height, refresh);
+		return powervr_dc_mode_default();
+	}
+
+	return mode;
+}
+
+/*
+ * Finds the memory the plane shows at a mode: the loader's framebuffer
+ * when it holds the mode, otherwise one the driver allocates below 4 GiB
+ * and paints with colour bars.
+ */
+static int
+own_screen(
+	const struct powervr_dc_mode *mode,
+	struct powervr_dc_screen *screen,
+	uint32_t *format)
+{
+	struct kern_boot_framebuffer framebuffer;
+	struct kern_pmem run;
+	uint64_t bytes;
+	void *view;
+	int fits;
+	int error;
+
+	/* Uses the loader's framebuffer when it is in reach and holds the mode, so its console stays visible. */
+	error = kern_boot_framebuffer("riscv64.framebuffer", &framebuffer);
+	fits = 0;
+	if (error == 0)
+		fits = 1;
+	if (fits && framebuffer.width < mode->width)
+		fits = 0;
+	if (fits && framebuffer.height < mode->height)
+		fits = 0;
+	if (fits && framebuffer.physical_base + framebuffer.size - 1U > DC_ADDRESS_LIMIT)
+		fits = 0;
+	if (fits && framebuffer.format != KERN_BOOT_FRAMEBUFFER_RGBX8888 && framebuffer.format != KERN_BOOT_FRAMEBUFFER_BGRX8888)
+		fits = 0;
+	if (fits) {
+		screen->physical = framebuffer.physical_base;
+		screen->pitch = framebuffer.pitch;
+		screen->width = framebuffer.width;
+		screen->height = framebuffer.height;
+		*format = framebuffer.format;
+		return 0;
+	}
+
+	/* Allocates one contiguous run the controller can scan. */
+	bytes = (uint64_t)mode->width * DC_PIXEL_BYTES * mode->height;
+	error = kern_pmem_alloc_limited((size_t)bytes, DC_OWN_ALIGNMENT, DC_ADDRESS_LIMIT, 0, &run);
+	if (error != 0)
+		return error;
+
+	/* Paints it through its uncached alias, which the controller reads without a flush. */
+	error = kern_pmem_map_uncached(&run, &view);
+	if (error != 0) {
+		(void)kern_pmem_free(&run);
+		return error;
+	}
+
+	screen->physical = run.paddr;
+	screen->pitch = mode->width * DC_PIXEL_BYTES;
+	screen->width = mode->width;
+	screen->height = mode->height;
+	*format = KERN_BOOT_FRAMEBUFFER_BGRX8888;
+	draw_bars(view, screen);
+
+	/* Succeeded: the run is the screen for the life of the system. */
+	return 0;
+}
+
+/*
+ * Paints red, green, blue and white bars over a framebuffer the driver
+ * allocated, blue bytes first, so the output shows the colours in order.
+ */
+static void
+draw_bars(
+	volatile uint32_t *pixels,
+	const struct powervr_dc_screen *screen)
+{
+	static const uint32_t colours[4] = { 0x00ff0000U, 0x0000ff00U, 0x000000ffU, 0x00ffffffU };
+	uint32_t row;
+	uint32_t column;
+	uint32_t bar;
+
+	/* Four upright bars, each a quarter of the width. */
+	for (row = 0; row < screen->height; row++) {
+		for (column = 0; column < screen->width; column++) {
+			bar = (column * 4U) / screen->width;
+			pixels[row * (screen->pitch / DC_PIXEL_BYTES) + column] = colours[bar];
+		}
+	}
+}
+
+/*
+ * Sets the HDMI panel's output to 24-bit RGB on the display port, its
+ * timing to the mode's, and starts it.
+ *
+ * Procedure referenced:
+ * Linux torvalds/linux master drivers/gpu/drm/verisilicon/vs_bridge.c
+ * (vs_bridge_atomic_enable_dp and vs_bridge_enable_common: the format
+ * with the port enabled, the panel's data, enable and clock signals and
+ * their polarities, the running bit, the panel started without the
+ * multi-display sync) and vs_crtc.c (vs_crtc_mode_set_nofb: the timing
+ * words); StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
+ * drivers/gpu/drm/verisilicon/vs_dc_hw.c (setup_display: the DPI format
+ * and the dither off).
+ */
+static void
+start_panel(
+	const struct dc_adoption *adoption,
+	const struct powervr_dc_mode *mode)
+{
+	struct powervr_dc_panel_timing timing;
+	uint32_t step;
+	uint32_t value;
+
+	step = DC_UNIT_STEP * DC_HDMI_PANEL;
+
+	/* 24-bit RGB on the display port and on the parallel output. */
+	write_display(adoption, DC_PANEL_DP + step, DC_PANEL_DP_RGB888 | DC_PANEL_DP_ENABLE);
+	write_display(adoption, DC_PANEL_DPI + step, DC_PANEL_DPI_RGB888);
+	write_display(adoption, DC_PANEL_DITHER + step, 0U);
+
+	/* The mode's timing. */
+	powervr_dc_panel_timing(mode, &timing);
+	write_display(adoption, DC_PANEL_HORIZONTAL + step, timing.horizontal);
+	write_display(adoption, DC_PANEL_HSYNC + step, timing.horizontal_sync);
+	write_display(adoption, DC_PANEL_VERTICAL + step, timing.vertical);
+	write_display(adoption, DC_PANEL_VSYNC + step, timing.vertical_sync);
+
+	/* The panel's signals enabled with their plain polarities, RGB, running. */
+	value = read_display(adoption, DC_PANEL_CONFIG + step);
+	value &= ~(DC_PANEL_CONFIG_DE_LOW | DC_PANEL_CONFIG_DATA_LOW | DC_PANEL_CONFIG_CLOCK_LOW | DC_PANEL_CONFIG_YUV);
+	value |= DC_PANEL_CONFIG_DE | DC_PANEL_CONFIG_DATA | DC_PANEL_CONFIG_CLOCK | DC_PANEL_CONFIG_RUNNING;
+	write_display(adoption, DC_PANEL_CONFIG + step, value);
+
+	/* Starts the panel on its own, without the other panel's sync. */
+	value = read_display(adoption, DC_PANEL_START);
+	value &= ~DC_PANEL_START_SYNC;
+	value |= 1U << DC_HDMI_PANEL;
+	write_display(adoption, DC_PANEL_START, value);
 }

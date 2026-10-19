@@ -2,7 +2,8 @@
 
 # WS277 設計: VisionFive 2 の DC8200 の display driver（zero copy の scanout）
 
-- 版: 3.1（2026-10-20、P1、ws277-p001、q1347-i01）。[レビュー 3](design-review-3.md)（差分の確認、Blocker 無し）の M1〜M3・Minor 1〜10 に対応（末尾 §14 の表）。Q1 の判断: M2 は serial-console に汎用で追加だけの口を足す事を許す。Q1 の差分の確認待ち。
+- 版: 3.2（2026-10-20、P1、q1353-i01）。§4.7・D7 の追補（p005 の前に要る物）を末尾 §15 に足した。Q1 の差分の確認待ち。
+- 版 3.1（2026-10-20、P1、ws277-p001、q1347-i01）。[レビュー 3](design-review-3.md)（差分の確認、Blocker 無し）の M1〜M3・Minor 1〜10 に対応（末尾 §14 の表）。Q1 の判断: M2 は serial-console に汎用で追加だけの口を足す事を許す。Q1 の差分の確認待ち。
 - 版 3（2026-10-20、P1、ws277-p001、q1346-i01）。[レビュー 2](design-review-2.md) の新 B1・新 M1〜M6・Minor 1〜11・D10・D11 に対応（末尾 §13 の表）。Q1 の判断（`plan/queue.md` の q1346 の行）を反映: 新 B1 は display.c の中の保持の数、U0 の go/no-go は小さい Phase、R4 は VF2 の platform の wrapper の ops、M1 は推奨 (a)（D10）、M6 は p005 の前の追補。コードは書いていない。design-reviewer の差分の確認待ち。
 - 版 2（q1343-i01、[レビュー 1](design-review-1.md) への対応）と版 1（q1341-i01）は git の履歴。
 - 目的: PowerVR（BXE-4-32）が線形で書いた render の buffer を、CPU の copy 無しで DC8200 が直接 scanout する。WS269 の display の node（gpu0、boot framebuffer への CPU の copy）を、DC8200 を自分で操作する node に置き換える。
@@ -192,7 +193,7 @@
 - **HAL（hal.h・fbcons）は変えない**。
 - 確かめ: p003 の host 試験（偽の窓で戻しの書き込みの順、fatal の印の後の present が書かない事）と、実機の項目 U5。
 
-### 4.7 自前の mode の後の戻し先（新 M6、**未定・p005 の前の追補**）
+### 4.7 自前の mode の後の戻し先（新 M6、**版 3.2 の §15 で決めた**）
 
 - release・panic・COPY・小さい BLOB の戻し先は U-Boot の plane の snapshot と bootfb で、**U-Boot の mode の間（p003・p004）だけ有効**とする。
 - p005 で mode を変えた後、または D1 が no-go で snapshot が無い時の扱いは **未定**で、**p005 の前の追補**で決める（D7 と一緒に）。決める事: (i) release・panic の時に mode も U-Boot の mode へ戻すか、(ii) console を今の mode に合わせる（bootfb の作り直しは HAL の責務に触れ得るので、その場合は HAL の承認が要るかを先に確かめる）か、(iii) D1 が no-go の時の console と panic の扱い。
@@ -346,3 +347,41 @@ VF2 の板の接続と実機の判定の方法は WS256 の #10・#15 で未決�
 | Minor 8 細かい不整合 | 「失敗の道は無い」を fatal の印と整合させた。panic の polling は `CURRENT_LOCATION` の wrap（ACK は読まない）。遅らせた解放は `owner` を参照しない | §2.6、§4.5、§4.6 |
 | Minor 9 p004 の UNGATED と pending | 待つ形を保つか pending を置き換えるか（保持の数は最大 3）を p004 の設計で決める事として書いた | §4.3、§7 p004 |
 | Minor 10 D1 が no-go の時の順 | p002 → §4.7 の追補 → p005 → p003 → p004 … と書いた | §7 |
+
+## 15. 追補（版 3.2、2026-10-20、§4.7・D7、p005 の前）
+
+前提の事実（2026-10-20 Q1、ユーザーの VF2）: 配布の U-Boot 2021.10 は console が serial だけだが、bootefi の時に GOP を出す（loader `RV64 GOP mode 0 of 1 1920x1080 format 1 scanline 1920 base 0x00000000fe000000 size 0x7e9000`、`RV64 GOP handed over`、kernel `RISCV64 FRAMEBUFFER 1920x1080 phys=fe000000`）。0xfe000000 は 4 GiB 未満で p002 の判定の条件に合う。p002 の実機の判定（U0）は未（kernel が BUG-338 で dc8200 の行の前に止まる）。
+
+### 15.1 道の優先
+
+1. **GOP がある時は引き継ぎ（p002〜p004）が主の道**。p005 の自前の mode は、(a) GOP が無い時（kern_boot_framebuffer が無い）、(b) `display.mode=` が boot の行にある時（GOP があっても自前の mode を試す。U7 の試験の手段）だけ動く。
+2. (b) で GOP があり、bootfb が mode を収める（`bootfb の幅 ≥ W`・`高さ ≥ H`）時は **bootfb の memory をそのまま scanout する**（stride = bootfb の pitch、plane の SIZE = W×H、bootfb の左上の W×H を出す）。HAL の早期の console（WS256 p011 の fbcons）は bootfb に描き続けるので、文字（80×25 = 640×400 pixel）は左上にそのまま見え、**HAL の変更は要らない**。
+3. (a)、または bootfb が mode を収めない時は、kernel が framebuffer を確保する（1 つの連続の run、末尾 ≤ 0xffffffff、`kern_pmem_alloc_limited`、uncached の別名で色の帯を描く）。この時 HAL の console はその memory を知らないので画面に文字は出ない（serial にだけ出る）。文字を出すには kernel から HAL へ framebuffer を渡す口が要り、**HAL の API の変更**になる（案は [proposed/hal-riscv64-late-framebuffer.md](proposed/hal-riscv64-late-framebuffer.md)。承認の前は適用しない）。
+
+### 15.2 mode を選ぶ経路（D7 (a)）
+
+- 既存の boot parameter **`display.mode=WxH[@R]`**（ws075-p012、`kern_boot_display_mode_parse` と同じ書き方）を使い、新しい名前は足さない。p005 の probe は boot の parameter の解析（`boot_start`）より前に走るので、`hal_get_arch_handoff("boot.command-line")` の行から `display.mode=` の語を自分で探して読む（i915 の `i915.gen9=` と同じ扱い）。
+- 既定（`display.mode=` が無く GOP も無い時）: **1920x1080@60**（148.5 MHz）。EDID は p006 なので読まない。
+- 受ける mode は表の 5 つだけ（D6 (a)、PLL の表の範囲）: 640x480@60（25.175 MHz）・800x600@60（40 MHz）・1024x768@60（65 MHz）・1280x720@60（74.25 MHz）・1920x1080@60（148.5 MHz）。R を省いたら 60。表に無い mode は既定に落として log に残す。
+- UAPI の mode の設定（ENUMERATE・VALIDATE の先）は p006 で決める（D7 の残り）。
+
+### 15.3 戻し先（§4.7 の決定）
+
+- 自前の mode は boot の時に 1 回だけ設定し、以後変えない。設定の後、書いた plane の register を **p002 の snapshot と同じ形**（`board_adoption`、verdict を go、plane 0）に入れ、framebuffer（bootfb か確保した物）を「戻し先の screen」とする。
+- よって release・close・panic（`reveal_fatal`）・COPY・小さい BLOB の戻し先は、自前の mode の plane と framebuffer で、**一生有効**。mode を U-Boot の mode へ戻す事はしない（GOP が無い時は戻す先が無い。GOP がある (b) の時も、試験の手段なので戻さない）。
+- panic の文字が画面に出るのは、戻し先が bootfb の時（GOP があり HAL が描く）だけ。確保した framebuffer の時は HAL の口（15.1 の 3）が承認されるまで serial だけ。
+- display.c の COPY の道は今 `kern_boot_framebuffer` の screen に描くので、GOP が無い時は copy の道も使えない（display の node は出ない）。確保した framebuffer を display.c の screen にする事は p003（no-go の順では p005 の後）で扱う（残り）。
+
+### 15.4 HW の手順の要点（p005、S1・S3、Procedure / Values referenced）
+
+- 電源と clock（GOP が無い時だけ。GOP がある時は U-Boot が開けた物をそのまま使い、触らない）: PD_VOUT を on、SYS の gate 58・60・61・62・63 と VOUT の gate 4・5・6・7・9・15・16・17 を開け、reset の SYS 43・26、VOUT 0・1・2・9 を外す。DSS の syscon（0x295B0000）の 0x4 bit 20・0x8 bit 3 を vendor の enable と同じく立てる（意味は未確認）。
+- **pixel clock**: HDMI の panel の pixel clock（VOUT 7、dc8200_pix0）の親は `hdmitx0_pixelclk`（HDMI の PHY の出力）。WS256 の `drv_vf2_clock_set_parent` は親が CRG の clock の時だけ受け、外の入力（SOURCE_INPUT）を選べない。**依頼 R1b**: 外の入力を親に選ぶ口（例 `drv_vf2_clock_set_input(clock, "hdmitx0_pixelclk")`）。R1b が入るまで p005 は selector を触らず（U-Boot が HDMI を出した後は既に PHY を選んでいると推測、vendor `vs_dc.c` の dc_init の注記）、GOP が無い時の画は未確認。
+- LCD の clock（VOUT 9）の親は pix0（VOUT 7）。
+- HDMI の regulator（PMIC AXP15060 の ALDO3・ALDO5）は DT で `regulator-boot-on`。zedBSD に PMIC の driver は無いので、firmware が on にしている事に頼る（未確認）。
+- 順: HDMI の PHY（pre/post PLL を表から、lock を上限付きで待つ、LDO・serializer、timing、PHY の on、TMDS の driver）→ DC の panel（DP の出力 RGB888・DPI、timing、panel の enable と start）→ plane（ADDRESS・STRIDE・XRGB と swizzle・SIZE・位置・blend 無効・FB_EN・DISPLAY_ID 0）を §2.6 の手順で commit。
+- 時間の上限: PLL の lock は 20 ms（`kern_usleep_range` の待ち、越えたら log に残し続ける。画が出なければ U7 で記録）。
+
+### 15.5 Phase と確かめの変化
+
+- p005 の依存: R1・R2（main にある）、**R1b（新、pixel clock の入力の選択、GOP が無い時だけ）**。HAL の口（15.1 の 3）は p005 の必須でなく、確保した framebuffer に文字を出す時だけ。
+- U7 の手順: GOP のある配布の U-Boot で `display.mode=1280x720@60` を boot の行に足して起動し、HDMI に 1280x720 の画（左上に HAL の文字）が出る事。GOP が無い時の画（色の帯）は R1b の後。
