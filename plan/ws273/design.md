@@ -2,7 +2,8 @@
 
 - 版 1: 2026-10-19 P2（ws273-p001、q1317 / q1317-i01）。
 - 版 2: 2026-10-19 P1（q1320 / q1320-i01）。[レビュー 1](design-review-1.md) の B1・M1〜M10・Minor 1〜12・D3 の変更・D7 の追加に対応（末尾 §9 の表）。
-- コードは書かない。design-reviewer の差分の確認待ち。
+- 版 2.1: 2026-10-19 P2（q1323 / q1323-i01）。[レビュー 2](design-review-2.md) の Major M-a と Minor 1〜12 に対応（末尾 §10 の表）。Minor 4〜12 は主に §3.1 の Phase の項に取り込んだ。
+- コードは書かない。Q1 の差分の確認待ち。
 
 ## 0. 出典と確認の水準
 
@@ -57,7 +58,7 @@
   5. 引数（o32）: `a0 = argc`、`a1 = argv`、`a2 = a3 = NULL`。DT は渡さない。
 - **入口の CP0 の状態**（確 [UBI] `head.S`）: Status = `0x00400004`（BEV=1、ERL=1）、**Cause = `0x00800000`（IV=1）**。PageCtrl は VTLB（上の 1.1-3）。
 - **argv は D cache の中だけにある**（M1）: `kernel_params[]` と文字列は UBIBoot の 8 KiB の窓の `.data`・`.rodata` にあり、その cache line は dirty の印が無く、追い出されると中身が失われる（確（レビュー 1）`main.c` の comment）。版 1 の「読み込みが D cache を汚さない」は意味の取り違えだった。kernel の bss の消去（page の bitmap だけで 16 KiB 超）で確実に追い出される。→ **この WS では argv を使わない**（M1 の (a)）。`mips_board_boot` は a0・a1 を無視し、`boot.command-line` は空にする。使う必要が出た時は `locore.S` で bss の消去の前に KSEG0 から読んで KSEG1 の宛先へ写す（(b)、後の WS）。
-- I cache: 入口の状態は BEV・ERL で cached の窓から来るので、kernel の入口で I cache を全部無効にする（`Index_Invalidate_I`）。D cache も入口で全部 writeback・invalidate する。
+- 入口の cache（M-a で直した）: 入口の状態は BEV・ERL で cached の窓から来る。kernel は早い段で L1 I を全部無効、L1 D と L2 を全部 writeback・invalidate する。**既存の `cache.c` にこの全体の操作は無い**（唯一の Index の操作 `mips_cache_flush_page_colors`（cache.c:131-186）は `cache_alias == 0` で何もせず戻り、RG350 は 4 KiB/way なので常に 0。cache の形は `mips_cache_init`（cmain.c:104）で初めて読まれ、`mips_board_init`（cmain.c:76）より後）。→ 新しい関数を p002 で作る（§2.2）。
 
 ### 1.4 LCD
 - LCDC `ingenic,jz4770-lcd`、`0x13050000`、INTC 31（確 [L-dtsi]）。
@@ -65,7 +66,12 @@
 - reset: DT は PE2（active low）を書くが、**Linux の panel-simple は `enable-gpios` しか読まず `reset-gpios` を使わない**（確（レビュー 1））。PE2 の順序と時間には参照が無い。p004 は「PE2 を high（解除）にしておく」だけから始め、映らなければ low→待ち→high を試す（試行の上限の中で）。
 - backlight: PWM1（TCU の channel 1）、pin PE1。UBIBoot は PE1 を GPIO の low にする（確 [UBI]）→ 起動直後は消えている見込み。最初の段は PE1 を GPIO の high。**backlight だけの印は、panel に信号が無いと暗いまま光るだけの可能性がある**（推測）ので、印は LED と組む（§2.3）。
 - pixel clock: OD の DT は LPCLK の親を PLL1（432 MHz）にする（確（レビュー 1））。UBIBoot が PLL1 を動かすかは未確認。案は 2 つ: (i) PLL1 が動いていれば 432/72 = 6 MHz、(ii) 動いていなければ PLL0（996 MHz）を 166 で割る（≈ 6.0 MHz）。どちらでも LCD の clock gate（CGU の CLKGR の LCD の bit）を開ける。bit と順序は Linux の `drivers/clk/ingenic/jz4770-cgu.c` と `drivers/gpu/drm/ingenic/ingenic-drm-drv.c` を「Procedure referenced:」で参照（p004 の最初の作業、版を記録）。
-- **framebuffer と LCDC の descriptor の置き場所と書き方**（M4）: `mips_board_init` は `mips_page_init` より前に呼ばれるので、framebuffer（320×240×4 = 300 KiB、page に揃える）と descriptor は image の bss に置き、**KSEG1（uncached）の alias から書く**。L1・L2 の dirty な line が DMA と食い違わない。console の描画は KSEG1 経由（速度は 320×240 なら十分と見込む）。
+- **framebuffer と LCDC の descriptor の置き場所と書き方**（M4、M-a で直した）:
+  - 版 2 の「bss に置き KSEG1 から書く」は誤り。`locore.S:68-76` は bss 全体を KSEG0（cached）から `sw $0` で消す。XBurst の L1 D は write-back で、L2 は L1 を包含しない（`cpu_has_inclusive_pcaches 0`、確 [L-probe]）。300 KiB を cached で消すと、dirty な 0 の line が L1 と L2 に残り（L2 が write-back なのは推測）、後で追い出された時に KSEG1 で描いた内容と descriptor を DRAM 上で壊す。QEMU は cache を模擬しないので T1 では見えない。
+  - **置き場所**: framebuffer（320×240×4 = 300 KiB、page に揃える）と descriptor は、`platform/mips32-rg350/vmunix.ld` で **`__bss_end` の後、`__kernel_vma_end` の前の専用の NOLOAD の section**（例 `.uncached`、page に揃える）に置く。locore.S の cached の消去の範囲（`__bss_start`〜`__bss_end`）から外れ、`page.c:142-143` の `reserve_range(0, kernel_end)` の中に入るので page の allocator には渡らない。
+  - **書き方**: bsp は KSEG1（uncached）の alias で消してから書く。**KSEG0 の symbol の address では決して読み書きしない**（bsp の中で KSEG1 の pointer に変える helper を 1 つ置き、それだけを使う）。console の描画も KSEG1 経由（320×240 なら速度は十分と見込む）。
+  - 上の section の置き場所に加え、入口の全体の flush（§2.2）が UBIBoot の残した dirty な line も消す。DMA を始める前に `sync` を入れる（Minor 9）。
+  - 機種の注意（Minor 7）: OpenDingux の DT では RG350M は `leadtek,ltk035c5444t`（640×480）で、RG350・RG350P が `frida,frd350h54004`（320×240）（確（レビュー 2）`od-rg350m.dts:11-13`・`od-rg350.dts`）。機種を p003 の前にユーザーに確かめる（§3.2-1、§7）。
 
 ### 1.5 SD（MSC）
 - MSC0 `0x10021000`（INTC 37）、MSC1 `0x10022000`（36）、MSC2 `0x10023000`（35）（確 [L-dtsi]）。RG350: MSC0 = 内部の TF1、MSC1 = 外部の TF2（確 [OD-dts]）。driver は範囲外（§6）。
@@ -116,11 +122,11 @@ platform/mips32-rg350/     vmunix.mk・vmunix.ld・Makefile（uImage の段を�
 | --- | --- | --- | --- |
 | **入口の CP0 の状態**（B1） | IV=0 で入る | UBIBoot は Cause.IV=1、Status = BEV|ERL で入る | `locore.S` の先頭で **Cause を 0**（`mtc0 $0, $13`）。Status は既存の初期化のまま（BEV・ERL を落とす所を確かめる）。**`vectors.S` の EBase+0x200 にも `mips_trap_entry` への分岐を置く**（IV が残った時の保険。`asm.h` の vector の配置に 0x200 を足す）。 |
 | PageCtrl | 無い | VTLB に戻す（UBIBoot も書く） | PRId の company が 0xd1 の時、TLB の初期化の前に CP0 5 sel 4 へ `0xa9000000`。 |
-| 入口の cache | — | cached の窓から来る | 入口で I cache を全部無効、D cache を全部 writeback・invalidate（`cache.c` の既存の全体の操作を早い段で呼ぶ）。 |
+| **入口の cache**（M-a） | — | cached の窓から来る | **新しい関数**（例 `mips_cache_flush_all_early`、`cache.c`）: Config1 と Config2 をその場で読んで L1 I・L1 D・L2 の形（set・way・line）を求め、L1 D に `Index_Writeback_Inv_D`、L1 I に `Index_Invalidate_I`、L2 に `Index_Writeback_Inv_SD` を全 way・全 set に掛ける（L2 は Config1.M と Config2 で在る時だけ、JZ4770 の way の補正もここで）。stack と global を使わない形にし、**呼ぶ所は locore.S の bss の消去の後、`mips_cmain` の `mips_board_init` より前**。malta でも呼び、QEMU では無害（Index の操作は QEMU で無操作）。`mips_cache_init` の既存の形の読み出しは変えない。 |
 | argv（M1） | YAMON 風 | D cache の中だけ | `mips_board_boot` は bsp の関数のまま。RG350 の bsp は a0・a1 を読まない。共通の層は不変。 |
 | **timer**（M2） | `clock.c` が CP0 Count/Compare、IP7 | Count が無い、tick は IP2 → INTC → TCU | timer を bsp の関数に移す（`mips_board_timer_init(hz)`・`mips_board_counter_read()`）。malta の bsp は今の Count/Compare を持つ。**tick の経路**: `int.c` の IP7 の経路は malta の bsp の物にし、RG350 は IP2 の bsp の handler から共通の tick の関数を呼ぶ。`cmain.c` の `wait_for_ticks` の IM の bit（今は IP7 の `MIPS_INTERRUPT_TIMER`）は bsp が返す mask にする。`mips_irq_begin_local` と `MIPS_ACK_LOCAL` が IP2 の経路でそのまま使えるかは p002 で code を読んで確かめ、使えなければ bsp の ack を挟む。`mips_board_count_frequency` は置き換える。 |
-| **I cache の VTAG**（M3） | PIPT 扱い | VTAG（tag は VA と ASID、推測） | (1) `space.c` の `asid_assign()` で世代が変わる時に `tlb_flush_all()` に加えて **I cache 全体を `Index_Invalidate_I`**。(2) `hal_space_prot`（`hal_space_prot_query`）で EXEC が付く時、**kernel の alias で該当の page の D cache を書き戻し、I cache 全体を消す**（arm64 の WS044 p009 と同じ不足の型）。(3) VTAG の時は `hal_icache_invalidate_range` と `hal_sync_instruction_stream` を常に全体の消去にする（`src/kern/ptrace.c:328` は tracee の VA で呼ぶが、走っているのは tracer の space で Hit の操作は届かないため。malta の潜在の不具合の修正にもなる）。VTAG の判定は PRId（0xd1）か Config から。 |
-| **L2**（M4） | 無い | Config2 で在る、way 4、DMA に coherent でない（推測） | `cache.c` に **L2 の Hit の操作（Hit_Writeback_Inv_SD・Hit_Invalidate_SD）**と Config2 の probe（JZ4770 の way の補正）を足す。DMA の同期の関数と `page.c` の `hal_pmem_map_uncached` で L1 の後に L2 も操作する。L2 の無い malta では何もしない。 |
+| **I cache の VTAG**（M3） | PIPT 扱い | VTAG（tag は VA と ASID、推測） | (1) `space.c` の `asid_assign()` で世代が変わる時に `tlb_flush_all()` に加えて **I cache 全体を `Index_Invalidate_I`**。(2) `hal_space_prot`（`hal_space_prot_query`）で EXEC が付く時、**kernel の alias で該当の page の D cache を書き戻し、I cache 全体を消す**（arm64 の WS044 p009 と同じ不足の型）。(3) VTAG の時は `hal_icache_invalidate_range` と `hal_sync_instruction_stream` を常に全体の消去にする（`hal_space_map`（space.c:438-440）が新しい map の kernel の alias で `hal_sync_instruction_stream` を呼ぶため。VTAG では kernel の alias の Hit の操作は user の VA の line に届かない。Minor 2 で根拠を直した。`src/kern/ptrace.c` は今の MIPS の build に入っていない（`platform/amd64`・`arm64` の vmunix.mk だけ）。将来 MIPS で ptrace を build する時も、他の space の VA で呼ぶ経路は同じ理由で全体の消去が要る）。VTAG の判定は PRId（0xd1）か Config から。 |
+| **L2**（M4） | 無い | Config2 で在る、way 4、DMA に coherent でない（推測） | 入口の全体の操作は上の行。`cache.c` に **L2 の Hit の操作（Hit_Writeback_Inv_SD・Hit_Invalidate_SD）**と Config2 の probe（JZ4770 の way の補正）を足す。DMA の同期の関数と `page.c` の `hal_pmem_map_uncached` で L1 の後に L2 も操作する。L2 の無い malta では何もしない。 |
 | cache の色 | 無し | `dc_aliases 0` | Config1 から求める今の code のまま。 |
 | 割り込み | IP2 の 8259 | IP2 の INTC | bsp の irq を差し替える。 |
 | **表示の名前**（M8） | `cmain.c:147-149` が `display = "VGA"` に固定 | `DISPLAY LCDC` | bsp に表示の名前を返す関数を足し、`cmain.c` はそれを使う。 |
@@ -141,6 +147,7 @@ platform/mips32-rg350/     vmunix.mk・vmunix.ld・Makefile（uImage の段を�
 | early exception | 長い点灯 1 回 + ExcCode の値の回数の短い点滅、繰り返し | 消灯 |
 
 - 点滅の待ちは OST が動く前なので命令の数の空回し（996 MHz を前提に目で数えられる 0.3 s 程度）。`mips_early_exception()` は console に加えて、bsp の「印」の関数を呼ぶ hook を共通の層に足す（p002）。
+- **`_start` の点滅の仕組み**（Minor 4）: `_start` は bss の消去と stack より前の共通の `locore.S` にあり、board の GPIO を叩く手段が無い。p002 で **locore.S から `jal` で呼ぶ、stack・global を使わない bsp の葉の関数 `mips_board_early_mark`**（引数 a0 = 段の番号、`$ra` 以外の保存すべき register を壊さない、malta は空）を足す。呼ぶ所は Cause の消去の直後（段 1）。RG350 では KSEG1 の GPIO の register へ直に書き、空回しで待つ。
 - LCDC が動いたら、画面を単色で塗る段（赤 = HAL の init の前、緑 = console が描ける）を挟む。
 - **成功の印を OpenDingux の起動と見分ける**（M6）: OpenDingux の起動は logo と menu。zedBSD は (1) LED の点滅の列、(2) 単色の画面、(3) 白黒の文字の console で、どれも OpenDingux には出ない。点滅が無く OpenDingux の logo が出たら「zedBSD の image が拒まれた」と判断する。
 - gdbstub・UART は無い（D4 A）。
@@ -150,12 +157,13 @@ platform/mips32-rg350/     vmunix.mk・vmunix.ld・Makefile（uImage の段を�
 - `boot.command-line` は空（argv を使わない、§1.3）。
 - 承認が要るのは次の 2 点だけで、**案を `plan/ws273/proposed/` に置いた（未適用）**:
   1. [proposed/mips32-h-timer-comment.diff](proposed/mips32-h-timer-comment.diff): `include/hal/arch/mips32.h` の `HAL_TIMER_FREQUENCY` の comment（「the coprocessor 0 counter」）を RG350 でも正しい表現にする。意味は不変（Minor 10）。p002 で入れるかはユーザーの判断（D8）。入れなくても動作は変わらない。
-  2. [proposed/mips32-h-fpregs-fr0.diff](proposed/mips32-h-fpregs-fr0.diff): FR=0 の `hal_fpregs` の意味（M10）。**この WS では使わない**。userland の WS で FR=0 に対応する時の叩き台。`fpregs.S` は `.set fp=64` で奇数の register にも `sdc1` を使い、`src/kern/ptrace.c:405-497` は `hal_fpregs` を `struct fpreg` に写すので、FR=0 の対応は API の意味の変更と kernel の変更を伴う。
+  2. [proposed/mips32-h-fpregs-fr0.diff](proposed/mips32-h-fpregs-fr0.diff): FR=0 の `hal_fpregs` の意味（M10）。**この WS では使わない**。userland の WS で FR=0 に対応する時の叩き台。承認が要る根拠は `hal_fpregs` の定義（`include/hal/arch/mips32.h:132-141`、「thirty-two 64-bit registers … with Status.FR set」）と `fpregs.S:23` の `.set fp=64`（奇数の register にも `sdc1`）で、FR=0 の対応は API の意味の変更と save・restore の別の経路を伴う（Minor 2 で根拠を直した）。`src/kern/ptrace.c` は今の MIPS の build に入っていないので、写しの変更は「将来 MIPS で ptrace を build する時」の注記にとどめる。版 2.1 で diff を `git apply --check` が通る形に直し、形を「各 entry の下半分に 32 bit、上半分は 0、double は偶奇の対」の 1 つに揃え、FIR.F64 は能力の bit であることを書いた（Minor 3）。
 
 ### 2.5 HAL の外
 - `Makefile`・`tools/menuconfig.py` に `mips32-rg350`（arch `mips32`、board `rg350`、build `build/mips32-rg350`）。
 - uImage の header（64 byte、big endian、CRC32 が 2 つ）は自前の短い Python の script（`zlib.crc32`、D5 B）。UBIBoot は CRC を見ないが正しく付ける。
 - link address: `0x80100000`（UBIBoot の窓 `0x80000000`〜8 KiB、`LD_ADDR 0x00600000` の 1 sector とは重ならない。§1.3-3 のとおり本体は `load` へ直に読まれる）。p003 で uImage の `load`・`ep` を link address と `_start` に合わせる。
+- **uImage に対応しない UBIBoot の時の案**（Minor 8、推測を含む）: `fat.c` では `VMLINUZ` は KSEG1 の `0xa0600000` へそのまま飛ぶ。古い UBIBoot が `UZIMAGE` に対応しない可能性がある（推測、未確認）。link address を `0x80600000` にすれば、locore.S は絶対 address で KSEG1→KSEG0 へ移る（locore.S:52-66）ので、同じ本体が `VMLINUZ.BAK`（raw）でも `UZIMAGE.BAK` でも走る。代わりに image の下の 6 MiB が予約で減る。**p003 で、ユーザーの card の UBIBoot の版（§3.2-1）を見て `0x80100000` と `0x80600000` のどちらにするかを決める**。
 
 ## 3. 実装の Phase（受け入れの条件 3）
 
@@ -164,11 +172,11 @@ platform/mips32-rg350/     vmunix.mk・vmunix.ld・Makefile（uImage の段を�
 ### 3.1 Phase の表
 | Phase | 中身 | 依存 | LW | 確認 |
 | --- | --- | --- | --- | --- |
-| p002 | 共通の層の変更を全部（§2.2 の表の全行と §2.3 の印の hook）: Cause の消去と 0x200 の vector、PageCtrl、入口の cache、timer の bsp 化と tick の経路・IM の mask、VTAG の I cache の 3 項、L2 の操作、表示の名前、判定の行の分割、console の共通化。malta の振る舞いは不変 | WS271 | 12 | build（mips32-malta・mips64-malta、warning 0）、host 試験、T1 の malta の回帰（mips32・mips64 の画面） |
-| p003 | `bsp-jz4770` の最小: 入口、LED・backlight の印、`platform/mips32-rg350`、uImage の script、PRId・Config0〜3・FIR を後で出すための記録 | p002、D1・D5・D7 | 6 | **実機 1**: 点滅 1〜3 回と backlight（目視）。build、malta の回帰は共通の層に触れた時だけ |
-| p004 | CGU の LPCLK・clock gate・LCDC・panel、KSEG1 の framebuffer、console、単色の段 | p003 | 10 | **実機 2**: console の文字が読める。最後に PRId・Config1・Config2・FIR のまとめを出し直し、写真で返す（Minor 6）。**試行の上限は実機 3 回**、上限で映らなければ uncleared にし D4 B（UART の pad を探す）を再検討 |
-| p005 | INTC・TCU ch0 の tick・OST の counter、`TIMER TICK` まで | p004 | 6 | **実機 3**: `MIPS32 HAL READY DISPLAY LCDC` と `TIMER TICK` |
-| p006 | 例外・TLB・space・FPU の self-test（WS271 §6.1 と同じ）、**I cache の整合の試験**（user の page に code を書いて実行し、書き換えて prot・map を変え、もう一度実行して新しい結果が出るか）、**uncached・L2 の整合の試験**（cached で書いて clean し、KSEG1 から読んで一致するか）、kernel の link、VFS の段まで | p005 | 8 | **実機 4**: `PAGING PASS`・`ICACHE PASS`・`L2 PASS`・`VFS initialization failed` |
+| p002 | 共通の層の変更を全部（§2.2 の表の全行と §2.3 の印の hook）: Cause の消去と 0x200 の vector、PageCtrl、**入口の全体の cache の操作の新しい関数**（M-a、L1 I・L1 D・L2 の Index、bss の消去の後・`mips_board_init` の前）、**locore.S から呼ぶ葉の `mips_board_early_mark`**（Minor 4、malta は空）、timer の bsp 化と tick の経路・IM の mask、VTAG の I cache の 3 項、L2 の操作、表示の名前、判定の行の分割、console の共通化。malta の振る舞いは不変。**試験用の build の切り替え**（Minor 12、例 `MIPS_FORCE_VTAG_L2_PATHS`、既定は off）で、malta でも VTAG の全体の消去・L2 の Index と Hit の操作（L2 が無い時は 0 個の set で回る形）を強制して走らせる | WS271 | 12 | build（mips32-malta・mips64-malta、warning 0、切り替え on・off の両方）、host 試験、T1 の malta の回帰（mips32・mips64 の画面）＋切り替え on の malta の起動 1 回（hang・例外が無いことだけを見る。整合の誤りは見つからない） |
+| p003 | `bsp-jz4770` の最小: 入口、LED・backlight の印（`mips_board_early_mark` の実装を含む）、`platform/mips32-rg350`（vmunix.ld の `.uncached` の NOLOAD の section、M-a）、uImage の script、PRId・Config0〜3・FIR を後で出すための記録。**link address を UBIBoot の版で決める**（§2.5、Minor 8） | p002、D1・D5・D7 | 6 | **実機 1**（p004 とまとめてよい、Minor 10）: 点滅 1〜3 回と backlight（目視）。**試行の上限は実機 2 回**（Minor 10）、上限で点滅が無ければ uncleared にし起動の道（D1・§2.5 の `0x80600000` の案）を見直す。build、malta の回帰は共通の層に触れた時だけ |
+| p004 | CGU の LPCLK・clock gate・**LCD の pin の機能を 24 bit の group に切り替える**（Minor 9、`gcw0-base.dtsi:328-330`・`rg280m-v1.0.dts:105-107`、UBIBoot は LCD の pin を設定しない）・LCDC・panel、`.uncached` の section の framebuffer・descriptor を KSEG1 で消して書く、**DMA の開始の前に `sync`**（Minor 9）、console、単色の段。panel は §3.2-1 で確かめた機種のもの（Minor 7） | p003 | 10 | **実機 2**: console の文字が読める。最後に PRId・Config1・Config2・FIR のまとめを出し直し、写真で返す。**試行の上限は実機 3 回**、上限で映らなければ uncleared にし D4 B（UART の pad を探す）を再検討。**実機 1・2 は 1 回の起動にまとめられる**（同じ image で LED の点滅と画面を見る、Minor 10）。時間の経過で文字が欠けないかも数分見る（M-a の確認） |
+| p005 | INTC・TCU ch0 の tick・OST の counter、`TIMER TICK` まで。**TCU の初期化**（Minor 9）: 他の channel の割り込み（半分の match の flag を含む）を mask して残った flag を消してから INTC の 25〜27 を開ける。TCU と OST の clock gate（CGU の CLKGR、UBIBoot は触れない）と channel の clock の源を明示する。flag の配置は JZ4740 の形からの類推なので Linux の `ingenic-timer.c` を「Procedure referenced:」で参照 | p004 | 6 | **実機 3**: **`MIPS32 HAL TIMER TICK ticks=… count=… Hz`**（`wait_for_ticks`、cmain.c:242 が出す行。Minor 1 で直した。`HAL READY` の行は `hal_cpu_start_others`（cmain.c:132-160）が paging の self-test の後に出すので p006 へ移した） |
+| p006 | 例外・TLB・space・FPU の self-test（WS271 §6.1 と同じ）、**I cache の整合の試験**（Minor 5 で足した）: (i) user の page に code を書いて実行し、書き換えて prot・map を変え、もう一度実行して新しい結果が出るか（M3 の (2)・(3)）、(ii) self-test の世代の上限を下げる仕組み（space.c:875 付近）で ASID の世代を回し、前の世代と同じ ASID を得た別の space で同じ VA の別の code を実行する（M3 の (1)）、(iii) 同じ世代の ASID の違う 2 つの space で同じ VA の別の code を交互に実行する（混ざれば tag に ASID が無いと分かり、space の切り替えごとに I cache 全体を消す。§7-8 の推測を確に変える）。**uncached・L2 の整合の試験**: cached で書いて clean し KSEG1 から読んで一致するか、と逆の向き（KSEG1 で書き invalidate し cached で読む）。共通の self-test（`selftest.c`）に置き、**L2 の無い malta では `L2 NONE` を出す**（Minor 6）。kernel の link、VFS の段まで | p005 | 8 | **実機 4**: `MIPS32 HAL READY DISPLAY LCDC`（Minor 1 で p005 から移した）・`PAGING PASS`・`ICACHE PASS`・`L2 PASS`・`VFS initialization failed`。**共通の層を変えるので mips32-malta・mips64-malta の build と T1 の回帰も行う**（Minor 6）。malta の出力は `ICACHE PASS`・`L2 NONE` の行が増える |
 | p007 | 規約の全文の見直し | p002〜p006 | 4 | build、malta の回帰（T1） |
 
 - **malta の回帰**（M8）: p003〜p006 で `src/hal/mips/*`（`bsp-*` を除く）に触れた時は、mips32-malta・mips64-malta の build と T1 の回帰を必須にする。原則として共通の層の変更は p002 に集め、後で要ると分かった時は小さく足してこの規則に従う。
@@ -176,6 +184,7 @@ platform/mips32-rg350/     vmunix.mk・vmunix.ld・Makefile（uImage の段を�
 - WS の完了の条件の案: 1. 実機で kernel が起動し LCD に console（p004）、2. TIMER TICK と self-test と VFS の段まで（p005・p006）。SD の root・login・button はこの WS の範囲外（D6 A）。
 
 ### 3.2 実機の手順（p003 から、D1 A の条件込み）
+0. **機種（RG350／RG350P／RG350M）と画面の解像度をユーザーに確かめる**（Minor 7、RG350M は panel が違う）。
 1. card を PC に挿し、第 1 partition の file の一覧と FAT の種類（FAT32 であること）を記録する。UBIBoot の版（stock か OpenDingux の新しい版か）を分かる範囲で記録する（M6）。
 2. 既存の `UZIMAGE.BAK`・`VMLINUZ.BAK` が有れば別の名前で退避し、記録する（`.BAK` は OpenDingux の更新が前の kernel を残す名前。OpenDingux の更新を流すと zedBSD の `.BAK` は上書きされる）。
 3. zedBSD の image を `UZIMAGE.BAK` として置く。
@@ -185,7 +194,8 @@ platform/mips32-rg350/     vmunix.mk・vmunix.ld・Makefile（uImage の段を�
 
 ## 4. 判定の文字列（320×240、8×16 の font で 40×15）
 ```
-MIPS32 HAL READY DISPLAY LCDC
+MIPS32 HAL TIMER TICK ticks=… count=… Hz   （p005 の判定、折り返しうる）
+MIPS32 HAL READY DISPLAY LCDC              （以下 p006）
 PAGING PASS TIMER TICK
 ICACHE PASS L2 PASS
 MIPS32 CPU 1 ONLINE
@@ -198,13 +208,13 @@ VFS initialization failed
 
 | ID | 問い | 選択肢 | 推奨 |
 | --- | --- | --- | --- |
-| D1 | 起動の道 | A: OpenDingux の card に `UZIMAGE.BAK` を置き alt key で起動／B: 専用の microSD／C: 自前の bootloader | **A**。条件: §3.2 の 1・2・5（FAT32 と UBIBoot の版の確認、既存の `.BAK` の退避、OpenDingux と見分けられる成功の印 §2.3） |
-| D2 | memory の範囲 | A: 低い 256 MiB／B: 高い側も | **A**（B は Future Work、§6） |
+| D1 | 起動の道 | A: OpenDingux の card に `UZIMAGE.BAK` を置き alt key で起動／B: 専用の microSD／C: 自前の bootloader | **A**。条件: §3.2 の 1・2・5（機種と画面の解像度・FAT32・UBIBoot の版の確認、既存の `.BAK` の退避、OpenDingux と見分けられる成功の印 §2.3）。UBIBoot が uImage に対応しない版なら §2.5 の `0x80600000` の案（Minor 7・8） |
+| D2 | memory の範囲 | A: 低い 256 MiB／B: 高い側も | **A**（B は Future Work、§6）。bsp の `mips_board_memory_total` は 256 MiB を返す（page.c は高い側を `PAGE_HIGH_ALIAS` の形で扱うため、Minor 9） |
 | D3 | FPU（XBurst1 が FR=1 を持たない時） | A: この WS では保留、FIR.F64=0 なら FPU を使わない（今の `fpu.c` のまま）／B: FR=0 の対応をこの WS で（`hal_fpregs` の意味の変更の承認が要る）／C: RG350 だけ softfloat | **A**（**版 1 の推奨から変更**、M10）。FR=0 の対応は userland の WS で `hal_fpregs` の意味の変更の承認（proposed/mips32-h-fpregs-fr0.diff）と一緒に決める。D6 A なら FP を使う user は無い |
 | D4 | UART の pad | A: 探さない（LCD と LED の点滅）／B: 基板を開けて探す | **A**。p004 の試行の上限（実機 3 回）で映らなければ B を再検討 |
 | D5 | uImage の道具 | A: host の `mkimage`／B: 自前の Python | **B** |
 | D6 | WS273 の範囲 | A: LCD の console と VFS の段まで／B: SD の root と login まで | **A** |
-| **D7**（新、M9） | 実機の検証の方法 | A: ユーザーが実機の画面・LED を目で見て写真で返す結果を証拠にする。AGENTS.md の起動の確認（`boot-test.sh`）の例外として認める。**試験はユーザーが拾える試験の一覧に置き、今すぐは頼まない**。結果が届くまで該当の Phase は uncleared（または結果待ち）／B: 実機の確認をこの WS の受け入れから外す | **A**（RG350 の emulator は無く、実機の他に B1・M3・M4 を確かめる手段が無い） |
+| **D7**（新、M9） | 実機の検証の方法 | A: ユーザーが実機の画面・LED を目で見て写真で返す結果を証拠にする。**AGENTS.md の「起動の確認は `boot-test.sh` だけ」の規則の例外なので、ユーザーの明示の承認が要る**（承認が無い間は実機の Phase を始めない）。**試験はユーザーが拾える試験の一覧に置き、今すぐは頼まない**。結果が届くまで該当の Phase は uncleared（または結果待ち）／B: 実機の確認をこの WS の受け入れから外す | **A**（RG350 の emulator は無く、実機の他に B1・M3・M4 を確かめる手段が無い） |
 | D8（新、Minor 10） | `mips32.h` の `HAL_TIMER_FREQUENCY` の comment | A: proposed の案のとおり直す（HAL の API の file なので承認が要る）／B: 直さない | A でも B でも動作は同じ。**A**（comment の正確さ） |
 
 ## 6. 範囲外・後の WS
@@ -212,16 +222,17 @@ VFS initialization failed
 - **高い側の memory（D2 B）**: `page.c` の `PAGE_HIGH_ALIAS 0x80000000` は malta の形で、`0x30000000` の bank を使うには **bsp が memory の map（複数の bank）を渡す形**が要る。その上で KSEG2 か TLB の wired の窓で届かせる（Minor 12）。
 - mipsel の userland（Q1・toolchain）。**XBurst の FPU の fused madd の不具合**（gcc `-mno-fused-madd`、LLVM は `-mno-madd4` の見込み）と、FR=0 の `hal_fpregs`（D3）を引き継ぐ。
 - argv の早い段の写し（§1.3 の (b)）。
+- **UserLocal が無い**（Minor 11）: `cpu_has_userlocal 0` なので TLS 用の `rdhwr $29` は使えない（例外で模擬が要る）。kernel は今 UserLocal を使わない（`task.c` は値を保持するだけ）ので害は無い。mipsel の userland の WS で TLS の方式を決める時に引き継ぐ。
 
 ## 7. 未確認の一覧
 1. JZ4770 の Programming Manual の公開の所在。
-2. boot ROM の読み込みの形、`MMC_ID2` の slot、ユーザーの card の UBIBoot の版。
-3. RAM の量、card の partition の形。
+2. boot ROM の読み込みの形、`MMC_ID2` の slot、ユーザーの card の UBIBoot の版と、それが `UZIMAGE` に対応するか（Minor 8、推測）。
+3. RAM の量、card の partition の形。**ユーザーの機種（RG350／RG350P／RG350M）と画面の解像度**（RG350M は 640×480 の別の panel、Minor 7）。
 4. PRId の実値、TLB の entry 数、L1 の形（16 KiB・4 way の見込み）、L2 の大きさ、FIR.F64。
 5. INTC の register の形、OST が INTC の 25〜27 のどれを通るか、LCDC・CGU の bit、UBIBoot が PLL1 を動かすか。
 6. UART2 の pad、EJTAG の pad。
 7. X・Y の物理の刻印と DT の label の対応。
-8. 推測のまま残るもの: I cache の tag に ASID が入ること、L2 が DMA に coherent でないこと、backlight だけでは panel に信号が無いと暗く光るだけの可能性、LLVM の `-mno-madd4` の対応。
+8. 推測のまま残るもの: L2 が write-back であること（M-a）、JZ4770 の TCU の flag の配置（JZ4740 の形からの類推）、I cache の tag に ASID が入ること（p006 の (iii) で確かめる）、L2 が DMA に coherent でないこと、backlight だけでは panel に信号が無いと暗く光るだけの可能性、LLVM の `-mno-madd4` の対応。
 
 ## 8. 外部の code の規則（受け入れの条件 4）
 - §0 の規則（guardrail 2026-10-15）に従う。この設計は値・pin・timing と手順の順序の事実だけを書いた。実装では block の直前の複数行の comment に「Value(s) referenced:」「Procedure referenced:」で出典（版・path・名前）を書き、file の先頭には書かない。code・comment・構造・symbol の名前は写さない。参照した file と版（commit か branch）を各 Phase の phase.md にも記録する。
@@ -254,3 +265,21 @@ VFS initialization failed
 | Minor 12 D2 B の見込み | bsp が memory の map を渡す形が要ると Future Work の記述に補った | §1.2、§6 |
 | D3 の推奨の変更 | A（保留）に変更 | §5 |
 | D7 の追加 | 実機の検証の方法を足した。あわせて D8 を足した | §5 |
+
+## 10. レビュー 2 への対応（版 2.1）
+| 指摘 | 対応 | 箇所 |
+| --- | --- | --- |
+| M-a bss の cached の消去の dirty な line、入口の全体の cache の操作が既存に無い | framebuffer・descriptor を `__bss_end` の後・`__kernel_vma_end` の前の NOLOAD の `.uncached` に置き、KSEG1 でだけ触れる。入口の全体の操作は新しい関数（Config1・Config2 をその場で読み、L1 D・L1 I・L2 を Index で全 way・全 set、bss の消去の後・`mips_board_init` の前）。既存に無いことと理由を事実に書いた | §1.3、§1.4、§2.2、§3.1 p002〜p004 |
+| Minor 1 p005 の判定の文字列が届かない | p005 の判定を `MIPS32 HAL TIMER TICK ticks=… count=… Hz` に、`HAL READY` は p006 へ | §3.1 p005・p006、§4 |
+| Minor 2 ptrace の根拠は MIPS では誤り | VTAG (3) は space.c:438-440、D3 は mips32.h:132-141 と fpregs.S:23 に差し替え、ptrace は将来の注記に | §2.2、§2.4-2、proposed/mips32-h-fpregs-fr0.diff |
+| Minor 3 fpregs の diff が壊れている | `diff -u` で作り直し `git apply --check` が通ることを確かめた。形を 1 つ（下半分に 32 bit、上半分 0、double は偶奇の対）に揃え、FIR.F64 は能力の bit で形は Status.FR で決まると直した | proposed/mips32-h-fpregs-fr0.diff、§2.4-2 |
+| Minor 4 `_start` の点滅の仕組みが無い | locore.S から呼ぶ stack を使わない bsp の葉 `mips_board_early_mark`（malta は空）を p002 に、実装を p003 に | §2.3、§3.1 p002・p003 |
+| Minor 5 I cache の試験が M3 (1) と ASID を覆わない、L2 の逆の向き | p006 に (ii) 世代を回した同じ ASID の別 space、(iii) 同じ世代の 2 つの space、L2 の逆の向きを足した | §3.1 p006、§7-8 |
+| Minor 6 p006 に malta の回帰が無い | p006 の確認に mips32・mips64 の malta の build と T1、malta は `L2 NONE` | §3.1 p006 |
+| Minor 7 機種と panel の版 | §3.2-0・§7-3・D1 の条件に機種と解像度の確認を足し、§1.4 に RG350M の panel を書いた | §1.4、§3.2、§5 D1、§7 |
+| Minor 8 uImage に対応しない UBIBoot | link address `0x80600000` の案を §2.5 に、p003 で版を見て決める | §2.5、§3.1 p003、§5 D1、§7-2 |
+| Minor 9 TCU・LCD の初期化の抜け、memory_total | p005 に TCU の mask・flag の消去・clock gate・源、p004 に LCD の pin の group と DMA 前の `sync`、D2 に 256 MiB | §1.4、§3.1 p004・p005、§5 D2 |
+| Minor 10 実機の確認が一つずつ進む | 実機 1・2 を 1 回の起動にまとめられると書き、p003 に試行の上限（実機 2 回） | §3.1 p003・p004 |
+| Minor 11 `cpu_has_userlocal 0` | userland の WS への引き継ぎに足した | §6 |
+| Minor 12 QEMU で新しい経路を通さない | p002 に試験用の build の切り替えで malta でも VTAG・L2 の経路を強制し、T1 で 1 回起動 | §3.1 p002 |
+| D7 | AGENTS.md の `boot-test.sh` だけの規則の例外としてユーザーの明示の承認が要る、と書いた | §5 D7 |
