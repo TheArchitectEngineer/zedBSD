@@ -795,7 +795,9 @@ vmspace_map_file_shared_find(
 	return 0;
 }
 
-/* Publishes captured cache pages as a private mapping, never MAP_SHARED. */
+/*
+ * Publishes captured cache pages as a private mapping, never MAP_SHARED.
+ */
 int
 vmspace_map_exec_snapshot(
 	struct vmspace *vm,
@@ -838,7 +840,10 @@ vmspace_map_exec_snapshot(
 	return 0;
 }
 
-/* Creates a region in a vmspace at a range that must be free; the caller holds the VM locks. */
+/*
+ * Creates a region in a vmspace at a range that must be free; the caller
+ * holds the VM locks.
+ */
 int
 map_region(
 	struct vmspace *vm,
@@ -923,6 +928,134 @@ map_region(
 	if (result != NULL)
 		*result = region;
 
+	return 0;
+}
+
+/*
+ * Maps anonymous memory at a free range; the caller holds the VM locks.
+ */
+int
+vmspace_map_anon_locked(
+	struct vmspace *vm,
+	uintptr_t start,
+	size_t size,
+	uint32_t prot,
+	struct vm_region **result)
+{
+	size_t commit_size;
+	int error;
+
+	/* Inaccessible memory is not committed until it becomes accessible. */
+	if (prot != 0)
+		commit_size = size;
+	else
+		commit_size = 0;
+
+	/* Reports the failure. */
+	error = map_region(vm, start, size, prot, VM_BACKING_ANON, NULL, 0, start, 0, 0, commit_size, result);
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Maps a private file region at a free range; the caller holds the VM locks.
+ */
+int
+vmspace_map_file_locked(
+	struct vmspace *vm,
+	uintptr_t start,
+	size_t size,
+	uint32_t prot,
+	struct file *file,
+	off_t file_offset,
+	uintptr_t data_start,
+	size_t data_size,
+	struct vm_object *object,
+	struct vm_region **result)
+{
+	struct vm_region *region;
+	size_t commit_size;
+	unsigned flags;
+	int error;
+
+	/* Only a writable private file mapping needs commit. */
+	if ((prot & HAL_SPACE_WRITE) != 0)
+		commit_size = size;
+	else
+		commit_size = 0;
+
+	/* A region given the file's object maps its cached pages, copying on write. */
+	flags = 0;
+	if (object != NULL)
+		flags = VM_REGION_PRIVATE_OBJECT;
+
+	/* Maps the region. */
+	error = map_region(vm, start, size, prot, VM_BACKING_FILE, file, file_offset, data_start, data_size, flags, commit_size, &region);
+	if (error != 0)
+		return error;
+
+	/* The region takes the caller's object reference. */
+	region->object = object;
+	if (result != NULL)
+		*result = region;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Maps a shared file region at a free range; the caller holds the VM locks.
+ */
+int
+vmspace_map_file_shared_locked(
+	struct vmspace *vm,
+	uintptr_t start,
+	size_t size,
+	uint32_t prot,
+	struct file *file,
+	off_t file_offset,
+	size_t data_size,
+	struct vm_object *object,
+	struct vm_region **result)
+{
+	struct vm_region *region;
+	int error;
+
+	/* Requires a prepared object and an aligned file offset. */
+	if (object == NULL)
+		return EINVAL;
+
+	/* Rejects offsets that cannot describe shared pages. */
+	if (file_offset < 0 || (file_offset & (PAGE_SIZE - 1U)) != 0)
+		return EINVAL;
+
+	/* Creates the region while its address-space metadata is locked. */
+	error = map_region(vm,
+			   start,
+			   size,
+			   prot,
+			   VM_BACKING_FILE,
+			   file,
+			   file_offset,
+			   start,
+			   data_size,
+			   VM_REGION_SHARED,
+			   0,
+			   &region);
+	if (error != 0)
+		return error;
+
+	/* Transfers the prepared shared-object reference to the region. */
+	region->object = object;
+
+	/* Returns the published region when requested. */
+	if (result != NULL)
+		*result = region;
+
+	/* Reports successful publication. */
 	return 0;
 }
 
@@ -1019,33 +1152,6 @@ discard_prepared_region(
 	kern_free(region);
 }
 
-/* Maps anonymous memory at a free range; the caller holds the VM locks. */
-int
-vmspace_map_anon_locked(
-	struct vmspace *vm,
-	uintptr_t start,
-	size_t size,
-	uint32_t prot,
-	struct vm_region **result)
-{
-	size_t commit_size;
-	int error;
-
-	/* Inaccessible memory is not committed until it becomes accessible. */
-	if (prot != 0)
-		commit_size = size;
-	else
-		commit_size = 0;
-
-	/* Reports the failure. */
-	error = map_region(vm, start, size, prot, VM_BACKING_ANON, NULL, 0, start, 0, 0, commit_size, result);
-	if (error != 0)
-		return error;
-
-	/* Succeeded. */
-	return 0;
-}
-
 /* Maps anonymous memory at a range that must not be in use; the caller holds the VM locks. */
 static int
 vmspace_map_anon_fixed_noreplace_locked(
@@ -1074,50 +1180,6 @@ vmspace_map_anon_fixed_noreplace_locked(
 	return 0;
 }
 
-/* Maps a private file region at a free range; the caller holds the VM locks. */
-int
-vmspace_map_file_locked(
-	struct vmspace *vm,
-	uintptr_t start,
-	size_t size,
-	uint32_t prot,
-	struct file *file,
-	off_t file_offset,
-	uintptr_t data_start,
-	size_t data_size,
-	struct vm_object *object,
-	struct vm_region **result)
-{
-	struct vm_region *region;
-	size_t commit_size;
-	unsigned flags;
-	int error;
-
-	/* Only a writable private file mapping needs commit. */
-	if ((prot & HAL_SPACE_WRITE) != 0)
-		commit_size = size;
-	else
-		commit_size = 0;
-
-	/* A region given the file's object maps its cached pages, copying on write. */
-	flags = 0;
-	if (object != NULL)
-		flags = VM_REGION_PRIVATE_OBJECT;
-
-	/* Maps the region. */
-	error = map_region(vm, start, size, prot, VM_BACKING_FILE, file, file_offset, data_start, data_size, flags, commit_size, &region);
-	if (error != 0)
-		return error;
-
-	/* The region takes the caller's object reference. */
-	region->object = object;
-	if (result != NULL)
-		*result = region;
-
-	/* Succeeded. */
-	return 0;
-}
-
 /*
  * Takes the shared VM object of a file a private mapping may map its cached
  * pages from, or NULL when the file has none (the mapping then copies each
@@ -1139,57 +1201,6 @@ private_file_object(
 
 	/* Reports the object with the reference the region will take. */
 	return object;
-}
-
-/* Maps a shared file region at a free range; the caller holds the VM locks. */
-int
-vmspace_map_file_shared_locked(
-	struct vmspace *vm,
-	uintptr_t start,
-	size_t size,
-	uint32_t prot,
-	struct file *file,
-	off_t file_offset,
-	size_t data_size,
-	struct vm_object *object,
-	struct vm_region **result)
-{
-	struct vm_region *region;
-	int error;
-
-	/* Requires a prepared object and an aligned file offset. */
-	if (object == NULL)
-		return EINVAL;
-
-	/* Rejects offsets that cannot describe shared pages. */
-	if (file_offset < 0 || (file_offset & (PAGE_SIZE - 1U)) != 0)
-		return EINVAL;
-
-	/* Creates the region while its address-space metadata is locked. */
-	error = map_region(vm,
-			   start,
-			   size,
-			   prot,
-			   VM_BACKING_FILE,
-			   file,
-			   file_offset,
-			   start,
-			   data_size,
-			   VM_REGION_SHARED,
-			   0,
-			   &region);
-	if (error != 0)
-		return error;
-
-	/* Transfers the prepared shared-object reference to the region. */
-	region->object = object;
-
-	/* Returns the published region when requested. */
-	if (result != NULL)
-		*result = region;
-
-	/* Reports successful publication. */
-	return 0;
 }
 
 /* Maps the stack and its guard below a top address; the caller holds the VM locks. */

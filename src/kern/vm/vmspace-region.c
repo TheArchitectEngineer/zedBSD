@@ -28,7 +28,9 @@
 #include "kern/clock.h"
 #include "vmspace-internal.h"
 
-/* Tests whether a page-aligned range lies inside the user address range. */
+/*
+ * Tests whether a page-aligned range lies inside the user address range.
+ */
 int
 range_valid(
 	uintptr_t start,
@@ -57,7 +59,9 @@ range_valid(
 	return 1;
 }
 
-/* Tests whether a range intersects any region. */
+/*
+ * Tests whether a range intersects any region.
+ */
 int
 overlaps(
 	struct vmspace *vm,
@@ -78,7 +82,9 @@ overlaps(
 	return 0;
 }
 
-/* Links a region into the address-sorted list. */
+/*
+ * Links a region into the address-sorted list.
+ */
 void
 insert_region(
 	struct vmspace *vm,
@@ -93,7 +99,9 @@ insert_region(
 	*link = region;
 }
 
-/* Finds the region that contains a whole range; the caller holds the VM lock. */
+/*
+ * Finds the region that contains a whole range; the caller holds the VM lock.
+ */
 struct vm_region *
 find_region_locked(
 	struct vmspace *vm,
@@ -117,7 +125,9 @@ find_region_locked(
 	return NULL;
 }
 
-/* Finds the page record of an address within a region. */
+/*
+ * Finds the page record of an address within a region.
+ */
 struct vm_page *
 vmspace_find_page(
 	struct vm_region *region,
@@ -266,7 +276,9 @@ region_page_index_insert(
 	region->page_index[bucket] = page;
 }
 
-/* Takes a page the caller is unlinking from a region's list out of the index. */
+/*
+ * Takes a page the caller is unlinking from a region's list out of the index.
+ */
 void
 region_page_index_remove(
 	struct vm_region *region,
@@ -297,7 +309,9 @@ region_page_index_remove(
 	page->index_next = NULL;
 }
 
-/* Frees a region's page index; the pages stay on the list. */
+/*
+ * Frees a region's page index; the pages stay on the list.
+ */
 void
 region_page_index_free(
 	struct vm_region *region)
@@ -308,7 +322,9 @@ region_page_index_free(
 	region->page_index_size = 0;
 }
 
-/* Finds a free aligned range between two bounds; the caller holds the VM lock. */
+/*
+ * Finds a free aligned range between two bounds; the caller holds the VM lock.
+ */
 int
 vmspace_find_free_range_bounded_locked(
 	struct vmspace *vm,
@@ -385,7 +401,10 @@ vmspace_find_free_range_bounded_locked(
 	return 0;
 }
 
-/* Finds a free aligned range at or above a hint in the mmap area; the caller holds the VM lock. */
+/*
+ * Finds a free aligned range at or above a hint in the mmap area; the caller
+ * holds the VM lock.
+ */
 int
 vmspace_find_free_range_locked(
 	struct vmspace *vm,
@@ -414,7 +433,10 @@ vmspace_find_free_range_locked(
 	return 0;
 }
 
-/* Maps anonymous memory at a free range near a hint; the caller holds the VM locks. */
+/*
+ * Maps anonymous memory at a free range near a hint; the caller holds the VM
+ * locks.
+ */
 int
 vmspace_map_find_locked(
 	struct vmspace *vm,
@@ -441,7 +463,10 @@ vmspace_map_find_locked(
 	return 0;
 }
 
-/* Maps a private file region at a free range near a hint; the caller holds the VM locks. */
+/*
+ * Maps a private file region at a free range near a hint; the caller holds
+ * the VM locks.
+ */
 int
 vmspace_map_file_find_locked(
 	struct vmspace *vm,
@@ -482,7 +507,10 @@ vmspace_map_file_find_locked(
 	return 0;
 }
 
-/* Maps a shared file region at a free range near a hint; the caller holds the VM locks. */
+/*
+ * Maps a shared file region at a free range near a hint; the caller holds
+ * the VM locks.
+ */
 int
 vmspace_map_file_shared_find_locked(
 	struct vmspace *vm,

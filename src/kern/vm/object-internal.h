@@ -97,6 +97,11 @@ extern unsigned cache_objects;
  */
 extern atomic_uint_t object_pages;
 
+/*
+ * Defined in object.c, part of the registry of shared objects and their
+ * lifetime: admission, lookup by inode, references, generations and
+ * destruction.
+ */
 int vm_object_get_shared_internal(struct file *file, struct vm_object **result, int cache_only);
 bool registry_lock(void);
 void registry_unlock(bool enabled);
@@ -105,42 +110,75 @@ int object_wait_registry_transition(struct vm_object *object, uint64_t sequence)
 void object_wake_registry_waiters(struct vm_object *object);
 int object_operation_begin(struct vm_object *object);
 void object_operation_end(struct vm_object *object);
-struct vm_object_page *find_page(struct vm_object *object, off_t offset);
-int unlink_page_locked(struct vm_object_page **head, struct vm_object_page *page);
 uint64_t next_generation(struct vm_object *object);
 uint64_t next_inode_resize_generation_locked(struct inode *inode);
 uint64_t next_inode_content_generation_locked(struct inode *inode);
-void object_initialize_eof_locked(struct vm_object *object, struct inode *inode);
-int page_overlaps(const struct vm_object_page *page, uint64_t start, uint64_t end);
-int object_has_dirty_pages_locked(struct vm_object *object);
-int object_has_busy_pages_locked(const struct vm_object *object);
-int object_has_busy_pages(struct vm_object *object);
-void object_record_writeback_error_locked(struct vm_object *object, int error);
-int write_page_data(struct vm_object *object, struct vm_object_page *page, off_t logical_size, int inode_io_owned);
-void clear_page_dirty_locked(struct vm_object_page *page);
-void free_object_page(struct vm_object_page *page);
 int object_can_destroy(struct vm_object *object);
 int unlink_object_locked(struct vm_object *object);
 unsigned object_hash_index(const struct inode *inode);
 void destroy_object(struct vm_object *object);
 void retain_object(struct vm_object *object, int error);
-int object_wait_resize(struct vm_object *object);
-void content_release_pages_locked(struct vm_object *object, uint64_t generation);
-int range_has_wired_mapping(struct vm_object *object, uint64_t start, uint64_t end);
-int vm_object_sync_range_internal(struct vm_object *object, off_t offset, size_t size, int flags, int detaching, int resize_owner, off_t resize_target);
-void object_page_dirty_link(struct vm_object_page *page);
-void object_page_dirty_unlink(struct vm_object_page *page);
-void object_page_dirty_mark(struct vm_object_page *page);
+int object_cache_retainable(struct vm_object *object);
+int inode_unnamed(const struct inode *inode);
+
+/*
+ * Defined in object-page.c, part of where object pages live: the
+ * descriptor slabs, page storage, the dirty and busy tests and the AVL
+ * index of an object's pages.
+ */
+struct vm_object_page *find_page(struct vm_object *object, off_t offset);
+int unlink_page_locked(struct vm_object_page **head, struct vm_object_page *page);
+int page_overlaps(const struct vm_object_page *page, uint64_t start, uint64_t end);
+int object_has_dirty_pages_locked(struct vm_object *object);
+int object_has_busy_pages_locked(const struct vm_object *object);
+int object_has_busy_pages(struct vm_object *object);
+void clear_page_dirty_locked(struct vm_object_page *page);
+void free_object_page(struct vm_object_page *page);
 struct vm_object_page *alloc_object_page(struct vm_object *object, off_t offset, int optional);
 void release_object_page_storage(struct vm_object_page *page);
 void object_page_index_insert(struct vm_object *object, struct vm_object_page *page);
 void object_page_index_remove(struct vm_object *object, struct vm_object_page *page);
-int object_cache_retainable(struct vm_object *object);
+
+/*
+ * Defined in object-content.c, part of changes to an object's content and
+ * size: the content and resize transactions, inode I/O waits and coherent
+ * reads.
+ */
+void object_initialize_eof_locked(struct vm_object *object, struct inode *inode);
+int object_wait_resize(struct vm_object *object);
+void content_release_pages_locked(struct vm_object *object, uint64_t generation);
+
+/*
+ * Defined in object-sync.c, part of synchronizing dirty object pages to
+ * their inode, write-back preparation and the delayed content path.
+ */
+void object_record_writeback_error_locked(struct vm_object *object, int error);
+int write_page_data(struct vm_object *object, struct vm_object_page *page, off_t logical_size, int inode_io_owned);
+int vm_object_sync_range_internal(struct vm_object *object, off_t offset, size_t size, int flags, int detaching, int resize_owner, off_t resize_target);
+void object_page_dirty_link(struct vm_object_page *page);
+void object_page_dirty_unlink(struct vm_object_page *page);
+void object_page_dirty_mark(struct vm_object_page *page);
+
+/*
+ * Defined in object-fault.c, part of faults on object pages, page pins and
+ * the mappings an object records.
+ */
+int range_has_wired_mapping(struct vm_object *object, uint64_t start, uint64_t end);
+
+/*
+ * Defined in object-cache.c, part of the object page cache: its counts,
+ * pins and drains, the discard of a mount's objects and the reclaim of
+ * clean object pages.
+ */
 int object_cache_evict_one(struct mount *mount);
-int inode_unnamed(const struct inode *inode);
-int object_mount_reserved(const struct vm_object *);
+int object_mount_reserved(const struct vm_object *object);
 void object_cache_discard_prepared(struct vm_object_page **pages, unsigned count);
 int object_cache_read_missing(struct vm_object *object, off_t offset, void *buffer, size_t length, ssize_t *result, int *handled, int *stop);
+
+/*
+ * Defined in object-prefetch.c, part of read-ahead of object pages:
+ * preparing, completing and abandoning a prefetch.
+ */
 size_t object_prefetch_consume(struct vm_object_page *page, size_t start, size_t length);
 void object_prefetch_retire(struct vm_object_page *page);
 

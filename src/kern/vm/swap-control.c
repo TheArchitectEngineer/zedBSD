@@ -25,16 +25,13 @@
 #include <kern/mount.h>
 #include <kern/swap-control.h>
 #include <kern/inode.h>
-#include <kern/lock.h>
 #include <kern/signal.h>
-#include <kern/swap.h>
 #include <kern/swap-source.h>
 #include <kern/backing-claim.h>
 #include <kern/buf.h>
 #include <kern/fat.h>
 #include <kern/file.h>
 #include <kern/file-backing.h>
-#include <kern/kmem.h>
 #include <kern/klog.h>
 #include <kern/vm-commit.h>
 #include <kern/vm-reclaim.h>

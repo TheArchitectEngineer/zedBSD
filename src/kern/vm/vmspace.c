@@ -362,6 +362,18 @@ vmspace_address_cap(
 	return (uint64_t)(vm_layout.user_limit - vm_layout.user_minimum);
 }
 
+/*
+ * Advances the generation, skipping zero; the caller holds the VM lock.
+ */
+void
+vmspace_generation_advance_locked(
+	struct vmspace *vm)
+{
+	vm->generation++;
+	if (vm->generation == 0)
+		vm->generation++;
+}
+
 /* Tears down a vmspace whose last reference is gone. */
 static void
 vmspace_destroy(
@@ -418,14 +430,4 @@ vmspace_destroy(
 
 	/* Frees the address space itself. */
 	kern_free(vm);
-}
-
-/* Advances the generation, skipping zero; the caller holds the VM lock. */
-void
-vmspace_generation_advance_locked(
-	struct vmspace *vm)
-{
-	vm->generation++;
-	if (vm->generation == 0)
-		vm->generation++;
 }

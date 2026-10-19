@@ -16,23 +16,16 @@
 #include <kern/pmem.h>
 #include <kern/page.h>
 #include <kern/kcrt.h>
-
 #include <uapi/errno.h>
 #include "kern/vmspace.h"
-#include "kern/vm-device.h"
-#include "kern/file.h"
-#include "kern/kmem.h"
 #include "kern/lock.h"
-#include "kern/page.h"
 #include "kern/sched.h"
 #include "kern/swap.h"
 #include "kern/vm-commit.h"
 #include "kern/vm-lock.h"
 #include "kern/vm-object.h"
 #include "kern/vm-reclaim.h"
-#include <uapi/errno.h>
 #include <uapi/mman.h>
-#include <kern/kcrt.h>
 #include "kern/clock.h"
 #include "vmspace-internal.h"
 
@@ -378,7 +371,10 @@ vmspace_map_device(
 	return 0;
 }
 
-/* Maps retained device storage while unmap and protection wait on its region hold. */
+/*
+ * Maps retained device storage while unmap and protection wait on its region
+ * hold.
+ */
 int
 vmspace_device_fault(
 	struct vmspace *vm,

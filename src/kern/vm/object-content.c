@@ -933,7 +933,10 @@ vm_object_resize_abort(
 	vm_object_resize_finish(resize, old_size, 0);
 }
 
-/* Gives an unpublished object the inode's end of file and any transaction in progress. */
+/*
+ * Gives an unpublished object the inode's end of file and any transaction in
+ * progress.
+ */
 void
 object_initialize_eof_locked(
 	struct vm_object *object,
@@ -986,7 +989,9 @@ object_initialize_eof_locked(
 	spin_unlock_irqrestore(&inode->i_vm_lock, irq);
 }
 
-/* Waits until no resize or content transaction is active on an object. */
+/*
+ * Waits until no resize or content transaction is active on an object.
+ */
 int
 object_wait_resize(
 	struct vm_object *object)
@@ -1015,7 +1020,10 @@ object_wait_resize(
 	return 0;
 }
 
-/* Releases the pages a content transaction took; the caller holds the object lock. */
+/*
+ * Releases the pages a content transaction took; the caller holds the object
+ * lock.
+ */
 void
 content_release_pages_locked(
 	struct vm_object *object,

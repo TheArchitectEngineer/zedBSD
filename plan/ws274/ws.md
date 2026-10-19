@@ -27,5 +27,5 @@ design.md §3 の段。各段は build（amd64 の LTO・gcc の LTO 無しの p
 | p004 | S5 vmspace の群と vmspace-internal.h、pin-host-test の追従 | 8 | in-progress（code と host の確かめは済み、main に merge（91693b1f2）、T1-737 待ち） |
 | p005 | S6 swap.c を vm/ へ移して 4 つに（判断③） | 4 | in-progress（code と host の確かめは済み、main に merge（91693b1f2）、T1-737 待ち） |
 | [p006](phase006/phase.md) | 死んだ code と重複（判断⑦、約 5 LW） | 5 | in-progress（q1302、P1、2026-10-19、実装 c3999fff9、T1 待ち） |
-| p007 | S9 最後の確かめ（全 platform の build、T1 の起動の回帰）と規約の全文の見直し（S8 の接頭辞を含むかは p006 の後に判断） | 3〜10 | in-progress（q1305、P1、2026-10-19） |
+| [p007](phase007/phase.md) | S9 最後の確かめ（全 platform の build、T1 の起動の回帰）と規約の全文の見直し（S8 の接頭辞を含むかは p006 の後に判断） | 3〜10 | in-progress（q1305、P1、2026-10-19、実装 42bf53226、全 platform の build 済み、T1 待ち） |
 

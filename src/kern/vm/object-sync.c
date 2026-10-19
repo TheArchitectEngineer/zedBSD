@@ -321,6 +321,12 @@ vm_object_writeback_prepare(
 	return 0;
 }
 
+/*
+ * Releases the object a write-back preparation returned.
+ *
+ * Ends the operation the preparation began and drops its reference; a null
+ * object, from a file without one, is ignored.
+ */
 void
 vm_object_writeback_release(
 	struct vm_object *object)
@@ -617,7 +623,9 @@ vm_object_sync_mount_buffer(
 	return first_error;
 }
 
-/* Remembers the first writeback error; the caller holds the object lock. */
+/*
+ * Remembers the first writeback error; the caller holds the object lock.
+ */
 void
 object_record_writeback_error_locked(
 	struct vm_object *object,
@@ -640,7 +648,9 @@ object_record_writeback_error_locked(
 	}
 }
 
-/* Writes a page's data to the backend through the writeback file. */
+/*
+ * Writes a page's data to the backend through the writeback file.
+ */
 int
 write_page_data(
 	struct vm_object *object,
@@ -690,7 +700,9 @@ write_page_data(
 	return EIO;
 }
 
-/* Revokes, writes back, and optionally invalidates the pages of a range. */
+/*
+ * Revokes, writes back, and optionally invalidates the pages of a range.
+ */
 int
 vm_object_sync_range_internal(
 	struct vm_object *object,
@@ -711,6 +723,93 @@ vm_object_sync_range_internal(
 
 	/* Succeeded. */
 	return 0;
+}
+
+/*
+ * Indexes resident dirty data, excluding resize-orphaned storage.
+ */
+void
+object_page_dirty_link(
+	struct vm_object_page *page)
+{
+	/*
+	 * Leaves clean, already indexed and orphaned descriptors out of
+	 * publication.
+	 */
+	if (page->dirty_linked ||
+	    (page->flags & VM_OBJECT_PAGE_DIRTY) == 0 ||
+	    (page->flags & VM_OBJECT_PAGE_ORPHANED) != 0)
+		return;
+
+	/*
+	 * Adds membership without scanning or sorting other resident pages.
+	 *
+	 * The page goes to the head of the owner's dirty list: its previous
+	 * link is cleared, its next link takes what the head held, the old
+	 * head points back at it when there was one, and the owner's head
+	 * becomes this page.  The membership flag then records that the page
+	 * is on the list, so a second mark does nothing.
+	 */
+	page->dirty_previous = NULL;
+	page->dirty_next = page->owner->dirty_pages;
+	if (page->dirty_next != NULL)
+		page->dirty_next->dirty_previous = page;
+	page->owner->dirty_pages = page;
+	page->dirty_linked = 1;
+}
+
+/*
+ * Removes writeback membership before a clean transition, orphan or retirement.
+ */
+void
+object_page_dirty_unlink(
+	struct vm_object_page *page)
+{
+	/*
+	 * Accepts never-dirty and already detached pages without touching their
+	 * owner.
+	 */
+	if (!page->dirty_linked)
+		return;
+
+	/*
+	 * Repairs the owner list before the descriptor may leave its resident
+	 * index.
+	 */
+	if (page->dirty_previous != NULL)
+		page->dirty_previous->dirty_next = page->dirty_next;
+	else
+		page->owner->dirty_pages = page->dirty_next;
+
+	/* Closes the list from the other side as well. */
+	if (page->dirty_next != NULL)
+		page->dirty_next->dirty_previous = page->dirty_previous;
+
+	/* Leaves the page off the list and records that it is off it. */
+	page->dirty_previous = NULL;
+	page->dirty_next = NULL;
+	page->dirty_linked = 0;
+}
+
+/*
+ * Advances dirty content and publishes eligible membership as one owner
+ * transition.
+ */
+void
+object_page_dirty_mark(
+	struct vm_object_page *page)
+{
+	/* A page that has been written is no longer a prefetch of the file. */
+	object_prefetch_retire(page);
+
+	/* Records the new contents as not yet written back. */
+	page->flags |= VM_OBJECT_PAGE_DIRTY;
+
+	/* Stamps the change, so a write-back knows what it cleaned. */
+	page->dirty_generation = next_generation(page->owner);
+
+	/* Publishes the page to the owner's dirty list. */
+	object_page_dirty_link(page);
 }
 
 /* Drains the captured range while using the supplied worker reserve when present. */
@@ -1127,91 +1226,6 @@ vm_object_sync_range_buffer(
 		mutex_unlock(&object->inode->i_io_lock);
 
 	return first_error;
-}
-
-/* Indexes resident dirty data, excluding resize-orphaned storage. */
-void
-object_page_dirty_link(
-	struct vm_object_page *page)
-{
-	/*
-	 * Leaves clean, already indexed and orphaned descriptors out of
-	 * publication.
-	 */
-	if (page->dirty_linked ||
-	    (page->flags & VM_OBJECT_PAGE_DIRTY) == 0 ||
-	    (page->flags & VM_OBJECT_PAGE_ORPHANED) != 0)
-		return;
-
-	/*
-	 * Adds membership without scanning or sorting other resident pages.
-	 *
-	 * The page goes to the head of the owner's dirty list: its previous
-	 * link is cleared, its next link takes what the head held, the old
-	 * head points back at it when there was one, and the owner's head
-	 * becomes this page.  The membership flag then records that the page
-	 * is on the list, so a second mark does nothing.
-	 */
-	page->dirty_previous = NULL;
-	page->dirty_next = page->owner->dirty_pages;
-	if (page->dirty_next != NULL)
-		page->dirty_next->dirty_previous = page;
-	page->owner->dirty_pages = page;
-	page->dirty_linked = 1;
-}
-
-/*
- * Removes writeback membership before a clean transition, orphan or retirement.
- */
-void
-object_page_dirty_unlink(
-	struct vm_object_page *page)
-{
-	/*
-	 * Accepts never-dirty and already detached pages without touching their
-	 * owner.
-	 */
-	if (!page->dirty_linked)
-		return;
-
-	/*
-	 * Repairs the owner list before the descriptor may leave its resident
-	 * index.
-	 */
-	if (page->dirty_previous != NULL)
-		page->dirty_previous->dirty_next = page->dirty_next;
-	else
-		page->owner->dirty_pages = page->dirty_next;
-
-	/* Closes the list from the other side as well. */
-	if (page->dirty_next != NULL)
-		page->dirty_next->dirty_previous = page->dirty_previous;
-
-	/* Leaves the page off the list and records that it is off it. */
-	page->dirty_previous = NULL;
-	page->dirty_next = NULL;
-	page->dirty_linked = 0;
-}
-
-/*
- * Advances dirty content and publishes eligible membership as one owner
- * transition.
- */
-void
-object_page_dirty_mark(
-	struct vm_object_page *page)
-{
-	/* A page that has been written is no longer a prefetch of the file. */
-	object_prefetch_retire(page);
-
-	/* Records the new contents as not yet written back. */
-	page->flags |= VM_OBJECT_PAGE_DIRTY;
-
-	/* Stamps the change, so a write-back knows what it cleaned. */
-	page->dirty_generation = next_generation(page->owner);
-
-	/* Publishes the page to the owner's dirty list. */
-	object_page_dirty_link(page);
 }
 
 /* Finds the first resident page at or after one offset. */

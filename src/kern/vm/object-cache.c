@@ -292,7 +292,9 @@ vm_object_cache_drain(
 	return count;
 }
 
-/* Global reclaim must not acquire owners after unmount has closed admission. */
+/*
+ * Global reclaim must not acquire owners after unmount has closed admission.
+ */
 int
 object_mount_reserved(
 	const struct vm_object *object)
@@ -309,90 +311,10 @@ object_mount_reserved(
 	return 0;
 }
 
-/* A retained file may still be shared with a descriptor outside the VM cache. */
-static int
-object_discard_file_check(
-	struct vm_object *object,
-	struct mount *mount,
-	struct file *file)
-{
-	unsigned owned;
-
-	if (file == NULL)
-		return 0;
-
-	/* Only ordinary paths on this exact mount have proven disposal ownership. */
-	if (object->inode == NULL)
-		return EBUSY;
-	if (object->inode->i_mount != mount)
-		return EBUSY;
-	if (file->f_path.p_mount != mount)
-		return EBUSY;
-	if (file->f_path.p_inode != object->inode)
-		return EBUSY;
-	if (file->f_inode != object->inode)
-		return EBUSY;
-	if (file->f_vm_inode != NULL && file->f_vm_inode != object->inode)
-		return EBUSY;
-
-	/* Two slots can hold one description, but it still owns only one path. */
-	owned = 0;
-	if (object->file == file)
-		owned++;
-	if (object->write_file == file)
-		owned++;
-	if (refcount_load(&file->f_refs) != owned)
-		return EBUSY;
-
-	return 0;
-}
-
-/* Checks ownership without clearing dirty/error state or detaching any object. */
-static int
-object_discard_mount_check_locked(struct mount *mount)
-{
-	struct vm_object *object;
-	struct vm_object_page *page;
-	unsigned long irq;
-	unsigned list;
-	int error;
-
-	error = 0;
-	for (object = shared_objects; object != NULL; object = object->next) {
-		if ((object->inode == NULL || object->inode->i_mount != mount) &&
-		    (object->file == NULL || object->file->f_path.p_mount != mount) &&
-		    (object->write_file == NULL || object->write_file->f_path.p_mount != mount))
-			continue;
-		irq = spin_lock_irqsave(&object->lock);
-		if ((object->flags & (VM_OBJECT_CACHE_REFERENCE | VM_OBJECT_RETAINED_WRITEBACK)) == 0 ||
-		    (object->flags & (VM_OBJECT_DETACHING | VM_OBJECT_RESIZING |
-		    VM_OBJECT_CONTENT | VM_OBJECT_ANONYMOUS)) != 0 ||
-		    refcount_load(&object->refs) != 1 || object->mapping_count != 0 ||
-		    object->active_operations != 0 || object->registry_waiters != 0)
-			error = EBUSY;
-		if (error == 0)
-			error = object_discard_file_check(object, mount, object->file);
-		if (error == 0)
-			error = object_discard_file_check(object, mount, object->write_file);
-		for (list = 0; list < 2 && error == 0; list++) {
-			page = list == 0 ? object->pages : object->orphan_pages;
-			for (; page != NULL; page = page->next) {
-				if ((page->flags & (VM_OBJECT_PAGE_BUSY | VM_OBJECT_PAGE_WRITEBACK)) != 0 ||
-				    page->hold_count != 0 || page->pin_count != 0 ||
-				    page->mapping_count != 0 || page->mappings != NULL) {
-					error = EBUSY;
-					break;
-				}
-			}
-		}
-		spin_unlock_irqrestore(&object->lock, irq);
-		if (error != 0)
-			break;
-	}
-	return error;
-}
-
-/* Counts only paths proven to disappear when the eligible objects are destroyed. */
+/*
+ * Counts only paths proven to disappear when the eligible objects are
+ * destroyed.
+ */
 int
 vm_object_discard_mount_refs(
 	struct mount *mount,
@@ -445,7 +367,9 @@ vm_object_discard_mount_refs(
 	return 0;
 }
 
-/* The caller has quiesced the mount, workers and all non-VM dependencies. */
+/*
+ * The caller has quiesced the mount, workers and all non-VM dependencies.
+ */
 int
 vm_object_discard_mount(struct mount *mount, uint64_t *dirty_bytes)
 {
@@ -687,38 +611,6 @@ vm_object_reclaim_one(
 	if (error != 0)
 		return ENOMEM;
 	return 0;
-}
-
-/*
- * Tests, under the registry lock, whether a cache-only object is idle: only
- * the registry holds it, and it has no mapping, operation, waiter, dirty or
- * busy page, failure or transition, on a mount that is not being removed.
- */
-static int
-object_cache_idle_locked(
-	struct vm_object *object)
-{
-	unsigned refs;
-	int reserved;
-	int clean;
-
-	/* An object on a mount that unmount has closed is unmount's. */
-	reserved = object_mount_reserved(object);
-	if (reserved)
-		return 0;
-
-	/* Only the cache reference may remain, with nothing in progress. */
-	refs = refcount_load(&object->refs);
-	if ((object->flags & VM_OBJECT_CACHE_REFERENCE) == 0 ||
-	    (object->flags & (VM_OBJECT_DETACHING | VM_OBJECT_RESIZING |
-	    VM_OBJECT_CONTENT | VM_OBJECT_RETAINED_WRITEBACK)) != 0 ||
-	    object->active_operations != 0 || object->registry_waiters != 0 ||
-	    refs != 1)
-		return 0;
-
-	/* Reports whether every page is clean and idle. */
-	clean = object_can_destroy(object);
-	return clean;
 }
 
 /*
@@ -1137,4 +1029,119 @@ object_cache_read_missing(
 	 * result.
 	 */
 	return 0;
+}
+
+/* A retained file may still be shared with a descriptor outside the VM cache. */
+static int
+object_discard_file_check(
+	struct vm_object *object,
+	struct mount *mount,
+	struct file *file)
+{
+	unsigned owned;
+
+	if (file == NULL)
+		return 0;
+
+	/* Only ordinary paths on this exact mount have proven disposal ownership. */
+	if (object->inode == NULL)
+		return EBUSY;
+	if (object->inode->i_mount != mount)
+		return EBUSY;
+	if (file->f_path.p_mount != mount)
+		return EBUSY;
+	if (file->f_path.p_inode != object->inode)
+		return EBUSY;
+	if (file->f_inode != object->inode)
+		return EBUSY;
+	if (file->f_vm_inode != NULL && file->f_vm_inode != object->inode)
+		return EBUSY;
+
+	/* Two slots can hold one description, but it still owns only one path. */
+	owned = 0;
+	if (object->file == file)
+		owned++;
+	if (object->write_file == file)
+		owned++;
+	if (refcount_load(&file->f_refs) != owned)
+		return EBUSY;
+
+	return 0;
+}
+
+/* Checks ownership without clearing dirty/error state or detaching any object. */
+static int
+object_discard_mount_check_locked(struct mount *mount)
+{
+	struct vm_object *object;
+	struct vm_object_page *page;
+	unsigned long irq;
+	unsigned list;
+	int error;
+
+	error = 0;
+	for (object = shared_objects; object != NULL; object = object->next) {
+		if ((object->inode == NULL || object->inode->i_mount != mount) &&
+		    (object->file == NULL || object->file->f_path.p_mount != mount) &&
+		    (object->write_file == NULL || object->write_file->f_path.p_mount != mount))
+			continue;
+		irq = spin_lock_irqsave(&object->lock);
+		if ((object->flags & (VM_OBJECT_CACHE_REFERENCE | VM_OBJECT_RETAINED_WRITEBACK)) == 0 ||
+		    (object->flags & (VM_OBJECT_DETACHING | VM_OBJECT_RESIZING |
+		    VM_OBJECT_CONTENT | VM_OBJECT_ANONYMOUS)) != 0 ||
+		    refcount_load(&object->refs) != 1 || object->mapping_count != 0 ||
+		    object->active_operations != 0 || object->registry_waiters != 0)
+			error = EBUSY;
+		if (error == 0)
+			error = object_discard_file_check(object, mount, object->file);
+		if (error == 0)
+			error = object_discard_file_check(object, mount, object->write_file);
+		for (list = 0; list < 2 && error == 0; list++) {
+			page = list == 0 ? object->pages : object->orphan_pages;
+			for (; page != NULL; page = page->next) {
+				if ((page->flags & (VM_OBJECT_PAGE_BUSY | VM_OBJECT_PAGE_WRITEBACK)) != 0 ||
+				    page->hold_count != 0 || page->pin_count != 0 ||
+				    page->mapping_count != 0 || page->mappings != NULL) {
+					error = EBUSY;
+					break;
+				}
+			}
+		}
+		spin_unlock_irqrestore(&object->lock, irq);
+		if (error != 0)
+			break;
+	}
+	return error;
+}
+
+/*
+ * Tests, under the registry lock, whether a cache-only object is idle: only
+ * the registry holds it, and it has no mapping, operation, waiter, dirty or
+ * busy page, failure or transition, on a mount that is not being removed.
+ */
+static int
+object_cache_idle_locked(
+	struct vm_object *object)
+{
+	unsigned refs;
+	int reserved;
+	int clean;
+
+	/* An object on a mount that unmount has closed is unmount's. */
+	reserved = object_mount_reserved(object);
+	if (reserved)
+		return 0;
+
+	/* Only the cache reference may remain, with nothing in progress. */
+	refs = refcount_load(&object->refs);
+	if ((object->flags & VM_OBJECT_CACHE_REFERENCE) == 0 ||
+	    (object->flags & (VM_OBJECT_DETACHING | VM_OBJECT_RESIZING |
+	    VM_OBJECT_CONTENT | VM_OBJECT_RETAINED_WRITEBACK)) != 0 ||
+	    object->active_operations != 0 || object->registry_waiters != 0 ||
+	    refs != 1)
+		return 0;
+
+	/* Reports whether every page is clean and idle. */
+	clean = object_can_destroy(object);
+	return clean;
 }

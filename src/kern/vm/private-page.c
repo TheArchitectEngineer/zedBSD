@@ -536,7 +536,9 @@ vm_private_page_in_owned(
 	return 0;
 }
 
-/* Allocates one page-sized physical run for the VM layer. */
+/*
+ * Allocates one page-sized physical run for the VM layer.
+ */
 int
 vm_private_page_alloc(
 	struct kern_pmem *memory)
@@ -551,7 +553,9 @@ vm_private_page_alloc(
 	return HAL_OK;
 }
 
-/* Advances a backing's generation, skipping zero. */
+/*
+ * Advances a backing's generation, skipping zero.
+ */
 void
 private_page_advance_locked(
 	struct vm_private_page *backing)
@@ -559,6 +563,53 @@ private_page_advance_locked(
 	backing->generation++;
 	if (backing->generation == 0)
 		backing->generation++;
+}
+
+/*
+ * Waits for a backing to go idle, polling a cancel callback around each sleep.
+ */
+int
+vm_private_page_wait_idle_cancelable(
+	struct vm_private_page *backing,
+	int (*cancel)(void *),
+	void *cancel_argument)
+{
+	uint64_t sequence;
+	unsigned long irq;
+	int error;
+
+	/* Without a callback the plain wait suffices. */
+	if (cancel == NULL) {
+		error = vm_private_page_wait_idle(backing);
+		return error;
+	}
+
+	if (backing == NULL)
+		return EINVAL;
+
+	/* Checks for cancellation before each sleep. */
+	for (;;) {
+		error = cancel(cancel_argument);
+		if (error != 0)
+			return error;
+
+		/* Reports the page idle when nobody owns, runs against, or pins it. */
+		irq = spin_lock_irqsave(&backing->state_lock);
+		if ((backing->flags & VM_PAGE_BUSY) == 0 &&
+		    backing->active_operations == 0 &&
+		    backing->pin_count == 0) {
+			spin_unlock_irqrestore(&backing->state_lock, irq);
+			return 0;
+		}
+
+		sequence = waitq_sequence(&backing->state_waitq);
+
+		spin_unlock_irqrestore(&backing->state_lock, irq);
+
+		error = private_page_wait_sequence_interruptible(backing, sequence);
+		if (error != 0 && error != EAGAIN)
+			return error;
+	}
 }
 
 /* Sleeps on a backing's state queue for the sequence observed. */
@@ -607,49 +658,4 @@ private_page_wait_sequence_interruptible(
 
 	/* Succeeded: the backing reported progress. */
 	return 0;
-}
-
-/* Waits for a backing to go idle, polling a cancel callback around each sleep. */
-int
-vm_private_page_wait_idle_cancelable(
-	struct vm_private_page *backing,
-	int (*cancel)(void *),
-	void *cancel_argument)
-{
-	uint64_t sequence;
-	unsigned long irq;
-	int error;
-
-	/* Without a callback the plain wait suffices. */
-	if (cancel == NULL) {
-		error = vm_private_page_wait_idle(backing);
-		return error;
-	}
-
-	if (backing == NULL)
-		return EINVAL;
-
-	/* Checks for cancellation before each sleep. */
-	for (;;) {
-		error = cancel(cancel_argument);
-		if (error != 0)
-			return error;
-
-		/* Reports the page idle when nobody owns, runs against, or pins it. */
-		irq = spin_lock_irqsave(&backing->state_lock);
-		if ((backing->flags & VM_PAGE_BUSY) == 0 &&
-		    backing->active_operations == 0 &&
-		    backing->pin_count == 0) {
-			spin_unlock_irqrestore(&backing->state_lock, irq);
-			return 0;
-		}
-
-		sequence = waitq_sequence(&backing->state_waitq);
-
-		spin_unlock_irqrestore(&backing->state_lock, irq);
-
-		error = private_page_wait_sequence_interruptible(backing, sequence);
-		if (error != 0 && error != EAGAIN)
-			return error;
-	}
 }
