@@ -2,7 +2,7 @@
 
 # ws270-p003 QEMU riscv64-virt での画面なしの確かめ
 
-- 親: [WS270](../ws.md)、Status: in-progress（2026-10-20 P2、q1342 / q1342-i01。準備は済み、T1 の結果待ち）。
+- 親: [WS270](../ws.md)、Status: cleared（2026-10-20 Q1 の判定: T1-752 A で B（service）・C（USB keyboard の login、evdev-probe の mouse）・E（QEMU の display が無い時の sessiond の 1 行と console の login）・F（keiland-preview の static の実行）を画面で確認、login まで約 6 秒。design §6 の「service status の要約」は `service list` に読み替える。QEMU のみ。準備は 2026-10-20 P2、q1342）
 - 設計: [design.md](../design.md) 改訂 2.1 の §2.1 B・C・E・F、§3 の p003。
 
 ## 範囲
