@@ -273,4 +273,156 @@
 #define POWERVR_MARS_IDLE		0x08f8U
 #define POWERVR_MARS_IDLE_FIRMWARE	0x00000006U
 
+/*
+ * The kernel commands the render node sends beyond the health check, and
+ * the cleanup's busy answer in a return slot.
+ *
+ * Values referenced:
+ * StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
+ * drivers/gpu/drm/imagination/pvr_rogue_fwif.h
+ * (ROGUE_FWIF_KCCB_CMD_KICK 101, ROGUE_FWIF_KCCB_CMD_MMUCACHE 102,
+ * ROGUE_FWIF_KCCB_CMD_CLEANUP 106, each with the magic in the upper 16
+ * bits; ROGUE_FWIF_KCCB_RTN_SLOT_CLEANUP_BUSY bit 1;
+ * ROGUE_FWIF_CLEANUP_FWCOMMONCONTEXT 0); pvr_rogue_fwif_check.h
+ * (the command's data at 8; struct rogue_fwif_kccb_cmd_kick_data: the
+ * context 0, the write offset 4, the wrap mask 8, the cleanup count 12;
+ * struct rogue_fwif_cleanup_request: the type 0, the context 4).
+ */
+#define POWERVR_COMMAND_DATA		8U
+#define POWERVR_COMMAND_KICK		(POWERVR_COMMAND_MAGIC | 101U)
+#define POWERVR_COMMAND_MMU_CACHE	(POWERVR_COMMAND_MAGIC | 102U)
+#define POWERVR_COMMAND_CLEANUP		(POWERVR_COMMAND_MAGIC | 106U)
+#define POWERVR_RETURN_CLEANUP_BUSY	0x2U
+#define POWERVR_KICK_CONTEXT		0U
+#define POWERVR_KICK_WRITE_OFFSET	4U
+#define POWERVR_KICK_WRAP_MASK		8U
+#define POWERVR_KICK_CLEANUPS		12U
+#define POWERVR_CLEANUP_TYPE		0U
+#define POWERVR_CLEANUP_CONTEXT		4U
+#define POWERVR_CLEANUP_COMMON_CONTEXT	0U
+
+/*
+ * The MMU cache command: which of the core's MMU caches to drop, and the
+ * word the firmware writes once it has.
+ *
+ * Values referenced:
+ * StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
+ * drivers/gpu/drm/imagination/pvr_rogue_fwif.h
+ * (struct rogue_fwif_mmucachedata: the flags 0, the sync word's firmware
+ * address 4, its value 8; ROGUE_FWIF_MMUCACHEDATA_FLAGS_PT 1, ..._PD 2,
+ * ..._PC 4, ..._TLB 0x18).
+ */
+#define POWERVR_MMU_CACHE_FLAGS		0U
+#define POWERVR_MMU_CACHE_SYNC		4U
+#define POWERVR_MMU_CACHE_VALUE		8U
+#define POWERVR_MMU_CACHE_ALL		0x1fU
+
+/*
+ * The firmware's notices the host acts on.
+ *
+ * Values referenced:
+ * StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
+ * drivers/gpu/drm/imagination/pvr_rogue_fwif.h
+ * (ROGUE_FWIF_FWCCB_CMD_CONTEXT_RESET_NOTIFICATION 105,
+ * ROGUE_FWIF_FWCCB_CMD_REQUEST_GPU_RESTART 109,
+ * ROGUE_FWIF_FWCCB_CMD_CONTEXT_FW_PF_NOTIFICATION 112, each with the
+ * magic); pvr_rogue_fwif_check.h (struct
+ * rogue_fwif_fwccb_cmd_context_reset_data: the context's identity 0).
+ */
+#define POWERVR_NOTICE_CONTEXT_RESET	(POWERVR_COMMAND_MAGIC | 105U)
+#define POWERVR_NOTICE_RESTART		(POWERVR_COMMAND_MAGIC | 109U)
+#define POWERVR_NOTICE_PAGE_FAULT	(POWERVR_COMMAND_MAGIC | 112U)
+#define POWERVR_NOTICE_CONTEXT_ID	0U
+
+/*
+ * One memory context as the firmware sees it.
+ *
+ * Values referenced:
+ * StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
+ * drivers/gpu/drm/imagination/pvr_rogue_fwif_check.h
+ * (struct rogue_fwif_fwmemcontext, 32 bytes: the catalogue's physical
+ * address 0, the catalogue register set 8); pvr_rogue_fwif.h
+ * (ROGUE_FW_BIF_INVALID_PCSET 0xFFFFFFFF).
+ */
+#define POWERVR_MEMORY_CONTEXT_ROOT	0U
+#define POWERVR_MEMORY_CONTEXT_SET	8U
+#define POWERVR_MEMORY_CONTEXT_BYTES	32U
+#define POWERVR_NO_REGISTER_SET		0xffffffffU
+
+/*
+ * One compute context as the firmware sees it: the common context of its
+ * data master first, then the static state, then counters and flags.
+ *
+ * Values referenced:
+ * StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
+ * drivers/gpu/drm/imagination/pvr_rogue_fwif_check.h
+ * (struct rogue_fwif_fwcommoncontext, 152 bytes: the command buffer's
+ * control 0 and base 4, the state 24, the priority 32, the data master
+ * 60, the deadline 104, the memory context 136, the host's identity 140;
+ * struct rogue_fwif_static_computecontext_state, 56 bytes; struct
+ * rogue_fwif_compute_ctx_state, 4 bytes); pvr_rogue_fwif.h (struct
+ * rogue_fwif_fwcomputecontext: the common context, the static state,
+ * then six 32-bit words, aligned to 8); pvr_rogue_fwif_common.h
+ * (PVR_FWIF_DM_CDM 4); pvr_queue.c (MAX_DEADLINE_MS 30000,
+ * CTX_COMPUTE_CCCB_SIZE_LOG2 15).
+ */
+#define POWERVR_CONTEXT_CCB_CONTROL	0U
+#define POWERVR_CONTEXT_CCB		4U
+#define POWERVR_CONTEXT_STATE		24U
+#define POWERVR_CONTEXT_PRIORITY	32U
+#define POWERVR_CONTEXT_DATA_MASTER	60U
+#define POWERVR_CONTEXT_DEADLINE	104U
+#define POWERVR_CONTEXT_MEMORY		136U
+#define POWERVR_CONTEXT_IDENTITY	140U
+#define POWERVR_COMPUTE_CONTEXT_BYTES	232U
+#define POWERVR_COMPUTE_STATE_BYTES	4U
+#define POWERVR_DATA_MASTER_COMPUTE	4U
+#define POWERVR_DEADLINE_MS		30000U
+#define POWERVR_CLIENT_CCB_BYTES	0x8000U
+
+/*
+ * A context's command buffer: its control block, the header in front of
+ * every command, the commands the render node writes, and the sync word
+ * a fence waits for or an update writes.
+ *
+ * Values referenced:
+ * StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
+ * drivers/gpu/drm/imagination/pvr_rogue_fwif_shared_check.h
+ * (struct rogue_fwif_cccb_ctl, 32 bytes: the write offset 0, the read
+ * offset 4, the dependency offset 8, the wrap mask 12; struct
+ * rogue_fwif_ufo, 8 bytes: the address 0, the value 4);
+ * pvr_rogue_fwif_check.h (struct rogue_fwif_ccb_cmd_header, 40 bytes:
+ * the type 0, the size 4); pvr_rogue_fwif.h
+ * (ROGUE_FWIF_CCB_CMD_TYPE_NULL 210 and ROGUE_CCB_TYPE_TASK bit 15,
+ * ROGUE_FWIF_CCB_CMD_TYPE_FENCE 212, ..._UPDATE 213, ..._PADDING 221,
+ * each with the magic; command sizes aligned to 8).
+ */
+#define POWERVR_CLIENT_CONTROL_BYTES	32U
+#define POWERVR_CLIENT_WRITE		0U
+#define POWERVR_CLIENT_READ		4U
+#define POWERVR_CLIENT_DEPENDENCY	8U
+#define POWERVR_CLIENT_WRAP_MASK	12U
+#define POWERVR_HEADER_TYPE		0U
+#define POWERVR_HEADER_SIZE		4U
+#define POWERVR_HEADER_BYTES		40U
+#define POWERVR_CLIENT_NULL		(POWERVR_COMMAND_MAGIC | 0x8000U | 210U)
+#define POWERVR_CLIENT_FENCE		(POWERVR_COMMAND_MAGIC | 212U)
+#define POWERVR_CLIENT_UPDATE		(POWERVR_COMMAND_MAGIC | 213U)
+#define POWERVR_CLIENT_PADDING		(POWERVR_COMMAND_MAGIC | 221U)
+#define POWERVR_SYNC_BYTES		8U
+#define POWERVR_SYNC_ADDRESS		0U
+#define POWERVR_SYNC_VALUE		4U
+
+/*
+ * The device address window a render context's buffers are mapped in.
+ *
+ * Values referenced:
+ * StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
+ * drivers/gpu/drm/imagination/pvr_rogue_heap_config.h
+ * (ROGUE_GENERAL_HEAP_BASE 0x8000000000, ROGUE_GENERAL_HEAP_SIZE
+ * 128 GiB).
+ */
+#define POWERVR_GENERAL_HEAP_BASE	0x8000000000ULL
+#define POWERVR_GENERAL_HEAP_BYTES	0x2000000000ULL
+
 #endif

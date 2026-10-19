@@ -264,6 +264,34 @@ powervr_write64(
 }
 
 /*
+ * Powers the core up again after powervr_power_down() and maps its
+ * registers; the identity read at attach still holds.
+ */
+int
+powervr_power_up(
+	struct powervr_core *core)
+{
+	void *mapped;
+	int error;
+
+	/* Powers the core, starts its clocks and releases its resets. */
+	error = core->description.power->power_up(core->description.context, &core->core_rate);
+	if (error != 0)
+		return error;
+
+	/* Maps the core's registers. */
+	error = kern_device_map(core->description.registers, (size_t)core->description.register_size, KERN_DEVICE_UNCACHED, &mapped);
+	if (error != 0) {
+		core->description.power->power_down(core->description.context);
+		return error;
+	}
+
+	/* Succeeded: the core is powered and its registers mapped. */
+	core->registers = mapped;
+	return 0;
+}
+
+/*
  * Releases the core's registers and powers it down: the resets held, the
  * clocks stopped in reverse and the domain off.
  */

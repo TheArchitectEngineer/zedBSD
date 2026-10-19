@@ -50,15 +50,14 @@
 #define FIRMWARE_LIMIT		0x400000U
 
 /*
- * How long the firmware has to say it started, how long one command has to
- * be executed, and how long the stop waits on each unit going idle.
+ * How long the firmware has to say it started, and how long the stop
+ * waits on each unit going idle.
  *
  * Values referenced:
  * Linux v7.3 drivers/gpu/drm/imagination/pvr_fw.c
  * (FW_BOOT_TIMEOUT_USEC 5 s); pvr_fw_startstop.c (POLL_TIMEOUT_USEC 1 s).
  */
 #define BOOT_WAIT_MS		5000U
-#define COMMAND_WAIT_MS		1000U
 #define IDLE_WAIT_MS		1000U
 
 /*
@@ -103,11 +102,11 @@ static void init_cache(struct powervr_core *core);
 static void init_wrapper(struct powervr_core *core);
 static int wait_started(struct powervr_core *core);
 static int health_check(struct powervr_core *core);
-static unsigned drain_firmware_queue(struct powervr_core *core);
 static void stop_processor(struct powervr_core *core);
 static int wait_register(struct powervr_core *core, uint32_t offset, uint64_t mask, uint64_t value, int wide);
 static void tear_down(struct powervr_core *core, enum late_stage reached);
-static void free_memory(struct powervr_core *core);
+static void free_blocks(struct powervr_core *core);
+static void free_file(struct powervr_core *core);
 static uint64_t ms_deadline(unsigned milliseconds);
 
 /*
@@ -147,8 +146,16 @@ late_thread(
 	reached = LATE_NOTHING;
 	step = "file";
 
-	/* Brings the firmware up; on failure undoes what was done and powers the core down. */
-	error = bring_up(core, &reached, &step);
+	/* Reads the file once the root is live, and keeps it for later resets. */
+	error = powervr_firmware_read(FIRMWARE_PATH, FIRMWARE_LIMIT, &core->firmware.file, &core->firmware.file_size);
+	if (error == 0) {
+		reached = LATE_FILE;
+
+		/* Brings the firmware up from the kept file. */
+		error = bring_up(core, &reached, &step);
+	}
+
+	/* On failure undoes what was done and powers the core down. */
 	if (error != 0) {
 		tear_down(core, reached);
 		kern_logf("powervr: firmware %s failed (%d); powered down\n", step, error);
@@ -156,7 +163,7 @@ late_thread(
 	}
 
 	/* Takes any replies the firmware queued meanwhile. */
-	replies = drain_firmware_queue(core);
+	replies = powervr_notices_take(core, NULL, NULL);
 
 	/* Reports the running firmware on one line. */
 	image = &core->firmware.image;
@@ -166,10 +173,62 @@ late_thread(
 		  (unsigned)image->version_build,
 		  (unsigned)core->firmware.interrupts,
 		  replies);
+
+	/* Publishes the render node over the running firmware; on failure the core goes down the same way. */
+	error = powervr_render_start(core);
+	if (error != 0) {
+		tear_down(core, LATE_STARTED);
+		powervr_render_abandon(core);
+		kern_logf("powervr: render node failed (%d); powered down\n", error);
+		return;
+	}
 }
 
 /*
- * Reads the firmware, lays it out, starts it and checks it answers.
+ * Starts the firmware again from the kept file after a reset: stops the
+ * processor, returns the firmware's memory, powers the core off and on,
+ * and brings the firmware up as at boot.  On failure the core is left
+ * powered down with nothing kept.
+ */
+int
+powervr_firmware_restart(
+	struct powervr_core *core)
+{
+	enum late_stage reached;
+	const char *step;
+	int error;
+
+	/* Stops the processor and the interrupt, and returns the firmware's memory. */
+	stop_processor(core);
+	remove_interrupt(core);
+	free_blocks(core);
+
+	/* Powers the core off and on, its domain, clocks and resets with it. */
+	powervr_power_down(core);
+	error = powervr_power_up(core);
+	if (error != 0) {
+		free_file(core);
+		return error;
+	}
+
+	/* Brings the firmware up from the kept file, without the root file system. */
+	reached = LATE_FILE;
+	error = bring_up(core, &reached, &step);
+	if (error != 0) {
+		tear_down(core, reached);
+		return error;
+	}
+
+	/* Takes any replies the restarted firmware queued. */
+	(void)powervr_notices_take(core, NULL, NULL);
+
+	/* Succeeded: the firmware runs and answers again. */
+	return 0;
+}
+
+/*
+ * Brings the firmware up from the kept file: checks it, lays it out,
+ * starts it and checks it answers.
  *
  * Reached and step report how far it got and which step failed.
  */
@@ -184,15 +243,8 @@ bring_up(
 	unsigned bus_bits;
 	int error;
 
-	/* Reads the file once the root is live, and keeps it for later resets. */
-	firmware = &core->firmware;
-	*step = "file";
-	error = powervr_firmware_read(FIRMWARE_PATH, FIRMWARE_LIMIT, &firmware->file, &firmware->file_size);
-	if (error != 0)
-		return error;
-	*reached = LATE_FILE;
-
 	/* Checks the file is for this core and describes it. */
+	firmware = &core->firmware;
 	*step = "image";
 	bvnc = powervr_bvnc_pack(core->branch, core->version, core->units, core->config);
 	error = powervr_fw_image_parse(firmware->file, firmware->file_size, bvnc, &firmware->image);
@@ -730,8 +782,8 @@ remove_interrupt(
 /*
  * Takes the firmware's event and counts it.
  *
- * It takes no lock: it reads and clears one register and moves a counter
- * only it writes.
+ * It reads and clears one register, moves a counter only it writes, and
+ * wakes the render node's service; it takes no lock of the firmware's.
  *
  * Procedure referenced:
  * Linux v7.3 drivers/gpu/drm/imagination/pvr_fw_mips.c
@@ -758,6 +810,9 @@ interrupt_handler(
 	if ((status & POWERVR_MIPS_IRQ_EVENT) != 0U) {
 		powervr_write32(core, POWERVR_MIPS_IRQ_CLEAR, POWERVR_MIPS_IRQ_EVENT);
 		core->firmware.interrupts++;
+
+		/* Wakes the render node's service, which reads what the firmware wrote. */
+		powervr_render_interrupt(core);
 	}
 
 	/* Retires the acknowledgement before returning, as every handler must. */
@@ -983,87 +1038,23 @@ static int
 health_check(
 	struct powervr_core *core)
 {
-	struct powervr_firmware *firmware;
-	uint64_t deadline;
-	uint64_t now;
-	uint32_t slot;
-	uint32_t next;
-	uint32_t read;
+	uint32_t command[POWERVR_COMMAND_WORDS];
 	uint32_t answer;
-	uint32_t offset;
+	uint32_t index;
+	int error;
 
-	/* Refuses a full buffer; the firmware has not read what was written. */
-	firmware = &core->firmware;
-	slot = powervr_object_get32(&firmware->kccb_control, POWERVR_CCB_WRITE);
-	read = powervr_object_get32(&firmware->kccb_control, POWERVR_CCB_READ);
-	next = (slot + 1U) & (POWERVR_KERNEL_CCB_SLOTS - 1U);
-	if (next == read)
-		return EBUSY;
+	/* The command: its type alone. */
+	for (index = 0; index < POWERVR_COMMAND_WORDS; index++)
+		command[index] = 0;
+	command[POWERVR_COMMAND_TYPE / 4U] = POWERVR_COMMAND_HEALTH_CHECK;
 
-	/* Writes the command and clears its return slot. */
-	for (offset = 0; offset < POWERVR_COMMAND_BYTES; offset += 4U)
-		powervr_object_put32(&firmware->kccb, slot * POWERVR_COMMAND_BYTES + offset, 0);
-	powervr_object_put32(&firmware->kccb, slot * POWERVR_COMMAND_BYTES + POWERVR_COMMAND_TYPE, POWERVR_COMMAND_HEALTH_CHECK);
-	powervr_object_put32(&firmware->kccb_returns, slot * 4U, POWERVR_RETURN_NONE);
-
-	/* Publishes the command, then kicks the firmware once it is in memory. */
-	kern_io_barrier();
-	powervr_object_put32(&firmware->kccb_control, POWERVR_CCB_WRITE, next);
-	kern_io_barrier();
-	powervr_write32(core, POWERVR_MTS_SCHEDULE, 0);
-	kern_io_barrier();
-
-	/* Waits for the return slot to say the command was executed. */
-	deadline = ms_deadline(COMMAND_WAIT_MS);
-	for (;;) {
-		answer = powervr_object_get32(&firmware->kccb_returns, slot * 4U);
-		if ((answer & POWERVR_RETURN_EXECUTED) != 0U)
-			break;
-
-		/* The bound is spent without an answer. */
-		now = sched_ticks();
-		if (now >= deadline)
-			return ETIMEDOUT;
-
-		/* Sleeps one tick. */
-		sched_sleep(now + 1U);
-	}
+	/* Sends it and waits for the return slot to say it was executed. */
+	error = powervr_command_run(core, command, POWERVR_COMMAND_WAIT_MS, &answer);
+	if (error != 0)
+		return error;
 
 	/* Succeeded: the firmware executed the command. */
 	return 0;
-}
-
-/*
- * Takes every command the firmware queued for the host, and counts them.
- *
- * None is acted on yet; a command without the interface's magic is
- * skipped the same way.
- */
-static unsigned
-drain_firmware_queue(
-	struct powervr_core *core)
-{
-	struct powervr_firmware *firmware;
-	uint32_t write;
-	uint32_t type;
-	unsigned count;
-
-	/* Reads up to the firmware's write offset, moving the read offset past each command. */
-	firmware = &core->firmware;
-	count = 0;
-	write = powervr_object_get32(&firmware->fwccb_control, POWERVR_CCB_WRITE) & (POWERVR_FIRMWARE_CCB_SLOTS - 1U);
-	while (firmware->fwccb_read != write) {
-		type = powervr_object_get32(&firmware->fwccb, firmware->fwccb_read * POWERVR_COMMAND_BYTES + POWERVR_COMMAND_TYPE);
-		if ((type & POWERVR_COMMAND_MAGIC_MASK) == POWERVR_COMMAND_MAGIC)
-			count++;
-
-		/* Hands the slot back to the firmware. */
-		firmware->fwccb_read = (firmware->fwccb_read + 1U) & (POWERVR_FIRMWARE_CCB_SLOTS - 1U);
-		powervr_object_put32(&firmware->fwccb_control, POWERVR_CCB_READ, firmware->fwccb_read);
-	}
-
-	/* Succeeded: the number of well-formed commands taken. */
-	return count;
 }
 
 /*
@@ -1179,15 +1170,16 @@ tear_down(
 		remove_interrupt(core);
 
 	/* Returns the firmware's memory and the kept file. */
-	free_memory(core);
+	free_blocks(core);
+	free_file(core);
 
 	/* Puts the resets back, stops the clocks in reverse and turns the domain off. */
 	powervr_power_down(core);
 }
 
-/* Returns every block, the page table and the kept file. */
+/* Returns every block and the page table; the kept file stays. */
 static void
-free_memory(
+free_blocks(
 	struct powervr_core *core)
 {
 	struct powervr_firmware *firmware;
@@ -1217,8 +1209,17 @@ free_memory(
 	powervr_object_destroy(heap, &firmware->data);
 	powervr_object_destroy(heap, &firmware->code);
 	powervr_heap_fini(heap);
+}
 
-	/* Returns the kept file. */
+/* Returns the kept file. */
+static void
+free_file(
+	struct powervr_core *core)
+{
+	struct powervr_firmware *firmware;
+
+	/* A file that was never read holds nothing. */
+	firmware = &core->firmware;
 	if (firmware->file != NULL)
 		kern_free(firmware->file);
 	firmware->file = NULL;

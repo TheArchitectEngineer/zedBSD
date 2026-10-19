@@ -52,6 +52,13 @@
 #define POWERVR_MIPS_TABLE_BYTES	(POWERVR_MIPS_TABLE_ENTRIES * 4U)
 #define POWERVR_MIPS_TABLE_PAGES	(POWERVR_MIPS_TABLE_BYTES / POWERVR_MIPS_PAGE_BYTES)
 
+/*
+ * The pages of the heap's general part, one bit each in a map of 64-bit
+ * words: set while a block holds the page.
+ */
+#define POWERVR_HEAP_GENERAL_PAGES	(POWERVR_HEAP_GENERAL_BYTES / POWERVR_MIPS_PAGE_BYTES)
+#define POWERVR_HEAP_MAP_WORDS		((POWERVR_HEAP_GENERAL_PAGES + 63U) / 64U)
+
 /* How a heap page is cached by the firmware's processor. */
 enum powervr_mips_caching {
 	POWERVR_MIPS_CACHED = 0,
@@ -81,6 +88,21 @@ int powervr_mips_map(volatile uint32_t *table, uint32_t heap_offset, uint64_t ph
 
 /* Removes the entries of a heap range mapped earlier. */
 void powervr_mips_unmap(volatile uint32_t *table, uint32_t heap_offset, uint32_t size);
+
+/*
+ * Takes the first run of free pages of the general part long enough for
+ * a block, and reports its first page; ENOMEM when none is.
+ */
+int powervr_heap_pages_take(uint64_t map[POWERVR_HEAP_MAP_WORDS], uint32_t pages, uint32_t *first);
+
+/*
+ * Takes a given run of pages of the general part; EEXIST when a page of
+ * it is held, and nothing is taken then.
+ */
+int powervr_heap_pages_claim(uint64_t map[POWERVR_HEAP_MAP_WORDS], uint32_t first, uint32_t pages);
+
+/* Gives back a run of pages taken earlier. */
+void powervr_heap_pages_give(uint64_t map[POWERVR_HEAP_MAP_WORDS], uint32_t first, uint32_t pages);
 
 /*
  * Fills the boot loader's parameters at the start of the boot data page:
