@@ -7,10 +7,12 @@
 
 /*
  * Host check of the PowerVR display node (ws269-p007) on a fake boot
- * framebuffer: the kernel calls it makes are stubs over host memory.
+ * framebuffer: the kernel calls it makes are stubs over host memory, and
+ * the render node's lookup is a fake that knows one exported buffer.
  */
 
 #include "drivers/gpu/powervr/powervr.h"
+#include "drivers/gpu/powervr/render.h"
 #include <drivers/gpu/gpu.h>
 #include <kern/boot.h>
 #include <kern/lock.h>
@@ -109,6 +111,30 @@ kern_snprintf(char *b, size_t c, const char *f, ...)
 	return n;
 }
 
+/* A fake render buffer: 6x2 BGRA pixels in rows of 8, exported once. */
+struct powervr_buffer {
+	uint32_t pixels[8 * 2];
+	int references;
+};
+static struct powervr_buffer render_buffer;
+static const uint64_t render_pages[1] = { 0x80000000ULL };
+
+int
+powervr_render_lookup(const struct gpu_image_descriptor *image, const struct drv_gpu_scanout_backing *backing, struct powervr_buffer **result)
+{
+	(void)image;
+	*result = NULL;
+	if (backing->pages != render_pages)
+		return ENOTSUP;
+	render_buffer.references++;
+	*result = &render_buffer;
+	return 0;
+}
+
+const volatile uint8_t *powervr_buffer_view(const struct powervr_buffer *b) { return (const volatile uint8_t *)b->pixels; }
+uint64_t powervr_buffer_bytes(const struct powervr_buffer *b) { return sizeof(b->pixels); }
+void powervr_buffer_release(struct powervr_buffer *b) { b->references--; }
+
 int
 drv_gpu_register(const struct drv_gpu_ops *o, void *p, struct drv_gpu_device **r)
 {
@@ -130,6 +156,8 @@ main(void)
 	struct gpu_resource_create create;
 	struct gpu_image_descriptor image;
 	struct drv_gpu_scanout_backing backing;
+	struct gpu_scanout_constraints constraints;
+	static const uint64_t foreign_pages[1] = { 0x90000000ULL };
 	void *a;
 	void *b;
 	void *resource;
@@ -202,16 +230,61 @@ main(void)
 	memcpy(&pixel, screen + 3U * FB_PITCH + 8U * 4U, 4);
 	check(pixel == 0x5a5a5a5aU, "clipped column untouched");
 
-	/* Shared frames and imports wait for the render node. */
+	/* Constraints offer both routes. */
+	memset(&constraints, 0, sizeof(constraints));
+	constraints.display_id = 1U;
+	constraints.generation = 1U;
+	check(ops->scanout->constraints(node, a, &constraints) == 0 &&
+	      constraints.flags == (GPU_SCANOUT_COPY | GPU_SCANOUT_SHARED | GPU_SCANOUT_FOREIGN), "constraints shared and copy");
+
+	/* A shared frame from a run is refused. */
 	present.flags = GPU_DISPLAY_PRESENT_FIFO | GPU_DISPLAY_PRESENT_BLOB;
-	check(ops->display->present(node, a, resource, &present) == ENOTSUP, "blob refused");
+	check(ops->display->present(node, a, resource, &present) == EINVAL, "blob from a run refused");
+
+	/* Imports: a foreign backing and bad layouts are refused, owning nothing. */
 	memset(&image, 0, sizeof(image));
+	image.width = 6U;
+	image.height = 2U;
+	image.stride = 32U;
+	image.format = GPU_PIXEL_BGRA8888;
+	image.tiling = GPU_IMAGE_LINEAR;
 	memset(&backing, 0, sizeof(backing));
-	check(ops->scanout->import_image(node, a, &image, &backing, &imported) == ENOTSUP && imported == NULL, "import refused");
+	backing.pages = foreign_pages;
+	check(ops->scanout->import_image(node, a, &image, &backing, &imported) == ENOTSUP && imported == NULL, "foreign import refused");
+	backing.pages = render_pages;
+	image.tiling = 0U;
+	check(ops->scanout->import_image(node, a, &image, &backing, &imported) == ENOTSUP && imported == NULL, "tiled import refused");
+	image.tiling = GPU_IMAGE_LINEAR;
+	image.height = 3U;
+	check(ops->scanout->import_image(node, a, &image, &backing, &imported) == EINVAL && imported == NULL && render_buffer.references == 0, "oversized import refused and returned");
+	image.height = 2U;
+	check(ops->scanout->import_image(node, a, &image, &backing, &imported) == 0 && imported != NULL && render_buffer.references == 1, "import retains");
+	check(ops->resource_write(node, a, imported, 0, frame, 4) == ENOTSUP, "import not writable");
+
+	/* A shared frame: the exported layout only, copied without a swap onto BGRX. */
+	for (i = 0; i < 16U; i++)
+		render_buffer.pixels[i] = 0xa0b0c000U + i;
+	present.width = 6U;
+	present.height = 2U;
+	present.stride = 32U;
+	present.format = GPU_PIXEL_RGBA8888;
+	check(ops->display->present(node, a, imported, &present) == EINVAL, "blob layout mismatch");
+	present.format = GPU_PIXEL_BGRA8888;
+	present.flags = GPU_DISPLAY_PRESENT_FIFO;
+	check(ops->display->present(node, a, imported, &present) == EINVAL, "import as ordinary refused");
+	present.flags = GPU_DISPLAY_PRESENT_FIFO | GPU_DISPLAY_PRESENT_BLOB;
+	cleaned = 0;
+	check(ops->display->present(node, a, imported, &present) == 0 && present.sequence == 2U && cleaned == 1, "blob present");
+	memcpy(&pixel, screen + 1U * FB_PITCH + 5U * 4U, 4);
+	check(pixel == 0xa0b0c00dU, "blob pixel");
+	memcpy(&pixel, screen + 1U * FB_PITCH + 6U * 4U, 4);
+	check(pixel == 0x11543322U, "blob leaves the rest");
+	ops->resource_destroy(node, a, imported);
+	check(render_buffer.references == 0, "destroy returns the buffer");
 
 	/* Wait, then release by the wrong session and the holder. */
 	wait.sequence = 1U;
-	check(ops->display->wait(node, a, &wait) == 0 && wait.completed_sequence == 1U, "wait");
+	check(ops->display->wait(node, a, &wait) == 0 && wait.completed_sequence == 2U, "wait");
 	memset(&release, 0, sizeof(release));
 	release.lease = claim.lease;
 	check(ops->display->release(node, b, &release) == EINVAL, "foreign release");

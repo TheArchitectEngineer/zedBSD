@@ -4,7 +4,7 @@
 
 - 親: [ws269](../ws.md)、設計: [design.md](../design.md) 改訂 3.1 の §3.5 の「表示」・§6 の p007 と §6 の末尾の必須項目（「display の node は powervr と同じ driver に置き、import は private な lookup。import の部分は p006 の後」）
 - Queue: q1333 / q1333-i01（P1、2026-10-19、前半: claim・present まで）
-- Status: in-progress（2026-10-19 P1: 前半の実装・build・host 試験まで。残り: (1) `scanout` の import（p006 の render の `share` の後）、(2) 下の実機の確認（未実施）。clearance は Q1 の判定）
+- Status: in-progress（2026-10-19 P1: 前半。2026-10-19 P2（q1340）: 後半の `scanout` の import の実装・build・host 試験まで。残り: 下の実機の確認（未実施、未依頼）。clearance は Q1 の判定）
 - 前提: WS256 p011（framebuffer、実機の目視は未）、p004（main に merge 済み 41dd20993）。import の部分は p006。
 
 ## 目的と受け入れの条件
@@ -33,6 +33,41 @@ Procedure referenced: `src/drivers/gpu/bcm2711/display-device.c`（device の op
 
 - damage の矩形だけの copy（§3.5）は render の buffer の import（uncached の読みが遅い）の為の物で、自分の resource は cacheable なので、今は frame の全体（clip 後）を copy する。import と一緒に入れる。
 - `drv_gpu_register` を board の bring-up（`probe_soc` の中、`drv_vf2_gpu_attach`）から呼ぶ。rpi4 の bcm2711 も board の attach から登録しているので同じ時期で動くと見込むが、VF2 での `/dev/gpu0` の出現は**未確認**（実機の試験で見る）。
+
+## 後半: `scanout` の import（q1340、2026-10-19 P2）
+
+| file | 中身 |
+| --- | --- |
+| `src/drivers/gpu/powervr/display.c` | `import_image`: 線形・BGRA/RGBA・4 byte 境界の stride/offset・stride ≥ 幅×4 を確かめ、p006 の `powervr_render_lookup`（render.h）で render の buffer を retain（lookup できない＝render の node の live な export でない backing は ENOTSUP、何も持たない）。行が全部 `powervr_buffer_bytes` に収まる事を確かめ、resource（`buffer`・`image`）を作って session の上限（16）に数える。`resource_destroy` は import なら `powervr_buffer_release`（close の時も core が destroy を先に呼ぶので返る）。import の resource は read・write・map を ENOTSUP。present: BLOB は import だけ・export の layout（幅・高さ・format・stride・offset）と一致する時だけ、`powervr_buffer_view` の uncached の view から 1 word ずつ（plain aligned load）copy、R/B の入れ替え・clip・clean は自分の resource と同じ。普通の present に import を渡すと EINVAL、BLOB に自分の run を渡すと EINVAL。constraints は `COPY | SHARED | FOREIGN`（placement 0：CPU が読むので要らない） |
+| `plan/ws269/tests/p007/display-host-test.c` | 偽の `powervr_render_lookup`（export 1 つ、6x2 の BGRA、stride 32）で: constraints、run の BLOB は EINVAL、他の backing の import は ENOTSUP、tiled は ENOTSUP、はみ出す image は EINVAL で reference を返す、import で retain、import への write は ENOTSUP、layout 違いの BLOB は EINVAL、import の普通の present は EINVAL、BLOB present の画素と clean、残りの画素は前の frame のまま、destroy で reference が 0 |
+
+### 設計との違い
+
+- **damage の矩形だけの copy（design.md §3.5）はしていない**: `struct gpu_display_present`（uapi）に damage の欄が無く、display の ops にも渡らない。ABI（core・uapi）を変えずに作れないので、BLOB の present は毎回 frame の全体（clip 後）を uncached の view から copy する。1080p で 1 frame 8 MB の uncached の読み（未計測）。damage が要るなら present の ABI の拡張を別に計画する（Q1 の判断。p010 の計測の後に）。
+- BLOB の present は返った時に copy が済んでいるので、frame を保持しない（import の resource の reference は destroy まで持つ）。
+
+### libvulkan の WSI との整合（確かめただけ、変えていない）
+
+- `display_import_image`（`userland/desktop/libvulkan/wsi-display.c`）は constraints の `GPU_SCANOUT_SHARED` と stride/offset の alignment（ここでは 4）を見て `GPU_RESOURCE_IMPORT`（`GPU_IMPORT_SCANOUT`）→ core の `gpu_scanout_import` → render の `share.get_scanout_backing`（render.c の `render_backing`）→ この `import_image` の道。present は `GPU_DISPLAY_PRESENT_FIFO | GPU_DISPLAY_PRESENT_BLOB` で export の descriptor の layout をそのまま送るので、`shared_frame_valid` の一致の条件に合う。
+- **合わない所**: libvulkan が shared の道を選ぶのは `context->copy_display == VK_FALSE` の時だけで、それは context.c:176-211 の renderer の capset（WINQ の XML 版と vendor の flag `OPAQUE|STRICT_QUEUE|QUIESCE|HOST_SCANOUT`）で決まる。PowerVR の native の renderer がこの capset を出さない限り、constraints に SHARED があっても libvulkan は copy の道（`GPU_SCANOUT_COPY`）を使う。PowerVR で shared を使うには WS270 の側で capset（または選択の条件）を合わせる必要がある（libvulkan は変えていない、WS270 の範囲）。
+- `GPU_DISPLAY_PRESENT_SYNC`（fence 付き）の道はこの node では試していない（display の ops は同期の present なので、core が fence を扱う範囲。p010 で確かめる）。
+
+### 確認（後半）
+
+| 確認 | コマンド | 結果 |
+| --- | --- | --- |
+| host 試験 p007（拡張） | `plan/ws269/tests/p007/run.sh build/ws269-p007b/host` | PASS |
+| host 試験 p004（回帰） | `plan/ws269/tests/p004/run.sh build/ws269-p007b/p004` | PASS（0 failures） |
+| VF2・riscv64-virt・amd64 の kernel | `timeout 3000 make ZEDBSD_CONFIG=config/ci/config-<c>.mk BUILD=build/ws269-p007b-<c> vmunix` | 3 つとも rc=0、`warning:`・`error:` 0 件 |
+| QEMU | — | 起動していない（依頼の範囲外） |
+| 実機 | — | 未実施 |
+
+### 実機の試験の文面（後半、未依頼）
+
+前半の 1〜4 に加えて、p006 の render の node（gpu1）が出る kernel で:
+
+5. render の node で BLOB を作り、線形の BGRA の image として export し（色の帯を書く）、display の node（gpu0）で `GPU_RESOURCE_IMPORT`（`GPU_IMPORT_SCANOUT`）→ claim → `GPU_DISPLAY_PRESENT`（FIFO|BLOB）。**目視**で帯が出る事、release で console に戻る事。試験の program は未作成（p010 の WSI の試験で兼ねる候補。作るなら `gpu-bars` に `--shared` を足す）。
+6. import の後に export の fd を閉じても、release・close まで画面が崩れない事（retain の確かめ）。
 
 ## 確認
 
@@ -67,5 +102,5 @@ image: `plan/ws269/tests/config-p007.mk`（`config/ci/config-visionfive2.mk` の
 
 ## 残り・再開の条件
 
-- 後半: `scanout` の import（render の buffer の object を driver の中の private な lookup で retain し、uncached の VA から damage の矩形だけを copy、constraints に SHARED・FOREIGN、BLOB の present）。条件: p006（render の node の `share`）が main に入った後。import の試験は p010。
+- 後半: 実装済み（q1340、上の「後半」）。damage の copy は ABI に欄が無く未対応（全面の copy）。libvulkan の shared の選択は WS270 の capset 次第。import の実機の試験は p010。
 - 実機の上の 1〜4（program は用意済み、未依頼）。
