@@ -595,7 +595,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS270](ws270/ws.md) | MG008 | VisionFive 2 で Keiland の desktop を動かし、OS を完全に動かす（2026-10-19 ユーザー） | planning（WS256・WS269 の後） | — |
 | [WS271](ws271/ws.md) | MG008 | MIPS32（mipsel）の QEMU malta への移植、framebuffer の console・VFS の段まで（2026-10-19 ユーザー） | completed（2026-10-19、QEMU malta の MIPS32 で VFS の段まで、T1-725・728・730・734） | — |
 | [WS272](ws272/ws.md) | MG008 | MIPS64（mips64el）の QEMU malta への移植、framebuffer の console・VFS の段まで（2026-10-19 ユーザー） | completed（2026-10-19、QEMU malta の MIPS64R2-generic で VFS の段まで、512M の high の alias も、T1-731・733・734） | — |
-| [WS273](ws273/ws.md) | MG008 | Anbernic RG350（JZ4770、MIPS32）の実機への移植（2026-10-19 ユーザー） | incomplete（2026-10-19 22:22 ユーザーの指示で中断: p001 cleared、p002 は T1-748 待ち、p003 途中（main 7adce0d6d）。実機 1 は beta2.md U26） | 再開は ws273/phase003/phase.md |
+| [WS273](ws273/ws.md) | MG008 | Anbernic RG350（JZ4770、MIPS32）の実機への移植（2026-10-19 ユーザー） | incomplete（2026-10-19 22:22 ユーザーの指示で中断: p001・p002 cleared、p003 途中（main 7adce0d6d）。実機 1 は beta2.md U26） | 再開は ws273/phase003/phase.md |
 | [WS274](ws274/ws.md) | MG001 | 仮想メモリの code（vm.c・vmspace.c など）を src/kern/vm/ に分けて整理する（2026-10-19 ユーザー） | completed（2026-10-19、src/kern/vm/ の 26 file、T1-741 まで PASS） | — |
 | [WS275](ws275/ws.md) | MG008 | sun4u に /dev/graphics を実装し Xzed を動かす（2026-10-19 ユーザー） | incomplete（2026-10-19 停止、BUG-337。p001〜p005 cleared・main に merge 50bd10c5f） | BUG-337 |
 | [WS276](ws276/ws.md) | MG008 | m68k（x68k・m68k-virt）の静的な program の TLS を kernel と libc で支える（2026-10-19、q1301 の所見） | completed（2026-10-19、m68k の静的な TLS、T1-741） | — |
