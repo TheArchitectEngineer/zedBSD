@@ -3,7 +3,7 @@
 # ws276-p001 m68k の静的な TLS の配置（elf.c・static-tls.c）と名前の食い違いの調べ
 
 - 親: [ws276](../ws.md)、Queue: q1304 / q1304-i01（P2、worktree `/home/awe/zedBSD-worktrees/p2`、branch agent/p2-q1258、main 2b9733149 を merge してから）
-- Status: in-progress（2026-10-19 18:50 P2 の実装と host 試験が済み、Q1 の判定待ち。T1 への m68k の依頼は無し: host 試験だけ）
+- Status: cleared（2026-10-19 Q1 の判定、T1-741: amd64・pcat の静的な TLS の道を書き直した後の起動の回帰 PASS、x68k の build PASS。m68k は host 試験だけ（MAME・実機は範囲外））
 - 規約: [coding-style.md](../../coding-style.md) の全文を新しい code に当てた。出典の規則（guardrail）: 外の source の code・値は使っていない。m68k の 0x7000 は m68k の TLS の ABI（compiler と GNU ld の振る舞い）で、下の probe で確かめた事実。
 
 ## 設計
