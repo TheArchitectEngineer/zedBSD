@@ -3,7 +3,7 @@
 # ws271-p002 入口と console の画面（MIPS32 mipsel、QEMU malta）
 
 - 親: [WS271](../ws.md)、設計: [design.md](../design.md)（改訂 2）§1.5・§1.6・§3.1・§3.3・§4・§5・§7.1、Queue: q1279 / q1279-i01（P1、2026-10-19）
-- Status: in-progress → 実装と build を終えた（2026-10-19 15:02 P1、commit 4a5d4885f）。QEMU の画面の確認は T1 の依頼（下）。clearance は T1 の結果を Q1 が判定してから。
+- Status: cleared（2026-10-19 Q1 の判定、T1-725: QEMU malta の画面に ENTRY（ebase=80101000、config の K0=3）・MALTA memory=262144 KiB・DISPLAY VGA 640x480x32 pci=0:18 fb=10000000 mmio=11000000・STOP AFTER CONSOLE の 4 行、build/review/t1-725/mips32-malta.png。QEMU だけ、実機は未実施）
 - 前提: 共有の LLVM は zedbsd10（`clang --print-targets` に mipsel、Q1）、boot-test.sh の `mips32-malta` の mode（main 652af9697、Q1）。HAL の API の差分は U1「同じ形で事前承認」（Guardrail の 2026-10-19 の行）。
 
 ## 範囲と受け入れ条件
