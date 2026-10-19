@@ -3,8 +3,8 @@
 # ws269-p009 最小の Venus の decode（compute）
 
 - 親: [ws269](../ws.md)、設計: [design.md](../design.md) 改訂 3.1 の §5（D6 A: kernel の powervr が Venus を decode）・§6 の p009、D7 (a)
-- Queue: q1352 / q1352-i01（P2、2026-10-20）
-- Status: in-progress（2026-10-20 P2: 実装・host 試験・build（VF2・riscv64-virt・amd64）warning 0 まで。実機の試験は compute の試験の program（残り 1）と WS270 p002 の riscv64 の libvulkan の後。clearance は Q1 の判定）
+- Queue: q1352 / q1352-i01（P2、2026-10-20）、q1357 / q1357-i01（P2、2026-10-20、残り 1: vkcompute と VF2 の試験の image）
+- Status: in-progress（2026-10-20 P2: 実装・host 試験・build（VF2・riscv64-virt・amd64）warning 0。q1357 で試験の program `vkcompute` と VF2 の試験の image の config まで（build warning 0、host の lavapipe で PASS）。**実機待ち**（下の文面）。clearance は Q1 の判定）
 - 前提: p008（encoder・compute の program・CDM の kick、実機待ち）。HAL の API は変えない。toolchain は変えない。
 
 ## 目的と受け入れの条件
@@ -82,9 +82,40 @@ USC の program（`powervr_compute_fill_program`）: r7 = 番号（sr51）、r0�
 - QEMU は起動していない。実機の試験は未実施（下）。
 - host 試験の framing は libvulkan の source を読んで書いた物で、libvulkan の実行の道（`vulkan_command_execute` など）そのものではない（record の encoder と reader は libvulkan の物）。
 
-## 実機の試験の文面（T1・ユーザー向け、残り 1・2 の後）
+## q1357: 試験の program と VF2 の image（残り 1 の結果）
 
-前提: WS270 p002（riscv64 の libvulkan の package）が merge され、残り 1 の `vkcompute` が image に入る。image は U29 と同じ VF2 の通常の image（firmware の LICENSE.powervr の同意の後）。login して:
+### libvulkan が VF2 の image に入らなかった理由
+
+- 規則の不足ではなかった。libvulkan は menu が `desktop` なので platform は `*`（`Makefile` の `ZEDBSD_USERLAND_PACKAGE`）、riscv64 の link の規則は `platform/common/userland-dynamic.mk` の共通の物（WS270 p002 で riscv64 も include）。VF2 の image に入らなかったのは、`config/ci/config-visionfive2.mk` の `ZEDBSD_USER_PROGRAMS` に libvulkan（と依存の libwayland-client）が無いだけ。
+- よって直しは試験の config で選ぶ事だけ: `plan/ws269/tests/p009/config-visionfive2-vkcompute.mk`（CI の config に `libwayland-client libvulkan vkcompute` を足し、`powervr-firmware` を外す）。build で `rootfs/lib/libvulkan.so` と `rootfs/bin/vkcompute` が入る事を確かめた。
+
+### vkcompute（`userland/tests/vkcompute/`）
+
+- `main.c`: 最初の physical device、compute の family の queue 1 つ、HOST_VISIBLE|HOST_COHERENT の memory の storage buffer（4096 語、0xa5 で埋める）、set 0 binding 0、`vkCmdDispatch(128, 1, 1)`、compute→host の barrier、fence（5 秒まで）、map して `3x + 7` を数え、1 行を出す。exit は PASS の時だけ 0。
+- `fill.comp` と `shader.h`: `plan/ws269/tests/p009/shaders/fill.comp` と同じ shader。`glslc --target-env=vulkan1.0 -mfmt=num` の出力を `shader.h` に埋め込んだ（host 試験の run.sh と同じ flag なので、host 試験が受けた words と同じ。build に glslc は要らない）。
+- package: `userland/tests/vkcompute/Makefile`（platform `amd64 visionfive2`、既定で入らない、require `desktop/libvulkan`）。link の規則は `platform/common/userland-dynamic.mk`（vkdemo と同じ形、`DYNAMIC_PORTABLE_PROGRAMS` に追加）、amd64 の `vmunix.mk` の静的の command の除外にも追加。
+- 出力の device の名前は `deviceName` そのもの（PowerVR では `zedBSD powervr (PowerVR BXE-4-32)`）。
+
+### 確かめ（q1357）
+
+| 確かめ | コマンド | 結果 |
+| --- | --- | --- |
+| VF2 の試験の image | `timeout 3600 make ZEDBSD_CONFIG=plan/ws269/tests/p009/config-visionfive2-vkcompute.mk BUILD=build/ws269-p009-vk disk-image -j16`（log `build/ws269-p009/vk-vf2.log`） | rc=0、`warning:` 0 件。`build/ws269-p009-vk/disk.img`、`rootfs/lib/libvulkan.so`・`rootfs/bin/vkcompute`（RISC-V の PIE、interpreter `/lib/ld.so`） |
+| amd64 の vkcompute | `timeout 3600 make ZEDBSD_CONFIG=config/ci/config-amd64.mk ZEDBSD_USER_PROGRAMS="libwayland-client libvulkan vkcompute" BUILD=build/ws269-p009-vka build/ws269-p009-vka/bin/vkcompute -j16`（log `vk-amd64.log`） | rc=0、0 件 |
+| host（Linux の loader と lavapipe） | `cc -std=c99 -Wall -Wextra -Werror userland/tests/vkcompute/main.c -lvulkan` を実行 | `vkcompute: llvmpipe (LLVM 19.1.7, 256 bits): PASS, 4096/4096 words`、rc=0（program と shader の正しさ。zedBSD の libvulkan・powervr ではない） |
+
+- QEMU は起動していない。実機は未実施。
+- firmware 付きの image は未 build（LICENSE.powervr の同意が要る。入れ方は config の注記: `VKCOMPUTE_FIRMWARE=powervr-firmware` を足すと最初の fetch で `license-agree.sh` が全文を見せて yes/no を聞く）。
+
+### T1 への依頼文（任意、amd64 の Venus）
+
+価値: zedBSD の libvulkan の compute の道（buffer・descriptor・compute pipeline・dispatch・fence・map）を、PowerVR の executor と切り離して先に確かめられる（実機で FAIL した時に libvulkan 側か executor 側かを分けられる）。費用は短い（1 command）。
+
+> ws269-p009（q1357）: amd64 の QEMU（Venus）で `vkcompute` を 1 回。image は `config/ci/config-amd64.mk` の Venus の desktop の試験の image に `ZEDBSD_USER_PROGRAMS += libwayland-client libvulkan vkcompute` を足した物（T1 の既存の Venus の config に 3 つ足す形でよい）。login して `vkcompute` を実行し、画面の 1 行を QMP の screendump の PNG で読む。期待 `vkcompute: <Venus の device 名>: PASS, 4096/4096 words`。FAIL の行はそのまま返す。
+
+## 実機の試験の文面（T1・ユーザー向け、VF2）
+
+image: `make ZEDBSD_CONFIG=plan/ws269/tests/p009/config-visionfive2-vkcompute.mk VKCOMPUTE_FIRMWARE=powervr-firmware BUILD=build/<dir> disk-image`（LICENSE.powervr を読んで同意の後）。U29 と同じ手順で VF2 に書き、login して:
 
 ```
 vkcompute
@@ -92,17 +123,16 @@ vkcompute
 
 | 行 | 期待 | 読み方 |
 | --- | --- | --- |
-| `vkcompute: powervr: PASS, 4096/4096 words` | PASS | `FAIL, <n>/4096 words (first bad <i>: <値>, expected <期待>)`（program・address の誤り）、`FAIL, vkQueueSubmit <VkResult>`（-4 = DEVICE_LOST は 2 秒の時間切れ、画面の `powervr: vk:` の行を記録）、`no PowerVR device`（render の node が無い・capset で外れた） |
+| `vkcompute: zedBSD powervr (PowerVR BXE-4-32): PASS, 4096/4096 words` | PASS | `FAIL, <n>/4096 words (first bad <i>: 0x…, expected 0x…)`（program・address の誤り。0xa5a5a5a5 は書かれていない）、`FAIL, vkQueueSubmit -4` または `vkWaitForFences -4`（DEVICE_LOST、2 秒の時間切れ。画面の `powervr: vk:` の行も記録）、`FAIL, vkCreateComputePipelines -8`（subset の外と判定された）、`no Vulkan device (<call> <n>)`（render の node が無い・capset で外れた） |
 
-`vkcompute` は fill.comp と同じ shader（`data[x] = 3x + 7`、local size 32）を 128 workgroup で dispatch し、host visible の memory を map して 4096 語を数える（残り 1）。
+p008 の 3 行（kernel・coherency・temps の単位）の結果を先に見る。
 
 ## 残り
 
-1. 実機の試験の program `userland/tests/vkcompute`（上の 1 行を出す）と、その package（riscv64 の arch の表と dynamic の規則、WS270 p002 の後）。
-2. 実機の試験（T1・ユーザー、上の文面）。p008 の 3 行（kernel・coherency・temps の単位）の結果を先に見る（temps が `BLOCKS OF 2` でも fill の program の field は 2 の単位で足りる）。
-3. WS277 R7 の文面（1.3.269 でも flags 7 と job の caps が要る）を Q1 経由で WS277 に。
-4. p010 に渡す物: image・linear の SAMPLED・transfer、import・export の memory、`GET_PHYSICAL_DEVICE_PROPERTIES2`、compiler（共有の IR から USC）で subset を置き換える、device local の memory の SLC。
-5. Q1 への片付けの依頼: `build/ws269-p009/`（host の出力・log・`inc/vulkan` の symlink）、`build/ws269-p009-vf2/`・`build/ws269-p009-vf2c/`・`build/ws269-p009-virt/`・`build/ws269-p009-amd64/`。
+1. 実機の試験（T1・ユーザー、上の文面）。任意で amd64 の Venus の vkcompute（上の依頼文）。
+2. WS277 R7 の文面（1.3.269 でも flags 7 と job の caps が要る）を Q1 経由で WS277 に。
+3. p010 に渡す物: image・linear の SAMPLED・transfer、import・export の memory、`GET_PHYSICAL_DEVICE_PROPERTIES2`、compiler（共有の IR から USC）で subset を置き換える、device local の memory の SLC。
+4. Q1 への片付けの依頼: `build/ws269-p009/`（host の出力・log・`inc/vulkan` の symlink）、`build/ws269-p009-vf2/`・`build/ws269-p009-vf2c/`・`build/ws269-p009-virt/`・`build/ws269-p009-amd64/`・`build/ws269-p009-vk/`・`build/ws269-p009-vka/`（p2 の worktree の中）。
 
 ## 出典
 
