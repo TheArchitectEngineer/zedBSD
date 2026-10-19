@@ -1,0 +1,147 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Declarations private to the object side of the VM: the registry, content,
+ * fault, sync, cache, prefetch and page parts.  These connect object.c,
+ * object-content.c, object-fault.c, object-sync.c, object-cache.c,
+ * object-prefetch.c and object-page.c and are not part of the kernel's
+ * public VM API.
+ *
+ * The registry below is guarded by the spin word taken through
+ * registry_lock() and registry_unlock() (object.c), with interrupts
+ * disabled.  Function bodies and the order they take the VM locks are as
+ * they were in vm.c: the metadata lock before any other VM lock
+ * (kern/vm-lock.h).
+ */
+
+#ifndef KERN_VM_OBJECT_INTERNAL_H
+#define KERN_VM_OBJECT_INTERNAL_H
+
+#include "kern/vm-object.h"
+#include "kern/cache-memory.h"
+#include "kern/lock.h"
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+struct file;
+struct inode;
+struct mount;
+
+#define PAGE_SIZE			KERN_PAGE_SIZE
+#define VM_OBJECT_DATA			__attribute__((section(".vfs_bss")))
+#define VM_OBJECT_FAULT_RECLAIM_RETRIES	4U
+#define VM_OBJECT_BACKING_SNAPSHOT_MAX	1024U
+#define VM_OBJECT_CACHE_OBJECTS		256U
+#define VM_OBJECT_CACHE_PAGES		16U /* Bounded transfer vector, not retention. */
+#define VM_OBJECT_HASH_BITS		10U
+#define VM_OBJECT_HASH_BUCKETS		(1U << VM_OBJECT_HASH_BITS)
+
+/* How many VM_FREE_WAIT_TICKS waits an object-page fault makes before it gives up, ten seconds. */
+#define VM_OBJECT_FAULT_WAITS		1000U
+
+/*
+ * The registry of shared objects, in most-recently-published order.
+ *
+ * A file-backed object lives here for as long as any mapping, cache
+ * reference or write-back holds it, so a second mapping of the same inode
+ * finds the object that already exists.
+ */
+extern struct vm_object *shared_objects;
+
+/*
+ * The registry's objects again, chained by the inode they cache.
+ *
+ * A file read or fault finds its inode's object here instead of walking
+ * every published object with interrupts disabled.  The chains hold
+ * exactly the objects of shared_objects, and change under the same lock.
+ */
+extern struct vm_object *object_hash[VM_OBJECT_HASH_BUCKETS];
+
+/*
+ * How many objects the registry holds.
+ */
+extern unsigned object_count;
+
+/*
+ * The generation stamped on the object published next.
+ *
+ * It only ever increases, so a stale reference to a slot that has been
+ * reused is recognized by the generation that came with it.
+ */
+extern uint64_t object_registry_generation;
+
+/*
+ * The use count stamped on an object each time it is admitted or referenced.
+ *
+ * It only ever increases under the registry lock, so the cache object with
+ * the lowest stamp is the least recently used one.
+ */
+extern uint64_t object_use_generation;
+
+/*
+ * How many registry entries exist only because the page cache asked for them.
+ *
+ * These are bounded by VM_OBJECT_CACHE_OBJECTS: an optional admission is
+ * refused once that many are already held.
+ */
+extern unsigned cache_objects;
+
+/*
+ * How many pages every object holds together.
+ */
+extern atomic_uint_t object_pages;
+
+int vm_object_get_shared_internal(struct file *file, struct vm_object **result, int cache_only);
+bool registry_lock(void);
+void registry_unlock(bool enabled);
+struct vm_object *find_object_by_inode_locked(struct inode *inode);
+int object_wait_registry_transition(struct vm_object *object, uint64_t sequence);
+void object_wake_registry_waiters(struct vm_object *object);
+int object_operation_begin(struct vm_object *object);
+void object_operation_end(struct vm_object *object);
+struct vm_object_page *find_page(struct vm_object *object, off_t offset);
+int unlink_page_locked(struct vm_object_page **head, struct vm_object_page *page);
+uint64_t next_generation(struct vm_object *object);
+uint64_t next_inode_resize_generation_locked(struct inode *inode);
+uint64_t next_inode_content_generation_locked(struct inode *inode);
+void object_initialize_eof_locked(struct vm_object *object, struct inode *inode);
+int page_overlaps(const struct vm_object_page *page, uint64_t start, uint64_t end);
+int object_has_dirty_pages_locked(struct vm_object *object);
+int object_has_busy_pages_locked(const struct vm_object *object);
+int object_has_busy_pages(struct vm_object *object);
+void object_record_writeback_error_locked(struct vm_object *object, int error);
+int write_page_data(struct vm_object *object, struct vm_object_page *page, off_t logical_size, int inode_io_owned);
+void clear_page_dirty_locked(struct vm_object_page *page);
+void free_object_page(struct vm_object_page *page);
+int object_can_destroy(struct vm_object *object);
+int unlink_object_locked(struct vm_object *object);
+unsigned object_hash_index(const struct inode *inode);
+void destroy_object(struct vm_object *object);
+void retain_object(struct vm_object *object, int error);
+int object_wait_resize(struct vm_object *object);
+void content_release_pages_locked(struct vm_object *object, uint64_t generation);
+int range_has_wired_mapping(struct vm_object *object, uint64_t start, uint64_t end);
+int vm_object_sync_range_internal(struct vm_object *object, off_t offset, size_t size, int flags, int detaching, int resize_owner, off_t resize_target);
+void object_page_dirty_link(struct vm_object_page *page);
+void object_page_dirty_unlink(struct vm_object_page *page);
+void object_page_dirty_mark(struct vm_object_page *page);
+struct vm_object_page *alloc_object_page(struct vm_object *object, off_t offset, int optional);
+void release_object_page_storage(struct vm_object_page *page);
+void object_page_index_insert(struct vm_object *object, struct vm_object_page *page);
+void object_page_index_remove(struct vm_object *object, struct vm_object_page *page);
+int object_cache_retainable(struct vm_object *object);
+int object_cache_evict_one(struct mount *mount);
+int inode_unnamed(const struct inode *inode);
+int object_mount_reserved(const struct vm_object *);
+void object_cache_discard_prepared(struct vm_object_page **pages, unsigned count);
+int object_cache_read_missing(struct vm_object *object, off_t offset, void *buffer, size_t length, ssize_t *result, int *handled, int *stop);
+size_t object_prefetch_consume(struct vm_object_page *page, size_t start, size_t length);
+void object_prefetch_retire(struct vm_object_page *page);
+
+#endif
