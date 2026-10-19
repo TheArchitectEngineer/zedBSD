@@ -3,7 +3,7 @@
 # WS275 sun4u（sparcv9）に /dev/graphics を実装し、Xzed を動かす
 
 - ID: ws275、Master: [master.md](../master.md)、Primary Milestone: MG008
-- Status: incomplete（p001 を P1、q1303。旧: planning（2026-10-19 18:18 Q1 作成）
+- Status: incomplete（2026-10-19 停止: ユーザー「sun4uはバグの原因がわからなければBUGチケットに積んでいったんやめます。」。p001 cleared（main）。p002〜p005 と p004 の cursor の直しは P1 の branch（HEAD 4aa7a753d、main には未 merge、sparcv9 の差分はユーザーの確認待ち）。p004 は T1-746 (1) PASS、p006 は BUG-337（startx の後に client が出ない）で uncleared。旧: incomplete（p001 を P1、q1303）。旧: planning（2026-10-19 18:18 Q1 作成）
 - 起点（2026-10-19 ユーザー）:「では、sun4uでも/dev/graphicsを実装して、Xzedが動くようにします。」（WS267 で入れた QEMU sun4u の VGA の framebuffer の console の上に）
 - 前提（Q1 の調べ）: /dev/graphics は今 pcat（src/drivers/platform/pcat/graphics/）と pc98 にある（include/uapi/graphics.h、docs/reference/control-devices.md）。Xzed は userland/x11/xzed（platform は *、既定は n）。sun4u の HAL は bsp-sun4u の framebuffer.c（std VGA）。sparcv9 は big endian の 64 bit で、pixel の並びと入力（keyboard・mouse）の道を設計で確かめる。sparcv9 はユーザーの担当の領域なので、変える file は設計で示す。
 - 決定（2026-10-19 18:25 ユーザー）: 「私のSunBlade 150にはXVR-500か600がついているようです。大したアクセラレーションがついたボードとは思えないので、OpenBootが用意したframebufferを使うのがコンソールとしてはいいですね。/dev/graphicsはfirmware framebufferにします。」 → console と /dev/graphics は OpenBoot が用意した firmware framebuffer（OBP の screen の node の property）を使う。QEMU sun4u も OpenBIOS の property から読む形に揃える。card の driver（XVR-500/600 など）は範囲外。実機の候補は Sun Blade 150。
