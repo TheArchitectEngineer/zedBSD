@@ -40,8 +40,29 @@
 #define RTLD_MACHINE EM_SPARCV9
 #define RTLD_DATA ELFDATA2MSB
 #define RTLD_RELATIVE R_SPARC_RELATIVE
+#elif defined(HAL_ARCH_RISCV64)
+#define RTLD_MACHINE EM_RISCV
+#define RTLD_DATA ELFDATA2LSB
+#define RTLD_RELATIVE R_RISCV_RELATIVE
 #else
 #error unsupported runtime-linker architecture
+#endif
+
+/*
+ * How far a dynamic TLS offset is biased.  On RISC-V the offsets a module
+ * carries (the TLS_DTPREL64 values the linker writes and the loader
+ * computes) are 0x800 below the variable's place in its block, so that a
+ * 12-bit signed immediate reaches twice as far; __tls_get_addr adds the
+ * bias back.  The other processors have none.
+ *
+ * Value referenced: LLVM 23.1 ld.lld, the value it writes into the GOT
+ * entry of a TLS_DTPREL64 it resolves itself (the variable's offset less
+ * 0x800).
+ */
+#if defined(HAL_ARCH_RISCV64)
+#define RTLD_DTV_OFFSET ((uintptr_t)0x800U)
+#else
+#define RTLD_DTV_OFFSET ((uintptr_t)0)
 #endif
 
 /*
@@ -902,6 +923,7 @@ __tls_get_addr(
 	struct __rtld_tcb *tcb;
 	struct rtld_tls_module *module;
 	uintptr_t count;
+	uintptr_t offset;
 	unsigned active;
 	void *block;
 
@@ -909,6 +931,9 @@ __tls_get_addr(
 	count = __atomic_load_n(&tls_module_count, __ATOMIC_ACQUIRE);
 	if (index == NULL || index->module == 0 || index->module > count)
 		rtld_fatal("invalid TLS index");
+
+	/* The variable's place in its module's block, with the bias taken off. */
+	offset = index->offset + RTLD_DTV_OFFSET;
 
 	/* The calling thread's control block, read without a system call where the processor holds it (BUG-110). */
 	value = (intptr_t)thread_pointer();
@@ -919,14 +944,14 @@ __tls_get_addr(
 	/* The module, written before it was marked active. */
 	module = tls_module_at(index->module);
 	active = __atomic_load_n(&module->active, __ATOMIC_ACQUIRE);
-	if (!active || index->offset >= module->memory_size)
+	if (!active || offset >= module->memory_size)
 		rtld_fatal("invalid TLS module access");
 
 	/* A module in the static area is already present in every thread. */
 	if (module->is_static) {
 		/* Returns the computed result. */
 		return (unsigned char *)tcb - module->static_offset +
-		       index->offset;
+		       offset;
 	}
 
 	/* A thread without a vector cannot reach a dynamic module. */
@@ -952,7 +977,7 @@ __tls_get_addr(
 	tcb->dtv_generation = tls_generation;
 
 	/* Returns the computed result. */
-	return (unsigned char *)block + index->offset;
+	return (unsigned char *)block + offset;
 }
 
 /*
@@ -4718,6 +4743,11 @@ apply_value(
 	/* Handles the type condition. */
 	if (type == R_SPARC_NONE)
 		return;
+#elif defined(HAL_ARCH_RISCV64)
+
+	/* A NONE relocation has nothing to do. */
+	if (type == R_RISCV_NONE)
+		return;
 #endif
 
 	/* Checks the current offset. */
@@ -4956,6 +4986,60 @@ apply_value(
 		break;
 	default:
 		rtld_fatal("unsupported sparcv9 relocation");
+	}
+#elif defined(HAL_ARCH_RISCV64)
+
+	/*
+	 * Applies one 64-bit RISC-V relocation.  A PLT slot and a GOT entry
+	 * both take the symbol's address (the psABI has no GLOB_DAT: a GOT
+	 * entry is an R_RISCV_64).  Every module's TLS is dynamic, so only the
+	 * module and offset pair of the general-dynamic model is accepted;
+	 * an initial-exec TLS_TPREL64 falls to the refusal below.
+	 */
+	switch (type) {
+	case R_RISCV_NONE:
+		/* Nothing to apply. */
+		return;
+	case R_RISCV_RELATIVE:
+		/* A relative relocation names no symbol. */
+		if (symbol_index != 0)
+			rtld_fatal("invalid relative relocation");
+		value = object->base + addend;
+		break;
+	case R_RISCV_64:
+		/* The symbol's address plus the addend. */
+		symbol = resolve_relocation_symbol(object, symbol_index);
+		value = symbol + addend;
+		break;
+	case R_RISCV_JUMP_SLOT:
+		/* The called function's address, bound now. */
+		value = resolve_relocation_symbol(object, symbol_index);
+		break;
+	case R_RISCV_TLS_DTPMOD64:
+		/* The module of the object itself, or of the symbol's owner. */
+		if (symbol_index == 0)
+			tls_owner = object;
+		else
+			tls_symbol = resolve_tls_symbol(object, symbol_index,
+							&tls_owner);
+
+		/* Refuses an owner without a TLS module. */
+		if (tls_owner == NULL || tls_owner->tls_module_id == 0)
+			rtld_fatal("TLS module is unavailable");
+		value = tls_owner->tls_module_id;
+		break;
+	case R_RISCV_TLS_DTPREL64:
+		/* The symbol's offset in its module's block. */
+		tls_symbol =
+		    resolve_tls_symbol(object, symbol_index, &tls_owner);
+
+		/* Refuses a symbol without a TLS module. */
+		if (tls_symbol == NULL || tls_owner->tls_module_id == 0)
+			rtld_fatal("TLS symbol is unavailable");
+		value = (uintptr_t)tls_symbol->st_value + addend - RTLD_DTV_OFFSET;
+		break;
+	default:
+		rtld_fatal("unsupported riscv64 relocation");
 	}
 #endif
 	*where = value;
@@ -6195,6 +6279,14 @@ thread_pointer(
 
 	/* The thread pointer register. */
 	__asm__ volatile("mrs %0, tpidr_el0" : "=r"(value));
+
+	/* Succeeded: the thread pointer. */
+	return value;
+#elif defined(HAL_ARCH_RISCV64)
+	uintptr_t value;
+
+	/* The thread pointer register, which the kernel sets for every thread. */
+	__asm__ volatile("mv %0, tp" : "=r"(value));
 
 	/* Succeeded: the thread pointer. */
 	return value;

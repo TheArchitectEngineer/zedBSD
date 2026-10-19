@@ -40,6 +40,7 @@
 #define EM_SPARCV9 43
 #define EM_X86_64 62
 #define EM_AARCH64 183
+#define EM_RISCV 243
 
 /* An e_phnum this large means the count is kept elsewhere; ld.so rejects it. */
 #define PN_XNUM 0xffff
@@ -272,5 +273,22 @@ typedef uint32_t Elf_Off;
 #define R_SPARC_RELATIVE 22
 #define R_SPARC_TLS_DTPMOD64 75
 #define R_SPARC_TLS_DTPOFF64 77
+
+/*
+ * 64-bit RISC-V.  TLS_TPREL64 (initial exec) has no place here: every
+ * module's TLS is dynamic, so the loader refuses it.
+ *
+ * Values referenced: riscv-non-isa/riscv-elf-psabi-doc riscv-elf.adoc
+ * (the relocation table: NONE, 64, RELATIVE, COPY, JUMP_SLOT,
+ * TLS_DTPMOD64, TLS_DTPREL64, TLS_TPREL64).
+ */
+#define R_RISCV_NONE 0
+#define R_RISCV_64 2
+#define R_RISCV_RELATIVE 3
+#define R_RISCV_COPY 4
+#define R_RISCV_JUMP_SLOT 5
+#define R_RISCV_TLS_DTPMOD64 7
+#define R_RISCV_TLS_DTPREL64 9
+#define R_RISCV_TLS_TPREL64 11
 
 #endif

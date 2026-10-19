@@ -13,3 +13,10 @@ $(BUILD)/root-bare.img: $(RISCV64_ROOT_IMAGE_TOOL) tools/build/ufs_format.py \
 	tools/build/check-ufs-image.py
 	@mkdir -p $(dir $@)
 	$(PYTHON) $(RISCV64_ROOT_IMAGE_TOOL) --force --bare-root $@
+
+# The root of the base system: the staged root tree (platform/riscv64/userland.mk).
+$(BUILD)/root.img: $(BUILD)/rootfs/.stamp $(RISCV64_ROOT_IMAGE_TOOL) \
+	tools/build/ufs_format.py tools/build/check-ufs-image.py
+	@mkdir -p $(dir $@)
+	$(PYTHON) $(RISCV64_ROOT_IMAGE_TOOL) --force --ufs-tree $(BUILD)/rootfs \
+ --ufs-size-mib 64 $@

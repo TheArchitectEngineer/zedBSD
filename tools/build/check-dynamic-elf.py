@@ -26,6 +26,9 @@ MACHINES = {
     "amd64": (2, 62, "<", {0, 1, 6, 7, 8, 16, 17, 36}),
     "aarch64": (2, 183, "<", {0, 257, 1025, 1026, 1027, 1028, 1029, 1031}),
     "sparcv9": (2, 43, ">", {0, 20, 21, 22, 32, 75, 77}),
+    # NONE, 64, RELATIVE, JUMP_SLOT, TLS_DTPMOD64 and TLS_DTPREL64: every
+    # module's TLS is dynamic, so TLS_TPREL64 (initial exec) is refused.
+    "riscv64": (2, 243, "<", {0, 2, 3, 5, 7, 9}),
 }
 
 PRIVATE_RTLD = {
@@ -278,7 +281,7 @@ def check(path, machine_name, role, expected_needed=None, expected_soname=None, 
             if ((machine_name == "amd64" and kind == 36) or
                     (machine_name == "aarch64" and kind == 1031)):
                 seen_tlsdesc = True
-            if role == "interpreter" and kind not in ({8} if machine_name in ("i386", "amd64") else {22} if machine_name == "sparcv9" else {1027}):
+            if role == "interpreter" and kind not in ({8} if machine_name in ("i386", "amd64") else {22} if machine_name == "sparcv9" else {3} if machine_name == "riscv64" else {1027}):
                 fail(path, f"ld.so bootstrap relocation {kind} is not relative")
 
     if role == "module" and machine_name in ("amd64", "aarch64") and not seen_tlsdesc:
