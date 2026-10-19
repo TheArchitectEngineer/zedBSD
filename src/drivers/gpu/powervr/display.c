@@ -29,13 +29,16 @@
  * direct map is written through an uncached device view instead.  The
  * presentation has completed on the screen when it returns.
  *
+ * A render buffer is shown through the scanout import: the render node's
+ * private lookup finds and retains the buffer behind the exported image,
+ * and a shared (BLOB) presentation copies its frame with the CPU from the
+ * buffer's uncached kernel view, one aligned word at a time.  The present
+ * request carries no damage, so the whole frame (clipped) is copied.  A
+ * buffer the lookup does not know (another driver's) is refused.
+ *
  * The node is registered before the render node, so it is gpu0 and the
  * render node gpu1.  It does not depend on the GPU core: it stays when the
  * core fails to come up.
- *
- * XXX: importing a render buffer for scanout (a private lookup of the
- * render node's object) waits for the render node's sharing; the import
- * operation exists and refuses with ENOTSUP until then.
  *
  * Procedure referenced:
  * src/drivers/gpu/bcm2711/display-device.c and
@@ -44,6 +47,7 @@
  */
 
 #include "drivers/gpu/powervr/powervr.h"
+#include "drivers/gpu/powervr/render.h"
 #include <drivers/gpu/gpu.h>
 #include <drivers/gpu/gpu-display.h>
 #include <drivers/gpu/gpu-scanout.h>
@@ -99,16 +103,22 @@ struct powervr_display_session {
 };
 
 /*
- * One resource of a session: a run of ordinary cacheable RAM.
+ * One resource of a session: a run of ordinary cacheable RAM, or an
+ * imported render buffer.
  *
- * Made by resource_create and freed by resource_destroy; the run and its
- * address do not change in between, so a CPU view of it stays valid.
+ * Made by resource_create (a run) or import_image (a render buffer, which
+ * the resource holds a reference on) and freed by resource_destroy; the
+ * memory and its address do not change in between.
  */
 struct powervr_display_resource {
 	struct powervr_display_session *owner;
 	struct kern_pmem run;
 	uint8_t *address;
 	uint64_t bytes;
+
+	/* The imported render buffer (NULL for a run) and the image it was exported with. */
+	struct powervr_buffer *buffer;
+	struct gpu_image_descriptor image;
 };
 
 /*
@@ -216,6 +226,8 @@ static void unmap_screen(struct powervr_display *display);
 static void clear_screen(struct powervr_display *display);
 static void flush_screen(struct powervr_display *display, uint32_t rows);
 static void show_frame(struct powervr_display *display, const struct powervr_display_resource *resource, const struct gpu_display_present *request);
+static void show_shared_frame(struct powervr_display *display, const struct powervr_display_resource *resource, const struct gpu_display_present *request);
+static int shared_frame_valid(const struct powervr_display_resource *resource, const struct gpu_display_present *request);
 static void end_lease(struct powervr_display *display);
 
 /*
@@ -451,8 +463,11 @@ resource_destroy(
 
 	mutex_unlock(&display->mutex);
 
-	/* A presentation copies and returns, so nothing on the screen still reads the run. */
-	(void)kern_pmem_free(&resource->run);
+	/* A presentation copies and returns, so nothing on the screen still reads the memory. */
+	if (resource->buffer != NULL)
+		powervr_buffer_release(resource->buffer);
+	else
+		(void)kern_pmem_free(&resource->run);
 	kern_free(resource);
 }
 
@@ -471,9 +486,11 @@ resource_read(
 	(void)device;
 	resource = private_resource;
 
-	/* Only the owner's resource, and only inside it. */
+	/* Only the owner's run, and only inside it. */
 	if (resource->owner != session)
 		return EINVAL;
+	if (resource->buffer != NULL)
+		return ENOTSUP;
 	if (offset > resource->bytes || bytes > resource->bytes - offset)
 		return EINVAL;
 
@@ -499,9 +516,11 @@ resource_write(
 	(void)device;
 	resource = private_resource;
 
-	/* Only the owner's resource, and only inside it. */
+	/* Only the owner's run, and only inside it. */
 	if (resource->owner != session)
 		return EINVAL;
+	if (resource->buffer != NULL)
+		return ENOTSUP;
 	if (offset > resource->bytes || bytes > resource->bytes - offset)
 		return EINVAL;
 
@@ -525,9 +544,11 @@ resource_map(
 	(void)device;
 	resource = private_resource;
 
-	/* Only the owner maps its resource. */
+	/* Only the owner maps its run; a render buffer is the render node's to map. */
 	if (resource->owner != session)
 		return EINVAL;
+	if (resource->buffer != NULL)
+		return ENOTSUP;
 
 	/* Ordinary cacheable RAM, as the CPU copies of a presentation read it. */
 	mapping->physical = resource->run.paddr;
@@ -721,8 +742,8 @@ output_release(
 
 /*
  * Shows a frame of the lease holder: the CPU copies it from the session's
- * resource onto the screen, and it is on the screen when this returns.
- * A shared (BLOB) frame needs the scanout import, which is not there yet.
+ * run, or for a shared (BLOB) frame from an imported render buffer, onto
+ * the screen, and it is on the screen when this returns.
  */
 static int
 output_present(
@@ -733,17 +754,25 @@ output_present(
 {
 	struct powervr_display *display;
 	struct powervr_display_resource *resource;
+	int shared;
+	int error;
 
 	display = device;
 	resource = private_resource;
 
-	/* A shared frame waits for the render node's sharing. */
-	if ((request->flags & GPU_DISPLAY_PRESENT_BLOB) != 0U)
-		return ENOTSUP;
-
 	/* Only the session's own resource; the core checked the frame lies inside it. */
 	if (resource->owner != session)
 		return EINVAL;
+
+	/* A shared frame comes from an imported render buffer in its exported layout, an ordinary one from a run. */
+	shared = (request->flags & GPU_DISPLAY_PRESENT_BLOB) != 0U;
+	if (shared) {
+		error = shared_frame_valid(resource, request);
+		if (error != 0)
+			return error;
+	} else if (resource->buffer != NULL) {
+		return EINVAL;
+	}
 
 	/* Checks the lease and shows the frame under the mutex. */
 	mutex_lock(&display->mutex);
@@ -758,7 +787,10 @@ output_present(
 		return ESTALE;
 	}
 
-	show_frame(display, resource, request);
+	if (shared)
+		show_shared_frame(display, resource, request);
+	else
+		show_frame(display, resource, request);
 	display->sequence++;
 	display->present_tick = sched_ticks();
 	request->sequence = display->sequence;
@@ -830,7 +862,7 @@ output_device(
 	return 0;
 }
 
-/* Reports the copied route only: shared scanout waits for the render node's sharing. */
+/* Reports both routes: copies from a run, and shared frames imported from the render node. */
 static int
 output_constraints(
 	void *device,
@@ -846,8 +878,12 @@ output_constraints(
 	if (request->generation != POWERVR_DISPLAY_GENERATION)
 		return ESTALE;
 
-	/* Copies from ordinary storage, in the two packed formats, rows of whole pixels. */
-	request->flags = GPU_SCANOUT_COPY;
+	/*
+	 * Copies from ordinary storage, and render buffers imported from the
+	 * other node, in the two packed formats, rows of whole pixels.  The
+	 * CPU reads an import, so it needs no placement of its own.
+	 */
+	request->flags = GPU_SCANOUT_COPY | GPU_SCANOUT_SHARED | GPU_SCANOUT_FOREIGN;
 	request->formats = GPU_DISPLAY_FORMAT_BGRA8888 | GPU_DISPLAY_FORMAT_RGBA8888;
 	request->stride_alignment = POWERVR_DISPLAY_PIXEL_BYTES;
 	request->offset_alignment = POWERVR_DISPLAY_PIXEL_BYTES;
@@ -859,27 +895,107 @@ output_constraints(
 }
 
 /*
- * Refuses a scanout import: reading a render buffer needs the render
- * node's private lookup of its object, which comes with its sharing.
+ * Imports a render buffer for shared frames: the render node's private
+ * lookup finds the buffer behind this image and backing and retains it.
+ * A backing the render node did not hand out is refused with ENOTSUP.
  */
 static int
 import_image(
 	void *device,
-	void *session,
+	void *private_session,
 	const struct gpu_image_descriptor *image,
 	const struct drv_gpu_scanout_backing *backing,
 	void **result)
 {
-	(void)device;
-	(void)session;
-	(void)image;
-	(void)backing;
+	struct powervr_display *display;
+	struct powervr_display_session *session;
+	struct powervr_display_resource *resource;
+	struct powervr_buffer *buffer;
+	uint64_t bytes;
+	int error;
+
+	display = device;
+	session = private_session;
 
 	/* Owns nothing on failure. */
 	*result = NULL;
 
-	/* Not yet: the borrowed pages alone give no view the node may read. */
-	return ENOTSUP;
+	/* A linear image of whole pixels in one of the two packed formats. */
+	if (image->format != GPU_PIXEL_RGBA8888 && image->format != GPU_PIXEL_BGRA8888)
+		return ENOTSUP;
+	if (image->tiling != GPU_IMAGE_LINEAR)
+		return ENOTSUP;
+	if ((image->stride % POWERVR_DISPLAY_PIXEL_BYTES) != 0U || (image->offset % POWERVR_DISPLAY_PIXEL_BYTES) != 0U)
+		return EINVAL;
+	if (image->width == 0U || image->height == 0U || (uint64_t)image->stride < (uint64_t)image->width * POWERVR_DISPLAY_PIXEL_BYTES)
+		return EINVAL;
+
+	/* Only a live export of the render node; the lookup takes a reference. */
+	error = powervr_render_lookup(image, backing, &buffer);
+	if (error != 0)
+		return error;
+
+	/* Every row inside the buffer as allocated. */
+	bytes = powervr_buffer_bytes(buffer);
+	if (image->offset > bytes || (uint64_t)image->stride * image->height > bytes - image->offset) {
+		powervr_buffer_release(buffer);
+		return EINVAL;
+	}
+
+	resource = kern_calloc(1, sizeof(*resource));
+	if (resource == NULL) {
+		powervr_buffer_release(buffer);
+		return ENOMEM;
+	}
+
+	resource->owner = session;
+	resource->buffer = buffer;
+	resource->image = *image;
+	resource->bytes = bytes;
+
+	/* Counts the import against the session's limit. */
+	mutex_lock(&display->mutex);
+
+	if (session->resources >= POWERVR_DISPLAY_RESOURCES) {
+		mutex_unlock(&display->mutex);
+		powervr_buffer_release(buffer);
+		kern_free(resource);
+		return ENOSPC;
+	}
+
+	session->resources++;
+
+	mutex_unlock(&display->mutex);
+
+	*result = resource;
+
+	/* Succeeded: the resource holds the buffer until resource_destroy. */
+	return 0;
+}
+
+/*
+ * Checks a shared frame: an imported render buffer, shown in the layout
+ * it was exported with.
+ */
+static int
+shared_frame_valid(
+	const struct powervr_display_resource *resource,
+	const struct gpu_display_present *request)
+{
+	/* Only an import is a shared frame. */
+	if (resource->buffer == NULL)
+		return EINVAL;
+
+	/* The exported layout is authoritative. */
+	if (request->width != resource->image.width ||
+	    request->height != resource->image.height ||
+	    request->format != resource->image.format ||
+	    request->stride != resource->image.stride ||
+	    request->offset != resource->image.offset)
+		return EINVAL;
+
+	/* Succeeded: the frame lies in the buffer (checked at import). */
+	return 0;
 }
 
 /* Reports whether the copies can write a screen: a known format and room for every row. */
@@ -1042,6 +1158,59 @@ show_frame(
 		for (column = 0U; column < width; column++) {
 			pixel = source[column];
 			destination[column] = (pixel & 0xff00ff00U) | ((pixel & 0x00ff0000U) >> 16) | ((pixel & 0x000000ffU) << 16);
+		}
+	}
+
+	/* The display controller reads memory, not the caches. */
+	flush_screen(display, height);
+}
+
+/*
+ * Copies a shared frame from an imported render buffer's uncached view
+ * onto the screen, clipped to its top left, swapping red and blue when
+ * the orders differ.  The view takes only plain aligned loads, so each
+ * pixel is read as one word.  The caller holds the mutex.
+ */
+static void
+show_shared_frame(
+	struct powervr_display *display,
+	const struct powervr_display_resource *resource,
+	const struct gpu_display_present *request)
+{
+	const volatile uint32_t *source;
+	uint32_t *destination;
+	uint32_t width;
+	uint32_t height;
+	uint32_t pixel;
+	uint32_t row;
+	uint32_t column;
+	int swap;
+
+	/* The part of the frame the screen has room for. */
+	width = request->width;
+	if (width > display->screen.width)
+		width = display->screen.width;
+
+	height = request->height;
+	if (height > display->screen.height)
+		height = display->screen.height;
+
+	/* An RGBA frame swaps onto a BGRX screen, a BGRA frame onto an RGBX one. */
+	swap = 0;
+	if (request->format == GPU_PIXEL_RGBA8888 && !display->rgbx)
+		swap = 1;
+	if (request->format == GPU_PIXEL_BGRA8888 && display->rgbx)
+		swap = 1;
+
+	/* Every row, top to bottom, a word at a time. */
+	for (row = 0U; row < height; row++) {
+		source = (const volatile uint32_t *)(const volatile void *)(powervr_buffer_view(resource->buffer) + request->offset + (uint64_t)row * request->stride);
+		destination = (uint32_t *)(void *)(display->pixels + (size_t)row * display->screen.pitch);
+		for (column = 0U; column < width; column++) {
+			pixel = source[column];
+			if (swap)
+				pixel = (pixel & 0xff00ff00U) | ((pixel & 0x00ff0000U) >> 16) | ((pixel & 0x000000ffU) << 16);
+			destination[column] = pixel;
 		}
 	}
 

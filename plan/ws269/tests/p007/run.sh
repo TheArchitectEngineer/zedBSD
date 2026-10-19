@@ -2,7 +2,7 @@
 # Host check of ws269-p007: the PowerVR driver's display node on a fake
 # boot framebuffer (query, mode, claim, present with the red/blue swap and
 # the clip, wait, release and close giving the screen back, the refused
-# scanout import and shared frame).
+# scanout import of a render buffer and its shared frame).
 #   plan/ws269/tests/p007/run.sh OUTDIR
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
