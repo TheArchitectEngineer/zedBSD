@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """Compares the function bodies of VM sources before and after a move.
 
-usage: body-compare.py <old-git-ref> <old-path>... -- <new-path>...
+usage: body-compare.py [--rename old=new]... <old-git-ref> <old-path>... -- <new-path>...
 
 The old files are read from the git ref and the new files from the work
 tree.  Every function definition (an opening brace in column 0) is keyed by
 its name.  For each name the set of definitions must be equal; the only
-difference allowed is a leading "static" in the header.  Exits 1 on any
+difference allowed is a leading "static" in the header.  Each --rename
+replaces the identifier old by new in the old files before comparing (a
+helper renamed because its name clashed at link time).  Exits 1 on any
 difference and prints the names involved.
 """
 
@@ -60,6 +62,11 @@ def collect(texts):
 
 
 def main(argv):
+    renames = []
+    while len(argv) > 2 and argv[1] == "--rename":
+        old_name, new_name = argv[2].split("=", 1)
+        renames.append((re.compile(r"\b" + old_name + r"\b"), new_name))
+        argv = argv[:1] + argv[3:]
     if "--" not in argv or len(argv) < 4:
         print(__doc__, file=sys.stderr)
         return 2
@@ -70,6 +77,8 @@ def main(argv):
     old_texts = [subprocess.run(["git", "show", ref + ":" + p],
                                 check=True, capture_output=True,
                                 text=True).stdout for p in old_paths]
+    for pattern, new_name in renames:
+        old_texts = [pattern.sub(new_name, t) for t in old_texts]
     new_texts = [open(p, encoding="utf-8").read() for p in new_paths]
     old = collect(old_texts)
     new = collect(new_texts)

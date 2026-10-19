@@ -1,7 +1,8 @@
 #!/bin/sh
 # Host test of the user copy's pin (ws213-p007 K-2 (b)).
 # copyin and copyout are cut out of src/kern/uaccess.c, and the copy, the pin,
-# the range check and the readiness test out of src/kern/vm/vmspace.c, and
+# the range check and the readiness test out of src/kern/vm/vmspace-copy.c and
+# vmspace-region.c (their declarations and constants from vmspace-internal.h), and
 # compiled with the real struct vmspace, struct vm_region and struct vm_page
 # against a fake fault, fake backings and a counting metadata lock:
 #  - a copy of a few ready pages enters the metadata lock once and faults
@@ -33,18 +34,20 @@ cut_function() {
 	awk -v name="$2" '$0 ~ "^"name"\\(" {p=1; print previous} p{print} p&&/^}/{exit} {previous=$0}' "$1"
 }
 
-grep -E '^#define (PAGE_SIZE|VM_COPY_STACK_PAGES)[[:space:]]' src/kern/vm/vmspace.c > "$out/pin-defines.inc"
+vm=src/kern/vm
+grep -E '^#define (PAGE_SIZE|VM_COPY_STACK_PAGES)[[:space:]]' $vm/vmspace-internal.h > "$out/pin-defines.inc"
 {
 	for name in vmspace_check_locked vmspace_pin_mapping_ready vmspace_pin_mapping_ready_locked \
 		vmspace_pin_first_unready_locked vmspace_pin_fault_from copy_backing vmspace_copy_to_locked \
-		vmspace_copy_from_locked find_region_locked find_page; do
-		grep -E "^static [a-z_ ]+\*? ?$name\(" src/kern/vm/vmspace.c
+		vmspace_copy_from_locked find_region_locked vmspace_find_page; do
+		grep -hE "^(static )?[a-z_ ]+\*? ?$name\(.*\);$" $vm/vmspace-copy.c $vm/vmspace-region.c $vm/vmspace-internal.h
 	done
 	for name in vmspace_check vmspace_pin_user_pages vmspace_unpin_user_pages vmspace_copy_to vmspace_copy_from \
 		vmspace_check_locked vmspace_pin_mapping_ready vmspace_pin_mapping_ready_locked \
 		vmspace_pin_first_unready_locked vmspace_pin_fault_from copy_backing vmspace_copy_to_locked \
-		vmspace_copy_from_locked find_region_locked find_page; do
-		cut_function src/kern/vm/vmspace.c "$name"
+		vmspace_copy_from_locked find_region_locked vmspace_find_page; do
+		cut_function $vm/vmspace-copy.c "$name"
+		cut_function $vm/vmspace-region.c "$name"
 	done
 	for name in copyin copyout; do
 		cut_function src/kern/uaccess.c "$name"
