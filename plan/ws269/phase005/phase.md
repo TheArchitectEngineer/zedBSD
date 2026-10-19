@@ -60,6 +60,13 @@
 
 未実施: QEMU（起動しない指示、QEMU に PowerVR は無い）。実機（下の文面）。
 
+## 必須項目: `hw.gpu.attaching`（2026-10-20 P1、q1356、design.md 末尾の Q1 の追記）
+
+- `powervr.c` `drv_powervr_attach`: ALIAS OK の後、`powervr_late_start` の直前に `kern_gpu_attach_begin()`。start の失敗では `kern_gpu_attach_end()` してから power down。ALIAS が OK でない時・未知の core・power up・map の失敗では数えない（遅い段が始まらない）。
+- `firmware-boot.c` `late_thread`: FW の失敗（file・bring_up）、render の node の失敗（`powervr_render_start`、EBUSY の再試行が尽きた時を含む）、render の node の登録の成功、の 3 つの出口すべてで `kern_gpu_attach_end()` を 1 回。i915（settled）・nvrtx（worker の終わり）と同じ「登録か、登録されない事が決まった時」に -1。
+- 試す: `timeout 120 sh plan/ws269/tests/p004/run.sh build/q1356-p004host` → PASS 70・FAIL 0（ok で begin 1・end 0、mismatch と unknown で 0・0 の 3 件を足した。early の段を compile するのは p004 の試験なので、数の case はそこに置いた。late_thread は host で build しない）。build は [ws270 p006a](../../ws270/phase006a/phase.md) の表（VF2 rc=0・warning 0、firmware-boot.c・powervr.c を compile）。
+- sessiond 側（gpu0 があっても attaching の間は待つ）は WS270 p006a。
+
 ## 実機の試験の文面（今は頼まない。p004 の実機で `ALIAS OK` が出た後）
 
 - **WS269 p005（VisionFive 2、GPU の firmware の起動）**: main の `config/ci/config-visionfive2.mk` で作った image を SD card で起動し、画面の boot の log で、p004 の行 `powervr: BXE 36.50.54.182 at 396000000 Hz, ALIAS OK` の後（root の mount の後、数秒以内）に次の 1 行が出るかを見る: `powervr: firmware 1.1 build 6976702 running, health check ok, <n> interrupts, <m> replies`。見る点: (1) `running, health check ok` が出るか、(2) `<n>`（1 以上なら IRQ 82 が届いている）と `<m>` の数を控える。代わりに `powervr: firmware <段> failed (<番号>); powered down` が出たら、その行をそのまま控える（段は file・image・memory・interrupt・start・boot・health check、番号は 42 = 時間切れ、6 = file が無い、22 = core・版の違い、3 = file の形の誤り、4 = memory 不足）。その後 login prompt まで起動が進む事も見る。

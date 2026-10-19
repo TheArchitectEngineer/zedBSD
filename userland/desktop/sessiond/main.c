@@ -504,54 +504,65 @@ main_ready(
 /*
  * Waits for the display while a GPU driver is still attaching a device.
  *
- * A machine where no GPU device is attaching gets its answer at once, so
- * its console login is not delayed.  Returns 0 when the display is there,
- * or the errno of the last look for it.
+ * The display being there is not enough while a device is attaching, so
+ * the greeter finds every node (sessiond_display_next).  A machine where
+ * no GPU device is attaching gets its answer at once, so its console
+ * login is not delayed.  Returns 0 when the display is there, or the errno
+ * of the last look for it.
  */
 static int
 main_wait_display(
 	void)
 {
+	enum sessiond_display_step step;
 	struct stat status;
 	struct timespec pause;
 	long long start;
 	long long waited;
 	unsigned attaching;
 	unsigned looks;
+	int present;
 	int error;
 
-	/* Looks for the display until it is there, no device is attaching, or the time is up. */
+	/* Looks until the display is there with no device attaching, none is attaching, or the time is up. */
 	start = sessiond_milliseconds();
 	looks = 0U;
 	for (;;) {
-		/* The display is there. */
+		/* Looks for the display. */
 		error = stat(MAIN_DISPLAY_PATH, &status);
-		if (error == 0)
+		present = error == 0;
+		if (!present)
+			error = errno;
+
+		/* Decides from the display and the number of devices on their way. */
+		attaching = main_gpu_attaching();
+		waited = sessiond_milliseconds() - start;
+		step = sessiond_display_next(present, attaching, waited, MAIN_DISPLAY_WAIT_MS);
+		if (step == SESSIOND_DISPLAY_READY)
 			break;
-		error = errno;
-		looks++;
 
 		/*
 		 * No GPU device is on its way, so the display will not come.  A
 		 * node published between the look and the count is taken by a
 		 * last look.
 		 */
-		attaching = main_gpu_attaching();
-		if (attaching == 0U) {
+		if (step == SESSIOND_DISPLAY_NONE) {
 			error = stat(MAIN_DISPLAY_PATH, &status);
 			if (error == 0)
 				break;
 			return errno;
 		}
 
-		/* The wait is bounded: a driver that never publishes gives the console back. */
-		waited = sessiond_milliseconds() - start;
-		if (waited >= MAIN_DISPLAY_WAIT_MS) {
-			sessiond_log("SESSIOND DISPLAY timeout waited_ms=%lld attaching=%u", waited, attaching);
+		/* The wait is bounded: a display that is there is used, else the console is given back. */
+		if (step == SESSIOND_DISPLAY_TIMEOUT) {
+			sessiond_log("SESSIOND DISPLAY timeout waited_ms=%lld attaching=%u present=%d", waited, attaching, present);
+			if (present)
+				break;
 			return error;
 		}
 
 		/* Looks again after a moment. */
+		looks++;
 		pause.tv_sec = 0;
 		pause.tv_nsec = MAIN_DISPLAY_POLL_NS;
 		(void)nanosleep(&pause, NULL);

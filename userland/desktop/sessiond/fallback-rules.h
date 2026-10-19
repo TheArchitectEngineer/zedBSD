@@ -31,7 +31,16 @@
  */
 #define SESSIOND_FAILURE_STREAK_MS	90000LL
 
+/* What the wait for the display does next (sessiond_display_next, ws270-p006a). */
+enum sessiond_display_step {
+	SESSIOND_DISPLAY_READY,		/* the display is there and no GPU device is attaching */
+	SESSIOND_DISPLAY_NONE,		/* no display and no GPU device attaching: it will not come */
+	SESSIOND_DISPLAY_WAIT,		/* a GPU device is attaching: look again after a moment */
+	SESSIOND_DISPLAY_TIMEOUT	/* a GPU device is still attaching after the bound */
+};
+
 int sessiond_greeter_failed(int ready, int status, long seconds);
+enum sessiond_display_step sessiond_display_next(int present, unsigned attaching, long long waited_ms, long long limit_ms);
 int sessiond_console_due(unsigned failures, long long streak_ms);
 
 #endif

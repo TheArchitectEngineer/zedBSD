@@ -30,6 +30,7 @@
 #include <kern/klog.h>
 #include <kern/kmem.h>
 #include <kern/sched.h>
+#include <kern/sysctl.h>
 #include <kern/thread.h>
 #include <uapi/errno.h>
 
@@ -159,6 +160,7 @@ late_thread(
 	if (error != 0) {
 		tear_down(core, reached);
 		kern_logf("powervr: firmware %s failed (%d); powered down\n", step, error);
+		kern_gpu_attach_end();
 		return;
 	}
 
@@ -180,8 +182,12 @@ late_thread(
 		tear_down(core, LATE_STARTED);
 		powervr_render_abandon(core);
 		kern_logf("powervr: render node failed (%d); powered down\n", error);
+		kern_gpu_attach_end();
 		return;
 	}
+
+	/* The render node is published: the GPU no longer counts as attaching. */
+	kern_gpu_attach_end();
 }
 
 /*
