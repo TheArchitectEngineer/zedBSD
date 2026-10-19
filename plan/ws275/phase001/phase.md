@@ -3,7 +3,7 @@
 # ws275-p001 設計: sun4u の /dev/graphics と Xzed
 
 - 親: [ws275](../ws.md)、Queue: q1303 / q1303-i01（P1、2026-10-19）
-- Status: in-progress（設計を書いた。design-reviewer は未実施: 依頼で子のエージェントを起動しないため Q1 に依頼する）
+- Status: in-progress（改訂 2 を書いた、2026-10-19 P1 q1308。再レビューとユーザーの判断待ち）
 - 成果: [design.md](../design.md)、HAL の案 [proposed/hal-sun4u-names.md](../proposed/hal-sun4u-names.md)（未適用）
 
 ## 受け入れの条件

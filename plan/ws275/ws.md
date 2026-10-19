@@ -11,15 +11,21 @@
 - 決定（2026-10-19 18:29 ユーザー）: 「まずAのフレームバッファだけ実装して、Sun PGX64とかはあとで対応できるように口だけ残しておきます。」 → 今回は firmware framebuffer だけを実装し、既知の card の driver が引き取る口（登録・優先度・引き取りの順）は作るが card の driver そのもの（PGX64・XVR-500/600 など）は後の WS。D8 は今は選ばない。
 - 担当: 未割当（手の空いた担当から p001）。
 
-## 完了の条件（案、p001 で確定）
+## 完了の条件（改訂 2、p001 の再レビューで確定）
 
-1. QEMU sun4u で /dev/graphics が開け、pcat と同じ契約（include/uapi/graphics.h）で mode・framebuffer の写像・描画ができる。
-2. QEMU sun4u で Xzed が起動し、画面に X の client（例 zterm）が出て、keyboard と mouse で操作できる。判定は boot-test.sh の画面。
-3. userland/base と X11 の program は arch ごとに有無を分けない（2026-10-19 の Guardrail）。
-4. 実機（Sun Blade 150、XVR-500 か 600）は、まず firmware framebuffer の道、次に card の driver。実機の確かめはユーザーの目視で、着手の時に決める。
+1. QEMU sun4u で /dev/graphics が開け、pcat と同じ契約（include/uapi/graphics.h）で mode の列挙・ENTER・ioctl での描画（BLIT・FILL など、mmap は契約に無い）ができる。8 bpp と 32 bpp の両方。
+2. QEMU sun4u で Xzed が起動し、画面に zterm が出て、keyboard と mouse で操作できる。判定は T1 の boot-test.sh の画面（`BOOT_TEXT_ORIGINS` で zterm の原点を渡す）、読めない時は T1 の PNG の目視。
+3. X11 の program は platform `*` のまま、arch の分岐を足さない。base の全部を sparcv9 で build するのはユーザーの担当（外部の条件）。
+4. 既知の card の driver が後で引き取れる口（backend の登録と優先度）がある。card の driver と実機（Sun Blade 150）は本 WS の外（design §9 の Future Work の案）。
 
-## Phase（案）
+## Phase
 
-| Phase | 目的 | 状態 |
-| --- | --- | --- |
-| p001 | 設計: /dev/graphics の契約と pcat の実装の読み、sun4u の VGA での実装の形（kernel の driver の置き場所、HAL との境界、mode の設定、framebuffer の user への写像、big endian の pixel の並び）、入力（QEMU sun4u の keyboard・mouse の device と driver の有無）、Xzed の sparcv9 での build（X11 の package、userland の X の group）、boot-test の判定、Phase の表と LW。design-reviewer を通す | in-progress（設計の版 1、design-review-1 は Blocker 1・Major 8。改訂 2 は手の空いた担当、2026-10-19） |
+| Phase | 目的 | 依存 | 状態 |
+| --- | --- | --- | --- |
+| p001 | 設計（[design.md](design.md)）と design-reviewer | — | in-progress（改訂 2、2026-10-19 P1 q1308。再レビュー待ち・ユーザーの判断待ち） |
+| p002 | loader（display の node・property・qext・`color!`・i8042）、boot.h と HAL の名前付きの値、HAL の早期の console | p001、HAL の承認、D4・D6 | planned |
+| p003 | generic の前段（backend の登録・優先度・行の分割）、firmware fb の backend、text の console と出力の道 | p002 | planned |
+| p004 | 8042 の共有と sun4u の poll、evdev | p002 | planned |
+| p005 | userland の config・Makefile・vmunix.mk・libX11 の BE、build | p003・p004 | planned |
+| p006 | T1 の試験（sun4u 8・32 bpp の X、回帰） | p005、外部: boot-test の `BOOT_TEXT_ORIGINS`（main に入った）・QEMU の引数の口・`mouse:`（Q1） | planned |
+| p007 | 規約の全文の見直し | p006 | planned |
