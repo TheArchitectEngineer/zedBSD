@@ -123,6 +123,16 @@ typedef int (
 	struct drv_pci_device *,
 	void *);
 
+/*
+ * Runs every handler on one shared pin line and returns.
+ *
+ * It sends no end of interrupt: the host that called it ends its own
+ * interrupt once, after it has served every pin it found raised.
+ */
+typedef void (
+	*drv_pci_intx_run_t)(
+	void *);
+
 struct drv_pci_bus_ops {
 	/* Zero selects conventional 256-byte PCI configuration space. */
 	unsigned config_space_size;
@@ -174,6 +184,49 @@ struct drv_pci_bus_ops {
 	 * its windows; drv_pci_probe_deferred() ends the wait (BUG-210).
 	 */
 	unsigned defer_unassigned;
+
+	/*
+	 * A host that demultiplexes its own pins sets all four, or none; with
+	 * none the core gives each pin line to kern_irq_register() by its
+	 * vector, as before.  vector is then the host's own pin number, and a
+	 * line is told apart by (host, vector), so two hosts may use the same
+	 * numbers.
+	 *
+	 * intx_establish, intx_mask and intx_unmask are called with the core's
+	 * line lock held and interrupts off: they neither sleep nor allocate,
+	 * and the only lock they take is the host's own, with interrupts off.
+	 * intx_establish puts (run, line) in the host's table and leaves the
+	 * pin masked: the core unmasks it once the line is published.  It
+	 * returns 0, EBUSY when the pin is taken, or another error.
+	 *
+	 * intx_disestablish is called in thread context with no core lock: it
+	 * masks the pin, empties its entry, and waits until no hart is still
+	 * inside run for it.  It returns 0 once drained, or EBUSY with the
+	 * entry and the pin as they were before the call.
+	 *
+	 * The host calls run without its own lock held, and sends the end of
+	 * interrupt itself, once, after its status is acknowledged.
+	 */
+	int (
+		*intx_establish)(
+		void *,
+		unsigned,
+		drv_pci_intx_run_t,
+		void *);
+	int (
+		*intx_disestablish)(
+		void *,
+		unsigned,
+		drv_pci_intx_run_t,
+		void *);
+	void (
+		*intx_mask)(
+		void *,
+		unsigned);
+	void (
+		*intx_unmask)(
+		void *,
+		unsigned);
 };
 
 /*

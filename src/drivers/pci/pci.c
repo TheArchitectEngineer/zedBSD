@@ -174,8 +174,22 @@ struct pci_irq_cookie {
 	unsigned intx_disable_set;
 };
 
+/*
+ * One physical pin line that one or more functions share.
+ *
+ * A line is told apart by its host and its vector.  A host without its own
+ * pin hooks leaves ops and host NULL, so its lines share the interrupt
+ * controller's numbers; a host that demultiplexes its own pins owns lines
+ * numbered by those pins, so two such hosts may use the same numbers.  A line
+ * stays on intx_lines from its first handler until its last one is taken off
+ * and the controller or the host has drained it.
+ */
 struct pci_intx_line {
 	int irq;
+	/* The host's pin hooks, or NULL for a line of the interrupt controller. */
+	const struct drv_pci_bus_ops *ops;
+	/* The host the hooks are called with; NULL together with ops. */
+	void *host;
 	unsigned dispatching;
 	unsigned removing;
 	struct pci_irq_cookie *handlers;
@@ -205,7 +219,13 @@ static void pci_bar_cache_readback(struct drv_pci_device *device, unsigned index
 static uint64_t pci_bar_address(enum drv_pci_bar_type type, uint32_t low, uint32_t high);
 static int establish_intx(struct pci_irq_cookie *cookie, const struct drv_pci_irq *irq);
 static bool intx_lock_enter(void);
-static struct pci_intx_line *find_intx_line(int irq);
+static struct pci_intx_line *find_intx_line(const struct drv_pci_bus_ops *ops, void *host, int irq);
+static int intx_host_hooks(const struct drv_pci_bus *bus, const struct drv_pci_bus_ops **ops, void **host);
+static int intx_line_install(struct pci_intx_line *line);
+static void intx_line_mask(struct pci_intx_line *line);
+static void intx_line_unmask(struct pci_intx_line *line);
+static int intx_line_remove(struct pci_intx_line *line);
+static void intx_line_run(void *argument);
 static void intx_lock_leave(bool enabled);
 static int establish_msi(struct pci_irq_cookie *cookie, const struct drv_pci_irq *irq);
 static void pci_source(const struct drv_pci_address *address, char result[17]);
@@ -3038,74 +3058,90 @@ establish_intx(
 	struct pci_irq_cookie *cookie,
 	const struct drv_pci_irq *irq)
 {
-	struct pci_intx_line *candidate, *line;
+	const struct drv_pci_bus_ops *ops;
+	struct pci_intx_line *candidate;
+	struct pci_intx_line *line;
 	struct pci_irq_cookie **link;
+	void *host;
 	bool enabled;
+	int error;
 	int status;
 
-	/* Handles the candidate availability. */
+	/* Finds whose numbers the pin's vector is in: the controller's or the host's. */
+	error = intx_host_hooks(cookie->device->bus, &ops, &host);
+	if (error != 0)
+		return error;
+
+	/* Allocates the line the pin needs if no other function shares it yet. */
 	candidate = kern_malloc(sizeof(*candidate));
 	if (candidate == NULL)
 		return ENOMEM;
+
+	/* Starts the candidate as an unpublished line on the pin's vector. */
 	kern_memset(candidate, 0, sizeof(*candidate));
 	candidate->irq = (int)irq->vector;
+	candidate->ops = ops;
+	candidate->host = host;
 
+	/* Joins the line another function already shares on the pin. */
 	enabled = intx_lock_enter();
 
-	/* Handles the line availability. */
-	line = find_intx_line(candidate->irq);
+	line = find_intx_line(ops, host, candidate->irq);
 	if (line != NULL) {
-		/* Handles the line condition. */
+		/* Refuses a line whose last handler is being taken off; the caller may retry. */
 		if (line->removing) {
 			intx_lock_leave(enabled);
 			kern_free(candidate);
 
-			/* Failed. */
 			return EBUSY;
 		}
 
-		/* Process each element required by the operation. */
-		for (link = &line->handlers; *link != NULL;
-		     link = &(*link)->intx_next)
-			;
+		/* Appends the handler after the line's others. */
+		link = &line->handlers;
+		while (*link != NULL)
+			link = &(*link)->intx_next;
 		*link = cookie;
 		cookie->irq = line->irq;
 		cookie->intx_line = line;
+
 		intx_lock_leave(enabled);
+
+		/* Releases the candidate the shared line made unneeded. */
 		kern_free(candidate);
 
-		/* Succeeded. */
+		/* Succeeded: the handler shares the line. */
 		return 0;
 	}
 
 	/*
-	 * Publish a line only after the sole HAL handler has been installed.
-	 * The line remains masked until both the handler and cookie list exist.
+	 * Publishes a new line only after its sole handler is installed.  The
+	 * pin stays masked until both the handler and the cookie list exist.
 	 */
-
-	/* Checks the operation status. */
-	status = kern_irq_register(candidate->irq, pci_intx_dispatch,
-					candidate);
+	status = intx_line_install(candidate);
 	if (status == 0) {
 		candidate->handlers = cookie;
 		candidate->next = intx_lines;
 		intx_lines = candidate;
 		cookie->irq = candidate->irq;
 		cookie->intx_line = candidate;
-		kern_irq_unmask(candidate->irq);
+		intx_line_unmask(candidate);
 	}
 
 	intx_lock_leave(enabled);
 
-	/* Checks the operation status. */
+	/* Gives back the candidate of a pin that could not be installed. */
 	if (status != 0) {
 		kern_free(candidate);
 
-		/* Returns the computed result. */
-		return status == EBUSY ? EBUSY : EIO;
+		/* Failed: a pin another line holds stays retryable. */
+		if (status == EBUSY)
+			return EBUSY;
+
+		/* Failed: the controller or the host refused the pin. */
+		return EIO;
 	}
 
-	/* Succeeded. */
+	/* Succeeded: the handler owns a new line. */
 	return 0;
 }
 
@@ -3124,22 +3160,164 @@ intx_lock_enter(
 	return enabled;
 }
 
-/* Finds the line a device's pin is routed to. */
+/* Finds the line a device's pin is routed to, by its host and its vector. */
 static struct pci_intx_line *
 find_intx_line(
+	const struct drv_pci_bus_ops *ops,
+	void *host,
 	int irq)
 {
 	struct pci_intx_line *line;
 
-	/* Process each linked entry. */
+	/* Looks for a published line with the same owner and number. */
 	for (line = intx_lines; line != NULL; line = line->next) {
-		/* Handles the line condition. */
+		/* Skips a line of another host, or of the controller for a hooked host. */
+		if (line->ops != ops)
+			continue;
+		if (line->host != host)
+			continue;
+
+		/* Found: the line is on the same pin. */
 		if (line->irq == irq)
 			return line;
 	}
 
-	/* Reports that no result is available. */
+	/* No function uses the pin yet. */
 	return NULL;
+}
+
+/*
+ * Reports whether a bus's host demultiplexes its own pins.
+ *
+ * A host sets all four pin hooks or none.  With none, ops and host are
+ * NULL and the pin's vector is the interrupt controller's number.
+ */
+static int
+intx_host_hooks(
+	const struct drv_pci_bus *bus,
+	const struct drv_pci_bus_ops **ops,
+	void **host)
+{
+	unsigned hooks;
+
+	/* Counts the pin hooks the host set. */
+	hooks = 0;
+	if (bus->ops->intx_establish != NULL)
+		hooks++;
+	if (bus->ops->intx_disestablish != NULL)
+		hooks++;
+	if (bus->ops->intx_mask != NULL)
+		hooks++;
+	if (bus->ops->intx_unmask != NULL)
+		hooks++;
+
+	/* A host without hooks leaves its pins to the interrupt controller. */
+	if (hooks == 0) {
+		*ops = NULL;
+		*host = NULL;
+
+		/* Succeeded: the controller's numbers. */
+		return 0;
+	}
+
+	/* Refuses a host that set only some of the hooks. */
+	if (hooks != 4)
+		return EINVAL;
+
+	/* Succeeded: the host's own pin numbers. */
+	*ops = bus->ops;
+	*host = bus->host;
+	return 0;
+}
+
+/*
+ * Installs a new line's sole handler, leaving its pin masked.
+ *
+ * Called with the line lock held and interrupts off.
+ */
+static int
+intx_line_install(
+	struct pci_intx_line *line)
+{
+	int status;
+
+	/* A host's pin: the host puts the line in its table. */
+	if (line->ops != NULL) {
+		status = line->ops->intx_establish(line->host, (unsigned)line->irq, intx_line_run, line);
+		if (status != 0)
+			return status;
+
+		/* Succeeded: the host serves the pin. */
+		return 0;
+	}
+
+	/* A controller's pin: the dispatcher ends each interrupt itself. */
+	status = kern_irq_register(line->irq, pci_intx_dispatch, line);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the controller serves the pin. */
+	return 0;
+}
+
+/* Stops a line's pin from interrupting, on the host or the controller. */
+static void
+intx_line_mask(
+	struct pci_intx_line *line)
+{
+	/* A host's pin is masked in the host. */
+	if (line->ops != NULL) {
+		line->ops->intx_mask(line->host, (unsigned)line->irq);
+		return;
+	}
+
+	/* A controller's pin is masked in the controller. */
+	kern_irq_mask(line->irq);
+}
+
+/* Lets a line's pin interrupt again, on the host or the controller. */
+static void
+intx_line_unmask(
+	struct pci_intx_line *line)
+{
+	/* A host's pin is let through by the host. */
+	if (line->ops != NULL) {
+		line->ops->intx_unmask(line->host, (unsigned)line->irq);
+		return;
+	}
+
+	/* A controller's pin is let through by the controller. */
+	kern_irq_unmask(line->irq);
+}
+
+/*
+ * Takes a masked line's handler off, and waits until no hart still runs it.
+ *
+ * Called in thread context with no lock held.
+ */
+static int
+intx_line_remove(
+	struct pci_intx_line *line)
+{
+	int status;
+
+	/* A host's pin: the host empties its entry and drains its own dispatch. */
+	if (line->ops != NULL) {
+		status = line->ops->intx_disestablish(line->host, (unsigned)line->irq, intx_line_run, line);
+		if (status != 0)
+			return status;
+
+		/* Succeeded: the host no longer runs the line. */
+		return 0;
+	}
+
+	/* A controller's pin: the controller's removal is the drain. */
+	status = kern_irq_unregister(line->irq, pci_intx_dispatch, line);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the controller no longer runs the line. */
+	return 0;
 }
 
 /* Gives that lock back. */
@@ -3494,30 +3672,30 @@ disestablish_intx(
 	bool enabled;
 	int status;
 
+	/* Finds the handler on its line, refusing a line already going away. */
 	enabled = intx_lock_enter();
 
-	/* Handles the line availability. */
 	line = cookie->intx_line;
-	if (line == NULL || line->removing) {
+	if (line == NULL) {
 		intx_lock_leave(enabled);
 
-		/* Returns the computed result. */
-		return line == NULL ? EINVAL : EBUSY;
+		return EINVAL;
+	}
+	if (line->removing) {
+		intx_lock_leave(enabled);
+
+		return EBUSY;
 	}
 
-	/* Process each element required by the operation. */
-	for (cookie_link = &line->handlers; *cookie_link != NULL;
-	     cookie_link = &(*cookie_link)->intx_next) {
-		/* Handles the cookie link condition. */
-		if (*cookie_link == cookie)
-			break;
-	}
+	/* Walks to the link that holds the cookie. */
+	cookie_link = &line->handlers;
+	while (*cookie_link != NULL && *cookie_link != cookie)
+		cookie_link = &(*cookie_link)->intx_next;
 
-	/* Handles the cookie link availability. */
+	/* Refuses a cookie the line does not hold. */
 	if (*cookie_link == NULL) {
 		intx_lock_leave(enabled);
 
-		/* Failed. */
 		return EINVAL;
 	}
 
@@ -3529,11 +3707,10 @@ disestablish_intx(
 	if (line->dispatching != 0) {
 		intx_lock_leave(enabled);
 
-		/* Failed. */
 		return EBUSY;
 	}
 
-	/* Handles the intx next availability. */
+	/* Unlinks a handler that is not the line's last, leaving the pin as it is. */
 	if (line->handlers != cookie || cookie->intx_next != NULL) {
 		*cookie_link = cookie->intx_next;
 		cookie->intx_line = NULL;
@@ -3541,49 +3718,59 @@ disestablish_intx(
 		intx_lock_leave(enabled);
 		kern_free(cookie);
 
-		/* Succeeded. */
+		/* Succeeded: the line keeps its other handlers. */
 		return 0;
 	}
 
-	/* Only the final owner may mask and remove the physical IRQ handler. */
+	/*
+	 * Only the final owner may mask and remove the line's handler.
+	 * removing turns away new handlers until the removal settles.
+	 */
 	line->removing = 1;
-	kern_irq_mask(line->irq);
+	intx_line_mask(line);
+
 	intx_lock_leave(enabled);
 
-	/* Checks the operation status. */
-	status = kern_irq_unregister(line->irq, pci_intx_dispatch, line);
+	/* Takes the line's handler off the controller or the host, which drains it. */
+	status = intx_line_remove(line);
 	if (status != 0) {
+		/* Gives the line back as it was, so the caller may retry. */
 		enabled = intx_lock_enter();
+
 		line->removing = 0;
-		kern_irq_unmask(line->irq);
+		intx_line_unmask(line);
+
 		intx_lock_leave(enabled);
 
-		/* Returns the computed result. */
-		return status == EBUSY ? EBUSY : EIO;
+		/* Failed: a dispatch still in flight; the caller may retry. */
+		if (status == EBUSY)
+			return EBUSY;
+
+		/* Failed: the controller or the host refused the removal. */
+		return EIO;
 	}
 
 	/*
-	 * HAL removal is a checked drain barrier, so no dispatcher can still
-	 * hold the line or its final cookie once it succeeds.
+	 * Removal is a checked drain barrier, so no dispatcher can still hold
+	 * the line or its final cookie once it succeeds.
 	 */
 	enabled = intx_lock_enter();
-	/* Process each linked entry. */
-	for (line_link = &intx_lines; *line_link != NULL;
-	     line_link = &(*line_link)->next) {
-		/* Handles the line link condition. */
-		if (*line_link == line) {
-			*line_link = line->next;
-			break;
-		}
-	}
 
+	line_link = &intx_lines;
+	while (*line_link != NULL && *line_link != line)
+		line_link = &(*line_link)->next;
+	if (*line_link == line)
+		*line_link = line->next;
 	line->handlers = NULL;
 	cookie->intx_line = NULL;
+
 	intx_lock_leave(enabled);
+
+	/* Frees the drained line and its last handler. */
 	kern_free(line);
 	kern_free(cookie);
 
-	/* Succeeded. */
+	/* Succeeded: the pin has no handler left. */
 	return 0;
 }
 
@@ -3601,46 +3788,78 @@ pci_irq_dispatch(
 	kern_irq_send_eoi(acknowledge);
 }
 
-/* Serves one pin interrupt, which several devices may share. */
+/* Serves one pin interrupt of the interrupt controller, which several devices may share. */
 static void
 pci_intx_dispatch(
 	int irq,
 	kern_irq_ack_t acknowledge,
 	void *argument)
 {
+	(void)irq;
+
+	/* Runs every handler on the line. */
+	intx_line_run(argument);
+
+	/* Ends the controller's interrupt, once, after every handler. */
+	kern_irq_send_eoi(acknowledge);
+}
+
+/*
+ * Runs every handler on one shared pin line, without ending the interrupt.
+ *
+ * The interrupt controller's dispatcher and a host that demultiplexes its
+ * own pins both call it; each ends its own interrupt once afterwards.
+ */
+static void
+intx_line_run(
+	void *argument)
+{
 	drv_pci_irq_handler_t handler;
 	void *handler_argument;
 	struct pci_irq_cookie *next;
-	struct pci_intx_line *line = argument;
+	struct pci_intx_line *line;
 	struct pci_irq_cookie *cookie;
 	bool enabled;
 
-	(void)irq;
+	line = argument;
+
+	/*
+	 * Counts this dispatcher on the line: while dispatching is not zero,
+	 * checked removal leaves every cookie linked.
+	 */
 	enabled = intx_lock_enter();
+
 	line->dispatching++;
 	cookie = line->handlers;
-	intx_lock_leave(enabled);
-	/* Continue while the operation condition remains true. */
-	while (cookie != NULL) {
-		enabled = intx_lock_enter();
 
+	intx_lock_leave(enabled);
+
+	/* Calls each handler with the line lock released. */
+	while (cookie != NULL) {
 		/*
 		 * Checked removal cannot unlink a cookie while any dispatcher
 		 * is walking this line. Establishment may append a new cookie,
 		 * which may be observed on this interrupt or the next one.
 		 */
+		enabled = intx_lock_enter();
+
 		handler = cookie->handler;
 		handler_argument = cookie->argument;
 		next = cookie->intx_next;
+
 		intx_lock_leave(enabled);
+
+		/* Lets the device's handler serve its own interrupt. */
 		(void)handler(handler_argument);
 		cookie = next;
 	}
 
+	/* Drops this dispatcher from the line, which lets removal proceed. */
 	enabled = intx_lock_enter();
+
 	line->dispatching--;
+
 	intx_lock_leave(enabled);
-	kern_irq_send_eoi(acknowledge);
 }
 
 /* The position still to count down to, and the function found there. */
