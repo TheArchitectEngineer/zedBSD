@@ -6,8 +6,7 @@
  */
 
 /*
- * The MIPS scheduling tick and counter, from coprocessor 0's Count and
- * Compare.
+ * The MIPS scheduling tick and counter, from the board's timer.
  */
 
 #ifndef KERN_HAL_MIPS_CLOCK_H
@@ -20,7 +19,7 @@ mips_clock_init(
 	void);
 
 void
-mips_clock_interrupt(
+mips_clock_tick(
 	void);
 
 uint64_t

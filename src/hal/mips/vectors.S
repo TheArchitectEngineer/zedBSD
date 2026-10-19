@@ -13,7 +13,8 @@
  * processor takes it at EBase + 0x000 and walks two levels; the 64-bit
  * one, whose user segment is xuseg (Status.UX), takes it at EBase +
  * 0x080 and walks three.  The general exception goes to the trap
- * handling of trap.S.  The refill the processor does not use and the
+ * handling of trap.S, and so does the interrupt vector at EBase + 0x200,
+ * in case Cause.IV is set.  The refill the processor does not use and the
  * cache error report the exception on the console and stop: the
  * processor's state is passed to C on a stack of its own, since the
  * stack pointer of the code that faulted may be what failed.
@@ -98,6 +99,15 @@ mips_tlb_refill:
 	nop
 
 	.org MIPS_VECTOR_GENERAL
+	j mips_trap_entry
+	nop
+
+	/*
+	 * The interrupt's own vector.  locore.S clears Cause.IV, so that
+	 * interrupts come to the general exception; a loader may have left
+	 * it set, and this keeps an interrupt taken then on the same path.
+	 */
+	.org MIPS_VECTOR_INTERRUPT
 	j mips_trap_entry
 	nop
 

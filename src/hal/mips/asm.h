@@ -83,8 +83,8 @@
  * Values referenced: MIPS32 Architecture for Programmers Volume III, the
  * Privileged Resource Architecture (the coprocessor 0 register numbers
  * and selects of Index, EntryLo0, EntryLo1, PageMask, Wired, BadVAddr,
- * Count, EntryHi, Compare, Status, Cause, EPC, PRId, EBase, Config and
- * Config1).
+ * Count, EntryHi, Compare, Status, Cause, EPC, PRId, EBase, Config,
+ * Config1 and Config2).
  */
 #define MIPS_CP0_INDEX			$0
 #define MIPS_CP0_ENTRY_LO0		$2
@@ -105,6 +105,26 @@
 #define MIPS_CP0_CONFIG			$16
 #define MIPS_CP0_CONFIG_SELECT		0
 #define MIPS_CP0_CONFIG1_SELECT		1
+#define MIPS_CP0_CONFIG2_SELECT		2
+
+/*
+ * The Ingenic XBurst cores' page control register (register 5, select
+ * 4) and the value that turns their own page mode off, so that the TLB
+ * behaves as the architecture's.  Written only on a processor whose
+ * company field of PRId is Ingenic's.
+ *
+ * Values referenced: Linux master arch/mips/kernel/cpu-probe.c
+ * (cpu_probe_ingenic: PRID_COMP_INGENIC_D1 0xd1 among Ingenic's company
+ * fields, the page control register at register 5 select 4, the value
+ * 0xa9000000); arch/mips/include/asm/cpu.h (the company field, PRId bits
+ * 16-23).
+ */
+#define MIPS_CP0_PAGE_CTRL		$5
+#define MIPS_CP0_PAGE_CTRL_SELECT	4
+#define MIPS_PRID_COMPANY_SHIFT		16
+#define MIPS_PRID_COMPANY_MASK		0xff
+#define MIPS_PRID_COMPANY_INGENIC_D1	0xd1
+#define MIPS_INGENIC_PAGE_CTRL_VTLB	0xa9000000
 
 /*
  * The bits of Status.
@@ -306,16 +326,19 @@
 
 /*
  * The offsets from EBase of the exception vectors when Status.BEV is clear:
- * the TLB refill, the 64-bit TLB refill, the cache error and the general
- * exception.
+ * the TLB refill, the 64-bit TLB refill, the cache error, the general
+ * exception and the interrupt's own vector, which an interrupt takes
+ * while Cause.IV is set.
  *
  * Values referenced: MIPS32 Architecture for Programmers Volume III (the
- * exception vector offsets 0x000, 0x080, 0x100 and 0x180).
+ * exception vector offsets 0x000, 0x080, 0x100 and 0x180, and 0x200 for
+ * an interrupt with Cause.IV set and IntCtl.VS zero).
  */
 #define MIPS_VECTOR_REFILL		0x000
 #define MIPS_VECTOR_REFILL64		0x080
 #define MIPS_VECTOR_CACHE_ERROR		0x100
 #define MIPS_VECTOR_GENERAL		0x180
+#define MIPS_VECTOR_INTERRUPT		0x200
 
 /*
  * The trap frame, as offsets from its start: the 32 general registers,
@@ -343,6 +366,15 @@
 #define MIPS_DISPATCH_WORDS		12
 #define MIPS_DISPATCH_FP		8
 #define MIPS_DISPATCH_RA		9
+
+/*
+ * The stages of the boot mips_board_early_mark() shows on a board that
+ * has no console yet: locore.S entered, C entered, and the board's
+ * display about to be set up.
+ */
+#define MIPS_EARLY_MARK_START		1
+#define MIPS_EARLY_MARK_C		2
+#define MIPS_EARLY_MARK_DISPLAY		3
 
 /* The bytes of the boot stack, which ends with the image's bss. */
 #define MIPS_BOOT_STACK_SIZE		16384

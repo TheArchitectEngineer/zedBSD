@@ -15,6 +15,8 @@
  * master's cascade input; a registered handler unmasks its line.  A
  * level-triggered line (the PCI interrupts routed through the PIIX4) is
  * marked in the edge/level control registers when it is registered.
+ * The processor's interrupt line 7 is coprocessor 0's timer, which
+ * timer.c serves.
  */
 
 #include <hal/hal.h>
@@ -22,6 +24,7 @@
 #include "../bsp.h"
 #include "../io.h"
 #include "../spin.h"
+#include "timer.h"
 
 /*
  * The physical address of the PCI I/O window, where ISA port n is at
@@ -113,6 +116,7 @@ static void port_write(uint32_t port, uint8_t value);
 static uint8_t port_read(uint32_t port);
 static unsigned poll_controller(uint32_t command_port, bool *found);
 static void end_interrupt(unsigned line);
+static void serve_controllers(void);
 
 /*
  * Initializes both controllers with every line masked but the cascade.
@@ -211,47 +215,46 @@ mips_board_irq_register(
 }
 
 /*
- * Serves the board's interrupt line: polls the pair for the pending
- * line, runs its handler and ends the interrupt.
+ * Serves the processor's interrupt lines the board wires: the timer of
+ * coprocessor 0 and the pair of controllers.  pending holds the lines of
+ * Cause.IP that are pending and let in.
  *
- * Called by the trap handling with interrupts off.
+ * Reports whether any of them was the board's.  Called by the trap
+ * handling with interrupts off.
  */
-void
+bool
 mips_board_interrupt(
+	uint32_t pending)
+{
+	bool served;
+
+	/* The tick of coprocessor 0. */
+	served = false;
+	if ((pending & MIPS_INTERRUPT_TIMER) != 0) {
+		malta_timer_interrupt();
+		served = true;
+	}
+
+	/* The pair of controllers. */
+	if ((pending & MIPS_INTERRUPT_BOARD) != 0) {
+		serve_controllers();
+		served = true;
+	}
+
+	/* Succeeded: whether a line was the board's. */
+	return served;
+}
+
+/*
+ * Reports the lines of Status.IM the board's interrupts come on: the
+ * timer's and the controllers'.
+ */
+uint32_t
+mips_board_interrupt_mask(
 	void)
 {
-	unsigned line;
-	bool found;
-
-	/* The master's pending input; the cascade means the slave holds the line. */
-	line = poll_controller(IRQ_MASTER_COMMAND, &found);
-	if (!found) {
-		irq_spurious++;
-		return;
-	}
-
-	/* The cascade input means the slave holds the line: polls it there. */
-	if (line == IRQ_CASCADE_INPUT) {
-		line = poll_controller(IRQ_SLAVE_COMMAND, &found);
-		if (!found) {
-			irq_spurious++;
-			end_interrupt(IRQ_CASCADE_INPUT);
-			return;
-		}
-
-		/* Numbers the slave's input after the master's. */
-		line += IRQ_INPUTS;
-	}
-
-	/* Runs the line's handler; a line with none is counted and only ended. */
-	if (irq_sources[line].handler != NULL) {
-		irq_sources[line].handler(irq_sources[line].argument);
-	} else {
-		irq_spurious++;
-	}
-
-	/* Lets the line, and the cascade for a slave line, interrupt again. */
-	end_interrupt(line);
+	/* Succeeded: the two lines. */
+	return MIPS_INTERRUPT_TIMER | MIPS_INTERRUPT_BOARD;
 }
 
 /* Writes an ISA port of the PIIX4. */
@@ -314,3 +317,46 @@ end_interrupt(
 		port_write(IRQ_MASTER_COMMAND, (uint8_t)(IRQ_OCW2_SPECIFIC_EOI | line));
 	}
 }
+
+/*
+ * Serves the pair of controllers: polls them for the pending line, runs
+ * its handler and ends the interrupt.
+ */
+static void
+serve_controllers(
+	void)
+{
+	unsigned line;
+	bool found;
+
+	/* The master's pending input; the cascade means the slave holds the line. */
+	line = poll_controller(IRQ_MASTER_COMMAND, &found);
+	if (!found) {
+		irq_spurious++;
+		return;
+	}
+
+	/* The cascade input means the slave holds the line: polls it there. */
+	if (line == IRQ_CASCADE_INPUT) {
+		line = poll_controller(IRQ_SLAVE_COMMAND, &found);
+		if (!found) {
+			irq_spurious++;
+			end_interrupt(IRQ_CASCADE_INPUT);
+			return;
+		}
+
+		/* Numbers the slave's input after the master's. */
+		line += IRQ_INPUTS;
+	}
+
+	/* Runs the line's handler; a line with none is counted and only ended. */
+	if (irq_sources[line].handler != NULL) {
+		irq_sources[line].handler(irq_sources[line].argument);
+	} else {
+		irq_spurious++;
+	}
+
+	/* Lets the line, and the cascade for a slave line, interrupt again. */
+	end_interrupt(line);
+}
+

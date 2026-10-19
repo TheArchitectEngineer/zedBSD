@@ -19,6 +19,14 @@ MIPS32_CPPFLAGS := -nostdlibinc -Iinclude -Isrc -I. -Isrc/hal/mips \
 	-DHAL_ARCH_MIPS32 -DHAL_BOARD_MALTA -DKERN_USER_ABI_MIPS32
 MIPS32_CPPFLAGS += $(ZEDBSD_CONFIG_CPPFLAGS)
 
+# A test build of the HAL takes the paths of a virtually tagged
+# instruction cache and of a secondary cache on the emulator, where they
+# do nothing (WS273 p002); the default build leaves them to the
+# processors that have them.
+ifeq ($(CONFIG_MIPS_FORCE_VTAG_L2_PATHS),y)
+MIPS32_CPPFLAGS += -DMIPS_FORCE_VTAG_L2_PATHS
+endif
+
 # The kernel's C uses no floating point.  The code is absolute, not
 # position-independent, and uses no small-data section, since nothing
 # sets up the global pointer those sections are reached through.
@@ -43,12 +51,14 @@ MIPS32_HAL_C := src/hal/mips/cmain.c src/hal/mips/lib.c \
 	src/hal/mips/cpu.c src/hal/mips/atomic.c src/hal/mips/irq.c \
 	src/hal/mips/cache.c src/hal/mips/fpu.c src/hal/mips/page.c \
 	src/hal/mips/space.c src/hal/mips/debug.c src/hal/mips/selftest.c \
+	src/hal/mips/cons.c src/hal/mips/font.c \
 	src/hal/idle-suspend-unsupported.c \
 	$(MIPS32_BSP)/board.c $(MIPS32_BSP)/irq.c \
 	$(MIPS32_BSP)/pci.c $(MIPS32_BSP)/framebuffer.c \
-	$(MIPS32_BSP)/cons.c $(MIPS32_BSP)/font.c
+	$(MIPS32_BSP)/timer.c
 MIPS32_HAL_S := src/hal/mips/locore.S src/hal/mips/vectors.S src/hal/mips/trap.S \
-	src/hal/mips/dispatch.S src/hal/mips/fpregs.S
+	src/hal/mips/dispatch.S src/hal/mips/fpregs.S \
+	$(MIPS32_BSP)/early.S
 MIPS32_HAL_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(MIPS32_HAL_C)) \
 	$(patsubst %.S,$(BUILD)/%.o,$(MIPS32_HAL_S))
 

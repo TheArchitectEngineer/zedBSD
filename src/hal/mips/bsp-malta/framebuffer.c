@@ -20,8 +20,8 @@
  */
 
 #include <hal/hal.h>
+#include "../font.h"
 #include "../io.h"
-#include "font.h"
 #include "framebuffer.h"
 #include "pci.h"
 
@@ -220,18 +220,18 @@ malta_framebuffer_cell(
 		return;
 
 	/* The glyph of the character (the font covers every byte value) and its colours. */
-	glyph = &malta_font8x16[((unsigned)character & 0xffU) * MALTA_FONT_HEIGHT];
+	glyph = &mips_font8x16[((unsigned)character & 0xffU) * MIPS_FONT_HEIGHT];
 	foreground = framebuffer_palette[attribute & 15U];
 	background = framebuffer_palette[(attribute >> 4) & 15U];
 
 	/* Each row of the glyph, from its leftmost pixel in the high bit. */
-	for (line = 0; line < MALTA_FONT_HEIGHT; line++) {
+	for (line = 0; line < MIPS_FONT_HEIGHT; line++) {
 		bits = glyph[line];
 		for (bit = 0; bit < 8U; bit++) {
 			value = background;
 			if ((bits & (0x80U >> bit)) != 0)
 				value = foreground;
-			put_pixel(column * 8U + bit, row * MALTA_FONT_HEIGHT + line, value);
+			put_pixel(column * 8U + bit, row * MIPS_FONT_HEIGHT + line, value);
 		}
 	}
 }
@@ -254,9 +254,9 @@ malta_framebuffer_cursor(
 		return;
 
 	/* Whitens rows 14 and 15 of the cell. */
-	for (line = MALTA_FONT_HEIGHT - 2U; line < MALTA_FONT_HEIGHT; line++) {
+	for (line = MIPS_FONT_HEIGHT - 2U; line < MIPS_FONT_HEIGHT; line++) {
 		for (bit = 0; bit < 8U; bit++)
-			put_pixel(column * 8U + bit, row * MALTA_FONT_HEIGHT + line, framebuffer_palette[15]);
+			put_pixel(column * 8U + bit, row * MIPS_FONT_HEIGHT + line, framebuffer_palette[15]);
 	}
 }
 

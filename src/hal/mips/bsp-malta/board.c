@@ -22,9 +22,9 @@
 #include <kern/boot.h>
 #include "../asm.h"
 #include "../bsp.h"
+#include "../cons.h"
 #include "../cpu.h"
 #include "../io.h"
-#include "cons.h"
 #include "framebuffer.h"
 
 /*
@@ -54,16 +54,6 @@
  * most 2 GiB of RAM; the environment's ememsize, the whole RAM).
  */
 #define BOARD_MEMORY_MAX	0x80000000U
-
-/*
- * The rate of coprocessor 0's Count: the processor's 320 MHz clock
- * divided by the two cycles of CCRes.
- *
- * Values referenced: QEMU v10.0.11 hw/mips/malta.c (cpu-refclk, 320 MHz)
- * and target/mips/cpu-defs.c.inc (24Kf, CCRes 2); target/mips/cpu.c
- * (mips_cp0_period_set, Count at the clock divided by CCRes).
- */
-#define BOARD_COUNT_FREQUENCY	160000000U
 
 /*
  * The board's software reset: the FPGA's SOFTRES register, which resets
@@ -127,6 +117,17 @@ static struct kern_boot_handoff board_handoff;
  * Nonzero once the display shows.  Set once by mips_board_init().
  */
 static int board_display_on;
+
+/*
+ * The standard VGA as the console draws on it: 80 by 30 cells of the
+ * 8x16 font.
+ */
+static const struct mips_cons_display board_display = {
+	.columns = MALTA_CONSOLE_COLUMNS,
+	.rows = MALTA_CONSOLE_ROWS,
+	.cell = malta_framebuffer_cell,
+	.cursor = malta_framebuffer_cursor,
+};
 
 static const char *table_string(uint32_t address);
 static void copy_string(char *destination, const char *source);
@@ -221,7 +222,7 @@ mips_board_init(
 
 	/* Shows the lines printed before the display was set up. */
 	board_display_on = 1;
-	malta_cons_attach();
+	mips_cons_attach(&board_display);
 }
 
 /*
@@ -232,7 +233,7 @@ mips_board_putc(
 	int character)
 {
 	/* The console keeps the grid before the display shows and draws it after. */
-	malta_cons_putc(character);
+	mips_cons_putc(character);
 }
 
 /*
@@ -272,14 +273,25 @@ mips_board_display_ready(
 }
 
 /*
- * Reports the rate of coprocessor 0's Count on this board.
+ * Names the display in the bring-up's summary.
  */
-uint32_t
-mips_board_count_frequency(
+const char *
+mips_board_display_name(
 	void)
 {
-	/* Succeeded: the emulated board's fixed rate. */
-	return BOARD_COUNT_FREQUENCY;
+	/* Succeeded: the emulator's standard VGA. */
+	return "VGA";
+}
+
+/*
+ * Shows nothing of an exception taken before the trap handling exists:
+ * the console reports it, and the emulator's screen shows the console.
+ */
+void
+mips_board_early_fault(
+	uint32_t code)
+{
+	UNUSED_PARAMETER(code);
 }
 
 /*

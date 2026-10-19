@@ -131,10 +131,20 @@ mips_space_init(
 	void)
 {
 	uint32_t config1;
+	uint32_t company;
 
 	/* The TLB's size, from Config1. */
 	config1 = mips_read_config1();
 	tlb_entries = ((config1 >> MIPS_CONFIG1_TLB_SHIFT) & MIPS_CONFIG1_TLB_MASK) + 1U;
+
+	/*
+	 * An Ingenic core leaves its own page mode for the architecture's
+	 * TLB before the TLB is first written.  Its loader may have done so
+	 * already; writing it again does no harm.
+	 */
+	company = (mips_read_processor_id() >> MIPS_PRID_COMPANY_SHIFT) & MIPS_PRID_COMPANY_MASK;
+	if (company == MIPS_PRID_COMPANY_INGENIC_D1)
+		__asm__ volatile("mtc0 %0, $5, 4\n\tehb" : : "r"((uint32_t)MIPS_INGENIC_PAGE_CTRL_VTLB) : "memory");
 
 	/* Pages of 4 KiB, no wired entry, and every entry one that matches nothing. */
 	__asm__ volatile("mtc0 $0, $5\n\tmtc0 $0, $6\n\tehb" : : : "memory");
@@ -520,6 +530,7 @@ hal_space_prot_query(
 	uintptr_t address;
 	uintptr_t offset;
 	bool enabled;
+	bool refetch;
 	int valid;
 	int locked;
 
@@ -546,6 +557,15 @@ hal_space_prot_query(
 		}
 	}
 
+	/*
+	 * A range made executable under virtually tagged instruction lines
+	 * is fetched afresh: its pages are written back through the
+	 * kernel's address, and the instruction cache is dropped whole.
+	 */
+	refetch = false;
+	if ((attr & HAL_SPACE_EXEC) != 0 && mips_cache_virtual_tags())
+		refetch = true;
+
 	/* Rewrites each entry, keeping its page and its records, and brings its pair along. */
 	observed = 0;
 	for (offset = 0; offset < size; offset += MIPS_PAGE_SIZE) {
@@ -559,7 +579,11 @@ hal_space_prot_query(
 		kept |= mips_pte_software_bits(attr);
 		*leaf = mips_pte_compose(kept);
 		tlb_sync(space, address + offset, 1);
+		if (refetch)
+			hal_dcache_clean_range((uintptr_t)hal_pmem_to_kernel((hal_physaddr_t)(kept & MIPS_PTE_FRAME_MASK)), MIPS_PAGE_SIZE);
 	}
+	if (refetch)
+		mips_cache_invalidate_instructions();
 
 	/* Turns interrupts back on as the caller had them. */
 	mips_irq_restore(enabled);
@@ -1282,6 +1306,13 @@ asid_assign(
 		asid_generation++;
 		tlb_flush_all();
 		asid_next = 1;
+
+		/*
+		 * Virtually tagged instruction lines carry the old ASIDs too,
+		 * which the new generation gives out again.
+		 */
+		if (mips_cache_virtual_tags())
+			mips_cache_invalidate_instructions();
 	}
 
 	/* Hands out the next ASID of the generation. */

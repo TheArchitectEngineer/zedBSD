@@ -9,8 +9,8 @@
  * The MIPS trap handling: the dispatch of each exception trap.S saves a
  * frame for, by Cause.ExcCode, and the Status every return erets with.
  *
- * The interrupts are the timer of coprocessor 0 and the board's
- * controller.  A TLB invalid or modified exception on a mapped user page
+ * The interrupts go to the board, which serves its tick and its
+ * controllers.  A TLB invalid or modified exception on a mapped user page
  * brings the TLB up to date and retries the access; a coprocessor
  * unusable exception for coprocessor 1 hands the floating-point unit to
  * the running context.  A system call from user mode goes to the kernel,
@@ -24,7 +24,6 @@
 #include <hal/hal.h>
 #include "asm.h"
 #include "bsp.h"
-#include "clock.h"
 #include "cpu.h"
 #include "fpu.h"
 #include "space.h"
@@ -222,19 +221,9 @@ trap_interrupt(
 
 	/* The lines pending at the exception that the interrupted code let in. */
 	pending = frame->cause & frame->status & MIPS_CAUSE_PENDING_MASK;
-	served = false;
 
-	/* The tick of coprocessor 0. */
-	if ((pending & MIPS_INTERRUPT_TIMER) != 0) {
-		mips_clock_interrupt();
-		served = true;
-	}
-
-	/* The board's interrupt controller. */
-	if ((pending & MIPS_INTERRUPT_BOARD) != 0) {
-		mips_board_interrupt();
-		served = true;
-	}
+	/* The board serves its lines: its tick and its interrupt controllers. */
+	served = mips_board_interrupt(pending);
 
 	/* Counts an interrupt with no line the HAL serves. */
 	if (!served)
