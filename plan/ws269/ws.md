@@ -65,3 +65,4 @@ D1 (a)、D2 (a)、D3 (a)、D5 (a)、D6 A、D7 (a)（D4 は Guardrail で決ま�
 ## ユーザーの判断（推奨で進めている、2026-10-20 07:24 のユーザーの不在の指示による）
 
 design-p010.md §9 の D-P1〜D-P5: D-P1 free list は固定 16 MiB で grow しない（尽きた時の SPM は p011）、D-P2 gpu-selftest は VF2 の試験の image だけ・起動で自動に流すかは config で選ぶ、D-P3 blend と color の pack は仮に driver が fragment の末尾に足す、D-P4 submit は ioctl の中で待つ（2 秒）、D-P5 段の行は英語の短い語。ユーザーが戻ったら確かめる。
+- D-P6（2026-10-20 Q1 が足した、design-p010-review-1 B1）: p010a で main に入った read-only の sysctl `hw.gpu.powervr.stages`（`include/uapi/sysctl.h` の HW_GPU_STAGES 11、`src/kern/sysctl.c`）は新しい UAPI。design.md §2「新しい UAPI は作らない」と食い違う。推奨: 試験の段の報告だけの読み取りの leaf として残す（代わり: 外して gpu-selftest は kern.msgbuf の `powervr: ` の行を読む）。ユーザーが戻ったら確かめる。D-P3 は review の B4 で (b)「compiler が pack と blend を行う」に変える（Q1 の判断、P2 に伝えた）。
