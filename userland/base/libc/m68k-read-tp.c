@@ -19,10 +19,9 @@
  * right after that area, so the thread pointer is computed from the
  * control block's address.
  *
- * Only the static user ABI of the X68000 links this.  The kernel does not
- * yet build that layout for an m68k program with PT_TLS at exec (such an
- * image is refused there), so a program that takes this path links but
- * does not run until it does.
+ * Only the static user ABI of the X68000 links this.  The loader builds
+ * the first thread's mapping in that placement at exec and the C library
+ * builds every later thread's (KERN_TLS_VARIANT_I in uapi/tls.h).
  */
 
 #include "userland/base/libc/syscall.h"
