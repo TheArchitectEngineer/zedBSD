@@ -49,7 +49,8 @@ enum tcp_state {
  * so the queue and the segments kept ahead stay within about one window
  * of packets together.  The 32-bit boards keep a few (tcp.c).
  */
-#if defined(HAL_ARCH_AMD64) || defined(HAL_ARCH_ARM64)
+#if defined(HAL_ARCH_AMD64) || defined(HAL_ARCH_ARM64) || \
+    defined(HAL_ARCH_RISCV64)
 #define TCP_REORDER_MAX 44U
 #else
 #define TCP_REORDER_MAX 16U

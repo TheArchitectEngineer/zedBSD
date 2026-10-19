@@ -45,8 +45,11 @@ RISCV64_BOOT_S := src/hal/riscv64/locore.S src/hal/riscv64/trap.S \
 RISCV64_BOOT_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(RISCV64_BOOT_C)) \
 	$(patsubst %.S,$(BUILD)/%.o,$(RISCV64_BOOT_S))
 
-# The platform binding of the board.
-RISCV64_PLATFORM_SOURCES_virt := src/kern/platform/hal-console.c
+# The platform binding of the board: the teletype console on the UART and
+# the initial ramdisk as the boot device.
+RISCV64_PLATFORM_SOURCES_virt := src/kern/platform/riscv-virt.c \
+	src/drivers/serial/ns16550.c src/drivers/generic/serial-console.c \
+	src/drivers/generic/ramdisk.c
 
 RISCV64_KERNEL_SOURCES := \
 	src/kern/main.c \

@@ -87,6 +87,28 @@ struct fpreg {
 	uint32_t fp_fpcr;
 };
 
+#elif defined(__riscv) && __riscv_xlen == 64
+
+/*
+ * The integer registers: the thirty-two general registers (x0 always reads
+ * as zero, x1 is the return address, x2 the stack pointer and x4 the thread
+ * pointer) and the address of the next instruction.
+ */
+struct reg {
+	uint64_t r_x[32];
+	uint64_t r_pc;
+};
+
+/*
+ * The floating-point state: the thirty-two 64-bit registers and the
+ * control and status register, padded to a whole number of words.
+ */
+struct fpreg {
+	uint64_t fp_f[32];
+	uint32_t fp_fcsr;
+	uint32_t fp_reserved;
+};
+
 #else
 
 #error "this architecture does not describe its registers yet"

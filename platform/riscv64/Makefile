@@ -2,3 +2,4 @@
 include platform/riscv64/toolchain.mk
 include platform/riscv64/vmunix.mk
 include platform/riscv64/run.mk
+include platform/riscv64/rootfs.mk
