@@ -3,7 +3,7 @@
 # ws271-p003 例外・timer・8259・task（MIPS32 mipsel、QEMU malta）
 
 - 親: [WS271](../ws.md)、設計: [design.md](../design.md)（改訂 2）§1.3・§2.3（M5）・§3.3（M4）・§3.6・§9、Queue: q1281 / q1281-i01（P1、2026-10-19）
-- Status: in-progress（実装と build・host の試験は済み。T1 の QEMU の画面の確認待ち。Q1 の判定まで cleared にしない）
+- Status: cleared（2026-10-19 Q1 の判定、T1-728: QEMU malta の画面に TRAP PASS・CONTEXT PASS・PIC 8259 mask=fffb・TIMER TICK ticks=10 count=160000000 Hz・STOP AFTER TICK、build/review/t1-728/mips32-malta-tick.png。QEMU だけ）
 - 前提: [p002](../phase002/phase.md)（cleared、T1-725）。HAL の API（hal.h）は変えていない。arch の header（`include/hal/arch/mips32.h`）も変えていない。
 
 ## 範囲と受け入れ条件

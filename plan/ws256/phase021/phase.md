@@ -67,3 +67,7 @@ tree は agent/p2 の p021 の code の commit 5eaebdff9 を merge した main�
 - T1 の結果と Q1 の判定。
 - Q1 への依頼: 上の ws004 の 5 つの古い試験の削除の判断。
 - PLDA の host の hook の実装（p020）。drain の上限 1 秒の timer の API（`kern_ms_to_ticks` など）は p020 で選ぶ。
+
+## T1-728 の追記（2026-10-19 Q1）
+
+amd64 の uefi-nvme で keys: で login して `ls /dev` に nvme0n1（boot の disk）と input。boot-test.sh の amd64 の mode は QEMU_EXTRA を使わないので、追加の qemu-xhci・usb-kbd・2 つ目の nvme は付いていない（xHCI と 2 つ目の NVMe は未確認）。NVMe の MSI-X の道は boot の disk で動いている。

@@ -48,3 +48,7 @@ Status: in-progress（(1) の loader の変更の code・host 試験・build を
 - T1 の回帰の結果を Q1 が判定（それまで (1) の loader の変更は cleared にしない）。
 - (1) の実機の調べ（p005・#15 の後）: 配布の U-Boot で `RV64 HART protocol|chosen`、`RV64 GOP …`、ExitBootServices の後の画、`bootefi <img> <fdt>` の DTB への fixup。
 - (2)（#20・#29・p004 の後）。
+
+## (1) の T1 の結果（2026-10-19 Q1）
+
+T1-728: riscv64-uboot で login・`uname -m` の `riscv64` PASS（loader の変更の後の回帰）。RV64 HART の行は画面に写らない（U-Boot の serial だけ）ので判定に入れていない。/chosen の道は host 試験だけ。(1) の実機の調べ（GOP が出るか）は実機の時。
