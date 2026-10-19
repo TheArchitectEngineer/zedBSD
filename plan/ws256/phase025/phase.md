@@ -2,7 +2,7 @@
 
 # ws256-p025 VF2 の skeleton（板の前）
 
-Status: in-progress（code と build は済み、Q1 の判定待ち。2026-10-19 q1278-i01、P2。QEMU・実機の試験は無い: vf2 の vmunix は virt では起動しない）
+Status: cleared（2026-10-19 Q1 の判定: VF2 の skeleton の build（config-visionfive2.mk）と virt の回帰の build が warning 0、強い undefined 0。実機は p005）
 
 - 親: [WS256](../ws.md)。Queue: q1278-i01（P2）。
 - 範囲: [design-peripherals.md](../design-peripherals.md) §3.10（改訂 4、レビュー 3 Minor 8 を当てた形）。`src/kern/platform/visionfive2.c` の最小、`platform/riscv64/vmunix.mk` の vf2 の枝、config と menuconfig、`src/hal/riscv64/bsp-visionfive2/` の最小の board（`hal_dcache_*` を ccache の FLUSH64 で）。HAL の API（hal.h）は変えない。

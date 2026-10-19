@@ -2,7 +2,7 @@
 
 # ws256-p012 周辺の設計（VisionFive 2）
 
-Status: in-progress（改訂 4、Q1 の判定待ち。2026-10-19 q1278-i01、P2。[レビュー 3](../design-peripherals-review-3.md) の Major 1・2 と Minor 1〜13 を全部当てた。レビュー 3 の結論は「この 2 つを直す小さな改訂の後なら受け入れてよい」）
+Status: cleared（2026-10-19 Q1 の判定: レビュー 3 の結論「Major 1・2 を直す小さな改訂の後なら受け入れてよい」に対し、改訂 4（aa4b92287）で Major 1・2 と Minor 1〜13 を当てた。ユーザーに聞く判断 §6.2・#29 は残る）
 
 - 親: [WS256](../ws.md)。Queue: q1270-i01、q1270-i02（P1）、q1272-i01、q1278-i01（P2）。
 - 範囲: p011（framebuffer の調べ）と p013〜p019（clock・reset・pinctrl/GPIO・PMIC、SD、rootfs からの起動、PCIe と USB・keyboard、NVMe、GbE と PHY、sound）の設計を `plan/ws256/design-peripherals.md` に書く。code は書かない。HAL の API の差分は案だけ。toolchain は変えない。
