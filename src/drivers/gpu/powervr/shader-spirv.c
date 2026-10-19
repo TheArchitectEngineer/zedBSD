@@ -156,6 +156,8 @@
 #define BUILT_IN_LOCAL_INVOCATION_ID	27U
 #define BUILT_IN_GLOBAL_INVOCATION_ID	28U
 #define BUILT_IN_LOCAL_INVOCATION_INDEX	29U
+#define BUILT_IN_VERTEX_INDEX		42U
+#define BUILT_IN_INSTANCE_INDEX		43U
 
 #define STORAGE_UNIFORM_CONSTANT	0U
 #define STORAGE_INPUT			1U
@@ -428,6 +430,8 @@ powervr_shader_read(
 	reader->key = key;
 	reader->push_request = POWERVR_SHADER_REQUESTS;
 	program->stage = stage;
+	program->vertex_index_reg = POWERVR_SHADER_NO_REG;
+	program->instance_index_reg = POWERVR_SHADER_NO_REG;
 	program->workgroup[0] = 1;
 	program->workgroup[1] = 1;
 	program->workgroup[2] = 1;
@@ -1084,6 +1088,38 @@ reader_layout_interface(
 		}
 	}
 
+	/*
+	 * The vertex and instance index, each one vertex input register after
+	 * the attributes, written by the driver's data sequencer program.
+	 *
+	 * Procedure referenced:
+	 * Mesa 26.2.5 src/imagination/vulkan/pvr_arch_pipeline.c
+	 * (pvr_alloc_vs_sysvals, pvr_pds_vertex_attrib_programs_create: the
+	 * vertex id and instance id are one vertex input register each, the
+	 * data sequencer told their registers) and
+	 * src/imagination/pco/pco_nir.c (the compiler options: the instance
+	 * id includes the base instance, the vertex id is not zero based).
+	 */
+	if (reader->stage == POWERVR_SHADER_VERTEX) {
+		for (index = 1; index < reader->bound; index++) {
+			id = &reader->ids[index];
+			if (id->kind != ID_POINTER || id->variable != index || id->storage != STORAGE_INPUT)
+				continue;
+			if ((id->flags & FLAG_BUILT_IN) == 0)
+				continue;
+			if (id->builtin != BUILT_IN_VERTEX_INDEX && id->builtin != BUILT_IN_INSTANCE_INDEX)
+				continue;
+			if (scalar_count(reader, id->type) != 1)
+				return ENOTSUP;
+			id->interface = next_input;
+			if (id->builtin == BUILT_IN_VERTEX_INDEX)
+				program->vertex_index_reg = next_input;
+			else
+				program->instance_index_reg = next_input;
+			next_input++;
+		}
+	}
+
 	/* Records the register counts of the interface. */
 	program->vertex_inputs = next_input;
 	program->vertex_outputs = next_output;
@@ -1144,6 +1180,12 @@ reader_entry_prologue(
 		if ((id->flags & FLAG_BUILT_IN) == 0)
 			return ENOTSUP;
 		builtin = id->builtin;
+
+		/* The vertex or instance index, in the register the layout gave it. */
+		if (reader->stage == POWERVR_SHADER_VERTEX && (builtin == BUILT_IN_VERTEX_INDEX || builtin == BUILT_IN_INSTANCE_INDEX)) {
+			emit(reader, POWERVR_IR_INPUT, id->first, NULL, NULL, NULL, id->interface, 0);
+			continue;
+		}
 		if (reader->stage != POWERVR_SHADER_COMPUTE)
 			return ENOTSUP;
 

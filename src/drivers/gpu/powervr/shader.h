@@ -64,6 +64,9 @@ enum powervr_shader_descriptor_part {
 #define POWERVR_SHADER_VARYINGS		16U
 #define POWERVR_SHADER_OUTPUTS		8U
 
+/* A register a program does not use. */
+#define POWERVR_SHADER_NO_REG		0xffffffffU
+
 /* The words of a texture's image state and sampler state. */
 #define POWERVR_SHADER_STATE_WORDS	4U
 
@@ -156,7 +159,12 @@ struct powervr_shader_key {
  * vertex shader writes its position to vertex output words 0 to 3 and
  * its varyings after them; vertex_outputs counts them all.  A fragment
  * shader with a perspective-correct varying reads the w coefficients at
- * w_coefficient.
+ * w_coefficient.  A vertex shader reading its vertex index or instance
+ * index wants the driver's data sequencer program to write it to the
+ * vertex input register vertex_index_reg or instance_index_reg, after
+ * the attributes' registers; POWERVR_SHADER_NO_REG when not read.  The
+ * vertex index includes the draw's first vertex or vertex offset, the
+ * instance index the first instance.
  */
 struct powervr_shader_program {
 	uint32_t stage;
@@ -168,6 +176,8 @@ struct powervr_shader_program {
 	uint32_t coefficients;
 	uint32_t w_coefficient;
 	uint32_t uses_w;
+	uint32_t vertex_index_reg;
+	uint32_t instance_index_reg;
 	uint32_t workgroup[3];
 	struct powervr_shader_request requests[POWERVR_SHADER_REQUESTS];
 	uint32_t request_count;

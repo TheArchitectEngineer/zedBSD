@@ -14,6 +14,11 @@ for shader in "$here"/shaders/*.comp; do
 	glslc --target-env=vulkan1.0 -O -o "$out/$name-o.spv" "$shader"
 	glslc --target-env=vulkan1.0 -o "$out/$name-0.spv" "$shader"
 done
+for shader in "$here"/shaders/*.vert; do
+	name=$(basename "$shader" .vert)
+	glslc --target-env=vulkan1.0 -O -o "$out/$name-vert-o.spv" "$shader"
+	glslc --target-env=vulkan1.0 -o "$out/$name-vert-0.spv" "$shader"
+done
 for name in fill offset; do
 	glslc --target-env=vulkan1.0 -o "$out/p009-$name.spv" "$root/plan/ws269/tests/p009/shaders/$name.comp"
 done
