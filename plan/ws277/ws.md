@@ -11,7 +11,7 @@
 ## 完了の条件（案、設計で確定）
 
 1. VF2 の DC8200 と HDMI（inno_hdmi）を zedBSD の driver で初期化し、WS269 の display の node（gpu0）を置き換えて、PowerVR が線形で書いた render の buffer を CPU の copy 無しで scanout する（import・page flip・vblank）。
-2. Keiland の desktop の実用の fps（WS270 §2.3 の段 2）を実機で測る。
+2. Keiland の desktop の実用の fps（WS270 §2.3 の段 2）を実機で測る。注記（設計 版 2）: この測定は GPU が線形で描く frame と capset（WS269 p010・p011、WS270 の該当 Phase、[design.md](design.md) §9 の R3・R5〜R7）に依るので、WS277 の完了はそれらが main に入るまで閉じられない。
 
 ## 依存
 
@@ -21,4 +21,4 @@
 
 | Phase | 中身 | 依存 | Status |
 | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 設計（DC8200・HDMI の初期化、clock・reset・PD、MMU、plane・modifier、vblank・IRQ、WS269 の display の node の置き換え、PowerVR の PBE の線形の書き出し、coherency） | — | in-progress（2026-10-20 P1、設計の文書が出来た、design-reviewer 待ち） |
+| [p001](phase001/phase.md) | 設計（DC8200・HDMI の初期化、clock・reset・PD、MMU、plane・modifier、vblank・IRQ、WS269 の display の node の置き換え、PowerVR の PBE の線形の書き出し、coherency） | — | in-progress（2026-10-20 P1、改訂 2 が出来た、design-reviewer の差分の確認待ち） |
