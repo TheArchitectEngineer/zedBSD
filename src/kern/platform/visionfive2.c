@@ -34,6 +34,9 @@
  * interrupts are on, the boot log lists the card's partitions.
  *
  * The first Ethernet port is published as the network interface en0.
+ *
+ * The GPU core is brought up as far as reading its identity, from the
+ * board's own description of it unless the device tree enables a node.
  */
 
 #include <stddef.h>
@@ -46,6 +49,9 @@
 #include <drivers/generic/serial-console.h>
 #include <drivers/platform/visionfive2/vf2-crg.h>
 #include <drivers/platform/visionfive2/vf2-ethernet.h>
+#if CONFIG_DRIVER_POWERVR
+#include <drivers/platform/visionfive2/vf2-gpu.h>
+#endif
 #include <drivers/platform/visionfive2/vf2-mmc.h>
 #include <drivers/platform/visionfive2/vf2-pcie.h>
 #include <drivers/platform/visionfive2/vf2-pinctrl.h>
@@ -93,6 +99,26 @@
 
 /* The SD card clock's number in the SYS clock generator. */
 #define VF2_SD_CARD_CLOCK	94U
+
+#if CONFIG_DRIVER_POWERVR
+/*
+ * Where the GPU core is: the board's device tree usually has no node for
+ * it, so the board describes it itself.
+ *
+ * Values referenced:
+ * StarFive JH7110 TRM Preliminary V2, Table 2-4 System Memory Map (the
+ * GPU at 0x1800_0000, 1 MB) and Table 2-3 System Interrupt Connections
+ * (gpu_os_irq is global interrupt 77, which the PLIC numbers 82, five
+ * above, as for the board's other devices); StarFive Linux
+ * JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
+ * arch/riscv/boot/dts/starfive/jh7110.dtsi (gpu@18000000, interrupts 82).
+ */
+static const struct drv_vf2_gpu_place vf2_gpu_builtin = {
+	0x18000000ULL,
+	0x100000ULL,
+	82U
+};
+#endif
 
 /*
  * The ramdisk's disk, published by kern_platform_init() and kept for the
@@ -514,6 +540,13 @@ probe_soc(
 	error = drv_vf2_pwmdac_attach(&fdt, VF2_DMA_DEFAULT_COHERENT);
 	if (error != 0 && error != ENODEV)
 		kern_logf("visionfive2: sound unavailable (%d)\n", error);
+#if CONFIG_DRIVER_POWERVR
+
+	/* Brings the GPU core up as far as its identity; the board boots without it when it fails. */
+	error = drv_vf2_gpu_attach(&fdt, &vf2_gpu_builtin);
+	if (error != 0)
+		kern_logf("visionfive2: GPU unavailable (%d)\n", error);
+#endif
 #ifdef CONFIG_VF2_DMA_TEST
 
 	/* The test kernel's DMA coherency check. */

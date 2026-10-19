@@ -52,5 +52,6 @@ CONFIG_DRIVER_BCM2711_GPU := n
 CONFIG_DRIVER_BCM2711_VCHIQ := n
 CONFIG_DRIVER_BCM2711_VIDEO := n
 CONFIG_DRIVER_LGY98 := n
+CONFIG_DRIVER_POWERVR := y
 
-ZEDBSD_USER_PROGRAMS := cat chmod chown cp dmesg echo id kill ln login ls mkdir mv ps pwd rm rmdir sh sleep sync touch uname
+ZEDBSD_USER_PROGRAMS := cat chmod chown cp dmesg echo id kill ln login ls mkdir mv ps pwd rm rmdir sh sleep sync touch uname powervr-firmware

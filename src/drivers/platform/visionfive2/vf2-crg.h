@@ -131,6 +131,14 @@ int drv_vf2_clock_apply_assigned(const struct drv_fdt *fdt, uint32_t node);
 int drv_vf2_clock_set_parent(const struct drv_vf2_clock *clock, const struct drv_vf2_clock *parent);
 
 /*
+ * Makes a multiplexed clock run from one of the three PLLs (0 to 2).
+ *
+ * ENOTSUP means the clock has no selector or other devices share it;
+ * ENOENT that the PLL is not one of its sources.
+ */
+int drv_vf2_clock_set_pll(const struct drv_vf2_clock *clock, unsigned pll);
+
+/*
  * Applies a device's assigned-clocks and assigned-clock-parents.
  *
  * ENOENT means the device has no assigned parents.

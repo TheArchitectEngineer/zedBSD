@@ -198,6 +198,18 @@ struct crg_instance {
  * (stfclock_get_frequency_jh7110_sys: the source of each clock).
  */
 static const struct crg_clock sys_clocks[] = {
+	/*
+	 * The GPU root, from PLL2 or PLL1, which only the GPU's core clock
+	 * divides.
+	 *
+	 * Values referenced:
+	 * StarFive JH7110 TRM Preliminary V2, Table 2-53 Clock GPU Root
+	 * (offset 0xc, selector 0 clk_pll2, 1 clk_pll1).
+	 */
+	{ 3, CLOCK_MUX, 0, 0, 2,
+	  { { SOURCE_PLL, DRV_VF2_CRG_SYS, 2, NULL },
+	    { SOURCE_PLL, DRV_VF2_CRG_SYS, 1, NULL } } },
+
 	/* The bus root, from the oscillator or PLL2. */
 	{ 5, CLOCK_MUX | CLOCK_SHARED, 0, 0, 2,
 	  { { SOURCE_INPUT, DRV_VF2_CRG_SYS, 0, "osc" },
@@ -235,6 +247,50 @@ static const struct crg_clock sys_clocks[] = {
 	 */
 	{ 16, CLOCK_DIVIDER | CLOCK_SHARED, 2, 8, 1,
 	  { { SOURCE_PLL, DRV_VF2_CRG_SYS, 2, NULL } } },
+
+	/*
+	 * The ISP's double-rate clock and its AXI bus, which the GPU's system
+	 * clock also runs on; shared, so only read.
+	 *
+	 * Values referenced:
+	 * StarFive JH7110 TRM Preliminary V2, Table 2-70 Clock ISP 2x
+	 * (offset 0x50, selector 0 clk_pll2, 1 clk_pll1, divider 2 to 8) and
+	 * Table 2-71 Clock ISP AXI (offset 0x54, divider 2 to 4); Linux v6.12
+	 * drivers/clk/starfive/clk-starfive-jh7110-sys.c (the ISP AXI clock
+	 * below the double-rate clock).
+	 */
+	{ 20, CLOCK_MUX | CLOCK_DIVIDER | CLOCK_SHARED, 2, 8, 2,
+	  { { SOURCE_PLL, DRV_VF2_CRG_SYS, 2, NULL },
+	    { SOURCE_PLL, DRV_VF2_CRG_SYS, 1, NULL } } },
+	{ 21, CLOCK_DIVIDER | CLOCK_SHARED, 2, 4, 1,
+	  { { SOURCE_CLOCK, DRV_VF2_CRG_SYS, 20, NULL } } },
+
+	/*
+	 * The GPU's clocks: the core clock's divider, whose rate the GPU's
+	 * driver sets, and the gates of the core, system, register bus, timer
+	 * and bus master clocks.
+	 *
+	 * Values referenced:
+	 * StarFive JH7110 TRM Preliminary V2, Tables 2-95 to 2-100
+	 * (clk_gpu_core at 0xb4, divider 3 to 7; the core, system and APB
+	 * gates at 0xb8 to 0xc0; the timer at 0xc4, divider 12; the bus
+	 * master gate at 0xc8); Linux v6.12
+	 * include/dt-bindings/clock/starfive,jh7110-crg.h (JH7110_SYSCLK_*
+	 * numbers 45 to 50) and drivers/clk/starfive/clk-starfive-jh7110-sys.c
+	 * (the source of each clock).
+	 */
+	{ 45, CLOCK_DIVIDER | CLOCK_SETTABLE, 3, 7, 1,
+	  { { SOURCE_CLOCK, DRV_VF2_CRG_SYS, 3, NULL } } },
+	{ 46, CLOCK_GATE, 0, 0, 1,
+	  { { SOURCE_CLOCK, DRV_VF2_CRG_SYS, 45, NULL } } },
+	{ 47, CLOCK_GATE, 0, 0, 1,
+	  { { SOURCE_CLOCK, DRV_VF2_CRG_SYS, 21, NULL } } },
+	{ 48, CLOCK_GATE, 0, 0, 1,
+	  { { SOURCE_CLOCK, DRV_VF2_CRG_SYS, 11, NULL } } },
+	{ 49, CLOCK_GATE | CLOCK_DIVIDER, 12, 12, 1,
+	  { { SOURCE_INPUT, DRV_VF2_CRG_SYS, 0, "osc" } } },
+	{ 50, CLOCK_GATE, 0, 0, 1,
+	  { { SOURCE_CLOCK, DRV_VF2_CRG_SYS, 45, NULL } } },
 
 	/* The SD card controller's bus interface. */
 	{ 92, CLOCK_GATE, 0, 0, 1,
@@ -847,6 +903,65 @@ drv_vf2_clock_set_parent(
 	spin_unlock_irqrestore(&crg_lock, irq);
 
 	/* Succeeded: the clock runs from the parent. */
+	return 0;
+}
+
+/*
+ * Makes a multiplexed clock run from one of the PLLs.
+ */
+int
+drv_vf2_clock_set_pll(
+	const struct drv_vf2_clock *clock,
+	unsigned pll)
+{
+	const struct crg_clock *entry;
+	const struct crg_source *source;
+	volatile uint32_t *address;
+	unsigned long irq;
+	uint32_t contents;
+	unsigned selector;
+
+	/* Refuses a missing clock or one outside the tables. */
+	if (clock == NULL)
+		return EINVAL;
+	entry = find_clock(clock->crg, clock->index);
+	if (entry == NULL)
+		return ENOENT;
+
+	/* Refuses a clock without a selector, or one several devices run on. */
+	if ((entry->flags & CLOCK_MUX) == 0)
+		return ENOTSUP;
+	if ((entry->flags & CLOCK_SHARED) != 0)
+		return ENOTSUP;
+
+	/* Refuses a clock whose generator is absent. */
+	address = clock_register(clock->crg, clock->index);
+	if (address == NULL)
+		return ENODEV;
+
+	/* Finds the PLL among the clock's sources. */
+	for (selector = 0; selector < entry->source_count; selector++) {
+		/* Stops at the source that is the PLL. */
+		source = &entry->sources[selector];
+		if (source->kind == SOURCE_PLL && source->number == pll)
+			break;
+	}
+
+	/* Refuses a PLL the clock cannot run from. */
+	if (selector == entry->source_count)
+		return ENOENT;
+
+	/* Writes the selector, keeping the other fields. */
+	irq = spin_lock_irqsave(&crg_lock);
+
+	contents = kern_mmio_read32(address);
+	contents &= ~(CRG_MUX_MASK << CRG_MUX_SHIFT);
+	contents |= (uint32_t)selector << CRG_MUX_SHIFT;
+	kern_mmio_write32(address, contents);
+
+	spin_unlock_irqrestore(&crg_lock, irq);
+
+	/* Succeeded: the clock runs from the PLL. */
 	return 0;
 }
 
