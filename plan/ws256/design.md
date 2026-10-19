@@ -428,7 +428,7 @@ QEMU の DTB（`-machine virt,dumpdtb=…`、guest を走らせない）は T1 �
 | # | 点 | 既定の案（P2） | 他の案と理由 | 要る時 |
 | --- | --- | --- | --- | --- |
 | 2 | 板の版と memory | 未決のまま設計は影響を受けない（v1.2A/1.3B の差は GbE だけ、memory は DT/UEFI から読む）。接続した時に U-Boot の `fdt print /model`・板の刻印・`bdinfo` で記録 | — | p005 |
-| 3 | SD・eMMC・GbE・USB・display | **別の WS**（WS256 は UART の login まで。dcache の操作だけ p005 で用意） | 同じ WS に入れると到達目標が二つになる | p005 の前 |
+| 3 | SD・eMMC・GbE・USB・display | ~~別の WS~~ → **決着（2026-10-19 13:00 ユーザー）**: framebuffer・SD・rootfs・USB keyboard・LAN・sound・NVMe はこの WS（p011〜p025、[design-peripherals.md](design-peripherals.md)）。eMMC は未定。GPU は WS269、Keiland は WS270 | ユーザーの指示「VisionFive2はまずフレームバッファ、SDカードを実装して…LANとサウンドとNVMeも使えるようにします。」 | — |
 | 4 | root の媒体 | **initrd**（MBR の `root.img`、§2.7。B1 を (a) で解いた）。QEMU の直の起動は `-initrd`。SD は別 WS | SD を root にすると DW MSHC の driver が WS256 に要る（4〜8 LW、実機でしか確かめられない） | p008 の前 |
 | 5 | Sv39 か Sv48 | **Sv39**（技術の既定: U74 は Sv39 だけ。user 256 GiB、direct map 128 GiB で足りる）。`RISCV64_VA_BITS` で持ち Sv48 は Future Work | Sv48 を今やると U74 で動かない物を QEMU で作る | 反対が無ければ p003 |
 | 7 | QEMU の UEFI の firmware | **U-Boot `qemu-riscv64_smode`**（Debian の package、apt）。GOP は要らない（画面は HAL の ramfb） | edk2 RiscVVirt は Debian に無く build が要る | p004 |
