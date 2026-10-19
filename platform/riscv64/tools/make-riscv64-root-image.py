@@ -7,9 +7,12 @@ boot partition and whose second is the UFS root that carries the
 /etc/zedbsd-root marker.
 
   make-riscv64-root-image.py --ufs-image ROOT.ufs OUTPUT
+  make-riscv64-root-image.py --ufs-tree ROOTFS [--ufs-size-mib N] OUTPUT
   make-riscv64-root-image.py --bare-root OUTPUT
 
---bare-root makes a root that holds nothing but the marker (a kernel check
+--ufs-tree makes the UFS root from a staged root tree (64 MiB unless
+--ufs-size-mib says otherwise).  --bare-root makes a root that holds
+nothing but the marker (a kernel check
 without any user program).  --boot-file DEST=SOURCE puts a file on the boot
 partition.
 """
@@ -55,10 +58,10 @@ def partition_entry(kind: int, lba: int, blocks: int) -> bytes:
                        CHS_PLACEHOLDER, lba, blocks)
 
 
-def bare_root() -> bytes:
+def ufs_create(size: int, tree: Path | None) -> bytes:
     sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "tools/build"))
     from ufs_format import create  # noqa: E402
-    return create(BARE_ROOT_BYTES)
+    return create(size, tree)
 
 
 def check_root(root: bytes) -> None:
@@ -77,7 +80,13 @@ def build(args: argparse.Namespace) -> None:
     if args.output.exists() and not args.force:
         raise SystemExit(f"output exists (use --force): {args.output}")
     if args.bare_root:
-        root = bare_root()
+        root = ufs_create(BARE_ROOT_BYTES, None)
+    elif args.ufs_tree is not None:
+        if not (args.ufs_tree / "etc" / "zedbsd-root").is_file():
+            raise SystemExit(f"root tree has no etc/zedbsd-root: {args.ufs_tree}")
+        if args.ufs_size_mib < 16:
+            raise SystemExit("the UFS root must be at least 16 MiB")
+        root = ufs_create(args.ufs_size_mib * 1024 * 1024, args.ufs_tree)
     else:
         if not args.ufs_image.is_file():
             raise SystemExit(f"missing UFS root image: {args.ufs_image}")
@@ -122,7 +131,9 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--ufs-image", type=Path)
+    source.add_argument("--ufs-tree", type=Path)
     source.add_argument("--bare-root", action="store_true")
+    parser.add_argument("--ufs-size-mib", type=int, default=64)
     parser.add_argument("--boot-file", action="append", default=[])
     parser.add_argument("--force", action="store_true")
     parser.add_argument("output", type=Path)
