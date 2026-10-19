@@ -314,7 +314,7 @@ vm_private_page_free_metadata(
  * Allocates and initializes a private backing without a frame.
  */
 struct vm_private_page *
-private_page_alloc(
+vmspace_private_page_alloc(
 	void)
 {
 	struct vm_private_page *backing;
@@ -330,7 +330,7 @@ private_page_alloc(
  * Attaches a fresh private backing to its first mapping.
  */
 void
-private_page_attach_new(
+vmspace_private_page_attach_new(
 	struct vm_page *page,
 	struct vm_private_page *backing)
 {

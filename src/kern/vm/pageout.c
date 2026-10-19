@@ -99,7 +99,7 @@ vm_reclaim_wait_free(
 	uint64_t sequence;
 
 	/* Asks the worker to refill. */
-	pageout_kick();
+	vm_reclaim_pageout_kick();
 
 	/* Sleeps until memory is freed, briefly. */
 	irq = spin_lock_irqsave(&pageout_lock);
@@ -191,7 +191,7 @@ vm_free_min_pages(
  * Wakes the page-out worker, starting it on first use.
  */
 void
-pageout_kick(
+vm_reclaim_pageout_kick(
 	void)
 {
 	struct thread *thread;

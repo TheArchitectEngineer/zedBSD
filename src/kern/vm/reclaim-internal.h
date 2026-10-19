@@ -11,6 +11,10 @@
  * private-page.c, page-track.c, reclaim.c, pageout.c and the object-*.c
  * files and are not part of the kernel's public VM API.
  *
+ * Internal VM API: used only between the files in src/kern/vm/.  Its
+ * compatibility is not guaranteed and it may change at any time.  None of
+ * these declarations belongs in the public headers under include/kern.
+ *
  * reclaim_lock guards the reclaim queue; pageout_lock guards the page-out
  * worker's state and its two wait queues.  Function bodies and the order
  * they take these locks are as they were in vm.c.
@@ -96,10 +100,10 @@ extern struct mutex reclaim_lock;
  * Defined in reclaim.c, part of the reclaim queue of private pages and the
  * reclaim of one page to swap or to its file.
  */
-void queue_insert(struct vm_private_page *backing);
-void queue_remove(struct vm_private_page *backing);
-void swapped_insert(struct vm_private_page *backing);
-unsigned reclaim_object_fault_reserve(void);
+void vm_reclaim_queue_insert(struct vm_private_page *backing);
+void vm_reclaim_queue_remove(struct vm_private_page *backing);
+void vm_reclaim_swapped_insert(struct vm_private_page *backing);
+unsigned vm_reclaim_object_fault_reserve(void);
 
 /*
  * Defined in pageout.c, part of the free-page estimate, the page-out
@@ -107,14 +111,14 @@ unsigned reclaim_object_fault_reserve(void);
  */
 size_t vm_free_pages(void);
 size_t vm_free_min_pages(void);
-void pageout_kick(void);
+void vm_reclaim_pageout_kick(void);
 int vm_oom_kill(void);
 
 /*
  * Defined in private-page.c, part of the private pages that back anonymous
  * memory: their reference, I/O, pin and operation state.
  */
-void private_page_advance_locked(struct vm_private_page *backing);
+void vm_reclaim_private_page_advance_locked(struct vm_private_page *backing);
 int vm_private_page_wait_idle_cancelable(struct vm_private_page *backing, int (*cancel)(void *), void *cancel_argument);
 
 #endif

@@ -227,7 +227,7 @@ retry_faults:
 	     index++, current += PAGE_SIZE) {
 
 		/* Looks up the mapping the fault just published. */
-		region = find_region_locked(vm, current, 1);
+		region = vmspace_find_region_locked(vm, current, 1);
 		if (region != NULL)
 			entry = vmspace_find_page(region, current);
 		else
@@ -287,7 +287,7 @@ retry_faults:
 	/* Pins each page's backing. */
 	for (index = 0, current = first; error == 0 && index < page_count;
 	     index++, current += PAGE_SIZE) {
-		region = find_region_locked(vm, current, 1);
+		region = vmspace_find_region_locked(vm, current, 1);
 		entry = vmspace_find_page(region, current);
 		if (region->device != NULL) {
 			/* The backing reference survives unmap and descriptor close. */
@@ -540,7 +540,7 @@ vmspace_pin_mapping_ready_locked(
 	 * path takes exclusive backing I/O ownership and would otherwise
 	 * wait for the syscall's first pin.
 	 */
-	region = find_region_locked(vm, address, 1);
+	region = vmspace_find_region_locked(vm, address, 1);
 	if (region != NULL)
 		entry = vmspace_find_page(region, address);
 	else

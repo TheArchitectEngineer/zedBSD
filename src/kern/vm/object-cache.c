@@ -64,9 +64,9 @@ vm_object_count(
 	bool enabled;
 	unsigned count;
 
-	enabled = registry_lock();
+	enabled = vm_object_registry_lock();
 	count = object_count;
-	registry_unlock(enabled);
+	vm_object_registry_unlock(enabled);
 
 	/* Reports the sampled count. */
 	return count;
@@ -82,9 +82,9 @@ vm_object_page_count(
 	bool enabled;
 	unsigned count;
 
-	enabled = registry_lock();
+	enabled = vm_object_registry_lock();
 	count = atomic_load_acquire(&object_pages);
-	registry_unlock(enabled);
+	vm_object_registry_unlock(enabled);
 
 	/* Reports the sampled count. */
 	return count;
@@ -118,7 +118,7 @@ vm_object_cache_prepare(
 		return;
 
 	/* A removed file is not cached: the cache would keep its storage (BUG-075). */
-	unnamed = inode_unnamed(inode);
+	unnamed = vm_object_inode_unnamed(inode);
 	if (unnamed)
 		return;
 
@@ -131,7 +131,7 @@ vm_object_cache_prepare(
 
 	/* Retries optional admission once after reclaiming one idle object. */
 	error = vm_object_get_shared_internal(file, &object, 1);
-	if (error == ENOMEM && object_cache_evict_one(NULL))
+	if (error == ENOMEM && vm_object_cache_evict_one(NULL))
 		error = vm_object_get_shared_internal(file, &object, 1);
 	backing_mutation_end(&guard);
 	if (error != 0)
@@ -140,9 +140,9 @@ vm_object_cache_prepare(
 	/*
 	 * Drops the operation reference while retaining the independent cache.
 	 */
-	object_operation_end(object);
+	vm_object_operation_end(object);
 	if (refcount_put(&object->refs))
-		destroy_object(object);
+		vm_object_destroy(object);
 }
 
 /*
@@ -163,10 +163,10 @@ vm_object_cache_pin(
 	if (inode == NULL || result == NULL)
 		return EINVAL;
 	*result = NULL;
-	enabled = registry_lock();
-	object = find_object_by_inode_locked(inode);
+	enabled = vm_object_registry_lock();
+	object = vm_object_find_by_inode_locked(inode);
 	if (object == NULL || (object->flags & VM_OBJECT_DETACHING) != 0) {
-		registry_unlock(enabled);
+		vm_object_registry_unlock(enabled);
 		return EAGAIN;
 	}
 
@@ -179,7 +179,7 @@ vm_object_cache_pin(
 		HAL_FATAL("VM cache pin operation counter overflow");
 	refcount_get(&object->refs);
 	*result = object;
-	registry_unlock(enabled);
+	vm_object_registry_unlock(enabled);
 	return 0;
 }
 
@@ -193,9 +193,9 @@ vm_object_cache_unpin(
 	/* Balances both the operation and its lifetime reference. */
 	if (object == NULL)
 		return;
-	object_operation_end(object);
+	vm_object_operation_end(object);
 	if (refcount_put(&object->refs))
-		destroy_object(object);
+		vm_object_destroy(object);
 }
 
 /*
@@ -227,7 +227,7 @@ vm_object_cache_reclaim_pinned(
 	 * prevent retirement of unrelated clean pages. Faults, other readers,
 	 * waiters, mappings and transactions keep the conservative exclusion.
 	 */
-	enabled = registry_lock();
+	enabled = vm_object_registry_lock();
 	if ((object->flags & VM_OBJECT_CACHE_REFERENCE) == 0 ||
 	    (object->flags & (VM_OBJECT_DETACHING | VM_OBJECT_RESIZING |
 	    VM_OBJECT_CONTENT | VM_OBJECT_RETAINED_WRITEBACK)) != 0 ||
@@ -237,7 +237,7 @@ vm_object_cache_reclaim_pinned(
 	    refcount_load(&object->refs) < 2 ||
 	    refcount_load(&object->refs) - 2 != object->prefetch_operations) {
 
-		registry_unlock(enabled);
+		vm_object_registry_unlock(enabled);
 		return 0;
 	}
 
@@ -254,19 +254,19 @@ vm_object_cache_reclaim_pinned(
 		}
 
 		*link = page->next;
-		object_page_index_remove(object, page);
+		vm_object_page_index_remove(object, page);
 		page->next = retired;
 		retired = page;
 		freed += page->pmem.size;
 	}
 	spin_unlock_irqrestore(&object->lock, irq);
-	registry_unlock(enabled);
+	vm_object_registry_unlock(enabled);
 
 	/* Returns physical storage and shared credits outside metadata locks. */
 	while (retired != NULL) {
 		page = retired;
 		retired = page->next;
-		free_object_page(page);
+		vm_object_free_page(page);
 	}
 	return freed;
 }
@@ -283,7 +283,7 @@ vm_object_cache_drain(
 	/* Bounds this pass even when other readers keep publishing objects. */
 	count = 0;
 	while (count < VM_OBJECT_CACHE_OBJECTS) {
-		if (!object_cache_evict_one(mount))
+		if (!vm_object_cache_evict_one(mount))
 			break;
 		count++;
 	}
@@ -296,7 +296,7 @@ vm_object_cache_drain(
  * Global reclaim must not acquire owners after unmount has closed admission.
  */
 int
-object_mount_reserved(
+vm_object_mount_reserved(
 	const struct vm_object *object)
 {
 	if (object->inode != NULL && object->inode->i_mount != NULL &&
@@ -339,10 +339,10 @@ vm_object_discard_mount_refs(
 
 	/* Caller keeps new mount users out; no inode-cache lock may be held here. */
 	count = 0;
-	enabled = registry_lock();
+	enabled = vm_object_registry_lock();
 	error = object_discard_mount_check_locked(mount);
 	if (error != 0) {
-		registry_unlock(enabled);
+		vm_object_registry_unlock(enabled);
 		return error;
 	}
 	for (object = shared_objects; object != NULL; object = object->next) {
@@ -357,12 +357,12 @@ vm_object_discard_mount_refs(
 		if (object->write_file != NULL && object->write_file != object->file)
 			owned++;
 		if (count > UINT_MAX - owned) {
-			registry_unlock(enabled);
+			vm_object_registry_unlock(enabled);
 			return EOVERFLOW;
 		}
 		count += owned;
 	}
-	registry_unlock(enabled);
+	vm_object_registry_unlock(enabled);
 	*refs = count;
 	return 0;
 }
@@ -390,10 +390,10 @@ vm_object_discard_mount(struct mount *mount, uint64_t *dirty_bytes)
 		return EINVAL;
 	discarded = 0;
 	detached = NULL;
-	enabled = registry_lock();
+	enabled = vm_object_registry_lock();
 	error = object_discard_mount_check_locked(mount);
 	if (error != 0) {
-		registry_unlock(enabled);
+		vm_object_registry_unlock(enabled);
 		return error;
 	}
 	/* No fallible admission remains; remove all selected identities before freeing. */
@@ -409,18 +409,18 @@ vm_object_discard_mount(struct mount *mount, uint64_t *dirty_bytes)
 			for (; page != NULL; page = page->next) {
 				if (page->flags & VM_OBJECT_PAGE_DIRTY)
 					discarded += PAGE_SIZE;
-				clear_page_dirty_locked(page);
+				vm_object_clear_page_dirty_locked(page);
 			}
 		}
 		object->writeback_error = 0;
 		object->flags &= ~VM_OBJECT_RETAINED_WRITEBACK;
 		spin_unlock_irqrestore(&object->lock, irq);
-		if (!unlink_object_locked(object))
+		if (!vm_object_unlink_locked(object))
 			HAL_FATAL("revoked VM discard lost registry entry");
 		object->next = detached;
 		detached = object;
 	}
-	registry_unlock(enabled);
+	vm_object_registry_unlock(enabled);
 
 	/* Physical frame and file finalizers may sleep or enter other owners. */
 	while (detached != NULL) {
@@ -429,7 +429,7 @@ vm_object_discard_mount(struct mount *mount, uint64_t *dirty_bytes)
 		object->next = NULL;
 		if (!refcount_put(&object->refs))
 			HAL_FATAL("revoked VM discard retained external reference");
-		destroy_object(object);
+		vm_object_destroy(object);
 	}
 	*dirty_bytes = discarded;
 	return 0;
@@ -455,10 +455,10 @@ vm_object_reclaim_clean(
 		target = KERN_IO_BATCH_MAX;
 	retired = NULL;
 	freed = 0;
-	enabled = registry_lock();
+	enabled = vm_object_registry_lock();
 	for (object = shared_objects; object != NULL && freed < target;
 	     object = object->next) {
-		if (object_mount_reserved(object))
+		if (vm_object_mount_reserved(object))
 			continue;
 		/* Skips an object anything still owns. */
 		if ((object->flags & VM_OBJECT_CACHE_REFERENCE) == 0 ||
@@ -481,7 +481,7 @@ vm_object_reclaim_clean(
 			}
 
 			*link = page->next;
-			object_page_index_remove(object, page);
+			vm_object_page_index_remove(object, page);
 			page->next = retired;
 			retired = page;
 			freed += page->pmem.size;
@@ -490,13 +490,13 @@ vm_object_reclaim_clean(
 		spin_unlock_irqrestore(&object->lock, irq);
 	}
 
-	registry_unlock(enabled);
+	vm_object_registry_unlock(enabled);
 
 	/* Frees detached storage without closing any inode or mount reference. */
 	while (retired != NULL) {
 		page = retired;
 		retired = page->next;
-		free_object_page(page);
+		vm_object_free_page(page);
 	}
 
 	/* Reports how many bytes the pass freed. */
@@ -527,9 +527,9 @@ vm_object_reclaim_one(
 	/* Selects the first idle, unwired page of a quiet object. */
 	vm_metadata_enter();
 
-	enabled = registry_lock();
+	enabled = vm_object_registry_lock();
 	for (object = shared_objects; object != NULL; object = object->next) {
-		if (object_mount_reserved(object))
+		if (vm_object_mount_reserved(object))
 			continue;
 		/* Skips an object that is being detached or resized. */
 		if ((object->flags & (VM_OBJECT_DETACHING |
@@ -575,7 +575,7 @@ vm_object_reclaim_one(
 			break;
 	}
 
-	registry_unlock(enabled);
+	vm_object_registry_unlock(enabled);
 
 	vm_metadata_leave();
 
@@ -590,22 +590,22 @@ vm_object_reclaim_one(
 	/* Unregisters an object the writeback left empty and unreferenced. */
 	removed = 0;
 	if (error == 0) {
-		enabled = registry_lock();
+		enabled = vm_object_registry_lock();
 		if (object->mapping_count == 0 &&
 		    object->active_operations == 1 &&
 		    (object->flags & VM_OBJECT_DETACHING) == 0 &&
-		    object_can_destroy(object))
-			removed = unlink_object_locked(object);
-		registry_unlock(enabled);
+		    vm_object_can_destroy(object))
+			removed = vm_object_unlink_locked(object);
+		vm_object_registry_unlock(enabled);
 	}
 
 	if (removed && refcount_put(&object->refs))
 		HAL_FATAL("VM object registry reference was last unexpectedly");
 
 	/* Ends the operation and drops the reference this pass took. */
-	object_operation_end(object);
+	vm_object_operation_end(object);
 	if (refcount_put(&object->refs))
-		destroy_object(object);
+		vm_object_destroy(object);
 
 	/* Reclaim reports whether a page was freed; writeback retains error. */
 	if (error != 0)
@@ -637,8 +637,8 @@ vm_object_cache_discard_inode(
 		return 0;
 
 	/* The inode's object, if the cache alone holds it. */
-	enabled = registry_lock();
-	for (object = object_hash[object_hash_index(inode)]; object != NULL;
+	enabled = vm_object_registry_lock();
+	for (object = object_hash[vm_object_hash_index(inode)]; object != NULL;
 	     object = object->hash_next) {
 		if (object->inode == inode)
 			break;
@@ -649,21 +649,21 @@ vm_object_cache_discard_inode(
 	if (object != NULL)
 		idle = object_cache_idle_locked(object);
 	if (!idle) {
-		registry_unlock(enabled);
+		vm_object_registry_unlock(enabled);
 		return 0;
 	}
 
 	/* Takes it out of the registry, which closes admission. */
-	unlinked = unlink_object_locked(object);
+	unlinked = vm_object_unlink_locked(object);
 	if (!unlinked)
 		HAL_FATAL("VM cache discard lost registry entry");
-	registry_unlock(enabled);
+	vm_object_registry_unlock(enabled);
 
 	/* Releases the sole registry reference and closes the handle outside locks. */
 	last = refcount_put(&object->refs);
 	if (!last)
 		HAL_FATAL("discarded VM cache retained an unknown reference");
-	destroy_object(object);
+	vm_object_destroy(object);
 
 	/* Reports the discarded object. */
 	return 1;
@@ -673,7 +673,7 @@ vm_object_cache_discard_inode(
  * Unlinks one idle cache under the registry lock, then closes it outside locks.
  */
 int
-object_cache_evict_one(
+vm_object_cache_evict_one(
 	struct mount *mount)
 {
 	struct vm_object *object;
@@ -686,7 +686,7 @@ object_cache_evict_one(
 	 * Leaves every mandatory mapping, operation, pin and failure owner
 	 * intact.
 	 */
-	enabled = registry_lock();
+	enabled = vm_object_registry_lock();
 	oldest = NULL;
 
 	for (object = shared_objects; object != NULL; object = object->next) {
@@ -710,10 +710,10 @@ object_cache_evict_one(
 	object = oldest;
 	unlinked = 1;
 	if (object != NULL)
-		unlinked = unlink_object_locked(object);
+		unlinked = vm_object_unlink_locked(object);
 	if (!unlinked)
 		HAL_FATAL("VM cache eviction lost registry entry");
-	registry_unlock(enabled);
+	vm_object_registry_unlock(enabled);
 
 	/* Reports that the cache held nothing evictable. */
 	if (object == NULL)
@@ -725,7 +725,7 @@ object_cache_evict_one(
 	if (!refcount_put(&object->refs))
 		HAL_FATAL("detached VM cache retained an unknown reference");
 
-	destroy_object(object);
+	vm_object_destroy(object);
 
 	/* Reports one complete eviction. */
 	return 1;
@@ -735,7 +735,7 @@ object_cache_evict_one(
  * Frees only unpublished preparation frames, which were never counted resident.
  */
 void
-object_cache_discard_prepared(
+vm_object_cache_discard_prepared(
 	struct vm_object_page **pages,
 	unsigned count)
 {
@@ -743,7 +743,7 @@ object_cache_discard_prepared(
 
 	/* Releases every successfully prepared frame and its metadata. */
 	for (index = 0; index < count; index++) {
-		release_object_page_storage(pages[index]);
+		vm_object_release_page_storage(pages[index]);
 	}
 }
 
@@ -751,7 +751,7 @@ object_cache_discard_prepared(
  * Reads an absent bounded run and publishes only fully initialized cache pages.
  */
 int
-object_cache_read_missing(
+vm_object_cache_read_missing(
 	struct vm_object *object,
 	off_t offset,
 	void *buffer,
@@ -791,7 +791,7 @@ object_cache_read_missing(
 	irq = spin_lock_irqsave(&object->lock);
 
 	if ((object->flags & VM_OBJECT_CACHE_REFERENCE) == 0 ||
-	    find_page(object, base) != NULL) {
+	    vm_object_find_page(object, base) != NULL) {
 		spin_unlock_irqrestore(&object->lock, irq);
 		return 0;
 	}
@@ -829,7 +829,7 @@ object_cache_read_missing(
 
 	/* Stops the read at the first page that is already resident. */
 	for (index = 1; (size_t)index * PAGE_SIZE < transfer; index++) {
-		if (find_page(object, base + (off_t)index * PAGE_SIZE) != NULL) {
+		if (vm_object_find_page(object, base + (off_t)index * PAGE_SIZE) != NULL) {
 			transfer = (size_t)index * PAGE_SIZE;
 			break;
 		}
@@ -863,7 +863,7 @@ object_cache_read_missing(
 
 	/* Allocates all private frames before any busy page is made visible. */
 	while (publish && prepared < needed) {
-		page = alloc_object_page(object, base + (off_t)prepared * PAGE_SIZE, 1);
+		page = vm_object_alloc_page(object, base + (off_t)prepared * PAGE_SIZE, 1);
 		if (page == NULL) {
 			publish = 0;
 			break;
@@ -885,7 +885,7 @@ object_cache_read_missing(
 			publish = 0;
 
 		for (index = 0; index < prepared && publish; index++) {
-			if (find_page(object, pages[index]->offset) != NULL)
+			if (vm_object_find_page(object, pages[index]->offset) != NULL)
 				publish = 0;
 		}
 
@@ -894,7 +894,7 @@ object_cache_read_missing(
 			for (index = 0; index < prepared; index++) {
 				pages[index]->next = object->pages;
 				object->pages = pages[index];
-				object_page_index_insert(object, pages[index]);
+				vm_object_page_index_insert(object, pages[index]);
 				(void)atomic_fetch_add_relaxed(&object_pages, 1);
 			}
 		}
@@ -907,7 +907,7 @@ object_cache_read_missing(
 	 * path.
 	 */
 	if (!publish) {
-		object_cache_discard_prepared(pages, prepared);
+		vm_object_cache_discard_prepared(pages, prepared);
 
 		if (scratch != NULL)
 			io_pool_release(scratch);
@@ -915,7 +915,7 @@ object_cache_read_missing(
 		/* A racing publication may now contain dirty shared data. */
 		irq = spin_lock_irqsave(&object->lock);
 		for (index = 0; (size_t)index * PAGE_SIZE < transfer; index++) {
-			if (find_page(object, base + (off_t)index * PAGE_SIZE) != NULL) {
+			if (vm_object_find_page(object, base + (off_t)index * PAGE_SIZE) != NULL) {
 				if (index == 0) {
 					spin_unlock_irqrestore(&object->lock, irq);
 					return 0;
@@ -1128,7 +1128,7 @@ object_cache_idle_locked(
 	int clean;
 
 	/* An object on a mount that unmount has closed is unmount's. */
-	reserved = object_mount_reserved(object);
+	reserved = vm_object_mount_reserved(object);
 	if (reserved)
 		return 0;
 
@@ -1142,6 +1142,6 @@ object_cache_idle_locked(
 		return 0;
 
 	/* Reports whether every page is clean and idle. */
-	clean = object_can_destroy(object);
+	clean = vm_object_can_destroy(object);
 	return clean;
 }

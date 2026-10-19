@@ -205,7 +205,7 @@ vmspace_object_page_revoke(
 		if (*link != mapping)
 			HAL_FATAL("shared VM mapping left region");
 		*link = mapping->next;
-		region_page_index_remove(region, mapping);
+		vmspace_region_page_index_remove(region, mapping);
 
 		/* Retires the mapping and gives back the region hold it took. */
 		mapping->flags &= ~(VM_MAPPING_MAPPED | VM_MAPPING_BUSY);
@@ -464,11 +464,11 @@ vmspace_set_stack_limit(
 
 /*
  * Removes a page's reverse mappings, keeping a reference on its private
- * backing as a retire token for release_detached_region_pages(); the
+ * backing as a retire token for vmspace_release_detached_region_pages(); the
  * caller holds the VM locks.
  */
 void
-detach_vm_page(
+vmspace_detach_page(
 	struct vm_page *page)
 {
 	struct vm_private_page *backing;
@@ -491,7 +491,7 @@ detach_vm_page(
 	 * temporary reference before vm_page_untrack() so that the
 	 * reverse-map detach cannot be the operation which frees those
 	 * resources.  The detached vm_page retains that reference solely as
-	 * a retire token; release_detached_region_pages() drops it after
+	 * a retire token; vmspace_release_detached_region_pages() drops it after
 	 * the address has been unpublished and both locks are gone.
 	 */
 	backing = page->private_page;
@@ -507,13 +507,13 @@ detach_vm_page(
  * Frees the detached pages of a retired region outside the locks.
  */
 void
-release_detached_region_pages(
+vmspace_release_detached_region_pages(
 	struct vm_region *region)
 {
 	struct vm_page *page;
 
 	/* Drops the index; the pages go one by one. */
-	region_page_index_free(region);
+	vmspace_region_page_index_free(region);
 	region->page_count = 0;
 	page = region->pages;
 	while (page != NULL) {
@@ -561,7 +561,7 @@ vmspace_replace_prepared(
 	if (vm == NULL ||
 	    vm == &kernel_vmspace ||
 	    prepared == NULL ||
-	    !range_valid(prepared->start, prepared->size))
+	    !vmspace_range_valid(prepared->start, prepared->size))
 		return EINVAL;
 
 	/* Preallocates both possible splits, because the commit may not fail. */
@@ -631,7 +631,7 @@ vmspace_replace_prepared(
 	}
 
 	/* Splits the regions that straddle either end of the range. */
-	region = find_region_locked(vm, end - 1U, 1);
+	region = vmspace_find_region_locked(vm, end - 1U, 1);
 	if (region != NULL && end < region->start + region->size) {
 		error = split_region_prepared(region, end, split_first);
 		if (error != 0)
@@ -640,7 +640,7 @@ vmspace_replace_prepared(
 	}
 
 	/* Splits the region that straddles the start of the range. */
-	region = find_region_locked(vm, start, 1);
+	region = vmspace_find_region_locked(vm, start, 1);
 	if (region != NULL && start > region->start) {
 		if (split_first != NULL)
 			split = split_first;
@@ -676,7 +676,7 @@ vmspace_replace_prepared(
 		region = *link;
 	}
 
-	insert_region(vm, prepared);
+	vmspace_insert_region(vm, prepared);
 	vm->mapped_virtual_bytes += prepared->size;
 	vmspace_generation_advance_locked(vm);
 	if (result != NULL)
@@ -758,7 +758,7 @@ detach_vm_page_for_unmap(
 	}
 
 	/* The reverse mappings. */
-	detach_vm_page(page);
+	vmspace_detach_page(page);
 }
 
 /*
@@ -947,8 +947,8 @@ split_region_prepared(
 
 	/* Indexes each half's pages afresh (the old index held both halves' pages). */
 	region->page_index_retry = 0;
-	(void)region_page_index_rebuild(region, 0);
-	(void)region_page_index_rebuild(right, 0);
+	(void)vmspace_region_page_index_rebuild(region, 0);
+	(void)vmspace_region_page_index_rebuild(right, 0);
 
 	/* Links the right half after the left. */
 	right->next = region->next;
@@ -995,7 +995,7 @@ release_retired_regions(
 	region = retired;
 	while (region != NULL) {
 		retired = region->next;
-		release_detached_region_pages(region);
+		vmspace_release_detached_region_pages(region);
 		if (region->file != NULL)
 			(void)file_close(region->file);
 		if (region->object != NULL)
@@ -1006,7 +1006,7 @@ release_retired_regions(
 			vm_device_put(region->device);
 		if (region->commit_size != 0)
 			vm_commit_release(region->commit_size);
-		region_page_index_free(region);
+		vmspace_region_page_index_free(region);
 		kern_free(region);
 		region = retired;
 	}
@@ -1025,7 +1025,7 @@ vmspace_set_brk_start_locked(
 	    (start & (PAGE_SIZE - 1U)) != 0 ||
 	    start < vm_layout.user_minimum ||
 	    start >= vm_layout.brk_limit ||
-	    overlaps(vm, start, PAGE_SIZE))
+	    vmspace_overlaps(vm, start, PAGE_SIZE))
 		return EINVAL;
 
 	if (static_data_bytes > vm->data_limit)
@@ -1095,7 +1095,7 @@ vmspace_brk_locked(
 	if (new_end > old_end) {
 		difference = new_end - old_end;
 		if (region == NULL) {
-			error = map_region(vm, vm->brk_start,
+			error = vmspace_map_region(vm, vm->brk_start,
 				new_end - vm->brk_start,
 				HAL_SPACE_READ | HAL_SPACE_WRITE, VM_BACKING_ANON,
 				NULL, 0, vm->brk_start, 0,
@@ -1105,7 +1105,7 @@ vmspace_brk_locked(
 				return error;
 		} else {
 			if (region->start + region->size != old_end ||
-			    overlaps(vm, old_end, difference))
+			    vmspace_overlaps(vm, old_end, difference))
 				return ENOMEM;
 			mapped_bytes = vm->mapped_virtual_bytes;
 			if (mapped_bytes > vm->address_limit)
@@ -1132,7 +1132,7 @@ vmspace_brk_locked(
 
 			/* Takes the page off the list and the index, and frees it. */
 			*page_link = page->next;
-			region_page_index_remove(region, page);
+			vmspace_region_page_index_remove(region, page);
 			free_vm_page(vm, page, 1);
 		}
 
@@ -1144,7 +1144,7 @@ vmspace_brk_locked(
 		vm->mapped_virtual_bytes -= difference;
 		if (region->size == 0) {
 			*link = region->next;
-			region_page_index_free(region);
+			vmspace_region_page_index_free(region);
 			kern_free(region);
 		}
 	}
@@ -1173,7 +1173,7 @@ vmspace_unmap_locked(
 	if (vm == NULL ||
 	    vm == &kernel_vmspace ||
 	    retired == NULL ||
-	    !range_valid(start, size))
+	    !vmspace_range_valid(start, size))
 		return EINVAL;
 
 	/* Waits for the faults in flight before changing the layout. */
@@ -1195,7 +1195,7 @@ vmspace_unmap_locked(
 	}
 
 	/* Splits the region that straddles the end of the range. */
-	region = find_region_locked(vm, end - 1U, 1);
+	region = vmspace_find_region_locked(vm, end - 1U, 1);
 	if (region != NULL && end < region->start + region->size) {
 		error = split_region(region, end);
 		if (error != 0)
@@ -1203,7 +1203,7 @@ vmspace_unmap_locked(
 	}
 
 	/* Splits the region that straddles the start of the range. */
-	region = find_region_locked(vm, start, 1);
+	region = vmspace_find_region_locked(vm, start, 1);
 	if (region != NULL && start > region->start) {
 		error = split_region(region, start);
 		if (error != 0)
@@ -1270,7 +1270,7 @@ vmspace_protect_locked(
 	/* Rejects a malformed range or a protection the hardware has no bit for. */
 	if (vm == NULL ||
 	    vm == &kernel_vmspace ||
-	    !range_valid(start, size) ||
+	    !vmspace_range_valid(start, size) ||
 	    (prot & ~(HAL_SPACE_READ | HAL_SPACE_WRITE | HAL_SPACE_EXEC)) != 0)
 		return EINVAL;
 
@@ -1299,7 +1299,7 @@ vmspace_protect_locked(
 		return EINVAL;
 
 	/* Splits the regions that straddle either end of the range. */
-	end_region = find_region_locked(vm, end - 1U, 1);
+	end_region = vmspace_find_region_locked(vm, end - 1U, 1);
 	if (end_region != NULL && end < end_region->start + end_region->size) {
 		error = split_region(end_region, end);
 		if (error != 0)
@@ -1307,7 +1307,7 @@ vmspace_protect_locked(
 	}
 
 	/* Splits the region that straddles the start of the range. */
-	region = find_region_locked(vm, start, 1);
+	region = vmspace_find_region_locked(vm, start, 1);
 	if (start > region->start) {
 		error = split_region(region, start);
 		if (error != 0)

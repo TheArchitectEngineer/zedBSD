@@ -221,13 +221,13 @@ vm_reclaim_frame(
 			error = vm_private_page_alloc(memory);
 			if (error == HAL_OK) {
 				if (free_pages < 2U * minimum)
-					pageout_kick();
+					vm_reclaim_pageout_kick();
 				return 0;
 			}
 		}
 
 		/* Asks the worker to refill and reclaims a page directly. */
-		pageout_kick();
+		vm_reclaim_pageout_kick();
 		error = vm_reclaim_one(avoid);
 		if (error == 0)
 			continue;
@@ -291,13 +291,13 @@ vm_reclaim_frame_private(
 			error = vm_private_page_alloc(memory);
 			if (error == HAL_OK) {
 				if (free_pages < 2U * minimum)
-					pageout_kick();
+					vm_reclaim_pageout_kick();
 				return 0;
 			}
 		}
 
 		/* Asks the worker to refill. */
-		pageout_kick();
+		vm_reclaim_pageout_kick();
 
 		/* Disposable cache is given back first. */
 		released = 0;
@@ -625,8 +625,8 @@ vm_reclaim_private_one(
 		flags = backing_pte_flags(backing);
 		if ((flags & HAL_SPACE_PAGE_ACCESSED) != 0) {
 			backing_clear_accessed(backing);
-			queue_remove(backing);
-			queue_insert(backing);
+			vm_reclaim_queue_remove(backing);
+			vm_reclaim_queue_insert(backing);
 			if (fallback == NULL)
 				fallback = backing;
 			backing = previous;
@@ -677,7 +677,7 @@ vm_reclaim_private_one(
  * reclaim lock.
  */
 void
-queue_insert(
+vm_reclaim_queue_insert(
 	struct vm_private_page *backing)
 {
 	/* Refuses a backing that is already on a list. */
@@ -691,7 +691,7 @@ queue_insert(
 		page_queue->queue_prev = backing;
 	page_queue = backing;
 
-	/* Records the list, which is how queue_remove() knows the head to fix. */
+	/* Records the list, which is how vm_reclaim_queue_remove() knows the head to fix. */
 	backing->queue_kind = VM_QUEUE_RECLAIM;
 
 	/* The first backing is also the oldest. */
@@ -704,7 +704,7 @@ queue_insert(
  * reclaim lock.
  */
 void
-swapped_insert(
+vm_reclaim_swapped_insert(
 	struct vm_private_page *backing)
 {
 	/* Refuses a backing that is already on a list. */
@@ -718,7 +718,7 @@ swapped_insert(
 		swapped_queue->queue_prev = backing;
 	swapped_queue = backing;
 
-	/* Records the list, which is how queue_remove() knows the head to fix. */
+	/* Records the list, which is how vm_reclaim_queue_remove() knows the head to fix. */
 	backing->queue_kind = VM_QUEUE_SWAPPED;
 }
 
@@ -731,7 +731,7 @@ swapped_insert(
  * is left alone.
  */
 void
-queue_remove(
+vm_reclaim_queue_remove(
 	struct vm_private_page *backing)
 {
 	/* A backing on no list is left alone. */
@@ -760,7 +760,7 @@ queue_remove(
  * Reclaims a few private pages so a fault's backend read has scratch memory.
  */
 unsigned
-reclaim_object_fault_reserve(
+vm_reclaim_object_fault_reserve(
 	void)
 {
 	unsigned reclaimed;
@@ -1272,7 +1272,7 @@ swap_out_backing_owned(
 	backing->flags &= ~(VM_PAGE_RESIDENT | VM_PAGE_DIRTY);
 	backing->flags |= VM_PAGE_SWAPPED;
 
-	private_page_advance_locked(backing);
+	vm_reclaim_private_page_advance_locked(backing);
 
 	spin_unlock_irqrestore(&backing->state_lock, irq);
 
@@ -1280,8 +1280,8 @@ swap_out_backing_owned(
 	unpin_backing_mappings(backing);
 
 	/* Moves the backing from the reclaim queue to the swapped list. */
-	queue_remove(backing);
-	swapped_insert(backing);
+	vm_reclaim_queue_remove(backing);
+	vm_reclaim_swapped_insert(backing);
 
 	if (stats.resident)
 		stats.resident--;
@@ -1357,7 +1357,7 @@ discard_file_backing_owned(
 
 	/* Takes the backing off the queue and drops its page. */
 	backing->mappings = NULL;
-	queue_remove(backing);
+	vm_reclaim_queue_remove(backing);
 	irq = spin_lock_irqsave(&backing->state_lock);
 
 	if (backing->mapping_count == 0 ||
@@ -1372,7 +1372,7 @@ discard_file_backing_owned(
 
 	kern_memset(&backing->pmem, 0, sizeof(backing->pmem));
 
-	private_page_advance_locked(backing);
+	vm_reclaim_private_page_advance_locked(backing);
 
 	spin_unlock_irqrestore(&backing->state_lock, irq);
 

@@ -205,7 +205,7 @@ fork_region(
 	int error;
 
 	/* Copies the region's layout into the child. */
-	error = map_region(copy,
+	error = vmspace_map_region(copy,
 			   source_region->start,
 			   source_region->size,
 			   source_region->prot,
@@ -438,11 +438,11 @@ fork_share_page(
 	 * held at this moment, which is all a fork ever promises.
 	 */
 	if (error == EBUSY) {
-		pinned = private_page_pinned_resident(backing);
+		pinned = vmspace_private_page_pinned_resident(backing);
 		if (pinned) {
-			error = prepare_cow_copy(source_page, backing, &fresh);
+			error = vmspace_prepare_cow_copy(source_page, backing, &fresh);
 			if (error == 0) {
-				private_page_attach_new(copy_page, fresh);
+				vmspace_private_page_attach_new(copy_page, fresh);
 				vm_page_track(copy_page);
 				entry->eager = 1;
 			}
@@ -469,7 +469,7 @@ fork_share_page(
 	/* Links the copy into the child's region. */
 	copy_page->next = copy_region->pages;
 	copy_region->pages = copy_page;
-	region_page_index_insert(copy_region, copy_page);
+	vmspace_region_page_index_insert(copy_region, copy_page);
 
 	/* An outright copy is the child's own, writable page. */
 	if (entry->eager) {

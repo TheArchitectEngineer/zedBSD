@@ -169,7 +169,7 @@ retry:
 	mutex_lock(&vm->lock);
 
 	/* Rejects an address no region covers with the access asked for. */
-	region = find_region_locked(vm, address, 1);
+	region = vmspace_find_region_locked(vm, address, 1);
 	if (region == NULL || (region->prot & required) == 0) {
 		mutex_unlock(&vm->lock);
 		vm_metadata_leave();
@@ -275,7 +275,7 @@ retry:
 		 * fault's own, which keeps the page resident and reclaim away
 		 * from it, as fork() does for such a page.
 		 */
-		if (cow_write && private_page_pinned_resident(reserved_backing) &&
+		if (cow_write && vmspace_private_page_pinned_resident(reserved_backing) &&
 		    vm_private_page_pin(reserved_backing, &pinned_memory) == 0) {
 			pinned_copy = 1;
 			error = 0;
@@ -290,7 +290,7 @@ retry:
 		mutex_lock(&vm->lock);
 
 		if (error == 0) {
-			if (find_region_locked(vm, address, 1) != region) {
+			if (vmspace_find_region_locked(vm, address, 1) != region) {
 				/* The region this reservation named is gone. */
 				error = EAGAIN;
 			} else if (vmspace_find_page(region, page_address) != page) {
@@ -340,7 +340,7 @@ retry:
 		}
 
 		if (error == 0 && need_cow)
-			error = prepare_cow_copy(page, reserved_backing, &fresh);
+			error = vmspace_prepare_cow_copy(page, reserved_backing, &fresh);
 
 		/*
 		 * Samples what the copy must still match when it is installed.
@@ -396,7 +396,7 @@ retry:
 		/* Refuses the mapping if anything the reservation named has changed. */
 		if (error == 0 &&
 		    (vm->generation != reservation_generation ||
-		    find_region_locked(vm, address, 1) != region ||
+		    vmspace_find_region_locked(vm, address, 1) != region ||
 		    vmspace_find_page(region, page_address) != page ||
 		    page->region != region ||
 		    page->address != page_address ||
@@ -443,7 +443,7 @@ retry:
 			/* Retakes the locks and traps if the reservation did not survive. */
 			vm_metadata_enter();
 			mutex_lock(&vm->lock);
-			if (find_region_locked(vm, address, 1) != region ||
+			if (vmspace_find_region_locked(vm, address, 1) != region ||
 			    vmspace_find_page(region, page_address) != page ||
 			    page->private_page != reserved_backing ||
 			    (page->flags & VM_MAPPING_BUSY) == 0 ||
@@ -503,7 +503,7 @@ retry:
 	vm_metadata_enter();
 	mutex_lock(&vm->lock);
 
-	if (find_region_locked(vm, address, 1) != region ||
+	if (vmspace_find_region_locked(vm, address, 1) != region ||
 	    (region->prot & required) == 0) {
 		error = EFAULT;
 		goto unlink_locked;
@@ -521,7 +521,7 @@ retry:
 
 	/* A generation change is allowed only after full region revalidation. */
 	if (vm->generation != reservation_generation &&
-	    find_region_locked(vm, address, 1) != region) {
+	    vmspace_find_region_locked(vm, address, 1) != region) {
 		error = EFAULT;
 		goto unlink_locked;
 	}
@@ -529,7 +529,7 @@ retry:
 	/* Publishes the placeholder and samples what it is measured against. */
 	page->next = region->pages;
 	region->pages = page;
-	region_page_index_insert(region, page);
+	vmspace_region_page_index_insert(region, page);
 	reservation_generation = vm->generation;
 	new_reservation_prot = region->prot;
 
@@ -640,7 +640,7 @@ retry:
 		vm_metadata_enter();
 		mutex_lock(&vm->lock);
 
-		if (find_region_locked(vm, address, 1) != region ||
+		if (vmspace_find_region_locked(vm, address, 1) != region ||
 		    vmspace_find_page(region, page_address) != page)
 			HAL_FATAL("lost VM fault reservation");
 
@@ -668,13 +668,13 @@ retry:
 	}
 
 	/* A private page gets a new backing, a frame, and its contents. */
-	page->private_page = private_page_alloc();
+	page->private_page = vmspace_private_page_alloc();
 	if (page->private_page == NULL) {
 		error = ENOMEM;
 		goto remove_placeholder;
 	}
 
-	private_page_attach_new(page, page->private_page);
+	vmspace_private_page_attach_new(page, page->private_page);
 	reserved_backing = page->private_page;
 	vm_private_page_ref(reserved_backing);
 	private_io_hold = 1;
@@ -737,7 +737,7 @@ retry:
 
 	/* Refuses the mapping if anything the reservation named has changed. */
 	if (vm->generation != reservation_generation ||
-	    find_region_locked(vm, address, 1) != region ||
+	    vmspace_find_region_locked(vm, address, 1) != region ||
 	    vmspace_find_page(region, page_address) != page ||
 	    page->region != region ||
 	    page->address != page_address ||
@@ -813,7 +813,7 @@ unlink_locked:
 		link = &(*link)->next;
 	if (*link == page) {
 		*link = page->next;
-		region_page_index_remove(region, page);
+		vmspace_region_page_index_remove(region, page);
 	}
 
 	if (region->hold_count == 0)
@@ -875,7 +875,7 @@ release_region:
  * keeps the page in memory and keeps reclaim away from it.
  */
 int
-private_page_pinned_resident(
+vmspace_private_page_pinned_resident(
 	struct vm_private_page *backing)
 {
 	unsigned long irq;
@@ -950,7 +950,7 @@ vmspace_wait_faults_locked(
  * Builds an unlinked copy of a private page while the fault owns the old one.
  */
 int
-prepare_cow_copy(
+vmspace_prepare_cow_copy(
 	struct vm_page *page,
 	struct vm_private_page *old,
 	struct vm_private_page **result)
@@ -961,7 +961,7 @@ prepare_cow_copy(
 	if (page == NULL || old == NULL || result == NULL)
 		return EINVAL;
 	/* Allocates a backing and a frame for the private copy. */
-	fresh = private_page_alloc();
+	fresh = vmspace_private_page_alloc();
 	if (fresh == NULL)
 		return ENOMEM;
 
@@ -1159,7 +1159,7 @@ vmspace_exec_cache_fault(
 	unmapped = 0;
 	waiting = 0;
 	if (writing) {
-		fresh = private_page_alloc();
+		fresh = vmspace_private_page_alloc();
 		if (fresh == NULL)
 			error = ENOMEM;
 		if (error == 0)
@@ -1222,7 +1222,7 @@ vmspace_exec_cache_fault(
 	if (unmapped)
 		page->flags &= ~VM_MAPPING_MAPPED;
 
-	if (error == 0 && (find_region_locked(vm, address, 1) != region ||
+	if (error == 0 && (vmspace_find_region_locked(vm, address, 1) != region ||
 	    vmspace_find_page(region, address) != page || page->object_page != source ||
 	    (region->snapshot == NULL && (region->flags & VM_REGION_PRIVATE_OBJECT) == 0) ||
 	    region->prot != prot || (prot & required) == 0))
@@ -1239,7 +1239,7 @@ vmspace_exec_cache_fault(
 			vm_object_mapping_remove(source, page);
 			page->object_page = NULL;
 			page->object_next = NULL;
-			private_page_attach_new(page, fresh);
+			vmspace_private_page_attach_new(page, fresh);
 			fresh = NULL;
 			vm_page_track(page);
 			page->flags &= ~VM_MAPPING_COW;
@@ -1433,7 +1433,7 @@ vmspace_fault_around_page_locked(
 	/* Publishes the mapping in the region and in the page's reverse map. */
 	page->next = region->pages;
 	region->pages = page;
-	region_page_index_insert(region, page);
+	vmspace_region_page_index_insert(region, page);
 	vm_object_mapping_add(object_page, page);
 
 	/* Reports the page mapped. */
