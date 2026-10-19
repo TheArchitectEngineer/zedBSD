@@ -13,9 +13,6 @@
  * the thirty-two registers are 64 bits wide (the FR=1 model every task
  * that uses the unit runs with).  The layout is struct hal_fpregs: the
  * registers by number, eight bytes each, then FCSR and FIR.
- *
- * Values referenced: MIPS32 Architecture for Programmers Volume I (FCSR
- * is control register 31, FIR control register 0).
  */
 
 #include "asm.h"
@@ -67,6 +64,13 @@ mips_fpu_save:
 	sdc1 $f29, 232($4)
 	sdc1 $f30, 240($4)
 	sdc1 $f31, 248($4)
+
+	/*
+	 * Stores the control registers after the data registers.
+	 *
+	 * Values referenced: MIPS32 Architecture for Programmers Volume I
+	 * (FCSR is control register 31, FIR control register 0).
+	 */
 	cfc1 $8, $31
 	sw $8, MIPS_FPREGS_FCSR($4)
 	cfc1 $8, $0
@@ -114,6 +118,13 @@ mips_fpu_restore:
 	ldc1 $f29, 232($4)
 	ldc1 $f30, 240($4)
 	ldc1 $f31, 248($4)
+
+	/*
+	 * Loads FCSR without its Cause bits, so the load raises nothing.
+	 *
+	 * Value referenced: MIPS32 Architecture for Programmers Volume I
+	 * (FCSR is control register 31).
+	 */
 	lw $8, MIPS_FPREGS_FCSR($4)
 	li $9, ~MIPS_FCSR_CAUSE_MASK
 	and $8, $8, $9

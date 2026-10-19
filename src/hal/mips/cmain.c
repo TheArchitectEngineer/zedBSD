@@ -273,6 +273,8 @@ check_direct_map(
 		hal_printf(MIPS_HAL_NAME " XKPHYS PASS physical=%08llx word=%08x\n", (unsigned long long)physical, linked);
 		return;
 	}
+
+	/* The reads disagree: names every value read. */
 	hal_printf(MIPS_HAL_NAME " XKPHYS FAIL physical=%08llx ckseg0=%08x cached=%08x uncached=%08x\n",
 		   (unsigned long long)physical,
 		   linked,

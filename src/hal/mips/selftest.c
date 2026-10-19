@@ -143,6 +143,7 @@ mips_paging_selftest(
 	enabled = mips_irq_save();
 	mips_trap_set_fault_hook(fault_hook);
 
+	/* Runs each check of the TLB in turn; a failed one stops the boot. */
 	check_refill(first);
 	check_pair(first);
 	check_accessed(first);
@@ -152,6 +153,7 @@ mips_paging_selftest(
 	check_generations();
 	check_flush(first, second);
 
+	/* Takes the hook away and goes back to the kernel's space. */
 	mips_trap_set_fault_hook(NULL);
 	hal_space_switch(HAL_SPACE_SYS);
 	mips_irq_restore(enabled);
@@ -574,6 +576,8 @@ check_generations(
 				fail(7);
 		}
 	}
+
+	/* Puts back the ASID limit of the boot. */
 	(void)mips_space_set_asid_limit(previous_limit);
 
 	/* The generation turned at least once. */
@@ -681,6 +685,8 @@ check_float(
 		test_pattern_first.f[index] = 0x1000000000000000ULL + index;
 		test_pattern_second.f[index] = 0x2000000000000000ULL + index;
 	}
+
+	/* Two control registers that differ too. */
 	test_pattern_first.fcsr = TEST_FCSR_FIRST;
 	test_pattern_second.fcsr = TEST_FCSR_SECOND;
 

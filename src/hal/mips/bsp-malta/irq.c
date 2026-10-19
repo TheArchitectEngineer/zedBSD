@@ -139,6 +139,7 @@ mips_board_irq_init(
 	port_write(IRQ_MASTER_DATA, irq_master_mask);
 	port_write(IRQ_SLAVE_DATA, irq_slave_mask);
 
+	/* Reports the masks the pair starts with. */
 	hal_printf(MIPS_HAL_NAME " MALTA PIC 8259 mask=%02x%02x\n", irq_slave_mask, irq_master_mask);
 }
 
@@ -169,25 +170,36 @@ mips_board_irq_register(
 	/* Records the handler, sets the line's trigger and lets it in. */
 	enabled = mips_spin_lock(&irq_lock);
 
+	/* Refuses a line that already has a handler. */
 	if (irq_sources[line].handler != NULL) {
 		mips_spin_unlock(&irq_lock, enabled);
 
 		return -1;
 	}
+
+	/* Records the handler the interrupt path calls. */
 	irq_sources[line].handler = handler;
 	irq_sources[line].argument = argument;
+
+	/* Sets the trigger and unmasks the line on the controller that owns it. */
 	if (line < IRQ_INPUTS) {
+		/* A level-triggered line is marked in the master's trigger register. */
 		if (level) {
 			triggers = port_read(IRQ_MASTER_LEVEL);
 			port_write(IRQ_MASTER_LEVEL, (uint8_t)(triggers | (1U << line)));
 		}
+
+		/* Lets the line in at the master. */
 		irq_master_mask = (uint8_t)(irq_master_mask & ~(1U << line));
 		port_write(IRQ_MASTER_DATA, irq_master_mask);
 	} else {
+		/* A level-triggered line is marked in the slave's trigger register. */
 		if (level) {
 			triggers = port_read(IRQ_SLAVE_LEVEL);
 			port_write(IRQ_SLAVE_LEVEL, (uint8_t)(triggers | (1U << (line - IRQ_INPUTS))));
 		}
+
+		/* Lets the line in at the slave. */
 		irq_slave_mask = (uint8_t)(irq_slave_mask & ~(1U << (line - IRQ_INPUTS)));
 		port_write(IRQ_SLAVE_DATA, irq_slave_mask);
 	}
@@ -217,6 +229,8 @@ mips_board_interrupt(
 		irq_spurious++;
 		return;
 	}
+
+	/* The cascade input means the slave holds the line: polls it there. */
 	if (line == IRQ_CASCADE_INPUT) {
 		line = poll_controller(IRQ_SLAVE_COMMAND, &found);
 		if (!found) {
@@ -224,6 +238,8 @@ mips_board_interrupt(
 			end_interrupt(IRQ_CASCADE_INPUT);
 			return;
 		}
+
+		/* Numbers the slave's input after the master's. */
 		line += IRQ_INPUTS;
 	}
 

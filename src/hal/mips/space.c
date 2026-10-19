@@ -34,11 +34,6 @@
  * generation starts with the TLB emptied, and every space takes a new
  * ASID when it is next selected; an ASID is never given to a second
  * space in the generation that gave it out.
- *
- * Values referenced: MIPS32 and MIPS64 Architecture for Programmers
- * Volume III (the TLB instructions tlbp, tlbwi and tlbwr, the EntryHi, EntryLo, Index,
- * PageMask and Wired registers, the TLB refill, invalid and modified
- * exceptions, and the execution hazards of their writes).
  */
 
 #include <hal/hal.h>
@@ -174,6 +169,8 @@ mips_space_fault(
 		return MIPS_SPACE_FAULT_MISSING;
 	if (current_space == HAL_SPACE_SYS)
 		return MIPS_SPACE_FAULT_MISSING;
+
+	/* The fault is in the running space. */
 	space = current_space;
 
 	/* The page must be mapped. */
@@ -223,6 +220,8 @@ hal_space_create(
 	space = kernel_alloc(sizeof(*space));
 	if (space == NULL)
 		return NULL;
+
+	/* Starts the record empty. */
 	hal_memset(space, 0, sizeof(*space));
 
 	/* The root, cleared through the kernel's view of it. */
@@ -231,6 +230,8 @@ hal_space_create(
 		kernel_free(space);
 		return NULL;
 	}
+
+	/* Clears the root and marks the record as a live space. */
 	space->root = hal_pmem_to_kernel(space->root_memory);
 	hal_memset(space->root, 0, MIPS_PAGE_SIZE);
 	space->magic = MIPS_SPACE_MAGIC;
@@ -273,13 +274,23 @@ hal_space_destroy(
 	/* Takes the space out of the registry and its ASID out of use. */
 	enabled = mips_irq_save();
 
+	/* Finds the link that names the space. */
 	link = &space_registry;
 	while (*link != NULL && *link != space)
 		link = &(*link)->registry_next;
+
+	/* A space that is not registered, or is already going, is a kernel bug. */
 	if (*link == NULL || space->destroying)
 		HAL_FATAL("invalid mips space destroy");
+
+	/* The selected space cannot go. */
 	if (current_space == handle)
 		HAL_FATAL("destroying an active mips space");
+
+	/*
+	 * Marks the space as going and unlinks it.  The count of spaces
+	 * drops with it, and a zero generation means it holds no ASID.
+	 */
 	space->destroying = 1U;
 	*link = space->registry_next;
 	if (space_count != 0)
@@ -390,11 +401,14 @@ hal_space_map(
 	for (offset = 0; offset < size; offset += MIPS_PAGE_SIZE) {
 		leaf = walk_leaf(space, address + offset, 1);
 		if (leaf == NULL) {
+			/* Takes back the entries already written. */
 			for (rollback = 0; rollback < offset; rollback += MIPS_PAGE_SIZE) {
 				leaf = walk_leaf(space, address + rollback, 0);
 				if (leaf != NULL)
 					*leaf = 0;
 			}
+
+			/* Drops the TLB's copies of the entries taken back. */
 			flush_pair_range(space, address, offset);
 
 			/* Turns interrupts back on as the caller had them. */
@@ -873,6 +887,7 @@ mips_space_set_asid_limit(
 	/* Swaps the limit in. */
 	enabled = mips_irq_save();
 
+	/* Keeps the limit before and takes a limit the hardware allows. */
 	previous = asid_limit;
 	if (limit != 0 && limit <= SPACE_ASID_LIMIT)
 		asid_limit = limit;
@@ -1122,6 +1137,11 @@ tlb_sync(
  * tlbwi, never tlbwr: a random write would leave the matching entry in
  * place and make two entries match, which a real processor takes as a
  * machine check.  Called with interrupts off.
+ *
+ * Values referenced: MIPS32 and MIPS64 Architecture for Programmers
+ * Volume III (the TLB instructions tlbp, tlbwi and tlbwr, the EntryHi,
+ * EntryLo, Index, PageMask and Wired registers, the TLB refill, invalid
+ * and modified exceptions, and the execution hazards of their writes).
  */
 static void
 tlb_update(

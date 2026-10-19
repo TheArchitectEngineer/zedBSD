@@ -110,13 +110,20 @@ mips_trap(
 
 	/* The tick and the board's interrupts, on either side. */
 	if (code == MIPS_EXCEPTION_INTERRUPT) {
+		/* A user task's frame is published for the kernel's handlers. */
 		if (from_user)
 			mips_task_enter_user_frame(frame);
+
+		/* Serves the interrupt. */
 		trap_interrupt(frame);
+
+		/* A user task returns through the kernel's return work. */
 		if (from_user) {
 			kernel_user_return_handler();
 			mips_task_leave_user_frame();
 		}
+
+		/* Sets the Status the exception returns with. */
 		finish_status(frame);
 		return;
 	}
@@ -142,6 +149,8 @@ mips_trap(
 		} else {
 			trap_kernel_system_call(frame);
 		}
+
+		/* Sets the Status the exception returns with. */
 		finish_status(frame);
 		return;
 	}
@@ -152,6 +161,8 @@ mips_trap(
 	} else {
 		trap_kernel_fault(frame, code, space_result);
 	}
+
+	/* Sets the Status the exception returns with. */
 	finish_status(frame);
 }
 
@@ -174,6 +185,7 @@ mips_trap_selftest(
 	if (error != 0)
 		HAL_FATAL("mips trap selftest error mark");
 
+	/* Reports the passed check. */
 	hal_puts(MIPS_HAL_NAME " HAL TRAP PASS\n");
 }
 

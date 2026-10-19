@@ -21,10 +21,6 @@
  * register reports 64-bit registers: every context then runs with
  * Status.FR set.  Without both the unit is left off, and every
  * floating-point instruction is a coprocessor unusable fault.
- *
- * Values referenced: MIPS32 Architecture for Programmers Volume III
- * (Config1 FP bit 0, Status CU1 bit 29 and FR bit 26); Volume I (FIR F64
- * bit 22, FCSR Cause bits 12-17).
  */
 
 #include <hal/hal.h>
@@ -107,6 +103,7 @@ mips_fpu_usable(
 	if (fpu_usable)
 		return true;
 
+	/* The unit is left off. */
 	return false;
 }
 
@@ -149,6 +146,7 @@ mips_fpu_owned_by(
 	if (fpu_owner == context)
 		return true;
 
+	/* Another context, or none, owns the unit. */
 	return false;
 }
 
@@ -209,6 +207,7 @@ mips_fpu_sync(
 	/* Saves the owner's registers with the unit reachable for the moment. */
 	enabled = mips_irq_save();
 
+	/* Only the owner of a used unit has registers to save. */
 	if (fpu_usable &&
 	    context != NULL &&
 	    fpu_owner == context) {
@@ -235,10 +234,13 @@ mips_fpu_forget(
 	/* Takes the unit away from the context, and closes it when the context runs. */
 	enabled = mips_irq_save();
 
+	/* The owner gives up the unit without a save. */
 	if (fpu_owner == context) {
 		fpu_owner = NULL;
 		fpu_owner_state = NULL;
 	}
+
+	/* The running context finds the unit closed at its next instruction. */
 	if (fpu_current == context) {
 		status = mips_read_status();
 		write_status(status & ~(uint32_t)MIPS_STATUS_COPROCESSOR_1);

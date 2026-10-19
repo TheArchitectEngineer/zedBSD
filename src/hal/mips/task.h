@@ -53,6 +53,7 @@ struct mips_task {
 	/* The floating-point registers while the unit does not hold them. */
 	struct hal_fpregs fpregs __attribute__((aligned(8)));
 
+	/* The kernel's own pointer for the task (hal_task_set_private()). */
 	void *private_data;
 
 	/*

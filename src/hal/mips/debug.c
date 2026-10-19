@@ -91,6 +91,8 @@ hal_task_set_user_gpregs(
 			continue;
 		frame->r[index] = registers->r[index];
 	}
+
+	/* Writes the multiply and divide results and the restart address. */
 	frame->hi = registers->hi;
 	frame->lo = registers->lo;
 	frame->exception_pc = registers->pc;
@@ -113,6 +115,8 @@ hal_task_get_user_fpregs(
 	/* Requires a task and somewhere to put the registers. */
 	if (task == NULL || registers == NULL)
 		return HAL_ERR_INVALID;
+
+	/* The handle is the HAL's task. */
 	target = task;
 
 	/* The unit's registers when the task owns it are saved first. */
@@ -141,6 +145,8 @@ hal_task_set_user_fpregs(
 	/* Requires a task and registers to write. */
 	if (task == NULL || registers == NULL)
 		return HAL_ERR_INVALID;
+
+	/* The handle is the HAL's task. */
 	target = task;
 
 	/*

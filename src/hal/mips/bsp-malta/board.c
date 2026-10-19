@@ -267,6 +267,7 @@ mips_board_display_ready(
 	if (board_display_on)
 		return true;
 
+	/* No display: the console stays on the serial line. */
 	return false;
 }
 
@@ -503,6 +504,8 @@ parse_number(
 		} else {
 			break;
 		}
+
+		/* Appends the digit to the number. */
 		number = number * base + digit;
 		digits++;
 		string++;

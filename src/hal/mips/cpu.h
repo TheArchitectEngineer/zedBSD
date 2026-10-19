@@ -24,6 +24,7 @@ mips_read_status(
 {
 	uint32_t value;
 
+	/* Moves the register from coprocessor 0. */
 	__asm__ volatile("mfc0 %0, $12" : "=r"(value));
 
 	/* Succeeded: the register's value. */
@@ -40,6 +41,7 @@ mips_read_processor_id(
 {
 	uint32_t value;
 
+	/* Moves the register from coprocessor 0. */
 	__asm__ volatile("mfc0 %0, $15, 0" : "=r"(value));
 
 	/* Succeeded: the register's value. */
@@ -56,6 +58,7 @@ mips_read_exception_base(
 {
 	uint32_t value;
 
+	/* Moves the register from coprocessor 0. */
 	__asm__ volatile("mfc0 %0, $15, 1" : "=r"(value));
 
 	/* Succeeded: the register's value. */
@@ -71,6 +74,7 @@ mips_read_config(
 {
 	uint32_t value;
 
+	/* Moves the register from coprocessor 0. */
 	__asm__ volatile("mfc0 %0, $16, 0" : "=r"(value));
 
 	/* Succeeded: the register's value. */
@@ -87,6 +91,7 @@ mips_read_config1(
 {
 	uint32_t value;
 
+	/* Moves the register from coprocessor 0. */
 	__asm__ volatile("mfc0 %0, $16, 1" : "=r"(value));
 
 	/* Succeeded: the register's value. */
