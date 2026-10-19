@@ -11,7 +11,7 @@
 - 決定（2026-10-19 18:29 ユーザー）: 「まずAのフレームバッファだけ実装して、Sun PGX64とかはあとで対応できるように口だけ残しておきます。」 → 今回は firmware framebuffer だけを実装し、既知の card の driver が引き取る口（登録・優先度・引き取りの順）は作るが card の driver そのもの（PGX64・XVR-500/600 など）は後の WS。D8 は今は選ばない。
 - 決定（2026-10-19 19:06 ユーザー、クリック）: D6 sparcv9 の file は「P の担当が変える」（merge の前に差分を見せる）。HAL の差分は「承認する」。
 - 決定（2026-10-19 19:12 ユーザー、クリック）: HAL の差分は「改訂 3 で承認」。D4「(a) loader が tree から」。D1 (a)・D2 (a)・D5 (a)・D7 (b) は「既定のまま」。
-- 担当: 未割当（手の空いた担当から p001）。
+- 担当: P1（p001 cleared、p002 は q1311）。
 
 ## 完了の条件（改訂 3）
 
@@ -25,7 +25,7 @@
 | Phase | 目的 | 依存 | 状態 |
 | --- | --- | --- | --- |
 | p001 | 設計（[design.md](design.md)）と design-reviewer | — | cleared（改訂 3.1、2026-10-19 P1 q1311、Q1 の判定: design-review-3 の結論） |
-| p002 | loader（display の node・property・qext・`color!`・i8042、`ofw.h`）、boot.h と HAL の名前付きの値（fallback の時も）、HAL の早期の console | p001、HAL の承認（改訂 3 の文面）、D4・D6・D7 | in-progress（P1 q1311） |
+| p002 | loader（display の node・property・qext・`color!`・i8042、`ofw.h`）、boot.h と HAL の名前付きの値（fallback の時も）、HAL の早期の console | p001、HAL の承認（改訂 3 の文面）、D4・D6・D7 | in-progress（[phase.md](phase002/phase.md)、実装・build・host 試験済み、p002b の T1 と sparcv9 の差分の提示待ち、P1 q1311） |
 | p002b | T1 の観察（gdbstub で handoff の値、`-g` x8・x32・既定の 3 条件の PNG） | p002 | planned |
 | p003 | generic の前段（登録・優先度・行の分割）と host 試験 | p002b、D1 | planned |
 | p004 | firmware fb の backend、text の console と出力の道、8042 の共有と sun4u の poll、evdev、sun4u.c | p003、D2・D5・D6 | planned |
