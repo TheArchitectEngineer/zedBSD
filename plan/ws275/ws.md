@@ -22,4 +22,4 @@
 
 | Phase | 目的 | 状態 |
 | --- | --- | --- |
-| p001 | 設計: /dev/graphics の契約と pcat の実装の読み、sun4u の VGA での実装の形（kernel の driver の置き場所、HAL との境界、mode の設定、framebuffer の user への写像、big endian の pixel の並び）、入力（QEMU sun4u の keyboard・mouse の device と driver の有無）、Xzed の sparcv9 での build（X11 の package、userland の X の group）、boot-test の判定、Phase の表と LW。design-reviewer を通す | in-progress（q1303、P1、2026-10-19） |
+| p001 | 設計: /dev/graphics の契約と pcat の実装の読み、sun4u の VGA での実装の形（kernel の driver の置き場所、HAL との境界、mode の設定、framebuffer の user への写像、big endian の pixel の並び）、入力（QEMU sun4u の keyboard・mouse の device と driver の有無）、Xzed の sparcv9 での build（X11 の package、userland の X の group）、boot-test の判定、Phase の表と LW。design-reviewer を通す | in-progress（設計の版 1、design-review-1 は Blocker 1・Major 8。改訂 2 は手の空いた担当、2026-10-19） |
