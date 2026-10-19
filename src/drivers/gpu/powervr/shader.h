@@ -19,8 +19,8 @@
  * the build host.
  */
 
-#ifndef KERN_DRIVERS_GPU_POWERVR_SHADER_COMPILE_H
-#define KERN_DRIVERS_GPU_POWERVR_SHADER_COMPILE_H
+#ifndef KERN_DRIVERS_GPU_POWERVR_SHADER_H
+#define KERN_DRIVERS_GPU_POWERVR_SHADER_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -190,4 +190,4 @@ int powervr_shader_read(const uint32_t *words, size_t count, uint32_t stage, con
 int powervr_shader_compile(const uint32_t *words, size_t count, uint32_t stage, const struct powervr_shader_key *key, struct powervr_shader_workspace *workspace, struct powervr_shader_program *program, uint8_t *code, size_t room);
 int powervr_shader_compile_inline(const uint32_t *words, size_t count, uint32_t stage, const struct powervr_shader_key *key, const uint32_t *shared_values, uint32_t value_count, struct powervr_shader_workspace *workspace, struct powervr_shader_program *program, uint8_t *code, size_t room);
 
-#endif /* KERN_DRIVERS_GPU_POWERVR_SHADER_COMPILE_H */
+#endif /* KERN_DRIVERS_GPU_POWERVR_SHADER_H */

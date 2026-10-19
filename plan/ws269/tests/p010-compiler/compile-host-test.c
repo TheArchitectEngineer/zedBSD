@@ -22,7 +22,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "drivers/gpu/powervr/shader-compile.h"
+#include "drivers/gpu/powervr/shader.h"
 #include "drivers/gpu/powervr/shader-ir.h"
 #include "ir-run.h"
 #include "machine-run.h"

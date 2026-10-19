@@ -16,7 +16,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "drivers/gpu/powervr/shader-compile.h"
+#include "drivers/gpu/powervr/shader.h"
 #include "drivers/gpu/powervr/shader-ir.h"
 #include "drivers/gpu/powervr/usc-encode.h"
 

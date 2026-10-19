@@ -14,7 +14,7 @@
  * codec are the i915 executor's, used unchanged.  The executor covers the
  * smallest compute path: the instance, the one physical device and its
  * queue, memory and buffers, descriptor sets, compute pipelines whose
- * SPIR-V the shader compiler takes (shader-compile.h), command buffers
+ * SPIR-V the shader compiler takes (shader.h), command buffers
  * that bind and dispatch, and their submission; and the images, image
  * views and samplers of the formats of image-state.c.
  *
@@ -33,7 +33,7 @@
 
 #include "drivers/gpu/i915/render/codec.h"
 #include "drivers/gpu/powervr/image-state.h"
-#include "drivers/gpu/powervr/shader-compile.h"
+#include "drivers/gpu/powervr/shader.h"
 
 struct powervr_session;
 struct powervr_resource;

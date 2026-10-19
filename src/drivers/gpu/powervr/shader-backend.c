@@ -25,7 +25,7 @@
 
 #include <uapi/errno.h>
 
-#include "drivers/gpu/powervr/shader-compile.h"
+#include "drivers/gpu/powervr/shader.h"
 #include "drivers/gpu/powervr/shader-ir.h"
 #include "drivers/gpu/powervr/shader-private.h"
 #include "drivers/gpu/powervr/usc-encode.h"
