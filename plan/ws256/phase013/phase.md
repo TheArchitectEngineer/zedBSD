@@ -2,7 +2,7 @@
 
 # ws256-p013 VF2 の周辺の基盤（code、板の前）
 
-Status: in-progress（2026-10-19 P2: code・host 試験・build（warning 0）まで済み。Q1 の判定待ち。実機の確かめは p022）
+Status: cleared（2026-10-19 Q1 の判定: 板の前の code の Phase。VF2 の CRG・pinctrl・SYSCON と drv_fdt_dma_coherent、host 試験 93 PASS、ecam の回帰 OK、VF2・virt・rpi4・amd64 の build warning 0。実機の確かめは p022（ユーザーの目視）。VF2 の root に基本の program 16 を足した）
 
 - 親: [WS256](../ws.md)。Queue: q1285-i01（P2）。
 - 範囲: [design-peripherals.md](../design-peripherals.md) §3.2（改訂 4）と §2.4 の `drv_fdt_dma_coherent`。`src/drivers/platform/visionfive2/` の CRG（SYS・STG・AON、PLL から rate）・reset・pinctrl/GPIO・SYSCON、汎用の `drv_fdt_dma_coherent(fdt, node, board_default)`（親を辿る）、`visionfive2.c` からの初期化。PMIC（AXP15060）と DW I2C は外す（#22 の既定）。HAL（hal.h）は変えない。
