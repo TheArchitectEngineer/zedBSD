@@ -19,7 +19,8 @@
 #   QEMU           emulator to run (default depends on BOOT_MODE)
 #   BOOT_MODE      uefi-nvme (default), uefi-usb, bios-ide, raspi4b,
 #                  riscv64-virt, riscv64-uboot, riscv32-virt, m68k-virt,
-#                  ppc32-mac99, ppc64-pseries or sun4u
+#                  ppc32-mac99, ppc64-pseries, mips32-malta, mips64-malta
+#                  or sun4u
 #   BOOT_PATTERN   what the screen must show, one regular expression per line;
 #                  every one must be seen on some screen (default the login
 #                  prompt, ^(?:\S+ )?login: ?)
@@ -31,7 +32,7 @@
 #                  the screen to show REGEX;
 #                  the last screen is OUTPUT/login-after.png
 #   BOOT_INTERVAL  seconds between two looks at the screen (default 2, 0.5 in
-#                  the riscv64 modes)
+#                  the modes that boot a kernel directly)
 #   QEMU_NO_KVM    1 runs the amd64 guest on TCG (-cpu max) even when /dev/kvm
 #                  is usable; otherwise it runs under KVM (-cpu host) when the
 #                  host offers it (plan/tools/guest/qemu-accel.sh)
@@ -70,6 +71,11 @@
 # kernel (default build/m68k-virt/vmunix) directly in qemu-system-m68k's virt
 # machine with an MC68040 and 512M (BOOT_MEMORY); its display is a
 # virtio-gpu device, its first serial line the same socket.
+# BOOT_MODE=mips32-malta boots a little-endian MIPS32 kernel (default
+# build/mips32-malta/vmunix) directly on qemu-system-mipsel's malta with the
+# std VGA and 256M (BOOT_MEMORY), and mips64-malta a MIPS64 one (default
+# build/mips64-malta/vmunix) on qemu-system-mips64el with the MIPS64R2-generic
+# CPU; BOOT_APPEND is the kernel's command line.
 # BOOT_MODE=ppc32-mac99 boots a flat 32-bit PowerPC kernel image (default
 # build/ppc32-mac99/vmunix.bin) on qemu-system-ppc's mac99 through OpenBIOS,
 # whose display is set to 800x600 at 32 bits a pixel; 512M (BOOT_MEMORY).
@@ -109,6 +115,14 @@ riscv32-virt)
 	;;
 m68k-virt)
 	image=${1:-${IMAGE:-${KERNEL:-$root/build/m68k-virt/vmunix}}}
+	boot_interval=${BOOT_INTERVAL:-0.5}
+	;;
+mips32-malta)
+	image=${1:-${IMAGE:-${KERNEL:-$root/build/mips32-malta/vmunix}}}
+	boot_interval=${BOOT_INTERVAL:-0.5}
+	;;
+mips64-malta)
+	image=${1:-${IMAGE:-${KERNEL:-$root/build/mips64-malta/vmunix}}}
 	boot_interval=${BOOT_INTERVAL:-0.5}
 	;;
 ppc32-mac99)
@@ -178,6 +192,14 @@ m68k-virt)
 	qemu=${QEMU:-qemu-system-m68k}
 	required=("$image")
 	;;
+mips32-malta)
+	qemu=${QEMU:-qemu-system-mipsel}
+	required=("$image")
+	;;
+mips64-malta)
+	qemu=${QEMU:-qemu-system-mips64el}
+	required=("$image")
+	;;
 ppc32-mac99)
 	qemu=${QEMU:-qemu-system-ppc}
 	required=("$image")
@@ -235,7 +257,8 @@ screenshot=$output/login.png
 # costs little), and the firmware gets its own variable store.  A riscv64-virt
 # kernel is booted directly and has no disk.
 if [[ $boot_mode != riscv64-virt && $boot_mode != riscv32-virt && $boot_mode != m68k-virt &&
-	$boot_mode != ppc32-mac99 && $boot_mode != ppc64-pseries ]]; then
+	$boot_mode != ppc32-mac99 && $boot_mode != ppc64-pseries &&
+	$boot_mode != mips32-malta && $boot_mode != mips64-malta ]]; then
 	qemu-img create -q -f qcow2 -F raw -b "$(readlink -f -- "$image")" "$disk"
 fi
 if [[ $boot_mode == uefi-usb || $boot_mode == uefi-nvme ]]; then
@@ -310,6 +333,23 @@ elif [[ $boot_mode == m68k-virt ]]; then
 		-serial "unix:$serial,server,nowait" \
 		-qmp "unix:$monitor,server,nowait" \
 		-kernel "$image" "${m68k_extra[@]}" >"$output/qemu.log" 2>&1 &
+elif [[ $boot_mode == mips32-malta || $boot_mode == mips64-malta ]]; then
+	# The malta machine with the std VGA the kernel sets up and draws its
+	# console on, and the Super I/O COM1 on a socket for typing into.
+	mips_machine=(-machine malta -m "${BOOT_MEMORY:-256M}" -vga std
+		-display none -no-reboot
+		-serial "unix:$serial,server,nowait"
+		-qmp "unix:$monitor,server,nowait")
+	if [[ $boot_mode == mips64-malta ]]; then
+		mips_machine+=(-cpu MIPS64R2-generic)
+	fi
+	mips_boot=(-kernel "$image")
+	if [[ -n ${BOOT_APPEND:-} ]]; then
+		mips_boot+=(-append "$BOOT_APPEND")
+	fi
+	read -r -a mips_extra <<<"${QEMU_EXTRA:-}"
+	"$qemu" "${mips_machine[@]}" "${mips_boot[@]}" "${mips_extra[@]}" \
+		>"$output/qemu.log" 2>&1 &
 elif [[ $boot_mode == ppc32-mac99 ]]; then
 	# The mac99 machine through its firmware, with a 32-bit display the
 	# kernel draws its console on, and the serial line on a socket.
