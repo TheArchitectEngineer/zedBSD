@@ -22,19 +22,6 @@ and write tests of the medium that must not touch a file system.
 for booting from the SD card: the SPL in partition 1, of the type its boot
 ROM looks for, and the U-Boot image in partition 2, which the SPL reads.
 The EFI system partition is then partition 3 and the root partition 4.
-
-Values referenced: UEFI Specification 2.10 section 5 (the protective MBR,
-the GPT header and partition entry layout, the EFI system partition type
-C12A7328-F81F-11D2-BA4B-00A0C93EC93B) and section 3.5.1.1 (the removable
-media boot path); the RISC-V file name BOOTRISCV64.EFI is the one U-Boot
-v2025.01 lib/efi_loader/efi_helper.c looks for.  The FreeBSD UFS partition
-type 516E7CB6-6ECF-11D6-8FF8-00022D09712B is the one the amd64 native image
-gives its root.  The SPL and U-Boot partition types
-2E54B353-1271-4842-806F-E436D6AF6985 and BC13C2FF-59E6-4262-A352-B275FD6F7172,
-their sectors 4096 to 8191 and 8192 to 16383, and the SPL reading U-Boot
-from partition 2: U-Boot v2025.01 doc/board/starfive/visionfive2.rst and
-configs/starfive_visionfive2_defconfig
-(CONFIG_SYS_MMCSD_RAW_MODE_U_BOOT_PARTITION).
 """
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
@@ -48,6 +35,12 @@ import uuid
 import zlib
 from pathlib import Path
 
+# The GPT's layout and the EFI system partition's type; the root partition
+# takes the FreeBSD UFS type, as the amd64 native image's root does.
+#
+# Values referenced: UEFI Specification 2.10 section 5 (the protective MBR,
+# the GPT header and partition entry layout, the EFI system partition type
+# C12A7328-F81F-11D2-BA4B-00A0C93EC93B).
 SECTOR = 512
 ENTRY_COUNT = 128
 ENTRY_SIZE = 128
@@ -60,6 +53,12 @@ SCRATCH_LABEL = "zedBSD-scratch"
 
 # The VisionFive 2's firmware partitions: the SPL where the boot ROM looks
 # for it, and U-Boot in partition 2, where the SPL reads it.
+#
+# Values referenced: U-Boot v2025.01 doc/board/starfive/visionfive2.rst and
+# configs/starfive_visionfive2_defconfig
+# (CONFIG_SYS_MMCSD_RAW_MODE_U_BOOT_PARTITION): the SPL and U-Boot
+# partition types, their sectors 4096 to 8191 and 8192 to 16383, and the
+# SPL reading U-Boot from partition 2.
 SPL_TYPE = uuid.UUID("2e54b353-1271-4842-806f-e436d6af6985")
 SPL_LBA = 4096
 SPL_LAST = 8191
@@ -122,6 +121,11 @@ def copy_into(image, source: Path, lba: int) -> None:
 
 
 def build(args: argparse.Namespace) -> None:
+    # The loader goes where the firmware looks on removable media.
+    #
+    # Values referenced: UEFI Specification 2.10 section 3.5.1.1 (the
+    # removable media boot path); U-Boot v2025.01
+    # lib/efi_loader/efi_helper.c (the RISC-V file name BOOTRISCV64.EFI).
     files = [("EFI/BOOT/BOOTRISCV64.EFI", args.efi), ("zedbsd.cfg", args.config),
              ("vmunix", args.kernel)]
     if args.root_image is not None:

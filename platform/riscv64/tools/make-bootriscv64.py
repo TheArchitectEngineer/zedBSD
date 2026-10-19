@@ -13,12 +13,6 @@ The header names two sections: .text (the code and the read-only data) and
 .data (the data, the relocations and, past the file's bytes, the
 zero-filled data).  It carries no base relocations: the image applies its
 own relocations at its entry.
-
-Values referenced: Microsoft PE/COFF specification (the MS-DOS stub's
-e_lfanew, the COFF file header, the PE32+ optional header and its data
-directories, the section table, IMAGE_SUBSYSTEM_EFI_APPLICATION, the section
-characteristics); Linux 6.8.12 include/linux/pe.h
-(IMAGE_FILE_MACHINE_RISCV64 0x5064).
 """
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
@@ -32,6 +26,13 @@ from pathlib import Path
 PAGE = 0x1000
 HEADER_BYTES = PAGE
 
+# The PE32+ header's fields and values.
+#
+# Values referenced: Microsoft PE/COFF specification (the MS-DOS stub's
+# e_lfanew, the COFF file header, the PE32+ optional header and its data
+# directories, the section table, IMAGE_SUBSYSTEM_EFI_APPLICATION, the
+# section characteristics); Linux 6.8.12 include/linux/pe.h
+# (IMAGE_FILE_MACHINE_RISCV64 0x5064).
 MACHINE_RISCV64 = 0x5064
 OPTIONAL_MAGIC_PE32PLUS = 0x20B
 SUBSYSTEM_EFI_APPLICATION = 10

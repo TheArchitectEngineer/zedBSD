@@ -1081,7 +1081,8 @@ allocate_kernel(
 	}
 
 	/* Takes any pages with room to round the start up to a megapage. */
-	status = context->boot->AllocatePages(AllocateAnyPages, EfiLoaderData,
+	status = context->boot->AllocatePages(AllocateAnyPages,
+					      EfiLoaderData,
 					      pages + (UINTN)(RISCV64_KERNEL_PHYS_ALIGN / PAGE_SIZE),
 					      &address);
 	if (EFI_ERROR(status))

@@ -464,16 +464,21 @@ read_cells(
 	const uint8_t *bytes,
 	uint32_t cells)
 {
-	/* One cell is a 32-bit number. */
-	if (cells == 1U)
-		return read_be32(bytes);
+	uint64_t number;
 
 	/* No cells is the number zero. */
 	if (cells == 0U)
 		return 0;
 
-	/* Two or more: the last two cells are the low 64 bits. */
-	return read_be64(bytes + (cells - 2U) * 4U);
+	/* One cell is a 32-bit number; of two or more, the last two cells are the low 64 bits. */
+	if (cells == 1U) {
+		number = read_be32(bytes);
+	} else {
+		number = read_be64(bytes + (cells - 2U) * 4U);
+	}
+
+	/* Succeeded: the number. */
+	return number;
 }
 
 /* Empties the record before a parse. */
@@ -1207,16 +1212,21 @@ read_number(
 	const uint8_t *value,
 	uint32_t length)
 {
-	/* Two cells are a 64-bit number. */
-	if (length >= 8U)
-		return read_be64(value);
+	uint64_t number;
 
-	/* One cell is a 32-bit number. */
-	if (length >= 4U)
-		return read_be32(value);
+	/* A value shorter than a cell is no number. */
+	if (length < 4U)
+		return 0;
 
-	/* A shorter value is no number. */
-	return 0;
+	/* Two cells are a 64-bit number, one cell a 32-bit number. */
+	if (length >= 8U) {
+		number = read_be64(value);
+	} else {
+		number = read_be32(value);
+	}
+
+	/* Succeeded: the number. */
+	return number;
 }
 
 /*

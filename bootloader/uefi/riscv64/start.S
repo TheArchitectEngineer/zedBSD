@@ -15,9 +15,6 @@
  * it), so the entry first applies the image's own R_RISCV_RELATIVE
  * relocations for the address it was loaded at, then calls efi_main() and
  * returns its status to the firmware.
- *
- * Procedure referenced: Linux 6.8.12 arch/riscv/kernel/efi-header.S (an
- * EFI image built as an ELF with its own PE header in front).
  */
 
 /*
@@ -30,6 +27,12 @@
 #define RELA_RELATIVE	3
 #define RELA_SIZE	24
 
+/*
+ * The entry the image's PE header names.
+ *
+ * Procedure referenced: Linux 6.8.12 arch/riscv/kernel/efi-header.S (an
+ * EFI image built as an ELF with its own PE header in front).
+ */
 	.option norelax
 	.section .text.start, "ax"
 	.balign 4
