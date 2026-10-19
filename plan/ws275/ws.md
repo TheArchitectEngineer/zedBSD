@@ -12,21 +12,22 @@
 - 決定（2026-10-19 19:06 ユーザー、クリック）: D6 sparcv9 の file は「P の担当が変える」（merge の前に差分を見せる）。HAL の差分は「承認する」。
 - 担当: 未割当（手の空いた担当から p001）。
 
-## 完了の条件（改訂 2、p001 の再レビューで確定）
+## 完了の条件（改訂 3）
 
 1. QEMU sun4u で /dev/graphics が開け、pcat と同じ契約（include/uapi/graphics.h）で mode の列挙・ENTER・ioctl での描画（BLIT・FILL など、mmap は契約に無い）ができる。8 bpp と 32 bpp の両方。
-2. QEMU sun4u で Xzed が起動し、画面に zterm が出て、keyboard と mouse で操作できる。判定は T1 の boot-test.sh の画面（`BOOT_TEXT_ORIGINS` で zterm の原点を渡す）、読めない時は T1 の PNG の目視。
+2. QEMU sun4u で Xzed が起動し、画面に zterm が出て、keyboard と mouse で操作できる。判定は T1 の boot-test.sh の画面（`BOOT_TEXT_ORIGINS` で zterm の原点を渡す。mouse は zterm の double click と中の click の貼り付け）と既知の色の画素の値、読めない時は T1 の PNG の目視（design §5）。
 3. X11 の program は platform `*` のまま、arch の分岐を足さない。base の全部を sparcv9 で build するのはユーザーの担当（外部の条件）。
-4. 既知の card の driver が後で引き取れる口（backend の登録と優先度）がある。card の driver と実機（Sun Blade 150）は本 WS の外（design §9 の Future Work の案）。
+4. 既知の card の driver が後で引き取れる口（backend の登録と優先度）がある。card の driver と実機（Sun Blade 150）は本 WS の外（F-107〜F-111）。
 
 ## Phase
 
 | Phase | 目的 | 依存 | 状態 |
 | --- | --- | --- | --- |
-| p001 | 設計（[design.md](design.md)）と design-reviewer | — | in-progress（改訂 2、2026-10-19 P1 q1308。再レビュー待ち・ユーザーの判断待ち） |
-| p002 | loader（display の node・property・qext・`color!`・i8042）、boot.h と HAL の名前付きの値、HAL の早期の console | p001、HAL の承認、D4・D6 | planned |
-| p003 | generic の前段（backend の登録・優先度・行の分割）、firmware fb の backend、text の console と出力の道 | p002 | planned |
-| p004 | 8042 の共有と sun4u の poll、evdev | p002 | planned |
-| p005 | userland の config・Makefile・vmunix.mk・libX11 の BE、build | p003・p004 | planned |
-| p006 | T1 の試験（sun4u 8・32 bpp の X、回帰） | p005、外部: boot-test の `BOOT_TEXT_ORIGINS`（main に入った）・QEMU の引数の口・`mouse:`（Q1） | planned |
+| p001 | 設計（[design.md](design.md)）と design-reviewer | — | in-progress（改訂 3、2026-10-19 P1 q1309。レビュー 2 の差分の確認待ち、改訂 3 の HAL の文面をユーザーに改めて示す） |
+| p002 | loader（display の node・property・qext・`color!`・i8042、`ofw.h`）、boot.h と HAL の名前付きの値（fallback の時も）、HAL の早期の console | p001、HAL の承認（改訂 3 の文面）、D4・D6・D7 | planned |
+| p002b | T1 の観察（gdbstub で handoff の値、`-g` x8・x32・既定の 3 条件の PNG） | p002 | planned |
+| p003 | generic の前段（登録・優先度・行の分割）と host 試験 | p002b、D1 | planned |
+| p004 | firmware fb の backend、text の console と出力の道、8042 の共有と sun4u の poll、evdev、sun4u.c | p003、D2・D5・D6 | planned |
+| p005 | userland の config・Makefile・vmunix.mk・libX11 の BE、build（warning 0） | p004、D6 | planned |
+| p006 | T1 の試験（sun4u 8・32 bpp・既定の X、色の画素、mouse、回帰） | p005（boot-test の `QEMU_EXTRA`・`mouse:`・`BOOT_TEXT_ORIGINS` は main に入済み） | planned |
 | p007 | 規約の全文の見直し | p006 | planned |
