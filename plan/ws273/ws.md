@@ -13,6 +13,10 @@
 1. RG350 の実機で kernel が起動し、内蔵の LCD に console が出る。
 2. 範囲（SD の root、login、入力のボタン）は p001 の設計で決める。
 
+## 決定（2026-10-19 21:00 ユーザー、クリック）
+
+機種 RG350（320×240）。D1 A（UZIMAGE.BAK）、D2 A、D3 A、D4 A、D5 B、D6 A、D7 承認（実機の目視・写真を証拠、Guardrail の表）、D8 A（mips32.h の comment の差分を承認、Guardrail の表）。原文は Master の decisions-log。
+
 ## Phase
 
 | Phase | 中身 | 依存 | Status |
