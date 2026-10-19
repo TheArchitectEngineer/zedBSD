@@ -23,5 +23,6 @@
 | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | 設計（riscv64 の desktop の package の build、service・seat・input・display の claim の画面なしの立ち上げ、描画は WS269 p010 の後、Phase の分割）。コードは書かない | — | cleared（2026-10-20 Q1、改訂 2.1。D は未決） |
 | [p002](phase002/phase.md) | riscv64 の desktop の build の不足のうち設計に依らない物（userland-dynamic の include、package の arch の表、kwl_cycles、machine 名） | — | in-progress（2026-10-19 P1、q1336・q1338。試しの build は rc=0（noct・emacs を config から外し、libcurses・keiland-preview の static の規則を足した）、amd64・rpi4 の rootfs rc=0） |
+| [p003](phase003/phase.md) | QEMU riscv64-virt の画面なしの確かめ（service・USB keyboard の login・mouse の event・display が無い時の道・`keiland-preview` の static の実行）。試験の config、rootfs 73 MiB（256 MiB の root に入る）、riscv64 の native の cfg に `login=graphical` | p002 | in-progress（2026-10-20 P2、q1342。準備は済み、T1 待ち） |
 
 残りの Phase は p001 の設計から作る。
