@@ -251,3 +251,6 @@ Keiland が使い、vkmatrix 15/15・gpu-selftest 13/13 で確かめていない
   - guard 付きの vkmatrix の case は作っていない。lavapipe では越境を検出できない。
 - 残り: app の VkBuffer を linear の transfer 面にする copy（image↔buffer）は、buffer の大きさを driver が延ばせない。
   そちらで越えるなら、transfer の側で、source の座標を clamp するか、最後の tile 行を分けて書く必要がある。
+- d8（q1526-i02、1399a25da）: `visionfive2: ccache at 0x2010000, cache maintenance on`、present 11.7 ms。ユーザー（HDMI）「キャッシュの挙動が消えました。」
+- d9（P2 の pc・fault の記述、9f0fdcf43）: `fault 0x8009ae2fc0 … above handle 0x80092f9000..0x8009ae2000 (8294400 bytes, past end by 4032) maker run_stream`、`transfer: fail` → 1920x1080 の linear の swapchain の image の末尾を transfer が越えて読む（16/32 行の tile）。P2 q1523-i05（7b97d66a5）で linear の image の memory を 32 行の倍数に。
+- **d10（P1 q1525 の linear の直接 scanout、3e530b10a、2026-10-21 07:37）: Keiland の desktop に Settings（welcome）と Terminal の window が表示され、terminal の prompt `kei@kei:/tmp$` が出た（build/review/vf2-desktop/shot10.png・shot11.png）。context reset 0。KWL PERF rec: present 1〜3 ms（前 10 ms）、copied=0、submit は 15〜300 ms（重い frame で遅い）。**
