@@ -11,14 +11,11 @@
 -->
 
 <!-- master:agents:start -->
-- **2026-10-18 夜〜 自走**（ユーザー「WS260, ws259, WS261, ws262, ws263, ws264, ws265, ws266, ws267, ws268 これらを完了させるまで自走してほしいです。」、N=2、子のエージェントなし、判断は decisions-log の同日の項目）。
-  - P1（q1257）: WS263 riscv32 → WS266 m68k の virt → WS264 ppc32 mac99 → WS265 ppc64 pseries BE。
-  - P2（q1256 → q1258）: WS262 の uefi・sparcv9 → WS267 sun4u → WS268 x68k → WS259。
-  - T1: QEMU の試験を都度。実機（WS260 の T1-710、WS259 の WiFi）は機械の準備待ち（beta2.md の U24・U25）。
-  - WS261 は completed。朝の報告: 事前の承認で入れた HAL の差分の一覧、bootloader/tests/payload*.ld の削除の可否、Pi 4 の CI の image の大きさ（2 の冪）。
-  - WS259 の license の package は「外す」（2026-10-19 ユーザー、P2 q1267）。
-  - WS245 p044・p045 の受け入れの読み替えは不要に（2026-10-19 ユーザー「WS245は5330で自動テスト合格ならそれでいいです。」）。
-  - WS252 の判断は 2026-10-19 12:46 にユーザーが回答済み（decisions-log）。
+- **2026-10-20 朝〜 自走**（ユーザー「では、私はしばらく寝るので、PowerVRのコードは完了を目指して作業をお願いします。あとでUATにおいて、どこまで実行できたかわかるログが出れば、デバッグしやすいと思います。」「起きたら試すので、進捗があったらイメージは作り直してOKです」、fg020、N=2）。
+  - P1・P2 は WS269 の p010e〜p010q・p011・p012 を q1376〜q1403 で実装（host 試験と build まで、実機は未）。全部 main に merge 済み（最後 e033354cb）。
+  - 実機の前に host の frame 試験で見つけて直した誤り: graphics の pipeline が全部断られる、pipeline の静的な viewport・scissor の無視、render pass の CLEAR の色、vertex の属性の既定、奇数の stride の blit、sRGB の clear、故障の後の kick。
+  - UAT の image: build/uat/vf2-gpu/native.img（main e87e32214、11:41、beta2.md U35）。起動で render check → transfer check → job check → gpu-selftest（vkstage の 6 段・present-clear・present）の行が出る。
+  - 実機で見る点（phase010q）: SR の H32/L32 の順、USC・PDS の命令 cache、linear の depth の store の並び。
   - push はしていない。
 <!-- master:agents:end -->
 
