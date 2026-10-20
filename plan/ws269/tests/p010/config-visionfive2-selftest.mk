@@ -18,3 +18,5 @@ GPU_SELFTEST_BOOT ?= y
 ZEDBSD_USER_PROGRAMS := $(filter-out powervr-firmware,$(ZEDBSD_USER_PROGRAMS)) \
 	libwayland-client libvulkan vkcompute vkimage vkstage gpu-selftest \
 	$(if $(filter y,$(GPU_SELFTEST_BOOT)),gpu-selftest-boot) $(SELFTEST_FIRMWARE)
+# The kernel renders a clear and a triangle once at start and says each step (render check).
+CONFIG_POWERVR_RENDER_CHECK := y
