@@ -1543,3 +1543,24 @@ csbgen（Mesa 25.0.7 の `gen_pack_header.py` の `__pvr_address`: `((addr >> sh
 - 板で流すもの: `-DPOWERVR_RENDER_LOAD_PROBE=5` で `vkmatrix two-passes` と `draws-32`。
 - それでも 0 なら、3D の背景の object で TPU の sample そのものが使えない（Mesa の load op は、texture の state を shared ではなく PDS の unitex の program で TPU の state として載せる: `pvr_pds_unitex_state_program_create_and_upload`）と見る。その時は LOAD を「compiler の texture の shader による全面の draw」（板で通る道）で置き換える（q1510 の (2)）。
 - 確認: RISC-V の self-test の build で warning 0（probe 0 と 5）。p010 の host 試験は failed 0。
+
+## q1514 / q1514-i01（2026-10-21）: LOAD を全画面の draw に置き換えた
+
+- 板 95: LOAD の背景に transfer の blit の program を使っても 0 だった。3D の背景の object から shared register の texture state で sample する道は、我々の設定では動かない。
+- 直し（`render-job.c`、既定の道。`POWERVR_RENDER_LOAD_PROBE` が 0 の時）:
+  - colour が LOAD の job は、job の写し（`work`）で走らせる。背景は DONT_CARE（0 の clear）にして、job の最初の draw として **load draw** を置く。対象は app の LOAD と、16 draw を越えて分けた後続の job（`powervr_render_job_continue`）の両方。
+  - load draw の作り:
+    - pipeline: vertex は位置と texture 座標（R32G32 の 2 つ、1 binding、stride 16）を渡し、fragment は set 0・binding 0 の combined image sampler を sample する。新しい `load-draw-shader.h` に入れた。SPIR-V は vkmatrix の `texture.vert`・`texture.frag` と同じ語。triangle list で、cull・depth・blend は無し。viewport と scissor は dynamic。
+    - compile: attachment の format ごとに 1 回だけ行い、render node の `load_draws` に 4 つまで保つ。core の lock の下で作る。
+    - vertex: 全画面の三角形 2 枚（device 座標 −1〜1、uv 0〜1）。job の general の +0x800 に置く。
+    - set: combined image sampler 1 つ。image は attachment の view の state、sampler は NEAREST・clamp の正規化の座標で、pixel の中心で自分の texel を読む。
+    - viewport は framebuffer、scissor は render area。
+  - `job_draws`・`draw_place` は、prefix の draw（load draw）を index 0 に置けるようにした（`job_draw`）。stream の room と scissor の表の static assert を、draw 17 個の分に直した。
+  - kernel は浮動小数の演算をしないので、viewport の幅と高さは `float_bits`（整数を float の bit に）で入れる。
+  - 切り分けの probe（1〜5）は残した。0 以外の時は従来の背景の道を使う。
+- 試験:
+  - p010 の job-host-test に「LOAD の colour の job: 最初の draw が 6 頂点の load draw、その後に job の draw」を足した（32/32）。
+  - host の stub の `placed[32]` の溢れ（job の数が増えて試験の数を上書きした）を 256 に広げ、上限の検査も足した。
+  - p010 の他の試験は failed 0。p009 の executor は 505/505。
+- 確認: RISC-V の self-test の build で warning 0（DIAGNOSTICS の 0 と 1 の両方）。板は未実施（Q1 が two-passes・draws-32・draws-64 と、vkmatrix の 15 case を流す）。
+- 残り: node を外す時の `load_draws` の解放（今は node を外すことが無いので、保ったまま）。

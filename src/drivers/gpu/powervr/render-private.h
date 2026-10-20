@@ -341,8 +341,11 @@ struct powervr_switch_shaders {
  * say it has.  Free_lists lists every session's free lists by the
  * identity the firmware names them by, next_free_list is the identity
  * the next one takes, and target_events counts what the firmware
- * reported of them; all three are under the core's lock.
+ * reported of them; all three are under the core's lock.  Load_draws
+ * keeps the load draw's pipelines (render-job.c), made on first use
+ * under the core's lock.
  */
+struct powervr_load_draws;
 struct powervr_render {
 	struct powervr_core *core;
 	struct drv_gpu_device *device;
@@ -359,6 +362,7 @@ struct powervr_render {
 	struct powervr_free_list *free_lists;
 	struct powervr_target_events target_events;
 	struct powervr_switch_shaders switch_shaders;
+	struct powervr_load_draws *load_draws;
 	uint32_t next_free_list;
 	unsigned faulted;
 	unsigned lost;

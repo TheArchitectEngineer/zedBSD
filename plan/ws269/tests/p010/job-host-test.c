@@ -38,8 +38,8 @@ static int passes;
 static uint64_t next_general = HOST_GENERAL_BASE;
 static uint64_t next_pds = POWERVR_PDS_HEAP_BASE + 0x100000ULL;
 static uint64_t next_usc = POWERVR_USC_HEAP_BASE + 0x100000ULL;
-static struct powervr_buffer *placed[32];
-static uint64_t placed_at[32];
+static struct powervr_buffer *placed[256];
+static uint64_t placed_at[256];
 static unsigned placed_count;
 static uint8_t kicked_geometry[POWERVR_GEOMETRY_BYTES];
 static uint8_t kicked_fragment[POWERVR_FRAGMENT_BYTES];
@@ -89,6 +89,8 @@ void powervr_buffer_put(struct powervr_render *render, struct powervr_buffer *bu
 static void
 note(struct powervr_buffer *buffer, uint64_t address)
 {
+	if (placed_count >= sizeof(placed) / sizeof(placed[0]))
+		return;
 	placed[placed_count] = buffer;
 	placed_at[placed_count] = address;
 	placed_count++;
@@ -378,6 +380,41 @@ main(void)
 	job.colors[0].surface.format = powervr_format_find(109);
 	expect(powervr_render_job_run(&render, &session, &job) == ENOTSUP, "a clear of four words is refused");
 	job.colors[0].surface.format = powervr_format_find(37);
+
+	/*
+	 * A loaded colour: no background load, the job's first draw the load
+	 * draw (six vertices) over the framebuffer, sampling the attachment's
+	 * view, before the job's own two draws.
+	 */
+	{
+		static struct powervr_image_layout colour_layout;
+
+		memset(&colour_layout, 0, sizeof(colour_layout));
+		colour_layout.row_pitch = 256;
+		colour_layout.padded_width = 64;
+		colour_layout.padded_height = 64;
+		colour_layout.layer_bytes = 0x4000;
+		job.colors[0].load_op = 0;
+		job.colors[0].view.format = powervr_format_find(37);
+		job.colors[0].view.layout = &colour_layout;
+		job.colors[0].view.address = 0x8800000000ULL;
+		job.colors[0].view.width = 64;
+		job.colors[0].view.height = 64;
+		job.colors[0].view.image_levels = 1;
+		job.colors[0].view.level_count = 1;
+		job.colors[0].view.layer_count = 1;
+		job.colors[0].view.linear = true;
+		expect(powervr_render_job_run(&render, &session, &job) == 0, "the job of a loaded colour runs");
+		stream = read64(kicked_geometry, POWERVR_GEOMETRY_STREAM_BASE);
+		at = 0;
+		while (device_read(stream + at) != 6U && at < 0x200U)
+			at += 4U;
+		expect(device_read(stream + at) == 6U, "the load draw's six vertices come first");
+		while (device_read(stream + at) != 3U && at < 0x400U)
+			at += 4U;
+		expect(device_read(stream + at) == 3U, "then the job's own draws");
+		job.colors[0].load_op = 1;
+	}
 
 	/* A blit of three rows to a linear destination of an odd row: one job a row. */
 	{

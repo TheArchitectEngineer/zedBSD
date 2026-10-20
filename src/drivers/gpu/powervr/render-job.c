@@ -38,6 +38,9 @@
 #include "drivers/gpu/powervr/render-depth.h"
 #include "drivers/gpu/powervr/vk-draw.h"
 #include "drivers/gpu/powervr/vk.h"
+#include "drivers/gpu/powervr/descriptor-set.h"
+#include "drivers/gpu/powervr/shader.h"
+#include "drivers/gpu/powervr/load-draw-shader.h"
 
 /* How long a render may take. */
 #define JOB_WAIT_MS			2000U
@@ -81,7 +84,7 @@
 #define DRAW_PDS_COEFFICIENT		0xb80U
 #define DRAW_STREAM_ROOM		(GENERAL_LOAD_WORDS - GENERAL_STREAM)
 
-_Static_assert(DRAW_STREAM_ROOM >= (POWERVR_RENDER_DRAWS * POWERVR_DRAW_VDM_WORDS + POWERVR_RENDER_TERMINATE_STREAM_WORDS) * 4U, "the stream's room");
+_Static_assert(DRAW_STREAM_ROOM >= ((POWERVR_RENDER_DRAWS + 1U) * POWERVR_DRAW_VDM_WORDS + POWERVR_RENDER_TERMINATE_STREAM_WORDS) * 4U, "the stream's room, a load draw included");
 _Static_assert(POWERVR_DRAW_PPP_WORDS * 4U <= DRAW_PUSH, "the primitive state block's room");
 _Static_assert(POWERVR_DRAW_PUSH_BYTES <= DRAW_BLEND - DRAW_PUSH, "the push constants' room");
 _Static_assert(POWERVR_DATA_VERTEX_DATA_MAX * 4U <= DRAW_PDS_VERTEX_CODE, "the vertex program's data room");
@@ -91,7 +94,7 @@ _Static_assert(POWERVR_DATA_SHARED_DATA_MAX * 4U <= DRAW_PDS_KICK - DRAW_PDS_VSH
 _Static_assert(POWERVR_DATA_SHARED_CODE_MAX * 4U <= DRAW_PDS_FSHARED_DATA - DRAW_PDS_FSHARED_CODE, "fragment shared code room");
 _Static_assert(POWERVR_DATA_SHARED_DATA_MAX * 4U <= DRAW_PDS_COEFFICIENT - DRAW_PDS_FSHARED_DATA, "fragment shared data room");
 _Static_assert((POWERVR_DRAW_COEFFICIENT_DATA + 3U) / 4U * 16U + POWERVR_DRAW_COEFFICIENT_CODE * 4U <= DRAW_SLOT - DRAW_PDS_COEFFICIENT, "coefficient room");
-_Static_assert(POWERVR_RENDER_DRAWS * POWERVR_DRAW_SCISSOR_WORDS * 4U <= GENERAL_BYTES - GENERAL_SCISSORS, "scissor table room");
+_Static_assert((POWERVR_RENDER_DRAWS + 1U) * POWERVR_DRAW_SCISSOR_WORDS * 4U <= GENERAL_TERMINATE_PPP - GENERAL_SCISSORS, "scissor table room, a load draw included");
 #define PDS_EVENT			0x000U
 #define PDS_KICK			0x040U
 #define PDS_SHARED_CODE			0x080U
@@ -112,6 +115,39 @@ _Static_assert(POWERVR_RENDER_DRAWS * POWERVR_DRAW_SCISSOR_WORDS * 4U <= GENERAL
  */
 #define LOAD_OP_LOAD			0U
 #define LOAD_OP_CLEAR			1U
+#define LOAD_OP_DONT_CARE		2U
+
+/*
+ * A colour attachment that is LOADed is drawn over by a full-screen
+ * draw that samples what the job before stored (LOAD_DRAW 1, the
+ * default), its background left as contents that do not matter; on the
+ * board a background object that samples from its shared registers read
+ * 0 whatever its program (2026-10-21), while a draw's sampling reads the
+ * image.  POWERVR_RENDER_LOAD_PROBE other than 0 keeps the background
+ * forms the board was probed with.
+ *
+ * Values referenced:
+ * Khronos Vulkan 1.x vulkan_core.h (VK_ATTACHMENT_LOAD_OP_DONT_CARE 2,
+ * VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST 3, VK_FORMAT_R32G32_SFLOAT 103).
+ */
+#define LOAD_DRAW_TOPOLOGY		3U
+#define LOAD_DRAW_POSITION_FORMAT	103U
+#define LOAD_DRAW_VERTICES		6U
+#define LOAD_DRAW_STRIDE		16U
+#define LOAD_DRAW_FORMATS		4U
+#define LOAD_DRAW_CODE_BYTES		0x2000U
+
+/* The load draw's compiled shaders, one pipeline per attachment format, kept by the render node. */
+struct powervr_load_draws {
+	uint32_t formats[LOAD_DRAW_FORMATS];
+	struct powervr_vk_graphics *graphics[LOAD_DRAW_FORMATS];
+};
+
+/* One job's load draw: the draw, its set and the set's bytes. */
+struct load_draw {
+	struct powervr_render_draw draw;
+	struct powervr_vk_descriptor_set set;
+};
 
 /* The job's memory and programs while it runs. */
 struct job_memory {
@@ -141,6 +177,10 @@ struct job_memory {
 };
 
 static int job_check(const struct powervr_render_job *job);
+static void load_draw_free(struct powervr_render_job *work, struct load_draw *load);
+static uint32_t float_bits(uint32_t value);
+static int load_graphics(struct powervr_render *render, uint32_t vk_format, struct powervr_vk_graphics **result);
+static int load_draw_build(struct powervr_render *render, const struct powervr_render_job *job, struct job_memory *memory, struct load_draw *load);
 static int job_map(struct powervr_render *render, struct powervr_session *session, struct job_memory *memory);
 static int job_programs(const struct powervr_render_job *job, struct job_memory *memory, uint32_t *shared_registers);
 /*
@@ -169,8 +209,9 @@ get_le32(
 }
 
 static int job_background(const struct powervr_render_target *color, struct job_memory *memory, uint32_t pds_base, uint32_t usc_base, uint32_t *shared_registers);
-static int job_draws(struct powervr_render *render, struct powervr_session *session, const struct powervr_render_job *job, struct job_memory *memory, uint32_t *stream_words, uint32_t *vertex_shareds);
-static int draw_place(const struct powervr_render_job *job, uint32_t index, struct job_memory *memory, uint64_t sets_place, uint64_t usc_place, uint32_t stream_at, uint32_t *words);
+static int job_draws(struct powervr_render *render, struct powervr_session *session, const struct powervr_render_job *job, const struct powervr_render_draw *prefix, struct job_memory *memory, uint32_t *stream_words, uint32_t *vertex_shareds);
+static int draw_place(const struct powervr_render_job *job, const struct powervr_render_draw *draw, uint32_t index, struct job_memory *memory, uint64_t sets_place, uint64_t usc_place, uint32_t stream_at, uint32_t *words);
+static const struct powervr_render_draw *job_draw(const struct powervr_render_job *job, const struct powervr_render_draw *prefix, uint32_t index);
 static int draw_shared(const struct powervr_shader_program *program, const struct powervr_data_state *state, struct job_memory *memory, uint32_t code_at, uint32_t data_at, uint32_t *data_words);
 static void job_release(struct powervr_render *render, struct powervr_session *session, struct job_memory *memory);
 static int attribute_words(uint32_t format, uint32_t components, uint32_t *words, uint32_t *defaults);
@@ -209,12 +250,36 @@ powervr_render_job_run(
 	uint32_t stream_words;
 	uint32_t terminate[POWERVR_RENDER_TERMINATE_STREAM_WORDS];
 	uint32_t terminate_state[POWERVR_RENDER_TERMINATE_STATE_WORDS];
+	const struct powervr_render_job *given;
+	struct powervr_render_job *work;
+	struct load_draw *load;
 	int error;
 
 	/* Refuses what the job runner does not build yet. */
 	error = job_check(job);
 	if (error != 0)
 		return error;
+
+	/*
+	 * A loaded colour attachment: the job runs with its background's
+	 * contents not mattering and a load draw first (LOAD_DRAW), on a
+	 * copy of the job.
+	 */
+	given = job;
+	work = NULL;
+	load = NULL;
+	if (POWERVR_RENDER_LOAD_PROBE == 0 && job->colors[0].load_op == LOAD_OP_LOAD) {
+		work = kern_malloc(sizeof(*work));
+		load = kern_calloc(1, sizeof(*load));
+		if (work == NULL || load == NULL) {
+			kern_free(work);
+			kern_free(load);
+			return ENOMEM;
+		}
+		*work = *job;
+		work->colors[0].load_op = LOAD_OP_DONT_CARE;
+		job = work;
+	}
 
 	/* The job's shape and its first colour target's load and store, with the diagnostics. */
 	if (POWERVR_DIAGNOSTICS && job->color_count != 0)
@@ -226,40 +291,49 @@ powervr_render_job_run(
 
 	/* The session's render context and a target of the frame. */
 	error = powervr_session_render_context(render, session, &context);
-	if (error != 0)
-		return error;
-
-	shape.width = job->width;
-	shape.height = job->height;
-	shape.samples = 1;
-	shape.layers = 1;
-	error = powervr_session_target(render, session, &shape, &target);
-	if (error != 0)
-		return error;
+	if (error == 0) {
+		shape.width = job->width;
+		shape.height = job->height;
+		shape.samples = 1;
+		shape.layers = 1;
+		error = powervr_session_target(render, session, &shape, &target);
+	}
 
 	/* The job's memory and its programs. */
-	memory = kern_calloc(1, sizeof(*memory));
-	if (memory == NULL)
-		return ENOMEM;
+	memory = NULL;
+	if (error == 0) {
+		memory = kern_calloc(1, sizeof(*memory));
+		if (memory == NULL)
+			error = ENOMEM;
+	}
+	if (error != 0) {
+		load_draw_free(work, load);
+		return error;
+	}
 
 	error = job_map(render, session, memory);
 	if (error == 0)
 		error = job_programs(job, memory, &shared_registers);
+	if (error == 0 && load != NULL)
+		error = load_draw_build(render, given, memory, load);
 	if (error != 0) {
 		job_release(render, session, memory);
+		load_draw_free(work, load);
 		return error;
 	}
 
-	/* The draws' programs and streams, then the stream's end. */
+	/* The draws' programs and streams (the load draw first), then the stream's end. */
 	stream_words = 0;
 	vertex_shareds = 0;
-	if (job->draw_count != 0) {
-		error = job_draws(render, session, job, memory, &stream_words, &vertex_shareds);
+	if (job->draw_count != 0 || load != NULL) {
+		error = job_draws(render, session, job, load != NULL ? &load->draw : NULL, memory, &stream_words, &vertex_shareds);
 		if (error != 0) {
 			job_release(render, session, memory);
+			load_draw_free(work, load);
 			return error;
 		}
 	}
+
 	if (vertex_shareds > shared_registers)
 		shared_registers = vertex_shareds;
 	/* The stream's end as Mesa ends a render: the terminate state's block, then the end. */
@@ -268,6 +342,7 @@ powervr_render_job_run(
 	error = powervr_render_terminate_stream(memory->general->address + GENERAL_TERMINATE_PPP, terminate);
 	if (error != 0) {
 		job_release(render, session, memory);
+		load_draw_free(work, load);
 		return error;
 	}
 	put_words(memory->general->buffer, GENERAL_STREAM + stream_words * 4U, terminate, POWERVR_RENDER_TERMINATE_STREAM_WORDS);
@@ -281,6 +356,7 @@ powervr_render_job_run(
 		error = powervr_render_zls_words(&job->depth, &zls);
 		if (error != 0) {
 			job_release(render, session, memory);
+			load_draw_free(work, load);
 			return error;
 		}
 		memory->fragment_setup.has_depth = 1;
@@ -320,6 +396,7 @@ powervr_render_job_run(
 
 	if (error != 0) {
 		job_release(render, session, memory);
+		load_draw_free(work, load);
 		return error;
 	}
 
@@ -328,12 +405,255 @@ powervr_render_job_run(
 	if (error != 0) {
 		kern_logf("powervr: render job did not finish (%d); its memory stays with the core\n", error);
 		session->abandoned = 1;
+		load_draw_free(work, load);
 		return error;
 	}
 
 	/* Succeeded: the render is done and its memory goes. */
 	job_release(render, session, memory);
+	load_draw_free(work, load);
 	return 0;
+}
+
+/*
+ * Finds or compiles the load draw's pipeline for an attachment format:
+ * the vertex shader passing a position and a texture coordinate (one
+ * binding of two R32G32 attributes), the fragment shader sampling set 0,
+ * binding 0 there into the one output of the format, a triangle list
+ * without culling, depth or blending, the viewport and scissor given by
+ * the draw.  Kept by the render node for every later job.
+ */
+static int
+load_graphics(
+	struct powervr_render *render,
+	uint32_t vk_format,
+	struct powervr_vk_graphics **result)
+{
+	struct powervr_shader_workspace *workspace;
+	struct powervr_vk_graphics *graphics;
+	struct powervr_draw_fixed *fixed;
+	uint32_t slot;
+	int error;
+
+	/* The node's table, made once. */
+	if (render->load_draws == NULL) {
+		render->load_draws = kern_calloc(1, sizeof(*render->load_draws));
+		if (render->load_draws == NULL)
+			return ENOMEM;
+	}
+
+	/* A pipeline already compiled for the format. */
+	for (slot = 0; slot < LOAD_DRAW_FORMATS; slot++) {
+		if (render->load_draws->graphics[slot] != NULL && render->load_draws->formats[slot] == vk_format) {
+			*result = render->load_draws->graphics[slot];
+			return 0;
+		}
+	}
+
+	/* A free slot for a new one. */
+	for (slot = 0; slot < LOAD_DRAW_FORMATS; slot++) {
+		if (render->load_draws->graphics[slot] == NULL)
+			break;
+	}
+	if (slot == LOAD_DRAW_FORMATS)
+		return ENOSPC;
+
+	/* The fixed state and the keys. */
+	graphics = kern_calloc(1, sizeof(*graphics));
+	if (graphics == NULL)
+		return ENOMEM;
+	fixed = &graphics->fixed;
+	fixed->topology = LOAD_DRAW_TOPOLOGY;
+	fixed->dynamic_viewport = true;
+	fixed->dynamic_scissor = true;
+	fixed->binding_count = 1;
+	fixed->bindings[0].stride = LOAD_DRAW_STRIDE;
+	fixed->attribute_count = 2;
+	fixed->attributes[0].location = 0;
+	fixed->attributes[0].format = LOAD_DRAW_POSITION_FORMAT;
+	fixed->attributes[1].location = 1;
+	fixed->attributes[1].format = LOAD_DRAW_POSITION_FORMAT;
+	fixed->attributes[1].offset = 8;
+	fixed->vertex_key.attribute_formats[0] = LOAD_DRAW_POSITION_FORMAT;
+	fixed->vertex_key.attribute_formats[1] = LOAD_DRAW_POSITION_FORMAT;
+	fixed->vertex_key.samples = 1;
+	fixed->fragment_key.output_formats[0] = vk_format;
+	fixed->fragment_key.blend[0].write_mask = 0xf;
+	fixed->fragment_key.samples = 1;
+
+	/* The two shaders and the varyings between them. */
+	workspace = kern_malloc(powervr_shader_workspace_size());
+	graphics->vertex_code = kern_malloc(LOAD_DRAW_CODE_BYTES);
+	graphics->fragment_code = kern_malloc(LOAD_DRAW_CODE_BYTES);
+	error = 0;
+	if (workspace == NULL || graphics->vertex_code == NULL || graphics->fragment_code == NULL)
+		error = ENOMEM;
+	if (error == 0)
+		error = powervr_shader_compile(powervr_load_draw_vert, sizeof(powervr_load_draw_vert) / 4U, POWERVR_SHADER_VERTEX, &fixed->vertex_key, workspace, &graphics->vertex, graphics->vertex_code, LOAD_DRAW_CODE_BYTES);
+	if (error == 0)
+		error = powervr_shader_compile(powervr_load_draw_frag, sizeof(powervr_load_draw_frag) / 4U, POWERVR_SHADER_FRAGMENT, &fixed->fragment_key, workspace, &graphics->fragment, graphics->fragment_code, LOAD_DRAW_CODE_BYTES);
+	if (error == 0)
+		error = powervr_draw_varyings_build(&graphics->vertex, &graphics->fragment, &graphics->varyings);
+	kern_free(workspace);
+	if (error != 0) {
+		kern_free(graphics->vertex_code);
+		kern_free(graphics->fragment_code);
+		kern_free(graphics);
+		return error;
+	}
+
+	/* Succeeded: the pipeline, kept. */
+	render->load_draws->formats[slot] = vk_format;
+	render->load_draws->graphics[slot] = graphics;
+	*result = graphics;
+	return 0;
+}
+
+/*
+ * Builds a job's load draw: two triangles over the framebuffer with
+ * texture coordinates 0 to 1, in the job's general memory; a set of one
+ * combined image sampler, the attachment's view and a nearest sampler
+ * clamped to the edge; the framebuffer's viewport and the render area's
+ * scissor.  Sampled at each pixel's centre, a coordinate names that
+ * pixel's own texel.
+ *
+ * Procedure referenced:
+ * zedBSD src/drivers/gpu/powervr/vk-layout.c (set_image: the image's
+ * descriptor and the sampler's in a combined binding).
+ */
+static int
+load_draw_build(
+	struct powervr_render *render,
+	const struct powervr_render_job *job,
+	struct job_memory *memory,
+	struct load_draw *load)
+{
+	/* Two triangles: x, y in device coordinates and u, v, as float bits (-1.0, 0, 1.0). */
+	static const uint32_t vertices[LOAD_DRAW_VERTICES * 4U] = {
+		0xbf800000U, 0xbf800000U, 0x00000000U, 0x00000000U,
+		0x3f800000U, 0xbf800000U, 0x3f800000U, 0x00000000U,
+		0xbf800000U, 0x3f800000U, 0x00000000U, 0x3f800000U,
+		0x3f800000U, 0xbf800000U, 0x3f800000U, 0x00000000U,
+		0x3f800000U, 0x3f800000U, 0x3f800000U, 0x3f800000U,
+		0xbf800000U, 0x3f800000U, 0x00000000U, 0x3f800000U,
+	};
+	const struct powervr_render_target *color;
+	struct powervr_set_binding_info binding;
+	struct powervr_sampler_shape sampler;
+	struct powervr_vk_graphics *graphics;
+	uint64_t view_words[2];
+	uint64_t sampler_words[2];
+	uint32_t offset;
+	uint32_t bits;
+	int error;
+
+	/* The pipeline for the attachment's format. */
+	color = &job->colors[0];
+	mutex_lock(&render->core->lock);
+
+	error = load_graphics(render, color->surface.format->vk_format, &graphics);
+
+	mutex_unlock(&render->core->lock);
+	if (error != 0)
+		return error;
+
+	/* The vertices, in the job's general memory. */
+	_Static_assert(sizeof(vertices) <= GENERAL_DBIAS - GENERAL_LOAD_WORDS, "the load draw's vertices' room");
+	put_words(memory->general->buffer, GENERAL_LOAD_WORDS, vertices, LOAD_DRAW_VERTICES * 4U);
+
+	/* The set: one combined image sampler. */
+	binding.binding = 0;
+	binding.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	binding.count = 1;
+	error = powervr_set_layout_build(&binding, 1, &load->set.layout);
+	if (error != 0)
+		return error;
+	load->set.bytes = kern_calloc(1, load->set.layout.bytes);
+	if (load->set.bytes == NULL)
+		return ENOMEM;
+	error = powervr_view_words(&color->view, view_words);
+	if (error != 0)
+		return error;
+	error = powervr_set_descriptor_offset(&load->set.layout, 0, 0, POWERVR_SHADER_PART_IMAGE_STATE, &offset);
+	if (error != 0)
+		return error;
+	powervr_descriptor_image(&load->set.bytes[offset], view_words, (uint32_t)color->view.layout->layer_bytes, powervr_pack_info(color->surface.format->vk_format));
+	kern_memset(&sampler, 0, sizeof(sampler));
+	sampler.mag_filter = VK_FILTER_NEAREST;
+	sampler.min_filter = VK_FILTER_NEAREST;
+	sampler.mipmap_mode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+	sampler.address_u = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	sampler.address_v = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	sampler.address_w = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	error = powervr_sampler_words(&sampler, sampler_words);
+	if (error != 0)
+		return error;
+	error = powervr_set_descriptor_offset(&load->set.layout, 0, 0, POWERVR_SHADER_PART_SAMPLER_STATE, &offset);
+	if (error != 0)
+		return error;
+	powervr_descriptor_sampler(&load->set.bytes[offset], sampler_words, VK_COMPARE_OP_NEVER);
+
+	/* The draw: the six vertices once, the framebuffer's viewport, the render area's scissor. */
+	load->draw.pipeline = graphics;
+	load->draw.sets[0] = &load->set;
+	load->draw.vertex_addresses[0] = memory->general->address + GENERAL_LOAD_WORDS;
+	load->draw.count = LOAD_DRAW_VERTICES;
+	load->draw.instances = 1;
+	bits = float_bits(job->width);
+	kern_memcpy(&load->draw.viewport.width, &bits, sizeof(bits));
+	bits = float_bits(job->height);
+	kern_memcpy(&load->draw.viewport.height, &bits, sizeof(bits));
+	bits = float_bits(1);
+	kern_memcpy(&load->draw.viewport.maxDepth, &bits, sizeof(bits));
+	load->draw.scissor.offset.x = (int32_t)job->area.x;
+	load->draw.scissor.offset.y = (int32_t)job->area.y;
+	load->draw.scissor.extent.width = job->area.width;
+	load->draw.scissor.extent.height = job->area.height;
+
+	/* Succeeded: the draw. */
+	return 0;
+}
+
+/* The bits of a whole number below 2^24 as a 32-bit float, without the processor's floating point. */
+static uint32_t
+float_bits(
+	uint32_t value)
+{
+	uint32_t exponent;
+
+	/* Zero is all zero bits. */
+	if (value == 0)
+		return 0;
+
+	/* The highest set bit gives the exponent; the bits below it, shifted up, the mantissa. */
+	exponent = 31U - (uint32_t)__builtin_clz(value);
+	return ((127U + exponent) << 23) | ((value << (23U - exponent)) & 0x7fffffU);
+}
+
+/* Frees a job's working copy and its load draw's set. */
+static void
+load_draw_free(
+	struct powervr_render_job *work,
+	struct load_draw *load)
+{
+	if (load != NULL)
+		kern_free(load->set.bytes);
+	kern_free(load);
+	kern_free(work);
+}
+
+/* The draw at an index of a job: the prefix draw first when there is one, then the job's own. */
+static const struct powervr_render_draw *
+job_draw(
+	const struct powervr_render_job *job,
+	const struct powervr_render_draw *prefix,
+	uint32_t index)
+{
+	if (prefix == NULL)
+		return &job->draws[index];
+	if (index == 0)
+		return prefix;
+	return &job->draws[index - 1U];
 }
 
 /* Refuses a job the runner does not build yet. */
@@ -604,40 +924,47 @@ job_draws(
 	struct powervr_render *render,
 	struct powervr_session *session,
 	const struct powervr_render_job *job,
+	const struct powervr_render_draw *prefix,
 	struct job_memory *memory,
 	uint32_t *stream_words,
 	uint32_t *vertex_shareds)
 {
 	const struct powervr_vk_graphics *graphics;
 	const struct powervr_vk_descriptor_set *set;
+	const struct powervr_render_draw *draw;
 	struct powervr_buffer *buffer;
 	uint64_t sets_bytes;
 	uint64_t usc_bytes;
 	uint64_t sets_place;
 	uint64_t usc_place;
+	uint32_t draw_count;
 	uint32_t index;
 	uint32_t slot;
 	uint32_t words;
 	int error;
 
+	/* The job's draws after the prefix draw, when there is one. */
+	draw_count = job->draw_count + (prefix != NULL ? 1U : 0U);
+
 	/* What the draws take: their shaders' code and their sets' copies, each on 16 bytes. */
 	sets_bytes = 0;
 	usc_bytes = 0;
-	for (index = 0; index < job->draw_count; index++) {
-		graphics = job->draws[index].pipeline;
+	for (index = 0; index < draw_count; index++) {
+		draw = job_draw(job, prefix, index);
+		graphics = draw->pipeline;
 		if (graphics == NULL)
 			return EINVAL;
 		usc_bytes += (graphics->vertex.length + 15U) & ~(uint64_t)15U;
 		usc_bytes += (graphics->fragment.length + 15U) & ~(uint64_t)15U;
 		for (slot = 0; slot < POWERVR_DRAW_SETS; slot++) {
-			set = job->draws[index].sets[slot];
+			set = draw->sets[slot];
 			if (set != NULL)
 				sets_bytes += (set->layout.bytes + 15U) & ~15U;
 		}
 	}
 
 	/* The general memory: a slot per draw, then the sets. */
-	error = powervr_buffer_create(render, (uint64_t)job->draw_count * DRAW_SLOT + sets_bytes + 16U, &buffer);
+	error = powervr_buffer_create(render, (uint64_t)draw_count * DRAW_SLOT + sets_bytes + 16U, &buffer);
 	if (error != 0)
 		return error;
 
@@ -649,7 +976,7 @@ job_draws(
 	}
 
 	/* The program buffers, in their windows. */
-	error = powervr_buffer_create(render, (uint64_t)job->draw_count * DRAW_SLOT, &memory->draw_pds);
+	error = powervr_buffer_create(render, (uint64_t)draw_count * DRAW_SLOT, &memory->draw_pds);
 	if (error != 0) {
 		memory->draw_pds = NULL;
 		return error;
@@ -676,11 +1003,12 @@ job_draws(
 	/* Each draw in order, its stream after the one before. */
 	*stream_words = 0;
 	*vertex_shareds = 0;
-	sets_place = (uint64_t)job->draw_count * DRAW_SLOT;
+	sets_place = (uint64_t)draw_count * DRAW_SLOT;
 	usc_place = 0;
-	for (index = 0; index < job->draw_count; index++) {
-		graphics = job->draws[index].pipeline;
-		error = draw_place(job, index, memory, sets_place, usc_place, *stream_words, &words);
+	for (index = 0; index < draw_count; index++) {
+		draw = job_draw(job, prefix, index);
+		graphics = draw->pipeline;
+		error = draw_place(job, draw, index, memory, sets_place, usc_place, *stream_words, &words);
 		if (error != 0)
 			return error;
 
@@ -690,7 +1018,7 @@ job_draws(
 		usc_place += (graphics->vertex.length + 15U) & ~(uint64_t)15U;
 		usc_place += (graphics->fragment.length + 15U) & ~(uint64_t)15U;
 		for (slot = 0; slot < POWERVR_DRAW_SETS; slot++) {
-			set = job->draws[index].sets[slot];
+			set = draw->sets[slot];
 			if (set != NULL)
 				sets_place += (set->layout.bytes + 15U) & ~15U;
 		}
@@ -717,6 +1045,7 @@ job_draws(
 static int
 draw_place(
 	const struct powervr_render_job *job,
+	const struct powervr_render_draw *draw,
 	uint32_t index,
 	struct job_memory *memory,
 	uint64_t sets_place,
@@ -724,7 +1053,6 @@ draw_place(
 	uint32_t stream_at,
 	uint32_t *words)
 {
-	const struct powervr_render_draw *draw;
 	const struct powervr_vk_graphics *graphics;
 	const struct powervr_vk_descriptor_set *set;
 	const struct powervr_draw_attribute *attribute;
@@ -754,7 +1082,6 @@ draw_place(
 	int error;
 
 	/* Where the draw's parts go. */
-	draw = &job->draws[index];
 	graphics = draw->pipeline;
 	general = memory->draw_general->address + (uint64_t)index * DRAW_SLOT;
 	pds_slot = index * DRAW_SLOT;
