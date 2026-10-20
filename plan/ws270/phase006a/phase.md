@@ -207,3 +207,16 @@ Keiland が使い、vkmatrix 15/15・gpu-selftest 13/13 で確かめていない
   - 別の process の export を import して sample する vkmatrix の case は作っていない。
 - d5（P1 e4748857a、1 job に 64 draw、170ce98fe）: 1 submit ≈ 1 job、submit の平均 57 ms（前 108 ms）、3D 1 job 44 ms、transfer 32 回 平均 5.6 ms。KWL の rec submit は 171〜176 ms/frame のまま。
 - d6（P2 c5a00a106 の deferred unmap + P1 render-linear、0fa1d8ecb）: vkmatrix 23/23（render-linear: PBE の linear の store が 1920x1080 で正しい → q1525 の前提が成立）。compositor の lockup は残る: `context 0x7 reason 1 dm 3 pc 0x41e1b000 fault 0x8009ae2000`（d4 と同じ辺りの address）→ P2 q1523-i03 で fault の address の持ち主を log に。
+
+### q1523-i03（2026-10-21、P2）: fault の address の持ち主を log に出す診断
+
+- 板の run 6: deferred の後も lockup は残った。fault は 0x8009ae2000 と 0x8009ae2500 で、boot をまたいで同じ所に出る。
+- 診断: session の生きている handle を全部、core の lock の下で list（`all`・`next_all`）に持つ。各 handle には作った関数の戻り番地（maker）、
+  host・shared・blob・deferred を記録する。context reset の通知（`render-queue.c` の `handle_notice`、名指しの session）で
+  `powervr_session_describe_fault` が次を出す:
+  - fault を含む handle（範囲、大きさ、end からの距離、各 flag、maker）;
+  - 含む handle が無ければ、すぐ下と上の handle（end の後ろを読んだかが分かる）;
+  - general heap の fixed area。
+  - maker は vmunix の `nm`・`addr2line` で関数に引く。
+  - render job の buffer、render target と free list、region header、vk の memory はどれも handle なので、この list で覆う。
+- 確認: VF2 の vmunix は rc 0、warning 0。host 試験は無い。板は未実施。
