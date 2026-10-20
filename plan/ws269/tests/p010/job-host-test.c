@@ -308,7 +308,7 @@ main(void)
 
 	/* The shaders' code: the vertex code at the start of the shading cluster buffer, the fragment's after it. */
 	for (index = 0; index < placed_count; index++) {
-		if (placed_at[index] >= POWERVR_USC_HEAP_BASE && placed[index]->view[0] == 0x10U && placed[index]->view[64] == 0x80U && placed[index]->view[112] == 0x10U && placed[index]->view[160] == 0x80U)
+		if (placed_at[index] >= POWERVR_USC_HEAP_BASE && placed[index]->view[0] == 0x10U && placed[index]->view[64] == 0x80U && placed[index]->view[112] == 0x10U && placed[index]->view[176] == 0x80U)
 			break;
 	}
 	expect(index < placed_count, "the two draws' code: vertex, fragment, vertex, fragment");
