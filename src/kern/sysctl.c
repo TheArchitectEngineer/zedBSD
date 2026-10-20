@@ -113,6 +113,9 @@ static const struct kern_gpu_start_ops *gpu_start_ops;
  */
 static kern_gpu_stages_read_t gpu_stages_read;
 
+/* The PowerVR driver's handler of writes of hw.gpu.powervr.stages (test-only settings), or NULL; set once at boot. */
+static kern_gpu_stages_write_t gpu_stages_write;
+
 /*
  * The HW_USB_TRACE_ bits of hw.usb.trace: which USB transfers the drivers
  * describe in the kernel log.  0 from boot; only the superuser changes it,
@@ -173,7 +176,7 @@ static int sysctl_writeback(const int *name, void *oldp, size_t *oldlenp, const 
 static int oid_compare(const int *a, unsigned alen, const int *b, unsigned blen);
 static const struct sysctl_leaf *find_oid(const int *oid, unsigned oidlen);
 static int sysctl_output(void *oldp, size_t *oldlenp, const void *value, size_t size);
-static int sysctl_gpu_stages(void *oldp, size_t *oldlenp, const void *newp, size_t newlen);
+static int sysctl_gpu_stages(void *oldp, size_t *oldlenp, const void *newp, size_t newlen, int superuser);
 static int sysctl_boot_parameter(enum kern_boot_parameter_key key, void *oldp, size_t *oldlenp, const void *newp, size_t newlen);
 static int sysctl_meta(int operation, void *oldp, size_t *oldlenp, const void *newp, size_t newlen);
 
@@ -366,6 +369,17 @@ kern_gpu_start_ops_set(
 }
 
 /*
+ * Installs the function behind writes of hw.gpu.powervr.stages.
+ */
+void
+kern_gpu_stages_write_set(
+	kern_gpu_stages_write_t write)
+{
+	/* Publishes the driver's function for every later sysctl call. */
+	gpu_stages_write = write;
+}
+
+/*
  * Installs the function behind hw.gpu.powervr.stages.
  */
 void
@@ -485,7 +499,7 @@ kern_sysctl(
 
 	/* Reports how far the PowerVR driver has come, as its text. */
 	if (namelen == 2 && name[0] == CTL_HW && name[1] == HW_GPU_STAGES) {
-		error = sysctl_gpu_stages(oldp, oldlenp, newp, newlen);
+		error = sysctl_gpu_stages(oldp, oldlenp, newp, newlen, superuser);
 		return error;
 	}
 
@@ -1238,15 +1252,24 @@ sysctl_gpu_stages(
 	void *oldp,
 	size_t *oldlenp,
 	const void *newp,
-	size_t newlen)
+	size_t newlen,
+	int superuser)
 {
 	char text[KERN_GPU_STAGES_MAX];
 	size_t length;
 	int error;
 
-	/* The leaf is read only. */
-	if (newp != NULL || newlen != 0)
-		return EPERM;
+	/* A write is the driver's test-only settings, the superuser's alone. */
+	if (newp != NULL || newlen != 0) {
+		if (!superuser)
+			return EPERM;
+		if (gpu_stages_write == NULL || newp == NULL || newlen >= KERN_GPU_STAGES_MAX)
+			return EPERM;
+		error = gpu_stages_write(newp, newlen);
+		if (error != 0)
+			return error;
+		return 0;
+	}
 
 	/* Without the driver there is no text. */
 	if (gpu_stages_read == NULL)

@@ -26,4 +26,7 @@
  */
 int powervr_render_job_run(struct powervr_render *render, struct powervr_session *session, const struct powervr_render_job *job);
 
+/* Sets the test-only draw filter of render jobs (limit 0xffffffff and skip 0 turn it off). */
+void powervr_render_debug_set(uint32_t limit, uint64_t skip);
+
 #endif
