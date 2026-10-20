@@ -263,7 +263,7 @@ static int write_kick(struct check_state *state, unsigned kick, uint32_t usc_pla
 static int write_probes(struct check_state *state, uint8_t *code);
 static void run_probes(struct check_state *state);
 static void run_nop_probe(struct check_state *state);
-static void run_compiled_fill(struct check_state *state);
+static void run_compiled_fill(struct check_state *state, int dumps);
 static int run_prefixes(struct check_state *state, const struct shader_backend *backend);
 static int dump_append(struct shader_backend *dump, unsigned kind, unsigned destination, unsigned source_0_bank, unsigned source_0, unsigned source_1, unsigned source_2, uint32_t immediate);
 static int dump_program(const struct shader_backend *backend, struct shader_backend *dump, unsigned keep, uint64_t address, uint8_t *code, size_t room, size_t *length);
@@ -306,13 +306,15 @@ void
 powervr_compute_check(
 	struct powervr_render *render)
 {
-	static const unsigned gaps[] = { 2, 6 };
+	static const unsigned fillers[] = { MACHINE_NOP, MACHINE_WAIT };
+	static const unsigned gaps[] = { 2, 4, 6 };
 	struct check_state state;
 	const char *step;
 	unsigned written;
 	unsigned four_wrong;
 	unsigned two_wrong;
 	unsigned wide_wrong;
+	unsigned filler;
 	unsigned gap;
 	int wide_error;
 	int four_error;
@@ -403,11 +405,16 @@ powervr_compute_check(
 	 * the workgroup id probe and the executor's layouts, each in a
 	 * session of its own.
 	 */
-	for (gap = 0; gap < sizeof(gaps) / sizeof(gaps[0]); gap++) {
-		shader_integer_source_gap = gaps[gap];
-		kern_logf("powervr: compute probes: compiled fill with multiply-add source gap %u, no-operation fillers\n", gaps[gap]);
-		run_compiled_fill(&state);
+	for (filler = 0; filler < sizeof(fillers) / sizeof(fillers[0]); filler++) {
+		for (gap = 0; gap < sizeof(gaps) / sizeof(gaps[0]); gap++) {
+			shader_filler_kind = fillers[filler];
+			shader_integer_source_gap = gaps[gap];
+			kern_logf("powervr: compute probes: compiled fill with multiply-add source gap %u, %s fillers\n",
+				  gaps[gap], fillers[filler] == MACHINE_NOP ? "nop" : "wdf");
+			run_compiled_fill(&state, filler == 0 && gap == 0);
+		}
 	}
+	shader_filler_kind = MACHINE_NOP;
 	shader_integer_source_gap = SHADER_INTEGER_SOURCE_GAP;
 	run_workgroup_probe(&state);
 	run_layouts(&state);
@@ -1041,7 +1048,8 @@ run_grid(
  */
 static void
 run_compiled_fill(
-	struct check_state *state)
+	struct check_state *state,
+	int dumps)
 {
 	struct powervr_shader_workspace *workspace;
 	struct powervr_shader_program *program;
@@ -1093,7 +1101,7 @@ run_compiled_fill(
 		error = powervr_compute_task_field(program->temps, &field);
 
 	/* Its prefixes first, each with a dump of r0 to r15 after it; a prefix the core does not finish stops the check here. */
-	if (error == 0) {
+	if (error == 0 && dumps) {
 		error = run_prefixes(state, &workspace->backend);
 		if (error != 0) {
 			kern_free(code);
@@ -1631,7 +1639,11 @@ run_workgroup_probe(
 #define TIMING_OTHER		0x800U
 #define TIMING_GROUPS		256U
 #define TIMING_SETTLE		8U
-#define TIMING_TEMPORARIES	24U
+#define TIMING_TEMPORARIES	32U
+#define TIMING_SCRATCH		30U
+#define TIMING_SCRATCH_SOURCE	31U
+#define TIMING_TAG_SHIFT	16U
+#define TIMING_GAPS		6U
 #define TIMING_FILLER		0xdeaddeadU
 #define TIMING_OLD		0x100U
 #define TIMING_NEW		0x200U
@@ -1654,7 +1666,17 @@ enum timing_kind {
 struct timing_program {
 	struct shader_machine_operation operations[TIMING_GROUPS];
 	unsigned count;
+	unsigned filler;
 	int error;
+};
+
+/* The fillers the probes put in the N groups. */
+enum timing_filler {
+	TIMING_FILL_NOP = 0,
+	TIMING_FILL_WAIT,
+	TIMING_FILL_MOVE,
+	TIMING_FILL_MADD,
+	TIMING_FILLERS
 };
 
 /* Appends one operation (registers are temporaries; DUMP_NONE leaves a place out). */
@@ -1704,7 +1726,7 @@ timing_add(
 	}
 }
 
-/* Appends count groups that do nothing (the control no-operation the board ran between groups). */
+/* Appends count filler groups of the program's kind: a no-operation, a wait, or an unrelated move or multiply-add (r30 from r31). */
 static void
 timing_fill(
 	struct timing_program *program,
@@ -1712,8 +1734,16 @@ timing_fill(
 {
 	unsigned index;
 
-	for (index = 0; index < count; index++)
-		timing_add(program, MACHINE_NOP, DUMP_NONE, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, 0);
+	for (index = 0; index < count; index++) {
+		if (program->filler == TIMING_FILL_WAIT)
+			timing_add(program, MACHINE_WAIT, DUMP_NONE, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, 0);
+		else if (program->filler == TIMING_FILL_MOVE)
+			timing_add(program, MACHINE_MOVE, TIMING_SCRATCH, POWERVR_USC_BANK_TEMPORARY, TIMING_SCRATCH_SOURCE, DUMP_NONE, DUMP_NONE, 0);
+		else if (program->filler == TIMING_FILL_MADD)
+			timing_add(program, MACHINE_INTEGER, TIMING_SCRATCH, POWERVR_USC_BANK_TEMPORARY, TIMING_SCRATCH_SOURCE, TIMING_SCRATCH_SOURCE, TIMING_SCRATCH_SOURCE, 0);
+		else
+			timing_add(program, MACHINE_NOP, DUMP_NONE, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, 0);
+	}
 }
 
 /* Appends one operation and TIMING_SETTLE spacing groups after it. */
@@ -1753,7 +1783,8 @@ timing_store(
  * added: the probe places them), and encodes it.
  *   r0 the lane, r10 the lane times four (r11 two), r12:r13 the lane's
  *   word, r20:r21 its word in the other place (r16, r17, r18 the bases);
- *   r1 three, r2 five, r22 TIMING_OLD, r23 zero; the operation under test
+ *   r1 three, r2 five, r22 TIMING_OLD (both plus the kick's tag), r23
+ *   zero, r31 one (the unrelated fillers write r30 from it); the operation under test
  *   writes r4 (r4:r5 for the 64-bit add); r14 the stored value.
  */
 static int
@@ -1761,6 +1792,8 @@ timing_build(
 	struct timing_program *program,
 	unsigned kind,
 	unsigned gap,
+	unsigned filler,
+	uint32_t tag,
 	uint64_t address,
 	uint8_t *code,
 	size_t room,
@@ -1772,6 +1805,7 @@ timing_build(
 
 	/* The settled set-up. */
 	kern_memset(program, 0, sizeof(*program));
+	program->filler = filler;
 	timing_settled(program, MACHINE_MOVE_SPECIAL, 0, POWERVR_USC_BANK_SPECIAL, DUMP_SPECIAL_INSTANCE, DUMP_NONE, DUMP_NONE, 0);
 	timing_settled(program, MACHINE_IMMEDIATE, 11, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, 2);
 	timing_settled(program, MACHINE_SHIFT, 10, POWERVR_USC_BANK_TEMPORARY, 0, 11, DUMP_NONE, 0);
@@ -1781,8 +1815,9 @@ timing_build(
 	timing_settled(program, MACHINE_ADD64, 12, POWERVR_USC_BANK_TEMPORARY, 16, 17, 10, 0);
 	timing_settled(program, MACHINE_ADD64, 20, POWERVR_USC_BANK_TEMPORARY, 18, 17, 10, 0);
 	timing_settled(program, MACHINE_IMMEDIATE, 1, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, 3);
-	timing_settled(program, MACHINE_IMMEDIATE, 2, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, 5);
-	timing_settled(program, MACHINE_IMMEDIATE, 22, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, TIMING_OLD);
+	timing_settled(program, MACHINE_IMMEDIATE, 2, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, 5U + tag);
+	timing_settled(program, MACHINE_IMMEDIATE, 22, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, TIMING_OLD + tag);
+	timing_settled(program, MACHINE_IMMEDIATE, TIMING_SCRATCH_SOURCE, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, 1);
 	timing_settled(program, MACHINE_IMMEDIATE, 23, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, 0);
 
 	/* The operation under test, gap groups, the other write, settled. */
@@ -1794,25 +1829,25 @@ timing_build(
 		if (kind == TIMING_MADD_SOURCE)
 			timing_settled(program, MACHINE_IMMEDIATE, 1, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, 7);
 		else
-			timing_settled(program, MACHINE_IMMEDIATE, 4, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, TIMING_OVER);
+			timing_settled(program, MACHINE_IMMEDIATE, 4, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, TIMING_OVER + tag);
 		break;
 	case TIMING_ADD64_SOURCE:
 	case TIMING_ADD64_RESULT:
 		timing_add(program, MACHINE_ADD64, 4, POWERVR_USC_BANK_TEMPORARY, 22, 23, 0, 0);
 		timing_fill(program, gap);
 		if (kind == TIMING_ADD64_SOURCE)
-			timing_settled(program, MACHINE_IMMEDIATE, 22, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, TIMING_NEW);
+			timing_settled(program, MACHINE_IMMEDIATE, 22, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, TIMING_NEW + tag);
 		else
-			timing_settled(program, MACHINE_IMMEDIATE, 4, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, TIMING_OVER);
+			timing_settled(program, MACHINE_IMMEDIATE, 4, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, TIMING_OVER + tag);
 		break;
 	case TIMING_MOVE_SOURCE:
 	case TIMING_MOVE_RESULT:
 		timing_add(program, MACHINE_MOVE, 4, POWERVR_USC_BANK_TEMPORARY, 22, DUMP_NONE, DUMP_NONE, 0);
 		timing_fill(program, gap);
 		if (kind == TIMING_MOVE_SOURCE)
-			timing_settled(program, MACHINE_IMMEDIATE, 22, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, TIMING_NEW);
+			timing_settled(program, MACHINE_IMMEDIATE, 22, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, TIMING_NEW + tag);
 		else
-			timing_settled(program, MACHINE_IMMEDIATE, 4, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, TIMING_OVER);
+			timing_settled(program, MACHINE_IMMEDIATE, 4, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, TIMING_OVER + tag);
 		break;
 	case TIMING_STORE_DATA:
 	case TIMING_STORE_ADDRESS:
@@ -1825,7 +1860,7 @@ timing_build(
 		}
 		timing_fill(program, gap);
 		if (kind == TIMING_STORE_DATA)
-			timing_settled(program, MACHINE_IMMEDIATE, 14, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, TIMING_OVER);
+			timing_settled(program, MACHINE_IMMEDIATE, 14, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, TIMING_OVER + tag);
 		else
 			timing_settled(program, MACHINE_MOVE, 12, POWERVR_USC_BANK_TEMPORARY, 20, DUMP_NONE, DUMP_NONE, 0);
 		timing_add(program, MACHINE_WAIT, DUMP_NONE, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, 0);
@@ -1865,48 +1900,53 @@ static void
 timing_expected(
 	unsigned kind,
 	unsigned lane,
+	uint32_t tag,
 	uint32_t *old,
 	uint32_t *new)
 {
 	switch (kind) {
 	case TIMING_MADD_SOURCE:
-		*old = lane * 3U + 5U;
-		*new = lane * 7U + 5U;
+		*old = lane * 3U + 5U + tag;
+		*new = lane * 7U + 5U + tag;
 		break;
 	case TIMING_MADD_RESULT:
-		*old = lane * 3U + 5U;
-		*new = TIMING_OVER;
+		*old = lane * 3U + 5U + tag;
+		*new = TIMING_OVER + tag;
 		break;
 	case TIMING_ADD64_SOURCE:
-		*old = TIMING_OLD + lane;
-		*new = TIMING_NEW + lane;
+		*old = TIMING_OLD + tag + lane;
+		*new = TIMING_NEW + tag + lane;
 		break;
 	case TIMING_ADD64_RESULT:
-		*old = TIMING_OLD + lane;
-		*new = TIMING_OVER;
+		*old = TIMING_OLD + tag + lane;
+		*new = TIMING_OVER + tag;
 		break;
 	case TIMING_MOVE_SOURCE:
-		*old = TIMING_OLD;
-		*new = TIMING_NEW;
+		*old = TIMING_OLD + tag;
+		*new = TIMING_NEW + tag;
 		break;
 	case TIMING_MOVE_RESULT:
 	case TIMING_STORE_DATA:
-		*old = TIMING_OLD;
-		*new = TIMING_OVER;
+		*old = TIMING_OLD + tag;
+		*new = TIMING_OVER + tag;
 		break;
 	default:
-		*old = TIMING_OLD;
-		*new = TIMING_OLD;
+		*old = TIMING_OLD + tag;
+		*new = TIMING_OLD + tag;
 		break;
 	}
 }
 
 /*
- * Runs every timing probe: the multiply-add's with 0 to 7 groups, the
- * others' with 0 to 3, one kick each, and reports one line each: the
- * lanes whose word holds the old value (the source read before the
- * write, or the result landed after the overwrite) and the new one.
- * Stops at the first kick that fails.
+ * Runs every timing probe with each filler (a no-operation, a wait, an
+ * unrelated move, an unrelated multiply-add) in 0 to TIMING_GAPS - 1
+ * groups, one kick each, and reports one line each: the lanes whose word
+ * holds the old value (the source read before the write, or the result
+ * landed after the overwrite; for the store's address, the lane's own
+ * word) and the new one (the other place).  Every kick's values carry
+ * its own tag in the upper half, so a word a previous kick left (in a
+ * cache written back late) is neither.  Stops at the first kick that
+ * fails.
  */
 static void
 run_timing_probes(
@@ -1914,18 +1954,18 @@ run_timing_probes(
 {
 	static const struct {
 		unsigned kind;
-		unsigned gaps;
 		const char *name;
 	} probes[] = {
-		{ TIMING_MADD_SOURCE, 8, "madd source read" },
-		{ TIMING_MADD_RESULT, 8, "madd result written" },
-		{ TIMING_ADD64_SOURCE, 4, "add64 source read" },
-		{ TIMING_ADD64_RESULT, 4, "add64 result written" },
-		{ TIMING_MOVE_SOURCE, 4, "mov source read" },
-		{ TIMING_MOVE_RESULT, 4, "mov result written" },
-		{ TIMING_STORE_DATA, 4, "store data read" },
-		{ TIMING_STORE_ADDRESS, 4, "store address read" },
+		{ TIMING_MADD_SOURCE, "madd source read" },
+		{ TIMING_MADD_RESULT, "madd result written" },
+		{ TIMING_ADD64_SOURCE, "add64 source read" },
+		{ TIMING_ADD64_RESULT, "add64 result written" },
+		{ TIMING_MOVE_SOURCE, "mov source read" },
+		{ TIMING_MOVE_RESULT, "mov result written" },
+		{ TIMING_STORE_DATA, "store data read" },
+		{ TIMING_STORE_ADDRESS, "store address read" },
 	};
+	static const char *const fillers[] = { "nop", "wdf", "mov", "madd" };
 	struct timing_program *program;
 	volatile uint32_t *words;
 	volatile uint32_t *other;
@@ -1933,7 +1973,9 @@ run_timing_probes(
 	size_t length;
 	uint32_t old;
 	uint32_t new;
+	uint32_t tag;
 	unsigned field;
+	unsigned filler;
 	unsigned probe;
 	unsigned gap;
 	unsigned lane;
@@ -1952,41 +1994,45 @@ run_timing_probes(
 	words = state->alias + TIMING_OFFSET / 4U;
 	other = state->alias + (TIMING_OFFSET + TIMING_OTHER) / 4U;
 
-	/* Each probe at each gap. */
-	for (probe = 0; error == 0 && probe < sizeof(probes) / sizeof(probes[0]); probe++) {
-		for (gap = 0; error == 0 && gap < probes[probe].gaps; gap++) {
-			length = 0;
-			error = timing_build(program, probes[probe].kind, gap, run_address + TIMING_OFFSET, code, USC_DUMP_ROOM, &length);
-			if (error == 0) {
-				put_bytes(state->usc, USC_COMPILED, code, length);
-				error = write_workgroup_kick(state, field, 1);
-			}
-			for (lane = 0; lane < POWERVR_COMPUTE_INSTANCES; lane++) {
-				words[lane] = TIMING_FILLER;
-				other[lane] = TIMING_FILLER;
-			}
-			if (error == 0)
-				error = kick(state, KICK_PROBE_FIRST);
+	/* Each filler, each probe, each gap. */
+	tag = 0;
+	for (filler = 0; error == 0 && filler < TIMING_FILLERS; filler++) {
+		for (probe = 0; error == 0 && probe < sizeof(probes) / sizeof(probes[0]); probe++) {
+			for (gap = 0; error == 0 && gap < TIMING_GAPS; gap++) {
+				tag += 1U << TIMING_TAG_SHIFT;
+				length = 0;
+				error = timing_build(program, probes[probe].kind, gap, filler, tag, run_address + TIMING_OFFSET, code, USC_DUMP_ROOM, &length);
+				if (error == 0) {
+					put_bytes(state->usc, USC_COMPILED, code, length);
+					error = write_workgroup_kick(state, field, 1);
+				}
+				for (lane = 0; lane < POWERVR_COMPUTE_INSTANCES; lane++) {
+					words[lane] = TIMING_FILLER;
+					other[lane] = TIMING_FILLER;
+				}
+				if (error == 0)
+					error = kick(state, KICK_PROBE_FIRST);
 
-			/* Which lanes saw the old value and which the new. */
-			old_mask = 0;
-			new_mask = 0;
-			for (lane = 0; lane < POWERVR_COMPUTE_INSTANCES; lane++) {
-				timing_expected(probes[probe].kind, lane, &old, &new);
-				if (probes[probe].kind == TIMING_STORE_ADDRESS) {
+				/* Which lanes saw the old value and which the new. */
+				old_mask = 0;
+				new_mask = 0;
+				for (lane = 0; lane < POWERVR_COMPUTE_INSTANCES; lane++) {
+					timing_expected(probes[probe].kind, lane, tag, &old, &new);
+					if (probes[probe].kind == TIMING_STORE_ADDRESS) {
+						if (words[lane] == old)
+							old_mask |= 1U << lane;
+						if (other[lane] == old)
+							new_mask |= 1U << lane;
+						continue;
+					}
 					if (words[lane] == old)
 						old_mask |= 1U << lane;
-					if (other[lane] == old)
+					else if (words[lane] == new)
 						new_mask |= 1U << lane;
-					continue;
 				}
-				if (words[lane] == old)
-					old_mask |= 1U << lane;
-				else if (words[lane] == new)
-					new_mask |= 1U << lane;
+				kern_logf("powervr: compute probes: %s after %u %s: old %08x new %08x, lane 0 %08x lane 31 %08x (%d, %u bytes)\n",
+					  probes[probe].name, gap, fillers[filler], old_mask, new_mask, words[0], words[POWERVR_COMPUTE_INSTANCES - 1U], error, (unsigned)length);
 			}
-			kern_logf("powervr: compute probes: %s after %u groups: old %08x new %08x, lane 0 %08x lane 31 %08x (%d, %u bytes)\n",
-				  probes[probe].name, gap, old_mask, new_mask, words[0], words[POWERVR_COMPUTE_INSTANCES - 1U], error, (unsigned)length);
 		}
 	}
 
