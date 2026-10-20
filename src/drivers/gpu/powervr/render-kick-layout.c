@@ -199,51 +199,47 @@ powervr_fragment_target(
 }
 
 /*
- * Fills the static state of a render context.
+ * Fills the static state of a render context: the first core's
+ * registers, with each buffer's own store and resume task words.
  *
  * Procedure referenced:
  * Mesa 26.2.5 src/imagination/vulkan/pvr_arch_job_context.c
  * (pvr_render_ctx_ws_static_state_init: the VDM and TA state buffers'
- * addresses, then for each buffer the store tasks of the shared register
- * store program and the persistent temporaries' store program, and the
- * resume tasks of the load and resume programs); Linux v7.3
+ * addresses, then for each of the two buffers its own programs' store
+ * and resume task words, tasks 3 and 4 left zero); Linux v7.3
  * drivers/gpu/drm/imagination/pvr_stream_defs.c
- * (pvr_static_render_context_state_stream: the stream fills the first
- * core's registers only).  The second core's registers are filled the
- * same, as the BXE-4-32 has one geometry core and the copy costs nothing.
+ * (rogue_fwif_static_render_context_state_stream: the fields by name,
+ * the resume address zero) and pvr_context.c (init_render_fw_objs: the
+ * stream fills ctxswitch_regs[0] only).
  */
 void
 powervr_render_switch_state(
 	uint8_t *record,
 	uint64_t vdm_state,
 	uint64_t ta_state,
-	const uint64_t store[5],
-	const uint64_t resume[5])
+	const struct powervr_switch_tasks tasks[2])
 {
-	static const uint32_t store_at[5] = {
+	static const uint32_t store_at[3] = {
 		POWERVR_SWITCH_STORE_0, POWERVR_SWITCH_STORE_1, POWERVR_SWITCH_STORE_2,
-		POWERVR_SWITCH_STORE_3, POWERVR_SWITCH_STORE_4,
 	};
-	static const uint32_t resume_at[5] = {
+	static const uint32_t resume_at[3] = {
 		POWERVR_SWITCH_RESUME_0, POWERVR_SWITCH_RESUME_1, POWERVR_SWITCH_RESUME_2,
-		POWERVR_SWITCH_RESUME_3, POWERVR_SWITCH_RESUME_4,
 	};
-	uint32_t core;
 	uint32_t buffer;
 	uint32_t base;
 	unsigned task;
 
-	/* Each core: the state buffers, then both buffers' task words. */
-	for (core = 0; core < POWERVR_SWITCH_CORES; core++) {
-		base = POWERVR_RENDER_CONTEXT_STATIC + core * POWERVR_SWITCH_CORE_BYTES;
-		put64(record, base + POWERVR_SWITCH_VDM_STATE, vdm_state);
-		put64(record, base + POWERVR_SWITCH_VDM_RESUME, 0);
-		put64(record, base + POWERVR_SWITCH_TA_STATE, ta_state);
-		for (buffer = 0; buffer < 2U; buffer++) {
-			for (task = 0; task < 5U; task++) {
-				put64(record, base + POWERVR_SWITCH_BUFFER + buffer * POWERVR_SWITCH_BUFFER_BYTES + store_at[task], store[task]);
-				put64(record, base + POWERVR_SWITCH_BUFFER + buffer * POWERVR_SWITCH_BUFFER_BYTES + resume_at[task], resume[task]);
-			}
+	/* The first core's state buffers. */
+	base = POWERVR_RENDER_CONTEXT_STATIC;
+	put64(record, base + POWERVR_SWITCH_VDM_STATE, vdm_state);
+	put64(record, base + POWERVR_SWITCH_VDM_RESUME, 0);
+	put64(record, base + POWERVR_SWITCH_TA_STATE, ta_state);
+
+	/* Each buffer's tasks 0 to 2; tasks 3 and 4 stay zero. */
+	for (buffer = 0; buffer < 2U; buffer++) {
+		for (task = 0; task < 3U; task++) {
+			put64(record, base + POWERVR_SWITCH_BUFFER + buffer * POWERVR_SWITCH_BUFFER_BYTES + store_at[task], tasks[buffer].store[task]);
+			put64(record, base + POWERVR_SWITCH_BUFFER + buffer * POWERVR_SWITCH_BUFFER_BYTES + resume_at[task], tasks[buffer].resume[task]);
 		}
 	}
 }

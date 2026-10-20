@@ -126,25 +126,30 @@ static void
 switch_state(void)
 {
 	static uint8_t record[POWERVR_RENDER_CONTEXT_BYTES];
-	const uint64_t store[5] = { 0x11, 0x12, 0x13, 0x14, 0x15 };
-	const uint64_t resume[5] = { 0x21, 0x22, 0x23, 0x24, 0x25 };
-	unsigned core;
+	const struct powervr_switch_tasks tasks[2] = {
+		{ { 0x11, 0x12, 0x13 }, { 0x21, 0x22, 0x23 } },
+		{ { 0x31, 0x32, 0x33 }, { 0x41, 0x42, 0x43 } },
+	};
 	unsigned base;
 
-	/* geom_registers_caswitch at 304 and 488: 0, 8, 16, then geom_state[0] 24..96 and [1] 104..176. */
+	/*
+	 * ctxswitch_regs[0] at 304: 0, 8, 16, then geom_state[0] store 0-2 at
+	 * 24..40, resume 0-2 at 48..64, store 3-4 at 72, 80, resume 3-4 at 88,
+	 * 96; geom_state[1] from 104.  ctxswitch_regs[1] at 488 stays zero.
+	 */
 	memset(record, 0, sizeof(record));
-	powervr_render_switch_state(record, 0x8000100000ULL, 0x8000200000ULL, store, resume);
-	for (core = 0; core < 2U; core++) {
-		base = 304U + core * 184U;
-		expect(read64(record, base + 0) == 0x8000100000ULL, "vdm state base");
-		expect(read64(record, base + 8) == 0, "vdm resume");
-		expect(read64(record, base + 16) == 0x8000200000ULL, "ta state base");
-		expect(read64(record, base + 24) == 0x11 && read64(record, base + 32) == 0x12 && read64(record, base + 40) == 0x13, "store 0-2");
-		expect(read64(record, base + 48) == 0x21 && read64(record, base + 56) == 0x22 && read64(record, base + 64) == 0x23, "resume 0-2");
-		expect(read64(record, base + 72) == 0x14 && read64(record, base + 80) == 0x15, "store 3-4");
-		expect(read64(record, base + 88) == 0x24 && read64(record, base + 96) == 0x25, "resume 3-4");
-		expect(read64(record, base + 104) == 0x11 && read64(record, base + 176) == 0x25, "second buffer");
-	}
+	powervr_render_switch_state(record, 0x8000100000ULL, 0x8000200000ULL, tasks);
+	base = 304U;
+	expect(read64(record, base + 0) == 0x8000100000ULL, "vdm state base");
+	expect(read64(record, base + 8) == 0, "vdm resume");
+	expect(read64(record, base + 16) == 0x8000200000ULL, "ta state base");
+	expect(read64(record, base + 24) == 0x11 && read64(record, base + 32) == 0x12 && read64(record, base + 40) == 0x13, "store 0-2");
+	expect(read64(record, base + 48) == 0x21 && read64(record, base + 56) == 0x22 && read64(record, base + 64) == 0x23, "resume 0-2");
+	expect(read64(record, base + 72) == 0 && read64(record, base + 80) == 0, "store 3-4 zero");
+	expect(read64(record, base + 88) == 0 && read64(record, base + 96) == 0, "resume 3-4 zero");
+	expect(read64(record, base + 104) == 0x31 && read64(record, base + 120) == 0x33, "second buffer store");
+	expect(read64(record, base + 128) == 0x41 && read64(record, base + 144) == 0x43, "second buffer resume");
+	expect(read64(record, 488) == 0 && read64(record, 488 + 24) == 0 && read64(record, 664) == 0, "second core untouched");
 	expect(read64(record, 0) == 0 && read64(record, 672) == 0, "common contexts and flags untouched");
 }
 

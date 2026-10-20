@@ -182,6 +182,15 @@ struct powervr_sync {
 };
 
 /*
+ * The task words of one buffer of a render context's switch: the store
+ * tasks 0 to 2 and the resume tasks 0 to 2, as register values.
+ */
+struct powervr_switch_tasks {
+	uint64_t store[3];
+	uint64_t resume[3];
+};
+
+/*
  * What one kick names: the context, its command buffer's new write offset
  * and wrap mask, and the firmware addresses of the cleanup counts its
  * commands use.
@@ -236,10 +245,10 @@ void powervr_fragment_target(uint8_t *command, uint32_t target_data);
 
 /*
  * Fills the static state of a render context (in the record at
- * POWERVR_RENDER_CONTEXT_STATIC): for every core, the VDM and TA state
- * buffers and the same store and resume task words in both buffers.
+ * POWERVR_RENDER_CONTEXT_STATIC): the first core's VDM and TA state
+ * buffer words and each buffer's store and resume task words.
  */
-void powervr_render_switch_state(uint8_t *record, uint64_t vdm_state, uint64_t ta_state, const uint64_t store[5], const uint64_t resume[5]);
+void powervr_render_switch_state(uint8_t *record, uint64_t vdm_state, uint64_t ta_state, const struct powervr_switch_tasks tasks[2]);
 
 /* Reads a context reset notice's data (POWERVR_RESET_BYTES bytes after the type and flags). */
 void powervr_reset_notice_read(const uint8_t *data, struct powervr_reset_notice *notice);
