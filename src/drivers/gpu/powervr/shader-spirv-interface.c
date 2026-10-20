@@ -165,7 +165,7 @@ shader_spirv_reader_layout_interface(
 				/* No attachment: the colour is dropped. */
 				id->interface = UINT32_MAX;
 			} else {
-				/* A packed colour in the next pixel output register. */
+				/* A packed colour in the next pixel output registers (one, or two for half floats). */
 				known = color_format_known(reader->key->output_formats[id->location]);
 				if (known == 0)
 					return ENOTSUP;
@@ -174,7 +174,7 @@ shader_spirv_reader_layout_interface(
 				program->outputs[entry].format = reader->key->output_formats[id->location];
 				program->outputs[entry].reg = next_pixel;
 				id->interface = next_pixel;
-				next_pixel++;
+				next_pixel += known;
 				if (next_pixel > PIXEL_OUTPUTS_MAX)
 					return ENOTSUP;
 			}
@@ -423,7 +423,9 @@ shader_spirv_reader_entry_epilogue(
 /*
  * Writes one colour output into its pixel output register: clamped to
  * the attachment's range, blended with the colour already there, its
- * unwritten channels kept, packed.
+ * unwritten channels kept, packed (as 8-bit unsigned normalised in one
+ * register, or as half floats in two for a 16-bit float attachment, not
+ * clamped).
  *
  * Procedure referenced:
  * Mesa 26.2.5 src/imagination/pco/pco_nir_pvfio.c (lower_pfo_store,
@@ -452,12 +454,20 @@ reader_pixel_output(
 	uint32_t constants;
 	uint32_t loaded;
 	uint32_t needs_destination;
+	uint32_t half;
 	int error;
 
-	/* The shader's colour, clamped; a missing channel is 0, a missing alpha 1. */
+	/* Half floats (a 16-bit float attachment) are neither clamped nor normalised. */
+	half = 0;
+	if (reader->key->output_formats[variable->location] == FORMAT_R16G16B16A16_SFLOAT)
+		half = 1;
+
+	/* The shader's colour, clamped when the attachment is normalised; a missing channel is 0, a missing alpha 1. */
 	blend = &reader->key->blend[variable->location];
 	for (channel = 0; channel < 4; channel++) {
-		if (channel < words) {
+		if (channel < words && half) {
+			source[channel] = shader_spirv_value_operand(variable->first + channel, 0);
+		} else if (channel < words) {
 			source[channel] = saturate(reader, shader_spirv_value_operand(variable->first + channel, 0));
 		} else {
 			source[channel] = shader_spirv_constant_operand(channel == 3 ? FLOAT_ONE : 0);
@@ -471,7 +481,7 @@ reader_pixel_output(
 	loaded = 0;
 	if (needs_destination != 0) {
 		loaded = shader_spirv_new_value(reader, 4);
-		shader_spirv_emit(reader, POWERVR_IR_PIXEL_LOAD, loaded, NULL, NULL, NULL, variable->interface, 0);
+		shader_spirv_emit(reader, POWERVR_IR_PIXEL_LOAD, loaded, NULL, NULL, NULL, variable->interface, half);
 	}
 	for (channel = 0; channel < 4; channel++)
 		destination[channel] = shader_spirv_value_operand(loaded, channel);
@@ -515,7 +525,8 @@ reader_pixel_output(
 				if (operation == OPERATION_REVERSE_SUBTRACT)
 					a = shader_spirv_float_negate(a);
 				result[channel] = shader_spirv_emit_value(reader, POWERVR_IR_FLOAT_ADD, &a, &b, NULL);
-				result[channel] = saturate(reader, result[channel]);
+				if (!half)
+					result[channel] = saturate(reader, result[channel]);
 			} else {
 				return ENOTSUP;
 			}
@@ -525,7 +536,7 @@ reader_pixel_output(
 	}
 
 	/* The packed colour into its register. */
-	shader_spirv_emit(reader, POWERVR_IR_PIXEL_STORE, 0, &result[0], &result[1], &result[2], variable->interface, 0);
+	shader_spirv_emit(reader, POWERVR_IR_PIXEL_STORE, 0, &result[0], &result[1], &result[2], variable->interface, half);
 	if (reader->error != 0)
 		return reader->error;
 	store = &reader->shader->instructions[reader->shader->instruction_count - 1U];
@@ -666,15 +677,21 @@ attribute_words(
 	return 0;
 }
 
-/* Reports whether a colour attachment format is one the compiler packs. */
+/* Reports the pixel output registers a colour attachment format takes (0 when the compiler does not pack it). */
 static uint32_t
 color_format_known(
 	uint32_t format)
 {
-	/* The 8-bit unsigned normalised four-channel formats. */
+	/* The 8-bit unsigned normalised four-channel formats: one register. */
 	if (format == FORMAT_R8G8B8A8_UNORM)
 		return 1;
 	if (format == FORMAT_B8G8R8A8_UNORM)
 		return 1;
+
+	/* The 16-bit float four-channel format: two registers, two channels each. */
+	if (format == FORMAT_R16G16B16A16_SFLOAT)
+		return 2;
+
+	/* Not a format the pixel output packs. */
 	return 0;
 }

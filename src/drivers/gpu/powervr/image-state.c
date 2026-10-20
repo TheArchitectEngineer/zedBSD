@@ -48,14 +48,18 @@
 
 /*
  * The features of a float format a shader samples and the transfer
- * copies and clears; a 16-bit float one filters too (ws269-p010m).
- * Neither is a colour attachment until the compiler packs floats.
+ * copies and clears; a 16-bit float one filters too (ws269-p010m), and
+ * is a colour attachment that blends (the compiler packs half floats
+ * into two pixel output registers, ws269-p010p).
  */
 #define FEATURES_SAMPLED_F32		(VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | \
 					 VK_FORMAT_FEATURE_TRANSFER_SRC_BIT | \
 					 VK_FORMAT_FEATURE_TRANSFER_DST_BIT)
 #define FEATURES_SAMPLED_F16		(FEATURES_SAMPLED_F32 | \
 					 VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT)
+#define FEATURES_RENDER_F16		(FEATURES_SAMPLED_F16 | \
+					 VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | \
+					 VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT)
 
 /* The features of the copies of a linear image. */
 #define FEATURES_TRANSFER		(VK_FORMAT_FEATURE_TRANSFER_SRC_BIT | \
@@ -134,7 +138,7 @@ static const struct powervr_format format_table[] = {
 	  FEATURES_DEPTH, 0, 0 },
 	{ VK_FORMAT_R16G16B16A16_SFLOAT, 8, POWERVR_FORMAT_COLOR | POWERVR_FORMAT_FLOAT, 28, 0x0A,
 	  { POWERVR_CHANNEL_0, POWERVR_CHANNEL_1, POWERVR_CHANNEL_2, POWERVR_CHANNEL_3 },
-	  FEATURES_SAMPLED_F16, FEATURES_TRANSFER, 0 },
+	  FEATURES_RENDER_F16, FEATURES_TRANSFER, 0 },
 	{ VK_FORMAT_R32_SFLOAT, 4, POWERVR_FORMAT_COLOR | POWERVR_FORMAT_FLOAT, 18, 0x36,
 	  { POWERVR_CHANNEL_0, POWERVR_CHANNEL_ZERO, POWERVR_CHANNEL_ZERO, POWERVR_CHANNEL_ONE },
 	  FEATURES_SAMPLED_F32, FEATURES_TRANSFER, VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT },

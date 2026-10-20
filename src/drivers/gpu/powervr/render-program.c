@@ -1181,9 +1181,18 @@ round_units(
 
 /*
  * Picks the pixel back end's source format and gamma for a colour
- * format: sRGB from 16-bit floats with gamma, an 8-bit unorm channel
- * from the packed 8 bits.  Refuses depth formats and colour formats of
- * other channel widths (ENOTSUP).
+ * format: sRGB from 16-bit floats with gamma, a 16-bit float format from
+ * its half floats, a raw format of 64 or 128 bits (the transfer's
+ * copies, integer words) from its words, an 8-bit unorm channel from the
+ * packed 8 bits.  Refuses depth formats and colour formats of other
+ * channel widths (ENOTSUP).
+ *
+ * Values referenced:
+ * Mesa 26.2.5 src/imagination/vulkan/pvr_arch_formats.c
+ * (pvr_arch_pbe_get_src_format_and_gamma: a 16-bit float channel takes
+ * F16_PER_CHANNEL); src/imagination/vulkan/pvr_arch_job_transfer.c
+ * (pvr_pbe_setup_codegen_defaults: a raw copy's destination, not
+ * normalised, leaves the source format zero, F16_PER_CHANNEL).
  */
 static int
 pbe_source(
@@ -1199,6 +1208,20 @@ pbe_source(
 	if ((format->kind & POWERVR_FORMAT_SRGB) != 0) {
 		*source_format = PBE_SOURCE_F16;
 		*gamma = 1;
+		return 0;
+	}
+
+	/* The 16-bit float colour: its half floats, two pixel output registers. */
+	if (format->vk_format == VK_FORMAT_R16G16B16A16_SFLOAT) {
+		*source_format = PBE_SOURCE_F16;
+		*gamma = 0;
+		return 0;
+	}
+
+	/* Another format of two or four words (a raw copy's, or 32-bit floats): the words as they are, the field left zero. */
+	if (format->texel_bytes == 8 || format->texel_bytes == 16) {
+		*source_format = PBE_SOURCE_F16;
+		*gamma = 0;
 		return 0;
 	}
 

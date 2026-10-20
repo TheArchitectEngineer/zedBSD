@@ -131,11 +131,13 @@ enum powervr_ir_opcode {
 	/*
 	 * Reads the colour already in pixel output register immediate into a
 	 * four-word value of floats, unpacked from 8-bit unsigned normalised
-	 * channels (red in the lowest byte).
+	 * channels (red in the lowest byte); with immediate_2 1, from half
+	 * floats in registers immediate and immediate + 1 (two channels a
+	 * register, the lower first).
 	 */
 	POWERVR_IR_PIXEL_LOAD,
 
-	/* Packs the four floats of sources 0 to 3 that way into pixel output register immediate. */
+	/* Packs the four floats of sources 0 to 3 that way into pixel output register immediate (and the next for half floats). */
 	POWERVR_IR_PIXEL_STORE,
 
 	POWERVR_IR_OPCODE_COUNT

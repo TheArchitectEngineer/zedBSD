@@ -68,7 +68,8 @@
  * Values referenced:
  * Mesa 26.2.5 src/imagination/pco/pco_isa.py (F_TST_OP z 0, g 5, e 4,
  * ge 6, ne 7, l 8; F_TST_TYPE f32 0, u32 5, s32 6; F_PCK_FORMAT u32
- * 0b00110, s32 0b00111, zero 0b11110; F_LOGICAL_OP or 0, and 1, xor 2;
+ * 0b00110, s32 0b00111, f16f16 0b01110, zero 0b11110; F_LOGICAL_OP or 0,
+ * and 1, xor 2;
  * F_SHIFT2_OP lsl 0, shr 1, asr_twb 4; F_CNDINST st 0, ef 1, sm 2,
  * lt 3, end 4; F_PCND always 0, p0_true 1, p0_false 3; F_BPRED cc 0,
  * allp 1; F_DSIZE 32bit 0b10; F_MOVW01 ft0 0, ft1 1, ft2 2, fte 3;
@@ -85,6 +86,7 @@
 #define TYPE_U32		5U
 #define TYPE_S32		6U
 #define PACK_U8888		0U
+#define PACK_F16F16		14U
 #define PACK_U32		6U
 #define PACK_S32		7U
 #define PACK_ZERO		30U
@@ -599,6 +601,7 @@ select_instruction(
 	unsigned mb;
 	unsigned mc;
 	unsigned channel;
+	unsigned word;
 	unsigned opcode;
 	unsigned variant;
 	int error;
@@ -964,27 +967,36 @@ select_instruction(
 		(void)append(select, MACHINE_WAIT);
 		break;
 	case POWERVR_IR_PIXEL_LOAD:
-		/* The pixel output, under the overlap check, unpacked into the four words. */
-		if (instruction->immediate >= 4)
+		/* The pixel output, under the overlap check, unpacked into the four words (8-bit unorm, or half floats from two registers). */
+		if (instruction->immediate >= 4 || (instruction->immediate_2 != 0 && instruction->immediate >= 3))
 			return ENOTSUP;
-		operation = append(select, MACHINE_MOVE);
-		if (operation != NULL) {
-			operation->destination[0] = temp_register(TEMP_SCRATCH);
-			operation->source[0] = bank_register(POWERVR_USC_BANK_SPECIAL, SPECIAL_PIXEL_OUTPUT + instruction->immediate);
-			operation->variant = 1;
-		}
-		operation = append(select, MACHINE_UNPACK);
-		if (operation != NULL) {
-			operation->destination[0] = destination_of(select, instruction);
-			operation->source[0] = temp_register(TEMP_SCRATCH);
-			operation->variant = PACK_U8888;
-			operation->immediate = 4;
-			operation->immediate_2 = PACK_SCALE;
+		destination = destination_of(select, instruction);
+		for (word = 0; word < (instruction->immediate_2 != 0 ? 2U : 1U); word++) {
+			operation = append(select, MACHINE_MOVE);
+			if (operation != NULL) {
+				operation->destination[0] = temp_register(TEMP_SCRATCH);
+				operation->source[0] = bank_register(POWERVR_USC_BANK_SPECIAL, SPECIAL_PIXEL_OUTPUT + instruction->immediate + word);
+				operation->variant = 1;
+			}
+			operation = append(select, MACHINE_UNPACK);
+			if (operation != NULL) {
+				operation->destination[0] = destination;
+				operation->destination[0].index = (uint16_t)(destination.index + word * 2U);
+				operation->source[0] = temp_register(TEMP_SCRATCH);
+				if (instruction->immediate_2 != 0) {
+					operation->variant = PACK_F16F16;
+					operation->immediate = 2;
+				} else {
+					operation->variant = PACK_U8888;
+					operation->immediate = 4;
+					operation->immediate_2 = PACK_SCALE;
+				}
+			}
 		}
 		break;
 	case POWERVR_IR_PIXEL_STORE:
-		/* The four words side by side, packed, into the pixel output under the overlap check. */
-		if (instruction->immediate >= 4)
+		/* The four words side by side, packed, into the pixel output under the overlap check (8-bit unorm, or half floats into two registers). */
+		if (instruction->immediate >= 4 || (instruction->immediate_2 != 0 && instruction->immediate >= 3))
 			return ENOTSUP;
 		for (channel = 0; channel < 4; channel++) {
 			select->scratch = 0;
@@ -995,19 +1007,26 @@ select_instruction(
 				operation->source[0] = source;
 			}
 		}
-		operation = append(select, MACHINE_PACK);
-		if (operation != NULL) {
-			operation->destination[0] = temp_register(TEMP_SCRATCH);
-			operation->source[0] = temp_register(TEMP_COORDINATES);
-			operation->variant = PACK_U8888;
-			operation->immediate = 4;
-			operation->immediate_2 = PACK_SCALE;
-		}
-		operation = append(select, MACHINE_MOVE);
-		if (operation != NULL) {
-			operation->destination[0] = bank_register(POWERVR_USC_BANK_SPECIAL, SPECIAL_PIXEL_OUTPUT + instruction->immediate);
-			operation->source[0] = temp_register(TEMP_SCRATCH);
-			operation->variant = 1;
+		for (word = 0; word < (instruction->immediate_2 != 0 ? 2U : 1U); word++) {
+			operation = append(select, MACHINE_PACK);
+			if (operation != NULL) {
+				operation->destination[0] = temp_register(TEMP_SCRATCH);
+				operation->source[0] = temp_register(TEMP_COORDINATES + word * 2U);
+				if (instruction->immediate_2 != 0) {
+					operation->variant = PACK_F16F16;
+					operation->immediate = 2;
+				} else {
+					operation->variant = PACK_U8888;
+					operation->immediate = 4;
+					operation->immediate_2 = PACK_SCALE;
+				}
+			}
+			operation = append(select, MACHINE_MOVE);
+			if (operation != NULL) {
+				operation->destination[0] = bank_register(POWERVR_USC_BANK_SPECIAL, SPECIAL_PIXEL_OUTPUT + instruction->immediate + word);
+				operation->source[0] = temp_register(TEMP_SCRATCH);
+				operation->variant = 1;
+			}
 		}
 		break;
 	default:
