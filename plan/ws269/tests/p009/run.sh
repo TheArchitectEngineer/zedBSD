@@ -27,7 +27,7 @@ done
 cc -std=c11 -O1 -Wall -Wextra -Werror $define -I"$root" -I"$root/include" -I"$out/inc" -I"$root/userland/desktop/libvulkan" \
 	-c "$here/frame-host.c" -o "$out/vk/frame-host.o"
 objects=""
-for file in vk-object vk-stream vk-device vk-memory vk-image image-state descriptor-set data-program vk-layout vk-command vk-queue vk-pass vk-transfer vk-draw render-draw render-pass render-program transfer-program shader-spirv shader-spirv-interface shader-spirv-control shader-spirv-instruction shader-backend compute-program usc-encode pds-encode; do
+for file in vk-object vk-stream vk-device vk-memory vk-image image-state descriptor-set data-program vk-layout vk-command vk-queue vk-pass vk-transfer vk-draw render-draw render-pass render-program transfer-program shader-spirv shader-spirv-interface shader-spirv-control shader-spirv-instruction shader-backend compute-program render-sr-program usc-encode pds-encode; do
 	cc -std=c11 -O1 -Wall -Wextra -Werror $define -I"$root/include" -I"$root/src" \
 		-c "$root/src/drivers/gpu/powervr/$file.c" -o "$out/vk/$file.o"
 	objects="$objects $out/vk/$file.o"

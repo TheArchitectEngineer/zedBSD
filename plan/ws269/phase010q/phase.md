@@ -387,3 +387,28 @@ mainline と照らした結果（v7.3 の `pvr_ccb.c`・`pvr_fw.c`・`pvr_rogue_
 - heap page 0xc020a000（unnamed）: firmware の 20 の record の外。session の FW の context の record（render の module が同じ heap から取る物）の見込み。slot 2 の位置の 1 は、その record の field である可能性が高い。名前を付けるのは後で（急がない）。
 - CDM の command の残りの field（cdm_resume_pds1・cdm_item・compute_cluster）は今回入れていない。switch を外した状態では resume は使われず、cdm_item・compute_cluster は Mesa でも feature（compute_morton_capable・cluster_grouping）がある時だけ。BXE-4-32 の feature の値は次に確かめる。
 - 確かめ: 試験の image の config（`plan/ws269/tests/p010/config-visionfive2-selftest.mk`、compute check を含む）の vmunix（`build/q1412/st`）は warning 0。通常の VF2 の config には compute check が入らない。
+
+## q1413-i01（P1、2026-10-20）: compute の lockup — resume の PDS1
+
+板（31755389a）: 「end only」の stream でも context が reset された（guilty lockup、dm 4）。
+
+trace の読み（mainline の `pvr_rogue_fwif_sf.h` の表）:
+- 0x7004109f: FW FAULT。line 0x532（1330）、file 0x66775f68 0x77722e63 = "fw_h" "wr.c" = `…fw_hwr.c`、データ 0。HWR（lockup の検出）が出す行で、command の検証の失敗ではない。
+- 0x70021016: UFO Updates for FWCtx 0xc002f000 @ 136。
+- 0x70021017: UFO Update [0xc002e000] = 1。timeline の更新で、kick の wait が通った理由。
+- 0x7005a02e・0x7002a00f・0x7000a00d・0x7003a015・0x7003a002: power の確認と idle。
+- assert の line 70・path 空: FW FAULT の行の残り（assert の buffer は使われていない）と見る。未確認。
+
+`kccb executed 131084` は 0x2000C だが、coherency の検査は 1 word ごとに MMU cache の command を 1 つ送る。16384 word × 8 round = 131072 に、ほかの 12 を足した数で、u32 の count として正しい。fallback の比べ方の誤りではない。
+
+原因の見込み:
+- FW は CDM の context を始める時に、static state の resume の program を流す（推測）。
+- switch の state が 0 なら address 0 の program を、state があれば PDS1 が 0 の program を流すことになる。どちらも end だけの stream で lockup する。q1388 の state を外しても入れても lockup したことと合う。
+
+直し:
+- `render-sr-program.c` に `powervr_compute_resume_pds1` を足した。Mesa の `pvr_submit_info_stream_init` の CR_CDM_CONTEXT_PDS1 のとおり、switch の unified store、common_shared、common の大きさ（64 byte 単位）、load の data（16 byte 単位）を入れる。
+- compute の command の word 15（regs の cdm_resume_pds1、offset 8+52）に、compute check と vk-queue の両方で入れる。common の大きさは、今は 0 で渡す（shared register の数を渡すのは残り）。
+- switch の state を既定で戻した（`POWERVR_COMPUTE_SWITCH_STATE` 1）。
+- p009 の run.sh に render-sr-program を足した。
+
+確かめ: 試験の image の config と VF2 の vmunix は warning 0。p009 は切り替え 0・1 とも 511/0、p010 は 0 failed。実機は未。

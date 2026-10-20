@@ -30,13 +30,14 @@
 
 /*
  * Whether a session writes its compute context's switch state (the
- * programs that save and restore the shared registers).  0 leaves the
- * state zero, as before the switch was added, to tell whether it is what
- * locks the compute data master up on the VF2; build with
- * -DPOWERVR_COMPUTE_SWITCH_STATE=1 to have it.
+ * programs that save and restore the shared registers) and the compute
+ * command its resume control word.  With the state zero, or the state
+ * without the word, the compute data master locked up on the VF2 even on
+ * a stream of its end alone; build with -DPOWERVR_COMPUTE_SWITCH_STATE=0
+ * only to look into that again.
  */
 #ifndef POWERVR_COMPUTE_SWITCH_STATE
-#define POWERVR_COMPUTE_SWITCH_STATE	0
+#define POWERVR_COMPUTE_SWITCH_STATE	1
 #endif
 
 /*

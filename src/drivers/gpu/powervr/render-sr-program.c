@@ -92,6 +92,8 @@
 #define CDM_UNIFIED_SHIFT		21U
 #define CDM_COMMON_SHARED		(1U << 20)
 #define CDM_DATA_SHIFT			1U
+#define CDM_COMMON_SHIFT		11U
+#define CDM_COMMON_UNIT_BYTES		64U
 #define CDM_FENCE			1U
 #define TARGET_ANY			(1U << 25)
 #define UNIFIED_SHIFT			10U
@@ -1130,6 +1132,42 @@ stream_out1_word(
 	/* The sync and the data size; no temporaries. */
 	word = STREAM_SYNC;
 	word |= (data_bytes / UNIT_BYTES) << STREAM_DATA_SHIFT;
+
+	/* Succeeded: the word. */
+	return word;
+}
+
+/*
+ * Builds the compute command's resume control word, CDM_CONTEXT_PDS1 for
+ * the load of the shared registers when the context comes back: no
+ * dependency, any target off, the switch's unified store, the common
+ * store of common_bytes shared, the load program's data.
+ *
+ * Values referenced:
+ * Mesa 26.2.5 src/imagination/csbgen/rogue/cr.xml (CDM_CONTEXT_PDS1:
+ * unified_size 21..26, common_shared 20, common_size 11..19 in units of
+ * 64 bytes, data_size 1..6 in units of 16 bytes); Linux v7.3
+ * drivers/gpu/drm/imagination/pvr_rogue_fwif_client_check.h (struct
+ * rogue_fwif_compute_regs: cdm_resume_pds1 52, after the command's
+ * 8-byte head).
+ * Procedure referenced:
+ * Mesa 26.2.5 src/imagination/vulkan/pvr_arch_job_compute.c
+ * (pvr_submit_info_stream_init: CR_CDM_CONTEXT_PDS1 with pds_seq_dep,
+ * usc_seq_dep, target and fence false, the switch's unified size,
+ * common_shared, the shared registers' common size and the load
+ * program's data size).
+ */
+uint32_t
+powervr_compute_resume_pds1(
+	uint32_t common_bytes)
+{
+	uint32_t word;
+
+	/* The switch's unified store, the common store shared and its size, the load's data. */
+	word = SHARED_UNIFIED_UNITS << CDM_UNIFIED_SHIFT;
+	word |= CDM_COMMON_SHARED;
+	word |= ((common_bytes + CDM_COMMON_UNIT_BYTES - 1U) / CDM_COMMON_UNIT_BYTES) << CDM_COMMON_SHIFT;
+	word |= (POWERVR_SHARED_PDS_DATA_WORDS * 4U / UNIT_BYTES) << CDM_DATA_SHIFT;
 
 	/* Succeeded: the word. */
 	return word;
