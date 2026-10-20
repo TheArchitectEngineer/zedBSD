@@ -427,3 +427,33 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
 | VF2 の vmunix（`plan/ws269/tests/p008/config-visionfive2-compute.mk`、`build/p023/vf2/vmunix`） | rc 0、warning 0 |
 
 - 片付け（Q1 に依頼）: `build/p023/`。
+
+## q1444-i01（P2、2026-10-20）: 64 bit の add を in place にしない
+
+- 板の 8 回目（vf2-dmesg41）: like store（address）・number・early は全部 ffffffff、**in place だけ 00006db1**。
+- 決定: 64 bit の add が自分の読む pair（base）に書くと、多くの instance の結果が誤る。IMADD・pass・inst_num・register の encode・temporaries の数は原因ではなかった。
+- 直し（`compute-program.c`）:
+  - `add64_group` は dst の pair が base の pair と重なると EINVAL を返す。in place の probe（LIKE_STORE_IN_PLACE）だけが、確かめ用に検めを通らない `add64_group_any` を使う。
+  - store の各 step: `add64 r0:r1 = r10:r11 + r8` の後、`add64 r12:r13 = r0:r1 + r9`。data は r12 を pass し、st の address は r12。
+  - temps: offset は r3（r2 を読むので r2 には書かない）、`add64 r4:r5 = r0:r1 + r3`、st は r4。
+  - fill: `add64 r2:r3 = r0:r1 + r5`、st は data が r6、address が r2（13 group）。
+  - ADDRESS・STRIDE・ADDRESS_WAIT の probe: `add64 r12:r13 = r0:r1 + r8`、st は r12。probe の temporaries は 14 にした。
+  - COMPUTED・ZERO_MADD・CONSTANT の probe（IMADD を r0 に in place で書く）は、比べるために残した。
+- compiler の back end（`shader-backend.c`）: `MACHINE_ADD64` は `select_address` だけで出す。dst は `TEMP_ADDRESS`（r6・r7）、source は値の register（r8 から）か scratch（r1〜r3）なので、in place にはならない。直しは要らない。ほかの 32 bit の op の in place（dst と同じ register を source に読む）は、今回の板の結果では壊れていない（IMADD の dst と別の source、pass）。
+- 理由（調べた範囲）:
+  - Mesa の register の割り当て（`pco_ra.c`）は、生存の範囲が命令で終わる source と dst を同じ register にしてよいとしている。repeat が 2 以上の時と vec の時だけ、src と dst を干渉させる。add64 の pair について、in place を避ける制約は見つからなかった。
+  - `pco_isa.py` にも記述は無い。
+  - hardware の側の read-after-write（w0 を書いた後に s1 を読む、など）か、64 bit の op の内部の順だと推測する。確かめてはいない。制約として、この phase.md と `add64_group` の comment に残した。
+
+| 確認 | 結果 |
+| --- | --- |
+| p008 の host | encode 94/0、compute 72/0 |
+| probe 16 種・fill（144 byte）・temps（168 byte）・store 512 step（29,776 byte）の encode（host） | 全部 0 |
+| VF2 の vmunix（`plan/ws269/tests/p008/config-visionfive2-compute.mk`、`build/p024/vf2/vmunix`） | rc 0、warning 0 |
+
+- 板で見ること:
+  - `compute kernel: OK 16384/16384`。
+  - store の 4 step が 128/128 で、lockup しない。
+  - grid と wide の temps が 0/32 wrong（temps の program も in place をやめた）。
+  - ADDRESS・STRIDE の own words が ffffffff。
+- 片付け（Q1 に依頼）: `build/p024/`。
