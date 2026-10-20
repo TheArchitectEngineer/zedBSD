@@ -934,3 +934,12 @@ source の変更は無し。
 - 105 の flags 0x1 は `POWERVR_RESET_FLAG_FAULT`（page fault。fault の address を報告するだけ）で、通知の context の session だけを lost にし、device は落とさない。device 全体の扱いになるのは flags 0x2（ALL）の時。
 - 訂正: q1449・q1450 の時に私の確認の build を `CONFIG=` で流しており、実際には x86 の既定の config で build されていた。今回は `ZEDBSD_CONFIG=` で RISC-V の build を確認した（`build/q1453/st/vmunix`、warning 0）。q1449・q1450 の差分もこの build に入っている。
 - 未実施: 板。submit を断った理由は、板の dmesg で特定する。
+
+## q1456 / q1456-i01（2026-10-20）
+
+- vkcompute の fault 0x8000025800 を切り分けるための log を `vk-queue.c` に足した。
+  - dispatch の時: 各 buffer の binding の address の範囲と大きさ・offset・shared word、workgroup の数と workgroup id の shared word。
+  - 最初と最後の kernel の USC の room と PDS の data の address。
+  - run の時: stream の address と使った範囲、kernel の数、USC・PDS の使った範囲。
+- 置き方の確認（机上）: 129 個の kernel（128 + fence）× 7 word × 4 = 0xe1c byte に terminate を足しても、0x1000 から始めて 0x1e20 で終わり、0x10000 の stream に収まる。
+- 確認: RISC-V の self-test の build（`build/q1456/st/vmunix`）で warning 0。板は未実施（Q1）。
