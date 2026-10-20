@@ -47,7 +47,7 @@ cc -std=c11 -O2 -Wall -Wextra -Werror -I"$root/include" -I"$root/src" \
 p="$root/src/drivers/gpu/powervr"
 cc -std=gnu11 -O1 -Wall -Wextra -Werror -Wno-maybe-uninitialized -I"$root/include" -I"$root/src" \
 	"$p/render-job.c" "$p/render-command.c" "$p/render-kick-layout.c" "$p/render-program.c" "$p/render-load-program.c" \
-	"$p/render-draw.c" "$p/render-pass.c" "$p/data-program.c" "$p/descriptor-set.c" "$p/pds-encode.c" \
+	"$p/render-draw.c" "$p/render-depth.c" "$p/render-pass.c" "$p/data-program.c" "$p/descriptor-set.c" "$p/pds-encode.c" \
 	"$p/image-state.c" $compiler "$here/job-host-test.c" -lm -o "$out/job-host-test"
 "$out/job-host-test"
 sh "$here/selftest-host.sh" "$out"

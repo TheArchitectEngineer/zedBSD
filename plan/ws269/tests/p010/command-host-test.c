@@ -92,6 +92,18 @@ main(void)
 	expect(read64(fragment, 416) == 0x200U && read64(fragment, 432) == 0x202U, "partial render background");
 	expect(read32(fragment, 464) == 0, "fragment flags");
 
+	/* A depth target: ZLS control 120+16, base 128+16, background depth, stride 468, flags bit 7. */
+	setup.has_depth = 1;
+	setup.zls_control = 0x1234;
+	setup.zls_base = 0x8000002000ULL;
+	setup.background_depth = 0x3f000000U;
+	setup.zls_stride = 0x4000;
+	memset(fragment, 0, sizeof(fragment));
+	powervr_fragment_command(&setup, fragment);
+	expect(read64(fragment, 136) == 0x1234U && read64(fragment, 144) == 0x8000002000ULL, "zls control and base");
+	expect(read32(fragment, 52) == 0x3f000000U && read32(fragment, 468) == 0x4000U && read32(fragment, 464) == 0x80U, "background depth, stride, depth buffer flag");
+	setup.has_depth = 0;
+
 	/* The quirks: no skip for 2 tiles wide with 1 or 3 tile group rows, or 2 rows. */
 	expect(powervr_fragment_isp_control(2, 2) == 0x00033000U, "2x2 tiles: no skip");
 	expect(powervr_fragment_isp_control(2, 4) == 0x00033000U, "2x4 tiles: two group rows, no skip");
