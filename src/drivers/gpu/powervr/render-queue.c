@@ -1178,6 +1178,9 @@ powervr_render_stop_poll(
 			answer = POWERVR_RETURN_NONE;
 		} else {
 			answer = powervr_object_get32(&render->core->firmware.kccb_returns, session->stop_slot * 4U);
+			/* The firmware may leave the slot unwritten; the executed count then says the cleanup ran. */
+			if ((answer & POWERVR_RETURN_EXECUTED) == 0U && powervr_command_wait_executed(render->core, session->stop_slot, 0) == 0)
+				answer = POWERVR_RETURN_EXECUTED;
 		}
 
 		/* Busy: the context still runs, asks again a bounded number of times. */
@@ -1935,7 +1938,8 @@ service_pass(
 		take_reached(session, &delivery);
 		if (session->pending_count != 0U) {
 			pending = 1;
-			if (now - session->pending[session->pending_head].submitted > ms_ticks(WATCHDOG_MS))
+			/* A session lost to a context reset is that session's loss alone; the firmware is not asked about it. */
+			if (!session->lost && now - session->pending[session->pending_head].submitted > ms_ticks(WATCHDOG_MS))
 				overdue = 1;
 		}
 
@@ -2105,7 +2109,11 @@ handle_notice(
 	outcome = context;
 	render = outcome->render;
 
-	/* The firmware lost the device. */
+	/*
+	 * The firmware lost the device: its own fault, or its request for a
+	 * restart.  A context reset (below) loses only that context's session
+	 * and the device goes on.
+	 */
 	if (type == POWERVR_NOTICE_FIRMWARE_FAULT || type == POWERVR_NOTICE_RESTART) {
 		outcome->device_lost = 1;
 		return;

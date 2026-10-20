@@ -41,6 +41,16 @@
 #endif
 
 /*
+ * Whether a session writes its render context's static switch state
+ * (the VDM and TA state buffers and their store and resume tasks).  Set
+ * to 0 for now to see whether the geometry data master runs with the
+ * state all zero, as the firmware should not read it without a resume.
+ */
+#ifndef POWERVR_RENDER_SWITCH_STATE
+#define POWERVR_RENDER_SWITCH_STATE	0
+#endif
+
+/*
  * The most a session holds, the largest allocation, and how many native
  * commands one session may have in flight.
  */

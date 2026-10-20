@@ -634,10 +634,11 @@ context_records(
 	if (error != 0)
 		return error;
 
-	/* The static state, written whole: the state buffers and both sets' tasks. */
+	/* The static state, written whole (or left zero): the state buffers and both sets' tasks. */
 	kern_memset(record, 0, sizeof(record));
 	general = context->switch_memory->address;
-	powervr_render_switch_state(record, powervr_switch_base_word(general + GENERAL_VDM_STATE), powervr_switch_base_word(general + GENERAL_TA_STATE), tasks);
+	if (POWERVR_RENDER_SWITCH_STATE)
+		powervr_render_switch_state(record, powervr_switch_base_word(general + GENERAL_VDM_STATE), powervr_switch_base_word(general + GENERAL_TA_STATE), tasks);
 	powervr_object_fill(&context->record, 0, record, sizeof(record));
 
 	/* The geometry state's initial call stack pointer. */

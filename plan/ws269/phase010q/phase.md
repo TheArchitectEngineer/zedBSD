@@ -913,3 +913,13 @@ source の変更は無し。
 - 変更: `render-check.c` の最初の transfer の session と memory を render の終わりまで閉じずに保持し（`transfer_check` の kept 引数、`transfer_close`）、TA が別の PC set を取るようにした。既定の trace の dump を all 1536 / head 256 / last 128 word に広げ、mark 以降の BIF 行が入るようにした。
 - 確認: self-test config で `vmunix` を build（warning 0）。板の試験は未実施（Q1/T1）。
 - 次: 板の dmesg の trace で TA の「Alloc PC set」を読む。set 1 でも TA が止まれば PC set の仮説は外れ。
+
+## q1450 / q1450-i01（2026-10-20）
+
+- dmesg47 の trace の判定: TA の kick の前の BIF の行は「Activate MemCtx=0xc0055000 DM=2」、「Alloc PC set 2 as register range [3-3]」、「Grab reg set 2」。transfer の session が active のままでも、TA は set 2・range 3（compute が動いた時は range 2）を得て、それでも止まった（USC slot 0、HWR は lockup）。PC set の仮説は外れ。
+- (c) の切り分け: `render-private.h` に `POWERVR_RENDER_SWITCH_STATE`（既定は今 0）を足し、`render-context.c` の render context の static switch state（VDM・TA の state buffer と store・resume の task）を 0 のままにした。
+- device の quarantine の直し（Q1 の追加）: 105 の context reset はもともとその session だけを lost にしていた。device を quarantine にしうる経路を 2 つ直した。
+  - 監視の pass が、lost の session の未完了の command を overdue として数えないようにした（health check を走らせない）。
+  - `powervr_render_stop_poll` で、FW が return slot を書かない時は kccb の executed count で cleanup の完了を判定するようにした。これで、session の close の stop が期限切れで escalate しない（escalate すると isolate、それが失敗すると fault になる）。
+  - 112（FW の fault）と restart の要求は、これまでどおり device lost。
+- 確認: self-test config で `vmunix` を build（warning 0）。板の試験は未実施。dmesg47 には device の quarantine を arm した行が無く、上の 2 経路のどちらだったかは未確認。
