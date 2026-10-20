@@ -32,8 +32,13 @@
 /* The clear rectangles one vkCmdClearAttachments takes. */
 #define POWERVR_PASS_CLEAR_RECTS	8U
 
-/* The draws one render job keeps, the vertex buffers and descriptor sets of a draw, its push constant bytes. */
-#define POWERVR_RENDER_DRAWS		16U
+/*
+ * The draws one render job keeps, the vertex buffers and descriptor sets
+ * of a draw, its push constant bytes.  Each job's 3D pass takes about the
+ * same time whatever its draws (a full-frame compositor job about 37 ms
+ * on the board at 396 MHz), so a pass split into fewer jobs is faster.
+ */
+#define POWERVR_RENDER_DRAWS		64U
 #define POWERVR_DRAW_VERTEX_BUFFERS	4U
 #define POWERVR_DRAW_SETS		4U
 #define POWERVR_DRAW_PUSH_BYTES		128U
