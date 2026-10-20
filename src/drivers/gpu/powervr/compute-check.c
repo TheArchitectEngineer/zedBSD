@@ -271,6 +271,7 @@ static int run_many_kernels(struct check_state *state, unsigned kernels, unsigne
 static int run_fence_variants(struct check_state *state);
 static int put_fence_kernel(struct check_state *state, uint32_t *stream);
 static void run_timing_probes(struct check_state *state);
+static void run_mesa_form(struct check_state *state);
 static void run_layouts(struct check_state *state);
 static void run_workgroup_probe(struct check_state *state);
 static struct shader_machine_operation *dump_last(struct shader_backend *dump);
@@ -338,7 +339,8 @@ powervr_compute_check(
 		return;
 	}
 
-	/* The groups' read and write timing, then a fresh session for the rest. */
+	/* The Mesa-form fill, the groups' read and write timing, then a fresh session for the rest. */
+	run_mesa_form(&state);
 	run_timing_probes(&state);
 	teardown(&state);
 	step = "open";
@@ -1939,6 +1941,159 @@ timing_expected(
 		*new = TIMING_OLD + tag;
 		break;
 	}
+}
+
+/*
+ * The Mesa-form fill: the group sequence Mesa 26.2.5's compiler (pco)
+ * emits for vkcompute's fill shader on the BXE-4-32 (run through its
+ * Vulkan driver on the host with the drm shim, PCO_DEBUG_PRINT=cs),
+ * groups 6 to 16 of its block B2, back to back with no spacing, the
+ * same registers and constants; only its inputs come from temporaries
+ * set up first: the lane (vi0 in Mesa) in r11, the buffer's address (sh0
+ * and sh1) in r8 and r9, the descriptor offset (sh3) in r10.
+ */
+#define MESA_FORM_OFFSET	0x1e1000U
+#define MESA_FORM_GROUPS	4U
+#define MESA_FORM_TEMPORARIES	12U
+
+/* Sets a source of the last operation to a special register (a constant). */
+static void
+mesa_form_special(
+	struct timing_program *program,
+	unsigned source,
+	unsigned index)
+{
+	if (program->error != 0 || program->count == 0)
+		return;
+	program->operations[program->count - 1U].source[source].bank = POWERVR_USC_BANK_SPECIAL;
+	program->operations[program->count - 1U].source[source].index = (uint16_t)index;
+}
+
+/* Builds and encodes the Mesa-form fill for a buffer at address. */
+static int
+mesa_form_build(
+	struct timing_program *program,
+	uint64_t address,
+	uint8_t *code,
+	size_t room,
+	size_t *length)
+{
+	struct powervr_usc_group *groups;
+	struct shader_machine_operation *operation;
+	unsigned index;
+	int error;
+
+	/* The inputs, settled. */
+	kern_memset(program, 0, sizeof(*program));
+	program->filler = TIMING_FILL_MOVE;
+	timing_settled(program, MACHINE_MOVE_SPECIAL, 11, POWERVR_USC_BANK_SPECIAL, DUMP_SPECIAL_INSTANCE, DUMP_NONE, DUMP_NONE, 0);
+	timing_settled(program, MACHINE_IMMEDIATE, 8, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, (uint32_t)address);
+	timing_settled(program, MACHINE_IMMEDIATE, 9, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, (uint32_t)(address >> 32));
+	timing_settled(program, MACHINE_IMMEDIATE, 10, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, 0);
+
+	/* g6: r0 = cf0. */
+	timing_add(program, MACHINE_MOVE, 0, POWERVR_USC_BANK_COEFFICIENT, 0, DUMP_NONE, DUMP_NONE, 0);
+	/* g7: r0 = r0 << sc5 (the workgroup times 32). */
+	timing_add(program, MACHINE_SHIFT, 0, POWERVR_USC_BANK_TEMPORARY, 0, 0, DUMP_NONE, 0);
+	mesa_form_special(program, 1, 5);
+	/* g8: r0 = r0 * sc1 + lane (the invocation). */
+	timing_add(program, MACHINE_INTEGER, 0, POWERVR_USC_BANK_TEMPORARY, 0, 0, 11, 0);
+	mesa_form_special(program, 1, 1);
+	/* g9: r1 = r0 << sc2 (its byte offset). */
+	timing_add(program, MACHINE_SHIFT, 1, POWERVR_USC_BANK_TEMPORARY, 0, 0, DUMP_NONE, 0);
+	mesa_form_special(program, 1, 2);
+	/* g10: r0 = r0 * sc3 + sc0. */
+	timing_add(program, MACHINE_INTEGER, 0, POWERVR_USC_BANK_TEMPORARY, 0, 0, 0, 0);
+	mesa_form_special(program, 1, 3);
+	mesa_form_special(program, 2, 0);
+	/* g11: r4 = r0 * sc1 + sc7 (3x + 7). */
+	timing_add(program, MACHINE_INTEGER, 4, POWERVR_USC_BANK_TEMPORARY, 0, 0, 0, 0);
+	mesa_form_special(program, 1, 1);
+	mesa_form_special(program, 2, 7);
+	/* g12: r0 = sh1 (the address's high word). */
+	timing_add(program, MACHINE_MOVE, 0, POWERVR_USC_BANK_TEMPORARY, 9, DUMP_NONE, DUMP_NONE, 0);
+	/* g13: r0:r1 = (sh0, r0) + r1. */
+	timing_add(program, MACHINE_ADD64, 0, POWERVR_USC_BANK_TEMPORARY, 8, 0, 1, 0);
+	/* g14: r2:r3 = (r0, r1) + sh3. */
+	timing_add(program, MACHINE_ADD64, 2, POWERVR_USC_BANK_TEMPORARY, 0, 1, 10, 0);
+	/* g15: st r4 -> [r2:r3]; g16: wdf; then the end. */
+	timing_add(program, MACHINE_STORE, DUMP_NONE, POWERVR_USC_BANK_TEMPORARY, 4, DUMP_NONE, DUMP_NONE, 0);
+	if (program->error == 0) {
+		operation = &program->operations[program->count - 1U];
+		operation->source[1].bank = POWERVR_USC_BANK_TEMPORARY;
+		operation->source[1].index = 2;
+	}
+	timing_add(program, MACHINE_WAIT, DUMP_NONE, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, 0);
+	timing_add(program, MACHINE_END, DUMP_NONE, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, 0);
+	if (program->error != 0)
+		return program->error;
+
+	/* The groups, then the bytes. */
+	groups = kern_malloc(program->count * sizeof(*groups));
+	if (groups == NULL)
+		return ENOMEM;
+	error = 0;
+	for (index = 0; error == 0 && index < program->count; index++)
+		error = shader_backend_group(&program->operations[index], 0, &groups[index]);
+	if (error == 0)
+		error = powervr_usc_program_encode(groups, program->count, code, room, length);
+	kern_free(groups);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the program. */
+	return 0;
+}
+
+/*
+ * Runs the Mesa-form fill as one kernel of MESA_FORM_GROUPS workgroups
+ * and reports on one line how many of their words hold 3x + 7, and the
+ * first two.
+ */
+static void
+run_mesa_form(
+	struct check_state *state)
+{
+	struct timing_program *program;
+	volatile uint32_t *words;
+	uint8_t *code;
+	size_t length;
+	unsigned field;
+	unsigned word;
+	unsigned good;
+	int error;
+
+	/* The program, its kick, the words filled with other values, the kick. */
+	code = kern_malloc(USC_DUMP_ROOM);
+	program = kern_malloc(sizeof(*program));
+	error = 0;
+	length = 0;
+	if (code == NULL || program == NULL)
+		error = ENOMEM;
+	if (error == 0)
+		error = powervr_compute_task_field(MESA_FORM_TEMPORARIES, &field);
+	if (error == 0)
+		error = mesa_form_build(program, run_address + MESA_FORM_OFFSET, code, USC_DUMP_ROOM, &length);
+	if (error == 0) {
+		put_bytes(state->usc, USC_COMPILED, code, length);
+		error = write_workgroup_kick(state, field, MESA_FORM_GROUPS);
+	}
+	words = state->alias + MESA_FORM_OFFSET / 4U;
+	for (word = 0; word < MESA_FORM_GROUPS * POWERVR_COMPUTE_INSTANCES; word++)
+		words[word] = TIMING_FILLER;
+	if (error == 0)
+		error = kick(state, KICK_PROBE_FIRST);
+
+	/* The words that hold 3x + 7. */
+	good = 0;
+	for (word = 0; word < MESA_FORM_GROUPS * POWERVR_COMPUTE_INSTANCES; word++)
+		good += words[word] == word * 3U + 7U;
+	kern_logf("powervr: compute probes: mesa-form fill %u/%u (%d), %u bytes, words 0 %08x 1 %08x 32 %08x\n",
+		  good, MESA_FORM_GROUPS * POWERVR_COMPUTE_INSTANCES, error, (unsigned)length, words[0], words[1], words[POWERVR_COMPUTE_INSTANCES]);
+
+	/* The room goes. */
+	kern_free(program);
+	kern_free(code);
 }
 
 /*

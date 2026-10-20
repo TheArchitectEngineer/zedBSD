@@ -1198,3 +1198,81 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
 | 板 | 未実施 |
 
 - 片付け（Q1 に依頼）: `build/p2q1479/`、scratchpad の `timingtest.c`・`timingtest`。
+
+## q1481-i01（P2、2026-10-21）: wdf の encoding、filler を実命令に、Mesa の compiler の実際の命令列
+
+### (a) wdf の encoding
+
+- 我々の wdf の group（MACHINE_WAIT）は `02 80 6a ff`。Mesa 26.2.5 の生成器（`pco_isa.h` の `pco_igrp_hdr_control_encode`）で、wdf（ctrlop 0b0101、cc e1_zx、miscctl ＝ drc 0、length 2）を encode すると `02 80 6a` になり、我々のものと同じ。続く 1 byte は word の padding の 0xff。
+- 下の Mesa の compiler の実際の出力にも、この group（`02 80 6a ff`、group 16）がある。
+- store は drc 0（Q1 の Mesa 25.0 の rogue_isa との照合とも一致）。
+- **wdf の encoding に違いは無い。** 候補の encoding を板で比べる必要も無い。
+- 板 75 の結果は「wdf は store の data の読みを待たない」とは読まない。wdf が待つのは data return counter（load の戻りなど）の完了で、store の source の読みの時期を保証する物ではない、と読む。
+
+### (b) filler を実命令に、間隔を種類ごとに（shader-backend.c、shader-private.h）
+
+- **filler**: `shader_filler_kind` の既定を MACHINE_MOVE にした（r11 ← r11、`TEMP_FILLER` 11 を予約し、値は r12 から）。MACHINE_MOVE_SPECIAL（r11 ← s0）も選べる。
+  - `filler_operation()` は filler を見分ける。filler とは何も待たず、何にも待たれず、in-place の数にも入れない。
+- **距離は時間を持つ群で数える**（`shader_backend_gap_needed`）。wdf と nop は数えない（板 75）。
+- **間隔は読む側の種類ごと**:
+  - madd（MACHINE_INTEGER）の source: `shader_integer_source_gap` ＝ 4
+  - store の data・address: `shader_store_source_gap` ＝ 6
+  - 他の ALU: `shader_alu_source_gap` ＝ 3
+  - madd の結果の読み、madd の新しい値の読み: 2
+  - 上の値は板 75 の mov／madd の filler の結果から決めた。探索の上限は `SHADER_GAP_MAX` 10。
+- compiled fill（vkcompute）は 752 byte・83 群・17 temps。host の simulator では 32/32。
+- **compute check の compiled fill**: filler（mov、mov-special）× 間隔（既定 4/3/6、大きめ 6/5/8）の 4 回を同じ起動で流す。dump の prefix は最初の回だけ。行の前に `compiled fill with gaps madd A alu B store C, mov|mov-special fillers`。
+
+### (c) Mesa の compiler の実際の命令列（ユーザーの指摘への対応）
+
+- **Mesa 25.0 の rogue の offline compiler**（`rogue_vk_compiler`）は scratchpad で build できた。ただし対応する stage は frag と vert だけで、compute は compile できない。Mesa 25.0 の driver の compute は rogue では無い。
+- 代わりに、**Mesa 26.2.5 の Vulkan driver（pco の compiler）を host で build** して、**drm-shim**（`libpowervr_noop_drm_shim.so`、`PVR_SHIM_DEVICE_BVNC=36.50.54.182` ＝ BXE-4-32）の上で、userland の vkcompute（host 用に build）を走らせた。`PCO_DEBUG_PRINT=cs,binary` で IR と binary を取った。
+  - build に要った host の package（sudo apt）: llvm-19-dev、libclang-19-dev、libclc-19(-dev)、libllvmspirvlib-19-dev、llvm-spirv-19、libdrm-dev、glslang-tools、spirv-tools。
+  - meson: `-Dvulkan-drivers=imagination -Dtools=drm-shim,imagination -Dllvm=enabled -Dmesa-clc=enabled`。
+  - 結果の全文（IR と binary）: `plan/ws269/tests/p008/mesa-pco-fill-bxe-4-32.txt`。
+- Mesa の命令列（block B2、if (vi0 < 32) の中）:
+
+| 群 | Mesa | 我々の同じ op の bytes |
+| --- | --- | --- |
+| 6 | `r0 = cf0`（mbyp）`35 82 00 87 c0 04 00 00 00 40` | 同じ（length・da の値は padding の分だけ違う） |
+| 7 | `r0 = r0 << sc5`（bitwise）`55 d2 40 00 02 80 a0 80 85 40` | 同じ |
+| 8 | `r0 = imadd32 r0, sc1, vi0`（**in-place、直前の群の結果を読む**） | 同じ |
+| 9 | `r1 = r0 << sc2` | 同じ |
+| 10 | `r0 = imadd32 r0, sc3, sc0`（in-place） | 同じ |
+| 11 | `r4 = imadd32 r0, sc1, sc7`（直前の群の結果を読む） | 同じ |
+| 12 | `r0 = sh1` | 同じ |
+| 13 | `r0:r1 = add64_32.s sh0, r0, r1`（**in-place の pair**） | 1 bit だけ違う（byte 3 が e8 と e0。`.s`） |
+| 14 | `r2:r3 = add64_32.s r0, r1, sh3` | 同じく `.s` |
+| 15 | `st.lazywriteback r4 → [r2..3]`（data ＝ address＋2） | cache の mode の 1 bit が違う（byte 4 が 66 と 64） |
+| 16 | `wdf drc0` | 同じ |
+| 18 | `nop`（end） | 同じ形 |
+
+- **Mesa の規則（この命令列から）:**
+  - 群の間に **spacing は一つも無い**。直前の群の結果をそのまま読み、in-place（同じ群で読んで書く、64-bit の pair も）を使う。
+  - imadd は special の定数（sc1・sc3・sc7）と vertex input（vi0）を直接読む。
+  - store の後に wdf を置き、program の最後に nop.end を置く。
+  - つまり、我々が板の結果から足してきた規則（in-place の禁止、2 群の間隔、imadd の special の禁止、filler）は、**Mesa は使っていない**。
+- **板で確かめる probe（`run_mesa_form`）**: Mesa の群 6〜16 を、同じ register・同じ定数・spacing 無しで並べた program を 1 kernel 4 workgroup で流す。入力（vi0 → r11 の lane、sh0/sh1 → r8/r9、sh3 → r10 ＝ 0）は、前に置いて落ち着かせる。
+  - 我々の encoder の bytes は、上の表のとおり Mesa と同じ（`.s` と lazywriteback を除く）。
+  - 行: `compute probes: mesa-form fill N/128 (e), bytes, words 0 … 1 … 32 …`。
+  - host の simulator: 128/128、424 byte・48 群（simulator の special の定数は Mesa の表のとおり、index 0〜31 ＝ 値にした）。
+  - **判定**: 128/128 なら、Mesa の規則（spacing 無し）で hardware は正しく動く。我々の compiled fill の誤りは、hazard ではなく、Mesa と違う所（命令の選び方・register の配置・`.s`・cache の mode など）にある。その時は、back end を Mesa の列に合わせる。128 にならなければ、Mesa と我々の実行の環境の違い（PDS・kernel の語・shared の載せ方）を疑う。
+
+### (d) fence
+
+- fence variant a は毎回 check の最初に流れる（`run_fence_variants`）。wdf の encoding は Mesa と同じなので、wdf の修正は無い。板 75 では a・b・d・e の lockup が続いている。
+- Mesa の stream（fence kernel を含む）の作りとの照合は、次の段にする。drm-shim で `PVR_DEBUG` の CSB dump が取れれば、Mesa の compute の control stream も取れる見込み。
+
+| 確認 | 結果 |
+| --- | --- |
+| p010-compiler の host | 455/0、group 20/0 |
+| p009 の host | 502/0 |
+| mesa-form（host の simulator、使い捨て） | 128/128 |
+| fill-registers.sh（既定、mov の filler） | 32/32、752 byte |
+| VF2 の vmunix（`build/p2q1481/vf2/vmunix`） | rc 0、warning 0 |
+| 板 | 未実施 |
+
+- 片付け（Q1 に依頼）:
+  - `build/p2q1481/`
+  - scratchpad の `mesa25/`（rogue の build）、`mesa26/`（26.2.5 の build と vkcompute-host、run1.txt）。mesa26 は次の Mesa の参照に使えるので、残すかどうかは Q1 の判断。
+  - scratchpad の `gen/`・`hdr*`・`wdf*`・`cmp*`・`mftest*`・`mesaform.c`・`mesa-groups.txt`・`timingtest*`
