@@ -53,3 +53,11 @@ kick に依らない部分: pipeline の decode、compile の入力（key）、v
 - job の draw ごとに: vertex の PDS（data-program.c の `powervr_data_vertex_build` に属性の DMA）、vertex・fragment の shared の PDS（`powervr_data_resolve`・`powervr_data_shared_build` に set・push constant）、fragment の kick（`powervr_render_kick_build`）、coefficient の PDS、USC の code を GPU の memory に置き、`powervr_draw_ppp_build`・`powervr_draw_vdm_build` で stream を組み、P1 の kick に渡す（scissor の表の address は fragment の command）。
 - gpu-selftest の `draw`・`sample` の実機。
 - 2 つ以上の viewport・stencil・depth bias・MSAA・primitive restart・firstInstance・instance rate の属性（p011）。
+
+## q1385-i01（2026-10-20 P1、後半: draw を kick に）
+
+- `render-job.c`: job の draws を載せた（draw の ENOTSUP を外した）。draw ごとに、vertex と fragment の USC の code（draw の USC の buffer に並べる）、set の写し（`set->bytes` を draw の GENERAL に、`powervr_data_resolve` の set の address に）、push constant、0 の blend constant、vertex と fragment の shared の PDS（要求が無ければ halt 1 つ）、vertex の PDS（attribute ごとの DMA、stride は binding から、`powervr_data_vertex_build`）、fragment の kick の PDS、coefficient の PDS（data の後に code）、scissor の表の 1 entry（index = draw の番号）を置き、P2 の `powervr_draw_ppp_build`・`powervr_draw_vdm_build` の stream を順につなぎ、最後に terminate。geometry の resume size は vertex の shared の最大。fragment の command に scissor と depth bias（0 の entry）の表の address。
+- `render-command.{c,h}`: fragment の `isp_scissor_base`（16+96）・`isp_dbias_base`（16+104）、bits 2..39。
+- `vk-draw.h`: `struct powervr_vk_graphics` を vk-draw.c から header へ（render-job が読む）。
+- 確かめ: p010 の host 試験 全部 0 failed、p009 165/0、VF2・riscv64-virt・amd64・試験の image の build warning 0。実機（vkstage の draw・sample）は未確認。
+- 未対応・推測: render check の三角形は今も自分の固定の program の道（vk の pipeline を通さない）。depth bias の表は 0 の 1 entry、MRT・depth は render-job の制限のまま。

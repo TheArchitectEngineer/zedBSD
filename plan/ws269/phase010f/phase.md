@@ -79,3 +79,10 @@ transfer の command の組み立て（copy と clear、src/dst の矩形と PBE
 - render check に transfer check（`CONFIG_POWERVR_RENDER_CHECK`）: 別の session で 64×64 の LINEAR を青（0xffff0000）に clear して読み返し、別の attachment へ copy して最初と比べる。行は `powervr: transfer check: prepared` / `clear finished` / `clear OK` / `copy finished` / `copy OK`、失敗は `FAILED at <段> (<errno>)` か最初に違った pixel と値、と `transfer` の段の行。
 - 確かめ（2026-10-20 10:16）: p010 の host 試験 12 本 0 failed（command 27/0 に transfer の command の offset を足した）、p009 165/0、VF2・riscv64-virt・amd64・試験の image の config の build で warning 0。QEMU・実機は未実施。
 - 残り: scale・flip・format 変換の blit（p010o、P2 の `powervr_transfer_blit_*` を組み込む）、mip・layer、8・16・64 bit の texel、buffer の命令（compute）、linear の TRANSFER の features、gpu-selftest の `clear`・`copy`、実機。
+
+## q1385-i01（2026-10-20 P1、p010o の blit の組み込み）
+
+- `transfer-job.{c,h}`: request に blit（source の矩形、flip x/y、linear）。P2 の `powervr_transfer_blit_usc`（destination の format）と `powervr_transfer_blit_words`。blit は行に分けない（奇数の行の linear は regs_build が断る）。
+- `vk-transfer.c`: vkCmdBlitImage の大きさ・format の制限を外し、端の順から矩形と flip、VK_FILTER_LINEAR で linear（4 channel の 8 bit unorm 以外は P2 の program が ENOTSUP）。
+- 確かめ: VF2・riscv64-virt・amd64・試験の image の build warning 0、p009 165/0、p010 の host 試験 0 failed。実機は未確認。
+
