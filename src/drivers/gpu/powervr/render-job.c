@@ -146,12 +146,23 @@ static int job_programs(const struct powervr_render_job *job, struct job_memory 
  * The LOAD background's probe (for the board): 0 the usual load program,
  * 1 the sample at (0, 0) (POWERVR_LOAD_PROBE_ORIGIN), 2 the program with a
  * wait group after each group (POWERVR_LOAD_PROBE_SPACED), 3 no sample at
- * all: the background a constant magenta as a clear's.
+ * all: the background a constant magenta as a clear's, 4 the usual
+ * program with its eight shared words written by the data sequencer as
+ * constants (DOUTW) instead of copied from memory (DOUTD).
  */
 #ifndef POWERVR_RENDER_LOAD_PROBE
 #define POWERVR_RENDER_LOAD_PROBE	0
 #endif
 #define LOAD_PROBE_CONSTANT		3
+#define LOAD_PROBE_WRITTEN		4
+
+/* Reads a little-endian 32-bit word. */
+static uint32_t
+get_le32(
+	const uint8_t *bytes)
+{
+	return (uint32_t)bytes[0] | (uint32_t)bytes[1] << 8 | (uint32_t)bytes[2] << 16 | (uint32_t)bytes[3] << 24;
+}
 
 static int job_background(const struct powervr_render_target *color, struct job_memory *memory, uint32_t pds_base, uint32_t usc_base, uint32_t *shared_registers);
 static int job_draws(struct powervr_render *render, struct powervr_session *session, const struct powervr_render_job *job, struct job_memory *memory, uint32_t *stream_words, uint32_t *vertex_shareds);
@@ -280,6 +291,17 @@ powervr_render_job_run(
 	memory->fragment_setup.border_table = powervr_session_border_table(session);
 	memory->geometry_setup.border_table = memory->fragment_setup.border_table;
 	powervr_fragment_command(&memory->fragment_setup, memory->fragment);
+	if (POWERVR_DIAGNOSTICS) {
+		uint32_t at;
+
+		/* The fragment command's words, eight a line, to set a loading job beside a clearing one. */
+		for (at = 0; at < POWERVR_FRAGMENT_BYTES; at += 32U)
+			kern_logf("powervr: render job: fragment +%03x: %08x %08x %08x %08x %08x %08x %08x %08x\n", (unsigned)at,
+				  (unsigned)get_le32(memory->fragment + at), (unsigned)get_le32(memory->fragment + at + 4U),
+				  (unsigned)get_le32(memory->fragment + at + 8U), (unsigned)get_le32(memory->fragment + at + 12U),
+				  (unsigned)get_le32(memory->fragment + at + 16U), (unsigned)get_le32(memory->fragment + at + 20U),
+				  (unsigned)get_le32(memory->fragment + at + 24U), (unsigned)get_le32(memory->fragment + at + 28U));
+	}
 	memory->geometry_setup.stream = memory->general->address + GENERAL_STREAM;
 	memory->geometry_setup.region_header_bytes = layout->region_header_bytes;
 	memory->geometry_setup.shared_registers = shared_registers;
@@ -455,7 +477,7 @@ job_background(
 	/* The background's program and the shared register program that feeds it. */
 	if (color->load_op == LOAD_OP_LOAD && POWERVR_RENDER_LOAD_PROBE != LOAD_PROBE_CONSTANT) {
 		/* The attachment's image and sampler words, and the program that samples it. */
-		error = powervr_render_load_usc_probe(color->surface.format, POWERVR_RENDER_LOAD_PROBE, &memory->program);
+		error = powervr_render_load_usc_probe(color->surface.format, POWERVR_RENDER_LOAD_PROBE <= POWERVR_LOAD_PROBE_SPACED ? POWERVR_RENDER_LOAD_PROBE : POWERVR_LOAD_PROBE_USUAL, &memory->program);
 		if (error != 0)
 			return error;
 
@@ -470,7 +492,21 @@ job_background(
 				  (unsigned)words[0], (unsigned)words[1], (unsigned)words[2], (unsigned)words[3], (unsigned)words[4], (unsigned)words[5]);
 
 		put_words(memory->general->buffer, GENERAL_LOAD_WORDS, words, POWERVR_RENDER_LOAD_SHARED_WORDS);
-		error = powervr_render_load_shared(memory->general->address + GENERAL_LOAD_WORDS, &memory->shared);
+		if (POWERVR_RENDER_LOAD_PROBE == LOAD_PROBE_WRITTEN) {
+			struct powervr_data_load loads[POWERVR_RENDER_LOAD_SHARED_WORDS / 2U];
+			uint32_t pair;
+
+			/* The words as four pairs of constants. */
+			for (pair = 0; pair < POWERVR_RENDER_LOAD_SHARED_WORDS / 2U; pair++) {
+				loads[pair].kind = POWERVR_DATA_LOAD_WRITE;
+				loads[pair].shared = (uint16_t)(pair * 2U);
+				loads[pair].words = 2;
+				loads[pair].source = (uint64_t)words[pair * 2U] | (uint64_t)words[pair * 2U + 1U] << 32;
+			}
+			error = powervr_data_shared_build(loads, POWERVR_RENDER_LOAD_SHARED_WORDS / 2U, &memory->shared);
+		} else {
+			error = powervr_render_load_shared(memory->general->address + GENERAL_LOAD_WORDS, &memory->shared);
+		}
 		if (error != 0)
 			return error;
 
@@ -490,10 +526,8 @@ job_background(
 		if (color->load_op == LOAD_OP_CLEAR)
 			kern_memcpy(value, color->clear, sizeof(value));
 		if (color->load_op == LOAD_OP_LOAD) {
-			/* The constant probe: magenta, opaque, as the clear's float bits. */
-			value[0] = 0x3f800000U;
-			value[2] = 0x3f800000U;
-			value[3] = 0x3f800000U;
+			/* The constant probe: magenta, opaque, in the format's packed word as a clear's value is. */
+			value[0] = 0xffff00ffU;
 		}
 		error = powervr_render_clear_usc_words(clear_words, &memory->program);
 		if (error != 0)

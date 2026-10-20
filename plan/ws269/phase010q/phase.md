@@ -1504,3 +1504,22 @@ csbgen（Mesa 25.0.7 の `gen_pack_header.py` の `__pvr_address`: `((addr >> sh
   - `sample-rendered`: 16×16 B8G8R8A8 の image を 1 つ目の pass で clear し、barrier の後、同じ command buffer の 2 つ目の pass で sample。
 - 板で: `vkmatrix sample-bgra` と `vkmatrix sample-rendered`。前者が落ちれば B8G8R8A8 の sample（format・swizzle）、後者だけが落ちれば PBE の書きと TPU の読みの間（同期・cache）が原因。
 - probe 3 の値の form の誤りは、次の commit で直す（今は切り分けに使わない）。
+
+## q1512（q1510 の続き、2026-10-21）: LOAD の背景の道の切り分け（2）
+
+- 板: `sample-bgra`・`sample-rendered` が PASS で、two-passes は 0 のまま。B8G8R8A8 の sample も、描いた直後の image の sample も通る。壊れているのは LOAD の背景の道そのもの。
+- clear の背景（probe 3）との違いは 2 つだけ:
+  1. USC の program（sample → wait → pack → 出力）。
+  2. shared register の program。clear は定数を DOUTW で書くが、LOAD は general の memory から 8 語を DOUTD（DMA）で写す。
+  - draw の texture の case でも descriptor の DMA は通っている。ただし背景の PDS の program からの DMA は、板で LOAD の時だけしか使われていない。
+- 足した物（`render-job.c`）:
+  - `POWERVR_RENDER_LOAD_PROBE` の値 4: いつもの program で、8 語を DMA ではなく 4 対の定数（DOUTW）で shared register 0〜7 に書く。通れば、背景の PDS からの DMA（その address・形・`pds_bgnd` の data の大きさ）が原因。
+  - probe 3 の magenta を、clear の値と同じ packed の語（0xffff00ff）に直した。B8G8R8A8 で magenta が出れば、背景の program の差し替えが効くことの確認になる。
+  - `POWERVR_DIAGNOSTICS` の下で、job ごとに fragment の command の全 120 語（8 語ずつ 15 行）を出す。LOAD の job と clear の job を並べて、ISP・PBE・ZLS・背景（`pds_bgnd`）の語の違いを見る。
+- 提案の (1)（compiler の fragment の shader を背景に使う版）は、背景に descriptor の set と compiler の入力をつなぐ配線が要り、大きい。(4) と (3) の結果を見てから決める。
+- 板で流すもの:
+  - `-DPOWERVR_RENDER_LOAD_PROBE=4 -DPOWERVR_DIAGNOSTICS=1` の kernel で `vkmatrix two-passes`。FAIL の値と、fragment の語の log。
+  - 余裕があれば probe 3 も（magenta か）。
+- 確認:
+  - RISC-V の self-test の build で warning 0（probe の 0・3・4、DIAGNOSTICS の 1）。
+  - p010 の host 試験は failed 0。
