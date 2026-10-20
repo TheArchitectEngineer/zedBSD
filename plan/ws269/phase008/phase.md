@@ -1525,3 +1525,38 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
   - workgroup の program（Mesa の形）は、どちらの field でも通る（1 block 多いだけ）。
   - p008 の host の期待値を 3・4・5 と、252 の拒否に戻した。
 - host: p008 は 94/0・77/0、p009 は 502/0（P1 の vk-queue の追従を merge した後）。VF2 の vmunix（`build/p2q1499/vf2/vmunix`）は rc 0、warning 0。板は未実施。
+
+## q1500-i01（P2、2026-10-21）: compute check の整理
+
+- **既定（`POWERVR_DIAGNOSTICS` 0）で出る compute の行**:
+  - 手書きの kernel 1 行、coherency 2 行、temporaries 2 行
+  - compiled fill 1・4・128 wg の 3 行
+  - stage の行
+- **`POWERVR_DIAGNOSTICS` の下に移した物**（compute-check.c の `CHECK_DIAGNOSTICS`）:
+  - 整数の probe と short store（`run_probes`）
+  - workgroup id の probe
+  - compiled fill の dump の prefix 付きの 1 回
+  - `compiled fill wrote` と `changed` の行
+  - 手書きの kernel の前の「end only」の kick
+- **`POWERVR_DIAGNOSTICS` かつ `POWERVR_COMPUTE_LOCKUP_PROBES` の時だけ**（`CHECK_LOCKUP`）: fence の変種、executor の並び、nop の probe、cf0 の probe。
+- **削った物**: p008 の host の試験からの参照は無い。AGENTS.md の「試験の整理の基準」で、回帰には使わない開発途中の probe と判断した。
+  - timing の probe の一式（`TIMING_*`、`timing_add`・`timing_fill`・`timing_settled`・`timing_store`・`timing_build`・`timing_expected`、filler 4 種の版の `run_timing_probes`）
+  - mesa-form の変種（`mesa_form_add`・`mesa_form_constant`・`mesa_form_build`・`run_mesa_form`）
+  - field の掃引（`run_field_probes`）
+  - compute-check.c は 3,512 行から 2,808 行になった。
+- VF2 の vmunix（`build/p2q1500/vf2/vmunix`）: rc 0、warning 0。
+
+## q1499-i01 の続き（板 90）: 手書きの kernel の退行は compute の kick の語ではない
+
+- 板 90: field を戻しても `compute kernel: FAILED, 7104/16384`。compiled fill は 1・4・128 wg とも通り、gpu-selftest は 13/13。
+- **host での照合**: 板 83（e116823a6）の `compute-program.c`・`pds-encode.c` と今の物で、手書きの kernel の kick の語を同じ使い捨ての host program で出して比べた。全部同じだった。
+  - field 5、task word 0x00100000・0x00000028、code c2c00002・d3000000・f4000002・d3000000、kernel 語 0x106・data・code・0・0・0・0x007c0000。
+  - `write_kick`・`kick`・`write_probes`・`put_fence_kernel` の関数も、e116823a6 から変わっていない（diff 0）。`run_kernel` の違いは、今回の「end only」を diagnostics にした分だけ。
+  - この値を p008 の compute-host-test に固定した（81/0）。
+- **退行の候補（P1 の範囲）**: 板 87（ba26c3e10）より後に入った a4f8663f2（P1、03:53）が、firmware の起動で `register_check(core)` を `POWERVR_DIAGNOSTICS` の時だけにした（firmware-boot.c）。
+  - register_check は、clock を全部強制で on にして戻し、catalogue base 7 を書いて 0 に戻し、bus の secure protection・catalogue・clock の control を 32 bit の半分ずつ書く。つまり register に副作用がある。
+  - 同じ commit は、`powervr_firmware_return_probe` も diagnostics の時だけにした（commands.c）。
+  - 板 87 の build には a4f8663f2 が入っていない（`git merge-base --is-ancestor` で確認）。板 88 からは入っている。
+  - 確かめ方（板 1 回）: `-DPOWERVR_DIAGNOSTICS=1` の build で手書きの kernel が 16384/16384 に戻るか。戻れば、register_check の副作用（どの書きが要るか）を P1 が切り分ける。
+- 片付け（Q1 に依頼）: `build/p2q1500/`、scratchpad の `kick*`・`a.txt`・`b.txt`。
+- 注記: 作業中に `git stash`（変更無しで何も積まれなかった）の後の `git stash pop` が、古い stash（agent/p2-bug333 の touch.c）を当てて衝突した。`git reset` と `git checkout HEAD -- userland/desktop/wayland/touch.c` で戻した。stash の entry は残っている。
