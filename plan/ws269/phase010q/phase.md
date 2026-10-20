@@ -1191,3 +1191,10 @@ csbgen（Mesa 25.0.7 の `gen_pack_header.py` の `__pvr_address`: `((addr >> sh
   - RISC-V の self-test の build で warning 0。既定（1）と、switch を 2 にした時の両方で確かめた。
   - p010 の host 試験は failed 0。
   - 板は未実施。
+
+## q1483 / q1483-i01（2026-10-21）: Linux 側で control stream を読む道具
+
+- `plan/ws269/tests/p010-linux/walk.py`: PC の物理 address・GPU の VA・byte 数を取り、/dev/mem で Rogue の page table を歩いて、各段の entry（PC は 32 bit、PD は 64 bit で page size の code を含む、PT は 64 bit で flag を含む）と PA と中身を出す。entry の形は mainline の pvr_rogue_mmu_defs.h に従い、PD の page size（4 KiB〜2 MiB）にも対応する。page をまたぐ読みは page ごとに解く。
+- `capture2.py`（gdb）: capture.py と同じ TA の kick の後、次の ioctl で firmware の trace（debugfs）の最後の `PC address=` を取る。TA cmd の +16（`vdm_ctrl_stream_base`）から 256 byte を読み、先頭の block が PPP_STATE0/1 なら、その指す PPP state の語も `/tmp/ta3d-capture2.txt` に出す。
+- README に手順と、CONFIG_STRICT_DEVMEM の時の代替（`/proc/kcore` の PT_LOAD を使った物理 address の変換、drgn の `prog.read(…, physical=True)`、`iomem=relaxed` の限界、devmem2・dd が同じ制限を受けること）を書いた。
+- 確認: host で、偽の物理 memory の file に PC・PD・PT・page を置き、`walk.read_va` が VA 0x80000ea010 → PA 0x5010 を解き、語を正しく読むことを確かめた（scratchpad の一時の試験で、repository には入れない）。板（Debian）は未実施（Q1）。
