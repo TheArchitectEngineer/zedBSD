@@ -34,6 +34,10 @@
  *   render-f16              a pass on an R16G16B16A16_SFLOAT attachment:
  *                           cleared, one quad drawn, copied out, every
  *                           half float compared
+ *   render-linear           a 1920x1080 LINEAR B8G8R8A8 attachment in
+ *                           host-visible memory, cleared and one quad
+ *                           drawn, read through its own mapping with its
+ *                           row pitch, every pixel compared
  *   clear-64, clear-128     the wide images cleared by vkCmdClearColorImage
  *                           and copied out (the image-to-buffer leg)
  *   sample-linear-1180, sample-linear-65
@@ -59,6 +63,10 @@
 #include <string.h>
 
 #include "shader.h"
+
+/* The linear case's image: the display's size. */
+#define VKMATRIX_LINEAR_WIDTH	1920U
+#define VKMATRIX_LINEAR_HEIGHT	1080U
 
 /* The offscreen image's side and pixels. */
 #define VKMATRIX_SIZE		64U
@@ -220,6 +228,9 @@ static VkResult case_copy_wide(struct vkmatrix *run, VkFormat format, uint32_t t
 static VkResult case_copy_64(struct vkmatrix *run);
 static VkResult case_copy_128(struct vkmatrix *run);
 static VkResult case_render_f16(struct vkmatrix *run);
+static VkResult case_render_linear(struct vkmatrix *run);
+static VkResult linear_target(struct vkmatrix *run, VkSubresourceLayout *layout);
+static VkResult linear_check(struct vkmatrix *run, const VkSubresourceLayout *layout, const float quad[4]);
 static VkResult case_clear_wide(struct vkmatrix *run, VkFormat format, uint32_t texel_bytes);
 static VkResult case_clear_64(struct vkmatrix *run);
 static VkResult case_clear_128(struct vkmatrix *run);
@@ -247,6 +258,7 @@ static const struct vkmatrix_case cases[] = {
 	{ "copy-64", case_copy_64 },
 	{ "copy-128", case_copy_128 },
 	{ "render-f16", case_render_f16 },
+	{ "render-linear", case_render_linear },
 	{ "clear-64", case_clear_64 },
 	{ "clear-128", case_clear_128 },
 	{ "sample-linear-1180", case_sample_linear_wide },
@@ -3195,4 +3207,279 @@ case_sample_linear_odd(
 	struct vkmatrix *run)
 {
 	return case_sample_linear(run, 65, 3);
+}
+
+/*
+ * render-linear: a 1920x1080 LINEAR B8G8R8A8 image in host-visible memory,
+ * cleared and drawn with one quad, then read through its own mapping with
+ * the row pitch vkGetImageSubresourceLayout reports, every pixel compared
+ * (the image a display would scan out without a copy).
+ */
+static VkResult
+case_render_linear(
+	struct vkmatrix *run)
+{
+	static const float quad[4] = { 1.0f, 0.0f, 0.0f, 1.0f };
+	VkSubresourceLayout layout;
+	struct vkmatrix_shape shape;
+	VkRenderPassBeginInfo pass;
+	VkCommandBufferBeginInfo begin;
+	VkClearValue value;
+	VkViewport viewport;
+	VkRect2D scissor;
+	VkMemoryBarrier host;
+	VkSubmitInfo submit;
+	uint32_t pipeline;
+	uint32_t first;
+	VkResult status;
+
+	/* The flat colour pipeline (push4: a red of the push constant, so the quad's colour is red). */
+	memset(&shape, 0, sizeof(shape));
+	shape.vertex = vkmatrix_push4_vert;
+	shape.vertex_size = sizeof(vkmatrix_push4_vert);
+	shape.fragment = vkmatrix_push4_frag;
+	shape.fragment_size = sizeof(vkmatrix_push4_frag);
+	shape.push_size = 4;
+	shape.push_stages = VK_SHADER_STAGE_FRAGMENT_BIT;
+	status = vkmatrix_pipeline(run, &shape, &pipeline);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* The linear image, its memory, view and framebuffer, and its row layout. */
+	status = linear_target(run, &layout);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* The command buffer. */
+	memset(&begin, 0, sizeof(begin));
+	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	vkResetCommandBuffer(run->command, 0);
+	vkBeginCommandBuffer(run->command, &begin);
+
+	/* The pass over the whole image, cleared to the background. */
+	memset(&value, 0, sizeof(value));
+	memcpy(value.color.float32, background, sizeof(value.color.float32));
+	memset(&pass, 0, sizeof(pass));
+	pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+	pass.renderPass = run->clear_pass;
+	pass.framebuffer = run->wide_framebuffer;
+	pass.renderArea.extent.width = VKMATRIX_LINEAR_WIDTH;
+	pass.renderArea.extent.height = VKMATRIX_LINEAR_HEIGHT;
+	pass.clearValueCount = 1;
+	pass.pClearValues = &value;
+	vkCmdBeginRenderPass(run->command, &pass, VK_SUBPASS_CONTENTS_INLINE);
+
+	/* The viewport over the whole image: the quad's units of 64 scale to it. */
+	memset(&viewport, 0, sizeof(viewport));
+	viewport.width = (float)VKMATRIX_LINEAR_WIDTH;
+	viewport.height = (float)VKMATRIX_LINEAR_HEIGHT;
+	viewport.maxDepth = 1.0f;
+	vkCmdSetViewport(run->command, 0, 1, &viewport);
+	memset(&scissor, 0, sizeof(scissor));
+	scissor.extent.width = VKMATRIX_LINEAR_WIDTH;
+	scissor.extent.height = VKMATRIX_LINEAR_HEIGHT;
+	vkCmdSetScissor(run->command, 0, 1, &scissor);
+
+	/* The quad over (16,16)-(48,48) of 64: pixels 480..1439 by 270..809. */
+	vkmatrix_bind(run, pipeline);
+	first = vkmatrix_quad(run, 16.0f, 16.0f, 48.0f, 48.0f);
+	vkCmdPushConstants(run->command, run->layouts[pipeline], VK_SHADER_STAGE_FRAGMENT_BIT, 0, 4, &quad[0]);
+	vkCmdDraw(run->command, 6, 1, first, 0);
+	vkCmdEndRenderPass(run->command);
+
+	/* The colour writes, then host reads. */
+	memset(&host, 0, sizeof(host));
+	host.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+	host.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+	host.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+	vkCmdPipelineBarrier(run->command, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &host, 0, NULL, 0, NULL);
+	vkEndCommandBuffer(run->command);
+
+	/* The submit and its wait. */
+	memset(&submit, 0, sizeof(submit));
+	submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submit.commandBufferCount = 1;
+	submit.pCommandBuffers = &run->command;
+	vkResetFences(run->device, 1, &run->fence);
+	run->failed_call = "vkQueueSubmit";
+	status = vkQueueSubmit(run->queue, 1, &submit, run->fence);
+	if (status != VK_SUCCESS)
+		return status;
+	run->failed_call = "vkWaitForFences";
+	status = vkWaitForFences(run->device, 1, &run->fence, VK_TRUE, VKMATRIX_WAIT_NS);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Every pixel through the image's own mapping. */
+	status = linear_check(run, &layout, quad);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the PBE stored the linear image row by row. */
+	return VK_SUCCESS;
+}
+
+/* Makes the 1920x1080 LINEAR image in host-visible coherent memory, its view and framebuffer, and reads its row layout. */
+static VkResult
+linear_target(
+	struct vkmatrix *run,
+	VkSubresourceLayout *layout)
+{
+	VkImageCreateInfo image_info;
+	VkMemoryRequirements requirements;
+	VkMemoryAllocateInfo allocate;
+	VkImageViewCreateInfo view_info;
+	VkFramebufferCreateInfo framebuffer_info;
+	VkImageSubresource subresource;
+	VkResult status;
+
+	/* The image: a colour attachment the processor reads. */
+	memset(&image_info, 0, sizeof(image_info));
+	image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	image_info.imageType = VK_IMAGE_TYPE_2D;
+	image_info.format = VK_FORMAT_B8G8R8A8_UNORM;
+	image_info.extent.width = VKMATRIX_LINEAR_WIDTH;
+	image_info.extent.height = VKMATRIX_LINEAR_HEIGHT;
+	image_info.extent.depth = 1;
+	image_info.mipLevels = 1;
+	image_info.arrayLayers = 1;
+	image_info.samples = VK_SAMPLE_COUNT_1_BIT;
+	image_info.tiling = VK_IMAGE_TILING_LINEAR;
+	image_info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+	image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	run->failed_call = "vkCreateImage (linear)";
+	status = vkCreateImage(run->device, &image_info, NULL, &run->wide_image);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Its memory: host-visible and coherent, as a scanout buffer is. */
+	vkGetImageMemoryRequirements(run->device, run->wide_image, &requirements);
+	memset(&allocate, 0, sizeof(allocate));
+	allocate.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	allocate.allocationSize = requirements.size;
+	status = vkmatrix_find_memory(run, requirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &allocate.memoryTypeIndex);
+	if (status != VK_SUCCESS)
+		return status;
+	run->failed_call = "vkAllocateMemory (linear)";
+	status = vkAllocateMemory(run->device, &allocate, NULL, &run->wide_memory);
+	if (status != VK_SUCCESS)
+		return status;
+	run->failed_call = "vkBindImageMemory (linear)";
+	status = vkBindImageMemory(run->device, run->wide_image, run->wide_memory, 0);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Its view. */
+	memset(&view_info, 0, sizeof(view_info));
+	view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	view_info.image = run->wide_image;
+	view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	view_info.format = VK_FORMAT_B8G8R8A8_UNORM;
+	view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	view_info.subresourceRange.levelCount = 1;
+	view_info.subresourceRange.layerCount = 1;
+	run->failed_call = "vkCreateImageView (linear)";
+	status = vkCreateImageView(run->device, &view_info, NULL, &run->wide_view);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Its framebuffer in the shared clearing pass (same format, one sample). */
+	memset(&framebuffer_info, 0, sizeof(framebuffer_info));
+	framebuffer_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+	framebuffer_info.renderPass = run->clear_pass;
+	framebuffer_info.attachmentCount = 1;
+	framebuffer_info.pAttachments = &run->wide_view;
+	framebuffer_info.width = VKMATRIX_LINEAR_WIDTH;
+	framebuffer_info.height = VKMATRIX_LINEAR_HEIGHT;
+	framebuffer_info.layers = 1;
+	run->failed_call = "vkCreateFramebuffer (linear)";
+	status = vkCreateFramebuffer(run->device, &framebuffer_info, NULL, &run->wide_framebuffer);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Its rows' place and pitch. */
+	memset(&subresource, 0, sizeof(subresource));
+	subresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	vkGetImageSubresourceLayout(run->device, run->wide_image, &subresource, layout);
+
+	/* Succeeded: the image is ready to render. */
+	return VK_SUCCESS;
+}
+
+/*
+ * Compares every pixel of the linear image, through its mapping, with
+ * the clear colour outside the quad and the quad's colour inside; on a
+ * difference it names the first pixel, the count and the row pitch.
+ */
+static VkResult
+linear_check(
+	struct vkmatrix *run,
+	const VkSubresourceLayout *layout,
+	const float quad[4])
+{
+	const uint8_t *bytes;
+	const uint32_t *row;
+	uint32_t inside_word;
+	uint32_t outside_word;
+	uint32_t wanted;
+	uint32_t first_x;
+	uint32_t first_y;
+	uint32_t first_seen;
+	uint32_t bad;
+	uint32_t x;
+	uint32_t y;
+	void *mapped;
+	VkResult status;
+
+	/* The image's memory. */
+	run->failed_call = "vkMapMemory (linear)";
+	status = vkMapMemory(run->device, run->wide_memory, 0, VK_WHOLE_SIZE, 0, &mapped);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* The two colours as the image stores them. */
+	inside_word = vkmatrix_pack(quad);
+	outside_word = vkmatrix_pack(background);
+
+	/* Each pixel against its colour; the first wrong one is remembered. */
+	bytes = (const uint8_t *)mapped + layout->offset;
+	bad = 0;
+	first_x = 0;
+	first_y = 0;
+	first_seen = 0;
+	for (y = 0; y < VKMATRIX_LINEAR_HEIGHT; y++) {
+		row = (const uint32_t *)(bytes + (size_t)y * layout->rowPitch);
+		for (x = 0; x < VKMATRIX_LINEAR_WIDTH; x++) {
+			/* The quad covers 480..1439 by 270..809. */
+			wanted = outside_word;
+			if (x >= 480U && x < 1440U && y >= 270U && y < 810U)
+				wanted = inside_word;
+
+			/* A wrong pixel. */
+			if (row[x] != wanted) {
+				if (bad == 0) {
+					first_x = x;
+					first_y = y;
+					first_seen = row[x];
+				}
+				bad++;
+			}
+		}
+	}
+	vkUnmapMemory(run->device, run->wide_memory);
+
+	/* Every pixel right: the shared target's comparison has nothing to say. */
+	if (bad == 0) {
+		memcpy(run->expected, run->pixels, sizeof(run->expected));
+		run->tolerance = 0;
+		return VK_SUCCESS;
+	}
+
+	/* Names what was wrong. */
+	snprintf(run->reason, sizeof(run->reason), "%u bad pixels, first (%u,%u) 0x%08x, row pitch %u",
+		 (unsigned)bad, (unsigned)first_x, (unsigned)first_y, (unsigned)first_seen, (unsigned)layout->rowPitch);
+	run->failed_call = run->reason;
+	return VK_ERROR_UNKNOWN;
 }
