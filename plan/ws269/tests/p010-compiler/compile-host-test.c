@@ -1065,7 +1065,7 @@ test_hazard_spacing(void)
 	check(shader_backend_hazards(&backend) == 1, "a write right after the read is a hazard");
 	error = shader_backend_space_hazards(&backend);
 	check(error == 0 && backend.operation_count == 5, "two no-operations go between");
-	check(backend.operations[2].kind == MACHINE_NOP && backend.operations[3].kind == MACHINE_NOP && backend.operations[4].kind == MACHINE_IMMEDIATE, "the no-operations, then the write");
+	check(backend.operations[2].kind == MACHINE_WAIT && backend.operations[3].kind == MACHINE_WAIT && backend.operations[4].kind == MACHINE_IMMEDIATE, "the no-operations, then the write");
 	check(backend.operations[0].target == 2, "the branch to the write lands on the first no-operation");
 	check(shader_backend_hazards(&backend) == 0, "no hazard once spaced");
 
@@ -1097,7 +1097,7 @@ test_hazard_spacing(void)
 	backend.operations[2].target = 0;
 	check(shader_backend_hazards(&backend) == 1, "a loop's end reading what its head writes is a hazard on the back edge");
 	error = shader_backend_space_hazards(&backend);
-	check(error == 0 && backend.operation_count == 4 && backend.operations[2].kind == MACHINE_NOP && backend.operations[3].kind == MACHINE_BRANCH && backend.operations[3].target == 0, "one no-operation before the back branch");
+	check(error == 0 && backend.operation_count == 4 && backend.operations[2].kind == MACHINE_WAIT && backend.operations[3].kind == MACHINE_BRANCH && backend.operations[3].target == 0, "one no-operation before the back branch");
 	check(shader_backend_hazards(&backend) == 0, "no hazard on the back edge once spaced");
 }
 

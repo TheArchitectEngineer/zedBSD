@@ -116,7 +116,9 @@ int powervr_compute_store_program(uint64_t base, unsigned steps, uint8_t *output
 #define POWERVR_COMPUTE_PROBE_LIKE_STORE_EARLY	15U
 #define POWERVR_COMPUTE_PROBE_REWRITE		16U
 #define POWERVR_COMPUTE_PROBE_REWRITE_LATER	17U
-#define POWERVR_COMPUTE_PROBES			18U
+#define POWERVR_COMPUTE_PROBE_NOP_BETWEEN	18U
+#define POWERVR_COMPUTE_PROBE_WAIT_BETWEEN	19U
+#define POWERVR_COMPUTE_PROBES			20U
 
 /* The bytes between two instances' words in each probe (4 but for the strided ones). */
 #define POWERVR_COMPUTE_PROBE_STRIDE_MAX	128U

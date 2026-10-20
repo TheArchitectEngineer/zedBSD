@@ -124,6 +124,8 @@ static int add64_group(struct powervr_usc_group *group, unsigned destination, un
 static int add64_group_any(struct powervr_usc_group *group, unsigned destination, unsigned base, unsigned offset);
 static int wait_group(struct powervr_usc_group *group);
 static int end_group(struct powervr_usc_group *group);
+static int nothing_group(struct powervr_usc_group *group);
+static int probe_with_fillers(const struct powervr_usc_group *groups, size_t count, int nothing, uint8_t *output, size_t room, size_t *length);
 static void temporary(struct powervr_usc_register *operand, unsigned index);
 
 /* A group with no operation, no operand, a repeat count of one. */
@@ -514,7 +516,12 @@ powervr_compute_temps_program(
  *                  multiply-add instead of after;
  *   REWRITE        LIKE_STORE_NUMBER with the multiply-add's zero addend
  *                  (r6) overwritten by the very next group;
- *   REWRITE_LATER  the same with two other groups between them.
+ *   REWRITE_LATER  the same with two other groups between them;
+ *   NOP_BETWEEN    LIKE_STORE_NUMBER with two control no-operation groups
+ *                  (the compiler's spacing, without the end mark) after
+ *                  each group before the store;
+ *   WAIT_BETWEEN   the same with two waits for the data return counter,
+ *                  the group every program here already runs.
  *
  * Procedure referenced:
  * Mesa 26.2.5 src/imagination/pco/pco_trans_nir.c (trans_store_global
@@ -706,12 +713,94 @@ powervr_compute_probe_program(
 	if (error != 0)
 		return error;
 
+	/* With fillers between the groups before the store, for the two filler probes. */
+	if (kind == POWERVR_COMPUTE_PROBE_NOP_BETWEEN || kind == POWERVR_COMPUTE_PROBE_WAIT_BETWEEN) {
+		error = probe_with_fillers(groups, count, kind == POWERVR_COMPUTE_PROBE_NOP_BETWEEN, output, room, length);
+		if (error != 0)
+			return error;
+		return 0;
+	}
+
 	/* Encodes them. */
 	error = powervr_usc_program_encode(groups, count, output, room, length);
 	if (error != 0)
 		return error;
 
 	/* Succeeded: the program. */
+	return 0;
+}
+
+/*
+ * Encodes a probe's groups with two filler groups (no-operations or
+ * waits) after each group before the last three (the store, its wait
+ * and the end).
+ */
+static int
+probe_with_fillers(
+	const struct powervr_usc_group *groups,
+	size_t count,
+	int nothing,
+	uint8_t *output,
+	size_t room,
+	size_t *length)
+{
+	struct powervr_usc_group spaced[64];
+	size_t used;
+	size_t index;
+	unsigned filler;
+	int error;
+
+	/* Each group, then its fillers while the store is still ahead. */
+	used = 0;
+	for (index = 0; index < count; index++) {
+		if (used >= 64U)
+			return E2BIG;
+		spaced[used++] = groups[index];
+		if (index + 3U >= count)
+			continue;
+		for (filler = 0; filler < 2; filler++) {
+			if (used >= 64U)
+				return E2BIG;
+			if (nothing)
+				error = nothing_group(&spaced[used++]);
+			else
+				error = wait_group(&spaced[used++]);
+			if (error != 0)
+				return error;
+		}
+	}
+
+	/* Encodes them. */
+	error = powervr_usc_program_encode(spaced, used, output, room, length);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the program. */
+	return 0;
+}
+
+/*
+ * Builds a control group that does nothing, as the compiler's spacing
+ * group (MACHINE_NOP in shader-backend.c) is built: the no-operation
+ * without the end mark.
+ */
+static int
+nothing_group(
+	struct powervr_usc_group *group)
+{
+	int error;
+
+	/* A control group naming the no-operation. */
+	*group = blank_group;
+	group->unit = POWERVR_USC_UNIT_CONTROL;
+	group->control = POWERVR_USC_CONTROL_NOTHING;
+
+	/* The no-operation's single byte. */
+	error = powervr_usc_nothing(&group->operation[POWERVR_USC_PHASE_0]);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the group. */
 	return 0;
 }
 
