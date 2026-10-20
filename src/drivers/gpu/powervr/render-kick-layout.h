@@ -182,6 +182,15 @@ struct powervr_sync {
 };
 
 /*
+ * The task words of one buffer of a render context's switch: the store
+ * tasks 0 to 2 and the resume tasks 0 to 2, as register values.
+ */
+struct powervr_switch_tasks {
+	uint64_t store[3];
+	uint64_t resume[3];
+};
+
+/*
  * What one kick names: the context, its command buffer's new write offset
  * and wrap mask, and the firmware addresses of the cleanup counts its
  * commands use.
@@ -217,6 +226,113 @@ struct powervr_reset_stage {
 	uint64_t value;
 };
 
+/*
+ * The most waits a render names: the partial render's fence takes one
+ * more, the geometry's own completion.
+ */
+#define POWERVR_RENDER_WAITS_MAX		(POWERVR_CLIENT_FENCES_MAX - 1U)
+
+/* The most commands one kick of a render puts in its buffer. */
+#define POWERVR_RENDER_COMMANDS_MAX		3U
+
+/*
+ * The control stream word that ends a VDM stream: a render with no draw
+ * runs a geometry stream of this word alone.
+ *
+ * Values referenced:
+ * Mesa 26.2.5 src/imagination/csbgen/rogue/vdm.xml (STREAM_TERMINATE:
+ * block_type 29..31 with STREAM_TERMINATE 6, context 0).
+ */
+#define POWERVR_VDM_TERMINATE			(6U << 29)
+
+/*
+ * Where a geometry command's registers name its VDM control stream, and
+ * the bits of the register the stream's address keeps.
+ *
+ * Values referenced:
+ * Linux v7.3 drivers/gpu/drm/imagination/pvr_rogue_fwif_client_check.h
+ * (struct rogue_fwif_geom_regs: vdm_ctrl_stream_base 0; struct
+ * rogue_fwif_cmd_geom: regs 16); Mesa 26.2.5
+ * src/imagination/csbgen/rogue/cr.xml (VDM_CTRL_STREAM_BASE: addr 2..39
+ * shifted by 2).
+ */
+#define POWERVR_GEOMETRY_STREAM_BASE		16U
+#define POWERVR_STREAM_BASE_MASK		0xfffffffffcULL
+
+/*
+ * The words a background object's programs take, as the registers they
+ * fill: the pixel and uniform programs' code places, the texture data's
+ * place, and the sizes (all zero here: no shared registers, uniforms,
+ * texture state or temporaries).
+ *
+ * Values referenced:
+ * Mesa 26.2.5 src/imagination/csbgen/rogue/cr.xml (PDS_BGRND0_BASE:
+ * texunicode_addr 36..63 and shader_addr 4..31, each shifted by 4;
+ * PDS_BGRND1_BASE: texturedata_addr 36..63 shifted by 4;
+ * PDS_BGRND3_SIZEINFO); Linux v7.3
+ * drivers/gpu/drm/imagination/pvr_rogue_fwif_client.h (struct
+ * rogue_fwif_frag_regs: pds_pr_bgnd[3]).
+ */
+#define POWERVR_BACKGROUND_WORDS		3U
+
+/* One command a kick puts in a context's buffer: its type, its size and its bytes. */
+struct powervr_client_command {
+	uint32_t type;
+	uint32_t size;
+	const uint8_t *data;
+};
+
+/*
+ * What one render asks of its contexts: the geometry and fragment
+ * contexts' timeline words and the values the render writes there (the
+ * partial render writes one less than the fragment), the render target
+ * data set, the syncs the render waits for, the three firmware commands
+ * as the caller built them, and the background the fragment takes after
+ * a partial render when its command names none (NULL for no such
+ * default).
+ */
+struct powervr_render_request {
+	uint32_t geometry_timeline;
+	uint32_t geometry_value;
+	uint32_t fragment_timeline;
+	uint32_t fragment_value;
+	uint32_t target_data;
+	const struct powervr_sync *waits;
+	unsigned wait_count;
+	const uint8_t *geometry;
+	const uint8_t *partial;
+	const uint8_t *fragment;
+	const uint64_t *partial_background;
+};
+
+/*
+ * The commands of one render for its three kicks: the geometry, the
+ * partial render and the fragment, with the copies of the firmware
+ * commands they carry and the syncs their fences and updates name.
+ */
+struct powervr_render_sequence {
+	uint8_t geometry[POWERVR_GEOMETRY_BYTES];
+	uint8_t partial[POWERVR_FRAGMENT_BYTES];
+	uint8_t fragment[POWERVR_FRAGMENT_BYTES];
+	struct powervr_sync geometry_waits[POWERVR_CLIENT_FENCES_MAX];
+	struct powervr_sync partial_waits[POWERVR_CLIENT_FENCES_MAX];
+	struct powervr_sync fragment_wait;
+	struct powervr_sync updates[3];
+	struct powervr_client_command geometry_commands[POWERVR_RENDER_COMMANDS_MAX];
+	struct powervr_client_command partial_commands[POWERVR_RENDER_COMMANDS_MAX];
+	struct powervr_client_command fragment_commands[POWERVR_RENDER_COMMANDS_MAX];
+	unsigned geometry_count;
+	unsigned partial_count;
+	unsigned fragment_count;
+};
+
+/* What the firmware reported of the free lists, as a render compares it before and after. */
+struct powervr_list_marks {
+	unsigned grow_requests;
+	unsigned partial_renders;
+	unsigned out_of_memory;
+};
+
 /* Builds the kick command of one context; EINVAL for more cleanup counts than a kick carries. */
 int powervr_kick_command(const struct powervr_kick *kick, uint32_t command[POWERVR_KICK_COMMAND_WORDS]);
 
@@ -231,15 +347,21 @@ int powervr_kick_combined_command(const struct powervr_kick *geometry, const str
  */
 void powervr_geometry_partial_fence(uint8_t *command, uint32_t target_data, uint32_t timeline, uint32_t value);
 
+/* Builds the words of a background object's programs from their places in the data sequencer's window. */
+void powervr_background_words(uint32_t pixel_code, uint32_t uniform_code, uint32_t texture_data, uint64_t words[POWERVR_BACKGROUND_WORDS]);
+
+/* Puts the VDM control stream a geometry command runs. */
+void powervr_geometry_stream(uint8_t *command, uint64_t stream);
+
 /* Puts the render target data set of a fragment or partial render command. */
 void powervr_fragment_target(uint8_t *command, uint32_t target_data);
 
 /*
  * Fills the static state of a render context (in the record at
- * POWERVR_RENDER_CONTEXT_STATIC): for every core, the VDM and TA state
- * buffers and the same store and resume task words in both buffers.
+ * POWERVR_RENDER_CONTEXT_STATIC): the first core's VDM and TA state
+ * buffer words and each buffer's store and resume task words.
  */
-void powervr_render_switch_state(uint8_t *record, uint64_t vdm_state, uint64_t ta_state, const uint64_t store[5], const uint64_t resume[5]);
+void powervr_render_switch_state(uint8_t *record, uint64_t vdm_state, uint64_t ta_state, const struct powervr_switch_tasks tasks[2]);
 
 /* Reads a context reset notice's data (POWERVR_RESET_BYTES bytes after the type and flags). */
 void powervr_reset_notice_read(const uint8_t *data, struct powervr_reset_notice *notice);
@@ -253,5 +375,22 @@ void powervr_reset_notice_read(const uint8_t *data, struct powervr_reset_notice 
  * (the transfer runs on the fragment master).
  */
 void powervr_reset_stage_of(const struct powervr_reset_notice *notice, enum powervr_context_kind kind, struct powervr_reset_stage *result);
+
+/*
+ * Builds the commands of a render's three kicks; EINVAL for more waits
+ * than a render names.
+ */
+int powervr_render_sequence_make(const struct powervr_render_request *request, struct powervr_render_sequence *sequence);
+
+/*
+ * Reports the stage a render that ran out of time stopped in, from the
+ * timeline words its kicks update: the TA while the geometry has not
+ * written its value, else the 3D while the fragment has not.  Zero when
+ * both were reached.
+ */
+int powervr_render_stalled(uint32_t geometry_now, uint32_t geometry_value, uint32_t fragment_now, uint32_t fragment_value, enum powervr_stage *stage);
+
+/* Reports whether a render's free lists ran out between two readings of the firmware's reports. */
+int powervr_free_list_ran_out(const struct powervr_list_marks *before, const struct powervr_list_marks *after);
 
 #endif

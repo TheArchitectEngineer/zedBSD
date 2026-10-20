@@ -3,9 +3,9 @@
 # ws269-p010e: PBE の store と EOT・固定の program・kernel の render check の三角形
 
 - ID: ws269-p010e（親 [ws269](../ws.md)）
-- Status: in-progress（q1378-i01 は前半。kick への組み込みと render check・実機は後半、p010n の merge の後）
+- Status: in-progress（q1378-i01 は前半。q1380-i01 で kick への組み込みと render check を実装、host 試験と build まで。実機の `render check: OK`・`ta`・`3d` は未確認、ユーザーの UAT 待ち）
 - Disposition: normal
-- Queue: q1378 / q1378-i01（2026-10-20 P2、前半）
+- Queue: q1378 / q1378-i01（2026-10-20 P2、前半）、q1380 / q1380-i01（2026-10-20 P1、後半の kernel 側）
 - 設計: [design-p010.md](../design-p010.md) 版 2.1 の §4.2・§4.3・§5.4・§8.3・§10 の p010e
 - 依存: O-p010c（image-state.c の format の表・layout、main に merge 済み）、O-p010n（kick・render check の骨。前半は依らない）
 
@@ -73,3 +73,32 @@ p010n に依らない部分だけ: pixel event の PDS・EOT の USC・static �
 - background の 3 word（`pds_bgnd`・`pds_pr_bgnd`）は今の `powervr_render_background_words`（kick の PDS ＋ この shared の program、shared_registers 8）で作れる。
 - 確認: `sh plan/ws269/tests/p010/run.sh OUT` に `render-load-host-test.c` を足して `render-load-program host test: 5 passed, 0 failed`（program を back end の group から作り直した bytes と一致、shared の word、PDS、refusal）。sampler の word は p010f の M9 で Mesa の transfer の sampler と照合済み。VF2 の kernel（`BUILD=build/p010f/vf2 vmunix`）rc=0、warning 0。
 - 未実施: 実機。kick への組み込み（load op LOAD の時の background と `pds_pr_bgnd`）は後半。
+
+## q1380-i01（2026-10-20 P1、後半の kernel 側）
+
+main d0d40dd4c を merge（ce7d84418）: P2 の render-program.{c,h} をそのまま残し、P1 の SR・PT の program を `render-sr-program.{c,h}` に改名（include・vmunix.mk・program-host-test・run.sh を直した）。run.sh・ws.md・render-private.h は両方を残した。
+
+作った物:
+- `render-command.{c,h}`（新規、host で build）: fragment の command の register（PBE の word（attachment 0）、`pds_bgnd`、`pds_pr_bgnd`、USC_PIXEL_OUTPUT_CTRL（2 register、partition mask 0x3ff）、ISP_BGOBJDEPTH 1.0、ISP_BGOBJVALS（tag・mask）、ISP_AA 0、ISP_CTL（sample_pos・empty tile・pipe 4・multicore の header skip を quirk 72168・72463 の形で）、EVENT_PIXEL_PDS_INFO・DATA）と geometry の command（VDM の stream、PPP_CTRL（wclamp・fixed point 1）、TE_PSG（completeonterminate・region stride）、resume task0 size（shared register の common size）、flags FIRST|LAST）。値は Mesa `pvr_frag_state_stream_init`・`pvr_geom_state_stream_init`・`pvr_arch_setup_tiles_in_flight` と bxe-4-32.h、mainline の partition の大きさから。
+- `render-check.c`（`CONFIG_POWERVR_RENDER_CHECK=y` の時）: 自分の session、render context、64×64 の target、GENERAL（VDM stream・PPP・頂点・64×64 R8G8B8A8 LINEAR の attachment）、PDS・USC の窓の buffer に P2 の program（EOT と pixel event、clear の background と shared の色、三角形の colour・vertex・PDS）を置き、P2 の PPP・VDM・PBE の word と render-command で command を組み、`powervr_session_kick_render`（117＋101）→ `powervr_render_finish`（上限 2 秒、`ta`・`3d` の段の行）→ 読み返し。clear 赤 0xff0000ff、三角形 緑 0xff00ff00、頂点 (8,8)(56,8)(32,56)。辺から 1 pixel 程度の pixel は判定しない。
+- 出す行（UAT で止まった所が読めるように）: `powervr: render check: prepared …` / `FAILED at <段> (<errno>)`、`kicked (geometry to G, fragment to F)` / `FAILED at kick`、`fence reached (geometry g, fragment f)` / `FAILED at fence (err; geometry g of G, fragment f of F)`、`OK (N pixels judged)` / `FAILED at read back: pixel (x, y) is 0x…, want 0x…`、と `ta`・`3d` の段の行。時間切れの時は session を abandoned にして core に残す（memory も解放しない）。
+- `render-target.c`: `powervr_target_layout_of`（tile 数と region header の大きさを command に渡す）。
+- `plan/ws269/tests/p010/config-visionfive2-selftest.mk`: `CONFIG_POWERVR_RENDER_CHECK := y`（UAT の試験の image で render check が走る）。
+- render context の 1 halt の仮の `pds_pr_bgnd` は、command が background を持たない時の既定として残した（render check は自分の clear の background を `pds_bgnd`・`pds_pr_bgnd` の両方に入れる）。
+
+確かめ（2026-10-20）:
+
+| 確かめ | 結果 |
+| --- | --- |
+| `sh plan/ws269/tests/p010/run.sh build/p010n/p010` | stage 24/0、image 55/0、target 77/0、kick 81/0、program 38/0、**command 22/0**、selftest 0 failed、data 83/0、render-program 26/0、transfer-program 15/0 |
+| p009 | 165 passed, 0 failed |
+| M9（tree の外、`build/p010n/m9/compare.c`） | 63 words/values, 197 fields, 0 mismatches（ISP_CTL・USC_PIXEL_OUTPUT_CTRL・ISP_BGOBJVALS・PPP_CTRL・TE_PSG・resume の PDS_STATE0 を足した） |
+| VF2・riscv64-virt・amd64 の vmunix | rc=0、warning 0 |
+| VF2 render check 付き、試験の image の config（`plan/ws269/tests/p010/config-visionfive2-selftest.mk`、`BUILD=build/p010n/selftest`） | rc=0、warning 0、render-check.o あり |
+
+QEMU・実機は未実施（QEMU に VF2 の GPU は無い）。実機で見る点（ユーザーの UAT の一覧へ）:
+- `render check:` の行がどこまで進むか、`ta`・`3d` の段の行。
+- SR の PDS の data の H32/L32 の順（p010n の phase.md）: context switch の時の fault の候補。
+- ISP_CTL の pipe（tiles in flight 4）・partition mask は Mesa の式で出した値。scissor・depth bias の table は 0（三角形の PPP は使わない前提、推測）。border colour table は 0。
+- FRAG_PR は本番と同じ command（EOT も同じ）。PR が起きると clear の background が走り、tile の途中の色は失われる（64×64 では PR は起きない見込み、推測）。
+- CDM の cswitch state は範囲外（Q1）。

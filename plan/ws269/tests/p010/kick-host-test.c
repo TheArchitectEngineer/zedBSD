@@ -126,25 +126,30 @@ static void
 switch_state(void)
 {
 	static uint8_t record[POWERVR_RENDER_CONTEXT_BYTES];
-	const uint64_t store[5] = { 0x11, 0x12, 0x13, 0x14, 0x15 };
-	const uint64_t resume[5] = { 0x21, 0x22, 0x23, 0x24, 0x25 };
-	unsigned core;
+	const struct powervr_switch_tasks tasks[2] = {
+		{ { 0x11, 0x12, 0x13 }, { 0x21, 0x22, 0x23 } },
+		{ { 0x31, 0x32, 0x33 }, { 0x41, 0x42, 0x43 } },
+	};
 	unsigned base;
 
-	/* geom_registers_caswitch at 304 and 488: 0, 8, 16, then geom_state[0] 24..96 and [1] 104..176. */
+	/*
+	 * ctxswitch_regs[0] at 304: 0, 8, 16, then geom_state[0] store 0-2 at
+	 * 24..40, resume 0-2 at 48..64, store 3-4 at 72, 80, resume 3-4 at 88,
+	 * 96; geom_state[1] from 104.  ctxswitch_regs[1] at 488 stays zero.
+	 */
 	memset(record, 0, sizeof(record));
-	powervr_render_switch_state(record, 0x8000100000ULL, 0x8000200000ULL, store, resume);
-	for (core = 0; core < 2U; core++) {
-		base = 304U + core * 184U;
-		expect(read64(record, base + 0) == 0x8000100000ULL, "vdm state base");
-		expect(read64(record, base + 8) == 0, "vdm resume");
-		expect(read64(record, base + 16) == 0x8000200000ULL, "ta state base");
-		expect(read64(record, base + 24) == 0x11 && read64(record, base + 32) == 0x12 && read64(record, base + 40) == 0x13, "store 0-2");
-		expect(read64(record, base + 48) == 0x21 && read64(record, base + 56) == 0x22 && read64(record, base + 64) == 0x23, "resume 0-2");
-		expect(read64(record, base + 72) == 0x14 && read64(record, base + 80) == 0x15, "store 3-4");
-		expect(read64(record, base + 88) == 0x24 && read64(record, base + 96) == 0x25, "resume 3-4");
-		expect(read64(record, base + 104) == 0x11 && read64(record, base + 176) == 0x25, "second buffer");
-	}
+	powervr_render_switch_state(record, 0x8000100000ULL, 0x8000200000ULL, tasks);
+	base = 304U;
+	expect(read64(record, base + 0) == 0x8000100000ULL, "vdm state base");
+	expect(read64(record, base + 8) == 0, "vdm resume");
+	expect(read64(record, base + 16) == 0x8000200000ULL, "ta state base");
+	expect(read64(record, base + 24) == 0x11 && read64(record, base + 32) == 0x12 && read64(record, base + 40) == 0x13, "store 0-2");
+	expect(read64(record, base + 48) == 0x21 && read64(record, base + 56) == 0x22 && read64(record, base + 64) == 0x23, "resume 0-2");
+	expect(read64(record, base + 72) == 0 && read64(record, base + 80) == 0, "store 3-4 zero");
+	expect(read64(record, base + 88) == 0 && read64(record, base + 96) == 0, "resume 3-4 zero");
+	expect(read64(record, base + 104) == 0x31 && read64(record, base + 120) == 0x33, "second buffer store");
+	expect(read64(record, base + 128) == 0x41 && read64(record, base + 144) == 0x43, "second buffer resume");
+	expect(read64(record, 488) == 0 && read64(record, 488 + 24) == 0 && read64(record, 664) == 0, "second core untouched");
 	expect(read64(record, 0) == 0 && read64(record, 672) == 0, "common contexts and flags untouched");
 }
 
@@ -206,6 +211,141 @@ lines(void)
 	expect(strcmp(line, "powervr: transfer: fail(fault 0xfffffffffffffffe)") == 0, "longest line fits");
 }
 
+/* The command at a place of a sequence matches a type, a size and a word. */
+static int
+command_is(
+	const struct powervr_client_command *command,
+	uint32_t type,
+	uint32_t size)
+{
+	return command->type == type && command->size == size;
+}
+
+static void
+sequence(void)
+{
+	static struct powervr_render_sequence seq;
+	static uint8_t geometry[POWERVR_GEOMETRY_BYTES];
+	static uint8_t partial[POWERVR_FRAGMENT_BYTES];
+	static uint8_t fragment[POWERVR_FRAGMENT_BYTES];
+	struct powervr_render_request request;
+	struct powervr_sync waits[POWERVR_RENDER_WAITS_MAX + 1U];
+	uint64_t background[POWERVR_BACKGROUND_WORDS];
+	unsigned index;
+
+	/*
+	 * A render with two waits: geometry timeline 0x7000 value 5, fragment
+	 * timeline 0x7100 value 9, data set 0x9000.  Geometry: FENCE_PR (2
+	 * waits, 16 bytes), GEOM (112), UPDATE {0x7000, 5}; the GEOM carries
+	 * the data set at 4 and the fence {0x7000, 4} at 84.  Partial render:
+	 * FENCE_PR (the waits and {0x7000, 5} last, 24 bytes), FRAG_PR (480,
+	 * data set at 4), UPDATE {0x7100, 8}.  Fragment: FENCE_PR {0x7000, 5},
+	 * FRAG (480), UPDATE {0x7100, 9}.
+	 */
+	memset(geometry, 0xa5, sizeof(geometry));
+	memset(partial, 0x5a, sizeof(partial));
+	memset(fragment, 0x3c, sizeof(fragment));
+	background[0] = 0x111;
+	background[1] = 0x222;
+	background[2] = 0x333;
+	waits[0].address = 0x6000;
+	waits[0].value = 1;
+	waits[1].address = 0x6100;
+	waits[1].value = 2;
+	request.geometry_timeline = 0x7000;
+	request.geometry_value = 5;
+	request.fragment_timeline = 0x7100;
+	request.fragment_value = 9;
+	request.target_data = 0x9000;
+	request.waits = waits;
+	request.wait_count = 2;
+	request.geometry = geometry;
+	request.partial = partial;
+	request.fragment = fragment;
+	request.partial_background = background;
+	expect(powervr_render_sequence_make(&request, &seq) == 0, "sequence builds");
+	expect(seq.geometry_count == 3 && seq.partial_count == 3 && seq.fragment_count == 3, "three commands each");
+	expect(command_is(&seq.geometry_commands[0], 0x2abc00d7U, 16) && command_is(&seq.geometry_commands[1], 0x2abc80c9U, 112) && command_is(&seq.geometry_commands[2], 0x2abc00d5U, 8), "geometry commands");
+	expect(read32(seq.geometry_commands[0].data, 0) == 0x6000 && read32(seq.geometry_commands[0].data, 12) == 2, "geometry waits");
+	expect(read32(seq.geometry_commands[1].data, 4) == 0x9000 && read32(seq.geometry_commands[1].data, 84) == 0x7000 && read32(seq.geometry_commands[1].data, 88) == 4, "geometry data set and partial fence");
+	expect(read32(seq.geometry_commands[1].data, 0) == 0xa5a5a5a5U && read32(seq.geometry_commands[1].data, 108) == 0xa5a5a5a5U, "geometry rest kept");
+	expect(read32(seq.geometry_commands[2].data, 0) == 0x7000 && read32(seq.geometry_commands[2].data, 4) == 5, "geometry update");
+	expect(command_is(&seq.partial_commands[0], 0x2abc00d7U, 24) && command_is(&seq.partial_commands[1], 0x2abc80ccU, 480) && command_is(&seq.partial_commands[2], 0x2abc00d5U, 8), "partial commands");
+	expect(read32(seq.partial_commands[0].data, 8) == 0x6100 && read32(seq.partial_commands[0].data, 16) == 0x7000 && read32(seq.partial_commands[0].data, 20) == 5, "partial waits, geometry last");
+	expect(read32(seq.partial_commands[1].data, 4) == 0x9000 && read32(seq.partial_commands[1].data, 8) == 0x5a5a5a5aU, "partial data set");
+	expect(read32(seq.partial_commands[2].data, 0) == 0x7100 && read32(seq.partial_commands[2].data, 4) == 8, "partial update one less");
+	expect(command_is(&seq.fragment_commands[0], 0x2abc00d7U, 8) && command_is(&seq.fragment_commands[1], 0x2abc80cbU, 480) && command_is(&seq.fragment_commands[2], 0x2abc00d5U, 8), "fragment commands");
+	expect(read32(seq.fragment_commands[0].data, 0) == 0x7000 && read32(seq.fragment_commands[0].data, 4) == 5, "fragment waits for the geometry");
+	expect(read32(seq.fragment_commands[1].data, 4) == 0x9000, "fragment data set");
+	expect(read32(seq.fragment_commands[2].data, 0) == 0x7100 && read32(seq.fragment_commands[2].data, 4) == 9, "fragment update");
+	expect(read64(seq.fragment_commands[1].data, 416) == 0x3c3c3c3c3c3c3c3cULL, "fragment's own background kept");
+
+	/* A fragment naming no background takes the default at 16 + 400; the partial render does not. */
+	memset(fragment, 0, sizeof(fragment));
+	memset(partial, 0, sizeof(partial));
+	expect(powervr_render_sequence_make(&request, &seq) == 0, "sequence with a default background");
+	expect(read64(seq.fragment_commands[1].data, 416) == 0x111 && read64(seq.fragment_commands[1].data, 424) == 0x222 && read64(seq.fragment_commands[1].data, 432) == 0x333, "default background");
+	expect(read64(seq.partial_commands[1].data, 416) == 0, "partial render background untouched");
+	request.partial_background = NULL;
+	expect(powervr_render_sequence_make(&request, &seq) == 0 && read64(seq.fragment_commands[1].data, 416) == 0, "no default: zero stays");
+
+	/* BGRND0: shader 4..31, texunicode 36..63; BGRND1: texture data 36..63; BGRND3 zero. */
+	powervr_background_words(0x123450, 0x678900, 0xabc00, background);
+	expect(background[0] == 0x0067890000123450ULL && background[1] == 0x000abc0000000000ULL && background[2] == 0, "background words");
+
+	/* The geometry's stream base at 16, bits 2..39. */
+	memset(geometry, 0, sizeof(geometry));
+	powervr_geometry_stream(geometry, 0x18000001237ULL);
+	expect(read64(geometry, 16) == 0x8000001234ULL && read64(geometry, 24) == 0, "geometry stream base");
+
+	/* No waits: the geometry has no fence; the partial render waits for the geometry alone. */
+	request.wait_count = 0;
+	expect(powervr_render_sequence_make(&request, &seq) == 0 && seq.geometry_count == 2, "no waits: geometry without a fence");
+	expect(command_is(&seq.geometry_commands[0], 0x2abc80c9U, 112) && command_is(&seq.partial_commands[0], 0x2abc00d7U, 8), "no waits: partial fence of one");
+
+	/* The most waits, and one more. */
+	for (index = 0; index <= POWERVR_RENDER_WAITS_MAX; index++) {
+		waits[index].address = 0x6000 + index * 8U;
+		waits[index].value = index;
+	}
+	request.wait_count = POWERVR_RENDER_WAITS_MAX;
+	expect(powervr_render_sequence_make(&request, &seq) == 0 && seq.partial_commands[0].size == 32U * 8U, "31 waits: a fence of 32");
+	request.wait_count = POWERVR_RENDER_WAITS_MAX + 1U;
+	expect(powervr_render_sequence_make(&request, &seq) == EINVAL, "32 waits refused");
+	expect(POWERVR_VDM_TERMINATE == 0xc0000000U, "VDM terminate block 6 << 29");
+}
+
+static void
+stalls(void)
+{
+	struct powervr_list_marks before;
+	struct powervr_list_marks after;
+	enum powervr_stage stage;
+
+	/* The first kick that did not write its value names the stage; values wrap. */
+	expect(powervr_render_stalled(4, 5, 8, 9, &stage) == 1 && stage == POWERVR_STAGE_TA, "geometry short: ta");
+	expect(powervr_render_stalled(5, 5, 8, 9, &stage) == 1 && stage == POWERVR_STAGE_3D, "fragment short: 3d");
+	expect(powervr_render_stalled(5, 5, 9, 9, &stage) == 0, "both reached");
+	expect(powervr_render_stalled(6, 5, 10, 9, &stage) == 0, "past both");
+	expect(powervr_render_stalled(0xffffffffU, 1, 0, 0, &stage) == 1 && stage == POWERVR_STAGE_TA, "geometry short across the wrap");
+	expect(powervr_render_stalled(2, 1, 0xfffffffeU, 0xffffffffU, &stage) == 1 && stage == POWERVR_STAGE_3D, "fragment short before the wrap");
+
+	/* Any of the free list reports moving says the lists ran out. */
+	before.grow_requests = 1;
+	before.partial_renders = 2;
+	before.out_of_memory = 3;
+	after = before;
+	expect(powervr_free_list_ran_out(&before, &after) == 0, "nothing moved");
+	after.grow_requests = 2;
+	expect(powervr_free_list_ran_out(&before, &after) == 1, "a grow request");
+	after = before;
+	after.partial_renders = 3;
+	expect(powervr_free_list_ran_out(&before, &after) == 1, "a partial render");
+	after = before;
+	after.out_of_memory = 4;
+	expect(powervr_free_list_ran_out(&before, &after) == 1, "out of memory");
+}
+
 int
 main(void)
 {
@@ -214,6 +354,8 @@ main(void)
 	switch_state();
 	resets();
 	lines();
+	sequence();
+	stalls();
 	printf("kick-host-test: %d passed, %d failed\n", passes, failures);
 	return failures == 0 ? 0 : 1;
 }

@@ -73,6 +73,7 @@ int powervr_pds_wait_data(unsigned condition, uint32_t *word);
 int powervr_pds_load_immediate(unsigned condition, unsigned destination, unsigned immediate, unsigned global, uint32_t *word);
 int powervr_pds_halt(unsigned condition, uint32_t *word);
 int powervr_pds_nothing(unsigned condition, uint32_t *word);
+int powervr_pds_stream_clear(unsigned condition, unsigned mask, uint32_t *word);
 int powervr_pds_dma_add(unsigned condition, unsigned end, unsigned source_0, unsigned source_1, unsigned source_2, unsigned source_3, uint32_t *word);
 int powervr_pds_output(unsigned condition, unsigned end, enum powervr_pds_output output, unsigned source_0, unsigned source_1, uint32_t *word);
 
@@ -80,5 +81,8 @@ int powervr_pds_task_word(uint64_t address, unsigned temporaries, unsigned sampl
 int powervr_pds_dma_address_word(uint64_t address, unsigned offset, uint64_t *word);
 int powervr_pds_dma_control_word(unsigned last, unsigned words, unsigned common_store, unsigned cache_mode, unsigned store_address, unsigned repeat, unsigned size, uint32_t *word);
 int powervr_pds_dma_add_control_word(uint32_t control, unsigned test, uint32_t limit, uint64_t *word);
+int powervr_pds_write_control_word(unsigned last, unsigned common_store, unsigned cache_mode, unsigned store_address, unsigned size, uint32_t *word);
+int powervr_pds_load_word(uint64_t address, unsigned count, unsigned cache_mode, unsigned destination, uint64_t *word);
+int powervr_pds_store_word(uint64_t address, unsigned count, unsigned cache_mode, unsigned source, uint64_t *word);
 
 #endif /* KERN_DRIVERS_GPU_POWERVR_PDS_ENCODE_H */

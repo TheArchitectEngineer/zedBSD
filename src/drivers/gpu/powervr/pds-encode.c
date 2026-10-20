@@ -61,13 +61,14 @@ enum pds_space {
  * Values referenced:
  * Mesa 26.2.5 src/imagination/vulkan/pds/pvr_rogue_pds_defs.h
  * (PVR_ROGUE_PDSINST_OPCODESP_LD 0, _ST 1, _WDF 2, _LIMM 3, _HALT 6,
- * _NOP 0xf; the _OP_SHIFT 23 of each).
+ * _STMC 7, _NOP 0xf; the _OP_SHIFT 23 of each).
  */
 #define PDS_SPECIAL_LOAD	0x0U
 #define PDS_SPECIAL_STORE	0x1U
 #define PDS_SPECIAL_WAIT_DATA	0x2U
 #define PDS_SPECIAL_IMMEDIATE	0x3U
 #define PDS_SPECIAL_HALT	0x6U
+#define PDS_SPECIAL_STREAM_CLEAR 0x7U
 #define PDS_SPECIAL_NOTHING	0xfU
 
 static int operand_check(enum pds_space space, unsigned value);
@@ -527,6 +528,37 @@ powervr_pds_nothing(
 }
 
 /*
+ * Encodes a clear of the stream out predicates a mask names.
+ *
+ * Values referenced:
+ * Mesa 26.2.5 src/imagination/vulkan/pds/pvr_rogue_pds_defs.h
+ * (PVR_ROGUE_PDSINST_STMC_SOMASK_SHIFT 0, PVR_ROGUE_PDSINST_SOMASK_MASK
+ * 0x1f).
+ */
+int
+powervr_pds_stream_clear(
+	unsigned condition,
+	unsigned mask,
+	uint32_t *word)
+{
+	int error;
+
+	/* Refuses a mask wider than the five predicates. */
+	if (mask > 0x1fU)
+		return EINVAL;
+
+	/* Builds the special word and adds the mask. */
+	error = special_word(condition, PDS_SPECIAL_STREAM_CLEAR, word);
+	if (error != 0)
+		return error;
+
+	*word |= (uint32_t)mask;
+
+	/* Succeeded: the clear. */
+	return 0;
+}
+
+/*
  * Encodes a DMA whose address is a multiply-add: source 2 plus
  * source 0 times source 1, with the transfer described by the 64-bit
  * constant source 3 (see powervr_pds_dma_add_control_word).
@@ -798,6 +830,149 @@ powervr_pds_dma_add_control_word(
 	*word |= (uint64_t)limit << 33;
 
 	/* Succeeded: the DMA multiply-add control constant. */
+	return 0;
+}
+
+/*
+ * Builds the 32-bit control word of a data write: whether it is the
+ * last write, the store it fills (the common store or the unified
+ * one), the cache mode, the store address it writes at, and which part
+ * of the 64-bit source it writes (the lower word, the upper word, both,
+ * or none).
+ *
+ * Values referenced:
+ * Mesa 26.2.5 src/imagination/vulkan/pds/pvr_rogue_pds_defs.h
+ * (PVR_ROGUE_PDSINST_DOUT_FIELDS_DOUTW_SRC1_LAST_SHIFT 31, _DEST_SHIFT
+ * 28 with UNIFIED_STORE 0 and COMMON_STORE 1, _CMODE_SHIFT 26 with
+ * CACHED 0, BYPASS 1, FORCE_LINE_FILL 2, _AO_SHIFT 13 with _AO_CLRMSK
+ * 0xfc001fff, _BSIZE_SHIFT 0 with LOWER 0, UPPER 1, ALL64 2, NONE 3).
+ */
+int
+powervr_pds_write_control_word(
+	unsigned last,
+	unsigned common_store,
+	unsigned cache_mode,
+	unsigned store_address,
+	unsigned size,
+	uint32_t *word)
+{
+	int error;
+
+	/* Refuses flags that are not single bits. */
+	error = flag_check(last);
+	if (error != 0)
+		return error;
+
+	error = flag_check(common_store);
+	if (error != 0)
+		return error;
+
+	/* Refuses a cache mode, address or size out of range. */
+	if (cache_mode > 2 || store_address > 0x1fff || size > 3 || word == NULL)
+		return EINVAL;
+
+	/* Assembles the word. */
+	*word = (uint32_t)last << 31;
+	*word |= (uint32_t)common_store << 28;
+	*word |= (uint32_t)cache_mode << 26;
+	*word |= (uint32_t)store_address << 13;
+	*word |= (uint32_t)size;
+
+	/* Succeeded: the data write control word. */
+	return 0;
+}
+
+/*
+ * Builds the 64-bit source word of a load from memory into temporaries:
+ * the 4-byte aligned address, the count of 64-bit words (1 to 7), the
+ * cache mode, and the first 64-bit temporary (counted from zero, the
+ * persistent ones from 16).
+ *
+ * Values referenced:
+ * Mesa 26.2.5 src/imagination/vulkan/pds/pvr_rogue_pds_defs.h
+ * (PVR_ROGUE_PDSINST_LD_LD_SRC0_DEST_SHIFT 47 with
+ * PVR_ROGUE_PDSINST_REGS64TP_MASK 0x1f, _CMODE_SHIFT 44 with CACHED 0,
+ * BYPASS 1, FORCE_LINE_FILL 2, _COUNT8_SHIFT 41 with
+ * PVR_ROGUE_PDSINST_LD_COUNT8_MASK 7, _SRCADD_SHIFT 2 with
+ * PVR_ROGUE_PDSINST_LD_SRCADD_MASK 0x3fffffffff, the address in words).
+ * The system level cache mode at bit 62 is left clear, as for the DMA.
+ */
+int
+powervr_pds_load_word(
+	uint64_t address,
+	unsigned count,
+	unsigned cache_mode,
+	unsigned destination,
+	uint64_t *word)
+{
+	int error;
+
+	/* Refuses a misaligned or wide address and a count out of range. */
+	if ((address & 3U) != 0 || (address >> 2) > 0x3fffffffffULL || count < 1 || count > 7 || cache_mode > 2)
+		return EINVAL;
+
+	/* Refuses a destination outside the temporaries. */
+	error = operand_check(PDS_SPACE_TEMPORARY64, destination);
+	if (error != 0)
+		return error;
+
+	if (word == NULL)
+		return EINVAL;
+
+	/* Assembles the word. */
+	*word = (address >> 2) << 2;
+	*word |= (uint64_t)count << 41;
+	*word |= (uint64_t)cache_mode << 44;
+	*word |= (uint64_t)destination << 47;
+
+	/* Succeeded: the load source word. */
+	return 0;
+}
+
+/*
+ * Builds the 64-bit source word of a store from temporaries to memory:
+ * the 4-byte aligned address, the count of 32-bit words (1 to 15), the
+ * cache mode (write through or write back), and the first 32-bit
+ * temporary (counted from zero, the persistent ones from 32).
+ *
+ * Values referenced:
+ * Mesa 26.2.5 src/imagination/vulkan/pds/pvr_rogue_pds_defs.h
+ * (PVR_ROGUE_PDSINST_ST_ST_SRC0_SRC_SHIFT 46 with
+ * PVR_ROGUE_PDSINST_REGS32TP_MASK 0x3f, _CMODE_SHIFT 44 with
+ * WRITE_THROUGH 0, WRITE_BACK 1, LAZY_WRITE_BACK 2, _COUNT4_SHIFT 40
+ * with PVR_ROGUE_PDSINST_ST_COUNT4_MASK 0xf, _DSTADD_SHIFT 2 with
+ * PVR_ROGUE_PDSINST_ST_SRCADD_MASK 0x3fffffffff, the address in words).
+ * The system level cache mode at bit 62 is left clear.
+ */
+int
+powervr_pds_store_word(
+	uint64_t address,
+	unsigned count,
+	unsigned cache_mode,
+	unsigned source,
+	uint64_t *word)
+{
+	int error;
+
+	/* Refuses a misaligned or wide address and a count out of range. */
+	if ((address & 3U) != 0 || (address >> 2) > 0x3fffffffffULL || count < 1 || count > 15 || cache_mode > 2)
+		return EINVAL;
+
+	/* Refuses a source outside the temporaries. */
+	error = operand_check(PDS_SPACE_TEMPORARY32, source);
+	if (error != 0)
+		return error;
+
+	if (word == NULL)
+		return EINVAL;
+
+	/* Assembles the word. */
+	*word = (address >> 2) << 2;
+	*word |= (uint64_t)count << 40;
+	*word |= (uint64_t)cache_mode << 44;
+	*word |= (uint64_t)source << 46;
+
+	/* Succeeded: the store source word. */
 	return 0;
 }
 

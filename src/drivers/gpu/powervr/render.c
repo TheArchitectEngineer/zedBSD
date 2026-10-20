@@ -169,6 +169,11 @@ powervr_render_start(
 	powervr_render_runtime_bind(render);
 	render->running = 1;
 
+	/* The shading cluster programs of a render context's switch; without them no render context is made. */
+	error = powervr_render_switch_shaders(render);
+	if (error != 0)
+		kern_logf("powervr: render context switch programs not built (%d)\n", error);
+
 	/* Lets the interrupt handler wake the service from here on. */
 	core->render = render;
 
@@ -193,6 +198,10 @@ powervr_render_start(
 	/* A test kernel runs the driver's own compute work and reports it; it only reports. */
 	if (powervr_compute_check != NULL)
 		powervr_compute_check(render);
+
+	/* A test kernel runs the driver's own render and reports it; it only reports. */
+	if (powervr_render_check != NULL)
+		powervr_render_check(render);
 
 	/* Registers the node, trying again a bounded number of times while registration is busy. */
 	retry.attempt = register_attempt;
@@ -668,8 +677,8 @@ render_close(
 	if (session->abandoned)
 		keep = 1;
 
-	/* A context that ran is cleaned up by the firmware before its records go. */
-	if (!keep && session->kicked) {
+	/* The contexts that ran are cleaned up by the firmware before their records go. */
+	if (!keep) {
 		error = powervr_session_cleanup(render, session);
 		if (error != 0)
 			keep = 1;

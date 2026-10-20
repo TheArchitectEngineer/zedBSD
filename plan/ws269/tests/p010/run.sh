@@ -5,7 +5,9 @@
 # render targets' sizes, records and free list frames (render-target-layout.c),
 # (p010n) the kick commands, render context state and reset notices
 # (render-kick-layout.c), and (p010h) the descriptor set bytes and data
-# sequencer programs (descriptor-set.c, data-program.c), and (p010e) the fixed
+# sequencer programs (descriptor-set.c, data-program.c), the render context's
+# switch programs and task words (render-sr-program.c), the render commands'
+# registers (render-command.c), and (p010e) the fixed
 # render programs and words (render-program.c), and (p010f) the transfer
 # command words, copy and blit programs (transfer-program.c), and the
 # attachment load background (render-load-program.c).
@@ -29,6 +31,15 @@ cc -std=c11 -O2 -Wall -Wextra -Werror -I"$root/include" -I"$root/src" \
 	"$root/src/drivers/gpu/powervr/render-kick-layout.c" "$root/src/drivers/gpu/powervr/stage.c" \
 	"$here/kick-host-test.c" -o "$out/kick-host-test"
 "$out/kick-host-test"
+compiler="$root/src/drivers/gpu/powervr/shader-spirv.c $root/src/drivers/gpu/powervr/shader-spirv-interface.c $root/src/drivers/gpu/powervr/shader-spirv-control.c $root/src/drivers/gpu/powervr/shader-spirv-instruction.c $root/src/drivers/gpu/powervr/shader-backend.c $root/src/drivers/gpu/powervr/usc-encode.c"
+cc -std=gnu11 -O2 -Wall -Wextra -Werror -I"$root/include" -I"$root/src" \
+	$compiler "$root/src/drivers/gpu/powervr/pds-encode.c" "$root/src/drivers/gpu/powervr/render-sr-program.c" \
+	"$here/program-host-test.c" -o "$out/program-host-test"
+"$out/program-host-test"
+cc -std=c11 -O2 -Wall -Wextra -Werror -I"$root/include" -I"$root/src" \
+	"$root/src/drivers/gpu/powervr/render-command.c" "$root/src/drivers/gpu/powervr/render-kick-layout.c" \
+	"$here/command-host-test.c" -o "$out/command-host-test"
+"$out/command-host-test"
 sh "$here/selftest-host.sh" "$out"
 cc -std=c11 -O2 -Wall -Wextra -Werror -I"$root/include" -I"$root/src" \
 	"$root/src/drivers/gpu/powervr/descriptor-set.c" "$root/src/drivers/gpu/powervr/data-program.c" \
