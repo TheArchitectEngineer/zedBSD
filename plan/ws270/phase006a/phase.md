@@ -146,3 +146,12 @@ Keiland が使い、vkmatrix 15/15・gpu-selftest 13/13 で確かめていない
 - 不足の G1〜G8 の扱い（板の結果で決める）。
 - T1 の回帰（上）。
 - 片付け（Q1 に依頼）: worktree /home/awe/zedBSD-worktrees/p1 の `build/q1356-p004host/`・`build/q1356-vf2.log`・`build/q1356-virt.log`・`build/q1356-amd64.log`・`build/q1356-rpi4.log`・`build/tmp/ws270-display-wait*`。
+
+## 板の結果（2026-10-21 Q1、desktop の 1 回目）
+
+- 方法: SD を書き直さず、`plan/tools/vf2/overlay.sh build/uat/vf2-gpu/rootfs build/uat/vf2-desktop/rootfs OUTDIR` で desktop の rootfs の差分（255 file、setuid と 644/755 以外の mode を戻す）を板の root に入れ、/boot/boot0/zedbsd.cfg に `login=graphical`（元は zedbsd.cfg.old、kernel の元は vmunix.old）、kernel は build/uat/vf2-desktop/vmunix（main 7f1ce814e 以降、config-visionfive2-desktop-gpu.mk、screen capture 入り）。
+- 起動: `SESSIOND DISPLAY waited_ms=2800` → greeter → `AUTOLOGIN user=kei` → `SESSIOND DESKTOP shown at_ms=12514`。session.log: `KWL DISPLAY device=zedBSD powervr (PowerVR BXE-4-32) width=1920 height=1080`、Vulkan の段が全部通る。dmesg に device lost・context reset 無し。
+- 画面: keiland-shot（swapchain の画）で panel・壁紙・時計が出ている（build/review/vf2-desktop/shot1.png）。
+- 遅さ: 1 frame の submit が約 160〜180 ms（`KWL PERF rec … submit=161`、present 9〜10 ms）→ 約 5 fps。G4（job ごとの同期の待ち）か。
+- client: `terminal` を session の中で起動すると `ZTERM FAILED run=term operation=vkCreateSwapchainKHR result=-11`（VK_ERROR_FORMAT_NOT_SUPPORTED）。G5（client の buffer の export/import、p010l の shared の道）の側。
+- SD の dw-mmc の read の失敗（BUG-343）は起動の間にも出るが、起動は通った。
