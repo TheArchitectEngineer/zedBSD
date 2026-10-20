@@ -892,3 +892,33 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
 | 板 | 未実施（Q1・T1 へ） |
 
 - 片付け（Q1 に依頼）: `build/p2q1466/`。
+
+## q1469-i01（P2、2026-10-20）: workgroup id を coefficient から読む compiler と、板で受け渡しを見る probe
+
+- 前提: P1 の 1 kernel の executor（main 5c2e09d32、`POWERVR_EXECUTOR_ONE_KERNEL`、設計は phase010q の q1467-i01）。workgroup id は PDS の `powervr_compute_workgroup_program` の DOUTW が coefficient cf0〜cf2（common store の 0・1・2）に書く。
+- **compiler**（`shader-backend.c`、`shader.h`）:
+  - `POWERVR_SHADER_REQUEST_WORKGROUP_ID` の word k は inline せず（`compile_inline` でも）、shared register からも読まない。`MACHINE_MOVE` で coefficient bank の register k から読む。
+  - 切り替えは `POWERVR_SHADER_WORKGROUP_COEFFICIENTS`（既定 1）。
+  - **注意（Q1・P1 へ）**: vk-queue.c の既定 `POWERVR_EXECUTOR_ONE_KERNEL 0`（workgroup ごとに 1 kernel、PDS が coefficient を書かない）とは組み合わない。1 kernel の executor を既定にするか、旧の形で build するなら `-DPOWERVR_SHADER_WORKGROUP_COEFFICIENTS=0` にする。
+- **host の試験の追従**: machine-run に `coefficient_word` の callback を足した（compute の時、bank 3 はそれを読む）。compile-host-test は compute の時に workgroup id を返す。`fill-registers.c` は workgroup 0 として 0 を返す。
+- **compute check**:
+  - `write_workgroup_kick(state, field, groups)`: 1 kernel の executor の形の kick を作る。PDS は P1 の workgroup program（data 4 語、code 6 語）を最初の probe の slot に置く。kernel 語は workgroups[0]、usc_common 3、pds_temporaries 4。その後に fence の kernel と end。program は `USC_COMPILED`、kick は `KICK_PROBE_FIRST`。
+  - compiled fill とその dump の prefix は、この形（workgroup 1）で流す。fill の program が cf0 を読むようになったため。`KICK_COMPILED` は無くした。
+  - **`run_workgroup_probe`**（compiled fill の後、executor の並びの前。各 case は自分の session で流す）:
+    - 4 workgroup × 32 instance の 1 kernel を流す。手書きの USC program（`workgroup_program`、dump と同じ組み立てと encode）が、1 つの register を読む。値の下位 2 bit を workgroup とし、その値を `+0x1d8000 + workgroup×128 + instance×4` へ store する。
+    - 読む場所は 3 通り: cf0、cf2（flat varying の C の +2 の約束の場合）、sh0。
+    - 行の形: `compute probes: workgroup id via coefficients <場所> MASK (e), N bytes, first words w0 w1 w2 w3, one kernel after A/32 (e2)`。
+    - 期待: cf0 で MASK f、first words は 0 1 2 3。
+  - host の使い捨ての確認（kernel の関数をそのまま host で compile、cf0、coefficient ＝ wg）: encode 0、272 byte、hazard 0。128 語すべてが自分の wg id（bad 0）。
+
+| 確認 | 結果 |
+| --- | --- |
+| p010-compiler の host（`run.sh`） | 455/0、group 20/0 |
+| p009 の host | 511/0 |
+| `fill-registers.sh` | 全体 32/32 |
+| VF2 の vmunix（`build/p2q1469/vf2/vmunix`） | rc 0、warning 0 |
+| 板 | 未実施 |
+
+- 片付け（Q1 に依頼）:
+  - `build/p2q1469/`
+  - scratchpad の `wgtest.c`・`wgtest`・`wg.c`

@@ -204,6 +204,14 @@ run_iterate(
 	return iterate_word(lane, coefficient, flags);
 }
 
+/* A compute program's coefficients: the workgroup id, as the data sequencer writes it. */
+static uint32_t
+coefficient_word(
+	uint32_t reg)
+{
+	return reg == 0 ? workgroup_id : 0;
+}
+
 /* A texture sample: a function of the coordinates and the state words. */
 static void
 sample_words(
@@ -348,6 +356,8 @@ machine_compare(
 	machine->input_word = input_word;
 	machine->iterate_word = iterate_word;
 	machine->sample_words = sample_words;
+	if (stage == POWERVR_SHADER_COMPUTE)
+		machine->coefficient_word = coefficient_word;
 	machine->memory = memory;
 	machine->memory_base = MEMORY_BASE;
 	machine->memory_words = MEMORY_WORDS;

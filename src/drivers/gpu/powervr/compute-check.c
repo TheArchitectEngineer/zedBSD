@@ -140,10 +140,10 @@
 #define KICK_GRID_FIRST		(KICK_TEMPS_WIDE + 1U)
 
 /*
- * The compiled-fill probe's kick, after the grid's, its program 4 KiB
- * after the short stores' in the probes' rooms, and the words it fills.
+ * The compiled-fill probe's program, 4 KiB after the short stores' in
+ * the probes' rooms (its kick the one-kernel executor's form in the
+ * first probe's slot, write_workgroup_kick), and the words it fills.
  */
-#define KICK_COMPILED		(KICK_GRID_FIRST + GRID_KICKS)
 #define USC_COMPILED		(USC_STEPS_FOUR + USC_PROBE_SPACING)
 #define COMPILED_OFFSET		0x1c0000U
 
@@ -265,6 +265,10 @@ static int dump_append(struct shader_backend *dump, unsigned kind, unsigned dest
 static int dump_program(const struct shader_backend *backend, struct shader_backend *dump, unsigned keep, uint64_t address, uint8_t *code, size_t room, size_t *length);
 static int run_many_kernels(struct check_state *state, unsigned kernels, unsigned flags);
 static void run_layouts(struct check_state *state);
+static void run_workgroup_probe(struct check_state *state);
+static struct shader_machine_operation *dump_last(struct shader_backend *dump);
+static int workgroup_program(struct shader_backend *dump, unsigned bank, unsigned index, uint64_t address, uint8_t *code, size_t room, size_t *length);
+static int write_workgroup_kick(struct check_state *state, unsigned field, unsigned groups);
 static int write_grid(struct check_state *state);
 static void run_grid(struct check_state *state);
 static uint32_t own_words(struct check_state *state, unsigned kind);
@@ -369,9 +373,11 @@ powervr_compute_check(
 
 	/*
 	 * The compiler's program the check's way (its prefixes first), then
-	 * the executor's layouts, each in a session of its own.
+	 * the workgroup id probe and the executor's layouts, each in a
+	 * session of its own.
 	 */
 	run_compiled_fill(&state);
+	run_workgroup_probe(&state);
 	run_layouts(&state);
 
 	/* The grid of unified sizes and fields, last and only when asked, as its narrow cells fault. */
@@ -1083,7 +1089,7 @@ run_compiled_fill(
 
 	if (error == 0) {
 		put_bytes(state->usc, USC_COMPILED, code, program->length);
-		error = write_kick(state, KICK_COMPILED, USC_COMPILED, 0, field);
+		error = write_workgroup_kick(state, field, 1);
 	}
 
 	/* The words and 64 KiB either side of them, each its own pattern, then the kick. */
@@ -1091,7 +1097,7 @@ run_compiled_fill(
 	for (word = 0; word < SCAN_WORDS; word++)
 		state->alias[SCAN_FIRST / 4U + word] = SCAN_PATTERN(word);
 	if (error == 0)
-		error = kick(state, KICK_COMPILED);
+		error = kick(state, KICK_PROBE_FIRST);
 
 	/* Every word that changed, where and to what (the first SCAN_LINES of them), and how many. */
 	changed = 0;
@@ -1186,12 +1192,12 @@ run_prefixes(
 		error = dump_program(backend, dump, keep, run_address + DUMP_OFFSET, code, USC_DUMP_ROOM, &length);
 		if (error == 0) {
 			put_bytes(state->usc, USC_COMPILED, code, length);
-			error = write_kick(state, KICK_COMPILED, USC_COMPILED, 0, field);
+			error = write_workgroup_kick(state, field, 1);
 		}
 		for (word = 0; word < 32U * DUMP_REGISTERS; word++)
 			words[word] = DUMP_FILLER;
 		if (error == 0)
-			error = kick(state, KICK_COMPILED);
+			error = kick(state, KICK_PROBE_FIRST);
 		for (i = 0; i < sizeof(lanes) / sizeof(lanes[0]); i++) {
 			row = words + lanes[i] * DUMP_REGISTERS;
 			kern_logf("powervr: compute probes: dump %u/%u lane %u (%d, %u bytes):"
@@ -1344,6 +1350,271 @@ dump_program(
 
 	/* Succeeded: the program. */
 	return 0;
+}
+
+/*
+ * The workgroup id probe: one kernel of WG_GROUPS workgroups of 32
+ * instances, its data sequencer program the one-kernel executor's
+ * (powervr_compute_workgroup_program, which writes the id into the
+ * common store), and a shading cluster program that reads one register,
+ * keeps its low two bits as the workgroup, and stores the register to
+ * WG_OFFSET + workgroup * 128 + instance * 4.  Its kick slot, stream and
+ * data sequencer slot are the first probe's (each variant runs on a
+ * session of its own).
+ */
+#define WG_GROUPS		4U
+#define WG_OFFSET		0x1d8000U
+#define WG_TEMPORARIES		15U
+#define WG_COEFFICIENTS		3U
+#define WG_PDS_INPUTS		4U
+#define WG_FILLER		0xdeaddeadU
+
+/* The last operation dump_append added, before its spacing groups. */
+static struct shader_machine_operation *
+dump_last(
+	struct shader_backend *dump)
+{
+	return &dump->operations[dump->operation_count - 1U - SHADER_HAZARD_GAP];
+}
+
+/* Builds and encodes the workgroup probe's shading cluster program, reading bank:index. */
+static int
+workgroup_program(
+	struct shader_backend *dump,
+	unsigned bank,
+	unsigned index,
+	uint64_t address,
+	uint8_t *code,
+	size_t room,
+	size_t *length)
+{
+	int error;
+
+	/* r0 the register, r2 its low two bits (r1 three), r4 those times 128 (r3 seven). */
+	kern_memset(dump, 0, sizeof(*dump));
+	error = dump_append(dump, MACHINE_MOVE, 0, bank, index, DUMP_NONE, DUMP_NONE, 0);
+	if (error == 0)
+		error = dump_append(dump, MACHINE_IMMEDIATE, 1, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, 3);
+	if (error == 0) {
+		error = dump_append(dump, MACHINE_LOGIC, 2, POWERVR_USC_BANK_TEMPORARY, 0, 1, DUMP_NONE, 0);
+		if (error == 0)
+			dump_last(dump)->variant = 1;
+	}
+	if (error == 0)
+		error = dump_append(dump, MACHINE_IMMEDIATE, 3, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, 7);
+	if (error == 0)
+		error = dump_append(dump, MACHINE_SHIFT, 4, POWERVR_USC_BANK_TEMPORARY, 2, 3, DUMP_NONE, 0);
+
+	/* r7 the instance times four (r5 the instance, r6 two). */
+	if (error == 0)
+		error = dump_append(dump, MACHINE_MOVE_SPECIAL, 5, POWERVR_USC_BANK_SPECIAL, DUMP_SPECIAL_INSTANCE, DUMP_NONE, DUMP_NONE, 0);
+	if (error == 0)
+		error = dump_append(dump, MACHINE_IMMEDIATE, 6, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, 2);
+	if (error == 0)
+		error = dump_append(dump, MACHINE_SHIFT, 7, POWERVR_USC_BANK_TEMPORARY, 5, 6, DUMP_NONE, 0);
+
+	/* r12 and r13 the word's address, r14 the register right after it, the store, its wait, the end. */
+	if (error == 0)
+		error = dump_append(dump, MACHINE_IMMEDIATE, 8, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, (uint32_t)address);
+	if (error == 0)
+		error = dump_append(dump, MACHINE_IMMEDIATE, 9, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, (uint32_t)(address >> 32));
+	if (error == 0)
+		error = dump_append(dump, MACHINE_ADD64, 10, POWERVR_USC_BANK_TEMPORARY, 8, 9, 4, 0);
+	if (error == 0)
+		error = dump_append(dump, MACHINE_ADD64, 12, POWERVR_USC_BANK_TEMPORARY, 10, 11, 7, 0);
+	if (error == 0)
+		error = dump_append(dump, MACHINE_MOVE, 14, POWERVR_USC_BANK_TEMPORARY, 0, DUMP_NONE, DUMP_NONE, 0);
+	if (error == 0) {
+		error = dump_append(dump, MACHINE_STORE, DUMP_NONE, POWERVR_USC_BANK_TEMPORARY, 14, DUMP_NONE, DUMP_NONE, 0);
+		if (error == 0) {
+			dump->operations[dump->operation_count - 1U].source[1].bank = POWERVR_USC_BANK_TEMPORARY;
+			dump->operations[dump->operation_count - 1U].source[1].index = 12;
+		}
+	}
+	if (error == 0)
+		error = dump_append(dump, MACHINE_WAIT, DUMP_NONE, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, 0);
+	if (error == 0)
+		error = dump_append(dump, MACHINE_END, DUMP_NONE, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, 0);
+
+	/* Encodes it. */
+	if (error == 0)
+		error = shader_backend_encode(dump, code, room, length);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the program. */
+	return 0;
+}
+
+/*
+ * Writes the one-kernel executor's form of a kick of the program at
+ * USC_COMPILED in the first probe's slot: the workgroup data sequencer
+ * program, one kernel of the given workgroups, the fence kernel and the
+ * end.
+ */
+static int
+write_workgroup_kick(
+	struct check_state *state,
+	unsigned field,
+	unsigned groups)
+{
+	struct powervr_compute_kernel kernel;
+	uint32_t data[POWERVR_COMPUTE_PDS_GROUP_DATA_WORDS];
+	uint32_t code[POWERVR_COMPUTE_PDS_CODE_MAX];
+	uint32_t words[POWERVR_COMPUTE_KERNEL_WORDS];
+	uint32_t slot;
+	uint32_t stream;
+	unsigned count;
+	unsigned i;
+	int error;
+
+	/* The program, in the first probe's slot: four data words, then its code. */
+	error = powervr_compute_workgroup_program(usc_offset + USC_COMPILED, field, data, code, &count);
+	if (error != 0)
+		return error;
+	slot = KICK_PROBE_FIRST * PDS_SLOT;
+	for (i = 0; i < POWERVR_COMPUTE_PDS_GROUP_DATA_WORDS; i++)
+		put_word(state->pds, slot + i * 4U, data[i]);
+	for (i = 0; i < count; i++)
+		put_word(state->pds, slot + PDS_CODE + i * 4U, code[i]);
+
+	/* The kernel: WG_GROUPS workgroups of a whole task, their ids in the common store. */
+	kern_memset(&kernel, 0, sizeof(kernel));
+	kernel.data_offset = pds_offset + slot;
+	kernel.code_offset = pds_offset + slot + PDS_CODE;
+	kernel.data_words = POWERVR_COMPUTE_PDS_GROUP_DATA_WORDS;
+	kernel.pds_temporaries = WG_PDS_INPUTS;
+	kernel.workgroups[0] = groups;
+	kernel.usc_common = WG_COEFFICIENTS;
+	kernel.usc_temporaries = WG_TEMPORARIES;
+	kernel.instances = POWERVR_COMPUTE_INSTANCES;
+	kernel.any_cluster = 1;
+	error = powervr_compute_kernel_words(&kernel, words);
+	if (error != 0)
+		return error;
+	stream = STREAM_FIRST + KICK_PROBE_FIRST * STREAM_SPACING;
+	for (i = 0; i < POWERVR_COMPUTE_KERNEL_WORDS; i++)
+		put_word(state->streams, stream + i * 4U, words[i]);
+	stream += POWERVR_COMPUTE_KERNEL_WORDS * 4U;
+
+	/* The fence kernel and the end, as every kick's. */
+	kern_memset(&kernel, 0, sizeof(kernel));
+	kernel.data_offset = pds_offset + PDS_FENCE * PDS_SLOT;
+	kernel.code_offset = pds_offset + PDS_FENCE * PDS_SLOT + PDS_CODE;
+	kernel.data_words = POWERVR_COMPUTE_PDS_DATA_WORDS;
+	kernel.instances = 1;
+	kernel.max_instances = FENCE_INSTANCES;
+	kernel.fence = 1;
+	kernel.shared_from_pds = 1;
+	kernel.common_shared = 1;
+	kernel.any_cluster = 1;
+	error = powervr_compute_kernel_words(&kernel, words);
+	if (error != 0)
+		return error;
+	for (i = 0; i < POWERVR_COMPUTE_KERNEL_WORDS; i++)
+		put_word(state->streams, stream + i * 4U, words[i]);
+	stream += POWERVR_COMPUTE_KERNEL_WORDS * 4U;
+	put_word(state->streams, stream, powervr_compute_terminate_word());
+
+	/* Succeeded: the kick is written. */
+	return 0;
+}
+
+/*
+ * Runs the workgroup id probe once for each place the id may be read
+ * from (coefficient 0, coefficient 2, shared register 0), each on a
+ * session of its own, and reports on one line each which workgroups'
+ * 32 words all hold their own id (the mask, 0xf when all four do), the
+ * first word of each workgroup's window, and whether a one-kernel kick
+ * after it still runs.
+ */
+static void
+run_workgroup_probe(
+	struct check_state *state)
+{
+	static const struct {
+		unsigned bank;
+		unsigned index;
+		const char *name;
+	} places[] = {
+		{ POWERVR_USC_BANK_COEFFICIENT, 0, "cf0" },
+		{ POWERVR_USC_BANK_COEFFICIENT, 2, "cf2" },
+		{ POWERVR_USC_BANK_SHARED, 0, "sh0" },
+	};
+	struct shader_backend *dump;
+	volatile uint32_t *words;
+	uint8_t *code;
+	const char *step;
+	size_t length;
+	unsigned field;
+	unsigned after;
+	unsigned mask;
+	unsigned group;
+	unsigned word;
+	unsigned good;
+	unsigned i;
+	int after_error;
+	int error;
+
+	/* The program room and the back end to build in. */
+	code = kern_malloc(USC_DUMP_ROOM);
+	dump = kern_malloc(sizeof(*dump));
+	if (code == NULL || dump == NULL) {
+		kern_free(dump);
+		kern_free(code);
+		kern_logf("powervr: compute probes: workgroup id: not run (%d)\n", ENOMEM);
+		return;
+	}
+
+	/* Each place on a session opened for it. */
+	for (i = 0; i < sizeof(places) / sizeof(places[0]); i++) {
+		teardown(state);
+		step = "open";
+		error = setup(state, &step);
+		if (error != 0) {
+			kern_logf("powervr: compute probes: workgroup id via %s: not run, %s (%d)\n", places[i].name, step, error);
+			break;
+		}
+
+		/* The program, the kick, the windows filled with other values. */
+		length = 0;
+		error = powervr_compute_task_field(WG_TEMPORARIES, &field);
+		if (error == 0)
+			error = workgroup_program(dump, places[i].bank, places[i].index, run_address + WG_OFFSET, code, USC_DUMP_ROOM, &length);
+		if (error == 0) {
+			put_bytes(state->usc, USC_COMPILED, code, length);
+			error = write_workgroup_kick(state, field, WG_GROUPS);
+		}
+		words = state->alias + WG_OFFSET / 4U;
+		for (word = 0; word < WG_GROUPS * POWERVR_COMPUTE_INSTANCES; word++)
+			words[word] = WG_FILLER;
+		if (error == 0)
+			error = kick(state, KICK_PROBE_FIRST);
+
+		/* Which workgroups' words all hold their id. */
+		mask = 0;
+		for (group = 0; group < WG_GROUPS; group++) {
+			good = 0;
+			for (word = 0; word < POWERVR_COMPUTE_INSTANCES; word++)
+				good += words[group * POWERVR_COMPUTE_INSTANCES + word] == group;
+			if (good == POWERVR_COMPUTE_INSTANCES)
+				mask |= 1U << group;
+		}
+
+		/* The one-kernel store after it: refused when the kick locked the core up. */
+		after = 0;
+		after_error = error;
+		if (error == 0)
+			after_error = run_store_window(state, KICK_STEPS_ONE, STEPS_ONE_OFFSET, POWERVR_COMPUTE_INSTANCES, &after);
+		kern_logf("powervr: compute probes: workgroup id via coefficients %s %x (%d), %u bytes, first words %08x %08x %08x %08x, one kernel after %u/32 (%d)\n",
+			  places[i].name, mask, error, (unsigned)length,
+			  words[0], words[POWERVR_COMPUTE_INSTANCES], words[2U * POWERVR_COMPUTE_INSTANCES], words[3U * POWERVR_COMPUTE_INSTANCES],
+			  after, after_error);
+	}
+
+	/* The room goes. */
+	kern_free(dump);
+	kern_free(code);
 }
 
 /*

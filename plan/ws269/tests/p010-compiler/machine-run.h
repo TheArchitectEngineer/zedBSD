@@ -32,6 +32,7 @@ struct machine_run {
 	uint32_t (*shared_word)(const struct powervr_shader_program *program, uint32_t request, uint32_t word);
 	uint32_t (*input_word)(unsigned lane, uint32_t reg);
 	uint32_t (*iterate_word)(unsigned lane, uint32_t coefficient, unsigned flags);
+	uint32_t (*coefficient_word)(uint32_t reg);
 	void (*sample_words)(uint32_t image, uint32_t sampler, uint32_t u, uint32_t v, uint32_t result[4]);
 	uint32_t *memory;
 	uint64_t memory_base;
