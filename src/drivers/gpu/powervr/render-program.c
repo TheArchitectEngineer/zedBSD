@@ -407,7 +407,7 @@ powervr_persistent_resume_program(
  * address after the head, the last burst only what is left.  The task
  * runs one instance, so a predicate and plain branches carry the loop.
  * The plan is kept in one static block: the driver builds these
- * programs only under the GPU core's lock.
+ * programs once, while the render node starts and nothing else runs.
  *
  * Procedure referenced:
  * Mesa 26.2.5 src/imagination/pco/usclib/common.cl (load_store_sr with
