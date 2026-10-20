@@ -52,6 +52,7 @@
 #define GENERAL_LOAD_WORDS		0x800U
 #define GENERAL_DBIAS			0x900U
 #define GENERAL_SCISSORS		0xa00U
+#define GENERAL_TERMINATE_PPP		0xb00U
 #define GENERAL_BYTES			0x1000U
 
 /*
@@ -79,7 +80,7 @@
 #define DRAW_PDS_COEFFICIENT		0xb80U
 #define DRAW_STREAM_ROOM		(GENERAL_LOAD_WORDS - GENERAL_STREAM)
 
-_Static_assert(DRAW_STREAM_ROOM >= (POWERVR_RENDER_DRAWS * POWERVR_DRAW_VDM_WORDS + 1U) * 4U, "the stream's room");
+_Static_assert(DRAW_STREAM_ROOM >= (POWERVR_RENDER_DRAWS * POWERVR_DRAW_VDM_WORDS + POWERVR_RENDER_TERMINATE_STREAM_WORDS) * 4U, "the stream's room");
 _Static_assert(POWERVR_DRAW_PPP_WORDS * 4U <= DRAW_PUSH, "the primitive state block's room");
 _Static_assert(POWERVR_DRAW_PUSH_BYTES <= DRAW_BLEND - DRAW_PUSH, "the push constants' room");
 _Static_assert(POWERVR_DATA_VERTEX_DATA_MAX * 4U <= DRAW_PDS_VERTEX_CODE, "the vertex program's data room");
@@ -180,7 +181,8 @@ powervr_render_job_run(
 	uint32_t shared_registers;
 	uint32_t vertex_shareds;
 	uint32_t stream_words;
-	uint32_t terminate;
+	uint32_t terminate[POWERVR_RENDER_TERMINATE_STREAM_WORDS];
+	uint32_t terminate_state[POWERVR_RENDER_TERMINATE_STATE_WORDS];
 	int error;
 
 	/* Refuses what the job runner does not build yet. */
@@ -226,8 +228,15 @@ powervr_render_job_run(
 	}
 	if (vertex_shareds > shared_registers)
 		shared_registers = vertex_shareds;
-	terminate = POWERVR_VDM_TERMINATE;
-	put_words(memory->general->buffer, GENERAL_STREAM + stream_words * 4U, &terminate, 1);
+	/* The stream's end as Mesa ends a render: the terminate state's block, then the end. */
+	powervr_render_terminate_state(job->width, job->height, terminate_state);
+	put_words(memory->general->buffer, GENERAL_TERMINATE_PPP, terminate_state, POWERVR_RENDER_TERMINATE_STATE_WORDS);
+	error = powervr_render_terminate_stream(memory->general->address + GENERAL_TERMINATE_PPP, terminate);
+	if (error != 0) {
+		job_release(render, session, memory);
+		return error;
+	}
+	put_words(memory->general->buffer, GENERAL_STREAM + stream_words * 4U, terminate, POWERVR_RENDER_TERMINATE_STREAM_WORDS);
 
 	/* The commands: the stream, the fragment of the target's tiles with the draws' tables. */
 	memory->fragment_setup.scissor_table = memory->general->address + GENERAL_SCISSORS;

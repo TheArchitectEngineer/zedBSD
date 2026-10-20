@@ -308,7 +308,16 @@ main(void)
 		expect(device_read(stream + at) == 3U, "the draw's count");
 		at += 4U;
 	}
-	expect(device_read(stream + at) == POWERVR_VDM_TERMINATE, "the stream ends after the second draw");
+	/* The terminate state's block (three words), then the end. */
+	expect((device_read(stream + at) >> 29) == 0U && ((device_read(stream + at) >> 8) & 0xffU) == 3U, "the terminate state's block after the second draw");
+	expect(device_read(stream + at + 8U) == POWERVR_VDM_TERMINATE, "the stream ends after the terminate state");
+	{
+		uint64_t state;
+
+		state = ((uint64_t)(device_read(stream + at) & 0xffU) << 32) | device_read(stream + at + 4U);
+		expect(device_read(state) == (1U << 25), "the terminate state's header names the terminate only");
+		expect(device_read(state + 8U) == 0U, "the terminate state's render target and left clip are zero");
+	}
 	expect(ppp[1] - ppp[0] == 0x1000U, "the draws' blocks one slot apart");
 	expect(device_read(ppp[0]) != 0U, "draw 0's block is written");
 

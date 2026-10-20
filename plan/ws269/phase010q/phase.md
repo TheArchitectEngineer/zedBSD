@@ -1198,3 +1198,32 @@ csbgen（Mesa 25.0.7 の `gen_pack_header.py` の `__pvr_address`: `((addr >> sh
 - `capture2.py`（gdb）: capture.py と同じ TA の kick の後、次の ioctl で firmware の trace（debugfs）の最後の `PC address=` を取る。TA cmd の +16（`vdm_ctrl_stream_base`）から 256 byte を読み、先頭の block が PPP_STATE0/1 なら、その指す PPP state の語も `/tmp/ta3d-capture2.txt` に出す。
 - README に手順と、CONFIG_STRICT_DEVMEM の時の代替（`/proc/kcore` の PT_LOAD を使った物理 address の変換、drgn の `prog.read(…, physical=True)`、`iomem=relaxed` の限界、devmem2・dd が同じ制限を受けること）を書いた。
 - 確認: host で、偽の物理 memory の file に PC・PD・PT・page を置き、`walk.read_va` が VA 0x80000ea010 → PA 0x5010 を解き、語を正しく読むことを確かめた（scratchpad の一時の試験で、repository には入れない）。板（Debian）は未実施（Q1）。
+
+## q1484 / q1484-i01（2026-10-21）: 全 stream の末尾に Mesa の terminate state
+
+- 板 77 で、Mesa の最小の stream（terminate の PPP state を指す PPP_STATE0/1 → VDM terminate）で TA が完走した。我々の stream は、PPP state の block が無いか、三角形の state（pres_terminate 無し）だけを置いて terminate していた。
+- 直し:
+  - `render-program.c` に `powervr_render_terminate_state`（3 語: header は pres_terminate だけ、TERMINATE0 は clip の right・bottom を 32 px の block 数 −1、TERMINATE1 は 0）と `powervr_render_terminate_stream`（PPP_STATE0（word count 3 と上位 byte）・PPP_STATE1（下位の word）・terminate）を足した。Mesa の `pvr_framebuffer_create_ppp_state` と `pvr_sub_cmd_gfx_build_terminate_ctrl_stream` の形。
+  - 三角形の stream（`powervr_render_triangle_vdm`、VDM の語数を 10 から 12 に）の末尾をこの 3 語にした。terminate state の address は `triangle.terminate_address`。
+  - job の道（`render-job.c`。vk の graphics もここを通る）の stream の末尾もこの 3 語にした。terminate state は general の +0xb00 に置き、job の幅と高さを使う。
+  - render check の最初の render（`check_empty`）は、この末尾の 3 語だけの stream にした。`POWERVR_RENDER_CHECK_STATE_FIRST` とその 0・1 の分岐は消した。log の名前は `terminate-state`。
+- 我々の PPP state の header と Mesa の対比（三角形の block、19 語。header は 0x007f05c7）:
+
+  | bit | pres_ | 我々の三角形 | Mesa の draw（`pvr_emit_ppp_state`・clear の template） | Mesa の terminate state |
+  | --- | --- | --- | --- | --- |
+  | 0〜2 | ispctl、ispctl_fa、ispctl_fb | ○ | ○ | — |
+  | 6〜8 | pds_state_ptr0〜2 | ○ | ○ | — |
+  | 10 | region_clip | ○ | ○ | — |
+  | 16 | wclamp | ○ | ○ | — |
+  | 17 | outselects | ○ | ○ | — |
+  | 18〜20 | varying_word0〜2 | ○ | ○ | — |
+  | 21 | ppp_ctrl | ○ | ○ | — |
+  | 22 | stream_out_size | ○ | ○ | — |
+  | 25 | terminate | — | — | ○（TERMINATE0・1 の 2 語が続く） |
+
+  Mesa も draw の state に pres_terminate を立てない。terminate は render の最後の、terminate state の block だけが持つ。我々に欠けていたのは、この最後の block である。
+- 試験:
+  - p010 の render-host-test の三角形の stream の golden を新しい末尾（0x00000300・0x81234600・0xc0000000）に直し、64×64 の terminate state（0x02000000・0x00040001・0）を足した（30/30）。
+  - job-host-test の stream の末尾の確認を、terminate state の block と中身の確認に直した（29/29）。
+  - p010 の他の試験と p009 の executor（502/502）は全部 PASS。
+- 確認: RISC-V の self-test の build で warning 0。板は未実施（Q1）。

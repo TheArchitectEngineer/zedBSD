@@ -166,6 +166,10 @@
 #define VDM_VDM_STATE		2U
 #define VDM_INDEX_LIST		3U
 #define VDM_TERMINATE		6U
+#define TERMINATE_PRESENT	(1U << 25)
+#define TERMINATE_BLOCK_PIXELS	32U
+#define TERMINATE_RIGHT_SHIFT	18U
+#define TERMINATE_CLIP_MASK	0x1ffU
 #define VDM_DATA_PRESENT	(1U << 27)
 #define VDM_OTHER_PRESENT	(1U << 26)
 #define VDM_COUNT_PRESENT	(1U << 27)
@@ -899,10 +903,69 @@ powervr_render_triangle_ppp(
 }
 
 /*
+ * Fills a render's terminate state: the header with only the terminate
+ * present, the clip's right and bottom in 32-pixel blocks less one, and
+ * render target 0 with the clip's left at 0.
+ *
+ * Procedure referenced:
+ * Mesa 25.0.0 src/imagination/vulkan/pvr_device.c
+ * (pvr_framebuffer_create_ppp_state).
+ * Values referenced:
+ * Mesa 25.0.7 src/imagination/csbgen/rogue_ppp.xml (STATE_HEADER
+ * pres_terminate bit 25; STATE_TERMINATE0 clip_right bits 18..26 and
+ * clip_bottom 0..8, BLOCK_SIZE_IN_PIXELS 32; STATE_TERMINATE1).
+ */
+void
+powervr_render_terminate_state(
+	uint32_t width,
+	uint32_t height,
+	uint32_t state[POWERVR_RENDER_TERMINATE_STATE_WORDS])
+{
+	uint32_t right;
+	uint32_t bottom;
+
+	/* The clip in whole 32-pixel blocks, less one. */
+	right = (width + TERMINATE_BLOCK_PIXELS - 1U) / TERMINATE_BLOCK_PIXELS - 1U;
+	bottom = (height + TERMINATE_BLOCK_PIXELS - 1U) / TERMINATE_BLOCK_PIXELS - 1U;
+	state[0] = TERMINATE_PRESENT;
+	state[1] = ((right & TERMINATE_CLIP_MASK) << TERMINATE_RIGHT_SHIFT) | (bottom & TERMINATE_CLIP_MASK);
+	state[2] = 0;
+}
+
+/*
+ * Packs the end of a render's vertex control stream: the primitive state
+ * block naming the terminate state, then the stream's end.
+ *
+ * Procedure referenced:
+ * Mesa 25.0.0 src/imagination/vulkan/pvr_cmd_buffer.c
+ * (pvr_sub_cmd_gfx_build_terminate_ctrl_stream and
+ * pvr_cmd_buffer_emit_ppp_state: PPP_STATE0 with the word count and the
+ * address's high byte, PPP_STATE1 its low word, then the terminate).
+ */
+int
+powervr_render_terminate_stream(
+	uint64_t state_address,
+	uint32_t words[POWERVR_RENDER_TERMINATE_STREAM_WORDS])
+{
+	/* Refuses a misaligned or out-of-range state. */
+	if ((state_address & 3U) != 0 || state_address >= (1ULL << 40))
+		return EINVAL;
+
+	/* The block, then the end. */
+	words[0] = (VDM_PPP_STATE << VDM_BLOCK_SHIFT) | (POWERVR_RENDER_TERMINATE_STATE_WORDS << 8) | (uint32_t)((state_address >> 32) & 0xffU);
+	words[1] = (uint32_t)state_address & ~3U;
+	words[2] = VDM_TERMINATE << VDM_BLOCK_SHIFT;
+
+	/* Succeeded: the three words. */
+	return 0;
+}
+
+/*
  * Packs the test triangle's vertex control stream: the primitive state
  * block, the vertex state (its data sequencer program and the sizes of
  * a four-word output vertex of three input words), a list of three
- * vertices without an index buffer, and the end of the stream.
+ * vertices without an index buffer, and the stream's end (the terminate
+ * state's block, then the end).
  *
  * Procedure referenced:
  * Mesa 26.2.5 src/imagination/vulkan/rogue/pvr_clear.c
@@ -925,6 +988,7 @@ powervr_render_triangle_vdm(
 	uint32_t temps;
 	uint32_t data;
 	unsigned index;
+	int error;
 
 	/* Refuses missing input or result, a misaligned block and misaligned programs. */
 	if (triangle == NULL || words == NULL)
@@ -957,8 +1021,10 @@ powervr_render_triangle_vdm(
 	words[index++] = (VDM_INDEX_LIST << VDM_BLOCK_SHIFT) | VDM_COUNT_PRESENT | VDM_TRIANGLE_LIST;
 	words[index++] = TRIANGLE_VERTICES;
 
-	/* The end of the stream. */
-	words[index++] = VDM_TERMINATE << VDM_BLOCK_SHIFT;
+	/* The end of the stream: the terminate state, then the end. */
+	error = powervr_render_terminate_stream(triangle->terminate_address, &words[index]);
+	if (error != 0)
+		return error;
 
 	/* Succeeded: the stream, all POWERVR_RENDER_VDM_WORDS words. */
 	return 0;
