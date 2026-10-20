@@ -124,7 +124,7 @@ design-p010.md §9 の D-P1〜D-P7（版 2）: D-P1 free list は global 固定 
   - 最初の 3D の job の後は立ったままになるが、害は無い（q1477）。
 - **host から読む register**: BIF・CLK_CTRL・CAT_BASE などは 0 に見える。
   - Linux でも同じで、正常。host の probe では判定できない（板 55、q1460）。
-- **trace の decode**: `plan/ws269/tests/tools/fw-trace-decode.py <mainline の pvr_rogue_fwif_sf.h> <dmesg>` を使う（sfdec2.py を整えた写し）。
+- **trace の decode**: `plan/tools/vf2/sfdec.py <mainline の pvr_rogue_fwif_sf.h> <dmesg>` を使う（Master の Tools に登録）。
   - id は number | group<<12 | 引数の数<<16 | 0x70000000。
 - **context reset の通知（105）**: その context の session だけを lost にする。
   - device を lost にするのは、firmware の fault（112）、restart の要求、restart の失敗だけ（q1450、1511943ec、板 81）。
@@ -213,7 +213,7 @@ design-p010.md §9 の D-P1〜D-P7（版 2）: D-P1 free list は global 固定 
   - SSH で /boot/boot0/vmunix を置き換え、読み戻して確かめる。
   - SwitchBot の plug（`plan/tools/switchbot.py`）で電源を入れ直す。
   - dmesg の ring は 32 KiB なので、起動の間に繰り返し読む。
-  - 道具は `plan/ws269/tests/tools/vf2-run.sh VMUNIX OUTDIR`。
+  - 道具は `VF2_HOST=user@host VF2_PASSWORD=… plan/tools/vf2/run.sh VMUNIX OUTDIR`（Master の Tools）。
     - host と password は環境変数 VF2_HOST・VF2_PASSWORD で渡す。
     - Master の Tools への登録は Q1。
 - **診断の switch**:
