@@ -308,3 +308,19 @@ Keiland が使い、vkmatrix 15/15・gpu-selftest 13/13 で確かめていない
 - d23（2eb705201、P2 の vblank の整理 bb98e59d5）: `dc8200: vblank 470`（数え続ける）、`frames scanned directly`。login の直後に lockup 1 回。
 - **lockup の再現（2026-10-21 09:1x、47d26b51a、P1 の b07ea4a73）**: vkmatrix load-1080-textured は単独で PASS。draw の上限の sysctl（`hw.gpu.powervr.stages=N`、試験だけの一時の例外、Q1 承認、原因が分かったら外す）と `service restart greeter`（autologin し直す）での二分探索は決まらなかった。**3 つの vkmatrix を別 process で同時に流すと load-1080-textured が context reset で device lost（`context 0x81 reason 1 dm 3`）** → 複数の session が同時に 3D を使うと lockup。desktop の login の直後（compositor・settings・files が同時に描く）に集中する事と合う。P1 に session 間で共有している物（region header の固定の window、free list、固定の区画など）の調査を依頼。
 - d24（a687d788b、P1 f9aa75bc9 で firmware の context switch を off、mainline と同じ flags）: login までに reset 3、同時の 3 つの vkmatrix を 3 回 → 通過 2・2・1、reset 3→7。context switch は原因でない。P1 は session 間で共有している物へ（q1530-i02）。P2 の SD の直し（eacefb94e、recovery の全 reset・5 回の retry・1 block ずつの fallback）を merge。
+
+### q1532-i01（2026-10-21、P2）: context reset の時の firmware の記録
+
+- 新しい file `src/drivers/gpu/powervr/firmware-hwr.c` の `powervr_hwr_dump`（weak）。`CONFIG_POWERVR_HWR_DUMP := y` の kernel にだけ入る（`platform/riscv64/vmunix.mk`）。
+  desktop の試験の config `plan/ws270/tests/config-visionfive2-desktop.mk` で on にした。
+- 出す物（Linux v7.3 の rogue_fwif_hwrinfobuf の並び）:
+  - HWR の counter と write index;
+  - data master ごとの locked up・overran・recovered・false の数（0 でない物）;
+  - 埋まっている各 record: number・dm・type（ROGUE_HWRTYPE）・flags・event status・frame・active HWRT data・core、hwr_data の 4 word（BIF・MMU・poll の情報）、kick・reset の開始と終わり・free list・timer の時刻;
+  - trace の最後の 256 word（`powervr: dump: trace` の形で、`plan/tools/vf2/sfdec.py` がそのまま読める）;
+  - reset された context の firmware の record（render・transfer・compute の別、raw、最大 96 word）。
+- 呼び出し: render-queue.c の `handle_notice` の、名指しの session の block で `powervr_session_describe_job` の直後に 3 行（`if (powervr_hwr_dump != NULL) powervr_hwr_dump(...)`）。
+- 確認:
+  - desktop の config で VF2 の vmunix は rc 0、warning 0（firmware-hwr.c が build に入る）。
+  - selftest の config（switch 無し）でも rc 0、warning 0。
+  - 板は未実施。
