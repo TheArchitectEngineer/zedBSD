@@ -861,7 +861,12 @@ fill_records(
 	 * set for the VisionFive 2).
 	 */
 	flags |= POWERVR_FLAG_POW_RASCALDUST;
+
+	/* The context switch as the vendor driver sets it: the medium profile, every data master's switch on. */
+	flags |= POWERVR_FLAG_CSW_PROFILE_MEDIUM;
 	powervr_object_put32(&firmware->system_data, POWERVR_SYSTEM_DATA_FLAGS, flags);
+	powervr_object_put32(&firmware->os_data, POWERVR_OS_DATA_CONFIG_FLAGS, POWERVR_OS_FLAGS_CSW_ALL);
+	kern_logf("powervr: firmware: system flags 0x%08x, os flags 0x%08x, core clock %u Hz\n", (unsigned)flags, (unsigned)POWERVR_OS_FLAGS_CSW_ALL, (unsigned)core->core_rate);
 
 	/*
 	 * The runtime configuration: the core clock's real rate, every
