@@ -44,6 +44,10 @@
  *                           a LINEAR R8G8B8A8 image of 1180x8 and 65x3
  *                           texels, written through its mapping, sampled
  *                           (nearest) over a quad
+ *   copy-1080, copy-65      buffers of exactly 1920x1080 and 65x3 RGBA8
+ *                           texels copied into an OPTIMAL image and back:
+ *                           a transfer that touches past either buffer
+ *                           faults on the board
  *
  * It prints one line a case and a total:
  *
@@ -161,6 +165,8 @@ struct vkmatrix {
 	int texture_linear;
 	uint32_t texture_width;
 	uint32_t texture_height;
+	uint32_t wide_width;
+	uint32_t wide_height;
 	VkRenderPass pipeline_pass;
 	VkImage wide_image;
 	VkDeviceMemory wide_memory;
@@ -237,6 +243,8 @@ static VkResult case_clear_128(struct vkmatrix *run);
 static VkResult case_sample_linear(struct vkmatrix *run, uint32_t width, uint32_t height);
 static VkResult case_sample_linear_wide(struct vkmatrix *run);
 static VkResult case_sample_linear_odd(struct vkmatrix *run);
+static VkResult case_copy_1080(struct vkmatrix *run);
+static VkResult case_copy_65(struct vkmatrix *run);
 
 /* Every case, in the order they run. */
 static const struct vkmatrix_case cases[] = {
@@ -263,6 +271,8 @@ static const struct vkmatrix_case cases[] = {
 	{ "clear-128", case_clear_128 },
 	{ "sample-linear-1180", case_sample_linear_wide },
 	{ "sample-linear-65", case_sample_linear_odd },
+	{ "copy-1080", case_copy_1080 },
+	{ "copy-65", case_copy_65 },
 };
 
 /* The clear colour of every case's first pass: dark blue. */
@@ -312,6 +322,8 @@ main(
 		run.texture_linear = 0;
 		run.texture_width = 0;
 		run.texture_height = 0;
+		run.wide_width = VKMATRIX_SIZE;
+		run.wide_height = VKMATRIX_SIZE;
 		run.pipeline_pass = VK_NULL_HANDLE;
 		status = cases[index].run(&run);
 		ran++;
@@ -2565,8 +2577,8 @@ wide_image(
 	image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 	image_info.imageType = VK_IMAGE_TYPE_2D;
 	image_info.format = format;
-	image_info.extent.width = VKMATRIX_SIZE;
-	image_info.extent.height = VKMATRIX_SIZE;
+	image_info.extent.width = run->wide_width;
+	image_info.extent.height = run->wide_height;
 	image_info.extent.depth = 1;
 	image_info.mipLevels = 1;
 	image_info.arrayLayers = 1;
@@ -2658,8 +2670,8 @@ wide_copy_out(
 	memset(&copy, 0, sizeof(copy));
 	copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	copy.imageSubresource.layerCount = 1;
-	copy.imageExtent.width = VKMATRIX_SIZE;
-	copy.imageExtent.height = VKMATRIX_SIZE;
+	copy.imageExtent.width = run->wide_width;
+	copy.imageExtent.height = run->wide_height;
 	copy.imageExtent.depth = 1;
 	vkCmdCopyImageToBuffer(run->command, run->wide_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, run->wide_download, 1, &copy);
 
@@ -2728,9 +2740,9 @@ wide_compare(
 
 	/* The count of texels that differ, the first of them, the word positions that differ. */
 	bad = 0;
-	first = VKMATRIX_PIXELS;
+	first = run->wide_width * run->wide_height;
 	positions = 0;
-	for (texel = 0; texel < VKMATRIX_PIXELS; texel++) {
+	for (texel = 0; texel < run->wide_width * run->wide_height; texel++) {
 		/* A texel that matches says nothing. */
 		differs = memcmp(seen + texel * texel_bytes, wanted + texel * texel_bytes, texel_bytes);
 		if (differs == 0)
@@ -2758,7 +2770,7 @@ wide_compare(
 
 	/* The first bad texel's words, seen/wanted, then the counts. */
 	used = (size_t)snprintf(run->reason, sizeof(run->reason), "%u bad, words 0x%x, (%u,%u)",
-				(unsigned)bad, (unsigned)positions, (unsigned)(first % VKMATRIX_SIZE), (unsigned)(first / VKMATRIX_SIZE));
+				(unsigned)bad, (unsigned)positions, (unsigned)(first % run->wide_width), (unsigned)(first / run->wide_width));
 	for (word = 0; word < texel_bytes / 4U && used < sizeof(run->reason); word++) {
 		memcpy(&got, seen + first * texel_bytes + word * 4U, 4);
 		memcpy(&want, wanted + first * texel_bytes + word * 4U, 4);
@@ -2902,17 +2914,17 @@ case_copy_wide(
 	status = wide_image(run, format, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
 	if (status != VK_SUCCESS)
 		return status;
-	status = vkmatrix_buffer(run, (VkDeviceSize)VKMATRIX_PIXELS * texel_bytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, &run->wide_upload, &run->wide_upload_memory, &mapped);
+	status = vkmatrix_buffer(run, (VkDeviceSize)run->wide_width * run->wide_height * texel_bytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, &run->wide_upload, &run->wide_upload_memory, &mapped);
 	if (status != VK_SUCCESS)
 		return status;
 	upload = mapped;
-	status = vkmatrix_buffer(run, (VkDeviceSize)VKMATRIX_PIXELS * texel_bytes, VK_BUFFER_USAGE_TRANSFER_DST_BIT, &run->wide_download, &run->wide_download_memory, &mapped);
+	status = vkmatrix_buffer(run, (VkDeviceSize)run->wide_width * run->wide_height * texel_bytes, VK_BUFFER_USAGE_TRANSFER_DST_BIT, &run->wide_download, &run->wide_download_memory, &mapped);
 	if (status != VK_SUCCESS)
 		return status;
 	download = mapped;
 
 	/* Every byte different (any bit pattern: the copy moves the words as they are), the readback filled otherwise. */
-	for (byte = 0; byte < VKMATRIX_PIXELS * texel_bytes; byte++) {
+	for (byte = 0; byte < run->wide_width * run->wide_height * texel_bytes; byte++) {
 		upload[byte] = (uint8_t)(byte * 7U + byte / 251U);
 		download[byte] = 0xa5;
 	}
@@ -2927,8 +2939,8 @@ case_copy_wide(
 	memset(&copy, 0, sizeof(copy));
 	copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	copy.imageSubresource.layerCount = 1;
-	copy.imageExtent.width = VKMATRIX_SIZE;
-	copy.imageExtent.height = VKMATRIX_SIZE;
+	copy.imageExtent.width = run->wide_width;
+	copy.imageExtent.height = run->wide_height;
 	copy.imageExtent.depth = 1;
 	vkCmdCopyBufferToImage(run->command, run->wide_upload, run->wide_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
 	wide_barrier(run, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
@@ -3482,4 +3494,24 @@ linear_check(
 		 (unsigned)bad, (unsigned)first_x, (unsigned)first_y, (unsigned)first_seen, (unsigned)layout->rowPitch);
 	run->failed_call = run->reason;
 	return VK_ERROR_UNKNOWN;
+}
+
+/* copy-1080: a 1920x1080 RGBA8 image (1080 not a whole number of tiles) through buffers of exactly its size. */
+static VkResult
+case_copy_1080(
+	struct vkmatrix *run)
+{
+	run->wide_width = 1920;
+	run->wide_height = 1080;
+	return case_copy_wide(run, VK_FORMAT_R8G8B8A8_UNORM, 4);
+}
+
+/* copy-65: a 65x3 RGBA8 image (an odd row smaller than a tile) through buffers of exactly its size. */
+static VkResult
+case_copy_65(
+	struct vkmatrix *run)
+{
+	run->wide_width = 65;
+	run->wide_height = 3;
+	return case_copy_wide(run, VK_FORMAT_R8G8B8A8_UNORM, 4);
 }

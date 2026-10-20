@@ -254,3 +254,19 @@ Keiland が使い、vkmatrix 15/15・gpu-selftest 13/13 で確かめていない
 - d8（q1526-i02、1399a25da）: `visionfive2: ccache at 0x2010000, cache maintenance on`、present 11.7 ms。ユーザー（HDMI）「キャッシュの挙動が消えました。」
 - d9（P2 の pc・fault の記述、9f0fdcf43）: `fault 0x8009ae2fc0 … above handle 0x80092f9000..0x8009ae2000 (8294400 bytes, past end by 4032) maker run_stream`、`transfer: fail` → 1920x1080 の linear の swapchain の image の末尾を transfer が越えて読む（16/32 行の tile）。P2 q1523-i05（7b97d66a5）で linear の image の memory を 32 行の倍数に。
 - **d10（P1 q1525 の linear の直接 scanout、3e530b10a、2026-10-21 07:37）: Keiland の desktop に Settings（welcome）と Terminal の window が表示され、terminal の prompt `kei@kei:/tmp$` が出た（build/review/vf2-desktop/shot10.png・shot11.png）。context reset 0。KWL PERF rec: present 1〜3 ms（前 10 ms）、copied=0、submit は 15〜300 ms（重い frame で遅い）。**
+
+### q1523-i06（2026-10-21、P2）: transfer の座標の clamp と端数の大きさの試験
+
+- transfer の copy と blit の program は、FMAD で作った source の座標を MINMAX（F32）で clamp する。
+  範囲は source の矩形の端の texel の中心で、x は [x+0.5, x+w−0.5]、y も同じ。
+  - tile の全体を shade しても、destination の矩形の外の pixel が、linear の source（buffer・linear image）の memory の外を読まない。
+  - 境界の値は shared の 12〜15 に置き、`POWERVR_TRANSFER_SHARED_WORDS` は 12 から 16 にした。program の中で temp の 8〜11 に移してから使う。
+  - destination の側の書き込みは、従来どおり PBE の clip（矩形の中だけ）に任せる。
+- vkmatrix: copy-1080（1920x1080 の RGBA8 を、ちょうどの大きさの buffer から OPTIMAL へ入れて戻す）と copy-65（65x3）を足した。
+  wide の case の大きさは `wide_width`・`wide_height` から取るようにした（既定は 64x64）。
+- 確認:
+  - p010 の host 試験は 0 failed（copy program の組み直しの期待に、limit の移動と MINMAX の 4 つを足した）。
+  - p009 は 0・1 とも 505 passed。
+  - vkmatrix は lavapipe で 25/25。
+  - VF2 の vmunix と bin/vkmatrix は rc 0、warning 0。
+  - 板は未実施（MINMAX の transfer での実機の動作も未確認）。
