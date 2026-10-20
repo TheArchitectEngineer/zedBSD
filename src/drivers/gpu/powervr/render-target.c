@@ -916,6 +916,7 @@ cleanup_object(
 	uint64_t deadline;
 	uint32_t answer;
 	unsigned tries;
+	uint64_t now;
 	int error;
 
 	/* The command, and when asking again stops. */
@@ -941,9 +942,10 @@ cleanup_object(
 
 		/* Still busy: out of time, or a pause before asking again. */
 		error = EBUSY;
-		if (sched_ticks() >= deadline)
+		now = sched_ticks();
+		if (now >= deadline)
 			break;
-		sched_sleep(sched_ticks() + ms_ticks(CLEANUP_PAUSE_MS));
+		sched_sleep(now + ms_ticks(CLEANUP_PAUSE_MS));
 	}
 
 	/* The object stayed busy. */

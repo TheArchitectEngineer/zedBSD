@@ -25,7 +25,7 @@
  * under a limit of 30 seconds).  present first has vkdemo render its
  * frame at 0 ms offscreen to a PPM file and checks it: the corners the
  * clear colour 101828 exactly, the centre within 24 a channel of e06895
- * (the frame llvmpipe renders, plan/ws269/phase010k2); then runs vkdemo
+ * (the frame llvmpipe renders); then runs vkdemo
  * on the display for four seconds, all under the same limit.  It needs
  * depth, as vkdemo renders with a depth attachment, and is skipped with
  * depth's name until depth passes.
@@ -541,12 +541,16 @@ run_program(
 	size_t capacity)
 {
 	char *arguments[3];
+	int status;
 
 	/* The program's name, its argument, the end. */
 	arguments[0] = (char *)path;
 	arguments[1] = (char *)argument;
 	arguments[2] = NULL;
-	return run_program_list(path, arguments, line, capacity);
+	status = run_program_list(path, arguments, line, capacity);
+
+	/* Succeeded: its exit status. */
+	return status;
 }
 
 /*

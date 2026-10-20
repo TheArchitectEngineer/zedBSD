@@ -23,12 +23,6 @@
  * first submission and reused by each: the earlier one has finished.
  * When a submission does not finish in time, the core may still read and
  * write that memory, so it stays with the core (abandoned).
- *
- * Procedure referenced: zedBSD src/drivers/gpu/powervr/compute-check.c
- * (the places of the programs, the kick program per kernel, the fence
- * kernel and the end of the stream, the compute command and its wait)
- * and src/drivers/gpu/bcm2711/vulkan-queue.c and vulkan-sync.c (the wire
- * of each command).
  */
 
 #include <stdbool.h>
@@ -141,6 +135,10 @@ static uint32_t instance_jobs(const struct powervr_vk_command_buffer *command, u
 /*
  * Runs a submission, fence or semaphore command; *handled stays clear for
  * another handler's opcode.
+ *
+ * Procedure referenced:
+ * zedBSD src/drivers/gpu/bcm2711/vulkan-queue.c and vulkan-sync.c (the
+ * wire of each command).
  */
 int
 powervr_vk_queue_route(
@@ -938,7 +936,7 @@ build_kernel(
 	/*
 	 * The program that issues it, in the slot after the fence's.  The
 	 * temporaries are counted in twos: if the core counts in fours, that
-	 * only gives more than the program uses (plan/ws269 p008).
+	 * only gives more than the program uses.
 	 */
 	error = powervr_compute_temporaries_field(temps, 2, &field);
 	if (error != 0)
@@ -1032,6 +1030,11 @@ put_word(
  * Ends the stream and has the core run it: one compute command with the
  * session's next timeline value, then a bounded wait for it.  A wait that
  * runs out abandons the executor's memory to the core.
+ *
+ * Procedure referenced:
+ * zedBSD src/drivers/gpu/powervr/compute-check.c (the places of the
+ * programs, the kick program per kernel, the fence kernel and the end of
+ * the stream, the compute command and its wait).
  */
 static int
 run(

@@ -130,6 +130,7 @@ powervr_target_lay_out(
 	uint32_t covered_x;
 	uint32_t covered_y;
 	uint32_t tail_edge;
+	uint32_t tail_edge_y;
 	uint32_t table_pages;
 	uint32_t directory_pages;
 	uint32_t catalogue_pages;
@@ -164,8 +165,9 @@ powervr_target_lay_out(
 
 	/* The tail pointer cache: one pointer per tile group of a square of a power of two tiles. */
 	tail_edge = next_power_of_two(covered_x);
-	if (next_power_of_two(covered_y) > tail_edge)
-		tail_edge = next_power_of_two(covered_y);
+	tail_edge_y = next_power_of_two(covered_y);
+	if (tail_edge_y > tail_edge)
+		tail_edge = tail_edge_y;
 	tail_used = (uint64_t)tail_edge * tail_edge / (TILE_GROUP_EDGE * TILE_GROUP_EDGE) * TAIL_POINTER_BYTES;
 	layout->tail_used_bytes = (uint32_t)tail_used;
 	layout->tail_bytes = align_up(tail_used, TAIL_CACHE_LINE);
