@@ -286,6 +286,7 @@ static void run_compiled_fill(struct check_state *state, int dumps, unsigned gro
 static int compile_fill(struct powervr_shader_workspace *workspace, struct powervr_shader_program *program, uint8_t *code, uint64_t address, unsigned *field);
 static void run_cf0_probe(struct check_state *state);
 static int fresh_session(struct check_state *state);
+static void run_rule_probes(struct check_state *state);
 static int run_prefixes(struct check_state *state, const struct shader_backend *backend);
 static int dump_append(struct shader_backend *dump, unsigned kind, unsigned destination, unsigned source_0_bank, unsigned source_0, unsigned source_1, unsigned source_2, uint32_t immediate);
 static int dump_program(const struct shader_backend *backend, struct shader_backend *dump, unsigned keep, uint64_t address, uint8_t *code, size_t room, size_t *length);
@@ -424,6 +425,10 @@ powervr_compute_check(
 	/* The register-window probe only when asked; the hand-written workgroup id probe (sessions of its own). */
 	if (CHECK_DIAGNOSTICS)
 		run_workgroup_probe(&state);
+
+	/* The shading cluster rules the compiler kept, each on the three kernels, when diagnosing, on a fresh session. */
+	if (CHECK_DIAGNOSTICS && fresh_session(&state) == 0)
+		run_rule_probes(&state);
 
 	/* The compiled fill's own move from the coefficients over four workgroups, only when asked, on a fresh session. */
 	if (CHECK_LOCKUP && fresh_session(&state) == 0)
@@ -1710,6 +1715,276 @@ run_workgroup_probe(
 
 	/* The room goes. */
 	kern_free(dump);
+	kern_free(code);
+}
+
+/*
+ * The rule probes: whether the shading cluster rules the board seemed to
+ * show while the workgroup program was not Mesa's (before vf2-dmesg87)
+ * hold with the three kernels and Mesa's program.  Each is one program
+ * of groups in the order listed (no spacing added), one workgroup; its
+ * words at RULE_OFFSET, lane L at +L*4.
+ */
+#define RULE_OFFSET		0x1e0000U
+#define RULE_GROUPS		128U
+#define RULE_TEMPORARIES	32U
+#define RULE_SETTLE		8U
+#define RULE_FILLER		0xdeaddeadU
+
+/* The rules. */
+enum rule_kind {
+	RULE_ADD64_IN_PLACE = 0,
+	RULE_STORE_DATA_APART,
+	RULE_MADD_SOURCE_NEXT,
+	RULE_MADD_SPECIAL,
+	RULE_MADD_RESULT_NEXT,
+	RULE_KINDS
+};
+
+/* A rule probe's program being built. */
+struct rule_program {
+	struct shader_machine_operation operations[RULE_GROUPS];
+	unsigned count;
+	int error;
+};
+
+/* Appends one operation: a temporary destination (a pair for the 64-bit add) and up to three sources. */
+static struct shader_machine_operation *
+rule_add(
+	struct rule_program *program,
+	unsigned kind,
+	unsigned destination,
+	unsigned source_0_bank,
+	unsigned source_0,
+	unsigned source_1_bank,
+	unsigned source_1,
+	unsigned source_2_bank,
+	unsigned source_2,
+	uint32_t immediate)
+{
+	struct shader_machine_operation *operation;
+	unsigned index;
+
+	/* Room for it. */
+	if (program->count >= RULE_GROUPS) {
+		program->error = ENOSPC;
+		return NULL;
+	}
+	operation = &program->operations[program->count++];
+	kern_memset(operation, 0, sizeof(*operation));
+	operation->kind = (uint8_t)kind;
+	operation->condition = POWERVR_USC_RUN_ENABLED;
+	operation->immediate = immediate;
+	operation->destination[0].bank = destination != DUMP_NONE ? POWERVR_USC_BANK_TEMPORARY : 0xff;
+	operation->destination[0].index = (uint16_t)(destination != DUMP_NONE ? destination : 0);
+	operation->destination[1].bank = 0xff;
+	if (kind == MACHINE_ADD64) {
+		operation->destination[1].bank = POWERVR_USC_BANK_TEMPORARY;
+		operation->destination[1].index = (uint16_t)(destination + 1U);
+	}
+	for (index = 0; index < 4; index++)
+		operation->source[index].bank = 0xff;
+	if (source_0 != DUMP_NONE) {
+		operation->source[0].bank = (uint8_t)source_0_bank;
+		operation->source[0].index = (uint16_t)source_0;
+	}
+	if (source_1 != DUMP_NONE) {
+		operation->source[1].bank = (uint8_t)source_1_bank;
+		operation->source[1].index = (uint16_t)source_1;
+	}
+	if (source_2 != DUMP_NONE) {
+		operation->source[2].bank = (uint8_t)source_2_bank;
+		operation->source[2].index = (uint16_t)source_2;
+	}
+
+	/* Succeeded: the operation, for its other fields. */
+	return operation;
+}
+
+/* Appends RULE_SETTLE groups that move s0 into r30: time between the set-up and the rule. */
+static void
+rule_settle(
+	struct rule_program *program)
+{
+	unsigned index;
+
+	for (index = 0; index < RULE_SETTLE; index++)
+		(void)rule_add(program, MACHINE_MOVE_SPECIAL, 30, POWERVR_USC_BANK_SPECIAL, 0, 0, DUMP_NONE, 0, DUMP_NONE, 0);
+}
+
+/*
+ * Builds one rule probe: r0 the lane, r12:r13 the lane's word (r16, r17
+ * the base, r10 the lane times four, r11 two); the rule's groups; then,
+ * settled, the result moved into r14 (right after the address pair) and
+ * stored, its wait and the end.  The store-data rule stores r20 with
+ * r14 holding something else.
+ */
+static int
+rule_build(
+	struct rule_program *program,
+	unsigned kind,
+	uint64_t address,
+	uint8_t *code,
+	size_t room,
+	size_t *length)
+{
+	const unsigned T = POWERVR_USC_BANK_TEMPORARY;
+	const unsigned S = POWERVR_USC_BANK_SPECIAL;
+	struct powervr_usc_group *groups;
+	unsigned result;
+	unsigned index;
+	int error;
+
+	/* The lane, its word's address, settled. */
+	kern_memset(program, 0, sizeof(*program));
+	(void)rule_add(program, MACHINE_MOVE_SPECIAL, 0, S, DUMP_SPECIAL_INSTANCE, 0, DUMP_NONE, 0, DUMP_NONE, 0);
+	(void)rule_add(program, MACHINE_IMMEDIATE, 11, 0, DUMP_NONE, 0, DUMP_NONE, 0, DUMP_NONE, 2);
+	(void)rule_add(program, MACHINE_IMMEDIATE, 16, 0, DUMP_NONE, 0, DUMP_NONE, 0, DUMP_NONE, (uint32_t)address);
+	(void)rule_add(program, MACHINE_IMMEDIATE, 17, 0, DUMP_NONE, 0, DUMP_NONE, 0, DUMP_NONE, (uint32_t)(address >> 32));
+	(void)rule_add(program, MACHINE_IMMEDIATE, 1, 0, DUMP_NONE, 0, DUMP_NONE, 0, DUMP_NONE, 3);
+	(void)rule_add(program, MACHINE_IMMEDIATE, 2, 0, DUMP_NONE, 0, DUMP_NONE, 0, DUMP_NONE, 5);
+	(void)rule_add(program, MACHINE_IMMEDIATE, 5, 0, DUMP_NONE, 0, DUMP_NONE, 0, DUMP_NONE, 0);
+	(void)rule_add(program, MACHINE_IMMEDIATE, 6, 0, DUMP_NONE, 0, DUMP_NONE, 0, DUMP_NONE, 0x100);
+	rule_settle(program);
+	(void)rule_add(program, MACHINE_SHIFT, 10, T, 0, T, 11, 0, DUMP_NONE, 0);
+	rule_settle(program);
+	(void)rule_add(program, MACHINE_ADD64, 12, T, 16, T, 17, T, 10, 0);
+	rule_settle(program);
+
+	/* The rule. */
+	result = 4;
+	switch (kind) {
+	case RULE_ADD64_IN_PLACE:
+		/* r4 the lane times four, then r4:r5 = (r4, r5) + 0x100 in place: 4L + 0x100. */
+		(void)rule_add(program, MACHINE_MOVE, 4, T, 10, 0, DUMP_NONE, 0, DUMP_NONE, 0);
+		rule_settle(program);
+		(void)rule_add(program, MACHINE_ADD64, 4, T, 4, T, 5, T, 6, 0);
+		break;
+	case RULE_STORE_DATA_APART:
+		/* r20 0x1234 for every lane, r14 (right after the address pair) another value; the store names r20. */
+		(void)rule_add(program, MACHINE_IMMEDIATE, 20, 0, DUMP_NONE, 0, DUMP_NONE, 0, DUMP_NONE, 0x1234);
+		(void)rule_add(program, MACHINE_IMMEDIATE, 14, 0, DUMP_NONE, 0, DUMP_NONE, 0, DUMP_NONE, 0xbad0);
+		result = 20;
+		break;
+	case RULE_MADD_SOURCE_NEXT:
+		/* r4 = 3L + 5, its multiplier rewritten by the very next group. */
+		(void)rule_add(program, MACHINE_INTEGER, 4, T, 0, T, 1, T, 2, 0);
+		(void)rule_add(program, MACHINE_IMMEDIATE, 1, 0, DUMP_NONE, 0, DUMP_NONE, 0, DUMP_NONE, 7);
+		break;
+	case RULE_MADD_SPECIAL:
+		/* r4 = L * s1 + s5 (the constants 1 and 5): L + 5. */
+		(void)rule_add(program, MACHINE_INTEGER, 4, T, 0, S, 1, S, 5, 0);
+		break;
+	case RULE_MADD_RESULT_NEXT:
+		/* r7 = 3L + 5, read by the very next group into r4. */
+		(void)rule_add(program, MACHINE_INTEGER, 7, T, 0, T, 1, T, 2, 0);
+		(void)rule_add(program, MACHINE_MOVE, 4, T, 7, 0, DUMP_NONE, 0, DUMP_NONE, 0);
+		break;
+	default:
+		return EINVAL;
+	}
+	rule_settle(program);
+
+	/* The result into r14 (but for the store-data rule), the store, its wait, the end. */
+	if (kind != RULE_STORE_DATA_APART) {
+		(void)rule_add(program, MACHINE_MOVE, 14, T, result, 0, DUMP_NONE, 0, DUMP_NONE, 0);
+		rule_settle(program);
+	}
+	(void)rule_add(program, MACHINE_STORE, DUMP_NONE, T, result == 4 ? 14U : result, T, 12, 0, DUMP_NONE, 0);
+	(void)rule_add(program, MACHINE_WAIT, DUMP_NONE, 0, DUMP_NONE, 0, DUMP_NONE, 0, DUMP_NONE, 0);
+	(void)rule_add(program, MACHINE_END, DUMP_NONE, 0, DUMP_NONE, 0, DUMP_NONE, 0, DUMP_NONE, 0);
+	if (program->error != 0)
+		return program->error;
+
+	/* The groups as listed, then the bytes. */
+	groups = kern_malloc(program->count * sizeof(*groups));
+	if (groups == NULL)
+		return ENOMEM;
+	error = 0;
+	for (index = 0; error == 0 && index < program->count; index++)
+		error = shader_backend_group(&program->operations[index], 0, &groups[index]);
+	if (error == 0)
+		error = powervr_usc_program_encode(groups, program->count, code, room, length);
+	kern_free(groups);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the program. */
+	return 0;
+}
+
+/* The value a rule probe's lane word holds when the rule does not bind. */
+static uint32_t
+rule_expected(
+	unsigned kind,
+	unsigned lane)
+{
+	switch (kind) {
+	case RULE_ADD64_IN_PLACE:
+		return lane * 4U + 0x100U;
+	case RULE_STORE_DATA_APART:
+		return 0x1234U;
+	case RULE_MADD_SPECIAL:
+		return lane + 5U;
+	default:
+		return lane * 3U + 5U;
+	}
+}
+
+/*
+ * Runs each rule probe as one workgroup of the three kernels and Mesa's
+ * program, and reports on one line each how many lanes hold the value
+ * they would if the rule did not bind, and lanes 0 and 31's words.
+ */
+static void
+run_rule_probes(
+	struct check_state *state)
+{
+	static const char *const names[] = {
+		"64-bit add in place", "store data apart from its address", "madd source rewritten by the next group",
+		"madd from special constants", "madd result read by the next group",
+	};
+	struct rule_program *program;
+	volatile uint32_t *words;
+	uint8_t *code;
+	size_t length;
+	unsigned field;
+	unsigned kind;
+	unsigned lane;
+	unsigned good;
+	int error;
+
+	/* The room, the program, the field. */
+	code = kern_malloc(USC_DUMP_ROOM);
+	program = kern_malloc(sizeof(*program));
+	error = 0;
+	if (code == NULL || program == NULL)
+		error = ENOMEM;
+	if (error == 0)
+		error = powervr_compute_task_field(RULE_TEMPORARIES, &field);
+	words = state->alias + RULE_OFFSET / 4U;
+
+	/* Each rule. */
+	for (kind = 0; error == 0 && kind < RULE_KINDS; kind++) {
+		length = 0;
+		error = rule_build(program, kind, run_address + RULE_OFFSET, code, USC_DUMP_ROOM, &length);
+		if (error == 0) {
+			put_bytes(state->usc, USC_COMPILED, code, length);
+			error = write_workgroup_kick(state, field, 1);
+		}
+		for (lane = 0; lane < POWERVR_COMPUTE_INSTANCES; lane++)
+			words[lane] = RULE_FILLER;
+		if (error == 0)
+			error = kick(state, KICK_PROBE_FIRST);
+		good = 0;
+		for (lane = 0; lane < POWERVR_COMPUTE_INSTANCES; lane++)
+			good += words[lane] == rule_expected(kind, lane);
+		kern_logf("powervr: compute probes: rule %s: %u/32 as if it does not bind (%d), lane 0 %08x lane 31 %08x, %u bytes\n",
+			  names[kind], good, error, words[0], words[POWERVR_COMPUTE_INSTANCES - 1U], (unsigned)length);
+	}
+
+	/* The room goes. */
+	kern_free(program);
 	kern_free(code);
 }
 
