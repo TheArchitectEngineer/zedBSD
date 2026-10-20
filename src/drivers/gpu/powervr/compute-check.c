@@ -427,18 +427,27 @@ powervr_compute_check(
 		run_workgroup_probe(&state);
 
 	/* The shading cluster rules the compiler kept, each on the three kernels, when diagnosing, on a fresh session. */
-	if (CHECK_DIAGNOSTICS && fresh_session(&state) == 0)
-		run_rule_probes(&state);
+	if (CHECK_DIAGNOSTICS) {
+		error = fresh_session(&state);
+		if (error == 0)
+			run_rule_probes(&state);
+	}
 
 	/* The compiled fill's own move from the coefficients over four workgroups, only when asked, on a fresh session. */
-	if (CHECK_LOCKUP && fresh_session(&state) == 0)
-		run_cf0_probe(&state);
+	if (CHECK_LOCKUP) {
+		error = fresh_session(&state);
+		if (error == 0)
+			run_cf0_probe(&state);
+	}
 
 	/* The compiled fill over 1, 4 and 128 workgroups (as vkcompute), the defaults, each on a fresh session. */
 	for (index = 0; index < sizeof(sweep) / sizeof(sweep[0]); index++) {
-		if (fresh_session(&state) == 0)
+		error = fresh_session(&state);
+		if (error == 0)
 			run_compiled_fill(&state, 0, sweep[index], 0, 0);
 	}
+
+	/* The executor's layouts, only when asked. */
 	if (CHECK_LOCKUP)
 		run_layouts(&state);
 
@@ -1207,14 +1216,18 @@ run_compiled_fill(
 	for (word = 0; CHECK_DIAGNOSTICS && word < SCAN_WORDS; word++) {
 		if (state->alias[SCAN_FIRST / 4U + word] == SCAN_PATTERN(word))
 			continue;
-		if (changed < SCAN_LINES)
+		if (changed < SCAN_LINES) {
 			kern_logf("powervr: compute probes: compiled fill wrote +%x: %08x\n",
 				  SCAN_FIRST + word * 4U, state->alias[SCAN_FIRST / 4U + word]);
+		}
 		changed++;
 	}
-	if (CHECK_DIAGNOSTICS)
+
+	/* How many changed, when diagnosing. */
+	if (CHECK_DIAGNOSTICS) {
 		kern_logf("powervr: compute probes: compiled fill changed %u words in +%x..+%x\n",
 			  changed, SCAN_FIRST, SCAN_FIRST + SCAN_WORDS * 4U);
+	}
 
 	/* The words that hold 3x + 7. */
 	good = 0;
@@ -2155,6 +2168,7 @@ run_many_kernels(
 	unsigned i;
 	int after_error;
 	int error;
+	unsigned fences;
 
 	/* Kernels of their own slots: the probes' slots issue the one-step store too. */
 	error = 0;
@@ -2192,7 +2206,12 @@ run_many_kernels(
 	 * MANY_FENCE_KEEP_SHARED, or the one-step store's kernel with only
 	 * the fence bit set with MANY_FENCE_STORE_PDS.  Then the end.
 	 */
-	for (count = 0; error == 0 && (flags & MANY_NO_FENCE) == 0 && count < ((flags & MANY_TWO_FENCES) != 0 ? 2U : 1U); count++) {
+	fences = 1;
+	if ((flags & MANY_TWO_FENCES) != 0)
+		fences = 2;
+	if ((flags & MANY_NO_FENCE) != 0)
+		fences = 0;
+	for (count = 0; error == 0 && count < fences; count++) {
 		kern_memset(&kernel, 0, sizeof(kernel));
 		kernel.data_offset = pds_offset + PDS_FENCE * PDS_SLOT;
 		kernel.code_offset = pds_offset + PDS_FENCE * PDS_SLOT + PDS_CODE;
@@ -2232,10 +2251,10 @@ run_many_kernels(
 	after_error = error;
 	if (error == 0)
 		after_error = run_store_window(state, KICK_STEPS_ONE, STEPS_ONE_OFFSET, POWERVR_COMPUTE_INSTANCES, &after);
-	if (variant != NULL)
+	if (variant != NULL) {
 		kern_logf("powervr: compute probes: fence variant %s %u/32 (%d), one kernel after %u/32 (%d)\n",
 			  variant, written, error, after, after_error);
-	else
+	} else {
 		kern_logf("powervr: compute probes: executor layout %u kernels%s%s%s%s %u/32 (%d), %u words (%u bytes), one kernel after %u/32 (%d)\n",
 			  kernels,
 			  (flags & MANY_NO_FENCE) != 0 ? " no fence" : "",
@@ -2246,6 +2265,9 @@ run_many_kernels(
 			  (unsigned)((stream + 4U - (STREAM_FIRST + KICK_MANY * STREAM_SPACING)) / 4U),
 			  (unsigned)(stream + 4U - (STREAM_FIRST + KICK_MANY * STREAM_SPACING)),
 			  after, after_error);
+	}
+
+	/* The kick's error first, then the one after it. */
 	if (error != 0)
 		return error;
 	if (after_error != 0)
@@ -2541,6 +2563,7 @@ run_kernel(
 {
 	uint32_t word;
 	int error;
+	uint32_t expected;
 
 	/*
 	 * Two smaller kicks first when diagnosing, to tell which part locks
@@ -2571,7 +2594,8 @@ run_kernel(
 	/* Counts the words that hold their own address. */
 	*written = 0;
 	for (word = 0; word < CHECK_WORDS; word++) {
-		if (state->alias[word] == pattern(0, word))
+		expected = pattern(0, word);
+		if (state->alias[word] == expected)
 			(*written)++;
 	}
 
@@ -2591,6 +2615,7 @@ run_control(
 {
 	uint32_t word;
 	uint32_t stale;
+	uint32_t expected;
 
 	/* Fills the first window through the alias and drops any line of it. */
 	for (word = 0; word < CHECK_WORDS; word++)
@@ -2605,7 +2630,8 @@ run_control(
 		state->alias[word] = pattern(0, word);
 	stale = 0;
 	for (word = 0; word < CHECK_WORDS; word++) {
-		if (state->cached[word] == before(0, word))
+		expected = before(0, word);
+		if (state->cached[word] == expected)
 			stale++;
 	}
 
@@ -2636,6 +2662,8 @@ run_round(
 	uint32_t matched;
 	uint32_t value;
 	int error;
+	uint32_t written_value;
+	uint32_t old_value;
 
 	/* The window of this round. */
 	alias = state->alias + round * (CHECK_STRIDE / 4U);
@@ -2660,16 +2688,19 @@ run_round(
 	matched = 0;
 	for (word = 0; word < CHECK_WORDS; word++) {
 		value = cached[word];
-		if (value == pattern(round, word)) {
+		written_value = pattern(round, word);
+		old_value = before(round, word);
+		if (value == written_value) {
 			matched++;
-		} else if (value == before(round, word)) {
+		} else if (value == old_value) {
 			counts->stale++;
 		}
 	}
 
 	/* Counts the words that never reached memory, through the alias. */
 	for (word = 0; word < CHECK_WORDS; word++) {
-		if (alias[word] != pattern(round, word))
+		written_value = pattern(round, word);
+		if (alias[word] != written_value)
 			counts->unwritten++;
 	}
 
@@ -3020,8 +3051,11 @@ probe_kick(
 	if (error != 0) {
 		powervr_firmware_dump(state->render->core, POWERVR_KERNEL_CCB_SLOTS);
 		probe_report(state, kick_index);
+		return error;
 	}
-	return error;
+
+	/* Succeeded: the probe's kick finished with the context kept. */
+	return 0;
 }
 
 /*
@@ -3065,10 +3099,11 @@ probe_report(
 		  (unsigned)powervr_object_get32(&session->context, 140U));
 
 	/* The switch state, seven 64-bit words after the common part. */
-	for (index = 0; index < 7U; index++)
+	for (index = 0; index < 7U; index++) {
 		kern_logf("powervr: probe: switch state %u: 0x%08x%08x\n", index,
 			  (unsigned)powervr_object_get32(&session->context, 152U + index * 8U + 4U),
 			  (unsigned)powervr_object_get32(&session->context, 152U + index * 8U));
+	}
 }
 
 /*

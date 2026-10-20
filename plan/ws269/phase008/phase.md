@@ -1724,3 +1724,37 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
   - scratchpad の `mesa26/`（896 MB）。Mesa 26.2.5 の host の build で、dumper と PDS の表示を改造してある。Mesa との再照合に使う時だけ残し、使わないなら消す。
 
 - master.md の一覧に入れたら、phase008 の中の試験の説明は履歴として残す（参照は master.md へ）。
+
+## q1512-i01（P2、2026-10-21）: 規約の全文の見直し（WS269 の P2 の分、書き方だけ）
+
+- **clang-format**: repo に `.clang-format`（LLVM 系、ColumnLimit 80）があるが、host に clang-format が入っていない（`clang-format: command not found`）。設定どおりに掛けると、対象の file の大半の行が折り返されて大量の整形になる（このプロジェクトの code は 80 桁を越える行が通例）。そのため掛けていない。掛けるかどうかは Q1 の判断。
+- **見た file**:
+  - 本体: compute-program.c・h、compute-check.c、shader-backend.c、shader-private.h、usc-encode.c・h、pds-encode.c・h、data-program.c・h
+  - 試験: p008・p009・p010-compiler の C、userland/tests/vkcoherency/main.c
+  - coding-style.md の機械的に拾える項（§6 の条件の中の呼び出し・条件演算子・式で作る Boolean、§8 の複数行の本体の波括弧、§10 の複数行の comment の区切り、§11 の最後の bare return、§4 の初期化子の呼び出し）を script で全部の行に当て、該当を読んで直した。それ以外の項（段落の comment、空行）は、変えた所の周りを読んで確かめた。
+
+| file | 規約の項 | 件数 | 中身 |
+| --- | --- | --- | --- |
+| compute-check.c | §8 複数行の本体に波括弧 | 4 | `compiled fill wrote` の log、fence の変種と executor の並びの log、switch state の log |
+| compute-check.c | §6 条件の中で関数を呼ばない | 7 | `fresh_session` の 3 か所を `error = …; if (error == 0)` に。`pattern()`・`before()` の 4 か所を変数に受けてから比べる |
+| compute-check.c | §6 条件演算子（長い・条件の中） | 1 | executor の並びの fence の数（for の条件の中の三項）を、`fences` を if で決める形に |
+| compute-check.c | §11 失敗と成功の return を分ける | 1 | `probe_kick` の最後の `return error;` |
+| shader-backend.c | §6 入れ子の条件演算子 | 2 | logic・shift の opcode から variant を選ぶ所を if・else if に |
+| shader-backend.c | §11 失敗と成功の return を分ける | 1 | `shader_backend_group` の最後の `return error;` |
+| vkcoherency/main.c | §11 失敗と成功の return を分ける | 2 | buffer・image の部の最後の `return status;` |
+| vkcoherency/main.c | §6 式で作る Boolean・条件演算子 | 3 | stale の判定を if で、memory 型の名前を if で |
+| p008/encode-host-test.c、compute-host-test.c | §6 条件の中で関数を呼ばない | 3 | `memcmp` を変数に受けて比べる |
+
+- **動作**: 変えていない。
+  - p008 は 94/0・84/0、p009 は 505/0、p010-compiler は 396/0・20/0。
+  - vkcoherency は host の lavapipe で PASS。
+  - VF2 の vmunix（`build/p2q1512/vf2/vmunix`）は rc 0、warning 0。`git diff --check` は空。
+- **残り（直していない。量が多いので、Q1 の判断を仰ぐ）**: host の試験の harness の、§6 の条件の中の呼び出しと条件演算子、および 1 行に複数の文を書いた形。本体（kernel・userland）の file は、上の script の項で残りは 0。
+  - m9-forms.c: 9 件（1 行の if に複数の文。全体が詰めた書き方）
+  - compile-host-test.c: 43 件
+  - ir-run.c: 18 件
+  - machine-run.c: 10 件
+  - fill-registers.c: 2 件
+  - group-host-test.c: 1 件
+  - これらは host でだけ動く試験の道具。直すなら、規約の全文の見直しの担当（P3 の conformance）に、file の単位で渡すのがよい。
+- 片付け（Q1 に依頼）: `build/p2q1512/`、scratchpad の `lint.py`・`vkc`。
