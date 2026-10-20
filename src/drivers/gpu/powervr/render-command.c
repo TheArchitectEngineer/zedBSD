@@ -184,6 +184,7 @@ powervr_fragment_command(
 		put32(command, POWERVR_FRAGMENT_ZLS_STRIDE, setup->zls_stride);
 		flags |= POWERVR_FRAGMENT_DEPTH_BUFFER;
 	}
+
 	put32(command, POWERVR_FRAGMENT_FLAGS, flags);
 
 	/* The end-of-tile program. */

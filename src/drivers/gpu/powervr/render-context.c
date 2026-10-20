@@ -205,6 +205,7 @@ powervr_session_render_context(
 	return 0;
 
 fail:
+	/* Destroys the part-made context and reports the failure. */
 	powervr_render_context_destroy(render, session);
 	return error;
 }

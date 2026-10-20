@@ -139,6 +139,7 @@ main(
 		destroy(&run);
 		return 1;
 	}
+
 	if (status == VK_SUCCESS)
 		status = create_pipeline(&run);
 
@@ -191,6 +192,8 @@ main(
 	else
 		printf("vkcoherency: %s: PASS\n", run.name);
 	destroy(&run);
+
+	/* A failed call or a stale or wrong word fails the run. */
 	if (status != VK_SUCCESS || failed)
 		return 1;
 
@@ -247,6 +250,7 @@ open_device(
 		if ((families[index].queueFlags & VK_QUEUE_COMPUTE_BIT) != 0)
 			break;
 	}
+
 	run->failed_call = "compute queue family";
 	if (index == count)
 		return VK_ERROR_FEATURE_NOT_PRESENT;
@@ -310,6 +314,7 @@ create_pipeline(
 		bindings[i].descriptorCount = 1;
 		bindings[i].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 	}
+
 	memset(&set_info, 0, sizeof(set_info));
 	set_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 	set_info.bindingCount = 2;
@@ -485,6 +490,7 @@ flush_or_invalidate(
 		run->failed_call = "vkFlushMappedMemoryRanges";
 		return vkFlushMappedMemoryRanges(run->device, 1, &range);
 	}
+
 	run->failed_call = "vkInvalidateMappedMemoryRanges";
 	return vkInvalidateMappedMemoryRanges(run->device, 1, &range);
 }
@@ -607,6 +613,7 @@ run_buffer_part(
 			writes[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 			writes[i].pBufferInfo = &infos[i];
 		}
+
 		vkUpdateDescriptorSets(run->device, 2, writes, 0, NULL);
 	}
 
@@ -617,6 +624,7 @@ run_buffer_part(
 			input.words[word] = pattern(round, word);
 			output.words[word] = fill;
 		}
+
 		status = flush_or_invalidate(run, &input, 1);
 		if (status == VK_SUCCESS)
 			status = flush_or_invalidate(run, &output, 1);
@@ -629,6 +637,7 @@ run_buffer_part(
 			run->failed_call = "vkBeginCommandBuffer";
 			status = vkBeginCommandBuffer(run->command, &begin);
 		}
+
 		if (status == VK_SUCCESS) {
 			vkCmdBindPipeline(run->command, VK_PIPELINE_BIND_POINT_COMPUTE, run->pipeline);
 			vkCmdBindDescriptorSets(run->command, VK_PIPELINE_BIND_POINT_COMPUTE, run->pipeline_layout, 0, 1, &run->set, 0, NULL);
@@ -640,6 +649,7 @@ run_buffer_part(
 			vkCmdPipelineBarrier(run->command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &barrier, 0, NULL, 0, NULL);
 			status = submit_and_wait(run);
 		}
+
 		if (status == VK_SUCCESS)
 			status = flush_or_invalidate(run, &output, 0);
 		if (status != VK_SUCCESS)
@@ -663,6 +673,7 @@ run_buffer_part(
 			} else if (round > 0 && seen == previous) {
 				stale = 1;
 			}
+
 			note(tally, round, word, seen, wanted, stale);
 		}
 	}
@@ -732,10 +743,12 @@ run_image_part(
 		    (run->memory.memoryTypes[type].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) != 0)
 			break;
 	}
+
 	for (i = 0; type == run->memory.memoryTypeCount && i < run->memory.memoryTypeCount; i++) {
 		if ((requirements.memoryTypeBits & (1U << i)) != 0)
 			type = i;
 	}
+
 	run->failed_call = "image memory type";
 	if (type == run->memory.memoryTypeCount)
 		return VK_ERROR_FEATURE_NOT_PRESENT;
@@ -789,6 +802,7 @@ run_image_part(
 			run->failed_call = "vkBeginCommandBuffer";
 			status = vkBeginCommandBuffer(run->command, &begin);
 		}
+
 		if (status != VK_SUCCESS)
 			break;
 		memset(&image_barrier, 0, sizeof(image_barrier));
@@ -840,8 +854,10 @@ run_image_part(
 			} else if (round > 0 && seen == previous) {
 				stale = 1;
 			}
+
 			note(tally, round, pixel, seen, wanted, stale);
 		}
+
 		previous = wanted;
 	}
 
@@ -868,6 +884,7 @@ print_tally(
 		printf("vkcoherency: %s: %s: %u rounds, 0 stale, 0 wrong\n", run->name, part, tally->rounds);
 		return;
 	}
+
 	printf("vkcoherency: %s: %s: %u rounds, %u stale, %u wrong, first at round %u word %u: 0x%08x, expected 0x%08x\n",
 	       run->name, part, tally->rounds, tally->stale, tally->wrong,
 	       tally->first_round, tally->first_word, tally->first_seen, tally->first_wanted);

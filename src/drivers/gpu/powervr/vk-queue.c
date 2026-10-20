@@ -908,6 +908,7 @@ build_dispatch(
 		if (error != 0)
 			return error;
 	}
+
 	build->dispatches++;
 
 	/* Succeeded: the dispatch is in the stream. */
@@ -1057,11 +1058,12 @@ build_shared(
 			if (error != 0)
 				return error;
 			address += slot->offset;
-			if (POWERVR_DIAGNOSTICS)
+			if (POWERVR_DIAGNOSTICS) {
 				kern_logf("powervr: vk: dispatch: set %u binding %u buffer 0x%llx-0x%llx (%llu bytes, offset %llu) in shared words %u-%u\n",
 				  (unsigned)request->set, (unsigned)request->binding, (unsigned long long)address,
 				  (unsigned long long)(address - slot->offset + buffer->size), (unsigned long long)buffer->size,
 				  (unsigned long long)slot->offset, (unsigned)request->shared, (unsigned)(request->shared + 1U));
+			}
 			values[request->shared] = (uint32_t)address;
 			values[request->shared + 1U] = (uint32_t)(address >> 32);
 			break;
@@ -1277,12 +1279,13 @@ run(
 	owner = build->session->owner;
 	render = owner->render;
 	stream = build->executor->stream->address;
-	if (POWERVR_DIAGNOSTICS)
+	if (POWERVR_DIAGNOSTICS) {
 		kern_logf("powervr: vk: run: stream 0x%llx, words 0x%llx-0x%llx of 0x%x bytes, %u kernels; usc 0x%llx-0x%llx, pds 0x%llx-0x%llx\n",
 		  (unsigned long long)stream, (unsigned long long)(stream + QUEUE_STREAM_FIRST), (unsigned long long)(stream + build->stream_at),
 		  QUEUE_STREAM_BYTES, (unsigned)build->kernels,
 		  (unsigned long long)(POWERVR_USC_HEAP_BASE + QUEUE_USC_OFFSET), (unsigned long long)(POWERVR_USC_HEAP_BASE + QUEUE_USC_OFFSET + build->kernels * QUEUE_USC_ROOM),
 		  (unsigned long long)(POWERVR_PDS_HEAP_BASE + QUEUE_PDS_OFFSET), (unsigned long long)(POWERVR_PDS_HEAP_BASE + QUEUE_PDS_OFFSET + (build->kernels + 1U) * QUEUE_PDS_SLOT));
+	}
 	powervr_compute_command(stream + QUEUE_STREAM_FIRST, stream, command);
 	if (POWERVR_COMPUTE_SWITCH_STATE)
 		command[POWERVR_COMPUTE_RESUME_PDS1_WORD] = powervr_compute_resume_pds1(0);

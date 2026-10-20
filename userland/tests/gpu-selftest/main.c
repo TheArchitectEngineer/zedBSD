@@ -125,6 +125,7 @@ static int stage_vkdemo(struct selftest *test, char *reason, size_t capacity);
 static int run_program(const char *path, const char *argument, char *line, size_t capacity);
 static int run_program_list(const char *path, char *const *arguments, char *line, size_t capacity);
 static int frame_check(const char *path, char *reason, size_t capacity);
+static void frame_describe(FILE *file, char *reason, size_t capacity);
 static int ppm_header(FILE *file, unsigned *width, unsigned *height, unsigned *maximum);
 static int ppm_number(FILE *file, unsigned *value);
 static int is_vkcompute_stage(const char *name);
@@ -615,12 +616,32 @@ ppm_header(
 	unsigned *height,
 	unsigned *maximum)
 {
-	/* The magic. */
-	if (fgetc(file) != 'P' || fgetc(file) != '6')
+	int c;
+	int error;
+
+	/* The magic's first byte. */
+	c = fgetc(file);
+	if (c != 'P')
 		return -1;
 
-	/* The three numbers. */
-	if (ppm_number(file, width) != 0 || ppm_number(file, height) != 0 || ppm_number(file, maximum) != 0)
+	/* The magic's second byte: binary pixels. */
+	c = fgetc(file);
+	if (c != '6')
+		return -1;
+
+	/* The width. */
+	error = ppm_number(file, width);
+	if (error != 0)
+		return -1;
+
+	/* The height. */
+	error = ppm_number(file, height);
+	if (error != 0)
+		return -1;
+
+	/* The largest channel value. */
+	error = ppm_number(file, maximum);
+	if (error != 0)
 		return -1;
 
 	/* Succeeded: the single white space byte ending the header was read with the last number. */
@@ -644,6 +665,7 @@ ppm_number(
 			while (c != '\n' && c != EOF)
 				c = fgetc(file);
 		}
+
 		c = fgetc(file);
 	}
 
@@ -655,7 +677,13 @@ ppm_number(
 		digits++;
 		c = fgetc(file);
 	}
-	if (digits == 0 || !(c == ' ' || c == '\t' || c == '\n' || c == '\r'))
+
+	/* Refuses a number without digits. */
+	if (digits == 0)
+		return -1;
+
+	/* Refuses a number not followed by white space. */
+	if (c != ' ' && c != '\t' && c != '\n' && c != '\r')
 		return -1;
 
 	/* Succeeded: the number, and the white space byte after it consumed. */
@@ -681,42 +709,51 @@ frame_check(
 	unsigned height;
 	unsigned maximum;
 	long start;
+	long place;
+	size_t got;
 	FILE *file;
 	int index;
 	int channel;
 	int difference;
+	int error;
 
-	/* The header. */
+	/* Opens the frame. */
 	file = fopen(path, "rb");
 	if (file == NULL) {
 		snprintf(reason, capacity, "no frame %s", path);
 		return 1;
 	}
-	if (ppm_header(file, &width, &height, &maximum) != 0 || width != 320U || height != 240U || maximum != 255U) {
-		/* Says what the file held: its size and its first bytes. */
-		unsigned char head[12];
-		size_t got;
-		long size;
 
-		(void)fseek(file, 0, SEEK_END);
-		size = ftell(file);
-		rewind(file);
-		got = fread(head, 1, sizeof(head), file);
+	/* Reads the header; says what the file held when it is not a 320x240 PPM. */
+	error = ppm_header(file, &width, &height, &maximum);
+	if (error != 0 || width != 320U || height != 240U || maximum != 255U) {
+		frame_describe(file, reason, capacity);
 		fclose(file);
-		snprintf(reason, capacity, "frame not a 320x240 PPM (%ld bytes, starts %02x %02x %02x %02x %02x %02x %02x %02x, %zu read)", size,
-			 got > 0 ? head[0] : 0, got > 1 ? head[1] : 0, got > 2 ? head[2] : 0, got > 3 ? head[3] : 0,
-			 got > 4 ? head[4] : 0, got > 5 ? head[5] : 0, got > 6 ? head[6] : 0, got > 7 ? head[7] : 0, got);
 		return 1;
 	}
+
+	/* The pixels start after the header. */
 	start = ftell(file);
 
-	/* Each point. */
+	/* Compares each point with its expected colour. */
 	for (index = 0; index < 3; index++) {
-		if (fseek(file, start + ((long)points[index][1] * 320L + points[index][0]) * 3L, SEEK_SET) != 0 || fread(pixel, 1, 3, file) != 3) {
+		/* Reads the point's pixel. */
+		place = start + ((long)points[index][1] * 320L + points[index][0]) * 3L;
+		error = fseek(file, place, SEEK_SET);
+		if (error != 0) {
 			fclose(file);
 			snprintf(reason, capacity, "frame short");
 			return 1;
 		}
+
+		got = fread(pixel, 1, 3, file);
+		if (got != 3) {
+			fclose(file);
+			snprintf(reason, capacity, "frame short");
+			return 1;
+		}
+
+		/* Compares its channels within the point's slack. */
 		for (channel = 0; channel < 3; channel++) {
 			difference = (int)pixel[channel] - (int)want[index][channel];
 			if (difference > slack[index] || difference < -slack[index]) {
@@ -730,6 +767,31 @@ frame_check(
 	/* Succeeded: the frame is as expected. */
 	fclose(file);
 	return 0;
+}
+
+/* Writes into reason what a file that is not the expected PPM held: its size and its first bytes. */
+static void
+frame_describe(
+	FILE *file,
+	char *reason,
+	size_t capacity)
+{
+	unsigned char head[12];
+	size_t got;
+	long size;
+
+	/* The file's size. */
+	(void)fseek(file, 0, SEEK_END);
+	size = ftell(file);
+
+	/* Its first bytes, zero past what could be read. */
+	memset(head, 0, sizeof(head));
+	rewind(file);
+	got = fread(head, 1, sizeof(head), file);
+
+	/* The reason line. */
+	snprintf(reason, capacity, "frame not a 320x240 PPM (%ld bytes, starts %02x %02x %02x %02x %02x %02x %02x %02x, %zu read)", size,
+		 head[0], head[1], head[2], head[3], head[4], head[5], head[6], head[7], got);
 }
 
 /* Runs a program with one argument when argument is not NULL; see run_program_list(). */

@@ -678,6 +678,7 @@ border_table_make(
 		error = powervr_resource_make(session, buffer, 1, 0, &session->border_table);
 		powervr_buffer_put(render, buffer);
 	}
+
 	if (error != 0) {
 		session->border_table = NULL;
 		kern_logf("powervr: border colour table not made (%d)\n", error);

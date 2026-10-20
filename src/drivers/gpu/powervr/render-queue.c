@@ -935,6 +935,8 @@ powervr_render_quarantine(
 	render->faulted = 1;
 
 	spin_unlock_irqrestore(&render->queue_lock, enabled);
+
+	/* Says so the first time. */
 	if (!already)
 		kern_logf("powervr: device quarantine armed (%d)\n", error);
 

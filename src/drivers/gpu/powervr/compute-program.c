@@ -421,6 +421,8 @@ powervr_compute_workgroup_program(
 	error = powervr_pds_task_word(usc_offset, 0, 0, 0, &task);
 	if (error != 0)
 		return error;
+
+	/* Mesa's data words with the task word, its temporaries field added, in the first two. */
 	task |= (uint64_t)temporaries_field << 35;
 	for (i = 0; i < POWERVR_COMPUTE_PDS_GROUP_DATA_WORDS; i++)
 		data[i] = group_data[i];
@@ -805,6 +807,7 @@ powervr_compute_probe_program(
 			if (error == 0)
 				error = immediate_group(&groups[count++], 1, 0);
 		}
+
 		if (error == 0)
 			error = special_group(&groups[count++], 5, USC_INSTANCE_NUMBER);
 		if (error == 0)
@@ -822,6 +825,7 @@ powervr_compute_probe_program(
 			if (error == 0)
 				error = immediate_group(&groups[count++], 6, 0x12340U);
 		}
+
 		if (error == 0 && kind == POWERVR_COMPUTE_PROBE_LIKE_STORE_IN_PLACE) {
 			error = immediate_group(&groups[count++], 0, (uint32_t)base);
 			if (error == 0)
@@ -834,9 +838,11 @@ powervr_compute_probe_program(
 				if (error == 0)
 					error = immediate_group(&groups[count++], 11, (uint32_t)(base >> 32));
 			}
+
 			if (error == 0)
 				error = add64_group(&groups[count++], 0, 10, 8);
 		}
+
 		if (error == 0 && kind == POWERVR_COMPUTE_PROBE_LIKE_STORE)
 			error = pass_group(&groups[count++], 2, POWERVR_USC_BANK_TEMPORARY, 0);
 		else if (error == 0)
@@ -924,14 +930,24 @@ probe_with_fillers(
 	/* Each group, then its fillers while the store is still ahead. */
 	used = 0;
 	for (index = 0; index < count; index++) {
+		/* Refuses a program longer than the room. */
 		if (used >= 64U)
 			return E2BIG;
+
+		/* The group itself. */
 		spaced[used++] = groups[index];
+
+		/* No fillers after the last three groups. */
 		if (index + 3U >= count)
 			continue;
+
+		/* Two fillers: no-operations or waits. */
 		for (filler = 0; filler < 2; filler++) {
+			/* Refuses a program longer than the room. */
 			if (used >= 64U)
 				return E2BIG;
+
+			/* The filler of the chosen kind. */
 			if (nothing)
 				error = nothing_group(&spaced[used++]);
 			else

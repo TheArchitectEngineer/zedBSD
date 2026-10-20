@@ -1132,8 +1132,11 @@ start_processor(
 	/* Sets up the system level cache, the MIPS wrapper and the bus attributes. */
 	kern_logf("powervr: firmware: start: out of reset but the Garten; cache\n");
 	init_cache(core);
+
+	/* The diagnostics: the registers' values after the cache is set up. */
 	if (POWERVR_DIAGNOSTICS)
 		register_check(core);
+
 	kern_logf("powervr: firmware: start: MIPS wrapper\n");
 	init_wrapper(core);
 	powervr_write64(core, POWERVR_AXI_ACE_LITE, POWERVR_AXI_ACE_LITE_VALUE);
@@ -1643,7 +1646,7 @@ powervr_firmware_dump(
 		  (unsigned)powervr_object_get32(&firmware->fwccb_control, POWERVR_CCB_READ));
 
 	/* The command in its slot and its return slot, when one is named. */
-	if (slot < POWERVR_KERNEL_CCB_SLOTS)
+	if (slot < POWERVR_KERNEL_CCB_SLOTS) {
 		kern_logf("powervr: dump: slot %u at 0x%x: 0x%x 0x%x 0x%x 0x%x; return at 0x%x: 0x%x\n",
 		  (unsigned)slot,
 		  (unsigned)powervr_object_address(&firmware->kccb, slot * POWERVR_COMMAND_BYTES),
@@ -1653,6 +1656,7 @@ powervr_firmware_dump(
 		  (unsigned)powervr_object_get32(&firmware->kccb, slot * POWERVR_COMMAND_BYTES + 12U),
 		  (unsigned)powervr_object_address(&firmware->kccb_returns, slot * 4U),
 		  (unsigned)powervr_object_get32(&firmware->kccb_returns, slot * 4U));
+	}
 
 	/* The first four return slots, in case the firmware wrote another than the one waited on. */
 	kern_logf("powervr: dump: returns 0..3: 0x%x 0x%x 0x%x 0x%x; returns physical 0x%llx\n",
