@@ -89,3 +89,37 @@
 ## 残件
 
 - (4): ユーザーの確認の後。
+
+## 2 つ以上の session の 3D の lockup（q1530、2026-10-21 P1）
+
+### 板の事実（Q1）
+
+- desktop の login の時に、3D の reset（`reason 1 dm 3`）が出る。
+- vkmatrix の `load-1080-textured`・`-6`・`-linear` は、1 つずつなら PASS。
+- 3 つを別の process で同時に流すと、`load-1080-textured` が `context reset notice: context 0x81 reason 1 dm 3 … pc 0x504c0001` → session lost になった。
+- **2 つ以上の session が同時に描く時にだけ起きる。**
+
+### 直した事（仮説）
+
+- 我々の firmware は mainline のもの（rogue_36.50.54.182_v1.fw、1.1.OS@6976702）。
+- 前の設定は vendor の driver（別の firmware の DDK 1.19）の値だった。
+  - system flags に context switch の MEDIUM の profile。
+  - OS flags 0xF（TDM・GEOM・3D・CDM の context switch を on）。
+- mainline の driver（`pvr_fw.c`）は profile を付けず、OS の flags も立てない。
+- switch が on だと、firmware は別の context の job のために 3D を止めて context を保存・再開する。我々の render context の switch の状態（保存・再開の program）は完全でない。
+- **既定を mainline と同じに替えた**: profile なし、OS flags 0。
+  - `interface.h` の `POWERVR_CONTEXT_SWITCH`（既定 0）で、前の値に戻せる。
+  - 起動の行は `powervr: firmware: system flags 0x00000010, os flags 0x00000000` になる。
+- 1 つの session では、switch の on・off で結果が変わらなかった（板 59・66、q1463）。
+
+### 試験用の一時の例外（Q1 承認、2026-10-21）
+
+- root の `sysctl hw.gpu.powervr.stages=N`（と skip の mask）で、render の job の draw を落とす試験用の filter（b07ea4a73）がある。
+- coding-style.md §12 の「試験だけの切り替えを production に置かない」の例外とする。
+- lockup の原因が分かったら外す。
+
+### 板の確認（Q1）
+
+1. 3 つの同時の vkmatrix（上と同じコマンド）を数回流し、reset が出ないこと。
+2. desktop の login で 3D の reset が出ないこと。
+3. gpu-selftest 13/13・vkmatrix の全部（1 つずつ）。

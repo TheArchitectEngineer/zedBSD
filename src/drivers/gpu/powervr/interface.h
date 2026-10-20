@@ -147,6 +147,11 @@
 #define POWERVR_FLAG_CSW_PROFILE_MEDIUM	0x20000U
 #define POWERVR_OS_DATA_CONFIG_FLAGS	0U
 #define POWERVR_OS_FLAGS_CSW_ALL	0xfU
+
+/* Whether the firmware switches contexts (preempts a job for another context's): 0 by default, as mainline. */
+#ifndef POWERVR_CONTEXT_SWITCH
+#define POWERVR_CONTEXT_SWITCH		0
+#endif
 #define POWERVR_DM_OVERLAP_MIN_KB	4U
 
 /*
