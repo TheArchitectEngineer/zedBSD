@@ -567,6 +567,7 @@ check_empty(
 			probe_geometry(check->render->core);
 		}
 	}
+
 	kern_logf("powervr: render check: %s stream: %s (%d), context %s\n", "terminate-state",
 		  error == 0 ? "finished" : "FAILED", error,
 		  check->session->lost ? "reset" : "kept");
@@ -579,12 +580,16 @@ check_empty(
 		error = EIO;
 	if (error != 0) {
 		powervr_firmware_dump(check->render->core, POWERVR_KERNEL_CCB_SLOTS);
+
+		/* The diagnostics: the target, the free list and the context, unless the full trace says it all. */
 		if (POWERVR_DIAGNOSTICS && !POWERVR_RENDER_CHECK_FULL_TRACE) {
 			powervr_target_dump(check->target);
 			powervr_session_global_list_dump(check->session);
 			dump_context(check);
 		}
-		if (POWERVR_DIAGNOSTICS)
+
+		/* The diagnostics: the geometry command's words. */
+		if (POWERVR_DIAGNOSTICS) {
 			kern_logf("powervr: render check: geometry command: %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x\n",
 			  get32(check->geometry, 0), get32(check->geometry, 4), get32(check->geometry, 8), get32(check->geometry, 12),
 			  get32(check->geometry, 16), get32(check->geometry, 20), get32(check->geometry, 24), get32(check->geometry, 28),
@@ -593,10 +598,18 @@ check_empty(
 			  get32(check->geometry, 64), get32(check->geometry, 68), get32(check->geometry, 72), get32(check->geometry, 76),
 			  get32(check->geometry, 80), get32(check->geometry, 84), get32(check->geometry, 88), get32(check->geometry, 92),
 			  get32(check->geometry, 96), get32(check->geometry, 100), get32(check->geometry, 104), get32(check->geometry, 108));
+		}
+
+		/* A timed-out render leaves the session to the core. */
 		if (error == ETIMEDOUT)
 			check->session->abandoned = 1;
+
+		/* Reports the reset or the failure. */
+		return error;
 	}
-	return error;
+
+	/* Succeeded: the stream finished with the context kept. */
+	return 0;
 }
 
 /*
@@ -637,10 +650,15 @@ check_kick(
 		check->session->abandoned = 1;
 		return error;
 	}
+
 	kern_logf("powervr: render check: fence reached (geometry %u, fragment %u), context %s\n", geometry_now, fragment_now,
 		  check->session->lost ? "reset" : "kept");
+
+	/* A context the firmware reset: the dump, and with the diagnostics the target and the list. */
 	if (check->session->lost) {
 		powervr_firmware_dump(check->render->core, POWERVR_KERNEL_CCB_SLOTS);
+
+		/* The diagnostics: the target and the free list. */
 		if (POWERVR_DIAGNOSTICS) {
 			powervr_target_dump(check->target);
 			powervr_session_global_list_dump(check->session);
@@ -1131,6 +1149,7 @@ transfer_check(
 		*kept_memory = memory;
 		return;
 	}
+
 	transfer_close(render, session, memory);
 }
 
@@ -1260,13 +1279,14 @@ dump_object(
 	uint32_t offset;
 
 	/* Eight words a line, at the object's firmware address. */
-	for (offset = 0; offset < bytes; offset += 32U)
+	for (offset = 0; offset < bytes; offset += 32U) {
 		kern_logf("powervr: %s 0x%x +%03x: %08x %08x %08x %08x %08x %08x %08x %08x\n", name,
 			  (unsigned)powervr_object_address(object, 0), (unsigned)offset,
 			  (unsigned)powervr_object_get32(object, offset), (unsigned)powervr_object_get32(object, offset + 4U),
 			  (unsigned)powervr_object_get32(object, offset + 8U), (unsigned)powervr_object_get32(object, offset + 12U),
 			  (unsigned)powervr_object_get32(object, offset + 16U), (unsigned)powervr_object_get32(object, offset + 20U),
 			  (unsigned)powervr_object_get32(object, offset + 24U), (unsigned)powervr_object_get32(object, offset + 28U));
+	}
 }
 
 /* Prints the render context's record and its geometry state, and the geometry command buffer's first commands. */
@@ -1325,6 +1345,8 @@ probe_geometry(
 	/* All first, then the lines. */
 	for (index = 0; index < CHECK_PROBE_REGISTERS; index++)
 		values[index] = powervr_read64(core, offsets[index]);
+
+	/* One line a register. */
 	for (index = 0; index < CHECK_PROBE_REGISTERS; index++)
 		kern_logf("powervr: render check: register 0x%04x = 0x%016llx\n", (unsigned)offsets[index], (unsigned long long)values[index]);
 
@@ -1335,6 +1357,7 @@ probe_geometry(
 		(void)powervr_read32(core, 0xe140U);
 		bases[index] = powervr_read32(core, 0xe148U);
 	}
+
 	powervr_write32(core, 0xe140U, saved);
 	(void)powervr_read32(core, 0xe140U);
 	kern_logf("powervr: render check: mapping context 0x%x; catalogue bases 0-7: %x %x %x %x %x %x %x %x\n", (unsigned)saved,

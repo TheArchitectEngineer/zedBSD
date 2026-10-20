@@ -935,6 +935,8 @@ powervr_render_quarantine(
 	render->faulted = 1;
 
 	spin_unlock_irqrestore(&render->queue_lock, enabled);
+
+	/* Says so the first time. */
 	if (!already)
 		kern_logf("powervr: device quarantine armed (%d)\n", error);
 
@@ -1176,6 +1178,7 @@ powervr_render_stop_poll(
 	unsigned outstanding;
 	unsigned faulted;
 	unsigned which;
+	int executed;
 	int sent;
 
 	/* A device in quarantine confirms nothing. */
@@ -1201,9 +1204,13 @@ powervr_render_stop_poll(
 			answer = POWERVR_RETURN_NONE;
 		} else {
 			answer = powervr_object_get32(&render->core->firmware.kccb_returns, session->stop_slot * 4U);
+
 			/* The firmware may leave the slot unwritten; the executed count then says the cleanup ran. */
-			if ((answer & POWERVR_RETURN_EXECUTED) == 0U && powervr_command_wait_executed(render->core, session->stop_slot, 0) == 0)
-				answer = POWERVR_RETURN_EXECUTED;
+			if ((answer & POWERVR_RETURN_EXECUTED) == 0U) {
+				executed = powervr_command_wait_executed(render->core, session->stop_slot, 0);
+				if (executed == 0)
+					answer = POWERVR_RETURN_EXECUTED;
+			}
 		}
 
 		/* Busy: the context still runs, asks again a bounded number of times. */
@@ -1933,6 +1940,7 @@ service_pass(
 	struct delivery delivery;
 	uint32_t command[POWERVR_COMMAND_WORDS];
 	unsigned long enabled;
+	uint64_t watchdog;
 	uint32_t answer;
 	uint32_t index;
 	unsigned faulted;
@@ -1958,14 +1966,16 @@ service_pass(
 	/* Each session's retired commands, a bounded number per pass; and whether one is overdue. */
 	delivery.count = 0;
 	delivery.markers_freed = 0;
+	watchdog = ms_ticks(WATCHDOG_MS);
 	for (session = render->sessions; session != NULL; session = session->next) {
 		enabled = spin_lock_irqsave(&render->queue_lock);
 
 		take_reached(session, &delivery);
 		if (session->pending_count != 0U) {
 			pending = 1;
+
 			/* A session lost to a context reset is that session's loss alone; the firmware is not asked about it. */
-			if (!session->lost && now - session->pending[session->pending_head].submitted > ms_ticks(WATCHDOG_MS))
+			if (!session->lost && now - session->pending[session->pending_head].submitted > watchdog)
 				overdue = 1;
 		}
 

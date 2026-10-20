@@ -100,10 +100,19 @@ main(
 	int argc,
 	char **argv)
 {
+	int isolated;
+	int named;
 	int failed;
 
 	/* Resets the device: only on explicit request. */
-	if (argc != 2 || strcmp(argv[1], "--isolated") != 0) {
+	isolated = 0;
+	if (argc == 2) {
+		named = strcmp(argv[1], "--isolated");
+		if (named == 0)
+			isolated = 1;
+	}
+
+	if (!isolated) {
 		printf("vkreset: usage: vkreset --isolated (no other GPU client may run)\n");
 		return 2;
 	}
@@ -128,9 +137,11 @@ vkreset_ms(
 	void)
 {
 	struct timespec now;
+	int error;
 
 	/* Reads the clock; a failure reads as zero. */
-	if (clock_gettime(CLOCK_MONOTONIC, &now) != 0)
+	error = clock_gettime(CLOCK_MONOTONIC, &now);
+	if (error != 0)
 		return 0;
 
 	/* Succeeded: the milliseconds. */
@@ -160,6 +171,7 @@ vkreset_hang(
 		run.failed_call = "vkMapMemory";
 		status = vkMapMemory(run.device, run.memory, 0, VK_WHOLE_SIZE, 0, &mapped);
 	}
+
 	if (status == VK_SUCCESS) {
 		words = mapped;
 		words[0] = 1U;
@@ -167,6 +179,7 @@ vkreset_hang(
 		vkUnmapMemory(run.device, run.memory);
 		status = vkreset_compute(&run, vkreset_hang_shader, sizeof(vkreset_hang_shader), 1U);
 	}
+
 	if (status != VK_SUCCESS) {
 		printf("vkreset: hang: FAIL (setup %s %d)\n", run.failed_call, (int)status);
 		vkreset_destroy(&run);
@@ -181,6 +194,7 @@ vkreset_hang(
 		vkreset_destroy(&run);
 		return 1;
 	}
+
 	printf("vkreset: hang: PASS (%llu ms, %s VK_ERROR_DEVICE_LOST)\n", (unsigned long long)(vkreset_ms() - start), run.failed_call);
 
 	/* Destroying the lost device and its instance closes the session. */
@@ -222,6 +236,7 @@ vkreset_fresh(
 		run.failed_call = "vkMapMemory";
 		status = vkMapMemory(run.device, run.memory, 0, VK_WHOLE_SIZE, 0, &mapped);
 	}
+
 	if (status != VK_SUCCESS) {
 		printf("vkreset: compute: FAIL (%s %d)\n", run.failed_call, (int)status);
 		vkreset_destroy(&run);
@@ -235,12 +250,16 @@ vkreset_fresh(
 		if (words[index] == index * 3U + 7U)
 			good++;
 	}
+
 	vkUnmapMemory(run.device, run.memory);
+
+	/* Fails on a word the fill did not write. */
 	if (good != VKRESET_WORDS) {
 		printf("vkreset: compute: FAIL (%u/%u words)\n", good, VKRESET_WORDS);
 		vkreset_destroy(&run);
 		return 1;
 	}
+
 	printf("vkreset: compute: PASS (%llu ms, %u/%u words)\n", (unsigned long long)(vkreset_ms() - start), good, VKRESET_WORDS);
 
 	/* The clear on a second fresh device, read back through a buffer. */
@@ -258,6 +277,7 @@ vkreset_fresh(
 		run.failed_call = "vkMapMemory";
 		status = vkMapMemory(run.device, run.memory, 0, VK_WHOLE_SIZE, 0, &mapped);
 	}
+
 	if (status != VK_SUCCESS) {
 		printf("vkreset: clear: FAIL (%s %d)\n", run.failed_call, (int)status);
 		vkreset_destroy(&run);
@@ -271,10 +291,16 @@ vkreset_fresh(
 		if (words[index] == VKRESET_CLEAR_WORD)
 			good++;
 	}
+
+	/* Says which pixel was wrong while the memory is still mapped. */
 	if (good != VKRESET_PIXELS)
 		printf("vkreset: clear: FAIL (%u/%u pixels, first 0x%08x, expected 0x%08x)\n", good, VKRESET_PIXELS, words[0], VKRESET_CLEAR_WORD);
+
+	/* The device goes. */
 	vkUnmapMemory(run.device, run.memory);
 	vkreset_destroy(&run);
+
+	/* Fails on a pixel the clear did not write. */
 	if (good != VKRESET_PIXELS)
 		return 1;
 	printf("vkreset: clear: PASS (%llu ms, %u/%u pixels)\n", (unsigned long long)(vkreset_ms() - start), good, VKRESET_PIXELS);
@@ -318,6 +344,8 @@ vkreset_open(
 	status = vkEnumeratePhysicalDevices(run->instance, &count, &run->physical);
 	if (status != VK_SUCCESS && status != VK_INCOMPLETE)
 		return status;
+
+	/* Refuses a system without a Vulkan device. */
 	if (count == 0)
 		return VK_ERROR_INITIALIZATION_FAILED;
 
@@ -330,6 +358,7 @@ vkreset_open(
 		if ((families[index].queueFlags & wanted) == wanted)
 			break;
 	}
+
 	if (index == count)
 		return VK_ERROR_FEATURE_NOT_PRESENT;
 
@@ -389,6 +418,7 @@ vkreset_buffer(
 		if ((requirements.memoryTypeBits & (1U << type)) != 0 && (memory.memoryTypes[type].propertyFlags & wanted) == wanted)
 			break;
 	}
+
 	run->failed_call = "host-coherent memory type";
 	if (type == memory.memoryTypeCount)
 		return VK_ERROR_FEATURE_NOT_PRESENT;
@@ -653,6 +683,7 @@ vkreset_clear(
 		if ((requirements.memoryTypeBits & (1U << type)) != 0)
 			break;
 	}
+
 	run->failed_call = "image memory type";
 	if (type == memory.memoryTypeCount)
 		return VK_ERROR_FEATURE_NOT_PRESENT;

@@ -120,8 +120,10 @@ void
 powervr_render_command_single_core(
 	int on)
 {
-	/* Remembers the choice for every command built after it. */
-	single_core = on && POWERVR_RENDER_SINGLE_CORE_FLAG ? 1 : 0;
+	/* Remembers the choice for every command built after it; the switch can keep it off. */
+	single_core = 0;
+	if (on && POWERVR_RENDER_SINGLE_CORE_FLAG)
+		single_core = 1;
 }
 
 /*
@@ -173,13 +175,16 @@ powervr_fragment_command(
 	put64(command, POWERVR_FRAGMENT_DBIAS_BASE, setup->dbias_table & 0xfffffffffcULL);
 
 	/* A depth target's loads and stores, and the flags: the depth buffer, one core. */
-	flags = single_core ? POWERVR_FRAGMENT_SINGLE_CORE : 0U;
+	flags = 0U;
+	if (single_core)
+		flags = POWERVR_FRAGMENT_SINGLE_CORE;
 	if (setup->has_depth) {
 		put64(command, POWERVR_FRAGMENT_ZLS_CONTROL, setup->zls_control);
 		put64(command, POWERVR_FRAGMENT_ZLS_BASE, setup->zls_base);
 		put32(command, POWERVR_FRAGMENT_ZLS_STRIDE, setup->zls_stride);
 		flags |= POWERVR_FRAGMENT_DEPTH_BUFFER;
 	}
+
 	put32(command, POWERVR_FRAGMENT_FLAGS, flags);
 
 	/* The end-of-tile program. */
@@ -197,6 +202,7 @@ powervr_geometry_command(
 	const struct powervr_geometry_setup *setup,
 	uint8_t *command)
 {
+	uint32_t flags;
 	uint64_t stride;
 	uint32_t common;
 
@@ -216,8 +222,11 @@ powervr_geometry_command(
 	if (POWERVR_GEOMETRY_RESUME_SIZE_SET)
 		put32(command, POWERVR_GEOMETRY_RESUME_SIZE, RESUME_STATE_UPDATE | (common << RESUME_COMMON_SHIFT));
 
-	/* The only geometry of its render, on one core. */
-	put32(command, POWERVR_GEOMETRY_FLAGS, POWERVR_GEOMETRY_FIRST_AND_LAST | (single_core ? POWERVR_GEOMETRY_SINGLE_CORE : 0U));
+	/* The only geometry of its render, on one core when chosen. */
+	flags = POWERVR_GEOMETRY_FIRST_AND_LAST;
+	if (single_core)
+		flags |= POWERVR_GEOMETRY_SINGLE_CORE;
+	put32(command, POWERVR_GEOMETRY_FLAGS, flags);
 }
 
 /*

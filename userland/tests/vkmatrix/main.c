@@ -182,6 +182,7 @@ static uint32_t vkmatrix_quad(struct vkmatrix *run, float x0, float y0, float x1
 static uint32_t vkmatrix_texture_quad(struct vkmatrix *run, float x0, float y0, float x1, float y1);
 static uint32_t vkmatrix_batch_quad(struct vkmatrix *run, float x0, float y0, float x1, float y1, const float colour[4], const float extra[4], float alpha);
 static float vkmatrix_ndc(float pixel);
+static float unit_clamp(float value);
 static uint32_t vkmatrix_pack(const float colour[4]);
 static void vkmatrix_fill(struct vkmatrix *run, uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1, uint32_t value);
 static int vkmatrix_compare(struct vkmatrix *run);
@@ -253,6 +254,7 @@ main(
 	uint32_t index;
 	uint32_t ran;
 	uint32_t passed;
+	int named;
 
 	/* The device and the objects every case shares. */
 	memset(&run, 0, sizeof(run));
@@ -271,8 +273,13 @@ main(
 	ran = 0;
 	passed = 0;
 	for (index = 0; index < sizeof(cases) / sizeof(cases[0]); index++) {
-		if (argc > 1 && strcmp(argv[1], cases[index].name) != 0)
-			continue;
+		/* Skips a case other than the one named. */
+		if (argc > 1) {
+			named = strcmp(argv[1], cases[index].name);
+			if (named != 0)
+				continue;
+		}
+
 		run.failed_call = "";
 		run.reason[0] = '\0';
 		run.tolerance = 0;
@@ -289,14 +296,19 @@ main(
 			printf("vkmatrix: %s: PASS\n", cases[index].name);
 			passed++;
 		}
+
 		vkmatrix_release_case(&run);
 	}
 
 	/* The total. */
 	printf("vkmatrix: %u/%u passed\n", (unsigned)passed, (unsigned)ran);
 	vkmatrix_destroy(&run);
+
+	/* A run of no case, or with a failure, fails. */
 	if (ran == 0 || passed != ran)
 		return 1;
+
+	/* Succeeded: every case that ran passed. */
 	return 0;
 }
 
@@ -349,6 +361,7 @@ vkmatrix_open(
 		if ((families[index].queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0)
 			break;
 	}
+
 	run->failed_call = "graphics queue family";
 	if (index == count)
 		return VK_ERROR_FEATURE_NOT_PRESENT;
@@ -692,10 +705,12 @@ vkmatrix_pipeline(
 		layout_info.setLayoutCount = 1;
 		layout_info.pSetLayouts = &run->set_layout;
 	}
+
 	if (shape->push_size != 0) {
 		layout_info.pushConstantRangeCount = 1;
 		layout_info.pPushConstantRanges = &range;
 	}
+
 	run->failed_call = "vkCreatePipelineLayout";
 	status = vkCreatePipelineLayout(run->device, &layout_info, NULL, &run->layouts[slot]);
 	if (status != VK_SUCCESS)
@@ -716,11 +731,13 @@ vkmatrix_pipeline(
 		module_info.pCode = shape->fragment;
 		status = vkCreateShaderModule(run->device, &module_info, NULL, &modules[1]);
 	}
+
 	if (status != VK_SUCCESS) {
 		if (modules[0] != VK_NULL_HANDLE)
 			vkDestroyShaderModule(run->device, modules[0], NULL);
 		return status;
 	}
+
 	memset(stages, 0, sizeof(stages));
 	stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 	stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
@@ -798,6 +815,7 @@ vkmatrix_pipeline(
 		blend_attachment.colorBlendOp = VK_BLEND_OP_ADD;
 		blend_attachment.alphaBlendOp = VK_BLEND_OP_ADD;
 	}
+
 	memset(&blend, 0, sizeof(blend));
 	blend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
 	blend.attachmentCount = 1;
@@ -949,6 +967,7 @@ vkmatrix_texture(
 		run->failed_call = "vkWaitForFences";
 		status = vkWaitForFences(run->device, 1, &run->fence, VK_TRUE, VKMATRIX_WAIT_NS);
 	}
+
 	vkDestroyBuffer(run->device, upload, NULL);
 	vkFreeMemory(run->device, upload_memory, NULL);
 	if (status != VK_SUCCESS)
@@ -1139,6 +1158,23 @@ vkmatrix_ndc(
 	return pixel / (float)(VKMATRIX_SIZE / 2U) - 1.0f;
 }
 
+/* Clamps a texture coordinate to the edge texels' centres (0..1), as the sampler clamps to the edge. */
+static float
+unit_clamp(
+	float value)
+{
+	/* Below the first texel's centre. */
+	if (value < 0.0f)
+		return 0.0f;
+
+	/* Past the last texel's centre. */
+	if (value > 1.0f)
+		return 1.0f;
+
+	/* Succeeded: the coordinate is inside. */
+	return value;
+}
+
 /* Appends a quad of positions over the pixel rectangle and returns its first vertex. */
 static uint32_t
 vkmatrix_quad(
@@ -1158,6 +1194,7 @@ vkmatrix_quad(
 		run->vertex_map[run->vertex_floats++] = vkmatrix_ndc(corners[index][0]);
 		run->vertex_map[run->vertex_floats++] = vkmatrix_ndc(corners[index][1]);
 	}
+
 	return first;
 }
 
@@ -1185,6 +1222,7 @@ vkmatrix_texture_quad(
 		run->vertex_map[run->vertex_floats++] = corners[index][2];
 		run->vertex_map[run->vertex_floats++] = corners[index][3];
 	}
+
 	return first;
 }
 
@@ -1216,6 +1254,7 @@ vkmatrix_batch_quad(
 			run->vertex_map[run->vertex_floats++] = extra[channel];
 		run->vertex_map[run->vertex_floats++] = alpha;
 	}
+
 	return first;
 }
 
@@ -1237,6 +1276,7 @@ vkmatrix_pack(
 			value = 1.0f;
 		bytes[index] = (uint32_t)(value * 255.0f + 0.5f);
 	}
+
 	return bytes[2] | (bytes[1] << 8) | (bytes[0] << 16) | (bytes[3] << 24);
 }
 
@@ -1310,6 +1350,7 @@ vkmatrix_release_case(
 		run->pipelines[index] = VK_NULL_HANDLE;
 		run->layouts[index] = VK_NULL_HANDLE;
 	}
+
 	run->pipeline_count = 0;
 
 	/* The textures and their sets. */
@@ -1327,6 +1368,7 @@ vkmatrix_release_case(
 			vkFreeMemory(run->device, texture->memory, NULL);
 		memset(texture, 0, sizeof(*texture));
 	}
+
 	run->texture_count = 0;
 
 	/* The wide cases' image, pass and buffers. */
@@ -1398,6 +1440,7 @@ vkmatrix_destroy(
 			vkDestroyCommandPool(run->device, run->command_pool, NULL);
 		vkDestroyDevice(run->device, NULL);
 	}
+
 	if (run->instance != VK_NULL_HANDLE)
 		vkDestroyInstance(run->instance, NULL);
 }
@@ -1454,7 +1497,14 @@ case_push4(
 		colour[3] = 1.0f;
 		vkmatrix_fill(run, 4U + 20U * index, 8U, 20U + 20U * index, 40U, vkmatrix_pack(colour));
 	}
-	return vkmatrix_finish(run, 1);
+
+	/* Ends the pass, submits it and reads the image back. */
+	status = vkmatrix_finish(run, 1);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the image was read back and compared. */
+	return VK_SUCCESS;
 }
 
 /* Draws three quads with a push constant of an offset and a colour, read by the vertex and the fragment. */
@@ -1507,7 +1557,14 @@ case_push_sized(
 			colour[1] += 0.25f;
 		vkmatrix_fill(run, 2U + index * 20U, 2U + index * 16U, 14U + index * 20U, 14U + index * 16U, vkmatrix_pack(colour));
 	}
-	return vkmatrix_finish(run, 1);
+
+	/* Ends the pass, submits it and reads the image back. */
+	status = vkmatrix_finish(run, 1);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the image was read back and compared. */
+	return VK_SUCCESS;
 }
 
 /* push32: the compositor's 32-byte push constant. */
@@ -1515,7 +1572,15 @@ static VkResult
 case_push32(
 	struct vkmatrix *run)
 {
-	return case_push_sized(run, vkmatrix_push32_vert, sizeof(vkmatrix_push32_vert), vkmatrix_push32_frag, sizeof(vkmatrix_push32_frag), 32U);
+	VkResult status;
+
+	/* Runs the push constant case at this size. */
+	status = case_push_sized(run, vkmatrix_push32_vert, sizeof(vkmatrix_push32_vert), vkmatrix_push32_frag, sizeof(vkmatrix_push32_frag), 32U);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the case ran. */
+	return VK_SUCCESS;
 }
 
 /* push128: a 128-byte push constant (the panel's 96 bytes fit in it). */
@@ -1523,7 +1588,15 @@ static VkResult
 case_push128(
 	struct vkmatrix *run)
 {
-	return case_push_sized(run, vkmatrix_push128_vert, sizeof(vkmatrix_push128_vert), vkmatrix_push128_frag, sizeof(vkmatrix_push128_frag), 128U);
+	VkResult status;
+
+	/* Runs the push constant case at this size. */
+	status = case_push_sized(run, vkmatrix_push128_vert, sizeof(vkmatrix_push128_vert), vkmatrix_push128_frag, sizeof(vkmatrix_push128_frag), 128U);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the case ran. */
+	return VK_SUCCESS;
 }
 
 /* batch: two quads of the compositor's batch vertex, every attribute used. */
@@ -1565,8 +1638,16 @@ case_batch(
 		colour[3] = alphas[index] + extras[index][3];
 		vkmatrix_fill(run, 8U + 28U * index, 8U, 28U + 28U * index, 56U, vkmatrix_pack(colour));
 	}
+
 	run->tolerance = 1;
-	return vkmatrix_finish(run, 1);
+
+	/* Ends the pass, submits it and reads the image back. */
+	status = vkmatrix_finish(run, 1);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the image was read back and compared. */
+	return VK_SUCCESS;
 }
 
 /* Makes the texture pipeline. */
@@ -1576,6 +1657,7 @@ texture_pipeline(
 	uint32_t *pipeline)
 {
 	struct vkmatrix_shape shape;
+	VkResult status;
 
 	memset(&shape, 0, sizeof(shape));
 	shape.vertex = vkmatrix_texture_vert;
@@ -1584,7 +1666,14 @@ texture_pipeline(
 	shape.fragment_size = sizeof(vkmatrix_texture_frag);
 	shape.layout = VKMATRIX_TEXTURE;
 	shape.texture = 1;
-	return vkmatrix_pipeline(run, &shape, pipeline);
+
+	/* Makes the pipeline of the shape. */
+	status = vkmatrix_pipeline(run, &shape, pipeline);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the pipeline is made. */
+	return VK_SUCCESS;
 }
 
 /* A texel word (0xAABBGGRR) as a colour. */
@@ -1631,7 +1720,14 @@ case_nearest(
 		texel_colour(texels[index], colour);
 		vkmatrix_fill(run, 16U + (index % 4U) * 8U, 16U + (index / 4U) * 8U, 24U + (index % 4U) * 8U, 24U + (index / 4U) * 8U, vkmatrix_pack(colour));
 	}
-	return vkmatrix_finish(run, 1);
+
+	/* Ends the pass, submits it and reads the image back. */
+	status = vkmatrix_finish(run, 1);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the image was read back and compared. */
+	return VK_SUCCESS;
 }
 
 /* linear: a 2x2 texture on a 16x16 quad, filtered and clamped to the edge. */
@@ -1675,16 +1771,26 @@ case_linear(
 		for (x = 0; x < 16; x++) {
 			s = ((float)x + 0.5f) / 16.0f * 2.0f - 0.5f;
 			t = ((float)y + 0.5f) / 16.0f * 2.0f - 0.5f;
-			fx = s < 0.0f ? 0.0f : (s > 1.0f ? 1.0f : s);
-			fy = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
-			for (channel = 0; channel < 4; channel++)
+			fx = unit_clamp(s);
+			fy = unit_clamp(t);
+			for (channel = 0; channel < 4; channel++) {
 				colour[channel] = (corners[0][channel] * (1.0f - fx) + corners[1][channel] * fx) * (1.0f - fy) +
 				    (corners[2][channel] * (1.0f - fx) + corners[3][channel] * fx) * fy;
+			}
+
 			run->expected[(24U + y) * VKMATRIX_SIZE + 24U + x] = vkmatrix_pack(colour);
 		}
 	}
+
 	run->tolerance = 3;
-	return vkmatrix_finish(run, 1);
+
+	/* Ends the pass, submits it and reads the image back. */
+	status = vkmatrix_finish(run, 1);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the image was read back and compared. */
+	return VK_SUCCESS;
 }
 
 /* two-textures: two sets, bound in turn between two draws of one pass. */
@@ -1721,7 +1827,14 @@ case_two_textures(
 	vkCmdDraw(run->command, 6, 1, first, 0);
 	vkmatrix_fill(run, 4, 4, 28, 60, vkmatrix_pack(red_colour));
 	vkmatrix_fill(run, 36, 4, 60, 60, vkmatrix_pack(green_colour));
-	return vkmatrix_finish(run, 1);
+
+	/* Ends the pass, submits it and reads the image back. */
+	status = vkmatrix_finish(run, 1);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the image was read back and compared. */
+	return VK_SUCCESS;
 }
 
 /* Draws one opaque quad, then two of a blend over it and over the background. */
@@ -1740,6 +1853,8 @@ case_blend(
 	uint32_t first;
 	uint32_t channel;
 	uint32_t pass;
+	uint32_t left;
+	uint32_t right;
 	VkResult status;
 
 	/* The opaque pipeline and the blending one, both of the 32-byte push constant. */
@@ -1776,17 +1891,38 @@ case_blend(
 
 	/* The band: over the green square (x 24..40), then over the background (x 40..56). */
 	for (pass = 0; pass < 2; pass++) {
-		memcpy(base, pass == 0 ? under : background, sizeof(base));
+		/* The colour under the band and the band's columns in this pass. */
+		if (pass == 0) {
+			memcpy(base, under, sizeof(base));
+			left = 24U;
+			right = 40U;
+		} else {
+			memcpy(base, background, sizeof(base));
+			left = 40U;
+			right = 56U;
+		}
+
+		/* The blended colour. */
 		for (channel = 0; channel < 4; channel++) {
 			if (mode == VKMATRIX_OVER)
 				colour[channel] = over[channel] + base[channel] * (1.0f - over[3]);
 			else
 				colour[channel] = over[channel] + base[channel];
 		}
-		vkmatrix_fill(run, pass == 0 ? 24U : 40U, 24U, pass == 0 ? 40U : 56U, 40U, vkmatrix_pack(colour));
+
+		/* The expected pixels of this part of the band. */
+		vkmatrix_fill(run, left, 24U, right, 40U, vkmatrix_pack(colour));
 	}
+
 	run->tolerance = 1;
-	return vkmatrix_finish(run, 1);
+
+	/* Ends the pass, submits it and reads the image back. */
+	status = vkmatrix_finish(run, 1);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the image was read back and compared. */
+	return VK_SUCCESS;
 }
 
 /* blend-over: premultiplied alpha, the compositor's blend. */
@@ -1794,7 +1930,15 @@ static VkResult
 case_blend_over(
 	struct vkmatrix *run)
 {
-	return case_blend(run, VKMATRIX_OVER);
+	VkResult status;
+
+	/* Runs the blend case in this mode. */
+	status = case_blend(run, VKMATRIX_OVER);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the case ran. */
+	return VK_SUCCESS;
 }
 
 /* blend-add: addition. */
@@ -1802,7 +1946,15 @@ static VkResult
 case_blend_add(
 	struct vkmatrix *run)
 {
-	return case_blend(run, VKMATRIX_ADD);
+	VkResult status;
+
+	/* Runs the blend case in this mode. */
+	status = case_blend(run, VKMATRIX_ADD);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the case ran. */
+	return VK_SUCCESS;
 }
 
 /* Draws a grid of the given number of squares in one pass, each its own colour by a push constant. */
@@ -1855,8 +2007,16 @@ case_draws(
 		vkCmdDraw(run->command, 6, 1, first, 0);
 		vkmatrix_fill(run, x * side + 1U, y * side + 1U, (x + 1U) * side - 1U, (y + 1U) * side - 1U, vkmatrix_pack(&push[4]));
 	}
+
 	run->tolerance = 1;
-	return vkmatrix_finish(run, 1);
+
+	/* Ends the pass, submits it and reads the image back. */
+	status = vkmatrix_finish(run, 1);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the image was read back and compared. */
+	return VK_SUCCESS;
 }
 
 /* draws-32: 32 draws in one render pass. */
@@ -1864,7 +2024,15 @@ static VkResult
 case_draws_32(
 	struct vkmatrix *run)
 {
-	return case_draws(run, 32);
+	VkResult status;
+
+	/* Runs the many-draws case with this count. */
+	status = case_draws(run, 32);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the case ran. */
+	return VK_SUCCESS;
 }
 
 /* draws-64: 64 draws in one render pass. */
@@ -1872,7 +2040,15 @@ static VkResult
 case_draws_64(
 	struct vkmatrix *run)
 {
-	return case_draws(run, 64);
+	VkResult status;
+
+	/* Runs the many-draws case with this count. */
+	status = case_draws(run, 64);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the case ran. */
+	return VK_SUCCESS;
 }
 
 /* two-passes: a pass that clears and draws, then one that loads and draws, one submit. */
@@ -1921,7 +2097,14 @@ case_two_passes(
 	vkCmdPushConstants(run->command, run->layouts[pipeline], VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), push);
 	vkCmdDraw(run->command, 6, 1, first, 0);
 	vkmatrix_fill(run, 32, 32, 56, 56, vkmatrix_pack(second_colour));
-	return vkmatrix_finish(run, 1);
+
+	/* Ends the pass, submits it and reads the image back. */
+	status = vkmatrix_finish(run, 1);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the image was read back and compared. */
+	return VK_SUCCESS;
 }
 
 /* scissor-viewport: one quad over the whole target, drawn under three scissors and viewports. */
@@ -2003,7 +2186,14 @@ case_scissor_viewport(
 	vkCmdPushConstants(run->command, run->layouts[pipeline], VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), push);
 	vkCmdDraw(run->command, 6, 1, first, 0);
 	vkmatrix_fill(run, 44, 40, 56, 56, vkmatrix_pack(colours[2]));
-	return vkmatrix_finish(run, 1);
+
+	/* Ends the pass, submits it and reads the image back. */
+	status = vkmatrix_finish(run, 1);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the image was read back and compared. */
+	return VK_SUCCESS;
 }
 
 /* sample-bgra: the nearest case with a B8G8R8A8 texture, the format the target and the compositor's images have. */
@@ -2043,7 +2233,14 @@ case_sample_bgra(
 		colour[3] = 1.0f;
 		vkmatrix_fill(run, 16U + (index % 4U) * 8U, 16U + (index / 4U) * 8U, 24U + (index % 4U) * 8U, 24U + (index / 4U) * 8U, vkmatrix_pack(colour));
 	}
-	return vkmatrix_finish(run, 1);
+
+	/* Ends the pass, submits it and reads the image back. */
+	status = vkmatrix_finish(run, 1);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the image was read back and compared. */
+	return VK_SUCCESS;
 }
 
 /* Makes a 16x16 B8G8R8A8 image that is an attachment and a texture, its view, sampler and set, in the case's texture slot. */
@@ -2430,22 +2627,31 @@ wide_compare(
 	uint32_t got;
 	uint32_t want;
 	size_t used;
+	int differs;
 
 	/* The count of texels that differ, the first of them, the word positions that differ. */
 	bad = 0;
 	first = VKMATRIX_PIXELS;
 	positions = 0;
 	for (texel = 0; texel < VKMATRIX_PIXELS; texel++) {
-		if (memcmp(seen + texel * texel_bytes, wanted + texel * texel_bytes, texel_bytes) == 0)
+		/* A texel that matches says nothing. */
+		differs = memcmp(seen + texel * texel_bytes, wanted + texel * texel_bytes, texel_bytes);
+		if (differs == 0)
 			continue;
+
+		/* Counts it and remembers the first. */
 		if (bad == 0)
 			first = texel;
 		bad++;
+
+		/* The word positions that differ in it. */
 		for (word = 0; word < texel_bytes / 4U; word++) {
-			if (memcmp(seen + texel * texel_bytes + word * 4U, wanted + texel * texel_bytes + word * 4U, 4) != 0)
+			differs = memcmp(seen + texel * texel_bytes + word * 4U, wanted + texel * texel_bytes + word * 4U, 4);
+			if (differs != 0)
 				positions |= 1U << word;
 		}
 	}
+
 	if (bad == 0) {
 		/* Every texel matched: the shared target's comparison has nothing to say. */
 		memcpy(run->expected, run->pixels, sizeof(run->expected));
@@ -2461,6 +2667,7 @@ wide_compare(
 		memcpy(&want, wanted + first * texel_bytes + word * 4U, 4);
 		used += (size_t)snprintf(run->reason + used, sizeof(run->reason) - used, " %08x/%08x", (unsigned)got, (unsigned)want);
 	}
+
 	run->failed_call = run->reason;
 	return VK_ERROR_UNKNOWN;
 }
@@ -2529,6 +2736,7 @@ case_clear_wide(
 		run->failed_call = "malloc";
 		return VK_ERROR_OUT_OF_HOST_MEMORY;
 	}
+
 	for (texel = 0; texel < VKMATRIX_PIXELS; texel++) {
 		byte = texel * texel_bytes;
 		if (texel_bytes == 8)
@@ -2536,6 +2744,7 @@ case_clear_wide(
 		else
 			memcpy(wanted + byte, words, sizeof(words));
 	}
+
 	status = wide_compare(run, download, wanted, texel_bytes);
 	free(wanted);
 	if (status != VK_SUCCESS)
@@ -2550,7 +2759,15 @@ static VkResult
 case_clear_64(
 	struct vkmatrix *run)
 {
-	return case_clear_wide(run, VK_FORMAT_R16G16B16A16_SFLOAT, 8);
+	VkResult status;
+
+	/* Runs the wide-format case with this format. */
+	status = case_clear_wide(run, VK_FORMAT_R16G16B16A16_SFLOAT, 8);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the case ran. */
+	return VK_SUCCESS;
 }
 
 /* clear-128: R32G32B32A32_SFLOAT cleared (raw words) and copied out. */
@@ -2558,7 +2775,15 @@ static VkResult
 case_clear_128(
 	struct vkmatrix *run)
 {
-	return case_clear_wide(run, VK_FORMAT_R32G32B32A32_SFLOAT, 16);
+	VkResult status;
+
+	/* Runs the wide-format case with this format. */
+	status = case_clear_wide(run, VK_FORMAT_R32G32B32A32_SFLOAT, 16);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the case ran. */
+	return VK_SUCCESS;
 }
 
 /* copy-64 and copy-128: a pattern from a buffer into an OPTIMAL image of the format and back, every byte compared. */

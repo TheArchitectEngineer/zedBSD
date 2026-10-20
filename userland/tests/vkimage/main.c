@@ -9,7 +9,7 @@
  * vkimage: the Vulkan image test.  On the first physical device it makes a
  * linear and an optimal colour image, checks that the linear image's rows
  * are a multiple of 32 bytes, that an image declaring external memory is
- * made (the shared path's image, ws269-p010l) and that no linear format
+ * made (the shared path's image) and that no linear format
  * reports sampling while the shared path's switch is off, and binds the optimal image to memory with a view and
  * a sampler.  It prints one line:
  *

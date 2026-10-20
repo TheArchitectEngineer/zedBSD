@@ -112,14 +112,33 @@ _Static_assert(QUEUE_PDS_OFFSET == POWERVR_PROGRAM_HEAP_START && QUEUE_PDS_BYTES
  * default and a submission's dispatches keep their order.
  *
  * Values referenced:
- * zedBSD plan/ws269/tests/p008/mesa-pco-vkcompute-stream-bxe-4-32.txt
- * (Mesa 26.2.5's vkcompute stream on BXE-4-32: kernel 0 usc_common_size
+ * Mesa 26.2.5's vkcompute stream on BXE-4-32, as its driver wrote it
+ * on the host with the drm shim (kernel 0: usc_common_size
  * 64 bytes, usc_target ALL, sd_type NONE, usc_common_shared, pds data 32
  * bytes, max_instances 8, one instance; kernel 1 sd_type USC; kernel 2
  * fence, sd_type PDS, usc_common_shared, max_instances 8; terminate).
  */
 #ifndef POWERVR_EXECUTOR_MESA_STREAM
 #define POWERVR_EXECUTOR_MESA_STREAM	1
+#endif
+
+/*
+ * A dispatch kernel's program and sizes: the one kernel's data sequencer
+ * program writes the workgroup ids into the common store; a kernel per
+ * workgroup has them compiled in.
+ */
+#if POWERVR_EXECUTOR_ONE_KERNEL
+#define QUEUE_KERNEL_PDS_CODE		POWERVR_COMPUTE_PDS_GROUP_CODE
+#define QUEUE_KERNEL_DATA_WORDS		POWERVR_COMPUTE_PDS_GROUP_DATA_WORDS
+#define QUEUE_KERNEL_USC_INPUTS		POWERVR_COMPUTE_GROUP_USC_INPUTS
+#define QUEUE_KERNEL_PDS_INPUTS		QUEUE_PDS_GROUP_INPUTS
+#define QUEUE_KERNEL_COMMON		QUEUE_GROUP_COEFFICIENTS
+#else
+#define QUEUE_KERNEL_PDS_CODE		QUEUE_PDS_CODE
+#define QUEUE_KERNEL_DATA_WORDS		POWERVR_COMPUTE_PDS_DATA_WORDS
+#define QUEUE_KERNEL_USC_INPUTS		0U
+#define QUEUE_KERNEL_PDS_INPUTS		QUEUE_PDS_INPUTS
+#define QUEUE_KERNEL_COMMON		0U
 #endif
 #define QUEUE_SHARED_DATA		0x40U
 #define QUEUE_SHARED_CODE		0x50U
@@ -175,6 +194,7 @@ static int executor_make(struct powervr_vk_session *session);
 static int map_program_buffer(struct powervr_session *owner, uint64_t bytes, uint64_t address, struct powervr_buffer **result);
 static int build_command_buffer(struct submission *build, const struct powervr_vk_command_buffer *command);
 static int build_dispatch(struct submission *build, uint32_t groups);
+static int dispatch_kernels(struct submission *build, const struct powervr_vk_pipeline *pipeline, uint32_t groups, uint32_t kernels, struct powervr_shader_workspace *workspace, struct powervr_shader_program *program, uint8_t *code);
 static int build_shared(struct submission *build, const struct powervr_shader_program *program, uint32_t groups, uint32_t *values);
 static int build_kernel(struct submission *build, const uint8_t *code, size_t length, uint32_t temps, uint32_t instances, uint32_t workgroups);
 static int build_fence(struct submission *build);
@@ -829,77 +849,56 @@ build_dispatch(
 {
 	struct powervr_shader_workspace *workspace;
 	struct powervr_shader_program *program;
-	struct powervr_ir_shader *shader;
 	const struct powervr_vk_pipeline *pipeline;
-	uint32_t values[POWERVR_SHADER_REQUESTS * 4U];
 	uint8_t *code;
-	uint32_t group;
-	uint32_t index;
+	uint32_t kernels;
 	int error;
 
 	/* No workgroup, no work. */
 	if (groups == 0)
 		return 0;
 
-	/* A bound pipeline, and room for its workgroups. */
+	/* A bound pipeline. */
 	pipeline = build->pipeline;
 	if (pipeline == NULL)
 		return EINVAL;
-	if (POWERVR_EXECUTOR_ONE_KERNEL ? build->kernels >= QUEUE_KERNELS_MAX : groups > QUEUE_KERNELS_MAX - build->kernels)
+
+	/* Room for its kernels: one of all the workgroups, or one a workgroup. */
+	kernels = groups;
+	if (POWERVR_EXECUTOR_ONE_KERNEL)
+		kernels = 1U;
+	if (kernels > QUEUE_KERNELS_MAX - build->kernels)
 		return E2BIG;
 
-	/* The compiler's working memory, the program's description and the code's room. */
+	/* The compiler's working memory. */
 	workspace = kern_malloc(powervr_shader_workspace_size());
+	if (workspace == NULL)
+		return ENOMEM;
+
+	/* The program's description. */
 	program = kern_malloc(sizeof(*program));
-	code = kern_malloc(QUEUE_USC_ROOM);
-	error = 0;
-	if (workspace == NULL || program == NULL || code == NULL)
-		error = ENOMEM;
-
-	/* What the shader asks for, and a workgroup the task holds. */
-	if (error == 0)
-		error = powervr_shader_read(pipeline->words, pipeline->word_count, POWERVR_SHADER_COMPUTE, NULL, workspace, program, &shader);
-	if (error == 0 && (program->workgroup[0] == 0 || program->workgroup[0] > POWERVR_COMPUTE_INSTANCES))
-		error = ENOTSUP;
-	if (error == 0 && program->shareds > POWERVR_SHADER_REQUESTS * 4U)
-		error = ENOTSUP;
-	if (error == 0)
-		error = build_shared(build, program, groups, values);
-
-	/*
-	 * One kernel per workgroup, its id in the program; or, with the one
-	 * kernel, a single program the data sequencer gives each id.
-	 */
-	for (group = 0; error == 0 && group < (POWERVR_EXECUTOR_ONE_KERNEL ? 1U : groups); group++) {
-		for (index = 0; index < program->request_count; index++) {
-			if (program->requests[index].kind == POWERVR_SHADER_REQUEST_WORKGROUP_ID)
-				values[program->requests[index].shared] = group;
-		}
-		error = powervr_shader_compile_inline(pipeline->words, pipeline->word_count, POWERVR_SHADER_COMPUTE, NULL, values, program->shareds, workspace, program, code, QUEUE_USC_ROOM);
-		if (error != 0) {
-			kern_logf("powervr: vk: the compute shader did not compile (%d)\n", error);
-			break;
-		}
-		if (POWERVR_DIAGNOSTICS && (group == 0 || group + 1U == groups))
-			kern_logf("powervr: vk: kernel %u (workgroup %u): usc 0x%llx, pds data 0x%llx\n", (unsigned)build->kernels, (unsigned)group,
-				  (unsigned long long)(POWERVR_USC_HEAP_BASE + QUEUE_USC_OFFSET + build->kernels * QUEUE_USC_ROOM),
-				  (unsigned long long)(POWERVR_PDS_HEAP_BASE + QUEUE_PDS_OFFSET + (build->kernels + 1U) * QUEUE_PDS_SLOT));
-		if (POWERVR_DIAGNOSTICS && group == 0) {
-			for (index = 0; index < program->shareds; index++)
-				kern_logf("powervr: vk: dispatch: shared word %u = 0x%08x\n", (unsigned)index, (unsigned)values[index]);
-		}
-		if (group == 0)
-			kern_logf("powervr: vk: dispatch of %u workgroups: the compute shader compiled to %u bytes, %u temps, %u shared words\n", groups, (unsigned)program->length, program->temps, program->shareds);
-		if (POWERVR_EXECUTOR_MESA_STREAM && group == 0)
-			error = build_shared_kernel(build);
-		if (error == 0)
-			error = build_kernel(build, code, program->length, program->temps, program->workgroup[0], POWERVR_EXECUTOR_ONE_KERNEL ? groups : 1U);
+	if (program == NULL) {
+		kern_free(workspace);
+		return ENOMEM;
 	}
 
-	/* The working memory goes. */
+	/* The room for the compiled code. */
+	code = kern_malloc(QUEUE_USC_ROOM);
+	if (code == NULL) {
+		kern_free(program);
+		kern_free(workspace);
+		return ENOMEM;
+	}
+
+	/* Compiles the shader and adds its kernels. */
+	error = dispatch_kernels(build, pipeline, groups, kernels, workspace, program, code);
+
+	/* The working memory goes, whatever the outcome. */
 	kern_free(code);
 	kern_free(program);
 	kern_free(workspace);
+
+	/* Reports a shader that did not compile or kernels that did not fit. */
 	if (error != 0)
 		return error;
 
@@ -909,9 +908,106 @@ build_dispatch(
 		if (error != 0)
 			return error;
 	}
+
 	build->dispatches++;
 
 	/* Succeeded: the dispatch is in the stream. */
+	return 0;
+}
+
+/*
+ * Compiles a dispatch's shader and adds its kernels: one in all, the data
+ * sequencer giving each workgroup its id, or one a workgroup with the id
+ * compiled in.
+ */
+static int
+dispatch_kernels(
+	struct submission *build,
+	const struct powervr_vk_pipeline *pipeline,
+	uint32_t groups,
+	uint32_t kernels,
+	struct powervr_shader_workspace *workspace,
+	struct powervr_shader_program *program,
+	uint8_t *code)
+{
+	uint32_t values[POWERVR_SHADER_REQUESTS * 4U];
+	struct powervr_ir_shader *shader;
+	uint32_t kernel_groups;
+	uint32_t group;
+	uint32_t index;
+	int error;
+
+	/* What the shader asks for. */
+	error = powervr_shader_read(pipeline->words, pipeline->word_count, POWERVR_SHADER_COMPUTE, NULL, workspace, program, &shader);
+	if (error != 0)
+		return error;
+
+	/* Refuses a workgroup one task cannot hold. */
+	if (program->workgroup[0] == 0 || program->workgroup[0] > POWERVR_COMPUTE_INSTANCES)
+		return ENOTSUP;
+
+	/* Refuses more shared words than the requests hold. */
+	if (program->shareds > POWERVR_SHADER_REQUESTS * 4U)
+		return ENOTSUP;
+
+	/* The shared register words: the buffers' addresses and the workgroup count. */
+	error = build_shared(build, program, groups, values);
+	if (error != 0)
+		return error;
+
+	/* The workgroups each kernel runs: all of them in the one kernel, else one. */
+	kernel_groups = 1U;
+	if (POWERVR_EXECUTOR_ONE_KERNEL)
+		kernel_groups = groups;
+
+	/* Compiles and adds each kernel. */
+	for (group = 0; group < kernels; group++) {
+		/* The workgroup's id, where the program reads it from its shared words. */
+		for (index = 0; index < program->request_count; index++) {
+			if (program->requests[index].kind == POWERVR_SHADER_REQUEST_WORKGROUP_ID)
+				values[program->requests[index].shared] = group;
+		}
+
+		/* The program with its shared words as constants. */
+		error = powervr_shader_compile_inline(pipeline->words, pipeline->word_count, POWERVR_SHADER_COMPUTE, NULL, values, program->shareds, workspace, program, code, QUEUE_USC_ROOM);
+		if (error != 0) {
+			kern_logf("powervr: vk: the compute shader did not compile (%d)\n", error);
+			return error;
+		}
+
+		/* The diagnostics: the first and last kernel's places. */
+		if (POWERVR_DIAGNOSTICS && (group == 0 || group + 1U == groups)) {
+			kern_logf("powervr: vk: kernel %u (workgroup %u): usc 0x%llx, pds data 0x%llx\n", (unsigned)build->kernels, (unsigned)group,
+				  (unsigned long long)(POWERVR_USC_HEAP_BASE + QUEUE_USC_OFFSET + build->kernels * QUEUE_USC_ROOM),
+				  (unsigned long long)(POWERVR_PDS_HEAP_BASE + QUEUE_PDS_OFFSET + (build->kernels + 1U) * QUEUE_PDS_SLOT));
+		}
+
+		/* The diagnostics: the first kernel's shared words. */
+		if (POWERVR_DIAGNOSTICS && group == 0) {
+			for (index = 0; index < program->shareds; index++)
+				kern_logf("powervr: vk: dispatch: shared word %u = 0x%08x\n", (unsigned)index, (unsigned)values[index]);
+		}
+
+		/* Says once what the dispatch compiled to. */
+		if (group == 0) {
+			kern_logf("powervr: vk: dispatch of %u workgroups: the compute shader compiled to %u bytes, %u temps, %u shared words\n",
+				  groups, (unsigned)program->length, program->temps, program->shareds);
+		}
+
+		/* Mesa's shared register allocation kernel goes before the first. */
+		if (POWERVR_EXECUTOR_MESA_STREAM && group == 0) {
+			error = build_shared_kernel(build);
+			if (error != 0)
+				return error;
+		}
+
+		/* The kernel itself. */
+		error = build_kernel(build, code, program->length, program->temps, program->workgroup[0], kernel_groups);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: every kernel of the dispatch is in the stream. */
 	return 0;
 }
 
@@ -962,11 +1058,12 @@ build_shared(
 			if (error != 0)
 				return error;
 			address += slot->offset;
-			if (POWERVR_DIAGNOSTICS)
+			if (POWERVR_DIAGNOSTICS) {
 				kern_logf("powervr: vk: dispatch: set %u binding %u buffer 0x%llx-0x%llx (%llu bytes, offset %llu) in shared words %u-%u\n",
 				  (unsigned)request->set, (unsigned)request->binding, (unsigned long long)address,
 				  (unsigned long long)(address - slot->offset + buffer->size), (unsigned long long)buffer->size,
 				  (unsigned long long)slot->offset, (unsigned)request->shared, (unsigned)(request->shared + 1U));
+			}
 			values[request->shared] = (uint32_t)address;
 			values[request->shared + 1U] = (uint32_t)(address >> 32);
 			break;
@@ -1041,8 +1138,8 @@ build_kernel(
 	if (error != 0)
 		return error;
 	slot = (build->kernels + 1U) * QUEUE_PDS_SLOT;
-	code_at = POWERVR_EXECUTOR_ONE_KERNEL ? POWERVR_COMPUTE_PDS_GROUP_CODE : QUEUE_PDS_CODE;
-	data_words = POWERVR_EXECUTOR_ONE_KERNEL ? POWERVR_COMPUTE_PDS_GROUP_DATA_WORDS : POWERVR_COMPUTE_PDS_DATA_WORDS;
+	code_at = QUEUE_KERNEL_PDS_CODE;
+	data_words = QUEUE_KERNEL_DATA_WORDS;
 	for (index = 0; index < data_words; index++)
 		put_word(build->executor->pds, slot + (uint32_t)index * 4U, data[index]);
 	for (index = 0; index < count; index++)
@@ -1053,15 +1150,21 @@ build_kernel(
 	kernel.data_offset = QUEUE_PDS_OFFSET + slot;
 	kernel.code_offset = QUEUE_PDS_OFFSET + slot + code_at;
 	kernel.data_words = data_words;
-	kernel.usc_inputs = POWERVR_EXECUTOR_ONE_KERNEL ? POWERVR_COMPUTE_GROUP_USC_INPUTS : 0U;
-	kernel.shared_from_usc = POWERVR_EXECUTOR_MESA_STREAM ? 1U : 0U;
-	kernel.pds_temporaries = POWERVR_EXECUTOR_ONE_KERNEL ? QUEUE_PDS_GROUP_INPUTS : QUEUE_PDS_INPUTS;
+	kernel.usc_inputs = QUEUE_KERNEL_USC_INPUTS;
+	kernel.shared_from_usc = 0U;
+	kernel.pds_temporaries = QUEUE_KERNEL_PDS_INPUTS;
 	kernel.workgroups[0] = workgroups;
-	kernel.usc_common = POWERVR_EXECUTOR_ONE_KERNEL ? QUEUE_GROUP_COEFFICIENTS : 0U;
+	kernel.usc_common = QUEUE_KERNEL_COMMON;
 	kernel.usc_temporaries = temps;
 	kernel.instances = instances;
 	kernel.max_instances = 0;
 	kernel.any_cluster = 1;
+
+	/* In Mesa's stream the shading cluster gives the kernel its shared data. */
+	if (POWERVR_EXECUTOR_MESA_STREAM)
+		kernel.shared_from_usc = 1U;
+
+	/* The kernel's words. */
 	error = powervr_compute_kernel_words(&kernel, words);
 	if (error != 0)
 		return error;
@@ -1176,12 +1279,13 @@ run(
 	owner = build->session->owner;
 	render = owner->render;
 	stream = build->executor->stream->address;
-	if (POWERVR_DIAGNOSTICS)
+	if (POWERVR_DIAGNOSTICS) {
 		kern_logf("powervr: vk: run: stream 0x%llx, words 0x%llx-0x%llx of 0x%x bytes, %u kernels; usc 0x%llx-0x%llx, pds 0x%llx-0x%llx\n",
 		  (unsigned long long)stream, (unsigned long long)(stream + QUEUE_STREAM_FIRST), (unsigned long long)(stream + build->stream_at),
 		  QUEUE_STREAM_BYTES, (unsigned)build->kernels,
 		  (unsigned long long)(POWERVR_USC_HEAP_BASE + QUEUE_USC_OFFSET), (unsigned long long)(POWERVR_USC_HEAP_BASE + QUEUE_USC_OFFSET + build->kernels * QUEUE_USC_ROOM),
 		  (unsigned long long)(POWERVR_PDS_HEAP_BASE + QUEUE_PDS_OFFSET), (unsigned long long)(POWERVR_PDS_HEAP_BASE + QUEUE_PDS_OFFSET + (build->kernels + 1U) * QUEUE_PDS_SLOT));
+	}
 	powervr_compute_command(stream + QUEUE_STREAM_FIRST, stream, command);
 	if (POWERVR_COMPUTE_SWITCH_STATE)
 		command[POWERVR_COMPUTE_RESUME_PDS1_WORD] = powervr_compute_resume_pds1(0);

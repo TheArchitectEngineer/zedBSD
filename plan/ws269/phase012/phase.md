@@ -110,3 +110,79 @@ userland は vkstage と gpu-selftest の P2 の分。書き方だけを直し�
 
 - 未実施: riscv64-virt・amd64 の vmunix。
 - 片付け（Q1 に依頼）: `build/p012/`。
+
+## q1522-i01（P1、2026-10-21）: 2 回目（N4）、P1 の file
+
+### 範囲
+
+[proposal-next-phases.md](../proposal-next-phases.md) の (3) のうち P1 の担当の file。
+
+| 群 | file |
+| --- | --- |
+| 1 | compute-program.c/.h、render-program.c/.h、render-command.c/.h、interface.h、gpu-mmu.c/.h、render-sr-program.c/.h。transfer-program.c は P2 が変えている途中なので除いた |
+| 2 | firmware-boot.c、commands.c、render.c、render-queue.c、render-runtime.c、render-target.c、render-context.c、render-job.c、render-private.h、powervr-private.h |
+| 3 | render-check.c |
+| 4 | vk-queue.c、vk-device.c |
+| 6 | vf2-gpu.c、vf2-pmu.c/.h、vf2-crg.c |
+| 7 | gpu-selftest、vkimage |
+| 追加 | vkmatrix、vkcoherency、vkreset |
+
+### 見方
+
+- 照らした規則は `plan/coding-style.md` の全文。
+- 1 回目（de99d9964、2026-10-20 20:00 の main）から変わった行を重く見た（30 file、+7053/−218）。
+- 機械の検査を 2 つ使った。どちらも scratchpad の使い捨ての script で、試験の道具としては残さない。
+  1. 条件の中の呼び出し、`for` の中の宣言、条件演算子、関数の結果の直の return、複数行の注釈の形。
+  2. 閉じ括弧の後の空行、注釈の無い制御文、複数行の本体の括弧。
+- 検査に出た所は全部、人が読んで判断した。
+
+### 直した物（動作は変えない）
+
+- **関数の結果の直の return**:
+  - compute-program.c `powervr_compute_shared_kernel_words`。
+  - render.c `resource_make`・`powervr_resource_make_free_list`・`powervr_resource_make_region_headers`。
+  - vkmatrix の 20 か所（`vkmatrix_finish`・`case_*` の呼び出し）。
+  - それぞれ結果を受けて調べ、成功の return を別にした。
+- **render-check.c の末尾の `return error;`**: 失敗と成功の return を分けた。
+- **条件の中の呼び出し**:
+  - render-queue.c: stop_poll の `powervr_command_wait_executed` は短絡の順を保って分けた。watchdog の `ms_ticks` は前に出した。
+  - gpu-selftest: `ppm_header` を 1 段ずつにした。`frame_check` の fseek・fread を分け、説明の部分を `frame_describe` に分けた。
+  - vkmatrix: 引数の名前の比較と、`wide_compare` の memcmp 2 か所。
+  - vkreset: 引数の比較と clock_gettime。
+- **条件演算子**:
+  - 入れ子の物: firmware-boot.c の trace の量の macro 3 つを `#if` に、vkmatrix の clamp を `unit_clamp` に、render-job.c の load の probe の形を `LOAD_USC_PROBE_FORM` に。
+  - 長い・意味のある選択: compute-program.c の workgroup の数と probe の index、render-command.c の single core の 3 か所、render.c の window の 2 か所、render-job.c の prefix の 2 か所、vk-queue.c の executor の 7 か所（`QUEUE_KERNEL_*` の macro と `if` に）、vkmatrix の band。
+  - 残した物: 短い対称の選択（`"reset" : "kept"`、`x != NULL ? x->address : 0` の診断の行など）は §6 の許す範囲として残した。
+- **まとめて確保して後で調べる形**:
+  - vk-queue.c の `build_dispatch` を 1 つずつ確保・検査する形にし、compile と kernel の追加を `dispatch_kernels` に分けた。
+  - render-job.c の `load_graphics` の compile を `load_graphics_compile`・`load_graphics_shaders` に分けた。
+- **入れ子の block の中の宣言**: render-job.c の 3 か所を関数の先頭へ移した。
+- **複数行の本体に括弧が無い**: render-target.c 3、render-check.c 2、vk-queue.c 2、firmware-boot.c 1、render-job.c 1、vkmatrix 1。
+- **閉じ括弧の後の空行**: 69 か所に足した。
+- **段落の注釈**: render-job.c・render-check.c・vk-queue.c・compute-program.c・render-queue.c・render-target.c・firmware-boot.c・vkreset の、注釈の無い制御文と段落に足した。
+- **goto の後始末の label**: render-target.c と render-context.c で、label の後に注釈を足した。
+- **source の中の plan/ と WS の参照**: 6 か所を外した。
+  - compute-program.c/.h と vk-queue.c の `plan/ws269/tests/p008/…` は「Mesa 26.2.5 を host で drm shim で動かした時の stream」と書き直した。
+  - render-job.c・vkimage・vkcoherency の `ws269-p0xx` は消した。
+
+### 確かめ（2026-10-21、worktree /home/awe/zedBSD-worktrees/p1、QEMU と板は使っていない）
+
+| 確かめ | コマンド | 結果 |
+| --- | --- | --- |
+| VF2 の kernel と userland | `timeout 3000 make ZEDBSD_CONFIG=plan/ws269/tests/p010/config-visionfive2-selftest.mk BUILD=build/q1522 -j16 vmunix build/q1522/bin/{vkreset,vkmatrix,vkcoherency,gpu-selftest,vkimage}` | rc=0、warning 0 |
+| p009 の host 試験 | `sh plan/ws269/tests/p009/run.sh build/q1522-host/p009` | 505 passed、0 failed |
+| p010 の host 試験 | `sh plan/ws269/tests/p010/run.sh build/q1522-host/p010` | rc=0、15 本とも 0 failed |
+| gpu-selftest の host 試験 | `sh plan/ws269/tests/p010/selftest-host.sh build/q1522-host/st` | 0 failed |
+| 空白 | `git diff --check` | 出力なし |
+
+### 残した物・未了
+
+- **vkmatrix・vkcoherency の段落の粒度**: 試験の program で、合わせて約 3,700 行ある。次の形が多く残る。
+  - `if (status == VK_SUCCESS) status = …` の連鎖。
+  - 1 つの段落に複数の操作を入れた書き方。
+  - 後始末の `if (x != NULL) destroy` の並び。
+  
+  検査に出た「注釈の無い制御文」約 80 か所のうち、直したのは明らかな物（最後の return、結果の判定）だけ。全部を段落に分けるには書き直しになるので、ここでは行わなかった。続けるなら別の Queue にする。
+- **compute-program.c の probe の program**: `if (error == 0) error = …group(&groups[count++], …)` の連鎖が残る。診断の probe で、動作を変えずに書き直すと長くなるので残した。
+- **群 5（compiler）と compute-check.c**: P2 の担当。transfer-program.c も P2 が変えている途中なので見ていない。
+- **commit**: 5960d5a97 と 4d6e01797（main 987679cba の上）。板での確認はしていない（style だけの変更で、host 試験と build で確かめた）。

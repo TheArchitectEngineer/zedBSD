@@ -547,6 +547,7 @@ list_make(
 	return 0;
 
 fail:
+	/* Gives back what was made and reports the failure. */
 	if (list->entries != NULL)
 		powervr_resource_unmake(session, list->entries);
 	list->entries = NULL;
@@ -724,6 +725,7 @@ target_make(
 	return 0;
 
 fail:
+	/* Destroys the part-made target and reports the failure. */
 	target_destroy(render, session, target);
 	return error;
 }
@@ -747,6 +749,8 @@ target_region_headers(
 	/* The session's handle on it in the region header window; the handle takes the creation reference. */
 	error = powervr_resource_make_region_headers(session, buffer, result);
 	powervr_buffer_put(session->render, buffer);
+
+	/* Reports a window that could not take it. */
 	if (error != 0)
 		return error;
 
@@ -1184,20 +1188,22 @@ powervr_target_dump(
 
 	/* The record: the first half's data, then the common part. */
 	bytes = POWERVR_TARGET_RECORD_BYTES;
-	for (offset = 0; offset < bytes; offset += 32U)
+	for (offset = 0; offset < bytes; offset += 32U) {
 		kern_logf("powervr: target: record +%03x: %08x %08x %08x %08x %08x %08x %08x %08x\n", (unsigned)offset,
 			  (unsigned)powervr_object_get32(&target->record, offset), (unsigned)powervr_object_get32(&target->record, offset + 4U),
 			  (unsigned)powervr_object_get32(&target->record, offset + 8U), (unsigned)powervr_object_get32(&target->record, offset + 12U),
 			  (unsigned)powervr_object_get32(&target->record, offset + 16U), (unsigned)powervr_object_get32(&target->record, offset + 20U),
 			  (unsigned)powervr_object_get32(&target->record, offset + 24U), (unsigned)powervr_object_get32(&target->record, offset + 28U));
+	}
 
 	/* The local free list's record. */
-	for (offset = 0; offset < (uint32_t)sizeof(struct powervr_fw_free_list); offset += 32U)
+	for (offset = 0; offset < (uint32_t)sizeof(struct powervr_fw_free_list); offset += 32U) {
 		kern_logf("powervr: target: local list +%02x: %08x %08x %08x %08x %08x %08x %08x %08x\n", (unsigned)offset,
 			  (unsigned)powervr_object_get32(&target->local.record, offset), (unsigned)powervr_object_get32(&target->local.record, offset + 4U),
 			  (unsigned)powervr_object_get32(&target->local.record, offset + 8U), (unsigned)powervr_object_get32(&target->local.record, offset + 12U),
 			  (unsigned)powervr_object_get32(&target->local.record, offset + 16U), (unsigned)powervr_object_get32(&target->local.record, offset + 20U),
 			  (unsigned)powervr_object_get32(&target->local.record, offset + 24U), (unsigned)powervr_object_get32(&target->local.record, offset + 28U));
+	}
 }
 
 /* Prints a session's global free list's record, eight words to a line, when it was made. */
@@ -1223,10 +1229,13 @@ powervr_session_global_list_dump(
 		  (unsigned long long)(list->entries != NULL ? list->entries->address : 0U),
 		  (unsigned)list->page_count,
 		  (unsigned long long)(list->pages != NULL ? list->pages->run.paddr : 0U));
-	for (offset = 0; offset < (uint32_t)sizeof(struct powervr_fw_free_list); offset += 32U)
+
+	/* The record, eight words a line. */
+	for (offset = 0; offset < (uint32_t)sizeof(struct powervr_fw_free_list); offset += 32U) {
 		kern_logf("powervr: target: global list +%02x: %08x %08x %08x %08x %08x %08x %08x %08x\n", (unsigned)offset,
 			  (unsigned)powervr_object_get32(&list->record, offset), (unsigned)powervr_object_get32(&list->record, offset + 4U),
 			  (unsigned)powervr_object_get32(&list->record, offset + 8U), (unsigned)powervr_object_get32(&list->record, offset + 12U),
 			  (unsigned)powervr_object_get32(&list->record, offset + 16U), (unsigned)powervr_object_get32(&list->record, offset + 20U),
 			  (unsigned)powervr_object_get32(&list->record, offset + 24U), (unsigned)powervr_object_get32(&list->record, offset + 28U));
+	}
 }
