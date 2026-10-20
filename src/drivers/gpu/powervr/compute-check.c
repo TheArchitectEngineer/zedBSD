@@ -30,12 +30,14 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <kern/clock.h>
 #include <kern/dcache.h>
 #include <kern/kcrt.h>
 #include <kern/klog.h>
 #include <kern/kmem.h>
 #include <kern/lock.h>
 #include <kern/pmem.h>
+#include <kern/sched.h>
 #include <uapi/errno.h>
 
 #include "drivers/gpu/powervr/render-private.h"
@@ -89,6 +91,10 @@
 /* The probe kicks' streams, after the fence program's slot. */
 #define KICK_END_ONLY		(KICK_COUNT + 1U)
 #define KICK_FENCE_ONLY		(KICK_COUNT + 2U)
+
+/* How long after a probe kick the core's registers are read, and how many. */
+#define PROBE_STATE_MS		100U
+#define PROBE_REGISTERS		14U
 #define PDS_FENCE		KICK_COUNT
 
 /* The data sequencer temporaries a compute kernel's inputs take. */
@@ -136,6 +142,7 @@ struct check_state {
 	const volatile uint32_t *cached;
 	unsigned mapped;
 	unsigned placed;
+	int probing;
 };
 
 /* What the rounds found, word by word. */
@@ -155,6 +162,7 @@ static int write_kick(struct check_state *state, unsigned kick, unsigned usc_pro
 static int write_probe_streams(struct check_state *state);
 static int probe_kick(struct check_state *state, unsigned kick_index, const char *what);
 static void probe_report(struct check_state *state, unsigned kick_index);
+static void probe_registers(struct powervr_core *core);
 static void put_bytes(struct powervr_buffer *buffer, uint32_t offset, const uint8_t *bytes, size_t length);
 static void put_word(struct powervr_buffer *buffer, uint32_t offset, uint32_t word);
 static int kick(struct check_state *state, unsigned kick_index);
@@ -251,6 +259,7 @@ setup(
 	state->usc = NULL;
 	state->mapped = 0;
 	state->placed = 0;
+	state->probing = 0;
 
 	/* A session of the check's own. */
 	*step = "open";
@@ -643,6 +652,12 @@ kick(
 	mutex_unlock(&state->render->core->lock);
 	if (error != 0)
 		return error;
+
+	/* A probe kick reads the core's state a little after the kick, before any recovery. */
+	if (state->probing) {
+		sched_sleep(sched_ticks() + (PROBE_STATE_MS * KERN_CLOCK_HZ + 999U) / 1000U);
+		probe_registers(state->render->core);
+	}
 
 	/* Waits for the timeline to reach it. */
 	error = powervr_session_wait(state->session, value, CHECK_WAIT_MS);
@@ -1059,7 +1074,9 @@ probe_kick(
 	/* The kick, between its two lines. */
 	powervr_firmware_trace_mark(state->render->core);
 	kern_logf("powervr: kick: compute probe %s sent (context %s)\n", what, state->session->lost ? "reset" : "kept");
+	state->probing = 1;
 	error = kick(state, kick_index);
+	state->probing = 0;
 	kern_logf("powervr: compute probe: %s: %s (%d), context %s\n", what, error == 0 ? "finished" : "FAILED", error,
 		  state->session->lost ? "reset" : "kept");
 	if (error == 0 && state->session->lost)
@@ -1116,4 +1133,35 @@ probe_report(
 		kern_logf("powervr: probe: switch state %u: 0x%08x%08x\n", index,
 			  (unsigned)powervr_object_get32(&session->context, 152U + index * 8U + 4U),
 			  (unsigned)powervr_object_get32(&session->context, 152U + index * 8U));
+}
+
+/*
+ * Prints the core's registers that say whether the compute data master
+ * and the bus's MMU are stuck, read while a probe kick runs.
+ *
+ * Values referenced:
+ * StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
+ * drivers/gpu/drm/img/img-rogue/hwdefs/rogue/km/rgx_cr_defs_km.h
+ * (RGX_CR_EVENT_STATUS 0x0130, RGX_CR_SIDEKICK_IDLE 0x03C8,
+ * RGX_CR_CDM_CONTEXT_STORE_STATUS 0x04A0, RGX_CR_BIF_CAT_BASE0 0x1200,
+ * RGX_CR_BIF_MMU_ENTRY_STATUS 0x1288, RGX_CR_BIF_MMU_ENTRY 0x1290,
+ * RGX_CR_BIF_FAULT_BANK0_MMU_STATUS 0x12B0, ..._REQ_STATUS 0x12B8,
+ * RGX_CR_BIF_FAULT_BANK1_MMU_STATUS 0x12C0, ..._REQ_STATUS 0x12C8,
+ * RGX_CR_BIF_MMU_STATUS 0x12D0, RGX_CR_BIF_READS_EXT_STATUS 0x1320,
+ * RGX_CR_BIF_READS_INT_STATUS 0x1328, RGX_CR_BIF_STATUS_MMU 0x1358).
+ */
+static void
+probe_registers(
+	struct powervr_core *core)
+{
+	static const uint32_t offsets[PROBE_REGISTERS] = {
+		0x0130U, 0x03c8U, 0x04a0U, 0x1200U, 0x1288U, 0x1290U, 0x12b0U, 0x12b8U,
+		0x12c0U, 0x12c8U, 0x12d0U, 0x1320U, 0x1328U, 0x1358U,
+	};
+	unsigned index;
+
+	/* Each register, 64 bits wide, on its own line. */
+	for (index = 0; index < PROBE_REGISTERS; index++)
+		kern_logf("powervr: probe: register 0x%04x = 0x%016llx\n", (unsigned)offsets[index],
+			  (unsigned long long)powervr_read64(core, offsets[index]));
 }

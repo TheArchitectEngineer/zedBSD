@@ -469,3 +469,36 @@ mainline と 1 field ずつ照らした結果（すべて一致）:
 | cmd_compute | common 4（align で regs は 8）、ctrl_stream_base 40、context_state_base 48、resume_pds1 60 | 同じ |
 
 - 確かめ: 試験の image の config の vmunix（`build/q1415/st`）と VF2 の vmunix は warning 0。実機は未。
+
+## q1416-i01（P1、2026-10-20）: 「end only」の kick の trace の読み
+
+trace（vf2-dmesg12、mark 2392〜3778）を mainline の `pvr_rogue_fwif_sf.h` で読んだ順:
+1. KCCB slot 17 の Cmd 0x2abc0065（kick）。
+2. cCCB Woff update = 184、DM 4、FWCtx 0xc002f000。
+3. Ready-to-run DM 4、item 0xc002f000。Client command header DM 4、client CCB 0xc0043000。
+4. GPU Units init（mask 0x1）、power off の取り消し。
+5. BIF: Activate MemCtx 0xc002b000 DM 4、Setup register set -1、PC address 0x405df000（catalogue と一致）、Alloc PC set 0、Grab reg set 0。
+6. Kick Compute: FWCtx 0xc002f000 @ 0。
+7. その後の HWR の検査:
+   - 「DM4 has taken 31444 / 62782 / 94246 ticks」
+   - Fast CRC Check の HWRNeeded 0 → 1
+   - USC Slots used by DM 0
+   - signature の register 0x40f8・0x4600 は Old・Curr とも 0
+   - Recovery DM4・5・6 fully recovered
+
+読み:
+- FW は CDM を kick し、MMU の context（PC）も設定した。
+- CDM は何も進めていない。USC の slot は 0、signature も 0。MMU の page fault の event は無い（EVENT_STATUS 0）。
+- program を動かす前（stream を読む、または resume の段）で止まっている見込み。
+
+PTE（`powervr_gpu_page_entry`）と mainline の `pvr_page_table_l0/l1/l2_entry_raw_set` の照合:
+- l0: 0x009 は VALID（bit 0）と SLC_BYPASS_CTRL（bit 3）。READ_ONLY（1）・CC（2）・PM_SRC（4）・ENTRY_PENDING（5）は 0。address は bit 12〜39。mainline と同じ形で、bypass は mainline の BO の BYPASS_DEVICE_CACHE と同じ使い方。
+- l1（PD）: valid と page size 4 KiB（0）と address。
+- l2（PC）: 32 bit で (address >> 12) << 4 | valid。
+
+どれも一致した。
+
+その他:
+- Mesa の compute の stream の execute_count は、gpu_multicore_support でも 0（Mesa main も同じ）。cdm_item・compute_cluster・tpu_tag_cdm_ctrl も 0 のまま。違いにはならない。
+- 直しは見つからなかった。次の診断として、probe の kick の 100 ms 後（FW の HWR の前）に core の register を読む `probe_registers` を足した。register は EVENT_STATUS・SIDEKICK_IDLE・CDM_CONTEXT_STORE_STATUS・BIF の CAT_BASE0・MMU_ENTRY_STATUS・MMU_ENTRY・FAULT_BANK0/1 の MMU・REQ の STATUS・MMU_STATUS・READS の EXT/INT・STATUS_MMU で、offset は StarFive の DDK の `rgx_cr_defs_km.h` による。MMU の walk の pending（MMU_ENTRY）や、bus の読みの滞り（READS_*）で、CDM がどこで止まるかを見る。
+- 確かめ: 試験の image の config の vmunix は warning 0。実機は未。BXE で存在しない register の読みは 0 を返す見込み。
