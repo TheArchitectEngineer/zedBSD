@@ -1,4 +1,10 @@
+<!-- awesome-plan project=zedbsd record=ws269-p010l -->
+
 # ws269-p010l — WSI の shared の道と dc8200 の zero copy
+
+- ID: ws269-p010l（親 [ws269](../ws.md)）
+- Status: in-progress（2026-10-20 P2 q1390-i01 前半: host 試験・VF2 の build まで、実機は未実施。2026-10-21: 板 93・94 で gpu-selftest の present-clear・present が通ったが、shared の道（export・import、dc8200 の zero copy）の板での確認は未）
+- Disposition: normal
 
 - 親: [ws269](../ws.md)。設計: [design-p010.md](../design-p010.md) §7。
 - Queue: q1390 / q1390-i01（P2、2026-10-20、前半）。状態: in-progress（host 試験・VF2 の build まで。実機（T1）は未実施。linear の SAMPLED の切り替えは off のまま）。

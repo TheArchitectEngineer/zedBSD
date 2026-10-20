@@ -1,4 +1,10 @@
+<!-- awesome-plan project=zedbsd record=ws269-p010p -->
+
 # ws269-p010p — format の広げ（純粋な関数の側）
+
+- ID: ws269-p010p（親 [ws269](../ws.md)）
+- Status: in-progress（2026-10-20 P2 q1389-i01: R32_SFLOAT・R16G16B16A16_SFLOAT など、host 試験・M9・VF2 の build まで。残り: raw 64/128 の copy、PBE の F16、板での確認）
+- Disposition: normal
 
 （Q1 2026-10-20: P2 が p010m と付けたが p010m は既に「仕上げと受け入れ」の ID なので p010p に付け直した。）
 
