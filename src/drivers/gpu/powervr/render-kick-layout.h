@@ -259,6 +259,22 @@ struct powervr_reset_stage {
 #define POWERVR_GEOMETRY_STREAM_BASE		16U
 #define POWERVR_STREAM_BASE_MASK		0xfffffffffcULL
 
+/*
+ * The words a background object's programs take, as the registers they
+ * fill: the pixel and uniform programs' code places, the texture data's
+ * place, and the sizes (all zero here: no shared registers, uniforms,
+ * texture state or temporaries).
+ *
+ * Values referenced:
+ * Mesa 26.2.5 src/imagination/csbgen/rogue/cr.xml (PDS_BGRND0_BASE:
+ * texunicode_addr 36..63 and shader_addr 4..31, each shifted by 4;
+ * PDS_BGRND1_BASE: texturedata_addr 36..63 shifted by 4;
+ * PDS_BGRND3_SIZEINFO); Linux v7.3
+ * drivers/gpu/drm/imagination/pvr_rogue_fwif_client.h (struct
+ * rogue_fwif_frag_regs: pds_pr_bgnd[3]).
+ */
+#define POWERVR_BACKGROUND_WORDS		3U
+
 /* One command a kick puts in a context's buffer: its type, its size and its bytes. */
 struct powervr_client_command {
 	uint32_t type;
@@ -270,8 +286,10 @@ struct powervr_client_command {
  * What one render asks of its contexts: the geometry and fragment
  * contexts' timeline words and the values the render writes there (the
  * partial render writes one less than the fragment), the render target
- * data set and its cleanup count, the syncs the render waits for, and
- * the three firmware commands as the caller built them.
+ * data set, the syncs the render waits for, the three firmware commands
+ * as the caller built them, and the background the fragment takes after
+ * a partial render when its command names none (NULL for no such
+ * default).
  */
 struct powervr_render_request {
 	uint32_t geometry_timeline;
@@ -284,6 +302,7 @@ struct powervr_render_request {
 	const uint8_t *geometry;
 	const uint8_t *partial;
 	const uint8_t *fragment;
+	const uint64_t *partial_background;
 };
 
 /*
@@ -327,6 +346,9 @@ int powervr_kick_combined_command(const struct powervr_kick *geometry, const str
  * own.
  */
 void powervr_geometry_partial_fence(uint8_t *command, uint32_t target_data, uint32_t timeline, uint32_t value);
+
+/* Builds the words of a background object's programs from their places in the data sequencer's window. */
+void powervr_background_words(uint32_t pixel_code, uint32_t uniform_code, uint32_t texture_data, uint64_t words[POWERVR_BACKGROUND_WORDS]);
 
 /* Puts the VDM control stream a geometry command runs. */
 void powervr_geometry_stream(uint8_t *command, uint64_t stream);

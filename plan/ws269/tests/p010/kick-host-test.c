@@ -230,6 +230,7 @@ sequence(void)
 	static uint8_t fragment[POWERVR_FRAGMENT_BYTES];
 	struct powervr_render_request request;
 	struct powervr_sync waits[POWERVR_RENDER_WAITS_MAX + 1U];
+	uint64_t background[POWERVR_BACKGROUND_WORDS];
 	unsigned index;
 
 	/*
@@ -244,6 +245,9 @@ sequence(void)
 	memset(geometry, 0xa5, sizeof(geometry));
 	memset(partial, 0x5a, sizeof(partial));
 	memset(fragment, 0x3c, sizeof(fragment));
+	background[0] = 0x111;
+	background[1] = 0x222;
+	background[2] = 0x333;
 	waits[0].address = 0x6000;
 	waits[0].value = 1;
 	waits[1].address = 0x6100;
@@ -258,6 +262,7 @@ sequence(void)
 	request.geometry = geometry;
 	request.partial = partial;
 	request.fragment = fragment;
+	request.partial_background = background;
 	expect(powervr_render_sequence_make(&request, &seq) == 0, "sequence builds");
 	expect(seq.geometry_count == 3 && seq.partial_count == 3 && seq.fragment_count == 3, "three commands each");
 	expect(command_is(&seq.geometry_commands[0], 0x2abc00d7U, 16) && command_is(&seq.geometry_commands[1], 0x2abc80c9U, 112) && command_is(&seq.geometry_commands[2], 0x2abc00d5U, 8), "geometry commands");
@@ -273,6 +278,25 @@ sequence(void)
 	expect(read32(seq.fragment_commands[0].data, 0) == 0x7000 && read32(seq.fragment_commands[0].data, 4) == 5, "fragment waits for the geometry");
 	expect(read32(seq.fragment_commands[1].data, 4) == 0x9000, "fragment data set");
 	expect(read32(seq.fragment_commands[2].data, 0) == 0x7100 && read32(seq.fragment_commands[2].data, 4) == 9, "fragment update");
+	expect(read64(seq.fragment_commands[1].data, 416) == 0x3c3c3c3c3c3c3c3cULL, "fragment's own background kept");
+
+	/* A fragment naming no background takes the default at 16 + 400; the partial render does not. */
+	memset(fragment, 0, sizeof(fragment));
+	memset(partial, 0, sizeof(partial));
+	expect(powervr_render_sequence_make(&request, &seq) == 0, "sequence with a default background");
+	expect(read64(seq.fragment_commands[1].data, 416) == 0x111 && read64(seq.fragment_commands[1].data, 424) == 0x222 && read64(seq.fragment_commands[1].data, 432) == 0x333, "default background");
+	expect(read64(seq.partial_commands[1].data, 416) == 0, "partial render background untouched");
+	request.partial_background = NULL;
+	expect(powervr_render_sequence_make(&request, &seq) == 0 && read64(seq.fragment_commands[1].data, 416) == 0, "no default: zero stays");
+
+	/* BGRND0: shader 4..31, texunicode 36..63; BGRND1: texture data 36..63; BGRND3 zero. */
+	powervr_background_words(0x123450, 0x678900, 0xabc00, background);
+	expect(background[0] == 0x0067890000123450ULL && background[1] == 0x000abc0000000000ULL && background[2] == 0, "background words");
+
+	/* The geometry's stream base at 16, bits 2..39. */
+	memset(geometry, 0, sizeof(geometry));
+	powervr_geometry_stream(geometry, 0x18000001237ULL);
+	expect(read64(geometry, 16) == 0x8000001234ULL && read64(geometry, 24) == 0, "geometry stream base");
 
 	/* No waits: the geometry has no fence; the partial render waits for the geometry alone. */
 	request.wait_count = 0;

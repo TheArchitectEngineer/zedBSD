@@ -28,6 +28,7 @@
 
 #include "drivers/gpu/powervr/render-private.h"
 #include "drivers/gpu/powervr/interface.h"
+#include "drivers/gpu/powervr/pds-encode.h"
 #include "drivers/gpu/powervr/render-program.h"
 
 /*
@@ -42,9 +43,10 @@
 /*
  * Where one set's memory sits in the data sequencer's window: the shared
  * register state, the persistent temporaries, then the four data
- * sequencer programs, each data then code, on 16 bytes.  The shared
- * register programs' code is 64 bytes after their data, the persistent
- * temporaries' right after theirs.
+ * sequencer programs, each data then code, on 16 bytes, and last the
+ * stand-in background program (used from the first set only).  The
+ * shared register programs' code is 64 bytes after their data, the
+ * persistent temporaries' right after theirs.
  */
 #define SET_SHARED_STATE		0x0U
 #define SET_PERSISTENT			0x4040U
@@ -52,9 +54,10 @@
 #define SET_SHARED_LOAD			0x4110U
 #define SET_PERSISTENT_STORE		0x4160U
 #define SET_PERSISTENT_RESUME		0x41a0U
+#define SET_BACKGROUND			0x41e0U
 #define SET_SHARED_CODE			0x40U
 #define SET_PERSISTENT_CODE		0x20U
-#define SET_BYTES			0x41e0U
+#define SET_BYTES			0x41f0U
 
 /* Where the shading cluster programs sit in theirs: the store, then the load. */
 #define SHADER_STORE			0x0U
@@ -71,7 +74,8 @@ _Static_assert(SET_SHARED_LOAD >= SET_SHARED_STORE + SET_SHARED_CODE + POWERVR_S
 _Static_assert(SET_PERSISTENT_STORE >= SET_SHARED_LOAD + SET_SHARED_CODE + POWERVR_SHARED_PDS_CODE_WORDS * 4U, "shared load program");
 _Static_assert(SET_PERSISTENT_CODE == POWERVR_PERSISTENT_DATA_WORDS * 4U, "persistent program data");
 _Static_assert(SET_PERSISTENT_RESUME >= SET_PERSISTENT_STORE + SET_PERSISTENT_CODE + POWERVR_PERSISTENT_STORE_CODE_WORDS * 4U, "persistent store program");
-_Static_assert(SET_BYTES >= SET_PERSISTENT_RESUME + SET_PERSISTENT_CODE + POWERVR_PERSISTENT_RESUME_CODE_WORDS * 4U, "persistent resume program");
+_Static_assert(SET_BACKGROUND >= SET_PERSISTENT_RESUME + SET_PERSISTENT_CODE + POWERVR_PERSISTENT_RESUME_CODE_WORDS * 4U, "persistent resume program");
+_Static_assert(SET_BYTES >= SET_BACKGROUND + 4U, "background program");
 _Static_assert(sizeof(((struct powervr_switch_shaders *)0)->store) == POWERVR_SHARED_USC_BYTES_MAX, "shader room");
 
 /* The contexts powervr_session_next_cleanup() names. */
@@ -87,6 +91,7 @@ static void client_drop(struct powervr_client *client);
 static void client_fill(struct powervr_client *client);
 static void common_fill(struct powervr_session *session, struct powervr_render_context *context, uint32_t place, struct powervr_client *client, struct powervr_object *state, uint32_t master);
 static int set_write(struct powervr_buffer *buffer, uint64_t place, uint64_t shader_place, struct powervr_switch_tasks *tasks);
+static int background_write(struct powervr_render_context *context);
 static void view_put32(struct powervr_buffer *buffer, uint32_t offset, uint32_t value);
 static void view_words(struct powervr_buffer *buffer, uint32_t offset, const uint32_t *words, unsigned count);
 static void view_bytes(struct powervr_buffer *buffer, uint32_t offset, const uint8_t *bytes, size_t count);
@@ -467,6 +472,11 @@ context_records(
 			return error;
 	}
 
+	/* The stand-in background: a program that only ends, as both the pixel and the uniform program. */
+	error = background_write(context);
+	if (error != 0)
+		return error;
+
 	/* The static state, written whole: the state buffers and both sets' tasks. */
 	kern_memset(record, 0, sizeof(record));
 	general = context->switch_memory->address;
@@ -640,6 +650,34 @@ set_write(
 	powervr_switch_task_words(&programs, tasks);
 
 	/* Succeeded: the set is written. */
+	return 0;
+}
+
+/*
+ * Writes the stand-in background program of a render context, a data
+ * sequencer program of one halt, and the words that name it as the
+ * background after a partial render.
+ */
+static int
+background_write(
+	struct powervr_render_context *context)
+{
+	uint32_t halt;
+	uint32_t place;
+	int error;
+
+	/* The halt, at its place in the first set. */
+	error = powervr_pds_halt(0, &halt);
+	if (error != 0)
+		return error;
+
+	view_put32(context->programs[0], SET_BACKGROUND, halt);
+
+	/* The words: the same program for the pixel and the uniform pass, no texture data. */
+	place = (uint32_t)(context->program_places[0] - POWERVR_PDS_HEAP_BASE) + SET_BACKGROUND;
+	powervr_background_words(place, place, 0, context->background);
+
+	/* Succeeded: the background is written. */
 	return 0;
 }
 

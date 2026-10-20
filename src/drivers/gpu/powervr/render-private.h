@@ -175,8 +175,10 @@ struct powervr_client {
  * general one, each buffer's shared register and persistent temporary
  * state and its data sequencer programs in the data sequencer's, the
  * shading cluster programs in the cluster's), the commands of the render
- * being kicked, the identity the firmware names it by, whether it was
- * kicked, and which of its contexts the firmware cleaned up.  Everything
+ * being kicked, the background a fragment takes after a partial render
+ * when its command names none (a stand-in program that only ends), the
+ * identity the firmware names it by, whether it was kicked, and which of
+ * its contexts the firmware cleaned up.  Everything
  * changes under the core's lock once the context is made.
  */
 struct powervr_render_context {
@@ -191,6 +193,7 @@ struct powervr_render_context {
 	struct powervr_buffer *shaders;
 	uint64_t shader_place;
 	struct powervr_render_sequence sequence;
+	uint64_t background[POWERVR_BACKGROUND_WORDS];
 	uint32_t identity;
 	unsigned kicked;
 	unsigned geometry_cleaned;

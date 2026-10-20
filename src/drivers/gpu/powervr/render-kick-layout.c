@@ -48,6 +48,7 @@ static void put64(uint8_t *bytes, uint32_t offset, uint64_t value);
 static uint32_t get32(const uint8_t *bytes, uint32_t offset);
 static int kick_data(const struct powervr_kick *kick, uint32_t *data);
 static void copy_bytes(uint8_t *to, const uint8_t *from, uint32_t bytes);
+static void partial_background(uint8_t *fragment, const uint64_t *words);
 static int reached(uint32_t now, uint32_t value);
 
 /* Writes a little-endian 32-bit word. */
@@ -189,6 +190,28 @@ powervr_geometry_partial_fence(
 	put32(command, POWERVR_SHARED_TARGET_DATA, target_data);
 	put32(command, POWERVR_GEOMETRY_PARTIAL_FENCE, timeline);
 	put32(command, POWERVR_GEOMETRY_PARTIAL_FENCE + 4U, value - 1U);
+}
+
+/*
+ * Builds the words of a background object's programs.
+ *
+ * Procedure referenced:
+ * Mesa 26.2.5 src/imagination/vulkan/pvr_arch_spm.c
+ * (pvr_spm_init_bgobj_state: BGRND0 from the pixel and uniform programs'
+ * places, BGRND1 from the texture data's, BGRND3 from the sizes).
+ */
+void
+powervr_background_words(
+	uint32_t pixel_code,
+	uint32_t uniform_code,
+	uint32_t texture_data,
+	uint64_t words[POWERVR_BACKGROUND_WORDS])
+{
+	/* Each place keeps its bits 4 to 31; the sizes stay zero. */
+	words[0] = (uint64_t)(pixel_code & 0xfffffff0U);
+	words[0] |= (uint64_t)(uniform_code & 0xfffffff0U) << 32;
+	words[1] = (uint64_t)(texture_data & 0xfffffff0U) << 32;
+	words[2] = 0;
 }
 
 /* Puts the VDM control stream a geometry command runs, as its register's value. */
@@ -339,6 +362,8 @@ powervr_render_sequence_make(
 	powervr_geometry_partial_fence(sequence->geometry, request->target_data, request->geometry_timeline, request->geometry_value);
 	powervr_fragment_target(sequence->partial, request->target_data);
 	powervr_fragment_target(sequence->fragment, request->target_data);
+	if (request->partial_background != NULL)
+		partial_background(sequence->fragment, request->partial_background);
 
 	/* The syncs: the render's waits for the geometry and the partial render, the geometry's completion last. */
 	for (index = 0; index < request->wait_count; index++) {
@@ -475,6 +500,25 @@ copy_bytes(
 	/* One byte at a time; the commands are short. */
 	for (index = 0; index < bytes; index++)
 		to[index] = from[index];
+}
+
+/* Puts a background after a partial render into a fragment command that names none. */
+static void
+partial_background(
+	uint8_t *fragment,
+	const uint64_t *words)
+{
+	unsigned index;
+
+	/* A command that names its own keeps it. */
+	for (index = 0; index < POWERVR_BACKGROUND_WORDS * 8U; index++) {
+		if (fragment[POWERVR_FRAGMENT_PARTIAL_BACKGROUND + index] != 0U)
+			return;
+	}
+
+	/* The default's three words. */
+	for (index = 0; index < POWERVR_BACKGROUND_WORDS; index++)
+		put64(fragment, POWERVR_FRAGMENT_PARTIAL_BACKGROUND + index * 8U, words[index]);
 }
 
 /* Reports whether a timeline word reached a value, across its wrap. */

@@ -177,6 +177,7 @@ check_build(
 	request.geometry = check->geometry;
 	request.partial = check->partial;
 	request.fragment = check->fragment;
+	request.partial_background = context->background;
 
 	/* The three kicks' commands, under the lock that guards the context. */
 	mutex_lock(&check->render->core->lock);

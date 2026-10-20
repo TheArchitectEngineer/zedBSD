@@ -383,7 +383,8 @@ powervr_session_kick_compute(
  * partial render's none; the fragment follows in a kick of its own with
  * the cleanup count.  The geometry's timeline takes the next value, the
  * fragment's the one after next (the partial render writes the one
- * between).
+ * between).  A fragment command that names no background after a
+ * partial render takes the context's stand-in.
  *
  * Procedure referenced:
  * Linux v7.3 drivers/gpu/drm/imagination/pvr_queue.c (pvr_queue_run_job:
@@ -433,6 +434,7 @@ powervr_session_kick_render(
 	request.geometry = geometry;
 	request.partial = partial;
 	request.fragment = fragment;
+	request.partial_background = context->background;
 	sequence = &context->sequence;
 	error = powervr_render_sequence_make(&request, sequence);
 	if (error != 0)
