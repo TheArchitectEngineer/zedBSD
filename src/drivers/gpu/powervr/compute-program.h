@@ -58,8 +58,13 @@
  * One kernel of the control stream.
  *
  * Data_offset and code_offset are the data sequencer program's places
- * in its heap; the unified and data sequencer temporaries are counts of
- * 32-bit registers.  Instances is the workgroup's size, all in x;
+ * in its heap.  Usc_inputs (the input registers the data sequencer
+ * writes into the unified store, as Mesa's vtxins) and pds_temporaries
+ * are counts of 32-bit registers and go into KERNEL0.  Usc_temporaries
+ * is not written to the kernel's words: the task issue word's field
+ * carries the temporaries, and on the board KERNEL0's unified size
+ * came out of the same allocation (2026-10-20), so writing the
+ * temporaries there as well left an instance too few.  Instances is the workgroup's size, all in x;
  * max_instances is how many go in one task, 32 written as zero.  Fence
  * makes the kernel wait for the work before it.  Shared_from_pds and
  * common_shared say the data sequencer loads the shared registers and
@@ -70,6 +75,7 @@ struct powervr_compute_kernel {
 	uint32_t code_offset;
 	unsigned data_words;
 	unsigned pds_temporaries;
+	unsigned usc_inputs;
 	unsigned usc_temporaries;
 	unsigned instances;
 	unsigned max_instances;

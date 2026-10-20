@@ -497,3 +497,36 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
   - own words・stride・grid・wide の temps が全部正しいこと。
   - その後に gpu-selftest の compute（vkcompute）も見る。
 - 片付け（Q1 に依頼）: `build/p025/`。
+
+## q1448-i01（P2、2026-10-20）: KERNEL0 の unified に temporaries を書かない、field は 4 register 単位
+
+- 板の 10 回目（vf2-dmesg45）:
+  - **`compute kernel: OK, 16384/16384`**（初めて通った）。
+  - own words・stride・wait は全部 ffffffff。store は 1 step 32/32、4 step 128/128。
+  - grid は u32・f16 が 0 wrong、u32・f8 が 32 wrong、u32・f4 で fault。
+- 読み:
+  - temps の program は r0〜r7 の 8 register を使う。unified 32（KERNEL0 の `usc_unified_size` に 32 register）では、field 16（16×4＝64 register）なら足り、field 8（32 register）では全部誤る。
+  - task issue の field は 4 register 単位（Mesa の `pvr_pds_setup_doutu` の `TEMPS_ALIGNSIZE 4`）で、instance の割り当ての全部を表す。KERNEL0 の unified（Mesa では vtxins、PDS が DOUTW で書く入力）は、その先頭を占める。だから unified に 32 を書くと、temporaries は 32 番目から後になる。
+  - 今までは KERNEL0 の unified に temporaries の数を書いていたので、その分だけ instance あたりの register が足りなかった（field を広げるほど直った理由）。
+- 直し:
+  - `compute-program.{c,h}`: `struct powervr_compute_kernel` に `usc_inputs`（unified の入力の register、Mesa の vtxins）を足し、KERNEL0 の `usc_unified_size` は `usc_inputs` から作る。`usc_temporaries` は KERNEL0 に書かない（task issue の field が持つ）。comment に理由を書いた。
+  - vk の executor（P1 の `vk-queue.c`）は `usc_temporaries` を設定し、`usc_inputs` を 0 のまま渡すので、file を変えずに unified は 0 になる。field は `temps` を 2 単位で数える（4 単位の 2 倍）ので、足りる。
+  - `compute-check.c`:
+    - `write_kick` の引数を unified の入力の数（`inputs`）に変え、普通の kick は 0 にした。
+    - store・probe・短い store の field は Mesa の通り 4 単位（`powervr_compute_temporaries_field(…, 4)`）にした。
+    - wide の temps は field 16 のまま（比べ用）。
+    - grid は `CHECK_GRID 0` で既定では走らせない。走らせる時も、狭い cell の fault が後を潰さないよう、最後に回した。
+- 試験: `plan/ws269/tests/p008/compute-host-test.c` の store の KERNEL0 の期待を `0x00000106`（unified 0）にし、unified の入力 2 で `0x00001106` を足した。
+
+| 確認 | 結果 |
+| --- | --- |
+| p008 の host | encode 94/0、compute 73/0 |
+| p009（切り替え 0） | 511 passed、0 failed |
+| VF2 の vmunix（`plan/ws269/tests/p008/config-visionfive2-compute.mk`、`build/p026/vf2/vmunix`） | rc 0、warning 0 |
+
+- 板で見ること:
+  - kernel が OK のまま。
+  - temps の行: fours（Mesa の field）が 0/32、twos も 0/32 なら INCONCLUSIVE。
+  - wide の temps が 0/32。
+  - 次に gpu-selftest の compute（vkcompute）。vk の executor は unified 0・field 2 単位になる。
+- 片付け（Q1 に依頼）: `build/p026/`。
