@@ -201,12 +201,14 @@ enum machine_kind {
  * board no-operation and wait groups took no time, and with unrelated
  * moves or multiply-adds between, a multiply-add read its source up to
  * three instructions later, a move or a 64-bit add up to two, and a
- * store its data up to four (vf2-dmesg75, 2026-10-21).  The spacing
+ * store its data up to four (vf2-dmesg75, 2026-10-21).  The compiled
+ * fill was 32/32 on the board with 6, 5 and 8 and either move filler,
+ * and with 4, 3 and 6 only with the move from s0 (vf2-dmesg79).  The spacing
  * loops look back at most SHADER_GAP_MAX groups.
  */
-#define SHADER_INTEGER_SOURCE_GAP	4U
-#define SHADER_ALU_SOURCE_GAP		3U
-#define SHADER_STORE_SOURCE_GAP		6U
+#define SHADER_INTEGER_SOURCE_GAP	6U
+#define SHADER_ALU_SOURCE_GAP		5U
+#define SHADER_STORE_SOURCE_GAP		8U
 #define SHADER_GAP_MAX			10U
 
 /* The back end's state for one shader. */

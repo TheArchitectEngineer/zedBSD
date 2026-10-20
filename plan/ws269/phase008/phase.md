@@ -1297,3 +1297,19 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
   - compiled fill などの結果は、それぞれの行で報告するだけ。probe の reset が Vulkan の device を閉じたままにしない。
   - kernel が ETIMEDOUT で check を途中で止める経路は、従来どおり stage に触らない。
 - VF2 の vmunix（`build/p2q1481/vf2/vmunix`）: rc 0、warning 0。板は未実施。
+
+## q1486-i01（P2、2026-10-21）: (1) 既定を板で 32/32 の組に
+
+- 板 79 の compiled fill:
+  - mov の filler、間隔 4/3/6 → 0/32
+  - mov の filler、6/5/8 → 32/32（920 byte）
+  - mov-special の filler、4/3/6 → 32/32
+  - mov-special の filler、6/5/8 → 32/32
+- mesa-form は 0/128（何も書かない）。
+- **既定を、filler `MACHINE_MOVE_SPECIAL`（r11 ← s0）、間隔 madd 6・alu 5・store 8 にした**（shader-private.h、shader-backend.c）。
+  - compute check の compiled fill は、最初の回（dump 付き）がこの既定になる。続いて mov-special の 4/3/6、mov の 6/5/8、mov の 4/3/6 の順に流れる。
+- host: compiler 455/0、group 20/0。fill-registers は 32/32（1,200 byte）。VF2 の vmunix（`build/p2q1486/vf2/vmunix`）は rc 0、warning 0。
+- **p009 の host が 491/3 になった**（変更前は 502/0）。
+  - 原因: vk-queue.c の `QUEUE_USC_ROOM` 0x400（1 KiB）に、p009 の fill の program が収まらない。`powervr: vk: the compute shader did not compile (28)`、28 ＝ ENOSPC。
+  - 板の compute check の inline の fill は 920 byte で、1 KiB に近い。vkcompute でも溢れうる。
+  - **P1 への依頼（vk-queue.c）**: `QUEUE_USC_ROOM` を 0x800 に上げる（`QUEUE_USC_BYTES` ＝ room × QUEUE_KERNELS_MAX。1 kernel の executor では kernel は少ないので、総量は問題にならない見込み）。

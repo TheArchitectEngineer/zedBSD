@@ -160,14 +160,14 @@ static int operations_conflict(const struct shader_machine_operation *reader, co
  * compute check compares settings on the board in one boot): the groups
  * between a group and a later write of a register it reads, by the
  * reader's kind (an integer multiply-add, a store, any other), and the
- * kind of the filler group: MACHINE_MOVE (r11 from itself, the default),
- * MACHINE_MOVE_SPECIAL (r11 from s0), or MACHINE_NOP / MACHINE_WAIT,
+ * kind of the filler group: MACHINE_MOVE_SPECIAL (r11 from s0, the
+ * default), MACHINE_MOVE (r11 from itself), or MACHINE_NOP / MACHINE_WAIT,
  * which on the board took no time (vf2-dmesg75).
  */
 unsigned shader_integer_source_gap = SHADER_INTEGER_SOURCE_GAP;
 unsigned shader_alu_source_gap = SHADER_ALU_SOURCE_GAP;
 unsigned shader_store_source_gap = SHADER_STORE_SOURCE_GAP;
-unsigned shader_filler_kind = MACHINE_MOVE;
+unsigned shader_filler_kind = MACHINE_MOVE_SPECIAL;
 
 static void nop_operation(struct shader_machine_operation *operation);
 static int filler_operation(const struct shader_machine_operation *operation);
