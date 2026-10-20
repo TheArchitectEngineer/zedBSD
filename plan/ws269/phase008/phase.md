@@ -1335,3 +1335,19 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
   - 板 79 の `as is` が 0/128 で、words が deaddead のまま（どこにも書かない）だった。window の filler は変種ごとに値を変えた（deaddead＋変種の番号）。
 - host の simulator（使い捨て）: 4 変種とも 128/128、880〜1,456 byte。
 - main の一時的な static assert（vk-queue.c の QUEUE_USC_ROOM 0x800 × 128 kernel）は、main 2244b19ca（QUEUE_KERNELS_MAX 64）で直ったので、それを merge して build した。VF2 の vmunix（`build/p2q1486/vf2/vmunix`）は rc 0、warning 0。板は未実施。
+
+### q1486-i01 の続き（板 81）
+
+- 板 81: compute check の `mesa-form fill`（as is）が **fault 0x400000000**（context 0x2、dm 4）を出し、session が lost になった。以降の compiled fill の 4 通りは (5) で走れなかった。
+- vkcompute: 3489/4096。word 0 が 0x00047000（buffer の address の下位語）。
+- 変更（compute-check.c）:
+  1. **mesa-form を opt-in にした**（`POWERVR_COMPUTE_LOCKUP_PROBES`。compute-program.h の注記にも fault を追記）。既定の build で流れる fault・lockup の probe は、これで無い見込み。
+  2. **compiled fill を 1 kernel × 4 workgroup でも流す**（`run_compiled_fill(state, dumps, groups)`、`COMPILED_GROUPS` 4）。
+     - 既定の filler・間隔の 4 通り（1 workgroup）の後に流す。workgroup id 1〜3 の instance が cf0 から address を作る道を見る。
+     - 行: `compiled fill G workgroups N/M (e), bytes, temps, field, words 0 … 32 …`。
+  3. **register の窓の probe（`run_field_probes`）は compiled fill の後**、workgroup id の probe の前へ移した（compiled fill の判定を先に守るため）。
+- vkcompute の word 0 ＝ address の下位語について（静的な見立て、板の 4 workgroup の結果で確かめる）:
+  - store は data を s0（r8）と s3 の範囲（address の pair r6:r7 と、その次の r8）の両方で渡す。Mesa も同じ形（`st s0=r4, s3=r2..4`）。
+  - data の位置に address の下位語が入るのは、次のどちらかの場合: store が data を読む時期に、その register がまだ前の値（address の下位語を置いた時期の値）だった。または、別の instance・workgroup の窓の r6 を読んだ（窓の重なりの仮説、(2) の field の probe で分かる）。
+  - 4096 語のうち 607 語だけが誤るのは、workgroup の重なり方（task に複数の workgroup が詰められる）とも整合する。
+- VF2 の vmunix（`build/p2q1486/vf2/vmunix`）: rc 0、warning 0。板は未実施。

@@ -146,6 +146,7 @@
  */
 #define USC_COMPILED		(USC_STEPS_FOUR + USC_PROBE_SPACING)
 #define COMPILED_OFFSET		0x1c0000U
+#define COMPILED_GROUPS		4U
 
 /*
  * The room for the compiled fill and its dump programs (to the end of
@@ -263,7 +264,7 @@ static int write_kick(struct check_state *state, unsigned kick, uint32_t usc_pla
 static int write_probes(struct check_state *state, uint8_t *code);
 static void run_probes(struct check_state *state);
 static void run_nop_probe(struct check_state *state);
-static void run_compiled_fill(struct check_state *state, int dumps);
+static void run_compiled_fill(struct check_state *state, int dumps, unsigned groups);
 static int run_prefixes(struct check_state *state, const struct shader_backend *backend);
 static int dump_append(struct shader_backend *dump, unsigned kind, unsigned destination, unsigned source_0_bank, unsigned source_0, unsigned source_1, unsigned source_2, uint32_t immediate);
 static int dump_program(const struct shader_backend *backend, struct shader_backend *dump, unsigned keep, uint64_t address, uint8_t *code, size_t room, size_t *length);
@@ -335,9 +336,9 @@ powervr_compute_check(
 	}
 
 	/*
-	 * The probes that lock the compute data master up on the VF2 (the
-	 * fence variants, the timing probes), only when asked, first, each
-	 * leaving a fresh session; the Mesa-form fill always.
+	 * The probes that lock the compute data master up or fault on the
+	 * VF2 (the fence variants, the Mesa-form fill, the timing probes),
+	 * only when asked, first, each leaving a fresh session.
 	 */
 	if (POWERVR_COMPUTE_LOCKUP_PROBES) {
 		error = run_fence_variants(&state);
@@ -346,9 +347,8 @@ powervr_compute_check(
 			return;
 		}
 	}
-	run_mesa_form(&state);
-	run_field_probes(&state);
 	if (POWERVR_COMPUTE_LOCKUP_PROBES) {
+		run_mesa_form(&state);
 		run_timing_probes(&state);
 		teardown(&state);
 		step = "open";
@@ -428,13 +428,19 @@ powervr_compute_check(
 			shader_store_source_gap = gaps[gap][2];
 			kern_logf("powervr: compute probes: compiled fill with gaps madd %u alu %u store %u, %s fillers\n",
 				  gaps[gap][0], gaps[gap][1], gaps[gap][2], fillers[filler] == MACHINE_MOVE ? "mov" : "mov-special");
-			run_compiled_fill(&state, filler == 0 && gap == 0);
+			run_compiled_fill(&state, filler == 0 && gap == 0, 1);
 		}
 	}
 	shader_filler_kind = MACHINE_MOVE_SPECIAL;
 	shader_integer_source_gap = SHADER_INTEGER_SOURCE_GAP;
 	shader_alu_source_gap = SHADER_ALU_SOURCE_GAP;
 	shader_store_source_gap = SHADER_STORE_SOURCE_GAP;
+
+	/* The compiled fill with the defaults as one kernel of four workgroups (ids 1 to 3 too), as the executor runs it. */
+	run_compiled_fill(&state, 0, COMPILED_GROUPS);
+
+	/* The register-window probe after the compiler's programs. */
+	run_field_probes(&state);
 	run_workgroup_probe(&state);
 	if (POWERVR_COMPUTE_LOCKUP_PROBES)
 		run_layouts(&state);
@@ -1079,7 +1085,8 @@ run_grid(
 static void
 run_compiled_fill(
 	struct check_state *state,
-	int dumps)
+	int dumps,
+	unsigned groups)
 {
 	struct powervr_shader_workspace *workspace;
 	struct powervr_shader_program *program;
@@ -1143,7 +1150,7 @@ run_compiled_fill(
 
 	if (error == 0) {
 		put_bytes(state->usc, USC_COMPILED, code, program->length);
-		error = write_workgroup_kick(state, field, 1);
+		error = write_workgroup_kick(state, field, groups);
 	}
 
 	/* The words and 64 KiB either side of them, each its own pattern, then the kick. */
@@ -1168,17 +1175,20 @@ run_compiled_fill(
 
 	/* The words that hold 3x + 7. */
 	good = 0;
-	for (word = 0; word < POWERVR_COMPUTE_INSTANCES; word++) {
+	for (word = 0; word < groups * POWERVR_COMPUTE_INSTANCES; word++) {
 		if (words[word] == word * 3U + 7U)
 			good++;
 	}
-	kern_logf("powervr: compute probes: compiled fill %u/%u (%d), %u bytes, %u temps, field %u\n",
+	kern_logf("powervr: compute probes: compiled fill %u workgroups %u/%u (%d), %u bytes, %u temps, field %u, words 0 %08x 32 %08x\n",
+		  groups,
 		  good,
-		  (unsigned)POWERVR_COMPUTE_INSTANCES,
+		  groups * (unsigned)POWERVR_COMPUTE_INSTANCES,
 		  error,
 		  program != NULL ? (unsigned)program->length : 0U,
 		  program != NULL ? (unsigned)program->temps : 0U,
-		  field);
+		  field,
+		  words[0],
+		  words[POWERVR_COMPUTE_INSTANCES]);
 
 	/* The working memory goes. */
 	kern_free(code);
