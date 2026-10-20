@@ -715,3 +715,63 @@ TA は始まったが何も進まない。USC は使われず、MMU の fault �
 - 次の結果で、mainline の `hwrt_data_init_fw_structure`・`hwrtdata_common_init` と field ごとに照らす。
 
 確かめ: 試験の image の config の vmunix は rc 0、warning 0。実機は未。
+
+## q1431-i01（P1、2026-10-20）: HWRT の record の読み（vf2-dmesg28）と context の dump
+
+Q1 の 3 つの問いへの答え（mainline の `pvr_rogue_fwif_check.h` の offset で読んだ）。
+
+(1) geometry command の先頭 16 byte は cmd_shared（frame_num・hwrt_data_fw_addr など）。render check が出したのは kick の前の雛形で、`powervr_session_kick_render` が CCB に写す時に RTD を入れる（trace の Kick TA の RTD 0xc0062000 と一致）。regs は 16 から:
+- 16 vdm_ctrl_stream_base = 0x8000013000
+- 44 ppp_ctrl = 0x202
+- 48 te_psg = 0x20000
+- 56 resume_task0_size = 0x20010000（state update と common 1）
+- 80 flags = 3
+
+te_psg の region stride は 0。Mesa も layers 1 では stride = header の大きさ（0x80）/ 4096 = 0 なので同じ。
+
+(2) HWRT data（半分ずつ 0x180、`rogue_fwif_hwrtdata`）:
+
+| offset | field | 値 |
+| --- | --- | --- |
+| 0 | pm_mlist | 0x800000a000 |
+| 0xa4 | common | 0xc0062300（record の +0x300） |
+| 0xac | state | 9（HWR、reset の後の値） |
+| 0xb0 | freelists | local 0xc0061000、global 0xc0060000、3 つ目 0 |
+| 0xc8 | vheap | 0x800000f000 |
+| 0xd0〜 | rta_ctl | max_rts 1 |
+| 0xf0 | tail | 0x8000011000 |
+| 0xf8 | macrotile array | 0 |
+| 0x100 | region header | 0x800000d000（2 つ目は +0x80） |
+| 0x108 | rtc | 0 |
+| 0x114 | geom_caches_need_zeroing | 1 |
+
+- macrotile array の 0: Mesa の `rogue_get_macrotile_array_size` は、SIMPLE_INTERNAL_PARAMETER_FORMAT の core（BXE）では 0 で、address は無効（0）。正しい。
+- rtc の 0: layers 1 では Mesa も無効。正しい。
+- region header: BRN 63142 が無い core（DDK の `rgxcore_km_36.50.54.182.h` は BRN 63553・71317 だけ）では、Mesa は general の heap に置く。正しい。
+- common（+0x300、`rogue_fwif_hwrtdata_common`）:
+  - screen_pixel_max 0x003f003f
+  - multi_sample_ctl・flipped 0x88
+  - tpc_stride 0・tpc_size 0x80（layers 1 で Mesa と同じ）
+  - te_screen 0x3003
+  - mtile_stride 4
+  - te_mtile1・2 0x80000
+  - isp_merge は 0（ROGUEXE で tile 16 の時、Mesa も入れない）
+  - rgn_header_size 0x10
+  - isp_mtile_size 0x20002
+
+  見た範囲で Mesa の式と食い違いは無い。
+
+(3) local free list（`rogue_fwif_freelist`）:
+- list 0x8000008000、top 0x8000008000
+- stack_top 0x1f、max 0x20、grow 0、current 0x20、allocated 0、id 1
+
+mainline の `free_list_create_fw_structure` の式（current = 初めの数 − ready、stack_top = current − 1）と一致（Q1 の読みの「current 0x1f」は stack_top）。global の record は今回の dump に無い（target が持たない）。
+
+直し（診断）: 空の stream の失敗の時に、次を出す。
+- render context の record の全部（680 byte: geometry と fragment の common の part と switch の state）
+- geometry の state（160 byte）
+- geometry の CCB の control と先頭 256 byte（header と command の実物）
+
+次はこれを mainline の `rogue_fwif_fwrendercontext`・`rogue_fwif_geom_registers_caswitch`（vdm_context_state_base 0、resume 8、ta_context_state_base 16、task の word 24〜）と照らす。
+
+確かめ: 試験の image の config の vmunix は rc 0、warning 0。実機は未。
