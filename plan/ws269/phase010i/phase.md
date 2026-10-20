@@ -71,3 +71,10 @@ kick に依らない部分: pipeline の decode、compile の入力（key）、v
 - `render-check.c`（`CONFIG_POWERVR_RENDER_CHECK`）に job check: 自分の session で、vkstage の colour の shader（`userland/tests/vkstage/shader.h` の SPIR-V）を kernel の中で key 付きで compile し、`powervr_render_job_run`（Vulkan の executor と同じ道）で 64×64 R8G8B8A8 を青に clear・D32 を 1.0 に clear して store、draw 1 つで赤（z 0.25）を先に、大きい緑（z 0.75）を後に描く。4 つの pixel で色と depth を読み返す（depth は float の行と仮定、PowerVR の linear の depth の store の並びは未確認なので別の行で言う）。
 - 行: `powervr: job check: prepared (…)` / `FAILED at compile|prepare (err)`、`kicked, fence reached` / `FAILED at kick|fence (err)`、`OK (4 pixels of colour and depth)` / `FAILED at colour|depth read back: pixel (x, y) is 0x…, want 0x…`。`ta`・`3d` の段の行は job の終わりから。
 - 確かめ: host で同じ shader と key の compile が通ること（vertex 416 byte・temps 24、fragment 344 byte、varyings の code 2 語）、試験の image の config と VF2・riscv64-virt・amd64 の build warning 0、p010 の host 試験 0 failed。実機は未確認。
+
+## q1393-i01 (4)（2026-10-20 P1）: 1 つの command buffer の draw の上限
+
+- `vk-queue.c`: job の配列を command buffer ごとに要る数だけ heap に作る（instance ごとに 1 job、draw が 16 を超えるごとに P2 の `powervr_render_job_continue` の続きの job が 1 つ）。上限 `QUEUE_JOBS_MAX` を 8 から 64 に（64 job = 1024 draw、job は約 4.5 KB で配列は最大約 290 KB）。begin の位置で、その instance の job（`instance_jobs` が draw の数から数える）を順に流す。捨てられた instance があって数が合わない時は、前と同じく終わりにまとめて流す。
+- 推された「job を 8 個ずつ作って流す」形は vk-pass.c（P2 の file）の `powervr_vk_render_jobs` を続きから呼べる形にする必要があるので、P1 の file の中で済む配列の大きさの形にした（1024 draw を超える command buffer は E2BIG のまま）。
+- 確かめ: p009 の切り替え 0・1 とも 175/0、VF2・riscv64-virt・amd64 の build warning 0。128 draw を超える command buffer の host 試験は P2 の q1394 の Keiland に似た frame で見る予定（未実施）。
+

@@ -80,8 +80,13 @@ _Static_assert(QUEUE_PDS_OFFSET == POWERVR_PROGRAM_HEAP_START && QUEUE_PDS_BYTES
 #define QUEUE_PDS_INPUTS		3U
 #define QUEUE_FENCE_INSTANCES		8U
 
-/* The most render pass instances one command buffer runs. */
-#define QUEUE_JOBS_MAX			8U
+/*
+ * The most render jobs one command buffer runs: an instance takes one
+ * job for each POWERVR_RENDER_DRAWS draws it records (the next job goes
+ * on loading what the one before stored), so 64 jobs take 1024 draws.
+ * The jobs are made for each command buffer, as many as it needs.
+ */
+#define QUEUE_JOBS_MAX			64U
 
 /* How long a submission waits for the core. */
 #define QUEUE_WAIT_MS			2000U
@@ -131,6 +136,7 @@ static void put_word(struct powervr_buffer *buffer, uint32_t offset, uint32_t wo
 static int run(struct submission *build);
 static int run_flush(struct submission *build);
 static int run_job(struct submission *build, const struct powervr_render_job *job);
+static uint32_t instance_jobs(const struct powervr_vk_command_buffer *command, uint32_t begin);
 
 /*
  * Runs a submission, fence or semaphore command; *handled stays clear for
@@ -649,24 +655,41 @@ build_command_buffer(
 	struct powervr_render_job *jobs;
 	uint32_t job_count;
 	uint32_t begins;
+	uint32_t expected;
+	uint32_t draws;
+	uint32_t opcode;
+	uint32_t in_instance;
 	uint32_t next_job;
 	uint32_t index;
 	uint32_t set;
 	int error;
 
-	/* The render pass instances as jobs, when the command buffer has any. */
+	/* The jobs each instance takes: one, and one more for each further run of POWERVR_RENDER_DRAWS draws. */
 	begins = 0;
+	expected = 0;
+	draws = 0;
 	for (index = 0; index < command->record_count; index++) {
-		if (command->records[index].opcode == GPU_OP_CMD_BEGIN_RENDER_PASS)
+		opcode = command->records[index].opcode;
+		if (opcode == GPU_OP_CMD_BEGIN_RENDER_PASS) {
 			begins++;
+			draws = 0;
+		} else if (opcode == GPU_OP_CMD_DRAW || opcode == GPU_OP_CMD_DRAW_INDEXED) {
+			draws++;
+		} else if (opcode == GPU_OP_CMD_END_RENDER_PASS) {
+			expected += draws == 0 ? 1U : (draws + POWERVR_RENDER_DRAWS - 1U) / POWERVR_RENDER_DRAWS;
+		}
 	}
+
+	/* The instances as jobs, as many as they take, when the command buffer has any. */
 	jobs = NULL;
 	job_count = 0;
 	if (begins != 0) {
-		jobs = kern_calloc(QUEUE_JOBS_MAX, sizeof(*jobs));
+		if (expected > QUEUE_JOBS_MAX)
+			return E2BIG;
+		jobs = kern_calloc(expected + 1U, sizeof(*jobs));
 		if (jobs == NULL)
 			return ENOMEM;
-		error = powervr_vk_render_jobs(command, jobs, QUEUE_JOBS_MAX, &job_count);
+		error = powervr_vk_render_jobs(command, jobs, expected + 1U, &job_count);
 		if (error != 0) {
 			kern_free(jobs);
 			return error;
@@ -700,15 +723,18 @@ build_command_buffer(
 			if (error == 0)
 				error = powervr_vk_transfer_run(build->session, entry);
 		} else if (entry->opcode == GPU_OP_CMD_BEGIN_RENDER_PASS) {
-			/* The dispatches before it run first; an instance dropped from the jobs runs nothing. */
+			/* The dispatches before it run first, then the instance's jobs in order. */
 			error = run_flush(build);
-			if (error == 0 && job_count == begins)
-				error = run_job(build, &jobs[next_job++]);
+			if (error == 0 && job_count == expected) {
+				in_instance = instance_jobs(command, index);
+				while (error == 0 && in_instance-- != 0U)
+					error = run_job(build, &jobs[next_job++]);
+			}
 		}
 	}
 
 	/* Instances dropped from the jobs: the rest run after the command buffer's dispatches before them. */
-	while (error == 0 && job_count != begins && next_job < job_count) {
+	while (error == 0 && job_count != expected && next_job < job_count) {
 		error = run_flush(build);
 		if (error == 0)
 			error = run_job(build, &jobs[next_job++]);
@@ -1101,4 +1127,32 @@ run_job(
 
 	/* Succeeded: the instance ran. */
 	return 0;
+}
+
+/* Counts the jobs the instance beginning at a record takes: one, and one more for each further run of POWERVR_RENDER_DRAWS draws. */
+static uint32_t
+instance_jobs(
+	const struct powervr_vk_command_buffer *command,
+	uint32_t begin)
+{
+	uint32_t index;
+	uint32_t draws;
+	uint32_t opcode;
+	uint32_t jobs;
+
+	/* The draws up to the instance's end. */
+	draws = 0;
+	for (index = begin + 1U; index < command->record_count; index++) {
+		opcode = command->records[index].opcode;
+		if (opcode == GPU_OP_CMD_END_RENDER_PASS)
+			break;
+		if (opcode == GPU_OP_CMD_DRAW || opcode == GPU_OP_CMD_DRAW_INDEXED)
+			draws++;
+	}
+
+	/* Succeeded: the jobs. */
+	jobs = 1;
+	if (draws != 0)
+		jobs = (draws + POWERVR_RENDER_DRAWS - 1U) / POWERVR_RENDER_DRAWS;
+	return jobs;
 }
