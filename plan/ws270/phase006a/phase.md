@@ -280,3 +280,6 @@ Keiland が使い、vkmatrix 15/15・gpu-selftest 13/13 で確かめていない
 - 修正（P1 の `transfer-job.c` の `powervr_transfer_run`、最小）: copy の行の job では、destination を、その行の address で始まる 1 行の surface にし、area の y を 0 にする。
   blit は従来どおり（linear image の行は偶数に揃えてあるので、奇数の行にならない）。
 - 確認: p010 は 0 failed、p009 は 505 passed、VF2 の vmunix と bin/vkmatrix は rc 0、warning 0。板は未実施。
+- d11（f72c803b4、i05 の padding まで）: login の直後に lockup（pc 0x4f25b001 fault 0）。d12（96192f4b3、i06 の clamp）: vkmatrix 24/25（copy-65 FAIL → i07）、terminal が出て reset 0。d13（8a8e32abd、i07）: vkmatrix 25/25、reset 0（display は `frames copied (zero copy off for the lease)`）。
+- d14（P1 の 594 MHz の使い捨て、78975419c 基）: wait 3d 24〜40 ms（396 MHz で 37〜44 ms）と明らかな差なし、login で lockup 1 回 → 396 MHz のまま。
+- d15（63445e412、P2 の late vblank start 8b1edfa7c）: `display scanout 1`、`zero copy 1`、だが `frames copied (controller not ready)`、`dc8200: vblank 0 …`（IRQ 95 が数えない）。**lockup が再び出た（pc 0x4dc12001 fault 0）→ i06・i07 の後も残る。d12・d13 はたまたま。** P2 は lockup を最優先（q1523-i08）、次に vblank、cursor plane は後。
