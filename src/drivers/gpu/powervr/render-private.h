@@ -202,6 +202,22 @@ struct powervr_render_context {
 };
 
 /*
+ * A session's transfer context: the firmware's record of it (one common
+ * context), its state block, its command buffer and timeline, the
+ * identity the firmware names it by, whether it was kicked and whether
+ * the firmware cleaned it up.  It changes under the core's lock once
+ * made.
+ */
+struct powervr_transfer_context {
+	struct powervr_object record;
+	struct powervr_object state;
+	struct powervr_client client;
+	uint32_t identity;
+	unsigned kicked;
+	unsigned cleaned;
+};
+
+/*
  * One open of the render node.
  *
  * Mmu and space are the session's memory context, and fixed holds the
@@ -262,6 +278,7 @@ struct powervr_session {
 	struct powervr_vk_session *vk;
 	struct powervr_targets *targets;
 	struct powervr_render_context *render_context;
+	struct powervr_transfer_context *transfer_context;
 	unsigned abandoned;
 };
 
@@ -571,5 +588,30 @@ int powervr_render_finish(struct powervr_render *render, struct powervr_session 
  * it.
  */
 extern void powervr_render_check(struct powervr_render *render) __attribute__((weak));
+
+/*
+ * Finds or makes a session's transfer context; the core's lock is not
+ * held.
+ */
+int powervr_session_transfer_context(struct powervr_render *render, struct powervr_session *session, struct powervr_transfer_context **result);
+
+/* Returns a session's transfer context once the firmware no longer uses it. */
+void powervr_transfer_context_destroy(struct powervr_render *render, struct powervr_session *session);
+
+/* Returns a kept session's transfer context once the firmware that knew it is gone; the core's lock is held. */
+void powervr_transfer_context_discard(struct powervr_session *session);
+
+/*
+ * Kicks one transfer command (POWERVR_TRANSFER_COMMAND_BYTES) on a
+ * session's transfer context, its timeline advancing to the next value
+ * once done, which it reports; the core's lock is held.
+ */
+int powervr_session_kick_transfer(struct powervr_render *render, struct powervr_session *session, const uint8_t *command, uint32_t *value);
+
+/*
+ * Waits, bounded, for a transfer to finish: transfer ok once done,
+ * fail(timeout) and ETIMEDOUT when it does not.
+ */
+int powervr_transfer_finish(struct powervr_session *session, uint32_t value, unsigned milliseconds);
 
 #endif

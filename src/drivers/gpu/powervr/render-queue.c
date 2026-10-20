@@ -47,6 +47,7 @@
 #include "drivers/gpu/powervr/fixed-area.h"
 #include "drivers/gpu/powervr/interface.h"
 #include "drivers/gpu/powervr/render-kick-layout.h"
+#include "drivers/gpu/powervr/render-command.h"
 
 /*
  * How long the service sleeps with nothing pending, how many tries a
@@ -233,8 +234,9 @@ powervr_session_firmware_destroy(
 	struct powervr_render *render,
 	struct powervr_session *session)
 {
-	/* The render context first, with the memory its switch uses. */
+	/* The render and transfer contexts first, with the memory the render's switch uses. */
 	powervr_render_context_destroy(render, session);
+	powervr_transfer_context_destroy(render, session);
 
 	/* Returns the records, unmapping each from the firmware's processor. */
 	mutex_lock(&render->core->lock);
@@ -263,6 +265,7 @@ powervr_session_firmware_discard(
 {
 	/* The render context, the render targets and free lists, then each record's run. */
 	powervr_render_context_discard(session);
+	powervr_transfer_context_discard(session);
 	powervr_session_targets_discard(session);
 	powervr_object_drop(&session->context);
 	powervr_object_drop(&session->compute.timeline);
@@ -570,6 +573,110 @@ powervr_session_kick_render(
 	context->fragment.submitted = request.fragment_value;
 	marks->geometry_value = request.geometry_value;
 	marks->fragment_value = request.fragment_value;
+	return 0;
+}
+
+/*
+ * Kicks one transfer command on a session's transfer context; the
+ * core's lock is held.
+ *
+ * Procedure referenced:
+ * Linux v7.3 drivers/gpu/drm/imagination/pvr_queue.c
+ * (pvr_queue_submit_job_to_cccb: the job's command, then the update of
+ * the queue's timeline; pvr_queue_run_job: its own kick, no data set).
+ */
+int
+powervr_session_kick_transfer(
+	struct powervr_render *render,
+	struct powervr_session *session,
+	const uint8_t *command,
+	uint32_t *value)
+{
+	struct powervr_transfer_context *context;
+	struct powervr_client_command commands[2];
+	struct powervr_sync update;
+	struct powervr_kick kick;
+	uint32_t words[POWERVR_COMMAND_WORDS];
+	uint32_t bytes;
+	int error;
+
+	/* Refuses a session without a transfer context. */
+	context = session->transfer_context;
+	if (context == NULL)
+		return EINVAL;
+
+	/* The command and the update of the timeline to the next value. */
+	update.address = powervr_object_address(&context->client.timeline, 0);
+	update.value = context->client.submitted + 1U;
+	commands[0].type = POWERVR_CLIENT_TRANSFER;
+	commands[0].size = POWERVR_TRANSFER_COMMAND_BYTES;
+	commands[0].data = command;
+	commands[1].type = POWERVR_CLIENT_UPDATE;
+	commands[1].size = POWERVR_SYNC_BYTES;
+	commands[1].data = (const uint8_t *)&update;
+	bytes = commands_bytes(commands, 2);
+	error = client_space(&context->client, bytes);
+	if (error != 0)
+		return error;
+
+	/* Writes them, then the kick naming the context. */
+	commands_put(&context->client, commands, 2);
+	kick.context = powervr_object_address(&context->record, 0);
+	kick.write_offset = context->client.write;
+	kick.wrap_mask = POWERVR_CLIENT_CCB_BYTES - 1U;
+	kick.cleanup_count = 0;
+	error = powervr_kick_command(&kick, words);
+	if (error != 0)
+		return error;
+
+	error = send_command(render, words);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the transfer is the firmware's. */
+	context->kicked = 1;
+	context->client.submitted = update.value;
+	*value = update.value;
+	return 0;
+}
+
+/* Waits, bounded, for a transfer to finish and reports its stage. */
+int
+powervr_transfer_finish(
+	struct powervr_session *session,
+	uint32_t value,
+	unsigned milliseconds)
+{
+	struct powervr_transfer_context *context;
+	uint64_t deadline;
+	uint64_t now;
+	uint32_t current;
+
+	/* Refuses a session without a transfer context. */
+	context = session->transfer_context;
+	if (context == NULL)
+		return EINVAL;
+
+	/* Reads the timeline once a tick until it reaches the value or the bound is spent. */
+	deadline = sched_ticks() + ms_ticks(milliseconds);
+	for (;;) {
+		current = powervr_object_get32(&context->client.timeline, POWERVR_SYNC_ADDRESS);
+		if ((int32_t)(current - value) >= 0)
+			break;
+
+		/* Out of time: the transfer stage fails with a timeout. */
+		now = sched_ticks();
+		if (now >= deadline) {
+			powervr_stage_fail(POWERVR_STAGE_TRANSFER, POWERVR_REASON_TIMEOUT);
+			return ETIMEDOUT;
+		}
+
+		/* Sleeps one tick. */
+		sched_sleep(now + 1U);
+	}
+
+	/* Succeeded: the transfer finished. */
+	powervr_stage_ok(POWERVR_STAGE_TRANSFER);
 	return 0;
 }
 
@@ -1952,6 +2059,9 @@ handle_notice(
 		} else if (session->render_context != NULL && session->render_context->identity == notice.context) {
 			named = 1;
 			kind = POWERVR_CONTEXT_RENDER;
+		} else if (session->transfer_context != NULL && session->transfer_context->identity == notice.context) {
+			named = 1;
+			kind = POWERVR_CONTEXT_TRANSFER;
 		}
 		if (!all && !named)
 			continue;
