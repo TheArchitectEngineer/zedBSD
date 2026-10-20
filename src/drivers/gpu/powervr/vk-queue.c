@@ -845,11 +845,11 @@ build_dispatch(
 			kern_logf("powervr: vk: the compute shader did not compile (%d)\n", error);
 			break;
 		}
-		if (group == 0 || group + 1U == groups)
+		if (POWERVR_DIAGNOSTICS && (group == 0 || group + 1U == groups))
 			kern_logf("powervr: vk: kernel %u (workgroup %u): usc 0x%llx, pds data 0x%llx\n", (unsigned)build->kernels, (unsigned)group,
 				  (unsigned long long)(POWERVR_USC_HEAP_BASE + QUEUE_USC_OFFSET + build->kernels * QUEUE_USC_ROOM),
 				  (unsigned long long)(POWERVR_PDS_HEAP_BASE + QUEUE_PDS_OFFSET + (build->kernels + 1U) * QUEUE_PDS_SLOT));
-		if (group == 0) {
+		if (POWERVR_DIAGNOSTICS && group == 0) {
 			for (index = 0; index < program->shareds; index++)
 				kern_logf("powervr: vk: dispatch: shared word %u = 0x%08x\n", (unsigned)index, (unsigned)values[index]);
 		}
@@ -924,7 +924,8 @@ build_shared(
 			if (error != 0)
 				return error;
 			address += slot->offset;
-			kern_logf("powervr: vk: dispatch: set %u binding %u buffer 0x%llx-0x%llx (%llu bytes, offset %llu) in shared words %u-%u\n",
+			if (POWERVR_DIAGNOSTICS)
+				kern_logf("powervr: vk: dispatch: set %u binding %u buffer 0x%llx-0x%llx (%llu bytes, offset %llu) in shared words %u-%u\n",
 				  (unsigned)request->set, (unsigned)request->binding, (unsigned long long)address,
 				  (unsigned long long)(address - slot->offset + buffer->size), (unsigned long long)buffer->size,
 				  (unsigned long long)slot->offset, (unsigned)request->shared, (unsigned)(request->shared + 1U));
@@ -933,10 +934,12 @@ build_shared(
 			break;
 		case POWERVR_SHADER_REQUEST_WORKGROUP_ID:
 			/* Set per workgroup; one deep in y and z. */
-			kern_logf("powervr: vk: dispatch: workgroup id in shared word %u\n", (unsigned)request->shared);
+			if (POWERVR_DIAGNOSTICS)
+				kern_logf("powervr: vk: dispatch: workgroup id in shared word %u\n", (unsigned)request->shared);
 			break;
 		case POWERVR_SHADER_REQUEST_NUM_WORKGROUPS:
-			kern_logf("powervr: vk: dispatch: workgroup count %u in shared word %u\n", groups, (unsigned)request->shared);
+			if (POWERVR_DIAGNOSTICS)
+				kern_logf("powervr: vk: dispatch: workgroup count %u in shared word %u\n", groups, (unsigned)request->shared);
 			values[request->shared] = groups;
 			for (word = 1; word < request->words; word++)
 				values[request->shared + word] = 1;
@@ -1115,7 +1118,8 @@ run(
 	owner = build->session->owner;
 	render = owner->render;
 	stream = build->executor->stream->address;
-	kern_logf("powervr: vk: run: stream 0x%llx, words 0x%llx-0x%llx of 0x%x bytes, %u kernels; usc 0x%llx-0x%llx, pds 0x%llx-0x%llx\n",
+	if (POWERVR_DIAGNOSTICS)
+		kern_logf("powervr: vk: run: stream 0x%llx, words 0x%llx-0x%llx of 0x%x bytes, %u kernels; usc 0x%llx-0x%llx, pds 0x%llx-0x%llx\n",
 		  (unsigned long long)stream, (unsigned long long)(stream + QUEUE_STREAM_FIRST), (unsigned long long)(stream + build->stream_at),
 		  QUEUE_STREAM_BYTES, (unsigned)build->kernels,
 		  (unsigned long long)(POWERVR_USC_HEAP_BASE + QUEUE_USC_OFFSET), (unsigned long long)(POWERVR_USC_HEAP_BASE + QUEUE_USC_OFFSET + build->kernels * QUEUE_USC_ROOM),

@@ -905,6 +905,9 @@ powervr_render_refusal_log(
 	const struct powervr_session *session,
 	const char *where)
 {
+	/* Only with the diagnostics: a lost session's refusals repeat for every kick it tries. */
+	if (!POWERVR_DIAGNOSTICS)
+		return;
 	kern_logf("powervr: %s refused (EIO): device faulted %u, session stopping %u lost %u isolated %u abandoned %u, contexts compute 0x%x render 0x%x transfer 0x%x\n",
 		  where, (unsigned)render->faulted, (unsigned)session->stopping, (unsigned)session->lost,
 		  (unsigned)session->isolated, (unsigned)session->abandoned, (unsigned)session->identity,

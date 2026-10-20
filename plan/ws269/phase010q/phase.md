@@ -1276,3 +1276,26 @@ csbgen（Mesa 25.0.7 の `gen_pack_header.py` の `__pvr_address`: `((addr >> sh
   - Mesa の表記どおりなら単位は 4 register。板 84 は field を 4 倍にすると全 lane が正しく読んだので、実際の単位はそれより小さい（P2 が q1490 で確定）。executor はその規則を自動で受け取る。
 - 併せて直した: p009 の試験の `expected` の buffer（0x400）が、main で 0x800 になった `QUEUE_USC_ROOM` より小さく、`compile_inline` が E2BIG になっていた（main の時点で 501/502 で、この直しの前から落ちていた）。0x800 にした。502/502。
 - 確認: RISC-V の self-test の build で warning 0。板は未実施（P2 の直しと一緒に Q1 が流す）。
+
+## q1493 / q1493-i01（2026-10-21）: 既定の起動の log を軽くする
+
+- 板 85 の dmesg（全体で 1279 行・95 KB）で多かった行: compute probes の compiled fill（226）・dump（54）など P2 の compute-check の行、`dump: trace`（180）、`probe: register`（101、compute-check）、`render check: register`（52）、`map:`（約 40）。
+- `POWERVR_DIAGNOSTICS`（`powervr-private.h`、既定 0）を足し、長い診断をその下に移した。
+
+| 行 | 既定（0） | 1 |
+| --- | --- | --- |
+| firmware の段（`firmware: X start/done`、`render node start/done`、`still in … after N s`） | 残す | 残す |
+| firmware の起動の register check と register map（`register check:`、`map:`） | 出さない | 出す |
+| return slot の probe（`probe: returns …`、`slots …`） | 出さない（executed count の fallback の 1 行は残す） | 出す |
+| coherency の 2 行 | 残す | 残す |
+| render check の register probe（kick の 200 ms 後と wait の後） | 出さない | 出す |
+| render check の失敗時の target・global list・context・geometry command の dump | 出さない | 出す |
+| 失敗時の firmware の dump（header の行と trace） | 残す。trace は短く（全部で 128 word まで、超えたら先頭 32 + 末尾 64） | 従来（1536 / 256 / 128） |
+| context reset notice、`session lost …`、`ta:`・`3d:` などの stage の行、`FAILED at … (error)`、`device quarantine armed`・`device lost` | 残す | 残す |
+| `kick/reserve/submit refused (EIO)`（lost の session が kick ごとに繰り返す） | 出さない | 出す |
+| vk の dispatch の配置（shared word、buffer、kernel の address、run の stream） | 出さない | 出す |
+| vk の `dispatch of N workgroups: compiled to …`（dispatch に 1 行） | 残す | 残す |
+| render check の自己試験（terminate-state → 三角形 → transfer → job check）とその結果の行 | 残す | 残す |
+
+- 範囲外（P2 の担当）: `compute-check.c` の compute probes の行（compiled fill・dump・field・probe register で約 400 行）は、今回の dmesg の最大の量である。P2 の q1492 の後で、同じ `POWERVR_DIAGNOSTICS` の下に移すことを推める（UAT の config は COMPUTE_CHECK が有効）。
+- 確認: RISC-V の self-test の build で warning 0（既定の 0 と、1 にした時の両方）。p008・p009・p010 の host 試験は failed 0。板は未実施。

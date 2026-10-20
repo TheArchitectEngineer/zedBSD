@@ -555,14 +555,14 @@ check_empty(
 	mutex_unlock(&check->render->core->lock);
 
 	/* The core's geometry registers a little after the kick. */
-	if (error == 0 && !POWERVR_RENDER_CHECK_FULL_TRACE) {
+	if (error == 0 && POWERVR_DIAGNOSTICS && !POWERVR_RENDER_CHECK_FULL_TRACE) {
 		sched_sleep(sched_ticks() + (CHECK_PROBE_MS * KERN_CLOCK_HZ + 999U) / 1000U);
 		probe_geometry(check->render->core);
 	}
 
 	if (error == 0) {
 		error = powervr_render_finish(check->render, check->session, &check->marks, CHECK_WAIT_MS);
-		if (!POWERVR_RENDER_CHECK_FULL_TRACE) {
+		if (POWERVR_DIAGNOSTICS && !POWERVR_RENDER_CHECK_FULL_TRACE) {
 			kern_logf("powervr: render check: registers after the wait (%d):\n", error);
 			probe_geometry(check->render->core);
 		}
@@ -579,12 +579,13 @@ check_empty(
 		error = EIO;
 	if (error != 0) {
 		powervr_firmware_dump(check->render->core, POWERVR_KERNEL_CCB_SLOTS);
-		if (!POWERVR_RENDER_CHECK_FULL_TRACE) {
+		if (POWERVR_DIAGNOSTICS && !POWERVR_RENDER_CHECK_FULL_TRACE) {
 			powervr_target_dump(check->target);
 			powervr_session_global_list_dump(check->session);
 			dump_context(check);
 		}
-		kern_logf("powervr: render check: geometry command: %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x\n",
+		if (POWERVR_DIAGNOSTICS)
+			kern_logf("powervr: render check: geometry command: %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x\n",
 			  get32(check->geometry, 0), get32(check->geometry, 4), get32(check->geometry, 8), get32(check->geometry, 12),
 			  get32(check->geometry, 16), get32(check->geometry, 20), get32(check->geometry, 24), get32(check->geometry, 28),
 			  get32(check->geometry, 32), get32(check->geometry, 36), get32(check->geometry, 40), get32(check->geometry, 44),
@@ -640,8 +641,10 @@ check_kick(
 		  check->session->lost ? "reset" : "kept");
 	if (check->session->lost) {
 		powervr_firmware_dump(check->render->core, POWERVR_KERNEL_CCB_SLOTS);
-		powervr_target_dump(check->target);
-		powervr_session_global_list_dump(check->session);
+		if (POWERVR_DIAGNOSTICS) {
+			powervr_target_dump(check->target);
+			powervr_session_global_list_dump(check->session);
+		}
 	}
 
 	/* Succeeded: the render finished. */
