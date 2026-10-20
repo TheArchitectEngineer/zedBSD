@@ -1482,3 +1482,25 @@ csbgen（Mesa 25.0.7 の `gen_pack_header.py` の `__pvr_address`: `((addr >> sh
   - RISC-V の self-test の build で warning 0（probe の 0〜3 の全部）。
   - p010 の host 試験は failed 0。
   - 板は未実施。
+
+## q1511 の続き（2026-10-21）: probe の結果の読みと、次の切り分け
+
+- 板（probe 3）の `0x3f000080` の読み: magenta の値を、私が float の bit（0x3f800000）で clear の shared word に入れたのが誤りで、clear の shared word は format の packed の語を受ける。B8G8R8A8 として読むと 0x3f800000 は B=0x00…ではなく、出た `0x3f000080` は「その raw の語が swizzle されて書かれた」値と合う。つまり **2 つ目の job の background の program は走り、store も動いている**（定数の背景は出ている）。問題は LOAD の sample が 0 を返すこと。
+- LOAD の image 語と、通っている texture の image 語の比較（host で `powervr_view_words` を同じ address で計算した）:
+
+  | view | 語 |
+  | --- | --- |
+  | attachment B8G8R8A8 64×64（LOAD） | 60008861 003f00fc 1c000001 00200001（板の log と同じ） |
+  | texture R8G8B8A8 4×4（nearest・PASS） | 60000a61 0003000c 1c000001 00200001 |
+  | texture B8G8R8A8 4×4 | 60008861 0003000c 1c000001 00200001 |
+  | texture R8G8B8A8 64×64 | 60000a61 003f00fc 1c000001 00200001 |
+
+  違いは、swizzle（B8G8R8A8 は 2,1,0,3、R8G8B8A8 は 0,1,2,3）と寸法だけ。texformat 12、twiddled、address の語は同じ形。sampler の語も transfer（板で通る）と同じ作り。
+- 残る差は 2 つ:
+  1. **B8G8R8A8 の sample**（vkmatrix の texture の case は全部 R8G8B8A8 だった）。
+  2. **render pass が書いた image の sample**（PBE の書きと TPU の読みの間。SLC・順序・layout）。
+- vkmatrix に case を 2 つ足した（host の lavapipe で 15/15 PASS、RISC-V の build OK）:
+  - `sample-bgra`: B8G8R8A8 の 4×4 texture を nearest で sample。
+  - `sample-rendered`: 16×16 B8G8R8A8 の image を 1 つ目の pass で clear し、barrier の後、同じ command buffer の 2 つ目の pass で sample。
+- 板で: `vkmatrix sample-bgra` と `vkmatrix sample-rendered`。前者が落ちれば B8G8R8A8 の sample（format・swizzle）、後者だけが落ちれば PBE の書きと TPU の読みの間（同期・cache）が原因。
+- probe 3 の値の form の誤りは、次の commit で直す（今は切り分けに使わない）。

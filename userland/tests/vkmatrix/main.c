@@ -24,6 +24,9 @@
  *   two-passes              a cleared pass, then one that loads it
  *   scissor-viewport        the dynamic scissor and viewport changed
  *                           between draws
+ *   sample-bgra             a B8G8R8A8 texture (the target's format)
+ *   sample-rendered         an image a render pass cleared, sampled by the
+ *                           next pass (what a pass that loads reads)
  *
  * It prints one line a case and a total:
  *
@@ -132,6 +135,7 @@ struct vkmatrix {
 	uint32_t pipeline_count;
 	struct vkmatrix_texture textures[VKMATRIX_TEXTURES_MAX];
 	uint32_t texture_count;
+	VkFormat texture_format;
 	uint32_t expected[VKMATRIX_PIXELS];
 	int tolerance;
 	const char *failed_call;
@@ -177,6 +181,8 @@ static VkResult case_draws_32(struct vkmatrix *run);
 static VkResult case_draws_64(struct vkmatrix *run);
 static VkResult case_two_passes(struct vkmatrix *run);
 static VkResult case_scissor_viewport(struct vkmatrix *run);
+static VkResult case_sample_bgra(struct vkmatrix *run);
+static VkResult case_sample_rendered(struct vkmatrix *run);
 
 /* Every case, in the order they run. */
 static const struct vkmatrix_case cases[] = {
@@ -193,6 +199,8 @@ static const struct vkmatrix_case cases[] = {
 	{ "draws-64", case_draws_64 },
 	{ "two-passes", case_two_passes },
 	{ "scissor-viewport", case_scissor_viewport },
+	{ "sample-bgra", case_sample_bgra },
+	{ "sample-rendered", case_sample_rendered },
 };
 
 /* The clear colour of every case's first pass: dark blue. */
@@ -232,6 +240,7 @@ main(
 		run.reason[0] = '\0';
 		run.tolerance = 0;
 		run.vertex_floats = 0;
+		run.texture_format = VK_FORMAT_UNDEFINED;
 		status = cases[index].run(&run);
 		ran++;
 		if (status != VK_SUCCESS)
@@ -823,7 +832,7 @@ vkmatrix_texture(
 	memset(&image_info, 0, sizeof(image_info));
 	image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 	image_info.imageType = VK_IMAGE_TYPE_2D;
-	image_info.format = VK_FORMAT_R8G8B8A8_UNORM;
+	image_info.format = run->texture_format != VK_FORMAT_UNDEFINED ? run->texture_format : VK_FORMAT_R8G8B8A8_UNORM;
 	image_info.extent.width = side;
 	image_info.extent.height = side;
 	image_info.extent.depth = 1;
@@ -910,7 +919,7 @@ vkmatrix_texture(
 	view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 	view_info.image = texture->image;
 	view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-	view_info.format = VK_FORMAT_R8G8B8A8_UNORM;
+	view_info.format = run->texture_format != VK_FORMAT_UNDEFINED ? run->texture_format : VK_FORMAT_R8G8B8A8_UNORM;
 	view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	view_info.subresourceRange.levelCount = 1;
 	view_info.subresourceRange.layerCount = 1;
@@ -1925,4 +1934,251 @@ case_scissor_viewport(
 	vkCmdDraw(run->command, 6, 1, first, 0);
 	vkmatrix_fill(run, 44, 40, 56, 56, vkmatrix_pack(colours[2]));
 	return vkmatrix_finish(run, 1);
+}
+
+/* sample-bgra: the nearest case with a B8G8R8A8 texture, the format the target and the compositor's images have. */
+static VkResult
+case_sample_bgra(
+	struct vkmatrix *run)
+{
+	uint32_t texels[16];
+	float colour[4];
+	uint32_t pipeline;
+	uint32_t first;
+	uint32_t index;
+	VkResult status;
+
+	/* The texture: sixteen colours, each word 0xAARRGGBB as B8G8R8A8 holds it. */
+	for (index = 0; index < 16; index++)
+		texels[index] = 0xff000000U | ((index * 16U) & 0xffU) | ((255U - index * 16U) << 8) | (((index % 4U) * 80U) << 16);
+	run->texture_format = VK_FORMAT_B8G8R8A8_UNORM;
+	pipeline = 0;
+	status = vkmatrix_texture(run, 4, texels, VK_FILTER_NEAREST);
+	if (status == VK_SUCCESS)
+		status = texture_pipeline(run, &pipeline);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* The quad, and the squares expected (blue the low byte). */
+	vkmatrix_fill(run, 0, 0, VKMATRIX_SIZE, VKMATRIX_SIZE, vkmatrix_pack(background));
+	vkmatrix_begin(run, 0, background);
+	vkmatrix_bind(run, pipeline);
+	vkCmdBindDescriptorSets(run->command, VK_PIPELINE_BIND_POINT_GRAPHICS, run->layouts[pipeline], 0, 1, &run->textures[0].set, 0, NULL);
+	first = vkmatrix_texture_quad(run, 16.0f, 16.0f, 48.0f, 48.0f);
+	vkCmdDraw(run->command, 6, 1, first, 0);
+	for (index = 0; index < 16; index++) {
+		colour[0] = (float)((texels[index] >> 16) & 0xffU) / 255.0f;
+		colour[1] = (float)((texels[index] >> 8) & 0xffU) / 255.0f;
+		colour[2] = (float)(texels[index] & 0xffU) / 255.0f;
+		colour[3] = 1.0f;
+		vkmatrix_fill(run, 16U + (index % 4U) * 8U, 16U + (index / 4U) * 8U, 24U + (index % 4U) * 8U, 24U + (index / 4U) * 8U, vkmatrix_pack(colour));
+	}
+	return vkmatrix_finish(run, 1);
+}
+
+/* Makes a 16x16 B8G8R8A8 image that is an attachment and a texture, its view, sampler and set, in the case's texture slot. */
+static VkResult
+rendered_texture(
+	struct vkmatrix *run,
+	struct vkmatrix_texture **result)
+{
+	struct vkmatrix_texture *texture;
+	VkImageCreateInfo image_info;
+	VkMemoryRequirements requirements;
+	VkMemoryAllocateInfo allocate;
+	VkImageViewCreateInfo view_info;
+	VkSamplerCreateInfo sampler_info;
+	VkDescriptorSetAllocateInfo set_info;
+	VkDescriptorImageInfo descriptor;
+	VkWriteDescriptorSet write;
+	VkResult status;
+
+	/* A free slot. */
+	run->failed_call = "texture slots";
+	if (run->texture_count >= VKMATRIX_TEXTURES_MAX)
+		return VK_ERROR_OUT_OF_HOST_MEMORY;
+	texture = &run->textures[run->texture_count];
+	run->texture_count++;
+	*result = texture;
+
+	/* The image and its memory. */
+	memset(&image_info, 0, sizeof(image_info));
+	image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	image_info.imageType = VK_IMAGE_TYPE_2D;
+	image_info.format = VK_FORMAT_B8G8R8A8_UNORM;
+	image_info.extent.width = 16;
+	image_info.extent.height = 16;
+	image_info.extent.depth = 1;
+	image_info.mipLevels = 1;
+	image_info.arrayLayers = 1;
+	image_info.samples = VK_SAMPLE_COUNT_1_BIT;
+	image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+	image_info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+	image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	run->failed_call = "vkCreateImage";
+	status = vkCreateImage(run->device, &image_info, NULL, &texture->image);
+	if (status != VK_SUCCESS)
+		return status;
+	vkGetImageMemoryRequirements(run->device, texture->image, &requirements);
+	memset(&allocate, 0, sizeof(allocate));
+	allocate.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	allocate.allocationSize = requirements.size;
+	status = vkmatrix_find_memory(run, requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &allocate.memoryTypeIndex);
+	if (status != VK_SUCCESS)
+		return status;
+	run->failed_call = "vkAllocateMemory";
+	status = vkAllocateMemory(run->device, &allocate, NULL, &texture->memory);
+	if (status != VK_SUCCESS)
+		return status;
+	run->failed_call = "vkBindImageMemory";
+	status = vkBindImageMemory(run->device, texture->image, texture->memory, 0);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* The view and the sampler. */
+	memset(&view_info, 0, sizeof(view_info));
+	view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	view_info.image = texture->image;
+	view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	view_info.format = VK_FORMAT_B8G8R8A8_UNORM;
+	view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	view_info.subresourceRange.levelCount = 1;
+	view_info.subresourceRange.layerCount = 1;
+	run->failed_call = "vkCreateImageView";
+	status = vkCreateImageView(run->device, &view_info, NULL, &texture->view);
+	if (status != VK_SUCCESS)
+		return status;
+	memset(&sampler_info, 0, sizeof(sampler_info));
+	sampler_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+	sampler_info.magFilter = VK_FILTER_NEAREST;
+	sampler_info.minFilter = VK_FILTER_NEAREST;
+	sampler_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	sampler_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	sampler_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	run->failed_call = "vkCreateSampler";
+	status = vkCreateSampler(run->device, &sampler_info, NULL, &texture->sampler);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* The set that names them. */
+	memset(&set_info, 0, sizeof(set_info));
+	set_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	set_info.descriptorPool = run->pool;
+	set_info.descriptorSetCount = 1;
+	set_info.pSetLayouts = &run->set_layout;
+	run->failed_call = "vkAllocateDescriptorSets";
+	status = vkAllocateDescriptorSets(run->device, &set_info, &texture->set);
+	if (status != VK_SUCCESS)
+		return status;
+	memset(&descriptor, 0, sizeof(descriptor));
+	descriptor.sampler = texture->sampler;
+	descriptor.imageView = texture->view;
+	descriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	memset(&write, 0, sizeof(write));
+	write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	write.dstSet = texture->set;
+	write.descriptorCount = 1;
+	write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	write.pImageInfo = &descriptor;
+	vkUpdateDescriptorSets(run->device, 1, &write, 0, NULL);
+
+	/* Succeeded: the image and its set. */
+	return VK_SUCCESS;
+}
+
+/*
+ * sample-rendered: a 16x16 B8G8R8A8 image a render pass clears, made a
+ * texture and sampled by the next pass of the same command buffer, as a
+ * pass that loads reads what the one before stored.
+ */
+static VkResult
+case_sample_rendered(
+	struct vkmatrix *run)
+{
+	static const float source_colour[4] = { 0.25f, 0.5f, 0.75f, 1.0f };
+	struct vkmatrix_texture *texture;
+	VkFramebufferCreateInfo framebuffer_info;
+	VkFramebuffer framebuffer;
+	VkRenderPassBeginInfo pass;
+	VkClearValue value;
+	VkCommandBufferBeginInfo begin;
+	VkImageMemoryBarrier barrier;
+	uint32_t pipeline;
+	uint32_t first;
+	VkResult status;
+
+	/* The source image and the pipeline. */
+	pipeline = 0;
+	status = rendered_texture(run, &texture);
+	if (status == VK_SUCCESS)
+		status = texture_pipeline(run, &pipeline);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* The source's framebuffer. */
+	memset(&framebuffer_info, 0, sizeof(framebuffer_info));
+	framebuffer_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+	framebuffer_info.renderPass = run->clear_pass;
+	framebuffer_info.attachmentCount = 1;
+	framebuffer_info.pAttachments = &texture->view;
+	framebuffer_info.width = 16;
+	framebuffer_info.height = 16;
+	framebuffer_info.layers = 1;
+	run->failed_call = "vkCreateFramebuffer";
+	status = vkCreateFramebuffer(run->device, &framebuffer_info, NULL, &framebuffer);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* The first pass: the source cleared, then made a texture. */
+	memset(&begin, 0, sizeof(begin));
+	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	vkResetCommandBuffer(run->command, 0);
+	vkBeginCommandBuffer(run->command, &begin);
+	memset(&value, 0, sizeof(value));
+	memcpy(value.color.float32, source_colour, sizeof(value.color.float32));
+	memset(&pass, 0, sizeof(pass));
+	pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+	pass.renderPass = run->clear_pass;
+	pass.framebuffer = framebuffer;
+	pass.renderArea.extent.width = 16;
+	pass.renderArea.extent.height = 16;
+	pass.clearValueCount = 1;
+	pass.pClearValues = &value;
+	vkCmdBeginRenderPass(run->command, &pass, VK_SUBPASS_CONTENTS_INLINE);
+	vkCmdEndRenderPass(run->command);
+	memset(&barrier, 0, sizeof(barrier));
+	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.image = texture->image;
+	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	barrier.subresourceRange.levelCount = 1;
+	barrier.subresourceRange.layerCount = 1;
+	barrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+	barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+	vkCmdPipelineBarrier(run->command, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, NULL, 0, NULL, 1, &barrier);
+
+	/* The second pass of the same command buffer: the source sampled over a quad of the target. */
+	vkmatrix_fill(run, 0, 0, VKMATRIX_SIZE, VKMATRIX_SIZE, vkmatrix_pack(background));
+	memset(&value, 0, sizeof(value));
+	memcpy(value.color.float32, background, sizeof(value.color.float32));
+	pass.framebuffer = run->framebuffer;
+	pass.renderArea.extent.width = VKMATRIX_SIZE;
+	pass.renderArea.extent.height = VKMATRIX_SIZE;
+	vkCmdBeginRenderPass(run->command, &pass, VK_SUBPASS_CONTENTS_INLINE);
+	vkmatrix_full_view(run);
+	vkmatrix_bind(run, pipeline);
+	vkCmdBindDescriptorSets(run->command, VK_PIPELINE_BIND_POINT_GRAPHICS, run->layouts[pipeline], 0, 1, &texture->set, 0, NULL);
+	first = vkmatrix_texture_quad(run, 16.0f, 16.0f, 48.0f, 48.0f);
+	vkCmdDraw(run->command, 6, 1, first, 0);
+	vkmatrix_fill(run, 16, 16, 48, 48, vkmatrix_pack(source_colour));
+	run->tolerance = 1;
+	status = vkmatrix_finish(run, 1);
+	vkDeviceWaitIdle(run->device);
+	vkDestroyFramebuffer(run->device, framebuffer, NULL);
+	return status;
 }
