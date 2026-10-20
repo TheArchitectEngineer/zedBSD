@@ -1227,3 +1227,11 @@ csbgen（Mesa 25.0.7 の `gen_pack_header.py` の `__pvr_address`: `((addr >> sh
   - job-host-test の stream の末尾の確認を、terminate state の block と中身の確認に直した（29/29）。
   - p010 の他の試験と p009 の executor（502/502）は全部 PASS。
 - 確認: RISC-V の self-test の build で warning 0。板は未実施（Q1）。
+
+## q1485 / q1485-i01（2026-10-21）: userland の Vulkan の device と queue
+
+- `present-clear: graphics queue family -8` の出所: kernel の `vk-device.c` の `families()` が、queue family を 1 つだけ、`VK_QUEUE_COMPUTE_BIT` だけで返していた。stage の結果とは関係なく、graphics を一度も公開していなかった。vkstage・present は graphics の family を探して `VK_ERROR_FEATURE_NOT_PRESENT`（-8）で止まる。直し: family の flags を GRAPHICS・COMPUTE・TRANSFER にした（executor は 1 つの queue で render pass（`run_job`）・dispatch・transfer を流す）。
+- `vkimage: vkCreateInstance -9` の出所: vkimage が `apiVersion` に 1.1 を求め、libvulkan の `vkCreateInstance` は 1.0 以外を `VK_ERROR_INCOMPATIBLE_DRIVER`（-9）で断る（`userland/desktop/libvulkan/instance.c`。1.0 だけを公開する方針）。device の状態や compute の fail とは関係が無い。直し: vkimage は 1.1 の機能を使わないので、`VK_API_VERSION_1_0` を求めるようにした（`userland/tests/vkimage/main.c`）。
+- compute の stage の fail で device が閉じるか: 板 78 の dmesg では、compute の reset は該当の session だけを lost にし（`session lost …`・`kick refused … device faulted 0`）、device の quarantine は起きていない。device と queue の公開は stage に依存しない（stage は log だけ）。理由を出す 1 行は、両方の test がすでに `<call> <VkResult>` を出しているので、library 側には足していない。
+- vkstage の draw・sample・depth の見込み: vk の graphics は `vk-queue.c` の `run_job` → `powervr_render_job_run`（render-job.c）を通る。job check も `job_compile`（vk の graphics と同じ compiler の道）→ `powervr_render_job_run` で同じ道であり、板 78 で色と depth が通った。stream の末尾の terminate state（q1484）も、この道に入っている。違いは shader の中身（sample の texture の読み、push constant）だけで、道の違いは見つからなかった。
+- 確認: RISC-V の self-test の build で warning 0。p009 の executor は 502/502。板は未実施。
