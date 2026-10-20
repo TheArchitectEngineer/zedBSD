@@ -18,6 +18,7 @@
 #ifndef KERN_DRIVERS_GPU_POWERVR_RENDER_COMMAND_H
 #define KERN_DRIVERS_GPU_POWERVR_RENDER_COMMAND_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "drivers/gpu/powervr/render-kick-layout.h"
@@ -50,9 +51,11 @@
  * (struct rogue_fwif_frag_regs: usc_pixel_output_ctrl 0,
  * usc_clear_register 4, isp_bgobjdepth 36, isp_bgobjvals 40, isp_aa 44,
  * isp_ctl 52, event_pixel_pds_info 60, event_pixel_pds_data 72,
- * isp_scissor_base 96, isp_dbias_base 104, pbe_word 152, pds_bgnd 352, pds_pr_bgnd 400; struct
- * rogue_fwif_cmd_frag: regs 16, flags 464; struct rogue_fwif_frag_regs
- * 448 bytes).
+ * isp_scissor_base 96, isp_dbias_base 104, isp_zlsctl 120,
+ * isp_zload_store_base 128, pbe_word 152, pds_bgnd 352, pds_pr_bgnd 400; struct
+ * rogue_fwif_cmd_frag: regs 16, flags 464, zls_stride 468; struct
+ * rogue_fwif_frag_regs 448 bytes); pvr_rogue_fwif_client.h
+ * (ROGUE_FRAG_FLAGS_DEPTHBUFFER bit 7).
  */
 #define POWERVR_FRAGMENT_PIXEL_OUTPUT		(16U + 0U)
 #define POWERVR_FRAGMENT_BACKGROUND_DEPTH	(16U + 36U)
@@ -63,7 +66,11 @@
 #define POWERVR_FRAGMENT_EVENT_DATA		(16U + 72U)
 #define POWERVR_FRAGMENT_SCISSOR_BASE	(16U + 96U)
 #define POWERVR_FRAGMENT_DBIAS_BASE		(16U + 104U)
+#define POWERVR_FRAGMENT_ZLS_CONTROL		(16U + 120U)
+#define POWERVR_FRAGMENT_ZLS_BASE		(16U + 128U)
 #define POWERVR_FRAGMENT_PBE			(16U + 152U)
+#define POWERVR_FRAGMENT_ZLS_STRIDE		468U
+#define POWERVR_FRAGMENT_DEPTH_BUFFER		(1U << 7)
 #define POWERVR_FRAGMENT_BACKGROUND		(16U + 352U)
 #define POWERVR_FRAGMENT_FLAGS			464U
 
@@ -91,7 +98,8 @@
  * partial render, the end-of-tile program's data word and size word,
  * the attachment's three pixel back end register words, and the
  * scissor and depth bias tables the draws' primitives index (zero when
- * there are no draws).
+ * there are no draws), and with a depth target its ZLS control, base,
+ * background depth and layer stride.
  */
 struct powervr_fragment_setup {
 	uint32_t tiles_x;
@@ -103,6 +111,11 @@ struct powervr_fragment_setup {
 	uint64_t pbe[3];
 	uint64_t scissor_table;
 	uint64_t dbias_table;
+	bool has_depth;
+	uint64_t zls_control;
+	uint64_t zls_base;
+	uint32_t background_depth;
+	uint32_t zls_stride;
 };
 
 /*

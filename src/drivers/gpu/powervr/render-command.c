@@ -122,7 +122,7 @@ powervr_fragment_command(
 
 	/* The tile's pixel output, background object and tile controls. */
 	put32(command, POWERVR_FRAGMENT_PIXEL_OUTPUT, PIXEL_OUTPUT_TWO_REGISTERS);
-	put32(command, POWERVR_FRAGMENT_BACKGROUND_DEPTH, BACKGROUND_DEPTH_ONE);
+	put32(command, POWERVR_FRAGMENT_BACKGROUND_DEPTH, setup->has_depth ? setup->background_depth : BACKGROUND_DEPTH_ONE);
 	put32(command, POWERVR_FRAGMENT_BACKGROUND_VALUES, BACKGROUND_TAG_AND_MASK);
 	put32(command, POWERVR_FRAGMENT_ANTIALIAS, 0);
 	put32(command, POWERVR_FRAGMENT_ISP_CONTROL, powervr_fragment_isp_control(setup->tiles_x, setup->tiles_y));
@@ -137,6 +137,14 @@ powervr_fragment_command(
 	 */
 	put64(command, POWERVR_FRAGMENT_SCISSOR_BASE, setup->scissor_table & 0xfffffffffcULL);
 	put64(command, POWERVR_FRAGMENT_DBIAS_BASE, setup->dbias_table & 0xfffffffffcULL);
+
+	/* A depth target's loads and stores, and the depth buffer flag. */
+	if (setup->has_depth) {
+		put64(command, POWERVR_FRAGMENT_ZLS_CONTROL, setup->zls_control);
+		put64(command, POWERVR_FRAGMENT_ZLS_BASE, setup->zls_base);
+		put32(command, POWERVR_FRAGMENT_ZLS_STRIDE, setup->zls_stride);
+		put32(command, POWERVR_FRAGMENT_FLAGS, POWERVR_FRAGMENT_DEPTH_BUFFER);
+	}
 
 	/* The end-of-tile program. */
 	put32(command, POWERVR_FRAGMENT_EVENT_INFO, setup->event_info);

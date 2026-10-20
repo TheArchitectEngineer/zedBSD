@@ -7,7 +7,8 @@
 # (render-kick-layout.c), and (p010h) the descriptor set bytes and data
 # sequencer programs (descriptor-set.c, data-program.c), the render context's
 # switch programs and task words (render-sr-program.c), the render commands'
-# registers (render-command.c), and (p010e) the fixed
+# registers (render-command.c), the placing of a job's draws (render-job.c
+# over stand-ins of the node's memory and kick), and (p010e) the fixed
 # render programs and words (render-program.c), and (p010f) the transfer
 # command words, copy and blit programs (transfer-program.c), and the
 # attachment load background (render-load-program.c), and (p010g) the render
@@ -43,6 +44,12 @@ cc -std=c11 -O2 -Wall -Wextra -Werror -I"$root/include" -I"$root/src" \
 	"$root/src/drivers/gpu/powervr/render-command.c" "$root/src/drivers/gpu/powervr/render-kick-layout.c" \
 	"$here/command-host-test.c" -o "$out/command-host-test"
 "$out/command-host-test"
+p="$root/src/drivers/gpu/powervr"
+cc -std=gnu11 -O1 -Wall -Wextra -Werror -Wno-maybe-uninitialized -I"$root/include" -I"$root/src" \
+	"$p/render-job.c" "$p/render-command.c" "$p/render-kick-layout.c" "$p/render-program.c" "$p/render-load-program.c" \
+	"$p/render-draw.c" "$p/render-depth.c" "$p/render-pass.c" "$p/data-program.c" "$p/descriptor-set.c" "$p/pds-encode.c" \
+	"$p/image-state.c" $compiler "$here/job-host-test.c" -lm -o "$out/job-host-test"
+"$out/job-host-test"
 sh "$here/selftest-host.sh" "$out"
 cc -std=c11 -O2 -Wall -Wextra -Werror -I"$root/include" -I"$root/src" \
 	"$root/src/drivers/gpu/powervr/descriptor-set.c" "$root/src/drivers/gpu/powervr/data-program.c" \

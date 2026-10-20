@@ -78,6 +78,27 @@ _Static_assert(SET_BACKGROUND >= SET_PERSISTENT_RESUME + SET_PERSISTENT_CODE + P
 _Static_assert(SET_BYTES >= SET_BACKGROUND + 4U, "background program");
 _Static_assert(sizeof(((struct powervr_switch_shaders *)0)->store) == POWERVR_SHARED_USC_BYTES_MAX, "shader room");
 
+/*
+ * Where the compute switch's memory sits in the data sequencer's window:
+ * per buffer the shared register state, the store program and the load
+ * program (data, code 64 bytes after); after both, the fence terminate
+ * program (data, code 16 bytes after).  The shading cluster programs
+ * are the render switch's two, store then load.
+ */
+#define COMPUTE_SET_BYTES		0x4140U
+#define COMPUTE_SET_STORE		0x4040U
+#define COMPUTE_SET_LOAD		0x40c0U
+#define COMPUTE_TERMINATE		(2U * COMPUTE_SET_BYTES)
+#define COMPUTE_TERMINATE_CODE		0x10U
+#define COMPUTE_PDS_BYTES		(COMPUTE_TERMINATE + 0x30U)
+#define COMPUTE_STATIC			152U
+
+_Static_assert(COMPUTE_SET_STORE >= POWERVR_SWITCH_SHARED_BYTES, "compute shared state");
+_Static_assert(COMPUTE_SET_LOAD >= COMPUTE_SET_STORE + SET_SHARED_CODE + POWERVR_COMPUTE_SHARED_CODE_WORDS * 4U, "compute store program");
+_Static_assert(COMPUTE_SET_BYTES >= COMPUTE_SET_LOAD + SET_SHARED_CODE + POWERVR_COMPUTE_SHARED_CODE_WORDS * 4U, "compute load program");
+_Static_assert(COMPUTE_TERMINATE_CODE >= POWERVR_COMPUTE_TERMINATE_DATA_WORDS * 4U, "terminate data");
+_Static_assert(COMPUTE_PDS_BYTES >= COMPUTE_TERMINATE + COMPUTE_TERMINATE_CODE + POWERVR_COMPUTE_TERMINATE_CODE_WORDS * 4U, "terminate program");
+
 /* The contexts powervr_session_next_cleanup() names. */
 #define CLEAN_COMPUTE			0U
 #define CLEAN_GEOMETRY			1U
@@ -286,6 +307,131 @@ powervr_render_context_discard(
 	/* The bookkeeping. */
 	kern_free(context);
 	session->render_context = NULL;
+}
+
+/*
+ * Writes the compute context's static state.
+ *
+ * Values referenced:
+ * Linux v7.3 drivers/gpu/drm/imagination/pvr_rogue_fwif.h (struct
+ * rogue_fwif_fwcomputecontext: the static compute context state after
+ * the 152-byte common context).
+ * Procedure referenced:
+ * Mesa 26.2.5 src/imagination/vulkan/pvr_arch_job_context.c
+ * (pvr_arch_compute_ctx_create: two sets of shared register programs,
+ * the fence terminate program, the static state from them).
+ */
+int
+powervr_session_compute_switch(
+	struct powervr_render *render,
+	struct powervr_session *session)
+{
+	struct powervr_compute_switch_programs programs;
+	uint64_t words[POWERVR_COMPUTE_SWITCH_WORDS];
+	uint32_t data[POWERVR_SHARED_PDS_DATA_WORDS];
+	uint32_t code[POWERVR_COMPUTE_SHARED_CODE_WORDS];
+	uint64_t usc;
+	uint64_t place;
+	uint32_t base;
+	unsigned set;
+	unsigned index;
+	int error;
+
+	/* Without the switch's programs the static state stays zero. */
+	if (!render->switch_shaders.built)
+		return EIO;
+
+	/* The programs' buffers, mapped. */
+	error = memory_buffer(render, COMPUTE_PDS_BYTES, &session->compute_switch_pds);
+	if (error != 0)
+		return error;
+
+	error = powervr_session_program_map(session, POWERVR_PROGRAM_PDS, session->compute_switch_pds, &session->compute_switch_pds_place);
+	if (error != 0) {
+		session->compute_switch_pds_place = 0;
+		return error;
+	}
+
+	error = memory_buffer(render, SHADER_BYTES, &session->compute_switch_usc);
+	if (error != 0)
+		return error;
+
+	view_bytes(session->compute_switch_usc, SHADER_STORE, render->switch_shaders.store, render->switch_shaders.store_bytes);
+	view_bytes(session->compute_switch_usc, SHADER_LOAD, render->switch_shaders.load, render->switch_shaders.load_bytes);
+	error = powervr_session_program_map(session, POWERVR_PROGRAM_USC, session->compute_switch_usc, &session->compute_switch_usc_place);
+	if (error != 0) {
+		session->compute_switch_usc_place = 0;
+		return error;
+	}
+
+	/* Each buffer's store and load programs. */
+	place = session->compute_switch_pds_place;
+	base = (uint32_t)(place - POWERVR_PDS_HEAP_BASE);
+	usc = session->compute_switch_usc_place - POWERVR_USC_HEAP_BASE;
+	for (set = 0; set < 2U; set++) {
+		error = powervr_compute_shared_pds_program(place + set * COMPUTE_SET_BYTES, usc + SHADER_STORE, POWERVR_SHARED_USC_TEMPORARIES, data, code);
+		if (error != 0)
+			return error;
+
+		view_words(session->compute_switch_pds, set * COMPUTE_SET_BYTES + COMPUTE_SET_STORE, data, POWERVR_SHARED_PDS_DATA_WORDS);
+		view_words(session->compute_switch_pds, set * COMPUTE_SET_BYTES + COMPUTE_SET_STORE + SET_SHARED_CODE, code, POWERVR_COMPUTE_SHARED_CODE_WORDS);
+		error = powervr_compute_shared_pds_program(place + set * COMPUTE_SET_BYTES, usc + SHADER_LOAD, POWERVR_SHARED_USC_TEMPORARIES, data, code);
+		if (error != 0)
+			return error;
+
+		view_words(session->compute_switch_pds, set * COMPUTE_SET_BYTES + COMPUTE_SET_LOAD, data, POWERVR_SHARED_PDS_DATA_WORDS);
+		view_words(session->compute_switch_pds, set * COMPUTE_SET_BYTES + COMPUTE_SET_LOAD + SET_SHARED_CODE, code, POWERVR_COMPUTE_SHARED_CODE_WORDS);
+		programs.store_data[set] = base + set * COMPUTE_SET_BYTES + COMPUTE_SET_STORE;
+		programs.store_code[set] = programs.store_data[set] + SET_SHARED_CODE;
+		programs.load_data[set] = base + set * COMPUTE_SET_BYTES + COMPUTE_SET_LOAD;
+		programs.load_code[set] = programs.load_data[set] + SET_SHARED_CODE;
+	}
+
+	/* The fence terminate program. */
+	error = powervr_compute_terminate_program(data, code);
+	if (error != 0)
+		return error;
+
+	view_words(session->compute_switch_pds, COMPUTE_TERMINATE, data, POWERVR_COMPUTE_TERMINATE_DATA_WORDS);
+	view_words(session->compute_switch_pds, COMPUTE_TERMINATE + COMPUTE_TERMINATE_CODE, code, POWERVR_COMPUTE_TERMINATE_CODE_WORDS);
+	programs.terminate_data = base + COMPUTE_TERMINATE;
+	programs.terminate_code = base + COMPUTE_TERMINATE + COMPUTE_TERMINATE_CODE;
+
+	/* The static state, in the context's record. */
+	powervr_compute_switch_words(&programs, words);
+	mutex_lock(&render->core->lock);
+
+	for (index = 0; index < POWERVR_COMPUTE_SWITCH_WORDS; index++)
+		powervr_object_put64(&session->context, COMPUTE_STATIC + index * 8U, words[index]);
+
+	mutex_unlock(&render->core->lock);
+
+	/* Succeeded: the context can be switched. */
+	return 0;
+}
+
+/* Returns the compute switch's memory; a discard leaves its mappings, whose tables go with the session. */
+void
+powervr_compute_switch_destroy(
+	struct powervr_render *render,
+	struct powervr_session *session,
+	unsigned discard)
+{
+	/* The shading cluster programs. */
+	if (session->compute_switch_usc != NULL) {
+		if (!discard && session->compute_switch_usc_place != 0U)
+			powervr_session_program_unmap(session, POWERVR_PROGRAM_USC, session->compute_switch_usc, session->compute_switch_usc_place);
+		powervr_buffer_put(render, session->compute_switch_usc);
+		session->compute_switch_usc = NULL;
+	}
+
+	/* The data sequencer programs and the state. */
+	if (session->compute_switch_pds != NULL) {
+		if (!discard && session->compute_switch_pds_place != 0U)
+			powervr_session_program_unmap(session, POWERVR_PROGRAM_PDS, session->compute_switch_pds, session->compute_switch_pds_place);
+		powervr_buffer_put(render, session->compute_switch_pds);
+		session->compute_switch_pds = NULL;
+	}
 }
 
 /*

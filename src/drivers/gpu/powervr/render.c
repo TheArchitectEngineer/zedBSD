@@ -625,6 +625,11 @@ render_open(
 		return error;
 	}
 
+	/* The compute context's switch; without it the static state stays zero and the context cannot be switched. */
+	error = powervr_session_compute_switch(render, session);
+	if (error != 0)
+		kern_logf("powervr: compute context switch state not written (%d)\n", error);
+
 	/* Succeeded: the session is the core's. */
 	*result = session;
 	return 0;

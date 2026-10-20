@@ -1,0 +1,318 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Host check of ws269-p010i: how render-job.c places a job of two draws.
+ * The render node's memory, mappings, contexts and kick are stand-ins
+ * here: buffers are host memory at addresses handed out in order, and the
+ * kick keeps the geometry and fragment commands it is given.  The check
+ * follows the stream from the geometry command: each draw's primitive
+ * state block and programs, the stream's end, the push constants and the
+ * sets' copies, and the scissor table the fragment command names.
+ */
+
+#include <stdarg.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <uapi/errno.h>
+
+#include "drivers/gpu/powervr/render-job.h"
+#include "drivers/gpu/powervr/render-command.h"
+#include "drivers/gpu/powervr/interface.h"
+#include "drivers/gpu/powervr/vk-draw.h"
+#include "drivers/gpu/powervr/vk.h"
+
+#define HOST_GENERAL_BASE	0x8000100000ULL
+#define HOST_STEP		0x100000ULL
+
+static int failures;
+static int passes;
+static uint64_t next_general = HOST_GENERAL_BASE;
+static uint64_t next_pds = POWERVR_PDS_HEAP_BASE + 0x100000ULL;
+static uint64_t next_usc = POWERVR_USC_HEAP_BASE + 0x100000ULL;
+static struct powervr_buffer *placed[32];
+static uint64_t placed_at[32];
+static unsigned placed_count;
+static uint8_t kicked_geometry[POWERVR_GEOMETRY_BYTES];
+static uint8_t kicked_fragment[POWERVR_FRAGMENT_BYTES];
+static struct powervr_render_context context_stand_in;
+static struct powervr_target *target_stand_in = (struct powervr_target *)&context_stand_in;
+static struct powervr_target_layout layout_stand_in;
+
+static void
+expect(
+	int good,
+	const char *what)
+{
+	if (good) {
+		passes++;
+		return;
+	}
+	failures++;
+	printf("FAIL %s\n", what);
+}
+
+/* The kernel services, on the host. */
+void *kern_malloc(size_t size) { return malloc(size); }
+void *kern_calloc(size_t count, size_t size) { return calloc(count, size); }
+void kern_free(void *pointer) { free(pointer); }
+void kern_logf(const char *format, ...) { va_list list; va_start(list, format); printf("  log: "); vprintf(format, list); va_end(list); }
+void mutex_lock(struct mutex *mutex) { (void)mutex; }
+void mutex_unlock(struct mutex *mutex) { (void)mutex; }
+
+/* Memory: host memory never freed, so the check reads it after the job returned it. */
+int
+powervr_buffer_create(struct powervr_render *render, uint64_t bytes, struct powervr_buffer **result)
+{
+	struct powervr_buffer *buffer;
+
+	(void)render;
+	buffer = calloc(1, sizeof(*buffer));
+	buffer->view = calloc(1, (size_t)((bytes + 4095U) & ~4095ULL));
+	buffer->bytes = bytes;
+	buffer->run.size = (size_t)((bytes + 4095U) & ~4095ULL);
+	buffer->references = 1;
+	*result = buffer;
+	return 0;
+}
+
+void powervr_buffer_put(struct powervr_render *render, struct powervr_buffer *buffer) { (void)render; buffer->references--; }
+
+static void
+note(struct powervr_buffer *buffer, uint64_t address)
+{
+	placed[placed_count] = buffer;
+	placed_at[placed_count] = address;
+	placed_count++;
+}
+
+int
+powervr_resource_make(struct powervr_session *session, struct powervr_buffer *buffer, int mappable, int shareable, struct powervr_resource **result)
+{
+	struct powervr_resource *resource;
+
+	(void)shareable;
+	resource = calloc(1, sizeof(*resource));
+	resource->session = session;
+	resource->buffer = buffer;
+	resource->mappable = mappable;
+	resource->address = next_general;
+	next_general += HOST_STEP;
+	note(buffer, resource->address);
+	*result = resource;
+	return 0;
+}
+
+void powervr_resource_unmake(struct powervr_session *session, struct powervr_resource *resource) { (void)session; (void)resource; }
+
+int
+powervr_session_program_map(struct powervr_session *session, enum powervr_program_heap heap, struct powervr_buffer *buffer, uint64_t *address)
+{
+	(void)session;
+	if (heap == POWERVR_PROGRAM_PDS) {
+		*address = next_pds;
+		next_pds += HOST_STEP;
+	} else {
+		*address = next_usc;
+		next_usc += HOST_STEP;
+	}
+	note(buffer, *address);
+	return 0;
+}
+
+void powervr_session_program_unmap(struct powervr_session *session, enum powervr_program_heap heap, struct powervr_buffer *buffer, uint64_t address) { (void)session; (void)heap; (void)buffer; (void)address; }
+
+/* Contexts, targets and the kick. */
+int powervr_session_render_context(struct powervr_render *render, struct powervr_session *session, struct powervr_render_context **result) { (void)render; (void)session; *result = &context_stand_in; return 0; }
+int powervr_session_target(struct powervr_render *render, struct powervr_session *session, const struct powervr_target_shape *shape, struct powervr_target **result) { (void)render; (void)session; (void)shape; *result = target_stand_in; return 0; }
+const struct powervr_target_layout *powervr_target_layout_of(const struct powervr_target *target) { (void)target; return &layout_stand_in; }
+
+int
+powervr_session_kick_render(struct powervr_render *render, struct powervr_session *session, struct powervr_target *target, unsigned half, const uint8_t *geometry, const uint8_t *partial, const uint8_t *fragment, const struct powervr_sync *waits, unsigned wait_count, struct powervr_render_marks *marks)
+{
+	(void)render; (void)session; (void)target; (void)half; (void)partial; (void)waits; (void)wait_count;
+	memcpy(kicked_geometry, geometry, sizeof(kicked_geometry));
+	memcpy(kicked_fragment, fragment, sizeof(kicked_fragment));
+	marks->geometry_value = 1;
+	marks->fragment_value = 2;
+	return 0;
+}
+
+int powervr_render_finish(struct powervr_render *render, struct powervr_session *session, const struct powervr_render_marks *marks, unsigned milliseconds) { (void)render; (void)session; (void)marks; (void)milliseconds; return 0; }
+
+/* Reads a word of device memory through the stand-in's placed buffers. */
+static uint32_t
+device_read(uint64_t address)
+{
+	unsigned index;
+	uint64_t offset;
+	const volatile uint8_t *view;
+
+	for (index = 0; index < placed_count; index++) {
+		if (address >= placed_at[index] && address < placed_at[index] + placed[index]->run.size) {
+			offset = address - placed_at[index];
+			view = placed[index]->view;
+			return (uint32_t)view[offset] | (uint32_t)view[offset + 1] << 8 | (uint32_t)view[offset + 2] << 16 | (uint32_t)view[offset + 3] << 24;
+		}
+	}
+	printf("FAIL no memory at 0x%llx\n", (unsigned long long)address);
+	failures++;
+	return 0;
+}
+
+static uint64_t
+read64(const uint8_t *bytes, unsigned offset)
+{
+	uint64_t value;
+	unsigned index;
+
+	value = 0;
+	for (index = 0; index < 8U; index++)
+		value |= (uint64_t)bytes[offset + index] << (8U * index);
+	return value;
+}
+
+int
+main(void)
+{
+	static struct powervr_render_job job;
+	static struct powervr_vk_graphics graphics;
+	static struct powervr_vk_descriptor_set set;
+	static uint8_t vertex_code[64];
+	static uint8_t fragment_code[48];
+	static uint8_t set_bytes[32];
+	static struct powervr_core core;
+	static struct powervr_render render;
+	struct powervr_session session;
+	uint64_t stream;
+	uint64_t ppp[2];
+	uint64_t scissors;
+	uint32_t word;
+	uint32_t at;
+	unsigned draw;
+	unsigned index;
+
+	/* A 64x64 R8G8B8A8 linear colour cleared, two triangles of three vertices each. */
+	memset(&session, 0, sizeof(session));
+	render.core = &core;
+	layout_stand_in.tiles_x = 4;
+	layout_stand_in.tiles_y = 4;
+	layout_stand_in.region_header_bytes = 0x2000;
+	job.width = 64;
+	job.height = 64;
+	job.area.width = 64;
+	job.area.height = 64;
+	job.color_count = 1;
+	job.colors[0].surface.format = powervr_format_find(37);
+	job.colors[0].surface.address = 0x8800000000ULL;
+	job.colors[0].surface.width = 64;
+	job.colors[0].surface.height = 64;
+	job.colors[0].surface.linear = 1;
+	job.colors[0].surface.row_pitch = 256;
+	job.colors[0].surface.padded_width = 64;
+	job.colors[0].load_op = 1;
+	job.colors[0].clear[0] = 0xff0000ffU;
+	job.depth.load_op = 2;
+	job.depth.store_op = 1;
+
+	/* The pipeline: one attribute of three words, no requests, no varyings. */
+	for (index = 0; index < sizeof(vertex_code); index++)
+		vertex_code[index] = (uint8_t)(0x10U + index);
+	for (index = 0; index < sizeof(fragment_code); index++)
+		fragment_code[index] = (uint8_t)(0x80U + index);
+	graphics.fixed.topology = 3;
+	graphics.fixed.cull_mode = 0;
+	graphics.fixed.binding_count = 1;
+	graphics.fixed.bindings[0].binding = 0;
+	graphics.fixed.bindings[0].stride = 12;
+	graphics.fixed.attribute_count = 1;
+	graphics.fixed.attributes[0].location = 0;
+	graphics.fixed.attributes[0].binding = 0;
+	graphics.fixed.attributes[0].format = 106;
+	graphics.vertex.length = sizeof(vertex_code);
+	graphics.vertex.temps = 4;
+	graphics.vertex.vertex_inputs = 3;
+	graphics.vertex.vertex_outputs = 4;
+	graphics.vertex.input_count = 1;
+	graphics.vertex.inputs[0].location = 0;
+	graphics.vertex.inputs[0].components = 3;
+	graphics.vertex.inputs[0].reg = 0;
+	graphics.vertex.vertex_index_reg = POWERVR_SHADER_NO_REG;
+	graphics.vertex.instance_index_reg = POWERVR_SHADER_NO_REG;
+	graphics.fragment.length = sizeof(fragment_code);
+	graphics.fragment.temps = 2;
+	graphics.vertex_code = vertex_code;
+	graphics.fragment_code = fragment_code;
+	graphics.varyings.output_select = 4;
+
+	/* One set of 32 bytes. */
+	for (index = 0; index < sizeof(set_bytes); index++)
+		set_bytes[index] = (uint8_t)(0xc0U + index);
+	set.bytes = set_bytes;
+	set.layout.bytes = sizeof(set_bytes);
+
+	/* Two draws: the second with a set, push constants, another scissor. */
+	job.draw_count = 2;
+	for (draw = 0; draw < 2U; draw++) {
+		job.draws[draw].pipeline = &graphics;
+		job.draws[draw].vertex_addresses[0] = 0x8900000000ULL + draw * 0x1000U;
+		job.draws[draw].count = 3;
+		job.draws[draw].instances = 1;
+		job.draws[draw].viewport.width = 64.0f;
+		job.draws[draw].viewport.height = 64.0f;
+		job.draws[draw].viewport.maxDepth = 1.0f;
+		job.draws[draw].scissor.extent.width = 64U - draw * 32U;
+		job.draws[draw].scissor.extent.height = 64;
+	}
+	job.draws[1].sets[0] = &set;
+	job.draws[1].push_bytes = 8;
+	job.draws[1].push[0] = 0x5a;
+	job.draws[1].push[7] = 0xa5;
+
+	expect(powervr_render_job_run(&render, &session, &job) == 0, "the job runs");
+
+	/* The geometry's stream: draw 0's PPP block word, its address, ..., then draw 1's, then the end. */
+	stream = read64(kicked_geometry, POWERVR_GEOMETRY_STREAM_BASE);
+	at = 0;
+	for (draw = 0; draw < 2U; draw++) {
+		word = device_read(stream + at);
+		expect((word >> 29) == 0U, "a draw starts with a PPP state block");
+		ppp[draw] = ((uint64_t)(word & 0xffU) << 32) | device_read(stream + at + 4U);
+		expect(((word >> 8) & 0x1fffffU) != 0U, "the block has words");
+		/* Skips the block's words to the index list's count, 3. */
+		while (device_read(stream + at) != 3U && at < 0x200U)
+			at += 4U;
+		expect(device_read(stream + at) == 3U, "the draw's count");
+		at += 4U;
+	}
+	expect(device_read(stream + at) == POWERVR_VDM_TERMINATE, "the stream ends after the second draw");
+	expect(ppp[1] - ppp[0] == 0x1000U, "the draws' blocks one slot apart");
+	expect(device_read(ppp[0]) != 0U, "draw 0's block is written");
+
+	/* The second draw's push constants and its set's copy, after the two slots. */
+	expect((device_read(ppp[1] + 0x100U) & 0xffU) == 0x5aU && (device_read(ppp[1] + 0x104U) >> 24) == 0xa5U, "push constants in draw 1's slot");
+	expect(device_read(ppp[0] + 0x2000U) == 0xc3c2c1c0U && device_read(ppp[0] + 0x201cU) == 0xdfdedddcU, "the set's copy after the slots");
+
+	/* The scissor table the fragment command names: one entry a draw, the second half as wide. */
+	scissors = read64(kicked_fragment, POWERVR_FRAGMENT_SCISSOR_BASE);
+	expect(scissors != 0U && device_read(scissors) != 0U, "the scissor table is named and written");
+	expect(device_read(scissors) != device_read(scissors + 8U) || device_read(scissors + 4U) != device_read(scissors + 12U), "the two scissors differ");
+	expect(read64(kicked_fragment, POWERVR_FRAGMENT_DBIAS_BASE) == scissors - 0x100U, "the depth bias table before it");
+
+	/* The shaders' code: the vertex code at the start of the shading cluster buffer, the fragment's after it. */
+	for (index = 0; index < placed_count; index++) {
+		if (placed_at[index] >= POWERVR_USC_HEAP_BASE && placed[index]->view[0] == 0x10U && placed[index]->view[64] == 0x80U && placed[index]->view[112] == 0x10U && placed[index]->view[176] == 0x80U)
+			break;
+	}
+	expect(index < placed_count, "the two draws' code: vertex, fragment, vertex, fragment");
+
+	printf("job-host-test: %d passed, %d failed\n", passes, failures);
+	return failures != 0;
+}

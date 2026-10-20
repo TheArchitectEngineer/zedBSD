@@ -189,10 +189,52 @@ usc(void)
 	printf("shared usc: store %zu bytes, load %zu bytes\n", store_length, load_length);
 }
 
+static void
+compute(void)
+{
+	static const uint32_t shared_code[POWERVR_COMPUTE_SHARED_CODE_WORDS] = {
+		0xc1100001, 0xdb000000, 0xc1080001, 0xf0020001, 0xf0060201, 0xfc000402,
+	};
+	static const uint32_t terminate_code[POWERVR_COMPUTE_TERMINATE_CODE_WORDS] = {
+		0xc1100001, 0xdb000000, 0xc1080001, 0xf0000005, 0xd3000000,
+	};
+	struct powervr_compute_switch_programs places;
+	uint64_t switch_words[POWERVR_COMPUTE_SWITCH_WORDS];
+	uint32_t data[POWERVR_SHARED_PDS_DATA_WORDS];
+	uint32_t code[POWERVR_COMPUTE_SHARED_CODE_WORDS];
+	unsigned index;
+
+	/* bra if0 setc if1 1, halt cc, bra if0 setc if0 1, the render program's writes, its issue with cc. */
+	expect(powervr_compute_shared_pds_program(0xda00012340ULL, 0x20000, 13, data, code) == 0, "compute shared pds builds");
+	expect_words(code, shared_code, POWERVR_COMPUTE_SHARED_CODE_WORDS, "compute shared pds code");
+	expect(data[0] == 0xda && data[8] == 0x00020000U, "compute shared pds data as the render one");
+
+	/* The terminate: zero sources, the skip, doutc, halt. */
+	memset(data, 0xff, sizeof(data));
+	expect(powervr_compute_terminate_program(data, code) == 0, "terminate builds");
+	expect(data[0] == 0 && data[3] == 0, "terminate data zero");
+	expect_words(code, terminate_code, POWERVR_COMPUTE_TERMINATE_CODE_WORDS, "terminate code");
+
+	/* PDS0 data << 32 | code; PDS1 seq 29, any 27, unified 4 << 21, data 4 << 1, fence; terminate PDS1 common shared 20, data 1. */
+	for (index = 0; index < 2U; index++) {
+		places.store_data[index] = 0x100U + index * 0x100U;
+		places.store_code[index] = 0x140U + index * 0x100U;
+		places.load_data[index] = 0x180U + index * 0x100U;
+		places.load_code[index] = 0x1c0U + index * 0x100U;
+	}
+	places.terminate_data = 0x300;
+	places.terminate_code = 0x310;
+	powervr_compute_switch_words(&places, switch_words);
+	expect(switch_words[0] == 0x0000010000000140ULL && switch_words[1] == 0x28800009ULL, "context pds0 and pds1");
+	expect(switch_words[2] == 0x0000030000000310ULL && switch_words[3] == 0x28100003ULL, "terminate pds and pds1");
+	expect(switch_words[4] == 0x00000180000001c0ULL && switch_words[5] == 0x0000020000000240ULL && switch_words[6] == 0x00000280000002c0ULL, "resume, second store and resume");
+}
+
 int
 main(void)
 {
 	words();
+	compute();
 	programs();
 	tasks();
 	usc();

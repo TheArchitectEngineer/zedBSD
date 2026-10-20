@@ -22,12 +22,13 @@ printf '#!/bin/sh\necho "vkimage: X: FAIL, external image -3"\nexit 1\n' > "$out
 printf '#!/bin/sh\necho "$1: X: PASS, seen"\n' > "$out/vks-pass"
 printf '#!/bin/sh\nif [ "$1" = draw ]; then echo "draw: X: FAIL, pixel (32,32) 0xffff0000, expected 0xff00ff00"; exit 1; fi\necho "$1: X: PASS, seen"\n' > "$out/vks-draw"
 printf '#!/bin/sh\nif [ "$1" = present ]; then sleep 30; fi\necho "$1: X: PASS, seen"\n' > "$out/vks-present"
-chmod +x "$out"/vk-* "$out"/vki-* "$out"/vks-*
+printf '#!/bin/sh\necho "vkdemo: X: $1"\n' > "$out/vkd-pass"
+chmod +x "$out"/vk-* "$out"/vki-* "$out"/vks-* "$out"/vkd-*
 fails=0
 # check NAME EXPECTED-FILE ARGS...: the output must be exactly the expected lines.
 check() {
 	name=$1; shift
-	"$out/gpu-selftest" "$@" > "$out/$name.out" 2>&1 || true
+	"$out/gpu-selftest" -d "$out/vkd-pass" "$@" > "$out/$name.out" 2>&1 || true
 	if diff -u "$out/$name.expect" "$out/$name.out"; then
 		echo "PASS $name"
 	else
@@ -41,7 +42,7 @@ gpu-selftest: draw: ok
 gpu-selftest: sample: ok
 gpu-selftest: depth: ok
 gpu-selftest: present-clear: ok
-gpu-selftest: present: skip(not built)'
+gpu-selftest: present: ok'
 skip_image='gpu-selftest: clear: skip(image)
 gpu-selftest: copy: skip(image)
 gpu-selftest: draw: skip(image)
@@ -49,7 +50,7 @@ gpu-selftest: sample: skip(draw)
 gpu-selftest: depth: skip(draw)'
 skip_device="$skip_image
 gpu-selftest: present-clear: skip(device)
-gpu-selftest: present: skip(not built)"
+gpu-selftest: present: skip(depth)"
 cat > "$out/pass.expect" <<END
 gpu-selftest: stages: firmware=ok render-node=ok compute=- ta=- 3d=- transfer=- present=-
 gpu-selftest: kernel: ok
@@ -59,7 +60,7 @@ gpu-selftest: device: ok
 gpu-selftest: compute: ok
 gpu-selftest: image: ok
 $rest_lines
-gpu-selftest: 12 ok, 0 fail, 1 skip
+gpu-selftest: 13 ok, 0 fail, 0 skip
 END
 check pass -s "$out/stages-ok" -n "$out/node" -i "$out/vki-pass" -v "$out/vk-pass" -g "$out/vks-pass"
 cat > "$out/firmware.expect" <<END
@@ -107,7 +108,7 @@ gpu-selftest: device: ok
 gpu-selftest: compute: fail(vkcompute: X: FAIL, vkWaitForFences -4)
 gpu-selftest: image: ok
 $rest_lines
-gpu-selftest: 11 ok, 1 fail, 1 skip
+gpu-selftest: 12 ok, 1 fail, 0 skip
 END
 check compute -s "$out/stages-ok" -n "$out/node" -i "$out/vki-pass" -v "$out/vk-compute" -g "$out/vks-pass"
 cat > "$out/hang.expect" <<END
@@ -145,7 +146,7 @@ gpu-selftest: compute: ok
 gpu-selftest: image: fail(vkimage: X: FAIL, external image -3)
 $skip_image
 gpu-selftest: present-clear: ok
-gpu-selftest: present: skip(not built)
+gpu-selftest: present: skip(depth)
 gpu-selftest: 6 ok, 1 fail, 6 skip
 END
 check image -s "$out/stages-ok" -n "$out/node" -i "$out/vki-fail" -v "$out/vk-pass" -g "$out/vks-pass"
@@ -163,7 +164,7 @@ gpu-selftest: draw: fail(draw: X: FAIL, pixel (32,32) 0xffff0000, expected 0xff0
 gpu-selftest: sample: skip(draw)
 gpu-selftest: depth: skip(draw)
 gpu-selftest: present-clear: ok
-gpu-selftest: present: skip(not built)
+gpu-selftest: present: skip(depth)
 gpu-selftest: 9 ok, 1 fail, 3 skip
 END
 check draw -s "$out/stages-ok" -n "$out/node" -i "$out/vki-pass" -v "$out/vk-pass" -g "$out/vks-draw"
@@ -181,8 +182,8 @@ gpu-selftest: draw: ok
 gpu-selftest: sample: ok
 gpu-selftest: depth: ok
 gpu-selftest: present-clear: fail(timeout)
-gpu-selftest: present: skip(not built)
-gpu-selftest: 11 ok, 1 fail, 1 skip
+gpu-selftest: present: ok
+gpu-selftest: 12 ok, 1 fail, 0 skip
 END
 start=$(date +%s)
 check present -t 1 -s "$out/stages-ok" -n "$out/node" -i "$out/vki-pass" -v "$out/vk-pass" -g "$out/vks-present"

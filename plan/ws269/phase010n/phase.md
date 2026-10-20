@@ -86,3 +86,9 @@ QEMU・実機は未実施（設計どおり実機は p010e。この Phase では
 - 3d5f4b8b2: 上の source と kick-host-test・run.sh
 - 片付け（Q1 へ）: `plan/ws269/tests/p010/run.sh.new`（誤って作った空の file、untracked）
 - q1377-i01: 2edec387f（pds-encode・render-program・static state の形・program-host-test・run.sh）、9de43386e（sequence・stalled・free list の印・kick の試験）、d337c9b7c（render-context.c・render-check.c・render-queue.c の一般化と kick・recovery・notice・render.c・vmunix.mk）、dd53a7bb8（`pds_pr_bgnd` の仮の program と background の語）、と下の phase.md・ws.md の commit
+
+## q1388-i01（2026-10-20 P1）: compute の context の CDM の cswitch state
+
+- `render-sr-program.{c,h}`: compute の SR の PDS（render の物の前に coefficient の pass を飛ばす branch・cc 付きの halt・branch、DOUTU は cc 付き。ERN 35421 あり、compute_morton なし）、fence terminate の PDS（0 の source、skip、DOUTC、halt）、static state の 7 語（CDM_CONTEXT_PDS0/1、TERMINATE_PDS/1、LOAD_PDS0、組 1 の PDS0・LOAD_PDS0）。Mesa `pvr_compute_ctx_ws_static_state_init`。
+- `render-context.c`: `powervr_session_compute_switch`（session を開いた後、core の lock の外で: PDS の窓に組 2 つ（SR の state 16432 と store・load の PDS）と terminate、USC の窓に SR の store・load の USC、compute の record の 152 からの static state に 7 語）、destroy・discard。`render.c` の render_open で呼ぶ（失敗は log だけ、static state は 0 のまま）。
+- 確かめ: program-host-test 47/0（compute の code・terminate・7 語の golden）、p009 165/0、3 つの build warning 0。M9 は未（CDM の 5 つの register を足す時に）。実機は未確認。

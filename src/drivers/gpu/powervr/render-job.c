@@ -33,6 +33,7 @@
 #include "drivers/gpu/powervr/render-program.h"
 #include "drivers/gpu/powervr/data-program.h"
 #include "drivers/gpu/powervr/render-draw.h"
+#include "drivers/gpu/powervr/render-depth.h"
 #include "drivers/gpu/powervr/vk-draw.h"
 #include "drivers/gpu/powervr/vk.h"
 
@@ -98,17 +99,14 @@ _Static_assert(POWERVR_RENDER_DRAWS * POWERVR_DRAW_SCISSOR_WORDS * 4U <= GENERAL
 #define USC_BYTES			0x1000U
 
 /*
- * The load and store operations the job reads.
+ * The load operations of a colour attachment the job reads.
  *
  * Values referenced:
  * Khronos Vulkan 1.x vulkan_core.h (VK_ATTACHMENT_LOAD_OP_LOAD 0,
- * VK_ATTACHMENT_LOAD_OP_CLEAR 1, VK_ATTACHMENT_LOAD_OP_DONT_CARE 2,
- * VK_ATTACHMENT_STORE_OP_DONT_CARE 1).
+ * VK_ATTACHMENT_LOAD_OP_CLEAR 1).
  */
 #define LOAD_OP_LOAD			0U
 #define LOAD_OP_CLEAR			1U
-#define LOAD_OP_DONT_CARE		2U
-#define STORE_OP_DONT_CARE		1U
 
 /* The job's memory and programs while it runs. */
 struct job_memory {
@@ -168,6 +166,7 @@ powervr_render_job_run(
 	struct powervr_target *target;
 	const struct powervr_target_layout *layout;
 	struct job_memory *memory;
+	struct powervr_render_zls zls;
 	uint32_t shared_registers;
 	uint32_t vertex_shareds;
 	uint32_t stream_words;
@@ -223,6 +222,20 @@ powervr_render_job_run(
 	/* The commands: the stream, the fragment of the target's tiles with the draws' tables. */
 	memory->fragment_setup.scissor_table = memory->general->address + GENERAL_SCISSORS;
 	memory->fragment_setup.dbias_table = memory->general->address + GENERAL_DBIAS;
+
+	/* A depth target's loads, stores and background depth. */
+	if (job->depth.present) {
+		error = powervr_render_zls_words(&job->depth, &zls);
+		if (error != 0) {
+			job_release(render, session, memory);
+			return error;
+		}
+		memory->fragment_setup.has_depth = 1;
+		memory->fragment_setup.zls_control = zls.control;
+		memory->fragment_setup.zls_base = zls.base;
+		memory->fragment_setup.background_depth = zls.background_depth;
+		memory->fragment_setup.zls_stride = zls.stride;
+	}
 	layout = powervr_target_layout_of(target);
 	memory->fragment_setup.tiles_x = layout->tiles_x;
 	memory->fragment_setup.tiles_y = layout->tiles_y;
@@ -264,10 +277,8 @@ job_check(
 {
 	const struct powervr_render_target *color;
 
-	/* One colour attachment, no depth load or store, draws each with a pipeline. */
+	/* One colour attachment, draws each with a pipeline. */
 	if (job->color_count != 1 || job->draw_count > POWERVR_RENDER_DRAWS)
-		return ENOTSUP;
-	if (job->depth.present && (job->depth.load_op != LOAD_OP_DONT_CARE || job->depth.store_op != STORE_OP_DONT_CARE))
 		return ENOTSUP;
 
 	/* A colour of one 32-bit word a pixel. */

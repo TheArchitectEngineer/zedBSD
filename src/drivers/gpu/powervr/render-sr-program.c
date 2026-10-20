@@ -87,6 +87,12 @@
  * by 4).
  */
 #define STATE_UPDATE_BLOCK		(1U << 29)
+#define CDM_PDS_SEQUENCE		(1U << 29)
+#define CDM_TARGET_ANY			(1U << 27)
+#define CDM_UNIFIED_SHIFT		21U
+#define CDM_COMMON_SHARED		(1U << 20)
+#define CDM_DATA_SHIFT			1U
+#define CDM_FENCE			1U
 #define TARGET_ANY			(1U << 25)
 #define UNIFIED_SHIFT			10U
 #define SHARED_TYPE_PDS			((1U << 2) | 1U)
@@ -145,6 +151,19 @@
  * F_TST_TYPE u32 5; F_BPRED cc 0).
  */
 #define TEST_GREATER			5U
+
+/*
+ * The data sequencer's condition inputs, and the condition bit of an
+ * instruction.
+ *
+ * Values referenced:
+ * Mesa 26.2.5 src/imagination/vulkan/pds/pvr_rogue_pds_defs.h
+ * (PVR_ROGUE_PDSINST_PREDICATE_IF0 1, _IF1 2; the CC field at bit 27
+ * of every instruction class).
+ */
+#define PREDICATE_IF0			1U
+#define PREDICATE_IF1			2U
+#define CONDITION_BIT			(1U << 27)
 #define TYPE_UNSIGNED			5U
 #define BRANCH_ON_CONDITION		0U
 
@@ -198,6 +217,7 @@ static unsigned shared_branch(struct shared_plan *plan, unsigned condition);
 static int shared_group(const struct shared_step *step, int32_t offset, struct powervr_usc_group *group);
 static int shared_fetch(void *context, size_t index, struct powervr_usc_group *group);
 static uint32_t state0_word(uint32_t target, uint32_t data_bytes);
+static uint64_t place_pair(uint32_t data, uint32_t code);
 static uint32_t state1_word(uint32_t data);
 static uint32_t stream_out1_word(uint32_t data_bytes);
 
@@ -507,6 +527,148 @@ powervr_switch_task_words(
 	tasks->resume[1] = programs->shared_load_code & ADDRESS_MASK;
 	tasks->resume[2] = stream_out1_word(persistent_bytes);
 	tasks->resume[2] |= (uint64_t)(programs->persistent_resume_data & ADDRESS_MASK) << 32;
+}
+
+/*
+ * Builds the data sequencer program that starts a compute context's
+ * shared register store or load.
+ *
+ * Values referenced:
+ * Mesa 26.2.5 src/imagination/vulkan/pds/pvr_rogue_pds_defs.h
+ * (PVR_ROGUE_PDSINST_PREDICATE_IF0 1, _IF1 2); bxe-4-32.h
+ * (has_ern35421, so the task issue is conditional; no
+ * compute_morton_capable, so the load takes the store's form).
+ * Procedure referenced:
+ * Mesa 26.2.5 src/imagination/vulkan/pvr_arch_job_context.c
+ * (pvr_pds_compute_ctx_sr_program_create_and_upload: the shared storing
+ * program's data, its code behind pvr_pds_generate_compute_barrier_conditional,
+ * cc_enable from ERN 35421); src/imagination/vulkan/pds/pvr_pds.c
+ * (pvr_pds_generate_compute_barrier_conditional: a branch on IF0 setting
+ * IF1 to address 1, a conditional halt, a branch on IF0 setting IF0 to
+ * address 1).
+ */
+int
+powervr_compute_shared_pds_program(
+	uint64_t state,
+	uint64_t usc_offset,
+	unsigned temporaries,
+	uint32_t data[POWERVR_SHARED_PDS_DATA_WORDS],
+	uint32_t code[POWERVR_COMPUTE_SHARED_CODE_WORDS])
+{
+	uint32_t render_code[POWERVR_SHARED_PDS_CODE_WORDS];
+	int error;
+
+	/* The render context's program: the same data, the writes and the issue. */
+	error = powervr_shared_pds_program(state, usc_offset, temporaries, data, render_code);
+	if (error != 0)
+		return error;
+
+	/* The coefficient pass's skip. */
+	error = powervr_pds_branch(PREDICATE_IF0, 0, PREDICATE_IF1, 1, &code[0]);
+	if (error != 0)
+		return error;
+
+	error = powervr_pds_halt(1, &code[1]);
+	if (error != 0)
+		return error;
+
+	error = powervr_pds_branch(PREDICATE_IF0, 0, PREDICATE_IF0, 1, &code[2]);
+	if (error != 0)
+		return error;
+
+	/* The writes, then the issue under the condition. */
+	code[3] = render_code[0];
+	code[4] = render_code[1];
+	code[5] = render_code[2] | CONDITION_BIT;
+
+	/* Succeeded: the program. */
+	return 0;
+}
+
+/*
+ * Builds the fence terminate program: a zero 64-bit constant and a zero
+ * control word for the fence's unused sources; the coefficient pass's
+ * skip, the compute fence, the end.
+ *
+ * Procedure referenced:
+ * Mesa 26.2.5 src/imagination/vulkan/pds/pvr_pds.c
+ * (pvr_pds_generate_fence_terminate_program without the software
+ * barrier, pvr_pds_generate_doutc).
+ */
+int
+powervr_compute_terminate_program(
+	uint32_t data[POWERVR_COMPUTE_TERMINATE_DATA_WORDS],
+	uint32_t code[POWERVR_COMPUTE_TERMINATE_CODE_WORDS])
+{
+	unsigned index;
+	int error;
+
+	/* The zero sources. */
+	for (index = 0; index < POWERVR_COMPUTE_TERMINATE_DATA_WORDS; index++)
+		data[index] = 0;
+
+	/* The skip, the fence, the end. */
+	error = powervr_pds_branch(PREDICATE_IF0, 0, PREDICATE_IF1, 1, &code[0]);
+	if (error != 0)
+		return error;
+
+	error = powervr_pds_halt(1, &code[1]);
+	if (error != 0)
+		return error;
+
+	error = powervr_pds_branch(PREDICATE_IF0, 0, PREDICATE_IF0, 1, &code[2]);
+	if (error != 0)
+		return error;
+
+	error = powervr_pds_output(0, 0, POWERVR_PDS_OUTPUT_COMPUTE_FENCE, 0, 0, &code[3]);
+	if (error != 0)
+		return error;
+
+	error = powervr_pds_halt(0, &code[4]);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the program. */
+	return 0;
+}
+
+/*
+ * Builds the compute context's static state.
+ *
+ * Values referenced:
+ * Mesa 26.2.5 src/imagination/csbgen/rogue/cr.xml (CDM_CONTEXT_PDS0,
+ * CDM_CONTEXT_LOAD_PDS0, CDM_TERMINATE_PDS: data_addr 36..63, code_addr
+ * 4..31, each shifted by 4; CDM_CONTEXT_PDS1 and CDM_TERMINATE_PDS1:
+ * pds_seq_dep 29, usc_seq_dep 28, target 27, unified_size 21..26,
+ * common_shared 20, common_size 11..19, temp_size 7..10, data_size 1..6
+ * in units of 16 bytes, fence 0); Linux v7.3
+ * drivers/gpu/drm/imagination/pvr_rogue_fwif_shared_check.h (struct
+ * rogue_fwif_cdm_registers_cswitch: context_pds0 0, context_pds1 8,
+ * terminate_pds 16, terminate_pds1 24, resume_pds0 32, context_pds0_b
+ * 40, resume_pds0_b 48).
+ * Procedure referenced:
+ * Mesa 26.2.5 src/imagination/vulkan/pvr_arch_job_context.c
+ * (pvr_compute_ctx_ws_static_state_init: the store programs' places,
+ * PDS1 with the data sequencer's dependency, any target, the unified
+ * store, the store's data size and the fence; the terminate program's
+ * places and PDS1 freeing the common store, any target on a core
+ * without Morton order; the load programs' places).
+ */
+void
+powervr_compute_switch_words(
+	const struct powervr_compute_switch_programs *programs,
+	uint64_t words[POWERVR_COMPUTE_SWITCH_WORDS])
+{
+	/* The first buffer's store, its control word, the terminate and its control word. */
+	words[0] = place_pair(programs->store_data[0], programs->store_code[0]);
+	words[1] = CDM_PDS_SEQUENCE | CDM_TARGET_ANY | (SHARED_UNIFIED_UNITS << CDM_UNIFIED_SHIFT) | ((POWERVR_SHARED_PDS_DATA_WORDS * 4U / UNIT_BYTES) << CDM_DATA_SHIFT) | CDM_FENCE;
+	words[2] = place_pair(programs->terminate_data, programs->terminate_code);
+	words[3] = CDM_PDS_SEQUENCE | CDM_TARGET_ANY | CDM_COMMON_SHARED | ((POWERVR_COMPUTE_TERMINATE_DATA_WORDS * 4U / UNIT_BYTES) << CDM_DATA_SHIFT) | CDM_FENCE;
+
+	/* The first buffer's load, then the second buffer's store and load. */
+	words[4] = place_pair(programs->load_data[0], programs->load_code[0]);
+	words[5] = place_pair(programs->store_data[1], programs->store_code[1]);
+	words[6] = place_pair(programs->load_data[1], programs->load_code[1]);
 }
 
 /* Builds the register value of a VDM or TA context state base. */
@@ -907,6 +1069,22 @@ shared_fetch(
 
 	/* Succeeded: the group. */
 	return 0;
+}
+
+/* Builds a PDS0 word: the data's place in the high half, the code's in the low, each on 16 bytes. */
+static uint64_t
+place_pair(
+	uint32_t data,
+	uint32_t code)
+{
+	uint64_t word;
+
+	/* The two places. */
+	word = (uint64_t)(data & ADDRESS_MASK) << 32;
+	word |= code & ADDRESS_MASK;
+
+	/* Succeeded: the word. */
+	return word;
 }
 
 /* Builds task 0's first word: a data sequencer state update for a target with its data's size. */
