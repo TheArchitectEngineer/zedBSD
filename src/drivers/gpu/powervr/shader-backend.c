@@ -47,7 +47,9 @@
 #define TEMP_STORE_DATA		8U
 #define TEMP_STAGE		9U
 #define TEMP_FILLER		11U
-#define TEMP_FIRST_VALUE	12U
+
+/* The first register values take: after the filler's when the fillers are moves. */
+#define TEMP_FIRST_VALUE	(shader_filler_kind == MACHINE_MOVE || shader_filler_kind == MACHINE_MOVE_SPECIAL ? TEMP_FILLER + 1U : TEMP_FILLER)
 
 /*
  * The special registers the back end names: constant zero, one, the
@@ -160,16 +162,17 @@ static int operations_conflict(const struct shader_machine_operation *reader, co
  * compute check compares settings on the board in one boot): the groups
  * between a group and a later write of a register it reads, by the
  * reader's kind (an integer multiply-add, a store, any other), and the
- * kind of the filler group: MACHINE_MOVE_SPECIAL (r11 from s0, the
- * default), MACHINE_MOVE (r11 from itself), or MACHINE_NOP / MACHINE_WAIT,
- * which on the board took no time (vf2-dmesg75).
+ * kind of the filler group: MACHINE_NOP (the default; with no spacing
+ * there are no fillers, and r11 holds values), MACHINE_WAIT, or a move
+ * into r11 kept for it, MACHINE_MOVE_SPECIAL (from s0) or MACHINE_MOVE
+ * (from itself).
  */
 unsigned shader_integer_source_gap = SHADER_INTEGER_SOURCE_GAP;
 unsigned shader_alu_source_gap = SHADER_ALU_SOURCE_GAP;
 unsigned shader_store_source_gap = SHADER_STORE_SOURCE_GAP;
 unsigned shader_result_gap = SHADER_RESULT_GAP;
 unsigned shader_in_place_staging = SHADER_IN_PLACE_STAGING;
-unsigned shader_filler_kind = MACHINE_MOVE_SPECIAL;
+unsigned shader_filler_kind = MACHINE_NOP;
 
 static void nop_operation(struct shader_machine_operation *operation);
 static int filler_operation(const struct shader_machine_operation *operation);

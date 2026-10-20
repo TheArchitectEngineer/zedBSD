@@ -1,0 +1,142 @@
+# Mesa 26.2.5 (host build, drm-shim BVNC 36.50.54.182 = BXE-4-32), vkcompute: the compute stream (PVR_DEBUG=cs, the dumper patched to read KERNEL9-11 only with global offsets) and the dispatch's PDS program (printed by a patched pvr_arch_pipeline.c). zedBSD ws269 p008, 2026-10-21.
+ZEDBSD-PDS temps 6 data_size 8 code_size 40 temps_used 3
+ZEDBSD-PDS data[0] = 0x00007a00
+ZEDBSD-PDS data[1] = 0x00000010
+ZEDBSD-PDS data[2] = 0x10000002
+ZEDBSD-PDS data[3] = 0x90004001
+ZEDBSD-PDS data[4] = 0x80000000
+ZEDBSD-PDS code[0] = 0xc2c00007
+ZEDBSD-PDS code[1] = 0x90016000
+ZEDBSD-PDS code[2] = 0x9001a041
+ZEDBSD-PDS code[3] = 0x9001e0c3
+ZEDBSD-PDS code[4] = 0xf0024001
+ZEDBSD-PDS code[5] = 0xf0034101
+ZEDBSD-PDS code[6] = 0xd3000000
+ZEDBSD-PDS code[7] = 0xf0044001
+ZEDBSD-PDS code[8] = 0xfc000002
+ZEDBSD-PDS code[9] = 0xd3000000
+======= BEGIN CONTROL STREAM DUMP =======
+Frame num                            : 0
+Job num                              : 0
+Status                               : VK_SUCCESS (0)
+Stream type                          : COMPUTE (3)
+Nr of BOs                            : 1
+
+------- Buffer objects -------
+[0] 0x80000ad000 ->     0x7f0d81c86000 (4 KiB, 0x1000 bytes)
+
+------- First buffer content -------
+[0000] 0: KERNEL
+  indirect_present                   : no (0)
+  global_offsets_present             : no (0)
+  event_object_present               : no (0)
+  usc_common_size                    : 64 bytes (1 x 64 bytes)
+  usc_unified_size                   : 0 bytes (0 x 16 bytes)
+  pds_temp_size                      : 0 bytes (0 x 16 bytes)
+  pds_data_size                      : 32 bytes (2 x 16 bytes)
+  usc_target                         : ALL (0)
+  fence                              : no (0)
+  data_addr                          : 0xda00002700 (0xda00000000 + 0x0000002700)
+    <buffer size>                    : 32 bytes (from pds_data_size)
+    <raw>                            : 131072 bytes
+  sd_type                            : NONE (0)
+  usc_common_shared                  : yes (1)
+  code_addr                          : 0xda00002600 (0xda00000000 + 0x0000002600)
+    <buffer size>                    : 125440 bytes mapped
+    <raw>                            : 131072 bytes
+  one_wg_per_task                    : no (0)
+  workgroup_x                        : 1 (0 + 1)
+  workgroup_y                        : 1 (0 + 1)
+  workgroup_z                        : 1 (0 + 1)
+  indirect_addr                      : <not present>
+  max_instances                      : 8
+  workgroup_size_x                   : 1 (0 + 1)
+  workgroup_size_y                   : 1 (0 + 1)
+  workgroup_size_z                   : 1 (0 + 1)
+  global_offset_x                    : <not present>
+  global_offset_y                    : <not present>
+  global_offset_z                    : <not present>
+  <raw>                              : 28 bytes
+    [00]  08..04.. 0227.... ..26.... ........  ........ ........ ......40
+    [1c]  <end of buffer>
+[001c] 1: KERNEL
+  indirect_present                   : no (0)
+  global_offsets_present             : no (0)
+  event_object_present               : no (0)
+  usc_common_size                    : 64 bytes (1 x 64 bytes)
+  usc_unified_size                   : 16 bytes (1 x 16 bytes)
+  pds_temp_size                      : 16 bytes (1 x 16 bytes)
+  pds_data_size                      : 32 bytes (2 x 16 bytes)
+  usc_target                         : ANY (1)
+  fence                              : no (0)
+  data_addr                          : 0xda00002640 (0xda00000000 + 0x0000002640)
+    <buffer size>                    : 32 bytes (from pds_data_size)
+    <raw>                            : 131072 bytes
+  sd_type                            : USC (2)
+  usc_common_shared                  : no (0)
+  code_addr                          : 0xda00002660 (0xda00000000 + 0x0000002660)
+    <buffer size>                    : 125344 bytes mapped
+    <raw>                            : 131072 bytes
+  one_wg_per_task                    : no (0)
+  workgroup_x                        : 128 (127 + 1)
+  workgroup_y                        : 1 (0 + 1)
+  workgroup_z                        : 1 (0 + 1)
+  indirect_addr                      : <not present>
+  max_instances                      : 32 (0)
+  workgroup_size_x                   : 32 (31 + 1)
+  workgroup_size_y                   : 1 (0 + 1)
+  workgroup_size_z                   : 1 (0 + 1)
+  global_offset_x                    : <not present>
+  global_offset_y                    : <not present>
+  global_offset_z                    : <not present>
+  <raw>                              : 28 bytes
+    [00]  0a1104.. 4826.... 6026.... 7f......  ........ ........ ....7c..
+    [1c]  <end of buffer>
+[0038] 2: KERNEL
+  indirect_present                   : no (0)
+  global_offsets_present             : no (0)
+  event_object_present               : no (0)
+  usc_common_size                    : 0 bytes (0 x 64 bytes)
+  usc_unified_size                   : 0 bytes (0 x 16 bytes)
+  pds_temp_size                      : 0 bytes (0 x 16 bytes)
+  pds_data_size                      : 16 bytes (1 x 16 bytes)
+  usc_target                         : ANY (1)
+  fence                              : yes (1)
+  data_addr                          : 0xda00001040 (0xda00000000 + 0x0000001040)
+    <buffer size>                    : 16 bytes (from pds_data_size)
+    <raw>                            : 131072 bytes
+  sd_type                            : PDS (1)
+  usc_common_shared                  : yes (1)
+  code_addr                          : 0xda00001050 (0xda00000000 + 0x0000001050)
+    <buffer size>                    : 130992 bytes mapped
+    <raw>                            : 131072 bytes
+  one_wg_per_task                    : no (0)
+  workgroup_x                        : 1 (0 + 1)
+  workgroup_y                        : 1 (0 + 1)
+  workgroup_z                        : 1 (0 + 1)
+  indirect_addr                      : <not present>
+  max_instances                      : 8
+  workgroup_size_x                   : 1 (0 + 1)
+  workgroup_size_y                   : 1 (0 + 1)
+  workgroup_size_z                   : 1 (0 + 1)
+  global_offset_x                    : <not present>
+  global_offset_y                    : <not present>
+  global_offset_z                    : <not present>
+  <raw>                              : 28 bytes
+    [00]  07...... 4610.... 5010.... ........  ........ ........ ......40
+    [1c]  <end of buffer>
+[0054] 3: TERMINATE
+  <no fields>
+  <raw>                              : 4 bytes
+    [0]  ......80
+    [4]  <end of buffer>
+[0058] <1002 unused words (4008 bytes)>
+[1000] <end of buffer>
+
+------- First buffer hexdump -------
+[0000]  08..04.. 0227.... ..26.... ........  ........ ........ ......40 0a1104..
+[0020]  4826.... 6026.... 7f...... ........  ........ ....7c.. 07...... 4610....
+[0040]  5010.... ........ ........ ........  ......40 ......80
+[1000]  <end of buffer>
+======= END CONTROL STREAM DUMP =======
+vkcompute: PowerVR B-Series BXE-4-32 MC1: FAIL, 0/4096 words (first bad 0: 0xa5a5a5a5, expected 0x00000007)
