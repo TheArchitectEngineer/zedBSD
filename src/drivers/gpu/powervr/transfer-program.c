@@ -381,7 +381,8 @@ build_program(
 		if (packed) {
 			operations[count].source[0] = machine_register(POWERVR_USC_BANK_TEMPORARY, TEMP_PIXEL);
 		} else {
-			operations[count].source[0] = machine_register(POWERVR_USC_BANK_TEMPORARY, TEMP_SAMPLE + word);
+			/* q1520 diagnostic: the sample's words in reverse order (a board run tells the sample from the pixel back end). */
+			operations[count].source[0] = machine_register(POWERVR_USC_BANK_TEMPORARY, TEMP_SAMPLE + (words - 1U - word));
 		}
 		operations[count].variant = 1;
 		count++;

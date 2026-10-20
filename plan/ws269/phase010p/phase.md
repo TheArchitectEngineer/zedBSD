@@ -99,3 +99,13 @@ sRGB・R8・R8G8・R16 の image は使われていない。このため R32_SFL
 - 確認: `plan/ws269/tests/vkmatrix/run.sh build/q1520-vkm`（lavapipe）20/20 PASS。VF2 `vmunix` と `bin/vkmatrix`
   （`plan/ws269/tests/p010/config-visionfive2-selftest.mk`、`BUILD=build/q1520/vf2`）rc 0、warning 0。driver の source は変えていない。
 - 次: board の出力（word の位置、clear-* の結果）で、壊れる leg（buffer→image／image→buffer／PBE）を決めて直す。
+
+### board 99 と次の診断（2026-10-21）
+
+- board 99: copy-64・clear-64・render-f16 は全 4096 texel で word 1 = word 0、copy-128・clear-128 は (w0 w1 w0 w1)。
+  clear も同じなので image→buffer の copy out（copy program の sample か PBE）が第一の容疑。
+- 読んだ範囲（PBE state・swizzle・pack mode・pixel output width・partition・texture format・pixout の番号）は Mesa と一致し、原因は決まらない。
+- 診断（一時的、transfer-program.c）: copy program が sample の word を逆順で pixel output に書く。読み方:
+  - clear-64 が w0 w0 → sample が word 0 を繰り返している。w1 w1 → PBE が pixout0 を繰り返し読んでいる。
+  - copy-64（逆順が 2 回）が全部 PASS → 両方とも正しく、clear・upload 側が原因。
+- 確認: p010 の host 試験は全部 0 failed。VF2 の vmunix と bin/vkmatrix は rc 0、warning 0。
