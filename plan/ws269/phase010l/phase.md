@@ -21,7 +21,7 @@
 | 確認 | コマンド | 結果 |
 | --- | --- | --- |
 | executor の frame（切り替え 0） | `sh plan/ws269/tests/p009/run.sh build/p010l/p009-0 0` | 175 passed、0 failed |
-| executor の frame（切り替え 1） | `sh plan/ws269/tests/p009/run.sh build/p010l/p009-1 1` | 173 passed、0 failed（あとで足した shareable の 2 件は切り替え 0 だけで回した） |
+| executor の frame（切り替え 1） | `sh plan/ws269/tests/p009/run.sh build/p010l/p009-1 1` | 175 passed、0 failed |
 | p010 の host 試験 | `sh plan/ws269/tests/p010/run.sh build/p010l/p010` | 全部 0 failed |
 | p006（SLC の flag） | `sh plan/ws269/tests/p006/run.sh build/p010l/p006` | PASS 95、FAIL 0 |
 | VF2 の kernel | `make ZEDBSD_CONFIG=config/ci/config-visionfive2.mk BUILD=build/p010l/vf2 vmunix -j16` | rc 0、warning 0 |
