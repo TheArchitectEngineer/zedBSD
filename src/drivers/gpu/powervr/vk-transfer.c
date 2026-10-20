@@ -241,7 +241,8 @@ powervr_vk_transfer_run(
 			error = image_surface(image, &work->request.destination);
 			if (error == 0)
 				error = image_view(other, &work->view);
-			if (error == 0 && entry->opcode == GPU_OP_CMD_COPY_IMAGE && other->format != image->format)
+			/* A copy moves raw texels: the two formats need the same texel size. */
+			if (error == 0 && entry->opcode == GPU_OP_CMD_COPY_IMAGE && other->format->texel_bytes != image->format->texel_bytes)
 				error = ENOTSUP;
 			if (entry->opcode == GPU_OP_CMD_COPY_IMAGE) {
 				work->request.area.x = (uint32_t)data->regions.copies[index].dstOffset.x;
@@ -344,15 +345,19 @@ hold(
 	return 0;
 }
 
-/* Refuses a subresource beyond level 0 and layer 0. */
+/*
+ * Refuses a subresource beyond level 0 and layer 0; the remaining layers
+ * from layer 0 (VK_REMAINING_ARRAY_LAYERS) are the one layer the images
+ * have.
+ */
 static int
 first_subresource(
 	uint32_t level,
 	uint32_t layer,
 	uint32_t count)
 {
-	/* Level 0, layer 0, one layer. */
-	if (level != 0 || layer != 0 || count != 1)
+	/* Level 0, layer 0, one layer or all of them. */
+	if (level != 0 || layer != 0 || (count != 1 && count != VK_REMAINING_ARRAY_LAYERS))
 		return ENOTSUP;
 
 	/* Succeeded: the first subresource. */
