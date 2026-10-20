@@ -962,3 +962,21 @@ source の変更は無し。
   - 通常に戻す時は 0 にする。
 - host が register を読めない件の調査（DDK の StarFive の tree）: sf_7110 の sysconfig は 0x18000000 から 0x100000 の 1 つの window を ioremap して、host は直に読み書きする。MIPS の core には META の slave port のような FW 経由の読みは無い。OSID の view は MTS_SCHEDULE の間隔（0x10000）ごとで、OS0 は先頭にある。clock も DDK と同じ順で入れている（clk_axi、apb・rtc、core の分周、core・sys、apb の reset の解除）。DDK に、host の読みで FW と同じ値を得るための追加の条件（別の window・security の register・特別な clock）は見当たらなかった。この調べた範囲では「host からは読めない（原因は未特定）」と結論する。
 - 確認: `build/q1460/st/vmunix`（RISC-V の self-test の build）で warning 0。板は未実施。
+
+## q1463 / q1463-i01（2026-10-20）
+
+- 我々と Linux の vendor の driver（dds_draw.txt）の config の比較:
+
+  | 項目 | 我々（直す前） | Linux |
+  | --- | --- | --- |
+  | system flags | 0x00000010（POW_RASCALDUST のみ。SLC が小さい時だけ bit 19 DISABLE_DM_OVERLAP も立つ） | 0x00020010 |
+  | OS flags（`RGXFWIF_OSDATA.ui32FwOsConfigFlags`、offset 0） | 0（書いていなかった） | 0x0000000F |
+  | core clock | 396 MHz | 594 MHz |
+
+  - 違う bit:
+    - system flags の bit 17: `CTXSWITCH_PROFILE` が MEDIUM（2<<16）。
+    - OS flags の bit 0〜3: `OS_CTXSWITCH_TDM_EN`・`GEOM_EN`・`3D_EN`・`CDM_EN`。
+  - DDK では、OS flags は rgxsrvinit.c の GetFWConfigFlags で `ui32EnableFWContextSwitch & DM_ALL` から作られる。FW の側は binary なので、DM の扱いは読めない。GEOM の bit が 0 の時に FW が TA の kick の前の context store・resume の設定（VDM の context store の register など）を飛ばす・変える可能性はあるが、未確認。
+- 直し（`firmware-boot.c`・`interface.h`）: system flags に MEDIUM の profile を足し（0x20010 になる）、OS data の config flags に 0xF を書く。起動時に値を 1 行の log に出す。
+- core clock: DDK の sf_7110 の sysconfig は既定が 594 MHz（`RGX_STARFIVE_7100_CORE_CLOCK_SPEED`）で、DT に `/opp-table-0/opp-1250000000` がある時だけ 396 MHz（BIN2）にする。我々の vf2-gpu.c は 396 MHz に固定していて、その注記（「vendor の kernel はどの板も 396 で動かす」）は誤り。clock は TA の lockup とは関係が薄いと見て、変えていない。594 にするかは WS256 の判断。
+- 確認: `build/q1463/st/vmunix`（RISC-V の self-test の build）で warning 0。板は未実施。

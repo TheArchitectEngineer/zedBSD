@@ -130,6 +130,23 @@
 #define POWERVR_SYSTEM_DATA_BYTES	3624U
 #define POWERVR_FLAG_NO_DM_OVERLAP	0x80000U
 #define POWERVR_FLAG_POW_RASCALDUST	0x10U
+
+/*
+ * The context switch profile in the system flags, and the per-OS flags
+ * that enable the context switch of each data master.
+ *
+ * Values referenced:
+ * StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
+ * drivers/gpu/drm/img/img-rogue/include/rogue/rgx_fwif_km.h
+ * (RGXFWIF_INICFG_CTXSWITCH_PROFILE_SHIFT 16,
+ * RGXFWIF_CTXSWITCH_PROFILE_MEDIUM_EN 2; RGXFWIF_INICFG_OS_CTXSWITCH_TDM_EN
+ * bit 0, _GEOM_EN 1, _3D_EN 2, _CDM_EN 3; RGXFWIF_OSDATA:
+ * ui32FwOsConfigFlags first); the vendor driver's debug dump on the
+ * board reads system flags 0x00020010 and OS flags 0x0000000F.
+ */
+#define POWERVR_FLAG_CSW_PROFILE_MEDIUM	0x20000U
+#define POWERVR_OS_DATA_CONFIG_FLAGS	0U
+#define POWERVR_OS_FLAGS_CSW_ALL	0xfU
 #define POWERVR_DM_OVERLAP_MIN_KB	4U
 
 /*
