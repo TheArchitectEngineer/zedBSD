@@ -127,6 +127,17 @@ powervr_fragment_command(
 	put32(command, POWERVR_FRAGMENT_ANTIALIAS, 0);
 	put32(command, POWERVR_FRAGMENT_ISP_CONTROL, powervr_fragment_isp_control(setup->tiles_x, setup->tiles_y));
 
+	/*
+	 * The scissor and depth bias tables, each register keeping the
+	 * address's bits 2 to 39.
+	 *
+	 * Values referenced:
+	 * Mesa 26.2.5 src/imagination/csbgen/rogue/cr.xml (ISP_SCISSOR_BASE,
+	 * ISP_DBIAS_BASE: addr 2..39 shifted by 2).
+	 */
+	put64(command, POWERVR_FRAGMENT_SCISSOR_BASE, setup->scissor_table & 0xfffffffffcULL);
+	put64(command, POWERVR_FRAGMENT_DBIAS_BASE, setup->dbias_table & 0xfffffffffcULL);
+
 	/* The end-of-tile program. */
 	put32(command, POWERVR_FRAGMENT_EVENT_INFO, setup->event_info);
 	put32(command, POWERVR_FRAGMENT_EVENT_DATA, setup->event_data);
