@@ -124,7 +124,6 @@ static int special_group(struct powervr_usc_group *group, unsigned destination, 
 static int multiply_add_group(struct powervr_usc_group *group, unsigned destination, unsigned first, unsigned second, unsigned addend);
 static int store_group(struct powervr_usc_group *group, unsigned data, unsigned address);
 static int add64_group(struct powervr_usc_group *group, unsigned destination, unsigned base, unsigned offset);
-static int add64_group_any(struct powervr_usc_group *group, unsigned destination, unsigned base, unsigned offset);
 static int wait_group(struct powervr_usc_group *group);
 static int end_group(struct powervr_usc_group *group);
 static int nothing_group(struct powervr_usc_group *group);
@@ -807,7 +806,7 @@ powervr_compute_probe_program(
 			if (error == 0)
 				error = immediate_group(&groups[count++], 1, (uint32_t)(base >> 32));
 			if (error == 0)
-				error = add64_group_any(&groups[count++], 0, 0, 8);
+				error = add64_group(&groups[count++], 0, 0, 8);
 		} else if (error == 0) {
 			if (kind != POWERVR_COMPUTE_PROBE_LIKE_STORE_EARLY) {
 				error = immediate_group(&groups[count++], 10, (uint32_t)base);
@@ -931,9 +930,8 @@ probe_with_fillers(
 }
 
 /*
- * Builds a control group that does nothing, as the compiler's spacing
- * group (MACHINE_NOP in shader-backend.c) is built: the no-operation
- * without the end mark.
+ * Builds a control group that does nothing: the no-operation without
+ * the end mark.
  */
 static int
 nothing_group(
@@ -1091,9 +1089,8 @@ store_fetch(
 	} else if (index < STORE_PROLOGUE + (size_t)shape->steps * STORE_STEP) {
 		/*
 		 * One step: its address from the base, the instance's offset and
-		 * the step's, each 64-bit add into a pair it does not read (the
-		 * board writes wrong pairs for an add in place); the data; the
-		 * store and the wait.
+		 * the step's, each 64-bit add into a pair it does not read; the
+		 * data; the store and the wait.
 		 */
 		step = (index - STORE_PROLOGUE) / STORE_STEP;
 		step_index = (index - STORE_PROLOGUE) % STORE_STEP;
@@ -1395,10 +1392,10 @@ multiply_add_group(
  * destination and destination + 1 (the low half from ft0, the high from
  * fte), as an address is made.
  *
- * The destination pair must not be the base pair: on the BXE-4-32 an
- * add that writes the pair it reads leaves most instances' results
- * wrong (the board's LIKE_STORE_IN_PLACE probe, 2026-10-20), so every
- * caller writes another pair.
+ * The destination pair may be the base pair: the add in place was wrong
+ * on the board only while the workgroup's data sequencer program let
+ * instances' registers overlap (2026-10-20); with Mesa's program it is
+ * right (rule probe, vf2-dmesg95), as Mesa's compiler emits it.
  *
  * Procedure referenced:
  * Mesa 26.2.5 src/imagination/pco/pco_map.py (group_map O_ADD64_32:
@@ -1408,32 +1405,6 @@ multiply_add_group(
  */
 static int
 add64_group(
-	struct powervr_usc_group *group,
-	unsigned destination,
-	unsigned base,
-	unsigned offset)
-{
-	int error;
-
-	/* Refuses an add in place, which the hardware gets wrong. */
-	if (destination == base || destination == base + 1U || destination + 1U == base)
-		return EINVAL;
-
-	/* The group. */
-	error = add64_group_any(group, destination, base, offset);
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the group. */
-	return 0;
-}
-
-/*
- * Builds the 64-bit add's group without the in-place check: only the
- * check's own probe of an add in place (LIKE_STORE_IN_PLACE) uses it.
- */
-static int
-add64_group_any(
 	struct powervr_usc_group *group,
 	unsigned destination,
 	unsigned base,

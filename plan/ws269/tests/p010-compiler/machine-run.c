@@ -57,8 +57,7 @@ enum {
 	KIND_END,
 	KIND_TEST_ZERO,
 	KIND_CONDITION,
-	KIND_BRANCH,
-	KIND_NOP
+	KIND_BRANCH
 };
 
 static float as_float(uint32_t word);
@@ -306,11 +305,11 @@ machine_run_program(
 				if (operation->kind == KIND_LOAD) {
 					write_register(run, operation->destination[0], lane, run->memory[(address - run->memory_base) / 4U]);
 				} else {
-					run->memory[(address - run->memory_base) / 4U] = a;
+					/* The data from the register right after the address pair, as the hardware takes it (vf2-dmesg95). */
+					run->memory[(address - run->memory_base) / 4U] = run->temps[operation->source[index].index + 2U][lane];
 				}
 				break;
 			case KIND_WAIT:
-			case KIND_NOP:
 				break;
 			case KIND_ITERATE:
 				write_register(run, operation->destination[0], lane, run->iterate_word(lane, operation->immediate, 0));

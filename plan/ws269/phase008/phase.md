@@ -1657,3 +1657,33 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
 | 板 | 未実施（`/bin/vkcoherency`） |
 
 - 片付け（Q1 に依頼）: `build/p2q1508/`、scratchpad の `xform.*`・`xc*`・`vkcoherency-host`・`rt*`・`rules.c`。
+
+### q1505-i01 の仕上げ（板 95 の結果を受けて）
+
+- 板 95（DIAGNOSTICS＝1、dmesg 284〜288 行）:
+  - in place の 64-bit add、次の群での madd の source の書き換え、madd の特殊 register の source、次の群での madd の結果の読みは、どれも 32/32 で、**要らない**。
+  - store の data が address の pair の直後に無い配置は 0/32（lane 0 の語は 0x0000bad0 ＝ pair の直後の r14 の値）で、**この規則だけが hardware の物**（Mesa も同じ並び）。
+- 外した物:
+  - shader-backend.c:
+    - 間隔の仕組みの一式（`shader_backend_space_hazards`、`shader_backend_hazards`、`shader_backend_gap_needed`、`required_gap`、`integer_result_read`、`operations_conflict`、`insert_nops`、`nop_operation`、`filler_operation`）
+    - in place の staging（`operation_in_place`、`stage_in_place`、`TEMP_STAGE`）
+    - filler 用の r11（`TEMP_FILLER`）
+    - 変数（`shader_*_gap`、`shader_result_gap`、`shader_in_place_staging`、`shader_filler_kind`）
+    - 整数の source の特殊 register を temp に移す処理（`integer_source`。madd は定数 1・0 を s1・s0 から直接読む）
+    - `MACHINE_NOP` の kind とその encode
+    - encode は間隔を入れずに並べるだけになった。値の register は r9 から（`TEMP_FIRST_VALUE` 9）。
+  - shader-private.h: `SHADER_HAZARD_GAP`、`SHADER_*_GAP`、`SHADER_IN_PLACE_STAGING`、`SHADER_GAP_MAX`、上の関数・変数の宣言、`MACHINE_NOP`。
+  - compute-program.c: `add64_group` の in place の拒否。`add64_group_any` を `add64_group` に一本化し、注記に板 95 を書いた。
+  - compute-check.c: dump の program の spacing の群（`dump_append` が足していた wait）。
+- 残した規則: store の data は address の pair の直後（`TEMP_STORE_DATA` ＝ r8、`TEMP_ADDRESS` ＝ r6:r7）。注記に板 95 の根拠を書いた。
+  - host の simulator（machine-run.c）の store も、hardware と同じく pair の直後の register から data を読むようにした。
+- 試験の追従:
+  - compile-host-test から、各 shader の「hazard 0」の確認と spacing の試験（`test_hazard_spacing`）を外した。
+  - machine-run の `KIND_NOP` を外した。
+- host:
+  - p010-compiler は 396/0・20/0（hazard の項目を外した分だけ減った）。
+  - p008 は 94/0・84/0、p009 は 505/0。
+  - fill-registers: vkcompute の fill は **280 byte・14 temps・27 群**で 32/32。
+  - DIAGNOSTICS＝1・LOCKUP＝1 の compute-check.c 単体も、warning 0 で compile できた。
+- VF2 の vmunix（`build/p2q1505b/vf2/vmunix`）: rc 0、warning 0。板は未実施（compute check と gpu-selftest で、間隔の無い compiler の出力を見る）。
+- 片付け（Q1 に依頼）: `build/p2q1505b/`、scratchpad の `cc.txt`・`cc.sh`・`diag.o`。

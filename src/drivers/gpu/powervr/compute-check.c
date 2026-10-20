@@ -1344,8 +1344,8 @@ dump_append(
 	struct shader_machine_operation *operation;
 	unsigned index;
 
-	/* Room for it and for the spacing groups after it. */
-	if (dump->operation_count >= SHADER_MACHINE_OPERATIONS / 2U)
+	/* Room for it. */
+	if (dump->operation_count >= SHADER_MACHINE_OPERATIONS)
 		return ENOSPC;
 	operation = &dump->operations[dump->operation_count++];
 	kern_memset(operation, 0, sizeof(*operation));
@@ -1372,22 +1372,6 @@ dump_append(
 	if (kind == MACHINE_ADD64) {
 		operation->destination[1].bank = POWERVR_USC_BANK_TEMPORARY;
 		operation->destination[1].index = (uint16_t)(destination + 1U);
-	}
-
-	/* Two spacing groups after every result, so no reader takes it early whatever its unit. */
-	if (destination != DUMP_NONE) {
-		for (index = 0; index < SHADER_HAZARD_GAP; index++) {
-			operation = &dump->operations[dump->operation_count++];
-			kern_memset(operation, 0, sizeof(*operation));
-			operation->kind = MACHINE_WAIT;
-			operation->condition = POWERVR_USC_RUN_ENABLED;
-			operation->destination[0].bank = 0xff;
-			operation->destination[1].bank = 0xff;
-			operation->source[0].bank = 0xff;
-			operation->source[1].bank = 0xff;
-			operation->source[2].bank = 0xff;
-			operation->source[3].bank = 0xff;
-		}
 	}
 
 	/* Succeeded: appended. */
@@ -1477,12 +1461,12 @@ dump_program(
 #define WG_PDS_INPUTS		4U
 #define WG_FILLER		0xdeaddeadU
 
-/* The last operation dump_append added, before its spacing groups. */
+/* The last operation dump_append added. */
 static struct shader_machine_operation *
 dump_last(
 	struct shader_backend *dump)
 {
-	return &dump->operations[dump->operation_count - 1U - SHADER_HAZARD_GAP];
+	return &dump->operations[dump->operation_count - 1U];
 }
 
 /* Builds and encodes the workgroup probe's shading cluster program, reading bank:index. */
