@@ -22,8 +22,10 @@
  * present-clear each from a run of vkstage with the stage's name
  * (present-clear runs "vkstage present", one cleared frame on the display held
  * three seconds through the WSI readback route,
- * under a limit of 30 seconds).  present (vkdemo on the display) prints
- * skip(not built) until its phase adds it.
+ * under a limit of 30 seconds).  present runs vkdemo on the display for
+ * four seconds, under the same limit; it needs depth, as vkdemo renders
+ * with a depth attachment, and is skipped with depth's name until depth
+ * passes.
  *
  * Options (the host test uses them in place of the board's):
  *   -c          also write each line to /dev/console
@@ -32,6 +34,7 @@
  *   -v PATH     the vkcompute program
  *   -i PATH     the vkimage program
  *   -g PATH     the vkstage program
+ *   -d PATH     the vkdemo program
  *   -t SECONDS  the time limit of each stage (default 10; present-clear 3 times it)
  *
  * The exit status is 0 when no stage failed.
@@ -75,6 +78,7 @@ struct selftest {
 	const char *vkcompute;
 	const char *vkimage;
 	const char *vkstage;
+	const char *vkdemo;
 	const char *argument;
 	int limit;
 	int counts[3];
@@ -101,6 +105,7 @@ static int stage_node(struct selftest *test, char *reason, size_t capacity);
 static int stage_vkcompute(struct selftest *test, char *reason, size_t capacity);
 static int stage_image(struct selftest *test, char *reason, size_t capacity);
 static int stage_vkstage(struct selftest *test, char *reason, size_t capacity);
+static int stage_vkdemo(struct selftest *test, char *reason, size_t capacity);
 static int run_program(const char *path, const char *argument, char *line, size_t capacity);
 static int is_vkcompute_stage(const char *name);
 static void vkcompute_outcomes(int status, const char *line, enum outcome *results, char reasons[3][SELFTEST_TEXT_MAX]);
@@ -119,7 +124,7 @@ static const struct stage stages[] = {
 	{ "sample", "draw", stage_vkstage, "sample", 1 },
 	{ "depth", "draw", stage_vkstage, "depth", 1 },
 	{ "present-clear", "device", stage_vkstage, "present", 3 },
-	{ "present", "device", NULL, NULL, 3 },
+	{ "present", "depth", stage_vkdemo, "--duration=4", 3 },
 };
 
 /* The stages that come from the one vkcompute run, in the order of its results. */
@@ -415,6 +420,29 @@ stage_vkstage(
 	return 1;
 }
 
+/* Runs vkdemo on the display with the stage's argument; fails with its line or status. */
+static int
+stage_vkdemo(
+	struct selftest *test,
+	char *reason,
+	size_t capacity)
+{
+	char line[SELFTEST_TEXT_MAX];
+	int status;
+
+	/* One run of vkdemo. */
+	status = run_program(test->vkdemo, test->argument, line, sizeof(line));
+	if (status == 0)
+		return 0;
+
+	/* Failed: its line, or its status when it printed none. */
+	if (line[0] != '\0')
+		snprintf(reason, capacity, "%s", line);
+	else
+		snprintf(reason, capacity, "exit %d", status);
+	return 1;
+}
+
 /*
  * Runs a program, with one argument when argument is not NULL, with its
  * first output line in line; reports its exit status (128 when it did not
@@ -556,8 +584,9 @@ main(
 	test.vkcompute = "/bin/vkcompute";
 	test.vkimage = "/bin/vkimage";
 	test.vkstage = "/bin/vkstage";
+	test.vkdemo = "/bin/vkdemo";
 	test.limit = 10;
-	while ((option = getopt(argc, argv, "cs:n:v:i:g:t:")) != -1) {
+	while ((option = getopt(argc, argv, "cs:n:v:i:g:d:t:")) != -1) {
 		if (option == 'c') {
 			test.console = 1;
 		} else if (option == 's') {
@@ -570,10 +599,12 @@ main(
 			test.vkimage = optarg;
 		} else if (option == 'g') {
 			test.vkstage = optarg;
+		} else if (option == 'd') {
+			test.vkdemo = optarg;
 		} else if (option == 't') {
 			test.limit = atoi(optarg);
 		} else {
-			fprintf(stderr, "usage: gpu-selftest [-c] [-s file] [-n node]... [-v vkcompute] [-i vkimage] [-g vkstage] [-t seconds]\n");
+			fprintf(stderr, "usage: gpu-selftest [-c] [-s file] [-n node]... [-v vkcompute] [-i vkimage] [-g vkstage] [-d vkdemo] [-t seconds]\n");
 			return 2;
 		}
 	}
