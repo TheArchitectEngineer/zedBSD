@@ -30,6 +30,7 @@
 #include "drivers/gpu/powervr/render-command.h"
 #include "drivers/gpu/powervr/render-kick-layout.h"
 #include "drivers/gpu/powervr/render-load-program.h"
+#include "drivers/gpu/powervr/transfer-program.h"
 #include "drivers/gpu/powervr/render-program.h"
 #include "drivers/gpu/powervr/data-program.h"
 #include "drivers/gpu/powervr/image-state.h"
@@ -148,13 +149,16 @@ static int job_programs(const struct powervr_render_job *job, struct job_memory 
  * wait group after each group (POWERVR_LOAD_PROBE_SPACED), 3 no sample at
  * all: the background a constant magenta as a clear's, 4 the usual
  * program with its eight shared words written by the data sequencer as
- * constants (DOUTW) instead of copied from memory (DOUTD).
+ * constants (DOUTW) instead of copied from memory (DOUTD), 5 the
+ * transfer's blit program and shared words (one to one over the
+ * attachment) as the background.
  */
 #ifndef POWERVR_RENDER_LOAD_PROBE
 #define POWERVR_RENDER_LOAD_PROBE	0
 #endif
 #define LOAD_PROBE_CONSTANT		3
 #define LOAD_PROBE_WRITTEN		4
+#define LOAD_PROBE_BLIT			5
 
 /* Reads a little-endian 32-bit word. */
 static uint32_t
@@ -475,7 +479,27 @@ job_background(
 	int error;
 
 	/* The background's program and the shared register program that feeds it. */
-	if (color->load_op == LOAD_OP_LOAD && POWERVR_RENDER_LOAD_PROBE != LOAD_PROBE_CONSTANT) {
+	if (color->load_op == LOAD_OP_LOAD && POWERVR_RENDER_LOAD_PROBE == LOAD_PROBE_BLIT) {
+		struct powervr_render_area whole;
+		uint32_t blit[POWERVR_TRANSFER_SHARED_WORDS];
+
+		/* The transfer's blit (coordinates from the position by a scale and an offset, filtered sample, packed), one to one over the attachment. */
+		error = powervr_transfer_blit_usc(color->surface.format, &memory->program);
+		if (error != 0)
+			return error;
+		whole.x = 0;
+		whole.y = 0;
+		whole.width = color->view.width;
+		whole.height = color->view.height;
+		error = powervr_transfer_blit_words(&color->view, &whole, &whole, false, false, false, blit);
+		if (error != 0)
+			return error;
+		put_words(memory->general->buffer, GENERAL_LOAD_WORDS, blit, POWERVR_TRANSFER_SHARED_WORDS);
+		error = powervr_transfer_shared_program(memory->general->address + GENERAL_LOAD_WORDS, &memory->shared);
+		if (error != 0)
+			return error;
+		*shared_registers = POWERVR_TRANSFER_SHARED_WORDS;
+	} else if (color->load_op == LOAD_OP_LOAD && POWERVR_RENDER_LOAD_PROBE != LOAD_PROBE_CONSTANT) {
 		/* The attachment's image and sampler words, and the program that samples it. */
 		error = powervr_render_load_usc_probe(color->surface.format, POWERVR_RENDER_LOAD_PROBE <= POWERVR_LOAD_PROBE_SPACED ? POWERVR_RENDER_LOAD_PROBE : POWERVR_LOAD_PROBE_USUAL, &memory->program);
 		if (error != 0)

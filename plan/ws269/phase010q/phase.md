@@ -1523,3 +1523,23 @@ csbgen（Mesa 25.0.7 の `gen_pack_header.py` の `__pvr_address`: `((addr >> sh
 - 確認:
   - RISC-V の self-test の build で warning 0（probe の 0・3・4、DIAGNOSTICS の 1）。
   - p010 の host 試験は failed 0。
+
+## q1513（q1510 の続き、2026-10-21）: LOAD の program と compiler の program の比較
+
+- 板 94: probe 4（shared 語を DOUTW）も 0。fragment の command は、LOAD の job と clear の job で +180/+1a0 の語 0（pds_bgnd の data の大きさ）だけが違う。残るのは LOAD の USC の命令列。
+- host で比べた（compiler の vkmatrix の `texture.frag` と `powervr_render_load_usc`。scratchpad の一時の道具で、repository には入れない）:
+
+  | group | compiler（板で PASS） | LOAD（手書き） | 差 |
+  | --- | --- | --- | --- |
+  | SAMPLE | `57 a0 00 f4 4c 80 64 80 04 88 80 b0 00 ff` | `57 a0 00 e4 4c 80 60 80 04 88 80 a4 00 ff` | 3 か所: byte 3 の f4/e4 は fcnorm（正規化の座標か、unnormalised か）。byte 6 の 64/60 は座標の register（r4 と r0）。byte 11 の b0/a4 は結果の register（r16 と r4） |
+  | WAIT | `02 80 6a ff` | 同じ | なし |
+  | PACK（U8888、scale） | `57 92 06 9c 20 80 40 a0 44 10 00 2c 41 ff` | `… 48 ff` | 結果の register だけ |
+  | 出力への MOVE | `37 8a 00 87 41 00 00 20` の後に end の group | `34 8a 80 87 48 00 00 20`（end の bit を同じ group に） | header（0x37 と 0x34）と、end の置き方 |
+
+  - image と sampler の state の shared register（s0・s4）、channel の数、次元は同じ。
+  - 命令の形として違うのは「unnormalised の座標」（座標は特殊 register の位置をそのまま）と、出力の group の形だけ。
+  - transfer（TDM）は unnormalised で通るが、3D の背景の object では一度も通っていない。
+- 足した物: `POWERVR_RENDER_LOAD_PROBE` の値 5。LOAD の背景に、transfer の blit の program（座標は位置 × scale + offset の FMAD、filter 付きの sample、pack）と、その shared 語（1 対 1、12 語）を使う。通れば、手書きの program の座標の作り方が原因。そのまま blit の道を LOAD に採るか、load program の座標を FMAD 形に直す。
+- 板で流すもの: `-DPOWERVR_RENDER_LOAD_PROBE=5` で `vkmatrix two-passes` と `draws-32`。
+- それでも 0 なら、3D の背景の object で TPU の sample そのものが使えない（Mesa の load op は、texture の state を shared ではなく PDS の unitex の program で TPU の state として載せる: `pvr_pds_unitex_state_program_create_and_upload`）と見る。その時は LOAD を「compiler の texture の shader による全面の draw」（板で通る道）で置き換える（q1510 の (2)）。
+- 確認: RISC-V の self-test の build で warning 0（probe 0 と 5）。p010 の host 試験は failed 0。
