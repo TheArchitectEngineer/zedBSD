@@ -196,6 +196,25 @@ static void watch_thread(void *argument);
 /* 1 asks the host to power the dusts up itself (with the PMU event unmasked it completes, 2026-10-20, but changes nothing); 0 leaves it to the firmware. */
 #define DUST_POWER_BY_HOST		0
 
+/*
+ * Whether the start clears every event before the processor leaves
+ * reset (1): EVENT_STATUS read ISP_END_MACROTILE (bit 4) from the
+ * firmware's first interrupt on, where the vendor firmware on Linux
+ * reads 0 when idle.  The vendor driver's start writes no event
+ * register; this is an experiment.
+ *
+ * Values referenced:
+ * StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
+ * drivers/gpu/drm/img/img-rogue/hwdefs/rogue/km/rgx_cr_defs_km.h
+ * (RGX_CR_EVENT_CLEAR 0x0138, RGX_CR_EVENT_STATUS_ISP_END_MACROTILE_EN
+ * 0x10).
+ */
+#ifndef POWERVR_CLEAR_EVENTS_AT_START
+#define POWERVR_CLEAR_EVENTS_AT_START	0
+#endif
+#define EVENT_STATUS_REGISTER		0x0130U
+#define EVENT_CLEAR_ALL			0xffffffffU
+
 #define REGISTER_CHECK_CLOCK_CONTROL	0x0000U
 #define REGISTER_CHECK_CLOCK_STATUS	0x0008U
 #define REGISTER_CHECK_ALL_ON		(0x5555555555555555ULL & 0xFFFFFF003F3FFFFFULL)
@@ -1100,6 +1119,13 @@ start_processor(
 	kern_logf("powervr: firmware: start: MIPS wrapper\n");
 	init_wrapper(core);
 	powervr_write64(core, POWERVR_AXI_ACE_LITE, POWERVR_AXI_ACE_LITE_VALUE);
+
+	/* The events cleared before the processor runs, when asked; the status said once before and after. */
+	if (POWERVR_CLEAR_EVENTS_AT_START) {
+		kern_logf("powervr: firmware: start: event status 0x%x before the clear\n", (unsigned)powervr_read32(core, EVENT_STATUS_REGISTER));
+		powervr_write32(core, DUST_EVENT_CLEAR, EVENT_CLEAR_ALL);
+		kern_logf("powervr: firmware: start: event status 0x%x after the clear\n", (unsigned)powervr_read32(core, EVENT_STATUS_REGISTER));
+	}
 
 	/* Lets the processor out of reset with a pause on each side. */
 	kern_logf("powervr: firmware: start: processor out of reset (started flag before 0x%x)\n",

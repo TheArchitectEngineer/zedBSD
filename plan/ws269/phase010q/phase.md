@@ -1105,3 +1105,12 @@ csbgen（Mesa 25.0.7 の `gen_pack_header.py` の `__pvr_address`: `((addr >> sh
 - sysdata の flags: mainline は 0（SLC が 4 KB 以上）。我々は POW_RASCALDUST に加え、q1463 で CSW の MEDIUM の profile（0x20010）。
 - osdata の config: mainline は 0、我々は 0xF（q1463。DDK に合わせた）。osinit の hwr_debug_dump_limit は 0 で同じ。
 - 結論: TA の完了や fence に関係し得る差は、起動列・config の中には見つからなかった。残る差は、clock の rate（396 と 594）と、mainline からわざと変えた POW_RASCALDUST・CSW の flags だけ。コードは変えていない。
+
+## q1477 / q1477-i01（2026-10-21）
+
+- (1) `vf2-gpu.c` に `POWERVR_VF2_CORE_594`（既定 0）を足した。1 の時は core の分周の目標を 594 MHz（PLL2 1188 MHz の 1/2、DDK の既定）にする。FW に渡す clock（sysinit・runtime）は `core->core_rate`（clock の読み返し）なので、自動で合う。
+- (2) ISP_END_MACROTILE（EVENT_STATUS の bit 4）:
+  - (a) trace51・trace57 は、render check の mark（KCCB の slot 0x58）からの窓で、FW の boot の直後は入っていない。窓の中では最初の `MTS Irq Task` から 0x10 が出ていて、`GPU Units init` の前にも出ている。boot の直後の最初の位置は、今ある trace では確かめられない（全 trace の build で mark を FW の起動の前に置けば取れる）。
+  - (b) `firmware-boot.c` に `POWERVR_CLEAR_EVENTS_AT_START`（既定 0）を足した。1 の時は、soft reset を Garten だけにして wrapper と AXI を設定した後、processor を reset から出す前に、EVENT_STATUS を読み、EVENT_CLEAR（0x138）に 0xffffffff を書き、もう一度 EVENT_STATUS を読んで、2 行の log に出す（before / after）。DDK の起動では host は event の register を書かないので、これは実験である。
+  - (c) 観察: 我々の trace では毎回 `Irq Task (EVENT_STATUS=0x10)` の後に `Irq Task complete` が来て、その間に DM の処理の行が無い。FW は bit 4 に対応する DM の仕事が無いので、clear せずに無視していると見る（Linux では 3D の後に 0x18 などが出て、FW が clear する）。TA の完了の event（TA_FINISHED は bit 5、TA_TERMINATE は bit 6）は同じ register の別の bit なので、bit 4 が立ったままでも TA が終われば 0x30・0x50 のように見える筈。我々の HWR の時の値は 0x10 のままなので、TA は終わっていない（event が隠れているのではない）。
+- 確認: RISC-V の self-test の build で warning 0（switch は既定の 0）。板は未実施。

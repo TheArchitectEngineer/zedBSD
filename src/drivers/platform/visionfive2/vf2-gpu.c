@@ -54,7 +54,17 @@
  */
 #define VF2_GPU_ROOT_CLOCK	3U
 #define VF2_GPU_ROOT_PLL	2U
-#define VF2_GPU_CORE_RATE	396000000ULL
+/*
+ * POWERVR_VF2_CORE_594 runs the core at the vendor driver's default 594
+ * MHz (PLL2 divided by two; RGX_STARFIVE_7100_CORE_CLOCK_SPEED, used
+ * unless the device tree has /opp-table-0/opp-1250000000) instead of
+ * the 396 MHz of the binned parts.  The firmware is told the rate the
+ * clock reads back.
+ */
+#ifndef POWERVR_VF2_CORE_594
+#define POWERVR_VF2_CORE_594	0
+#endif
+#define VF2_GPU_CORE_RATE	(POWERVR_VF2_CORE_594 ? 594000000ULL : 396000000ULL)
 
 /* The highest address the core is let name until wider ones are proven. */
 #define VF2_GPU_DMA_LIMIT	0xffffffffULL
