@@ -27,6 +27,18 @@
 #include "drivers/gpu/powervr/render-target-layout.h"
 #include "drivers/gpu/powervr/render-kick-layout.h"
 
+
+/*
+ * Whether a session writes its compute context's switch state (the
+ * programs that save and restore the shared registers).  0 leaves the
+ * state zero, as before the switch was added, to tell whether it is what
+ * locks the compute data master up on the VF2; build with
+ * -DPOWERVR_COMPUTE_SWITCH_STATE=1 to have it.
+ */
+#ifndef POWERVR_COMPUTE_SWITCH_STATE
+#define POWERVR_COMPUTE_SWITCH_STATE	0
+#endif
+
 /*
  * The most a session holds, the largest allocation, and how many native
  * commands one session may have in flight.

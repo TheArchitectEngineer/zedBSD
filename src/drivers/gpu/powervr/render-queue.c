@@ -2089,17 +2089,24 @@ handle_notice(
 		data[index + 2U] = (uint8_t)(word >> 16);
 		data[index + 3U] = (uint8_t)(word >> 24);
 	}
-	kern_logf("powervr: context reset notice: %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x\n",
+	/*
+	 * Values referenced:
+	 * Linux v7.3 drivers/gpu/drm/imagination/pvr_rogue_fwif_check.h
+	 * (struct rogue_fwif_fwccb_cmd_context_reset_data: context 0,
+	 * reset_reason 4, dm 8, reset_job_ref 12, flags 16, pc_address 24,
+	 * fault_address 32) and pvr_rogue_fwif_shared.h (reason 1 guilty
+	 * lockup, 2 innocent lockup; dm 4 the compute data master).
+	 */
+	kern_logf("powervr: context reset notice: context 0x%x reason %u dm %u job %u flags 0x%x pc 0x%08x%08x fault 0x%08x%08x\n",
 		  (unsigned)powervr_object_get32(buffer, offset + POWERVR_COMMAND_DATA + 0U),
 		  (unsigned)powervr_object_get32(buffer, offset + POWERVR_COMMAND_DATA + 4U),
 		  (unsigned)powervr_object_get32(buffer, offset + POWERVR_COMMAND_DATA + 8U),
 		  (unsigned)powervr_object_get32(buffer, offset + POWERVR_COMMAND_DATA + 12U),
 		  (unsigned)powervr_object_get32(buffer, offset + POWERVR_COMMAND_DATA + 16U),
-		  (unsigned)powervr_object_get32(buffer, offset + POWERVR_COMMAND_DATA + 20U),
-		  (unsigned)powervr_object_get32(buffer, offset + POWERVR_COMMAND_DATA + 24U),
 		  (unsigned)powervr_object_get32(buffer, offset + POWERVR_COMMAND_DATA + 28U),
-		  (unsigned)powervr_object_get32(buffer, offset + POWERVR_COMMAND_DATA + 32U),
-		  (unsigned)powervr_object_get32(buffer, offset + POWERVR_COMMAND_DATA + 36U));
+		  (unsigned)powervr_object_get32(buffer, offset + POWERVR_COMMAND_DATA + 24U),
+		  (unsigned)powervr_object_get32(buffer, offset + POWERVR_COMMAND_DATA + 36U),
+		  (unsigned)powervr_object_get32(buffer, offset + POWERVR_COMMAND_DATA + 32U));
 	powervr_reset_notice_read(data, &notice);
 	all = (notice.flags & POWERVR_RESET_FLAG_ALL) != 0U;
 	for (session = render->sessions; session != NULL; session = session->next) {

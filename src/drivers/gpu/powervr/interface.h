@@ -57,6 +57,13 @@
 #define POWERVR_RETURN_NONE		0x0U
 
 /*
+ * The value the host leaves in a cleared return slot while it looks for
+ * where the firmware's answers go: a pattern no answer has (the executed
+ * bit clear), with the slot's number in it.
+ */
+#define POWERVR_RETURN_MARKER(slot)	(0xdead0000U | ((uint32_t)(slot) << 4))
+
+/*
  * The per-OS initialisation record.
  *
  * Values referenced:
