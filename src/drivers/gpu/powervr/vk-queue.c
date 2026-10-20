@@ -58,7 +58,9 @@
  * The executor's memory: the shading cluster programs (one 512-byte room
  * per kernel) and the data sequencer programs (one 64-byte slot per
  * program, data then code; slot 0 the fence's), each at its place in its
- * heap, and the stream buffer (the resume area first, then the stream).
+ * heap past the session's fixed area (the heap's first page,
+ * fixed-area.h), and the stream buffer (the resume area first, then the
+ * stream).
  */
 #define QUEUE_USC_OFFSET		0x10000U
 #define QUEUE_USC_ROOM			0x400U

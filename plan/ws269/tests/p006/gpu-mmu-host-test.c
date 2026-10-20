@@ -21,7 +21,9 @@
 
 #include <uapi/errno.h>
 
+#include "drivers/gpu/powervr/fixed-area.h"
 #include "drivers/gpu/powervr/gpu-mmu.h"
+#include "drivers/gpu/powervr/interface.h"
 #include "drivers/gpu/powervr/mips-table.h"
 
 #define MAX_TABLES	64U
@@ -287,6 +289,120 @@ test_buffer_rules(void)
 	check(powervr_gpu_run_fits(~0ULL - 0xfffU, 0x2000U, 0, 0) == EINVAL, "a wrapping run is refused");
 }
 
+/* Reads one little-endian word of a page. */
+static uint32_t
+page_word(
+	const uint8_t *page,
+	unsigned offset)
+{
+	return (uint32_t)page[offset] | ((uint32_t)page[offset + 1U] << 8) |
+	    ((uint32_t)page[offset + 2U] << 16) | ((uint32_t)page[offset + 3U] << 24);
+}
+
+/* Counts the non-zero bytes of a page in [from, to). */
+static unsigned
+nonzero_bytes(
+	const uint8_t *page,
+	unsigned from,
+	unsigned to)
+{
+	unsigned count;
+	unsigned index;
+
+	count = 0;
+	for (index = from; index < to; index++) {
+		if (page[index] != 0)
+			count++;
+	}
+	return count;
+}
+
+/*
+ * The fixed area at the start of the general, data sequencer and shading
+ * cluster heaps (BUG-342): where its parts lie, that a session's
+ * allocations start after it, that its mappings do not collide with the
+ * executor's program places (0x10000 into each program heap), and what
+ * its programs hold.
+ *
+ * The expected words are worked out by hand from Mesa 26.2.5: the task
+ * issue "dout" with the end bit and DOUTU as the destination, from the
+ * zero 64-bit constant (opcode 0xf at 28, end at 26, destination 2), is
+ * 0xf4000002; the task word for offset 0 with no temporaries and the
+ * instance rate is zero.  The shading cluster program is one main group
+ * (pco_map.py O_UVSW_EMIT_ENDTASK) laid out by pco_group_instrs.c,
+ * pco_map.h.py and pco_binary.c: a 3-byte header, the 1-byte back end
+ * operation (uvsw_op emit_endtask 0b101), the unused lower and upper
+ * source words of one byte each (a main group always carries both), the
+ * 1-byte internal selector and a word padding byte 0xff, 8 bytes in all,
+ * so no alignment padding; the header has the decode assist 4 (header
+ * and back end) and the length 4 half-words (0x44), the extension bit
+ * and the back end organisation 0b010 (0xa0), and the end bit (0x80).
+ */
+static void
+test_fixed_area(void)
+{
+	static const uint8_t shader[8] = { 0x44, 0xa0, 0x80, 0x05, 0x00, 0x00, 0x00, 0xff };
+	static struct powervr_gpu_space space;
+	struct powervr_gpu_mmu mmu;
+	uint8_t *pds;
+	uint8_t *usc;
+	uint64_t first;
+	unsigned index;
+	int same;
+
+	/* The parts lie in their heap's reserved bytes, the general ones apart, each reserve whole pages. */
+	check(POWERVR_FIXED_FENCE_OFFSET + POWERVR_FIXED_FENCE_BYTES <= POWERVR_FIXED_COLOUR_OFFSET, "fixed: the fence ends before the colour coefficients");
+	check(POWERVR_FIXED_COLOUR_OFFSET + POWERVR_FIXED_COLOUR_BYTES <= POWERVR_FIXED_GENERAL_BYTES, "fixed: the general parts fit the general reserve");
+	check(POWERVR_FIXED_SYNC_PDS_OFFSET + POWERVR_FIXED_SYNC_PDS_BYTES <= POWERVR_FIXED_TILE_END_OFFSET, "fixed: the sync program ends before the end-of-tile code");
+	check(POWERVR_FIXED_TILE_END_OFFSET + POWERVR_FIXED_TILE_END_BYTES <= POWERVR_FIXED_PDS_BYTES, "fixed: the data sequencer parts fit their reserve");
+	check(POWERVR_FIXED_SYNC_USC_OFFSET + POWERVR_FIXED_SYNC_USC_BYTES <= POWERVR_FIXED_USC_BYTES, "fixed: the shader fits its reserve");
+	check(POWERVR_FIXED_GENERAL_BYTES == 0x1000U && POWERVR_FIXED_PDS_BYTES == 0x1000U && POWERVR_FIXED_USC_BYTES == 0x1000U, "fixed: each reserve is the one page past the last part");
+
+	/* The session's general space as render_open() sets it up: its first range is past the area. */
+	powervr_gpu_space_init(&space, POWERVR_GENERAL_HEAP_BASE + POWERVR_FIXED_GENERAL_BYTES, POWERVR_GENERAL_HEAP_BYTES - POWERVR_FIXED_GENERAL_BYTES);
+	check(powervr_gpu_space_take(&space, 0x1000U, &first) == 0 && first == POWERVR_GENERAL_HEAP_BASE + POWERVR_FIXED_GENERAL_BYTES, "fixed: the first allocation is the page after the area");
+
+	/* The area mapped at the three heaps' starts, then an allocation and the executor's program places beside it. */
+	check(powervr_gpu_mmu_init(&mmu, &memory) == 0, "fixed: context init");
+	check(powervr_gpu_mmu_map(&mmu, POWERVR_GENERAL_HEAP_BASE, 0x80000000ULL, POWERVR_FIXED_GENERAL_BYTES, POWERVR_GPU_MAP_SLC_BYPASS) == 0, "fixed: the general page maps");
+	check(powervr_gpu_mmu_map(&mmu, POWERVR_PDS_HEAP_BASE, 0x80001000ULL, POWERVR_FIXED_PDS_BYTES, POWERVR_GPU_MAP_SLC_BYPASS) == 0, "fixed: the data sequencer page maps");
+	check(powervr_gpu_mmu_map(&mmu, POWERVR_USC_HEAP_BASE, 0x80002000ULL, POWERVR_FIXED_USC_BYTES, POWERVR_GPU_MAP_SLC_BYPASS) == 0, "fixed: the shading cluster page maps");
+	check(powervr_gpu_mmu_map(&mmu, first, 0x80003000ULL, 0x1000U, 0) == 0, "fixed: the first allocation maps beside the area");
+	check(powervr_gpu_mmu_map(&mmu, POWERVR_PDS_HEAP_BASE + 0x10000U, 0x80010000ULL, 0x3000U, POWERVR_GPU_MAP_SLC_BYPASS) == 0, "fixed: the executor's data sequencer place maps");
+	check(powervr_gpu_mmu_map(&mmu, POWERVR_USC_HEAP_BASE + 0x10000U, 0x80020000ULL, 0x10000U, POWERVR_GPU_MAP_SLC_BYPASS) == 0, "fixed: the executor's shader place maps");
+	check((powervr_gpu_mmu_lookup(&mmu, POWERVR_GENERAL_HEAP_BASE) & POWERVR_GPU_PAGE_VALID) != 0, "fixed: the fence is backed by a page");
+	check(powervr_gpu_mmu_lookup(&mmu, POWERVR_PDS_HEAP_BASE + POWERVR_FIXED_PDS_BYTES) == 0, "fixed: the data sequencer heap is free after the area");
+	check(powervr_gpu_mmu_lookup(&mmu, POWERVR_USC_HEAP_BASE + POWERVR_FIXED_USC_BYTES) == 0, "fixed: the shading cluster heap is free after the area");
+	check(powervr_gpu_mmu_map(&mmu, POWERVR_GENERAL_HEAP_BASE, 0x80004000ULL, 0x1000U, 0) == EEXIST, "fixed: nothing else maps over the area");
+	powervr_gpu_mmu_fini(&mmu);
+
+	/* The programs in zeroed pages. */
+	pds = calloc(1, POWERVR_FIXED_PDS_BYTES);
+	usc = calloc(1, POWERVR_FIXED_USC_BYTES);
+	check(powervr_fixed_area_write(NULL, usc) == EINVAL, "fixed: a missing page is refused");
+	check(powervr_fixed_area_write(pds, usc) == 0, "fixed: the programs are written");
+
+	/* The synchronisation program: the zero task word in eight data words, then the task issue that ends. */
+	check(nonzero_bytes(pds, POWERVR_FIXED_SYNC_PDS_OFFSET, POWERVR_FIXED_SYNC_PDS_OFFSET + 32U) == 0, "fixed: the sync data is the zero task word");
+	check(page_word(pds, POWERVR_FIXED_SYNC_PDS_OFFSET + 32U) == 0xf4000002U, "fixed: the sync code issues the task and ends");
+	check(nonzero_bytes(pds, POWERVR_FIXED_SYNC_PDS_OFFSET + 36U, POWERVR_FIXED_TILE_END_OFFSET) == 0, "fixed: nothing else in the sync part");
+
+	/* The end-of-tile code: one task issue that ends. */
+	check(page_word(pds, POWERVR_FIXED_TILE_END_OFFSET) == 0xf4000002U, "fixed: the end-of-tile code issues the task and ends");
+	check(nonzero_bytes(pds, POWERVR_FIXED_TILE_END_OFFSET + 4U, POWERVR_FIXED_PDS_BYTES) == 0, "fixed: nothing after the end-of-tile code");
+
+	/* The shading cluster program: the one group, padded to the cache alignment. */
+	same = 1;
+	for (index = 0; index < sizeof(shader); index++) {
+		if (usc[POWERVR_FIXED_SYNC_USC_OFFSET + index] != shader[index])
+			same = 0;
+	}
+	check(same, "fixed: the sync shader is the emit-and-end group");
+	check(nonzero_bytes(usc, POWERVR_FIXED_SYNC_USC_OFFSET + sizeof(shader), POWERVR_FIXED_USC_BYTES) == 0, "fixed: nothing after the sync shader");
+	free(pds);
+	free(usc);
+}
+
 int
 main(void)
 {
@@ -295,6 +411,7 @@ main(void)
 	test_space();
 	test_heap_pages();
 	test_buffer_rules();
+	test_fixed_area();
 	printf("PASS %d FAIL %d\n", passes, failures);
 	return failures == 0 ? 0 : 1;
 }

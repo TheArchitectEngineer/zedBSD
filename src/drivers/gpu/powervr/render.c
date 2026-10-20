@@ -40,6 +40,7 @@
 #include <uapi/gpu-scanout.h>
 
 #include "drivers/gpu/powervr/render-private.h"
+#include "drivers/gpu/powervr/fixed-area.h"
 #include "drivers/gpu/powervr/interface.h"
 #include "drivers/gpu/powervr/retry.h"
 #include "drivers/gpu/powervr/vk.h"
@@ -584,9 +585,19 @@ render_open(
 	if (session == NULL)
 		return ENOMEM;
 	session->render = render;
-	powervr_gpu_space_init(&session->space, POWERVR_GENERAL_HEAP_BASE, POWERVR_GENERAL_HEAP_BYTES);
 
-	/* Makes its tables and firmware records, and lists it. */
+	/* The general heap's allocations start on the page after the fixed area. */
+	powervr_gpu_space_init(&session->space, POWERVR_GENERAL_HEAP_BASE + POWERVR_FIXED_GENERAL_BYTES, POWERVR_GENERAL_HEAP_BYTES - POWERVR_FIXED_GENERAL_BYTES);
+
+	/* The fixed area's pages, with its programs. */
+	error = powervr_session_fixed_make(render, session);
+	if (error != 0) {
+		powervr_session_fixed_drop(render, session);
+		kern_free(session);
+		return error;
+	}
+
+	/* Makes its tables, with the fixed area mapped, and its firmware records, and lists it. */
 	mutex_lock(&render->core->lock);
 
 	session->identity = render->next_identity++;
@@ -598,8 +609,9 @@ render_open(
 
 	mutex_unlock(&render->core->lock);
 
-	/* The records could not be made; they were undone. */
+	/* The records could not be made; they were undone, and the fixed area's pages go. */
 	if (error != 0) {
+		powervr_session_fixed_drop(render, session);
 		kern_free(session);
 		return error;
 	}

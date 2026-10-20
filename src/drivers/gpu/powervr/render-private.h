@@ -21,6 +21,7 @@
 #include <kern/waitq.h>
 
 #include "drivers/gpu/powervr/powervr-private.h"
+#include "drivers/gpu/powervr/fixed-area.h"
 #include "drivers/gpu/powervr/gpu-mmu.h"
 #include "drivers/gpu/powervr/render.h"
 #include "drivers/gpu/powervr/render-target-layout.h"
@@ -153,7 +154,11 @@ struct powervr_target_events {
 /*
  * One open of the render node.
  *
- * Mmu and space are the session's memory context; the firmware records
+ * Mmu and space are the session's memory context, and fixed holds the
+ * pages backing the context's fixed area at the start of the general,
+ * data sequencer and shading cluster heaps (fixed-area.h), mapped while
+ * the tables exist and returned with them; space hands out the general
+ * heap after that area.  The firmware records
  * (its memory context, its compute context and state, the context's
  * command buffer and control, and the timeline word the firmware
  * advances) are blocks of the firmware's heap, changed under the core's
@@ -176,6 +181,7 @@ struct powervr_session {
 	struct powervr_gpu_space pds_space;
 	struct powervr_gpu_space usc_space;
 	struct powervr_gpu_space transfer_space;
+	struct powervr_buffer *fixed[POWERVR_FIXED_HEAPS];
 	struct powervr_object memory_context;
 	struct powervr_object context;
 	struct powervr_object context_state;
@@ -288,15 +294,31 @@ int powervr_render_frame(struct powervr_render *render, struct powervr_session *
 /* Binds the Vulkan transport, the capset and the supervised jobs to the node's table. */
 void powervr_render_runtime_bind(struct powervr_render *render);
 
-/* Makes a session's memory context and firmware records; the core's lock is held. */
+/*
+ * Makes the pages of a session's fixed area with its programs written;
+ * the core's lock is not held.
+ */
+int powervr_session_fixed_make(struct powervr_render *render, struct powervr_session *session);
+
+/* Returns the pages of a session's fixed area that nothing maps; the core's lock is not held. */
+void powervr_session_fixed_drop(struct powervr_render *render, struct powervr_session *session);
+
+/*
+ * Makes a session's memory context, with the fixed area's pages mapped,
+ * and its firmware records; the core's lock is held.
+ */
 int powervr_session_firmware_create(struct powervr_render *render, struct powervr_session *session);
 
-/* Returns a session's firmware records and tables; the firmware no longer uses them. */
+/*
+ * Returns a session's firmware records, tables and fixed area's pages;
+ * the firmware no longer uses them.
+ */
 void powervr_session_firmware_destroy(struct powervr_render *render, struct powervr_session *session);
 
 /*
  * Returns a kept session's records and tables once the firmware that knew
- * them is gone, without touching their old places in its heap.
+ * them is gone, without touching their old places in its heap; the fixed
+ * area's pages join the node's kept buffers, which the caller frees next.
  */
 void powervr_session_firmware_discard(struct powervr_session *session);
 
