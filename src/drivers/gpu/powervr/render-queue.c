@@ -742,6 +742,8 @@ powervr_render_finish(
 	uint64_t now;
 	uint32_t geometry_now;
 	uint32_t fragment_now;
+	uint64_t started;
+	uint64_t geometry_done;
 	int stalled;
 	int ran_out;
 
@@ -751,13 +753,25 @@ powervr_render_finish(
 		return EINVAL;
 
 	/* Reads the fragment's timeline once a tick until it reaches the value or the bound is spent. */
-	deadline = sched_ticks() + ms_ticks(milliseconds);
+	started = sched_ticks();
+	geometry_done = 0;
+	deadline = started + ms_ticks(milliseconds);
 	for (;;) {
 		geometry_now = powervr_object_get32(&context->geometry.timeline, POWERVR_SYNC_ADDRESS);
 		fragment_now = powervr_object_get32(&context->fragment.timeline, POWERVR_SYNC_ADDRESS);
 		stalled = powervr_render_stalled(geometry_now, marks->geometry_value, fragment_now, marks->fragment_value, &stage);
-		if (!stalled)
+
+		/* The timing: when the TA was first seen done, which starts the 3D's share. */
+		if (geometry_done == 0 && (!stalled || stage == POWERVR_STAGE_3D)) {
+			geometry_done = sched_ticks();
+			powervr_timing_add(POWERVR_TIMING_WAIT_TA, started);
+		}
+
+		/* Both done: the 3D's share of the wait. */
+		if (!stalled) {
+			powervr_timing_add(POWERVR_TIMING_WAIT_3D, geometry_done);
 			break;
+		}
 
 		/* Out of time: the stage it stopped in fails with a timeout. */
 		now = sched_ticks();
@@ -1167,6 +1181,7 @@ powervr_timing_report(
 {
 	static const char *const names[POWERVR_TIMING_PARTS] = {
 		"submit", "job setup", "job map", "job build", "job kick", "job wait", "job release", "transfer", "dispatch",
+		"wait ta", "wait 3d", "wait small job",
 	};
 	uint64_t now;
 	uint64_t average;
