@@ -1580,3 +1580,29 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
   4. p008 の compute-host-test に、shared の program と kernel の語、本体の sd_type USC の bit の期待値を足した（84/0）。
 - host: p008 は 94/0・84/0、p009 は 504/0。VF2 の vmunix（`build/p2q1503/vf2/vmunix`）は rc 0、warning 0。板は未実施（手書きの kernel が 16384/16384 になり、compute の stage が ok になるかを見る）。
 - 片付け（Q1 に依頼）: `build/p2q1503/`、scratchpad の `sh.c`・`sh`。
+
+## q1505-i01（P2、2026-10-21）: 古い規則が今も要るかを確かめる probe
+
+- 板 93: 手書きの kernel 16384/16384、compute ok、compiled fill は 1・4・128 wg とも OK、gpu-selftest 13/13。
+- **`run_rule_probes`**（compute-check.c、`POWERVR_DIAGNOSTICS` の時。新しい session で、3 kernel の形・Mesa の workgroup program の kick 1 workgroup）:
+  - 各 probe は、群を書いた順のまま encode する（間隔は付けない）。
+  - 前段: lane、address の pair（r12:r13）、定数を置いた後に、s0 から r30 への mov を 8 群置いて落ち着かせる。
+  - 後段: 規則の群の後も 8 群置き、結果を r14（pair の直後）へ写して store する。
+  - 行: `compute probes: rule <名前>: N/32 as if it does not bind (e), lane 0 … lane 31 …`。32/32 なら、その規則は hardware に要らない。
+
+| probe | 群 | 規則が要らない時の値 |
+| --- | --- | --- |
+| 64-bit add in place | r4 ＝ 4L、r4:r5 ＝ (r4, r5) ＋ 0x100（dst の pair ＝ src の pair） | 4L＋0x100 |
+| store data apart from its address | r20 ＝ 0x1234、r14 ＝ 0xbad0、st r20 → [r12:r13]（data は pair の直後ではない） | 0x1234 |
+| madd source rewritten by the next group | r4 ＝ imadd(L, r1＝3, r2＝5)、直後の群で r1 ＝ 7 | 3L＋5 |
+| madd from special constants | r4 ＝ imadd(L, s1, s5) | L＋5 |
+| madd result read by the next group | r7 ＝ imadd(L, 3, 5)、直後の群で r4 ＝ r7 | 3L＋5 |
+
+- host の simulator（使い捨て）: 5 つとも 32/32、encode 0。
+- **shader-backend.c の規則の整理は、この probe の板の結果の後に行う**（今は変えていない）。対応は次のとおり:
+  - 「64-bit add in place」が 32/32 → `operation_in_place` の staging（既定で既に off）と、`compute-program.c` の `add64_group` の in-place の拒否を外す。
+  - 「store data apart」が 32/32 → `TEMP_STORE_DATA` への移し（store の data を address＋2 に置く規則）を外せる。0xbad0 なら規則は要る（Mesa も同じ並び）。
+  - 「madd source next」「madd result next」が 32/32 → `required_gap` の表（既定は既に 0）と `integer_result_read` を外す。
+  - 「madd from special」が 32/32 → `integer_source` の、特殊 register の定数を temp に移す処理を外す。
+- 板には `-DPOWERVR_DIAGNOSTICS=1` の build で流す。p008 は 94/0・84/0。VF2 の vmunix（`build/p2q1505/vf2/vmunix`、既定の build）は rc 0、warning 0。板は未実施。
+- 片付け（Q1 に依頼）: `build/p2q1505/`、scratchpad の `rules.c`・`rt.c`・`rt`。
