@@ -270,3 +270,13 @@ Keiland が使い、vkmatrix 15/15・gpu-selftest 13/13 で確かめていない
   - vkmatrix は lavapipe で 25/25。
   - VF2 の vmunix と bin/vkmatrix は rc 0、warning 0。
   - 板は未実施（MINMAX の transfer での実機の動作も未確認）。
+
+### q1523-i07（2026-10-21、P2）: copy-65 の 1 行目以降
+
+- run 12: copy-65 は row 1・2 が書かれなかった（0xa5 のまま）。copy-1080 は PASS。
+- 原因: 奇数の行（65 texel）の linear destination は、1 行ずつの job で書く（`powervr_transfer_needs_rows`）。
+  その job は surface 全体のまま、area の y だけを変えていた。PBE の line stride は 2 pixel 単位なので、(65−1)/2 で 66 texel の行になる。
+  row 1 以降は、ずれた所（y×66×4）に書かれていた。
+- 修正（P1 の `transfer-job.c` の `powervr_transfer_run`、最小）: copy の行の job では、destination を、その行の address で始まる 1 行の surface にし、area の y を 0 にする。
+  blit は従来どおり（linear image の行は偶数に揃えてあるので、奇数の行にならない）。
+- 確認: p010 は 0 failed、p009 は 505 passed、VF2 の vmunix と bin/vkmatrix は rc 0、warning 0。板は未実施。
