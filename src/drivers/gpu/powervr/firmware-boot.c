@@ -172,6 +172,21 @@ static void watch_thread(void *argument);
 #define REGISTER_CHECK_PATTERN		0x0000000012345000ULL
 
 /*
+ * The core's clock control and status, and every clock field of the
+ * control set to on (01 in each two-bit field of the full mask).
+ *
+ * Values referenced:
+ * StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
+ * drivers/gpu/drm/img/img-rogue/hwdefs/rogue/km/rgx_cr_defs_km.h
+ * (RGX_CR_CLK_CTRL 0x0000 with RGX_CR_CLK_CTRL__PBE2_XE__MASKFULL
+ * 0xFFFFFF003F3FFFFF, each field OFF 0, ON 1, AUTO 2; RGX_CR_CLK_STATUS
+ * 0x0008).
+ */
+#define REGISTER_CHECK_CLOCK_CONTROL	0x0000U
+#define REGISTER_CHECK_CLOCK_STATUS	0x0008U
+#define REGISTER_CHECK_ALL_ON		(0x5555555555555555ULL & 0xFFFFFF003F3FFFFFULL)
+
+/*
  * The step the later stage is in, for its log lines and for the thread
  * that reports a step taking long: the name (NULL between steps), the
  * tick it began, and whether the stage has ended.
@@ -1772,8 +1787,10 @@ dump_trace(
  * Checks the host's writes reach the core's registers and read back: the
  * system level cache's control just written, and a page catalogue base
  * no data master uses yet (set 7) written with a pattern, read and
- * cleared again.  A register that reads 0 after a write is not one the
- * host's reads of it can be trusted on.
+ * cleared again; then the same with every clock of the core forced on,
+ * the clocks' control put back after.  A register that reads 0 after a
+ * write is not one the host's reads of it can be trusted on; one that
+ * reads back only with the clocks on sits behind the core's clock gating.
  *
  * Values referenced:
  * StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
@@ -1784,15 +1801,37 @@ static void
 register_check(
 	struct powervr_core *core)
 {
+	uint64_t clock_control;
 	uint64_t catalogue;
+	uint64_t forced;
 	uint32_t control;
+
+	/* The clocks' control and status and the soft reset as they stand. */
+	clock_control = powervr_read64(core, REGISTER_CHECK_CLOCK_CONTROL);
+	kern_logf("powervr: firmware: start: register check: window 0x%llx bytes, clock control 0x%llx, clock status 0x%llx, soft reset 0x%llx\n",
+		  (unsigned long long)core->description.register_size,
+		  (unsigned long long)clock_control,
+		  (unsigned long long)powervr_read64(core, REGISTER_CHECK_CLOCK_STATUS),
+		  (unsigned long long)powervr_read64(core, POWERVR_SOFT_RESET));
 
 	/* The cache control as written just before, and the catalogue base written and read back. */
 	control = powervr_read32(core, POWERVR_SLC_CONTROL);
 	powervr_write64(core, REGISTER_CHECK_CATALOGUE, REGISTER_CHECK_PATTERN);
 	catalogue = powervr_read64(core, REGISTER_CHECK_CATALOGUE);
 	powervr_write64(core, REGISTER_CHECK_CATALOGUE, 0);
-	kern_logf("powervr: firmware: start: register check: slc control 0x%x, catalogue base 7 wrote 0x%llx read 0x%llx, then 0x%llx\n",
-		  (unsigned)control, (unsigned long long)REGISTER_CHECK_PATTERN, (unsigned long long)catalogue,
-		  (unsigned long long)powervr_read64(core, REGISTER_CHECK_CATALOGUE));
+	kern_logf("powervr: firmware: start: register check: slc control 0x%x, catalogue base 7 wrote 0x%llx read 0x%llx\n",
+		  (unsigned)control, (unsigned long long)REGISTER_CHECK_PATTERN, (unsigned long long)catalogue);
+
+	/* The same with every clock forced on, then the clocks' control as it was. */
+	powervr_write64(core, REGISTER_CHECK_CLOCK_CONTROL, REGISTER_CHECK_ALL_ON);
+	(void)powervr_read64(core, REGISTER_CHECK_CLOCK_CONTROL);
+	powervr_write64(core, REGISTER_CHECK_CATALOGUE, REGISTER_CHECK_PATTERN);
+	catalogue = powervr_read64(core, REGISTER_CHECK_CATALOGUE);
+	powervr_write64(core, REGISTER_CHECK_CATALOGUE, 0);
+	forced = powervr_read64(core, REGISTER_CHECK_CLOCK_CONTROL);
+	kern_logf("powervr: firmware: start: register check: clocks forced on (control reads 0x%llx, status 0x%llx): slc control 0x%x, catalogue base 7 read 0x%llx\n",
+		  (unsigned long long)forced,
+		  (unsigned long long)powervr_read64(core, REGISTER_CHECK_CLOCK_STATUS),
+		  (unsigned)powervr_read32(core, POWERVR_SLC_CONTROL), (unsigned long long)catalogue);
+	powervr_write64(core, REGISTER_CHECK_CLOCK_CONTROL, clock_control);
 }
