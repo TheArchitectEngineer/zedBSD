@@ -37,7 +37,7 @@
  * buffer the lookup does not know (another driver's) is refused.
  *
  * When the display controller's screen could be taken over (dc8200.c) and
- * the boot parameter dc8200.zerocopy=test is given, a shared frame of the
+ * dc8200.zerocopy=off is not given, a shared frame of the
  * loader's extent and row pitch, in a contiguous buffer below 4 GiB, is
  * not copied: the controller's plane is pointed at the buffer itself.
  * Such a presentation returns once the plane counts as taken, two
@@ -220,7 +220,7 @@ struct powervr_display {
 	/* Nonzero when the display controller counts vertical blanks: its plane can be changed. */
 	int scanout;
 
-	/* Nonzero when the lease may scan buffers directly (dc8200.zerocopy=test, read at claim). */
+	/* Nonzero when the lease may scan buffers directly (unless dc8200.zerocopy=off, read at claim). */
 	int zero_copy;
 
 	/*
@@ -1769,11 +1769,10 @@ check_direct_scan(
 }
 
 /*
- * Reports whether the boot asked for direct scanning (dc8200.zerocopy=test).
- *
- * Until the render node refuses to export buffers the GPU writes through
- * its cache, only a test program that presents buffers which bypass it
- * may be scanned directly, and the boot parameter says one runs.
+ * Reports whether the display may scan presented buffers directly: the
+ * default, and dc8200.zerocopy=test; dc8200.zerocopy=off keeps every
+ * frame copied.  The render node maps every buffer it exports around the
+ * GPU's system level cache, so what the GPU wrote is in memory.
  */
 static int
 zero_copy_requested(
@@ -1781,19 +1780,23 @@ zero_copy_requested(
 {
 	const struct kern_boot_parameters *parameters;
 	const char *value;
+	int off;
 
-	/* Without the boot's parameters nothing was asked. */
+	/* Without the boot's parameters, the default. */
 	parameters = kern_boot_parameters_current();
 	if (parameters == NULL)
-		return 0;
+		return 1;
 
+	/* Without the parameter, the default. */
 	value = kern_boot_parameters_value(parameters, KERN_BOOT_PARAMETER_DC8200_ZEROCOPY);
 	if (value == NULL)
+		return 1;
+
+	/* Only the word off keeps the copy. */
+	off = kern_strcmp(value, "off");
+	if (off == 0)
 		return 0;
 
-	/* Only the word test asks for it. */
-	if (kern_strcmp(value, "test") != 0)
-		return 0;
-
+	/* Succeeded: direct scanning. */
 	return 1;
 }

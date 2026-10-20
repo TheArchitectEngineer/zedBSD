@@ -16,14 +16,44 @@
 #include <unistd.h>
 
 /*
- * Creates one shared GPU image using renderer requirements and real row layout.
- * The returned fd and Vulkan objects have separate, explicit ownership.
+ * Creates one shared GPU image, a copy destination (transfer and
+ * sampling), using renderer requirements and real row layout.
  */
 VkResult
 vulkan_wsi_shared_image_create(
 	struct VkDevice_T *device,
 	VkFormat format,
 	VkExtent2D extent,
+	const VkAllocationCallbacks *allocator,
+	const struct gpu_placement *placement,
+	VkImage *image,
+	VkDeviceMemory *memory,
+	int *fd,
+	struct gpu_image_descriptor *descriptor)
+{
+	VkResult error;
+
+	/* The copy destination's uses. */
+	error = vulkan_wsi_shared_image_create_usage(device, format, extent, 0U, allocator, placement, image, memory, fd, descriptor);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Succeeded: the caller owns the image, its memory and the fd. */
+	return VK_SUCCESS;
+}
+
+/*
+ * Creates one shared GPU image using renderer requirements and real row layout.
+ * The returned fd and Vulkan objects have separate, explicit ownership.
+ * A usage of zero is the copy destination's (transfer and sampling); a
+ * swapchain that renders into the shared image names its own.
+ */
+VkResult
+vulkan_wsi_shared_image_create_usage(
+	struct VkDevice_T *device,
+	VkFormat format,
+	VkExtent2D extent,
+	VkImageUsageFlags usage,
 	const VkAllocationCallbacks *allocator,
 	const struct gpu_placement *placement,
 	VkImage *image,
@@ -80,6 +110,8 @@ vulkan_wsi_shared_image_create(
 	create.tiling = VK_IMAGE_TILING_LINEAR;
 	create.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
 	    VK_IMAGE_USAGE_SAMPLED_BIT;
+	if (usage != 0U)
+		create.usage = usage;
 	create.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	create.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 	error = vkCreateImage((VkDevice)device, &create, allocator, image);

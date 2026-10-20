@@ -51,10 +51,17 @@
  */
 #define WSI_PRESENT_SLOTS	8U
 
-/* One ordinary bound image whose allocation lives with a shared image group. */
+/*
+ * One ordinary bound image whose allocation lives with a shared image group.
+ * A direct chain's image is itself the linear shared image the output
+ * shows: fd is its allocation's capability until the import takes it (-1
+ * otherwise), with the descriptor the import needs.
+ */
 struct wsi_image {
 	VkImage image;
 	VkDeviceMemory memory;
+	int fd;
+	struct gpu_image_descriptor descriptor;
 };
 
 /* One swapchain owns its scanout destination independently from shared application VkImages. */
@@ -97,6 +104,12 @@ struct vulkan_swapchain {
 	struct wsi_present_image *presentation;
 	uint32_t presentation_count;
 	VkBool32 gpu_present;
+	/*
+	 * The application renders into the linear images the output shows
+	 * (a direct display, not a cursor or overlay plane): a present copies
+	 * nothing and only waits for the rendering before the flip.
+	 */
+	VkBool32 direct;
 	void *lease;
 	uint8_t *states;
 	VkFormat format;
@@ -322,6 +335,8 @@ static void swapchain_group_free(struct wsi_image_group *group);
 static VkResult swapchain_image_create(struct vulkan_swapchain *chain, const VkSwapchainCreateInfoKHR *info, struct wsi_image *image);
 static VkResult swapchain_readback_create(struct vulkan_swapchain *chain);
 static VkResult swapchain_native_images_create(struct vulkan_swapchain *chain);
+static VkBool32 swapchain_direct_possible(struct vulkan_swapchain *chain, const VkSwapchainCreateInfoKHR *info);
+static VkResult swapchain_native_images_import(struct vulkan_swapchain *chain);
 static void swapchain_native_images_free(struct vulkan_swapchain *chain);
 static VkResult swapchain_allocate_memory(struct vulkan_swapchain *chain, const VkMemoryRequirements *requirements, VkMemoryPropertyFlags required, const struct vulkan_allocator *policy, VkDeviceMemory *memory);
 static const VkAllocationCallbacks *swapchain_allocator(const struct vulkan_allocator *allocator);
@@ -1078,6 +1093,10 @@ swapchain_create(
 
 	memset(chain->states, WSI_IMAGE_AVAILABLE, bytes);
 
+	/* A chain with its own images on a direct display renders into what the output shows. */
+	if (shared == NULL)
+		chain->direct = swapchain_direct_possible(chain, info);
+
 	/* Creates an image group only for the first independently owned swapchain. */
 	if (shared == NULL) {
 		error = swapchain_group_create(chain, info);
@@ -1096,7 +1115,11 @@ swapchain_create(
 
 	/* A complete shared allocation/import trial selects the GPU route exactly once for this chain. */
 	error = VK_ERROR_FORMAT_NOT_SUPPORTED;
-	if (surface->platform->import_image != NULL)
+	if (chain->direct != VK_FALSE)
+		error = swapchain_native_images_import(chain);
+	if (error != VK_SUCCESS)
+		chain->direct = VK_FALSE;
+	if (error != VK_SUCCESS && surface->platform->import_image != NULL)
 		error = swapchain_native_images_create(chain);
 	if (error == VK_SUCCESS) {
 		chain->gpu_present = VK_TRUE;
@@ -1449,6 +1472,11 @@ swapchain_group_create(
 		return VK_ERROR_OUT_OF_HOST_MEMORY;
 	memset(group->images, 0, bytes);
 	group->count = info->minImageCount;
+
+	/* No image has a capability to close until its creation makes one. */
+	for (index = 0U; index < group->count; index++)
+		group->images[index].fd = -1;
+
 	for (index = 0U; index < group->count; index++) {
 		error = swapchain_image_create(chain, info, &group->images[index]);
 		if (error != VK_SUCCESS)
@@ -1484,6 +1512,10 @@ swapchain_group_free(
 		/* Releases each image allocation after the image bound to it has retired. */
 		if (group->images[index].memory != VK_NULL_HANDLE)
 			vkFreeMemory((VkDevice)group->device, group->images[index].memory, allocator);
+
+		/* A direct image's capability the import never took. */
+		if (group->images[index].fd >= 0)
+			close(group->images[index].fd);
 	}
 
 	/* The copied allocator remains available until the group's final allocation retires. */
@@ -1505,10 +1537,45 @@ swapchain_image_create(
 	VkMemoryRequirements requirements;
 	struct vulkan_image *private_image;
 	const VkAllocationCallbacks *allocator;
+	struct gpu_placement placement;
+	const struct gpu_placement *conditions;
 	VkResult error;
 
 	/* Internal transfer use is added without restricting the application's declared use. */
 	allocator = swapchain_allocator(&chain->group->allocator);
+	image->fd = -1;
+
+	/* A direct chain's image is the linear shared image the output shows. */
+	if (chain->direct != VK_FALSE) {
+		conditions = NULL;
+		if (chain->surface->platform->placement != NULL) {
+			error = chain->surface->platform->placement(chain->lease, &placement);
+			if (error != VK_SUCCESS)
+				return error;
+			conditions = &placement;
+		}
+		error = vulkan_wsi_shared_image_create_usage(
+			chain->device,
+			info->imageFormat,
+			info->imageExtent,
+			info->imageUsage | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+			allocator,
+			conditions,
+			&image->image,
+			&image->memory,
+			&image->fd,
+			&image->descriptor);
+		if (error != VK_SUCCESS)
+			return error;
+
+		/* The standard image handle remains valid but its lifetime belongs to WSI. */
+		private_image = vulkan_image(image->image);
+		private_image->swapchain_owned = VK_TRUE;
+
+		/* Succeeded: the application renders straight into scanout memory. */
+		return VK_SUCCESS;
+	}
+
 	memset(&create, 0, sizeof(create));
 	create.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 	create.imageType = VK_IMAGE_TYPE_2D;
@@ -1623,6 +1690,94 @@ swapchain_native_images_create(
 	}
 
 	/* Succeeded: every acquired application image has its own native GPU-copy destination. */
+	return VK_SUCCESS;
+}
+
+/*
+ * Tells whether a chain may render into the images the output shows: a
+ * direct display's primary plane, a renderer that shares allocations, and
+ * a format that a linear image renders to, with no use a linear image
+ * cannot have.
+ */
+static VkBool32
+swapchain_direct_possible(
+	struct vulkan_swapchain *chain,
+	const VkSwapchainCreateInfoKHR *info)
+{
+	VkFormatProperties properties;
+	VkImageUsageFlags allowed;
+
+	/* The library must make shared images with a swapchain's uses. */
+	if (vulkan_wsi_shared_image_create_usage == NULL)
+		return VK_FALSE;
+
+	/* Only a direct display's primary plane; Wayland, cursor and overlay chains copy. */
+	if (chain->surface->display_mode == NULL)
+		return VK_FALSE;
+	if (chain->surface->cursor != VK_FALSE || chain->surface->overlay != VK_FALSE)
+		return VK_FALSE;
+	if (chain->surface->platform->import_image == NULL)
+		return VK_FALSE;
+
+	/* The renderer must share the allocation with the display node. */
+	if ((chain->device->object.context->capabilities & GPU_CAP_SHARE) == 0U)
+		return VK_FALSE;
+
+	/* One layer, and uses a linear image has. */
+	if (info->imageArrayLayers != 1U)
+		return VK_FALSE;
+	allowed = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+	    VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+	if ((info->imageUsage & ~allowed) != 0U)
+		return VK_FALSE;
+
+	/* A format a linear image renders to and is sampled from. */
+	vkGetPhysicalDeviceFormatProperties((VkPhysicalDevice)chain->device->physical, info->imageFormat, &properties);
+	if ((properties.linearTilingFeatures & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT) == 0U)
+		return VK_FALSE;
+	if ((properties.linearTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) == 0U)
+		return VK_FALSE;
+
+	/* Succeeded: the chain renders into scanout memory. */
+	return VK_TRUE;
+}
+
+/*
+ * Gives the output a direct chain's own images: each image's allocation is
+ * imported into the display once, and the output shows it as it is.
+ */
+static VkResult
+swapchain_native_images_import(
+	struct vulkan_swapchain *chain)
+{
+	struct wsi_image *image;
+	size_t bytes;
+	uint32_t index;
+	VkResult error;
+
+	/* One native alias for each image. */
+	bytes = (size_t)chain->group->count * sizeof(*chain->presentation);
+	if (bytes / sizeof(*chain->presentation) != chain->group->count)
+		return VK_ERROR_OUT_OF_HOST_MEMORY;
+	chain->presentation = vulkan_allocate(&chain->object.allocator, bytes, sizeof(void *), VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+	if (chain->presentation == NULL)
+		return VK_ERROR_OUT_OF_HOST_MEMORY;
+	memset(chain->presentation, 0, bytes);
+	chain->presentation_count = chain->group->count;
+
+	/* Imports each image's allocation; the capability is closed once taken. */
+	for (index = 0U; index < chain->presentation_count; index++) {
+		image = &chain->group->images[index];
+		if (image->fd < 0)
+			return VK_ERROR_FORMAT_NOT_SUPPORTED;
+		error = chain->surface->platform->import_image(chain->lease, image->fd, &image->descriptor, &chain->presentation[index].native_image);
+		close(image->fd);
+		image->fd = -1;
+		if (error != VK_SUCCESS)
+			return VK_ERROR_FORMAT_NOT_SUPPORTED;
+	}
+
+	/* Succeeded: the output shows the application's own images. */
 	return VK_SUCCESS;
 }
 
@@ -2299,6 +2454,10 @@ present_record(
 
 		/* A cursor image unchanged since its last copy needs only the present's waits. */
 		if (job->route == WSI_ROUTE_EMPTY)
+			continue;
+
+		/* A direct chain's image is what the output shows: only the present's waits. */
+		if (job->chains[index]->direct != VK_FALSE)
 			continue;
 
 		/* Optional display composition remains GPU-resident on both direct and shared-image paths; a cursor or overlay image is copied whole. */

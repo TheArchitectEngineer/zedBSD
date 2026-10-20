@@ -420,9 +420,8 @@ parameter_word(
 
 	/*
 	 * dc8200.zerocopy= lets the VisionFive 2's display scan a program's
-	 * render buffer directly (test) while only test programs are known to
-	 * present buffers that bypass the GPU's cache, or keeps every frame
-	 * copied (off, the default when absent).
+	 * render buffer directly (test, and the default when absent), or
+	 * keeps every frame copied (off).
 	 */
 	if (key == KERN_BOOT_PARAMETER_DC8200_ZEROCOPY) {
 		other = parameter_text_is(value, length, "off");
