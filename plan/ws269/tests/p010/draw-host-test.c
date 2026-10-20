@@ -313,6 +313,15 @@ main(
 	check(ok && varyings.code_words == 2 && (ppp[2] & (1U << 21)) != 0 && ((ppp[2] >> 17) & 7U) == VK_COMPARE_OP_ALWAYS, "vkstage colour: w and colour iterated, no depth test");
 	check(ok && vdm[7] == 0x7a020600U && vdm[8] == 0x82000000U && vdm[9] == 36U && vdm[10] == 4U, "vkstage colour: the indexed list with its offset");
 
+	/* vkstage depth (p010j): the colour shaders with the depth test against a D32 depth: LESS, written. */
+	pipeline_init(&pipeline, VK_FORMAT_R32G32B32_SFLOAT, VK_FORMAT_R32G32B32A32_SFLOAT, 12, 28, 1);
+	pass.depth = 1;
+	pass.attachment_count = 2;
+	ok = run("vkstage depth", &pipeline, &pass, vkstage_colour_vert, sizeof(vkstage_colour_vert), vkstage_colour_frag, sizeof(vkstage_colour_frag), &varyings, ppp, &ppp_count, vdm, &vdm_count, 0);
+	check(ok && (ppp[2] & (1U << 21)) == 0 && ((ppp[2] >> 17) & 7U) == VK_COMPARE_OP_LESS, "vkstage depth: the test compares less and writes");
+	pass.depth = POWERVR_PASS_UNUSED;
+	pass.attachment_count = 1;
+
 	/* vkstage sample: position and coordinate (16 bytes). */
 	pipeline_init(&pipeline, VK_FORMAT_R32G32_SFLOAT, VK_FORMAT_R32G32_SFLOAT, 8, 16, 0);
 	pipeline.assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
