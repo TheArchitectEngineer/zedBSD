@@ -32,6 +32,7 @@
 #include "drivers/gpu/powervr/render-load-program.h"
 #include "drivers/gpu/powervr/render-program.h"
 #include "drivers/gpu/powervr/data-program.h"
+#include "drivers/gpu/powervr/image-state.h"
 #include "drivers/gpu/powervr/render-draw.h"
 #include "drivers/gpu/powervr/render-depth.h"
 #include "drivers/gpu/powervr/vk-draw.h"
@@ -417,7 +418,8 @@ job_background(
 {
 	struct powervr_render_background background;
 	uint32_t words[POWERVR_RENDER_LOAD_SHARED_WORDS];
-	uint32_t value;
+	uint32_t value[4];
+	uint32_t clear_words;
 	int error;
 
 	/* The background's program and the shared register program that feeds it. */
@@ -438,19 +440,28 @@ job_background(
 
 		*shared_registers = POWERVR_RENDER_LOAD_SHARED_WORDS;
 	} else {
-		/* The clear value, or zero for contents that do not matter. */
-		value = 0;
+		/*
+		 * The clear value in the format's words (two for sRGB, whose
+		 * back end takes F16, within the two output registers a pixel
+		 * the fragment command gives), or zero for contents that do not
+		 * matter.
+		 */
+		clear_words = powervr_format_clear_word_count(color->surface.format);
+		if (clear_words == 0 || clear_words > 2U)
+			return ENOTSUP;
+
+		kern_memset(value, 0, sizeof(value));
 		if (color->load_op == LOAD_OP_CLEAR)
-			value = color->clear[0];
-		error = powervr_render_clear_usc(&memory->program);
+			kern_memcpy(value, color->clear, sizeof(value));
+		error = powervr_render_clear_usc_words(clear_words, &memory->program);
 		if (error != 0)
 			return error;
 
-		error = powervr_render_clear_shared(value, &memory->shared);
+		error = powervr_render_clear_shared_words(value, clear_words, &memory->shared);
 		if (error != 0)
 			return error;
 
-		*shared_registers = 1;
+		*shared_registers = clear_words;
 	}
 
 	/* The program, its task program and its shared register program. */

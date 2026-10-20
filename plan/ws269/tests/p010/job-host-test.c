@@ -356,6 +356,13 @@ main(void)
 	expect(device_read(ppp[0] + 0x31cU) == 1U, "the integer defaults after them");
 	graphics.fixed.attributes[0].format = 106;
 
+	/* An sRGB colour cleared: two clear words, a job that runs; a 128-bit colour is refused. */
+	job.colors[0].surface.format = powervr_format_find(43);
+	expect(powervr_render_job_run(&render, &session, &job) == 0, "the job clearing an sRGB colour runs");
+	job.colors[0].surface.format = powervr_format_find(109);
+	expect(powervr_render_job_run(&render, &session, &job) == ENOTSUP, "a clear of four words is refused");
+	job.colors[0].surface.format = powervr_format_find(37);
+
 	/* A blit of three rows to a linear destination of an odd row: one job a row. */
 	{
 		struct powervr_transfer_request blit;

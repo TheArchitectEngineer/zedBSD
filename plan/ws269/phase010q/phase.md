@@ -141,3 +141,9 @@ P1 の render-job.c・transfer-job.c・render-check.c を読み、P2 の関数�
 | VF2 の vmunix（build/p014/vf2） | rc 0、warning 0 |
 
 - 片付け（Q1 に依頼）: `build/p014/`。
+
+## q1401-i01 の追加（P1、2026-10-20）: sRGB 等の多 word の CLEAR
+
+- `render-job.c` の `job_background` の CLEAR（と DONT_CARE）の枝を `powervr_format_clear_word_count`・`powervr_render_clear_usc_words`・`powervr_render_clear_shared_words` に変え、`*shared_registers` を word の数にした。0 word（depth など）と 2 を越える word（R32G32B32A32_SFLOAT の 4）は ENOTSUP（fragment の command の pixel output が 1 pixel 2 register なので）。
+- pixel output の幅: `render-command.c` は USC_PIXEL_OUTPUT_CTRL を常に 2 register（BXE-4-32 の最少）で出すので、sRGB の F16 の 2 word は入る。直しは要らなかった。
+- 試験: job-host-test に sRGB の CLEAR の job（走る）と 4 word の format の拒否を足した（26/0）。p009 511/0、VF2 の vmunix warning 0。
