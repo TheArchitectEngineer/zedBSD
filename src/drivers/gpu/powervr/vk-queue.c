@@ -40,6 +40,7 @@
 #include "drivers/gpu/powervr/render-sr-program.h"
 #include "drivers/gpu/powervr/interface.h"
 #include "drivers/gpu/powervr/compute-program.h"
+#include "drivers/gpu/powervr/pds-encode.h"
 #include "drivers/gpu/powervr/render-job.h"
 #include "drivers/gpu/powervr/vk.h"
 
@@ -94,9 +95,34 @@ _Static_assert(QUEUE_PDS_OFFSET == POWERVR_PROGRAM_HEAP_START && QUEUE_PDS_BYTES
  * leaves the fence out, as Mesa's one dispatch is one kernel.
  */
 #ifndef POWERVR_EXECUTOR_FENCE_KERNEL
-#define POWERVR_EXECUTOR_FENCE_KERNEL	(!POWERVR_EXECUTOR_ONE_KERNEL)
+#define POWERVR_EXECUTOR_FENCE_KERNEL	(!POWERVR_EXECUTOR_ONE_KERNEL || POWERVR_EXECUTOR_MESA_STREAM)
 #endif
 #define QUEUE_PDS_GROUP_INPUTS		4U
+
+/*
+ * Whether a dispatch is Mesa's three kernels (1): a kernel that only
+ * allocates the shared registers (64 bytes of common store on every
+ * cluster, the registers kept for the kernels after it, no shared data,
+ * eight instances a task), the dispatch with the shared data the
+ * shading cluster's (sd_type USC), then the fence that waits for it and
+ * frees the shared registers.  On the board a fence after a dispatch
+ * without the first kernel locked up (2026-10-21), which may be the
+ * fence freeing registers no kernel allocated.  With it the fence kernel
+ * is on (POWERVR_EXECUTOR_FENCE_KERNEL).
+ *
+ * Values referenced:
+ * zedBSD plan/ws269/tests/p008/mesa-pco-vkcompute-stream-bxe-4-32.txt
+ * (Mesa 26.2.5's vkcompute stream on BXE-4-32: kernel 0 usc_common_size
+ * 64 bytes, usc_target ALL, sd_type NONE, usc_common_shared, pds data 32
+ * bytes, max_instances 8, one instance; kernel 1 sd_type USC; kernel 2
+ * fence, sd_type PDS, usc_common_shared, max_instances 8; terminate).
+ */
+#ifndef POWERVR_EXECUTOR_MESA_STREAM
+#define POWERVR_EXECUTOR_MESA_STREAM	0
+#endif
+#define QUEUE_SHARED_COMMON		16U
+#define QUEUE_SHARED_DATA		0x40U
+#define QUEUE_SHARED_CODE		0x50U
 
 /* The data sequencer temporaries a compute kernel's inputs take, and the fence kernel's task size. */
 #define QUEUE_PDS_INPUTS		3U
@@ -153,6 +179,7 @@ static int build_dispatch(struct submission *build, uint32_t groups);
 static int build_shared(struct submission *build, const struct powervr_shader_program *program, uint32_t groups, uint32_t *values);
 static int build_kernel(struct submission *build, const uint8_t *code, size_t length, uint32_t temps, uint32_t instances, uint32_t workgroups);
 static int build_fence(struct submission *build);
+static int build_shared_kernel(struct submission *build);
 static void put_stream_words(struct submission *build, const uint32_t *words, unsigned count);
 static void put_word(struct powervr_buffer *buffer, uint32_t offset, uint32_t word);
 static int run(struct submission *build);
@@ -626,6 +653,14 @@ executor_make(
 	for (index = 0; index < count; index++)
 		put_word(executor->pds, QUEUE_PDS_CODE + index * 4U, code[index]);
 
+	/* The shared register allocation's program, after the fence's in slot 0: zero data, a halt. */
+	put_word(executor->pds, QUEUE_SHARED_DATA, 0);
+	put_word(executor->pds, QUEUE_SHARED_DATA + 4U, 0);
+	error = powervr_pds_halt(0, &code[0]);
+	if (error != 0)
+		return error;
+	put_word(executor->pds, QUEUE_SHARED_CODE, code[0]);
+
 	/* Succeeded: submissions can build their streams. */
 	return 0;
 }
@@ -855,7 +890,10 @@ build_dispatch(
 		}
 		if (group == 0)
 			kern_logf("powervr: vk: dispatch of %u workgroups: the compute shader compiled to %u bytes, %u temps, %u shared words\n", groups, (unsigned)program->length, program->temps, program->shareds);
-		error = build_kernel(build, code, program->length, program->temps, program->workgroup[0], POWERVR_EXECUTOR_ONE_KERNEL ? groups : 1U);
+		if (POWERVR_EXECUTOR_MESA_STREAM && group == 0)
+			error = build_shared_kernel(build);
+		if (error == 0)
+			error = build_kernel(build, code, program->length, program->temps, program->workgroup[0], POWERVR_EXECUTOR_ONE_KERNEL ? groups : 1U);
 	}
 
 	/* The working memory goes. */
@@ -1016,6 +1054,7 @@ build_kernel(
 	kernel.code_offset = QUEUE_PDS_OFFSET + slot + code_at;
 	kernel.data_words = data_words;
 	kernel.usc_inputs = POWERVR_EXECUTOR_ONE_KERNEL ? POWERVR_COMPUTE_GROUP_USC_INPUTS : 0U;
+	kernel.shared_from_usc = POWERVR_EXECUTOR_MESA_STREAM ? 1U : 0U;
 	kernel.pds_temporaries = POWERVR_EXECUTOR_ONE_KERNEL ? QUEUE_PDS_GROUP_INPUTS : QUEUE_PDS_INPUTS;
 	kernel.workgroups[0] = workgroups;
 	kernel.usc_common = POWERVR_EXECUTOR_ONE_KERNEL ? QUEUE_GROUP_COEFFICIENTS : 0U;
@@ -1030,6 +1069,34 @@ build_kernel(
 	build->kernels++;
 
 	/* Succeeded: the kernel is in the stream. */
+	return 0;
+}
+
+/* Adds Mesa's shared register allocation kernel before a dispatch (POWERVR_EXECUTOR_MESA_STREAM). */
+static int
+build_shared_kernel(
+	struct submission *build)
+{
+	struct powervr_compute_kernel kernel;
+	uint32_t words[POWERVR_COMPUTE_KERNEL_WORDS];
+	int error;
+
+	/* One instance on every cluster, 64 bytes of common store kept for the next kernels, no shared data. */
+	kern_memset(&kernel, 0, sizeof(kernel));
+	kernel.data_offset = QUEUE_PDS_OFFSET + QUEUE_SHARED_DATA;
+	kernel.code_offset = QUEUE_PDS_OFFSET + QUEUE_SHARED_CODE;
+	kernel.data_words = POWERVR_COMPUTE_PDS_DATA_WORDS;
+	kernel.usc_common = QUEUE_SHARED_COMMON;
+	kernel.instances = 1;
+	kernel.max_instances = QUEUE_FENCE_INSTANCES;
+	kernel.common_shared = 1;
+	kernel.any_cluster = 0;
+	error = powervr_compute_kernel_words(&kernel, words);
+	if (error != 0)
+		return error;
+	put_stream_words(build, words, POWERVR_COMPUTE_KERNEL_WORDS);
+
+	/* Succeeded: the allocation is in the stream. */
 	return 0;
 }
 
