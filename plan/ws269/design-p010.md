@@ -2,7 +2,7 @@
 
 # WS269 設計の追補: p010（graphics）の分割
 
-- 版: 2.1（2026-10-20、P1、q1370 / q1370-i01）。版 2（q1367、7541d5612）に [design-p010-review-2.md](design-p010-review-2.md)（Blocker なし、M-1〜M-6・Minor 1〜11）を入れた。対応の一覧は末尾の §13（版 2 の対応は §12）。版 1（q1362）は [design-p010-review-1.md](design-p010-review-1.md) と [phase010b](phase010b/phase.md) で版 2 にした。親の設計は [design.md](design.md) 改訂 3.1（§5 の案 A、§6 の p010、§7 の判定）。コードは書いていない。review 2 の結論 2・3 のとおり、**design-reviewer の再レビューは要らず、Q1 が差分を見て、P2 と §5.4 の O-ENC の一覧を合意すれば** p010d・p010n・p010e・p010f を始めてよい。
+- 版: 2.2（2026-10-20、§6 の transfer の道を Mesa に合わせた注記、Q1 採用、P2 q1381）。版 2.1（2026-10-20、P1、q1370 / q1370-i01）。版 2（q1367、7541d5612）に [design-p010-review-2.md](design-p010-review-2.md)（Blocker なし、M-1〜M-6・Minor 1〜11）を入れた。対応の一覧は末尾の §13（版 2 の対応は §12）。版 1（q1362）は [design-p010-review-1.md](design-p010-review-1.md) と [phase010b](phase010b/phase.md) で版 2 にした。親の設計は [design.md](design.md) 改訂 3.1（§5 の案 A、§6 の p010、§7 の判定）。コードは書いていない。review 2 の結論 2・3 のとおり、**design-reviewer の再レビューは要らず、Q1 が差分を見て、P2 と §5.4 の O-ENC の一覧を合意すれば** p010d・p010n・p010e・p010f を始めてよい。
 - 起点（2026-10-20 07:24 ユーザー）: 「PowerVRのコードは完了を目指して作業をお願いします。あとでUATにおいて、どこまで実行できたかわかるログが出れば、デバッグしやすいと思います。」
 - ユーザーは不在。判断の要る点は推奨を採って先へ進める前提で §9 に D-P1〜D-P7 として列挙する（採否はユーザー）。
 - 印は design.md と同じ: **事実**（出典あり）、**推測**、**未確認**。
@@ -250,6 +250,12 @@ compiler を通さず、encoder で直に書く物（p009 の `compute-program.c
   - **p010o**（blit）: `vkCmdBlitImage`（NEAREST・LINEAR、拡大縮小、同じ format か表の中の 8 bit の RGBA の間）。shared の道の `present_copy_shared` が使うので p010l の前。
 - 1 つの transfer の命令 = 1 つの transfer job（矩形が上限を超えたら分ける）。
 
+- **版 2.2 の注記（2026-10-20、Q1 が採用、P2 q1381）**: p010f の前半（[phase010f](phase010f/phase.md)）で Mesa 26.2.5 の `pvr_arch_job_transfer.c` を読んだ結果、上の「形」を次のとおり改める。
+  - 普通の copy・clear（source 1 つ、矩形 1 つ、custom mapping なし）は **FAST_SCALE と ISP の背景の object**（`pvr_3d_copy_blit_core`）。copy は背景の object（`CR_PDS_BGRND*`、`ISP_BGOBJVALS.enablebgtag`）が転送の program を全 tile に走らせ、clear は object なしで `USC_CLEAR_REGISTER` の値を PBE が書く。blit（p010o）も同じ道で scale と filter を足す。
+  - **IPF の control stream と FAST_2D は clip blit の道（`pvr_3d_clip_blit`）だけ**（custom mapping・`double_stride`・複数の mapping・DS merge）。p010f・p010o では使わない（`isp_mtile_base`・`isp_rgn` は 0、TRANSFER_FRAG の heap は今は使わない）。
+  - 奇数の row length は上のとおり **1 行ずつの job**（`powervr_transfer_needs_rows`）。
+  - EOT は transfer 専用の DOUTW の program でなく、**p010e の即値の EOT**（`powervr_render_eot_usc`）と fixed area の +128 の code を使う。
+
 ## 7. WSI と display（libvulkan の 2 つの道）
 
 | 道 | 要る物 | Phase |
@@ -445,3 +451,9 @@ LW は粗い（8 LW ≈ 実時間 2〜3 h）。「T1」は QEMU の他の platfo
 | Minor 10 `gen_pack_header.py` | 専用の directory で `python3 -I`、path は引数 | §10 の M9 の照合 |
 | Minor 11 p010b の SHA | p010d の必須項目に | §0、§10 |
 | P2 の compiler（main） | §5.4 の「今の encoder」の列を `usc-encode.h`（smp・ditr・emitpix・upck を含む）と照らした。`shader-compile.h` は O-SHADER-ABI の候補 | §5、§5.4 |
+
+### 13.1 版 2.2 の注記（2026-10-20）
+
+| 点 | 対応 | 場所 |
+| --- | --- | --- |
+| transfer の道 | copy・clear・blit は FAST_SCALE と背景の object（Mesa の `pvr_3d_copy_blit_core`）。IPF・FAST_2D は clip blit の道だけ。奇数の row length は 1 行ずつ。EOT は p010e の即値の形。Q1 が 2026-10-20 に採用（p010f q1379 の phase.md の「設計からの変更」） | §6 |

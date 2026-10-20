@@ -46,7 +46,18 @@
 #define TEMP_COORDINATES	2U
 #define TEMP_SAMPLE		4U
 #define TEMP_FLOATS		8U
+#define TEMP_PIXEL		12U
 #define COPY_TEMPS		12U
+
+/*
+ * The pack of four 8-bit unorm channels with its scale (the blit).
+ *
+ * Values referenced:
+ * the compiler back end's pack (shader-backend.c PACK_U8888 0,
+ * PACK_SCALE 1), from Mesa 26.2.5 src/imagination/pco/pco_isa.py.
+ */
+#define PACK_U8888		0U
+#define PACK_SCALE		1U
 
 /*
  * The special registers of the pixel's position at the pixel rate, and
@@ -100,7 +111,7 @@ static const struct powervr_format raw_32 = {
  * ISP_MTILE_SIZE x 16..25, y 0..9; ISP_BGOBJVALS enablebgtag 9; ISP_CTL
  * process_empty_tiles 17, pipe_enable 12..15; USC_PIXEL_OUTPUT_CTRL
  * width 0..1 2REGISTERS 0, partition_mask 3..20; FRAG_SCREEN xmax 0..14,
- * ymax 16..30; PBESTATE_STATE_WORD1 norm 13, source_format 19).
+ * ymax 16..30; PBESTATE_STATE_WORD1 norm 13).
  */
 #define RENDER_FAST_SCALE	3U
 #define BGOBJ_ENABLE_TAG	(1U << 9)
@@ -109,7 +120,6 @@ static const struct powervr_format raw_32 = {
 #define PIXEL_PARTITION_SHIFT	3U
 #define TILE_FIELD_MAX		0x3ffU
 #define SCREEN_FIELD_MAX	0x7fffU
-#define PBE_SOURCE_8_BIT	(1U << 19)
 #define PBE_NORMALISED		(1U << 13)
 
 /*
@@ -143,15 +153,15 @@ static const struct powervr_format raw_32 = {
 #define SAMPLER_DADJUST_MASK	0x1fffULL
 #define SAMPLER_WRAP_W_MASK	(7ULL << 56)
 
-/* The bits of 1.0f. */
-#define FLOAT_ONE		0x3f800000U
 
 static const struct shader_machine_register no_register = { 0xff, 0 };
 
 static void blank_operation(struct shader_machine_operation *operation, unsigned kind);
 static struct shader_machine_register machine_register(unsigned bank, unsigned index);
+static int build_program(unsigned packed, struct powervr_render_usc *program);
+static int fill_shared(const struct powervr_view_shape *view, const struct powervr_render_area *source, const struct powervr_render_area *area, bool flip_x, bool flip_y, bool linear, uint32_t words[POWERVR_TRANSFER_SHARED_WORDS]);
+static uint32_t float_from_ratio(int64_t numerator, int64_t denominator);
 static int build_groups(const struct shader_machine_operation *operations, size_t count, struct powervr_usc_group *groups);
-static uint32_t float_from_integer(int32_t value);
 static uint32_t unorm8_from_float(uint32_t bits);
 static void tiles_in_flight(uint32_t *isp_ctl, uint32_t *pixel_output_ctrl);
 
@@ -213,15 +223,69 @@ int
 powervr_transfer_copy_usc(
 	struct powervr_render_usc *program)
 {
-	struct shader_machine_operation operations[12];
-	struct powervr_usc_group groups[12];
-	size_t length;
-	unsigned axis;
 	int error;
 
 	/* Refuses a missing result. */
 	if (program == NULL)
 		return EINVAL;
+
+	/* The raw word, not packed. */
+	error = build_program(0, program);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the copy program. */
+	return 0;
+}
+
+/*
+ * Builds the blit program: as the copy program, but the sampled channels
+ * of a four-channel 8-bit unorm format (filtered as the sampler says)
+ * are packed into one word.  Other formats are not taken yet (ENOTSUP).
+ *
+ * Procedure referenced:
+ * Mesa 26.2.5 src/imagination/vulkan/pvr_arch_job_transfer.c
+ * (pvr_pbe_src_format_normal: an R8G8B8A8 or B8G8R8A8 unorm destination
+ * takes PVR_TRANSFER_PBE_PIXEL_SRC_F16_U8); src/imagination/vulkan/
+ * pvr_usc.c (pvr_uscgen_tq_frag_pack: F16_U8 is nir_pack_unorm_4x8).
+ */
+int
+powervr_transfer_blit_usc(
+	const struct powervr_format *format,
+	struct powervr_render_usc *program)
+{
+	int error;
+
+	/* Refuses missing input or result, and formats other than four 8-bit unorm channels. */
+	if (format == NULL || program == NULL)
+		return EINVAL;
+	if (format->store_code != 0 || format->texel_bytes != 4 || (format->kind & POWERVR_FORMAT_SRGB) != 0)
+		return ENOTSUP;
+
+	/* The channels packed. */
+	error = build_program(1, program);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the blit program. */
+	return 0;
+}
+
+/*
+ * Builds the transfer program of powervr_transfer_copy_usc, with the
+ * four sampled channels packed as 8-bit unorm when packed is 1.
+ */
+static int
+build_program(
+	unsigned packed,
+	struct powervr_render_usc *program)
+{
+	struct shader_machine_operation operations[12];
+	struct powervr_usc_group groups[12];
+	size_t length;
+	size_t count;
+	unsigned axis;
+	int error;
 
 	/* The position's x and y into temporaries 0 and 1. */
 	for (axis = 0; axis < 2; axis++) {
@@ -258,29 +322,46 @@ powervr_transfer_copy_usc(
 	operations[8].source[2] = machine_register(POWERVR_USC_BANK_SHARED, SHARED_SAMPLER);
 	blank_operation(&operations[9], MACHINE_WAIT);
 
-	/* The first word to the pixel output under the overlap check. */
-	blank_operation(&operations[10], MACHINE_MOVE);
-	operations[10].destination[0] = machine_register(POWERVR_USC_BANK_SPECIAL, SPECIAL_PIXEL_OUTPUT);
-	operations[10].source[0] = machine_register(POWERVR_USC_BANK_TEMPORARY, TEMP_SAMPLE);
-	operations[10].variant = 1;
+	/* The four channels packed into one word, for the blit. */
+	count = 10;
+	if (packed) {
+		blank_operation(&operations[count], MACHINE_PACK);
+		operations[count].destination[0] = machine_register(POWERVR_USC_BANK_TEMPORARY, TEMP_PIXEL);
+		operations[count].source[0] = machine_register(POWERVR_USC_BANK_TEMPORARY, TEMP_SAMPLE);
+		operations[count].variant = PACK_U8888;
+		operations[count].immediate = 4;
+		operations[count].immediate_2 = PACK_SCALE;
+		count++;
+	}
+
+	/* The word to the pixel output under the overlap check. */
+	blank_operation(&operations[count], MACHINE_MOVE);
+	operations[count].destination[0] = machine_register(POWERVR_USC_BANK_SPECIAL, SPECIAL_PIXEL_OUTPUT);
+	if (packed) {
+		operations[count].source[0] = machine_register(POWERVR_USC_BANK_TEMPORARY, TEMP_PIXEL);
+	} else {
+		operations[count].source[0] = machine_register(POWERVR_USC_BANK_TEMPORARY, TEMP_SAMPLE);
+	}
+	operations[count].variant = 1;
+	count++;
 
 	/* The groups, the sample with unnormalised coordinates, the last one ending. */
-	error = build_groups(operations, 11, groups);
+	error = build_groups(operations, count, groups);
 	if (error != 0)
 		return error;
 	error = powervr_usc_sample(0, 0, SAMPLE_2D, SAMPLE_CHANNELS, 0, &groups[8].operation[POWERVR_USC_PHASE_BACKEND]);
 	if (error != 0)
 		return error;
-	groups[10].end = 1;
+	groups[count - 1U].end = 1;
 
 	/* Encodes them. */
-	error = powervr_usc_program_encode(groups, 11, program->code, sizeof(program->code), &length);
+	error = powervr_usc_program_encode(groups, count, program->code, sizeof(program->code), &length);
 	if (error != 0)
 		return error;
 
 	/* Succeeded: the program and its temporaries. */
 	program->length = length;
-	program->temps = COPY_TEMPS;
+	program->temps = COPY_TEMPS + packed;
 	return 0;
 }
 
@@ -310,11 +391,7 @@ powervr_transfer_shared_words(
 	uint32_t words[POWERVR_TRANSFER_SHARED_WORDS])
 {
 	struct powervr_view_shape view;
-	struct powervr_sampler_shape sampler;
-	uint64_t image_words[2];
-	uint64_t sampler_words[2];
-	int64_t offset_x;
-	int64_t offset_y;
+	struct powervr_render_area rectangle;
 	int error;
 
 	/* Refuses missing input or result. */
@@ -330,13 +407,107 @@ powervr_transfer_shared_words(
 	view.mapping[1] = VK_COMPONENT_SWIZZLE_IDENTITY;
 	view.mapping[2] = VK_COMPONENT_SWIZZLE_IDENTITY;
 	view.mapping[3] = VK_COMPONENT_SWIZZLE_IDENTITY;
-	error = powervr_view_words(&view, image_words);
+
+	/* The source rectangle of the destination's size, point sampled. */
+	rectangle.x = source_x;
+	rectangle.y = source_y;
+	rectangle.width = area->width;
+	rectangle.height = area->height;
+	error = fill_shared(&view, &rectangle, area, false, false, false, words);
 	if (error != 0)
 		return error;
 
-	/* The point sampler with unnormalised coordinates. */
+	/* Succeeded: the twelve words. */
+	return 0;
+}
+
+/*
+ * Fills the twelve shared words of a blit: the source's image state as
+ * the view gives it, a sampler that clamps and takes unnormalised
+ * coordinates (linear when linear and the rectangles differ in size,
+ * else point), and the floats that map the destination rectangle onto
+ * the source rectangle, mirrored along an axis whose flip is set.
+ *
+ * Procedure referenced:
+ * Mesa 26.2.5 src/imagination/vulkan/pvr_arch_job_transfer.c
+ * (pvr_transfer_set_filter: point filtering when the sizes match;
+ * pvr_sampler_state_for_surface; pvr_dma_texture_floats with
+ * PVR_INT_COORD_SET_FLOATS_4).
+ */
+int
+powervr_transfer_blit_words(
+	const struct powervr_view_shape *source,
+	const struct powervr_render_area *source_area,
+	const struct powervr_render_area *area,
+	bool flip_x,
+	bool flip_y,
+	bool linear,
+	uint32_t words[POWERVR_TRANSFER_SHARED_WORDS])
+{
+	int error;
+
+	/* Refuses missing input or result. */
+	if (source == NULL || source->format == NULL || source_area == NULL || area == NULL || words == NULL)
+		return EINVAL;
+
+	/* Point filtering when no scaling is applied. */
+	if (source_area->width == area->width && source_area->height == area->height)
+		linear = false;
+
+	/* The words. */
+	error = fill_shared(source, source_area, area, flip_x, flip_y, linear, words);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the twelve words. */
+	return 0;
+}
+
+/*
+ * Fills the twelve shared words: the view's image state, the clamping
+ * unnormalised sampler, and for each axis the scale source / destination
+ * and the offset (source corner * destination - source size *
+ * destination corner) / destination, the destination size negated and
+ * its far edge used when the axis flips; each float the correctly
+ * rounded value of its ratio.  Refuses empty rectangles and sizes past
+ * 2^15 (EINVAL, E2BIG).
+ */
+static int
+fill_shared(
+	const struct powervr_view_shape *view,
+	const struct powervr_render_area *source,
+	const struct powervr_render_area *area,
+	bool flip_x,
+	bool flip_y,
+	bool linear,
+	uint32_t words[POWERVR_TRANSFER_SHARED_WORDS])
+{
+	struct powervr_sampler_shape sampler;
+	uint64_t image_words[2];
+	uint64_t sampler_words[2];
+	int64_t destination_size;
+	int64_t constant;
+	int error;
+
+	/* Refuses empty and oversized rectangles. */
+	if (source->width == 0 || source->height == 0 || area->width == 0 || area->height == 0)
+		return EINVAL;
+	if (source->x > 0x8000U || source->y > 0x8000U || source->width > 0x8000U || source->height > 0x8000U ||
+	    area->x > 0x8000U || area->y > 0x8000U || area->width > 0x8000U || area->height > 0x8000U)
+		return E2BIG;
+
+	/* The source's image state. */
+	error = powervr_view_words(view, image_words);
+	if (error != 0)
+		return error;
+
+	/* The sampler with unnormalised coordinates. */
 	sampler.mag_filter = VK_FILTER_NEAREST;
 	sampler.min_filter = VK_FILTER_NEAREST;
+	if (linear) {
+		sampler.mag_filter = VK_FILTER_LINEAR;
+		sampler.min_filter = VK_FILTER_LINEAR;
+	}
 	sampler.mipmap_mode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
 	sampler.address_u = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
 	sampler.address_v = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
@@ -352,12 +523,6 @@ powervr_transfer_shared_words(
 	/* As the transfer's sampler: the detail adjust at its minimum and no w wrap (a 2D source). */
 	sampler_words[0] &= ~(SAMPLER_DADJUST_MASK | SAMPLER_WRAP_W_MASK);
 
-	/* The offsets, refused beyond what a float holds exactly. */
-	offset_x = (int64_t)source_x - (int64_t)area->x;
-	offset_y = (int64_t)source_y - (int64_t)area->y;
-	if (offset_x >= (1 << 24) || offset_x <= -(1 << 24) || offset_y >= (1 << 24) || offset_y <= -(1 << 24))
-		return E2BIG;
-
 	/* The image and sampler state, low words first. */
 	words[SHARED_IMAGE + 0] = (uint32_t)image_words[0];
 	words[SHARED_IMAGE + 1] = (uint32_t)(image_words[0] >> 32);
@@ -368,11 +533,25 @@ powervr_transfer_shared_words(
 	words[SHARED_SAMPLER + 2] = (uint32_t)sampler_words[1];
 	words[SHARED_SAMPLER + 3] = (uint32_t)(sampler_words[1] >> 32);
 
-	/* The floats: x scale and offset, y scale and offset. */
-	words[SHARED_FLOATS + 0] = FLOAT_ONE;
-	words[SHARED_FLOATS + 1] = float_from_integer((int32_t)offset_x);
-	words[SHARED_FLOATS + 2] = FLOAT_ONE;
-	words[SHARED_FLOATS + 3] = float_from_integer((int32_t)offset_y);
+	/* x: the scale and the offset. */
+	destination_size = (int64_t)area->width;
+	constant = (int64_t)source->x * destination_size - (int64_t)source->width * (int64_t)area->x;
+	if (flip_x) {
+		destination_size = -destination_size;
+		constant = (int64_t)source->x * destination_size - (int64_t)source->width * ((int64_t)area->x + (int64_t)area->width);
+	}
+	words[SHARED_FLOATS + 0] = float_from_ratio((int64_t)source->width, destination_size);
+	words[SHARED_FLOATS + 1] = float_from_ratio(constant, destination_size);
+
+	/* y: the scale and the offset. */
+	destination_size = (int64_t)area->height;
+	constant = (int64_t)source->y * destination_size - (int64_t)source->height * (int64_t)area->y;
+	if (flip_y) {
+		destination_size = -destination_size;
+		constant = (int64_t)source->y * destination_size - (int64_t)source->height * ((int64_t)area->y + (int64_t)area->height);
+	}
+	words[SHARED_FLOATS + 2] = float_from_ratio((int64_t)source->height, destination_size);
+	words[SHARED_FLOATS + 3] = float_from_ratio(constant, destination_size);
 
 	/* Succeeded: the twelve words. */
 	return 0;
@@ -469,8 +648,9 @@ powervr_transfer_clear_colour(
  * tag enabled; pvr_setup_hwbg_object: CR_PDS_BGRND0/1/3; ISP_RENDER
  * FAST_SCALE with the scan direction; FRAG_SCREEN the destination's
  * edges less one; pvr_pbe_setup_codegen_defaults: the clip from the
- * scissor, the tiles from the clip, the source format without a packed
- * USC channel; pvr_isp_tiles: ISP_MTILE_SIZE, ISP_RENDER_ORIGIN,
+ * scissor, the tiles from the clip; pvr_pbe_setup_swizzle: 8 bits a
+ * channel for a fill of R8G8B8A8 or B8G8R8A8 unorm and for the F16_U8
+ * pixel of a blit, as the render's words already have; pvr_isp_tiles: ISP_MTILE_SIZE, ISP_RENDER_ORIGIN,
  * ISP_CTL process_empty_tiles with the tiles in flight;
  * pvr_pbe_setup_emit: the end-of-tile program's sizes and addresses);
  * src/imagination/vulkan/pvr_arch_job_common.c
@@ -497,7 +677,7 @@ powervr_transfer_regs_build(
 	/* Refuses missing input or results, an unknown kind, and an odd linear row of several rows. */
 	if (job == NULL || regs == NULL || state == NULL)
 		return EINVAL;
-	if (job->kind != POWERVR_TRANSFER_CLEAR && job->kind != POWERVR_TRANSFER_COPY)
+	if (job->kind != POWERVR_TRANSFER_CLEAR && job->kind != POWERVR_TRANSFER_COPY && job->kind != POWERVR_TRANSFER_BLIT)
 		return EINVAL;
 	if (powervr_transfer_needs_rows(&job->destination, &job->area))
 		return EINVAL;
@@ -529,10 +709,6 @@ powervr_transfer_regs_build(
 	if (error != 0)
 		return error;
 
-	/* A transfer gives the back end no packed 8-bit channel: 8-bit channels come as 16-bit floats. */
-	if (destination.format != &raw_32)
-		state[1] &= ~PBE_SOURCE_8_BIT;
-
 	/* The raw format's channels are integers, not normalised. */
 	if (destination.format == &raw_32)
 		state[1] &= ~PBE_NORMALISED;
@@ -540,7 +716,7 @@ powervr_transfer_regs_build(
 	regs->pbe[1] = pbe[1];
 	regs->pbe[2] = pbe[2];
 
-	/* The clear's colour, or the copy's background object. */
+	/* The clear's colour, or the copy's and the blit's background object. */
 	if (job->kind == POWERVR_TRANSFER_CLEAR) {
 		error = powervr_transfer_clear_colour(job->destination.format, job->colour, regs->usc_clear);
 		if (error != 0)
@@ -640,34 +816,67 @@ build_groups(
 	return 0;
 }
 
-/* The bits of the float of an integer below 2^24 in magnitude (exact). */
+/*
+ * The bits of the float nearest numerator / denominator (round to
+ * nearest, ties to even), for a nonzero denominator and a quotient in
+ * the normal range; both below 2^40 in magnitude.
+ */
 static uint32_t
-float_from_integer(
-	int32_t value)
+float_from_ratio(
+	int64_t numerator,
+	int64_t denominator)
 {
-	uint32_t magnitude;
+	uint64_t dividend;
+	uint64_t divisor;
+	uint64_t quotient;
+	uint64_t remainder;
+	uint64_t mantissa;
 	uint32_t sign;
-	uint32_t exponent;
+	int32_t exponent;
+	unsigned sticky;
 
-	/* Zero is all zero bits. */
-	if (value == 0)
+	/* Zero, and the sign of the quotient. */
+	if (numerator == 0 || denominator == 0)
 		return 0;
-
-	/* The sign and the magnitude. */
 	sign = 0;
-	magnitude = (uint32_t)value;
-	if (value < 0) {
+	if ((numerator < 0) != (denominator < 0))
 		sign = 0x80000000U;
-		magnitude = (uint32_t)(-(int64_t)value);
+	dividend = (uint64_t)(numerator < 0 ? -numerator : numerator);
+	divisor = (uint64_t)(denominator < 0 ? -denominator : denominator);
+
+	/* The quotient to 26 significant bits (24, a round bit and a guard bit) and whether anything is left. */
+	quotient = dividend / divisor;
+	remainder = dividend % divisor;
+	exponent = 25;
+	sticky = 0;
+	while (quotient >= (1ULL << 26)) {
+		sticky |= (unsigned)(quotient & 1U);
+		quotient >>= 1;
+		exponent++;
+	}
+	while (quotient < (1ULL << 25)) {
+		remainder <<= 1;
+		quotient <<= 1;
+		if (remainder >= divisor) {
+			quotient |= 1U;
+			remainder -= divisor;
+		}
+		exponent--;
+	}
+	if (remainder != 0)
+		sticky = 1;
+
+	/* Rounds the 24-bit mantissa to nearest, ties to even. */
+	mantissa = quotient >> 2;
+	if ((quotient & 2U) != 0 && ((quotient & 1U) != 0 || sticky != 0 || (mantissa & 1U) != 0))
+		mantissa++;
+	if (mantissa == (1ULL << 24)) {
+		mantissa >>= 1;
+		exponent++;
 	}
 
-	/* The exponent of the highest set bit. */
-	exponent = 0;
-	while ((magnitude >> (exponent + 1U)) != 0)
-		exponent++;
-
-	/* The bits: the mantissa below the leading one, shifted to 23 bits. */
-	return sign | ((exponent + 127U) << 23) | ((magnitude << (23U - exponent)) & 0x7fffffU);
+	/* The bits: the exponent of the leading one, the 23 bits below it. */
+	return sign | ((uint32_t)(exponent + 127) << 23) | ((uint32_t)mantissa & 0x7fffffU);
 }
 
 /*

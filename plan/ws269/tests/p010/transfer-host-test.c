@@ -10,8 +10,9 @@
  * registers of a clear and a copy against golden values that the
  * one-time M9 comparison with Mesa 26.2.5's csbgen packing confirmed
  * (phase010f/phase.md), the copy program against the compiler back
- * end's groups with the unnormalised sample, the shared words (the
- * sampler as Mesa's transfer sampler, the coordinate floats), the
+ * end's groups with the unnormalised sample, the blit program with its
+ * pack, the shared words (the sampler as Mesa's transfer sampler, the
+ * coordinate floats of copies and of scaled and flipped blits), the
  * clear colour's rounding, the odd-row split and the refusals.
  */
 
@@ -87,11 +88,11 @@ test_regs(void)
 	uint32_t state[2];
 	int ok;
 
-	/* Clear: no background, the packed colour, 16-bit float source, the R8G8B8A8 pack mode. */
+	/* Clear: no background, the packed colour, 8 bits a channel, the R8G8B8A8 pack mode. */
 	job_init(&job, POWERVR_TRANSFER_CLEAR);
 	ok = powervr_transfer_regs_build(&job, &regs, state) == 0;
 	ok = ok && common_regs(&regs) && regs.isp_bgobjvals == 0 && regs.pds_bgnd[0] == 0 && regs.usc_clear[0] == 0xffbf8040U;
-	ok = ok && state[0] == 0x4000U && state[1] == 0x2000U;
+	ok = ok && state[0] == 0x4000U && state[1] == 0x82000U;
 	ok = ok && regs.pbe[0] == 0x0200007c68800000ULL && regs.pbe[1] == 0x0000003f0000003fULL && regs.pbe[2] == 0;
 	check(ok, "clear registers");
 
@@ -277,6 +278,80 @@ test_copy_usc(void)
 	check(ok && length == program.length && memcmp(bytes, program.code, length) == 0, "copy program");
 }
 
+static void
+test_blit(void)
+{
+	struct powervr_transfer_job job;
+	struct powervr_transfer_regs regs;
+	struct powervr_image_layout layout;
+	struct powervr_view_shape view;
+	struct powervr_render_area source;
+	struct powervr_render_area area;
+	struct powervr_render_usc copy;
+	struct powervr_render_usc blit;
+	uint32_t words[POWERVR_TRANSFER_SHARED_WORDS];
+	uint32_t state[2];
+	int ok;
+
+	/* A 32 x 32 source scaled to 64 x 64: scale 0.5, offset 0, linear. */
+	memset(&layout, 0, sizeof(layout));
+	layout.row_pitch = 128;
+	layout.padded_width = 32;
+	layout.padded_height = 32;
+	layout.layer_bytes = 0x1000;
+	memset(&view, 0, sizeof(view));
+	view.format = powervr_format_find(37);
+	view.layout = &layout;
+	view.address = 0x20000;
+	view.width = 32;
+	view.height = 32;
+	view.image_levels = 1;
+	view.level_count = 1;
+	view.layer_count = 1;
+	view.linear = 1;
+	source.x = 0;
+	source.y = 0;
+	source.width = 32;
+	source.height = 32;
+	area.x = 0;
+	area.y = 0;
+	area.width = 64;
+	area.height = 64;
+	ok = powervr_transfer_blit_words(&view, &source, &area, 0, 0, 1, words) == 0;
+	ok = ok && words[8] == 0x3f000000U && words[9] == 0 && words[10] == 0x3f000000U && words[11] == 0;
+	check(ok && ((words[5] >> 4) & 0xfU) == 0x5U, "blit words: scale and linear filters");
+
+	/* Flipped in x: scale -0.5, offset 32. */
+	ok = powervr_transfer_blit_words(&view, &source, &area, 1, 0, 1, words) == 0;
+	check(ok && words[8] == 0xbf000000U && words[9] == 0x42000000U, "blit words: flip in x");
+
+	/* A third, rounded to nearest: 1 / 3 and its offset (1 * 3 - 1 * 0) / 3 = 1. */
+	source.x = 1;
+	source.width = 1;
+	area.width = 3;
+	ok = powervr_transfer_blit_words(&view, &source, &area, 0, 0, 1, words) == 0;
+	check(ok && words[8] == 0x3eaaaaabU && words[9] == 0x3f800000U, "blit words: a third");
+
+	/* Same size: point filters whatever was asked. */
+	source.x = 0;
+	source.width = 32;
+	area.width = 32;
+	area.height = 32;
+	ok = powervr_transfer_blit_words(&view, &source, &area, 0, 0, 1, words) == 0;
+	check(ok && ((words[5] >> 4) & 0xfU) == 0, "blit words: point when not scaled");
+
+	/* The blit program: the copy program with a pack before the output, one more temporary. */
+	ok = powervr_transfer_copy_usc(&copy) == 0 && powervr_transfer_blit_usc(powervr_format_find(44), &blit) == 0;
+	check(ok && blit.temps == copy.temps + 1U && blit.length > copy.length, "blit program");
+	check(powervr_transfer_blit_usc(powervr_format_find(43), &blit) != 0, "blit of sRGB refused for now");
+
+	/* Blit registers: as a copy, but the destination's own format. */
+	job_init(&job, POWERVR_TRANSFER_BLIT);
+	ok = powervr_transfer_regs_build(&job, &regs, state) == 0;
+	ok = ok && common_regs(&regs) && regs.isp_bgobjvals == 0x200U && regs.pds_bgnd[0] == 0x0000510000005000ULL;
+	check(ok && state[1] == 0x82000U && regs.pbe[0] == 0x0200007c68800000ULL, "blit registers");
+}
+
 int
 main(void)
 {
@@ -284,6 +359,7 @@ main(void)
 	test_colour();
 	test_shared();
 	test_copy_usc();
+	test_blit();
 	printf("transfer-program host test: %u passed, %u failed\n", passed, failed);
 	return failed == 0 ? 0 : 1;
 }
