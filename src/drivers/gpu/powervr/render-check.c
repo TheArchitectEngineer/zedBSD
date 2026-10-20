@@ -209,6 +209,14 @@ powervr_render_check(
 	/* A render of an empty stream first: whether the geometry master resets on its end alone. */
 	error = check_empty(check);
 
+	/* The full trace ends the check here, so no later dump pushes it out of the message ring. */
+	if (POWERVR_RENDER_CHECK_FULL_TRACE) {
+		check_release(check);
+		transfer_close(render, kept, kept_memory);
+		kern_logf("powervr: render check: full trace taken; the rest of the check is left out\n");
+		return;
+	}
+
 	/* The kick and the wait for the fragment, then the read back; each says its own line. */
 	if (error == 0)
 		error = check_kick(check);
@@ -548,15 +556,17 @@ check_empty(
 	mutex_unlock(&check->render->core->lock);
 
 	/* The core's geometry registers a little after the kick. */
-	if (error == 0) {
+	if (error == 0 && !POWERVR_RENDER_CHECK_FULL_TRACE) {
 		sched_sleep(sched_ticks() + (CHECK_PROBE_MS * KERN_CLOCK_HZ + 999U) / 1000U);
 		probe_geometry(check->render->core);
 	}
 
 	if (error == 0) {
 		error = powervr_render_finish(check->render, check->session, &check->marks, CHECK_WAIT_MS);
-		kern_logf("powervr: render check: registers after the wait (%d):\n", error);
-		probe_geometry(check->render->core);
+		if (!POWERVR_RENDER_CHECK_FULL_TRACE) {
+			kern_logf("powervr: render check: registers after the wait (%d):\n", error);
+			probe_geometry(check->render->core);
+		}
 	}
 	kern_logf("powervr: render check: %s stream: %s (%d), context %s\n", POWERVR_RENDER_CHECK_STATE_FIRST ? "state-and-end" : "empty",
 		  error == 0 ? "finished" : "FAILED", error,
@@ -570,9 +580,11 @@ check_empty(
 		error = EIO;
 	if (error != 0) {
 		powervr_firmware_dump(check->render->core, POWERVR_KERNEL_CCB_SLOTS);
-		powervr_target_dump(check->target);
-		powervr_session_global_list_dump(check->session);
-		dump_context(check);
+		if (!POWERVR_RENDER_CHECK_FULL_TRACE) {
+			powervr_target_dump(check->target);
+			powervr_session_global_list_dump(check->session);
+			dump_context(check);
+		}
 		kern_logf("powervr: render check: geometry command: %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x\n",
 			  get32(check->geometry, 0), get32(check->geometry, 4), get32(check->geometry, 8), get32(check->geometry, 12),
 			  get32(check->geometry, 16), get32(check->geometry, 20), get32(check->geometry, 24), get32(check->geometry, 28),

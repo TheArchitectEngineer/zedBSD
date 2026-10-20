@@ -27,6 +27,16 @@
 #include "drivers/gpu/powervr/interface.h"
 
 /*
+ * Whether the render check takes the firmware's whole trace of its first
+ * geometry kick (1): every trace group, the debug group too, the words
+ * from the kick to the recovery, and no other dump or kick after it, so
+ * the kernel's message ring keeps them.  0 is the usual check.
+ */
+#ifndef POWERVR_RENDER_CHECK_FULL_TRACE
+#define POWERVR_RENDER_CHECK_FULL_TRACE	1
+#endif
+
+/*
  * One block of memory the firmware's processor sees.
  *
  * The block is one physically contiguous run below the core's DMA limit,

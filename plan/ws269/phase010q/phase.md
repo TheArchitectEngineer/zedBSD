@@ -952,3 +952,13 @@ source の変更は無し。
   - context 0..7 を 0xE140 に書いて 0xE148 を読む、各 mapping context の catalogue base を 1 行に出す。読んだ後で元の context を書き戻す。
   - 読む時点は、kick の 200 ms 後（100 ms から変えた）と wait の後（reset の後）。
 - 確認: `build/q1459/st/vmunix`（RISC-V の self-test の build）で warning 0。板は未実施。
+
+## q1460 / q1460-i01（2026-10-20）
+
+- `POWERVR_RENDER_CHECK_FULL_TRACE` を `powervr-private.h` に移し、既定を 1 にした（この build 用）。1 の時の動き:
+  - FW の trace の log type を 0x80007fff にする（全 group と DEBUG group）。
+  - dump は mark（TA の kick の直前）から先頭の 1536 word と、末尾の 512 word（HWR まで）を出す。合わせて 2048 word 以下なら全部を出す。
+  - render check は、空の stream の TA の後で終える（triangle、後の transfer、job check を行わない）。register の probe、target・global list・context の dump も行わない（dmesg の ring から押し出さないため）。
+  - 通常に戻す時は 0 にする。
+- host が register を読めない件の調査（DDK の StarFive の tree）: sf_7110 の sysconfig は 0x18000000 から 0x100000 の 1 つの window を ioremap して、host は直に読み書きする。MIPS の core には META の slave port のような FW 経由の読みは無い。OSID の view は MTS_SCHEDULE の間隔（0x10000）ごとで、OS0 は先頭にある。clock も DDK と同じ順で入れている（clk_axi、apb・rtc、core の分周、core・sys、apb の reset の解除）。DDK に、host の読みで FW と同じ値を得るための追加の条件（別の window・security の register・特別な clock）は見当たらなかった。この調べた範囲では「host からは読めない（原因は未特定）」と結論する。
+- 確認: `build/q1460/st/vmunix`（RISC-V の self-test の build）で warning 0。板は未実施。
