@@ -82,6 +82,7 @@ _Static_assert(sizeof(((struct powervr_switch_shaders *)0)->store) == POWERVR_SH
 #define CLEAN_COMPUTE			0U
 #define CLEAN_GEOMETRY			1U
 #define CLEAN_FRAGMENT			2U
+#define CLEAN_TRANSFER			3U
 
 static int context_memory(struct powervr_render *render, struct powervr_session *session, struct powervr_render_context *context);
 static int context_records(struct powervr_render *render, struct powervr_session *session, struct powervr_render_context *context);
@@ -289,7 +290,8 @@ powervr_render_context_discard(
 
 /*
  * Reports the firmware address of the next context of a session the
- * firmware still has to clean up, or zero.
+ * firmware still has to clean up, or zero: the compute context, the
+ * render context's geometry and fragment contexts, the transfer context.
  *
  * A context that never ran needs no cleanup.  A render context's
  * geometry context lies at the start of its record, its fragment context
@@ -329,6 +331,13 @@ powervr_session_next_cleanup(
 		return address;
 	}
 
+	/* Then the transfer context, once it ran. */
+	if (session->transfer_context != NULL && session->transfer_context->kicked && !session->transfer_context->cleaned) {
+		*which = CLEAN_TRANSFER;
+		address = powervr_object_address(&session->transfer_context->record, 0);
+		return address;
+	}
+
 	/* Succeeded: none is left. */
 	return 0;
 }
@@ -344,8 +353,10 @@ powervr_session_cleaned(
 		session->cleaned = 1;
 	} else if (which == CLEAN_GEOMETRY) {
 		session->render_context->geometry_cleaned = 1;
-	} else {
+	} else if (which == CLEAN_FRAGMENT) {
 		session->render_context->fragment_cleaned = 1;
+	} else {
+		session->transfer_context->cleaned = 1;
 	}
 }
 

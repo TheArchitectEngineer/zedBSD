@@ -3,7 +3,7 @@
 # ws269-p010g: render pass・framebuffer・load/store・clear・job の列
 
 - ID: ws269-p010g（親 [ws269](../ws.md)）
-- Status: in-progress（q1382-i01 は前半。kick への受け渡しと実機は p010e の後半の後）
+- Status: in-progress（q1382-i01 は前半。q1383-i01 で kick への受け渡し（draw の無い render pass）。実機は未確認）
 - Disposition: normal
 - Queue: q1382 / q1382-i01（2026-10-20 P2、前半）
 - 設計: [design-p010.md](../design-p010.md) 版 2.2 の §2・§4.3・§10 の p010g
@@ -49,3 +49,11 @@ Venus の command の decode と render の job の列の組み立てまで。jo
 
 - `powervr_vk_render_jobs` の job を P1 の kick の関数に渡す（vk-queue.c の ENOTSUP を置き換える）。draw の record（p010i）で `draw_count` を数える。
 - vkCmdClearAttachments の部分・draw の後（p011）。dynamic rendering は Venus の wire に来たら。
+
+## q1383-i01（2026-10-20 P1、後半の kick への受け渡し）
+
+- `render-job.{c,h}`（新規、kernel）: `powervr_render_job_run` が `struct powervr_render_job` を render context の kick に渡す。draw の無い job（空の VDM stream）、color 1 つ（32 bit の texel）、depth は load・store とも DONT_CARE の時だけ（他は ENOTSUP）。background は load の op で: CLEAR は P2 の clear（clear の値の 1 word）、LOAD は P2 の render-load-program（image と sampler の 8 word を GENERAL に、DMA の PDS）、DONT_CARE は 0 の clear。PBE の store は render area で clip、`pds_pr_bgnd` も同じ background。program と word は job ごとの memory（GENERAL・PDS・USC の窓）に置き、終われば返す。時間切れは session を abandoned にし memory を core に残す。
+- `vk-queue.c`: render pass を含む command buffer の ENOTSUP を置き換えた。command buffer の `powervr_vk_render_jobs` の job を、begin の位置で（それより前の dispatch の stream を先に流してから）1 つずつ流す。捨てられた instance があり数が合わない時は、残りを command buffer の終わりにまとめて流す。
+- 試験: p009 の run.sh に vk-pass・render-pass・render-program（P2 の merge で link が切れていた）と、`powervr_render_job_run` の host の stand-in。gcc の -O1 が vk-pass.c の area を maybe-uninitialized と言うので p009 の compile に `-Wno-maybe-uninitialized`（kernel の clang は言わない）。
+- 確かめ: p009 165/0、p010 の 12 本 0 failed、VF2・riscv64-virt・amd64 の build warning 0。実機は未確認（draw の無い render pass の clear と store）。
+- 残り: MRT（color 2 つ以上、EOT が 1 つの PBE の state だけ）、depth の ZLS（p010j）、draw（p010i）、64・16・8 bit の texel。

@@ -163,6 +163,46 @@ powervr_geometry_command(
 	put32(command, POWERVR_GEOMETRY_FLAGS, POWERVR_GEOMETRY_FIRST_AND_LAST);
 }
 
+/*
+ * Fills a transfer command from its registers, each at its place in the
+ * firmware's transfer registers; the common part and the flags stay
+ * zero.
+ *
+ * Procedure referenced:
+ * Mesa 26.2.5 src/imagination/vulkan/pvr_arch_job_transfer.c
+ * (pvr_submit_info_stream_init: the registers of one transfer).
+ */
+void
+powervr_transfer_command(
+	const struct powervr_transfer_regs *regs,
+	uint8_t *command)
+{
+	unsigned index;
+
+	/* The 32-bit registers. */
+	put32(command, 8U + 0U, regs->isp_bgobjvals);
+	put32(command, 8U + 4U, regs->usc_pixel_output_ctrl);
+	for (index = 0; index < 4U; index++)
+		put32(command, 8U + 8U + index * 4U, regs->usc_clear[index]);
+	put32(command, 8U + 24U, regs->isp_mtile_size);
+	put32(command, 8U + 28U, regs->isp_render_origin);
+	put32(command, 8U + 32U, regs->isp_ctl);
+	put32(command, 8U + 40U, regs->isp_aa);
+	put32(command, 8U + 44U, regs->event_pixel_pds_info);
+	put32(command, 8U + 48U, regs->event_pixel_pds_code);
+	put32(command, 8U + 52U, regs->event_pixel_pds_data);
+	put32(command, 8U + 56U, regs->isp_render);
+	put32(command, 8U + 60U, regs->isp_rgn);
+	put32(command, 8U + 64U, regs->frag_screen);
+
+	/* The 64-bit ones: the background, the macrotile base, the back end words. */
+	for (index = 0; index < 3U; index++)
+		put64(command, 8U + 72U + index * 8U, regs->pds_bgnd[index]);
+	put64(command, 8U + 96U, regs->isp_mtile_base);
+	for (index = 0; index < POWERVR_TRANSFER_PBE_WORDS; index++)
+		put64(command, 8U + 104U + index * 8U, regs->pbe[index]);
+}
+
 /* Reports the tile control word the fragment command takes for a frame of tiles. */
 uint32_t
 powervr_fragment_isp_control(

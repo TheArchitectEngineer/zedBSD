@@ -3,7 +3,7 @@
 # ws269-p010f: transfer（copy・clear）
 
 - ID: ws269-p010f（親 [ws269](../ws.md)）
-- Status: in-progress（q1379-i01 は前半。transfer の context・kick・recovery・sync の word への組み込み、kernel の transfer check、実機は後半、p010n の merge の後）
+- Status: in-progress（q1383-i01 で context・kick・vk の組み込み・transfer check、実機は未確認）（q1379-i01 は前半。transfer の context・kick・recovery・sync の word への組み込み、kernel の transfer check、実機は後半、p010n の merge の後）
 - Disposition: normal
 - Queue: q1379 / q1379-i01（2026-10-20 P2、前半）
 - 設計: [design-p010.md](../design-p010.md) 版 2.1 の §6・§10 の p010f
@@ -69,3 +69,13 @@ transfer の command の組み立て（copy と clear、src/dst の矩形と PBE
   - `powervr_transfer_blit_words`: source の矩形・dst の矩形・flip x/y・linear から shared 12 word。float は Mesa の `pvr_dma_texture_floats`（FLOATS_4）の比 src/dst と (src.x·dst − src.w·dst.x)/dst（flip は dst の大きさを負に、遠い端を使う）を、整数だけで最近接偶数に丸めた float（`float_from_ratio`）。大きさが同じなら point（`pvr_transfer_set_filter`）。copy の float も同じ関数に寄せた（値は前と同じ）。
 - 確認: host 試験 `transfer-program host test: 22 passed, 0 failed`（blit の word: scale 0.5・flip・1/3 の丸め・同じ大きさの point、blit の program、blit の register）。M9（`build/p010f/m9.c`）`M9: 2104 words/values compared, 2254 fields, 0 mismatches`（前の 77 に、500 件の乱数の矩形の scale・offset を host の float の割り算と比べた 2000 値、linear の sampler、blit の register 2 件）。VF2 の kernel rc=0、warning 0。
 - 残り（p010o の後半）: vkCmdBlitImage から job へ（p010f の後半の組み込みの後）、sRGB・他の format、3D の source。
+
+## q1383-i01（2026-10-20 P1、後半の kernel と vk の側）
+
+- `transfer-context.c`（新規）: session の最初の transfer で transfer context（common context 1 つ、fragment の master、state 256 byte、CCB 32 KiB と timeline）。identity は通し番号、destroy・discard。`render-context.c` の cleanup の順に transfer（compute → geometry → fragment → transfer）、`render-queue.c` の 105 の notice は transfer の identity なら `transfer` の段（`fault`/`reset`）。
+- `render-command.{c,h}`: `powervr_transfer_command`（TQ_3D 202、192 byte、regs は 8 から、v7.3 の check の offset）。`render-queue.c`: `powervr_session_kick_transfer`（command と timeline の UPDATE、KICK 101、cleanup ctl なし）、`powervr_transfer_finish`（上限付きの待ち、`transfer: ok` / `transfer: fail(timeout)`）。sync の word は transfer context の timeline。
+- `transfer-job.{c,h}`（新規）: `powervr_transfer_run` が clear と copy を P2 の `powervr_transfer_regs_build`（FAST_SCALE と背景の object）で組む。copy は P2 の copy の USC・shared の 12 word・DMA の PDS、EOT は p010e の即値の形。奇数の行は 1 行ずつ。
+- `vk-transfer.c`（新規）: vkCmdCopyBufferToImage・CopyImageToBuffer・CopyImage・ClearColorImage と、同じ大きさ・同じ format の BlitImage を record（level 0・layer 0 だけ、他は ENOTSUP）し、`vk-queue.c` がその位置で（前の dispatch を流してから）region ごとに流す。buffer は image の texel の linear の行（bufferRowLength・bufferImageHeight）として扱う。
+- render check に transfer check（`CONFIG_POWERVR_RENDER_CHECK`）: 別の session で 64×64 の LINEAR を青（0xffff0000）に clear して読み返し、別の attachment へ copy して最初と比べる。行は `powervr: transfer check: prepared` / `clear finished` / `clear OK` / `copy finished` / `copy OK`、失敗は `FAILED at <段> (<errno>)` か最初に違った pixel と値、と `transfer` の段の行。
+- 確かめ（2026-10-20 10:16）: p010 の host 試験 12 本 0 failed（command 27/0 に transfer の command の offset を足した）、p009 165/0、VF2・riscv64-virt・amd64・試験の image の config の build で warning 0。QEMU・実機は未実施。
+- 残り: scale・flip・format 変換の blit（p010o、P2 の `powervr_transfer_blit_*` を組み込む）、mip・layer、8・16・64 bit の texel、buffer の命令（compute）、linear の TRANSFER の features、gpu-selftest の `clear`・`copy`、実機。

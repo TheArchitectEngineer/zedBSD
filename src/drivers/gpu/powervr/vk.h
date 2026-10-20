@@ -290,6 +290,12 @@ int powervr_vk_queue_route(struct powervr_vk_session *session, uint32_t opcode, 
 struct powervr_render_job;
 int powervr_vk_record_begin_pass(struct powervr_vk_session *session, struct i915_wire_reader *reader, struct powervr_vk_record *entry);
 int powervr_vk_record_clear_attachments(struct powervr_vk_session *session, struct i915_wire_reader *reader, struct powervr_vk_record *entry);
+/* Records a transfer command (copies, a blit of the same size, a colour clear) with its objects and regions. */
+int powervr_vk_record_transfer(struct powervr_vk_session *session, uint32_t opcode, struct i915_wire_reader *reader, struct powervr_vk_record *entry);
+
+/* Runs a recorded transfer command on the session's transfer context, region by region. */
+int powervr_vk_transfer_run(struct powervr_vk_session *session, const struct powervr_vk_record *entry);
+
 int powervr_vk_render_jobs(const struct powervr_vk_command_buffer *command, struct powervr_render_job *jobs, uint32_t room, uint32_t *count);
 
 /* A command buffer emptied of its records (vk-command.c). */

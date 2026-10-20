@@ -115,6 +115,31 @@ main(void)
 	powervr_geometry_command(&geo, geometry);
 	expect(read32(geometry, 48) == 0x20005U && read32(geometry, 56) == 0x20020000U, "stride 5, two common units");
 
+	/* Transfer: regs at 8; bgobjvals 0, pixel output 4, clear 8..20, isp_render 56, frag_screen 64, bgnd 72..88, mtile base 96, pbe 104..168; flags 184. */
+	{
+		static uint8_t transfer[POWERVR_TRANSFER_COMMAND_BYTES];
+		struct powervr_transfer_regs regs;
+
+		memset(&regs, 0, sizeof(regs));
+		regs.isp_bgobjvals = 0x200;
+		regs.usc_pixel_output_ctrl = 0x1ff8;
+		regs.usc_clear[3] = 0x44;
+		regs.isp_render = 3;
+		regs.frag_screen = 0x3f003f;
+		regs.event_pixel_pds_data = 0x1230;
+		regs.pds_bgnd[2] = 0x99;
+		regs.isp_mtile_base = 0x77;
+		regs.pbe[0] = 0x11;
+		regs.pbe[8] = 0x88;
+		memset(transfer, 0, sizeof(transfer));
+		powervr_transfer_command(&regs, transfer);
+		expect(read32(transfer, 8) == 0x200 && read32(transfer, 12) == 0x1ff8 && read32(transfer, 28) == 0x44, "transfer: bgobjvals, pixel output, clear 3");
+		expect(read32(transfer, 64) == 3 && read32(transfer, 72) == 0x3f003f && read32(transfer, 60) == 0x1230, "transfer: isp_render, frag_screen, event data");
+		expect(read64(transfer, 96) == 0x99 && read64(transfer, 104) == 0x77 && read64(transfer, 112) == 0x11 && read64(transfer, 176) == 0x88, "transfer: bgnd 3, mtile base, pbe 0 and 8");
+		expect(read32(transfer, 184) == 0 && read32(transfer, 0) == 0, "transfer: flags and common part zero");
+		expect(POWERVR_CLIENT_TRANSFER == 0x2abc80caU, "transfer: TQ_3D 202");
+	}
+
 	printf("command-host-test: %d passed, %d failed\n", passes, failures);
 	return failures != 0;
 }

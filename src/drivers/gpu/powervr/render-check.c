@@ -15,6 +15,11 @@
  * preparation, the kick, the wait for the fragment's fence with the
  * timelines it read, and the read back with the first pixel that
  * differed.  The TA and 3D stage lines come from the render's end.
+ *
+ * A transfer check follows on a session of its own: a 64x64 attachment
+ * cleared to blue through the transfer context and read back, then
+ * copied to a second one and that read back, a line for each step and
+ * the transfer stage line from each transfer's end.
  */
 
 #include <stddef.h>
@@ -32,6 +37,7 @@
 #include "drivers/gpu/powervr/render-command.h"
 #include "drivers/gpu/powervr/render-kick-layout.h"
 #include "drivers/gpu/powervr/render-program.h"
+#include "drivers/gpu/powervr/transfer-job.h"
 
 /*
  * The frame: 64x64 R8G8B8A8 (VK_FORMAT_R8G8B8A8_UNORM 37), linear, rows
@@ -120,6 +126,8 @@ static int check_kick(struct render_check *check);
 static int check_read(struct render_check *check);
 static void check_release(struct render_check *check);
 static int pixel_class(uint32_t x, uint32_t y);
+static void transfer_check(struct powervr_render *render);
+static int transfer_read(struct powervr_buffer *buffer, uint32_t offset, const struct powervr_buffer *against, uint32_t against_offset, uint32_t value, const char *what);
 static void put_words(struct powervr_buffer *buffer, uint32_t offset, const uint32_t *words, unsigned count);
 static void put_bytes(struct powervr_buffer *buffer, uint32_t offset, const uint8_t *bytes, size_t count);
 static uint32_t get_word(const struct powervr_buffer *buffer, uint32_t offset);
@@ -157,6 +165,9 @@ powervr_render_check(
 
 	/* What the core may still run is kept with the session; otherwise everything goes. */
 	check_release(check);
+
+	/* The transfer check, on a session of its own. */
+	transfer_check(render);
 }
 
 /* Opens the check's session, makes its render context and target, and maps its memory. */
@@ -600,6 +611,153 @@ pixel_class(
 
 	/* Succeeded: inside or outside. */
 	return inside;
+}
+
+/*
+ * The transfer check: a clear to blue (0xffff0000 as the attachment
+ * holds it) of a 64x64 linear attachment, read back, then its copy to a
+ * second attachment, read back against the first.
+ */
+static void
+transfer_check(
+	struct powervr_render *render)
+{
+	static struct powervr_transfer_request request;
+	struct powervr_session *session;
+	struct powervr_resource *memory;
+	struct powervr_buffer *buffer;
+	struct powervr_image_shape shape;
+	struct powervr_image_layout layout;
+	struct powervr_view_shape source;
+	const struct powervr_format *format;
+	void *opaque;
+	int error;
+
+	/* A session and two attachments of its own. */
+	session = NULL;
+	memory = NULL;
+	format = powervr_format_find(CHECK_FORMAT);
+	error = render->ops.open(render, &opaque);
+	if (error == 0) {
+		session = opaque;
+		error = powervr_buffer_create(render, 2U * CHECK_EDGE * CHECK_ROW_BYTES, &buffer);
+	}
+	if (error == 0) {
+		error = powervr_resource_make(session, buffer, 1, 0, &memory);
+		powervr_buffer_put(render, buffer);
+		if (error != 0)
+			memory = NULL;
+	}
+	if (error != 0) {
+		kern_logf("powervr: transfer check: FAILED at prepare (%d)\n", error);
+		if (session != NULL)
+			render->ops.close(render, session);
+		return;
+	}
+	kern_logf("powervr: transfer check: prepared (64x64 R8G8B8A8, clear and copy)\n");
+
+	/* The clear of the first attachment. */
+	kern_memset(&request, 0, sizeof(request));
+	request.kind = POWERVR_TRANSFER_CLEAR;
+	request.destination.format = format;
+	request.destination.address = memory->address;
+	request.destination.width = CHECK_EDGE;
+	request.destination.height = CHECK_EDGE;
+	request.destination.linear = 1;
+	request.destination.row_pitch = CHECK_ROW_BYTES;
+	request.destination.padded_width = CHECK_EDGE;
+	request.area.width = CHECK_EDGE;
+	request.area.height = CHECK_EDGE;
+	request.colour[2] = 0x3f800000U;
+	request.colour[3] = 0x3f800000U;
+	error = powervr_transfer_run(render, session, &request);
+	if (error != 0) {
+		kern_logf("powervr: transfer check: FAILED at clear (%d)\n", error);
+	} else {
+		kern_logf("powervr: transfer check: clear finished\n");
+		error = transfer_read(memory->buffer, 0, NULL, 0, 0xffff0000U, "clear");
+	}
+
+	/* The copy of the first attachment to the second. */
+	if (error == 0) {
+		shape.width = CHECK_EDGE;
+		shape.height = CHECK_EDGE;
+		shape.depth = 1;
+		shape.levels = 1;
+		shape.layers = 1;
+		shape.linear = 1;
+		shape.volume = 0;
+		error = powervr_image_lay_out(&shape, format, &layout);
+		if (error != 0)
+			kern_logf("powervr: transfer check: FAILED at copy layout (%d)\n", error);
+	}
+	if (error == 0) {
+		kern_memset(&source, 0, sizeof(source));
+		source.format = format;
+		source.layout = &layout;
+		source.address = memory->address;
+		source.width = CHECK_EDGE;
+		source.height = CHECK_EDGE;
+		source.image_levels = 1;
+		source.level_count = 1;
+		source.layer_count = 1;
+		source.linear = 1;
+		request.kind = POWERVR_TRANSFER_COPY;
+		request.destination.address = memory->address + CHECK_EDGE * CHECK_ROW_BYTES;
+		request.source = &source;
+		error = powervr_transfer_run(render, session, &request);
+		if (error != 0) {
+			kern_logf("powervr: transfer check: FAILED at copy (%d)\n", error);
+		} else {
+			kern_logf("powervr: transfer check: copy finished\n");
+			(void)transfer_read(memory->buffer, CHECK_EDGE * CHECK_ROW_BYTES, memory->buffer, 0, 0, "copy");
+		}
+	}
+
+	/* A transfer the core may still run keeps the memory with the session; otherwise it goes. */
+	if (!session->abandoned)
+		powervr_resource_unmake(session, memory);
+	render->ops.close(render, session);
+}
+
+/*
+ * Reads an attachment back against a value or against another
+ * attachment, and says the first pixel that differed or that all
+ * matched.
+ */
+static int
+transfer_read(
+	struct powervr_buffer *buffer,
+	uint32_t offset,
+	const struct powervr_buffer *against,
+	uint32_t against_offset,
+	uint32_t value,
+	const char *what)
+{
+	uint32_t want;
+	uint32_t got;
+	uint32_t at;
+	uint32_t x;
+	uint32_t y;
+
+	/* Every pixel, row by row. */
+	for (y = 0; y < CHECK_EDGE; y++) {
+		for (x = 0; x < CHECK_EDGE; x++) {
+			at = y * CHECK_ROW_BYTES + x * 4U;
+			want = value;
+			if (against != NULL)
+				want = get_word(against, against_offset + at);
+			got = get_word(buffer, offset + at);
+			if (got != want) {
+				kern_logf("powervr: transfer check: FAILED at %s read back: pixel (%u, %u) is 0x%08x, want 0x%08x\n", what, x, y, got, want);
+				return EIO;
+			}
+		}
+	}
+
+	/* Succeeded: every pixel matched. */
+	kern_logf("powervr: transfer check: %s OK\n", what);
+	return 0;
 }
 
 /* Writes words through a buffer's uncached view, low byte first. */

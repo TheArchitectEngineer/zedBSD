@@ -21,6 +21,25 @@
 #include <stdint.h>
 
 #include "drivers/gpu/powervr/render-kick-layout.h"
+#include "drivers/gpu/powervr/transfer-program.h"
+
+/*
+ * A transfer command: its type in a context's buffer, its bytes, and
+ * where its registers sit (after the 8-byte common part).
+ *
+ * Values referenced:
+ * Linux v7.3 drivers/gpu/drm/imagination/pvr_rogue_fwif.h
+ * (ROGUE_FWIF_CCB_CMD_TYPE_TQ_3D 202 with ROGUE_CCB_TYPE_TASK and the
+ * magic); pvr_rogue_fwif_client_check.h (struct rogue_fwif_cmd_transfer,
+ * 192 bytes: regs 8, flags 184; struct rogue_fwif_transfer_regs:
+ * isp_bgobjvals 0, usc_pixel_output_ctrl 4, usc_clear_register0..3 8 to
+ * 20, isp_mtile_size 24, isp_render_origin 28, isp_ctl 32, isp_aa 40,
+ * event_pixel_pds_info 44, _code 48, _data 52, isp_render 56, isp_rgn
+ * 60, frag_screen 64, pds_bgnd0_base 72, pds_bgnd1_base 80,
+ * pds_bgnd3_sizeinfo 88, isp_mtile_base 96, pbe_wordx_mrty 104).
+ */
+#define POWERVR_CLIENT_TRANSFER			(0x2abc0000U | 0x8000U | 202U)
+#define POWERVR_TRANSFER_COMMAND_BYTES		192U
 
 /*
  * Where the fragment command's registers are, from the command's start:
@@ -95,6 +114,9 @@ void powervr_fragment_command(const struct powervr_fragment_setup *setup, uint8_
 
 /* Fills the registers of a geometry command (POWERVR_GEOMETRY_BYTES, zeroed by the caller). */
 void powervr_geometry_command(const struct powervr_geometry_setup *setup, uint8_t *command);
+
+/* Fills a transfer command (POWERVR_TRANSFER_COMMAND_BYTES, zeroed by the caller) from its registers. */
+void powervr_transfer_command(const struct powervr_transfer_regs *regs, uint8_t *command);
 
 /* Reports the tile control word the fragment command takes for a frame of tiles. */
 uint32_t powervr_fragment_isp_control(uint32_t tiles_x, uint32_t tiles_y);
