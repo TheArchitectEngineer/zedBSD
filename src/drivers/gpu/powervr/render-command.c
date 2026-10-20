@@ -97,13 +97,16 @@ static int single_core;
 
 /*
  * Whether the commands carry the single-core flag on a core with
- * multicore support (1, as Mesa's use_single_core: the firmware does not
- * wait for other cores), and whether the geometry command sets its
+ * multicore support (1: the firmware does not wait for other cores).
+ * It is 0 as in Mesa 25.0.0 src/imagination/vulkan/pvr_job_render.c,
+ * whose render jobs set use_single_core only for a fragment that uses
+ * atomics (frag_uses_atomic_ops), and the vendor driver's captured
+ * geometry command on the board leaves the bit clear.  And whether the geometry command sets its
  * resume size (1, Mesa's VDMCTRL_PDS_STATE0 of the shared registers; the
  * vendor driver's command on the board left it zero).
  */
 #ifndef POWERVR_RENDER_SINGLE_CORE_FLAG
-#define POWERVR_RENDER_SINGLE_CORE_FLAG	1
+#define POWERVR_RENDER_SINGLE_CORE_FLAG	0
 #endif
 #ifndef POWERVR_GEOMETRY_RESUME_SIZE_SET
 #define POWERVR_GEOMETRY_RESUME_SIZE_SET	1
