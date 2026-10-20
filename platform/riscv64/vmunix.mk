@@ -133,6 +133,7 @@ RISCV64_PLATFORM_SOURCES_visionfive2 += src/drivers/platform/visionfive2/vf2-pmu
 	src/drivers/gpu/powervr/image-state.c \
 	src/drivers/gpu/powervr/descriptor-set.c \
 	src/drivers/gpu/powervr/data-program.c \
+	src/drivers/gpu/powervr/render-program.c \
 	src/drivers/gpu/powervr/vk-layout.c \
 	src/drivers/gpu/powervr/vk-command.c \
 	src/drivers/gpu/powervr/vk-queue.c \
