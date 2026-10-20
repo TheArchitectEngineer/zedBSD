@@ -42,3 +42,10 @@
 - `present_copy_shared` の clear・blit・copy を LINEAR の PBE で通すのは、render・transfer の側（P1 の q1388 の file）。今回は触っていない。
 - `GET_PHYSICAL_DEVICE_IMAGE_FORMAT_PROPERTIES2`・`EXTERNAL_BUFFER_PROPERTIES` は route に無い（ENOTSUP のまま）。libvulkan が shared の道で尋ねるなら次の段で足す。
 - 片付け（Q1 に依頼）: `build/p010l/`。
+
+## q1393-i01（2026-10-20 P1）: LINEAR の dst の transfer（P1 の file の分）
+
+- libvulkan の `present_copy_shared`（`wsi-swapchain.c`）が使うのは vkCmdClearColorImage（float の (0,0,0,1)、range は level 1・layer 1）、vkCmdBlitImage（NEAREST、z 0..1）、vkCmdCopyImage（同じ大きさ）。
+- `vk-transfer.c` の直し: (a) range・subresource の layer の数に `VK_REMAINING_ARRAY_LAYERS` を受ける（1 layer の image なので同じ）。(b) vkCmdCopyImage の format の一致を texel の byte 数の一致に（copy は raw の texel、swapchain と native の B8G8R8A8・R8G8B8A8 の組を通す）。
+- LINEAR の dst の扱いを読んで確かめた所: `image_surface` は `shape.linear`・`layout.row_pitch`・`layout.padded_width`（linear では行の texel 数）を PBE に渡し、clear・copy・blit とも P2 の `powervr_transfer_regs_build` の linear の stride になる。奇数の幅の linear は copy・clear は 1 行ずつ、blit は regs_build が断る（display の幅は偶数の見込み）。render-job の colour も render-pass の surface の linear をそのまま使う。
+- 確かめ: p009 の run.sh の切り替え 0 と 1（`POWERVR_FORMAT_LINEAR_SAMPLED`）でどちらも 175 passed, 0 failed、p010 の host 試験 0 failed、VF2・riscv64-virt・amd64 の build warning 0。p009 の host 試験は transfer を stand-in にしているので、vk-transfer の request の組み立ては host では通していない（未実施）。実機は未確認。

@@ -38,3 +38,9 @@
 
 - PowerVR の実機での offscreen の画と表示（ユーザーの UAT 待ち）。
 - 上の 2 の pixel の判定の実装（p010k1 の readback の道の後）。
+
+## q1393-i01（2026-10-20 P1）: present の判定の実装
+
+- `userland/tests/gpu-selftest/main.c`: `present` は先に `vkdemo --offscreen --time-ms=0 --hold=0 --output=FRAME`（既定 `/tmp/gpu-selftest-vkdemo.ppm`、`-f` で変える）を流し、PPM の (5,5)・(314,234) が 101828 ちょうど、(160,120) が e06895 から各 channel ±24 以内かを見て、外れれば `present: fail(pixel (x,y) RRGGBB, want RRGGBB)`、その後に `--duration=4` の表示。vkdemo に option の追加は要らなかった（`--offscreen`・`--time-ms`・`--hold`・`--output` は既にある）。
+- 直し: gpu-selftest は子の出力の最初の 1 行だけ読んで pipe を閉じていたので、多く書く vkdemo が SIGPIPE で落ちていた（host の llvmpipe で再現: `fail(offscreen: VKDEMO START …)`）。残りを読み捨てる形にした。
+- 確かめ: selftest-host.sh 0 failed（frame の stand-in、黒い frame で `fail(pixel (5,5) 000000, want 101828)` の場面を追加）。host の llvmpipe の vkdemo を `-d` に渡した gpu-selftest で `present: ok`。VF2 の userland の gpu-selftest の build rc=0、warning 0。実機は未確認。
