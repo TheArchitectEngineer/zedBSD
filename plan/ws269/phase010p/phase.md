@@ -109,3 +109,16 @@ sRGB・R8・R8G8・R16 の image は使われていない。このため R32_SFL
   - clear-64 が w0 w0 → sample が word 0 を繰り返している。w1 w1 → PBE が pixout0 を繰り返し読んでいる。
   - copy-64（逆順が 2 回）が全部 PASS → 両方とも正しく、clear・upload 側が原因。
 - 確認: p010 の host 試験は全部 0 failed。VF2 の vmunix と bin/vkmatrix は rc 0、warning 0。
+
+### board 100 と試み（2026-10-21）
+
+- board 100（逆順の診断）: clear-64 は w1 w1、clear-128 は w3 w2 w3 w2。sample は全 word を出力へ届けている。
+  PBE（pixel output）は、64-bit で pixout0 を、128-bit で pixout0・1 を繰り返し読み、与えた幅の半分しか見ていない。
+- transfer の register の並び（Mesa の `pvr_submit_info_stream_init`・`rogue_fwif_transfer_regs`）と USC_PIXEL_OUTPUT_CTRL の enum は Mesa と一致する。
+  Mesa 26.2.5 の 3D transfer の USC は `pvr_usc_tq` が未実装（finishme）で、実機で確かめた参照が無い。
+- 試み: 逆順を外し、wide な texel には書く register の倍の幅を指定する（64-bit → 4REGISTERS、128-bit → 8REGISTERS、partition はその幅で数える）。
+  幅が足りているなら、余分な幅は害が無い。
+- 確認: p010 の host 試験は全部 0 failed（transfer-program 32 passed、64/128 の register の期待値は 0x1ff9・0x1ffa/0x21000 に更新）。VF2 は rc 0、warning 0。
+- board の判定:
+  - copy-*・clear-* が PASS → この幅で確定する。
+  - 変わらない → 幅以外（PBE の emit・firmware の TQ の扱い）を調べる。

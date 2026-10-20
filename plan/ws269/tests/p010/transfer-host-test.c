@@ -138,13 +138,13 @@ test_regs(void)
 	job.destination.format = powervr_format_find(97);
 	job.destination.row_pitch = 64 * 8;
 	ok = powervr_transfer_regs_build(&job, &regs, state) == 0;
-	ok = ok && regs.usc_pixel_output_ctrl == 0x1ff8U && regs.isp_ctl == 0x23000U;
+	ok = ok && regs.usc_pixel_output_ctrl == 0x1ff9U && regs.isp_ctl == 0x23000U;
 	ok = ok && ((state[1] >> 7) & 0x3fU) == 0x28U && (state[1] & (1U << 13)) == 0 && ((state[1] >> 19) & 1U) == 0;
 	check(ok, "copy registers of 64-bit texels");
 	job.destination.format = powervr_format_find(109);
 	job.destination.row_pitch = 64 * 16;
 	ok = powervr_transfer_regs_build(&job, &regs, state) == 0;
-	ok = ok && regs.usc_pixel_output_ctrl == 0x1ff9U && regs.isp_ctl == 0x23000U;
+	ok = ok && regs.usc_pixel_output_ctrl == 0x1ffaU && regs.isp_ctl == 0x21000U;
 	ok = ok && ((state[1] >> 7) & 0x3fU) == 0x0bU && (state[1] & (1U << 13)) == 0;
 	check(ok, "copy registers of 128-bit texels");
 }
