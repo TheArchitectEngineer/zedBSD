@@ -227,6 +227,13 @@ kern_irq_register(
 	return 0;
 }
 
+void
+kern_irq_unmask(
+	int irq)
+{
+	(void)irq;
+}
+
 int
 spin_trylock(
 	struct spinlock *lock)
