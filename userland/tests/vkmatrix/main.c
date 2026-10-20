@@ -72,6 +72,9 @@
 #define VKMATRIX_LINEAR_WIDTH	1920U
 #define VKMATRIX_LINEAR_HEIGHT	1080U
 
+/* The load cases' passes over one 1920x1080 image. */
+#define VKMATRIX_LOAD_FRAMES	60U
+
 /* The offscreen image's side and pixels. */
 #define VKMATRIX_SIZE		64U
 #define VKMATRIX_PIXELS		(VKMATRIX_SIZE * VKMATRIX_SIZE)
@@ -235,7 +238,13 @@ static VkResult case_copy_64(struct vkmatrix *run);
 static VkResult case_copy_128(struct vkmatrix *run);
 static VkResult case_render_f16(struct vkmatrix *run);
 static VkResult case_render_linear(struct vkmatrix *run);
-static VkResult linear_target(struct vkmatrix *run, VkSubresourceLayout *layout);
+static VkResult linear_target(struct vkmatrix *run, VkImageTiling tiling, VkSubresourceLayout *layout);
+static VkResult case_load_1080(struct vkmatrix *run, uint32_t draws, VkImageTiling tiling);
+static VkResult case_load_1080_6(struct vkmatrix *run);
+static VkResult case_load_1080_32(struct vkmatrix *run);
+static VkResult case_load_1080_linear(struct vkmatrix *run);
+static float load_1080_red(uint32_t frame, uint32_t draw);
+static void load_1080_quad(uint32_t draw, float corners[4]);
 static VkResult linear_check(struct vkmatrix *run, const VkSubresourceLayout *layout, const float quad[4]);
 static VkResult case_clear_wide(struct vkmatrix *run, VkFormat format, uint32_t texel_bytes);
 static VkResult case_clear_64(struct vkmatrix *run);
@@ -267,6 +276,9 @@ static const struct vkmatrix_case cases[] = {
 	{ "copy-128", case_copy_128 },
 	{ "render-f16", case_render_f16 },
 	{ "render-linear", case_render_linear },
+	{ "load-1080-6", case_load_1080_6 },
+	{ "load-1080-32", case_load_1080_32 },
+	{ "load-1080-linear", case_load_1080_linear },
 	{ "clear-64", case_clear_64 },
 	{ "clear-128", case_clear_128 },
 	{ "sample-linear-1180", case_sample_linear_wide },
@@ -3258,7 +3270,7 @@ case_render_linear(
 		return status;
 
 	/* The linear image, its memory, view and framebuffer, and its row layout. */
-	status = linear_target(run, &layout);
+	status = linear_target(run, VK_IMAGE_TILING_LINEAR, &layout);
 	if (status != VK_SUCCESS)
 		return status;
 
@@ -3332,10 +3344,11 @@ case_render_linear(
 	return VK_SUCCESS;
 }
 
-/* Makes the 1920x1080 LINEAR image in host-visible coherent memory, its view and framebuffer, and reads its row layout. */
+/* Makes the 1920x1080 image (LINEAR in host-visible coherent memory, or OPTIMAL), its view and framebuffer, and reads its row layout. */
 static VkResult
 linear_target(
 	struct vkmatrix *run,
+	VkImageTiling tiling,
 	VkSubresourceLayout *layout)
 {
 	VkImageCreateInfo image_info;
@@ -3357,8 +3370,10 @@ linear_target(
 	image_info.mipLevels = 1;
 	image_info.arrayLayers = 1;
 	image_info.samples = VK_SAMPLE_COUNT_1_BIT;
-	image_info.tiling = VK_IMAGE_TILING_LINEAR;
+	image_info.tiling = tiling;
 	image_info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+	if (tiling == VK_IMAGE_TILING_OPTIMAL)
+		image_info.usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 	image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 	run->failed_call = "vkCreateImage (linear)";
@@ -3371,7 +3386,11 @@ linear_target(
 	memset(&allocate, 0, sizeof(allocate));
 	allocate.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 	allocate.allocationSize = requirements.size;
-	status = vkmatrix_find_memory(run, requirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &allocate.memoryTypeIndex);
+	if (tiling == VK_IMAGE_TILING_LINEAR) {
+		status = vkmatrix_find_memory(run, requirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &allocate.memoryTypeIndex);
+	} else {
+		status = vkmatrix_find_memory(run, requirements.memoryTypeBits, 0, &allocate.memoryTypeIndex);
+	}
 	if (status != VK_SUCCESS)
 		return status;
 	run->failed_call = "vkAllocateMemory (linear)";
@@ -3514,4 +3533,303 @@ case_copy_65(
 	run->wide_width = 65;
 	run->wide_height = 3;
 	return case_copy_wide(run, VK_FORMAT_R8G8B8A8_UNORM, 4);
+}
+
+/*
+ * load-1080-6, load-1080-32 and load-1080-linear: a 1920x1080 B8G8R8A8
+ * attachment (OPTIMAL, or LINEAR for the last) cleared once, then drawn
+ * in VKMATRIX_LOAD_FRAMES passes that each load it (LOAD, the driver's
+ * full-screen load draw first) and draw 6 or 32 quads in a grid with a
+ * red that changes every pass.  Each pass is submitted and waited for.
+ * At the end every pixel holds the last pass's red inside a quad and the
+ * clear colour outside: what the desktop's compositor does every frame.
+ */
+static VkResult
+case_load_1080(
+	struct vkmatrix *run,
+	uint32_t draws,
+	VkImageTiling tiling)
+{
+	VkSubresourceLayout layout;
+	struct vkmatrix_shape shape;
+	VkRenderPassBeginInfo pass;
+	VkCommandBufferBeginInfo begin;
+	VkClearValue value;
+	VkViewport viewport;
+	VkRect2D scissor;
+	VkImageMemoryBarrier barrier;
+	VkBufferImageCopy copy;
+	VkMemoryBarrier host;
+	VkSubmitInfo submit;
+	const uint8_t *bytes;
+	const uint32_t *row;
+	uint32_t firsts[32];
+	uint32_t wanted;
+	uint32_t bad;
+	uint32_t first_x;
+	uint32_t first_y;
+	uint32_t first_seen;
+	uint32_t pipeline;
+	uint32_t frame;
+	uint32_t draw;
+	uint32_t x;
+	uint32_t y;
+	float corners[4];
+	float red;
+	float colour[4];
+	void *mapped;
+	VkResult status;
+
+	/* The flat red pipeline. */
+	memset(&shape, 0, sizeof(shape));
+	shape.vertex = vkmatrix_push4_vert;
+	shape.vertex_size = sizeof(vkmatrix_push4_vert);
+	shape.fragment = vkmatrix_push4_frag;
+	shape.fragment_size = sizeof(vkmatrix_push4_frag);
+	shape.push_size = 4;
+	shape.push_stages = VK_SHADER_STAGE_FRAGMENT_BIT;
+	status = vkmatrix_pipeline(run, &shape, &pipeline);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* The attachment, and for an OPTIMAL one a buffer to copy it out to. */
+	status = linear_target(run, tiling, &layout);
+	if (status != VK_SUCCESS)
+		return status;
+	if (tiling == VK_IMAGE_TILING_OPTIMAL) {
+		status = vkmatrix_buffer(run, (VkDeviceSize)VKMATRIX_LINEAR_WIDTH * VKMATRIX_LINEAR_HEIGHT * 4U, VK_BUFFER_USAGE_TRANSFER_DST_BIT, &run->wide_download, &run->wide_download_memory, &mapped);
+		if (status != VK_SUCCESS)
+			return status;
+		layout.offset = 0;
+		layout.rowPitch = (VkDeviceSize)VKMATRIX_LINEAR_WIDTH * 4U;
+	}
+
+	/* The quads, the same every pass. */
+	for (draw = 0; draw < draws; draw++) {
+		load_1080_quad(draw, corners);
+		firsts[draw] = vkmatrix_quad(run, corners[0], corners[1], corners[2], corners[3]);
+	}
+
+	/* The passes: the first clears, the others load, each its own submission. */
+	for (frame = 0; frame < VKMATRIX_LOAD_FRAMES; frame++) {
+		/* The command buffer and the pass over the whole image. */
+		memset(&begin, 0, sizeof(begin));
+		begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+		vkResetCommandBuffer(run->command, 0);
+		vkBeginCommandBuffer(run->command, &begin);
+		memset(&value, 0, sizeof(value));
+		memcpy(value.color.float32, background, sizeof(value.color.float32));
+		memset(&pass, 0, sizeof(pass));
+		pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+		pass.renderPass = run->clear_pass;
+		if (frame != 0)
+			pass.renderPass = run->load_pass;
+		pass.framebuffer = run->wide_framebuffer;
+		pass.renderArea.extent.width = VKMATRIX_LINEAR_WIDTH;
+		pass.renderArea.extent.height = VKMATRIX_LINEAR_HEIGHT;
+		pass.clearValueCount = 1;
+		pass.pClearValues = &value;
+		vkCmdBeginRenderPass(run->command, &pass, VK_SUBPASS_CONTENTS_INLINE);
+
+		/* The viewport and scissor over the whole image. */
+		memset(&viewport, 0, sizeof(viewport));
+		viewport.width = (float)VKMATRIX_LINEAR_WIDTH;
+		viewport.height = (float)VKMATRIX_LINEAR_HEIGHT;
+		viewport.maxDepth = 1.0f;
+		vkCmdSetViewport(run->command, 0, 1, &viewport);
+		memset(&scissor, 0, sizeof(scissor));
+		scissor.extent.width = VKMATRIX_LINEAR_WIDTH;
+		scissor.extent.height = VKMATRIX_LINEAR_HEIGHT;
+		vkCmdSetScissor(run->command, 0, 1, &scissor);
+
+		/* The quads with this pass's reds. */
+		vkmatrix_bind(run, pipeline);
+		for (draw = 0; draw < draws; draw++) {
+			red = load_1080_red(frame, draw);
+			vkCmdPushConstants(run->command, run->layouts[pipeline], VK_SHADER_STAGE_FRAGMENT_BIT, 0, 4, &red);
+			vkCmdDraw(run->command, 6, 1, firsts[draw], 0);
+		}
+		vkCmdEndRenderPass(run->command);
+
+		/* The last pass of an OPTIMAL image is copied out. */
+		if (frame + 1U == VKMATRIX_LOAD_FRAMES && tiling == VK_IMAGE_TILING_OPTIMAL) {
+			memset(&barrier, 0, sizeof(barrier));
+			barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+			barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+			barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+			barrier.image = run->wide_image;
+			barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			barrier.subresourceRange.levelCount = 1;
+			barrier.subresourceRange.layerCount = 1;
+			barrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+			barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+			barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+			barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+			vkCmdPipelineBarrier(run->command, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1, &barrier);
+			memset(&copy, 0, sizeof(copy));
+			copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			copy.imageSubresource.layerCount = 1;
+			copy.imageExtent.width = VKMATRIX_LINEAR_WIDTH;
+			copy.imageExtent.height = VKMATRIX_LINEAR_HEIGHT;
+			copy.imageExtent.depth = 1;
+			vkCmdCopyImageToBuffer(run->command, run->wide_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, run->wide_download, 1, &copy);
+		}
+
+		/* The writes, then host reads. */
+		memset(&host, 0, sizeof(host));
+		host.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+		host.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
+		host.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+		vkCmdPipelineBarrier(run->command, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &host, 0, NULL, 0, NULL);
+		vkEndCommandBuffer(run->command);
+
+		/* The submit and its wait. */
+		memset(&submit, 0, sizeof(submit));
+		submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		submit.commandBufferCount = 1;
+		submit.pCommandBuffers = &run->command;
+		vkResetFences(run->device, 1, &run->fence);
+		run->failed_call = "vkQueueSubmit (load pass)";
+		status = vkQueueSubmit(run->queue, 1, &submit, run->fence);
+		if (status != VK_SUCCESS)
+			return status;
+		run->failed_call = "vkWaitForFences (load pass)";
+		status = vkWaitForFences(run->device, 1, &run->fence, VK_TRUE, VKMATRIX_WAIT_NS);
+		if (status != VK_SUCCESS)
+			return status;
+	}
+
+	/* The pixels: the image's own memory, or the copy. */
+	if (tiling == VK_IMAGE_TILING_LINEAR) {
+		run->failed_call = "vkMapMemory (load)";
+		status = vkMapMemory(run->device, run->wide_memory, 0, VK_WHOLE_SIZE, 0, &mapped);
+		if (status != VK_SUCCESS)
+			return status;
+	}
+
+	/* Each pixel against the last pass's reds and the clear colour. */
+	bytes = (const uint8_t *)mapped + layout.offset;
+	bad = 0;
+	first_x = 0;
+	first_y = 0;
+	first_seen = 0;
+	colour[1] = 0.0f;
+	colour[2] = 0.0f;
+	colour[3] = 1.0f;
+	for (y = 0; y < VKMATRIX_LINEAR_HEIGHT; y++) {
+		row = (const uint32_t *)(bytes + (size_t)y * layout.rowPitch);
+		for (x = 0; x < VKMATRIX_LINEAR_WIDTH; x++) {
+			/* The quad the pixel is in, if any, at 30 by 16.875 pixels a unit. */
+			wanted = vkmatrix_pack(background);
+			for (draw = 0; draw < draws; draw++) {
+				load_1080_quad(draw, corners);
+				if (x >= (uint32_t)(corners[0] * 30.0f) && x < (uint32_t)(corners[2] * 30.0f) &&
+				    y >= (uint32_t)(corners[1] * 16.875f) && y < (uint32_t)(corners[3] * 16.875f)) {
+					colour[0] = load_1080_red(VKMATRIX_LOAD_FRAMES - 1U, draw);
+					wanted = vkmatrix_pack(colour);
+				}
+			}
+
+			/* A wrong pixel. */
+			if (row[x] != wanted) {
+				if (bad == 0) {
+					first_x = x;
+					first_y = y;
+					first_seen = row[x];
+				}
+				bad++;
+			}
+		}
+	}
+	if (tiling == VK_IMAGE_TILING_LINEAR)
+		vkUnmapMemory(run->device, run->wide_memory);
+
+	/* Every pixel right: the shared target's comparison has nothing to say. */
+	if (bad == 0) {
+		memcpy(run->expected, run->pixels, sizeof(run->expected));
+		run->tolerance = 0;
+		return VK_SUCCESS;
+	}
+
+	/* Names what was wrong. */
+	snprintf(run->reason, sizeof(run->reason), "%u bad pixels after %u passes, first (%u,%u) 0x%08x", (unsigned)bad, (unsigned)VKMATRIX_LOAD_FRAMES, (unsigned)first_x, (unsigned)first_y, (unsigned)first_seen);
+	run->failed_call = run->reason;
+	return VK_ERROR_UNKNOWN;
+}
+
+/* The red of one quad in one pass: changing with both, never the clear's. */
+static float
+load_1080_red(
+	uint32_t frame,
+	uint32_t draw)
+{
+	uint32_t level;
+
+	/* A level from 40 to 239. */
+	level = (frame * 7U + draw * 13U) % 200U + 40U;
+
+	/* Succeeded: the red. */
+	return (float)level / 255.0f;
+}
+
+/* The corners (x0, y0, x1, y1) of one quad of the grid, in units of 64 across and down: 8 a row, 4 rows. */
+static void
+load_1080_quad(
+	uint32_t draw,
+	float corners[4])
+{
+	/* Columns 8 units apart, rows 16 apart, each 4 by 8 units. */
+	corners[0] = (float)((draw % 8U) * 8U + 2U);
+	corners[1] = (float)(((draw / 8U) * 2U + 1U) * 8U);
+	corners[2] = corners[0] + 4.0f;
+	corners[3] = corners[1] + 8.0f;
+}
+
+/* load-1080-6: six quads a pass, OPTIMAL. */
+static VkResult
+case_load_1080_6(
+	struct vkmatrix *run)
+{
+	VkResult status;
+
+	/* Runs the load case with six draws. */
+	status = case_load_1080(run, 6U, VK_IMAGE_TILING_OPTIMAL);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the case ran. */
+	return VK_SUCCESS;
+}
+
+/* load-1080-32: 32 quads a pass, OPTIMAL. */
+static VkResult
+case_load_1080_32(
+	struct vkmatrix *run)
+{
+	VkResult status;
+
+	/* Runs the load case with 32 draws. */
+	status = case_load_1080(run, 32U, VK_IMAGE_TILING_OPTIMAL);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the case ran. */
+	return VK_SUCCESS;
+}
+
+/* load-1080-linear: six quads a pass, LINEAR in host-visible memory (a swapchain image). */
+static VkResult
+case_load_1080_linear(
+	struct vkmatrix *run)
+{
+	VkResult status;
+
+	/* Runs the load case on a linear image. */
+	status = case_load_1080(run, 6U, VK_IMAGE_TILING_LINEAR);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the case ran. */
+	return VK_SUCCESS;
 }
