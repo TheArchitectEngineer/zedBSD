@@ -371,3 +371,19 @@ mainline と照らした結果（v7.3 の `pvr_ccb.c`・`pvr_fw.c`・`pvr_rogue_
   - 消えなければ別の原因。dump と trace で見る。
 - return slot: boot の時に全 slot に marker（`0xdead0000 | slot << 4`、executed の bit は 0）を入れ、答えを読んだ後も marker に戻す。FW がこの page の word を書けば、probe の slot の値が marker でなくなる。
 - 確かめ: VF2 の vmunix は warning 0、p010 は 0 failed、p009 は 511/0。実機は未。
+
+## q1412-i01（P1、2026-10-20）: compute の lockup の切り分け
+
+板（54de7284b）:
+- return slot の marker は全部そのまま。FW はこの page を書いていない。
+- switch の state を外しても compute は guilty lockup（dm 4）。
+- compute の失敗の時に dump が出なかった。
+
+- dump が出なかった理由: 失敗が「kick は終わったが 0 word」の枝（error 0）で、dump はもう一方の枝（error ≠ 0）にしか無かった。両方の枝で出すようにした。
+- 切り分けのため、compute の kernel の前に小さい kick を 2 つ流す（`compute-check.c` の `probe_kick`）。どちらも行 `compute probe: <名前>: finished/FAILED (e), context kept/reset` を出し、失敗か context の reset なら dump して check を止める。
+  - 「end only」: stream が end だけ。
+  - 「fence and end」: fence の kernel と end。
+  - どこで lockup するかで、原因が CDM の command・context（end only）、fence の PDS program（fence）、kernel の PDS・USC の program（両方通って kernel で落ちる）のどれかに絞れる。
+- heap page 0xc020a000（unnamed）: firmware の 20 の record の外。session の FW の context の record（render の module が同じ heap から取る物）の見込み。slot 2 の位置の 1 は、その record の field である可能性が高い。名前を付けるのは後で（急がない）。
+- CDM の command の残りの field（cdm_resume_pds1・cdm_item・compute_cluster）は今回入れていない。switch を外した状態では resume は使われず、cdm_item・compute_cluster は Mesa でも feature（compute_morton_capable・cluster_grouping）がある時だけ。BXE-4-32 の feature の値は次に確かめる。
+- 確かめ: 試験の image の config（`plan/ws269/tests/p010/config-visionfive2-selftest.mk`、compute check を含む）の vmunix（`build/q1412/st`）は warning 0。通常の VF2 の config には compute check が入らない。
