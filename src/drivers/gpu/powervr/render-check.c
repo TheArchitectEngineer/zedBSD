@@ -77,8 +77,9 @@
 #define GENERAL_BYTES		(GENERAL_ATTACHMENT + CHECK_EDGE * CHECK_ROW_BYTES)
 
 /* How long after the empty kick the geometry registers are read, and how many. */
-#define CHECK_PROBE_MS		100U
-#define CHECK_PROBE_REGISTERS	11U
+#define CHECK_PROBE_MS		200U
+#define CHECK_PROBE_REGISTERS	26U
+#define CHECK_PROBE_CONTEXTS	8U
 
 /*
  * Whether the render check's first render names the triangle's
@@ -552,8 +553,11 @@ check_empty(
 		probe_geometry(check->render->core);
 	}
 
-	if (error == 0)
+	if (error == 0) {
 		error = powervr_render_finish(check->render, check->session, &check->marks, CHECK_WAIT_MS);
+		kern_logf("powervr: render check: registers after the wait (%d):\n", error);
+		probe_geometry(check->render->core);
+	}
 	kern_logf("powervr: render check: %s stream: %s (%d), context %s\n", POWERVR_RENDER_CHECK_STATE_FIRST ? "state-and-end" : "empty",
 		  error == 0 ? "finished" : "FAILED", error,
 		  check->session->lost ? "reset" : "kept");
@@ -1266,7 +1270,8 @@ dump_context(
 }
 
 /*
- * Prints the core's geometry registers, read together then printed.
+ * Prints the core's geometry and memory registers, read together then
+ * printed, and then the page catalogue base of each MMU mapping context.
  *
  * Values referenced:
  * StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
@@ -1274,18 +1279,33 @@ dump_context(
  * (RGX_CR_TIMER 0x0160, RGX_CR_EVENT_STATUS 0x0130,
  * RGX_CR_VDM_CONTEXT_STORE_STATUS 0x0430, RGX_CR_PPP_SIGNATURE 0x5020,
  * RGX_CR_TE_SIGNATURE 0x5028, RGX_CR_VCE_CHECKSUM 0x5030,
- * RGX_CR_BIF_FAULT_BANK0_MMU_STATUS 0x12B0, _REQ_STATUS 0x12B8); the
- * firmware's own recovery checks read 0x40E0 and 0x4600 for the
- * geometry master.
+ * RGX_CR_BIF_CAT_BASE0 to 7 0x1200 to 0x1238, RGX_CR_BIF_CAT_BASE_INDEX
+ * 0x1240, RGX_CR_BIF_FAULT_BANK0_MMU_STATUS 0x12B0, _REQ_STATUS 0x12B8,
+ * RGX_CR_BIF_CTRL 0x12A8, RGX_CR_BIF_MMU_STATUS 0x12D0,
+ * RGX_CR_BIF_STATUS_MMU 0x1358, RGX_CR_MMU_CBASE_MAPPING_CONTEXT 0xE140,
+ * RGX_CR_MMU_CBASE_MAPPING 0xE148, RGX_CR_MMU_FAULT_STATUS 0xE150,
+ * RGX_CR_MMU_FAULT_STATUS_META 0xE158); the firmware's own recovery
+ * checks read 0x40E0 and 0x4600 for the geometry master.
+ *
+ * Procedure referenced:
+ * the same tree, services/server/devices/rogue/rgxstartstop.c
+ * (RGXInitBIF: on a core with RGX_CR_MMU_CBASE_MAPPING the context id
+ * goes to the mapping context register, read back as a fence, then the
+ * catalogue base goes to the mapping register).
  */
 static void
 probe_geometry(
 	struct powervr_core *core)
 {
 	static const uint32_t offsets[CHECK_PROBE_REGISTERS] = {
-		0x0160U, 0x0130U, 0x0430U, 0x40e0U, 0x4600U, 0x5020U, 0x5028U, 0x5030U, 0x12b0U, 0x12b8U, 0x0160U,
+		0x0160U, 0x0130U, 0x0430U, 0x40e0U, 0x4600U, 0x5020U, 0x5028U, 0x5030U,
+		0x1200U, 0x1208U, 0x1210U, 0x1218U, 0x1220U, 0x1228U, 0x1230U, 0x1238U,
+		0x1240U, 0x12a8U, 0x12b0U, 0x12b8U, 0x12d0U, 0x1358U, 0xe140U, 0xe150U,
+		0xe158U, 0x0160U,
 	};
 	uint64_t values[CHECK_PROBE_REGISTERS];
+	uint32_t bases[CHECK_PROBE_CONTEXTS];
+	uint32_t saved;
 	unsigned index;
 
 	/* All first, then the lines. */
@@ -1293,4 +1313,17 @@ probe_geometry(
 		values[index] = powervr_read64(core, offsets[index]);
 	for (index = 0; index < CHECK_PROBE_REGISTERS; index++)
 		kern_logf("powervr: render check: register 0x%04x = 0x%016llx\n", (unsigned)offsets[index], (unsigned long long)values[index]);
+
+	/* Each mapping context's catalogue base, then the context the register held put back. */
+	saved = powervr_read32(core, 0xe140U);
+	for (index = 0; index < CHECK_PROBE_CONTEXTS; index++) {
+		powervr_write32(core, 0xe140U, index);
+		(void)powervr_read32(core, 0xe140U);
+		bases[index] = powervr_read32(core, 0xe148U);
+	}
+	powervr_write32(core, 0xe140U, saved);
+	(void)powervr_read32(core, 0xe140U);
+	kern_logf("powervr: render check: mapping context 0x%x; catalogue bases 0-7: %x %x %x %x %x %x %x %x\n", (unsigned)saved,
+		  (unsigned)bases[0], (unsigned)bases[1], (unsigned)bases[2], (unsigned)bases[3],
+		  (unsigned)bases[4], (unsigned)bases[5], (unsigned)bases[6], (unsigned)bases[7]);
 }
