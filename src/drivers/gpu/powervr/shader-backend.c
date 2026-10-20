@@ -150,6 +150,8 @@ static void note_reference(struct shader_backend *backend, unsigned value, unsig
 static int allocate(const struct powervr_ir_shader *shader, struct shader_backend *backend);
 static int select_instruction(struct backend_select *select, const struct powervr_ir_instruction *instruction);
 static int select_structure(struct backend_select *select, const struct powervr_ir_instruction *instruction);
+static int operations_conflict(const struct shader_machine_operation *reader, const struct shader_machine_operation *writer);
+static void nop_operation(struct shader_machine_operation *operation);
 static struct shader_machine_operation *append(struct backend_select *select, unsigned kind);
 static struct shader_machine_register temp_register(unsigned index);
 static struct shader_machine_register bank_register(unsigned bank, unsigned index);
@@ -335,6 +337,159 @@ powervr_shader_compile_inline(
 }
 
 /*
+ * Inserts no-operation groups so that no group writes a temporary that
+ * one of the SHADER_HAZARD_GAP groups just before it reads.  Branches
+ * that land after an insertion are moved with their targets; a branch
+ * to the group itself lands on the first inserted group.  E2BIG when
+ * the table has no room.
+ */
+int
+shader_backend_space_hazards(
+	struct shader_backend *backend)
+{
+	struct shader_machine_operation *operation;
+	unsigned index;
+	unsigned back;
+	unsigned needed;
+	unsigned other;
+	int conflict;
+
+	/* Each group against the ones just before it. */
+	for (index = 0; index < backend->operation_count; index++) {
+		/* How many groups must still come between, from the nearest conflicting reader. */
+		needed = 0;
+		for (back = 1; back <= SHADER_HAZARD_GAP && back <= index; back++) {
+			conflict = operations_conflict(&backend->operations[index - back], &backend->operations[index]);
+			if (conflict) {
+				needed = SHADER_HAZARD_GAP + 1U - back;
+				break;
+			}
+		}
+		if (needed == 0)
+			continue;
+
+		/* Room for the no-operations. */
+		if (backend->operation_count + needed > SHADER_MACHINE_OPERATIONS)
+			return E2BIG;
+
+		/* The groups from here on move down, the branches that land beyond here with them. */
+		for (other = backend->operation_count; other > index; other--)
+			backend->operations[other - 1U + needed] = backend->operations[other - 1U];
+		backend->operation_count += needed;
+		for (other = 0; other < backend->operation_count; other++) {
+			operation = &backend->operations[other];
+			if (operation->kind == MACHINE_BRANCH && operation->target > index)
+				operation->target += needed;
+		}
+
+		/* The no-operations in the gap; the group itself is now after them. */
+		for (other = index; other < index + needed; other++)
+			nop_operation(&backend->operations[other]);
+		index += needed;
+	}
+
+	/* Succeeded: the program is spaced. */
+	return 0;
+}
+
+/* Counts the groups that write a temporary one of the groups just before them reads (zero once spaced). */
+unsigned
+shader_backend_hazards(
+	const struct shader_backend *backend)
+{
+	unsigned index;
+	unsigned back;
+	unsigned count;
+	int conflict;
+
+	/* Each group against the ones just before it. */
+	count = 0;
+	for (index = 0; index < backend->operation_count; index++) {
+		for (back = 1; back <= SHADER_HAZARD_GAP && back <= index; back++) {
+			conflict = operations_conflict(&backend->operations[index - back], &backend->operations[index]);
+			if (conflict) {
+				count++;
+				break;
+			}
+		}
+	}
+
+	/* Succeeded: the count. */
+	return count;
+}
+
+/*
+ * Says whether a later group writes a temporary an earlier group reads.
+ * Pairs are counted whole: a source or destination names its register
+ * and the next (an address or a 64-bit value), and a store's data, the
+ * register after its address pair, is read too; a load or a sample may
+ * write four.
+ */
+static int
+operations_conflict(
+	const struct shader_machine_operation *reader,
+	const struct shader_machine_operation *writer)
+{
+	unsigned source;
+	unsigned destination;
+	unsigned read_low;
+	unsigned read_high;
+	unsigned write_low;
+	unsigned write_high;
+
+	/* Each written temporary range against each read one. */
+	for (destination = 0; destination < 2; destination++) {
+		if (writer->destination[destination].bank != POWERVR_USC_BANK_TEMPORARY)
+			continue;
+		write_low = writer->destination[destination].index;
+		write_high = write_low + 1U;
+		if (writer->kind == MACHINE_LOAD || writer->kind == MACHINE_SAMPLE)
+			write_high = write_low + 3U;
+		for (source = 0; source < 4; source++) {
+			if (reader->source[source].bank != POWERVR_USC_BANK_TEMPORARY)
+				continue;
+			read_low = reader->source[source].index;
+			read_high = read_low + 1U;
+			if (reader->kind == MACHINE_STORE)
+				read_high = read_low + 2U;
+			if (write_low <= read_high && read_low <= write_high)
+				return 1;
+		}
+	}
+
+	/* Succeeded: no conflict. */
+	return 0;
+}
+
+/* Makes an operation a no-operation. */
+static void
+nop_operation(
+	struct shader_machine_operation *operation)
+{
+	unsigned index;
+
+	/* A cleared operation of the kind, with no registers. */
+	operation->kind = MACHINE_NOP;
+	operation->condition = POWERVR_USC_RUN_ENABLED;
+	operation->variant = 0;
+	operation->modifiers[0] = 0;
+	operation->modifiers[1] = 0;
+	operation->modifiers[2] = 0;
+	operation->end = 0;
+	for (index = 0; index < 2; index++) {
+		operation->destination[index].bank = 0xff;
+		operation->destination[index].index = 0;
+	}
+	for (index = 0; index < 4; index++) {
+		operation->source[index].bank = 0xff;
+		operation->source[index].index = 0;
+	}
+	operation->immediate = 0;
+	operation->immediate_2 = 0;
+	operation->target = 0;
+}
+
+/*
  * Encodes a shader's machine operations as instruction groups, with
  * every branch's offset worked out from the groups' sizes.
  */
@@ -354,6 +509,11 @@ shader_backend_encode(
 	/* Refuses an empty program. */
 	if (backend->operation_count == 0)
 		return EINVAL;
+
+	/* Spaces every write of a temporary from the groups that read it just before. */
+	error = shader_backend_space_hazards(backend);
+	if (error != 0)
+		return error;
 
 	/* Sizes every group; a branch's size does not depend on its offset. */
 	total = 0;
@@ -1851,6 +2011,12 @@ shader_backend_group(
 		group->unit = POWERVR_USC_UNIT_MAIN;
 		group->end = 1;
 		error = powervr_usc_vertex_output(5, 0, 0, 0, 0, &group->operation[POWERVR_USC_PHASE_BACKEND]);
+		break;
+	case MACHINE_NOP:
+		/* A control group that does nothing, spacing a write from the reads before it. */
+		group->unit = POWERVR_USC_UNIT_CONTROL;
+		group->control = POWERVR_USC_CONTROL_NOTHING;
+		error = powervr_usc_nothing(&group->operation[POWERVR_USC_PHASE_0]);
 		break;
 	case MACHINE_END:
 		group->unit = POWERVR_USC_UNIT_CONTROL;

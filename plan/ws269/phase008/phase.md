@@ -615,3 +615,30 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
 | VF2 の vmunix（`plan/ws269/tests/p008/config-visionfive2-compute.mk`、`build/p029/vf2/vmunix`） | rc 0、warning 0 |
 
 - 片付け（Q1 に依頼）: `build/p029/`。
+
+## q1455-i01（P2、2026-10-20）: compiler の back end に「読んだ register を 2 group は書き換えない」規則
+
+- 板の 14 回目（vf2-dmesg51）: `addend rewritten by the next group ffff0000`、`two groups later ffffffff`。hazard の仮説が確かめられた。temps は exact でも 0/32 で、field は exact で足りる（+1 は要らない）。
+- 直し（`shader-backend.c`・`shader-private.h`）:
+  - `MACHINE_NOP`（control の nop）と `SHADER_HAZARD_GAP`（2）を足した。板で確かめたのは「間に 2 group で正しい」ことで、間に 1 group は確かめていないので 2 にした。
+  - `shader_backend_space_hazards` を足し、`shader_backend_encode` の最初に呼ぶ。直前の 2 group のどれかが読む temporary を書く group の前に、足りない数の nop を入れる。
+    - 範囲は register の pair を丸ごと数える。st は address の対と data（＋2）を読むとみなし、load と sample は 4 つ書くとみなす（安全側）。
+    - 挿入より後に着地する branch の target は、一緒に動かす。その group 自身への branch は、最初の nop に着地する。
+  - `shader_backend_hazards`（残った hazard の数）を足した。
+- 試験（`plan/ws269/tests/p010-compiler/`）:
+  - `compile-host-test.c` で、compile したすべての shader に「hazard 0」の確かめを足した。
+  - nop を入れる仕組みの単体の試験（`test_hazard_spacing`）を足した: 読んだ直後に書くと hazard 1 → nop 2 つ → 書きは後ろへ、branch は最初の nop へ → hazard 0。
+  - `machine-run.c`（simulator）に `KIND_NOP` を足した。
+- 未対処（記録）: loop の戻りの辺。loop の末尾で読み、branch で戻った先の頭で書く並びは、間が branch の 1 group だけになる。直線の順でしか確かめていない。vkcompute の fill は loop を持たない。
+- **main の build が通らない（Q1 の変更、P1 の file）**: `vk-queue.c` の `QUEUE_KERNELS_MAX` が 128 になったため、`QUEUE_USC_BYTES`（0x400×128＝128 KiB）と `QUEUE_PDS_BYTES`（0x40×129）が、`POWERVR_EXECUTOR_USC_BYTES`（0x10000）と `POWERVR_EXECUTOR_PDS_BYTES`（0x2000）を超える。`_Static_assert`（vk-queue.c:74・75）で、VF2 の vmunix と p009 の host 試験の compile が失敗する。直し方は次のどれか:
+  - `render-private.h` の 2 つの大きさを 2 倍（USC 0x20000、PDS 0x4000）にする。session の program の heap の中の place も合わせる。
+  - `QUEUE_USC_ROOM` を 0x200 にする（kernel の program が 512 byte に収まるなら）。
+  - kernel を 64 ずつの複数の submission に分ける。
+
+| 確認 | 結果 |
+| --- | --- |
+| compiler の host（p010-compiler） | 452 passed、0 failed（全部の shader で hazard 0）、group 20/0 |
+| p008 の host | encode 94/0、compute 76/0 |
+| p009 の host・VF2 の vmunix | **失敗**。main の vk-queue.c の `_Static_assert`（上）が原因で、この Queue の変更とは無関係 |
+
+- 片付け（Q1 に依頼）: `build/p030/`。
