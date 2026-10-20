@@ -151,4 +151,8 @@ void powervr_switch_task_words(const struct powervr_switch_programs *programs, s
 /* Builds the register value of a VDM or TA context state base from its address. */
 uint64_t powervr_switch_base_word(uint64_t address);
 
+/* The compute command's resume control word, its word in the command, for a context with the switch's state. */
+#define POWERVR_COMPUTE_RESUME_PDS1_WORD	15U
+uint32_t powervr_compute_resume_pds1(uint32_t common_bytes);
+
 #endif

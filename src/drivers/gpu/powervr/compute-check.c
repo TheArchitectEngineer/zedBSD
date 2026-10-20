@@ -39,6 +39,7 @@
 #include <uapi/errno.h>
 
 #include "drivers/gpu/powervr/render-private.h"
+#include "drivers/gpu/powervr/render-sr-program.h"
 #include "drivers/gpu/powervr/interface.h"
 #include "drivers/gpu/powervr/compute-program.h"
 
@@ -628,6 +629,8 @@ kick(
 
 	/* The command names the kick's stream and the shared resume area. */
 	powervr_compute_command(stream_address + STREAM_FIRST + (uint64_t)kick_index * STREAM_SPACING, stream_address, command);
+	if (POWERVR_COMPUTE_SWITCH_STATE)
+		command[POWERVR_COMPUTE_RESUME_PDS1_WORD] = powervr_compute_resume_pds1(0);
 
 	/* Sends it with the next timeline value. */
 	mutex_lock(&state->render->core->lock);

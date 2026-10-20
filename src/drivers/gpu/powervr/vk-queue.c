@@ -37,6 +37,7 @@
 #include <uapi/gpu-op.h>
 
 #include "drivers/gpu/powervr/render-private.h"
+#include "drivers/gpu/powervr/render-sr-program.h"
 #include "drivers/gpu/powervr/interface.h"
 #include "drivers/gpu/powervr/compute-program.h"
 #include "drivers/gpu/powervr/render-job.h"
@@ -1057,6 +1058,8 @@ run(
 	render = owner->render;
 	stream = build->executor->stream->address;
 	powervr_compute_command(stream + QUEUE_STREAM_FIRST, stream, command);
+	if (POWERVR_COMPUTE_SWITCH_STATE)
+		command[POWERVR_COMPUTE_RESUME_PDS1_WORD] = powervr_compute_resume_pds1(0);
 
 	/* Sends it with the next timeline value. */
 	mutex_lock(&render->core->lock);
