@@ -57,7 +57,8 @@ enum {
 	KIND_END,
 	KIND_TEST_ZERO,
 	KIND_CONDITION,
-	KIND_BRANCH
+	KIND_BRANCH,
+	KIND_NOP
 };
 
 static float as_float(uint32_t word);
@@ -309,6 +310,7 @@ machine_run_program(
 				}
 				break;
 			case KIND_WAIT:
+			case KIND_NOP:
 				break;
 			case KIND_ITERATE:
 				write_register(run, operation->destination[0], lane, run->iterate_word(lane, operation->immediate, 0));

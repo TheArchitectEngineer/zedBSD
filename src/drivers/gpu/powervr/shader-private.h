@@ -182,8 +182,17 @@ enum machine_kind {
 	MACHINE_END,
 	MACHINE_TEST_ZERO,
 	MACHINE_CONDITION,
-	MACHINE_BRANCH
+	MACHINE_BRANCH,
+	MACHINE_NOP
 };
+
+/*
+ * The groups that must lie between a group that reads a temporary and
+ * one that writes it: on the board a multiply-add's addend overwritten
+ * by the very next group was read with its new value in half the lanes,
+ * and two groups between were enough (2026-10-20).
+ */
+#define SHADER_HAZARD_GAP	2U
 
 /* The back end's state for one shader. */
 struct shader_backend {
@@ -212,5 +221,7 @@ struct powervr_shader_workspace {
 int shader_backend_build(const struct powervr_ir_shader *shader, struct powervr_shader_program *program, struct shader_backend *backend);
 int shader_backend_group(const struct shader_machine_operation *operation, int32_t offset, struct powervr_usc_group *group);
 int shader_backend_encode(struct shader_backend *backend, uint8_t *code, size_t room, size_t *length);
+int shader_backend_space_hazards(struct shader_backend *backend);
+unsigned shader_backend_hazards(const struct shader_backend *backend);
 
 #endif /* KERN_DRIVERS_GPU_POWERVR_SHADER_PRIVATE_H */

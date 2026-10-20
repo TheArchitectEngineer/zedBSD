@@ -336,6 +336,10 @@ machine_compare(
 		return;
 	}
 
+	/* No group writes a temporary one of the two groups before it reads (SHADER_HAZARD_GAP). */
+	snprintf(label, sizeof(label), "%s has no read-then-write hazard (%u)", name, shader_backend_hazards(&workspace->backend));
+	check(shader_backend_hazards(&workspace->backend) == 0, label);
+
 	/* Runs the machine form with the same inputs. */
 	memset(machine, 0, sizeof(*machine));
 	pixels_prepare(machine->pixels);
@@ -1024,6 +1028,48 @@ test_vkstage(void)
 	current_key = NULL;
 }
 
+/*
+ * The spacing of a write after a read: a multiply-add reading r9, then
+ * an immediate writing r9, a branch over them to the second; two
+ * no-operations go between, the branch's target moves with the write.
+ */
+static void
+test_hazard_spacing(void)
+{
+	static struct shader_backend backend;
+	struct shader_machine_operation *operation;
+	unsigned index;
+	int error;
+
+	memset(&backend, 0, sizeof(backend));
+	backend.operation_count = 3;
+	for (index = 0; index < 3; index++) {
+		operation = &backend.operations[index];
+		operation->destination[0].bank = 0xff;
+		operation->destination[1].bank = 0xff;
+		operation->source[0].bank = 0xff;
+		operation->source[1].bank = 0xff;
+		operation->source[2].bank = 0xff;
+		operation->source[3].bank = 0xff;
+	}
+	backend.operations[0].kind = MACHINE_BRANCH;
+	backend.operations[0].target = 2;
+	backend.operations[1].kind = MACHINE_INTEGER;
+	backend.operations[1].destination[0].bank = POWERVR_USC_BANK_TEMPORARY;
+	backend.operations[1].destination[0].index = 20;
+	backend.operations[1].source[2].bank = POWERVR_USC_BANK_TEMPORARY;
+	backend.operations[1].source[2].index = 9;
+	backend.operations[2].kind = MACHINE_IMMEDIATE;
+	backend.operations[2].destination[0].bank = POWERVR_USC_BANK_TEMPORARY;
+	backend.operations[2].destination[0].index = 9;
+	check(shader_backend_hazards(&backend) == 1, "a write right after the read is a hazard");
+	error = shader_backend_space_hazards(&backend);
+	check(error == 0 && backend.operation_count == 5, "two no-operations go between");
+	check(backend.operations[2].kind == MACHINE_NOP && backend.operations[3].kind == MACHINE_NOP && backend.operations[4].kind == MACHINE_IMMEDIATE, "the no-operations, then the write");
+	check(backend.operations[0].target == 2, "the branch to the write lands on the first no-operation");
+	check(shader_backend_hazards(&backend) == 0, "no hazard once spaced");
+}
+
 int
 main(
 	int argc,
@@ -1051,6 +1097,7 @@ main(
 		return 2;
 
 	/* vkcompute and p009's fills. */
+	test_hazard_spacing();
 	test_fill(vkcompute_fill_shader, sizeof(vkcompute_fill_shader) / 4U, "vkcompute fill", 3, 7, 0);
 	words = load_file(argv[1], "p009-fill.spv", &count);
 	if (words != NULL) {
