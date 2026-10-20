@@ -330,3 +330,29 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
   - kernel が OK、または fault 無しで正しい word が増えるなら、運ぶ register が壊れていた（重なり）。
   - まだ fault が出るなら、その address を報告してほしい。instance の offset（r8）か base の対（r10・r11）が壊れている。
 - 片付け（Q1 に依頼）: `build/p020/`。
+
+## q1438-i01（P2、2026-10-20）: 同じ fault の address、temporaries の field を広く
+
+- 板の 5 回目（vf2-dmesg34）: kernel は 9752/16384（1648 から増えた）。`fault 0x80007c4000` は前回と同じ address。
+- どの kick の fault か:
+  - log の順は「kernel: FAILED 9752」→ reset の notice → `compute: fail(fault …)` → temporaries は NOT RUN。kernel の kick は fault 無しで終わり、次の temporaries の kick（fields four）が fault した。
+  - temporaries の program は前回と変わっていない。同じ program なら壊れ方も同じなので、fault の address も同じになる。store の program を変えても address が変わらないことと合う。
+  - run の buffer（0x8000001000〜0x8000201000）の外の固定の場所を、壊れた address の対で書いている。
+- 見込み: 1 つの instance の temporaries が足りず、隣の instance の register と重なっている。field の単位の思い違い（Mesa の DOUTU は 4 register 単位）か、CDM の側の割り当てか。これで次のことを説明できる:
+  - field を広げるほど正しい word が増えた（store の field は 4 → 8 で、1648 → 9752）。
+  - 8 temporaries の temps の program は field 2（four）でも 4（two）でも壊れ、今回は fault した。
+  - IMADD の後に dst 以外（r1）が壊れて見えた。
+- 直し（`compute-check.c`）:
+  - store・probe・新しい temps の kick の field を、広い 16（`CHECK_WIDE_FIELD`）に固定した。単位が 1 でも 4 でも、instance あたり 16 register 以上になる。
+  - temps の program を広い field で流す kick（`KICK_TEMPS_WIDE`）を足し、`powervr: compute temporaries: wide field N/32 wrong (e)` を出す。
+  - 順を「kernel → probes → wide の temps → four と two の temps」にした。fault しうる kick を最後に回し、probes が読めるようにするため。
+- 板の読み方:
+  - kernel が OK で wide の temps が 0/32 なら、原因は field の幅。正しい単位を four・two の結果から決めて、vk の compute（`vk-queue.c` の task word の temps）にも当てる。
+  - wide でもまだ壊れるなら、CDM の KERNEL0 の `usc_unified_size`（Mesa は vtxins だけ）か、instance の割り当ての別の原因を見る。
+
+| 確認 | 結果 |
+| --- | --- |
+| p008 の host | encode 94/0、compute 72/0 |
+| VF2 の vmunix（`plan/ws269/tests/p008/config-visionfive2-compute.mk`、`build/p021/vf2/vmunix`） | rc 0、warning 0 |
+
+- 片付け（Q1 に依頼）: `build/p021/`。

@@ -106,6 +106,19 @@
 #define KICK_STEPS_ONE		(KICK_PROBE_FIRST + POWERVR_COMPUTE_PROBES)
 #define KICK_STEPS_FOUR		(KICK_STEPS_ONE + 1U)
 
+/* The temporaries program issued with the wide field, after the short store kicks. */
+#define KICK_TEMPS_WIDE		(KICK_STEPS_FOUR + 1U)
+
+/*
+ * The temporaries field the store, probe and wide temporaries kicks
+ * give: 16 in the field, at least 16 registers an instance whatever the
+ * unit the task issue counts in.  The board's checks wrote fewer words
+ * the smaller the field was, and a program of eight temporaries faulted
+ * with the fields of four and two, as if neighbouring instances shared
+ * registers.
+ */
+#define CHECK_WIDE_FIELD	16U
+
 /*
  * Where in the run the probes write: each probe's 32 words 256 bytes
  * apart after the temporaries program's, and the two short store
@@ -217,6 +230,8 @@ powervr_compute_check(
 	unsigned written;
 	unsigned four_wrong;
 	unsigned two_wrong;
+	unsigned wide_wrong;
+	int wide_error;
 	int four_error;
 	int two_error;
 	int error;
@@ -254,6 +269,18 @@ powervr_compute_check(
 	if (error == 0 && written == CHECK_WORDS)
 		run_coherency(&state);
 
+	/* The probes of the integer path and the short stores, before any kick that may fault. */
+	run_probes(&state);
+
+	/* The temporaries program with the wide field first: it must always work. */
+	wide_wrong = 0;
+	wide_error = run_temps(&state, KICK_TEMPS_WIDE, &wide_wrong);
+	kern_logf("powervr: compute temporaries: wide field %u/%u wrong (%d)\n", wide_wrong, (unsigned)POWERVR_COMPUTE_INSTANCES, wide_error);
+	if (wide_error == ETIMEDOUT) {
+		kern_logf("powervr: compute check: stopped, its memory left to the core\n");
+		return;
+	}
+
 	/* The temporaries field, read both ways. */
 	four_wrong = 0;
 	two_wrong = 0;
@@ -266,9 +293,6 @@ powervr_compute_check(
 		kern_logf("powervr: compute check: stopped, its memory left to the core\n");
 		return;
 	}
-
-	/* The probes of the integer path and the short stores. */
-	run_probes(&state);
 
 	/* Unmaps and returns everything. */
 	teardown(&state);
@@ -523,17 +547,9 @@ write_programs(
 	if (error != 0)
 		return error;
 
-	/*
-	 * One kick per round, issuing the round's store program.  Its field
-	 * is counted in twos: if the core counts in fours, that only asks for
-	 * more temporaries than the program uses.
-	 */
-	error = powervr_compute_temporaries_field(POWERVR_COMPUTE_STORE_TEMPORARIES, 2, &field_two);
-	if (error != 0)
-		return error;
-
+	/* One kick per round, issuing the round's store program with the wide field. */
 	for (round = 0; round < CHECK_ROUNDS; round++) {
-		error = write_kick(state, round, round * USC_ROOM, POWERVR_COMPUTE_STORE_TEMPORARIES, field_two);
+		error = write_kick(state, round, round * USC_ROOM, POWERVR_COMPUTE_STORE_TEMPORARIES, CHECK_WIDE_FIELD);
 		if (error != 0)
 			return error;
 	}
@@ -552,6 +568,11 @@ write_programs(
 		return error;
 
 	error = write_kick(state, KICK_TEMPS_TWO, CHECK_ROUNDS * USC_ROOM, POWERVR_COMPUTE_TEMPS_TEMPORARIES, field_two);
+	if (error != 0)
+		return error;
+
+	/* And with the wide field: it must always work. */
+	error = write_kick(state, KICK_TEMPS_WIDE, CHECK_ROUNDS * USC_ROOM, POWERVR_COMPUTE_TEMPS_TEMPORARIES, CHECK_WIDE_FIELD);
 	if (error != 0)
 		return error;
 
@@ -652,10 +673,8 @@ write_probes(
 	unsigned kind;
 	int error;
 
-	/* The field of the probes' temporaries. */
-	error = powervr_compute_temporaries_field(POWERVR_COMPUTE_PROBE_TEMPORARIES, 2, &field);
-	if (error != 0)
-		return error;
+	/* The probes' field: the wide one. */
+	field = CHECK_WIDE_FIELD;
 
 	/* Each probe: its program in its place, and its kick. */
 	for (kind = 0; kind < POWERVR_COMPUTE_PROBES; kind++) {
@@ -669,9 +688,6 @@ write_probes(
 	}
 
 	/* The store program of one step and of four, each over its own window. */
-	error = powervr_compute_temporaries_field(POWERVR_COMPUTE_STORE_TEMPORARIES, 2, &field);
-	if (error != 0)
-		return error;
 
 	error = powervr_compute_store_program(run_address + STEPS_ONE_OFFSET, 1, code, USC_PROBE_SPACING, &length);
 	if (error != 0)
