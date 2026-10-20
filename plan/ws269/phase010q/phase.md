@@ -1073,3 +1073,35 @@ csbgen（Mesa 25.0.7 の `gen_pack_header.py` の `__pvr_address`: `((addr >> sh
   形は同じ。違うのは値（buffer の address と workgroup の数）と、workgroup の数が 1 か 128 か。fault 0x8000470010 は buffer 0x8000047000 の low word が 4 bit 左にずれた形（0x47000 → 0x470000、+0x10）で、128 workgroup の時だけ出るなら、gid の計算（cf からの wg id × 32 + lane）の値か、shared words の値のどちらかと見る。判別のため、dispatch の時に各 shared word を 1 行ずつ log する（`vk: dispatch: shared word N = 0x…`）ようにした。直す点は、板の log と生成された code を見てから決める。
 - p009 の executor の試験を 1 kernel の形（kernel 1 つ、workgroup の数 128、common 3、workgroup の PDS program、fence 無し）に直した。502/502 PASS。
 - 確認: RISC-V の self-test の build で warning 0。板は未実施。
+
+## q1475 / q1475-i01（2026-10-21）: DDK 1.19 の起動列との照合
+
+(a) `rgxstartstop.c` の RGXStart と我々の `firmware-boot.c` の start（XE、MIPS、PHYS_BUS_WIDTH 36、`rgxconfig_km_36.V.54.182.h` の feature で枝を選んだ）:
+
+| 順 | DDK | 我々 | 差 |
+| --- | --- | --- | --- |
+| 1 | SYS_BUS_SECURE_RESET の feature があれば SYS_BUS_SECURE に 0 を書き、読んで fence | 同じ（`secure`） | なし |
+| 2 | SOFT_RESET を ALL（S7_TOP は無い）に、読んで fence | ALL（PBE2_IN_XE の時は ALL_PBE2）、XE_TPU2 なら SOFT_RESET2 も | なし |
+| 3 | ALL から RASCALDUSTS を除く | 同じ（host の dust power の hack、`DUST_POWER_BY_HOST` は 0 で無効） | なし |
+| 4 | SOFT_RESET = GARTEN | 同じ | なし |
+| 5 | RGXEnableClocks: 何も書かない（自動の clock gating） | 書かない（register_check は読むだけで、試験の書き込みは元に戻す） | なし |
+| 6 | __RGXInitSLC: SLC_CTRL_BYPASS は 8 KB の SLC か BRN 61450 の時だけ（この core は 16 KB で該当しない）。SLC_CTRL_MISC の下位 32 bit = HASH1、PSG の hazard の bit は残し、line が 1024 bit 未満なら BYPASS_BURST_COMBINER | `init_cache` で同じ | なし |
+| 7 | ECC_RAMS の feature が無いので SAFETY_EVENT_ENABLE は書かない | 書かない | なし |
+| 8 | RGXInitMipsProcWrapper: WRAPPER_CONFIG（bus 36 bit > 32 なので `REGISTERS_VIRTUAL_BASE >> align`、microMIPS）、REMAP1（boot）、BRN 63553 の REMAP5、REMAP2（data）、REMAP3（code）、bus 32 bit の時だけ REMAP4、GARTEN_WRAPPER = IDLE_CTRL_META、MIPS_DEBUG_CONFIG 0 | `init_wrapper` で同じ | なし。読み返しの 0x1CF80 は DDK と同じ値 |
+| 9 | AXI_ACE_LITE の feature があるので CONFIGURATION を書く（3/3/2/2/2/2/2/2。BRN 42321・68186 はこの core に無い） | 同じ値。順も wrapper の後 | なし |
+| 10 | RGXInitBIF: MIPS の feature があれば何もしない（MMU_CBASE_MAPPING は META・RISC-V の時だけ） | 書かない（mainline も MIPS では bif init を飛ばす） | なし |
+| 11 | 32 cycle の wait → SOFT_RESET 0 → wait | usleep → 0 → usleep | なし |
+
+- EVENT_CLEAR・EVENT_ENABLE・MTS・CLK_CTRL を host が書く所は、DDK の起動には無い（rgxinit.c の SAFETY の clear だけで、この core に SAFETY は無い）。EVENT_STATUS の bit 4（ISP_END_MACROTILE）が立ったままなのは、host の起動列の差では説明できない。
+
+(b) sf_7110 の sysconfig と vf2-gpu.c:
+- `u0_img_gpu_enable` の順: clk_apb、clk_rtc、core の分周（rate）、clk_core、clk_sys、rst_apb の解除、rst_doma の解除。その前の runtime resume で、PMU の turn-off mask 0 と clk_axi。
+- vf2-gpu.c も同じ順。違いは rate だけ（DDK は既定 594 MHz で、`opp-1250000000` がある時だけ 396 MHz。我々は 396 MHz）。syscon への特別な書き込みは DDK に無い。
+- DDK は bEnableActivePM・bEnableRDPowIsland を TRUE、ActivePMLatency を 100 ms にする。我々と mainline は APM の latency 0（persistent）。
+
+(c) firmware に渡す config（我々の firmware は mainline の ABI なので、mainline の pvr_fw.c と比べた）:
+- sysinit: fault page・PDS/USC の exec base・runtime・trace・sysdata・util の cb・初期 clock・marker 1・started 0 を mainline と同じに設定している。mainline は filter・HWPerf・align_checks・firmware_perf・APM・gpio を 0 にし、coremem は MIPS では無い。我々の 0 埋めと同じ。
+- runtime: clock、persistent 1、dust 数 = cluster 数、watchdog 0。mainline と同じ。
+- sysdata の flags: mainline は 0（SLC が 4 KB 以上）。我々は POW_RASCALDUST に加え、q1463 で CSW の MEDIUM の profile（0x20010）。
+- osdata の config: mainline は 0、我々は 0xF（q1463。DDK に合わせた）。osinit の hwr_debug_dump_limit は 0 で同じ。
+- 結論: TA の完了や fence に関係し得る差は、起動列・config の中には見つからなかった。残る差は、clock の rate（396 と 594）と、mainline からわざと変えた POW_RASCALDUST・CSW の flags だけ。コードは変えていない。
