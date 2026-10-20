@@ -157,7 +157,23 @@ test_colour(void)
 		}
 	}
 	check(ok, "clear colour rounding");
-	check(powervr_transfer_clear_colour(powervr_format_find(43), colour, packed) != 0, "sRGB clear refused for now");
+	/* Half-float packs (Mesa pvr_pack_clear_color, values from pvr_float_to_f16). */
+	colour[0] = 0x3F800000U;
+	colour[1] = 0x3F000000U;
+	colour[2] = 0;
+	colour[3] = 0x3F800000U;
+	check(powervr_transfer_clear_colour(powervr_format_find(43), colour, packed) == 0 &&
+	    packed[0] == 0x38003C00U && packed[1] == 0x3C000000U && packed[2] == 0, "sRGB clear as four halves");
+	check(powervr_transfer_clear_colour(powervr_format_find(97), colour, packed) == 0 &&
+	    packed[0] == 0x38003C00U && packed[1] == 0x3C000000U, "R16G16B16A16_SFLOAT clear as four halves");
+	check(powervr_transfer_clear_colour(powervr_format_find(9), colour, packed) == 0 &&
+	    packed[0] == 0x3C00U && packed[1] == 0, "R8_UNORM clear as one half");
+	check(powervr_transfer_clear_colour(powervr_format_find(16), colour, packed) == 0 &&
+	    packed[0] == 0x38003C00U && packed[1] == 0, "R8G8_UNORM clear as two halves");
+	check(powervr_transfer_clear_colour(powervr_format_find(100), colour, packed) == 0 &&
+	    packed[0] == 0x3F800000U && packed[1] == 0, "R32_SFLOAT clear as raw bits");
+	check(powervr_transfer_clear_colour(powervr_format_find(109), colour, packed) == 0 &&
+	    packed[1] == 0x3F000000U && packed[3] == 0x3F800000U, "R32G32B32A32_SFLOAT clear as raw bits");
 }
 
 static void
