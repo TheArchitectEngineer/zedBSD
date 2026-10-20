@@ -27,6 +27,9 @@ structures, constants, errors and permissions that programs and people use
 - [Vulkan Video decode](vulkan-video.md): H.264 decode on Intel Gen12's video
   engine through the Vulkan Video extensions, its limits, result status and
   differences from the specification.
+- [VisionFive 2 GPU](visionfive2-gpu.md): the PowerVR BXE-4-32's Vulkan
+  range, memory, firmware and licence, start-up stages and the test programs
+  gpu-selftest, vkmatrix and vkreset.
 
 ## System administration
 
