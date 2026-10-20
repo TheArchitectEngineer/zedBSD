@@ -1156,3 +1156,45 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
   3. required_gap は、結果側が L＋2、source 側が D＋2 で決める。
 
 - 片付け（Q1 に依頼）: `build/p2q1476/`、scratchpad の `timing.c`・`timingtest.c`・`timingtest`。
+
+## q1479-i01（P2、2026-10-21）: filler の種類ごとの timing の probe、compiled fill の filler×gap、store address の判定
+
+板 72（Q1 の読み）:
+- nop を N 個入れても、mov・add64・store の source は N＝3 でも新しい値を読んだ。
+- madd だけは N≥4 で古い値を読んだ（N＝0〜3 は lane 0 だけが古い）。
+- 結果の遅れは、どの op でも無かった。
+- compiled fill は gap 2 と gap 6（どちらも nop）で 0/32。
+- 疑い: nop の群は実行の時間を持たない。
+
+### 変更（compute-check.c）
+
+1. **timing の probe を filler の 4 種で流す**。
+   - filler: (a) `nop`（MACHINE_NOP）、(b) `wdf`（MACHINE_WAIT）、(c) `mov`（r30 ＝ r31、無関係な ALU）、(d) `madd`（r30 ＝ r31·r31＋r31）。
+   - r31 ＝ 1 を set-up で置く。temps は 32。
+   - N は 0〜5（TIMING_GAPS 6）。8 種の probe について、4 × 8 × 6 ＝ 192 kick。
+   - 行: `compute probes: <名前> after N <filler>: old MASK new MASK, lane 0 V lane 31 V (e, bytes)`。
+2. **kick ごとの tag**（(3) の修正）。各 kick の値（r2 ＝ 5、r22 ＝ 0x100、新しい値、0xabc）の上位 16 bit に、kick の番号を足した。
+   - 板 72 の `store address read` は N＝1〜3 で old と new が両方立った。これは、前の kick（N＝0、別の場所に書いた）が残した 0x100 が、cache から遅れて書き戻された物と読んだ（CPU が書いた filler の後に現れた）。
+   - tag があれば、前の kick の値はどちらにも数えない。
+3. **compiled fill を filler 2 種（nop、wdf）× gap 3 種（2、4、6）の 6 回**、同じ起動で流す。
+   - 行: `compiled fill with multiply-add source gap N, nop|wdf fillers`。
+   - dump の prefix は最初（nop・gap 2）だけで流す（`run_compiled_fill(state, dumps)`）。
+   - 終わったら既定（nop、2）に戻す。
+   - ALU の filler（mov・madd）を compiler に入れるのは、timing の結果で効くと分かってからにする。scratch の register の予約と field の拡大が要るため。
+
+### required_gap と filler の決め方（次の板の表から）
+
+| 見る行 | 読み方 |
+| --- | --- |
+| `<op> source read after N <filler>` | new が消える（全 lane が old になる）最小の N を、filler ごとに見る。その filler で、その op の source を守るのに要る数 |
+| `<op> result written after N <filler>` | old が出る N があれば結果が遅い。無ければ、結果の読みは間隔なしでよい |
+| filler の比較 | N が小さい filler ほど時間を稼ぐ。nop で new が消えないなら nop は数えない |
+| `compiled fill with gap N, <filler>` | 32/32 になった組み合わせを compiler の既定（`shader_filler_kind`・`shader_integer_source_gap`）にする |
+
+| 確認 | 結果 |
+| --- | --- |
+| timing の program を host の simulator で（使い捨て。kernel の `timing_build`・`timing_expected` をそのまま host で compile） | 192 通りすべて encode 0・期待どおり（source は全 old、result は全 new、store address は自分の語） |
+| VF2 の vmunix（`build/p2q1479/vf2/vmunix`） | rc 0、warning 0 |
+| 板 | 未実施 |
+
+- 片付け（Q1 に依頼）: `build/p2q1479/`、scratchpad の `timingtest.c`・`timingtest`。
