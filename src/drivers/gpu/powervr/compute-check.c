@@ -61,8 +61,6 @@
  * streams and the resume area, and of the data sequencer and shading
  * cluster programs, each in its heap with room before it.
  */
-#define PDS_OFFSET		0x10000U
-#define USC_OFFSET		0x10000U
 
 /* The stream buffer: the resume area first, then one stream per kick. */
 #define STREAM_BYTES		0x10000U
@@ -118,6 +116,10 @@ enum control_result {
 static uint64_t run_address;
 static uint64_t stream_address;
 
+/* Where the programs are mapped, as offsets in their heaps: places the session's program heaps hand out. */
+static uint32_t pds_offset;
+static uint32_t usc_offset;
+
 struct check_state {
 	struct powervr_render *render;
 	struct powervr_session *session;
@@ -142,6 +144,7 @@ struct check_counts {
 static int setup(struct check_state *state, const char **step);
 static void teardown(struct check_state *state);
 static int take_buffer(struct check_state *state, uint64_t bytes, uint64_t address, struct powervr_buffer **result);
+static int take_program(struct check_state *state, uint64_t bytes, enum powervr_program_heap heap, struct powervr_buffer **result, uint32_t *offset);
 static int write_programs(struct check_state *state);
 static int write_kick(struct check_state *state, unsigned kick, unsigned usc_program, unsigned temporaries, unsigned field);
 static void put_bytes(struct powervr_buffer *buffer, uint32_t offset, const uint8_t *bytes, size_t length);
@@ -277,14 +280,16 @@ setup(
 		return error;
 
 	*step = "memory: data sequencer programs";
-	error = take_buffer(state, PDS_BYTES, POWERVR_PDS_HEAP_BASE + PDS_OFFSET, &state->pds);
+	error = take_program(state, PDS_BYTES, POWERVR_PROGRAM_PDS, &state->pds, &pds_offset);
 	if (error != 0)
 		return error;
+	state->mapped |= MAPPED_PDS;
 
 	*step = "memory: shading cluster programs";
-	error = take_buffer(state, USC_BYTES, POWERVR_USC_HEAP_BASE + USC_OFFSET, &state->usc);
+	error = take_program(state, USC_BYTES, POWERVR_PROGRAM_USC, &state->usc, &usc_offset);
 	if (error != 0)
 		return error;
+	state->mapped |= MAPPED_USC;
 
 	/* Has the core drop stale table entries before it walks the new ones. */
 	*step = "mmu";
@@ -313,18 +318,20 @@ teardown(
 {
 	struct powervr_render *render;
 
-	/* Removes the mappings the check made. */
+	/* Removes the programs' mappings; each unmap takes the lock and flushes. */
 	render = state->render;
+	if ((state->mapped & MAPPED_PDS) != 0)
+		powervr_session_program_unmap(state->session, POWERVR_PROGRAM_PDS, state->pds, POWERVR_PDS_HEAP_BASE + pds_offset);
+	if ((state->mapped & MAPPED_USC) != 0)
+		powervr_session_program_unmap(state->session, POWERVR_PROGRAM_USC, state->usc, POWERVR_USC_HEAP_BASE + usc_offset);
+
+	/* Removes the mappings the check made. */
 	mutex_lock(&render->core->lock);
 
 	if ((state->mapped & MAPPED_RUN) != 0)
 		powervr_gpu_mmu_unmap(&state->session->mmu, run_address, state->run->run.size);
 	if ((state->mapped & MAPPED_STREAMS) != 0)
 		powervr_gpu_mmu_unmap(&state->session->mmu, stream_address, state->streams->run.size);
-	if ((state->mapped & MAPPED_PDS) != 0)
-		powervr_gpu_mmu_unmap(&state->session->mmu, POWERVR_PDS_HEAP_BASE + PDS_OFFSET, state->pds->run.size);
-	if ((state->mapped & MAPPED_USC) != 0)
-		powervr_gpu_mmu_unmap(&state->session->mmu, POWERVR_USC_HEAP_BASE + USC_OFFSET, state->usc->run.size);
 	if (state->mapped != 0)
 		(void)powervr_command_mmu_flush(render->core);
 	if ((state->placed & MAPPED_RUN) != 0)
@@ -393,12 +400,8 @@ take_buffer(
 	/* Notes the mapping by the buffer's place, so teardown removes it. */
 	if (address == run_address) {
 		state->mapped |= MAPPED_RUN;
-	} else if (address == stream_address) {
-		state->mapped |= MAPPED_STREAMS;
-	} else if (address == POWERVR_PDS_HEAP_BASE + PDS_OFFSET) {
-		state->mapped |= MAPPED_PDS;
 	} else {
-		state->mapped |= MAPPED_USC;
+		state->mapped |= MAPPED_STREAMS;
 	}
 
 	/* Succeeded: the buffer is mapped. */
@@ -519,7 +522,7 @@ write_kick(
 	int error;
 
 	/* The program issuing the shading cluster program, in the kick's slot. */
-	error = powervr_compute_kick_program(USC_OFFSET + (uint64_t)usc_program * USC_ROOM, field, data, code, &count);
+	error = powervr_compute_kick_program(usc_offset + (uint64_t)usc_program * USC_ROOM, field, data, code, &count);
 	if (error != 0)
 		return error;
 
@@ -531,8 +534,8 @@ write_kick(
 
 	/* The kernel: one workgroup of a whole task, on any cluster, no shared registers. */
 	kern_memset(&kernel, 0, sizeof(kernel));
-	kernel.data_offset = PDS_OFFSET + slot;
-	kernel.code_offset = PDS_OFFSET + slot + PDS_CODE;
+	kernel.data_offset = pds_offset + slot;
+	kernel.code_offset = pds_offset + slot + PDS_CODE;
 	kernel.data_words = POWERVR_COMPUTE_PDS_DATA_WORDS;
 	kernel.pds_temporaries = PDS_INPUT_TEMPORARIES;
 	kernel.usc_temporaries = temporaries;
@@ -549,8 +552,8 @@ write_kick(
 
 	/* The fence kernel: it waits for the work and frees the shared registers. */
 	kern_memset(&kernel, 0, sizeof(kernel));
-	kernel.data_offset = PDS_OFFSET + PDS_FENCE * PDS_SLOT;
-	kernel.code_offset = PDS_OFFSET + PDS_FENCE * PDS_SLOT + PDS_CODE;
+	kernel.data_offset = pds_offset + PDS_FENCE * PDS_SLOT;
+	kernel.code_offset = pds_offset + PDS_FENCE * PDS_SLOT + PDS_CODE;
 	kernel.data_words = POWERVR_COMPUTE_PDS_DATA_WORDS;
 	kernel.instances = 1;
 	kernel.max_instances = FENCE_INSTANCES;
@@ -941,4 +944,37 @@ load_cached(
 	for (word = 0; word < count; word++)
 		sum += words[word];
 	(void)sum;
+}
+
+/* Takes a zeroed buffer for programs and maps it where the session's program heap places it; reports its offset in the heap. */
+static int
+take_program(
+	struct check_state *state,
+	uint64_t bytes,
+	enum powervr_program_heap heap,
+	struct powervr_buffer **result,
+	uint32_t *offset)
+{
+	struct powervr_buffer *buffer;
+	uint64_t address;
+	uint64_t base;
+	int error;
+
+	/* The buffer. */
+	error = powervr_buffer_create(state->render, bytes, &buffer);
+	if (error != 0)
+		return error;
+
+	/* Its place in the heap. */
+	error = powervr_session_program_map(state->session, heap, buffer, &address);
+	if (error != 0) {
+		powervr_buffer_put(state->render, buffer);
+		return error;
+	}
+
+	/* Succeeded: the buffer and its offset from the heap's base. */
+	base = heap == POWERVR_PROGRAM_PDS ? POWERVR_PDS_HEAP_BASE : POWERVR_USC_HEAP_BASE;
+	*offset = (uint32_t)(address - base);
+	*result = buffer;
+	return 0;
 }

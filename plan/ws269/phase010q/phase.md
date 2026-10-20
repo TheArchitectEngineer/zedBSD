@@ -327,3 +327,17 @@ mainline と照らした結果（v7.3 の `pvr_ccb.c`・`pvr_fw.c`・`pvr_rogue_
 - run・stream の位置を session の `powervr_gpu_space_take` で取るようにし、teardown で返す。PDS・USC は固定のまま。step の名前を `memory: run`・`streams`・`data sequencer programs`・`shading cluster programs` に分け、まだ重なればどれかが行に出る。
 
 確かめ: VF2 の vmunix は warning 0、p010 は 0 failed。実機は未。TA の reset lockup は別の件で、この直しの範囲外（次の dmesg を見て）。
+
+## q1409-i01（P1、2026-10-20）: return slot の行き先の探索、compute の program の位置、TA の lockup の dump
+
+板（2b996406e）: health check は 9 ms で done。slot 1（MMU の flush）の return も見えず、fallback で executed count 130 を見て通過。compute は `memory: shading cluster programs (16)`。render check は `ta: fail(reset lockup)`。
+
+- (a) `powervr_firmware_return_probe`（`firmware-boot.c`）: fallback が初めて働いた時に一度だけ出す。
+  - return slot の FW の address と heap の位置、MIPS の page table の entry とそれが指す物理の page、host の page と alias。
+  - slot 0〜7 を alias と cached の view（invalidate の後）で読んだ値。
+  - heap の有効な全部の page で、slot の位置の word が 1 の page（最大 8）。
+  - entry の指す page と host の page が違うか、別の page に 1 があるかで、FW が書いた先が分かる。
+  - executed count は FW が実行した KCCB の command の総数。`kccb_sent` は送った数（boot ごとに 0 から、最初の command が 1）。130 は、coherency の検査が送った MMU cache の command を含む数。
+- (b) `compute-check.c`: PDS・USC の program を、固定の offset ではなく session の program の heap（`powervr_session_program_map`）から取るようにした。teardown で `powervr_session_program_unmap`。
+- (c) render check の fence の失敗の時に `powervr_firmware_dump`（slot 無し、trace の最後の 128 word）を出す。`render-queue.c` の context reset の通知（105）で、data の 40 byte を hex で 1 行出す。
+- 確かめ: VF2 の vmunix は warning 0、p010 は 0 failed。実機は未。

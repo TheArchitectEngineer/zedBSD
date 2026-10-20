@@ -170,6 +170,8 @@ int powervr_command_send(struct powervr_core *core, const uint32_t command[POWER
 /* Waits, bounded, for the command in a slot to be executed, and reports its answer. */
 int powervr_command_wait(struct powervr_core *core, uint32_t slot, unsigned milliseconds, uint32_t *answer);
 int powervr_command_wait_executed(struct powervr_core *core, uint32_t slot, unsigned milliseconds);
+void powervr_firmware_dump(struct powervr_core *core, uint32_t slot);
+void powervr_firmware_return_probe(struct powervr_core *core, uint32_t slot);
 
 /* Sends one command and waits, bounded, for its answer. */
 int powervr_command_run(struct powervr_core *core, const uint32_t command[POWERVR_COMMAND_WORDS], unsigned milliseconds, uint32_t *answer);
