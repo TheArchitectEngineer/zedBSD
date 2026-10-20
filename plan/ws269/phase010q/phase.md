@@ -327,3 +327,28 @@ mainline と照らした結果（v7.3 の `pvr_ccb.c`・`pvr_fw.c`・`pvr_rogue_
 - run・stream の位置を session の `powervr_gpu_space_take` で取るようにし、teardown で返す。PDS・USC は固定のまま。step の名前を `memory: run`・`streams`・`data sequencer programs`・`shading cluster programs` に分け、まだ重なればどれかが行に出る。
 
 確かめ: VF2 の vmunix は warning 0、p010 は 0 failed。実機は未。TA の reset lockup は別の件で、この直しの範囲外（次の dmesg を見て）。
+
+## q1409-i01（P1、2026-10-20）: return slot の行き先の探索、compute の program の位置、TA の lockup の dump
+
+板（2b996406e）: health check は 9 ms で done。slot 1（MMU の flush）の return も見えず、fallback で executed count 130 を見て通過。compute は `memory: shading cluster programs (16)`。render check は `ta: fail(reset lockup)`。
+
+- (a) `powervr_firmware_return_probe`（`firmware-boot.c`）: fallback が初めて働いた時に一度だけ出す。
+  - return slot の FW の address と heap の位置、MIPS の page table の entry とそれが指す物理の page、host の page と alias。
+  - slot 0〜7 を alias と cached の view（invalidate の後）で読んだ値。
+  - heap の有効な全部の page で、slot の位置の word が 1 の page（最大 8）。
+  - entry の指す page と host の page が違うか、別の page に 1 があるかで、FW が書いた先が分かる。
+  - executed count は FW が実行した KCCB の command の総数。`kccb_sent` は送った数（boot ごとに 0 から、最初の command が 1）。130 は、coherency の検査が送った MMU cache の command を含む数。
+- (b) `compute-check.c`: PDS・USC の program を、固定の offset ではなく session の program の heap（`powervr_session_program_map`）から取るようにした。teardown で `powervr_session_program_unmap`。
+- (c) render check の fence の失敗の時に `powervr_firmware_dump`（slot 無し、trace の最後の 128 word）を出す。`render-queue.c` の context reset の通知（105）で、data の 40 byte を hex で 1 行出す。
+- 確かめ: VF2 の vmunix は warning 0、p010 は 0 failed。実機は未。
+
+### q1409-i01 の追加（ユーザーの仮説、2026-10-20「CPUの窓がHALのAPIでcachedなとcoherent属性がおかしいのでは」）
+
+- 130 の数: KCCB は 128 slot なので、slot 1 は 130 番目の command（coherency の検査が送った MMU cache の command の後で一周した物）。期待の数 130 と FW の kccb_cmds_executed 130（mainline の `rogue_fwif_osdata` の offset 568 で一致）が合っており、fallback の判定は正しい。実行の前の command を executed にした誤りではない。
+- 窓: VF2 の alias は TRM の Table 2-4 の system port（DDR を 0x04_4000_0000 で、memory port の 0x00_4000_0000 から +0x4_0000_0000）。同じ窓で、FW の read offset・executed count・coherency の検査の書き込み（missing 0）は見えているので、窓の全部が cached とは考えにくい。違いは、CPU が kick の直前に書く word（return slot の NONE）だけ。
+- 直し（仮説の確かめを兼ねる、`commands.c`）:
+  - return slot を kick の直前に NONE にするのをやめた。答えを読んだ直後（`powervr_command_wait` と `powervr_command_wait_executed` の成功の時）に NONE に戻す。
+  - send の時は、slot がまだ NONE でない時だけ NONE を書き、`kern_io_barrier` の後で読み戻す。
+  - CPU の遅れた store が FW の答えを上書きしていたのなら、fallback の行と probe が出なくなる。
+- HAL の実装・hal.h は変えていない。窓の leaf の属性と U74 の PMA は、この板の結果を見てから（probe の行が alias と cached の値の違いを出す）。
+- 確かめ: VF2 の vmunix は warning 0、p010 は 0 failed。

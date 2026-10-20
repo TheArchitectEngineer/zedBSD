@@ -24,6 +24,7 @@
 #include <stdint.h>
 
 #include <kern/clock.h>
+#include <kern/dcache.h>
 #include <kern/device-io.h>
 #include <kern/irq.h>
 #include <kern/kcrt.h>
@@ -110,7 +111,6 @@ static void tear_down(struct powervr_core *core, enum late_stage reached);
 static void free_blocks(struct powervr_core *core);
 static void free_file(struct powervr_core *core);
 static uint64_t ms_deadline(unsigned milliseconds);
-static void firmware_dump(struct powervr_core *core, uint32_t slot);
 static void step_start(const char *name);
 static void step_done(const char *name, int error);
 static void watch_thread(void *argument);
@@ -139,10 +139,26 @@ static void watch_thread(void *argument);
 #define DUMP_ASSERT_INFO		224U
 #define DUMP_ASSERT_LINE		424U
 #define DUMP_ASSERT_TEXT		200U
-#define DUMP_TRACE_LAST_WORDS		48U
+#define DUMP_TRACE_LAST_WORDS		128U
 #define DUMP_OS_DATA_INTERRUPTS		560U
 #define DUMP_SYSTEM_DATA_POWER		8U
 #define DUMP_SYSTEM_INIT_STARTED_TIME	360U
+
+/*
+ * The processor's page table entry, read back for the probe: the frame
+ * field over a wide bus and its shift, the valid bit, and how many pages
+ * the probe names at most.
+ *
+ * Values referenced:
+ * Linux v7.3 drivers/gpu/drm/imagination/pvr_rogue_mips.h
+ * (ROGUE_MIPSFW_ENTRYLO_PFN_SHIFT 6, ROGUE_MIPSFW_ENTRYLO_PFN_MASK_ABOVE_32BIT
+ * 0x3FFFFFC0, ROGUE_MIPSFW_ENTRYLO_VALID_EN 0x2, the 4 KiB page).
+ */
+#define PROBE_FRAME_MASK		0x3fffffc0U
+#define PROBE_FRAME_SHIFT		6U
+#define PROBE_PAGE_SHIFT		12U
+#define PROBE_ENTRY_VALID		0x2U
+#define PROBE_FOUND_MAX			8U
 
 /*
  * The step the later stage is in, for its log lines and for the thread
@@ -1184,7 +1200,7 @@ health_check(
 	if (error != 0) {
 		answer = powervr_object_get32(&core->firmware.kccb_returns, slot * 4U);
 		kern_logf("powervr: firmware: health check timed out waiting for the executed count (%d, return 0x%x)\n", error, (unsigned)answer);
-		firmware_dump(core, slot);
+		powervr_firmware_dump(core, slot);
 		return error;
 	}
 
@@ -1458,8 +1474,8 @@ watch_thread(
  * firmware's own counts and power state, an assertion it left, and the
  * last words of its trace.
  */
-static void
-firmware_dump(
+void
+powervr_firmware_dump(
 	struct powervr_core *core,
 	uint32_t slot)
 {
@@ -1483,8 +1499,9 @@ firmware_dump(
 		  (unsigned)powervr_object_get32(&firmware->fwccb_control, POWERVR_CCB_WRITE),
 		  (unsigned)powervr_object_get32(&firmware->fwccb_control, POWERVR_CCB_READ));
 
-	/* The command in its slot and its return slot. */
-	kern_logf("powervr: dump: slot %u at 0x%x: 0x%x 0x%x 0x%x 0x%x; return at 0x%x: 0x%x\n",
+	/* The command in its slot and its return slot, when one is named. */
+	if (slot < POWERVR_KERNEL_CCB_SLOTS)
+		kern_logf("powervr: dump: slot %u at 0x%x: 0x%x 0x%x 0x%x 0x%x; return at 0x%x: 0x%x\n",
 		  (unsigned)slot,
 		  (unsigned)powervr_object_address(&firmware->kccb, slot * POWERVR_COMMAND_BYTES),
 		  (unsigned)powervr_object_get32(&firmware->kccb, slot * POWERVR_COMMAND_BYTES),
@@ -1564,4 +1581,84 @@ firmware_dump(
 			  (unsigned)powervr_object_get32(&firmware->trace_buffer, (index + 6U) * 4U),
 			  (unsigned)powervr_object_get32(&firmware->trace_buffer, (index + 7U) * 4U));
 	}
+}
+
+/*
+ * Looks for where the firmware's answer to a command went, when its
+ * return slot reads empty: the return slots' firmware address, the
+ * processor's page table entry for it and the physical page that entry
+ * names, the page the host maps, the first slots read through the alias
+ * and through the cached view, and every mapped page of the heap whose
+ * word at the slot's offset reads as executed.
+ */
+void
+powervr_firmware_return_probe(
+	struct powervr_core *core,
+	uint32_t slot)
+{
+	struct powervr_firmware *firmware;
+	const volatile uint32_t *table;
+	const volatile uint32_t *cached;
+	uint64_t physical;
+	uint64_t entry_physical;
+	uint32_t entry;
+	uint32_t page;
+	uint32_t pages;
+	uint32_t found;
+	uint32_t index;
+
+	/* The slots' firmware address, the table's entry for it and the page it names. */
+	firmware = &core->firmware;
+	table = (const volatile uint32_t *)firmware->heap.table.view;
+	page = firmware->kccb_returns.heap_offset / POWERVR_MIPS_PAGE_BYTES;
+	entry = table[page];
+	entry_physical = ((uint64_t)(entry & PROBE_FRAME_MASK) >> PROBE_FRAME_SHIFT) << PROBE_PAGE_SHIFT;
+	physical = powervr_object_physical(&firmware->kccb_returns, 0);
+	kern_logf("powervr: probe: returns at 0x%x (heap offset 0x%x): entry 0x%x names 0x%llx; host page 0x%llx, alias %p\n",
+		  (unsigned)powervr_object_address(&firmware->kccb_returns, 0),
+		  (unsigned)firmware->kccb_returns.heap_offset,
+		  (unsigned)entry,
+		  (unsigned long long)entry_physical,
+		  (unsigned long long)physical,
+		  (const void *)firmware->kccb_returns.view);
+
+	/* The first slots through the alias and through the cached view, its lines dropped first. */
+	cached = kern_pmem_to_kernel((hal_physaddr_t)physical);
+	if (cached != NULL)
+		kern_dcache_invalidate_range((const void *)cached, POWERVR_MIPS_PAGE_BYTES);
+	for (index = 0; index < 8U; index += 4U) {
+		kern_logf("powervr: probe: slots %u..%u alias %x %x %x %x cached %x %x %x %x\n",
+			  (unsigned)index, (unsigned)(index + 3U),
+			  (unsigned)powervr_object_get32(&firmware->kccb_returns, index * 4U),
+			  (unsigned)powervr_object_get32(&firmware->kccb_returns, (index + 1U) * 4U),
+			  (unsigned)powervr_object_get32(&firmware->kccb_returns, (index + 2U) * 4U),
+			  (unsigned)powervr_object_get32(&firmware->kccb_returns, (index + 3U) * 4U),
+			  cached != NULL ? (unsigned)cached[index] : 0U,
+			  cached != NULL ? (unsigned)cached[index + 1U] : 0U,
+			  cached != NULL ? (unsigned)cached[index + 2U] : 0U,
+			  cached != NULL ? (unsigned)cached[index + 3U] : 0U);
+	}
+
+	/* Every mapped page of the heap whose word at the slot's offset reads as executed. */
+	pages = POWERVR_HEAP_BYTES / POWERVR_MIPS_PAGE_BYTES;
+	found = 0;
+	for (page = 0; page < pages && found < PROBE_FOUND_MAX; page++) {
+		entry = table[page];
+		if ((entry & PROBE_ENTRY_VALID) == 0U)
+			continue;
+		entry_physical = ((uint64_t)(entry & PROBE_FRAME_MASK) >> PROBE_FRAME_SHIFT) << PROBE_PAGE_SHIFT;
+		cached = kern_pmem_to_kernel((hal_physaddr_t)entry_physical);
+		if (cached == NULL)
+			continue;
+		kern_dcache_invalidate_range((const void *)cached, POWERVR_MIPS_PAGE_BYTES);
+		if (cached[slot % (POWERVR_MIPS_PAGE_BYTES / 4U)] != POWERVR_RETURN_EXECUTED)
+			continue;
+		kern_logf("powervr: probe: heap page 0x%x (firmware 0x%x, physical 0x%llx) holds 1 at slot %u\n",
+			  (unsigned)(page * POWERVR_MIPS_PAGE_BYTES),
+			  (unsigned)powervr_mips_address(page * POWERVR_MIPS_PAGE_BYTES),
+			  (unsigned long long)entry_physical,
+			  (unsigned)slot);
+		found++;
+	}
+	kern_logf("powervr: probe: %u heap pages hold 1 at slot %u\n", (unsigned)found, (unsigned)slot);
 }

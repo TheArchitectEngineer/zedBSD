@@ -2089,6 +2089,17 @@ handle_notice(
 		data[index + 2U] = (uint8_t)(word >> 16);
 		data[index + 3U] = (uint8_t)(word >> 24);
 	}
+	kern_logf("powervr: context reset notice: %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x\n",
+		  (unsigned)powervr_object_get32(buffer, offset + POWERVR_COMMAND_DATA + 0U),
+		  (unsigned)powervr_object_get32(buffer, offset + POWERVR_COMMAND_DATA + 4U),
+		  (unsigned)powervr_object_get32(buffer, offset + POWERVR_COMMAND_DATA + 8U),
+		  (unsigned)powervr_object_get32(buffer, offset + POWERVR_COMMAND_DATA + 12U),
+		  (unsigned)powervr_object_get32(buffer, offset + POWERVR_COMMAND_DATA + 16U),
+		  (unsigned)powervr_object_get32(buffer, offset + POWERVR_COMMAND_DATA + 20U),
+		  (unsigned)powervr_object_get32(buffer, offset + POWERVR_COMMAND_DATA + 24U),
+		  (unsigned)powervr_object_get32(buffer, offset + POWERVR_COMMAND_DATA + 28U),
+		  (unsigned)powervr_object_get32(buffer, offset + POWERVR_COMMAND_DATA + 32U),
+		  (unsigned)powervr_object_get32(buffer, offset + POWERVR_COMMAND_DATA + 36U));
 	powervr_reset_notice_read(data, &notice);
 	all = (notice.flags & POWERVR_RESET_FLAG_ALL) != 0U;
 	for (session = render->sessions; session != NULL; session = session->next) {

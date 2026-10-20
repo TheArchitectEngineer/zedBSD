@@ -498,6 +498,7 @@ check_kick(
 	fragment_now = powervr_object_get32(&context->fragment.timeline, POWERVR_SYNC_ADDRESS);
 	if (error != 0) {
 		kern_logf("powervr: render check: FAILED at fence (%d; geometry %u of %u, fragment %u of %u)\n", error, geometry_now, check->marks.geometry_value, fragment_now, check->marks.fragment_value);
+		powervr_firmware_dump(check->render->core, POWERVR_KERNEL_CCB_SLOTS);
 		check->session->abandoned = 1;
 		return error;
 	}

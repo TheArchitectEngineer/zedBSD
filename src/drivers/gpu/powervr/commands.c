@@ -70,7 +70,18 @@ powervr_command_send(
 	/* Writes the command a word at a time and clears its return slot. */
 	for (index = 0; index < POWERVR_COMMAND_WORDS; index++)
 		powervr_object_put32(&firmware->kccb, write * POWERVR_COMMAND_BYTES + index * 4U, command[index]);
-	powervr_object_put32(&firmware->kccb_returns, write * 4U, POWERVR_RETURN_NONE);
+
+	/*
+	 * The return slot was cleared when its last command was answered
+	 * (and is zero from the start), so no store to it goes out just
+	 * before the kick, where a late one could land over the firmware's
+	 * answer; one left set is cleared now, then read back.
+	 */
+	if (powervr_object_get32(&firmware->kccb_returns, write * 4U) != POWERVR_RETURN_NONE) {
+		powervr_object_put32(&firmware->kccb_returns, write * 4U, POWERVR_RETURN_NONE);
+		kern_io_barrier();
+		(void)powervr_object_get32(&firmware->kccb_returns, write * 4U);
+	}
 
 	/* The firmware's executed count that marks this command done, for when its return slot is not seen. */
 	firmware->kccb_sent++;
@@ -127,6 +138,7 @@ powervr_command_wait(
 				kern_logf("powervr: firmware: slot %u: return 0x%x not seen, executed count %u reached; taken as executed\n",
 					  (unsigned)slot, (unsigned)value, (unsigned)executed);
 				firmware->return_fallback_noted = true;
+				powervr_firmware_return_probe(core, slot);
 			}
 			value = POWERVR_RETURN_EXECUTED;
 			break;
@@ -145,6 +157,9 @@ powervr_command_wait(
 		/* Sleeps one tick. */
 		sched_sleep(now + 1U);
 	}
+
+	/* Clears the slot for its next command, now that its answer is read. */
+	powervr_object_put32(&firmware->kccb_returns, slot * 4U, POWERVR_RETURN_NONE);
 
 	/* Succeeded: the firmware's answer. */
 	*answer = value;
@@ -177,8 +192,10 @@ powervr_command_wait_executed(
 	deadline = ms_deadline(milliseconds);
 	for (;;) {
 		executed = powervr_object_get32(&firmware->os_data, POWERVR_OS_DATA_KCCB_EXECUTED);
-		if ((int32_t)(executed - firmware->kccb_expect[slot]) >= 0)
+		if ((int32_t)(executed - firmware->kccb_expect[slot]) >= 0) {
+			powervr_object_put32(&firmware->kccb_returns, slot * 4U, POWERVR_RETURN_NONE);
 			return 0;
+		}
 
 		/* The bound is spent without the count. */
 		now = sched_ticks();
