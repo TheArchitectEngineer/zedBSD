@@ -364,6 +364,9 @@ powervr_render_job_run(
 			load_draw_free(work, load);
 			return error;
 		}
+
+		/* q1523 diagnostics: the session keeps a note of its newest job for a reset's report. */
+		powervr_session_note_job(session, job, prefix);
 	}
 
 	/* The shared registers the job takes: the background's or the draws', whichever is more. */

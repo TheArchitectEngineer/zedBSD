@@ -989,6 +989,18 @@ drv_powervr_dc_vblank_report(
 		  lowest,
 		  highest,
 		  newest);
+
+	/*
+	 * q1529 diagnostics: whether the controller raises the interrupt at
+	 * all (enable and pending registers; the read clears pending), and
+	 * whether the panel scans (its position read twice, its config).
+	 */
+	kern_logf("dc8200: interrupt enable %x pending %x; panel config %x location %x then %x\n",
+		  read_control(&board_adoption, DC_INTERRUPT_ENABLE),
+		  read_control(&board_adoption, DC_INTERRUPT_PENDING),
+		  read_display(&board_adoption, DC_PANEL_CONFIG + DC_UNIT_STEP * DC_HDMI_PANEL),
+		  read_display(&board_adoption, DC_PANEL_LOCATION + DC_UNIT_STEP * DC_HDMI_PANEL),
+		  read_display(&board_adoption, DC_PANEL_LOCATION + DC_UNIT_STEP * DC_HDMI_PANEL));
 }
 
 /* Reads one of the identity registers. */

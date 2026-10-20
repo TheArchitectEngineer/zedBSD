@@ -284,3 +284,17 @@ Keiland が使い、vkmatrix 15/15・gpu-selftest 13/13 で確かめていない
 - d14（P1 の 594 MHz の使い捨て、78975419c 基）: wait 3d 24〜40 ms（396 MHz で 37〜44 ms）と明らかな差なし、login で lockup 1 回 → 396 MHz のまま。
 - d15（63445e412、P2 の late vblank start 8b1edfa7c）: `display scanout 1`、`zero copy 1`、だが `frames copied (controller not ready)`、`dc8200: vblank 0 …`（IRQ 95 が数えない）。**lockup が再び出た（pc 0x4dc12001 fault 0）→ i06・i07 の後も残る。d12・d13 はたまたま。** P2 は lockup を最優先（q1523-i08）、次に vblank、cursor plane は後。
 - d16（7df2eca73、P2 の DC8200 の cursor plane eb3836d67、2026-10-21 08:1x）: `KWL CURSOR_PLANE open plane=1 width=64 height=64 images=3 format=37` — Keiland が hardware cursor を使う。display は `frames copied (controller not ready)` のまま（vblank が数えない）。滑らかさはユーザーの目視待ち。
+
+
+### q1523-i08（2026-10-21、P2）: render job の記録（fault 0 の lockup 用）
+
+- run 15: i06・i07 の後も、login の直後に fault 0 の 3D lockup が出た（d11・d14・d15）。
+- 診断:
+  - session ごとに、最新の render job の要約（`struct powervr_job_note`、render-private.h）を持つ。
+    中身は area、colour target（address・format・大きさ・pitch・padded・linear・load）、draw ごとの pipeline と scissor、texture の image state の 2 word と sampler の word 0（各 set の image binding の最初の要素、draw ごとに 4 つまで）。
+  - reset が session を名指したら、`powervr_session_describe_job` がそれを出す。texture は種類・format・大きさ・stride・address に解いて、address を含む live handle と、strided の行の末尾が handle の end をどれだけ越えるかを出す。
+  - 呼び出し: render-job.c の `powervr_render_job_run` の、job_draws が成功した直後の if の中に 1 行（`powervr_session_note_job`、P1 の q1528 と衝突しないよう 1 block）。render-queue.c の `handle_notice` に 1 行。
+  - p010 の job-host-test に stub を 1 行足した。
+- (B) vblank の数が 0 のまま: `drv_powervr_dc_vblank_report` が、controller の interrupt enable・pending、panel の config、scan の位置を 2 回出す。late の vblank start の直後にも出す。
+  pending が立つのに handler が来ないなら PLIC 側、pending が立たないなら controller 側。
+- 確認: p010 は 0 failed、p009 は 505 passed、ws277 の host 試験は全部 0 failures、VF2 の vmunix は rc 0、warning 0。板は未実施。

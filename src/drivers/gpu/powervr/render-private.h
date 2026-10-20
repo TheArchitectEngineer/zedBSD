@@ -247,6 +247,56 @@ struct powervr_transfer_context {
 };
 
 /*
+ * Diagnostics (q1523): a compact note of the session's newest render job,
+ * printed when a context reset names the session: the area, the colour
+ * targets, and for each draw its pipeline, scissor and textures (the
+ * image state words, and the sampler's first word).
+ */
+#define POWERVR_NOTE_COLORS	2U
+#define POWERVR_NOTE_DRAWS	12U
+#define POWERVR_NOTE_TEXTURES	4U
+
+struct powervr_note_texture {
+	uint64_t image[2];
+	uint64_t sampler;
+	uint32_t set;
+	uint32_t binding;
+};
+
+struct powervr_note_draw {
+	const void *pipeline;
+	int32_t scissor_x;
+	int32_t scissor_y;
+	uint32_t scissor_width;
+	uint32_t scissor_height;
+	uint32_t texture_count;
+	struct powervr_note_texture textures[POWERVR_NOTE_TEXTURES];
+};
+
+struct powervr_note_color {
+	uint64_t address;
+	uint32_t vk_format;
+	uint32_t width;
+	uint32_t height;
+	uint32_t row_pitch;
+	uint32_t padded_width;
+	uint32_t linear;
+	uint32_t load_op;
+};
+
+struct powervr_job_note {
+	uint64_t serial;
+	uint32_t area[4];
+	uint32_t width;
+	uint32_t height;
+	uint32_t color_count;
+	struct powervr_note_color colors[POWERVR_NOTE_COLORS];
+	uint32_t draw_count;
+	uint32_t prefix;
+	struct powervr_note_draw draws[POWERVR_NOTE_DRAWS];
+};
+
+/*
  * One open of the render node.
  *
  * Mmu and space are the session's memory context, and fixed holds the
@@ -307,6 +357,7 @@ struct powervr_session {
 	struct powervr_resource *blobs;
 	struct powervr_resource *deferred;
 	struct powervr_resource *all;
+	struct powervr_job_note note;
 	struct powervr_resource *border_table;
 	struct powervr_marker markers[POWERVR_RENDER_PENDING];
 	unsigned reserved;
@@ -399,6 +450,10 @@ int powervr_resource_make(struct powervr_session *session, struct powervr_buffer
 void powervr_resource_unmake(struct powervr_session *session, struct powervr_resource *resource);
 void powervr_session_describe_fault(struct powervr_session *session, uint64_t fault);
 void powervr_session_describe_physical(struct powervr_session *session, uint64_t physical);
+struct powervr_render_job;
+struct powervr_render_draw;
+void powervr_session_note_job(struct powervr_session *session, const struct powervr_render_job *job, const struct powervr_render_draw *prefix);
+void powervr_session_describe_job(struct powervr_session *session);
 uint64_t powervr_session_border_table(const struct powervr_session *session);
 int powervr_resource_make_region_headers(struct powervr_session *session, struct powervr_buffer *buffer, struct powervr_resource **result);
 int powervr_resource_make_free_list(struct powervr_session *session, struct powervr_buffer *buffer, struct powervr_resource **result);
