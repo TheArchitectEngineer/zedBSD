@@ -1376,3 +1376,30 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
   - cf0 の probe が f にならない → field（temps が多い kick）か、compiler が並べた先頭の群の形が原因。
 - VF2 の vmunix（`build/p2q1488/vf2/vmunix`）: rc 0、warning 0。板は未実施。
 - 片付け（Q1 に依頼）: `build/p2q1486/`、`build/p2q1488/`、scratchpad の `cf0.c`。
+
+## q1490-i01（P2、2026-10-21）: temporaries の field の単位、compiler の間隔を 0 に
+
+- 板 84 の field の probe（32 temps の madd、nop）:
+  - field 9・10・11・18 は lane 1〜31 が新しい値を読んだ。
+  - field 36 は全 lane が古い値を読んだ（正しい）。
+  - → **instance ごとの register の窓が重なっていた**。cf0 の probe も、wg 1 が 2 を読んだ（d）。
+  - 「hazard」「nop・wdf が効かない」「lane 0 だけ正しい」「21x＋57」「mesa-form が動かない」は、同じ一つの原因と読む。
+- **Mesa の定義**: `pvr_pds_setup_doutu`（pvr_pds.c）は temps を `DIV_ROUND_UP(usc_temps, PVR_ROGUE_PDSINST_DOUT_FIELDS_DOUTU_SRC0_TEMPS_ALIGNSIZE)`（＝4）にして、bit 35 から置く（pvr_rogue_pds_defs.h の `…TEMPS_ALIGNSIZE (4U)`、`…TEMPS_SHIFT (35U)`）。compute の pipeline は `cs_data->common.temps` を渡す（pvr_arch_pipeline.c）。
+  - つまり **Mesa は 4 register 単位で、我々の従来の計算と同じ**。板では 4 倍が要った。
+  - 単位そのものが違うのか、別の設定（core の USC の割当の単位、firmware の設定、kernel の語の何か）が違うのかは未確定。下の掃引で、要る値を板で決める。
+- 変更:
+  1. **`powervr_compute_task_field(temps)` ＝ temps＋1 を 1 register 単位**（compute-program.c。`powervr_compute_temporaries_field` が単位 1 も受ける。62 temps まで）。
+     - p008 の host の期待値を 9・16・17 に直し、63 は拒否する試験を足した（77/0）。
+  2. **compiler の間隔を全部 0、in-place の staging も無し**（Mesa と同じ）。
+     - `SHADER_INTEGER/ALU/STORE_SOURCE_GAP` 0、新しい `SHADER_RESULT_GAP` 0、`SHADER_IN_PLACE_STAGING` 0。変数（`shader_result_gap`、`shader_in_place_staging` など）で入れ直せる。
+     - compile-host-test の spacing の試験は、変数で間隔を入れて流し、終わったら既定に戻す（455/0）。
+     - vkcompute の fill は **360 byte・34 群**（host の simulator で 32/32）。
+  3. **compute check の掃引**（既定の build で流れる）:
+     - compiled fill（1 workgroup）を field 計算どおり（18。dump 付き）、17、18、20、24 で。
+     - field の probe（32 temps の madd、N＝0）を、計算どおり（33）、32、33、34、36、40、48 で。
+     - 手書きの workgroup id の probe、cf0 の probe（field は計算どおり 35）。
+     - compiled fill（4 workgroup）を、計算どおり、17、18、20、24 で、各々新しい session で。
+     - 行には field の値を出す（`compiled fill G workgroups … field F`、`field F (as computed) madd source read after 0 nop: …`）。
+- 読み方: 全 lane が old になる最小の field と、compiled fill が 32/32・128/128 になる最小の field から単位を決める（17 temps で 18 なら 1 register 単位で＋1）。
+- **P1 への依頼（vk-queue.c）**: `powervr_compute_temporaries_field(temps, 2, …)` を `powervr_compute_task_field(temps, …)` に替える。今のままでは 17 temps で 9 になり、窓が重なるので、vkcompute は 4096/4096 にならない見込み。
+- host: p008 は 94/0・77/0、compiler は 455/0・20/0、p009 は 502/0、fill-registers は 32/32。VF2 の vmunix（`build/p2q1490/vf2/vmunix`）は rc 0、warning 0。板は未実施。

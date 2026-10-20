@@ -167,6 +167,8 @@ static int operations_conflict(const struct shader_machine_operation *reader, co
 unsigned shader_integer_source_gap = SHADER_INTEGER_SOURCE_GAP;
 unsigned shader_alu_source_gap = SHADER_ALU_SOURCE_GAP;
 unsigned shader_store_source_gap = SHADER_STORE_SOURCE_GAP;
+unsigned shader_result_gap = SHADER_RESULT_GAP;
+unsigned shader_in_place_staging = SHADER_IN_PLACE_STAGING;
 unsigned shader_filler_kind = MACHINE_MOVE_SPECIAL;
 
 static void nop_operation(struct shader_machine_operation *operation);
@@ -384,8 +386,8 @@ shader_backend_space_hazards(
 	int conflict;
 	int error;
 
-	/* No group writes a register it reads: it writes the staging pair, a move after it the register. */
-	for (index = 0; index < backend->operation_count; index++) {
+	/* No group writes a register it reads, when asked: it writes the staging pair, a move after it the register. */
+	for (index = 0; shader_in_place_staging && index < backend->operation_count; index++) {
 		conflict = operation_in_place(&backend->operations[index]) && !filler_operation(&backend->operations[index]);
 		if (!conflict)
 			continue;
@@ -476,7 +478,7 @@ shader_backend_gap_needed(
  * (0 when none, or when either is a filler): when the later one writes
  * a register the earlier one read, shader_integer_source_gap for an
  * integer multiply-add reader, shader_store_source_gap for a store and
- * shader_alu_source_gap for any other; SHADER_HAZARD_GAP when it reads
+ * shader_alu_source_gap for any other; shader_result_gap when it reads
  * an integer multiply-add's result, or is an integer multiply-add
  * reading a register the earlier one wrote.
  */
@@ -500,9 +502,9 @@ required_gap(
 
 	/* The later group reads an integer result, or is an integer group reading a fresh value. */
 	if (integer_result_read(earlier, later))
-		return SHADER_HAZARD_GAP;
+		return shader_result_gap;
 	if (later->kind == MACHINE_INTEGER && operations_conflict(later, earlier))
-		return SHADER_HAZARD_GAP;
+		return shader_result_gap;
 
 	/* Succeeded: no gap is needed. */
 	return 0;
@@ -675,7 +677,7 @@ shader_backend_hazards(
 
 	/* Each group that writes a register it reads, but the counter step. */
 	for (index = 0; index < backend->operation_count; index++) {
-		conflict = operation_in_place(&backend->operations[index]) && !filler_operation(&backend->operations[index]);
+		conflict = shader_in_place_staging && operation_in_place(&backend->operations[index]) && !filler_operation(&backend->operations[index]);
 		if (conflict && backend->operations[index].kind != MACHINE_CONDITION && backend->operations[index].kind != MACHINE_BRANCH)
 			count++;
 	}
