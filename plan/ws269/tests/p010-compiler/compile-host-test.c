@@ -1050,6 +1050,7 @@ test_hazard_spacing(void)
 	struct shader_machine_operation *operation;
 	unsigned index;
 	int error;
+	int ok;
 
 	memset(&backend, 0, sizeof(backend));
 	backend.operation_count = 3;
@@ -1074,14 +1075,19 @@ test_hazard_spacing(void)
 	backend.operations[2].destination[0].index = 9;
 	check(shader_backend_hazards(&backend) == 1, "a write right after the read is a hazard");
 	error = shader_backend_space_hazards(&backend);
-	check(error == 0 && backend.operation_count == 5, "two no-operations go between");
-	check(backend.operations[2].kind == MACHINE_WAIT && backend.operations[3].kind == MACHINE_WAIT && backend.operations[4].kind == MACHINE_IMMEDIATE, "the no-operations, then the write");
+	check(error == 0 && backend.operation_count == 3U + SHADER_INTEGER_SOURCE_GAP, "SHADER_INTEGER_SOURCE_GAP no-operations go between (an integer multiply-add's source)");
+	ok = 1;
+	for (index = 2; index < 2U + SHADER_INTEGER_SOURCE_GAP; index++)
+		ok &= backend.operations[index].kind == MACHINE_WAIT;
+	check(ok && backend.operations[2U + SHADER_INTEGER_SOURCE_GAP].kind == MACHINE_IMMEDIATE, "the no-operations, then the write");
 	check(backend.operations[0].target == 2, "the branch to the write lands on the first no-operation");
 	check(shader_backend_hazards(&backend) == 0, "no hazard once spaced");
 
 	/*
-	 * A loop: its head writes r9, its end reads r9, the back branch to
-	 * the head; one no-operation goes before the branch, so two groups
+	 * A loop: its head writes r9, its end (an integer multiply-add)
+	 * reads r9, the back branch to the head.  Two no-operations go
+	 * between the head and the multiply-add (a fresh value), and
+	 * SHADER_INTEGER_SOURCE_GAP - 1 before the branch, so that many groups
 	 * lie between the read and the head's write on the back edge.
 	 */
 	memset(&backend, 0, sizeof(backend));
@@ -1105,9 +1111,14 @@ test_hazard_spacing(void)
 	backend.operations[1].source[0].index = 9;
 	backend.operations[2].kind = MACHINE_BRANCH;
 	backend.operations[2].target = 0;
-	check(shader_backend_hazards(&backend) == 1, "a loop's end reading what its head writes is a hazard on the back edge");
+	check(shader_backend_hazards(&backend) == 2, "a loop's end reading what its head writes is a hazard, also on the back edge");
 	error = shader_backend_space_hazards(&backend);
-	check(error == 0 && backend.operation_count == 4 && backend.operations[2].kind == MACHINE_WAIT && backend.operations[3].kind == MACHINE_BRANCH && backend.operations[3].target == 0, "one no-operation before the back branch");
+	ok = error == 0 && backend.operation_count == 3U + 2U + SHADER_INTEGER_SOURCE_GAP - 1U;
+	ok = ok && backend.operations[1].kind == MACHINE_WAIT && backend.operations[2].kind == MACHINE_WAIT && backend.operations[3].kind == MACHINE_INTEGER;
+	for (index = 4; ok && index < 4U + SHADER_INTEGER_SOURCE_GAP - 1U; index++)
+		ok &= backend.operations[index].kind == MACHINE_WAIT;
+	ok = ok && backend.operations[backend.operation_count - 1U].kind == MACHINE_BRANCH && backend.operations[backend.operation_count - 1U].target == 0;
+	check(ok, "two no-operations before the multiply-add, the rest before the back branch");
 	check(shader_backend_hazards(&backend) == 0, "no hazard on the back edge once spaced");
 }
 
