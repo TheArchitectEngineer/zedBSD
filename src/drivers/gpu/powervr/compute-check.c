@@ -270,6 +270,7 @@ static int dump_program(const struct shader_backend *backend, struct shader_back
 static int run_many_kernels(struct check_state *state, unsigned kernels, unsigned flags, const char *variant);
 static int run_fence_variants(struct check_state *state);
 static int put_fence_kernel(struct check_state *state, uint32_t *stream);
+static void run_timing_probes(struct check_state *state);
 static void run_layouts(struct check_state *state);
 static void run_workgroup_probe(struct check_state *state);
 static struct shader_machine_operation *dump_last(struct shader_backend *dump);
@@ -305,12 +306,14 @@ void
 powervr_compute_check(
 	struct powervr_render *render)
 {
+	static const unsigned gaps[] = { 2, 6 };
 	struct check_state state;
 	const char *step;
 	unsigned written;
 	unsigned four_wrong;
 	unsigned two_wrong;
 	unsigned wide_wrong;
+	unsigned gap;
 	int wide_error;
 	int four_error;
 	int two_error;
@@ -329,6 +332,17 @@ powervr_compute_check(
 	/* The fence kernel's variants first, before any probe that may lose the session. */
 	error = run_fence_variants(&state);
 	if (error != 0) {
+		teardown(&state);
+		return;
+	}
+
+	/* The groups' read and write timing, then a fresh session for the rest. */
+	run_timing_probes(&state);
+	teardown(&state);
+	step = "open";
+	error = setup(&state, &step);
+	if (error != 0) {
+		kern_logf("powervr: compute kernel: not run, %s (%d)\n", step, error);
 		teardown(&state);
 		return;
 	}
@@ -389,7 +403,12 @@ powervr_compute_check(
 	 * the workgroup id probe and the executor's layouts, each in a
 	 * session of its own.
 	 */
-	run_compiled_fill(&state);
+	for (gap = 0; gap < sizeof(gaps) / sizeof(gaps[0]); gap++) {
+		shader_integer_source_gap = gaps[gap];
+		kern_logf("powervr: compute probes: compiled fill with multiply-add source gap %u, no-operation fillers\n", gaps[gap]);
+		run_compiled_fill(&state);
+	}
+	shader_integer_source_gap = SHADER_INTEGER_SOURCE_GAP;
 	run_workgroup_probe(&state);
 	run_layouts(&state);
 
@@ -1598,6 +1617,381 @@ run_workgroup_probe(
 
 	/* The room goes. */
 	kern_free(dump);
+	kern_free(code);
+}
+
+/*
+ * The timing probes: how many groups after an operation it still reads
+ * a source's old value, and whether its result lands before or after a
+ * write of the same register N groups later.  Each is one program, one
+ * kick of the one-kernel form; its words at TIMING_OFFSET (lane L at
+ * +L*4), the store-address probe's other place TIMING_OTHER after them.
+ */
+#define TIMING_OFFSET		0x1e0000U
+#define TIMING_OTHER		0x800U
+#define TIMING_GROUPS		256U
+#define TIMING_SETTLE		8U
+#define TIMING_TEMPORARIES	24U
+#define TIMING_FILLER		0xdeaddeadU
+#define TIMING_OLD		0x100U
+#define TIMING_NEW		0x200U
+#define TIMING_OVER		0xabcU
+
+/* The probes' kinds. */
+enum timing_kind {
+	TIMING_MADD_SOURCE = 0,
+	TIMING_MADD_RESULT,
+	TIMING_ADD64_SOURCE,
+	TIMING_ADD64_RESULT,
+	TIMING_MOVE_SOURCE,
+	TIMING_MOVE_RESULT,
+	TIMING_STORE_DATA,
+	TIMING_STORE_ADDRESS,
+	TIMING_KINDS
+};
+
+/* A program being built: its groups' operations, in order. */
+struct timing_program {
+	struct shader_machine_operation operations[TIMING_GROUPS];
+	unsigned count;
+	int error;
+};
+
+/* Appends one operation (registers are temporaries; DUMP_NONE leaves a place out). */
+static void
+timing_add(
+	struct timing_program *program,
+	unsigned kind,
+	unsigned destination,
+	unsigned source_0_bank,
+	unsigned source_0,
+	unsigned source_1,
+	unsigned source_2,
+	uint32_t immediate)
+{
+	struct shader_machine_operation *operation;
+	unsigned index;
+
+	if (program->count >= TIMING_GROUPS) {
+		program->error = ENOSPC;
+		return;
+	}
+	operation = &program->operations[program->count++];
+	kern_memset(operation, 0, sizeof(*operation));
+	operation->kind = (uint8_t)kind;
+	operation->condition = POWERVR_USC_RUN_ENABLED;
+	operation->immediate = immediate;
+	operation->destination[0].bank = destination != DUMP_NONE ? POWERVR_USC_BANK_TEMPORARY : 0xff;
+	operation->destination[0].index = (uint16_t)(destination != DUMP_NONE ? destination : 0);
+	operation->destination[1].bank = 0xff;
+	for (index = 0; index < 4; index++)
+		operation->source[index].bank = 0xff;
+	if (source_0 != DUMP_NONE) {
+		operation->source[0].bank = (uint8_t)source_0_bank;
+		operation->source[0].index = (uint16_t)source_0;
+	}
+	if (source_1 != DUMP_NONE) {
+		operation->source[1].bank = POWERVR_USC_BANK_TEMPORARY;
+		operation->source[1].index = (uint16_t)source_1;
+	}
+	if (source_2 != DUMP_NONE) {
+		operation->source[2].bank = POWERVR_USC_BANK_TEMPORARY;
+		operation->source[2].index = (uint16_t)source_2;
+	}
+	if (kind == MACHINE_ADD64) {
+		operation->destination[1].bank = POWERVR_USC_BANK_TEMPORARY;
+		operation->destination[1].index = (uint16_t)(destination + 1U);
+	}
+}
+
+/* Appends count groups that do nothing (the control no-operation the board ran between groups). */
+static void
+timing_fill(
+	struct timing_program *program,
+	unsigned count)
+{
+	unsigned index;
+
+	for (index = 0; index < count; index++)
+		timing_add(program, MACHINE_NOP, DUMP_NONE, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, 0);
+}
+
+/* Appends one operation and TIMING_SETTLE spacing groups after it. */
+static void
+timing_settled(
+	struct timing_program *program,
+	unsigned kind,
+	unsigned destination,
+	unsigned source_0_bank,
+	unsigned source_0,
+	unsigned source_1,
+	unsigned source_2,
+	uint32_t immediate)
+{
+	timing_add(program, kind, destination, source_0_bank, source_0, source_1, source_2, immediate);
+	timing_fill(program, TIMING_SETTLE);
+}
+
+/* Appends the store of r14 to the place r12 and r13 hold, its wait. */
+static void
+timing_store(
+	struct timing_program *program)
+{
+	struct shader_machine_operation *operation;
+
+	timing_add(program, MACHINE_STORE, DUMP_NONE, POWERVR_USC_BANK_TEMPORARY, 14, DUMP_NONE, DUMP_NONE, 0);
+	if (program->error == 0) {
+		operation = &program->operations[program->count - 1U];
+		operation->source[1].bank = POWERVR_USC_BANK_TEMPORARY;
+		operation->source[1].index = 12;
+	}
+	timing_add(program, MACHINE_WAIT, DUMP_NONE, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, 0);
+}
+
+/*
+ * Builds one timing program, the groups exactly as listed (no spacing is
+ * added: the probe places them), and encodes it.
+ *   r0 the lane, r10 the lane times four (r11 two), r12:r13 the lane's
+ *   word, r20:r21 its word in the other place (r16, r17, r18 the bases);
+ *   r1 three, r2 five, r22 TIMING_OLD, r23 zero; the operation under test
+ *   writes r4 (r4:r5 for the 64-bit add); r14 the stored value.
+ */
+static int
+timing_build(
+	struct timing_program *program,
+	unsigned kind,
+	unsigned gap,
+	uint64_t address,
+	uint8_t *code,
+	size_t room,
+	size_t *length)
+{
+	struct powervr_usc_group *groups;
+	unsigned index;
+	int error;
+
+	/* The settled set-up. */
+	kern_memset(program, 0, sizeof(*program));
+	timing_settled(program, MACHINE_MOVE_SPECIAL, 0, POWERVR_USC_BANK_SPECIAL, DUMP_SPECIAL_INSTANCE, DUMP_NONE, DUMP_NONE, 0);
+	timing_settled(program, MACHINE_IMMEDIATE, 11, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, 2);
+	timing_settled(program, MACHINE_SHIFT, 10, POWERVR_USC_BANK_TEMPORARY, 0, 11, DUMP_NONE, 0);
+	timing_settled(program, MACHINE_IMMEDIATE, 16, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, (uint32_t)address);
+	timing_settled(program, MACHINE_IMMEDIATE, 17, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, (uint32_t)(address >> 32));
+	timing_settled(program, MACHINE_IMMEDIATE, 18, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, (uint32_t)address + TIMING_OTHER);
+	timing_settled(program, MACHINE_ADD64, 12, POWERVR_USC_BANK_TEMPORARY, 16, 17, 10, 0);
+	timing_settled(program, MACHINE_ADD64, 20, POWERVR_USC_BANK_TEMPORARY, 18, 17, 10, 0);
+	timing_settled(program, MACHINE_IMMEDIATE, 1, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, 3);
+	timing_settled(program, MACHINE_IMMEDIATE, 2, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, 5);
+	timing_settled(program, MACHINE_IMMEDIATE, 22, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, TIMING_OLD);
+	timing_settled(program, MACHINE_IMMEDIATE, 23, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, 0);
+
+	/* The operation under test, gap groups, the other write, settled. */
+	switch (kind) {
+	case TIMING_MADD_SOURCE:
+	case TIMING_MADD_RESULT:
+		timing_add(program, MACHINE_INTEGER, 4, POWERVR_USC_BANK_TEMPORARY, 0, 1, 2, 0);
+		timing_fill(program, gap);
+		if (kind == TIMING_MADD_SOURCE)
+			timing_settled(program, MACHINE_IMMEDIATE, 1, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, 7);
+		else
+			timing_settled(program, MACHINE_IMMEDIATE, 4, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, TIMING_OVER);
+		break;
+	case TIMING_ADD64_SOURCE:
+	case TIMING_ADD64_RESULT:
+		timing_add(program, MACHINE_ADD64, 4, POWERVR_USC_BANK_TEMPORARY, 22, 23, 0, 0);
+		timing_fill(program, gap);
+		if (kind == TIMING_ADD64_SOURCE)
+			timing_settled(program, MACHINE_IMMEDIATE, 22, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, TIMING_NEW);
+		else
+			timing_settled(program, MACHINE_IMMEDIATE, 4, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, TIMING_OVER);
+		break;
+	case TIMING_MOVE_SOURCE:
+	case TIMING_MOVE_RESULT:
+		timing_add(program, MACHINE_MOVE, 4, POWERVR_USC_BANK_TEMPORARY, 22, DUMP_NONE, DUMP_NONE, 0);
+		timing_fill(program, gap);
+		if (kind == TIMING_MOVE_SOURCE)
+			timing_settled(program, MACHINE_IMMEDIATE, 22, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, TIMING_NEW);
+		else
+			timing_settled(program, MACHINE_IMMEDIATE, 4, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, TIMING_OVER);
+		break;
+	case TIMING_STORE_DATA:
+	case TIMING_STORE_ADDRESS:
+		/* The store itself is under test: r14 the old value, then the other write after it. */
+		timing_settled(program, MACHINE_MOVE, 14, POWERVR_USC_BANK_TEMPORARY, 22, DUMP_NONE, DUMP_NONE, 0);
+		timing_add(program, MACHINE_STORE, DUMP_NONE, POWERVR_USC_BANK_TEMPORARY, 14, DUMP_NONE, DUMP_NONE, 0);
+		if (program->error == 0) {
+			program->operations[program->count - 1U].source[1].bank = POWERVR_USC_BANK_TEMPORARY;
+			program->operations[program->count - 1U].source[1].index = 12;
+		}
+		timing_fill(program, gap);
+		if (kind == TIMING_STORE_DATA)
+			timing_settled(program, MACHINE_IMMEDIATE, 14, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, TIMING_OVER);
+		else
+			timing_settled(program, MACHINE_MOVE, 12, POWERVR_USC_BANK_TEMPORARY, 20, DUMP_NONE, DUMP_NONE, 0);
+		timing_add(program, MACHINE_WAIT, DUMP_NONE, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, 0);
+		break;
+	default:
+		return EINVAL;
+	}
+
+	/* Then, but for the store probes, r4 stored to the lane's word. */
+	if (kind != TIMING_STORE_DATA && kind != TIMING_STORE_ADDRESS) {
+		timing_settled(program, MACHINE_MOVE, 14, POWERVR_USC_BANK_TEMPORARY, 4, DUMP_NONE, DUMP_NONE, 0);
+		timing_store(program);
+	}
+	timing_add(program, MACHINE_END, DUMP_NONE, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, 0);
+	if (program->error != 0)
+		return program->error;
+
+	/* The groups, then the bytes. */
+	groups = kern_malloc(program->count * sizeof(*groups));
+	if (groups == NULL)
+		return ENOMEM;
+	error = 0;
+	for (index = 0; error == 0 && index < program->count; index++)
+		error = shader_backend_group(&program->operations[index], 0, &groups[index]);
+	if (error == 0)
+		error = powervr_usc_program_encode(groups, program->count, code, room, length);
+	kern_free(groups);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the program. */
+	return 0;
+}
+
+/* The values a lane's word holds when the old or the new value won. */
+static void
+timing_expected(
+	unsigned kind,
+	unsigned lane,
+	uint32_t *old,
+	uint32_t *new)
+{
+	switch (kind) {
+	case TIMING_MADD_SOURCE:
+		*old = lane * 3U + 5U;
+		*new = lane * 7U + 5U;
+		break;
+	case TIMING_MADD_RESULT:
+		*old = lane * 3U + 5U;
+		*new = TIMING_OVER;
+		break;
+	case TIMING_ADD64_SOURCE:
+		*old = TIMING_OLD + lane;
+		*new = TIMING_NEW + lane;
+		break;
+	case TIMING_ADD64_RESULT:
+		*old = TIMING_OLD + lane;
+		*new = TIMING_OVER;
+		break;
+	case TIMING_MOVE_SOURCE:
+		*old = TIMING_OLD;
+		*new = TIMING_NEW;
+		break;
+	case TIMING_MOVE_RESULT:
+	case TIMING_STORE_DATA:
+		*old = TIMING_OLD;
+		*new = TIMING_OVER;
+		break;
+	default:
+		*old = TIMING_OLD;
+		*new = TIMING_OLD;
+		break;
+	}
+}
+
+/*
+ * Runs every timing probe: the multiply-add's with 0 to 7 groups, the
+ * others' with 0 to 3, one kick each, and reports one line each: the
+ * lanes whose word holds the old value (the source read before the
+ * write, or the result landed after the overwrite) and the new one.
+ * Stops at the first kick that fails.
+ */
+static void
+run_timing_probes(
+	struct check_state *state)
+{
+	static const struct {
+		unsigned kind;
+		unsigned gaps;
+		const char *name;
+	} probes[] = {
+		{ TIMING_MADD_SOURCE, 8, "madd source read" },
+		{ TIMING_MADD_RESULT, 8, "madd result written" },
+		{ TIMING_ADD64_SOURCE, 4, "add64 source read" },
+		{ TIMING_ADD64_RESULT, 4, "add64 result written" },
+		{ TIMING_MOVE_SOURCE, 4, "mov source read" },
+		{ TIMING_MOVE_RESULT, 4, "mov result written" },
+		{ TIMING_STORE_DATA, 4, "store data read" },
+		{ TIMING_STORE_ADDRESS, 4, "store address read" },
+	};
+	struct timing_program *program;
+	volatile uint32_t *words;
+	volatile uint32_t *other;
+	uint8_t *code;
+	size_t length;
+	uint32_t old;
+	uint32_t new;
+	unsigned field;
+	unsigned probe;
+	unsigned gap;
+	unsigned lane;
+	unsigned old_mask;
+	unsigned new_mask;
+	int error;
+
+	/* The room, the program, the field. */
+	code = kern_malloc(USC_DUMP_ROOM);
+	program = kern_malloc(sizeof(*program));
+	error = 0;
+	if (code == NULL || program == NULL)
+		error = ENOMEM;
+	if (error == 0)
+		error = powervr_compute_task_field(TIMING_TEMPORARIES, &field);
+	words = state->alias + TIMING_OFFSET / 4U;
+	other = state->alias + (TIMING_OFFSET + TIMING_OTHER) / 4U;
+
+	/* Each probe at each gap. */
+	for (probe = 0; error == 0 && probe < sizeof(probes) / sizeof(probes[0]); probe++) {
+		for (gap = 0; error == 0 && gap < probes[probe].gaps; gap++) {
+			length = 0;
+			error = timing_build(program, probes[probe].kind, gap, run_address + TIMING_OFFSET, code, USC_DUMP_ROOM, &length);
+			if (error == 0) {
+				put_bytes(state->usc, USC_COMPILED, code, length);
+				error = write_workgroup_kick(state, field, 1);
+			}
+			for (lane = 0; lane < POWERVR_COMPUTE_INSTANCES; lane++) {
+				words[lane] = TIMING_FILLER;
+				other[lane] = TIMING_FILLER;
+			}
+			if (error == 0)
+				error = kick(state, KICK_PROBE_FIRST);
+
+			/* Which lanes saw the old value and which the new. */
+			old_mask = 0;
+			new_mask = 0;
+			for (lane = 0; lane < POWERVR_COMPUTE_INSTANCES; lane++) {
+				timing_expected(probes[probe].kind, lane, &old, &new);
+				if (probes[probe].kind == TIMING_STORE_ADDRESS) {
+					if (words[lane] == old)
+						old_mask |= 1U << lane;
+					if (other[lane] == old)
+						new_mask |= 1U << lane;
+					continue;
+				}
+				if (words[lane] == old)
+					old_mask |= 1U << lane;
+				else if (words[lane] == new)
+					new_mask |= 1U << lane;
+			}
+			kern_logf("powervr: compute probes: %s after %u groups: old %08x new %08x, lane 0 %08x lane 31 %08x (%d, %u bytes)\n",
+				  probes[probe].name, gap, old_mask, new_mask, words[0], words[POWERVR_COMPUTE_INSTANCES - 1U], error, (unsigned)length);
+		}
+	}
+
+	/* The room goes. */
+	kern_free(program);
 	kern_free(code);
 }
 

@@ -1076,3 +1076,83 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
 - 片付け（Q1 に依頼）:
   - `build/p2q1473/`
   - scratchpad の `ops2.c`・`ops2`・`ops65.txt`・`sim65.txt`
+
+## q1476-i01（P2、2026-10-21）: 群の読み書きの時期を測る probe（`run_timing_probes`）
+
+- 置き場所: fence の変種の直後（同じ session）。終わったら session を開き直し、残りの check へ進む。
+- 形: 各 probe は 1 program・1 kick（1 kernel の形、fence 無し）。group は書いた順のまま encode し、compiler の間隔は付けない。`timing_build` で組み立てる。
+  - set-up の operation は、どれも後ろに 8 群の spacing（TIMING_SETTLE）を置く:
+    - r0 ＝ lane
+    - r10 ＝ lane×4
+    - r12:r13 ＝ 自分の語（run＋0x1e0000＋lane×4）
+    - r20:r21 ＝ 別の場所（＋0x800）の語
+    - r1 ＝ 3、r2 ＝ 5、r22 ＝ 0x100、r23 ＝ 0
+  - 試す operation の後に N 群の空き（MACHINE_WAIT）を置き、続けて「もう一方の書き」を置く。その後を 8 群空ける。r4 を r14 へ写して store する（store の probe は store 自身が対象）。
+- 行の形: `compute probes: <名前> after N groups: old MASK new MASK, lane 0 V lane 31 V (e, bytes)`。
+
+| 名前 | N | 試す operation → N 群 → もう一方の書き | old（lane L の語） | new |
+| --- | --- | --- | --- | --- |
+| madd source read | 0〜7 | r4 ＝ imadd(r0, r1, r2) → r1 ＝ 7 | 3L＋5（rB の古い値を読んだ） | 7L＋5（新しい値を読んだ ＝ 読みが N＋1 群より遅い） |
+| madd result written | 0〜7 | r4 ＝ imadd(…) → r4 ＝ 0xabc | 3L＋5（madd の結果が上書きより後に着いた ＝ 書きが N＋1 群より遅い） | 0xabc（順序どおり） |
+| add64 source read | 0〜3 | r4:r5 ＝ add64(r22, r23, r0) → r22 ＝ 0x200 | 0x100＋L | 0x200＋L |
+| add64 result written | 0〜3 | 同上 → r4 ＝ 0xabc | 0x100＋L | 0xabc |
+| mov source read | 0〜3 | r4 ＝ mov r22 → r22 ＝ 0x200 | 0x100 | 0x200 |
+| mov result written | 0〜3 | r4 ＝ mov r22 → r4 ＝ 0xabc | 0x100 | 0xabc |
+| store data read | 0〜3 | st r14(＝0x100) → [r12] → r14 ＝ 0xabc | 0x100 | 0xabc |
+| store address read | 0〜3 | st r14 → [r12] → r12 ＝ r20（別の場所） | 自分の語に 0x100 | 別の場所の語に 0x100 |
+
+- host の simulator（順序どおりに動く模型）での期待（使い捨ての確認。kernel の `timing_build` をそのまま host で compile した）:
+  - source read は全部 old（ffffffff）。
+  - result written は全部 new（ffffffff）。
+  - store address は、自分の語が old。
+  - encode 0、629〜648 byte、129〜130 群。
+- **required_gap の決め方**（板の結果から、op の種類ごとに）:
+  - source read で new が出る最大の N を S とすると、その op の source の書き換えまでに要る群は **S＋2**（N 群の空き＋次の群）。今の `SHADER_INTEGER_SOURCE_GAP` 6 と `SHADER_HAZARD_GAP` 2 は、この値で置き換える。
+  - result written で old が出る最大の N を W とすると、その op の結果を読む・上書きするまでに要る群は **W＋2**（今の `integer_result_read` の 2 を置き換える）。
+  - lane ごとに混ざる場合（MASK が一部）は、全 lane が順序どおりになる N を採る。
+
+| 確認 | 結果 |
+| --- | --- |
+| host の simulator での timing の program（使い捨て） | 8 種 × N 0〜3 で encode 0、期待どおり |
+| VF2 の vmunix（`build/p2q1476/vf2/vmunix`） | rc 0、warning 0 |
+| 板 | 未実施 |
+
+- 片付け（Q1 に依頼）:
+  - `build/p2q1476/`
+  - scratchpad の `timing.c`・`timingtest.c`・`timingtest`
+
+### q1476-i01 の追加（Q1 の 2 通目、板 69）
+
+- 板 69（gap 6）の compiled fill は悪化した: `wrote +1c0000: 00202004`、`+1c000c: 00202004`、0/32。vk は `fault 0x000000f75c6758e0`。
+- 変更:
+  1. **filler の種類と madd の source の間隔を、実行時に変えられるようにした**（`shader-backend.c` の `shader_filler_kind`・`shader_integer_source_gap`、`shader-private.h` の extern）。
+     - 既定は、filler が **MACHINE_NOP**（板で `nop between groups` が ffffffff だった control の no-operation）、間隔は **2** に戻した（`SHADER_INTEGER_SOURCE_GAP` ＝ 2）。
+     - 間隔の探索の上限は `SHADER_GAP_MAX` 8。
+  2. compute check は、compiled fill（dump の prefix を含む）を **gap 2 と gap 6 の 2 回**、どちらも nop の filler で、同じ起動で流す。行の前に `compiled fill with multiply-add source gap N, no-operation fillers` を出す。終わったら既定の 2 に戻す。
+  3. timing の probe の空き（N 群）も nop にした。
+- host の確認:
+  - compiler 455/0、group 20/0（spacing の試験は、filler の種類と間隔の変数に追従させた）。
+  - p009 は 502/0（main の追従の後）。
+  - fill-registers.sh（既定の gap 2、nop）は 504 byte・68 群で 32/32。
+  - VF2 の vmunix: rc 0、warning 0。
+
+### 板 65（21x＋57）と板 69（0x00202004）を説明する model の候補（板の timing の probe で選ぶ）
+
+確かな観察:
+- 板 65: op 32（r12 ＝ imadd(r13, r1, r2)）の結果は 7·gid だった。r1 を 3 から 7 にする op 35 は 3 群後にある。r2 を 0 から 1 にする op 36 は 4 群後で、これは結果に入っていない（lane 0 の結果は 0）。
+- 板 65: op 37〜39 に r12 を書く命令が無いのに、r12 が 7gid から 21gid＋50 に変わった。
+- 板 69: store の data（r8）に、隣の lane の address の下位語（r6 の値 0x00202004）が入った形になった。
+
+| model | 板 65 の説明 | 板 69 の説明 | timing の probe で出る形 |
+| --- | --- | --- | --- |
+| M1: imadd の source の読みが遅い（発行から D 群後の register の値を読む。乗数の場所の source は D≈3、加数の場所の source は ＜4） | op 32 の 7gid は説明できる。r12 の後の変化は説明できない | gap 6 では読みの遅れが間に合うはずなので、悪化は説明できない | `madd source read after N` で、N ＜ D の時に new |
+| M2: imadd の結果の書きが遅い（L 群後に着き、その間に書かれた値を上書きする） | r12 が書く命令の無い所で変わったことは説明できる（遅れて着いた結果）。値の 21gid＋50 は、遅れて計算された op 37 の結果が r12 の場所に着いたとすれば近い | spacing の群が増えると、着く時期と後の命令（add64 の address の対、store の data の対）の重なり方が変わる。data の register に address の片割れが入る形も説明できる | `madd result written after N` で、N ＜ L の時に old（madd が後に着く） |
+| M3: wdf（MACHINE_WAIT）の filler 自体が、register の内容を変えたり順序を崩したりする | 板 65 の filler も wdf だった | gap 6 で wdf が増えて悪化したことと整合する | gap 2 と 6 の nop 版の compiled fill の比較で分かる（nop で両方とも直れば M3） |
+| M4: store の data ＝ address＋2 の規則と、imadd の結果の register の位置の衝突（r6:r7 の直後の r8 に、遅れて着いた値が入る） | 説明しない | 0x00202004（r6 の値）が data に出た形は、M2 の遅着と組み合わせれば説明できる | `store data read` と `store address read`、および M2 の形 |
+
+- 判定の順序:
+  1. 次の起動の `compiled fill with … gap 2`（nop）と `… gap 6`（nop）がどちらも 32/32 なら **M3**（wdf の filler が原因）。
+  2. それ以外なら、`madd result written after N` の old が出る最大の N から **M2** の L を読む。`madd source read after N` の new から **M1** の D を読む。
+  3. required_gap は、結果側が L＋2、source 側が D＋2 で決める。
+
+- 片付け（Q1 に依頼）: `build/p2q1476/`、scratchpad の `timing.c`・`timingtest.c`・`timingtest`。

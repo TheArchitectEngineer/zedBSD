@@ -196,12 +196,14 @@ enum machine_kind {
 
 /*
  * The groups that must lie between an integer multiply-add and a group
- * that writes a register it reads: on the board a multiply-add's
- * multiplier rewritten three groups after it was read with its new
- * value (compiled fill dump, vf2-dmesg65, 2026-10-21); six is a margin
- * until the board narrows it.
+ * that writes a register it reads, by default (shader_integer_source_gap
+ * holds the one in use).  Six (vf2-dmesg65) made the compiled fill worse
+ * on the board (vf2-dmesg69, 0x00202004 in two words); back to two until
+ * the timing probes (compute-check.c run_timing_probes) measure it.  The
+ * spacing loops look back at most SHADER_GAP_MAX groups.
  */
-#define SHADER_INTEGER_SOURCE_GAP	6U
+#define SHADER_INTEGER_SOURCE_GAP	2U
+#define SHADER_GAP_MAX			8U
 
 /* The back end's state for one shader. */
 struct shader_backend {
@@ -232,5 +234,8 @@ int shader_backend_group(const struct shader_machine_operation *operation, int32
 int shader_backend_encode(struct shader_backend *backend, uint8_t *code, size_t room, size_t *length);
 int shader_backend_space_hazards(struct shader_backend *backend);
 unsigned shader_backend_hazards(const struct shader_backend *backend);
+
+extern unsigned shader_integer_source_gap;
+extern unsigned shader_filler_kind;
 
 #endif /* KERN_DRIVERS_GPU_POWERVR_SHADER_PRIVATE_H */
