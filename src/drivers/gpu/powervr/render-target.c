@@ -325,6 +325,15 @@ powervr_target_data_address(
 	return address;
 }
 
+/* Reports the layout a render target was made with. */
+const struct powervr_target_layout *
+powervr_target_layout_of(
+	const struct powervr_target *target)
+{
+	/* The target's own. */
+	return &target->layout;
+}
+
 /* Reports the firmware address of the cleanup count of one half of a render target. */
 uint32_t
 powervr_target_cleanup_address(

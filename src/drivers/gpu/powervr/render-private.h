@@ -481,6 +481,9 @@ int powervr_session_target(struct powervr_render *render, struct powervr_session
 /* Reports the firmware address of one half (0 or 1) of a render target's data set. */
 uint32_t powervr_target_data_address(const struct powervr_target *target, unsigned half);
 
+/* Reports the layout a render target was made with. */
+const struct powervr_target_layout *powervr_target_layout_of(const struct powervr_target *target);
+
 /* Reports the firmware address of the cleanup count of one half of a render target, which a kick names. */
 uint32_t powervr_target_cleanup_address(const struct powervr_target *target, unsigned half);
 

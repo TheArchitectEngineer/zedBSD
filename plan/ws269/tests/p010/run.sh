@@ -6,7 +6,8 @@
 # (p010n) the kick commands, render context state and reset notices
 # (render-kick-layout.c), and (p010h) the descriptor set bytes and data
 # sequencer programs (descriptor-set.c, data-program.c), the render context's
-# switch programs and task words (render-sr-program.c), and (p010e) the fixed
+# switch programs and task words (render-sr-program.c), the render commands'
+# registers (render-command.c), and (p010e) the fixed
 # render programs and words (render-program.c), and (p010f) the transfer
 # command words and copy program (transfer-program.c).
 #   plan/ws269/tests/p010/run.sh OUTDIR
@@ -34,6 +35,10 @@ cc -std=gnu11 -O2 -Wall -Wextra -Werror -I"$root/include" -I"$root/src" \
 	$compiler "$root/src/drivers/gpu/powervr/pds-encode.c" "$root/src/drivers/gpu/powervr/render-sr-program.c" \
 	"$here/program-host-test.c" -o "$out/program-host-test"
 "$out/program-host-test"
+cc -std=c11 -O2 -Wall -Wextra -Werror -I"$root/include" -I"$root/src" \
+	"$root/src/drivers/gpu/powervr/render-command.c" "$root/src/drivers/gpu/powervr/render-kick-layout.c" \
+	"$here/command-host-test.c" -o "$out/command-host-test"
+"$out/command-host-test"
 sh "$here/selftest-host.sh" "$out"
 cc -std=c11 -O2 -Wall -Wextra -Werror -I"$root/include" -I"$root/src" \
 	"$root/src/drivers/gpu/powervr/descriptor-set.c" "$root/src/drivers/gpu/powervr/data-program.c" \
