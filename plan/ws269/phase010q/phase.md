@@ -1338,3 +1338,22 @@ csbgen（Mesa 25.0.7 の `gen_pack_header.py` の `__pvr_address`: `((addr >> sh
   - fence の program（slot 0、code は +0x10）は変えていない。
 - p009 の executor の試験の期待（slot 0x80、code は +0x20、usc_inputs 4）を直した。502/502。
 - 確認: RISC-V の self-test の build で warning 0。板は未実施（Q1 が vkcompute・gpu-selftest を流す）。
+
+## q1501 / q1501-i01（2026-10-21）: Mesa の 3 kernel の compute stream（switch）
+
+- Mesa の vkcompute の stream（`plan/ws269/tests/p008/mesa-pco-vkcompute-stream-bxe-4-32.txt`）は 3 kernel と terminate からなる:
+  - K0 は shared register を確保する kernel（usc_common 64 byte、target ALL、sd NONE、usc_common_shared、PDS の data 32 byte、max_instances 8、1 instance）。
+  - K1 は dispatch（sd_type USC）。
+  - K2 は fence（sd PDS、usc_common_shared、max_instances 8）。
+- 我々の fence kernel は、確保されていない shared register を解放しようとして止まっている可能性がある（K0 が無い）。
+- `vk-queue.c` に `POWERVR_EXECUTOR_MESA_STREAM`（既定 0）を足した。1 の時の動き:
+  - dispatch の前に K0 を置く（`build_shared_kernel`: usc_common 16 register = 64 byte、any_cluster 0 = target ALL、common_shared 1、sd NONE、max_instances 8、instances 1）。K0 の PDS は slot 0 の +0x40 に data 2 語（0）、+0x50 に code（halt 1 語）を置く。
+  - dispatch の kernel は sd_type USC（`powervr_compute_kernel` に足した `shared_from_usc`。KERNEL1 の bit 2〜3 に 2 を書く）。
+  - fence kernel を有効にする（`POWERVR_EXECUTOR_FENCE_KERNEL` の既定が MESA_STREAM で on になる）。
+- `compute-program.c`・`.h`（P2 の file）には、`shared_from_usc` の 1 field と、PDS と USC の両方を同時に立てたら拒否する検査だけを足した。
+- 確認:
+  - RISC-V の self-test の build で warning 0（switch の 0 と 1 の両方）。
+  - 既定の 0 で p009 は 502/502、p008 は encode 94・compute 77。
+  - switch を 1 にすると、p009 の 1 kernel の形の期待 2 件が落ちる。stream が変わるためで、板で通ったら既定にし、試験を 3 kernel の形に直す。
+  - 板は未実施（Q1 が `-DPOWERVR_EXECUTOR_MESA_STREAM=1` で vkcompute を流す）。
+- 板で通らなかった場合: 1 submission の中の dispatch の間の順序は保証しない（fence が無い）、という制限を docs の Vulkan の queue の節と、この phase.md に書く（q1501 の (2)）。

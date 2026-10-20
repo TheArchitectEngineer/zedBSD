@@ -104,6 +104,8 @@
  * makes the kernel wait for the work before it.  Shared_from_pds and
  * common_shared say the data sequencer loads the shared registers and
  * the kernel frees them; any_cluster lets the task run on any cluster.
+ * Shared_from_usc names the shading cluster as the one that loads the
+ * shared registers (sd_type USC), as Mesa's dispatch kernels do.
  * Workgroups is the count of workgroups in each dimension (zero taken as
  * one), and usc_common the coefficient registers each workgroup's
  * instances share (the data sequencer writes the workgroup id there).
@@ -119,6 +121,7 @@ struct powervr_compute_kernel {
 	unsigned max_instances;
 	unsigned fence;
 	unsigned shared_from_pds;
+	unsigned shared_from_usc;
 	unsigned common_shared;
 	unsigned any_cluster;
 	unsigned workgroups[3];

@@ -169,6 +169,8 @@ powervr_compute_kernel_words(
 	/* Refuses flags that are not single bits. */
 	if (kernel->fence > 1 ||
 	    kernel->shared_from_pds > 1 ||
+	    kernel->shared_from_usc > 1 ||
+	    kernel->shared_from_pds + kernel->shared_from_usc > 1 ||
 	    kernel->common_shared > 1 ||
 	    kernel->any_cluster > 1)
 		return EINVAL;
@@ -208,6 +210,7 @@ powervr_compute_kernel_words(
 	/* The data segment, who loads the shared registers, and whether the kernel frees them. */
 	words[1] = kernel->data_offset;
 	words[1] |= kernel->shared_from_pds << 2;
+	words[1] |= (kernel->shared_from_usc * 2U) << 2;
 	words[1] |= kernel->common_shared << 1;
 
 	/* The code segment. */
