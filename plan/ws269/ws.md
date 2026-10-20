@@ -9,11 +9,18 @@
 
 ## 現在の状態（2026-10-21、再開点）
 
-- 板（VF2 の実機、板 93・94）: kernel の自己試験（compute check、render check の terminate-state・三角形・transfer・job check）が全部 ok。gpu-selftest は 13 ok / 0 fail / 0 skip。HDMI に vkdemo の cube の animation を出した。SD image は main b9672d30d。
-- 原因と直しの要約は [p010q](phase010q/phase.md) の先頭:
+- 板（VF2 の実機、板 96、SD image は main から作り直し中）:
+  - kernel の自己試験（compute check、render check の terminate-state・三角形・transfer・job check）が全部 ok。
+  - gpu-selftest は 13 ok / 0 fail / 0 skip。
+  - vkcoherency は PASS。
+  - vkmatrix（Keiland の Vulkan の範囲、15 case）は 15/15。
+  - context reset は 0。
+  - HDMI に vkdemo の cube の animation を出した。
+- p010q は cleared。原因と直しの要約は [p010q](phase010q/phase.md) の先頭:
   - TA: 末尾の terminate の PPP state。
-  - compute: Mesa の PDS program と、K0（shared の確保）・fence の 3 kernel。
-- 再開点: 残りの Phase の提案は [proposal-next-phases.md](proposal-next-phases.md)（q1506）。中身は、完了の条件の未達（Keiland の desktop、安定性、docs）、p010q の close と移管、規約の全文の見直しの 2 回目、Phase の表の案。
+  - compute: Mesa の PDS と 3 kernel。
+  - LOAD: 全画面の draw。
+- 再開点: 次の Phase（[proposal-next-phases.md](proposal-next-phases.md) の N2 安定性・N3 Keiland の範囲・N4 規約の全文の見直しの 2 回目・N5 docs・N6 594 MHz）。ID は Q1 が、ユーザーの判断の後に割り当てる。
 
 ## 完了の条件（案、着手の時に設計で確定する）
 
@@ -55,7 +62,7 @@
 | [p010j](phase010j/phase.md) | depth と vkdemo の offscreen | O-p010i | in-progress（2026-10-20 P2 q1387-i01 前半: render-depth.c（ZLS の word・clear の値）、render-pass.c の depth の受け入れ（部分の area は load を足す、版 2.3）、vkstage の depth の pipeline の compile、host 試験 12 PASS、M9 12 word 0 mismatch、VF2 build warning 0。fragment の command への受け渡しは後半。q1388-i01（P1）: ZLS を render-job の fragment の command に、depth の ENOTSUP を外した） |
 | [p010k1](phase010k1/phase.md) | WSI の readback の道（clear だけ、compiler なし） | O-p010f、O-P007 | in-progress（2026-10-20 P2 q1386-i01: libvulkan の readback の道が PowerVR で通る順を確かめた（vk の features の変更は不要）、vkstage present を semaphore・fence・3 秒に、VF2 の image build warning 0。実機は P1 の q1385 の後） |
 | [p010p](phase010p/phase.md) | format の広げ（純粋な関数の側） | O-p010f | in-progress（2026-10-20 P2 q1389-i01: R32_SFLOAT・R16G16B16A16_SFLOAT・float の texture code、clear の half/raw の pack。host 全 PASS、f16 は Mesa と一致、VF2 warning 0。raw 64/128 copy・PBE の F16 は残り。q1388-i01（P1）: gpu-selftest の present（vkdemo、depth が通るまで skip(depth)）、vkdemo を VF2 の試験の image に） |
-| [p010q](phase010q/phase.md) | 実機の前の点検（cache・MMU・SLC・順・時間切れの後） | O-p010n、O-p010e、O-p010f | in-progress（2026-10-21 N1: clear の条件をそろえた（TA・3D・compute・transfer・present・gpu-selftest 13/13・vkcoherency PASS）。vkmatrix（板 96）の後に Q1 が判定する。残件の行き先は phase.md の「clearance の記録」。2026-10-21: 板で TA・3D・render check・job check が通り（板 78、q1484 の terminate state）、gpu-selftest は 12/13。残り: compute の既定の PDS（P2 q1496）、fence kernel の lockup、mesa-form の probe の整理、compute-check の診断の行の整理、BUG-344。結論の要約は phase.md の先頭。以前の経過: 2026-10-20 P1 q1395-i01: 全部の kick の道を mainline・Mesa に照らした表、kick の拒否（quarantine・stopping・lost・isolated・abandoned）を render・transfer・compute に足した。build warning 0、p009 175/0、p010 0 failed。q1398-i01: vkstage・vkdemo の frame の host 試験を p009 に足し、pipeline の static な viewport・scissor が使われていなかった誤りを render-job.c で直した。p009 509/2（Keiland の古い期待 2 つ、P2 q1397）、p010 0 failed、VF2 warning 0。実機は未。q1399-i01 P2: P1 の job と P2 の関数の約束の点検、render の CLEAR の値が float の bit のまま背景に入っていた誤りを render-pass.c で直した（format の clear の word に）。p009 511/0、VF2 warning 0。P1 へ vertex の DMA の words と blit の odd stride。q1401-i01 P1: vertex の DMA を format の大きさに（不足は既定）、奇数 stride の linear の dst への blit を行ごとに。p009 511/0、p010 0 failed、VF2 warning 0） |
+| [p010q](phase010q/phase.md) | 実機の前の点検（cache・MMU・SLC・順・時間切れの後） | O-p010n、O-p010e、O-p010f | cleared（2026-10-21 Q1。板 96: vkmatrix 15/15、gpu-selftest 13/13、context reset 0。結論と残件の行き先は phase.md の先頭。以前の経過: 2026-10-21 N1: clear の条件をそろえた（TA・3D・compute・transfer・present・gpu-selftest 13/13・vkcoherency PASS）。vkmatrix（板 96）の後に Q1 が判定する。残件の行き先は phase.md の「clearance の記録」。2026-10-21: 板で TA・3D・render check・job check が通り（板 78、q1484 の terminate state）、gpu-selftest は 12/13。残り: compute の既定の PDS（P2 q1496）、fence kernel の lockup、mesa-form の probe の整理、compute-check の診断の行の整理、BUG-344。結論の要約は phase.md の先頭。以前の経過: 2026-10-20 P1 q1395-i01: 全部の kick の道を mainline・Mesa に照らした表、kick の拒否（quarantine・stopping・lost・isolated・abandoned）を render・transfer・compute に足した。build warning 0、p009 175/0、p010 0 failed。q1398-i01: vkstage・vkdemo の frame の host 試験を p009 に足し、pipeline の static な viewport・scissor が使われていなかった誤りを render-job.c で直した。p009 509/2（Keiland の古い期待 2 つ、P2 q1397）、p010 0 failed、VF2 warning 0。実機は未。q1399-i01 P2: P1 の job と P2 の関数の約束の点検、render の CLEAR の値が float の bit のまま背景に入っていた誤りを render-pass.c で直した（format の clear の word に）。p009 511/0、VF2 warning 0。P1 へ vertex の DMA の words と blit の odd stride。q1401-i01 P1: vertex の DMA を format の大きさに（不足は既定）、奇数 stride の linear の dst への blit を行ごとに。p009 511/0、p010 0 failed、VF2 warning 0） |
 | [p010k2](phase010k2/phase.md) | readback の道で vkdemo が画面に | O-p010k1、O-p010j | planning（2026-10-20 P1 q1391-i01: host の llvmpipe で vkdemo の期待の画（背景 101828、中央 e06895 @0 ms）と present の判定・UAT の文面の案） |
 | [p010l](phase010l/phase.md) | WSI の shared の道と p007 の import の試験（WS277 R6）、dc8200 の zero copy | O-p010k2、O-p010o | in-progress（2026-10-20 P2 q1390-i01: external の image・export・import・identity を受ける、export/import は SLC_BYPASS、linear の SAMPLED は 1 か所の切り替えで off のまま。p009 の試験は切り替え 0・1 で PASS、VF2 warning 0。実機は未実施） |
 | p010m | 仕上げ、T1 の回帰、p010 の受け入れ（vkdemo と gpu-selftest の clear・copy・draw、D-P7） | O-p010l | planning（同） |
