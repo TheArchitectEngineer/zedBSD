@@ -308,3 +308,22 @@ mainline と照らした結果（v7.3 の `pvr_ccb.c`・`pvr_fw.c`・`pvr_rogue_
   - CLEANUP の BUSY など、return の値そのものが要る command は、この道では EXECUTED だけになる。原因が分かるまでの回避。
 - dump に return slot 0〜3 と return の物理 address を足した（FW が別の slot に書いていないかを見る）。
 - 確かめ: VF2 の vmunix は warning 0。p010 は 0 failed。実機は未。
+
+## q1408-i01（P1、2026-10-20）: coherency の読み、return slot、compute の memory (16)
+
+(1) coherency の「stale」:
+- `coherency.c` の round は、CPU の cached の view（direct map）を先に読み込んで clean な行にしておき、FW に書かせる。「stale」は cached の view に前の値が見えた word の数、「missing」は uncached の alias に FW の値が無かった word の数。
+- 板の値は 31424 stale・0 missing。FW の書き込みは全部 DRAM（alias）に届いている。cached の view が古いのは、GPU の書き込みが CPU の L2 を snoop しないため（非 coherent、`take_memory` の設計どおり）。
+- したがって「GPU の書き込みが DRAM に出ない」のではない。driver は alias だけを読むので、この stale は問題でない。
+- StarFive の DDK（`drivers/gpu/drm/img/img-rogue/services/system/rogue/sf_7110/sysconfig.c`）も snoop は EMULATED（非 coherent）で、CPU 側を `sifive_l2_flush64_range` で保守する。GPU 側の SLC の特別な設定（SLC_CTRL_BYPASS・GARTEN_SLC）は BXE では入れていない（`rgxstartstop.c` の GARTEN_SLC は S7 の cache の階層だけ）。MIPS の entry の cache policy は uncached 2 で一致。
+
+(2) return slot:
+- mainline の health check は slot を待たずに送る（`pvr_power.c` の watchdog）。slot を待つのは MMU cache（`pvr_mmu.c`）と cleanup（`pvr_fw.c`）。StarFive の DDK も health check は slot 無し（`rgxfwutils.c` の `RGXScheduleCommand`）。
+- 板では FW が health check を実行したのに slot は 0 で、それ以外の FW の書き込みは alias に見えている。このことから、FW は health check の return slot を書かないと見る（推測）。
+- health check は FW の executed count で待つようにした（`powervr_command_wait_executed`）。他の command（MMU の flush など）は従来どおり return slot で待つ。見えない時の回避の行（`return 0x.. not seen`）はそちらで出れば本当の問題の証拠になる。
+
+(3) compute kernel の `memory (16)`:
+- zedBSD の errno で 16 は EEXIST（EBUSY は 17）。`compute-check.c` は run と stream を general heap の固定の位置（+1 MiB・+4 MiB）に map していた。session の中で同じ heap から取られた物と重なると EEXIST になる。
+- run・stream の位置を session の `powervr_gpu_space_take` で取るようにし、teardown で返す。PDS・USC は固定のまま。step の名前を `memory: run`・`streams`・`data sequencer programs`・`shading cluster programs` に分け、まだ重なればどれかが行に出る。
+
+確かめ: VF2 の vmunix は warning 0、p010 は 0 failed。実機は未。TA の reset lockup は別の件で、この直しの範囲外（次の dmesg を見て）。

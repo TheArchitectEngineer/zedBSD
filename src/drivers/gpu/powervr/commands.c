@@ -152,6 +152,45 @@ powervr_command_wait(
 }
 
 /*
+ * Waits, bounded, for the firmware's executed count to reach a command,
+ * for a command whose return slot the firmware does not write (the health
+ * check: mainline sends it without waiting on its slot).
+ *
+ * Procedure referenced:
+ * Linux v7.3 drivers/gpu/drm/imagination/pvr_power.c (the watchdog's
+ * health check sent with no slot to wait on) and pvr_rogue_fwif.h
+ * (struct rogue_fwif_osdata: kccb_cmds_executed).
+ */
+int
+powervr_command_wait_executed(
+	struct powervr_core *core,
+	uint32_t slot,
+	unsigned milliseconds)
+{
+	struct powervr_firmware *firmware;
+	uint64_t deadline;
+	uint64_t now;
+	uint32_t executed;
+
+	/* Reads the count once a tick until it reaches the command or the bound is spent. */
+	firmware = &core->firmware;
+	deadline = ms_deadline(milliseconds);
+	for (;;) {
+		executed = powervr_object_get32(&firmware->os_data, POWERVR_OS_DATA_KCCB_EXECUTED);
+		if ((int32_t)(executed - firmware->kccb_expect[slot]) >= 0)
+			return 0;
+
+		/* The bound is spent without the count. */
+		now = sched_ticks();
+		if (now >= deadline)
+			return ETIMEDOUT;
+
+		/* Sleeps one tick. */
+		sched_sleep(now + 1U);
+	}
+}
+
+/*
  * Sends one command and waits, bounded, for its answer.
  */
 int

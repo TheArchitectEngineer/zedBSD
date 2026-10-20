@@ -61,8 +61,6 @@
  * streams and the resume area, and of the data sequencer and shading
  * cluster programs, each in its heap with room before it.
  */
-#define RUN_ADDRESS		(POWERVR_GENERAL_HEAP_BASE + 0x100000ULL)
-#define STREAM_ADDRESS		(POWERVR_GENERAL_HEAP_BASE + 0x400000ULL)
 #define PDS_OFFSET		0x10000U
 #define USC_OFFSET		0x10000U
 
@@ -112,6 +110,14 @@ enum control_result {
 };
 
 /* The buffers of the check, where the core sees them, and the session they are mapped in. */
+/*
+ * Where the run and the streams are mapped: places the session's general
+ * heap hands out, so they never meet what the session itself mapped
+ * there (the check runs once, on one thread).
+ */
+static uint64_t run_address;
+static uint64_t stream_address;
+
 struct check_state {
 	struct powervr_render *render;
 	struct powervr_session *session;
@@ -122,6 +128,7 @@ struct check_state {
 	volatile uint32_t *alias;
 	const volatile uint32_t *cached;
 	unsigned mapped;
+	unsigned placed;
 };
 
 /* What the rounds found, word by word. */
@@ -230,6 +237,7 @@ setup(
 	state->pds = NULL;
 	state->usc = NULL;
 	state->mapped = 0;
+	state->placed = 0;
 
 	/* A session of the check's own. */
 	*step = "open";
@@ -238,23 +246,42 @@ setup(
 		return error;
 	state->session = opaque;
 
+	/* Places for the run and the streams in the session's general heap. */
+	*step = "memory places";
+	mutex_lock(&state->render->core->lock);
+
+	error = powervr_gpu_space_take(&state->session->space, CHECK_BYTES, &run_address);
+	if (error == 0) {
+		state->placed |= MAPPED_RUN;
+		error = powervr_gpu_space_take(&state->session->space, STREAM_BYTES, &stream_address);
+		if (error == 0)
+			state->placed |= MAPPED_STREAMS;
+	}
+
+	mutex_unlock(&state->render->core->lock);
+	if (error != 0)
+		return error;
+
 	/* The run the kernels write, with its alias and its cached view. */
-	*step = "memory";
-	error = take_buffer(state, CHECK_BYTES, RUN_ADDRESS, &state->run);
+	*step = "memory: run";
+	error = take_buffer(state, CHECK_BYTES, run_address, &state->run);
 	if (error != 0)
 		return error;
 	state->alias = (volatile uint32_t *)state->run->view;
 	state->cached = kern_pmem_to_kernel(state->run->run.paddr);
 
 	/* The control streams and the resume area, the data sequencer and the shading cluster programs. */
-	error = take_buffer(state, STREAM_BYTES, STREAM_ADDRESS, &state->streams);
+	*step = "memory: streams";
+	error = take_buffer(state, STREAM_BYTES, stream_address, &state->streams);
 	if (error != 0)
 		return error;
 
+	*step = "memory: data sequencer programs";
 	error = take_buffer(state, PDS_BYTES, POWERVR_PDS_HEAP_BASE + PDS_OFFSET, &state->pds);
 	if (error != 0)
 		return error;
 
+	*step = "memory: shading cluster programs";
 	error = take_buffer(state, USC_BYTES, POWERVR_USC_HEAP_BASE + USC_OFFSET, &state->usc);
 	if (error != 0)
 		return error;
@@ -291,15 +318,19 @@ teardown(
 	mutex_lock(&render->core->lock);
 
 	if ((state->mapped & MAPPED_RUN) != 0)
-		powervr_gpu_mmu_unmap(&state->session->mmu, RUN_ADDRESS, state->run->run.size);
+		powervr_gpu_mmu_unmap(&state->session->mmu, run_address, state->run->run.size);
 	if ((state->mapped & MAPPED_STREAMS) != 0)
-		powervr_gpu_mmu_unmap(&state->session->mmu, STREAM_ADDRESS, state->streams->run.size);
+		powervr_gpu_mmu_unmap(&state->session->mmu, stream_address, state->streams->run.size);
 	if ((state->mapped & MAPPED_PDS) != 0)
 		powervr_gpu_mmu_unmap(&state->session->mmu, POWERVR_PDS_HEAP_BASE + PDS_OFFSET, state->pds->run.size);
 	if ((state->mapped & MAPPED_USC) != 0)
 		powervr_gpu_mmu_unmap(&state->session->mmu, POWERVR_USC_HEAP_BASE + USC_OFFSET, state->usc->run.size);
 	if (state->mapped != 0)
 		(void)powervr_command_mmu_flush(render->core);
+	if ((state->placed & MAPPED_RUN) != 0)
+		(void)powervr_gpu_space_give(&state->session->space, run_address);
+	if ((state->placed & MAPPED_STREAMS) != 0)
+		(void)powervr_gpu_space_give(&state->session->space, stream_address);
 
 	mutex_unlock(&render->core->lock);
 
@@ -360,9 +391,9 @@ take_buffer(
 	}
 
 	/* Notes the mapping by the buffer's place, so teardown removes it. */
-	if (address == RUN_ADDRESS) {
+	if (address == run_address) {
 		state->mapped |= MAPPED_RUN;
-	} else if (address == STREAM_ADDRESS) {
+	} else if (address == stream_address) {
 		state->mapped |= MAPPED_STREAMS;
 	} else if (address == POWERVR_PDS_HEAP_BASE + PDS_OFFSET) {
 		state->mapped |= MAPPED_PDS;
@@ -402,7 +433,7 @@ write_programs(
 	/* One store program per round, each over its own window. */
 	error = 0;
 	for (round = 0; round < CHECK_ROUNDS; round++) {
-		error = powervr_compute_store_program(RUN_ADDRESS + (uint64_t)round * CHECK_STRIDE, CHECK_STEPS, code, USC_ROOM, &length);
+		error = powervr_compute_store_program(run_address + (uint64_t)round * CHECK_STRIDE, CHECK_STEPS, code, USC_ROOM, &length);
 		if (error != 0)
 			break;
 		put_bytes(state->usc, round * USC_ROOM, code, length);
@@ -410,7 +441,7 @@ write_programs(
 
 	/* The temporaries program, after the store programs. */
 	if (error == 0) {
-		error = powervr_compute_temps_program(RUN_ADDRESS + TEMPS_OFFSET, code, USC_ROOM, &length);
+		error = powervr_compute_temps_program(run_address + TEMPS_OFFSET, code, USC_ROOM, &length);
 		if (error == 0)
 			put_bytes(state->usc, CHECK_ROUNDS * USC_ROOM, code, length);
 	}
@@ -580,7 +611,7 @@ kick(
 	int error;
 
 	/* The command names the kick's stream and the shared resume area. */
-	powervr_compute_command(STREAM_ADDRESS + STREAM_FIRST + (uint64_t)kick_index * STREAM_SPACING, STREAM_ADDRESS, command);
+	powervr_compute_command(stream_address + STREAM_FIRST + (uint64_t)kick_index * STREAM_SPACING, stream_address, command);
 
 	/* Sends it with the next timeline value. */
 	mutex_lock(&state->render->core->lock);
@@ -880,7 +911,7 @@ pattern(
 	uint64_t address;
 
 	/* The low half of the word's device address. */
-	address = RUN_ADDRESS + (uint64_t)round * CHECK_STRIDE + (uint64_t)word * 4U;
+	address = run_address + (uint64_t)round * CHECK_STRIDE + (uint64_t)word * 4U;
 
 	/* Succeeded: the value. */
 	return (uint32_t)address;
