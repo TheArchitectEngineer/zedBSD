@@ -32,15 +32,18 @@
 
 /*
  * The temporaries the back end keeps for itself: the execution mask
- * counter, scratch words, the coordinate pair of a sample and the
- * address pair of a memory access.  Values start after them.
+ * counter, scratch words, the coordinate pair of a sample, the address
+ * pair of a memory access and the store's data right after it (the
+ * hardware's st32 takes the data from the register after the address
+ * pair, as Mesa lays them out in one vector).  Values start after them.
  */
 #define TEMP_EMC		0U
 #define TEMP_SCRATCH		1U
 #define TEMP_SCRATCH_COUNT	3U
 #define TEMP_COORDINATES	4U
 #define TEMP_ADDRESS		6U
-#define TEMP_FIRST_VALUE	8U
+#define TEMP_STORE_DATA		8U
+#define TEMP_FIRST_VALUE	9U
 
 /*
  * The special registers the back end names: constant zero, one, the
@@ -861,12 +864,17 @@ select_instruction(
 		(void)append(select, MACHINE_WAIT);
 		break;
 	case POWERVR_IR_STORE:
-		/* The data, the address, the store, the wait for it. */
+		/* The data moved after the address pair, the address, the store, the wait for it. */
 		source = operand_plain(select, &instruction->source[3], 0);
+		operation = append(select, MACHINE_MOVE);
+		if (operation != NULL) {
+			operation->destination[0] = temp_register(TEMP_STORE_DATA);
+			operation->source[0] = source;
+		}
 		select_address(select, instruction);
 		operation = append(select, MACHINE_STORE);
 		if (operation != NULL) {
-			operation->source[0] = source;
+			operation->source[0] = temp_register(TEMP_STORE_DATA);
 			operation->source[1] = temp_register(TEMP_ADDRESS);
 		}
 		(void)append(select, MACHINE_WAIT);

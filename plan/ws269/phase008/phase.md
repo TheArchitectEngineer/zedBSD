@@ -457,3 +457,43 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
   - grid と wide の temps が 0/32 wrong（temps の program も in place をやめた）。
   - ADDRESS・STRIDE の own words が ffffffff。
 - 片付け（Q1 に依頼）: `build/p024/`。
+
+## q1446-i01（P2、2026-10-20）: st の data は address の対の次の register に
+
+- 板の 9 回目（vf2-dmesg43）:
+  - ADDRESS の own words に garbage が書かれた（[1]=a032b820 など）。
+  - store は 1 step が 0/32 に退行し、その後 lockup した。
+  - like store の 3 種は正しい。in place は 00006db1 のまま。
+- 原因（q1444 で入れた形）:
+  - st の data を address の対と離して置いた（address r12、data r2。fill は address r2、data r6）。
+  - Mesa の `trans_store_global` は address の低・高と data を 1 つの vector に並べる。hardware は data を「address の対の次」の register から取ると見る（data の selector とは関係なく）。通った形（LIKE_STORE、前の store）は、どれも address r0・r1 と data r2 だった。
+  - COMPUTED の probe の「low 001fa004」も同じ理由で説明できる。st の address は r8・r9 だったので、data として r10（＝ base+4）が書かれた。
+- 直し:
+  - `compute-program.c`:
+    - `store_group` は data が address+2 でなければ EINVAL を返す。comment に規則を書いた。
+    - store の step: address r12・r13、data r14（pass）。
+    - temps: address r4・r5、data r6。
+    - fill: address r2・r3、data r4（pass、14 group）。
+    - ADDRESS 系の probe: address r12・r13、data r14。
+    - COMPUTED: r0 を r8・r9・r10 で、r1 を r12・r13・r14 で store。
+    - probe の temporaries は 15。store の 16 で r14 まで足りる。
+  - **compiler の back end（`shader-backend.c`）にも同じ誤りがあった**: st の data は任意の値の register で、address は r6・r7。data を r8（`TEMP_STORE_DATA`、新しく予約）に MOVE してから st する形にした。値の register は r9（`TEMP_FIRST_VALUE`）から。vk の compute（vkcompute の fill）の store も、これで並びが正しくなる。
+- 試験:
+  - `plan/ws269/tests/p008/compute-host-test.c` の temps の group 11 を r6 にした。
+  - compiler の host 試験（396・group 20）は、そのまま PASS。
+
+| 確認 | 結果 |
+| --- | --- |
+| p008 の host | encode 94/0、compute 72/0 |
+| compiler の host（p010-compiler） | 396/0、group 20/0 |
+| p009（切り替え 0） | 511 passed、0 failed |
+| p010 | 全部 0 failed |
+| probe 16 種・fill・temps・store 512 step の encode | 全部 0 |
+| VF2 の vmunix（`plan/ws269/tests/p008/config-visionfive2-compute.mk`、`build/p025/vf2/vmunix`） | rc 0、warning 0 |
+
+- 板で見ること:
+  - kernel が OK。
+  - store が 1 step 32/32、4 step 128/128。
+  - own words・stride・grid・wide の temps が全部正しいこと。
+  - その後に gpu-selftest の compute（vkcompute）も見る。
+- 片付け（Q1 に依頼）: `build/p025/`。

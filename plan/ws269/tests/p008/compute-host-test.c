@@ -333,8 +333,8 @@ test_temps_program(void)
 	/* Group 1, r3 = 0xdead0003: immediate low byte first, destination 0x43. */
 	static const uint8_t fill_r3[] = { 0x86, 0x92, 0x40, 0x13, 0x03, 0x00, 0xad, 0xde, 0x00, 0x00, 0x43, 0xff };
 
-	/* Group 11, r2 = byp(r7): lower source bank temp 1 <<6 | 7 = 0x47, destination 0x42. */
-	static const uint8_t pass_r2[] = { 0x34, 0x82, 0x00, 0x87, 0x47, 0x00, 0x00, 0x42 };
+	/* Group 11, r6 = byp(r7), the data after the address pair r4, r5: lower source bank temp 1 <<6 | 7 = 0x47, destination 0x46. */
+	static const uint8_t pass_r6[] = { 0x34, 0x82, 0x00, 0x87, 0x47, 0x00, 0x00, 0x46 };
 
 	error = powervr_compute_temps_program(0x80001f0000ULL, program, sizeof(program), &length);
 	check(error == 0, "temps program built");
@@ -350,7 +350,7 @@ test_temps_program(void)
 	check_bytes(program + starts[0], pass_r7, sizeof(pass_r7), "temps group 0, r7 = movs1 sr51");
 	check_bytes(program + starts[1], fill_r3, sizeof(fill_r3), "temps group 1, r3 fill");
 	check(program[starts[10] + 1] == 0x86 && program[starts[10] + 3] == 0xe0, "temps group 10, add64_32");
-	check_bytes(program + starts[11], pass_r2, sizeof(pass_r2), "temps group 11, r2 = r7");
+	check_bytes(program + starts[11], pass_r6, sizeof(pass_r6), "temps group 11, r6 = r7");
 	check(program[starts[12] + 1] == 0xa0 && program[starts[12] + 3] == 0xf2, "temps group 12, st");
 	check(program[starts[13] + 2] == 0x6a, "temps group 13, wdf");
 	check(program[starts[14] + 2] == 0xee, "temps group 14, nop end");
