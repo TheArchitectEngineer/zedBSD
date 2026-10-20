@@ -386,3 +386,44 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
 | VF2 の vmunix（`plan/ws269/tests/p008/config-visionfive2-compute.mk`、`build/p022/vf2/vmunix`） | rc 0、warning 0 |
 
 - 片付け（Q1 に依頼）: `build/p022/`。
+
+## q1441-i01（P2、2026-10-20）: encoder の register の field の M9、と store の形の probe
+
+- 板の 7 回目（vf2-dmesg38）:
+  - grid の u32・f16 でも temps は 31/32 wrong。u32・f8 で fault（0x8000213550）。
+  - register の数の単位では説明できない。
+- **M9（register の operand の encode）**:
+  - Mesa 26.2.5 の `pco_isa.h.py`・`pco_common.h.py` から `pco_isa.h` を生成した。usc-encode.c の lower の source の 8 form、upper の 8 form、destination の 5 form の layout（`layout_place`）の bytes を、Mesa の `pco_src_*_encode`・`pco_dst_*_encode` の bytes と比べた。register は各 form の bank と index の上限の中で乱数（r0〜r3 も r4 以上も、bank も、mux も含む）。
+  - 結果は **84000 passed、0 failed**。register の番号と bank の field（r4 以上、src2、dst の bank を含む）は Mesa と bit 単位で一致する。
+  - 試験は `plan/ws269/tests/p008/m9-forms.sh MESA_SRC OUTDIR`（`m9-forms.c`、Mesa の展開した tree が要る）。
+- group の並び（読みで確かめた）:
+  - Mesa の `pco_encode_igrp` の順（header、命令は後ろの phase から、lower、upper、iss、dest、padding）と同じ。
+  - main・bitwise の group は使わない側の source の 1 byte の form も出す（Mesa の `pco_igrp_src_variant` も、control 以外は必ず出す）。
+  - main の group には必ず iss がある（`pco_igrp_iss_variant`）。
+  - da（main は header と phase 2・back end の命令の長さ）と length も Mesa と同じ。
+  - IMADD32 の group（`36 82 00 e2 c5 64 00 40 00 00 40 ff`）を手で読むと、s0=r5、s1=r4、s2=r0、dst=r0、w1p=0、is4=ft0 で正しい。
+- encode に誤りが見つからないので、違いを板で切り分ける probe を足した。基準にするのは、板で 32/32 通った 1 step の store の形:
+  - offset を IMADD で r8 に作る。
+  - base を r10・r11 に置く。
+  - add64 で r0・r1 を作る。
+  - data は pass で入れる。
+- 足した 4 種:
+  - LIKE_STORE: その形そのまま（data は address の低い word）。期待は ffffffff。
+  - LIKE_STORE_NUMBER: data を inst_num にする。ADDRESS の probe との違いはここだけ。
+  - LIKE_STORE_IN_PLACE: base を r0・r1 に置き、add64 が読む pair に書く。
+  - LIKE_STORE_EARLY: r0〜r11 を IMADD の前に書く。
+  - 出力の行: `powervr: compute probes: like store (address) MASK (e), number MASK (e), in place MASK (e), early MASK (e)`。
+- probe の場所を 0x1a0000 からに移し、USC の room を 3 つにした（16 種 × 4 KiB と、2 つの短い store）。前は 0x1f1000 からで、16 種なら run の外に出る。
+- 読み方:
+  - LIKE_STORE が ffffffff で NUMBER が 1 だけなら、data が inst_num の時だけ壊れる（data の register か、値が 0 でない時）。
+  - IN_PLACE だけが壊れるなら、読む pair と同じ pair への書き込み（ADDRESS・temps・fill・前の store の形）。
+  - EARLY だけが壊れるなら、IMADD より前に書いた register が壊れる（COMPUTED の r1 と同じ）。
+
+| 確認 | 結果 |
+| --- | --- |
+| M9（operand の form） | 84000 passed、0 failed |
+| p008 の host | encode 94/0、compute 72/0 |
+| probe の encode（16 種、host） | 全部 0 |
+| VF2 の vmunix（`plan/ws269/tests/p008/config-visionfive2-compute.mk`、`build/p023/vf2/vmunix`） | rc 0、warning 0 |
+
+- 片付け（Q1 に依頼）: `build/p023/`。

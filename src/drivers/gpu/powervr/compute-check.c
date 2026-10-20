@@ -77,11 +77,11 @@
 
 /* The shading cluster buffer: one 32 KiB room per program. */
 #define USC_ROOM		0x8000U
-#define USC_PROGRAMS		(CHECK_ROUNDS + 3U)
+#define USC_PROGRAMS		(CHECK_ROUNDS + 4U)
 
 /*
  * The probes' rooms, after the temporaries program's: each probe program
- * and the two short store programs 4 KiB apart in them.
+ * and the two short store programs 4 KiB apart in them (three rooms).
  */
 #define USC_PROBE_ROOM		((CHECK_ROUNDS + 1U) * USC_ROOM)
 #define USC_PROBE_SPACING	0x1000U
@@ -131,11 +131,11 @@
 #define KICK_GRID_FIRST		(KICK_TEMPS_WIDE + 1U)
 
 /*
- * Where in the run the probes write: each probe's 32 words 256 bytes
- * apart after the temporaries program's, and the two short store
- * programs' windows.
+ * Where in the run the probes write: each probe's area 4 KiB apart
+ * from 0x1a0000 (inside the run, below the temporaries program's), and
+ * the two short store programs' windows.
  */
-#define PROBE_OFFSET		(TEMPS_OFFSET + 0x1000U)
+#define PROBE_OFFSET		0x1a0000U
 #define PROBE_SPACING		0x1000U
 #define STEPS_ONE_OFFSET	0x180000U
 #define STEPS_FOUR_OFFSET	0x190000U
@@ -212,6 +212,7 @@ static void run_probes(struct check_state *state);
 static int write_grid(struct check_state *state);
 static void run_grid(struct check_state *state);
 static uint32_t own_words(struct check_state *state, unsigned kind);
+static uint32_t address_words(struct check_state *state, unsigned kind);
 static uint32_t probe_word(struct check_state *state, unsigned kind, uint32_t word);
 static int run_store_window(struct check_state *state, unsigned kick_index, uint32_t offset, uint32_t words, unsigned *written);
 static int write_probe_streams(struct check_state *state);
@@ -806,6 +807,17 @@ run_probes(
 		  own_words(state, POWERVR_COMPUTE_PROBE_MOVED),
 		  errors[POWERVR_COMPUTE_PROBE_MOVED]);
 
+	/* The one-step store's way, its variants. */
+	kern_logf("powervr: compute probes: like store (address) %08x (%d), number %08x (%d), in place %08x (%d), early %08x (%d)\n",
+		  address_words(state, POWERVR_COMPUTE_PROBE_LIKE_STORE),
+		  errors[POWERVR_COMPUTE_PROBE_LIKE_STORE],
+		  own_words(state, POWERVR_COMPUTE_PROBE_LIKE_STORE_NUMBER),
+		  errors[POWERVR_COMPUTE_PROBE_LIKE_STORE_NUMBER],
+		  own_words(state, POWERVR_COMPUTE_PROBE_LIKE_STORE_IN_PLACE),
+		  errors[POWERVR_COMPUTE_PROBE_LIKE_STORE_IN_PLACE],
+		  own_words(state, POWERVR_COMPUTE_PROBE_LIKE_STORE_EARLY),
+		  errors[POWERVR_COMPUTE_PROBE_LIKE_STORE_EARLY]);
+
 	/* The short stores: one step (32 words) and four (128). */
 	one = 0;
 	four = 0;
@@ -884,6 +896,30 @@ run_grid(
 
 	/* The grid on one line: wrong instances of 32 for each unified size and field. */
 	kern_logf("powervr: compute grid (wrong of 32, unified regs u, field f):%s\n", line);
+}
+
+/* Reports, as a mask, which instances' words of a probe hold their own address's low word. */
+static uint32_t
+address_words(
+	struct check_state *state,
+	unsigned kind)
+{
+	volatile uint32_t *words;
+	uint32_t address;
+	uint32_t mask;
+	uint32_t instance;
+
+	/* Each instance's word. */
+	words = state->alias + (PROBE_OFFSET + kind * PROBE_SPACING) / 4U;
+	mask = 0;
+	for (instance = 0; instance < POWERVR_COMPUTE_INSTANCES; instance++) {
+		address = (uint32_t)(run_address + PROBE_OFFSET + kind * PROBE_SPACING + instance * 4U);
+		if (words[instance] == address)
+			mask |= 1U << instance;
+	}
+
+	/* Succeeded: the mask. */
+	return mask;
 }
 
 /* Reads one word of a probe's area. */
