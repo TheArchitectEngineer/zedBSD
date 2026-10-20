@@ -181,3 +181,10 @@ Keiland が使い、vkmatrix 15/15・gpu-selftest 13/13 で確かめていない
   nearest で 32x32 の quad に sample して、pixel ごとに比べる。
   lavapipe（`plan/ws269/tests/vkmatrix/run.sh`）で 22/22 PASS。VF2 の vmunix と bin/vkmatrix は rc 0、warning 0。
 - 次: 板で sample-linear-* の結果（PASS、FAIL、lockup）を見て、desktop の前に linear の sampling だけを切り分ける。
+
+## 板の経過（2026-10-21 Q1、desktop の 2〜4 回目）
+
+- d2（q1523 の linear SAMPLED on、ec66edf23）: client の swapchain は通り、settings --welcome（1180x800）・files の desktop（1920x1036）が import される。数 frame の後に compositor の 3D が lockup: `context reset notice: context 0x5 reason 1 dm 3 … pc 0x47dec001 fault 0` → `session lost` → `KWL EXIT … error=5`、greeter に戻る（build/review/vf2-desktop/shot3.png、greeter は正しく描かれる）。terminal は `terminal_window_open … errno=6`（compositor が居ない）。
+- d3（P1 の timing、52353d85d）: 同じ lockup。1 回は terminal の起動の時に板が自分で再起動し、log は残らなかった（原因は未確認）。
+- d4（f046eed60）: login の直後（terminal なし）に `context 0x4 reason 1 dm 3 pc 0x41db7000 fault 0x8009ae2500`。timing: job の待ちは 3D が 1 job 約 37 ms（TA は 1.6 ms）、1 submit に約 2.4 job → P1 q1524。
+- vkmatrix 22/22（sample-linear-65・sample-linear-1180 を含む、e71afc04c）: linear の sampling 自体は通る → lockup は import の memory・blur・大きな draw など compositor に固有の所（P2 q1523-i02）。
