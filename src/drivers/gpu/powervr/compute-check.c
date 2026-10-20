@@ -147,6 +147,7 @@
 #define USC_COMPILED		(USC_STEPS_FOUR + USC_PROBE_SPACING)
 #define COMPILED_OFFSET		0x1c0000U
 #define COMPILED_GROUPS		4U
+#define COMPILED_VK_GROUPS	128U
 
 /*
  * The room for the compiled fill and its dump programs (to the end of
@@ -245,6 +246,7 @@ struct check_state {
 	unsigned placed;
 	int probing;
 	int no_resume;
+	unsigned max_instances;
 };
 
 /* What the rounds found, word by word. */
@@ -264,7 +266,7 @@ static int write_kick(struct check_state *state, unsigned kick, uint32_t usc_pla
 static int write_probes(struct check_state *state, uint8_t *code);
 static void run_probes(struct check_state *state);
 static void run_nop_probe(struct check_state *state);
-static void run_compiled_fill(struct check_state *state, int dumps, unsigned groups, unsigned field_override);
+static void run_compiled_fill(struct check_state *state, int dumps, unsigned groups, unsigned field_override, unsigned max_instances);
 static int compile_fill(struct powervr_shader_workspace *workspace, struct powervr_shader_program *program, uint8_t *code, uint64_t address, unsigned *field);
 static void run_cf0_probe(struct check_state *state);
 static int fresh_session(struct check_state *state);
@@ -312,7 +314,12 @@ void
 powervr_compute_check(
 	struct powervr_render *render)
 {
-	static const unsigned fill_fields[] = { 0, 17, 18, 20, 24 };
+	static const unsigned sweep[][3] = {
+		{ 1, 0, 0 }, { 1, 0, 16 }, { 1, 0, 8 }, { 1, 0, 4 },
+		{ COMPILED_GROUPS, 0, 0 }, { COMPILED_GROUPS, 0, 16 }, { COMPILED_GROUPS, 0, 8 }, { COMPILED_GROUPS, 0, 4 },
+		{ COMPILED_VK_GROUPS, 0, 0 }, { COMPILED_VK_GROUPS, 0, 16 }, { COMPILED_VK_GROUPS, 0, 8 }, { COMPILED_VK_GROUPS, 0, 4 },
+		{ 1, 24, 0 }, { COMPILED_GROUPS, 24, 0 }, { COMPILED_VK_GROUPS, 24, 0 },
+	};
 	struct check_state state;
 	const char *step;
 	unsigned written;
@@ -416,13 +423,8 @@ powervr_compute_check(
 	if (POWERVR_COMPUTE_LOCKUP_PROBES)
 		run_nop_probe(&state);
 
-	/*
-	 * The compiler's program (no spacing, as Mesa's) as one workgroup,
-	 * with its task field as computed (its prefixes dumped first) and
-	 * with the fields of the unit sweep.
-	 */
-	for (index = 0; index < sizeof(fill_fields) / sizeof(fill_fields[0]); index++)
-		run_compiled_fill(&state, index == 0, 1, fill_fields[index]);
+	/* The compiler's program (no spacing, as Mesa's) as one workgroup, its prefixes dumped. */
+	run_compiled_fill(&state, 1, 1, 0, 0);
 
 	/* The register-window probe and the hand-written workgroup id probe (sessions of its own). */
 	run_field_probes(&state);
@@ -436,9 +438,15 @@ powervr_compute_check(
 	 */
 	if (fresh_session(&state) == 0)
 		run_cf0_probe(&state);
-	for (index = 0; index < sizeof(fill_fields) / sizeof(fill_fields[0]); index++) {
+	/*
+	 * The compiled fill over 1, 4 and 128 workgroups (as vkcompute), with
+	 * the field as Mesa computes it and the task size Mesa's (0, all 32
+	 * instances), 16, 8 and 4, then with field 24 and Mesa's task size;
+	 * each on a fresh session.
+	 */
+	for (index = 0; index < sizeof(sweep) / sizeof(sweep[0]); index++) {
 		if (fresh_session(&state) == 0)
-			run_compiled_fill(&state, 0, COMPILED_GROUPS, fill_fields[index]);
+			run_compiled_fill(&state, 0, sweep[index][0], sweep[index][1], sweep[index][2]);
 	}
 	if (POWERVR_COMPUTE_LOCKUP_PROBES)
 		run_layouts(&state);
@@ -480,6 +488,7 @@ setup(
 	state->placed = 0;
 	state->probing = 0;
 	state->no_resume = 0;
+	state->max_instances = 0;
 
 	/* A session of the check's own. */
 	*step = "open";
@@ -1135,7 +1144,8 @@ run_compiled_fill(
 	struct check_state *state,
 	int dumps,
 	unsigned groups,
-	unsigned field_override)
+	unsigned field_override,
+	unsigned max_instances)
 {
 	struct powervr_shader_workspace *workspace;
 	struct powervr_shader_program *program;
@@ -1175,7 +1185,9 @@ run_compiled_fill(
 
 	if (error == 0) {
 		put_bytes(state->usc, USC_COMPILED, code, program->length);
+		state->max_instances = max_instances;
 		error = write_workgroup_kick(state, field, groups);
+		state->max_instances = 0;
 	}
 
 	/* The words and 64 KiB either side of them, each its own pattern, then the kick. */
@@ -1204,8 +1216,9 @@ run_compiled_fill(
 		if (words[word] == word * 3U + 7U)
 			good++;
 	}
-	kern_logf("powervr: compute probes: compiled fill %u workgroups %u/%u (%d), %u bytes, %u temps, field %u, words 0 %08x 32 %08x\n",
+	kern_logf("powervr: compute probes: compiled fill %u workgroups, max instances %u: %u/%u (%d), %u bytes, %u temps, field %u, words 0 %08x 32 %08x\n",
 		  groups,
+		  max_instances,
 		  good,
 		  groups * (unsigned)POWERVR_COMPUTE_INSTANCES,
 		  error,
@@ -1567,7 +1580,7 @@ write_workgroup_kick(
 	for (i = 0; i < count; i++)
 		put_word(state->pds, slot + PDS_CODE + i * 4U, code[i]);
 
-	/* The kernel: WG_GROUPS workgroups of a whole task, their ids in the common store. */
+	/* The kernel: the workgroups, a whole task each, their ids in the common store, the task size the check names (0, all 32). */
 	kern_memset(&kernel, 0, sizeof(kernel));
 	kernel.data_offset = pds_offset + slot;
 	kernel.code_offset = pds_offset + slot + PDS_CODE;
@@ -1577,6 +1590,7 @@ write_workgroup_kick(
 	kernel.usc_common = WG_COEFFICIENTS;
 	kernel.usc_temporaries = WG_TEMPORARIES;
 	kernel.instances = POWERVR_COMPUTE_INSTANCES;
+	kernel.max_instances = state->max_instances;
 	kernel.any_cluster = 1;
 	error = powervr_compute_kernel_words(&kernel, words);
 	if (error != 0)

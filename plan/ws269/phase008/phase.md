@@ -1403,3 +1403,29 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
 - 読み方: 全 lane が old になる最小の field と、compiled fill が 32/32・128/128 になる最小の field から単位を決める（17 temps で 18 なら 1 register 単位で＋1）。
 - **P1 への依頼（vk-queue.c）**: `powervr_compute_temporaries_field(temps, 2, …)` を `powervr_compute_task_field(temps, …)` に替える。今のままでは 17 temps で 9 になり、窓が重なるので、vkcompute は 4096/4096 にならない見込み。
 - host: p008 は 94/0・77/0、compiler は 455/0・20/0、p009 は 502/0、fill-registers は 32/32。VF2 の vmunix（`build/p2q1490/vf2/vmunix`）は rc 0、warning 0。板は未実施。
+
+## q1492-i01（P2、2026-10-21）: field を Mesa の計算に戻し、task size（KERNEL8 max_instances）を掃引
+
+- 板 85:
+  - compiled fill（1 wg）は field 17・18 で 0/32、20・24 で 32/32。
+  - madd の probe（32 temps）は field 32〜48 で全部正しい。
+  - 4 wg は、field を広げても直らない（17 → 33/128、24 → 64/128、18・20 → fault）。
+- **Mesa（25.0.7 pvr_cmd_buffer.c）の task size の計算**:
+  - `pvr_compute_update_kernel` は `work_size = MAX2(workgroup の大きさ, ROGUE_MAX_INSTANCES_PER_TASK 32)` にする。
+  - その後 `info.max_instances = pvr_compute_flat_slot_size(pdevice, coeff_regs, false, work_size)` を呼ぶ。この関数は `total_workitems >= 32` の時、32 を返す。
+  - KERNEL8 では 32 を 0 と書く（`if (info->max_instances == ROGUE_MAX_INSTANCES_PER_TASK) kernel8.max_instances = 0`）。
+  - **つまり 32 instance の workgroup では、Mesa も max_instances 0**。我々（P1 の表）と同じ。
+  - usc_common は coeff_regs（workgroup id の 3）、usc_unified は unified store の数（vi0 を使う時）。fence kernel の 8 は `flat_slot_size(0, false, 1)`。
+  - Mesa の値と違う所は、kernel の語の上では見つからなかった。
+- 変更:
+  1. `powervr_compute_task_field` を **Mesa どおり ceil(temps/4)** に戻した（＋1 も無し。p008 の host の期待値を 2・4・4 に、253 の拒否に直した。77/0）。
+  2. `check_state.max_instances`（既定 0）を足した。`write_workgroup_kick` の kernel 語の max_instances に入る。`run_compiled_fill(state, dumps, groups, field_override, max_instances)`。
+  3. **compute check の掃引**（各々新しい session）:
+     - compiled fill（17 temps、Mesa の field ＝ 5）を 1・4・128 workgroup × max_instances 0（Mesa）・16・8・4 で。
+     - 対照として、field 24・max 0 を 1・4・128 で。
+     - 先頭の 1 wg（dump 付き）は Mesa の field・max 0。
+     - 行: `compiled fill G workgroups, max instances M: N/T (e), bytes, temps, field F, words 0 … 32 …`。
+- 読み方:
+  - max_instances を下げて 4・128 wg が通れば、1 task（slot）に詰める instance が register の予算を超えている（Q1 の見立て）。
+  - どれも通らず、field 24 の対照だけが 1 wg で通るなら、予算の元（USC の register の総量や割当の単位の設定）が Mesa の driver と違う。firmware・core の設定の側を調べる。
+- VF2 の vmunix（`build/p2q1492/vf2/vmunix`）: rc 0、warning 0。板は未実施。
