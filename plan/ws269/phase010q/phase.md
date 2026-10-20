@@ -1384,3 +1384,43 @@ csbgen（Mesa 25.0.7 の `gen_pack_header.py` の `__pvr_address`: `((addr >> sh
 - `vk-queue.c` の shared register の確保を、P2 の q1503 の helper に寄せた: slot 0 の program は `powervr_compute_shared_program`、`build_shared_kernel` の語は `powervr_compute_shared_kernel_words`。自前の定数 `QUEUE_SHARED_COMMON`・`QUEUE_FENCE_INSTANCES` は消して helper 側（`POWERVR_COMPUTE_SHARED_COMMON`・`POWERVR_COMPUTE_FENCE_INSTANCES`）に寄せた。使わなくなった `pds-encode.h` の include も外した。
 - p009 の executor の試験: K0 の期待を helper から取り、slot 0 の shared の program の確認を足した。505/505。
 - 確認: RISC-V の self-test の build で warning 0。板は未実施。
+
+## q1507 / q1507-i01（2026-10-21）: vkmatrix（Keiland の Vulkan の範囲の行列）
+
+- `userland/tests/vkmatrix/`（vkstage と同じ作り。標準の Vulkan C、64×64 B8G8R8A8 の offscreen、CPU の期待の画と読み返しを比べる）。各 case は `vkmatrix: <case>: PASS|FAIL(...)` と合計の 1 行。引数で 1 case だけ走らせる。
+- 範囲は Keiland（`userland/desktop/wayland/`）の使い方に合わせた。
+  - 使う物:
+    - descriptor は set 0・binding 0 の combined image sampler だけ。
+    - push constant は 32 byte と 96 byte（panel）で、vertex と fragment の両 stage。
+    - batch の vertex は 1 binding・stride 44（R32G32、R32G32B32A32 ×2、R32 の SFLOAT）。compose は R32G32 の stride 8。
+    - sampler は NEAREST・LINEAR の CLAMP_TO_EDGE で、mip は 1。
+    - blend は ONE / ONE_MINUS_SRC_ALPHA（premultiplied）。
+    - viewport・scissor は dynamic。
+    - depth は無し。
+  - 省いた物（Keiland が使わない）: uniform・storage・dynamic の buffer、set 1、mip 2 段、repeat、R8G8B8A8・R32 UINT の vertex、depth の混在。
+- case（13）:
+
+  | case | 中身 |
+  | --- | --- |
+  | push4 | 4 byte の push constant、fragment、3 draw で値を変える |
+  | push32 | Keiland の compose の 32 byte、vertex（offset）と fragment（色）、3 draw |
+  | push128 | 128 byte（panel の 96 byte を含む大きさ）、最後の vec4 と中間の 1 語を読む、3 draw |
+  | batch | batch の vertex の全 attribute |
+  | nearest | 4×4 の texture、NEAREST |
+  | linear | 2×2 の texture、LINEAR、clamp。期待は CPU の bilinear（tolerance 3） |
+  | two-textures | 2 つの set を 1 pass の中で切り替える |
+  | blend-over | premultiplied の alpha 合成 |
+  | blend-add | ONE / ONE |
+  | draws-32 | 1 pass に 32 draw |
+  | draws-64 | 1 pass に 64 draw（16 を超える） |
+  | two-passes | clear の pass の後に load の pass、1 submit |
+  | scissor-viewport | scissor・viewport を draw の間で切り替える |
+
+- 生成物と build:
+  - shader（GLSL）は `shaders/`、`shaders/regenerate.py` で `shader.h`（SPIR-V の語）を生成する。build に shader の compiler は要らない。
+  - `platform/common/userland-dynamic.mk` に vkmatrix の dynamic の link の規則（vkstage と同じ形、libvulkan.so）を足した。package の platform は visionfive2 だけ。
+  - `plan/ws269/tests/p010/config-visionfive2-selftest.mk` に vkmatrix を足した。
+- 確認:
+  - host の lavapipe（`plan/ws269/tests/vkmatrix/run.sh OUTDIR`）で 13/13 PASS。
+  - RISC-V の build（`bin/vkmatrix`、libvulkan.so の dynamic、warning 0）。
+  - 板は未実施（Q1 が /bin に置いて流す）。
