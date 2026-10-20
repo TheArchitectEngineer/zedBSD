@@ -132,7 +132,7 @@ static void watch_thread(void *argument);
  * (ROGUE_FWIF_LOG_TYPE_TRACE 0x1, ROGUE_FWIF_LOG_TYPE_GROUP_MAIN 0x2,
  * and every group from GROUP_MAIN 0x2 to GROUP_MISC 0x4000 (MTS,
  * CLEANUP, CSW, BIF, PM, RTD, SPM, POW, HWR, HWP, RPM, DMA), the debug
- * group 0x80000000 left off; struct rogue_fwif_tracebuf_space:
+ * group 0x80000000 on only for the full trace; struct rogue_fwif_tracebuf_space:
  * trace_pointer 0, the assert buffer at 16 with path 200 bytes, info 200
  * bytes and the line; struct rogue_fwif_osdata: interrupt_count 560,
  * kccb_cmds_executed 568; struct rogue_fwif_sysdata: pow_state 8;
@@ -140,24 +140,15 @@ static void watch_thread(void *argument);
  * struct rogue_fwif_osinit: the hardware and firmware identities at 40
  * and 56, each its layout and BVNC) and pvr_rogue_fwif_check.h.
  */
-#define DUMP_TRACE_LOG_TYPE		0x7fffU
+#define DUMP_TRACE_LOG_TYPE		(POWERVR_RENDER_CHECK_FULL_TRACE ? 0x80007fffU : 0x7fffU)
 #define DUMP_TRACE_POINTER		8U
 #define DUMP_ASSERT_PATH		24U
 #define DUMP_ASSERT_INFO		224U
 #define DUMP_ASSERT_LINE		424U
 #define DUMP_ASSERT_TEXT		200U
-#define DUMP_TRACE_LAST_WORDS		(POWERVR_RENDER_CHECK_FULL_TRACE ? 128U : 128U)
-
-/*
- * Whether a dump prints the whole trace since the kick's mark (1), or
- * its first and last 64 words (0, the default, so the kernel's message
- * ring keeps the lines before the dump).
- */
-#ifndef POWERVR_RENDER_CHECK_FULL_TRACE
-#define POWERVR_RENDER_CHECK_FULL_TRACE	0
-#endif
+#define DUMP_TRACE_LAST_WORDS		(POWERVR_RENDER_CHECK_FULL_TRACE ? 512U : 128U)
 #define DUMP_TRACE_ALL_WORDS		(POWERVR_RENDER_CHECK_FULL_TRACE ? 2048U : 1536U)
-#define DUMP_TRACE_HEAD_WORDS		(POWERVR_RENDER_CHECK_FULL_TRACE ? 256U : 256U)
+#define DUMP_TRACE_HEAD_WORDS		(POWERVR_RENDER_CHECK_FULL_TRACE ? 1536U : 256U)
 #define DUMP_OS_DATA_INTERRUPTS		560U
 #define DUMP_SYSTEM_DATA_POWER		8U
 #define DUMP_SYSTEM_INIT_STARTED_TIME	360U
