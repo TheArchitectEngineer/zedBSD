@@ -3,7 +3,7 @@
 # ws269-p010q: 実機の前の点検（cache・MMU・SLC・順・時間切れの後）
 
 - ID: ws269-p010q（親 [ws269](../ws.md)）
-- Status: in-progress（2026-10-21: clear の条件をそろえた。板 96 の vkmatrix の結果の後に Q1 が判定する。下の「clearance の記録」）
+- Status: cleared（2026-10-21 Q1 の判定。板 96 で vkmatrix 15/15・gpu-selftest 13/13・context reset 0）
 - Disposition: normal
 - Queue: q1395 / q1395-i01、q1398 / q1398-i01、q1401 / q1401-i01（2026-10-20 P1）
 
@@ -34,7 +34,7 @@
   - present：vkdemo の cube（HDMI で目視）。
   - `gpu-selftest` 13 ok / 0 fail / 0 skip、context reset 0（板 93・94）。
   - vkcoherency PASS（buffer 1000 round・image 200 round、stale 0、板 95）。
-  - vkmatrix（Keiland の範囲の 13 case）：**板 96 の結果待ち**。
+  - vkmatrix（Keiland の範囲の 15 case）：**15/15 PASS（板 96）**。draws-32・draws-64・two-passes は、LOAD を全画面の draw にした後に通った（q1514）。
 - 残件の行き先:
   - fence kernel の lockup：解決（K0、q1501・q1502）。
   - 手書き kernel の退行：解決（fence を戻した、P2 の q1503）。
@@ -42,6 +42,9 @@
   - BUG-344（libc の fscanf）：libc の stdio の WS へ移す（WS269 は依存しない）。
   - Linux の walk（IMG の stack の control stream）：Future Work へ（kernel module が要る。再検討は IMG との差が再び要る不具合が出た時）。
   - border colour table の cache：SLC bypass にした（q1509）。
+  - LOAD の背景の sample（3D の背景の object で shared の texture state から sample すると 0 になる）：LOAD を全画面の draw にして解決（q1514）。背景の object で sample する道は、Mesa と同じ unitex の state の program が要ると見ており、使わない。
+  - `load_draws` の pipeline の解放：render node の teardown が入る時に行う（今は node を外さない）。
+  - Future Work の追記の文案（Q1 が `plan/future-work.md` に入れる）：「Linux（IMG の DDK）の GPU の control stream・PPP state を、GPU の page table を辿って読む道具（plan/ws269/tests/p010-linux/walk.py・capture2.py・capture-cdm.py）。StarFive の Debian の kernel では /dev/mem と /proc/kcore で RAM を読めず、kernel module（または drgn と kcore のある kernel）が要る。由来：WS269 p010q（q1483・q1495）。再検討の条件：IMG の stack との差を調べる必要が再び出た時。」
 - 次は [proposal-next-phases.md](../proposal-next-phases.md) の N2〜N6。
 
 
