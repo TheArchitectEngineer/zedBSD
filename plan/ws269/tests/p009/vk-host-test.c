@@ -30,6 +30,7 @@
 #include "drivers/gpu/powervr/compute-program.h"
 #include "drivers/gpu/powervr/shader.h"
 #include "drivers/gpu/powervr/render-job.h"
+#include "drivers/gpu/powervr/transfer-job.h"
 #include "drivers/gpu/powervr/vk.h"
 #include "drivers/gpu/powervr/vk.h"
 #include "drivers/gpu/powervr/render-job.h"
@@ -231,7 +232,19 @@ void powervr_stage_ok(enum powervr_stage stage) { (void)stage; }
 void powervr_stage_fail(enum powervr_stage stage, enum powervr_stage_reason reason) { (void)stage; (void)reason; }
 enum powervr_stage_reason powervr_stage_reason_of(int error) { (void)error; return POWERVR_REASON_ERROR; }
 
-/* Render pass instances: none in this test's command buffers, so the stand-in is not reached. */
+/* Render pass instances and transfers: none in this test's command buffers, so the stand-ins are not reached. */
+int
+powervr_transfer_run(
+	struct powervr_render *render,
+	struct powervr_session *session,
+	const struct powervr_transfer_request *request)
+{
+	(void)render;
+	(void)session;
+	(void)request;
+	return ENOTSUP;
+}
+
 int
 powervr_render_job_run(
 	struct powervr_render *render,
