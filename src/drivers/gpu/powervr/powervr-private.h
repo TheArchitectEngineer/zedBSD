@@ -33,7 +33,7 @@
  * the kernel's message ring keeps them.  0 is the usual check.
  */
 #ifndef POWERVR_RENDER_CHECK_FULL_TRACE
-#define POWERVR_RENDER_CHECK_FULL_TRACE	1
+#define POWERVR_RENDER_CHECK_FULL_TRACE	0
 #endif
 
 /*
