@@ -465,7 +465,6 @@ check_stream(
 	size_t index;
 	unsigned count;
 	unsigned field;
-	uint32_t group;
 	uint32_t word;
 	int same;
 
@@ -492,74 +491,64 @@ check_stream(
 		free(workspace);
 		return;
 	}
-	for (group = 0; group < HOST_GROUPS; group++) {
-		/* The buffer's address and the workgroup's id as the executor gives them. */
-		memset(values, 0, sizeof(values));
-		for (request = 0; request < program.request_count; request++) {
-			if (program.requests[request].kind == POWERVR_SHADER_REQUEST_DESCRIPTOR) {
-				values[program.requests[request].shared] = (uint32_t)memory_address;
-				values[program.requests[request].shared + 1U] = (uint32_t)(memory_address >> 32);
-			} else if (program.requests[request].kind == POWERVR_SHADER_REQUEST_WORKGROUP_ID) {
-				values[program.requests[request].shared] = group;
-			}
+	/* One kernel of every workgroup: the buffer's address given up front, the workgroup id zero (the program reads it from a coefficient register). */
+	memset(values, 0, sizeof(values));
+	for (request = 0; request < program.request_count; request++) {
+		if (program.requests[request].kind == POWERVR_SHADER_REQUEST_DESCRIPTOR) {
+			values[program.requests[request].shared] = (uint32_t)memory_address;
+			values[program.requests[request].shared + 1U] = (uint32_t)(memory_address >> 32);
+		} else if (program.requests[request].kind == POWERVR_SHADER_REQUEST_NUM_WORKGROUPS) {
+			values[program.requests[request].shared] = HOST_GROUPS;
+			for (index = 1; index < program.requests[request].words; index++)
+				values[program.requests[request].shared + index] = 1;
 		}
-		check(powervr_shader_compile_inline(spirv, spirv_words, POWERVR_SHADER_COMPUTE, NULL, values, program.shareds, workspace, &program, expected, sizeof(expected)) == 0, "the fill shader compiles for a workgroup");
-		length = program.length;
-		powervr_compute_temporaries_field(program.temps, 2, &field);
+	}
+	check(powervr_shader_compile_inline(spirv, spirv_words, POWERVR_SHADER_COMPUTE, NULL, values, program.shareds, workspace, &program, expected, sizeof(expected)) == 0, "the fill shader compiles");
+	length = program.length;
+	powervr_compute_temporaries_field(program.temps, 2, &field);
 
-		/* The kernel's words. */
-		memset(&expected_kernel, 0, sizeof(expected_kernel));
-		expected_kernel.data_offset = 0x10000U + (group + 1U) * 0x40U;
-		expected_kernel.code_offset = expected_kernel.data_offset + 0x10U;
-		expected_kernel.data_words = POWERVR_COMPUTE_PDS_DATA_WORDS;
-		expected_kernel.pds_temporaries = 3;
-		expected_kernel.usc_temporaries = program.temps;
-		expected_kernel.instances = 32;
-		expected_kernel.any_cluster = 1;
-		powervr_compute_kernel_words(&expected_kernel, expected_words);
+	/* The kernel's words: every workgroup, the workgroup id in three coefficient registers. */
+	memset(&expected_kernel, 0, sizeof(expected_kernel));
+	expected_kernel.data_offset = 0x10000U + 0x40U;
+	expected_kernel.code_offset = expected_kernel.data_offset + 0x10U;
+	expected_kernel.data_words = POWERVR_COMPUTE_PDS_GROUP_DATA_WORDS;
+	expected_kernel.pds_temporaries = 4;
+	expected_kernel.usc_temporaries = program.temps;
+	expected_kernel.instances = 32;
+	expected_kernel.any_cluster = 1;
+	expected_kernel.workgroups[0] = HOST_GROUPS;
+	expected_kernel.usc_common = 3;
+	powervr_compute_kernel_words(&expected_kernel, expected_words);
+	same = 1;
+	for (index = 0; index < POWERVR_COMPUTE_KERNEL_WORDS; index++) {
+		word = word_at(stream->buffer->view, at + index * 4U);
+		if (word != expected_words[index])
+			same = 0;
+	}
+	check(same, "the dispatch's one kernel");
+	at += POWERVR_COMPUTE_KERNEL_WORDS * 4U;
+
+	/* Its shading cluster program, and the data sequencer program that gives each workgroup its id and issues it. */
+	check(memcmp((const void *)usc, expected, length) == 0, "the kernel's program is the shader compiled once");
+	{
+		uint32_t group_data[POWERVR_COMPUTE_PDS_GROUP_DATA_WORDS];
+
+		powervr_compute_workgroup_program(0x10000U, field, group_data, code, &count);
 		same = 1;
-		for (index = 0; index < POWERVR_COMPUTE_KERNEL_WORDS; index++) {
-			word = word_at(stream->buffer->view, at + index * 4U);
-			if (word != expected_words[index])
+		for (index = 0; index < POWERVR_COMPUTE_PDS_GROUP_DATA_WORDS; index++) {
+			if (word_at(pds, 0x40U + index * 4U) != group_data[index])
 				same = 0;
 		}
-		check(same, "a workgroup's kernel words");
-		at += POWERVR_COMPUTE_KERNEL_WORDS * 4U;
-
-		/* Its shading cluster program: the shader compiled with the group's id and the buffer's address. */
-		check(memcmp((const void *)(usc + (size_t)group * 0x400U), expected, length) == 0, "a workgroup's program is the shader compiled for it");
-
-		/* The data sequencer program that issues it. */
-		powervr_compute_kick_program(0x10000U + group * 0x400U, field, data, code, &count);
-		same = word_at(pds, (group + 1U) * 0x40U) == data[0] && word_at(pds, (group + 1U) * 0x40U + 4U) == data[1];
 		for (index = 0; index < count; index++) {
-			if (word_at(pds, (group + 1U) * 0x40U + 0x10U + index * 4U) != code[index])
+			if (word_at(pds, 0x40U + 0x10U + index * 4U) != code[index])
 				same = 0;
 		}
-		check(same, "a workgroup's issuing program");
+		check(same, "the kernel's workgroup program");
 	}
 
 	free(workspace);
 
-	/* The fence kernel after the dispatch, then the end. */
-	memset(&expected_kernel, 0, sizeof(expected_kernel));
-	expected_kernel.data_offset = 0x10000U;
-	expected_kernel.code_offset = 0x10010U;
-	expected_kernel.data_words = POWERVR_COMPUTE_PDS_DATA_WORDS;
-	expected_kernel.instances = 1;
-	expected_kernel.max_instances = 8;
-	expected_kernel.fence = 1;
-	expected_kernel.shared_from_pds = 1;
-	expected_kernel.common_shared = 1;
-	expected_kernel.any_cluster = 1;
-	powervr_compute_kernel_words(&expected_kernel, expected_words);
-	same = 1;
-	for (index = 0; index < POWERVR_COMPUTE_KERNEL_WORDS; index++) {
-		if (word_at(stream->buffer->view, at + index * 4U) != expected_words[index])
-			same = 0;
-	}
-	check(same, "the fence kernel after the dispatch");
-	at += POWERVR_COMPUTE_KERNEL_WORDS * 4U;
+	/* No fence kernel: the stream ends after the kernel. */
 	check(word_at(stream->buffer->view, at) == powervr_compute_terminate_word(), "the end of the stream");
 
 	/* The fence program in slot 0. */

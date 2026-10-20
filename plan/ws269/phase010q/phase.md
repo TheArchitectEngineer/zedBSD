@@ -1057,3 +1057,19 @@ csbgen（Mesa 25.0.7 の `gen_pack_header.py` の `__pvr_address`: `((addr >> sh
 - mainline の heap（pvr_rogue_heap_config.h）: GENERAL 0x8000000000（128 GiB）、PDSCODEDATA 0xDA00000000（4 GiB）、**RGNHDR 0xDBF0000000（256 MiB）**、USCCODE 0xE000000000（4 GiB）、FW 0xE1C0000000、TRANSFER_FRAG 0xE400000000（16 GiB）、VISTEST 0xF200000000（2 MiB）。Mesa 25.0.0 は region headers だけを rgn_hdr_heap に置き、TPC・vheap・MTA・mlist は general heap に置く。
 - 直し: session に region header の窓（`region_space`、0xDBF0000000〜、256 MiB、`powervr_session_heaps_init` で初期化）を足した。render target の region headers を `powervr_resource_make_region_headers` でそこに map する。resource は自分の取った窓（`resource->space`）を覚え、unmake ではその窓に返す。TPC は Mesa と同じく general のまま。
 - 確認: RISC-V の self-test の build で warning 0。p010 の host 試験はどれも 0 failed。板は未実施（dump の `target: … region headers 0xdbf…` で配置を確かめられる）。
+
+## q1474 / q1474-i01（2026-10-21）
+
+- (1) 1 kernel の executor から fence kernel を外した（`POWERVR_EXECUTOR_FENCE_KERNEL`、既定は `!POWERVR_EXECUTOR_ONE_KERNEL`）。stream は kernel 語と terminate だけになる。compiler はもともと store ごとに `MACHINE_WAIT`（wdf）を出している。end の前の wdf は P2 の q1473 の約束に従う。注: fence が無いので、同じ submission の dispatch の間の順序は保証されない（vkcompute は dispatch 1 回）。
+- (2) shared words の作り方の比較（compute-check の `run_compiled_fill` と vk-queue の `build_shared`）:
+
+  | word | compute-check | vk-queue（1 kernel） |
+  | --- | --- | --- |
+  | DESCRIPTOR の low・high | probe の area の address（`run_address + COMPILED_OFFSET`）の low・high | `powervr_vk_buffer_address` + slot->offset の low・high |
+  | WORKGROUP_ID | 0 | 0（1 kernel では compiler が cf から読む） |
+  | NUM_WORKGROUPS | 全部 1 | x = groups、y・z = 1 |
+  | 他の request | 0 | ENOTSUP で拒否 |
+
+  形は同じ。違うのは値（buffer の address と workgroup の数）と、workgroup の数が 1 か 128 か。fault 0x8000470010 は buffer 0x8000047000 の low word が 4 bit 左にずれた形（0x47000 → 0x470000、+0x10）で、128 workgroup の時だけ出るなら、gid の計算（cf からの wg id × 32 + lane）の値か、shared words の値のどちらかと見る。判別のため、dispatch の時に各 shared word を 1 行ずつ log する（`vk: dispatch: shared word N = 0x…`）ようにした。直す点は、板の log と生成された code を見てから決める。
+- p009 の executor の試験を 1 kernel の形（kernel 1 つ、workgroup の数 128、common 3、workgroup の PDS program、fence 無し）に直した。502/502 PASS。
+- 確認: RISC-V の self-test の build で warning 0。板は未実施。

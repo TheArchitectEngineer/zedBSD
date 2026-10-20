@@ -85,6 +85,17 @@ _Static_assert(QUEUE_PDS_OFFSET == POWERVR_PROGRAM_HEAP_START && QUEUE_PDS_BYTES
 #define POWERVR_EXECUTOR_ONE_KERNEL	1
 #endif
 #define QUEUE_GROUP_COEFFICIENTS	3U
+
+/*
+ * Whether a dispatch ends with a fence kernel (1).  On the board a kernel
+ * with the fence bit locked up after its stores even when it was the same
+ * bits as Mesa's, and a stream of kernels whose programs wait for their
+ * own stores before the end ran (2026-10-21); the one-kernel executor
+ * leaves the fence out, as Mesa's one dispatch is one kernel.
+ */
+#ifndef POWERVR_EXECUTOR_FENCE_KERNEL
+#define POWERVR_EXECUTOR_FENCE_KERNEL	(!POWERVR_EXECUTOR_ONE_KERNEL)
+#endif
 #define QUEUE_PDS_GROUP_INPUTS		4U
 
 /* The data sequencer temporaries a compute kernel's inputs take, and the fence kernel's task size. */
@@ -838,6 +849,10 @@ build_dispatch(
 			kern_logf("powervr: vk: kernel %u (workgroup %u): usc 0x%llx, pds data 0x%llx\n", (unsigned)build->kernels, (unsigned)group,
 				  (unsigned long long)(POWERVR_USC_HEAP_BASE + QUEUE_USC_OFFSET + build->kernels * QUEUE_USC_ROOM),
 				  (unsigned long long)(POWERVR_PDS_HEAP_BASE + QUEUE_PDS_OFFSET + (build->kernels + 1U) * QUEUE_PDS_SLOT));
+		if (group == 0) {
+			for (index = 0; index < program->shareds; index++)
+				kern_logf("powervr: vk: dispatch: shared word %u = 0x%08x\n", (unsigned)index, (unsigned)values[index]);
+		}
 		if (group == 0)
 			kern_logf("powervr: vk: dispatch of %u workgroups: the compute shader compiled to %u bytes, %u temps, %u shared words\n", groups, (unsigned)program->length, program->temps, program->shareds);
 		error = build_kernel(build, code, program->length, program->temps, program->workgroup[0], POWERVR_EXECUTOR_ONE_KERNEL ? groups : 1U);
@@ -851,9 +866,11 @@ build_dispatch(
 		return error;
 
 	/* The fence: the next dispatch starts after this one's work. */
-	error = build_fence(build);
-	if (error != 0)
-		return error;
+	if (POWERVR_EXECUTOR_FENCE_KERNEL) {
+		error = build_fence(build);
+		if (error != 0)
+			return error;
+	}
 	build->dispatches++;
 
 	/* Succeeded: the dispatch is in the stream. */
