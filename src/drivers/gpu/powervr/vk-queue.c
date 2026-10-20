@@ -660,6 +660,9 @@ build_command_buffer(
 			error = build_dispatch(build, entry->values[0]);
 			if (error != 0)
 				return error;
+		} else if (entry->opcode == GPU_OP_CMD_BEGIN_RENDER_PASS) {
+			/* A render pass instance needs the render kick, not built yet (ws269-p010e): refused, not skipped. */
+			return ENOTSUP;
 		}
 	}
 

@@ -10,7 +10,8 @@
 # registers (render-command.c), and (p010e) the fixed
 # render programs and words (render-program.c), and (p010f) the transfer
 # command words, copy and blit programs (transfer-program.c), and the
-# attachment load background (render-load-program.c).
+# attachment load background (render-load-program.c), and (p010g) the render
+# passes and render jobs (render-pass.c).
 #   plan/ws269/tests/p010/run.sh OUTDIR
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
@@ -70,3 +71,7 @@ cc -std=gnu11 -O2 -Wall -Wextra -Werror -I"$root/include" -I"$root/src" \
 	"$root/src/drivers/gpu/powervr/shader-spirv-control.c" "$root/src/drivers/gpu/powervr/shader-spirv-instruction.c" \
 	"$root/src/drivers/gpu/powervr/shader-backend.c" "$here/render-load-host-test.c" -o "$out/render-load-host-test"
 "$out/render-load-host-test"
+cc -std=gnu11 -O2 -Wall -Wextra -Werror -I"$root/include" -I"$root/src" \
+	"$root/src/drivers/gpu/powervr/render-pass.c" "$root/src/drivers/gpu/powervr/image-state.c" \
+	"$here/pass-host-test.c" -o "$out/pass-host-test"
+"$out/pass-host-test"

@@ -106,6 +106,10 @@ powervr_vk_command_route(
 	case GPU_OP_CMD_BIND_DESCRIPTOR_SETS:
 	case GPU_OP_CMD_DISPATCH:
 	case GPU_OP_CMD_PIPELINE_BARRIER:
+	case GPU_OP_CMD_BEGIN_RENDER_PASS:
+	case GPU_OP_CMD_NEXT_SUBPASS:
+	case GPU_OP_CMD_END_RENDER_PASS:
+	case GPU_OP_CMD_CLEAR_ATTACHMENTS:
 		error = record(session, opcode, reader);
 		break;
 	default:
@@ -538,6 +542,17 @@ record(
 		refused = record_sets(session, reader, &entry);
 	} else if (opcode == GPU_OP_CMD_DISPATCH) {
 		refused = record_dispatch(reader, &entry);
+	} else if (opcode == GPU_OP_CMD_BEGIN_RENDER_PASS) {
+		refused = powervr_vk_record_begin_pass(session, reader, &entry);
+	} else if (opcode == GPU_OP_CMD_CLEAR_ATTACHMENTS) {
+		refused = powervr_vk_record_clear_attachments(session, reader, &entry);
+	} else if (opcode == GPU_OP_CMD_NEXT_SUBPASS) {
+		/* [contents]: a second subpass is never created, so this is a client error. */
+		(void)drv_i915_wire_read_u32(reader);
+		refused = ENOTSUP;
+	} else if (opcode == GPU_OP_CMD_END_RENDER_PASS) {
+		/* No argument. */
+		refused = 0;
 	} else {
 		refused = record_barrier(session, reader);
 	}
@@ -826,6 +841,10 @@ record_drop(
 		entry->objects[index] = NULL;
 	}
 	entry->object_count = 0;
+
+	/* The record's own data. */
+	kern_free(entry->data);
+	entry->data = NULL;
 }
 
 /* Destroys a command buffer nothing holds: its records let their objects go. */

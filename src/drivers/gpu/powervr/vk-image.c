@@ -562,6 +562,8 @@ view_build(
 		return error;
 	view->image = object;
 	view->aspect = aspect;
+	view->base_level = info->subresourceRange.baseMipLevel;
+	view->base_layer = info->subresourceRange.baseArrayLayer;
 
 	/* Succeeded: the view is filled. */
 	return 0;
