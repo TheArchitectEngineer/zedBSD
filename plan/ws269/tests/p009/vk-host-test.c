@@ -54,6 +54,8 @@ static uint32_t kicked[HOST_KICKS][POWERVR_COMPUTE_COMMAND_WORDS];
 static unsigned kicks;
 static struct powervr_resource *resources[64];
 static unsigned resource_count;
+/* Whether each resource was made shareable (its mapping then goes around the SLC, powervr_gpu_buffer_flags; p006's test). */
+static int shareables[64];
 static struct powervr_buffer *buffers[64];
 static unsigned buffer_count;
 static uint64_t mapped_address[16];
@@ -139,7 +141,6 @@ powervr_resource_make(
 {
 	struct powervr_resource *resource;
 
-	(void)shareable;
 	resource = calloc(1, sizeof(*resource));
 	resource->session = session;
 	resource->buffer = buffer;
@@ -147,6 +148,7 @@ powervr_resource_make(
 	resource->address = next_address;
 	next_address += HOST_ADDRESS_STEP;
 	buffer->references++;
+	shareables[resource_count] = shareable;
 	resources[resource_count++] = resource;
 	*result = resource;
 	return 0;
@@ -284,6 +286,20 @@ powervr_session_wait(
 	(void)session;
 	(void)value;
 	(void)milliseconds;
+	return 0;
+}
+
+/* Says whether a resource was made shareable. */
+static int
+resource_shareable(
+	const struct powervr_resource *resource)
+{
+	unsigned index;
+
+	for (index = 0; index < resource_count; index++) {
+		if (resources[index] == resource)
+			return shareables[index];
+	}
 	return 0;
 }
 
@@ -544,6 +560,8 @@ main(
 	struct powervr_buffer *buffer;
 	struct powervr_resource *reply;
 	struct powervr_resource *memory_blob;
+	struct powervr_resource *import_blob;
+	struct powervr_vk_memory *imported;
 	struct powervr_vk_memory *memory;
 	struct powervr_vk_descriptor_set *set;
 	const struct powervr_vk_buffer *bound;
@@ -626,11 +644,20 @@ main(
 	}
 
 	/* The image frame: the shared path refused, the linear and optimal images, the view's words. */
-	bytes = frame_image(reply->identifier, &frame);
+	powervr_buffer_create(&render, 16384, &buffer);
+	import_blob = make_blob(&session, buffer);
+	bytes = frame_image(reply->identifier, import_blob->identifier, &frame);
 	error = powervr_vk_execute(session.vk, frame, (uint32_t)bytes);
 	free(frame);
 	check(error == 0, "image frame runs");
 	replies_image((uint8_t *)reply->buffer->view);
+	imported = powervr_vk_payload(session.vk, I915_VK_OBJ_MEMORY, 25);
+	check(imported != NULL && imported->imported && imported->storage->buffer == import_blob->buffer, "the import maps the blob's own buffer");
+	memory = powervr_vk_payload(session.vk, I915_VK_OBJ_MEMORY, 24);
+	check(memory != NULL && memory->exported && !memory->imported, "the export is marked exported");
+	check(memory != NULL && imported != NULL && resource_shareable(memory->storage) && resource_shareable(imported->storage), "the export and the import are mapped shareable (around the SLC)");
+	memory = powervr_vk_payload(session.vk, I915_VK_OBJ_MEMORY, 27);
+	check(memory != NULL && !resource_shareable(memory->storage), "a plain allocation is not made shareable");
 	image_memory = powervr_vk_payload(session.vk, I915_VK_OBJ_MEMORY, 27);
 	view = powervr_vk_payload(session.vk, I915_VK_OBJ_IMAGE_VIEW, 29);
 	sampler = powervr_vk_payload(session.vk, I915_VK_OBJ_SAMPLER, 30);

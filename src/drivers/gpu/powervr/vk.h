@@ -114,15 +114,33 @@ struct powervr_vk_object {
 };
 
 /*
- * A VkDeviceMemory: its bytes and type, and its storage, a resource of
- * the session over a buffer of its own (mapped for the core).  A blob
+ * A VkDeviceMemory: its bytes and type, whether it is exported or
+ * imported, and its storage, a resource of the session over a buffer of
+ * its own or of the imported blob (mapped for the core).  A blob
  * libvulkan makes for it maps the same buffer once more.
  */
 struct powervr_vk_memory {
 	uint64_t bytes;
 	uint32_t type;
+	bool exported;
+	bool imported;
 	struct powervr_resource *storage;
 };
+
+/*
+ * The handle types an allocation may be exported by: an opaque file
+ * descriptor and a dma-buf (VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT
+ * and _DMA_BUF_BIT_EXT).
+ */
+#define POWERVR_VK_EXTERNAL_HANDLES	0x201U
+
+/* An allocation's extension: whether it is exported, and the blob it imports (0 for none). */
+struct powervr_vk_memory_chain {
+	bool exported;
+	uint32_t imported;
+};
+
+int powervr_vk_memory_chain(bool present, uint32_t extension, uint32_t value, struct powervr_vk_memory_chain *chain);
 
 /* A VkBuffer: its size and usage, and once bound the memory object it holds and its offset there. */
 struct powervr_vk_buffer {
@@ -133,14 +151,16 @@ struct powervr_vk_buffer {
 };
 
 /*
- * A VkImage: its format, shape and layout, its usage, and once bound the
- * memory object it holds and its offset there.
+ * A VkImage: its format, shape and layout, its usage, whether it declared
+ * external memory, and once bound the memory object it holds and its
+ * offset there.
  */
 struct powervr_vk_image {
 	const struct powervr_format *format;
 	struct powervr_image_shape shape;
 	struct powervr_image_layout layout;
 	uint32_t usage;
+	bool external;
 	struct powervr_vk_object *memory;
 	uint64_t offset;
 };

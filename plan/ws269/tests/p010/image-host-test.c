@@ -248,6 +248,26 @@ main(void)
 	expect(powervr_descriptor_bytes(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER) == 80, "combined descriptor 80 bytes");
 	expect(powervr_descriptor_bytes(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) == 0, "a storage image is not taken");
 
+	/*
+	 * dc8200.zerocopy=test (p010l): the plane scans a shared frame only
+	 * when its row pitch is the loader's (drv_powervr_dc_frame_fits), the
+	 * width times 4 bytes, on the 32-byte boundary its import needs
+	 * (display.c check_direct_scan).  A linear BGRA8 swapchain image of
+	 * the loader's modes has exactly that row pitch; a width whose rows
+	 * are not a multiple of 32 bytes is padded and so is copied instead.
+	 */
+	{
+		static const uint32_t modes[][2] = { { 640, 480 }, { 800, 600 }, { 1024, 768 }, { 1280, 720 }, { 1920, 1080 }, { 3840, 2160 } };
+
+		for (i = 0; i < sizeof(modes) / sizeof(modes[0]); i++) {
+			expect(lay(VK_FORMAT_B8G8R8A8_UNORM, modes[i][0], modes[i][1], 1, 1, 1, 1, 0, &layout) == 0 &&
+			    layout.row_pitch == modes[i][0] * 4U && layout.row_pitch % 32U == 0 &&
+			    layout.layer_bytes == (uint64_t)modes[i][0] * 4U * modes[i][1], "a linear BGRA8 image of a loader mode has the loader's row pitch");
+		}
+		expect(lay(VK_FORMAT_B8G8R8A8_UNORM, 1366, 768, 1, 1, 1, 1, 0, &layout) == 0 && layout.row_pitch == 5472U,
+		    "1366 wide: rows padded to 5472 bytes, not the loader's 5464 (copied, not scanned)");
+	}
+
 	printf("image-host-test: %d passed, %d failed\n", passes, failures);
 	return failures == 0 ? 0 : 1;
 }

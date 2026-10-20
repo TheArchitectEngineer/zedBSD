@@ -42,12 +42,18 @@
 #define POWERVR_IMAGE_ROW_ALIGN		32U
 
 /*
- * Whether a linear image's formats report sampling.  While they do not,
- * a client's window system presents through copies of optimal images and
- * never asks for a linear image shared with the display, which the
- * executor cannot import yet; the other linear features are reported.
+ * The one switch of the shared path: whether a linear image's formats
+ * report sampling (and linear filtering).  libvulkan tries a shared,
+ * linear swapchain image only when linear sampling is reported; while it
+ * is not, a client's window system presents through copies of optimal
+ * images.  The executor takes the shared path's external images,
+ * exports and imports either way (ws269-p010l); the switch stays off
+ * until the readback path has run on the board (p010k2) and Q1 opens it.
+ * A host test may define it to 1 to check both values.
  */
+#ifndef POWERVR_FORMAT_LINEAR_SAMPLED
 #define POWERVR_FORMAT_LINEAR_SAMPLED	0
+#endif
 
 /* The kinds of a format's texels. */
 #define POWERVR_FORMAT_COLOR		0x1U

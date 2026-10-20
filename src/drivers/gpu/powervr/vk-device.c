@@ -72,6 +72,8 @@ static int device_token;
 static int create_instance(struct powervr_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int enumerate(struct powervr_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int properties(struct powervr_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
+static int identity(struct powervr_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
+static VkPhysicalDeviceProperties *device_record(struct powervr_vk_session *session);
 static void limits(VkPhysicalDeviceLimits *limit);
 static int features(struct powervr_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int memory_properties(struct powervr_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
@@ -126,6 +128,9 @@ powervr_vk_device_route(
 		break;
 	case GPU_OP_GET_PHYSICAL_DEVICE_PROPERTIES:
 		error = properties(session, reader, reply);
+		break;
+	case GPU_OP_GET_PHYSICAL_DEVICE_PROPERTIES2:
+		error = identity(session, reader, reply);
 		break;
 	case GPU_OP_GET_PHYSICAL_DEVICE_QUEUE_FAMILY_PROPERTIES:
 		error = families(reader, reply);
@@ -245,7 +250,6 @@ properties(
 	struct i915_wire_reader *reader,
 	struct i915_wire_writer *reply)
 {
-	static const char name[] = "zedBSD powervr (PowerVR BXE-4-32)";
 	VkPhysicalDeviceProperties *record;
 
 	/* The physical device and the output's presence word. */
@@ -254,10 +258,100 @@ properties(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* A cleared record from the scratch (too large for the stack). */
-	record = powervr_vk_arena_take(session, sizeof(*record));
+	/* The device's record. */
+	record = device_record(session);
 	if (record == NULL)
 		return ENOMEM;
+
+	/* The presence word and the record. */
+	drv_i915_wire_reply_u64(reply, 1);
+	i915_vkc_enc_VkPhysicalDeviceProperties(reply, record);
+
+	/* Succeeded: the properties are reported. */
+	return 0;
+}
+
+/*
+ * vkGetPhysicalDeviceProperties2, asked for the device's ID properties
+ * only: [physical][u64 1][PROPERTIES_2 sType][u64 1][ID_PROPERTIES sType]
+ * [u64 0] -> [u64 1], the two headers, the device and driver UUIDs, the
+ * LUID (none), the node mask, the LUID-valid word and the properties.
+ * The UUIDs pair an exported allocation with its importer: every session
+ * of the device reports the same ones.  ENOTSUP for another chain.
+ *
+ * Procedure referenced: zedBSD src/drivers/gpu/bcm2711/vulkan-query.c
+ * (identity_query); include/uapi/gpu-op.h
+ * (GPU_OP_GET_PHYSICAL_DEVICE_PROPERTIES2).
+ */
+static int
+identity(
+	struct powervr_vk_session *session,
+	struct i915_wire_reader *reader,
+	struct i915_wire_writer *reply)
+{
+	static const uint8_t device_uuid[VK_UUID_SIZE] = {
+		'z', 'e', 'd', 'B', 'S', 'D', '-', 'p', 'o', 'w', 'e', 'r', 'v', 'r', 'b', 'x'
+	};
+	static const uint8_t driver_uuid[VK_UUID_SIZE] = {
+		'z', 'e', 'd', 'B', 'S', 'D', '-', 'p', 'v', 'r', '-', 'v', 'k', '-', '0', '1'
+	};
+	static const uint8_t luid[VK_LUID_SIZE] = { 0 };
+	VkPhysicalDeviceProperties *record;
+	uint64_t present;
+	uint64_t chained;
+	uint64_t last;
+	uint32_t outer;
+	uint32_t inner;
+
+	/* The physical device and the output chain: properties2, then the ID properties, then nothing. */
+	(void)drv_i915_wire_read_u64(reader);
+	present = drv_i915_wire_read_u64(reader);
+	outer = drv_i915_wire_read_u32(reader);
+	chained = drv_i915_wire_read_u64(reader);
+	inner = drv_i915_wire_read_u32(reader);
+	last = drv_i915_wire_read_u64(reader);
+	if (reader->error != 0 || present != 1)
+		return EINVAL;
+	if (outer != VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2 || chained != 1 || inner != VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES || last != 0)
+		return ENOTSUP;
+
+	/* The ordinary properties, as the plain query gives them. */
+	record = device_record(session);
+	if (record == NULL)
+		return ENOMEM;
+
+	/* The two headers, the identity (no Windows adapter: no LUID), then the properties. */
+	drv_i915_wire_reply_u64(reply, 1);
+	drv_i915_wire_reply_u32(reply, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2);
+	drv_i915_wire_reply_u64(reply, 1);
+	drv_i915_wire_reply_u32(reply, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES);
+	drv_i915_wire_reply_u64(reply, 0);
+	drv_i915_wire_reply_u64(reply, VK_UUID_SIZE);
+	i915_vkc_reply_bytes(reply, device_uuid, VK_UUID_SIZE);
+	drv_i915_wire_reply_u64(reply, VK_UUID_SIZE);
+	i915_vkc_reply_bytes(reply, driver_uuid, VK_UUID_SIZE);
+	drv_i915_wire_reply_u64(reply, VK_LUID_SIZE);
+	i915_vkc_reply_bytes(reply, luid, VK_LUID_SIZE);
+	drv_i915_wire_reply_u32(reply, 0);
+	drv_i915_wire_reply_u32(reply, VK_FALSE);
+	i915_vkc_enc_VkPhysicalDeviceProperties(reply, record);
+
+	/* Succeeded: the identity every session of the device reports. */
+	return 0;
+}
+
+/* Fills a cleared record from the scratch (too large for the stack) with the device's properties; NULL when none is left. */
+static VkPhysicalDeviceProperties *
+device_record(
+	struct powervr_vk_session *session)
+{
+	static const char name[] = "zedBSD powervr (PowerVR BXE-4-32)";
+	VkPhysicalDeviceProperties *record;
+
+	/* The cleared record. */
+	record = powervr_vk_arena_take(session, sizeof(*record));
+	if (record == NULL)
+		return NULL;
 
 	/* The device: an integrated GPU, its names and its limits. */
 	record->apiVersion = DEVICE_API_VERSION;
@@ -268,12 +362,8 @@ properties(
 	kern_memcpy(record->deviceName, name, sizeof(name));
 	limits(&record->limits);
 
-	/* The presence word and the record. */
-	drv_i915_wire_reply_u64(reply, 1);
-	i915_vkc_enc_VkPhysicalDeviceProperties(reply, record);
-
-	/* Succeeded: the properties are reported. */
-	return 0;
+	/* Succeeded: the record. */
+	return record;
 }
 
 /* Fills the limits the compute path keeps; the rest stay at the smallest. */

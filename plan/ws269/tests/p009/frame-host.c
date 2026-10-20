@@ -52,9 +52,16 @@
 #define ID_IMAGE		28U
 #define ID_VIEW			29U
 #define ID_SAMPLER		30U
+#define ID_UNKNOWN_IMPORT	31U
+#define ID_OTHER_HANDLE_IMAGE	32U
+
+/* The shared path's switch the executor is built with (image-state.h). */
+#ifndef POWERVR_FORMAT_LINEAR_SAMPLED
+#define POWERVR_FORMAT_LINEAR_SAMPLED	0
+#endif
 
 /* Local objects whose pointers are the handles libvulkan's encoders turn into wire identities. */
-static struct vulkan_object objects[32];
+static struct vulkan_object objects[40];
 
 static int failures;
 static int passes;
@@ -317,7 +324,7 @@ allocate_memory(
 	append(frame, &w);
 }
 
-/* Appends a vkCreateImage of a 2D colour image, with libvulkan's external declaration when external. */
+/* Appends a vkCreateImage of a 2D colour image, with libvulkan's external declaration of these handle types when external is nonzero. */
 static void
 create_image(
 	struct vulkan_writer *frame,
@@ -335,7 +342,7 @@ create_image(
 
 	memset(&declaration, 0, sizeof(declaration));
 	declaration.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO;
-	declaration.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
+	declaration.handleTypes = external > 1 ? (VkExternalMemoryHandleTypeFlags)external : VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
 	memset(&image, 0, sizeof(image));
 	image.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 	if (external)
@@ -362,14 +369,16 @@ create_image(
 }
 
 /*
- * The image frame: the format queries, the refusals that keep a window
- * system off the shared path (an image declaring external memory, an
- * export and an import), a linear image and its layout, and an optimal
- * image bound to memory with a view and a sampler.
+ * The image frame: the format queries, the shared path (an image
+ * declaring external memory, an export, an import of the session's blob
+ * import_blob, the device's identity, and the refusals of an unknown blob
+ * and another handle type), a linear image and its layout, and an
+ * optimal image bound to memory with a view and a sampler.
  */
 size_t
 frame_image(
 	uint32_t reply_blob,
+	uint32_t import_blob,
 	uint8_t **bytes)
 {
 	VkImageSubresource subresource;
@@ -401,10 +410,23 @@ frame_image(
 		append(&frame, &w);
 	}
 
-	/* The shared path's three refusals. */
+	/* The shared path: an external image, an export, an import, then the refusals. */
 	create_image(&frame, ID_SHARED_IMAGE, VK_FORMAT_B8G8R8A8_UNORM, 64, 64, VK_IMAGE_TILING_LINEAR, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, 1);
 	allocate_memory(&frame, ID_EXPORT_MEMORY, 16384, VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO, VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT);
-	allocate_memory(&frame, ID_IMPORT_MEMORY, 16384, GPU_OP_RECORD_IMPORT_RESOURCE, 7);
+	allocate_memory(&frame, ID_IMPORT_MEMORY, 16384, GPU_OP_RECORD_IMPORT_RESOURCE, import_blob);
+	allocate_memory(&frame, ID_UNKNOWN_IMPORT, 16384, GPU_OP_RECORD_IMPORT_RESOURCE, 999);
+	create_image(&frame, ID_OTHER_HANDLE_IMAGE, VK_FORMAT_B8G8R8A8_UNORM, 64, 64, VK_IMAGE_TILING_LINEAR, VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_EXTERNAL_MEMORY_HANDLE_TYPE_HOST_ALLOCATION_BIT_EXT);
+
+	/* The device's identity: properties2 with the ID properties. */
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_GET_PHYSICAL_DEVICE_PROPERTIES2);
+	vulkan_write_u64(&w, ID_PHYSICAL);
+	vulkan_write_u64(&w, 1);
+	vulkan_write_u32(&w, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2);
+	vulkan_write_u64(&w, 1);
+	vulkan_write_u32(&w, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES);
+	vulkan_write_u64(&w, 0);
+	append(&frame, &w);
 
 	/* A linear image of 100 texels a row and its layout. */
 	create_image(&frame, ID_LINEAR_IMAGE, VK_FORMAT_R8G8B8A8_UNORM, 100, 10, VK_IMAGE_TILING_LINEAR, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, 0);
@@ -962,6 +984,36 @@ replies_compute(
 	expect_trailer(reply);
 }
 
+/* Checks the identity reply: the two headers, the UUIDs, no LUID, then the properties. */
+static void
+expect_identity(
+	struct vulkan_reader *reader)
+{
+	static const uint8_t device_uuid[VK_UUID_SIZE] = {
+		'z', 'e', 'd', 'B', 'S', 'D', '-', 'p', 'o', 'w', 'e', 'r', 'v', 'r', 'b', 'x'
+	};
+	VkPhysicalDeviceProperties properties;
+	uint8_t uuid[VK_UUID_SIZE];
+	uint8_t driver[VK_UUID_SIZE];
+	uint8_t luid[VK_LUID_SIZE];
+	int ok;
+
+	expect_opcode(reader, GPU_OP_GET_PHYSICAL_DEVICE_PROPERTIES2, "identity");
+	ok = vulkan_read_u64(reader) == 1;
+	ok = ok && vulkan_read_u32(reader) == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2 && vulkan_read_u64(reader) == 1;
+	ok = ok && vulkan_read_u32(reader) == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES && vulkan_read_u64(reader) == 0;
+	ok = ok && vulkan_read_u64(reader) == VK_UUID_SIZE;
+	vulkan_read_bytes(reader, uuid, VK_UUID_SIZE);
+	ok = ok && vulkan_read_u64(reader) == VK_UUID_SIZE;
+	vulkan_read_bytes(reader, driver, VK_UUID_SIZE);
+	ok = ok && vulkan_read_u64(reader) == VK_LUID_SIZE;
+	vulkan_read_bytes(reader, luid, VK_LUID_SIZE);
+	ok = ok && vulkan_read_u32(reader) == 0 && vulkan_read_u32(reader) == VK_FALSE;
+	memset(&properties, 0, sizeof(properties));
+	vulkan_decode_VkPhysicalDeviceProperties(reader, &properties);
+	check(ok && memcmp(uuid, device_uuid, VK_UUID_SIZE) == 0 && properties.vendorID != 0, "the identity: headers, the device UUID, no LUID, the properties");
+}
+
 /* Checks the replies of the image frame. */
 void
 replies_image(
@@ -982,12 +1034,18 @@ replies_image(
 	check(vulkan_reply_pointer(&reader), "format present");
 	memset(&format, 0, sizeof(format));
 	vulkan_decode_VkFormatProperties(&reader, &format);
-	check((format.linearTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) == 0 && (format.linearTilingFeatures & VK_FORMAT_FEATURE_TRANSFER_DST_BIT) != 0, "RGBA8 linear: copies but no sampling (no shared path yet)");
+	if (POWERVR_FORMAT_LINEAR_SAMPLED)
+		check((format.linearTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) != 0 && (format.linearTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) != 0 && (format.linearTilingFeatures & VK_FORMAT_FEATURE_TRANSFER_DST_BIT) != 0, "switch on: RGBA8 linear samples and filters (the shared path)");
+	else
+		check((format.linearTilingFeatures & (VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT)) == 0 && (format.linearTilingFeatures & VK_FORMAT_FEATURE_TRANSFER_DST_BIT) != 0, "switch off: RGBA8 linear copies but does not sample (libvulkan stays off the shared path)");
 	check((format.optimalTilingFeatures & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT) != 0 && (format.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) != 0, "RGBA8 optimal draws and samples");
 	check(format.bufferFeatures == VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT, "RGBA8 is a vertex format");
 	expect_opcode(&reader, GPU_OP_GET_PHYSICAL_DEVICE_IMAGE_FORMAT_PROPERTIES, "linear image query");
 	result = vulkan_read_u32(&reader);
-	check(result == (uint32_t)VK_ERROR_FORMAT_NOT_SUPPORTED, "a linear sampled BGRA8 image query is FORMAT_NOT_SUPPORTED");
+	if (POWERVR_FORMAT_LINEAR_SAMPLED)
+		check(result == VK_SUCCESS, "switch on: a linear sampled BGRA8 image query succeeds");
+	else
+		check(result == (uint32_t)VK_ERROR_FORMAT_NOT_SUPPORTED, "switch off: a linear sampled BGRA8 image query is FORMAT_NOT_SUPPORTED");
 	check(vulkan_reply_pointer(&reader), "linear limits present");
 	vulkan_decode_VkImageFormatProperties(&reader, &limits);
 	expect_opcode(&reader, GPU_OP_GET_PHYSICAL_DEVICE_IMAGE_FORMAT_PROPERTIES, "optimal image query");
@@ -998,9 +1056,14 @@ replies_image(
 	vulkan_decode_VkImageFormatProperties(&reader, &limits);
 	check(limits.maxExtent.width == 4096 && limits.maxArrayLayers == 256 && limits.sampleCounts == VK_SAMPLE_COUNT_1_BIT, "optimal limits");
 
-	expect_result(&reader, GPU_OP_CREATE_IMAGE, (uint32_t)VK_ERROR_FEATURE_NOT_PRESENT, "an image declaring external memory is FEATURE_NOT_PRESENT");
-	expect_result(&reader, GPU_OP_ALLOCATE_MEMORY, (uint32_t)VK_ERROR_FEATURE_NOT_PRESENT, "an export is FEATURE_NOT_PRESENT");
-	expect_result(&reader, GPU_OP_ALLOCATE_MEMORY, (uint32_t)VK_ERROR_FEATURE_NOT_PRESENT, "an import is FEATURE_NOT_PRESENT");
+	expect_created(&reader, GPU_OP_CREATE_IMAGE, ID_SHARED_IMAGE, "an image declaring dma-buf external memory is made");
+	expect_created(&reader, GPU_OP_ALLOCATE_MEMORY, ID_EXPORT_MEMORY, "an export is allocated");
+	expect_created(&reader, GPU_OP_ALLOCATE_MEMORY, ID_IMPORT_MEMORY, "an import of the session's blob is allocated");
+	expect_opcode(&reader, GPU_OP_ALLOCATE_MEMORY, "unknown import");
+	result = vulkan_read_u32(&reader);
+	check(result != VK_SUCCESS, "an import of an unknown blob is refused");
+	expect_result(&reader, GPU_OP_CREATE_IMAGE, (uint32_t)VK_ERROR_FEATURE_NOT_PRESENT, "an image declaring a host allocation is FEATURE_NOT_PRESENT");
+	expect_identity(&reader);
 
 	expect_created(&reader, GPU_OP_CREATE_IMAGE, ID_LINEAR_IMAGE, "linear image");
 	expect_opcode(&reader, GPU_OP_GET_IMAGE_SUBRESOURCE_LAYOUT, "subresource layout");

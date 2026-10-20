@@ -13,10 +13,10 @@
  * An image is laid out when it is made (image-state.c) and takes the
  * storage of the memory it is bound to.  A view is made of a bound image
  * and keeps it; its words name the image's address, so they are built
- * once, when the view is made.  No image is shared with another process
- * or the display yet: a create that declares external memory is refused
- * as a missing feature, which is what a client's window system takes as
- * the sign to present through copies.
+ * once, when the view is made.  An image that declares external memory
+ * (libvulkan's declaration for a window system's shared image, of a
+ * handle type the session shares by) is made as any other; its memory is
+ * the exported or imported allocation it is bound to (vk-memory.c).
  *
  * Procedure referenced: zedBSD src/drivers/gpu/bcm2711/vulkan-resource.c
  * and vulkan-input.c (the wire of each command).
@@ -145,8 +145,8 @@ powervr_vk_image_address(
 /*
  * vkCreateImage: [device][present][VkImageCreateInfo] and the create's
  * tail -> the create's reply.  A two-dimensional image of one sample in a
- * format of the table; one that declares external memory is a missing
- * feature.
+ * format of the table; one that declares external memory names a
+ * handle type the session shares by.
  */
 static int
 create_image(
@@ -159,28 +159,26 @@ create_image(
 	const struct powervr_format *format;
 	uint64_t identity;
 	bool external;
+	int declared;
 	int error;
 
-	/* Whether the record chains an external memory declaration, then the record and the identity. */
+	/* Whether the record chains an external memory declaration the executor takes, then the record and the identity. */
 	kern_memset(&info, 0, sizeof(info));
 	(void)drv_i915_wire_read_u64(reader);
 	(void)drv_i915_wire_read_u64(reader);
-	error = image_chain(reader, &external);
-	if (error != 0)
-		return error;
+	declared = image_chain(reader, &external);
+	if (declared == EINVAL)
+		return EINVAL;
 	i915_vkc_dec_VkImageCreateInfo(reader, &session->arena, &info);
 	identity = powervr_vk_create_tail(reader);
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* No external memory, then a shape and format the executor takes. */
+	/* A declaration the executor takes, then a shape and format it takes. */
 	format = powervr_format_find(info.format);
-	error = 0;
-	if (external) {
-		error = ENOTSUP;
-	} else {
+	error = declared;
+	if (error == 0)
 		error = image_check(&info, format);
-	}
 
 	/* The record with its layout. */
 	image = NULL;
@@ -192,6 +190,7 @@ create_image(
 	if (error == 0) {
 		image->format = format;
 		image->usage = info.usage;
+		image->external = external;
 		image->shape.width = info.extent.width;
 		image->shape.height = info.extent.height;
 		image->shape.depth = info.extent.depth;
@@ -215,8 +214,13 @@ create_image(
 
 /*
  * Reports in *present whether an image's create record chains libvulkan's
- * external memory declaration ([sType][u64 present] ahead of the rest),
- * without moving the reader.
+ * external memory declaration ([sType][u64 present], then [sType][u64 0]
+ * [u32 handle types] ahead of the rest), without moving the reader: the
+ * record's decoder steps over it.  ENOTSUP for another extension, one
+ * that chains more, or a handle type the session does not share by.
+ *
+ * Procedure referenced: zedBSD src/drivers/gpu/bcm2711/vulkan-resource.c
+ * (external_declaration).
  */
 static int
 image_chain(
@@ -225,16 +229,33 @@ image_chain(
 {
 	struct i915_wire_reader peek;
 	uint64_t chained;
+	uint64_t next;
+	uint32_t type;
+	uint32_t handles;
 
 	/* A copy of the reader steps over sType to the chain's presence word. */
+	*present = false;
 	peek = *reader;
 	(void)drv_i915_wire_read_u32(&peek);
 	chained = drv_i915_wire_read_u64(&peek);
 	if (peek.error != 0 || chained > 1)
 		return EINVAL;
+	if (chained == 0)
+		return 0;
 
-	/* Succeeded: whether a declaration follows. */
-	*present = chained != 0;
+	/* The one declaration, of handle types the session shares by. */
+	type = drv_i915_wire_read_u32(&peek);
+	next = drv_i915_wire_read_u64(&peek);
+	handles = drv_i915_wire_read_u32(&peek);
+	if (peek.error != 0)
+		return EINVAL;
+	if (type != VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO || next != 0)
+		return ENOTSUP;
+	if (handles == 0 || (handles & ~POWERVR_VK_EXTERNAL_HANDLES) != 0)
+		return ENOTSUP;
+
+	/* Succeeded: a declaration follows. */
+	*present = true;
 	return 0;
 }
 
