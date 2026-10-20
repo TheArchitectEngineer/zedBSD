@@ -825,6 +825,9 @@ powervr_service_start(
 	if (error != 0)
 		return error;
 
+	/* Makes it runnable: kthread_create leaves a new thread stopped. */
+	thread_start(thread);
+
 	/* Succeeded: the service runs. */
 	return 0;
 }

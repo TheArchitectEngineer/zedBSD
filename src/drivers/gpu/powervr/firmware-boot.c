@@ -142,6 +142,9 @@ powervr_late_start(
 	if (error != 0)
 		return error;
 
+	/* Makes it runnable: kthread_create leaves a new thread stopped. */
+	thread_start(thread);
+
 	/* Succeeded: the stage runs on its own from here. */
 	return 0;
 }
@@ -166,8 +169,12 @@ late_thread(
 
 	/* The thread that reports a step taking long; the stage goes on without it. */
 	__atomic_store_n(&stage_ended, 0, __ATOMIC_RELEASE);
-	if (kthread_create(watch_thread, NULL, SCHED_PRIORITY_DEFAULT, &watcher) != 0)
+	error = kthread_create(watch_thread, NULL, SCHED_PRIORITY_DEFAULT, &watcher);
+	if (error != 0) {
 		kern_logf("powervr: firmware: no thread to report long steps\n");
+	} else {
+		thread_start(watcher);
+	}
 
 	/* Reads the file once the root is live, and keeps it for later resets. */
 	step_start("file");
