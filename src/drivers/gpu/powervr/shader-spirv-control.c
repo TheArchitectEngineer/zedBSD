@@ -322,8 +322,14 @@ reader_arm(
 	int error;
 
 	/* An arm straight to the merge only moves the merge's phis. */
-	if (target == merge)
-		return reader_phi_moves(reader, from, target);
+	if (target == merge) {
+		error = reader_phi_moves(reader, from, target);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the merge's phis are moved. */
+		return 0;
+	}
 
 	/* An arm that leaves the loop. */
 	error = reader_phi_moves(reader, from, target);
@@ -337,7 +343,12 @@ reader_arm(
 
 	/* Otherwise the blocks up to the merge. */
 	returned = 0;
-	return reader_region(reader, target, merge, 0, &returned);
+	error = reader_region(reader, target, merge, 0, &returned);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the arm's blocks are read. */
+	return 0;
 }
 
 /* Takes an edge that must leave the innermost loop: its phis, then the break or continue. */

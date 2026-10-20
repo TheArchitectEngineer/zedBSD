@@ -6,8 +6,8 @@
  */
 
 /*
- * vkstage: the gpu-selftest stages after image (ws269-p010, design-p010.md
- * section 8.2), one stage a run, named by the only argument:
+ * vkstage: the gpu-selftest stages after image, one stage a run, named by
+ * the only argument:
  *
  *   clear    vkCmdClearColorImage on an OPTIMAL image, copied to a buffer
  *   copy     buffer -> OPTIMAL image -> buffer, compared word by word
@@ -50,7 +50,7 @@
 /* The fence wait's limit in nanoseconds (5 s, above the driver's 2 s). */
 #define VKSTAGE_WAIT_NS		5000000000ULL
 
-/* The seconds the present stage leaves its frame on the display (design-p010.md section 8.2). */
+/* The seconds the present stage leaves its frame on the display. */
 #define VKSTAGE_PRESENT_SECONDS	3U
 
 /* The most bytes of a failure's reason. */
@@ -189,11 +189,13 @@ main(
 	struct vkstage run;
 	VkResult status;
 	size_t i;
+	int same;
 
 	/* Finds the stage. */
 	stage = NULL;
 	for (i = 0; argc == 2 && i < sizeof(stages) / sizeof(stages[0]); i++) {
-		if (strcmp(argv[1], stages[i].name) == 0)
+		same = strcmp(argv[1], stages[i].name);
+		if (same == 0)
 			stage = &stages[i];
 	}
 
@@ -1079,6 +1081,7 @@ stage_clear(
 	uint32_t wanted;
 	uint32_t i;
 	VkResult status;
+	int matches;
 
 	/* The image and the buffer it is copied into. */
 	status = vkstage_create_image(run, VK_FORMAT_R8G8B8A8_UNORM, VKSTAGE_SIZE, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_IMAGE_ASPECT_COLOR_BIT, &image);
@@ -1111,7 +1114,8 @@ stage_clear(
 	pixels = run->mapped[buffer];
 	wanted = vkstage_rgba(64, 128, 191, 255);
 	for (i = 0; i < VKSTAGE_PIXELS; i++) {
-		if (!vkstage_check_pixel(run, pixels, i % VKSTAGE_SIZE, i / VKSTAGE_SIZE, wanted))
+		matches = vkstage_check_pixel(run, pixels, i % VKSTAGE_SIZE, i / VKSTAGE_SIZE, wanted);
+		if (!matches)
 			return VK_ERROR_UNKNOWN;
 	}
 
@@ -1207,6 +1211,7 @@ stage_draw(
 	uint32_t vertices;
 	uint32_t colour;
 	VkResult status;
+	int matches;
 
 	/* The readback, the vertices and the colour image. */
 	status = vkstage_create_buffer(run, VKSTAGE_PIXELS * 4U, VK_BUFFER_USAGE_TRANSFER_DST_BIT, &readback);
@@ -1244,13 +1249,17 @@ stage_draw(
 
 	/* The middle is the triangle's green, the corners and the top edge the background. */
 	pixels = run->mapped[readback];
-	if (!vkstage_check_pixel(run, pixels, VKSTAGE_SIZE / 2U, VKSTAGE_SIZE / 2U, vkstage_rgba(0, 255, 0, 255)))
+	matches = vkstage_check_pixel(run, pixels, VKSTAGE_SIZE / 2U, VKSTAGE_SIZE / 2U, vkstage_rgba(0, 255, 0, 255));
+	if (!matches)
 		return VK_ERROR_UNKNOWN;
-	if (!vkstage_check_pixel(run, pixels, 2, 2, vkstage_rgba(0, 0, 255, 255)))
+	matches = vkstage_check_pixel(run, pixels, 2, 2, vkstage_rgba(0, 0, 255, 255));
+	if (!matches)
 		return VK_ERROR_UNKNOWN;
-	if (!vkstage_check_pixel(run, pixels, VKSTAGE_SIZE - 3U, VKSTAGE_SIZE - 3U, vkstage_rgba(0, 0, 255, 255)))
+	matches = vkstage_check_pixel(run, pixels, VKSTAGE_SIZE - 3U, VKSTAGE_SIZE - 3U, vkstage_rgba(0, 0, 255, 255));
+	if (!matches)
 		return VK_ERROR_UNKNOWN;
-	if (!vkstage_check_pixel(run, pixels, VKSTAGE_SIZE / 2U, 4, vkstage_rgba(0, 0, 255, 255)))
+	matches = vkstage_check_pixel(run, pixels, VKSTAGE_SIZE / 2U, 4, vkstage_rgba(0, 0, 255, 255));
+	if (!matches)
 		return VK_ERROR_UNKNOWN;
 
 	/* Succeeded: the triangle is where it was drawn and nowhere else. */
@@ -1293,6 +1302,7 @@ stage_sample(
 	uint32_t y;
 	uint32_t quadrant;
 	VkResult status;
+	int matches;
 
 	/* Red, green, blue and white: top left, top right, bottom left, bottom right. */
 	quadrants[0] = vkstage_rgba(255, 0, 0, 255);
@@ -1421,7 +1431,8 @@ stage_sample(
 	for (quadrant = 0; quadrant < 4; quadrant++) {
 		x = VKSTAGE_SIZE / 4U + (quadrant % 2U) * (VKSTAGE_SIZE / 2U);
 		y = VKSTAGE_SIZE / 4U + (quadrant / 2U) * (VKSTAGE_SIZE / 2U);
-		if (!vkstage_check_pixel(run, pixels, x, y, quadrants[quadrant]))
+		matches = vkstage_check_pixel(run, pixels, x, y, quadrants[quadrant]);
+		if (!matches)
 			return VK_ERROR_UNKNOWN;
 	}
 
@@ -1454,6 +1465,7 @@ stage_depth(
 	uint32_t colour;
 	uint32_t depth;
 	VkResult status;
+	int matches;
 
 	/* The readback, the vertices, the colour image and the depth image. */
 	status = vkstage_create_buffer(run, VKSTAGE_PIXELS * 4U, VK_BUFFER_USAGE_TRANSFER_DST_BIT, &readback);
@@ -1495,13 +1507,17 @@ stage_depth(
 
 	/* The middle keeps the near red; a corner only the far green covers is green. */
 	pixels = run->mapped[readback];
-	if (!vkstage_check_pixel(run, pixels, VKSTAGE_SIZE / 2U, VKSTAGE_SIZE / 2U, vkstage_rgba(255, 0, 0, 255)))
+	matches = vkstage_check_pixel(run, pixels, VKSTAGE_SIZE / 2U, VKSTAGE_SIZE / 2U, vkstage_rgba(255, 0, 0, 255));
+	if (!matches)
 		return VK_ERROR_UNKNOWN;
-	if (!vkstage_check_pixel(run, pixels, 2, 2, vkstage_rgba(0, 255, 0, 255)))
+	matches = vkstage_check_pixel(run, pixels, 2, 2, vkstage_rgba(0, 255, 0, 255));
+	if (!matches)
 		return VK_ERROR_UNKNOWN;
 
-	/* Succeeded: the depth test kept the nearer triangle. */
+	/* What was seen, for the stage's line. */
 	snprintf(run->seen, sizeof(run->seen), "near 0x%08x over far 0x%08x", pixels[(VKSTAGE_SIZE / 2U) * VKSTAGE_SIZE + VKSTAGE_SIZE / 2U], pixels[2 * VKSTAGE_SIZE + 2]);
+
+	/* Succeeded: the depth test kept the nearer triangle. */
 	return VK_SUCCESS;
 }
 
@@ -1605,8 +1621,7 @@ vkstage_open_surface(
  * present: one frame cleared to the clear colour on the first display,
  * held three seconds, then back.  On PowerVR the swapchain images are
  * OPTIMAL and libvulkan's WSI presents them by copying each to a
- * host-visible buffer and the display (the readback route,
- * design-p010.md section 7, ws269-p010k1).
+ * host-visible buffer and the display (the readback route).
  */
 static VkResult
 stage_present(

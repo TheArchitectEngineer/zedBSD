@@ -79,7 +79,12 @@ shader_spirv_reader_instruction(
 		/* Phis are moved on their edges; merges were noted in the first pass. */
 		return 0;
 	case OP_UNDEF:
-		return shader_spirv_reader_constant(reader, words, length);
+		error = shader_spirv_reader_constant(reader, words, length);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the undefined value is a constant. */
+		return 0;
 	case OP_VARIABLE:
 		/* A function variable: values for its words, set to its initializer if it has one. */
 		if (length < 4 || words[2] >= reader->bound)
@@ -108,14 +113,29 @@ shader_spirv_reader_instruction(
 	case OP_LOAD:
 		if (length < 4)
 			return EINVAL;
-		return reader_load(reader, words[1], words[2], words[3]);
+		error = reader_load(reader, words[1], words[2], words[3]);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the load is read. */
+		return 0;
 	case OP_STORE:
 		if (length < 3)
 			return EINVAL;
-		return reader_store(reader, words[1], words[2]);
+		error = reader_store(reader, words[1], words[2]);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the store is read. */
+		return 0;
 	case OP_ACCESS_CHAIN:
 	case OP_IN_BOUNDS_ACCESS_CHAIN:
-		return reader_access_chain(reader, words, length);
+		error = reader_access_chain(reader, words, length);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the access chain is read. */
+		return 0;
 	case OP_FUNCTION_CALL:
 		/* Binds the parameters to the arguments, then inlines the body. */
 		if (length < 4 || words[3] >= reader->bound)
@@ -143,7 +163,12 @@ shader_spirv_reader_instruction(
 		}
 		return reader->error;
 	case OP_EXT_INST:
-		return reader_extended(reader, words, length);
+		error = reader_extended(reader, words, length);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the extended instruction is read. */
+		return 0;
 	case OP_SAMPLED_IMAGE:
 		/* The combined image's binding carries over. */
 		if (length < 5 || words[2] >= reader->bound || words[3] >= reader->bound)
@@ -151,7 +176,12 @@ shader_spirv_reader_instruction(
 		reader->ids[words[2]] = reader->ids[words[3]];
 		return 0;
 	case OP_IMAGE_SAMPLE_IMPLICIT_LOD:
-		return reader_sample(reader, words, length);
+		error = reader_sample(reader, words, length);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the sample is read. */
+		return 0;
 	default:
 		break;
 	}
@@ -1204,7 +1234,10 @@ sine(
 		k = shader_spirv_constant_operand(sine_coefficients[index]);
 		sum = shader_spirv_emit_value(reader, POWERVR_IR_FLOAT_MULTIPLY_ADD, &sum, &y2, &k);
 	}
-	return shader_spirv_emit_value(reader, POWERVR_IR_FLOAT_MULTIPLY, &sum, &y, NULL);
+	sum = shader_spirv_emit_value(reader, POWERVR_IR_FLOAT_MULTIPLY, &sum, &y, NULL);
+
+	/* Succeeded: the sine's value. */
+	return sum;
 }
 
 /* Reads a sample of a combined image at two coordinates. */

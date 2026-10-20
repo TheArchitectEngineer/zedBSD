@@ -1074,7 +1074,7 @@ round_units(
  * Picks the pixel back end's source format and gamma for a colour
  * format: sRGB from 16-bit floats with gamma, an 8-bit unorm channel
  * from the packed 8 bits.  Refuses depth formats and colour formats of
- * other channel widths (ENOTSUP) until the formats of p010g need them.
+ * other channel widths (ENOTSUP).
  */
 static int
 pbe_source(

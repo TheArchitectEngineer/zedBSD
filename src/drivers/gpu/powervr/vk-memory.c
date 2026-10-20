@@ -23,9 +23,6 @@
  * the cache for that reason too), or import a blob of the session's
  * (one the session imported from another's export): it then maps that
  * blob's buffer, holding it, instead of a buffer of its own.
- *
- * Procedure referenced: zedBSD src/drivers/gpu/bcm2711/vulkan-memory.c
- * and vulkan-resource.c (the wire of each command).
  */
 
 #include <stdbool.h>
@@ -54,6 +51,9 @@ static int buffer_destroy(struct powervr_vk_session *session, void *payload);
 /*
  * Runs a memory, buffer, binding or requirements command; *handled stays
  * clear for another handler's opcode.
+ *
+ * Procedure referenced: zedBSD src/drivers/gpu/bcm2711/vulkan-memory.c
+ * and vulkan-resource.c (the wire of each command).
  */
 int
 powervr_vk_memory_route(

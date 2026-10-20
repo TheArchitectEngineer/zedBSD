@@ -12,7 +12,7 @@
  * them (render-draw.c), and the records of the state a draw reads
  * (vertex and index buffers, viewport, scissor, push constants) and of
  * the draws.  The render jobs pick them up (vk-pass.c); nothing here
- * kicks.  design-p010.md section 4.4.
+ * kicks.
  */
 
 #include <stdbool.h>
@@ -216,6 +216,7 @@ decode_info(
 	uint64_t count;
 	uint64_t index;
 	int refused;
+	uint64_t present;
 
 	/* The head and the stages. */
 	kern_memset(info, 0, sizeof(*info));
@@ -246,7 +247,8 @@ decode_info(
 	info->pStages = stages;
 
 	/* Each state behind its presence word. */
-	if (drv_i915_wire_read_u64(reader) != 0) {
+	present = drv_i915_wire_read_u64(reader);
+	if (present != 0) {
 		input = powervr_vk_arena_take(session, sizeof(*input));
 		if (input == NULL)
 			return EINVAL;
@@ -254,7 +256,9 @@ decode_info(
 		i915_vkc_dec_VkPipelineVertexInputStateCreateInfo(reader, &session->arena, input);
 		info->pVertexInputState = input;
 	}
-	if (drv_i915_wire_read_u64(reader) != 0) {
+
+	present = drv_i915_wire_read_u64(reader);
+	if (present != 0) {
 		assembly = powervr_vk_arena_take(session, sizeof(*assembly));
 		if (assembly == NULL)
 			return EINVAL;
@@ -262,7 +266,9 @@ decode_info(
 		i915_vkc_dec_VkPipelineInputAssemblyStateCreateInfo(reader, &session->arena, assembly);
 		info->pInputAssemblyState = assembly;
 	}
-	if (drv_i915_wire_read_u64(reader) != 0) {
+
+	present = drv_i915_wire_read_u64(reader);
+	if (present != 0) {
 		tessellation = powervr_vk_arena_take(session, sizeof(*tessellation));
 		if (tessellation == NULL)
 			return EINVAL;
@@ -270,7 +276,9 @@ decode_info(
 		i915_vkc_dec_VkPipelineTessellationStateCreateInfo(reader, &session->arena, tessellation);
 		info->pTessellationState = tessellation;
 	}
-	if (drv_i915_wire_read_u64(reader) != 0) {
+
+	present = drv_i915_wire_read_u64(reader);
+	if (present != 0) {
 		viewport = powervr_vk_arena_take(session, sizeof(*viewport));
 		if (viewport == NULL)
 			return EINVAL;
@@ -278,7 +286,9 @@ decode_info(
 		i915_vkc_dec_VkPipelineViewportStateCreateInfo(reader, &session->arena, viewport);
 		info->pViewportState = viewport;
 	}
-	if (drv_i915_wire_read_u64(reader) != 0) {
+
+	present = drv_i915_wire_read_u64(reader);
+	if (present != 0) {
 		raster = powervr_vk_arena_take(session, sizeof(*raster));
 		if (raster == NULL)
 			return EINVAL;
@@ -286,7 +296,9 @@ decode_info(
 		i915_vkc_dec_VkPipelineRasterizationStateCreateInfo(reader, &session->arena, raster);
 		info->pRasterizationState = raster;
 	}
-	if (drv_i915_wire_read_u64(reader) != 0) {
+
+	present = drv_i915_wire_read_u64(reader);
+	if (present != 0) {
 		multisample = powervr_vk_arena_take(session, sizeof(*multisample));
 		if (multisample == NULL)
 			return EINVAL;
@@ -294,7 +306,9 @@ decode_info(
 		i915_vkc_dec_VkPipelineMultisampleStateCreateInfo(reader, &session->arena, multisample);
 		info->pMultisampleState = multisample;
 	}
-	if (drv_i915_wire_read_u64(reader) != 0) {
+
+	present = drv_i915_wire_read_u64(reader);
+	if (present != 0) {
 		depth = powervr_vk_arena_take(session, sizeof(*depth));
 		if (depth == NULL)
 			return EINVAL;
@@ -302,7 +316,9 @@ decode_info(
 		i915_vkc_dec_VkPipelineDepthStencilStateCreateInfo(reader, &session->arena, depth);
 		info->pDepthStencilState = depth;
 	}
-	if (drv_i915_wire_read_u64(reader) != 0) {
+
+	present = drv_i915_wire_read_u64(reader);
+	if (present != 0) {
 		blend = powervr_vk_arena_take(session, sizeof(*blend));
 		if (blend == NULL)
 			return EINVAL;
@@ -310,7 +326,9 @@ decode_info(
 		i915_vkc_dec_VkPipelineColorBlendStateCreateInfo(reader, &session->arena, blend);
 		info->pColorBlendState = blend;
 	}
-	if (drv_i915_wire_read_u64(reader) != 0) {
+
+	present = drv_i915_wire_read_u64(reader);
+	if (present != 0) {
 		dynamic = powervr_vk_arena_take(session, sizeof(*dynamic));
 		if (dynamic == NULL)
 			return EINVAL;
@@ -378,6 +396,7 @@ record_vertex_buffers(
 	uint64_t offsets;
 	uint64_t index;
 	int refused;
+	int retained;
 
 	/* The data. */
 	data = kern_calloc(1, sizeof(*data));
@@ -399,7 +418,14 @@ record_vertex_buffers(
 		if (refused != 0)
 			continue;
 		object = powervr_vk_object_find(session, I915_VK_OBJ_BUFFER, identity);
-		if (object == NULL || powervr_vk_object_retain(object) != 0) {
+		if (object == NULL) {
+			refused = EINVAL;
+			continue;
+		}
+
+		/* The record holds the buffer. */
+		retained = powervr_vk_object_retain(object);
+		if (retained != 0) {
 			refused = EINVAL;
 			continue;
 		}
@@ -437,6 +463,7 @@ record_index_buffer(
 	uint64_t identity;
 	uint64_t offset;
 	uint32_t type;
+	int retained;
 
 	/* The buffer, the offset and the type. */
 	identity = drv_i915_wire_read_u64(reader);
@@ -449,7 +476,10 @@ record_index_buffer(
 
 	/* The buffer, held; the offset's halves and the size. */
 	object = powervr_vk_object_find(session, I915_VK_OBJ_BUFFER, identity);
-	if (object == NULL || powervr_vk_object_retain(object) != 0)
+	if (object == NULL)
+		return EINVAL;
+	retained = powervr_vk_object_retain(object);
+	if (retained != 0)
 		return EINVAL;
 	entry->objects[entry->object_count++] = object;
 	entry->values[0] = (uint32_t)offset;

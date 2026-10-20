@@ -9,13 +9,10 @@
  * The executor's instance, physical-device, device and queue commands.
  *
  * The device is one physical device with one queue family of one queue
- * that computes (graphics comes with plan/ws269 p010), and two memory
- * types over one heap of uncached system memory: device local, and host
- * visible and coherent (design D7 (a)).  No image format has features
- * yet.  The limits are the ones the compute path keeps.
- *
- * Procedure referenced: zedBSD src/drivers/gpu/bcm2711/vulkan-device.c
- * and vulkan-query.c (the wire of each command).
+ * that draws, computes and copies, and two memory types over one heap
+ * of uncached system memory: device local, and host visible and
+ * coherent.  The formats are the table's (image-state.c); the limits
+ * are the ones the executor keeps.
  */
 
 #include <stdbool.h>
@@ -50,7 +47,8 @@
  * B << 48 | V << 32 | N << 16 | C, of which the low 32 bits are taken.
  *
  * Values referenced: PCI-SIG vendor id 0x1010 (Imagination Technologies);
- * plan/ws269/design.md section 0.1 (BVNC 36.50.54.182).
+ * the BXE-4-32's BVNC 36.50.54.182 as its core identification registers
+ * report it.
  */
 #define DEVICE_VENDOR_ID		0x1010U
 #define DEVICE_ID			((54U << 16) | 182U)
@@ -92,6 +90,9 @@ static void set_float(float *destination, uint32_t bits);
 /*
  * Runs an instance, physical-device, device or queue command; *handled
  * stays clear for another handler's opcode.
+ *
+ * Procedure referenced: zedBSD src/drivers/gpu/bcm2711/vulkan-device.c
+ * and vulkan-query.c (the wire of each command).
  */
 int
 powervr_vk_device_route(
@@ -647,6 +648,7 @@ image_format(
 	uint32_t flags;
 	uint32_t features;
 	uint32_t result;
+	bool allowed;
 
 	/* The physical device, the format, type, tiling, usage and flags, and the presence word. */
 	(void)drv_i915_wire_read_u64(reader);
@@ -669,7 +671,8 @@ image_format(
 
 	/* A plain image whose usages its features allow. */
 	result = (uint32_t)VK_SUCCESS;
-	if (type != VK_IMAGE_TYPE_2D || flags != 0 || !usage_allowed(usage, features))
+	allowed = usage_allowed(usage, features);
+	if (type != VK_IMAGE_TYPE_2D || flags != 0 || !allowed)
 		result = (uint32_t)VK_ERROR_FORMAT_NOT_SUPPORTED;
 
 	/* The limits of such an image: a linear one is one level and one layer. */
