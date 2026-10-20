@@ -360,3 +360,14 @@ mainline と照らした結果（v7.3 の `pvr_ccb.c`・`pvr_fw.c`・`pvr_rogue_
 - そのため return slot の謎は残る。FW は MMU cache の command も実行する（executed count が進む）が、os init の 0xc001d000（entry 0x10142d7、物理 0x4050b000、host の page と同じ、uncached の policy 2・writable・valid）に答えが無い。
 - 直し: probe の行に、page がどの record に属するか（code・data・…・runtime・trace）の名前を足した。fallback は残す（return slot が見えるまで外さない）。
 - 確かめ: VF2 の vmunix は warning 0。
+
+## q1411-i01（P1、2026-10-20）: compute の reset lockup の切り分けと return slot の marker
+
+- 通知の読み（mainline の `rogue_fwif_fwccb_cmd_context_reset_data`: context 0・reason 4・dm 8・job 12・flags 16・pc 24・fault 32）: `00000002 00000001 00000004 00000000 …` は context 0x2、reason 1（guilty lockup）、dm 4（compute）、pc・fault は 0。`render-queue.c` の行を名前付きにした。
+- compute の kernel の失敗の時に `powervr_firmware_dump`（trace の最後の 128 word を含む）を出す。
+- compute の command は mainline の `rogue_fwif_cmd_compute`（regs は 8 から、cdm_ctrl_stream_base 40、cdm_context_state_base_addr 48）と word 10・12 で一致。Mesa（25.0.7 の `pvr_job_compute.c`）は、ほかに `cdm_resume_pds1`（CR_CDM_CONTEXT_PDS1: switch の load program の data の大きさ、unified・common の大きさ）、`cdm_item`、`compute_cluster` を入れる。こちらは 0 のまま。
+- q1388 の compute の switch の static state（`powervr_session_compute_switch`）は、`POWERVR_COMPUTE_SWITCH_STATE`（`render-private.h`、既定 0）で外せるようにし、この build では外した。switch を入れて PDS1 を 0 のままにしているのが lockup の原因かを、これで切り分ける。
+  - lockup が消えれば、switch を戻すときに `cdm_resume_pds1` を Mesa のとおりに入れる。
+  - 消えなければ別の原因。dump と trace で見る。
+- return slot: boot の時に全 slot に marker（`0xdead0000 | slot << 4`、executed の bit は 0）を入れ、答えを読んだ後も marker に戻す。FW がこの page の word を書けば、probe の slot の値が marker でなくなる。
+- 確かめ: VF2 の vmunix は warning 0、p010 は 0 failed、p009 は 511/0。実機は未。

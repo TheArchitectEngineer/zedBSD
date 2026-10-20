@@ -191,6 +191,7 @@ powervr_compute_check(
 	error = run_kernel(&state, &written);
 	if (error != 0) {
 		kern_logf("powervr: compute kernel: FAILED (%d), %u/%u words written\n", error, written, (unsigned)CHECK_WORDS);
+		powervr_firmware_dump(state.render->core, POWERVR_KERNEL_CCB_SLOTS);
 	} else if (written != CHECK_WORDS) {
 		kern_logf("powervr: compute kernel: FAILED, %u/%u words written\n", written, (unsigned)CHECK_WORDS);
 	} else {

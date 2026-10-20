@@ -77,8 +77,8 @@ powervr_command_send(
 	 * before the kick, where a late one could land over the firmware's
 	 * answer; one left set is cleared now, then read back.
 	 */
-	if (powervr_object_get32(&firmware->kccb_returns, write * 4U) != POWERVR_RETURN_NONE) {
-		powervr_object_put32(&firmware->kccb_returns, write * 4U, POWERVR_RETURN_NONE);
+	if (powervr_object_get32(&firmware->kccb_returns, write * 4U) != POWERVR_RETURN_MARKER(write)) {
+		powervr_object_put32(&firmware->kccb_returns, write * 4U, POWERVR_RETURN_MARKER(write));
 		kern_io_barrier();
 		(void)powervr_object_get32(&firmware->kccb_returns, write * 4U);
 	}
@@ -159,7 +159,7 @@ powervr_command_wait(
 	}
 
 	/* Clears the slot for its next command, now that its answer is read. */
-	powervr_object_put32(&firmware->kccb_returns, slot * 4U, POWERVR_RETURN_NONE);
+	powervr_object_put32(&firmware->kccb_returns, slot * 4U, POWERVR_RETURN_MARKER(slot));
 
 	/* Succeeded: the firmware's answer. */
 	*answer = value;
@@ -193,7 +193,7 @@ powervr_command_wait_executed(
 	for (;;) {
 		executed = powervr_object_get32(&firmware->os_data, POWERVR_OS_DATA_KCCB_EXECUTED);
 		if ((int32_t)(executed - firmware->kccb_expect[slot]) >= 0) {
-			powervr_object_put32(&firmware->kccb_returns, slot * 4U, POWERVR_RETURN_NONE);
+			powervr_object_put32(&firmware->kccb_returns, slot * 4U, POWERVR_RETURN_MARKER(slot));
 			return 0;
 		}
 

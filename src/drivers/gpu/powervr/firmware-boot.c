@@ -627,6 +627,7 @@ make_command_buffers(
 {
 	struct powervr_firmware *firmware;
 	struct powervr_heap *heap;
+	uint32_t slot;
 	int error;
 
 	/* The kernel's buffer's control block. */
@@ -669,6 +670,8 @@ make_command_buffers(
 	powervr_object_put32(&firmware->fwccb_control, POWERVR_CCB_COMMAND_BYTES, POWERVR_COMMAND_BYTES);
 	firmware->fwccb_read = 0;
 	firmware->kccb_sent = 0;
+	for (slot = 0; slot < POWERVR_KERNEL_CCB_SLOTS; slot++)
+		powervr_object_put32(&firmware->kccb_returns, slot * 4U, POWERVR_RETURN_MARKER(slot));
 	firmware->return_fallback_noted = false;
 
 	/* Succeeded: both buffers are empty. */

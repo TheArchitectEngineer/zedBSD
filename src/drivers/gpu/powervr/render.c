@@ -625,10 +625,16 @@ render_open(
 		return error;
 	}
 
-	/* The compute context's switch; without it the static state stays zero and the context cannot be switched. */
-	error = powervr_session_compute_switch(render, session);
-	if (error != 0)
-		kern_logf("powervr: compute context switch state not written (%d)\n", error);
+	/*
+	 * The compute context's switch; without it the static state stays
+	 * zero and the context cannot be switched.  It is left out while a
+	 * compute lockup on the VF2 is looked into (POWERVR_COMPUTE_SWITCH_STATE).
+	 */
+	if (POWERVR_COMPUTE_SWITCH_STATE) {
+		error = powervr_session_compute_switch(render, session);
+		if (error != 0)
+			kern_logf("powervr: compute context switch state not written (%d)\n", error);
+	}
 
 	/* Succeeded: the session is the core's. */
 	*result = session;
