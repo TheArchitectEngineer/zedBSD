@@ -147,3 +147,29 @@ P1 の render-job.c・transfer-job.c・render-check.c を読み、P2 の関数�
 - `render-job.c` の `job_background` の CLEAR（と DONT_CARE）の枝を `powervr_format_clear_word_count`・`powervr_render_clear_usc_words`・`powervr_render_clear_shared_words` に変え、`*shared_registers` を word の数にした。0 word（depth など）と 2 を越える word（R32G32B32A32_SFLOAT の 4）は ENOTSUP（fragment の command の pixel output が 1 pixel 2 register なので）。
 - pixel output の幅: `render-command.c` は USC_PIXEL_OUTPUT_CTRL を常に 2 register（BXE-4-32 の最少）で出すので、sRGB の F16 の 2 word は入る。直しは要らなかった。
 - 試験: job-host-test に sRGB の CLEAR の job（走る）と 4 word の format の拒否を足した（26/0）。p009 511/0、VF2 の vmunix warning 0。
+
+## q1403-i01（P2、2026-10-20）: 相互点検 2、P1 の file の wire の decode と libvulkan の encode
+
+P1 の file の decode を、libvulkan（`userland/desktop/libvulkan`）の encode と field ごとに照らした。見たのは field の順、大きさ（u32・u64）、pointer の有無の word、count の 2 つの形（u32 の count と u64 の payload の数）、padding、sType の chain。
+
+| 命令 | P1 の decode | libvulkan の encode | 判定 |
+| --- | --- | --- | --- |
+| vkQueueSubmit | vk-queue.c `submit`・`read_submit`・`read_identities`: [queue][u32 count][u64 count]、submit ごとに [sType][u64 pNext][u32 wait][u64 n]{u64}[u64 n]{u32 stage}[u32 cmd][u64 n]{u64}[u32 signal][u64 n]{u64}、最後に [u64 fence] | queue.c `queue_attempt`・`queue_write_submit`・`queue_write_waits`（stage は has_stages の時だけ、同じ native_count）・`queue_write_signals`・`queue_write_handle`（fence、null は 0） | 合う。software で完了した wait は libvulkan が配列から抜くが、u32 と u64 の count は同じ native_count で、decode はどちらも受ける |
+| vkCreateFence・vkCreateSemaphore | `create_sync`: [device][u64 1][sType][u64 pNext][u32 flags] と create の tail | sync.c `sync_create`: 同じ。pNext は常に 0（export fence などの chain は libvulkan の中で済む） | 合う |
+| vkResetFences | [device][u32 count][u64 count]{u64} | sync.c:129 同じ | 合う |
+| vkGetFenceStatus | [device][fence] | sync.c:903 同じ | 合う |
+| vkCmdClearColorImage | vk-transfer.c: [image][u32 layout][u64 present][u32 tag][u64 4]{4×u32}[u32 count][u64 count]{range} | commands-generated.inc `vkCmdClearColorImage` と commands.c `command_encode_color`（tag 2、u64 4、4 word） | 合う（pColor が NULL のときは present 0 で色の word が無いが、Vulkan では NULL にならない） |
+| vkCmdCopyBufferToImage | [buffer][image][u32 layout][u32 count][u64 count]{VkBufferImageCopy} | 同じ順 | 合う |
+| vkCmdCopyImageToBuffer | [image][u32 layout][buffer][u32][u64]{VkBufferImageCopy} | 同じ順 | 合う |
+| vkCmdCopyImage | [src][u32 layout][dst][u32 layout][u32][u64]{VkImageCopy} | 同じ順 | 合う |
+| vkCmdBlitImage | [src][layout][dst][layout][u32][u64]{VkImageBlit}[u32 filter] | 同じ順（filter が最後） | 合う |
+| vkBindImageMemory | vk-image.c `bind_image`: [device][image][memory][u64 offset] → [result] | resources.c `resource_bind`: 同じ。BindImageMemory2 は libvulkan が 1 つずつこれにする | 合う |
+| vkGetImageMemoryRequirements | `image_requirements`: [device][image][u64 present] → [u64 1][VkMemoryRequirements] | `resource_requirements`: 同じ。…2KHR と dedicated の答えは libvulkan の中 | 合う |
+| vkGetImageSubresourceLayout | `subresource_layout`: [device][image][u64 1][VkImageSubresource][u64 1] → [u64 1][VkSubresourceLayout] | resources.c:252: 同じ。reply は 52 byte（opcode 4、present 8、layout 40） | 合う |
+| vkQueueWaitIdle・vkDeviceWaitIdle | vk-device.c（P2） | libvulkan は送らない（自分の中で済む） | 対応の要なし |
+
+- 中の struct（VkImageSubresourceRange・VkBufferImageCopy・VkImageCopy・VkImageBlit・VkImageSubresource・VkSubresourceLayout・VkMemoryRequirements）は、生成された codec の組（libvulkan の codec.c と i915 の vulkan-codec.inc）で読む。p009 の frame の試験は libvulkan の encoder（lib-wire・lib-codec）で frame を書き、executor で読む。この試験で ClearColorImage・CopyBufferToImage・CopyImageToBuffer・bind・requirements・subresource layout・submit・fence が通っている（511 passed）。
+- **食い違いは見つからなかった。** 直しは無い。
+- 動きの注意（wire ではない、P1 の file、記録だけ）: `submit` は semaphore の wait と signal を読むだけで使わない。submit は同期で終わるので、今の順の保証はこれで足りる。fence は error のときに立たず、libvulkan は submit の result（DEVICE_LOST など）で知る。
+
+- 試験と build: コードの変更が無いので、新しくは流していない（main の f7aa25f5b の上で p009 511 passed は Q1 が確認済み）。
