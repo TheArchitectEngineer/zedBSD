@@ -38,6 +38,19 @@
  * trace's log type), and the compute and render checks are left out so
  * the kernel's message ring keeps it (1).
  */
+/*
+ * Whether the driver prints its long diagnostics (1): the register check
+ * and map at start, the return slot probe, the render check's register
+ * probes and its target, list, context and command dumps, every refused
+ * kick, and the Vulkan executor's per-dispatch layout.  0 (the default)
+ * keeps a working boot's messages short enough for the kernel's message
+ * ring to hold the start, the stages and gpu-selftest; failures still say
+ * their step, their reason and a short firmware trace.
+ */
+#ifndef POWERVR_DIAGNOSTICS
+#define POWERVR_DIAGNOSTICS	0
+#endif
+
 #ifndef POWERVR_FIRMWARE_BOOT_TRACE
 #define POWERVR_FIRMWARE_BOOT_TRACE	0
 #endif

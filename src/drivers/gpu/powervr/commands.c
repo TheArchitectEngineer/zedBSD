@@ -138,7 +138,8 @@ powervr_command_wait(
 				kern_logf("powervr: firmware: slot %u: return 0x%x not seen, executed count %u reached; taken as executed\n",
 					  (unsigned)slot, (unsigned)value, (unsigned)executed);
 				firmware->return_fallback_noted = true;
-				powervr_firmware_return_probe(core, slot);
+				if (POWERVR_DIAGNOSTICS)
+					powervr_firmware_return_probe(core, slot);
 			}
 			value = POWERVR_RETURN_EXECUTED;
 			break;
