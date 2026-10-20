@@ -45,6 +45,7 @@
 
 #include "drivers/gpu/powervr/render-private.h"
 #include "drivers/gpu/powervr/interface.h"
+#include "drivers/gpu/powervr/render-kick-layout.h"
 
 /*
  * How long the service sleeps with nothing pending, how many tries a
@@ -1488,9 +1489,10 @@ deliver(
 /*
  * Acts on one notice of the firmware; the core's lock is held.
  *
- * A context reset loses that session; a page fault of the firmware's own
- * or a request to restart loses the device; a free list's request is
- * answered.
+ * A context reset prints the stage its context's master names and loses
+ * that session, or every session when the firmware says it reset them
+ * all; a page fault of the firmware's own or a request to restart loses
+ * the device; a free list's request is answered.
  */
 static void
 handle_notice(
@@ -1502,15 +1504,20 @@ handle_notice(
 	struct notice_outcome *outcome;
 	struct powervr_render *render;
 	struct powervr_session *session;
+	struct powervr_reset_notice notice;
+	struct powervr_reset_stage stage;
+	uint8_t data[POWERVR_RESET_BYTES];
 	unsigned long enabled;
-	uint32_t identity;
+	uint32_t index;
+	uint32_t word;
+	int all;
 
 	/* The node the pass runs for. */
 	outcome = context;
 	render = outcome->render;
 
 	/* The firmware lost the device. */
-	if (type == POWERVR_NOTICE_PAGE_FAULT || type == POWERVR_NOTICE_RESTART) {
+	if (type == POWERVR_NOTICE_FIRMWARE_FAULT || type == POWERVR_NOTICE_RESTART) {
 		outcome->device_lost = 1;
 		return;
 	}
@@ -1521,11 +1528,25 @@ handle_notice(
 		return;
 	}
 
-	/* A context the firmware reset: finds its session and marks it lost. */
-	identity = powervr_object_get32(buffer, offset + POWERVR_COMMAND_DATA + POWERVR_NOTICE_CONTEXT_ID);
+	/* A context the firmware reset: its stage line, then its session (or every session) lost. */
+	for (index = 0; index < POWERVR_RESET_BYTES; index += 4U) {
+		word = powervr_object_get32(buffer, offset + POWERVR_COMMAND_DATA + index);
+		data[index + 0U] = (uint8_t)word;
+		data[index + 1U] = (uint8_t)(word >> 8);
+		data[index + 2U] = (uint8_t)(word >> 16);
+		data[index + 3U] = (uint8_t)(word >> 24);
+	}
+	powervr_reset_notice_read(data, &notice);
+	all = (notice.flags & POWERVR_RESET_FLAG_ALL) != 0U;
 	for (session = render->sessions; session != NULL; session = session->next) {
-		if (session->identity != identity)
+		if (!all && session->identity != notice.context)
 			continue;
+
+		/* The stage the context's master names, with the fault's address or the reset's reason. */
+		if (session->identity == notice.context) {
+			powervr_reset_stage_of(&notice, POWERVR_CONTEXT_COMPUTE, &stage);
+			powervr_stage_fail_value(stage.stage, stage.reason, stage.value);
+		}
 
 		/* No new kick for it; the core hears of the loss. */
 		enabled = spin_lock_irqsave(&render->queue_lock);
@@ -1534,7 +1555,8 @@ handle_notice(
 
 		spin_unlock_irqrestore(&render->queue_lock, enabled);
 		drv_gpu_report_session_error(render->device, session, EIO);
-		break;
+		if (!all)
+			break;
 	}
 }
 

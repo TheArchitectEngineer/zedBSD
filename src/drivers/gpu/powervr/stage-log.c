@@ -81,6 +81,28 @@ powervr_stage_fail(
 		kern_logf("%s\n", line);
 }
 
+/* Notes that stage failed for reason with the value it carries (a fault's address, a reset's reason). */
+void
+powervr_stage_fail_value(
+	enum powervr_stage stage,
+	enum powervr_stage_reason reason,
+	uint64_t value)
+{
+	char line[POWERVR_STAGE_LINE_MAX];
+	bool print;
+
+	/* Notes it under the lock; prints after. */
+	spin_lock(&stage_lock);
+
+	print = powervr_stage_note_fail_value(&stage_record, stage, reason, value, line, sizeof(line));
+
+	spin_unlock(&stage_lock);
+
+	/* The line, outside the lock. */
+	if (print)
+		kern_logf("%s\n", line);
+}
+
 /* The text of hw.gpu.powervr.stages. */
 static size_t
 stages_read(

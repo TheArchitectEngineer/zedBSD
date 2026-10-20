@@ -253,4 +253,7 @@ void powervr_stage_ok(enum powervr_stage stage);
 /* Notes that a stage failed; "powervr: <stage>: fail(<reason>)" is printed the first three times. */
 void powervr_stage_fail(enum powervr_stage stage, enum powervr_stage_reason reason);
 
+/* Notes a failure with its value: "fail(fault 0x...)" or "fail(reset <reason>)". */
+void powervr_stage_fail_value(enum powervr_stage stage, enum powervr_stage_reason reason, uint64_t value);
+
 #endif

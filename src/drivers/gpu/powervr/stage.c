@@ -34,10 +34,26 @@ static const char *const stage_text_names[POWERVR_STAGE_COUNT] = {
 /* The reasons as the lines name them. */
 static const char *const reason_names[POWERVR_REASON_COUNT] = {
 	"error", "enoent", "timeout", "bad image", "ebusy", "coherency", "fault",
-	"spirv subset", "free list", "format", "import", "stride", "claim",
+	"spirv subset", "free list", "format", "import", "stride", "claim", "reset",
+};
+
+/*
+ * The firmware's reasons for resetting a context, as the lines name them.
+ *
+ * Values referenced:
+ * Linux v7.3 drivers/gpu/drm/imagination/pvr_rogue_fwif_shared.h
+ * (enum rogue_context_reset_reason: ROGUE_CONTEXT_RESET_REASON_NONE 0 to
+ * ROGUE_CONTEXT_GEOM_OOM_DISABLED 16).
+ */
+static const char *const reset_names[] = {
+	"none", "lockup", "innocent lockup", "overrun", "innocent overrun",
+	"context switch", "wgp checksum", "trp checksum", "gpu ecc ok", "gpu ecc",
+	"fw ecc ok", "fw ecc", "fw watchdog", "fw fault", "fw error",
+	"host watchdog", "geometry oom",
 };
 
 static void put_text(char *out, size_t capacity, size_t *length, const char *text, bool word);
+static void put_hex(char *out, size_t capacity, size_t *length, uint64_t value);
 
 /*
  * Appends text to out at *length, keeping out terminated and *length the
@@ -66,6 +82,32 @@ put_text(
 	/* Keeps the output terminated. */
 	if (capacity != 0U)
 		out[*length < capacity ? *length : capacity - 1U] = '\0';
+}
+
+/* Appends value as "0x" and its hexadecimal digits, without leading zeros. */
+static void
+put_hex(
+	char *out,
+	size_t capacity,
+	size_t *length,
+	uint64_t value)
+{
+	static const char digits[] = "0123456789abcdef";
+	char text[19];
+	unsigned count;
+	unsigned shift;
+
+	/* The digits from the highest one that is not zero; zero is "0x0". */
+	text[0] = '0';
+	text[1] = 'x';
+	count = 2;
+	for (shift = 64; shift != 0U; shift -= 4U) {
+		if (count == 2U && shift > 4U && (value >> (shift - 4U)) == 0U)
+			continue;
+		text[count++] = digits[(value >> (shift - 4U)) & 0xfU];
+	}
+	text[count] = '\0';
+	put_text(out, capacity, length, text, false);
 }
 
 /*
@@ -110,6 +152,24 @@ powervr_stage_note_fail(
 	char *line,
 	size_t capacity)
 {
+	/* The same with no value; a fault or a reset without one prints its word alone. */
+	return powervr_stage_note_fail_value(record, stage, reason, POWERVR_STAGE_NO_VALUE, line, capacity);
+}
+
+/*
+ * Records that stage failed for reason, with the value a fault or a reset
+ * carries.  Prints as powervr_stage_note_fail(), the value after the
+ * reason's word.
+ */
+bool
+powervr_stage_note_fail_value(
+	struct powervr_stage_record *record,
+	enum powervr_stage stage,
+	enum powervr_stage_reason reason,
+	uint64_t value,
+	char *line,
+	size_t capacity)
+{
 	size_t length;
 	uint32_t fails;
 
@@ -140,6 +200,16 @@ powervr_stage_note_fail(
 	/* "powervr: <stage>: fail(<reason>)". */
 	put_text(line, capacity, &length, ": fail(", false);
 	put_text(line, capacity, &length, reason_names[reason], false);
+	if (reason == POWERVR_REASON_FAULT && value != POWERVR_STAGE_NO_VALUE) {
+		put_text(line, capacity, &length, " ", false);
+		put_hex(line, capacity, &length, value);
+	} else if (reason == POWERVR_REASON_RESET && value != POWERVR_STAGE_NO_VALUE) {
+		put_text(line, capacity, &length, " ", false);
+		if (value < sizeof(reset_names) / sizeof(reset_names[0]))
+			put_text(line, capacity, &length, reset_names[value], false);
+		else
+			put_hex(line, capacity, &length, value);
+	}
 	put_text(line, capacity, &length, ")", false);
 	return true;
 }
