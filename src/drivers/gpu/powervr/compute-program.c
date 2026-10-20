@@ -450,6 +450,94 @@ powervr_compute_temps_program(
 }
 
 /*
+ * Builds one of the compute check's probe programs, each writing at
+ * base (only the low half of the address is computed):
+ *
+ *   MADD           every instance writes 3 * 5 + 7, the multiply-add of
+ *                  temporaries alone (22 when it works);
+ *   INSTANCE       every instance writes its instance number (the last
+ *                  writer's stays);
+ *   INSTANCE_MADD  every instance writes its number times four through
+ *                  the multiply-add;
+ *   ADDRESS        each instance writes its number to the word at base
+ *                  plus four times it (the temporaries program without
+ *                  its fill).
+ *
+ * Procedure referenced:
+ * Mesa 26.2.5 src/imagination/pco/pco_trans_nir.c (trans_store_global
+ * and nir_intrinsic_load_instance_num_pco, as for the store program).
+ */
+int
+powervr_compute_probe_program(
+	unsigned kind,
+	uint64_t base,
+	uint8_t *output,
+	size_t room,
+	size_t *length)
+{
+	struct powervr_usc_group groups[12];
+	size_t count;
+	int error;
+
+	/* Refuses an unknown probe, a misaligned base or one whose words would wrap. */
+	if (kind >= POWERVR_COMPUTE_PROBES || (base & 3U) != 0 || (base & 0xffffffffULL) + POWERVR_COMPUTE_INSTANCES * 4U > 0x100000000ULL)
+		return EINVAL;
+
+	/* The address in r0 and r1. */
+	count = 0;
+	error = immediate_group(&groups[count++], 0, (uint32_t)base);
+	if (error == 0)
+		error = immediate_group(&groups[count++], 1, (uint32_t)(base >> 32));
+
+	/* The value in r2 (and, for ADDRESS, the instance's word in r0). */
+	if (error == 0 && kind == POWERVR_COMPUTE_PROBE_MADD) {
+		error = immediate_group(&groups[count++], 3, 3);
+		if (error == 0)
+			error = immediate_group(&groups[count++], 4, 5);
+		if (error == 0)
+			error = immediate_group(&groups[count++], 5, 7);
+		if (error == 0)
+			error = multiply_add_group(&groups[count++], 2, 3, 4, 5);
+	} else if (error == 0 && kind == POWERVR_COMPUTE_PROBE_INSTANCE) {
+		error = special_group(&groups[count++], 2, USC_INSTANCE_NUMBER);
+	} else if (error == 0 && kind == POWERVR_COMPUTE_PROBE_INSTANCE_MADD) {
+		error = special_group(&groups[count++], 5, USC_INSTANCE_NUMBER);
+		if (error == 0)
+			error = immediate_group(&groups[count++], 4, 4);
+		if (error == 0)
+			error = immediate_group(&groups[count++], 6, 0);
+		if (error == 0)
+			error = multiply_add_group(&groups[count++], 2, 5, 4, 6);
+	} else if (error == 0) {
+		error = special_group(&groups[count++], 5, USC_INSTANCE_NUMBER);
+		if (error == 0)
+			error = immediate_group(&groups[count++], 4, 4);
+		if (error == 0)
+			error = multiply_add_group(&groups[count++], 0, 5, 4, 0);
+		if (error == 0)
+			error = pass_group(&groups[count++], 2, POWERVR_USC_BANK_TEMPORARY, 5);
+	}
+
+	/* The store, the wait for it, the end. */
+	if (error == 0)
+		error = store_group(&groups[count++], 2, 0);
+	if (error == 0)
+		error = wait_group(&groups[count++]);
+	if (error == 0)
+		error = end_group(&groups[count++]);
+	if (error != 0)
+		return error;
+
+	/* Encodes them. */
+	error = powervr_usc_program_encode(groups, count, output, room, length);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the program. */
+	return 0;
+}
+
+/*
  * Builds the shading cluster program of one workgroup of a fill kernel.
  *
  * Each instance writes the word at base plus four times its instance

@@ -172,3 +172,43 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
 3. 逆向き（CPU が cacheable で書き flush せず、GPU が読む）の data master の道は作っていない。USC の load（`ld` の data の返り先の routing）が要り、p009 の compute の load と一緒に確かめる（p006 は FW の fence で逆向きを確かめ済み）。
 4. coherency の判定が COHERENT でも、既定（非 coherent）の切り替えは別の Phase で Q1 の承認を得て（design §3.2 の 4）。
 5. Q1 への片付けの依頼: `build/ws269-p008/`（`mesa2/` は Mesa の raw の file、`host/` は試験の出力、`*.log`）、`build/ws269-p008-vf2/`・`build/ws269-p008-vf2b/`・`build/ws269-p008-virt/`（この worktree の build の出力）。前半の依頼の `build/ws269-p006-vf2/` は既に無い。
+
+## q1428-i01（P2、2026-10-20）: 板の compute kernel が 91/16384 の件の切り分けの probe
+
+- 板の結果（Q1、PMU の直しの後）:
+  - `compute kernel: FAILED, 91/16384 words written`
+  - `compute temporaries: fours 31/32 wrong, twos 31/32 wrong: BROKEN`
+  - 通るもの: fence・end は finished、transfer の clear・copy は OK、reset の通知は無い。
+- 読みで確かめたこと:
+  - CDM の KERNEL0〜8 の field の位置は Mesa の cdm.xml と同じ。
+  - workgroup は 1、workgroup の大きさは 32（`instances - 1` = 31）、max_instances 0（= 32）。
+  - USC の special register の読み（inst_num 51）は、transfer（板で動いた x_p 97）と同じ MOVS1 の形。
+  - 違いが 1 つあった: KERNEL0 の `usc_unified_size` に、こちらは USC の temporaries（7 → 2 単位）を入れている。Mesa は `vtxins`（PDS が DOUTW で書く入力の register、compute では local id）を入れ、temporaries は DOUTU の field だけで与える。害は割り当てが大きくなるだけと見て、今回は変えていない（次の結果しだい）。
+  - Mesa の compute は invocation の番号を inst_num ではなく、CDM が PDS の temp 0・1 に入れる local id を DOUTW で unified store に書いて得る（`pvr_pds_compute_shader` の local_input_regs）。こちらの store・temps・fill は inst_num に頼る。
+- 見込み（未確定）:
+  - (a) inst_num が 0..31 にならない。
+  - (b) 整数の multiply-add（IMADD32）の encode の誤り。
+  - (c) 1 つの task の instance が 1 つしか走らない。
+  - どれでも「32 の中で 1 つだけ正しい」は説明できる。91 は (a)・(b) で address がずれる場合にありうる。SLC は PTE の bypass があり、transfer の PBE の書き込みは届いているので、可能性は低いと見た。
+- 足したもの（板の 1 回で切り分ける）:
+  - `compute-program.{c,h}` の `powervr_compute_probe_program`。4 種類:
+    - MADD: 全 instance が 3×5+7 を書く。
+    - INSTANCE: inst_num を書く（最後に書いた instance の値が残る）。
+    - INSTANCE_MADD: inst_num×4 を書く。
+    - ADDRESS: 各 instance が base+4×inst_num に自分の番号を書く（temps の program から fill を抜いた形）。
+  - `compute-check.c`: 上の 4 種類と、1 step・4 step の store の program の kick を足した（USC の room を 1 つ、kick を 6 つ）。結果は temporaries の行の後に 2 行で出す:
+    - `powervr: compute probes: madd N (want 22, e), instance last N (e), instance*4 last N (e), own words MASK [1]=… [2]=… [31]=… (e)`
+    - `powervr: compute probes: store of 1 step N/32 (e), of 4 steps N/128 (e)`
+- 読み方:
+  - madd が 22 でなければ (b)。
+  - instance last が常に 0 で、own words が 00000001 なら (a) か (c)。[1]・[2]・[31] の値が 0xffffffff のままなら書かれていない。
+  - 1 step が 32/32 で 4 step が満たないなら、step の進め（IMADD による address の加算）。
+
+| 確認 | コマンド | 結果 |
+| --- | --- | --- |
+| host（p008） | `sh plan/ws269/tests/p008/run.sh build/p016/p008` | encode 94/0、compute 70/0 |
+| host（p009） | `sh plan/ws269/tests/p009/run.sh build/p016/p009 0` | 511 passed、0 failed |
+| VF2 の vmunix（compute の check 入り） | `make ZEDBSD_CONFIG=plan/ws269/tests/p008/config-visionfive2-compute.mk BUILD=build/p016/vf2 vmunix -j16` | rc 0、warning 0。`build/p016/vf2/vmunix` |
+
+- 直し自体はまだ無い。板の probe の 2 行で原因を決めて、次の Queue で直す。
+- 片付け（Q1 に依頼）: `build/p016/`（vmunix を取り出した後）。
