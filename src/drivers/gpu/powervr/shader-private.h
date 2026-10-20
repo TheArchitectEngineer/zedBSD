@@ -182,35 +182,8 @@ enum machine_kind {
 	MACHINE_END,
 	MACHINE_TEST_ZERO,
 	MACHINE_CONDITION,
-	MACHINE_BRANCH,
-	MACHINE_NOP
+	MACHINE_BRANCH
 };
-
-/*
- * The groups that must lie between a group that reads a temporary and
- * one that writes it: on the board a multiply-add's addend overwritten
- * by the very next group was read with its new value in half the lanes,
- * and two groups between were enough (2026-10-20).
- */
-#define SHADER_HAZARD_GAP	2U
-
-/*
- * The spacing the back end applies, by default none, as Mesa's compiler
- * (pco) emits for the BXE-4-32: no groups between a group and a later
- * one writing a register it reads, or reading its result, and no staging
- * of a group that writes a register it reads.  The gaps the board seemed
- * to need (vf2-dmesg65 to 81) were instances' registers overlapping
- * under a task temporaries field four times too small (vf2-dmesg84,
- * powervr_compute_task_field); the shader_*_gap variables and
- * shader_in_place_staging can still turn spacing on to look into it.
- * The spacing loops look back at most SHADER_GAP_MAX groups.
- */
-#define SHADER_INTEGER_SOURCE_GAP	0U
-#define SHADER_ALU_SOURCE_GAP		0U
-#define SHADER_STORE_SOURCE_GAP		0U
-#define SHADER_RESULT_GAP		0U
-#define SHADER_IN_PLACE_STAGING		0U
-#define SHADER_GAP_MAX			10U
 
 /* The back end's state for one shader. */
 struct shader_backend {
@@ -239,14 +212,5 @@ struct powervr_shader_workspace {
 int shader_backend_build(const struct powervr_ir_shader *shader, struct powervr_shader_program *program, struct shader_backend *backend);
 int shader_backend_group(const struct shader_machine_operation *operation, int32_t offset, struct powervr_usc_group *group);
 int shader_backend_encode(struct shader_backend *backend, uint8_t *code, size_t room, size_t *length);
-int shader_backend_space_hazards(struct shader_backend *backend);
-unsigned shader_backend_hazards(const struct shader_backend *backend);
-
-extern unsigned shader_integer_source_gap;
-extern unsigned shader_alu_source_gap;
-extern unsigned shader_store_source_gap;
-extern unsigned shader_result_gap;
-extern unsigned shader_in_place_staging;
-extern unsigned shader_filler_kind;
 
 #endif /* KERN_DRIVERS_GPU_POWERVR_SHADER_PRIVATE_H */

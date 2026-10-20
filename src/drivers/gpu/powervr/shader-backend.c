@@ -35,9 +35,8 @@
  * counter, scratch words, the coordinate pair of a sample, the address
  * pair of a memory access and the store's data right after it (the
  * hardware's st32 takes the data from the register after the address
- * pair, as Mesa lays them out in one vector), and the staging pair an
- * operation that would write a register it reads writes instead (the
- * board's operations in place came out wrong).  Values start after them.
+ * pair, as Mesa lays them out in one vector; vf2-dmesg95).  Values start
+ * after them.
  */
 #define TEMP_EMC		0U
 #define TEMP_SCRATCH		1U
@@ -45,11 +44,7 @@
 #define TEMP_COORDINATES	4U
 #define TEMP_ADDRESS		6U
 #define TEMP_STORE_DATA		8U
-#define TEMP_STAGE		9U
-#define TEMP_FILLER		11U
-
-/* The first register values take: after the filler's when the fillers are moves. */
-#define TEMP_FIRST_VALUE	(shader_filler_kind == MACHINE_MOVE || shader_filler_kind == MACHINE_MOVE_SPECIAL ? TEMP_FILLER + 1U : TEMP_FILLER)
+#define TEMP_FIRST_VALUE	9U
 
 /*
  * The special registers the back end names: constant zero, one, the
@@ -156,38 +151,12 @@ static void note_reference(struct shader_backend *backend, unsigned value, unsig
 static int allocate(const struct powervr_ir_shader *shader, struct shader_backend *backend);
 static int select_instruction(struct backend_select *select, const struct powervr_ir_instruction *instruction);
 static int select_structure(struct backend_select *select, const struct powervr_ir_instruction *instruction);
-static int operations_conflict(const struct shader_machine_operation *reader, const struct shader_machine_operation *writer);
-/*
- * The spacing the back end applies, changeable before a compile (the
- * compute check compares settings on the board in one boot): the groups
- * between a group and a later write of a register it reads, by the
- * reader's kind (an integer multiply-add, a store, any other), and the
- * kind of the filler group: MACHINE_NOP (the default; with no spacing
- * there are no fillers, and r11 holds values), MACHINE_WAIT, or a move
- * into r11 kept for it, MACHINE_MOVE_SPECIAL (from s0) or MACHINE_MOVE
- * (from itself).
- */
-unsigned shader_integer_source_gap = SHADER_INTEGER_SOURCE_GAP;
-unsigned shader_alu_source_gap = SHADER_ALU_SOURCE_GAP;
-unsigned shader_store_source_gap = SHADER_STORE_SOURCE_GAP;
-unsigned shader_result_gap = SHADER_RESULT_GAP;
-unsigned shader_in_place_staging = SHADER_IN_PLACE_STAGING;
-unsigned shader_filler_kind = MACHINE_NOP;
 
-static void nop_operation(struct shader_machine_operation *operation);
-static int filler_operation(const struct shader_machine_operation *operation);
-static unsigned shader_backend_gap_needed(const struct shader_backend *backend, unsigned index);
-static int insert_nops(struct shader_backend *backend, unsigned index, unsigned count);
-static int stage_in_place(struct shader_backend *backend, unsigned index, unsigned *added);
-static int operation_in_place(const struct shader_machine_operation *operation);
-static int integer_result_read(const struct shader_machine_operation *writer, const struct shader_machine_operation *reader);
-static unsigned required_gap(const struct shader_machine_operation *earlier, const struct shader_machine_operation *later);
 static struct shader_machine_operation *append(struct backend_select *select, unsigned kind);
 static struct shader_machine_register temp_register(unsigned index);
 static struct shader_machine_register bank_register(unsigned bank, unsigned index);
 static struct shader_machine_register destination_of(struct backend_select *select, const struct powervr_ir_instruction *instruction);
 static struct shader_machine_register operand_register(struct backend_select *select, const struct powervr_ir_operand *operand, unsigned *modifiers);
-static struct shader_machine_register integer_source(struct backend_select *select, struct shader_machine_register reg);
 static struct shader_machine_register operand_plain(struct backend_select *select, const struct powervr_ir_operand *operand, unsigned allowed);
 static struct shader_machine_register scratch_register(struct backend_select *select);
 static void select_float_pair(struct backend_select *select, unsigned kind, struct shader_machine_register destination, const struct powervr_ir_operand *a, const struct powervr_ir_operand *b, unsigned floor);
@@ -368,431 +337,6 @@ powervr_shader_compile_inline(
 }
 
 /*
- * Inserts no-operation groups so that no group writes a temporary that
- * one of the SHADER_HAZARD_GAP groups run just before it reads: the
- * groups before it in order, and, for a group a branch lands on, the
- * group before the branch (the branch itself is the one group between
- * them, so one no-operation goes before the branch).  Branches that
- * land after an insertion are moved with their targets; a branch to the
- * group itself lands on the first inserted group.  E2BIG when the table
- * has no room.
- */
-int
-shader_backend_space_hazards(
-	struct shader_backend *backend)
-{
-	const struct shader_machine_operation *branch;
-	unsigned index;
-	unsigned needed;
-	unsigned added;
-	unsigned gap;
-	int conflict;
-	int error;
-
-	/* No group writes a register it reads, when asked: it writes the staging pair, a move after it the register. */
-	for (index = 0; shader_in_place_staging && index < backend->operation_count; index++) {
-		conflict = operation_in_place(&backend->operations[index]) && !filler_operation(&backend->operations[index]);
-		if (!conflict)
-			continue;
-
-		/* The control unit's counter step works in place by design. */
-		if (backend->operations[index].kind == MACHINE_CONDITION || backend->operations[index].kind == MACHINE_BRANCH)
-			continue;
-		error = stage_in_place(backend, index, &added);
-		if (error != 0)
-			return error;
-		index += added;
-	}
-
-	/* Each group against the ones just before it in order. */
-	for (index = 0; index < backend->operation_count; index++) {
-		/* How many groups must still come between, from the nearest conflicting reader. */
-		needed = shader_backend_gap_needed(backend, index);
-		if (needed == 0)
-			continue;
-
-		/* The no-operations in the gap; the group itself is now after them. */
-		error = insert_nops(backend, index, needed);
-		if (error != 0)
-			return error;
-		index += needed;
-	}
-
-	/*
-	 * Each branch: the group before it against the group it lands on,
-	 * which runs right after the branch on that path (a loop's back edge
-	 * or a jump forward).
-	 */
-	for (index = 1; index < backend->operation_count; index++) {
-		branch = &backend->operations[index];
-		if (branch->kind != MACHINE_BRANCH || branch->target >= backend->operation_count)
-			continue;
-		gap = required_gap(&backend->operations[index - 1U], &backend->operations[branch->target]);
-		if (gap < 2U)
-			continue;
-
-		/* The no-operations before the branch (the branch itself is one group between); the branch is now after them. */
-		error = insert_nops(backend, index, gap - 1U);
-		if (error != 0)
-			return error;
-		index += gap - 1U;
-	}
-
-	/* Succeeded: the program is spaced. */
-	return 0;
-}
-
-/*
- * The fillers still needed before the group at index: against each group
- * before it, the gap that pair needs less the distance between them, in
- * groups that take time (a wait or a no-operation takes none; the board,
- * vf2-dmesg75), looking back at most SHADER_GAP_MAX such groups.
- */
-static unsigned
-shader_backend_gap_needed(
-	const struct shader_backend *backend,
-	unsigned index)
-{
-	const struct shader_machine_operation *earlier;
-	unsigned distance;
-	unsigned needed;
-	unsigned steps;
-	unsigned back;
-	unsigned gap;
-
-	/* From the group just before it, back. */
-	needed = 0;
-	distance = 1;
-	for (back = 1, steps = 0; back <= index && distance <= SHADER_GAP_MAX && steps < 4U * SHADER_GAP_MAX; back++, steps++) {
-		earlier = &backend->operations[index - back];
-		gap = required_gap(earlier, &backend->operations[index]);
-		if (gap >= distance && gap + 1U - distance > needed)
-			needed = gap + 1U - distance;
-		if (earlier->kind != MACHINE_WAIT && earlier->kind != MACHINE_NOP)
-			distance++;
-	}
-
-	/* Succeeded: the count. */
-	return needed;
-}
-
-/*
- * The groups that must lie between an earlier group and a later one
- * (0 when none, or when either is a filler): when the later one writes
- * a register the earlier one read, shader_integer_source_gap for an
- * integer multiply-add reader, shader_store_source_gap for a store and
- * shader_alu_source_gap for any other; shader_result_gap when it reads
- * an integer multiply-add's result, or is an integer multiply-add
- * reading a register the earlier one wrote.
- */
-static unsigned
-required_gap(
-	const struct shader_machine_operation *earlier,
-	const struct shader_machine_operation *later)
-{
-	/* A filler group keeps no value: nothing waits for it, it waits for nothing. */
-	if (filler_operation(earlier) || filler_operation(later))
-		return 0;
-
-	/* The later group writes what the earlier one read: the gap by the reader's kind. */
-	if (operations_conflict(earlier, later)) {
-		if (earlier->kind == MACHINE_INTEGER)
-			return shader_integer_source_gap;
-		if (earlier->kind == MACHINE_STORE)
-			return shader_store_source_gap;
-		return shader_alu_source_gap;
-	}
-
-	/* The later group reads an integer result, or is an integer group reading a fresh value. */
-	if (integer_result_read(earlier, later))
-		return shader_result_gap;
-	if (later->kind == MACHINE_INTEGER && operations_conflict(later, earlier))
-		return shader_result_gap;
-
-	/* Succeeded: no gap is needed. */
-	return 0;
-}
-
-/*
- * Says whether a group reads the result of an integer multiply-add just
- * before it.  The board's hand-built programs, which run right, always
- * have two groups between a multiply-add and the first read of its
- * result; the compiler keeps that distance too (its reading right after
- * is not shown to work).
- */
-static int
-integer_result_read(
-	const struct shader_machine_operation *writer,
-	const struct shader_machine_operation *reader)
-{
-	unsigned source;
-
-	/* Only the integer multiply-add's result. */
-	if (writer->kind != MACHINE_INTEGER || writer->destination[0].bank != POWERVR_USC_BANK_TEMPORARY)
-		return 0;
-
-	/* Any temporary source of the reader that is it. */
-	for (source = 0; source < 4; source++) {
-		if (reader->source[source].bank == POWERVR_USC_BANK_TEMPORARY &&
-		    reader->source[source].index == writer->destination[0].index)
-			return 1;
-	}
-
-	/* Succeeded: not read. */
-	return 0;
-}
-
-/* Says whether an operation writes a temporary it also reads (exactly the same register). */
-static int
-operation_in_place(
-	const struct shader_machine_operation *operation)
-{
-	unsigned destination;
-	unsigned source;
-
-	/* Each written temporary against each read one. */
-	for (destination = 0; destination < 2; destination++) {
-		if (operation->destination[destination].bank != POWERVR_USC_BANK_TEMPORARY)
-			continue;
-		for (source = 0; source < 4; source++) {
-			if (operation->source[source].bank == POWERVR_USC_BANK_TEMPORARY &&
-			    operation->source[source].index == operation->destination[destination].index)
-				return 1;
-		}
-	}
-
-	/* Succeeded: not in place. */
-	return 0;
-}
-
-/*
- * Moves the results of the group at index, which reads a register it
- * writes, through the staging pair: the group writes TEMP_STAGE (and the
- * next), and a move after it for each result copies it to the register
- * it named.  Reports the moves added; E2BIG without room.
- */
-static int
-stage_in_place(
-	struct shader_backend *backend,
-	unsigned index,
-	unsigned *added)
-{
-	struct shader_machine_operation *operation;
-	struct shader_machine_register targets[2];
-	unsigned destination;
-	unsigned condition;
-	unsigned count;
-	int error;
-
-	/* The registers it named, and the staging pair in their place; the moves run when it runs. */
-	operation = &backend->operations[index];
-	condition = operation->condition;
-	count = 0;
-	for (destination = 0; destination < 2; destination++) {
-		targets[destination] = operation->destination[destination];
-		if (operation->destination[destination].bank != POWERVR_USC_BANK_TEMPORARY)
-			continue;
-		operation->destination[destination].index = (uint16_t)(TEMP_STAGE + destination);
-		count = destination + 1U;
-	}
-
-	/* Room after it for the moves, which are spaced like any other group later. */
-	error = insert_nops(backend, index + 1U, count);
-	if (error != 0)
-		return error;
-
-	/* A move for each result. */
-	for (destination = 0; destination < count; destination++) {
-		operation = &backend->operations[index + 1U + destination];
-		operation->kind = MACHINE_MOVE;
-		operation->condition = (uint8_t)condition;
-		operation->destination[0] = targets[destination];
-		operation->source[0].bank = POWERVR_USC_BANK_TEMPORARY;
-		operation->source[0].index = (uint16_t)(TEMP_STAGE + destination);
-	}
-
-	/* Succeeded: the moves are in. */
-	*added = count;
-	return 0;
-}
-
-/*
- * Inserts count no-operations before the group at index: the groups from
- * there move down, and a branch that lands beyond index moves with its
- * target (one that lands on index lands on the first no-operation).
- */
-static int
-insert_nops(
-	struct shader_backend *backend,
-	unsigned index,
-	unsigned count)
-{
-	struct shader_machine_operation *operation;
-	unsigned other;
-
-	/* Room for them. */
-	if (backend->operation_count + count > SHADER_MACHINE_OPERATIONS)
-		return E2BIG;
-
-	/* The groups from index on move down, the branches that land beyond index with them. */
-	for (other = backend->operation_count; other > index; other--)
-		backend->operations[other - 1U + count] = backend->operations[other - 1U];
-	backend->operation_count += count;
-	for (other = 0; other < backend->operation_count; other++) {
-		operation = &backend->operations[other];
-		if (operation->kind == MACHINE_BRANCH && operation->target > index)
-			operation->target += count;
-	}
-
-	/* The no-operations. */
-	for (other = index; other < index + count; other++)
-		nop_operation(&backend->operations[other]);
-
-	/* Succeeded: the no-operations are in. */
-	return 0;
-}
-
-/* Counts the groups that write a temporary one of the groups run just before them reads, in order or after a branch, or that they read themselves (zero once spaced). */
-unsigned
-shader_backend_hazards(
-	const struct shader_backend *backend)
-{
-	const struct shader_machine_operation *branch;
-	unsigned index;
-	unsigned count;
-	int conflict;
-
-	/* Each group against the ones just before it. */
-	count = 0;
-	for (index = 0; index < backend->operation_count; index++) {
-		if (shader_backend_gap_needed(backend, index) != 0)
-			count++;
-	}
-
-	/* Each branch: the group before it against the group it lands on. */
-	for (index = 1; index < backend->operation_count; index++) {
-		branch = &backend->operations[index];
-		if (branch->kind != MACHINE_BRANCH || branch->target >= backend->operation_count)
-			continue;
-		if (required_gap(&backend->operations[index - 1U], &backend->operations[branch->target]) >= 2U)
-			count++;
-	}
-
-	/* Each group that writes a register it reads, but the counter step. */
-	for (index = 0; index < backend->operation_count; index++) {
-		conflict = shader_in_place_staging && operation_in_place(&backend->operations[index]) && !filler_operation(&backend->operations[index]);
-		if (conflict && backend->operations[index].kind != MACHINE_CONDITION && backend->operations[index].kind != MACHINE_BRANCH)
-			count++;
-	}
-
-	/* Succeeded: the count. */
-	return count;
-}
-
-/*
- * Says whether a later group writes a temporary an earlier group reads.
- * Pairs are counted whole: a source or destination names its register
- * and the next (an address or a 64-bit value), and a store's data, the
- * register after its address pair, is read too; a load or a sample may
- * write four.
- */
-static int
-operations_conflict(
-	const struct shader_machine_operation *reader,
-	const struct shader_machine_operation *writer)
-{
-	unsigned source;
-	unsigned destination;
-	unsigned read_low;
-	unsigned read_high;
-	unsigned write_low;
-	unsigned write_high;
-
-	/* Each written temporary range against each read one. */
-	for (destination = 0; destination < 2; destination++) {
-		if (writer->destination[destination].bank != POWERVR_USC_BANK_TEMPORARY)
-			continue;
-		write_low = writer->destination[destination].index;
-		write_high = write_low + 1U;
-		if (writer->kind == MACHINE_LOAD || writer->kind == MACHINE_SAMPLE)
-			write_high = write_low + 3U;
-		for (source = 0; source < 4; source++) {
-			if (reader->source[source].bank != POWERVR_USC_BANK_TEMPORARY)
-				continue;
-			read_low = reader->source[source].index;
-			read_high = read_low + 1U;
-			if (reader->kind == MACHINE_STORE)
-				read_high = read_low + 2U;
-			if (write_low <= read_high && read_low <= write_high)
-				return 1;
-		}
-	}
-
-	/* Succeeded: no conflict. */
-	return 0;
-}
-
-/*
- * Makes an operation a spacing group: a wait for the data return
- * counter, which every program on the board already runs and which
- * touches no register, rather than the control no-operation
- * (MACHINE_NOP), not yet shown on the board (a compute dispatch with
- * them stopped the core, 2026-10-20; the check's NOP_BETWEEN probe
- * tells whether it was they).
- */
-static void
-nop_operation(
-	struct shader_machine_operation *operation)
-{
-	unsigned index;
-
-	/* A cleared operation of the filler's kind, with no registers but the filler's own. */
-	operation->kind = (uint8_t)shader_filler_kind;
-	operation->condition = POWERVR_USC_RUN_ENABLED;
-	operation->variant = 0;
-	operation->modifiers[0] = 0;
-	operation->modifiers[1] = 0;
-	operation->modifiers[2] = 0;
-	operation->end = 0;
-	for (index = 0; index < 2; index++) {
-		operation->destination[index].bank = 0xff;
-		operation->destination[index].index = 0;
-	}
-	for (index = 0; index < 4; index++) {
-		operation->source[index].bank = 0xff;
-		operation->source[index].index = 0;
-	}
-	operation->immediate = 0;
-	operation->immediate_2 = 0;
-	operation->target = 0;
-
-	/* A real instruction as the filler: a move into the filler's register, from itself or from s0. */
-	if (shader_filler_kind == MACHINE_MOVE || shader_filler_kind == MACHINE_MOVE_SPECIAL) {
-		operation->destination[0] = temp_register(TEMP_FILLER);
-		operation->source[0] = shader_filler_kind == MACHINE_MOVE ? temp_register(TEMP_FILLER) : bank_register(POWERVR_USC_BANK_SPECIAL, 0);
-	}
-}
-
-/* Whether an operation is a filler group (nop_operation): one that keeps no value. */
-static int
-filler_operation(
-	const struct shader_machine_operation *operation)
-{
-	/* The control fillers. */
-	if (operation->kind == MACHINE_NOP)
-		return 1;
-
-	/* The moves into the filler's register. */
-	if ((operation->kind == MACHINE_MOVE || operation->kind == MACHINE_MOVE_SPECIAL) &&
-	    operation->destination[0].bank == POWERVR_USC_BANK_TEMPORARY &&
-	    operation->destination[0].index == TEMP_FILLER)
-		return 1;
-
-	/* Succeeded: a real group. */
-	return 0;
-}
-
-/*
  * Encodes a shader's machine operations as instruction groups, with
  * every branch's offset worked out from the groups' sizes.
  */
@@ -812,11 +356,6 @@ shader_backend_encode(
 	/* Refuses an empty program. */
 	if (backend->operation_count == 0)
 		return EINVAL;
-
-	/* Spaces every write of a temporary from the groups that read it just before. */
-	error = shader_backend_space_hazards(backend);
-	if (error != 0)
-		return error;
 
 	/* Sizes every group; a branch's size does not depend on its offset. */
 	total = 0;
@@ -1207,17 +746,17 @@ select_instruction(
 	case POWERVR_IR_INTEGER_ADD:
 	case POWERVR_IR_INTEGER_MULTIPLY:
 		/*
-		 * Every source a temporary: on the board an integer multiply-add
-		 * read its special-register constant one as temporary r1
-		 * (2026-10-20), so constants go through scratch temporaries.
+		 * The sources as they are, a constant one or zero from its special
+		 * register: the multiply-add reads special registers (rule probe,
+		 * vf2-dmesg95, as Mesa's compiler does).
 		 */
 		destination = destination_of(select, instruction);
-		a = integer_source(select, operand_plain(select, &instruction->source[0], 0));
-		b = integer_source(select, operand_plain(select, &instruction->source[1], 0));
+		a = operand_plain(select, &instruction->source[0], 0);
+		b = operand_plain(select, &instruction->source[1], 0);
 		if (opcode == POWERVR_IR_INTEGER_ADD)
-			c = integer_source(select, bank_register(POWERVR_USC_BANK_SPECIAL, SPECIAL_ONE));
+			c = bank_register(POWERVR_USC_BANK_SPECIAL, SPECIAL_ONE);
 		else
-			c = integer_source(select, bank_register(POWERVR_USC_BANK_SPECIAL, SPECIAL_ZERO));
+			c = bank_register(POWERVR_USC_BANK_SPECIAL, SPECIAL_ZERO);
 		operation = append(select, MACHINE_INTEGER);
 		if (operation != NULL) {
 			operation->destination[0] = destination;
@@ -1345,7 +884,13 @@ select_instruction(
 		(void)append(select, MACHINE_WAIT);
 		break;
 	case POWERVR_IR_STORE:
-		/* The data moved after the address pair, the address, the store, the wait for it. */
+		/*
+		 * The data moved right after the address pair, the address, the
+		 * store, the wait for it: the store reads its data from the
+		 * register after the pair, whatever its data source names (rule
+		 * probe, vf2-dmesg95: data elsewhere was not stored; Mesa's
+		 * compiler places it the same way).
+		 */
 		source = operand_plain(select, &instruction->source[3], 0);
 		operation = append(select, MACHINE_MOVE);
 		if (operation != NULL) {
@@ -1730,45 +1275,6 @@ operand_register(
 		operation->immediate = operand->constant;
 	}
 	return reg;
-}
-
-/*
- * Gives an integer operation's source as a temporary: a special
- * register constant (zero, one, float one, all ones) is loaded into a
- * scratch temporary first.
- */
-static struct shader_machine_register
-integer_source(
-	struct backend_select *select,
-	struct shader_machine_register reg)
-{
-	struct shader_machine_operation *operation;
-	struct shader_machine_register moved;
-	uint32_t value;
-
-	/* A temporary or another bank stays as it is. */
-	if (reg.bank != POWERVR_USC_BANK_SPECIAL)
-		return reg;
-
-	/* The constant the special register holds. */
-	value = 0;
-	if (reg.index == SPECIAL_ONE)
-		value = 1;
-	else if (reg.index == SPECIAL_FLOAT_ONE)
-		value = 0x3f800000U;
-	else if (reg.index == SPECIAL_TRUE)
-		value = 0xffffffffU;
-
-	/* Its value in a scratch temporary. */
-	moved = scratch_register(select);
-	operation = append(select, MACHINE_IMMEDIATE);
-	if (operation != NULL) {
-		operation->destination[0] = moved;
-		operation->immediate = value;
-	}
-
-	/* Succeeded: the temporary. */
-	return moved;
 }
 
 /*
@@ -2371,12 +1877,6 @@ shader_backend_group(
 		group->unit = POWERVR_USC_UNIT_MAIN;
 		group->end = 1;
 		error = powervr_usc_vertex_output(5, 0, 0, 0, 0, &group->operation[POWERVR_USC_PHASE_BACKEND]);
-		break;
-	case MACHINE_NOP:
-		/* A control group that does nothing (not used for spacing until the board shows it, nop_operation). */
-		group->unit = POWERVR_USC_UNIT_CONTROL;
-		group->control = POWERVR_USC_CONTROL_NOTHING;
-		error = powervr_usc_nothing(&group->operation[POWERVR_USC_PHASE_0]);
 		break;
 	case MACHINE_END:
 		group->unit = POWERVR_USC_UNIT_CONTROL;
