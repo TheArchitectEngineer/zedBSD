@@ -780,3 +780,34 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
 | VF2 の vmunix（`plan/ws269/tests/p008/config-visionfive2-compute.mk`、`build/p034/vf2/vmunix`） | rc 0、warning 0 |
 
 - 片付け（Q1 に依頼）: `build/p034/`。
+
+## q1464-i01（P2、2026-10-20）: executor の並びを kernel 数で二分、compiled fill を先に
+
+- 板（vf2-dmesg59、Q1 の読み直し）: 128 kernel の probe は store を終えた後に lockup した。HWR の後でも fence は届くので wait は 0 で返り、data は 32/32。そのため session が lost になり、compiled fill は kick を断られた（5 ＝ EIO）だけで、走っていない。**executor の並びが core を止める**。compiled fill は未判定。
+- 変えた順（`compute-check.c`）:
+  1. **compiled fill を先に**流す。その前に prefix を流す（`run_prefixes`）: fill の先頭の N group（4 刻み、最後は end の前まで）の後に、既知の正しい marker の store（r16・r17 に address、r18 に 0xc0de0000|N、st、wdf、end）を繋いだ program を 1 kernel ずつ流す。行は `compiled fill prefix N of M groups: marker V (ok|MISSING, e)`。失敗したら、そこで check を止める。
+  2. **executor の並びを 1・2・4・8・16・32・64・128 kernel** で、小さい順に別々の kick で流す（`run_many_kernels(state, N)`。同じ stream の場所 0x8000、各 kernel は 1 step の store と同じ PDS program、最後に fence の kernel と end）。行は `powervr: compute probes: executor layout N kernels M/32 (e)`。
+     - 注意: lockup した kick 自身は、HWR が fence を進めるので (0) で返る。**境界は「(0) の最後の N」で、その次の N が (5) refused になる**。
+- (3) 普通の check の kick と executor の並びの違い（静的）:
+
+| 項目 | check の普通の kick（OK） | executor の並び（止まる） |
+| --- | --- | --- |
+| stream の中の kernel の数 | 1（＋fence の kernel） | 128（＋fence の kernel） |
+| kernel の語 | `powervr_compute_kernel_words`（7 語） | 同じ関数、同じ形 |
+| 各 kernel の PDS program | kick ごとの slot | 全部の kernel が 1 つの slot を使う（同じ data・code） |
+| fence の kernel | あり（`PDS_FENCE` の slot、max_instances 8、shared_from_pds・common_shared） | 同じ |
+| end の前 | fence の kernel、すぐ end の語 | 同じ |
+| stream の長さ | 15 語（60 byte） | 128×7＋7＋1 ＝ 904 語（3,616 byte）、0x8000〜0x8e20（4 KiB の境界は跨がない。vk-queue は 0x11000〜0x11e20 で、これも跨がない） |
+| resume（context の保存）の領域 | stream の buffer の先頭 0x1000 byte を全部の kick で共有 | 同じ |
+
+- 怪しい点（推測、板で決める）:
+  - 長い stream の途中で FW が compute の context を切り替える（time slice）と、resume の領域（`CDM_CONTEXT_STATE_BASE`、0x1000 byte、resume の PDS は `POWERVR_COMPUTE_SWITCH_STATE` の時だけ）からの再開が要る。その形が不完全で、再開か保存で止まる。kernel 数が増えるほど切り替えに当たりやすい。
+  - 128 の kernel が同じ PDS の data・code を共有する。check は kick ごとに別の slot を使う。
+  - CDM の 1 stream の kernel の上限（Mesa は 1 dispatch に 1 kernel で、workgroup は KERNEL3〜5 の global size で数える）。我々は workgroup ごとに 1 kernel にしている。Mesa の形（1 kernel、global_size 128）に寄せるのが本筋の候補。
+
+| 確認 | 結果 |
+| --- | --- |
+| p008 の host | encode 94/0、compute 76/0 |
+| VF2 の vmunix（`plan/ws269/tests/p008/config-visionfive2-compute.mk`、`build/p035/vf2/vmunix`） | rc 0、warning 0 |
+
+- 片付け（Q1 に依頼）: `build/p035/`。
