@@ -204,10 +204,10 @@ test_pds(void)
 	check(powervr_compute_temporaries_field(7, 2, &field) == 0 && field == 4, "7 in twos");
 	check(powervr_compute_temporaries_field(8, 4, &field) == 0 && field == 2, "8 in fours");
 	check(powervr_compute_temporaries_field(8, 2, &field) == 0 && field == 4, "8 in twos");
-	check(powervr_compute_task_field(8, &field) == 0 && field == 2, "the task field of 8 temporaries: 2 blocks of four, as Mesa");
+	check(powervr_compute_task_field(8, &field) == 0 && field == 3, "the task field of 8 temporaries: one register more, 3 blocks of four");
 	check(powervr_compute_task_field(15, &field) == 0 && field == 4, "the task field of 15 temporaries: 4 blocks");
-	check(powervr_compute_task_field(16, &field) == 0 && field == 4, "the task field of 16 temporaries: 4 blocks");
-	check(powervr_compute_task_field(253, &field) != 0, "253 temporaries do not fit the six-bit field");
+	check(powervr_compute_task_field(16, &field) == 0 && field == 5, "the task field of 16 temporaries: 5 blocks");
+	check(powervr_compute_task_field(252, &field) != 0, "252 temporaries (one more) do not fit the six-bit field");
 	check(powervr_compute_temporaries_field(7, 4, &field) == 0 && field == 2, "7 in fours");
 	check(powervr_compute_temporaries_field(8, 3, &field) == EINVAL, "unit 3 refused");
 	check(powervr_compute_temporaries_field(127, 2, &field) == EINVAL, "64 blocks refused");

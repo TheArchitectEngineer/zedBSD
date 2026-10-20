@@ -1514,3 +1514,14 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
   - **p009 は 501/1**（上の vk-queue の依頼。P1 の範囲）。
   - p010 は全 14 本が 0 failed。
 - VF2 の vmunix（`build/p2q1496/vf2/vmunix`）: rc 0、warning 0。板は未実施（vkcompute は vk-queue の修正の後）。
+
+## q1499-i01（P2、2026-10-21）: 手書きの kernel の field を戻す
+
+- 板 88: compiled fill は 1・4・128 wg で全部通った。一方、手書きの kernel が `6944/16384`（これまでは常に 16384/16384）。
+- 原因の見立て: q1492 で `powervr_compute_task_field` を Mesa どおりの ceil(temps/4)（＋1 無し）にした。手書きの kernel は旧の kick program（`powervr_compute_kick_program`。local id の DOUTW が無い形）で issue される。その形では、temps が 4 の倍数ちょうどの時に instance の窓が重なる（2026-10-20 の 8 temps・2 block の観察と同じ）。
+  - 例: store の program は 16 temps で field 4。＋1 なら 5。
+  - q1496 の変更（workgroup の program）は、手書きの kick（slot 0〜7、data 2 語、code＋0x10、usc_inputs 0）を変えていない。
+- 変更: **`powervr_compute_task_field` を「1 register 多く、4 register 単位」に戻した**（compute-program.c、注記に板 87・88 の経緯）。
+  - workgroup の program（Mesa の形）は、どちらの field でも通る（1 block 多いだけ）。
+  - p008 の host の期待値を 3・4・5 と、252 の拒否に戻した。
+- host: p008 は 94/0・77/0、p009 は 502/0（P1 の vk-queue の追従を merge した後）。VF2 の vmunix（`build/p2q1499/vf2/vmunix`）は rc 0、warning 0。板は未実施。

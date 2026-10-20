@@ -273,11 +273,12 @@ powervr_compute_temporaries_field(
 /*
  * Works out the task issue's temporaries field for a program that uses
  * the given number of temporaries (its highest register plus one): in
- * blocks of four registers, as Mesa's pvr_pds_setup_doutu
- * (PVR_ROGUE_PDSINST_DOUT_FIELDS_DOUTU_SRC0_TEMPS_ALIGNSIZE 4).  On the
- * board, wider fields hid instances' registers overlapping for one
- * workgroup but not for several (vf2-dmesg84 and 85); the compute check
- * sweeps the task size (KERNEL8 max_instances) to look into it.
+ * blocks of four registers (Mesa's pvr_pds_setup_doutu,
+ * PVR_ROGUE_PDSINST_DOUT_FIELDS_DOUTU_SRC0_TEMPS_ALIGNSIZE 4), for one
+ * register more than the program uses.  The check's hand-written
+ * kernels, issued by the plain kick program, ran with one more and not
+ * without it (16384/16384 until vf2-dmesg87, 6944/16384 in vf2-dmesg88);
+ * the workgroup program (Mesa's) runs with either.
  */
 int
 powervr_compute_task_field(
@@ -286,8 +287,8 @@ powervr_compute_task_field(
 {
 	int error;
 
-	/* Blocks of four, as Mesa's pvr_pds_setup_doutu. */
-	error = powervr_compute_temporaries_field(temporaries, 4, field);
+	/* Blocks of four for one register more. */
+	error = powervr_compute_temporaries_field(temporaries + 1U, 4, field);
 	if (error != 0)
 		return error;
 
