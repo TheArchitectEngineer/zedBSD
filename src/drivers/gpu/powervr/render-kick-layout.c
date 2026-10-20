@@ -17,6 +17,7 @@
 #include <uapi/errno.h>
 
 #include "drivers/gpu/powervr/render-kick-layout.h"
+#include "drivers/gpu/powervr/interface.h"
 
 /* The command's data follows its type and flags. */
 #define COMMAND_DATA	8U
@@ -46,6 +47,8 @@ static void put32(uint8_t *bytes, uint32_t offset, uint32_t value);
 static void put64(uint8_t *bytes, uint32_t offset, uint64_t value);
 static uint32_t get32(const uint8_t *bytes, uint32_t offset);
 static int kick_data(const struct powervr_kick *kick, uint32_t *data);
+static void copy_bytes(uint8_t *to, const uint8_t *from, uint32_t bytes);
+static int reached(uint32_t now, uint32_t value);
 
 /* Writes a little-endian 32-bit word. */
 static void
@@ -284,4 +287,199 @@ powervr_reset_stage_of(
 		result->reason = POWERVR_REASON_RESET;
 		result->value = notice->reason;
 	}
+}
+
+/*
+ * Builds the commands of a render's three kicks.
+ *
+ * The geometry waits for the render's syncs, runs with its partial
+ * render test on the geometry timeline at one less than its own value,
+ * and writes its value.  The partial render waits for the same syncs and
+ * then the geometry's value, last, runs, and writes one less than the
+ * fragment's value.  The fragment waits for the geometry's value, runs,
+ * and writes its own.  Every fence is a partial render fence.
+ *
+ * Procedure referenced:
+ * Linux v7.3 drivers/gpu/drm/imagination/pvr_queue.c
+ * (pvr_queue_submit_job_to_cccb: the dependencies in FENCE_PR commands,
+ * the paired geometry's completion as the fragment's last fence, the
+ * geometry's partial_render_geom_frag_fence, then the command and the
+ * update of the queue's timeline); pvr_job.c (the data set's address in
+ * each render command's shared part); Mesa 26.2.5
+ * src/imagination/vulkan/winsys/powervr/pvr_drm_job_render.c
+ * (pvr_drm_winsys_render_submit: the geometry, its partial render and
+ * the fragment, in that order).
+ */
+int
+powervr_render_sequence_make(
+	const struct powervr_render_request *request,
+	struct powervr_render_sequence *sequence)
+{
+	struct powervr_client_command *command;
+	unsigned index;
+
+	/* Refuses more waits than the partial render's fence holds with the geometry's. */
+	if (request->wait_count > POWERVR_RENDER_WAITS_MAX)
+		return EINVAL;
+
+	/* The firmware commands, each with the data set and the geometry with its test. */
+	copy_bytes(sequence->geometry, request->geometry, POWERVR_GEOMETRY_BYTES);
+	copy_bytes(sequence->partial, request->partial, POWERVR_FRAGMENT_BYTES);
+	copy_bytes(sequence->fragment, request->fragment, POWERVR_FRAGMENT_BYTES);
+	powervr_geometry_partial_fence(sequence->geometry, request->target_data, request->geometry_timeline, request->geometry_value);
+	powervr_fragment_target(sequence->partial, request->target_data);
+	powervr_fragment_target(sequence->fragment, request->target_data);
+
+	/* The syncs: the render's waits for the geometry and the partial render, the geometry's completion last. */
+	for (index = 0; index < request->wait_count; index++) {
+		sequence->geometry_waits[index] = request->waits[index];
+		sequence->partial_waits[index] = request->waits[index];
+	}
+	sequence->partial_waits[request->wait_count].address = request->geometry_timeline;
+	sequence->partial_waits[request->wait_count].value = request->geometry_value;
+	sequence->fragment_wait = sequence->partial_waits[request->wait_count];
+
+	/* The three updates: the geometry's value, one less than the fragment's, the fragment's. */
+	sequence->updates[0].address = request->geometry_timeline;
+	sequence->updates[0].value = request->geometry_value;
+	sequence->updates[1].address = request->fragment_timeline;
+	sequence->updates[1].value = request->fragment_value - 1U;
+	sequence->updates[2].address = request->fragment_timeline;
+	sequence->updates[2].value = request->fragment_value;
+
+	/* The geometry's buffer: its fence when it waits, the command, the update. */
+	sequence->geometry_count = 0;
+	if (request->wait_count != 0U) {
+		command = &sequence->geometry_commands[sequence->geometry_count++];
+		command->type = POWERVR_CLIENT_FENCE_PARTIAL;
+		command->size = request->wait_count * 8U;
+		command->data = (const uint8_t *)sequence->geometry_waits;
+	}
+	command = &sequence->geometry_commands[sequence->geometry_count++];
+	command->type = POWERVR_CLIENT_GEOMETRY;
+	command->size = POWERVR_GEOMETRY_BYTES;
+	command->data = sequence->geometry;
+	command = &sequence->geometry_commands[sequence->geometry_count++];
+	command->type = POWERVR_CLIENT_UPDATE;
+	command->size = 8U;
+	command->data = (const uint8_t *)&sequence->updates[0];
+
+	/* The partial render's: the fence, the command, the update. */
+	sequence->partial_count = 0;
+	command = &sequence->partial_commands[sequence->partial_count++];
+	command->type = POWERVR_CLIENT_FENCE_PARTIAL;
+	command->size = (request->wait_count + 1U) * 8U;
+	command->data = (const uint8_t *)sequence->partial_waits;
+	command = &sequence->partial_commands[sequence->partial_count++];
+	command->type = POWERVR_CLIENT_PARTIAL_RENDER;
+	command->size = POWERVR_FRAGMENT_BYTES;
+	command->data = sequence->partial;
+	command = &sequence->partial_commands[sequence->partial_count++];
+	command->type = POWERVR_CLIENT_UPDATE;
+	command->size = 8U;
+	command->data = (const uint8_t *)&sequence->updates[1];
+
+	/* The fragment's: the geometry's completion, the command, the update. */
+	sequence->fragment_count = 0;
+	command = &sequence->fragment_commands[sequence->fragment_count++];
+	command->type = POWERVR_CLIENT_FENCE_PARTIAL;
+	command->size = 8U;
+	command->data = (const uint8_t *)&sequence->fragment_wait;
+	command = &sequence->fragment_commands[sequence->fragment_count++];
+	command->type = POWERVR_CLIENT_FRAGMENT;
+	command->size = POWERVR_FRAGMENT_BYTES;
+	command->data = sequence->fragment;
+	command = &sequence->fragment_commands[sequence->fragment_count++];
+	command->type = POWERVR_CLIENT_UPDATE;
+	command->size = 8U;
+	command->data = (const uint8_t *)&sequence->updates[2];
+
+	/* Succeeded: the commands. */
+	return 0;
+}
+
+/* Reports the stage a render that ran out of time stopped in. */
+int
+powervr_render_stalled(
+	uint32_t geometry_now,
+	uint32_t geometry_value,
+	uint32_t fragment_now,
+	uint32_t fragment_value,
+	enum powervr_stage *stage)
+{
+	int geometry_done;
+	int fragment_done;
+
+	/* Which of the two kicks wrote its value. */
+	geometry_done = reached(geometry_now, geometry_value);
+	fragment_done = reached(fragment_now, fragment_value);
+
+	/* The first kick that did not finish names the stage. */
+	if (!geometry_done) {
+		*stage = POWERVR_STAGE_TA;
+		return 1;
+	}
+
+	if (!fragment_done) {
+		*stage = POWERVR_STAGE_3D;
+		return 1;
+	}
+
+	/* Succeeded: both finished. */
+	return 0;
+}
+
+/*
+ * Reports whether a render's free lists ran out: the firmware asked for
+ * pages, or counted a partial render or an out-of-memory event.
+ */
+int
+powervr_free_list_ran_out(
+	const struct powervr_list_marks *before,
+	const struct powervr_list_marks *after)
+{
+	int ran_out;
+
+	/* Any of the three moved. */
+	ran_out = 0;
+	if (after->grow_requests != before->grow_requests)
+		ran_out = 1;
+	if (after->partial_renders != before->partial_renders)
+		ran_out = 1;
+	if (after->out_of_memory != before->out_of_memory)
+		ran_out = 1;
+
+	/* Succeeded: the answer. */
+	return ran_out;
+}
+
+/* Copies bytes. */
+static void
+copy_bytes(
+	uint8_t *to,
+	const uint8_t *from,
+	uint32_t bytes)
+{
+	uint32_t index;
+
+	/* One byte at a time; the commands are short. */
+	for (index = 0; index < bytes; index++)
+		to[index] = from[index];
+}
+
+/* Reports whether a timeline word reached a value, across its wrap. */
+static int
+reached(
+	uint32_t now,
+	uint32_t value)
+{
+	int32_t distance;
+
+	/* The word is at or past the value when the signed distance is not negative. */
+	distance = (int32_t)(now - value);
+	if (distance < 0)
+		return 0;
+
+	/* Succeeded: reached. */
+	return 1;
 }
