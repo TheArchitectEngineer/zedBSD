@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1152 / WS074 vertical Grid item margins（2026-10-14）
+## 最新: q1404〜q1516 / WS269 VisionFive 2 の PowerVR（2026-10-20〜21）
+
+[q1404〜q1516履歴](queue-q1404-q1516.md): PMU の hw event → TA の terminate PPP state → compute の PDS と K0 → LOAD の全画面 draw。板 96 で gpu-selftest 13/13・vkmatrix 15/15・vkcoherency PASS、UAT image main 06f1ba788。
+
+## q1152 / WS074 vertical Grid item margins（2026-10-14）
 
 [q1152履歴](queue-q1152.md): 非負px marginをauto track寄与・子寸法・配置に反映、固定010/014 whole FAIL→PASS。独立2ページがChromiumと全box一致、旧WPT12件・Acid3差0維持。[証拠](../ws074/phase225/evidence/20261014-q1152/README.md)。border/padding残存、共有投影/GitHub publication pending。
 
