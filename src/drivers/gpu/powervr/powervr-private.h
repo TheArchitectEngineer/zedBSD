@@ -32,6 +32,16 @@
  * from the kick to the recovery, and no other dump or kick after it, so
  * the kernel's message ring keeps them.  0 is the usual check.
  */
+/*
+ * Whether the start prints the firmware's trace from its first word,
+ * after the health check (up to 2048 words, every group with the full
+ * trace's log type), and the compute and render checks are left out so
+ * the kernel's message ring keeps it (1).
+ */
+#ifndef POWERVR_FIRMWARE_BOOT_TRACE
+#define POWERVR_FIRMWARE_BOOT_TRACE	0
+#endif
+
 #ifndef POWERVR_RENDER_CHECK_FULL_TRACE
 #define POWERVR_RENDER_CHECK_FULL_TRACE	0
 #endif

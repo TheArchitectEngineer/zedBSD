@@ -286,14 +286,19 @@ static const struct crg_clock sys_clocks[] = {
 	 *
 	 * Values referenced:
 	 * StarFive JH7110 TRM Preliminary V2, Tables 2-95 to 2-100
-	 * (clk_gpu_core at 0xb4, divider 3 to 7; the core, system and APB
+	 * (clk_gpu_core at 0xb4, divider 3 to 7 as listed, taken down to 2
+	 * since the vendor kernel runs the core at PLL2 / 2, 594 MHz:
+	 * StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
+	 * drivers/gpu/drm/img/img-rogue/services/system/rogue/sf_7110/sysconfig.h
+	 * RGX_STARFIVE_7100_CORE_CLOCK_SPEED, and the firmware reports that
+	 * rate on the board; the core, system and APB
 	 * gates at 0xb8 to 0xc0; the timer at 0xc4, divider 12; the bus
 	 * master gate at 0xc8); Linux v6.12
 	 * include/dt-bindings/clock/starfive,jh7110-crg.h (JH7110_SYSCLK_*
 	 * numbers 45 to 50) and drivers/clk/starfive/clk-starfive-jh7110-sys.c
 	 * (the source of each clock).
 	 */
-	{ 45, CLOCK_DIVIDER | CLOCK_SETTABLE, 3, 7, 1,
+	{ 45, CLOCK_DIVIDER | CLOCK_SETTABLE, 2, 7, 1,
 	  { { SOURCE_CLOCK, DRV_VF2_CRG_SYS, 3, NULL } } },
 	{ 46, CLOCK_GATE, 0, 0, 1,
 	  { { SOURCE_CLOCK, DRV_VF2_CRG_SYS, 45, NULL } } },

@@ -202,11 +202,11 @@ powervr_render_start(
 	}
 
 	/* A test kernel runs the driver's own compute work and reports it; it only reports. */
-	if (powervr_compute_check != NULL)
+	if (powervr_compute_check != NULL && !POWERVR_FIRMWARE_BOOT_TRACE)
 		powervr_compute_check(render);
 
 	/* A test kernel runs the driver's own render and reports it; it only reports. */
-	if (powervr_render_check != NULL)
+	if (powervr_render_check != NULL && !POWERVR_FIRMWARE_BOOT_TRACE)
 		powervr_render_check(render);
 
 	/* Registers the node, trying again a bounded number of times while registration is busy. */
