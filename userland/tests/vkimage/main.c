@@ -9,9 +9,9 @@
  * vkimage: the Vulkan image test.  On the first physical device it makes a
  * linear and an optimal colour image, checks that the linear image's rows
  * are a multiple of 32 bytes, that an image declaring external memory is
- * made (the shared path's image) and that no linear format
- * reports sampling while the shared path's switch is off, and binds the optimal image to memory with a view and
- * a sampler.  It prints one line:
+ * made (the shared path's image) and that a linear B8G8R8A8 image
+ * reports sampling (the swapchain and client images are linear), and
+ * binds the optimal image to memory with a view and a sampler.  It prints one line:
  *
  *   vkimage: <device>: PASS
  *   vkimage: <device>: FAIL, <what> <VkResult or value>
@@ -185,10 +185,10 @@ check_images(
 	VkSamplerCreateInfo sampler;
 	VkResult status;
 
-	/* No linear format reports sampling while the shared path's switch is off. */
+	/* A linear B8G8R8A8 image is sampled (a compositor samples linear client images). */
 	vkGetPhysicalDeviceFormatProperties(run->physical, VK_FORMAT_B8G8R8A8_UNORM, &format);
-	if ((format.linearTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) != 0) {
-		run->failed = "linear sampled";
+	if ((format.linearTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) == 0) {
+		run->failed = "linear not sampled";
 		run->value = (long)format.linearTilingFeatures;
 		return 1;
 	}

@@ -154,6 +154,15 @@ _Static_assert(QUEUE_PDS_OFFSET == POWERVR_PROGRAM_HEAP_START && QUEUE_PDS_BYTES
  */
 #define QUEUE_JOBS_MAX			64U
 
+/*
+ * Whether a submission returns once it kicked its work (1), or waits for
+ * each render job and compute stream to finish as before (0, the default
+ * until the board runs the asynchronous submission without faults).
+ */
+#ifndef POWERVR_ASYNC_SUBMIT
+#define POWERVR_ASYNC_SUBMIT		0
+#endif
+
 /* How long a submission waits for the core. */
 #define QUEUE_WAIT_MS			2000U
 
@@ -205,6 +214,7 @@ static int run(struct submission *build);
 static int run_flush(struct submission *build);
 static int run_job(struct submission *build, const struct powervr_render_job *job);
 static int order_after(struct submission *build, unsigned kind);
+static int settle(struct submission *build);
 static uint32_t instance_jobs(const struct powervr_vk_command_buffer *command, uint32_t begin);
 
 /*
@@ -1376,7 +1386,50 @@ run(
 	powervr_session_point_set(owner, POWERVR_POINT_COMPUTE, value);
 	powervr_timing_add(POWERVR_TIMING_DISPATCH, started);
 
+	/* A synchronous submission waits for it here. */
+	error = settle(build);
+	if (error != 0)
+		return error;
+
 	/* Succeeded: the stream was kicked. */
+	return 0;
+}
+
+/*
+ * Waits, when submissions are synchronous (POWERVR_ASYNC_SUBMIT 0), for
+ * the work just kicked, as the submission did before it became
+ * asynchronous: within QUEUE_WAIT_MS, else the session is abandoned.
+ * The finished render job's memory is released.
+ */
+static int
+settle(
+	struct submission *build)
+{
+	struct powervr_session *owner;
+	int error;
+
+	/* Asynchronous submissions do not wait. */
+	if (POWERVR_ASYNC_SUBMIT)
+		return 0;
+
+	/* The last work's point. */
+	owner = build->session->owner;
+	error = powervr_session_point_wait(owner, owner->last_kind, owner->last_value, QUEUE_WAIT_MS);
+	if (error != 0) {
+		kern_logf("powervr: vk: work did not finish (%d); the session is abandoned\n", error);
+		build->session->abandoned = true;
+		owner->abandoned = 1;
+		if (owner->last_kind == POWERVR_POINT_COMPUTE)
+			powervr_stage_fail(POWERVR_STAGE_COMPUTE, powervr_stage_reason_of(error));
+		return error;
+	}
+
+	/* The compute stage's ok, and the finished job's memory. */
+	if (owner->last_kind == POWERVR_POINT_COMPUTE)
+		powervr_stage_ok(POWERVR_STAGE_COMPUTE);
+	powervr_render_jobs_reap(owner->render, owner, 0);
+
+	/* Succeeded: the work finished. */
 	return 0;
 }
 
@@ -1457,8 +1510,10 @@ run_job(
 	if (error != 0)
 		return error;
 
-	/* The job on the session's render context. */
+	/* The job on the session's render context; a synchronous submission waits for it. */
 	error = powervr_render_job_run(owner->render, owner, job);
+	if (error == 0)
+		error = settle(build);
 	if (error == ETIMEDOUT)
 		build->session->abandoned = true;
 	if (error != 0) {
