@@ -74,6 +74,9 @@ static int render_import(void *device, void *session, void *shared, void **resul
 static int render_backing(void *device, void *shared, struct drv_gpu_scanout_backing *backing);
 static int render_query(void *device, void *session, struct gpu_device_info *info);
 static int resource_make(struct powervr_session *session, struct powervr_buffer *buffer, int mappable, int shareable, struct powervr_resource **result);
+/* Not a mapping flag: the resource's address comes from the region header window. */
+#define RESOURCE_REGION_HEADERS	0x80000000U
+
 static int resource_make_flags(struct powervr_session *session, struct powervr_buffer *buffer, int mappable, int shareable, unsigned extra, struct powervr_resource **result);
 static void resource_unmake(struct powervr_session *session, struct powervr_resource *resource);
 static void blob_list(struct powervr_session *session, struct powervr_resource *resource, uint32_t *identifier);
@@ -1244,7 +1247,21 @@ powervr_resource_make_free_list(
 	return resource_make_flags(session, buffer, 0, 0, POWERVR_GPU_MAP_SLC_BYPASS | POWERVR_GPU_MAP_PM_PROTECT, result);
 }
 
-/* Makes a session's handle on a buffer with extra mapping flags. */
+/* Makes a session's handle on a render target's region headers, in their own window. */
+int
+powervr_resource_make_region_headers(
+	struct powervr_session *session,
+	struct powervr_buffer *buffer,
+	struct powervr_resource **result)
+{
+	return resource_make_flags(session, buffer, 1, 0, RESOURCE_REGION_HEADERS, result);
+}
+
+/*
+ * Makes a session's handle on a buffer with extra mapping flags;
+ * RESOURCE_REGION_HEADERS takes the address from the region header
+ * window instead of the general one.
+ */
 static int
 resource_make_flags(
 	struct powervr_session *session,
@@ -1277,16 +1294,17 @@ resource_make_flags(
 	 * Host-visible and shareable memory goes around the core's system level
 	 * cache, so the processor and the display read what the core wrote.
 	 */
-	flags = powervr_gpu_buffer_flags(mappable, shareable) | extra;
+	flags = powervr_gpu_buffer_flags(mappable, shareable) | (extra & ~RESOURCE_REGION_HEADERS);
 
 	/* Takes a device address and maps the run there, then has the core drop stale table entries. */
 	mutex_lock(&render->core->lock);
 
-	error = powervr_gpu_space_take(&session->space, buffer->run.size, &resource->address);
+	resource->space = (extra & RESOURCE_REGION_HEADERS) != 0U ? &session->region_space : &session->space;
+	error = powervr_gpu_space_take(resource->space, buffer->run.size, &resource->address);
 	if (error == 0) {
 		error = powervr_gpu_mmu_map(&session->mmu, resource->address, buffer->run.paddr, buffer->run.size, flags);
 		if (error != 0)
-			(void)powervr_gpu_space_give(&session->space, resource->address);
+			(void)powervr_gpu_space_give(resource->space, resource->address);
 	}
 	if (error == 0)
 		error = powervr_command_mmu_flush(render->core);
@@ -1345,7 +1363,7 @@ resource_unmake(
 		mutex_lock(&render->core->lock);
 
 		powervr_gpu_mmu_unmap(&session->mmu, resource->address, resource->buffer->run.size);
-		(void)powervr_gpu_space_give(&session->space, resource->address);
+		(void)powervr_gpu_space_give(resource->space != NULL ? resource->space : &session->space, resource->address);
 		(void)powervr_command_mmu_flush(render->core);
 
 		mutex_unlock(&render->core->lock);

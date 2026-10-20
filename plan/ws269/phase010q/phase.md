@@ -1038,3 +1038,22 @@ source の変更は無し。
   - PM の page（`list->pages`）は GPU の VA に map しない（PM は物理で扱う）ので、変えていない。
 - 注（新しい候補、未確認）: Mesa は region header を専用の heap（RGNHDR、0xDBF0000000）に置く。TE の `TE_PSGREGION_ADDR` の base は bit 6〜33（shift 6）。我々の 0x800000d000 は general heap なので、heap の制約があるかを確かめる価値がある。
 - 確認: RISC-V の self-test の build で warning 0。p010 の host 試験はどれも 0 failed。板は未実施。
+
+## q1472 / q1472-i01（2026-10-21）: HWRT の address の field の幅
+
+csbgen（Mesa 25.0.7 の `gen_pack_header.py` の `__pvr_address`: `((addr >> shift) << start) & mask(start..end)`。register に入るのは address の bit start〜end）と `rogue_cr.xml` で調べた結果:
+
+| register（field） | bit | 表せる address | alignment | 我々の address | 入るか |
+| --- | --- | --- | --- | --- | --- |
+| TE_PSGREGION_ADDR（region headers） | 6〜33 | 下位 34 bit（16 GiB の窓） | 64 | 0x800000d000（bit 39） | **入らない**（下位の 0xd000 だけ残る） |
+| TE_TPC_ADDR（tail pointers） | 6〜33 | 下位 34 bit | 64 | 0x8000011000 | 入らない（ただし Mesa も general heap 0x80_0000_0000 に置くので、FW か HW が上位を補っているはず） |
+| PM_MTILE_ARRAY | 4〜39 | 40 bit | 16 | 0x800000a000 | 入る |
+| PM_VHEAP_TABLE | 4〜39 | 40 bit | 16 | 0x800000f000 | 入る |
+| PM_MLIST0_BASE | 4〜39 | 40 bit | 16 | （macrotile と同じ buffer） | 入る |
+| VDM_CTRL_STREAM_BASE | 2〜39 | 40 bit | 4 | 0x8000013000 | 入る |
+| TPU_BORDER_COLOUR_TABLE | 0〜37（shift 2） | 40 bit | 4 | general heap | 入る |
+| ISP_SCISSOR_BASE | 2〜39 | 40 bit | 4 | general heap | 入る |
+
+- mainline の heap（pvr_rogue_heap_config.h）: GENERAL 0x8000000000（128 GiB）、PDSCODEDATA 0xDA00000000（4 GiB）、**RGNHDR 0xDBF0000000（256 MiB）**、USCCODE 0xE000000000（4 GiB）、FW 0xE1C0000000、TRANSFER_FRAG 0xE400000000（16 GiB）、VISTEST 0xF200000000（2 MiB）。Mesa 25.0.0 は region headers だけを rgn_hdr_heap に置き、TPC・vheap・MTA・mlist は general heap に置く。
+- 直し: session に region header の窓（`region_space`、0xDBF0000000〜、256 MiB、`powervr_session_heaps_init` で初期化）を足した。render target の region headers を `powervr_resource_make_region_headers` でそこに map する。resource は自分の取った窓（`resource->space`）を覚え、unmake ではその窓に返す。TPC は Mesa と同じく general のまま。
+- 確認: RISC-V の self-test の build で warning 0。p010 の host 試験はどれも 0 failed。板は未実施（dump の `target: … region headers 0xdbf…` で配置を確かめられる）。

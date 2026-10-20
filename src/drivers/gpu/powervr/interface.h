@@ -542,6 +542,21 @@
 #define POWERVR_USC_HEAP_BYTES		0x100000000ULL
 #define POWERVR_TRANSFER_HEAP_BASE	0xe400000000ULL
 #define POWERVR_TRANSFER_HEAP_BYTES	0x400000000ULL
+
+/*
+ * The region header window, where a render target's region headers go,
+ * as the vendor and Mesa drivers keep them in a heap of their own.
+ *
+ * Values referenced:
+ * Linux v7.3 drivers/gpu/drm/imagination/pvr_rogue_heap_config.h
+ * (ROGUE_RGNHDR_HEAP_BASE 0xDBF0000000, ROGUE_RGNHDR_HEAP_SIZE 256 MiB);
+ * Mesa 25.0.0 src/imagination/vulkan/pvr_job_render.c
+ * (pvr_rt_rgn_headers_data_init: the region headers in rgn_hdr_heap);
+ * Mesa 25.0.7 src/imagination/csbgen/rogue_cr.xml (TE_PSGREGION_ADDR:
+ * the base's bits 6 to 33 only).
+ */
+#define POWERVR_REGION_HEADER_HEAP_BASE	0xdbf0000000ULL
+#define POWERVR_REGION_HEADER_HEAP_BYTES	0x10000000ULL
 #define POWERVR_STATIC_AREA_BYTES	0x1000U
 
 #endif
