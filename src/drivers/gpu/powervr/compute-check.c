@@ -1173,11 +1173,11 @@ probe_registers(
 		0x3898U, 0x8328U, 0xe140U, 0xe148U, 0xe150U, 0x0160U,
 	};
 	unsigned index;
+	uint64_t values[PROBE_REGISTERS];
 
-	/* Each register on its own line, read 64 bits wide and as two 32-bit halves, to tell a read the bus drops. */
+	/* Every register first, back to back, so the timer read last shows how long the reads took; then the lines. */
 	for (index = 0; index < PROBE_REGISTERS; index++)
-		kern_logf("powervr: probe: register 0x%04x = 0x%016llx (halves 0x%08x 0x%08x)\n", (unsigned)offsets[index],
-			  (unsigned long long)powervr_read64(core, offsets[index]),
-			  (unsigned)powervr_read32(core, offsets[index] + 4U),
-			  (unsigned)powervr_read32(core, offsets[index]));
+		values[index] = powervr_read64(core, offsets[index]);
+	for (index = 0; index < PROBE_REGISTERS; index++)
+		kern_logf("powervr: probe: register 0x%04x = 0x%016llx\n", (unsigned)offsets[index], (unsigned long long)values[index]);
 }
