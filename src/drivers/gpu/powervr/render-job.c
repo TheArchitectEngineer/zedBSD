@@ -59,6 +59,9 @@
 #define GENERAL_TERMINATE_PPP		0xb00U
 #define GENERAL_BYTES			0x1000U
 
+/* The most pixels of a job the timing counts as small (256 x 256). */
+#define JOB_SMALL_PIXELS		65536U
+
 /*
  * Each draw's memory: in its slot of the draws' general buffer the
  * primitive state block, the push constants, the blend constants, then
@@ -441,6 +444,10 @@ powervr_render_job_run(
 	started = powervr_timing_now();
 	error = powervr_render_finish(render, session, &memory->marks, JOB_WAIT_MS);
 	powervr_timing_add(POWERVR_TIMING_JOB_WAIT, started);
+
+	/* The timing: a small job's wait on its own, to set beside a full frame's. */
+	if (job->width * job->height <= JOB_SMALL_PIXELS)
+		powervr_timing_add(POWERVR_TIMING_WAIT_SMALL, started);
 	if (error != 0) {
 		kern_logf("powervr: render job did not finish (%d); its memory stays with the core\n", error);
 		session->abandoned = 1;
