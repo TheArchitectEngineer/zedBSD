@@ -176,6 +176,14 @@ powervr_render_check(
 	const char *step;
 	int error;
 
+	/*
+	 * A transfer on a session of its own before the render, so the
+	 * firmware has handed out a page catalogue set before the render's
+	 * context asks for one.
+	 */
+	kern_logf("powervr: render check: transfer before the render\n");
+	transfer_check(render);
+
 	/* The session, its render context and target, the memory and the programs. */
 	check = &check_state;
 	kern_memset(check, 0, sizeof(*check));
@@ -203,7 +211,12 @@ powervr_render_check(
 	/* What the core may still run is kept with the session; otherwise everything goes. */
 	check_release(check);
 
-	/* The transfer check and the job check, each on a session of its own. */
+	/*
+	 * A transfer on a fresh session after the render: whether it takes
+	 * the page catalogue set the render's context let go and still runs
+	 * on it.  Then the job check, on a session of its own.
+	 */
+	kern_logf("powervr: render check: transfer after the render\n");
 	transfer_check(render);
 	job_check(render);
 }
