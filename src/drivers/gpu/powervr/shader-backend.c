@@ -152,6 +152,7 @@ static int select_instruction(struct backend_select *select, const struct powerv
 static int select_structure(struct backend_select *select, const struct powervr_ir_instruction *instruction);
 static int operations_conflict(const struct shader_machine_operation *reader, const struct shader_machine_operation *writer);
 static void nop_operation(struct shader_machine_operation *operation);
+static int insert_nops(struct shader_backend *backend, unsigned index, unsigned count);
 static struct shader_machine_operation *append(struct backend_select *select, unsigned kind);
 static struct shader_machine_register temp_register(unsigned index);
 static struct shader_machine_register bank_register(unsigned bank, unsigned index);
@@ -338,23 +339,26 @@ powervr_shader_compile_inline(
 
 /*
  * Inserts no-operation groups so that no group writes a temporary that
- * one of the SHADER_HAZARD_GAP groups just before it reads.  Branches
- * that land after an insertion are moved with their targets; a branch
- * to the group itself lands on the first inserted group.  E2BIG when
- * the table has no room.
+ * one of the SHADER_HAZARD_GAP groups run just before it reads: the
+ * groups before it in order, and, for a group a branch lands on, the
+ * group before the branch (the branch itself is the one group between
+ * them, so one no-operation goes before the branch).  Branches that
+ * land after an insertion are moved with their targets; a branch to the
+ * group itself lands on the first inserted group.  E2BIG when the table
+ * has no room.
  */
 int
 shader_backend_space_hazards(
 	struct shader_backend *backend)
 {
-	struct shader_machine_operation *operation;
+	const struct shader_machine_operation *branch;
 	unsigned index;
 	unsigned back;
 	unsigned needed;
-	unsigned other;
 	int conflict;
+	int error;
 
-	/* Each group against the ones just before it. */
+	/* Each group against the ones just before it in order. */
 	for (index = 0; index < backend->operation_count; index++) {
 		/* How many groups must still come between, from the nearest conflicting reader. */
 		needed = 0;
@@ -368,35 +372,79 @@ shader_backend_space_hazards(
 		if (needed == 0)
 			continue;
 
-		/* Room for the no-operations. */
-		if (backend->operation_count + needed > SHADER_MACHINE_OPERATIONS)
-			return E2BIG;
-
-		/* The groups from here on move down, the branches that land beyond here with them. */
-		for (other = backend->operation_count; other > index; other--)
-			backend->operations[other - 1U + needed] = backend->operations[other - 1U];
-		backend->operation_count += needed;
-		for (other = 0; other < backend->operation_count; other++) {
-			operation = &backend->operations[other];
-			if (operation->kind == MACHINE_BRANCH && operation->target > index)
-				operation->target += needed;
-		}
-
 		/* The no-operations in the gap; the group itself is now after them. */
-		for (other = index; other < index + needed; other++)
-			nop_operation(&backend->operations[other]);
+		error = insert_nops(backend, index, needed);
+		if (error != 0)
+			return error;
 		index += needed;
+	}
+
+	/*
+	 * Each branch: the group before it against the group it lands on,
+	 * which runs right after the branch on that path (a loop's back edge
+	 * or a jump forward).
+	 */
+	for (index = 1; index < backend->operation_count; index++) {
+		branch = &backend->operations[index];
+		if (branch->kind != MACHINE_BRANCH || branch->target >= backend->operation_count)
+			continue;
+		conflict = operations_conflict(&backend->operations[index - 1U], &backend->operations[branch->target]);
+		if (!conflict)
+			continue;
+
+		/* One no-operation before the branch; the branch is now after it. */
+		error = insert_nops(backend, index, 1);
+		if (error != 0)
+			return error;
+		index++;
 	}
 
 	/* Succeeded: the program is spaced. */
 	return 0;
 }
 
-/* Counts the groups that write a temporary one of the groups just before them reads (zero once spaced). */
+/*
+ * Inserts count no-operations before the group at index: the groups from
+ * there move down, and a branch that lands beyond index moves with its
+ * target (one that lands on index lands on the first no-operation).
+ */
+static int
+insert_nops(
+	struct shader_backend *backend,
+	unsigned index,
+	unsigned count)
+{
+	struct shader_machine_operation *operation;
+	unsigned other;
+
+	/* Room for them. */
+	if (backend->operation_count + count > SHADER_MACHINE_OPERATIONS)
+		return E2BIG;
+
+	/* The groups from index on move down, the branches that land beyond index with them. */
+	for (other = backend->operation_count; other > index; other--)
+		backend->operations[other - 1U + count] = backend->operations[other - 1U];
+	backend->operation_count += count;
+	for (other = 0; other < backend->operation_count; other++) {
+		operation = &backend->operations[other];
+		if (operation->kind == MACHINE_BRANCH && operation->target > index)
+			operation->target += count;
+	}
+
+	/* The no-operations. */
+	for (other = index; other < index + count; other++)
+		nop_operation(&backend->operations[other]);
+
+	/* Succeeded: the no-operations are in. */
+	return 0;
+}
+
+/* Counts the groups that write a temporary one of the groups run just before them reads, in order or after a branch (zero once spaced). */
 unsigned
 shader_backend_hazards(
 	const struct shader_backend *backend)
 {
+	const struct shader_machine_operation *branch;
 	unsigned index;
 	unsigned back;
 	unsigned count;
@@ -412,6 +460,16 @@ shader_backend_hazards(
 				break;
 			}
 		}
+	}
+
+	/* Each branch: the group before it against the group it lands on. */
+	for (index = 1; index < backend->operation_count; index++) {
+		branch = &backend->operations[index];
+		if (branch->kind != MACHINE_BRANCH || branch->target >= backend->operation_count)
+			continue;
+		conflict = operations_conflict(&backend->operations[index - 1U], &backend->operations[branch->target]);
+		if (conflict)
+			count++;
 	}
 
 	/* Succeeded: the count. */

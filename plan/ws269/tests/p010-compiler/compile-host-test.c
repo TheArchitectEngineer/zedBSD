@@ -1068,6 +1068,37 @@ test_hazard_spacing(void)
 	check(backend.operations[2].kind == MACHINE_NOP && backend.operations[3].kind == MACHINE_NOP && backend.operations[4].kind == MACHINE_IMMEDIATE, "the no-operations, then the write");
 	check(backend.operations[0].target == 2, "the branch to the write lands on the first no-operation");
 	check(shader_backend_hazards(&backend) == 0, "no hazard once spaced");
+
+	/*
+	 * A loop: its head writes r9, its end reads r9, the back branch to
+	 * the head; one no-operation goes before the branch, so two groups
+	 * lie between the read and the head's write on the back edge.
+	 */
+	memset(&backend, 0, sizeof(backend));
+	backend.operation_count = 3;
+	for (index = 0; index < 3; index++) {
+		operation = &backend.operations[index];
+		operation->destination[0].bank = 0xff;
+		operation->destination[1].bank = 0xff;
+		operation->source[0].bank = 0xff;
+		operation->source[1].bank = 0xff;
+		operation->source[2].bank = 0xff;
+		operation->source[3].bank = 0xff;
+	}
+	backend.operations[0].kind = MACHINE_IMMEDIATE;
+	backend.operations[0].destination[0].bank = POWERVR_USC_BANK_TEMPORARY;
+	backend.operations[0].destination[0].index = 9;
+	backend.operations[1].kind = MACHINE_INTEGER;
+	backend.operations[1].destination[0].bank = POWERVR_USC_BANK_TEMPORARY;
+	backend.operations[1].destination[0].index = 20;
+	backend.operations[1].source[0].bank = POWERVR_USC_BANK_TEMPORARY;
+	backend.operations[1].source[0].index = 9;
+	backend.operations[2].kind = MACHINE_BRANCH;
+	backend.operations[2].target = 0;
+	check(shader_backend_hazards(&backend) == 1, "a loop's end reading what its head writes is a hazard on the back edge");
+	error = shader_backend_space_hazards(&backend);
+	check(error == 0 && backend.operation_count == 4 && backend.operations[2].kind == MACHINE_NOP && backend.operations[3].kind == MACHINE_BRANCH && backend.operations[3].target == 0, "one no-operation before the back branch");
+	check(shader_backend_hazards(&backend) == 0, "no hazard on the back edge once spaced");
 }
 
 int

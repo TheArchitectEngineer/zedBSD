@@ -642,3 +642,20 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
 | p009 の host・VF2 の vmunix | **失敗**。main の vk-queue.c の `_Static_assert`（上）が原因で、この Queue の変更とは無関係 |
 
 - 片付け（Q1 に依頼）: `build/p030/`。
+
+## q1457-i01（P2、2026-10-20）: loop の戻りの辺の hazard
+
+- `shader_backend_space_hazards` に branch の確かめを足した。branch の直前の group が読む temporary を、branch の着地先の group が書くなら、branch の前に nop を 1 つ入れる。branch 自身と nop で、間が 2 group になる。loop の戻りも、前への jump も同じ扱い。nop を入れる処理は `insert_nops` に分けた。
+- `shader_backend_hazards` も同じ確かめを数える。
+- 試験（`compile-host-test.c`）:
+  - loop の単体の試験を足した: 頭で r9 を書き、末尾で r9 を読み、頭へ戻る branch → hazard 1 → branch の前に nop → hazard 0。
+  - loop.comp（loop-o・loop-0）を含む全部の shader で hazard 0 を確かめる（branch の分を含む）。
+
+| 確認 | 結果 |
+| --- | --- |
+| compiler の host | 455 passed、0 failed、group 20/0 |
+| p009 | 511 passed、0 failed |
+| p010 | 全部 0 failed |
+| VF2 の vmunix（`build/p031/vf2/vmunix`） | rc 0、warning 0 |
+
+- 注意: q1458 の板の結果で、nop の group が USC を止めている疑いが出た。この Queue は nop を使う。q1458 の結果しだいで、埋め草の形を替える。
