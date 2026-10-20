@@ -40,7 +40,6 @@
 #include "drivers/gpu/powervr/render-sr-program.h"
 #include "drivers/gpu/powervr/interface.h"
 #include "drivers/gpu/powervr/compute-program.h"
-#include "drivers/gpu/powervr/pds-encode.h"
 #include "drivers/gpu/powervr/render-job.h"
 #include "drivers/gpu/powervr/vk.h"
 
@@ -122,13 +121,11 @@ _Static_assert(QUEUE_PDS_OFFSET == POWERVR_PROGRAM_HEAP_START && QUEUE_PDS_BYTES
 #ifndef POWERVR_EXECUTOR_MESA_STREAM
 #define POWERVR_EXECUTOR_MESA_STREAM	1
 #endif
-#define QUEUE_SHARED_COMMON		16U
 #define QUEUE_SHARED_DATA		0x40U
 #define QUEUE_SHARED_CODE		0x50U
 
-/* The data sequencer temporaries a compute kernel's inputs take, and the fence kernel's task size. */
+/* The data sequencer temporaries a compute kernel's inputs take. */
 #define QUEUE_PDS_INPUTS		3U
-#define QUEUE_FENCE_INSTANCES		8U
 
 /*
  * The most render jobs one command buffer runs: an instance takes one
@@ -655,13 +652,14 @@ executor_make(
 	for (index = 0; index < count; index++)
 		put_word(executor->pds, QUEUE_PDS_CODE + index * 4U, code[index]);
 
-	/* The shared register allocation's program, after the fence's in slot 0: zero data, a halt. */
-	put_word(executor->pds, QUEUE_SHARED_DATA, 0);
-	put_word(executor->pds, QUEUE_SHARED_DATA + 4U, 0);
-	error = powervr_pds_halt(0, &code[0]);
+	/* The shared register allocation's program, after the fence's in slot 0. */
+	error = powervr_compute_shared_program(data, code, &count);
 	if (error != 0)
 		return error;
-	put_word(executor->pds, QUEUE_SHARED_CODE, code[0]);
+	put_word(executor->pds, QUEUE_SHARED_DATA, data[0]);
+	put_word(executor->pds, QUEUE_SHARED_DATA + 4U, data[1]);
+	for (index = 0; index < count; index++)
+		put_word(executor->pds, QUEUE_SHARED_CODE + index * 4U, code[index]);
 
 	/* Succeeded: submissions can build their streams. */
 	return 0;
@@ -1079,21 +1077,11 @@ static int
 build_shared_kernel(
 	struct submission *build)
 {
-	struct powervr_compute_kernel kernel;
 	uint32_t words[POWERVR_COMPUTE_KERNEL_WORDS];
 	int error;
 
-	/* One instance on every cluster, 64 bytes of common store kept for the next kernels, no shared data. */
-	kern_memset(&kernel, 0, sizeof(kernel));
-	kernel.data_offset = QUEUE_PDS_OFFSET + QUEUE_SHARED_DATA;
-	kernel.code_offset = QUEUE_PDS_OFFSET + QUEUE_SHARED_CODE;
-	kernel.data_words = POWERVR_COMPUTE_PDS_DATA_WORDS;
-	kernel.usc_common = QUEUE_SHARED_COMMON;
-	kernel.instances = 1;
-	kernel.max_instances = QUEUE_FENCE_INSTANCES;
-	kernel.common_shared = 1;
-	kernel.any_cluster = 0;
-	error = powervr_compute_kernel_words(&kernel, words);
+	/* The allocation kernel's words, its program in slot 0. */
+	error = powervr_compute_shared_kernel_words(QUEUE_PDS_OFFSET + QUEUE_SHARED_DATA, QUEUE_PDS_OFFSET + QUEUE_SHARED_CODE, words);
 	if (error != 0)
 		return error;
 	put_stream_words(build, words, POWERVR_COMPUTE_KERNEL_WORDS);
@@ -1117,7 +1105,7 @@ build_fence(
 	kernel.code_offset = QUEUE_PDS_OFFSET + QUEUE_PDS_CODE;
 	kernel.data_words = POWERVR_COMPUTE_PDS_DATA_WORDS;
 	kernel.instances = 1;
-	kernel.max_instances = QUEUE_FENCE_INSTANCES;
+	kernel.max_instances = POWERVR_COMPUTE_FENCE_INSTANCES;
 	kernel.fence = 1;
 	kernel.shared_from_pds = 1;
 	kernel.common_shared = 1;

@@ -508,15 +508,7 @@ check_stream(
 	powervr_compute_task_field(program.temps, &field);
 
 	/* Mesa's first kernel: the shared registers' allocation (64 bytes of common store, every cluster, eight a task), its program after the fence's in slot 0. */
-	memset(&expected_kernel, 0, sizeof(expected_kernel));
-	expected_kernel.data_offset = 0x10000U + 0x40U;
-	expected_kernel.code_offset = 0x10000U + 0x50U;
-	expected_kernel.data_words = POWERVR_COMPUTE_PDS_DATA_WORDS;
-	expected_kernel.usc_common = 16;
-	expected_kernel.instances = 1;
-	expected_kernel.max_instances = 8;
-	expected_kernel.common_shared = 1;
-	powervr_compute_kernel_words(&expected_kernel, expected_words);
+	powervr_compute_shared_kernel_words(0x10000U + 0x40U, 0x10000U + 0x50U, expected_words);
 	same = 1;
 	for (index = 0; index < POWERVR_COMPUTE_KERNEL_WORDS; index++) {
 		if (word_at(stream->buffer->view, at + index * 4U) != expected_words[index])
@@ -574,7 +566,7 @@ check_stream(
 	expected_kernel.code_offset = 0x10010U;
 	expected_kernel.data_words = POWERVR_COMPUTE_PDS_DATA_WORDS;
 	expected_kernel.instances = 1;
-	expected_kernel.max_instances = 8;
+	expected_kernel.max_instances = POWERVR_COMPUTE_FENCE_INSTANCES;
 	expected_kernel.fence = 1;
 	expected_kernel.shared_from_pds = 1;
 	expected_kernel.common_shared = 1;
@@ -597,6 +589,15 @@ check_stream(
 			same = 0;
 	}
 	check(same, "the fence program");
+
+	/* The shared registers' allocation program after it in slot 0. */
+	powervr_compute_shared_program(data, code, &count);
+	same = word_at(pds, 0x40U) == data[0] && word_at(pds, 0x44U) == data[1];
+	for (index = 0; index < count; index++) {
+		if (word_at(pds, 0x50U + index * 4U) != code[index])
+			same = 0;
+	}
+	check(same, "the shared registers' allocation program");
 }
 
 /*

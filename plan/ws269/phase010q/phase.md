@@ -1375,5 +1375,12 @@ csbgen（Mesa 25.0.7 の `gen_pack_header.py` の `__pvr_address`: `((addr >> sh
   | `register_map` | 7 つの band を読むだけ | 変わらない | 無い（読みの副作用を持つ register が band に入っていれば別） |
   | `powervr_firmware_return_probe` | FW の heap の page の CPU の cache line を invalidate して読む（GPU の register は書かない） | CPU の cache の line が落ちる。FW の heap に CPU の dirty な line があれば、それも消える | 低い。FW の object は uncached の view で書くので、dirty な line は無い筈 |
 
+  - 訂正（2026-10-21）: 板 92（DIAGNOSTICS=1 で register_check・return probe 有り）でも手書き kernel は 6976/16384 で、CLK_CTRL の疑いは否定された。原因は板 69（bd39399ba）で compute check の stream から fence kernel を外したこと（kick の完了が store の完了より早い）。P2 の q1503 で 3 kernel の形に戻した。
   - 板 92 の後の切り分け: DIAGNOSTICS=1 で手書き kernel が戻るなら、`register_check` の clock の部分だけ（`CLK_CTRL` ← ALL_ON → 0）を独立の switch にして確かめる。戻るなら「起動時に CLK_CTRL を明示に設定する」のを正式の起動列に入れる（DDK・mainline の起動列は CLK_CTRL を書かない、q1475）。
 - 確認: RISC-V の self-test の build で warning 0。p009 は 504/504。板は未実施。
+
+## q1504 / q1504-i01（2026-10-21）
+
+- `vk-queue.c` の shared register の確保を、P2 の q1503 の helper に寄せた: slot 0 の program は `powervr_compute_shared_program`、`build_shared_kernel` の語は `powervr_compute_shared_kernel_words`。自前の定数 `QUEUE_SHARED_COMMON`・`QUEUE_FENCE_INSTANCES` は消して helper 側（`POWERVR_COMPUTE_SHARED_COMMON`・`POWERVR_COMPUTE_FENCE_INSTANCES`）に寄せた。使わなくなった `pds-encode.h` の include も外した。
+- p009 の executor の試験: K0 の期待を helper から取り、slot 0 の shared の program の確認を足した。505/505。
+- 確認: RISC-V の self-test の build で warning 0。板は未実施。
