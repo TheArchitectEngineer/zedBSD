@@ -245,6 +245,20 @@ struct powervr_reset_stage {
  */
 #define POWERVR_VDM_TERMINATE			(6U << 29)
 
+/*
+ * Where a geometry command's registers name its VDM control stream, and
+ * the bits of the register the stream's address keeps.
+ *
+ * Values referenced:
+ * Linux v7.3 drivers/gpu/drm/imagination/pvr_rogue_fwif_client_check.h
+ * (struct rogue_fwif_geom_regs: vdm_ctrl_stream_base 0; struct
+ * rogue_fwif_cmd_geom: regs 16); Mesa 26.2.5
+ * src/imagination/csbgen/rogue/cr.xml (VDM_CTRL_STREAM_BASE: addr 2..39
+ * shifted by 2).
+ */
+#define POWERVR_GEOMETRY_STREAM_BASE		16U
+#define POWERVR_STREAM_BASE_MASK		0xfffffffffcULL
+
 /* One command a kick puts in a context's buffer: its type, its size and its bytes. */
 struct powervr_client_command {
 	uint32_t type;
@@ -313,6 +327,9 @@ int powervr_kick_combined_command(const struct powervr_kick *geometry, const str
  * own.
  */
 void powervr_geometry_partial_fence(uint8_t *command, uint32_t target_data, uint32_t timeline, uint32_t value);
+
+/* Puts the VDM control stream a geometry command runs. */
+void powervr_geometry_stream(uint8_t *command, uint64_t stream);
 
 /* Puts the render target data set of a fragment or partial render command. */
 void powervr_fragment_target(uint8_t *command, uint32_t target_data);

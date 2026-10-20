@@ -114,6 +114,7 @@ RISCV64_PLATFORM_SOURCES_visionfive2 += src/drivers/platform/visionfive2/vf2-pmu
 	src/drivers/gpu/powervr/render-queue.c \
 	src/drivers/gpu/powervr/render-kick-layout.c \
 	src/drivers/gpu/powervr/render-program.c \
+	src/drivers/gpu/powervr/render-context.c \
 	src/drivers/gpu/powervr/render-target-layout.c \
 	src/drivers/gpu/powervr/render-target.c \
 	src/drivers/gpu/powervr/usc-encode.c \
@@ -140,6 +141,10 @@ RISCV64_PLATFORM_SOURCES_visionfive2 += src/drivers/platform/visionfive2/vf2-pmu
 # The test kernel's check of the core's compute path (ws269-p008).
 ifeq ($(CONFIG_POWERVR_COMPUTE_CHECK),y)
 RISCV64_PLATFORM_SOURCES_visionfive2 += src/drivers/gpu/powervr/compute-check.c
+endif
+# The test kernel's check of the core's render path.
+ifeq ($(CONFIG_POWERVR_RENDER_CHECK),y)
+RISCV64_PLATFORM_SOURCES_visionfive2 += src/drivers/gpu/powervr/render-check.c
 endif
 # The display node needs the common GPU core even without a PCI GPU.
 RISCV64_PLATFORM_SOURCES_visionfive2 += $(filter-out $(KERN_GPU_SOURCES),src/drivers/gpu/gpu.c src/drivers/gpu/gpu-fence.c)

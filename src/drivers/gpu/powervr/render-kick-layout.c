@@ -191,6 +191,16 @@ powervr_geometry_partial_fence(
 	put32(command, POWERVR_GEOMETRY_PARTIAL_FENCE + 4U, value - 1U);
 }
 
+/* Puts the VDM control stream a geometry command runs, as its register's value. */
+void
+powervr_geometry_stream(
+	uint8_t *command,
+	uint64_t stream)
+{
+	/* The register keeps the address's bits 2 to 39. */
+	put64(command, POWERVR_GEOMETRY_STREAM_BASE, stream & POWERVR_STREAM_BASE_MASK);
+}
+
 /* Puts the render target data set of a fragment or partial render command. */
 void
 powervr_fragment_target(

@@ -59,6 +59,12 @@
 #define KICK_WAIT_MS		1000U
 #define WATCHDOG_MS		(POWERVR_DEADLINE_MS + 5000U)
 
+/* A kick of a render context is one kernel command. */
+_Static_assert(POWERVR_KICK_COMMAND_WORDS == POWERVR_COMMAND_WORDS, "a kick is one kernel command");
+
+/* The most 32-bit words of one command a render puts in a context's buffer. */
+#define RENDER_COMMAND_WORDS	(POWERVR_FRAGMENT_BYTES / 4U)
+
 /* The most callbacks one pass of the service delivers. */
 #define DELIVER_MAX		64U
 
@@ -84,11 +90,15 @@ static void give_memory(void *context, void *memory);
 static int make_records(struct powervr_render *render, struct powervr_session *session);
 static void fill_records(struct powervr_session *session);
 static void destroy_records(struct powervr_render *render, struct powervr_session *session);
-static int client_space(const struct powervr_session *session, uint32_t bytes);
-static void client_put(struct powervr_session *session, uint32_t type, uint32_t size, const uint32_t *data, uint32_t words);
+static int client_space(const struct powervr_client *client, uint32_t bytes);
+static void client_put(struct powervr_client *client, uint32_t type, uint32_t size, const uint32_t *data, uint32_t words);
 static int send_kick(struct powervr_render *render, struct powervr_session *session);
+static int send_command(struct powervr_render *render, const uint32_t command[POWERVR_COMMAND_WORDS]);
+static uint32_t commands_bytes(const struct powervr_client_command *commands, unsigned count);
+static void commands_put(struct powervr_client *client, const struct powervr_client_command *commands, unsigned count);
+static void list_marks(const struct powervr_render *render, struct powervr_list_marks *marks);
 static int send_waiting(struct powervr_core *core, const uint32_t command[POWERVR_COMMAND_WORDS], uint32_t *slot);
-static void cleanup_command(const struct powervr_session *session, uint32_t command[POWERVR_COMMAND_WORDS]);
+static void cleanup_command(uint32_t context, uint32_t command[POWERVR_COMMAND_WORDS]);
 static void service_thread(void *argument);
 static int service_pass(struct powervr_render *render, uint64_t now);
 static void take_entry(struct powervr_session *session, int error, struct delivery *delivery);
@@ -154,6 +164,9 @@ powervr_session_firmware_destroy(
 	struct powervr_render *render,
 	struct powervr_session *session)
 {
+	/* The render context first, with the memory its switch uses. */
+	powervr_render_context_destroy(render, session);
+
 	/* Returns the records, unmapping each from the firmware's processor. */
 	mutex_lock(&render->core->lock);
 
@@ -178,12 +191,13 @@ void
 powervr_session_firmware_discard(
 	struct powervr_session *session)
 {
-	/* The render targets and free lists first, then each record's run. */
+	/* The render context, the render targets and free lists, then each record's run. */
+	powervr_render_context_discard(session);
 	powervr_session_targets_discard(session);
 	powervr_object_drop(&session->context);
-	powervr_object_drop(&session->timeline);
-	powervr_object_drop(&session->client);
-	powervr_object_drop(&session->client_control);
+	powervr_object_drop(&session->compute.timeline);
+	powervr_object_drop(&session->compute.buffer);
+	powervr_object_drop(&session->compute.control);
 	powervr_object_drop(&session->context_state);
 	powervr_object_drop(&session->memory_context);
 
@@ -192,14 +206,18 @@ powervr_session_firmware_discard(
 }
 
 /*
- * Has the firmware clean up a session's context and waits for it,
- * bounded; EBUSY when the context stays busy.
+ * Has the firmware clean up each of a session's contexts that ran (the
+ * compute context, then the render context's geometry and fragment
+ * contexts) and waits for each, bounded; EBUSY when one stays busy.
  *
  * Procedure referenced:
  * StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
  * drivers/gpu/drm/imagination/pvr_fw.c (pvr_fw_structure_cleanup: the
  * cleanup command naming the common context, a bounded wait on its
- * return slot, busy when the slot says so).
+ * return slot, busy when the slot says so); Linux v7.3
+ * drivers/gpu/drm/imagination/pvr_context.c (pvr_context_destroy_queues:
+ * each queue of a render context cleaned up through its own common
+ * context).
  */
 int
 powervr_session_cleanup(
@@ -207,43 +225,50 @@ powervr_session_cleanup(
 	struct powervr_session *session)
 {
 	uint32_t command[POWERVR_COMMAND_WORDS];
+	uint32_t context;
 	uint32_t answer;
+	unsigned which;
 	unsigned tries;
 	int error;
 
-	/* A context the firmware already cleaned up needs nothing more. */
-	if (session->cleaned)
-		return 0;
+	/* Each context still to clean up, in turn, until none is left. */
+	for (;;) {
+		context = powervr_session_next_cleanup(session, &which);
+		if (context == 0U)
+			break;
 
-	/* Sends the cleanup until the firmware says the context is idle, a bounded number of times. */
-	cleanup_command(session, command);
-	error = EBUSY;
-	for (tries = 0; tries < CLEANUP_TRIES; tries++) {
-		mutex_lock(&render->core->lock);
+		/* Sends the cleanup until the firmware says the context is idle, a bounded number of times. */
+		cleanup_command(context, command);
+		error = EBUSY;
+		for (tries = 0; tries < CLEANUP_TRIES; tries++) {
+			mutex_lock(&render->core->lock);
 
-		error = powervr_command_run(render->core, command, POWERVR_COMMAND_WAIT_MS, &answer);
+			error = powervr_command_run(render->core, command, POWERVR_COMMAND_WAIT_MS, &answer);
 
-		mutex_unlock(&render->core->lock);
+			mutex_unlock(&render->core->lock);
 
-		/* The firmware did not answer. */
+			/* The firmware did not answer. */
+			if (error != 0)
+				return error;
+
+			/* The context is idle and forgotten. */
+			if ((answer & POWERVR_RETURN_CLEANUP_BUSY) == 0U)
+				break;
+
+			/* Still busy: waits a little before asking again. */
+			error = EBUSY;
+			sched_sleep(sched_ticks() + ms_ticks(CLEANUP_PAUSE_MS));
+		}
+
+		/* The context stayed busy. */
 		if (error != 0)
 			return error;
 
-		/* The context is idle and forgotten. */
-		if ((answer & POWERVR_RETURN_CLEANUP_BUSY) == 0U)
-			break;
-
-		/* Still busy: waits a little before asking again. */
-		error = EBUSY;
-		sched_sleep(sched_ticks() + ms_ticks(CLEANUP_PAUSE_MS));
+		/* The firmware no longer uses this one. */
+		powervr_session_cleaned(session, which);
 	}
 
-	/* The context stayed busy. */
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the firmware no longer uses the context. */
-	session->cleaned = 1;
+	/* Succeeded: the firmware no longer uses any of the session's contexts. */
 	return 0;
 }
 
@@ -278,7 +303,7 @@ powervr_session_kick(
 	bytes = 2U * POWERVR_HEADER_BYTES + POWERVR_SYNC_BYTES;
 	if (fence_address != 0U)
 		bytes += POWERVR_HEADER_BYTES + POWERVR_SYNC_BYTES;
-	error = client_space(session, bytes);
+	error = client_space(&session->compute, bytes);
 	if (error != 0)
 		return error;
 
@@ -286,14 +311,14 @@ powervr_session_kick(
 	if (fence_address != 0U) {
 		sync[0] = fence_address;
 		sync[1] = fence_value;
-		client_put(session, POWERVR_CLIENT_FENCE, POWERVR_SYNC_BYTES, sync, 2);
+		client_put(&session->compute, POWERVR_CLIENT_FENCE, POWERVR_SYNC_BYTES, sync, 2);
 	}
 
 	/* The empty job, then the update of the timeline once it is done. */
-	client_put(session, POWERVR_CLIENT_NULL, 0, NULL, 0);
-	sync[0] = powervr_object_address(&session->timeline, 0);
+	client_put(&session->compute, POWERVR_CLIENT_NULL, 0, NULL, 0);
+	sync[0] = powervr_object_address(&session->compute.timeline, 0);
 	sync[1] = value;
-	client_put(session, POWERVR_CLIENT_UPDATE, POWERVR_SYNC_BYTES, sync, 2);
+	client_put(&session->compute, POWERVR_CLIENT_UPDATE, POWERVR_SYNC_BYTES, sync, 2);
 
 	/* Tells the firmware the buffer grew. */
 	error = send_kick(render, session);
@@ -329,15 +354,15 @@ powervr_session_kick_compute(
 
 	/* Room for the command and the update, each behind a header. */
 	bytes = 2U * POWERVR_HEADER_BYTES + ((words * 4U + 7U) & ~7U) + POWERVR_SYNC_BYTES;
-	error = client_space(session, bytes);
+	error = client_space(&session->compute, bytes);
 	if (error != 0)
 		return error;
 
 	/* The compute command, then the update of the timeline once it is done. */
-	client_put(session, POWERVR_CLIENT_COMPUTE, words * 4U, command, words);
-	sync[0] = powervr_object_address(&session->timeline, 0);
+	client_put(&session->compute, POWERVR_CLIENT_COMPUTE, words * 4U, command, words);
+	sync[0] = powervr_object_address(&session->compute.timeline, 0);
 	sync[1] = value;
-	client_put(session, POWERVR_CLIENT_UPDATE, POWERVR_SYNC_BYTES, sync, 2);
+	client_put(&session->compute, POWERVR_CLIENT_UPDATE, POWERVR_SYNC_BYTES, sync, 2);
 
 	/* Tells the firmware the buffer grew. */
 	error = send_kick(render, session);
@@ -346,6 +371,202 @@ powervr_session_kick_compute(
 
 	/* Succeeded: the command is the firmware's. */
 	session->kicked = 1;
+	return 0;
+}
+
+/*
+ * Kicks one render on a session's render context; the core's lock is
+ * held.
+ *
+ * The geometry and its partial render go in one combined kick, the
+ * geometry's naming the render target half's cleanup count and the
+ * partial render's none; the fragment follows in a kick of its own with
+ * the cleanup count.  The geometry's timeline takes the next value, the
+ * fragment's the one after next (the partial render writes the one
+ * between).
+ *
+ * Procedure referenced:
+ * Linux v7.3 drivers/gpu/drm/imagination/pvr_queue.c (pvr_queue_run_job:
+ * the geometry and its paired fragment written, then the combined kick;
+ * any other job's own kick) and pvr_cccb.c
+ * (pvr_cccb_send_kccb_combined_kick, pvr_cccb_send_kccb_kick:
+ * fill_cmd_kick_data with the data set's cleanup state, none for a
+ * partial render, after a barrier).
+ */
+int
+powervr_session_kick_render(
+	struct powervr_render *render,
+	struct powervr_session *session,
+	struct powervr_target *target,
+	unsigned half,
+	const uint8_t *geometry,
+	const uint8_t *partial,
+	const uint8_t *fragment,
+	const struct powervr_sync *waits,
+	unsigned wait_count,
+	struct powervr_render_marks *marks)
+{
+	struct powervr_render_context *context;
+	struct powervr_render_sequence *sequence;
+	struct powervr_render_request request;
+	struct powervr_kick geometry_kick;
+	struct powervr_kick partial_kick;
+	struct powervr_kick fragment_kick;
+	uint32_t command[POWERVR_COMMAND_WORDS];
+	uint32_t cleanup;
+	uint32_t bytes;
+	int error;
+
+	/* Refuses a session without a render context and a half that does not exist. */
+	context = session->render_context;
+	if (context == NULL || half > 1U)
+		return EINVAL;
+
+	/* What the render's commands name: the timelines and their next values, the data set, the waits. */
+	request.geometry_timeline = powervr_object_address(&context->geometry.timeline, 0);
+	request.geometry_value = context->geometry.submitted + 1U;
+	request.fragment_timeline = powervr_object_address(&context->fragment.timeline, 0);
+	request.fragment_value = context->fragment.submitted + 2U;
+	request.target_data = powervr_target_data_address(target, half);
+	request.waits = waits;
+	request.wait_count = wait_count;
+	request.geometry = geometry;
+	request.partial = partial;
+	request.fragment = fragment;
+	sequence = &context->sequence;
+	error = powervr_render_sequence_make(&request, sequence);
+	if (error != 0)
+		return error;
+
+	/* Room in both buffers for all of it. */
+	bytes = commands_bytes(sequence->geometry_commands, sequence->geometry_count);
+	error = client_space(&context->geometry, bytes);
+	if (error != 0)
+		return error;
+
+	bytes = commands_bytes(sequence->partial_commands, sequence->partial_count);
+	bytes += commands_bytes(sequence->fragment_commands, sequence->fragment_count);
+	error = client_space(&context->fragment, bytes);
+	if (error != 0)
+		return error;
+
+	/* What the firmware reported of the free lists before, for the render's end to compare. */
+	list_marks(render, &marks->lists);
+
+	/* The geometry and the partial render, then their combined kick. */
+	cleanup = powervr_target_cleanup_address(target, half);
+	commands_put(&context->geometry, sequence->geometry_commands, sequence->geometry_count);
+	commands_put(&context->fragment, sequence->partial_commands, sequence->partial_count);
+	geometry_kick.context = powervr_object_address(&context->record, POWERVR_RENDER_CONTEXT_GEOMETRY);
+	geometry_kick.write_offset = context->geometry.write;
+	geometry_kick.wrap_mask = POWERVR_CLIENT_CCB_BYTES - 1U;
+	geometry_kick.cleanups[0] = cleanup;
+	geometry_kick.cleanup_count = 1;
+	partial_kick.context = powervr_object_address(&context->record, POWERVR_RENDER_CONTEXT_FRAGMENT);
+	partial_kick.write_offset = context->fragment.write;
+	partial_kick.wrap_mask = POWERVR_CLIENT_CCB_BYTES - 1U;
+	partial_kick.cleanup_count = 0;
+	error = powervr_kick_combined_command(&geometry_kick, &partial_kick, command);
+	if (error != 0)
+		return error;
+
+	error = send_command(render, command);
+	if (error != 0)
+		return error;
+
+	/* From here the firmware has the context's jobs. */
+	context->kicked = 1;
+	context->geometry.submitted = request.geometry_value;
+	context->fragment.submitted = request.fragment_value - 1U;
+
+	/* The fragment, then its own kick. */
+	commands_put(&context->fragment, sequence->fragment_commands, sequence->fragment_count);
+	fragment_kick = partial_kick;
+	fragment_kick.write_offset = context->fragment.write;
+	fragment_kick.cleanups[0] = cleanup;
+	fragment_kick.cleanup_count = 1;
+	error = powervr_kick_command(&fragment_kick, command);
+	if (error != 0)
+		return error;
+
+	error = send_command(render, command);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the render is the firmware's; its end is the fragment's value. */
+	context->fragment.submitted = request.fragment_value;
+	marks->geometry_value = request.geometry_value;
+	marks->fragment_value = request.fragment_value;
+	return 0;
+}
+
+/*
+ * Waits, bounded, for a render's fragment to finish and reports its
+ * stages.
+ *
+ * A render that runs out of time names the stage of the first kick whose
+ * timeline did not reach its value; one that finishes says whether its
+ * free lists ran out on the way.
+ */
+int
+powervr_render_finish(
+	struct powervr_render *render,
+	struct powervr_session *session,
+	const struct powervr_render_marks *marks,
+	unsigned milliseconds)
+{
+	struct powervr_render_context *context;
+	struct powervr_list_marks lists;
+	enum powervr_stage stage;
+	uint64_t deadline;
+	uint64_t now;
+	uint32_t geometry_now;
+	uint32_t fragment_now;
+	int stalled;
+	int ran_out;
+
+	/* Refuses a session without a render context. */
+	context = session->render_context;
+	if (context == NULL)
+		return EINVAL;
+
+	/* Reads the fragment's timeline once a tick until it reaches the value or the bound is spent. */
+	deadline = sched_ticks() + ms_ticks(milliseconds);
+	for (;;) {
+		geometry_now = powervr_object_get32(&context->geometry.timeline, POWERVR_SYNC_ADDRESS);
+		fragment_now = powervr_object_get32(&context->fragment.timeline, POWERVR_SYNC_ADDRESS);
+		stalled = powervr_render_stalled(geometry_now, marks->geometry_value, fragment_now, marks->fragment_value, &stage);
+		if (!stalled)
+			break;
+
+		/* Out of time: the stage it stopped in fails with a timeout. */
+		now = sched_ticks();
+		if (now >= deadline) {
+			powervr_stage_fail(stage, POWERVR_REASON_TIMEOUT);
+			return ETIMEDOUT;
+		}
+
+		/* Sleeps one tick. */
+		sched_sleep(now + 1U);
+	}
+
+	/* What the firmware reported of the free lists since the kicks. */
+	mutex_lock(&render->core->lock);
+
+	list_marks(render, &lists);
+
+	mutex_unlock(&render->core->lock);
+
+	/* The TA ran out of free list pages, or did not; the 3D finished. */
+	ran_out = powervr_free_list_ran_out(&marks->lists, &lists);
+	if (ran_out) {
+		powervr_stage_fail(POWERVR_STAGE_TA, POWERVR_REASON_FREE_LIST);
+	} else {
+		powervr_stage_ok(POWERVR_STAGE_TA);
+	}
+	powervr_stage_ok(POWERVR_STAGE_3D);
+
+	/* Succeeded: the render finished. */
 	return 0;
 }
 
@@ -379,7 +600,7 @@ powervr_session_timeline(
 	uint32_t value;
 
 	/* One load through the record's uncached view. */
-	value = powervr_object_get32(&session->timeline, POWERVR_SYNC_ADDRESS);
+	value = powervr_object_get32(&session->compute.timeline, POWERVR_SYNC_ADDRESS);
 
 	/* Succeeded: the value. */
 	return value;
@@ -639,11 +860,8 @@ powervr_render_drain(
 }
 
 /*
- * Stops a session's new work and asks the firmware to clean its context
- * up, without waiting.
- *
- * The firmware's context is the session's only one: the empty jobs of
- * this queue run in its one compute context.
+ * Stops a session's new work and asks the firmware to clean up the first
+ * of its contexts that ran, without waiting; the poll asks for the rest.
  */
 int
 powervr_render_stop_begin(
@@ -655,6 +873,8 @@ powervr_render_stop_begin(
 	struct powervr_session *session;
 	uint32_t command[POWERVR_COMMAND_WORDS];
 	unsigned long enabled;
+	uint32_t context;
+	unsigned which;
 	int sent;
 
 	/* No new kick from here. */
@@ -667,17 +887,19 @@ powervr_render_stop_begin(
 
 	spin_unlock_irqrestore(&render->queue_lock, enabled);
 
-	/* A context that never ran, or a device that is gone, has nothing to ask. */
-	if (!session->kicked || session->cleaned || is_faulted(render))
+	/* No context that ran, or a device that is gone, has nothing to ask. */
+	context = powervr_session_next_cleanup(session, &which);
+	if (context == 0U || is_faulted(render))
 		return 0;
 
 	/* Asks for the cleanup; a full buffer is retried by the poll. */
-	cleanup_command(session, command);
+	cleanup_command(context, command);
 	mutex_lock(&render->core->lock);
 
 	sent = powervr_command_send(render->core, command, &session->stop_slot);
 
 	mutex_unlock(&render->core->lock);
+	session->stop_context = which;
 	session->stop_since = sched_ticks();
 	session->stop_tries = 1;
 	session->stop_sent = 0;
@@ -690,8 +912,8 @@ powervr_render_stop_begin(
 
 /*
  * Reports whether a session's stop is done: EAGAIN while it is not, zero
- * once the firmware cleaned the context up and every callback was
- * delivered, another error when the firmware does not confirm it.
+ * once the firmware cleaned every context that ran up and every callback
+ * was delivered, another error when the firmware does not confirm it.
  */
 int
 powervr_render_stop_poll(
@@ -703,8 +925,10 @@ powervr_render_stop_poll(
 	struct delivery delivery;
 	uint32_t command[POWERVR_COMMAND_WORDS];
 	unsigned long enabled;
+	uint32_t context;
 	uint32_t answer;
 	unsigned outstanding;
+	unsigned which;
 	int sent;
 
 	/* A device in quarantine confirms nothing. */
@@ -714,13 +938,16 @@ powervr_render_stop_poll(
 		return EIO;
 
 	/* A context still to be cleaned up: reads the firmware's answer without waiting. */
-	if (session->kicked && !session->cleaned) {
-		cleanup_command(session, command);
+	context = powervr_session_next_cleanup(session, &which);
+	while (context != 0U) {
+		cleanup_command(context, command);
 		mutex_lock(&render->core->lock);
 
-		/* A cleanup the full buffer refused is sent again. */
-		if (!session->stop_sent) {
+		/* A cleanup the full buffer refused, or the first of a new context, is sent again. */
+		if (!session->stop_sent || session->stop_context != which) {
+			session->stop_context = which;
 			sent = powervr_command_send(render->core, command, &session->stop_slot);
+			session->stop_sent = 0;
 			if (sent == 0)
 				session->stop_sent = 1;
 			answer = POWERVR_RETURN_NONE;
@@ -740,16 +967,19 @@ powervr_render_stop_poll(
 
 		mutex_unlock(&render->core->lock);
 
-		/* Done: the firmware forgot the context. */
-		if ((answer & POWERVR_RETURN_EXECUTED) != 0U) {
-			session->cleaned = 1;
-		} else if (session->stop_tries > CLEANUP_TRIES) {
-			return EBUSY;
-		} else if (sched_ticks() - session->stop_since > ms_ticks(POWERVR_DEADLINE_MS)) {
-			return ETIMEDOUT;
-		} else {
+		/* Not done yet: out of tries, out of time, or asked again later. */
+		if ((answer & POWERVR_RETURN_EXECUTED) == 0U) {
+			if (session->stop_tries > CLEANUP_TRIES)
+				return EBUSY;
+			if (sched_ticks() - session->stop_since > ms_ticks(POWERVR_DEADLINE_MS))
+				return ETIMEDOUT;
 			return EAGAIN;
 		}
+
+		/* Done: the firmware forgot this context; the next one, if any, is asked for. */
+		powervr_session_cleaned(session, which);
+		session->stop_sent = 0;
+		context = powervr_session_next_cleanup(session, &which);
 	}
 
 	/* Retires what reached the timeline, then ends the rest with an error: their jobs no longer run. */
@@ -1020,15 +1250,15 @@ make_records(
 		return error;
 
 	/* The command buffer's control and the buffer. */
-	error = powervr_object_create(heap, POWERVR_CLIENT_CONTROL_BYTES, POWERVR_HEAP_ANYWHERE, POWERVR_MIPS_UNCACHED, &session->client_control);
+	error = powervr_object_create(heap, POWERVR_CLIENT_CONTROL_BYTES, POWERVR_HEAP_ANYWHERE, POWERVR_MIPS_UNCACHED, &session->compute.control);
 	if (error != 0)
 		return error;
-	error = powervr_object_create(heap, POWERVR_CLIENT_CCB_BYTES, POWERVR_HEAP_ANYWHERE, POWERVR_MIPS_UNCACHED, &session->client);
+	error = powervr_object_create(heap, POWERVR_CLIENT_CCB_BYTES, POWERVR_HEAP_ANYWHERE, POWERVR_MIPS_UNCACHED, &session->compute.buffer);
 	if (error != 0)
 		return error;
 
 	/* The timeline word the firmware advances. */
-	error = powervr_object_create(heap, POWERVR_SYNC_BYTES, POWERVR_HEAP_ANYWHERE, POWERVR_MIPS_UNCACHED, &session->timeline);
+	error = powervr_object_create(heap, POWERVR_SYNC_BYTES, POWERVR_HEAP_ANYWHERE, POWERVR_MIPS_UNCACHED, &session->compute.timeline);
 	if (error != 0)
 		return error;
 
@@ -1052,9 +1282,9 @@ destroy_records(
 	/* Each record, unmapped from the firmware's processor, in the reverse of their making. */
 	heap = &render->core->firmware.heap;
 	powervr_object_destroy(heap, &session->context);
-	powervr_object_destroy(heap, &session->timeline);
-	powervr_object_destroy(heap, &session->client);
-	powervr_object_destroy(heap, &session->client_control);
+	powervr_object_destroy(heap, &session->compute.timeline);
+	powervr_object_destroy(heap, &session->compute.buffer);
+	powervr_object_destroy(heap, &session->compute.control);
 	powervr_object_destroy(heap, &session->context_state);
 	powervr_object_destroy(heap, &session->memory_context);
 }
@@ -1082,16 +1312,16 @@ fill_records(
 	powervr_object_put32(&session->memory_context, POWERVR_MEMORY_CONTEXT_SET, POWERVR_NO_REGISTER_SET);
 
 	/* The command buffer's control: empty, with its wrap mask. */
-	powervr_object_put32(&session->client_control, POWERVR_CLIENT_WRITE, 0);
-	powervr_object_put32(&session->client_control, POWERVR_CLIENT_READ, 0);
-	powervr_object_put32(&session->client_control, POWERVR_CLIENT_DEPENDENCY, 0);
-	powervr_object_put32(&session->client_control, POWERVR_CLIENT_WRAP_MASK, POWERVR_CLIENT_CCB_BYTES - 1U);
-	session->client_write = 0;
+	powervr_object_put32(&session->compute.control, POWERVR_CLIENT_WRITE, 0);
+	powervr_object_put32(&session->compute.control, POWERVR_CLIENT_READ, 0);
+	powervr_object_put32(&session->compute.control, POWERVR_CLIENT_DEPENDENCY, 0);
+	powervr_object_put32(&session->compute.control, POWERVR_CLIENT_WRAP_MASK, POWERVR_CLIENT_CCB_BYTES - 1U);
+	session->compute.write = 0;
 
 	/* The compute context's common part; the rest stays zero. */
 	context = &session->context;
-	powervr_object_put32(context, POWERVR_CONTEXT_CCB_CONTROL, powervr_object_address(&session->client_control, 0));
-	powervr_object_put32(context, POWERVR_CONTEXT_CCB, powervr_object_address(&session->client, 0));
+	powervr_object_put32(context, POWERVR_CONTEXT_CCB_CONTROL, powervr_object_address(&session->compute.control, 0));
+	powervr_object_put32(context, POWERVR_CONTEXT_CCB, powervr_object_address(&session->compute.buffer, 0));
 	powervr_object_put32(context, POWERVR_CONTEXT_STATE, powervr_object_address(&session->context_state, 0));
 	powervr_object_put32(context, POWERVR_CONTEXT_PRIORITY, 0);
 	powervr_object_put32(context, POWERVR_CONTEXT_DATA_MASTER, POWERVR_DATA_MASTER_COMPUTE);
@@ -1107,7 +1337,7 @@ fill_records(
  */
 static int
 client_space(
-	const struct powervr_session *session,
+	const struct powervr_client *client,
 	uint32_t bytes)
 {
 	uint32_t read;
@@ -1117,8 +1347,8 @@ client_space(
 	uint32_t free_bytes;
 
 	/* What is left before the end; a sequence that does not fit takes the rest for padding. */
-	write = session->client_write;
-	read = powervr_object_get32(&session->client_control, POWERVR_CLIENT_READ);
+	write = client->write;
+	read = powervr_object_get32(&client->control, POWERVR_CLIENT_READ);
 	remaining = POWERVR_CLIENT_CCB_BYTES - write;
 	required = bytes;
 	if (remaining < bytes + POWERVR_HEADER_BYTES)
@@ -1140,7 +1370,7 @@ client_space(
  */
 static void
 client_put(
-	struct powervr_session *session,
+	struct powervr_client *client,
 	uint32_t type,
 	uint32_t size,
 	const uint32_t *data,
@@ -1151,31 +1381,31 @@ client_put(
 	uint32_t index;
 
 	/* Pads the rest of the buffer when the command and a padding header would not fit. */
-	remaining = POWERVR_CLIENT_CCB_BYTES - session->client_write;
+	remaining = POWERVR_CLIENT_CCB_BYTES - client->write;
 	if (remaining < size + POWERVR_HEADER_BYTES + POWERVR_HEADER_BYTES) {
 		for (index = 0; index < POWERVR_HEADER_BYTES; index += 4U)
-			powervr_object_put32(&session->client, session->client_write + index, 0);
-		powervr_object_put32(&session->client, session->client_write + POWERVR_HEADER_TYPE, POWERVR_CLIENT_PADDING);
-		powervr_object_put32(&session->client, session->client_write + POWERVR_HEADER_SIZE, remaining - POWERVR_HEADER_BYTES);
-		session->client_write = 0;
+			powervr_object_put32(&client->buffer, client->write + index, 0);
+		powervr_object_put32(&client->buffer, client->write + POWERVR_HEADER_TYPE, POWERVR_CLIENT_PADDING);
+		powervr_object_put32(&client->buffer, client->write + POWERVR_HEADER_SIZE, remaining - POWERVR_HEADER_BYTES);
+		client->write = 0;
 	}
 
 	/* The header: the type and the size, the rest zero. */
-	offset = session->client_write;
+	offset = client->write;
 	for (index = 0; index < POWERVR_HEADER_BYTES; index += 4U)
-		powervr_object_put32(&session->client, offset + index, 0);
-	powervr_object_put32(&session->client, offset + POWERVR_HEADER_TYPE, type);
-	powervr_object_put32(&session->client, offset + POWERVR_HEADER_SIZE, (size + 7U) & ~7U);
+		powervr_object_put32(&client->buffer, offset + index, 0);
+	powervr_object_put32(&client->buffer, offset + POWERVR_HEADER_TYPE, type);
+	powervr_object_put32(&client->buffer, offset + POWERVR_HEADER_SIZE, (size + 7U) & ~7U);
 
 	/* The command's words behind it. */
 	for (index = 0; index < words; index++)
-		powervr_object_put32(&session->client, offset + POWERVR_HEADER_BYTES + index * 4U, data[index]);
+		powervr_object_put32(&client->buffer, offset + POWERVR_HEADER_BYTES + index * 4U, data[index]);
 
 	/* Moves the host's write offset past it. */
-	session->client_write = (offset + POWERVR_HEADER_BYTES + ((size + 7U) & ~7U)) & (POWERVR_CLIENT_CCB_BYTES - 1U);
+	client->write = (offset + POWERVR_HEADER_BYTES + ((size + 7U) & ~7U)) & (POWERVR_CLIENT_CCB_BYTES - 1U);
 }
 
-/* Sends a kick naming the session's context and the host's write offset. */
+/* Sends a kick naming the session's compute context and the host's write offset. */
 static int
 send_kick(
 	struct powervr_render *render,
@@ -1183,7 +1413,6 @@ send_kick(
 {
 	uint32_t command[POWERVR_COMMAND_WORDS];
 	uint32_t index;
-	uint32_t slot;
 	int error;
 
 	/* The kick: the context, the new write offset, the wrap mask, no cleanup. */
@@ -1191,11 +1420,29 @@ send_kick(
 		command[index] = 0;
 	command[POWERVR_COMMAND_TYPE / 4U] = POWERVR_COMMAND_KICK;
 	command[(POWERVR_COMMAND_DATA + POWERVR_KICK_CONTEXT) / 4U] = powervr_object_address(&session->context, 0);
-	command[(POWERVR_COMMAND_DATA + POWERVR_KICK_WRITE_OFFSET) / 4U] = session->client_write;
+	command[(POWERVR_COMMAND_DATA + POWERVR_KICK_WRITE_OFFSET) / 4U] = session->compute.write;
 	command[(POWERVR_COMMAND_DATA + POWERVR_KICK_WRAP_MASK) / 4U] = POWERVR_CLIENT_CCB_BYTES - 1U;
 	command[(POWERVR_COMMAND_DATA + POWERVR_KICK_CLEANUPS) / 4U] = 0;
 
-	/* Orders the commands in the session's buffer before the kick that names them. */
+	/* Sends it after the commands it names. */
+	error = send_command(render, command);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the firmware will look at the context. */
+	return 0;
+}
+
+/* Sends a kick after a barrier that orders the commands it names before it, waiting while the kernel's buffer is full. */
+static int
+send_command(
+	struct powervr_render *render,
+	const uint32_t command[POWERVR_COMMAND_WORDS])
+{
+	uint32_t slot;
+	int error;
+
+	/* Orders the commands in the context's buffer before the kick that names them. */
 	kern_io_barrier();
 
 	/* Sends it, waiting while the kernel's buffer is full. */
@@ -1203,7 +1450,7 @@ send_kick(
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the firmware will look at the context. */
+	/* Succeeded: the command is sent. */
 	return 0;
 }
 
@@ -1242,10 +1489,10 @@ send_waiting(
 	return 0;
 }
 
-/* Builds the cleanup command for the session's compute context. */
+/* Builds the cleanup command for a common context named by its firmware address. */
 static void
 cleanup_command(
-	const struct powervr_session *session,
+	uint32_t context,
 	uint32_t command[POWERVR_COMMAND_WORDS])
 {
 	uint32_t index;
@@ -1255,7 +1502,7 @@ cleanup_command(
 		command[index] = 0;
 	command[POWERVR_COMMAND_TYPE / 4U] = POWERVR_COMMAND_CLEANUP;
 	command[(POWERVR_COMMAND_DATA + POWERVR_CLEANUP_TYPE) / 4U] = POWERVR_CLEANUP_COMMON_CONTEXT;
-	command[(POWERVR_COMMAND_DATA + POWERVR_CLEANUP_CONTEXT) / 4U] = powervr_object_address(&session->context, 0);
+	command[(POWERVR_COMMAND_DATA + POWERVR_CLEANUP_CONTEXT) / 4U] = context;
 }
 
 /*
@@ -1506,10 +1753,12 @@ handle_notice(
 	struct powervr_session *session;
 	struct powervr_reset_notice notice;
 	struct powervr_reset_stage stage;
+	enum powervr_context_kind kind;
 	uint8_t data[POWERVR_RESET_BYTES];
 	unsigned long enabled;
 	uint32_t index;
 	uint32_t word;
+	int named;
 	int all;
 
 	/* The node the pass runs for. */
@@ -1539,12 +1788,21 @@ handle_notice(
 	powervr_reset_notice_read(data, &notice);
 	all = (notice.flags & POWERVR_RESET_FLAG_ALL) != 0U;
 	for (session = render->sessions; session != NULL; session = session->next) {
-		if (!all && session->identity != notice.context)
+		/* Which of the session's contexts the notice names, if any. */
+		named = 0;
+		kind = POWERVR_CONTEXT_COMPUTE;
+		if (session->identity == notice.context) {
+			named = 1;
+		} else if (session->render_context != NULL && session->render_context->identity == notice.context) {
+			named = 1;
+			kind = POWERVR_CONTEXT_RENDER;
+		}
+		if (!all && !named)
 			continue;
 
-		/* The stage the context's master names, with the fault's address or the reset's reason. */
-		if (session->identity == notice.context) {
-			powervr_reset_stage_of(&notice, POWERVR_CONTEXT_COMPUTE, &stage);
+		/* The stage the context's kind and master name, with the fault's address or the reset's reason. */
+		if (named) {
+			powervr_reset_stage_of(&notice, kind, &stage);
 			powervr_stage_fail_value(stage.stage, stage.reason, stage.value);
 		}
 
@@ -1558,6 +1816,58 @@ handle_notice(
 		if (!all)
 			break;
 	}
+}
+
+/* Counts the bytes a run of commands takes in a context's buffer, each behind its header. */
+static uint32_t
+commands_bytes(
+	const struct powervr_client_command *commands,
+	unsigned count)
+{
+	uint32_t bytes;
+	unsigned index;
+
+	/* Each command's header and its size aligned to 8. */
+	bytes = 0;
+	for (index = 0; index < count; index++)
+		bytes += POWERVR_HEADER_BYTES + ((commands[index].size + 7U) & ~7U);
+
+	/* Succeeded: the bytes. */
+	return bytes;
+}
+
+/* Writes a run of commands into a context's buffer; the caller checked the room. */
+static void
+commands_put(
+	struct powervr_client *client,
+	const struct powervr_client_command *commands,
+	unsigned count)
+{
+	uint32_t words[RENDER_COMMAND_WORDS];
+	unsigned index;
+	uint32_t length;
+
+	/* Each command's bytes as words, behind its header. */
+	for (index = 0; index < count; index++) {
+		length = commands[index].size / 4U;
+		kern_memcpy(words, commands[index].data, (size_t)length * 4U);
+		client_put(client, commands[index].type, commands[index].size, words, length);
+	}
+}
+
+/* Copies what the firmware reported of the free lists into a render's marks; the core's lock is held. */
+static void
+list_marks(
+	const struct powervr_render *render,
+	struct powervr_list_marks *marks)
+{
+	struct powervr_target_events events;
+
+	/* The three counts a render compares. */
+	powervr_render_target_events(render, &events);
+	marks->grow_requests = events.grow_requests;
+	marks->partial_renders = events.partial_renders;
+	marks->out_of_memory = events.out_of_memory;
 }
 
 /* Converts milliseconds to scheduler ticks, rounding up. */

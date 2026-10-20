@@ -24,6 +24,7 @@
 #include "drivers/gpu/powervr/gpu-mmu.h"
 #include "drivers/gpu/powervr/render.h"
 #include "drivers/gpu/powervr/render-target-layout.h"
+#include "drivers/gpu/powervr/render-kick-layout.h"
 
 /*
  * The most a session holds, the largest allocation, and how many native
@@ -151,14 +152,61 @@ struct powervr_target_events {
 };
 
 /*
+ * One command buffer of a firmware context: its control block, the
+ * buffer, the timeline word the firmware advances after the context's
+ * jobs, all blocks of the firmware's heap; write is the host's write
+ * offset into the buffer and submitted the last timeline value a job
+ * was given.  All of it changes under the core's lock.
+ */
+struct powervr_client {
+	struct powervr_object control;
+	struct powervr_object buffer;
+	struct powervr_object timeline;
+	uint32_t write;
+	uint32_t submitted;
+};
+
+/*
+ * A session's render context: the firmware's record of it (the geometry
+ * and fragment contexts' common parts and the static state its switch
+ * uses), each context's own state block, command buffer and timeline,
+ * all in the firmware's heap; the memory the switch uses in the
+ * session's windows (the VDM call stack and the VDM and TA state in the
+ * general one, each buffer's shared register and persistent temporary
+ * state and its data sequencer programs in the data sequencer's, the
+ * shading cluster programs in the cluster's), the commands of the render
+ * being kicked, the identity the firmware names it by, whether it was
+ * kicked, and which of its contexts the firmware cleaned up.  Everything
+ * changes under the core's lock once the context is made.
+ */
+struct powervr_render_context {
+	struct powervr_object record;
+	struct powervr_object geometry_state;
+	struct powervr_object fragment_state;
+	struct powervr_client geometry;
+	struct powervr_client fragment;
+	struct powervr_resource *switch_memory;
+	struct powervr_buffer *programs[2];
+	uint64_t program_places[2];
+	struct powervr_buffer *shaders;
+	uint64_t shader_place;
+	struct powervr_render_sequence sequence;
+	uint32_t identity;
+	unsigned kicked;
+	unsigned geometry_cleaned;
+	unsigned fragment_cleaned;
+};
+
+/*
  * One open of the render node.
  *
  * Mmu and space are the session's memory context; the firmware records
- * (its memory context, its compute context and state, the context's
- * command buffer and control, and the timeline word the firmware
- * advances) are blocks of the firmware's heap, changed under the core's
- * lock.  Client_write is the host's write offset into the context's
- * buffer.  The pending ring, its count of callbacks not yet delivered,
+ * (its memory context, its compute context and state, and the compute
+ * context's command buffer) are blocks of the firmware's heap, changed
+ * under the core's lock.  The render context (its geometry and fragment
+ * contexts) is made by the first render and changes under the core's
+ * lock too.  Stop_context says which of the session's contexts the
+ * cleanup in flight names.  The pending ring, its count of callbacks not yet delivered,
  * the job markers and their reserved count, and the stop flags are under
  * the render node's queue lock.  Blobs lists the session's blobs and
  * imports by identifier, and vk is the Vulkan executor's session (made
@@ -179,11 +227,8 @@ struct powervr_session {
 	struct powervr_object memory_context;
 	struct powervr_object context;
 	struct powervr_object context_state;
-	struct powervr_object client_control;
-	struct powervr_object client;
-	struct powervr_object timeline;
+	struct powervr_client compute;
 	uint32_t identity;
-	uint32_t client_write;
 	uint32_t submitted;
 	uint32_t next_resource;
 	unsigned resources;
@@ -195,6 +240,7 @@ struct powervr_session {
 	unsigned cleaned;
 	unsigned stopping;
 	unsigned stop_sent;
+	unsigned stop_context;
 	uint32_t stop_slot;
 	uint64_t stop_since;
 	unsigned stop_tries;
@@ -206,7 +252,21 @@ struct powervr_session {
 	unsigned reserved;
 	struct powervr_vk_session *vk;
 	struct powervr_targets *targets;
+	struct powervr_render_context *render_context;
 	unsigned abandoned;
+};
+
+/*
+ * The shading cluster programs every render context's switch uses: the
+ * shared register store and load, built once when the node starts, and
+ * whether they were.
+ */
+struct powervr_switch_shaders {
+	uint8_t store[512];
+	uint8_t load[512];
+	size_t store_bytes;
+	size_t load_bytes;
+	unsigned built;
 };
 
 /*
@@ -242,6 +302,7 @@ struct powervr_render {
 	struct powervr_session *kept_sessions;
 	struct powervr_free_list *free_lists;
 	struct powervr_target_events target_events;
+	struct powervr_switch_shaders switch_shaders;
 	uint32_t next_free_list;
 	unsigned faulted;
 	unsigned lost;
@@ -418,5 +479,69 @@ void powervr_targets_notice(struct powervr_render *render, uint32_t type, const 
 
 /* Copies what the firmware reported of the free lists; the core's lock is held. */
 void powervr_render_target_events(const struct powervr_render *render, struct powervr_target_events *events);
+
+/* Builds the shading cluster programs of a render context's switch; the node is starting. */
+int powervr_render_switch_shaders(struct powervr_render *render);
+
+/*
+ * Finds or makes a session's render context: its geometry and fragment
+ * contexts, their command buffers and timelines, the record with its
+ * static state, and the switch's buffers and programs.  The core's lock
+ * is not held.
+ */
+int powervr_session_render_context(struct powervr_render *render, struct powervr_session *session, struct powervr_render_context **result);
+
+/* Returns a session's render context once the firmware no longer uses it. */
+void powervr_render_context_destroy(struct powervr_render *render, struct powervr_session *session);
+
+/*
+ * Returns a kept session's render context once the firmware that knew it
+ * is gone; the core's lock is held.
+ */
+void powervr_render_context_discard(struct powervr_session *session);
+
+/*
+ * Reports the firmware address of the next context of a session the
+ * firmware still has to clean up, or zero when none is left: the compute
+ * context, then the render context's geometry and fragment contexts.
+ */
+uint32_t powervr_session_next_cleanup(const struct powervr_session *session, unsigned *which);
+
+/* Notes that the firmware cleaned up the context powervr_session_next_cleanup() named. */
+void powervr_session_cleaned(struct powervr_session *session, unsigned which);
+
+/*
+ * What a render's kicks leave to wait on: the timeline words and the
+ * values its geometry and fragment write, and what the firmware had
+ * reported of the free lists before it ran.
+ */
+struct powervr_render_marks {
+	uint32_t geometry_value;
+	uint32_t fragment_value;
+	struct powervr_list_marks lists;
+};
+
+/*
+ * Kicks one render on a session's render context: the geometry and its
+ * partial render in one combined kick, then the fragment, all on one
+ * half of a render target, after the syncs it waits for; the core's lock
+ * is held.
+ */
+int powervr_session_kick_render(struct powervr_render *render, struct powervr_session *session, struct powervr_target *target, unsigned half, const uint8_t *geometry, const uint8_t *partial, const uint8_t *fragment, const struct powervr_sync *waits, unsigned wait_count, struct powervr_render_marks *marks);
+
+/*
+ * Waits, bounded, for a render's fragment to finish and reports its
+ * stages: ok for the TA and the 3D, fail(free list) for the TA when its
+ * lists ran out, and fail(timeout) for the stage it stopped in;
+ * ETIMEDOUT when it did not finish.
+ */
+int powervr_render_finish(struct powervr_render *render, struct powervr_session *session, const struct powervr_render_marks *marks, unsigned milliseconds);
+
+/*
+ * Runs the driver's own render on the core and reports how it went.
+ * Weak: only a test kernel built with CONFIG_POWERVR_RENDER_CHECK has
+ * it.
+ */
+extern void powervr_render_check(struct powervr_render *render) __attribute__((weak));
 
 #endif
