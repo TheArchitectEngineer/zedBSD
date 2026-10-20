@@ -23,6 +23,8 @@
 #include "internal.h"
 #include "userland/desktop/libkeiland/ui/shaders.h"
 #include "userland/desktop/wayland/shaders.h"
+#include "userland/tests/vkdemo/shaders.h"
+#include "userland/tests/vkstage/shader.h"
 #include "frame-host.h"
 
 /* The places of the reply region: the replies from 0, the trailer in the last 20 bytes. */
@@ -89,7 +91,7 @@
 #endif
 
 /* Local objects whose pointers are the handles libvulkan's encoders turn into wire identities. */
-static struct vulkan_object objects[64];
+static struct vulkan_object objects[256];
 
 static int failures;
 static int passes;
@@ -1816,4 +1818,1100 @@ replies_keiland(
 	expect_opcode(&reader, GPU_OP_QUEUE_SUBMIT, "submit B");
 	*submit_b = vulkan_read_u32(&reader);
 	check(reader.error == VK_SUCCESS, "keiland replies read");
+}
+
+/*
+ * The scene frames (ws269-p009, the frames of vkstage and vkdemo): each
+ * builds its objects in one memory and records its command buffer as
+ * userland/tests/vkstage/main.c (draw, sample, depth) or
+ * userland/tests/vkdemo/renderer.c (the upload and two frames of the
+ * cuboid) call libvulkan, with libvulkan's encodings of each call.  The
+ * replies each command has are noted in order as the frame is written
+ * and checked by replies_scene.
+ */
+
+/* The scene's objects: a scene's identities are its base plus these. */
+#define S_MEMORY	0U
+#define S_COLOR		1U
+#define S_COLOR_VIEW	2U
+#define S_DEPTH		3U
+#define S_DEPTH_VIEW	4U
+#define S_VERTEX	5U
+#define S_READBACK	6U
+#define S_TEXTURE	7U
+#define S_TEXTURE_VIEW	8U
+#define S_UPLOAD	9U
+#define S_SAMPLER	10U
+#define S_PASS		11U
+#define S_FRAMEBUFFER	12U
+#define S_VERT		13U
+#define S_FRAG		14U
+#define S_SET_LAYOUT	15U
+#define S_LAYOUT	16U
+#define S_PIPELINE	17U
+#define S_POOL		18U
+#define S_SET		19U
+#define S_COMMAND	20U
+#define S_FENCE		21U
+#define S_COMMAND_POOL	22U
+#define S_OBJECTS	23U
+
+/* Where each object is bound in the scene's memory. */
+#define S_AT_COLOR	0x000000U
+#define S_AT_DEPTH	0x100000U
+#define S_AT_TEXTURE	0x200000U
+#define S_AT_VERTEX	0x280000U
+#define S_AT_UPLOAD	0x290000U
+#define S_AT_READBACK	0x300000U
+#define S_MEMORY_BYTES	0x400000U
+
+/* One scene: its target, depth, texture, push constants, vertices and shaders. */
+struct scene {
+	uint64_t base;
+	uint32_t width;
+	uint32_t height;
+	int depth;
+	uint32_t texture_edge;
+	uint32_t texture_offset;
+	uint32_t push_bytes;
+	uint32_t vertex_count;
+	VkPrimitiveTopology topology;
+	uint32_t stride;
+	VkFormat attribute_formats[2];
+	uint32_t attribute_offsets[2];
+	const uint32_t *vertex;
+	size_t vertex_bytes;
+	const uint32_t *fragment;
+	size_t fragment_bytes;
+	float background[4];
+	int vkdemo;
+	uint32_t frames;
+};
+
+/* A reply the scene's frame asks for: its opcode, the identity it names and its shape. */
+#define REPLY_CREATED	'c'
+#define REPLY_RESULT	'r'
+#define REPLY_LISTED	'l'
+#define REPLY_PIPELINE	'p'
+#define REPLY_VOID	'v'
+#define REPLY_SUBMIT	's'
+
+struct scene_reply {
+	uint32_t opcode;
+	uint64_t identity;
+	char shape;
+};
+
+static struct scene_reply scene_replies[96];
+static unsigned scene_reply_count;
+
+/* Notes the next reply the frame asks for. */
+static void
+scene_expect(
+	uint32_t opcode,
+	uint64_t identity,
+	char shape)
+{
+	if (scene_reply_count < sizeof(scene_replies) / sizeof(scene_replies[0])) {
+		scene_replies[scene_reply_count].opcode = opcode;
+		scene_replies[scene_reply_count].identity = identity;
+		scene_replies[scene_reply_count].shape = shape;
+	}
+	scene_reply_count++;
+}
+
+/* The scenes, in the order of FRAME_SCENE_*. */
+static const struct scene scenes[FRAME_SCENES] = {
+	/* vkstage draw: a green triangle of three vertices over the blue background. */
+	{ 100, 64, 64, 0, 0, 0, 0, 3, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 28,
+	  { VK_FORMAT_R32G32B32_SFLOAT, VK_FORMAT_R32G32B32A32_SFLOAT }, { 0, 12 },
+	  vkstage_colour_vert, sizeof(vkstage_colour_vert), vkstage_colour_frag, sizeof(vkstage_colour_frag),
+	  { 0.0f, 0.0f, 1.0f, 1.0f }, 0, 1 },
+	/* vkstage sample: a strip of four over the whole image, sampling a 4x4 texture. */
+	{ 130, 64, 64, 0, 4, 0, 0, 4, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP, 16,
+	  { VK_FORMAT_R32G32_SFLOAT, VK_FORMAT_R32G32_SFLOAT }, { 0, 8 },
+	  vkstage_texture_vert, sizeof(vkstage_texture_vert), vkstage_texture_frag, sizeof(vkstage_texture_frag),
+	  { 0.0f, 0.0f, 1.0f, 1.0f }, 0, 1 },
+	/* vkstage depth: two triangles, the near one first, with a D32 depth cleared to 1.0. */
+	{ 160, 64, 64, 1, 0, 0, 0, 6, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 28,
+	  { VK_FORMAT_R32G32B32_SFLOAT, VK_FORMAT_R32G32B32A32_SFLOAT }, { 0, 12 },
+	  vkstage_colour_vert, sizeof(vkstage_colour_vert), vkstage_colour_frag, sizeof(vkstage_colour_frag),
+	  { 0.0f, 0.0f, 1.0f, 1.0f }, 0, 1 },
+	/* vkdemo: the textured cuboid of 36 vertices, depth tested, its time a push constant, two frames. */
+	{ 190, 320, 240, 1, 64, 4096, 4, 36, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 20,
+	  { VK_FORMAT_R32G32B32_SFLOAT, VK_FORMAT_R32G32_SFLOAT }, { 0, 12 },
+	  vkdemo_vertex_shader, sizeof(vkdemo_vertex_shader), vkdemo_fragment_shader, sizeof(vkdemo_fragment_shader),
+	  { 16.0f / 255.0f, 24.0f / 255.0f, 40.0f / 255.0f, 1.0f }, 1, 2 },
+};
+
+/* Appends vkCreateImage, its bind at offset and the view of its aspect. */
+static void
+scene_image(
+	struct vulkan_writer *frame,
+	const struct scene *s,
+	uint32_t image,
+	uint32_t view_id,
+	VkFormat format,
+	uint32_t width,
+	uint32_t height,
+	VkImageUsageFlags usage,
+	VkImageAspectFlags aspect,
+	uint64_t offset)
+{
+	VkImageViewCreateInfo view;
+	struct vulkan_writer w;
+
+	create_image(frame, s->base + image, format, width, height, VK_IMAGE_TILING_OPTIMAL, usage, 0);
+	scene_expect(GPU_OP_CREATE_IMAGE, s->base + image, REPLY_CREATED);
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_BIND_IMAGE_MEMORY);
+	vulkan_write_u64(&w, ID_DEVICE);
+	vulkan_encode_handle(&w, handle(s->base + image));
+	vulkan_encode_handle(&w, handle(s->base + S_MEMORY));
+	vulkan_write_u64(&w, offset);
+	append(frame, &w);
+	scene_expect(GPU_OP_BIND_IMAGE_MEMORY, 0, REPLY_RESULT);
+	memset(&view, 0, sizeof(view));
+	view.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	view.image = (VkImage)(uintptr_t)handle(s->base + image);
+	view.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	view.format = format;
+	view.subresourceRange.aspectMask = aspect;
+	view.subresourceRange.levelCount = 1;
+	view.subresourceRange.layerCount = 1;
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_CREATE_IMAGE_VIEW);
+	vulkan_write_u64(&w, ID_DEVICE);
+	vulkan_write_u64(&w, 1);
+	vulkan_encode_VkImageViewCreateInfo(&w, &view);
+	create_tail(&w, s->base + view_id);
+	append(frame, &w);
+	scene_expect(GPU_OP_CREATE_IMAGE_VIEW, s->base + view_id, REPLY_CREATED);
+}
+
+/* Appends vkCreateBuffer of these bytes and usage and its bind at offset. */
+static void
+scene_buffer(
+	struct vulkan_writer *frame,
+	const struct scene *s,
+	uint32_t buffer_id,
+	uint64_t bytes,
+	VkBufferUsageFlags usage,
+	uint64_t offset)
+{
+	VkBufferCreateInfo buffer;
+	struct vulkan_writer w;
+
+	memset(&buffer, 0, sizeof(buffer));
+	buffer.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	buffer.size = bytes;
+	buffer.usage = usage;
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_CREATE_BUFFER);
+	vulkan_write_u64(&w, ID_DEVICE);
+	vulkan_write_u64(&w, 1);
+	vulkan_encode_VkBufferCreateInfo(&w, &buffer);
+	create_tail(&w, s->base + buffer_id);
+	append(frame, &w);
+	scene_expect(GPU_OP_CREATE_BUFFER, s->base + buffer_id, REPLY_CREATED);
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_BIND_BUFFER_MEMORY);
+	vulkan_write_u64(&w, ID_DEVICE);
+	vulkan_encode_handle(&w, handle(s->base + buffer_id));
+	vulkan_encode_handle(&w, handle(s->base + S_MEMORY));
+	vulkan_write_u64(&w, offset);
+	append(frame, &w);
+	scene_expect(GPU_OP_BIND_BUFFER_MEMORY, 0, REPLY_RESULT);
+}
+
+/* Appends the render pass of one cleared, stored colour and, with depth, a cleared D32 not stored, and its framebuffer. */
+static void
+scene_pass(
+	struct vulkan_writer *frame,
+	const struct scene *s)
+{
+	VkAttachmentDescription attachments[2];
+	VkAttachmentReference color;
+	VkAttachmentReference depth;
+	VkSubpassDescription subpass;
+	VkSubpassDependency dependencies[2];
+	VkRenderPassCreateInfo pass;
+	VkFramebufferCreateInfo framebuffer;
+	VkImageView views[2];
+	struct vulkan_writer w;
+
+	memset(attachments, 0, sizeof(attachments));
+	attachments[0].format = VK_FORMAT_R8G8B8A8_UNORM;
+	attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
+	attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	attachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	attachments[0].finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+	attachments[1].format = VK_FORMAT_D32_SFLOAT;
+	attachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
+	attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	attachments[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	attachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	attachments[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	attachments[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+	memset(&color, 0, sizeof(color));
+	color.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	memset(&depth, 0, sizeof(depth));
+	depth.attachment = 1;
+	depth.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+	memset(&subpass, 0, sizeof(subpass));
+	subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+	subpass.colorAttachmentCount = 1;
+	subpass.pColorAttachments = &color;
+	if (s->depth)
+		subpass.pDepthStencilAttachment = &depth;
+	memset(dependencies, 0, sizeof(dependencies));
+	dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+	dependencies[0].srcStageMask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+	dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+	dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+	dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+	dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	dependencies[1].dstStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+	dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+	dependencies[1].dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+	memset(&pass, 0, sizeof(pass));
+	pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+	pass.attachmentCount = s->depth ? 2 : 1;
+	pass.pAttachments = attachments;
+	pass.subpassCount = 1;
+	pass.pSubpasses = &subpass;
+	pass.dependencyCount = s->vkdemo ? 2 : 1;
+	pass.pDependencies = s->vkdemo ? dependencies : &dependencies[1];
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_CREATE_RENDER_PASS);
+	vulkan_write_u64(&w, ID_DEVICE);
+	vulkan_write_u64(&w, 1);
+	vulkan_encode_VkRenderPassCreateInfo(&w, &pass);
+	create_tail(&w, s->base + S_PASS);
+	append(frame, &w);
+	scene_expect(GPU_OP_CREATE_RENDER_PASS, s->base + S_PASS, REPLY_CREATED);
+
+	views[0] = (VkImageView)(uintptr_t)handle(s->base + S_COLOR_VIEW);
+	views[1] = (VkImageView)(uintptr_t)handle(s->base + S_DEPTH_VIEW);
+	memset(&framebuffer, 0, sizeof(framebuffer));
+	framebuffer.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+	framebuffer.renderPass = (VkRenderPass)(uintptr_t)handle(s->base + S_PASS);
+	framebuffer.attachmentCount = pass.attachmentCount;
+	framebuffer.pAttachments = views;
+	framebuffer.width = s->width;
+	framebuffer.height = s->height;
+	framebuffer.layers = 1;
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_CREATE_FRAMEBUFFER);
+	vulkan_write_u64(&w, ID_DEVICE);
+	vulkan_write_u64(&w, 1);
+	vulkan_encode_VkFramebufferCreateInfo(&w, &framebuffer);
+	create_tail(&w, s->base + S_FRAMEBUFFER);
+	append(frame, &w);
+	scene_expect(GPU_OP_CREATE_FRAMEBUFFER, s->base + S_FRAMEBUFFER, REPLY_CREATED);
+}
+
+/* Appends the set layout (one combined image sampler with a texture, none without) and the pipeline layout. */
+static void
+scene_layouts(
+	struct vulkan_writer *frame,
+	const struct scene *s)
+{
+	VkDescriptorSetLayoutBinding binding;
+	VkDescriptorSetLayoutCreateInfo set_layout;
+	VkDescriptorSetLayout set_layout_handle;
+	VkPushConstantRange range;
+	VkPipelineLayoutCreateInfo layout;
+	struct vulkan_writer w;
+
+	memset(&binding, 0, sizeof(binding));
+	binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	binding.descriptorCount = 1;
+	binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+	memset(&set_layout, 0, sizeof(set_layout));
+	set_layout.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	if (s->texture_edge != 0) {
+		set_layout.bindingCount = 1;
+		set_layout.pBindings = &binding;
+	}
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_CREATE_DESCRIPTOR_SET_LAYOUT);
+	vulkan_write_u64(&w, ID_DEVICE);
+	vulkan_write_pointer(&w, &set_layout);
+	vulkan_encode_VkDescriptorSetLayoutCreateInfo(&w, &set_layout);
+	create_tail(&w, s->base + S_SET_LAYOUT);
+	append(frame, &w);
+	scene_expect(GPU_OP_CREATE_DESCRIPTOR_SET_LAYOUT, s->base + S_SET_LAYOUT, REPLY_CREATED);
+
+	set_layout_handle = (VkDescriptorSetLayout)(uintptr_t)handle(s->base + S_SET_LAYOUT);
+	memset(&range, 0, sizeof(range));
+	range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+	range.size = s->push_bytes;
+	memset(&layout, 0, sizeof(layout));
+	layout.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+	layout.setLayoutCount = 1;
+	layout.pSetLayouts = &set_layout_handle;
+	if (s->push_bytes != 0) {
+		layout.pushConstantRangeCount = 1;
+		layout.pPushConstantRanges = &range;
+	}
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_CREATE_PIPELINE_LAYOUT);
+	vulkan_write_u64(&w, ID_DEVICE);
+	vulkan_write_u64(&w, 1);
+	vulkan_encode_VkPipelineLayoutCreateInfo(&w, &layout);
+	create_tail(&w, s->base + S_LAYOUT);
+	append(frame, &w);
+	scene_expect(GPU_OP_CREATE_PIPELINE_LAYOUT, s->base + S_LAYOUT, REPLY_CREATED);
+}
+
+/*
+ * Appends vkCreateGraphicsPipelines as vkstage_create_pipeline and
+ * vkdemo's create_pipeline make it (two attributes of one binding, a
+ * static viewport and scissor over the target, no culling, no blending,
+ * with depth a LESS test that writes), encoded as
+ * libvulkan/pipeline.c:pipeline_encode_graphics writes it.
+ */
+static void
+scene_pipeline(
+	struct vulkan_writer *frame,
+	const struct scene *s)
+{
+	VkPipelineShaderStageCreateInfo stages[2];
+	VkVertexInputBindingDescription binding;
+	VkVertexInputAttributeDescription attributes[2];
+	VkPipelineVertexInputStateCreateInfo input;
+	VkPipelineInputAssemblyStateCreateInfo assembly;
+	VkViewport viewport;
+	VkRect2D scissor;
+	VkPipelineViewportStateCreateInfo view;
+	VkPipelineRasterizationStateCreateInfo raster;
+	VkPipelineMultisampleStateCreateInfo multisample;
+	VkPipelineDepthStencilStateCreateInfo depth;
+	VkPipelineColorBlendAttachmentState blend_attachment;
+	VkPipelineColorBlendStateCreateInfo blend;
+	struct vulkan_writer w;
+	unsigned index;
+
+	memset(stages, 0, sizeof(stages));
+	stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+	stages[0].module = (VkShaderModule)(uintptr_t)handle(s->base + S_VERT);
+	stages[0].pName = "main";
+	stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+	stages[1].module = (VkShaderModule)(uintptr_t)handle(s->base + S_FRAG);
+	stages[1].pName = "main";
+	memset(&binding, 0, sizeof(binding));
+	binding.stride = s->stride;
+	binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+	memset(attributes, 0, sizeof(attributes));
+	for (index = 0; index < 2; index++) {
+		attributes[index].location = index;
+		attributes[index].format = s->attribute_formats[index];
+		attributes[index].offset = s->attribute_offsets[index];
+	}
+	memset(&input, 0, sizeof(input));
+	input.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+	input.vertexBindingDescriptionCount = 1;
+	input.pVertexBindingDescriptions = &binding;
+	input.vertexAttributeDescriptionCount = 2;
+	input.pVertexAttributeDescriptions = attributes;
+	memset(&assembly, 0, sizeof(assembly));
+	assembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+	assembly.topology = s->topology;
+	memset(&viewport, 0, sizeof(viewport));
+	viewport.width = (float)s->width;
+	viewport.height = (float)s->height;
+	viewport.maxDepth = 1.0f;
+	memset(&scissor, 0, sizeof(scissor));
+	scissor.extent.width = s->width;
+	scissor.extent.height = s->height;
+	memset(&view, 0, sizeof(view));
+	view.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+	view.viewportCount = 1;
+	view.pViewports = &viewport;
+	view.scissorCount = 1;
+	view.pScissors = &scissor;
+	memset(&raster, 0, sizeof(raster));
+	raster.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+	raster.polygonMode = VK_POLYGON_MODE_FILL;
+	raster.cullMode = VK_CULL_MODE_NONE;
+	raster.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+	raster.lineWidth = 1.0f;
+	memset(&multisample, 0, sizeof(multisample));
+	multisample.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+	multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+	memset(&depth, 0, sizeof(depth));
+	depth.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+	depth.depthTestEnable = VK_TRUE;
+	depth.depthWriteEnable = VK_TRUE;
+	depth.depthCompareOp = VK_COMPARE_OP_LESS;
+	depth.front.compareOp = VK_COMPARE_OP_ALWAYS;
+	depth.back.compareOp = VK_COMPARE_OP_ALWAYS;
+	depth.maxDepthBounds = 1.0f;
+	memset(&blend_attachment, 0, sizeof(blend_attachment));
+	blend_attachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+	if (s->vkdemo) {
+		blend_attachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+		blend_attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+	}
+	memset(&blend, 0, sizeof(blend));
+	blend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+	blend.logicOp = VK_LOGIC_OP_COPY;
+	blend.attachmentCount = 1;
+	blend.pAttachments = &blend_attachment;
+
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_CREATE_GRAPHICS_PIPELINES);
+	vulkan_write_u64(&w, ID_DEVICE);
+	vulkan_write_u64(&w, 0);
+	vulkan_write_u32(&w, 1);
+	vulkan_write_u64(&w, 1);
+	vulkan_write_u32(&w, VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO);
+	vulkan_write_u64(&w, 0);
+	vulkan_write_u32(&w, 0);
+	vulkan_write_u32(&w, 2);
+	vulkan_write_u64(&w, 2);
+	for (index = 0; index < 2; index++)
+		vulkan_encode_VkPipelineShaderStageCreateInfo(&w, &stages[index]);
+	vulkan_write_pointer(&w, &input);
+	vulkan_encode_VkPipelineVertexInputStateCreateInfo(&w, &input);
+	vulkan_write_pointer(&w, &assembly);
+	vulkan_encode_VkPipelineInputAssemblyStateCreateInfo(&w, &assembly);
+	vulkan_write_u64(&w, 0);
+	vulkan_write_pointer(&w, &view);
+	vulkan_encode_VkPipelineViewportStateCreateInfo(&w, &view);
+	vulkan_write_u64(&w, 1);
+	vulkan_encode_VkPipelineRasterizationStateCreateInfo(&w, &raster);
+	vulkan_write_pointer(&w, &multisample);
+	vulkan_encode_VkPipelineMultisampleStateCreateInfo(&w, &multisample);
+	if (s->depth) {
+		/* pipeline_encode_depth: stencil off, so both faces ALWAYS and nothing else. */
+		depth.front.compareOp = VK_COMPARE_OP_ALWAYS;
+		depth.back.compareOp = VK_COMPARE_OP_ALWAYS;
+		depth.minDepthBounds = 0.0f;
+		depth.maxDepthBounds = 1.0f;
+		vulkan_write_pointer(&w, &depth);
+		vulkan_encode_VkPipelineDepthStencilStateCreateInfo(&w, &depth);
+	} else {
+		vulkan_write_u64(&w, 0);
+	}
+	vulkan_write_pointer(&w, &blend);
+	vulkan_encode_VkPipelineColorBlendStateCreateInfo(&w, &blend);
+	vulkan_write_u64(&w, 0);
+	vulkan_encode_handle(&w, handle(s->base + S_LAYOUT));
+	vulkan_encode_handle(&w, handle(s->base + S_PASS));
+	vulkan_write_u32(&w, 0);
+	vulkan_encode_handle(&w, 0);
+	vulkan_write_u32(&w, (uint32_t)-1);
+	vulkan_write_u64(&w, 0);
+	vulkan_write_u64(&w, 1);
+	vulkan_write_u64(&w, s->base + S_PIPELINE);
+	append(frame, &w);
+	scene_expect(GPU_OP_CREATE_GRAPHICS_PIPELINES, s->base + S_PIPELINE, REPLY_PIPELINE);
+}
+
+/* Appends the sampler (nearest, clamped), the pool, the set and its write of the texture. */
+static void
+scene_set(
+	struct vulkan_writer *frame,
+	const struct scene *s)
+{
+	VkSamplerCreateInfo sampler;
+	VkDescriptorPoolSize pool_size;
+	VkDescriptorPoolCreateInfo pool;
+	VkDescriptorSetAllocateInfo allocate;
+	VkDescriptorSetLayout set_layout;
+	struct vulkan_writer w;
+
+	memset(&sampler, 0, sizeof(sampler));
+	sampler.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+	sampler.magFilter = VK_FILTER_NEAREST;
+	sampler.minFilter = VK_FILTER_NEAREST;
+	sampler.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+	sampler.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	sampler.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	sampler.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	if (s->vkdemo) {
+		sampler.maxAnisotropy = 1.0f;
+		sampler.compareOp = VK_COMPARE_OP_ALWAYS;
+	}
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_CREATE_SAMPLER);
+	vulkan_write_u64(&w, ID_DEVICE);
+	vulkan_write_u64(&w, 1);
+	vulkan_encode_VkSamplerCreateInfo(&w, &sampler);
+	create_tail(&w, s->base + S_SAMPLER);
+	append(frame, &w);
+	scene_expect(GPU_OP_CREATE_SAMPLER, s->base + S_SAMPLER, REPLY_CREATED);
+
+	memset(&pool_size, 0, sizeof(pool_size));
+	pool_size.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	pool_size.descriptorCount = 1;
+	memset(&pool, 0, sizeof(pool));
+	pool.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	pool.maxSets = 1;
+	pool.poolSizeCount = 1;
+	pool.pPoolSizes = &pool_size;
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_CREATE_DESCRIPTOR_POOL);
+	vulkan_write_u64(&w, ID_DEVICE);
+	vulkan_write_pointer(&w, &pool);
+	vulkan_encode_VkDescriptorPoolCreateInfo(&w, &pool);
+	create_tail(&w, s->base + S_POOL);
+	append(frame, &w);
+	scene_expect(GPU_OP_CREATE_DESCRIPTOR_POOL, s->base + S_POOL, REPLY_CREATED);
+
+	set_layout = (VkDescriptorSetLayout)(uintptr_t)handle(s->base + S_SET_LAYOUT);
+	memset(&allocate, 0, sizeof(allocate));
+	allocate.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	allocate.descriptorPool = (VkDescriptorPool)(uintptr_t)handle(s->base + S_POOL);
+	allocate.descriptorSetCount = 1;
+	allocate.pSetLayouts = &set_layout;
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_ALLOCATE_DESCRIPTOR_SETS);
+	vulkan_write_u64(&w, ID_DEVICE);
+	vulkan_write_pointer(&w, &allocate);
+	vulkan_encode_VkDescriptorSetAllocateInfo(&w, &allocate);
+	vulkan_write_u64(&w, 1);
+	vulkan_encode_handle(&w, handle(s->base + S_SET));
+	append(frame, &w);
+	scene_expect(GPU_OP_ALLOCATE_DESCRIPTOR_SETS, s->base + S_SET, REPLY_LISTED);
+
+	/* The write as libvulkan/descriptors.c encodes one combined image sampler. */
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_UPDATE_DESCRIPTOR_SETS);
+	vulkan_write_u64(&w, ID_DEVICE);
+	vulkan_write_u32(&w, 1);
+	vulkan_write_u64(&w, 1);
+	vulkan_write_u32(&w, VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET);
+	vulkan_write_u64(&w, 0);
+	vulkan_write_u64(&w, s->base + S_SET);
+	vulkan_write_u32(&w, 0);
+	vulkan_write_u32(&w, 0);
+	vulkan_write_u32(&w, 1);
+	vulkan_write_u32(&w, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+	vulkan_write_u64(&w, 1);
+	vulkan_write_u64(&w, s->base + S_SAMPLER);
+	vulkan_write_u64(&w, s->base + S_TEXTURE_VIEW);
+	vulkan_write_u32(&w, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+	vulkan_write_u64(&w, 0);
+	vulkan_write_u64(&w, 0);
+	vulkan_write_u32(&w, 0);
+	vulkan_write_u64(&w, 0);
+	append(frame, &w);
+	scene_expect(GPU_OP_UPDATE_DESCRIPTOR_SETS, 0, REPLY_VOID);
+}
+
+/* Appends vkBeginCommandBuffer of a one-time recording. */
+static void
+scene_begin(
+	struct vulkan_writer *frame,
+	const struct scene *s)
+{
+	VkCommandBufferBeginInfo begin;
+	struct vulkan_writer w;
+
+	memset(&begin, 0, sizeof(begin));
+	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_BEGIN_COMMAND_BUFFER);
+	vulkan_write_u64(&w, s->base + S_COMMAND);
+	vulkan_write_u64(&w, 1);
+	vulkan_encode_VkCommandBufferBeginInfo(&w, &begin);
+	append(frame, &w);
+	scene_expect(GPU_OP_BEGIN_COMMAND_BUFFER, 0, REPLY_RESULT);
+}
+
+/*
+ * Appends vkEndCommandBuffer, vkQueueSubmit with the scene's fence, the
+ * fence's status (vkWaitForFences), then what the program does before
+ * its next recording: vkstage resets the fence and the command buffer,
+ * vkdemo resets the fence and the pool before its next frame.
+ */
+static void
+scene_submit(
+	struct vulkan_writer *frame,
+	const struct scene *s,
+	int last)
+{
+	struct vulkan_writer w;
+
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_END_COMMAND_BUFFER);
+	vulkan_write_u64(&w, s->base + S_COMMAND);
+	append(frame, &w);
+	scene_expect(GPU_OP_END_COMMAND_BUFFER, 0, REPLY_RESULT);
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_QUEUE_SUBMIT);
+	vulkan_write_u64(&w, ID_QUEUE);
+	vulkan_write_u32(&w, 1);
+	vulkan_write_u64(&w, 1);
+	vulkan_write_u32(&w, VK_STRUCTURE_TYPE_SUBMIT_INFO);
+	vulkan_write_u64(&w, 0);
+	vulkan_write_u32(&w, 0);
+	vulkan_write_u64(&w, 0);
+	vulkan_write_u64(&w, 0);
+	vulkan_write_u32(&w, 1);
+	vulkan_write_u64(&w, 1);
+	vulkan_write_u64(&w, s->base + S_COMMAND);
+	vulkan_write_u32(&w, 0);
+	vulkan_write_u64(&w, 0);
+	vulkan_write_u64(&w, s->base + S_FENCE);
+	append(frame, &w);
+	scene_expect(GPU_OP_QUEUE_SUBMIT, 0, REPLY_SUBMIT);
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_GET_FENCE_STATUS);
+	vulkan_write_u64(&w, ID_DEVICE);
+	vulkan_write_u64(&w, s->base + S_FENCE);
+	append(frame, &w);
+	scene_expect(GPU_OP_GET_FENCE_STATUS, 0, REPLY_RESULT);
+	if (last)
+		return;
+
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_RESET_FENCES);
+	vulkan_write_u64(&w, ID_DEVICE);
+	vulkan_write_u32(&w, 1);
+	vulkan_write_u64(&w, 1);
+	vulkan_write_u64(&w, s->base + S_FENCE);
+	append(frame, &w);
+	scene_expect(GPU_OP_RESET_FENCES, 0, REPLY_RESULT);
+	vulkan_writer_init(&w);
+	if (s->vkdemo) {
+		vulkan_command_begin(&w, GPU_OP_RESET_COMMAND_POOL);
+		vulkan_write_u64(&w, ID_DEVICE);
+		vulkan_write_u64(&w, s->base + S_COMMAND_POOL);
+		vulkan_write_u32(&w, 0);
+		append(frame, &w);
+		scene_expect(GPU_OP_RESET_COMMAND_POOL, 0, REPLY_RESULT);
+	} else {
+		vulkan_command_begin(&w, GPU_OP_RESET_COMMAND_BUFFER);
+		vulkan_write_u64(&w, s->base + S_COMMAND);
+		vulkan_write_u32(&w, 0);
+		append(frame, &w);
+		scene_expect(GPU_OP_RESET_COMMAND_BUFFER, 0, REPLY_RESULT);
+	}
+}
+
+/* Records vkCmdPipelineBarrier of one image's colour layout change. */
+static void
+scene_image_barrier(
+	struct vulkan_writer *frame,
+	const struct scene *s,
+	uint32_t image,
+	VkImageLayout from,
+	VkImageLayout to,
+	VkAccessFlags source_access,
+	VkAccessFlags destination_access,
+	VkPipelineStageFlags source_stage,
+	VkPipelineStageFlags destination_stage)
+{
+	VkImageMemoryBarrier barrier;
+	struct vulkan_writer w;
+
+	memset(&barrier, 0, sizeof(barrier));
+	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	barrier.srcAccessMask = source_access;
+	barrier.dstAccessMask = destination_access;
+	barrier.oldLayout = from;
+	barrier.newLayout = to;
+	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.image = (VkImage)(uintptr_t)handle(s->base + image);
+	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	barrier.subresourceRange.levelCount = 1;
+	barrier.subresourceRange.layerCount = 1;
+	record_for(&w, GPU_OP_CMD_PIPELINE_BARRIER, s->base + S_COMMAND);
+	vulkan_write_u32(&w, source_stage);
+	vulkan_write_u32(&w, destination_stage);
+	vulkan_write_u32(&w, 0);
+	vulkan_write_u32(&w, 0);
+	vulkan_write_u64(&w, 0);
+	vulkan_write_u32(&w, 0);
+	vulkan_write_u64(&w, 0);
+	vulkan_write_u32(&w, 1);
+	vulkan_write_u64(&w, 1);
+	vulkan_encode_VkImageMemoryBarrier(&w, &barrier);
+	append(frame, &w);
+}
+
+/* Records vkCmdPipelineBarrier of one buffer's range (vkdemo) or of all memory (vkstage's host barrier). */
+static void
+scene_memory_barrier(
+	struct vulkan_writer *frame,
+	const struct scene *s,
+	uint32_t buffer,
+	uint64_t bytes,
+	VkAccessFlags source_access,
+	VkAccessFlags destination_access,
+	VkPipelineStageFlags source_stage,
+	VkPipelineStageFlags destination_stage)
+{
+	VkBufferMemoryBarrier barrier;
+	VkMemoryBarrier memory;
+	struct vulkan_writer w;
+
+	record_for(&w, GPU_OP_CMD_PIPELINE_BARRIER, s->base + S_COMMAND);
+	vulkan_write_u32(&w, source_stage);
+	vulkan_write_u32(&w, destination_stage);
+	vulkan_write_u32(&w, 0);
+	if (buffer == 0) {
+		memset(&memory, 0, sizeof(memory));
+		memory.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+		memory.srcAccessMask = source_access;
+		memory.dstAccessMask = destination_access;
+		vulkan_write_u32(&w, 1);
+		vulkan_write_u64(&w, 1);
+		vulkan_encode_VkMemoryBarrier(&w, &memory);
+		vulkan_write_u32(&w, 0);
+		vulkan_write_u64(&w, 0);
+	} else {
+		memset(&barrier, 0, sizeof(barrier));
+		barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+		barrier.srcAccessMask = source_access;
+		barrier.dstAccessMask = destination_access;
+		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.buffer = (VkBuffer)(uintptr_t)handle(s->base + buffer);
+		barrier.size = bytes;
+		vulkan_write_u32(&w, 0);
+		vulkan_write_u64(&w, 0);
+		vulkan_write_u32(&w, 1);
+		vulkan_write_u64(&w, 1);
+		vulkan_encode_VkBufferMemoryBarrier(&w, &barrier);
+	}
+	vulkan_write_u32(&w, 0);
+	vulkan_write_u64(&w, 0);
+	append(frame, &w);
+}
+
+/* Records the texture's upload: into TRANSFER_DST, the copy from the upload buffer, into SHADER_READ_ONLY. */
+static void
+scene_upload(
+	struct vulkan_writer *frame,
+	const struct scene *s)
+{
+	VkBufferImageCopy copy;
+	struct vulkan_writer w;
+
+	if (s->vkdemo)
+		scene_memory_barrier(frame, s, S_UPLOAD, s->texture_offset + s->texture_edge * s->texture_edge * 4U, VK_ACCESS_HOST_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_VERTEX_INPUT_BIT);
+	scene_image_barrier(frame, s, S_TEXTURE, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+	memset(&copy, 0, sizeof(copy));
+	copy.bufferOffset = s->texture_offset;
+	if (s->vkdemo) {
+		copy.bufferRowLength = s->texture_edge;
+		copy.bufferImageHeight = s->texture_edge;
+	}
+	copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	copy.imageSubresource.layerCount = 1;
+	copy.imageExtent.width = s->texture_edge;
+	copy.imageExtent.height = s->texture_edge;
+	copy.imageExtent.depth = 1;
+	record_for(&w, GPU_OP_CMD_COPY_BUFFER_TO_IMAGE, s->base + S_COMMAND);
+	vulkan_encode_handle(&w, handle(s->base + S_UPLOAD));
+	vulkan_encode_handle(&w, handle(s->base + S_TEXTURE));
+	vulkan_write_u32(&w, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+	vulkan_write_u32(&w, 1);
+	vulkan_write_u64(&w, 1);
+	vulkan_encode_VkBufferImageCopy(&w, &copy);
+	append(frame, &w);
+	scene_image_barrier(frame, s, S_TEXTURE, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+}
+
+/*
+ * Records one frame: the render pass with the clears (the background,
+ * with depth 1.0), the pipeline, the set, the vertex buffer, with push
+ * constants the time, the draw, then the copy of the colour into the
+ * readback buffer and the barrier before the host reads it.
+ */
+static void
+scene_draw(
+	struct vulkan_writer *frame,
+	const struct scene *s,
+	float seconds)
+{
+	VkBufferImageCopy copy;
+	VkRect2D area;
+	struct vulkan_writer w;
+	uint32_t words[4];
+	uint32_t index;
+
+	if (s->vkdemo) {
+		scene_memory_barrier(frame, s, S_UPLOAD, s->texture_offset + s->texture_edge * s->texture_edge * 4U, VK_ACCESS_HOST_WRITE_BIT, VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT);
+		scene_memory_barrier(frame, s, S_READBACK, (uint64_t)s->width * s->height * 4U, VK_ACCESS_HOST_READ_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+	}
+
+	/* command_encode_render_begin: a colour clear's tagged words, a depth clear's float and stencil. */
+	memcpy(words, s->background, sizeof(words));
+	record_for(&w, GPU_OP_CMD_BEGIN_RENDER_PASS, s->base + S_COMMAND);
+	vulkan_write_u64(&w, 1);
+	vulkan_write_u32(&w, VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO);
+	vulkan_write_u64(&w, 0);
+	vulkan_encode_handle(&w, handle(s->base + S_PASS));
+	vulkan_encode_handle(&w, handle(s->base + S_FRAMEBUFFER));
+	memset(&area, 0, sizeof(area));
+	area.extent.width = s->width;
+	area.extent.height = s->height;
+	vulkan_encode_VkRect2D(&w, &area);
+	vulkan_write_u32(&w, s->depth ? 2 : 1);
+	vulkan_write_u64(&w, s->depth ? 2 : 1);
+	vulkan_write_u32(&w, 0);
+	vulkan_write_u32(&w, 2);
+	vulkan_write_u64(&w, 4);
+	for (index = 0; index < 4; index++)
+		vulkan_write_u32(&w, words[index]);
+	if (s->depth) {
+		vulkan_write_u32(&w, 1);
+		vulkan_write_float(&w, 1.0f);
+		vulkan_write_u32(&w, 0);
+	}
+	vulkan_write_u32(&w, VK_SUBPASS_CONTENTS_INLINE);
+	append(frame, &w);
+
+	record_for(&w, GPU_OP_CMD_BIND_PIPELINE, s->base + S_COMMAND);
+	vulkan_write_u32(&w, VK_PIPELINE_BIND_POINT_GRAPHICS);
+	vulkan_encode_handle(&w, handle(s->base + S_PIPELINE));
+	append(frame, &w);
+	if (!s->vkdemo && s->texture_edge != 0) {
+		record_for(&w, GPU_OP_CMD_BIND_DESCRIPTOR_SETS, s->base + S_COMMAND);
+		vulkan_write_u32(&w, VK_PIPELINE_BIND_POINT_GRAPHICS);
+		vulkan_encode_handle(&w, handle(s->base + S_LAYOUT));
+		vulkan_write_u32(&w, 0);
+		vulkan_write_u32(&w, 1);
+		vulkan_write_u64(&w, 1);
+		vulkan_encode_handle(&w, handle(s->base + S_SET));
+		vulkan_write_u32(&w, 0);
+		vulkan_write_u64(&w, 0);
+		append(frame, &w);
+	}
+	record_for(&w, GPU_OP_CMD_BIND_VERTEX_BUFFERS, s->base + S_COMMAND);
+	vulkan_write_u32(&w, 0);
+	vulkan_write_u32(&w, 1);
+	vulkan_write_u64(&w, 1);
+	vulkan_encode_handle(&w, handle(s->base + (s->vkdemo ? S_UPLOAD : S_VERTEX)));
+	vulkan_write_u64(&w, 1);
+	vulkan_write_u64(&w, 0);
+	append(frame, &w);
+	if (s->vkdemo) {
+		record_for(&w, GPU_OP_CMD_BIND_DESCRIPTOR_SETS, s->base + S_COMMAND);
+		vulkan_write_u32(&w, VK_PIPELINE_BIND_POINT_GRAPHICS);
+		vulkan_encode_handle(&w, handle(s->base + S_LAYOUT));
+		vulkan_write_u32(&w, 0);
+		vulkan_write_u32(&w, 1);
+		vulkan_write_u64(&w, 1);
+		vulkan_encode_handle(&w, handle(s->base + S_SET));
+		vulkan_write_u32(&w, 0);
+		vulkan_write_u64(&w, 0);
+		append(frame, &w);
+		record_for(&w, GPU_OP_CMD_PUSH_CONSTANTS, s->base + S_COMMAND);
+		vulkan_encode_handle(&w, handle(s->base + S_LAYOUT));
+		vulkan_write_u32(&w, VK_SHADER_STAGE_VERTEX_BIT);
+		vulkan_write_u32(&w, 0);
+		vulkan_write_u32(&w, 4);
+		vulkan_write_u64(&w, 4);
+		vulkan_write_bytes(&w, &seconds, 4);
+		append(frame, &w);
+	}
+	record_for(&w, GPU_OP_CMD_DRAW, s->base + S_COMMAND);
+	vulkan_write_u32(&w, s->vertex_count);
+	vulkan_write_u32(&w, 1);
+	vulkan_write_u32(&w, 0);
+	vulkan_write_u32(&w, 0);
+	append(frame, &w);
+	record_for(&w, GPU_OP_CMD_END_RENDER_PASS, s->base + S_COMMAND);
+	append(frame, &w);
+
+	memset(&copy, 0, sizeof(copy));
+	if (s->vkdemo) {
+		copy.bufferRowLength = s->width;
+		copy.bufferImageHeight = s->height;
+	}
+	copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	copy.imageSubresource.layerCount = 1;
+	copy.imageExtent.width = s->width;
+	copy.imageExtent.height = s->height;
+	copy.imageExtent.depth = 1;
+	record_for(&w, GPU_OP_CMD_COPY_IMAGE_TO_BUFFER, s->base + S_COMMAND);
+	vulkan_encode_handle(&w, handle(s->base + S_COLOR));
+	vulkan_write_u32(&w, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+	vulkan_encode_handle(&w, handle(s->base + S_READBACK));
+	vulkan_write_u32(&w, 1);
+	vulkan_write_u64(&w, 1);
+	vulkan_encode_VkBufferImageCopy(&w, &copy);
+	append(frame, &w);
+	if (s->vkdemo)
+		scene_memory_barrier(frame, s, S_READBACK, (uint64_t)s->width * s->height * 4U, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_HOST_READ_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT);
+	else
+		scene_memory_barrier(frame, s, 0, 0, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_HOST_READ_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT);
+}
+
+/*
+ * One scene's frame: its memory, images, buffers, pass and pipeline in
+ * the order the program creates them, its command pool, buffer and
+ * fence, the texture's upload when it has one, then its frames.
+ */
+size_t
+frame_scene(
+	uint32_t reply_blob,
+	unsigned which,
+	uint8_t **bytes)
+{
+	VkCommandPoolCreateInfo pool;
+	VkCommandBufferAllocateInfo allocate;
+	const struct scene *s;
+	struct vulkan_writer frame;
+	struct vulkan_writer w;
+	uint32_t index;
+
+	s = &scenes[which];
+	scene_reply_count = 0;
+	frame_begin(&frame, reply_blob);
+
+	allocate_memory(&frame, s->base + S_MEMORY, S_MEMORY_BYTES, 0, 0);
+	scene_expect(GPU_OP_ALLOCATE_MEMORY, s->base + S_MEMORY, REPLY_CREATED);
+	scene_buffer(&frame, s, S_READBACK, (uint64_t)s->width * s->height * 4U, VK_BUFFER_USAGE_TRANSFER_DST_BIT, S_AT_READBACK);
+	if (s->vkdemo)
+		scene_buffer(&frame, s, S_UPLOAD, s->texture_offset + s->texture_edge * s->texture_edge * 4U, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, S_AT_UPLOAD);
+	else
+		scene_buffer(&frame, s, S_VERTEX, (uint64_t)s->vertex_count * s->stride, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, S_AT_VERTEX);
+	if (s->texture_edge != 0 && !s->vkdemo)
+		scene_buffer(&frame, s, S_UPLOAD, s->texture_edge * s->texture_edge * 4U, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, S_AT_UPLOAD);
+	if (s->texture_edge != 0)
+		scene_image(&frame, s, S_TEXTURE, S_TEXTURE_VIEW, VK_FORMAT_R8G8B8A8_UNORM, s->texture_edge, s->texture_edge, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_ASPECT_COLOR_BIT, S_AT_TEXTURE);
+	scene_image(&frame, s, S_COLOR, S_COLOR_VIEW, VK_FORMAT_R8G8B8A8_UNORM, s->width, s->height, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_IMAGE_ASPECT_COLOR_BIT, S_AT_COLOR);
+	if (s->depth)
+		scene_image(&frame, s, S_DEPTH, S_DEPTH_VIEW, VK_FORMAT_D32_SFLOAT, s->width, s->height, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_ASPECT_DEPTH_BIT, S_AT_DEPTH);
+
+	/* The command pool, the one command buffer and the fence every submit reuses. */
+	memset(&pool, 0, sizeof(pool));
+	pool.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	if (!s->vkdemo)
+		pool.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_CREATE_COMMAND_POOL);
+	vulkan_write_u64(&w, ID_DEVICE);
+	vulkan_write_u64(&w, 1);
+	vulkan_encode_VkCommandPoolCreateInfo(&w, &pool);
+	create_tail(&w, s->base + S_COMMAND_POOL);
+	append(&frame, &w);
+	scene_expect(GPU_OP_CREATE_COMMAND_POOL, s->base + S_COMMAND_POOL, REPLY_CREATED);
+	memset(&allocate, 0, sizeof(allocate));
+	allocate.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	allocate.commandPool = (VkCommandPool)(uintptr_t)handle(s->base + S_COMMAND_POOL);
+	allocate.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	allocate.commandBufferCount = 1;
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_ALLOCATE_COMMAND_BUFFERS);
+	vulkan_write_u64(&w, ID_DEVICE);
+	vulkan_write_u64(&w, 1);
+	vulkan_encode_VkCommandBufferAllocateInfo(&w, &allocate);
+	vulkan_write_u64(&w, 1);
+	vulkan_write_u64(&w, s->base + S_COMMAND);
+	append(&frame, &w);
+	scene_expect(GPU_OP_ALLOCATE_COMMAND_BUFFERS, s->base + S_COMMAND, REPLY_LISTED);
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_CREATE_FENCE);
+	vulkan_write_u64(&w, ID_DEVICE);
+	vulkan_write_u64(&w, 1);
+	vulkan_write_u32(&w, VK_STRUCTURE_TYPE_FENCE_CREATE_INFO);
+	vulkan_write_u64(&w, 0);
+	vulkan_write_u32(&w, 0);
+	create_tail(&w, s->base + S_FENCE);
+	append(&frame, &w);
+	scene_expect(GPU_OP_CREATE_FENCE, s->base + S_FENCE, REPLY_CREATED);
+
+	/* vkstage uploads the texture before its pass; vkdemo after its descriptors and pipeline. */
+	if (s->texture_edge != 0 && !s->vkdemo) {
+		scene_begin(&frame, s);
+		scene_upload(&frame, s);
+		scene_submit(&frame, s, 0);
+	}
+	if (!s->vkdemo)
+		scene_pass(&frame, s);
+	k_shader(&frame, s->base + S_VERT, s->vertex, s->vertex_bytes);
+	scene_expect(GPU_OP_CREATE_SHADER_MODULE, s->base + S_VERT, REPLY_CREATED);
+	k_shader(&frame, s->base + S_FRAG, s->fragment, s->fragment_bytes);
+	scene_expect(GPU_OP_CREATE_SHADER_MODULE, s->base + S_FRAG, REPLY_CREATED);
+	if (s->vkdemo) {
+		scene_layouts(&frame, s);
+		scene_set(&frame, s);
+		scene_pass(&frame, s);
+	} else {
+		scene_layouts(&frame, s);
+	}
+	scene_pipeline(&frame, s);
+	if (s->texture_edge != 0 && !s->vkdemo)
+		scene_set(&frame, s);
+	if (s->vkdemo) {
+		scene_begin(&frame, s);
+		scene_upload(&frame, s);
+		scene_submit(&frame, s, 0);
+	}
+
+	for (index = 0; index < s->frames; index++) {
+		scene_begin(&frame, s);
+		scene_draw(&frame, s, (float)index);
+		scene_submit(&frame, s, index + 1 == s->frames);
+	}
+
+	return frame_end(&frame, bytes);
+}
+
+/* Checks a scene frame's replies in the order its frame asked for them; results gets each submission's result. */
+unsigned
+replies_scene(
+	uint8_t *reply,
+	uint32_t *results,
+	unsigned capacity)
+{
+	struct vulkan_reader reader;
+	const struct scene_reply *expected;
+	unsigned submits;
+	unsigned index;
+	uint32_t result;
+	char what[64];
+
+	vulkan_reader_init(&reader, NULL, 0);
+	reader.data = reply;
+	reader.bytes = FRAME_REPLY_BYTES - REPLY_TRAILER_BYTES;
+	check(scene_reply_count <= sizeof(scene_replies) / sizeof(scene_replies[0]), "the scene's replies fit the note");
+	submits = 0;
+	for (index = 0; index < scene_reply_count && index < sizeof(scene_replies) / sizeof(scene_replies[0]); index++) {
+		expected = &scene_replies[index];
+		snprintf(what, sizeof(what), "scene reply %u (opcode %u, identity %llu)", index, expected->opcode, (unsigned long long)expected->identity);
+		switch (expected->shape) {
+		case REPLY_CREATED:
+			expect_created(&reader, expected->opcode, expected->identity, what);
+			break;
+		case REPLY_RESULT:
+			expect_result(&reader, expected->opcode, VK_SUCCESS, what);
+			break;
+		case REPLY_LISTED:
+		case REPLY_PIPELINE:
+			expect_opcode(&reader, expected->opcode, what);
+			result = vulkan_read_u32(&reader);
+			check(result == VK_SUCCESS && vulkan_read_u64(&reader) == 1 && vulkan_read_u64(&reader) == expected->identity, what);
+			break;
+		case REPLY_VOID:
+			expect_opcode(&reader, expected->opcode, what);
+			break;
+		default:
+			expect_opcode(&reader, expected->opcode, what);
+			result = vulkan_read_u32(&reader);
+			if (submits < capacity)
+				results[submits] = result;
+			submits++;
+			break;
+		}
+	}
+	check(reader.error == VK_SUCCESS, "scene replies read");
+	return submits;
 }

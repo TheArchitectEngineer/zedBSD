@@ -609,6 +609,8 @@ draw_place(
 	const struct powervr_vk_descriptor_set *set;
 	const struct powervr_draw_attribute *attribute;
 	const struct powervr_shader_input *input;
+	const VkViewport *draw_viewport;
+	const VkRect2D *draw_scissor;
 	struct powervr_data_state state;
 	struct powervr_draw_ppp ppp;
 	struct powervr_draw_vdm vdm;
@@ -712,13 +714,23 @@ draw_place(
 	put_words(memory->draw_pds, pds_slot + DRAW_PDS_COEFFICIENT, graphics->varyings.data, graphics->varyings.data_words);
 	put_words(memory->draw_pds, pds_slot + DRAW_PDS_COEFFICIENT + (graphics->varyings.data_words + 3U) / 4U * 16U, graphics->varyings.code, graphics->varyings.code_words);
 
-	/* The viewport and the scissor, the scissor in its entry of the table. */
-	error = powervr_draw_viewport_words(&draw->viewport, viewport);
+	/*
+	 * The viewport and the scissor, the scissor in its entry of the
+	 * table: the pipeline's own unless it made them dynamic, then the
+	 * ones the command buffer set.
+	 */
+	draw_viewport = &draw->viewport;
+	if (!graphics->fixed.dynamic_viewport)
+		draw_viewport = &graphics->fixed.viewport;
+	draw_scissor = &draw->scissor;
+	if (!graphics->fixed.dynamic_scissor)
+		draw_scissor = &graphics->fixed.scissor;
+	error = powervr_draw_viewport_words(draw_viewport, viewport);
 	if (error != 0)
 		return error;
 
 	kern_memset(&ppp, 0, sizeof(ppp));
-	error = powervr_draw_scissor_words(&draw->viewport, &draw->scissor, scissor, ppp.region_clip);
+	error = powervr_draw_scissor_words(draw_viewport, draw_scissor, scissor, ppp.region_clip);
 	if (error != 0)
 		return error;
 

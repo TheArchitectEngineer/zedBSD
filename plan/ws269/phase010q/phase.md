@@ -5,7 +5,7 @@
 - ID: ws269-p010q（親 [ws269](../ws.md)）
 - Status: in-progress（q1395-i01 で読みの点検と 1 つの直し。実機は未）
 - Disposition: normal
-- Queue: q1395 / q1395-i01（2026-10-20 P1）
+- Queue: q1395 / q1395-i01、q1398 / q1398-i01（2026-10-20 P1）
 
 ## 範囲
 
@@ -42,3 +42,16 @@
 
 - uncached の view で書いた program を GPU の USC・PDS の cache が古いまま持つか（同じ place の program を作り直す時。今は job ごとに新しい buffer を map するので place は変わり得るが同じになることもある）。mainline も PDS・USC の code の cache を明示に invalidate しない（推測: FW が kick ごとに）。
 - SR の H32/L32 の順（p010n）。
+
+## 後半（q1398-i01）: vkstage・vkdemo の frame の host 試験
+
+p009 の executor の host 試験（`tests/p009/frame-host.c` の `frame_scene`・`replies_scene`、`vk-host-test.c`）に、vkstage の draw・sample・depth と vkdemo（texture の upload、depth、push constant の時間 0.0 と 1.0 の 2 frame）の frame を足した。`userland/tests/vkstage/main.c`・`userland/tests/vkdemo/renderer.c` の呼ぶ順（buffer・image・pass・pipeline・pool・fence・upload・draw・copy out・barrier、submit の後の fence と command buffer（vkdemo は pool）の reset）を、libvulkan の encode（`pipeline.c` の static viewport・depth state、`commands.c` の render pass の clear、barrier、copy）のとおりに組んだ。vkdemo に uniform buffer は無い（set は combined image sampler だけ）。kick の stand-in で job の draw の数・頂点数・colour の load/store と clear・depth の有無と load/store/clear 値・set・push の中身・viewport を見る。
+
+- 見つけた誤り: pipeline の static な viewport・scissor（vkstage・vkdemo）が使われず、draw の viewport が 0 のままだった（`render-job.c` は command buffer の set した値だけを見ていた）。`render-job.c` の `draw_place` で、pipeline が dynamic にしていない時は pipeline の値を使うように直した。p010 の job-host-test に、static な pipeline で draw 側を空にした job の確かめを足した（既存の job は dynamic にした）。
+- 見つからなかった物: job の数・順（upload の T、R、copy out の T）、depth の ZLS の入力（CLEAR、DONT_CARE、1.0）、set、vkdemo の push の更新は期待どおり。
+
+| 確かめ（2026-10-20） | 結果 |
+| --- | --- |
+| p009 run.sh | 509 passed, 2 failed（2 つは Keiland の frame の古い期待で、P2 の q1397 で直す物） |
+| p010 run.sh | 全部 0 failed（job-host-test 19/0） |
+| VF2 の vmunix | rc=0、warning 0 |

@@ -32,8 +32,7 @@
 #include "drivers/gpu/powervr/render-job.h"
 #include "drivers/gpu/powervr/transfer-job.h"
 #include "drivers/gpu/powervr/vk.h"
-#include "drivers/gpu/powervr/vk.h"
-#include "drivers/gpu/powervr/render-job.h"
+#include "drivers/gpu/powervr/vk-draw.h"
 #include "frame-host.h"
 
 /* Where the stand-in hands out device addresses, and how far apart. */
@@ -246,6 +245,18 @@ struct kick_entry {
 	uint32_t load_op;
 	uint32_t store_op;
 	int continued;
+	uint32_t width;
+	uint32_t height;
+	uint32_t clear_blue;
+	int depth;
+	uint32_t depth_load_op;
+	uint32_t depth_store_op;
+	uint32_t clear_depth;
+	uint32_t count;
+	int set;
+	uint32_t push_bytes;
+	uint32_t push_first;
+	float viewport_width;
 };
 static struct kick_entry jobs_run[64];
 static unsigned kick_count;
@@ -275,16 +286,34 @@ powervr_render_job_run(
 	struct powervr_session *session,
 	const struct powervr_render_job *job)
 {
+	const struct powervr_vk_graphics *graphics;
+
 	(void)render;
 	(void)session;
 	if (!kick_recording)
 		return ENOTSUP;
 	if (kick_count < 64U) {
+		memset(&jobs_run[kick_count], 0, sizeof(jobs_run[0]));
 		jobs_run[kick_count].kind = 'R';
 		jobs_run[kick_count].draws = job->draw_count;
 		jobs_run[kick_count].load_op = job->colors[0].load_op;
 		jobs_run[kick_count].store_op = job->colors[0].store_op;
 		jobs_run[kick_count].continued = job->continued;
+		jobs_run[kick_count].width = job->width;
+		jobs_run[kick_count].height = job->height;
+		jobs_run[kick_count].clear_blue = job->colors[0].clear[2];
+		jobs_run[kick_count].depth = job->depth.present;
+		jobs_run[kick_count].depth_load_op = job->depth.load_op;
+		jobs_run[kick_count].depth_store_op = job->depth.store_op;
+		jobs_run[kick_count].clear_depth = job->depth.clear_depth;
+		if (job->draw_count != 0) {
+			jobs_run[kick_count].count = job->draws[0].count;
+			jobs_run[kick_count].set = job->draws[0].sets[0] != NULL;
+			jobs_run[kick_count].push_bytes = job->draws[0].push_bytes;
+			memcpy(&jobs_run[kick_count].push_first, job->draws[0].push, 4);
+			graphics = job->draws[0].pipeline;
+			jobs_run[kick_count].viewport_width = graphics->fixed.dynamic_viewport ? job->draws[0].viewport.width : graphics->fixed.viewport.width;
+		}
 		kick_count++;
 	}
 	return 0;
@@ -759,6 +788,81 @@ main(
 		}
 		check(ok && draws == 200U, "keiland B: 200 draws run as 13 jobs in order (12 of 16, one of 8)");
 		kick_recording = 0;
+	}
+
+	/*
+	 * The scene frames, as vkstage and vkdemo call libvulkan: each
+	 * submission's render job is checked for its draw (the vertices, the
+	 * set, the push area (the whole of it; vkdemo's time 0.0 then 1.0),
+	 * the static viewport), its colour's clear
+	 * and store, and with depth the D32 cleared to 1.0 and not stored
+	 * (the ZLS loads nothing and stores nothing); the copy out of the
+	 * colour is a transfer after it.
+	 */
+	{
+		static const char *names[FRAME_SCENES] = { "vkstage draw", "vkstage sample", "vkstage depth", "vkdemo" };
+		static const uint32_t widths[FRAME_SCENES] = { 64, 64, 64, 320 };
+		static const uint32_t heights[FRAME_SCENES] = { 64, 64, 64, 240 };
+		static const uint32_t counts[FRAME_SCENES] = { 3, 4, 6, 36 };
+		static const uint32_t blues[FRAME_SCENES] = { 0x3f800000U, 0x3f800000U, 0x3f800000U, 0x3e20a0a1U };
+		static const int depths[FRAME_SCENES] = { 0, 0, 1, 1 };
+		static const int sets[FRAME_SCENES] = { 0, 1, 0, 1 };
+		static const unsigned uploads[FRAME_SCENES] = { 0, 1, 0, 1 };
+		static const unsigned frames[FRAME_SCENES] = { 1, 1, 1, 2 };
+		uint32_t results[8];
+		unsigned scene;
+		unsigned submits;
+		unsigned index;
+		unsigned at;
+		int ok;
+		char what[128];
+
+		for (scene = 0; scene < FRAME_SCENES; scene++) {
+			kick_recording = 1;
+			kick_count = 0;
+			bytes = frame_scene(reply->identifier, scene, &frame);
+			error = powervr_vk_execute(session.vk, frame, (uint32_t)bytes);
+			free(frame);
+			snprintf(what, sizeof(what), "%s frame runs", names[scene]);
+			check(error == 0, what);
+			memset(results, 0, sizeof(results));
+			submits = replies_scene((uint8_t *)reply->buffer->view, results, 8);
+			ok = submits == uploads[scene] + frames[scene];
+			for (index = 0; index < submits && index < 8; index++)
+				ok = ok && results[index] == VK_SUCCESS;
+			snprintf(what, sizeof(what), "%s: every submission succeeds", names[scene]);
+			check(ok, what);
+			printf("  %s kicks:", names[scene]);
+			for (index = 0; index < kick_count; index++) {
+				if (jobs_run[index].kind == 'R')
+					printf(" R%u(%ux%u, %u vertices, load %u store %u, depth %d load %u store %u, set %d, push %u from %08x, blue %08x, viewport %g, clear depth %08x)", jobs_run[index].draws, jobs_run[index].width, jobs_run[index].height, jobs_run[index].count, jobs_run[index].load_op, jobs_run[index].store_op, jobs_run[index].depth, jobs_run[index].depth_load_op, jobs_run[index].depth_store_op, jobs_run[index].set, jobs_run[index].push_bytes, jobs_run[index].push_first, jobs_run[index].clear_blue, (double)jobs_run[index].viewport_width, jobs_run[index].clear_depth);
+				else
+					printf(" T");
+			}
+			printf("\n");
+			ok = kick_count == uploads[scene] + 2U * frames[scene];
+			at = 0;
+			if (uploads[scene] != 0)
+				ok = ok && jobs_run[at++].kind == 'T';
+			for (index = 0; ok && index < frames[scene]; index++) {
+				const struct kick_entry *job = &jobs_run[at];
+
+				ok = ok && job->kind == 'R' && job->draws == 1 && !job->continued;
+				ok = ok && job->width == widths[scene] && job->height == heights[scene];
+				ok = ok && job->load_op == VK_ATTACHMENT_LOAD_OP_CLEAR && job->store_op == VK_ATTACHMENT_STORE_OP_STORE && job->clear_blue == blues[scene];
+				ok = ok && job->count == counts[scene] && job->set == sets[scene] && job->push_bytes == POWERVR_DRAW_PUSH_BYTES && job->viewport_width == (float)widths[scene];
+				ok = ok && job->depth == depths[scene];
+				if (scene == FRAME_SCENE_VKDEMO)
+					ok = ok && job->push_first == (index == 0 ? 0U : 0x3f800000U);
+				if (depths[scene])
+					ok = ok && job->depth_load_op == VK_ATTACHMENT_LOAD_OP_CLEAR && job->depth_store_op == VK_ATTACHMENT_STORE_OP_DONT_CARE && job->clear_depth == 0x3f800000U;
+				ok = ok && jobs_run[at + 1].kind == 'T';
+				at += 2;
+			}
+			snprintf(what, sizeof(what), "%s: %s%u render job(s) of one draw, each followed by the copy out", names[scene], uploads[scene] ? "the upload, then " : "", frames[scene]);
+			check(ok, what);
+			kick_recording = 0;
+		}
 	}
 
 	/* Close: every object and the executor's memory go. */
