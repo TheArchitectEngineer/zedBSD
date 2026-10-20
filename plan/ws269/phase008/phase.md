@@ -1687,3 +1687,40 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
   - DIAGNOSTICS＝1・LOCKUP＝1 の compute-check.c 単体も、warning 0 で compile できた。
 - VF2 の vmunix（`build/p2q1505b/vf2/vmunix`）: rc 0、warning 0。板は未実施（compute check と gpu-selftest で、間隔の無い compiler の出力を見る）。
 - 片付け（Q1 に依頼）: `build/p2q1505b/`、scratchpad の `cc.txt`・`cc.sh`・`diag.o`。
+
+## q1511-i01（P2、2026-10-21）: 試験の整理（AGENTS.md の「試験の整理の基準」）
+
+### (1)(3) 回帰に使い続ける物: plan/master.md の Tools・試験の一覧に入れる行の案（Q1 が master.md に入れる）
+
+所要時間は host（この worktree）で 2026-10-21 に測った値。
+
+| path | 何を確かめるか | 実行の仕方 | 所要 |
+| --- | --- | --- | --- |
+| `plan/ws269/tests/p008/run.sh` | USC・PDS の encoder（encode-host-test）と compute の program・kernel の語（compute-host-test。手書きの kernel の kick、shared の kernel、workgroup の PDS ＝ Mesa の bytes、field の計算） | `sh plan/ws269/tests/p008/run.sh OUTDIR` → `encode … 0 failed`、`compute … 0 failed` | 1.4 秒 |
+| `plan/ws269/tests/p008/m9-forms.sh` | USC の operand の形を、Mesa 26.2.5 の生成した `pco_isa.h` の encoder と乱数で照合 | `sh plan/ws269/tests/p008/m9-forms.sh <mesa-26.2.5 の展開先> OUTDIR` → `m9 operand forms: 84000 passed, 0 failed`（Mesa の tarball は `build/ws269-p014/mesa/`） | 0.7 秒 |
+| `plan/ws269/tests/p008/fill-registers.sh` | vkcompute の fill を compiler が出す形で host の simulator に流し、prefix ごとの register を出す。板の compute check の dump（DIAGNOSTICS）と照合し、全体の 32/32 も確かめる | `sh plan/ws269/tests/p008/fill-registers.sh OUTDIR <run の address＋0x1c0000>` → 最後の行 `whole program (0): 32/32 …` | 2 秒 |
+| `plan/ws269/tests/p009/run.sh` | Venus の frame の decode と executor（vk-queue。1 kernel の dispatch、PDS の配置、stream） | `sh plan/ws269/tests/p009/run.sh OUTDIR` → `executor host test: … 0 failed` | 5 秒 |
+| `plan/ws269/tests/p010-compiler/run.sh` | SPIR-V → USC の compiler。interpreter と machine の simulator の一致、group の bytes と Mesa の表の照合（glslc が要る） | `sh plan/ws269/tests/p010-compiler/run.sh OUTDIR` → `compiler host test: … 0 failed`、`group host test: … 0 failed` | 5 秒 |
+| `plan/ws269/tests/p008/mesa-pco-fill-bxe-4-32.txt`、`mesa-pco-vkcompute-stream-bxe-4-32.txt` | 参照資料: Mesa 26.2.5 が BXE-4-32 に出す fill の USC と compute の stream・PDS（drm-shim の host の build で取った） | 読むだけ（取り直す手順は phase008 の q1481・q1494） | ― |
+| `userland/tests/vkcompute`（`/bin/vkcompute`） | 1 dispatch（128 wg、4096 語）の Vulkan compute の端から端 | 板: `/bin/vkcompute`（gpu-selftest の compute の段でも流れる）→ `vkcompute: PowerVR … : PASS, 4096/4096 words`。host: lavapipe で同じ行 | 板 1 秒未満 |
+| `userland/tests/vkcoherency`（`/bin/vkcoherency`、image は `plan/ws269/tests/p008/config-visionfive2-coherency.mk`） | CPU と GPU の cache の整合の stress: host-visible の全 memory 型で buffer の 1000 回の往復、image の clear→copy→CPU の読みを 200 回 | 板: `/bin/vkcoherency` → 部ごとに `… 1000 rounds, 0 stale, 0 wrong`、`image: 200 rounds, 0 stale, 0 wrong`、最後に `vkcoherency: … : PASS`。host（lavapipe）は 0.4 秒で PASS | 板は未計測（板 96 で PASS） |
+
+- compute check（kernel の中、`CONFIG_POWERVR_COMPUTE_CHECK`）の既定の行は、起動の dmesg の回帰として読める。
+  - `compute kernel: OK, 16384/16384 words written`
+  - coherency の 2 行
+  - temporaries の 2 行
+  - `compiled fill 1/4/128 workgroups … 32/32・128/128・4096/4096`
+  - stage の `compute: ok`
+  - これは試験の file ではなく kernel の機能なので、一覧には注記として入れる。
+
+### (2) 削除の候補（削除は Q1）
+
+- 基準: master.md の一覧、complete でない WS の未完了の Phase、tests/ のシナリオ、T1 の未実行の依頼のどこからも参照されていない物。plan/ws269/tests/p008・p009・p010-compiler の file は、全部が上の一覧か ws269 の未完了の Phase（phase009・010q ほか）から参照されているので、**repo の中で消す file は無い**。
+  - `p008/config-visionfive2-compute.mk` は phase009 から参照されている。
+  - `p009/config-*-vkcompute.mk` は ws.md・phase009・T1 の requests から参照されている。
+  - timing・mesa-form・field の掃引の code は、q1500 で compute-check.c から既に消した。timing の記録は phase.md の履歴の文だけで、file は無い。
+- repo の外の物:
+  - `/home/awe/zedBSD-worktrees/p2/build/p2q1511/`（今回の所要時間の測定の出力）
+  - scratchpad の `mesa26/`（896 MB）。Mesa 26.2.5 の host の build で、dumper と PDS の表示を改造してある。Mesa との再照合に使う時だけ残し、使わないなら消す。
+
+- master.md の一覧に入れたら、phase008 の中の試験の説明は履歴として残す（参照は master.md へ）。
