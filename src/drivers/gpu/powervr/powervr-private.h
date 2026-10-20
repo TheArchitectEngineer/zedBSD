@@ -13,6 +13,7 @@
 #ifndef KERN_DRIVERS_GPU_POWERVR_PRIVATE_H
 #define KERN_DRIVERS_GPU_POWERVR_PRIVATE_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -23,6 +24,7 @@
 #include "drivers/gpu/powervr/firmware-image.h"
 #include "drivers/gpu/powervr/mips-table.h"
 #include "drivers/gpu/powervr/stage.h"
+#include "drivers/gpu/powervr/interface.h"
 
 /*
  * One block of memory the firmware's processor sees.
@@ -109,6 +111,9 @@ struct powervr_firmware {
 	struct powervr_object trace_buffer;
 	uint32_t fwccb_read;
 	volatile uint32_t interrupts;
+	uint32_t kccb_sent;
+	uint32_t kccb_expect[POWERVR_KERNEL_CCB_SLOTS];
+	bool return_fallback_noted;
 	int interrupt_installed;
 };
 
