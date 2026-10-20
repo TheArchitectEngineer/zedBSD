@@ -898,8 +898,15 @@ job_check(
 	job->draws[0].scissor.extent.height = CHECK_EDGE;
 	kern_logf("powervr: job check: prepared (64x64 R8G8B8A8 and D32, one draw of two triangles, %u and %u bytes of shader)\n", (unsigned)graphics->vertex.length, (unsigned)graphics->fragment.length);
 
-	/* The job: its kick and its fence. */
+	/* The job: its kick, then its fence (the job runs on after the kick). */
 	error = powervr_render_job_run(render, session, job);
+	if (error == 0) {
+		error = powervr_session_point_wait(session, session->last_kind, session->last_value, POWERVR_PROGRESS_MS);
+		if (error == 0)
+			powervr_render_jobs_reap(render, session, 0);
+	}
+	if (error == ETIMEDOUT)
+		session->abandoned = 1;
 	if (error == ETIMEDOUT) {
 		kern_logf("powervr: job check: FAILED at fence (%d)\n", error);
 		goto done;

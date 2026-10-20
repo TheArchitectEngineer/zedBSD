@@ -773,6 +773,9 @@ render_close(
 		return;
 	}
 
+	/* The render jobs' memory, whose work has all ended. */
+	powervr_render_jobs_reap(render, session, 2);
+
 	/* The handles whose unmapping waited for the session's work, which has all ended. */
 	resources_drain(session, 1);
 

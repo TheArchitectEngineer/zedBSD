@@ -140,7 +140,7 @@ powervr_render_frame(
 		error = run_frame(session, command, bytes);
 
 	/* The callback, after everything the session sent the core. */
-	powervr_session_pend(render, session, session->submitted, completion, error, POWERVR_NO_MARKER);
+	powervr_session_pend(render, session, session->last_kind, session->last_value, completion, error, POWERVR_NO_MARKER);
 
 	/* Work the core may still run: the core stops the session. */
 	if (session->vk != NULL && session->vk->abandoned)
@@ -179,8 +179,9 @@ runtime_capset(
 }
 
 /*
- * Runs one frame at once; EAGAIN while a callback of the session is still
- * in the ring (a frame may not overtake it).
+ * Runs one frame at once; EAGAIN while a callback of the session that
+ * carries an error is still in the ring (a frame may not overtake it).
+ * Callbacks that only wait for the GPU to complete may be overtaken.
  */
 static int
 runtime_command(
@@ -206,9 +207,14 @@ runtime_command(
 	if (error != 0)
 		return error;
 
+	/*
+	 * Callbacks that only wait for the GPU's work to complete may be
+	 * overtaken (a submission returns once it kicked its work); one that
+	 * carries an error may not, so its error is seen first.
+	 */
 	enabled = spin_lock_irqsave(&render->queue_lock);
 
-	pending = session->pending_count;
+	pending = session->pending_errors;
 
 	spin_unlock_irqrestore(&render->queue_lock, enabled);
 
@@ -335,7 +341,7 @@ runtime_commit(
 		return error;
 
 	/* Into the ring after the session's work; the delivery frees the marker. */
-	powervr_session_pend(render, session, session->submitted, completion, 0, index);
+	powervr_session_pend(render, session, session->last_kind, session->last_value, completion, 0, index);
 
 	/* Succeeded: the marker completes in order. */
 	return 0;
@@ -394,7 +400,7 @@ runtime_cancel(
 
 	/* A faulted reservation ends with the error, in order. */
 	if (state == POWERVR_MARKER_RESERVED && fault != 0U)
-		powervr_session_pend(render, session, session->submitted, completion, EIO, index);
+		powervr_session_pend(render, session, session->last_kind, session->last_value, completion, EIO, index);
 
 	/* Succeeded: the reservation is withdrawn or ended. */
 	return 0;

@@ -68,6 +68,9 @@
 #define KICK_WAIT_MS		1000U
 #define WATCHDOG_MS		(POWERVR_DEADLINE_MS + 5000U)
 
+/* The most sessions one service pass reports for no progress. */
+#define SERVICE_STALLED_MAX	8U
+
 /* A kick of a render context is one kernel command. */
 _Static_assert(POWERVR_KICK_COMMAND_WORDS == POWERVR_COMMAND_WORDS, "a kick is one kernel command");
 
@@ -736,7 +739,6 @@ powervr_render_finish(
 	unsigned milliseconds)
 {
 	struct powervr_render_context *context;
-	struct powervr_list_marks lists;
 	enum powervr_stage stage;
 	uint64_t deadline;
 	uint64_t now;
@@ -745,7 +747,6 @@ powervr_render_finish(
 	uint64_t started;
 	uint64_t geometry_done;
 	int stalled;
-	int ran_out;
 
 	/* Refuses a session without a render context. */
 	context = session->render_context;
@@ -784,13 +785,6 @@ powervr_render_finish(
 		sched_sleep(now + 1U);
 	}
 
-	/* What the firmware reported of the free lists since the kicks. */
-	mutex_lock(&render->core->lock);
-
-	list_marks(render, &lists);
-
-	mutex_unlock(&render->core->lock);
-
 	/*
 	 * A render whose context the firmware reset reaches its timelines
 	 * only because the reset signals them: its stages already said why,
@@ -798,6 +792,38 @@ powervr_render_finish(
 	 */
 	if (session->lost)
 		return EIO;
+
+	/* The stages of the finished render. */
+	powervr_render_retired(render, session, marks);
+
+	/* Succeeded: the render finished. */
+	return 0;
+}
+
+/*
+ * Says the TA and 3D stages of a render job whose point was reached: the
+ * TA ran out of free list pages, or did not; the 3D finished.  Nothing is
+ * said of a lost session's render.
+ */
+void
+powervr_render_retired(
+	struct powervr_render *render,
+	struct powervr_session *session,
+	const struct powervr_render_marks *marks)
+{
+	struct powervr_list_marks lists;
+	int ran_out;
+
+	/* A reset signalled the timelines; the stages said why already. */
+	if (session->lost)
+		return;
+
+	/* What the firmware reported of the free lists since the kicks. */
+	mutex_lock(&render->core->lock);
+
+	list_marks(render, &lists);
+
+	mutex_unlock(&render->core->lock);
 
 	/* The TA ran out of free list pages, or did not; the 3D finished. */
 	ran_out = powervr_free_list_ran_out(&marks->lists, &lists);
@@ -807,9 +833,6 @@ powervr_render_finish(
 		powervr_stage_ok(POWERVR_STAGE_TA);
 	}
 	powervr_stage_ok(POWERVR_STAGE_3D);
-
-	/* Succeeded: the render finished. */
-	return 0;
 }
 
 /*
@@ -1061,7 +1084,7 @@ powervr_render_submit(
 	error = powervr_session_kick(render, session, session->submitted + 1U, 0, 0);
 	if (error == 0) {
 		session->submitted++;
-		powervr_session_pend(render, session, session->submitted, completion, 0, POWERVR_NO_MARKER);
+		powervr_session_pend(render, session, POWERVR_POINT_COMPUTE, session->submitted, completion, 0, POWERVR_NO_MARKER);
 	}
 
 	mutex_unlock(&render->core->lock);
@@ -1075,6 +1098,98 @@ powervr_render_submit(
 }
 
 /*
+ * Reports whether a session's completion point was reached: no point, a
+ * compute value its compute timeline reached, or a 3D value its render
+ * context's fragment timeline reached.
+ */
+int
+powervr_session_point_reached(
+	const struct powervr_session *session,
+	unsigned kind,
+	uint32_t value)
+{
+	const struct powervr_render_context *context;
+	uint32_t current;
+
+	/* No point: complete. */
+	if (kind == POWERVR_POINT_NONE)
+		return 1;
+
+	/* The compute timeline. */
+	if (kind == POWERVR_POINT_COMPUTE) {
+		current = powervr_session_timeline(session);
+		if ((int32_t)(current - value) >= 0)
+			return 1;
+		return 0;
+	}
+
+	/* The render context's 3D timeline; without the context nothing of it runs. */
+	context = session->render_context;
+	if (context == NULL)
+		return 1;
+	current = powervr_object_get32(&context->fragment.timeline, POWERVR_SYNC_ADDRESS);
+	if ((int32_t)(current - value) >= 0)
+		return 1;
+
+	/* Succeeded: not reached yet. */
+	return 0;
+}
+
+/*
+ * Waits, bounded, for a session's completion point.  ETIMEDOUT when the
+ * bound is spent; a lost session's point is not waited for (EIO).
+ */
+int
+powervr_session_point_wait(
+	const struct powervr_session *session,
+	unsigned kind,
+	uint32_t value,
+	unsigned milliseconds)
+{
+	uint64_t deadline;
+	uint64_t now;
+	int reached;
+
+	/* Reads the point once a tick until it is reached or the bound is spent. */
+	deadline = sched_ticks() + ms_ticks(milliseconds);
+	for (;;) {
+		reached = powervr_session_point_reached(session, kind, value);
+		if (reached)
+			break;
+
+		/* A session the firmware reset: its work ended. */
+		if (session->lost)
+			return EIO;
+
+		/* The bound is spent. */
+		now = sched_ticks();
+		if (now >= deadline)
+			return ETIMEDOUT;
+
+		/* Sleeps one tick. */
+		sched_sleep(now + 1U);
+	}
+
+	/* Succeeded: the point was reached. */
+	return 0;
+}
+
+/*
+ * Notes a session's last kicked work: the point its later callbacks and
+ * fences complete at.
+ */
+void
+powervr_session_point_set(
+	struct powervr_session *session,
+	unsigned kind,
+	uint32_t value)
+{
+	/* The point. */
+	session->last_kind = kind;
+	session->last_value = value;
+}
+
+/*
  * Puts a callback in a session's ring: retired in order once the
  * session's timeline reaches value, delivered with the error, freeing the
  * job marker when it names one.  The caller checked the ring has room.
@@ -1083,6 +1198,7 @@ void
 powervr_session_pend(
 	struct powervr_render *render,
 	struct powervr_session *session,
+	unsigned kind,
 	uint32_t value,
 	struct drv_gpu_completion *completion,
 	int error,
@@ -1095,12 +1211,18 @@ powervr_session_pend(
 	enabled = spin_lock_irqsave(&render->queue_lock);
 
 	slot = (session->pending_head + session->pending_count) % POWERVR_RENDER_PENDING;
+	session->pending[slot].kind = kind;
 	session->pending[slot].value = value;
 	session->pending[slot].submitted = sched_ticks();
 	session->pending[slot].completion = completion;
 	session->pending[slot].error = error;
 	session->pending[slot].marker = marker;
 	session->pending_count++;
+
+	/* A callback with an error keeps commands from overtaking it. */
+	if (error != 0)
+		session->pending_errors++;
+
 	session->outstanding++;
 	waitq_wake_all(&render->service);
 
@@ -2050,6 +2172,9 @@ service_pass(
 	uint32_t answer;
 	uint32_t index;
 	unsigned faulted;
+	struct powervr_session *stalled[SERVICE_STALLED_MAX];
+	unsigned stalled_count;
+	uint64_t progress;
 	int overdue;
 	int pending;
 	int error;
@@ -2073,6 +2198,8 @@ service_pass(
 	delivery.count = 0;
 	delivery.markers_freed = 0;
 	watchdog = ms_ticks(WATCHDOG_MS);
+	progress = ms_ticks(POWERVR_PROGRESS_MS);
+	stalled_count = 0;
 	for (session = render->sessions; session != NULL; session = session->next) {
 		enabled = spin_lock_irqsave(&render->queue_lock);
 
@@ -2083,6 +2210,16 @@ service_pass(
 			/* A session lost to a context reset is that session's loss alone; the firmware is not asked about it. */
 			if (!session->lost && now - session->pending[session->pending_head].submitted > watchdog)
 				overdue = 1;
+
+			/* Work without progress for POWERVR_PROGRESS_MS: the session is reported lost, once. */
+			if (!session->lost &&
+			    !session->progress_reported &&
+			    stalled_count < SERVICE_STALLED_MAX &&
+			    now - session->pending[session->pending_head].submitted > progress) {
+				session->progress_reported = 1;
+				stalled[stalled_count] = session;
+				stalled_count++;
+			}
 		}
 
 		spin_unlock_irqrestore(&render->queue_lock, enabled);
@@ -2103,6 +2240,12 @@ service_pass(
 	/* Delivers what retired. */
 	deliver(render, &delivery);
 
+	/* Sessions whose work made no progress: the core stops each (it lives while its callbacks are pending). */
+	for (index = 0; index < stalled_count; index++) {
+		kern_logf("powervr: session's work made no progress for %u ms; the session is lost\n", (unsigned)POWERVR_PROGRESS_MS);
+		drv_gpu_report_session_error(render->device, stalled[index], ETIMEDOUT);
+	}
+
 	/*
 	 * The firmware stopped answering, or asked for a restart or reported a
 	 * fault of its own: the device goes into quarantine before the core
@@ -2119,20 +2262,20 @@ service_pass(
 	return pending;
 }
 
-/* Takes, under the queue lock, the session's commands whose timeline value was reached. */
+/* Takes, under the queue lock, the session's commands whose points were reached, in order. */
 static void
 take_reached(
 	struct powervr_session *session,
 	struct delivery *delivery)
 {
 	struct powervr_pending *entry;
-	uint32_t current;
+	int reached;
 
-	/* Reads the timeline once, then retires in order up to it, each with its own error. */
-	current = powervr_session_timeline(session);
+	/* Retires in order up to the first entry whose point is not reached, each with its own error. */
 	while (session->pending_count != 0U && delivery->count < DELIVER_MAX) {
 		entry = &session->pending[session->pending_head];
-		if ((int32_t)(current - entry->value) < 0)
+		reached = powervr_session_point_reached(session, entry->kind, entry->value);
+		if (!reached)
 			break;
 		take_entry(session, entry->error, delivery);
 	}
@@ -2162,8 +2305,10 @@ take_entry(
 {
 	struct powervr_pending *entry;
 
-	/* The callback and its error. */
+	/* The callback and its error; an entry with its own error no longer holds commands back. */
 	entry = &session->pending[session->pending_head];
+	if (entry->error != 0 && session->pending_errors != 0U)
+		session->pending_errors--;
 	delivery->completion[delivery->count] = entry->completion;
 	delivery->error[delivery->count] = error;
 	delivery->session[delivery->count] = session;
