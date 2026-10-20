@@ -321,6 +321,10 @@ powervr_vk_result(
 	if (error == ENOMEM || error == ENOSPC)
 		return (uint32_t)VK_ERROR_OUT_OF_DEVICE_MEMORY;
 
+	/* A shape the executor does not take where only running out of memory may be reported (vkCreateRenderPass). */
+	if (error == ENOBUFS)
+		return (uint32_t)VK_ERROR_OUT_OF_HOST_MEMORY;
+
 	/* Something the executor does not implement is a missing feature. */
 	if (error == ENOTSUP)
 		return (uint32_t)VK_ERROR_FEATURE_NOT_PRESENT;

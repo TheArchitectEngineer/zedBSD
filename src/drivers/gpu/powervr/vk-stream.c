@@ -66,6 +66,7 @@ static const powervr_vk_route routes[] = {
 	powervr_vk_image_route,
 	powervr_vk_layout_route,
 	powervr_vk_command_route,
+	powervr_vk_pass_route,
 	powervr_vk_queue_route
 };
 

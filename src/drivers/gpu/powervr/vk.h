@@ -149,6 +149,8 @@ struct powervr_vk_image {
 struct powervr_vk_image_view {
 	struct powervr_vk_object *image;
 	uint32_t aspect;
+	uint32_t base_level;
+	uint32_t base_layer;
 	uint64_t words[2];
 };
 
@@ -228,6 +230,7 @@ struct powervr_vk_command_pool {
  */
 struct powervr_vk_record {
 	uint32_t opcode;
+	void *data;
 	struct powervr_vk_object *objects[POWERVR_VK_SETS_MAX];
 	uint32_t object_count;
 	uint32_t first;
@@ -280,7 +283,14 @@ int powervr_vk_memory_route(struct powervr_vk_session *session, uint32_t opcode,
 int powervr_vk_image_route(struct powervr_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
 int powervr_vk_layout_route(struct powervr_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
 int powervr_vk_command_route(struct powervr_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
+int powervr_vk_pass_route(struct powervr_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
 int powervr_vk_queue_route(struct powervr_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
+
+/* The render pass records and the render jobs of a command buffer (vk-pass.c). */
+struct powervr_render_job;
+int powervr_vk_record_begin_pass(struct powervr_vk_session *session, struct i915_wire_reader *reader, struct powervr_vk_record *entry);
+int powervr_vk_record_clear_attachments(struct powervr_vk_session *session, struct i915_wire_reader *reader, struct powervr_vk_record *entry);
+int powervr_vk_render_jobs(const struct powervr_vk_command_buffer *command, struct powervr_render_job *jobs, uint32_t room, uint32_t *count);
 
 /* A command buffer emptied of its records (vk-command.c). */
 void powervr_vk_command_reset(struct powervr_vk_command_buffer *command);
