@@ -272,3 +272,36 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
 | VF2 の vmunix（`plan/ws269/tests/p008/config-visionfive2-compute.mk`、`build/p018/vf2/vmunix`） | rc 0、warning 0 |
 
 - 片付け（Q1 に依頼）: `build/p018/`（vmunix の後）。
+
+## q1435-i01（P2、2026-10-20）: address を 64 bit の add で作る
+
+- 板の 3 回目（vf2-dmesg31）:
+  - `computed low 001fa004 high 7532c3d9`: IMADD32 の後、address の高い word の r1 が壊れている。
+  - zero madd（積が 0）は全 instance が届く。constant（積 4）も届かない。moved（IMADD の結果を r6 に取ってから r0 へ移す）も届かない。
+  - つまり、積が 0 でない IMADD32 の後に、IMADD の書き先と関係なく r1 が壊れる。
+- 直し（`compute-program.c`）: Mesa の compiler（とこちらの shader-backend の `MACHINE_ADD64`）と同じ形にした。
+  - 1. instance の offset を IMADD32 で別の temp（r8 など）に作る。address の対を書く前に行う。
+  - 2. 基底の対 r0・r1 を immediate で書く。
+  - 3. `add64_group`（`add6432`、s0・s1 が基底の対、s2 が offset、w0・w1 に ft0・fte。Mesa の `group_map O_ADD64_32`）で address の対を書く。
+  - store の program の各 step の address の進めも IMADD から add64 に替え、data（address の低い word）は pass で取る。
+  - temps・fill の program と、probe の ADDRESS・STRIDE・ADDRESS_WAIT も同じ順にした。
+  - IMADD の group に Mesa の `is[4]=ft0` を明示した。
+  - temporaries は store が 9（r8 まで）、temps は 8 のまま（offset は r2 に）、fill は 8。
+  - COMPUTED・ZERO_MADD・CONSTANT・MOVED の probe は、IMADD の影響を見るために前の形のまま残した。
+- r1 が壊れる理由（IMADD32 の何が dst 以外の register を書くのか）は分かっていない。Mesa は address を add64 で作り、IMADD32 の結果を address の対に置かない。
+- 試験: `plan/ws269/tests/p008/compute-host-test.c` の期待を新しい group の並びに直した。
+  - store: group 3 が madd32（offset）、4 が r0、6 が add64_32、11 が add64_32。
+  - temps: 15 group で、10 が add64_32、14 が end。
+
+| 確認 | 結果 |
+| --- | --- |
+| p008 の host | encode 94/0、compute 73/0 |
+| p009 の host（切り替え 0） | 511 passed、0 failed |
+| VF2 の vmunix（`plan/ws269/tests/p008/config-visionfive2-compute.mk`、`build/p019/vf2/vmunix`） | rc 0、warning 0 |
+
+- 板で見ること:
+  - `compute kernel: OK, 16384/16384`。
+  - temporaries の行の読み（BLOCKS OF 2 か INCONCLUSIVE）。
+  - probes の own words、stride 16・64・128、wait が ffffffff になること。
+  - store の 1 step が 32/32、4 step が 128/128。
+- 片付け（Q1 に依頼）: `build/p019/`。
