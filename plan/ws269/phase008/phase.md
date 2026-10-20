@@ -212,3 +212,36 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
 
 - 直し自体はまだ無い。板の probe の 2 行で原因を決めて、次の Queue で直す。
 - 片付け（Q1 に依頼）: `build/p016/`（vmunix を取り出した後）。
+
+## q1430-i01（P2、2026-10-20）: probe の 2 回目、instance ごとに違う address への store
+
+- 板の 1 回目の probe（Q1、vf2-dmesg27）:
+  - madd 22（IMADD32 は正しい）。
+  - instance last 31、instance*4 last 124（inst_num は 0..31、掛け算も正しい）。
+  - own words は 00000001 だけ（[1]・[2]・[31] は 0xffffffff のまま）。
+  - store は 1 step で 8/32、4 step で 21/128。
+  - 固定の address へは全 instance が書く。instance ごとに違う address へは一部しか届かない。
+- 読みで確かめたこと:
+  - st の encode（I_ST_IMMBL: drc・srcseladd・burstlen 1・cachemode write-through・srcseldata・dsize 32）は Mesa の st32 と同じ。
+  - Mesa の `trans_store_global` は address の対と data を 1 つの vector（addr lo、addr hi、data）に置き、address は s3、data は s0 で読む。こちらも r0・r1・r2 で同じ並び。
+  - Mesa の schedule は st の後に wdf を置くだけ。
+  - 違いは見つからなかった。
+- 見込み:
+  - (1) memory への書き込みが一定の granule（16 byte など）単位で、古い中身ごと書き戻されて上書きされる（stale な read-modify-write）。1 step の 8/32 は 16 byte の granule で 32 word に 8 個、と合う。
+  - (2) address が数 instance ごとに 1 つ（例えば 4 instance の先頭）しか使われない。8/32 は 4 instance の先頭の 8 個と合う。
+  - (3) address の計算から st までの依存。
+- 足したもの（板の 1 回で分ける）:
+  - `compute-program.{c,h}` に probe を 4 種類足した: STRIDE_16・STRIDE_64・STRIDE_128（instance の word の間を 16・64・128 byte にする）と ADDRESS_WAIT（address の計算と st の間に wait を挟む）。
+  - `powervr_compute_probe_stride(kind)` を足した。
+  - `compute-check.c` は probe の場所を 4 KiB ずつにし、USC の room を 1 つ足した。出力の行を 1 つ足した: `powervr: compute probes: own words at stride 16 MASK (e), 64 MASK (e), 128 MASK (e), with a wait MASK (e)`。
+- 読み方:
+  - stride が大きいと全部（ffffffff）になるなら (1)。その境の byte 数が granule。
+  - stride によらず 4 instance ごと（11111111 の形、bit 0・4・8…）なら (2)。
+  - wait の版だけ全部なら (3)。
+
+| 確認 | 結果 |
+| --- | --- |
+| p008 の host（encode 94、compute 70） | 0 failed |
+| VF2 の vmunix（`plan/ws269/tests/p008/config-visionfive2-compute.mk`、`build/p017/vf2/vmunix`） | rc 0、warning 0 |
+
+- 片付け（Q1 に依頼）: `build/p017/`。

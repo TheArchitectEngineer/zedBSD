@@ -90,12 +90,20 @@ int powervr_compute_store_program(uint64_t base, unsigned steps, uint8_t *output
 #define POWERVR_COMPUTE_PROBE_INSTANCE		1U
 #define POWERVR_COMPUTE_PROBE_INSTANCE_MADD	2U
 #define POWERVR_COMPUTE_PROBE_ADDRESS		3U
-#define POWERVR_COMPUTE_PROBES			4U
+#define POWERVR_COMPUTE_PROBE_STRIDE_16		4U
+#define POWERVR_COMPUTE_PROBE_STRIDE_64		5U
+#define POWERVR_COMPUTE_PROBE_STRIDE_128	6U
+#define POWERVR_COMPUTE_PROBE_ADDRESS_WAIT	7U
+#define POWERVR_COMPUTE_PROBES			8U
+
+/* The bytes between two instances' words in each probe (4 but for the strided ones). */
+#define POWERVR_COMPUTE_PROBE_STRIDE_MAX	128U
 
 /* The temporaries a probe program uses. */
 #define POWERVR_COMPUTE_PROBE_TEMPORARIES	7U
 
 int powervr_compute_probe_program(unsigned kind, uint64_t base, uint8_t *output, size_t room, size_t *length);
+uint32_t powervr_compute_probe_stride(unsigned kind);
 int powervr_compute_temps_program(uint64_t base, uint8_t *output, size_t room, size_t *length);
 int powervr_compute_fill_program(uint64_t base, unsigned instances, uint32_t multiplier, uint32_t addend, uint8_t *output, size_t room, size_t *length);
 void powervr_compute_command(uint64_t stream, uint64_t resume, uint32_t words[POWERVR_COMPUTE_COMMAND_WORDS]);
