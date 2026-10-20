@@ -922,3 +922,84 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
 - 片付け（Q1 に依頼）:
   - `build/p2q1469/`
   - scratchpad の `wgtest.c`・`wgtest`・`wg.c`
+
+## q1470-i01（P2、2026-10-21）: fence kernel を Mesa と bit 単位で照合し、変種を check の最初に流す
+
+板の前回（vf2-dmesg62、Q1 の読み）:
+- workgroup id の probe は cf0 で MASK f、first words は 0 1 2 3。P1 の DOUTW と cf0 の読みは正しい。
+- lockup が多い。16 kernel で lockup しないのは fence 無しだけ。
+- vk の 1 kernel の dispatch は `fault 0x8000470010`（buffer は 0x8000047000〜）。
+
+### (1) fence kernel の照合（Mesa 25.0.7）
+
+- 参照:
+  - `pvr_cmd_buffer.c` の pvr_compute_generate_fence と pvr_compute_generate_control_stream
+  - `pvr_device.c` の pvr_device_init_compute_fence_program（fence＋clear_pds_barrier）
+  - `pvr_pds.c` の pvr_pds_compute_shader
+  - `csbgen/rogue_cdm.xml`
+- PDS の命令は、Mesa の `pvr_rogue_pds_encode.h` の encoder（`pvr_pds_inst_encode_bra`・`_halt`・`_add64`・`_dout(DOUTC)`）と我々の `powervr_compute_fence_program` を、使い捨ての host の program で同じ引数で並べて比べた。
+
+| 語 | Mesa | 我々 | |
+| --- | --- | --- | --- |
+| PDS code 0（bra IF1 neg keep +2） | c2c00002 | c2c00002 | 同じ |
+| code 1（halt、coefficient の pass） | d3000000 | d3000000 | 同じ |
+| code 2（add64 const0+const0 → ptemp0） | 80000010 | 80000010 | 同じ |
+| code 3（DOUTC、END 0） | f0000005 | f0000005 | 同じ |
+| code 4（halt） | d3000000 | d3000000 | 同じ |
+| PDS data（fence の定数 0、2 語） | 0、0 | 0、0 | 同じ |
+| KERNEL0 | data_size 1、usc_target ANY、fence 1、他 0 → 0x00000007 | 0x00000007 | 同じ |
+| KERNEL1 | data の場所、sd_type PDS(1)<<2、usc_common_shared 1<<1 | 同じ | 同じ |
+| KERNEL2 | code の場所 | 同じ | 同じ |
+| KERNEL3〜5 | global 1 → 0 | 0 | 同じ |
+| KERNEL8 | max_instances ＝ pvr_compute_flat_slot_size(0, false, 1) ＝ min(1×8, 32) ＝ 8（ROGUE_CDM_MAX_PACKED_WORKGROUPS_PER_TASK 8）、workgroup size 1 → 0 | 8<<27 | 同じ |
+| work の kernel（参考） | sd_type NONE、usc_common_shared 0、max_instances 32→0、usc_target ANY | 同じ | 同じ |
+
+- **結論: fence kernel の語と PDS の program は Mesa と bit 単位で同じ。** そのため (b)「Mesa の bytes に合わせた fence」は (a) と同じになる。(b) は、Mesa の別の分岐 deallocate_shareds＝false（shared を解放しない fence）に替えた。
+- Mesa との違いで残るのは、kernel の外側だけ:
+  - 我々は work の kernel を 16 個並べる（Mesa は 1 dispatch に 1 kernel）。
+  - shared の確保の kernel（sd_type USC、usc_target ALL）は、const shared がある時だけ Mesa が出す。我々は出さない（const shared は無いので Mesa も出さない）。
+  - context の作り（静的な state、resume）。
+
+### (2) check の最初に流す fence の変種（`run_fence_variants`）
+
+- 各変種は 16 kernel の 1 step の store で、自分の session で流す。最後に新しい session を開き、残りの check はそこで流す。
+- 行の形: `compute probes: fence variant X W/32 (e), one kernel after A/32 (e2)`。e2 が (5) なら、その変種で lockup した。
+
+| 変種 | 中身 |
+| --- | --- |
+| a (as is, Mesa's bytes) | 今の fence kernel |
+| b (keeps the shared registers) | fence の KERNEL1 の usc_common_shared を 0（Mesa の deallocate_shareds false） |
+| c (none, the store waits) | fence kernel 無し。1 step の store の program は end の前に wdf を既に持っている（store ごとの wdf）ので、追加は無い |
+| d (store kernel with the fence bit) | fence の kernel を、1 step の store の kernel 語（PDS は普通の store の program）に fence の bit だけを立てた物にする |
+| e (two fence kernels) | fence kernel を 2 つ続ける |
+
+- `run_many_kernels` に MANY_FENCE_KEEP_SHARED・MANY_FENCE_STORE_PDS・MANY_TWO_FENCES と variant の名前の引数を足した。executor の並びの行は今と同じ。
+
+### (3) vk の fault 0x8000470010（静的な解析。板の dump は未実施）
+
+- vkcompute の fill を 1 kernel の形（wg は cf から、buffer 0x8000047000 は immediate）で compile した machine の operation:
+  - r11 ＝ lane（s51）
+  - r12 ＝ cf0（wg）
+  - r13 ＝ imadd(r12, 32, 0)
+  - r9 ＝ imadd(r13, 1, r11)（gid）
+  - …
+  - r12 ＝ 0x00047000（buffer の下位）、r14 ＝ 0x80（上位）
+  - r15 ＝ imadd(r11, 4, 0)（byte の offset）
+  - r11 ＝ imadd(r15, 1, 0)
+  - r6:r7 ＝ add64(r12, r14, r11)
+  - r8 ＝ data
+  - st r8 → [r6]
+- fault の下位 0x00470010 ＝ (0x47000 ＋ 1)×16。正しい lane 1 の address は 0x47004 で、それを 16 倍した値ではない。**buffer の下位と lane（または gid）の和を 4 bit 左へずらした形**に見える。
+  - compiler の命令の列には、16 倍や << 4 の operand は無い。host の simulator では 32/32。
+  - 同じ add64（s2 が shift の結果）を使う dump と workgroup id の probe は、板で正しい address に書いた（cf0 の MASK f）。そのため、ずれは **imadd の結果（r15・r11）を add64 の s2 に渡す所**、つまり imadd の結果の形（幅・pair）か読み方が怪しい。
+  - これは compiled fill の dump（prefix の r11・r15・r6 の値）で決まる。前回は lockup で走れなかった。fence の変種が通れば、次の起動で同じ check の中で dump が走る。fill-registers.sh の ADDRESS には、板の `run at`＋0x1c0000 を渡す。
+
+| 確認 | 結果 |
+| --- | --- |
+| PDS の fence program の Mesa の encoder との比較（使い捨ての host） | 5 語とも同じ |
+| VF2 の vmunix（`build/p2q1470/vf2/vmunix`） | rc 0、warning 0 |
+| 板 | 未実施 |
+
+- 片付け（Q1 に依頼）:
+  - `build/p2q1470/`
+  - scratchpad の `fence-cmp.c`・`fence-cmp`・`util/`・`ops.c`・`ops`・`wgtest*`・`wg.c`
