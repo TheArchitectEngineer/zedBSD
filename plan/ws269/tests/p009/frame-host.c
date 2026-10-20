@@ -1069,7 +1069,7 @@ replies_image(
 	else
 		check((format.linearTilingFeatures & (VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT)) == 0 && (format.linearTilingFeatures & VK_FORMAT_FEATURE_TRANSFER_DST_BIT) != 0, "switch off: RGBA8 linear copies but does not sample (libvulkan stays off the shared path)");
 	check((format.optimalTilingFeatures & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT) != 0 && (format.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) != 0, "RGBA8 optimal draws and samples");
-	check(format.bufferFeatures == VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT, "RGBA8 is a vertex format");
+	check(format.bufferFeatures == 0, "RGBA8 is not a vertex format (the fetch does not normalise)");
 	expect_opcode(&reader, GPU_OP_GET_PHYSICAL_DEVICE_IMAGE_FORMAT_PROPERTIES, "linear image query");
 	result = vulkan_read_u32(&reader);
 	if (POWERVR_FORMAT_LINEAR_SAMPLED)

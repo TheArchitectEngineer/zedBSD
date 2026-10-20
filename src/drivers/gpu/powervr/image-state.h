@@ -168,6 +168,7 @@ int powervr_image_lay_out(const struct powervr_image_shape *shape, const struct 
 int powervr_view_words(const struct powervr_view_shape *view, uint64_t words[2]);
 int powervr_sampler_words(const struct powervr_sampler_shape *sampler, uint64_t words[2]);
 uint32_t powervr_descriptor_bytes(uint32_t type);
+uint32_t powervr_format_clear_word_count(const struct powervr_format *format);
 int powervr_format_clear_words(const struct powervr_format *format, const uint32_t colour[4], uint32_t packed[4]);
 
 #endif /* KERN_DRIVERS_GPU_POWERVR_IMAGE_STATE_H */

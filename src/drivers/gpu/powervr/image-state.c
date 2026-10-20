@@ -113,9 +113,10 @@ static const struct powervr_format format_table[] = {
 	{ VK_FORMAT_R8G8_UNORM, 2, POWERVR_FORMAT_COLOR, 7, 0x23,
 	  { POWERVR_CHANNEL_0, POWERVR_CHANNEL_1, POWERVR_CHANNEL_ZERO, POWERVR_CHANNEL_ONE },
 	  FEATURES_SAMPLED_COLOR, FEATURES_TRANSFER, 0 },
+	/* RGBA8 is not a vertex format: the vertex fetch does not normalise its bytes. */
 	{ VK_FORMAT_R8G8B8A8_UNORM, 4, POWERVR_FORMAT_COLOR, 12, 0x00,
 	  { POWERVR_CHANNEL_0, POWERVR_CHANNEL_1, POWERVR_CHANNEL_2, POWERVR_CHANNEL_3 },
-	  FEATURES_RENDER_COLOR, FEATURES_RENDER_COLOR, VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT },
+	  FEATURES_RENDER_COLOR, FEATURES_RENDER_COLOR, 0 },
 	{ VK_FORMAT_R8G8B8A8_SRGB, 4, POWERVR_FORMAT_COLOR | POWERVR_FORMAT_SRGB, 12, 0x00,
 	  { POWERVR_CHANNEL_0, POWERVR_CHANNEL_1, POWERVR_CHANNEL_2, POWERVR_CHANNEL_3 },
 	  FEATURES_RENDER_COLOR, FEATURES_RENDER_COLOR, 0 },
@@ -528,6 +529,44 @@ powervr_descriptor_bytes(
 
 	/* Not a type the executor takes. */
 	return 0;
+}
+
+/*
+ * Reports how many words powervr_format_clear_words writes for a format
+ * (the pixel output registers a clear of it fills): one for four 8-bit
+ * unorm channels and the one-channel formats of up to 32 bits, two for
+ * the half-float packs of more channels and R32G32_SFLOAT, four for
+ * R32G32B32A32_SFLOAT; 0 for a format it does not take.
+ */
+uint32_t
+powervr_format_clear_word_count(
+	const struct powervr_format *format)
+{
+	uint32_t packed[4];
+	uint32_t zero[4];
+	int error;
+
+	/* A format the pack does not take has none. */
+	zero[0] = 0;
+	zero[1] = 0;
+	zero[2] = 0;
+	zero[3] = 0;
+	error = powervr_format_clear_words(format, zero, packed);
+	if (error != 0)
+		return 0;
+
+	/* The 32-bit float formats: a word a channel. */
+	if (format->vk_format == VK_FORMAT_R32G32_SFLOAT)
+		return 2;
+	if (format->vk_format == VK_FORMAT_R32G32B32A32_SFLOAT)
+		return 4;
+
+	/* The half-float packs of three or four channels. */
+	if ((format->kind & POWERVR_FORMAT_SRGB) != 0 || format->vk_format == VK_FORMAT_R16G16B16A16_SFLOAT)
+		return 2;
+
+	/* Succeeded: one word. */
+	return 1;
 }
 
 /*
