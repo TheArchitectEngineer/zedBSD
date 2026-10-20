@@ -134,6 +134,7 @@ static int check_prepare(struct render_check *check, const char **step);
 static int check_programs(struct render_check *check, const char **step);
 static int check_triangle(struct render_check *check, uint32_t pds_base, uint32_t usc_base);
 static int check_empty(struct render_check *check);
+static unsigned get32(const uint8_t *bytes, unsigned offset);
 static int check_kick(struct render_check *check);
 static int check_read(struct render_check *check);
 static void check_release(struct render_check *check);
@@ -513,6 +514,15 @@ check_empty(
 		error = EIO;
 	if (error != 0) {
 		powervr_firmware_dump(check->render->core, POWERVR_KERNEL_CCB_SLOTS);
+		powervr_target_dump(check->target);
+		kern_logf("powervr: render check: geometry command: %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x\n",
+			  get32(check->geometry, 0), get32(check->geometry, 4), get32(check->geometry, 8), get32(check->geometry, 12),
+			  get32(check->geometry, 16), get32(check->geometry, 20), get32(check->geometry, 24), get32(check->geometry, 28),
+			  get32(check->geometry, 32), get32(check->geometry, 36), get32(check->geometry, 40), get32(check->geometry, 44),
+			  get32(check->geometry, 48), get32(check->geometry, 52), get32(check->geometry, 56), get32(check->geometry, 60),
+			  get32(check->geometry, 64), get32(check->geometry, 68), get32(check->geometry, 72), get32(check->geometry, 76),
+			  get32(check->geometry, 80), get32(check->geometry, 84), get32(check->geometry, 88), get32(check->geometry, 92),
+			  get32(check->geometry, 96), get32(check->geometry, 100), get32(check->geometry, 104), get32(check->geometry, 108));
 		if (error == ETIMEDOUT)
 			check->session->abandoned = 1;
 	}
@@ -559,8 +569,10 @@ check_kick(
 	}
 	kern_logf("powervr: render check: fence reached (geometry %u, fragment %u), context %s\n", geometry_now, fragment_now,
 		  check->session->lost ? "reset" : "kept");
-	if (check->session->lost)
+	if (check->session->lost) {
 		powervr_firmware_dump(check->render->core, POWERVR_KERNEL_CCB_SLOTS);
+		powervr_target_dump(check->target);
+	}
 
 	/* Succeeded: the render finished. */
 	return 0;
@@ -1134,4 +1146,14 @@ get_word(
 
 	/* Succeeded: the word. */
 	return word;
+}
+
+/* Reads a little-endian word of a command. */
+static unsigned
+get32(
+	const uint8_t *bytes,
+	unsigned offset)
+{
+	/* The four bytes, low first. */
+	return (unsigned)bytes[offset] | (unsigned)bytes[offset + 1U] << 8 | (unsigned)bytes[offset + 2U] << 16 | (unsigned)bytes[offset + 3U] << 24;
 }

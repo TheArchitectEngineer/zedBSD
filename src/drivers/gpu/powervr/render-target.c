@@ -1131,3 +1131,43 @@ ms_ticks(
 	/* Rounds up, so a short span is still a tick. */
 	return ((uint64_t)milliseconds * KERN_CLOCK_HZ + 999U) / 1000U;
 }
+
+/*
+ * Prints a target's records for a render the firmware reset: the
+ * buffers' device addresses, the first half's data record, the common
+ * record and the local free list's record, eight words to a line.
+ */
+void
+powervr_target_dump(
+	const struct powervr_target *target)
+{
+	uint32_t bytes;
+	uint32_t offset;
+
+	/* The buffers the parameter manager and the tiler use. */
+	kern_logf("powervr: target: macrotiles 0x%llx, region headers 0x%llx, vertex heap 0x%llx, tails 0x%llx, local list 0x%llx (%u pages from 0x%llx)\n",
+		  (unsigned long long)(target->macrolists != NULL ? target->macrolists->address : 0U),
+		  (unsigned long long)(target->region_headers != NULL ? target->region_headers->address : 0U),
+		  (unsigned long long)(target->vertex_heap != NULL ? target->vertex_heap->address : 0U),
+		  (unsigned long long)(target->tails != NULL ? target->tails->address : 0U),
+		  (unsigned long long)(target->local.entries != NULL ? target->local.entries->address : 0U),
+		  (unsigned)target->local.page_count,
+		  (unsigned long long)(target->local.pages != NULL ? target->local.pages->run.paddr : 0U));
+
+	/* The record: the first half's data, then the common part. */
+	bytes = POWERVR_TARGET_RECORD_BYTES;
+	for (offset = 0; offset < bytes; offset += 32U)
+		kern_logf("powervr: target: record +%03x: %08x %08x %08x %08x %08x %08x %08x %08x\n", (unsigned)offset,
+			  (unsigned)powervr_object_get32(&target->record, offset), (unsigned)powervr_object_get32(&target->record, offset + 4U),
+			  (unsigned)powervr_object_get32(&target->record, offset + 8U), (unsigned)powervr_object_get32(&target->record, offset + 12U),
+			  (unsigned)powervr_object_get32(&target->record, offset + 16U), (unsigned)powervr_object_get32(&target->record, offset + 20U),
+			  (unsigned)powervr_object_get32(&target->record, offset + 24U), (unsigned)powervr_object_get32(&target->record, offset + 28U));
+
+	/* The local free list's record. */
+	for (offset = 0; offset < (uint32_t)sizeof(struct powervr_fw_free_list); offset += 32U)
+		kern_logf("powervr: target: local list +%02x: %08x %08x %08x %08x %08x %08x %08x %08x\n", (unsigned)offset,
+			  (unsigned)powervr_object_get32(&target->local.record, offset), (unsigned)powervr_object_get32(&target->local.record, offset + 4U),
+			  (unsigned)powervr_object_get32(&target->local.record, offset + 8U), (unsigned)powervr_object_get32(&target->local.record, offset + 12U),
+			  (unsigned)powervr_object_get32(&target->local.record, offset + 16U), (unsigned)powervr_object_get32(&target->local.record, offset + 20U),
+			  (unsigned)powervr_object_get32(&target->local.record, offset + 24U), (unsigned)powervr_object_get32(&target->local.record, offset + 28U));
+}
