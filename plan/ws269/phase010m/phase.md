@@ -35,3 +35,8 @@ sRGB・R8・R8G8・R16 の image は使われていない。このため R32_SFL
     `texel_bytes` が同じなら許す形にできる。
   - clear の regs（`powervr_transfer_regs_build`）は U8888 以外の source format を選んでいないため、clear pack が広がっても kick 側はまだ U8888 だけ。
 - 片付け（Q1 に依頼）: `build/p010fmt/`。
+
+## q1388-i01（2026-10-20 P1）: gpu-selftest の `present`
+
+- `userland/tests/gpu-selftest/main.c`: `present` の段を作った（`vkdemo --duration=4` を exec、上限は 3 倍）。vkdemo は depth を使うので段の need を `depth` にし、depth が通るまでは `present: skip(depth)` の 1 行。`-d PATH` で vkdemo の場所。
+- vkdemo の package を visionfive2 にも、gpu-selftest の依存と試験の image の config（`config-visionfive2-selftest.mk`）に vkdemo。selftest-host.sh に vkdemo の stand-in、期待値を直した（0 failed）。VF2 の userland で vkdemo・gpu-selftest の build rc=0。

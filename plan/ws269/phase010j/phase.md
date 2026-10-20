@@ -44,3 +44,9 @@ ZLS の load・store の register の word、ISP の depth の state（PPP の I
 - P1 の render-job の fragment の command に `powervr_render_zls_words` の word（ZLSCTL・ZLOAD_BASE・BGOBJDEPTH・zls_stride）と `process_empty_tiles` を入れる。
 - vkdemo の offscreen（`--offscreen`）と gpu-selftest の `depth` の実機。
 - 32×32 より小さい depth の load・store（Mesa の alignment の transfer）、stencil、level 0 以外の depth（p011）。
+
+## q1388-i01（2026-10-20 P1）: ZLS を render-job へ
+
+- `render-command.{c,h}`: fragment の setup に depth（`isp_zlsctl` 16+120、`isp_zload_store_base` 16+128、BGOBJDEPTH、`zls_stride` 468、flags の DEPTHBUFFER bit 7）。depth の無い command は前と同じ。
+- `render-job.c`: depth の ENOTSUP を外し、P2 の `powervr_render_zls_words` の control・base・background depth・stride を fragment の command に。process_empty_tiles は ISP_CTL で常に立てている。
+- 確かめ: command-host-test 29/0、p010 の host 試験 15 本 0 failed、p009 165/0、3 つの build warning 0。実機は未確認。

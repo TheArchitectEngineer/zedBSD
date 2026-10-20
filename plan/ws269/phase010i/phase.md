@@ -61,3 +61,7 @@ kick に依らない部分: pipeline の decode、compile の入力（key）、v
 - `vk-draw.h`: `struct powervr_vk_graphics` を vk-draw.c から header へ（render-job が読む）。
 - 確かめ: p010 の host 試験 全部 0 failed、p009 165/0、VF2・riscv64-virt・amd64・試験の image の build warning 0。実機（vkstage の draw・sample）は未確認。
 - 未対応・推測: render check の三角形は今も自分の固定の program の道（vk の pipeline を通さない）。depth bias の表は 0 の 1 entry、MRT・depth は render-job の制限のまま。
+
+## q1388-i01（2026-10-20 P1）: render-job の draw の置き方の host 試験
+
+- `plan/ws269/tests/p010/job-host-test.c`（新規、run.sh に）: kernel の memory・写像・context・kick を host の stand-in にして、draw 2 つの job を `powervr_render_job_run` に通し、geometry の command の stream（draw ごとの PPP の block と address、count 3、2 つ目の後の terminate）、PPP の slot の間隔、2 つ目の draw の push constant、set の写しの位置と中身、fragment の command の scissor の表（2 entry が違う）と depth bias の表、USC の buffer の code の並び（vertex・fragment・vertex・fragment）を見る。16/0。
