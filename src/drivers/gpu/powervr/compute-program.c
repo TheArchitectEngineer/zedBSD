@@ -275,11 +275,12 @@ powervr_compute_temporaries_field(
 
 /*
  * Works out the task issue's temporaries field for a program that uses
- * the given number of temporaries (its highest register plus one): one
- * register more than the program uses, counted one by one (at most 62
- * temporaries).  Mesa's pvr_pds_setup_doutu counts blocks of four; on
- * the board that let instances' registers overlap (the probes before
- * 2026-10-21 that passed with it did not show the overlap).
+ * the given number of temporaries (its highest register plus one): in
+ * blocks of four registers, as Mesa's pvr_pds_setup_doutu
+ * (PVR_ROGUE_PDSINST_DOUT_FIELDS_DOUTU_SRC0_TEMPS_ALIGNSIZE 4).  On the
+ * board, wider fields hid instances' registers overlapping for one
+ * workgroup but not for several (vf2-dmesg84 and 85); the compute check
+ * sweeps the task size (KERNEL8 max_instances) to look into it.
  */
 int
 powervr_compute_task_field(
@@ -288,16 +289,8 @@ powervr_compute_task_field(
 {
 	int error;
 
-	/*
-	 * One register more, counted one by one: on the VF2 a field of
-	 * ceil(temporaries / 4) (Mesa's pvr_pds_setup_doutu, the DOUTU temps
-	 * in units of PVR_ROGUE_PDSINST_DOUT_FIELDS_DOUTU_TEMPS_ALIGNSIZE 4)
-	 * let each instance's registers overlap the next one's, and a field
-	 * of four times that kept them apart (vf2-dmesg84, 2026-10-21); the
-	 * unit the board needs is measured by the compute check's field
-	 * probes.
-	 */
-	error = powervr_compute_temporaries_field(temporaries + 1U, 1, field);
+	/* Blocks of four, as Mesa's pvr_pds_setup_doutu. */
+	error = powervr_compute_temporaries_field(temporaries, 4, field);
 	if (error != 0)
 		return error;
 
