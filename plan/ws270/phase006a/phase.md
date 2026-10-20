@@ -170,3 +170,14 @@ Keiland が使い、vkmatrix 15/15・gpu-selftest 13/13 で確かめていない
   - VF2 の vmunix は rc 0、warning 0。
   - 板は未実施（Q1 が overlay して terminal を確かめる）。
   - libvulkan の判断（Wayland が copied の道を持たない）は host 試験にしていない。
+
+## q1523-i02（2026-10-21、P2）: linear の client image の合成で 3D が lockup
+
+- 板（Q1）: client の window は import され描かれるようになったが、合成の数 frame 後に compositor の 3D job が lockup した
+  （reason 1、dm 3、fault 0）。
+- 読んだ範囲: linear の texture state（STRIDE、word1 の stride は texel 単位で −1、num_mip_levels 1、texaddr）と row の揃え
+  （私たちは 32 byte、Mesa は PBE の 2 pixel）は Mesa の `pvr_arch_tex_state.c`・`pvr_image.c` と矛盾しない。読むだけでは原因が出ない。
+- 診断: vkmatrix に sample-linear-1180（1180x8）と sample-linear-65（65x3）を足した。LINEAR R8G8B8A8 を mapping から行ごとに書き、
+  nearest で 32x32 の quad に sample して、pixel ごとに比べる。
+  lavapipe（`plan/ws269/tests/vkmatrix/run.sh`）で 22/22 PASS。VF2 の vmunix と bin/vkmatrix は rc 0、warning 0。
+- 次: 板で sample-linear-* の結果（PASS、FAIL、lockup）を見て、desktop の前に linear の sampling だけを切り分ける。

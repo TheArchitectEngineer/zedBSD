@@ -36,6 +36,10 @@
  *                           half float compared
  *   clear-64, clear-128     the wide images cleared by vkCmdClearColorImage
  *                           and copied out (the image-to-buffer leg)
+ *   sample-linear-1180, sample-linear-65
+ *                           a LINEAR R8G8B8A8 image of 1180x8 and 65x3
+ *                           texels, written through its mapping, sampled
+ *                           (nearest) over a quad
  *
  * It prints one line a case and a total:
  *
@@ -146,6 +150,9 @@ struct vkmatrix {
 	struct vkmatrix_texture textures[VKMATRIX_TEXTURES_MAX];
 	uint32_t texture_count;
 	VkFormat texture_format;
+	int texture_linear;
+	uint32_t texture_width;
+	uint32_t texture_height;
 	VkRenderPass pipeline_pass;
 	VkImage wide_image;
 	VkDeviceMemory wide_memory;
@@ -216,6 +223,9 @@ static VkResult case_render_f16(struct vkmatrix *run);
 static VkResult case_clear_wide(struct vkmatrix *run, VkFormat format, uint32_t texel_bytes);
 static VkResult case_clear_64(struct vkmatrix *run);
 static VkResult case_clear_128(struct vkmatrix *run);
+static VkResult case_sample_linear(struct vkmatrix *run, uint32_t width, uint32_t height);
+static VkResult case_sample_linear_wide(struct vkmatrix *run);
+static VkResult case_sample_linear_odd(struct vkmatrix *run);
 
 /* Every case, in the order they run. */
 static const struct vkmatrix_case cases[] = {
@@ -239,6 +249,8 @@ static const struct vkmatrix_case cases[] = {
 	{ "render-f16", case_render_f16 },
 	{ "clear-64", case_clear_64 },
 	{ "clear-128", case_clear_128 },
+	{ "sample-linear-1180", case_sample_linear_wide },
+	{ "sample-linear-65", case_sample_linear_odd },
 };
 
 /* The clear colour of every case's first pass: dark blue. */
@@ -285,6 +297,9 @@ main(
 		run.tolerance = 0;
 		run.vertex_floats = 0;
 		run.texture_format = VK_FORMAT_UNDEFINED;
+		run.texture_linear = 0;
+		run.texture_width = 0;
+		run.texture_height = 0;
 		run.pipeline_pass = VK_NULL_HANDLE;
 		status = cases[index].run(&run);
 		ran++;
@@ -852,7 +867,9 @@ vkmatrix_pipeline(
 /*
  * Makes a texture of side x side R8G8B8A8 texels (given as 0xAABBGGRR),
  * uploaded through a buffer, with a sampler of the filter clamped to the
- * edge, and its descriptor set.
+ * edge, and its descriptor set.  With run->texture_linear it is a LINEAR
+ * image of run->texture_width x run->texture_height texels written
+ * through its mapping row by row at its row pitch.
  */
 static VkResult
 vkmatrix_texture(
@@ -876,8 +893,21 @@ vkmatrix_texture(
 	VkSubmitInfo submit;
 	VkBuffer upload;
 	VkDeviceMemory upload_memory;
+	VkImageSubresource subresource;
+	VkSubresourceLayout layout;
+	uint32_t width;
+	uint32_t height;
+	uint32_t row;
 	void *mapped;
 	VkResult status;
+
+	/* The size: a square, or the linear case's own. */
+	width = side;
+	height = side;
+	if (run->texture_linear) {
+		width = run->texture_width;
+		height = run->texture_height;
+	}
 
 	/* A free slot. */
 	run->failed_call = "texture slots";
@@ -891,8 +921,8 @@ vkmatrix_texture(
 	image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 	image_info.imageType = VK_IMAGE_TYPE_2D;
 	image_info.format = run->texture_format != VK_FORMAT_UNDEFINED ? run->texture_format : VK_FORMAT_R8G8B8A8_UNORM;
-	image_info.extent.width = side;
-	image_info.extent.height = side;
+	image_info.extent.width = width;
+	image_info.extent.height = height;
 	image_info.extent.depth = 1;
 	image_info.mipLevels = 1;
 	image_info.arrayLayers = 1;
@@ -901,6 +931,11 @@ vkmatrix_texture(
 	image_info.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 	image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	if (run->texture_linear) {
+		image_info.tiling = VK_IMAGE_TILING_LINEAR;
+		image_info.usage = VK_IMAGE_USAGE_SAMPLED_BIT;
+		image_info.initialLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;
+	}
 	run->failed_call = "vkCreateImage";
 	status = vkCreateImage(run->device, &image_info, NULL, &texture->image);
 	if (status != VK_SUCCESS)
@@ -909,7 +944,11 @@ vkmatrix_texture(
 	memset(&allocate, 0, sizeof(allocate));
 	allocate.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 	allocate.allocationSize = requirements.size;
-	status = vkmatrix_find_memory(run, requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &allocate.memoryTypeIndex);
+	if (run->texture_linear) {
+		status = vkmatrix_find_memory(run, requirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &allocate.memoryTypeIndex);
+	} else {
+		status = vkmatrix_find_memory(run, requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &allocate.memoryTypeIndex);
+	}
 	if (status != VK_SUCCESS)
 		return status;
 	run->failed_call = "vkAllocateMemory";
@@ -921,57 +960,103 @@ vkmatrix_texture(
 	if (status != VK_SUCCESS)
 		return status;
 
-	/* The texels through a buffer: undefined -> transfer -> shader read. */
-	status = vkmatrix_buffer(run, (VkDeviceSize)side * side * 4U, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, &upload, &upload_memory, &mapped);
-	if (status != VK_SUCCESS)
-		return status;
-	memcpy(mapped, texels, (size_t)side * side * 4U);
-	memset(&begin, 0, sizeof(begin));
-	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-	vkResetCommandBuffer(run->command, 0);
-	vkBeginCommandBuffer(run->command, &begin);
-	memset(&barrier, 0, sizeof(barrier));
-	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	barrier.image = texture->image;
-	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	barrier.subresourceRange.levelCount = 1;
-	barrier.subresourceRange.layerCount = 1;
-	barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-	barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-	vkCmdPipelineBarrier(run->command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1, &barrier);
-	memset(&copy, 0, sizeof(copy));
-	copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	copy.imageSubresource.layerCount = 1;
-	copy.imageExtent.width = side;
-	copy.imageExtent.height = side;
-	copy.imageExtent.depth = 1;
-	vkCmdCopyBufferToImage(run->command, upload, texture->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
-	barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-	barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-	barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-	barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-	vkCmdPipelineBarrier(run->command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, NULL, 0, NULL, 1, &barrier);
-	vkEndCommandBuffer(run->command);
-	memset(&submit, 0, sizeof(submit));
-	submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-	submit.commandBufferCount = 1;
-	submit.pCommandBuffers = &run->command;
-	vkResetFences(run->device, 1, &run->fence);
-	run->failed_call = "vkQueueSubmit";
-	status = vkQueueSubmit(run->queue, 1, &submit, run->fence);
-	if (status == VK_SUCCESS) {
-		run->failed_call = "vkWaitForFences";
-		status = vkWaitForFences(run->device, 1, &run->fence, VK_TRUE, VKMATRIX_WAIT_NS);
-	}
+	/* A linear image: the rows through its mapping at its row pitch, then preinitialised -> shader read. */
+	if (run->texture_linear) {
+		memset(&subresource, 0, sizeof(subresource));
+		subresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		vkGetImageSubresourceLayout(run->device, texture->image, &subresource, &layout);
+		run->failed_call = "vkMapMemory";
+		status = vkMapMemory(run->device, texture->memory, 0, VK_WHOLE_SIZE, 0, &mapped);
+		if (status != VK_SUCCESS)
+			return status;
+		for (row = 0; row < height; row++)
+			memcpy((uint8_t *)mapped + layout.offset + row * layout.rowPitch, texels + (size_t)row * width, (size_t)width * 4U);
+		vkUnmapMemory(run->device, texture->memory);
+		memset(&begin, 0, sizeof(begin));
+		begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+		vkResetCommandBuffer(run->command, 0);
+		vkBeginCommandBuffer(run->command, &begin);
+		memset(&barrier, 0, sizeof(barrier));
+		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.image = texture->image;
+		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		barrier.subresourceRange.levelCount = 1;
+		barrier.subresourceRange.layerCount = 1;
+		barrier.oldLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;
+		barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
+		barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+		vkCmdPipelineBarrier(run->command, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, NULL, 0, NULL, 1, &barrier);
+		vkEndCommandBuffer(run->command);
+		memset(&submit, 0, sizeof(submit));
+		submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		submit.commandBufferCount = 1;
+		submit.pCommandBuffers = &run->command;
+		vkResetFences(run->device, 1, &run->fence);
+		run->failed_call = "vkQueueSubmit";
+		status = vkQueueSubmit(run->queue, 1, &submit, run->fence);
+		if (status == VK_SUCCESS) {
+			run->failed_call = "vkWaitForFences";
+			status = vkWaitForFences(run->device, 1, &run->fence, VK_TRUE, VKMATRIX_WAIT_NS);
+		}
+		if (status != VK_SUCCESS)
+			return status;
+	} else {
+		/* The texels through a buffer: undefined -> transfer -> shader read. */
+		status = vkmatrix_buffer(run, (VkDeviceSize)side * side * 4U, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, &upload, &upload_memory, &mapped);
+		if (status != VK_SUCCESS)
+			return status;
+		memcpy(mapped, texels, (size_t)side * side * 4U);
+		memset(&begin, 0, sizeof(begin));
+		begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+		vkResetCommandBuffer(run->command, 0);
+		vkBeginCommandBuffer(run->command, &begin);
+		memset(&barrier, 0, sizeof(barrier));
+		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.image = texture->image;
+		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		barrier.subresourceRange.levelCount = 1;
+		barrier.subresourceRange.layerCount = 1;
+		barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+		barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+		vkCmdPipelineBarrier(run->command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1, &barrier);
+		memset(&copy, 0, sizeof(copy));
+		copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		copy.imageSubresource.layerCount = 1;
+		copy.imageExtent.width = side;
+		copy.imageExtent.height = side;
+		copy.imageExtent.depth = 1;
+		vkCmdCopyBufferToImage(run->command, upload, texture->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+		barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+		barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+		barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+		vkCmdPipelineBarrier(run->command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, NULL, 0, NULL, 1, &barrier);
+		vkEndCommandBuffer(run->command);
+		memset(&submit, 0, sizeof(submit));
+		submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		submit.commandBufferCount = 1;
+		submit.pCommandBuffers = &run->command;
+		vkResetFences(run->device, 1, &run->fence);
+		run->failed_call = "vkQueueSubmit";
+		status = vkQueueSubmit(run->queue, 1, &submit, run->fence);
+		if (status == VK_SUCCESS) {
+			run->failed_call = "vkWaitForFences";
+			status = vkWaitForFences(run->device, 1, &run->fence, VK_TRUE, VKMATRIX_WAIT_NS);
+		}
 
-	vkDestroyBuffer(run->device, upload, NULL);
-	vkFreeMemory(run->device, upload_memory, NULL);
-	if (status != VK_SUCCESS)
-		return status;
+		vkDestroyBuffer(run->device, upload, NULL);
+		vkFreeMemory(run->device, upload_memory, NULL);
+		if (status != VK_SUCCESS)
+			return status;
+	}
 
 	/* The view and the sampler. */
 	memset(&view_info, 0, sizeof(view_info));
@@ -3027,4 +3112,87 @@ case_render_f16(
 
 	/* Succeeded: the clear and the quad, as half floats. */
 	return VK_SUCCESS;
+}
+
+/*
+ * sample-linear-*: a LINEAR R8G8B8A8 texture of width x height texels,
+ * each a different colour, written through its mapping and sampled with
+ * a nearest filter over the 32x32 quad; each pixel shows the texel its
+ * centre falls in (no centre lies on a texel edge for these sizes).
+ */
+static VkResult
+case_sample_linear(
+	struct vkmatrix *run,
+	uint32_t width,
+	uint32_t height)
+{
+	uint32_t *texels;
+	uint32_t texel;
+	float colour[4];
+	uint32_t pipeline;
+	uint32_t first;
+	uint32_t x;
+	uint32_t y;
+	VkResult status;
+
+	/* The texels: red from x, green from y, blue mixing both. */
+	texels = malloc((size_t)width * height * 4U);
+	if (texels == NULL) {
+		run->failed_call = "malloc";
+		return VK_ERROR_OUT_OF_HOST_MEMORY;
+	}
+	for (y = 0; y < height; y++) {
+		for (x = 0; x < width; x++)
+			texels[y * width + x] = 0xff000000U | ((x * 37U) & 0xffU) | (((y * 71U + 13U) & 0xffU) << 8) | (((x * 5U + y * 29U) & 0xffU) << 16);
+	}
+	run->texture_linear = 1;
+	run->texture_width = width;
+	run->texture_height = height;
+	pipeline = 0;
+	status = vkmatrix_texture(run, 0, texels, VK_FILTER_NEAREST);
+	if (status == VK_SUCCESS)
+		status = texture_pipeline(run, &pipeline);
+	if (status != VK_SUCCESS) {
+		free(texels);
+		return status;
+	}
+
+	/* The quad, and each pixel's texel (0xAABBGGRR). */
+	vkmatrix_fill(run, 0, 0, VKMATRIX_SIZE, VKMATRIX_SIZE, vkmatrix_pack(background));
+	vkmatrix_begin(run, 0, background);
+	vkmatrix_bind(run, pipeline);
+	vkCmdBindDescriptorSets(run->command, VK_PIPELINE_BIND_POINT_GRAPHICS, run->layouts[pipeline], 0, 1, &run->textures[0].set, 0, NULL);
+	first = vkmatrix_texture_quad(run, 16.0f, 16.0f, 48.0f, 48.0f);
+	vkCmdDraw(run->command, 6, 1, first, 0);
+	for (y = 0; y < 32; y++) {
+		for (x = 0; x < 32; x++) {
+			texel = texels[((2U * y + 1U) * height / 64U) * width + (2U * x + 1U) * width / 64U];
+			colour[0] = (float)(texel & 0xffU) / 255.0f;
+			colour[1] = (float)((texel >> 8) & 0xffU) / 255.0f;
+			colour[2] = (float)((texel >> 16) & 0xffU) / 255.0f;
+			colour[3] = 1.0f;
+			vkmatrix_fill(run, 16U + x, 16U + y, 17U + x, 17U + y, vkmatrix_pack(colour));
+		}
+	}
+	free(texels);
+	run->tolerance = 1;
+
+	/* Ends the pass, submits it and reads the image back. */
+	return vkmatrix_finish(run, 1);
+}
+
+/* sample-linear-1180: a linear row not a power of two (the desktop's client width). */
+static VkResult
+case_sample_linear_wide(
+	struct vkmatrix *run)
+{
+	return case_sample_linear(run, 1180, 8);
+}
+
+/* sample-linear-65: an odd linear row and height. */
+static VkResult
+case_sample_linear_odd(
+	struct vkmatrix *run)
+{
+	return case_sample_linear(run, 65, 3);
 }
