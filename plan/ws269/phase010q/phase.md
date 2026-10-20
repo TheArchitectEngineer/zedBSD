@@ -634,3 +634,31 @@ mainline で FW が host の割り込みを上げる道: host は `ROGUE_CR_MIPS
 (3) DDK の `rgxpower.c`・`rgxinit.c` で、host が BXE の start の前に書く register を探した。soft reset（`rgxinit.c` の reset の道）と、IRQ・event・safety の clear だけで、power island（SIDEKICK・JONES）や CLK_CTRL を host が書く所は無かった。
 
 確かめ: 試験の image の config と通常の VF2 の config の vmunix は、どちらも rc 0、warning 0。実機は未。
+
+## q1424-i01（P1、2026-10-20）: 地図の読み（StarFive の DDK の `rgx_cr_defs_km.h`）
+
+| offset | DDK の名前 | 値 |
+| --- | --- | --- |
+| 0x0018 | CORE_ID | 0x8470000 |
+| 0x0020 | CORE_ID__PBVNC | 36.50.54.182 |
+| 0x0058 | DDK に定義なし | 0xff |
+| 0x0100 | SOFT_RESET | GARTEN_EN |
+| 0x0160 | TIMER | 進む |
+| 0x0810 | MIPS_WRAPPER_CONFIG | 0x10000 |
+| 0x0818〜0x0878 | MIPS_ADDR_REMAP1〜 の CONFIG1/2 | 0x1fc00000 と 0xc の繰り返し |
+| 0x0888 | MIPS_ADDR_REMAP_RANGE_DATA | 0x780 |
+| 0x0890 | XPU_BROADCAST | 1 |
+| 0x08C8 | MIPS_DEBUG_CONFIG | 1 |
+| 0x08D0 | MIPS_EXCEPTION_STATUS | 1 |
+| 0x08F8 | MARS_IDLE | 6 |
+| 0x0B50 | MTS_GARTEN_WRAPPER_CONFIG | 1 |
+| 0x0BC8 | MTS_SCHEDULE_ENABLE | 0xff |
+| 0x38C0 | AXI_ACE_LITE_CONFIGURATION | 0x88805000 |
+
+- DDK の定義には XE 用の別の offset の CLK_CTRL・BIF は無い（q1418 の確かめのとおり、`__XE_MEM__` は field の形だけ）。mainline の imagination の driver（upstream）には JH7110 の GPU の DT の node も無い。BXE-4-32 の JH7110 で動いた参照は、StarFive の DDK だけ。
+- 注目点: host が書いた MIPS wrapper（0xCF800000 >> 16 | micromips、前は 0x1cf80 で読めた）が、今は 0x10000 で読める。remap の CONFIG2 は出力の page を落とした 0xc（log2 の 12）だけで読める。
+  - FW は起動するので、書き込みは効いている。
+  - これらの register は、読むと一部の field が 0 に見える（読みが制限されている）。
+  - したがって、0 の読みは「書き込みが届いていない」証拠にならない。CLK_CTRL・BIF・SLC の 0 も同じ理由の可能性がある（GPU_VIRTUALISATION の OS の bank から読む host の窓の制限か）。
+- 結論: register の配置の誤りの証拠は見つからなかった。host の読みで GPU の状態を確かめる道は、この core ではあてにならない。CDM の停止の原因は、FW の trace（BIF の setup・Kick Compute の後に何も無い）から別に探す必要がある。
+- source の変更は無し（記録だけ）。
