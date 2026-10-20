@@ -102,7 +102,7 @@ struct store_shape {
 #define TEMPS_GROUPS		15U
 
 /* The groups of the fill program. */
-#define FILL_GROUPS		14U
+#define FILL_GROUPS		13U
 
 /*
  * What a fill program writes: the word of instance 0's address, and the
@@ -124,6 +124,7 @@ static int special_group(struct powervr_usc_group *group, unsigned destination, 
 static int multiply_add_group(struct powervr_usc_group *group, unsigned destination, unsigned first, unsigned second, unsigned addend);
 static int store_group(struct powervr_usc_group *group, unsigned data, unsigned address);
 static int add64_group(struct powervr_usc_group *group, unsigned destination, unsigned base, unsigned offset);
+static int add64_group_any(struct powervr_usc_group *group, unsigned destination, unsigned base, unsigned offset);
 static int wait_group(struct powervr_usc_group *group);
 static int end_group(struct powervr_usc_group *group);
 static void temporary(struct powervr_usc_register *operand, unsigned index);
@@ -506,6 +507,7 @@ powervr_compute_probe_program(
 	size_t *length)
 {
 	struct powervr_usc_group groups[20];
+	unsigned address;
 	uint32_t stride;
 	size_t count;
 	int error;
@@ -517,8 +519,9 @@ powervr_compute_probe_program(
 	if ((base & 0xffffffffULL) + (uint64_t)POWERVR_COMPUTE_INSTANCES * stride > 0x100000000ULL)
 		return EINVAL;
 
-	/* The address in r0 and r1. */
+	/* The address in r0 and r1 (r12 and r13 for the ADDRESS kinds). */
 	count = 0;
+	address = 0;
 	error = immediate_group(&groups[count++], 0, (uint32_t)base);
 	if (error == 0)
 		error = immediate_group(&groups[count++], 1, (uint32_t)(base >> 32));
@@ -611,7 +614,7 @@ powervr_compute_probe_program(
 			if (error == 0)
 				error = immediate_group(&groups[count++], 1, (uint32_t)(base >> 32));
 			if (error == 0)
-				error = add64_group(&groups[count++], 0, 0, 8);
+				error = add64_group_any(&groups[count++], 0, 0, 8);
 		} else if (error == 0) {
 			if (kind != POWERVR_COMPUTE_PROBE_LIKE_STORE_EARLY) {
 				error = immediate_group(&groups[count++], 10, (uint32_t)base);
@@ -650,16 +653,17 @@ powervr_compute_probe_program(
 		if (error == 0)
 			error = immediate_group(&groups[count++], 1, (uint32_t)(base >> 32));
 		if (error == 0)
-			error = add64_group(&groups[count++], 0, 0, 8);
+			error = add64_group(&groups[count++], 12, 0, 8);
 		if (error == 0)
 			error = pass_group(&groups[count++], 2, POWERVR_USC_BANK_TEMPORARY, 5);
+		address = 12;
 		if (error == 0 && kind == POWERVR_COMPUTE_PROBE_ADDRESS_WAIT)
 			error = wait_group(&groups[count++]);
 	}
 
 	/* The store, the wait for it, the end. */
 	if (error == 0)
-		error = store_group(&groups[count++], 2, 0);
+		error = store_group(&groups[count++], 2, address);
 	if (error == 0)
 		error = wait_group(&groups[count++]);
 	if (error == 0)
@@ -810,7 +814,12 @@ store_fetch(
 		/* r11: the high half. */
 		error = immediate_group(group, 11, shape->base_high);
 	} else if (index < STORE_PROLOGUE + (size_t)shape->steps * STORE_STEP) {
-		/* One step: its address from the base, the instance's offset and the step's; the data; the store and the wait. */
+		/*
+		 * One step: its address from the base, the instance's offset and
+		 * the step's, each 64-bit add into a pair it does not read (the
+		 * board writes wrong pairs for an add in place); the data; the
+		 * store and the wait.
+		 */
 		step = (index - STORE_PROLOGUE) / STORE_STEP;
 		step_index = (index - STORE_PROLOGUE) % STORE_STEP;
 		if (step_index == 0) {
@@ -818,11 +827,11 @@ store_fetch(
 		} else if (step_index == 1) {
 			error = add64_group(group, 0, 10, 8);
 		} else if (step_index == 2) {
-			error = add64_group(group, 0, 0, 9);
+			error = add64_group(group, 12, 0, 9);
 		} else if (step_index == 3) {
-			error = pass_group(group, 2, POWERVR_USC_BANK_TEMPORARY, 0);
+			error = pass_group(group, 2, POWERVR_USC_BANK_TEMPORARY, 12);
 		} else if (step_index == 4) {
-			error = store_group(group, 2, 0);
+			error = store_group(group, 2, 12);
 		} else {
 			error = wait_group(group);
 		}
@@ -867,8 +876,8 @@ temps_fetch(
 		/* r0: zero. */
 		error = immediate_group(group, 0, 0);
 	} else if (index == 7) {
-		/* r2: the instance's offset. */
-		error = multiply_add_group(group, 2, 7, 2, 0);
+		/* r3: the instance's offset (not into r2, which it reads). */
+		error = multiply_add_group(group, 3, 7, 2, 0);
 	} else if (index == 8) {
 		/* r0: the low half of the base. */
 		error = immediate_group(group, 0, shape->base_low);
@@ -876,14 +885,14 @@ temps_fetch(
 		/* r1: the high half. */
 		error = immediate_group(group, 1, shape->base_high);
 	} else if (index == 10) {
-		/* r0 and r1: the instance's word. */
-		error = add64_group(group, 0, 0, 2);
+		/* r4 and r5: the instance's word, into a pair the add does not read. */
+		error = add64_group(group, 4, 0, 3);
 	} else if (index == 11) {
 		/* r2: the data, the number as the eighth temporary holds it now. */
 		error = pass_group(group, 2, POWERVR_USC_BANK_TEMPORARY, 7);
 	} else if (index == 12) {
 		/* The store. */
-		error = store_group(group, 2, 0);
+		error = store_group(group, 2, 4);
 	} else if (index == 13) {
 		/* The wait for it. */
 		error = wait_group(group);
@@ -943,15 +952,12 @@ fill_fetch(
 		/* r1: the high half. */
 		error = immediate_group(group, 1, shape->base_high);
 	} else if (index == 9) {
-		/* r0 and r1: the instance's word. */
-		error = add64_group(group, 0, 0, 5);
+		/* r2 and r3: the instance's word, into a pair the add does not read. */
+		error = add64_group(group, 2, 0, 5);
 	} else if (index == 10) {
-		/* r2: the value. */
-		error = pass_group(group, 2, POWERVR_USC_BANK_TEMPORARY, 6);
+		/* The store of the value in r6. */
+		error = store_group(group, 6, 2);
 	} else if (index == 11) {
-		/* The store. */
-		error = store_group(group, 2, 0);
-	} else if (index == 12) {
 		/* The wait for it. */
 		error = wait_group(group);
 	} else {
@@ -1114,6 +1120,11 @@ multiply_add_group(
  * destination and destination + 1 (the low half from ft0, the high from
  * fte), as an address is made.
  *
+ * The destination pair must not be the base pair: on the BXE-4-32 an
+ * add that writes the pair it reads leaves most instances' results
+ * wrong (the board's LIKE_STORE_IN_PLACE probe, 2026-10-20), so every
+ * caller writes another pair.
+ *
  * Procedure referenced:
  * Mesa 26.2.5 src/imagination/pco/pco_map.py (group_map O_ADD64_32:
  * phase 0, both writes, the sources in s0, s1 and s2, is4 from ft0 and
@@ -1122,6 +1133,32 @@ multiply_add_group(
  */
 static int
 add64_group(
+	struct powervr_usc_group *group,
+	unsigned destination,
+	unsigned base,
+	unsigned offset)
+{
+	int error;
+
+	/* Refuses an add in place, which the hardware gets wrong. */
+	if (destination == base || destination == base + 1U || destination + 1U == base)
+		return EINVAL;
+
+	/* The group. */
+	error = add64_group_any(group, destination, base, offset);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the group. */
+	return 0;
+}
+
+/*
+ * Builds the 64-bit add's group without the in-place check: only the
+ * check's own probe of an add in place (LIKE_STORE_IN_PLACE) uses it.
+ */
+static int
+add64_group_any(
 	struct powervr_usc_group *group,
 	unsigned destination,
 	unsigned base,
