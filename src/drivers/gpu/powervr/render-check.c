@@ -72,6 +72,7 @@
  */
 #define GENERAL_STREAM		0x0U
 #define GENERAL_PPP		0x100U
+#define GENERAL_TERMINATE_PPP	0x180U
 #define GENERAL_VERTICES	0x200U
 #define GENERAL_ATTACHMENT	0x1000U
 #define GENERAL_BYTES		(GENERAL_ATTACHMENT + CHECK_EDGE * CHECK_ROW_BYTES)
@@ -80,14 +81,6 @@
 #define CHECK_PROBE_MS		200U
 #define CHECK_PROBE_REGISTERS	26U
 #define CHECK_PROBE_CONTEXTS	8U
-
-/*
- * Whether the render check's first render names the triangle's
- * primitive state before its end (1), or is the end alone (0).
- */
-#ifndef POWERVR_RENDER_CHECK_STATE_FIRST
-#define POWERVR_RENDER_CHECK_STATE_FIRST	1
-#endif
 
 /*
  * The data sequencer buffer, each program on 16 bytes: the end-of-tile
@@ -451,6 +444,7 @@ check_triangle(
 	struct powervr_render_triangle triangle;
 	uint32_t ppp[POWERVR_RENDER_PPP_WORDS];
 	uint32_t vdm[POWERVR_RENDER_VDM_WORDS];
+	uint32_t terminate[POWERVR_RENDER_TERMINATE_STATE_WORDS];
 	uint32_t halt;
 	uint64_t general;
 	int error;
@@ -493,8 +487,13 @@ check_triangle(
 	put_words(check->pds, PDS_VERTEX_CODE, check->vertex.code, check->vertex.code_words);
 	put_words(check->general->buffer, GENERAL_VERTICES, vertices, 3U * POWERVR_RENDER_VERTEX_WORDS);
 
+	/* The render's terminate state, which every stream names before its end. */
+	powervr_render_terminate_state(CHECK_EDGE, CHECK_EDGE, terminate);
+	put_words(check->general->buffer, GENERAL_TERMINATE_PPP, terminate, POWERVR_RENDER_TERMINATE_STATE_WORDS);
+
 	/* The primitive state block and the stream that names it and draws. */
 	triangle.ppp_address = general + GENERAL_PPP;
+	triangle.terminate_address = general + GENERAL_TERMINATE_PPP;
 	triangle.fragment.kick_offset = pds_base + PDS_TRIANGLE_KICK;
 	triangle.fragment.shared_code_offset = pds_base + PDS_NOTHING_CODE;
 	triangle.fragment.shared_data_offset = pds_base + PDS_NOTHING_DATA;
@@ -531,23 +530,21 @@ check_empty(
 	struct render_check *check)
 {
 	uint32_t saved[POWERVR_RENDER_VDM_WORDS];
-	uint32_t end;
+	uint32_t stream[POWERVR_RENDER_TERMINATE_STREAM_WORDS];
 	unsigned index;
 	int error;
 
 	/*
-	 * The stream's end in place of the triangle's stream, or, with
-	 * POWERVR_RENDER_CHECK_STATE_FIRST, the triangle's primitive state
-	 * block (its first two words) and then the end, as a stream that
-	 * names a state before it ends.
+	 * In place of the triangle's stream, the stream's end alone as Mesa
+	 * ends a render: the terminate state's block, then the end (the
+	 * state was written with the triangle).
 	 */
 	for (index = 0; index < POWERVR_RENDER_VDM_WORDS; index++)
 		saved[index] = get_word(check->general->buffer, GENERAL_STREAM + index * 4U);
-	end = POWERVR_VDM_TERMINATE;
-	if (POWERVR_RENDER_CHECK_STATE_FIRST)
-		put_words(check->general->buffer, GENERAL_STREAM + 8U, &end, 1);
-	else
-		put_words(check->general->buffer, GENERAL_STREAM, &end, 1);
+	error = powervr_render_terminate_stream(check->general->address + GENERAL_TERMINATE_PPP, stream);
+	if (error != 0)
+		return error;
+	put_words(check->general->buffer, GENERAL_STREAM, stream, POWERVR_RENDER_TERMINATE_STREAM_WORDS);
 
 	/* The kick and the wait, as the triangle's. */
 	powervr_firmware_trace_mark(check->render->core);
@@ -570,7 +567,7 @@ check_empty(
 			probe_geometry(check->render->core);
 		}
 	}
-	kern_logf("powervr: render check: %s stream: %s (%d), context %s\n", POWERVR_RENDER_CHECK_STATE_FIRST ? "state-and-end" : "empty",
+	kern_logf("powervr: render check: %s stream: %s (%d), context %s\n", "terminate-state",
 		  error == 0 ? "finished" : "FAILED", error,
 		  check->session->lost ? "reset" : "kept");
 

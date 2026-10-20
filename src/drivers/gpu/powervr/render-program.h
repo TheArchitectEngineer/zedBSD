@@ -64,7 +64,14 @@
 #define POWERVR_RENDER_PPP_WORDS	19U
 
 /* The words of the test triangle's vertex control stream. */
-#define POWERVR_RENDER_VDM_WORDS	10U
+#define POWERVR_RENDER_VDM_WORDS	12U
+
+/*
+ * A render's terminate state (the primitive state block every stream
+ * names before its end) and the stream's end that names it.
+ */
+#define POWERVR_RENDER_TERMINATE_STATE_WORDS	3U
+#define POWERVR_RENDER_TERMINATE_STREAM_WORDS	3U
 
 /* The coordinates of one vertex of the test triangle: x and y in pixels, z. */
 #define POWERVR_RENDER_VERTEX_WORDS	3U
@@ -128,6 +135,7 @@ struct powervr_render_background {
  */
 struct powervr_render_triangle {
 	uint64_t ppp_address;
+	uint64_t terminate_address;
 	struct powervr_render_background fragment;
 	uint32_t vertex_data_offset;
 	uint32_t vertex_code_offset;
@@ -149,6 +157,8 @@ int powervr_render_kick_build(uint32_t usc_offset, unsigned temps, struct powerv
 int powervr_render_background_words(const struct powervr_render_background *background, uint64_t words[3]);
 int powervr_render_pbe_words(const struct powervr_render_surface *surface, const struct powervr_render_area *area, uint32_t state[2], uint64_t reg[3]);
 int powervr_render_triangle_ppp(const struct powervr_render_triangle *triangle, uint32_t words[POWERVR_RENDER_PPP_WORDS]);
+void powervr_render_terminate_state(uint32_t width, uint32_t height, uint32_t state[POWERVR_RENDER_TERMINATE_STATE_WORDS]);
+int powervr_render_terminate_stream(uint64_t state_address, uint32_t words[POWERVR_RENDER_TERMINATE_STREAM_WORDS]);
 int powervr_render_triangle_vdm(const struct powervr_render_triangle *triangle, uint32_t words[POWERVR_RENDER_VDM_WORDS]);
 
 #endif /* KERN_DRIVERS_GPU_POWERVR_RENDER_PROGRAM_H */

@@ -321,8 +321,12 @@ test_streams(void)
 	static const uint32_t vdm_golden[POWERVR_RENDER_VDM_WORDS] = {
 		0x00001300U, 0x81234560U, 0x4c000f80U, 0x00003000U,
 		0x00003040U, 0x00000004U, 0x20000442U, 0x68000600U,
-		0x00000003U, 0xc0000000U
+		0x00000003U, 0x00000300U, 0x81234600U, 0xc0000000U
 	};
+	static const uint32_t terminate_golden[POWERVR_RENDER_TERMINATE_STATE_WORDS] = {
+		0x02000000U, 0x00040001U, 0x00000000U
+	};
+	uint32_t terminate[POWERVR_RENDER_TERMINATE_STATE_WORDS];
 	struct powervr_render_background background;
 	struct powervr_render_triangle triangle;
 	uint32_t ppp[POWERVR_RENDER_PPP_WORDS];
@@ -333,6 +337,7 @@ test_streams(void)
 	/* The triangle's block and stream (values M9 confirmed). */
 	memset(&triangle, 0, sizeof(triangle));
 	triangle.ppp_address = 0x81234560ULL;
+	triangle.terminate_address = 0x81234600ULL;
 	triangle.fragment.kick_offset = 0x2000;
 	triangle.fragment.shared_code_offset = 0x2100;
 	triangle.fragment.shared_data_offset = 0x2200;
@@ -344,6 +349,8 @@ test_streams(void)
 	check(ok && memcmp(ppp, ppp_golden, sizeof(ppp)) == 0, "triangle primitive block");
 	ok = powervr_render_triangle_vdm(&triangle, vdm) == 0;
 	check(ok && memcmp(vdm, vdm_golden, sizeof(vdm)) == 0, "triangle vertex stream");
+	powervr_render_terminate_state(64, 64, terminate);
+	check(memcmp(terminate, terminate_golden, sizeof(terminate)) == 0, "terminate state of 64x64");
 
 	/* Refusals: a misaligned program and too many temporaries. */
 	triangle.vertex_code_offset = 0x3044;

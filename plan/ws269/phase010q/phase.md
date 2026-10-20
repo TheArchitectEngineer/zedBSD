@@ -1163,3 +1163,67 @@ csbgen（Mesa 25.0.7 の `gen_pack_header.py` の `__pvr_address`: `((addr >> sh
   - TPC: 0 埋めのみ（Mesa も同じ）。
   - RTC: 1 layer では無い。
 - 結論: 64×64・1 sample・1 layer の HWRT の record・common・free list の全 field は、Mesa と mainline の計算と一致した。直す差は無い。コードは変えていない。
+
+## q1482 / q1482-i01（2026-10-21）: geometry の register と最小の stream
+
+(1) Mesa 25.0.7 の csbgen の `rogue_cr.xml`（25.0.0 と同じ定義）で decode した:
+
+| register | field（bit） | 我々 | IMG（capture） |
+| --- | --- | --- | --- |
+| TE_PSG | force_protect 22、cs_size 21、enable_pwr_gate_state 20（ROGUEXE）、enable_context_state_restore 19、zonlyrender 18、**completeonterminate 17**、cache_bypass 14、forcenewstate 13、region_stride 0〜10（4096 byte の単位） | 0x20000 = completeonterminate だけ。region_stride は 0（region header は 16 個 × 8 byte で 4 KiB 未満） | 0x20000（同じ） |
+| PPP_CTRL | vpt_scissor 12、flush_mode 11、bfcull_restrict_clip 10、**fixed_point_format 9**、default_point_size 8、cull の disable 7〜2、**wclampen 1**、opengl 0 | 0x202 = fixed_point_format と wclampen | 0x202（同じ） |
+| TPU | mcu_pds_l0_off 8、tag_cem_64_face_packing 7、tag_enable_mmu_prefetch 6、… madd_config_dxt35_transovr 0 | 0 | 0 |
+| VDM_CTRL_STREAM_BASE | addr 2〜39 | 0x8000013000 | 0x80000ea000 |
+| TPU_BORDER_COLOUR_TABLE_VDM | addr 0〜37（shift 2） | 表の address（q1468） | 0x2000026c00 |
+
+(2) Mesa の `pvr_geom_state_stream_init` と我々の geometry command の対応（`render-command.c`）:
+  - vdm_ctrl_stream_base、tpu_border_colour_table、ppp_ctrl（wclampen と fixed point 1）、te_psg（completeonterminate と region_stride。forcenewstate は quirk 52942 の時だけで、この core には無い）: 同じ。
+  - vdm_context_resume_task0_size: Mesa の VDMCTRL_PDS_STATE0 の usc_common_size に合わせている（q1468）。同じ。
+  - view_idx 0、tpu 0: 同じ。
+  - pds_coeff_free_prog: ext の stream の物で、この core では使わない。0 で同じ。
+  - flags: Mesa は is_first・is_last（FIRST|LAST の 0x3）。`use_single_core` は fragment が atomic を使う時だけ立つので、通常は 0。我々は multicore の feature で bit 3 を立てていた（0xb）。**違うので直した**: `POWERVR_RENDER_SINGLE_CORE_FLAG` の既定を 0 にした（IMG の capture も flags 3）。
+(3) Mesa の最小の stream: `pvr_sub_cmd_gfx_build_terminate_ctrl_stream` は `pvr_cmd_buffer_emit_ppp_state`（PPP_STATE0 に word_count 3 と address の上位 byte、PPP_STATE1 に下位の word）の後に terminate を置く。PPP の 3 語は `pvr_framebuffer_create_ppp_state` の物で、次のとおり:
+  - TA_STATE_HEADER は pres_terminate（bit 25）だけ。
+  - TERMINATE0 は clip_right（bit 18〜26）と clip_bottom（bit 0〜8）。どちらも 32 px の block 数 −1 で、64×64 では 1 と 1。
+  - TERMINATE1 は 0。
+  - `render-check.c` の `POWERVR_RENDER_CHECK_STATE_FIRST` を 2 にすると、この形になる。3 語を general の +0x180 に置き、stream は STATE0・STATE1・terminate。log の名前は `terminate-state`。既定は 1 のまま。
+- 確認:
+  - RISC-V の self-test の build で warning 0。既定（1）と、switch を 2 にした時の両方で確かめた。
+  - p010 の host 試験は failed 0。
+  - 板は未実施。
+
+## q1483 / q1483-i01（2026-10-21）: Linux 側で control stream を読む道具
+
+- `plan/ws269/tests/p010-linux/walk.py`: PC の物理 address・GPU の VA・byte 数を取り、/dev/mem で Rogue の page table を歩いて、各段の entry（PC は 32 bit、PD は 64 bit で page size の code を含む、PT は 64 bit で flag を含む）と PA と中身を出す。entry の形は mainline の pvr_rogue_mmu_defs.h に従い、PD の page size（4 KiB〜2 MiB）にも対応する。page をまたぐ読みは page ごとに解く。
+- `capture2.py`（gdb）: capture.py と同じ TA の kick の後、次の ioctl で firmware の trace（debugfs）の最後の `PC address=` を取る。TA cmd の +16（`vdm_ctrl_stream_base`）から 256 byte を読み、先頭の block が PPP_STATE0/1 なら、その指す PPP state の語も `/tmp/ta3d-capture2.txt` に出す。
+- README に手順と、CONFIG_STRICT_DEVMEM の時の代替（`/proc/kcore` の PT_LOAD を使った物理 address の変換、drgn の `prog.read(…, physical=True)`、`iomem=relaxed` の限界、devmem2・dd が同じ制限を受けること）を書いた。
+- 確認: host で、偽の物理 memory の file に PC・PD・PT・page を置き、`walk.read_va` が VA 0x80000ea010 → PA 0x5010 を解き、語を正しく読むことを確かめた（scratchpad の一時の試験で、repository には入れない）。板（Debian）は未実施（Q1）。
+
+## q1484 / q1484-i01（2026-10-21）: 全 stream の末尾に Mesa の terminate state
+
+- 板 77 で、Mesa の最小の stream（terminate の PPP state を指す PPP_STATE0/1 → VDM terminate）で TA が完走した。我々の stream は、PPP state の block が無いか、三角形の state（pres_terminate 無し）だけを置いて terminate していた。
+- 直し:
+  - `render-program.c` に `powervr_render_terminate_state`（3 語: header は pres_terminate だけ、TERMINATE0 は clip の right・bottom を 32 px の block 数 −1、TERMINATE1 は 0）と `powervr_render_terminate_stream`（PPP_STATE0（word count 3 と上位 byte）・PPP_STATE1（下位の word）・terminate）を足した。Mesa の `pvr_framebuffer_create_ppp_state` と `pvr_sub_cmd_gfx_build_terminate_ctrl_stream` の形。
+  - 三角形の stream（`powervr_render_triangle_vdm`、VDM の語数を 10 から 12 に）の末尾をこの 3 語にした。terminate state の address は `triangle.terminate_address`。
+  - job の道（`render-job.c`。vk の graphics もここを通る）の stream の末尾もこの 3 語にした。terminate state は general の +0xb00 に置き、job の幅と高さを使う。
+  - render check の最初の render（`check_empty`）は、この末尾の 3 語だけの stream にした。`POWERVR_RENDER_CHECK_STATE_FIRST` とその 0・1 の分岐は消した。log の名前は `terminate-state`。
+- 我々の PPP state の header と Mesa の対比（三角形の block、19 語。header は 0x007f05c7）:
+
+  | bit | pres_ | 我々の三角形 | Mesa の draw（`pvr_emit_ppp_state`・clear の template） | Mesa の terminate state |
+  | --- | --- | --- | --- | --- |
+  | 0〜2 | ispctl、ispctl_fa、ispctl_fb | ○ | ○ | — |
+  | 6〜8 | pds_state_ptr0〜2 | ○ | ○ | — |
+  | 10 | region_clip | ○ | ○ | — |
+  | 16 | wclamp | ○ | ○ | — |
+  | 17 | outselects | ○ | ○ | — |
+  | 18〜20 | varying_word0〜2 | ○ | ○ | — |
+  | 21 | ppp_ctrl | ○ | ○ | — |
+  | 22 | stream_out_size | ○ | ○ | — |
+  | 25 | terminate | — | — | ○（TERMINATE0・1 の 2 語が続く） |
+
+  Mesa も draw の state に pres_terminate を立てない。terminate は render の最後の、terminate state の block だけが持つ。我々に欠けていたのは、この最後の block である。
+- 試験:
+  - p010 の render-host-test の三角形の stream の golden を新しい末尾（0x00000300・0x81234600・0xc0000000）に直し、64×64 の terminate state（0x02000000・0x00040001・0）を足した（30/30）。
+  - job-host-test の stream の末尾の確認を、terminate state の block と中身の確認に直した（29/29）。
+  - p010 の他の試験と p009 の executor（502/502）は全部 PASS。
+- 確認: RISC-V の self-test の build で warning 0。板は未実施（Q1）。
