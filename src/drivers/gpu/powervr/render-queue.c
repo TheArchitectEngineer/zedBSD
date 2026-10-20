@@ -2429,7 +2429,7 @@ handle_notice(
 	 * fault_address 32) and pvr_rogue_fwif_shared.h (reason 1 guilty
 	 * lockup, 2 innocent lockup; dm 4 the compute data master).
 	 */
-	kern_logf("powervr: context reset notice: context 0x%x reason %u dm %u job %u flags 0x%x pc 0x%08x%08x fault 0x%08x%08x\n",
+	kern_logf("powervr: context reset notice: context 0x%x reason %u dm %u job %u flags 0x%x page catalogue 0x%08x%08x fault 0x%08x%08x\n",
 		  (unsigned)powervr_object_get32(buffer, offset + POWERVR_COMMAND_DATA + 0U),
 		  (unsigned)powervr_object_get32(buffer, offset + POWERVR_COMMAND_DATA + 4U),
 		  (unsigned)powervr_object_get32(buffer, offset + POWERVR_COMMAND_DATA + 8U),
@@ -2466,8 +2466,6 @@ handle_notice(
 			if (powervr_hwr_dump != NULL)
 				powervr_hwr_dump(render->core, kind == POWERVR_CONTEXT_RENDER ? &session->render_context->record :
 							       kind == POWERVR_CONTEXT_TRANSFER ? &session->transfer_context->record : &session->context);
-			powervr_session_describe_physical(session, ((uint64_t)powervr_object_get32(buffer, offset + POWERVR_COMMAND_DATA + 28U) << 32 |
-								    powervr_object_get32(buffer, offset + POWERVR_COMMAND_DATA + 24U)) & ~(uint64_t)3U);
 		}
 
 		/* No new kick for it; the core hears of the loss. */

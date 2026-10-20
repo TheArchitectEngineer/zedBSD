@@ -326,3 +326,14 @@ Keiland が使い、vkmatrix 15/15・gpu-selftest 13/13 で確かめていない
   - 板は未実施。
 - d25（3c347a062、P1 の `vkmatrix -p N -r R`、P2 の SD の直し）: SD の read の失敗は retry で通る（errors 29、止まらない）。同時の試験の途中で板が log 無しで再起動（2 回、原因未確認、SoC ごと止まり watchdog か）。
 - **d26（61002a373、P2 の HWR の dump 37645e247）: `vkmatrix -p 3 -r 3 load-1080-textured` → FAIL。`hwr: record 0: number 1 dm 3 type 3 … hwrt 0xc0129000`、`data 10650000000000 d001 58ae9001 0` → type 3 = BIF0FAULT（GPU の MMU の fault）、notice の「pc」は page catalogue の address（0x58ae9001）。複数 session の同時の描画で MMU の文脈が衝突する疑い（page_cat_base_reg_set を全 session で共有、または MMU cache の invalidate）。P1 に修正、P2 に decode を依頼。**
+
+### q1532-i02（2026-10-21、P2）: BIF fault の解読と page catalogue の名
+
+- run 26 の record（type 3 の BIF0FAULT、`data 10650000000000 d001 58ae9001 0`）を、vendor の rgx_cr_defs_km.h（XE MEM）と rgxdebug.c の tag の表で解くと次のとおり。
+  - address 0x0、read、tag 0x25 = IPF CREQ（ISP の parameter fetch の control stream の要求）、side band 1。
+  - mmu status は fault 1、catalogue base 13、page size 0。page catalogue は 0x58ae9001。
+  - つまり 3D の ISP が region header か control stream の address 0 を読んだ。
+- HWR dump は、type 3〜5（BIF の fault）の record に、上の解読の 1 行（`bif fault at …, read by tag N (name) …; page catalogue …`）を足す。
+- notice の行の "pc" は page catalogue の物理 address なので、log の名を `page catalogue` にした。`powervr_session_describe_physical`（shader の address と見て探していた）は消した。
+- session を作る時に `powervr: session context 0x… memory context 0x… page catalogue 0x…` を出す。fault の page catalogue から session を引ける。
+- 確認: desktop の config で VF2 の vmunix は rc 0、warning 0。p010 の host 試験は 0 failed。

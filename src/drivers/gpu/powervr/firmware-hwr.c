@@ -51,7 +51,34 @@
 #define TRACE_TAIL_WORDS	256U
 #define RECORD_WORDS_MAX	96U
 
+/*
+ * A BIF fault's two status registers on this core (XE memory):
+ * REQ_STATUS address 4..39, tag ID 40..45, tag side band 46..51, read not
+ * write 52; MMU_STATUS fault 0, PM/META read only 2, read only 4, data type
+ * 5..6, page size 8..10, catalogue base 12..15.  And the requesters' tag
+ * IDs.
+ *
+ * Values referenced: StarFive Linux JH7110_VisionFive2_6.12.y_devel
+ * drivers/gpu/drm/img/img-rogue/hwdefs/rogue/km/rgx_cr_defs_km.h
+ * (RGX_CR_BIF_FAULT_BANK0_REQ_STATUS__XE_MEM__*, RGX_CR_BIF_FAULT_BANK0_
+ * MMU_STATUS_*), rgx_mh_defs_km.h (RGX_MH_TAG_ENCODING_MH_TAG_*) and
+ * services/server/devices/rogue/rgxdebug.c (_RGXDecodeBIFReqTagsXE).
+ */
+#define HWR_TYPE_BIF0		3U
+#define HWR_TYPE_TEXAS_BIF0	5U
+
+static const char *const tag_names[] = {
+	"MMU", "CPU MMU", "CPU IFU", "CPU LSU", "MIPS", "CDM 0", "CDM 1", "CDM 2",
+	"CDM 3", "VDM 0", "VDM 1", "VDM 2", "VDM 3", "VDM 4", "PDS 0", "PDS 1",
+	"MCU USCA", "MCU USCB", "MCU USCC", "MCU USCD", "MCU PDS USCA", "MCU PDS USCB", "MCU PDS USCC", "MCU PDS USCD",
+	"MCU PDSRW", "TCU 0", "TCU 1", "FBCDC 0", "FBCDC 1", "FBCDC 2", "FBCDC 3", "USC",
+	"ISP ZLS", "ISP DS", "TPF", "TPF DBIAS", "TPF SPF", "IPF CREQ", "IPF OTHERS", "VDM 5",
+	"TA PPP", "TA TPWRTC", "TA TEACRTC", "TA PSGRTC", "TA PSGREGION", "TA PSGSTREAM", "TA TPW", "TA TPC",
+	"PM ALLOC", "PM DEALLOC", "TDM DMA", "TDM CTL", "PBE 0", "PBE 1", "PBE 2", "PBE 3"
+};
+
 static uint64_t get64(const struct powervr_object *object, uint32_t offset);
+static void bif_decode(uint32_t record, uint64_t request, uint64_t status, uint64_t catalogue);
 
 /* Prints the recovery records, the trace's tail and the reset context's record. */
 void
@@ -100,6 +127,8 @@ powervr_hwr_dump(
 			  (unsigned long long)get64(info, base + 88U), (unsigned long long)get64(info, base + 96U),
 			  (unsigned long long)get64(info, base + 104U), (unsigned long long)get64(info, base + 112U),
 			  (unsigned long long)get64(info, base + 32U));
+		if (powervr_object_get32(info, base + 72U) >= HWR_TYPE_BIF0 && powervr_object_get32(info, base + 72U) <= HWR_TYPE_TEXAS_BIF0)
+			bif_decode(record, get64(info, base), get64(info, base + 8U), get64(info, base + 16U));
 	}
 
 	/* The trace's last words, for plan/tools/vf2/sfdec.py. */
@@ -144,4 +173,28 @@ get64(
 {
 	/* The low word, then the high. */
 	return (uint64_t)powervr_object_get32(object, offset) | ((uint64_t)powervr_object_get32(object, offset + 4U) << 32);
+}
+
+/* Prints a BIF fault's status registers decoded: the address, the requester, the access, the catalogue. */
+static void
+bif_decode(
+	uint32_t record,
+	uint64_t request,
+	uint64_t status,
+	uint64_t catalogue)
+{
+	uint32_t tag;
+	const char *name;
+
+	/* The requester by its tag. */
+	tag = (uint32_t)((request >> 40) & 0x3fU);
+	name = "?";
+	if (tag < sizeof(tag_names) / sizeof(tag_names[0]))
+		name = tag_names[tag];
+	kern_logf("powervr: hwr: record %u: bif fault at 0x%llx, %s by tag %u (%s) side band %u; mmu fault %u read only %u pm/meta read only %u data type %u page size %u catalogue base %u; page catalogue 0x%llx\n",
+		  (unsigned)record, (unsigned long long)(request & 0xfffffffff0ULL), ((request >> 52) & 1U) != 0 ? "read" : "write",
+		  (unsigned)tag, name, (unsigned)((request >> 46) & 0x3fU),
+		  (unsigned)(status & 1U), (unsigned)((status >> 4) & 1U), (unsigned)((status >> 2) & 1U),
+		  (unsigned)((status >> 5) & 3U), (unsigned)((status >> 8) & 7U), (unsigned)((status >> 12) & 0xfU),
+		  (unsigned long long)catalogue);
 }
