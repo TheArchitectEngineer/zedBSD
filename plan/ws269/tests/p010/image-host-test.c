@@ -136,19 +136,19 @@ main(void)
 	int pitch_good;
 	int error;
 
-	/* The table: every format found, none with linear features yet, an unknown one absent. */
+	/* The table: every format found, linear sampling only while the shared path's switch is on, an unknown one absent. */
 	for (i = 0; i < sizeof(formats) / sizeof(formats[0]); i++) {
 		format = powervr_format_find(formats[i]);
 		expect(format != NULL, "a format of the table is found");
 		if (format != NULL)
-			expect((powervr_format_linear_features(format) & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) == 0, "no linear sampling before the shared path");
+			expect(POWERVR_FORMAT_LINEAR_SAMPLED != 0 || (powervr_format_linear_features(format) & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) == 0, "no linear sampling while the shared path is off");
 	}
 	expect(powervr_format_find(VK_FORMAT_R16_UNORM) == NULL, "a format outside the table is absent");
 	expect(powervr_format_clear_word_count(powervr_format_find(VK_FORMAT_B8G8R8A8_UNORM)) == 1 && powervr_format_clear_word_count(powervr_format_find(VK_FORMAT_B8G8R8A8_SRGB)) == 2 &&
 	    powervr_format_clear_word_count(powervr_format_find(VK_FORMAT_R32G32B32A32_SFLOAT)) == 4 && powervr_format_clear_word_count(powervr_format_find(VK_FORMAT_D32_SFLOAT)) == 0, "clear word counts: 1 for RGBA8, 2 for sRGB, 4 for RGBA32F, none for depth");
 	format = powervr_format_find(VK_FORMAT_R8G8B8A8_UNORM);
 	expect(format != NULL && (format->optimal_features & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT) != 0 && (format->optimal_features & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) != 0, "RGBA8 optimal draws and filters");
-	expect(format != NULL && powervr_format_linear_features(format) == (FEATURES_LINEAR_RGBA), "RGBA8 linear: all but sampling");
+	expect(format != NULL && powervr_format_linear_features(format) == (POWERVR_FORMAT_LINEAR_SAMPLED != 0 ? format->linear_features : FEATURES_LINEAR_RGBA), "RGBA8 linear: all, or all but sampling while the shared path is off");
 	format = powervr_format_find(VK_FORMAT_D32_SFLOAT);
 	expect(format != NULL && format->optimal_features == (VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_FORMAT_FEATURE_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT) && format->linear_features == 0, "D32 depth and copies, optimal only");
 	format = powervr_format_find(VK_FORMAT_R32G32B32_SFLOAT);

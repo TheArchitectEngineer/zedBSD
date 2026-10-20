@@ -155,3 +155,18 @@ Keiland が使い、vkmatrix 15/15・gpu-selftest 13/13 で確かめていない
 - 遅さ: 1 frame の submit が約 160〜180 ms（`KWL PERF rec … submit=161`、present 9〜10 ms）→ 約 5 fps。G4（job ごとの同期の待ち）か。
 - client: `terminal` を session の中で起動すると `ZTERM FAILED run=term operation=vkCreateSwapchainKHR result=-11`（VK_ERROR_FORMAT_NOT_SUPPORTED）。G5（client の buffer の export/import、p010l の shared の道）の側。
 - SD の dw-mmc の read の失敗（BUG-343）は起動の間にも出るが、起動は通った。
+
+## q1523-i01（2026-10-21、P2）: client の vkCreateSwapchainKHR -11
+
+- 原因: libvulkan の Wayland の platform（`userland/desktop/libvulkan/wsi-wayland.c`）は copied の present を持たない（ops の present は NULL）。
+  `swapchain_create` は shared の道（`swapchain_native_images_create` → `wsi-image.c`）だけを使える。
+  その道は、format の linearTilingFeatures に SAMPLED_IMAGE が無いと VK_ERROR_FORMAT_NOT_SUPPORTED を返す（wsi-image.c:57）。
+  PowerVR は `POWERVR_FORMAT_LINEAR_SAMPLED` 0 で linear の SAMPLED を外していたので、Wayland の swapchain はどれも -11 になった。
+- 修正: shared の道に必要なので、`src/drivers/gpu/powervr/image-state.h` の `POWERVR_FORMAT_LINEAR_SAMPLED` を 1 にした
+  （p010l で用意した切り替え。executor の linear の image state・external・export・import は p010l で host を通している）。
+- 確認:
+  - p009 の executor host 試験は、切り替え 0・1 とも 505 passed、0 failed。
+  - p010 の host 試験は 0 failed（image-host-test は切り替えに従う期待に直し、63 passed）。
+  - VF2 の vmunix は rc 0、warning 0。
+  - 板は未実施（Q1 が overlay して terminal を確かめる）。
+  - libvulkan の判断（Wayland が copied の道を持たない）は host 試験にしていない。

@@ -47,12 +47,13 @@
  * linear swapchain image only when linear sampling is reported; while it
  * is not, a client's window system presents through copies of optimal
  * images.  The executor takes the shared path's external images,
- * exports and imports either way (ws269-p010l); the switch stays off
- * until the readback path has run on the board (p010k2) and Q1 opens it.
- * A host test may define it to 1 to check both values.
+ * exports and imports either way (ws269-p010l).  It is on (q1523): the
+ * Wayland client WSI has no copied route, so with it off every Wayland
+ * swapchain failed with VK_ERROR_FORMAT_NOT_SUPPORTED.  A host test may
+ * define it to 0 to check both values.
  */
 #ifndef POWERVR_FORMAT_LINEAR_SAMPLED
-#define POWERVR_FORMAT_LINEAR_SAMPLED	0
+#define POWERVR_FORMAT_LINEAR_SAMPLED	1
 #endif
 
 /* The kinds of a format's texels. */
