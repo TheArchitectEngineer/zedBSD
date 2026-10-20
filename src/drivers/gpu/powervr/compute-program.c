@@ -44,6 +44,12 @@
 #define KERNEL_ADDRESS_MASK	0xfffffff0U
 #define KERNEL_INSTANCES_MAX	0x1fU
 #define KERNEL_SIZE_MAX		0x200U
+#define KERNEL_COMMON_UNIT_BYTES	64U
+#define GROUP_TEMP64_0		64U
+#define GROUP_WRITE_UPPER	1U
+#define GROUP_WRITE_ALL64	2U
+#define KERNEL_COMMON_MAX	0x1ffU
+#define KERNEL_GROUPS_MAX	0x10000U
 
 /*
  * The data sequencer's predicates and registers the programs name.
@@ -140,6 +146,12 @@ static const struct powervr_usc_group blank_group = {
  * Mesa 26.2.5 src/imagination/vulkan/pvr_arch_cmd_buffer.c
  * (pvr_compute_generate_control_stream: KERNEL0, 1, 2, then 3, 4, 5
  * without an indirect buffer, then 8; the sizes in units rounded up).
+ * Values referenced:
+ * Mesa 25.0.7 src/imagination/csbgen/rogue_cdm.xml (KERNEL0
+ * usc_common_size bits 18 to 26 in units of 64 bytes; KERNEL3, 4, 5 the
+ * workgroup counts less one); pvr_cmd_buffer.c
+ * (pvr_compute_update_kernel: the coefficient registers as the common
+ * size, the global size the dispatch's workgroups).
  */
 int
 powervr_compute_kernel_words(
@@ -147,8 +159,11 @@ powervr_compute_kernel_words(
 	uint32_t words[POWERVR_COMPUTE_KERNEL_WORDS])
 {
 	unsigned unified;
+	unsigned common;
 	unsigned temps;
 	unsigned data;
+	unsigned groups[3];
+	unsigned axis;
 
 	/* Refuses a missing kernel or result. */
 	if (kernel == NULL || words == NULL)
@@ -173,11 +188,20 @@ powervr_compute_kernel_words(
 	unified = (kernel->usc_inputs * 4U + KERNEL_UNIT_BYTES - 1U) / KERNEL_UNIT_BYTES;
 	temps = (kernel->pds_temporaries * 4U + KERNEL_UNIT_BYTES - 1U) / KERNEL_UNIT_BYTES;
 	data = (kernel->data_words * 4U + KERNEL_UNIT_BYTES - 1U) / KERNEL_UNIT_BYTES;
-	if (unified > KERNEL_UNIFIED_MAX || temps > KERNEL_TEMPS_MAX || data > KERNEL_DATA_MAX)
+	common = (kernel->usc_common * 4U + KERNEL_COMMON_UNIT_BYTES - 1U) / KERNEL_COMMON_UNIT_BYTES;
+	if (unified > KERNEL_UNIFIED_MAX || temps > KERNEL_TEMPS_MAX || data > KERNEL_DATA_MAX || common > KERNEL_COMMON_MAX)
 		return EINVAL;
+
+	/* The workgroup counts, zero taken as one. */
+	for (axis = 0; axis < 3U; axis++) {
+		groups[axis] = kernel->workgroups[axis] == 0 ? 1U : kernel->workgroups[axis];
+		if (groups[axis] > KERNEL_GROUPS_MAX)
+			return EINVAL;
+	}
 
 	/* The first word: the kernel block, its sizes, its target and its fence. */
 	words[0] = BLOCK_KERNEL << BLOCK_SHIFT;
+	words[0] |= common << 18;
 	words[0] |= unified << 12;
 	words[0] |= temps << 8;
 	words[0] |= data << 2;
@@ -192,10 +216,10 @@ powervr_compute_kernel_words(
 	/* The code segment. */
 	words[2] = kernel->code_offset;
 
-	/* One workgroup in each dimension, written less one. */
-	words[3] = 0;
-	words[4] = 0;
-	words[5] = 0;
+	/* The workgroups in each dimension, written less one. */
+	words[3] = groups[0] - 1U;
+	words[4] = groups[1] - 1U;
+	words[5] = groups[2] - 1U;
 
 	/* The task size and the workgroup's size, all in x, written less one. */
 	words[6] = (uint32_t)kernel->max_instances << 27;
@@ -332,6 +356,87 @@ powervr_compute_kick_program(
 
 	/* Succeeded: four code words. */
 	*code_words = 4;
+	return 0;
+}
+
+/*
+ * Builds the data sequencer program of a kernel of many workgroups: the
+ * coefficient update pass, run once per workgroup, writes the workgroup
+ * id (x and y, then z) into the first three coefficient registers, and
+ * the instance pass issues the shading cluster task.  The data words are
+ * the task issue word, then the two write control words.
+ *
+ * Procedure referenced:
+ * Mesa 25.0.7 src/imagination/vulkan/pds/pvr_pds.c
+ * (pvr_pds_compute_shader: the branch on IF1 negated past the
+ * coefficient update pass; in that pass the work-group ids in the
+ * temporaries the compute data master fills, x and y as one 64-bit
+ * write from temporaries 0 and 1, z as the upper half of the second
+ * 64-bit temporary, into the common store, the last write marked, then a
+ * halt; the instance pass's task issue ending the program, then a halt).
+ * Values referenced:
+ * the same file (PVR_PDS_CDM_WORK_GROUP_ID_X 0 and the z component in
+ * temporary 3, PVR_PDS_TEMPS_BLOCK_BASE 128) and pvr_rogue_pds_defs.h
+ * (PVR_ROGUE_PDSINST_REGS64_TEMP64_LOWER 64; the write control word's
+ * fields as powervr_pds_write_control_word takes them).
+ */
+int
+powervr_compute_workgroup_program(
+	uint64_t usc_offset,
+	unsigned temporaries_field,
+	uint32_t data[POWERVR_COMPUTE_PDS_GROUP_DATA_WORDS],
+	uint32_t code[POWERVR_COMPUTE_PDS_CODE_MAX],
+	unsigned *code_words)
+{
+	uint64_t task;
+	int error;
+
+	/* Refuses a missing result or a field wider than six bits. */
+	if (data == NULL || code == NULL || code_words == NULL || temporaries_field > 0x3fU)
+		return EINVAL;
+
+	/* The task issue word, as the plain kick's. */
+	error = powervr_pds_task_word(usc_offset, 0, 0, 0, &task);
+	if (error != 0)
+		return error;
+	task |= (uint64_t)temporaries_field << 35;
+	data[0] = (uint32_t)task;
+	data[1] = (uint32_t)(task >> 32);
+
+	/* The writes: x and y to coefficients 0 and 1, then z to coefficient 2, the last. */
+	error = powervr_pds_write_control_word(0, 1, 0, 0, GROUP_WRITE_ALL64, &data[2]);
+	if (error != 0)
+		return error;
+	error = powervr_pds_write_control_word(1, 1, 0, 2, GROUP_WRITE_UPPER, &data[3]);
+	if (error != 0)
+		return error;
+
+	/* The instance pass skips the coefficient update pass. */
+	error = powervr_pds_branch(PDS_IF1, 1, PDS_KEEP, 4, &code[0]);
+	if (error != 0)
+		return error;
+
+	/* The coefficient update pass: the two writes, then a halt. */
+	error = powervr_pds_output(0, 0, POWERVR_PDS_OUTPUT_WRITE, GROUP_TEMP64_0, 2, &code[1]);
+	if (error != 0)
+		return error;
+	error = powervr_pds_output(0, 0, POWERVR_PDS_OUTPUT_WRITE, GROUP_TEMP64_0 + 1U, 3, &code[2]);
+	if (error != 0)
+		return error;
+	error = powervr_pds_halt(0, &code[3]);
+	if (error != 0)
+		return error;
+
+	/* The instance pass: the task issue ending the program, then a halt. */
+	error = powervr_pds_output(0, 1, POWERVR_PDS_OUTPUT_SHADER_TASK, 0, 0, &code[4]);
+	if (error != 0)
+		return error;
+	error = powervr_pds_halt(0, &code[5]);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: six code words. */
+	*code_words = 6;
 	return 0;
 }
 

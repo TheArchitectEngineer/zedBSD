@@ -74,6 +74,19 @@
 _Static_assert(QUEUE_USC_OFFSET == POWERVR_PROGRAM_HEAP_START && QUEUE_USC_BYTES <= POWERVR_EXECUTOR_USC_BYTES, "the executor's programs are in the place the session holds for them");
 _Static_assert(QUEUE_PDS_OFFSET == POWERVR_PROGRAM_HEAP_START && QUEUE_PDS_BYTES <= POWERVR_EXECUTOR_PDS_BYTES, "the executor's programs are in the place the session holds for them");
 
+/*
+ * Whether a dispatch runs as one kernel of all its workgroups (1), the
+ * data sequencer writing each workgroup's id into the coefficient
+ * registers the program reads it from, or as one kernel per workgroup
+ * with the id compiled into each (0).  The first needs the compiler to
+ * read the workgroup id from coefficient registers 0 to 2.
+ */
+#ifndef POWERVR_EXECUTOR_ONE_KERNEL
+#define POWERVR_EXECUTOR_ONE_KERNEL	0
+#endif
+#define QUEUE_GROUP_COEFFICIENTS	3U
+#define QUEUE_PDS_GROUP_INPUTS		4U
+
 /* The data sequencer temporaries a compute kernel's inputs take, and the fence kernel's task size. */
 #define QUEUE_PDS_INPUTS		3U
 #define QUEUE_FENCE_INSTANCES		8U
@@ -127,7 +140,7 @@ static int map_program_buffer(struct powervr_session *owner, uint64_t bytes, uin
 static int build_command_buffer(struct submission *build, const struct powervr_vk_command_buffer *command);
 static int build_dispatch(struct submission *build, uint32_t groups);
 static int build_shared(struct submission *build, const struct powervr_shader_program *program, uint32_t groups, uint32_t *values);
-static int build_kernel(struct submission *build, const uint8_t *code, size_t length, uint32_t temps, uint32_t instances);
+static int build_kernel(struct submission *build, const uint8_t *code, size_t length, uint32_t temps, uint32_t instances, uint32_t workgroups);
 static int build_fence(struct submission *build);
 static void put_stream_words(struct submission *build, const uint32_t *words, unsigned count);
 static void put_word(struct powervr_buffer *buffer, uint32_t offset, uint32_t word);
@@ -786,7 +799,7 @@ build_dispatch(
 	pipeline = build->pipeline;
 	if (pipeline == NULL)
 		return EINVAL;
-	if (groups > QUEUE_KERNELS_MAX - build->kernels)
+	if (POWERVR_EXECUTOR_ONE_KERNEL ? build->kernels >= QUEUE_KERNELS_MAX : groups > QUEUE_KERNELS_MAX - build->kernels)
 		return E2BIG;
 
 	/* The compiler's working memory, the program's description and the code's room. */
@@ -807,8 +820,11 @@ build_dispatch(
 	if (error == 0)
 		error = build_shared(build, program, groups, values);
 
-	/* One kernel per workgroup, its id in the program. */
-	for (group = 0; error == 0 && group < groups; group++) {
+	/*
+	 * One kernel per workgroup, its id in the program; or, with the one
+	 * kernel, a single program the data sequencer gives each id.
+	 */
+	for (group = 0; error == 0 && group < (POWERVR_EXECUTOR_ONE_KERNEL ? 1U : groups); group++) {
 		for (index = 0; index < program->request_count; index++) {
 			if (program->requests[index].kind == POWERVR_SHADER_REQUEST_WORKGROUP_ID)
 				values[program->requests[index].shared] = group;
@@ -824,7 +840,7 @@ build_dispatch(
 				  (unsigned long long)(POWERVR_PDS_HEAP_BASE + QUEUE_PDS_OFFSET + (build->kernels + 1U) * QUEUE_PDS_SLOT));
 		if (group == 0)
 			kern_logf("powervr: vk: dispatch of %u workgroups: the compute shader compiled to %u bytes, %u temps, %u shared words\n", groups, (unsigned)program->length, program->temps, program->shareds);
-		error = build_kernel(build, code, program->length, program->temps, program->workgroup[0]);
+		error = build_kernel(build, code, program->length, program->temps, program->workgroup[0], POWERVR_EXECUTOR_ONE_KERNEL ? groups : 1U);
 	}
 
 	/* The working memory goes. */
@@ -929,10 +945,11 @@ build_kernel(
 	const uint8_t *code,
 	size_t length,
 	uint32_t temps,
-	uint32_t instances)
+	uint32_t instances,
+	uint32_t workgroups)
 {
 	struct powervr_compute_kernel kernel;
-	uint32_t data[POWERVR_COMPUTE_PDS_DATA_WORDS];
+	uint32_t data[POWERVR_COMPUTE_PDS_GROUP_DATA_WORDS];
 	uint32_t pds[POWERVR_COMPUTE_PDS_CODE_MAX];
 	uint32_t words[POWERVR_COMPUTE_KERNEL_WORDS];
 	uint32_t room;
@@ -957,12 +974,19 @@ build_kernel(
 	error = powervr_compute_temporaries_field(temps, 2, &field);
 	if (error != 0)
 		return error;
-	error = powervr_compute_kick_program(QUEUE_USC_OFFSET + room, field, data, pds, &count);
+	if (POWERVR_EXECUTOR_ONE_KERNEL)
+		error = powervr_compute_workgroup_program(QUEUE_USC_OFFSET + room, field, data, pds, &count);
+	else
+		error = powervr_compute_kick_program(QUEUE_USC_OFFSET + room, field, data, pds, &count);
 	if (error != 0)
 		return error;
 	slot = (build->kernels + 1U) * QUEUE_PDS_SLOT;
 	put_word(build->executor->pds, slot, data[0]);
 	put_word(build->executor->pds, slot + 4U, data[1]);
+	if (POWERVR_EXECUTOR_ONE_KERNEL) {
+		put_word(build->executor->pds, slot + 8U, data[2]);
+		put_word(build->executor->pds, slot + 12U, data[3]);
+	}
 	for (index = 0; index < count; index++)
 		put_word(build->executor->pds, slot + QUEUE_PDS_CODE + (uint32_t)index * 4U, pds[index]);
 
@@ -970,8 +994,10 @@ build_kernel(
 	kern_memset(&kernel, 0, sizeof(kernel));
 	kernel.data_offset = QUEUE_PDS_OFFSET + slot;
 	kernel.code_offset = QUEUE_PDS_OFFSET + slot + QUEUE_PDS_CODE;
-	kernel.data_words = POWERVR_COMPUTE_PDS_DATA_WORDS;
-	kernel.pds_temporaries = QUEUE_PDS_INPUTS;
+	kernel.data_words = POWERVR_EXECUTOR_ONE_KERNEL ? POWERVR_COMPUTE_PDS_GROUP_DATA_WORDS : POWERVR_COMPUTE_PDS_DATA_WORDS;
+	kernel.pds_temporaries = POWERVR_EXECUTOR_ONE_KERNEL ? QUEUE_PDS_GROUP_INPUTS : QUEUE_PDS_INPUTS;
+	kernel.workgroups[0] = workgroups;
+	kernel.usc_common = POWERVR_EXECUTOR_ONE_KERNEL ? QUEUE_GROUP_COEFFICIENTS : 0U;
 	kernel.usc_temporaries = temps;
 	kernel.instances = instances;
 	kernel.max_instances = 0;

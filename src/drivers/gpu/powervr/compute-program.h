@@ -35,7 +35,8 @@
 #define POWERVR_COMPUTE_INSTANCES	32U
 #define POWERVR_COMPUTE_KERNEL_WORDS	7U
 #define POWERVR_COMPUTE_PDS_DATA_WORDS	2U
-#define POWERVR_COMPUTE_PDS_CODE_MAX	5U
+#define POWERVR_COMPUTE_PDS_CODE_MAX	6U
+#define POWERVR_COMPUTE_PDS_GROUP_DATA_WORDS	4U
 
 /* The words of the firmware's compute command. */
 #define POWERVR_COMPUTE_COMMAND_WORDS	24U
@@ -69,6 +70,9 @@
  * makes the kernel wait for the work before it.  Shared_from_pds and
  * common_shared say the data sequencer loads the shared registers and
  * the kernel frees them; any_cluster lets the task run on any cluster.
+ * Workgroups is the count of workgroups in each dimension (zero taken as
+ * one), and usc_common the coefficient registers each workgroup's
+ * instances share (the data sequencer writes the workgroup id there).
  */
 struct powervr_compute_kernel {
 	uint32_t data_offset;
@@ -83,6 +87,8 @@ struct powervr_compute_kernel {
 	unsigned shared_from_pds;
 	unsigned common_shared;
 	unsigned any_cluster;
+	unsigned workgroups[3];
+	unsigned usc_common;
 };
 
 int powervr_compute_kernel_words(const struct powervr_compute_kernel *kernel, uint32_t words[POWERVR_COMPUTE_KERNEL_WORDS]);
@@ -90,6 +96,7 @@ uint32_t powervr_compute_terminate_word(void);
 int powervr_compute_temporaries_field(unsigned temporaries, unsigned unit, unsigned *field);
 int powervr_compute_task_field(unsigned temporaries, unsigned *field);
 int powervr_compute_kick_program(uint64_t usc_offset, unsigned temporaries_field, uint32_t data[POWERVR_COMPUTE_PDS_DATA_WORDS], uint32_t code[POWERVR_COMPUTE_PDS_CODE_MAX], unsigned *code_words);
+int powervr_compute_workgroup_program(uint64_t usc_offset, unsigned temporaries_field, uint32_t data[POWERVR_COMPUTE_PDS_GROUP_DATA_WORDS], uint32_t code[POWERVR_COMPUTE_PDS_CODE_MAX], unsigned *code_words);
 int powervr_compute_fence_program(uint32_t data[POWERVR_COMPUTE_PDS_DATA_WORDS], uint32_t code[POWERVR_COMPUTE_PDS_CODE_MAX], unsigned *code_words);
 int powervr_compute_store_program(uint64_t base, unsigned steps, uint8_t *output, size_t room, size_t *length);
 /*

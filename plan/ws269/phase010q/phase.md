@@ -980,3 +980,25 @@ source の変更は無し。
 - 直し（`firmware-boot.c`・`interface.h`）: system flags に MEDIUM の profile を足し（0x20010 になる）、OS data の config flags に 0xF を書く。起動時に値を 1 行の log に出す。
 - core clock: DDK の sf_7110 の sysconfig は既定が 594 MHz（`RGX_STARFIVE_7100_CORE_CLOCK_SPEED`）で、DT に `/opp-table-0/opp-1250000000` がある時だけ 396 MHz（BIN2）にする。我々の vf2-gpu.c は 396 MHz に固定していて、その注記（「vendor の kernel はどの板も 396 で動かす」）は誤り。clock は TA の lockup とは関係が薄いと見て、変えていない。594 にするかは WS256 の判断。
 - 確認: `build/q1463/st/vmunix`（RISC-V の self-test の build）で warning 0。板は未実施。
+
+## q1467 / q1467-i01（2026-10-20）: executor の dispatch を 1 kernel にする
+
+設計（Mesa 25.0.7 の `pvr_compute_update_kernel`・`pvr_pds_compute_shader`、`rogue_cdm.xml` に従う）:
+1. kernel 語（`powervr_compute_kernel_words`。`struct powervr_compute_kernel` に `workgroups[3]` と `usc_common` を足した）:
+   - KERNEL0: usc_common_size（bit 18〜26、64 byte の単位）= 係数 register 3 個 → 1。unified = 0。pds_temp_size は PDS の temp 4 個 → 1。pds_data_size は data 4 word → 1。usc_target は ANY。fence は 0。
+   - KERNEL1: PDS の data の address（slot）。sd_type は 0、common_shared は 0。
+   - KERNEL2: PDS の code の address。
+   - KERNEL3〜5: workgroup の数 −1（x = groups−1、y = z = 0）。
+   - KERNEL8: local size −1（shader の workgroup[0]、x のみ）と max_instances 0（32）。
+   - 新しい field が 0 なら今までと同じ語になる（compute check は変わらない。p008 の host 試験 76/76 PASS）。
+2. PDS（`powervr_compute_workgroup_program`、code 6 語・data 4 語）:
+   - data: [0..1] DOUTU の task 語、[2] DOUTW の制御（COMMON_STORE、address 0、ALL64、last なし）、[3] DOUTW の制御（COMMON_STORE、address 2、UPPER、last）。
+   - code: `BRA IF1 neg +4`、`DOUTW temp64 0 → cf0・cf1`（CDM が temp 0・1 に入れる x・y）、`DOUTW temp64 1 の上位 → cf2`（z は temp 3）、`HALT`（ここまでが係数の更新の pass で、workgroup ごとに 1 回）、`DOUTU end`、`HALT`（instance の pass）。
+3. compiler（P2、shader-backend.c）への約束: request の kind が `POWERVR_SHADER_REQUEST_WORKGROUP_ID` の時、その word k（k = 0, 1, 2 が x, y, z）を、inline の値でも shared register でもなく、**`POWERVR_USC_BANK_COEFFICIENT` の register k** からの move で読む（`compile_inline` の時も同じ）。他の request（buffer の address、NUM_WORKGROUPS）は今までどおり inline でよい。
+- vk-queue.c: `POWERVR_EXECUTOR_ONE_KERNEL`（既定 0）を足した。1 の時の動き:
+  - dispatch を 1 回だけ compile する。
+  - `build_kernel` に workgroup の数を渡し、PDS は workgroup の program にする。
+  - slot の data の 4 語を書き、kernel の usc_common に 3、PDS の temp に 4 を渡す。
+  - 0 の時は今までの kernel を workgroup ごとに出す形。上の 3 の compiler の変更が main に入ったら 1 にする。
+- 確認: RISC-V の self-test の build を、`POWERVR_EXECUTOR_ONE_KERNEL` を 1 にした時と 0 にした時の両方で行い、どちらも warning 0（commit は 0）。`plan/ws269/tests/p008/run.sh` は encode 94/94・compute 76/76 PASS。板は未実施。
+- 未確認の仮定: DOUTW の COMMON_STORE の address が係数 register の番号であること（Mesa の barrier_coefficient・work_group_input_regs と同じ扱い）、z が temp 3 であること（Mesa の add_base_workgroup の {0,1,3}）。
