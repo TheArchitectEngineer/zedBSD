@@ -120,6 +120,17 @@
 #define CHECK_WIDE_FIELD	16U
 
 /*
+ * The grid of the temporaries program's kicks that tells which setting
+ * gives an instance its registers: the kernel's unified store size (the
+ * registers written into KERNEL0, 32, 16, 8 or 0) against the task
+ * issue's temporaries field (16, 8, 4 or 2), widest first, after the
+ * wide temporaries kick.
+ */
+#define GRID_SIZES		4U
+#define GRID_KICKS		(GRID_SIZES * GRID_SIZES)
+#define KICK_GRID_FIRST		(KICK_TEMPS_WIDE + 1U)
+
+/*
  * Where in the run the probes write: each probe's 32 words 256 bytes
  * apart after the temporaries program's, and the two short store
  * programs' windows.
@@ -198,6 +209,8 @@ static int write_programs(struct check_state *state);
 static int write_kick(struct check_state *state, unsigned kick, uint32_t usc_place, unsigned temporaries, unsigned field);
 static int write_probes(struct check_state *state, uint8_t *code);
 static void run_probes(struct check_state *state);
+static int write_grid(struct check_state *state);
+static void run_grid(struct check_state *state);
 static uint32_t own_words(struct check_state *state, unsigned kind);
 static uint32_t probe_word(struct check_state *state, unsigned kind, uint32_t word);
 static int run_store_window(struct check_state *state, unsigned kick_index, uint32_t offset, uint32_t words, unsigned *written);
@@ -271,6 +284,9 @@ powervr_compute_check(
 
 	/* The probes of the integer path and the short stores, before any kick that may fault. */
 	run_probes(&state);
+
+	/* The grid of unified sizes and fields, widest first, stopping at a fault. */
+	run_grid(&state);
 
 	/* The temporaries program with the wide field first: it must always work. */
 	wide_wrong = 0;
@@ -576,6 +592,11 @@ write_programs(
 	if (error != 0)
 		return error;
 
+	/* The grid of unified store sizes and temporaries fields. */
+	error = write_grid(state);
+	if (error != 0)
+		return error;
+
 	/* Succeeded: everything the kicks read is in memory. */
 	return 0;
 }
@@ -801,6 +822,68 @@ run_probes(
 		  errors[POWERVR_COMPUTE_PROBES],
 		  four,
 		  errors[POWERVR_COMPUTE_PROBES + 1U]);
+}
+
+/* The unified store sizes, in registers, and the temporaries fields of the grid, each widest first. */
+static const unsigned grid_unified[GRID_SIZES] = { 32, 16, 8, 0 };
+static const unsigned grid_field[GRID_SIZES] = { 16, 8, 4, 2 };
+
+/* Writes the grid's kicks of the temporaries program. */
+static int
+write_grid(
+	struct check_state *state)
+{
+	unsigned unified;
+	unsigned field;
+	int error;
+
+	/* One kick for each size and field. */
+	for (unified = 0; unified < GRID_SIZES; unified++) {
+		for (field = 0; field < GRID_SIZES; field++) {
+			error = write_kick(state, KICK_GRID_FIRST + unified * GRID_SIZES + field, CHECK_ROUNDS * USC_ROOM, grid_unified[unified], grid_field[field]);
+			if (error != 0)
+				return error;
+		}
+	}
+
+	/* Succeeded: the grid is in memory. */
+	return 0;
+}
+
+/*
+ * Runs the grid and reports the instances whose word is wrong for each
+ * unified size (a row) and field (a column), "F" from a kick that
+ * failed; a failure stops the grid, as the context is lost.
+ */
+static void
+run_grid(
+	struct check_state *state)
+{
+	char line[160];
+	unsigned wrong;
+	unsigned unified;
+	unsigned field;
+	size_t used;
+	int error;
+
+	/* Each kick in order, its count after the row's label. */
+	used = 0;
+	error = 0;
+	for (unified = 0; unified < GRID_SIZES && error == 0; unified++) {
+		used += (size_t)kern_snprintf(line + used, sizeof(line) - used, " u%u:", grid_unified[unified]);
+		for (field = 0; field < GRID_SIZES; field++) {
+			wrong = 0;
+			error = run_temps(state, KICK_GRID_FIRST + unified * GRID_SIZES + field, &wrong);
+			if (error != 0) {
+				used += (size_t)kern_snprintf(line + used, sizeof(line) - used, " f%u=F(%d)", grid_field[field], error);
+				break;
+			}
+			used += (size_t)kern_snprintf(line + used, sizeof(line) - used, " f%u=%u", grid_field[field], wrong);
+		}
+	}
+
+	/* The grid on one line: wrong instances of 32 for each unified size and field. */
+	kern_logf("powervr: compute grid (wrong of 32, unified regs u, field f):%s\n", line);
 }
 
 /* Reads one word of a probe's area. */
