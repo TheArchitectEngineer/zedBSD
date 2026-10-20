@@ -1055,7 +1055,8 @@ probe_kick(
 {
 	int error;
 
-	/* The kick, then its line. */
+	/* The kick, between its two lines. */
+	kern_logf("powervr: kick: compute probe %s sent (context %s)\n", what, state->session->lost ? "reset" : "kept");
 	error = kick(state, kick_index);
 	kern_logf("powervr: compute probe: %s: %s (%d), context %s\n", what, error == 0 ? "finished" : "FAILED", error,
 		  state->session->lost ? "reset" : "kept");
