@@ -237,6 +237,7 @@ powervr_session_firmware_destroy(
 	/* The render and transfer contexts first, with the memory the render's switch uses. */
 	powervr_render_context_destroy(render, session);
 	powervr_transfer_context_destroy(render, session);
+	powervr_compute_switch_destroy(render, session, 0);
 
 	/* Returns the records, unmapping each from the firmware's processor. */
 	mutex_lock(&render->core->lock);
@@ -266,6 +267,7 @@ powervr_session_firmware_discard(
 	/* The render context, the render targets and free lists, then each record's run. */
 	powervr_render_context_discard(session);
 	powervr_transfer_context_discard(session);
+	powervr_compute_switch_destroy(session->render, session, 1);
 	powervr_session_targets_discard(session);
 	powervr_object_drop(&session->context);
 	powervr_object_drop(&session->compute.timeline);

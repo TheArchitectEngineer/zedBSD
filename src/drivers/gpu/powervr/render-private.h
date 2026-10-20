@@ -279,6 +279,10 @@ struct powervr_session {
 	struct powervr_targets *targets;
 	struct powervr_render_context *render_context;
 	struct powervr_transfer_context *transfer_context;
+	struct powervr_buffer *compute_switch_pds;
+	struct powervr_buffer *compute_switch_usc;
+	uint64_t compute_switch_pds_place;
+	uint64_t compute_switch_usc_place;
 	unsigned abandoned;
 };
 
@@ -535,6 +539,16 @@ int powervr_render_switch_shaders(struct powervr_render *render);
  * is not held.
  */
 int powervr_session_render_context(struct powervr_render *render, struct powervr_session *session, struct powervr_render_context **result);
+
+/*
+ * Writes the compute context's static state with the programs and
+ * buffers its switch uses, mapped in the session's windows; before the
+ * context's first kick, the core's lock not held.
+ */
+int powervr_session_compute_switch(struct powervr_render *render, struct powervr_session *session);
+
+/* Returns the compute switch's memory; the firmware no longer uses the context, or is gone (discard). */
+void powervr_compute_switch_destroy(struct powervr_render *render, struct powervr_session *session, unsigned discard);
 
 /* Returns a session's render context once the firmware no longer uses it. */
 void powervr_render_context_destroy(struct powervr_render *render, struct powervr_session *session);

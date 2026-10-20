@@ -103,6 +103,48 @@ int powervr_persistent_resume_program(uint64_t buffer, uint32_t data[POWERVR_PER
  */
 int powervr_shared_usc_program(unsigned loading, uint8_t *output, size_t room, size_t *length);
 
+/*
+ * The compute context's switch programs' sizes in 32-bit words: the
+ * shared register programs' code (the coefficient pass's skip, then the
+ * two writes and the task issue) and the fence terminate program's data
+ * and code; and the words of the compute context's static state.
+ */
+#define POWERVR_COMPUTE_SHARED_CODE_WORDS	6U
+#define POWERVR_COMPUTE_TERMINATE_DATA_WORDS	4U
+#define POWERVR_COMPUTE_TERMINATE_CODE_WORDS	5U
+#define POWERVR_COMPUTE_SWITCH_WORDS		7U
+
+/*
+ * Where the compute context's switch programs are, as offsets from the
+ * data sequencer window's base: each of the two buffers' store and load
+ * programs' data and code, and the fence terminate program's.
+ */
+struct powervr_compute_switch_programs {
+	uint32_t store_data[2];
+	uint32_t store_code[2];
+	uint32_t load_data[2];
+	uint32_t load_code[2];
+	uint32_t terminate_data;
+	uint32_t terminate_code;
+};
+
+/*
+ * Builds the data sequencer program that starts a compute context's
+ * shared register store or load: the render context's program behind a
+ * skip of the coefficient pass, its task issue conditional.
+ */
+int powervr_compute_shared_pds_program(uint64_t state, uint64_t usc_offset, unsigned temporaries, uint32_t data[POWERVR_SHARED_PDS_DATA_WORDS], uint32_t code[POWERVR_COMPUTE_SHARED_CODE_WORDS]);
+
+/* Builds the data sequencer program that ends a compute context's switch with a compute fence. */
+int powervr_compute_terminate_program(uint32_t data[POWERVR_COMPUTE_TERMINATE_DATA_WORDS], uint32_t code[POWERVR_COMPUTE_TERMINATE_CODE_WORDS]);
+
+/*
+ * Builds the compute context's static state: context PDS0 and PDS1,
+ * terminate PDS and PDS1, resume PDS0, the second buffer's context PDS0
+ * and resume PDS0, in that order.
+ */
+void powervr_compute_switch_words(const struct powervr_compute_switch_programs *programs, uint64_t words[POWERVR_COMPUTE_SWITCH_WORDS]);
+
 /* Builds one buffer's store and resume task words from its programs' places. */
 void powervr_switch_task_words(const struct powervr_switch_programs *programs, struct powervr_switch_tasks *tasks);
 
