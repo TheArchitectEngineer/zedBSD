@@ -14,7 +14,9 @@
  *   draw     an offscreen render pass: clear and one triangle
  *   sample   a quad that samples a 4x4 texture in its four quadrants
  *   depth    two triangles in the wrong order, sorted by a D32 depth test
- *   present  one cleared frame on the first display (VK_KHR_display)
+ *   present  one cleared frame on the first display (VK_KHR_display), held
+ *            three seconds; the acquire, the clear and the present are
+ *            ordered by semaphores and the clear's submit by a fence
  *
  * Like vkcompute it opens an instance and a device on the first physical
  * device, does the stage's work, reads the result back and prints one line:
@@ -47,6 +49,9 @@
 
 /* The fence wait's limit in nanoseconds (5 s, above the driver's 2 s). */
 #define VKSTAGE_WAIT_NS		5000000000ULL
+
+/* The seconds the present stage leaves its frame on the display (design-p010.md section 8.2). */
+#define VKSTAGE_PRESENT_SECONDS	3U
 
 /* The most bytes of a failure's reason. */
 #define VKSTAGE_REASON_MAX	160
@@ -118,6 +123,8 @@ struct vkstage {
 	VkDescriptorSet set;
 	VkSurfaceKHR surface;
 	VkSwapchainKHR swapchain;
+	VkSemaphore acquired;
+	VkSemaphore rendered;
 	char name[VK_MAX_PHYSICAL_DEVICE_NAME_SIZE];
 	const char *failed_call;
 	char reason[VKSTAGE_REASON_MAX];
@@ -1594,7 +1601,13 @@ vkstage_open_surface(
 	return VK_SUCCESS;
 }
 
-/* present: one frame cleared to the clear colour on the first display, then back. */
+/*
+ * present: one frame cleared to the clear colour on the first display,
+ * held three seconds, then back.  On PowerVR the swapchain images are
+ * OPTIMAL and libvulkan's WSI presents them by copying each to a
+ * host-visible buffer and the display (the readback route,
+ * design-p010.md section 7, ws269-p010k1).
+ */
 static VkResult
 stage_present(
 	struct vkstage *run)
@@ -1606,6 +1619,9 @@ stage_present(
 	VkClearColorValue colour;
 	VkImageSubresourceRange range;
 	VkPresentInfoKHR present;
+	VkSemaphoreCreateInfo semaphore_info;
+	VkSubmitInfo submit;
+	VkPipelineStageFlags wait_stage;
 	VkExtent2D extent;
 	struct timespec pause;
 	VkBool32 supported;
@@ -1675,9 +1691,20 @@ stage_present(
 	if (status != VK_SUCCESS && status != VK_INCOMPLETE)
 		return status;
 
-	/* Acquires an image, waiting on the fence. */
+	/* The two semaphores: the image acquired, the clear done. */
+	memset(&semaphore_info, 0, sizeof(semaphore_info));
+	semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+	run->failed_call = "vkCreateSemaphore";
+	status = vkCreateSemaphore(run->device, &semaphore_info, NULL, &run->acquired);
+	if (status != VK_SUCCESS)
+		return status;
+	status = vkCreateSemaphore(run->device, &semaphore_info, NULL, &run->rendered);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Acquires an image, signalling the semaphore and the fence. */
 	run->failed_call = "vkAcquireNextImageKHR";
-	status = vkAcquireNextImageKHR(run->device, run->swapchain, VKSTAGE_WAIT_NS, VK_NULL_HANDLE, run->fence, &index);
+	status = vkAcquireNextImageKHR(run->device, run->swapchain, VKSTAGE_WAIT_NS, run->acquired, run->fence, &index);
 	if (status != VK_SUCCESS && status != VK_SUBOPTIMAL_KHR)
 		return status;
 	run->failed_call = "vkWaitForFences (acquire)";
@@ -1705,13 +1732,36 @@ stage_present(
 	range.layerCount = 1;
 	vkCmdClearColorImage(run->command, images[index], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &colour, 1, &range);
 	vkstage_image_barrier(run, images[index], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_TRANSFER_WRITE_BIT, 0, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
-	status = vkstage_submit(run);
+	run->failed_call = "vkEndCommandBuffer";
+	status = vkEndCommandBuffer(run->command);
 	if (status != VK_SUCCESS)
 		return status;
 
-	/* Presents it; the submit has finished, so nothing to wait on. */
+	/* Submits it after the acquire, signalling the clear's semaphore and the fence. */
+	wait_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+	memset(&submit, 0, sizeof(submit));
+	submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submit.waitSemaphoreCount = 1;
+	submit.pWaitSemaphores = &run->acquired;
+	submit.pWaitDstStageMask = &wait_stage;
+	submit.commandBufferCount = 1;
+	submit.pCommandBuffers = &run->command;
+	submit.signalSemaphoreCount = 1;
+	submit.pSignalSemaphores = &run->rendered;
+	run->failed_call = "vkQueueSubmit";
+	status = vkQueueSubmit(run->queue, 1, &submit, run->fence);
+	if (status != VK_SUCCESS)
+		return status;
+	run->failed_call = "vkWaitForFences";
+	status = vkWaitForFences(run->device, 1, &run->fence, VK_TRUE, VKSTAGE_WAIT_NS);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Presents it after the clear: the WSI copies it out to the display (the readback route). */
 	memset(&present, 0, sizeof(present));
 	present.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+	present.waitSemaphoreCount = 1;
+	present.pWaitSemaphores = &run->rendered;
 	present.swapchainCount = 1;
 	present.pSwapchains = &run->swapchain;
 	present.pImageIndices = &index;
@@ -1720,8 +1770,8 @@ stage_present(
 	if (status != VK_SUCCESS && status != VK_SUBOPTIMAL_KHR)
 		return status;
 
-	/* Leaves the frame up for a second, then lets the queue drain. */
-	pause.tv_sec = 1;
+	/* Leaves the frame up for three seconds, then lets the queue drain. */
+	pause.tv_sec = VKSTAGE_PRESENT_SECONDS;
 	pause.tv_nsec = 0;
 	nanosleep(&pause, NULL);
 	run->failed_call = "vkQueueWaitIdle";
@@ -1730,7 +1780,7 @@ stage_present(
 		return status;
 
 	/* Succeeded: one frame went to the display. */
-	snprintf(run->seen, sizeof(run->seen), "1 frame %ux%u format %d", extent.width, extent.height, (int)formats[0].format);
+	snprintf(run->seen, sizeof(run->seen), "1 frame %ux%u format %d, %u s", extent.width, extent.height, (int)formats[0].format, VKSTAGE_PRESENT_SECONDS);
 	return VK_SUCCESS;
 }
 
@@ -1746,6 +1796,8 @@ vkstage_destroy(
 		vkDeviceWaitIdle(run->device);
 		if (run->swapchain != VK_NULL_HANDLE)
 			vkDestroySwapchainKHR(run->device, run->swapchain, NULL);
+		vkDestroySemaphore(run->device, run->rendered, NULL);
+		vkDestroySemaphore(run->device, run->acquired, NULL);
 		vkDestroyDescriptorPool(run->device, run->pool, NULL);
 		vkDestroyPipeline(run->device, run->pipeline, NULL);
 		vkDestroyPipelineLayout(run->device, run->pipeline_layout, NULL);

@@ -45,7 +45,7 @@
 | [p010h](phase010h/phase.md) | descriptor と compiler の境（`shader.h` の使用、PDS の data の program） | O-p010c、O-SHADER-ABI | in-progress（2026-10-20 P2 q1374: descriptor-set.c（set の並び・buffer 16・image 32（meta と PCK_INFO）・sampler 48（gather）・combined 80）、data-program.c（要求の表から shared の DOUTD/DOUTW の program、vertex の DDMAD と index の DOUTW の program）、set の memory は CPU の写し（heap は p010i で P1 の API に）、compute の inline は据え置き（理由は phase.md）。host 試験 data 83/0・executor 162/0、VF2・riscv64-virt・amd64 の build warning 0。Q1 の判定待ち） |
 | [p010i](phase010i/phase.md) | graphics の pipeline と draw | O-p010g、O-p010h、O-VSFS | in-progress（2026-10-20 P2 q1384-i01 前半: render-draw.c（固定の state・key・coefficient の PDS・viewport・scissor・PPP・VDM）と vk-draw.c（graphics pipeline の decode と compile、draw の record）、job への draw の付加、host 試験 30 PASS、M9 41 word 0 mismatch、VF2 build warning 0。GPU の memory への配置と kick への受け渡しは後半） |
 | p010j | depth と vkdemo の offscreen | O-p010i | planning（同） |
-| p010k1 | WSI の readback の道（clear だけ、compiler なし） | O-p010f、O-P007 | planning（同） |
+| [p010k1](phase010k1/phase.md) | WSI の readback の道（clear だけ、compiler なし） | O-p010f、O-P007 | in-progress（2026-10-20 P2 q1386-i01: libvulkan の readback の道が PowerVR で通る順を確かめた（vk の features の変更は不要）、vkstage present を semaphore・fence・3 秒に、VF2 の image build warning 0。実機は P1 の q1385 の後） |
 | p010k2 | readback の道で vkdemo が画面に | O-p010k1、O-p010j | planning（同） |
 | p010l | WSI の shared の道と p007 の import の試験（WS277 R6）、dc8200 の zero copy | O-p010k2、O-p010o | planning（同） |
 | p010m | 仕上げ、T1 の回帰、p010 の受け入れ（vkdemo と gpu-selftest の clear・copy・draw、D-P7） | O-p010l | planning（同） |

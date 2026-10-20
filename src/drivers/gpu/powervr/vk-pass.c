@@ -316,6 +316,7 @@ powervr_vk_record_begin_pass(
 	(void)drv_i915_wire_read_u64(reader);
 	pass = drv_i915_wire_read_u64(reader);
 	framebuffer = drv_i915_wire_read_u64(reader);
+	kern_memset(&area, 0, sizeof(area));
 	i915_vkc_dec_VkRect2D(reader, &session->arena, &area);
 
 	/* The record's data. */
