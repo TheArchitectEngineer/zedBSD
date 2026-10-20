@@ -170,6 +170,7 @@ static void watch_thread(void *argument);
 /* The register the host's write and read back is checked on, and the pattern (a page address). */
 #define REGISTER_CHECK_CATALOGUE	0x1238U
 #define REGISTER_CHECK_PATTERN		0x0000000012345000ULL
+#define REGISTER_CHECK_PAGE		0x1000U
 
 /*
  * The core's clock control and status, and every clock field of the
@@ -1804,6 +1805,8 @@ register_check(
 	uint64_t clock_control;
 	uint64_t catalogue;
 	uint64_t forced;
+	uint64_t low_first;
+	uint64_t high_first;
 	uint32_t control;
 
 	/* The clocks' control and status and the soft reset as they stand. */
@@ -1834,4 +1837,20 @@ register_check(
 		  (unsigned long long)powervr_read64(core, REGISTER_CHECK_CLOCK_STATUS),
 		  (unsigned)powervr_read32(core, POWERVR_SLC_CONTROL), (unsigned long long)catalogue);
 	powervr_write64(core, REGISTER_CHECK_CLOCK_CONTROL, clock_control);
+
+	/* The bus's secure protection, and the catalogue base and the clocks' control written as two 32-bit halves, low then high and high then low. */
+	powervr_write32(core, REGISTER_CHECK_CATALOGUE, (uint32_t)REGISTER_CHECK_PATTERN);
+	powervr_write32(core, REGISTER_CHECK_CATALOGUE + 4U, (uint32_t)(REGISTER_CHECK_PATTERN >> 32));
+	low_first = powervr_read64(core, REGISTER_CHECK_CATALOGUE);
+	powervr_write32(core, REGISTER_CHECK_CATALOGUE + 4U, (uint32_t)(REGISTER_CHECK_PATTERN >> 32));
+	powervr_write32(core, REGISTER_CHECK_CATALOGUE, (uint32_t)REGISTER_CHECK_PATTERN + REGISTER_CHECK_PAGE);
+	high_first = powervr_read64(core, REGISTER_CHECK_CATALOGUE);
+	powervr_write64(core, REGISTER_CHECK_CATALOGUE, 0);
+	powervr_write32(core, REGISTER_CHECK_CLOCK_CONTROL, (uint32_t)REGISTER_CHECK_ALL_ON);
+	powervr_write32(core, REGISTER_CHECK_CLOCK_CONTROL + 4U, (uint32_t)(REGISTER_CHECK_ALL_ON >> 32));
+	forced = powervr_read64(core, REGISTER_CHECK_CLOCK_CONTROL);
+	powervr_write64(core, REGISTER_CHECK_CLOCK_CONTROL, clock_control);
+	kern_logf("powervr: firmware: start: register check: bus secure 0x%x; 32-bit halves: catalogue low first 0x%llx, high first 0x%llx, clock control 0x%llx\n",
+		  (unsigned)powervr_read32(core, POWERVR_SYSTEM_BUS_SECURE),
+		  (unsigned long long)low_first, (unsigned long long)high_first, (unsigned long long)forced);
 }
