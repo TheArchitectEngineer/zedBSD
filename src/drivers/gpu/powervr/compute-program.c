@@ -87,10 +87,16 @@ struct store_shape {
 };
 
 /* The groups every store program starts with, before its first step. */
-#define STORE_PROLOGUE		9U
+#define STORE_PROLOGUE		6U
 
-/* The groups of one step: the store, the wait for it, the 64-bit add and the data's move. */
-#define STORE_STEP		4U
+/*
+ * The groups of one step: the step's offset, the address as the base
+ * pair plus the instance's offset plus the step's, the data's move, the
+ * store and the wait.  Every step makes its address afresh from values
+ * set once (the base pair and the instance's offset), so no address
+ * carries from one step to the next.
+ */
+#define STORE_STEP		6U
 
 /* The groups of the temporaries program. */
 #define TEMPS_GROUPS		15U
@@ -730,14 +736,10 @@ store_fetch(
 {
 	const struct store_shape *shape;
 	size_t step_index;
+	size_t step;
 	int error;
 
-	/*
-	 * The set-up: the instance's offset first (the 32-bit multiply-add
-	 * is done before the address pair is written), then the address as
-	 * the base pair plus the offset in one 64-bit add, the stride and the
-	 * data.
-	 */
+	/* The set-up: the instance's offset, made once by the multiply-add. */
 	shape = context;
 	error = 0;
 	if (index == 0) {
@@ -753,31 +755,27 @@ store_fetch(
 		/* r8: the instance's offset. */
 		error = multiply_add_group(group, 8, 5, 4, 6);
 	} else if (index == 4) {
-		/* r0: the low half of the base. */
-		error = immediate_group(group, 0, shape->base_low);
+		/* r10: the low half of the base. */
+		error = immediate_group(group, 10, shape->base_low);
 	} else if (index == 5) {
-		/* r1: the high half. */
-		error = immediate_group(group, 1, shape->base_high);
-	} else if (index == 6) {
-		/* r0 and r1: the instance's first address. */
-		error = add64_group(group, 0, 0, 8);
-	} else if (index == 7) {
-		/* r3: the stride between one instance's words. */
-		error = immediate_group(group, 3, POWERVR_COMPUTE_STORE_STRIDE);
-	} else if (index == 8) {
-		/* r2: the data, the word's own address. */
-		error = pass_group(group, 2, POWERVR_USC_BANK_TEMPORARY, 0);
+		/* r11: the high half. */
+		error = immediate_group(group, 11, shape->base_high);
 	} else if (index < STORE_PROLOGUE + (size_t)shape->steps * STORE_STEP) {
-		/* One step: store, wait, advance the address, take its low half as the data. */
+		/* One step: its address from the base, the instance's offset and the step's; the data; the store and the wait. */
+		step = (index - STORE_PROLOGUE) / STORE_STEP;
 		step_index = (index - STORE_PROLOGUE) % STORE_STEP;
 		if (step_index == 0) {
-			error = store_group(group, 2, 0);
+			error = immediate_group(group, 9, (uint32_t)(step * POWERVR_COMPUTE_STORE_STRIDE));
 		} else if (step_index == 1) {
-			error = wait_group(group);
+			error = add64_group(group, 0, 10, 8);
 		} else if (step_index == 2) {
-			error = add64_group(group, 0, 0, 3);
-		} else {
+			error = add64_group(group, 0, 0, 9);
+		} else if (step_index == 3) {
 			error = pass_group(group, 2, POWERVR_USC_BANK_TEMPORARY, 0);
+		} else if (step_index == 4) {
+			error = store_group(group, 2, 0);
+		} else {
+			error = wait_group(group);
 		}
 	} else {
 		/* The end. */

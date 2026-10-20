@@ -44,7 +44,12 @@
  * The temporaries each program uses per instance, the words one instance
  * of the store program writes per step, and how far apart its steps are.
  */
-#define POWERVR_COMPUTE_STORE_TEMPORARIES	9U
+/*
+ * The temporaries the store program's kick asks for: more than the ten
+ * it uses (r0 to r11), so that a task issue counting them in other units
+ * than assumed still gives each instance its own.
+ */
+#define POWERVR_COMPUTE_STORE_TEMPORARIES	16U
 #define POWERVR_COMPUTE_TEMPS_TEMPORARIES	8U
 #define POWERVR_COMPUTE_FILL_TEMPORARIES	8U
 #define POWERVR_COMPUTE_STORE_STRIDE		(POWERVR_COMPUTE_INSTANCES * 4U)

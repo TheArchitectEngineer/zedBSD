@@ -236,7 +236,7 @@ test_pds(void)
 static void
 test_store_program(void)
 {
-	size_t starts[2100];
+	size_t starts[3200];
 	size_t length;
 	size_t count;
 	int error;
@@ -253,16 +253,6 @@ test_store_program(void)
 	 * destination bank temp 1 <<6 | 5 = 0x45.
 	 */
 	static const uint8_t pass_r5[] = { 0x56, 0x92, 0x00, 0xd3, 0x3f, 0x80, 0xd3, 0x81, 0x10, 0x00, 0x30, 0x45 };
-
-	/*
-	 * Group 1, r0 = 0x00100000, bitwise: header da 3+5 = 8 | 6
-	 * half-words = 0x86; ext | opcnt p0 1 <<4 | w0p = 0x92; alutype
-	 * bitwise 2 <<5 = 0x40.  Phase 0: csrc s2 0, count_op byp 0b10 (cnt
-	 * 0, cnt_byp 1 <<1), ext0 1 <<4, shft1 byp 0, bm byp32 1 = 0x13, then
-	 * the immediate low byte first.  Lower and upper sources unused, one
-	 * byte each; the destination 0x40; the word padding 0xff.
-	 */
-	static const uint8_t immediate_r0[] = { 0x86, 0x92, 0x40, 0x13, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x40, 0xff };
 
 	/*
 	 * The store, back end: ext | oporg be 2 <<4 = 0xa0, no write; then
@@ -307,19 +297,18 @@ test_store_program(void)
 
 	check((length % 8U) == 0, "store program ends on 8 bytes");
 	count = walk(program, length, starts, sizeof(starts) / sizeof(starts[0]));
-	check(count == 9U + 512U * 4U + 1U, "store program: 9 + 4 x 512 + 1 groups");
-	if (count != 9U + 512U * 4U + 1U)
+	check(count == 6U + 512U * 6U + 1U, "store program: 6 + 6 x 512 + 1 groups");
+	if (count != 6U + 512U * 6U + 1U)
 		return;
 
 	check_bytes(program + starts[0], pass_r5, sizeof(pass_r5), "store group 0, r5 = movs1 sr51");
 	check_bytes(program + starts[3] + 1, multiply_add_head, sizeof(multiply_add_head), "store group 3, madd32 (the offset)");
-	check_bytes(program + starts[4], immediate_r0, sizeof(immediate_r0), "store group 4, r0 = base low");
-	check_bytes(program + starts[6] + 1, add64_head, sizeof(add64_head), "store group 6, add64_32 (the address pair)");
-	check_bytes(program + starts[9] + 1, store_head, sizeof(store_head), "store group 9, st");
-	check_bytes(program + starts[10], wait, sizeof(wait), "store group 10, wdf");
-	check_bytes(program + starts[11] + 1, add64_head, sizeof(add64_head), "store group 11, add64_32 (the next address)");
-	check_bytes(program + starts[13] + 1, store_head, sizeof(store_head), "store step 2, st");
-	check_bytes(program + starts[9 + 4 * 511] + 1, store_head, sizeof(store_head), "store last step st");
+	check_bytes(program + starts[7] + 1, add64_head, sizeof(add64_head), "store group 7, add64_32 (base and the instance's offset)");
+	check_bytes(program + starts[8] + 1, add64_head, sizeof(add64_head), "store group 8, add64_32 (the step's offset)");
+	check_bytes(program + starts[10] + 1, store_head, sizeof(store_head), "store group 10, st");
+	check_bytes(program + starts[11], wait, sizeof(wait), "store group 11, wdf");
+	check_bytes(program + starts[16] + 1, store_head, sizeof(store_head), "store step 2, st");
+	check_bytes(program + starts[10 + 6 * 511] + 1, store_head, sizeof(store_head), "store last step st");
 	check((starts[count - 1] % 8U) == 0, "store last group starts on 8 bytes");
 	check_bytes(program + starts[count - 1], end, sizeof(end), "store end");
 
