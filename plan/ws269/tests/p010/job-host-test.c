@@ -251,6 +251,8 @@ main(void)
 	graphics.vertex_code = vertex_code;
 	graphics.fragment_code = fragment_code;
 	graphics.varyings.output_select = 4;
+	graphics.fixed.dynamic_viewport = true;
+	graphics.fixed.dynamic_scissor = true;
 
 	/* One set of 32 bytes. */
 	for (index = 0; index < sizeof(set_bytes); index++)
@@ -312,6 +314,27 @@ main(void)
 			break;
 	}
 	expect(index < placed_count, "the two draws' code: vertex, fragment, vertex, fragment");
+
+	/*
+	 * A pipeline with its own viewport and scissor (vkstage, vkdemo): the
+	 * draws' are left empty, as nothing sets them, and the job takes the
+	 * pipeline's, the same for both draws.
+	 */
+	graphics.fixed.dynamic_viewport = false;
+	graphics.fixed.dynamic_scissor = false;
+	graphics.fixed.viewport.width = 64.0f;
+	graphics.fixed.viewport.height = 64.0f;
+	graphics.fixed.viewport.maxDepth = 1.0f;
+	graphics.fixed.scissor.extent.width = 64;
+	graphics.fixed.scissor.extent.height = 64;
+	for (draw = 0; draw < 2U; draw++) {
+		memset(&job.draws[draw].viewport, 0, sizeof(job.draws[draw].viewport));
+		memset(&job.draws[draw].scissor, 0, sizeof(job.draws[draw].scissor));
+	}
+	expect(powervr_render_job_run(&render, &session, &job) == 0, "the job with the pipeline's viewport runs");
+	scissors = read64(kicked_fragment, POWERVR_FRAGMENT_SCISSOR_BASE);
+	expect(scissors != 0U && device_read(scissors) != 0U, "the pipeline's scissor is written");
+	expect(device_read(scissors) == device_read(scissors + 8U) && device_read(scissors + 4U) == device_read(scissors + 12U), "both draws have the pipeline's scissor");
 
 	printf("job-host-test: %d passed, %d failed\n", passes, failures);
 	return failures != 0;

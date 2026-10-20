@@ -27,6 +27,15 @@ void replies_compute(uint8_t *reply);
 void replies_image(uint8_t *reply);
 size_t frame_keiland(uint32_t reply_blob, uint8_t **bytes);
 void replies_keiland(uint8_t *reply, uint32_t *submit_b);
+/* The scene frames: vkstage's draw, sample and depth, and vkdemo's upload and two frames. */
+#define FRAME_SCENE_VKSTAGE_DRAW	0U
+#define FRAME_SCENE_VKSTAGE_SAMPLE	1U
+#define FRAME_SCENE_VKSTAGE_DEPTH	2U
+#define FRAME_SCENE_VKDEMO		3U
+#define FRAME_SCENES			4U
+
+size_t frame_scene(uint32_t reply_blob, unsigned which, uint8_t **bytes);
+unsigned replies_scene(uint8_t *reply, uint32_t *results, unsigned capacity);
 void frame_counts(int *passed, int *failed);
 
 #endif
