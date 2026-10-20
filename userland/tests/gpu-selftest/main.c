@@ -568,7 +568,8 @@ stage_vkdemo(
 	char *arguments[6];
 	int status;
 
-	/* The offscreen frame at 0 ms, written to the frame file. */
+	/* The offscreen frame at 0 ms, written to the frame file; an older frame is removed first so it cannot pass. */
+	(void)unlink(test->frame);
 	snprintf(output, sizeof(output), "--output=%s", test->frame);
 	arguments[0] = (char *)test->vkdemo;
 	arguments[1] = "--offscreen";
@@ -629,8 +630,19 @@ frame_check(
 		return 1;
 	}
 	if (fscanf(file, "P6 %u %u %u", &width, &height, &maximum) != 3 || width != 320U || height != 240U || maximum != 255U || fgetc(file) == EOF) {
+		/* Says what the file held: its size and its first bytes. */
+		unsigned char head[12];
+		size_t got;
+		long size;
+
+		(void)fseek(file, 0, SEEK_END);
+		size = ftell(file);
+		rewind(file);
+		got = fread(head, 1, sizeof(head), file);
 		fclose(file);
-		snprintf(reason, capacity, "frame not a 320x240 PPM");
+		snprintf(reason, capacity, "frame not a 320x240 PPM (%ld bytes, starts %02x %02x %02x %02x %02x %02x %02x %02x, %zu read)", size,
+			 got > 0 ? head[0] : 0, got > 1 ? head[1] : 0, got > 2 ? head[2] : 0, got > 3 ? head[3] : 0,
+			 got > 4 ? head[4] : 0, got > 5 ? head[5] : 0, got > 6 ? head[6] : 0, got > 7 ? head[7] : 0, got);
 		return 1;
 	}
 	start = ftell(file);

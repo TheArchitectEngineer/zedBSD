@@ -1235,3 +1235,18 @@ csbgen（Mesa 25.0.7 の `gen_pack_header.py` の `__pvr_address`: `((addr >> sh
 - compute の stage の fail で device が閉じるか: 板 78 の dmesg では、compute の reset は該当の session だけを lost にし（`session lost …`・`kick refused … device faulted 0`）、device の quarantine は起きていない。device と queue の公開は stage に依存しない（stage は log だけ）。理由を出す 1 行は、両方の test がすでに `<call> <VkResult>` を出しているので、library 側には足していない。
 - vkstage の draw・sample・depth の見込み: vk の graphics は `vk-queue.c` の `run_job` → `powervr_render_job_run`（render-job.c）を通る。job check も `job_compile`（vk の graphics と同じ compiler の道）→ `powervr_render_job_run` で同じ道であり、板 78 で色と depth が通った。stream の末尾の terminate state（q1484）も、この道に入っている。違いは shader の中身（sample の texture の読み、push constant）だけで、道の違いは見つからなかった。
 - 確認: RISC-V の self-test の build で warning 0。p009 の executor は 502/502。板は未実施。
+
+## q1487 / q1487-i01（2026-10-21）: present の段
+
+- 読み合わせ:
+  - gpu-selftest の present は `vkdemo --offscreen --time-ms=0 --hold=0 --output=/tmp/gpu-selftest-vkdemo.ppm` を動かす。vkdemo の exit が 0 の時だけ frame を判定する（0 でなければ理由は `offscreen: …`）。
+  - vkdemo の `vkdemo_write_frame` は `P6\n320 240\n255\n` と RGB の 320×240×3 byte を書く。gpu-selftest の `fscanf("P6 %u %u %u")` と、空白を含めて合う。
+  - 板の理由は `frame not a 320x240 PPM` なので、vkdemo は exit 0 だったが、file の中身が合わなかった。候補は 2 つ: 前の run の古い file（別の大きさ・空・別の形式）が残り、vkdemo が書かなかった。または、書いた中身が短い。
+  - 板の出力が無いので、どちらかは特定できない。
+- 直し（`userland/tests/gpu-selftest/main.c`）:
+  - offscreen の run の前に frame の file を `unlink` し、古い file が判定に入らないようにした。
+  - header が合わない時は、理由に file の大きさと先頭 8 byte を出す（`frame not a 320x240 PPM (N bytes, starts …)`）。
+- 確認:
+  - gpu-selftest と vkimage の main.c を、UAT の config と同じ clang の引数で RISC-V 向けに compile した（warning・error 0）。
+  - `build/uat/vf2-gpu/config.mk`（`config-visionfive2.mk` に COMPUTE_CHECK・RENDER_CHECK と、gpu-selftest・gpu-selftest-boot・vkcompute・vkimage・vkstage・vkdemo・libvulkan・libwayland-client など）の rootfs の一覧（`make -pn` で展開）に、/bin の gpu-selftest・vkcompute・vkdemo・vkimage・vkstage、/lib の libvulkan.so、firmware が入ることを確かめた。
+  - 板は未実施。
