@@ -96,6 +96,20 @@ static void put64(uint8_t *bytes, uint32_t offset, uint64_t value);
 static int single_core;
 
 /*
+ * Whether the commands carry the single-core flag on a core with
+ * multicore support (1, as Mesa's use_single_core: the firmware does not
+ * wait for other cores), and whether the geometry command sets its
+ * resume size (1, Mesa's VDMCTRL_PDS_STATE0 of the shared registers; the
+ * vendor driver's command on the board left it zero).
+ */
+#ifndef POWERVR_RENDER_SINGLE_CORE_FLAG
+#define POWERVR_RENDER_SINGLE_CORE_FLAG	1
+#endif
+#ifndef POWERVR_GEOMETRY_RESUME_SIZE_SET
+#define POWERVR_GEOMETRY_RESUME_SIZE_SET	1
+#endif
+
+/*
  * Turns the single-core flags on or off, once the firmware image's
  * features are known.
  */
@@ -104,7 +118,7 @@ powervr_render_command_single_core(
 	int on)
 {
 	/* Remembers the choice for every command built after it. */
-	single_core = on ? 1 : 0;
+	single_core = on && POWERVR_RENDER_SINGLE_CORE_FLAG ? 1 : 0;
 }
 
 /*
@@ -152,6 +166,7 @@ powervr_fragment_command(
 	 * ISP_DBIAS_BASE: addr 2..39 shifted by 2).
 	 */
 	put64(command, POWERVR_FRAGMENT_SCISSOR_BASE, setup->scissor_table & 0xfffffffffcULL);
+	put64(command, POWERVR_FRAGMENT_BORDER_TABLE, setup->border_table & 0xfffffffffcULL);
 	put64(command, POWERVR_FRAGMENT_DBIAS_BASE, setup->dbias_table & 0xfffffffffcULL);
 
 	/* A depth target's loads and stores, and the flags: the depth buffer, one core. */
@@ -182,8 +197,9 @@ powervr_geometry_command(
 	uint64_t stride;
 	uint32_t common;
 
-	/* The stream and the primitive control. */
+	/* The stream, the texture unit's border colours and the primitive control. */
 	powervr_geometry_stream(command, setup->stream);
+	put64(command, POWERVR_GEOMETRY_BORDER_TABLE, setup->border_table & 0xfffffffffcULL);
 	put32(command, POWERVR_GEOMETRY_PPP_CONTROL, PPP_WCLAMP_FIXED_POINT);
 
 	/* The tiling control: done at the stream's end, the region header stride. */
@@ -194,7 +210,8 @@ powervr_geometry_command(
 
 	/* The resume size: the common store of the shared registers. */
 	common = (setup->shared_registers * 4U + RESUME_COMMON_UNIT - 1U) / RESUME_COMMON_UNIT;
-	put32(command, POWERVR_GEOMETRY_RESUME_SIZE, RESUME_STATE_UPDATE | (common << RESUME_COMMON_SHIFT));
+	if (POWERVR_GEOMETRY_RESUME_SIZE_SET)
+		put32(command, POWERVR_GEOMETRY_RESUME_SIZE, RESUME_STATE_UPDATE | (common << RESUME_COMMON_SHIFT));
 
 	/* The only geometry of its render, on one core. */
 	put32(command, POWERVR_GEOMETRY_FLAGS, POWERVR_GEOMETRY_FIRST_AND_LAST | (single_core ? POWERVR_GEOMETRY_SINGLE_CORE : 0U));

@@ -249,6 +249,8 @@ powervr_render_job_run(
 	layout = powervr_target_layout_of(target);
 	memory->fragment_setup.tiles_x = layout->tiles_x;
 	memory->fragment_setup.tiles_y = layout->tiles_y;
+	memory->fragment_setup.border_table = powervr_session_border_table(session);
+	memory->geometry_setup.border_table = memory->fragment_setup.border_table;
 	powervr_fragment_command(&memory->fragment_setup, memory->fragment);
 	memory->geometry_setup.stream = memory->general->address + GENERAL_STREAM;
 	memory->geometry_setup.region_header_bytes = layout->region_header_bytes;

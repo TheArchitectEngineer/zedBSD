@@ -39,6 +39,7 @@
 #include <uapi/gpu.h>
 #include <uapi/gpu-scanout.h>
 
+#include "drivers/gpu/powervr/render-command.h"
 #include "drivers/gpu/powervr/render-private.h"
 #include "drivers/gpu/powervr/fixed-area.h"
 #include "drivers/gpu/powervr/interface.h"
@@ -57,6 +58,7 @@
 
 static int render_open(void *device, void **result);
 static void render_close(void *device, void *session);
+static void border_table_make(struct powervr_render *render, struct powervr_session *session);
 static int render_info(void *device, void *session, struct gpu_info *info);
 static int render_resource_create(void *device, void *session, const struct gpu_resource_create *request, void **result);
 static void render_resource_destroy(void *device, void *session, void *resource);
@@ -636,9 +638,51 @@ render_open(
 			kern_logf("powervr: compute context switch state not written (%d)\n", error);
 	}
 
+	/* The texture unit's border colour table, all zero (transparent black); without it the commands name none. */
+	border_table_make(render, session);
+
 	/* Succeeded: the session is the core's. */
 	*result = session;
 	return 0;
+}
+
+/*
+ * Makes a session's border colour table: zeroed memory of the table's
+ * size at an address of the session's general heap.  Without it the
+ * commands carry no table.
+ *
+ * Procedure referenced:
+ * Mesa 25.0.7 src/imagination/vulkan/pvr_border.c
+ * (pvr_border_color_table_init: one table of every entry in the general
+ * heap, aligned to the cache line; entry 0, transparent black, all zero).
+ */
+static void
+border_table_make(
+	struct powervr_render *render,
+	struct powervr_session *session)
+{
+	struct powervr_buffer *buffer;
+	int error;
+
+	error = powervr_buffer_create(render, POWERVR_BORDER_TABLE_BYTES, &buffer);
+	if (error == 0) {
+		error = powervr_resource_make(session, buffer, 0, 0, &session->border_table);
+		powervr_buffer_put(render, buffer);
+	}
+	if (error != 0) {
+		session->border_table = NULL;
+		kern_logf("powervr: border colour table not made (%d)\n", error);
+	}
+}
+
+/* The device address of a session's border colour table, or zero without one. */
+uint64_t
+powervr_session_border_table(
+	const struct powervr_session *session)
+{
+	if (session->border_table == NULL)
+		return 0;
+	return session->border_table->address;
 }
 
 /*
@@ -713,6 +757,11 @@ render_close(
 		mutex_unlock(&render->core->lock);
 		return;
 	}
+
+	/* The border colour table, which no command reaches any more. */
+	if (session->border_table != NULL)
+		powervr_resource_unmake(session, session->border_table);
+	session->border_table = NULL;
 
 	/* Returns its render targets, its tables and records, then the bookkeeping. */
 	powervr_session_targets_destroy(render, session);

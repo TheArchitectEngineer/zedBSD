@@ -1002,3 +1002,17 @@ source の変更は無し。
   - 0 の時は今までの kernel を workgroup ごとに出す形。上の 3 の compiler の変更が main に入ったら 1 にする。
 - 確認: RISC-V の self-test の build を、`POWERVR_EXECUTOR_ONE_KERNEL` を 1 にした時と 0 にした時の両方で行い、どちらも warning 0（commit は 0）。`plan/ws269/tests/p008/run.sh` は encode 94/94・compute 76/76 PASS。板は未実施。
 - 未確認の仮定: DOUTW の COMMON_STORE の address が係数 register の番号であること（Mesa の barrier_coefficient・work_group_input_regs と同じ扱い）、z が temp 3 であること（Mesa の add_base_workgroup の {0,1,3}）。
+
+## q1468 / q1468-i01（2026-10-20）
+
+- (1) TPU の border colour table を作った:
+  - 表は session ごとに 1 つ、0 で埋めた 256 KiB（64 entry × 128 format × float/int の 2 × 16 byte、Mesa の pvr_border.c の entry の形）を、render_open で general heap に置く。entry 0（透明黒）は 0 で正しい。他の entry（不透明の黒・白）は今は 0 のままで、sampler の border は未対応。
+  - 置く場所: geometry の regs+8（command の +24）と fragment の regs+344（command の +360）に、address の bit 2〜39 を入れる。
+  - render_close で、keep でない時に解放する。
+  - 作れなかった時は log を出して 0 を入れる（今までと同じ）。
+- (2) `vdm_context_resume_task0_size` の 0x20010000 は、Mesa の `pvr_geom_state_stream_init` の VDMCTRL_PDS_STATE0 と同じ値（block_type PDS_STATE_UPDATE が bit 29、usc_common_size は shared register 1 個を 64 byte の単位に切り上げて 1、bit 16）。違わないので直していない。IMG の 0 も試せるよう switch `POWERVR_GEOMETRY_RESUME_SIZE_SET`（既定 1）を足した。
+- (3) SINGLE_CORE の bit 3: mainline の `ROGUE_GEOM_FLAGS_SINGLE_CORE`（multicore の firmware で他の core を待たない）を、`gpu_multicore_support` の feature がある時に立てている。switch `POWERVR_RENDER_SINGLE_CORE_FLAG`（既定 1、0 で立てない）を足した。
+- 確認:
+  - RISC-V の self-test の build で warning 0。
+  - host 試験: p009 の executor が 511/511。p010 は全部 0 failed（job 26・command 29・kick 81 など）。p010 の job-host-test に `powervr_session_border_table` の stub を足した。
+  - 板は未実施。

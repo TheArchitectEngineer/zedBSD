@@ -296,6 +296,7 @@ struct powervr_session {
 	unsigned isolated;
 	unsigned retained;
 	struct powervr_resource *blobs;
+	struct powervr_resource *border_table;
 	struct powervr_marker markers[POWERVR_RENDER_PENDING];
 	unsigned reserved;
 	struct powervr_vk_session *vk;
@@ -381,6 +382,7 @@ int powervr_resource_make(struct powervr_session *session, struct powervr_buffer
 
 /* Undoes a handle: unmaps it and drops its buffer, unless the core may still reach the session. */
 void powervr_resource_unmake(struct powervr_session *session, struct powervr_resource *resource);
+uint64_t powervr_session_border_table(const struct powervr_session *session);
 
 /* Finds a blob or an import of a session by the identifier the renderer names it by, or NULL. */
 struct powervr_resource *powervr_session_blob(struct powervr_session *session, uint32_t identifier);
