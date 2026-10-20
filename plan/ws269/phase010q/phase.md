@@ -1124,3 +1124,42 @@ csbgen（Mesa 25.0.7 の `gen_pack_header.py` の `__pvr_address`: `((addr >> sh
   - compute と render の check は行わない（dmesg の ring に残すため）。
   - FW の起動前の EVENT_STATUS は 0（板 70）なので、この dump で bit 4 が立つ所（`GPU init` の前後）を見る。
 - 確認: RISC-V の self-test の build で warning 0。既定（0・0）と、両方の switch を 1 にした時の両方で確かめた（commit は既定）。板は未実施。
+
+## q1480 / q1480-i01（2026-10-21）: HWRT の record と Mesa・mainline の値
+
+64×64、1 sample、1 layer。tile は 16 px なので 4×4 tile。simple parameter format は version 2。板の dump は vf2-dmesg51 の `target: record`（half 0 は +000、half 1 は +180、common は +300）。
+
+| field（mainline の struct） | Mesa・mainline の計算 | 期待値 | 板の値 | 一致 |
+| --- | --- | --- | --- | --- |
+| common.geom_caches_need_zeroing | false | 0 | 0 | ○ |
+| screen_pixel_max | (w-1)、(h-1)<<16 | 0x003f003f | 0x003f003f | ○ |
+| multi_sample_ctl / flipped | 1 sample の中心（8,8）と、y を反転した 16-8 | 0x88 / 0x88 | 0x88 / 0x88 | ○ |
+| tpc_stride / tpc_size | 1 layer は stride 0。size は next_pow2(8)²/4 × 8 byte | 0 / 0x80 | 0 / 0x80 | ○ |
+| te_screen | round_up(4,2)-1 = 3、Y は <<12 | 0x3003 | 0x3003 | ○ |
+| mtile_stride | mtile_x × mtile_y = 2×2 | 4 | 4 | ○ |
+| teaa | 1 sample | 0 | 0 | ○ |
+| te_mtile1 / te_mtile2 | X1 = ceil(4/8)×2 = 2 を <<18、X2・X3 は 0（format 2） | 0x80000 / 0x80000 | 0x80000 / 0x80000 | ○ |
+| isp_merge_* | roguexe で 16 px の tile なので 0 | 0 | 0 | ○ |
+| rgn_header_size | (2×2) × (4×4) / 4（region header の個数） | 16 | 0x10 | ○ |
+| isp_mtile_size | x = 2 を <<16、y = 2 | 0x20002 | 0x20002 | ○ |
+| data.pm_mlist_dev_addr | mlist の buffer | macrolist（half ごと） | 0x800000a000 / 0x800000b000 | ○ |
+| cat base・stack pointer | FW が書く | 0 | 0 | ○ |
+| hwrt_data_common_fw_addr | common の FW address | c007b300 | c007b300 | ○ |
+| hwrt_data_flags | mainline は書かない | 0 | 0 | ○ |
+| state | 初期値 0、以後は FW が書く | — | 9（FW が書いた後の値） | — |
+| freelists_fw_addr[0..2] | local・global の順 | local, global, 0 | c007a000, c0079000, 0 | ○（FW の trace も type 0 → 1 の順に load） |
+| vheap_table_dev_addr | vheap | 0x800000f000 | 0x800000f000 | ○ |
+| rta_ctl | index 0、active 0、valid 0、partial 0、max_rts = layers | max_rts 1 | 1 | ○ |
+| tail_ptrs_dev_addr | TPC | 0x8000011000 | 0x8000011000 | ○ |
+| macrotile_array_dev_addr | simple internal parameter format の core では MTA の大きさは 0（`rogue_get_macrotile_array_size`） | 0 | 0 | ○ |
+| rgn_header_dev_addr | region headers（q1472 から 0xdbf…） | half ごと | 0x800000d000 / 0x800000d080（板 51 の時点） | ○ |
+| rtc_dev_addr | 1 layer では RTC 無し | 0 | 0 | ○ |
+| geom_caches_need_zeroing（data） | 初期値 false | 0 | 1（HWR の後に FW が立てる） | — |
+
+- free list（local は +00、global は +00）: base・current の address、stack top（pages−1）、total・max・current の pages は mainline の `free_list_fw_init` と同じ形（local は 32 page、global は 4096 page、grow 0）。
+- Mesa が TA の前に行う初期化と我々の比較:
+  - vheap・tails・mlist・region headers: Mesa は `pvr_bo_alloc`（kernel の GEM で 0 埋め）だけで、中身を書かない。我々も 0 埋めの buffer。region header は FW が初期化する（trace の `RGNHDR Init: 1`）。
+  - macrotile array: この core では無い（大きさ 0）。
+  - TPC: 0 埋めのみ（Mesa も同じ）。
+  - RTC: 1 layer では無い。
+- 結論: 64×64・1 sample・1 layer の HWRT の record・common・free list の全 field は、Mesa と mainline の計算と一致した。直す差は無い。コードは変えていない。
