@@ -240,3 +240,35 @@ sample の段の道（通しで読んだ）:
 - 後段の間は別の thread が 1 秒ごとに見て、終わらない段を 5 秒ごとに `still in <段> after N s` と出す（段が register の読みで戻らない時もほかの hart から出る）。
 - `userland/base/sysctl/main.c`: `hw.gpu.powervr.stages` は可変の長さの文字列なのに、名前の分岐が無く固定の大きさで読んでいた（ENOMEM）。`fetch_value` で大きさを問い、文字列として出す分岐を足した。kernel の `sysctl_output` は oldp NULL に大きさを答えており、正しかった。
 - 確かめ: VF2 の vmunix と sysctl の build、warning 0。p010 run.sh 0 failed。実機は未（ユーザーが SD で）。
+
+## q1406-i01（P1、2026-10-20）: health check の timeout の診断と mainline との照合
+
+実機（Q1、main 5eb7030f5）: boot は 4 ms で done、health check は return slot 0x0 のまま 1011 ms で時間切れ。
+
+- 診断（`firmware-boot.c`）:
+  - health check の時間切れに `firmware_dump` を出す。内容は次のとおり。
+    - KCCB・FWCCB の control（write・read・wrap・size と FW の address）。
+    - slot の command の先頭 4 word と return slot（FW の address と値）。
+    - os init が名指す各 address。
+    - MTS の schedule・interrupt/background assoc、soft reset、MIPS wrapper、Garten、MIPS の IRQ status。
+    - host の割り込みの数、FW の interrupt_count・kccb_cmds_executed、sysdata の pow_state、started とその時刻。
+    - trace の assert の path・info・line。
+    - trace の pointer と最後の 48 word。
+  - trace を有効にした（log type 0x207: TRACE・MAIN・MTS・POW）。
+- (3) の確かめの行:
+  - processor の reset 解除の直前に started の値を出す（前の残りでないことを見る）。
+  - boot の done の時に started・その時刻・marker と、FW が埋める os init の hardware・firmware の identity（layout と BVNC）を出す。FW が os init を読んだかどうかもこれで分かる。
+- mainline（StarFive 6.12.y 4cecf169f38e の imagination）との照合。すべて一致し、直しは無し。
+
+| 項目 | mainline | zedBSD | 結果 |
+| --- | --- | --- | --- |
+| KCCB の送り（`pvr_kccb_send_cmd_reserved_powered`） | command を slot へ、return slot を NO_RESPONSE、mb、write_offset、MTS_SCHEDULE に DM_GP（0）、wmb の後 | 同じ順（`commands.c`）。値 0、0x0b00 に 32 bit | 一致 |
+| ccb_ctl | write 0、read 128、wrap 132、cmd_size 136、144 byte | 同じ | 一致 |
+| kccb_cmd | 88 byte、HEALTH_CHECK 115 と magic 0x2abc<<16 | 同じ | 一致 |
+| osinit | 0・4・8・12・16、hwr 28、os data 36、compchecks 40（layout の版 3、bvnc 0） | 同じ | 一致 |
+| sysinit | runtime 316・trace 320・sysdata 324・util 328・clock 344・started 352・marker 356 | 同じ | 一致 |
+| KCCB の写像 | PVR_BO_FW_FLAGS_DEVICE_UNCACHED | `POWERVR_MIPS_UNCACHED` | 一致 |
+| `pvr_fw_start` | 順と値（secure、soft reset 3 段、slc、wrapper、ACE、3 µs、release、3 µs） | 同じ | 一致 |
+| boot の待ち | `firmware_started` の poll | 同じ | 一致（4 ms が本物かは上の行で見る） |
+
+- 確かめ: VF2 の vmunix の build、warning 0。実機は Q1 が板で。

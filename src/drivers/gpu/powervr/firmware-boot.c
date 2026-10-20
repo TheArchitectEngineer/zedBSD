@@ -110,12 +110,39 @@ static void tear_down(struct powervr_core *core, enum late_stage reached);
 static void free_blocks(struct powervr_core *core);
 static void free_file(struct powervr_core *core);
 static uint64_t ms_deadline(unsigned milliseconds);
+static void firmware_dump(struct powervr_core *core, uint32_t slot);
 static void step_start(const char *name);
 static void step_done(const char *name, int error);
 static void watch_thread(void *argument);
 
 /* How often a step that has not ended is reported again. */
 #define WATCH_REPORT_MS		5000U
+
+/*
+ * The trace the firmware keeps, for the dump of a command it did not
+ * execute: its main group on, the last words printed.
+ *
+ * Values referenced:
+ * Linux v7.3 drivers/gpu/drm/imagination/pvr_rogue_fwif.h
+ * (ROGUE_FWIF_LOG_TYPE_TRACE 0x1, ROGUE_FWIF_LOG_TYPE_GROUP_MAIN 0x2,
+ * GROUP_MTS 0x4, GROUP_POW 0x200; struct rogue_fwif_tracebuf_space:
+ * trace_pointer 0, the assert buffer at 16 with path 200 bytes, info 200
+ * bytes and the line; struct rogue_fwif_osdata: interrupt_count 560,
+ * kccb_cmds_executed 568; struct rogue_fwif_sysdata: pow_state 8;
+ * struct rogue_fwif_sysinit: firmware_started_timestamp 360;
+ * struct rogue_fwif_osinit: the hardware and firmware identities at 40
+ * and 56, each its layout and BVNC) and pvr_rogue_fwif_check.h.
+ */
+#define DUMP_TRACE_LOG_TYPE		0x207U
+#define DUMP_TRACE_POINTER		8U
+#define DUMP_ASSERT_PATH		24U
+#define DUMP_ASSERT_INFO		224U
+#define DUMP_ASSERT_LINE		424U
+#define DUMP_ASSERT_TEXT		200U
+#define DUMP_TRACE_LAST_WORDS		48U
+#define DUMP_OS_DATA_INTERRUPTS		560U
+#define DUMP_SYSTEM_DATA_POWER		8U
+#define DUMP_SYSTEM_INIT_STARTED_TIME	360U
 
 /*
  * The step the later stage is in, for its log lines and for the thread
@@ -762,8 +789,8 @@ fill_records(
 	powervr_object_put32(&firmware->runtime, POWERVR_RUNTIME_CLUSTERS, (uint32_t)clusters);
 	powervr_object_put32(&firmware->runtime, POWERVR_RUNTIME_WATCHDOG, 0);
 
-	/* The trace: off, with the one thread's buffer named and sized. */
-	powervr_object_put32(&firmware->trace_control, POWERVR_TRACE_LOG_TYPE, 0);
+	/* The trace: its main, scheduler and power groups on, the one thread's buffer named and sized. */
+	powervr_object_put32(&firmware->trace_control, POWERVR_TRACE_LOG_TYPE, DUMP_TRACE_LOG_TYPE);
 	powervr_object_put32(&firmware->trace_control, POWERVR_TRACE_BUFFER_ADDRESS, powervr_object_address(&firmware->trace_buffer, 0));
 	powervr_object_put32(&firmware->trace_control, POWERVR_TRACE_WORDS_FIELD, POWERVR_TRACE_WORDS);
 
@@ -959,7 +986,8 @@ start_processor(
 	powervr_write64(core, POWERVR_AXI_ACE_LITE, POWERVR_AXI_ACE_LITE_VALUE);
 
 	/* Lets the processor out of reset with a pause on each side. */
-	kern_logf("powervr: firmware: start: processor out of reset\n");
+	kern_logf("powervr: firmware: start: processor out of reset (started flag before 0x%x)\n",
+		  (unsigned)powervr_object_get32(&core->firmware.system_init, POWERVR_SYSTEM_INIT_STARTED));
 	kern_usleep_range(RELEASE_PAUSE_US, RELEASE_PAUSE_US * 2U);
 	powervr_write64(core, POWERVR_SOFT_RESET, 0);
 	(void)powervr_read64(core, POWERVR_SOFT_RESET);
@@ -1103,6 +1131,16 @@ wait_started(
 		sched_sleep(now + 1U);
 	}
 
+	/* What the firmware wrote at its start: the flag, its time, and the identities it filled. */
+	kern_logf("powervr: firmware: boot: started 0x%x at %u, marker %u, hardware identity %u/0x%x, firmware identity %u/0x%x\n",
+		  (unsigned)started,
+		  (unsigned)powervr_object_get32(&core->firmware.system_init, DUMP_SYSTEM_INIT_STARTED_TIME),
+		  (unsigned)powervr_object_get32(&core->firmware.system_init, POWERVR_SYSTEM_INIT_MARKER),
+		  (unsigned)powervr_object_get32(&core->firmware.os_init, POWERVR_OS_INIT_HW_IDENTITY),
+		  (unsigned)powervr_object_get32(&core->firmware.os_init, POWERVR_OS_INIT_HW_IDENTITY + 8U),
+		  (unsigned)powervr_object_get32(&core->firmware.os_init, POWERVR_OS_INIT_FW_IDENTITY),
+		  (unsigned)powervr_object_get32(&core->firmware.os_init, POWERVR_OS_INIT_FW_IDENTITY + 8U));
+
 	/* Succeeded: the firmware runs. */
 	return 0;
 }
@@ -1125,6 +1163,7 @@ health_check(
 	uint32_t command[POWERVR_COMMAND_WORDS];
 	uint32_t answer;
 	uint32_t index;
+	uint32_t slot;
 	int error;
 
 	/* The command: its type alone. */
@@ -1134,9 +1173,13 @@ health_check(
 	command[POWERVR_COMMAND_TYPE / 4U] = POWERVR_COMMAND_HEALTH_CHECK;
 
 	/* Sends it and waits for the return slot to say it was executed. */
-	error = powervr_command_run(core, command, POWERVR_COMMAND_WAIT_MS, &answer);
+	error = powervr_command_send(core, command, &slot);
+	if (error != 0)
+		return error;
+	error = powervr_command_wait(core, slot, POWERVR_COMMAND_WAIT_MS, &answer);
 	if (error != 0) {
 		kern_logf("powervr: firmware: health check timed out waiting for its return slot (%d, 0x%x)\n", error, (unsigned)answer);
+		firmware_dump(core, slot);
 		return error;
 	}
 
@@ -1399,5 +1442,113 @@ watch_thread(
 			continue;
 		reported = now;
 		kern_logf("powervr: firmware: still in %s after %u s\n", name, (unsigned)((now - began) / KERN_CLOCK_HZ));
+	}
+}
+
+/*
+ * Prints what the host and the firmware share about a command the
+ * firmware did not execute: the two command buffers' controls, the
+ * command and its return slot with their firmware addresses, the
+ * scheduler and the processor's registers, the interrupts, the
+ * firmware's own counts and power state, an assertion it left, and the
+ * last words of its trace.
+ */
+static void
+firmware_dump(
+	struct powervr_core *core,
+	uint32_t slot)
+{
+	struct powervr_firmware *firmware;
+	struct powervr_object *trace;
+	char text[DUMP_ASSERT_TEXT + 1U];
+	uint32_t pointer;
+	uint32_t first;
+	uint32_t word;
+	uint32_t index;
+
+	/* The command buffers' controls. */
+	firmware = &core->firmware;
+	kern_logf("powervr: dump: kccb control at 0x%x: write %u read %u wrap 0x%x size %u; fwccb control at 0x%x: write %u read %u\n",
+		  (unsigned)powervr_object_address(&firmware->kccb_control, 0),
+		  (unsigned)powervr_object_get32(&firmware->kccb_control, POWERVR_CCB_WRITE),
+		  (unsigned)powervr_object_get32(&firmware->kccb_control, POWERVR_CCB_READ),
+		  (unsigned)powervr_object_get32(&firmware->kccb_control, POWERVR_CCB_WRAP_MASK),
+		  (unsigned)powervr_object_get32(&firmware->kccb_control, POWERVR_CCB_COMMAND_BYTES),
+		  (unsigned)powervr_object_address(&firmware->fwccb_control, 0),
+		  (unsigned)powervr_object_get32(&firmware->fwccb_control, POWERVR_CCB_WRITE),
+		  (unsigned)powervr_object_get32(&firmware->fwccb_control, POWERVR_CCB_READ));
+
+	/* The command in its slot and its return slot. */
+	kern_logf("powervr: dump: slot %u at 0x%x: 0x%x 0x%x 0x%x 0x%x; return at 0x%x: 0x%x\n",
+		  (unsigned)slot,
+		  (unsigned)powervr_object_address(&firmware->kccb, slot * POWERVR_COMMAND_BYTES),
+		  (unsigned)powervr_object_get32(&firmware->kccb, slot * POWERVR_COMMAND_BYTES),
+		  (unsigned)powervr_object_get32(&firmware->kccb, slot * POWERVR_COMMAND_BYTES + 4U),
+		  (unsigned)powervr_object_get32(&firmware->kccb, slot * POWERVR_COMMAND_BYTES + 8U),
+		  (unsigned)powervr_object_get32(&firmware->kccb, slot * POWERVR_COMMAND_BYTES + 12U),
+		  (unsigned)powervr_object_address(&firmware->kccb_returns, slot * 4U),
+		  (unsigned)powervr_object_get32(&firmware->kccb_returns, slot * 4U));
+
+	/* The records' firmware addresses as the per-OS record names them. */
+	kern_logf("powervr: dump: os init at 0x%x names kccb control 0x%x kccb 0x%x returns 0x%x fwccb control 0x%x os data 0x%x\n",
+		  (unsigned)powervr_object_address(&firmware->os_init, 0),
+		  (unsigned)powervr_object_get32(&firmware->os_init, POWERVR_OS_INIT_KCCB_CONTROL),
+		  (unsigned)powervr_object_get32(&firmware->os_init, POWERVR_OS_INIT_KCCB),
+		  (unsigned)powervr_object_get32(&firmware->os_init, POWERVR_OS_INIT_KCCB_RETURNS),
+		  (unsigned)powervr_object_get32(&firmware->os_init, POWERVR_OS_INIT_FWCCB_CONTROL),
+		  (unsigned)powervr_object_get32(&firmware->os_init, POWERVR_OS_INIT_OS_DATA));
+
+	/* The scheduler's and the processor's registers. */
+	kern_logf("powervr: dump: mts schedule 0x%x interrupt assoc 0x%x background assoc 0x%x; soft reset 0x%llx; mips wrapper 0x%x garten 0x%llx; mips irq status 0x%x\n",
+		  (unsigned)powervr_read32(core, POWERVR_MTS_SCHEDULE),
+		  (unsigned)powervr_read32(core, POWERVR_MTS_INTERRUPT_ASSOC),
+		  (unsigned)powervr_read32(core, POWERVR_MTS_BACKGROUND_ASSOC),
+		  (unsigned long long)powervr_read64(core, POWERVR_SOFT_RESET),
+		  (unsigned)powervr_read32(core, POWERVR_MIPS_WRAPPER),
+		  (unsigned long long)powervr_read64(core, POWERVR_GARTEN_WRAPPER),
+		  (unsigned)powervr_read32(core, POWERVR_MIPS_IRQ_STATUS));
+
+	/* The interrupts the host took and the firmware's own counts and power state. */
+	kern_logf("powervr: dump: host interrupts %u; firmware interrupts %u, kccb executed %u, power state %u; started 0x%x at %u\n",
+		  (unsigned)firmware->interrupts,
+		  (unsigned)powervr_object_get32(&firmware->os_data, DUMP_OS_DATA_INTERRUPTS),
+		  (unsigned)powervr_object_get32(&firmware->os_data, POWERVR_OS_DATA_KCCB_EXECUTED),
+		  (unsigned)powervr_object_get32(&firmware->system_data, DUMP_SYSTEM_DATA_POWER),
+		  (unsigned)powervr_object_get32(&firmware->system_init, POWERVR_SYSTEM_INIT_STARTED),
+		  (unsigned)powervr_object_get32(&firmware->system_init, DUMP_SYSTEM_INIT_STARTED_TIME));
+
+	/* An assertion the firmware left: its file, its text and its line. */
+	trace = &firmware->trace_control;
+	for (index = 0; index < DUMP_ASSERT_TEXT; index++) {
+		word = powervr_object_get32(trace, (DUMP_ASSERT_PATH + index) & ~3U);
+		text[index] = (char)(word >> (8U * ((DUMP_ASSERT_PATH + index) & 3U)));
+	}
+	text[DUMP_ASSERT_TEXT] = '\0';
+	kern_logf("powervr: dump: assert path \"%s\" line %u\n", text, (unsigned)powervr_object_get32(trace, DUMP_ASSERT_LINE));
+	for (index = 0; index < DUMP_ASSERT_TEXT; index++) {
+		word = powervr_object_get32(trace, (DUMP_ASSERT_INFO + index) & ~3U);
+		text[index] = (char)(word >> (8U * ((DUMP_ASSERT_INFO + index) & 3U)));
+	}
+	text[DUMP_ASSERT_TEXT] = '\0';
+	kern_logf("powervr: dump: assert info \"%s\"\n", text);
+
+	/* The trace: where the firmware writes next, then the words before it, eight a line. */
+	pointer = powervr_object_get32(trace, DUMP_TRACE_POINTER);
+	kern_logf("powervr: dump: trace log type 0x%x, pointer %u of %u\n",
+		  (unsigned)powervr_object_get32(trace, POWERVR_TRACE_LOG_TYPE), (unsigned)pointer, (unsigned)POWERVR_TRACE_WORDS);
+	if (pointer > POWERVR_TRACE_WORDS)
+		pointer = 0;
+	first = pointer >= DUMP_TRACE_LAST_WORDS ? pointer - DUMP_TRACE_LAST_WORDS : 0;
+	for (index = first; index + 8U <= pointer; index += 8U) {
+		kern_logf("powervr: dump: trace %5u: %08x %08x %08x %08x %08x %08x %08x %08x\n",
+			  (unsigned)index,
+			  (unsigned)powervr_object_get32(&firmware->trace_buffer, (index + 0U) * 4U),
+			  (unsigned)powervr_object_get32(&firmware->trace_buffer, (index + 1U) * 4U),
+			  (unsigned)powervr_object_get32(&firmware->trace_buffer, (index + 2U) * 4U),
+			  (unsigned)powervr_object_get32(&firmware->trace_buffer, (index + 3U) * 4U),
+			  (unsigned)powervr_object_get32(&firmware->trace_buffer, (index + 4U) * 4U),
+			  (unsigned)powervr_object_get32(&firmware->trace_buffer, (index + 5U) * 4U),
+			  (unsigned)powervr_object_get32(&firmware->trace_buffer, (index + 6U) * 4U),
+			  (unsigned)powervr_object_get32(&firmware->trace_buffer, (index + 7U) * 4U));
 	}
 }
