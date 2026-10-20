@@ -126,7 +126,8 @@ static void watch_thread(void *argument);
  * Values referenced:
  * Linux v7.3 drivers/gpu/drm/imagination/pvr_rogue_fwif.h
  * (ROGUE_FWIF_LOG_TYPE_TRACE 0x1, ROGUE_FWIF_LOG_TYPE_GROUP_MAIN 0x2,
- * GROUP_MTS 0x4, GROUP_POW 0x200; struct rogue_fwif_tracebuf_space:
+ * GROUP_MTS 0x4, GROUP_CSW 0x10, GROUP_BIF 0x20, GROUP_POW 0x200,
+ * GROUP_HWR 0x400, GROUP_MISC 0x4000; struct rogue_fwif_tracebuf_space:
  * trace_pointer 0, the assert buffer at 16 with path 200 bytes, info 200
  * bytes and the line; struct rogue_fwif_osdata: interrupt_count 560,
  * kccb_cmds_executed 568; struct rogue_fwif_sysdata: pow_state 8;
@@ -134,7 +135,7 @@ static void watch_thread(void *argument);
  * struct rogue_fwif_osinit: the hardware and firmware identities at 40
  * and 56, each its layout and BVNC) and pvr_rogue_fwif_check.h.
  */
-#define DUMP_TRACE_LOG_TYPE		0x207U
+#define DUMP_TRACE_LOG_TYPE		0x4637U
 #define DUMP_TRACE_POINTER		8U
 #define DUMP_ASSERT_PATH		24U
 #define DUMP_ASSERT_INFO		224U
@@ -812,7 +813,7 @@ fill_records(
 	powervr_object_put32(&firmware->runtime, POWERVR_RUNTIME_CLUSTERS, (uint32_t)clusters);
 	powervr_object_put32(&firmware->runtime, POWERVR_RUNTIME_WATCHDOG, 0);
 
-	/* The trace: its main, scheduler and power groups on, the one thread's buffer named and sized. */
+	/* The trace: its main, scheduler, context switch, bus, power, recovery and other groups on, the one thread's buffer named and sized. */
 	powervr_object_put32(&firmware->trace_control, POWERVR_TRACE_LOG_TYPE, DUMP_TRACE_LOG_TYPE);
 	powervr_object_put32(&firmware->trace_control, POWERVR_TRACE_BUFFER_ADDRESS, powervr_object_address(&firmware->trace_buffer, 0));
 	powervr_object_put32(&firmware->trace_control, POWERVR_TRACE_WORDS_FIELD, POWERVR_TRACE_WORDS);

@@ -412,3 +412,28 @@ trace の読み（mainline の `pvr_rogue_fwif_sf.h` の表）:
 - p009 の run.sh に render-sr-program を足した。
 
 確かめ: 試験の image の config と VF2 の vmunix は warning 0。p009 は切り替え 0・1 とも 511/0、p010 は 0 failed。実機は未。
+
+## q1414-i01（P1、2026-10-20）: どの kick で reset か
+
+板の全文（vf2-dmesg10）の順:
+- coherency の検査
+- context reset notice（context 0x2、reason 1、dm 4）
+- `compute: fail(reset lockup)`
+- `compute probe: end only: finished (0), context reset`
+
+この順の読み:
+- coherency の検査は data master を使わない。KCCB の MMU cache の command だけで、131072 個。
+- compute-check の最初の compute の kick は probe の「end only」。その行は wait の後に出るので、wait の間に service が通知を出す。通知が probe の行より前に出るのはそのため。
+- したがって、最初に reset を起こしているのは「end only」の kick そのものと読む。前の reset を引きずっているのではないので、(2) の context の作り直しは要らない。
+
+FW の trace（2648〜）:
+1. FW FAULT（`…fw_hwr.c` line 1330）
+2. UFO の更新（FWCtx 0xc002f000 @ 136、[0xc002e000] = 1）
+3. idle
+
+CDM の lockup の前後の行は、MTS・POW の group しか有効でなかったので出ていない。
+
+直し:
+- probe の kick の前に `powervr: kick: compute probe <名前> sent (context kept|reset)` を出す。
+- FW の trace の group を増やした（log type 0x4637: MAIN・MTS・CSW・BIF・POW・HWR・MISC）。context の switch・bus（MMU）・recovery の行で、CDM のどこで止まるかを見る。
+- 確かめ: 試験の image の config の vmunix は warning 0。実機は未。
