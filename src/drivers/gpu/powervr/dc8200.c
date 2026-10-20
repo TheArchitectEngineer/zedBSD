@@ -728,6 +728,13 @@ drv_powervr_dc_vblank_start(
 
 	blanks->started = 1;
 
+	/*
+	 * Gives the source its priority: registering only routes it, and a
+	 * source of priority 0 never reaches the hart (q1529: the controller's
+	 * pending bit was set and the handler never ran).
+	 */
+	kern_irq_unmask(blanks->irq);
+
 	/* Lets the HDMI panel raise it, leaving the other panel's bit as it was. */
 	enabled_panels = read_control(adoption, DC_INTERRUPT_ENABLE);
 	enabled_panels |= 1U << DC_HDMI_PANEL;

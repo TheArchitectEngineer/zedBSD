@@ -69,3 +69,13 @@ D1〜D11 は全部 (a)（推奨どおり）。原文は Master の decisions-log
   - VF2 の vmunix は rc 0、warning 0。
   - 板は未実施。
   - premultiplied の alpha と DC8200 の cursor の blend の違い（縁の見え方）も未確認。
+
+## q1529（2026-10-21、P2）: vblank の割り込みが届かない
+
+- run 17: `interrupt enable 5 pending 1` なのに、handler は一度も呼ばれなかった（vblank 0、other 0）。
+- 原因: `kern_irq_register`（`hal_irq_register`）は PLIC の source を hart へ向けるだけで、priority は 0 のまま（source は mask されたまま）。
+  他の driver（firmware-boot.c など）は register の後に `kern_irq_unmask` を呼ぶ。`drv_powervr_dc_vblank_start` はそれを欠いていた。
+- 修正: `dc8200.c` の `drv_powervr_dc_vblank_start` で、register の後に `kern_irq_unmask(irq)` を呼ぶ。
+  ws277 の p003 と p005 の試験に stub を足した。
+- `location 0 then 0` について: register（0x1450）は Linux の DC_DISPLAY_CURRENT_LOCATION と同じ番地。own mode でも 0 のままの理由は未確認。
+- 確認: ws277 の host 試験は全部 0 failures、VF2 の vmunix は rc 0、warning 0。板は未実施。
