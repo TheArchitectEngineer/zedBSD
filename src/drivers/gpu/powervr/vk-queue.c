@@ -82,7 +82,7 @@ _Static_assert(QUEUE_PDS_OFFSET == POWERVR_PROGRAM_HEAP_START && QUEUE_PDS_BYTES
  * read the workgroup id from coefficient registers 0 to 2.
  */
 #ifndef POWERVR_EXECUTOR_ONE_KERNEL
-#define POWERVR_EXECUTOR_ONE_KERNEL	0
+#define POWERVR_EXECUTOR_ONE_KERNEL	1
 #endif
 #define QUEUE_GROUP_COEFFICIENTS	3U
 #define QUEUE_PDS_GROUP_INPUTS		4U
