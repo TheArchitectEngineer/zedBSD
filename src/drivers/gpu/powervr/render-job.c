@@ -190,6 +190,14 @@ powervr_render_job_run(
 	if (error != 0)
 		return error;
 
+	/* The job's shape and its first colour target's load and store, with the diagnostics. */
+	if (POWERVR_DIAGNOSTICS && job->color_count != 0)
+		kern_logf("powervr: render job: %ux%u, %u draws, colour load %u store %u at 0x%llx (%s, pitch %u, padded %u)\n",
+			  (unsigned)job->width, (unsigned)job->height, (unsigned)job->draw_count,
+			  (unsigned)job->colors[0].load_op, (unsigned)job->colors[0].store_op,
+			  (unsigned long long)job->colors[0].surface.address, job->colors[0].surface.linear ? "linear" : "twiddled",
+			  (unsigned)job->colors[0].surface.row_pitch, (unsigned)job->colors[0].surface.padded_width);
+
 	/* The session's render context and a target of the frame. */
 	error = powervr_session_render_context(render, session, &context);
 	if (error != 0)
@@ -443,6 +451,12 @@ job_background(
 		error = powervr_render_load_words(&color->view, words);
 		if (error != 0)
 			return error;
+		if (POWERVR_DIAGNOSTICS)
+			kern_logf("powervr: render job: load from 0x%llx (%s, %ux%u, view mapping %u %u %u %u), image words %08x %08x %08x %08x, sampler %08x %08x\n",
+				  (unsigned long long)color->view.address, color->view.linear ? "linear" : "twiddled",
+				  (unsigned)color->view.width, (unsigned)color->view.height,
+				  (unsigned)color->view.mapping[0], (unsigned)color->view.mapping[1], (unsigned)color->view.mapping[2], (unsigned)color->view.mapping[3],
+				  (unsigned)words[0], (unsigned)words[1], (unsigned)words[2], (unsigned)words[3], (unsigned)words[4], (unsigned)words[5]);
 
 		put_words(memory->general->buffer, GENERAL_LOAD_WORDS, words, POWERVR_RENDER_LOAD_SHARED_WORDS);
 		error = powervr_render_load_shared(memory->general->address + GENERAL_LOAD_WORDS, &memory->shared);
