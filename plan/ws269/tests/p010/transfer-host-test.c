@@ -240,7 +240,7 @@ test_shared(void)
 	view.format = powervr_format_find(9);
 	check(powervr_transfer_shared_words(&view, 0, 0, &area, words) != 0, "shared words refuse 8-bit texels");
 
-	/* The program: one DMA of twelve words, three data words, one code word. */
+	/* The program: one DMA of sixteen words, three data words, one code word. */
 	ok = powervr_transfer_shared_program(0x30000, &shared) == 0;
 	check(ok && shared.data_words == 3 && shared.code_words == 1 && shared.data[0] == 0x30000U, "shared program");
 }
@@ -249,7 +249,7 @@ static void
 test_copy_usc(void)
 {
 	struct shader_machine_operation operation;
-	struct powervr_usc_group groups[11];
+	struct powervr_usc_group groups[19];
 	struct powervr_render_usc program;
 	uint8_t bytes[POWERVR_RENDER_USC_MAX];
 	size_t length;
@@ -258,7 +258,7 @@ test_copy_usc(void)
 
 	/* The program, rebuilt here from the back end's groups. */
 	ok = powervr_transfer_copy_usc(powervr_format_find(44), &program) == 0 && program.temps == 12;
-	for (index = 0; index < 11 && ok; index++) {
+	for (index = 0; index < 19 && ok; index++) {
 		memset(&operation, 0, sizeof(operation));
 		operation.destination[0].bank = 0xff;
 		operation.destination[1].bank = 0xff;
@@ -288,7 +288,25 @@ test_copy_usc(void)
 			operation.source[1].index = (uint16_t)(8 + (index - 6) * 2);
 			operation.source[2].bank = POWERVR_USC_BANK_TEMPORARY;
 			operation.source[2].index = (uint16_t)(9 + (index - 6) * 2);
-		} else if (index == 8) {
+		} else if (index < 12) {
+			/* The limits over the floats. */
+			operation.kind = MACHINE_MOVE;
+			operation.destination[0].bank = POWERVR_USC_BANK_TEMPORARY;
+			operation.destination[0].index = (uint16_t)index;
+			operation.source[0].bank = POWERVR_USC_BANK_SHARED;
+			operation.source[0].index = (uint16_t)(12 + index - 8);
+		} else if (index < 16) {
+			/* x no less than its least, no more than its most, then y. */
+			operation.kind = MACHINE_MINMAX;
+			operation.destination[0].bank = POWERVR_USC_BANK_TEMPORARY;
+			operation.destination[0].index = (uint16_t)(2 + (index - 12) / 2);
+			operation.source[0].bank = POWERVR_USC_BANK_TEMPORARY;
+			operation.source[0].index = (uint16_t)(2 + (index - 12) / 2);
+			operation.source[1].bank = POWERVR_USC_BANK_TEMPORARY;
+			operation.source[1].index = (uint16_t)(8 + index - 12);
+			operation.variant = (index % 2U) == 0 ? 5 : 8;
+			operation.immediate = 0;
+		} else if (index == 16) {
 			operation.kind = MACHINE_SAMPLE;
 			operation.destination[0].bank = POWERVR_USC_BANK_TEMPORARY;
 			operation.destination[0].index = 4;
@@ -298,7 +316,7 @@ test_copy_usc(void)
 			operation.source[1].index = 2;
 			operation.source[2].bank = POWERVR_USC_BANK_SHARED;
 			operation.source[2].index = 4;
-		} else if (index == 9) {
+		} else if (index == 17) {
 			operation.kind = MACHINE_WAIT;
 		} else {
 			operation.kind = MACHINE_MOVE;
@@ -310,9 +328,9 @@ test_copy_usc(void)
 		}
 		ok = shader_backend_group(&operation, 0, &groups[index]) == 0;
 	}
-	ok = ok && powervr_usc_sample(0, 0, 2, 4, 0, &groups[8].operation[POWERVR_USC_PHASE_BACKEND]) == 0;
-	groups[10].end = 1;
-	ok = ok && powervr_usc_program_encode(groups, 11, bytes, sizeof(bytes), &length) == 0;
+	ok = ok && powervr_usc_sample(0, 0, 2, 4, 0, &groups[16].operation[POWERVR_USC_PHASE_BACKEND]) == 0;
+	groups[18].end = 1;
+	ok = ok && powervr_usc_program_encode(groups, 19, bytes, sizeof(bytes), &length) == 0;
 	check(ok && length == program.length && memcmp(bytes, program.code, length) == 0, "copy program");
 }
 

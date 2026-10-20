@@ -30,7 +30,7 @@
 #include "drivers/gpu/powervr/render-program.h"
 
 /* The shared register words the copy program reads: image state, sampler state, the four coordinate floats. */
-#define POWERVR_TRANSFER_SHARED_WORDS	12U
+#define POWERVR_TRANSFER_SHARED_WORDS	16U
 
 /* The pixel back end's register words of the transfer command (three for each of three targets). */
 #define POWERVR_TRANSFER_PBE_WORDS	9U

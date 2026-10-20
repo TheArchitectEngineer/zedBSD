@@ -26,11 +26,17 @@
 
 /*
  * The copy program's registers: the shared registers of the image state
- * (0 to 3), the sampler state (4 to 7) and the coordinate floats (8 to
- * 11, x scale and offset, y scale and offset); the temporaries of the
- * pixel's position (0, 1), the source coordinates (2, 3), the sampled
- * words (4 to 7) and the coordinate floats (8 to 11; a multiply-add
- * takes no two shared registers, so they are moved first).
+ * (0 to 3), the sampler state (4 to 7), the coordinate floats (8 to
+ * 11, x scale and offset, y scale and offset) and the coordinates'
+ * limits (12 to 15, x least and most, y least and most); the
+ * temporaries of the pixel's position (0, 1), the source coordinates
+ * (2, 3), the sampled words (4 to 7) and the coordinate floats, then
+ * the limits (8 to 11; a multiply-add takes no two shared registers, so
+ * they are moved first).  The coordinates are clamped to the centres of
+ * the source rectangle's edge texels: a transfer shades whole tiles, and
+ * a pixel outside the destination's rectangle must not read past a
+ * linear source's memory (q1523: a read 4032 bytes past a 1920x1080
+ * image).
  *
  * Procedure referenced:
  * Mesa 26.2.5 src/imagination/vulkan/pvr_usc.c (pvr_uscgen_tq with
@@ -42,12 +48,18 @@
 #define SHARED_IMAGE		0U
 #define SHARED_SAMPLER		4U
 #define SHARED_FLOATS		8U
+#define SHARED_LIMITS		12U
 #define TEMP_POSITION		0U
 #define TEMP_COORDINATES	2U
 #define TEMP_SAMPLE		4U
 #define TEMP_FLOATS		8U
+#define TEMP_LIMITS		8U
+#define TEST_GREATER		5U
+#define TEST_LESS		8U
+#define TYPE_F32		0U
 #define TEMP_PIXEL		12U
 #define COPY_TEMPS		12U
+#define SAMPLE_INDEX		16U
 
 /*
  * The pack of four 8-bit unorm channels with its scale (the blit).
@@ -319,8 +331,8 @@ build_program(
 	unsigned words,
 	struct powervr_render_usc *program)
 {
-	struct shader_machine_operation operations[16];
-	struct powervr_usc_group groups[16];
+	struct shader_machine_operation operations[24];
+	struct powervr_usc_group groups[24];
 	unsigned word;
 	size_t length;
 	size_t count;
@@ -354,16 +366,39 @@ build_program(
 		operations[6 + axis].source[2] = machine_register(POWERVR_USC_BANK_TEMPORARY, TEMP_FLOATS + axis * 2U + 1U);
 	}
 
+	/* The four limits into temporaries 8 to 11, over the floats the multiply-adds took. */
+	for (axis = 0; axis < 4; axis++) {
+		blank_operation(&operations[8 + axis], MACHINE_MOVE);
+		operations[8 + axis].destination[0] = machine_register(POWERVR_USC_BANK_TEMPORARY, TEMP_LIMITS + axis);
+		operations[8 + axis].source[0] = machine_register(POWERVR_USC_BANK_SHARED, SHARED_LIMITS + axis);
+	}
+
+	/* Each coordinate no less than its least and no more than its most. */
+	for (axis = 0; axis < 2; axis++) {
+		blank_operation(&operations[12 + axis * 2], MACHINE_MINMAX);
+		operations[12 + axis * 2].destination[0] = machine_register(POWERVR_USC_BANK_TEMPORARY, TEMP_COORDINATES + axis);
+		operations[12 + axis * 2].source[0] = machine_register(POWERVR_USC_BANK_TEMPORARY, TEMP_COORDINATES + axis);
+		operations[12 + axis * 2].source[1] = machine_register(POWERVR_USC_BANK_TEMPORARY, TEMP_LIMITS + axis * 2U);
+		operations[12 + axis * 2].variant = TEST_GREATER;
+		operations[12 + axis * 2].immediate = TYPE_F32;
+		blank_operation(&operations[13 + axis * 2], MACHINE_MINMAX);
+		operations[13 + axis * 2].destination[0] = machine_register(POWERVR_USC_BANK_TEMPORARY, TEMP_COORDINATES + axis);
+		operations[13 + axis * 2].source[0] = machine_register(POWERVR_USC_BANK_TEMPORARY, TEMP_COORDINATES + axis);
+		operations[13 + axis * 2].source[1] = machine_register(POWERVR_USC_BANK_TEMPORARY, TEMP_LIMITS + axis * 2U + 1U);
+		operations[13 + axis * 2].variant = TEST_LESS;
+		operations[13 + axis * 2].immediate = TYPE_F32;
+	}
+
 	/* The sample, and the wait for its data. */
-	blank_operation(&operations[8], MACHINE_SAMPLE);
-	operations[8].destination[0] = machine_register(POWERVR_USC_BANK_TEMPORARY, TEMP_SAMPLE);
-	operations[8].source[0] = machine_register(POWERVR_USC_BANK_SHARED, SHARED_IMAGE);
-	operations[8].source[1] = machine_register(POWERVR_USC_BANK_TEMPORARY, TEMP_COORDINATES);
-	operations[8].source[2] = machine_register(POWERVR_USC_BANK_SHARED, SHARED_SAMPLER);
-	blank_operation(&operations[9], MACHINE_WAIT);
+	blank_operation(&operations[SAMPLE_INDEX], MACHINE_SAMPLE);
+	operations[SAMPLE_INDEX].destination[0] = machine_register(POWERVR_USC_BANK_TEMPORARY, TEMP_SAMPLE);
+	operations[SAMPLE_INDEX].source[0] = machine_register(POWERVR_USC_BANK_SHARED, SHARED_IMAGE);
+	operations[SAMPLE_INDEX].source[1] = machine_register(POWERVR_USC_BANK_TEMPORARY, TEMP_COORDINATES);
+	operations[SAMPLE_INDEX].source[2] = machine_register(POWERVR_USC_BANK_SHARED, SHARED_SAMPLER);
+	blank_operation(&operations[SAMPLE_INDEX + 1], MACHINE_WAIT);
 
 	/* The four channels packed into one word, for the blit. */
-	count = 10;
+	count = SAMPLE_INDEX + 2;
 	if (packed) {
 		blank_operation(&operations[count], MACHINE_PACK);
 		operations[count].destination[0] = machine_register(POWERVR_USC_BANK_TEMPORARY, TEMP_PIXEL);
@@ -391,7 +426,7 @@ build_program(
 	error = build_groups(operations, count, groups);
 	if (error != 0)
 		return error;
-	error = powervr_usc_sample(0, 0, SAMPLE_2D, SAMPLE_CHANNELS, 0, &groups[8].operation[POWERVR_USC_PHASE_BACKEND]);
+	error = powervr_usc_sample(0, 0, SAMPLE_2D, SAMPLE_CHANNELS, 0, &groups[SAMPLE_INDEX].operation[POWERVR_USC_PHASE_BACKEND]);
 	if (error != 0)
 		return error;
 	groups[count - 1U].end = 1;
@@ -408,7 +443,7 @@ build_program(
 }
 
 /*
- * Fills the twelve words the copy program's shared registers hold: the
+ * Fills the sixteen words the copy program's shared registers hold: the
  * source's image state (as its raw format), a point sampler that clamps
  * and takes unnormalised coordinates, and the floats that map a
  * destination pixel (x, y) to the source texel (x - area.x + source_x,
@@ -459,12 +494,12 @@ powervr_transfer_shared_words(
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the twelve words. */
+	/* Succeeded: the sixteen words. */
 	return 0;
 }
 
 /*
- * Fills the twelve shared words of a blit: the source's image state as
+ * Fills the sixteen shared words of a blit: the source's image state as
  * the view gives it, a sampler that clamps and takes unnormalised
  * coordinates (linear when linear and the rectangles differ in size,
  * else point), and the floats that map the destination rectangle onto
@@ -501,12 +536,12 @@ powervr_transfer_blit_words(
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the twelve words. */
+	/* Succeeded: the sixteen words. */
 	return 0;
 }
 
 /*
- * Fills the twelve shared words: the view's image state, the clamping
+ * Fills the sixteen shared words: the view's image state, the clamping
  * unnormalised sampler, and for each axis the scale source / destination
  * and the offset (source corner * destination - source size *
  * destination corner) / destination, the destination size negated and
@@ -595,13 +630,19 @@ fill_shared(
 	words[SHARED_FLOATS + 2] = float_from_ratio((int64_t)source->height, destination_size);
 	words[SHARED_FLOATS + 3] = float_from_ratio(constant, destination_size);
 
-	/* Succeeded: the twelve words. */
+	/* The limits: the centres of the source rectangle's first and last texels on each axis. */
+	words[SHARED_LIMITS + 0] = float_from_ratio(2 * (int64_t)source->x + 1, 2);
+	words[SHARED_LIMITS + 1] = float_from_ratio(2 * ((int64_t)source->x + (int64_t)source->width) - 1, 2);
+	words[SHARED_LIMITS + 2] = float_from_ratio(2 * (int64_t)source->y + 1, 2);
+	words[SHARED_LIMITS + 3] = float_from_ratio(2 * ((int64_t)source->y + (int64_t)source->height) - 1, 2);
+
+	/* Succeeded: the sixteen words. */
 	return 0;
 }
 
 /*
- * Builds the data sequencer program that copies the twelve shared words
- * from words_address into shared registers 0 to 11.
+ * Builds the data sequencer program that copies the sixteen shared words
+ * from words_address into shared registers 0 to 15.
  *
  * Procedure referenced:
  * Mesa 26.2.5 src/imagination/vulkan/pvr_arch_job_transfer.c
@@ -620,7 +661,7 @@ powervr_transfer_shared_program(
 	if (program == NULL)
 		return EINVAL;
 
-	/* One DMA of the twelve words to shared register 0. */
+	/* One DMA of the sixteen words to shared register 0. */
 	load.kind = POWERVR_DATA_LOAD_DMA;
 	load.shared = 0;
 	load.words = POWERVR_TRANSFER_SHARED_WORDS;
