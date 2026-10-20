@@ -863,6 +863,7 @@ static void
 fill_records(
 	struct powervr_core *core)
 {
+	uint32_t os_flags;
 	struct powervr_firmware *firmware;
 	uint64_t clusters;
 	uint64_t slc_kilobytes;
@@ -898,11 +899,27 @@ fill_records(
 	 */
 	flags |= POWERVR_FLAG_POW_RASCALDUST;
 
-	/* The context switch as the vendor driver sets it: the medium profile, every data master's switch on. */
-	flags |= POWERVR_FLAG_CSW_PROFILE_MEDIUM;
+	/*
+	 * The context switch: off by default, as the mainline driver leaves it
+	 * for this (mainline) firmware, so the firmware never preempts one
+	 * context's job for another's; with POWERVR_CONTEXT_SWITCH the vendor
+	 * driver's medium profile and every data master's switch.  On the
+	 * board two sessions rendering at once locked the 3D up with the
+	 * switch on (2026-10-21).
+	 *
+	 * Procedure referenced:
+	 * Linux v7.3 drivers/gpu/drm/imagination/pvr_fw.c (the system
+	 * configuration flags: no context switch profile, the OS flags not
+	 * set).
+	 */
+	os_flags = 0U;
+	if (POWERVR_CONTEXT_SWITCH) {
+		flags |= POWERVR_FLAG_CSW_PROFILE_MEDIUM;
+		os_flags = POWERVR_OS_FLAGS_CSW_ALL;
+	}
 	powervr_object_put32(&firmware->system_data, POWERVR_SYSTEM_DATA_FLAGS, flags);
-	powervr_object_put32(&firmware->os_data, POWERVR_OS_DATA_CONFIG_FLAGS, POWERVR_OS_FLAGS_CSW_ALL);
-	kern_logf("powervr: firmware: system flags 0x%08x, os flags 0x%08x, core clock %u Hz\n", (unsigned)flags, (unsigned)POWERVR_OS_FLAGS_CSW_ALL, (unsigned)core->core_rate);
+	powervr_object_put32(&firmware->os_data, POWERVR_OS_DATA_CONFIG_FLAGS, os_flags);
+	kern_logf("powervr: firmware: system flags 0x%08x, os flags 0x%08x, core clock %u Hz\n", (unsigned)flags, (unsigned)os_flags, (unsigned)core->core_rate);
 
 	/*
 	 * The runtime configuration: the core clock's real rate, every
