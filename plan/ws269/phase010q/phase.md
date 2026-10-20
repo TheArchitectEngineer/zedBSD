@@ -5,7 +5,7 @@
 - ID: ws269-p010q（親 [ws269](../ws.md)）
 - Status: in-progress（q1395-i01 で読みの点検と 1 つの直し。実機は未）
 - Disposition: normal
-- Queue: q1395 / q1395-i01、q1398 / q1398-i01（2026-10-20 P1）
+- Queue: q1395 / q1395-i01、q1398 / q1398-i01、q1401 / q1401-i01（2026-10-20 P1）
 
 ## 範囲
 
@@ -101,3 +101,15 @@ P1 の render-job.c・transfer-job.c・render-check.c を読み、P2 の関数�
 - 未実施: 実機（CLEAR の pass の色は実機で初めて確かめられる）。
 - P1 へ: 上の表の「vertex の DMA の words」と「transfer の blit の odd stride」の 2 つ。
 - 片付け（Q1 に依頼）: `build/p013/`。
+
+## 後半（q1401-i01）: P2 の q1399 が返した 2 件
+
+- `render-job.c`: vertex の属性の DMA を shader の入力の成分の数ではなく min(format の word 数, 成分の数) にした。32 bit の channel の format（R32〜R32G32B32A32 の UINT・SINT・SFLOAT）で足りない成分は、draw の slot の既定（float は (0,0,0,1.0)、整数は (0,0,0,1)）から stride 0 の DMA で埋める。packed の format（8・16 bit の channel）は word のまま読み（shader が解く）、既定は足さない。table に無い format は従来どおり成分の数。Mesa 25.0.7 の `pvr_pipeline.c` は size_in_dwords を format の bit / 32 とし（成分の数と等しいと assert）、既定の扱いは Vulkan の Vertex Input Extraction に従った（Mesa 26.2.5 の該当の扱いは手元に無く未確認）。
+- `transfer-job.c`: blit も奇数の stride の linear の dst では行ごとの job にした。各行の shared words には矩形全体の対応（`&request->area`）を渡すので、どの行も一度に描いた時と同じ所を sample する。
+- 試験: p010 job-host-test に、2 float の属性を 3 成分の入力へ流す job（既定が slot に書かれる）と、63 px の linear の dst への 3 行の blit（transfer の kick 3 回）を足した。
+
+| 確かめ（2026-10-20） | 結果 |
+| --- | --- |
+| p010 run.sh | 全部 0 failed（job-host-test 24/0） |
+| p009 run.sh | 511 passed, 0 failed |
+| VF2 の vmunix | rc=0、warning 0 |

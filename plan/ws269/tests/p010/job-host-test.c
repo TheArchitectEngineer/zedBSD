@@ -24,6 +24,7 @@
 #include <uapi/errno.h>
 
 #include "drivers/gpu/powervr/render-job.h"
+#include "drivers/gpu/powervr/transfer-job.h"
 #include "drivers/gpu/powervr/render-command.h"
 #include "drivers/gpu/powervr/interface.h"
 #include "drivers/gpu/powervr/vk-draw.h"
@@ -144,6 +145,12 @@ powervr_session_kick_render(struct powervr_render *render, struct powervr_sessio
 	marks->fragment_value = 2;
 	return 0;
 }
+
+/* The transfer context and kick: each kick counted. */
+static unsigned transfer_kicks;
+int powervr_session_transfer_context(struct powervr_render *render, struct powervr_session *session, struct powervr_transfer_context **result) { (void)render; (void)session; *result = (struct powervr_transfer_context *)&context_stand_in; return 0; }
+int powervr_session_kick_transfer(struct powervr_render *render, struct powervr_session *session, const uint8_t *command, uint32_t *value) { (void)render; (void)session; (void)command; transfer_kicks++; *value = transfer_kicks; return 0; }
+int powervr_transfer_finish(struct powervr_session *session, uint32_t value, unsigned milliseconds) { (void)session; (void)value; (void)milliseconds; return 0; }
 
 int powervr_render_finish(struct powervr_render *render, struct powervr_session *session, const struct powervr_render_marks *marks, unsigned milliseconds) { (void)render; (void)session; (void)marks; (void)milliseconds; return 0; }
 
@@ -335,6 +342,59 @@ main(void)
 	scissors = read64(kicked_fragment, POWERVR_FRAGMENT_SCISSOR_BASE);
 	expect(scissors != 0U && device_read(scissors) != 0U, "the pipeline's scissor is written");
 	expect(device_read(scissors) == device_read(scissors + 8U) && device_read(scissors + 4U) == device_read(scissors + 12U), "both draws have the pipeline's scissor");
+
+	/*
+	 * An attribute of two floats into an input of three: the DMA loads
+	 * the two, the third comes from the slot's defaults (0, 0, 0, 1.0).
+	 */
+	graphics.fixed.attributes[0].format = 103;
+	expect(powervr_render_job_run(&render, &session, &job) == 0, "the job of a narrower attribute runs");
+	stream = read64(kicked_geometry, POWERVR_GEOMETRY_STREAM_BASE);
+	word = device_read(stream);
+	ppp[0] = ((uint64_t)(word & 0xffU) << 32) | device_read(stream + 4U);
+	expect(device_read(ppp[0] + 0x308U) == 0U && device_read(ppp[0] + 0x30cU) == 0x3f800000U, "the float defaults in the draw's slot");
+	expect(device_read(ppp[0] + 0x31cU) == 1U, "the integer defaults after them");
+	graphics.fixed.attributes[0].format = 106;
+
+	/* A blit of three rows to a linear destination of an odd row: one job a row. */
+	{
+		struct powervr_transfer_request blit;
+		struct powervr_view_shape source;
+		struct powervr_image_layout source_layout;
+
+		memset(&source_layout, 0, sizeof(source_layout));
+		source_layout.row_pitch = 64;
+		source_layout.padded_width = 16;
+		source_layout.padded_height = 16;
+		source_layout.layer_bytes = 0x400;
+		memset(&source, 0, sizeof(source));
+		source.layout = &source_layout;
+		source.format = powervr_format_find(37);
+		source.address = 0x8a00000000ULL;
+		source.width = 16;
+		source.height = 16;
+		source.image_levels = 1;
+		source.level_count = 1;
+		source.layer_count = 1;
+		memset(&blit, 0, sizeof(blit));
+		blit.kind = POWERVR_TRANSFER_BLIT;
+		blit.destination.format = powervr_format_find(37);
+		blit.destination.address = 0x8b00000000ULL;
+		blit.destination.width = 63;
+		blit.destination.height = 3;
+		blit.destination.linear = 1;
+		blit.destination.row_pitch = 63 * 4;
+		blit.destination.padded_width = 63;
+		blit.area.width = 63;
+		blit.area.height = 3;
+		blit.source = &source;
+		blit.source_area.width = 16;
+		blit.source_area.height = 16;
+		blit.linear = true;
+		transfer_kicks = 0;
+		expect(powervr_transfer_run(&render, &session, &blit) == 0, "the blit to odd linear rows runs");
+		expect(transfer_kicks == 3U, "one transfer a row");
+	}
 
 	printf("job-host-test: %d passed, %d failed\n", passes, failures);
 	return failures != 0;

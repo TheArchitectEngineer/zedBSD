@@ -75,7 +75,9 @@ static void put_bytes(struct powervr_buffer *buffer, uint32_t offset, const uint
 
 /*
  * Runs a transfer, one row at a time when the destination's rows need
- * it (a blit is not split: it is refused instead).
+ * it (an odd linear row of several rows).  A blit's row keeps the whole
+ * rectangle's mapping onto the source, so each row samples where it
+ * would in one job.
  *
  * Procedure referenced:
  * Mesa 26.2.5 src/imagination/vulkan/pvr_arch_job_transfer.c
@@ -115,9 +117,7 @@ powervr_transfer_run(
 	}
 
 	/* The whole rectangle, or each of its rows. */
-	by_rows = 0;
-	if (request->kind != POWERVR_TRANSFER_BLIT)
-		by_rows = powervr_transfer_needs_rows(&request->destination, &request->area);
+	by_rows = powervr_transfer_needs_rows(&request->destination, &request->area);
 	if (!by_rows) {
 		error = transfer_one(render, session, memory, request, &request->area, request->source_y);
 	} else {
@@ -198,7 +198,7 @@ transfer_one(
 		put_words(memory->pds, PDS_KICK, memory->kick.data, POWERVR_RENDER_KICK_DATA_WORDS);
 		put_words(memory->pds, PDS_KICK + POWERVR_RENDER_KICK_DATA_WORDS * 4U, memory->kick.code, POWERVR_RENDER_KICK_CODE_WORDS);
 		if (request->kind == POWERVR_TRANSFER_BLIT) {
-			error = powervr_transfer_blit_words(request->source, &request->source_area, area, request->flip_x, request->flip_y, request->linear, words);
+			error = powervr_transfer_blit_words(request->source, &request->source_area, &request->area, request->flip_x, request->flip_y, request->linear, words);
 		} else {
 			error = powervr_transfer_shared_words(request->source, request->source_x, source_y, area, words);
 		}
