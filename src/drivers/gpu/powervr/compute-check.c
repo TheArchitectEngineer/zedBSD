@@ -127,6 +127,9 @@
  * wide temporaries kick.
  */
 #define GRID_SIZES		4U
+
+/* Whether the grid runs: off, since its narrow cells fault and lose the context (set it to 1 to read the grid). */
+#define CHECK_GRID		0
 #define GRID_KICKS		(GRID_SIZES * GRID_SIZES)
 #define KICK_GRID_FIRST		(KICK_TEMPS_WIDE + 1U)
 
@@ -206,7 +209,7 @@ static void teardown(struct check_state *state);
 static int take_buffer(struct check_state *state, uint64_t bytes, uint64_t address, struct powervr_buffer **result);
 static int take_program(struct check_state *state, uint64_t bytes, enum powervr_program_heap heap, struct powervr_buffer **result, uint32_t *offset);
 static int write_programs(struct check_state *state);
-static int write_kick(struct check_state *state, unsigned kick, uint32_t usc_place, unsigned temporaries, unsigned field);
+static int write_kick(struct check_state *state, unsigned kick, uint32_t usc_place, unsigned inputs, unsigned field);
 static int write_probes(struct check_state *state, uint8_t *code);
 static void run_probes(struct check_state *state);
 static int write_grid(struct check_state *state);
@@ -286,9 +289,6 @@ powervr_compute_check(
 	/* The probes of the integer path and the short stores, before any kick that may fault. */
 	run_probes(&state);
 
-	/* The grid of unified sizes and fields, widest first, stopping at a fault. */
-	run_grid(&state);
-
 	/* The temporaries program with the wide field first: it must always work. */
 	wide_wrong = 0;
 	wide_error = run_temps(&state, KICK_TEMPS_WIDE, &wide_wrong);
@@ -310,6 +310,10 @@ powervr_compute_check(
 		kern_logf("powervr: compute check: stopped, its memory left to the core\n");
 		return;
 	}
+
+	/* The grid of unified sizes and fields, last and only when asked, as its narrow cells fault. */
+	if (CHECK_GRID)
+		run_grid(&state);
 
 	/* Unmaps and returns everything. */
 	teardown(&state);
@@ -516,6 +520,7 @@ write_programs(
 	unsigned count;
 	unsigned field_four;
 	unsigned field_two;
+	unsigned store_field;
 	unsigned round;
 	unsigned i;
 	int error;
@@ -564,9 +569,17 @@ write_programs(
 	if (error != 0)
 		return error;
 
-	/* One kick per round, issuing the round's store program with the wide field. */
+	/*
+	 * One kick per round, issuing the round's store program.  Its field
+	 * counts the temporaries in blocks of four, as Mesa's task issue does
+	 * (pvr_pds_setup_doutu), with no unified store inputs.
+	 */
+	error = powervr_compute_temporaries_field(POWERVR_COMPUTE_STORE_TEMPORARIES, 4, &store_field);
+	if (error != 0)
+		return error;
+
 	for (round = 0; round < CHECK_ROUNDS; round++) {
-		error = write_kick(state, round, round * USC_ROOM, POWERVR_COMPUTE_STORE_TEMPORARIES, CHECK_WIDE_FIELD);
+		error = write_kick(state, round, round * USC_ROOM, 0, store_field);
 		if (error != 0)
 			return error;
 	}
@@ -580,16 +593,16 @@ write_programs(
 	if (error != 0)
 		return error;
 
-	error = write_kick(state, KICK_TEMPS_FOUR, CHECK_ROUNDS * USC_ROOM, POWERVR_COMPUTE_TEMPS_TEMPORARIES, field_four);
+	error = write_kick(state, KICK_TEMPS_FOUR, CHECK_ROUNDS * USC_ROOM, 0, field_four);
 	if (error != 0)
 		return error;
 
-	error = write_kick(state, KICK_TEMPS_TWO, CHECK_ROUNDS * USC_ROOM, POWERVR_COMPUTE_TEMPS_TEMPORARIES, field_two);
+	error = write_kick(state, KICK_TEMPS_TWO, CHECK_ROUNDS * USC_ROOM, 0, field_two);
 	if (error != 0)
 		return error;
 
 	/* And with the wide field: it must always work. */
-	error = write_kick(state, KICK_TEMPS_WIDE, CHECK_ROUNDS * USC_ROOM, POWERVR_COMPUTE_TEMPS_TEMPORARIES, CHECK_WIDE_FIELD);
+	error = write_kick(state, KICK_TEMPS_WIDE, CHECK_ROUNDS * USC_ROOM, 0, CHECK_WIDE_FIELD);
 	if (error != 0)
 		return error;
 
@@ -611,7 +624,7 @@ write_kick(
 	struct check_state *state,
 	unsigned kick_index,
 	uint32_t usc_place,
-	unsigned temporaries,
+	unsigned inputs,
 	unsigned field)
 {
 	struct powervr_compute_kernel kernel;
@@ -641,7 +654,7 @@ write_kick(
 	kernel.code_offset = pds_offset + slot + PDS_CODE;
 	kernel.data_words = POWERVR_COMPUTE_PDS_DATA_WORDS;
 	kernel.pds_temporaries = PDS_INPUT_TEMPORARIES;
-	kernel.usc_temporaries = temporaries;
+	kernel.usc_inputs = inputs;
 	kernel.instances = POWERVR_COMPUTE_INSTANCES;
 	kernel.max_instances = 0;
 	kernel.any_cluster = 1;
@@ -696,7 +709,9 @@ write_probes(
 	int error;
 
 	/* The probes' field: the wide one. */
-	field = CHECK_WIDE_FIELD;
+	error = powervr_compute_temporaries_field(POWERVR_COMPUTE_PROBE_TEMPORARIES, 4, &field);
+	if (error != 0)
+		return error;
 
 	/* Each probe: its program in its place, and its kick. */
 	for (kind = 0; kind < POWERVR_COMPUTE_PROBES; kind++) {
@@ -704,7 +719,7 @@ write_probes(
 		if (error != 0)
 			return error;
 		put_bytes(state->usc, USC_PROBE_ROOM + kind * USC_PROBE_SPACING, code, length);
-		error = write_kick(state, KICK_PROBE_FIRST + kind, USC_PROBE_ROOM + kind * USC_PROBE_SPACING, POWERVR_COMPUTE_PROBE_TEMPORARIES, field);
+		error = write_kick(state, KICK_PROBE_FIRST + kind, USC_PROBE_ROOM + kind * USC_PROBE_SPACING, 0, field);
 		if (error != 0)
 			return error;
 	}
@@ -716,7 +731,11 @@ write_probes(
 		return error;
 
 	put_bytes(state->usc, USC_STEPS_ONE, code, length);
-	error = write_kick(state, KICK_STEPS_ONE, USC_STEPS_ONE, POWERVR_COMPUTE_STORE_TEMPORARIES, field);
+	error = powervr_compute_temporaries_field(POWERVR_COMPUTE_STORE_TEMPORARIES, 4, &field);
+	if (error != 0)
+		return error;
+
+	error = write_kick(state, KICK_STEPS_ONE, USC_STEPS_ONE, 0, field);
 	if (error != 0)
 		return error;
 
@@ -725,7 +744,7 @@ write_probes(
 		return error;
 
 	put_bytes(state->usc, USC_STEPS_FOUR, code, length);
-	error = write_kick(state, KICK_STEPS_FOUR, USC_STEPS_FOUR, POWERVR_COMPUTE_STORE_TEMPORARIES, field);
+	error = write_kick(state, KICK_STEPS_FOUR, USC_STEPS_FOUR, 0, field);
 	if (error != 0)
 		return error;
 

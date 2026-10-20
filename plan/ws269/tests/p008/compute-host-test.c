@@ -122,9 +122,10 @@ test_kernels(void)
 
 	/*
 	 * The store kernel: data 0x10000, code 0x10010, 2 data words, 3 data
-	 * sequencer temporaries, 7 unified ones, 32 instances, any cluster.
-	 * KERNEL0: usc_unified_size ceil(28/16)=2 <<12, pds_temp_size
-	 * ceil(12/16)=1 <<8, pds_data_size ceil(8/16)=1 <<2, usc_target 1 <<1.
+	 * sequencer temporaries, 7 USC temporaries (not in KERNEL0: the task
+	 * issue word carries them), no unified inputs, 32 instances, any
+	 * cluster.  KERNEL0: usc_unified_size 0, pds_temp_size ceil(12/16)=1
+	 * <<8, pds_data_size ceil(8/16)=1 <<2, usc_target 1 <<1.
 	 */
 	memset(&kernel, 0, sizeof(kernel));
 	kernel.data_offset = 0x10000;
@@ -136,7 +137,14 @@ test_kernels(void)
 	kernel.any_cluster = 1;
 	error = powervr_compute_kernel_words(&kernel, words);
 	check(error == 0, "store kernel");
-	check_word(words[0], 0x00002106, "store KERNEL0");
+	check_word(words[0], 0x00000106, "store KERNEL0");
+
+	/* Two unified inputs: usc_unified_size ceil(8/16)=1 <<12. */
+	kernel.usc_inputs = 2;
+	error = powervr_compute_kernel_words(&kernel, words);
+	check(error == 0 && words[0] == 0x00001106, "KERNEL0 with two unified inputs");
+	kernel.usc_inputs = 0;
+	error = powervr_compute_kernel_words(&kernel, words);
 	check_word(words[1], 0x00010000, "store KERNEL1 data_addr, sd_type none");
 	check_word(words[2], 0x00010010, "store KERNEL2 code_addr");
 	check_word(words[3], 0, "store KERNEL3 one workgroup");

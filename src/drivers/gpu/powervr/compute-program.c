@@ -171,7 +171,7 @@ powervr_compute_kernel_words(
 		return EINVAL;
 
 	/* The sizes in 16-byte units, rounded up, each within its field. */
-	unified = (kernel->usc_temporaries * 4U + KERNEL_UNIT_BYTES - 1U) / KERNEL_UNIT_BYTES;
+	unified = (kernel->usc_inputs * 4U + KERNEL_UNIT_BYTES - 1U) / KERNEL_UNIT_BYTES;
 	temps = (kernel->pds_temporaries * 4U + KERNEL_UNIT_BYTES - 1U) / KERNEL_UNIT_BYTES;
 	data = (kernel->data_words * 4U + KERNEL_UNIT_BYTES - 1U) / KERNEL_UNIT_BYTES;
 	if (unified > KERNEL_UNIFIED_MAX || temps > KERNEL_TEMPS_MAX || data > KERNEL_DATA_MAX)
