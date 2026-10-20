@@ -437,3 +437,35 @@ CDM の lockup の前後の行は、MTS・POW の group しか有効でなかっ
 - probe の kick の前に `powervr: kick: compute probe <名前> sent (context kept|reset)` を出す。
 - FW の trace の group を増やした（log type 0x4637: MAIN・MTS・CSW・BIF・POW・HWR・MISC）。context の switch・bus（MMU）・recovery の行で、CDM のどこで止まるかを見る。
 - 確かめ: 試験の image の config の vmunix は warning 0。実機は未。
+
+## q1415-i01（P1、2026-10-20）: kick の後の trace の全部と、CDM が読む物の probe
+
+trace（vf2-dmesg11）の 2 つの id（mainline の表）:
+- 0x7002b021: HWR「Recovery DM%u: Updated Recovery counter. New R-Flags」。DM 4、flags 0。
+- 0x7001b019: HWR「Recovery DM%u: DM fully recovered」。DM 4・5・6。
+
+compute の DM が回復させられた後の行で、lockup の手前の CSW・BIF の event は窓の外。
+
+直し（診断）:
+- probe の kick の直前に FW の trace の pointer を覚える（`powervr_firmware_trace_mark`）。dump はそこから現在までの全部を出す。512 word を越えれば先頭 256 と末尾 128 を出し、間の数を 1 行に書く。
+- probe の kick の失敗の時に `probe_report` を出す。
+  - stream・resume の area・PDS・USC の GPU の address と、session の page table の entry（`powervr_gpu_mmu_lookup`）、buffer の物理 page、catalogue。
+  - context の record の common の field（ccb control・ccb・state・flags・priority・dm・deadline・memory・id）。
+  - switch の state の 7 word。
+
+mainline と 1 field ずつ照らした結果（すべて一致）:
+
+| 物 | mainline（check の offset） | zedBSD |
+| --- | --- | --- |
+| fwcommoncontext | ccbctl 0、ccb 4、context_state 24、priority 32、dm 60、max_deadline 104、fw_mem_context 136、server id 140、152 byte | 同じ（`interface.h` の POWERVR_CONTEXT_*） |
+| fwcomputecontext | common 152 + static 56 + work_est・flags・wgp・core_mask の 24 = 232 | 232 |
+| compute_ctx_state | ctx_state_flags の 4 byte | 4 |
+| cccb_ctl | write 0、read 4、dep 8、wrap 12、32 byte | 同じ |
+| ccb_cmd_header | type・size・ext・int・work_est、40 byte | 40 |
+| CDM の型 | 205 \| magic \| TASK（bit 15） | 同じ |
+| UPDATE | 213 \| magic、ufo 8 byte | 同じ |
+| kick_data | context 0、woff 4、wrap 8、num_cleanup 12 | 同じ |
+| fwmemcontext | pc の物理 0、reg set 8、32 byte | 同じ |
+| cmd_compute | common 4（align で regs は 8）、ctrl_stream_base 40、context_state_base 48、resume_pds1 60 | 同じ |
+
+- 確かめ: 試験の image の config の vmunix（`build/q1415/st`）と VF2 の vmunix は warning 0。実機は未。
