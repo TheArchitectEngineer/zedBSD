@@ -24,7 +24,7 @@ for file in wire codec; do
 	cc -std=c11 -O1 -Wall -Wno-unused-parameter -I"$root/include" -I"$out/inc" -I"$root/userland/desktop/libvulkan" \
 		-c "$root/userland/desktop/libvulkan/$file.c" -o "$out/vk/lib-$file.o"
 done
-cc -std=c11 -O1 -Wall -Wextra -Werror $define -I"$root/include" -I"$out/inc" -I"$root/userland/desktop/libvulkan" \
+cc -std=c11 -O1 -Wall -Wextra -Werror $define -I"$root" -I"$root/include" -I"$out/inc" -I"$root/userland/desktop/libvulkan" \
 	-c "$here/frame-host.c" -o "$out/vk/frame-host.o"
 objects=""
 for file in vk-object vk-stream vk-device vk-memory vk-image image-state descriptor-set data-program vk-layout vk-command vk-queue vk-pass vk-transfer vk-draw render-draw render-pass render-program transfer-program shader-spirv shader-spirv-interface shader-spirv-control shader-spirv-instruction shader-backend compute-program usc-encode pds-encode; do

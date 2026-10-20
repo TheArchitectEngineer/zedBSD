@@ -304,6 +304,7 @@ powervr_render_job_continue(
 	/* The next job: the same area and targets, no draws. */
 	__builtin_memcpy(next, job, offsetof(struct powervr_render_job, draws));
 	next->draw_count = 0;
+	next->continued = true;
 
 	/* Each colour target: stored by the full job, loaded by the next one. */
 	for (index = 0; index < job->color_count; index++) {

@@ -235,6 +235,22 @@ void powervr_stage_fail(enum powervr_stage stage, enum powervr_stage_reason reas
 enum powervr_stage_reason powervr_stage_reason_of(int error) { (void)error; return POWERVR_REASON_ERROR; }
 
 /* Render pass instances and transfers: none in this test's command buffers, so the stand-ins are not reached. */
+/*
+ * The kicks of transfers and render jobs, recorded in order when the
+ * recording is on (the Keiland frame), refused (ENOTSUP) otherwise.  A
+ * render job is recorded with its draws and its colour's load and store.
+ */
+struct kick_entry {
+	char kind;
+	uint32_t draws;
+	uint32_t load_op;
+	uint32_t store_op;
+	int continued;
+};
+static struct kick_entry jobs_run[64];
+static unsigned kick_count;
+static int kick_recording;
+
 int
 powervr_transfer_run(
 	struct powervr_render *render,
@@ -244,7 +260,13 @@ powervr_transfer_run(
 	(void)render;
 	(void)session;
 	(void)request;
-	return ENOTSUP;
+	if (!kick_recording)
+		return ENOTSUP;
+	if (kick_count < 64U) {
+		memset(&jobs_run[kick_count], 0, sizeof(jobs_run[0]));
+		jobs_run[kick_count++].kind = 'T';
+	}
+	return 0;
 }
 
 int
@@ -255,8 +277,17 @@ powervr_render_job_run(
 {
 	(void)render;
 	(void)session;
-	(void)job;
-	return ENOTSUP;
+	if (!kick_recording)
+		return ENOTSUP;
+	if (kick_count < 64U) {
+		jobs_run[kick_count].kind = 'R';
+		jobs_run[kick_count].draws = job->draw_count;
+		jobs_run[kick_count].load_op = job->colors[0].load_op;
+		jobs_run[kick_count].store_op = job->colors[0].store_op;
+		jobs_run[kick_count].continued = job->continued;
+		kick_count++;
+	}
+	return 0;
 }
 
 /* The kick records the compute command; the wait finds the work done. */
@@ -676,6 +707,49 @@ main(
 	error = powervr_vk_execute(session.vk, frame, (uint32_t)(bytes / 2U) & ~3U);
 	free(frame);
 	check(error != 0, "a cut frame is refused");
+
+	/*
+	 * The Keiland-like frame (ws269-p011): command buffer A has the copy,
+	 * the pass of 20 draws (jobs of 16 and 4), the pass of 17 (16 and 1;
+	 * each continuation loads what the job before it stored), then the
+	 * clear.  Today vk-queue.c runs a begin's job only when there are as
+	 * many jobs as begins, so with continuations every job runs after the
+	 * command buffer's other records: copy, clear, then the four jobs.
+	 * That is the order checked here until P1 runs a begin's job and its
+	 * continued ones in place (then: T R16 R4c R16 R1c T).  Command buffer
+	 * B's 200 draws need 13 jobs, more than QUEUE_JOBS_MAX (8): its submit
+	 * fails (E2BIG, INITIALIZATION_FAILED) with no kick.
+	 */
+	{
+		uint32_t submit_b;
+		unsigned index;
+		int ok;
+
+		kick_recording = 1;
+		bytes = frame_keiland(reply->identifier, &frame);
+		error = powervr_vk_execute(session.vk, frame, (uint32_t)bytes);
+		free(frame);
+		check(error == 0, "keiland frame runs");
+		submit_b = 0;
+		replies_keiland((uint8_t *)reply->buffer->view, &submit_b);
+		printf("  keiland kicks:");
+		for (index = 0; index < kick_count; index++) {
+			if (jobs_run[index].kind == 'R')
+				printf(" R%u%s(load %u store %u)", jobs_run[index].draws, jobs_run[index].continued ? "c" : "", jobs_run[index].load_op, jobs_run[index].store_op);
+			else
+				printf(" T");
+		}
+		printf("; submit B %d\n", (int)submit_b);
+		ok = kick_count == 6;
+		ok = ok && jobs_run[0].kind == 'T' && jobs_run[1].kind == 'T';
+		ok = ok && jobs_run[2].kind == 'R' && jobs_run[2].draws == 16 && !jobs_run[2].continued && jobs_run[2].load_op == VK_ATTACHMENT_LOAD_OP_CLEAR && jobs_run[2].store_op == VK_ATTACHMENT_STORE_OP_STORE;
+		ok = ok && jobs_run[3].kind == 'R' && jobs_run[3].draws == 4 && jobs_run[3].continued && jobs_run[3].load_op == VK_ATTACHMENT_LOAD_OP_LOAD && jobs_run[3].store_op == VK_ATTACHMENT_STORE_OP_STORE;
+		ok = ok && jobs_run[4].kind == 'R' && jobs_run[4].draws == 16 && !jobs_run[4].continued && jobs_run[4].load_op == VK_ATTACHMENT_LOAD_OP_CLEAR && jobs_run[4].store_op == VK_ATTACHMENT_STORE_OP_STORE;
+		ok = ok && jobs_run[5].kind == 'R' && jobs_run[5].draws == 1 && jobs_run[5].continued && jobs_run[5].load_op == VK_ATTACHMENT_LOAD_OP_LOAD && jobs_run[5].store_op == VK_ATTACHMENT_STORE_OP_STORE;
+		check(ok, "keiland A today: copy, clear, then jobs 16, 4c, 16, 1c (continuations load what was stored)");
+		check(submit_b == (uint32_t)VK_ERROR_INITIALIZATION_FAILED, "keiland B: 200 draws (13 jobs > QUEUE_JOBS_MAX 8) are refused (E2BIG, until P1 raises the room)");
+		kick_recording = 0;
+	}
 
 	/* Close: every object and the executor's memory go. */
 	powervr_vk_close(session.vk);
