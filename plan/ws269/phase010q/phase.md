@@ -662,3 +662,15 @@ mainline で FW が host の割り込みを上げる道: host は `ROGUE_CR_MIPS
   - したがって、0 の読みは「書き込みが届いていない」証拠にならない。CLK_CTRL・BIF・SLC の 0 も同じ理由の可能性がある（GPU_VIRTUALISATION の OS の bank から読む host の窓の制限か）。
 - 結論: register の配置の誤りの証拠は見つからなかった。host の読みで GPU の状態を確かめる道は、この core ではあてにならない。CDM の停止の原因は、FW の trace（BIF の setup・Kick Compute の後に何も無い）から別に探す必要がある。
 - source の変更は無し（記録だけ）。
+
+## q1425-i01（P1、2026-10-20）: visionfive2opengpu の照合（取得できず）と mainline の master の差分
+
+- `https://github.com/rumorsorchid/visionfive2opengpu` は取得できなかった（git clone・raw.githubusercontent・GitHub の API がどれも 404、検索の API でも 0 件）。private か、名前が変わったか、消えた見込み。この repo の patch・DT・README の照合は未実施。
+- 代わりに、mainline の master（torvalds/linux）の `drivers/gpu/drm/imagination` を StarFive の 6.12 の写しと比べた。BXE と同じ形の BXM-4-64（TH1520）の対応で入った変更:
+  - `pvr_fw_startstop.c` `pvr_fw_stop`: 「LAYOUT_MARS の feature の core では、SIDEKICK と SLC は FW が電源を落としている」として、SIDEKICK_IDLE・SLC_IDLE の待ちを LAYOUT_MARS でない core だけにした。この core は LAYOUT_MARS 1（DDK の config と FW の feature）。
+    - FW が SIDEKICK・SLC の電源の島を落とすなら、host の読みで SLC・BIF・clock の register が 0 になるのは、その島が off の間なら当然。q1421〜q1424 の 0 の読みと合う（推測）。
+    - こちらの `stop_processor` は、MARS の時に MARS_IDLE を待つ形で、SIDEKICK・SLC の待ちは前から無い（`POWERVR_FEATURE_LAYOUT_MARS` の分岐）。
+  - `pvr_mmu.c`: page table の page を、device が coherent でない時は write-combine で map するようにした。こちらは uncached の alias で書いているので同等。
+  - `pvr_power.c`: TH1520 は pwrseq（SoC 固有の電源の順の driver）を使う。JH7110 は manual の道（clock・reset）に当たる。
+  - `pvr_fw_mips.c`: ELF の処理の共通化と、IRQ の enable の register（MIPS_WRAPPER_IRQ_ENABLE）の扱いの整理だけ。中身の変化は無い。
+- source の変更は無し（直す違いを見つけられなかった）。repo の中身（JH7110 の SoC の統合の直し）が分かれば、それを照らすのが次。
