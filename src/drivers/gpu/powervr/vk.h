@@ -214,10 +214,20 @@ struct powervr_vk_descriptor_set {
  * A VkPipeline: a compute pipeline's own copy of its module's SPIR-V
  * (the module may go first), compiled for each workgroup it runs.
  */
+struct powervr_vk_graphics;
 struct powervr_vk_pipeline {
 	uint32_t word_count;
 	uint32_t *words;
+	struct powervr_vk_graphics *graphics;
 };
+
+/*
+ * The records of a graphics bind of a pipeline and of descriptor sets:
+ * opcodes of their own, so the compute submission's walk never takes
+ * them for its own binds.
+ */
+#define POWERVR_VK_RECORD_BIND_GRAPHICS	0x10000U
+#define POWERVR_VK_RECORD_SETS_GRAPHICS	0x10001U
 
 /* A VkCommandPool: its queue family. */
 struct powervr_vk_command_pool {
@@ -291,6 +301,11 @@ struct powervr_render_job;
 int powervr_vk_record_begin_pass(struct powervr_vk_session *session, struct i915_wire_reader *reader, struct powervr_vk_record *entry);
 int powervr_vk_record_clear_attachments(struct powervr_vk_session *session, struct i915_wire_reader *reader, struct powervr_vk_record *entry);
 int powervr_vk_render_jobs(const struct powervr_vk_command_buffer *command, struct powervr_render_job *jobs, uint32_t room, uint32_t *count);
+
+/* The graphics pipelines and the draw records (vk-draw.c). */
+int powervr_vk_graphics_decode(struct powervr_vk_session *session, struct i915_wire_reader *reader, struct powervr_vk_pipeline *pipeline);
+void powervr_vk_graphics_free(struct powervr_vk_graphics *graphics);
+int powervr_vk_record_draw(struct powervr_vk_session *session, uint32_t opcode, struct i915_wire_reader *reader, struct powervr_vk_record *entry);
 
 /* A command buffer emptied of its records (vk-command.c). */
 void powervr_vk_command_reset(struct powervr_vk_command_buffer *command);

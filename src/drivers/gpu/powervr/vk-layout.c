@@ -58,7 +58,7 @@ static int slot_buffer(struct powervr_vk_descriptor_slot *slot, struct powervr_v
 static void set_buffer(struct powervr_vk_session *session, struct powervr_vk_descriptor_set *set, uint32_t binding, uint32_t element, const VkDescriptorBufferInfo *info);
 static void set_image(struct powervr_vk_session *session, struct powervr_vk_descriptor_set *set, uint32_t binding, uint32_t element, uint64_t sampler_id, uint64_t view_id);
 static int set_destroy(struct powervr_vk_session *session, void *payload);
-static int create_pipelines(struct powervr_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
+static int create_pipelines(struct powervr_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply, bool graphics);
 static int decode_pipeline(struct powervr_vk_session *session, struct i915_wire_reader *reader, struct powervr_vk_pipeline *pipeline);
 static int pipeline_destroy(struct powervr_vk_session *session, void *payload);
 
@@ -124,7 +124,10 @@ powervr_vk_layout_route(
 		error = update_sets(session, reader);
 		break;
 	case GPU_OP_CREATE_COMPUTE_PIPELINES:
-		error = create_pipelines(session, reader, reply);
+		error = create_pipelines(session, reader, reply, false);
+		break;
+	case GPU_OP_CREATE_GRAPHICS_PIPELINES:
+		error = create_pipelines(session, reader, reply, true);
 		break;
 	case GPU_OP_DESTROY_PIPELINE:
 		error = powervr_vk_destroy_plain(session, reader, I915_VK_OBJ_PIPELINE);
@@ -930,16 +933,19 @@ set_destroy(
 }
 
 /*
- * vkCreateComputePipelines: [device][cache][count][count]{create info}
- * [allocator][count][identities] -> [result][count][identities].  Each
- * pipeline's module must be of the subset; on the first failure none is
- * left and every identity is answered as null.
+ * vkCreateComputePipelines and vkCreateGraphicsPipelines (graphics):
+ * [device][cache][count][count]{create info}[allocator][count]
+ * [identities] -> [result][count][identities].  Each pipeline's modules
+ * must be of the subset (a graphics one is compiled in vk-draw.c); on
+ * the first failure none is left and every identity is answered as
+ * null.
  */
 static int
 create_pipelines(
 	struct powervr_vk_session *session,
 	struct i915_wire_reader *reader,
-	struct i915_wire_writer *reply)
+	struct i915_wire_writer *reply,
+	bool graphics)
 {
 	struct powervr_vk_pipeline *pipelines[LAYOUT_PIPELINES_MAX];
 	uint64_t identities[LAYOUT_PIPELINES_MAX];
@@ -971,7 +977,11 @@ create_pipelines(
 			break;
 		}
 
-		decoded = decode_pipeline(session, reader, pipelines[index]);
+		if (graphics) {
+			decoded = powervr_vk_graphics_decode(session, reader, pipelines[index]);
+		} else {
+			decoded = decode_pipeline(session, reader, pipelines[index]);
+		}
 		if (decoded == EINVAL) {
 			error = EINVAL;
 			break;
@@ -1089,6 +1099,7 @@ pipeline_destroy(
 	if (pipeline == NULL)
 		return 0;
 	kern_free(pipeline->words);
+	powervr_vk_graphics_free(pipeline->graphics);
 	kern_free(pipeline);
 
 	/* Succeeded: the pipeline is gone. */
