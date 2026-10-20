@@ -272,3 +272,39 @@ sample の段の道（通しで読んだ）:
 | boot の待ち | `firmware_started` の poll | 同じ | 一致（4 ms が本物かは上の行で見る） |
 
 - 確かめ: VF2 の vmunix の build、warning 0。実機は Q1 が板で。
+
+## q1407（P1、2026-10-20）: return slot が見えない件
+
+板の dump（Q1、bdb17253e）から分かったこと:
+- FW は起動している。started の前は 0、後は 1。os init の identity も埋まった。
+- FW は slot 0 の health check を読んで実行した。KCCB の read は 1、kccb executed は 1、host への割り込みは 1。
+- それでも return slot は 0 のまま。
+
+trace の event id を mainline の `pvr_rogue_fwif_sf.h` の表で読んだ:
+- 0x70017012: Bg Task OSid
+- 0x70037013: KCCB Slot 0 の Cmd 0x2abc0073
+- 0x7001700d: Bg Task complete
+- 0x70017006: Kick MTS Irq task
+- 0x70017014: Irq Task
+- 0x7005a02e: Check Pow state
+- 0x7003a015: Idle timer start
+- 0x7003a002: GPU idle
+- 0x7000700e: Irq Task complete
+
+つまり command は FW の中で完了し、その後 FW は idle に入った。
+
+mainline と照らした結果（v7.3 の `pvr_ccb.c`・`pvr_fw.c`・`pvr_rogue_fwif.h` を raw.githubusercontent から取得）:
+- kccb_flags は mainline も 0。
+- return slot は u32 の配列で、rtn[slot] の bit 0 が EXECUTED。
+- 写像は DEVICE_UNCACHED。
+- MIPS の entry の cache policy は 2。
+
+どれも一致した。書いた先が CPU の uncached の view（JH7110 の system port の alias）から見えない理由は、まだ確定していない。候補は GPU の SLC か、CPU の L2 に残る行。同じ時に FW が書いた read offset と executed count は見えている。
+
+直し（回避）と診断:
+- `commands.c` `powervr_command_wait`: return slot が EXECUTED でなくても、os data の kccb_cmds_executed がその command の通し番号に達していれば実行済みとする。最初の 1 回だけ `slot N: return 0x.. not seen, executed count M reached; taken as executed` を出す。
+  - 通し番号は `powervr_command_send` が数え、boot ごとに 0 に戻す（`kccb_sent`・`kccb_expect`）。
+  - FW は KCCB を順に実行するので、数で判定できる。
+  - CLEANUP の BUSY など、return の値そのものが要る command は、この道では EXECUTED だけになる。原因が分かるまでの回避。
+- dump に return slot 0〜3 と return の物理 address を足した（FW が別の slot に書いていないかを見る）。
+- 確かめ: VF2 の vmunix は warning 0。p010 は 0 failed。実機は未。

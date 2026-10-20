@@ -650,6 +650,8 @@ make_command_buffers(
 	powervr_object_put32(&firmware->fwccb_control, POWERVR_CCB_WRAP_MASK, POWERVR_FIRMWARE_CCB_SLOTS - 1U);
 	powervr_object_put32(&firmware->fwccb_control, POWERVR_CCB_COMMAND_BYTES, POWERVR_COMMAND_BYTES);
 	firmware->fwccb_read = 0;
+	firmware->kccb_sent = 0;
+	firmware->return_fallback_noted = false;
 
 	/* Succeeded: both buffers are empty. */
 	return 0;
@@ -1488,6 +1490,14 @@ firmware_dump(
 		  (unsigned)powervr_object_get32(&firmware->kccb, slot * POWERVR_COMMAND_BYTES + 12U),
 		  (unsigned)powervr_object_address(&firmware->kccb_returns, slot * 4U),
 		  (unsigned)powervr_object_get32(&firmware->kccb_returns, slot * 4U));
+
+	/* The first four return slots, in case the firmware wrote another than the one waited on. */
+	kern_logf("powervr: dump: returns 0..3: 0x%x 0x%x 0x%x 0x%x; returns physical 0x%llx\n",
+		  (unsigned)powervr_object_get32(&firmware->kccb_returns, 0U),
+		  (unsigned)powervr_object_get32(&firmware->kccb_returns, 4U),
+		  (unsigned)powervr_object_get32(&firmware->kccb_returns, 8U),
+		  (unsigned)powervr_object_get32(&firmware->kccb_returns, 12U),
+		  (unsigned long long)powervr_object_physical(&firmware->kccb_returns, 0));
 
 	/* The records' firmware addresses as the per-OS record names them. */
 	kern_logf("powervr: dump: os init at 0x%x names kccb control 0x%x kccb 0x%x returns 0x%x fwccb control 0x%x os data 0x%x\n",

@@ -22,6 +22,7 @@
 
 #include <kern/clock.h>
 #include <kern/device-io.h>
+#include <kern/klog.h>
 #include <kern/sched.h>
 #include <uapi/errno.h>
 
@@ -71,6 +72,10 @@ powervr_command_send(
 		powervr_object_put32(&firmware->kccb, write * POWERVR_COMMAND_BYTES + index * 4U, command[index]);
 	powervr_object_put32(&firmware->kccb_returns, write * 4U, POWERVR_RETURN_NONE);
 
+	/* The firmware's executed count that marks this command done, for when its return slot is not seen. */
+	firmware->kccb_sent++;
+	firmware->kccb_expect[write] = firmware->kccb_sent;
+
 	/* Publishes the command, then kicks the firmware once it is in memory. */
 	kern_io_barrier();
 	powervr_object_put32(&firmware->kccb_control, POWERVR_CCB_WRITE, next);
@@ -98,6 +103,7 @@ powervr_command_wait(
 	uint64_t deadline;
 	uint64_t now;
 	uint32_t value;
+	uint32_t executed;
 	unsigned spins;
 
 	/* Reads the return slot, first in a short spin, then once a tick. */
@@ -108,6 +114,23 @@ powervr_command_wait(
 		value = powervr_object_get32(&firmware->kccb_returns, slot * 4U);
 		if ((value & POWERVR_RETURN_EXECUTED) != 0U)
 			break;
+
+		/*
+		 * The return slot the firmware writes has been seen not to reach
+		 * the processor's uncached view on the VF2, while the per-OS
+		 * executed count it writes beside it does: a command whose count
+		 * the firmware has reached is taken as executed, once noted.
+		 */
+		executed = powervr_object_get32(&firmware->os_data, POWERVR_OS_DATA_KCCB_EXECUTED);
+		if ((int32_t)(executed - firmware->kccb_expect[slot]) >= 0) {
+			if (!firmware->return_fallback_noted) {
+				kern_logf("powervr: firmware: slot %u: return 0x%x not seen, executed count %u reached; taken as executed\n",
+					  (unsigned)slot, (unsigned)value, (unsigned)executed);
+				firmware->return_fallback_noted = true;
+			}
+			value = POWERVR_RETURN_EXECUTED;
+			break;
+		}
 
 		/* Keeps spinning while the short budget lasts. */
 		spins++;
