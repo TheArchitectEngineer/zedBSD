@@ -265,6 +265,9 @@ static int write_probes(struct check_state *state, uint8_t *code);
 static void run_probes(struct check_state *state);
 static void run_nop_probe(struct check_state *state);
 static void run_compiled_fill(struct check_state *state, int dumps, unsigned groups);
+static int compile_fill(struct powervr_shader_workspace *workspace, struct powervr_shader_program *program, uint8_t *code, uint64_t address, unsigned *field);
+static void run_cf0_probe(struct check_state *state);
+static int fresh_session(struct check_state *state);
 static int run_prefixes(struct check_state *state, const struct shader_backend *backend);
 static int dump_append(struct shader_backend *dump, unsigned kind, unsigned destination, unsigned source_0_bank, unsigned source_0, unsigned source_1, unsigned source_2, uint32_t immediate);
 static int dump_program(const struct shader_backend *backend, struct shader_backend *dump, unsigned keep, uint64_t address, uint8_t *code, size_t room, size_t *length);
@@ -436,12 +439,20 @@ powervr_compute_check(
 	shader_alu_source_gap = SHADER_ALU_SOURCE_GAP;
 	shader_store_source_gap = SHADER_STORE_SOURCE_GAP;
 
-	/* The compiled fill with the defaults as one kernel of four workgroups (ids 1 to 3 too), as the executor runs it. */
-	run_compiled_fill(&state, 0, COMPILED_GROUPS);
-
-	/* The register-window probe after the compiler's programs. */
+	/* The register-window probe and the hand-written workgroup id probe (sessions of its own). */
 	run_field_probes(&state);
 	run_workgroup_probe(&state);
+
+	/*
+	 * Then, each on a fresh session, as either may lose it: the compiled
+	 * fill's own move from the coefficients over four workgroups, and
+	 * the compiled fill as one kernel of four workgroups (ids 1 to 3
+	 * too), as the executor runs it.
+	 */
+	if (fresh_session(&state) == 0)
+		run_cf0_probe(&state);
+	if (fresh_session(&state) == 0)
+		run_compiled_fill(&state, 0, COMPILED_GROUPS);
 	if (POWERVR_COMPUTE_LOCKUP_PROBES)
 		run_layouts(&state);
 
@@ -1075,6 +1086,56 @@ run_grid(
 }
 
 /*
+ * Compiles vkcompute's fill shader the executor's way (the buffer's
+ * address inlined, the workgroup id from the coefficients) into code
+ * (USC_PROBE_SPACING bytes), and its task field.
+ */
+static int
+compile_fill(
+	struct powervr_shader_workspace *workspace,
+	struct powervr_shader_program *program,
+	uint8_t *code,
+	uint64_t address,
+	unsigned *field)
+{
+	struct powervr_ir_shader *shader;
+	const struct powervr_shader_request *request;
+	uint32_t values[POWERVR_SHADER_REQUESTS * 4U];
+	unsigned index;
+	unsigned word;
+	int error;
+
+	/* What the shader asks for, then its words. */
+	error = powervr_shader_read(vkcompute_fill_shader, sizeof(vkcompute_fill_shader) / 4U, POWERVR_SHADER_COMPUTE, NULL, workspace, program, &shader);
+	for (index = 0; error == 0 && index < program->request_count; index++) {
+		request = &program->requests[index];
+		if (request->shared + request->words > POWERVR_SHADER_REQUESTS * 4U) {
+			error = ENOTSUP;
+			break;
+		}
+		for (word = 0; word < request->words; word++)
+			values[request->shared + word] = request->kind == POWERVR_SHADER_REQUEST_NUM_WORKGROUPS ? 1U : 0U;
+		if (request->kind == POWERVR_SHADER_REQUEST_DESCRIPTOR) {
+			values[request->shared] = (uint32_t)address;
+			values[request->shared + 1U] = (uint32_t)(address >> 32);
+		}
+	}
+
+	/* The program compiled with them, and its field. */
+	if (error == 0)
+		error = powervr_shader_compile_inline(vkcompute_fill_shader, sizeof(vkcompute_fill_shader) / 4U, POWERVR_SHADER_COMPUTE, NULL, values, program->shareds, workspace, program, code, USC_PROBE_SPACING);
+	if (error == 0 && program->workgroup[0] != POWERVR_COMPUTE_INSTANCES)
+		error = ENOTSUP;
+	if (error == 0)
+		error = powervr_compute_task_field(program->temps, field);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the program. */
+	return 0;
+}
+
+/*
  * Compiles the vkcompute fill shader (data[x] = 3x + 7) with the
  * workgroup id 0 and the buffer's address as immediates, as the Vulkan
  * executor does, and runs it as the check runs its own programs: one
@@ -1090,14 +1151,9 @@ run_compiled_fill(
 {
 	struct powervr_shader_workspace *workspace;
 	struct powervr_shader_program *program;
-	struct powervr_ir_shader *shader;
-	const struct powervr_shader_request *request;
 	volatile uint32_t *words;
-	uint32_t values[POWERVR_SHADER_REQUESTS * 4U];
 	uint8_t *code;
-	uint64_t address;
 	unsigned field;
-	unsigned index;
 	unsigned word;
 	unsigned good;
 	unsigned changed;
@@ -1111,31 +1167,10 @@ run_compiled_fill(
 	if (workspace == NULL || program == NULL || code == NULL)
 		error = ENOMEM;
 
-	/* What the shader asks for, then its words: the buffer at the probe's area, workgroup 0 of 1. */
+	/* The program compiled for the buffer at the probe's area, and its field. */
+	field = 0;
 	if (error == 0)
-		error = powervr_shader_read(vkcompute_fill_shader, sizeof(vkcompute_fill_shader) / 4U, POWERVR_SHADER_COMPUTE, NULL, workspace, program, &shader);
-	address = run_address + COMPILED_OFFSET;
-	for (index = 0; error == 0 && index < program->request_count; index++) {
-		request = &program->requests[index];
-		if (request->shared + request->words > POWERVR_SHADER_REQUESTS * 4U) {
-			error = ENOTSUP;
-			break;
-		}
-		for (word = 0; word < request->words; word++)
-			values[request->shared + word] = request->kind == POWERVR_SHADER_REQUEST_NUM_WORKGROUPS ? 1U : 0U;
-		if (request->kind == POWERVR_SHADER_REQUEST_DESCRIPTOR) {
-			values[request->shared] = (uint32_t)address;
-			values[request->shared + 1U] = (uint32_t)(address >> 32);
-		}
-	}
-
-	/* The program compiled with them, in its place, and its kick. */
-	if (error == 0)
-		error = powervr_shader_compile_inline(vkcompute_fill_shader, sizeof(vkcompute_fill_shader) / 4U, POWERVR_SHADER_COMPUTE, NULL, values, program->shareds, workspace, program, code, USC_PROBE_SPACING);
-	if (error == 0 && program->workgroup[0] != POWERVR_COMPUTE_INSTANCES)
-		error = ENOTSUP;
-	if (error == 0)
-		error = powervr_compute_task_field(program->temps, &field);
+		error = compile_fill(workspace, program, code, run_address + COMPILED_OFFSET, &field);
 
 	/* Its prefixes first, each with a dump of r0 to r15 after it; a prefix the core does not finish stops the check here. */
 	if (error == 0 && dumps) {
@@ -2373,6 +2408,162 @@ run_timing_probes(
 	/* The room goes. */
 	kern_free(program);
 	kern_free(code);
+}
+
+/*
+ * The compiled fill's workgroup id probe: the fill's groups up to its
+ * move from the coefficients (as the compiler emits them), then the
+ * hand-written workgroup probe's tail (the value's low two bits pick
+ * the workgroup's window, the value is stored at the lane's word), as
+ * one kernel of WG_GROUPS workgroups; it reports which windows hold
+ * their workgroup's id, as the workgroup id probe does.
+ */
+#define CF0_OFFSET		0x1d9000U
+#define CF0_TEMPORARIES		34U
+
+static void
+run_cf0_probe(
+	struct check_state *state)
+{
+	struct powervr_shader_workspace *workspace;
+	struct powervr_shader_program *program;
+	struct shader_backend *dump;
+	volatile uint32_t *words;
+	uint8_t *code;
+	uint64_t address;
+	size_t length;
+	unsigned field;
+	unsigned keep;
+	unsigned value;
+	unsigned group;
+	unsigned word;
+	unsigned good;
+	unsigned mask;
+	unsigned i;
+	int error;
+
+	/* The working memory and the compiled fill. */
+	workspace = kern_malloc(powervr_shader_workspace_size());
+	program = kern_malloc(sizeof(*program));
+	code = kern_malloc(USC_DUMP_ROOM);
+	dump = kern_malloc(sizeof(*dump));
+	error = 0;
+	if (workspace == NULL || program == NULL || code == NULL || dump == NULL)
+		error = ENOMEM;
+	if (error == 0)
+		error = compile_fill(workspace, program, code, run_address + COMPILED_OFFSET, &field);
+
+	/* Its groups up to the first move from the coefficients. */
+	keep = 0;
+	value = 0;
+	for (i = 0; error == 0 && i < workspace->backend.operation_count; i++) {
+		if (workspace->backend.operations[i].source[0].bank == POWERVR_USC_BANK_COEFFICIENT) {
+			keep = i + 1U;
+			value = workspace->backend.operations[i].destination[0].index;
+			break;
+		}
+	}
+	if (error == 0 && keep == 0)
+		error = ENOENT;
+
+	/* The tail: r20 its low two bits (r21 three), r22 those times 128 (r23 seven), r26 the lane times four (r24 the lane, r25 two), r29:r30 and r31:r32 the word, r33 the value. */
+	address = run_address + CF0_OFFSET;
+	if (error == 0) {
+		kern_memcpy(dump, &workspace->backend, sizeof(*dump));
+		dump->operation_count = keep;
+		error = dump_append(dump, MACHINE_IMMEDIATE, 21, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, 3);
+	}
+	if (error == 0) {
+		error = dump_append(dump, MACHINE_LOGIC, 20, POWERVR_USC_BANK_TEMPORARY, value, 21, DUMP_NONE, 0);
+		if (error == 0)
+			dump_last(dump)->variant = 1;
+	}
+	if (error == 0)
+		error = dump_append(dump, MACHINE_IMMEDIATE, 23, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, 7);
+	if (error == 0)
+		error = dump_append(dump, MACHINE_SHIFT, 22, POWERVR_USC_BANK_TEMPORARY, 20, 23, DUMP_NONE, 0);
+	if (error == 0)
+		error = dump_append(dump, MACHINE_MOVE_SPECIAL, 24, POWERVR_USC_BANK_SPECIAL, DUMP_SPECIAL_INSTANCE, DUMP_NONE, DUMP_NONE, 0);
+	if (error == 0)
+		error = dump_append(dump, MACHINE_IMMEDIATE, 25, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, 2);
+	if (error == 0)
+		error = dump_append(dump, MACHINE_SHIFT, 26, POWERVR_USC_BANK_TEMPORARY, 24, 25, DUMP_NONE, 0);
+	if (error == 0)
+		error = dump_append(dump, MACHINE_IMMEDIATE, 27, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, (uint32_t)address);
+	if (error == 0)
+		error = dump_append(dump, MACHINE_IMMEDIATE, 28, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, (uint32_t)(address >> 32));
+	if (error == 0)
+		error = dump_append(dump, MACHINE_ADD64, 29, POWERVR_USC_BANK_TEMPORARY, 27, 28, 22, 0);
+	if (error == 0)
+		error = dump_append(dump, MACHINE_ADD64, 31, POWERVR_USC_BANK_TEMPORARY, 29, 30, 26, 0);
+	if (error == 0)
+		error = dump_append(dump, MACHINE_MOVE, 33, POWERVR_USC_BANK_TEMPORARY, value, DUMP_NONE, DUMP_NONE, 0);
+	if (error == 0) {
+		error = dump_append(dump, MACHINE_STORE, DUMP_NONE, POWERVR_USC_BANK_TEMPORARY, 33, DUMP_NONE, DUMP_NONE, 0);
+		if (error == 0) {
+			dump->operations[dump->operation_count - 1U].source[1].bank = POWERVR_USC_BANK_TEMPORARY;
+			dump->operations[dump->operation_count - 1U].source[1].index = 31;
+		}
+	}
+	if (error == 0)
+		error = dump_append(dump, MACHINE_WAIT, DUMP_NONE, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, 0);
+	if (error == 0)
+		error = dump_append(dump, MACHINE_END, DUMP_NONE, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, 0);
+	length = 0;
+	if (error == 0)
+		error = shader_backend_encode(dump, code, USC_DUMP_ROOM, &length);
+
+	/* The kick of WG_GROUPS workgroups over windows filled with other values. */
+	if (error == 0)
+		error = powervr_compute_task_field(CF0_TEMPORARIES, &field);
+	if (error == 0) {
+		put_bytes(state->usc, USC_COMPILED, code, length);
+		error = write_workgroup_kick(state, field, WG_GROUPS);
+	}
+	words = state->alias + CF0_OFFSET / 4U;
+	for (word = 0; word < WG_GROUPS * POWERVR_COMPUTE_INSTANCES; word++)
+		words[word] = WG_FILLER;
+	if (error == 0)
+		error = kick(state, KICK_PROBE_FIRST);
+
+	/* Which workgroups' words all hold their id. */
+	mask = 0;
+	for (group = 0; group < WG_GROUPS; group++) {
+		good = 0;
+		for (word = 0; word < POWERVR_COMPUTE_INSTANCES; word++)
+			good += words[group * POWERVR_COMPUTE_INSTANCES + word] == group;
+		if (good == POWERVR_COMPUTE_INSTANCES)
+			mask |= 1U << group;
+	}
+	kern_logf("powervr: compute probes: compiled fill's workgroup id (its first %u groups, r%u) %x (%d), %u bytes, first words %08x %08x %08x %08x\n",
+		  keep, value, mask, error, (unsigned)length,
+		  words[0], words[POWERVR_COMPUTE_INSTANCES], words[2U * POWERVR_COMPUTE_INSTANCES], words[3U * POWERVR_COMPUTE_INSTANCES]);
+
+	/* The working memory goes. */
+	kern_free(dump);
+	kern_free(code);
+	kern_free(program);
+	kern_free(workspace);
+}
+
+/* Closes the check's session and opens another; returns the error that kept it from opening. */
+static int
+fresh_session(
+	struct check_state *state)
+{
+	const char *step;
+	int error;
+
+	teardown(state);
+	step = "open";
+	error = setup(state, &step);
+	if (error != 0) {
+		kern_logf("powervr: compute probes: session not opened, %s (%d)\n", step, error);
+		return error;
+	}
+
+	/* Succeeded: a fresh session. */
+	return 0;
 }
 
 /*

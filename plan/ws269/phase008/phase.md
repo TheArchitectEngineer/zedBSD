@@ -1351,3 +1351,28 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
   - data の位置に address の下位語が入るのは、次のどちらかの場合: store が data を読む時期に、その register がまだ前の値（address の下位語を置いた時期の値）だった。または、別の instance・workgroup の窓の r6 を読んだ（窓の重なりの仮説、(2) の field の probe で分かる）。
   - 4096 語のうち 607 語だけが誤るのは、workgroup の重なり方（task に複数の workgroup が詰められる）とも整合する。
 - VF2 の vmunix（`build/p2q1486/vf2/vmunix`）: rc 0、warning 0。板は未実施。
+
+## q1488-i01（P2、2026-10-21）: 4 workgroup の compiled fill の順序と、compiled fill の cf0 の読みの probe
+
+- 板 83:
+  - compiled fill（1 workgroup）は、1,200・944・920 byte の 3 設定で 32/32。752 byte（mov、4/3/6）は 0/32。
+  - **4 workgroup の版**は fault（0x8000a0a000、buffer の 0x9c8000 先）で 0/128。session が lost になり、field の probe と vkcompute（128 wg）は (5)・-4 になった。
+- 変更（compute-check.c）:
+  1. **順序**: compiled fill（1 workgroup × 4 設定）→ field の probe → 手書きの workgroup id の probe（変種ごとに session を開き直す）→ **新しい session で** `run_cf0_probe` → **新しい session で** compiled fill の 4 workgroup 版。field の probe が先に読める。
+     - `fresh_session()` を足した（teardown して setup。開けなければ行を出して、その probe を飛ばす）。
+  2. **`compile_fill()`** を `run_compiled_fill` から切り出した（buffer の address を inline、workgroup id は coefficient から、program と field を返す）。
+  3. **`run_cf0_probe`**: compiler が出した fill の群を、最初の coefficient bank からの mov まで（その群を含む）そのまま使う。その後に、手書きの workgroup id の probe と同じ尾を付ける（値の下位 2 bit で窓を選び、値を lane の語に store）。
+     - 1 kernel × 4 workgroup（`write_workgroup_kick`、field は 34 temps）で流す。
+     - 行: `compute probes: compiled fill's workgroup id (its first K groups, rN) MASK (e), bytes, first words w0 w1 w2 w3`。期待は MASK f、0 1 2 3。
+- 手書きの probe との比較（静的）:
+  - **cf0 の mov の encoding は同じ**。どちらも `MACHINE_MOVE`、source は coefficient bank の index 0 で、`shader_backend_group` の同じ経路を通る。
+  - **kick の形も同じ**（`write_workgroup_kick`。PDS は P1 の workgroup program、usc_common 3、pds temps 4）。
+  - 違うのは次の 3 点:
+    - fill では cf0 の mov の前に lane の mov（s51）がある。
+    - task field: fill は 17 temps で 5、手書きは 15 temps で 4、cf0 の probe は 34 temps。
+    - 群の間隔の付け方（compiler の filler・間隔）。
+- 読み方:
+  - cf0 の probe が f → compiler の cf0 の読みと kick の形は正しい。fill の後半（gid・address の計算の imadd の列）で wg≠0 の時に壊れている。field の probe と合わせて、窓の重なりかどうかを見る。
+  - cf0 の probe が f にならない → field（temps が多い kick）か、compiler が並べた先頭の群の形が原因。
+- VF2 の vmunix（`build/p2q1488/vf2/vmunix`）: rc 0、warning 0。板は未実施。
+- 片付け（Q1 に依頼）: `build/p2q1486/`、`build/p2q1488/`、scratchpad の `cf0.c`。
