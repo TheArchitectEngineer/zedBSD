@@ -188,3 +188,20 @@ Keiland が使い、vkmatrix 15/15・gpu-selftest 13/13 で確かめていない
 - d3（P1 の timing、52353d85d）: 同じ lockup。1 回は terminal の起動の時に板が自分で再起動し、log は残らなかった（原因は未確認）。
 - d4（f046eed60）: login の直後（terminal なし）に `context 0x4 reason 1 dm 3 pc 0x41db7000 fault 0x8009ae2500`。timing: job の待ちは 3D が 1 job 約 37 ms（TA は 1.6 ms）、1 submit に約 2.4 job → P1 q1524。
 - vkmatrix 22/22（sample-linear-65・sample-linear-1180 を含む、e71afc04c）: linear の sampling 自体は通る → lockup は import の memory・blur・大きな draw など compositor に固有の所（P2 q1523-i02）。
+
+### 板の sample-linear PASS の後（2026-10-21、P2）
+
+- 板: vkmatrix 22/22（sample-linear-* も PASS）。linear の sampling そのものは動く。
+  desktop の lockup の fault 0x8009ae2500 は general heap（0x8000000000〜）の中にある。
+- 見つけた穴: powervr の handle の破棄（`render.c` の `resource_unmake`）は、session の job が動いている間でも
+  すぐに GPU の mapping を外し、その VA を空間へ返していた（job の参照による延命が無い）。
+  compositor が client の buffer の import を、それを読む最後の frame の完了の前に捨てると、3D は外れた page を読む（fault あり）。
+  返した VA に別の mapping が入ると、別の中身を読む（fault 0）。どちらも lockup の形に合う。
+- 修正: session に job が残っている間（outstanding か pending_count が 0 でない）は、handle を mapping のまま deferred の list に置く。
+  session の次の handle の操作（make・unmake）で、job が無ければ外す。session の破棄では残りを全部外す。
+  `render.c` の `resource_unmake`・`resources_drain`・`resource_release` と、`render-private.h` の `deferred`。
+- 確認:
+  - VF2 の vmunix は rc 0、warning 0。
+  - render.c を通す host 試験は無い（未実施）。
+  - 板は未実施。
+  - 別の process の export を import して sample する vkmatrix の case は作っていない。
