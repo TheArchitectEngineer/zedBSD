@@ -32,6 +32,7 @@
 #include "drivers/gpu/powervr/render-load-program.h"
 #include "drivers/gpu/powervr/render-program.h"
 #include "drivers/gpu/powervr/data-program.h"
+#include "drivers/gpu/powervr/image-state.h"
 #include "drivers/gpu/powervr/render-draw.h"
 #include "drivers/gpu/powervr/render-depth.h"
 #include "drivers/gpu/powervr/vk-draw.h"
@@ -66,6 +67,8 @@
 #define DRAW_PPP			0x000U
 #define DRAW_PUSH			0x100U
 #define DRAW_BLEND			0x200U
+#define DRAW_DEFAULTS			0x300U
+#define ATTRIBUTE_NO_DEFAULTS		0xffffffffU
 #define DRAW_PDS_VERTEX_DATA		0x000U
 #define DRAW_PDS_VERTEX_CODE		0x400U
 #define DRAW_PDS_VSHARED_CODE		0x500U
@@ -143,8 +146,15 @@ static int job_draws(struct powervr_render *render, struct powervr_session *sess
 static int draw_place(const struct powervr_render_job *job, uint32_t index, struct job_memory *memory, uint64_t sets_place, uint64_t usc_place, uint32_t stream_at, uint32_t *words);
 static int draw_shared(const struct powervr_shader_program *program, const struct powervr_data_state *state, struct job_memory *memory, uint32_t code_at, uint32_t data_at, uint32_t *data_words);
 static void job_release(struct powervr_render *render, struct powervr_session *session, struct job_memory *memory);
+static int attribute_words(uint32_t format, uint32_t components, uint32_t *words, uint32_t *defaults);
 static void put_words(struct powervr_buffer *buffer, uint32_t offset, const uint32_t *words, unsigned count);
 static void put_bytes(struct powervr_buffer *buffer, uint32_t offset, const uint8_t *bytes, size_t count);
+
+/* The components a vertex format lacks: (0, 0, 0, 1.0) for a float format, then (0, 0, 0, 1) for an integer one, little-endian. */
+static const uint8_t attribute_defaults[32] = {
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x00, 0x00, 0x80, 0x3f,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01, 0x00, 0x00, 0x00,
+};
 
 /*
  * Runs a render job without draws.
@@ -408,7 +418,8 @@ job_background(
 {
 	struct powervr_render_background background;
 	uint32_t words[POWERVR_RENDER_LOAD_SHARED_WORDS];
-	uint32_t value;
+	uint32_t value[4];
+	uint32_t clear_words;
 	int error;
 
 	/* The background's program and the shared register program that feeds it. */
@@ -429,19 +440,28 @@ job_background(
 
 		*shared_registers = POWERVR_RENDER_LOAD_SHARED_WORDS;
 	} else {
-		/* The clear value, or zero for contents that do not matter. */
-		value = 0;
+		/*
+		 * The clear value in the format's words (two for sRGB, whose
+		 * back end takes F16, within the two output registers a pixel
+		 * the fragment command gives), or zero for contents that do not
+		 * matter.
+		 */
+		clear_words = powervr_format_clear_word_count(color->surface.format);
+		if (clear_words == 0 || clear_words > 2U)
+			return ENOTSUP;
+
+		kern_memset(value, 0, sizeof(value));
 		if (color->load_op == LOAD_OP_CLEAR)
-			value = color->clear[0];
-		error = powervr_render_clear_usc(&memory->program);
+			kern_memcpy(value, color->clear, sizeof(value));
+		error = powervr_render_clear_usc_words(clear_words, &memory->program);
 		if (error != 0)
 			return error;
 
-		error = powervr_render_clear_shared(value, &memory->shared);
+		error = powervr_render_clear_shared_words(value, clear_words, &memory->shared);
 		if (error != 0)
 			return error;
 
-		*shared_registers = 1;
+		*shared_registers = clear_words;
 	}
 
 	/* The program, its task program and its shared register program. */
@@ -610,6 +630,8 @@ draw_place(
 	const struct powervr_draw_attribute *attribute;
 	const struct powervr_shader_input *input;
 	const VkViewport *draw_viewport;
+	uint32_t dma_words;
+	uint32_t defaults;
 	const VkRect2D *draw_scissor;
 	struct powervr_data_state state;
 	struct powervr_draw_ppp ppp;
@@ -670,7 +692,8 @@ draw_place(
 	if (error != 0)
 		return error;
 
-	/* The vertex program: a DMA per attribute into its input registers. */
+	/* The vertex program: a DMA per attribute into its input registers, the defaults (0, 0, 0, 1.0) beside them. */
+	put_bytes(memory->draw_general->buffer, index * DRAW_SLOT + DRAW_DEFAULTS, attribute_defaults, sizeof(attribute_defaults));
 	dma_count = 0;
 	for (slot = 0; slot < graphics->fixed.attribute_count; slot++) {
 		attribute = &graphics->fixed.attributes[slot];
@@ -689,9 +712,31 @@ draw_place(
 			if (graphics->fixed.bindings[at].binding == attribute->binding)
 				memory->dmas[dma_count].stride = graphics->fixed.bindings[at].stride;
 		}
-		memory->dmas[dma_count].words = input->components;
+		error = attribute_words(attribute->format, input->components, &dma_words, &defaults);
+		if (error != 0)
+			return error;
+
+		memory->dmas[dma_count].words = dma_words;
 		memory->dmas[dma_count].reg = input->reg;
 		dma_count++;
+
+		/*
+		 * Procedure referenced: Mesa 25.0.7 src/imagination/vulkan/pvr_pipeline.c
+		 * (the vertex DMA's size_in_dwords is the format's block bits / 32)
+		 * and the Vulkan 1.0 specification, "Vertex Input Extraction" (a
+		 * format with fewer components than the shader's input gives 0
+		 * for G and B and 1 for A) -- the components past the format's
+		 * are a stride-0 load from the slot's defaults.
+		 */
+		if (dma_words < input->components && defaults != ATTRIBUTE_NO_DEFAULTS) {
+			if (dma_count == POWERVR_DATA_VERTEX_DMAS_MAX)
+				return ENOTSUP;
+			memory->dmas[dma_count].address = general + DRAW_DEFAULTS + defaults + dma_words * 4U;
+			memory->dmas[dma_count].stride = 0;
+			memory->dmas[dma_count].words = input->components - dma_words;
+			memory->dmas[dma_count].reg = input->reg + dma_words;
+			dma_count++;
+		}
 	}
 	error = powervr_pds_task_word(vertex_usc, graphics->vertex.temps, 0, 0, &task);
 	if (error != 0)
@@ -868,6 +913,44 @@ job_release(
 	if (memory->general != NULL)
 		powervr_resource_unmake(session, memory->general);
 	kern_free(memory);
+}
+
+/*
+ * The words a vertex attribute's DMA loads, the format's bytes but no
+ * more than the shader's input takes, and where its defaults are: a
+ * format of 32-bit channels lacks the components past its own (the
+ * defaults fill them); a packed one's words are the shader's to unpack,
+ * so only 32-bit-channel formats take defaults.
+ */
+static int
+attribute_words(
+	uint32_t format,
+	uint32_t components,
+	uint32_t *words,
+	uint32_t *defaults)
+{
+	const struct powervr_format *found;
+	uint32_t format_words;
+
+	/* A format the table does not know: the shader's input, as the pipeline let it through. */
+	found = powervr_format_find(format);
+	*defaults = ATTRIBUTE_NO_DEFAULTS;
+	if (found == NULL || found->texel_bytes == 0) {
+		*words = components;
+		return 0;
+	}
+
+	/* The format's bytes in whole words; the defaults of an integer 32-bit-channel format after the float ones. */
+	format_words = ((uint32_t)found->texel_bytes + 3U) / 4U;
+	if (format >= VK_FORMAT_R32_UINT && format <= VK_FORMAT_R32G32B32A32_SFLOAT) {
+		*defaults = 0;
+		if (format != VK_FORMAT_R32_SFLOAT && format != VK_FORMAT_R32G32_SFLOAT && format != VK_FORMAT_R32G32B32_SFLOAT && format != VK_FORMAT_R32G32B32A32_SFLOAT)
+			*defaults = 16;
+	}
+	*words = format_words < components ? format_words : components;
+
+	/* Succeeded: the words and the defaults' offset. */
+	return 0;
 }
 
 /* Writes words through a buffer's uncached view, low byte first. */

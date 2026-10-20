@@ -5,7 +5,7 @@
 - ID: ws269-p010q（親 [ws269](../ws.md)）
 - Status: in-progress（q1395-i01 で読みの点検と 1 つの直し。実機は未）
 - Disposition: normal
-- Queue: q1395 / q1395-i01、q1398 / q1398-i01（2026-10-20 P1）
+- Queue: q1395 / q1395-i01、q1398 / q1398-i01、q1401 / q1401-i01（2026-10-20 P1）
 
 ## 範囲
 
@@ -102,6 +102,18 @@ P1 の render-job.c・transfer-job.c・render-check.c を読み、P2 の関数�
 - P1 へ: 上の表の「vertex の DMA の words」と「transfer の blit の odd stride」の 2 つ。
 - 片付け（Q1 に依頼）: `build/p013/`。
 
+## 後半（q1401-i01）: P2 の q1399 が返した 2 件
+
+- `render-job.c`: vertex の属性の DMA を shader の入力の成分の数ではなく min(format の word 数, 成分の数) にした。32 bit の channel の format（R32〜R32G32B32A32 の UINT・SINT・SFLOAT）で足りない成分は、draw の slot の既定（float は (0,0,0,1.0)、整数は (0,0,0,1)）から stride 0 の DMA で埋める。packed の format（8・16 bit の channel）は word のまま読み（shader が解く）、既定は足さない。table に無い format は従来どおり成分の数。Mesa 25.0.7 の `pvr_pipeline.c` は size_in_dwords を format の bit / 32 とし（成分の数と等しいと assert）、既定の扱いは Vulkan の Vertex Input Extraction に従った（Mesa 26.2.5 の該当の扱いは手元に無く未確認）。
+- `transfer-job.c`: blit も奇数の stride の linear の dst では行ごとの job にした。各行の shared words には矩形全体の対応（`&request->area`）を渡すので、どの行も一度に描いた時と同じ所を sample する。
+- 試験: p010 job-host-test に、2 float の属性を 3 成分の入力へ流す job（既定が slot に書かれる）と、63 px の linear の dst への 3 行の blit（transfer の kick 3 回）を足した。
+
+| 確かめ（2026-10-20） | 結果 |
+| --- | --- |
+| p010 run.sh | 全部 0 failed（job-host-test 24/0） |
+| p009 run.sh | 511 passed, 0 failed |
+| VF2 の vmunix | rc=0、warning 0 |
+
 ## q1400-i01（P2、2026-10-20）: Q1 の決定の 2 つ
 
 1. `image-state.c`: R8G8B8A8_UNORM の VERTEX_BUFFER を外した（vertex の fetch が byte を正規化しないため。変換を作るまで）。p009 の「RGBA8 は vertex の format」の期待を「でない」に変えた。
@@ -129,3 +141,9 @@ P1 の render-job.c・transfer-job.c・render-check.c を読み、P2 の関数�
 | VF2 の vmunix（build/p014/vf2） | rc 0、warning 0 |
 
 - 片付け（Q1 に依頼）: `build/p014/`。
+
+## q1401-i01 の追加（P1、2026-10-20）: sRGB 等の多 word の CLEAR
+
+- `render-job.c` の `job_background` の CLEAR（と DONT_CARE）の枝を `powervr_format_clear_word_count`・`powervr_render_clear_usc_words`・`powervr_render_clear_shared_words` に変え、`*shared_registers` を word の数にした。0 word（depth など）と 2 を越える word（R32G32B32A32_SFLOAT の 4）は ENOTSUP（fragment の command の pixel output が 1 pixel 2 register なので）。
+- pixel output の幅: `render-command.c` は USC_PIXEL_OUTPUT_CTRL を常に 2 register（BXE-4-32 の最少）で出すので、sRGB の F16 の 2 word は入る。直しは要らなかった。
+- 試験: job-host-test に sRGB の CLEAR の job（走る）と 4 word の format の拒否を足した（26/0）。p009 511/0、VF2 の vmunix warning 0。
