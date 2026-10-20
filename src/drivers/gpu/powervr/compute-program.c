@@ -251,6 +251,31 @@ powervr_compute_temporaries_field(
 }
 
 /*
+ * Works out the task issue's temporaries field for a program that uses
+ * the given number of temporaries (its highest register plus one): in
+ * blocks of four registers (Mesa's pvr_pds_setup_doutu), for one more
+ * register than the program uses.  On the board, 8-register programs
+ * with 2 blocks (exactly 8) ran into each other's registers, and with
+ * the next block they did not; a 15-register program ran with 4 blocks
+ * (2026-10-20).  Why one more is needed is not known.
+ */
+int
+powervr_compute_task_field(
+	unsigned temporaries,
+	unsigned *field)
+{
+	int error;
+
+	/* Blocks of four for one register more. */
+	error = powervr_compute_temporaries_field(temporaries + 1U, 4, field);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the field. */
+	return 0;
+}
+
+/*
  * Builds the data sequencer program that issues one shading cluster task
  * per instance group: its data word and its code.
  *

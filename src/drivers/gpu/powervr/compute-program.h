@@ -88,6 +88,7 @@ struct powervr_compute_kernel {
 int powervr_compute_kernel_words(const struct powervr_compute_kernel *kernel, uint32_t words[POWERVR_COMPUTE_KERNEL_WORDS]);
 uint32_t powervr_compute_terminate_word(void);
 int powervr_compute_temporaries_field(unsigned temporaries, unsigned unit, unsigned *field);
+int powervr_compute_task_field(unsigned temporaries, unsigned *field);
 int powervr_compute_kick_program(uint64_t usc_offset, unsigned temporaries_field, uint32_t data[POWERVR_COMPUTE_PDS_DATA_WORDS], uint32_t code[POWERVR_COMPUTE_PDS_CODE_MAX], unsigned *code_words);
 int powervr_compute_fence_program(uint32_t data[POWERVR_COMPUTE_PDS_DATA_WORDS], uint32_t code[POWERVR_COMPUTE_PDS_CODE_MAX], unsigned *code_words);
 int powervr_compute_store_program(uint64_t base, unsigned steps, uint8_t *output, size_t room, size_t *length);
