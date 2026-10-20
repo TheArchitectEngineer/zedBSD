@@ -341,11 +341,8 @@ test_temps_program(void)
 	/* Group 0, r7 = movs1(sr51): as the store's group 0 with destination 0x47. */
 	static const uint8_t pass_r7[] = { 0x56, 0x92, 0x00, 0xd3, 0x3f, 0x80, 0xd3, 0x81, 0x10, 0x00, 0x30, 0x47 };
 
-	/* Group 1, r3 = 0xdead0003: immediate low byte first, destination 0x43. */
-	static const uint8_t fill_r3[] = { 0x86, 0x92, 0x40, 0x13, 0x03, 0x00, 0xad, 0xde, 0x00, 0x00, 0x43, 0xff };
-
-	/* Group 11, r6 = byp(r7), the data after the address pair r4, r5: lower source bank temp 1 <<6 | 7 = 0x47, destination 0x46. */
-	static const uint8_t pass_r6[] = { 0x34, 0x82, 0x00, 0x87, 0x47, 0x00, 0x00, 0x46 };
+	/* Group 1, r0 = 0x001f0000, the base's low half: immediate low byte first, destination 0x40. */
+	static const uint8_t immediate_r0[] = { 0x86, 0x92, 0x40, 0x13, 0x00, 0x00, 0x1f, 0x00, 0x00, 0x00, 0x40, 0xff };
 
 	error = powervr_compute_temps_program(0x80001f0000ULL, program, sizeof(program), &length);
 	check(error == 0, "temps program built");
@@ -354,17 +351,17 @@ test_temps_program(void)
 
 	check((length % 8U) == 0, "temps program ends on 8 bytes");
 	count = walk(program, length, starts, sizeof(starts) / sizeof(starts[0]));
-	check(count == 15, "temps program: 15 groups");
-	if (count != 15)
+	check(count == 10, "temps program: 10 groups");
+	if (count != 10)
 		return;
 
 	check_bytes(program + starts[0], pass_r7, sizeof(pass_r7), "temps group 0, r7 = movs1 sr51");
-	check_bytes(program + starts[1], fill_r3, sizeof(fill_r3), "temps group 1, r3 fill");
-	check(program[starts[10] + 1] == 0x86 && program[starts[10] + 3] == 0xe0, "temps group 10, add64_32");
-	check_bytes(program + starts[11], pass_r6, sizeof(pass_r6), "temps group 11, r6 = r7");
-	check(program[starts[12] + 1] == 0xa0 && program[starts[12] + 3] == 0xf2, "temps group 12, st");
-	check(program[starts[13] + 2] == 0x6a, "temps group 13, wdf");
-	check(program[starts[14] + 2] == 0xee, "temps group 14, nop end");
+	check_bytes(program + starts[1], immediate_r0, sizeof(immediate_r0), "temps group 1, r0 = base low");
+	check(program[starts[5] + 1] == 0x82 && program[starts[5] + 3] == 0xe2, "temps group 5, madd32");
+	check(program[starts[6] + 1] == 0x86 && program[starts[6] + 3] == 0xe0, "temps group 6, add64_32");
+	check(program[starts[7] + 1] == 0xa0 && program[starts[7] + 3] == 0xf2, "temps group 7, st");
+	check(program[starts[8] + 2] == 0x6a, "temps group 8, wdf");
+	check(program[starts[9] + 2] == 0xee, "temps group 9, nop end");
 }
 
 static void
