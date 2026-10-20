@@ -2317,6 +2317,8 @@ handle_notice(
 			powervr_reset_stage_of(&notice, kind, &stage);
 			powervr_stage_fail_value(stage.stage, stage.reason, stage.value);
 			powervr_session_describe_fault(session, notice.fault_address);
+			powervr_session_describe_physical(session, ((uint64_t)powervr_object_get32(buffer, offset + POWERVR_COMMAND_DATA + 28U) << 32 |
+								    powervr_object_get32(buffer, offset + POWERVR_COMMAND_DATA + 24U)) & ~(uint64_t)3U);
 		}
 
 		/* No new kick for it; the core hears of the loss. */

@@ -398,6 +398,7 @@ int powervr_resource_make(struct powervr_session *session, struct powervr_buffer
 /* Undoes a handle: unmaps it and drops its buffer, unless the core may still reach the session. */
 void powervr_resource_unmake(struct powervr_session *session, struct powervr_resource *resource);
 void powervr_session_describe_fault(struct powervr_session *session, uint64_t fault);
+void powervr_session_describe_physical(struct powervr_session *session, uint64_t physical);
 uint64_t powervr_session_border_table(const struct powervr_session *session);
 int powervr_resource_make_region_headers(struct powervr_session *session, struct powervr_buffer *buffer, struct powervr_resource **result);
 int powervr_resource_make_free_list(struct powervr_session *session, struct powervr_buffer *buffer, struct powervr_resource **result);
