@@ -224,6 +224,14 @@ struct powervr_display {
 	int zero_copy;
 
 	/*
+	 * Why the last frame was copied rather than scanned directly ("" when
+	 * it was scanned), and the route the log last named under this lease
+	 * (-1 before the first frame); a change of route is logged once.
+	 */
+	const char *copy_reason;
+	int logged_route;
+
+	/*
 	 * The plane's buffers, under the mutex.  Flipping is set while a
 	 * thread waits, without the mutex, for a commit to be taken; another
 	 * change waits on flip_done until it is over.
@@ -300,7 +308,7 @@ static void show_frame(struct powervr_display *display, const struct powervr_dis
 static void show_shared_frame(struct powervr_display *display, const struct powervr_display_resource *resource, const struct gpu_display_present *request);
 static int shared_frame_valid(const struct powervr_display_resource *resource, const struct gpu_display_present *request);
 static void end_lease(struct powervr_display *display, struct powervr_display_resource **freed, unsigned *count);
-static int scan_directly(const struct powervr_display *display, const struct powervr_display_resource *resource, const struct gpu_display_present *request);
+static int scan_directly(struct powervr_display *display, const struct powervr_display_resource *resource, const struct gpu_display_present *request);
 static int change_plane(struct powervr_display *display, struct powervr_display_resource *resource, struct powervr_display_resource **freed, unsigned *count);
 static int await_plane(struct powervr_display *display, struct powervr_display_resource **freed, unsigned *count);
 static int settle_lost(struct powervr_display *display, struct powervr_display_resource **freed, unsigned *count);
@@ -393,10 +401,11 @@ drv_powervr_display_attach(
 		display->scanout = 1;
 
 	display->ready = 1;
-	kern_logf("powervr: display %ux%u on the boot framebuffer, scanout %d\n",
+	kern_logf("powervr: display %ux%u on the boot framebuffer, scanout %d (vblank start %d)\n",
 		  display->screen.width,
 		  display->screen.height,
-		  display->scanout);
+		  display->scanout,
+		  error);
 
 	/* Succeeded: the screen is a display node. */
 	return 0;
@@ -818,6 +827,8 @@ output_claim(
 	display->zero_copy = 0;
 	if (display->scanout)
 		display->zero_copy = zero_copy_requested();
+	display->logged_route = -1;
+	display->copy_reason = "";
 
 	/* The console stops drawing before the screen is cleared for the frames. */
 	kern_text_suspend();
@@ -825,9 +836,11 @@ output_claim(
 
 	mutex_unlock(&display->mutex);
 
-	kern_logf("powervr: display lease %llu claimed; the text console is suspended, zero copy %d\n",
+	kern_logf("powervr: display lease %llu claimed; the text console is suspended, zero copy %d (scanout %d, asked %d)\n",
 		  (unsigned long long)request->lease,
-		  display->zero_copy);
+		  display->zero_copy,
+		  display->scanout,
+		  zero_copy_requested());
 
 	/* Succeeded: the session holds the screen. */
 	return 0;
@@ -933,8 +946,20 @@ output_present(
 		 * it, so the old framebuffer is never shown.
 		 */
 		direct = 0;
+		display->copy_reason = "not a shared frame";
 		if (shared)
 			direct = scan_directly(display, resource, request);
+
+		/* Says the route when it changes: scanned directly, or copied and why. */
+		if (direct != display->logged_route) {
+			display->logged_route = direct;
+			if (direct) {
+				kern_logf("powervr: display lease %llu: frames scanned directly\n", (unsigned long long)display->lease);
+			} else {
+				kern_logf("powervr: display lease %llu: frames copied (%s)\n", (unsigned long long)display->lease, display->copy_reason);
+			}
+		}
+
 		if (direct) {
 			error = change_plane(display, resource, freed, &count);
 		} else {
@@ -1474,7 +1499,7 @@ end_lease(
  */
 static int
 scan_directly(
-	const struct powervr_display *display,
+	struct powervr_display *display,
 	const struct powervr_display_resource *resource,
 	const struct gpu_display_present *request)
 {
@@ -1482,23 +1507,29 @@ scan_directly(
 	int fits;
 
 	/* Only under a lease that asked for it. */
+	display->copy_reason = "zero copy off for the lease";
 	if (!display->zero_copy)
 		return 0;
 
 	/* Only a buffer the controller can reach in one run with its rows aligned. */
+	display->copy_reason = "buffer not scannable (offset, stride, contiguity or 4 GiB)";
 	if (!resource->direct)
 		return 0;
 
 	/* Only while the controller counts frames and no fatal stop took the screen. */
+	display->copy_reason = "controller not ready";
 	ready = drv_powervr_dc_scanout_ready();
 	if (!ready)
 		return 0;
 
 	/* Only a frame the plane shows unscaled at the loader's extent and pitch. */
+	display->copy_reason = "frame size or pitch not the plane's";
 	fits = drv_powervr_dc_frame_fits(request->width, request->height, request->stride);
 	if (!fits)
 		return 0;
 
+	/* Succeeded: scanned directly. */
+	display->copy_reason = "";
 	return 1;
 }
 
