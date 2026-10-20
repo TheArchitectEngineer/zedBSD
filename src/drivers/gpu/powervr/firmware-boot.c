@@ -184,6 +184,16 @@ static void watch_thread(void *argument);
  * 0xFFFFFF003F3FFFFF, each field OFF 0, ON 1, AUTO 2; RGX_CR_CLK_STATUS
  * 0x0008).
  */
+/* The dust power event register and the event bits its completion sets (sources: see start_processor). */
+#define DUST_POWER_EVENT		0x0038U
+#define DUST_POWER_EVENT_UP_ALL		0xff000703U
+#define DUST_EVENT_STATUS		0x0130U
+#define DUST_EVENT_CLEAR		0x0138U
+#define DUST_EVENT_POWER_COMPLETE	0x00000400U
+#define DUST_EVENT_POWER_ABORT		0x00000800U
+/* 1 asks the host to power the dusts up itself (the 2026-10-20 try on the board answered POWER_ABORT); 0 leaves it to the firmware. */
+#define DUST_POWER_BY_HOST		0
+
 #define REGISTER_CHECK_CLOCK_CONTROL	0x0000U
 #define REGISTER_CHECK_CLOCK_STATUS	0x0008U
 #define REGISTER_CHECK_ALL_ON		(0x5555555555555555ULL & 0xFFFFFF003F3FFFFFULL)
@@ -815,6 +825,7 @@ fill_records(
 	struct powervr_firmware *firmware;
 	uint64_t clusters;
 	uint64_t slc_kilobytes;
+	uint32_t flags;
 	uint32_t word;
 	int error;
 
@@ -827,9 +838,25 @@ fill_records(
 		powervr_object_put32(&firmware->fault_page, word * 4U, POWERVR_FAULT_PAGE_FILL);
 
 	/* Overlapping data masters needs a big enough system level cache. */
+	flags = 0;
 	error = powervr_fw_image_feature_value(&firmware->image, POWERVR_FEATURE_SLC_KILOBYTES, &slc_kilobytes);
 	if (error != 0 || slc_kilobytes < POWERVR_DM_OVERLAP_MIN_KB)
-		powervr_object_put32(&firmware->system_data, POWERVR_SYSTEM_DATA_FLAGS, POWERVR_FLAG_NO_DM_OVERLAP);
+		flags |= POWERVR_FLAG_NO_DM_OVERLAP;
+
+	/*
+	 * The firmware manages the power of the Rascal and the dusts.  On the
+	 * JH7110 their island is off after reset and no one else turns it on,
+	 * so without this every data master kick locks up without a fault.
+	 *
+	 * Values referenced:
+	 * Linux v7.3 drivers/gpu/drm/imagination/pvr_rogue_fwif.h
+	 * (ROGUE_FWIF_INICFG_POW_RASCALDUST, bit 4); Dominique Belhachemi,
+	 * "drm/imagination: re-program PDS/USC exec bases after POW_RASCALDUST
+	 * wipeout" (github.com/domibel/linux commit b53c4500f133, the flag
+	 * set for the VisionFive 2).
+	 */
+	flags |= POWERVR_FLAG_POW_RASCALDUST;
+	powervr_object_put32(&firmware->system_data, POWERVR_SYSTEM_DATA_FLAGS, flags);
 
 	/*
 	 * The runtime configuration: the core clock's real rate, every
@@ -997,6 +1024,7 @@ start_processor(
 	int second_reset;
 	int pbe2;
 	int secure;
+	int error;
 
 	/* Chooses the reset masks the core's features call for. */
 	image = &core->firmware.image;
@@ -1018,6 +1046,30 @@ start_processor(
 	if (second_reset)
 		powervr_write64(core, POWERVR_SOFT_RESET2, POWERVR_SOFT_RESET2_ALL);
 	fence_reset(core, second_reset);
+
+	/*
+	 * Powers the Rascal and the dusts up by hand before they leave reset.
+	 * On the JH7110 their power island stays off after reset and nothing
+	 * else turns it on (the firmware is not asked to manage dust power),
+	 * so every data master kick locks up without a fault.
+	 *
+	 * Values referenced:
+	 * Icenowy Zheng, "hack to power up rascal+dust" (2024-07-28,
+	 * github.com/Icenowy/linux commit 09db317c9c22, pvr_fw_start):
+	 * register 0x0038 written 0xff000703, then EVENT_STATUS polled for
+	 * POWER_COMPLETE, then 0x0038 written 0 and the event cleared.
+	 * StarFive linux (vf2-6.12.y) rgx_cr_defs_km.h: RGX_CR_EVENT_STATUS
+	 * 0x0130, RGX_CR_EVENT_CLEAR 0x0138, POWER_COMPLETE_EN 0x00000400.
+	 */
+	if (DUST_POWER_BY_HOST) {
+		kern_logf("powervr: firmware: start: dust power up\n");
+		powervr_write32(core, DUST_POWER_EVENT, DUST_POWER_EVENT_UP_ALL);
+		error = wait_register(core, DUST_EVENT_STATUS, DUST_EVENT_POWER_COMPLETE, DUST_EVENT_POWER_COMPLETE, 0);
+		kern_logf("powervr: firmware: start: dust power up %s (event status 0x%x)\n",
+			  error == 0 ? "complete" : "timed out", (unsigned)powervr_read32(core, DUST_EVENT_STATUS));
+		powervr_write32(core, DUST_POWER_EVENT, 0);
+		powervr_write32(core, DUST_EVENT_CLEAR, DUST_EVENT_POWER_COMPLETE | DUST_EVENT_POWER_ABORT);
+	}
 
 	/* Takes the Rascal and the dusts out of reset. */
 	powervr_write64(core, POWERVR_SOFT_RESET, everything ^ POWERVR_SOFT_RESET_RASCAL_DUSTS);

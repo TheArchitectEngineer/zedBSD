@@ -49,6 +49,12 @@
 #include "drivers/gpu/powervr/render-kick-layout.h"
 #include "drivers/gpu/powervr/render-command.h"
 
+/* The program heaps' base registers (sources: see send_command). */
+#define EXEC_BASE_PDS		0x0610U
+#define EXEC_BASE_USC0		0x4008U
+#define EXEC_BASE_USC1		0x4010U
+#define EXEC_BASE_USC2		0x4028U
+
 /*
  * How long the service sleeps with nothing pending, how many tries a
  * busy cleanup gets and how far apart, how long a command may wait in
@@ -1746,6 +1752,28 @@ send_command(
 
 	/* Orders the commands in the context's buffer before the kick that names them. */
 	kern_io_barrier();
+
+	/*
+	 * Writes the program heaps' bases again before every kick: with the
+	 * firmware managing the dusts' power, a power cycle of the island
+	 * loses them, and the data masters then fetch programs from nowhere.
+	 *
+	 * Values referenced:
+	 * Dominique Belhachemi, "drm/imagination: re-program PDS/USC exec
+	 * bases after POW_RASCALDUST wipeout" (github.com/domibel/linux
+	 * commit b53c4500f133): PDS_EXEC_BASE 0x0610, USC_EXEC_BASE0 0x4008
+	 * (transfer), USC_EXEC_BASE1 0x4010 (graphics), USC_EXEC_BASE2
+	 * 0x4028 (compute), each the heap base as two 32-bit halves, low
+	 * first, written after the job is in its buffer and before the kick.
+	 */
+	powervr_write32(render->core, EXEC_BASE_PDS, (uint32_t)POWERVR_PDS_HEAP_BASE);
+	powervr_write32(render->core, EXEC_BASE_PDS + 4U, (uint32_t)(POWERVR_PDS_HEAP_BASE >> 32));
+	powervr_write32(render->core, EXEC_BASE_USC0, (uint32_t)POWERVR_USC_HEAP_BASE);
+	powervr_write32(render->core, EXEC_BASE_USC0 + 4U, (uint32_t)(POWERVR_USC_HEAP_BASE >> 32));
+	powervr_write32(render->core, EXEC_BASE_USC1, (uint32_t)POWERVR_USC_HEAP_BASE);
+	powervr_write32(render->core, EXEC_BASE_USC1 + 4U, (uint32_t)(POWERVR_USC_HEAP_BASE >> 32));
+	powervr_write32(render->core, EXEC_BASE_USC2, (uint32_t)POWERVR_USC_HEAP_BASE);
+	powervr_write32(render->core, EXEC_BASE_USC2 + 4U, (uint32_t)(POWERVR_USC_HEAP_BASE >> 32));
 
 	/* Sends it, waiting while the kernel's buffer is full. */
 	error = send_waiting(render->core, command, &slot);
