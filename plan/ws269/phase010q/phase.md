@@ -853,3 +853,27 @@ source の変更は無し。
 - 省かれた 796 word（kick と HWR の間）に PM・TE の event があるかを見るため、dump の全部出しの上限を 512 から 2048 word に上げた（今回の 1180 word は全部出る）。
 
 確かめ: 試験の image の config の vmunix は rc 0、warning 0。実機は未。
+
+## q1443-i01（P1、2026-10-20）: kick の後の trace の全部（vf2-dmesg40）と次の切り分け
+
+Kick TA の後の全部の event（mainline の `pvr_rogue_fwif_sf.h`）:
+- POW の確認、MTS の Bg・Irq の task の繰り返し、fragment の cCCB の Woff の更新だけ。PM・TE・RTD・SPM の event は 1 つも無い。
+- HWR が 4 回「DM2 has taken N ticks」と調べ、USC slot 0、signature の register はどれも Old・Curr とも 0。
+  - 0x5000 USC_UVS0_CHECKSUM
+  - 0x5020 PPP_SIGNATURE
+  - 0x5028 TE_SIGNATURE
+  - 0x5030 VCE_CHECKSUM
+  - 0x5060 PDS_DOUTM_STM_SIGNATURE
+  - 0x4600（DDK に名前が無い）
+  - 0x40E0 だけは 0x10000 で変わらない（DDK に名前が無い）
+- 最後に「DM2 timed out」。
+
+読み: FW は TA の割り込みを待つだけ。VDM・PPP・TE・VCE・USC は何も処理していない（どの signature も 0）。VDM が stream の最初の word を処理する前に止まっている見込み。
+
+(a) について: mainline の sf の表で、TA の kick の時に FW が register の値（VDM_CTRL_STREAM_BASE・TE・PM）を出す event は見当たらない。値を出すのは HWR の signature の検査（上の行）だけ。
+
+直し（診断、`render-check.c`）:
+- (b) 空の kick の 100 ms 後に、geometry の register を続けて読んで出す。TIMER（最初と最後）、EVENT_STATUS、VDM_CONTEXT_STORE_STATUS（0x430）、0x40E0、0x4600、PPP・TE の signature、VCE の checksum、BIF の FAULT_BANK0 の MMU・REQ の status。
+- (c) 最初の render の stream を、三角形の PPP state の block（2 word）の後に end を置く形にした（`POWERVR_RENDER_CHECK_STATE_FIRST`、既定 1、0 で前の end だけ）。行は `render check: state-and-end stream: …`。
+
+確かめ: 試験の image の config の vmunix は rc 0、warning 0。実機は未。

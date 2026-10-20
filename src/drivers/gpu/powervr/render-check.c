@@ -31,10 +31,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <kern/clock.h>
 #include <kern/kcrt.h>
 #include <kern/klog.h>
 #include <kern/kmem.h>
 #include <kern/lock.h>
+#include <kern/sched.h>
 #include <uapi/errno.h>
 
 #include "drivers/gpu/powervr/render-private.h"
@@ -73,6 +75,18 @@
 #define GENERAL_VERTICES	0x200U
 #define GENERAL_ATTACHMENT	0x1000U
 #define GENERAL_BYTES		(GENERAL_ATTACHMENT + CHECK_EDGE * CHECK_ROW_BYTES)
+
+/* How long after the empty kick the geometry registers are read, and how many. */
+#define CHECK_PROBE_MS		100U
+#define CHECK_PROBE_REGISTERS	11U
+
+/*
+ * Whether the render check's first render names the triangle's
+ * primitive state before its end (1), or is the end alone (0).
+ */
+#ifndef POWERVR_RENDER_CHECK_STATE_FIRST
+#define POWERVR_RENDER_CHECK_STATE_FIRST	1
+#endif
 
 /*
  * The data sequencer buffer, each program on 16 bytes: the end-of-tile
@@ -137,6 +151,7 @@ static int check_empty(struct render_check *check);
 static unsigned get32(const uint8_t *bytes, unsigned offset);
 static void dump_object(const char *name, const struct powervr_object *object, uint32_t bytes);
 static void dump_context(struct render_check *check);
+static void probe_geometry(struct powervr_core *core);
 static int check_kick(struct render_check *check);
 static int check_read(struct render_check *check);
 static void check_release(struct render_check *check);
@@ -489,11 +504,19 @@ check_empty(
 	unsigned index;
 	int error;
 
-	/* The stream's end in place of the triangle's stream. */
+	/*
+	 * The stream's end in place of the triangle's stream, or, with
+	 * POWERVR_RENDER_CHECK_STATE_FIRST, the triangle's primitive state
+	 * block (its first two words) and then the end, as a stream that
+	 * names a state before it ends.
+	 */
 	for (index = 0; index < POWERVR_RENDER_VDM_WORDS; index++)
 		saved[index] = get_word(check->general->buffer, GENERAL_STREAM + index * 4U);
 	end = POWERVR_VDM_TERMINATE;
-	put_words(check->general->buffer, GENERAL_STREAM, &end, 1);
+	if (POWERVR_RENDER_CHECK_STATE_FIRST)
+		put_words(check->general->buffer, GENERAL_STREAM + 8U, &end, 1);
+	else
+		put_words(check->general->buffer, GENERAL_STREAM, &end, 1);
 
 	/* The kick and the wait, as the triangle's. */
 	powervr_firmware_trace_mark(check->render->core);
@@ -503,9 +526,16 @@ check_empty(
 
 	mutex_unlock(&check->render->core->lock);
 
+	/* The core's geometry registers a little after the kick. */
+	if (error == 0) {
+		sched_sleep(sched_ticks() + (CHECK_PROBE_MS * KERN_CLOCK_HZ + 999U) / 1000U);
+		probe_geometry(check->render->core);
+	}
+
 	if (error == 0)
 		error = powervr_render_finish(check->render, check->session, &check->marks, CHECK_WAIT_MS);
-	kern_logf("powervr: render check: empty stream: %s (%d), context %s\n", error == 0 ? "finished" : "FAILED", error,
+	kern_logf("powervr: render check: %s stream: %s (%d), context %s\n", POWERVR_RENDER_CHECK_STATE_FIRST ? "state-and-end" : "empty",
+		  error == 0 ? "finished" : "FAILED", error,
 		  check->session->lost ? "reset" : "kept");
 
 	/* The triangle's stream back. */
@@ -1194,4 +1224,34 @@ dump_context(
 	/* The geometry command buffer's control and its first 256 bytes. */
 	dump_object("geometry ccb control", &check->context->geometry.control, 32U);
 	dump_object("geometry ccb", &check->context->geometry.buffer, 256U);
+}
+
+/*
+ * Prints the core's geometry registers, read together then printed.
+ *
+ * Values referenced:
+ * StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
+ * drivers/gpu/drm/img/img-rogue/hwdefs/rogue/km/rgx_cr_defs_km.h
+ * (RGX_CR_TIMER 0x0160, RGX_CR_EVENT_STATUS 0x0130,
+ * RGX_CR_VDM_CONTEXT_STORE_STATUS 0x0430, RGX_CR_PPP_SIGNATURE 0x5020,
+ * RGX_CR_TE_SIGNATURE 0x5028, RGX_CR_VCE_CHECKSUM 0x5030,
+ * RGX_CR_BIF_FAULT_BANK0_MMU_STATUS 0x12B0, _REQ_STATUS 0x12B8); the
+ * firmware's own recovery checks read 0x40E0 and 0x4600 for the
+ * geometry master.
+ */
+static void
+probe_geometry(
+	struct powervr_core *core)
+{
+	static const uint32_t offsets[CHECK_PROBE_REGISTERS] = {
+		0x0160U, 0x0130U, 0x0430U, 0x40e0U, 0x4600U, 0x5020U, 0x5028U, 0x5030U, 0x12b0U, 0x12b8U, 0x0160U,
+	};
+	uint64_t values[CHECK_PROBE_REGISTERS];
+	unsigned index;
+
+	/* All first, then the lines. */
+	for (index = 0; index < CHECK_PROBE_REGISTERS; index++)
+		values[index] = powervr_read64(core, offsets[index]);
+	for (index = 0; index < CHECK_PROBE_REGISTERS; index++)
+		kern_logf("powervr: render check: register 0x%04x = 0x%016llx\n", (unsigned)offsets[index], (unsigned long long)values[index]);
 }
