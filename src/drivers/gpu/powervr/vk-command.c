@@ -115,6 +115,13 @@ powervr_vk_command_route(
 	case GPU_OP_CMD_COPY_IMAGE:
 	case GPU_OP_CMD_BLIT_IMAGE:
 	case GPU_OP_CMD_CLEAR_COLOR_IMAGE:
+	case GPU_OP_CMD_BIND_VERTEX_BUFFERS:
+	case GPU_OP_CMD_BIND_INDEX_BUFFER:
+	case GPU_OP_CMD_SET_VIEWPORT:
+	case GPU_OP_CMD_SET_SCISSOR:
+	case GPU_OP_CMD_PUSH_CONSTANTS:
+	case GPU_OP_CMD_DRAW:
+	case GPU_OP_CMD_DRAW_INDEXED:
 		error = record(session, opcode, reader);
 		break;
 	default:
@@ -560,6 +567,8 @@ record(
 		refused = 0;
 	} else if (opcode == GPU_OP_CMD_COPY_BUFFER_TO_IMAGE || opcode == GPU_OP_CMD_COPY_IMAGE_TO_BUFFER || opcode == GPU_OP_CMD_COPY_IMAGE || opcode == GPU_OP_CMD_BLIT_IMAGE || opcode == GPU_OP_CMD_CLEAR_COLOR_IMAGE) {
 		refused = powervr_vk_record_transfer(session, opcode, reader, &entry);
+	} else if (opcode != GPU_OP_CMD_PIPELINE_BARRIER) {
+		refused = powervr_vk_record_draw(session, opcode, reader, &entry);
 	} else {
 		refused = record_barrier(session, reader);
 	}
@@ -601,7 +610,7 @@ record(
 	return 0;
 }
 
-/* vkCmdBindPipeline: [bind point][pipeline]; a compute pipeline at the compute bind point. */
+/* vkCmdBindPipeline: [bind point][pipeline]; a compute or graphics pipeline at its own bind point. */
 static int
 record_pipeline(
 	struct powervr_vk_session *session,
@@ -610,6 +619,7 @@ record_pipeline(
 {
 	uint64_t pipeline;
 	uint32_t point;
+	bool graphics;
 	int error;
 
 	/* The bind point and the pipeline. */
@@ -618,8 +628,8 @@ record_pipeline(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* Only the compute bind point is run. */
-	if (point != VK_PIPELINE_BIND_POINT_COMPUTE)
+	/* The compute and the graphics bind points. */
+	if (point != VK_PIPELINE_BIND_POINT_COMPUTE && point != VK_PIPELINE_BIND_POINT_GRAPHICS)
 		return ENOTSUP;
 
 	/* The record holds a known pipeline. */
@@ -629,13 +639,20 @@ record_pipeline(
 	if (entry->object_count == 0)
 		return ENOENT;
 
+	/* A pipeline of the bind point's kind; a graphics bind is a record of its own. */
+	graphics = ((const struct powervr_vk_pipeline *)entry->objects[0]->payload)->graphics != NULL;
+	if (graphics != (point == VK_PIPELINE_BIND_POINT_GRAPHICS))
+		return EINVAL;
+	if (graphics)
+		entry->opcode = POWERVR_VK_RECORD_BIND_GRAPHICS;
+
 	/* Succeeded: the pipeline is recorded. */
 	return 0;
 }
 
 /*
  * vkCmdBindDescriptorSets: [bind point][layout][first set][count][count]
- * {set}[dynamic count][count]{offset}; compute sets, held, without
+ * {set}[dynamic count][count]{offset}; compute or graphics sets, held, without
  * dynamic offsets.
  */
 static int
@@ -663,8 +680,11 @@ record_sets(
 
 	/* Each set, held while the bind fits a pipeline layout. */
 	refused = 0;
-	if (point != VK_PIPELINE_BIND_POINT_COMPUTE)
+	if (point == VK_PIPELINE_BIND_POINT_GRAPHICS) {
+		entry->opcode = POWERVR_VK_RECORD_SETS_GRAPHICS;
+	} else if (point != VK_PIPELINE_BIND_POINT_COMPUTE) {
 		refused = ENOTSUP;
+	}
 	if (entry->first >= POWERVR_VK_SETS_MAX || count > POWERVR_VK_SETS_MAX - entry->first)
 		refused = ENOTSUP;
 	for (index = 0; index < count; index++) {

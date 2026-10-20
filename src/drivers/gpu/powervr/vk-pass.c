@@ -23,6 +23,7 @@
 #include <uapi/gpu-op.h>
 
 #include "drivers/gpu/powervr/render-pass.h"
+#include "drivers/gpu/powervr/vk-draw.h"
 #include "drivers/gpu/powervr/vk.h"
 
 #include "drivers/gpu/i915/render/vulkan-codec.inc"
@@ -413,12 +414,29 @@ powervr_vk_record_clear_attachments(
 	return 0;
 }
 
+/* The state the draws read, as the records set it. */
+struct draw_state {
+	const void *pipeline;
+	const void *sets[POWERVR_DRAW_SETS];
+	uint64_t vertex_addresses[POWERVR_DRAW_VERTEX_BUFFERS];
+	uint64_t index_address;
+	uint32_t index_bytes;
+	VkViewport viewport;
+	VkRect2D scissor;
+	uint8_t push[POWERVR_DRAW_PUSH_BYTES];
+};
+
+static int state_apply(struct draw_state *state, const struct powervr_vk_record *entry);
+static int draw_add(struct powervr_render_job *job, const struct draw_state *state, const struct powervr_vk_record *entry);
+
 /*
  * Turns a command buffer's render pass instances into render jobs, in
- * order: a begin starts one, a clear attachments applies to it, an end
+ * order: a begin starts one, a clear attachments applies to it, each
+ * draw is added to it with the state the records set before it, an end
  * closes it.  An instance with a partial area and a depth store is
- * dropped with its log line (design section 4.3).  Refuses more jobs
- * than room (E2BIG), records outside an instance (EINVAL) and a clear
+ * dropped with its log line (design section 4.3).  The jobs are built
+ * in place.  Refuses more jobs or draws than room (E2BIG), records
+ * outside an instance and draws without a pipeline (EINVAL), and what
  * the jobs do not take yet (ENOTSUP).
  */
 int
@@ -432,9 +450,9 @@ powervr_vk_render_jobs(
 	const struct powervr_vk_framebuffer *framebuffer;
 	const struct begin_data *begin;
 	const struct clear_data *clear;
-	struct powervr_render_job job;
+	struct powervr_render_job *job;
+	struct draw_state state;
 	uint32_t index;
-	bool open;
 	bool dropped;
 	int error;
 
@@ -444,17 +462,21 @@ powervr_vk_render_jobs(
 
 	/* Each record in order. */
 	*count = 0;
-	open = false;
+	job = NULL;
 	dropped = false;
+	kern_memset(&state, 0, sizeof(state));
 	for (index = 0; index < command->record_count; index++) {
 		entry = &command->records[index];
 		if (entry->opcode == GPU_OP_CMD_BEGIN_RENDER_PASS) {
-			/* A new instance. */
-			if (open)
+			/* A new instance, built in the next job. */
+			if (job != NULL)
 				return EINVAL;
+			if (*count == room)
+				return E2BIG;
+			job = &jobs[*count];
 			begin = entry->data;
 			framebuffer = entry->objects[1]->payload;
-			error = powervr_render_job_begin(entry->objects[0]->payload, &framebuffer->state, &begin->area, begin->clears, begin->clear_count, &job);
+			error = powervr_render_job_begin(entry->objects[0]->payload, &framebuffer->state, &begin->area, begin->clears, begin->clear_count, job);
 			dropped = false;
 			if (error == EPERM) {
 				kern_logf("powervr: render pass: partial render area with depth store not supported\n");
@@ -462,35 +484,146 @@ powervr_vk_render_jobs(
 			} else if (error != 0) {
 				return error;
 			}
-			open = true;
 		} else if (entry->opcode == GPU_OP_CMD_CLEAR_ATTACHMENTS) {
 			/* A clear inside the instance. */
-			if (!open)
+			if (job == NULL)
 				return EINVAL;
 			clear = entry->data;
 			if (!dropped) {
-				error = powervr_render_job_clear(&job, clear->attachments, clear->count, clear->rects, clear->rect_count);
+				error = powervr_render_job_clear(job, clear->attachments, clear->count, clear->rects, clear->rect_count);
+				if (error != 0)
+					return error;
+			}
+		} else if (entry->opcode == GPU_OP_CMD_DRAW || entry->opcode == GPU_OP_CMD_DRAW_INDEXED) {
+			/* A draw inside the instance. */
+			if (job == NULL)
+				return EINVAL;
+			if (!dropped) {
+				error = draw_add(job, &state, entry);
 				if (error != 0)
 					return error;
 			}
 		} else if (entry->opcode == GPU_OP_CMD_END_RENDER_PASS) {
 			/* The instance's end: its job, unless dropped. */
-			if (!open)
+			if (job == NULL)
 				return EINVAL;
-			open = false;
-			if (dropped)
-				continue;
-			if (*count == room)
-				return E2BIG;
-			jobs[(*count)++] = job;
+			job = NULL;
+			if (!dropped)
+				(*count)++;
+		} else {
+			/* State the draws read. */
+			error = state_apply(&state, entry);
+			if (error != 0)
+				return error;
 		}
 	}
 
 	/* An instance left open is a client error. */
-	if (open)
+	if (job != NULL)
 		return EINVAL;
 
 	/* Succeeded: the jobs. */
+	return 0;
+}
+
+/* Applies a state record to the draw state; other records leave it as it is. */
+static int
+state_apply(
+	struct draw_state *state,
+	const struct powervr_vk_record *entry)
+{
+	const struct powervr_vk_vertex_bind *vertex;
+	const struct powervr_vk_state_record *data;
+	const struct powervr_vk_buffer *buffer;
+	uint64_t address;
+	uint32_t index;
+	int error;
+
+	/* Each kind of state. */
+	if (entry->opcode == POWERVR_VK_RECORD_BIND_GRAPHICS) {
+		state->pipeline = ((const struct powervr_vk_pipeline *)entry->objects[0]->payload)->graphics;
+	} else if (entry->opcode == POWERVR_VK_RECORD_SETS_GRAPHICS) {
+		for (index = 0; index < entry->object_count; index++) {
+			if (entry->objects[index] != NULL && entry->first + index < POWERVR_DRAW_SETS)
+				state->sets[entry->first + index] = entry->objects[index]->payload;
+		}
+	} else if (entry->opcode == GPU_OP_CMD_BIND_VERTEX_BUFFERS) {
+		vertex = entry->data;
+		for (index = 0; index < vertex->count; index++) {
+			buffer = entry->objects[index]->payload;
+			error = powervr_vk_buffer_address(buffer, &address);
+			if (error != 0)
+				return EINVAL;
+			state->vertex_addresses[vertex->first + index] = address + vertex->offsets[index];
+		}
+	} else if (entry->opcode == GPU_OP_CMD_BIND_INDEX_BUFFER) {
+		buffer = entry->objects[0]->payload;
+		error = powervr_vk_buffer_address(buffer, &address);
+		if (error != 0)
+			return EINVAL;
+		state->index_address = address + ((uint64_t)entry->values[1] << 32 | entry->values[0]);
+		state->index_bytes = entry->values[2];
+	} else if (entry->opcode == GPU_OP_CMD_SET_VIEWPORT) {
+		data = entry->data;
+		__builtin_memcpy(&state->viewport, &data->viewport, sizeof(state->viewport));
+	} else if (entry->opcode == GPU_OP_CMD_SET_SCISSOR) {
+		data = entry->data;
+		state->scissor = data->scissor;
+	} else if (entry->opcode == GPU_OP_CMD_PUSH_CONSTANTS) {
+		data = entry->data;
+		kern_memcpy(&state->push[data->push_offset], data->push, data->push_bytes);
+	}
+
+	/* Succeeded: the state is up to date. */
+	return 0;
+}
+
+/* Adds a draw to a job with the state in force. */
+static int
+draw_add(
+	struct powervr_render_job *job,
+	const struct draw_state *state,
+	const struct powervr_vk_record *entry)
+{
+	struct powervr_render_draw *draw;
+
+	/* Refuses a draw without a pipeline and one past the job's room. */
+	if (state->pipeline == NULL)
+		return EINVAL;
+	if (job->draw_count == POWERVR_RENDER_DRAWS)
+		return E2BIG;
+
+	/* The draw and the state it reads. */
+	draw = &job->draws[job->draw_count];
+	kern_memset(draw, 0, sizeof(*draw));
+	draw->pipeline = state->pipeline;
+	kern_memcpy(draw->sets, state->sets, sizeof(draw->sets));
+	kern_memcpy(draw->vertex_addresses, state->vertex_addresses, sizeof(draw->vertex_addresses));
+	__builtin_memcpy(&draw->viewport, &state->viewport, sizeof(draw->viewport));
+	draw->scissor = state->scissor;
+	draw->push_bytes = POWERVR_DRAW_PUSH_BYTES;
+	kern_memcpy(draw->push, state->push, sizeof(draw->push));
+
+	/* The counts: a draw's first vertex, an indexed draw's index buffer at its first index and its vertex offset. */
+	draw->count = entry->values[0];
+	draw->instances = entry->values[1];
+	if (entry->opcode == GPU_OP_CMD_DRAW) {
+		draw->vertex_offset = entry->values[2];
+	} else {
+		if (state->index_bytes == 0)
+			return EINVAL;
+		draw->indexed = true;
+		draw->index_bytes = state->index_bytes;
+		draw->index_address = state->index_address + (uint64_t)entry->values[2] * state->index_bytes;
+		draw->vertex_offset = entry->first;
+	}
+
+	/* An empty draw is no draw. */
+	if (draw->count == 0 || draw->instances == 0)
+		return 0;
+
+	/* Succeeded: the draw is the job's. */
+	job->draw_count++;
 	return 0;
 }
 

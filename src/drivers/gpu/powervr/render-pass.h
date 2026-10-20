@@ -32,6 +32,12 @@
 /* The clear rectangles one vkCmdClearAttachments takes. */
 #define POWERVR_PASS_CLEAR_RECTS	8U
 
+/* The draws one render job keeps, the vertex buffers and descriptor sets of a draw, its push constant bytes. */
+#define POWERVR_RENDER_DRAWS		16U
+#define POWERVR_DRAW_VERTEX_BUFFERS	4U
+#define POWERVR_DRAW_SETS		4U
+#define POWERVR_DRAW_PUSH_BYTES		128U
+
 /* No attachment. */
 #define POWERVR_PASS_UNUSED		0xffffffffU
 
@@ -95,6 +101,28 @@ struct powervr_render_depth {
 };
 
 /*
+ * One draw of a render job: the graphics pipeline (the executor's
+ * powervr_vk_graphics) and descriptor sets bound, the vertex buffers'
+ * addresses by binding, the index buffer, the counts, the viewport and
+ * scissor in force, and the push constants.
+ */
+struct powervr_render_draw {
+	const void *pipeline;
+	const void *sets[POWERVR_DRAW_SETS];
+	uint64_t vertex_addresses[POWERVR_DRAW_VERTEX_BUFFERS];
+	bool indexed;
+	uint64_t index_address;
+	uint32_t index_bytes;
+	uint32_t count;
+	uint32_t instances;
+	uint32_t vertex_offset;
+	VkViewport viewport;
+	VkRect2D scissor;
+	uint32_t push_bytes;
+	uint8_t push[POWERVR_DRAW_PUSH_BYTES];
+};
+
+/*
  * One render job (a render pass instance): the render area, the colour
  * targets in the subpass's order, the depth target, and the draws
  * recorded in it.  The kick takes it as it is.
@@ -107,6 +135,7 @@ struct powervr_render_job {
 	struct powervr_render_target colors[POWERVR_PASS_COLORS];
 	struct powervr_render_depth depth;
 	uint32_t draw_count;
+	struct powervr_render_draw draws[POWERVR_RENDER_DRAWS];
 };
 
 /* One attachment of vkCmdClearAttachments: its aspects, its colour index and value. */
