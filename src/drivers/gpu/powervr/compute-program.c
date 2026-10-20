@@ -481,7 +481,17 @@ powervr_compute_temps_program(
  *   CONSTANT       the address computed as 1 * 4 + base, not from the
  *                  instance number, and the instance number written;
  *   MOVED          ADDRESS's address computed into another temporary
- *                  and moved into the address pair before the store.
+ *                  and moved into the address pair before the store;
+ *   LIKE_STORE     the one-step store program's way, which the board
+ *                  ran right: the offset by the multiply-add into r8,
+ *                  the base in r10 and r11, the pair r0 and r1 made by
+ *                  the 64-bit add from them, the address's low word
+ *                  written to it;
+ *   LIKE_STORE_NUMBER    the same writing the instance number instead;
+ *   LIKE_STORE_IN_PLACE  the same with the base in r0 and r1 and the
+ *                  64-bit add writing the pair it reads;
+ *   LIKE_STORE_EARLY     the same with r0 to r11 set before the
+ *                  multiply-add instead of after.
  *
  * Procedure referenced:
  * Mesa 26.2.5 src/imagination/pco/pco_trans_nir.c (trans_store_global
@@ -495,7 +505,7 @@ powervr_compute_probe_program(
 	size_t room,
 	size_t *length)
 {
-	struct powervr_usc_group groups[16];
+	struct powervr_usc_group groups[20];
 	uint32_t stride;
 	size_t count;
 	int error;
@@ -576,6 +586,45 @@ powervr_compute_probe_program(
 			error = immediate_group(&groups[count++], 4, kind == POWERVR_COMPUTE_PROBE_CONSTANT ? 4U : 0U);
 		if (error == 0)
 			error = multiply_add_group(&groups[count++], 0, 5, 4, 0);
+	} else if (error == 0 && kind >= POWERVR_COMPUTE_PROBE_LIKE_STORE) {
+		/* The one-step store program's set-up. */
+		count = 0;
+		if (kind == POWERVR_COMPUTE_PROBE_LIKE_STORE_EARLY) {
+			error = immediate_group(&groups[count++], 10, (uint32_t)base);
+			if (error == 0)
+				error = immediate_group(&groups[count++], 11, (uint32_t)(base >> 32));
+			if (error == 0)
+				error = immediate_group(&groups[count++], 0, 0);
+			if (error == 0)
+				error = immediate_group(&groups[count++], 1, 0);
+		}
+		if (error == 0)
+			error = special_group(&groups[count++], 5, USC_INSTANCE_NUMBER);
+		if (error == 0)
+			error = immediate_group(&groups[count++], 4, 4);
+		if (error == 0)
+			error = immediate_group(&groups[count++], 6, 0);
+		if (error == 0)
+			error = multiply_add_group(&groups[count++], 8, 5, 4, 6);
+		if (error == 0 && kind == POWERVR_COMPUTE_PROBE_LIKE_STORE_IN_PLACE) {
+			error = immediate_group(&groups[count++], 0, (uint32_t)base);
+			if (error == 0)
+				error = immediate_group(&groups[count++], 1, (uint32_t)(base >> 32));
+			if (error == 0)
+				error = add64_group(&groups[count++], 0, 0, 8);
+		} else if (error == 0) {
+			if (kind != POWERVR_COMPUTE_PROBE_LIKE_STORE_EARLY) {
+				error = immediate_group(&groups[count++], 10, (uint32_t)base);
+				if (error == 0)
+					error = immediate_group(&groups[count++], 11, (uint32_t)(base >> 32));
+			}
+			if (error == 0)
+				error = add64_group(&groups[count++], 0, 10, 8);
+		}
+		if (error == 0 && kind == POWERVR_COMPUTE_PROBE_LIKE_STORE)
+			error = pass_group(&groups[count++], 2, POWERVR_USC_BANK_TEMPORARY, 0);
+		else if (error == 0)
+			error = pass_group(&groups[count++], 2, POWERVR_USC_BANK_TEMPORARY, 5);
 	} else if (error == 0 && kind == POWERVR_COMPUTE_PROBE_MOVED) {
 		/* The address in r6, moved into r0, the number as data. */
 		error = special_group(&groups[count++], 5, USC_INSTANCE_NUMBER);
