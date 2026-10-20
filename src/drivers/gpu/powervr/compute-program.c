@@ -45,9 +45,6 @@
 #define KERNEL_INSTANCES_MAX	0x1fU
 #define KERNEL_SIZE_MAX		0x200U
 #define KERNEL_COMMON_UNIT_BYTES	64U
-#define GROUP_TEMP64_0		64U
-#define GROUP_WRITE_UPPER	1U
-#define GROUP_WRITE_ALL64	2U
 #define KERNEL_COMMON_MAX	0x1ffU
 #define KERNEL_GROUPS_MAX	0x10000U
 
@@ -360,25 +357,41 @@ powervr_compute_kick_program(
 }
 
 /*
- * Builds the data sequencer program of a kernel of many workgroups: the
- * coefficient update pass, run once per workgroup, writes the workgroup
- * id (x and y, then z) into the first three coefficient registers, and
- * the instance pass issues the shading cluster task.  The data words are
- * the task issue word, then the two write control words.
+ * Mesa's data sequencer program of a compute dispatch, as its driver
+ * wrote it for vkcompute on the BXE-4-32 (Mesa 26.2.5 on the host with
+ * the drm shim; plan/ws269/tests/p008/mesa-pco-vkcompute-stream-bxe-4-32.txt):
+ * data words 2 to 7 (the two writes of the workgroup id into the common
+ * store, the write of the local id into the unified store, the base
+ * workgroup's zeros), and the ten code words: the branch past the
+ * coefficient update pass, three adds of the base workgroup to the ids,
+ * the two writes, a halt; then the instance pass's write of the local id,
+ * the task issue ending the program, a halt.  The code names data words
+ * by their places, so it holds for any address and field.
+ */
+static const uint32_t group_data[POWERVR_COMPUTE_PDS_GROUP_DATA_WORDS] = {
+	0x00000000, 0x00000000, 0x10000002, 0x90004001, 0x80000000, 0x00000000, 0x00000000, 0x00000000,
+};
+
+static const uint32_t group_code[POWERVR_COMPUTE_PDS_GROUP_CODE_WORDS] = {
+	0xc2c00007, 0x90016000, 0x9001a041, 0x9001e0c3, 0xf0024001,
+	0xf0034101, 0xd3000000, 0xf0044001, 0xfc000002, 0xd3000000,
+};
+
+/*
+ * Builds the data sequencer program of a kernel of many workgroups,
+ * Mesa's for a compute dispatch (above): the task issue word (the
+ * program's address, its temporaries field) in data words 0 and 1, the
+ * rest as Mesa has them.  Its kernel takes POWERVR_COMPUTE_PDS_GROUP_DATA_WORDS
+ * data words, its code POWERVR_COMPUTE_PDS_GROUP_CODE bytes after them
+ * and POWERVR_COMPUTE_GROUP_USC_INPUTS unified store registers (the local
+ * id).  On the board the earlier program (the task issue alone in the
+ * instance pass) let the instances' registers overlap over several
+ * workgroups, and Mesa's ran 4096/4096 (vf2-dmesg87, 2026-10-21).
  *
  * Procedure referenced:
- * Mesa 25.0.7 src/imagination/vulkan/pds/pvr_pds.c
- * (pvr_pds_compute_shader: the branch on IF1 negated past the
- * coefficient update pass; in that pass the work-group ids in the
- * temporaries the compute data master fills, x and y as one 64-bit
- * write from temporaries 0 and 1, z as the upper half of the second
- * 64-bit temporary, into the common store, the last write marked, then a
- * halt; the instance pass's task issue ending the program, then a halt).
- * Values referenced:
- * the same file (PVR_PDS_CDM_WORK_GROUP_ID_X 0 and the z component in
- * temporary 3, PVR_PDS_TEMPS_BLOCK_BASE 128) and pvr_rogue_pds_defs.h
- * (PVR_ROGUE_PDSINST_REGS64_TEMP64_LOWER 64; the write control word's
- * fields as powervr_pds_write_control_word takes them).
+ * Mesa 26.2.5 src/imagination/vulkan/pds/pvr_pds.c (pvr_pds_compute_shader
+ * with flattened work groups, the work-group ids and the local id in
+ * use, a base workgroup) and pvr_pds_setup_doutu (the task word).
  */
 int
 powervr_compute_workgroup_program(
@@ -389,54 +402,29 @@ powervr_compute_workgroup_program(
 	unsigned *code_words)
 {
 	uint64_t task;
+	unsigned i;
 	int error;
 
 	/* Refuses a missing result or a field wider than six bits. */
 	if (data == NULL || code == NULL || code_words == NULL || temporaries_field > 0x3fU)
 		return EINVAL;
 
-	/* The task issue word, as the plain kick's. */
+	/* The task issue word, as the plain kick's, then Mesa's words. */
 	error = powervr_pds_task_word(usc_offset, 0, 0, 0, &task);
 	if (error != 0)
 		return error;
 	task |= (uint64_t)temporaries_field << 35;
+	for (i = 0; i < POWERVR_COMPUTE_PDS_GROUP_DATA_WORDS; i++)
+		data[i] = group_data[i];
 	data[0] = (uint32_t)task;
 	data[1] = (uint32_t)(task >> 32);
 
-	/* The writes: x and y to coefficients 0 and 1, then z to coefficient 2, the last. */
-	error = powervr_pds_write_control_word(0, 1, 0, 0, GROUP_WRITE_ALL64, &data[2]);
-	if (error != 0)
-		return error;
-	error = powervr_pds_write_control_word(1, 1, 0, 2, GROUP_WRITE_UPPER, &data[3]);
-	if (error != 0)
-		return error;
+	/* Mesa's code. */
+	for (i = 0; i < POWERVR_COMPUTE_PDS_GROUP_CODE_WORDS; i++)
+		code[i] = group_code[i];
 
-	/* The instance pass skips the coefficient update pass. */
-	error = powervr_pds_branch(PDS_IF1, 1, PDS_KEEP, 4, &code[0]);
-	if (error != 0)
-		return error;
-
-	/* The coefficient update pass: the two writes, then a halt. */
-	error = powervr_pds_output(0, 0, POWERVR_PDS_OUTPUT_WRITE, GROUP_TEMP64_0, 2, &code[1]);
-	if (error != 0)
-		return error;
-	error = powervr_pds_output(0, 0, POWERVR_PDS_OUTPUT_WRITE, GROUP_TEMP64_0 + 1U, 3, &code[2]);
-	if (error != 0)
-		return error;
-	error = powervr_pds_halt(0, &code[3]);
-	if (error != 0)
-		return error;
-
-	/* The instance pass: the task issue ending the program, then a halt. */
-	error = powervr_pds_output(0, 1, POWERVR_PDS_OUTPUT_SHADER_TASK, 0, 0, &code[4]);
-	if (error != 0)
-		return error;
-	error = powervr_pds_halt(0, &code[5]);
-	if (error != 0)
-		return error;
-
-	/* Succeeded: six code words. */
-	*code_words = 6;
+	/* Succeeded: ten code words. */
+	*code_words = POWERVR_COMPUTE_PDS_GROUP_CODE_WORDS;
 	return 0;
 }
 

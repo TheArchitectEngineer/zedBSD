@@ -35,8 +35,18 @@
 #define POWERVR_COMPUTE_INSTANCES	32U
 #define POWERVR_COMPUTE_KERNEL_WORDS	7U
 #define POWERVR_COMPUTE_PDS_DATA_WORDS	2U
-#define POWERVR_COMPUTE_PDS_CODE_MAX	6U
-#define POWERVR_COMPUTE_PDS_GROUP_DATA_WORDS	4U
+#define POWERVR_COMPUTE_PDS_CODE_MAX	10U
+
+/*
+ * The workgroup program's (powervr_compute_workgroup_program, Mesa's):
+ * its data words, its code words, where its code starts after the data
+ * (bytes), and the unified store registers its kernel declares (the
+ * local id the program writes there; KERNEL0 usc_unified_size 16 bytes).
+ */
+#define POWERVR_COMPUTE_PDS_GROUP_DATA_WORDS	8U
+#define POWERVR_COMPUTE_PDS_GROUP_CODE_WORDS	10U
+#define POWERVR_COMPUTE_PDS_GROUP_CODE		0x20U
+#define POWERVR_COMPUTE_GROUP_USC_INPUTS	4U
 
 /*
  * Whether a compute stream ends with a fence kernel before its end.  On

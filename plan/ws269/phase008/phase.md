@@ -1484,3 +1484,33 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
   - 16 temps だけで通る → 1 instance あたりの上限の問題。
   - どれも通らない → K0（shared の確保）か、firmware・core の設定の側。
 - 片付け（Q1 に依頼）: `build/p2q1494/`、scratchpad の `ours*`。mesa26 は改造済み（dumper と表示）。次の照合にも使える。
+
+## q1496-i01（P2、2026-10-21）: workgroup の PDS program を Mesa の bytes に
+
+- 板 87: Mesa の PDS をそのまま使うと、sd NONE（`mesa pds 1`）でも sd USC（`mesa pds 2`）でも、1 wg 32/32、4 wg 128/128、128 wg 4096/4096 になった（16 temps、field 4）。
+  - 補足: Q1 の要約では unified 0 だが、この変種は check の側で usc_inputs 4（unified 16 byte）を立てていた。
+  - 我々の PDS（mesa pds 0）は、どの設定でも fault または一部だけ。
+  - → **原因は PDS program の違い**。kernel 語の sd_type はどちらでも通る。
+- 変更:
+  1. **`powervr_compute_workgroup_program`（compute-program.c）が Mesa の bytes を出す**。
+     - data は 8 語。0・1 が task word（我々の address・field）、2〜7 は Mesa の値（workgroup id の DOUTW の制御 2 つ、local id の unified store への DOUTW の制御 0x80000000、base workgroup の 0 が 3 つ）。
+     - code は 10 語（Mesa の値。bra +7、base workgroup の add32 ×3、DOUTW ×2、halt、local id の DOUTW、DOUTU（cc 1）、halt）。
+     - code は data の語の位置だけを名指すので、address・field に依らない。
+     - 新しい定数（compute-program.h）: `POWERVR_COMPUTE_PDS_GROUP_DATA_WORDS` 8、`POWERVR_COMPUTE_PDS_GROUP_CODE_WORDS` 10、`POWERVR_COMPUTE_PDS_GROUP_CODE` 0x20（code は data の 32 byte 先）、`POWERVR_COMPUTE_GROUP_USC_INPUTS` 4（unified store 16 byte ＝ KERNEL0 の unified 1）。
+     - `POWERVR_COMPUTE_PDS_CODE_MAX` は 10。
+  2. KERNEL0 の data size（8 語 → 2）と unified size（4 register → 1）は、`powervr_compute_kernel_words` が `data_words`・`usc_inputs` から出す。helper の計算は変えず、呼ぶ側が新しい定数を渡す。
+  3. compute check の `write_workgroup_kick` は、新しい program・code の位置・usc_inputs 4 を使う。check の既定の掃引は、**compiled fill の既定の設定で 1・4・128 wg（各々新しい session）だけ**にした。
+     - field の probe、cf0 の probe は opt-in（`POWERVR_COMPUTE_LOCKUP_PROBES`）にした。
+     - mesa-pds の比較の変種は消した（既定の program が Mesa の bytes になったため）。
+  4. 差の切り分け（cc の bit だけ、local id の書きだけ）は今回は入れていない。
+- **P1 への依頼（vk-queue.c の build_kernel、1 kernel の executor）**。今の vk-queue.c は data を 4 語だけ書き、code を slot＋0x10 に置き、slot は 0x40 なので、新しい program（data 8 語＋code 10 語）と合わない。p009 の `the kernel's workgroup program` が FAIL になる（501/1）。直す点:
+  - `QUEUE_PDS_SLOT` を 0x80 にする（data 32 byte＋code 40 byte ＝ 0x48 が入るように）。`QUEUE_PDS_BYTES` が `POWERVR_EXECUTOR_PDS_BYTES`（0x4000）に収まるか確かめる: 0x80 ×（64＋1）＝ 0x2080 なので可。
+  - data は `POWERVR_COMPUTE_PDS_GROUP_DATA_WORDS`（8）語を全部書く。code は slot＋`POWERVR_COMPUTE_PDS_GROUP_CODE`（0x20）から。
+  - kernel の `code_offset` を slot＋`POWERVR_COMPUTE_PDS_GROUP_CODE` にし、`usc_inputs` を `POWERVR_COMPUTE_GROUP_USC_INPUTS` にする。
+  - p009 の vk-host-test の期待（0x40＋0x10 の code の位置）も同じに直す。
+- host:
+  - p008 は 94/0・77/0。
+  - p010-compiler は 455/0・20/0。
+  - **p009 は 501/1**（上の vk-queue の依頼。P1 の範囲）。
+  - p010 は全 14 本が 0 failed。
+- VF2 の vmunix（`build/p2q1496/vf2/vmunix`）: rc 0、warning 0。板は未実施（vkcompute は vk-queue の修正の後）。
