@@ -818,3 +818,10 @@ source の変更は無し。
 - (2) VDM sync の固定の program: Mesa 25.0.7 の `pvr_winsys_helper.c` `pvr_setup_static_vdm_sync` の USC は 8 byte の `44 A0 80 05 00 00 00 FF`。こちらの `fixed-area.c` の `sync_shader` を host で encode した byte（`build/q1436/sync`）は `44 A0 80 05 00 00 00 FF` で、1 byte ずつ一致。PDS は DOUTU の task の word（USC の offset、temps 0、sample rate INSTANCE 0）と、constant 0 からの task の出力・END の 1 word（0xf4000002）。compute の kick の program と同じ encoder の道で、Mesa の `pvr_pds_kick_usc` の形（data の 64 bit の task の word、code の DOUT・END）と一致。
 - (3) global free list の record の dump を足した（`powervr_session_global_list_dump`、render check の失敗・reset の時）。
 - 確かめ: 試験の image の config の vmunix は rc 0、warning 0。実機は未。
+
+## q1440-i01（P1、2026-10-20）: FW の trace の group を全部にする、reset の後の「ok」の行を止める
+
+- global free list の record（板）: stack_top 0xfff、max 0x1000、current 0x1000、ready 0、id 0。mainline の形と一致。
+- FW の trace の log type を 0x7fff にした。MAIN 0x2 から MISC 0x4000 までの全部の group（MTS・CLEANUP・CSW・BIF・PM・RTD・SPM・POW・HWR・HWP・RPM・DMA）で、DEBUG（0x80000000）は除く。空の stream の kick から reset までの PM の free list の扱い、RTD の HWRT の処理、TA の開始・終了の event を見る。
+- `ta: fail(reset lockup)` の後に `ta: ok`・`3d: ok` が出ていた理由: `powervr_render_finish`（`render-queue.c`）は timeline に達すると、free list の印だけを見て TA・3D の段を ok にしていた。FW が context を reset した render の timeline は、reset が信号を出したので達する。session が lost（reset の通知の後）の時は ok を出さず、EIO で返すようにした。render check の空の stream は、これで「FAILED (5)」と dump になる。
+- 確かめ: 試験の image の config の vmunix は rc 0、warning 0。p010 は 0 failed。実機は未。

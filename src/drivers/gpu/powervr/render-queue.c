@@ -761,6 +761,14 @@ powervr_render_finish(
 
 	mutex_unlock(&render->core->lock);
 
+	/*
+	 * A render whose context the firmware reset reaches its timelines
+	 * only because the reset signals them: its stages already said why,
+	 * and no stage line says it went well.
+	 */
+	if (session->lost)
+		return EIO;
+
 	/* The TA ran out of free list pages, or did not; the 3D finished. */
 	ran_out = powervr_free_list_ran_out(&marks->lists, &lists);
 	if (ran_out) {
