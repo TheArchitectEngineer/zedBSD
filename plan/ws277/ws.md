@@ -84,3 +84,8 @@ D1〜D11 は全部 (a)（推奨どおり）。原文は Master の decisions-log
   - unmask の後に `dc8200: vblank interrupt N unmasked` を出す。
   - report で、PLIC（0x0c000000）を読むだけの view から、source 95 の priority と pending、context 0〜9 の enable bit と threshold を出す（`plic_report`）。
   - 確認: VF2 の vmunix は rc 0、warning 0、ws277 の host 試験は 0 failures。
+- run 21: PLIC の経路は正しかった（context 2 で enable 1、threshold 0、priority 1）。開始時は DC も PLIC も pending 0。
+  次の診断と試み:
+  - report は DC の pending（0x10、読むと消える）を読まない。PLIC を先に読む。
+  - unmask の直後に一度だけ、enable の立っている context の claim/complete register に 95 を書く（完了されずに残った claim が、後の割り込みを止めている場合に外す）。
+  - 確認: VF2 の vmunix は rc 0、warning 0、ws277 の host 試験は 0 failures。

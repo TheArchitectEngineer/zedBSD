@@ -373,7 +373,7 @@ static void blank_interrupt(int irq, kern_irq_ack_t acknowledge, void *argument)
 static const struct powervr_dc_mode *choose_mode(void);
 static int own_screen(const struct powervr_dc_mode *mode, struct powervr_dc_screen *screen, uint32_t *format);
 static void draw_bars(volatile uint32_t *pixels, const struct powervr_dc_screen *screen);
-static void plic_report(int irq);
+static void plic_report(int irq, int complete);
 static void start_panel(const struct dc_adoption *adoption, const struct powervr_dc_mode *mode);
 
 /*
@@ -740,6 +740,7 @@ drv_powervr_dc_vblank_start(
 	 */
 	kern_irq_unmask(blanks->irq);
 	kern_logf("dc8200: vblank interrupt %d unmasked\n", blanks->irq);
+	plic_report(blanks->irq, 1);
 
 	/* Lets the HDMI panel raise it, leaving the other panel's bit as it was. */
 	enabled_panels = read_control(adoption, DC_INTERRUPT_ENABLE);
@@ -1008,18 +1009,19 @@ drv_powervr_dc_vblank_report(
 	 * all (enable and pending registers; the read clears pending), and
 	 * whether the panel scans (its position read twice, its config).
 	 */
-	kern_logf("dc8200: interrupt enable %x pending %x; panel config %x location %x then %x\n",
+	plic_report(board_blanks.irq, 0);
+	kern_logf("dc8200: interrupt enable %x (pending not read: the read clears it); panel config %x location %x then %x\n",
 		  read_control(&board_adoption, DC_INTERRUPT_ENABLE),
-		  read_control(&board_adoption, DC_INTERRUPT_PENDING),
 		  read_display(&board_adoption, DC_PANEL_CONFIG + DC_UNIT_STEP * DC_HDMI_PANEL),
 		  read_display(&board_adoption, DC_PANEL_LOCATION + DC_UNIT_STEP * DC_HDMI_PANEL),
 		  read_display(&board_adoption, DC_PANEL_LOCATION + DC_UNIT_STEP * DC_HDMI_PANEL));
-	plic_report(board_blanks.irq);
 }
 
 /*
  * q1529 diagnostics: the JH7110 PLIC's view of the controller's source,
- * read only: its priority, whether it is pending, and its enable bit and
+ * read only but for one completion at the start (complete: a claim of
+ * the source left uncompleted holds every later one back): its priority,
+ * whether it is pending, and its enable bit and
  * the threshold of each of the first ten contexts (the S-mode contexts of
  * harts 1 to 4 are 2, 4, 6 and 8 when hart 0 has only an M-mode one).
  *
@@ -1030,7 +1032,8 @@ drv_powervr_dc_vblank_report(
  */
 static void
 plic_report(
-	int irq)
+	int irq,
+	int complete)
 {
 	volatile uint8_t *plic;
 	void *mapped;
@@ -1055,6 +1058,10 @@ plic_report(
 		enable = (kern_mmio_read32(plic + 0x2000U + context * 0x80U + (source / 32U) * 4U) >> (source % 32U)) & 1U;
 		threshold = kern_mmio_read32(plic + 0x200000U + context * 0x1000U);
 		kern_logf("dc8200: plic context %u enable %u threshold %u\n", context, enable, threshold);
+
+		/* At the start, a claim of the source left uncompleted in an enabled context is completed once. */
+		if (complete && enable)
+			kern_mmio_write32(plic + 0x200004U + context * 0x1000U, source);
 	}
 }
 
