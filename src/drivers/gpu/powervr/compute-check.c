@@ -77,7 +77,16 @@
 
 /* The shading cluster buffer: one 32 KiB room per program. */
 #define USC_ROOM		0x8000U
-#define USC_PROGRAMS		(CHECK_ROUNDS + 1U)
+#define USC_PROGRAMS		(CHECK_ROUNDS + 2U)
+
+/*
+ * The probes' room, after the temporaries program's: each probe program
+ * and the two short store programs 4 KiB apart in it.
+ */
+#define USC_PROBE_ROOM		((CHECK_ROUNDS + 1U) * USC_ROOM)
+#define USC_PROBE_SPACING	0x1000U
+#define USC_STEPS_ONE		(USC_PROBE_ROOM + POWERVR_COMPUTE_PROBES * USC_PROBE_SPACING)
+#define USC_STEPS_FOUR		(USC_STEPS_ONE + USC_PROBE_SPACING)
 #define USC_BYTES		(USC_ROOM * USC_PROGRAMS)
 
 /*
@@ -91,6 +100,21 @@
 /* The probe kicks' streams, after the fence program's slot. */
 #define KICK_END_ONLY		(KICK_COUNT + 1U)
 #define KICK_FENCE_ONLY		(KICK_COUNT + 2U)
+
+/* The probe kicks of the integer path, and the two short store kicks, after them. */
+#define KICK_PROBE_FIRST	(KICK_COUNT + 3U)
+#define KICK_STEPS_ONE		(KICK_PROBE_FIRST + POWERVR_COMPUTE_PROBES)
+#define KICK_STEPS_FOUR		(KICK_STEPS_ONE + 1U)
+
+/*
+ * Where in the run the probes write: each probe's 32 words 256 bytes
+ * apart after the temporaries program's, and the two short store
+ * programs' windows.
+ */
+#define PROBE_OFFSET		(TEMPS_OFFSET + 0x1000U)
+#define PROBE_SPACING		0x100U
+#define STEPS_ONE_OFFSET	0x180000U
+#define STEPS_FOUR_OFFSET	0x190000U
 
 /* How long after a probe kick the core's registers are read, and how many. */
 #define PROBE_STATE_MS		100U
@@ -158,7 +182,10 @@ static void teardown(struct check_state *state);
 static int take_buffer(struct check_state *state, uint64_t bytes, uint64_t address, struct powervr_buffer **result);
 static int take_program(struct check_state *state, uint64_t bytes, enum powervr_program_heap heap, struct powervr_buffer **result, uint32_t *offset);
 static int write_programs(struct check_state *state);
-static int write_kick(struct check_state *state, unsigned kick, unsigned usc_program, unsigned temporaries, unsigned field);
+static int write_kick(struct check_state *state, unsigned kick, uint32_t usc_place, unsigned temporaries, unsigned field);
+static int write_probes(struct check_state *state, uint8_t *code);
+static void run_probes(struct check_state *state);
+static int run_store_window(struct check_state *state, unsigned kick_index, uint32_t offset, uint32_t words, unsigned *written);
 static int write_probe_streams(struct check_state *state);
 static int probe_kick(struct check_state *state, unsigned kick_index, const char *what);
 static void probe_report(struct check_state *state, unsigned kick_index);
@@ -237,6 +264,9 @@ powervr_compute_check(
 		kern_logf("powervr: compute check: stopped, its memory left to the core\n");
 		return;
 	}
+
+	/* The probes of the integer path and the short stores. */
+	run_probes(&state);
 
 	/* Unmaps and returns everything. */
 	teardown(&state);
@@ -468,6 +498,10 @@ write_programs(
 			put_bytes(state->usc, CHECK_ROUNDS * USC_ROOM, code, length);
 	}
 
+	/* The probe programs and their kicks, after the temporaries program. */
+	if (error == 0)
+		error = write_probes(state, code);
+
 	kern_free(code);
 	if (error != 0)
 		return error;
@@ -497,7 +531,7 @@ write_programs(
 		return error;
 
 	for (round = 0; round < CHECK_ROUNDS; round++) {
-		error = write_kick(state, round, round, POWERVR_COMPUTE_STORE_TEMPORARIES, field_two);
+		error = write_kick(state, round, round * USC_ROOM, POWERVR_COMPUTE_STORE_TEMPORARIES, field_two);
 		if (error != 0)
 			return error;
 	}
@@ -511,11 +545,11 @@ write_programs(
 	if (error != 0)
 		return error;
 
-	error = write_kick(state, KICK_TEMPS_FOUR, CHECK_ROUNDS, POWERVR_COMPUTE_TEMPS_TEMPORARIES, field_four);
+	error = write_kick(state, KICK_TEMPS_FOUR, CHECK_ROUNDS * USC_ROOM, POWERVR_COMPUTE_TEMPS_TEMPORARIES, field_four);
 	if (error != 0)
 		return error;
 
-	error = write_kick(state, KICK_TEMPS_TWO, CHECK_ROUNDS, POWERVR_COMPUTE_TEMPS_TEMPORARIES, field_two);
+	error = write_kick(state, KICK_TEMPS_TWO, CHECK_ROUNDS * USC_ROOM, POWERVR_COMPUTE_TEMPS_TEMPORARIES, field_two);
 	if (error != 0)
 		return error;
 
@@ -531,7 +565,7 @@ static int
 write_kick(
 	struct check_state *state,
 	unsigned kick_index,
-	unsigned usc_program,
+	uint32_t usc_place,
 	unsigned temporaries,
 	unsigned field)
 {
@@ -546,7 +580,7 @@ write_kick(
 	int error;
 
 	/* The program issuing the shading cluster program, in the kick's slot. */
-	error = powervr_compute_kick_program(usc_offset + (uint64_t)usc_program * USC_ROOM, field, data, code, &count);
+	error = powervr_compute_kick_program(usc_offset + (uint64_t)usc_place, field, data, code, &count);
 	if (error != 0)
 		return error;
 
@@ -598,6 +632,176 @@ write_kick(
 	put_word(state->streams, stream, powervr_compute_terminate_word());
 
 	/* Succeeded: the kick's program and stream are written. */
+	return 0;
+}
+
+/*
+ * Writes the probe programs and the two short store programs into the
+ * probes' room, with a kick each; the field is counted in twos, as the
+ * store kicks' is.
+ */
+static int
+write_probes(
+	struct check_state *state,
+	uint8_t *code)
+{
+	size_t length;
+	unsigned field;
+	unsigned kind;
+	int error;
+
+	/* The field of the probes' temporaries. */
+	error = powervr_compute_temporaries_field(POWERVR_COMPUTE_PROBE_TEMPORARIES, 2, &field);
+	if (error != 0)
+		return error;
+
+	/* Each probe: its program in its place, and its kick. */
+	for (kind = 0; kind < POWERVR_COMPUTE_PROBES; kind++) {
+		error = powervr_compute_probe_program(kind, run_address + PROBE_OFFSET + kind * PROBE_SPACING, code, USC_PROBE_SPACING, &length);
+		if (error != 0)
+			return error;
+		put_bytes(state->usc, USC_PROBE_ROOM + kind * USC_PROBE_SPACING, code, length);
+		error = write_kick(state, KICK_PROBE_FIRST + kind, USC_PROBE_ROOM + kind * USC_PROBE_SPACING, POWERVR_COMPUTE_PROBE_TEMPORARIES, field);
+		if (error != 0)
+			return error;
+	}
+
+	/* The store program of one step and of four, each over its own window. */
+	error = powervr_compute_temporaries_field(POWERVR_COMPUTE_STORE_TEMPORARIES, 2, &field);
+	if (error != 0)
+		return error;
+
+	error = powervr_compute_store_program(run_address + STEPS_ONE_OFFSET, 1, code, USC_PROBE_SPACING, &length);
+	if (error != 0)
+		return error;
+
+	put_bytes(state->usc, USC_STEPS_ONE, code, length);
+	error = write_kick(state, KICK_STEPS_ONE, USC_STEPS_ONE, POWERVR_COMPUTE_STORE_TEMPORARIES, field);
+	if (error != 0)
+		return error;
+
+	error = powervr_compute_store_program(run_address + STEPS_FOUR_OFFSET, 4, code, USC_PROBE_SPACING, &length);
+	if (error != 0)
+		return error;
+
+	put_bytes(state->usc, USC_STEPS_FOUR, code, length);
+	error = write_kick(state, KICK_STEPS_FOUR, USC_STEPS_FOUR, POWERVR_COMPUTE_STORE_TEMPORARIES, field);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the probes are in memory. */
+	return 0;
+}
+
+/*
+ * Runs the probes and reports them on two lines: what the multiply-add
+ * and the instance number gave (the last writer's word), which of the 32
+ * words the instances' own addresses reached and the first values there,
+ * and how many words the store programs of one and of four steps wrote.
+ */
+static void
+run_probes(
+	struct check_state *state)
+{
+	volatile uint32_t *words;
+	uint32_t values[POWERVR_COMPUTE_PROBES];
+	uint32_t mask;
+	unsigned one;
+	unsigned four;
+	unsigned kind;
+	unsigned word;
+	int errors[POWERVR_COMPUTE_PROBES + 2U];
+	int error;
+
+	/* Each probe over words no instance writes. */
+	for (kind = 0; kind < POWERVR_COMPUTE_PROBES; kind++) {
+		words = state->alias + (PROBE_OFFSET + kind * PROBE_SPACING) / 4U;
+		for (word = 0; word < POWERVR_COMPUTE_INSTANCES; word++)
+			words[word] = 0xffffffffU;
+		errors[kind] = kick(state, KICK_PROBE_FIRST + kind);
+		values[kind] = words[0];
+		if (errors[kind] == ETIMEDOUT) {
+			kern_logf("powervr: compute probe %u: timed out, its memory left to the core\n", kind);
+			return;
+		}
+	}
+
+	/* The address probe's words: those holding their own number. */
+	words = state->alias + (PROBE_OFFSET + POWERVR_COMPUTE_PROBE_ADDRESS * PROBE_SPACING) / 4U;
+	mask = 0;
+	for (word = 0; word < POWERVR_COMPUTE_INSTANCES; word++) {
+		if (words[word] == word)
+			mask |= 1U << word;
+	}
+	kern_logf("powervr: compute probes: madd %u (want 22, %d), instance last %u (%d), instance*4 last %u (%d), own words %08x [1]=%08x [2]=%08x [31]=%08x (%d)\n",
+		  values[POWERVR_COMPUTE_PROBE_MADD],
+		  errors[POWERVR_COMPUTE_PROBE_MADD],
+		  values[POWERVR_COMPUTE_PROBE_INSTANCE],
+		  errors[POWERVR_COMPUTE_PROBE_INSTANCE],
+		  values[POWERVR_COMPUTE_PROBE_INSTANCE_MADD],
+		  errors[POWERVR_COMPUTE_PROBE_INSTANCE_MADD],
+		  mask,
+		  words[1],
+		  words[2],
+		  words[31],
+		  errors[POWERVR_COMPUTE_PROBE_ADDRESS]);
+
+	/* The short stores: one step (32 words) and four (128). */
+	one = 0;
+	four = 0;
+	error = run_store_window(state, KICK_STEPS_ONE, STEPS_ONE_OFFSET, POWERVR_COMPUTE_INSTANCES, &one);
+	errors[POWERVR_COMPUTE_PROBES] = error;
+	if (error != ETIMEDOUT) {
+		error = run_store_window(state, KICK_STEPS_FOUR, STEPS_FOUR_OFFSET, POWERVR_COMPUTE_INSTANCES * 4U, &four);
+		errors[POWERVR_COMPUTE_PROBES + 1U] = error;
+	} else {
+		errors[POWERVR_COMPUTE_PROBES + 1U] = 0;
+	}
+	kern_logf("powervr: compute probes: store of 1 step %u/32 (%d), of 4 steps %u/128 (%d)\n",
+		  one,
+		  errors[POWERVR_COMPUTE_PROBES],
+		  four,
+		  errors[POWERVR_COMPUTE_PROBES + 1U]);
+}
+
+/*
+ * Runs a store kick over a window of words filled with other values and
+ * counts, through the alias, the words that hold their own address.
+ */
+static int
+run_store_window(
+	struct check_state *state,
+	unsigned kick_index,
+	uint32_t offset,
+	uint32_t words,
+	unsigned *written)
+{
+	volatile uint32_t *window;
+	uint32_t address;
+	uint32_t word;
+	int error;
+
+	/* Every word flipped from its address. */
+	window = state->alias + offset / 4U;
+	for (word = 0; word < words; word++) {
+		address = (uint32_t)(run_address + offset + word * 4U);
+		window[word] = ~address;
+	}
+
+	/* The kick. */
+	*written = 0;
+	error = kick(state, kick_index);
+	if (error != 0)
+		return error;
+
+	/* The words that hold their own address. */
+	for (word = 0; word < words; word++) {
+		address = (uint32_t)(run_address + offset + word * 4U);
+		if (window[word] == address)
+			(*written)++;
+	}
+
+	/* Succeeded: the count is the caller's to judge. */
 	return 0;
 }
 

@@ -80,6 +80,22 @@ int powervr_compute_temporaries_field(unsigned temporaries, unsigned unit, unsig
 int powervr_compute_kick_program(uint64_t usc_offset, unsigned temporaries_field, uint32_t data[POWERVR_COMPUTE_PDS_DATA_WORDS], uint32_t code[POWERVR_COMPUTE_PDS_CODE_MAX], unsigned *code_words);
 int powervr_compute_fence_program(uint32_t data[POWERVR_COMPUTE_PDS_DATA_WORDS], uint32_t code[POWERVR_COMPUTE_PDS_CODE_MAX], unsigned *code_words);
 int powervr_compute_store_program(uint64_t base, unsigned steps, uint8_t *output, size_t room, size_t *length);
+/*
+ * The probe programs of the compute check (compute-check.c), each a few
+ * groups that tell one part of the shading cluster's integer path apart:
+ * a multiply-add of constants, the instance number, the instance number
+ * times four, and the word each instance addresses by its number.
+ */
+#define POWERVR_COMPUTE_PROBE_MADD		0U
+#define POWERVR_COMPUTE_PROBE_INSTANCE		1U
+#define POWERVR_COMPUTE_PROBE_INSTANCE_MADD	2U
+#define POWERVR_COMPUTE_PROBE_ADDRESS		3U
+#define POWERVR_COMPUTE_PROBES			4U
+
+/* The temporaries a probe program uses. */
+#define POWERVR_COMPUTE_PROBE_TEMPORARIES	7U
+
+int powervr_compute_probe_program(unsigned kind, uint64_t base, uint8_t *output, size_t room, size_t *length);
 int powervr_compute_temps_program(uint64_t base, uint8_t *output, size_t room, size_t *length);
 int powervr_compute_fill_program(uint64_t base, unsigned instances, uint32_t multiplier, uint32_t addend, uint8_t *output, size_t room, size_t *length);
 void powervr_compute_command(uint64_t stream, uint64_t resume, uint32_t words[POWERVR_COMPUTE_COMMAND_WORDS]);
