@@ -212,6 +212,7 @@ static int write_programs(struct check_state *state);
 static int write_kick(struct check_state *state, unsigned kick, uint32_t usc_place, unsigned inputs, unsigned field);
 static int write_probes(struct check_state *state, uint8_t *code);
 static void run_probes(struct check_state *state);
+static void run_nop_probe(struct check_state *state);
 static int write_grid(struct check_state *state);
 static void run_grid(struct check_state *state);
 static uint32_t own_words(struct check_state *state, unsigned kind);
@@ -310,6 +311,9 @@ powervr_compute_check(
 		kern_logf("powervr: compute check: stopped, its memory left to the core\n");
 		return;
 	}
+
+	/* The probe with no-operation groups, which may stop the core, after everything else. */
+	run_nop_probe(&state);
 
 	/* The grid of unified sizes and fields, last and only when asked, as its narrow cells fault. */
 	if (CHECK_GRID)
@@ -788,7 +792,7 @@ run_probes(
 		words = state->alias + (PROBE_OFFSET + kind * PROBE_SPACING) / 4U;
 		for (word = 0; word < PROBE_SPACING / 4U; word++)
 			words[word] = 0xffffffffU;
-		if (kind == POWERVR_COMPUTE_PROBE_CONSTANT || kind == POWERVR_COMPUTE_PROBE_LIKE_STORE_IN_PLACE) {
+		if (kind == POWERVR_COMPUTE_PROBE_CONSTANT || kind == POWERVR_COMPUTE_PROBE_LIKE_STORE_IN_PLACE || kind == POWERVR_COMPUTE_PROBE_NOP_BETWEEN) {
 			errors[kind] = -1;
 			values[kind] = 0xffffffffU;
 			continue;
@@ -859,6 +863,11 @@ run_probes(
 		  errors[POWERVR_COMPUTE_PROBE_REWRITE],
 		  own_words(state, POWERVR_COMPUTE_PROBE_REWRITE_LATER),
 		  errors[POWERVR_COMPUTE_PROBE_REWRITE_LATER]);
+
+	/* Two waits after each group before the store (the no-operation version runs last, run_nop_probe). */
+	kern_logf("powervr: compute probes: wait between groups %08x (%d)\n",
+		  own_words(state, POWERVR_COMPUTE_PROBE_WAIT_BETWEEN),
+		  errors[POWERVR_COMPUTE_PROBE_WAIT_BETWEEN]);
 
 	/* The short stores: one step (32 words) and four (128). */
 	one = 0;
@@ -938,6 +947,29 @@ run_grid(
 
 	/* The grid on one line: wrong instances of 32 for each unified size and field. */
 	kern_logf("powervr: compute grid (wrong of 32, unified regs u, field f):%s\n", line);
+}
+
+/*
+ * Runs the probe with two control no-operation groups after each group
+ * before its store (the compiler's spacing group), on one line; it runs
+ * last, as a group the core does not take may stop it.
+ */
+static void
+run_nop_probe(
+	struct check_state *state)
+{
+	volatile uint32_t *words;
+	uint32_t word;
+	int error;
+
+	/* Its words, then the kick. */
+	words = state->alias + (PROBE_OFFSET + POWERVR_COMPUTE_PROBE_NOP_BETWEEN * PROBE_SPACING) / 4U;
+	for (word = 0; word < PROBE_SPACING / 4U; word++)
+		words[word] = 0xffffffffU;
+	error = kick(state, KICK_PROBE_FIRST + POWERVR_COMPUTE_PROBE_NOP_BETWEEN);
+
+	/* The instances whose word holds their number. */
+	kern_logf("powervr: compute probes: nop between groups %08x (%d)\n", own_words(state, POWERVR_COMPUTE_PROBE_NOP_BETWEEN), error);
 }
 
 /* Reports, as a mask, which instances' words of a probe hold their own address's low word. */

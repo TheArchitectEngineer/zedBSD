@@ -642,3 +642,58 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
 | p009 の host・VF2 の vmunix | **失敗**。main の vk-queue.c の `_Static_assert`（上）が原因で、この Queue の変更とは無関係 |
 
 - 片付け（Q1 に依頼）: `build/p030/`。
+
+## q1457-i01（P2、2026-10-20）: loop の戻りの辺の hazard
+
+- `shader_backend_space_hazards` に branch の確かめを足した。branch の直前の group が読む temporary を、branch の着地先の group が書くなら、branch の前に nop を 1 つ入れる。branch 自身と nop で、間が 2 group になる。loop の戻りも、前への jump も同じ扱い。nop を入れる処理は `insert_nops` に分けた。
+- `shader_backend_hazards` も同じ確かめを数える。
+- 試験（`compile-host-test.c`）:
+  - loop の単体の試験を足した: 頭で r9 を書き、末尾で r9 を読み、頭へ戻る branch → hazard 1 → branch の前に nop → hazard 0。
+  - loop.comp（loop-o・loop-0）を含む全部の shader で hazard 0 を確かめる（branch の分を含む）。
+
+| 確認 | 結果 |
+| --- | --- |
+| compiler の host | 455 passed、0 failed、group 20/0 |
+| p009 | 511 passed、0 failed |
+| p010 | 全部 0 failed |
+| VF2 の vmunix（`build/p031/vf2/vmunix`） | rc 0、warning 0 |
+
+- 注意: q1458 の板の結果で、nop の group が USC を止めている疑いが出た。この Queue は nop を使う。q1458 の結果しだいで、埋め草の形を替える。
+
+## q1458-i01（P2、2026-10-20）: vkcompute の lockup・fault、nop の probe と compiler の in place の IMADD
+
+- 板（vf2-dmesg53・54）:
+  - 128 workgroup の vkcompute は、nop 入り（288 → 368 byte）で lockup した。次の回は fault 0x800000a020 で、buffer の末尾の先、data[4104] への store。
+  - 同じ shader で fault 0x8000025800 → lockup → +0x20 と毎回違う。timing に依存しているように見える。
+- (1) probe: `compute-program.c`:
+  - NOP_BETWEEN（LIKE_STORE_NUMBER の、store より前の各 group の後に、compiler と同じ形の control の nop を 2 つ）を足した。
+  - WAIT_BETWEEN（同じく wait を 2 つ）を足した。
+  - `compute-check.c` は WAIT の行を probes の中で出す。NOP の行（`powervr: compute probes: nop between groups MASK (e)`）は、core を止めうるので check の最後（`run_nop_probe`）に流す。
+- (2) nop の encode を Mesa と照らした:
+  - 我々の nop の group は `02 80 6e 00`（header の length 2 半語、ext、alutype control 0x60 と ctrlop nop 7<<1、命令の 1 byte の 0）。
+  - Mesa の `group_map O_NOP` は control の header で、ctrlop nop、miscctl は end。板で動く END の group（`04 80 ee 00`）と比べると、違うのは end の bit だけ。
+  - 誤りは見つからない。それでも板で一度も流していないので、**compiler の埋め草（`nop_operation`）は板で確かめた wait（wdf）に替えた**。`MACHINE_NOP` の定義は残した。
+- (a) host で vkcompute の fill を compile し、machine の operation の列を見た（`build/p032/ops.c`）:
+  - **gid の計算が in place の IMADD だった**（`IMADD r11 = r11×1 + r9`、workgroup×32 の後に local id を足す所）。in place の IMADD は板の CONSTANT・COMPUTED の probe で壊れることが分かっている。hazard の検め（間の group の数）では、同じ group の中の in place は捕まえていなかった。gid が壊れると data[4104] のような範囲外の store になり、timing で毎回違う結果になることと合う。
+  - 直し（`shader-backend.c`）:
+    - `operation_in_place` を足した。
+    - `stage_in_place` は、自分が読む register に書く operation の結果を、新しく予約した staging の対（`TEMP_STAGE` r9・r10。値の register は r11 から）に書かせ、直後に元の register への MOVE（同じ condition）を入れる。
+    - control の counter の step（`MACHINE_CONDITION`）と branch は、設計の上で in place なので除く。
+    - `shader_backend_hazards` は in place の数も数える。
+  - fill の出力（staging の後）: `IMADD r9 = r13×S1 + r11` → wait 2 → `MOVE r13 = r9`。in place は 0。
+- (b) 板で動いた手書きの kernel（compute-program.c）の gid は、`r8 = r5×r4 + r6`（別の register に）で、add64 は別の pair に書く。compiler の出力も、in place をやめたことで同じ形になった。
+
+| 確認 | 結果 |
+| --- | --- |
+| compiler の host | 455 passed、0 failed（全部の shader で hazard と in place が 0） |
+| p008 | encode 94/0、compute 76/0 |
+| p009 | 511 passed、0 failed |
+| p010 | 全部 0 failed |
+| probe 20 種の encode | 全部 0 |
+| VF2 の vmunix（`plan/ws269/tests/p008/config-visionfive2-compute.mk`、`build/p032/vf2/vmunix`） | rc 0、warning 0 |
+
+- 板で見ること:
+  - compute check の `wait between groups` が ffffffff。
+  - 最後の `nop between groups`（nop の encode そのものの確かめ）。
+  - その後、手で vkcompute。
+- 片付け（Q1 に依頼）: `build/p032/`。

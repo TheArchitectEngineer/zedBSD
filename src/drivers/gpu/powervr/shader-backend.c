@@ -35,7 +35,9 @@
  * counter, scratch words, the coordinate pair of a sample, the address
  * pair of a memory access and the store's data right after it (the
  * hardware's st32 takes the data from the register after the address
- * pair, as Mesa lays them out in one vector).  Values start after them.
+ * pair, as Mesa lays them out in one vector), and the staging pair an
+ * operation that would write a register it reads writes instead (the
+ * board's operations in place came out wrong).  Values start after them.
  */
 #define TEMP_EMC		0U
 #define TEMP_SCRATCH		1U
@@ -43,7 +45,8 @@
 #define TEMP_COORDINATES	4U
 #define TEMP_ADDRESS		6U
 #define TEMP_STORE_DATA		8U
-#define TEMP_FIRST_VALUE	9U
+#define TEMP_STAGE		9U
+#define TEMP_FIRST_VALUE	11U
 
 /*
  * The special registers the back end names: constant zero, one, the
@@ -152,6 +155,9 @@ static int select_instruction(struct backend_select *select, const struct powerv
 static int select_structure(struct backend_select *select, const struct powervr_ir_instruction *instruction);
 static int operations_conflict(const struct shader_machine_operation *reader, const struct shader_machine_operation *writer);
 static void nop_operation(struct shader_machine_operation *operation);
+static int insert_nops(struct shader_backend *backend, unsigned index, unsigned count);
+static int stage_in_place(struct shader_backend *backend, unsigned index, unsigned *added);
+static int operation_in_place(const struct shader_machine_operation *operation);
 static struct shader_machine_operation *append(struct backend_select *select, unsigned kind);
 static struct shader_machine_register temp_register(unsigned index);
 static struct shader_machine_register bank_register(unsigned bank, unsigned index);
@@ -338,23 +344,42 @@ powervr_shader_compile_inline(
 
 /*
  * Inserts no-operation groups so that no group writes a temporary that
- * one of the SHADER_HAZARD_GAP groups just before it reads.  Branches
- * that land after an insertion are moved with their targets; a branch
- * to the group itself lands on the first inserted group.  E2BIG when
- * the table has no room.
+ * one of the SHADER_HAZARD_GAP groups run just before it reads: the
+ * groups before it in order, and, for a group a branch lands on, the
+ * group before the branch (the branch itself is the one group between
+ * them, so one no-operation goes before the branch).  Branches that
+ * land after an insertion are moved with their targets; a branch to the
+ * group itself lands on the first inserted group.  E2BIG when the table
+ * has no room.
  */
 int
 shader_backend_space_hazards(
 	struct shader_backend *backend)
 {
-	struct shader_machine_operation *operation;
+	const struct shader_machine_operation *branch;
 	unsigned index;
 	unsigned back;
 	unsigned needed;
-	unsigned other;
+	unsigned added;
 	int conflict;
+	int error;
 
-	/* Each group against the ones just before it. */
+	/* No group writes a register it reads: it writes the staging pair, a move after it the register. */
+	for (index = 0; index < backend->operation_count; index++) {
+		conflict = operation_in_place(&backend->operations[index]);
+		if (!conflict)
+			continue;
+
+		/* The control unit's counter step works in place by design. */
+		if (backend->operations[index].kind == MACHINE_CONDITION || backend->operations[index].kind == MACHINE_BRANCH)
+			continue;
+		error = stage_in_place(backend, index, &added);
+		if (error != 0)
+			return error;
+		index += added;
+	}
+
+	/* Each group against the ones just before it in order. */
 	for (index = 0; index < backend->operation_count; index++) {
 		/* How many groups must still come between, from the nearest conflicting reader. */
 		needed = 0;
@@ -368,35 +393,153 @@ shader_backend_space_hazards(
 		if (needed == 0)
 			continue;
 
-		/* Room for the no-operations. */
-		if (backend->operation_count + needed > SHADER_MACHINE_OPERATIONS)
-			return E2BIG;
-
-		/* The groups from here on move down, the branches that land beyond here with them. */
-		for (other = backend->operation_count; other > index; other--)
-			backend->operations[other - 1U + needed] = backend->operations[other - 1U];
-		backend->operation_count += needed;
-		for (other = 0; other < backend->operation_count; other++) {
-			operation = &backend->operations[other];
-			if (operation->kind == MACHINE_BRANCH && operation->target > index)
-				operation->target += needed;
-		}
-
 		/* The no-operations in the gap; the group itself is now after them. */
-		for (other = index; other < index + needed; other++)
-			nop_operation(&backend->operations[other]);
+		error = insert_nops(backend, index, needed);
+		if (error != 0)
+			return error;
 		index += needed;
+	}
+
+	/*
+	 * Each branch: the group before it against the group it lands on,
+	 * which runs right after the branch on that path (a loop's back edge
+	 * or a jump forward).
+	 */
+	for (index = 1; index < backend->operation_count; index++) {
+		branch = &backend->operations[index];
+		if (branch->kind != MACHINE_BRANCH || branch->target >= backend->operation_count)
+			continue;
+		conflict = operations_conflict(&backend->operations[index - 1U], &backend->operations[branch->target]);
+		if (!conflict)
+			continue;
+
+		/* One no-operation before the branch; the branch is now after it. */
+		error = insert_nops(backend, index, 1);
+		if (error != 0)
+			return error;
+		index++;
 	}
 
 	/* Succeeded: the program is spaced. */
 	return 0;
 }
 
-/* Counts the groups that write a temporary one of the groups just before them reads (zero once spaced). */
+/* Says whether an operation writes a temporary it also reads (exactly the same register). */
+static int
+operation_in_place(
+	const struct shader_machine_operation *operation)
+{
+	unsigned destination;
+	unsigned source;
+
+	/* Each written temporary against each read one. */
+	for (destination = 0; destination < 2; destination++) {
+		if (operation->destination[destination].bank != POWERVR_USC_BANK_TEMPORARY)
+			continue;
+		for (source = 0; source < 4; source++) {
+			if (operation->source[source].bank == POWERVR_USC_BANK_TEMPORARY &&
+			    operation->source[source].index == operation->destination[destination].index)
+				return 1;
+		}
+	}
+
+	/* Succeeded: not in place. */
+	return 0;
+}
+
+/*
+ * Moves the results of the group at index, which reads a register it
+ * writes, through the staging pair: the group writes TEMP_STAGE (and the
+ * next), and a move after it for each result copies it to the register
+ * it named.  Reports the moves added; E2BIG without room.
+ */
+static int
+stage_in_place(
+	struct shader_backend *backend,
+	unsigned index,
+	unsigned *added)
+{
+	struct shader_machine_operation *operation;
+	struct shader_machine_register targets[2];
+	unsigned destination;
+	unsigned condition;
+	unsigned count;
+	int error;
+
+	/* The registers it named, and the staging pair in their place; the moves run when it runs. */
+	operation = &backend->operations[index];
+	condition = operation->condition;
+	count = 0;
+	for (destination = 0; destination < 2; destination++) {
+		targets[destination] = operation->destination[destination];
+		if (operation->destination[destination].bank != POWERVR_USC_BANK_TEMPORARY)
+			continue;
+		operation->destination[destination].index = (uint16_t)(TEMP_STAGE + destination);
+		count = destination + 1U;
+	}
+
+	/* Room after it for the moves, which are spaced like any other group later. */
+	error = insert_nops(backend, index + 1U, count);
+	if (error != 0)
+		return error;
+
+	/* A move for each result. */
+	for (destination = 0; destination < count; destination++) {
+		operation = &backend->operations[index + 1U + destination];
+		operation->kind = MACHINE_MOVE;
+		operation->condition = (uint8_t)condition;
+		operation->destination[0] = targets[destination];
+		operation->source[0].bank = POWERVR_USC_BANK_TEMPORARY;
+		operation->source[0].index = (uint16_t)(TEMP_STAGE + destination);
+	}
+
+	/* Succeeded: the moves are in. */
+	*added = count;
+	return 0;
+}
+
+/*
+ * Inserts count no-operations before the group at index: the groups from
+ * there move down, and a branch that lands beyond index moves with its
+ * target (one that lands on index lands on the first no-operation).
+ */
+static int
+insert_nops(
+	struct shader_backend *backend,
+	unsigned index,
+	unsigned count)
+{
+	struct shader_machine_operation *operation;
+	unsigned other;
+
+	/* Room for them. */
+	if (backend->operation_count + count > SHADER_MACHINE_OPERATIONS)
+		return E2BIG;
+
+	/* The groups from index on move down, the branches that land beyond index with them. */
+	for (other = backend->operation_count; other > index; other--)
+		backend->operations[other - 1U + count] = backend->operations[other - 1U];
+	backend->operation_count += count;
+	for (other = 0; other < backend->operation_count; other++) {
+		operation = &backend->operations[other];
+		if (operation->kind == MACHINE_BRANCH && operation->target > index)
+			operation->target += count;
+	}
+
+	/* The no-operations. */
+	for (other = index; other < index + count; other++)
+		nop_operation(&backend->operations[other]);
+
+	/* Succeeded: the no-operations are in. */
+	return 0;
+}
+
+/* Counts the groups that write a temporary one of the groups run just before them reads, in order or after a branch, or that they read themselves (zero once spaced). */
 unsigned
 shader_backend_hazards(
 	const struct shader_backend *backend)
 {
+	const struct shader_machine_operation *branch;
 	unsigned index;
 	unsigned back;
 	unsigned count;
@@ -412,6 +555,23 @@ shader_backend_hazards(
 				break;
 			}
 		}
+	}
+
+	/* Each branch: the group before it against the group it lands on. */
+	for (index = 1; index < backend->operation_count; index++) {
+		branch = &backend->operations[index];
+		if (branch->kind != MACHINE_BRANCH || branch->target >= backend->operation_count)
+			continue;
+		conflict = operations_conflict(&backend->operations[index - 1U], &backend->operations[branch->target]);
+		if (conflict)
+			count++;
+	}
+
+	/* Each group that writes a register it reads, but the counter step. */
+	for (index = 0; index < backend->operation_count; index++) {
+		conflict = operation_in_place(&backend->operations[index]);
+		if (conflict && backend->operations[index].kind != MACHINE_CONDITION && backend->operations[index].kind != MACHINE_BRANCH)
+			count++;
 	}
 
 	/* Succeeded: the count. */
@@ -461,7 +621,14 @@ operations_conflict(
 	return 0;
 }
 
-/* Makes an operation a no-operation. */
+/*
+ * Makes an operation a spacing group: a wait for the data return
+ * counter, which every program on the board already runs and which
+ * touches no register, rather than the control no-operation
+ * (MACHINE_NOP), not yet shown on the board (a compute dispatch with
+ * them stopped the core, 2026-10-20; the check's NOP_BETWEEN probe
+ * tells whether it was they).
+ */
 static void
 nop_operation(
 	struct shader_machine_operation *operation)
@@ -469,7 +636,7 @@ nop_operation(
 	unsigned index;
 
 	/* A cleared operation of the kind, with no registers. */
-	operation->kind = MACHINE_NOP;
+	operation->kind = MACHINE_WAIT;
 	operation->condition = POWERVR_USC_RUN_ENABLED;
 	operation->variant = 0;
 	operation->modifiers[0] = 0;
@@ -2013,7 +2180,7 @@ shader_backend_group(
 		error = powervr_usc_vertex_output(5, 0, 0, 0, 0, &group->operation[POWERVR_USC_PHASE_BACKEND]);
 		break;
 	case MACHINE_NOP:
-		/* A control group that does nothing, spacing a write from the reads before it. */
+		/* A control group that does nothing (not used for spacing until the board shows it, nop_operation). */
 		group->unit = POWERVR_USC_UNIT_CONTROL;
 		group->control = POWERVR_USC_CONTROL_NOTHING;
 		error = powervr_usc_nothing(&group->operation[POWERVR_USC_PHASE_0]);
