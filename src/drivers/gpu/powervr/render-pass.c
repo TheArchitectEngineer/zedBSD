@@ -21,6 +21,15 @@
 #include "drivers/gpu/powervr/render-pass.h"
 #include "drivers/gpu/powervr/render-program.h"
 
+/*
+ * The default depth clear value, 1.0.
+ *
+ * Values referenced:
+ * Mesa 26.2.5 src/imagination/vulkan/pvr_arch_cmd_buffer.c
+ * (pvr_sub_cmd_gfx_job_init: default_ds_clear_value depth 1.0f).
+ */
+#define DEPTH_ONE	0x3f800000U
+
 static int pass_attachment(const VkAttachmentDescription *description, struct powervr_pass_attachment *attachment);
 static int target_surface(const struct powervr_view_shape *view, struct powervr_render_surface *surface);
 static bool area_covers(const struct powervr_render_area *area, const VkClearRect *rect);
@@ -99,11 +108,12 @@ powervr_pass_build(
  * render area and the clear values (indexed by attachment).
  *
  * The area must lie in the framebuffer (EINVAL).  A colour attachment
- * takes a partial area (the pixel back end clips to it); a depth
- * attachment the pass stores does not, since the depth store writes
- * whole tiles: such an instance is refused with EPERM, and the caller
- * drops it with its log line (design-p010.md section 4.3).  A cleared
- * attachment without its clear value is refused (EINVAL).
+ * takes a partial area (the pixel back end clips to it); so does a depth
+ * attachment, whose store writes whole tiles: the job marks it partial
+ * and the depth is loaded before it is stored, as Mesa does
+ * (render-depth.c; design-p010.md version 2.3).  A depth view of a level
+ * other than 0 is not taken yet (ENOTSUP).  A cleared attachment without
+ * its clear value is refused (EINVAL).
  *
  * Procedure referenced:
  * Mesa 26.2.5 src/imagination/vulkan/pvr_arch_cmd_buffer.c
@@ -124,7 +134,6 @@ powervr_render_job_begin(
 	struct powervr_render_target *target;
 	uint32_t reference;
 	uint32_t index;
-	bool partial;
 	int error;
 
 	/* Refuses missing input or result. */
@@ -138,7 +147,6 @@ powervr_render_job_begin(
 		return EINVAL;
 	if (area->y >= framebuffer->height || area->height > framebuffer->height - area->y)
 		return EINVAL;
-	partial = area->x != 0 || area->y != 0 || area->width != framebuffer->width || area->height != framebuffer->height;
 
 	/* The framebuffer must hold the pass's attachments. */
 	if (framebuffer->view_count < pass->attachment_count)
@@ -185,22 +193,30 @@ powervr_render_job_begin(
 		view = &framebuffer->views[pass->depth].shape;
 		if (view->format == NULL || view->format->vk_format != attachment->format || (view->format->kind & POWERVR_FORMAT_DEPTH) == 0)
 			return EINVAL;
+		if (view->layout == NULL || view->base_level != 0)
+			return ENOTSUP;
 		job->depth.present = true;
 		job->depth.format = view->format;
-		job->depth.address = view->address + (uint64_t)view->base_layer * view->layout->layer_bytes + view->layout->level_offset[view->base_level];
+		job->depth.address = view->address + (uint64_t)view->base_layer * view->layout->layer_bytes;
 		job->depth.width = view->width;
 		job->depth.height = view->height;
+		job->depth.physical_width = view->layout->padded_width;
+		job->depth.physical_height = view->layout->padded_height;
+		job->depth.twiddled = !view->linear;
+		job->depth.layer_bytes = view->layout->layer_bytes;
 		job->depth.load_op = attachment->load_op;
 		job->depth.store_op = attachment->store_op;
+		job->depth.clear_depth = DEPTH_ONE;
 		if (attachment->load_op == VK_ATTACHMENT_LOAD_OP_CLEAR) {
 			if (pass->depth >= clear_count || !clears[pass->depth].is_depth)
 				return EINVAL;
 			job->depth.clear_depth = clears[pass->depth].words[0];
 		}
 
-		/* A partial area with a depth store is refused. */
-		if (partial && attachment->store_op == VK_ATTACHMENT_STORE_OP_STORE)
-			return EPERM;
+		/* An area short of the depth view (as Mesa's pvr_is_render_area_tile_aligned): the depth outside it is kept by a load before the store. */
+		job->depth.partial = false;
+		if (area->x != 0 || area->y != 0 || area->width != view->width || area->height != view->height)
+			job->depth.partial = true;
 	}
 
 	/* Succeeded: the job is started. */

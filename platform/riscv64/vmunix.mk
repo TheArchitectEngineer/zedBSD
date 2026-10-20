@@ -149,6 +149,7 @@ RISCV64_PLATFORM_SOURCES_visionfive2 += src/drivers/platform/visionfive2/vf2-pmu
 	src/drivers/gpu/powervr/vk-transfer.c \
 	src/drivers/gpu/powervr/render-pass.c \
 	src/drivers/gpu/powervr/render-draw.c \
+	src/drivers/gpu/powervr/render-depth.c \
 	src/drivers/gpu/powervr/vk-draw.c \
 	src/drivers/gpu/i915/render/codec.c
 # The test kernel's check of the core's compute path (ws269-p008).

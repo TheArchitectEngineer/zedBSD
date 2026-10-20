@@ -88,16 +88,27 @@ struct powervr_render_target {
 	uint32_t clear[4];
 };
 
-/* The depth target of a render job, when there is one. */
+/*
+ * The depth target of a render job, when there is one: its format, the
+ * address of its layer, its edges and its padded (physical) edges, its
+ * layout and layer size, its operations, its clear value's bits (1.0
+ * when it is not cleared), and whether the render area misses part of
+ * it (a stored depth is then loaded first, render-depth.c).
+ */
 struct powervr_render_depth {
 	bool present;
 	const struct powervr_format *format;
 	uint64_t address;
 	uint32_t width;
 	uint32_t height;
+	uint32_t physical_width;
+	uint32_t physical_height;
+	bool twiddled;
+	uint64_t layer_bytes;
 	uint32_t load_op;
 	uint32_t store_op;
 	uint32_t clear_depth;
+	bool partial;
 };
 
 /*
