@@ -156,7 +156,8 @@ static int check_kick(struct render_check *check);
 static int check_read(struct render_check *check);
 static void check_release(struct render_check *check);
 static int pixel_class(uint32_t x, uint32_t y);
-static void transfer_check(struct powervr_render *render);
+static void transfer_check(struct powervr_render *render, struct powervr_session **kept, struct powervr_resource **kept_memory);
+static void transfer_close(struct powervr_render *render, struct powervr_session *session, struct powervr_resource *memory);
 static void job_check(struct powervr_render *render);
 static int job_compile(struct powervr_vk_graphics *graphics);
 static int job_read(const struct powervr_buffer *colour, const struct powervr_buffer *depth);
@@ -173,16 +174,20 @@ powervr_render_check(
 	struct powervr_render *render)
 {
 	struct render_check *check;
+	struct powervr_session *kept;
+	struct powervr_resource *kept_memory;
 	const char *step;
 	int error;
 
 	/*
-	 * A transfer on a session of its own before the render, so the
-	 * firmware has handed out a page catalogue set before the render's
-	 * context asks for one.
+	 * A transfer on a session of its own before the render, kept open
+	 * through the render so its memory context holds the page catalogue
+	 * set it was given and the render's context has to take another.
 	 */
-	kern_logf("powervr: render check: transfer before the render\n");
-	transfer_check(render);
+	kern_logf("powervr: render check: transfer before the render (session kept open)\n");
+	kept = NULL;
+	kept_memory = NULL;
+	transfer_check(render, &kept, &kept_memory);
 
 	/* The session, its render context and target, the memory and the programs. */
 	check = &check_state;
@@ -195,6 +200,7 @@ powervr_render_check(
 	if (error != 0) {
 		kern_logf("powervr: render check: FAILED at %s (%d)\n", step, error);
 		check_release(check);
+		transfer_close(render, kept, kept_memory);
 		return;
 	}
 	kern_logf("powervr: render check: prepared (64x64 R8G8B8A8, clear and one triangle)\n");
@@ -210,6 +216,7 @@ powervr_render_check(
 
 	/* What the core may still run is kept with the session; otherwise everything goes. */
 	check_release(check);
+	transfer_close(render, kept, kept_memory);
 
 	/*
 	 * A transfer on a fresh session after the render: whether it takes
@@ -217,7 +224,7 @@ powervr_render_check(
 	 * on it.  Then the job check, on a session of its own.
 	 */
 	kern_logf("powervr: render check: transfer after the render\n");
-	transfer_check(render);
+	transfer_check(render, NULL, NULL);
 	job_check(render);
 }
 
@@ -1004,7 +1011,9 @@ job_read(
  */
 static void
 transfer_check(
-	struct powervr_render *render)
+	struct powervr_render *render,
+	struct powervr_session **kept,
+	struct powervr_resource **kept_memory)
 {
 	static struct powervr_transfer_request request;
 	struct powervr_session *session;
@@ -1098,7 +1107,24 @@ transfer_check(
 		}
 	}
 
-	/* A transfer the core may still run keeps the memory with the session; otherwise it goes. */
+	/* The session stays open for the caller when asked; otherwise it goes now. */
+	if (kept != NULL) {
+		*kept = session;
+		*kept_memory = memory;
+		return;
+	}
+	transfer_close(render, session, memory);
+}
+
+/* Closes a transfer check's session; a transfer the core may still run keeps the memory with it. */
+static void
+transfer_close(
+	struct powervr_render *render,
+	struct powervr_session *session,
+	struct powervr_resource *memory)
+{
+	if (session == NULL)
+		return;
 	if (!session->abandoned)
 		powervr_resource_unmake(session, memory);
 	render->ops.close(render, session);
