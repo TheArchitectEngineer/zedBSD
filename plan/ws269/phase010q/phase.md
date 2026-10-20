@@ -1329,3 +1329,12 @@ csbgen（Mesa 25.0.7 の `gen_pack_header.py` の `__pvr_address`: `((addr >> sh
 - `decode-cdm.py`: KERNEL0〜8 の全 field（Mesa の rogue_cdm.xml）と、DOUTU の exe_off・sample_rate・temps field（×4 register）・dual_phase を表にする。host で偽の capture を decode して、表示を確かめた。
 - README に手順を書いた（vkcompute を Debian の gcc で `/tmp/vkcompute` に build する、/dev/mem の制限は walk.py と同じ）。
 - 板（Debian）は未実施（Q1）。
+
+## q1498 / q1498-i01（2026-10-21）: executor を Mesa の PDS の配置に
+
+- P2 の q1496 で `powervr_compute_workgroup_program` が Mesa の bytes（data 8 語・code 10 語、code は slot の +0x20）を出すようになったのに合わせて、`vk-queue.c` の `build_kernel` を変えた:
+  - `QUEUE_PDS_SLOT` を 0x40 から 0x80 にした（0x80 × 65 = 0x2080 ≤ `POWERVR_EXECUTOR_PDS_BYTES` 0x4000、static assert で確かめる）。
+  - 1 kernel の時は data を 8 語全部書き、code を slot + `POWERVR_COMPUTE_PDS_GROUP_CODE`（0x20）に置いて、kernel の `code_offset` を合わせた。kernel の `usc_inputs` は `POWERVR_COMPUTE_GROUP_USC_INPUTS`（4）。
+  - fence の program（slot 0、code は +0x10）は変えていない。
+- p009 の executor の試験の期待（slot 0x80、code は +0x20、usc_inputs 4）を直した。502/502。
+- 確認: RISC-V の self-test の build で warning 0。板は未実施（Q1 が vkcompute・gpu-selftest を流す）。

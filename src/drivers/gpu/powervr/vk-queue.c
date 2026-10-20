@@ -65,7 +65,7 @@
 #define QUEUE_USC_ROOM			0x800U
 #define QUEUE_USC_BYTES			(QUEUE_USC_ROOM * QUEUE_KERNELS_MAX)
 #define QUEUE_PDS_OFFSET		0x10000U
-#define QUEUE_PDS_SLOT			0x40U
+#define QUEUE_PDS_SLOT			0x80U
 #define QUEUE_PDS_CODE			0x10U
 #define QUEUE_PDS_BYTES			(QUEUE_PDS_SLOT * (QUEUE_KERNELS_MAX + 1U))
 #define QUEUE_STREAM_BYTES		0x10000U
@@ -974,6 +974,8 @@ build_kernel(
 	uint32_t words[POWERVR_COMPUTE_KERNEL_WORDS];
 	uint32_t room;
 	uint32_t slot;
+	uint32_t code_at;
+	uint32_t data_words;
 	unsigned field;
 	unsigned count;
 	size_t index;
@@ -1001,20 +1003,19 @@ build_kernel(
 	if (error != 0)
 		return error;
 	slot = (build->kernels + 1U) * QUEUE_PDS_SLOT;
-	put_word(build->executor->pds, slot, data[0]);
-	put_word(build->executor->pds, slot + 4U, data[1]);
-	if (POWERVR_EXECUTOR_ONE_KERNEL) {
-		put_word(build->executor->pds, slot + 8U, data[2]);
-		put_word(build->executor->pds, slot + 12U, data[3]);
-	}
+	code_at = POWERVR_EXECUTOR_ONE_KERNEL ? POWERVR_COMPUTE_PDS_GROUP_CODE : QUEUE_PDS_CODE;
+	data_words = POWERVR_EXECUTOR_ONE_KERNEL ? POWERVR_COMPUTE_PDS_GROUP_DATA_WORDS : POWERVR_COMPUTE_PDS_DATA_WORDS;
+	for (index = 0; index < data_words; index++)
+		put_word(build->executor->pds, slot + (uint32_t)index * 4U, data[index]);
 	for (index = 0; index < count; index++)
-		put_word(build->executor->pds, slot + QUEUE_PDS_CODE + (uint32_t)index * 4U, pds[index]);
+		put_word(build->executor->pds, slot + code_at + (uint32_t)index * 4U, pds[index]);
 
 	/* The kernel: one workgroup of the given instances, on any cluster, no shared registers. */
 	kern_memset(&kernel, 0, sizeof(kernel));
 	kernel.data_offset = QUEUE_PDS_OFFSET + slot;
-	kernel.code_offset = QUEUE_PDS_OFFSET + slot + QUEUE_PDS_CODE;
-	kernel.data_words = POWERVR_EXECUTOR_ONE_KERNEL ? POWERVR_COMPUTE_PDS_GROUP_DATA_WORDS : POWERVR_COMPUTE_PDS_DATA_WORDS;
+	kernel.code_offset = QUEUE_PDS_OFFSET + slot + code_at;
+	kernel.data_words = data_words;
+	kernel.usc_inputs = POWERVR_EXECUTOR_ONE_KERNEL ? POWERVR_COMPUTE_GROUP_USC_INPUTS : 0U;
 	kernel.pds_temporaries = POWERVR_EXECUTOR_ONE_KERNEL ? QUEUE_PDS_GROUP_INPUTS : QUEUE_PDS_INPUTS;
 	kernel.workgroups[0] = workgroups;
 	kernel.usc_common = POWERVR_EXECUTOR_ONE_KERNEL ? QUEUE_GROUP_COEFFICIENTS : 0U;

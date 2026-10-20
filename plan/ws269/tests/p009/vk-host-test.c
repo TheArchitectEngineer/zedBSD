@@ -509,8 +509,9 @@ check_stream(
 
 	/* The kernel's words: every workgroup, the workgroup id in three coefficient registers. */
 	memset(&expected_kernel, 0, sizeof(expected_kernel));
-	expected_kernel.data_offset = 0x10000U + 0x40U;
-	expected_kernel.code_offset = expected_kernel.data_offset + 0x10U;
+	expected_kernel.data_offset = 0x10000U + 0x80U;
+	expected_kernel.code_offset = expected_kernel.data_offset + POWERVR_COMPUTE_PDS_GROUP_CODE;
+	expected_kernel.usc_inputs = POWERVR_COMPUTE_GROUP_USC_INPUTS;
 	expected_kernel.data_words = POWERVR_COMPUTE_PDS_GROUP_DATA_WORDS;
 	expected_kernel.pds_temporaries = 4;
 	expected_kernel.usc_temporaries = program.temps;
@@ -536,11 +537,11 @@ check_stream(
 		powervr_compute_workgroup_program(0x10000U, field, group_data, code, &count);
 		same = 1;
 		for (index = 0; index < POWERVR_COMPUTE_PDS_GROUP_DATA_WORDS; index++) {
-			if (word_at(pds, 0x40U + index * 4U) != group_data[index])
+			if (word_at(pds, 0x80U + index * 4U) != group_data[index])
 				same = 0;
 		}
 		for (index = 0; index < count; index++) {
-			if (word_at(pds, 0x40U + 0x10U + index * 4U) != code[index])
+			if (word_at(pds, 0x80U + POWERVR_COMPUTE_PDS_GROUP_CODE + index * 4U) != code[index])
 				same = 0;
 		}
 		check(same, "the kernel's workgroup program");
