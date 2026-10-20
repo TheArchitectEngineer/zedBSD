@@ -113,6 +113,7 @@ static void free_blocks(struct powervr_core *core);
 static void free_file(struct powervr_core *core);
 static uint64_t ms_deadline(unsigned milliseconds);
 static const char *probe_owner(const struct powervr_firmware *firmware, uint32_t heap_offset);
+static void dump_boot_trace(struct powervr_core *core);
 static void dump_trace(const struct powervr_firmware *firmware, uint32_t first, uint32_t count);
 static void register_check(struct powervr_core *core);
 static void register_map(struct powervr_core *core);
@@ -140,7 +141,8 @@ static void watch_thread(void *argument);
  * struct rogue_fwif_osinit: the hardware and firmware identities at 40
  * and 56, each its layout and BVNC) and pvr_rogue_fwif_check.h.
  */
-#define DUMP_TRACE_LOG_TYPE		(POWERVR_RENDER_CHECK_FULL_TRACE ? 0x80007fffU : 0x7fffU)
+#define DUMP_TRACE_LOG_TYPE		(POWERVR_RENDER_CHECK_FULL_TRACE || POWERVR_FIRMWARE_BOOT_TRACE ? 0x80007fffU : 0x7fffU)
+#define BOOT_TRACE_WORDS		2048U
 #define DUMP_TRACE_POINTER		8U
 #define DUMP_ASSERT_PATH		24U
 #define DUMP_ASSERT_INFO		224U
@@ -476,6 +478,10 @@ bring_up(
 	step_done("health check", error);
 	if (error != 0)
 		return error;
+
+	/* The firmware's trace from its start, when asked. */
+	if (POWERVR_FIRMWARE_BOOT_TRACE)
+		dump_boot_trace(core);
 
 	/* Succeeded: the firmware runs and answers. */
 	return 0;
@@ -1846,6 +1852,21 @@ powervr_firmware_trace_mark(
 	/* The word the firmware writes next. */
 	trace_mark = powervr_object_get32(&core->firmware.trace_control, DUMP_TRACE_POINTER) % POWERVR_TRACE_WORDS;
 	trace_marked = 1;
+}
+
+/* Prints the trace from its first word to where the firmware writes next, at most BOOT_TRACE_WORDS. */
+static void
+dump_boot_trace(
+	struct powervr_core *core)
+{
+	uint32_t pointer;
+	uint32_t count;
+
+	pointer = powervr_object_get32(&core->firmware.trace_control, DUMP_TRACE_POINTER) % POWERVR_TRACE_WORDS;
+	count = pointer < BOOT_TRACE_WORDS ? pointer : BOOT_TRACE_WORDS;
+	kern_logf("powervr: boot trace: log type 0x%x, pointer %u, %u words from 0\n",
+		  (unsigned)powervr_object_get32(&core->firmware.trace_control, POWERVR_TRACE_LOG_TYPE), (unsigned)pointer, (unsigned)count);
+	dump_trace(&core->firmware, 0, count);
 }
 
 /* Prints count words of the trace from first, wrapping at its end, eight a line (the last line may be short). */

@@ -1114,3 +1114,13 @@ csbgen（Mesa 25.0.7 の `gen_pack_header.py` の `__pvr_address`: `((addr >> sh
   - (b) `firmware-boot.c` に `POWERVR_CLEAR_EVENTS_AT_START`（既定 0）を足した。1 の時は、soft reset を Garten だけにして wrapper と AXI を設定した後、processor を reset から出す前に、EVENT_STATUS を読み、EVENT_CLEAR（0x138）に 0xffffffff を書き、もう一度 EVENT_STATUS を読んで、2 行の log に出す（before / after）。DDK の起動では host は event の register を書かないので、これは実験である。
   - (c) 観察: 我々の trace では毎回 `Irq Task (EVENT_STATUS=0x10)` の後に `Irq Task complete` が来て、その間に DM の処理の行が無い。FW は bit 4 に対応する DM の仕事が無いので、clear せずに無視していると見る（Linux では 3D の後に 0x18 などが出て、FW が clear する）。TA の完了の event（TA_FINISHED は bit 5、TA_TERMINATE は bit 6）は同じ register の別の bit なので、bit 4 が立ったままでも TA が終われば 0x30・0x50 のように見える筈。我々の HWR の時の値は 0x10 のままなので、TA は終わっていない（event が隠れているのではない）。
 - 確認: RISC-V の self-test の build で warning 0（switch は既定の 0）。板は未実施。
+
+## q1478 / q1478-i01（2026-10-21）
+
+- (1) 594 MHz が効かなかった理由: CRG の表で `clk_gpu_core`（index 45）の divider の最小を 3 にしていた（TRM の表の「3 to 7」）。root（PLL2 1188 MHz）に対する `drv_vf2_clock_set_rate` の計算は ceil(1188/594) = 2 だが、最小の 3 に切り上がって 396 MHz になっていた。vendor の kernel は 594 MHz（PLL2 / 2）で動かしている（sysconfig.h の `RGX_STARFIVE_7100_CORE_CLOCK_SPEED`、Linux の FW の log の `Core clock set to 594000000 Hz`）ので、最小を 2 にした（`vf2-crg.c`）。switch が 0（396）の時は divider 3 で変わらない。FW に渡す rate は clock の読み返しなので、594 が出る筈。
+- (2) `POWERVR_FIRMWARE_BOOT_TRACE`（`powervr-private.h`、既定 0）。1 の時の動き:
+  - FW の trace の log type を全 group と DEBUG にする。
+  - health check の後に trace を 0 語目から最大 2048 語 dump する（`powervr: boot trace: …` の後に、従来と同じ `dump: trace` の行）。
+  - compute と render の check は行わない（dmesg の ring に残すため）。
+  - FW の起動前の EVENT_STATUS は 0（板 70）なので、この dump で bit 4 が立つ所（`GPU init` の前後）を見る。
+- 確認: RISC-V の self-test の build で warning 0。既定（0・0）と、両方の switch を 1 にした時の両方で確かめた（commit は既定）。板は未実施。
