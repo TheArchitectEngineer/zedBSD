@@ -465,7 +465,16 @@ powervr_compute_temps_program(
  *   STRIDE_16, _64, _128  the same with 16, 64 or 128 bytes between the
  *                  instances' words (memory granules);
  *   ADDRESS_WAIT   ADDRESS with a wait for the data return counter
- *                  between the address's computation and the store.
+ *                  between the address's computation and the store;
+ *   COMPUTED       each instance computes ADDRESS's address and writes
+ *                  its low word to base, its high word to base + 4 (the
+ *                  last writer's address, base + 124 for instance 31);
+ *   ZERO_MADD      the address computed as the instance number times 0
+ *                  plus base, the same for all, and the number written;
+ *   CONSTANT       the address computed as 1 * 4 + base, not from the
+ *                  instance number, and the instance number written;
+ *   MOVED          ADDRESS's address computed into another temporary
+ *                  and moved into the address pair before the store.
  *
  * Procedure referenced:
  * Mesa 26.2.5 src/imagination/pco/pco_trans_nir.c (trans_store_global
@@ -479,7 +488,7 @@ powervr_compute_probe_program(
 	size_t room,
 	size_t *length)
 {
-	struct powervr_usc_group groups[12];
+	struct powervr_usc_group groups[16];
 	uint32_t stride;
 	size_t count;
 	int error;
@@ -516,6 +525,61 @@ powervr_compute_probe_program(
 			error = immediate_group(&groups[count++], 6, 0);
 		if (error == 0)
 			error = multiply_add_group(&groups[count++], 2, 5, 4, 6);
+	} else if (error == 0 && kind == POWERVR_COMPUTE_PROBE_COMPUTED) {
+		/* The address in r0 as ADDRESS makes it, then r0 and r1 stored at base (r8, r9) and base + 4 (r10, r11). */
+		error = special_group(&groups[count++], 5, USC_INSTANCE_NUMBER);
+		if (error == 0)
+			error = immediate_group(&groups[count++], 4, 4);
+		if (error == 0)
+			error = multiply_add_group(&groups[count++], 0, 5, 4, 0);
+		if (error == 0)
+			error = immediate_group(&groups[count++], 8, (uint32_t)base);
+		if (error == 0)
+			error = immediate_group(&groups[count++], 9, (uint32_t)(base >> 32));
+		if (error == 0)
+			error = immediate_group(&groups[count++], 10, (uint32_t)base + 4U);
+		if (error == 0)
+			error = immediate_group(&groups[count++], 11, (uint32_t)(base >> 32));
+		if (error == 0)
+			error = store_group(&groups[count++], 0, 8);
+		if (error == 0)
+			error = wait_group(&groups[count++]);
+		if (error == 0)
+			error = store_group(&groups[count++], 1, 10);
+		if (error == 0)
+			error = wait_group(&groups[count++]);
+		if (error == 0)
+			error = end_group(&groups[count++]);
+		if (error != 0)
+			return error;
+
+		/* Encodes them; this probe has its own stores. */
+		error = powervr_usc_program_encode(groups, count, output, room, length);
+		if (error != 0)
+			return error;
+		return 0;
+	} else if (error == 0 && (kind == POWERVR_COMPUTE_PROBE_ZERO_MADD || kind == POWERVR_COMPUTE_PROBE_CONSTANT)) {
+		/* The number as data, and the address from a constant factor or index. */
+		error = special_group(&groups[count++], 2, USC_INSTANCE_NUMBER);
+		if (error == 0 && kind == POWERVR_COMPUTE_PROBE_CONSTANT)
+			error = immediate_group(&groups[count++], 5, 1);
+		if (error == 0 && kind == POWERVR_COMPUTE_PROBE_ZERO_MADD)
+			error = special_group(&groups[count++], 5, USC_INSTANCE_NUMBER);
+		if (error == 0)
+			error = immediate_group(&groups[count++], 4, kind == POWERVR_COMPUTE_PROBE_CONSTANT ? 4U : 0U);
+		if (error == 0)
+			error = multiply_add_group(&groups[count++], 0, 5, 4, 0);
+	} else if (error == 0 && kind == POWERVR_COMPUTE_PROBE_MOVED) {
+		/* The address in r6, moved into r0, the number as data. */
+		error = special_group(&groups[count++], 5, USC_INSTANCE_NUMBER);
+		if (error == 0)
+			error = immediate_group(&groups[count++], 4, 4);
+		if (error == 0)
+			error = multiply_add_group(&groups[count++], 6, 5, 4, 0);
+		if (error == 0)
+			error = pass_group(&groups[count++], 0, POWERVR_USC_BANK_TEMPORARY, 6);
+		if (error == 0)
+			error = pass_group(&groups[count++], 2, POWERVR_USC_BANK_TEMPORARY, 5);
 	} else if (error == 0) {
 		error = special_group(&groups[count++], 5, USC_INSTANCE_NUMBER);
 		if (error == 0)

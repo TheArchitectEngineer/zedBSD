@@ -186,6 +186,7 @@ static int write_kick(struct check_state *state, unsigned kick, uint32_t usc_pla
 static int write_probes(struct check_state *state, uint8_t *code);
 static void run_probes(struct check_state *state);
 static uint32_t own_words(struct check_state *state, unsigned kind);
+static uint32_t probe_word(struct check_state *state, unsigned kind, uint32_t word);
 static int run_store_window(struct check_state *state, unsigned kick_index, uint32_t offset, uint32_t words, unsigned *written);
 static int write_probe_streams(struct check_state *state);
 static int probe_kick(struct check_state *state, unsigned kick_index, const char *what);
@@ -754,6 +755,20 @@ run_probes(
 		  own_words(state, POWERVR_COMPUTE_PROBE_ADDRESS_WAIT),
 		  errors[POWERVR_COMPUTE_PROBE_ADDRESS_WAIT]);
 
+	/* The address's own value, a constant factor, a constant index, and a moved address. */
+	kern_logf("powervr: compute probes: computed low %08x high %08x (want %08x, %d), zero madd [0]=%08x (%d), constant [0]=%08x [1]=%08x (%d), moved %08x (%d)\n",
+		  probe_word(state, POWERVR_COMPUTE_PROBE_COMPUTED, 0),
+		  probe_word(state, POWERVR_COMPUTE_PROBE_COMPUTED, 1),
+		  (uint32_t)(run_address + PROBE_OFFSET + POWERVR_COMPUTE_PROBE_COMPUTED * PROBE_SPACING) + (POWERVR_COMPUTE_INSTANCES - 1U) * 4U,
+		  errors[POWERVR_COMPUTE_PROBE_COMPUTED],
+		  probe_word(state, POWERVR_COMPUTE_PROBE_ZERO_MADD, 0),
+		  errors[POWERVR_COMPUTE_PROBE_ZERO_MADD],
+		  probe_word(state, POWERVR_COMPUTE_PROBE_CONSTANT, 0),
+		  probe_word(state, POWERVR_COMPUTE_PROBE_CONSTANT, 1),
+		  errors[POWERVR_COMPUTE_PROBE_CONSTANT],
+		  own_words(state, POWERVR_COMPUTE_PROBE_MOVED),
+		  errors[POWERVR_COMPUTE_PROBE_MOVED]);
+
 	/* The short stores: one step (32 words) and four (128). */
 	one = 0;
 	four = 0;
@@ -770,6 +785,22 @@ run_probes(
 		  errors[POWERVR_COMPUTE_PROBES],
 		  four,
 		  errors[POWERVR_COMPUTE_PROBES + 1U]);
+}
+
+/* Reads one word of a probe's area. */
+static uint32_t
+probe_word(
+	struct check_state *state,
+	unsigned kind,
+	uint32_t word)
+{
+	uint32_t value;
+
+	/* The word through the alias. */
+	value = state->alias[(PROBE_OFFSET + kind * PROBE_SPACING) / 4U + word];
+
+	/* Succeeded: the value. */
+	return value;
 }
 
 /* Reports, as a mask, which instances' words of a probe hold their own number. */

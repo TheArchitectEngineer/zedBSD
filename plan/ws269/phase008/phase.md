@@ -245,3 +245,30 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
 | VF2 の vmunix（`plan/ws269/tests/p008/config-visionfive2-compute.mk`、`build/p017/vf2/vmunix`） | rc 0、warning 0 |
 
 - 片付け（Q1 に依頼）: `build/p017/`。
+
+## q1432-i01（P2、2026-10-20）: probe の 3 回目、計算した address の値そのもの
+
+- 板の 2 回目（vf2-dmesg29）:
+  - stride 16・64・128 でも、wait を挟んでも、own words は 00000001 だけ。
+  - store は 1 step で 3/32、4 step で 0/128。kernel は 100 word で、起動ごとに違う。
+  - granule でも、4 instance ごとでも、依存でもない。計算した address へは instance 0 しか届かない。
+- 足した probe（`compute-program.c`、`compute-check.c`、Q1 の (a)〜(d)）:
+  - **COMPUTED**（a）: 各 instance が ADDRESS と同じ計算をした r0 と r1 を、固定の base（r8・r9）と base+4（r10・r11）に store する。最後に書いた instance の address が見える（期待は base+124）。
+  - **ZERO_MADD**（b）: address = inst_num×0 + base（全 instance で同じ値、ただし IMADD を通す）、data は inst_num。期待は [0]=31 前後（最後に書いた instance）。
+  - **CONSTANT**（c）: address = 1×4 + base（inst_num を使わない）、data は inst_num。期待は [1] が最後に書いた instance。
+  - **MOVED**（d の代わり）: IMADD で r6 に address を計算し、pass で r0 に移してから store する。IMADD が書いた register を address に直接使うことの問題かを分ける（整数の add の encoder がまだ無いので、ADD の版は作らなかった）。
+  - 出力の行を 1 つ足した: `powervr: compute probes: computed low … high … (want …), zero madd [0]=…, constant [0]=… [1]=…, moved MASK`。
+- 読み方:
+  - computed low が want なら値は正しく、st の address の読みの問題になる。違えば値の問題で、high も見る。
+  - zero madd の [0] が 31 など instance の番号なら、IMADD を通した address でも全員が届く。
+  - constant の [1] が埋まれば、inst_num 由来の address だけが壊れる。
+  - moved が ffffffff なら、IMADD の結果の register を address に使うことの問題。
+- 確かめていない（Mesa）: pco の compute の store の address の作り方（`add64_32` と carry、register の対の並び）は、まだ照らしていない。こちらの IMADD の group は Mesa の `is[4]=ft0` を明示しておらず、既定の 0 に頼っている（INSTANCE_MADD が正しいので、値は書けている）。
+
+| 確認 | 結果 |
+| --- | --- |
+| p008 の host（encode 94、compute 70） | 0 failed |
+| probe の encode（12 種、host） | 全部 0、長さ 64〜144 byte |
+| VF2 の vmunix（`plan/ws269/tests/p008/config-visionfive2-compute.mk`、`build/p018/vf2/vmunix`） | rc 0、warning 0 |
+
+- 片付け（Q1 に依頼）: `build/p018/`（vmunix の後）。
