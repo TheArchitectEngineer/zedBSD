@@ -595,7 +595,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS267](ws267/ws.md) | MG008 | sun4u（sparcv9）を再び build できるようにし、QEMU で動かす（2026-10-18 ユーザー） | completed（2026-10-19） | — |
 | [WS268](ws268/ws.md) | MG008 | x68k（X68000）を再び build できるようにする（起動は任意、2026-10-18 ユーザー） | completed（2026-10-19） | — |
 | [WS269](ws269/ws.md) | MG008 | VisionFive 2 の GPU（PowerVR BXE-4-32）の driver（2026-10-19 ユーザー） | incomplete（p001〜p003 cleared、p004 を P2、2026-10-19 q1330） | p004 PMU・CRG・別名・BVNC |
-| [WS270](ws270/ws.md) | MG008 | VisionFive 2 で Keiland の desktop を動かし、OS を完全に動かす（2026-10-19 ユーザー） | planning（WS256・WS269 の後） | — |
+| [WS270](ws270/ws.md) | MG008 | VisionFive 2 で Keiland の desktop を動かし、OS を完全に動かす（2026-10-19 ユーザー） | incomplete（2026-10-19 から p001〜p006a を実行。実機の結果待ち） | — |
 | [WS271](ws271/ws.md) | MG008 | MIPS32（mipsel）の QEMU malta への移植、framebuffer の console・VFS の段まで（2026-10-19 ユーザー） | completed（2026-10-19、QEMU malta の MIPS32 で VFS の段まで、T1-725・728・730・734） | — |
 | [WS272](ws272/ws.md) | MG008 | MIPS64（mips64el）の QEMU malta への移植、framebuffer の console・VFS の段まで（2026-10-19 ユーザー） | completed（2026-10-19、QEMU malta の MIPS64R2-generic で VFS の段まで、512M の high の alias も、T1-731・733・734） | — |
 | [WS273](ws273/ws.md) | MG008 | Anbernic RG350（JZ4770、MIPS32）の実機への移植（2026-10-19 ユーザー） | incomplete（2026-10-19 22:22 ユーザーの指示で中断: p001・p002 cleared、p003 途中（main 7adce0d6d）。実機 1 は beta2.md U26） | 再開は ws273/phase003/phase.md |
