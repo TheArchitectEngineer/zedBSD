@@ -725,7 +725,7 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
   - operand の encode は M9 で Mesa と同じなので、bank の field の誤りではない。int32_64 の op が special の bank を読めない（Mesa は定数を temporary に置く）と推測する。確かめてはいない。
 - 直し（`shader-backend.c`）:
   - `integer_source` を足した。整数の IMADD（add・multiply）の source が special register（0・1・float の 1・all ones）なら、scratch の temporary に IMMEDIATE で載せてから使う。
-  - 直した後の fill: `IMADD r13 = r12 * r1 + r2`、`IMADD r9 = r13 * r1(1) + r11` と、全部 temporary。468 → 456 byte、temps 16。
+  - 直した後の fill: `IMADD r13 = r12 * r1 + r2`、`IMADD r9 = r13 * r1(1) + r11` と、全部 temporary。368 → 456 byte、temps 16。
 - Q1 の質問への答え:
   - **COMPUTED の probe**: in place の IMADD（r0 に書く）で address を作り、その r0・r1 の値を書き出す probe で、比べのために残してある。in place は壊れる（q1441・q1444）ので、low が want と違い、毎回変わるのは想定どおり。`(0)` は kick の error の値（kick は通った）で、合否ではない。
   - **shared word の probe**: vk の executor は shared の値（workgroup id、buffer の address）を compile の時に即値として埋める（`powervr_shader_compile_inline`）。fill の shader は shared register を読まないので、作らなかった。同じ理由で、PDS が書く shared と USC の最初の読みの間の hazard も、今の fill には関係しない。shared register を実際に読む shader（push constant など）が出たら確かめる。
