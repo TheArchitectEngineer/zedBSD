@@ -167,7 +167,7 @@ main(void)
 			    layout.row_pitch < widths[j] * bytes ||
 			    layout.row_pitch - 32U >= widths[j] * bytes ||
 			    layout.padded_width * bytes != layout.row_pitch ||
-			    layout.bytes != (uint64_t)layout.row_pitch * 3U) {
+			    layout.bytes != (uint64_t)layout.row_pitch * 32U) {
 				pitch_good = 0;
 				printf("  linear format %u width %u: pitch %u\n", linear_formats[i], widths[j], layout.row_pitch);
 			}
@@ -175,7 +175,7 @@ main(void)
 	}
 	expect(pitch_good, "linear rows are the smallest multiple of 32 bytes and two texels");
 	error = lay(VK_FORMAT_B8G8R8A8_UNORM, 1920, 1080, 1, 1, 1, 1, 0, &layout);
-	expect(error == 0 && layout.row_pitch == 7680 && layout.bytes == 7680U * 1080U, "1920 BGRA linear rows of 7680 bytes");
+	expect(error == 0 && layout.row_pitch == 7680 && layout.bytes == 7680U * 1088U, "1920 BGRA linear rows of 7680 bytes");
 	error = lay(VK_FORMAT_B8G8R8A8_UNORM, 64, 64, 1, 2, 1, 1, 0, &layout);
 	expect(error == ENOTSUP, "a linear image of two levels is not taken");
 	error = lay(VK_FORMAT_B8G8R8A8_UNORM, 64, 64, 1, 1, 2, 1, 0, &layout);

@@ -1100,7 +1100,7 @@ replies_image(
 	check(vulkan_reply_pointer(&reader), "layout present");
 	memset(&layout, 0, sizeof(layout));
 	vulkan_decode_VkSubresourceLayout(&reader, &layout);
-	check(layout.offset == 0 && layout.rowPitch == 416 && layout.size == 4160 && layout.rowPitch % 32U == 0, "100 RGBA8 texels: rows of 416 bytes");
+	check(layout.offset == 0 && layout.rowPitch == 416 && layout.size == 416U * 32U && layout.rowPitch % 32U == 0, "100 RGBA8 texels: rows of 416 bytes");
 
 	expect_created(&reader, GPU_OP_ALLOCATE_MEMORY, ID_IMAGE_MEMORY, "image memory");
 	expect_created(&reader, GPU_OP_CREATE_IMAGE, ID_IMAGE, "optimal image");

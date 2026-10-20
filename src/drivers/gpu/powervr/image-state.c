@@ -259,7 +259,9 @@ powervr_image_lay_out(
 	/*
 	 * A linear image's rows: the fewest whole texels that are a multiple
 	 * of the 32 bytes of a row and of the pixel back end's two-texel unit
-	 * of a line.
+	 * of a line.  Its memory runs on to a whole number of 32-row tiles:
+	 * a transfer shades whole tiles, and board run 9 (q1523) showed one
+	 * reading 4032 bytes past the end of a 1920x1080 linear image.
 	 *
 	 * Value referenced: Mesa 26.2.5 src/imagination/csbgen/rogue/
 	 * pbestate.xml (the unit of the line stride of the first register
@@ -272,7 +274,7 @@ powervr_image_lay_out(
 		layout->padded_height = shape->height;
 		layout->padded_depth = 1;
 		layout->layer_bytes = (uint64_t)layout->row_pitch * shape->height;
-		layout->bytes = layout->layer_bytes;
+		layout->bytes = (uint64_t)layout->row_pitch * round_up(shape->height, POWERVR_IMAGE_LINEAR_ROWS);
 		return 0;
 	}
 
