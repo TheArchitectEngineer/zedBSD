@@ -439,6 +439,43 @@ check_stream(
 	check(same, "the fence program");
 }
 
+/*
+ * Checks that the executor's program places, mapped at fixed offsets of
+ * the data sequencer and shading cluster heaps, lie past the session's
+ * fixed area at the start of each heap (BUG-342), and that its other
+ * memory lies past the general heap's.
+ */
+static void
+check_fixed_area(void)
+{
+	unsigned index;
+	unsigned programs;
+	int clear;
+
+	programs = 0;
+	clear = 1;
+	for (index = 0; index < mapped_count; index++) {
+		if (mapped_address[index] >= POWERVR_USC_HEAP_BASE) {
+			programs++;
+			if (mapped_address[index] < POWERVR_USC_HEAP_BASE + POWERVR_FIXED_USC_BYTES)
+				clear = 0;
+		} else if (mapped_address[index] >= POWERVR_PDS_HEAP_BASE) {
+			programs++;
+			if (mapped_address[index] < POWERVR_PDS_HEAP_BASE + POWERVR_FIXED_PDS_BYTES)
+				clear = 0;
+		} else if (mapped_address[index] < POWERVR_GENERAL_HEAP_BASE + POWERVR_FIXED_GENERAL_BYTES) {
+			clear = 0;
+		}
+	}
+	check(programs == 2, "the executor maps its two program buffers");
+	check(clear, "the executor's mappings lie past the fixed area of each heap");
+	for (index = 0; index < resource_count; index++) {
+		if (resources[index]->address < POWERVR_GENERAL_HEAP_BASE + POWERVR_FIXED_GENERAL_BYTES)
+			clear = 0;
+	}
+	check(clear, "the executor's resources lie past the general heap's fixed area");
+}
+
 int
 main(
 	int argc,
@@ -512,6 +549,7 @@ main(
 	replies_compute((uint8_t *)reply->buffer->view);
 	if (memory != NULL)
 		check_stream(memory->storage->address);
+	check_fixed_area();
 
 	/* A frame cut in the middle of a command is refused. */
 	bytes = frame_setup(reply->identifier, &frame);

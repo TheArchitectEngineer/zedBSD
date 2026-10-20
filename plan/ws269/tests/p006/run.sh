@@ -12,5 +12,8 @@ mkdir -p "$out"
 cc -std=c11 -O2 -Wall -Wextra -Werror -I"$root/include" -I"$root/src" \
 	"$root/src/drivers/gpu/powervr/gpu-mmu.c" \
 	"$root/src/drivers/gpu/powervr/mips-table.c" \
+	"$root/src/drivers/gpu/powervr/fixed-area.c" \
+	"$root/src/drivers/gpu/powervr/usc-encode.c" \
+	"$root/src/drivers/gpu/powervr/pds-encode.c" \
 	"$here/gpu-mmu-host-test.c" -o "$out/gpu-mmu-host-test"
 "$out/gpu-mmu-host-test"

@@ -44,6 +44,7 @@
 #include <uapi/gpu.h>
 
 #include "drivers/gpu/powervr/render-private.h"
+#include "drivers/gpu/powervr/fixed-area.h"
 #include "drivers/gpu/powervr/interface.h"
 
 /*
@@ -80,6 +81,8 @@ static int take_table(void *context, struct powervr_gpu_table *table);
 static void give_table(void *context, struct powervr_gpu_table *table);
 static void *take_memory(void *context, size_t size);
 static void give_memory(void *context, void *memory);
+static int map_fixed_area(struct powervr_session *session);
+static void keep_fixed_area(struct powervr_session *session);
 static int make_records(struct powervr_render *render, struct powervr_session *session);
 static void fill_records(struct powervr_session *session);
 static void destroy_records(struct powervr_render *render, struct powervr_session *session);
@@ -108,8 +111,67 @@ static const struct powervr_gpu_memory table_memory_template = {
 };
 
 /*
- * Makes a session's memory context and firmware records; the core's lock
- * is held.
+ * Makes the pages of a session's fixed area with its programs written;
+ * the core's lock is not held.
+ *
+ * Each heap's page is zeroed when made, so the general heap's fence and
+ * colour coefficients stay zero; on failure the pages made so far stay
+ * in the session for powervr_session_fixed_drop().
+ */
+int
+powervr_session_fixed_make(
+	struct powervr_render *render,
+	struct powervr_session *session)
+{
+	int error;
+
+	/* The general heap's page. */
+	error = powervr_buffer_create(render, POWERVR_FIXED_GENERAL_BYTES, &session->fixed[POWERVR_FIXED_HEAP_GENERAL]);
+	if (error != 0)
+		return error;
+
+	/* The data sequencer heap's page. */
+	error = powervr_buffer_create(render, POWERVR_FIXED_PDS_BYTES, &session->fixed[POWERVR_FIXED_HEAP_PDS]);
+	if (error != 0)
+		return error;
+
+	/* The shading cluster heap's page. */
+	error = powervr_buffer_create(render, POWERVR_FIXED_USC_BYTES, &session->fixed[POWERVR_FIXED_HEAP_USC]);
+	if (error != 0)
+		return error;
+
+	/* The programs, through the processor's uncached views. */
+	error = powervr_fixed_area_write(session->fixed[POWERVR_FIXED_HEAP_PDS]->view, session->fixed[POWERVR_FIXED_HEAP_USC]->view);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the pages are ready to be mapped. */
+	return 0;
+}
+
+/*
+ * Returns the pages of a session's fixed area that nothing maps; the
+ * core's lock is not held.
+ */
+void
+powervr_session_fixed_drop(
+	struct powervr_render *render,
+	struct powervr_session *session)
+{
+	unsigned heap;
+
+	/* Each page that was made goes back; a fault keeps it until the reset. */
+	for (heap = 0; heap < POWERVR_FIXED_HEAPS; heap++) {
+		if (session->fixed[heap] != NULL) {
+			powervr_buffer_put(render, session->fixed[heap]);
+			session->fixed[heap] = NULL;
+		}
+	}
+}
+
+/*
+ * Makes a session's memory context, with the fixed area's pages mapped,
+ * and its firmware records; the core's lock is held.
  */
 int
 powervr_session_firmware_create(
@@ -123,6 +185,13 @@ powervr_session_firmware_create(
 	error = powervr_gpu_mmu_init(&session->mmu, &render->table_memory);
 	if (error != 0)
 		return error;
+
+	/* The fixed area at the start of its three heaps, before anything else is mapped there. */
+	error = map_fixed_area(session);
+	if (error != 0) {
+		powervr_gpu_mmu_fini(&session->mmu);
+		return error;
+	}
 
 	/* The firmware's records of the session; nothing has been kicked, so they and the tables just go on failure. */
 	error = make_records(render, session);
@@ -159,8 +228,9 @@ powervr_session_firmware_destroy(
 
 	mutex_unlock(&render->core->lock);
 
-	/* Returns the tables. */
+	/* Returns the tables, then the fixed area's pages they named. */
 	powervr_gpu_mmu_fini(&session->mmu);
+	powervr_session_fixed_drop(render, session);
 }
 
 /*
@@ -180,8 +250,9 @@ powervr_session_firmware_discard(
 	powervr_object_drop(&session->context_state);
 	powervr_object_drop(&session->memory_context);
 
-	/* Returns the tables. */
+	/* Returns the tables, then hands the fixed area's pages they named to the kept buffers. */
 	powervr_gpu_mmu_fini(&session->mmu);
+	keep_fixed_area(session);
 }
 
 /*
@@ -990,6 +1061,89 @@ give_memory(
 	/* Back to the kernel. */
 	(void)context;
 	kern_free(memory);
+}
+
+/*
+ * Maps the fixed area's pages at the start of the general, data sequencer
+ * and shading cluster heaps; on failure nothing of them stays mapped.
+ *
+ * The pages are written by the processor through uncached views, so the
+ * core reaches them around its system level cache.  Only the area's own
+ * bytes are mapped, so the next page of each heap stays free for the
+ * session's allocations.
+ *
+ * Procedure referenced:
+ * Mesa 26.2.5 src/imagination/vulkan/winsys/pvr_winsys_helper.c
+ * (pvr_winsys_helper_allocate_static_memory: one buffer for each of the
+ * three heaps, mapped at the heap's carve-out address for the
+ * carve-out's size).
+ */
+static int
+map_fixed_area(
+	struct powervr_session *session)
+{
+	struct powervr_buffer *general;
+	struct powervr_buffer *pds;
+	struct powervr_buffer *usc;
+	unsigned flags;
+	int error;
+
+	/* The pages powervr_session_fixed_make() made, and the attributes of pages the processor writes. */
+	general = session->fixed[POWERVR_FIXED_HEAP_GENERAL];
+	pds = session->fixed[POWERVR_FIXED_HEAP_PDS];
+	usc = session->fixed[POWERVR_FIXED_HEAP_USC];
+	flags = powervr_gpu_buffer_flags(1, 0);
+
+	/* The general heap's page: the fence and the colour coefficients. */
+	error = powervr_gpu_mmu_map(&session->mmu, POWERVR_GENERAL_HEAP_BASE, general->run.paddr, POWERVR_FIXED_GENERAL_BYTES, flags);
+	if (error != 0)
+		return error;
+
+	/* The data sequencer heap's page: the synchronisation program and the end-of-tile code. */
+	error = powervr_gpu_mmu_map(&session->mmu, POWERVR_PDS_HEAP_BASE, pds->run.paddr, POWERVR_FIXED_PDS_BYTES, flags);
+	if (error != 0) {
+		powervr_gpu_mmu_unmap(&session->mmu, POWERVR_GENERAL_HEAP_BASE, POWERVR_FIXED_GENERAL_BYTES);
+		return error;
+	}
+
+	/* The shading cluster heap's page: the synchronisation task's program. */
+	error = powervr_gpu_mmu_map(&session->mmu, POWERVR_USC_HEAP_BASE, usc->run.paddr, POWERVR_FIXED_USC_BYTES, flags);
+	if (error != 0) {
+		powervr_gpu_mmu_unmap(&session->mmu, POWERVR_PDS_HEAP_BASE, POWERVR_FIXED_PDS_BYTES);
+		powervr_gpu_mmu_unmap(&session->mmu, POWERVR_GENERAL_HEAP_BASE, POWERVR_FIXED_GENERAL_BYTES);
+		return error;
+	}
+
+	/* Succeeded: the core finds the area at each heap's start. */
+	return 0;
+}
+
+/*
+ * Hands the fixed area's pages of a kept session to the node's kept
+ * buffers, which the reset frees once nothing reaches them; the core's
+ * lock may be held, so the buffer guard is not taken here.
+ */
+static void
+keep_fixed_area(
+	struct powervr_session *session)
+{
+	struct powervr_render *render;
+	unsigned long enabled;
+	unsigned heap;
+
+	/* Links each page that was made, its only reference the session's. */
+	render = session->render;
+	enabled = spin_lock_irqsave(&render->queue_lock);
+
+	for (heap = 0; heap < POWERVR_FIXED_HEAPS; heap++) {
+		if (session->fixed[heap] != NULL) {
+			session->fixed[heap]->next = render->kept_buffers;
+			render->kept_buffers = session->fixed[heap];
+			session->fixed[heap] = NULL;
+		}
+	}
+
+	spin_unlock_irqrestore(&render->queue_lock, enabled);
 }
 
 /* Makes the session's firmware records, each uncached on the firmware's side. */
