@@ -158,8 +158,8 @@ enum powervr_program_heap {
  * each window holds for them.
  */
 #define POWERVR_PROGRAM_HEAP_START	0x10000U
-#define POWERVR_EXECUTOR_PDS_BYTES	0x2000U
-#define POWERVR_EXECUTOR_USC_BYTES	0x10000U
+#define POWERVR_EXECUTOR_PDS_BYTES	0x4000U
+#define POWERVR_EXECUTOR_USC_BYTES	0x20000U
 
 /*
  * What the firmware reported of the render targets' free lists since the
