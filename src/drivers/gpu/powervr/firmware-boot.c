@@ -40,6 +40,7 @@
 #include "drivers/gpu/powervr/firmware-image.h"
 #include "drivers/gpu/powervr/interface.h"
 #include "drivers/gpu/powervr/mips-table.h"
+#include "drivers/gpu/powervr/render-command.h"
 
 /*
  * Where the firmware file is, and the most bytes the driver accepts.
@@ -409,6 +410,9 @@ bring_up(
 	step_done("processor", error);
 	if (error != 0)
 		return error;
+
+	/* A core with multicore support runs each render on one core. */
+	powervr_render_command_single_core(powervr_fw_image_has_feature(&firmware->image, POWERVR_FEATURE_GPU_MULTICORE));
 
 	/* Lays out the program, the command buffers and the records. */
 	*step = "memory";

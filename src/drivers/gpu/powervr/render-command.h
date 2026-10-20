@@ -93,6 +93,23 @@
 #define POWERVR_GEOMETRY_FIRST_AND_LAST		0x3U
 
 /*
+ * The single-core flags of the geometry and fragment commands, set on a
+ * core with multicore support so the firmware does not wait for other
+ * cores (Mesa's use_single_core); the switch is set once from the
+ * firmware image's features.
+ *
+ * Values referenced:
+ * Linux v7.3 drivers/gpu/drm/imagination/pvr_rogue_fwif_client.h
+ * (ROGUE_GEOM_FLAGS_SINGLE_CORE bit 3, ROGUE_FRAG_FLAGS_SINGLE_CORE bit
+ * 3); Mesa 26 src/imagination/vulkan/winsys/powervr/pvr_drm_job_render.c
+ * (DRM_PVR_SUBMIT_JOB_GEOM_CMD_SINGLE_CORE and _FRAG_CMD_SINGLE_CORE from
+ * use_single_core).
+ */
+#define POWERVR_GEOMETRY_SINGLE_CORE		(1U << 3)
+#define POWERVR_FRAGMENT_SINGLE_CORE		(1U << 3)
+void powervr_render_command_single_core(int on);
+
+/*
  * What a fragment command of one colour attachment names: the tiles
  * across and down the frame, the background and the background after a
  * partial render, the end-of-tile program's data word and size word,

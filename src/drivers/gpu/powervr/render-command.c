@@ -92,6 +92,21 @@
 static void put32(uint8_t *bytes, uint32_t offset, uint32_t value);
 static void put64(uint8_t *bytes, uint32_t offset, uint64_t value);
 
+/* Whether the geometry and fragment commands carry the single-core flags (see render-command.h). */
+static int single_core;
+
+/*
+ * Turns the single-core flags on or off, once the firmware image's
+ * features are known.
+ */
+void
+powervr_render_command_single_core(
+	int on)
+{
+	/* Remembers the choice for every command built after it. */
+	single_core = on ? 1 : 0;
+}
+
 /*
  * Fills the registers of a fragment command.
  *
@@ -108,6 +123,7 @@ powervr_fragment_command(
 	const struct powervr_fragment_setup *setup,
 	uint8_t *command)
 {
+	uint32_t flags;
 	unsigned index;
 
 	/* The first attachment's back end words. */
@@ -138,13 +154,15 @@ powervr_fragment_command(
 	put64(command, POWERVR_FRAGMENT_SCISSOR_BASE, setup->scissor_table & 0xfffffffffcULL);
 	put64(command, POWERVR_FRAGMENT_DBIAS_BASE, setup->dbias_table & 0xfffffffffcULL);
 
-	/* A depth target's loads and stores, and the depth buffer flag. */
+	/* A depth target's loads and stores, and the flags: the depth buffer, one core. */
+	flags = single_core ? POWERVR_FRAGMENT_SINGLE_CORE : 0U;
 	if (setup->has_depth) {
 		put64(command, POWERVR_FRAGMENT_ZLS_CONTROL, setup->zls_control);
 		put64(command, POWERVR_FRAGMENT_ZLS_BASE, setup->zls_base);
 		put32(command, POWERVR_FRAGMENT_ZLS_STRIDE, setup->zls_stride);
-		put32(command, POWERVR_FRAGMENT_FLAGS, POWERVR_FRAGMENT_DEPTH_BUFFER);
+		flags |= POWERVR_FRAGMENT_DEPTH_BUFFER;
 	}
+	put32(command, POWERVR_FRAGMENT_FLAGS, flags);
 
 	/* The end-of-tile program. */
 	put32(command, POWERVR_FRAGMENT_EVENT_INFO, setup->event_info);
@@ -178,8 +196,8 @@ powervr_geometry_command(
 	common = (setup->shared_registers * 4U + RESUME_COMMON_UNIT - 1U) / RESUME_COMMON_UNIT;
 	put32(command, POWERVR_GEOMETRY_RESUME_SIZE, RESUME_STATE_UPDATE | (common << RESUME_COMMON_SHIFT));
 
-	/* The only geometry of its render. */
-	put32(command, POWERVR_GEOMETRY_FLAGS, POWERVR_GEOMETRY_FIRST_AND_LAST);
+	/* The only geometry of its render, on one core. */
+	put32(command, POWERVR_GEOMETRY_FLAGS, POWERVR_GEOMETRY_FIRST_AND_LAST | (single_core ? POWERVR_GEOMETRY_SINGLE_CORE : 0U));
 }
 
 /*
