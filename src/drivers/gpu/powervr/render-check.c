@@ -72,6 +72,11 @@
  */
 #define GENERAL_STREAM		0x0U
 #define GENERAL_PPP		0x100U
+#define GENERAL_TERMINATE_PPP	0x180U
+#define TERMINATE_PRESENT	(1U << 25)
+#define TERMINATE_BLOCK		32U
+#define TERMINATE_RIGHT_SHIFT	18U
+#define TERMINATE_BLOCKS	((CHECK_EDGE + TERMINATE_BLOCK - 1U) / TERMINATE_BLOCK)
 #define GENERAL_VERTICES	0x200U
 #define GENERAL_ATTACHMENT	0x1000U
 #define GENERAL_BYTES		(GENERAL_ATTACHMENT + CHECK_EDGE * CHECK_ROW_BYTES)
@@ -83,7 +88,20 @@
 
 /*
  * Whether the render check's first render names the triangle's
- * primitive state before its end (1), or is the end alone (0).
+ * primitive state before its end (1), is the end alone (0), or is
+ * Mesa's terminate stream (2): a primitive state block of the three
+ * words a framebuffer's terminate state has (the header with only the
+ * terminate present, the clip's right and bottom in 32-pixel blocks
+ * less one, render target 0 and clip left 0), then the end.
+ *
+ * Values referenced:
+ * Mesa 25.0.0 src/imagination/vulkan/pvr_device.c
+ * (pvr_framebuffer_create_ppp_state) and pvr_cmd_buffer.c
+ * (pvr_sub_cmd_gfx_build_terminate_ctrl_stream,
+ * pvr_cmd_buffer_emit_ppp_state: PPP_STATE0 with the word count and
+ * the address's high byte, PPP_STATE1 the low word); Mesa 25.0.7
+ * src/imagination/csbgen/rogue_ppp.xml (STATE_HEADER pres_terminate bit
+ * 25; STATE_TERMINATE0 clip_right bits 18..26, clip_bottom 0..8).
  */
 #ifndef POWERVR_RENDER_CHECK_STATE_FIRST
 #define POWERVR_RENDER_CHECK_STATE_FIRST	1
@@ -531,6 +549,9 @@ check_empty(
 	struct render_check *check)
 {
 	uint32_t saved[POWERVR_RENDER_VDM_WORDS];
+	uint32_t state[3];
+	uint32_t stream[3];
+	uint64_t address;
 	uint32_t end;
 	unsigned index;
 	int error;
@@ -544,10 +565,21 @@ check_empty(
 	for (index = 0; index < POWERVR_RENDER_VDM_WORDS; index++)
 		saved[index] = get_word(check->general->buffer, GENERAL_STREAM + index * 4U);
 	end = POWERVR_VDM_TERMINATE;
-	if (POWERVR_RENDER_CHECK_STATE_FIRST)
+	if (POWERVR_RENDER_CHECK_STATE_FIRST == 2) {
+		state[0] = TERMINATE_PRESENT;
+		state[1] = (TERMINATE_BLOCKS - 1U) << TERMINATE_RIGHT_SHIFT | (TERMINATE_BLOCKS - 1U);
+		state[2] = 0;
+		put_words(check->general->buffer, GENERAL_TERMINATE_PPP, state, 3);
+		address = check->general->address + GENERAL_TERMINATE_PPP;
+		stream[0] = (3U << 8) | (uint32_t)((address >> 32) & 0xffU);
+		stream[1] = (uint32_t)address & ~3U;
+		stream[2] = end;
+		put_words(check->general->buffer, GENERAL_STREAM, stream, 3);
+	} else if (POWERVR_RENDER_CHECK_STATE_FIRST) {
 		put_words(check->general->buffer, GENERAL_STREAM + 8U, &end, 1);
-	else
+	} else {
 		put_words(check->general->buffer, GENERAL_STREAM, &end, 1);
+	}
 
 	/* The kick and the wait, as the triangle's. */
 	powervr_firmware_trace_mark(check->render->core);
@@ -570,7 +602,8 @@ check_empty(
 			probe_geometry(check->render->core);
 		}
 	}
-	kern_logf("powervr: render check: %s stream: %s (%d), context %s\n", POWERVR_RENDER_CHECK_STATE_FIRST ? "state-and-end" : "empty",
+	kern_logf("powervr: render check: %s stream: %s (%d), context %s\n",
+		  POWERVR_RENDER_CHECK_STATE_FIRST == 2 ? "terminate-state" : POWERVR_RENDER_CHECK_STATE_FIRST ? "state-and-end" : "empty",
 		  error == 0 ? "finished" : "FAILED", error,
 		  check->session->lost ? "reset" : "kept");
 
