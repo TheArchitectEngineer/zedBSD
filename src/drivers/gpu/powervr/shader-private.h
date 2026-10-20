@@ -194,6 +194,15 @@ enum machine_kind {
  */
 #define SHADER_HAZARD_GAP	2U
 
+/*
+ * The groups that must lie between an integer multiply-add and a group
+ * that writes a register it reads: on the board a multiply-add's
+ * multiplier rewritten three groups after it was read with its new
+ * value (compiled fill dump, vf2-dmesg65, 2026-10-21); six is a margin
+ * until the board narrows it.
+ */
+#define SHADER_INTEGER_SOURCE_GAP	6U
+
 /* The back end's state for one shader. */
 struct shader_backend {
 	struct shader_machine_operation operations[SHADER_MACHINE_OPERATIONS];

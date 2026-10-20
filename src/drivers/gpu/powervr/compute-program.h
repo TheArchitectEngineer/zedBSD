@@ -38,6 +38,18 @@
 #define POWERVR_COMPUTE_PDS_CODE_MAX	6U
 #define POWERVR_COMPUTE_PDS_GROUP_DATA_WORDS	4U
 
+/*
+ * Whether a compute stream ends with a fence kernel before its end.  On
+ * the VF2 every stream with a kernel whose fence bit is set locked the
+ * compute data master up after its work (vf2-dmesg65, 2026-10-21), while
+ * the same work without one finished; so the streams leave it out and
+ * each shading cluster program waits for its stores (wdf) before its
+ * end.  Build with -DPOWERVR_COMPUTE_FENCE_KERNEL=1 to look into it.
+ */
+#ifndef POWERVR_COMPUTE_FENCE_KERNEL
+#define POWERVR_COMPUTE_FENCE_KERNEL	0
+#endif
+
 /* The words of the firmware's compute command. */
 #define POWERVR_COMPUTE_COMMAND_WORDS	24U
 

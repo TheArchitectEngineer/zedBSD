@@ -1003,3 +1003,76 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
 - 片付け（Q1 に依頼）:
   - `build/p2q1470/`
   - scratchpad の `fence-cmp.c`・`fence-cmp`・`util/`・`ops.c`・`ops`・`wgtest*`・`wg.c`
+
+## q1473-i01（P2、2026-10-21）: fence kernel を外す形を標準に、compiled fill の register の実測と simulator の照合
+
+### (A) fence kernel を使わない形（`POWERVR_COMPUTE_FENCE_KERNEL`、compute-program.h、既定 0）
+
+- 根拠（vf2-dmesg65）: 16 kernel の変種 a・b・d・e（fence の bit のある kernel を含む物）は全部、後の 1 kernel が (5) になった。c（fence 無し）だけが 32/32 (0) で、後の kick も 32/32 (0)。
+- 既定 0 で、compute-check の stream から fence kernel を外す。各 USC program は、store の後に wdf を持ったまま end に至る。
+  - 新しい関数 `put_fence_kernel`: 1 なら fence kernel を書く。0 なら何も書かない。
+  - `write_kick`（全部の普通の kick、probe、grid）と `write_workgroup_kick`（compiled fill、dump、workgroup id）は、これを通す。
+  - 「fence and end」の probe（`KICK_FENCE_ONLY`）は、1 の時だけ流す。
+- fence kernel を明示する実験（`run_fence_variants`、`run_many_kernels` の既定の並び）は、そのまま残す。
+- fence kernel・`powervr_compute_fence_program` を使う所の一覧:
+
+| 場所 | 用途 | 今回 |
+| --- | --- | --- |
+| compute-check.c `setup` → `powervr_compute_fence_program`（PDS_FENCE の slot） | fence の PDS program | 書くのは残す（実験用） |
+| compute-check.c `write_kick` | 全部の check の kick | `put_fence_kernel`（既定で無し） |
+| compute-check.c `write_workgroup_kick` | 1 kernel の形の kick | `put_fence_kernel`（既定で無し） |
+| compute-check.c `write_probe_streams` / `run_kernel` の「fence and end」 | probe | 既定で流さない |
+| compute-check.c `run_many_kernels` / `run_fence_variants` | 実験 | 明示のまま |
+| **vk-queue.c**（P1 の file、610 行の `powervr_compute_fence_program`、1031 行の `build_fence` の `kernel.fence = 1`） | Vulkan の submission の最後 | **P1 に要る変更**: `POWERVR_COMPUTE_FENCE_KERNEL` が 0 なら `build_fence` を呼ばず、stream を terminate の語だけで閉じる。compile された program は、store の後に wdf を持つ（back end の MACHINE_STORE の後の MACHINE_WAIT）ので、追加は要らない。 |
+
+### (B) compiled fill の register: 板（vf2-dmesg65 256〜298 行、run at 0x8000042000）と simulator（`fill-registers.sh OUT 0x8000202000`）
+
+- 照合は、simulator が書いた register（値が 0 でない物）だけを比べた。board の未初期化の register は比べない。
+- prefix 4〜32 は全 lane で一致した。**最初の食い違いは prefix 36**:
+
+| prefix | 食い違い（lane 1 / 31） | simulator | 板 |
+| --- | --- | --- | --- |
+| 36 | r12（op 32 ＝ imadd(r13, r1, r2)、r1＝3 は op 30、r2＝0 は op 31） | 3 / 0x5d（3·gid） | 7 / 0xd9（**7·gid**） |
+| 40 | r12、r13（op 37 ＝ imadd(r12, r2, r1)） | r12 3·gid、r13 3gid＋7 | r12 21gid＋50（op 37〜39 に r12 を書く命令は無い）、r13 21gid＋57 |
+| 52・55 | r8（store の data） | 3x＋7 | 21x＋57 |
+
+- **板の compiled fill の結果は 3x＋7 ではない。** 書いた値は 0x39、0x4e、0x63… で、`+1c0000` は 57 ＝ 21·0＋57（正しくは 7）。address（r6 ＝ base＋lane×4）は正しいので、正しい場所に違う値を書いている。Q1 の「正しい」は読み違い。
+- 読み取り:
+  - op 32 の乗数 r1 は、3 group 後（op 35 の `r1 ＝ 7`）で書き換えられる。板は、その**新しい値の 7 を使った**。現行の hazard の規則（読みの後 2 group は書かない）は満たしているが、imadd の source は 3 group 以上遅れて読まれている。
+  - その後の r12 の変化（7gid → 21gid＋50）も、op 37〜39 の読み書きの時期のずれでしか説明が付かない。host で source の読みの遅れ（0〜5 group）を全部試したが、単純な「遅れた読み」の模型では値を再現できなかった。imadd の結果を書く時期にも遅れがあると見ている（未確定）。
+- **compiler の修正**（`shader-backend.c`、`shader-private.h`）: 間隔の規則を `required_gap(earlier, later)` にまとめた。
+  - imadd（MACHINE_INTEGER）が読んだ register を後で書く時は、**`SHADER_INTEGER_SOURCE_GAP` ＝ 6 group** 空ける（従来は 2）。
+  - imadd が、2 group 以内に書かれた register を読む時も 2 group 空ける（新規）。
+  - 他の規則は従来どおり 2。
+  - 分岐の後ろ向きの辺には、必要な数（gap−1）の no-operation を入れる。
+  - fill は 456 byte・56 group から、584 byte・88 group になった。simulator では 32/32。
+  - 6 は余裕を持たせた値。次の板の dump で、prefix ごとの一致を見て詰める。
+- 試験の追従: compile-host-test の `test_hazard_spacing` を新しい間隔に合わせた。
+
+### vk の fault（0x8000470010）の候補
+
+| 項目 | compute-check の compiled fill（板で走った） | vk-queue.c の 1 kernel の run（fault） |
+| --- | --- | --- |
+| shader | vkcompute の fill（`vkcompute_fill_shader`） | vkcompute の fill（456 byte で同じ） |
+| buffer の address | DESCRIPTOR の word 0・1 に run＋0x1c0000 を inline | `build_shared` が DESCRIPTOR の word 0・1（shared 3・4）に buffer＋offset を inline。形は同じ |
+| workgroup id | cf0（P1 の PDS）、workgroup 1 つ（id 0） | cf0、workgroup 128（id 0〜127） |
+| NUM_WORKGROUPS | 1 | 128（shader は使わない） |
+| kernel の語 | workgroups[0] 1、usc_common 3 | workgroups[0] 128、usc_common 3 |
+
+- **候補は 1 つ: imadd の読みの時期の食い違い**（上の (B)。executor の側ではない）。
+  - 板では op 32 以降の imadd の値が狂う。gid の項（wg×32＋lane）は wg≠0 の時にだけ効くので、compute-check（wg 0）では address が偶然合い、data だけが狂った。vk（wg 0〜127）では、address の計算（r15 ＝ imadd(r11, 4, 0)、その r11 も imadd の結果）に狂った gid が入る。
+  - 0x470010 ＝ (0x47000＋1)×16 のような値は、この種の取り違えで出うる。
+  - 確認: 上の compiler の修正で、次の板の compiled fill が 3x＋7（32/32）になり、vk の fault が消えれば確定する。
+
+| 確認 | 結果 |
+| --- | --- |
+| p010-compiler の host | 455/0、group 20/0 |
+| p008 の host | encode 94/0、compute 76/0 |
+| fill-registers.sh（0x8000202000） | 32/32、584 byte |
+| p009 の host | 501/10。**main（変更前の stash）でも同じ 10 個**（POWERVR_EXECUTOR_ONE_KERNEL＝1 の merge 以後の試験の追従漏れ。P1 の範囲） |
+| VF2 の vmunix（`build/p2q1473/vf2/vmunix`） | rc 0、warning 0 |
+| 板 | 未実施 |
+
+- 片付け（Q1 に依頼）:
+  - `build/p2q1473/`
+  - scratchpad の `ops2.c`・`ops2`・`ops65.txt`・`sim65.txt`

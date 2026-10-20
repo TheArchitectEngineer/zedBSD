@@ -159,6 +159,7 @@ static int insert_nops(struct shader_backend *backend, unsigned index, unsigned 
 static int stage_in_place(struct shader_backend *backend, unsigned index, unsigned *added);
 static int operation_in_place(const struct shader_machine_operation *operation);
 static int integer_result_read(const struct shader_machine_operation *writer, const struct shader_machine_operation *reader);
+static unsigned required_gap(const struct shader_machine_operation *earlier, const struct shader_machine_operation *later);
 static struct shader_machine_operation *append(struct backend_select *select, unsigned kind);
 static struct shader_machine_register temp_register(unsigned index);
 static struct shader_machine_register bank_register(unsigned bank, unsigned index);
@@ -363,6 +364,7 @@ shader_backend_space_hazards(
 	unsigned back;
 	unsigned needed;
 	unsigned added;
+	unsigned gap;
 	int conflict;
 	int error;
 
@@ -385,14 +387,10 @@ shader_backend_space_hazards(
 	for (index = 0; index < backend->operation_count; index++) {
 		/* How many groups must still come between, from the nearest conflicting reader. */
 		needed = 0;
-		for (back = 1; back <= SHADER_HAZARD_GAP && back <= index; back++) {
-			conflict = operations_conflict(&backend->operations[index - back], &backend->operations[index]);
-			if (!conflict)
-				conflict = integer_result_read(&backend->operations[index - back], &backend->operations[index]);
-			if (conflict) {
-				needed = SHADER_HAZARD_GAP + 1U - back;
-				break;
-			}
+		for (back = 1; back <= SHADER_INTEGER_SOURCE_GAP && back <= index; back++) {
+			gap = required_gap(&backend->operations[index - back], &backend->operations[index]);
+			if (gap >= back && gap + 1U - back > needed)
+				needed = gap + 1U - back;
 		}
 		if (needed == 0)
 			continue;
@@ -413,18 +411,45 @@ shader_backend_space_hazards(
 		branch = &backend->operations[index];
 		if (branch->kind != MACHINE_BRANCH || branch->target >= backend->operation_count)
 			continue;
-		conflict = operations_conflict(&backend->operations[index - 1U], &backend->operations[branch->target]);
-		if (!conflict)
+		gap = required_gap(&backend->operations[index - 1U], &backend->operations[branch->target]);
+		if (gap < 2U)
 			continue;
 
-		/* One no-operation before the branch; the branch is now after it. */
-		error = insert_nops(backend, index, 1);
+		/* The no-operations before the branch (the branch itself is one group between); the branch is now after them. */
+		error = insert_nops(backend, index, gap - 1U);
 		if (error != 0)
 			return error;
-		index++;
+		index += gap - 1U;
 	}
 
 	/* Succeeded: the program is spaced. */
+	return 0;
+}
+
+/*
+ * The groups that must lie between an earlier group and a later one
+ * (0 when none): SHADER_INTEGER_SOURCE_GAP when the later one writes a
+ * register an integer multiply-add read, SHADER_HAZARD_GAP when it
+ * writes a register any other group read, reads an integer
+ * multiply-add's result, or is an integer multiply-add reading a
+ * register the earlier one wrote.
+ */
+static unsigned
+required_gap(
+	const struct shader_machine_operation *earlier,
+	const struct shader_machine_operation *later)
+{
+	/* The later group writes what the earlier one read. */
+	if (operations_conflict(earlier, later))
+		return earlier->kind == MACHINE_INTEGER ? SHADER_INTEGER_SOURCE_GAP : SHADER_HAZARD_GAP;
+
+	/* The later group reads an integer result, or is an integer group reading a fresh value. */
+	if (integer_result_read(earlier, later))
+		return SHADER_HAZARD_GAP;
+	if (later->kind == MACHINE_INTEGER && operations_conflict(later, earlier))
+		return SHADER_HAZARD_GAP;
+
+	/* Succeeded: no gap is needed. */
 	return 0;
 }
 
@@ -581,11 +606,8 @@ shader_backend_hazards(
 	/* Each group against the ones just before it. */
 	count = 0;
 	for (index = 0; index < backend->operation_count; index++) {
-		for (back = 1; back <= SHADER_HAZARD_GAP && back <= index; back++) {
-			conflict = operations_conflict(&backend->operations[index - back], &backend->operations[index]);
-			if (!conflict)
-				conflict = integer_result_read(&backend->operations[index - back], &backend->operations[index]);
-			if (conflict) {
+		for (back = 1; back <= SHADER_INTEGER_SOURCE_GAP && back <= index; back++) {
+			if (required_gap(&backend->operations[index - back], &backend->operations[index]) >= back) {
 				count++;
 				break;
 			}
@@ -597,8 +619,7 @@ shader_backend_hazards(
 		branch = &backend->operations[index];
 		if (branch->kind != MACHINE_BRANCH || branch->target >= backend->operation_count)
 			continue;
-		conflict = operations_conflict(&backend->operations[index - 1U], &backend->operations[branch->target]);
-		if (conflict)
+		if (required_gap(&backend->operations[index - 1U], &backend->operations[branch->target]) >= 2U)
 			count++;
 	}
 

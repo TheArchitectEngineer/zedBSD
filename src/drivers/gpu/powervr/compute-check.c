@@ -269,6 +269,7 @@ static int dump_append(struct shader_backend *dump, unsigned kind, unsigned dest
 static int dump_program(const struct shader_backend *backend, struct shader_backend *dump, unsigned keep, uint64_t address, uint8_t *code, size_t room, size_t *length);
 static int run_many_kernels(struct check_state *state, unsigned kernels, unsigned flags, const char *variant);
 static int run_fence_variants(struct check_state *state);
+static int put_fence_kernel(struct check_state *state, uint32_t *stream);
 static void run_layouts(struct check_state *state);
 static void run_workgroup_probe(struct check_state *state);
 static struct shader_machine_operation *dump_last(struct shader_backend *dump);
@@ -753,27 +754,11 @@ write_kick(
 	for (i = 0; i < POWERVR_COMPUTE_KERNEL_WORDS; i++)
 		put_word(state->streams, stream + i * 4U, words[i]);
 
-	/* The fence kernel: it waits for the work and frees the shared registers. */
-	kern_memset(&kernel, 0, sizeof(kernel));
-	kernel.data_offset = pds_offset + PDS_FENCE * PDS_SLOT;
-	kernel.code_offset = pds_offset + PDS_FENCE * PDS_SLOT + PDS_CODE;
-	kernel.data_words = POWERVR_COMPUTE_PDS_DATA_WORDS;
-	kernel.instances = 1;
-	kernel.max_instances = FENCE_INSTANCES;
-	kernel.fence = 1;
-	kernel.shared_from_pds = 1;
-	kernel.common_shared = 1;
-	kernel.any_cluster = 1;
-	error = powervr_compute_kernel_words(&kernel, words);
+	/* The fence kernel when it is used (POWERVR_COMPUTE_FENCE_KERNEL), then the end of the stream. */
+	stream += POWERVR_COMPUTE_KERNEL_WORDS * 4U;
+	error = put_fence_kernel(state, &stream);
 	if (error != 0)
 		return error;
-
-	stream += POWERVR_COMPUTE_KERNEL_WORDS * 4U;
-	for (i = 0; i < POWERVR_COMPUTE_KERNEL_WORDS; i++)
-		put_word(state->streams, stream + i * 4U, words[i]);
-
-	/* The end of the stream. */
-	stream += POWERVR_COMPUTE_KERNEL_WORDS * 4U;
 	put_word(state->streams, stream, powervr_compute_terminate_word());
 
 	/* Succeeded: the kick's program and stream are written. */
@@ -1509,23 +1494,10 @@ write_workgroup_kick(
 		put_word(state->streams, stream + i * 4U, words[i]);
 	stream += POWERVR_COMPUTE_KERNEL_WORDS * 4U;
 
-	/* The fence kernel and the end, as every kick's. */
-	kern_memset(&kernel, 0, sizeof(kernel));
-	kernel.data_offset = pds_offset + PDS_FENCE * PDS_SLOT;
-	kernel.code_offset = pds_offset + PDS_FENCE * PDS_SLOT + PDS_CODE;
-	kernel.data_words = POWERVR_COMPUTE_PDS_DATA_WORDS;
-	kernel.instances = 1;
-	kernel.max_instances = FENCE_INSTANCES;
-	kernel.fence = 1;
-	kernel.shared_from_pds = 1;
-	kernel.common_shared = 1;
-	kernel.any_cluster = 1;
-	error = powervr_compute_kernel_words(&kernel, words);
+	/* The fence kernel when it is used, and the end, as every kick's. */
+	error = put_fence_kernel(state, &stream);
 	if (error != 0)
 		return error;
-	for (i = 0; i < POWERVR_COMPUTE_KERNEL_WORDS; i++)
-		put_word(state->streams, stream + i * 4U, words[i]);
-	stream += POWERVR_COMPUTE_KERNEL_WORDS * 4U;
 	put_word(state->streams, stream, powervr_compute_terminate_word());
 
 	/* Succeeded: the kick is written. */
@@ -2051,9 +2023,11 @@ run_kernel(
 	error = probe_kick(state, KICK_END_ONLY, "end only");
 	if (error != 0)
 		return error;
-	error = probe_kick(state, KICK_FENCE_ONLY, "fence and end");
-	if (error != 0)
-		return error;
+	if (POWERVR_COMPUTE_FENCE_KERNEL) {
+		error = probe_kick(state, KICK_FENCE_ONLY, "fence and end");
+		if (error != 0)
+			return error;
+	}
 
 	/* Fills the window with values the kernel never writes. */
 	for (word = 0; word < CHECK_WORDS; word++)
@@ -2381,6 +2355,47 @@ take_program(
 	base = heap == POWERVR_PROGRAM_PDS ? POWERVR_PDS_HEAP_BASE : POWERVR_USC_HEAP_BASE;
 	*offset = (uint32_t)(address - base);
 	*result = buffer;
+	return 0;
+}
+
+/*
+ * Writes the fence kernel at *stream and moves *stream past it, when the
+ * streams use one (POWERVR_COMPUTE_FENCE_KERNEL); otherwise writes
+ * nothing, each program waiting for its stores before its end instead.
+ */
+static int
+put_fence_kernel(
+	struct check_state *state,
+	uint32_t *stream)
+{
+	struct powervr_compute_kernel kernel;
+	uint32_t words[POWERVR_COMPUTE_KERNEL_WORDS];
+	unsigned i;
+	int error;
+
+	/* Nothing when the streams leave it out. */
+	if (!POWERVR_COMPUTE_FENCE_KERNEL)
+		return 0;
+
+	/* The fence kernel: it waits for the work and frees the shared registers. */
+	kern_memset(&kernel, 0, sizeof(kernel));
+	kernel.data_offset = pds_offset + PDS_FENCE * PDS_SLOT;
+	kernel.code_offset = pds_offset + PDS_FENCE * PDS_SLOT + PDS_CODE;
+	kernel.data_words = POWERVR_COMPUTE_PDS_DATA_WORDS;
+	kernel.instances = 1;
+	kernel.max_instances = FENCE_INSTANCES;
+	kernel.fence = 1;
+	kernel.shared_from_pds = 1;
+	kernel.common_shared = 1;
+	kernel.any_cluster = 1;
+	error = powervr_compute_kernel_words(&kernel, words);
+	if (error != 0)
+		return error;
+	for (i = 0; i < POWERVR_COMPUTE_KERNEL_WORDS; i++)
+		put_word(state->streams, *stream + i * 4U, words[i]);
+	*stream += POWERVR_COMPUTE_KERNEL_WORDS * 4U;
+
+	/* Succeeded: written, or left out. */
 	return 0;
 }
 
