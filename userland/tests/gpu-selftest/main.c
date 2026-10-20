@@ -125,6 +125,8 @@ static int stage_vkdemo(struct selftest *test, char *reason, size_t capacity);
 static int run_program(const char *path, const char *argument, char *line, size_t capacity);
 static int run_program_list(const char *path, char *const *arguments, char *line, size_t capacity);
 static int frame_check(const char *path, char *reason, size_t capacity);
+static int ppm_header(FILE *file, unsigned *width, unsigned *height, unsigned *maximum);
+static int ppm_number(FILE *file, unsigned *value);
 static int is_vkcompute_stage(const char *name);
 static void vkcompute_outcomes(int status, const char *line, enum outcome *results, char reasons[3][SELFTEST_TEXT_MAX]);
 
@@ -601,6 +603,67 @@ stage_vkdemo(
 }
 
 /*
+ * Reads a binary PPM's header byte by byte: "P6", then the width, height
+ * and maximum as decimal numbers each after white space, then the one
+ * white space byte before the pixels.  (The library's fscanf reads one
+ * line only, so a header over several lines is read here instead.)
+ */
+static int
+ppm_header(
+	FILE *file,
+	unsigned *width,
+	unsigned *height,
+	unsigned *maximum)
+{
+	/* The magic. */
+	if (fgetc(file) != 'P' || fgetc(file) != '6')
+		return -1;
+
+	/* The three numbers. */
+	if (ppm_number(file, width) != 0 || ppm_number(file, height) != 0 || ppm_number(file, maximum) != 0)
+		return -1;
+
+	/* Succeeded: the single white space byte ending the header was read with the last number. */
+	return 0;
+}
+
+/* Reads white space (and comments), then a decimal number and the one byte after it, which must be white space. */
+static int
+ppm_number(
+	FILE *file,
+	unsigned *value)
+{
+	unsigned number;
+	int digits;
+	int c;
+
+	/* White space and comment lines. */
+	c = fgetc(file);
+	while (c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '#') {
+		if (c == '#') {
+			while (c != '\n' && c != EOF)
+				c = fgetc(file);
+		}
+		c = fgetc(file);
+	}
+
+	/* The digits. */
+	number = 0;
+	digits = 0;
+	while (c >= '0' && c <= '9' && digits < 9) {
+		number = number * 10U + (unsigned)(c - '0');
+		digits++;
+		c = fgetc(file);
+	}
+	if (digits == 0 || !(c == ' ' || c == '\t' || c == '\n' || c == '\r'))
+		return -1;
+
+	/* Succeeded: the number, and the white space byte after it consumed. */
+	*value = number;
+	return 0;
+}
+
+/*
  * Checks vkdemo's 320x240 PPM frame at 0 ms: two corners exactly the
  * clear colour 101828, the centre within 24 a channel of e06895.
  */
@@ -629,7 +692,7 @@ frame_check(
 		snprintf(reason, capacity, "no frame %s", path);
 		return 1;
 	}
-	if (fscanf(file, "P6 %u %u %u", &width, &height, &maximum) != 3 || width != 320U || height != 240U || maximum != 255U || fgetc(file) == EOF) {
+	if (ppm_header(file, &width, &height, &maximum) != 0 || width != 320U || height != 240U || maximum != 255U) {
 		/* Says what the file held: its size and its first bytes. */
 		unsigned char head[12];
 		size_t got;

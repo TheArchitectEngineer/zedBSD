@@ -1250,3 +1250,19 @@ csbgen（Mesa 25.0.7 の `gen_pack_header.py` の `__pvr_address`: `((addr >> sh
   - gpu-selftest と vkimage の main.c を、UAT の config と同じ clang の引数で RISC-V 向けに compile した（warning・error 0）。
   - `build/uat/vf2-gpu/config.mk`（`config-visionfive2.mk` に COMPUTE_CHECK・RENDER_CHECK と、gpu-selftest・gpu-selftest-boot・vkcompute・vkimage・vkstage・vkdemo・libvulkan・libwayland-client など）の rootfs の一覧（`make -pn` で展開）に、/bin の gpu-selftest・vkcompute・vkdemo・vkimage・vkstage、/lib の libvulkan.so、firmware が入ることを確かめた。
   - 板は未実施。
+
+## q1489 / q1489-i01（2026-10-21）: present の header の読み
+
+- 原因は zedBSD の libc の `vfscanf`（`src/libc/stdio-extra.c`）。中身は `fgets` で 1 行だけ読んで `vsscanf` に渡す形なので、`fscanf(file, "P6 %u %u %u")` は 1 行目の "P6\n" しか見ず、1 を返す。PPM の header は 3 行にまたがるので、vkdemo の frame は正しい（230415 byte = 15 byte の header + 320×240×3）のに失敗していた。さらに、残りの行は読み捨てられる（stream の位置が 1 行先へ進む）。
+- 直し（`userland/tests/gpu-selftest/main.c`）: fscanf を使わず、`ppm_header`・`ppm_number` で byte ごとに読むようにした。"P6"、空白・`#` の comment の行、10 進の幅・高さ・最大値を読み、最後の数の後の空白 1 byte まで読む。その後の `ftell` が画素の先頭になる。
+- libc の bug（Q1 に ticket の起票を依頼。libc は私の担当の範囲外なので直していない）:
+  - 症状: `fscanf`・`vfscanf`・`scanf` が、stream から 1 行（`fgets`、最大 4095 byte）しか読まない。
+    - 改行をまたぐ書式（"%u %u" で数が次の行にある）が途中で止まる。
+    - 1 行の中で書式が使わなかった残りは捨てられ、stream の次の読みに戻らない。
+    - 4095 byte を超える行は切れる。
+  - 期待: C の仕様どおり、書式の空白は改行を含む任意の空白を読み飛ばし、変換が使わなかった文字は `ungetc` で stream に戻す。
+  - 再現: "P6\n320 240\n255\n" の file に `fscanf(f, "P6 %u %u %u", …)` を行うと、zedBSD では 0 か 1 を返す（glibc では 3）。
+- 確認:
+  - RISC-V 向けに UAT の clang の引数で `-fsyntax-only`（warning・error 0）。
+  - host で `ppm_header` を取り出し、"P6\n320 240\n255\n" + 画素 1 byte の file を読んで、320・240・255 と次の byte が正しく出ることを確かめた。
+  - 板は未実施。
