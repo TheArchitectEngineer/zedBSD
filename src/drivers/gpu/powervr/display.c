@@ -194,9 +194,13 @@ struct powervr_display {
 	uint8_t *pixels;
 	int direct;
 
-	/* The device view this file made (NULL with the direct map), and its extent. */
+	/*
+	 * The view this file made, and its extent: RAM's uncached alias
+	 * (alias set), or a device view of a screen outside RAM.
+	 */
 	void *view;
 	size_t view_bytes;
+	int alias;
 
 	/* Protects the lease fields below. */
 	struct mutex mutex;
@@ -1193,30 +1197,52 @@ screen_valid(
 }
 
 /*
- * Makes the CPU's view of the screen: the direct map when the screen is
- * RAM it holds, as the text console draws it, else an uncached device
- * view of its pages.
+ * Makes the CPU's view of the screen, uncached so that what the CPU
+ * writes is in memory for the display controller without cache
+ * maintenance.  A screen in RAM is written through RAM's uncached alias:
+ * the U74 has no page attribute that makes RAM uncached, so a device view
+ * of RAM is still cached, and the direct map with a clean afterwards
+ * showed stale cache-line pieces on the board.  A screen outside RAM gets
+ * a device view.
  */
 static int
 map_screen(
 	struct powervr_display *display)
 {
+	struct kern_pmem run;
 	uint64_t offset;
+	void *kernel;
 	void *view;
 	int error;
 
-	/* RAM the direct map holds is written through it and cleaned afterwards. */
+	/* The whole pages the screen lies in. */
 	display->view = NULL;
 	display->view_bytes = 0U;
-	display->pixels = kern_pmem_to_kernel(display->screen.physical_base);
-	if (display->pixels != NULL) {
-		display->direct = 1;
+	display->pixels = NULL;
+	display->alias = 0;
+	display->direct = 0;
+	offset = display->screen.physical_base & (POWERVR_DISPLAY_PAGE_BYTES - 1U);
+	display->view_bytes = (size_t)((offset + display->screen.size + POWERVR_DISPLAY_PAGE_BYTES - 1U) & ~(uint64_t)(POWERVR_DISPLAY_PAGE_BYTES - 1U));
+
+	/* A screen in RAM: what the console wrote through the direct map goes to memory, then the alias. */
+	kernel = kern_pmem_to_kernel(display->screen.physical_base - offset);
+	if (kernel != NULL) {
+		kern_dcache_clean_range(kernel, display->view_bytes);
+		run.paddr = display->screen.physical_base - offset;
+		run.size = display->view_bytes;
+		error = kern_pmem_map_uncached(&run, &view);
+		if (error != 0) {
+			display->view_bytes = 0U;
+			return error;
+		}
+
+		display->view = view;
+		display->pixels = (uint8_t *)view + offset;
+		display->alias = 1;
 		return 0;
 	}
 
-	/* Anything else through a device view of whole pages. */
-	offset = display->screen.physical_base & (POWERVR_DISPLAY_PAGE_BYTES - 1U);
-	display->view_bytes = (size_t)((offset + display->screen.size + POWERVR_DISPLAY_PAGE_BYTES - 1U) & ~(uint64_t)(POWERVR_DISPLAY_PAGE_BYTES - 1U));
+	/* A screen outside RAM: a device view of its pages. */
 	error = kern_device_map(display->screen.physical_base - offset, display->view_bytes, KERN_DEVICE_UNCACHED, &view);
 	if (error != 0) {
 		display->view_bytes = 0U;
@@ -1225,7 +1251,6 @@ map_screen(
 
 	display->view = view;
 	display->pixels = (uint8_t *)view + offset;
-	display->direct = 0;
 
 	/* Succeeded: the CPU can write the screen. */
 	return 0;
@@ -1236,8 +1261,10 @@ static void
 unmap_screen(
 	struct powervr_display *display)
 {
-	/* The direct map is not this file's to end. */
-	if (display->view != NULL)
+	/* RAM's alias, or the device view. */
+	if (display->view != NULL && display->alias)
+		(void)kern_pmem_unmap_uncached(display->view, display->view_bytes);
+	else if (display->view != NULL)
 		(void)kern_device_unmap(display->view, display->view_bytes);
 
 	display->view = NULL;
