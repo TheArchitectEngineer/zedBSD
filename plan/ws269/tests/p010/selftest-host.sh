@@ -215,5 +215,22 @@ gpu-selftest: present: fail(pixel (5,5) 000000, want 101828)
 gpu-selftest: 12 ok, 1 fail, 0 skip
 END
 check frame -s "$out/stages-ok" -n "$out/node" -i "$out/vki-pass" -v "$out/vk-pass" -g "$out/vks-pass" -d "$out/vkd-black"
+# The firmware not reached yet ("-") at first, ok from 2.5 s on: the kernel stage waits a second at a time.
+printf 'firmware=- render-node=- compute=- ta=- 3d=- transfer=- present=-\n' > "$out/stages-late"
+( sleep 2.5; cp "$out/stages-ok" "$out/stages-late" ) &
+cat > "$out/late.expect" <<END
+gpu-selftest: waited 3 s for the GPU to attach
+gpu-selftest: stages: firmware=ok render-node=ok compute=- ta=- 3d=- transfer=- present=-
+gpu-selftest: kernel: ok
+gpu-selftest: node: ok
+gpu-selftest: instance: ok
+gpu-selftest: device: ok
+gpu-selftest: compute: ok
+gpu-selftest: image: ok
+$rest_lines
+gpu-selftest: 13 ok, 0 fail, 0 skip
+END
+check late -s "$out/stages-late" -n "$out/node" -i "$out/vki-pass" -v "$out/vk-pass" -g "$out/vks-pass"
+wait
 echo "selftest-host: $fails failed"
 [ "$fails" -eq 0 ]

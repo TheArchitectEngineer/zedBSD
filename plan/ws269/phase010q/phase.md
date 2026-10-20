@@ -208,3 +208,27 @@ sample の段の道（通しで読んだ）:
 | descriptor の copy | 読んでから ENOTSUP | 同上 |
 
 結論: P2 の file に直しの要る食い違いは見つからなかった。P1 の file の直しも無い（source の変更なし）。
+
+## q1404-i01（P2、2026-10-20、急ぎ）: 起動の gpu-selftest が firmware を待たない
+
+- 症状（UAT、VF2 の実機）: `stages: firmware=- render-node=- …` と `kernel: fail(firmware=-)` が出て、ほかの段は全部 skip になった。各行が 2 回出る。
+- 原因の見込み（Q1）: powervr は firmware を root が live になった後の段で載せる。gpu-selftest の oneshot はそれを待たずに走る。
+- 直し（`userland/tests/gpu-selftest/main.c`）:
+  - kernel の段の前の `wait_attach` を足した。stages の firmware が `-` の間、1 秒ごとに読み直す。止まるのは次のどれか:
+    - firmware が `-` 以外になる。
+    - `hw.gpu.attaching` が一度 0 より大きくなった後に 0 に戻る。
+    - 120 秒が過ぎる（`SELFTEST_ATTACH_SECONDS`）。
+  - 待ったら `gpu-selftest: waited N s for the GPU to attach` を 1 行出す。上限を越えて firmware がまだ `-` なら `kernel: fail(attach timeout, firmware=-)`。
+  - attaching は「一度 0 より大きく見えた後の 0」だけを終わりとみなす。late start が始まる前の 0 で、すぐ終わらないようにするため。
+- 2 回の行: `-c` は stdout と `/dev/console` の両方に書いていた。boot の service（init）の stdout が console なので、同じ行が 2 回出た。`-c` でも stdout が console そのもの（同じ char の device、または同じ file）なら、console へは書かないようにした（`stdout_is_console`）。実機の init の stdout が別の名前の device（rdev が違う）なら、まだ 2 回出る（実機で確かめる）。
+- 試験: `plan/ws269/tests/p010/selftest-host.sh` に `late` を足した（最初は `firmware=-`、2.5 秒後に ok → `waited 3 s` の後、13 ok）。
+
+| 確認 | コマンド | 結果 |
+| --- | --- | --- |
+| host | `sh plan/ws269/tests/p010/selftest-host.sh build/p015` | 0 failed（late を含む） |
+| VF2 の試験の image | `make ZEDBSD_CONFIG=plan/ws269/tests/p010/config-visionfive2-selftest.mk BUILD=build/p015/img disk-image -j16` | rc 0、warning 0 |
+
+- 未実施:
+  - 120 秒の上限を越える場合の host 試験（時間がかかるので）。
+  - 実機。
+- 片付け（Q1 に依頼）: `build/p015/`。
