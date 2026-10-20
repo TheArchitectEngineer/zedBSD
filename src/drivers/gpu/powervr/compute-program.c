@@ -89,14 +89,14 @@ struct store_shape {
 /* The groups every store program starts with, before its first step. */
 #define STORE_PROLOGUE		9U
 
-/* The groups of one step: the store, the wait for it and two adds. */
+/* The groups of one step: the store, the wait for it, the 64-bit add and the data's move. */
 #define STORE_STEP		4U
 
 /* The groups of the temporaries program. */
-#define TEMPS_GROUPS		13U
+#define TEMPS_GROUPS		15U
 
 /* The groups of the fill program. */
-#define FILL_GROUPS		11U
+#define FILL_GROUPS		14U
 
 /*
  * What a fill program writes: the word of instance 0's address, and the
@@ -117,6 +117,7 @@ static int pass_group(struct powervr_usc_group *group, unsigned destination, uns
 static int special_group(struct powervr_usc_group *group, unsigned destination, unsigned source);
 static int multiply_add_group(struct powervr_usc_group *group, unsigned destination, unsigned first, unsigned second, unsigned addend);
 static int store_group(struct powervr_usc_group *group, unsigned data, unsigned address);
+static int add64_group(struct powervr_usc_group *group, unsigned destination, unsigned base, unsigned offset);
 static int wait_group(struct powervr_usc_group *group);
 static int end_group(struct powervr_usc_group *group);
 static void temporary(struct powervr_usc_register *operand, unsigned index);
@@ -581,11 +582,20 @@ powervr_compute_probe_program(
 		if (error == 0)
 			error = pass_group(&groups[count++], 2, POWERVR_USC_BANK_TEMPORARY, 5);
 	} else if (error == 0) {
+		/* The offset in r8 by the multiply-add, then the address pair by the 64-bit add. */
 		error = special_group(&groups[count++], 5, USC_INSTANCE_NUMBER);
 		if (error == 0)
 			error = immediate_group(&groups[count++], 4, stride);
 		if (error == 0)
-			error = multiply_add_group(&groups[count++], 0, 5, 4, 0);
+			error = immediate_group(&groups[count++], 6, 0);
+		if (error == 0)
+			error = multiply_add_group(&groups[count++], 8, 5, 4, 6);
+		if (error == 0)
+			error = immediate_group(&groups[count++], 0, (uint32_t)base);
+		if (error == 0)
+			error = immediate_group(&groups[count++], 1, (uint32_t)(base >> 32));
+		if (error == 0)
+			error = add64_group(&groups[count++], 0, 0, 8);
 		if (error == 0)
 			error = pass_group(&groups[count++], 2, POWERVR_USC_BANK_TEMPORARY, 5);
 		if (error == 0 && kind == POWERVR_COMPUTE_PROBE_ADDRESS_WAIT)
@@ -722,47 +732,52 @@ store_fetch(
 	size_t step_index;
 	int error;
 
-	/* The set-up: the instance's first address and data, the stride and the constants. */
+	/*
+	 * The set-up: the instance's offset first (the 32-bit multiply-add
+	 * is done before the address pair is written), then the address as
+	 * the base pair plus the offset in one 64-bit add, the stride and the
+	 * data.
+	 */
 	shape = context;
 	error = 0;
 	if (index == 0) {
 		/* r5: the instance number. */
 		error = special_group(group, 5, USC_INSTANCE_NUMBER);
 	} else if (index == 1) {
-		/* r0: the low half of the first address. */
-		error = immediate_group(group, 0, shape->base_low);
-	} else if (index == 2) {
-		/* r1: the high half of the address. */
-		error = immediate_group(group, 1, shape->base_high);
-	} else if (index == 3) {
 		/* r4: four, the bytes of a word. */
 		error = immediate_group(group, 4, 4);
-	} else if (index == 4) {
-		/* r0: the instance's own first word. */
-		error = multiply_add_group(group, 0, 5, 4, 0);
-	} else if (index == 5) {
-		/* r4: one. */
-		error = immediate_group(group, 4, 1);
-	} else if (index == 6) {
-		/* r3: the stride between one instance's words. */
-		error = immediate_group(group, 3, POWERVR_COMPUTE_STORE_STRIDE);
-	} else if (index == 7) {
+	} else if (index == 2) {
 		/* r6: zero. */
 		error = immediate_group(group, 6, 0);
+	} else if (index == 3) {
+		/* r8: the instance's offset. */
+		error = multiply_add_group(group, 8, 5, 4, 6);
+	} else if (index == 4) {
+		/* r0: the low half of the base. */
+		error = immediate_group(group, 0, shape->base_low);
+	} else if (index == 5) {
+		/* r1: the high half. */
+		error = immediate_group(group, 1, shape->base_high);
+	} else if (index == 6) {
+		/* r0 and r1: the instance's first address. */
+		error = add64_group(group, 0, 0, 8);
+	} else if (index == 7) {
+		/* r3: the stride between one instance's words. */
+		error = immediate_group(group, 3, POWERVR_COMPUTE_STORE_STRIDE);
 	} else if (index == 8) {
 		/* r2: the data, the word's own address. */
-		error = multiply_add_group(group, 2, 0, 4, 6);
+		error = pass_group(group, 2, POWERVR_USC_BANK_TEMPORARY, 0);
 	} else if (index < STORE_PROLOGUE + (size_t)shape->steps * STORE_STEP) {
-		/* One step: store, wait, advance the address and the data. */
+		/* One step: store, wait, advance the address, take its low half as the data. */
 		step_index = (index - STORE_PROLOGUE) % STORE_STEP;
 		if (step_index == 0) {
 			error = store_group(group, 2, 0);
 		} else if (step_index == 1) {
 			error = wait_group(group);
 		} else if (step_index == 2) {
-			error = multiply_add_group(group, 0, 0, 4, 3);
+			error = add64_group(group, 0, 0, 3);
 		} else {
-			error = multiply_add_group(group, 2, 2, 4, 3);
+			error = pass_group(group, 2, POWERVR_USC_BANK_TEMPORARY, 0);
 		}
 	} else {
 		/* The end. */
@@ -789,7 +804,7 @@ temps_fetch(
 	const struct store_shape *shape;
 	int error;
 
-	/* The number first, then the fill, then the address, then the store. */
+	/* The number first, then the fill, then the offset and the address, then the store. */
 	shape = context;
 	error = 0;
 	if (index == 0) {
@@ -799,24 +814,30 @@ temps_fetch(
 		/* r3 to r6: values that are no instance number. */
 		error = immediate_group(group, (unsigned)index + 2U, TEMPS_FILL | ((uint32_t)index + 2U));
 	} else if (index == 5) {
-		/* r0: the low half of the base. */
-		error = immediate_group(group, 0, shape->base_low);
-	} else if (index == 6) {
-		/* r1: the high half. */
-		error = immediate_group(group, 1, shape->base_high);
-	} else if (index == 7) {
 		/* r2: four, the bytes of a word. */
 		error = immediate_group(group, 2, 4);
+	} else if (index == 6) {
+		/* r0: zero. */
+		error = immediate_group(group, 0, 0);
+	} else if (index == 7) {
+		/* r2: the instance's offset. */
+		error = multiply_add_group(group, 2, 7, 2, 0);
 	} else if (index == 8) {
-		/* r0: the instance's word. */
-		error = multiply_add_group(group, 0, 7, 2, 0);
+		/* r0: the low half of the base. */
+		error = immediate_group(group, 0, shape->base_low);
 	} else if (index == 9) {
+		/* r1: the high half. */
+		error = immediate_group(group, 1, shape->base_high);
+	} else if (index == 10) {
+		/* r0 and r1: the instance's word. */
+		error = add64_group(group, 0, 0, 2);
+	} else if (index == 11) {
 		/* r2: the data, the number as the eighth temporary holds it now. */
 		error = pass_group(group, 2, POWERVR_USC_BANK_TEMPORARY, 7);
-	} else if (index == 10) {
+	} else if (index == 12) {
 		/* The store. */
 		error = store_group(group, 2, 0);
-	} else if (index == 11) {
+	} else if (index == 13) {
 		/* The wait for it. */
 		error = wait_group(group);
 	} else {
@@ -844,37 +865,46 @@ fill_fetch(
 	const struct fill_shape *shape;
 	int error;
 
-	/* The number, the address, the value, then the store. */
+	/* The number, the value, the offset and the address, then the store. */
 	shape = context;
 	error = 0;
 	if (index == 0) {
 		/* r7: the instance number. */
 		error = special_group(group, 7, USC_INSTANCE_NUMBER);
 	} else if (index == 1) {
-		/* r0: the low half of the base. */
-		error = immediate_group(group, 0, shape->base_low);
-	} else if (index == 2) {
-		/* r1: the high half. */
-		error = immediate_group(group, 1, shape->base_high);
-	} else if (index == 3) {
-		/* r2: four, the bytes of a word. */
-		error = immediate_group(group, 2, 4);
-	} else if (index == 4) {
-		/* r0: the instance's word. */
-		error = multiply_add_group(group, 0, 7, 2, 0);
-	} else if (index == 5) {
 		/* r3: the multiplier. */
 		error = immediate_group(group, 3, shape->multiplier);
-	} else if (index == 6) {
+	} else if (index == 2) {
 		/* r4: the addend. */
 		error = immediate_group(group, 4, shape->addend);
+	} else if (index == 3) {
+		/* r6: the value. */
+		error = multiply_add_group(group, 6, 7, 3, 4);
+	} else if (index == 4) {
+		/* r2: four, the bytes of a word. */
+		error = immediate_group(group, 2, 4);
+	} else if (index == 5) {
+		/* r0: zero. */
+		error = immediate_group(group, 0, 0);
+	} else if (index == 6) {
+		/* r5: the instance's offset. */
+		error = multiply_add_group(group, 5, 7, 2, 0);
 	} else if (index == 7) {
-		/* r2: the value. */
-		error = multiply_add_group(group, 2, 7, 3, 4);
+		/* r0: the low half of the base. */
+		error = immediate_group(group, 0, shape->base_low);
 	} else if (index == 8) {
+		/* r1: the high half. */
+		error = immediate_group(group, 1, shape->base_high);
+	} else if (index == 9) {
+		/* r0 and r1: the instance's word. */
+		error = add64_group(group, 0, 0, 5);
+	} else if (index == 10) {
+		/* r2: the value. */
+		error = pass_group(group, 2, POWERVR_USC_BANK_TEMPORARY, 6);
+	} else if (index == 11) {
 		/* The store. */
 		error = store_group(group, 2, 0);
-	} else if (index == 9) {
+	} else if (index == 12) {
 		/* The wait for it. */
 		error = wait_group(group);
 	} else {
@@ -1020,9 +1050,53 @@ multiply_add_group(
 	temporary(&group->source[1], second);
 	temporary(&group->source[2], addend);
 	temporary(&group->destination[0], destination);
+	group->internal[4] = USC_SELECT_FT0;
 
 	/* The first phase multiplies and adds. */
 	error = powervr_usc_integer(POWERVR_USC_INTEGER_MULTIPLY_ADD_32, 0, 0, 0, 0, 0, 0, 0, 0, &group->operation[POWERVR_USC_PHASE_0]);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the group. */
+	return 0;
+}
+
+/*
+ * Builds a main group of a 64-bit add of a 32-bit word: the pair at base
+ * and base + 1 plus the temporary offset, written to the pair at
+ * destination and destination + 1 (the low half from ft0, the high from
+ * fte), as an address is made.
+ *
+ * Procedure referenced:
+ * Mesa 26.2.5 src/imagination/pco/pco_map.py (group_map O_ADD64_32:
+ * phase 0, both writes, the sources in s0, s1 and s2, is4 from ft0 and
+ * is5 from fte; encode_map O_ADD64_32: the short form, add6432);
+ * zedBSD src/drivers/gpu/powervr/shader-backend.c (MACHINE_ADD64).
+ */
+static int
+add64_group(
+	struct powervr_usc_group *group,
+	unsigned destination,
+	unsigned base,
+	unsigned offset)
+{
+	int error;
+
+	/* A main group from the base pair and the offset to the destination pair. */
+	*group = blank_group;
+	group->unit = POWERVR_USC_UNIT_MAIN;
+	group->write_0 = 1;
+	group->write_1 = 1;
+	temporary(&group->source[0], base);
+	temporary(&group->source[1], base + 1U);
+	temporary(&group->source[2], offset);
+	temporary(&group->destination[0], destination);
+	temporary(&group->destination[1], destination + 1U);
+	group->internal[4] = USC_SELECT_FT0;
+	group->internal[5] = USC_SELECT_FTE;
+
+	/* The first phase adds. */
+	error = powervr_usc_integer(POWERVR_USC_INTEGER_ADD_64_FROM_32, 0, 0, 0, 0, 0, 0, 0, 0, &group->operation[POWERVR_USC_PHASE_0]);
 	if (error != 0)
 		return error;
 

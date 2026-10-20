@@ -286,6 +286,13 @@ test_store_program(void)
 	static const uint8_t multiply_add_head[] = { 0x82, 0x00, 0xe2 };
 
 	/*
+	 * The 64-bit add of a 32-bit word that makes the address, main: ext |
+	 * oporg p0 | w1p | w0p = 0x86, 0x00; the short int32_64: main_op
+	 * 0b111 <<5 | int32_64_op add6432 0 = 0xe0.
+	 */
+	static const uint8_t add64_head[] = { 0x86, 0x00, 0xe0 };
+
+	/*
 	 * The end, control, padded so the program ends on 8 bytes: 4 + 4
 	 * bytes = 4 half-words = 0x04; ext 0x80; miscctl end 1 <<7 |
 	 * alutype control 3 <<5 | ctrlop nop 7 <<1 = 0xee; the nop byte 0x00;
@@ -305,10 +312,12 @@ test_store_program(void)
 		return;
 
 	check_bytes(program + starts[0], pass_r5, sizeof(pass_r5), "store group 0, r5 = movs1 sr51");
-	check_bytes(program + starts[1], immediate_r0, sizeof(immediate_r0), "store group 1, r0 = base low");
+	check_bytes(program + starts[3] + 1, multiply_add_head, sizeof(multiply_add_head), "store group 3, madd32 (the offset)");
+	check_bytes(program + starts[4], immediate_r0, sizeof(immediate_r0), "store group 4, r0 = base low");
+	check_bytes(program + starts[6] + 1, add64_head, sizeof(add64_head), "store group 6, add64_32 (the address pair)");
 	check_bytes(program + starts[9] + 1, store_head, sizeof(store_head), "store group 9, st");
 	check_bytes(program + starts[10], wait, sizeof(wait), "store group 10, wdf");
-	check_bytes(program + starts[11] + 1, multiply_add_head, sizeof(multiply_add_head), "store group 11, madd32");
+	check_bytes(program + starts[11] + 1, add64_head, sizeof(add64_head), "store group 11, add64_32 (the next address)");
 	check_bytes(program + starts[13] + 1, store_head, sizeof(store_head), "store step 2, st");
 	check_bytes(program + starts[9 + 4 * 511] + 1, store_head, sizeof(store_head), "store last step st");
 	check((starts[count - 1] % 8U) == 0, "store last group starts on 8 bytes");
@@ -335,7 +344,7 @@ test_temps_program(void)
 	/* Group 1, r3 = 0xdead0003: immediate low byte first, destination 0x43. */
 	static const uint8_t fill_r3[] = { 0x86, 0x92, 0x40, 0x13, 0x03, 0x00, 0xad, 0xde, 0x00, 0x00, 0x43, 0xff };
 
-	/* Group 9, r2 = byp(r7): lower source bank temp 1 <<6 | 7 = 0x47, destination 0x42. */
+	/* Group 11, r2 = byp(r7): lower source bank temp 1 <<6 | 7 = 0x47, destination 0x42. */
 	static const uint8_t pass_r2[] = { 0x34, 0x82, 0x00, 0x87, 0x47, 0x00, 0x00, 0x42 };
 
 	error = powervr_compute_temps_program(0x80001f0000ULL, program, sizeof(program), &length);
@@ -345,16 +354,17 @@ test_temps_program(void)
 
 	check((length % 8U) == 0, "temps program ends on 8 bytes");
 	count = walk(program, length, starts, sizeof(starts) / sizeof(starts[0]));
-	check(count == 13, "temps program: 13 groups");
-	if (count != 13)
+	check(count == 15, "temps program: 15 groups");
+	if (count != 15)
 		return;
 
 	check_bytes(program + starts[0], pass_r7, sizeof(pass_r7), "temps group 0, r7 = movs1 sr51");
 	check_bytes(program + starts[1], fill_r3, sizeof(fill_r3), "temps group 1, r3 fill");
-	check_bytes(program + starts[9], pass_r2, sizeof(pass_r2), "temps group 9, r2 = r7");
-	check(program[starts[10] + 1] == 0xa0 && program[starts[10] + 3] == 0xf2, "temps group 10, st");
-	check(program[starts[11] + 2] == 0x6a, "temps group 11, wdf");
-	check(program[starts[12] + 2] == 0xee, "temps group 12, nop end");
+	check(program[starts[10] + 1] == 0x86 && program[starts[10] + 3] == 0xe0, "temps group 10, add64_32");
+	check_bytes(program + starts[11], pass_r2, sizeof(pass_r2), "temps group 11, r2 = r7");
+	check(program[starts[12] + 1] == 0xa0 && program[starts[12] + 3] == 0xf2, "temps group 12, st");
+	check(program[starts[13] + 2] == 0x6a, "temps group 13, wdf");
+	check(program[starts[14] + 2] == 0xee, "temps group 14, nop end");
 }
 
 static void
