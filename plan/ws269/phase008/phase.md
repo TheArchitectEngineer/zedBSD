@@ -356,3 +356,33 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
 | VF2 の vmunix（`plan/ws269/tests/p008/config-visionfive2-compute.mk`、`build/p021/vf2/vmunix`） | rc 0、warning 0 |
 
 - 片付け（Q1 に依頼）: `build/p021/`。
+
+## q1439-i01（P2、2026-10-20）: unified の大きさと field の格子
+
+- 板の 6 回目（vf2-dmesg-vf2-gpu）:
+  - kernel は 10116/16384。
+  - store の 1 step は 32/32（field 16 の効果）、4 step は 108/128。
+  - wide の temps は 30/32 wrong。
+  - COMPUTED の r1 は依然として壊れている（high c5208a85）。
+  - fours の kick は同じ 0x80007c4000 で fault。
+- 読みで分かったこと:
+  - `write_kick` の `temporaries` の引数は、CDM の KERNEL0 の `usc_unified_size`（temporaries×4 byte を 16 byte 単位で切り上げ）にもなる。
+  - store の kick は temporaries 16 で unified 4 単位、field 16。wide の temps の kick は temporaries 8 で unified 2 単位、field 16。
+  - 同じ field 16 で、unified の大きい store の 1 step は全部届き、unified の小さい temps は壊れた。field より unified（KERNEL0）が効いている見込みがある。Mesa は unified に vtxins だけを入れ、temporaries は DOUTU で与える。
+  - COMPUTED の probe（temporaries 12 → unified 3 単位、field 16）でも r1 が壊れる。field だけの問題ではない。
+- (2) fours の program を手で追う: temps の program は r7 に inst、r3〜r6 に fill、r2 に 4、r0 に 0、r2 = r7×r2 + r0、r0・r1 に base、add64、r2 = r7、st の順。instance どうしの register が重なると、隣の instance の fill（`0xdead000N`）や base が r0・r1・r2 に入る。この形の 64 bit の address（例えば高い word が fill の値）は run の外になり、毎回同じ値になる。0x80007c4000 は高い word が 0x80 のままで、低い word が 0x007c4000。base の低い word（0x001f1000 前後）に、壊れた offset（r2）が足された形と見る。r2 が壊れる（r7 が隣の instance の値になる、または r2 が重なる）とすると説明できるが、どの register かは格子の結果で決める。
+- 足したもの（`compute-check.c`）:
+  - temps の program の kick の格子を足した: unified の register 数 {32, 16, 8, 0} × field {16, 8, 4, 2} の 16 個。広いものから順に流し、fault で止まる。
+  - 1 行で出す: `powervr: compute grid (wrong of 32, unified regs u, field f): u32: f16=N f8=N f4=N f2=N u16: …`。kick が失敗した所は `F(err)`。
+  - 順は「kernel → probes → 格子 → wide の temps → four と two」。
+- 読み方:
+  - 行（u）で決まり、列（f）によらないなら、instance の register は KERNEL0 の unified が決める（単位は 0 になる境から分かる）。
+  - 列で決まるなら DOUTU の field。その単位は、壊れ始める f と program の 8 register から分かる。
+  - どこでも壊れるなら別の原因（r1 の破壊を含めて）。
+
+| 確認 | 結果 |
+| --- | --- |
+| p008 の host | encode 94/0、compute 72/0 |
+| VF2 の vmunix（`plan/ws269/tests/p008/config-visionfive2-compute.mk`、`build/p022/vf2/vmunix`） | rc 0、warning 0 |
+
+- 片付け（Q1 に依頼）: `build/p022/`。
