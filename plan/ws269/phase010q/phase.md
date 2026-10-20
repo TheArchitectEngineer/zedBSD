@@ -811,3 +811,10 @@ source の変更は無し。
   - 外れ。
 - (2) partial render の fence: mainline の `pvr_queue.c`（master の 718〜727 行）は、geometry の job の `partial_render_geom_frag_fence` を、**その queue（geometry）の timeline の UFO** の address と `done_fence->seqno - 1` にする。こちらの `render-kick-layout.c`（190〜204 行）も、geometry の queue の timeline と `value - 1` で、最初の kick では 0。一致しており、外れ。
 - source の変更は無し（直す物が無い）。新しい vmunix は無い。
+
+## q1436-i01（P1、2026-10-20）: geometry だけが使う物の照合
+
+- (1) `geom_caches_need_zeroing`: mainline の `pvr_hwrt.c`（286 行）は common の `geom_caches_need_zeroing` を false にし、data の側（+0x114）は入れない（0 のまま）。こちらの `render-target-layout.c` も data の `clear_geometry_caches` を書かない（empty の record から始めて名前の無い field は 0）、common の側も 0。板の dump の +0x114 = 1 と state 9（HWR）は、reset の後に FW が書いた値。host が 1 にしているのではないので、「0 にして kick する」切り分けは今の形がすでにそれ（kick の時は 0）。
+- (2) VDM sync の固定の program: Mesa 25.0.7 の `pvr_winsys_helper.c` `pvr_setup_static_vdm_sync` の USC は 8 byte の `44 A0 80 05 00 00 00 FF`。こちらの `fixed-area.c` の `sync_shader` を host で encode した byte（`build/q1436/sync`）は `44 A0 80 05 00 00 00 FF` で、1 byte ずつ一致。PDS は DOUTU の task の word（USC の offset、temps 0、sample rate INSTANCE 0）と、constant 0 からの task の出力・END の 1 word（0xf4000002）。compute の kick の program と同じ encoder の道で、Mesa の `pvr_pds_kick_usc` の形（data の 64 bit の task の word、code の DOUT・END）と一致。
+- (3) global free list の record の dump を足した（`powervr_session_global_list_dump`、render check の失敗・reset の時）。
+- 確かめ: 試験の image の config の vmunix は rc 0、warning 0。実機は未。
