@@ -734,12 +734,16 @@ shader_spirv_emit_value(
 	const struct powervr_ir_operand *b,
 	const struct powervr_ir_operand *c)
 {
+	struct powervr_ir_operand operand;
 	uint32_t value;
 
 	/* A new value and the instruction that writes it. */
 	value = shader_spirv_new_value(reader, 1);
 	shader_spirv_emit(reader, opcode, value, a, b, c, 0, 0);
-	return shader_spirv_value_operand(value, 0);
+	operand = shader_spirv_value_operand(value, 0);
+
+	/* Succeeded: the new value as an operand. */
+	return operand;
 }
 
 /* Makes an operand of a constant word. */
@@ -841,12 +845,16 @@ shader_spirv_shared_word(
 	uint32_t request,
 	uint32_t word)
 {
+	struct powervr_ir_operand operand;
 	uint32_t value;
 
 	/* The word as a new value, read where it is used. */
 	value = shader_spirv_new_value(reader, 1);
 	shader_spirv_emit(reader, POWERVR_IR_SHARED, value, NULL, NULL, NULL, request, word);
-	return shader_spirv_value_operand(value, 0);
+	operand = shader_spirv_value_operand(value, 0);
+
+	/* Succeeded: the shared word as an operand. */
+	return operand;
 }
 
 /*

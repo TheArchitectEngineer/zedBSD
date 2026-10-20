@@ -709,20 +709,17 @@ main(
 	check(error != 0, "a cut frame is refused");
 
 	/*
-	 * The Keiland-like frame (ws269-p011): command buffer A has the copy,
-	 * the pass of 20 draws (jobs of 16 and 4), the pass of 17 (16 and 1;
-	 * each continuation loads what the job before it stored), then the
-	 * clear.  Today vk-queue.c runs a begin's job only when there are as
-	 * many jobs as begins, so with continuations every job runs after the
-	 * command buffer's other records: copy, clear, then the four jobs.
-	 * That is the order checked here until P1 runs a begin's job and its
-	 * continued ones in place (then: T R16 R4c R16 R1c T).  Command buffer
-	 * B's 200 draws need 13 jobs, more than QUEUE_JOBS_MAX (8): its submit
-	 * fails (E2BIG, INITIALIZATION_FAILED) with no kick.
+	 * The Keiland-like frame (ws269-p011): command buffer A runs the
+	 * copy, the pass of 20 draws as jobs of 16 and 4, the pass of 17 as
+	 * 16 and 1 (each continuation loads what the job before it stored),
+	 * then the clear, in the records' order (vk-queue.c runs a begin's
+	 * job and its continued ones at the begin).  Command buffer B's 200
+	 * draws run as 13 jobs in order, 12 of 16 and one of 8.
 	 */
 	{
 		uint32_t submit_b;
 		unsigned index;
+		uint32_t draws;
 		int ok;
 
 		kick_recording = 1;
@@ -735,19 +732,32 @@ main(
 		printf("  keiland kicks:");
 		for (index = 0; index < kick_count; index++) {
 			if (jobs_run[index].kind == 'R')
-				printf(" R%u%s(load %u store %u)", jobs_run[index].draws, jobs_run[index].continued ? "c" : "", jobs_run[index].load_op, jobs_run[index].store_op);
+				printf(" R%u%s", jobs_run[index].draws, jobs_run[index].continued ? "c" : "");
 			else
 				printf(" T");
 		}
 		printf("; submit B %d\n", (int)submit_b);
-		ok = kick_count == 6;
-		ok = ok && jobs_run[0].kind == 'T' && jobs_run[1].kind == 'T';
-		ok = ok && jobs_run[2].kind == 'R' && jobs_run[2].draws == 16 && !jobs_run[2].continued && jobs_run[2].load_op == VK_ATTACHMENT_LOAD_OP_CLEAR && jobs_run[2].store_op == VK_ATTACHMENT_STORE_OP_STORE;
-		ok = ok && jobs_run[3].kind == 'R' && jobs_run[3].draws == 4 && jobs_run[3].continued && jobs_run[3].load_op == VK_ATTACHMENT_LOAD_OP_LOAD && jobs_run[3].store_op == VK_ATTACHMENT_STORE_OP_STORE;
-		ok = ok && jobs_run[4].kind == 'R' && jobs_run[4].draws == 16 && !jobs_run[4].continued && jobs_run[4].load_op == VK_ATTACHMENT_LOAD_OP_CLEAR && jobs_run[4].store_op == VK_ATTACHMENT_STORE_OP_STORE;
-		ok = ok && jobs_run[5].kind == 'R' && jobs_run[5].draws == 1 && jobs_run[5].continued && jobs_run[5].load_op == VK_ATTACHMENT_LOAD_OP_LOAD && jobs_run[5].store_op == VK_ATTACHMENT_STORE_OP_STORE;
-		check(ok, "keiland A today: copy, clear, then jobs 16, 4c, 16, 1c (continuations load what was stored)");
-		check(submit_b == (uint32_t)VK_ERROR_INITIALIZATION_FAILED, "keiland B: 200 draws (13 jobs > QUEUE_JOBS_MAX 8) are refused (E2BIG, until P1 raises the room)");
+
+		/* A: T R16 R4c R16 R1c T. */
+		ok = kick_count == 6U + 13U;
+		ok = ok && jobs_run[0].kind == 'T' && jobs_run[5].kind == 'T';
+		ok = ok && jobs_run[1].kind == 'R' && jobs_run[1].draws == 16 && !jobs_run[1].continued && jobs_run[1].load_op == VK_ATTACHMENT_LOAD_OP_CLEAR && jobs_run[1].store_op == VK_ATTACHMENT_STORE_OP_STORE;
+		ok = ok && jobs_run[2].kind == 'R' && jobs_run[2].draws == 4 && jobs_run[2].continued && jobs_run[2].load_op == VK_ATTACHMENT_LOAD_OP_LOAD && jobs_run[2].store_op == VK_ATTACHMENT_STORE_OP_STORE;
+		ok = ok && jobs_run[3].kind == 'R' && jobs_run[3].draws == 16 && !jobs_run[3].continued && jobs_run[3].load_op == VK_ATTACHMENT_LOAD_OP_CLEAR && jobs_run[3].store_op == VK_ATTACHMENT_STORE_OP_STORE;
+		ok = ok && jobs_run[4].kind == 'R' && jobs_run[4].draws == 1 && jobs_run[4].continued && jobs_run[4].load_op == VK_ATTACHMENT_LOAD_OP_LOAD && jobs_run[4].store_op == VK_ATTACHMENT_STORE_OP_STORE;
+		check(ok, "keiland A: copy, jobs 16, 4c, 16, 1c (continuations load what was stored), clear, in order");
+
+		/* B: 13 jobs of 200 draws, the first clearing, the rest continuing. */
+		ok = submit_b == VK_SUCCESS && kick_count == 19U;
+		draws = 0;
+		for (index = 6; ok && index < 19U; index++) {
+			ok = jobs_run[index].kind == 'R' && jobs_run[index].continued == (index != 6U);
+			ok = ok && jobs_run[index].load_op == (index == 6U ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD);
+			ok = ok && jobs_run[index].store_op == VK_ATTACHMENT_STORE_OP_STORE;
+			ok = ok && jobs_run[index].draws == (index < 18U ? 16U : 8U);
+			draws += jobs_run[index].draws;
+		}
+		check(ok && draws == 200U, "keiland B: 200 draws run as 13 jobs in order (12 of 16, one of 8)");
 		kick_recording = 0;
 	}
 

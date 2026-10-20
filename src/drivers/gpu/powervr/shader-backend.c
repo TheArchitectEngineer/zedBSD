@@ -269,8 +269,15 @@ powervr_shader_compile(
 	uint8_t *code,
 	size_t room)
 {
+	int error;
+
 	/* The shared registers stay registers. */
-	return powervr_shader_compile_inline(words, count, stage, key, NULL, 0, workspace, program, code, room);
+	error = powervr_shader_compile_inline(words, count, stage, key, NULL, 0, workspace, program, code, room);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the program and its code. */
+	return 0;
 }
 
 /*
@@ -588,11 +595,18 @@ select_instruction(
 	unsigned mc;
 	unsigned channel;
 	unsigned opcode;
+	int error;
 
 	/* Structure has its own selection. */
 	opcode = instruction->opcode;
-	if (opcode <= POWERVR_IR_CONTINUE)
-		return select_structure(select, instruction);
+	if (opcode <= POWERVR_IR_CONTINUE) {
+		error = select_structure(select, instruction);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the structure's operations. */
+		return 0;
+	}
 
 	/* The operations that write a value. */
 	switch (opcode) {
@@ -1129,7 +1143,13 @@ static struct shader_machine_register
 temp_register(
 	unsigned index)
 {
-	return bank_register(POWERVR_USC_BANK_TEMPORARY, index);
+	struct shader_machine_register reg;
+
+	/* The temporary bank's register. */
+	reg = bank_register(POWERVR_USC_BANK_TEMPORARY, index);
+
+	/* Succeeded: the temporary. */
+	return reg;
 }
 
 /* Names a register of a bank. */
@@ -1151,7 +1171,13 @@ destination_of(
 	struct backend_select *select,
 	const struct powervr_ir_instruction *instruction)
 {
-	return temp_register(select->backend->value_register[instruction->destination]);
+	struct shader_machine_register reg;
+
+	/* The first temporary the value was given. */
+	reg = temp_register(select->backend->value_register[instruction->destination]);
+
+	/* Succeeded: the destination's register. */
+	return reg;
 }
 
 /*
@@ -1172,18 +1198,40 @@ operand_register(
 	*modifiers = 0;
 	if (operand->kind == POWERVR_IR_OPERAND_VALUE) {
 		*modifiers = operand->modifiers;
-		return temp_register(select->backend->value_register[operand->value] + operand->component);
+		reg = temp_register(select->backend->value_register[operand->value] + operand->component);
+
+		/* Succeeded: the value's register. */
+		return reg;
 	}
 
 	/* The constants the hardware holds. */
-	if (operand->constant == 0)
-		return bank_register(POWERVR_USC_BANK_SPECIAL, SPECIAL_ZERO);
-	if (operand->constant == 1)
-		return bank_register(POWERVR_USC_BANK_SPECIAL, SPECIAL_ONE);
-	if (operand->constant == 0x3f800000U)
-		return bank_register(POWERVR_USC_BANK_SPECIAL, SPECIAL_FLOAT_ONE);
-	if (operand->constant == 0xffffffffU)
-		return bank_register(POWERVR_USC_BANK_SPECIAL, SPECIAL_TRUE);
+	if (operand->constant == 0) {
+		reg = bank_register(POWERVR_USC_BANK_SPECIAL, SPECIAL_ZERO);
+
+		/* Succeeded: the zero register. */
+		return reg;
+	}
+
+	if (operand->constant == 1) {
+		reg = bank_register(POWERVR_USC_BANK_SPECIAL, SPECIAL_ONE);
+
+		/* Succeeded: the one register. */
+		return reg;
+	}
+
+	if (operand->constant == 0x3f800000U) {
+		reg = bank_register(POWERVR_USC_BANK_SPECIAL, SPECIAL_FLOAT_ONE);
+
+		/* Succeeded: the float one register. */
+		return reg;
+	}
+
+	if (operand->constant == 0xffffffffU) {
+		reg = bank_register(POWERVR_USC_BANK_SPECIAL, SPECIAL_TRUE);
+
+		/* Succeeded: the true register. */
+		return reg;
+	}
 
 	/* Any other constant in a scratch temporary. */
 	reg = scratch_register(select);
@@ -1231,16 +1279,25 @@ static struct shader_machine_register
 scratch_register(
 	struct backend_select *select)
 {
+	struct shader_machine_register reg;
 	unsigned index;
 
 	/* Refuses an instruction that needs more scratch than there is. */
 	if (select->scratch >= TEMP_SCRATCH_COUNT) {
 		if (select->backend->error == 0)
 			select->backend->error = ENOTSUP;
-		return temp_register(TEMP_SCRATCH);
+		reg = temp_register(TEMP_SCRATCH);
+
+		/* The refusal is latched; the first scratch keeps the selection going. */
+		return reg;
 	}
+
+	/* The next scratch temporary. */
 	index = TEMP_SCRATCH + select->scratch++;
-	return temp_register(index);
+	reg = temp_register(index);
+
+	/* Succeeded: the scratch temporary. */
+	return reg;
 }
 
 /*
@@ -1440,6 +1497,7 @@ build_group_fetch(
 	const struct shader_backend *backend;
 	const struct shader_machine_operation *operation;
 	int32_t offset;
+	int error;
 
 	/* A branch's offset is from its own start to its target's. */
 	backend = context;
@@ -1447,7 +1505,12 @@ build_group_fetch(
 	offset = 0;
 	if (operation->kind == MACHINE_BRANCH)
 		offset = (int32_t)backend->offsets[operation->target] - (int32_t)backend->offsets[index];
-	return shader_backend_group(operation, offset, group);
+	error = shader_backend_group(operation, offset, group);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the operation's group. */
+	return 0;
 }
 
 /* Copies a machine register into an operand of a group. */

@@ -182,7 +182,7 @@ powervr_transfer_raw_format(
  * Says whether a linear surface's rectangle must be written one row a
  * job: the pixel back end's line stride counts pairs of pixels, so an
  * odd row in pixels cannot be named when the rectangle has more than one
- * row (design-p010.md section 6).
+ * row.
  */
 bool
 powervr_transfer_needs_rows(
@@ -755,13 +755,15 @@ powervr_transfer_regs_build(
 	uint32_t origin_y;
 	unsigned index;
 	int error;
+	bool rows;
 
 	/* Refuses missing input or results, an unknown kind, and an odd linear row of several rows. */
 	if (job == NULL || regs == NULL || state == NULL)
 		return EINVAL;
 	if (job->kind != POWERVR_TRANSFER_CLEAR && job->kind != POWERVR_TRANSFER_COPY && job->kind != POWERVR_TRANSFER_BLIT)
 		return EINVAL;
-	if (powervr_transfer_needs_rows(&job->destination, &job->area))
+	rows = powervr_transfer_needs_rows(&job->destination, &job->area);
+	if (rows)
 		return EINVAL;
 
 	/* Starts from zero: no background, no clear words, no region list. */

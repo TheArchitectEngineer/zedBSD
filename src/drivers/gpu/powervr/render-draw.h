@@ -13,7 +13,7 @@
  * primitive state block of a draw and its vertex control stream (with
  * and without an index buffer).  Nothing here holds a lock or memory;
  * the callers give the heap offsets and device addresses, and the host
- * check builds this file unchanged.  design-p010.md section 4.4.
+ * check builds this file unchanged.
  */
 
 #ifndef KERN_DRIVERS_GPU_POWERVR_RENDER_DRAW_H

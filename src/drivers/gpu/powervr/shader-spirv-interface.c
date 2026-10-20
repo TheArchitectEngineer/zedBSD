@@ -51,6 +51,8 @@ shader_spirv_reader_layout_interface(
 	uint32_t entry;
 	uint32_t next_pixel;
 	int error;
+	uint32_t known;
+	uint32_t scalars;
 
 	/* Gives every register-class global its words as values. */
 	program = reader->program;
@@ -164,7 +166,8 @@ shader_spirv_reader_layout_interface(
 				id->interface = UINT32_MAX;
 			} else {
 				/* A packed colour in the next pixel output register. */
-				if (color_format_known(reader->key->output_formats[id->location]) == 0)
+				known = color_format_known(reader->key->output_formats[id->location]);
+				if (known == 0)
 					return ENOTSUP;
 				entry = program->output_count++;
 				program->outputs[entry].location = id->location;
@@ -202,7 +205,8 @@ shader_spirv_reader_layout_interface(
 				continue;
 			if (id->builtin != BUILT_IN_VERTEX_INDEX && id->builtin != BUILT_IN_INSTANCE_INDEX)
 				continue;
-			if (shader_spirv_scalar_count(reader, id->type) != 1)
+			scalars = shader_spirv_scalar_count(reader, id->type);
+			if (scalars != 1)
 				return ENOTSUP;
 			id->interface = next_input;
 			if (id->builtin == BUILT_IN_VERTEX_INDEX)
@@ -550,7 +554,10 @@ blend_factor(
 	one = shader_spirv_constant_operand(FLOAT_ONE);
 	switch (factor) {
 	case FACTOR_ZERO:
-		return shader_spirv_constant_operand(0);
+		value = shader_spirv_constant_operand(0);
+
+		/* Succeeded: the zero factor. */
+		return value;
 	case FACTOR_ONE:
 		return one;
 	case FACTOR_SOURCE_COLOR:
@@ -583,7 +590,10 @@ blend_factor(
 			return one;
 		other = shader_spirv_float_negate(destination[3]);
 		other = shader_spirv_emit_value(reader, POWERVR_IR_FLOAT_ADD, &one, &other, NULL);
-		return shader_spirv_emit_value(reader, POWERVR_IR_FLOAT_MINIMUM, &source[3], &other, NULL);
+		value = shader_spirv_emit_value(reader, POWERVR_IR_FLOAT_MINIMUM, &source[3], &other, NULL);
+
+		/* Succeeded: the saturated alpha factor. */
+		return value;
 	default:
 		*error = ENOTSUP;
 		return one;

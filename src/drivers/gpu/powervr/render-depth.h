@@ -11,7 +11,6 @@
  * the depth buffer's address and layer size, and the background depth
  * (the clear value).  D32_SFLOAT and D16_UNORM.  Nothing here holds a
  * lock or memory; the host check builds this file unchanged.
- * design-p010.md section 4.3.
  */
 
 #ifndef KERN_DRIVERS_GPU_POWERVR_RENDER_DEPTH_H

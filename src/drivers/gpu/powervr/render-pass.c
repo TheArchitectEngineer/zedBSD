@@ -40,8 +40,8 @@ static bool area_covers(const struct powervr_render_area *area, const VkClearRec
  * executor takes, one sample, no input, resolve or preserved attachment.
  *
  * Any other shape is refused with ENOBUFS, which the reply turns into
- * VK_ERROR_OUT_OF_HOST_MEMORY (the only failures vkCreateRenderPass may
- * report, design-p010.md section 4.3).
+ * VK_ERROR_OUT_OF_HOST_MEMORY (one of the failures vkCreateRenderPass
+ * may report).
  *
  * Procedure referenced:
  * Mesa 26.2.5 src/imagination/vulkan/pvr_pass.c (pvr_CreateRenderPass2:
@@ -111,7 +111,7 @@ powervr_pass_build(
  * takes a partial area (the pixel back end clips to it); so does a depth
  * attachment, whose store writes whole tiles: the job marks it partial
  * and the depth is loaded before it is stored, as Mesa does
- * (render-depth.c; design-p010.md version 2.3).  A depth view of a level
+ * (render-depth.c).  A depth view of a level
  * other than 0 is not taken yet (ENOTSUP).  A cleared attachment without
  * its clear value is refused (EINVAL).
  *
@@ -225,9 +225,8 @@ powervr_render_job_begin(
 
 /*
  * Applies vkCmdClearAttachments to a job.  A clear of the whole render
- * area of layer 0 before any draw is the attachment's load clear (design
- * section 4.3); any other clear (part of the area, after draws) is not
- * taken until p011 (ENOTSUP).  A colour index past the subpass's or an
+ * area of layer 0 before any draw is the attachment's load clear; any
+ * other clear (part of the area, after draws) is not taken (ENOTSUP).  A colour index past the subpass's or an
  * unused attachment is refused (EINVAL).
  */
 int
@@ -242,6 +241,7 @@ powervr_render_job_clear(
 	uint32_t index;
 	uint32_t rect;
 	bool whole;
+	bool covers;
 
 	/* Refuses missing input. */
 	if (job == NULL || (count != 0 && attachments == NULL) || (rect_count != 0 && rects == NULL))
@@ -250,7 +250,8 @@ powervr_render_job_clear(
 	/* Only before any draw, over the whole area of layer 0. */
 	whole = rect_count != 0 && job->draw_count == 0;
 	for (rect = 0; rect < rect_count && whole; rect++) {
-		if (!area_covers(&job->area, &rects[rect]))
+		covers = area_covers(&job->area, &rects[rect]);
+		if (!covers)
 			whole = false;
 	}
 	if (!whole)

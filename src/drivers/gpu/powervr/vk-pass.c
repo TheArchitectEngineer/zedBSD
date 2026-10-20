@@ -8,7 +8,7 @@
 /*
  * The Venus executor's render passes and framebuffers, the records of a
  * render pass instance (begin, clear attachments) and the render jobs a
- * command buffer's records come to (design-p010.md sections 2 and 4.3).
+ * command buffer's records come to.
  * The jobs are what the render kick takes; nothing here kicks.
  */
 
@@ -305,6 +305,7 @@ powervr_vk_record_begin_pass(
 	uint64_t framebuffer;
 	uint64_t count;
 	uint64_t index;
+	int retained;
 
 	/* The begin info: its pass, framebuffer and area. */
 	present = drv_i915_wire_read_u64(reader);
@@ -353,11 +354,17 @@ powervr_vk_record_begin_pass(
 
 	/* The record holds the pass and the framebuffer. */
 	object = powervr_vk_object_find(session, I915_VK_OBJ_RENDER_PASS, pass);
-	if (object == NULL || powervr_vk_object_retain(object) != 0)
+	if (object == NULL)
+		return EINVAL;
+	retained = powervr_vk_object_retain(object);
+	if (retained != 0)
 		return EINVAL;
 	entry->objects[entry->object_count++] = object;
 	object = powervr_vk_object_find(session, I915_VK_OBJ_FRAMEBUFFER, framebuffer);
-	if (object == NULL || powervr_vk_object_retain(object) != 0)
+	if (object == NULL)
+		return EINVAL;
+	retained = powervr_vk_object_retain(object);
+	if (retained != 0)
 		return EINVAL;
 	entry->objects[entry->object_count++] = object;
 

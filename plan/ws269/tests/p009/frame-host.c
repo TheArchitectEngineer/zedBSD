@@ -1755,7 +1755,7 @@ frame_keiland(
 	append(&frame, &w);
 	k_submit(&frame, ID_K_COMMAND_A, ID_K_FENCE_A);
 
-	/* Command buffer B: one pass of 200 draws, more jobs than a command buffer has room for. */
+	/* Command buffer B: one pass of 200 draws (13 jobs). */
 	k_command_begin(&frame, ID_K_COMMAND_B);
 	k_pass(&frame, ID_K_COMMAND_B, ID_K_QUAD_PIPELINE, ID_K_QUAD_LAYOUT, 32, 200);
 	k_submit(&frame, ID_K_COMMAND_B, ID_K_FENCE_B);

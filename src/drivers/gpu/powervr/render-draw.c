@@ -681,6 +681,8 @@ powervr_draw_vdm_build(
 	uint32_t data;
 	uint32_t list;
 	uint32_t index;
+	uint32_t shared_units;
+	uint32_t data_units;
 
 	/* Refuses missing input or result, misaligned programs and blocks, and topologies the core list does not take. */
 	if (input == NULL || words == NULL || count == NULL)
@@ -714,9 +716,11 @@ powervr_draw_vdm_build(
 
 	/* The vertex shader's shared register program, when it has one. */
 	if (input->vertex_shareds != 0) {
-		if (round_units(input->vertex_shareds * 4U, UNIT_64) > FIELD_9_MAX || round_units(input->shared_data_words * 4U, UNIT_16) > FIELD_6_MAX)
+		shared_units = round_units(input->vertex_shareds * 4U, UNIT_64);
+		data_units = round_units(input->shared_data_words * 4U, UNIT_16);
+		if (shared_units > FIELD_9_MAX || data_units > FIELD_6_MAX)
 			return EINVAL;
-		words[index++] = (BLOCK_PDS << BLOCK_SHIFT) | (round_units(input->vertex_shareds * 4U, UNIT_64) << 16) | round_units(input->shared_data_words * 4U, UNIT_16);
+		words[index++] = (BLOCK_PDS << BLOCK_SHIFT) | (shared_units << 16) | data_units;
 		words[index++] = input->shared_data_offset;
 		words[index++] = input->shared_code_offset;
 	}
@@ -816,6 +820,7 @@ fixed_vertex(
 {
 	const VkVertexInputAttributeDescription *attribute;
 	uint32_t index;
+	const struct powervr_format *format;
 
 	/* No vertex input is no binding and no attribute. */
 	if (input == NULL)
@@ -835,7 +840,10 @@ fixed_vertex(
 	/* Attributes of a vertex format the executor takes, the format in the key. */
 	for (index = 0; index < input->vertexAttributeDescriptionCount; index++) {
 		attribute = &input->pVertexAttributeDescriptions[index];
-		if (attribute->location >= POWERVR_SHADER_INPUTS || powervr_format_find(attribute->format) == NULL)
+		if (attribute->location >= POWERVR_SHADER_INPUTS)
+			return ENOTSUP;
+		format = powervr_format_find(attribute->format);
+		if (format == NULL)
 			return ENOTSUP;
 		fixed->attributes[index].location = attribute->location;
 		fixed->attributes[index].binding = attribute->binding;
@@ -1043,9 +1051,11 @@ integer_from_float(
 	int64_t mantissa;
 	int32_t exponent;
 	int64_t value;
+	int special;
 
 	/* NaN and infinity count as zero. */
-	if (rational_from_float(bits, &mantissa, &exponent) != 0)
+	special = rational_from_float(bits, &mantissa, &exponent);
+	if (special != 0)
 		return 0;
 
 	/* Shifts the mantissa to the integer, toward zero. */

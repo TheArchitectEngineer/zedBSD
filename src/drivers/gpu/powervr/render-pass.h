@@ -11,7 +11,7 @@
  * a render pass instance (the attachments with their load and store
  * operations, clear values and the render area) in the form the render
  * kick takes.  Nothing here holds a lock or memory; the host check
- * builds it unchanged.  design-p010.md sections 2 and 4.3.
+ * builds it unchanged.
  */
 
 #ifndef KERN_DRIVERS_GPU_POWERVR_RENDER_PASS_H
