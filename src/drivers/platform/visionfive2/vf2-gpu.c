@@ -59,6 +59,9 @@
 /* The highest address the core is let name until wider ones are proven. */
 #define VF2_GPU_DMA_LIMIT	0xffffffffULL
 
+/* Every domain's hardware turn-off event, masked (the vendor kernel's (uint32_t)-1). */
+#define VF2_GPU_EVENTS_ALL	0xffffffffU
+
 /*
  * How far the bring-up got, so a failure undoes exactly the steps done.
  *
@@ -207,6 +210,11 @@ power_up(
 		goto fail;
 	gpu->stage = VF2_GPU_POWERED;
 
+	/* Lets the hardware events turn domains off again, as the vendor kernel does before the GPU's clocks start. */
+	error = drv_vf2_pmu_event_off_mask(0);
+	if (error != 0)
+		goto fail;
+
 	/* Starts the bus master clock, then the register bus and timer clocks. */
 	error = start_clock(VF2_GPU_MASTER_CLOCK, gpu, VF2_GPU_MASTER_RUNNING);
 	if (error != 0)
@@ -312,6 +320,10 @@ power_down(
 		make_clock(VF2_GPU_MASTER_CLOCK, &clock);
 		(void)drv_vf2_clock_disable(&clock);
 	}
+
+	/* Masks every hardware turn-off event again, as the vendor kernel does once the clocks stop. */
+	if (gpu->stage >= VF2_GPU_POWERED)
+		(void)drv_vf2_pmu_event_off_mask(VF2_GPU_EVENTS_ALL);
 
 	/* Turns the core's outer domain off. */
 	if (gpu->stage >= VF2_GPU_POWERED)

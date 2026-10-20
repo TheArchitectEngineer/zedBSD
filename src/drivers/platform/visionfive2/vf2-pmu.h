@@ -61,4 +61,7 @@ int drv_vf2_pmu_set_power(unsigned domain, int on);
  */
 int drv_vf2_pmu_powered(unsigned domain, int *on);
 
+/* Sets the hardware event turn-off mask (a set bit keeps that domain's event from turning it off). */
+int drv_vf2_pmu_event_off_mask(uint32_t mask);
+
 #endif
