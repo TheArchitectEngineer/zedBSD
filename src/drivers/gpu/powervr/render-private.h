@@ -47,7 +47,7 @@
  * state all zero, as the firmware should not read it without a resume.
  */
 #ifndef POWERVR_RENDER_SWITCH_STATE
-#define POWERVR_RENDER_SWITCH_STATE	0
+#define POWERVR_RENDER_SWITCH_STATE	1
 #endif
 
 /*
@@ -487,6 +487,7 @@ void powervr_session_fail_pending(struct powervr_render *render, struct powervr_
  * keeps what the core may reach.  Idempotent.
  */
 void powervr_render_quarantine(struct powervr_render *render, int error);
+void powervr_render_refusal_log(struct powervr_render *render, const struct powervr_session *session, const char *where);
 
 /* The queue and recovery operations the node's table points at. */
 int powervr_render_submit(void *device, void *session, const void *command, uint32_t bytes, uint32_t flags, uint32_t timeline, struct drv_gpu_completion *completion);

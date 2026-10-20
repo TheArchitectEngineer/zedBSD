@@ -299,8 +299,10 @@ submit(
 
 	/* The executor's memory, made at the first submission. */
 	error = 0;
-	if (session->abandoned)
+	if (session->abandoned) {
+		kern_logf("powervr: vk: submission refused (EIO): the session was abandoned\n");
 		error = EIO;
+	}
 	if (error == 0 && session->executor == NULL)
 		error = executor_make(session);
 
@@ -1071,6 +1073,7 @@ run(
 
 	mutex_unlock(&render->core->lock);
 	if (error != 0) {
+		kern_logf("powervr: vk: compute kick failed (%d)\n", error);
 		powervr_stage_fail(POWERVR_STAGE_COMPUTE, powervr_stage_reason_of(error));
 		return error;
 	}
@@ -1078,6 +1081,7 @@ run(
 	/* Waits for the timeline to reach it; the core may still run work that did not. */
 	error = powervr_session_wait(owner, value, QUEUE_WAIT_MS);
 	if (error != 0) {
+		kern_logf("powervr: vk: compute stream did not finish (%d); the session is abandoned\n", error);
 		build->session->abandoned = true;
 		owner->abandoned = 1;
 		powervr_stage_fail(POWERVR_STAGE_COMPUTE, powervr_stage_reason_of(error));
