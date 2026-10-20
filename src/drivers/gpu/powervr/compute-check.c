@@ -307,8 +307,8 @@ void
 powervr_compute_check(
 	struct powervr_render *render)
 {
-	static const unsigned fillers[] = { MACHINE_MOVE, MACHINE_MOVE_SPECIAL };
-	static const unsigned gaps[][3] = { { SHADER_INTEGER_SOURCE_GAP, SHADER_ALU_SOURCE_GAP, SHADER_STORE_SOURCE_GAP }, { 6, 5, 8 } };
+	static const unsigned fillers[] = { MACHINE_MOVE_SPECIAL, MACHINE_MOVE };
+	static const unsigned gaps[][3] = { { SHADER_INTEGER_SOURCE_GAP, SHADER_ALU_SOURCE_GAP, SHADER_STORE_SOURCE_GAP }, { 4, 3, 6 } };
 	struct check_state state;
 	const char *step;
 	unsigned written;
@@ -429,7 +429,7 @@ powervr_compute_check(
 			run_compiled_fill(&state, filler == 0 && gap == 0);
 		}
 	}
-	shader_filler_kind = MACHINE_MOVE;
+	shader_filler_kind = MACHINE_MOVE_SPECIAL;
 	shader_integer_source_gap = SHADER_INTEGER_SOURCE_GAP;
 	shader_alu_source_gap = SHADER_ALU_SOURCE_GAP;
 	shader_store_source_gap = SHADER_STORE_SOURCE_GAP;
