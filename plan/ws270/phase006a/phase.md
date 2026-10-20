@@ -220,3 +220,17 @@ Keiland が使い、vkmatrix 15/15・gpu-selftest 13/13 で確かめていない
   - maker は vmunix の `nm`・`addr2line` で関数に引く。
   - render job の buffer、render target と free list、region header、vk の memory はどれも handle なので、この list で覆う。
 - 確認: VF2 の vmunix は rc 0、warning 0。host 試験は無い。板は未実施。
+
+### q1523-i04（2026-10-21、P2）: fault 0 の lockup の手がかり
+
+- run 7: fault 0 の 3D lockup（pc 0x50b1e001）。fault の address が無いので describe は出なかった。
+- reset の pc（0x41db7000、0x41e1b000、0x47dec001、0x5055d001、0x50b1e001）は、どれも 0x4000_0000 からの DRAM の物理の範囲にある。
+  program の window（PDS・USC の heap の先頭近く）の address ではない。
+  そこで reset のたびに、pc（下の 2 bit を落とす）を物理の address と見て、その page を持つ live handle を出す
+  （`powervr_session_describe_physical`、`render-queue.c` に 1 行の呼び出し）。
+- compositor の効果を切る設定（`userland/desktop/wayland/settings.c`、key は `settings-keys.c`）:
+  - `~kei/.config/keiland/desktop.conf` に `window.frosted=0`（panel を不透明にする）と `window.opacity=100`（window の半透明を切る）。
+  - blur は CPU が壁紙から一度だけ作る小さい画像で、GPU の blur pass は無い。GPU は linear filter でそれを sample するだけ。
+  - 影と角丸を切る設定は見当たらない。
+- 未実施: 失敗した render job の draw ごとの記録（P1 の render-job.c に job の要約を持たせる必要がある）。
+- 確認: VF2 の vmunix は rc 0、warning 0。板は未実施。
