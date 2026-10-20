@@ -149,6 +149,29 @@ test_programs(void)
 	groups[0].end = 1;
 	check(ok && same_bytes(groups, 1, &program), "clear program");
 
+	/* A clear of two words (four halves): shared 0 and 1 to pixel outputs 0 and 1, the first checked, the second ending. */
+	operation = blank(MACHINE_MOVE);
+	operation.source[0] = reg(POWERVR_USC_BANK_SHARED, 0);
+	operation.destination[0] = reg(POWERVR_USC_BANK_SPECIAL, 32);
+	operation.variant = 1;
+	ok = powervr_render_clear_usc_words(2, &program) == 0 && program.temps == 0;
+	ok = ok && shader_backend_group(&operation, 0, &groups[0]) == 0;
+	operation = blank(MACHINE_MOVE);
+	operation.source[0] = reg(POWERVR_USC_BANK_SHARED, 1);
+	operation.destination[0] = reg(POWERVR_USC_BANK_SPECIAL, 33);
+	ok = ok && shader_backend_group(&operation, 0, &groups[1]) == 0;
+	groups[1].end = 1;
+	check(ok && same_bytes(groups, 2, &program), "clear program of two words");
+	check(powervr_render_clear_usc_words(3, &program) != 0 && powervr_render_clear_usc_words(0, &program) != 0, "clear of 0 or 3 words refused");
+	{
+		struct powervr_data_shared_program one;
+		struct powervr_data_shared_program two;
+		uint32_t halves[2] = { 0x38003c00U, 0x3c000000U };
+
+		ok = powervr_render_clear_shared_words(halves, 2, &two) == 0 && powervr_render_clear_shared(0x38003c00U, &one) == 0;
+		check(ok && two.data_words >= 2 && two.data[0] == 0x38003c00U && two.data[1] == 0x3c000000U && one.data[0] == 0x38003c00U, "the two clear words written as one 64-bit write");
+	}
+
 	/* Colour: the immediate, then the move to the pixel output. */
 	ok = powervr_render_colour_usc(0xff00ff00U, &program) == 0 && program.temps == 1;
 	ok = ok && immediate(&groups[0], 0, 0xff00ff00U);

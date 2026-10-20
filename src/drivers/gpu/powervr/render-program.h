@@ -139,7 +139,9 @@ int powervr_render_eot_usc(const uint32_t state[2], struct powervr_render_usc *p
 int powervr_render_event_data(uint32_t usc_offset, unsigned temps, uint32_t data[POWERVR_RENDER_EVENT_DATA_WORDS]);
 int powervr_render_event_words(uint32_t data_offset, uint32_t *code_word, uint32_t *data_word, uint32_t *info_word);
 int powervr_render_clear_usc(struct powervr_render_usc *program);
+int powervr_render_clear_usc_words(uint32_t words, struct powervr_render_usc *program);
 int powervr_render_clear_shared(uint32_t colour, struct powervr_data_shared_program *program);
+int powervr_render_clear_shared_words(const uint32_t *colour, uint32_t words, struct powervr_data_shared_program *program);
 int powervr_render_colour_usc(uint32_t colour, struct powervr_render_usc *program);
 int powervr_render_vertex_usc(struct powervr_render_usc *program);
 int powervr_render_vertex_pds(uint64_t vertices, uint32_t usc_offset, unsigned temps, struct powervr_data_vertex_program *program);

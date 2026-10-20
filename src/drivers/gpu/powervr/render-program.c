@@ -341,37 +341,59 @@ powervr_render_event_words(
 }
 
 /*
- * Builds the clear background's shading cluster program: the colour in
- * shared register 0 moved into pixel output register 0 under the
- * overlap check, ending the program.
+ * Builds the clear background's shading cluster program for a clear of
+ * one word (one packed colour) or two (four half floats, the sRGB and
+ * 16-bit float formats): the words in shared registers 0 and 1 moved
+ * into pixel output registers 0 and 1, the first under the overlap
+ * check, ending the program.
  *
  * Procedure referenced:
  * Mesa 26.2.5 src/imagination/vulkan/pvr_usc.c (pvr_uscgen_loadop with
- * one cleared render target of one word: the value from shared register
- * 0, nir_load_preamble, stored to the output register);
+ * one cleared render target: each of its words from the shared
+ * registers, nir_load_preamble, stored to the output registers);
  * src/imagination/pco/pco_map.py (group_map O_MBYP: phase 0 passes s0,
  * the first write, is4 from ft0).
  */
 int
+powervr_render_clear_usc_words(
+	uint32_t words,
+	struct powervr_render_usc *program)
+{
+	struct powervr_usc_group groups[2];
+	uint32_t word;
+	int error;
+
+	/* Refuses a missing result and a clear of other than one or two words. */
+	if (program == NULL || words == 0 || words > 2U)
+		return EINVAL;
+
+	/* A move a word from its shared register to its pixel output, the first checked, the last ending. */
+	for (word = 0; word < words; word++) {
+		error = move_group(&groups[word], POWERVR_USC_BANK_SHARED, CLEAR_SHARED + word, POWERVR_USC_BANK_SPECIAL, USC_PIXEL_OUTPUT + word);
+		if (error != 0)
+			return error;
+	}
+	groups[0].overlap_check = 1;
+	groups[words - 1U].end = 1;
+
+	/* Encodes them; they need no temporary. */
+	error = encode(groups, words, 0, program);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the clear program. */
+	return 0;
+}
+
+/* Builds the clear background's shading cluster program for a clear of one packed word. */
+int
 powervr_render_clear_usc(
 	struct powervr_render_usc *program)
 {
-	struct powervr_usc_group group;
 	int error;
 
-	/* Refuses a missing result. */
-	if (program == NULL)
-		return EINVAL;
-
-	/* The move from the shared register to the pixel output, the last group. */
-	error = move_group(&group, POWERVR_USC_BANK_SHARED, CLEAR_SHARED, POWERVR_USC_BANK_SPECIAL, USC_PIXEL_OUTPUT);
-	if (error != 0)
-		return error;
-	group.overlap_check = 1;
-	group.end = 1;
-
-	/* Encodes it; it needs no temporary. */
-	error = encode(&group, 1, 0, program);
+	/* The program of one word. */
+	error = powervr_render_clear_usc_words(1, program);
 	if (error != 0)
 		return error;
 
@@ -380,8 +402,9 @@ powervr_render_clear_usc(
 }
 
 /*
- * Builds the data sequencer program that writes the clear colour (one
- * packed word) to shared register 0 for the clear background.
+ * Builds the data sequencer program that writes a clear's one or two
+ * words (powervr_format_clear_words) to shared registers 0 and 1 for the
+ * clear background.
  *
  * Procedure referenced:
  * Mesa 26.2.5 src/imagination/vulkan/pvr_arch_cmd_buffer.c
@@ -390,23 +413,43 @@ powervr_render_clear_usc(
  * program).
  */
 int
-powervr_render_clear_shared(
-	uint32_t colour,
+powervr_render_clear_shared_words(
+	const uint32_t *colour,
+	uint32_t words,
 	struct powervr_data_shared_program *program)
 {
 	struct powervr_data_load load;
 	int error;
 
-	/* Refuses a missing result. */
-	if (program == NULL)
+	/* Refuses a missing input or result and a clear of other than one or two words. */
+	if (colour == NULL || program == NULL || words == 0 || words > 2U)
 		return EINVAL;
 
-	/* One word written to the clear's shared register. */
+	/* The words written to the clear's even shared register, the first in the low half. */
 	load.kind = POWERVR_DATA_LOAD_WRITE;
 	load.shared = CLEAR_SHARED;
-	load.words = 1;
-	load.source = colour;
+	load.words = (uint16_t)words;
+	load.source = colour[0];
+	if (words == 2U)
+		load.source |= (uint64_t)colour[1] << 32;
 	error = powervr_data_shared_build(&load, 1, program);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the program. */
+	return 0;
+}
+
+/* Builds the data sequencer program that writes a clear of one packed word to shared register 0. */
+int
+powervr_render_clear_shared(
+	uint32_t colour,
+	struct powervr_data_shared_program *program)
+{
+	int error;
+
+	/* The program of one word. */
+	error = powervr_render_clear_shared_words(&colour, 1, program);
 	if (error != 0)
 		return error;
 

@@ -113,3 +113,31 @@ P1 の render-job.c・transfer-job.c・render-check.c を読み、P2 の関数�
 | p010 run.sh | 全部 0 failed（job-host-test 24/0） |
 | p009 run.sh | 511 passed, 0 failed |
 | VF2 の vmunix | rc=0、warning 0 |
+
+## q1400-i01（P2、2026-10-20）: Q1 の決定の 2 つ
+
+1. `image-state.c`: R8G8B8A8_UNORM の VERTEX_BUFFER を外した（vertex の fetch が byte を正規化しないため。変換を作るまで）。p009 の「RGBA8 は vertex の format」の期待を「でない」に変えた。
+2. sRGB の render pass の CLEAR の用意（P2 の側）:
+   - `render-program.{c,h}`:
+     - `powervr_render_clear_usc_words(words)` を足した（1 か 2 の word で、shared 0・1 を pixel output 0・1 へ。最初の group に overlap check、最後の group に end）。
+     - `powervr_render_clear_shared_words(colour, words)` を足した（2 word は偶数の shared への 64 bit の 1 回の write）。
+     - 前の `powervr_render_clear_usc`・`powervr_render_clear_shared` は 1 word の場合として残した。
+   - `image-state.{c,h}`: `powervr_format_clear_word_count(format)` を足した。1 は RGBA8 など、2 は sRGB・R16G16B16A16_SFLOAT・R32G32_SFLOAT、4 は R32G32B32A32_SFLOAT、0 は depth など pack しない format。
+   - 試験:
+     - render-host-test: 2 word の clear の program の bytes。0 と 3 の word は拒む。2 word の write の data。
+     - image-host-test: word の数。
+
+**P1 の file に要る残り（これで sRGB の CLEAR が直る）**: render-job.c の `job_background` の CLEAR の枝を次のようにする。
+- `words = powervr_format_clear_word_count(color->surface.format)` を求める。
+- `powervr_render_clear_usc_words(words, …)` と `powervr_render_clear_shared_words(color->clear, words, …)` を呼ぶ。
+- `*shared_registers = words` にする。
+- sRGB の PBE の source は F16 で、pixel の出力が 2 register なので、fragment の command の pixel output の幅が 2 register になっていることも確かめる。
+- LOAD（render-load）の sRGB は今も U8888 だけ（ENOTSUP）。
+
+| 確認 | 結果 |
+| --- | --- |
+| p010 run.sh | 全部 0 failed（render-program 29、image 63 など） |
+| p009（切り替え 0・1） | どちらも 511 passed、0 failed |
+| VF2 の vmunix（build/p014/vf2） | rc 0、warning 0 |
+
+- 片付け（Q1 に依頼）: `build/p014/`。
