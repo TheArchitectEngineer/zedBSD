@@ -770,6 +770,13 @@ void powervr_render_retired(struct powervr_render *render, struct powervr_sessio
 extern void powervr_render_check(struct powervr_render *render) __attribute__((weak));
 
 /*
+ * Prints what the firmware knows of a context reset: its recovery
+ * records, its trace's tail and the context's record.  Weak: only a
+ * kernel built with CONFIG_POWERVR_HWR_DUMP has it (firmware-hwr.c).
+ */
+extern void powervr_hwr_dump(struct powervr_core *core, const struct powervr_object *context_record) __attribute__((weak));
+
+/*
  * Finds or makes a session's transfer context; the core's lock is not
  * held.
  */

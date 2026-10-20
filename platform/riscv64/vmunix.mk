@@ -156,6 +156,10 @@ RISCV64_PLATFORM_SOURCES_visionfive2 += src/drivers/platform/visionfive2/vf2-pmu
 ifeq ($(CONFIG_POWERVR_COMPUTE_CHECK),y)
 RISCV64_PLATFORM_SOURCES_visionfive2 += src/drivers/gpu/powervr/compute-check.c
 endif
+# The dump of what the firmware knows of a context reset (q1532).
+ifeq ($(CONFIG_POWERVR_HWR_DUMP),y)
+RISCV64_PLATFORM_SOURCES_visionfive2 += src/drivers/gpu/powervr/firmware-hwr.c
+endif
 # The test kernel's check of the core's render path.
 ifeq ($(CONFIG_POWERVR_RENDER_CHECK),y)
 RISCV64_PLATFORM_SOURCES_visionfive2 += src/drivers/gpu/powervr/render-check.c
