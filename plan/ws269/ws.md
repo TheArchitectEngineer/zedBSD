@@ -9,15 +9,11 @@
 
 ## 現在の状態（2026-10-21、再開点）
 
-- 板（VF2 の実機）: render の TA・3D、kernel の render check（三角形、3156 pixel）、job check（色と depth）が通った（板 78）。
-- userland の `gpu-selftest` は 12 ok / 1 fail（板 83〜85）。kernel・node・image・clear・copy・draw・sample・depth・present-clear・present（vkdemo）などが ok で、HDMI で vkdemo の cube を目視した。残る fail は compute。
-- TA の lockup の原因は、stream の末尾に Mesa の terminate の PPP state の block が無かったこと（q1484、板 77・78）。
-- compute の原因は PDS program の差（local id の unified store への DOUTW、task issue の cc bit、base workgroup の add）。Mesa の形の PDS なら 128 workgroup で 4096/4096 が通った（板 87）。既定への取り込みは P2 の q1496。
-- 再開点:
-  - compute の既定の取り込み（q1496）の板の確認。
-  - p010q の残り: fence kernel の lockup（Mesa の K0 の shared の確保の kernel と sd_type の差が候補）、mesa-form の probe の整理、compute-check の診断の行を `POWERVR_DIAGNOSTICS` の下へ。
-  - BUG-344（libc の fscanf、別の WS）。
-  - UAT の SD image は main の dd8a79213 で作り直し済み。
+- 板（VF2 の実機、板 93・94）: kernel の自己試験（compute check、render check の terminate-state・三角形・transfer・job check）が全部 ok。gpu-selftest は 13 ok / 0 fail / 0 skip。HDMI に vkdemo の cube の animation を出した。SD image は main b9672d30d。
+- 原因と直しの要約は [p010q](phase010q/phase.md) の先頭:
+  - TA: 末尾の terminate の PPP state。
+  - compute: Mesa の PDS program と、K0（shared の確保）・fence の 3 kernel。
+- 再開点: 残りの Phase の提案は [proposal-next-phases.md](proposal-next-phases.md)（q1506）。中身は、完了の条件の未達（Keiland の desktop、安定性、docs）、p010q の close と移管、規約の全文の見直しの 2 回目、Phase の表の案。
 
 ## 完了の条件（案、着手の時に設計で確定する）
 
