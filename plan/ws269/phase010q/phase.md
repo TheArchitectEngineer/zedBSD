@@ -906,3 +906,10 @@ source の変更は無し。
 - split 2: render の後に、もう一度 transfer check を新しい session で流す。行 `render check: transfer after the render`。TA が手放した set を transfer が取り、それで動くかを見る。job check はその後。
 - dump の trace: 既定は、kick の印からの先頭 64 word と末尾 64 word（128 word を越えた時、間の数を 1 行）。全部を出すのは `POWERVR_RENDER_CHECK_FULL_TRACE=1` で build した時（上限 2048 word）。kernel の message の ring が dump で溢れて、前の行が消えないようにする。
 - 確かめ: 試験の image の config の vmunix は rc 0、warning 0。実機は未。
+
+## q1449 / q1449-i01（2026-10-20）
+
+- dmesg44 の短い trace（head 64 + last 64 word、1052 word 省略）には BIF の「Alloc PC set」行も Kick TA 行も入っておらず、最初の transfer・TA・2 回目の transfer の PC set は判定できなかった（読めたのは MTS の DM=0 の kick のみ）。
+- 変更: `render-check.c` の最初の transfer の session と memory を render の終わりまで閉じずに保持し（`transfer_check` の kept 引数、`transfer_close`）、TA が別の PC set を取るようにした。既定の trace の dump を all 1536 / head 256 / last 128 word に広げ、mark 以降の BIF 行が入るようにした。
+- 確認: self-test config で `vmunix` を build（warning 0）。板の試験は未実施（Q1/T1）。
+- 次: 板の dmesg の trace で TA の「Alloc PC set」を読む。set 1 でも TA が止まれば PC set の仮説は外れ。
