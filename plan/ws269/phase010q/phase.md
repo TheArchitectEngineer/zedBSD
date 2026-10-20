@@ -502,3 +502,19 @@ PTE（`powervr_gpu_page_entry`）と mainline の `pvr_page_table_l0/l1/l2_entry
 - Mesa の compute の stream の execute_count は、gpu_multicore_support でも 0（Mesa main も同じ）。cdm_item・compute_cluster・tpu_tag_cdm_ctrl も 0 のまま。違いにはならない。
 - 直しは見つからなかった。次の診断として、probe の kick の 100 ms 後（FW の HWR の前）に core の register を読む `probe_registers` を足した。register は EVENT_STATUS・SIDEKICK_IDLE・CDM_CONTEXT_STORE_STATUS・BIF の CAT_BASE0・MMU_ENTRY_STATUS・MMU_ENTRY・FAULT_BANK0/1 の MMU・REQ の STATUS・MMU_STATUS・READS の EXT/INT・STATUS_MMU で、offset は StarFive の DDK の `rgx_cr_defs_km.h` による。MMU の walk の pending（MMU_ENTRY）や、bus の読みの滞り（READS_*）で、CDM がどこで止まるかを見る。
 - 確かめ: 試験の image の config の vmunix は warning 0。実機は未。BXE で存在しない register の読みは 0 を返す見込み。
+
+## q1417-i01（P1、2026-10-20）: register の読みが本物かの確かめ
+
+板（vf2-dmesg13）: kick の 100 ms 後の 14 個の register が全部 0。
+
+確かめた事:
+- BXE-4-32 の feature（StarFive の DDK `configs/rgxconfig_km_36.V.54.182.h`）: XE_MEMORY_HIERARCHY、MIPS、ROGUEXE、GPU_VIRTUALISATION（OSID 8）、PHYS_BUS_WIDTH 36、VIRTUAL_ADDRESS_SPACE_BITS 40、SLC 16 KiB・1 bank・512 bit の line、GPU_MULTICORE_SUPPORT、LAYOUT_MARS。
+- XE_MEMORY_HIERARCHY でも、DDK の debug（`rgxdebug.c`）は BIF の FAULT_BANK の register を同じ offset で読む（REQ_STATUS の field の形だけが違う）。
+- FW の trace は「Alloc PC set 0 as register range [1 - 1]」なので、catalogue は CAT_BASE0 ではない所に入る見込みがある。CAT_BASE0 の 0 は不自然でない。
+- JH7110 の DT の gpu の node に dma-ranges は無い。GPU は CPU の物理の address をそのまま使う（bus の offset は無い）。FW の memory context の catalogue は 64 bit の物理（mainline の `fw_mem_context_init` と同じ形）。
+- 前の dump で、32 bit で読んだ MIPS wrapper は 0x1cf80 なのに、64 bit で読んだ Garten wrapper・soft reset は 0 だった。64 bit の読みが bus で 0 になる疑いがある。
+
+直し（診断）:
+- probe の register を 25 個にした。CORE_ID・TIMER（最初と最後）、CDM_CONTEXT_PDS0/1・TERMINATE_PDS・CONTEXT_LOAD_PDS0、CAT_BASE1、SLC_STATUS1・SLC_IDLE・JONES_IDLE を足した。
+- それぞれを 64 bit の読みと 32 bit 2 つの読みで並べて出す。CORE_ID・TIMER が 64 bit で 0、32 bit で値なら、64 bit の読みが落ちている（全部の 64 bit の読みの直しへ）。
+- 確かめ: 試験の image の config の vmunix は warning 0。実機は未。
