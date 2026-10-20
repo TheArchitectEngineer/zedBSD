@@ -346,8 +346,12 @@ submit(
 	uint64_t submits;
 	uint64_t index;
 	uint64_t fence_id;
+	uint64_t started;
 	uint32_t result;
 	int error;
+
+	/* When the submission started, for its timing. */
+	started = powervr_timing_now();
 
 	/* The queue and how many submits follow. */
 	(void)drv_i915_wire_read_u64(reader);
@@ -398,6 +402,12 @@ submit(
 		error = run(&build);
 	if (error != 0)
 		kern_logf("powervr: vk: a submission did not run (%d)\n", error);
+
+	/* The submission's time, and the sums every few seconds. */
+	if (POWERVR_SUBMIT_TIMING) {
+		powervr_timing_add(POWERVR_TIMING_SUBMIT, started);
+		powervr_timing_report();
+	}
 
 	/* The work is done: the fence is signaled. */
 	fence = powervr_vk_payload(session, I915_VK_OBJ_FENCE, fence_id);
@@ -745,6 +755,7 @@ build_command_buffer(
 	uint32_t next_job;
 	uint32_t index;
 	uint32_t set;
+	uint64_t started;
 	int error;
 
 	/* The jobs each instance takes: one, and one more for each further run of POWERVR_RENDER_DRAWS draws. */
@@ -803,8 +814,11 @@ build_command_buffer(
 		    entry->opcode == GPU_OP_CMD_COPY_IMAGE || entry->opcode == GPU_OP_CMD_BLIT_IMAGE || entry->opcode == GPU_OP_CMD_CLEAR_COLOR_IMAGE) {
 			/* A transfer: the dispatches before it run first. */
 			error = run_flush(build);
-			if (error == 0)
+			if (error == 0) {
+				started = powervr_timing_now();
 				error = powervr_vk_transfer_run(build->session, entry);
+				powervr_timing_add(POWERVR_TIMING_TRANSFER, started);
+			}
 		} else if (entry->opcode == GPU_OP_CMD_BEGIN_RENDER_PASS) {
 			/* The dispatches before it run first, then the instance's jobs in order. */
 			error = run_flush(build);
@@ -1269,7 +1283,11 @@ run(
 	uint32_t terminate;
 	uint64_t stream;
 	uint32_t value;
+	uint64_t started;
 	int error;
+
+	/* When the run started, for its timing. */
+	started = powervr_timing_now();
 
 	/* The end of the stream. */
 	terminate = powervr_compute_terminate_word();
@@ -1316,6 +1334,7 @@ run(
 	}
 
 	/* Succeeded: the core finished the stream; the first time is the compute stage's ok. */
+	powervr_timing_add(POWERVR_TIMING_DISPATCH, started);
 	powervr_stage_ok(POWERVR_STAGE_COMPUTE);
 	return 0;
 }
