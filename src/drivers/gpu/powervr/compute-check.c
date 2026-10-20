@@ -772,11 +772,22 @@ run_probes(
 	int errors[POWERVR_COMPUTE_PROBES + 2U];
 	int error;
 
-	/* Each probe over words no instance writes. */
+	/*
+	 * Each probe over words no instance writes.  The probes that make
+	 * their address in place (CONSTANT's multiply-add, LIKE_STORE_IN_PLACE's
+	 * 64-bit add) are not run: their wrong addresses write elsewhere in
+	 * the session's memory, and a later kick's program was overwritten
+	 * once (the board's lockup of 2026-10-20); they report -1.
+	 */
 	for (kind = 0; kind < POWERVR_COMPUTE_PROBES; kind++) {
 		words = state->alias + (PROBE_OFFSET + kind * PROBE_SPACING) / 4U;
 		for (word = 0; word < PROBE_SPACING / 4U; word++)
 			words[word] = 0xffffffffU;
+		if (kind == POWERVR_COMPUTE_PROBE_CONSTANT || kind == POWERVR_COMPUTE_PROBE_LIKE_STORE_IN_PLACE) {
+			errors[kind] = -1;
+			values[kind] = 0xffffffffU;
+			continue;
+		}
 		errors[kind] = kick(state, KICK_PROBE_FIRST + kind);
 		values[kind] = words[0];
 		if (errors[kind] == ETIMEDOUT) {
