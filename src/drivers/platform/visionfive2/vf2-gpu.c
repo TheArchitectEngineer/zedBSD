@@ -110,6 +110,7 @@ static int find_node(const struct drv_fdt *fdt, uint32_t *node);
 static void make_clock(uint32_t index, struct drv_vf2_clock *clock);
 static void make_reset(uint32_t index, struct drv_vf2_reset *reset);
 static int start_clock(uint32_t index, struct vf2_gpu *gpu, enum vf2_gpu_stage stage);
+static void log_clock_rates(void);
 
 /*
  * Powers the GPU core and hands it to the PowerVR driver.
@@ -262,6 +263,9 @@ power_up(
 	if (error != 0)
 		goto fail;
 
+	/* Logs the rate of every clock the core runs on, to see which is stopped (2026-10-20, the GPU's data masters lock up). */
+	log_clock_rates();
+
 	/* Succeeded: the core is powered, clocked and out of reset. */
 	return 0;
 
@@ -269,6 +273,37 @@ fail:
 	/* Undoes the steps done and reports the failure. */
 	power_down(gpu);
 	return error;
+}
+
+/*
+ * Logs the rate of each clock the core runs on and of its PLL, one line
+ * each; a divider of zero or an unknown source shows as an error.  A
+ * diagnostic for the board: the GPU's system clock comes from the ISP's
+ * AXI clock, which nothing else on this board starts.
+ */
+static void
+log_clock_rates(void)
+{
+	static const struct { uint32_t index; const char *name; } clocks[] = {
+		{ 20U, "isp_2x" }, { 21U, "isp_axi" }, { 45U, "gpu_core" }, { 46U, "gpu_core_clk" },
+		{ 47U, "gpu_sys_clk" }, { 48U, "gpu_apb" }, { 49U, "gpu_rtc_toggle" }, { 50U, "noc_bus_gpu_axi" },
+	};
+	struct drv_vf2_clock clock;
+	uint64_t rate;
+	unsigned i;
+	int error;
+
+	/* Each clock, with its rate or the error. */
+	for (i = 0; i < sizeof(clocks) / sizeof(clocks[0]); i++) {
+		make_clock(clocks[i].index, &clock);
+		rate = 0;
+		error = drv_vf2_clock_get_rate(&clock, &rate);
+		kern_logf("vf2-gpu: clock %u %s: %llu Hz (error %d)\n", (unsigned)clocks[i].index, clocks[i].name, (unsigned long long)rate, error);
+	}
+
+	/* The PLL the core runs from. */
+	error = drv_vf2_pll_get_rate(VF2_GPU_ROOT_PLL, &rate);
+	kern_logf("vf2-gpu: pll %u: %llu Hz (error %d)\n", (unsigned)VF2_GPU_ROOT_PLL, (unsigned long long)rate, error);
 }
 
 /*
