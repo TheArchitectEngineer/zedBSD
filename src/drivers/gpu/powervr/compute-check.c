@@ -306,12 +306,14 @@ void
 powervr_compute_check(
 	struct powervr_render *render)
 {
+	static const unsigned gaps[] = { 2, 6 };
 	struct check_state state;
 	const char *step;
 	unsigned written;
 	unsigned four_wrong;
 	unsigned two_wrong;
 	unsigned wide_wrong;
+	unsigned gap;
 	int wide_error;
 	int four_error;
 	int two_error;
@@ -401,7 +403,12 @@ powervr_compute_check(
 	 * the workgroup id probe and the executor's layouts, each in a
 	 * session of its own.
 	 */
-	run_compiled_fill(&state);
+	for (gap = 0; gap < sizeof(gaps) / sizeof(gaps[0]); gap++) {
+		shader_integer_source_gap = gaps[gap];
+		kern_logf("powervr: compute probes: compiled fill with multiply-add source gap %u, no-operation fillers\n", gaps[gap]);
+		run_compiled_fill(&state);
+	}
+	shader_integer_source_gap = SHADER_INTEGER_SOURCE_GAP;
 	run_workgroup_probe(&state);
 	run_layouts(&state);
 
@@ -1697,7 +1704,7 @@ timing_add(
 	}
 }
 
-/* Appends count groups that do nothing (the compiler's spacing group). */
+/* Appends count groups that do nothing (the control no-operation the board ran between groups). */
 static void
 timing_fill(
 	struct timing_program *program,
@@ -1706,7 +1713,7 @@ timing_fill(
 	unsigned index;
 
 	for (index = 0; index < count; index++)
-		timing_add(program, MACHINE_WAIT, DUMP_NONE, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, 0);
+		timing_add(program, MACHINE_NOP, DUMP_NONE, 0, DUMP_NONE, DUMP_NONE, DUMP_NONE, 0);
 }
 
 /* Appends one operation and TIMING_SETTLE spacing groups after it. */

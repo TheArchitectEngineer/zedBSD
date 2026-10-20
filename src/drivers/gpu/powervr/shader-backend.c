@@ -154,6 +154,16 @@ static int allocate(const struct powervr_ir_shader *shader, struct shader_backen
 static int select_instruction(struct backend_select *select, const struct powervr_ir_instruction *instruction);
 static int select_structure(struct backend_select *select, const struct powervr_ir_instruction *instruction);
 static int operations_conflict(const struct shader_machine_operation *reader, const struct shader_machine_operation *writer);
+/*
+ * The spacing the back end applies, changeable before a compile (the
+ * compute check compares settings on the board in one boot): the groups
+ * between an integer multiply-add and a write of a register it reads,
+ * and the kind of the filler group (MACHINE_NOP, the control group the
+ * board ran as "nop between groups", or MACHINE_WAIT).
+ */
+unsigned shader_integer_source_gap = SHADER_INTEGER_SOURCE_GAP;
+unsigned shader_filler_kind = MACHINE_NOP;
+
 static void nop_operation(struct shader_machine_operation *operation);
 static int insert_nops(struct shader_backend *backend, unsigned index, unsigned count);
 static int stage_in_place(struct shader_backend *backend, unsigned index, unsigned *added);
@@ -387,7 +397,7 @@ shader_backend_space_hazards(
 	for (index = 0; index < backend->operation_count; index++) {
 		/* How many groups must still come between, from the nearest conflicting reader. */
 		needed = 0;
-		for (back = 1; back <= SHADER_INTEGER_SOURCE_GAP && back <= index; back++) {
+		for (back = 1; back <= SHADER_GAP_MAX && back <= index; back++) {
 			gap = required_gap(&backend->operations[index - back], &backend->operations[index]);
 			if (gap >= back && gap + 1U - back > needed)
 				needed = gap + 1U - back;
@@ -428,7 +438,7 @@ shader_backend_space_hazards(
 
 /*
  * The groups that must lie between an earlier group and a later one
- * (0 when none): SHADER_INTEGER_SOURCE_GAP when the later one writes a
+ * (0 when none): shader_integer_source_gap when the later one writes a
  * register an integer multiply-add read, SHADER_HAZARD_GAP when it
  * writes a register any other group read, reads an integer
  * multiply-add's result, or is an integer multiply-add reading a
@@ -441,7 +451,7 @@ required_gap(
 {
 	/* The later group writes what the earlier one read. */
 	if (operations_conflict(earlier, later))
-		return earlier->kind == MACHINE_INTEGER ? SHADER_INTEGER_SOURCE_GAP : SHADER_HAZARD_GAP;
+		return earlier->kind == MACHINE_INTEGER ? shader_integer_source_gap : SHADER_HAZARD_GAP;
 
 	/* The later group reads an integer result, or is an integer group reading a fresh value. */
 	if (integer_result_read(earlier, later))
@@ -606,7 +616,7 @@ shader_backend_hazards(
 	/* Each group against the ones just before it. */
 	count = 0;
 	for (index = 0; index < backend->operation_count; index++) {
-		for (back = 1; back <= SHADER_INTEGER_SOURCE_GAP && back <= index; back++) {
+		for (back = 1; back <= SHADER_GAP_MAX && back <= index; back++) {
 			if (required_gap(&backend->operations[index - back], &backend->operations[index]) >= back) {
 				count++;
 				break;
@@ -691,8 +701,8 @@ nop_operation(
 {
 	unsigned index;
 
-	/* A cleared operation of the kind, with no registers. */
-	operation->kind = MACHINE_WAIT;
+	/* A cleared operation of the filler's kind, with no registers. */
+	operation->kind = (uint8_t)shader_filler_kind;
 	operation->condition = POWERVR_USC_RUN_ENABLED;
 	operation->variant = 0;
 	operation->modifiers[0] = 0;
