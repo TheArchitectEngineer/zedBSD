@@ -65,6 +65,9 @@ void *kern_malloc(size_t size) { return malloc(size); }
 void *kern_calloc(size_t count, size_t size) { return calloc(count, size); }
 void kern_free(void *pointer) { free(pointer); }
 void kern_logf(const char *format, ...) { va_list list; va_start(list, format); printf("  log: "); vprintf(format, list); va_end(list); }
+uint64_t powervr_timing_now(void) { return 0; }
+void powervr_timing_add(enum powervr_timing_part part, uint64_t start) { (void)part; (void)start; }
+void powervr_timing_report(void) { }
 void mutex_lock(struct mutex *mutex) { (void)mutex; }
 void mutex_unlock(struct mutex *mutex) { (void)mutex; }
 

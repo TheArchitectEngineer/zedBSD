@@ -263,8 +263,12 @@ powervr_render_job_run(
 	struct powervr_render_job *work;
 	const struct powervr_render_draw *prefix;
 	struct load_draw *load;
+	uint64_t started;
 	uint32_t at;
 	int error;
+
+	/* When the job started, for the submission's timing. */
+	started = powervr_timing_now();
 
 	/* Refuses what the job runner does not build yet. */
 	error = job_check(job);
@@ -325,7 +329,14 @@ powervr_render_job_run(
 		return error;
 	}
 
+	/* The job's memory, timed on its own. */
+	powervr_timing_add(POWERVR_TIMING_JOB_SETUP, started);
+	started = powervr_timing_now();
 	error = job_map(render, session, memory);
+	powervr_timing_add(POWERVR_TIMING_JOB_MAP, started);
+
+	/* The background's programs and the load draw. */
+	started = powervr_timing_now();
 	if (error == 0)
 		error = job_programs(job, memory, &shared_registers);
 	if (error == 0 && load != NULL)
@@ -411,6 +422,8 @@ powervr_render_job_run(
 	powervr_geometry_command(&memory->geometry_setup, memory->geometry);
 
 	/* The kicks; the partial render runs the fragment's own command. */
+	powervr_timing_add(POWERVR_TIMING_JOB_BUILD, started);
+	started = powervr_timing_now();
 	mutex_lock(&render->core->lock);
 
 	error = powervr_session_kick_render(render, session, target, 0, memory->geometry, memory->fragment, memory->fragment, NULL, 0, &memory->marks);
@@ -424,7 +437,10 @@ powervr_render_job_run(
 	}
 
 	/* The wait; the render's end says the TA and 3D stages. */
+	powervr_timing_add(POWERVR_TIMING_JOB_KICK, started);
+	started = powervr_timing_now();
 	error = powervr_render_finish(render, session, &memory->marks, JOB_WAIT_MS);
+	powervr_timing_add(POWERVR_TIMING_JOB_WAIT, started);
 	if (error != 0) {
 		kern_logf("powervr: render job did not finish (%d); its memory stays with the core\n", error);
 		session->abandoned = 1;
@@ -433,8 +449,10 @@ powervr_render_job_run(
 	}
 
 	/* Succeeded: the render is done and its memory goes. */
+	started = powervr_timing_now();
 	job_release(render, session, memory);
 	load_draw_free(work, load);
+	powervr_timing_add(POWERVR_TIMING_JOB_RELEASE, started);
 	return 0;
 }
 

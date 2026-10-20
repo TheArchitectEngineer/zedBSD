@@ -230,6 +230,9 @@ int powervr_command_mmu_flush(struct powervr_core *core) { (void)core; return 0;
 
 /* The stage lines are not part of this test. */
 void powervr_stage_ok(enum powervr_stage stage) { (void)stage; }
+uint64_t powervr_timing_now(void) { return 0; }
+void powervr_timing_add(enum powervr_timing_part part, uint64_t start) { (void)part; (void)start; }
+void powervr_timing_report(void) { }
 void powervr_stage_fail(enum powervr_stage stage, enum powervr_stage_reason reason) { (void)stage; (void)reason; }
 enum powervr_stage_reason powervr_stage_reason_of(int error) { (void)error; return POWERVR_REASON_ERROR; }
 

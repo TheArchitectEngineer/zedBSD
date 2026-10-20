@@ -48,6 +48,7 @@
 #include "drivers/gpu/powervr/interface.h"
 #include "drivers/gpu/powervr/render-kick-layout.h"
 #include "drivers/gpu/powervr/render-command.h"
+#include "drivers/gpu/powervr/vk.h"
 
 /* The program heaps' base registers (sources: see send_command). */
 #define EXEC_BASE_PDS		0x0610U
@@ -117,6 +118,21 @@ static void take_reached(struct powervr_session *session, struct delivery *deliv
 static void take_all(struct powervr_session *session, int error, struct delivery *delivery);
 static void deliver(struct powervr_render *render, struct delivery *delivery);
 static void handle_notice(void *context, uint32_t type, const struct powervr_object *buffer, uint32_t offset);
+/* How often the timing says its sums, in milliseconds. */
+#define TIMING_REPORT_MS		5000U
+
+/*
+ * The submission timing: each part's summed ticks and count since the
+ * last report, and when that was.
+ *
+ * Only a diagnostic: parts added by sessions at the same time may race
+ * on a sum and lose an addition, which a report's averages tolerate.
+ */
+static uint64_t timing_ticks[POWERVR_TIMING_PARTS];
+static uint64_t timing_count[POWERVR_TIMING_PARTS];
+static uint64_t timing_reported;
+
+static uint64_t timing_us(uint64_t ticks);
 static uint64_t ms_ticks(unsigned milliseconds);
 static unsigned is_faulted(struct powervr_render *render);
 
@@ -1103,6 +1119,81 @@ powervr_render_drain(
 
 	spin_unlock_irqrestore(&render->queue_lock, enabled);
 }
+
+/*
+ * Reads the timer's ticks now, for the start of a timed part.
+ */
+uint64_t
+powervr_timing_now(
+	void)
+{
+	uint64_t now;
+
+	/* The scheduler's clock. */
+	now = sched_ticks();
+
+	/* Succeeded: the ticks. */
+	return now;
+}
+
+/*
+ * Adds the ticks since start to a part's sum and counts one more of it.
+ */
+void
+powervr_timing_add(
+	enum powervr_timing_part part,
+	uint64_t start)
+{
+	uint64_t now;
+
+	/* Nothing when the timing is off. */
+	if (!POWERVR_SUBMIT_TIMING)
+		return;
+
+	/* The part's time and count. */
+	now = sched_ticks();
+	timing_ticks[part] += now - start;
+	timing_count[part]++;
+}
+
+/*
+ * Says the submission timing's sums once TIMING_REPORT_MS passed since
+ * the last report: for each part its count and its average and total in
+ * microseconds, then clears them.
+ */
+void
+powervr_timing_report(
+	void)
+{
+	static const char *const names[POWERVR_TIMING_PARTS] = {
+		"submit", "job setup", "job map", "job build", "job kick", "job wait", "job release", "transfer", "dispatch",
+	};
+	uint64_t now;
+	uint64_t average;
+	unsigned part;
+
+	/* Not yet time. */
+	now = sched_ticks();
+	if (now - timing_reported < KERN_MS_TO_TICKS(TIMING_REPORT_MS))
+		return;
+	timing_reported = now;
+
+	/* One line a part that ran. */
+	for (part = 0; part < POWERVR_TIMING_PARTS; part++) {
+		/* A part that did not run says nothing. */
+		if (timing_count[part] == 0)
+			continue;
+
+		/* Its count, average and total. */
+		average = timing_us(timing_ticks[part]) / timing_count[part];
+		kern_logf("powervr: timing: %s: %llu, average %llu us, total %llu us\n", names[part],
+			  (unsigned long long)timing_count[part], (unsigned long long)average,
+			  (unsigned long long)timing_us(timing_ticks[part]));
+		timing_ticks[part] = 0;
+		timing_count[part] = 0;
+	}
+}
+
 
 /*
  * Stops a session's new work and asks the firmware to clean up the first
@@ -2345,4 +2436,13 @@ is_faulted(
 
 	/* Succeeded: the flag. */
 	return faulted;
+}
+
+/* Converts timer ticks to microseconds. */
+static uint64_t
+timing_us(
+	uint64_t ticks)
+{
+	/* Succeeded: the whole seconds and the rest, each scaled. */
+	return ticks / KERN_CLOCK_HZ * 1000000U + ticks % KERN_CLOCK_HZ * 1000000U / KERN_CLOCK_HZ;
 }

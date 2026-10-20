@@ -348,4 +348,35 @@ int powervr_vk_image_address(const struct powervr_vk_image *image, uint64_t *add
 /* The executor's own memory on the core, and its release (vk-queue.c). */
 void powervr_vk_executor_free(struct powervr_vk_session *session);
 
+/*
+ * Whether the executor sums where a submission's time goes and says it
+ * every five seconds in which submissions ran (1), or not (0).
+ */
+#ifndef POWERVR_SUBMIT_TIMING
+#define POWERVR_SUBMIT_TIMING	1
+#endif
+
+/* The parts of a submission's time the executor sums, in timer ticks. */
+enum powervr_timing_part {
+	POWERVR_TIMING_SUBMIT,
+	POWERVR_TIMING_JOB_SETUP,
+	POWERVR_TIMING_JOB_MAP,
+	POWERVR_TIMING_JOB_BUILD,
+	POWERVR_TIMING_JOB_KICK,
+	POWERVR_TIMING_JOB_WAIT,
+	POWERVR_TIMING_JOB_RELEASE,
+	POWERVR_TIMING_TRANSFER,
+	POWERVR_TIMING_DISPATCH,
+	POWERVR_TIMING_PARTS
+};
+
+/* Adds the ticks since start to a part's sum and counts one more of it (render-queue.c). */
+void powervr_timing_add(enum powervr_timing_part part, uint64_t start);
+
+/* The timer's ticks now, for a part's start (render-queue.c). */
+uint64_t powervr_timing_now(void);
+
+/* Says the sums every TIMING_REPORT_MS and clears them (render-queue.c). */
+void powervr_timing_report(void);
+
 #endif /* KERN_DRIVERS_GPU_POWERVR_VK_H */
