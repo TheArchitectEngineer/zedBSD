@@ -697,3 +697,44 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
   - 最後の `nop between groups`（nop の encode そのものの確かめ）。
   - その後、手で vkcompute。
 - 片付け（Q1 に依頼）: `build/p032/`。
+
+## q1461-i01（P2、2026-10-20）: vkcompute の fill の fault、IMADD の special register の定数
+
+- 板（vf2-dmesg56）:
+  - nop と wait の probe は、どちらも ffffffff（nop の encode は良い）。
+  - vkcompute はまだ fault: 0x800002a020 ＝ buffer の先頭＋0x24020、word 36872 ＝ 0x9008。前回は 4104 ＝ 0x1008。
+- 逆算: 36872 ＝ 36×1024＋8、4104 ＝ 4×1024＋8。gid（workgroup×32＋local id）の workgroup の項が、**×32 ではなく ×1024（＝×32×32）**になっている。
+- host で compile した列（workgroup 36 の kernel、`powervr_shader_compile_inline` の形。vk の executor は shared の値を即値に埋めるので、shader は shared register を読まない。直す前の分。WAIT は省く）:
+
+```
+  1 IMM     r12 = 0x24                 (workgroup id 36、即値)
+  2 IMM     r1  = 0x20                 (32)
+  3 IMADD   r13 = r12 * r1 + sr0       (workgroup×32、加数は special の 0)
+  4 IMADD   r9  = r13 * sr1 + r11      (＋local id、乗数は special の 1)
+  7 MOVE    r13 = r9                   (gid)
+ ...
+ 38 IMADD   r15 = r11 * r1(4) + sr0    (gid×4)
+ 41 IMADD   r11 = r15 * sr1 + sr0
+ 43 ADD64   r6:r7 = r12:r14 + r11      (buffer＋offset)
+ 44 STORE   data r8, address r6
+```
+
+- 原因の見込み: op 4 の乗数の special の定数 1（sr1）を、hardware は temporary の r1 として読んだ。r1 はその時 32 なので、gid ＝ (wg×32)×32＋lid になり、計算と合う。
+  - 板で動いた手書きの program（compute-program.c）は、IMADD の source が全部 temporary。
+  - 加数の sr0（0）が r0 として読まれても、r0 は EMC の counter（0）なので害が出ない。
+  - operand の encode は M9 で Mesa と同じなので、bank の field の誤りではない。int32_64 の op が special の bank を読めない（Mesa は定数を temporary に置く）と推測する。確かめてはいない。
+- 直し（`shader-backend.c`）:
+  - `integer_source` を足した。整数の IMADD（add・multiply）の source が special register（0・1・float の 1・all ones）なら、scratch の temporary に IMMEDIATE で載せてから使う。
+  - 直した後の fill: `IMADD r13 = r12 * r1 + r2`、`IMADD r9 = r13 * r1(1) + r11` と、全部 temporary。468 → 456 byte、temps 16。
+- Q1 の質問への答え:
+  - **COMPUTED の probe**: in place の IMADD（r0 に書く）で address を作り、その r0・r1 の値を書き出す probe で、比べのために残してある。in place は壊れる（q1441・q1444）ので、low が want と違い、毎回変わるのは想定どおり。`(0)` は kick の error の値（kick は通った）で、合否ではない。
+  - **shared word の probe**: vk の executor は shared の値（workgroup id、buffer の address）を compile の時に即値として埋める（`powervr_shader_compile_inline`）。fill の shader は shared register を読まないので、作らなかった。同じ理由で、PDS が書く shared と USC の最初の読みの間の hazard も、今の fill には関係しない。shared register を実際に読む shader（push constant など）が出たら確かめる。
+
+| 確認 | 結果 |
+| --- | --- |
+| compiler の host | 455 passed、0 failed |
+| p009 | 511 passed、0 failed |
+| p010 | 全部 0 failed |
+| VF2 の vmunix（`plan/ws269/tests/p008/config-visionfive2-compute.mk`、`build/p033/vf2/vmunix`） | rc 0、warning 0 |
+
+- 片付け（Q1 に依頼）: `build/p033/`。

@@ -163,6 +163,7 @@ static struct shader_machine_register temp_register(unsigned index);
 static struct shader_machine_register bank_register(unsigned bank, unsigned index);
 static struct shader_machine_register destination_of(struct backend_select *select, const struct powervr_ir_instruction *instruction);
 static struct shader_machine_register operand_register(struct backend_select *select, const struct powervr_ir_operand *operand, unsigned *modifiers);
+static struct shader_machine_register integer_source(struct backend_select *select, struct shader_machine_register reg);
 static struct shader_machine_register operand_plain(struct backend_select *select, const struct powervr_ir_operand *operand, unsigned allowed);
 static struct shader_machine_register scratch_register(struct backend_select *select);
 static void select_float_pair(struct backend_select *select, unsigned kind, struct shader_machine_register destination, const struct powervr_ir_operand *a, const struct powervr_ir_operand *b, unsigned floor);
@@ -1070,21 +1071,30 @@ select_instruction(
 		break;
 	case POWERVR_IR_INTEGER_ADD:
 	case POWERVR_IR_INTEGER_MULTIPLY:
+		/*
+		 * Every source a temporary: on the board an integer multiply-add
+		 * read its special-register constant one as temporary r1
+		 * (2026-10-20), so constants go through scratch temporaries.
+		 */
 		destination = destination_of(select, instruction);
-		a = operand_plain(select, &instruction->source[0], 0);
-		b = operand_plain(select, &instruction->source[1], 0);
+		a = integer_source(select, operand_plain(select, &instruction->source[0], 0));
+		b = integer_source(select, operand_plain(select, &instruction->source[1], 0));
+		if (opcode == POWERVR_IR_INTEGER_ADD)
+			c = integer_source(select, bank_register(POWERVR_USC_BANK_SPECIAL, SPECIAL_ONE));
+		else
+			c = integer_source(select, bank_register(POWERVR_USC_BANK_SPECIAL, SPECIAL_ZERO));
 		operation = append(select, MACHINE_INTEGER);
 		if (operation != NULL) {
 			operation->destination[0] = destination;
 			operation->source[0] = a;
 			if (opcode == POWERVR_IR_INTEGER_ADD) {
 				/* a times one plus b. */
-				operation->source[1] = bank_register(POWERVR_USC_BANK_SPECIAL, SPECIAL_ONE);
+				operation->source[1] = c;
 				operation->source[2] = b;
 			} else {
 				/* a times b plus zero. */
 				operation->source[1] = b;
-				operation->source[2] = bank_register(POWERVR_USC_BANK_SPECIAL, SPECIAL_ZERO);
+				operation->source[2] = c;
 			}
 		}
 		break;
@@ -1576,6 +1586,45 @@ operand_register(
 		operation->immediate = operand->constant;
 	}
 	return reg;
+}
+
+/*
+ * Gives an integer operation's source as a temporary: a special
+ * register constant (zero, one, float one, all ones) is loaded into a
+ * scratch temporary first.
+ */
+static struct shader_machine_register
+integer_source(
+	struct backend_select *select,
+	struct shader_machine_register reg)
+{
+	struct shader_machine_operation *operation;
+	struct shader_machine_register moved;
+	uint32_t value;
+
+	/* A temporary or another bank stays as it is. */
+	if (reg.bank != POWERVR_USC_BANK_SPECIAL)
+		return reg;
+
+	/* The constant the special register holds. */
+	value = 0;
+	if (reg.index == SPECIAL_ONE)
+		value = 1;
+	else if (reg.index == SPECIAL_FLOAT_ONE)
+		value = 0x3f800000U;
+	else if (reg.index == SPECIAL_TRUE)
+		value = 0xffffffffU;
+
+	/* Its value in a scratch temporary. */
+	moved = scratch_register(select);
+	operation = append(select, MACHINE_IMMEDIATE);
+	if (operation != NULL) {
+		operation->destination[0] = moved;
+		operation->immediate = value;
+	}
+
+	/* Succeeded: the temporary. */
+	return moved;
 }
 
 /*
