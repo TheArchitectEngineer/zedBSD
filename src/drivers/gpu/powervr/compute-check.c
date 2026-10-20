@@ -853,6 +853,13 @@ run_probes(
 		  own_words(state, POWERVR_COMPUTE_PROBE_LIKE_STORE_EARLY),
 		  errors[POWERVR_COMPUTE_PROBE_LIKE_STORE_EARLY]);
 
+	/* An addend overwritten right after the multiply-add read it, and two groups later. */
+	kern_logf("powervr: compute probes: addend rewritten by the next group %08x (%d), two groups later %08x (%d)\n",
+		  own_words(state, POWERVR_COMPUTE_PROBE_REWRITE),
+		  errors[POWERVR_COMPUTE_PROBE_REWRITE],
+		  own_words(state, POWERVR_COMPUTE_PROBE_REWRITE_LATER),
+		  errors[POWERVR_COMPUTE_PROBE_REWRITE_LATER]);
+
 	/* The short stores: one step (32 words) and four (128). */
 	one = 0;
 	four = 0;

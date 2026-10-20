@@ -76,9 +76,6 @@
 #define USC_COUNT_PASS		2U
 #define USC_SHIFT_PASS		0U
 
-/* The values the temporaries program fills its clobber registers with. */
-#define TEMPS_FILL		0xdead0000U
-
 /* What a store program writes: its first word's address and its steps. */
 struct store_shape {
 	uint32_t base_low;
@@ -99,10 +96,10 @@ struct store_shape {
 #define STORE_STEP		6U
 
 /* The groups of the temporaries program. */
-#define TEMPS_GROUPS		15U
+#define TEMPS_GROUPS		10U
 
 /* The groups of the fill program. */
-#define FILL_GROUPS		14U
+#define FILL_GROUPS		13U
 
 /*
  * What a fill program writes: the word of instance 0's address, and the
@@ -444,15 +441,12 @@ powervr_compute_store_program(
 }
 
 /*
- * Builds the shading cluster program that checks how the task issue's
- * temporaries field counts.
+ * Builds the shading cluster program of the temporaries check.
  *
  * Each of the 32 instances writes its own instance number to the word
- * at base plus four times that number.  It first puts the number in its
- * eighth temporary, then fills the four below with other values: if the
- * field allocates fewer than eight temporaries per instance and the
- * instances' temporaries lie next to each other, a neighbour's fill
- * lands on the eighth temporary and the word written is not the number.
+ * at base plus four times that number, using exactly eight temporaries
+ * (r0 to r7), each written once.  With a task issue field too small for
+ * eight, neighbouring instances share registers and the words go wrong.
  */
 int
 powervr_compute_temps_program(
@@ -517,7 +511,10 @@ powervr_compute_temps_program(
  *   LIKE_STORE_IN_PLACE  the same with the base in r0 and r1 and the
  *                  64-bit add writing the pair it reads;
  *   LIKE_STORE_EARLY     the same with r0 to r11 set before the
- *                  multiply-add instead of after.
+ *                  multiply-add instead of after;
+ *   REWRITE        LIKE_STORE_NUMBER with the multiply-add's zero addend
+ *                  (r6) overwritten by the very next group;
+ *   REWRITE_LATER  the same with two other groups between them.
  *
  * Procedure referenced:
  * Mesa 26.2.5 src/imagination/pco/pco_trans_nir.c (trans_store_global
@@ -638,6 +635,15 @@ powervr_compute_probe_program(
 			error = immediate_group(&groups[count++], 6, 0);
 		if (error == 0)
 			error = multiply_add_group(&groups[count++], 8, 5, 4, 6);
+		if (error == 0 && kind == POWERVR_COMPUTE_PROBE_REWRITE)
+			error = immediate_group(&groups[count++], 6, 0x12340U);
+		if (error == 0 && kind == POWERVR_COMPUTE_PROBE_REWRITE_LATER) {
+			error = immediate_group(&groups[count++], 9, 0);
+			if (error == 0)
+				error = immediate_group(&groups[count++], 12, 0);
+			if (error == 0)
+				error = immediate_group(&groups[count++], 6, 0x12340U);
+		}
 		if (error == 0 && kind == POWERVR_COMPUTE_PROBE_LIKE_STORE_IN_PLACE) {
 			error = immediate_group(&groups[count++], 0, (uint32_t)base);
 			if (error == 0)
@@ -889,40 +895,40 @@ temps_fetch(
 	const struct store_shape *shape;
 	int error;
 
-	/* The number first, then the fill, then the offset and the address, then the store. */
+	/*
+	 * Every register is written once, before anything reads it, and
+	 * never after: on the board a register the multiply-add read was
+	 * seen holding the value the next group wrote to it (2026-10-20).
+	 * The eight registers: the base pair, four, zero, the offset, the
+	 * address pair and the number, which is the data after the pair.
+	 */
 	shape = context;
 	error = 0;
 	if (index == 0) {
-		/* r7: the instance number. */
+		/* r7: the instance number, the data. */
 		error = special_group(group, 7, USC_INSTANCE_NUMBER);
-	} else if (index >= 1 && index <= 4) {
-		/* r3 to r6: values that are no instance number. */
-		error = immediate_group(group, (unsigned)index + 2U, TEMPS_FILL | ((uint32_t)index + 2U));
-	} else if (index == 5) {
-		/* r2: four, the bytes of a word. */
-		error = immediate_group(group, 2, 4);
-	} else if (index == 6) {
-		/* r0: zero. */
-		error = immediate_group(group, 0, 0);
-	} else if (index == 7) {
-		/* r3: the instance's offset (not into r2, which it reads). */
-		error = multiply_add_group(group, 3, 7, 2, 0);
-	} else if (index == 8) {
+	} else if (index == 1) {
 		/* r0: the low half of the base. */
 		error = immediate_group(group, 0, shape->base_low);
-	} else if (index == 9) {
+	} else if (index == 2) {
 		/* r1: the high half. */
 		error = immediate_group(group, 1, shape->base_high);
-	} else if (index == 10) {
-		/* r4 and r5: the instance's word, into a pair the add does not read. */
-		error = add64_group(group, 4, 0, 3);
-	} else if (index == 11) {
-		/* r6: the data after the address pair, the number as the eighth temporary holds it now. */
-		error = pass_group(group, 6, POWERVR_USC_BANK_TEMPORARY, 7);
-	} else if (index == 12) {
+	} else if (index == 3) {
+		/* r2: four, the bytes of a word. */
+		error = immediate_group(group, 2, 4);
+	} else if (index == 4) {
+		/* r3: zero. */
+		error = immediate_group(group, 3, 0);
+	} else if (index == 5) {
+		/* r4: the instance's offset. */
+		error = multiply_add_group(group, 4, 7, 2, 3);
+	} else if (index == 6) {
+		/* r5 and r6: the instance's word, the data r7 right after them. */
+		error = add64_group(group, 5, 0, 4);
+	} else if (index == 7) {
 		/* The store. */
-		error = store_group(group, 6, 4);
-	} else if (index == 13) {
+		error = store_group(group, 7, 5);
+	} else if (index == 8) {
 		/* The wait for it. */
 		error = wait_group(group);
 	} else {
@@ -950,46 +956,43 @@ fill_fetch(
 	const struct fill_shape *shape;
 	int error;
 
-	/* The number, the value, the offset and the address, then the store. */
+	/* Every register written once, before it is read (as for the temporaries program). */
 	shape = context;
 	error = 0;
 	if (index == 0) {
 		/* r7: the instance number. */
 		error = special_group(group, 7, USC_INSTANCE_NUMBER);
 	} else if (index == 1) {
-		/* r3: the multiplier. */
-		error = immediate_group(group, 3, shape->multiplier);
-	} else if (index == 2) {
-		/* r4: the addend. */
-		error = immediate_group(group, 4, shape->addend);
-	} else if (index == 3) {
-		/* r6: the value. */
-		error = multiply_add_group(group, 6, 7, 3, 4);
-	} else if (index == 4) {
-		/* r2: four, the bytes of a word. */
-		error = immediate_group(group, 2, 4);
-	} else if (index == 5) {
-		/* r0: zero. */
-		error = immediate_group(group, 0, 0);
-	} else if (index == 6) {
-		/* r5: the instance's offset. */
-		error = multiply_add_group(group, 5, 7, 2, 0);
-	} else if (index == 7) {
 		/* r0: the low half of the base. */
 		error = immediate_group(group, 0, shape->base_low);
-	} else if (index == 8) {
+	} else if (index == 2) {
 		/* r1: the high half. */
 		error = immediate_group(group, 1, shape->base_high);
+	} else if (index == 3) {
+		/* r2: four, the bytes of a word. */
+		error = immediate_group(group, 2, 4);
+	} else if (index == 4) {
+		/* r3: zero. */
+		error = immediate_group(group, 3, 0);
+	} else if (index == 5) {
+		/* r4: the multiplier. */
+		error = immediate_group(group, 4, shape->multiplier);
+	} else if (index == 6) {
+		/* r5: the addend. */
+		error = immediate_group(group, 5, shape->addend);
+	} else if (index == 7) {
+		/* r8: the instance's offset. */
+		error = multiply_add_group(group, 8, 7, 2, 3);
+	} else if (index == 8) {
+		/* r12: the value, the data after the address pair. */
+		error = multiply_add_group(group, 12, 7, 4, 5);
 	} else if (index == 9) {
-		/* r2 and r3: the instance's word, into a pair the add does not read. */
-		error = add64_group(group, 2, 0, 5);
+		/* r10 and r11: the instance's word. */
+		error = add64_group(group, 10, 0, 8);
 	} else if (index == 10) {
-		/* r4: the value, after the address pair. */
-		error = pass_group(group, 4, POWERVR_USC_BANK_TEMPORARY, 6);
-	} else if (index == 11) {
 		/* The store. */
-		error = store_group(group, 4, 2);
-	} else if (index == 12) {
+		error = store_group(group, 12, 10);
+	} else if (index == 11) {
 		/* The wait for it. */
 		error = wait_group(group);
 	} else {

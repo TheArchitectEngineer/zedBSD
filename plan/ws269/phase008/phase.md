@@ -589,3 +589,29 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
 | VF2 の vmunix（`plan/ws269/tests/p008/config-visionfive2-compute.mk`、`build/p028/vf2/vmunix`） | rc 0、warning 0 |
 
 - 片付け（Q1 に依頼）: `build/p028/`。
+
+## q1454-i01（P2、2026-10-20）: fault の address の逆算と、読んだ register を次の group が書き換える hazard
+
+- 板の 13 回目（vf2-dmesg50）: temps の program（8 register）は field 4（wide）なら OK、field 3・2 では fault 0x80003e2000（毎回同じ address）。
+- fault の address の逆算:
+  - run の base は 0x8000001000。temps の base は run＋0x1f0000＝0x80001f1000。
+  - 0x80003e2000 ＝ temps の base ＋ 0x1f1000（＝ base の低い word）。
+  - temps の program は index 6 で r0=0、index 7 で `r3 = r7×r2 + r0`、index 8 で `r0 = base の低い word` の順。IMADD が読んだ r0 が、**次の group が書いた base の低い word** だった。こう考えると、offset ＝ base_low＋4i、address ＝ base＋base_low＋4i で、fault の address と合う。
+  - fill の program も同じ順（r0=0 → IMADD → r0=base）。
+  - 通っている program（store・probe の ADDRESS 系・LIKE_STORE）は、IMADD の source（r6 の 0 など）を後で書き換えない。in place の失敗（q1441・q1444）も同じ種類と見る。
+  - field で結果が変わるのは、一度に走る instance の数か順が変わって、hazard が出るかどうかが変わるためと推測する（確かめてはいない）。
+- 直し:
+  - `compute-program.c` の temps の program を、各 register を 1 回だけ、読まれる前に書き、後で書き換えない形にした（10 group、r0〜r7）: r7 inst（＝ data）→ r0・r1 base → r2=4 → r3=0 → `r4 = r7×r2 + r3` → `add64 r5:r6 = r0:r1 + r4` → st（data r7 ＝ address の次）→ wait → end。fill を詰める仕組み（`TEMPS_FILL`）は外した。
+  - fill の program（`POWERVR_COMPUTE_FILL_TEMPORARIES` 13）も同じ規則にした: r8 offset、r12 value、`add64 r10:r11`、st は data r12。
+  - 確かめの probe を 2 つ足した: REWRITE（LIKE_STORE_NUMBER の IMADD の加数 r6 を、次の group で 0x12340 に書き換える）と REWRITE_LATER（間に 2 group を挟む）。行は `powervr: compute probes: addend rewritten by the next group MASK (e), two groups later MASK (e)`。
+  - field は前回の `powervr_compute_task_field`（＋1）のまま。exact（2）は最後に流す。hazard が原因なら、exact も 0/32 になるはず。
+  - 試験: p008 の temps の group の期待を 10 group の並びに直した。
+- compiler（`shader-backend.c`）への含み（未対処、vkcompute の結果しだい）: register の割り当ては、生存が終わった register を次の命令の dst に使いうる。IMADD・add64 の source を次の group が書き換える並びが出れば、同じ hazard になる。板で REWRITE が壊れて REWRITE_LATER が通れば、間隔の規則（source を書く前に N group 空ける）を back end の割り当てに入れる。
+
+| 確認 | 結果 |
+| --- | --- |
+| p008 の host | encode 94/0、compute 76/0 |
+| probe 18 種・fill（144 byte）・temps（112 byte）・store 512 step の encode | 全部 0 |
+| VF2 の vmunix（`plan/ws269/tests/p008/config-visionfive2-compute.mk`、`build/p029/vf2/vmunix`） | rc 0、warning 0 |
+
+- 片付け（Q1 に依頼）: `build/p029/`。
