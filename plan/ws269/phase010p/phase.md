@@ -88,3 +88,14 @@ sRGB・R8・R8G8・R16 の image は使われていない。このため R32_SFL
 
 - 板の期待: `vkmatrix: copy-64: PASS`、`copy-128: PASS`、`render-f16: PASS`、`18/18 passed`。
 - 片付け（Q1 に依頼）: `build/p2q1518/`。
+
+## q1520-i01（2026-10-21、診断の build）
+
+- board 97 の copy-64・copy-128・render-f16 は、どれも texel の word 0 は合い、後ろの word が違う（PBE を通る全経路で共通）。
+- host 側を読んだ結果: PBE state word 1 の source_pos・source_format・packmode、linestride の単位（pixel）は Mesa の
+  `pvr_pbe_setup_codegen_defaults` と同じ形。読むだけでは原因を決められなかったので、診断の build にした。
+- vkmatrix: `wide_compare` は、違う texel の数、どこかで違った word の位置の bit mask、最初の違う texel の全 word（seen/wanted）を出す。
+  新しい case clear-64・clear-128（vkCmdClearColorImage → copy out）で image→buffer の leg だけを試す。
+- 確認: `plan/ws269/tests/vkmatrix/run.sh build/q1520-vkm`（lavapipe）20/20 PASS。VF2 `vmunix` と `bin/vkmatrix`
+  （`plan/ws269/tests/p010/config-visionfive2-selftest.mk`、`BUILD=build/q1520/vf2`）rc 0、warning 0。driver の source は変えていない。
+- 次: board の出力（word の位置、clear-* の結果）で、壊れる leg（buffer→image／image→buffer／PBE）を決めて直す。
