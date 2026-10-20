@@ -1,0 +1,96 @@
+MESA: warning: ../mesa-26.2.5/src/imagination/vulkan/winsys/powervr/pvr_drm.c:344: FINISHME: Core count fetching is unimplemented. Setting 1 for now.
+WARNING: powervr is not a conformant Vulkan implementation, testing use only.
+shader ir before passes:
+name: ""
+stage: MESA_SHADER_COMPUTE
+internal: false
+func ENTRY main(void)
+{
+block B0:
+    0000: mov %0, vi0;
+    0001: movi32 %1, 32u;
+    0002: bcmp.s32.l %2, %0, %1;
+if I0 (%2) {
+    block B1:
+        0003: rpt3 mov %3, cf0..2;
+        0004: comp %14, %3, 0x0;
+        0005: comp %15, %3, 0x1;
+        0006: comp %16, %3, 0x2;
+        0007: movi32 %4, 5u;
+        0008: shift.lsl %5, %14, %4, _;
+        0009: iadd32 %6, %5, %0, _;
+        0010: movi32 %17, 0x0;
+        0011: movi32 %18, 0x0;
+        0012: vec %7, %17, %18;
+        0013: comp %19, %7, 0x0;
+        0014: comp %20, %7, 0x1;
+        0015: movi32 %8, 3u;
+        0016: movi32 %9, 7u;
+        0017: movi32 %10, 2u;
+        0018: shift.lsl %11, %6, %10, _;
+        0019: imul32 %12, %6, %8, _;
+        0020: iadd32 %13, %12, %9, _;
+        0021: add64_32.s %21, %22, sh0, sh1, %11, _;
+        0022: add64_32.s %23, %24, %21, %22, sh3, _;
+        0023: vec %25, %23, %24, %13;
+        0024: comp %26, %25, 0x2;
+        0025: st32.lazywriteback %26, drc0, 1u, %25, _;
+}
+block B2:
+}
+shader ir after passes:
+name: ""
+stage: MESA_SHADER_COMPUTE
+internal: false
+func ENTRY main(void) /* temps: 6 */ /* vtxins: 0 */
+{
+block B0:
+    0000: {  p0: bbyp0bm_imm32 ft0, ft1, s0, 32u; w0 = r0 }
+    0001: { s0 = vi0, s1 = sc143, s3 = r0, is0 = s1, is1 = ft0, is2 = ft1, is4 = ft2 p0: mbyp ft0, s0; p1: mbyp ft1, s3; p2_pck: pck.zero ft2, _; p2_tst: tst.s32.l ftt, _, is1, is2; p2_mov: movc w0, _, ftt, fte, is4, _, _; w0 = r0 }
+if I0 {
+/* if I0 prologue start */
+    block B1:
+        0002: (ignorepe) { s0 = sc0, s3 = sc0 ctrl: cndst.if(1) pe, w0, s0, 1u; w0 = r5 }
+        0003: { s0 = r0, s1 = sc143, is0 = s1, is1 = ft0, is4 = ft2 p0: mbyp ft0, s0; p2_pck: pck.zero ft2, _; p2_tst: tst.u32.z ftt, p0, is1, _; p2_mov: movc w0, _, ftt, fte, is4, _, _; }
+        0004: (ignorepe) { s0 = r5, s3 = sc0 ctrl: cndst.if(!p0) pe, w0, s0, 1u; w0 = r5 }
+        0005: { ctrl: br.allinst B3; }
+/* if I0 prologue end */
+    block B2:
+        0006: { s0 = cf0, is4 = ft0 p0: mbyp ft0, s0; w0 = r0 }
+        0007: { s1 = r0, s4 = sc5 p0: bbyp0bm ft0, ft1, s0, s1; p2: shift.lsl ft5, ft4, s4, _; w0 = r0 }
+        0008: { s0 = r0, s1 = sc1, s2 = vi0, is4 = ft0 p0: imadd32 ft0, s0, s1, s2, _; w0 = r0 }
+        0009: { s1 = r0, s4 = sc2 p0: bbyp0bm ft0, ft1, s0, s1; p2: shift.lsl ft5, ft4, s4, _; w0 = r1 }
+        0010: { s0 = r0, s1 = sc3, s2 = sc0, is4 = ft0 p0: imadd32 ft0, s0, s1, s2, _; w0 = r0 }
+        0011: { s0 = r0, s1 = sc1, s2 = sc7, is4 = ft0 p0: imadd32 ft0, s0, s1, s2, _; w0 = r4 }
+        0012: { s0 = sh1, is4 = ft0 p0: mbyp ft0, s0; w0 = r0 }
+        0013: { s0 = sh0, s1 = r0, s2 = r1, is4 = ft0, is5 = fte p0: add64_32.s ft0, fte, s0, s1, s2, _; w0 = r0, w1 = r1 }
+        0014: { s0 = r0, s1 = r1, s2 = sh3, is4 = ft0, is5 = fte p0: add64_32.s ft0, fte, s0, s1, s2, _; w0 = r2, w1 = r3 }
+        0015: { s0 = r4, s3 = r2..4 backend: st.lazywriteback s0, 2u, drc0, 1u, s3, _; }
+        0016: { ctrl: wdf drc0; }
+/* if I0 epilogue start */
+    block B3:
+        0017: (ignorepe) { s0 = r5, s3 = sc0 ctrl: cndend pe, w0, s0, 1u; w0 = r5 }
+/* if I0 epilogue end */
+}
+block B4:
+    0018: { ctrl: nop; }
+}
+shader binary after encoding:
+name: ""
+stage: MESA_SHADER_COMPUTE
+internal: false
+000000  86 92 40 13 20 00 00 00 00 00 40 FF 99 D2 00 D3 
+000010  3C F0 C1 9C 1E 87 87 80 CF 90 11 40 20 40 44 82 
+000020  67 20 00 00 45 FF 98 C0 00 D3 3C F1 A0 9C 1E 87 
+000030  C0 CF 80 11 00 20 44 82 67 38 45 00 45 FF 04 80 
+000040  60 04 7E 00 00 00 35 82 00 87 C0 04 00 00 00 40 
+000050  55 D2 40 00 02 80 A0 80 85 40 36 82 00 E2 C0 41 
+000060  00 80 00 00 40 FF 55 D2 40 00 02 80 A0 80 82 41 
+000070  36 82 00 E2 C0 43 00 00 00 00 40 FF 36 82 00 E2 
+000080  C0 41 00 07 00 00 44 FF 35 82 00 87 81 08 00 00 
+000090  00 40 37 86 00 E8 80 60 80 41 08 00 C0 80 41 FF 
+0000A0  37 86 00 E8 C0 61 80 03 80 00 C0 82 43 FF 65 A0 
+0000B0  00 F2 66 08 44 42 00 FF 02 80 6A FF 46 82 67 24 
+0000C0  45 00 45 FF F2 FF FF FF 04 80 EE 00 F2 FF FF FF 
+
+vkcompute: PowerVR B-Series BXE-4-32 MC1: FAIL, 0/4096 words (first bad 0: 0xa5a5a5a5, expected 0x00000007)

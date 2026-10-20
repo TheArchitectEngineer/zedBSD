@@ -46,7 +46,8 @@
 #define TEMP_ADDRESS		6U
 #define TEMP_STORE_DATA		8U
 #define TEMP_STAGE		9U
-#define TEMP_FIRST_VALUE	11U
+#define TEMP_FILLER		11U
+#define TEMP_FIRST_VALUE	12U
 
 /*
  * The special registers the back end names: constant zero, one, the
@@ -157,14 +158,20 @@ static int operations_conflict(const struct shader_machine_operation *reader, co
 /*
  * The spacing the back end applies, changeable before a compile (the
  * compute check compares settings on the board in one boot): the groups
- * between an integer multiply-add and a write of a register it reads,
- * and the kind of the filler group (MACHINE_NOP, the control group the
- * board ran as "nop between groups", or MACHINE_WAIT).
+ * between a group and a later write of a register it reads, by the
+ * reader's kind (an integer multiply-add, a store, any other), and the
+ * kind of the filler group: MACHINE_MOVE (r11 from itself, the default),
+ * MACHINE_MOVE_SPECIAL (r11 from s0), or MACHINE_NOP / MACHINE_WAIT,
+ * which on the board took no time (vf2-dmesg75).
  */
 unsigned shader_integer_source_gap = SHADER_INTEGER_SOURCE_GAP;
-unsigned shader_filler_kind = MACHINE_NOP;
+unsigned shader_alu_source_gap = SHADER_ALU_SOURCE_GAP;
+unsigned shader_store_source_gap = SHADER_STORE_SOURCE_GAP;
+unsigned shader_filler_kind = MACHINE_MOVE;
 
 static void nop_operation(struct shader_machine_operation *operation);
+static int filler_operation(const struct shader_machine_operation *operation);
+static unsigned shader_backend_gap_needed(const struct shader_backend *backend, unsigned index);
 static int insert_nops(struct shader_backend *backend, unsigned index, unsigned count);
 static int stage_in_place(struct shader_backend *backend, unsigned index, unsigned *added);
 static int operation_in_place(const struct shader_machine_operation *operation);
@@ -371,7 +378,6 @@ shader_backend_space_hazards(
 {
 	const struct shader_machine_operation *branch;
 	unsigned index;
-	unsigned back;
 	unsigned needed;
 	unsigned added;
 	unsigned gap;
@@ -380,7 +386,7 @@ shader_backend_space_hazards(
 
 	/* No group writes a register it reads: it writes the staging pair, a move after it the register. */
 	for (index = 0; index < backend->operation_count; index++) {
-		conflict = operation_in_place(&backend->operations[index]);
+		conflict = operation_in_place(&backend->operations[index]) && !filler_operation(&backend->operations[index]);
 		if (!conflict)
 			continue;
 
@@ -396,12 +402,7 @@ shader_backend_space_hazards(
 	/* Each group against the ones just before it in order. */
 	for (index = 0; index < backend->operation_count; index++) {
 		/* How many groups must still come between, from the nearest conflicting reader. */
-		needed = 0;
-		for (back = 1; back <= SHADER_GAP_MAX && back <= index; back++) {
-			gap = required_gap(&backend->operations[index - back], &backend->operations[index]);
-			if (gap >= back && gap + 1U - back > needed)
-				needed = gap + 1U - back;
-		}
+		needed = shader_backend_gap_needed(backend, index);
 		if (needed == 0)
 			continue;
 
@@ -437,21 +438,65 @@ shader_backend_space_hazards(
 }
 
 /*
+ * The fillers still needed before the group at index: against each group
+ * before it, the gap that pair needs less the distance between them, in
+ * groups that take time (a wait or a no-operation takes none; the board,
+ * vf2-dmesg75), looking back at most SHADER_GAP_MAX such groups.
+ */
+static unsigned
+shader_backend_gap_needed(
+	const struct shader_backend *backend,
+	unsigned index)
+{
+	const struct shader_machine_operation *earlier;
+	unsigned distance;
+	unsigned needed;
+	unsigned steps;
+	unsigned back;
+	unsigned gap;
+
+	/* From the group just before it, back. */
+	needed = 0;
+	distance = 1;
+	for (back = 1, steps = 0; back <= index && distance <= SHADER_GAP_MAX && steps < 4U * SHADER_GAP_MAX; back++, steps++) {
+		earlier = &backend->operations[index - back];
+		gap = required_gap(earlier, &backend->operations[index]);
+		if (gap >= distance && gap + 1U - distance > needed)
+			needed = gap + 1U - distance;
+		if (earlier->kind != MACHINE_WAIT && earlier->kind != MACHINE_NOP)
+			distance++;
+	}
+
+	/* Succeeded: the count. */
+	return needed;
+}
+
+/*
  * The groups that must lie between an earlier group and a later one
- * (0 when none): shader_integer_source_gap when the later one writes a
- * register an integer multiply-add read, SHADER_HAZARD_GAP when it
- * writes a register any other group read, reads an integer
- * multiply-add's result, or is an integer multiply-add reading a
- * register the earlier one wrote.
+ * (0 when none, or when either is a filler): when the later one writes
+ * a register the earlier one read, shader_integer_source_gap for an
+ * integer multiply-add reader, shader_store_source_gap for a store and
+ * shader_alu_source_gap for any other; SHADER_HAZARD_GAP when it reads
+ * an integer multiply-add's result, or is an integer multiply-add
+ * reading a register the earlier one wrote.
  */
 static unsigned
 required_gap(
 	const struct shader_machine_operation *earlier,
 	const struct shader_machine_operation *later)
 {
-	/* The later group writes what the earlier one read. */
-	if (operations_conflict(earlier, later))
-		return earlier->kind == MACHINE_INTEGER ? shader_integer_source_gap : SHADER_HAZARD_GAP;
+	/* A filler group keeps no value: nothing waits for it, it waits for nothing. */
+	if (filler_operation(earlier) || filler_operation(later))
+		return 0;
+
+	/* The later group writes what the earlier one read: the gap by the reader's kind. */
+	if (operations_conflict(earlier, later)) {
+		if (earlier->kind == MACHINE_INTEGER)
+			return shader_integer_source_gap;
+		if (earlier->kind == MACHINE_STORE)
+			return shader_store_source_gap;
+		return shader_alu_source_gap;
+	}
 
 	/* The later group reads an integer result, or is an integer group reading a fresh value. */
 	if (integer_result_read(earlier, later))
@@ -609,19 +654,14 @@ shader_backend_hazards(
 {
 	const struct shader_machine_operation *branch;
 	unsigned index;
-	unsigned back;
 	unsigned count;
 	int conflict;
 
 	/* Each group against the ones just before it. */
 	count = 0;
 	for (index = 0; index < backend->operation_count; index++) {
-		for (back = 1; back <= SHADER_GAP_MAX && back <= index; back++) {
-			if (required_gap(&backend->operations[index - back], &backend->operations[index]) >= back) {
-				count++;
-				break;
-			}
-		}
+		if (shader_backend_gap_needed(backend, index) != 0)
+			count++;
 	}
 
 	/* Each branch: the group before it against the group it lands on. */
@@ -635,7 +675,7 @@ shader_backend_hazards(
 
 	/* Each group that writes a register it reads, but the counter step. */
 	for (index = 0; index < backend->operation_count; index++) {
-		conflict = operation_in_place(&backend->operations[index]);
+		conflict = operation_in_place(&backend->operations[index]) && !filler_operation(&backend->operations[index]);
 		if (conflict && backend->operations[index].kind != MACHINE_CONDITION && backend->operations[index].kind != MACHINE_BRANCH)
 			count++;
 	}
@@ -701,7 +741,7 @@ nop_operation(
 {
 	unsigned index;
 
-	/* A cleared operation of the filler's kind, with no registers. */
+	/* A cleared operation of the filler's kind, with no registers but the filler's own. */
 	operation->kind = (uint8_t)shader_filler_kind;
 	operation->condition = POWERVR_USC_RUN_ENABLED;
 	operation->variant = 0;
@@ -720,6 +760,31 @@ nop_operation(
 	operation->immediate = 0;
 	operation->immediate_2 = 0;
 	operation->target = 0;
+
+	/* A real instruction as the filler: a move into the filler's register, from itself or from s0. */
+	if (shader_filler_kind == MACHINE_MOVE || shader_filler_kind == MACHINE_MOVE_SPECIAL) {
+		operation->destination[0] = temp_register(TEMP_FILLER);
+		operation->source[0] = shader_filler_kind == MACHINE_MOVE ? temp_register(TEMP_FILLER) : bank_register(POWERVR_USC_BANK_SPECIAL, 0);
+	}
+}
+
+/* Whether an operation is a filler group (nop_operation): one that keeps no value. */
+static int
+filler_operation(
+	const struct shader_machine_operation *operation)
+{
+	/* The control fillers. */
+	if (operation->kind == MACHINE_NOP)
+		return 1;
+
+	/* The moves into the filler's register. */
+	if ((operation->kind == MACHINE_MOVE || operation->kind == MACHINE_MOVE_SPECIAL) &&
+	    operation->destination[0].bank == POWERVR_USC_BANK_TEMPORARY &&
+	    operation->destination[0].index == TEMP_FILLER)
+		return 1;
+
+	/* Succeeded: a real group. */
+	return 0;
 }
 
 /*

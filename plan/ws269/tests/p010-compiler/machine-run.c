@@ -435,6 +435,8 @@ read_register(
 			return lane;
 		if (reg.index >= 32 && reg.index < 36)
 			return run->pixels[reg.index - 32U][lane];
+		if (reg.index < 32)
+			return reg.index;
 		return 0xdead0000U;
 	case 1:
 		if (reg.index >= SHADER_MACHINE_TEMPORARIES)
