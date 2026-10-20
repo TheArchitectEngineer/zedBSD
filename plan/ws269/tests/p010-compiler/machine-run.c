@@ -443,7 +443,9 @@ read_register(
 	case 2:
 		return run->input_word(lane, reg.index);
 	case 3:
-		/* Only flat varyings' C coefficients are read directly. */
+		/* A compute program's coefficients (its workgroup id); otherwise only flat varyings' C coefficients are read directly. */
+		if (run->coefficient_word != NULL)
+			return run->coefficient_word(reg.index);
 		return run->iterate_word(lane, reg.index - 2U, 1);
 	case 4:
 		request = request_at(run->program, reg.index, &word);

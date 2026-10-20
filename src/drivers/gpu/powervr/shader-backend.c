@@ -1174,6 +1174,15 @@ select_instruction(
 		request = &select->program->requests[instruction->immediate];
 		if (instruction->immediate_2 >= request->words)
 			return EINVAL;
+		if (POWERVR_SHADER_WORKGROUP_COEFFICIENTS && request->kind == POWERVR_SHADER_REQUEST_WORKGROUP_ID) {
+			/* The workgroup id: the data sequencer writes word k into coefficient k for each workgroup. */
+			operation = append(select, MACHINE_MOVE);
+			if (operation != NULL) {
+				operation->destination[0] = destination_of(select, instruction);
+				operation->source[0] = bank_register(POWERVR_USC_BANK_COEFFICIENT, instruction->immediate_2);
+			}
+			break;
+		}
 		if (select->backend->inline_values != NULL) {
 			/* The word given up front, as a constant. */
 			operation = append(select, MACHINE_IMMEDIATE);

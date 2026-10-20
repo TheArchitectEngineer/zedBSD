@@ -58,6 +58,14 @@ iterate_word(unsigned lane, uint32_t coefficient, unsigned flags)
 	return 0xdead3000U;
 }
 
+/* Workgroup 0: the coefficients the data sequencer writes. */
+static uint32_t
+coefficient_word(uint32_t reg)
+{
+	(void)reg;
+	return 0;
+}
+
 static void
 sample_words(uint32_t image, uint32_t sampler, uint32_t u, uint32_t v, uint32_t result[4])
 {
@@ -85,6 +93,7 @@ run_prefix(const struct powervr_shader_program *program, const struct shader_bac
 	run->input_word = input_word;
 	run->iterate_word = iterate_word;
 	run->sample_words = sample_words;
+	run->coefficient_word = coefficient_word;
 	run->memory = memory;
 	run->memory_base = address;
 	run->memory_words = MEMORY_WORDS;

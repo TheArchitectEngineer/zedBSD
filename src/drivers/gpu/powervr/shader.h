@@ -51,6 +51,18 @@ enum powervr_shader_request_kind {
 	POWERVR_SHADER_REQUEST_BLEND_CONSTANTS
 };
 
+/*
+ * Whether a compute program reads its workgroup id from coefficients 0
+ * to 2, which the one-kernel executor's data sequencer program writes
+ * for each workgroup (powervr_compute_workgroup_program), instead of the
+ * request's shared registers or inlined words.  Build with
+ * -DPOWERVR_SHADER_WORKGROUP_COEFFICIENTS=0 for the executor of one
+ * kernel per workgroup.
+ */
+#ifndef POWERVR_SHADER_WORKGROUP_COEFFICIENTS
+#define POWERVR_SHADER_WORKGROUP_COEFFICIENTS	1
+#endif
+
 /* The parts of a descriptor a request may name. */
 enum powervr_shader_descriptor_part {
 	POWERVR_SHADER_PART_BUFFER_ADDRESS = 0,
