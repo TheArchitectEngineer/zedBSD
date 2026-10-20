@@ -76,11 +76,15 @@ powervr_vk_graphics_decode(
 	if (error == EINVAL)
 		return EINVAL;
 
-	/* A pipeline of a known pass and two known stages. */
+	/*
+	 * A pipeline of a known pass and two known stages.  A module's status
+	 * says only whether it has a compute entry (vk-layout.c), so the two
+	 * graphics stages are judged by their compiles below, not by it.
+	 */
 	if (error != 0)
 		return error;
 	pass = powervr_vk_payload(session, I915_VK_OBJ_RENDER_PASS, render_pass);
-	if (pass == NULL || vertex == NULL || fragment == NULL || vertex->status != 0 || fragment->status != 0)
+	if (pass == NULL || vertex == NULL || fragment == NULL)
 		return ENOTSUP;
 
 	/* The graphics state. */

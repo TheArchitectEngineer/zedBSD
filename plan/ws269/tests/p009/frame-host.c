@@ -21,6 +21,8 @@
 #include <string.h>
 
 #include "internal.h"
+#include "userland/desktop/libkeiland/ui/shaders.h"
+#include "userland/desktop/wayland/shaders.h"
 #include "frame-host.h"
 
 /* The places of the reply region: the replies from 0, the trailer in the last 20 bytes. */
@@ -55,13 +57,39 @@
 #define ID_UNKNOWN_IMPORT	31U
 #define ID_OTHER_HANDLE_IMAGE	32U
 
+/* The Keiland-like frame's objects (ws269-p011). */
+#define ID_K_MEMORY		40U
+#define ID_K_TARGET		41U
+#define ID_K_VERTEX		42U
+#define ID_K_TARGET_VIEW	43U
+#define ID_K_PASS		44U
+#define ID_K_FRAMEBUFFER	45U
+#define ID_K_QUAD_VERT		46U
+#define ID_K_QUAD_FRAG		47U
+#define ID_K_CANVAS_VERT	48U
+#define ID_K_CANVAS_FRAG	49U
+#define ID_K_SET_LAYOUT		50U
+#define ID_K_QUAD_LAYOUT	51U
+#define ID_K_CANVAS_LAYOUT	52U
+#define ID_K_QUAD_PIPELINE	53U
+#define ID_K_CANVAS_PIPELINE	54U
+#define ID_K_POOL		55U
+#define ID_K_SET		56U
+#define ID_K_COMMAND_A		57U
+#define ID_K_COMMAND_B		58U
+#define ID_K_FENCE_A		59U
+#define ID_K_FENCE_B		60U
+
+/* The Keiland-like frame's target: 64x64 BGRA8. */
+#define K_EDGE			64U
+
 /* The shared path's switch the executor is built with (image-state.h). */
 #ifndef POWERVR_FORMAT_LINEAR_SAMPLED
 #define POWERVR_FORMAT_LINEAR_SAMPLED	0
 #endif
 
 /* Local objects whose pointers are the handles libvulkan's encoders turn into wire identities. */
-static struct vulkan_object objects[40];
+static struct vulkan_object objects[64];
 
 static int failures;
 static int passes;
@@ -1093,4 +1121,699 @@ frame_counts(
 {
 	*passed = passes;
 	*failed = failures;
+}
+
+/* Starts a recorded command of a command buffer. */
+static void
+record_for(
+	struct vulkan_writer *w,
+	uint32_t opcode,
+	uint64_t command)
+{
+	vulkan_writer_init(w);
+	w->bytes = 0;
+	vulkan_write_u32(w, opcode);
+	vulkan_write_u32(w, 0);
+	vulkan_write_u64(w, command);
+}
+
+/* Appends a vkCreateShaderModule of SPIR-V words. */
+static void
+k_shader(
+	struct vulkan_writer *frame,
+	uint64_t identity,
+	const uint32_t *words,
+	size_t bytes)
+{
+	VkShaderModuleCreateInfo module;
+	struct vulkan_writer w;
+
+	memset(&module, 0, sizeof(module));
+	module.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+	module.codeSize = bytes;
+	module.pCode = words;
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_CREATE_SHADER_MODULE);
+	vulkan_write_u64(&w, ID_DEVICE);
+	vulkan_write_u64(&w, 1);
+	vulkan_encode_VkShaderModuleCreateInfo(&w, &module);
+	create_tail(&w, identity);
+	append(frame, &w);
+}
+
+/* Appends a vkCreatePipelineLayout of the one set and a vertex push constant range of these bytes. */
+static void
+k_pipeline_layout(
+	struct vulkan_writer *frame,
+	uint64_t identity,
+	uint32_t push_bytes)
+{
+	VkPipelineLayoutCreateInfo info;
+	VkPushConstantRange range;
+	VkDescriptorSetLayout set_layout;
+	struct vulkan_writer w;
+
+	set_layout = (VkDescriptorSetLayout)(uintptr_t)handle(ID_K_SET_LAYOUT);
+	memset(&range, 0, sizeof(range));
+	range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+	range.size = push_bytes;
+	memset(&info, 0, sizeof(info));
+	info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+	info.setLayoutCount = 1;
+	info.pSetLayouts = &set_layout;
+	info.pushConstantRangeCount = 1;
+	info.pPushConstantRanges = &range;
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_CREATE_PIPELINE_LAYOUT);
+	vulkan_write_u64(&w, ID_DEVICE);
+	vulkan_write_u64(&w, 1);
+	vulkan_encode_VkPipelineLayoutCreateInfo(&w, &info);
+	create_tail(&w, identity);
+	append(frame, &w);
+}
+
+/*
+ * Appends a vkCreateGraphicsPipelines of one pipeline as
+ * userland/desktop/wayland/compose.c makes it (one vertex binding of the
+ * attribute's format, triangle lists, dynamic viewport and scissor, the
+ * premultiplied alpha blend), encoded as libvulkan/pipeline.c:
+ * pipeline_encode_graphics writes it.
+ */
+static void
+k_pipeline(
+	struct vulkan_writer *frame,
+	uint64_t identity,
+	uint64_t vertex,
+	uint64_t fragment,
+	uint64_t layout,
+	VkFormat attribute_format,
+	uint32_t stride)
+{
+	static const VkDynamicState dynamic[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+	VkPipelineShaderStageCreateInfo stages[2];
+	VkVertexInputBindingDescription binding;
+	VkVertexInputAttributeDescription attribute;
+	VkPipelineVertexInputStateCreateInfo input;
+	VkPipelineInputAssemblyStateCreateInfo assembly;
+	VkPipelineViewportStateCreateInfo viewport;
+	VkPipelineRasterizationStateCreateInfo raster;
+	VkPipelineMultisampleStateCreateInfo multisample;
+	VkPipelineColorBlendAttachmentState blend_attachment;
+	VkPipelineColorBlendStateCreateInfo blend;
+	VkPipelineDynamicStateCreateInfo dynamic_state;
+	struct vulkan_writer w;
+	unsigned stage;
+
+	memset(stages, 0, sizeof(stages));
+	stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+	stages[0].module = (VkShaderModule)(uintptr_t)handle(vertex);
+	stages[0].pName = "main";
+	stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+	stages[1].module = (VkShaderModule)(uintptr_t)handle(fragment);
+	stages[1].pName = "main";
+	memset(&binding, 0, sizeof(binding));
+	binding.stride = stride;
+	binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+	memset(&attribute, 0, sizeof(attribute));
+	attribute.format = attribute_format;
+	memset(&input, 0, sizeof(input));
+	input.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+	input.vertexBindingDescriptionCount = 1;
+	input.pVertexBindingDescriptions = &binding;
+	input.vertexAttributeDescriptionCount = 1;
+	input.pVertexAttributeDescriptions = &attribute;
+	memset(&assembly, 0, sizeof(assembly));
+	assembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+	assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+	memset(&viewport, 0, sizeof(viewport));
+	viewport.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+	viewport.viewportCount = 1;
+	viewport.scissorCount = 1;
+	memset(&raster, 0, sizeof(raster));
+	raster.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+	raster.polygonMode = VK_POLYGON_MODE_FILL;
+	raster.cullMode = VK_CULL_MODE_NONE;
+	raster.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+	raster.lineWidth = 1.0f;
+	memset(&multisample, 0, sizeof(multisample));
+	multisample.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+	multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+	memset(&blend_attachment, 0, sizeof(blend_attachment));
+	blend_attachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+	blend_attachment.blendEnable = VK_TRUE;
+	blend_attachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+	blend_attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+	blend_attachment.colorBlendOp = VK_BLEND_OP_ADD;
+	blend_attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+	blend_attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+	blend_attachment.alphaBlendOp = VK_BLEND_OP_ADD;
+	memset(&blend, 0, sizeof(blend));
+	blend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+	blend.logicOp = VK_LOGIC_OP_COPY;
+	blend.attachmentCount = 1;
+	blend.pAttachments = &blend_attachment;
+	memset(&dynamic_state, 0, sizeof(dynamic_state));
+	dynamic_state.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+	dynamic_state.dynamicStateCount = 2;
+	dynamic_state.pDynamicStates = dynamic;
+
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_CREATE_GRAPHICS_PIPELINES);
+	vulkan_write_u64(&w, ID_DEVICE);
+	vulkan_write_u64(&w, 0);
+	vulkan_write_u32(&w, 1);
+	vulkan_write_u64(&w, 1);
+	vulkan_write_u32(&w, VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO);
+	vulkan_write_u64(&w, 0);
+	vulkan_write_u32(&w, 0);
+	vulkan_write_u32(&w, 2);
+	vulkan_write_u64(&w, 2);
+	for (stage = 0; stage < 2; stage++)
+		vulkan_encode_VkPipelineShaderStageCreateInfo(&w, &stages[stage]);
+	vulkan_write_pointer(&w, &input);
+	vulkan_encode_VkPipelineVertexInputStateCreateInfo(&w, &input);
+	vulkan_write_pointer(&w, &assembly);
+	vulkan_encode_VkPipelineInputAssemblyStateCreateInfo(&w, &assembly);
+	vulkan_write_u64(&w, 0);
+	vulkan_write_pointer(&w, &viewport);
+	vulkan_encode_VkPipelineViewportStateCreateInfo(&w, &viewport);
+	vulkan_write_u64(&w, 1);
+	vulkan_encode_VkPipelineRasterizationStateCreateInfo(&w, &raster);
+	vulkan_write_pointer(&w, &multisample);
+	vulkan_encode_VkPipelineMultisampleStateCreateInfo(&w, &multisample);
+	vulkan_write_u64(&w, 0);
+	vulkan_write_pointer(&w, &blend);
+	vulkan_encode_VkPipelineColorBlendStateCreateInfo(&w, &blend);
+	vulkan_write_pointer(&w, &dynamic_state);
+	vulkan_encode_VkPipelineDynamicStateCreateInfo(&w, &dynamic_state);
+	vulkan_encode_handle(&w, handle(layout));
+	vulkan_encode_handle(&w, handle(ID_K_PASS));
+	vulkan_write_u32(&w, 0);
+	vulkan_encode_handle(&w, 0);
+	vulkan_write_u32(&w, (uint32_t)-1);
+	vulkan_write_u64(&w, 0);
+	vulkan_write_u64(&w, 1);
+	vulkan_write_u64(&w, identity);
+	append(frame, &w);
+}
+
+/* Appends vkAllocateCommandBuffers of one primary command buffer and its vkBeginCommandBuffer. */
+static void
+k_command_begin(
+	struct vulkan_writer *frame,
+	uint64_t command)
+{
+	VkCommandBufferAllocateInfo allocate;
+	VkCommandBufferBeginInfo begin;
+	struct vulkan_writer w;
+
+	memset(&allocate, 0, sizeof(allocate));
+	allocate.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	allocate.commandPool = (VkCommandPool)(uintptr_t)handle(ID_COMMAND_POOL);
+	allocate.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	allocate.commandBufferCount = 1;
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_ALLOCATE_COMMAND_BUFFERS);
+	vulkan_write_u64(&w, ID_DEVICE);
+	vulkan_write_u64(&w, 1);
+	vulkan_encode_VkCommandBufferAllocateInfo(&w, &allocate);
+	vulkan_write_u64(&w, 1);
+	vulkan_write_u64(&w, command);
+	append(frame, &w);
+	memset(&begin, 0, sizeof(begin));
+	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_BEGIN_COMMAND_BUFFER);
+	vulkan_write_u64(&w, command);
+	vulkan_write_u64(&w, 1);
+	vulkan_encode_VkCommandBufferBeginInfo(&w, &begin);
+	append(frame, &w);
+}
+
+/*
+ * Records one render pass instance as compose.c records a frame: begin
+ * with the clear, the pipeline, the set, the vertex buffer, the
+ * viewport and scissor, then per quad its push constants and a draw of
+ * six corners, then the end.
+ */
+static void
+k_pass(
+	struct vulkan_writer *frame,
+	uint64_t command,
+	uint64_t pipeline,
+	uint64_t layout,
+	uint32_t push_bytes,
+	uint32_t draws)
+{
+	VkViewport viewport;
+	VkRect2D scissor;
+	VkRect2D area;
+	struct vulkan_writer w;
+	float push[8];
+	uint32_t index;
+
+	record_for(&w, GPU_OP_CMD_BEGIN_RENDER_PASS, command);
+	vulkan_write_u64(&w, 1);
+	vulkan_write_u32(&w, VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO);
+	vulkan_write_u64(&w, 0);
+	vulkan_encode_handle(&w, handle(ID_K_PASS));
+	vulkan_encode_handle(&w, handle(ID_K_FRAMEBUFFER));
+	memset(&area, 0, sizeof(area));
+	area.extent.width = K_EDGE;
+	area.extent.height = K_EDGE;
+	vulkan_encode_VkRect2D(&w, &area);
+	vulkan_write_u32(&w, 1);
+	vulkan_write_u64(&w, 1);
+	vulkan_write_u32(&w, 0);
+	vulkan_write_u32(&w, 2);
+	vulkan_write_u64(&w, 4);
+	vulkan_write_u32(&w, 0);
+	vulkan_write_u32(&w, 0);
+	vulkan_write_u32(&w, 0);
+	vulkan_write_u32(&w, 0x3f800000U);
+	vulkan_write_u32(&w, VK_SUBPASS_CONTENTS_INLINE);
+	append(frame, &w);
+
+	record_for(&w, GPU_OP_CMD_BIND_PIPELINE, command);
+	vulkan_write_u32(&w, VK_PIPELINE_BIND_POINT_GRAPHICS);
+	vulkan_encode_handle(&w, handle(pipeline));
+	append(frame, &w);
+	record_for(&w, GPU_OP_CMD_BIND_DESCRIPTOR_SETS, command);
+	vulkan_write_u32(&w, VK_PIPELINE_BIND_POINT_GRAPHICS);
+	vulkan_encode_handle(&w, handle(layout));
+	vulkan_write_u32(&w, 0);
+	vulkan_write_u32(&w, 1);
+	vulkan_write_u64(&w, 1);
+	vulkan_encode_handle(&w, handle(ID_K_SET));
+	vulkan_write_u32(&w, 0);
+	vulkan_write_u64(&w, 0);
+	append(frame, &w);
+	record_for(&w, GPU_OP_CMD_BIND_VERTEX_BUFFERS, command);
+	vulkan_write_u32(&w, 0);
+	vulkan_write_u32(&w, 1);
+	vulkan_write_u64(&w, 1);
+	vulkan_encode_handle(&w, handle(ID_K_VERTEX));
+	vulkan_write_u64(&w, 1);
+	vulkan_write_u64(&w, 0);
+	append(frame, &w);
+	memset(&viewport, 0, sizeof(viewport));
+	viewport.width = (float)K_EDGE;
+	viewport.height = (float)K_EDGE;
+	viewport.maxDepth = 1.0f;
+	record_for(&w, GPU_OP_CMD_SET_VIEWPORT, command);
+	vulkan_write_u32(&w, 0);
+	vulkan_write_u32(&w, 1);
+	vulkan_write_u64(&w, 1);
+	vulkan_encode_VkViewport(&w, &viewport);
+	append(frame, &w);
+	memset(&scissor, 0, sizeof(scissor));
+	scissor.extent.width = K_EDGE;
+	scissor.extent.height = K_EDGE;
+	record_for(&w, GPU_OP_CMD_SET_SCISSOR, command);
+	vulkan_write_u32(&w, 0);
+	vulkan_write_u32(&w, 1);
+	vulkan_write_u64(&w, 1);
+	vulkan_encode_VkRect2D(&w, &scissor);
+	append(frame, &w);
+
+	for (index = 0; index < draws; index++) {
+		memset(push, 0, sizeof(push));
+		push[0] = -1.0f + (float)index / (float)draws;
+		push[2] = push[0] + 0.5f;
+		push[3] = 1.0f;
+		record_for(&w, GPU_OP_CMD_PUSH_CONSTANTS, command);
+		vulkan_encode_handle(&w, handle(layout));
+		vulkan_write_u32(&w, VK_SHADER_STAGE_VERTEX_BIT);
+		vulkan_write_u32(&w, 0);
+		vulkan_write_u32(&w, push_bytes);
+		vulkan_write_u64(&w, push_bytes);
+		vulkan_write_bytes(&w, push, push_bytes);
+		append(frame, &w);
+		record_for(&w, GPU_OP_CMD_DRAW, command);
+		vulkan_write_u32(&w, 6);
+		vulkan_write_u32(&w, 1);
+		vulkan_write_u32(&w, 0);
+		vulkan_write_u32(&w, 0);
+		append(frame, &w);
+	}
+
+	record_for(&w, GPU_OP_CMD_END_RENDER_PASS, command);
+	append(frame, &w);
+}
+
+/* Appends vkEndCommandBuffer, a fence and vkQueueSubmit of the command buffer with it, then its status. */
+static void
+k_submit(
+	struct vulkan_writer *frame,
+	uint64_t command,
+	uint64_t fence)
+{
+	struct vulkan_writer w;
+
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_END_COMMAND_BUFFER);
+	vulkan_write_u64(&w, command);
+	append(frame, &w);
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_CREATE_FENCE);
+	vulkan_write_u64(&w, ID_DEVICE);
+	vulkan_write_u64(&w, 1);
+	vulkan_write_u32(&w, VK_STRUCTURE_TYPE_FENCE_CREATE_INFO);
+	vulkan_write_u64(&w, 0);
+	vulkan_write_u32(&w, 0);
+	create_tail(&w, fence);
+	append(frame, &w);
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_QUEUE_SUBMIT);
+	vulkan_write_u64(&w, ID_QUEUE);
+	vulkan_write_u32(&w, 1);
+	vulkan_write_u64(&w, 1);
+	vulkan_write_u32(&w, VK_STRUCTURE_TYPE_SUBMIT_INFO);
+	vulkan_write_u64(&w, 0);
+	vulkan_write_u32(&w, 0);
+	vulkan_write_u64(&w, 0);
+	vulkan_write_u64(&w, 0);
+	vulkan_write_u32(&w, 1);
+	vulkan_write_u64(&w, 1);
+	vulkan_write_u64(&w, command);
+	vulkan_write_u32(&w, 0);
+	vulkan_write_u64(&w, 0);
+	vulkan_write_u64(&w, fence);
+	append(frame, &w);
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_GET_FENCE_STATUS);
+	vulkan_write_u64(&w, ID_DEVICE);
+	vulkan_write_u64(&w, fence);
+	append(frame, &w);
+}
+
+/*
+ * The Keiland-like frame (ws269-p011): the compositor's quad pipeline
+ * and libkeiland's canvas pipeline over one set of the image frame's
+ * texture and sampler, a 64x64 BGRA8 target with its pass and
+ * framebuffer, then command buffer A (a copy of the vertex buffer into
+ * the texture, render passes of 20 and 17 draws, the clear before the
+ * present) and command buffer B (a render pass of 200 draws), each
+ * submitted with its fence.
+ */
+size_t
+frame_keiland(
+	uint32_t reply_blob,
+	uint8_t **bytes)
+{
+	VkBufferCreateInfo buffer;
+	VkImageViewCreateInfo view;
+	VkAttachmentDescription attachment;
+	VkAttachmentReference reference;
+	VkSubpassDescription subpass;
+	VkRenderPassCreateInfo pass;
+	VkFramebufferCreateInfo framebuffer;
+	VkImageView view_handle;
+	VkDescriptorSetLayoutBinding binding;
+	VkDescriptorSetLayoutCreateInfo set_layout;
+	VkDescriptorSetLayout set_layout_handle;
+	VkDescriptorPoolSize pool_size;
+	VkDescriptorPoolCreateInfo pool;
+	VkDescriptorSetAllocateInfo allocate;
+	VkBufferImageCopy copy;
+	VkImageSubresourceRange range;
+	struct vulkan_writer frame;
+	struct vulkan_writer w;
+
+	frame_begin(&frame, reply_blob);
+
+	/* The memory, the target image and the vertex buffer bound in it. */
+	allocate_memory(&frame, ID_K_MEMORY, 65536, 0, 0);
+	create_image(&frame, ID_K_TARGET, VK_FORMAT_B8G8R8A8_UNORM, K_EDGE, K_EDGE, VK_IMAGE_TILING_OPTIMAL,
+	    VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, 0);
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_BIND_IMAGE_MEMORY);
+	vulkan_write_u64(&w, ID_DEVICE);
+	vulkan_encode_handle(&w, handle(ID_K_TARGET));
+	vulkan_encode_handle(&w, handle(ID_K_MEMORY));
+	vulkan_write_u64(&w, 0);
+	append(&frame, &w);
+	memset(&buffer, 0, sizeof(buffer));
+	buffer.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	buffer.size = 4096;
+	buffer.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_CREATE_BUFFER);
+	vulkan_write_u64(&w, ID_DEVICE);
+	vulkan_write_u64(&w, 1);
+	vulkan_encode_VkBufferCreateInfo(&w, &buffer);
+	create_tail(&w, ID_K_VERTEX);
+	append(&frame, &w);
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_BIND_BUFFER_MEMORY);
+	vulkan_write_u64(&w, ID_DEVICE);
+	vulkan_encode_handle(&w, handle(ID_K_VERTEX));
+	vulkan_encode_handle(&w, handle(ID_K_MEMORY));
+	vulkan_write_u64(&w, 32768);
+	append(&frame, &w);
+
+	/* The target's view, the pass of one cleared and stored colour, and the framebuffer. */
+	memset(&view, 0, sizeof(view));
+	view.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	view.image = (VkImage)(uintptr_t)handle(ID_K_TARGET);
+	view.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	view.format = VK_FORMAT_B8G8R8A8_UNORM;
+	view.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	view.subresourceRange.levelCount = 1;
+	view.subresourceRange.layerCount = 1;
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_CREATE_IMAGE_VIEW);
+	vulkan_write_u64(&w, ID_DEVICE);
+	vulkan_write_u64(&w, 1);
+	vulkan_encode_VkImageViewCreateInfo(&w, &view);
+	create_tail(&w, ID_K_TARGET_VIEW);
+	append(&frame, &w);
+	memset(&attachment, 0, sizeof(attachment));
+	attachment.format = VK_FORMAT_B8G8R8A8_UNORM;
+	attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+	attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	attachment.finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+	memset(&reference, 0, sizeof(reference));
+	reference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	memset(&subpass, 0, sizeof(subpass));
+	subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+	subpass.colorAttachmentCount = 1;
+	subpass.pColorAttachments = &reference;
+	memset(&pass, 0, sizeof(pass));
+	pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+	pass.attachmentCount = 1;
+	pass.pAttachments = &attachment;
+	pass.subpassCount = 1;
+	pass.pSubpasses = &subpass;
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_CREATE_RENDER_PASS);
+	vulkan_write_u64(&w, ID_DEVICE);
+	vulkan_write_u64(&w, 1);
+	vulkan_encode_VkRenderPassCreateInfo(&w, &pass);
+	create_tail(&w, ID_K_PASS);
+	append(&frame, &w);
+	view_handle = (VkImageView)(uintptr_t)handle(ID_K_TARGET_VIEW);
+	memset(&framebuffer, 0, sizeof(framebuffer));
+	framebuffer.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+	framebuffer.renderPass = (VkRenderPass)(uintptr_t)handle(ID_K_PASS);
+	framebuffer.attachmentCount = 1;
+	framebuffer.pAttachments = &view_handle;
+	framebuffer.width = K_EDGE;
+	framebuffer.height = K_EDGE;
+	framebuffer.layers = 1;
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_CREATE_FRAMEBUFFER);
+	vulkan_write_u64(&w, ID_DEVICE);
+	vulkan_write_u64(&w, 1);
+	vulkan_encode_VkFramebufferCreateInfo(&w, &framebuffer);
+	create_tail(&w, ID_K_FRAMEBUFFER);
+	append(&frame, &w);
+
+	/* The four shader modules: the compositor's quad and libkeiland's canvas. */
+	k_shader(&frame, ID_K_QUAD_VERT, kwl_quad_vert, sizeof(kwl_quad_vert));
+	k_shader(&frame, ID_K_QUAD_FRAG, kwl_quad_frag, sizeof(kwl_quad_frag));
+	k_shader(&frame, ID_K_CANVAS_VERT, keiui_canvas_vert, sizeof(keiui_canvas_vert));
+	k_shader(&frame, ID_K_CANVAS_FRAG, keiui_canvas_frag, sizeof(keiui_canvas_frag));
+
+	/* The set layout of one combined image sampler for the fragment stage, and the two pipeline layouts. */
+	memset(&binding, 0, sizeof(binding));
+	binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	binding.descriptorCount = 1;
+	binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+	memset(&set_layout, 0, sizeof(set_layout));
+	set_layout.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	set_layout.bindingCount = 1;
+	set_layout.pBindings = &binding;
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_CREATE_DESCRIPTOR_SET_LAYOUT);
+	vulkan_write_u64(&w, ID_DEVICE);
+	vulkan_write_pointer(&w, &set_layout);
+	vulkan_encode_VkDescriptorSetLayoutCreateInfo(&w, &set_layout);
+	create_tail(&w, ID_K_SET_LAYOUT);
+	append(&frame, &w);
+	k_pipeline_layout(&frame, ID_K_QUAD_LAYOUT, 32);
+	k_pipeline_layout(&frame, ID_K_CANVAS_LAYOUT, 16);
+
+	/* The two pipelines: a vec2 corner a vertex, and a vec4 corner a vertex. */
+	k_pipeline(&frame, ID_K_QUAD_PIPELINE, ID_K_QUAD_VERT, ID_K_QUAD_FRAG, ID_K_QUAD_LAYOUT, VK_FORMAT_R32G32_SFLOAT, 8);
+	k_pipeline(&frame, ID_K_CANVAS_PIPELINE, ID_K_CANVAS_VERT, ID_K_CANVAS_FRAG, ID_K_CANVAS_LAYOUT, VK_FORMAT_R32G32B32A32_SFLOAT, 16);
+
+	/* The pool, the set and its sampler and texture (the image frame's view and sampler). */
+	memset(&pool_size, 0, sizeof(pool_size));
+	pool_size.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	pool_size.descriptorCount = 1;
+	memset(&pool, 0, sizeof(pool));
+	pool.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	pool.maxSets = 1;
+	pool.poolSizeCount = 1;
+	pool.pPoolSizes = &pool_size;
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_CREATE_DESCRIPTOR_POOL);
+	vulkan_write_u64(&w, ID_DEVICE);
+	vulkan_write_pointer(&w, &pool);
+	vulkan_encode_VkDescriptorPoolCreateInfo(&w, &pool);
+	create_tail(&w, ID_K_POOL);
+	append(&frame, &w);
+	set_layout_handle = (VkDescriptorSetLayout)(uintptr_t)handle(ID_K_SET_LAYOUT);
+	memset(&allocate, 0, sizeof(allocate));
+	allocate.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	allocate.descriptorPool = (VkDescriptorPool)(uintptr_t)handle(ID_K_POOL);
+	allocate.descriptorSetCount = 1;
+	allocate.pSetLayouts = &set_layout_handle;
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_ALLOCATE_DESCRIPTOR_SETS);
+	vulkan_write_u64(&w, ID_DEVICE);
+	vulkan_write_pointer(&w, &allocate);
+	vulkan_encode_VkDescriptorSetAllocateInfo(&w, &allocate);
+	vulkan_write_u64(&w, 1);
+	vulkan_encode_handle(&w, handle(ID_K_SET));
+	append(&frame, &w);
+	vulkan_writer_init(&w);
+	vulkan_command_begin(&w, GPU_OP_UPDATE_DESCRIPTOR_SETS);
+	vulkan_write_u64(&w, ID_DEVICE);
+	vulkan_write_u32(&w, 1);
+	vulkan_write_u64(&w, 1);
+	vulkan_write_u32(&w, VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET);
+	vulkan_write_u64(&w, 0);
+	vulkan_write_u64(&w, ID_K_SET);
+	vulkan_write_u32(&w, 0);
+	vulkan_write_u32(&w, 0);
+	vulkan_write_u32(&w, 1);
+	vulkan_write_u32(&w, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+	vulkan_write_u64(&w, 1);
+	vulkan_write_u64(&w, ID_SAMPLER);
+	vulkan_write_u64(&w, ID_VIEW);
+	vulkan_write_u32(&w, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+	vulkan_write_u64(&w, 0);
+	vulkan_write_u64(&w, 0);
+	vulkan_write_u32(&w, 0);
+	vulkan_write_u64(&w, 0);
+	append(&frame, &w);
+
+	/* Command buffer A: the copy into the texture, the passes of 20 and 17 draws, the clear before the present. */
+	k_command_begin(&frame, ID_K_COMMAND_A);
+	memset(&copy, 0, sizeof(copy));
+	copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	copy.imageSubresource.layerCount = 1;
+	copy.imageExtent.width = 30;
+	copy.imageExtent.height = 20;
+	copy.imageExtent.depth = 1;
+	record_for(&w, GPU_OP_CMD_COPY_BUFFER_TO_IMAGE, ID_K_COMMAND_A);
+	vulkan_encode_handle(&w, handle(ID_K_VERTEX));
+	vulkan_encode_handle(&w, handle(ID_IMAGE));
+	vulkan_write_u32(&w, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+	vulkan_write_u32(&w, 1);
+	vulkan_write_u64(&w, 1);
+	vulkan_encode_VkBufferImageCopy(&w, &copy);
+	append(&frame, &w);
+	k_pass(&frame, ID_K_COMMAND_A, ID_K_QUAD_PIPELINE, ID_K_QUAD_LAYOUT, 32, 20);
+	k_pass(&frame, ID_K_COMMAND_A, ID_K_CANVAS_PIPELINE, ID_K_CANVAS_LAYOUT, 16, 17);
+	memset(&range, 0, sizeof(range));
+	range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	range.levelCount = 1;
+	range.layerCount = 1;
+	record_for(&w, GPU_OP_CMD_CLEAR_COLOR_IMAGE, ID_K_COMMAND_A);
+	vulkan_encode_handle(&w, handle(ID_K_TARGET));
+	vulkan_write_u32(&w, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+	vulkan_write_u64(&w, 1);
+	vulkan_write_u32(&w, 2);
+	vulkan_write_u64(&w, 4);
+	vulkan_write_u32(&w, 0x3e800000U);
+	vulkan_write_u32(&w, 0x3f000000U);
+	vulkan_write_u32(&w, 0x3f400000U);
+	vulkan_write_u32(&w, 0x3f800000U);
+	vulkan_write_u32(&w, 1);
+	vulkan_write_u64(&w, 1);
+	vulkan_encode_VkImageSubresourceRange(&w, &range);
+	append(&frame, &w);
+	k_submit(&frame, ID_K_COMMAND_A, ID_K_FENCE_A);
+
+	/* Command buffer B: one pass of 200 draws, more jobs than a command buffer has room for. */
+	k_command_begin(&frame, ID_K_COMMAND_B);
+	k_pass(&frame, ID_K_COMMAND_B, ID_K_QUAD_PIPELINE, ID_K_QUAD_LAYOUT, 32, 200);
+	k_submit(&frame, ID_K_COMMAND_B, ID_K_FENCE_B);
+
+	return frame_end(&frame, bytes);
+}
+
+/* Checks the replies of the Keiland-like frame up to and with the two submissions' results; *submit_b gets B's. */
+void
+replies_keiland(
+	uint8_t *reply,
+	uint32_t *submit_b)
+{
+	struct vulkan_reader reader;
+	uint32_t result;
+
+	vulkan_reader_init(&reader, NULL, 0);
+	reader.data = reply;
+	reader.bytes = FRAME_REPLY_BYTES - REPLY_TRAILER_BYTES;
+
+	expect_created(&reader, GPU_OP_ALLOCATE_MEMORY, ID_K_MEMORY, "keiland memory");
+	expect_created(&reader, GPU_OP_CREATE_IMAGE, ID_K_TARGET, "keiland target");
+	expect_result(&reader, GPU_OP_BIND_IMAGE_MEMORY, VK_SUCCESS, "keiland target bind");
+	expect_created(&reader, GPU_OP_CREATE_BUFFER, ID_K_VERTEX, "keiland vertex buffer");
+	expect_result(&reader, GPU_OP_BIND_BUFFER_MEMORY, VK_SUCCESS, "keiland vertex bind");
+	expect_created(&reader, GPU_OP_CREATE_IMAGE_VIEW, ID_K_TARGET_VIEW, "keiland target view");
+	expect_created(&reader, GPU_OP_CREATE_RENDER_PASS, ID_K_PASS, "keiland render pass");
+	expect_created(&reader, GPU_OP_CREATE_FRAMEBUFFER, ID_K_FRAMEBUFFER, "keiland framebuffer");
+	expect_created(&reader, GPU_OP_CREATE_SHADER_MODULE, ID_K_QUAD_VERT, "kwl quad.vert module");
+	expect_created(&reader, GPU_OP_CREATE_SHADER_MODULE, ID_K_QUAD_FRAG, "kwl quad.frag module");
+	expect_created(&reader, GPU_OP_CREATE_SHADER_MODULE, ID_K_CANVAS_VERT, "canvas.vert module");
+	expect_created(&reader, GPU_OP_CREATE_SHADER_MODULE, ID_K_CANVAS_FRAG, "canvas.frag module");
+	expect_created(&reader, GPU_OP_CREATE_DESCRIPTOR_SET_LAYOUT, ID_K_SET_LAYOUT, "sampler set layout");
+	expect_created(&reader, GPU_OP_CREATE_PIPELINE_LAYOUT, ID_K_QUAD_LAYOUT, "quad pipeline layout");
+	expect_created(&reader, GPU_OP_CREATE_PIPELINE_LAYOUT, ID_K_CANVAS_LAYOUT, "canvas pipeline layout");
+	expect_opcode(&reader, GPU_OP_CREATE_GRAPHICS_PIPELINES, "quad pipeline");
+	result = vulkan_read_u32(&reader);
+	check(result == VK_SUCCESS && vulkan_read_u64(&reader) == 1 && vulkan_read_u64(&reader) == ID_K_QUAD_PIPELINE, "the compositor's quad pipeline is created");
+	expect_opcode(&reader, GPU_OP_CREATE_GRAPHICS_PIPELINES, "canvas pipeline");
+	result = vulkan_read_u32(&reader);
+	check(result == VK_SUCCESS && vulkan_read_u64(&reader) == 1 && vulkan_read_u64(&reader) == ID_K_CANVAS_PIPELINE, "libkeiland's canvas pipeline is created");
+	expect_created(&reader, GPU_OP_CREATE_DESCRIPTOR_POOL, ID_K_POOL, "sampler pool");
+	expect_opcode(&reader, GPU_OP_ALLOCATE_DESCRIPTOR_SETS, "sampler set");
+	check(vulkan_read_u32(&reader) == VK_SUCCESS && vulkan_read_u64(&reader) == 1 && vulkan_read_u64(&reader) == ID_K_SET, "sampler set allocated");
+	expect_opcode(&reader, GPU_OP_UPDATE_DESCRIPTOR_SETS, "sampler update");
+	expect_opcode(&reader, GPU_OP_ALLOCATE_COMMAND_BUFFERS, "command buffer A");
+	check(vulkan_read_u32(&reader) == VK_SUCCESS && vulkan_read_u64(&reader) == 1 && vulkan_read_u64(&reader) == ID_K_COMMAND_A, "command buffer A allocated");
+	expect_result(&reader, GPU_OP_BEGIN_COMMAND_BUFFER, VK_SUCCESS, "begin A");
+	expect_result(&reader, GPU_OP_END_COMMAND_BUFFER, VK_SUCCESS, "end A");
+	expect_created(&reader, GPU_OP_CREATE_FENCE, ID_K_FENCE_A, "fence A");
+	expect_result(&reader, GPU_OP_QUEUE_SUBMIT, VK_SUCCESS, "submit A (copy, 20 and 17 draws, clear)");
+	expect_result(&reader, GPU_OP_GET_FENCE_STATUS, VK_SUCCESS, "fence A signaled");
+	expect_opcode(&reader, GPU_OP_ALLOCATE_COMMAND_BUFFERS, "command buffer B");
+	check(vulkan_read_u32(&reader) == VK_SUCCESS && vulkan_read_u64(&reader) == 1 && vulkan_read_u64(&reader) == ID_K_COMMAND_B, "command buffer B allocated");
+	expect_result(&reader, GPU_OP_BEGIN_COMMAND_BUFFER, VK_SUCCESS, "begin B");
+	expect_result(&reader, GPU_OP_END_COMMAND_BUFFER, VK_SUCCESS, "end B");
+	expect_created(&reader, GPU_OP_CREATE_FENCE, ID_K_FENCE_B, "fence B");
+	expect_opcode(&reader, GPU_OP_QUEUE_SUBMIT, "submit B");
+	*submit_b = vulkan_read_u32(&reader);
+	check(reader.error == VK_SUCCESS, "keiland replies read");
 }

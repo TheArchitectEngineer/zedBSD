@@ -134,12 +134,16 @@ struct powervr_render_draw {
 };
 
 /*
- * One render job (a render pass instance): the render area, the colour
- * targets in the subpass's order, the depth target, and the draws
- * recorded in it.  The kick takes it as it is.
+ * One render job (a render pass instance, or a part of one): the render
+ * area, the colour targets in the subpass's order, the depth target, and
+ * the draws recorded in it.  Continued is set on a job that goes on with
+ * the instance of the job before it (powervr_render_job_continue), so the
+ * jobs of one instance are the first one and the continued ones after
+ * it.  The kick takes it as it is.
  */
 struct powervr_render_job {
 	struct powervr_render_area area;
+	bool continued;
 	uint32_t width;
 	uint32_t height;
 	uint32_t color_count;

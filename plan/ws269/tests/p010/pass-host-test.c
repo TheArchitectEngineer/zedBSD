@@ -219,7 +219,7 @@ main(void)
 		ok = ok && job.colors[0].store_op == VK_ATTACHMENT_STORE_OP_STORE && job.depth.store_op == VK_ATTACHMENT_STORE_OP_STORE;
 		ok = ok && next.colors[0].load_op == VK_ATTACHMENT_LOAD_OP_LOAD && next.colors[0].store_op == VK_ATTACHMENT_STORE_OP_DONT_CARE;
 		ok = ok && next.depth.load_op == VK_ATTACHMENT_LOAD_OP_LOAD && next.depth.store_op == VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		ok = ok && next.draw_count == 0 && next.area.width == job.area.width && next.colors[0].surface.address == job.colors[0].surface.address;
+		ok = ok && next.continued && !job.continued && next.draw_count == 0 && next.area.width == job.area.width && next.colors[0].surface.address == job.colors[0].surface.address;
 		check(ok, "a full job continues: it stores, the next loads and keeps the pass's store");
 	}
 

@@ -80,6 +80,48 @@
 ## P1 の file に要る物（Q1 経由で P1 へ）
 
 1. `vk-queue.c` の `QUEUE_JOBS_MAX`（8）。1 つの command buffer の render pass と、続きの job で 8 を越えると E2BIG になる。room を広げるか、job を 8 ずつ順に kick する。Keiland の frame は draw が多い。
-2. `render-job.c` の `job_check` は depth の load・store が DONT_CARE 以外なら ENOTSUP。続きの job は depth を STORE→LOAD で運ぶので、depth のある pass で 16 個を越えると止まる。depth の load・store（render-depth.c の道）を job で受ける。Keiland は depth を使わないので急がない。
+2. ~~`render-job.c` の `job_check` が depth の load・store を ENOTSUP にする件~~。q1388（c449248de）で既に外れていた（Q1、2026-10-20）。
 3. `render-job.c` の `job_check` の colour は 1 つ・4 byte。Keiland はこれで足りるので、今は不要。
 - 片付け（Q1 に依頼）: `build/p011/`。
+
+## 後半（q1394-i01）: Keiland に似た frame の host 試験
+
+p009 の executor の host 試験（Venus の frame）に `frame_keiland`・`replies_keiland`（`plan/ws269/tests/p009/frame-host.c`）を足した。command の順と wire の形は compose.c と libvulkan の encoder（pipeline.c の `pipeline_encode_graphics`、commands.c の render pass の begin と clear の color）に合わせた。frame の中身は次のとおり。
+
+- 64x64 の BGRA8 の target・view・pass（CLEAR・STORE）・framebuffer。vertex buffer。
+- compositor の quad.vert・quad.frag と libkeiland の canvas.vert・canvas.frag の module。
+- combined image sampler の set layout。push constant が 32 byte と 16 byte の 2 つの pipeline layout。
+- 2 つの graphics pipeline（R32G32 と R32G32B32A32 の vertex、premultiplied の blend、dynamic の viewport・scissor）。
+- image の frame の texture と sampler の set。
+- command buffer A: CopyBufferToImage → 20 draw の pass（quad）→ 17 draw の pass（canvas）→ present の前の ClearColorImage → submit・fence。
+- command buffer B: 200 draw の pass → submit。
+- draw ごとに PushConstants と Draw(6)。
+
+host の stub（`vk-host-test.c`）は transfer と render job の kick を順に記録する。記録するのは種類、draw の数、colour の load・store、continued。
+
+### 分かったことと直したもの
+
+- **graphics pipeline がすべて FEATURE_NOT_PRESENT になっていた。**
+  - 原因: `vk-draw.c` の `powervr_vk_graphics_decode` が、shader module の `status` が 0 であることを求めていた。`status` は compute の entry が読めたかどうかだけを表すので（vk-layout.c）、vertex・fragment の module は必ず 0 でない。
+  - 直し: `status` の検めを外し、2 つの stage は compile の結果で判断する（compile に失敗すれば今までどおり ENOTSUP）。あわせて、vk-layout.c が graphics の module のたびに出していた「compute entry が無い」の log を、ENOTSUP 以外のときだけにした。
+  - 影響: 実機で vkdemo や Keiland の pipeline を作る前に必ず当たる不具合だった。実機ではまだ確かめていない。
+- **render job の continued**: `struct powervr_render_job` に `continued` を足した（`powervr_render_job_continue` が立てる）。1 つの instance の job は、最初の job とその後の continued の job になる。
+- **今の挙動（vk-queue.c、P1）**:
+  - command buffer A の kick の順は「T（copy）T（clear）R16 R4c R16 R1c」で、clear が 2 つの pass より先に走る。
+  - 原因: `build_command_buffer` は job の数が begin の数と同じときだけ begin の位置で job を走らせる。continuation があると数が合わず、job がすべて command buffer の最後に回る。
+  - 試験はこの今の順を期待にしている。P1 が直したら「T R16 R4c R16 R1c T」に変える。
+  - load・store は期待どおり: 最初の job は CLEAR・STORE、continued は LOAD・STORE。
+- **B（200 draw → 13 job）**: QUEUE_JOBS_MAX（8）を越えて E2BIG になる。submit は INITIALIZATION_FAILED で、kick は無い。試験はこれを期待にしている。P1 が room を広げたら変える。
+
+| 確認 | コマンド | 結果 |
+| --- | --- | --- |
+| executor の frame（切り替え 0・1） | `sh plan/ws269/tests/p009/run.sh build/p011b/p009-0 0`（と `1`） | どちらも 240 passed、0 failed |
+| p010 の host 試験 | `sh plan/ws269/tests/p010/run.sh build/p011b/p010` | 全部 0 failed |
+| VF2 の kernel | `make ZEDBSD_CONFIG=config/ci/config-visionfive2.mk BUILD=build/p011b/vf2 vmunix -j16` | rc 0、warning 0 |
+
+### P1 の file に要る物（後半で増えた分）
+
+4. `vk-queue.c` の `build_command_buffer`: begin の位置で、その instance の job（最初の job と続く `continued` の job）を順に走らせる。今は continuation があると、job がすべて command buffer の最後に回り、copy・clear との順が崩れる。
+5. （1. と同じ）`QUEUE_JOBS_MAX`。
+
+- 片付け（Q1 に依頼）: `build/p011b/`。

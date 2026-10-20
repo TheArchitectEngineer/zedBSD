@@ -205,7 +205,8 @@ create_shader(
 			shader->status = powervr_shader_read(shader->words, shader->word_count, POWERVR_SHADER_COMPUTE, NULL, workspace, program, &ir);
 		kern_free(program);
 		kern_free(workspace);
-		if (shader->status != 0)
+		/* Only a module the compiler cannot read at all is worth a line; a graphics module has no compute entry. */
+		if (shader->status != 0 && shader->status != ENOTSUP)
 			kern_logf("powervr: vk: a shader module of %u words has no compute entry the compiler takes (%d)\n", shader->word_count, shader->status);
 	}
 

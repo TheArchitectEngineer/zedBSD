@@ -25,6 +25,8 @@ void replies_setup(uint8_t *reply);
 void replies_memory(uint8_t *reply);
 void replies_compute(uint8_t *reply);
 void replies_image(uint8_t *reply);
+size_t frame_keiland(uint32_t reply_blob, uint8_t **bytes);
+void replies_keiland(uint8_t *reply, uint32_t *submit_b);
 void frame_counts(int *passed, int *failed);
 
 #endif
