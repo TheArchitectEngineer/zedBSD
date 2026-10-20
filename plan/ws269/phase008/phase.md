@@ -530,3 +530,29 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
   - wide の temps が 0/32。
   - 次に gpu-selftest の compute（vkcompute）。vk の executor は unified 0・field 2 単位になる。
 - 片付け（Q1 に依頼）: `build/p026/`。
+
+## q1451-i01（P2、2026-10-20）: 4 step の store の lockup、in place の probe を止める
+
+- 板の 11 回目（vf2-dmesg46）:
+  - kernel は OK、probes も正しい。store の 1 step は 32/32。
+  - 4 step の kick で reset lockup（context 0x2、dm 4）が起き、以後は NOT RUN。
+- field の確かめ:
+  - 4 step の store の program は、kernel（512 step）・1 step と同じ生成器でできる。使う register は r0〜r14 の 15。
+  - `POWERVR_COMPUTE_STORE_TEMPORARIES` は 16 で、field は 4（16 register）。足りている。
+  - kernel（同じ field）と 1 step（同じ field）は通る。field の不足ではない。
+- 見込み:
+  - 4 step の kick の前に、in place で address を作る probe（CONSTANT の IMADD、LIKE_STORE_IN_PLACE の add64）が、壊れた address で session の memory のどこかに書いた。それが後の kick の program を壊した。
+  - 4 step の program（`USC_STEPS_FOUR`）は probe の program の直後の room にある。
+  - in place の結果は instance ごとに違う garbage の address になる。field と register の割り当てが変わったので、今回はたまたまそこに当たったと見る。確かめてはいない。
+- 直し（`compute-check.c`）: CONSTANT と LIKE_STORE_IN_PLACE の probe の kick を流さない（error −1、値 ffffffff として報告する）。in place が壊れることはもう確かめてあり（q1441・q1444）、確かめのために memory を壊す危険を取らない。program と kick は残してある（流す時は skip を外す）。
+
+| 確認 | 結果 |
+| --- | --- |
+| p008 の host | encode 94/0、compute 73/0 |
+| VF2 の vmunix（`plan/ws269/tests/p008/config-visionfive2-compute.mk`、`build/p027/vf2/vmunix`） | rc 0、warning 0 |
+
+- 板で見ること:
+  - 4 step が 128/128 で lockup しない。
+  - temps の行（fours・twos・wide）。
+  - その後、手で `vkcompute`。
+- 片付け（Q1 に依頼）: `build/p027/`。
