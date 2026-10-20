@@ -130,7 +130,8 @@ static void vkcompute_outcomes(int status, const char *line, enum outcome *resul
 
 /* The stages, in order; a NULL run is "not built". */
 static const struct stage stages[] = {
-	{ "kernel", NULL, stage_kernel, NULL, 1 },
+	/* 13 times the default 10 s: the kernel stage waits up to SELFTEST_ATTACH_SECONDS for the GPU to attach. */
+	{ "kernel", NULL, stage_kernel, NULL, 13 },
 	{ "node", "kernel", stage_node, NULL, 1 },
 	{ "instance", "node", NULL, NULL, 1 },
 	{ "device", "instance", NULL, NULL, 1 },
