@@ -576,3 +576,21 @@ mainline で FW が host の割り込みを上げる道: host は `ROGUE_CR_MIPS
 - 読めなければ、その register の帯は host から読めない（OSID の bank など）ので、0 は何も言わない。
 
 確かめ: 試験の image の config の vmunix は rc 0、warning 0。実機は未。
+
+## q1421-i01（P1、2026-10-20）: host の書き込みが一部の register に届かない件
+
+板: SLC control と catalogue base 7 は、host が書いても読み戻すと 0。MIPS wrapper・CORE_ID・BVNC・TIMER は読める。
+
+照らした事:
+- 電源・clock・reset（StarFive の DDK `sf_7110/sysconfig.c` の `u0_img_gpu_enable` と `sys_gpu_runtime_resume`）と、`src/drivers/platform/visionfive2/vf2-gpu.c` の `power_up`。順は一致している: PMU の domain → bus master（NOC の GPU AXI）→ APB・RTC の clock → core の divider の rate → core・sys の clock → APB の reset → DOMA の reset。
+  - 違い: DDK は `starfive_pmu_hw_event_turn_off_mask(0)` で PMU の hardware event の mask を外している。こちらは扱っていない（PMU の file は Q1・HAL の側、未確認）。
+- DDK の `RGXStart`（`rgxstartstop.c`）の順は mainline と同じ。clock は「既定（自動の clock gating）」で、CLK_CTRL を書かない。MIPS では BIF の catalogue を host が書かない（FW の仕事）。
+
+直し（診断、`register_check`）:
+- 次の値を出す: register の窓の大きさ、CLK_CTRL（0x0000）と CLK_STATUS（0x0008）、soft reset。
+- 次に、CLK_CTRL の全部の field を ON にしてから、同じ catalogue base 7 の書き・読みと SLC control の読みをし、CLK_CTRL を元に戻す。
+- 結果で場合を分ける:
+  - ON で読めるようになれば、自動の clock gating で block の clock が止まっている。FW が block を起こしていないか、起こし方の誤りを探す。
+  - ON でも 0 なら、clock 以外（PMU・電源の island・register の帯の保護）を探す。
+
+確かめ: 試験の image の config の vmunix は rc 0、warning 0。実機は未。
