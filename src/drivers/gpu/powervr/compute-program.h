@@ -46,7 +46,7 @@
  */
 /*
  * The temporaries the store program's kick asks for: more than the ten
- * it uses (r0 to r11), so that a task issue counting them in other units
+ * it uses (r0 to r14), so that a task issue counting them in other units
  * than assumed still gives each instance its own.
  */
 #define POWERVR_COMPUTE_STORE_TEMPORARIES	16U
@@ -113,7 +113,7 @@ int powervr_compute_store_program(uint64_t base, unsigned steps, uint8_t *output
 #define POWERVR_COMPUTE_PROBE_STRIDE_MAX	128U
 
 /* The temporaries a probe program uses. */
-#define POWERVR_COMPUTE_PROBE_TEMPORARIES	14U
+#define POWERVR_COMPUTE_PROBE_TEMPORARIES	15U
 
 int powervr_compute_probe_program(unsigned kind, uint64_t base, uint8_t *output, size_t room, size_t *length);
 uint32_t powervr_compute_probe_stride(unsigned kind);

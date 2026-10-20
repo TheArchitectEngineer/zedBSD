@@ -102,7 +102,7 @@ struct store_shape {
 #define TEMPS_GROUPS		15U
 
 /* The groups of the fill program. */
-#define FILL_GROUPS		13U
+#define FILL_GROUPS		14U
 
 /*
  * What a fill program writes: the word of instance 0's address, and the
@@ -546,7 +546,7 @@ powervr_compute_probe_program(
 		if (error == 0)
 			error = multiply_add_group(&groups[count++], 2, 5, 4, 6);
 	} else if (error == 0 && kind == POWERVR_COMPUTE_PROBE_COMPUTED) {
-		/* The address in r0 as ADDRESS makes it, then r0 and r1 stored at base (r8, r9) and base + 4 (r10, r11). */
+		/* The address in r0 as ADDRESS makes it, then r0 stored at base (r8, r9, the data in r10) and r1 at base + 4 (r12, r13, the data in r14). */
 		error = special_group(&groups[count++], 5, USC_INSTANCE_NUMBER);
 		if (error == 0)
 			error = immediate_group(&groups[count++], 4, 4);
@@ -557,15 +557,19 @@ powervr_compute_probe_program(
 		if (error == 0)
 			error = immediate_group(&groups[count++], 9, (uint32_t)(base >> 32));
 		if (error == 0)
-			error = immediate_group(&groups[count++], 10, (uint32_t)base + 4U);
+			error = pass_group(&groups[count++], 10, POWERVR_USC_BANK_TEMPORARY, 0);
 		if (error == 0)
-			error = immediate_group(&groups[count++], 11, (uint32_t)(base >> 32));
+			error = immediate_group(&groups[count++], 12, (uint32_t)base + 4U);
 		if (error == 0)
-			error = store_group(&groups[count++], 0, 8);
+			error = immediate_group(&groups[count++], 13, (uint32_t)(base >> 32));
+		if (error == 0)
+			error = pass_group(&groups[count++], 14, POWERVR_USC_BANK_TEMPORARY, 1);
+		if (error == 0)
+			error = store_group(&groups[count++], 10, 8);
 		if (error == 0)
 			error = wait_group(&groups[count++]);
 		if (error == 0)
-			error = store_group(&groups[count++], 1, 10);
+			error = store_group(&groups[count++], 14, 12);
 		if (error == 0)
 			error = wait_group(&groups[count++]);
 		if (error == 0)
@@ -655,7 +659,7 @@ powervr_compute_probe_program(
 		if (error == 0)
 			error = add64_group(&groups[count++], 12, 0, 8);
 		if (error == 0)
-			error = pass_group(&groups[count++], 2, POWERVR_USC_BANK_TEMPORARY, 5);
+			error = pass_group(&groups[count++], 14, POWERVR_USC_BANK_TEMPORARY, 5);
 		address = 12;
 		if (error == 0 && kind == POWERVR_COMPUTE_PROBE_ADDRESS_WAIT)
 			error = wait_group(&groups[count++]);
@@ -663,7 +667,7 @@ powervr_compute_probe_program(
 
 	/* The store, the wait for it, the end. */
 	if (error == 0)
-		error = store_group(&groups[count++], 2, address);
+		error = store_group(&groups[count++], address + 2U, address);
 	if (error == 0)
 		error = wait_group(&groups[count++]);
 	if (error == 0)
@@ -829,9 +833,9 @@ store_fetch(
 		} else if (step_index == 2) {
 			error = add64_group(group, 12, 0, 9);
 		} else if (step_index == 3) {
-			error = pass_group(group, 2, POWERVR_USC_BANK_TEMPORARY, 12);
+			error = pass_group(group, 14, POWERVR_USC_BANK_TEMPORARY, 12);
 		} else if (step_index == 4) {
-			error = store_group(group, 2, 12);
+			error = store_group(group, 14, 12);
 		} else {
 			error = wait_group(group);
 		}
@@ -888,11 +892,11 @@ temps_fetch(
 		/* r4 and r5: the instance's word, into a pair the add does not read. */
 		error = add64_group(group, 4, 0, 3);
 	} else if (index == 11) {
-		/* r2: the data, the number as the eighth temporary holds it now. */
-		error = pass_group(group, 2, POWERVR_USC_BANK_TEMPORARY, 7);
+		/* r6: the data after the address pair, the number as the eighth temporary holds it now. */
+		error = pass_group(group, 6, POWERVR_USC_BANK_TEMPORARY, 7);
 	} else if (index == 12) {
 		/* The store. */
-		error = store_group(group, 2, 4);
+		error = store_group(group, 6, 4);
 	} else if (index == 13) {
 		/* The wait for it. */
 		error = wait_group(group);
@@ -955,9 +959,12 @@ fill_fetch(
 		/* r2 and r3: the instance's word, into a pair the add does not read. */
 		error = add64_group(group, 2, 0, 5);
 	} else if (index == 10) {
-		/* The store of the value in r6. */
-		error = store_group(group, 6, 2);
+		/* r4: the value, after the address pair. */
+		error = pass_group(group, 4, POWERVR_USC_BANK_TEMPORARY, 6);
 	} else if (index == 11) {
+		/* The store. */
+		error = store_group(group, 4, 2);
+	} else if (index == 12) {
 		/* The wait for it. */
 		error = wait_group(group);
 	} else {
@@ -1191,6 +1198,11 @@ add64_group_any(
 /*
  * Builds a main group that stores one 32-bit word.
  *
+ * The data must be in the register after the address pair (address + 2),
+ * as Mesa lays the address and the data out in one vector for st32: the
+ * board stored another register's value when the data was elsewhere
+ * (2026-10-20), whatever the data selector named.
+ *
  * Procedure referenced:
  * Mesa 26.2.5 src/imagination/pco/pco_map.py (group_map O_ST32: the
  * back end only, no write, the data in s0 and the address pair in s3;
@@ -1204,6 +1216,10 @@ store_group(
 	unsigned address)
 {
 	int error;
+
+	/* Refuses data that is not right after the address pair. */
+	if (data != address + 2U)
+		return EINVAL;
 
 	/* A main group reading the data and the address pair. */
 	*group = blank_group;
