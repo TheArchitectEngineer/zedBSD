@@ -135,6 +135,8 @@ static int check_programs(struct render_check *check, const char **step);
 static int check_triangle(struct render_check *check, uint32_t pds_base, uint32_t usc_base);
 static int check_empty(struct render_check *check);
 static unsigned get32(const uint8_t *bytes, unsigned offset);
+static void dump_object(const char *name, const struct powervr_object *object, uint32_t bytes);
+static void dump_context(struct render_check *check);
 static int check_kick(struct render_check *check);
 static int check_read(struct render_check *check);
 static void check_release(struct render_check *check);
@@ -515,6 +517,7 @@ check_empty(
 	if (error != 0) {
 		powervr_firmware_dump(check->render->core, POWERVR_KERNEL_CCB_SLOTS);
 		powervr_target_dump(check->target);
+		dump_context(check);
 		kern_logf("powervr: render check: geometry command: %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x\n",
 			  get32(check->geometry, 0), get32(check->geometry, 4), get32(check->geometry, 8), get32(check->geometry, 12),
 			  get32(check->geometry, 16), get32(check->geometry, 20), get32(check->geometry, 24), get32(check->geometry, 28),
@@ -1156,4 +1159,37 @@ get32(
 {
 	/* The four bytes, low first. */
 	return (unsigned)bytes[offset] | (unsigned)bytes[offset + 1U] << 8 | (unsigned)bytes[offset + 2U] << 16 | (unsigned)bytes[offset + 3U] << 24;
+}
+
+/* Prints an object's words from its start, eight to a line, with a name. */
+static void
+dump_object(
+	const char *name,
+	const struct powervr_object *object,
+	uint32_t bytes)
+{
+	uint32_t offset;
+
+	/* Eight words a line, at the object's firmware address. */
+	for (offset = 0; offset < bytes; offset += 32U)
+		kern_logf("powervr: %s 0x%x +%03x: %08x %08x %08x %08x %08x %08x %08x %08x\n", name,
+			  (unsigned)powervr_object_address(object, 0), (unsigned)offset,
+			  (unsigned)powervr_object_get32(object, offset), (unsigned)powervr_object_get32(object, offset + 4U),
+			  (unsigned)powervr_object_get32(object, offset + 8U), (unsigned)powervr_object_get32(object, offset + 12U),
+			  (unsigned)powervr_object_get32(object, offset + 16U), (unsigned)powervr_object_get32(object, offset + 20U),
+			  (unsigned)powervr_object_get32(object, offset + 24U), (unsigned)powervr_object_get32(object, offset + 28U));
+}
+
+/* Prints the render context's record and its geometry state, and the geometry command buffer's first commands. */
+static void
+dump_context(
+	struct render_check *check)
+{
+	/* The record (the geometry and fragment common parts and the switch state), the geometry state. */
+	dump_object("context", &check->context->record, POWERVR_RENDER_CONTEXT_BYTES);
+	dump_object("geometry state", &check->context->geometry_state, POWERVR_GEOMETRY_STATE_BYTES);
+
+	/* The geometry command buffer's control and its first 256 bytes. */
+	dump_object("geometry ccb control", &check->context->geometry.control, 32U);
+	dump_object("geometry ccb", &check->context->geometry.buffer, 256U);
 }
