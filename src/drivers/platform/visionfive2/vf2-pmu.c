@@ -11,10 +11,11 @@
  * Software switches a domain in two steps: it names the domain in the
  * turn-on or turn-off mode register, then writes a fixed three-byte
  * command to the encourage register.  The current power mode register
- * shows the outcome.  Hardware events can switch domains too; the GPU's
- * event is masked, so its firmware cannot switch its own domain off while
- * the driver does not manage the GPU's power.  The display's domain has
- * no hardware event, so only software switches it.
+ * shows the outcome.  Hardware events can switch domains too: the GPU's
+ * power controller asks for its shader cluster's power through the GPU's
+ * event, which therefore stays unmasked while the core runs (the GPU's
+ * driver masks the turn-off events while the core is off).  The
+ * display's domain has no hardware event, so only software switches it.
  */
 
 #include "drivers/platform/visionfive2/vf2-pmu.h"
@@ -147,8 +148,8 @@ drv_vf2_pmu_set_power(
 		return ENODEV;
 
 	/*
-	 * Masks the GPU's hardware events when switching the GPU's domain,
-	 * then names the domain and writes the command: the reset byte
+	 * Names the domain and writes the command (the GPU's hardware events are
+	 * handled below): the reset byte
 	 * restarts the unit's command parser, the two bytes after it select
 	 * turning on or off.  The display's domain has no hardware event
 	 * (TRM Table 3-12 lists none for it), so nothing is masked for it.
@@ -162,11 +163,26 @@ drv_vf2_pmu_set_power(
 	irq = spin_lock_irqsave(&pmu_lock);
 	before = kern_mmio_read32(pmu_register(PMU_POWER_STATE));
 
+	/*
+	 * The GPU's hardware event must stay unmasked while the core runs:
+	 * the core's power controller asks the unit through it for the power
+	 * of its shader cluster (the Rascal and the dusts), and a masked
+	 * event makes every such request abort, so no job ever runs.  The
+	 * vendor kernel never masks it; the turn-off mask is set by the GPU's
+	 * driver around the clocks (drv_vf2_pmu_event_off_mask).
+	 *
+	 * Procedure referenced:
+	 * StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
+	 * drivers/gpu/drm/img/img-rogue/services/system/rogue/sf_7110/
+	 * sysconfig.c (sys_gpu_runtime_resume: only the turn-off mask is
+	 * written); the firmware's trace on the board, 2026-10-20 ("HW
+	 * Request On(1) Units 0x01000703", "Aborted", "Power controller
+	 * returned ABORT for last request so retrying" while the event was
+	 * masked).
+	 */
 	if (domain == DRV_VF2_PD_GPU) {
 		events = kern_mmio_read32(pmu_register(PMU_EVENT_ON_MASK));
-		kern_mmio_write32(pmu_register(PMU_EVENT_ON_MASK), events | PMU_EVENT_GPU);
-		events = kern_mmio_read32(pmu_register(PMU_EVENT_OFF_MASK));
-		kern_mmio_write32(pmu_register(PMU_EVENT_OFF_MASK), events | PMU_EVENT_GPU);
+		kern_mmio_write32(pmu_register(PMU_EVENT_ON_MASK), events & ~PMU_EVENT_GPU);
 	}
 	if (on) {
 		kern_mmio_write32(pmu_register(PMU_SOFT_ON), mask);
