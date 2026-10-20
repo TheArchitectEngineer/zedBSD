@@ -877,3 +877,24 @@ Kick TA の後の全部の event（mainline の `pvr_rogue_fwif_sf.h`）:
 - (c) 最初の render の stream を、三角形の PPP state の block（2 word）の後に end を置く形にした（`POWERVR_RENDER_CHECK_STATE_FIRST`、既定 1、0 で前の end だけ）。行は `render check: state-and-end stream: …`。
 
 確かめ: 試験の image の config の vmunix は rc 0、warning 0。実機は未。
+
+## q1445-i01（P1、2026-10-20）: memory context の activate の比較
+
+FW の trace の BIF の行（mainline の sf の表）:
+
+| 板 | DM | 前の set | PC | 割り当て | 結果 |
+| --- | --- | --- | --- | --- | --- |
+| dmesg25・26（compute check の session） | 4（CDM） | 0 | 0x405df000・0x4060e000 | PC set 1 = register range [2 - 2] | Compute finished |
+| dmesg40・42（render check の session） | 2（TA） | -1（新規） | 0x40601000・0x4060e000 | PC set 0 = register range [1 - 1] | lockup（何も処理せず） |
+| dmesg40・42（reset の後） | 3（3D） | 0 | 同じ | PC set 0 = [1 - 1] | 直後に Deactivate（reset で捨てられた command の後で、実際に描いたかは不明） |
+
+読み:
+- 動いた data master（CDM）は catalogue の register の range 2 を、止まった TA は range 1 を使っている。range 1 で何かが動いた証拠は今のところ無い（3D は TA の reset の後に捨てられている）。
+- FW は catalogue の register を自分で選んで書く（MIPS の FW、host は書かない）。host の読みでは、BIF_CAT_BASE0〜7 も MMU_CBASE_MAPPING も 0 に見えるので、どの register に何が入ったかは host から確かめられない。
+- 仮説（未確認）: catalogue の register の 1 番（set 0）がこの SoC では使えない。または、その set の catalogue の写像が TA の要求（VDM の fetch）に届いていない。
+
+次の切り分けの案（判断は Q1）:
+- render の session で、TA の前に別の memory context の job を流し、set 0 を他に取らせた状態で TA を kick する（TA が set 1 = range 2 を使うか、それで動くかを見る）。
+- 逆に、compute の probe を新しい session（set 0 = range 1 を取る）で流し、compute も range 1 で止まるかを見る。range の番号だけで決まるなら、原因は catalogue の register 1 の扱い（FW の設定、または XE の OSID の bank の対応）に絞れる。
+
+source の変更は無し。
