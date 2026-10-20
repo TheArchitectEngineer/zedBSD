@@ -203,6 +203,26 @@ main(void)
 	clear.color_index = 3;
 	check(powervr_render_job_clear(&job, &clear, 1, &rect, 1) == EINVAL, "clear of a missing colour refused");
 
+	/* A job whose draws filled its room goes on in the next: stored, then loaded, no draws. */
+	{
+		static struct powervr_render_job next;
+
+		job.colors[0].load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		job.colors[0].store_op = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		job.depth.load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		job.depth.store_op = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		job.draw_count = 3;
+		check(powervr_render_job_continue(&job, &next) == EINVAL, "a job with room is not continued");
+		job.draw_count = POWERVR_RENDER_DRAWS;
+		memset(&next, 0xa5, sizeof(next));
+		ok = powervr_render_job_continue(&job, &next) == 0;
+		ok = ok && job.colors[0].store_op == VK_ATTACHMENT_STORE_OP_STORE && job.depth.store_op == VK_ATTACHMENT_STORE_OP_STORE;
+		ok = ok && next.colors[0].load_op == VK_ATTACHMENT_LOAD_OP_LOAD && next.colors[0].store_op == VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		ok = ok && next.depth.load_op == VK_ATTACHMENT_LOAD_OP_LOAD && next.depth.store_op == VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		ok = ok && next.draw_count == 0 && next.area.width == job.area.width && next.colors[0].surface.address == job.colors[0].surface.address;
+		check(ok, "a full job continues: it stores, the next loads and keeps the pass's store");
+	}
+
 	printf("render-pass host test: %u passed, %u failed\n", passed, failed);
 	return failed == 0 ? 0 : 1;
 }

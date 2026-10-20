@@ -283,6 +283,44 @@ powervr_render_job_clear(
 	return 0;
 }
 
+/*
+ * Continues a render job whose draws filled its room in a next job of the
+ * same area and targets: the full job stores every target, and the next
+ * one loads what the full one stored, then stores as the pass asked.  The
+ * next job starts without draws.  A depth target is carried the same way,
+ * so the depth test goes on across the two jobs.
+ */
+int
+powervr_render_job_continue(
+	struct powervr_render_job *job,
+	struct powervr_render_job *next)
+{
+	uint32_t index;
+
+	/* Refuses missing input and a job that is not full. */
+	if (job == NULL || next == NULL || job == next || job->draw_count != POWERVR_RENDER_DRAWS)
+		return EINVAL;
+
+	/* The next job: the same area and targets, no draws. */
+	__builtin_memcpy(next, job, offsetof(struct powervr_render_job, draws));
+	next->draw_count = 0;
+
+	/* Each colour target: stored by the full job, loaded by the next one. */
+	for (index = 0; index < job->color_count; index++) {
+		job->colors[index].store_op = VK_ATTACHMENT_STORE_OP_STORE;
+		next->colors[index].load_op = VK_ATTACHMENT_LOAD_OP_LOAD;
+	}
+
+	/* The depth target likewise. */
+	if (job->depth.present) {
+		job->depth.store_op = VK_ATTACHMENT_STORE_OP_STORE;
+		next->depth.load_op = VK_ATTACHMENT_LOAD_OP_LOAD;
+	}
+
+	/* Succeeded: the next job goes on where the full one stops. */
+	return 0;
+}
+
 /* Keeps one attachment of a pass: a format the executor takes, one sample, the core operations. */
 static int
 pass_attachment(

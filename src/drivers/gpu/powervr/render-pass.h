@@ -158,6 +158,7 @@ struct powervr_pass_clear_attachment {
 
 int powervr_pass_build(const VkRenderPassCreateInfo *info, struct powervr_pass *pass);
 int powervr_render_job_begin(const struct powervr_pass *pass, const struct powervr_pass_framebuffer *framebuffer, const struct powervr_render_area *area, const struct powervr_pass_clear *clears, uint32_t clear_count, struct powervr_render_job *job);
+int powervr_render_job_continue(struct powervr_render_job *job, struct powervr_render_job *next);
 int powervr_render_job_clear(struct powervr_render_job *job, const struct powervr_pass_clear_attachment *attachments, uint32_t count, const VkClearRect *rects, uint32_t rect_count);
 
 #endif /* KERN_DRIVERS_GPU_POWERVR_RENDER_PASS_H */

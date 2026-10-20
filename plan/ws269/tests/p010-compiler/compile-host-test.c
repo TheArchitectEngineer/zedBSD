@@ -27,6 +27,7 @@
 #include "ir-run.h"
 #include "machine-run.h"
 
+#include "userland/desktop/libkeiland/ui/shaders.h"
 #include "userland/desktop/wayland/shaders.h"
 #include "userland/tests/vkcompute/shader.h"
 #include "userland/tests/vkdemo/shaders.h"
@@ -1115,6 +1116,8 @@ main(
 	test_graphics(kwl_batch_vert, sizeof(kwl_batch_vert) / 4U, POWERVR_SHADER_VERTEX, "kwl panel-batch.vert");
 	test_graphics(kwl_batch_frag, sizeof(kwl_batch_frag) / 4U, POWERVR_SHADER_FRAGMENT, "kwl panel-batch.frag");
 	test_graphics(kwl_turn_vert, sizeof(kwl_turn_vert) / 4U, POWERVR_SHADER_VERTEX, "kwl turn.vert");
+	test_graphics(keiui_canvas_vert, sizeof(keiui_canvas_vert) / 4U, POWERVR_SHADER_VERTEX, "libkeiland canvas.vert");
+	test_graphics(keiui_canvas_frag, sizeof(keiui_canvas_frag) / 4U, POWERVR_SHADER_FRAGMENT, "libkeiland canvas.frag");
 	for (index = 0; index < 8; index++) {
 		snprintf(name, sizeof(name), "kwl panel.frag mode %u", index);
 		test_graphics(kwl_panel_variants[index].words, kwl_panel_variants[index].bytes / 4U, POWERVR_SHADER_FRAGMENT, name);

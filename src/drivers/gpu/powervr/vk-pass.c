@@ -435,8 +435,10 @@ static int draw_add(struct powervr_render_job *job, const struct draw_state *sta
  * order: a begin starts one, a clear attachments applies to it, each
  * draw is added to it with the state the records set before it, an end
  * closes it.  An instance with a partial area and a depth store is
- * dropped with its log line (design section 4.3).  The jobs are built
- * in place.  Refuses more jobs or draws than room (E2BIG), records
+ * dropped with its log line (design section 4.3).  An instance with
+ * more draws than a job has room for goes on in further jobs, each
+ * loading what the one before stored (powervr_render_job_continue).  The
+ * jobs are built in place.  Refuses more jobs or draws than room (E2BIG), records
  * outside an instance and draws without a pipeline (EINVAL), and what
  * the jobs do not take yet (ENOTSUP).
  */
@@ -499,6 +501,16 @@ powervr_vk_render_jobs(
 			/* A draw inside the instance. */
 			if (job == NULL)
 				return EINVAL;
+			if (!dropped && job->draw_count == POWERVR_RENDER_DRAWS) {
+				/* A full job goes on in the next one, which loads what it stored. */
+				if (*count + 1U >= room)
+					return E2BIG;
+				error = powervr_render_job_continue(job, &jobs[*count + 1U]);
+				if (error != 0)
+					return error;
+				(*count)++;
+				job = &jobs[*count];
+			}
 			if (!dropped) {
 				error = draw_add(job, &state, entry);
 				if (error != 0)
