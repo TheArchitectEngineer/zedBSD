@@ -556,3 +556,23 @@ FW の register の書き込みが全部消えているとは考えにくい。F
 直し（診断）: 38 個を先に続けて全部読み、後でまとめて出す。最後の TIMER と最初の差で、読みが HWR の前に収まったかが分かる。
 
 確かめ: 試験の image の config の vmunix は warning 0。実機は未。
+
+## q1420-i01（P1、2026-10-20）: 読みは job の最中だった、host の書き込みの読み戻し
+
+vf2-dmesg16 で時刻を照らした。FW の trace の時刻と TIMER は桁が合い、同じ timer と見る（推測）:
+- FW の trace: Activate MemCtx 0x9a8fb9、Kick Compute 0x9a8ffd、「DM4 has taken」0x9b0ae2・0x9b854b・0x9c0035、Recovery 0xa4aa3d。
+- probe の読み: TIMER 0x9ce713〜0x9ce71e。
+
+読みは kick の後、recovery の前、つまり job の最中。そこで catalogue base 0〜7・MMU・CDM の register が全部 0 だった。FW の書き込みが見えていない仮説が戻る。
+
+mainline で FW が host の割り込みを上げる道: host は `ROGUE_CR_MIPS_WRAPPER_IRQ_STATUS` を読んで `..._IRQ_CLEAR` を書く。FW は MIPS wrapper の割り込みを立てるが、それが GPU の register bank の書き込みかは、mainline の host の code からは分からない。host interrupts 8 が届いたことは、FW の register の書き込みの証拠にならない。
+
+直し（診断）: FW の start の段の cache の設定の後で、host の書き込みが register に届き、読み戻せるかを確かめる（`register_check`）。
+- SLC の control（直前に host が書いた物）を読む。
+- まだ誰も使わない catalogue base 7（0x1238）に 0x12345000 を書いて読み、0 に戻して読む。
+
+読み戻しの結果で場合を分ける:
+- 書いた値が読めれば、その register の読みは信用でき、job の最中の 0 は FW が書いていない事を意味する。
+- 読めなければ、その register の帯は host から読めない（OSID の bank など）ので、0 は何も言わない。
+
+確かめ: 試験の image の config の vmunix は rc 0、warning 0。実機は未。

@@ -113,6 +113,7 @@ static void free_file(struct powervr_core *core);
 static uint64_t ms_deadline(unsigned milliseconds);
 static const char *probe_owner(const struct powervr_firmware *firmware, uint32_t heap_offset);
 static void dump_trace(const struct powervr_firmware *firmware, uint32_t first, uint32_t count);
+static void register_check(struct powervr_core *core);
 static void step_start(const char *name);
 static void step_done(const char *name, int error);
 static void watch_thread(void *argument);
@@ -165,6 +166,10 @@ static void watch_thread(void *argument);
 #define PROBE_ENTRY_VALID		0x2U
 #define PROBE_FOUND_MAX			8U
 #define PROBE_OBJECTS			20U
+
+/* The register the host's write and read back is checked on, and the pattern (a page address). */
+#define REGISTER_CHECK_CATALOGUE	0x1238U
+#define REGISTER_CHECK_PATTERN		0x0000000012345000ULL
 
 /*
  * The step the later stage is in, for its log lines and for the thread
@@ -1012,6 +1017,7 @@ start_processor(
 	/* Sets up the system level cache, the MIPS wrapper and the bus attributes. */
 	kern_logf("powervr: firmware: start: out of reset but the Garten; cache\n");
 	init_cache(core);
+	register_check(core);
 	kern_logf("powervr: firmware: start: MIPS wrapper\n");
 	init_wrapper(core);
 	powervr_write64(core, POWERVR_AXI_ACE_LITE, POWERVR_AXI_ACE_LITE_VALUE);
@@ -1760,4 +1766,33 @@ dump_trace(
 			  (unsigned)words[0], (unsigned)words[1], (unsigned)words[2], (unsigned)words[3],
 			  (unsigned)words[4], (unsigned)words[5], (unsigned)words[6], (unsigned)words[7]);
 	}
+}
+
+/*
+ * Checks the host's writes reach the core's registers and read back: the
+ * system level cache's control just written, and a page catalogue base
+ * no data master uses yet (set 7) written with a pattern, read and
+ * cleared again.  A register that reads 0 after a write is not one the
+ * host's reads of it can be trusted on.
+ *
+ * Values referenced:
+ * StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
+ * drivers/gpu/drm/img/img-rogue/hwdefs/rogue/km/rgx_cr_defs_km.h
+ * (RGX_CR_BIF_CAT_BASE7 0x1238, address field 12..39).
+ */
+static void
+register_check(
+	struct powervr_core *core)
+{
+	uint64_t catalogue;
+	uint32_t control;
+
+	/* The cache control as written just before, and the catalogue base written and read back. */
+	control = powervr_read32(core, POWERVR_SLC_CONTROL);
+	powervr_write64(core, REGISTER_CHECK_CATALOGUE, REGISTER_CHECK_PATTERN);
+	catalogue = powervr_read64(core, REGISTER_CHECK_CATALOGUE);
+	powervr_write64(core, REGISTER_CHECK_CATALOGUE, 0);
+	kern_logf("powervr: firmware: start: register check: slc control 0x%x, catalogue base 7 wrote 0x%llx read 0x%llx, then 0x%llx\n",
+		  (unsigned)control, (unsigned long long)REGISTER_CHECK_PATTERN, (unsigned long long)catalogue,
+		  (unsigned long long)powervr_read64(core, REGISTER_CHECK_CATALOGUE));
 }
