@@ -895,6 +895,24 @@ powervr_session_fail_pending(
 }
 
 /*
+ * Says in one line why a session's work was refused: the device's
+ * quarantine, or the session stopping, lost, isolated or abandoned, with
+ * its contexts' identities.
+ */
+void
+powervr_render_refusal_log(
+	struct powervr_render *render,
+	const struct powervr_session *session,
+	const char *where)
+{
+	kern_logf("powervr: %s refused (EIO): device faulted %u, session stopping %u lost %u isolated %u abandoned %u, contexts compute 0x%x render 0x%x transfer 0x%x\n",
+		  where, (unsigned)render->faulted, (unsigned)session->stopping, (unsigned)session->lost,
+		  (unsigned)session->isolated, (unsigned)session->abandoned, (unsigned)session->identity,
+		  session->render_context != NULL ? (unsigned)session->render_context->identity : 0U,
+		  session->transfer_context != NULL ? (unsigned)session->transfer_context->identity : 0U);
+}
+
+/*
  * Arms the device-wide quarantine.  Idempotent.
  */
 void
@@ -914,6 +932,8 @@ powervr_render_quarantine(
 	render->faulted = 1;
 
 	spin_unlock_irqrestore(&render->queue_lock, enabled);
+	if (!already)
+		kern_logf("powervr: device quarantine armed (%d)\n", error);
 
 	/* A second call has nothing more to do. */
 	if (already)
@@ -1268,8 +1288,10 @@ powervr_render_reset(
 	mutex_lock(&render->core->lock);
 
 	error = powervr_firmware_restart(render->core);
-	if (error != 0)
+	if (error != 0) {
 		render->lost = 1;
+		kern_logf("powervr: device lost: firmware restart failed (%d)\n", error);
+	}
 
 	/* The kept sessions' records belonged to the stopped firmware: their runs go, their old places with it. */
 	while (render->kept_sessions != NULL) {
@@ -1332,6 +1354,7 @@ powervr_render_isolate(
 	session->stopping = 1;
 
 	spin_unlock_irqrestore(&render->queue_lock, enabled);
+	kern_logf("powervr: session isolated (compute context 0x%x)\n", (unsigned)session->identity);
 
 	/* A device in quarantine cannot isolate one session. */
 	faulted = is_faulted(render);
@@ -2116,6 +2139,7 @@ handle_notice(
 	 */
 	if (type == POWERVR_NOTICE_FIRMWARE_FAULT || type == POWERVR_NOTICE_RESTART) {
 		outcome->device_lost = 1;
+		kern_logf("powervr: device lost: firmware notice %u\n", (unsigned)type);
 		return;
 	}
 
@@ -2181,6 +2205,7 @@ handle_notice(
 		session->lost = 1;
 
 		spin_unlock_irqrestore(&render->queue_lock, enabled);
+		kern_logf("powervr: session lost to the reset of context 0x%x%s\n", (unsigned)notice.context, named ? "" : " (all contexts)");
 		drv_gpu_report_session_error(render->device, session, EIO);
 		if (!all)
 			break;
@@ -2220,8 +2245,10 @@ kick_refused(
 		refused = EIO;
 
 	/* Refused, or not. */
-	if (refused != 0)
+	if (refused != 0) {
+		powervr_render_refusal_log(render, session, "kick");
 		return refused;
+	}
 
 	/* Succeeded: the kick may go out. */
 	return 0;

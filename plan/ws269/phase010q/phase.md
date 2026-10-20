@@ -923,3 +923,14 @@ source の変更は無し。
   - `powervr_render_stop_poll` で、FW が return slot を書かない時は kccb の executed count で cleanup の完了を判定するようにした。これで、session の close の stop が期限切れで escalate しない（escalate すると isolate、それが失敗すると fault になる）。
   - 112（FW の fault）と restart の要求は、これまでどおり device lost。
 - 確認: self-test config で `vmunix` を build（warning 0）。板の試験は未実施。dmesg47 には device の quarantine を arm した行が無く、上の 2 経路のどちらだったかは未確認。
+
+## q1453 / q1453-i01（2026-10-20）
+
+- dmesg49 の結果: static state を 0 にしても TA は変わらず reset した。`POWERVR_RENDER_SWITCH_STATE` の既定を 1 に戻した。
+- log を足した:
+  - EIO で断る全部の場所に、理由（device faulted、session stopping・lost・isolated・abandoned）と context id を 1 行出す。場所は kick・reserve・commit・submit と、vk の submission（abandoned の時）。
+  - quarantine を arm した時、session を lost・isolated にした時、device lost（112・restart の要求、restart の失敗）の時に 1 行ずつ出す。
+  - vk の compute の kick の失敗と wait の失敗、run_frame の失敗にも 1 行ずつ出す。
+- 105 の flags 0x1 は `POWERVR_RESET_FLAG_FAULT`（page fault。fault の address を報告するだけ）で、通知の context の session だけを lost にし、device は落とさない。device 全体の扱いになるのは flags 0x2（ALL）の時。
+- 訂正: q1449・q1450 の時に私の確認の build を `CONFIG=` で流しており、実際には x86 の既定の config で build されていた。今回は `ZEDBSD_CONFIG=` で RISC-V の build を確認した（`build/q1453/st/vmunix`、warning 0）。q1449・q1450 の差分もこの build に入っている。
+- 未実施: 板。submit を断った理由は、板の dmesg で特定する。

@@ -217,6 +217,8 @@ runtime_command(
 
 	/* Runs the frame. */
 	error = run_frame(session, wire, bytes);
+	if (error != 0)
+		kern_logf("powervr: frame failed (%d)\n", error);
 
 	/* Work the core may still run: the core stops the session. */
 	if (session->vk != NULL && session->vk->abandoned)
@@ -262,6 +264,7 @@ runtime_reserve(
 	error = 0;
 	if (render->faulted || session->stopping || session->lost || session->isolated) {
 		error = EIO;
+		powervr_render_refusal_log(render, session, "reserve");
 	} else if (session->pending_count + session->reserved >= POWERVR_RENDER_PENDING) {
 		error = EAGAIN;
 	}
@@ -320,6 +323,7 @@ runtime_commit(
 		error = ESTALE;
 	} else if (render->faulted) {
 		error = EIO;
+		powervr_render_refusal_log(render, session, "commit");
 	} else {
 		session->markers[index].state = POWERVR_MARKER_COMMITTED;
 		session->reserved--;
@@ -456,6 +460,7 @@ refusal(
 	error = 0;
 	if (render->faulted || session->stopping || session->lost || session->isolated) {
 		error = EIO;
+		powervr_render_refusal_log(render, session, "submit");
 	} else if (session->pending_count + session->reserved + room > POWERVR_RENDER_PENDING) {
 		error = EBUSY;
 	}
