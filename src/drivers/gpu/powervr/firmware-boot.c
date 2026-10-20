@@ -111,6 +111,7 @@ static void tear_down(struct powervr_core *core, enum late_stage reached);
 static void free_blocks(struct powervr_core *core);
 static void free_file(struct powervr_core *core);
 static uint64_t ms_deadline(unsigned milliseconds);
+static const char *probe_owner(const struct powervr_firmware *firmware, uint32_t heap_offset);
 static void step_start(const char *name);
 static void step_done(const char *name, int error);
 static void watch_thread(void *argument);
@@ -159,6 +160,7 @@ static void watch_thread(void *argument);
 #define PROBE_PAGE_SHIFT		12U
 #define PROBE_ENTRY_VALID		0x2U
 #define PROBE_FOUND_MAX			8U
+#define PROBE_OBJECTS			20U
 
 /*
  * The step the later stage is in, for its log lines and for the thread
@@ -1591,6 +1593,53 @@ powervr_firmware_dump(
  * and through the cached view, and every mapped page of the heap whose
  * word at the slot's offset reads as executed.
  */
+/* Names the firmware record a heap offset lies in, for the probe's lines. */
+static const char *
+probe_owner(
+	const struct powervr_firmware *firmware,
+	uint32_t heap_offset)
+{
+	const struct powervr_object *objects[PROBE_OBJECTS];
+	static const char *const names[PROBE_OBJECTS] = {
+		"code", "data", "connection", "os init", "system init", "kccb control", "kccb", "kccb returns",
+		"fwccb control", "fwccb", "os data", "system data", "power sync", "hwr info", "mmu sync",
+		"fault page", "utilisation", "runtime", "trace control", "trace buffer",
+	};
+	unsigned index;
+
+	/* The records in the order of the names. */
+	objects[0] = &firmware->code;
+	objects[1] = &firmware->data;
+	objects[2] = &firmware->connection;
+	objects[3] = &firmware->os_init;
+	objects[4] = &firmware->system_init;
+	objects[5] = &firmware->kccb_control;
+	objects[6] = &firmware->kccb;
+	objects[7] = &firmware->kccb_returns;
+	objects[8] = &firmware->fwccb_control;
+	objects[9] = &firmware->fwccb;
+	objects[10] = &firmware->os_data;
+	objects[11] = &firmware->system_data;
+	objects[12] = &firmware->power_sync;
+	objects[13] = &firmware->hwr_info;
+	objects[14] = &firmware->mmu_sync;
+	objects[15] = &firmware->fault_page;
+	objects[16] = &firmware->utilisation;
+	objects[17] = &firmware->runtime;
+	objects[18] = &firmware->trace_control;
+	objects[19] = &firmware->trace_buffer;
+
+	/* The record whose pages hold the offset. */
+	for (index = 0; index < PROBE_OBJECTS; index++) {
+		if (objects[index]->view != NULL && heap_offset >= objects[index]->heap_offset &&
+		    heap_offset - objects[index]->heap_offset < ((objects[index]->size + POWERVR_MIPS_PAGE_BYTES - 1U) & ~(POWERVR_MIPS_PAGE_BYTES - 1U)))
+			return names[index];
+	}
+
+	/* None of the named records. */
+	return "unnamed";
+}
+
 void
 powervr_firmware_return_probe(
 	struct powervr_core *core,
@@ -1653,10 +1702,11 @@ powervr_firmware_return_probe(
 		kern_dcache_invalidate_range((const void *)cached, POWERVR_MIPS_PAGE_BYTES);
 		if (cached[slot % (POWERVR_MIPS_PAGE_BYTES / 4U)] != POWERVR_RETURN_EXECUTED)
 			continue;
-		kern_logf("powervr: probe: heap page 0x%x (firmware 0x%x, physical 0x%llx) holds 1 at slot %u\n",
+		kern_logf("powervr: probe: heap page 0x%x (firmware 0x%x, physical 0x%llx, %s) holds 1 at slot %u\n",
 			  (unsigned)(page * POWERVR_MIPS_PAGE_BYTES),
 			  (unsigned)powervr_mips_address(page * POWERVR_MIPS_PAGE_BYTES),
 			  (unsigned long long)entry_physical,
+			  probe_owner(firmware, page * POWERVR_MIPS_PAGE_BYTES),
 			  (unsigned)slot);
 		found++;
 	}
