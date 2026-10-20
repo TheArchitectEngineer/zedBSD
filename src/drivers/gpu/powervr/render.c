@@ -44,6 +44,7 @@
 #include "drivers/gpu/powervr/fixed-area.h"
 #include "drivers/gpu/powervr/interface.h"
 #include "drivers/gpu/powervr/retry.h"
+#include "drivers/gpu/powervr/render-pass.h"
 #include "drivers/gpu/powervr/vk.h"
 
 /*
@@ -1945,4 +1946,164 @@ powervr_session_describe_physical(
 		}
 	}
 	kern_logf("powervr: pc 0x%llx is in no live handle's pages\n", (unsigned long long)physical);
+}
+
+/* Notes the textures of one draw's sets: each image binding's state words and its sampler's first word. */
+static void
+note_textures(
+	struct powervr_note_draw *note,
+	const struct powervr_render_draw *draw)
+{
+	const struct powervr_vk_descriptor_set *set;
+	const struct powervr_set_binding *binding;
+	struct powervr_note_texture *texture;
+	uint32_t slot;
+	uint32_t number;
+	uint32_t offset;
+
+	/* Each set's image bindings, their first element, as far as the note holds. */
+	note->texture_count = 0;
+	for (slot = 0; slot < POWERVR_DRAW_SETS; slot++) {
+		set = draw->sets[slot];
+		if (set == NULL || set->bytes == NULL)
+			continue;
+		for (number = 0; number < POWERVR_SET_BINDINGS_MAX; number++) {
+			binding = &set->layout.bindings[number];
+			if (binding->count == 0 || note->texture_count >= POWERVR_NOTE_TEXTURES)
+				continue;
+			if (powervr_set_descriptor_offset(&set->layout, number, 0, POWERVR_SHADER_PART_IMAGE_STATE, &offset) != 0)
+				continue;
+			texture = &note->textures[note->texture_count];
+			kern_memcpy(texture->image, set->bytes + offset, sizeof(texture->image));
+			texture->sampler = 0;
+			if (powervr_set_descriptor_offset(&set->layout, number, 0, POWERVR_SHADER_PART_SAMPLER_STATE, &offset) == 0)
+				kern_memcpy(&texture->sampler, set->bytes + offset, sizeof(texture->sampler));
+			texture->set = slot;
+			texture->binding = number;
+			note->texture_count++;
+		}
+	}
+}
+
+/*
+ * Keeps a compact note of the session's newest render job (q1523), for
+ * powervr_session_describe_job after a reset: the area, the colour
+ * targets, and the draws (the load draw first when there is one).
+ */
+void
+powervr_session_note_job(
+	struct powervr_session *session,
+	const struct powervr_render_job *job,
+	const struct powervr_render_draw *prefix)
+{
+	struct powervr_job_note *note;
+	const struct powervr_render_draw *draw;
+	uint32_t index;
+	uint32_t count;
+
+	/* The job's shape and its colour targets. */
+	note = &session->note;
+	note->serial++;
+	note->area[0] = job->area.x;
+	note->area[1] = job->area.y;
+	note->area[2] = job->area.width;
+	note->area[3] = job->area.height;
+	note->width = job->width;
+	note->height = job->height;
+	note->color_count = job->color_count;
+	for (index = 0; index < job->color_count && index < POWERVR_NOTE_COLORS; index++) {
+		note->colors[index].address = job->colors[index].surface.address;
+		note->colors[index].vk_format = job->colors[index].surface.format != NULL ? job->colors[index].surface.format->vk_format : 0;
+		note->colors[index].width = job->colors[index].surface.width;
+		note->colors[index].height = job->colors[index].surface.height;
+		note->colors[index].row_pitch = job->colors[index].surface.row_pitch;
+		note->colors[index].padded_width = job->colors[index].surface.padded_width;
+		note->colors[index].linear = job->colors[index].surface.linear;
+		note->colors[index].load_op = job->colors[index].load_op;
+	}
+
+	/* The draws, the load draw first. */
+	note->prefix = prefix != NULL;
+	count = job->draw_count + (prefix != NULL ? 1U : 0U);
+	note->draw_count = count;
+	for (index = 0; index < count && index < POWERVR_NOTE_DRAWS; index++) {
+		draw = prefix != NULL ? (index == 0 ? prefix : &job->draws[index - 1U]) : &job->draws[index];
+		note->draws[index].pipeline = draw->pipeline;
+		note->draws[index].scissor_x = draw->scissor.offset.x;
+		note->draws[index].scissor_y = draw->scissor.offset.y;
+		note->draws[index].scissor_width = draw->scissor.extent.width;
+		note->draws[index].scissor_height = draw->scissor.extent.height;
+		note_textures(&note->draws[index], draw);
+	}
+}
+
+/*
+ * Prints the note of the session's newest render job (q1523): for each
+ * texture the decoded state (kind, format, size, linear row, address) and
+ * the live handle its address lies in, with how far the texture's last
+ * linear row reaches past the handle's end.  The core's lock is held.
+ */
+void
+powervr_session_describe_job(
+	struct powervr_session *session)
+{
+	const struct powervr_job_note *note;
+	const struct powervr_note_texture *texture;
+	const struct powervr_resource *resource;
+	uint64_t address;
+	uint64_t reach;
+	uint32_t kind;
+	uint32_t width;
+	uint32_t height;
+	uint32_t stride;
+	uint32_t index;
+	uint32_t number;
+
+	/* The job. */
+	note = &session->note;
+	if (note->serial == 0)
+		return;
+	kern_logf("powervr: job %llu: area %u,%u %ux%u of %ux%u, %u colour(s), %u draw(s)%s\n",
+		  (unsigned long long)note->serial, note->area[0], note->area[1], note->area[2], note->area[3],
+		  note->width, note->height, note->color_count, note->draw_count, note->prefix ? " (load draw first)" : "");
+	for (index = 0; index < note->color_count && index < POWERVR_NOTE_COLORS; index++) {
+		kern_logf("powervr: job colour %u: 0x%llx format %u %ux%u pitch %u padded %u linear %u load %u\n", index,
+			  (unsigned long long)note->colors[index].address, note->colors[index].vk_format, note->colors[index].width,
+			  note->colors[index].height, note->colors[index].row_pitch, note->colors[index].padded_width,
+			  note->colors[index].linear, note->colors[index].load_op);
+	}
+
+	/* Each draw and its textures. */
+	for (index = 0; index < note->draw_count && index < POWERVR_NOTE_DRAWS; index++) {
+		kern_logf("powervr: job draw %u: pipeline %p scissor %d,%d %ux%u, %u texture(s)\n", index,
+			  note->draws[index].pipeline, note->draws[index].scissor_x, note->draws[index].scissor_y,
+			  note->draws[index].scissor_width, note->draws[index].scissor_height, note->draws[index].texture_count);
+		for (number = 0; number < note->draws[index].texture_count; number++) {
+			texture = &note->draws[index].textures[number];
+			kind = (uint32_t)(texture->image[0] & 7U);
+			width = (uint32_t)((texture->image[0] >> 34) & 0x3fffU) + 1U;
+			height = (uint32_t)((texture->image[0] >> 48) & 0x3fffU) + 1U;
+			stride = (uint32_t)(texture->image[1] & 0x7fffU) + 1U;
+			address = ((texture->image[1] >> 16) & ((1ULL << 38) - 1U)) << 2;
+			kern_logf("powervr: job draw %u texture set %u binding %u: words %llx %llx sampler %llx: kind %u format %u %ux%u stride %u at 0x%llx\n",
+				  index, texture->set, texture->binding, (unsigned long long)texture->image[0], (unsigned long long)texture->image[1],
+				  (unsigned long long)texture->sampler, kind, (unsigned)((texture->image[0] >> 27) & 0x7fU), width, height,
+				  kind == 4U ? stride : 0U, (unsigned long long)address);
+
+			/* The handle it lies in, and for a strided one how far its rows reach (4-byte texels assumed). */
+			for (resource = session->all; resource != NULL; resource = resource->next_all) {
+				if (address >= resource->address && address < resource->address + resource->buffer->run.size)
+					break;
+			}
+			if (resource == NULL) {
+				kern_logf("powervr: job texture at 0x%llx is in no live handle\n", (unsigned long long)address);
+				continue;
+			}
+			reach = address + (uint64_t)stride * height * 4U;
+			kern_logf("powervr: job texture in handle 0x%llx..0x%llx (shared %u blob %u deferred %u maker %p)%s past end %lld\n",
+				  (unsigned long long)resource->address, (unsigned long long)(resource->address + resource->buffer->run.size),
+				  resource->shareable, (unsigned)resource->identifier, resource->deferred, (void *)resource->origin,
+				  kind == 4U ? " strided rows" : "", kind == 4U ? (long long)(reach - (resource->address + resource->buffer->run.size)) : 0LL);
+		}
+	}
 }

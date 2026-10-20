@@ -1896,6 +1896,7 @@ display_scanout_start(
 	if (error == 0 || error == EALREADY)
 		display->scanout = 1;
 	kern_logf("powervr: display scanout %d (late vblank start %d)\n", display->scanout, error);
+	drv_powervr_dc_vblank_report();
 }
 
 /* Makes the cursor plane's images, once; the caller holds the mutex. */

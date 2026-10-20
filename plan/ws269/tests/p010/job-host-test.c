@@ -117,6 +117,7 @@ powervr_resource_make(struct powervr_session *session, struct powervr_buffer *bu
 }
 
 void powervr_resource_unmake(struct powervr_session *session, struct powervr_resource *resource) { (void)session; (void)resource; }
+void powervr_session_note_job(struct powervr_session *session, const struct powervr_render_job *job, const struct powervr_render_draw *prefix) { (void)session; (void)job; (void)prefix; }
 
 uint64_t
 powervr_session_border_table(const struct powervr_session *session)
