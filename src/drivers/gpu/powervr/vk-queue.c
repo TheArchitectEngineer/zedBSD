@@ -51,7 +51,7 @@
  * The most kernels (workgroups) one submission runs: vkcompute's 128
  * (userland/tests/vkcompute/main.c), the most the tests dispatch.
  */
-#define QUEUE_KERNELS_MAX		128U
+#define QUEUE_KERNELS_MAX		64U
 
 /*
  * The executor's memory: the shading cluster programs (one 512-byte room
