@@ -801,3 +801,13 @@ mainline の offset（`rogue_fwif_fwrendercontext` = geometry の common 0〜0x9
 - domibel の stack で同じ空の stream を流して比べる（その環境は手元に無い）。
 
 source の変更は無し。
+
+## q1434-i01（P1、2026-10-20）: Q1 の 2 つの疑いの照合
+
+- (1) VDM の stream の terminate: Mesa（25.0.7 の `csbgen/rogue_vdm.xml`）の VDMCTRL の block_type は 3 bit（29〜31）で、STREAM_TERMINATE は 6（`<struct name="STREAM_TERMINATE">` の block_type 29..31、context の bit 0）。こちらは 3 つとも `6 << 29` = 0xC0000000 で正しい。
+  - `render-kick-layout.h` の `POWERVR_VDM_TERMINATE`（render check の空の stream と `render-job.c`）
+  - `render-program.c` の `VDM_TERMINATE << VDM_BLOCK_SHIFT`（三角形の stream）
+  - P2 の `render-draw.c` も BLOCK_SHIFT 29 で、PPP 0・PDS 1・VDM 2・INDEX 3 の値は一致。terminate は render-job.c の共通の値を使う。
+  - 外れ。
+- (2) partial render の fence: mainline の `pvr_queue.c`（master の 718〜727 行）は、geometry の job の `partial_render_geom_frag_fence` を、**その queue（geometry）の timeline の UFO** の address と `done_fence->seqno - 1` にする。こちらの `render-kick-layout.c`（190〜204 行）も、geometry の queue の timeline と `value - 1` で、最初の kick では 0。一致しており、外れ。
+- source の変更は無し（直す物が無い）。新しい vmunix は無い。
