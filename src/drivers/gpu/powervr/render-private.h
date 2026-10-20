@@ -518,6 +518,7 @@ uint32_t powervr_target_data_address(const struct powervr_target *target, unsign
 /* Reports the layout a render target was made with. */
 const struct powervr_target_layout *powervr_target_layout_of(const struct powervr_target *target);
 void powervr_target_dump(const struct powervr_target *target);
+void powervr_session_global_list_dump(const struct powervr_session *session);
 
 /* Reports the firmware address of the cleanup count of one half of a render target, which a kick names. */
 uint32_t powervr_target_cleanup_address(const struct powervr_target *target, unsigned half);

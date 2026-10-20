@@ -517,6 +517,7 @@ check_empty(
 	if (error != 0) {
 		powervr_firmware_dump(check->render->core, POWERVR_KERNEL_CCB_SLOTS);
 		powervr_target_dump(check->target);
+		powervr_session_global_list_dump(check->session);
 		dump_context(check);
 		kern_logf("powervr: render check: geometry command: %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x\n",
 			  get32(check->geometry, 0), get32(check->geometry, 4), get32(check->geometry, 8), get32(check->geometry, 12),
@@ -575,6 +576,7 @@ check_kick(
 	if (check->session->lost) {
 		powervr_firmware_dump(check->render->core, POWERVR_KERNEL_CCB_SLOTS);
 		powervr_target_dump(check->target);
+		powervr_session_global_list_dump(check->session);
 	}
 
 	/* Succeeded: the render finished. */
