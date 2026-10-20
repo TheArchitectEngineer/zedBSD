@@ -611,3 +611,26 @@ mainline で FW が host の割り込みを上げる道: host は `ROGUE_CR_MIPS
 - clock control も 32 bit 2 回で書いて読み戻し、元に戻す。
 
 確かめ: 試験の image の config の vmunix は rc 0、warning 0。実機は未。
+
+## q1423-i01（P1、2026-10-20）: PMU の hw event の mask、register の地図
+
+板: bus secure は 0。32 bit の 2 回の書き込みでも catalogue・clock control は 0 に読める。幅でも bus secure でもない。
+
+(1) PMU（Q1 の許可で WS256 の `vf2-pmu.c`・`vf2-gpu.c` も直した）:
+- StarFive の `drivers/pmdomain/starfive/jh71xx-pmu.c` の `starfive_pmu_hw_event_turn_off_mask` は、`JH71XX_PMU_HW_EVENT_TURN_OFF`（0x08）に mask をそのまま書く。
+- DDK の `sys_gpu_runtime_resume` は clock の前に 0 を、`sys_gpu_runtime_suspend` は clock を止めた後に -1 を書く。
+- こちらの `drv_vf2_pmu_set_power` は、GPU の domain の切り替えのたびに GPU の bit（0x80）を on・off の mask に足していた。
+- 直し:
+  - `drv_vf2_pmu_event_off_mask` を足した。
+  - `vf2-gpu.c` の `power_up` で、PMU の domain を入れた後・clock の前に 0 を書く。
+  - `power_down` で、clock を止めた後・domain を切る前に 0xffffffff を書く。
+  - DDK のとおりで、全部の domain の mask を書く。
+
+(2) register の地図（`register_map`、start の段の register check の後）:
+- 帯は 0x0000〜0x0200、0x0800〜0x0900、0x0A00〜0x0C00、0x1200〜0x1400、0x3800〜0x3900、0xA100〜0xA110、0xE100〜0xE200。
+- 8 byte ごとに読み、0 でない物を 4 つずつ 1 行で、0 の数を帯ごとに出す。
+- 書くのは前からの catalogue base 7 と clock control（元に戻す）だけ。
+
+(3) DDK の `rgxpower.c`・`rgxinit.c` で、host が BXE の start の前に書く register を探した。soft reset（`rgxinit.c` の reset の道）と、IRQ・event・safety の clear だけで、power island（SIDEKICK・JONES）や CLK_CTRL を host が書く所は無かった。
+
+確かめ: 試験の image の config と通常の VF2 の config の vmunix は、どちらも rc 0、warning 0。実機は未。

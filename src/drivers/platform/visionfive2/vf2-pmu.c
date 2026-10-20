@@ -237,3 +237,34 @@ pmu_register(
 	/* The registers are 32 bits wide at their byte offsets. */
 	return (volatile uint32_t *)(pmu_registers + offset);
 }
+
+/*
+ * Sets the hardware event turn-off mask: a set bit keeps that domain's
+ * hardware event from turning its domain off.
+ *
+ * Procedure referenced:
+ * StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
+ * drivers/pmdomain/starfive/jh71xx-pmu.c
+ * (starfive_pmu_hw_event_turn_off_mask: the mask written whole) and
+ * drivers/gpu/drm/img/img-rogue/services/system/rogue/sf_7110/sysconfig.c
+ * (sys_gpu_runtime_resume: 0 before the GPU's clocks start;
+ * sys_gpu_runtime_suspend: all ones after they stop).
+ */
+int
+drv_vf2_pmu_event_off_mask(
+	uint32_t mask)
+{
+	unsigned long irq;
+
+	/* Refuses the call before the unit is mapped. */
+	if (pmu_registers == NULL)
+		return ENODEV;
+
+	/* Writes the mask whole, as the vendor kernel does. */
+	irq = spin_lock_irqsave(&pmu_lock);
+	kern_mmio_write32(pmu_register(PMU_EVENT_OFF_MASK), mask);
+	spin_unlock_irqrestore(&pmu_lock, irq);
+
+	/* Succeeded: the mask is set. */
+	return 0;
+}

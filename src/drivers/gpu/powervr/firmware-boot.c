@@ -114,6 +114,7 @@ static uint64_t ms_deadline(unsigned milliseconds);
 static const char *probe_owner(const struct powervr_firmware *firmware, uint32_t heap_offset);
 static void dump_trace(const struct powervr_firmware *firmware, uint32_t first, uint32_t count);
 static void register_check(struct powervr_core *core);
+static void register_map(struct powervr_core *core);
 static void step_start(const char *name);
 static void step_done(const char *name, int error);
 static void watch_thread(void *argument);
@@ -1853,4 +1854,51 @@ register_check(
 	kern_logf("powervr: firmware: start: register check: bus secure 0x%x; 32-bit halves: catalogue low first 0x%llx, high first 0x%llx, clock control 0x%llx\n",
 		  (unsigned)powervr_read32(core, POWERVR_SYSTEM_BUS_SECURE),
 		  (unsigned long long)low_first, (unsigned long long)high_first, (unsigned long long)forced);
+
+	/* A map of the registers that read other than 0, band by band, four to a line. */
+	register_map(core);
+}
+
+/* Prints the registers of each band that read other than 0, and how many read 0. */
+static void
+register_map(
+	struct powervr_core *core)
+{
+	static const uint32_t bands[][2] = {
+		{ 0x0000U, 0x0200U }, { 0x0800U, 0x0900U }, { 0x0a00U, 0x0c00U }, { 0x1200U, 0x1400U },
+		{ 0x3800U, 0x3900U }, { 0xa100U, 0xa110U }, { 0xe100U, 0xe200U },
+	};
+	uint32_t offsets[4];
+	uint64_t values[4];
+	uint32_t offset;
+	uint64_t value;
+	unsigned band;
+	unsigned count;
+	unsigned zeros;
+	unsigned index;
+
+	/* Each band, 64 bits at a time. */
+	for (band = 0; band < sizeof(bands) / sizeof(bands[0]); band++) {
+		count = 0;
+		zeros = 0;
+		for (offset = bands[band][0]; offset < bands[band][1]; offset += 8U) {
+			value = powervr_read64(core, offset);
+			if (value == 0U) {
+				zeros++;
+				continue;
+			}
+			offsets[count] = offset;
+			values[count] = value;
+			count++;
+			if (count == 4U) {
+				kern_logf("powervr: map: %04x=%llx %04x=%llx %04x=%llx %04x=%llx\n",
+					  (unsigned)offsets[0], (unsigned long long)values[0], (unsigned)offsets[1], (unsigned long long)values[1],
+					  (unsigned)offsets[2], (unsigned long long)values[2], (unsigned)offsets[3], (unsigned long long)values[3]);
+				count = 0;
+			}
+		}
+		for (index = 0; index < count; index++)
+			kern_logf("powervr: map: %04x=%llx\n", (unsigned)offsets[index], (unsigned long long)values[index]);
+		kern_logf("powervr: map: band %04x-%04x: %u read 0\n", (unsigned)bands[band][0], (unsigned)bands[band][1], zeros);
+	}
 }
