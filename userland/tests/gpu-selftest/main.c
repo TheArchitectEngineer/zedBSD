@@ -51,6 +51,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <time.h>
@@ -62,6 +63,13 @@
 
 /* The most render nodes -n names. */
 #define SELFTEST_NODES_MAX	4
+
+/*
+ * How long the kernel stage waits for the GPU to attach: the firmware is
+ * loaded after the root file system is live (the driver's late start),
+ * and the boot's selftest may come before it.
+ */
+#define SELFTEST_ATTACH_SECONDS	120
 
 /* The most bytes of a reason or of the stages text. */
 #define SELFTEST_TEXT_MAX	256
@@ -105,6 +113,9 @@ struct stage {
 static void report(struct selftest *test, const char *format, ...);
 static int run_child(struct selftest *test, const struct stage *stage, char *reason, size_t capacity);
 static int read_stages(struct selftest *test, char *text, size_t capacity);
+static int gpu_attaching(void);
+static int wait_attach(struct selftest *test, char *text, size_t capacity);
+static int stdout_is_console(void);
 static int stage_kernel(struct selftest *test, char *reason, size_t capacity);
 static int stage_node(struct selftest *test, char *reason, size_t capacity);
 static int stage_vkcompute(struct selftest *test, char *reason, size_t capacity);
@@ -292,6 +303,115 @@ read_stages(
 }
 
 /*
+ * Reports whether the kernel says a GPU is still attaching
+ * (hw.gpu.attaching above 0); a kernel without the count, and the host,
+ * say not.
+ */
+static int
+gpu_attaching(void)
+{
+#ifdef GPU_SELFTEST_HOST
+	/* The host has no such sysctl. */
+	return 0;
+#else
+	uint32_t attaching;
+	size_t size;
+	int error;
+
+	/* The count, when the kernel has it. */
+	attaching = 0;
+	size = sizeof(attaching);
+	error = sysctlbyname("hw.gpu.attaching", &attaching, &size, NULL, 0);
+	if (error != 0 || size != sizeof(attaching))
+		return 0;
+
+	/* Succeeded: whether some GPU is attaching. */
+	return attaching != 0 ? 1 : 0;
+#endif
+}
+
+/*
+ * Reads the stages text, waiting a second at a time while the firmware
+ * stage is still "-" (not reached): until it is something else, until
+ * hw.gpu.attaching, once seen above 0, falls back to 0, or for at most
+ * SELFTEST_ATTACH_SECONDS.  Says how long it waited when it did.
+ * Returns -1 when there is no text, 1 when the wait ran out with the
+ * firmware still "-", 0 otherwise.
+ */
+static int
+wait_attach(
+	struct selftest *test,
+	char *text,
+	size_t capacity)
+{
+	int waited;
+	int seen;
+	int attaching;
+	int error;
+
+	/* The text, again each second while the firmware has not been reached. */
+	waited = 0;
+	seen = 0;
+	for (;;) {
+		error = read_stages(test, text, capacity);
+		if (error != 0)
+			return -1;
+		if (strstr(text, "firmware=-") == NULL)
+			break;
+
+		/* An attach that ended leaves the firmware as it is. */
+		attaching = gpu_attaching();
+		if (attaching)
+			seen = 1;
+		else if (seen)
+			break;
+
+		/* The limit. */
+		if (waited >= SELFTEST_ATTACH_SECONDS)
+			break;
+		sleep(1);
+		waited++;
+	}
+
+	/* How long it waited, when it did. */
+	if (waited != 0)
+		report(test, "gpu-selftest: waited %d s for the GPU to attach", waited);
+
+	/* The firmware still not reached when the wait ran out. */
+	if (waited >= SELFTEST_ATTACH_SECONDS && strstr(text, "firmware=-") != NULL)
+		return 1;
+
+	/* Succeeded: the text as the kernel has it now. */
+	return 0;
+}
+
+/*
+ * Says whether standard output is the console itself (the boot's service
+ * runs the selftest with its output there), so that -c does not write
+ * each line twice.
+ */
+static int
+stdout_is_console(void)
+{
+	struct stat output;
+	struct stat console;
+	int error;
+
+	/* Both, as files. */
+	error = fstat(STDOUT_FILENO, &output);
+	if (error != 0)
+		return 0;
+	error = stat("/dev/console", &console);
+	if (error != 0)
+		return 0;
+
+	/* Succeeded: the same device or the same file. */
+	if (S_ISCHR(output.st_mode) && S_ISCHR(console.st_mode) && output.st_rdev == console.st_rdev)
+		return 1;
+	return output.st_dev == console.st_dev && output.st_ino == console.st_ino ? 1 : 0;
+}
+
+/*
  * The kernel stage: the stages text, copied on a line, is ok when the
  * firmware and the render node are ok; otherwise the first of them that
  * is not.
@@ -307,13 +427,17 @@ stage_kernel(
 	size_t length;
 	int error;
 
-	/* The text, copied for the reader. */
-	error = read_stages(test, text, sizeof(text));
-	if (error != 0) {
+	/* The text once the GPU attached (or the wait ran out), copied for the reader. */
+	error = wait_attach(test, text, sizeof(text));
+	if (error < 0) {
 		snprintf(reason, capacity, "no stages");
 		return 1;
 	}
 	report(test, "gpu-selftest: stages: %s", text);
+	if (error > 0) {
+		snprintf(reason, capacity, "attach timeout, firmware=-");
+		return 1;
+	}
 
 	/* The two stages before any node. */
 	word = strstr(text, "firmware=ok");
@@ -704,6 +828,8 @@ main(
 	while ((option = getopt(argc, argv, "cs:n:v:i:g:d:f:t:")) != -1) {
 		if (option == 'c') {
 			test.console = 1;
+			if (stdout_is_console())
+				test.console = 0;
 		} else if (option == 's') {
 			test.stages_file = optarg;
 		} else if (option == 'n' && test.node_count < SELFTEST_NODES_MAX) {
