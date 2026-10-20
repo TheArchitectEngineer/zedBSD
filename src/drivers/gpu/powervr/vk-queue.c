@@ -204,6 +204,7 @@ static void put_word(struct powervr_buffer *buffer, uint32_t offset, uint32_t wo
 static int run(struct submission *build);
 static int run_flush(struct submission *build);
 static int run_job(struct submission *build, const struct powervr_render_job *job);
+static int order_after(struct submission *build, unsigned kind);
 static uint32_t instance_jobs(const struct powervr_vk_command_buffer *command, uint32_t begin);
 
 /*
@@ -348,6 +349,7 @@ submit(
 	uint64_t fence_id;
 	uint64_t started;
 	uint32_t result;
+	int reached;
 	int error;
 
 	/* When the submission started, for its timing. */
@@ -373,6 +375,9 @@ submit(
 	fence_id = drv_i915_wire_read_u64(reader);
 	if (reader->error != 0)
 		return EINVAL;
+
+	/* The render jobs of earlier submissions that finished give their memory back. */
+	powervr_render_jobs_reap(session->owner->render, session->owner, 0);
 
 	/* The executor's memory, made at the first submission. */
 	error = 0;
@@ -409,10 +414,18 @@ submit(
 		powervr_timing_report();
 	}
 
-	/* The work is done: the fence is signaled. */
+	/* The fence completes at the submission's last point, which may already be reached. */
 	fence = powervr_vk_payload(session, I915_VK_OBJ_FENCE, fence_id);
-	if (error == 0 && fence != NULL)
-		fence->signaled = true;
+	if (error == 0 && fence != NULL) {
+		fence->kind = session->owner->last_kind;
+		fence->value = session->owner->last_value;
+		reached = powervr_session_point_reached(session->owner, fence->kind, fence->value);
+		fence->signaled = reached != 0;
+
+		/* A compute stream already finished is the compute stage's ok. */
+		if (reached && fence->kind == POWERVR_POINT_COMPUTE)
+			powervr_stage_ok(POWERVR_STAGE_COMPUTE);
+	}
 
 	/* The submission's result. */
 	result = submit_result(error);
@@ -577,8 +590,11 @@ reset_fences(
 	for (index = 0; index < count; index++) {
 		identity = drv_i915_wire_read_u64(reader);
 		fence = powervr_vk_payload(session, I915_VK_OBJ_FENCE, identity);
-		if (fence != NULL)
+		if (fence != NULL) {
 			fence->signaled = false;
+			fence->kind = POWERVR_POINT_NONE;
+			fence->value = 0;
+		}
 	}
 
 	if (reader->error != 0)
@@ -598,8 +614,9 @@ fence_status(
 	struct i915_wire_reader *reader,
 	struct i915_wire_writer *reply)
 {
-	const struct powervr_vk_fence *fence;
+	struct powervr_vk_fence *fence;
 	uint64_t identity;
+	int reached;
 	uint32_t result;
 
 	/* The fence behind the device. */
@@ -608,11 +625,25 @@ fence_status(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* Signaled, or not yet. */
+	/* Finished render jobs give their memory back. */
+	powervr_render_jobs_reap(session->owner->render, session->owner, 0);
+
+	/* Signaled once its point is reached; a lost session's work never completes. */
 	result = (uint32_t)VK_NOT_READY;
 	fence = powervr_vk_payload(session, I915_VK_OBJ_FENCE, identity);
+	if (fence != NULL && !fence->signaled) {
+		reached = powervr_session_point_reached(session->owner, fence->kind, fence->value);
+		if (reached)
+			fence->signaled = true;
+
+		/* A compute stream seen to finish is the compute stage's ok. */
+		if (reached && fence->kind == POWERVR_POINT_COMPUTE)
+			powervr_stage_ok(POWERVR_STAGE_COMPUTE);
+	}
 	if (fence != NULL && fence->signaled)
 		result = (uint32_t)VK_SUCCESS;
+	if (fence != NULL && !fence->signaled && (session->owner->lost || session->abandoned))
+		result = (uint32_t)VK_ERROR_DEVICE_LOST;
 	drv_i915_wire_reply_u32(reply, result);
 
 	/* Succeeded: the reply carries the status. */
@@ -814,11 +845,17 @@ build_command_buffer(
 		    entry->opcode == GPU_OP_CMD_COPY_IMAGE || entry->opcode == GPU_OP_CMD_BLIT_IMAGE || entry->opcode == GPU_OP_CMD_CLEAR_COLOR_IMAGE) {
 			/* A transfer: the dispatches before it run first. */
 			error = run_flush(build);
+			if (error == 0)
+				error = order_after(build, POWERVR_POINT_NONE);
 			if (error == 0) {
 				started = powervr_timing_now();
 				error = powervr_vk_transfer_run(build->session, entry);
 				powervr_timing_add(POWERVR_TIMING_TRANSFER, started);
 			}
+
+			/* A transfer finishes before it returns: nothing of the session is left running. */
+			if (error == 0)
+				powervr_session_point_set(build->session->owner, POWERVR_POINT_NONE, 0);
 		} else if (entry->opcode == GPU_OP_CMD_BEGIN_RENDER_PASS) {
 			/* The dispatches before it run first, then the instance's jobs in order. */
 			error = run_flush(build);
@@ -871,6 +908,13 @@ build_dispatch(
 	/* No workgroup, no work. */
 	if (groups == 0)
 		return 0;
+
+	/* The executor's programs and stream are rewritten: a stream still running finishes first. */
+	if (build->session->owner->last_kind == POWERVR_POINT_COMPUTE) {
+		error = order_after(build, POWERVR_POINT_NONE);
+		if (error != 0)
+			return error;
+	}
 
 	/* A bound pipeline. */
 	pipeline = build->pipeline;
@@ -1289,6 +1333,11 @@ run(
 	/* When the run started, for its timing. */
 	started = powervr_timing_now();
 
+	/* Another context's work finishes first (the stream may read what it wrote). */
+	error = order_after(build, POWERVR_POINT_COMPUTE);
+	if (error != 0)
+		return error;
+
 	/* The end of the stream. */
 	terminate = powervr_compute_terminate_word();
 	put_stream_words(build, &terminate, 1);
@@ -1323,19 +1372,50 @@ run(
 		return error;
 	}
 
-	/* Waits for the timeline to reach it; the core may still run work that did not. */
-	error = powervr_session_wait(owner, value, QUEUE_WAIT_MS);
+	/* The stream runs on; later callbacks and fences complete at its point. */
+	powervr_session_point_set(owner, POWERVR_POINT_COMPUTE, value);
+	powervr_timing_add(POWERVR_TIMING_DISPATCH, started);
+
+	/* Succeeded: the stream was kicked. */
+	return 0;
+}
+
+/*
+ * Orders the session's next work of a kind after its last work: work on
+ * the same context keeps the firmware's order; anything else (and a
+ * transfer, kind POWERVR_POINT_NONE, after anything) waits for the last
+ * work's point, bounded by POWERVR_PROGRESS_MS.  A wait that runs out
+ * abandons the session, whose work the core may still run.
+ */
+static int
+order_after(
+	struct submission *build,
+	unsigned kind)
+{
+	struct powervr_session *owner;
+	int error;
+
+	/* The same context: the firmware runs its kicks in order. */
+	owner = build->session->owner;
+	if (kind != POWERVR_POINT_NONE && owner->last_kind == kind)
+		return 0;
+
+	/* The last work's point. */
+	error = powervr_session_point_wait(owner, owner->last_kind, owner->last_value, POWERVR_PROGRESS_MS);
 	if (error != 0) {
-		kern_logf("powervr: vk: compute stream did not finish (%d); the session is abandoned\n", error);
+		kern_logf("powervr: vk: earlier work did not finish (%d); the session is abandoned\n", error);
 		build->session->abandoned = true;
 		owner->abandoned = 1;
-		powervr_stage_fail(POWERVR_STAGE_COMPUTE, powervr_stage_reason_of(error));
+		if (owner->last_kind == POWERVR_POINT_COMPUTE)
+			powervr_stage_fail(POWERVR_STAGE_COMPUTE, powervr_stage_reason_of(error));
 		return error;
 	}
 
-	/* Succeeded: the core finished the stream; the first time is the compute stage's ok. */
-	powervr_timing_add(POWERVR_TIMING_DISPATCH, started);
-	powervr_stage_ok(POWERVR_STAGE_COMPUTE);
+	/* The compute stage's ok, once a stream was seen to finish. */
+	if (owner->last_kind == POWERVR_POINT_COMPUTE)
+		powervr_stage_ok(POWERVR_STAGE_COMPUTE);
+
+	/* Succeeded: the earlier work finished. */
 	return 0;
 }
 
@@ -1371,8 +1451,13 @@ run_job(
 	struct powervr_session *owner;
 	int error;
 
-	/* The job on the session's render context. */
+	/* The work of another context finishes first (a render may read what it wrote). */
 	owner = build->session->owner;
+	error = order_after(build, POWERVR_POINT_FRAGMENT);
+	if (error != 0)
+		return error;
+
+	/* The job on the session's render context. */
 	error = powervr_render_job_run(owner->render, owner, job);
 	if (error == ETIMEDOUT)
 		build->session->abandoned = true;

@@ -152,6 +152,21 @@ struct load_draw {
 	struct powervr_vk_descriptor_set set;
 };
 
+/*
+ * A render job whose 3D may still run: its memory, the copy of the job
+ * the load draw took and the load draw, when it was kicked (for the
+ * timing) and whether it was small; one of the session's list, oldest
+ * first (powervr_render_jobs_reap).
+ */
+struct powervr_job_done {
+	struct powervr_job_done *next;
+	struct job_memory *memory;
+	struct powervr_render_job *work;
+	struct load_draw *load;
+	uint64_t kicked;
+	int small;
+};
+
 /* The job's memory and programs while it runs. */
 struct job_memory {
 	struct powervr_resource *general;
@@ -266,6 +281,8 @@ powervr_render_job_run(
 	struct powervr_render_job *work;
 	const struct powervr_render_draw *prefix;
 	struct load_draw *load;
+	struct powervr_job_done *done;
+	unsigned long enabled;
 	uint64_t started;
 	uint32_t at;
 	int error;
@@ -424,8 +441,16 @@ powervr_render_job_run(
 	memory->geometry_setup.shared_registers = shared_registers;
 	powervr_geometry_command(&memory->geometry_setup, memory->geometry);
 
-	/* The kicks; the partial render runs the fragment's own command. */
+	/* The record that keeps the job's memory until its 3D finished. */
 	powervr_timing_add(POWERVR_TIMING_JOB_BUILD, started);
+	done = kern_calloc(1, sizeof(*done));
+	if (done == NULL) {
+		job_release(render, session, memory);
+		load_draw_free(work, load);
+		return ENOMEM;
+	}
+
+	/* The kicks; the partial render runs the fragment's own command. */
 	started = powervr_timing_now();
 	mutex_lock(&render->core->lock);
 
@@ -434,33 +459,117 @@ powervr_render_job_run(
 	mutex_unlock(&render->core->lock);
 
 	if (error != 0) {
+		kern_free(done);
 		job_release(render, session, memory);
 		load_draw_free(work, load);
 		return error;
 	}
 
-	/* The wait; the render's end says the TA and 3D stages. */
+	/*
+	 * The job runs on: its memory waits in the session's list until its
+	 * 3D point is reached (powervr_render_jobs_reap), and the session's
+	 * later callbacks and fences complete at that point.
+	 */
 	powervr_timing_add(POWERVR_TIMING_JOB_KICK, started);
-	started = powervr_timing_now();
-	error = powervr_render_finish(render, session, &memory->marks, JOB_WAIT_MS);
-	powervr_timing_add(POWERVR_TIMING_JOB_WAIT, started);
+	done->memory = memory;
+	done->work = work;
+	done->load = load;
+	done->kicked = powervr_timing_now();
+	done->small = job->width * job->height <= JOB_SMALL_PIXELS;
+	enabled = spin_lock_irqsave(&render->queue_lock);
 
-	/* The timing: a small job's wait on its own, to set beside a full frame's. */
-	if (job->width * job->height <= JOB_SMALL_PIXELS)
-		powervr_timing_add(POWERVR_TIMING_WAIT_SMALL, started);
-	if (error != 0) {
-		kern_logf("powervr: render job did not finish (%d); its memory stays with the core\n", error);
-		session->abandoned = 1;
-		load_draw_free(work, load);
-		return error;
+	if (session->jobs_done_tail != NULL) {
+		session->jobs_done_tail->next = done;
+	} else {
+		session->jobs_done = done;
 	}
+	session->jobs_done_tail = done;
 
-	/* Succeeded: the render is done and its memory goes. */
-	started = powervr_timing_now();
-	job_release(render, session, memory);
-	load_draw_free(work, load);
-	powervr_timing_add(POWERVR_TIMING_JOB_RELEASE, started);
+	spin_unlock_irqrestore(&render->queue_lock, enabled);
+
+	powervr_session_point_set(session, POWERVR_POINT_FRAGMENT, memory->marks.fragment_value);
+
+	/* Succeeded: the render was kicked. */
 	return 0;
+}
+
+/*
+ * Releases the memory of a session's render jobs whose 3D points were
+ * reached, oldest first.  With wait 1 each job is waited for, bounded by
+ * POWERVR_PROGRESS_MS; with wait 2 every job is released (the session's
+ * work is over).  Nothing is released of a lost or isolated session, or
+ * on a faulted device, before then: the core may still reach it.
+ */
+void
+powervr_render_jobs_reap(
+	struct powervr_render *render,
+	struct powervr_session *session,
+	int wait)
+{
+	struct powervr_job_done *done;
+	unsigned long enabled;
+	uint64_t started;
+	int reached;
+	int halted;
+	int error;
+
+	/* Oldest first, while there is one to release. */
+	for (;;) {
+		/* The oldest job, and whether its point was reached. */
+		reached = 0;
+		halted = 0;
+		enabled = spin_lock_irqsave(&render->queue_lock);
+
+		done = session->jobs_done;
+		if (done != NULL) {
+			reached = powervr_session_point_reached(session, POWERVR_POINT_FRAGMENT, done->memory->marks.fragment_value);
+			if (render->faulted || session->lost || session->isolated)
+				halted = 1;
+		}
+
+		spin_unlock_irqrestore(&render->queue_lock, enabled);
+
+		/* Nothing more. */
+		if (done == NULL)
+			return;
+
+		/* The core may still reach it, until the session's work is over. */
+		if (halted && wait != 2)
+			return;
+
+		/* Not reached: left for later, or waited for. */
+		if (!reached && wait == 0)
+			return;
+		if (!reached && wait == 1) {
+			error = powervr_session_point_wait(session, POWERVR_POINT_FRAGMENT, done->memory->marks.fragment_value, POWERVR_PROGRESS_MS);
+			if (error != 0)
+				return;
+		}
+
+		/* Takes it off the list. */
+		enabled = spin_lock_irqsave(&render->queue_lock);
+
+		session->jobs_done = done->next;
+		if (session->jobs_done == NULL)
+			session->jobs_done_tail = NULL;
+
+		spin_unlock_irqrestore(&render->queue_lock, enabled);
+
+		/* Its stages and timing (seen at this point, after the 3D finished). */
+		if (!halted) {
+			powervr_render_retired(render, session, &done->memory->marks);
+			powervr_timing_add(POWERVR_TIMING_JOB_WAIT, done->kicked);
+			if (done->small)
+				powervr_timing_add(POWERVR_TIMING_WAIT_SMALL, done->kicked);
+		}
+
+		/* Its memory. */
+		started = powervr_timing_now();
+		job_release(render, session, done->memory);
+		load_draw_free(done->work, done->load);
+		powervr_timing_add(POWERVR_TIMING_JOB_RELEASE, started);
+		kern_free(done);
+	}
 }
 
 /*

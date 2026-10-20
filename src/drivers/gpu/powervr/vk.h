@@ -280,9 +280,14 @@ struct powervr_vk_command_buffer {
 	int error;
 };
 
-/* A VkFence: whether it is signaled. */
+/*
+ * A VkFence: whether it is signaled, and else the completion point of the
+ * submission that will signal it (kind POWERVR_POINT_NONE when none).
+ */
 struct powervr_vk_fence {
 	bool signaled;
+	unsigned kind;
+	uint32_t value;
 };
 
 /* A command's handler: sets *handled when the opcode is its own. */

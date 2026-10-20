@@ -352,6 +352,54 @@ powervr_session_wait(
 	return 0;
 }
 
+/* The host's work finishes at its kick: every point is reached at once. */
+int
+powervr_session_point_reached(
+	const struct powervr_session *session,
+	unsigned kind,
+	uint32_t value)
+{
+	(void)session;
+	(void)kind;
+	(void)value;
+	return 1;
+}
+
+int
+powervr_session_point_wait(
+	const struct powervr_session *session,
+	unsigned kind,
+	uint32_t value,
+	unsigned milliseconds)
+{
+	(void)session;
+	(void)kind;
+	(void)value;
+	(void)milliseconds;
+	return 0;
+}
+
+void
+powervr_session_point_set(
+	struct powervr_session *session,
+	unsigned kind,
+	uint32_t value)
+{
+	session->last_kind = kind;
+	session->last_value = value;
+}
+
+void
+powervr_render_jobs_reap(
+	struct powervr_render *render,
+	struct powervr_session *session,
+	int wait)
+{
+	(void)render;
+	(void)session;
+	(void)wait;
+}
+
 /* Says whether a resource was made shareable. */
 static int
 resource_shareable(

@@ -116,6 +116,7 @@ struct powervr_shared {
  * when it is delivered, or POWERVR_NO_MARKER.
  */
 struct powervr_pending {
+	unsigned kind;
 	uint32_t value;
 	uint64_t submitted;
 	struct drv_gpu_completion *completion;
@@ -125,6 +126,25 @@ struct powervr_pending {
 
 /* No job marker. */
 #define POWERVR_NO_MARKER	0xffffffffU
+
+/*
+ * The timeline a completion point is on: none (already complete), the
+ * session's compute context, or its render context's 3D (fragment).
+ */
+#define POWERVR_POINT_NONE	0U
+#define POWERVR_POINT_COMPUTE	1U
+#define POWERVR_POINT_FRAGMENT	2U
+
+/*
+ * How long a session's oldest pending callback may wait without its
+ * point being reached before the driver reports the session lost
+ * (ETIMEDOUT), well before the core's job deadline; the firmware's own
+ * context reset usually comes first (about 2 s on the board).
+ */
+#define POWERVR_PROGRESS_MS	5000U
+
+/* A render job whose 3D runs, kept until its point is reached (render-job.c). */
+struct powervr_job_done;
 
 /*
  * One job marker of a session: a reservation libvulkan makes before it
@@ -319,6 +339,27 @@ struct powervr_session {
 	uint64_t compute_switch_pds_place;
 	uint64_t compute_switch_usc_place;
 	unsigned abandoned;
+
+	/*
+	 * The last work kicked: its point (kind and value).  Callbacks and
+	 * fences complete at it.  Changed only by the session's own
+	 * submissions.
+	 */
+	unsigned last_kind;
+	uint32_t last_value;
+
+	/*
+	 * The render jobs whose 3D may still run, oldest first, under the
+	 * queue lock; their memory is released once their points are reached.
+	 */
+	struct powervr_job_done *jobs_done;
+	struct powervr_job_done *jobs_done_tail;
+
+	/* Pending callbacks that carry an error (a command may not overtake them), under the queue lock. */
+	unsigned pending_errors;
+
+	/* Set once the progress watchdog reported the session (under the queue lock). */
+	unsigned progress_reported;
 };
 
 /*
@@ -411,7 +452,24 @@ struct powervr_resource *powervr_session_blob(struct powervr_session *session, u
  * value, with an error and the job marker it frees; the caller checked
  * the ring has room.
  */
-void powervr_session_pend(struct powervr_render *render, struct powervr_session *session, uint32_t value, struct drv_gpu_completion *completion, int error, unsigned marker);
+void powervr_session_pend(struct powervr_render *render, struct powervr_session *session, unsigned kind, uint32_t value, struct drv_gpu_completion *completion, int error, unsigned marker);
+
+/* Reports whether a session's completion point was reached. */
+int powervr_session_point_reached(const struct powervr_session *session, unsigned kind, uint32_t value);
+
+/* Waits, bounded, for a session's completion point: 0, or ETIMEDOUT. */
+int powervr_session_point_wait(const struct powervr_session *session, unsigned kind, uint32_t value, unsigned milliseconds);
+
+/* Notes a session's last kicked work. */
+void powervr_session_point_set(struct powervr_session *session, unsigned kind, uint32_t value);
+
+
+/*
+ * Releases the memory of a session's render jobs whose points were
+ * reached (all of them when wait is set, waiting for each), in order
+ * (render-job.c).  Nothing is released of a lost or isolated session.
+ */
+void powervr_render_jobs_reap(struct powervr_render *render, struct powervr_session *session, int wait);
 
 /*
  * Takes one command frame of the Vulkan transport (or an empty marker
@@ -642,6 +700,12 @@ int powervr_session_kick_render(struct powervr_render *render, struct powervr_se
  * ETIMEDOUT when it did not finish.
  */
 int powervr_render_finish(struct powervr_render *render, struct powervr_session *session, const struct powervr_render_marks *marks, unsigned milliseconds);
+
+/*
+ * Says the TA and 3D stages of a render job whose point was reached:
+ * ok, or fail(free list) for the TA when its lists ran out.
+ */
+void powervr_render_retired(struct powervr_render *render, struct powervr_session *session, const struct powervr_render_marks *marks);
 
 /*
  * Runs the driver's own render on the core and reports how it went.

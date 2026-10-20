@@ -66,6 +66,13 @@ void *kern_calloc(size_t count, size_t size) { return calloc(count, size); }
 void kern_free(void *pointer) { free(pointer); }
 void kern_logf(const char *format, ...) { va_list list; va_start(list, format); printf("  log: "); vprintf(format, list); va_end(list); }
 uint64_t powervr_timing_now(void) { return 0; }
+unsigned long spin_lock_irqsave(struct spinlock *lock) { (void)lock; return 0; }
+void spin_unlock_irqrestore(struct spinlock *lock, unsigned long enabled) { (void)lock; (void)enabled; }
+/* The host's render finishes at its kick: every point is reached at once. */
+int powervr_session_point_reached(const struct powervr_session *session, unsigned kind, uint32_t value) { (void)session; (void)kind; (void)value; return 1; }
+int powervr_session_point_wait(const struct powervr_session *session, unsigned kind, uint32_t value, unsigned milliseconds) { (void)session; (void)kind; (void)value; (void)milliseconds; return 0; }
+void powervr_session_point_set(struct powervr_session *session, unsigned kind, uint32_t value) { session->last_kind = kind; session->last_value = value; }
+void powervr_render_retired(struct powervr_render *render, struct powervr_session *session, const struct powervr_render_marks *marks) { (void)render; (void)session; (void)marks; }
 void powervr_timing_add(enum powervr_timing_part part, uint64_t start) { (void)part; (void)start; }
 void powervr_timing_report(void) { }
 void mutex_lock(struct mutex *mutex) { (void)mutex; }
