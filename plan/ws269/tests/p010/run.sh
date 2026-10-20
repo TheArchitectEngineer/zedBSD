@@ -5,7 +5,8 @@
 # render targets' sizes, records and free list frames (render-target-layout.c),
 # (p010n) the kick commands, render context state and reset notices
 # (render-kick-layout.c), and (p010h) the descriptor set bytes and data
-# sequencer programs (descriptor-set.c, data-program.c).
+# sequencer programs (descriptor-set.c, data-program.c), and (p010e) the fixed
+# render programs and words (render-program.c).
 #   plan/ws269/tests/p010/run.sh OUTDIR
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
@@ -31,3 +32,11 @@ cc -std=c11 -O2 -Wall -Wextra -Werror -I"$root/include" -I"$root/src" \
 	"$root/src/drivers/gpu/powervr/descriptor-set.c" "$root/src/drivers/gpu/powervr/data-program.c" \
 	"$root/src/drivers/gpu/powervr/pds-encode.c" "$here/data-host-test.c" -o "$out/data-host-test"
 "$out/data-host-test"
+cc -std=gnu11 -O2 -Wall -Wextra -Werror -I"$root/include" -I"$root/src" \
+	"$root/src/drivers/gpu/powervr/render-program.c" "$root/src/drivers/gpu/powervr/data-program.c" \
+	"$root/src/drivers/gpu/powervr/pds-encode.c" "$root/src/drivers/gpu/powervr/usc-encode.c" \
+	"$root/src/drivers/gpu/powervr/descriptor-set.c" "$root/src/drivers/gpu/powervr/image-state.c" \
+	"$root/src/drivers/gpu/powervr/shader-spirv.c" "$root/src/drivers/gpu/powervr/shader-spirv-interface.c" \
+	"$root/src/drivers/gpu/powervr/shader-spirv-control.c" "$root/src/drivers/gpu/powervr/shader-spirv-instruction.c" \
+	"$root/src/drivers/gpu/powervr/shader-backend.c" "$here/render-host-test.c" -o "$out/render-host-test"
+"$out/render-host-test"
