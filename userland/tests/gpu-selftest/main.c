@@ -22,10 +22,13 @@
  * present-clear each from a run of vkstage with the stage's name
  * (present-clear runs "vkstage present", one cleared frame on the display held
  * three seconds through the WSI readback route,
- * under a limit of 30 seconds).  present runs vkdemo on the display for
- * four seconds, under the same limit; it needs depth, as vkdemo renders
- * with a depth attachment, and is skipped with depth's name until depth
- * passes.
+ * under a limit of 30 seconds).  present first has vkdemo render its
+ * frame at 0 ms offscreen to a PPM file and checks it: the corners the
+ * clear colour 101828 exactly, the centre within 24 a channel of e06895
+ * (the frame llvmpipe renders, plan/ws269/phase010k2); then runs vkdemo
+ * on the display for four seconds, all under the same limit.  It needs
+ * depth, as vkdemo renders with a depth attachment, and is skipped with
+ * depth's name until depth passes.
  *
  * Options (the host test uses them in place of the board's):
  *   -c          also write each line to /dev/console
@@ -35,6 +38,7 @@
  *   -i PATH     the vkimage program
  *   -g PATH     the vkstage program
  *   -d PATH     the vkdemo program
+ *   -f PATH     where vkdemo writes its offscreen frame
  *   -t SECONDS  the time limit of each stage (default 10; present-clear 3 times it)
  *
  * The exit status is 0 when no stage failed.
@@ -79,6 +83,7 @@ struct selftest {
 	const char *vkimage;
 	const char *vkstage;
 	const char *vkdemo;
+	const char *frame;
 	const char *argument;
 	int limit;
 	int counts[3];
@@ -107,6 +112,8 @@ static int stage_image(struct selftest *test, char *reason, size_t capacity);
 static int stage_vkstage(struct selftest *test, char *reason, size_t capacity);
 static int stage_vkdemo(struct selftest *test, char *reason, size_t capacity);
 static int run_program(const char *path, const char *argument, char *line, size_t capacity);
+static int run_program_list(const char *path, char *const *arguments, char *line, size_t capacity);
+static int frame_check(const char *path, char *reason, size_t capacity);
 static int is_vkcompute_stage(const char *name);
 static void vkcompute_outcomes(int status, const char *line, enum outcome *results, char reasons[3][SELFTEST_TEXT_MAX]);
 
@@ -420,17 +427,41 @@ stage_vkstage(
 	return 1;
 }
 
-/* Runs vkdemo on the display with the stage's argument; fails with its line or status. */
+/*
+ * Runs vkdemo offscreen at 0 ms, checks the frame it wrote, then runs it
+ * on the display with the stage's argument; fails with the first line
+ * that went wrong.
+ */
 static int
 stage_vkdemo(
 	struct selftest *test,
 	char *reason,
 	size_t capacity)
 {
+	char output[SELFTEST_TEXT_MAX];
 	char line[SELFTEST_TEXT_MAX];
+	char *arguments[6];
 	int status;
 
-	/* One run of vkdemo. */
+	/* The offscreen frame at 0 ms, written to the frame file. */
+	snprintf(output, sizeof(output), "--output=%s", test->frame);
+	arguments[0] = (char *)test->vkdemo;
+	arguments[1] = "--offscreen";
+	arguments[2] = "--time-ms=0";
+	arguments[3] = "--hold=0";
+	arguments[4] = output;
+	arguments[5] = NULL;
+	status = run_program_list(test->vkdemo, arguments, line, sizeof(line));
+	if (status != 0) {
+		snprintf(reason, capacity, "offscreen: %s", line[0] != '\0' ? line : "no output");
+		return 1;
+	}
+
+	/* The frame's pixels. */
+	if (frame_check(test->frame, reason, capacity) != 0)
+		return 1;
+
+	/* Then the display. */
 	status = run_program(test->vkdemo, test->argument, line, sizeof(line));
 	if (status == 0)
 		return 0;
@@ -444,10 +475,64 @@ stage_vkdemo(
 }
 
 /*
- * Runs a program, with one argument when argument is not NULL, with its
- * first output line in line; reports its exit status (128 when it did not
- * exit, 127 when it could not run).
+ * Checks vkdemo's 320x240 PPM frame at 0 ms: two corners exactly the
+ * clear colour 101828, the centre within 24 a channel of e06895.
  */
+static int
+frame_check(
+	const char *path,
+	char *reason,
+	size_t capacity)
+{
+	static const int points[3][2] = { { 5, 5 }, { 314, 234 }, { 160, 120 } };
+	static const unsigned char want[3][3] = { { 0x10, 0x18, 0x28 }, { 0x10, 0x18, 0x28 }, { 0xe0, 0x68, 0x95 } };
+	static const int slack[3] = { 0, 0, 24 };
+	unsigned char pixel[3];
+	unsigned width;
+	unsigned height;
+	unsigned maximum;
+	long start;
+	FILE *file;
+	int index;
+	int channel;
+	int difference;
+
+	/* The header. */
+	file = fopen(path, "rb");
+	if (file == NULL) {
+		snprintf(reason, capacity, "no frame %s", path);
+		return 1;
+	}
+	if (fscanf(file, "P6 %u %u %u", &width, &height, &maximum) != 3 || width != 320U || height != 240U || maximum != 255U || fgetc(file) == EOF) {
+		fclose(file);
+		snprintf(reason, capacity, "frame not a 320x240 PPM");
+		return 1;
+	}
+	start = ftell(file);
+
+	/* Each point. */
+	for (index = 0; index < 3; index++) {
+		if (fseek(file, start + ((long)points[index][1] * 320L + points[index][0]) * 3L, SEEK_SET) != 0 || fread(pixel, 1, 3, file) != 3) {
+			fclose(file);
+			snprintf(reason, capacity, "frame short");
+			return 1;
+		}
+		for (channel = 0; channel < 3; channel++) {
+			difference = (int)pixel[channel] - (int)want[index][channel];
+			if (difference > slack[index] || difference < -slack[index]) {
+				fclose(file);
+				snprintf(reason, capacity, "pixel (%d,%d) %02x%02x%02x, want %02x%02x%02x", points[index][0], points[index][1], pixel[0], pixel[1], pixel[2], want[index][0], want[index][1], want[index][2]);
+				return 1;
+			}
+		}
+	}
+
+	/* Succeeded: the frame is as expected. */
+	fclose(file);
+	return 0;
+}
+
+/* Runs a program with one argument when argument is not NULL; see run_program_list(). */
 static int
 run_program(
 	const char *path,
@@ -455,6 +540,28 @@ run_program(
 	char *line,
 	size_t capacity)
 {
+	char *arguments[3];
+
+	/* The program's name, its argument, the end. */
+	arguments[0] = (char *)path;
+	arguments[1] = (char *)argument;
+	arguments[2] = NULL;
+	return run_program_list(path, arguments, line, capacity);
+}
+
+/*
+ * Runs a program with a list of arguments (its name first, NULL last),
+ * with its first output line in line; reports its exit status (128 when
+ * it did not exit, 127 when it could not run).
+ */
+static int
+run_program_list(
+	const char *path,
+	char *const *arguments,
+	char *line,
+	size_t capacity)
+{
+	char drain[256];
 	size_t length;
 	pid_t child;
 	int pipes[2];
@@ -475,21 +582,24 @@ run_program(
 	if (child == 0) {
 		close(pipes[0]);
 		dup2(pipes[1], STDOUT_FILENO);
-		execl(path, path, argument, (char *)NULL);
+		execv(path, arguments);
 		printf("%s: not run (exec %d)\n", path, errno);
 		fflush(stdout);
 		_exit(127);
 	}
 
-	/* Reads what it printed, then its status. */
+	/* Reads what it printed, keeping the start and draining the rest so it never writes to a closed pipe, then its status. */
 	close(pipes[1]);
 	length = 0;
 	for (;;) {
-		got = read(pipes[0], line + length, capacity - 1U - length);
+		if (length < capacity - 1U) {
+			got = read(pipes[0], line + length, capacity - 1U - length);
+			if (got > 0)
+				length += (size_t)got;
+		} else {
+			got = read(pipes[0], drain, sizeof(drain));
+		}
 		if (got <= 0)
-			break;
-		length += (size_t)got;
-		if (length == capacity - 1U)
 			break;
 	}
 	line[length] = '\0';
@@ -585,8 +695,9 @@ main(
 	test.vkimage = "/bin/vkimage";
 	test.vkstage = "/bin/vkstage";
 	test.vkdemo = "/bin/vkdemo";
+	test.frame = "/tmp/gpu-selftest-vkdemo.ppm";
 	test.limit = 10;
-	while ((option = getopt(argc, argv, "cs:n:v:i:g:d:t:")) != -1) {
+	while ((option = getopt(argc, argv, "cs:n:v:i:g:d:f:t:")) != -1) {
 		if (option == 'c') {
 			test.console = 1;
 		} else if (option == 's') {
@@ -601,10 +712,12 @@ main(
 			test.vkstage = optarg;
 		} else if (option == 'd') {
 			test.vkdemo = optarg;
+		} else if (option == 'f') {
+			test.frame = optarg;
 		} else if (option == 't') {
 			test.limit = atoi(optarg);
 		} else {
-			fprintf(stderr, "usage: gpu-selftest [-c] [-s file] [-n node]... [-v vkcompute] [-i vkimage] [-g vkstage] [-d vkdemo] [-t seconds]\n");
+			fprintf(stderr, "usage: gpu-selftest [-c] [-s file] [-n node]... [-v vkcompute] [-i vkimage] [-g vkstage] [-d vkdemo] [-f frame] [-t seconds]\n");
 			return 2;
 		}
 	}
