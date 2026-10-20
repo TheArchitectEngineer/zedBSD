@@ -130,7 +130,8 @@ test_regs(void)
 	/*
 	 * Copies of 64- and 128-bit texels (R16G16B16A16_SFLOAT 97 and
 	 * R32G32B32A32_SFLOAT 109): the raw pack modes U32U32 0x28 and
-	 * U32U32U32U32 0x0b at state word 1 bit 7, not normalised; the
+	 * U32U32U32U32 0x0b at state word 1 bit 7, not normalised, the source
+ * 8_PER_CHANNEL (bit 19, the words whole: q1520 board 101); the
 	 * 128-bit pixel four output registers wide (USC_PIXEL_OUTPUT_CTRL
 	 * width 1, five partitions of 1024 words, still four tiles).
 	 */
@@ -138,14 +139,14 @@ test_regs(void)
 	job.destination.format = powervr_format_find(97);
 	job.destination.row_pitch = 64 * 8;
 	ok = powervr_transfer_regs_build(&job, &regs, state) == 0;
-	ok = ok && regs.usc_pixel_output_ctrl == 0x1ff9U && regs.isp_ctl == 0x23000U;
-	ok = ok && ((state[1] >> 7) & 0x3fU) == 0x28U && (state[1] & (1U << 13)) == 0 && ((state[1] >> 19) & 1U) == 0;
+	ok = ok && regs.usc_pixel_output_ctrl == 0x1ff8U && regs.isp_ctl == 0x23000U;
+	ok = ok && ((state[1] >> 7) & 0x3fU) == 0x28U && (state[1] & (1U << 13)) == 0 && ((state[1] >> 19) & 1U) == 1;
 	check(ok, "copy registers of 64-bit texels");
 	job.destination.format = powervr_format_find(109);
 	job.destination.row_pitch = 64 * 16;
 	ok = powervr_transfer_regs_build(&job, &regs, state) == 0;
-	ok = ok && regs.usc_pixel_output_ctrl == 0x1ffaU && regs.isp_ctl == 0x21000U;
-	ok = ok && ((state[1] >> 7) & 0x3fU) == 0x0bU && (state[1] & (1U << 13)) == 0;
+	ok = ok && regs.usc_pixel_output_ctrl == 0x1ff9U && regs.isp_ctl == 0x23000U;
+	ok = ok && ((state[1] >> 7) & 0x3fU) == 0x0bU && (state[1] & (1U << 13)) == 0 && ((state[1] >> 19) & 1U) == 1;
 	check(ok, "copy registers of 128-bit texels");
 }
 

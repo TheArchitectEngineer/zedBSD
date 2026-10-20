@@ -122,3 +122,13 @@ sRGB・R8・R8G8・R16 の image は使われていない。このため R32_SFL
 - board の判定:
   - copy-*・clear-* が PASS → この幅で確定する。
   - 変わらない → 幅以外（PBE の emit・firmware の TQ の扱い）を調べる。
+
+### board 101 と修正（2026-10-21）
+
+- board 101 では、幅を倍にしても 64-bit は w0 w0 のままだった。128-bit は w2 w3 w2 w3 に変わった。幅の不足が原因ではない。
+- 原因: Mesa の `pvr_arch_pbe_get_src_format_and_gamma` は、32-bit の channel を持つ format と整数の format に
+  SOURCE_FORMAT 8_PER_CHANNEL（word をそのまま取る）を付ける。私たちは raw の R32G32/R32G32B32A32 に F16_PER_CHANNEL を付けていた。
+  PBE が source を半分の幅の lane として読み、前半を繰り返していた。
+- 修正: `pbe_source`（render-program.c）は、8/16 byte の texel のうち R16G16B16A16_SFLOAT 以外に 8_PER_CHANNEL を付ける。
+  幅の試み（8REGISTERS）と逆順の診断は外した（幅は 64-bit 2、128-bit 4 に戻した）。
+- 確認: p010 の host 試験は全部 0 failed（transfer-host-test は bit 19 = 1 を確かめる）。VF2 の vmunix と bin/vkmatrix は rc 0、warning 0。board は未実施。

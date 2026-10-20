@@ -145,7 +145,6 @@ static const struct powervr_format raw_128 = {
 #define ISP_PIPE_SHIFT		12U
 #define PIXEL_PARTITION_SHIFT	3U
 #define PIXEL_WIDTH_4_REGISTERS	1U
-#define PIXEL_WIDTH_8_REGISTERS	2U
 #define TILE_FIELD_MAX		0x3ffU
 #define SCREEN_FIELD_MAX	0x7fffU
 #define PBE_NORMALISED		(1U << 13)
@@ -773,16 +772,8 @@ powervr_transfer_regs_build(
 	regs->isp_render_origin = (origin_x << 16) | origin_y;
 
 	/* The tiles in flight and the pixel output's partitions, for the destination's registers a pixel (four for 128-bit texels). */
-	/*
-	 * q1520 experiment: board 100 showed the pixel back end reading half
-	 * the words it was given (pixout0 again for a 64-bit texel, pixout0
-	 * and 1 again for a 128-bit one), so a wide texel asks for twice the
-	 * registers it writes.
-	 */
 	registers = MIN_OUTPUT_REGISTERS;
 	if (destination.format != NULL && destination.format->texel_bytes > 8)
-		registers = 8;
-	else if (destination.format != NULL && destination.format->texel_bytes > 4)
 		registers = 4;
 	tiles_in_flight(registers, &regs->isp_ctl, &regs->usc_pixel_output_ctrl);
 	regs->isp_ctl |= ISP_PROCESS_EMPTY;
@@ -958,6 +949,4 @@ tiles_in_flight(
 	*pixel_output_ctrl = ((1U << MAX_PARTITIONS) - 1U) << PIXEL_PARTITION_SHIFT;
 	if (registers == 4)
 		*pixel_output_ctrl |= PIXEL_WIDTH_4_REGISTERS;
-	else if (registers == 8)
-		*pixel_output_ctrl |= PIXEL_WIDTH_8_REGISTERS;
 }
