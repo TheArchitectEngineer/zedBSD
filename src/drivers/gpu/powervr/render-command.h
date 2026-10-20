@@ -90,6 +90,25 @@
 #define POWERVR_GEOMETRY_TE_PSG			(16U + 32U)
 #define POWERVR_GEOMETRY_RESUME_SIZE		(16U + 40U)
 #define POWERVR_GEOMETRY_FLAGS			80U
+
+/*
+ * The texture unit's border colour table in the geometry and fragment
+ * registers, and the table's size: an entry per border colour index, each
+ * a 16-byte value per texture format, float and integer.
+ *
+ * Values referenced:
+ * Linux v7.3 drivers/gpu/drm/imagination/pvr_rogue_fwif_client_check.h
+ * (struct rogue_fwif_geom_regs: tpu_border_colour_table 8; struct
+ * rogue_fwif_frag_regs: tpu_border_colour_table 344); Mesa 25.0.7
+ * src/imagination/csbgen/rogue_cr.xml (TPU_BORDER_COLOUR_TABLE_VDM and
+ * _PDM: address bits 2 to 39), rogue_texstate.xml (bordercolor_index
+ * bits 50 to 55, texformat bits 27 to 33) and vulkan/pvr_border.c
+ * (struct pvr_border_color_table_entry: PVR_TEX_FORMAT_COUNT x 2 values
+ * of 16 bytes; the table in the general heap).
+ */
+#define POWERVR_GEOMETRY_BORDER_TABLE		(16U + 8U)
+#define POWERVR_FRAGMENT_BORDER_TABLE		(16U + 344U)
+#define POWERVR_BORDER_TABLE_BYTES		(64U * 128U * 2U * 16U)
 #define POWERVR_GEOMETRY_FIRST_AND_LAST		0x3U
 
 /*
@@ -119,6 +138,7 @@ void powervr_render_command_single_core(int on);
  * background depth and layer stride.
  */
 struct powervr_fragment_setup {
+	uint64_t border_table;
 	uint32_t tiles_x;
 	uint32_t tiles_y;
 	uint64_t background[POWERVR_BACKGROUND_WORDS];
@@ -141,6 +161,7 @@ struct powervr_fragment_setup {
  */
 struct powervr_geometry_setup {
 	uint64_t stream;
+	uint64_t border_table;
 	uint64_t region_header_bytes;
 	uint32_t shared_registers;
 };

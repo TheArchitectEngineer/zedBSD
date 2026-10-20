@@ -416,6 +416,8 @@ check_programs(
 	layout = powervr_target_layout_of(check->target);
 	check->fragment_setup.tiles_x = layout->tiles_x;
 	check->fragment_setup.tiles_y = layout->tiles_y;
+	check->fragment_setup.border_table = powervr_session_border_table(check->session);
+	check->geometry_setup.border_table = check->fragment_setup.border_table;
 	kern_memset(check->fragment, 0, sizeof(check->fragment));
 	powervr_fragment_command(&check->fragment_setup, check->fragment);
 	check->geometry_setup.stream = general + GENERAL_STREAM;

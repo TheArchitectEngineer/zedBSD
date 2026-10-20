@@ -113,6 +113,13 @@ powervr_resource_make(struct powervr_session *session, struct powervr_buffer *bu
 
 void powervr_resource_unmake(struct powervr_session *session, struct powervr_resource *resource) { (void)session; (void)resource; }
 
+uint64_t
+powervr_session_border_table(const struct powervr_session *session)
+{
+	(void)session;
+	return 0;
+}
+
 int
 powervr_session_program_map(struct powervr_session *session, enum powervr_program_heap heap, struct powervr_buffer *buffer, uint64_t *address)
 {
