@@ -325,13 +325,13 @@
  * drivers/gpu/drm/imagination/pvr_rogue_fwif.h
  * (ROGUE_FWIF_FWCCB_CMD_CONTEXT_RESET_NOTIFICATION 105,
  * ROGUE_FWIF_FWCCB_CMD_REQUEST_GPU_RESTART 109,
- * ROGUE_FWIF_FWCCB_CMD_CONTEXT_FW_PF_NOTIFICATION 112, each with the
- * magic); pvr_rogue_fwif_check.h (struct
+ * ROGUE_FWIF_FWCCB_CMD_CONTEXT_FW_PF_NOTIFICATION 112, a page fault of
+ * the firmware's own, each with the magic); pvr_rogue_fwif_check.h (struct
  * rogue_fwif_fwccb_cmd_context_reset_data: the context's identity 0).
  */
 #define POWERVR_NOTICE_CONTEXT_RESET	(POWERVR_COMMAND_MAGIC | 105U)
 #define POWERVR_NOTICE_RESTART		(POWERVR_COMMAND_MAGIC | 109U)
-#define POWERVR_NOTICE_PAGE_FAULT	(POWERVR_COMMAND_MAGIC | 112U)
+#define POWERVR_NOTICE_FIRMWARE_FAULT	(POWERVR_COMMAND_MAGIC | 112U)
 #define POWERVR_NOTICE_CONTEXT_ID	0U
 
 /*

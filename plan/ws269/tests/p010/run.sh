@@ -3,8 +3,9 @@
 # text (stage.c), gpu-selftest's run of its stages against stand-in programs,
 # the image formats, layouts and state words (image-state.c), (p010d) the
 # render targets' sizes, records and free list frames (render-target-layout.c),
-# and (p010h) the descriptor set bytes and data sequencer programs
-# (descriptor-set.c, data-program.c).
+# (p010n) the kick commands, render context state and reset notices
+# (render-kick-layout.c), and (p010h) the descriptor set bytes and data
+# sequencer programs (descriptor-set.c, data-program.c).
 #   plan/ws269/tests/p010/run.sh OUTDIR
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
@@ -21,6 +22,10 @@ cc -std=c11 -O2 -Wall -Wextra -Werror -I"$root/include" -I"$root/src" \
 cc -std=c11 -O2 -Wall -Wextra -Werror -I"$root/include" -I"$root/src" \
 	"$root/src/drivers/gpu/powervr/render-target-layout.c" "$here/target-host-test.c" -o "$out/target-host-test"
 "$out/target-host-test"
+cc -std=c11 -O2 -Wall -Wextra -Werror -I"$root/include" -I"$root/src" \
+	"$root/src/drivers/gpu/powervr/render-kick-layout.c" "$root/src/drivers/gpu/powervr/stage.c" \
+	"$here/kick-host-test.c" -o "$out/kick-host-test"
+"$out/kick-host-test"
 sh "$here/selftest-host.sh" "$out"
 cc -std=c11 -O2 -Wall -Wextra -Werror -I"$root/include" -I"$root/src" \
 	"$root/src/drivers/gpu/powervr/descriptor-set.c" "$root/src/drivers/gpu/powervr/data-program.c" \

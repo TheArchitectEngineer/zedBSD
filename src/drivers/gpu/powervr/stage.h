@@ -48,11 +48,15 @@ enum powervr_stage_reason {
 	POWERVR_REASON_IMPORT,
 	POWERVR_REASON_STRIDE,
 	POWERVR_REASON_CLAIM,
+	POWERVR_REASON_RESET,
 	POWERVR_REASON_COUNT
 };
 
 /* The failures of one stage printed before the rest are only counted. */
 #define POWERVR_STAGE_FAILS_SHOWN	3U
+
+/* No value with a failure. */
+#define POWERVR_STAGE_NO_VALUE		UINT64_MAX
 
 /* The most bytes of one stage line, its NUL included. */
 #define POWERVR_STAGE_LINE_MAX		64U
@@ -82,6 +86,21 @@ powervr_stage_note_fail(
 	struct powervr_stage_record *record,
 	enum powervr_stage stage,
 	enum powervr_stage_reason reason,
+	char *line,
+	size_t capacity);
+
+/*
+ * Like powervr_stage_note_fail(), with the value the reason carries: the
+ * faulting device address for POWERVR_REASON_FAULT ("fault 0x..."), the
+ * firmware's reset reason for POWERVR_REASON_RESET ("reset lockup").  Other
+ * reasons ignore it.
+ */
+bool
+powervr_stage_note_fail_value(
+	struct powervr_stage_record *record,
+	enum powervr_stage stage,
+	enum powervr_stage_reason reason,
+	uint64_t value,
 	char *line,
 	size_t capacity);
 

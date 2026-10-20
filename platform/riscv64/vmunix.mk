@@ -112,6 +112,7 @@ RISCV64_PLATFORM_SOURCES_visionfive2 += src/drivers/platform/visionfive2/vf2-pmu
 	src/drivers/gpu/powervr/gpu-mmu.c \
 	src/drivers/gpu/powervr/render.c \
 	src/drivers/gpu/powervr/render-queue.c \
+	src/drivers/gpu/powervr/render-kick-layout.c \
 	src/drivers/gpu/powervr/render-target-layout.c \
 	src/drivers/gpu/powervr/render-target.c \
 	src/drivers/gpu/powervr/usc-encode.c \
