@@ -133,6 +133,7 @@ static struct render_check check_state;
 static int check_prepare(struct render_check *check, const char **step);
 static int check_programs(struct render_check *check, const char **step);
 static int check_triangle(struct render_check *check, uint32_t pds_base, uint32_t usc_base);
+static int check_empty(struct render_check *check);
 static int check_kick(struct render_check *check);
 static int check_read(struct render_check *check);
 static void check_release(struct render_check *check);
@@ -172,8 +173,12 @@ powervr_render_check(
 	}
 	kern_logf("powervr: render check: prepared (64x64 R8G8B8A8, clear and one triangle)\n");
 
+	/* A render of an empty stream first: whether the geometry master resets on its end alone. */
+	error = check_empty(check);
+
 	/* The kick and the wait for the fragment, then the read back; each says its own line. */
-	error = check_kick(check);
+	if (error == 0)
+		error = check_kick(check);
 	if (error == 0)
 		(void)check_read(check);
 
@@ -466,6 +471,55 @@ check_triangle(
 }
 
 /*
+ * Renders once with a vertex control stream of its end alone, the
+ * triangle's stream put back after: says whether the geometry master
+ * finished it and whether the firmware reset the context, with the
+ * firmware's dump when it did.  EIO when the context was reset, so the
+ * triangle is not kicked behind it.
+ */
+static int
+check_empty(
+	struct render_check *check)
+{
+	uint32_t saved[POWERVR_RENDER_VDM_WORDS];
+	uint32_t end;
+	unsigned index;
+	int error;
+
+	/* The stream's end in place of the triangle's stream. */
+	for (index = 0; index < POWERVR_RENDER_VDM_WORDS; index++)
+		saved[index] = get_word(check->general->buffer, GENERAL_STREAM + index * 4U);
+	end = POWERVR_VDM_TERMINATE;
+	put_words(check->general->buffer, GENERAL_STREAM, &end, 1);
+
+	/* The kick and the wait, as the triangle's. */
+	powervr_firmware_trace_mark(check->render->core);
+	mutex_lock(&check->render->core->lock);
+
+	error = powervr_session_kick_render(check->render, check->session, check->target, 0, check->geometry, check->fragment, check->fragment, NULL, 0, &check->marks);
+
+	mutex_unlock(&check->render->core->lock);
+
+	if (error == 0)
+		error = powervr_render_finish(check->render, check->session, &check->marks, CHECK_WAIT_MS);
+	kern_logf("powervr: render check: empty stream: %s (%d), context %s\n", error == 0 ? "finished" : "FAILED", error,
+		  check->session->lost ? "reset" : "kept");
+
+	/* The triangle's stream back. */
+	put_words(check->general->buffer, GENERAL_STREAM, saved, POWERVR_RENDER_VDM_WORDS);
+
+	/* A reset or a failure: the dump, and no triangle behind it. */
+	if (error == 0 && check->session->lost)
+		error = EIO;
+	if (error != 0) {
+		powervr_firmware_dump(check->render->core, POWERVR_KERNEL_CCB_SLOTS);
+		if (error == ETIMEDOUT)
+			check->session->abandoned = 1;
+	}
+	return error;
+}
+
+/*
  * Kicks the render and waits for its fragment, saying each step: the
  * kick with its timeline values, then the timelines the wait read.
  */
@@ -480,6 +534,7 @@ check_kick(
 
 	/* The kicks, under the core's lock; the partial render runs the fragment's own command. */
 	context = check->context;
+	powervr_firmware_trace_mark(check->render->core);
 	mutex_lock(&check->render->core->lock);
 
 	error = powervr_session_kick_render(check->render, check->session, check->target, 0, check->geometry, check->fragment, check->fragment, NULL, 0, &check->marks);
@@ -502,7 +557,10 @@ check_kick(
 		check->session->abandoned = 1;
 		return error;
 	}
-	kern_logf("powervr: render check: fence reached (geometry %u, fragment %u)\n", geometry_now, fragment_now);
+	kern_logf("powervr: render check: fence reached (geometry %u, fragment %u), context %s\n", geometry_now, fragment_now,
+		  check->session->lost ? "reset" : "kept");
+	if (check->session->lost)
+		powervr_firmware_dump(check->render->core, POWERVR_KERNEL_CCB_SLOTS);
 
 	/* Succeeded: the render finished. */
 	return 0;

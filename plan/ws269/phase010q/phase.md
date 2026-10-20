@@ -674,3 +674,19 @@ mainline で FW が host の割り込みを上げる道: host は `ROGUE_CR_MIPS
   - `pvr_power.c`: TH1520 は pwrseq（SoC 固有の電源の順の driver）を使う。JH7110 は manual の道（clock・reset）に当たる。
   - `pvr_fw_mips.c`: ELF の処理の共通化と、IRQ の enable の register（MIPS_WRAPPER_IRQ_ENABLE）の扱いの整理だけ。中身の変化は無い。
 - source の変更は無し（直す違いを見つけられなかった）。repo の中身（JH7110 の SoC の統合の直し）が分かれば、それを照らすのが次。
+
+## q1427-i01（P1、2026-10-20）: geometry（dm 2）の reset lockup の切り分け
+
+Q1 の直し（main d851a8783・1512e79cd）の後の板（vf2-dmesg25）:
+- compute の probe と transfer（clear・copy）は通った。
+- render check は、geometry の kick の後に context reset（context 0x4、reason 1、dm 2）、`ta: fail(reset lockup)` の後に `ta: ok`・`3d: ok`。fence には達するが、colour は 0。job check も同じ。
+
+直し（診断、`render-check.c`）:
+- 三角形の render の前に、VDM の stream を end（`POWERVR_VDM_TERMINATE`）だけにした render を 1 回流す（`check_empty`）。行 `render check: empty stream: finished/FAILED (e), context kept/reset` を出す。reset か失敗なら FW の dump（kick の直前の印からの trace の全部）を出し、三角形は流さない。
+- 三角形の kick の直前にも trace の印を付ける。fence に達しても context が reset されていれば dump を出す。行は `fence reached (…), context kept/reset`。
+- 読み方:
+  - 空の stream でも reset するなら、geometry の command・HWRT・free list・context の record・SR/PT の program の側。
+  - 空は通って三角形で reset するなら、VDM の stream・PPP・vertex の program の側。
+  - trace は CSW・BIF・HWR の group を含む（log type 0x4637）。
+
+確かめ: 試験の image の config の vmunix は rc 0、warning 0。実機は未。
