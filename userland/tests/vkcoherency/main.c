@@ -6,7 +6,7 @@
  */
 
 /*
- * vkcoherency: the CPU and GPU cache coherency stress (ws269-p008).  On
+ * vkcoherency: the CPU and GPU cache coherency stress.  On
  * the first physical device it runs, for every host-visible memory type
  * the buffers accept:
  *

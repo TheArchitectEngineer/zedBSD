@@ -1225,8 +1225,15 @@ resource_make(
 	int shareable,
 	struct powervr_resource **result)
 {
-	/* No flag beyond what host access asks for. */
-	return resource_make_flags(session, buffer, mappable, shareable, 0, result);
+	int error;
+
+	/* Maps it with no flag beyond what host access asks for. */
+	error = resource_make_flags(session, buffer, mappable, shareable, 0, result);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the handle is in result. */
+	return 0;
 }
 
 /*
@@ -1249,7 +1256,15 @@ powervr_resource_make_free_list(
 	struct powervr_buffer *buffer,
 	struct powervr_resource **result)
 {
-	return resource_make_flags(session, buffer, 0, 0, POWERVR_GPU_MAP_SLC_BYPASS | POWERVR_GPU_MAP_PM_PROTECT, result);
+	int error;
+
+	/* Maps it protected and around the system level cache, with no processor mapping. */
+	error = resource_make_flags(session, buffer, 0, 0, POWERVR_GPU_MAP_SLC_BYPASS | POWERVR_GPU_MAP_PM_PROTECT, result);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the free list's handle is in result. */
+	return 0;
 }
 
 /* Makes a session's handle on a render target's region headers, in their own window. */
@@ -1259,7 +1274,15 @@ powervr_resource_make_region_headers(
 	struct powervr_buffer *buffer,
 	struct powervr_resource **result)
 {
-	return resource_make_flags(session, buffer, 1, 0, RESOURCE_REGION_HEADERS, result);
+	int error;
+
+	/* Maps it in the region header window. */
+	error = resource_make_flags(session, buffer, 1, 0, RESOURCE_REGION_HEADERS, result);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the region headers' handle is in result. */
+	return 0;
 }
 
 /*
@@ -1304,7 +1327,9 @@ resource_make_flags(
 	/* Takes a device address and maps the run there, then has the core drop stale table entries. */
 	mutex_lock(&render->core->lock);
 
-	resource->space = (extra & RESOURCE_REGION_HEADERS) != 0U ? &session->region_space : &session->space;
+	resource->space = &session->space;
+	if ((extra & RESOURCE_REGION_HEADERS) != 0U)
+		resource->space = &session->region_space;
 	error = powervr_gpu_space_take(resource->space, buffer->run.size, &resource->address);
 	if (error == 0) {
 		error = powervr_gpu_mmu_map(&session->mmu, resource->address, buffer->run.paddr, buffer->run.size, flags);
@@ -1338,6 +1363,7 @@ resource_unmake(
 	struct powervr_session *session,
 	struct powervr_resource *resource)
 {
+	struct powervr_gpu_space *space;
 	struct powervr_render *render;
 	struct powervr_resource **link;
 	unsigned long enabled;
@@ -1368,7 +1394,11 @@ resource_unmake(
 		mutex_lock(&render->core->lock);
 
 		powervr_gpu_mmu_unmap(&session->mmu, resource->address, resource->buffer->run.size);
-		(void)powervr_gpu_space_give(resource->space != NULL ? resource->space : &session->space, resource->address);
+		/* The window it was taken from; one made before windows were recorded is in the general one. */
+		space = resource->space;
+		if (space == NULL)
+			space = &session->space;
+		(void)powervr_gpu_space_give(space, resource->address);
 		(void)powervr_command_mmu_flush(render->core);
 
 		mutex_unlock(&render->core->lock);

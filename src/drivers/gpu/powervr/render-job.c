@@ -200,6 +200,13 @@ static int job_programs(const struct powervr_render_job *job, struct job_memory 
 #define LOAD_PROBE_WRITTEN		4
 #define LOAD_PROBE_BLIT			5
 
+/* The load program's form: the probe's own up to SPACED, the usual one for the later probes. */
+#if POWERVR_RENDER_LOAD_PROBE <= POWERVR_LOAD_PROBE_SPACED
+#define LOAD_USC_PROBE_FORM		POWERVR_RENDER_LOAD_PROBE
+#else
+#define LOAD_USC_PROBE_FORM		POWERVR_LOAD_PROBE_USUAL
+#endif
+
 /* Reads a little-endian 32-bit word. */
 static uint32_t
 get_le32(
@@ -252,6 +259,7 @@ powervr_render_job_run(
 	uint32_t terminate_state[POWERVR_RENDER_TERMINATE_STATE_WORDS];
 	const struct powervr_render_job *given;
 	struct powervr_render_job *work;
+	const struct powervr_render_draw *prefix;
 	struct load_draw *load;
 	int error;
 
@@ -326,7 +334,11 @@ powervr_render_job_run(
 	stream_words = 0;
 	vertex_shareds = 0;
 	if (job->draw_count != 0 || load != NULL) {
-		error = job_draws(render, session, job, load != NULL ? &load->draw : NULL, memory, &stream_words, &vertex_shareds);
+		/* The load draw, when there is one, goes before the job's own. */
+		prefix = NULL;
+		if (load != NULL)
+			prefix = &load->draw;
+		error = job_draws(render, session, job, prefix, memory, &stream_words, &vertex_shareds);
 		if (error != 0) {
 			job_release(render, session, memory);
 			load_draw_free(work, load);
@@ -667,7 +679,7 @@ job_check(
 	if (job->color_count != 1 || job->draw_count > POWERVR_RENDER_DRAWS)
 		return ENOTSUP;
 
-	/* A colour of one 32-bit word a pixel, or of four half floats in two (the compiler packs them, ws269-p010p). */
+	/* A colour of one 32-bit word a pixel, or of four half floats in two (the compiler packs them). */
 	color = &job->colors[0];
 	if (color->surface.format == NULL)
 		return ENOTSUP;
@@ -823,7 +835,7 @@ job_background(
 		*shared_registers = POWERVR_TRANSFER_SHARED_WORDS;
 	} else if (color->load_op == LOAD_OP_LOAD && POWERVR_RENDER_LOAD_PROBE != LOAD_PROBE_CONSTANT) {
 		/* The attachment's image and sampler words, and the program that samples it. */
-		error = powervr_render_load_usc_probe(color->surface.format, POWERVR_RENDER_LOAD_PROBE <= POWERVR_LOAD_PROBE_SPACED ? POWERVR_RENDER_LOAD_PROBE : POWERVR_LOAD_PROBE_USUAL, &memory->program);
+		error = powervr_render_load_usc_probe(color->surface.format, LOAD_USC_PROBE_FORM, &memory->program);
 		if (error != 0)
 			return error;
 
@@ -946,7 +958,9 @@ job_draws(
 	int error;
 
 	/* The job's draws after the prefix draw, when there is one. */
-	draw_count = job->draw_count + (prefix != NULL ? 1U : 0U);
+	draw_count = job->draw_count;
+	if (prefix != NULL)
+		draw_count++;
 
 	/* What the draws take: their shaders' code and their sets' copies, each on 16 bytes. */
 	sets_bytes = 0;

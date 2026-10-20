@@ -192,7 +192,12 @@ powervr_compute_kernel_words(
 
 	/* The workgroup counts, zero taken as one. */
 	for (axis = 0; axis < 3U; axis++) {
-		groups[axis] = kernel->workgroups[axis] == 0 ? 1U : kernel->workgroups[axis];
+		/* A count of zero means one workgroup on that axis. */
+		groups[axis] = kernel->workgroups[axis];
+		if (groups[axis] == 0)
+			groups[axis] = 1U;
+
+		/* Refuses a count the field cannot hold. */
 		if (groups[axis] > KERNEL_GROUPS_MAX)
 			return EINVAL;
 	}
@@ -362,7 +367,7 @@ powervr_compute_kick_program(
 /*
  * Mesa's data sequencer program of a compute dispatch, as its driver
  * wrote it for vkcompute on the BXE-4-32 (Mesa 26.2.5 on the host with
- * the drm shim; plan/ws269/tests/p008/mesa-pco-vkcompute-stream-bxe-4-32.txt):
+ * the drm shim):
  * data words 2 to 7 (the two writes of the workgroup id into the common
  * store, the write of the local id into the unified store, the base
  * workgroup's zeros), and the ten code words: the branch past the
@@ -471,6 +476,7 @@ powervr_compute_shared_kernel_words(
 {
 	static const struct powervr_compute_kernel cleared;
 	struct powervr_compute_kernel kernel;
+	int error;
 
 	/* One instance on every cluster, the common store kept for the next kernels, no shared data. */
 	kernel = cleared;
@@ -482,7 +488,14 @@ powervr_compute_shared_kernel_words(
 	kernel.max_instances = POWERVR_COMPUTE_FENCE_INSTANCES;
 	kernel.common_shared = 1;
 	kernel.any_cluster = 0;
-	return powervr_compute_kernel_words(&kernel, words);
+
+	/* Builds the kernel's words. */
+	error = powervr_compute_kernel_words(&kernel, words);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the shared allocation kernel's words. */
+	return 0;
 }
 
 /*
@@ -686,6 +699,7 @@ powervr_compute_probe_program(
 	size_t *length)
 {
 	struct powervr_usc_group groups[20];
+	uint32_t constant_index;
 	unsigned address;
 	uint32_t stride;
 	size_t count;
@@ -768,8 +782,15 @@ powervr_compute_probe_program(
 			error = immediate_group(&groups[count++], 5, 1);
 		if (error == 0 && kind == POWERVR_COMPUTE_PROBE_ZERO_MADD)
 			error = special_group(&groups[count++], 5, USC_INSTANCE_NUMBER);
+
+		/* The index register's value: four for CONSTANT, zero for ZERO_MADD. */
+		constant_index = 0U;
+		if (kind == POWERVR_COMPUTE_PROBE_CONSTANT)
+			constant_index = 4U;
+
+		/* The index, then the multiply-add that makes the address. */
 		if (error == 0)
-			error = immediate_group(&groups[count++], 4, kind == POWERVR_COMPUTE_PROBE_CONSTANT ? 4U : 0U);
+			error = immediate_group(&groups[count++], 4, constant_index);
 		if (error == 0)
 			error = multiply_add_group(&groups[count++], 0, 5, 4, 0);
 	} else if (error == 0 && kind >= POWERVR_COMPUTE_PROBE_LIKE_STORE) {

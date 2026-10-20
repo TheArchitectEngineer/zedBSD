@@ -144,8 +144,8 @@ int powervr_compute_workgroup_program(uint64_t usc_offset, unsigned temporaries_
  * a task; its data sequencer program is two zero data words and a halt.
  *
  * Values referenced:
- * zedBSD plan/ws269/tests/p008/mesa-pco-vkcompute-stream-bxe-4-32.txt
- * (Mesa 26.2.5's vkcompute stream on BXE-4-32, kernel 0: usc_common_size
+ * Mesa 26.2.5's vkcompute stream on BXE-4-32, as its driver wrote it
+ * on the host with the drm shim (kernel 0: usc_common_size
  * 64 bytes, usc_target ALL, sd_type NONE, usc_common_shared,
  * max_instances 8, one instance).
  */
