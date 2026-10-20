@@ -195,15 +195,19 @@ enum machine_kind {
 #define SHADER_HAZARD_GAP	2U
 
 /*
- * The groups that must lie between an integer multiply-add and a group
- * that writes a register it reads, by default (shader_integer_source_gap
- * holds the one in use).  Six (vf2-dmesg65) made the compiled fill worse
- * on the board (vf2-dmesg69, 0x00202004 in two words); back to two until
- * the timing probes (compute-check.c run_timing_probes) measure it.  The
- * spacing loops look back at most SHADER_GAP_MAX groups.
+ * The groups that must lie between a group and a later one writing a
+ * register it reads, by the reader (the defaults; the shader_*_gap
+ * variables hold the ones in use), counted in real instructions: on the
+ * board no-operation and wait groups took no time, and with unrelated
+ * moves or multiply-adds between, a multiply-add read its source up to
+ * three instructions later, a move or a 64-bit add up to two, and a
+ * store its data up to four (vf2-dmesg75, 2026-10-21).  The spacing
+ * loops look back at most SHADER_GAP_MAX groups.
  */
-#define SHADER_INTEGER_SOURCE_GAP	2U
-#define SHADER_GAP_MAX			8U
+#define SHADER_INTEGER_SOURCE_GAP	4U
+#define SHADER_ALU_SOURCE_GAP		3U
+#define SHADER_STORE_SOURCE_GAP		6U
+#define SHADER_GAP_MAX			10U
 
 /* The back end's state for one shader. */
 struct shader_backend {
@@ -236,6 +240,8 @@ int shader_backend_space_hazards(struct shader_backend *backend);
 unsigned shader_backend_hazards(const struct shader_backend *backend);
 
 extern unsigned shader_integer_source_gap;
+extern unsigned shader_alu_source_gap;
+extern unsigned shader_store_source_gap;
 extern unsigned shader_filler_kind;
 
 #endif /* KERN_DRIVERS_GPU_POWERVR_SHADER_PRIVATE_H */

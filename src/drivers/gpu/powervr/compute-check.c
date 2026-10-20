@@ -306,8 +306,8 @@ void
 powervr_compute_check(
 	struct powervr_render *render)
 {
-	static const unsigned fillers[] = { MACHINE_NOP, MACHINE_WAIT };
-	static const unsigned gaps[] = { 2, 4, 6 };
+	static const unsigned fillers[] = { MACHINE_MOVE, MACHINE_MOVE_SPECIAL };
+	static const unsigned gaps[][3] = { { SHADER_INTEGER_SOURCE_GAP, SHADER_ALU_SOURCE_GAP, SHADER_STORE_SOURCE_GAP }, { 6, 5, 8 } };
 	struct check_state state;
 	const char *step;
 	unsigned written;
@@ -408,14 +408,18 @@ powervr_compute_check(
 	for (filler = 0; filler < sizeof(fillers) / sizeof(fillers[0]); filler++) {
 		for (gap = 0; gap < sizeof(gaps) / sizeof(gaps[0]); gap++) {
 			shader_filler_kind = fillers[filler];
-			shader_integer_source_gap = gaps[gap];
-			kern_logf("powervr: compute probes: compiled fill with multiply-add source gap %u, %s fillers\n",
-				  gaps[gap], fillers[filler] == MACHINE_NOP ? "nop" : "wdf");
+			shader_integer_source_gap = gaps[gap][0];
+			shader_alu_source_gap = gaps[gap][1];
+			shader_store_source_gap = gaps[gap][2];
+			kern_logf("powervr: compute probes: compiled fill with gaps madd %u alu %u store %u, %s fillers\n",
+				  gaps[gap][0], gaps[gap][1], gaps[gap][2], fillers[filler] == MACHINE_MOVE ? "mov" : "mov-special");
 			run_compiled_fill(&state, filler == 0 && gap == 0);
 		}
 	}
-	shader_filler_kind = MACHINE_NOP;
+	shader_filler_kind = MACHINE_MOVE;
 	shader_integer_source_gap = SHADER_INTEGER_SOURCE_GAP;
+	shader_alu_source_gap = SHADER_ALU_SOURCE_GAP;
+	shader_store_source_gap = SHADER_STORE_SOURCE_GAP;
 	run_workgroup_probe(&state);
 	run_layouts(&state);
 
