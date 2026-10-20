@@ -825,3 +825,31 @@ source の変更は無し。
 - FW の trace の log type を 0x7fff にした。MAIN 0x2 から MISC 0x4000 までの全部の group（MTS・CLEANUP・CSW・BIF・PM・RTD・SPM・POW・HWR・HWP・RPM・DMA）で、DEBUG（0x80000000）は除く。空の stream の kick から reset までの PM の free list の扱い、RTD の HWRT の処理、TA の開始・終了の event を見る。
 - `ta: fail(reset lockup)` の後に `ta: ok`・`3d: ok` が出ていた理由: `powervr_render_finish`（`render-queue.c`）は timeline に達すると、free list の印だけを見て TA・3D の段を ok にしていた。FW が context を reset した render の timeline は、reset が信号を出したので達する。session が lost（reset の通知の後）の時は ok を出さず、EIO で返すようにした。render check の空の stream は、これで「FAILED (5)」と dump になる。
 - 確かめ: 試験の image の config の vmunix は rc 0、warning 0。p010 は 0 failed。実機は未。
+
+## q1442-i01（P1、2026-10-20）: 全部の group の trace の読み（vf2-dmesg39）
+
+空の stream の kick の流れ（mainline の `pvr_rogue_fwif_sf.h`）:
+1. KCCB slot 27 の kick、cCCB Woff 200 DM 2 FWCtx 0xc0030000、fragment（DM 3）は PR-Check（[0xc0055000] ≥ 1）で待つ。
+2. Ready-to-run DM 2、client command header（CCB 0xc004d000）。
+3. PM: 「PM running primary config (Core 0)」。
+4. POW: dust 0 → 1、HW Request On 完了。BIF: Activate MemCtx 0xc002b000、PC 0x40622000、PC set 0。
+5. RTD:
+   - Load Freelist 0xc0061000（local）: 32 page、FL-addr 0x8000008000、stacktop 31。
+   - Load Freelist 0xc0060000（global）: 4096 page、FL-addr 0x8000003000。
+   - CONTEXT_PB_BASE 0x3、TA RTData 0xc0062000 loaded on HW context 0。
+   - TA Buffers: VHeap 0x800000f000、TPC 0x8000011000。
+   - TE Region headers base 0x800000d000（RGNHDR Init 1）。
+6. PM:
+   - 「Is TA 1, finished 0 on HW 0 (HWRTData 0xc0062000)」
+   - UFL-TA-Base 0x8000003000（SP 4095）、FL-TA-Base 0x8000008000（SP 31）
+   - ALIST0 SP 0、MLIST0 SP 0（VCE・TE・ALIST の cat base 0）
+7. Kick TA（RTD 0xc0062000、first 1、last 1、CSW resume 0）。
+8. その後、TA の完了の event（TA finished・PM の event・ISR の geometry の終わり）は 1 つも無い。HWR の検査の後、「Discarded cmd on DM3 (reason=1) HWRTData 0xc0062000 (st 9)」と recovery。
+
+読み:
+- FW は free list・HWRT・region header・PM を全部読んで設定した。値は host の record と一致する（free list の address・page 数・stack top、vheap、TPC、region header）。
+- TA の hardware は kick の後、完了を出さない。FW は TA の終わり（geometry の ISR）を待っている。
+- PM の cat base（VCE・TE・ALIST）が 0 なのは、最初の TA では mainline でも同じ（FW と PM が埋める）。
+- 省かれた 796 word（kick と HWR の間）に PM・TE の event があるかを見るため、dump の全部出しの上限を 512 から 2048 word に上げた（今回の 1180 word は全部出る）。
+
+確かめ: 試験の image の config の vmunix は rc 0、warning 0。実機は未。
