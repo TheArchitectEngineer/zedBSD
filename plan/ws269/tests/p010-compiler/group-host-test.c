@@ -465,6 +465,38 @@ main(void)
 		if (!ok)
 			dump(&group);
 
+		/*
+		 * A half-float colour's pack and unpack: the same groups with
+		 * format f16f16 0b01110 and no scale (0x0e), repeated over two
+		 * registers (Mesa 26.2.5 pco_trans_nir.c: nir_op_pack_half_2x16
+		 * and unpack_half_2x16, rpt 2, PCO_PCK_FMT_F16F16).
+		 */
+		{
+			static const uint8_t half[] = { 0x9c, 0x0e };
+
+			operation = blank(MACHINE_PACK);
+			operation.destination[0] = reg(1, 1);
+			operation.source[0] = reg(1, 4);
+			operation.variant = 14;
+			operation.immediate = 2;
+			ok = shader_backend_group(&operation, 0, &group) == 0;
+			ok = ok && group.repeat == 2 && slot_is(&group.source[2], 1, 4) && phase_is(&group, 2, half, 2);
+			check(ok, "half colour pack");
+			if (!ok)
+				dump(&group);
+
+			operation = blank(MACHINE_UNPACK);
+			operation.destination[0] = reg(1, 12);
+			operation.source[0] = reg(1, 1);
+			operation.variant = 14;
+			operation.immediate = 2;
+			ok = shader_backend_group(&operation, 0, &group) == 0;
+			ok = ok && group.repeat == 2 && slot_is(&group.source[0], 1, 1) && phase_is(&group, 0, half, 2);
+			check(ok, "half colour unpack");
+			if (!ok)
+				dump(&group);
+		}
+
 		operation = blank(MACHINE_MOVE);
 		operation.destination[0] = reg(0, 32);
 		operation.source[0] = reg(1, 1);

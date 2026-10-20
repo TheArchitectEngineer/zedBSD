@@ -250,14 +250,26 @@ ir_run(
 				run->sample(run, instruction->immediate, instruction->immediate_2, a, b, result);
 				break;
 			case POWERVR_IR_PIXEL_LOAD:
-				ir_run_unpack(run->pixels[instruction->immediate & 3U][lane], result);
+				if (instruction->immediate_2 != 0) {
+					/* Half floats: two channels in each of two registers. */
+					ir_run_unpack_half(run->pixels[instruction->immediate & 3U][lane], result);
+					ir_run_unpack_half(run->pixels[(instruction->immediate + 1U) & 3U][lane], result + 2);
+				} else {
+					ir_run_unpack(run->pixels[instruction->immediate & 3U][lane], result);
+				}
 				break;
 			case POWERVR_IR_PIXEL_STORE:
 				result[0] = a;
 				result[1] = b;
 				result[2] = c;
 				result[3] = d;
-				run->pixels[instruction->immediate & 3U][lane] = ir_run_pack(result);
+				if (instruction->immediate_2 != 0) {
+					/* Half floats: two channels in each of two registers. */
+					run->pixels[instruction->immediate & 3U][lane] = ir_run_pack_half(a, b);
+					run->pixels[(instruction->immediate + 1U) & 3U][lane] = ir_run_pack_half(c, d);
+				} else {
+					run->pixels[instruction->immediate & 3U][lane] = ir_run_pack(result);
+				}
 				result[0] = 0;
 				result[1] = 0;
 				result[2] = 0;
@@ -427,4 +439,89 @@ ir_run_unpack(
 
 	for (channel = 0; channel < 4; channel++)
 		words[channel] = as_word((float)((packed >> (channel * 8U)) & 0xffU) / 255.0f);
+}
+
+/* Converts a float's bits to a half float's (round to nearest even; overflow to infinity; NaN kept a NaN). */
+static uint32_t
+half_from_float(
+	uint32_t bits)
+{
+	uint32_t sign;
+	uint32_t mantissa;
+	int32_t exponent;
+	uint32_t half;
+	uint32_t shift;
+	uint32_t rest;
+
+	sign = (bits >> 16) & 0x8000U;
+	exponent = (int32_t)((bits >> 23) & 0xffU);
+	mantissa = bits & 0x7fffffU;
+	if (exponent == 0xff)
+		return sign | 0x7c00U | (mantissa != 0 ? 0x200U : 0U);
+	exponent -= 127 - 15;
+	if (exponent >= 31)
+		return sign | 0x7c00U;
+	if (exponent <= 0) {
+		if (exponent < -10)
+			return sign;
+		mantissa |= 0x800000U;
+		shift = (uint32_t)(14 - exponent);
+		half = mantissa >> shift;
+		rest = mantissa & ((1U << shift) - 1U);
+		if (rest > (1U << (shift - 1U)) || (rest == (1U << (shift - 1U)) && (half & 1U) != 0))
+			half++;
+		return sign | half;
+	}
+	half = ((uint32_t)exponent << 10) | (mantissa >> 13);
+	rest = mantissa & 0x1fffU;
+	if (rest > 0x1000U || (rest == 0x1000U && (half & 1U) != 0))
+		half++;
+	return sign | half;
+}
+
+/* Converts a half float's bits to a float's. */
+static uint32_t
+float_from_half(
+	uint32_t half)
+{
+	uint32_t sign;
+	uint32_t exponent;
+	uint32_t mantissa;
+
+	sign = (half & 0x8000U) << 16;
+	exponent = (half >> 10) & 0x1fU;
+	mantissa = half & 0x3ffU;
+	if (exponent == 0x1f)
+		return sign | 0x7f800000U | (mantissa << 13);
+	if (exponent == 0) {
+		if (mantissa == 0)
+			return sign;
+		exponent = 1;
+		while ((mantissa & 0x400U) == 0) {
+			mantissa <<= 1;
+			exponent--;
+		}
+		mantissa &= 0x3ffU;
+		return sign | ((exponent + 127U - 15U) << 23) | (mantissa << 13);
+	}
+	return sign | ((exponent + 127U - 15U) << 23) | (mantissa << 13);
+}
+
+/* Packs two floats as half floats, the first in the low half. */
+uint32_t
+ir_run_pack_half(
+	uint32_t low,
+	uint32_t high)
+{
+	return half_from_float(low) | (half_from_float(high) << 16);
+}
+
+/* Unpacks two half floats to floats, the low half first. */
+void
+ir_run_unpack_half(
+	uint32_t packed,
+	uint32_t words[2])
+{
+	words[0] = float_from_half(packed & 0xffffU);
+	words[1] = float_from_half(packed >> 16);
 }

@@ -251,6 +251,12 @@ machine_run_program(
 				write_register(run, operation->destination[0], lane, result);
 				break;
 			case KIND_PACK:
+				if (operation->variant == 14 && operation->immediate == 2) {
+					/* Two registers from the source on, as half floats. */
+					write_register(run, operation->destination[0], lane,
+						       ir_run_pack_half(run->temps[operation->source[0].index][lane], run->temps[operation->source[0].index + 1U][lane]));
+					break;
+				}
 				if (operation->variant == 0 && operation->immediate == 4) {
 					/* The four registers from the source on, packed. */
 					for (word = 0; word < 4; word++)
@@ -278,6 +284,13 @@ machine_run_program(
 				write_register(run, operation->destination[0], lane, result);
 				break;
 			case KIND_UNPACK:
+				if (operation->variant == 14 && operation->immediate == 2) {
+					/* Into two registers from the destination on, from half floats. */
+					ir_run_unpack_half(a, words);
+					run->temps[operation->destination[0].index][lane] = words[0];
+					run->temps[operation->destination[0].index + 1U][lane] = words[1];
+					break;
+				}
 				if (operation->variant == 0 && operation->immediate == 4) {
 					/* Into the four registers from the destination on. */
 					ir_run_unpack(a, words);

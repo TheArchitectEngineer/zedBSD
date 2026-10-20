@@ -667,9 +667,11 @@ job_check(
 	if (job->color_count != 1 || job->draw_count > POWERVR_RENDER_DRAWS)
 		return ENOTSUP;
 
-	/* A colour of one 32-bit word a pixel. */
+	/* A colour of one 32-bit word a pixel, or of four half floats in two (the compiler packs them, ws269-p010p). */
 	color = &job->colors[0];
-	if (color->surface.format == NULL || color->surface.format->texel_bytes != 4U)
+	if (color->surface.format == NULL)
+		return ENOTSUP;
+	if (color->surface.format->texel_bytes != 4U && color->surface.format->vk_format != VK_FORMAT_R16G16B16A16_SFLOAT)
 		return ENOTSUP;
 
 	/* Succeeded: the job can run. */

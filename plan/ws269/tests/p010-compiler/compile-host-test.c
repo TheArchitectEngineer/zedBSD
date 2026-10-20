@@ -843,6 +843,35 @@ test_keyed(void)
 		machine_compare(vkdemo_fragment_shader, sizeof(vkdemo_fragment_shader) / 4U, POWERVR_SHADER_FRAGMENT, "keyed vkdemo fragment");
 	}
 
+	/* vkdemo to a 16-bit float attachment: the sample as half floats in two registers, not clamped. */
+	memset(&key, 0, sizeof(key));
+	key.output_formats[0] = 97;
+	key.blend[0].write_mask = 0xf;
+	if (prepare(vkdemo_fragment_shader, sizeof(vkdemo_fragment_shader) / 4U, POWERVR_SHADER_FRAGMENT, &program, "keyed vkdemo fragment, half floats", 0xffffffffU) == 0) {
+		ok = program.output_count == 1 && program.outputs[0].reg == 0 && program.outputs[0].format == 97;
+		for (lane = 0; lane < 32; lane++) {
+			sample_words(0, 1, iterate_word(lane, 4, 0), iterate_word(lane, 8, 0), sampled);
+			if (run->pixels[0][lane] != ir_run_pack_half(sampled[0], sampled[1]))
+				ok = 0;
+			if (run->pixels[1][lane] != ir_run_pack_half(sampled[2], sampled[3]))
+				ok = 0;
+		}
+		check(ok, "keyed vkdemo fragment packs its sample as half floats");
+		machine_compare(vkdemo_fragment_shader, sizeof(vkdemo_fragment_shader) / 4U, POWERVR_SHADER_FRAGMENT, "keyed vkdemo fragment, half floats");
+	}
+
+	/* quad.frag to a 16-bit float attachment: the premultiplied blend over the half floats there. */
+	memset(&key, 0, sizeof(key));
+	key.output_formats[0] = 97;
+	key.blend[0].enable = 1;
+	key.blend[0].source_color = 1;
+	key.blend[0].destination_color = 7;
+	key.blend[0].source_alpha = 1;
+	key.blend[0].destination_alpha = 7;
+	key.blend[0].write_mask = 0xf;
+	if (prepare(kwl_quad_frag, sizeof(kwl_quad_frag) / 4U, POWERVR_SHADER_FRAGMENT, &program, "keyed kwl quad.frag, half floats", 0xffffffffU) == 0)
+		machine_compare(kwl_quad_frag, sizeof(kwl_quad_frag) / 4U, POWERVR_SHADER_FRAGMENT, "keyed kwl quad.frag, half floats");
+
 	/* quad.frag: premultiplied over, alpha kept. */
 	memset(&key, 0, sizeof(key));
 	key.output_formats[0] = 44;

@@ -103,6 +103,32 @@ static const struct powervr_format raw_32 = {
 };
 
 /*
+ * The raw formats of 64- and 128-bit texels: R32G32_UINT (texture
+ * format U32U32 35, pack mode U32U32 0x28, swizzle XY01) and
+ * R32G32B32A32_UINT (U32U32U32U32 62, 0x0b, XYZW).
+ *
+ * Values referenced:
+ * Mesa 26.2.5 src/imagination/vulkan/pvr_arch_formats.c (R32G32_UINT
+ * and R32G32B32A32_UINT: their texture formats and pack modes);
+ * src/imagination/csbgen/rogue/texstate.xml (FORMAT U32U32 35,
+ * U32U32U32U32 62); src/imagination/csbgen/rogue/pbestate.xml (PACKMODE
+ * U32U32 0x28, U32U32U32U32 0xb); src/imagination/vulkan/
+ * pvr_arch_job_transfer.c (pvr_get_raw_copy_format: a 64-bit texel as
+ * R32G32_UINT, a 128-bit one as R32G32B32A32_UINT).
+ */
+static const struct powervr_format raw_64 = {
+	VK_FORMAT_R32G32_UINT, 8, POWERVR_FORMAT_COLOR, 35, 0x28,
+	{ POWERVR_CHANNEL_0, POWERVR_CHANNEL_1, POWERVR_CHANNEL_ZERO, POWERVR_CHANNEL_ONE },
+	0, 0, 0
+};
+
+static const struct powervr_format raw_128 = {
+	VK_FORMAT_R32G32B32A32_UINT, 16, POWERVR_FORMAT_COLOR, 62, 0x0b,
+	{ POWERVR_CHANNEL_0, POWERVR_CHANNEL_1, POWERVR_CHANNEL_2, POWERVR_CHANNEL_3 },
+	0, 0, 0
+};
+
+/*
  * The fields of the transfer command's registers.
  *
  * Values referenced:
@@ -118,6 +144,7 @@ static const struct powervr_format raw_32 = {
 #define ISP_PROCESS_EMPTY	(1U << 17)
 #define ISP_PIPE_SHIFT		12U
 #define PIXEL_PARTITION_SHIFT	3U
+#define PIXEL_WIDTH_4_REGISTERS	1U
 #define TILE_FIELD_MAX		0x3ffU
 #define SCREEN_FIELD_MAX	0x7fffU
 #define PBE_NORMALISED		(1U << 13)
@@ -158,20 +185,24 @@ static const struct shader_machine_register no_register = { 0xff, 0 };
 
 static void blank_operation(struct shader_machine_operation *operation, unsigned kind);
 static struct shader_machine_register machine_register(unsigned bank, unsigned index);
-static int build_program(unsigned packed, struct powervr_render_usc *program);
+static int build_program(unsigned packed, unsigned words, struct powervr_render_usc *program);
 static int fill_shared(const struct powervr_view_shape *view, const struct powervr_render_area *source, const struct powervr_render_area *area, bool flip_x, bool flip_y, bool linear, uint32_t words[POWERVR_TRANSFER_SHARED_WORDS]);
 static uint32_t float_from_ratio(int64_t numerator, int64_t denominator);
 static int build_groups(const struct shader_machine_operation *operations, size_t count, struct powervr_usc_group *groups);
-static void tiles_in_flight(uint32_t *isp_ctl, uint32_t *pixel_output_ctrl);
+static void tiles_in_flight(uint32_t registers, uint32_t *isp_ctl, uint32_t *pixel_output_ctrl);
 
 /* Returns the raw format a same-format copy of texel_bytes texels moves them as, NULL when there is none. */
 const struct powervr_format *
 powervr_transfer_raw_format(
 	uint32_t texel_bytes)
 {
-	/* Only 32-bit texels for now (the 8-bit RGBA formats of the table). */
+	/* One, two or four 32-bit words a texel. */
 	if (texel_bytes == 4)
 		return &raw_32;
+	if (texel_bytes == 8)
+		return &raw_64;
+	if (texel_bytes == 16)
+		return &raw_128;
 
 	/* No raw format of that size. */
 	return NULL;
@@ -204,11 +235,13 @@ powervr_transfer_needs_rows(
 }
 
 /*
- * Builds the copy program: the pixel's position from the special
- * registers, scaled and offset by the shared floats into the source's
- * unnormalised coordinates, the source texel sampled with the shared
- * image and sampler state, its first raw word into pixel output register
- * 0 under the overlap check, ending the program.
+ * Builds the copy program of a format's texels: the pixel's position
+ * from the special registers, scaled and offset by the shared floats into
+ * the source's unnormalised coordinates, the source texel sampled with
+ * the shared image and sampler state (as the raw format of its size), its
+ * one, two or four raw words into pixel output registers 0 to 3 under the
+ * overlap check, ending the program.  Refuses a texel of no raw format
+ * (ENOTSUP).
  *
  * The groups are the compiler back end's (shader_backend_group); the
  * sample is rebuilt with unnormalised coordinates.
@@ -216,20 +249,25 @@ powervr_transfer_needs_rows(
  * Procedure referenced:
  * Mesa 26.2.5 src/imagination/vulkan/pvr_usc.c (pvr_uscgen_tq,
  * pvr_uscgen_tq_frag_coords, pvr_uscgen_tq_frag_load with nncoords and
- * the uint32 type of a raw format, the store of one word to output 0).
+ * the uint32 type of a raw format, the store of each word to its output).
  */
 int
 powervr_transfer_copy_usc(
+	const struct powervr_format *format,
 	struct powervr_render_usc *program)
 {
+	const struct powervr_format *raw;
 	int error;
 
-	/* Refuses a missing result. */
-	if (program == NULL)
+	/* Refuses missing input or result, and texels of no raw format. */
+	if (format == NULL || program == NULL)
 		return EINVAL;
+	raw = powervr_transfer_raw_format(format->texel_bytes);
+	if (raw == NULL)
+		return ENOTSUP;
 
-	/* The raw word, not packed. */
-	error = build_program(0, program);
+	/* The raw words, not packed. */
+	error = build_program(0, raw->texel_bytes / 4U, program);
 	if (error != 0)
 		return error;
 
@@ -262,7 +300,7 @@ powervr_transfer_blit_usc(
 		return ENOTSUP;
 
 	/* The channels packed. */
-	error = build_program(1, program);
+	error = build_program(1, 1, program);
 	if (error != 0)
 		return error;
 
@@ -272,15 +310,18 @@ powervr_transfer_blit_usc(
 
 /*
  * Builds the transfer program of powervr_transfer_copy_usc, with the
- * four sampled channels packed as 8-bit unorm when packed is 1.
+ * four sampled channels packed as 8-bit unorm when packed is 1, else the
+ * first words of the sample (one, two or four) each to its pixel output.
  */
 static int
 build_program(
 	unsigned packed,
+	unsigned words,
 	struct powervr_render_usc *program)
 {
-	struct shader_machine_operation operations[12];
-	struct powervr_usc_group groups[12];
+	struct shader_machine_operation operations[16];
+	struct powervr_usc_group groups[16];
+	unsigned word;
 	size_t length;
 	size_t count;
 	unsigned axis;
@@ -333,16 +374,18 @@ build_program(
 		count++;
 	}
 
-	/* The word to the pixel output under the overlap check. */
-	blank_operation(&operations[count], MACHINE_MOVE);
-	operations[count].destination[0] = machine_register(POWERVR_USC_BANK_SPECIAL, SPECIAL_PIXEL_OUTPUT);
-	if (packed) {
-		operations[count].source[0] = machine_register(POWERVR_USC_BANK_TEMPORARY, TEMP_PIXEL);
-	} else {
-		operations[count].source[0] = machine_register(POWERVR_USC_BANK_TEMPORARY, TEMP_SAMPLE);
+	/* Each word to its pixel output under the overlap check: the packed one, or the sample's raw words. */
+	for (word = 0; word < words; word++) {
+		blank_operation(&operations[count], MACHINE_MOVE);
+		operations[count].destination[0] = machine_register(POWERVR_USC_BANK_SPECIAL, SPECIAL_PIXEL_OUTPUT + word);
+		if (packed) {
+			operations[count].source[0] = machine_register(POWERVR_USC_BANK_TEMPORARY, TEMP_PIXEL);
+		} else {
+			operations[count].source[0] = machine_register(POWERVR_USC_BANK_TEMPORARY, TEMP_SAMPLE + word);
+		}
+		operations[count].variant = 1;
+		count++;
 	}
-	operations[count].variant = 1;
-	count++;
 
 	/* The groups, the sample with unnormalised coordinates, the last one ending. */
 	error = build_groups(operations, count, groups);
@@ -652,6 +695,7 @@ powervr_transfer_regs_build(
 	uint32_t origin_x;
 	uint32_t origin_y;
 	unsigned index;
+	uint32_t registers;
 	int error;
 	bool rows;
 
@@ -691,8 +735,8 @@ powervr_transfer_regs_build(
 	if (error != 0)
 		return error;
 
-	/* The raw format's channels are integers, not normalised. */
-	if (destination.format == &raw_32)
+	/* The raw formats' channels are integers, not normalised. */
+	if (destination.format == &raw_32 || destination.format == &raw_64 || destination.format == &raw_128)
 		state[1] &= ~PBE_NORMALISED;
 	regs->pbe[0] = pbe[0];
 	regs->pbe[1] = pbe[1];
@@ -727,8 +771,11 @@ powervr_transfer_regs_build(
 	regs->isp_mtile_size = (((max_x + TILE_SIZE) / TILE_SIZE - origin_x) << 16) | ((max_y + TILE_SIZE) / TILE_SIZE - origin_y);
 	regs->isp_render_origin = (origin_x << 16) | origin_y;
 
-	/* The tiles in flight and the pixel output's partitions. */
-	tiles_in_flight(&regs->isp_ctl, &regs->usc_pixel_output_ctrl);
+	/* The tiles in flight and the pixel output's partitions, for the destination's registers a pixel (four for 128-bit texels). */
+	registers = MIN_OUTPUT_REGISTERS;
+	if (destination.format != NULL && destination.format->texel_bytes > 8)
+		registers = 4;
+	tiles_in_flight(registers, &regs->isp_ctl, &regs->usc_pixel_output_ctrl);
 	regs->isp_ctl |= ISP_PROCESS_EMPTY;
 
 	/* The end-of-tile program's words. */
@@ -863,11 +910,22 @@ float_from_ratio(
 
 /*
  * Works out the BXE-4-32's tiles in flight and pixel output control for
- * a pixel of one output register (rounded up to the core's two): ten
- * partitions of 512 words, four tiles in flight.
+ * a pixel of the given output registers (two or four; the core's least
+ * is two): partitions of 256 pixels of that width in the reserved space,
+ * no more than ten, and no more tiles in flight than partitions (four
+ * at most).
+ *
+ * Values referenced:
+ * Mesa 26.2.5 src/imagination/vulkan/pvr_arch_job_common.c
+ * (pvr_arch_setup_tiles_in_flight: the width rounded up to the least and
+ * to a power of two, the partition a 16x16 tile of it, the partitions
+ * available, the ISP tiles no more than they); src/imagination/csbgen/
+ * rogue/cr.xml (USC_PIXEL_OUTPUT_CTRL width: 2REGISTERS 0, 4REGISTERS 1;
+ * partition_mask 3..20).
  */
 static void
 tiles_in_flight(
+	uint32_t registers,
 	uint32_t *isp_ctl,
 	uint32_t *pixel_output_ctrl)
 {
@@ -875,8 +933,8 @@ tiles_in_flight(
 	uint32_t partitions;
 	uint32_t tiles;
 
-	/* Partitions of a tile of two registers a pixel within the reserved space. */
-	partition_size = MIN_OUTPUT_REGISTERS * TILE_SIZE * TILE_SIZE;
+	/* Partitions of a tile of that width within the reserved space. */
+	partition_size = registers * TILE_SIZE * TILE_SIZE;
 	partitions = RESERVED_PARTITIONS / partition_size;
 	if (partitions > MAX_PARTITIONS)
 		partitions = MAX_PARTITIONS;
@@ -886,7 +944,9 @@ tiles_in_flight(
 	if (tiles > partitions)
 		tiles = partitions;
 
-	/* The pipes enabled, and the two-register width with every partition in the mask. */
+	/* The pipes enabled, the width (two registers 0, four 1) with every partition in the mask. */
 	*isp_ctl = (tiles - 1U) << ISP_PIPE_SHIFT;
 	*pixel_output_ctrl = ((1U << MAX_PARTITIONS) - 1U) << PIXEL_PARTITION_SHIFT;
+	if (registers == 4)
+		*pixel_output_ctrl |= PIXEL_WIDTH_4_REGISTERS;
 }

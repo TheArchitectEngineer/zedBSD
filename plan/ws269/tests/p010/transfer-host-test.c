@@ -126,6 +126,27 @@ test_regs(void)
 	job.destination.format = powervr_format_find(9);
 	job.destination.row_pitch = 64;
 	check(powervr_transfer_regs_build(&job, &regs, state) != 0, "copy of 8-bit texels refused");
+
+	/*
+	 * Copies of 64- and 128-bit texels (R16G16B16A16_SFLOAT 97 and
+	 * R32G32B32A32_SFLOAT 109): the raw pack modes U32U32 0x28 and
+	 * U32U32U32U32 0x0b at state word 1 bit 7, not normalised; the
+	 * 128-bit pixel four output registers wide (USC_PIXEL_OUTPUT_CTRL
+	 * width 1, five partitions of 1024 words, still four tiles).
+	 */
+	job_init(&job, POWERVR_TRANSFER_COPY);
+	job.destination.format = powervr_format_find(97);
+	job.destination.row_pitch = 64 * 8;
+	ok = powervr_transfer_regs_build(&job, &regs, state) == 0;
+	ok = ok && regs.usc_pixel_output_ctrl == 0x1ff8U && regs.isp_ctl == 0x23000U;
+	ok = ok && ((state[1] >> 7) & 0x3fU) == 0x28U && (state[1] & (1U << 13)) == 0 && ((state[1] >> 19) & 1U) == 0;
+	check(ok, "copy registers of 64-bit texels");
+	job.destination.format = powervr_format_find(109);
+	job.destination.row_pitch = 64 * 16;
+	ok = powervr_transfer_regs_build(&job, &regs, state) == 0;
+	ok = ok && regs.usc_pixel_output_ctrl == 0x1ff9U && regs.isp_ctl == 0x23000U;
+	ok = ok && ((state[1] >> 7) & 0x3fU) == 0x0bU && (state[1] & (1U << 13)) == 0;
+	check(ok, "copy registers of 128-bit texels");
 }
 
 static void
@@ -235,7 +256,7 @@ test_copy_usc(void)
 	int ok;
 
 	/* The program, rebuilt here from the back end's groups. */
-	ok = powervr_transfer_copy_usc(&program) == 0 && program.temps == 12;
+	ok = powervr_transfer_copy_usc(powervr_format_find(44), &program) == 0 && program.temps == 12;
 	for (index = 0; index < 11 && ok; index++) {
 		memset(&operation, 0, sizeof(operation));
 		operation.destination[0].bank = 0xff;
@@ -357,8 +378,19 @@ test_blit(void)
 	check(ok && ((words[5] >> 4) & 0xfU) == 0, "blit words: point when not scaled");
 
 	/* The blit program: the copy program with a pack before the output, one more temporary. */
-	ok = powervr_transfer_copy_usc(&copy) == 0 && powervr_transfer_blit_usc(powervr_format_find(44), &blit) == 0;
+	ok = powervr_transfer_copy_usc(powervr_format_find(44), &copy) == 0 && powervr_transfer_blit_usc(powervr_format_find(44), &blit) == 0;
 	check(ok && blit.temps == copy.temps + 1U && blit.length > copy.length, "blit program");
+
+	/* The copy programs of 64- and 128-bit texels: as the 32-bit one, one and three more output moves. */
+	{
+		struct powervr_render_usc wide;
+
+		ok = powervr_transfer_copy_usc(powervr_format_find(97), &wide) == 0 && wide.temps == copy.temps && wide.length > copy.length;
+		check(ok, "copy program of 64-bit texels");
+		ok = powervr_transfer_copy_usc(powervr_format_find(109), &wide) == 0 && wide.temps == copy.temps && wide.length > copy.length;
+		check(ok, "copy program of 128-bit texels");
+		check(powervr_transfer_copy_usc(powervr_format_find(9), &wide) != 0, "copy program of 8-bit texels refused");
+	}
 	check(powervr_transfer_blit_usc(powervr_format_find(43), &blit) != 0, "blit of sRGB refused for now");
 
 	/* Blit registers: as a copy, but the destination's own format. */

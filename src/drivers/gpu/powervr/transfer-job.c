@@ -185,7 +185,7 @@ transfer_one(
 		if (request->kind == POWERVR_TRANSFER_BLIT) {
 			error = powervr_transfer_blit_usc(request->destination.format, &memory->program);
 		} else {
-			error = powervr_transfer_copy_usc(&memory->program);
+			error = powervr_transfer_copy_usc(request->source->format, &memory->program);
 		}
 		if (error != 0)
 			return error;
