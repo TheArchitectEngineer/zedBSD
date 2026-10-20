@@ -110,6 +110,7 @@ static void list_destroy(struct powervr_render *render, struct powervr_session *
 static void list_discard(struct powervr_render *render, struct powervr_session *session, struct powervr_free_list *list);
 static struct powervr_free_list *list_find(struct powervr_render *render, uint32_t identity);
 static int target_make(struct powervr_render *render, struct powervr_session *session, const struct powervr_target_shape *shape, struct powervr_target **result);
+static int target_region_headers(struct powervr_session *session, uint64_t bytes, struct powervr_resource **result);
 static int target_memory(struct powervr_session *session, uint64_t bytes, struct powervr_resource **result);
 static void target_records(struct powervr_target *target, uint32_t global_list);
 static int target_cleanup(struct powervr_render *render, struct powervr_target *target);
@@ -143,6 +144,7 @@ powervr_session_heaps_init(
 	powervr_gpu_space_init(&session->pds_space, POWERVR_PDS_HEAP_BASE + POWERVR_PROGRAM_HEAP_START, POWERVR_PDS_HEAP_BYTES - POWERVR_PROGRAM_HEAP_START);
 	powervr_gpu_space_init(&session->usc_space, POWERVR_USC_HEAP_BASE + POWERVR_PROGRAM_HEAP_START, POWERVR_USC_HEAP_BYTES - POWERVR_PROGRAM_HEAP_START);
 	powervr_gpu_space_init(&session->transfer_space, POWERVR_TRANSFER_HEAP_BASE, POWERVR_TRANSFER_HEAP_BYTES);
+	powervr_gpu_space_init(&session->region_space, POWERVR_REGION_HEADER_HEAP_BASE, POWERVR_REGION_HEADER_HEAP_BYTES);
 
 	/* The executor's data sequencer programs: the window's first range. */
 	error = powervr_gpu_space_take(&session->pds_space, POWERVR_EXECUTOR_PDS_BYTES, &address);
@@ -516,7 +518,7 @@ list_make(
 	error = powervr_buffer_create(render, (uint64_t)pages * POWERVR_FREE_LIST_ENTRY_BYTES, &entries);
 	if (error != 0)
 		goto fail;
-	error = powervr_resource_make(session, entries, 1, 0, &list->entries);
+	error = powervr_resource_make_free_list(session, entries, &list->entries);
 	powervr_buffer_put(render, entries);
 	if (error != 0)
 		goto fail;
@@ -694,7 +696,7 @@ target_make(
 	error = target_memory(session, 2U * target->layout.macrolist_bytes, &target->macrolists);
 	if (error != 0)
 		goto fail;
-	error = target_memory(session, 2U * target->layout.region_header_bytes, &target->region_headers);
+	error = target_region_headers(session, 2U * target->layout.region_header_bytes, &target->region_headers);
 	if (error != 0)
 		goto fail;
 	error = target_memory(session, target->layout.vertex_heap_bytes, &target->vertex_heap);
@@ -724,6 +726,32 @@ target_make(
 fail:
 	target_destroy(render, session, target);
 	return error;
+}
+
+/* Makes a render target's region headers, zeroed and mapped in the session's region header window. */
+static int
+target_region_headers(
+	struct powervr_session *session,
+	uint64_t bytes,
+	struct powervr_resource **result)
+{
+	struct powervr_buffer *buffer;
+	int error;
+
+	/* The zeroed buffer. */
+	*result = NULL;
+	error = powervr_buffer_create(session->render, bytes, &buffer);
+	if (error != 0)
+		return error;
+
+	/* The session's handle on it in the region header window; the handle takes the creation reference. */
+	error = powervr_resource_make_region_headers(session, buffer, result);
+	powervr_buffer_put(session->render, buffer);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the memory is mapped. */
+	return 0;
 }
 
 /* Makes one memory of a render target, zeroed, uncached for the core and mapped in the session's general window. */

@@ -87,6 +87,7 @@ struct powervr_resource {
 	struct powervr_session *session;
 	struct powervr_buffer *buffer;
 	uint64_t address;
+	struct powervr_gpu_space *space;
 	int mappable;
 	uint32_t identifier;
 	struct powervr_resource *next_blob;
@@ -271,6 +272,7 @@ struct powervr_session {
 	struct powervr_gpu_space pds_space;
 	struct powervr_gpu_space usc_space;
 	struct powervr_gpu_space transfer_space;
+	struct powervr_gpu_space region_space;
 	struct powervr_buffer *fixed[POWERVR_FIXED_HEAPS];
 	struct powervr_object memory_context;
 	struct powervr_object context;
@@ -383,6 +385,8 @@ int powervr_resource_make(struct powervr_session *session, struct powervr_buffer
 /* Undoes a handle: unmaps it and drops its buffer, unless the core may still reach the session. */
 void powervr_resource_unmake(struct powervr_session *session, struct powervr_resource *resource);
 uint64_t powervr_session_border_table(const struct powervr_session *session);
+int powervr_resource_make_region_headers(struct powervr_session *session, struct powervr_buffer *buffer, struct powervr_resource **result);
+int powervr_resource_make_free_list(struct powervr_session *session, struct powervr_buffer *buffer, struct powervr_resource **result);
 
 /* Finds a blob or an import of a session by the identifier the renderer names it by, or NULL. */
 struct powervr_resource *powervr_session_blob(struct powervr_session *session, uint32_t identifier);

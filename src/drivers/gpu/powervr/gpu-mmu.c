@@ -97,6 +97,10 @@ powervr_gpu_page_entry(
 	if ((flags & POWERVR_GPU_MAP_SLC_BYPASS) != 0U)
 		entry |= POWERVR_GPU_PAGE_SLC_BYPASS;
 
+	/* A page the parameter manager's metadata protection covers. */
+	if ((flags & POWERVR_GPU_MAP_PM_PROTECT) != 0U)
+		entry |= POWERVR_GPU_PAGE_PM_PROTECT;
+
 	/* Succeeded: the entry. */
 	return entry;
 }
