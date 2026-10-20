@@ -108,7 +108,9 @@ _Static_assert(QUEUE_PDS_OFFSET == POWERVR_PROGRAM_HEAP_START && QUEUE_PDS_BYTES
  * frees the shared registers.  On the board a fence after a dispatch
  * without the first kernel locked up (2026-10-21), which may be the
  * fence freeing registers no kernel allocated.  With it the fence kernel
- * is on (POWERVR_EXECUTOR_FENCE_KERNEL).
+ * is on (POWERVR_EXECUTOR_FENCE_KERNEL), and on the board four dispatches
+ * of the three kernels ran without a reset (2026-10-21), so it is the
+ * default and a submission's dispatches keep their order.
  *
  * Values referenced:
  * zedBSD plan/ws269/tests/p008/mesa-pco-vkcompute-stream-bxe-4-32.txt
@@ -118,7 +120,7 @@ _Static_assert(QUEUE_PDS_OFFSET == POWERVR_PROGRAM_HEAP_START && QUEUE_PDS_BYTES
  * fence, sd_type PDS, usc_common_shared, max_instances 8; terminate).
  */
 #ifndef POWERVR_EXECUTOR_MESA_STREAM
-#define POWERVR_EXECUTOR_MESA_STREAM	0
+#define POWERVR_EXECUTOR_MESA_STREAM	1
 #endif
 #define QUEUE_SHARED_COMMON		16U
 #define QUEUE_SHARED_DATA		0x40U

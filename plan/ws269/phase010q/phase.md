@@ -1357,3 +1357,23 @@ csbgen（Mesa 25.0.7 の `gen_pack_header.py` の `__pvr_address`: `((addr >> sh
   - switch を 1 にすると、p009 の 1 kernel の形の期待 2 件が落ちる。stream が変わるためで、板で通ったら既定にし、試験を 3 kernel の形に直す。
   - 板は未実施（Q1 が `-DPOWERVR_EXECUTOR_MESA_STREAM=1` で vkcompute を流す）。
 - 板で通らなかった場合: 1 submission の中の dispatch の間の順序は保証しない（fence が無い）、という制限を docs の Vulkan の queue の節と、この phase.md に書く（q1501 の (2)）。
+
+## q1502 / q1502-i01（2026-10-21）
+
+- (1) 板 91 で、3 kernel（K0 の shared の確保・sd USC の dispatch・fence）で 4 回の dispatch が reset 無しで通り、gpu-selftest は 13/13 になった。fence kernel の lockup の原因は、K0（shared register の確保）が無かったことで確定。
+  - `POWERVR_EXECUTOR_MESA_STREAM` を既定 1 にした。**1 submission の中の dispatch は、各 dispatch の後の fence kernel で順序が守られる。**
+  - p009 の executor の試験を 3 kernel の形に直した（K0 の語、dispatch の sd USC、fence の語、terminate）。504/504。
+- (2) a4f8663f2 で `POWERVR_DIAGNOSTICS` の下へ移した、起動時の診断が core の状態に与える副作用の整理（板 92 で DIAGNOSTICS=1 の結果を待つ）:
+
+  | 処理 | 書く register と値 | 起動後に残る状態 | 「手書き kernel が通る前提」になり得るか |
+  | --- | --- | --- | --- |
+  | `register_check` の最初 | `CLK_CTRL`（0x0000）を読む。host には 0 に見える | — | — |
+  | catalogue base 7 | `BIF_CAT_BASE7`（0x1238）にパターンを書いて読み、0 を書く。32 bit の半分ずつの書きも同じ | 0（この core は MMU_CBASE を使い、BIF_CAT_BASE を使わない） | 低い |
+  | clock の強制 on | `CLK_CTRL` に ALL_ON（0x5555…、各 field の ON）を 64 bit で書き、次に、最初に**読んだ値（0）**を書き戻す。もう一度、32 bit の半分ずつで ALL_ON を書いて 0 に戻す | 書きが届いているなら、`CLK_CTRL` は reset 値（AUTO）ではなく **0（全 field が OFF）**のまま FW の起動へ進む。FW が自分の初期化で CLK_CTRL を設定し直すかは binary で見えない | **最有力**。FW が CLK_CTRL を書き直さないなら、clock の gating の状態が DIAGNOSTICS の有無で変わる。USC の timing（P2 の madd の hazard の類）が変わり、手書き kernel の lane の結果が変わり得る |
+  | bus secure | `SYS_BUS_SECURE` は読むだけ（0 にする書きは `start_processor` に元からある） | 変わらない | 無い |
+  | SLC control | 読むだけ | 変わらない | 無い |
+  | `register_map` | 7 つの band を読むだけ | 変わらない | 無い（読みの副作用を持つ register が band に入っていれば別） |
+  | `powervr_firmware_return_probe` | FW の heap の page の CPU の cache line を invalidate して読む（GPU の register は書かない） | CPU の cache の line が落ちる。FW の heap に CPU の dirty な line があれば、それも消える | 低い。FW の object は uncached の view で書くので、dirty な line は無い筈 |
+
+  - 板 92 の後の切り分け: DIAGNOSTICS=1 で手書き kernel が戻るなら、`register_check` の clock の部分だけ（`CLK_CTRL` ← ALL_ON → 0）を独立の switch にして確かめる。戻るなら「起動時に CLK_CTRL を明示に設定する」のを正式の起動列に入れる（DDK・mainline の起動列は CLK_CTRL を書かない、q1475）。
+- 確認: RISC-V の self-test の build で warning 0。p009 は 504/504。板は未実施。
