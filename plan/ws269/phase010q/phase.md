@@ -537,3 +537,22 @@ CORE_ID: 0x0018 は古い形の id の register。PBVNC_COREID_REG の core（�
 直し（診断）: probe の register を 38 個にした（上のすべてと前の分）。どの catalogue の register に PC（0x405df000 の形）が入っているか、MMU の fault の status が何かを見る。
 
 確かめ: 試験の image の config の vmunix は warning 0。実機は未。
+
+## q1419-i01（P1、2026-10-20）: FW の register の書き込みは届いているか
+
+板（30d65e4b3）:
+- 0 でないのは CORE_ID 0x08470000、0x0020 の packed BVNC 0x00240032003600b6（36.50.54.182）、TIMER だけ。
+- catalogue・MMU・CDM・SLC・idle の register は全部 0。
+
+MIPS の設定を mainline の `pvr_mips_wrapper_init`・`pvr_mips_fw_process` と照らした（すべて一致）:
+- MIPS wrapper: 0xCF800000 >> 16 | micromips。読み戻しの 0x1cf80 と一致。
+- remap 1・5・2・3: 入力の address と enable、出力の page と log2 の segment 12。
+- boot data: stack 0、reg_base 8（GPU の register の物理）、page table 16〜（4 page）、log2 12、page 数 4。
+
+FW の register の書き込みが全部消えているとは考えにくい。FW は host への割り込み（register の書き込み）を出せている（host interrupts 8）。
+
+新しい疑い: 前の probe は 1 register ごとに kern_logf していたので、読みの間に時間がかかり、FW の HWR（kick から約 0xA1A27 の TIMER）をまたいでいた可能性がある。TIMER の最初と最後の差は 0xAF8E1 で、その間隔より長い。reset の後の 0 を読んでいたかもしれない。
+
+直し（診断）: 38 個を先に続けて全部読み、後でまとめて出す。最後の TIMER と最初の差で、読みが HWR の前に収まったかが分かる。
+
+確かめ: 試験の image の config の vmunix は warning 0。実機は未。
