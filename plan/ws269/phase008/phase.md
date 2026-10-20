@@ -738,3 +738,45 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
 | VF2 の vmunix（`plan/ws269/tests/p008/config-visionfive2-compute.mk`、`build/p033/vf2/vmunix`） | rc 0、warning 0 |
 
 - 片付け（Q1 に依頼）: `build/p033/`。
+
+## q1462-i01（P2、2026-10-20）: compiler の出力と executor の道の切り分け
+
+- 板（vf2-dmesg58）: 456 byte、16 temps の fill で lockup（fault は無い）。手書きの compute check は全部 OK。
+- 足した probe（`compute-check.c`、どちらも check の最後に流す。止まりうるため）:
+  - (1) **compiled fill**:
+    - kernel の中で vkcompute の fill の SPIR-V（`userland/tests/vkcompute/shader.h`）を `powervr_shader_read` → `powervr_shader_compile_inline` で compile する。workgroup id 0、buffer は run の 0x1c0000 を即値にする（executor と同じ）。
+    - check の道で 1 kernel（32 instance、check の PDS program、unified 0、field ＝ `powervr_compute_task_field(temps)`）を流す。
+    - 行は `powervr: compute probes: compiled fill N/32 (e), BYTES bytes, TEMPS temps, field F`。期待は data[x] ＝ 3x＋7 で 32/32。
+  - (2) **many kernels**:
+    - executor と同じ並び（1 つの stream に 128 個の kernel、各 kernel は同じ PDS program、最後に fence の kernel と end）で、手書きの 1 step の store を流す。
+    - stream は stream の buffer の 0x8000 から置く（kick の slot 112）。
+    - 行は `powervr: compute probes: 128 kernels of the one-step store in one stream N/32 (e)`。
+  - 読み方:
+    - (1) が 32/32 で (2) が止まるなら、executor の道（kernel の数・stream）が悪い。
+    - (1) が止まって (2) が通るなら、compiler の出力が悪い。
+- (3) compiled fill と手書きの program の比べ（compiler の今の出力、`build/p034/ops.c`）:
+
+| 項目 | 手書き（check の store・LIKE_STORE、板で OK） | compiled fill（直す前・直した後） |
+| --- | --- | --- |
+| IMADD の source | 全部 temporary | 直す前は special の定数（q1461 で temporary に） |
+| IMADD の結果を読むまでの間 | 2 group 以上（例: IMADD r8 → IMM r10 → IMM r11 → ADD64） | 直す前は 1 group（`IMADD r11` → `MOVE r8` → `ADD64` が r11 を読む）。**今回 2 に広げた**（下） |
+| in place | なし | q1458 で staging にした（0） |
+| 読んだ register を書くまでの間 | 2 group 以上 | 2（q1455、wait を埋め草に） |
+| st の data | address の対の次 | `MOVE r8` → address r6・r7、data r8（q1446） |
+| st の後 | wdf、end | wdf、end（同じ） |
+| ADD64 の結果を読むまでの間 | 0（ADD64 → 次の group の pass が読む、板で OK） | 0（ADD64 → STORE） |
+| temps / field | store 16 → 5 block | 16 → `powervr_compute_task_field(16)` ＝ 5（probe の道）。executor は `ceil(16/2)` ＝ 8 |
+| 長さ | store 1 step 144 byte | 464 byte、56 group（wait を多く含む） |
+| 埋め草 | なし | wdf（q1458） |
+
+- 違いからの直し（`shader-backend.c`）: IMADD の結果を直後の group が読む形（RAW、間 0〜1）は、手書きの program に無く、板で確かめていない。`integer_result_read` を足し、`SHADER_HAZARD_GAP` の間隔を IMADD の結果を読む側にも当てた。fill は `IMADD r11` → `MOVE r8` → wait → `ADD64` になった（456 → 464 byte）。`shader_backend_hazards` もこれを数える。
+
+| 確認 | 結果 |
+| --- | --- |
+| compiler の host | 455/0、group 20/0 |
+| p008 | encode 94/0、compute 76/0 |
+| p009 | 511 passed、0 failed |
+| p010 | 全部 0 failed |
+| VF2 の vmunix（`plan/ws269/tests/p008/config-visionfive2-compute.mk`、`build/p034/vf2/vmunix`） | rc 0、warning 0 |
+
+- 片付け（Q1 に依頼）: `build/p034/`。

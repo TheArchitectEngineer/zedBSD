@@ -158,6 +158,7 @@ static void nop_operation(struct shader_machine_operation *operation);
 static int insert_nops(struct shader_backend *backend, unsigned index, unsigned count);
 static int stage_in_place(struct shader_backend *backend, unsigned index, unsigned *added);
 static int operation_in_place(const struct shader_machine_operation *operation);
+static int integer_result_read(const struct shader_machine_operation *writer, const struct shader_machine_operation *reader);
 static struct shader_machine_operation *append(struct backend_select *select, unsigned kind);
 static struct shader_machine_register temp_register(unsigned index);
 static struct shader_machine_register bank_register(unsigned bank, unsigned index);
@@ -386,6 +387,8 @@ shader_backend_space_hazards(
 		needed = 0;
 		for (back = 1; back <= SHADER_HAZARD_GAP && back <= index; back++) {
 			conflict = operations_conflict(&backend->operations[index - back], &backend->operations[index]);
+			if (!conflict)
+				conflict = integer_result_read(&backend->operations[index - back], &backend->operations[index]);
 			if (conflict) {
 				needed = SHADER_HAZARD_GAP + 1U - back;
 				break;
@@ -422,6 +425,35 @@ shader_backend_space_hazards(
 	}
 
 	/* Succeeded: the program is spaced. */
+	return 0;
+}
+
+/*
+ * Says whether a group reads the result of an integer multiply-add just
+ * before it.  The board's hand-built programs, which run right, always
+ * have two groups between a multiply-add and the first read of its
+ * result; the compiler keeps that distance too (its reading right after
+ * is not shown to work).
+ */
+static int
+integer_result_read(
+	const struct shader_machine_operation *writer,
+	const struct shader_machine_operation *reader)
+{
+	unsigned source;
+
+	/* Only the integer multiply-add's result. */
+	if (writer->kind != MACHINE_INTEGER || writer->destination[0].bank != POWERVR_USC_BANK_TEMPORARY)
+		return 0;
+
+	/* Any temporary source of the reader that is it. */
+	for (source = 0; source < 4; source++) {
+		if (reader->source[source].bank == POWERVR_USC_BANK_TEMPORARY &&
+		    reader->source[source].index == writer->destination[0].index)
+			return 1;
+	}
+
+	/* Succeeded: not read. */
 	return 0;
 }
 
@@ -551,6 +583,8 @@ shader_backend_hazards(
 	for (index = 0; index < backend->operation_count; index++) {
 		for (back = 1; back <= SHADER_HAZARD_GAP && back <= index; back++) {
 			conflict = operations_conflict(&backend->operations[index - back], &backend->operations[index]);
+			if (!conflict)
+				conflict = integer_result_read(&backend->operations[index - back], &backend->operations[index]);
 			if (conflict) {
 				count++;
 				break;

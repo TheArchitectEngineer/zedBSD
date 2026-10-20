@@ -44,6 +44,10 @@
 #include "drivers/gpu/powervr/render-sr-program.h"
 #include "drivers/gpu/powervr/interface.h"
 #include "drivers/gpu/powervr/compute-program.h"
+#include "drivers/gpu/powervr/shader.h"
+
+/* The vkcompute fill shader the compiled-fill probe compiles (its SPIR-V words, a header of the test program). */
+#include "../userland/tests/vkcompute/shader.h"
 
 /*
  * The run the rounds use, the rounds, how far apart they are, the bytes
@@ -134,6 +138,23 @@
 #define KICK_GRID_FIRST		(KICK_TEMPS_WIDE + 1U)
 
 /*
+ * The compiled-fill probe's kick, after the grid's, its program 4 KiB
+ * after the short stores' in the probes' rooms, and the words it fills.
+ */
+#define KICK_COMPILED		(KICK_GRID_FIRST + GRID_KICKS)
+#define USC_COMPILED		(USC_STEPS_FOUR + USC_PROBE_SPACING)
+#define COMPILED_OFFSET		0x1c0000U
+
+/*
+ * The many-kernels probe: one stream of KERNELS_MANY kernels of the
+ * one-step store program (its data sequencer program shared), a fence
+ * kernel and the end, as the Vulkan executor lays a dispatch out; its
+ * stream at the kick slot whose place is 0x8000 into the stream buffer.
+ */
+#define KERNELS_MANY		128U
+#define KICK_MANY		((0x8000U - STREAM_FIRST) / STREAM_SPACING)
+
+/*
  * Where in the run the probes write: each probe's area 4 KiB apart
  * from 0x1a0000 (inside the run, below the temporaries program's), and
  * the two short store programs' windows.
@@ -213,6 +234,8 @@ static int write_kick(struct check_state *state, unsigned kick, uint32_t usc_pla
 static int write_probes(struct check_state *state, uint8_t *code);
 static void run_probes(struct check_state *state);
 static void run_nop_probe(struct check_state *state);
+static void run_compiled_fill(struct check_state *state);
+static void run_many_kernels(struct check_state *state);
 static int write_grid(struct check_state *state);
 static void run_grid(struct check_state *state);
 static uint32_t own_words(struct check_state *state, unsigned kind);
@@ -314,6 +337,10 @@ powervr_compute_check(
 
 	/* The probe with no-operation groups, which may stop the core, after everything else. */
 	run_nop_probe(&state);
+
+	/* The executor's way with the hand-built program, then the compiler's program the check's way, last as they may stop the core. */
+	run_many_kernels(&state);
+	run_compiled_fill(&state);
 
 	/* The grid of unified sizes and fields, last and only when asked, as its narrow cells fault. */
 	if (CHECK_GRID)
@@ -947,6 +974,159 @@ run_grid(
 
 	/* The grid on one line: wrong instances of 32 for each unified size and field. */
 	kern_logf("powervr: compute grid (wrong of 32, unified regs u, field f):%s\n", line);
+}
+
+/*
+ * Compiles the vkcompute fill shader (data[x] = 3x + 7) with the
+ * workgroup id 0 and the buffer's address as immediates, as the Vulkan
+ * executor does, and runs it as the check runs its own programs: one
+ * kernel of its workgroup's instances, the check's data sequencer
+ * program, the task field for its temporaries.  Reports the words that
+ * hold their value, on one line.
+ */
+static void
+run_compiled_fill(
+	struct check_state *state)
+{
+	struct powervr_shader_workspace *workspace;
+	struct powervr_shader_program *program;
+	struct powervr_ir_shader *shader;
+	const struct powervr_shader_request *request;
+	volatile uint32_t *words;
+	uint32_t values[POWERVR_SHADER_REQUESTS * 4U];
+	uint8_t *code;
+	uint64_t address;
+	unsigned field;
+	unsigned index;
+	unsigned word;
+	unsigned good;
+	int error;
+
+	/* The working memory. */
+	workspace = kern_malloc(powervr_shader_workspace_size());
+	program = kern_malloc(sizeof(*program));
+	code = kern_malloc(USC_PROBE_SPACING);
+	error = 0;
+	if (workspace == NULL || program == NULL || code == NULL)
+		error = ENOMEM;
+
+	/* What the shader asks for, then its words: the buffer at the probe's area, workgroup 0 of 1. */
+	if (error == 0)
+		error = powervr_shader_read(vkcompute_fill_shader, sizeof(vkcompute_fill_shader) / 4U, POWERVR_SHADER_COMPUTE, NULL, workspace, program, &shader);
+	address = run_address + COMPILED_OFFSET;
+	for (index = 0; error == 0 && index < program->request_count; index++) {
+		request = &program->requests[index];
+		if (request->shared + request->words > POWERVR_SHADER_REQUESTS * 4U) {
+			error = ENOTSUP;
+			break;
+		}
+		for (word = 0; word < request->words; word++)
+			values[request->shared + word] = request->kind == POWERVR_SHADER_REQUEST_NUM_WORKGROUPS ? 1U : 0U;
+		if (request->kind == POWERVR_SHADER_REQUEST_DESCRIPTOR) {
+			values[request->shared] = (uint32_t)address;
+			values[request->shared + 1U] = (uint32_t)(address >> 32);
+		}
+	}
+
+	/* The program compiled with them, in its place, and its kick. */
+	if (error == 0)
+		error = powervr_shader_compile_inline(vkcompute_fill_shader, sizeof(vkcompute_fill_shader) / 4U, POWERVR_SHADER_COMPUTE, NULL, values, program->shareds, workspace, program, code, USC_PROBE_SPACING);
+	if (error == 0 && program->workgroup[0] != POWERVR_COMPUTE_INSTANCES)
+		error = ENOTSUP;
+	if (error == 0)
+		error = powervr_compute_task_field(program->temps, &field);
+	if (error == 0) {
+		put_bytes(state->usc, USC_COMPILED, code, program->length);
+		error = write_kick(state, KICK_COMPILED, USC_COMPILED, 0, field);
+	}
+
+	/* The words, then the kick. */
+	words = state->alias + COMPILED_OFFSET / 4U;
+	for (word = 0; word < POWERVR_COMPUTE_INSTANCES; word++)
+		words[word] = 0xffffffffU;
+	if (error == 0)
+		error = kick(state, KICK_COMPILED);
+
+	/* The words that hold 3x + 7. */
+	good = 0;
+	for (word = 0; word < POWERVR_COMPUTE_INSTANCES; word++) {
+		if (words[word] == word * 3U + 7U)
+			good++;
+	}
+	kern_logf("powervr: compute probes: compiled fill %u/%u (%d), %u bytes, %u temps, field %u\n",
+		  good,
+		  (unsigned)POWERVR_COMPUTE_INSTANCES,
+		  error,
+		  program != NULL ? (unsigned)program->length : 0U,
+		  program != NULL ? (unsigned)program->temps : 0U,
+		  field);
+
+	/* The working memory goes. */
+	kern_free(code);
+	kern_free(program);
+	kern_free(workspace);
+}
+
+/*
+ * Runs one stream of KERNELS_MANY kernels of the one-step store program,
+ * a fence kernel and the end, as the Vulkan executor lays a dispatch out,
+ * and reports, on one line, whether the window holds its words.
+ */
+static void
+run_many_kernels(
+	struct check_state *state)
+{
+	struct powervr_compute_kernel kernel;
+	uint32_t words[POWERVR_COMPUTE_KERNEL_WORDS];
+	uint32_t stream;
+	uint32_t slot;
+	unsigned written;
+	unsigned count;
+	unsigned i;
+	int error;
+
+	/* Every kernel issues the one-step store's data sequencer program. */
+	slot = KICK_STEPS_ONE * PDS_SLOT;
+	stream = STREAM_FIRST + KICK_MANY * STREAM_SPACING;
+	error = 0;
+	for (count = 0; error == 0 && count < KERNELS_MANY; count++) {
+		kern_memset(&kernel, 0, sizeof(kernel));
+		kernel.data_offset = pds_offset + slot;
+		kernel.code_offset = pds_offset + slot + PDS_CODE;
+		kernel.data_words = POWERVR_COMPUTE_PDS_DATA_WORDS;
+		kernel.pds_temporaries = PDS_INPUT_TEMPORARIES;
+		kernel.instances = POWERVR_COMPUTE_INSTANCES;
+		kernel.any_cluster = 1;
+		error = powervr_compute_kernel_words(&kernel, words);
+		for (i = 0; error == 0 && i < POWERVR_COMPUTE_KERNEL_WORDS; i++)
+			put_word(state->streams, stream + i * 4U, words[i]);
+		stream += POWERVR_COMPUTE_KERNEL_WORDS * 4U;
+	}
+
+	/* The fence kernel and the end. */
+	kern_memset(&kernel, 0, sizeof(kernel));
+	kernel.data_offset = pds_offset + PDS_FENCE * PDS_SLOT;
+	kernel.code_offset = pds_offset + PDS_FENCE * PDS_SLOT + PDS_CODE;
+	kernel.data_words = POWERVR_COMPUTE_PDS_DATA_WORDS;
+	kernel.instances = 1;
+	kernel.max_instances = FENCE_INSTANCES;
+	kernel.fence = 1;
+	kernel.shared_from_pds = 1;
+	kernel.common_shared = 1;
+	kernel.any_cluster = 1;
+	if (error == 0)
+		error = powervr_compute_kernel_words(&kernel, words);
+	for (i = 0; error == 0 && i < POWERVR_COMPUTE_KERNEL_WORDS; i++)
+		put_word(state->streams, stream + i * 4U, words[i]);
+	stream += POWERVR_COMPUTE_KERNEL_WORDS * 4U;
+	if (error == 0)
+		put_word(state->streams, stream, powervr_compute_terminate_word());
+
+	/* The window, the kick, the words. */
+	written = 0;
+	if (error == 0)
+		error = run_store_window(state, KICK_MANY, STEPS_ONE_OFFSET, POWERVR_COMPUTE_INSTANCES, &written);
+	kern_logf("powervr: compute probes: %u kernels of the one-step store in one stream %u/32 (%d)\n", (unsigned)KERNELS_MANY, written, error);
 }
 
 /*
