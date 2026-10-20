@@ -943,3 +943,12 @@ source の変更は無し。
   - run の時: stream の address と使った範囲、kernel の数、USC・PDS の使った範囲。
 - 置き方の確認（机上）: 129 個の kernel（128 + fence）× 7 word × 4 = 0xe1c byte に terminate を足しても、0x1000 から始めて 0x1e20 で終わり、0x10000 の stream に収まる。
 - 確認: RISC-V の self-test の build（`build/q1456/st/vmunix`）で warning 0。板は未実施（Q1）。
+
+## q1459 / q1459-i01（2026-10-20）
+
+- DDK（StarFive の tree）を読んで分かったこと: この core の page catalogue は `RGX_CR_BIF_CAT_BASE0..7`（0x1200〜0x1238）ではない。`RGX_CR_MMU_CBASE_MAPPING_CONTEXT`（0xE140）に context id を書き、`RGX_CR_MMU_CBASE_MAPPING`（0xE148、PC の address >> 12）に書く形である（rgxstartstop.c の RGXInitBIF の `#if defined(RGX_CR_MMU_CBASE_MAPPING)` の枝。XE_MEMORY_HIERARCHY の core）。trace の「register range [7-7]」は、この mapping context の 7 番のこと。MIPS の FW では `MMU_CONTEXT_MAPPING_FWIF` が `FWPRIV`（0）と同じなので、7 番は FW の予約ではない。
+- `render-check.c` の `probe_geometry`:
+  - 読む register を足した: BIF_CAT_BASE0..7・INDEX、BIF_CTRL、BIF_FAULT_BANK0 の MMU/REQ status、BIF_MMU_STATUS、BIF_STATUS_MMU、MMU_CBASE_MAPPING_CONTEXT、MMU_FAULT_STATUS・_META。
+  - context 0..7 を 0xE140 に書いて 0xE148 を読む、各 mapping context の catalogue base を 1 行に出す。読んだ後で元の context を書き戻す。
+  - 読む時点は、kick の 200 ms 後（100 ms から変えた）と wait の後（reset の後）。
+- 確認: `build/q1459/st/vmunix`（RISC-V の self-test の build）で warning 0。板は未実施。
