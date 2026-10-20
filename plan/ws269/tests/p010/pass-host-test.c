@@ -10,8 +10,9 @@
  * and refused (two subpasses with ENOBUFS, which the reply makes
  * VK_ERROR_OUT_OF_HOST_MEMORY), the render job of a pass instance (its
  * targets' surfaces, operations and clear values), the partial render
- * area (a colour attachment takes it, a stored depth refuses it with
- * EPERM), and vkCmdClearAttachments as load clears.
+ * area (taken, a depth marked partial so a stored depth is loaded first,
+ * p010j), the depth's layout fields, and vkCmdClearAttachments as load
+ * clears.
  */
 
 #include <errno.h>
@@ -157,6 +158,7 @@ main(void)
 	ok = ok && job.colors[0].load_op == VK_ATTACHMENT_LOAD_OP_CLEAR && job.colors[0].store_op == VK_ATTACHMENT_STORE_OP_STORE;
 	ok = ok && job.colors[0].clear[0] == 0x3f800000U && job.depth.present && job.depth.address == 0x200000U && job.depth.clear_depth == 0x3f800000U;
 	check(ok, "full-area job");
+	check(ok && !job.depth.partial && job.depth.twiddled && job.depth.physical_width == 64 && job.depth.layer_bytes == 0x4000, "depth layout fields");
 
 	/* A partial area: taken with a depth not stored, refused with one stored. */
 	area.x = 8;
@@ -164,7 +166,8 @@ main(void)
 	check(powervr_render_job_begin(&pass, &framebuffer, &area, clears, 2, &job) == 0, "partial area with a colour and an unstored depth taken");
 	pass_info(VK_ATTACHMENT_STORE_OP_STORE);
 	(void)powervr_pass_build(&info, &pass);
-	check(powervr_render_job_begin(&pass, &framebuffer, &area, clears, 2, &job) == EPERM, "partial area with a depth store refused with EPERM");
+	ok = powervr_render_job_begin(&pass, &framebuffer, &area, clears, 2, &job) == 0;
+	check(ok && job.depth.partial && job.depth.store_op == VK_ATTACHMENT_STORE_OP_STORE, "partial area with a depth store taken, marked partial");
 	area.x = 0;
 	area.width = 64;
 	check(powervr_render_job_begin(&pass, &framebuffer, &area, clears, 2, &job) == 0, "full area with a depth store taken");

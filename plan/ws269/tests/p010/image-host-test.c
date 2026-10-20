@@ -143,7 +143,7 @@ main(void)
 		if (format != NULL)
 			expect((powervr_format_linear_features(format) & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) == 0, "no linear sampling before the shared path");
 	}
-	expect(powervr_format_find(VK_FORMAT_R16G16B16A16_SFLOAT) == NULL, "a format outside the table is absent");
+	expect(powervr_format_find(VK_FORMAT_R16_UNORM) == NULL, "a format outside the table is absent");
 	format = powervr_format_find(VK_FORMAT_R8G8B8A8_UNORM);
 	expect(format != NULL && (format->optimal_features & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT) != 0 && (format->optimal_features & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) != 0, "RGBA8 optimal draws and filters");
 	expect(format != NULL && powervr_format_linear_features(format) == (FEATURES_LINEAR_RGBA), "RGBA8 linear: all but sampling");

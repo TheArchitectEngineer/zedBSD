@@ -53,6 +53,7 @@
 #define POWERVR_FORMAT_COLOR		0x1U
 #define POWERVR_FORMAT_DEPTH		0x2U
 #define POWERVR_FORMAT_SRGB		0x4U
+#define POWERVR_FORMAT_FLOAT		0x8U
 
 /* Where one output channel of a view comes from. */
 enum powervr_channel {
