@@ -20,3 +20,5 @@ ZEDBSD_USER_PROGRAMS := $(filter-out powervr-firmware,$(ZEDBSD_USER_PROGRAMS)) \
 	$(if $(filter y,$(GPU_SELFTEST_BOOT)),gpu-selftest-boot) $(SELFTEST_FIRMWARE)
 # The kernel renders a clear and a triangle once at start and says each step (render check).
 CONFIG_POWERVR_RENDER_CHECK := y
+# The GPU reset recovery test (ws269-p015, destructive; run by hand as vkreset --isolated).
+ZEDBSD_USER_PROGRAMS += vkreset
