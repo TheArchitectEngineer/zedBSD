@@ -110,6 +110,21 @@ static void tear_down(struct powervr_core *core, enum late_stage reached);
 static void free_blocks(struct powervr_core *core);
 static void free_file(struct powervr_core *core);
 static uint64_t ms_deadline(unsigned milliseconds);
+static void step_start(const char *name);
+static void step_done(const char *name, int error);
+static void watch_thread(void *argument);
+
+/* How often a step that has not ended is reported again. */
+#define WATCH_REPORT_MS		5000U
+
+/*
+ * The step the later stage is in, for its log lines and for the thread
+ * that reports a step taking long: the name (NULL between steps), the
+ * tick it began, and whether the stage has ended.
+ */
+static const char *step_name;
+static uint64_t step_began;
+static int stage_ended;
 
 /*
  * Starts the later stage on a thread of its own: it waits for the root
@@ -138,6 +153,7 @@ late_thread(
 {
 	struct powervr_core *core;
 	struct powervr_fw_image *image;
+	struct thread *watcher;
 	enum late_stage reached;
 	const char *step;
 	unsigned replies;
@@ -148,8 +164,15 @@ late_thread(
 	reached = LATE_NOTHING;
 	step = "file";
 
+	/* The thread that reports a step taking long; the stage goes on without it. */
+	__atomic_store_n(&stage_ended, 0, __ATOMIC_RELEASE);
+	if (kthread_create(watch_thread, NULL, SCHED_PRIORITY_DEFAULT, &watcher) != 0)
+		kern_logf("powervr: firmware: no thread to report long steps\n");
+
 	/* Reads the file once the root is live, and keeps it for later resets. */
+	step_start("file");
 	error = powervr_firmware_read(FIRMWARE_PATH, FIRMWARE_LIMIT, &core->firmware.file, &core->firmware.file_size);
+	step_done("file", error);
 	if (error == 0) {
 		reached = LATE_FILE;
 
@@ -162,6 +185,7 @@ late_thread(
 		tear_down(core, reached);
 		kern_logf("powervr: firmware %s failed (%d); powered down\n", step, error);
 		powervr_stage_fail(POWERVR_STAGE_FIRMWARE, firmware_reason(step, error));
+		__atomic_store_n(&stage_ended, 1, __ATOMIC_RELEASE);
 		kern_gpu_attach_end();
 		return;
 	}
@@ -180,7 +204,10 @@ late_thread(
 	powervr_stage_ok(POWERVR_STAGE_FIRMWARE);
 
 	/* Publishes the render node over the running firmware; on failure the core goes down the same way. */
+	step_start("render node");
 	error = powervr_render_start(core);
+	step_done("render node", error);
+	__atomic_store_n(&stage_ended, 1, __ATOMIC_RELEASE);
 	if (error != 0) {
 		tear_down(core, LATE_STARTED);
 		powervr_render_abandon(core);
@@ -278,45 +305,59 @@ bring_up(
 	firmware = &core->firmware;
 	*step = "image";
 	bvnc = powervr_bvnc_pack(core->branch, core->version, core->units, core->config);
+	step_start("image");
 	error = powervr_fw_image_parse(firmware->file, firmware->file_size, bvnc, &firmware->image);
+	step_done("image", error);
 	if (error != 0)
 		return error;
 
 	/* Checks the firmware runs on a MIPS processor on a bus wider than 32 bits. */
+	step_start("processor");
 	error = check_processor(&firmware->image, &bus_bits);
+	step_done("processor", error);
 	if (error != 0)
 		return error;
 
 	/* Lays out the program, the command buffers and the records. */
 	*step = "memory";
 	*reached = LATE_MEMORY;
+	step_start("memory");
 	error = lay_out(core, bus_bits);
+	step_done("memory", error);
 	if (error != 0)
 		return error;
 
 	/* Installs the handler of the firmware's interrupt. */
 	*step = "interrupt";
+	step_start("interrupt");
 	error = install_interrupt(core);
+	step_done("interrupt", error);
 	if (error != 0)
 		return error;
 	*reached = LATE_INTERRUPT;
 
 	/* Takes the core out of reset; the processor runs from here. */
 	*step = "start";
+	step_start("start");
 	error = start_processor(core);
+	step_done("start", error);
 	*reached = LATE_STARTED;
 	if (error != 0)
 		return error;
 
 	/* Waits for the firmware to say it started. */
 	*step = "boot";
+	step_start("boot");
 	error = wait_started(core);
+	step_done("boot", error);
 	if (error != 0)
 		return error;
 
 	/* Sends one health check and waits for the firmware to execute it. */
 	*step = "health check";
+	step_start("health check");
 	error = health_check(core);
+	step_done("health check", error);
 	if (error != 0)
 		return error;
 
@@ -904,11 +945,14 @@ start_processor(
 	fence_reset(core, second_reset);
 
 	/* Sets up the system level cache, the MIPS wrapper and the bus attributes. */
+	kern_logf("powervr: firmware: start: out of reset but the Garten; cache\n");
 	init_cache(core);
+	kern_logf("powervr: firmware: start: MIPS wrapper\n");
 	init_wrapper(core);
 	powervr_write64(core, POWERVR_AXI_ACE_LITE, POWERVR_AXI_ACE_LITE_VALUE);
 
 	/* Lets the processor out of reset with a pause on each side. */
+	kern_logf("powervr: firmware: start: processor out of reset\n");
 	kern_usleep_range(RELEASE_PAUSE_US, RELEASE_PAUSE_US * 2U);
 	powervr_write64(core, POWERVR_SOFT_RESET, 0);
 	(void)powervr_read64(core, POWERVR_SOFT_RESET);
@@ -1043,8 +1087,10 @@ wait_started(
 
 		/* The bound is spent without the flag. */
 		now = sched_ticks();
-		if (now >= deadline)
+		if (now >= deadline) {
+			kern_logf("powervr: firmware: boot timed out waiting for the started flag (0x%x)\n", (unsigned)started);
 			return ETIMEDOUT;
+		}
 
 		/* Sleeps one tick. */
 		sched_sleep(now + 1U);
@@ -1075,14 +1121,17 @@ health_check(
 	int error;
 
 	/* The command: its type alone. */
+	answer = 0;
 	for (index = 0; index < POWERVR_COMMAND_WORDS; index++)
 		command[index] = 0;
 	command[POWERVR_COMMAND_TYPE / 4U] = POWERVR_COMMAND_HEALTH_CHECK;
 
 	/* Sends it and waits for the return slot to say it was executed. */
 	error = powervr_command_run(core, command, POWERVR_COMMAND_WAIT_MS, &answer);
-	if (error != 0)
+	if (error != 0) {
+		kern_logf("powervr: firmware: health check timed out waiting for its return slot (%d, 0x%x)\n", error, (unsigned)answer);
 		return error;
+	}
 
 	/* Succeeded: the firmware executed the command. */
 	return 0;
@@ -1175,8 +1224,11 @@ wait_register(
 
 		/* The bound is spent without the bits. */
 		now = sched_ticks();
-		if (now >= deadline)
+		if (now >= deadline) {
+			kern_logf("powervr: firmware: stop timed out waiting for register 0x%x (0x%llx, mask 0x%llx)\n",
+				  (unsigned)offset, (unsigned long long)current, (unsigned long long)mask);
 			return ETIMEDOUT;
+		}
 
 		/* Sleeps one tick. */
 		sched_sleep(now + 1U);
@@ -1271,4 +1323,74 @@ ms_deadline(
 
 	/* Succeeded: the deadline. */
 	return sched_ticks() + ticks;
+}
+
+/* Notes that a step of the later stage begins, on one line. */
+static void
+step_start(
+	const char *name)
+{
+	/* The tick first, so the thread that reports never sees a name with an old tick. */
+	__atomic_store_n(&step_began, sched_ticks(), __ATOMIC_RELEASE);
+	__atomic_store_n(&step_name, name, __ATOMIC_RELEASE);
+	kern_logf("powervr: firmware: %s start\n", name);
+}
+
+/* Notes that a step ended, with how long it took and how it went, on one line. */
+static void
+step_done(
+	const char *name,
+	int error)
+{
+	uint64_t ticks;
+	unsigned milliseconds;
+
+	/* The time the step took. */
+	ticks = sched_ticks() - __atomic_load_n(&step_began, __ATOMIC_ACQUIRE);
+	milliseconds = (unsigned)(ticks * 1000U / KERN_CLOCK_HZ);
+	__atomic_store_n(&step_name, (const char *)NULL, __ATOMIC_RELEASE);
+
+	/* Done, or failed with its error. */
+	if (error == 0) {
+		kern_logf("powervr: firmware: %s done (%u ms)\n", name, milliseconds);
+	} else {
+		kern_logf("powervr: firmware: %s failed (%d) after %u ms\n", name, error, milliseconds);
+	}
+}
+
+/*
+ * Reports, every few seconds, a step of the later stage that has not
+ * ended, until the stage ends.  It runs beside the stage, so a step that
+ * never returns is still named.
+ */
+static void
+watch_thread(
+	void *argument)
+{
+	const char *name;
+	uint64_t began;
+	uint64_t now;
+	uint64_t reported;
+	uint64_t interval;
+
+	(void)argument;
+	interval = ((uint64_t)WATCH_REPORT_MS * KERN_CLOCK_HZ + 999U) / 1000U;
+	reported = 0;
+	while (!__atomic_load_n(&stage_ended, __ATOMIC_ACQUIRE)) {
+		/* Sleeps a second. */
+		sched_sleep(sched_ticks() + KERN_CLOCK_HZ);
+
+		/* A step that has run past the next report time is named. */
+		name = __atomic_load_n(&step_name, __ATOMIC_ACQUIRE);
+		began = __atomic_load_n(&step_began, __ATOMIC_ACQUIRE);
+		now = sched_ticks();
+		if (name == NULL || now - began < interval) {
+			reported = 0;
+			continue;
+		}
+		if (reported != 0 && now - reported < interval)
+			continue;
+		reported = now;
+		kern_logf("powervr: firmware: still in %s after %u s\n", name, (unsigned)((now - began) / KERN_CLOCK_HZ));
+	}
 }
