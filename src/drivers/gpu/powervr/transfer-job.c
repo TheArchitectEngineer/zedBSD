@@ -92,6 +92,7 @@ powervr_transfer_run(
 {
 	struct powervr_transfer_context *context;
 	struct transfer_memory *memory;
+	struct powervr_transfer_request single;
 	struct powervr_render_area row;
 	uint32_t index;
 	bool by_rows;
@@ -121,11 +122,25 @@ powervr_transfer_run(
 	if (!by_rows) {
 		error = transfer_one(render, session, memory, request, &request->area, request->source_y);
 	} else {
+		/*
+		 * A copy's row is a surface of its own one row high at that row's
+		 * address: the line stride cannot name an odd row, so a row of
+		 * the whole surface would land at the wrong place (q1523,
+		 * copy-65).  A blit's row keeps the whole surface and mapping.
+		 */
 		row = request->area;
 		row.height = 1;
+		single = *request;
 		for (index = 0; error == 0 && index < request->area.height; index++) {
 			row.y = request->area.y + index;
-			error = transfer_one(render, session, memory, request, &row, request->source_y + index);
+			if (request->kind == POWERVR_TRANSFER_BLIT) {
+				error = transfer_one(render, session, memory, request, &row, request->source_y + index);
+			} else {
+				single.destination.address = request->destination.address + (uint64_t)row.y * request->destination.row_pitch;
+				single.destination.height = 1;
+				row.y = 0;
+				error = transfer_one(render, session, memory, &single, &row, request->source_y + index);
+			}
 		}
 	}
 
