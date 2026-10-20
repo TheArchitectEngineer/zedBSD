@@ -1149,7 +1149,9 @@ wait_started(
 
 /*
  * Sends one health check through the kernel's command buffer and waits
- * for the firmware to mark it executed.
+ * for the firmware's executed count to reach it: on the VF2 its return
+ * slot stayed empty though the firmware ran it, and mainline sends it
+ * without waiting on the slot.
  *
  * Procedure referenced:
  * Linux v7.3 drivers/gpu/drm/imagination/pvr_ccb.c
@@ -1178,9 +1180,10 @@ health_check(
 	error = powervr_command_send(core, command, &slot);
 	if (error != 0)
 		return error;
-	error = powervr_command_wait(core, slot, POWERVR_COMMAND_WAIT_MS, &answer);
+	error = powervr_command_wait_executed(core, slot, POWERVR_COMMAND_WAIT_MS);
 	if (error != 0) {
-		kern_logf("powervr: firmware: health check timed out waiting for its return slot (%d, 0x%x)\n", error, (unsigned)answer);
+		answer = powervr_object_get32(&core->firmware.kccb_returns, slot * 4U);
+		kern_logf("powervr: firmware: health check timed out waiting for the executed count (%d, return 0x%x)\n", error, (unsigned)answer);
 		firmware_dump(core, slot);
 		return error;
 	}
