@@ -1299,3 +1299,15 @@ csbgen（Mesa 25.0.7 の `gen_pack_header.py` の `__pvr_address`: `((addr >> sh
 
 - 範囲外（P2 の担当）: `compute-check.c` の compute probes の行（compiled fill・dump・field・probe register で約 400 行）は、今回の dmesg の最大の量である。P2 の q1492 の後で、同じ `POWERVR_DIAGNOSTICS` の下に移すことを推める（UAT の config は COMPUTE_CHECK が有効）。
 - 確認: RISC-V の self-test の build で warning 0（既定の 0 と、1 にした時の両方）。p008・p009・p010 の host 試験は failed 0。板は未実施。
+
+## q1495 / q1495-i01（2026-10-21）: Linux の compute の kick を取る道具
+
+- `plan/ws269/tests/p010-linux/capture-cdm.py`（gdb）:
+  - `RGXKickCDM2`（bridge 129、function 5。入力 struct は packed で 108 byte、`pui8DMCmd` +40、`ui32CmdSize` +84、`ui32NumOfWorkgroups` +92、`ui32NumOfWorkitems` +96）で CDM の command を記録する。
+  - 次の ioctl で、firmware の trace の最新の `PC address=` を取る。`walk.py` で、command の +40（mainline の layout の `cdm_ctrl_stream_base`。違えば環境変数 `CDM_STREAM_OFFSET`）の control stream を 256 byte 読む。
+  - 各 kernel の語（KERNEL0 の present の bit で語数を数える）から、PDS の data・code を読む（PDS heap は 0xDA00000000）。
+  - PDS の code の中の DOUTU（class 0xF、dst 2）の const64 から task 語を取り、USC の program を 1 KiB 読む（USC heap は 0xE000000000）。
+  - 結果は `/tmp/cdm-capture.txt` に書く。
+- `decode-cdm.py`: KERNEL0〜8 の全 field（Mesa の rogue_cdm.xml）と、DOUTU の exe_off・sample_rate・temps field（×4 register）・dual_phase を表にする。host で偽の capture を decode して、表示を確かめた。
+- README に手順を書いた（vkcompute を Debian の gcc で `/tmp/vkcompute` に build する、/dev/mem の制限は walk.py と同じ）。
+- 板（Debian）は未実施（Q1）。

@@ -33,3 +33,15 @@ A kernel with `CONFIG_STRICT_DEVMEM` (Debian's default) refuses `/dev/mem` reads
 - `/proc/kcore`: an ELF core of the kernel's address space. Its program headers map the linear map's virtual addresses to physical ranges (`readelf -l /proc/kcore`). To read physical address P, take the PT_LOAD segment whose physical range holds P, and read at `offset + (P - paddr)`. To use it, change `walk.read_phys` to open `/proc/kcore` and make that conversion. It needs root and `CONFIG_PROC_KCORE`, which Debian enables.
 - `devmem2` and `dd if=/dev/mem` go through the same `/dev/mem` and have the same restriction.
 - A small kernel module or `drgn` (`drgn` reads physical memory through `/proc/kcore` with `prog.read(address, size, physical=True)`) is the most direct way when kcore is present.
+
+## The compute kick (capture-cdm.py, decode-cdm.py)
+
+1. Build zedBSD's `userland/tests/vkcompute/main.c` on the board with gcc, against the system's Vulkan loader (as for vkstage), as `/tmp/vkcompute`.
+2. `sudo gdb -q -batch -x /tmp/capture-cdm.py --args /tmp/vkcompute`. At each `RGXKickCDM2` (bridge 129, function 5) it records the CDM command. At the next ioctl it reads the latest `PC address=` from the firmware trace. Then, with `walk.py`, it dumps the following to `/tmp/cdm-capture.txt`:
+   - 256 bytes of the compute control stream (at the command's +40 in the mainline layout; set `CDM_STREAM_OFFSET=` if the closed driver's command puts it elsewhere, judging from the raw command words);
+   - each kernel's words;
+   - the PDS data and code its KERNEL1/2 name (PDS heap 0xDA00000000);
+   - for each task issue (DOUTU) in the code, its 64-bit task word and 1 KiB of the USC program it starts (USC heap 0xE000000000).
+3. `python3 -I /tmp/decode-cdm.py` prints every KERNEL0–8 field (Mesa's `rogue_cdm.xml`) and the DOUTU word's exe offset, sample rate, temps field and dual phase.
+
+The same `/dev/mem` limits apply as for walk.py (see above).
