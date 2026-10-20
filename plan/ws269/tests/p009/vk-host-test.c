@@ -247,7 +247,7 @@ struct kick_entry {
 	int continued;
 	uint32_t width;
 	uint32_t height;
-	uint32_t clear_blue;
+	uint32_t clear_blue;	/* the packed clear's blue byte (8-bit unorm) */
 	int depth;
 	uint32_t depth_load_op;
 	uint32_t depth_store_op;
@@ -301,7 +301,7 @@ powervr_render_job_run(
 		jobs_run[kick_count].continued = job->continued;
 		jobs_run[kick_count].width = job->width;
 		jobs_run[kick_count].height = job->height;
-		jobs_run[kick_count].clear_blue = job->colors[0].clear[2];
+		jobs_run[kick_count].clear_blue = (job->colors[0].clear[0] >> 16) & 0xffU;
 		jobs_run[kick_count].depth = job->depth.present;
 		jobs_run[kick_count].depth_load_op = job->depth.load_op;
 		jobs_run[kick_count].depth_store_op = job->depth.store_op;
@@ -804,7 +804,7 @@ main(
 		static const uint32_t widths[FRAME_SCENES] = { 64, 64, 64, 320 };
 		static const uint32_t heights[FRAME_SCENES] = { 64, 64, 64, 240 };
 		static const uint32_t counts[FRAME_SCENES] = { 3, 4, 6, 36 };
-		static const uint32_t blues[FRAME_SCENES] = { 0x3f800000U, 0x3f800000U, 0x3f800000U, 0x3e20a0a1U };
+		static const uint32_t blues[FRAME_SCENES] = { 255U, 255U, 255U, 40U };
 		static const int depths[FRAME_SCENES] = { 0, 0, 1, 1 };
 		static const int sets[FRAME_SCENES] = { 0, 1, 0, 1 };
 		static const unsigned uploads[FRAME_SCENES] = { 0, 1, 0, 1 };

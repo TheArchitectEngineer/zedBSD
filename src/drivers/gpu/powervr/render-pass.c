@@ -180,10 +180,11 @@ powervr_render_job_begin(
 		if (attachment->load_op == VK_ATTACHMENT_LOAD_OP_CLEAR) {
 			if (reference >= clear_count || clears[reference].is_depth)
 				return EINVAL;
-			target->clear[0] = clears[reference].words[0];
-			target->clear[1] = clears[reference].words[1];
-			target->clear[2] = clears[reference].words[2];
-			target->clear[3] = clears[reference].words[3];
+
+			/* The clear value as the format's clear words, which the background writes. */
+			error = powervr_format_clear_words(view->format, clears[reference].words, target->clear);
+			if (error != 0)
+				return error;
 		}
 	}
 
@@ -242,6 +243,7 @@ powervr_render_job_clear(
 	uint32_t rect;
 	bool whole;
 	bool covers;
+	int error;
 
 	/* Refuses missing input. */
 	if (job == NULL || (count != 0 && attachments == NULL) || (rect_count != 0 && rects == NULL))
@@ -266,10 +268,9 @@ powervr_render_job_clear(
 			if (target->surface.format == NULL)
 				return EINVAL;
 			target->load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
-			target->clear[0] = attachments[index].value.words[0];
-			target->clear[1] = attachments[index].value.words[1];
-			target->clear[2] = attachments[index].value.words[2];
-			target->clear[3] = attachments[index].value.words[3];
+			error = powervr_format_clear_words(target->surface.format, attachments[index].value.words, target->clear);
+			if (error != 0)
+				return error;
 		} else if ((attachments[index].aspects & VK_IMAGE_ASPECT_DEPTH_BIT) != 0) {
 			if (!job->depth.present || !attachments[index].value.is_depth)
 				return EINVAL;

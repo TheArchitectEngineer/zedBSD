@@ -79,7 +79,12 @@ struct powervr_pass_clear {
 	uint32_t words[4];
 };
 
-/* One colour target of a render job: the surface stored to, the view loaded from, its operations and clear value. */
+/*
+ * One colour target of a render job: the surface stored to, the view
+ * loaded from, its operations, and its clear value as the format's clear
+ * words (powervr_format_clear_words: one packed word for four 8-bit
+ * unorm channels), which the clear background writes.
+ */
 struct powervr_render_target {
 	struct powervr_render_surface surface;
 	struct powervr_view_shape view;
