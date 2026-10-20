@@ -99,3 +99,36 @@ sRGB・R8・R8G8・R16 の image は使われていない。このため R32_SFL
 - 確認: `plan/ws269/tests/vkmatrix/run.sh build/q1520-vkm`（lavapipe）20/20 PASS。VF2 `vmunix` と `bin/vkmatrix`
   （`plan/ws269/tests/p010/config-visionfive2-selftest.mk`、`BUILD=build/q1520/vf2`）rc 0、warning 0。driver の source は変えていない。
 - 次: board の出力（word の位置、clear-* の結果）で、壊れる leg（buffer→image／image→buffer／PBE）を決めて直す。
+
+### board 99 と次の診断（2026-10-21）
+
+- board 99: copy-64・clear-64・render-f16 は全 4096 texel で word 1 = word 0、copy-128・clear-128 は (w0 w1 w0 w1)。
+  clear も同じなので image→buffer の copy out（copy program の sample か PBE）が第一の容疑。
+- 読んだ範囲（PBE state・swizzle・pack mode・pixel output width・partition・texture format・pixout の番号）は Mesa と一致し、原因は決まらない。
+- 診断（一時的、transfer-program.c）: copy program が sample の word を逆順で pixel output に書く。読み方:
+  - clear-64 が w0 w0 → sample が word 0 を繰り返している。w1 w1 → PBE が pixout0 を繰り返し読んでいる。
+  - copy-64（逆順が 2 回）が全部 PASS → 両方とも正しく、clear・upload 側が原因。
+- 確認: p010 の host 試験は全部 0 failed。VF2 の vmunix と bin/vkmatrix は rc 0、warning 0。
+
+### board 100 と試み（2026-10-21）
+
+- board 100（逆順の診断）: clear-64 は w1 w1、clear-128 は w3 w2 w3 w2。sample は全 word を出力へ届けている。
+  PBE（pixel output）は、64-bit で pixout0 を、128-bit で pixout0・1 を繰り返し読み、与えた幅の半分しか見ていない。
+- transfer の register の並び（Mesa の `pvr_submit_info_stream_init`・`rogue_fwif_transfer_regs`）と USC_PIXEL_OUTPUT_CTRL の enum は Mesa と一致する。
+  Mesa 26.2.5 の 3D transfer の USC は `pvr_usc_tq` が未実装（finishme）で、実機で確かめた参照が無い。
+- 試み: 逆順を外し、wide な texel には書く register の倍の幅を指定する（64-bit → 4REGISTERS、128-bit → 8REGISTERS、partition はその幅で数える）。
+  幅が足りているなら、余分な幅は害が無い。
+- 確認: p010 の host 試験は全部 0 failed（transfer-program 32 passed、64/128 の register の期待値は 0x1ff9・0x1ffa/0x21000 に更新）。VF2 は rc 0、warning 0。
+- board の判定:
+  - copy-*・clear-* が PASS → この幅で確定する。
+  - 変わらない → 幅以外（PBE の emit・firmware の TQ の扱い）を調べる。
+
+### board 101 と修正（2026-10-21）
+
+- board 101 では、幅を倍にしても 64-bit は w0 w0 のままだった。128-bit は w2 w3 w2 w3 に変わった。幅の不足が原因ではない。
+- 原因: Mesa の `pvr_arch_pbe_get_src_format_and_gamma` は、32-bit の channel を持つ format と整数の format に
+  SOURCE_FORMAT 8_PER_CHANNEL（word をそのまま取る）を付ける。私たちは raw の R32G32/R32G32B32A32 に F16_PER_CHANNEL を付けていた。
+  PBE が source を半分の幅の lane として読み、前半を繰り返していた。
+- 修正: `pbe_source`（render-program.c）は、8/16 byte の texel のうち R16G16B16A16_SFLOAT 以外に 8_PER_CHANNEL を付ける。
+  幅の試み（8REGISTERS）と逆順の診断は外した（幅は 64-bit 2、128-bit 4 に戻した）。
+- 確認: p010 の host 試験は全部 0 failed（transfer-host-test は bit 19 = 1 を確かめる）。VF2 の vmunix と bin/vkmatrix は rc 0、warning 0。board は未実施。

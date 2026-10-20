@@ -1190,9 +1190,10 @@ round_units(
  * Values referenced:
  * Mesa 26.2.5 src/imagination/vulkan/pvr_arch_formats.c
  * (pvr_arch_pbe_get_src_format_and_gamma: a 16-bit float channel takes
- * F16_PER_CHANNEL); src/imagination/vulkan/pvr_arch_job_transfer.c
- * (pvr_pbe_setup_codegen_defaults: a raw copy's destination, not
- * normalised, leaves the source format zero, F16_PER_CHANNEL).
+ * F16_PER_CHANNEL; a format with 32-bit channels, or an integer one,
+ * 8_PER_CHANNEL: the source words taken whole); board 101 (q1520): a
+ * raw R32G32/R32G32B32A32 store with F16_PER_CHANNEL repeated the first
+ * half of the source.
  */
 static int
 pbe_source(
@@ -1218,9 +1219,9 @@ pbe_source(
 		return 0;
 	}
 
-	/* Another format of two or four words (a raw copy's, or 32-bit floats): the words as they are, the field left zero. */
+	/* Another format of two or four words (a raw copy's, or 32-bit channels): the words as they are, 8_PER_CHANNEL. */
 	if (format->texel_bytes == 8 || format->texel_bytes == 16) {
-		*source_format = PBE_SOURCE_F16;
+		*source_format = PBE_SOURCE_8;
 		*gamma = 0;
 		return 0;
 	}
