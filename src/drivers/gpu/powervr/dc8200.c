@@ -106,6 +106,29 @@
 #define DC_UNIT_STEP		4U
 
 /*
+ * The cursor plane of the first panel, and the second panel's offset from
+ * it; the configuration's fields: the format (2, ARGB8888) in bits 0 to
+ * 2, bits 2 and 3 set when shown, the size at bit 5 (1, 64 x 64) and the
+ * hotspot's y at 8 and x at 16.  Hiding clears the format, keeps bit 3.
+ *
+ * Values referenced:
+ * StarFive Linux JH7110_VisionFive2_6.12.y_devel
+ * drivers/gpu/drm/verisilicon/vs_dc_hw.h (DC_CURSOR_CONFIG 0x1468,
+ * DC_CURSOR_ADDRESS 0x146C, DC_CURSOR_LOCATION 0x1470, DC_CURSOR_OFFSET
+ * 0x1080, CURSOR_SIZE_64X64 1) and vs_dc_hw.c (dc_hw_commit: the address,
+ * the location x | y << 16, then the configuration).
+ */
+#define DC_CURSOR_CONFIG	0x1468U
+#define DC_CURSOR_ADDRESS	0x146cU
+#define DC_CURSOR_LOCATION	0x1470U
+#define DC_CURSOR_PANEL_STEP	0x1080U
+#define DC_CURSOR_SHOWN		((1U << 3) | (1U << 2) | 0x2U | (1U << 5))
+#define DC_CURSOR_CLEAR		((0xffU << 16) | (0xffU << 8) | (0x7U << 5) | 0x1fU)
+#define DC_CURSOR_HIDDEN_SET	(1U << 3)
+#define DC_CURSOR_HIDDEN_CLEAR	0x3U
+#define DC_CURSOR_HOT_MAX	63
+
+/*
  * The panel registers the driver sets when it lights the output itself:
  * the dither, the DPI and DP output formats, the four timing words, and
  * the word that starts the panels.
@@ -1449,4 +1472,92 @@ start_panel(
 	value &= ~DC_PANEL_START_SYNC;
 	value |= 1U << DC_HDMI_PANEL;
 	write_display(adoption, DC_PANEL_START, value);
+}
+
+/*
+ * Shows the 64 x 64 ARGB cursor image at physical with its top-left
+ * corner at (x, y) on the HDMI panel, or hides it.  A corner left of or
+ * above the screen is shown through the hotspot, as Linux does.  The
+ * registers are written with the panel's shadowed registers held back and
+ * the plane's commit bit set again, the order Linux's commit uses, so the
+ * cursor changes at a frame boundary with the plane.
+ */
+int
+drv_powervr_dc_cursor(
+	int shown,
+	uint64_t physical,
+	int32_t x,
+	int32_t y)
+{
+	const struct dc_adoption *adoption;
+	const struct powervr_dc_plane *plane;
+	unsigned long enabled;
+	uint32_t base;
+	uint32_t step;
+	uint32_t panel;
+	uint32_t config;
+	uint32_t hot_x;
+	uint32_t hot_y;
+
+	/* Only the controller whose screen is the driver's, and an image it can name. */
+	adoption = &board_adoption;
+	if (!adoption->probed || adoption->verdict != POWERVR_DC_GO || adoption->plane >= POWERVR_DC_PLANES)
+		return ENODEV;
+	if (shown && (physical > DC_ADDRESS_LIMIT || (physical & 0xffU) != 0))
+		return EINVAL;
+
+	/* The hotspot takes what lies left of or above the screen; beyond 63 the cursor is off the screen. */
+	hot_x = 0;
+	hot_y = 0;
+	if (x < 0) {
+		if (x < -DC_CURSOR_HOT_MAX)
+			shown = 0;
+		else
+			hot_x = (uint32_t)-x;
+		x = 0;
+	}
+	if (y < 0) {
+		if (y < -DC_CURSOR_HOT_MAX)
+			shown = 0;
+		else
+			hot_y = (uint32_t)-y;
+		y = 0;
+	}
+	if (x > 0xffff)
+		x = 0xffff;
+	if (y > 0xffff)
+		y = 0xffff;
+
+	/* The registers of the HDMI panel's cursor, and the plane's. */
+	base = DC_HDMI_PANEL != 0U ? DC_CURSOR_PANEL_STEP : 0U;
+	step = DC_UNIT_STEP * adoption->plane;
+	panel = DC_PANEL_EXTRA + DC_UNIT_STEP * DC_HDMI_PANEL;
+	plane = &adoption->state.planes[adoption->plane];
+
+	enabled = spin_lock_irqsave(&dc_commit_lock);
+
+	if (drv_powervr_dc_fatal()) {
+		spin_unlock_irqrestore(&dc_commit_lock, enabled);
+		return ENXIO;
+	}
+
+	/* Holds the shadowed registers back, then the cursor, then the commit edge and the release. */
+	write_display(adoption, panel, adoption->panel_extra | DC_PANEL_EXTRA_HOLD);
+	write_display(adoption, DC_PLANE_EXTRA + step, plane->extra & ~POWERVR_DC_EXTRA_COMMIT);
+	config = read_display(adoption, DC_CURSOR_CONFIG + base);
+	if (shown) {
+		write_display(adoption, DC_CURSOR_ADDRESS + base, (uint32_t)physical);
+		write_display(adoption, DC_CURSOR_LOCATION + base, (uint32_t)x | ((uint32_t)y << 16));
+		config = (config & ~DC_CURSOR_CLEAR) | (hot_x << 16) | (hot_y << 8) | DC_CURSOR_SHOWN;
+	} else {
+		config = (config & ~DC_CURSOR_HIDDEN_CLEAR) | DC_CURSOR_HIDDEN_SET;
+	}
+	write_display(adoption, DC_CURSOR_CONFIG + base, config);
+	write_display(adoption, DC_PLANE_EXTRA + step, plane->extra | POWERVR_DC_EXTRA_COMMIT);
+	write_display(adoption, panel, adoption->panel_extra & ~DC_PANEL_EXTRA_HOLD);
+
+	spin_unlock_irqrestore(&dc_commit_lock, enabled);
+
+	/* Succeeded: the cursor changes at one of the next blanks. */
+	return 0;
 }
