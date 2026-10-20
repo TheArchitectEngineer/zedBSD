@@ -352,3 +352,11 @@ mainline と照らした結果（v7.3 の `pvr_ccb.c`・`pvr_fw.c`・`pvr_rogue_
   - CPU の遅れた store が FW の答えを上書きしていたのなら、fallback の行と probe が出なくなる。
 - HAL の実装・hal.h は変えていない。窓の leaf の属性と U74 の PMA は、この板の結果を見てから（probe の行が alias と cached の値の違いを出す）。
 - 確かめ: VF2 の vmunix は warning 0、p010 は 0 failed。
+
+## q1410-i01（P1、2026-10-20）: probe の「0xc0028000 に 1」の読み直し
+
+- 板の probe は、heap page 0x28000（FW 0xc0028000）の slot 2 の word（offset 8）が 1 だと出した。
+- runtime の record（`rogue_fwif_runtime_cfg`）は offset 8 が `active_pm_latency_persistant` で、host が 1 を書く（`fill_records`、mainline の check の 306 行と一致）。この page は runtime の record で、FW の return の書き先ではない見込みが高い（偽の一致）。os init の field の offset は mainline の check（340〜351 行）と全部一致しており、ずれは無い。
+- そのため return slot の謎は残る。FW は MMU cache の command も実行する（executed count が進む）が、os init の 0xc001d000（entry 0x10142d7、物理 0x4050b000、host の page と同じ、uncached の policy 2・writable・valid）に答えが無い。
+- 直し: probe の行に、page がどの record に属するか（code・data・…・runtime・trace）の名前を足した。fallback は残す（return slot が見えるまで外さない）。
+- 確かめ: VF2 の vmunix は warning 0。
