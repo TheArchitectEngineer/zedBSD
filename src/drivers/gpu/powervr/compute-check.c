@@ -94,7 +94,7 @@
 
 /* How long after a probe kick the core's registers are read, and how many. */
 #define PROBE_STATE_MS		100U
-#define PROBE_REGISTERS		14U
+#define PROBE_REGISTERS		25U
 #define PDS_FENCE		KICK_COUNT
 
 /* The data sequencer temporaries a compute kernel's inputs take. */
@@ -1142,26 +1142,37 @@ probe_report(
  * Values referenced:
  * StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
  * drivers/gpu/drm/img/img-rogue/hwdefs/rogue/km/rgx_cr_defs_km.h
- * (RGX_CR_EVENT_STATUS 0x0130, RGX_CR_SIDEKICK_IDLE 0x03C8,
- * RGX_CR_CDM_CONTEXT_STORE_STATUS 0x04A0, RGX_CR_BIF_CAT_BASE0 0x1200,
+ * (RGX_CR_CORE_ID 0x0018 and RGX_CR_TIMER 0x0160, read first and the
+ * timer again last, to show the reads are the core's own;
+ * RGX_CR_EVENT_STATUS 0x0130, RGX_CR_SIDEKICK_IDLE 0x03C8,
+ * RGX_CR_CDM_CONTEXT_STORE_STATUS 0x04A0, RGX_CR_CDM_CONTEXT_PDS0 0x04A8,
+ * RGX_CR_CDM_CONTEXT_PDS1 0x04B0, RGX_CR_CDM_TERMINATE_PDS 0x04B8,
+ * RGX_CR_CDM_CONTEXT_LOAD_PDS0 0x04D8, RGX_CR_BIF_CAT_BASE0 0x1200,
+ * RGX_CR_BIF_CAT_BASE1 0x1208,
  * RGX_CR_BIF_MMU_ENTRY_STATUS 0x1288, RGX_CR_BIF_MMU_ENTRY 0x1290,
  * RGX_CR_BIF_FAULT_BANK0_MMU_STATUS 0x12B0, ..._REQ_STATUS 0x12B8,
  * RGX_CR_BIF_FAULT_BANK1_MMU_STATUS 0x12C0, ..._REQ_STATUS 0x12C8,
  * RGX_CR_BIF_MMU_STATUS 0x12D0, RGX_CR_BIF_READS_EXT_STATUS 0x1320,
- * RGX_CR_BIF_READS_INT_STATUS 0x1328, RGX_CR_BIF_STATUS_MMU 0x1358).
+ * RGX_CR_BIF_READS_INT_STATUS 0x1328, RGX_CR_BIF_STATUS_MMU 0x1358,
+ * RGX_CR_SLC_STATUS1 0x3870, RGX_CR_SLC_IDLE 0x3898, RGX_CR_JONES_IDLE
+ * 0x8328).
  */
 static void
 probe_registers(
 	struct powervr_core *core)
 {
 	static const uint32_t offsets[PROBE_REGISTERS] = {
-		0x0130U, 0x03c8U, 0x04a0U, 0x1200U, 0x1288U, 0x1290U, 0x12b0U, 0x12b8U,
-		0x12c0U, 0x12c8U, 0x12d0U, 0x1320U, 0x1328U, 0x1358U,
+		0x0018U, 0x0160U, 0x0130U, 0x03c8U, 0x04a0U, 0x04a8U, 0x04b0U, 0x04b8U,
+		0x04d8U, 0x1200U, 0x1208U, 0x1288U, 0x1290U, 0x12b0U, 0x12b8U, 0x12c0U,
+		0x12c8U, 0x12d0U, 0x1320U, 0x1328U, 0x1358U, 0x3870U, 0x3898U, 0x8328U,
+		0x0160U,
 	};
 	unsigned index;
 
-	/* Each register, 64 bits wide, on its own line. */
+	/* Each register on its own line, read 64 bits wide and as two 32-bit halves, to tell a read the bus drops. */
 	for (index = 0; index < PROBE_REGISTERS; index++)
-		kern_logf("powervr: probe: register 0x%04x = 0x%016llx\n", (unsigned)offsets[index],
-			  (unsigned long long)powervr_read64(core, offsets[index]));
+		kern_logf("powervr: probe: register 0x%04x = 0x%016llx (halves 0x%08x 0x%08x)\n", (unsigned)offsets[index],
+			  (unsigned long long)powervr_read64(core, offsets[index]),
+			  (unsigned)powervr_read32(core, offsets[index] + 4U),
+			  (unsigned)powervr_read32(core, offsets[index]));
 }
