@@ -317,6 +317,7 @@ static void collect_freed(struct powervr_flip_hold **taken, unsigned taken_count
 static struct powervr_display_resource *resource_of_hold(struct powervr_flip_hold *hold);
 static void free_resource(struct powervr_display_resource *resource);
 static void free_resources(struct powervr_display_resource **freed, unsigned count);
+static void display_scanout_start(struct powervr_display *display);
 static void check_direct_scan(struct powervr_display_resource *resource, const struct gpu_image_descriptor *image, const struct drv_gpu_scanout_backing *backing);
 static int zero_copy_requested(void);
 
@@ -808,6 +809,14 @@ output_claim(
 		return ESTALE;
 	if (request->plane_index != 0U)
 		return EINVAL;
+
+	/*
+	 * Starts counting frames when attach could not: the board lights its
+	 * own mode only after the GPU attached (q1529), so the controller was
+	 * not yet read then and every present was copied.
+	 */
+	if (!display->scanout)
+		display_scanout_start(display);
 
 	/* Takes the lease when it is free. */
 	mutex_lock(&display->mutex);
@@ -1830,4 +1839,21 @@ zero_copy_requested(
 
 	/* Succeeded: direct scanning. */
 	return 1;
+}
+
+/*
+ * Starts the controller's frame count for a display whose attach found
+ * the controller not yet read, and turns direct scanout on when it runs.
+ */
+static void
+display_scanout_start(
+	struct powervr_display *display)
+{
+	int error;
+
+	/* The count, once; one already started is as good. */
+	error = drv_powervr_dc_vblank_start();
+	if (error == 0 || error == EALREADY)
+		display->scanout = 1;
+	kern_logf("powervr: display scanout %d (late vblank start %d)\n", display->scanout, error);
 }

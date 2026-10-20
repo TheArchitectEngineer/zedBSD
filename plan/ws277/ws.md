@@ -34,3 +34,15 @@ D1〜D11 は全部 (a)（推奨どおり）。原文は Master の decisions-log
 > 2026-10-20 Q1 の記録: ユーザーの VF2 の serial の log（U-Boot SPL 2021.10、`U-Boot 2021.10 (Oct 10 2025) Build: jenkins-github_visionfive2_6.12-16`、`In: serial / Out: serial / Err: serial`）。配布の U-Boot は console を HDMI に出しておらず、GOP の framebuffer を渡さない見込み（未確認）。D1 は no-go の見込みなので、§7 の no-go の順（p005 を先に、その後に p003 の code を使う）で進める。同じ log で SD（mmc1）が `Card did not respond to voltage select! : -110` で認識されていない。
 
 > 2026-10-20 06:11 Q1 の記録: ユーザーの VF2 の実機で、U-Boot が ExitBootServices で消した表示を p005 の自前の点灯（PD_VOUT・SYS と VOUT の clock・reset の順、bootfb の memory を 1920x1080@60 で scanout）で点け直し、画面が出た（「画面がつきました！」、BUG-341）。p005 の U7 の主の部分の実機の確認。
+
+## q1529-i01（2026-10-21、P2）: own mode での直接 scanout
+
+- 原因: board は own mode の display を GPU の attach の後に点ける（`visionfive2.c`: `drv_vf2_gpu_attach` → `drv_powervr_display_attach` → `drv_powervr_dc_vblank_start` → `probe_display_controller` → `light_display` → `drv_powervr_dc_own_mode`）。
+  attach の時点では controller が未読（probed 0）なので、vblank の開始は ENODEV になり、scanout 0 のまま、毎 present を 8 MB 複写していた。
+- 修正（`display.c`）: lease の claim の時に scanout が 0 なら、`drv_powervr_dc_vblank_start` をもう一度試す（`display_scanout_start`。EALREADY も開始済みと扱う）。
+  log は `powervr: display scanout N (late vblank start E)`。
+- 確認:
+  - ws277 の host 試験は p002 16 passes、p003 24 passes と 7 checks、p005 20 passes。
+  - VF2 の vmunix は rc 0、warning 0。
+  - 板は未実施。
+- 残り: DC8200 の cursor plane（`cursor_set`・`cursor_move`・`cursor_hide`、GPU_DISPLAY_HAS_CURSOR）。register は Linux の vs_dc_hw.c（0x1468〜0x1478、64x64 ARGB）。
