@@ -1442,3 +1442,21 @@ csbgen（Mesa 25.0.7 の `gen_pack_header.py` の `__pvr_address`: `((addr >> sh
   - host の lavapipe（`plan/ws269/tests/vkmatrix/run.sh OUTDIR`）で 13/13 PASS。
   - RISC-V の build（`bin/vkmatrix`、libvulkan.so の dynamic、warning 0）。
   - 板は未実施（Q1 が /bin に置いて流す）。
+
+## q1510 / q1510-i01（2026-10-21）: vkmatrix の draws-32・draws-64・two-passes
+
+- 板 96: この 3 つが `FAIL(pixel (0,0) 0x00000000, expected 0xff000080)`（clear の色も無く、全 channel が 0）。他の 10 case は PASS。
+- 3 つに共通するのは、colour の LOAD の道である。
+  - draws-32・draws-64: 16 draw を越える pass は `powervr_render_job_continue` で 2 つ目以降の job が LOAD。
+  - two-passes: app の 2 つ目の pass が LOAD。
+  - LOAD は vkstage・gpu-selftest・render check・job check のどれも使っておらず、板で通るのは初めて。(0,0) は 1 つ目の job が clear する背景なので、2 つ目の job の LOAD（`powervr_render_load_usc` の sample で背景を作る）が 0 を読んで上書きしている、と見る。
+  - dmesg96b には `vk: a render pass did not run`（job の失敗）も reset も無い。job は「成功」している。
+- 候補（板で切り分ける）:
+  1. LOAD の image state（view の address・layout（twiddled か）・format の sample code・寸法）が、1 つ目の job の PBE が store した所と食い違う（別の address か layout を読む）。
+  2. LOAD の program の座標（`SPECIAL_X/Y` を unnormalised の座標として渡す）が、範囲の外か浮動小数でない。
+  3. 2 つの job の間の順序（1 つ目の store が終わる前に 2 つ目の sample が読む）。
+- log を足した（`render-job.c`、`POWERVR_DIAGNOSTICS` の下）:
+  - job ごとに、寸法・draw の数・colour の load_op と store_op・store の address・layout・pitch を出す。
+  - LOAD の時は、view の address・layout・寸法・mapping と、image の 4 語・sampler の 2 語を出す。
+- 板で流すもの: `-DPOWERVR_DIAGNOSTICS=1` の kernel で `vkmatrix two-passes` と `vkmatrix draws-32`。log の store の address と load の address・layout が合うかを見る。合っていれば 2 か 3。
+- 確認: RISC-V の self-test の build で warning 0（DIAGNOSTICS の 0 と 1 の両方）。
