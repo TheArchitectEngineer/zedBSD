@@ -7,3 +7,9 @@ include plan/ws270/tests/config-visionfive2-desktop.mk
 
 ZEDBSD_GRAPHICAL_LOGIN := y
 ZEDBSD_USER_PROGRAMS += mount sh gpu-selftest vkmatrix powervr-firmware
+
+# The compositor's test-only screen capture (userland/desktop/wayland/shot.c) and
+# its client keiland-shot, so the board's screen can be read over SSH (Q1 2026-10-21,
+# the user's 「デスクトップが動くまで自走」). A test image only.
+ZEDBSD_TEST_SCREEN_CAPTURE := y
+ZEDBSD_USER_PROGRAMS += keiland-shot
