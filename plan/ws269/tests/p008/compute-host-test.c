@@ -231,6 +231,35 @@ test_pds(void)
 	check(powervr_compute_kick_program(0x10000, 64, data, code, &count) == EINVAL, "wide field refused");
 
 	/*
+	 * The compute check's hand-written kernel kick (the store program of
+	 * POWERVR_COMPUTE_STORE_TEMPORARIES, its data sequencer program in
+	 * its slot), as it was when the kernel wrote 16384/16384 on the board
+	 * (e116823a6, vf2-dmesg83): field 5, the task word with it, the same
+	 * code, and its kernel's words.
+	 */
+	{
+		struct powervr_compute_kernel hand;
+		uint32_t hand_words[POWERVR_COMPUTE_KERNEL_WORDS];
+		unsigned hand_field;
+
+		check(powervr_compute_task_field(POWERVR_COMPUTE_STORE_TEMPORARIES, &hand_field) == 0 && hand_field == 5, "the hand-written kernel's field is 5");
+		error = powervr_compute_kick_program(0x100000, hand_field, data, code, &count);
+		check(error == 0 && count == 4 && data[0] == 0x00100000 && data[1] == 0x00000028, "the hand-written kernel's task word");
+		check(code[0] == 0xc2c00002 && code[1] == 0xd3000000 && code[2] == 0xf4000002 && code[3] == 0xd3000000, "the hand-written kernel's code");
+		memset(&hand, 0, sizeof(hand));
+		hand.data_offset = 0x2000;
+		hand.code_offset = 0x2010;
+		hand.data_words = POWERVR_COMPUTE_PDS_DATA_WORDS;
+		hand.pds_temporaries = 3;
+		hand.instances = POWERVR_COMPUTE_INSTANCES;
+		hand.any_cluster = 1;
+		check(powervr_compute_kernel_words(&hand, hand_words) == 0 &&
+		      hand_words[0] == 0x00000106 && hand_words[1] == 0x00002000 && hand_words[2] == 0x00002010 &&
+		      hand_words[3] == 0 && hand_words[4] == 0 && hand_words[5] == 0 && hand_words[6] == 0x007c0000,
+		      "the hand-written kernel's kernel words");
+	}
+
+	/*
 	 * The fence program: zero data.  ADD64: opcode 8 <<28, src0 0, src1
 	 * 0, dst ptemp64 0 = 16.  DOUT: opcode 0xf <<28, end 0, dst DOUTC 5.
 	 */

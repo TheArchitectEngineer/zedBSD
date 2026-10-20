@@ -63,10 +63,11 @@
 /*
  * Whether the compute check runs the probes that lock the compute data
  * master up or fault on the VF2 (the fence variants, the executor
- * layouts, the timing probes, the no-operation probe, the Mesa-form
- * fill: fault 0x400000000, vf2-dmesg81); off by default, as their
- * resets mark the compute stage failed and keep the Vulkan device
- * closed.  Build with -DPOWERVR_COMPUTE_LOCKUP_PROBES=1 to run them.
+ * layouts, the no-operation probe, the compiled fill's own workgroup id
+ * probe), and then only with POWERVR_DIAGNOSTICS; off by default, as
+ * their resets mark the compute stage failed and keep the Vulkan device
+ * closed.  Build with -DPOWERVR_DIAGNOSTICS=1
+ * -DPOWERVR_COMPUTE_LOCKUP_PROBES=1 to run them.
  */
 #ifndef POWERVR_COMPUTE_LOCKUP_PROBES
 #define POWERVR_COMPUTE_LOCKUP_PROBES	0
