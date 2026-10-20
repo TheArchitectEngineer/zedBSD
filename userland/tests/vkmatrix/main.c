@@ -27,6 +27,13 @@
  *   sample-bgra             a B8G8R8A8 texture (the target's format)
  *   sample-rendered         an image a render pass cleared, sampled by the
  *                           next pass (what a pass that loads reads)
+ *   copy-64, copy-128       a buffer copied into an OPTIMAL image of 64-bit
+ *                           (R16G16B16A16_SFLOAT) and 128-bit
+ *                           (R32G32B32A32_SFLOAT) texels and back, every
+ *                           byte compared
+ *   render-f16              a pass on an R16G16B16A16_SFLOAT attachment:
+ *                           cleared, one quad drawn, copied out, every
+ *                           half float compared
  *
  * It prints one line a case and a total:
  *
@@ -136,6 +143,16 @@ struct vkmatrix {
 	struct vkmatrix_texture textures[VKMATRIX_TEXTURES_MAX];
 	uint32_t texture_count;
 	VkFormat texture_format;
+	VkRenderPass pipeline_pass;
+	VkImage wide_image;
+	VkDeviceMemory wide_memory;
+	VkImageView wide_view;
+	VkRenderPass wide_pass;
+	VkFramebuffer wide_framebuffer;
+	VkBuffer wide_upload;
+	VkDeviceMemory wide_upload_memory;
+	VkBuffer wide_download;
+	VkDeviceMemory wide_download_memory;
 	uint32_t expected[VKMATRIX_PIXELS];
 	int tolerance;
 	const char *failed_call;
@@ -183,6 +200,15 @@ static VkResult case_two_passes(struct vkmatrix *run);
 static VkResult case_scissor_viewport(struct vkmatrix *run);
 static VkResult case_sample_bgra(struct vkmatrix *run);
 static VkResult case_sample_rendered(struct vkmatrix *run);
+static VkResult wide_image(struct vkmatrix *run, VkFormat format, VkImageUsageFlags usage);
+static VkResult wide_submit(struct vkmatrix *run);
+static void wide_barrier(struct vkmatrix *run, VkImageLayout from, VkImageLayout to, VkAccessFlags source_access, VkAccessFlags destination_access, VkPipelineStageFlags source_stage, VkPipelineStageFlags destination_stage);
+static void wide_copy_out(struct vkmatrix *run);
+static VkResult wide_compare(struct vkmatrix *run, const uint8_t *seen, const uint8_t *wanted, uint32_t texel_bytes);
+static VkResult case_copy_wide(struct vkmatrix *run, VkFormat format, uint32_t texel_bytes);
+static VkResult case_copy_64(struct vkmatrix *run);
+static VkResult case_copy_128(struct vkmatrix *run);
+static VkResult case_render_f16(struct vkmatrix *run);
 
 /* Every case, in the order they run. */
 static const struct vkmatrix_case cases[] = {
@@ -201,6 +227,9 @@ static const struct vkmatrix_case cases[] = {
 	{ "scissor-viewport", case_scissor_viewport },
 	{ "sample-bgra", case_sample_bgra },
 	{ "sample-rendered", case_sample_rendered },
+	{ "copy-64", case_copy_64 },
+	{ "copy-128", case_copy_128 },
+	{ "render-f16", case_render_f16 },
 };
 
 /* The clear colour of every case's first pass: dark blue. */
@@ -241,6 +270,7 @@ main(
 		run.tolerance = 0;
 		run.vertex_floats = 0;
 		run.texture_format = VK_FORMAT_UNDEFINED;
+		run.pipeline_pass = VK_NULL_HANDLE;
 		status = cases[index].run(&run);
 		ran++;
 		if (status != VK_SUCCESS)
@@ -779,6 +809,8 @@ vkmatrix_pipeline(
 	pipeline_info.pDynamicState = &dynamic;
 	pipeline_info.layout = run->layouts[slot];
 	pipeline_info.renderPass = run->clear_pass;
+	if (run->pipeline_pass != VK_NULL_HANDLE)
+		pipeline_info.renderPass = run->pipeline_pass;
 	run->failed_call = "vkCreateGraphicsPipelines";
 	status = vkCreateGraphicsPipelines(run->device, VK_NULL_HANDLE, 1, &pipeline_info, NULL, &run->pipelines[slot]);
 	vkDestroyShaderModule(run->device, modules[0], NULL);
@@ -1288,6 +1320,36 @@ vkmatrix_release_case(
 		memset(texture, 0, sizeof(*texture));
 	}
 	run->texture_count = 0;
+
+	/* The wide cases' image, pass and buffers. */
+	if (run->wide_framebuffer != VK_NULL_HANDLE)
+		vkDestroyFramebuffer(run->device, run->wide_framebuffer, NULL);
+	if (run->wide_pass != VK_NULL_HANDLE)
+		vkDestroyRenderPass(run->device, run->wide_pass, NULL);
+	if (run->wide_view != VK_NULL_HANDLE)
+		vkDestroyImageView(run->device, run->wide_view, NULL);
+	if (run->wide_image != VK_NULL_HANDLE)
+		vkDestroyImage(run->device, run->wide_image, NULL);
+	if (run->wide_memory != VK_NULL_HANDLE)
+		vkFreeMemory(run->device, run->wide_memory, NULL);
+	if (run->wide_upload != VK_NULL_HANDLE)
+		vkDestroyBuffer(run->device, run->wide_upload, NULL);
+	if (run->wide_upload_memory != VK_NULL_HANDLE)
+		vkFreeMemory(run->device, run->wide_upload_memory, NULL);
+	if (run->wide_download != VK_NULL_HANDLE)
+		vkDestroyBuffer(run->device, run->wide_download, NULL);
+	if (run->wide_download_memory != VK_NULL_HANDLE)
+		vkFreeMemory(run->device, run->wide_download_memory, NULL);
+	run->wide_framebuffer = VK_NULL_HANDLE;
+	run->wide_pass = VK_NULL_HANDLE;
+	run->wide_view = VK_NULL_HANDLE;
+	run->wide_image = VK_NULL_HANDLE;
+	run->wide_memory = VK_NULL_HANDLE;
+	run->wide_upload = VK_NULL_HANDLE;
+	run->wide_upload_memory = VK_NULL_HANDLE;
+	run->wide_download = VK_NULL_HANDLE;
+	run->wide_download_memory = VK_NULL_HANDLE;
+	run->pipeline_pass = VK_NULL_HANDLE;
 }
 
 /* Destroys everything the run made, in the reverse order. */
@@ -2181,4 +2243,440 @@ case_sample_rendered(
 	vkDeviceWaitIdle(run->device);
 	vkDestroyFramebuffer(run->device, framebuffer, NULL);
 	return status;
+}
+
+/* Makes the wide cases' 64x64 OPTIMAL image of the format, in device-local memory when there is some, and its view. */
+static VkResult
+wide_image(
+	struct vkmatrix *run,
+	VkFormat format,
+	VkImageUsageFlags usage)
+{
+	VkImageCreateInfo image_info;
+	VkMemoryRequirements requirements;
+	VkMemoryAllocateInfo allocate;
+	VkImageViewCreateInfo view_info;
+	VkResult status;
+
+	/* The image. */
+	memset(&image_info, 0, sizeof(image_info));
+	image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	image_info.imageType = VK_IMAGE_TYPE_2D;
+	image_info.format = format;
+	image_info.extent.width = VKMATRIX_SIZE;
+	image_info.extent.height = VKMATRIX_SIZE;
+	image_info.extent.depth = 1;
+	image_info.mipLevels = 1;
+	image_info.arrayLayers = 1;
+	image_info.samples = VK_SAMPLE_COUNT_1_BIT;
+	image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+	image_info.usage = usage;
+	image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	run->failed_call = "vkCreateImage";
+	status = vkCreateImage(run->device, &image_info, NULL, &run->wide_image);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Its memory: device-local if any type allows it, any type otherwise. */
+	vkGetImageMemoryRequirements(run->device, run->wide_image, &requirements);
+	memset(&allocate, 0, sizeof(allocate));
+	allocate.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	allocate.allocationSize = requirements.size;
+	status = vkmatrix_find_memory(run, requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &allocate.memoryTypeIndex);
+	if (status != VK_SUCCESS)
+		status = vkmatrix_find_memory(run, requirements.memoryTypeBits, 0, &allocate.memoryTypeIndex);
+	if (status != VK_SUCCESS)
+		return status;
+	run->failed_call = "vkAllocateMemory";
+	status = vkAllocateMemory(run->device, &allocate, NULL, &run->wide_memory);
+	if (status != VK_SUCCESS)
+		return status;
+	run->failed_call = "vkBindImageMemory";
+	status = vkBindImageMemory(run->device, run->wide_image, run->wide_memory, 0);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Its view. */
+	memset(&view_info, 0, sizeof(view_info));
+	view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	view_info.image = run->wide_image;
+	view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	view_info.format = format;
+	view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	view_info.subresourceRange.levelCount = 1;
+	view_info.subresourceRange.layerCount = 1;
+	run->failed_call = "vkCreateImageView";
+	status = vkCreateImageView(run->device, &view_info, NULL, &run->wide_view);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the image and its view. */
+	return VK_SUCCESS;
+}
+
+/* Records a layout change of the wide image. */
+static void
+wide_barrier(
+	struct vkmatrix *run,
+	VkImageLayout from,
+	VkImageLayout to,
+	VkAccessFlags source_access,
+	VkAccessFlags destination_access,
+	VkPipelineStageFlags source_stage,
+	VkPipelineStageFlags destination_stage)
+{
+	VkImageMemoryBarrier barrier;
+
+	/* The whole colour image. */
+	memset(&barrier, 0, sizeof(barrier));
+	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.image = run->wide_image;
+	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	barrier.subresourceRange.levelCount = 1;
+	barrier.subresourceRange.layerCount = 1;
+	barrier.oldLayout = from;
+	barrier.newLayout = to;
+	barrier.srcAccessMask = source_access;
+	barrier.dstAccessMask = destination_access;
+	vkCmdPipelineBarrier(run->command, source_stage, destination_stage, 0, 0, NULL, 0, NULL, 1, &barrier);
+}
+
+/* Records the copy of the whole wide image (TRANSFER_SRC) into the download buffer and the barrier to the host. */
+static void
+wide_copy_out(
+	struct vkmatrix *run)
+{
+	VkBufferImageCopy copy;
+	VkMemoryBarrier host;
+
+	/* The copy, tightly packed. */
+	memset(&copy, 0, sizeof(copy));
+	copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	copy.imageSubresource.layerCount = 1;
+	copy.imageExtent.width = VKMATRIX_SIZE;
+	copy.imageExtent.height = VKMATRIX_SIZE;
+	copy.imageExtent.depth = 1;
+	vkCmdCopyImageToBuffer(run->command, run->wide_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, run->wide_download, 1, &copy);
+
+	/* Transfer writes, then host reads. */
+	memset(&host, 0, sizeof(host));
+	host.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+	host.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+	host.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+	vkCmdPipelineBarrier(run->command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &host, 0, NULL, 0, NULL);
+}
+
+/* Ends the recording, submits it and waits for it. */
+static VkResult
+wide_submit(
+	struct vkmatrix *run)
+{
+	VkSubmitInfo submit;
+	VkResult status;
+
+	/* The end, the submit, the wait. */
+	run->failed_call = "vkEndCommandBuffer";
+	status = vkEndCommandBuffer(run->command);
+	if (status != VK_SUCCESS)
+		return status;
+	memset(&submit, 0, sizeof(submit));
+	submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submit.commandBufferCount = 1;
+	submit.pCommandBuffers = &run->command;
+	vkResetFences(run->device, 1, &run->fence);
+	run->failed_call = "vkQueueSubmit";
+	status = vkQueueSubmit(run->queue, 1, &submit, run->fence);
+	if (status != VK_SUCCESS)
+		return status;
+	run->failed_call = "vkWaitForFences";
+	status = vkWaitForFences(run->device, 1, &run->fence, VK_TRUE, VKMATRIX_WAIT_NS);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the work is done. */
+	return VK_SUCCESS;
+}
+
+/*
+ * Compares the texels read back with the wanted ones; on a difference it
+ * names the first texel and fails (VK_ERROR_UNKNOWN, the reason in the
+ * failed call), else it leaves the shared target's comparison passing.
+ */
+static VkResult
+wide_compare(
+	struct vkmatrix *run,
+	const uint8_t *seen,
+	const uint8_t *wanted,
+	uint32_t texel_bytes)
+{
+	uint32_t texel;
+	uint32_t byte;
+	uint32_t word;
+	int differ;
+
+	/* The first texel that differs. */
+	for (texel = 0; texel < VKMATRIX_PIXELS; texel++) {
+		differ = memcmp(seen + texel * texel_bytes, wanted + texel * texel_bytes, texel_bytes);
+		if (differ == 0)
+			continue;
+		byte = texel * texel_bytes;
+		word = 0;
+		memcpy(&word, seen + byte, 4);
+		snprintf(run->reason, sizeof(run->reason), "texel (%u,%u) first word 0x%08x, expected 0x%08x",
+			 (unsigned)(texel % VKMATRIX_SIZE), (unsigned)(texel / VKMATRIX_SIZE), (unsigned)word,
+			 (unsigned)(wanted[byte] | (wanted[byte + 1] << 8) | (wanted[byte + 2] << 16) | ((uint32_t)wanted[byte + 3] << 24)));
+		run->failed_call = run->reason;
+		return VK_ERROR_UNKNOWN;
+	}
+
+	/* Every texel matched: the shared target's comparison has nothing to say. */
+	memcpy(run->expected, run->pixels, sizeof(run->expected));
+	run->tolerance = 0;
+	return VK_SUCCESS;
+}
+
+/* copy-64 and copy-128: a pattern from a buffer into an OPTIMAL image of the format and back, every byte compared. */
+static VkResult
+case_copy_wide(
+	struct vkmatrix *run,
+	VkFormat format,
+	uint32_t texel_bytes)
+{
+	VkCommandBufferBeginInfo begin;
+	VkBufferImageCopy copy;
+	uint8_t *upload;
+	uint8_t *download;
+	void *mapped;
+	uint32_t byte;
+	VkResult status;
+
+	/* The image and the two buffers. */
+	status = wide_image(run, format, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+	if (status != VK_SUCCESS)
+		return status;
+	status = vkmatrix_buffer(run, (VkDeviceSize)VKMATRIX_PIXELS * texel_bytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, &run->wide_upload, &run->wide_upload_memory, &mapped);
+	if (status != VK_SUCCESS)
+		return status;
+	upload = mapped;
+	status = vkmatrix_buffer(run, (VkDeviceSize)VKMATRIX_PIXELS * texel_bytes, VK_BUFFER_USAGE_TRANSFER_DST_BIT, &run->wide_download, &run->wide_download_memory, &mapped);
+	if (status != VK_SUCCESS)
+		return status;
+	download = mapped;
+
+	/* Every byte different (any bit pattern: the copy moves the words as they are), the readback filled otherwise. */
+	for (byte = 0; byte < VKMATRIX_PIXELS * texel_bytes; byte++) {
+		upload[byte] = (uint8_t)(byte * 7U + byte / 251U);
+		download[byte] = 0xa5;
+	}
+
+	/* UNDEFINED -> TRANSFER_DST, the copy in, -> TRANSFER_SRC, the copy out. */
+	memset(&begin, 0, sizeof(begin));
+	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	vkResetCommandBuffer(run->command, 0);
+	vkBeginCommandBuffer(run->command, &begin);
+	wide_barrier(run, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+	memset(&copy, 0, sizeof(copy));
+	copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	copy.imageSubresource.layerCount = 1;
+	copy.imageExtent.width = VKMATRIX_SIZE;
+	copy.imageExtent.height = VKMATRIX_SIZE;
+	copy.imageExtent.depth = 1;
+	vkCmdCopyBufferToImage(run->command, run->wide_upload, run->wide_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+	wide_barrier(run, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+	wide_copy_out(run);
+	status = wide_submit(run);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Every byte back. */
+	status = wide_compare(run, download, upload, texel_bytes);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the texels went in and came back. */
+	return VK_SUCCESS;
+}
+
+/* copy-64: 64-bit texels (R16G16B16A16_SFLOAT). */
+static VkResult
+case_copy_64(
+	struct vkmatrix *run)
+{
+	VkResult status;
+
+	/* The copy of eight bytes a texel. */
+	status = case_copy_wide(run, VK_FORMAT_R16G16B16A16_SFLOAT, 8);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: every byte matched. */
+	return VK_SUCCESS;
+}
+
+/* copy-128: 128-bit texels (R32G32B32A32_SFLOAT). */
+static VkResult
+case_copy_128(
+	struct vkmatrix *run)
+{
+	VkResult status;
+
+	/* The copy of sixteen bytes a texel. */
+	status = case_copy_wide(run, VK_FORMAT_R32G32B32A32_SFLOAT, 16);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: every byte matched. */
+	return VK_SUCCESS;
+}
+
+/*
+ * render-f16: a pass on an R16G16B16A16_SFLOAT attachment cleared to
+ * (0.25, 0.5, 0.75, 1), a quad of (0.625, 0, 0, 1) drawn over its middle,
+ * the image copied out and every half float compared (each value exact
+ * in a half float, so the pack's rounding does not matter).
+ */
+static VkResult
+case_render_f16(
+	struct vkmatrix *run)
+{
+	static const float clear[4] = { 0.25f, 0.5f, 0.75f, 1.0f };
+	static const float red = 0.625f;
+	static const uint16_t clear_halves[4] = { 0x3400, 0x3800, 0x3a00, 0x3c00 };
+	static const uint16_t quad_halves[4] = { 0x3900, 0x0000, 0x0000, 0x3c00 };
+	static uint16_t wanted[VKMATRIX_PIXELS * 4];
+	VkAttachmentDescription attachment;
+	VkAttachmentReference reference;
+	VkSubpassDescription subpass;
+	VkRenderPassCreateInfo pass_info;
+	VkFramebufferCreateInfo framebuffer_info;
+	VkCommandBufferBeginInfo begin;
+	VkRenderPassBeginInfo pass;
+	VkClearValue value;
+	struct vkmatrix_shape shape;
+	void *mapped;
+	uint32_t pipeline;
+	uint32_t first;
+	uint32_t x;
+	uint32_t y;
+	uint32_t channel;
+	int inside;
+	VkResult status;
+
+	/* The attachment and the buffer it is copied into. */
+	status = wide_image(run, VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+	if (status != VK_SUCCESS)
+		return status;
+	status = vkmatrix_buffer(run, (VkDeviceSize)VKMATRIX_PIXELS * 8U, VK_BUFFER_USAGE_TRANSFER_DST_BIT, &run->wide_download, &run->wide_download_memory, &mapped);
+	if (status != VK_SUCCESS)
+		return status;
+	memset(mapped, 0xa5, (size_t)VKMATRIX_PIXELS * 8U);
+
+	/* The pass: cleared, stored, left for the copy. */
+	memset(&attachment, 0, sizeof(attachment));
+	attachment.format = VK_FORMAT_R16G16B16A16_SFLOAT;
+	attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+	attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	attachment.finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+	memset(&reference, 0, sizeof(reference));
+	reference.attachment = 0;
+	reference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	memset(&subpass, 0, sizeof(subpass));
+	subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+	subpass.colorAttachmentCount = 1;
+	subpass.pColorAttachments = &reference;
+	memset(&pass_info, 0, sizeof(pass_info));
+	pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+	pass_info.attachmentCount = 1;
+	pass_info.pAttachments = &attachment;
+	pass_info.subpassCount = 1;
+	pass_info.pSubpasses = &subpass;
+	run->failed_call = "vkCreateRenderPass";
+	status = vkCreateRenderPass(run->device, &pass_info, NULL, &run->wide_pass);
+	if (status != VK_SUCCESS)
+		return status;
+	memset(&framebuffer_info, 0, sizeof(framebuffer_info));
+	framebuffer_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+	framebuffer_info.renderPass = run->wide_pass;
+	framebuffer_info.attachmentCount = 1;
+	framebuffer_info.pAttachments = &run->wide_view;
+	framebuffer_info.width = VKMATRIX_SIZE;
+	framebuffer_info.height = VKMATRIX_SIZE;
+	framebuffer_info.layers = 1;
+	run->failed_call = "vkCreateFramebuffer";
+	status = vkCreateFramebuffer(run->device, &framebuffer_info, NULL, &run->wide_framebuffer);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* The push4 pipeline, made for this pass. */
+	memset(&shape, 0, sizeof(shape));
+	shape.vertex = vkmatrix_push4_vert;
+	shape.vertex_size = sizeof(vkmatrix_push4_vert);
+	shape.fragment = vkmatrix_push4_frag;
+	shape.fragment_size = sizeof(vkmatrix_push4_frag);
+	shape.push_size = 4;
+	shape.push_stages = VK_SHADER_STAGE_FRAGMENT_BIT;
+	run->pipeline_pass = run->wide_pass;
+	status = vkmatrix_pipeline(run, &shape, &pipeline);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* The pass, the quad over the middle, the copy out. */
+	memset(&begin, 0, sizeof(begin));
+	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	vkResetCommandBuffer(run->command, 0);
+	vkBeginCommandBuffer(run->command, &begin);
+	memset(&value, 0, sizeof(value));
+	memcpy(value.color.float32, clear, sizeof(value.color.float32));
+	memset(&pass, 0, sizeof(pass));
+	pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+	pass.renderPass = run->wide_pass;
+	pass.framebuffer = run->wide_framebuffer;
+	pass.renderArea.extent.width = VKMATRIX_SIZE;
+	pass.renderArea.extent.height = VKMATRIX_SIZE;
+	pass.clearValueCount = 1;
+	pass.pClearValues = &value;
+	vkCmdBeginRenderPass(run->command, &pass, VK_SUBPASS_CONTENTS_INLINE);
+	vkmatrix_full_view(run);
+	vkmatrix_bind(run, pipeline);
+	first = vkmatrix_quad(run, 16.0f, 16.0f, 48.0f, 48.0f);
+	vkCmdPushConstants(run->command, run->layouts[pipeline], VK_SHADER_STAGE_FRAGMENT_BIT, 0, 4, &red);
+	vkCmdDraw(run->command, 6, 1, first, 0);
+	vkCmdEndRenderPass(run->command);
+	wide_copy_out(run);
+	status = wide_submit(run);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* The wanted half floats: the quad's inside, the clear outside. */
+	for (y = 0; y < VKMATRIX_SIZE; y++) {
+		for (x = 0; x < VKMATRIX_SIZE; x++) {
+			inside = 0;
+			if (x >= 16U && x < 48U && y >= 16U && y < 48U)
+				inside = 1;
+			for (channel = 0; channel < 4; channel++) {
+				if (inside) {
+					wanted[(y * VKMATRIX_SIZE + x) * 4U + channel] = quad_halves[channel];
+				} else {
+					wanted[(y * VKMATRIX_SIZE + x) * 4U + channel] = clear_halves[channel];
+				}
+			}
+		}
+	}
+
+	/* Every half float. */
+	status = wide_compare(run, mapped, (const uint8_t *)wanted, 8);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the clear and the quad, as half floats. */
+	return VK_SUCCESS;
 }

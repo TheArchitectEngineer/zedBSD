@@ -3,7 +3,7 @@
 # ws269-p010p — format の広げ（純粋な関数の側）
 
 - ID: ws269-p010p（親 [ws269](../ws.md)）
-- Status: in-progress（2026-10-20 P2 q1389-i01: R32_SFLOAT・R16G16B16A16_SFLOAT など、host 試験・M9・VF2 の build まで。残り: raw 64/128 の copy、PBE の F16、板での確認）
+- Status: in-progress（2026-10-20 P2 q1389-i01: R32_SFLOAT・R16G16B16A16_SFLOAT など、host 試験・M9・VF2 の build まで。2026-10-21 P2 q1518-i01: raw 64/128 の copy と PBE の F16 を実装。残り: 板での確認（Q1、vkmatrix の copy-64・copy-128・render-f16））
 - Disposition: normal
 
 （Q1 2026-10-20: P2 が p010m と付けたが p010m は既に「仕上げと受け入れ」の ID なので p010p に付け直した。）
@@ -48,3 +48,43 @@ sRGB・R8・R8G8・R16 の image は使われていない。このため R32_SFL
 
 - `userland/tests/gpu-selftest/main.c`: `present` の段を作った（`vkdemo --duration=4` を exec、上限は 3 倍）。vkdemo は depth を使うので段の need を `depth` にし、depth が通るまでは `present: skip(depth)` の 1 行。`-d PATH` で vkdemo の場所。
 - vkdemo の package を visionfive2 にも、gpu-selftest の依存と試験の image の config（`config-visionfive2-selftest.mk`）に vkdemo。selftest-host.sh に vkdemo の stand-in、期待値を直した（0 failed）。VF2 の userland で vkdemo・gpu-selftest の build rc=0。
+
+## q1518-i01（P2、2026-10-21）: raw 64/128 bit の copy と PBE の F16（R16G16B16A16_SFLOAT の colour attachment）
+
+### raw 64/128 bit の copy（transfer-program.c）
+
+- raw の format を 2 つ足した（Mesa 26.2.5 の `pvr_arch_formats.c`、`texstate.xml`、`pbestate.xml`、`pvr_get_raw_copy_format` に照らした）:
+  - `raw_64` ＝ R32G32_UINT（texture U32U32 35、pack mode U32U32 0x28、XY01）
+  - `raw_128` ＝ R32G32B32A32_UINT（U32U32U32U32 62、0x0b、XYZW）
+  - `powervr_transfer_raw_format` が、8・16 byte の texel にこれを返す。
+- copy の program（`powervr_transfer_copy_usc(format, program)`、引数に format を足した）: sample の raw の語を、1・2・4 個、pixel output register 0〜3 へ順に写す（overlap の check 付き）。
+- `powervr_transfer_regs_build`:
+  - raw の 3 つとも norm を落とす。
+  - **pixel の幅**: 128 bit の texel は 4 register（`USC_PIXEL_OUTPUT_CTRL` の width 1、partition は 1024 語で 5、tile は 4 のまま）。64 bit は core の最小の 2 register のまま。Mesa の `pvr_arch_setup_tiles_in_flight` に照らした。
+- PBE（render-program.c の `pbe_source`）: 2・4 語の format の source format は 0（Mesa の raw の copy は 0 のまま）。
+
+### PBE の F16（R16G16B16A16_SFLOAT へ描く）
+
+- compiler:
+  - shader-spirv-interface.c: `color_format_known` は register の数を返す（8-bit の 2 つは 1、R16G16B16A16_SFLOAT 97 は 2）。half の attachment の色は clamp しない（blend の後も）。PIXEL_LOAD・PIXEL_STORE の immediate_2 ＝ 1 が half。
+  - shader-backend.c: PIXEL_STORE は、channel 0・1 と 2・3 を `pck.f16f16`（format 0b01110、rpt 2、scale なし）で 2 つの output register へ詰める。PIXEL_LOAD は `upck.f16f16` で 2 つから戻す。Mesa の `pco_trans_nir.c`（`nir_op_pack_half_2x16`・`unpack_half_2x16`）と `pco_isa.py`（F_PCK_FORMAT f16f16 0b01110）に照らした。
+- PBE: `pbe_source` は R16G16B16A16_SFLOAT に source F16_PER_CHANNEL（0）・gamma 0（Mesa の `pvr_arch_pbe_get_src_format_and_gamma`）。pack mode は表の 0x0A。
+- image-state.c: R16G16B16A16_SFLOAT の optimal に `COLOR_ATTACHMENT`・`COLOR_ATTACHMENT_BLEND` を足した（`FEATURES_RENDER_F16`）。blit の program は U8888 だけなので、BLIT は名乗らない。
+- **P1 の file の変更（最小）**:
+  - `render-job.c` の `job_check`: colour が 4 byte の時に加えて R16G16B16A16_SFLOAT を通す（1 か所）。
+  - `transfer-job.c`: `powervr_transfer_copy_usc(request->source->format, …)`（引数を足した 1 行）。
+- render の LOAD（load の draw）は、attachment の format の key で compile した program が sample して書く。F16 でも同じ道を通る（板で未確認）。
+
+### 確認
+
+| 確認 | 結果 |
+| --- | --- |
+| p010（host） | 全部 0 failed（transfer-program 32: 64・128 bit の copy の register と program、8-bit の copy の拒否を追加） |
+| p010-compiler | 411/0（half の attachment の keyed の fragment 2 つ）、group 22/0（`pck`・`upck` f16f16 の bytes ＝ Mesa の表の 0x9c 0x0e） |
+| p009 | 505/0。p008 は 94/0・84/0 |
+| vkmatrix（host の lavapipe） | **18/18**（新しい case: `copy-64`・`copy-128`・`render-f16`） |
+| VF2 | kernel `build/p2q1518/vf2/vmunix` rc 0・warning 0、userland の vkmatrix rc 0 |
+| 板 | 未実施（Q1） |
+
+- 板の期待: `vkmatrix: copy-64: PASS`、`copy-128: PASS`、`render-f16: PASS`、`18/18 passed`。
+- 片付け（Q1 に依頼）: `build/p2q1518/`。

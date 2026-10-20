@@ -125,3 +125,13 @@ host の stub（`vk-host-test.c`）は transfer と render job の kick を順�
 5. （1. と同じ）`QUEUE_JOBS_MAX`。
 
 - 片付け（Q1 に依頼）: `build/p011b/`。
+
+## q1518-i01（P2、2026-10-21）: 表の残りの見直し
+
+- 「P1 の file に要る物」の 1・4・5 は、P1 が既に直していた。
+  - `QUEUE_JOBS_MAX` は 64。
+  - `build_command_buffer` は begin の位置で、その instance の最初の job と継続の job を順に走らせる。
+  - p009 の keiland の試験は「T R16 R4c R16 R1c T」と「B は 200 draw を 13 job で」を期待にしていて、505/0 で通る。
+- 突き合わせの表で、driver 側に「未対応・未確認」は残っていない。Keiland の image は B8G8R8A8・R8G8B8A8 だけで、vertex・blend・sampler・pass・limit は対応済み。
+- 今回の追加（p010p の q1518）: R16G16B16A16_SFLOAT の colour attachment と、raw 64/128 bit の copy。Keiland 自身は使わないが、format の問い合わせで出る能力が描ける・写せるものになった。
+- 板の確認は Q1（vkmatrix の 18 case。Keiland の範囲は従来の 15 case）。
