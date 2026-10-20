@@ -14,6 +14,7 @@
 #ifndef KERN_DRIVERS_GPU_POWERVR_TRANSFER_JOB_H
 #define KERN_DRIVERS_GPU_POWERVR_TRANSFER_JOB_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "drivers/gpu/powervr/render-private.h"
@@ -21,8 +22,10 @@
 
 /*
  * One transfer: a clear of the destination's rectangle to a colour
- * (four float or integer bit patterns), or a copy into it from a source
- * view whose corner the rectangle's corner reads.
+ * (four float or integer bit patterns), a copy into it from a source
+ * view whose corner the rectangle's corner reads, or a blit into it from
+ * a source rectangle, scaled, mirrored along a flipped axis, and filtered
+ * linearly when linear is set.
  */
 struct powervr_transfer_request {
 	enum powervr_transfer_kind kind;
@@ -32,6 +35,10 @@ struct powervr_transfer_request {
 	const struct powervr_view_shape *source;
 	uint32_t source_x;
 	uint32_t source_y;
+	struct powervr_render_area source_area;
+	bool flip_x;
+	bool flip_y;
+	bool linear;
 };
 
 /*
