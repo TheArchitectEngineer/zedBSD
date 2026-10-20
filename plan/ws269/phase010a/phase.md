@@ -91,3 +91,35 @@ login の後に `sysctl hw.gpu.powervr.stages`（または `/bin/gpu-selftest` �
 - 実機の結果で cleared の判定（Q1）。
 - design-reviewer のレビューで §8 が変われば合わせる。
 - 規約の全文の見直しは WS の最後の Phase で。
+
+## 追補: gpu-selftest の clear〜present-clear の段（2026-10-20 P2 q1376 / q1376-i01）
+
+記録の置き場所はこの phase.md（gpu-selftest の骨の Phase）に決めた。新しい Phase は作らない。
+
+- **program**: `userland/tests/vkstage/`（1 つの program で、段の名前を引数に取る。`vkstage clear|copy|draw|sample|depth|present`）。vkcompute と同じ形で、instance・device（graphics の family）を作り、操作して読み戻し、`<段>: <device>: PASS, …` か `FAIL, <call> <VkResult>`／`FAIL, pixel (x,y) 0x…, expected 0x…` を 1 行出す。6 つの program でなく 1 つにしたのは、package・platform の規則（`platform/common/userland-dynamic.mk`、`platform/amd64/vmunix.mk` の除外）を 1 組にするため。
+  - clear: OPTIMAL の 64×64 R8G8B8A8 に `vkCmdClearColorImage`(0.25,0.5,0.75,1) → buffer、全 pixel を比べる。
+  - copy: buffer → OPTIMAL → buffer、全 word。
+  - draw: render pass（clear 青）+ 三角形 1 つ（緑）、中心と角 3 点。
+  - sample: 4×4 の texture（四象限）を全面の四角（strip）に NEAREST で、各象限の中心。
+  - depth: D32、近い赤を先に・遠い緑（全面）を後に、中心が赤・角が緑。
+  - present: VK_KHR_display の最初の display・mode・plane で FIFO swapchain、1 枚を transfer の clear で出して 1 秒、戻る（vkdemo を exec する段とは別）。
+  - shader は `shaders/colour.{vert,frag}`・`texture.{vert,frag}` と `.spv`、`shader.h` に glslc（shaderc 2025.2-1）の `-mfmt=num` の出力を埋め込み、build に glslc は要らない。
+- **gpu-selftest**: `-g PATH`（既定 `/bin/vkstage`）。clear・copy・draw・sample・depth と `present-clear`（`vkstage present`、上限は 3 倍の 30 秒）が vkstage を exec する。§8.2 のとおり `frame` を外し、`present`（vkdemo）は skip(not built) のまま。
+- **package**: `vkstage`（amd64 visionfive2）、gpu-selftest の依存に `tests/vkstage`、VF2 の試験の config に vkstage。amd64 の試験の config `plan/ws269/tests/p010/config-amd64-vkstage.mk` を足した。
+- **compiler（O-VSFS の分）**: `plan/ws269/tests/p010-compiler/compile-host-test.c` に vkstage の 4 つの shader（key なし・key あり: 属性 106/109/103、出力 37）を足した。全部 compile でき、IR の実行と machine の比較が一致。compiler の機能の不足は無かった（8/16 bit・整数の除算は要らない形）。制限: key ありの fragment の値の確認は、試験の iterate の値が 1 を超えて pack で 255 に飽和するので弱い。
+
+### 確認（2026-10-20）
+
+| 確認 | コマンド | 結果 |
+| --- | --- | --- |
+| host の Vulkan（llvmpipe）で vkstage | `cc -Wall -Wextra -Werror userland/tests/vkstage/main.c -lvulkan`、各段 | clear・copy・draw・sample・depth PASS。present は host に display が無く `FAIL, no display -3`（期待どおり） |
+| gpu-selftest の host 試験 | `sh plan/ws269/tests/p010/selftest-host.sh OUT` | 10 件 PASS（draw の失敗で sample・depth が skip(draw)、present-clear の timeout を足した） |
+| compiler の host 試験 | `sh plan/ws269/tests/p010-compiler/run.sh OUT` | 382 passed, 0 failed、group 20 passed |
+| VF2 の試験の image | `make ZEDBSD_CONFIG=plan/ws269/tests/p010/config-visionfive2-selftest.mk BUILD=build/p010st/img disk-image -j16` | rc=0、`-Werror` で vkstage・gpu-selftest は warning 0、`rootfs/bin/vkstage` あり |
+| amd64 | `make ZEDBSD_CONFIG=plan/ws269/tests/p010/config-amd64-vkstage.mk BUILD=build/p010st/amd64 disk-image -j8` | rc=0、warning 0、`rootfs/bin/vkstage` あり |
+
+未実施: QEMU（Venus）と VF2 の実機。VF2 では driver の transfer・render（P1 の p010n）が入るまで clear 以降は fail が見込まれる。
+
+### T1 への依頼文（案、Q1 が判断して送る）
+
+amd64 の QEMU の Venus で vkstage を流す（driver を介さない参照の結果として価値がある）: image `make ZEDBSD_CONFIG=plan/ws269/tests/p010/config-amd64-vkstage.mk BUILD=build/<dir> disk-image`、Venus の GPU 付きで起動し、SSH で `/bin/vkstage clear`、`copy`、`draw`、`sample`、`depth` を各 1 回（各 10 秒の上限）。期待は 5 行とも `PASS`。`present` は display の node の有無で結果が変わるので参考（PASS なら QMP の screendump の PNG を 1 枚）。

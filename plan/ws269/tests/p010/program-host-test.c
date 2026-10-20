@@ -21,7 +21,7 @@
 #include <uapi/errno.h>
 
 #include "drivers/gpu/powervr/pds-encode.h"
-#include "drivers/gpu/powervr/render-program.h"
+#include "drivers/gpu/powervr/render-sr-program.h"
 #include "drivers/gpu/powervr/usc-encode.h"
 
 static int failures;

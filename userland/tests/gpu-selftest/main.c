@@ -18,8 +18,11 @@
  * and last "gpu-selftest: N ok, M fail, K skip".  The kernel stage reads
  * hw.gpu.powervr.stages and copies it on a line "gpu-selftest: stages: ...".
  * instance, device and compute come from one run of vkcompute, image
- * from a run of vkimage.  The stages
- * of later phases print skip(not built) until those phases add them.
+ * from a run of vkimage, and clear, copy, draw, sample, depth and
+ * present-clear each from a run of vkstage with the stage's name
+ * (present-clear runs "vkstage present", one cleared frame on the display,
+ * under a limit of 30 seconds).  present (vkdemo on the display) prints
+ * skip(not built) until its phase adds it.
  *
  * Options (the host test uses them in place of the board's):
  *   -c          also write each line to /dev/console
@@ -27,7 +30,8 @@
  *   -n NODE     a render node to open (more than one -n tries each)
  *   -v PATH     the vkcompute program
  *   -i PATH     the vkimage program
- *   -t SECONDS  the time limit of each stage (default 10)
+ *   -g PATH     the vkstage program
+ *   -t SECONDS  the time limit of each stage (default 10; present-clear 3 times it)
  *
  * The exit status is 0 when no stage failed.
  */
@@ -69,15 +73,23 @@ struct selftest {
 	int node_count;
 	const char *vkcompute;
 	const char *vkimage;
+	const char *vkstage;
+	const char *argument;
 	int limit;
 	int counts[3];
 };
 
-/* One stage: its name, the stage it needs (or NULL), and how it runs in the child. */
+/*
+ * One stage: its name, the stage it needs (or NULL), how it runs in the
+ * child, vkstage's argument for it (or NULL), and how many times the time
+ * limit it gets.
+ */
 struct stage {
 	const char *name;
 	const char *needs;
 	int (*run)(struct selftest *test, char *reason, size_t capacity);
+	const char *argument;
+	int limit_times;
 };
 
 static void report(struct selftest *test, const char *format, ...);
@@ -87,25 +99,26 @@ static int stage_kernel(struct selftest *test, char *reason, size_t capacity);
 static int stage_node(struct selftest *test, char *reason, size_t capacity);
 static int stage_vkcompute(struct selftest *test, char *reason, size_t capacity);
 static int stage_image(struct selftest *test, char *reason, size_t capacity);
-static int run_program(const char *path, char *line, size_t capacity);
+static int stage_vkstage(struct selftest *test, char *reason, size_t capacity);
+static int run_program(const char *path, const char *argument, char *line, size_t capacity);
 static int is_vkcompute_stage(const char *name);
 static void vkcompute_outcomes(int status, const char *line, enum outcome *results, char reasons[3][SELFTEST_TEXT_MAX]);
 
 /* The stages, in order; a NULL run is "not built". */
 static const struct stage stages[] = {
-	{ "kernel", NULL, stage_kernel },
-	{ "node", "kernel", stage_node },
-	{ "instance", "node", NULL },
-	{ "device", "instance", NULL },
-	{ "compute", "device", NULL },
-	{ "image", "device", stage_image },
-	{ "clear", "image", NULL },
-	{ "copy", "image", NULL },
-	{ "draw", "image", NULL },
-	{ "sample", "draw", NULL },
-	{ "depth", "draw", NULL },
-	{ "present", "device", NULL },
-	{ "frame", "device", NULL },
+	{ "kernel", NULL, stage_kernel, NULL, 1 },
+	{ "node", "kernel", stage_node, NULL, 1 },
+	{ "instance", "node", NULL, NULL, 1 },
+	{ "device", "instance", NULL, NULL, 1 },
+	{ "compute", "device", NULL, NULL, 1 },
+	{ "image", "device", stage_image, NULL, 1 },
+	{ "clear", "image", stage_vkstage, "clear", 1 },
+	{ "copy", "image", stage_vkstage, "copy", 1 },
+	{ "draw", "image", stage_vkstage, "draw", 1 },
+	{ "sample", "draw", stage_vkstage, "sample", 1 },
+	{ "depth", "draw", stage_vkstage, "depth", 1 },
+	{ "present-clear", "device", stage_vkstage, "present", 3 },
+	{ "present", "device", NULL, NULL, 3 },
 };
 
 /* The stages that come from the one vkcompute run, in the order of its results. */
@@ -173,10 +186,11 @@ run_child(
 		return 1;
 	}
 
-	/* The child: runs the stage, writes its reason, exits 0 on ok. */
+	/* The child: runs the stage with its vkstage argument, writes its reason, exits 0 on ok. */
 	if (child == 0) {
 		setpgid(0, 0);
 		close(pipes[0]);
+		test->argument = stage->argument;
 		result = stage->run(test, reason, capacity);
 		if (result != 0) {
 			got = write(pipes[1], reason, strlen(reason));
@@ -195,7 +209,7 @@ run_child(
 		done = waitpid(child, &status, WNOHANG);
 		if (done == child)
 			break;
-		if (waited >= test->limit * 20) {
+		if (waited >= test->limit * stage->limit_times * 20) {
 			kill(-child, SIGKILL);
 			kill(child, SIGKILL);
 			waitpid(child, &status, 0);
@@ -349,7 +363,7 @@ stage_vkcompute(
 	int status;
 
 	/* Always "fails" to the parent so the line comes back; the parent reads the status in it. */
-	status = run_program(test->vkcompute, line, sizeof(line));
+	status = run_program(test->vkcompute, NULL, line, sizeof(line));
 	snprintf(reason, capacity, "%d %s", status, line);
 	return 1;
 }
@@ -365,7 +379,30 @@ stage_image(
 	int status;
 
 	/* One run of vkimage. */
-	status = run_program(test->vkimage, line, sizeof(line));
+	status = run_program(test->vkimage, NULL, line, sizeof(line));
+	if (status == 0)
+		return 0;
+
+	/* Failed: its line, or its status when it printed none. */
+	if (line[0] != '\0')
+		snprintf(reason, capacity, "%s", line);
+	else
+		snprintf(reason, capacity, "exit %d", status);
+	return 1;
+}
+
+/* The child of a vkstage stage: vkstage's exit 0 is ok, else its line is the reason. */
+static int
+stage_vkstage(
+	struct selftest *test,
+	char *reason,
+	size_t capacity)
+{
+	char line[SELFTEST_TEXT_MAX];
+	int status;
+
+	/* One run of vkstage with the stage's argument. */
+	status = run_program(test->vkstage, test->argument, line, sizeof(line));
 	if (status == 0)
 		return 0;
 
@@ -378,12 +415,14 @@ stage_image(
 }
 
 /*
- * Runs a program with its first output line in line; reports its exit
- * status (128 when it did not exit, 127 when it could not run).
+ * Runs a program, with one argument when argument is not NULL, with its
+ * first output line in line; reports its exit status (128 when it did not
+ * exit, 127 when it could not run).
  */
 static int
 run_program(
 	const char *path,
+	const char *argument,
 	char *line,
 	size_t capacity)
 {
@@ -407,7 +446,7 @@ run_program(
 	if (child == 0) {
 		close(pipes[0]);
 		dup2(pipes[1], STDOUT_FILENO);
-		execl(path, path, (char *)NULL);
+		execl(path, path, argument, (char *)NULL);
 		printf("%s: not run (exec %d)\n", path, errno);
 		fflush(stdout);
 		_exit(127);
@@ -497,7 +536,7 @@ main(
 	int argc,
 	char **argv)
 {
-	static const struct stage vk_stage = { "vkcompute", NULL, stage_vkcompute };
+	static const struct stage vk_stage = { "vkcompute", NULL, stage_vkcompute, NULL, 1 };
 	char reasons[3][SELFTEST_TEXT_MAX];
 	char reason[SELFTEST_TEXT_MAX];
 	enum outcome outcomes[sizeof(stages) / sizeof(stages[0])];
@@ -515,8 +554,9 @@ main(
 	memset(&test, 0, sizeof(test));
 	test.vkcompute = "/bin/vkcompute";
 	test.vkimage = "/bin/vkimage";
+	test.vkstage = "/bin/vkstage";
 	test.limit = 10;
-	while ((option = getopt(argc, argv, "cs:n:v:i:t:")) != -1) {
+	while ((option = getopt(argc, argv, "cs:n:v:i:g:t:")) != -1) {
 		if (option == 'c') {
 			test.console = 1;
 		} else if (option == 's') {
@@ -527,10 +567,12 @@ main(
 			test.vkcompute = optarg;
 		} else if (option == 'i') {
 			test.vkimage = optarg;
+		} else if (option == 'g') {
+			test.vkstage = optarg;
 		} else if (option == 't') {
 			test.limit = atoi(optarg);
 		} else {
-			fprintf(stderr, "usage: gpu-selftest [-c] [-s file] [-n node]... [-v vkcompute] [-i vkimage] [-t seconds]\n");
+			fprintf(stderr, "usage: gpu-selftest [-c] [-s file] [-n node]... [-v vkcompute] [-i vkimage] [-g vkstage] [-t seconds]\n");
 			return 2;
 		}
 	}

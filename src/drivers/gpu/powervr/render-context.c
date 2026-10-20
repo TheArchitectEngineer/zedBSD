@@ -29,7 +29,7 @@
 #include "drivers/gpu/powervr/render-private.h"
 #include "drivers/gpu/powervr/interface.h"
 #include "drivers/gpu/powervr/pds-encode.h"
-#include "drivers/gpu/powervr/render-program.h"
+#include "drivers/gpu/powervr/render-sr-program.h"
 
 /*
  * Where the switch's memory sits in the general window: the VDM call
