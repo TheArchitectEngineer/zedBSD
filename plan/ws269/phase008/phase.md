@@ -1560,3 +1560,23 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
   - 確かめ方（板 1 回）: `-DPOWERVR_DIAGNOSTICS=1` の build で手書きの kernel が 16384/16384 に戻るか。戻れば、register_check の副作用（どの書きが要るか）を P1 が切り分ける。
 - 片付け（Q1 に依頼）: `build/p2q1500/`、scratchpad の `kick*`・`a.txt`・`b.txt`。
 - 注記: 作業中に `git stash`（変更無しで何も積まれなかった）の後の `git stash pop` が、古い stash（agent/p2-bug333 の touch.c）を当てて衝突した。`git reset` と `git checkout HEAD -- userland/desktop/wayland/touch.c` で戻した。stash の entry は残っている。
+
+## q1503-i01（P2、2026-10-21）: compute check の kick を 3 kernel の形に、fence kernel を既定で on
+
+- Q1 の特定:
+  - 手書きの kernel は、板 68（ca76bd427）まで 16384/16384、板 69（bd39399ba ＝ fence kernel の既定 0）から 6944〜9456。
+  - fence 無しでは、kick の完了が store の完了より早い。
+  - P1（板 91）で、K0（shared register の確保）→ 本体（sd_type USC）→ fence kernel の形なら lockup しないと確定した。
+- 変更:
+  1. **`POWERVR_COMPUTE_FENCE_KERNEL` の既定を 1 に戻した**（compute-program.h、注記を 3 kernel の形の経緯に）。
+  2. **helper（compute-program.c・h）**。P1 の vk-queue.c の `build_shared_kernel` とその program（slot 0 の後の 0 data と halt）と同じ値:
+     - `int powervr_compute_shared_program(uint32_t data[POWERVR_COMPUTE_PDS_DATA_WORDS], uint32_t code[POWERVR_COMPUTE_PDS_CODE_MAX], unsigned *code_words)`: data 0・0、code は halt 1 語。
+     - `int powervr_compute_shared_kernel_words(uint32_t data_offset, uint32_t code_offset, uint32_t words[POWERVR_COMPUTE_KERNEL_WORDS])`: data 2 語、usc_common `POWERVR_COMPUTE_SHARED_COMMON`（16 register ＝ 64 byte）、1 instance、max_instances `POWERVR_COMPUTE_FENCE_INSTANCES`（8）、common_shared 1、any_cluster 0（target ALL）。
+     - **P1 への依頼**: vk-queue.c の `build_shared_kernel` と、PDS の shared の program の書き込みを、この 2 つの helper に替える（`QUEUE_SHARED_COMMON`・`QUEUE_FENCE_INSTANCES` は helper の定数と同じ値）。
+  3. **compute check**:
+     - setup で、shared の program を PDS の最後の slot（`PDS_SHARED` ＝ 63）に書く。
+     - `write_kick`（手書きの kernel、coherency、temporaries、probe）と `write_workgroup_kick`（compiled fill）の stream は「shared の kernel（`put_shared_kernel`）→ 本体（`shared_from_usc` 1 ＝ sd_type USC）→ fence kernel → 終わり」になった。fence が off の時は、従来どおり本体と終わりだけ。
+     - 「fence and end」の probe（K0 の無い fence）は `CHECK_LOCKUP` の下に移した。
+  4. p008 の compute-host-test に、shared の program と kernel の語、本体の sd_type USC の bit の期待値を足した（84/0）。
+- host: p008 は 94/0・84/0、p009 は 504/0。VF2 の vmunix（`build/p2q1503/vf2/vmunix`）は rc 0、warning 0。板は未実施（手書きの kernel が 16384/16384 になり、compute の stage が ok になるかを見る）。
+- 片付け（Q1 に依頼）: `build/p2q1503/`、scratchpad の `sh.c`・`sh`。

@@ -49,15 +49,17 @@
 #define POWERVR_COMPUTE_GROUP_USC_INPUTS	4U
 
 /*
- * Whether a compute stream ends with a fence kernel before its end.  On
- * the VF2 every stream with a kernel whose fence bit is set locked the
- * compute data master up after its work (vf2-dmesg65, 2026-10-21), while
- * the same work without one finished; so the streams leave it out and
- * each shading cluster program waits for its stores (wdf) before its
- * end.  Build with -DPOWERVR_COMPUTE_FENCE_KERNEL=1 to look into it.
+ * Whether a compute stream is Mesa's three kernels: the shared register
+ * allocation kernel (powervr_compute_shared_kernel_words), the work (its
+ * shared data the shading cluster's, sd_type USC), and the fence kernel
+ * that waits for the work and frees the registers.  A fence without the
+ * first kernel locked the compute data master up on the VF2
+ * (vf2-dmesg65); with it the fence ran (P1, vf2-dmesg91), and without a
+ * fence the kick finished before the stores of the check's hand-written
+ * kernel did (6944 to 9456 of 16384 words from vf2-dmesg69 on).
  */
 #ifndef POWERVR_COMPUTE_FENCE_KERNEL
-#define POWERVR_COMPUTE_FENCE_KERNEL	0
+#define POWERVR_COMPUTE_FENCE_KERNEL	1
 #endif
 
 /*
@@ -135,6 +137,22 @@ int powervr_compute_temporaries_field(unsigned temporaries, unsigned unit, unsig
 int powervr_compute_task_field(unsigned temporaries, unsigned *field);
 int powervr_compute_kick_program(uint64_t usc_offset, unsigned temporaries_field, uint32_t data[POWERVR_COMPUTE_PDS_DATA_WORDS], uint32_t code[POWERVR_COMPUTE_PDS_CODE_MAX], unsigned *code_words);
 int powervr_compute_workgroup_program(uint64_t usc_offset, unsigned temporaries_field, uint32_t data[POWERVR_COMPUTE_PDS_GROUP_DATA_WORDS], uint32_t code[POWERVR_COMPUTE_PDS_CODE_MAX], unsigned *code_words);
+/*
+ * The shared register allocation kernel: one instance on every cluster
+ * (usc_target ALL), POWERVR_COMPUTE_SHARED_COMMON registers of common
+ * store kept for the kernels after it, no shared data, eight instances
+ * a task; its data sequencer program is two zero data words and a halt.
+ *
+ * Values referenced:
+ * zedBSD plan/ws269/tests/p008/mesa-pco-vkcompute-stream-bxe-4-32.txt
+ * (Mesa 26.2.5's vkcompute stream on BXE-4-32, kernel 0: usc_common_size
+ * 64 bytes, usc_target ALL, sd_type NONE, usc_common_shared,
+ * max_instances 8, one instance).
+ */
+#define POWERVR_COMPUTE_SHARED_COMMON	16U
+#define POWERVR_COMPUTE_FENCE_INSTANCES	8U
+int powervr_compute_shared_program(uint32_t data[POWERVR_COMPUTE_PDS_DATA_WORDS], uint32_t code[POWERVR_COMPUTE_PDS_CODE_MAX], unsigned *code_words);
+int powervr_compute_shared_kernel_words(uint32_t data_offset, uint32_t code_offset, uint32_t words[POWERVR_COMPUTE_KERNEL_WORDS]);
 int powervr_compute_fence_program(uint32_t data[POWERVR_COMPUTE_PDS_DATA_WORDS], uint32_t code[POWERVR_COMPUTE_PDS_CODE_MAX], unsigned *code_words);
 int powervr_compute_store_program(uint64_t base, unsigned steps, uint8_t *output, size_t room, size_t *length);
 /*

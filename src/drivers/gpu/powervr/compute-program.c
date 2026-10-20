@@ -433,6 +433,60 @@ powervr_compute_workgroup_program(
 }
 
 /*
+ * Builds the shared register allocation kernel's data sequencer
+ * program: two zero data words and a halt (compute-program.h).
+ */
+int
+powervr_compute_shared_program(
+	uint32_t data[POWERVR_COMPUTE_PDS_DATA_WORDS],
+	uint32_t code[POWERVR_COMPUTE_PDS_CODE_MAX],
+	unsigned *code_words)
+{
+	int error;
+
+	/* Refuses a missing result. */
+	if (data == NULL || code == NULL || code_words == NULL)
+		return EINVAL;
+
+	/* Zero data, then a halt. */
+	data[0] = 0;
+	data[1] = 0;
+	error = powervr_pds_halt(0, &code[0]);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: one code word. */
+	*code_words = 1;
+	return 0;
+}
+
+/*
+ * Builds the shared register allocation kernel's words for its data
+ * sequencer program at the given places (compute-program.h).
+ */
+int
+powervr_compute_shared_kernel_words(
+	uint32_t data_offset,
+	uint32_t code_offset,
+	uint32_t words[POWERVR_COMPUTE_KERNEL_WORDS])
+{
+	static const struct powervr_compute_kernel cleared;
+	struct powervr_compute_kernel kernel;
+
+	/* One instance on every cluster, the common store kept for the next kernels, no shared data. */
+	kernel = cleared;
+	kernel.data_offset = data_offset;
+	kernel.code_offset = code_offset;
+	kernel.data_words = POWERVR_COMPUTE_PDS_DATA_WORDS;
+	kernel.usc_common = POWERVR_COMPUTE_SHARED_COMMON;
+	kernel.instances = 1;
+	kernel.max_instances = POWERVR_COMPUTE_FENCE_INSTANCES;
+	kernel.common_shared = 1;
+	kernel.any_cluster = 0;
+	return powervr_compute_kernel_words(&kernel, words);
+}
+
+/*
  * Builds the data sequencer program of the fence that ends a compute
  * stream: its zero data word and its code.
  *

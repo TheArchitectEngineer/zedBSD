@@ -260,6 +260,35 @@ test_pds(void)
 	}
 
 	/*
+	 * The shared register allocation kernel ahead of every kick (Mesa's
+	 * kernel 0, as P1's vk-queue.c has it): zero data and a halt; one
+	 * instance on every cluster, common store 16 registers (64 bytes,
+	 * one unit at bit 18), the registers kept (bit 1 of KERNEL1), eight
+	 * instances a task.  The work kernel names the shading cluster as the
+	 * one that loads the shared registers (sd_type USC, bit 3 of KERNEL1).
+	 */
+	{
+		struct powervr_compute_kernel work;
+		uint32_t shared_words[POWERVR_COMPUTE_KERNEL_WORDS];
+
+		check(powervr_compute_shared_program(data, code, &count) == 0 && count == 1 &&
+		      data[0] == 0 && data[1] == 0 && code[0] == 0xd3000000, "the shared kernel's program: zero data, a halt");
+		check(powervr_compute_shared_kernel_words(0x3fc0, 0x3fd0, shared_words) == 0 &&
+		      shared_words[0] == 0x00040004 && shared_words[1] == 0x00003fc2 && shared_words[2] == 0x00003fd0 &&
+		      shared_words[3] == 0 && shared_words[4] == 0 && shared_words[5] == 0 && shared_words[6] == 0x40000000,
+		      "the shared kernel's words");
+		memset(&work, 0, sizeof(work));
+		work.data_offset = 0x2000;
+		work.code_offset = 0x2010;
+		work.data_words = POWERVR_COMPUTE_PDS_DATA_WORDS;
+		work.pds_temporaries = 3;
+		work.instances = POWERVR_COMPUTE_INSTANCES;
+		work.shared_from_usc = 1;
+		work.any_cluster = 1;
+		check(powervr_compute_kernel_words(&work, shared_words) == 0 && shared_words[1] == 0x00002008, "the work kernel's shared data the shading cluster's");
+	}
+
+	/*
 	 * The fence program: zero data.  ADD64: opcode 8 <<28, src0 0, src1
 	 * 0, dst ptemp64 0 = 16.  DOUT: opcode 0xf <<28, end 0, dst DOUTC 5.
 	 */
