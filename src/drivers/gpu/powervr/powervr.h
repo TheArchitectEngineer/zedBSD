@@ -192,6 +192,7 @@ int drv_powervr_dc_frame_fits(uint32_t width, uint32_t height, uint32_t stride);
  * interrupts off; must not be called with it held.
  */
 int drv_powervr_dc_commit(const struct drv_powervr_dc_frame *frame, uint64_t *base);
+int drv_powervr_dc_cursor(int shown, uint64_t physical, int32_t x, int32_t y);
 
 /* Reports the HDMI panel's vertical-blank count. */
 uint64_t drv_powervr_dc_sequence(void);

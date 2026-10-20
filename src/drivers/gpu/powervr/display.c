@@ -73,6 +73,7 @@
 #include <kern/boot.h>
 #include <kern/clock.h>
 #include <kern/dcache.h>
+#include <kern/device-io.h>
 #include <kern/kcrt.h>
 #include <kern/klog.h>
 #include <kern/kmem.h>
@@ -120,6 +121,14 @@
 
 /* How many buffers one presentation or release can let go of: two for each of up to four plane changes. */
 #define POWERVR_DISPLAY_FREED_MAX	8U
+
+/*
+ * The cursor plane's images: 64 x 64 ARGB, below 4 GiB, written through
+ * RAM's uncached alias; three, so the one written is neither shown nor
+ * the one shown before it.
+ */
+#define POWERVR_DISPLAY_CURSOR_IMAGES	3U
+#define POWERVR_DISPLAY_CURSOR_BYTES	(GPU_DISPLAY_CURSOR_MAX * GPU_DISPLAY_CURSOR_MAX * 4U)
 
 /* The name a query reports, and the driver name of the node. */
 #define POWERVR_DISPLAY_NAME		"powervr bootfb"
@@ -239,6 +248,18 @@ struct powervr_display {
 	struct powervr_flip flip;
 	int flipping;
 	struct wait_queue flip_done;
+
+	/*
+	 * The cursor plane (q1529), under the mutex: its images, made at the
+	 * first image set, their uncached views, the one shown or last set
+	 * (-1 before any), whether it is shown, and its corner.
+	 */
+	struct kern_pmem cursor_runs[POWERVR_DISPLAY_CURSOR_IMAGES];
+	uint32_t *cursor_views[POWERVR_DISPLAY_CURSOR_IMAGES];
+	int cursor_image;
+	int cursor_shown;
+	int32_t cursor_x;
+	int32_t cursor_y;
 };
 
 /* Declared before the operation tables that name them. */
@@ -259,6 +280,11 @@ static int output_wait(void *device, void *session, struct gpu_display_wait *req
 static int output_device(void *device, void *session, struct gpu_device_info *info);
 static int output_constraints(void *device, void *session, struct gpu_scanout_constraints *request);
 static int import_image(void *device, void *session, const struct gpu_image_descriptor *image, const struct drv_gpu_scanout_backing *backing, void **result);
+static int output_cursor_set(void *device, void *session, void *resource, const struct gpu_display_cursor_image *request);
+static int output_cursor_move(void *device, void *session, const struct gpu_display_cursor_move *request);
+static int output_cursor_hide(void *device, void *session, const struct gpu_display_cursor_hide *request);
+static int cursor_images(struct powervr_display *display);
+static void cursor_off(struct powervr_display *display);
 
 /* The display operations of the node. */
 static const struct drv_gpu_display_ops display_operations = {
@@ -268,6 +294,9 @@ static const struct drv_gpu_display_ops display_operations = {
 	.release = output_release,
 	.present = output_present,
 	.wait = output_wait,
+	.cursor_set = output_cursor_set,
+	.cursor_move = output_cursor_move,
+	.cursor_hide = output_cursor_hide,
 };
 
 /* The scanout operations: the node's role, its constraints, and the import that waits for the render node. */
@@ -383,6 +412,8 @@ drv_powervr_display_attach(
 	display->flipping = 0;
 	waitq_init(&display->flip_done, "powervr-display flip");
 	display->zero_copy = 0;
+	display->cursor_image = -1;
+	display->cursor_shown = 0;
 
 	/* Publishes the node; before the render node, so it is the first GPU device. */
 	error = drv_gpu_register(&node_operations, display, &display->gpu);
@@ -707,6 +738,12 @@ output_query(
 	request->display_id = POWERVR_DISPLAY_ID;
 	request->generation = POWERVR_DISPLAY_GENERATION;
 	request->flags = GPU_DISPLAY_CONNECTED | GPU_DISPLAY_FIFO;
+
+	/* The cursor plane, when the controller is the driver's (counting frames). */
+	if (!display->scanout)
+		display_scanout_start(display);
+	if (display->scanout)
+		request->flags |= GPU_DISPLAY_HAS_CURSOR;
 	mutex_lock(&display->mutex);
 
 	if (display->owner != NULL && display->sequence != 0U)
@@ -1490,6 +1527,9 @@ end_lease(
 		  (unsigned long long)display->lease,
 		  (unsigned long long)display->sequence);
 
+	/* The lease's cursor goes with it; its image is kept for the next. */
+	cursor_off(display);
+
 	/* The screen is free. */
 	display->owner = NULL;
 	display->lease = 0U;
@@ -1856,4 +1896,186 @@ display_scanout_start(
 	if (error == 0 || error == EALREADY)
 		display->scanout = 1;
 	kern_logf("powervr: display scanout %d (late vblank start %d)\n", display->scanout, error);
+}
+
+/* Makes the cursor plane's images, once; the caller holds the mutex. */
+static int
+cursor_images(
+	struct powervr_display *display)
+{
+	unsigned index;
+	void *view;
+	int error;
+
+	/* Each image: RAM the controller can name, cleared, written through the uncached alias. */
+	for (index = 0; index < POWERVR_DISPLAY_CURSOR_IMAGES; index++) {
+		if (display->cursor_views[index] != NULL)
+			continue;
+		error = kern_pmem_alloc_limited(POWERVR_DISPLAY_CURSOR_BYTES, POWERVR_DISPLAY_PAGE_BYTES, POWERVR_DISPLAY_SCAN_LIMIT - 1U, 0, &display->cursor_runs[index]);
+		if (error != 0)
+			return error;
+		error = kern_pmem_map_uncached(&display->cursor_runs[index], &view);
+		if (error != 0) {
+			(void)kern_pmem_free(&display->cursor_runs[index]);
+			return error;
+		}
+		kern_memset(view, 0, POWERVR_DISPLAY_CURSOR_BYTES);
+		display->cursor_views[index] = view;
+	}
+
+	/* Succeeded: the images exist. */
+	return 0;
+}
+
+/* Hides the cursor; the caller holds the mutex. */
+static void
+cursor_off(
+	struct powervr_display *display)
+{
+	/* Only a shown one is written. */
+	if (!display->cursor_shown)
+		return;
+	(void)drv_powervr_dc_cursor(0, 0, 0, 0);
+	display->cursor_shown = 0;
+}
+
+/*
+ * Copies a cursor image into the next of the plane's images, packed at 64
+ * texels a row and cleared around it (GPU_DISPLAY_CURSOR_SET); a shown
+ * cursor shows it from a coming blank.
+ */
+static int
+output_cursor_set(
+	void *device,
+	void *session,
+	void *private_resource,
+	const struct gpu_display_cursor_image *request)
+{
+	struct powervr_display *display;
+	struct powervr_display_resource *resource;
+	const volatile uint32_t *source;
+	uint32_t *target;
+	uint64_t span;
+	uint32_t pixel;
+	uint32_t row;
+	uint32_t column;
+	int next;
+	int error;
+
+	display = device;
+	resource = private_resource;
+
+	/* The lease's own open, from storage it owns, of a size the plane takes. */
+	if (request->width == 0 || request->height == 0 || request->width > GPU_DISPLAY_CURSOR_MAX || request->height > GPU_DISPLAY_CURSOR_MAX)
+		return EINVAL;
+	if (request->format != GPU_PIXEL_BGRA8888 && request->format != GPU_PIXEL_RGBA8888)
+		return EINVAL;
+	if (request->stride < request->width * 4U || (request->stride & 3U) != 0)
+		return EINVAL;
+	span = (uint64_t)request->stride * (request->height - 1U) + (uint64_t)request->width * 4U;
+	if (request->offset > resource->bytes || span > resource->bytes - request->offset)
+		return EINVAL;
+
+	mutex_lock(&display->mutex);
+
+	if (display->owner != session || display->lease != request->lease) {
+		mutex_unlock(&display->mutex);
+		return EBUSY;
+	}
+	if (resource->owner != session || !display->scanout) {
+		mutex_unlock(&display->mutex);
+		return resource->owner != session ? ESTALE : EOPNOTSUPP;
+	}
+	error = cursor_images(display);
+	if (error != 0) {
+		mutex_unlock(&display->mutex);
+		return error;
+	}
+
+	/* The next image, cleared, then the rows (a red-first image swapped to the plane's blue-first). */
+	next = (display->cursor_image + 1) % (int)POWERVR_DISPLAY_CURSOR_IMAGES;
+	target = display->cursor_views[next];
+	kern_memset(target, 0, POWERVR_DISPLAY_CURSOR_BYTES);
+	for (row = 0; row < request->height; row++) {
+		if (resource->buffer != NULL) {
+			source = (const volatile uint32_t *)(const volatile void *)(powervr_buffer_view(resource->buffer) + request->offset + (uint64_t)row * request->stride);
+		} else {
+			source = (const volatile uint32_t *)(const volatile void *)(resource->address + request->offset + (uint64_t)row * request->stride);
+		}
+		for (column = 0; column < request->width; column++) {
+			pixel = source[column];
+			if (request->format == GPU_PIXEL_RGBA8888)
+				pixel = (pixel & 0xff00ff00U) | ((pixel & 0x00ff0000U) >> 16) | ((pixel & 0x000000ffU) << 16);
+			target[row * GPU_DISPLAY_CURSOR_MAX + column] = pixel;
+		}
+	}
+	kern_io_write_barrier();
+	display->cursor_image = next;
+
+	/* A shown cursor takes the new image where it is. */
+	error = 0;
+	if (display->cursor_shown)
+		error = drv_powervr_dc_cursor(1, display->cursor_runs[next].paddr, display->cursor_x, display->cursor_y);
+
+	mutex_unlock(&display->mutex);
+
+	/* Succeeded: the image is the plane's. */
+	return error;
+}
+
+/* Shows the cursor with its top-left corner at a point (GPU_DISPLAY_CURSOR_MOVE). */
+static int
+output_cursor_move(
+	void *device,
+	void *session,
+	const struct gpu_display_cursor_move *request)
+{
+	struct powervr_display *display;
+	int error;
+
+	display = device;
+	mutex_lock(&display->mutex);
+
+	/* The lease's own open, once it has set an image. */
+	if (display->owner != session || display->lease != request->lease) {
+		mutex_unlock(&display->mutex);
+		return EBUSY;
+	}
+	if (display->cursor_image < 0) {
+		mutex_unlock(&display->mutex);
+		return EINVAL;
+	}
+
+	/* The corner, shown from a coming blank. */
+	display->cursor_x = request->x;
+	display->cursor_y = request->y;
+	error = drv_powervr_dc_cursor(1, display->cursor_runs[display->cursor_image].paddr, request->x, request->y);
+	if (error == 0)
+		display->cursor_shown = 1;
+
+	mutex_unlock(&display->mutex);
+	return error;
+}
+
+/* Hides the cursor, keeping its image (GPU_DISPLAY_CURSOR_HIDE). */
+static int
+output_cursor_hide(
+	void *device,
+	void *session,
+	const struct gpu_display_cursor_hide *request)
+{
+	struct powervr_display *display;
+
+	display = device;
+	mutex_lock(&display->mutex);
+
+	/* The lease's own open. */
+	if (display->owner != session || display->lease != request->lease) {
+		mutex_unlock(&display->mutex);
+		return EBUSY;
+	}
+	cursor_off(display);
+
+	mutex_unlock(&display->mutex);
+	return 0;
 }

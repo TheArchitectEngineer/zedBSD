@@ -46,3 +46,26 @@ D1〜D11 は全部 (a)（推奨どおり）。原文は Master の decisions-log
   - VF2 の vmunix は rc 0、warning 0。
   - 板は未実施。
 - 残り: DC8200 の cursor plane（`cursor_set`・`cursor_move`・`cursor_hide`、GPU_DISPLAY_HAS_CURSOR）。register は Linux の vs_dc_hw.c（0x1468〜0x1478、64x64 ARGB）。
+
+## q1529-i01（2026-10-21、P2）: DC8200 の cursor plane
+
+- `dc8200.c` の `drv_powervr_dc_cursor(shown, physical, x, y)`: HDMI panel の cursor の register を書く（Linux の vs_dc_hw.c の dc_hw_commit と同じ順）。
+  - 書く register: ADDRESS 0x146C、LOCATION 0x1470（x、y<<16）、CONFIG 0x1468。CONFIG の値は hot_x<<16、hot_y<<8、64x64（1<<5）、bit 3、bit 2、ARGB 2。
+  - 隠す時は bit 0〜1 を消し、bit 3 を立てる。
+  - 画面の左・上にはみ出した分は hotspot で表す。63 を越えたら隠す。
+  - 書く時は panel の shadow を hold し、plane の commit bit を立て直してから hold を解く（`write_plane` と同じ枠）。
+  - cursor の register が plane の commit で latch されるのか、すぐ効くのかは未確認。どちらでも frame の境で変わるように、毎回 plane の commit を立て直している。板で確かめる。
+- `display.c`:
+  - `cursor_set`・`cursor_move`・`cursor_hide` を display の ops に足した。
+  - query は、controller を driver が持っている（scanout 1）時に GPU_DISPLAY_HAS_CURSOR を出す（query の時にも late の vblank start を試す）。
+  - image は 64x64 ARGB を 3 枚、4 GiB 未満の RAM に置き、uncached の alias から書く。毎回次の 1 枚に、透明に消してから写す（RGBA は B と R を入れ替える）。
+  - lease の終わり（`end_lease`）で隠す。
+  - libvulkan（`wsi-display.c`）が要るものは次の 3 つで、display node はそれを満たす:
+    - query の HAS_CURSOR（plane が 1 つ増えて見える）;
+    - CURSOR_SET（import した image の handle・offset・stride・format）;
+    - CURSOR_MOVE と CURSOR_HIDE。
+- 確認:
+  - ws277 の host 試験は全部 0 failures。
+  - VF2 の vmunix は rc 0、warning 0。
+  - 板は未実施。
+  - premultiplied の alpha と DC8200 の cursor の blend の違い（縁の見え方）も未確認。
