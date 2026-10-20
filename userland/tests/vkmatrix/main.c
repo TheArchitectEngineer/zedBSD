@@ -239,7 +239,9 @@ static VkResult case_copy_128(struct vkmatrix *run);
 static VkResult case_render_f16(struct vkmatrix *run);
 static VkResult case_render_linear(struct vkmatrix *run);
 static VkResult linear_target(struct vkmatrix *run, VkImageTiling tiling, VkSubresourceLayout *layout);
-static VkResult case_load_1080(struct vkmatrix *run, uint32_t draws, VkImageTiling tiling);
+static VkResult case_load_1080(struct vkmatrix *run, uint32_t draws, VkImageTiling tiling, int textured);
+static VkResult case_load_1080_textured(struct vkmatrix *run);
+static VkResult load_1080_textures(struct vkmatrix *run, uint32_t *pipeline);
 static VkResult case_load_1080_6(struct vkmatrix *run);
 static VkResult case_load_1080_32(struct vkmatrix *run);
 static VkResult case_load_1080_linear(struct vkmatrix *run);
@@ -279,6 +281,7 @@ static const struct vkmatrix_case cases[] = {
 	{ "load-1080-6", case_load_1080_6 },
 	{ "load-1080-32", case_load_1080_32 },
 	{ "load-1080-linear", case_load_1080_linear },
+	{ "load-1080-textured", case_load_1080_textured },
 	{ "clear-64", case_clear_64 },
 	{ "clear-128", case_clear_128 },
 	{ "sample-linear-1180", case_sample_linear_wide },
@@ -937,10 +940,10 @@ vkmatrix_texture(
 	void *mapped;
 	VkResult status;
 
-	/* The size: a square, or the linear case's own. */
+	/* The size: a square, or the case's own (a linear one, or a named OPTIMAL size). */
 	width = side;
 	height = side;
-	if (run->texture_linear) {
+	if (run->texture_linear || run->texture_width != 0) {
 		width = run->texture_width;
 		height = run->texture_height;
 	}
@@ -1042,10 +1045,10 @@ vkmatrix_texture(
 			return status;
 	} else {
 		/* The texels through a buffer: undefined -> transfer -> shader read. */
-		status = vkmatrix_buffer(run, (VkDeviceSize)side * side * 4U, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, &upload, &upload_memory, &mapped);
+		status = vkmatrix_buffer(run, (VkDeviceSize)width * height * 4U, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, &upload, &upload_memory, &mapped);
 		if (status != VK_SUCCESS)
 			return status;
-		memcpy(mapped, texels, (size_t)side * side * 4U);
+		memcpy(mapped, texels, (size_t)width * height * 4U);
 		memset(&begin, 0, sizeof(begin));
 		begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 		begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
@@ -1066,8 +1069,8 @@ vkmatrix_texture(
 		memset(&copy, 0, sizeof(copy));
 		copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		copy.imageSubresource.layerCount = 1;
-		copy.imageExtent.width = side;
-		copy.imageExtent.height = side;
+		copy.imageExtent.width = width;
+		copy.imageExtent.height = height;
 		copy.imageExtent.depth = 1;
 		vkCmdCopyBufferToImage(run->command, upload, texture->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
 		barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
@@ -3548,7 +3551,8 @@ static VkResult
 case_load_1080(
 	struct vkmatrix *run,
 	uint32_t draws,
-	VkImageTiling tiling)
+	VkImageTiling tiling,
+	int textured)
 {
 	VkSubresourceLayout layout;
 	struct vkmatrix_shape shape;
@@ -3574,23 +3578,30 @@ case_load_1080(
 	uint32_t draw;
 	uint32_t x;
 	uint32_t y;
+	int inside;
 	float corners[4];
 	float red;
 	float colour[4];
 	void *mapped;
 	VkResult status;
 
-	/* The flat red pipeline. */
-	memset(&shape, 0, sizeof(shape));
-	shape.vertex = vkmatrix_push4_vert;
-	shape.vertex_size = sizeof(vkmatrix_push4_vert);
-	shape.fragment = vkmatrix_push4_frag;
-	shape.fragment_size = sizeof(vkmatrix_push4_frag);
-	shape.push_size = 4;
-	shape.push_stages = VK_SHADER_STAGE_FRAGMENT_BIT;
-	status = vkmatrix_pipeline(run, &shape, &pipeline);
-	if (status != VK_SUCCESS)
-		return status;
+	/* The flat red pipeline, or the textured one blending over (and its two textures). */
+	if (textured) {
+		status = load_1080_textures(run, &pipeline);
+		if (status != VK_SUCCESS)
+			return status;
+	} else {
+		memset(&shape, 0, sizeof(shape));
+		shape.vertex = vkmatrix_push4_vert;
+		shape.vertex_size = sizeof(vkmatrix_push4_vert);
+		shape.fragment = vkmatrix_push4_frag;
+		shape.fragment_size = sizeof(vkmatrix_push4_frag);
+		shape.push_size = 4;
+		shape.push_stages = VK_SHADER_STAGE_FRAGMENT_BIT;
+		status = vkmatrix_pipeline(run, &shape, &pipeline);
+		if (status != VK_SUCCESS)
+			return status;
+	}
 
 	/* The attachment, and for an OPTIMAL one a buffer to copy it out to. */
 	status = linear_target(run, tiling, &layout);
@@ -3607,7 +3618,11 @@ case_load_1080(
 	/* The quads, the same every pass. */
 	for (draw = 0; draw < draws; draw++) {
 		load_1080_quad(draw, corners);
-		firsts[draw] = vkmatrix_quad(run, corners[0], corners[1], corners[2], corners[3]);
+		if (textured) {
+			firsts[draw] = vkmatrix_texture_quad(run, corners[0], corners[1], corners[2], corners[3]);
+		} else {
+			firsts[draw] = vkmatrix_quad(run, corners[0], corners[1], corners[2], corners[3]);
+		}
 	}
 
 	/* The passes: the first clears, the others load, each its own submission. */
@@ -3643,11 +3658,16 @@ case_load_1080(
 		scissor.extent.height = VKMATRIX_LINEAR_HEIGHT;
 		vkCmdSetScissor(run->command, 0, 1, &scissor);
 
-		/* The quads with this pass's reds. */
+		/* The quads with this pass's reds, or the first six of the 1024x256 texture and the rest of the 1024x1024 one. */
 		vkmatrix_bind(run, pipeline);
 		for (draw = 0; draw < draws; draw++) {
-			red = load_1080_red(frame, draw);
-			vkCmdPushConstants(run->command, run->layouts[pipeline], VK_SHADER_STAGE_FRAGMENT_BIT, 0, 4, &red);
+			if (textured) {
+				if (draw == 0 || draw == 6U)
+					vkCmdBindDescriptorSets(run->command, VK_PIPELINE_BIND_POINT_GRAPHICS, run->layouts[pipeline], 0, 1, &run->textures[draw == 0 ? 0 : 1].set, 0, NULL);
+			} else {
+				red = load_1080_red(frame, draw);
+				vkCmdPushConstants(run->command, run->layouts[pipeline], VK_SHADER_STAGE_FRAGMENT_BIT, 0, 4, &red);
+			}
 			vkCmdDraw(run->command, 6, 1, firsts[draw], 0);
 		}
 		vkCmdEndRenderPass(run->command);
@@ -3720,16 +3740,20 @@ case_load_1080(
 	for (y = 0; y < VKMATRIX_LINEAR_HEIGHT; y++) {
 		row = (const uint32_t *)(bytes + (size_t)y * layout.rowPitch);
 		for (x = 0; x < VKMATRIX_LINEAR_WIDTH; x++) {
-			/* The quad the pixel is in, if any, at 30 by 16.875 pixels a unit. */
+			/* The quad the pixel is in, if any, at 30 by 16.875 pixels a unit; a textured quad is not compared. */
 			wanted = vkmatrix_pack(background);
+			inside = 0;
 			for (draw = 0; draw < draws; draw++) {
 				load_1080_quad(draw, corners);
 				if (x >= (uint32_t)(corners[0] * 30.0f) && x < (uint32_t)(corners[2] * 30.0f) &&
 				    y >= (uint32_t)(corners[1] * 16.875f) && y < (uint32_t)(corners[3] * 16.875f)) {
 					colour[0] = load_1080_red(VKMATRIX_LOAD_FRAMES - 1U, draw);
 					wanted = vkmatrix_pack(colour);
+					inside = 1;
 				}
 			}
+			if (textured && inside)
+				continue;
 
 			/* A wrong pixel. */
 			if (row[x] != wanted) {
@@ -3794,7 +3818,7 @@ case_load_1080_6(
 	VkResult status;
 
 	/* Runs the load case with six draws. */
-	status = case_load_1080(run, 6U, VK_IMAGE_TILING_OPTIMAL);
+	status = case_load_1080(run, 6U, VK_IMAGE_TILING_OPTIMAL, 0);
 	if (status != VK_SUCCESS)
 		return status;
 
@@ -3810,7 +3834,7 @@ case_load_1080_32(
 	VkResult status;
 
 	/* Runs the load case with 32 draws. */
-	status = case_load_1080(run, 32U, VK_IMAGE_TILING_OPTIMAL);
+	status = case_load_1080(run, 32U, VK_IMAGE_TILING_OPTIMAL, 0);
 	if (status != VK_SUCCESS)
 		return status;
 
@@ -3826,10 +3850,81 @@ case_load_1080_linear(
 	VkResult status;
 
 	/* Runs the load case on a linear image. */
-	status = case_load_1080(run, 6U, VK_IMAGE_TILING_LINEAR);
+	status = case_load_1080(run, 6U, VK_IMAGE_TILING_LINEAR, 0);
 	if (status != VK_SUCCESS)
 		return status;
 
 	/* Succeeded: the case ran. */
+	return VK_SUCCESS;
+}
+
+/*
+ * load-1080-textured: what the desktop's locking job draws over its
+ * loaded 1080p target: 32 quads, the first six sampling a 1024x256
+ * texture and the rest a 1024x1024 one (OPTIMAL, R8G8B8A8, linear
+ * filtering), blended over (premultiplied), 60 passes.  Only the pixels
+ * outside the quads are compared (the clear colour the loads keep).
+ */
+static VkResult
+case_load_1080_textured(
+	struct vkmatrix *run)
+{
+	VkResult status;
+
+	/* Runs the load case with the textured draws. */
+	status = case_load_1080(run, 32U, VK_IMAGE_TILING_OPTIMAL, 1);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the case ran. */
+	return VK_SUCCESS;
+}
+
+/* Makes the textured case's 1024x256 and 1024x1024 textures and its pipeline, blending over. */
+static VkResult
+load_1080_textures(
+	struct vkmatrix *run,
+	uint32_t *pipeline)
+{
+	struct vkmatrix_shape shape;
+	uint32_t *texels;
+	uint32_t index;
+	VkResult status;
+
+	/* Opaque texels of a pattern, enough for the larger texture. */
+	texels = malloc((size_t)1024U * 1024U * 4U);
+	if (texels == NULL) {
+		run->failed_call = "malloc";
+		return VK_ERROR_OUT_OF_HOST_MEMORY;
+	}
+	for (index = 0; index < 1024U * 1024U; index++)
+		texels[index] = 0xff000000U | (index * 2654435761U >> 8);
+
+	/* The text-atlas-like texture, then the icon-atlas-like one. */
+	run->texture_width = 1024U;
+	run->texture_height = 256U;
+	status = vkmatrix_texture(run, 0, texels, VK_FILTER_LINEAR);
+	if (status == VK_SUCCESS) {
+		run->texture_height = 1024U;
+		status = vkmatrix_texture(run, 0, texels, VK_FILTER_LINEAR);
+	}
+	free(texels);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* The textured pipeline, blending over. */
+	memset(&shape, 0, sizeof(shape));
+	shape.vertex = vkmatrix_texture_vert;
+	shape.vertex_size = sizeof(vkmatrix_texture_vert);
+	shape.fragment = vkmatrix_texture_frag;
+	shape.fragment_size = sizeof(vkmatrix_texture_frag);
+	shape.layout = VKMATRIX_TEXTURE;
+	shape.texture = 1;
+	shape.blend = VKMATRIX_OVER;
+	status = vkmatrix_pipeline(run, &shape, pipeline);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the textures and the pipeline. */
 	return VK_SUCCESS;
 }
