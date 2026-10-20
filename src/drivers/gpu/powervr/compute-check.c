@@ -84,6 +84,10 @@
 #define KICK_TEMPS_FOUR		CHECK_ROUNDS
 #define KICK_TEMPS_TWO		(CHECK_ROUNDS + 1U)
 #define KICK_COUNT		(CHECK_ROUNDS + 2U)
+
+/* The probe kicks' streams, after the fence program's slot. */
+#define KICK_END_ONLY		(KICK_COUNT + 1U)
+#define KICK_FENCE_ONLY		(KICK_COUNT + 2U)
 #define PDS_FENCE		KICK_COUNT
 
 /* The data sequencer temporaries a compute kernel's inputs take. */
@@ -147,6 +151,8 @@ static int take_buffer(struct check_state *state, uint64_t bytes, uint64_t addre
 static int take_program(struct check_state *state, uint64_t bytes, enum powervr_program_heap heap, struct powervr_buffer **result, uint32_t *offset);
 static int write_programs(struct check_state *state);
 static int write_kick(struct check_state *state, unsigned kick, unsigned usc_program, unsigned temporaries, unsigned field);
+static int write_probe_streams(struct check_state *state);
+static int probe_kick(struct check_state *state, unsigned kick_index, const char *what);
 static void put_bytes(struct powervr_buffer *buffer, uint32_t offset, const uint8_t *bytes, size_t length);
 static void put_word(struct powervr_buffer *buffer, uint32_t offset, uint32_t word);
 static int kick(struct check_state *state, unsigned kick_index);
@@ -194,6 +200,7 @@ powervr_compute_check(
 		powervr_firmware_dump(state.render->core, POWERVR_KERNEL_CCB_SLOTS);
 	} else if (written != CHECK_WORDS) {
 		kern_logf("powervr: compute kernel: FAILED, %u/%u words written\n", written, (unsigned)CHECK_WORDS);
+		powervr_firmware_dump(state.render->core, POWERVR_KERNEL_CCB_SLOTS);
 	} else {
 		kern_logf("powervr: compute kernel: OK, %u/%u words written\n", written, (unsigned)CHECK_WORDS);
 	}
@@ -464,6 +471,11 @@ write_programs(
 	for (i = 0; i < count; i++)
 		put_word(state->pds, PDS_FENCE * PDS_SLOT + PDS_CODE + i * 4U, words[i]);
 
+	/* The probe kicks' streams: the end alone; the fence kernel and the end. */
+	error = write_probe_streams(state);
+	if (error != 0)
+		return error;
+
 	/*
 	 * One kick per round, issuing the round's store program.  Its field
 	 * is counted in twos: if the core counts in fours, that only asks for
@@ -648,6 +660,18 @@ run_kernel(
 {
 	uint32_t word;
 	int error;
+
+	/*
+	 * Two smaller kicks first, to tell which part locks the compute data
+	 * master up: a stream of its end alone, then one of the fence kernel
+	 * and the end.  A kick that fails stops the check there.
+	 */
+	error = probe_kick(state, KICK_END_ONLY, "end only");
+	if (error != 0)
+		return error;
+	error = probe_kick(state, KICK_FENCE_ONLY, "fence and end");
+	if (error != 0)
+		return error;
 
 	/* Fills the window with values the kernel never writes. */
 	for (word = 0; word < CHECK_WORDS; word++)
@@ -978,4 +1002,63 @@ take_program(
 	*offset = (uint32_t)(address - base);
 	*result = buffer;
 	return 0;
+}
+
+/* Writes the probe kicks' streams: the end alone, and the fence kernel followed by the end. */
+static int
+write_probe_streams(
+	struct check_state *state)
+{
+	struct powervr_compute_kernel kernel;
+	uint32_t words[POWERVR_COMPUTE_KERNEL_WORDS];
+	uint32_t stream;
+	unsigned i;
+	int error;
+
+	/* The end alone. */
+	stream = STREAM_FIRST + KICK_END_ONLY * STREAM_SPACING;
+	put_word(state->streams, stream, powervr_compute_terminate_word());
+
+	/* The fence kernel as the kicks have it, then the end. */
+	kern_memset(&kernel, 0, sizeof(kernel));
+	kernel.data_offset = pds_offset + PDS_FENCE * PDS_SLOT;
+	kernel.code_offset = pds_offset + PDS_FENCE * PDS_SLOT + PDS_CODE;
+	kernel.data_words = POWERVR_COMPUTE_PDS_DATA_WORDS;
+	kernel.instances = 1;
+	kernel.max_instances = FENCE_INSTANCES;
+	kernel.fence = 1;
+	kernel.shared_from_pds = 1;
+	kernel.common_shared = 1;
+	kernel.any_cluster = 1;
+	error = powervr_compute_kernel_words(&kernel, words);
+	if (error != 0)
+		return error;
+
+	stream = STREAM_FIRST + KICK_FENCE_ONLY * STREAM_SPACING;
+	for (i = 0; i < POWERVR_COMPUTE_KERNEL_WORDS; i++)
+		put_word(state->streams, stream + i * 4U, words[i]);
+	put_word(state->streams, stream + POWERVR_COMPUTE_KERNEL_WORDS * 4U, powervr_compute_terminate_word());
+
+	/* Succeeded: both streams are written. */
+	return 0;
+}
+
+/* Runs one probe kick and reports whether it finished and whether the firmware reset the context. */
+static int
+probe_kick(
+	struct check_state *state,
+	unsigned kick_index,
+	const char *what)
+{
+	int error;
+
+	/* The kick, then its line. */
+	error = kick(state, kick_index);
+	kern_logf("powervr: compute probe: %s: %s (%d), context %s\n", what, error == 0 ? "finished" : "FAILED", error,
+		  state->session->lost ? "reset" : "kept");
+	if (error == 0 && state->session->lost)
+		error = EIO;
+	if (error != 0)
+		powervr_firmware_dump(state->render->core, POWERVR_KERNEL_CCB_SLOTS);
+	return error;
 }
