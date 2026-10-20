@@ -31,6 +31,10 @@
 #include "drivers/gpu/powervr/render-kick-layout.h"
 #include "drivers/gpu/powervr/render-load-program.h"
 #include "drivers/gpu/powervr/render-program.h"
+#include "drivers/gpu/powervr/data-program.h"
+#include "drivers/gpu/powervr/render-draw.h"
+#include "drivers/gpu/powervr/vk-draw.h"
+#include "drivers/gpu/powervr/vk.h"
 
 /* How long a render may take. */
 #define JOB_WAIT_MS			2000U
@@ -43,8 +47,45 @@
  * in the shading cluster's the end-of-tile and background programs.
  */
 #define GENERAL_STREAM			0x0U
-#define GENERAL_LOAD_WORDS		0x100U
+#define GENERAL_LOAD_WORDS		0x800U
+#define GENERAL_DBIAS			0x900U
+#define GENERAL_SCISSORS		0xa00U
 #define GENERAL_BYTES			0x1000U
+
+/*
+ * Each draw's memory: in its slot of the draws' general buffer the
+ * primitive state block, the push constants, the blend constants, then
+ * its descriptor sets' copies after every slot; in its slot of the
+ * data sequencer buffer the vertex program's data and code, the vertex
+ * and fragment shared register programs' code and data, the fragment's
+ * task program and the coefficient program (data, then code); its
+ * shaders' code one after another in the shading cluster buffer.
+ */
+#define DRAW_SLOT			0x1000U
+#define DRAW_PPP			0x000U
+#define DRAW_PUSH			0x100U
+#define DRAW_BLEND			0x200U
+#define DRAW_PDS_VERTEX_DATA		0x000U
+#define DRAW_PDS_VERTEX_CODE		0x400U
+#define DRAW_PDS_VSHARED_CODE		0x500U
+#define DRAW_PDS_VSHARED_DATA		0x600U
+#define DRAW_PDS_KICK			0x800U
+#define DRAW_PDS_FSHARED_CODE		0x880U
+#define DRAW_PDS_FSHARED_DATA		0x980U
+#define DRAW_PDS_COEFFICIENT		0xb80U
+#define DRAW_STREAM_ROOM		(GENERAL_LOAD_WORDS - GENERAL_STREAM)
+
+_Static_assert(DRAW_STREAM_ROOM >= (POWERVR_RENDER_DRAWS * POWERVR_DRAW_VDM_WORDS + 1U) * 4U, "the stream's room");
+_Static_assert(POWERVR_DRAW_PPP_WORDS * 4U <= DRAW_PUSH, "the primitive state block's room");
+_Static_assert(POWERVR_DRAW_PUSH_BYTES <= DRAW_BLEND - DRAW_PUSH, "the push constants' room");
+_Static_assert(POWERVR_DATA_VERTEX_DATA_MAX * 4U <= DRAW_PDS_VERTEX_CODE, "the vertex program's data room");
+_Static_assert(POWERVR_DATA_VERTEX_CODE_MAX * 4U <= DRAW_PDS_VSHARED_CODE - DRAW_PDS_VERTEX_CODE, "the vertex program's code room");
+_Static_assert(POWERVR_DATA_SHARED_CODE_MAX * 4U <= DRAW_PDS_VSHARED_DATA - DRAW_PDS_VSHARED_CODE, "shared code room");
+_Static_assert(POWERVR_DATA_SHARED_DATA_MAX * 4U <= DRAW_PDS_KICK - DRAW_PDS_VSHARED_DATA, "shared data room");
+_Static_assert(POWERVR_DATA_SHARED_CODE_MAX * 4U <= DRAW_PDS_FSHARED_DATA - DRAW_PDS_FSHARED_CODE, "fragment shared code room");
+_Static_assert(POWERVR_DATA_SHARED_DATA_MAX * 4U <= DRAW_PDS_COEFFICIENT - DRAW_PDS_FSHARED_DATA, "fragment shared data room");
+_Static_assert((POWERVR_DRAW_COEFFICIENT_DATA + 3U) / 4U * 16U + POWERVR_DRAW_COEFFICIENT_CODE * 4U <= DRAW_SLOT - DRAW_PDS_COEFFICIENT, "coefficient room");
+_Static_assert(POWERVR_RENDER_DRAWS * POWERVR_DRAW_SCISSOR_WORDS * 4U <= GENERAL_BYTES - GENERAL_SCISSORS, "scissor table room");
 #define PDS_EVENT			0x000U
 #define PDS_KICK			0x040U
 #define PDS_SHARED_CODE			0x080U
@@ -84,12 +125,25 @@ struct job_memory {
 	uint8_t geometry[POWERVR_GEOMETRY_BYTES];
 	uint8_t fragment[POWERVR_FRAGMENT_BYTES];
 	struct powervr_render_marks marks;
+	struct powervr_resource *draw_general;
+	struct powervr_buffer *draw_pds;
+	struct powervr_buffer *draw_usc;
+	uint64_t draw_pds_place;
+	uint64_t draw_usc_place;
+	struct powervr_data_load loads[POWERVR_DATA_LOADS_MAX];
+	struct powervr_data_vertex_dma dmas[POWERVR_DATA_VERTEX_DMAS_MAX];
+	struct powervr_data_vertex_program vertex;
+	uint32_t ppp[POWERVR_DRAW_PPP_WORDS];
+	uint32_t vdm[POWERVR_DRAW_VDM_WORDS];
 };
 
 static int job_check(const struct powervr_render_job *job);
 static int job_map(struct powervr_render *render, struct powervr_session *session, struct job_memory *memory);
 static int job_programs(const struct powervr_render_job *job, struct job_memory *memory, uint32_t *shared_registers);
 static int job_background(const struct powervr_render_target *color, struct job_memory *memory, uint32_t pds_base, uint32_t usc_base, uint32_t *shared_registers);
+static int job_draws(struct powervr_render *render, struct powervr_session *session, const struct powervr_render_job *job, struct job_memory *memory, uint32_t *stream_words, uint32_t *vertex_shareds);
+static int draw_place(const struct powervr_render_job *job, uint32_t index, struct job_memory *memory, uint64_t sets_place, uint64_t usc_place, uint32_t stream_at, uint32_t *words);
+static int draw_shared(const struct powervr_shader_program *program, const struct powervr_data_state *state, struct job_memory *memory, uint32_t code_at, uint32_t data_at, uint32_t *data_words);
 static void job_release(struct powervr_render *render, struct powervr_session *session, struct job_memory *memory);
 static void put_words(struct powervr_buffer *buffer, uint32_t offset, const uint32_t *words, unsigned count);
 static void put_bytes(struct powervr_buffer *buffer, uint32_t offset, const uint8_t *bytes, size_t count);
@@ -115,6 +169,8 @@ powervr_render_job_run(
 	const struct powervr_target_layout *layout;
 	struct job_memory *memory;
 	uint32_t shared_registers;
+	uint32_t vertex_shareds;
+	uint32_t stream_words;
 	uint32_t terminate;
 	int error;
 
@@ -149,9 +205,24 @@ powervr_render_job_run(
 		return error;
 	}
 
-	/* The commands: an empty stream, the fragment of the target's tiles. */
+	/* The draws' programs and streams, then the stream's end. */
+	stream_words = 0;
+	vertex_shareds = 0;
+	if (job->draw_count != 0) {
+		error = job_draws(render, session, job, memory, &stream_words, &vertex_shareds);
+		if (error != 0) {
+			job_release(render, session, memory);
+			return error;
+		}
+	}
+	if (vertex_shareds > shared_registers)
+		shared_registers = vertex_shareds;
 	terminate = POWERVR_VDM_TERMINATE;
-	put_words(memory->general->buffer, GENERAL_STREAM, &terminate, 1);
+	put_words(memory->general->buffer, GENERAL_STREAM + stream_words * 4U, &terminate, 1);
+
+	/* The commands: the stream, the fragment of the target's tiles with the draws' tables. */
+	memory->fragment_setup.scissor_table = memory->general->address + GENERAL_SCISSORS;
+	memory->fragment_setup.dbias_table = memory->general->address + GENERAL_DBIAS;
 	layout = powervr_target_layout_of(target);
 	memory->fragment_setup.tiles_x = layout->tiles_x;
 	memory->fragment_setup.tiles_y = layout->tiles_y;
@@ -193,8 +264,8 @@ job_check(
 {
 	const struct powervr_render_target *color;
 
-	/* Draws come with the graphics pipeline; one colour attachment, no depth load or store. */
-	if (job->draw_count != 0 || job->color_count != 1)
+	/* One colour attachment, no depth load or store, draws each with a pipeline. */
+	if (job->color_count != 1 || job->draw_count > POWERVR_RENDER_DRAWS)
 		return ENOTSUP;
 	if (job->depth.present && (job->depth.load_op != LOAD_OP_DONT_CARE || job->depth.store_op != STORE_OP_DONT_CARE))
 		return ENOTSUP;
@@ -390,6 +461,350 @@ job_background(
 	return 0;
 }
 
+/*
+ * Makes the draws' memory and places every draw's programs, tables and
+ * stream: the shading cluster code of each draw's two shaders, then for
+ * each draw its slot of data sequencer programs and general memory, its
+ * scissor and its part of the stream.  Reports the stream's words and
+ * the most shared registers a vertex shader takes.
+ */
+static int
+job_draws(
+	struct powervr_render *render,
+	struct powervr_session *session,
+	const struct powervr_render_job *job,
+	struct job_memory *memory,
+	uint32_t *stream_words,
+	uint32_t *vertex_shareds)
+{
+	const struct powervr_vk_graphics *graphics;
+	const struct powervr_vk_descriptor_set *set;
+	struct powervr_buffer *buffer;
+	uint64_t sets_bytes;
+	uint64_t usc_bytes;
+	uint64_t sets_place;
+	uint64_t usc_place;
+	uint32_t index;
+	uint32_t slot;
+	uint32_t words;
+	int error;
+
+	/* What the draws take: their shaders' code and their sets' copies, each on 16 bytes. */
+	sets_bytes = 0;
+	usc_bytes = 0;
+	for (index = 0; index < job->draw_count; index++) {
+		graphics = job->draws[index].pipeline;
+		if (graphics == NULL)
+			return EINVAL;
+		usc_bytes += (graphics->vertex.length + 15U) & ~(uint64_t)15U;
+		usc_bytes += (graphics->fragment.length + 15U) & ~(uint64_t)15U;
+		for (slot = 0; slot < POWERVR_DRAW_SETS; slot++) {
+			set = job->draws[index].sets[slot];
+			if (set != NULL)
+				sets_bytes += (set->layout.bytes + 15U) & ~15U;
+		}
+	}
+
+	/* The general memory: a slot per draw, then the sets. */
+	error = powervr_buffer_create(render, (uint64_t)job->draw_count * DRAW_SLOT + sets_bytes + 16U, &buffer);
+	if (error != 0)
+		return error;
+
+	error = powervr_resource_make(session, buffer, 1, 0, &memory->draw_general);
+	powervr_buffer_put(render, buffer);
+	if (error != 0) {
+		memory->draw_general = NULL;
+		return error;
+	}
+
+	/* The program buffers, in their windows. */
+	error = powervr_buffer_create(render, (uint64_t)job->draw_count * DRAW_SLOT, &memory->draw_pds);
+	if (error != 0) {
+		memory->draw_pds = NULL;
+		return error;
+	}
+
+	error = powervr_session_program_map(session, POWERVR_PROGRAM_PDS, memory->draw_pds, &memory->draw_pds_place);
+	if (error != 0) {
+		memory->draw_pds_place = 0;
+		return error;
+	}
+
+	error = powervr_buffer_create(render, usc_bytes + 16U, &memory->draw_usc);
+	if (error != 0) {
+		memory->draw_usc = NULL;
+		return error;
+	}
+
+	error = powervr_session_program_map(session, POWERVR_PROGRAM_USC, memory->draw_usc, &memory->draw_usc_place);
+	if (error != 0) {
+		memory->draw_usc_place = 0;
+		return error;
+	}
+
+	/* Each draw in order, its stream after the one before. */
+	*stream_words = 0;
+	*vertex_shareds = 0;
+	sets_place = (uint64_t)job->draw_count * DRAW_SLOT;
+	usc_place = 0;
+	for (index = 0; index < job->draw_count; index++) {
+		graphics = job->draws[index].pipeline;
+		error = draw_place(job, index, memory, sets_place, usc_place, *stream_words, &words);
+		if (error != 0)
+			return error;
+
+		*stream_words += words;
+		if (graphics->vertex.shareds > *vertex_shareds)
+			*vertex_shareds = graphics->vertex.shareds;
+		usc_place += (graphics->vertex.length + 15U) & ~(uint64_t)15U;
+		usc_place += (graphics->fragment.length + 15U) & ~(uint64_t)15U;
+		for (slot = 0; slot < POWERVR_DRAW_SETS; slot++) {
+			set = job->draws[index].sets[slot];
+			if (set != NULL)
+				sets_place += (set->layout.bytes + 15U) & ~15U;
+		}
+	}
+
+	/* Succeeded: every draw is placed. */
+	return 0;
+}
+
+/*
+ * Places one draw: its shaders' code, its sets' and push constants'
+ * copies, its vertex, shared register, task and coefficient programs,
+ * its scissor, its primitive state block and its part of the stream.
+ *
+ * Procedure referenced:
+ * Mesa 26.2.5 src/imagination/vulkan/pvr_arch_cmd_buffer.c
+ * (pvr_emit_dirty_pds_state, pvr_emit_dirty_ppp_state,
+ * pvr_emit_vdm_index_list: the descriptor programs of both stages, the
+ * fragment's task and coefficient programs in the primitive state, the
+ * vertex program and the index list in the stream); zedBSD
+ * src/drivers/gpu/powervr/render-check.c (the same placing for the
+ * kernel's own triangle).
+ */
+static int
+draw_place(
+	const struct powervr_render_job *job,
+	uint32_t index,
+	struct job_memory *memory,
+	uint64_t sets_place,
+	uint64_t usc_place,
+	uint32_t stream_at,
+	uint32_t *words)
+{
+	const struct powervr_render_draw *draw;
+	const struct powervr_vk_graphics *graphics;
+	const struct powervr_vk_descriptor_set *set;
+	const struct powervr_draw_attribute *attribute;
+	const struct powervr_shader_input *input;
+	struct powervr_data_state state;
+	struct powervr_draw_ppp ppp;
+	struct powervr_draw_vdm vdm;
+	uint32_t viewport[POWERVR_DRAW_VIEWPORT_WORDS];
+	uint32_t scissor[POWERVR_DRAW_SCISSOR_WORDS];
+	uint64_t general;
+	uint64_t task;
+	uint32_t pds_base;
+	uint32_t usc_base;
+	uint32_t pds_slot;
+	uint32_t vertex_usc;
+	uint32_t fragment_usc;
+	uint32_t vertex_shared_words;
+	uint32_t fragment_shared_words;
+	uint32_t ppp_words;
+	uint32_t dma_count;
+	uint32_t slot;
+	uint32_t at;
+	int error;
+
+	/* Where the draw's parts go. */
+	draw = &job->draws[index];
+	graphics = draw->pipeline;
+	general = memory->draw_general->address + (uint64_t)index * DRAW_SLOT;
+	pds_slot = index * DRAW_SLOT;
+	pds_base = (uint32_t)(memory->draw_pds_place - POWERVR_PDS_HEAP_BASE) + pds_slot;
+	usc_base = (uint32_t)(memory->draw_usc_place - POWERVR_USC_HEAP_BASE);
+	vertex_usc = usc_base + (uint32_t)usc_place;
+	fragment_usc = vertex_usc + (uint32_t)((graphics->vertex.length + 15U) & ~(size_t)15U);
+
+	/* The two shaders' code. */
+	put_bytes(memory->draw_usc, (uint32_t)usc_place, graphics->vertex_code, graphics->vertex.length);
+	put_bytes(memory->draw_usc, (uint32_t)(usc_place + ((graphics->vertex.length + 15U) & ~(size_t)15U)), graphics->fragment_code, graphics->fragment.length);
+
+	/* The bound sets' copies, the push constants and zero blend constants. */
+	kern_memset(&state, 0, sizeof(state));
+	at = (uint32_t)sets_place;
+	for (slot = 0; slot < POWERVR_DRAW_SETS; slot++) {
+		set = draw->sets[slot];
+		if (set == NULL)
+			continue;
+		put_bytes(memory->draw_general->buffer, at, set->bytes, set->layout.bytes);
+		state.layouts[slot] = &set->layout;
+		state.set_addresses[slot] = memory->draw_general->address + at;
+		at += (set->layout.bytes + 15U) & ~15U;
+	}
+	put_bytes(memory->draw_general->buffer, index * DRAW_SLOT + DRAW_PUSH, draw->push, draw->push_bytes);
+	state.push_address = general + DRAW_PUSH;
+	state.blend_address = general + DRAW_BLEND;
+
+	/* The two shared register programs. */
+	error = draw_shared(&graphics->vertex, &state, memory, pds_slot + DRAW_PDS_VSHARED_CODE, pds_slot + DRAW_PDS_VSHARED_DATA, &vertex_shared_words);
+	if (error != 0)
+		return error;
+
+	error = draw_shared(&graphics->fragment, &state, memory, pds_slot + DRAW_PDS_FSHARED_CODE, pds_slot + DRAW_PDS_FSHARED_DATA, &fragment_shared_words);
+	if (error != 0)
+		return error;
+
+	/* The vertex program: a DMA per attribute into its input registers. */
+	dma_count = 0;
+	for (slot = 0; slot < graphics->fixed.attribute_count; slot++) {
+		attribute = &graphics->fixed.attributes[slot];
+		input = NULL;
+		for (at = 0; at < graphics->vertex.input_count; at++) {
+			if (graphics->vertex.inputs[at].location == attribute->location)
+				input = &graphics->vertex.inputs[at];
+		}
+		if (input == NULL)
+			continue;
+		if (attribute->binding >= POWERVR_DRAW_VERTEX_BUFFERS)
+			return ENOTSUP;
+		memory->dmas[dma_count].address = draw->vertex_addresses[attribute->binding] + attribute->offset;
+		memory->dmas[dma_count].stride = 0;
+		for (at = 0; at < graphics->fixed.binding_count; at++) {
+			if (graphics->fixed.bindings[at].binding == attribute->binding)
+				memory->dmas[dma_count].stride = graphics->fixed.bindings[at].stride;
+		}
+		memory->dmas[dma_count].words = input->components;
+		memory->dmas[dma_count].reg = input->reg;
+		dma_count++;
+	}
+	error = powervr_pds_task_word(vertex_usc, graphics->vertex.temps, 0, 0, &task);
+	if (error != 0)
+		return error;
+
+	error = powervr_data_vertex_build(memory->dmas, dma_count, graphics->vertex.vertex_index_reg, graphics->vertex.instance_index_reg, task, &memory->vertex);
+	if (error != 0)
+		return error;
+
+	put_words(memory->draw_pds, pds_slot + DRAW_PDS_VERTEX_DATA, memory->vertex.data, memory->vertex.data_words);
+	put_words(memory->draw_pds, pds_slot + DRAW_PDS_VERTEX_CODE, memory->vertex.code, memory->vertex.code_words);
+
+	/* The fragment's task program, and the coefficient program: data, then code after it. */
+	error = powervr_render_kick_build(fragment_usc, graphics->fragment.temps, &memory->kick);
+	if (error != 0)
+		return error;
+
+	put_words(memory->draw_pds, pds_slot + DRAW_PDS_KICK, memory->kick.data, POWERVR_RENDER_KICK_DATA_WORDS);
+	put_words(memory->draw_pds, pds_slot + DRAW_PDS_KICK + POWERVR_RENDER_KICK_DATA_WORDS * 4U, memory->kick.code, POWERVR_RENDER_KICK_CODE_WORDS);
+	put_words(memory->draw_pds, pds_slot + DRAW_PDS_COEFFICIENT, graphics->varyings.data, graphics->varyings.data_words);
+	put_words(memory->draw_pds, pds_slot + DRAW_PDS_COEFFICIENT + (graphics->varyings.data_words + 3U) / 4U * 16U, graphics->varyings.code, graphics->varyings.code_words);
+
+	/* The viewport and the scissor, the scissor in its entry of the table. */
+	error = powervr_draw_viewport_words(&draw->viewport, viewport);
+	if (error != 0)
+		return error;
+
+	kern_memset(&ppp, 0, sizeof(ppp));
+	error = powervr_draw_scissor_words(&draw->viewport, &draw->scissor, scissor, ppp.region_clip);
+	if (error != 0)
+		return error;
+
+	put_words(memory->general->buffer, GENERAL_SCISSORS + index * POWERVR_DRAW_SCISSOR_WORDS * 4U, scissor, POWERVR_DRAW_SCISSOR_WORDS);
+
+	/* The primitive state block. */
+	ppp.fixed = &graphics->fixed;
+	ppp.varyings = &graphics->varyings;
+	ppp.has_depth = job->depth.present;
+	ppp.fragment_kick_offset = pds_base + DRAW_PDS_KICK;
+	ppp.shared_code_offset = pds_base + DRAW_PDS_FSHARED_CODE;
+	ppp.shared_data_offset = pds_base + DRAW_PDS_FSHARED_DATA;
+	ppp.shared_data_words = fragment_shared_words;
+	ppp.fragment_shareds = graphics->fragment.shareds;
+	ppp.coefficient_offset = pds_base + DRAW_PDS_COEFFICIENT;
+	kern_memcpy(ppp.viewport, viewport, sizeof(viewport));
+	ppp.scissor_index = index;
+	error = powervr_draw_ppp_build(&ppp, memory->ppp, &ppp_words);
+	if (error != 0)
+		return error;
+
+	put_words(memory->draw_general->buffer, index * DRAW_SLOT + DRAW_PPP, memory->ppp, ppp_words);
+
+	/* The stream: the block, the vertex program and the index list. */
+	kern_memset(&vdm, 0, sizeof(vdm));
+	vdm.ppp_address = general + DRAW_PPP;
+	vdm.ppp_words = ppp_words;
+	vdm.vertex_data_offset = pds_base + DRAW_PDS_VERTEX_DATA;
+	vdm.vertex_code_offset = pds_base + DRAW_PDS_VERTEX_CODE;
+	vdm.vertex_data_words = memory->vertex.data_words;
+	vdm.vertex_temps = memory->vertex.temps;
+	vdm.shared_code_offset = pds_base + DRAW_PDS_VSHARED_CODE;
+	vdm.shared_data_offset = pds_base + DRAW_PDS_VSHARED_DATA;
+	vdm.shared_data_words = vertex_shared_words;
+	vdm.vertex_shareds = graphics->vertex.shareds;
+	vdm.vertex_inputs = graphics->vertex.vertex_inputs;
+	vdm.vertex_outputs = graphics->vertex.vertex_outputs;
+	vdm.topology = graphics->fixed.topology;
+	vdm.indexed = draw->indexed;
+	vdm.index_address = draw->index_address;
+	vdm.index_bytes = draw->index_bytes;
+	vdm.count = draw->count;
+	vdm.instances = draw->instances;
+	vdm.vertex_offset = draw->vertex_offset;
+	error = powervr_draw_vdm_build(&vdm, memory->vdm, words);
+	if (error != 0)
+		return error;
+
+	put_words(memory->general->buffer, GENERAL_STREAM + stream_at * 4U, memory->vdm, *words);
+
+	/* Succeeded: the draw is placed. */
+	return 0;
+}
+
+/* Builds and places a shader's shared register program from the bound state; one halt when it takes no shared registers. */
+static int
+draw_shared(
+	const struct powervr_shader_program *program,
+	const struct powervr_data_state *state,
+	struct job_memory *memory,
+	uint32_t code_at,
+	uint32_t data_at,
+	uint32_t *data_words)
+{
+	uint32_t halt;
+	uint32_t count;
+	int error;
+
+	/* No request: a program that only ends. */
+	*data_words = 0;
+	if (program->request_count == 0) {
+		error = powervr_pds_halt(0, &halt);
+		if (error != 0)
+			return error;
+
+		put_words(memory->draw_pds, code_at, &halt, 1);
+		return 0;
+	}
+
+	/* The loads the requests ask for. */
+	error = powervr_data_resolve(program, state, memory->loads, POWERVR_DATA_LOADS_MAX, &count);
+	if (error != 0)
+		return error;
+
+	/* The program, its code and data at their places. */
+	error = powervr_data_shared_build(memory->loads, count, &memory->shared);
+	if (error != 0)
+		return error;
+
+	put_words(memory->draw_pds, code_at, memory->shared.code, memory->shared.code_words);
+	put_words(memory->draw_pds, data_at, memory->shared.data, memory->shared.data_words);
+	*data_words = memory->shared.data_words;
+
+	/* Succeeded: the program is placed. */
+	return 0;
+}
+
 /* Unmaps and returns the job's memory and its bookkeeping. */
 static void
 job_release(
@@ -409,6 +824,22 @@ job_release(
 			powervr_session_program_unmap(session, POWERVR_PROGRAM_PDS, memory->pds, memory->pds_place);
 		powervr_buffer_put(render, memory->pds);
 	}
+
+	/* The draws' program buffers and memory. */
+	if (memory->draw_usc != NULL) {
+		if (memory->draw_usc_place != 0U)
+			powervr_session_program_unmap(session, POWERVR_PROGRAM_USC, memory->draw_usc, memory->draw_usc_place);
+		powervr_buffer_put(render, memory->draw_usc);
+	}
+
+	if (memory->draw_pds != NULL) {
+		if (memory->draw_pds_place != 0U)
+			powervr_session_program_unmap(session, POWERVR_PROGRAM_PDS, memory->draw_pds, memory->draw_pds_place);
+		powervr_buffer_put(render, memory->draw_pds);
+	}
+
+	if (memory->draw_general != NULL)
+		powervr_resource_unmake(session, memory->draw_general);
 
 	/* The general memory and the bookkeeping. */
 	if (memory->general != NULL)

@@ -7,12 +7,12 @@
 
 /*
  * The executor's transfer commands: vkCmdCopyBufferToImage,
- * vkCmdCopyImageToBuffer, vkCmdCopyImage, vkCmdBlitImage of the same size
- * and format, and vkCmdClearColorImage, recorded with their regions and
- * run as transfers on the session's transfer context.
+ * vkCmdCopyImageToBuffer, vkCmdCopyImage, vkCmdBlitImage (scaled,
+ * mirrored, nearest or linear) and vkCmdClearColorImage, recorded with
+ * their regions and run as transfers on the session's transfer context.
  *
  * Each region names level 0 and layer 0 of its image; other subresources
- * and scaled or converting blits are refused (ENOTSUP) when recorded.
+ * are refused (ENOTSUP) when recorded.
  */
 
 #include <stdbool.h>
@@ -35,6 +35,7 @@
 /* What a transfer record keeps: its regions, and a clear's colour. */
 struct transfer_data {
 	uint32_t count;
+	uint32_t filter;
 	uint32_t colour[4];
 	union {
 		VkImageCopy copies[TRANSFER_REGIONS_MAX];
@@ -55,6 +56,7 @@ static int hold(struct powervr_vk_session *session, struct powervr_vk_record *en
 static int first_subresource(uint32_t level, uint32_t layer, uint32_t count);
 static int image_surface(const struct powervr_vk_image *image, struct powervr_render_surface *surface);
 static int image_view(const struct powervr_vk_image *image, struct powervr_view_shape *view);
+static void blit_request(const VkImageBlit *blit, uint32_t filter, struct powervr_transfer_request *request);
 static int run_one(struct powervr_vk_session *session, struct powervr_transfer_request *request);
 
 /*
@@ -155,9 +157,9 @@ powervr_vk_record_transfer(
 	}
 	data->count = (uint32_t)count;
 
-	/* A blit's filter, which a blit of the same size does not use. */
+	/* A blit's filter. */
 	if (opcode == GPU_OP_CMD_BLIT_IMAGE)
-		(void)drv_i915_wire_read_u32(reader);
+		data->filter = drv_i915_wire_read_u32(reader);
 	if (reader->error != 0)
 		return EINVAL;
 
@@ -180,11 +182,9 @@ powervr_vk_record_transfer(
 			refused = first_subresource(blit->srcSubresource.mipLevel, blit->srcSubresource.baseArrayLayer, blit->srcSubresource.layerCount);
 			if (refused == 0)
 				refused = first_subresource(blit->dstSubresource.mipLevel, blit->dstSubresource.baseArrayLayer, blit->dstSubresource.layerCount);
-			if (refused == 0 && (blit->srcOffsets[1].x - blit->srcOffsets[0].x != blit->dstOffsets[1].x - blit->dstOffsets[0].x ||
-			    blit->srcOffsets[1].y - blit->srcOffsets[0].y != blit->dstOffsets[1].y - blit->dstOffsets[0].y ||
-			    blit->srcOffsets[1].x <= blit->srcOffsets[0].x || blit->srcOffsets[1].y <= blit->srcOffsets[0].y ||
-			    blit->srcOffsets[0].x < 0 || blit->srcOffsets[0].y < 0 || blit->dstOffsets[0].x < 0 || blit->dstOffsets[0].y < 0))
-				refused = ENOTSUP;
+			if (refused == 0 && (blit->srcOffsets[0].x < 0 || blit->srcOffsets[0].y < 0 || blit->srcOffsets[1].x < 0 || blit->srcOffsets[1].y < 0 ||
+			    blit->dstOffsets[0].x < 0 || blit->dstOffsets[0].y < 0 || blit->dstOffsets[1].x < 0 || blit->dstOffsets[1].y < 0))
+				refused = EINVAL;
 		} else {
 			refused = first_subresource(data->regions.buffers[index].imageSubresource.mipLevel, data->regions.buffers[index].imageSubresource.baseArrayLayer, data->regions.buffers[index].imageSubresource.layerCount);
 		}
@@ -241,7 +241,7 @@ powervr_vk_transfer_run(
 			error = image_surface(image, &work->request.destination);
 			if (error == 0)
 				error = image_view(other, &work->view);
-			if (error == 0 && other->format != image->format)
+			if (error == 0 && entry->opcode == GPU_OP_CMD_COPY_IMAGE && other->format != image->format)
 				error = ENOTSUP;
 			if (entry->opcode == GPU_OP_CMD_COPY_IMAGE) {
 				work->request.area.x = (uint32_t)data->regions.copies[index].dstOffset.x;
@@ -251,12 +251,7 @@ powervr_vk_transfer_run(
 				work->request.source_x = (uint32_t)data->regions.copies[index].srcOffset.x;
 				work->request.source_y = (uint32_t)data->regions.copies[index].srcOffset.y;
 			} else {
-				work->request.area.x = (uint32_t)data->regions.blits[index].dstOffsets[0].x;
-				work->request.area.y = (uint32_t)data->regions.blits[index].dstOffsets[0].y;
-				work->request.area.width = (uint32_t)(data->regions.blits[index].dstOffsets[1].x - data->regions.blits[index].dstOffsets[0].x);
-				work->request.area.height = (uint32_t)(data->regions.blits[index].dstOffsets[1].y - data->regions.blits[index].dstOffsets[0].y);
-				work->request.source_x = (uint32_t)data->regions.blits[index].srcOffsets[0].x;
-				work->request.source_y = (uint32_t)data->regions.blits[index].srcOffsets[0].y;
+				blit_request(&data->regions.blits[index], data->filter, &work->request);
 			}
 			work->request.source = &work->view;
 		} else {
@@ -419,6 +414,48 @@ image_view(
 
 	/* Succeeded: the view. */
 	return 0;
+}
+
+/*
+ * Fills a blit's request: the destination and source rectangles from
+ * their corners in either order, each axis flipped when the two
+ * rectangles run in opposite directions along it, linear for
+ * VK_FILTER_LINEAR (1).
+ */
+static void
+blit_request(
+	const VkImageBlit *blit,
+	uint32_t filter,
+	struct powervr_transfer_request *request)
+{
+	int32_t low;
+	int32_t high;
+
+	/* The destination rectangle. */
+	request->kind = POWERVR_TRANSFER_BLIT;
+	low = blit->dstOffsets[0].x < blit->dstOffsets[1].x ? blit->dstOffsets[0].x : blit->dstOffsets[1].x;
+	high = blit->dstOffsets[0].x < blit->dstOffsets[1].x ? blit->dstOffsets[1].x : blit->dstOffsets[0].x;
+	request->area.x = (uint32_t)low;
+	request->area.width = (uint32_t)(high - low);
+	low = blit->dstOffsets[0].y < blit->dstOffsets[1].y ? blit->dstOffsets[0].y : blit->dstOffsets[1].y;
+	high = blit->dstOffsets[0].y < blit->dstOffsets[1].y ? blit->dstOffsets[1].y : blit->dstOffsets[0].y;
+	request->area.y = (uint32_t)low;
+	request->area.height = (uint32_t)(high - low);
+
+	/* The source rectangle. */
+	low = blit->srcOffsets[0].x < blit->srcOffsets[1].x ? blit->srcOffsets[0].x : blit->srcOffsets[1].x;
+	high = blit->srcOffsets[0].x < blit->srcOffsets[1].x ? blit->srcOffsets[1].x : blit->srcOffsets[0].x;
+	request->source_area.x = (uint32_t)low;
+	request->source_area.width = (uint32_t)(high - low);
+	low = blit->srcOffsets[0].y < blit->srcOffsets[1].y ? blit->srcOffsets[0].y : blit->srcOffsets[1].y;
+	high = blit->srcOffsets[0].y < blit->srcOffsets[1].y ? blit->srcOffsets[1].y : blit->srcOffsets[0].y;
+	request->source_area.y = (uint32_t)low;
+	request->source_area.height = (uint32_t)(high - low);
+
+	/* An axis whose rectangles run in opposite directions is flipped. */
+	request->flip_x = (blit->srcOffsets[0].x > blit->srcOffsets[1].x) != (blit->dstOffsets[0].x > blit->dstOffsets[1].x);
+	request->flip_y = (blit->srcOffsets[0].y > blit->srcOffsets[1].y) != (blit->dstOffsets[0].y > blit->dstOffsets[1].y);
+	request->linear = filter == 1U;
 }
 
 /* Runs one region's transfer; one that did not finish abandons the session. */

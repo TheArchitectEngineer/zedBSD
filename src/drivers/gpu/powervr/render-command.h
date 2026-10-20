@@ -50,7 +50,7 @@
  * (struct rogue_fwif_frag_regs: usc_pixel_output_ctrl 0,
  * usc_clear_register 4, isp_bgobjdepth 36, isp_bgobjvals 40, isp_aa 44,
  * isp_ctl 52, event_pixel_pds_info 60, event_pixel_pds_data 72,
- * pbe_word 152, pds_bgnd 352, pds_pr_bgnd 400; struct
+ * isp_scissor_base 96, isp_dbias_base 104, pbe_word 152, pds_bgnd 352, pds_pr_bgnd 400; struct
  * rogue_fwif_cmd_frag: regs 16, flags 464; struct rogue_fwif_frag_regs
  * 448 bytes).
  */
@@ -61,6 +61,8 @@
 #define POWERVR_FRAGMENT_ISP_CONTROL		(16U + 52U)
 #define POWERVR_FRAGMENT_EVENT_INFO		(16U + 60U)
 #define POWERVR_FRAGMENT_EVENT_DATA		(16U + 72U)
+#define POWERVR_FRAGMENT_SCISSOR_BASE	(16U + 96U)
+#define POWERVR_FRAGMENT_DBIAS_BASE		(16U + 104U)
 #define POWERVR_FRAGMENT_PBE			(16U + 152U)
 #define POWERVR_FRAGMENT_BACKGROUND		(16U + 352U)
 #define POWERVR_FRAGMENT_FLAGS			464U
@@ -87,7 +89,9 @@
  * What a fragment command of one colour attachment names: the tiles
  * across and down the frame, the background and the background after a
  * partial render, the end-of-tile program's data word and size word,
- * and the attachment's three pixel back end register words.
+ * the attachment's three pixel back end register words, and the
+ * scissor and depth bias tables the draws' primitives index (zero when
+ * there are no draws).
  */
 struct powervr_fragment_setup {
 	uint32_t tiles_x;
@@ -97,6 +101,8 @@ struct powervr_fragment_setup {
 	uint32_t event_data;
 	uint32_t event_info;
 	uint64_t pbe[3];
+	uint64_t scissor_table;
+	uint64_t dbias_table;
 };
 
 /*

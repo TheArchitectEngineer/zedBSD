@@ -39,19 +39,6 @@
 /* The stages a graphics record may carry. */
 #define GRAPHICS_STAGES_MAX	4U
 
-/*
- * A graphics pipeline: its fixed state, its two compiled shaders and the
- * varyings between them.
- */
-struct powervr_vk_graphics {
-	struct powervr_draw_fixed fixed;
-	struct powervr_shader_program vertex;
-	struct powervr_shader_program fragment;
-	uint8_t *vertex_code;
-	uint8_t *fragment_code;
-	struct powervr_draw_varyings varyings;
-};
-
 static int decode_info(struct powervr_vk_session *session, struct i915_wire_reader *reader, VkGraphicsPipelineCreateInfo *info, uint64_t *render_pass, const struct powervr_vk_shader **vertex, const struct powervr_vk_shader **fragment);
 static int compile_stage(const struct powervr_vk_shader *shader, uint32_t stage, const struct powervr_shader_key *key, struct powervr_shader_workspace *workspace, struct powervr_shader_program *program, uint8_t **code);
 static int record_vertex_buffers(struct powervr_vk_session *session, struct i915_wire_reader *reader, struct powervr_vk_record *entry);

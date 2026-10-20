@@ -75,7 +75,7 @@ static void put_bytes(struct powervr_buffer *buffer, uint32_t offset, const uint
 
 /*
  * Runs a transfer, one row at a time when the destination's rows need
- * it.
+ * it (a blit is not split: it is refused instead).
  *
  * Procedure referenced:
  * Mesa 26.2.5 src/imagination/vulkan/pvr_arch_job_transfer.c
@@ -114,7 +114,7 @@ powervr_transfer_run(
 	}
 
 	/* The whole rectangle, or each of its rows. */
-	if (!powervr_transfer_needs_rows(&request->destination, &request->area)) {
+	if (request->kind == POWERVR_TRANSFER_BLIT || !powervr_transfer_needs_rows(&request->destination, &request->area)) {
 		error = transfer_one(render, session, memory, request, &request->area, request->source_y);
 	} else {
 		row = request->area;
@@ -176,9 +176,13 @@ transfer_one(
 	job->shared_data_offset = pds_base + PDS_SHARED_DATA;
 	job->event_data_offset = pds_base + PDS_EVENT;
 
-	/* A copy: its program, its task program, its shared words and the program that loads them. */
-	if (request->kind == POWERVR_TRANSFER_COPY) {
-		error = powervr_transfer_copy_usc(&memory->program);
+	/* A copy or a blit: its program, its task program, its shared words and the program that loads them. */
+	if (request->kind != POWERVR_TRANSFER_CLEAR) {
+		if (request->kind == POWERVR_TRANSFER_BLIT) {
+			error = powervr_transfer_blit_usc(request->destination.format, &memory->program);
+		} else {
+			error = powervr_transfer_copy_usc(&memory->program);
+		}
 		if (error != 0)
 			return error;
 
@@ -189,7 +193,11 @@ transfer_one(
 
 		put_words(memory->pds, PDS_KICK, memory->kick.data, POWERVR_RENDER_KICK_DATA_WORDS);
 		put_words(memory->pds, PDS_KICK + POWERVR_RENDER_KICK_DATA_WORDS * 4U, memory->kick.code, POWERVR_RENDER_KICK_CODE_WORDS);
-		error = powervr_transfer_shared_words(request->source, request->source_x, source_y, area, words);
+		if (request->kind == POWERVR_TRANSFER_BLIT) {
+			error = powervr_transfer_blit_words(request->source, &request->source_area, area, request->flip_x, request->flip_y, request->linear, words);
+		} else {
+			error = powervr_transfer_shared_words(request->source, request->source_x, source_y, area, words);
+		}
 		if (error != 0)
 			return error;
 
