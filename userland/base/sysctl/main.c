@@ -197,6 +197,23 @@ show_name(
 	if (strcmp(name, "hw.diskstats") == 0)
 		return show_diskstats();
 
+	/* How far the PowerVR driver has come: a NUL-terminated text of any length. */
+	if (strcmp(name, "hw.gpu.powervr.stages") == 0) {
+		unsigned char *text;
+		size_t text_length;
+
+		if (fetch_value(name, &text, &text_length) != 0)
+			return -1;
+		if (text_length == 0 || text[text_length - 1] != '\0') {
+			free(text);
+			errno = EIO;
+			return -1;
+		}
+		printf("%s: %s\n", name, (const char *)text);
+		free(text);
+		return 0;
+	}
+
 	/* Each GPU's work as its driver keeps it, a line a GPU. */
 	if (strcmp(name, "hw.gputelemetry") == 0)
 		return show_gputelemetry();

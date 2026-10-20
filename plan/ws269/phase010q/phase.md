@@ -232,3 +232,11 @@ sample の段の道（通しで読んだ）:
   - 120 秒の上限を越える場合の host 試験（時間がかかるので）。
   - 実機。
 - 片付け（Q1 に依頼）: `build/p015/`。
+
+## q1405-i01（P1、2026-10-20、急ぎ）: VF2 の firmware の起動が止まる件の観測の行
+
+- `firmware-boot.c`: 後段の各段（file、image、processor、memory、interrupt、start、boot、health check、render node）の始まりと終わりに `powervr: firmware: <段> start`、`done (N ms)` か `failed (E) after N ms` を 1 行ずつ出す。start の中は cache、MIPS wrapper、processor の reset 解除の前に 1 行ずつ出す。
+- 待ちは元から全部に上限がある（boot・stop の register・command の return slot）。時間切れの時に、何を待っていたかと register・slot の値の行を足した。
+- 後段の間は別の thread が 1 秒ごとに見て、終わらない段を 5 秒ごとに `still in <段> after N s` と出す（段が register の読みで戻らない時もほかの hart から出る）。
+- `userland/base/sysctl/main.c`: `hw.gpu.powervr.stages` は可変の長さの文字列なのに、名前の分岐が無く固定の大きさで読んでいた（ENOMEM）。`fetch_value` で大きさを問い、文字列として出す分岐を足した。kernel の `sysctl_output` は oldp NULL に大きさを答えており、正しかった。
+- 確かめ: VF2 の vmunix と sysctl の build、warning 0。p010 run.sh 0 failed。実機は未（ユーザーが SD で）。
