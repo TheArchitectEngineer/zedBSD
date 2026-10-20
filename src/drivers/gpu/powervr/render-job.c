@@ -142,6 +142,17 @@ struct job_memory {
 static int job_check(const struct powervr_render_job *job);
 static int job_map(struct powervr_render *render, struct powervr_session *session, struct job_memory *memory);
 static int job_programs(const struct powervr_render_job *job, struct job_memory *memory, uint32_t *shared_registers);
+/*
+ * The LOAD background's probe (for the board): 0 the usual load program,
+ * 1 the sample at (0, 0) (POWERVR_LOAD_PROBE_ORIGIN), 2 the program with a
+ * wait group after each group (POWERVR_LOAD_PROBE_SPACED), 3 no sample at
+ * all: the background a constant magenta as a clear's.
+ */
+#ifndef POWERVR_RENDER_LOAD_PROBE
+#define POWERVR_RENDER_LOAD_PROBE	0
+#endif
+#define LOAD_PROBE_CONSTANT		3
+
 static int job_background(const struct powervr_render_target *color, struct job_memory *memory, uint32_t pds_base, uint32_t usc_base, uint32_t *shared_registers);
 static int job_draws(struct powervr_render *render, struct powervr_session *session, const struct powervr_render_job *job, struct job_memory *memory, uint32_t *stream_words, uint32_t *vertex_shareds);
 static int draw_place(const struct powervr_render_job *job, uint32_t index, struct job_memory *memory, uint64_t sets_place, uint64_t usc_place, uint32_t stream_at, uint32_t *words);
@@ -442,9 +453,9 @@ job_background(
 	int error;
 
 	/* The background's program and the shared register program that feeds it. */
-	if (color->load_op == LOAD_OP_LOAD) {
+	if (color->load_op == LOAD_OP_LOAD && POWERVR_RENDER_LOAD_PROBE != LOAD_PROBE_CONSTANT) {
 		/* The attachment's image and sampler words, and the program that samples it. */
-		error = powervr_render_load_usc(color->surface.format, &memory->program);
+		error = powervr_render_load_usc_probe(color->surface.format, POWERVR_RENDER_LOAD_PROBE, &memory->program);
 		if (error != 0)
 			return error;
 
@@ -478,6 +489,12 @@ job_background(
 		kern_memset(value, 0, sizeof(value));
 		if (color->load_op == LOAD_OP_CLEAR)
 			kern_memcpy(value, color->clear, sizeof(value));
+		if (color->load_op == LOAD_OP_LOAD) {
+			/* The constant probe: magenta, opaque, as the clear's float bits. */
+			value[0] = 0x3f800000U;
+			value[2] = 0x3f800000U;
+			value[3] = 0x3f800000U;
+		}
 		error = powervr_render_clear_usc_words(clear_words, &memory->program);
 		if (error != 0)
 			return error;

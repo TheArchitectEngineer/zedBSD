@@ -28,6 +28,17 @@
 #define POWERVR_RENDER_LOAD_SHARED_WORDS	8U
 
 int powervr_render_load_usc(const struct powervr_format *format, struct powervr_render_usc *program);
+
+/*
+ * The load program's probe forms (powervr_render_load_usc_probe): the
+ * usual program, the sample at coordinate (0, 0), and the usual program
+ * with a wait group after every group (spacing any register a group
+ * writes from the next group that reads it).
+ */
+#define POWERVR_LOAD_PROBE_USUAL	0U
+#define POWERVR_LOAD_PROBE_ORIGIN	1U
+#define POWERVR_LOAD_PROBE_SPACED	2U
+int powervr_render_load_usc_probe(const struct powervr_format *format, unsigned probe, struct powervr_render_usc *program);
 int powervr_render_load_words(const struct powervr_view_shape *attachment, uint32_t words[POWERVR_RENDER_LOAD_SHARED_WORDS]);
 int powervr_render_load_shared(uint64_t words_address, struct powervr_data_shared_program *program);
 

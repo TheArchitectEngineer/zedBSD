@@ -1460,3 +1460,25 @@ csbgen（Mesa 25.0.7 の `gen_pack_header.py` の `__pvr_address`: `((addr >> sh
   - LOAD の時は、view の address・layout・寸法・mapping と、image の 4 語・sampler の 2 語を出す。
 - 板で流すもの: `-DPOWERVR_DIAGNOSTICS=1` の kernel で `vkmatrix two-passes` と `vkmatrix draws-32`。log の store の address と load の address・layout が合うかを見る。合っていれば 2 か 3。
 - 確認: RISC-V の self-test の build で warning 0（DIAGNOSTICS の 0 と 1 の両方）。
+
+## q1511（q1510 の続き、2026-10-21）: LOAD の切り分けの probe
+
+- 板 97: two-passes・draws-32 とも、1 つ目の job は CLEAR + STORE で 0x8000047000 に twiddled で書き、2 つ目は同じ address・layout から LOAD している（image 語 `60008861 003f00fc 1c000001 00200001`、sampler `00000000 00022400`）。address と layout の不一致（候補 1）は外れた。
+- 読みで見つけた点: LOAD の program（`powervr_render_load_usc`）は手で組んだ 6 group で、compiler の `shader_backend_space_hazards`（書いた register を次の group がすぐ読む時の間隔）を通らない。group の間に間隔が無い:
+  - `MOVE_SPECIAL`（x・y）の直後に、その temp を `SAMPLE` が読む。
+  - `PACK` の直後に、`MOVE` が出力へ送る。
+  - P2 が見つけた hazard（直前の group が書いた値を読むと、半分の lane が古い値になる）に当たる可能性がある。
+- `render-job.c` に `POWERVR_RENDER_LOAD_PROBE`（既定 0）を足し、`render-load-program.c` に `powervr_render_load_usc_probe` を足した:
+
+  | 値 | LOAD の背景 | 結果の読み方 |
+  | --- | --- | --- |
+  | 0 | いつもの program | 今と同じ |
+  | 1 | sample の座標を (0, 0) に固定（`MACHINE_IMMEDIATE` 0） | 全画素が 1 つ目の job の (0,0)（clear の色）になれば、sample と image の state は正しく、座標（`SPECIAL_X/Y`）が原因 |
+  | 2 | いつもの program の各 group の後に wait の group | 通れば hazard が原因 |
+  | 3 | sample をせず、背景を定数の magenta（clear の道） | magenta が出れば、2 つ目の job の store は動き、問題は LOAD の sample の側。0 のままなら、2 つ目の job の store か順序が原因（候補 3・4） |
+
+- 板で流すもの: `-DPOWERVR_RENDER_LOAD_PROBE=1`（2・3 も）の kernel で `vkmatrix two-passes`。FAIL の行の pixel の値を見る。
+- 確認:
+  - RISC-V の self-test の build で warning 0（probe の 0〜3 の全部）。
+  - p010 の host 試験は failed 0。
+  - 板は未実施。
