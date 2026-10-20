@@ -50,6 +50,17 @@
 #define POWERVR_COMPUTE_FENCE_KERNEL	0
 #endif
 
+/*
+ * Whether the compute check runs the probes that lock the compute data
+ * master up on the VF2 (the fence variants, the executor layouts, the
+ * timing probes, the no-operation probe); off by default, as their
+ * resets mark the compute stage failed and keep the Vulkan device
+ * closed.  Build with -DPOWERVR_COMPUTE_LOCKUP_PROBES=1 to run them.
+ */
+#ifndef POWERVR_COMPUTE_LOCKUP_PROBES
+#define POWERVR_COMPUTE_LOCKUP_PROBES	0
+#endif
+
 /* The words of the firmware's compute command. */
 #define POWERVR_COMPUTE_COMMAND_WORDS	24U
 
