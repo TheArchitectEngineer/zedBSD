@@ -1016,3 +1016,25 @@ source の変更は無し。
   - RISC-V の self-test の build で warning 0。
   - host 試験: p009 の executor が 511/511。p010 は全部 0 failed（job 26・command 29・kick 81 など）。p010 の job-host-test に `powervr_session_border_table` の stub を足した。
   - 板は未実施。
+
+## q1471 / q1471-i01（2026-10-21）: PM_META_PROTECT と SLC bypass
+
+- bit: `ROGUE_MMUCTRL_PT_DATA_PM_META_PROTECT_EN` は page table entry の bit 62（0x4000000000000000）。mainline の pvr_mmu.c は `DRM_PVR_BO_PM_FW_PROTECT` の buffer に立てる。
+
+| buffer | mainline の kernel | Mesa 25.0.0 | 我々（前） | 我々（後） |
+| --- | --- | --- | --- | --- |
+| free list（entry の配列） | PM_FW_PROTECT が必須、CPU の mmap は禁止（pvr_free_list.c） | GPU_UNCACHED と PM_FW_PROTECT | mappable（SLC bypass）、protect なし | SLC bypass と PM_PROTECT、mappable なし |
+| vheap と RTC | — | GPU_UNCACHED | mappable（bypass） | 同じ |
+| tail pointers（TPC） | — | GPU_UNCACHED | mappable（bypass） | 同じ |
+| macrotile array と mlist | — | GPU_UNCACHED（25.0.0。25.0.7 の別の file は mlist に PM_FW_PROTECT） | mappable（bypass） | 同じ |
+| region headers | — | GPU_UNCACHED、**rgn_hdr_heap**（mainline の ROGUE_RGNHDR_HEAP_BASE 0xDBF0000000、256 MiB） | general heap（0x80_0000_xxxx）、bypass | 同じ（下の注を参照） |
+| FW の record（firmware heap） | FW の側 | — | MIPS の uncached | 同じ |
+
+- SLC bypass の方針の差: mainline は `DRM_PVR_BO_BYPASS_DEVICE_CACHE`（Mesa の GPU_UNCACHED）の buffer だけを bypass する。我々は mappable か shareable の resource を全部 bypass している（`powervr_gpu_buffer_flags`）。render target の buffer では、Mesa も GPU_UNCACHED なので結果は同じ。違いが出るのは vk の buffer・image（Mesa は cached）。
+- 実装:
+  - `gpu-mmu.h`・`gpu-mmu.c` に `POWERVR_GPU_MAP_PM_PROTECT`（bit 62）を足した。
+  - `render.c` に `powervr_resource_make_free_list`（bypass と protect、mappable なし）を足した。
+  - `render-target.c` の free list の entry の配列にだけ使う。kernel は従来どおり自分の uncached の view から entry を書く。
+  - PM の page（`list->pages`）は GPU の VA に map しない（PM は物理で扱う）ので、変えていない。
+- 注（新しい候補、未確認）: Mesa は region header を専用の heap（RGNHDR、0xDBF0000000）に置く。TE の `TE_PSGREGION_ADDR` の base は bit 6〜33（shift 6）。我々の 0x800000d000 は general heap なので、heap の制約があるかを確かめる価値がある。
+- 確認: RISC-V の self-test の build で warning 0。p010 の host 試験はどれも 0 failed。板は未実施。

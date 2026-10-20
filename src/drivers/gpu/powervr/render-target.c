@@ -516,7 +516,7 @@ list_make(
 	error = powervr_buffer_create(render, (uint64_t)pages * POWERVR_FREE_LIST_ENTRY_BYTES, &entries);
 	if (error != 0)
 		goto fail;
-	error = powervr_resource_make(session, entries, 1, 0, &list->entries);
+	error = powervr_resource_make_free_list(session, entries, &list->entries);
 	powervr_buffer_put(render, entries);
 	if (error != 0)
 		goto fail;
