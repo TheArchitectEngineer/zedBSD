@@ -932,7 +932,15 @@ check_driver(
 	      "one CRC error: stop, status, the run again, data matches");
 	card.crc_errors = 3;
 	error = submit(disk, BIO_READ, 50, 4, data);
-	check(error == EIO && completed_bytes == 0, "three CRC errors: EIO");
+	check(error == 0 && memcmp(data, card.memory + 50U * 512U, 2048) == 0, "three CRC errors: recovered within the five tries (BUG-343)");
+	card.crc_errors = 7;
+	error = submit(disk, BIO_READ, 50, 4, data);
+	check(error == 0 && card.crc_errors == 0 && memcmp(data, card.memory + 50U * 512U, 2048) == 0,
+	      "seven CRC errors: the run a block at a time after its five tries, data matches");
+	card.crc_errors = 1000;
+	error = submit(disk, BIO_READ, 50, 4, data);
+	check(error == EIO && completed_bytes == 0, "CRC errors on every try: EIO");
+	card.crc_errors = 0;
 	error = submit(disk, BIO_READ, 60, 2, data);
 	check(error == 0 && memcmp(data, card.memory + 60U * 512U, 1024) == 0, "the card serves the next request");
 

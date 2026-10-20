@@ -276,8 +276,18 @@
  */
 #define DW_MMC_RUN_BLOCKS		128U
 
-/* How many times one run is tried, with a recovery between the tries. */
-#define DW_MMC_RUN_TRIES		3U
+/*
+ * How many times one run is tried, with a recovery between the tries, and
+ * how many times one recovery is tried before the card is taken as gone.
+ * A run of several blocks that fails every try is then moved a block at a
+ * time, each block with its own tries (BUG-343: a data CRC error now and
+ * then must not reach the file system).
+ *
+ * Value referenced: Linux v6.12 drivers/mmc/core/block.c (MMC_MAX_RETRIES
+ * 5, and a failed multiple-block read retried a sector at a time).
+ */
+#define DW_MMC_RUN_TRIES		5U
+#define DW_MMC_RECOVER_TRIES		3U
 
 /* The clocks the card runs at while identified, by default and at high speed. */
 #define DW_MMC_IDENTIFY_HZ		400000ULL
@@ -417,6 +427,10 @@ struct dw_mmc_unit {
 
 	/* The raw interrupt status the last failed wait saw, for the failure report. */
 	uint32_t last_status;
+
+	/* Failed tries and runs that moved only a block at a time, since the attach, for the log. */
+	uint64_t errors;
+	uint64_t split_runs;
 };
 
 /*
@@ -460,6 +474,7 @@ static int switch_high_speed(struct dw_mmc_unit *unit, int *switched);
 static int wait_card_ready(struct dw_mmc_unit *unit);
 static int transfer_run(struct dw_mmc_unit *unit, int write, uint64_t block, uint32_t count, uint8_t *data);
 static int transfer_run_recovering(struct dw_mmc_unit *unit, int write, uint64_t block, uint32_t count, uint8_t *data);
+static int transfer_run_tries(struct dw_mmc_unit *unit, int write, uint64_t block, uint32_t count, uint8_t *data);
 static int recover_card(struct dw_mmc_unit *unit);
 static int adapt_bus(struct dw_mmc_unit *unit, int write, uint64_t block, uint32_t count, uint8_t *data);
 static int tune_sample_phase(struct dw_mmc_unit *unit, uint64_t block, uint32_t count, uint8_t *data);
@@ -2086,7 +2101,8 @@ transfer_run(
 }
 
 /*
- * Moves one run, recovering the card and trying again when it fails.
+ * Moves one run, recovering the card and trying again when it fails, and
+ * a block at a time when the whole run never moves.
  *
  * A card that cannot be recovered marks the unit failed.
  */
@@ -2098,7 +2114,44 @@ transfer_run_recovering(
 	uint32_t count,
 	uint8_t *data)
 {
+	uint32_t index;
+	int error;
+
+	/* The whole run, with its tries. */
+	error = transfer_run_tries(unit, write, block, count, data);
+	if (error == 0 || unit->failed || count == 1U)
+		return error;
+
+	/* A run of several blocks that never moved goes a block at a time, each with its own tries. */
+	unit->split_runs++;
+	kern_logf("dw-mmc: %s of %u blocks at %llu moved a block at a time (errors %llu, split runs %llu)\n",
+		  write ? "write" : "read", count, (unsigned long long)block,
+		  (unsigned long long)unit->errors, (unsigned long long)unit->split_runs);
+	for (index = 0; index < count; index++) {
+		error = transfer_run_tries(unit, write, block + index, 1U, data + (size_t)index * DW_MMC_BLOCK_BYTES);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: every block has moved. */
+	return 0;
+}
+
+/*
+ * Tries one run up to DW_MMC_RUN_TRIES times, recovering the card between
+ * the tries; a card that a recovery cannot bring back after
+ * DW_MMC_RECOVER_TRIES attempts marks the unit failed.
+ */
+static int
+transfer_run_tries(
+	struct dw_mmc_unit *unit,
+	int write,
+	uint64_t block,
+	uint32_t count,
+	uint8_t *data)
+{
 	unsigned attempt;
+	unsigned again;
 	int recovered;
 	int error;
 
@@ -2110,18 +2163,23 @@ transfer_run_recovering(
 		if (error == 0)
 			break;
 
-		/* Reports the failed try with the status that ended it. */
-		kern_logf("dw-mmc: %s of %u blocks at %llu failed (%d, status %x), try %u\n",
+		/* Reports the failed try with the status that ended it, and the count so far. */
+		unit->errors++;
+		kern_logf("dw-mmc: %s of %u blocks at %llu failed (%d, status %x), try %u (errors %llu)\n",
 			  write ? "write" : "read",
 			  count,
 			  (unsigned long long)block,
 			  error,
 			  unit->last_status,
-			  attempt + 1U);
+			  attempt + 1U,
+			  (unsigned long long)unit->errors);
 
-		/* Brings the card back to the transfer state; a card that does not come back is failed. */
-		recovered = recover_card(unit);
+		/* Brings the card back to the transfer state, a few times; a card that never comes back is failed. */
+		recovered = EIO;
+		for (again = 0; again < DW_MMC_RECOVER_TRIES && recovered != 0; again++)
+			recovered = recover_card(unit);
 		if (recovered != 0) {
+			kern_logf("dw-mmc: the card did not come back (%d); it is taken as gone\n", recovered);
 			unit->failed = 1;
 			break;
 		}
@@ -2146,8 +2204,8 @@ transfer_run_recovering(
 
 /*
  * Brings the card back to the transfer state after a failed command: the
- * FIFO is emptied, the transfer in progress is stopped, and the card is
- * asked until it is ready for data.
+ * controller and its FIFO are reset, the transfer in progress is stopped,
+ * and the card is asked until it is ready for data.
  */
 static int
 recover_card(
@@ -2156,10 +2214,21 @@ recover_card(
 	struct dw_mmc_command command;
 	int error;
 
-	/* Empties the FIFO of what the failed transfer left. */
-	error = reset_controller(unit, DW_MMC_CONTROL_FIFO_RESET);
+	/*
+	 * Resets the controller's state machines, its FIFO and its DMA
+	 * interface, has the card side take the clock registers again, and
+	 * clears the raw status the failed transfer left.
+	 *
+	 * Procedure referenced: Linux v6.12 drivers/mmc/host/dw_mmc.c
+	 * (dw_mci_reset: SDMMC_CTRL_ALL_RESET_FLAGS, then the clock update).
+	 */
+	error = reset_controller(unit, DW_MMC_CONTROL_RESET | DW_MMC_CONTROL_FIFO_RESET | DW_MMC_CONTROL_DMA_RESET);
 	if (error != 0)
 		return error;
+	error = update_clock_registers(unit);
+	if (error != 0)
+		return error;
+	write_register(unit, DW_MMC_RAW_STATUS, DW_MMC_STATUS_ALL);
 
 	/* Stops a transfer still in progress; a card with none refuses it, which is harmless. */
 	prepare_command(&command, SD_STOP_TRANSMISSION, 0, DW_MMC_RESPONSE_BUSY);
