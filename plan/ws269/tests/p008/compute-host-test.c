@@ -68,8 +68,11 @@ check_bytes(
 	const char *what)
 {
 	unsigned i;
+	int differ;
 
-	if (memcmp(bytes, expected, length) == 0) {
+	/* The same bytes pass. */
+	differ = memcmp(bytes, expected, length);
+	if (differ == 0) {
 		passes++;
 		return;
 	}

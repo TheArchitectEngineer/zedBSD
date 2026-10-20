@@ -600,6 +600,7 @@ select_instruction(
 	unsigned mc;
 	unsigned channel;
 	unsigned opcode;
+	unsigned variant;
 	int error;
 
 	/* Structure has its own selection. */
@@ -775,12 +776,24 @@ select_instruction(
 	case POWERVR_IR_BIT_AND:
 	case POWERVR_IR_BIT_OR:
 	case POWERVR_IR_BIT_XOR:
-		select_two_sourced(select, MACHINE_LOGIC, opcode == POWERVR_IR_BIT_AND ? LOGIC_AND : (opcode == POWERVR_IR_BIT_OR ? LOGIC_OR : LOGIC_XOR), 0, destination_of(select, instruction), &instruction->source[0], &instruction->source[1], 0);
+		/* The logic operation the opcode names. */
+		variant = LOGIC_XOR;
+		if (opcode == POWERVR_IR_BIT_AND)
+			variant = LOGIC_AND;
+		else if (opcode == POWERVR_IR_BIT_OR)
+			variant = LOGIC_OR;
+		select_two_sourced(select, MACHINE_LOGIC, variant, 0, destination_of(select, instruction), &instruction->source[0], &instruction->source[1], 0);
 		break;
 	case POWERVR_IR_SHIFT_LEFT:
 	case POWERVR_IR_SHIFT_RIGHT:
 	case POWERVR_IR_SHIFT_RIGHT_SIGNED:
-		select_two_sourced(select, MACHINE_SHIFT, opcode == POWERVR_IR_SHIFT_LEFT ? SHIFT_LEFT : (opcode == POWERVR_IR_SHIFT_RIGHT ? SHIFT_RIGHT : SHIFT_RIGHT_SIGNED), 0, destination_of(select, instruction), &instruction->source[0], &instruction->source[1], 0);
+		/* The shift the opcode names. */
+		variant = SHIFT_RIGHT_SIGNED;
+		if (opcode == POWERVR_IR_SHIFT_LEFT)
+			variant = SHIFT_LEFT;
+		else if (opcode == POWERVR_IR_SHIFT_RIGHT)
+			variant = SHIFT_RIGHT;
+		select_two_sourced(select, MACHINE_SHIFT, variant, 0, destination_of(select, instruction), &instruction->source[0], &instruction->source[1], 0);
 		break;
 	case POWERVR_IR_FLOAT_TO_SIGNED:
 	case POWERVR_IR_FLOAT_TO_UNSIGNED:
@@ -1907,6 +1920,10 @@ shader_backend_group(
 		return EINVAL;
 	}
 
-	/* Reports what the group came to. */
-	return error;
+	/* Reports a field the encoder refused. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the group. */
+	return 0;
 }

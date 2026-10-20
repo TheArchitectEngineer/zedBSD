@@ -53,8 +53,13 @@ check_operation(
 	const char *what)
 {
 	unsigned i;
+	int differ;
 
-	if (error != 0 || operation->length != length || memcmp(operation->bytes, expected, length) != 0) {
+	/* A failure, another length, or other bytes. */
+	differ = 1;
+	if (error == 0 && operation->length == length)
+		differ = memcmp(operation->bytes, expected, length);
+	if (differ != 0) {
 		failures++;
 		printf("FAIL: %s: error %d length %u:", what, error, operation->length);
 		for (i = 0; i < operation->length; i++)
@@ -78,12 +83,18 @@ check_program(
 	uint8_t output[256];
 	size_t length;
 	size_t i;
+	int differ;
 	int error;
 
 	memset(output, 0x5a, sizeof(output));
 	length = 0;
 	error = powervr_usc_program_encode(groups, count, output, sizeof(output), &length);
-	if (error != 0 || length != expected_length || memcmp(output, expected, length) != 0) {
+
+	/* A failure, another length, or other bytes. */
+	differ = 1;
+	if (error == 0 && length == expected_length)
+		differ = memcmp(output, expected, length);
+	if (differ != 0) {
 		failures++;
 		printf("FAIL: %s: error %d length %zu:", what, error, length);
 		for (i = 0; i < length; i++)

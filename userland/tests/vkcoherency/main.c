@@ -126,6 +126,7 @@ main(
 	VkBuffer probe;
 	VkMemoryRequirements requirements;
 	char part[64];
+	const char *kind;
 	uint32_t type;
 	int failed;
 	VkResult status;
@@ -166,8 +167,10 @@ main(
 			continue;
 		memset(&tally, 0, sizeof(tally));
 		status = run_buffer_part(&run, type, &tally);
-		snprintf(part, sizeof(part), "buffer type %u (%s)", type,
-			 (run.memory.memoryTypes[type].propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) != 0 ? "coherent" : "non-coherent");
+		kind = "non-coherent";
+		if ((run.memory.memoryTypes[type].propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) != 0)
+			kind = "coherent";
+		snprintf(part, sizeof(part), "buffer type %u (%s)", type, kind);
 		print_tally(&run, part, &tally);
 		failed |= tally.failed;
 	}
@@ -580,7 +583,9 @@ run_buffer_part(
 	uint32_t wanted;
 	uint32_t fill;
 	uint32_t seen;
+	uint32_t previous;
 	uint32_t i;
+	int stale;
 	VkResult status;
 
 	/* The input and the output, bound to the set. */
@@ -647,14 +652,31 @@ run_buffer_part(
 			seen = output.words[word];
 			if (seen == wanted)
 				continue;
-			note(tally, round, word, seen, wanted, seen == fill || (round > 0 && seen == pattern(round - 1U, word) + word * 3U));
+
+			/* Stale: the CPU's fill, or what the round before wrote. */
+			stale = 0;
+			previous = 0;
+			if (round > 0)
+				previous = pattern(round - 1U, word) + word * 3U;
+			if (seen == fill) {
+				stale = 1;
+			} else if (round > 0 && seen == previous) {
+				stale = 1;
+			}
+			note(tally, round, word, seen, wanted, stale);
 		}
 	}
 
 	/* The buffers go. */
 	destroy_buffer(run, &input);
 	destroy_buffer(run, &output);
-	return status;
+
+	/* Reports the call that failed. */
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: every round ran (the tally says what each saw). */
+	return VK_SUCCESS;
 }
 
 /* The image part: a clear of an OPTIMAL image to a new colour each round, copied out and compared. */
@@ -681,6 +703,7 @@ run_image_part(
 	uint32_t seen;
 	uint32_t type;
 	uint32_t i;
+	int stale;
 	VkResult status;
 
 	/* The image in device-local memory if there is any, any type it accepts otherwise. */
@@ -809,14 +832,28 @@ run_image_part(
 			seen = readback.words[pixel];
 			if (seen == wanted)
 				continue;
-			note(tally, round, pixel, seen, wanted, seen == fill || (round > 0 && seen == previous));
+
+			/* Stale: the CPU's fill, or the round before's colour. */
+			stale = 0;
+			if (seen == fill) {
+				stale = 1;
+			} else if (round > 0 && seen == previous) {
+				stale = 1;
+			}
+			note(tally, round, pixel, seen, wanted, stale);
 		}
 		previous = wanted;
 	}
 
 	/* The readback buffer goes; the image goes with the run. */
 	destroy_buffer(run, &readback);
-	return status;
+
+	/* Reports the call that failed. */
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: every round ran (the tally says what each saw). */
+	return VK_SUCCESS;
 }
 
 /* Prints a part's line. */
