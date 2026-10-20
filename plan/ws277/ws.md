@@ -79,3 +79,8 @@ D1〜D11 は全部 (a)（推奨どおり）。原文は Master の decisions-log
   ws277 の p003 と p005 の試験に stub を足した。
 - `location 0 then 0` について: register（0x1450）は Linux の DC_DISPLAY_CURRENT_LOCATION と同じ番地。own mode でも 0 のままの理由は未確認。
 - 確認: ws277 の host 試験は全部 0 failures、VF2 の vmunix は rc 0、warning 0。板は未実施。
+- run 19（unmask の後）でも handler は来なかった。flip は 26 回あり、mismatch は 0。
+  診断を足した:
+  - unmask の後に `dc8200: vblank interrupt N unmasked` を出す。
+  - report で、PLIC（0x0c000000）を読むだけの view から、source 95 の priority と pending、context 0〜9 の enable bit と threshold を出す（`plic_report`）。
+  - 確認: VF2 の vmunix は rc 0、warning 0、ws277 の host 試験は 0 failures。

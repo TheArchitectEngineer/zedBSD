@@ -105,6 +105,10 @@
 #define DC_PANEL_LOCATION	0x1450U
 #define DC_UNIT_STEP		4U
 
+/* The JH7110 PLIC, for the q1529 diagnostics only. */
+#define DC_PLIC_BASE		0x0c000000ULL
+#define DC_PLIC_SIZE		0x400000U
+
 /*
  * The cursor plane of the first panel, and the second panel's offset from
  * it; the configuration's fields: the format (2, ARGB8888) in bits 0 to
@@ -369,6 +373,7 @@ static void blank_interrupt(int irq, kern_irq_ack_t acknowledge, void *argument)
 static const struct powervr_dc_mode *choose_mode(void);
 static int own_screen(const struct powervr_dc_mode *mode, struct powervr_dc_screen *screen, uint32_t *format);
 static void draw_bars(volatile uint32_t *pixels, const struct powervr_dc_screen *screen);
+static void plic_report(int irq);
 static void start_panel(const struct dc_adoption *adoption, const struct powervr_dc_mode *mode);
 
 /*
@@ -734,6 +739,7 @@ drv_powervr_dc_vblank_start(
 	 * pending bit was set and the handler never ran).
 	 */
 	kern_irq_unmask(blanks->irq);
+	kern_logf("dc8200: vblank interrupt %d unmasked\n", blanks->irq);
 
 	/* Lets the HDMI panel raise it, leaving the other panel's bit as it was. */
 	enabled_panels = read_control(adoption, DC_INTERRUPT_ENABLE);
@@ -1008,6 +1014,48 @@ drv_powervr_dc_vblank_report(
 		  read_display(&board_adoption, DC_PANEL_CONFIG + DC_UNIT_STEP * DC_HDMI_PANEL),
 		  read_display(&board_adoption, DC_PANEL_LOCATION + DC_UNIT_STEP * DC_HDMI_PANEL),
 		  read_display(&board_adoption, DC_PANEL_LOCATION + DC_UNIT_STEP * DC_HDMI_PANEL));
+	plic_report(board_blanks.irq);
+}
+
+/*
+ * q1529 diagnostics: the JH7110 PLIC's view of the controller's source,
+ * read only: its priority, whether it is pending, and its enable bit and
+ * the threshold of each of the first ten contexts (the S-mode contexts of
+ * harts 1 to 4 are 2, 4, 6 and 8 when hart 0 has only an M-mode one).
+ *
+ * Values referenced: the RISC-V PLIC specification (priority 4 bytes a
+ * source from 0, pending bits from 0x1000, enable blocks of 0x80 a context
+ * from 0x2000, threshold 0x1000 a context from 0x200000); the JH7110
+ * device tree (plic at 0x0c000000).
+ */
+static void
+plic_report(
+	int irq)
+{
+	volatile uint8_t *plic;
+	void *mapped;
+	uint32_t source;
+	unsigned context;
+	uint32_t enable;
+	uint32_t threshold;
+	int error;
+
+	/* The registers, read through a view of their own. */
+	error = kern_device_map(DC_PLIC_BASE, DC_PLIC_SIZE, KERN_DEVICE_UNCACHED, &mapped);
+	if (error != 0 || irq < 0) {
+		kern_logf("dc8200: plic unread (%d)\n", error);
+		return;
+	}
+	plic = mapped;
+	source = (uint32_t)irq;
+	kern_logf("dc8200: plic source %u priority %u pending %u\n", source,
+		  kern_mmio_read32(plic + source * 4U),
+		  (kern_mmio_read32(plic + 0x1000U + (source / 32U) * 4U) >> (source % 32U)) & 1U);
+	for (context = 0; context < 10U; context++) {
+		enable = (kern_mmio_read32(plic + 0x2000U + context * 0x80U + (source / 32U) * 4U) >> (source % 32U)) & 1U;
+		threshold = kern_mmio_read32(plic + 0x200000U + context * 0x1000U);
+		kern_logf("dc8200: plic context %u enable %u threshold %u\n", context, enable, threshold);
+	}
 }
 
 /* Reads one of the identity registers. */
