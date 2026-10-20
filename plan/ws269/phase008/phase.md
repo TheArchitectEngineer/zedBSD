@@ -305,3 +305,28 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
   - probes の own words、stride 16・64・128、wait が ffffffff になること。
   - store の 1 step が 32/32、4 step が 128/128。
 - 片付け（Q1 に依頼）: `build/p019/`。
+
+## q1437-i01（P2、2026-10-20）: store の address を step ごとに作り直す、temporaries を多めに
+
+- 板の 4 回目（vf2-dmesg32）:
+  - `compute kernel: FAILED, 1648/16384`（前は 60〜100）。
+  - `fault 0x80007c4000`。run の base は 0x8000001000（前回の probe の want から逆算）なので、約 7.8 MB 先。
+  - その後は context を失い、ほかは NOT RUN。
+- 逆算: 正しい word の 1648 は 32 instance × 約 51 step。そこから先で address が大きく飛んだ。step ごとの加数（r3＝128）が 1 回だけ大きければ、こうは飛ばない。前の 3 回（MOVED・CONSTANT・COMPUTED）でも、IMADD の後で dst 以外の register（r1）が壊れていた。
+- 見込み: 1 つの instance の temporaries が、隣の instance の register と重なっている（task issue の temporaries の field の単位の思い違い）。または前の step から運ぶ register（r0・r1・r3）が途中で壊れる。重なりなら、temps の probe の BROKEN（31/32）も、IMADD が「r1 を壊す」ように見えたことも説明できる。ただし確かめてはいない。
+- 直し（`compute-program.{c,h}`）:
+  - store の program は、step ごとに address を作り直す: step の offset（immediate k×128）→ base の対（r10・r11、最初に 1 回だけ書く）＋ instance の offset（r8）を add64 → それに step の offset を add64 → data を pass → st → wait。step から step へ address を運ばない。
+  - 1 step は 6 group、512 step で 29,776 byte（USC の room の 32 KiB に収まる）。
+  - store の kick の temporaries を 16 にした（`POWERVR_COMPUTE_STORE_TEMPORARIES`。使うのは r0〜r11）。field の単位が思っていたのと違っても、各 instance に足りるようにするため。
+- 試験: `plan/ws269/tests/p008/compute-host-test.c` の store の group の期待を新しい並びに直した（6＋6×512＋1 group、7・8 が add64、10 が st、11 が wdf）。使わなくなった `immediate_r0` を外した。
+
+| 確認 | 結果 |
+| --- | --- |
+| p008 の host | encode 94/0、compute 72/0 |
+| p009 の host（切り替え 0） | 511 passed、0 failed |
+| VF2 の vmunix（`plan/ws269/tests/p008/config-visionfive2-compute.mk`、`build/p020/vf2/vmunix`） | rc 0、warning 0 |
+
+- 板の読み方:
+  - kernel が OK、または fault 無しで正しい word が増えるなら、運ぶ register が壊れていた（重なり）。
+  - まだ fault が出るなら、その address を報告してほしい。instance の offset（r8）か base の対（r10・r11）が壊れている。
+- 片付け（Q1 に依頼）: `build/p020/`。
