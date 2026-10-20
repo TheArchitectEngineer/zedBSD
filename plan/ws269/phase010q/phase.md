@@ -775,3 +775,29 @@ mainline の `free_list_create_fw_structure` の式（current = 初めの数 −
 次はこれを mainline の `rogue_fwif_fwrendercontext`・`rogue_fwif_geom_registers_caswitch`（vdm_context_state_base 0、resume 8、ta_context_state_base 16、task の word 24〜）と照らす。
 
 確かめ: 試験の image の config の vmunix は rc 0、warning 0。実機は未。
+
+## q1433-i01（P1、2026-10-20）: render context・geometry state・CCB の読み（vf2-dmesg30）
+
+mainline の offset（`rogue_fwif_fwrendercontext` = geometry の common 0〜0x97、fragment の common 0x98〜0x12f、static の state 0x130〜（368 byte、`rogue_fwif_geom_registers_caswitch`））で読んだ。
+
+| 物 | 値 | 照らした結果 |
+| --- | --- | --- |
+| geometry の common | ccbctl c004c000、ccb c004d000、context_state c0031000（+0x18）、priority 0、dm 2（+0x3c）、deadline 0x7530 = 30000 ms（+0x68、mainline の MAX_DEADLINE_MS と同じ形）、memory c002b000（+0x88）、id 4（+0x8c） | 一致 |
+| fragment の common | ccbctl c0056000、ccb c0057000、state c004b000、dm 3（+0xd4）、deadline 0x7530、memory c002b000、id 4 | 一致 |
+| static の state | vdm_context_state_base 0x8000001010（+0x130）、resume 0（+0x138）、ta_context_state_base 0x8000001070（+0x140）、buffer 0・1 の store・resume の task の word（+0x148〜） | 形は一致 |
+| geometry state（`rogue_fwif_geom_ctx_state`） | vdm_call_stack_pointer 0、vdm_call_stack_pointer_init 0x8000001000 | mainline の `reg_state_init` と同じ（init だけを入れる） |
+| VDM の call stack | 0x8000001000（8 byte、Mesa の `PVR_VDM_CALLSTACK_MAX_DEPTH` 1 × 8）。VDM の state は +0x10、TA の state は +0x70 | 重なりは無い。`render-context.c` の static assert で大きさを確かめている |
+| CCB の header | 0x2abc80c9。201 \| magic \| 0x8000 | bit 15 は mainline の `ROGUE_CCB_TYPE_TASK`。GEOM の型（`ROGUE_FWIF_CCB_CMD_TYPE_GEOM` = 201 \| magic \| TASK）そのもの。size 0x70 = 112（`rogue_fwif_cmd_geom` の SIZE_CHECK 112） |
+| CCB の command | frame_num 0、hwrt c0062000、regs（stream 0x8000013000、ppp 0x202、te_psg 0x20000、resume 0x20010000）、flags 3、partial_render_geom_frag_fence = { c0055000, 0 } | fence の値 0 は未確認（mainline では fragment の PR の fence の値） |
+| CCB の続き | UPDATE（2abc00d5、8 byte）で c0055000 = 1 | 一致 |
+| CCB の control | write・read・dep が 0xc8、wrap 0x7fff | 0xc8 = 40 + 112 + 40 + 8 = 200 で、kick した書き込みの後ろ。FW が全部読んだ後の値で、write offset は進んでいた |
+| deadline 以外の +0xc0 の 3、+0x100 台の 1 | fragment の dm 3、FW が書く run の field | 意味は一致 |
+
+結論: context・CCB・geometry state・HWRT（q1431）は、どれも mainline・Mesa と形が一致した。空の stream の TA の停止の原因は見つからない。FW の trace は Kick TA の後に event が無い。前に読んだ host の register は、job の最中でも 0 だった。
+
+次の候補（未実施、判断が要る）:
+- partial_render_geom_frag_fence の値を、mainline のように fragment の PR の fence の値（kick の後の値）にする。
+- dummy_rgnhdr_init_geom_regs（command の 96）を Mesa のように設定する（BRN の要否を確かめる）。
+- domibel の stack で同じ空の stream を流して比べる（その環境は手元に無い）。
+
+source の変更は無し。
