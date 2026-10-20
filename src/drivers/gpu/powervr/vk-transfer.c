@@ -334,10 +334,15 @@ hold(
 	uint64_t identity)
 {
 	struct powervr_vk_object *object;
+	int error;
 
 	/* The object, held. */
 	object = powervr_vk_object_find(session, kind, identity);
-	if (object == NULL || powervr_vk_object_retain(object) != 0)
+	if (object == NULL)
+		return EINVAL;
+
+	error = powervr_vk_object_retain(object);
+	if (error != 0)
 		return EINVAL;
 	entry->objects[entry->object_count++] = object;
 

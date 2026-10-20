@@ -128,6 +128,7 @@ powervr_kick_command(
 	uint32_t command[POWERVR_KICK_COMMAND_WORDS])
 {
 	unsigned index;
+	int error;
 
 	/* A zeroed command of the kick's type. */
 	for (index = 0; index < POWERVR_KICK_COMMAND_WORDS; index++)
@@ -135,7 +136,12 @@ powervr_kick_command(
 	command[0] = 0x2abc0000U | 101U;
 
 	/* The kick's data. */
-	return kick_data(kick, &command[COMMAND_DATA / 4U]);
+	error = kick_data(kick, &command[COMMAND_DATA / 4U]);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the command. */
+	return 0;
 }
 
 /*
@@ -165,7 +171,13 @@ powervr_kick_combined_command(
 	error = kick_data(geometry, &command[COMMAND_DATA / 4U]);
 	if (error != 0)
 		return error;
-	return kick_data(fragment, &command[(COMMAND_DATA + POWERVR_KICK_DATA_BYTES) / 4U]);
+
+	error = kick_data(fragment, &command[(COMMAND_DATA + POWERVR_KICK_DATA_BYTES) / 4U]);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the command. */
+	return 0;
 }
 
 /*

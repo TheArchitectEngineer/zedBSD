@@ -152,8 +152,13 @@ powervr_stage_note_fail(
 	char *line,
 	size_t capacity)
 {
+	bool shown;
+
 	/* The same with no value; a fault or a reset without one prints its word alone. */
-	return powervr_stage_note_fail_value(record, stage, reason, POWERVR_STAGE_NO_VALUE, line, capacity);
+	shown = powervr_stage_note_fail_value(record, stage, reason, POWERVR_STAGE_NO_VALUE, line, capacity);
+
+	/* Succeeded: whether the line is to be shown. */
+	return shown;
 }
 
 /*

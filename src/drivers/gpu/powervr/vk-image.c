@@ -17,9 +17,6 @@
  * (libvulkan's declaration for a window system's shared image, of a
  * handle type the session shares by) is made as any other; its memory is
  * the exported or imported allocation it is bound to (vk-memory.c).
- *
- * Procedure referenced: zedBSD src/drivers/gpu/bcm2711/vulkan-resource.c
- * and vulkan-input.c (the wire of each command).
  */
 
 #include <stdbool.h>
@@ -66,6 +63,10 @@ static int view_destroy(struct powervr_vk_session *session, void *payload);
 /*
  * Runs an image, image view or sampler command; *handled stays clear for
  * another handler's opcode.
+ *
+ * Procedure referenced:
+ * zedBSD src/drivers/gpu/bcm2711/vulkan-resource.c and vulkan-input.c
+ * (the wire of each command).
  */
 int
 powervr_vk_image_route(

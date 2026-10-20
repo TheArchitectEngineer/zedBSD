@@ -952,8 +952,13 @@ powervr_render_submit(
 		kern_memcpy(&opcode, words, sizeof(opcode));
 		kern_memcpy(&reserved, words + 4, sizeof(reserved));
 	}
-	if (opcode != POWERVR_NATIVE_EMPTY_JOB || reserved != 0U)
-		return powervr_render_frame(render, session, command, bytes, flags, timeline, completion);
+	if (opcode != POWERVR_NATIVE_EMPTY_JOB || reserved != 0U) {
+		error = powervr_render_frame(render, session, command, bytes, flags, timeline, completion);
+		if (error != 0)
+			return error;
+
+		return 0;
+	}
 
 	/* The empty job, on the session's one timeline. */
 	if (timeline != 0U)
@@ -1072,6 +1077,7 @@ powervr_render_stop_begin(
 	uint32_t command[POWERVR_COMMAND_WORDS];
 	unsigned long enabled;
 	uint32_t context;
+	unsigned faulted;
 	unsigned which;
 	int sent;
 
@@ -1087,7 +1093,8 @@ powervr_render_stop_begin(
 
 	/* No context that ran, or a device that is gone, has nothing to ask. */
 	context = powervr_session_next_cleanup(session, &which);
-	if (context == 0U || is_faulted(render))
+	faulted = is_faulted(render);
+	if (context == 0U || faulted)
 		return 0;
 
 	/* Asks for the cleanup; a full buffer is retried by the poll. */
@@ -1125,14 +1132,17 @@ powervr_render_stop_poll(
 	unsigned long enabled;
 	uint32_t context;
 	uint32_t answer;
+	uint64_t waited;
 	unsigned outstanding;
+	unsigned faulted;
 	unsigned which;
 	int sent;
 
 	/* A device in quarantine confirms nothing. */
 	render = device;
 	session = opaque;
-	if (is_faulted(render))
+	faulted = is_faulted(render);
+	if (faulted)
 		return EIO;
 
 	/* A context still to be cleaned up: reads the firmware's answer without waiting. */
@@ -1169,7 +1179,8 @@ powervr_render_stop_poll(
 		if ((answer & POWERVR_RETURN_EXECUTED) == 0U) {
 			if (session->stop_tries > CLEANUP_TRIES)
 				return EBUSY;
-			if (sched_ticks() - session->stop_since > ms_ticks(POWERVR_DEADLINE_MS))
+			waited = sched_ticks() - session->stop_since;
+			if (waited > ms_ticks(POWERVR_DEADLINE_MS))
 				return ETIMEDOUT;
 			return EAGAIN;
 		}
@@ -1289,6 +1300,7 @@ powervr_render_isolate(
 	unsigned long enabled;
 	uint32_t answer;
 	uint32_t index;
+	unsigned faulted;
 	int error;
 
 	/* From here every destroy and the close keep what the session owned. */
@@ -1302,7 +1314,8 @@ powervr_render_isolate(
 	spin_unlock_irqrestore(&render->queue_lock, enabled);
 
 	/* A device in quarantine cannot isolate one session. */
-	if (is_faulted(render))
+	faulted = is_faulted(render);
+	if (faulted)
 		return EIO;
 
 	/* Checks the firmware still answers, so the other sessions go on. */
@@ -1411,9 +1424,14 @@ take_memory(
 	void *context,
 	size_t size)
 {
+	void *memory;
+
 	/* Kernel memory, cleared. */
 	(void)context;
-	return kern_calloc(1, size);
+	memory = kern_calloc(1, size);
+
+	/* Succeeded: the memory, or NULL when there is none. */
+	return memory;
 }
 
 /* Returns bookkeeping memory. */
@@ -1849,6 +1867,7 @@ service_pass(
 	unsigned long enabled;
 	uint32_t answer;
 	uint32_t index;
+	unsigned faulted;
 	int overdue;
 	int pending;
 	int error;
@@ -1886,7 +1905,8 @@ service_pass(
 
 	/* A command overdue: asks the firmware whether it is alive. */
 	error = 0;
-	if (overdue && !is_faulted(render)) {
+	faulted = is_faulted(render);
+	if (overdue && !faulted) {
 		for (index = 0; index < POWERVR_COMMAND_WORDS; index++)
 			command[index] = 0;
 		command[POWERVR_COMMAND_TYPE / 4U] = POWERVR_COMMAND_HEALTH_CHECK;

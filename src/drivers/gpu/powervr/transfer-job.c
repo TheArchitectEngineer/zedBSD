@@ -92,6 +92,7 @@ powervr_transfer_run(
 	struct transfer_memory *memory;
 	struct powervr_render_area row;
 	uint32_t index;
+	bool by_rows;
 	int error;
 
 	/* A copy names its source. */
@@ -114,7 +115,10 @@ powervr_transfer_run(
 	}
 
 	/* The whole rectangle, or each of its rows. */
-	if (request->kind == POWERVR_TRANSFER_BLIT || !powervr_transfer_needs_rows(&request->destination, &request->area)) {
+	by_rows = 0;
+	if (request->kind != POWERVR_TRANSFER_BLIT)
+		by_rows = powervr_transfer_needs_rows(&request->destination, &request->area);
+	if (!by_rows) {
 		error = transfer_one(render, session, memory, request, &request->area, request->source_y);
 	} else {
 		row = request->area;
