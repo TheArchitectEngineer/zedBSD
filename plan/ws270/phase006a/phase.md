@@ -324,3 +324,5 @@ Keiland が使い、vkmatrix 15/15・gpu-selftest 13/13 で確かめていない
   - desktop の config で VF2 の vmunix は rc 0、warning 0（firmware-hwr.c が build に入る）。
   - selftest の config（switch 無し）でも rc 0、warning 0。
   - 板は未実施。
+- d25（3c347a062、P1 の `vkmatrix -p N -r R`、P2 の SD の直し）: SD の read の失敗は retry で通る（errors 29、止まらない）。同時の試験の途中で板が log 無しで再起動（2 回、原因未確認、SoC ごと止まり watchdog か）。
+- **d26（61002a373、P2 の HWR の dump 37645e247）: `vkmatrix -p 3 -r 3 load-1080-textured` → FAIL。`hwr: record 0: number 1 dm 3 type 3 … hwrt 0xc0129000`、`data 10650000000000 d001 58ae9001 0` → type 3 = BIF0FAULT（GPU の MMU の fault）、notice の「pc」は page catalogue の address（0x58ae9001）。複数 session の同時の描画で MMU の文脈が衝突する疑い（page_cat_base_reg_set を全 session で共有、または MMU cache の invalidate）。P1 に修正、P2 に decode を依頼。**
