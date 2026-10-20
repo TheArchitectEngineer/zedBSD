@@ -668,9 +668,14 @@ border_table_make(
 	struct powervr_buffer *buffer;
 	int error;
 
+	/*
+	 * The table's memory is written by the processor (zeroed now, the
+	 * border colours later) through an uncached view, so the core reads it
+	 * around its system level cache, as every buffer the processor writes.
+	 */
 	error = powervr_buffer_create(render, POWERVR_BORDER_TABLE_BYTES, &buffer);
 	if (error == 0) {
-		error = powervr_resource_make(session, buffer, 0, 0, &session->border_table);
+		error = powervr_resource_make(session, buffer, 1, 0, &session->border_table);
 		powervr_buffer_put(render, buffer);
 	}
 	if (error != 0) {

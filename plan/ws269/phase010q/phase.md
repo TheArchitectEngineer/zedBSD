@@ -3,7 +3,7 @@
 # ws269-p010q: 実機の前の点検（cache・MMU・SLC・順・時間切れの後）
 
 - ID: ws269-p010q（親 [ws269](../ws.md)）
-- Status: in-progress（2026-10-21: 板で TA・3D・render check・job check・gpu-selftest 12/13。残りは下の要約）
+- Status: in-progress（2026-10-21: clear の条件をそろえた。板 96 の vkmatrix の結果の後に Q1 が判定する。下の「clearance の記録」）
 - Disposition: normal
 - Queue: q1395 / q1395-i01、q1398 / q1398-i01、q1401 / q1401-i01（2026-10-20 P1）
 
@@ -25,7 +25,25 @@
   - HWRT の record の全 field（q1480、一致）、起動列・config（q1475、一致）、geometry の register 値（q1482、IMG の capture と一致）。
 - **残り**: fence kernel の lockup（K0 の shared の確保と sd_type の差が候補）、mesa-form の probe の整理、compute-check の診断の行の整理、BUG-344、Linux の walk（この kernel では /dev/mem・/proc/kcore が使えず、kernel module が要る。q1495）。
 
-## 範囲
+## clearance の記録（2026-10-21、N1、判定は Q1）
+
+- clear の条件（板）:
+  - TA・3D：render check の三角形 3156 pixel、job check の色と depth（板 78 以降）。
+  - compute：vkcompute の 128 workgroup 4096/4096、3 kernel の stream（板 91・93）。
+  - transfer：transfer check（clear・copy）。
+  - present：vkdemo の cube（HDMI で目視）。
+  - `gpu-selftest` 13 ok / 0 fail / 0 skip、context reset 0（板 93・94）。
+  - vkcoherency PASS（buffer 1000 round・image 200 round、stale 0、板 95）。
+  - vkmatrix（Keiland の範囲の 13 case）：**板 96 の結果待ち**。
+- 残件の行き先:
+  - fence kernel の lockup：解決（K0、q1501・q1502）。
+  - 手書き kernel の退行：解決（fence を戻した、P2 の q1503）。
+  - 診断の整理：済（q1493）。
+  - BUG-344（libc の fscanf）：libc の stdio の WS へ移す（WS269 は依存しない）。
+  - Linux の walk（IMG の stack の control stream）：Future Work へ（kernel module が要る。再検討は IMG との差が再び要る不具合が出た時）。
+  - border colour table の cache：SLC bypass にした（q1509）。
+- 次は [proposal-next-phases.md](../proposal-next-phases.md) の N2〜N6。
+
 
 実機で最初に出やすい誤りを、全部の kick の道（compute（vk-queue）・render-job・transfer-job・render check・transfer check・job check）について、mainline（Linux v7.3 `drivers/gpu/drm/imagination/pvr_*.c`）と Mesa 26.2.5 の winsys に照らして読む。
 
