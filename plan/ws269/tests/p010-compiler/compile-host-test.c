@@ -1052,6 +1052,13 @@ test_hazard_spacing(void)
 	int error;
 	int ok;
 
+	/* The spacing on, as the variables can set it (the default is none, as Mesa's). */
+	shader_integer_source_gap = 4;
+	shader_alu_source_gap = 3;
+	shader_store_source_gap = 6;
+	shader_result_gap = 2;
+	shader_in_place_staging = 1;
+
 	memset(&backend, 0, sizeof(backend));
 	backend.operation_count = 3;
 	for (index = 0; index < 3; index++) {
@@ -1120,6 +1127,13 @@ test_hazard_spacing(void)
 	ok = ok && backend.operations[backend.operation_count - 1U].kind == MACHINE_BRANCH && backend.operations[backend.operation_count - 1U].target == 0;
 	check(ok, "two no-operations before the multiply-add, the rest before the back branch");
 	check(shader_backend_hazards(&backend) == 0, "no hazard on the back edge once spaced");
+
+	/* The defaults again. */
+	shader_integer_source_gap = SHADER_INTEGER_SOURCE_GAP;
+	shader_alu_source_gap = SHADER_ALU_SOURCE_GAP;
+	shader_store_source_gap = SHADER_STORE_SOURCE_GAP;
+	shader_result_gap = SHADER_RESULT_GAP;
+	shader_in_place_staging = SHADER_IN_PLACE_STAGING;
 }
 
 int

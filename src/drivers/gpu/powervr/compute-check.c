@@ -264,7 +264,7 @@ static int write_kick(struct check_state *state, unsigned kick, uint32_t usc_pla
 static int write_probes(struct check_state *state, uint8_t *code);
 static void run_probes(struct check_state *state);
 static void run_nop_probe(struct check_state *state);
-static void run_compiled_fill(struct check_state *state, int dumps, unsigned groups);
+static void run_compiled_fill(struct check_state *state, int dumps, unsigned groups, unsigned field_override);
 static int compile_fill(struct powervr_shader_workspace *workspace, struct powervr_shader_program *program, uint8_t *code, uint64_t address, unsigned *field);
 static void run_cf0_probe(struct check_state *state);
 static int fresh_session(struct check_state *state);
@@ -312,16 +312,14 @@ void
 powervr_compute_check(
 	struct powervr_render *render)
 {
-	static const unsigned fillers[] = { MACHINE_MOVE_SPECIAL, MACHINE_MOVE };
-	static const unsigned gaps[][3] = { { SHADER_INTEGER_SOURCE_GAP, SHADER_ALU_SOURCE_GAP, SHADER_STORE_SOURCE_GAP }, { 4, 3, 6 } };
+	static const unsigned fill_fields[] = { 0, 17, 18, 20, 24 };
 	struct check_state state;
 	const char *step;
 	unsigned written;
 	unsigned four_wrong;
 	unsigned two_wrong;
 	unsigned wide_wrong;
-	unsigned filler;
-	unsigned gap;
+	unsigned index;
 	int wide_error;
 	int four_error;
 	int two_error;
@@ -419,25 +417,12 @@ powervr_compute_check(
 		run_nop_probe(&state);
 
 	/*
-	 * The compiler's program the check's way (its prefixes first), then
-	 * the workgroup id probe and the executor's layouts, each in a
-	 * session of its own.
+	 * The compiler's program (no spacing, as Mesa's) as one workgroup,
+	 * with its task field as computed (its prefixes dumped first) and
+	 * with the fields of the unit sweep.
 	 */
-	for (filler = 0; filler < sizeof(fillers) / sizeof(fillers[0]); filler++) {
-		for (gap = 0; gap < sizeof(gaps) / sizeof(gaps[0]); gap++) {
-			shader_filler_kind = fillers[filler];
-			shader_integer_source_gap = gaps[gap][0];
-			shader_alu_source_gap = gaps[gap][1];
-			shader_store_source_gap = gaps[gap][2];
-			kern_logf("powervr: compute probes: compiled fill with gaps madd %u alu %u store %u, %s fillers\n",
-				  gaps[gap][0], gaps[gap][1], gaps[gap][2], fillers[filler] == MACHINE_MOVE ? "mov" : "mov-special");
-			run_compiled_fill(&state, filler == 0 && gap == 0, 1);
-		}
-	}
-	shader_filler_kind = MACHINE_MOVE_SPECIAL;
-	shader_integer_source_gap = SHADER_INTEGER_SOURCE_GAP;
-	shader_alu_source_gap = SHADER_ALU_SOURCE_GAP;
-	shader_store_source_gap = SHADER_STORE_SOURCE_GAP;
+	for (index = 0; index < sizeof(fill_fields) / sizeof(fill_fields[0]); index++)
+		run_compiled_fill(&state, index == 0, 1, fill_fields[index]);
 
 	/* The register-window probe and the hand-written workgroup id probe (sessions of its own). */
 	run_field_probes(&state);
@@ -451,8 +436,10 @@ powervr_compute_check(
 	 */
 	if (fresh_session(&state) == 0)
 		run_cf0_probe(&state);
-	if (fresh_session(&state) == 0)
-		run_compiled_fill(&state, 0, COMPILED_GROUPS);
+	for (index = 0; index < sizeof(fill_fields) / sizeof(fill_fields[0]); index++) {
+		if (fresh_session(&state) == 0)
+			run_compiled_fill(&state, 0, COMPILED_GROUPS, fill_fields[index]);
+	}
 	if (POWERVR_COMPUTE_LOCKUP_PROBES)
 		run_layouts(&state);
 
@@ -1147,7 +1134,8 @@ static void
 run_compiled_fill(
 	struct check_state *state,
 	int dumps,
-	unsigned groups)
+	unsigned groups,
+	unsigned field_override)
 {
 	struct powervr_shader_workspace *workspace;
 	struct powervr_shader_program *program;
@@ -1171,6 +1159,8 @@ run_compiled_fill(
 	field = 0;
 	if (error == 0)
 		error = compile_fill(workspace, program, code, run_address + COMPILED_OFFSET, &field);
+	if (field_override != 0)
+		field = field_override;
 
 	/* Its prefixes first, each with a dump of r0 to r15 after it; a prefix the core does not finish stops the check here. */
 	if (error == 0 && dumps) {
@@ -2230,16 +2220,16 @@ run_mesa_form(
 }
 
 /*
- * The register-window probe: the multiply-add source probe with no-
- * operation fillers (0 to 3), its task field as computed, one and two
- * blocks more, twice and four times as many; if instances' register
- * windows overlap, a wider field makes the late-read look go away.
+ * The register-window probe: the multiply-add source probe (32
+ * temporaries, no gap) with its task field as computed and as 32, 33,
+ * 34, 36, 40 and 48: the smallest field with every lane old tells the
+ * field's unit (vf2-dmesg84: 9 to 18 overlapped, 36 did not).
  */
 static void
 run_field_probes(
 	struct check_state *state)
 {
-	static const char *const names[] = { "as computed", "+1", "+2", "x2", "x4" };
+	static const unsigned fields[] = { 0, 32, 33, 34, 36, 40, 48 };
 	struct timing_program *program;
 	volatile uint32_t *words;
 	uint8_t *code;
@@ -2247,7 +2237,7 @@ run_field_probes(
 	uint32_t old;
 	uint32_t new;
 	uint32_t tag;
-	unsigned fields[5];
+	unsigned computed;
 	unsigned field;
 	unsigned which;
 	unsigned gap;
@@ -2262,26 +2252,22 @@ run_field_probes(
 	error = 0;
 	if (code == NULL || program == NULL)
 		error = ENOMEM;
-	field = 0;
+	computed = 0;
 	if (error == 0)
-		error = powervr_compute_task_field(TIMING_TEMPORARIES, &field);
-	fields[0] = field;
-	fields[1] = field + 1U;
-	fields[2] = field + 2U;
-	fields[3] = field * 2U > 0x3fU ? 0x3fU : field * 2U;
-	fields[4] = field * 4U > 0x3fU ? 0x3fU : field * 4U;
+		error = powervr_compute_task_field(TIMING_TEMPORARIES, &computed);
 	words = state->alias + TIMING_OFFSET / 4U;
 
 	/* Each field, each gap. */
 	tag = 0x80000000U;
 	for (which = 0; error == 0 && which < sizeof(fields) / sizeof(fields[0]); which++) {
-		for (gap = 0; error == 0 && gap < 4U; gap++) {
+		field = fields[which] != 0 ? fields[which] : computed;
+		for (gap = 0; error == 0 && gap < 1U; gap++) {
 			tag += 1U << TIMING_TAG_SHIFT;
 			length = 0;
 			error = timing_build(program, TIMING_MADD_SOURCE, gap, TIMING_FILL_NOP, tag, run_address + TIMING_OFFSET, code, USC_DUMP_ROOM, &length);
 			if (error == 0) {
 				put_bytes(state->usc, USC_COMPILED, code, length);
-				error = write_workgroup_kick(state, fields[which], 1);
+				error = write_workgroup_kick(state, field, 1);
 			}
 			for (lane = 0; lane < POWERVR_COMPUTE_INSTANCES; lane++)
 				words[lane] = TIMING_FILLER;
@@ -2296,8 +2282,8 @@ run_field_probes(
 				else if (words[lane] == new)
 					new_mask |= 1U << lane;
 			}
-			kern_logf("powervr: compute probes: field %s (%u) madd source read after %u nop: old %08x new %08x, lane 0 %08x lane 1 %08x (%d)\n",
-				  names[which], fields[which], gap, old_mask, new_mask, words[0], words[1], error);
+			kern_logf("powervr: compute probes: field %u%s madd source read after %u nop: old %08x new %08x, lane 0 %08x lane 1 %08x (%d)\n",
+				  field, fields[which] == 0 ? " (as computed)" : "", gap, old_mask, new_mask, words[0], words[1], error);
 		}
 	}
 
