@@ -16,6 +16,12 @@
  * timelines it read, and the read back with the first pixel that
  * differed.  The TA and 3D stage lines come from the render's end.
  *
+ * A job check follows the transfer check on a session of its own: the
+ * render job path the Vulkan executor takes (the job runner with the
+ * compiler's programs, not this file's fixed ones) clears a 64x64
+ * attachment and a D32 depth and draws two triangles in one draw, the
+ * nearer first, and reads both back.
+ *
  * A transfer check follows on a session of its own: a 64x64 attachment
  * cleared to blue through the transfer context and read back, then
  * copied to a second one and that read back, a line for each step and
@@ -27,6 +33,7 @@
 
 #include <kern/kcrt.h>
 #include <kern/klog.h>
+#include <kern/kmem.h>
 #include <kern/lock.h>
 #include <uapi/errno.h>
 
@@ -38,6 +45,10 @@
 #include "drivers/gpu/powervr/render-kick-layout.h"
 #include "drivers/gpu/powervr/render-program.h"
 #include "drivers/gpu/powervr/transfer-job.h"
+#include "drivers/gpu/powervr/render-job.h"
+#include "drivers/gpu/powervr/shader.h"
+#include "drivers/gpu/powervr/vk-draw.h"
+#include "userland/tests/vkstage/shader.h"
 
 /*
  * The frame: 64x64 R8G8B8A8 (VK_FORMAT_R8G8B8A8_UNORM 37), linear, rows
@@ -127,6 +138,9 @@ static int check_read(struct render_check *check);
 static void check_release(struct render_check *check);
 static int pixel_class(uint32_t x, uint32_t y);
 static void transfer_check(struct powervr_render *render);
+static void job_check(struct powervr_render *render);
+static int job_compile(struct powervr_vk_graphics *graphics);
+static int job_read(const struct powervr_buffer *colour, const struct powervr_buffer *depth);
 static int transfer_read(struct powervr_buffer *buffer, uint32_t offset, const struct powervr_buffer *against, uint32_t against_offset, uint32_t value, const char *what);
 static void put_words(struct powervr_buffer *buffer, uint32_t offset, const uint32_t *words, unsigned count);
 static void put_bytes(struct powervr_buffer *buffer, uint32_t offset, const uint8_t *bytes, size_t count);
@@ -166,8 +180,9 @@ powervr_render_check(
 	/* What the core may still run is kept with the session; otherwise everything goes. */
 	check_release(check);
 
-	/* The transfer check, on a session of its own. */
+	/* The transfer check and the job check, each on a session of its own. */
 	transfer_check(render);
+	job_check(render);
 }
 
 /* Opens the check's session, makes its render context and target, and maps its memory. */
@@ -611,6 +626,256 @@ pixel_class(
 
 	/* Succeeded: inside or outside. */
 	return inside;
+}
+
+/*
+ * The job check: one render job of the executor's path on a session of
+ * its own, a clear to blue and a D32 depth cleared to 1.0, and one draw
+ * of two triangles with the depth test: a red one at depth 0.25 first,
+ * then a larger green one at 0.75 behind it.  The colour and the depth
+ * are read back at a few pixels.
+ *
+ * Procedure referenced: zedBSD userland/tests/vkstage/main.c (stage_depth:
+ * the shaders, a D32 depth cleared to 1.0, the nearer drawn first).
+ */
+static void
+job_check(
+	struct powervr_render *render)
+{
+	/* Two triangles of seven floats a vertex: x, y, z, then red, green, blue, alpha. */
+	static const uint32_t vertices[6U * 7U] = {
+		0xbf000000U, 0xbf000000U, 0x3e800000U, 0x3f800000U, 0, 0, 0x3f800000U,
+		0x3f000000U, 0xbf000000U, 0x3e800000U, 0x3f800000U, 0, 0, 0x3f800000U,
+		0, 0x3f000000U, 0x3e800000U, 0x3f800000U, 0, 0, 0x3f800000U,
+		0xbf666666U, 0xbf666666U, 0x3f400000U, 0, 0x3f800000U, 0, 0x3f800000U,
+		0x3f666666U, 0xbf666666U, 0x3f400000U, 0, 0x3f800000U, 0, 0x3f800000U,
+		0, 0x3f666666U, 0x3f400000U, 0, 0x3f800000U, 0, 0x3f800000U,
+	};
+	struct powervr_vk_graphics *graphics;
+	struct powervr_render_job *job;
+	struct powervr_session *session;
+	struct powervr_resource *memory;
+	struct powervr_buffer *buffer;
+	uint64_t colour;
+	uint64_t depth;
+	uint64_t vertex;
+	void *opaque;
+	int error;
+
+	/* The pipeline: the two shaders compiled with their keys, the fixed state. */
+	session = NULL;
+	memory = NULL;
+	graphics = kern_calloc(1, sizeof(*graphics));
+	job = kern_calloc(1, sizeof(*job));
+	error = 0;
+	if (graphics == NULL || job == NULL)
+		error = ENOMEM;
+	if (error == 0)
+		error = job_compile(graphics);
+	if (error != 0) {
+		kern_logf("powervr: job check: FAILED at compile (%d)\n", error);
+		goto done;
+	}
+
+	/* A session; its memory: the colour, the depth, the vertices. */
+	error = render->ops.open(render, &opaque);
+	if (error == 0) {
+		session = opaque;
+		error = powervr_buffer_create(render, CHECK_EDGE * CHECK_ROW_BYTES * 2U + 0x1000U, &buffer);
+	}
+	if (error == 0) {
+		error = powervr_resource_make(session, buffer, 1, 0, &memory);
+		powervr_buffer_put(render, buffer);
+		if (error != 0)
+			memory = NULL;
+	}
+	if (error != 0) {
+		kern_logf("powervr: job check: FAILED at prepare (%d)\n", error);
+		goto done;
+	}
+	colour = memory->address;
+	depth = colour + CHECK_EDGE * CHECK_ROW_BYTES;
+	vertex = depth + CHECK_EDGE * CHECK_ROW_BYTES;
+	put_words(memory->buffer, (uint32_t)(vertex - colour), vertices, 6U * 7U);
+
+	/* The job: the colour cleared to blue and stored, the depth cleared to 1.0 and stored, one draw. */
+	job->area.width = CHECK_EDGE;
+	job->area.height = CHECK_EDGE;
+	job->width = CHECK_EDGE;
+	job->height = CHECK_EDGE;
+	job->color_count = 1;
+	job->colors[0].surface.format = powervr_format_find(CHECK_FORMAT);
+	job->colors[0].surface.address = colour;
+	job->colors[0].surface.width = CHECK_EDGE;
+	job->colors[0].surface.height = CHECK_EDGE;
+	job->colors[0].surface.linear = 1;
+	job->colors[0].surface.row_pitch = CHECK_ROW_BYTES;
+	job->colors[0].surface.padded_width = CHECK_EDGE;
+	job->colors[0].load_op = 1;
+	job->colors[0].clear[0] = 0xffff0000U;
+	job->depth.present = 1;
+	job->depth.format = powervr_format_find(126);
+	job->depth.address = depth;
+	job->depth.width = CHECK_EDGE;
+	job->depth.height = CHECK_EDGE;
+	job->depth.physical_width = CHECK_EDGE;
+	job->depth.physical_height = CHECK_EDGE;
+	job->depth.layer_bytes = CHECK_EDGE * CHECK_ROW_BYTES;
+	job->depth.load_op = 1;
+	job->depth.store_op = 0;
+	job->depth.clear_depth = 0x3f800000U;
+	job->draw_count = 1;
+	job->draws[0].pipeline = graphics;
+	job->draws[0].vertex_addresses[0] = vertex;
+	job->draws[0].count = 6;
+	job->draws[0].instances = 1;
+	job->draws[0].viewport.width = 64.0f;
+	job->draws[0].viewport.height = 64.0f;
+	job->draws[0].viewport.maxDepth = 1.0f;
+	job->draws[0].scissor.extent.width = CHECK_EDGE;
+	job->draws[0].scissor.extent.height = CHECK_EDGE;
+	kern_logf("powervr: job check: prepared (64x64 R8G8B8A8 and D32, one draw of two triangles, %u and %u bytes of shader)\n", (unsigned)graphics->vertex.length, (unsigned)graphics->fragment.length);
+
+	/* The job: its kick and its fence. */
+	error = powervr_render_job_run(render, session, job);
+	if (error == ETIMEDOUT) {
+		kern_logf("powervr: job check: FAILED at fence (%d)\n", error);
+		goto done;
+	}
+	if (error != 0) {
+		kern_logf("powervr: job check: FAILED at kick (%d)\n", error);
+		goto done;
+	}
+	kern_logf("powervr: job check: kicked, fence reached\n");
+
+	/* The read back. */
+	(void)job_read(memory->buffer, memory->buffer);
+
+done:
+	/* A job the core may still run keeps its memory with the session. */
+	if (memory != NULL && !session->abandoned)
+		powervr_resource_unmake(session, memory);
+	if (session != NULL)
+		render->ops.close(render, session);
+	if (graphics != NULL) {
+		kern_free(graphics->vertex_code);
+		kern_free(graphics->fragment_code);
+	}
+	kern_free(graphics);
+	kern_free(job);
+}
+
+/*
+ * Compiles the job check's two shaders with their keys and fills the
+ * fixed state: a triangle list, no culling, the depth test LESS with
+ * writes, one binding of 28 bytes with the position (R32G32B32_SFLOAT
+ * 106) and the colour (R32G32B32A32_SFLOAT 109), one R8G8B8A8 output.
+ */
+static int
+job_compile(
+	struct powervr_vk_graphics *graphics)
+{
+	struct powervr_shader_workspace *workspace;
+	struct powervr_draw_fixed *fixed;
+	int error;
+
+	/* The fixed state and the keys. */
+	fixed = &graphics->fixed;
+	fixed->topology = 3;
+	fixed->depth_test = 1;
+	fixed->depth_write = 1;
+	fixed->depth_compare = 1;
+	fixed->viewport.width = 64.0f;
+	fixed->viewport.height = 64.0f;
+	fixed->viewport.maxDepth = 1.0f;
+	fixed->scissor.extent.width = CHECK_EDGE;
+	fixed->scissor.extent.height = CHECK_EDGE;
+	fixed->binding_count = 1;
+	fixed->bindings[0].stride = 28;
+	fixed->attribute_count = 2;
+	fixed->attributes[0].location = 0;
+	fixed->attributes[0].format = 106;
+	fixed->attributes[1].location = 1;
+	fixed->attributes[1].format = 109;
+	fixed->attributes[1].offset = 12;
+	fixed->vertex_key.attribute_formats[0] = 106;
+	fixed->vertex_key.attribute_formats[1] = 109;
+	fixed->vertex_key.samples = 1;
+	fixed->fragment_key.output_formats[0] = CHECK_FORMAT;
+	fixed->fragment_key.blend[0].write_mask = 0xf;
+	fixed->fragment_key.samples = 1;
+
+	/* The compiler's memory and the code's. */
+	workspace = kern_malloc(powervr_shader_workspace_size());
+	graphics->vertex_code = kern_malloc(0x4000);
+	graphics->fragment_code = kern_malloc(0x4000);
+	if (workspace == NULL || graphics->vertex_code == NULL || graphics->fragment_code == NULL) {
+		kern_free(workspace);
+		return ENOMEM;
+	}
+
+	/* The vertex shader, the fragment shader, the varyings between them. */
+	error = powervr_shader_compile(vkstage_colour_vert, sizeof(vkstage_colour_vert) / 4U, POWERVR_SHADER_VERTEX, &fixed->vertex_key, workspace, &graphics->vertex, graphics->vertex_code, 0x4000);
+	if (error == 0)
+		error = powervr_shader_compile(vkstage_colour_frag, sizeof(vkstage_colour_frag) / 4U, POWERVR_SHADER_FRAGMENT, &fixed->fragment_key, workspace, &graphics->fragment, graphics->fragment_code, 0x4000);
+	if (error == 0)
+		error = powervr_draw_varyings_build(&graphics->vertex, &graphics->fragment, &graphics->varyings);
+	kern_free(workspace);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the pipeline. */
+	return 0;
+}
+
+/*
+ * Reads the job check's colour and depth back at four pixels: inside the
+ * red triangle, inside the green one only (twice), and in the corner the
+ * clear leaves.  The depth is read as rows of 32-bit floats; the layout
+ * a linear depth store writes is not confirmed on the hardware.
+ */
+static int
+job_read(
+	const struct powervr_buffer *colour,
+	const struct powervr_buffer *depth)
+{
+	static const uint32_t at[4][4] = {
+		{ 32, 20, 0xff0000ffU, 0x3e800000U },
+		{ 32, 54, 0xff00ff00U, 0x3f400000U },
+		{ 32, 10, 0xff00ff00U, 0x3f400000U },
+		{ 2, 2, 0xffff0000U, 0x3f800000U },
+	};
+	uint32_t got;
+	uint32_t offset;
+	unsigned index;
+	int depth_bad;
+
+	/* The colours first. */
+	for (index = 0; index < 4U; index++) {
+		offset = at[index][1] * CHECK_ROW_BYTES + at[index][0] * 4U;
+		got = get_word(colour, offset);
+		if (got != at[index][2]) {
+			kern_logf("powervr: job check: FAILED at colour read back: pixel (%u, %u) is 0x%08x, want 0x%08x\n", at[index][0], at[index][1], got, at[index][2]);
+			return EIO;
+		}
+	}
+
+	/* Then the depths, said apart: the store's layout is unconfirmed. */
+	depth_bad = 0;
+	for (index = 0; index < 4U && !depth_bad; index++) {
+		offset = CHECK_EDGE * CHECK_ROW_BYTES + at[index][1] * CHECK_ROW_BYTES + at[index][0] * 4U;
+		got = get_word(depth, offset);
+		if (got != at[index][3]) {
+			kern_logf("powervr: job check: FAILED at depth read back: pixel (%u, %u) is 0x%08x, want 0x%08x (rows of floats assumed)\n", at[index][0], at[index][1], got, at[index][3]);
+			depth_bad = 1;
+		}
+	}
+	if (depth_bad)
+		return EIO;
+
+	/* Succeeded: the colours and depths are as drawn. */
+	kern_logf("powervr: job check: OK (4 pixels of colour and depth)\n");
+	return 0;
 }
 
 /*
