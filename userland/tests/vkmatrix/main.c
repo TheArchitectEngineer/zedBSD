@@ -56,7 +56,9 @@
  *   vkmatrix: <passed>/<cases> passed
  *
  * The exit status is 0 only when every case passes.  An argument names
- * the one case to run.
+ * the one case to run; -r R runs the cases R times, and -p N runs them in
+ * N processes at once, each with its own device (sessions rendering
+ * concurrently), with lines prefixed vkmatrix[1] to vkmatrix[N].
  */
 
 #include <vulkan/vulkan.h>
@@ -65,6 +67,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #include "shader.h"
 
@@ -192,6 +197,7 @@ struct vkmatrix_case {
 	VkResult (*run)(struct vkmatrix *run);
 };
 
+static int vkmatrix_run_cases(const char *name, unsigned long repeats, unsigned worker);
 static VkResult vkmatrix_open(struct vkmatrix *run);
 static VkResult vkmatrix_find_memory(struct vkmatrix *run, uint32_t allowed, VkMemoryPropertyFlags wanted, uint32_t *type);
 static VkResult vkmatrix_buffer(struct vkmatrix *run, VkDeviceSize size, VkBufferUsageFlags usage, VkBuffer *buffer, VkDeviceMemory *memory, void **mapped);
@@ -298,65 +304,156 @@ main(
 	int argc,
 	char **argv)
 {
-	static struct vkmatrix run;
+	const char *name;
+	unsigned long processes;
+	unsigned long repeats;
+	unsigned long index;
+	char *end;
+	pid_t child;
+	pid_t done;
+	int status;
+	int failed;
+	int arg;
+
+	/* The options: -p N processes at once, -r R runs of the cases each, then the case's name. */
+	processes = 1;
+	repeats = 1;
+	name = NULL;
+	for (arg = 1; arg < argc; arg++) {
+		if (strcmp(argv[arg], "-p") == 0 && arg + 1 < argc) {
+			arg++;
+			processes = strtoul(argv[arg], &end, 10);
+			if (*end != '\0' || processes == 0 || processes > 16)
+				return 2;
+		} else if (strcmp(argv[arg], "-r") == 0 && arg + 1 < argc) {
+			arg++;
+			repeats = strtoul(argv[arg], &end, 10);
+			if (*end != '\0' || repeats == 0)
+				return 2;
+		} else {
+			name = argv[arg];
+		}
+	}
+
+	/* One process: the cases here. */
+	if (processes == 1) {
+		failed = vkmatrix_run_cases(name, repeats, 0);
+		return failed;
+	}
+
+	/* Several: each its own device in its own process, all at once (sessions rendering concurrently). */
+	for (index = 0; index < processes; index++) {
+		child = fork();
+		if (child < 0) {
+			printf("vkmatrix: fork failed\n");
+			return 1;
+		}
+		if (child == 0) {
+			failed = vkmatrix_run_cases(name, repeats, (unsigned)index + 1U);
+			_exit(failed);
+		}
+	}
+
+	/* Every process's verdict. */
+	failed = 0;
+	for (index = 0; index < processes; index++) {
+		done = wait(&status);
+		if (done < 0 || !WIFEXITED(status) || WEXITSTATUS(status) != 0)
+			failed = 1;
+	}
+	printf("vkmatrix: %lu processes: %s\n", processes, failed ? "FAIL" : "PASS");
+	if (failed)
+		return 1;
+
+	/* Succeeded: every process passed. */
+	return 0;
+}
+
+/*
+ * Opens a device and runs every case, or the one named, repeats times,
+ * printing a line a case (with the process's number when it is one of
+ * several) and a total; returns 1 on a failure.
+ */
+static int
+vkmatrix_run_cases(
+	const char *name,
+	unsigned long repeats,
+	unsigned worker)
+{
+	struct vkmatrix *run;
 	VkResult status;
+	unsigned long repeat;
 	uint32_t index;
 	uint32_t ran;
 	uint32_t passed;
 	int named;
+	char prefix[32];
+
+	/* The line's prefix. */
+	snprintf(prefix, sizeof(prefix), "vkmatrix");
+	if (worker != 0)
+		snprintf(prefix, sizeof(prefix), "vkmatrix[%u]", worker);
+
+	/* The run's objects (too large for a thread's stack). */
+	run = calloc(1, sizeof(*run));
+	if (run == NULL)
+		return 1;
 
 	/* The device and the objects every case shares. */
-	memset(&run, 0, sizeof(run));
-	status = vkmatrix_open(&run);
+	status = vkmatrix_open(run);
 	if (status == VK_SUCCESS)
-		status = vkmatrix_target(&run);
+		status = vkmatrix_target(run);
 	if (status == VK_SUCCESS)
-		status = vkmatrix_passes(&run);
+		status = vkmatrix_passes(run);
 	if (status != VK_SUCCESS) {
-		printf("vkmatrix: no Vulkan device (%s %d)\n", run.failed_call, (int)status);
-		vkmatrix_destroy(&run);
+		printf("%s: no Vulkan device (%s %d)\n", prefix, run->failed_call, (int)status);
+		vkmatrix_destroy(run);
+		free(run);
 		return 1;
 	}
 
-	/* Each case (or the one named), its line. */
+	/* Each case (or the one named), its line, as many times as asked. */
 	ran = 0;
 	passed = 0;
-	for (index = 0; index < sizeof(cases) / sizeof(cases[0]); index++) {
-		/* Skips a case other than the one named. */
-		if (argc > 1) {
-			named = strcmp(argv[1], cases[index].name);
-			if (named != 0)
-				continue;
-		}
+	for (repeat = 0; repeat < repeats; repeat++) {
+		for (index = 0; index < sizeof(cases) / sizeof(cases[0]); index++) {
+			/* Skips a case other than the one named. */
+			if (name != NULL) {
+				named = strcmp(name, cases[index].name);
+				if (named != 0)
+					continue;
+			}
 
-		run.failed_call = "";
-		run.reason[0] = '\0';
-		run.tolerance = 0;
-		run.vertex_floats = 0;
-		run.texture_format = VK_FORMAT_UNDEFINED;
-		run.texture_linear = 0;
-		run.texture_width = 0;
-		run.texture_height = 0;
-		run.wide_width = VKMATRIX_SIZE;
-		run.wide_height = VKMATRIX_SIZE;
-		run.pipeline_pass = VK_NULL_HANDLE;
-		status = cases[index].run(&run);
-		ran++;
-		if (status != VK_SUCCESS)
-			printf("vkmatrix: %s: FAIL(%s %d)\n", cases[index].name, run.failed_call, (int)status);
-		else if (vkmatrix_compare(&run) != 0)
-			printf("vkmatrix: %s: FAIL(%s)\n", cases[index].name, run.reason);
-		else {
-			printf("vkmatrix: %s: PASS\n", cases[index].name);
-			passed++;
-		}
+			run->failed_call = "";
+			run->reason[0] = '\0';
+			run->tolerance = 0;
+			run->vertex_floats = 0;
+			run->texture_format = VK_FORMAT_UNDEFINED;
+			run->texture_linear = 0;
+			run->texture_width = 0;
+			run->texture_height = 0;
+			run->wide_width = VKMATRIX_SIZE;
+			run->wide_height = VKMATRIX_SIZE;
+			run->pipeline_pass = VK_NULL_HANDLE;
+			status = cases[index].run(run);
+			ran++;
+			if (status != VK_SUCCESS)
+				printf("%s: %s: FAIL(%s %d)\n", prefix, cases[index].name, run->failed_call, (int)status);
+			else if (vkmatrix_compare(run) != 0)
+				printf("%s: %s: FAIL(%s)\n", prefix, cases[index].name, run->reason);
+			else {
+				printf("%s: %s: PASS\n", prefix, cases[index].name);
+				passed++;
+			}
 
-		vkmatrix_release_case(&run);
+			vkmatrix_release_case(run);
+		}
 	}
 
 	/* The total. */
-	printf("vkmatrix: %u/%u passed\n", (unsigned)passed, (unsigned)ran);
-	vkmatrix_destroy(&run);
+	printf("%s: %u/%u passed\n", prefix, (unsigned)passed, (unsigned)ran);
+	vkmatrix_destroy(run);
+	free(run);
 
 	/* A run of no case, or with a failure, fails. */
 	if (ran == 0 || passed != ran)
