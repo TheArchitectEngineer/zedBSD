@@ -594,3 +594,20 @@ mainline で FW が host の割り込みを上げる道: host は `ROGUE_CR_MIPS
   - ON でも 0 なら、clock 以外（PMU・電源の island・register の帯の保護）を探す。
 
 確かめ: 試験の image の config の vmunix は rc 0、warning 0。実機は未。
+
+## q1422-i01（P1、2026-10-20）: 書き込みの幅と bus の保護
+
+板: clock control（0x0000）に「全部 on」を 64 bit で書いても 0 に読める。
+
+読み:
+- soft reset の 0x100000000 は bit 32 の GARTEN_EN で、start の手順のとおり（processor だけを reset に置いた状態）。soft reset は 64 bit の store で書き、64 bit で読めている。64 bit の書き込みそのものは効いている。
+- SLC control は `powervr_write32`（32 bit）で書いているのに 0 に読める。MIPS wrapper も 32 bit で書いて読める。幅だけでは説明が付かない。
+- `kern_mmio_write64` は 1 回の 64 bit の store（kern の device-io）。mainline の `pvr_cr_write64` も `writeq` の 1 回。
+- 残る候補は bus の secure の保護（SYS_BUS_SECURE、0xA100）。FW の image の feature の bit 48（mainline の `PVR_FW_HAS_FEATURE_SYS_BUS_SECURE_RESET` の位置と一致）が立つ時だけ、start の最初で 0 を書いて解いている。解けていなければ、保護された register の帯への host の書き込みは落ち、読みは 0 になる。
+
+直し（診断、`register_check`）:
+- SYS_BUS_SECURE の値を出す。
+- catalogue base 7 を 32 bit 2 回（low → high、high → low）で書いて読み戻す。
+- clock control も 32 bit 2 回で書いて読み戻し、元に戻す。
+
+確かめ: 試験の image の config の vmunix は rc 0、warning 0。実機は未。
