@@ -300,6 +300,13 @@ void vulkan_wsi_surface_release(struct vulkan_surface *surface);
 VkResult vulkan_wsi_surface_publish(struct vulkan_surface *surface, VkSurfaceKHR *handle);
 VkResult vulkan_wsi_shared_image_create(struct VkDevice_T *device, VkFormat format, VkExtent2D extent, const VkAllocationCallbacks *allocator, const struct gpu_placement *placement, VkImage *image, VkDeviceMemory *memory, int *fd, struct gpu_image_descriptor *descriptor);
 
+/*
+ * The shared image with the uses a swapchain renders with (wsi-image.c).
+ * It is weak because the host tests of the swapchain link stubs of
+ * wsi-image.c without it; a null test there leaves the chain on its copy.
+ */
+extern VkResult vulkan_wsi_shared_image_create_usage(struct VkDevice_T *device, VkFormat format, VkExtent2D extent, VkImageUsageFlags usage, const VkAllocationCallbacks *allocator, const struct gpu_placement *placement, VkImage *image, VkDeviceMemory *memory, int *fd, struct gpu_image_descriptor *descriptor) __attribute__((weak));
+
 VkResult vulkan_wsi_shared_image_import(struct VkDevice_T *device, int fd, const VkAllocationCallbacks *allocator, VkImage *image, VkDeviceMemory *memory, struct gpu_image_descriptor *descriptor);
 
 #endif
