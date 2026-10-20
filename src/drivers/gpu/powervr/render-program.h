@@ -30,7 +30,7 @@
 #include "drivers/gpu/powervr/image-state.h"
 
 /* The largest fixed shading cluster program here, in bytes. */
-#define POWERVR_RENDER_USC_MAX		96U
+#define POWERVR_RENDER_USC_MAX		256U
 
 /*
  * The data and code words of a data sequencer program that only starts
