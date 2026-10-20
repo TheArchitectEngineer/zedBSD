@@ -234,3 +234,20 @@ Keiland が使い、vkmatrix 15/15・gpu-selftest 13/13 で確かめていない
   - 影と角丸を切る設定は見当たらない。
 - 未実施: 失敗した render job の draw ごとの記録（P1 の render-job.c に job の要約を持たせる必要がある）。
 - 確認: VF2 の vmunix は rc 0、warning 0。板は未実施。
+
+### q1523-i05（2026-10-21、P2）: linear image の末尾の先を transfer が読む
+
+- run 9 で特定できた。fault 0x8009ae2fc0 は、1920x1080x4 = 8294400 byte の host の handle（vkAllocateMemory）の end から 4032 byte 先。
+  失敗したのは transfer（dm 3）。swapchain の native image（linear）を source か destination にした transfer が、
+  16 行の tile 単位で 1080 行目より先（1080 は 16 の倍数でない）に触れたと見る。
+  copy の program は unnormalised の座標で sample するので、clip の外の pixel も linear の source の外を読みうる。
+- 修正: linear image の memory（`powervr_image_lay_out` の bytes）を 32 行の倍数まで延ばす（`POWERVR_IMAGE_LINEAR_ROWS`）。
+  row と layer の大きさ（layer_bytes）は変えない。vkGetImageMemoryRequirements と subresource の size が延びる。
+- 確認:
+  - p010 の host 試験は 0 failed。image-host-test の linear の大きさの期待は 32 行に直した。
+  - p009 は切り替え 0・1 とも 505 passed。frame-host の 100x10 linear の size の期待を 416x32 に直した。
+  - VF2 の vmunix は rc 0、warning 0。
+  - 板は未実施。
+  - guard 付きの vkmatrix の case は作っていない。lavapipe では越境を検出できない。
+- 残り: app の VkBuffer を linear の transfer 面にする copy（image↔buffer）は、buffer の大きさを driver が延ばせない。
+  そちらで越えるなら、transfer の側で、source の座標を clamp するか、最後の tile 行を分けて書く必要がある。

@@ -41,6 +41,9 @@
 /* The bytes a row of a linear image is a multiple of (the display's import takes such rows). */
 #define POWERVR_IMAGE_ROW_ALIGN		32U
 
+/* The rows a linear image's memory is rounded up to: whole tiles a transfer may touch (q1523). */
+#define POWERVR_IMAGE_LINEAR_ROWS	32U
+
 /*
  * The one switch of the shared path: whether a linear image's formats
  * report sampling (and linear filtering).  libvulkan tries a shared,
