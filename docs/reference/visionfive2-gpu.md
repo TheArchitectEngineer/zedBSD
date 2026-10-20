@@ -35,9 +35,9 @@ node.
 | `B8G8R8A8_UNORM`, `B8G8R8A8_SRGB`, `R8G8B8A8_UNORM`, `R8G8B8A8_SRGB` | colour attachment with blending, sampled with linear filtering, transfer |
 | `R8_UNORM`, `R8G8_UNORM` | sampled, transfer |
 | `D16_UNORM`, `D32_SFLOAT` | depth attachment |
-| `R32_SFLOAT`, `R32G32_SFLOAT`, `R32G32B32A32_SFLOAT` | vertex attribute; sampled, transfer (the 128-bit form is being verified) |
+| `R32_SFLOAT`, `R32G32_SFLOAT`, `R32G32B32A32_SFLOAT` | vertex attribute; sampled, transfer |
 | `R32G32B32_SFLOAT` | vertex attribute only |
-| `R16G16B16A16_SFLOAT` | colour attachment, sampled, transfer (being verified) |
+| `R16G16B16A16_SFLOAT` | colour attachment, sampled, transfer |
 
 ## Memory
 
@@ -149,17 +149,17 @@ works out:
 - dynamic scissor and viewport
 - sampling a B8G8R8A8 texture
 - sampling a rendered image
+- copies of 64-bit and 128-bit texels (`copy-64`, `copy-128`)
+- clears of 64-bit and 128-bit images read back (`clear-64`, `clear-128`)
+- rendering to `R16G16B16A16_SFLOAT` (`render-f16`)
 
 The output is one line for each case and a total:
 
     vkmatrix: <case>: PASS
-    vkmatrix: <case>: FAIL(<call> <VkResult> | pixel (<x>,<y>) 0x<seen>, expected 0x<wanted>)
-    vkmatrix: 15/15 passed
+    vkmatrix: <case>: FAIL(<call> <VkResult> | pixel (<x>,<y>) 0x<seen>, expected 0x<wanted> | <n> bad, words 0x<mask>, (<x>,<y>) <seen>/<wanted> ...)
+    vkmatrix: 20/20 passed
 
 - **One case:** an argument runs only that case.
-- **Cases being verified:** `copy-64`, `copy-128` and `render-f16`, which
-  check the 64-bit and 128-bit formats, are not yet counted as verified on
-  the board.
 
 ### vkreset
 
