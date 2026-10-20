@@ -674,3 +674,44 @@ mainline で FW が host の割り込みを上げる道: host は `ROGUE_CR_MIPS
   - `pvr_power.c`: TH1520 は pwrseq（SoC 固有の電源の順の driver）を使う。JH7110 は manual の道（clock・reset）に当たる。
   - `pvr_fw_mips.c`: ELF の処理の共通化と、IRQ の enable の register（MIPS_WRAPPER_IRQ_ENABLE）の扱いの整理だけ。中身の変化は無い。
 - source の変更は無し（直す違いを見つけられなかった）。repo の中身（JH7110 の SoC の統合の直し）が分かれば、それを照らすのが次。
+
+## q1427-i01（P1、2026-10-20）: geometry（dm 2）の reset lockup の切り分け
+
+Q1 の直し（main d851a8783・1512e79cd）の後の板（vf2-dmesg25）:
+- compute の probe と transfer（clear・copy）は通った。
+- render check は、geometry の kick の後に context reset（context 0x4、reason 1、dm 2）、`ta: fail(reset lockup)` の後に `ta: ok`・`3d: ok`。fence には達するが、colour は 0。job check も同じ。
+
+直し（診断、`render-check.c`）:
+- 三角形の render の前に、VDM の stream を end（`POWERVR_VDM_TERMINATE`）だけにした render を 1 回流す（`check_empty`）。行 `render check: empty stream: finished/FAILED (e), context kept/reset` を出す。reset か失敗なら FW の dump（kick の直前の印からの trace の全部）を出し、三角形は流さない。
+- 三角形の kick の直前にも trace の印を付ける。fence に達しても context が reset されていれば dump を出す。行は `fence reached (…), context kept/reset`。
+- 読み方:
+  - 空の stream でも reset するなら、geometry の command・HWRT・free list・context の record・SR/PT の program の側。
+  - 空は通って三角形で reset するなら、VDM の stream・PPP・vertex の program の側。
+  - trace は CSW・BIF・HWR の group を含む（log type 0x4637）。
+
+確かめ: 試験の image の config の vmunix は rc 0、warning 0。実機は未。
+
+## q1429-i01（P1、2026-10-20）: geometry の lockup の続き — trace の読みと record の dump
+
+板（vf2-dmesg26）: 空の stream でも geometry の context が reset された（stream の外が原因）。
+
+trace（mainline の `pvr_rogue_fwif_sf.h` で読んだ）:
+1. Kick TA の前: KCCB slot 44 の kick、cCCB Woff 200 DM 2 FWCtx 0xc0030000、Woff 616 DM 3 FWCtx 0xc0030098、fragment の UFO PR-Check（[0xc0055000] ≥ 1 を待つ）。
+2. Ready-to-run DM 2。dust の電源 0 → 1、HW Request On が完了。
+3. BIF: Activate MemCtx 0xc002b000 DM 2、PC 0x4060e000、PC set 5（range 6）、Grab reg set 5。
+4. `700b1077` は「Kick TA: FWCtx 0xc0030000 @ 0, RTD 0xc0062000, First kick 1, Last kick 1, CSW resume 0 …」。11 個の引数は FWCtx・CCB の offset・RTD（HWRT data の FW の address）・first・last・CSW resume・PID・prio・frame・ext・int で、register の値ではない。
+5. その後、「DM2 has taken N ticks」「Fast CRC / Full Signature Check」「USC slots used by DM 0」で recovery。
+6. FWCCB に free list の grow の要求は来ていない（write 2 は reset の通知など）。
+
+TA は始まったが何も進まない。USC は使われず、MMU の fault も grow も無い。
+
+照らした事:
+- 我々の geometry の command は、mainline の `rogue_fwif_cmd_geom` の regs（vdm_ctrl_stream_base 0、border colour 8、ppp_ctrl 28、te_psg 32、resume_task0_size 40、pds_ctrl 48、view_idx 52）に対し、stream・PPP_CTRL（wclamp と fixed point）・TE_PSG（complete on terminate と region の stride）・resume size（PDS_STATE0 の state update と common size）・flags（first と last）を入れている。Mesa の `pvr_geom_state_stream_init` と同じ組。border colour table・pds_ctrl・view_idx は 0（Mesa も view_idx は 0、pds_ctrl は stream に無い）。BRN 52942 の forcenewstate は未確認。
+- free list は物理の page 番号（`powervr_free_list_entry`）で、mainline の `pvr_free_list_insert_pages_locked` と同じ形。record の current_dev_addr は先頭（max = current の時、mainline の式と一致）。
+
+直し（診断）: render check の空の stream・三角形で context が reset された時に、次を出す。
+- `powervr_target_dump`（`render-target.c`）: target の buffer（macrotile・region header・vertex heap・tail pointer・local の free list と物理の先頭）の device の address、HWRT の data と common の record の全部の word、local の free list の record。
+- 空の stream の失敗では、geometry の command の 28 word も出す。
+- 次の結果で、mainline の `hwrt_data_init_fw_structure`・`hwrtdata_common_init` と field ごとに照らす。
+
+確かめ: 試験の image の config の vmunix は rc 0、warning 0。実機は未。
