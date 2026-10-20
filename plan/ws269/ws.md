@@ -48,7 +48,7 @@
 | [p010k1](phase010k1/phase.md) | WSI の readback の道（clear だけ、compiler なし） | O-p010f、O-P007 | in-progress（2026-10-20 P2 q1386-i01: libvulkan の readback の道が PowerVR で通る順を確かめた（vk の features の変更は不要）、vkstage present を semaphore・fence・3 秒に、VF2 の image build warning 0。実機は P1 の q1385 の後） |
 | [p010p](phase010p/phase.md) | format の広げ（純粋な関数の側） | O-p010f | in-progress（2026-10-20 P2 q1389-i01: R32_SFLOAT・R16G16B16A16_SFLOAT・float の texture code、clear の half/raw の pack。host 全 PASS、f16 は Mesa と一致、VF2 warning 0。raw 64/128 copy・PBE の F16 は残り） |
 | p010k2 | readback の道で vkdemo が画面に | O-p010k1、O-p010j | planning（同） |
-| p010l | WSI の shared の道と p007 の import の試験（WS277 R6）、dc8200 の zero copy | O-p010k2、O-p010o | planning（同） |
+| [p010l](phase010l/phase.md) | WSI の shared の道と p007 の import の試験（WS277 R6）、dc8200 の zero copy | O-p010k2、O-p010o | in-progress（2026-10-20 P2 q1390-i01: external の image・export・import・identity を受ける、export/import は SLC_BYPASS、linear の SAMPLED は 1 か所の切り替えで off のまま。p009 の試験は切り替え 0・1 で PASS、VF2 warning 0。実機は未実施） |
 | p010m | 仕上げ、T1 の回帰、p010 の受け入れ（vkdemo と gpu-selftest の clear・copy・draw、D-P7） | O-p010l | planning（同） |
 | p011 | Keiland が使う Vulkan の機能の不足を driver 側で埋める（受け入れは機能の試験。desktop の目視は WS270 p006、WS269 p011 → WS270 p006） | p010m | planned |
 | [p013](phase013/phase.md) | USC の encoder（`usc-encode.c`）の広げ: SMP・FITR/FITRP・EMITPIX・EOT・SR/PT・transfer に要る命令（持ち主は P2）。出力 O-ENC（main に merge 済みで host 試験 PASS。中身は design-p010 版 2.1 §5.4 で確定） | p008 | in-progress（2026-10-20 P2: 最初の試行 q1363（記録は p010-compiler）で compiler の命令を追加、host 試験 PASS。q1369 で phase.md。q1372 で SR の shared register の burst が今の encoder で書けることを host 試験で確認、O-ENC の判定は Q1） |

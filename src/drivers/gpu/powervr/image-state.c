@@ -174,8 +174,9 @@ powervr_format_find(
 }
 
 /*
- * Reports the features a format has on linear images: all but sampling
- * until linear images can be shared with the display.
+ * Reports the features a format has on linear images: all of them, or
+ * all but sampling while the shared path's switch is off
+ * (POWERVR_FORMAT_LINEAR_SAMPLED).
  */
 uint32_t
 powervr_format_linear_features(
@@ -183,7 +184,7 @@ powervr_format_linear_features(
 {
 	uint32_t sampled;
 
-	/* Linear images report no sampling while they cannot be shared. */
+	/* Linear images report no sampling while the switch is off. */
 	sampled = VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
 	if (POWERVR_FORMAT_LINEAR_SAMPLED == 0)
 		return format->linear_features & ~sampled;

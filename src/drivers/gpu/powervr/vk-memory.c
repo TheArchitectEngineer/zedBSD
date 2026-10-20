@@ -18,6 +18,12 @@
  * every mapping the processor reaches does, so the attributes of one
  * page never differ between them.
  *
+ * An allocation may declare that it is exported (its blob is then shared
+ * with the display node or another session, and its mapping goes around
+ * the cache for that reason too), or import a blob of the session's
+ * (one the session imported from another's export): it then maps that
+ * blob's buffer, holding it, instead of a buffer of its own.
+ *
  * Procedure referenced: zedBSD src/drivers/gpu/bcm2711/vulkan-memory.c
  * and vulkan-resource.c (the wire of each command).
  */
@@ -37,6 +43,7 @@
 #include "drivers/gpu/i915/render/vulkan-codec.inc"
 
 static int allocate(struct powervr_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
+static int allocate_storage(struct powervr_vk_session *session, const struct powervr_vk_memory_chain *chain, uint64_t bytes, struct powervr_resource **storage);
 static int commitment(struct powervr_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int bind(struct powervr_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int requirements(struct powervr_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
@@ -150,8 +157,9 @@ powervr_vk_buffer_address(
 /*
  * vkAllocateMemory: [device][present][sType][chain] with, when chain is
  * 1, [extension sType][next][value], then [size][type][allocator]
- * [present][identity] -> [result][present][identity].  An import of a
- * resource and an export are not taken yet.
+ * [present][identity] -> [result][present][identity].  The extension
+ * is an export declaration or an import of a blob of the session's
+ * (powervr_vk_memory_chain).
  */
 static int
 allocate(
@@ -159,12 +167,13 @@ allocate(
 	struct i915_wire_reader *reader,
 	struct i915_wire_writer *reply)
 {
-	struct powervr_render *render;
+	struct powervr_vk_memory_chain parsed;
 	struct powervr_vk_memory *memory;
-	struct powervr_buffer *buffer;
 	uint64_t chain;
 	uint64_t bytes;
 	uint64_t identity;
+	uint32_t extension;
+	uint32_t value;
 	uint32_t type;
 	int error;
 
@@ -174,11 +183,13 @@ allocate(
 	(void)drv_i915_wire_read_u32(reader);
 	chain = drv_i915_wire_read_u64(reader);
 
-	/* The extension is read; one present refuses the allocation below. */
+	/* The extension, when one is chained: its type and its value. */
+	extension = 0;
+	value = 0;
 	if (chain != 0) {
-		(void)drv_i915_wire_read_u32(reader);
+		extension = drv_i915_wire_read_u32(reader);
 		(void)drv_i915_wire_read_u64(reader);
-		(void)drv_i915_wire_read_u32(reader);
+		value = drv_i915_wire_read_u32(reader);
 	}
 
 	/* The size, the type and the identity. */
@@ -188,13 +199,12 @@ allocate(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* A nonempty allocation of a type, without import or export. */
+	/* A nonempty allocation of a type, with an extension the executor takes. */
 	error = 0;
-	if (bytes == 0 || bytes > POWERVR_RENDER_MAX_BYTES || type >= POWERVR_VK_MEMORY_TYPES) {
+	if (bytes == 0 || bytes > POWERVR_RENDER_MAX_BYTES || type >= POWERVR_VK_MEMORY_TYPES || chain > 1)
 		error = EINVAL;
-	} else if (chain != 0) {
-		error = ENOTSUP;
-	}
+	if (error == 0)
+		error = powervr_vk_memory_chain(chain != 0, extension, value, &parsed);
 
 	/* The record. */
 	memory = NULL;
@@ -204,22 +214,105 @@ allocate(
 			error = ENOMEM;
 	}
 
-	/* Its buffer, mapped for the core as the processor's mappings are; the storage takes the reference. */
-	render = session->owner->render;
+	/* Its storage: a buffer of its own, or the imported blob's. */
 	if (error == 0) {
 		memory->bytes = bytes;
 		memory->type = type;
-		error = powervr_buffer_create(render, bytes, &buffer);
-		if (error == 0) {
-			error = powervr_resource_make(session->owner, buffer, 1, 0, &memory->storage);
-			powervr_buffer_put(render, buffer);
-		}
+		memory->exported = parsed.exported;
+		memory->imported = parsed.imported != 0;
+		error = allocate_storage(session, &parsed, bytes, &memory->storage);
 	}
 
 	/* Publishes the record and answers; a refused one is destroyed there. */
 	powervr_vk_create_reply(session, reply, I915_VK_OBJ_MEMORY, identity, memory, memory_destroy, error);
 
 	/* Succeeded: the reply carries the allocation's result. */
+	return 0;
+}
+
+/*
+ * Classifies an allocation's one extension: none, an export declaration
+ * of a handle type the session shares by (an opaque or a dma-buf
+ * handle), or an import of a blob of the session's by its identifier.
+ * ENOTSUP for any other extension, EINVAL for a malformed one.
+ */
+int
+powervr_vk_memory_chain(
+	bool present,
+	uint32_t extension,
+	uint32_t value,
+	struct powervr_vk_memory_chain *chain)
+{
+	/* Nothing chained: a plain allocation. */
+	chain->exported = false;
+	chain->imported = 0;
+	if (!present)
+		return 0;
+
+	/* An export names one or both of the handle types the session shares by. */
+	if (extension == VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO) {
+		if (value == 0 || (value & ~POWERVR_VK_EXTERNAL_HANDLES) != 0)
+			return ENOTSUP;
+		chain->exported = true;
+		return 0;
+	}
+
+	/* An import names a blob; zero names none. */
+	if (extension == GPU_OP_RECORD_IMPORT_RESOURCE) {
+		if (value == 0)
+			return EINVAL;
+		chain->imported = value;
+		return 0;
+	}
+
+	/* Any other extension is not taken. */
+	return ENOTSUP;
+}
+
+/*
+ * Makes an allocation's storage: the imported blob's buffer, which must
+ * hold the allocation, or a buffer of its own.  Either is mapped for the
+ * core as the processor's mappings are, around the system level cache
+ * (powervr_gpu_buffer_flags), which an exported one needs for the
+ * display too.
+ */
+static int
+allocate_storage(
+	struct powervr_vk_session *session,
+	const struct powervr_vk_memory_chain *chain,
+	uint64_t bytes,
+	struct powervr_resource **storage)
+{
+	struct powervr_render *render;
+	struct powervr_resource *blob;
+	struct powervr_buffer *buffer;
+	int shareable;
+	int error;
+
+	/* The imported blob's buffer, with a reference of the storage's own. */
+	render = session->owner->render;
+	if (chain->imported != 0) {
+		blob = powervr_session_blob(session->owner, chain->imported);
+		if (blob == NULL || blob->buffer == NULL || bytes > blob->buffer->bytes)
+			return EINVAL;
+		buffer = blob->buffer;
+		powervr_buffer_retain(render, buffer);
+	} else {
+		error = powervr_buffer_create(render, bytes, &buffer);
+		if (error != 0)
+			return error;
+	}
+
+	/* The session's mapping of it; the mapping takes the reference. */
+	shareable = 0;
+	if (chain->exported || chain->imported != 0)
+		shareable = 1;
+	error = powervr_resource_make(session->owner, buffer, 1, shareable, storage);
+	powervr_buffer_put(render, buffer);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the allocation's storage. */
 	return 0;
 }
 
