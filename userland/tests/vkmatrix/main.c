@@ -34,6 +34,8 @@
  *   render-f16              a pass on an R16G16B16A16_SFLOAT attachment:
  *                           cleared, one quad drawn, copied out, every
  *                           half float compared
+ *   clear-64, clear-128     the wide images cleared by vkCmdClearColorImage
+ *                           and copied out (the image-to-buffer leg)
  *
  * It prints one line a case and a total:
  *
@@ -49,6 +51,7 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "shader.h"
@@ -64,7 +67,7 @@
 #define VKMATRIX_WAIT_NS	5000000000ULL
 
 /* The most bytes of a failure's reason. */
-#define VKMATRIX_REASON_MAX	160
+#define VKMATRIX_REASON_MAX	256
 
 /* The most pipelines and textures one case makes. */
 #define VKMATRIX_PIPELINES_MAX	4
@@ -209,6 +212,9 @@ static VkResult case_copy_wide(struct vkmatrix *run, VkFormat format, uint32_t t
 static VkResult case_copy_64(struct vkmatrix *run);
 static VkResult case_copy_128(struct vkmatrix *run);
 static VkResult case_render_f16(struct vkmatrix *run);
+static VkResult case_clear_wide(struct vkmatrix *run, VkFormat format, uint32_t texel_bytes);
+static VkResult case_clear_64(struct vkmatrix *run);
+static VkResult case_clear_128(struct vkmatrix *run);
 
 /* Every case, in the order they run. */
 static const struct vkmatrix_case cases[] = {
@@ -230,6 +236,8 @@ static const struct vkmatrix_case cases[] = {
 	{ "copy-64", case_copy_64 },
 	{ "copy-128", case_copy_128 },
 	{ "render-f16", case_render_f16 },
+	{ "clear-64", case_clear_64 },
+	{ "clear-128", case_clear_128 },
 };
 
 /* The clear colour of every case's first pass: dark blue. */
@@ -2402,8 +2410,10 @@ wide_submit(
 
 /*
  * Compares the texels read back with the wanted ones; on a difference it
- * names the first texel and fails (VK_ERROR_UNKNOWN, the reason in the
- * failed call), else it leaves the shared target's comparison passing.
+ * names the first texel, every word seen and wanted there, the number of
+ * texels that differ and which word positions differed anywhere, and fails
+ * (VK_ERROR_UNKNOWN, the reason in the failed call), else it leaves the
+ * shared target's comparison passing.
  */
 static VkResult
 wide_compare(
@@ -2413,29 +2423,142 @@ wide_compare(
 	uint32_t texel_bytes)
 {
 	uint32_t texel;
-	uint32_t byte;
+	uint32_t first;
+	uint32_t bad;
+	uint32_t positions;
 	uint32_t word;
-	int differ;
+	uint32_t got;
+	uint32_t want;
+	size_t used;
 
-	/* The first texel that differs. */
+	/* The count of texels that differ, the first of them, the word positions that differ. */
+	bad = 0;
+	first = VKMATRIX_PIXELS;
+	positions = 0;
 	for (texel = 0; texel < VKMATRIX_PIXELS; texel++) {
-		differ = memcmp(seen + texel * texel_bytes, wanted + texel * texel_bytes, texel_bytes);
-		if (differ == 0)
+		if (memcmp(seen + texel * texel_bytes, wanted + texel * texel_bytes, texel_bytes) == 0)
 			continue;
-		byte = texel * texel_bytes;
-		word = 0;
-		memcpy(&word, seen + byte, 4);
-		snprintf(run->reason, sizeof(run->reason), "texel (%u,%u) first word 0x%08x, expected 0x%08x",
-			 (unsigned)(texel % VKMATRIX_SIZE), (unsigned)(texel / VKMATRIX_SIZE), (unsigned)word,
-			 (unsigned)(wanted[byte] | (wanted[byte + 1] << 8) | (wanted[byte + 2] << 16) | ((uint32_t)wanted[byte + 3] << 24)));
-		run->failed_call = run->reason;
-		return VK_ERROR_UNKNOWN;
+		if (bad == 0)
+			first = texel;
+		bad++;
+		for (word = 0; word < texel_bytes / 4U; word++) {
+			if (memcmp(seen + texel * texel_bytes + word * 4U, wanted + texel * texel_bytes + word * 4U, 4) != 0)
+				positions |= 1U << word;
+		}
+	}
+	if (bad == 0) {
+		/* Every texel matched: the shared target's comparison has nothing to say. */
+		memcpy(run->expected, run->pixels, sizeof(run->expected));
+		run->tolerance = 0;
+		return VK_SUCCESS;
 	}
 
-	/* Every texel matched: the shared target's comparison has nothing to say. */
-	memcpy(run->expected, run->pixels, sizeof(run->expected));
-	run->tolerance = 0;
+	/* The first bad texel's words, seen/wanted, then the counts. */
+	used = (size_t)snprintf(run->reason, sizeof(run->reason), "%u bad, words 0x%x, (%u,%u)",
+				(unsigned)bad, (unsigned)positions, (unsigned)(first % VKMATRIX_SIZE), (unsigned)(first / VKMATRIX_SIZE));
+	for (word = 0; word < texel_bytes / 4U && used < sizeof(run->reason); word++) {
+		memcpy(&got, seen + first * texel_bytes + word * 4U, 4);
+		memcpy(&want, wanted + first * texel_bytes + word * 4U, 4);
+		used += (size_t)snprintf(run->reason + used, sizeof(run->reason) - used, " %08x/%08x", (unsigned)got, (unsigned)want);
+	}
+	run->failed_call = run->reason;
+	return VK_ERROR_UNKNOWN;
+}
+
+/* clear-64 and clear-128: the image cleared by vkCmdClearColorImage, then copied out (the image-to-buffer leg alone). */
+static VkResult
+case_clear_wide(
+	struct vkmatrix *run,
+	VkFormat format,
+	uint32_t texel_bytes)
+{
+	static const uint32_t words[4] = { 0x11223344U, 0x55667788U, 0x99aabbccU, 0xddeeff01U };
+	static const uint16_t halves[4] = { 0x3400U, 0x3800U, 0x3a00U, 0x3c00U };
+	VkCommandBufferBeginInfo begin;
+	VkClearColorValue colour;
+	VkImageSubresourceRange range;
+	uint8_t *download;
+	uint8_t *wanted;
+	void *mapped;
+	uint32_t texel;
+	uint32_t byte;
+	VkResult status;
+
+	/* The image and the readback buffer. */
+	status = wide_image(run, format, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+	if (status != VK_SUCCESS)
+		return status;
+	status = vkmatrix_buffer(run, (VkDeviceSize)VKMATRIX_PIXELS * texel_bytes, VK_BUFFER_USAGE_TRANSFER_DST_BIT, &run->wide_download, &run->wide_download_memory, &mapped);
+	if (status != VK_SUCCESS)
+		return status;
+	download = mapped;
+	memset(download, 0xa5, (size_t)VKMATRIX_PIXELS * texel_bytes);
+
+	/* The colour: halves (0.25, 0.5, 0.75, 1) for 64 bits, the raw words for 128. */
+	memset(&colour, 0, sizeof(colour));
+	if (texel_bytes == 8) {
+		colour.float32[0] = 0.25f;
+		colour.float32[1] = 0.5f;
+		colour.float32[2] = 0.75f;
+		colour.float32[3] = 1.0f;
+	} else {
+		memcpy(colour.uint32, words, sizeof(words));
+	}
+
+	/* UNDEFINED -> TRANSFER_DST, the clear, -> TRANSFER_SRC, the copy out. */
+	memset(&begin, 0, sizeof(begin));
+	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	vkResetCommandBuffer(run->command, 0);
+	vkBeginCommandBuffer(run->command, &begin);
+	wide_barrier(run, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+	memset(&range, 0, sizeof(range));
+	range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	range.levelCount = 1;
+	range.layerCount = 1;
+	vkCmdClearColorImage(run->command, run->wide_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &colour, 1, &range);
+	wide_barrier(run, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+	wide_copy_out(run);
+	status = wide_submit(run);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* The wanted texels: the colour in the format, every texel the same. */
+	wanted = malloc((size_t)VKMATRIX_PIXELS * texel_bytes);
+	if (wanted == NULL) {
+		run->failed_call = "malloc";
+		return VK_ERROR_OUT_OF_HOST_MEMORY;
+	}
+	for (texel = 0; texel < VKMATRIX_PIXELS; texel++) {
+		byte = texel * texel_bytes;
+		if (texel_bytes == 8)
+			memcpy(wanted + byte, halves, sizeof(halves));
+		else
+			memcpy(wanted + byte, words, sizeof(words));
+	}
+	status = wide_compare(run, download, wanted, texel_bytes);
+	free(wanted);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the cleared texels came back. */
 	return VK_SUCCESS;
+}
+
+/* clear-64: R16G16B16A16_SFLOAT cleared and copied out. */
+static VkResult
+case_clear_64(
+	struct vkmatrix *run)
+{
+	return case_clear_wide(run, VK_FORMAT_R16G16B16A16_SFLOAT, 8);
+}
+
+/* clear-128: R32G32B32A32_SFLOAT cleared (raw words) and copied out. */
+static VkResult
+case_clear_128(
+	struct vkmatrix *run)
+{
+	return case_clear_wide(run, VK_FORMAT_R32G32B32A32_SFLOAT, 16);
 }
 
 /* copy-64 and copy-128: a pattern from a buffer into an OPTIMAL image of the format and back, every byte compared. */
