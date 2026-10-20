@@ -92,25 +92,56 @@ powervr_render_load_usc(
 	const struct powervr_format *format,
 	struct powervr_render_usc *program)
 {
-	struct shader_machine_operation operations[6];
-	struct powervr_usc_group groups[6];
-	size_t length;
-	size_t index;
 	int error;
 
-	/* Refuses missing input or result, and formats other than four 8-bit unorm channels. */
-	if (format == NULL || program == NULL)
+	/* The usual form. */
+	error = powervr_render_load_usc_probe(format, POWERVR_LOAD_PROBE_USUAL, program);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the program. */
+	return 0;
+}
+
+/*
+ * Builds the load program in one of its probe forms: the usual one, the
+ * sample at (0, 0) instead of the pixel's position, or the usual one
+ * with a wait group after each group.
+ */
+int
+powervr_render_load_usc_probe(
+	const struct powervr_format *format,
+	unsigned probe,
+	struct powervr_render_usc *program)
+{
+	struct shader_machine_operation operations[6];
+	struct powervr_usc_group groups[12];
+	size_t length;
+	size_t index;
+	size_t count;
+	size_t sample;
+	int error;
+
+	/* Refuses missing input or result, an unknown form, and formats other than four 8-bit unorm channels. */
+	if (format == NULL || program == NULL || probe > POWERVR_LOAD_PROBE_SPACED)
 		return EINVAL;
 	if (format->store_code != 0 || format->texel_bytes != 4 || (format->kind & POWERVR_FORMAT_SRGB) != 0)
 		return ENOTSUP;
 
-	/* The position's x and y. */
-	blank_operation(&operations[0], MACHINE_MOVE_SPECIAL);
-	operations[0].destination[0] = machine_register(POWERVR_USC_BANK_TEMPORARY, TEMP_POSITION);
-	operations[0].source[0] = machine_register(POWERVR_USC_BANK_SPECIAL, SPECIAL_X);
-	blank_operation(&operations[1], MACHINE_MOVE_SPECIAL);
-	operations[1].destination[0] = machine_register(POWERVR_USC_BANK_TEMPORARY, TEMP_POSITION + 1U);
-	operations[1].source[0] = machine_register(POWERVR_USC_BANK_SPECIAL, SPECIAL_Y);
+	/* The position's x and y, or zero for the origin probe. */
+	if (probe == POWERVR_LOAD_PROBE_ORIGIN) {
+		blank_operation(&operations[0], MACHINE_IMMEDIATE);
+		operations[0].destination[0] = machine_register(POWERVR_USC_BANK_TEMPORARY, TEMP_POSITION);
+		blank_operation(&operations[1], MACHINE_IMMEDIATE);
+		operations[1].destination[0] = machine_register(POWERVR_USC_BANK_TEMPORARY, TEMP_POSITION + 1U);
+	} else {
+		blank_operation(&operations[0], MACHINE_MOVE_SPECIAL);
+		operations[0].destination[0] = machine_register(POWERVR_USC_BANK_TEMPORARY, TEMP_POSITION);
+		operations[0].source[0] = machine_register(POWERVR_USC_BANK_SPECIAL, SPECIAL_X);
+		blank_operation(&operations[1], MACHINE_MOVE_SPECIAL);
+		operations[1].destination[0] = machine_register(POWERVR_USC_BANK_TEMPORARY, TEMP_POSITION + 1U);
+		operations[1].source[0] = machine_register(POWERVR_USC_BANK_SPECIAL, SPECIAL_Y);
+	}
 
 	/* The sample there, and the wait for its data. */
 	blank_operation(&operations[2], MACHINE_SAMPLE);
@@ -134,21 +165,32 @@ powervr_render_load_usc(
 	operations[5].source[0] = machine_register(POWERVR_USC_BANK_TEMPORARY, TEMP_PIXEL);
 	operations[5].variant = 1;
 
-	/* The back end's group of each. */
+	/* The back end's group of each, with a wait group after each but the last for the spaced probe. */
+	count = 0;
+	sample = 0;
 	for (index = 0; index < 6; index++) {
-		error = shader_backend_group(&operations[index], 0, &groups[index]);
+		if (index == 2)
+			sample = count;
+		error = shader_backend_group(&operations[index], 0, &groups[count]);
 		if (error != 0)
 			return error;
+		count++;
+		if (probe == POWERVR_LOAD_PROBE_SPACED && index < 5U) {
+			error = shader_backend_group(&operations[3], 0, &groups[count]);
+			if (error != 0)
+				return error;
+			count++;
+		}
 	}
 
 	/* The sample with unnormalised coordinates, the last group ending. */
-	error = powervr_usc_sample(0, 0, SAMPLE_2D, SAMPLE_CHANNELS, 0, &groups[2].operation[POWERVR_USC_PHASE_BACKEND]);
+	error = powervr_usc_sample(0, 0, SAMPLE_2D, SAMPLE_CHANNELS, 0, &groups[sample].operation[POWERVR_USC_PHASE_BACKEND]);
 	if (error != 0)
 		return error;
-	groups[5].end = 1;
+	groups[count - 1U].end = 1;
 
 	/* Encodes them. */
-	error = powervr_usc_program_encode(groups, 6, program->code, sizeof(program->code), &length);
+	error = powervr_usc_program_encode(groups, count, program->code, sizeof(program->code), &length);
 	if (error != 0)
 		return error;
 
