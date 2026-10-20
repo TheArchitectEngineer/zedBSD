@@ -50,3 +50,8 @@ ZLS の load・store の register の word、ISP の depth の state（PPP の I
 - `render-command.{c,h}`: fragment の setup に depth（`isp_zlsctl` 16+120、`isp_zload_store_base` 16+128、BGOBJDEPTH、`zls_stride` 468、flags の DEPTHBUFFER bit 7）。depth の無い command は前と同じ。
 - `render-job.c`: depth の ENOTSUP を外し、P2 の `powervr_render_zls_words` の control・base・background depth・stride を fragment の command に。process_empty_tiles は ISP_CTL で常に立てている。
 - 確かめ: command-host-test 29/0、p010 の host 試験 15 本 0 failed、p009 165/0、3 つの build warning 0。実機は未確認。
+
+## q1391-i01（2026-10-20 P1）: M9 の照合（CDM の switch と ZLS）
+
+- Mesa 26.2.5 の tarball（sha256 `794b3d17…a0a5`）を `build/p010n/dl/` に取り直し、`src/imagination` を展開、`python3 -I …/gen_pack_header.py …/rogue/cr.xml > build/p010n/gen/cr.h`（sha256 `16f0f16f6e450483…`、前と同じ）。比べる program は `build/p010n/m9/compare2.c`（tree の外）。
+- 結果: `M9: 31 words/values compared, 108 fields, 0 mismatches`。内訳: compute の static state の 7 語（CDM_CONTEXT_PDS0・PDS1・TERMINATE_PDS・PDS1・CONTEXT_LOAD_PDS0 と組 1 の 2 つ）を 3 つの置き場所で、ZLS は D32 と D16 の 64×64（clear 0.5、store）で render-depth の語を render-command に通した fragment の command の ISP_ZLSCTL・ISP_ZLOAD_BASE・ISP_BGOBJDEPTH と、zls_stride（layer の byte 数）・DEPTHBUFFER の flag（v7.3 の header の bit 7、csbgen には無い）。

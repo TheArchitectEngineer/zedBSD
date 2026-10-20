@@ -92,3 +92,8 @@ QEMU・実機は未実施（設計どおり実機は p010e。この Phase では
 - `render-sr-program.{c,h}`: compute の SR の PDS（render の物の前に coefficient の pass を飛ばす branch・cc 付きの halt・branch、DOUTU は cc 付き。ERN 35421 あり、compute_morton なし）、fence terminate の PDS（0 の source、skip、DOUTC、halt）、static state の 7 語（CDM_CONTEXT_PDS0/1、TERMINATE_PDS/1、LOAD_PDS0、組 1 の PDS0・LOAD_PDS0）。Mesa `pvr_compute_ctx_ws_static_state_init`。
 - `render-context.c`: `powervr_session_compute_switch`（session を開いた後、core の lock の外で: PDS の窓に組 2 つ（SR の state 16432 と store・load の PDS）と terminate、USC の窓に SR の store・load の USC、compute の record の 152 からの static state に 7 語）、destroy・discard。`render.c` の render_open で呼ぶ（失敗は log だけ、static state は 0 のまま）。
 - 確かめ: program-host-test 47/0（compute の code・terminate・7 語の golden）、p009 165/0、3 つの build warning 0。M9 は未（CDM の 5 つの register を足す時に）。実機は未確認。
+
+## q1391-i01（2026-10-20 P1）: M9 の照合（CDM の switch と ZLS）
+
+- Mesa 26.2.5 の tarball（sha256 `794b3d17…a0a5`）を `build/p010n/dl/` に取り直し、`src/imagination` を展開、`python3 -I …/gen_pack_header.py …/rogue/cr.xml > build/p010n/gen/cr.h`（sha256 `16f0f16f6e450483…`、前と同じ）。比べる program は `build/p010n/m9/compare2.c`（tree の外）。
+- 結果: `M9: 31 words/values compared, 108 fields, 0 mismatches`。内訳: compute の static state の 7 語（CDM_CONTEXT_PDS0・PDS1・TERMINATE_PDS・PDS1・CONTEXT_LOAD_PDS0 と組 1 の 2 つ）を 3 つの置き場所で、ZLS は D32 と D16 の 64×64（clear 0.5、store）で render-depth の語を render-command に通した fragment の command の ISP_ZLSCTL・ISP_ZLOAD_BASE・ISP_BGOBJDEPTH と、zls_stride（layer の byte 数）・DEPTHBUFFER の flag（v7.3 の header の bit 7、csbgen には無い）。

@@ -65,3 +65,9 @@ kick に依らない部分: pipeline の decode、compile の入力（key）、v
 ## q1388-i01（2026-10-20 P1）: render-job の draw の置き方の host 試験
 
 - `plan/ws269/tests/p010/job-host-test.c`（新規、run.sh に）: kernel の memory・写像・context・kick を host の stand-in にして、draw 2 つの job を `powervr_render_job_run` に通し、geometry の command の stream（draw ごとの PPP の block と address、count 3、2 つ目の後の terminate）、PPP の slot の間隔、2 つ目の draw の push constant、set の写しの位置と中身、fragment の command の scissor の表（2 entry が違う）と depth bias の表、USC の buffer の code の並び（vertex・fragment・vertex・fragment）を見る。16/0。
+
+## q1391-i01（2026-10-20 P1）: kernel の job check
+
+- `render-check.c`（`CONFIG_POWERVR_RENDER_CHECK`）に job check: 自分の session で、vkstage の colour の shader（`userland/tests/vkstage/shader.h` の SPIR-V）を kernel の中で key 付きで compile し、`powervr_render_job_run`（Vulkan の executor と同じ道）で 64×64 R8G8B8A8 を青に clear・D32 を 1.0 に clear して store、draw 1 つで赤（z 0.25）を先に、大きい緑（z 0.75）を後に描く。4 つの pixel で色と depth を読み返す（depth は float の行と仮定、PowerVR の linear の depth の store の並びは未確認なので別の行で言う）。
+- 行: `powervr: job check: prepared (…)` / `FAILED at compile|prepare (err)`、`kicked, fence reached` / `FAILED at kick|fence (err)`、`OK (4 pixels of colour and depth)` / `FAILED at colour|depth read back: pixel (x, y) is 0x…, want 0x…`。`ta`・`3d` の段の行は job の終わりから。
+- 確かめ: host で同じ shader と key の compile が通ること（vertex 416 byte・temps 24、fragment 344 byte、varyings の code 2 語）、試験の image の config と VF2・riscv64-virt・amd64 の build warning 0、p010 の host 試験 0 failed。実機は未確認。

@@ -47,7 +47,7 @@
 | [p010j](phase010j/phase.md) | depth と vkdemo の offscreen | O-p010i | in-progress（2026-10-20 P2 q1387-i01 前半: render-depth.c（ZLS の word・clear の値）、render-pass.c の depth の受け入れ（部分の area は load を足す、版 2.3）、vkstage の depth の pipeline の compile、host 試験 12 PASS、M9 12 word 0 mismatch、VF2 build warning 0。fragment の command への受け渡しは後半。q1388-i01（P1）: ZLS を render-job の fragment の command に、depth の ENOTSUP を外した） |
 | [p010k1](phase010k1/phase.md) | WSI の readback の道（clear だけ、compiler なし） | O-p010f、O-P007 | in-progress（2026-10-20 P2 q1386-i01: libvulkan の readback の道が PowerVR で通る順を確かめた（vk の features の変更は不要）、vkstage present を semaphore・fence・3 秒に、VF2 の image build warning 0。実機は P1 の q1385 の後） |
 | [p010p](phase010p/phase.md) | format の広げ（純粋な関数の側） | O-p010f | in-progress（2026-10-20 P2 q1389-i01: R32_SFLOAT・R16G16B16A16_SFLOAT・float の texture code、clear の half/raw の pack。host 全 PASS、f16 は Mesa と一致、VF2 warning 0。raw 64/128 copy・PBE の F16 は残り。q1388-i01（P1）: gpu-selftest の present（vkdemo、depth が通るまで skip(depth)）、vkdemo を VF2 の試験の image に） |
-| p010k2 | readback の道で vkdemo が画面に | O-p010k1、O-p010j | planning（同） |
+| [p010k2](phase010k2/phase.md) | readback の道で vkdemo が画面に | O-p010k1、O-p010j | planning（2026-10-20 P1 q1391-i01: host の llvmpipe で vkdemo の期待の画（背景 101828、中央 e06895 @0 ms）と present の判定・UAT の文面の案） |
 | p010l | WSI の shared の道と p007 の import の試験（WS277 R6）、dc8200 の zero copy | O-p010k2、O-p010o | planning（同） |
 | p010m | 仕上げ、T1 の回帰、p010 の受け入れ（vkdemo と gpu-selftest の clear・copy・draw、D-P7） | O-p010l | planning（同） |
 | p011 | Keiland が使う Vulkan の機能の不足を driver 側で埋める（受け入れは機能の試験。desktop の目視は WS270 p006、WS269 p011 → WS270 p006） | p010m | planned |
