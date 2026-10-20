@@ -173,3 +173,38 @@ P1 の file の decode を、libvulkan（`userland/desktop/libvulkan`）の enco
 - 動きの注意（wire ではない、P1 の file、記録だけ）: `submit` は semaphore の wait と signal を読むだけで使わない。submit は同期で終わるので、今の順の保証はこれで足りる。fence は error のときに立たず、libvulkan は submit の result（DEVICE_LOST など）で知る。
 
 - 試験と build: コードの変更が無いので、新しくは流していない（main の f7aa25f5b の上で p009 511 passed は Q1 が確認済み）。
+
+## q1402-i01（P1、2026-10-20）: 相互点検 1、P2 の file の wire の decode と libvulkan の encode
+
+libvulkan（`userland/desktop/libvulkan`、この tree での場所）の encode と、powervr の decode を field ごとに読んで照らした。照らした物は、順・大きさ・presence の word・count の二重の形（u32 と u64）・padding・sType と pNext。p009 の host 試験は libvulkan の encoder で組んだ frame をこの decoder に通しているので、そこを通る道は出力でも確かめてある（Keiland の frame と、vkstage・vkdemo の frame。後者は q1398 で足した）。
+
+| 道 | libvulkan の encode | powervr の decode | 照らした結果 |
+| --- | --- | --- | --- |
+| vkCreateGraphicsPipelines（`vk-draw.c` `decode_info`） | `pipeline.c` `pipeline_encode_graphics`: sType, u64 0, flags, u32+u64 の stage の数、stage。各 state は presence の後（tessellation は stage が無い時 0、viewport・multisample は rasterize の時、depth は subpass に depth がある時、blend は colour がある時、raster は常に 1）。後ろに dynamic, layout, pass, subpass, base, index | 同じ順で 9 つの presence を読む | 一致。試験で通る: static・dynamic の viewport、depth の有無、blend。specialization の map entry は ENOTSUP（意図どおり） |
+| vkCmdDraw・vkCmdDrawIndexed | 4・5 個の u32 | 同じ。firstInstance≠0 は ENOTSUP。indexed は firstIndex を values[2]、vertexOffset を first に | 一致 |
+| vkCmdBindVertexBuffers・vkCmdBindIndexBuffer | first、u32+u64 の数と handle、u64 の数と offset。index は buffer, u64 offset, u32 type | 同じ | 一致 |
+| vkCmdSetViewport・vkCmdSetScissor・vkCmdPushConstants | first、u32+u64 の数と record。push は layout, stages, offset, size, u64 size, byte（4 byte に pad） | 同じ（`i915_vkc_read_bytes` も pad を読み飛ばす） | 一致 |
+| vkCmdBindDescriptorSets（`vk-command.c` `record_sets`） | point, layout, firstSet, u32+u64 の数と set, u32+u64 の dynamic offset の数と u32 | 同じ。dynamic offset は ENOTSUP | 一致 |
+| vkCreateRenderPass・vkCreateFramebuffer（`vk-pass.c`） | device, presence, 生成の codec の record, tail | 同じ codec（i915 の生成の decoder） | 一致。試験で通る: 1・2 attachment、dependency 1・2 |
+| vkCmdBeginRenderPass | presence, sType, u64 0, pass, fb, rect, u32+u64 の clear の数。colour は tag 0, u32 2, u64 4, 4 word。depth は tag 1, float, stencil。後に contents | `read_clear` は同じ形（colour の長さ 4 を確かめる） | 一致（depth の clear 1.0 は q1398 の試験で job まで届く） |
+| vkCmdClearAttachments | aspect, colour index（depth は 0）, tag と値。後に u32+u64 の rect | 同じ | 一致 |
+| vkAllocateMemory（`vk-memory.c`） | device, presence, sType, u64 chain（0/1）。chain は [type][u64 0][u32 value] で、export は handle の種類（DMA_BUF 0x200 か OPAQUE 0x1）、import は `GPU_OP_RECORD_IMPORT_RESOURCE` と blob。後に size（host visible は page に切り上げ）, type, tail | 同じ。export は `POWERVR_VK_EXTERNAL_HANDLES` 0x201 の中だけ | 一致。dedicated の chain は libvulkan が送らない |
+| vkUpdateDescriptorSets（`vk-layout.c` `update_sets`・`update_write`） | device, u32+u64 の write の数、write（sType, u64 0, set, binding, element, count, type）。後に u64 の image の数と {sampler, view, layout}、u64 の buffer の数と `VkDescriptorBufferInfo`、u64 の texel view の数と handle。最後に u32+u64 の copy | 同じ。copy は読んでから ENOTSUP。VK_WHOLE_SIZE は buffer の終わりまで | 一致 |
+| instance・device の問い合わせ（`vk-device.c`） | — | — | p009 の setup の frame（全部の reply の検査）で通る範囲だけ。field ごとの読みは未実施 |
+
+sample の段の道（通しで読んだ）:
+
+- write の `set_image` は view の 2 word と layer の大きさ・pack の情報を image の部分（offset 0）に、sampler の 2 word を sampler の部分（`COMBINED_SAMPLER_OFFSET`）に書く。
+- compiler（`shader-spirv-instruction.c` の OpImageSampleImplicitLod）は、set・binding の IMAGE_STATE と SAMPLER_STATE を、それぞれ `POWERVR_SHADER_STATE_WORDS` の request にする。
+- `data-program.c` `resolve_descriptor` は同じ `powervr_set_descriptor_offset` で place を求め、set の address に足して DOUTD で shared に読む。
+- render-job.c は set の copy を slot の後ろに置き、その address と layout を state に渡す。job-host-test で set の copy の位置を確かめている。
+- 3 つが同じ offset の関数を使うので食い違いは無い。array の element は compiler が 0 しか出さない（array の sampler は未対応）。
+
+食い違い・未対応（直しは要らないが記録）:
+
+| 項目 | 内容 | 扱い |
+| --- | --- | --- |
+| libvulkan に有って decode に無い command | vkCmdDrawIndirect・vkCmdDrawIndexedIndirect・vkCmdSetBlendConstants・vkCmdSetDepthBias（`commands-generated.inc` には有る） | 記録の時点で拒まれる（ENOTSUP/EINVAL）。Keiland・vkstage・vkdemo は使わない。要るなら別の Phase |
+| descriptor の copy | 読んでから ENOTSUP | 同上 |
+
+結論: P2 の file に直しの要る食い違いは見つからなかった。P1 の file の直しも無い（source の変更なし）。
