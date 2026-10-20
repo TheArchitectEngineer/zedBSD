@@ -637,9 +637,18 @@ probe_soc(
 	void)
 {
 	const uint64_t *fdt_range;
+	const uint64_t *ccache;
 	struct drv_fdt fdt;
 	const void *blob;
 	int error;
+
+	/* Says whether the hardware layer found the cache controller that cache maintenance writes. */
+	ccache = hal_get_arch_handoff("riscv64.ccache.base");
+	if (ccache != NULL) {
+		kern_logf("visionfive2: ccache at 0x%llx, cache maintenance on\n", (unsigned long long)*ccache);
+	} else {
+		kern_logf("visionfive2: ccache unavailable, no cache maintenance\n");
+	}
 
 	/* Finds the device tree's range the hardware layer kept. */
 	fdt_range = hal_get_arch_handoff("riscv64.fdt");

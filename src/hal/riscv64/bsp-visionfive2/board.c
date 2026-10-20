@@ -159,16 +159,26 @@ riscv64_board_init(
 }
 
 /*
- * Answers the board's own handoff names: the screen the firmware left on,
- * as six 64-bit words under "riscv64.framebuffer.".
+ * Answers the board's own handoff names: the cache controller's base as
+ * "riscv64.ccache.base" (NULL when it was not found, so cache maintenance
+ * does nothing), and the screen the firmware left on, as six 64-bit words
+ * under "riscv64.framebuffer.".
  *
- * Every name is NULL when the loader handed no screen over.
+ * Every screen name is NULL when the loader handed no screen over.
  */
 void *
 riscv64_board_handoff(
 	const char *name)
 {
 	bool match;
+
+	/* The cache controller, when one was found; the kernel logs it. */
+	match = riscv64_boot_name_is(name, "riscv64.ccache.base");
+	if (match) {
+		if (board_flush64 == NULL)
+			return NULL;
+		return &board_ccache_base;
+	}
 
 	/* A board without a screen names none of it. */
 	if (!board_screen_named)

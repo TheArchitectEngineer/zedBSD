@@ -1193,9 +1193,11 @@ screen_valid(
 }
 
 /*
- * Makes the CPU's view of the screen: the direct map when the screen is
- * RAM it holds, as the text console draws it, else an uncached device
- * view of its pages.
+ * Makes the CPU's view of the screen: always an uncached device view of
+ * its pages, so what the CPU writes is in memory for the display
+ * controller without cache maintenance.  The direct map with a clean
+ * afterwards showed stale cache-line pieces on the board when the clean
+ * did not reach memory.
  */
 static int
 map_screen(
@@ -1205,16 +1207,10 @@ map_screen(
 	void *view;
 	int error;
 
-	/* RAM the direct map holds is written through it and cleaned afterwards. */
+	/* A device view of whole pages. */
 	display->view = NULL;
 	display->view_bytes = 0U;
-	display->pixels = kern_pmem_to_kernel(display->screen.physical_base);
-	if (display->pixels != NULL) {
-		display->direct = 1;
-		return 0;
-	}
-
-	/* Anything else through a device view of whole pages. */
+	display->pixels = NULL;
 	offset = display->screen.physical_base & (POWERVR_DISPLAY_PAGE_BYTES - 1U);
 	display->view_bytes = (size_t)((offset + display->screen.size + POWERVR_DISPLAY_PAGE_BYTES - 1U) & ~(uint64_t)(POWERVR_DISPLAY_PAGE_BYTES - 1U));
 	error = kern_device_map(display->screen.physical_base - offset, display->view_bytes, KERN_DEVICE_UNCACHED, &view);
