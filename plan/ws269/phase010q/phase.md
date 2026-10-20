@@ -3,9 +3,27 @@
 # ws269-p010q: 実機の前の点検（cache・MMU・SLC・順・時間切れの後）
 
 - ID: ws269-p010q（親 [ws269](../ws.md)）
-- Status: in-progress（q1395-i01 で読みの点検と 1 つの直し。実機は未）
+- Status: in-progress（2026-10-21: 板で TA・3D・render check・job check・gpu-selftest 12/13。残りは下の要約）
 - Disposition: normal
 - Queue: q1395 / q1395-i01、q1398 / q1398-i01、q1401 / q1401-i01（2026-10-20 P1）
+
+## 結論の要約（2026-10-21）
+
+- **TA の lockup の原因**: 我々の VDM の control stream の末尾に、Mesa の terminate の PPP state の block が無かった。この block は PPP_STATE0/1 で 3 語の state（header は pres_terminate、TERMINATE0 は clip の right・bottom、TERMINATE1 は 0）を指し、その後に terminate が来る。この block が無いと VDM は terminate を完了しない。最小の stream で通り（板 77）、全 stream に入れて三角形・job が通った（q1484、板 78）。
+- **userland の不通の原因**:
+  - kernel の queue family が COMPUTE だけを公開していた。
+  - vkimage が API 1.1 を求めていた（q1485、板 81）。
+  - libc の fscanf が 1 行しか読まなかった（BUG-344、gpu-selftest は回避。q1489、板 83）。
+- **compute の原因**: PDS program の差。Mesa の形（local id の unified store への DOUTW、task issue の cc bit、base workgroup の add）なら 128 workgroup で 4096/4096（板 87、P2 q1496 で既定に取り込み中）。
+- **除外した項目**（括弧は板の番号か Queue）:
+  - PC set・register range（47・55・57、q1449〜q1459）。
+  - FW の context switch の flags・profile（59・66、q1463）。
+  - static switch state を 0 にする（49、q1450）。
+  - border colour table（61、q1468）、resume size を 0 にする（62）、single-core の flag（63・76）。
+  - PM_META_PROTECT（q1471）、region header の heap（67、q1472）。
+  - 594 MHz（73、q1478）、起動前の EVENT_CLEAR（70、q1477）。
+  - HWRT の record の全 field（q1480、一致）、起動列・config（q1475、一致）、geometry の register 値（q1482、IMG の capture と一致）。
+- **残り**: fence kernel の lockup（K0 の shared の確保と sd_type の差が候補）、mesa-form の probe の整理、compute-check の診断の行の整理、BUG-344、Linux の walk（この kernel では /dev/mem・/proc/kcore が使えず、kernel module が要る。q1495）。
 
 ## 範囲
 

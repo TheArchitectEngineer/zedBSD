@@ -7,6 +7,18 @@
 - 起点（2026-10-19 ユーザー）: 「VisionFive2はまずフレームバッファ、SDカードを実装して、rootfsから起動できるところまで持って行きます。USBキーボードで操作できるようにします。LANとサウンドとNVMeも使えるようにします。NVMe SSDがボードにつけてあり、テスト可能です。ここまでのphaseを作ってください。そのあと、PowerVRのドライバを独立WSで作ります。最終的に、VF2でkeilandを動かして、OSを完全に動作させます。」
 - 担当: P2（設計 p001、2026-10-19 q1316）。
 
+## 現在の状態（2026-10-21、再開点）
+
+- 板（VF2 の実機）: render の TA・3D、kernel の render check（三角形、3156 pixel）、job check（色と depth）が通った（板 78）。
+- userland の `gpu-selftest` は 12 ok / 1 fail（板 83〜85）。kernel・node・image・clear・copy・draw・sample・depth・present-clear・present（vkdemo）などが ok で、HDMI で vkdemo の cube を目視した。残る fail は compute。
+- TA の lockup の原因は、stream の末尾に Mesa の terminate の PPP state の block が無かったこと（q1484、板 77・78）。
+- compute の原因は PDS program の差（local id の unified store への DOUTW、task issue の cc bit、base workgroup の add）。Mesa の形の PDS なら 128 workgroup で 4096/4096 が通った（板 87）。既定への取り込みは P2 の q1496。
+- 再開点:
+  - compute の既定の取り込み（q1496）の板の確認。
+  - p010q の残り: fence kernel の lockup（Mesa の K0 の shared の確保の kernel と sd_type の差が候補）、mesa-form の probe の整理、compute-check の診断の行を `POWERVR_DIAGNOSTICS` の下へ。
+  - BUG-344（libc の fscanf、別の WS）。
+  - UAT の SD image は main の dd8a79213 で作り直し済み。
+
 ## 完了の条件（案、着手の時に設計で確定する）
 
 1. JH7110 の PowerVR BXE-4-32 を kernel の driver が認識し、電源・clock・reset を入れ、firmware を載せて GPU を起こす。
@@ -47,7 +59,7 @@
 | [p010j](phase010j/phase.md) | depth と vkdemo の offscreen | O-p010i | in-progress（2026-10-20 P2 q1387-i01 前半: render-depth.c（ZLS の word・clear の値）、render-pass.c の depth の受け入れ（部分の area は load を足す、版 2.3）、vkstage の depth の pipeline の compile、host 試験 12 PASS、M9 12 word 0 mismatch、VF2 build warning 0。fragment の command への受け渡しは後半。q1388-i01（P1）: ZLS を render-job の fragment の command に、depth の ENOTSUP を外した） |
 | [p010k1](phase010k1/phase.md) | WSI の readback の道（clear だけ、compiler なし） | O-p010f、O-P007 | in-progress（2026-10-20 P2 q1386-i01: libvulkan の readback の道が PowerVR で通る順を確かめた（vk の features の変更は不要）、vkstage present を semaphore・fence・3 秒に、VF2 の image build warning 0。実機は P1 の q1385 の後） |
 | [p010p](phase010p/phase.md) | format の広げ（純粋な関数の側） | O-p010f | in-progress（2026-10-20 P2 q1389-i01: R32_SFLOAT・R16G16B16A16_SFLOAT・float の texture code、clear の half/raw の pack。host 全 PASS、f16 は Mesa と一致、VF2 warning 0。raw 64/128 copy・PBE の F16 は残り。q1388-i01（P1）: gpu-selftest の present（vkdemo、depth が通るまで skip(depth)）、vkdemo を VF2 の試験の image に） |
-| [p010q](phase010q/phase.md) | 実機の前の点検（cache・MMU・SLC・順・時間切れの後） | O-p010n、O-p010e、O-p010f | in-progress（2026-10-20 P1 q1395-i01: 全部の kick の道を mainline・Mesa に照らした表、kick の拒否（quarantine・stopping・lost・isolated・abandoned）を render・transfer・compute に足した。build warning 0、p009 175/0、p010 0 failed。q1398-i01: vkstage・vkdemo の frame の host 試験を p009 に足し、pipeline の static な viewport・scissor が使われていなかった誤りを render-job.c で直した。p009 509/2（Keiland の古い期待 2 つ、P2 q1397）、p010 0 failed、VF2 warning 0。実機は未。q1399-i01 P2: P1 の job と P2 の関数の約束の点検、render の CLEAR の値が float の bit のまま背景に入っていた誤りを render-pass.c で直した（format の clear の word に）。p009 511/0、VF2 warning 0。P1 へ vertex の DMA の words と blit の odd stride。q1401-i01 P1: vertex の DMA を format の大きさに（不足は既定）、奇数 stride の linear の dst への blit を行ごとに。p009 511/0、p010 0 failed、VF2 warning 0） |
+| [p010q](phase010q/phase.md) | 実機の前の点検（cache・MMU・SLC・順・時間切れの後） | O-p010n、O-p010e、O-p010f | in-progress（2026-10-21: 板で TA・3D・render check・job check が通り（板 78、q1484 の terminate state）、gpu-selftest は 12/13。残り: compute の既定の PDS（P2 q1496）、fence kernel の lockup、mesa-form の probe の整理、compute-check の診断の行の整理、BUG-344。結論の要約は phase.md の先頭。以前の経過: 2026-10-20 P1 q1395-i01: 全部の kick の道を mainline・Mesa に照らした表、kick の拒否（quarantine・stopping・lost・isolated・abandoned）を render・transfer・compute に足した。build warning 0、p009 175/0、p010 0 failed。q1398-i01: vkstage・vkdemo の frame の host 試験を p009 に足し、pipeline の static な viewport・scissor が使われていなかった誤りを render-job.c で直した。p009 509/2（Keiland の古い期待 2 つ、P2 q1397）、p010 0 failed、VF2 warning 0。実機は未。q1399-i01 P2: P1 の job と P2 の関数の約束の点検、render の CLEAR の値が float の bit のまま背景に入っていた誤りを render-pass.c で直した（format の clear の word に）。p009 511/0、VF2 warning 0。P1 へ vertex の DMA の words と blit の odd stride。q1401-i01 P1: vertex の DMA を format の大きさに（不足は既定）、奇数 stride の linear の dst への blit を行ごとに。p009 511/0、p010 0 failed、VF2 warning 0） |
 | [p010k2](phase010k2/phase.md) | readback の道で vkdemo が画面に | O-p010k1、O-p010j | planning（2026-10-20 P1 q1391-i01: host の llvmpipe で vkdemo の期待の画（背景 101828、中央 e06895 @0 ms）と present の判定・UAT の文面の案） |
 | [p010l](phase010l/phase.md) | WSI の shared の道と p007 の import の試験（WS277 R6）、dc8200 の zero copy | O-p010k2、O-p010o | in-progress（2026-10-20 P2 q1390-i01: external の image・export・import・identity を受ける、export/import は SLC_BYPASS、linear の SAMPLED は 1 か所の切り替えで off のまま。p009 の試験は切り替え 0・1 で PASS、VF2 warning 0。実機は未実施） |
 | p010m | 仕上げ、T1 の回帰、p010 の受け入れ（vkdemo と gpu-selftest の clear・copy・draw、D-P7） | O-p010l | planning（同） |
