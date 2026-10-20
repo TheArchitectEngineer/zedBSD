@@ -93,7 +93,8 @@ open_device(
 	memset(&application, 0, sizeof(application));
 	application.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
 	application.pApplicationName = "vkimage";
-	application.apiVersion = VK_MAKE_VERSION(1, 1, 0);
+	/* 1.0: the library exposes the 1.0 API and refuses a later one (VK_ERROR_INCOMPATIBLE_DRIVER); nothing here needs 1.1. */
+	application.apiVersion = VK_API_VERSION_1_0;
 	memset(&instance_info, 0, sizeof(instance_info));
 	instance_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
 	instance_info.pApplicationInfo = &application;

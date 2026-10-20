@@ -555,7 +555,8 @@ memory_properties(
 /*
  * vkGetPhysicalDeviceQueueFamilyProperties: [physical][present][count]
  * [array count] -> [present][count][array count][families].  One family
- * of one queue that computes.
+ * of one queue that draws, computes and copies: the executor runs render
+ * passes (vk-queue.c run_job), dispatches and transfers on its one queue.
  */
 static int
 families(
@@ -580,7 +581,7 @@ families(
 	drv_i915_wire_reply_u64(reply, array_count);
 	for (index = 0; index < array_count; index++) {
 		kern_memset(&family, 0, sizeof(family));
-		family.queueFlags = VK_QUEUE_COMPUTE_BIT;
+		family.queueFlags = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT;
 		family.queueCount = 1;
 		family.minImageTransferGranularity.width = 1;
 		family.minImageTransferGranularity.height = 1;
