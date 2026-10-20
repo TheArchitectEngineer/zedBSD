@@ -45,6 +45,7 @@
 #include "drivers/gpu/powervr/render-private.h"
 #include "drivers/gpu/powervr/interface.h"
 #include "drivers/gpu/powervr/compute-program.h"
+#include "drivers/gpu/powervr/render-job.h"
 #include "drivers/gpu/powervr/vk.h"
 
 /* The most submits of one vkQueueSubmit, and the most command buffers and semaphores of one submit. */
@@ -78,6 +79,9 @@ _Static_assert(QUEUE_PDS_OFFSET == POWERVR_PROGRAM_HEAP_START && QUEUE_PDS_BYTES
 /* The data sequencer temporaries a compute kernel's inputs take, and the fence kernel's task size. */
 #define QUEUE_PDS_INPUTS		3U
 #define QUEUE_FENCE_INSTANCES		8U
+
+/* The most render pass instances one command buffer runs. */
+#define QUEUE_JOBS_MAX			8U
 
 /* How long a submission waits for the core. */
 #define QUEUE_WAIT_MS			2000U
@@ -125,6 +129,8 @@ static int build_fence(struct submission *build);
 static void put_stream_words(struct submission *build, const uint32_t *words, unsigned count);
 static void put_word(struct powervr_buffer *buffer, uint32_t offset, uint32_t word);
 static int run(struct submission *build);
+static int run_flush(struct submission *build);
+static int run_job(struct submission *build, const struct powervr_render_job *job);
 
 /*
  * Runs a submission, fence or semaphore command; *handled stays clear for
@@ -629,16 +635,43 @@ map_program_buffer(
 	return 0;
 }
 
-/* Adds one command buffer's dispatches to the stream, with the pipeline and sets each one finds bound. */
+/*
+ * Adds one command buffer's dispatches to the stream, with the pipeline
+ * and sets each one finds bound, and runs its render pass instances in
+ * their places: the dispatches before an instance run first.
+ */
 static int
 build_command_buffer(
 	struct submission *build,
 	const struct powervr_vk_command_buffer *command)
 {
 	const struct powervr_vk_record *entry;
+	struct powervr_render_job *jobs;
+	uint32_t job_count;
+	uint32_t begins;
+	uint32_t next_job;
 	uint32_t index;
 	uint32_t set;
 	int error;
+
+	/* The render pass instances as jobs, when the command buffer has any. */
+	begins = 0;
+	for (index = 0; index < command->record_count; index++) {
+		if (command->records[index].opcode == GPU_OP_CMD_BEGIN_RENDER_PASS)
+			begins++;
+	}
+	jobs = NULL;
+	job_count = 0;
+	if (begins != 0) {
+		jobs = kern_calloc(QUEUE_JOBS_MAX, sizeof(*jobs));
+		if (jobs == NULL)
+			return ENOMEM;
+		error = powervr_vk_render_jobs(command, jobs, QUEUE_JOBS_MAX, &job_count);
+		if (error != 0) {
+			kern_free(jobs);
+			return error;
+		}
+	}
 
 	/* Nothing is bound at a command buffer's start. */
 	build->pipeline = NULL;
@@ -646,7 +679,9 @@ build_command_buffer(
 		build->sets[set] = NULL;
 
 	/* Each record in order. */
-	for (index = 0; index < command->record_count; index++) {
+	next_job = 0;
+	error = 0;
+	for (index = 0; error == 0 && index < command->record_count; index++) {
 		entry = &command->records[index];
 		if (entry->opcode == GPU_OP_CMD_BIND_PIPELINE) {
 			build->pipeline = entry->objects[0]->payload;
@@ -658,15 +693,27 @@ build_command_buffer(
 			}
 		} else if (entry->opcode == GPU_OP_CMD_DISPATCH) {
 			error = build_dispatch(build, entry->values[0]);
-			if (error != 0)
-				return error;
 		} else if (entry->opcode == GPU_OP_CMD_BEGIN_RENDER_PASS) {
-			/* A render pass instance needs the render kick, not built yet (ws269-p010e): refused, not skipped. */
-			return ENOTSUP;
+			/* The dispatches before it run first; an instance dropped from the jobs runs nothing. */
+			error = run_flush(build);
+			if (error == 0 && job_count == begins)
+				error = run_job(build, &jobs[next_job++]);
 		}
 	}
 
-	/* Succeeded: the command buffer's dispatches are in the stream. */
+	/* Instances dropped from the jobs: the rest run after the command buffer's dispatches before them. */
+	while (error == 0 && job_count != begins && next_job < job_count) {
+		error = run_flush(build);
+		if (error == 0)
+			error = run_job(build, &jobs[next_job++]);
+	}
+
+	/* The jobs' bookkeeping goes. */
+	kern_free(jobs);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the command buffer's dispatches are in the stream and its render passes ran. */
 	return 0;
 }
 
@@ -1001,5 +1048,51 @@ run(
 
 	/* Succeeded: the core finished the stream; the first time is the compute stage's ok. */
 	powervr_stage_ok(POWERVR_STAGE_COMPUTE);
+	return 0;
+}
+
+/* Runs the dispatches the stream holds so far, and starts the stream again. */
+static int
+run_flush(
+	struct submission *build)
+{
+	int error;
+
+	/* Nothing to run. */
+	if (build->kernels == 0)
+		return 0;
+
+	/* The stream, then an empty one. */
+	error = run(build);
+	if (error != 0)
+		return error;
+
+	build->stream_at = QUEUE_STREAM_FIRST;
+	build->kernels = 0;
+
+	/* Succeeded: the dispatches ran. */
+	return 0;
+}
+
+/* Runs one render pass instance; one that does not finish leaves the session abandoned. */
+static int
+run_job(
+	struct submission *build,
+	const struct powervr_render_job *job)
+{
+	struct powervr_session *owner;
+	int error;
+
+	/* The job on the session's render context. */
+	owner = build->session->owner;
+	error = powervr_render_job_run(owner->render, owner, job);
+	if (error == ETIMEDOUT)
+		build->session->abandoned = true;
+	if (error != 0) {
+		kern_logf("powervr: vk: a render pass did not run (%d)\n", error);
+		return error;
+	}
+
+	/* Succeeded: the instance ran. */
 	return 0;
 }

@@ -23,8 +23,9 @@ done
 cc -std=c11 -O1 -Wall -Wextra -Werror -I"$root/include" -I"$out/inc" -I"$root/userland/desktop/libvulkan" \
 	-c "$here/frame-host.c" -o "$out/vk/frame-host.o"
 objects=""
-for file in vk-object vk-stream vk-device vk-memory vk-image image-state descriptor-set data-program vk-layout vk-command vk-queue shader-spirv shader-spirv-interface shader-spirv-control shader-spirv-instruction shader-backend compute-program usc-encode pds-encode; do
-	cc -std=c11 -O1 -Wall -Wextra -Werror -I"$root/include" -I"$root/src" \
+for file in vk-object vk-stream vk-device vk-memory vk-image image-state descriptor-set data-program vk-layout vk-command vk-queue vk-pass render-pass render-program shader-spirv shader-spirv-interface shader-spirv-control shader-spirv-instruction shader-backend compute-program usc-encode pds-encode; do
+	# gcc's -O1 reads the wire's decoded area in vk-pass.c as maybe unset (the kernel's clang does not).
+	cc -std=c11 -O1 -Wall -Wextra -Werror -Wno-maybe-uninitialized -I"$root/include" -I"$root/src" \
 		-c "$root/src/drivers/gpu/powervr/$file.c" -o "$out/vk/$file.o"
 	objects="$objects $out/vk/$file.o"
 done
