@@ -461,7 +461,11 @@ powervr_compute_temps_program(
  *                  the multiply-add;
  *   ADDRESS        each instance writes its number to the word at base
  *                  plus four times it (the temporaries program without
- *                  its fill).
+ *                  its fill);
+ *   STRIDE_16, _64, _128  the same with 16, 64 or 128 bytes between the
+ *                  instances' words (memory granules);
+ *   ADDRESS_WAIT   ADDRESS with a wait for the data return counter
+ *                  between the address's computation and the store.
  *
  * Procedure referenced:
  * Mesa 26.2.5 src/imagination/pco/pco_trans_nir.c (trans_store_global
@@ -476,11 +480,15 @@ powervr_compute_probe_program(
 	size_t *length)
 {
 	struct powervr_usc_group groups[12];
+	uint32_t stride;
 	size_t count;
 	int error;
 
 	/* Refuses an unknown probe, a misaligned base or one whose words would wrap. */
-	if (kind >= POWERVR_COMPUTE_PROBES || (base & 3U) != 0 || (base & 0xffffffffULL) + POWERVR_COMPUTE_INSTANCES * 4U > 0x100000000ULL)
+	if (kind >= POWERVR_COMPUTE_PROBES || (base & 3U) != 0)
+		return EINVAL;
+	stride = powervr_compute_probe_stride(kind);
+	if ((base & 0xffffffffULL) + (uint64_t)POWERVR_COMPUTE_INSTANCES * stride > 0x100000000ULL)
 		return EINVAL;
 
 	/* The address in r0 and r1. */
@@ -511,11 +519,13 @@ powervr_compute_probe_program(
 	} else if (error == 0) {
 		error = special_group(&groups[count++], 5, USC_INSTANCE_NUMBER);
 		if (error == 0)
-			error = immediate_group(&groups[count++], 4, 4);
+			error = immediate_group(&groups[count++], 4, stride);
 		if (error == 0)
 			error = multiply_add_group(&groups[count++], 0, 5, 4, 0);
 		if (error == 0)
 			error = pass_group(&groups[count++], 2, POWERVR_USC_BANK_TEMPORARY, 5);
+		if (error == 0 && kind == POWERVR_COMPUTE_PROBE_ADDRESS_WAIT)
+			error = wait_group(&groups[count++]);
 	}
 
 	/* The store, the wait for it, the end. */
@@ -535,6 +545,23 @@ powervr_compute_probe_program(
 
 	/* Succeeded: the program. */
 	return 0;
+}
+
+/* Reports the bytes between two instances' words in a probe: 16, 64 or 128 for the strided ones, else 4. */
+uint32_t
+powervr_compute_probe_stride(
+	unsigned kind)
+{
+	/* The strided probes. */
+	if (kind == POWERVR_COMPUTE_PROBE_STRIDE_16)
+		return 16;
+	if (kind == POWERVR_COMPUTE_PROBE_STRIDE_64)
+		return 64;
+	if (kind == POWERVR_COMPUTE_PROBE_STRIDE_128)
+		return 128;
+
+	/* Succeeded: a word apart. */
+	return 4;
 }
 
 /*

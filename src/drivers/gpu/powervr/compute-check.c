@@ -77,11 +77,11 @@
 
 /* The shading cluster buffer: one 32 KiB room per program. */
 #define USC_ROOM		0x8000U
-#define USC_PROGRAMS		(CHECK_ROUNDS + 2U)
+#define USC_PROGRAMS		(CHECK_ROUNDS + 3U)
 
 /*
- * The probes' room, after the temporaries program's: each probe program
- * and the two short store programs 4 KiB apart in it.
+ * The probes' rooms, after the temporaries program's: each probe program
+ * and the two short store programs 4 KiB apart in them.
  */
 #define USC_PROBE_ROOM		((CHECK_ROUNDS + 1U) * USC_ROOM)
 #define USC_PROBE_SPACING	0x1000U
@@ -112,7 +112,7 @@
  * programs' windows.
  */
 #define PROBE_OFFSET		(TEMPS_OFFSET + 0x1000U)
-#define PROBE_SPACING		0x100U
+#define PROBE_SPACING		0x1000U
 #define STEPS_ONE_OFFSET	0x180000U
 #define STEPS_FOUR_OFFSET	0x190000U
 
@@ -185,6 +185,7 @@ static int write_programs(struct check_state *state);
 static int write_kick(struct check_state *state, unsigned kick, uint32_t usc_place, unsigned temporaries, unsigned field);
 static int write_probes(struct check_state *state, uint8_t *code);
 static void run_probes(struct check_state *state);
+static uint32_t own_words(struct check_state *state, unsigned kind);
 static int run_store_window(struct check_state *state, unsigned kick_index, uint32_t offset, uint32_t words, unsigned *written);
 static int write_probe_streams(struct check_state *state);
 static int probe_kick(struct check_state *state, unsigned kick_index, const char *what);
@@ -716,7 +717,7 @@ run_probes(
 	/* Each probe over words no instance writes. */
 	for (kind = 0; kind < POWERVR_COMPUTE_PROBES; kind++) {
 		words = state->alias + (PROBE_OFFSET + kind * PROBE_SPACING) / 4U;
-		for (word = 0; word < POWERVR_COMPUTE_INSTANCES; word++)
+		for (word = 0; word < PROBE_SPACING / 4U; word++)
 			words[word] = 0xffffffffU;
 		errors[kind] = kick(state, KICK_PROBE_FIRST + kind);
 		values[kind] = words[0];
@@ -727,12 +728,8 @@ run_probes(
 	}
 
 	/* The address probe's words: those holding their own number. */
+	mask = own_words(state, POWERVR_COMPUTE_PROBE_ADDRESS);
 	words = state->alias + (PROBE_OFFSET + POWERVR_COMPUTE_PROBE_ADDRESS * PROBE_SPACING) / 4U;
-	mask = 0;
-	for (word = 0; word < POWERVR_COMPUTE_INSTANCES; word++) {
-		if (words[word] == word)
-			mask |= 1U << word;
-	}
 	kern_logf("powervr: compute probes: madd %u (want 22, %d), instance last %u (%d), instance*4 last %u (%d), own words %08x [1]=%08x [2]=%08x [31]=%08x (%d)\n",
 		  values[POWERVR_COMPUTE_PROBE_MADD],
 		  errors[POWERVR_COMPUTE_PROBE_MADD],
@@ -745,6 +742,17 @@ run_probes(
 		  words[2],
 		  words[31],
 		  errors[POWERVR_COMPUTE_PROBE_ADDRESS]);
+
+	/* The strided and waiting probes: which instances' words hold their number. */
+	kern_logf("powervr: compute probes: own words at stride 16 %08x (%d), 64 %08x (%d), 128 %08x (%d), with a wait %08x (%d)\n",
+		  own_words(state, POWERVR_COMPUTE_PROBE_STRIDE_16),
+		  errors[POWERVR_COMPUTE_PROBE_STRIDE_16],
+		  own_words(state, POWERVR_COMPUTE_PROBE_STRIDE_64),
+		  errors[POWERVR_COMPUTE_PROBE_STRIDE_64],
+		  own_words(state, POWERVR_COMPUTE_PROBE_STRIDE_128),
+		  errors[POWERVR_COMPUTE_PROBE_STRIDE_128],
+		  own_words(state, POWERVR_COMPUTE_PROBE_ADDRESS_WAIT),
+		  errors[POWERVR_COMPUTE_PROBE_ADDRESS_WAIT]);
 
 	/* The short stores: one step (32 words) and four (128). */
 	one = 0;
@@ -762,6 +770,30 @@ run_probes(
 		  errors[POWERVR_COMPUTE_PROBES],
 		  four,
 		  errors[POWERVR_COMPUTE_PROBES + 1U]);
+}
+
+/* Reports, as a mask, which instances' words of a probe hold their own number. */
+static uint32_t
+own_words(
+	struct check_state *state,
+	unsigned kind)
+{
+	volatile uint32_t *words;
+	uint32_t stride;
+	uint32_t mask;
+	uint32_t instance;
+
+	/* Each instance's word at its stride. */
+	words = state->alias + (PROBE_OFFSET + kind * PROBE_SPACING) / 4U;
+	stride = powervr_compute_probe_stride(kind) / 4U;
+	mask = 0;
+	for (instance = 0; instance < POWERVR_COMPUTE_INSTANCES; instance++) {
+		if (words[instance * stride] == instance)
+			mask |= 1U << instance;
+	}
+
+	/* Succeeded: the mask. */
+	return mask;
 }
 
 /*
