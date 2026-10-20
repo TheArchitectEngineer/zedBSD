@@ -145,9 +145,18 @@ static void watch_thread(void *argument);
 #define DUMP_ASSERT_INFO		224U
 #define DUMP_ASSERT_LINE		424U
 #define DUMP_ASSERT_TEXT		200U
-#define DUMP_TRACE_LAST_WORDS		128U
-#define DUMP_TRACE_ALL_WORDS		2048U
-#define DUMP_TRACE_HEAD_WORDS		256U
+#define DUMP_TRACE_LAST_WORDS		(POWERVR_RENDER_CHECK_FULL_TRACE ? 128U : 64U)
+
+/*
+ * Whether a dump prints the whole trace since the kick's mark (1), or
+ * its first and last 64 words (0, the default, so the kernel's message
+ * ring keeps the lines before the dump).
+ */
+#ifndef POWERVR_RENDER_CHECK_FULL_TRACE
+#define POWERVR_RENDER_CHECK_FULL_TRACE	0
+#endif
+#define DUMP_TRACE_ALL_WORDS		(POWERVR_RENDER_CHECK_FULL_TRACE ? 2048U : 128U)
+#define DUMP_TRACE_HEAD_WORDS		(POWERVR_RENDER_CHECK_FULL_TRACE ? 256U : 64U)
 #define DUMP_OS_DATA_INTERRUPTS		560U
 #define DUMP_SYSTEM_DATA_POWER		8U
 #define DUMP_SYSTEM_INIT_STARTED_TIME	360U

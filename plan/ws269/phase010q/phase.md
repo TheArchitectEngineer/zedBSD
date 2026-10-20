@@ -898,3 +898,11 @@ FW の trace の BIF の行（mainline の sf の表）:
 - 逆に、compute の probe を新しい session（set 0 = range 1 を取る）で流し、compute も range 1 で止まるかを見る。range の番号だけで決まるなら、原因は catalogue の register 1 の扱い（FW の設定、または XE の OSID の bank の対応）に絞れる。
 
 source の変更は無し。
+
+## q1447-i01（P1、2026-10-20）: page catalogue の set の切り分けと trace の dump の短縮
+
+- split 1: render check の最初に transfer check（自分の session で clear と copy）を流してから、render の session を開いて TA を kick する。行 `render check: transfer before the render`。
+  - transfer の session は TA の前に閉じるので、その memory context は deactivate される。FW がその後も set 0 を前の context に結び付けて残すか（TA が set 1 = range 2 を得るか）は、trace の BIF の行で見る。
+- split 2: render の後に、もう一度 transfer check を新しい session で流す。行 `render check: transfer after the render`。TA が手放した set を transfer が取り、それで動くかを見る。job check はその後。
+- dump の trace: 既定は、kick の印からの先頭 64 word と末尾 64 word（128 word を越えた時、間の数を 1 行）。全部を出すのは `POWERVR_RENDER_CHECK_FULL_TRACE=1` で build した時（上限 2048 word）。kernel の message の ring が dump で溢れて、前の行が消えないようにする。
+- 確かめ: 試験の image の config の vmunix は rc 0、warning 0。実機は未。
