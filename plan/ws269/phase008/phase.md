@@ -556,3 +556,36 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
   - temps の行（fours・twos・wide）。
   - その後、手で `vkcompute`。
 - 片付け（Q1 に依頼）: `build/p027/`。
+
+## q1452-i01（P2、2026-10-20）: task の field は使う register より 1 つ多く
+
+- 板の 12 回目（vf2-dmesg48）:
+  - kernel は OK、store は 4 step まで 128/128、wide の temps（field 16）は 0/32。
+  - fours（8 register の program に field 2＝8 register）は fault 0x80003e2000、32/32 wrong。
+- Mesa の確かめ:
+  - `pco_ra.c` の `func->temps` は「使う最大の register の番号+1」（`temp_alloc_offset` を含む）。
+  - `pvr_pds_setup_doutu` は、それを `DIV_ROUND_UP(temps, 4)` にする。
+  - 余白は見当たらない。
+- 板で分かったこと:
+  - 15 register の store は 4 block（16 register）で通る。
+  - 8 register の temps は 2 block（8 register、ちょうど）で重なる。
+  - 「使う register＋1」を 4 で割って切り上げれば、両方に合う。1 つ余分に要る理由は分からない（hardware が 1 つ予約する、instance の割り当ての境、など）。
+- 直し:
+  - `compute-program.{c,h}`: `powervr_compute_task_field(temporaries, &field)` を足した。`ceil((temporaries + 1) / 4)` で、comment に理由を書いた。
+  - `compute-check.c`: store・probe・短い store の field をこの式にした（store 16 → 5、probe 15 → 4）。
+  - temps の試験を「単位の確認」に直した:
+    - driver の field（`powervr_compute_task_field(8)`＝3）を先に流す。
+    - ちょうど（2）は最後に流す。fault しても後を潰さないようにするため。
+    - 行は `powervr: compute temporaries: exact field N/32 wrong (e), one more N/32 wrong (e): READING`。
+    - 読みは「OK, one register more than used is needed」「OK, the exact field is enough too」「BROKEN, the driver's field failed」のどれか。
+  - host 試験（p008）に task field の 8→3、15→4、16→5 を足した。
+- vk の executor（P1 の `vk-queue.c`、Q1 へ）:
+  - 今は `powervr_compute_temporaries_field(temps, 2, &field)`、つまり `ceil(temps / 2)` で、どの temps でも `ceil((temps + 1) / 4)` 以上なので、今のままでも足りる。
+  - 揃えるなら `powervr_compute_task_field(temps, &field)` に替える。式は compute-program の 1 か所に置いた。
+
+| 確認 | 結果 |
+| --- | --- |
+| p008 の host | encode 94/0、compute 76/0 |
+| VF2 の vmunix（`plan/ws269/tests/p008/config-visionfive2-compute.mk`、`build/p028/vf2/vmunix`） | rc 0、warning 0 |
+
+- 片付け（Q1 に依頼）: `build/p028/`。

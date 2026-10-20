@@ -298,13 +298,13 @@ powervr_compute_check(
 		return;
 	}
 
-	/* The temporaries field, read both ways. */
+	/* The temporaries field: the driver's (one register more) first, the exact one last, as it may fault. */
 	four_wrong = 0;
 	two_wrong = 0;
-	four_error = run_temps(&state, KICK_TEMPS_FOUR, &four_wrong);
-	two_error = 0;
-	if (four_error != ETIMEDOUT)
-		two_error = run_temps(&state, KICK_TEMPS_TWO, &two_wrong);
+	two_error = run_temps(&state, KICK_TEMPS_TWO, &two_wrong);
+	four_error = 0;
+	if (two_error != ETIMEDOUT)
+		four_error = run_temps(&state, KICK_TEMPS_FOUR, &four_wrong);
 	report_temps(four_error, four_wrong, two_error, two_wrong);
 	if (four_error == ETIMEDOUT || two_error == ETIMEDOUT) {
 		kern_logf("powervr: compute check: stopped, its memory left to the core\n");
@@ -572,9 +572,10 @@ write_programs(
 	/*
 	 * One kick per round, issuing the round's store program.  Its field
 	 * counts the temporaries in blocks of four, as Mesa's task issue does
-	 * (pvr_pds_setup_doutu), with no unified store inputs.
+	 * (pvr_pds_setup_doutu) for one register more than the program uses
+	 * (powervr_compute_task_field), with no unified store inputs.
 	 */
-	error = powervr_compute_temporaries_field(POWERVR_COMPUTE_STORE_TEMPORARIES, 4, &store_field);
+	error = powervr_compute_task_field(POWERVR_COMPUTE_STORE_TEMPORARIES, &store_field);
 	if (error != 0)
 		return error;
 
@@ -584,12 +585,16 @@ write_programs(
 			return error;
 	}
 
-	/* The temporaries program issued with the field counted in fours, then in twos. */
+	/*
+	 * The temporaries program issued with exactly its eight registers in
+	 * blocks of four (field 2), and with one register more (field 3, the
+	 * driver's field).
+	 */
 	error = powervr_compute_temporaries_field(POWERVR_COMPUTE_TEMPS_TEMPORARIES, 4, &field_four);
 	if (error != 0)
 		return error;
 
-	error = powervr_compute_temporaries_field(POWERVR_COMPUTE_TEMPS_TEMPORARIES, 2, &field_two);
+	error = powervr_compute_task_field(POWERVR_COMPUTE_TEMPS_TEMPORARIES, &field_two);
 	if (error != 0)
 		return error;
 
@@ -709,7 +714,7 @@ write_probes(
 	int error;
 
 	/* The probes' field: the wide one. */
-	error = powervr_compute_temporaries_field(POWERVR_COMPUTE_PROBE_TEMPORARIES, 4, &field);
+	error = powervr_compute_task_field(POWERVR_COMPUTE_PROBE_TEMPORARIES, &field);
 	if (error != 0)
 		return error;
 
@@ -731,7 +736,7 @@ write_probes(
 		return error;
 
 	put_bytes(state->usc, USC_STEPS_ONE, code, length);
-	error = powervr_compute_temporaries_field(POWERVR_COMPUTE_STORE_TEMPORARIES, 4, &field);
+	error = powervr_compute_task_field(POWERVR_COMPUTE_STORE_TEMPORARIES, &field);
 	if (error != 0)
 		return error;
 
@@ -1359,19 +1364,17 @@ report_temps(
 {
 	const char *reading;
 
-	/* Reads the two outcomes. */
-	if (four_error != 0 || two_error != 0) {
-		reading = "NOT RUN";
-	} else if (two_wrong != 0) {
-		reading = "BROKEN, the larger field failed";
-	} else if (four_wrong != 0) {
-		reading = "BLOCKS OF 2";
+	/* Reads the two outcomes: the driver's field must work; the exact one says whether the extra register is needed. */
+	if (two_error != 0 || two_wrong != 0) {
+		reading = "BROKEN, the driver's field failed";
+	} else if (four_error != 0 || four_wrong != 0) {
+		reading = "OK, one register more than used is needed";
 	} else {
-		reading = "INCONCLUSIVE, no clobber seen (blocks of 4 not excluded)";
+		reading = "OK, the exact field is enough too";
 	}
 
 	/* Reports both counts and the reading. */
-	kern_logf("powervr: compute temporaries: fours %u/%u wrong (%d), twos %u/%u wrong (%d): %s\n",
+	kern_logf("powervr: compute temporaries: exact field %u/%u wrong (%d), one more %u/%u wrong (%d): %s\n",
 		  four_wrong,
 		  (unsigned)POWERVR_COMPUTE_INSTANCES,
 		  four_error,
