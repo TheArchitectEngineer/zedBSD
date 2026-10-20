@@ -58,3 +58,14 @@ transfer の command の組み立て（copy と clear、src/dst の矩形と PBE
 - vkCmdCopyBufferToImage・CopyImageToBuffer・CopyImage・ClearColorImage を vk-command.c から job に（奇数の行は 1 行ずつ）、buffer の命令は compute、linear の TRANSFER の features、kernel の transfer check、gpu-selftest の `clear`・`copy` の実機。
 - 8 bit・16 bit の texel（R8・R8G8 の raw の R8_UINT・R8G8_UINT）、sRGB の clear（F16 の pack）、64・128 bit の texel は ENOTSUP のまま（要れば足す）。
 - design-p010.md §6 の FAST_2D の文面（上の「設計からの変更」）。
+
+## q1381-i01（2026-10-20 P2）: 版 2.2 の注記・clear の source format の直し・p010o の blit の組み立て
+
+- **design-p010.md 版 2.2**: §6 に「transfer は FAST_SCALE と背景の object、IPF・FAST_2D は clip blit の道だけ、奇数の row length は 1 行ずつ、EOT は p010e の即値の形」の注記と、§13.1 の表を足した（Q1 が 2026-10-20 に採用）。
+- **直し（q1379-i01 の誤り）**: transfer の PBE の source format を「8 bit unorm は F16」にしていたのは誤り。Mesa の `pvr_pbe_setup_swizzle` が R8G8B8A8・B8G8R8A8 unorm の fill と F16_U8 の pixel（copy・blit）を 8_PER_CHANNEL に戻すので、render と同じ 8_PER_CHANNEL のままにした（直しの前は M9 の私の期待値も同じ誤りで一致していた）。clear の state word 1 は 0x82000。
+- **p010o の blit**（[ws.md](../ws.md) の p010o の前半、この file に記録）:
+  - `POWERVR_TRANSFER_BLIT`: copy と同じ FAST_SCALE と背景の object で、dst は raw でなく自分の format（PBE の norm 1、8_PER_CHANNEL）。
+  - `powervr_transfer_blit_usc`: copy の program の smp の後に pack U8888（scale）を挟む（F16_U8、`nir_pack_unorm_4x8`）。temps 13。4 channel の 8 bit unorm だけ。
+  - `powervr_transfer_blit_words`: source の矩形・dst の矩形・flip x/y・linear から shared 12 word。float は Mesa の `pvr_dma_texture_floats`（FLOATS_4）の比 src/dst と (src.x·dst − src.w·dst.x)/dst（flip は dst の大きさを負に、遠い端を使う）を、整数だけで最近接偶数に丸めた float（`float_from_ratio`）。大きさが同じなら point（`pvr_transfer_set_filter`）。copy の float も同じ関数に寄せた（値は前と同じ）。
+- 確認: host 試験 `transfer-program host test: 22 passed, 0 failed`（blit の word: scale 0.5・flip・1/3 の丸め・同じ大きさの point、blit の program、blit の register）。M9（`build/p010f/m9.c`）`M9: 2104 words/values compared, 2254 fields, 0 mismatches`（前の 77 に、500 件の乱数の矩形の scale・offset を host の float の割り算と比べた 2000 値、linear の sampler、blit の register 2 件）。VF2 の kernel rc=0、warning 0。
+- 残り（p010o の後半）: vkCmdBlitImage から job へ（p010f の後半の組み込みの後）、sRGB・他の format、3D の source。

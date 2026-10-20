@@ -59,3 +59,17 @@ p010n に依らない部分だけ: pixel event の PDS・EOT の USC・static �
 - render check（`CONFIG_POWERVR_RENDER_CHECK`）の clear と三角形、実機の `render check: OK`・`ta`・`3d`。
 - attachment の load の background（`ditr`・`smp` の USC と texture の state の DMA の PDS、§5.4 の表の 1 行）は前半で作っていない（後半か p010g）。
 - depth の ZLS、他の format の PBE（p010g）。
+
+## q1381-i01: attachment の load の background（2026-10-20 P2）
+
+`src/drivers/gpu/powervr/render-load-program.{h,c}`（新規。P1 の q1380 の衝突を避けて render-program.{c,h} とは別の file）:
+
+| 関数 | 中身 | Mesa 26.2.5 の出所 |
+| --- | --- | --- |
+| `powervr_render_load_usc` | load の USC: x_p・y_p（special 97・100）を temp へ、shared 0〜3 の image と 4〜7 の sampler で非正規化の smp、wait、pack U8888（scale）、pixout 0（overlap check、end）。temps 9。4 channel の 8 bit unorm だけ（sRGB 他は ENOTSUP） | `pvr_uscgen_loadop`（rt_load_mask、POS の x・y、image・sampler の state を shared から、attachment の format で store） |
+| `powervr_render_load_words` | shared 8 word: attachment の image state（`powervr_view_words`）と point・clamp・非正規化の sampler（dadjust 0、w の wrap なし） | `pvr_load_op_constants_create_and_upload`、`pvr_sampler_state_for_surface` |
+| `powervr_render_load_shared` | 8 word を shared 0 へ DMA する PDS（data-program.c） | `pvr_load_op_pds_data_create_and_upload` |
+
+- background の 3 word（`pds_bgnd`・`pds_pr_bgnd`）は今の `powervr_render_background_words`（kick の PDS ＋ この shared の program、shared_registers 8）で作れる。
+- 確認: `sh plan/ws269/tests/p010/run.sh OUT` に `render-load-host-test.c` を足して `render-load-program host test: 5 passed, 0 failed`（program を back end の group から作り直した bytes と一致、shared の word、PDS、refusal）。sampler の word は p010f の M9 で Mesa の transfer の sampler と照合済み。VF2 の kernel（`BUILD=build/p010f/vf2 vmunix`）rc=0、warning 0。
+- 未実施: 実機。kick への組み込み（load op LOAD の時の background と `pds_pr_bgnd`）は後半。

@@ -38,7 +38,8 @@
 /* What a transfer job does. */
 enum powervr_transfer_kind {
 	POWERVR_TRANSFER_CLEAR = 0,
-	POWERVR_TRANSFER_COPY
+	POWERVR_TRANSFER_COPY,
+	POWERVR_TRANSFER_BLIT
 };
 
 /*
@@ -67,10 +68,11 @@ struct powervr_transfer_regs {
 /*
  * One transfer job: its kind, the destination and the rectangle written,
  * the clear colour (four float or integer bit patterns) or the source
- * corner the rectangle's corner reads, and where the job's data sequencer
- * programs lie (offsets in the data sequencer heap): the copy program's
- * task, the shared register program's code and data and its data words,
- * and the end-of-tile program's data.
+ * corner the rectangle's corner reads (a blit's source rectangle and
+ * filter go in its shared words, powervr_transfer_blit_words), and where
+ * the job's data sequencer programs lie (offsets in the data sequencer
+ * heap): the copy or blit program's task, the shared register program's
+ * code and data and its data words, and the end-of-tile program's data.
  */
 struct powervr_transfer_job {
 	enum powervr_transfer_kind kind;
@@ -89,7 +91,9 @@ struct powervr_transfer_job {
 const struct powervr_format *powervr_transfer_raw_format(uint32_t texel_bytes);
 bool powervr_transfer_needs_rows(const struct powervr_render_surface *surface, const struct powervr_render_area *area);
 int powervr_transfer_copy_usc(struct powervr_render_usc *program);
+int powervr_transfer_blit_usc(const struct powervr_format *format, struct powervr_render_usc *program);
 int powervr_transfer_shared_words(const struct powervr_view_shape *source, uint32_t source_x, uint32_t source_y, const struct powervr_render_area *area, uint32_t words[POWERVR_TRANSFER_SHARED_WORDS]);
+int powervr_transfer_blit_words(const struct powervr_view_shape *source, const struct powervr_render_area *source_area, const struct powervr_render_area *area, bool flip_x, bool flip_y, bool linear, uint32_t words[POWERVR_TRANSFER_SHARED_WORDS]);
 int powervr_transfer_shared_program(uint64_t words_address, struct powervr_data_shared_program *program);
 int powervr_transfer_clear_colour(const struct powervr_format *format, const uint32_t colour[4], uint32_t packed[4]);
 int powervr_transfer_regs_build(const struct powervr_transfer_job *job, struct powervr_transfer_regs *regs, uint32_t state[2]);

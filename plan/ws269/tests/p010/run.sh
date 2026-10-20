@@ -7,7 +7,8 @@
 # (render-kick-layout.c), and (p010h) the descriptor set bytes and data
 # sequencer programs (descriptor-set.c, data-program.c), and (p010e) the fixed
 # render programs and words (render-program.c), and (p010f) the transfer
-# command words and copy program (transfer-program.c).
+# command words, copy and blit programs (transfer-program.c), and the
+# attachment load background (render-load-program.c).
 #   plan/ws269/tests/p010/run.sh OUTDIR
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
@@ -50,3 +51,11 @@ cc -std=gnu11 -O2 -Wall -Wextra -Werror -I"$root/include" -I"$root/src" \
 	"$root/src/drivers/gpu/powervr/shader-spirv-instruction.c" "$root/src/drivers/gpu/powervr/shader-backend.c" \
 	"$here/transfer-host-test.c" -o "$out/transfer-host-test"
 "$out/transfer-host-test"
+cc -std=gnu11 -O2 -Wall -Wextra -Werror -I"$root/include" -I"$root/src" \
+	"$root/src/drivers/gpu/powervr/render-load-program.c" "$root/src/drivers/gpu/powervr/data-program.c" \
+	"$root/src/drivers/gpu/powervr/pds-encode.c" "$root/src/drivers/gpu/powervr/usc-encode.c" \
+	"$root/src/drivers/gpu/powervr/descriptor-set.c" "$root/src/drivers/gpu/powervr/image-state.c" \
+	"$root/src/drivers/gpu/powervr/shader-spirv.c" "$root/src/drivers/gpu/powervr/shader-spirv-interface.c" \
+	"$root/src/drivers/gpu/powervr/shader-spirv-control.c" "$root/src/drivers/gpu/powervr/shader-spirv-instruction.c" \
+	"$root/src/drivers/gpu/powervr/shader-backend.c" "$here/render-load-host-test.c" -o "$out/render-load-host-test"
+"$out/render-load-host-test"
