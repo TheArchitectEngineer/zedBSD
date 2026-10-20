@@ -105,9 +105,10 @@
 #define DC_PANEL_LOCATION	0x1450U
 #define DC_UNIT_STEP		4U
 
-/* The JH7110 PLIC, for the q1529 diagnostics only. */
+/* The JH7110 PLIC, which the vblank report reads one line of. */
 #define DC_PLIC_BASE		0x0c000000ULL
 #define DC_PLIC_SIZE		0x400000U
+#define DC_PLIC_CONTEXTS	10U
 
 /*
  * The cursor plane of the first panel, and the second panel's offset from
@@ -1005,25 +1006,23 @@ drv_powervr_dc_vblank_report(
 		  newest);
 
 	/*
-	 * q1529 diagnostics: whether the controller raises the interrupt at
-	 * all (enable and pending registers; the read clears pending), and
-	 * whether the panel scans (its position read twice, its config).
+	 * The PLIC's view of the source, the controller's interrupt enable and
+	 * the panel's configuration.  The pending register (0x10) is not read:
+	 * the read clears it, and only the handler may (q1529: a read here ate
+	 * the interrupt the handler waited for).
 	 */
 	plic_report(board_blanks.irq, 0);
-	kern_logf("dc8200: interrupt enable %x (pending not read: the read clears it); panel config %x location %x then %x\n",
+	kern_logf("dc8200: interrupt enable %x, panel config %x\n",
 		  read_control(&board_adoption, DC_INTERRUPT_ENABLE),
-		  read_display(&board_adoption, DC_PANEL_CONFIG + DC_UNIT_STEP * DC_HDMI_PANEL),
-		  read_display(&board_adoption, DC_PANEL_LOCATION + DC_UNIT_STEP * DC_HDMI_PANEL),
-		  read_display(&board_adoption, DC_PANEL_LOCATION + DC_UNIT_STEP * DC_HDMI_PANEL));
+		  read_display(&board_adoption, DC_PANEL_CONFIG + DC_UNIT_STEP * DC_HDMI_PANEL));
 }
 
 /*
- * q1529 diagnostics: the JH7110 PLIC's view of the controller's source,
- * read only but for one completion at the start (complete: a claim of
- * the source left uncompleted holds every later one back): its priority,
- * whether it is pending, and its enable bit and
- * the threshold of each of the first ten contexts (the S-mode contexts of
- * harts 1 to 4 are 2, 4, 6 and 8 when hart 0 has only an M-mode one).
+ * The JH7110 PLIC's view of the controller's source, in one line: its
+ * priority, whether it is pending, and the contexts it is enabled in
+ * (the S-mode ones of harts 1 to 4 are 2, 4, 6 and 8).  With complete set
+ * (once, when the count starts) each enabled context completes the source,
+ * which frees a claim left uncompleted and is ignored otherwise.
  *
  * Values referenced: the RISC-V PLIC specification (priority 4 bytes a
  * source from 0, pending bits from 0x1000, enable blocks of 0x80 a context
@@ -1035,34 +1034,41 @@ plic_report(
 	int irq,
 	int complete)
 {
-	volatile uint8_t *plic;
+	static volatile uint8_t *plic;
 	void *mapped;
 	uint32_t source;
+	uint32_t enabled;
 	unsigned context;
-	uint32_t enable;
-	uint32_t threshold;
 	int error;
 
-	/* The registers, read through a view of their own. */
-	error = kern_device_map(DC_PLIC_BASE, DC_PLIC_SIZE, KERN_DEVICE_UNCACHED, &mapped);
-	if (error != 0 || irq < 0) {
-		kern_logf("dc8200: plic unread (%d)\n", error);
+	/* The registers, through one view of their own made at the first call. */
+	if (irq < 0)
 		return;
+	if (plic == NULL) {
+		error = kern_device_map(DC_PLIC_BASE, DC_PLIC_SIZE, KERN_DEVICE_UNCACHED, &mapped);
+		if (error != 0) {
+			kern_logf("dc8200: plic unread (%d)\n", error);
+			return;
+		}
+		plic = mapped;
 	}
-	plic = mapped;
-	source = (uint32_t)irq;
-	kern_logf("dc8200: plic source %u priority %u pending %u\n", source,
-		  kern_mmio_read32(plic + source * 4U),
-		  (kern_mmio_read32(plic + 0x1000U + (source / 32U) * 4U) >> (source % 32U)) & 1U);
-	for (context = 0; context < 10U; context++) {
-		enable = (kern_mmio_read32(plic + 0x2000U + context * 0x80U + (source / 32U) * 4U) >> (source % 32U)) & 1U;
-		threshold = kern_mmio_read32(plic + 0x200000U + context * 0x1000U);
-		kern_logf("dc8200: plic context %u enable %u threshold %u\n", context, enable, threshold);
 
-		/* At the start, a claim of the source left uncompleted in an enabled context is completed once. */
-		if (complete && enable)
+	/* The contexts the source is enabled in; at the start each completes a claim it may hold. */
+	source = (uint32_t)irq;
+	enabled = 0;
+	for (context = 0; context < DC_PLIC_CONTEXTS; context++) {
+		if (((kern_mmio_read32(plic + 0x2000U + context * 0x80U + (source / 32U) * 4U) >> (source % 32U)) & 1U) == 0)
+			continue;
+		enabled |= 1U << context;
+		if (complete)
 			kern_mmio_write32(plic + 0x200004U + context * 0x1000U, source);
 	}
+
+	/* One line: the priority, whether it is pending, and where it is enabled. */
+	kern_logf("dc8200: plic source %u priority %u pending %u contexts %x\n", source,
+		  kern_mmio_read32(plic + source * 4U),
+		  (kern_mmio_read32(plic + 0x1000U + (source / 32U) * 4U) >> (source % 32U)) & 1U,
+		  enabled);
 }
 
 /* Reads one of the identity registers. */

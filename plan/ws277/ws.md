@@ -89,3 +89,17 @@ D1〜D11 は全部 (a)（推奨どおり）。原文は Master の decisions-log
   - report は DC の pending（0x10、読むと消える）を読まない。PLIC を先に読む。
   - unmask の直後に一度だけ、enable の立っている context の claim/complete register に 95 を書く（完了されずに残った claim が、後の割り込みを止めている場合に外す）。
   - 確認: VF2 の vmunix は rc 0、warning 0、ws277 の host 試験は 0 failures。
+
+### q1529 のまとめ（2026-10-21、P2）
+
+- run 22 で direct scanout が動いた（`frames scanned directly`、`vblank 1 other 1`）。
+  - 原因: 診断の report が DC の AQ_INTR_ACKNOWLEDGE（0x10）を読み、handler が待つ割り込みを先に消していた。
+  - 修正の組: late の vblank start、`kern_irq_unmask`、0x10 を handler の外で読まないこと。
+- 片付け:
+  - report は 1 行の PLIC の要約（priority、pending、enable の context の mask）と、DC の interrupt enable・panel config だけを出し、0x10 は読まない。
+  - PLIC の view は最初の呼び出しで一度だけ作る。
+  - 開始時の claim の complete は残した。仕様の上で、claim されていない source の complete は無視されるので害は無い。
+- cursor plane の確かめ方（次の boot）:
+  - Keiland: `KWL CURSOR_PLANE open plane=… width=64 height=64 …`。`unavailable step=…` が出ないこと。
+  - kernel: lease の終わりに `powervr: display lease N: cursor plane sets S moves M`。pointer を動かして M が増え、S が image の変化の数くらいに留まれば、移動は register の書き込みだけで済んでいる（GPU の frame は要らない）。
+- 未解決: run 22 の `vblank 1` は 1 回だけに見える。lease の間ずっと数が増えていくかは、次の report で確かめる。

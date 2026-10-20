@@ -260,6 +260,8 @@ struct powervr_display {
 	int cursor_shown;
 	int32_t cursor_x;
 	int32_t cursor_y;
+	uint64_t cursor_sets;
+	uint64_t cursor_moves;
 };
 
 /* Declared before the operation tables that name them. */
@@ -1528,6 +1530,10 @@ end_lease(
 		  (unsigned long long)display->sequence);
 
 	/* The lease's cursor goes with it; its image is kept for the next. */
+	kern_logf("powervr: display lease %llu: cursor plane sets %llu moves %llu\n",
+		  (unsigned long long)display->lease, (unsigned long long)display->cursor_sets, (unsigned long long)display->cursor_moves);
+	display->cursor_sets = 0;
+	display->cursor_moves = 0;
 	cursor_off(display);
 
 	/* The screen is free. */
@@ -2012,6 +2018,7 @@ output_cursor_set(
 	}
 	kern_io_write_barrier();
 	display->cursor_image = next;
+	display->cursor_sets++;
 
 	/* A shown cursor takes the new image where it is. */
 	error = 0;
@@ -2051,8 +2058,10 @@ output_cursor_move(
 	display->cursor_x = request->x;
 	display->cursor_y = request->y;
 	error = drv_powervr_dc_cursor(1, display->cursor_runs[display->cursor_image].paddr, request->x, request->y);
-	if (error == 0)
+	if (error == 0) {
 		display->cursor_shown = 1;
+		display->cursor_moves++;
+	}
 
 	mutex_unlock(&display->mutex);
 	return error;
