@@ -1266,3 +1266,13 @@ csbgen（Mesa 25.0.7 の `gen_pack_header.py` の `__pvr_address`: `((addr >> sh
   - RISC-V 向けに UAT の clang の引数で `-fsyntax-only`（warning・error 0）。
   - host で `ppm_header` を取り出し、"P6\n320 240\n255\n" + 画素 1 byte の file を読んで、320・240・255 と次の byte が正しく出ることを確かめた。
   - 板は未実施。
+
+## q1491 / q1491-i01（2026-10-21）: executor の temporaries field
+
+- `vk-queue.c` の `build_kernel` を、`powervr_compute_temporaries_field(temps, 2, …)`（2 register 単位の自前の規則）から `powervr_compute_task_field(temps, …)`（compute の program が共有する 1 か所の規則。P2 の q1490 で単位を確定させる）に変えた。p009 の executor の試験の期待値も同じ関数に合わせた。
+- Mesa の temps の単位:
+  - `pvr_pds_setup_doutu`（pvr_pds.c）は、DOUTU の src0 の TEMPS（bit 35〜40、6 bit、`PVR_ROGUE_PDSINST_DOUT_FIELDS_DOUTU_TEMPS_MASK`）に、`DIV_ROUND_UP(usc_temps, 4)`（`..._SRC0_TEMPS_ALIGNSIZE` 4、`ALIGNSHIFT` 2）を書く。usc_temps は shader の `common.temps`（register の数）。最大は 63 × 4 = 252 register。
+  - compute の kernel 語（`pvr_compute_update_kernel`）は、KERNEL0 に pds_temp_size（PDS の temp を 16 byte 単位）・pds_data_size・usc_unified_size（入力 register の数 × 4 を 16 byte 単位）と、usc_common_size（coefficient register、64 byte 単位）を書く。USC の temps は KERNEL0・KERNEL8 には入らず、DOUTU の field だけで渡る（KERNEL8 は local size と max_instances）。
+  - Mesa の表記どおりなら単位は 4 register。板 84 は field を 4 倍にすると全 lane が正しく読んだので、実際の単位はそれより小さい（P2 が q1490 で確定）。executor はその規則を自動で受け取る。
+- 併せて直した: p009 の試験の `expected` の buffer（0x400）が、main で 0x800 になった `QUEUE_USC_ROOM` より小さく、`compile_inline` が E2BIG になっていた（main の時点で 501/502 で、この直しの前から落ちていた）。0x800 にした。502/502。
+- 確認: RISC-V の self-test の build で warning 0。板は未実施（P2 の直しと一緒に Q1 が流す）。

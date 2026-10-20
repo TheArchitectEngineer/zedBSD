@@ -455,7 +455,7 @@ check_stream(
 	const volatile uint8_t *pds;
 	struct powervr_resource *stream;
 	struct powervr_compute_kernel expected_kernel;
-	uint8_t expected[0x400];
+	uint8_t expected[0x800];
 	uint32_t expected_words[POWERVR_COMPUTE_KERNEL_WORDS];
 	uint32_t data[POWERVR_COMPUTE_PDS_DATA_WORDS];
 	uint32_t code[POWERVR_COMPUTE_PDS_CODE_MAX];
@@ -505,7 +505,7 @@ check_stream(
 	}
 	check(powervr_shader_compile_inline(spirv, spirv_words, POWERVR_SHADER_COMPUTE, NULL, values, program.shareds, workspace, &program, expected, sizeof(expected)) == 0, "the fill shader compiles");
 	length = program.length;
-	powervr_compute_temporaries_field(program.temps, 2, &field);
+	powervr_compute_task_field(program.temps, &field);
 
 	/* The kernel's words: every workgroup, the workgroup id in three coefficient registers. */
 	memset(&expected_kernel, 0, sizeof(expected_kernel));

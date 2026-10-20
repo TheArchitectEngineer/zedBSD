@@ -984,11 +984,11 @@ build_kernel(
 		build->executor->usc->view[room + index] = code[index];
 
 	/*
-	 * The program that issues it, in the slot after the fence's.  The
-	 * temporaries are counted in twos: if the core counts in fours, that
-	 * only gives more than the program uses.
+	 * The program that issues it, in the slot after the fence's, with
+	 * the task's temporaries field by the one rule the compute programs
+	 * share (powervr_compute_task_field).
 	 */
-	error = powervr_compute_temporaries_field(temps, 2, &field);
+	error = powervr_compute_task_field(temps, &field);
 	if (error != 0)
 		return error;
 	if (POWERVR_EXECUTOR_ONE_KERNEL)
