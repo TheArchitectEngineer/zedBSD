@@ -518,3 +518,22 @@ PTE（`powervr_gpu_page_entry`）と mainline の `pvr_page_table_l0/l1/l2_entry
 - probe の register を 25 個にした。CORE_ID・TIMER（最初と最後）、CDM_CONTEXT_PDS0/1・TERMINATE_PDS・CONTEXT_LOAD_PDS0、CAT_BASE1、SLC_STATUS1・SLC_IDLE・JONES_IDLE を足した。
 - それぞれを 64 bit の読みと 32 bit 2 つの読みで並べて出す。CORE_ID・TIMER が 64 bit で 0、32 bit で値なら、64 bit の読みが落ちている（全部の 64 bit の読みの直しへ）。
 - 確かめ: 試験の image の config の vmunix は warning 0。実機は未。
+
+## q1418-i01（P1、2026-10-20）: catalogue の register を全部読む
+
+板（vf2-dmesg14）:
+- 読みは本物。CORE_ID 0x08470000、TIMER は進む。
+- CAT_BASE0・1、CDM の context の register、SLC・Jones の idle は 0。
+
+StarFive の DDK の `rgx_cr_defs_km.h` に、XE 用の別の offset の BIF の register は無かった。`__XE_MEM__` は field の形だけ。catalogue の register の候補は次の 3 つ:
+- BIF_CAT_BASE0〜7（0x1200〜0x1238）と CAT_BASE_INDEX（0x1240）
+- FWCORE_MEM_CAT_BASE0〜7（0x30F0〜）
+- 新しい MMU の MMU_CBASE_MAPPING_CONTEXT・MAPPING・FAULT_STATUS（0xE140・0xE148・0xE150）
+
+どれに FW が書くかは、読んで確かめる。
+
+CORE_ID: 0x0018 は古い形の id の register。PBVNC_COREID_REG の core（この BXE）では、packed の BVNC が CORE_REVISION の位置 0x0020 に出る見込み。boot の BVNC の読みと比べるため、0x0020 も足した。
+
+直し（診断）: probe の register を 38 個にした（上のすべてと前の分）。どの catalogue の register に PC（0x405df000 の形）が入っているか、MMU の fault の status が何かを見る。
+
+確かめ: 試験の image の config の vmunix は warning 0。実機は未。
