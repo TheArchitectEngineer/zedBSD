@@ -2316,6 +2316,7 @@ handle_notice(
 		if (named) {
 			powervr_reset_stage_of(&notice, kind, &stage);
 			powervr_stage_fail_value(stage.stage, stage.reason, stage.value);
+			powervr_session_describe_fault(session, notice.fault_address);
 		}
 
 		/* No new kick for it; the core hears of the loss. */

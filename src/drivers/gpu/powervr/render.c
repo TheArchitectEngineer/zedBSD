@@ -81,6 +81,7 @@ static int resource_make_flags(struct powervr_session *session, struct powervr_b
 static void resource_unmake(struct powervr_session *session, struct powervr_resource *resource);
 static void resource_release(struct powervr_session *session, struct powervr_resource *resource);
 static void resources_drain(struct powervr_session *session, int force);
+static void resource_log(const char *what, const struct powervr_resource *resource, uint64_t fault);
 static void blob_list(struct powervr_session *session, struct powervr_resource *resource, uint32_t *identifier);
 static int check_image(const struct powervr_buffer *buffer, const struct gpu_image_descriptor *image);
 static int make_pages(struct powervr_buffer *buffer);
@@ -540,6 +541,7 @@ powervr_resource_make(
 		return error;
 
 	/* Succeeded: the handle holds the buffer. */
+	(*result)->origin = (uintptr_t)__builtin_return_address(0);
 	return 0;
 }
 
@@ -1242,7 +1244,8 @@ resource_make(
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the handle is in result. */
+	/* Succeeded: the handle is in result, named by its maker. */
+	(*result)->origin = (uintptr_t)__builtin_return_address(0);
 	return 0;
 }
 
@@ -1273,7 +1276,8 @@ powervr_resource_make_free_list(
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the free list's handle is in result. */
+	/* Succeeded: the free list's handle is in result, named by its maker. */
+	(*result)->origin = (uintptr_t)__builtin_return_address(0);
 	return 0;
 }
 
@@ -1291,7 +1295,8 @@ powervr_resource_make_region_headers(
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the region headers' handle is in result. */
+	/* Succeeded: the region headers' handle is in result, named by its maker. */
+	(*result)->origin = (uintptr_t)__builtin_return_address(0);
 	return 0;
 }
 
@@ -1327,6 +1332,8 @@ resource_make_flags(
 	resource->session = session;
 	resource->buffer = buffer;
 	resource->mappable = mappable;
+	resource->shareable = shareable != 0;
+	resource->origin = (uintptr_t)__builtin_return_address(0);
 
 	/*
 	 * Host-visible and shareable memory goes around the core's system level
@@ -1348,6 +1355,10 @@ resource_make_flags(
 	}
 	if (error == 0)
 		error = powervr_command_mmu_flush(render->core);
+	if (error == 0) {
+		resource->next_all = session->all;
+		session->all = resource;
+	}
 
 	mutex_unlock(&render->core->lock);
 
@@ -1405,6 +1416,7 @@ resource_unmake(
 	spin_unlock_irqrestore(&render->queue_lock, enabled);
 
 	if (busy) {
+		resource->deferred = 1;
 		resource->next_blob = session->deferred;
 		session->deferred = resource;
 		return;
@@ -1459,6 +1471,7 @@ resource_release(
 {
 	struct powervr_gpu_space *space;
 	struct powervr_render *render;
+	struct powervr_resource **link;
 	unsigned long enabled;
 	unsigned keep;
 
@@ -1471,6 +1484,16 @@ resource_release(
 		keep = 1;
 
 	spin_unlock_irqrestore(&render->queue_lock, enabled);
+
+	/* It leaves the diagnostic list of live handles. */
+	mutex_lock(&render->core->lock);
+	for (link = &session->all; *link != NULL; link = &(*link)->next_all) {
+		if (*link == resource) {
+			*link = resource->next_all;
+			break;
+		}
+	}
+	mutex_unlock(&render->core->lock);
 
 	/* Unmaps it and has the core drop what it cached of the entries. */
 	if (!keep) {
@@ -1826,4 +1849,67 @@ close:
 
 	/* Succeeded: the queue, the fence and the memory work. */
 	return 0;
+}
+
+/* Logs one handle of a session for a fault report: its range, kind, state and maker. */
+static void
+resource_log(
+	const char *what,
+	const struct powervr_resource *resource,
+	uint64_t fault)
+{
+	uint64_t end;
+
+	/* The range, the distance of the fault from its end, and what it is. */
+	end = resource->address + resource->buffer->run.size;
+	kern_logf("powervr: fault 0x%llx %s: 0x%llx..0x%llx (%llu bytes, past end by %lld) host %u shared %u blob %u deferred %u maker %p\n",
+		  (unsigned long long)fault, what, (unsigned long long)resource->address, (unsigned long long)end,
+		  (unsigned long long)resource->buffer->run.size, (long long)(fault - end),
+		  (unsigned)resource->mappable, resource->shareable, (unsigned)resource->identifier, resource->deferred,
+		  (void *)resource->origin);
+}
+
+/*
+ * Names what a session maps at a fault address (q1523 diagnostics): the
+ * handle that covers it, else the nearest below and above, and the fixed
+ * area; the core's lock is held.
+ */
+void
+powervr_session_describe_fault(
+	struct powervr_session *session,
+	uint64_t fault)
+{
+	const struct powervr_resource *resource;
+	const struct powervr_resource *below;
+	const struct powervr_resource *above;
+	unsigned count;
+
+	/* Nothing to name. */
+	if (fault == 0)
+		return;
+
+	/* The fixed area at the general heap's start. */
+	if (fault >= POWERVR_GENERAL_HEAP_BASE && fault < POWERVR_GENERAL_HEAP_BASE + POWERVR_FIXED_GENERAL_BYTES)
+		kern_logf("powervr: fault 0x%llx is in the general heap's fixed area\n", (unsigned long long)fault);
+
+	/* The live handles: the cover, or the neighbours. */
+	below = NULL;
+	above = NULL;
+	count = 0;
+	for (resource = session->all; resource != NULL; resource = resource->next_all) {
+		count++;
+		if (fault >= resource->address && fault < resource->address + resource->buffer->run.size) {
+			resource_log("inside", resource, fault);
+			return;
+		}
+		if (resource->address <= fault && (below == NULL || resource->address > below->address))
+			below = resource;
+		if (resource->address > fault && (above == NULL || resource->address < above->address))
+			above = resource;
+	}
+	kern_logf("powervr: fault 0x%llx in no live handle of %u\n", (unsigned long long)fault, count);
+	if (below != NULL)
+		resource_log("above handle", below, fault);
+	if (above != NULL)
+		resource_log("below handle", above, fault);
 }
