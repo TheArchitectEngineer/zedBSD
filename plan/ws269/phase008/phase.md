@@ -811,3 +811,84 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
 | VF2 の vmunix（`plan/ws269/tests/p008/config-visionfive2-compute.mk`、`build/p035/vf2/vmunix`） | rc 0、warning 0 |
 
 - 片付け（Q1 に依頼）: `build/p035/`。
+
+## q1466-i01（P2、2026-10-20）: compiled fill の書き先・register の dump、executor の並びの 9〜16 kernel と判別の probe
+
+板の前回（vf2-dmesg60）: prefix は全部 OK、compiled fill は 0/32（0）、464 byte、16 temps、field 5。executor の並びは 1・2・4・8 kernel が 32/32、16 kernel で store の後に lockup、32 kernel は refused。
+
+### (A) compiled fill の data が違う原因を探す probe（`compute-check.c`）
+
+1. **書き先の走査**: compiled fill の kick の前に、run の `+0x1b0000`〜`+0x1d0000`（fill の語 `+0x1c0000` の前後 64 KiB）の語を、それぞれ `0x5a000000 | 語の番号` で埋める。kick の後で、変わった語を最初の 48 個まで 1 行ずつ出す（`compiled fill wrote +OFF: VALUE`）。最後に個数を出す（`compiled fill changed N words in +1b0000..+1d0000`）。
+2. **register の dump**: prefix の marker の代わりに、fill の先頭 N group（4 刻み、最後は end の前の 55 まで）の後に dump を繋いで流す。dump は r0〜r15 の全部（fill が使う register は 16 個）を、lane ごとに `+0x1c8000 + lane×64 + K×4` へ store する。
+   - 作り（`dump_program`）: 中身は fill の back end の写しで、kept の group に dump の operation を足して `shader_backend_encode` に渡す（compile と同じ間隔の付け方）。結果を書く operation の後には、どれも 2 つの spacing group（MACHINE_WAIT）を置く。
+   - dump の operation:
+     - r19 ＝ lane（s51）
+     - r21 ＝ 6
+     - r20 ＝ r19 << r21
+     - r23 ＝ address の上位
+     - register ごとに: r22 ＝ 下位＋K×4、r24:r25 ＝ add64(r22, r23, r20)、r26 ＝ rK、st r26 → [r24]（data ＝ address＋2）、wdf
+   - 使う temps は 27。field は ceil(28/4) ＝ 7。program は 1,256〜1,656 byte で、置き場は `USC_COMPILED` の後の 8 KiB。
+   - 行の形: `dump N/55 lane L (e, bytes): r0 … r15`。lane は 0・1・31。行の前に `compiled fill dump: run at HI_LO, dump at +1c8000` を出す。
+3. **host の simulator の対の値**: `plan/ws269/tests/p008/fill-registers.sh OUTDIR ADDRESS`（新規、`fill-registers.c`）。
+   - ADDRESS には板の `run at` の値に 0x1c0000 を足した値を渡す。
+   - fill を同じ値で inline に compile し、machine-run で先頭 N group に end を足して走らせる。同じ形の `dump N/55 lane L (0): r0 … r15` を出す。最後に全体の program の 3x+7 を確かめる。
+   - 板の行と diff すれば、**最初に食い違う N（4 group の幅）** が分かる。address を含む register は、ADDRESS を板の値にすれば一致する。
+   - host（ADDRESS 0x8001c0000）: 43 行、全体は 32/32。
+   - 例: N＝55 で r6 ＝ 0x001c0000＋lane×4、r7 ＝ 8、r8 ＝ 3·lane＋7（store の data）。
+4. **dump の形の host 確認**（使い捨て、commit しない）: kernel の `dump_append`・`dump_program` をそのまま host で compile した。prefix の 14 通りすべてで、次を確かめた。
+   - encode 0。
+   - hazard の数 0。
+   - machine-run の dump の語が simulator の register と全 lane で一致（bad 0）。
+
+### (B) executor の並びの lockup の境界と判別（`run_layouts`、`run_many_kernels(state, N, flags)`）
+
+- 各 case は**自分の session で流す**（teardown → setup で開き直す）。lockup で session が lost になっても、次の case は走る。
+- 各 case の kick の直後に、同じ session で 1 kernel の store（`KICK_STEPS_ONE`）をもう一度流す。lockup した kick 自身は (0) で返るので、**「one kernel after」が (5) なら、その case が lockup した**と読む。
+- 行の形: `executor layout N kernels[ flags] W/32 (e), S words (B bytes), one kernel after A/32 (e2)`。
+- 順序:
+  1. 1・8・9・10・12・14・16 kernel（境界を詰める）。
+  2. 16 kernel で fence の kernel 無し（`MANY_NO_FENCE`）。
+  3. 16 kernel で kernel ごとに別の PDS slot（`MANY_OWN_SLOTS`。probe の slot 13〜28 に 1 step の store の PDS program を書き直して使う。DOUTU が 1 slot を共有するかどうかの判別）。
+  4. 16 kernel で全部の kernel に fence の bit（`MANY_ALL_FENCED`。kernel の並行を無くす）。
+  5. 16 kernel で command の resume の語（word 15）無し（`MANY_NO_RESUME`）。
+- context switch を session ごとに切る経路（`POWERVR_COMPUTE_SWITCH_STATE`）は session の作りの中なので、ここでは kick 単位の resume の語だけを外した。以前の記録では「state の語なし」は end だけの stream でも lockup している。そのため、この case は最後に置いた。
+- 判別の読み方:
+
+| 結果 | 示唆 |
+| --- | --- |
+| 9〜14 のどこかで境界 | stream の語数・kernel 数のしきい値。境界の bytes を行の値で見る |
+| no fence だけ通る | fence の kernel の位置（多数の kernel の後の fence）が原因 |
+| own slots だけ通る | 1 つの PDS slot（DOUTU）を多数の kernel が共有するのが原因 |
+| all fenced だけ通る | kernel の並行（USC の資源・shared の確保）が原因 |
+| no resume word だけ通る | resume（context switch）の領域の作りが原因 |
+| どれも止まる | kernel 数そのもの。Mesa の形（下）へ |
+
+### Mesa の形の executor の設計（vk-queue.c は P1 の file。Q1 へ）
+
+1 dispatch を **1 kernel** にし、workgroup の数は KERNEL3〜5 で数える。workgroup の id は immediate で埋め込まず、PDS が USC へ渡す。
+- 参照: Mesa 26.2.5 の `src/imagination/vulkan/pvr_cmd_buffer.c`（pvr_compute_generate_control_stream）、`src/imagination/csbgen/rogue/cdm.xml`、`pvr_pds.c`（pvr_pds_compute_shader の work_group_input_regs）。
+- kernel の語（`powervr_compute_kernel_words` を拡張する。値は現在の関数の bit の置き方のまま）:
+  - word0（KERNEL0）:
+    - block KERNEL
+    - usc_unified_size ＝ ceil(USC の入力 4 語×4 / 16)。workgroup id x・y・z を vtxin r0〜r2 に置くので、usc_inputs ＝ 4（16 byte 単位で 1）
+    - pds_temp_size ＝ ceil(3×4/16)＝1。PDS の入力の temps 0〜2 に、CDM が workgroup id を入れる
+    - pds_data_size
+    - any_cluster
+    - fence 0
+  - word1（KERNEL1）: PDS の data の場所。shared_from_pds・common_shared は今と同じ。
+  - word2（KERNEL2）: PDS の code の場所。
+  - **word3・4・5（KERNEL3〜5）＝ groupCountX−1・groupCountY−1・groupCountZ−1**。今は 0、0、0 に固定している。
+  - word6（KERNEL8）: max_instances<<27 | (local_size_x−1)<<18。y・z の local size の field がある場合は、その位置に local_size_y−1・local_size_z−1。
+  - その後に fence の kernel（今と同じ）と end の語。stream は 1 dispatch あたり 7＋7＋1 ＝ 15 語で、check の普通の kick（OK）と同じ形になる。
+- PDS の program（`powervr_compute_kick_program` の拡張）: DOUTU の前に DOUTW を 1 つ置く。PDS の入力の temps 0〜2（workgroup id）を USC の vtxin 0〜2 へ写す。DOUTU の task の word は今と同じ（temps の field ＝ ceil((temps+1)/4)）。
+- compiler: `POWERVR_SHADER_REQUEST_WORKGROUP_ID` を inline の値ではなく、vtxin bank（`POWERVR_USC_BANK_VERTEX_INPUT` r0〜r2）から読む形にする（`MACHINE_MOVE` で temp へ）。buffer の address など dispatch に共通の値は今の inline のままでよい。program は workgroup の数に関係なく 1 つになる。
+- 前提の確認（板）: (B) の結果で、1 kernel・fence・end の形は OK と分かっている（1 kernel 32/32）。KERNEL3〜5 を 0 以外にした時の workgroup id の渡り方は未確認。実装の最初の Phase で probe を作る: 1 step の store の program を vtxin r0 で x を足す形に変え、groupCountX ＝ 4 で 4 つの窓に書けるか見る。
+
+| 確認 | 結果 |
+| --- | --- |
+| `fill-registers.sh`（host、ADDRESS 0x8001c0000） | 43 行、全体 32/32 |
+| dump の形の host 確認（使い捨て） | 14 通りすべてで encode 0・hazard 0・bad 0 |
+| VF2 の vmunix（`config-visionfive2-compute.mk`、`build/p2q1466/vf2/vmunix`） | rc 0、warning 0 |
+| 板 | 未実施（Q1・T1 へ） |
+
+- 片付け（Q1 に依頼）: `build/p2q1466/`。
