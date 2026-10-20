@@ -154,6 +154,7 @@ static int write_programs(struct check_state *state);
 static int write_kick(struct check_state *state, unsigned kick, unsigned usc_program, unsigned temporaries, unsigned field);
 static int write_probe_streams(struct check_state *state);
 static int probe_kick(struct check_state *state, unsigned kick_index, const char *what);
+static void probe_report(struct check_state *state, unsigned kick_index);
 static void put_bytes(struct powervr_buffer *buffer, uint32_t offset, const uint8_t *bytes, size_t length);
 static void put_word(struct powervr_buffer *buffer, uint32_t offset, uint32_t word);
 static int kick(struct check_state *state, unsigned kick_index);
@@ -1056,13 +1057,63 @@ probe_kick(
 	int error;
 
 	/* The kick, between its two lines. */
+	powervr_firmware_trace_mark(state->render->core);
 	kern_logf("powervr: kick: compute probe %s sent (context %s)\n", what, state->session->lost ? "reset" : "kept");
 	error = kick(state, kick_index);
 	kern_logf("powervr: compute probe: %s: %s (%d), context %s\n", what, error == 0 ? "finished" : "FAILED", error,
 		  state->session->lost ? "reset" : "kept");
 	if (error == 0 && state->session->lost)
 		error = EIO;
-	if (error != 0)
+	if (error != 0) {
 		powervr_firmware_dump(state->render->core, POWERVR_KERNEL_CCB_SLOTS);
+		probe_report(state, kick_index);
+	}
 	return error;
+}
+
+/*
+ * Prints what the compute data master reads for a kick: the stream's and
+ * the resume area's page entries next to their buffers' pages, the
+ * programs' entries, the context record's fields and its switch state.
+ */
+static void
+probe_report(
+	struct check_state *state,
+	unsigned kick_index)
+{
+	struct powervr_session *session;
+	uint64_t stream;
+	unsigned index;
+
+	/* The stream, the resume area and the programs, as the session's page table maps them. */
+	session = state->session;
+	stream = stream_address + STREAM_FIRST + (uint64_t)kick_index * STREAM_SPACING;
+	kern_logf("powervr: probe: stream 0x%llx entry 0x%llx, resume 0x%llx entry 0x%llx, buffer page 0x%llx; pds 0x%llx entry 0x%llx (page 0x%llx); usc 0x%llx entry 0x%llx (page 0x%llx); catalogue 0x%llx\n",
+		  (unsigned long long)stream, (unsigned long long)powervr_gpu_mmu_lookup(&session->mmu, stream),
+		  (unsigned long long)stream_address, (unsigned long long)powervr_gpu_mmu_lookup(&session->mmu, stream_address),
+		  (unsigned long long)state->streams->run.paddr,
+		  (unsigned long long)(POWERVR_PDS_HEAP_BASE + pds_offset), (unsigned long long)powervr_gpu_mmu_lookup(&session->mmu, POWERVR_PDS_HEAP_BASE + pds_offset),
+		  (unsigned long long)state->pds->run.paddr,
+		  (unsigned long long)(POWERVR_USC_HEAP_BASE + usc_offset), (unsigned long long)powervr_gpu_mmu_lookup(&session->mmu, POWERVR_USC_HEAP_BASE + usc_offset),
+		  (unsigned long long)state->usc->run.paddr,
+		  (unsigned long long)powervr_gpu_mmu_root(&session->mmu));
+
+	/* The context record's common fields. */
+	kern_logf("powervr: probe: context 0x%x: ccb control 0x%x ccb 0x%x state 0x%x flags 0x%x priority %u dm %u deadline %u memory 0x%x id 0x%x\n",
+		  (unsigned)powervr_object_address(&session->context, 0),
+		  (unsigned)powervr_object_get32(&session->context, 0U),
+		  (unsigned)powervr_object_get32(&session->context, 4U),
+		  (unsigned)powervr_object_get32(&session->context, 24U),
+		  (unsigned)powervr_object_get32(&session->context, 28U),
+		  (unsigned)powervr_object_get32(&session->context, 32U),
+		  (unsigned)powervr_object_get32(&session->context, 60U),
+		  (unsigned)powervr_object_get32(&session->context, 104U),
+		  (unsigned)powervr_object_get32(&session->context, 136U),
+		  (unsigned)powervr_object_get32(&session->context, 140U));
+
+	/* The switch state, seven 64-bit words after the common part. */
+	for (index = 0; index < 7U; index++)
+		kern_logf("powervr: probe: switch state %u: 0x%08x%08x\n", index,
+			  (unsigned)powervr_object_get32(&session->context, 152U + index * 8U + 4U),
+			  (unsigned)powervr_object_get32(&session->context, 152U + index * 8U));
 }

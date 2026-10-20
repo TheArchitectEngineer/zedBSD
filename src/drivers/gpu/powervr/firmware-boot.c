@@ -112,6 +112,7 @@ static void free_blocks(struct powervr_core *core);
 static void free_file(struct powervr_core *core);
 static uint64_t ms_deadline(unsigned milliseconds);
 static const char *probe_owner(const struct powervr_firmware *firmware, uint32_t heap_offset);
+static void dump_trace(const struct powervr_firmware *firmware, uint32_t first, uint32_t count);
 static void step_start(const char *name);
 static void step_done(const char *name, int error);
 static void watch_thread(void *argument);
@@ -142,6 +143,8 @@ static void watch_thread(void *argument);
 #define DUMP_ASSERT_LINE		424U
 #define DUMP_ASSERT_TEXT		200U
 #define DUMP_TRACE_LAST_WORDS		128U
+#define DUMP_TRACE_ALL_WORDS		512U
+#define DUMP_TRACE_HEAD_WORDS		256U
 #define DUMP_OS_DATA_INTERRUPTS		560U
 #define DUMP_SYSTEM_DATA_POWER		8U
 #define DUMP_SYSTEM_INIT_STARTED_TIME	360U
@@ -169,6 +172,10 @@ static void watch_thread(void *argument);
  * tick it began, and whether the stage has ended.
  */
 static const char *step_name;
+
+/* Where the trace was when a kick was about to go, for the dump of what followed. */
+static uint32_t trace_mark;
+static int trace_marked;
 static uint64_t step_began;
 static int stage_ended;
 
@@ -1490,6 +1497,7 @@ powervr_firmware_dump(
 	char text[DUMP_ASSERT_TEXT + 1U];
 	uint32_t pointer;
 	uint32_t first;
+	uint32_t count;
 	uint32_t word;
 	uint32_t index;
 
@@ -1568,24 +1576,26 @@ powervr_firmware_dump(
 	text[DUMP_ASSERT_TEXT] = '\0';
 	kern_logf("powervr: dump: assert info \"%s\"\n", text);
 
-	/* The trace: where the firmware writes next, then the words before it, eight a line. */
+	/* The trace: where the firmware writes next, then the words since the mark (or the last ones), eight a line. */
 	pointer = powervr_object_get32(trace, DUMP_TRACE_POINTER);
-	kern_logf("powervr: dump: trace log type 0x%x, pointer %u of %u\n",
-		  (unsigned)powervr_object_get32(trace, POWERVR_TRACE_LOG_TYPE), (unsigned)pointer, (unsigned)POWERVR_TRACE_WORDS);
-	if (pointer > POWERVR_TRACE_WORDS)
+	kern_logf("powervr: dump: trace log type 0x%x, pointer %u of %u, mark %u\n",
+		  (unsigned)powervr_object_get32(trace, POWERVR_TRACE_LOG_TYPE), (unsigned)pointer, (unsigned)POWERVR_TRACE_WORDS,
+		  (unsigned)trace_mark);
+	if (pointer >= POWERVR_TRACE_WORDS)
 		pointer = 0;
-	first = pointer >= DUMP_TRACE_LAST_WORDS ? pointer - DUMP_TRACE_LAST_WORDS : 0;
-	for (index = first; index + 8U <= pointer; index += 8U) {
-		kern_logf("powervr: dump: trace %5u: %08x %08x %08x %08x %08x %08x %08x %08x\n",
-			  (unsigned)index,
-			  (unsigned)powervr_object_get32(&firmware->trace_buffer, (index + 0U) * 4U),
-			  (unsigned)powervr_object_get32(&firmware->trace_buffer, (index + 1U) * 4U),
-			  (unsigned)powervr_object_get32(&firmware->trace_buffer, (index + 2U) * 4U),
-			  (unsigned)powervr_object_get32(&firmware->trace_buffer, (index + 3U) * 4U),
-			  (unsigned)powervr_object_get32(&firmware->trace_buffer, (index + 4U) * 4U),
-			  (unsigned)powervr_object_get32(&firmware->trace_buffer, (index + 5U) * 4U),
-			  (unsigned)powervr_object_get32(&firmware->trace_buffer, (index + 6U) * 4U),
-			  (unsigned)powervr_object_get32(&firmware->trace_buffer, (index + 7U) * 4U));
+	if (trace_marked) {
+		/* The words since the mark: all of them, or the first and the last when there are many. */
+		count = (pointer + POWERVR_TRACE_WORDS - trace_mark) % POWERVR_TRACE_WORDS;
+		if (count <= DUMP_TRACE_ALL_WORDS) {
+			dump_trace(firmware, trace_mark, count);
+		} else {
+			dump_trace(firmware, trace_mark, DUMP_TRACE_HEAD_WORDS);
+			kern_logf("powervr: dump: trace ... %u words left out\n", (unsigned)(count - DUMP_TRACE_HEAD_WORDS - DUMP_TRACE_LAST_WORDS));
+			dump_trace(firmware, (pointer + POWERVR_TRACE_WORDS - DUMP_TRACE_LAST_WORDS) % POWERVR_TRACE_WORDS, DUMP_TRACE_LAST_WORDS);
+		}
+	} else {
+		first = pointer >= DUMP_TRACE_LAST_WORDS ? pointer - DUMP_TRACE_LAST_WORDS : 0;
+		dump_trace(firmware, first, pointer - first);
 	}
 }
 
@@ -1715,4 +1725,39 @@ powervr_firmware_return_probe(
 		found++;
 	}
 	kern_logf("powervr: probe: %u heap pages hold 1 at slot %u\n", (unsigned)found, (unsigned)slot);
+}
+
+/* Notes where the firmware's trace is, so a dump shows what followed. */
+void
+powervr_firmware_trace_mark(
+	struct powervr_core *core)
+{
+	/* The word the firmware writes next. */
+	trace_mark = powervr_object_get32(&core->firmware.trace_control, DUMP_TRACE_POINTER) % POWERVR_TRACE_WORDS;
+	trace_marked = 1;
+}
+
+/* Prints count words of the trace from first, wrapping at its end, eight a line (the last line may be short). */
+static void
+dump_trace(
+	const struct powervr_firmware *firmware,
+	uint32_t first,
+	uint32_t count)
+{
+	uint32_t words[8];
+	uint32_t done;
+	uint32_t index;
+
+	/* Eight words a line, each read at its place in the ring. */
+	for (done = 0; done < count; done += 8U) {
+		for (index = 0; index < 8U; index++) {
+			words[index] = 0;
+			if (done + index < count)
+				words[index] = powervr_object_get32(&firmware->trace_buffer, ((first + done + index) % POWERVR_TRACE_WORDS) * 4U);
+		}
+		kern_logf("powervr: dump: trace %5u: %08x %08x %08x %08x %08x %08x %08x %08x\n",
+			  (unsigned)((first + done) % POWERVR_TRACE_WORDS),
+			  (unsigned)words[0], (unsigned)words[1], (unsigned)words[2], (unsigned)words[3],
+			  (unsigned)words[4], (unsigned)words[5], (unsigned)words[6], (unsigned)words[7]);
+	}
 }
