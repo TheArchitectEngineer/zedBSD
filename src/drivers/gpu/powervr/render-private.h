@@ -91,6 +91,11 @@ struct powervr_resource {
 	int mappable;
 	uint32_t identifier;
 	struct powervr_resource *next_blob;
+	/* Diagnostics (q1523): every live handle of the session, under the core's lock, and who made it. */
+	struct powervr_resource *next_all;
+	uintptr_t origin;
+	unsigned shareable;
+	unsigned deferred;
 };
 
 /*
@@ -301,6 +306,7 @@ struct powervr_session {
 	unsigned retained;
 	struct powervr_resource *blobs;
 	struct powervr_resource *deferred;
+	struct powervr_resource *all;
 	struct powervr_resource *border_table;
 	struct powervr_marker markers[POWERVR_RENDER_PENDING];
 	unsigned reserved;
@@ -391,6 +397,7 @@ int powervr_resource_make(struct powervr_session *session, struct powervr_buffer
 
 /* Undoes a handle: unmaps it and drops its buffer, unless the core may still reach the session. */
 void powervr_resource_unmake(struct powervr_session *session, struct powervr_resource *resource);
+void powervr_session_describe_fault(struct powervr_session *session, uint64_t fault);
 uint64_t powervr_session_border_table(const struct powervr_session *session);
 int powervr_resource_make_region_headers(struct powervr_session *session, struct powervr_buffer *buffer, struct powervr_resource **result);
 int powervr_resource_make_free_list(struct powervr_session *session, struct powervr_buffer *buffer, struct powervr_resource **result);
