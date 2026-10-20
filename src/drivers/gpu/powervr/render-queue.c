@@ -101,6 +101,7 @@ static int send_command(struct powervr_render *render, const uint32_t command[PO
 static uint32_t commands_bytes(const struct powervr_client_command *commands, unsigned count);
 static void commands_put(struct powervr_client *client, const struct powervr_client_command *commands, unsigned count);
 static void list_marks(const struct powervr_render *render, struct powervr_list_marks *marks);
+static int kick_refused(struct powervr_render *render, struct powervr_session *session);
 static int send_waiting(struct powervr_core *core, const uint32_t command[POWERVR_COMMAND_WORDS], uint32_t *slot);
 static void cleanup_command(uint32_t context, uint32_t command[POWERVR_COMMAND_WORDS]);
 static void service_thread(void *argument);
@@ -428,6 +429,11 @@ powervr_session_kick_compute(
 	uint32_t bytes;
 	int error;
 
+	/* No kick on a device in quarantine or a session that is stopping, lost or abandoned. */
+	error = kick_refused(render, session);
+	if (error != 0)
+		return error;
+
 	/* Room for the command and the update, each behind a header. */
 	bytes = 2U * POWERVR_HEADER_BYTES + ((words * 4U + 7U) & ~7U) + POWERVR_SYNC_BYTES;
 	error = client_space(&session->compute, bytes);
@@ -498,6 +504,11 @@ powervr_session_kick_render(
 	context = session->render_context;
 	if (context == NULL || half > 1U)
 		return EINVAL;
+
+	/* No kick on a device in quarantine or a session that is stopping, lost or abandoned. */
+	error = kick_refused(render, session);
+	if (error != 0)
+		return error;
 
 	/* What the render's commands name: the timelines and their next values, the data set, the waits. */
 	request.geometry_timeline = powervr_object_address(&context->geometry.timeline, 0);
@@ -606,6 +617,11 @@ powervr_session_kick_transfer(
 	context = session->transfer_context;
 	if (context == NULL)
 		return EINVAL;
+
+	/* No kick on a device in quarantine or a session that is stopping, lost or abandoned. */
+	error = kick_refused(render, session);
+	if (error != 0)
+		return error;
 
 	/* The command and the update of the timeline to the next value. */
 	update.address = powervr_object_address(&context->client.timeline, 0);
@@ -2084,6 +2100,46 @@ handle_notice(
 		if (!all)
 			break;
 	}
+}
+
+/*
+ * Refuses a kick (EIO) on a device in quarantine, or for a session that
+ * is stopping, lost to a reset, isolated or abandoned after a timeout:
+ * the firmware may still run its earlier work, and a new kick would
+ * queue behind it or reach a firmware that no longer answers.
+ *
+ * Procedure referenced:
+ * Linux v7.3 drivers/gpu/drm/imagination/pvr_queue.c
+ * (pvr_queue_run_job and pvr_context's faulty entity: no job of a
+ * faulty context reaches the firmware).
+ */
+static int
+kick_refused(
+	struct powervr_render *render,
+	struct powervr_session *session)
+{
+	unsigned long enabled;
+	int refused;
+
+	/* The flags, read under the queue lock. */
+	enabled = spin_lock_irqsave(&render->queue_lock);
+
+	refused = 0;
+	if (render->faulted || session->stopping || session->lost || session->isolated)
+		refused = EIO;
+
+	spin_unlock_irqrestore(&render->queue_lock, enabled);
+
+	/* An abandoned session's earlier work may still run. */
+	if (session->abandoned)
+		refused = EIO;
+
+	/* Refused, or not. */
+	if (refused != 0)
+		return refused;
+
+	/* Succeeded: the kick may go out. */
+	return 0;
 }
 
 /* Counts the bytes a run of commands takes in a context's buffer, each behind its header. */
