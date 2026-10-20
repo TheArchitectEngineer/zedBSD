@@ -22,13 +22,22 @@ printf '#!/bin/sh\necho "vkimage: X: FAIL, external image -3"\nexit 1\n' > "$out
 printf '#!/bin/sh\necho "$1: X: PASS, seen"\n' > "$out/vks-pass"
 printf '#!/bin/sh\nif [ "$1" = draw ]; then echo "draw: X: FAIL, pixel (32,32) 0xffff0000, expected 0xff00ff00"; exit 1; fi\necho "$1: X: PASS, seen"\n' > "$out/vks-draw"
 printf '#!/bin/sh\nif [ "$1" = present ]; then sleep 30; fi\necho "$1: X: PASS, seen"\n' > "$out/vks-present"
-printf '#!/bin/sh\necho "vkdemo: X: $1"\n' > "$out/vkd-pass"
+python3 -I -c 'import sys
+w, h = 320, 240
+px = bytearray(b"\x10\x18\x28" * (w * h))
+i = (120 * w + 160) * 3
+px[i:i + 3] = bytes((0xd0, 0x70, 0x90))
+open(sys.argv[1], "wb").write(b"P6\n320 240\n255\n" + bytes(px))' "$out/frame.ppm"
+printf '#!/bin/sh\nfor a in "$@"; do case "$a" in --output=*) cp "%s" "${a#--output=}";; esac; done\necho "vkdemo: X: $1"\n' "$out/frame.ppm" > "$out/vkd-pass"
+python3 -I -c 'import sys
+open(sys.argv[1], "wb").write(b"P6\n320 240\n255\n" + b"\x00\x00\x00" * (320 * 240))' "$out/black.ppm"
+printf '#!/bin/sh\nfor a in "$@"; do case "$a" in --output=*) cp "%s" "${a#--output=}";; esac; done\necho "vkdemo: X: $1"\n' "$out/black.ppm" > "$out/vkd-black"
 chmod +x "$out"/vk-* "$out"/vki-* "$out"/vks-* "$out"/vkd-*
 fails=0
 # check NAME EXPECTED-FILE ARGS...: the output must be exactly the expected lines.
 check() {
 	name=$1; shift
-	"$out/gpu-selftest" -d "$out/vkd-pass" "$@" > "$out/$name.out" 2>&1 || true
+	"$out/gpu-selftest" -d "$out/vkd-pass" -f "$out/frame-$name.ppm" "$@" > "$out/$name.out" 2>&1 || true
 	if diff -u "$out/$name.expect" "$out/$name.out"; then
 		echo "PASS $name"
 	else
@@ -188,5 +197,23 @@ END
 start=$(date +%s)
 check present -t 1 -s "$out/stages-ok" -n "$out/node" -i "$out/vki-pass" -v "$out/vk-pass" -g "$out/vks-present"
 echo "present took $(( $(date +%s) - start )) s (limit 3 s)"
+cat > "$out/frame.expect" <<END
+gpu-selftest: stages: firmware=ok render-node=ok compute=- ta=- 3d=- transfer=- present=-
+gpu-selftest: kernel: ok
+gpu-selftest: node: ok
+gpu-selftest: instance: ok
+gpu-selftest: device: ok
+gpu-selftest: compute: ok
+gpu-selftest: image: ok
+gpu-selftest: clear: ok
+gpu-selftest: copy: ok
+gpu-selftest: draw: ok
+gpu-selftest: sample: ok
+gpu-selftest: depth: ok
+gpu-selftest: present-clear: ok
+gpu-selftest: present: fail(pixel (5,5) 000000, want 101828)
+gpu-selftest: 12 ok, 1 fail, 0 skip
+END
+check frame -s "$out/stages-ok" -n "$out/node" -i "$out/vki-pass" -v "$out/vk-pass" -g "$out/vks-pass" -d "$out/vkd-black"
 echo "selftest-host: $fails failed"
 [ "$fails" -eq 0 ]
