@@ -156,7 +156,7 @@ main(void)
 	ok = ok && job.color_count == 1 && job.colors[0].surface.address == 0x100000U + 0x20000U + 0x10000U;
 	ok = ok && job.colors[0].surface.width == 64 && job.colors[0].surface.padded_width == 64 && job.colors[0].surface.row_pitch == 512;
 	ok = ok && job.colors[0].load_op == VK_ATTACHMENT_LOAD_OP_CLEAR && job.colors[0].store_op == VK_ATTACHMENT_STORE_OP_STORE;
-	ok = ok && job.colors[0].clear[0] == 0x3f800000U && job.depth.present && job.depth.address == 0x200000U && job.depth.clear_depth == 0x3f800000U;
+	ok = ok && job.colors[0].clear[0] == 0xff0000ffU && job.colors[0].clear[1] == 0 && job.depth.present && job.depth.address == 0x200000U && job.depth.clear_depth == 0x3f800000U;
 	check(ok, "full-area job");
 	check(ok && !job.depth.partial && job.depth.twiddled && job.depth.physical_width == 64 && job.depth.layer_bytes == 0x4000, "depth layout fields");
 
@@ -191,7 +191,7 @@ main(void)
 	rect.rect.extent.height = 64;
 	rect.layerCount = 1;
 	ok = ok && powervr_render_job_clear(&job, &clear, 1, &rect, 1) == 0;
-	check(ok && job.colors[0].load_op == VK_ATTACHMENT_LOAD_OP_CLEAR && job.colors[0].clear[1] == 0x3f000000U, "whole clear becomes the load clear");
+	check(ok && job.colors[0].load_op == VK_ATTACHMENT_LOAD_OP_CLEAR && job.colors[0].clear[0] == 0x00008000U, "whole clear becomes the load clear, packed (green 0.5 is 128)");
 
 	/* A part of the area, or after a draw: not taken until p011. */
 	rect.rect.extent.width = 32;

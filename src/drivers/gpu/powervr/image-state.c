@@ -155,6 +155,8 @@ static uint32_t common_multiple(uint32_t a, uint32_t b);
 static uint32_t channel_select(const struct powervr_format *format, uint32_t mapping, unsigned output);
 static int sampler_wrap(uint32_t mode, uint32_t *wrap);
 static int32_t fixed_from_bits(uint32_t bits, unsigned fraction, int32_t smallest, int32_t largest);
+static uint32_t half_from_float(uint32_t bits);
+static uint32_t unorm8_from_float(uint32_t bits);
 
 /* Finds the executor's entry of a Vulkan format, or NULL when it does not take the format. */
 const struct powervr_format *
@@ -528,6 +530,80 @@ powervr_descriptor_bytes(
 	return 0;
 }
 
+/*
+ * Packs a clear colour (four float bit patterns) as the words a clear
+ * writes for the format, in channel order: a format of four 8-bit unorm
+ * channels as one word, red in the low byte, each channel rounded to the
+ * nearest of 255 steps and clamped; the one- and two-channel 8-bit unorm
+ * formats, the sRGB ones and the 16-bit float one as half floats, two a
+ * word; the 32-bit float ones as their bits, a word a channel.  Other
+ * formats are not taken (ENOTSUP).
+ *
+ * Procedure referenced:
+ * Mesa 26.2.5 src/imagination/vulkan/pvr_arch_job_transfer.c
+ * (pvr_pack_clear_color: PACKMODE_U8U8U8U8 with normalised channels,
+ * pvr_float_to_ufixed: NaN, infinity and 1.0 or more to 255, below 0 to
+ * 0, else floor(value * 255 + 0.5)).
+ */
+int
+powervr_format_clear_words(
+	const struct powervr_format *format,
+	const uint32_t colour[4],
+	uint32_t packed[4])
+{
+	unsigned channel;
+
+	/* Refuses missing input or result. */
+	if (format == NULL || colour == NULL || packed == NULL)
+		return EINVAL;
+
+	/* 32-bit float channels: the raw bits, one word a channel. */
+	switch (format->vk_format) {
+	case VK_FORMAT_R32_SFLOAT:
+	case VK_FORMAT_R32G32_SFLOAT:
+	case VK_FORMAT_R32G32B32A32_SFLOAT:
+		for (channel = 0; channel < 4; channel++)
+			packed[channel] = channel < format->texel_bytes / 4U ? colour[channel] : 0;
+		return 0;
+
+	/*
+	 * The one- and two-channel 8-bit unorm formats, the sRGB ones and
+	 * the 16-bit float one: half floats, two a word.
+	 */
+	case VK_FORMAT_R8_UNORM:
+	case VK_FORMAT_R8G8_UNORM:
+	case VK_FORMAT_R8G8B8A8_SRGB:
+	case VK_FORMAT_B8G8R8A8_SRGB:
+	case VK_FORMAT_R16G16B16A16_SFLOAT:
+		packed[0] = half_from_float(colour[0]) | (half_from_float(colour[1]) << 16);
+		packed[1] = half_from_float(colour[2]) | (half_from_float(colour[3]) << 16);
+		if (format->vk_format == VK_FORMAT_R8_UNORM)
+			packed[0] &= 0xFFFFU;
+		if (format->texel_bytes <= 2U)
+			packed[1] = 0;
+		packed[2] = 0;
+		packed[3] = 0;
+		return 0;
+	default:
+		break;
+	}
+
+	/* Otherwise takes the four-channel 8-bit unorm formats only. */
+	if (format->store_code != 0 || format->texel_bytes != 4 || (format->kind & POWERVR_FORMAT_SRGB) != 0)
+		return ENOTSUP;
+
+	/* The four bytes in channel order, the other words zero. */
+	packed[0] = 0;
+	for (channel = 0; channel < 4; channel++)
+		packed[0] |= unorm8_from_float(colour[channel]) << (channel * 8U);
+	packed[1] = 0;
+	packed[2] = 0;
+	packed[3] = 0;
+
+	/* Succeeded: the packed colour. */
+	return 0;
+}
+
 /* Puts value in the bits low to high of a word; bits of value beyond them are dropped. */
 static uint64_t
 place(
@@ -724,4 +800,87 @@ fixed_from_bits(
 
 	/* Succeeded: the fixed-point value. */
 	return (int32_t)value;
+}
+
+/*
+ * Converts a float, as its bits, to a half float without float
+ * arithmetic (the kernel is soft float): clamped to the largest half,
+ * denormalised below the smallest normal, rounded half up.
+ *
+ * Procedure referenced:
+ * Mesa 26.2.5 src/imagination/vulkan/pvr_arch_job_transfer.c pvr_float_to_f16
+ * (round_to_even false), used by pvr_pack_clear_color.
+ */
+static uint32_t
+half_from_float(
+	uint32_t bits)
+{
+	uint32_t sign;
+	uint32_t mantissa;
+	int32_t exponent;
+	uint32_t result;
+
+	/* The sign apart; zero (either sign) is zero. */
+	sign = (bits >> 16) & 0x8000U;
+	if ((bits & 0x7FFFFFFFU) == 0)
+		return 0;
+
+	/* Clamps to 131008, the largest half (and infinities and NaNs). */
+	if ((bits & 0x7FFFFFFFU) > 0x47FFE000U)
+		bits = (bits & 0x80000000U) | 0x47FFE000U;
+
+	/* The half's exponent and the mantissa with its hidden bit. */
+	exponent = (int32_t)((bits >> 23) & 0xFFU) - 127 + 15;
+	mantissa = (bits & 0x7FFFFFU) | 0x800000U;
+
+	/* Below the smallest normal: shifts the mantissa down, exponent 0. */
+	if (exponent <= 0) {
+		if (1 - exponent >= 24)
+			mantissa = 0;
+		else
+			mantissa >>= (uint32_t)(1 - exponent);
+		exponent = 0;
+	} else {
+		mantissa &= 0x7FFFFFU;
+	}
+
+	/* Rounds up on the first dropped bit. */
+	result = ((uint32_t)exponent << 10) + (mantissa >> 13);
+	if ((mantissa & 0x1000U) != 0)
+		result++;
+
+	/* Succeeded: the half with its sign. */
+	return sign | result;
+}
+
+/*
+ * Converts a float's bits to an 8-bit unorm channel: NaN, infinity and
+ * 1.0 or more to 255, below zero to 0, else floor(value * 255 + 0.5)
+ * computed exactly.
+ */
+static uint32_t
+unorm8_from_float(
+	uint32_t bits)
+{
+	uint64_t mantissa;
+	uint32_t exponent;
+	uint32_t shift;
+
+	/* NaN, infinity and 1.0 or more (a positive exponent of 127 or above). */
+	exponent = (bits >> 23) & 0xffU;
+	if (exponent == 0xffU)
+		return 255;
+	if ((bits & 0x80000000U) != 0)
+		return 0;
+	if (exponent >= 127U)
+		return 255;
+
+	/* Denormals and values below 2^-40 round to zero. */
+	shift = 150U - exponent;
+	if (exponent == 0 || shift > 60U)
+		return 0;
+
+	/* floor((mantissa * 255) / 2^shift + 0.5). */
+	mantissa = (uint64_t)((bits & 0x7fffffU) | 0x800000U) * 255U;
+	return (uint32_t)((mantissa + (1ULL << (shift - 1U))) >> shift);
 }
