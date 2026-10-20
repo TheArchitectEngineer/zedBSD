@@ -298,3 +298,6 @@ Keiland が使い、vkmatrix 15/15・gpu-selftest 13/13 で確かめていない
 - (B) vblank の数が 0 のまま: `drv_powervr_dc_vblank_report` が、controller の interrupt enable・pending、panel の config、scan の位置を 2 回出す。late の vblank start の直後にも出す。
   pending が立つのに handler が来ないなら PLIC 側、pending が立たないなら controller 側。
 - 確認: p010 は 0 failed、p009 は 505 passed、ws277 の host 試験は全部 0 failures、VF2 の vmunix は rc 0、warning 0。板は未実施。
+- d17（f490a65b8、P2 の job・vblank の診断）: `dc8200: interrupt enable 5 pending 1` で handler が走らない → aedded233 で IRQ 95 の unmask。lockup は出ず。
+- d18（e4bdff188、P1 の非同期の submit stage A 2e3e67418）: SD の I/O の失敗（`ufs … refuses writes … error 5`、同じ address の segfault が複数）で信用できない。gpu-selftest の image が `linear sampled` で fail（vkimage の期待が古い → P1）。TA の lockup の job は 41 draw、texture は全部 handle の中。
+- d19（b754f95b9、非同期 + unmask）: compositor の起動ごとに 3D の lockup（context 0x1a・0x1f・0x23、`job 2 … (load draw first)`、色は linear の swapchain、load 2）。vblank は 0 のまま、`display flips 26`。→ P1 に非同期の切り替え（既定 off）と競合の調査、P2 に vblank。
