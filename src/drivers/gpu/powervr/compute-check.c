@@ -247,6 +247,8 @@ struct check_state {
 	int probing;
 	int no_resume;
 	unsigned max_instances;
+	unsigned usc_inputs;
+	unsigned mesa_pds;
 };
 
 /* What the rounds found, word by word. */
@@ -315,10 +317,12 @@ powervr_compute_check(
 	struct powervr_render *render)
 {
 	static const unsigned sweep[][3] = {
-		{ 1, 0, 0 }, { 1, 0, 16 }, { 1, 0, 8 }, { 1, 0, 4 },
-		{ COMPILED_GROUPS, 0, 0 }, { COMPILED_GROUPS, 0, 16 }, { COMPILED_GROUPS, 0, 8 }, { COMPILED_GROUPS, 0, 4 },
-		{ COMPILED_VK_GROUPS, 0, 0 }, { COMPILED_VK_GROUPS, 0, 16 }, { COMPILED_VK_GROUPS, 0, 8 }, { COMPILED_VK_GROUPS, 0, 4 },
-		{ 1, 24, 0 }, { COMPILED_GROUPS, 24, 0 }, { COMPILED_VK_GROUPS, 24, 0 },
+		{ 1, 16, 0 }, { COMPILED_GROUPS, 16, 0 }, { COMPILED_VK_GROUPS, 16, 0 },
+		{ 1, 16, 4 }, { COMPILED_GROUPS, 16, 4 }, { COMPILED_VK_GROUPS, 16, 4 },
+		{ 1, 17, 0 }, { COMPILED_GROUPS, 17, 0 }, { COMPILED_VK_GROUPS, 17, 0 },
+		{ 1, 17, 4 }, { COMPILED_GROUPS, 17, 4 }, { COMPILED_VK_GROUPS, 17, 4 },
+		{ 1, 16, 101 }, { COMPILED_GROUPS, 16, 101 }, { COMPILED_VK_GROUPS, 16, 101 },
+		{ 1, 16, 102 }, { COMPILED_GROUPS, 16, 102 }, { COMPILED_VK_GROUPS, 16, 102 },
 	};
 	struct check_state state;
 	const char *step;
@@ -440,13 +444,24 @@ powervr_compute_check(
 		run_cf0_probe(&state);
 	/*
 	 * The compiled fill over 1, 4 and 128 workgroups (as vkcompute), with
-	 * the field as Mesa computes it and the task size Mesa's (0, all 32
-	 * instances), 16, 8 and 4, then with field 24 and Mesa's task size;
-	 * each on a fresh session.
+	 * the field as Mesa computes it and Mesa's task size: compiled to 16
+	 * temporaries (no-operation fillers, r11 a value) and to 17 (r11 kept
+	 * for move fillers), each with no unified store and with Mesa's 16
+	 * bytes (its kernel 1 of vkcompute: usc_unified_size 1, the local id
+	 * in vi0); then with Mesa's data sequencer program as is (unified 16
+	 * bytes), with sd_type NONE (101) and USC (102); each on a fresh
+	 * session.
 	 */
 	for (index = 0; index < sizeof(sweep) / sizeof(sweep[0]); index++) {
-		if (fresh_session(&state) == 0)
-			run_compiled_fill(&state, 0, sweep[index][0], sweep[index][1], sweep[index][2]);
+		if (fresh_session(&state) != 0)
+			continue;
+		shader_filler_kind = sweep[index][1] == 17 ? MACHINE_MOVE_SPECIAL : MACHINE_NOP;
+		state.usc_inputs = sweep[index][2] < 100 ? sweep[index][2] : 0;
+		state.mesa_pds = sweep[index][2] >= 100 ? sweep[index][2] - 100U : 0;
+		run_compiled_fill(&state, 0, sweep[index][0], 0, 0);
+		state.usc_inputs = 0;
+		state.mesa_pds = 0;
+		shader_filler_kind = MACHINE_NOP;
 	}
 	if (POWERVR_COMPUTE_LOCKUP_PROBES)
 		run_layouts(&state);
@@ -489,6 +504,8 @@ setup(
 	state->probing = 0;
 	state->no_resume = 0;
 	state->max_instances = 0;
+	state->usc_inputs = 0;
+	state->mesa_pds = 0;
 
 	/* A session of the check's own. */
 	*step = "open";
@@ -1216,9 +1233,11 @@ run_compiled_fill(
 		if (words[word] == word * 3U + 7U)
 			good++;
 	}
-	kern_logf("powervr: compute probes: compiled fill %u workgroups, max instances %u: %u/%u (%d), %u bytes, %u temps, field %u, words 0 %08x 32 %08x\n",
+	kern_logf("powervr: compute probes: compiled fill %u workgroups, max instances %u, unified %u, mesa pds %u: %u/%u (%d), %u bytes, %u temps, field %u, words 0 %08x 32 %08x\n",
 		  groups,
 		  max_instances,
+		  state->usc_inputs,
+		  state->mesa_pds,
 		  good,
 		  groups * (unsigned)POWERVR_COMPUTE_INSTANCES,
 		  error,
@@ -1549,6 +1568,32 @@ workgroup_program(
 }
 
 /*
+ * Mesa's data sequencer program for vkcompute's dispatch on the
+ * BXE-4-32 (Mesa 26.2.5's driver on the host with the drm shim, the
+ * words pvr_pds_compute_shader wrote; plan/ws269/tests/p008/
+ * mesa-pco-vkcompute-stream-bxe-4-32.txt): eight data words (the task
+ * word, which the check replaces with its own, the two writes of the
+ * workgroup id, the write of the local id into the unified store, the
+ * base workgroup's zeros) and ten code words (the branch past the
+ * coefficient pass, three adds of the base workgroup, the two writes,
+ * a halt; the local id's write, the task issue, a halt), its code 32
+ * bytes in; and the KERNEL1 bit of Mesa's sd_type USC.
+ */
+#define MESA_PDS_DATA_WORDS	8U
+#define MESA_PDS_CODE_WORDS	10U
+#define MESA_PDS_CODE		0x20U
+#define MESA_SD_TYPE_USC	0x8U
+
+static const uint32_t mesa_pds_data[MESA_PDS_DATA_WORDS] = {
+	0x00007a00, 0x00000010, 0x10000002, 0x90004001, 0x80000000, 0x00000000, 0x00000000, 0x00000000,
+};
+
+static const uint32_t mesa_pds_code[MESA_PDS_CODE_WORDS] = {
+	0xc2c00007, 0x90016000, 0x9001a041, 0x9001e0c3, 0xf0024001,
+	0xf0034101, 0xd3000000, 0xf0044001, 0xfc000002, 0xd3000000,
+};
+
+/*
  * Writes the one-kernel executor's form of a kick of the program at
  * USC_COMPILED in the first probe's slot: the workgroup data sequencer
  * program, one kernel of the given workgroups, the fence kernel and the
@@ -1570,31 +1615,43 @@ write_workgroup_kick(
 	unsigned i;
 	int error;
 
-	/* The program, in the first probe's slot: four data words, then its code. */
+	/* The program, in the first probe's slot: four data words, then its code; or Mesa's, eight data words, its code after them. */
+	slot = KICK_PROBE_FIRST * PDS_SLOT;
 	error = powervr_compute_workgroup_program(usc_offset + USC_COMPILED, field, data, code, &count);
 	if (error != 0)
 		return error;
-	slot = KICK_PROBE_FIRST * PDS_SLOT;
-	for (i = 0; i < POWERVR_COMPUTE_PDS_GROUP_DATA_WORDS; i++)
-		put_word(state->pds, slot + i * 4U, data[i]);
-	for (i = 0; i < count; i++)
-		put_word(state->pds, slot + PDS_CODE + i * 4U, code[i]);
+	if (state->mesa_pds != 0) {
+		for (i = 0; i < 2; i++)
+			put_word(state->pds, slot + i * 4U, data[i]);
+		for (i = 2; i < MESA_PDS_DATA_WORDS; i++)
+			put_word(state->pds, slot + i * 4U, mesa_pds_data[i]);
+		for (i = 0; i < MESA_PDS_CODE_WORDS; i++)
+			put_word(state->pds, slot + MESA_PDS_CODE + i * 4U, mesa_pds_code[i]);
+	} else {
+		for (i = 0; i < POWERVR_COMPUTE_PDS_GROUP_DATA_WORDS; i++)
+			put_word(state->pds, slot + i * 4U, data[i]);
+		for (i = 0; i < count; i++)
+			put_word(state->pds, slot + PDS_CODE + i * 4U, code[i]);
+	}
 
 	/* The kernel: the workgroups, a whole task each, their ids in the common store, the task size the check names (0, all 32). */
 	kern_memset(&kernel, 0, sizeof(kernel));
 	kernel.data_offset = pds_offset + slot;
-	kernel.code_offset = pds_offset + slot + PDS_CODE;
-	kernel.data_words = POWERVR_COMPUTE_PDS_GROUP_DATA_WORDS;
+	kernel.code_offset = pds_offset + slot + (state->mesa_pds != 0 ? MESA_PDS_CODE : PDS_CODE);
+	kernel.data_words = state->mesa_pds != 0 ? MESA_PDS_DATA_WORDS : POWERVR_COMPUTE_PDS_GROUP_DATA_WORDS;
 	kernel.pds_temporaries = WG_PDS_INPUTS;
 	kernel.workgroups[0] = groups;
 	kernel.usc_common = WG_COEFFICIENTS;
 	kernel.usc_temporaries = WG_TEMPORARIES;
 	kernel.instances = POWERVR_COMPUTE_INSTANCES;
 	kernel.max_instances = state->max_instances;
+	kernel.usc_inputs = state->mesa_pds != 0 ? 4U : state->usc_inputs;
 	kernel.any_cluster = 1;
 	error = powervr_compute_kernel_words(&kernel, words);
 	if (error != 0)
 		return error;
+	if (state->mesa_pds == 2)
+		words[1] |= MESA_SD_TYPE_USC;
 	stream = STREAM_FIRST + KICK_PROBE_FIRST * STREAM_SPACING;
 	for (i = 0; i < POWERVR_COMPUTE_KERNEL_WORDS; i++)
 		put_word(state->streams, stream + i * 4U, words[i]);

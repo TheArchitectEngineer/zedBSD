@@ -1429,3 +1429,58 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
   - max_instances を下げて 4・128 wg が通れば、1 task（slot）に詰める instance が register の予算を超えている（Q1 の見立て）。
   - どれも通らず、field 24 の対照だけが 1 wg で通るなら、予算の元（USC の register の総量や割当の単位の設定）が Mesa の driver と違う。firmware・core の設定の側を調べる。
 - VF2 の vmunix（`build/p2q1492/vf2/vmunix`）: rc 0、warning 0。板は未実施。
+
+## q1494-i01（P2、2026-10-21）: Mesa が実際に出す compute の stream・PDS と我々の bit 単位の比較
+
+- 板 86: max_instances を変えても直らない。1 wg × field 24 だけが通る。
+- **取り方**:
+  - host の Mesa 26.2.5（scratchpad の mesa26、drm-shim、BVNC 36.50.54.182 ＝ BXE-4-32）で vkcompute を `PVR_DEBUG=cs` で走らせた。
+  - Mesa の dumper は global offset が無くても KERNEL9〜11 を読むので、2 つ目以降の kernel の解読がずれる。scratch の Mesa の dumper だけを直した（offset がある時だけ読む）。
+  - dispatch の PDS program は、scratch の Mesa の `pvr_arch_pipeline.c` に表示を足して取った。
+  - 全文: `plan/ws269/tests/p008/mesa-pco-vkcompute-stream-bxe-4-32.txt`。
+- **Mesa の vkcompute の compute stream ＝ kernel 3 つ＋終わり**:
+  - K0（shared の確保）: usc_common 64 byte、pds_data 32 byte、usc_target ALL、sd NONE、usc_common_shared 1、1 wg、max_instances 8、size 1。
+  - K1（dispatch）: 下の表。
+  - K2（fence）: pds_data 16 byte、ANY、fence 1、sd PDS、shared 1、max 8。
+- **K1（dispatch）の kernel の語**（我々の値は `powervr_compute_kernel_words`、workgroups 128、usc_common 3、pds temps 4、data 4 語）:
+
+| 語 | Mesa | 我々 | 違い |
+| --- | --- | --- | --- |
+| KERNEL0 | 0x0004110a（common 1、**unified 1（16 byte）**、pds temp 1、**data 2（32 byte）**、ANY） | 0x00040106（unified 0、data 1） | unified size（Mesa は vi0 に local id）、data size |
+| KERNEL1 | 0x00002648（data の場所、**sd_type USC（bit 3）**） | 0x00002640（sd NONE） | sd_type |
+| KERNEL2 | 0x00002660 | 同じ形 | 無し |
+| KERNEL3〜5 | 0x7f、0、0 | 同じ | 無し |
+| KERNEL8 | 0x007c0000（max 0、size_x 31） | 同じ | 無し |
+
+- **K1 の PDS program**:
+
+| | Mesa | 我々（P1 の `powervr_compute_workgroup_program`） |
+| --- | --- | --- |
+| data 0〜1（DOUTU） | 0x00007a00、0x00000010（temps 2 ＝ ceil(6/4)、sample rate 0） | **同じ値**（同じ address・field の時） |
+| data 2〜3（DOUTW の制御） | 0x10000002、0x90004001 | 同じ |
+| data 4 | 0x80000000（local id を unified store へ書く DOUTW） | 無し |
+| data 5〜7 | base workgroup の 0 | 無し |
+| code | c2c00007（bra +7）、9001xxxx ×3（base workgroup の add32）、f0024001、f0034101（DOUTW 2 つ）、d3000000（halt）、**f0044001（local id の DOUTW）**、**fc000002（DOUTU、cc 1）**、d3000000 | c2c00004、f0024001、f0034101、d3000000、**f4000002（DOUTU、cc 0）**、d3000000 |
+
+- **違う bit の一覧**:
+  1. KERNEL0 の unified size（Mesa 1 block）。Mesa は local id を vi0 に置くため。
+  2. KERNEL0 の pds data size（2 と 1。data の語数の違い）。
+  3. KERNEL1 の sd_type（Mesa は USC。K0 が shared を確保する形）。
+  4. PDS の instance の pass の local id の DOUTW（unified store へ）。
+  5. DOUTU の cc bit（bit 27）。
+  6. base workgroup の add32 ×3（値は 0）。
+  7. stream の前の K0（shared の確保の kernel）。
+  - USC の temps の field（DOUTU）は Mesa と同じ。KERNEL8 も同じ。
+- **板の probe**（compute check、各々新しい session、compiled fill ＝ vkcompute の fill、Mesa の field、max 0）:
+  - temps 16（nop の filler。r11 も値に使う。既定）と、temps 17（mov の filler 用に r11 を空ける）。
+  - 各々、unified 0 と unified 4 register（Mesa の 16 byte）で。
+  - **Mesa の PDS をそのまま**（data 8 語。DOUTU の語は我々の address と field にする。code 10 語、code は 32 byte 先、unified 16 byte）で、sd NONE（101）と sd USC（102）を流す。
+  - これらを各々 1・4・128 wg で流す。
+  - 行: `compiled fill G workgroups, max instances 0, unified U, mesa pds P: N/T (e), bytes, temps T, field F, …`。
+- **compiler**: filler の既定を MACHINE_NOP にした（間隔 0 では filler は入らない）。値は r11 から使う（`TEMP_FIRST_VALUE` は filler が mov の時だけ r12）。vkcompute の fill は **16 temps**・360 byte。
+- host: compiler 455/0・20/0（spacing の試験は mov の filler で流す）、p009 502/0、fill-registers 32/32。VF2 の vmunix（`build/p2q1494/vf2/vmunix`）は rc 0、warning 0。板は未実施。
+- 読み方:
+  - unified 4 や Mesa の PDS で 4・128 wg が通る → instance の register の割当は unified store の宣言・local id の DOUTW に依る。executor（P1）を Mesa の形にする。
+  - 16 temps だけで通る → 1 instance あたりの上限の問題。
+  - どれも通らない → K0（shared の確保）か、firmware・core の設定の側。
+- 片付け（Q1 に依頼）: `build/p2q1494/`、scratchpad の `ours*`。mesa26 は改造済み（dumper と表示）。次の照合にも使える。

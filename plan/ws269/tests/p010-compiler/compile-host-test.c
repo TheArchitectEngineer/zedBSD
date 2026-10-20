@@ -1058,6 +1058,7 @@ test_hazard_spacing(void)
 	shader_store_source_gap = 6;
 	shader_result_gap = 2;
 	shader_in_place_staging = 1;
+	shader_filler_kind = MACHINE_MOVE;
 
 	memset(&backend, 0, sizeof(backend));
 	backend.operation_count = 3;
@@ -1134,6 +1135,7 @@ test_hazard_spacing(void)
 	shader_store_source_gap = SHADER_STORE_SOURCE_GAP;
 	shader_result_gap = SHADER_RESULT_GAP;
 	shader_in_place_staging = SHADER_IN_PLACE_STAGING;
+	shader_filler_kind = MACHINE_NOP;
 }
 
 int
