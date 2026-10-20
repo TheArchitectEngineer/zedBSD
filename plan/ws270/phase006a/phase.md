@@ -2,14 +2,14 @@
 
 # ws270-p006a Keiland の起動と不足の一覧
 
-- 親: [WS270](../ws.md)、Status: in-progress（2026-10-20 P1、q1356 / q1356-i01。必須項目 2a（sessiond の gpu1 の待ち）の実装・build・host 試験まで。Keiland の起動と不足の一覧は WS269 p010 の後）
+- 親: [WS270](../ws.md)、Status: in-progress（2026-10-20 P1、q1356 / q1356-i01: 2a の実装・build・host 試験。2026-10-21 P1、q1517 / q1517-i01: 2b の image・host の読み・板の手順。板の確認は Q1 待ち）
 - 設計: [design.md](../design.md) 改訂 2.1 の §2.2 の 2a・2b、§3 の p006a。
 - 依存: WS269 p010、本 WS の p004、WS269 p005（powervr の遅い段が gpu1 の登録まで `hw.gpu.attaching` を数える。q1356 で同時に実装）。
 
 ## 範囲
 
 1. （2a、済み）sessiond の `main_wait_display` が、`/dev/gpu0` があっても `hw.gpu.attaching` が 0 でない間は待つ（上限は今の `MAIN_DISPLAY_WAIT_MS` 120 s）。
-2. （2b、未着手）VF2 で Keiland を起動し、Vulkan の機能の不足の一覧と、それを確かめる試験の program を作り、WS269 p011 の入力として Q1 に渡す。
+2. （2b、q1517 で image と手順まで）VF2 で Keiland を起動し、Vulkan の機能の不足の一覧と、それを確かめる試験の program を作り、WS269 p011 の入力として Q1 に渡す。
 
 ## 2a の実装（2026-10-20 P1、q1356）
 
@@ -42,8 +42,107 @@
 
 - **ws270-p006a の sessiond（amd64・rpi4 の回帰）**: P1 の WIP（返却の SHA）を含む main で、amd64（QEMU、`config/ci/config-amd64.mk`）と rpi4（QEMU raspi4b か既存の rpi4 の回帰の道）の image を作り、`plan/tools/boot-test.sh` で (1) graphical login（`login=graphical`）の greeter の画面、(2) text login（graphical なし）の login prompt を PNG で撮る。合否: (1) greeter が出る、(2) login prompt が遅れずに出る。
 
+## 2b の準備（2026-10-21 P1、q1517 / q1517-i01）
+
+### image
+
+- config: `plan/ws270/tests/config-visionfive2-desktop-gpu.mk`。`config-visionfive2-desktop.mk` を include し、次の 2 つを変える。
+  - graphical login を y にする。
+  - `mount sh gpu-selftest vkmatrix powervr-firmware` を足す。
+  - DRIVER_POWERVR は y のまま。
+  - Keiland と desktop の program は rpi4 と同じ並び。
+- firmware の入手:
+  - license の同意はユーザーが済ませている（main の `build/sources/firmware/powervr/license-accepted`）。
+  - worktree の `build/sources/firmware/powervr` を、main の cache への symlink にして読んだ（Guardrail の「共有の build/ は symlink で読む」）。同意の操作はしていない。
+- build: `timeout 3600 make ZEDBSD_CONFIG=plan/ws270/tests/config-visionfive2-desktop-gpu.mk BUILD=build/q1517 -j16 build/q1517/native.img` で rc=0。
+  - 自前の source の warning は 0。log `build/q1517-native.log` の warning は、外部 package の openssh の deprecated と llvm-ar の注記だけ。
+  - 初めに `disk-image`（ramdisk の 64 MiB の root.img）を作ろうとしたら inode が尽きた。VF2 の板の SD は native.img なので、そちらを使う。
+- 成果: `/home/awe/zedBSD-worktrees/p1/build/q1517/native.img`。
+  - 412,090,368 byte。
+  - sha256 `7b4faada1037dcad6bd7744d292459d14e7a58448fdd5a460ede90430fc91714`。
+  - rootfs は 73 MiB。`/lib/firmware/powervr/rogue_36.50.54.182_v1.fw`、`/bin/gpu-selftest`、`/bin/vkmatrix`、`/bin/wayland` が入っている。
+  - `login=graphical` は disk-image.mk が boot の行に足すので、手で足さない。
+- SSH の host key は入れていない。Q1 が `build/uat/vf2-gpu/hostkeys` を `build/q1517/rootfs/etc/ssh/` に置き、同じ make で native.img を作り直す。
+
+### host での読み（Keiland の起動の道）
+
+1. **sessiond**（2a）: `/dev/gpu0`（dc8200）が出ても、`hw.gpu.attaching` が 0 になるまで待つ。powervr の遅い段が gpu1 の登録まで数える（WS269 p005）。
+2. **libvulkan**: `instance.c` が `/dev` の GPU node を全部開き、node ごとに physical device を作る。Keiland の `compose_device` は最初の physical device の最初の graphics queue family を使う。
+   - render node（gpu1）の queue family は GRAPHICS・COMPUTE・TRANSFER を持つ（863b44cf1、板 81）。
+   - gpu0 は display だけの node。vkmatrix・gpu-selftest は gpu0 がある板で通っている。
+3. **拡張**:
+   - Keiland が必ず有効にする device の拡張は、swapchain、external memory（fd）、memory requirements2、dedicated allocation の 5 つ。
+   - powervr の node は `GPU_CAP_SHARE`（render.c:160）を持つので、libvulkan は external memory fd を出す。kernel の executor にも export・import がある（vk-memory.c・vk-image.c）。
+   - `GPU_CAP_FENCE` が無いので、external fence は出ない。Keiland は fence fd を使わない道に入る（compose.c、i915 と同じ）。
+   - display control（`GPU_CAP_DISPLAY_EVENTS`）も出ない。hotplug の event は使わない道。
+4. **present**:
+   - Keiland は VK_KHR_display の swapchain で出す。
+   - libvulkan の `wsi-display-nodes.c` が、別の display node（gpu0）を組にして readback して出す。vkimage の present の PPM は板 83 で確認済み。
+   - game mode の直の scanout（`scanout-zedbsd.c`）は gpu0 に GPU_DISPLAY_BLOB が無ければ ENOTSUP で、合成に戻る。
+5. **shader**: Keiland の shader 15 個（quad・panel・batch・turn と panel の 8 つの変種）は、powervr の compiler で全部 compile できた（host の probe、下の表）。
+
+| 確かめ | コマンド | 結果 |
+| --- | --- | --- |
+| Keiland の shader の compile | `plan/ws270/tests/p006a/shader-probe.c` を compiler の 6 file と cc -Werror で build し、`build/q1517-probe/shader-probe` を流す | 15/15 OK（`FAILED 0`。panel.frag は 5208 byte・temps 55） |
+
+### 板で通った範囲との差（不足の候補、WS269 p011 の入力）
+
+Keiland が使い、vkmatrix 15/15・gpu-selftest 13/13 で確かめていない物を挙げる。
+
+| # | 項目 | 理由 | 担当 |
+| --- | --- | --- | --- |
+| G1 | flat の varying、4 つの vertex attribute（R32G32 + R32G32B32A32 ×2 + R32） | batch.vert/frag。vkmatrix は位置と texcoord だけ | 板で見る。駄目なら compiler（P2） |
+| G2 | push constant 96 byte を vertex と fragment の両方で使う | panel の layout。vkmatrix の push128 は片方の stage だけ | 同上 |
+| G3 | 分岐と数学の多い fragment shader（length・abs・clamp・mix・dot・除算、temps 55） | 結果の正しさは host の compile だけで、板では未確認 | 同上 |
+| G4 | 1 frame に 16 draw を超える pass（job の分割と LOAD の draw） | 正しさは draws-64 で確認済み。速さは未測定で、frame ごとに複数の job の同期の待ち（D-P4 の 2 秒）になる | driver（P2、p011） |
+| G5 | client（terminal など）の buffer の export と、compositor での import（別の session） | vkmatrix・gpu-selftest は 1 つの session だけ | driver（vk-memory の import）。板で見る |
+| G6 | 1080p の swapchain の readback present の速さ（CPU の copy） | vkimage は小さい画だけ | WSI。板で見る |
+| G7 | vkCmdCopyImageToBuffer（screenshot） | gpu-selftest の copy は buffer→image | 板で見る |
+| G8 | GPU の memory の量（1080p の複数の image と client の buffer） | heap の上限を見ていない | driver（P2） |
+
+- desktop の code（WS270 の範囲）で直す所は、読んだ範囲では見つからなかった。
+
+## 板の確認の手順（Q1 が SSH で行う。P1 は板を操作しない）
+
+1. 上の native.img を SD に書くか、host key を入れて作り直した物を書く。板は kei@10.0.30.2。HDMI の monitor と USB の keyboard・mouse をつなぐ。
+2. 起動後、SSH で次を読む。
+   - `ps ax | grep -E 'sessiond|wayland|greeter'`: sessiond と、greeter の compositor（`/bin/wayland`、`_greeter` の user）が動いていること。
+   - `cat /var/log/sessiond.log`:
+     - `SESSIOND DISPLAY` の行（待った時間・attaching・present）があること。
+     - `SESSIOND GREETER` があること。
+     - `timeout` が無いこと。
+   - `cat /var/log/greeter.log`:
+     - `KWL STARTUP` があること。
+     - `KWL FAILED` と `KWL VULKAN_ERROR` が無いこと。
+   - `sysctl hw.gpu.powervr.stages`: 全部の段が ok。
+   - `dmesg | grep powervr`: 次のどれも無いこと。
+     - `device lost`
+     - `context reset notice`
+     - `session lost`
+     - `refused (EIO)`
+     - `quarantine`
+     - `firmware restart`
+   - `ls -l /dev/gpu*`: gpu0 と gpu1 がある。
+3. 画面: greeter の login の画面が monitor に出る（写真か、ユーザーの目視）。
+4. kei で login する（greeter で）。
+   - 続けて `<XDG_RUNTIME_DIR>/session.log`（`find / -name session.log 2>/dev/null`）を見る。`KWL FAILED` が無いこと。
+   - desktop が出て、terminal が開く。
+   - 2 の dmesg をもう一度見る。
+5. 同じ板で `/bin/vkmatrix` と `/bin/gpu-selftest` を流す（回帰。15/15 と 13/13）。
+
+**合格**:
+- 2 の条件が全部満たされる。
+- 3 で greeter が見える。
+- 4 で desktop と terminal が出て、dmesg に lost・reset が無い。
+- 5 が 15/15 と 13/13。
+
+**不合格の時**:
+- greeter.log・session.log・dmesg の全部と、`hw.gpu.powervr.stages` を P1 に渡す。
+- G1〜G8 のどれに当たるかで、担当を分ける。
+
 ## 残件
 
-- 2b（Keiland の起動と不足の一覧）は WS269 p010 の後。
+- 2b の板の確認（上の手順、Q1）。
+- 不足の G1〜G8 の扱い（板の結果で決める）。
 - T1 の回帰（上）。
 - 片付け（Q1 に依頼）: worktree /home/awe/zedBSD-worktrees/p1 の `build/q1356-p004host/`・`build/q1356-vf2.log`・`build/q1356-virt.log`・`build/q1356-amd64.log`・`build/q1356-rpi4.log`・`build/tmp/ws270-display-wait*`。
