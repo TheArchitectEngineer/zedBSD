@@ -1606,3 +1606,54 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
   - 「madd from special」が 32/32 → `integer_source` の、特殊 register の定数を temp に移す処理を外す。
 - 板には `-DPOWERVR_DIAGNOSTICS=1` の build で流す。p008 は 94/0・84/0。VF2 の vmunix（`build/p2q1505/vf2/vmunix`、既定の build）は rc 0、warning 0。板は未実施。
 - 片付け（Q1 に依頼）: `build/p2q1505/`、scratchpad の `rules.c`・`rt.c`・`rt`。
+
+## q1508-i01（P2、2026-10-21）: CPU と GPU の cache の整合の stress と方針の表
+
+### (1) 試験 `userland/tests/vkcoherency/`（新規）
+
+- 作り: vkcompute と同じ。標準の Vulkan 1.0 の C。shader は `xform.comp`（out[x] ＝ in[x]＋3x、local size 32）を glslc で `shader.h` に埋めた。
+- **buffer の部**: storage buffer が受ける host-visible の memory 型の全部について、各 1000 回。
+  - CPU が、map したままの入力に回ごとに違う pattern を書く。出力には CPU が別の値を書いておく。
+  - non-coherent の型なら、`vkFlushMappedMemoryRanges` の後に dispatch（128 wg）を流す。dispatch の後の barrier は SHADER_WRITE→HOST_READ。
+  - non-coherent の型なら `vkInvalidateMappedMemoryRanges` してから、全語を比べる。
+- **image の部**: 200 回。OPTIMAL の 64×64 R8G8B8A8 を、回ごとに違う色（byte の値が割り切れる色）で clear し、host-visible の buffer へ copy して全 pixel を比べる。
+- 判定:
+  - CPU の fill の値や前の回の値なら stale、それ以外の違いは wrong。
+  - 行は部ごとに `… N rounds, S stale, W wrong[, first at round R word W: 0x…, expected 0x…]`、最後に PASS か FAIL。終了 status は PASS の時だけ 0。
+- **host（llvmpipe）**: buffer type 0（coherent）は 1000 回、image は 200 回で、どちらも 0 stale・0 wrong の PASS（0.43 秒）。
+- **VF2 の build**:
+  - `plan/ws269/tests/p008/config-visionfive2-coherency.mk`（gpu-selftest の構成に vkcoherency を足す）で、`build/p2q1508/vf2/bin/vkcoherency` を作った（rc 0）。
+  - この build のために、共有の build の規則に vkcoherency を足した（vkcompute と同じ形）。`platform/common/userland-dynamic.mk` の `DYNAMIC_PORTABLE_PROGRAMS` と link の規則、`platform/amd64/vmunix.mk` の filter-out の一覧。WS の外の file なので、Q1 が確認する。
+  - 板では `/bin/vkcoherency` を手で流す。
+
+### (2) kernel の側の方針（読んだ所: render.c、gpu-mmu.c、vk-memory.c、vk-queue.c、render-queue.c、render-target.c、render-job.c、coherency.c）
+
+- 前提（render.c の頭の注記）:
+  - core は CPU の cache を snoop しない。
+  - CPU は、確保した物に kernel でも user の mapping でも**非 cache の alias** でだけ触れる。`kern_pmem_map_uncached` は、作る時に cache の line を押し出す。user への mapping は `DRV_GPU_MAPPING_UNCACHED_RAM`。
+  - CPU が読む物は、core の SLC も**迂回**する（`powervr_gpu_buffer_flags(mappable, shareable)` が `POWERVR_GPU_MAP_SLC_BYPASS`）。
+
+| 物 | CPU の view | 書く者 | GPU の側（SLC） | clean・invalidate |
+| --- | --- | --- | --- | --- |
+| VkDeviceMemory（host-visible、device-local の両方。vk-memory.c は mappable 1 で作る） | 非 cache（kernel・user とも） | CPU（map）と GPU | bypass | 不要（非 cache）。Vulkan の型も HOST_COHERENT（vk-device.c）。device-local の型も同じ扱い |
+| image（vk-image が VkDeviceMemory に bind） | 同上 | GPU（clear・copy・描画）、CPU（linear の時） | bypass | 不要 |
+| descriptor・uniform の値（data-program・vk-queue の build_shared。PDS の data 語や inline の immediate に写す） | executor の PDS buffer の非 cache の view | CPU（submit 時） | bypass（vk-queue.c 687 の flags(1,0)） | 不要 |
+| control stream（vk-queue の stream、`resource_make(…, 1, 0)`） | 非 cache | CPU | bypass | 不要 |
+| PDS・USC の program（vk-queue の program buffer、session の固定の heap（render-queue.c 1523〜1538）） | 非 cache | CPU | bypass | 不要 |
+| render の内部（render-job・transfer-job の general、render-context の switch、render-target） | 非 cache | CPU と GPU | bypass（mappable 1） | 不要 |
+| **border colour table**（render.c 673、`resource_make(…, 0, 0)`） | 非 cache（作る時に書く） | CPU（session を開く時）、GPU が読む | **SLC 有り（private）** | 無し |
+| firmware の object（firmware-boot.c） | MIPS の非 cache | CPU と firmware | ― | 起動時の確認でだけ invalidate |
+| compute・render の check の run（compute-check.c、coherency.c） | 非 cache の alias＋cached view（確認用） | GPU | bypass | cached view の読みの前後で invalidate（確認のため） |
+
+- **穴の候補**: border colour table だけが SLC を通る private な物。CPU は session を作る時に非 cache で書くので、その物理 page の line が前の使い手の時から SLC に残っていれば、GPU は古い値を読みうる。
+  - 前の使い手が別の session の border table なら同じ内容。それ以外の private な物は無いので、今は実害の経路が見当たらない。
+  - border table は P1 の範囲なので、変更はしない。安全側に倒すなら `resource_make(session, buffer, 1, 0, …)`（bypass）にする案を Q1・P1 に渡す。
+- それ以外は「CPU は非 cache、GPU は SLC を迂回」で一貫しており、dcache の操作は不要な設計。stress の結果（板）で確かめる。
+
+| 確認 | 結果 |
+| --- | --- |
+| vkcoherency（host、llvmpipe） | PASS（buffer 1000 回・image 200 回、0 stale・0 wrong） |
+| vkcoherency（VF2 の build） | rc 0 |
+| 板 | 未実施（`/bin/vkcoherency`） |
+
+- 片付け（Q1 に依頼）: `build/p2q1508/`、scratchpad の `xform.*`・`xc*`・`vkcoherency-host`・`rt*`・`rules.c`。
