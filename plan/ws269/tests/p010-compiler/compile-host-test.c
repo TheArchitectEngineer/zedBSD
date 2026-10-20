@@ -30,6 +30,7 @@
 #include "userland/desktop/wayland/shaders.h"
 #include "userland/tests/vkcompute/shader.h"
 #include "userland/tests/vkdemo/shaders.h"
+#include "userland/tests/vkstage/shader.h"
 
 /* The bytes of program room per shader. */
 #define CODE_ROOM	65536
@@ -892,6 +893,136 @@ test_keyed(void)
 	current_key = NULL;
 }
 
+/*
+ * A vertex shader of vkstage that copies its attributes: the first to the
+ * position (padded with 0 and 1), the second to its one varying.
+ */
+static void
+check_vkstage_vertex(
+	const uint32_t *words,
+	size_t count,
+	unsigned position_components,
+	unsigned varying_components,
+	const char *name)
+{
+	struct powervr_shader_program program;
+	uint32_t expected;
+	char label[128];
+	unsigned lane;
+	unsigned k;
+	int ok;
+
+	if (prepare(words, count, POWERVR_SHADER_VERTEX, &program, name, 0xffffffffU) != 0)
+		return;
+	ok = program.input_count == 2 && program.varying_count == 1 && program.varyings[0].components == varying_components;
+	for (lane = 0; ok && lane < 32; lane++) {
+		for (k = 0; k < 4; k++) {
+			expected = as_word(k == 3 ? 1.0f : 0.0f);
+			if (k < position_components)
+				expected = input_word(lane, program.inputs[0].reg + k);
+			if (run->outputs[k][lane] != expected)
+				ok = 0;
+		}
+		for (k = 0; k < varying_components; k++) {
+			if (run->outputs[program.varyings[0].reg + k][lane] != input_word(lane, program.inputs[1].reg + k))
+				ok = 0;
+		}
+	}
+	snprintf(label, sizeof(label), "%s passes its attributes", name);
+	check(ok, label);
+	machine_compare(words, count, POWERVR_SHADER_VERTEX, name);
+}
+
+/*
+ * vkstage's shaders (gpu-selftest's draw, depth and sample): without a key,
+ * and with the key the driver gives them (float attributes, an R8G8B8A8
+ * attachment, no blending).
+ */
+static void
+test_vkstage(void)
+{
+	static struct powervr_shader_key key;
+	struct powervr_shader_program program;
+	uint32_t words[4];
+	uint32_t sampled[4];
+	float colour[4];
+	unsigned lane;
+	unsigned k;
+	int ok;
+
+	/* The vertex shaders, as they are and with their attribute formats. */
+	check_vkstage_vertex(vkstage_colour_vert, sizeof(vkstage_colour_vert) / 4U, 3, 4, "vkstage colour.vert");
+	check_vkstage_vertex(vkstage_texture_vert, sizeof(vkstage_texture_vert) / 4U, 2, 2, "vkstage texture.vert");
+	memset(&key, 0, sizeof(key));
+	key.attribute_formats[0] = 106;
+	key.attribute_formats[1] = 109;
+	current_key = &key;
+	check_vkstage_vertex(vkstage_colour_vert, sizeof(vkstage_colour_vert) / 4U, 3, 4, "keyed vkstage colour.vert");
+	key.attribute_formats[0] = 103;
+	key.attribute_formats[1] = 103;
+	check_vkstage_vertex(vkstage_texture_vert, sizeof(vkstage_texture_vert) / 4U, 2, 2, "keyed vkstage texture.vert");
+	current_key = NULL;
+
+	/* colour.frag: the iterated colour, as floats. */
+	if (prepare(vkstage_colour_frag, sizeof(vkstage_colour_frag) / 4U, POWERVR_SHADER_FRAGMENT, &program, "vkstage colour.frag", 0xffffffffU) == 0) {
+		ok = program.output_count == 1 && program.varying_count == 1 && program.varyings[0].components == 4;
+		for (lane = 0; ok && lane < 32; lane++) {
+			for (k = 0; k < 4; k++) {
+				if (run->outputs[program.outputs[0].reg + k][lane] != iterate_word(lane, program.varyings[0].reg + k * 4U, 0))
+					ok = 0;
+			}
+		}
+		check(ok, "vkstage colour.frag passes its colour");
+		machine_compare(vkstage_colour_frag, sizeof(vkstage_colour_frag) / 4U, POWERVR_SHADER_FRAGMENT, "vkstage colour.frag");
+	}
+
+	/* texture.frag: the sample at the coordinate, as floats. */
+	if (prepare(vkstage_texture_frag, sizeof(vkstage_texture_frag) / 4U, POWERVR_SHADER_FRAGMENT, &program, "vkstage texture.frag", 0xffffffffU) == 0) {
+		ok = program.output_count == 1 && program.varying_count == 1;
+		for (lane = 0; ok && lane < 32; lane++) {
+			sample_words(0, 1, iterate_word(lane, program.varyings[0].reg, 0), iterate_word(lane, program.varyings[0].reg + 4U, 0), sampled);
+			for (k = 0; k < 4; k++) {
+				if (run->outputs[program.outputs[0].reg + k][lane] != sampled[k])
+					ok = 0;
+			}
+		}
+		check(ok, "vkstage texture.frag samples its texture");
+		machine_compare(vkstage_texture_frag, sizeof(vkstage_texture_frag) / 4U, POWERVR_SHADER_FRAGMENT, "vkstage texture.frag");
+	}
+
+	/* Both fragment shaders keyed to R8G8B8A8 without blending: the packed colour. */
+	memset(&key, 0, sizeof(key));
+	key.output_formats[0] = 37;
+	key.blend[0].write_mask = 0xf;
+	current_key = &key;
+	if (prepare(vkstage_colour_frag, sizeof(vkstage_colour_frag) / 4U, POWERVR_SHADER_FRAGMENT, &program, "keyed vkstage colour.frag", 0xffffffffU) == 0) {
+		ok = program.output_count == 1 && program.outputs[0].format == 37;
+		for (lane = 0; ok && lane < 32; lane++) {
+			for (k = 0; k < 4; k++) {
+				words[k] = iterate_word(lane, program.varyings[0].reg + k * 4U, 0);
+				colour[k] = as_float(words[k]);
+			}
+			if (run->pixels[0][lane] != pack_expected(colour))
+				ok = 0;
+		}
+		check(ok, "keyed vkstage colour.frag packs its colour");
+		machine_compare(vkstage_colour_frag, sizeof(vkstage_colour_frag) / 4U, POWERVR_SHADER_FRAGMENT, "keyed vkstage colour.frag");
+	}
+	if (prepare(vkstage_texture_frag, sizeof(vkstage_texture_frag) / 4U, POWERVR_SHADER_FRAGMENT, &program, "keyed vkstage texture.frag", 0xffffffffU) == 0) {
+		ok = program.output_count == 1 && program.outputs[0].format == 37;
+		for (lane = 0; ok && lane < 32; lane++) {
+			sample_words(0, 1, iterate_word(lane, program.varyings[0].reg, 0), iterate_word(lane, program.varyings[0].reg + 4U, 0), sampled);
+			for (k = 0; k < 4; k++)
+				colour[k] = as_float(sampled[k]);
+			if (run->pixels[0][lane] != pack_expected(colour))
+				ok = 0;
+		}
+		check(ok, "keyed vkstage texture.frag packs its sample");
+		machine_compare(vkstage_texture_frag, sizeof(vkstage_texture_frag) / 4U, POWERVR_SHADER_FRAGMENT, "keyed vkstage texture.frag");
+	}
+	current_key = NULL;
+}
+
 int
 main(
 	int argc,
@@ -990,6 +1121,7 @@ main(
 	}
 
 	test_keyed();
+	test_vkstage();
 
 	printf("powervr compiler host test: %u passed, %u failed\n", passed, failed);
 	return failed == 0 ? 0 : 1;
