@@ -192,7 +192,7 @@ static void watch_thread(void *argument);
 #define DUST_EVENT_CLEAR		0x0138U
 #define DUST_EVENT_POWER_COMPLETE	0x00000400U
 #define DUST_EVENT_POWER_ABORT		0x00000800U
-/* 1 asks the host to power the dusts up itself (the 2026-10-20 try on the board answered POWER_ABORT); 0 leaves it to the firmware. */
+/* 1 asks the host to power the dusts up itself (with the PMU event unmasked it completes, 2026-10-20, but changes nothing); 0 leaves it to the firmware. */
 #define DUST_POWER_BY_HOST		0
 
 #define REGISTER_CHECK_CLOCK_CONTROL	0x0000U
