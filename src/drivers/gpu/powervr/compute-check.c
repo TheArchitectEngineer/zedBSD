@@ -177,6 +177,10 @@
 #define MANY_OWN_SLOTS		0x2U
 #define MANY_ALL_FENCED		0x4U
 #define MANY_NO_RESUME		0x8U
+#define MANY_FENCE_KEEP_SHARED	0x10U
+#define MANY_FENCE_STORE_PDS	0x20U
+#define MANY_TWO_FENCES		0x40U
+#define FENCE_VARIANT_KERNELS	16U
 
 /*
  * Where in the run the probes write: each probe's area 4 KiB apart
@@ -263,7 +267,8 @@ static void run_compiled_fill(struct check_state *state);
 static int run_prefixes(struct check_state *state, const struct shader_backend *backend);
 static int dump_append(struct shader_backend *dump, unsigned kind, unsigned destination, unsigned source_0_bank, unsigned source_0, unsigned source_1, unsigned source_2, uint32_t immediate);
 static int dump_program(const struct shader_backend *backend, struct shader_backend *dump, unsigned keep, uint64_t address, uint8_t *code, size_t room, size_t *length);
-static int run_many_kernels(struct check_state *state, unsigned kernels, unsigned flags);
+static int run_many_kernels(struct check_state *state, unsigned kernels, unsigned flags, const char *variant);
+static int run_fence_variants(struct check_state *state);
 static void run_layouts(struct check_state *state);
 static void run_workgroup_probe(struct check_state *state);
 static struct shader_machine_operation *dump_last(struct shader_backend *dump);
@@ -316,6 +321,13 @@ powervr_compute_check(
 	error = setup(&state, &step);
 	if (error != 0) {
 		kern_logf("powervr: compute kernel: not run, %s (%d)\n", step, error);
+		teardown(&state);
+		return;
+	}
+
+	/* The fence kernel's variants first, before any probe that may lose the session. */
+	error = run_fence_variants(&state);
+	if (error != 0) {
 		teardown(&state);
 		return;
 	}
@@ -1630,7 +1642,8 @@ static int
 run_many_kernels(
 	struct check_state *state,
 	unsigned kernels,
-	unsigned flags)
+	unsigned flags,
+	const char *variant)
 {
 	struct powervr_compute_kernel kernel;
 	uint32_t words[POWERVR_COMPUTE_KERNEL_WORDS];
@@ -1674,8 +1687,13 @@ run_many_kernels(
 		stream += POWERVR_COMPUTE_KERNEL_WORDS * 4U;
 	}
 
-	/* The fence kernel, unless left out, and the end. */
-	if (error == 0 && (flags & MANY_NO_FENCE) == 0) {
+	/*
+	 * The fence kernel (two with MANY_TWO_FENCES), unless left out: its
+	 * own program and words, without freeing the shared registers with
+	 * MANY_FENCE_KEEP_SHARED, or the one-step store's kernel with only
+	 * the fence bit set with MANY_FENCE_STORE_PDS.  Then the end.
+	 */
+	for (count = 0; error == 0 && (flags & MANY_NO_FENCE) == 0 && count < ((flags & MANY_TWO_FENCES) != 0 ? 2U : 1U); count++) {
 		kern_memset(&kernel, 0, sizeof(kernel));
 		kernel.data_offset = pds_offset + PDS_FENCE * PDS_SLOT;
 		kernel.code_offset = pds_offset + PDS_FENCE * PDS_SLOT + PDS_CODE;
@@ -1684,8 +1702,17 @@ run_many_kernels(
 		kernel.max_instances = FENCE_INSTANCES;
 		kernel.fence = 1;
 		kernel.shared_from_pds = 1;
-		kernel.common_shared = 1;
+		kernel.common_shared = (flags & MANY_FENCE_KEEP_SHARED) != 0 ? 0U : 1U;
 		kernel.any_cluster = 1;
+		if ((flags & MANY_FENCE_STORE_PDS) != 0) {
+			kernel.data_offset = pds_offset + KICK_STEPS_ONE * PDS_SLOT;
+			kernel.code_offset = pds_offset + KICK_STEPS_ONE * PDS_SLOT + PDS_CODE;
+			kernel.pds_temporaries = PDS_INPUT_TEMPORARIES;
+			kernel.instances = POWERVR_COMPUTE_INSTANCES;
+			kernel.max_instances = 0;
+			kernel.shared_from_pds = 0;
+			kernel.common_shared = 0;
+		}
 		error = powervr_compute_kernel_words(&kernel, words);
 		for (i = 0; error == 0 && i < POWERVR_COMPUTE_KERNEL_WORDS; i++)
 			put_word(state->streams, stream + i * 4U, words[i]);
@@ -1706,22 +1733,72 @@ run_many_kernels(
 	after_error = error;
 	if (error == 0)
 		after_error = run_store_window(state, KICK_STEPS_ONE, STEPS_ONE_OFFSET, POWERVR_COMPUTE_INSTANCES, &after);
-	kern_logf("powervr: compute probes: executor layout %u kernels%s%s%s%s %u/32 (%d), %u words (%u bytes), one kernel after %u/32 (%d)\n",
-		  kernels,
-		  (flags & MANY_NO_FENCE) != 0 ? " no fence" : "",
-		  (flags & MANY_OWN_SLOTS) != 0 ? " own slots" : "",
-		  (flags & MANY_ALL_FENCED) != 0 ? " all fenced" : "",
-		  (flags & MANY_NO_RESUME) != 0 ? " no resume word" : "",
-		  written, error,
-		  (unsigned)((stream + 4U - (STREAM_FIRST + KICK_MANY * STREAM_SPACING)) / 4U),
-		  (unsigned)(stream + 4U - (STREAM_FIRST + KICK_MANY * STREAM_SPACING)),
-		  after, after_error);
+	if (variant != NULL)
+		kern_logf("powervr: compute probes: fence variant %s %u/32 (%d), one kernel after %u/32 (%d)\n",
+			  variant, written, error, after, after_error);
+	else
+		kern_logf("powervr: compute probes: executor layout %u kernels%s%s%s%s %u/32 (%d), %u words (%u bytes), one kernel after %u/32 (%d)\n",
+			  kernels,
+			  (flags & MANY_NO_FENCE) != 0 ? " no fence" : "",
+			  (flags & MANY_OWN_SLOTS) != 0 ? " own slots" : "",
+			  (flags & MANY_ALL_FENCED) != 0 ? " all fenced" : "",
+			  (flags & MANY_NO_RESUME) != 0 ? " no resume word" : "",
+			  written, error,
+			  (unsigned)((stream + 4U - (STREAM_FIRST + KICK_MANY * STREAM_SPACING)) / 4U),
+			  (unsigned)(stream + 4U - (STREAM_FIRST + KICK_MANY * STREAM_SPACING)),
+			  after, after_error);
 	if (error != 0)
 		return error;
 	if (after_error != 0)
 		return after_error;
 
 	/* Succeeded: the kick and the one after it finished. */
+	return 0;
+}
+
+/*
+ * Runs the fence kernel's variants on 16 kernels of the one-step store
+ * (the count that locks up), each on a session of its own, first in the
+ * check: (a) the fence kernel as it is, which matches Mesa's
+ * (pvr_compute_generate_fence and the fence data sequencer program) bit
+ * for bit; (b) one that keeps the shared registers (Mesa's
+ * deallocate_shareds false); (c) none (the store program already waits
+ * for its data before its end); (d) the one-step store's kernel with
+ * only the fence bit set; (e) two fence kernels.  Leaves a fresh
+ * session, or returns the error that kept one from opening.
+ */
+static int
+run_fence_variants(
+	struct check_state *state)
+{
+	static const struct {
+		const char *name;
+		unsigned flags;
+	} variants[] = {
+		{ "a (as is, Mesa's bytes)", 0 },
+		{ "b (keeps the shared registers)", MANY_FENCE_KEEP_SHARED },
+		{ "c (none, the store waits)", MANY_NO_FENCE },
+		{ "d (store kernel with the fence bit)", MANY_FENCE_STORE_PDS },
+		{ "e (two fence kernels)", MANY_TWO_FENCES },
+	};
+	const char *step;
+	unsigned i;
+	int error;
+
+	/* Each variant on a session opened for it, then one for the rest of the check. */
+	for (i = 0; i <= sizeof(variants) / sizeof(variants[0]); i++) {
+		teardown(state);
+		step = "open";
+		error = setup(state, &step);
+		if (error != 0) {
+			kern_logf("powervr: compute probes: fence variants: session not opened, %s (%d)\n", step, error);
+			return error;
+		}
+		if (i < sizeof(variants) / sizeof(variants[0]))
+			(void)run_many_kernels(state, FENCE_VARIANT_KERNELS, variants[i].flags, variants[i].name);
+	}
+
+	/* Succeeded: a fresh session is open. */
 	return 0;
 }
 
@@ -1755,7 +1832,7 @@ run_layouts(
 			kern_logf("powervr: compute probes: executor layout %u kernels: not run, %s (%d)\n", cases[i].kernels, step, error);
 			return;
 		}
-		(void)run_many_kernels(state, cases[i].kernels, cases[i].flags);
+		(void)run_many_kernels(state, cases[i].kernels, cases[i].flags, NULL);
 	}
 }
 
