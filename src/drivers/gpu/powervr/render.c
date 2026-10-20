@@ -79,6 +79,8 @@ static int resource_make(struct powervr_session *session, struct powervr_buffer 
 
 static int resource_make_flags(struct powervr_session *session, struct powervr_buffer *buffer, int mappable, int shareable, unsigned extra, struct powervr_resource **result);
 static void resource_unmake(struct powervr_session *session, struct powervr_resource *resource);
+static void resource_release(struct powervr_session *session, struct powervr_resource *resource);
+static void resources_drain(struct powervr_session *session, int force);
 static void blob_list(struct powervr_session *session, struct powervr_resource *resource, uint32_t *identifier);
 static int check_image(const struct powervr_buffer *buffer, const struct gpu_image_descriptor *image);
 static int make_pages(struct powervr_buffer *buffer);
@@ -768,6 +770,9 @@ render_close(
 		return;
 	}
 
+	/* The handles whose unmapping waited for the session's work, which has all ended. */
+	resources_drain(session, 1);
+
 	/* The border colour table, which no command reaches any more. */
 	if (session->border_table != NULL)
 		powervr_resource_unmake(session, session->border_table);
@@ -775,6 +780,7 @@ render_close(
 
 	/* Returns its render targets, its tables and records, then the bookkeeping. */
 	powervr_session_targets_destroy(render, session);
+	resources_drain(session, 1);
 	powervr_session_firmware_destroy(render, session);
 	kern_free(session);
 }
@@ -1228,6 +1234,9 @@ resource_make(
 {
 	int error;
 
+	/* Handles that waited for work which has since ended are unmapped first. */
+	resources_drain(session, 0);
+
 	/* Maps it with no flag beyond what host access asks for. */
 	error = resource_make_flags(session, buffer, mappable, shareable, 0, result);
 	if (error != 0)
@@ -1358,17 +1367,21 @@ resource_make_flags(
 /*
  * Undoes a handle: unmaps it and drops its buffer, unless the core may
  * still reach the session, when the mapping and the buffer both stay.
+ * While the session has work in flight the unmapping waits (q1523: a
+ * compositor dropped a client buffer's import while its last frame
+ * still sampled it, and the core read a page that was gone or mapped
+ * again): the handle is kept, mapped, on the session's deferred list
+ * until a later handle operation of the session finds no work left.
  */
 static void
 resource_unmake(
 	struct powervr_session *session,
 	struct powervr_resource *resource)
 {
-	struct powervr_gpu_space *space;
 	struct powervr_render *render;
 	struct powervr_resource **link;
 	unsigned long enabled;
-	unsigned keep;
+	unsigned busy;
 
 	/* A listed blob leaves its session's list. */
 	if (resource->identifier != 0) {
@@ -1379,6 +1392,75 @@ resource_unmake(
 			}
 		}
 	}
+
+	/* Earlier handles whose work has ended go first. */
+	resources_drain(session, 0);
+
+	/* Work in flight may still read it: it waits, mapped, on the deferred list. */
+	render = session->render;
+	enabled = spin_lock_irqsave(&render->queue_lock);
+
+	busy = session->outstanding != 0U || session->pending_count != 0U;
+
+	spin_unlock_irqrestore(&render->queue_lock, enabled);
+
+	if (busy) {
+		resource->next_blob = session->deferred;
+		session->deferred = resource;
+		return;
+	}
+
+	/* Nothing reads it any more. */
+	resource_release(session, resource);
+}
+
+/*
+ * Unmaps the session's deferred handles once no work of the session is
+ * in flight, or all of them when force is set (the session is going).
+ */
+static void
+resources_drain(
+	struct powervr_session *session,
+	int force)
+{
+	struct powervr_render *render;
+	struct powervr_resource *resource;
+	unsigned long enabled;
+	unsigned busy;
+
+	/* Nothing waits. */
+	if (session->deferred == NULL)
+		return;
+
+	/* Only when the session's work has ended. */
+	render = session->render;
+	enabled = spin_lock_irqsave(&render->queue_lock);
+
+	busy = session->outstanding != 0U || session->pending_count != 0U;
+
+	spin_unlock_irqrestore(&render->queue_lock, enabled);
+
+	if (busy && !force)
+		return;
+
+	/* Each one unmapped and dropped. */
+	while (session->deferred != NULL) {
+		resource = session->deferred;
+		session->deferred = resource->next_blob;
+		resource_release(session, resource);
+	}
+}
+
+/* Unmaps a handle no work reads any more and drops its buffer, unless the device or session is in quarantine. */
+static void
+resource_release(
+	struct powervr_session *session,
+	struct powervr_resource *resource)
+{
+	struct powervr_gpu_space *space;
+	struct powervr_render *render;
+	unsigned long enabled;
+	unsigned keep;
 
 	/* Reads whether the device or the session is in quarantine. */
 	render = session->render;

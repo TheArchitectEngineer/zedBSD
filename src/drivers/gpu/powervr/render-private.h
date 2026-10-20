@@ -259,7 +259,9 @@ struct powervr_transfer_context {
  * the render node's queue lock.  Blobs lists the session's blobs and
  * imports by identifier, and vk is the Vulkan executor's session (made
  * by the first command frame); both change only in the session's own
- * ioctls, which the GPU core serializes.  So do targets, the render
+ * ioctls, which the GPU core serializes; so does deferred, the handles
+ * destroyed while work was in flight, still mapped (render.c
+ * resource_unmake).  So do targets, the render
  * targets and free lists made by the first render, and abandoned, set
  * once a submission ran out of time while the core may still run it.
  * The program windows' spaces change under the core's lock.
@@ -298,6 +300,7 @@ struct powervr_session {
 	unsigned isolated;
 	unsigned retained;
 	struct powervr_resource *blobs;
+	struct powervr_resource *deferred;
 	struct powervr_resource *border_table;
 	struct powervr_marker markers[POWERVR_RENDER_PENDING];
 	unsigned reserved;
