@@ -1276,3 +1276,24 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
   - `build/p2q1481/`
   - scratchpad の `mesa25/`（rogue の build）、`mesa26/`（26.2.5 の build と vkcompute-host、run1.txt）。mesa26 は次の Mesa の参照に使えるので、残すかどうかは Q1 の判断。
   - scratchpad の `gen/`・`hdr*`・`wdf*`・`cmp*`・`mftest*`・`mesaform.c`・`mesa-groups.txt`・`timingtest*`
+
+### q1481-i01 の追加（Q1 の 3 通目）: lockup する probe を opt-in に、compute の stage は手書きの kernel で決める
+
+- **`POWERVR_COMPUTE_LOCKUP_PROBES`**（compute-program.h、既定 0）。0 の時、compute check は次を流さない:
+  - fence の変種（`run_fence_variants`）
+  - executor の並び（`run_layouts`。既定の並びは fence kernel 付き）
+  - timing の probe（`run_timing_probes`。どれが lockup したかは板で分けていないので、全部止めた）
+  - nop の probe（`run_nop_probe`）
+  - 「fence and end」の probe（`POWERVR_COMPUTE_FENCE_KERNEL` が 1 の時だけ。今回も止めたまま）
+- 既定の build で流す物:
+  - 手書きの kernel
+  - coherency の rounds
+  - 整数の probe と short store
+  - temporaries
+  - mesa-form fill
+  - compiled fill（1 kernel の形、4 通りの filler・間隔。dump は最初だけ）
+  - workgroup id の probe
+- **compute の stage は手書きの kernel だけで決める**。check の最後に、kernel が 0 で全語を書いていれば `powervr_stage_ok(POWERVR_STAGE_COMPUTE)`（記録を ok に上書きする）、そうでなければ `powervr_stage_fail(…, powervr_stage_reason_of(e))`。
+  - compiled fill などの結果は、それぞれの行で報告するだけ。probe の reset が Vulkan の device を閉じたままにしない。
+  - kernel が ETIMEDOUT で check を途中で止める経路は、従来どおり stage に触らない。
+- VF2 の vmunix（`build/p2q1481/vf2/vmunix`）: rc 0、warning 0。板は未実施。

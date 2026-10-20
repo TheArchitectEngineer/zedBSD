@@ -320,6 +320,7 @@ powervr_compute_check(
 	int wide_error;
 	int four_error;
 	int two_error;
+	int kernel_error;
 	int error;
 
 	/* Opens a session of the check's own, with its buffers mapped and its programs written. */
@@ -332,23 +333,29 @@ powervr_compute_check(
 		return;
 	}
 
-	/* The fence kernel's variants first, before any probe that may lose the session. */
-	error = run_fence_variants(&state);
-	if (error != 0) {
-		teardown(&state);
-		return;
+	/*
+	 * The probes that lock the compute data master up on the VF2 (the
+	 * fence variants, the timing probes), only when asked, first, each
+	 * leaving a fresh session; the Mesa-form fill always.
+	 */
+	if (POWERVR_COMPUTE_LOCKUP_PROBES) {
+		error = run_fence_variants(&state);
+		if (error != 0) {
+			teardown(&state);
+			return;
+		}
 	}
-
-	/* The Mesa-form fill, the groups' read and write timing, then a fresh session for the rest. */
 	run_mesa_form(&state);
-	run_timing_probes(&state);
-	teardown(&state);
-	step = "open";
-	error = setup(&state, &step);
-	if (error != 0) {
-		kern_logf("powervr: compute kernel: not run, %s (%d)\n", step, error);
+	if (POWERVR_COMPUTE_LOCKUP_PROBES) {
+		run_timing_probes(&state);
 		teardown(&state);
-		return;
+		step = "open";
+		error = setup(&state, &step);
+		if (error != 0) {
+			kern_logf("powervr: compute kernel: not run, %s (%d)\n", step, error);
+			teardown(&state);
+			return;
+		}
 	}
 
 	/* The kernel alone: every word of the first window, read through the alias. */
@@ -363,6 +370,9 @@ powervr_compute_check(
 	} else {
 		kern_logf("powervr: compute kernel: OK, %u/%u words written\n", written, (unsigned)CHECK_WORDS);
 	}
+	kernel_error = error;
+	if (kernel_error == 0 && written != CHECK_WORDS)
+		kernel_error = EIO;
 
 	/* A kick the core never finished may still write; everything stays with the core. */
 	if (error == ETIMEDOUT) {
@@ -399,8 +409,9 @@ powervr_compute_check(
 		return;
 	}
 
-	/* The probe with no-operation groups, which may stop the core, after everything else. */
-	run_nop_probe(&state);
+	/* The probe with no-operation groups, which may stop the core, only when asked. */
+	if (POWERVR_COMPUTE_LOCKUP_PROBES)
+		run_nop_probe(&state);
 
 	/*
 	 * The compiler's program the check's way (its prefixes first), then
@@ -423,7 +434,8 @@ powervr_compute_check(
 	shader_alu_source_gap = SHADER_ALU_SOURCE_GAP;
 	shader_store_source_gap = SHADER_STORE_SOURCE_GAP;
 	run_workgroup_probe(&state);
-	run_layouts(&state);
+	if (POWERVR_COMPUTE_LOCKUP_PROBES)
+		run_layouts(&state);
 
 	/* The grid of unified sizes and fields, last and only when asked, as its narrow cells fault. */
 	if (CHECK_GRID)
@@ -431,6 +443,16 @@ powervr_compute_check(
 
 	/* Unmaps and returns everything. */
 	teardown(&state);
+
+	/*
+	 * The compute stage is the hand-written kernel's: a probe's reset
+	 * (the compiled fill is reported on its own lines) does not keep the
+	 * Vulkan device closed.
+	 */
+	if (kernel_error == 0)
+		powervr_stage_ok(POWERVR_STAGE_COMPUTE);
+	else
+		powervr_stage_fail(POWERVR_STAGE_COMPUTE, powervr_stage_reason_of(kernel_error));
 }
 
 /* Opens the session, takes and maps the buffers, and writes the programs. */
