@@ -20,7 +20,8 @@
  * instance, device and compute come from one run of vkcompute, image
  * from a run of vkimage, and clear, copy, draw, sample, depth and
  * present-clear each from a run of vkstage with the stage's name
- * (present-clear runs "vkstage present", one cleared frame on the display,
+ * (present-clear runs "vkstage present", one cleared frame on the display held
+ * three seconds through the WSI readback route,
  * under a limit of 30 seconds).  present (vkdemo on the display) prints
  * skip(not built) until its phase adds it.
  *
