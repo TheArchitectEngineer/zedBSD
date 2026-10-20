@@ -1313,3 +1313,25 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
   - 原因: vk-queue.c の `QUEUE_USC_ROOM` 0x400（1 KiB）に、p009 の fill の program が収まらない。`powervr: vk: the compute shader did not compile (28)`、28 ＝ ENOSPC。
   - 板の compute check の inline の fill は 920 byte で、1 KiB に近い。vkcompute でも溢れうる。
   - **P1 への依頼（vk-queue.c）**: `QUEUE_USC_ROOM` を 0x800 に上げる（`QUEUE_USC_BYTES` ＝ room × QUEUE_KERNELS_MAX。1 kernel の executor では kernel は少ないので、総量は問題にならない見込み）。
+
+### q1486-i01 (2)(3): register の窓の重なりの probe、mesa-form の変種（既定の build で流れる。lockup の probe ではない）
+
+- **(2) `run_field_probes`**: madd source read（nop の filler、N ＝ 0〜3、timing の probe と同じ program、32 temps）の kick の task field だけを変える。
+  - 変える値は 5 通り: 計算どおり（`powervr_compute_task_field(32)` ＝ 9）、＋1、＋2、×2、×4（上限は 0x3f）。
+  - 行: `compute probes: field <名前> (F) madd source read after N nop: old MASK new MASK, lane 0 V lane 1 V (e)`。
+  - **読み方**: 計算どおりの field で new（lane 1〜31）が出て、広げた field で new が消えて全 lane が old になれば、instance の register の窓が重なっている（field が狭い）。
+    - その場合は `powervr_compute_task_field` と、P1 の vk-queue の `powervr_compute_temporaries_field(temps, 2, …)` を直し、間隔を 0 に戻せる。
+    - どの field でも同じなら、仮説は外れ。
+- **(3) mesa-form の変種**（`mesa_form_build(program, variant, …)`、4 workgroup ずつ）。行: `mesa-form fill <変種> N/128 (e), bytes, words 0 … 1 … 32 … 127 …`。
+  - `as is`: Mesa の群 6〜16 のまま（sc の定数、in-place、spacing 無し）。
+  - `constants in temporaries`: sc0・1・2・3・5・7 を temps r12〜r17 から読む。
+  - `fresh registers`: 上に加えて、どの群も読む register を書かない。store の pair は r20:r21、data は r22。
+  - `spaced`: 上に加えて、各群の後に 8 群の filler。
+  - 読み方:
+    - `as is` だけ 0 で `constants in temporaries` が通る → sc の定数を読む形（imadd・shift の special の source）に問題がある。
+    - `fresh` から通る → in-place（とくに add64 の pair）に問題がある。
+    - `spaced` だけ通る → 時期の問題。
+    - どれも 0 → 入力の代替（cf0・r11 の lane・r8/r9 の address）か、kick の形の側に問題がある。
+  - 板 79 の `as is` が 0/128 で、words が deaddead のまま（どこにも書かない）だった。window の filler は変種ごとに値を変えた（deaddead＋変種の番号）。
+- host の simulator（使い捨て）: 4 変種とも 128/128、880〜1,456 byte。
+- main の一時的な static assert（vk-queue.c の QUEUE_USC_ROOM 0x800 × 128 kernel）は、main 2244b19ca（QUEUE_KERNELS_MAX 64）で直ったので、それを merge して build した。VF2 の vmunix（`build/p2q1486/vf2/vmunix`）は rc 0、warning 0。板は未実施。
