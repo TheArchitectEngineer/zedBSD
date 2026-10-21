@@ -229,6 +229,58 @@ kwl_compose_clip_draw(
 	}
 }
 
+/*
+ * Draws a quad's vertices, whose bound pipeline, set and constants are
+ * recorded, only inside a rectangle of the pass's pixels: the scissor is
+ * the rectangle cut to the frame's scissor and, while the damage's
+ * rectangles are drawn apart, to each of them.  A shape is drawn this way
+ * in parts (its opaque inside and its blended edges, glass.c), every pixel
+ * by exactly one part.
+ */
+void
+kwl_compose_clip_draw_rect(
+	struct kwl_server *server,
+	struct kwl_list *command,
+	const VkRect2D *rect,
+	uint32_t vertices)
+{
+	struct kwl_compose *compose;
+	VkRect2D inside;
+	VkRect2D cut;
+	unsigned index;
+	int active;
+	int left;
+
+	/* The rectangle inside the frame's scissor; nothing of it is drawn outside. */
+	compose = server->compose;
+	left = clip_cut(rect, &compose->scissor_now, &inside);
+	if (!left)
+		return;
+
+	/* Without rectangles drawn apart: one draw within the rectangle. */
+	active = clip_active(compose);
+	if (!active) {
+		kwl_list_set_scissor(command, 0U, 1U, &inside);
+		compose->clip_scissor = inside;
+		compose->clip_serial = command->scissor_serial;
+		compose->clip_scissor_valid = 1U;
+		kwl_list_draw(command, vertices, 1U, 0U, 0U);
+		return;
+	}
+
+	/* Each damage rectangle the rectangle meets. */
+	for (index = 0U; index < compose->clip_count; index++) {
+		left = clip_cut(&compose->clips[index], &inside, &cut);
+		if (!left)
+			continue;
+		kwl_list_set_scissor(command, 0U, 1U, &cut);
+		compose->clip_scissor = cut;
+		compose->clip_serial = command->scissor_serial;
+		compose->clip_scissor_valid = 1U;
+		kwl_list_draw(command, vertices, 1U, 0U, 0U);
+	}
+}
+
 /* Tells whether the damage's rectangles are drawn apart in the pass being recorded: only the anchor's, not a backdrop's or a layer's. */
 static int
 clip_active(

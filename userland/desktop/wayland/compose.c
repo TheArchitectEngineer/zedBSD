@@ -1015,6 +1015,10 @@ kwl_compose_close(
 			if (compose->panel_pipelines[index] != VK_NULL_HANDLE)
 				vkDestroyPipeline(compose->device, compose->panel_pipelines[index], NULL);
 		}
+		for (index = 0; index < 2; index++) {
+			if (compose->panel_opaque_pipelines[index] != VK_NULL_HANDLE)
+				vkDestroyPipeline(compose->device, compose->panel_opaque_pipelines[index], NULL);
+		}
 
 		/* The family shares its constants, descriptors and sampler. */
 		vkDestroyPipelineLayout(compose->device, compose->panel_layout, NULL);
@@ -2053,6 +2057,18 @@ compose_panel_pipeline(
 			compose->panel_layout,
 			NULL,
 			pipeline);
+
+		/* The image and solid modes also without blending (the insides of opaque shapes, glass.c). */
+		if (error == VK_SUCCESS && (mode == 2U || mode == 3U)) {
+			error = compose_pipeline(
+				compose,
+				KWL_DRAW_OPAQUE,
+				vertex,
+				fragment,
+				compose->panel_layout,
+				NULL,
+				&compose->panel_opaque_pipelines[mode - 2U]);
+		}
 		vkDestroyShaderModule(compose->device, fragment, NULL);
 		if (error != VK_SUCCESS) {
 			vkDestroyShaderModule(compose->device, vertex, NULL);
