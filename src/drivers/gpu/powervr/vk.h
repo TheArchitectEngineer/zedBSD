@@ -46,8 +46,8 @@ struct powervr_vk_executor;
 #define POWERVR_VK_OBJECT_LIMIT		1024U
 
 /*
- * The buckets a session's published identities are found by (ws270-p007
- * q1550): the compositor's session holds hundreds of objects, and every
+ * The buckets a session's published identities are found by: the
+ * compositor's session holds hundreds of objects, and every
  * recorded command finds its objects, so a walk of one list cost the
  * End of a frame's command buffer about 10 ms on the VisionFive 2.
  */
@@ -55,8 +55,11 @@ struct powervr_vk_executor;
 
 /*
  * The memory types: device local only (type 0) and host visible and
- * coherent (type 1), both the same uncached system memory of one heap
- * (plan/ws269/design.md D7 (a)).
+ * coherent (type 1), both the same uncached system memory of one heap.
+ * The core does not snoop the processor's caches, so host visible memory
+ * is mapped through the uncached alias; a host cached type is not
+ * offered, since the user library never asks the driver to flush or
+ * invalidate a mapping.
  */
 #define POWERVR_VK_MEMORY_DEVICE	0U
 #define POWERVR_VK_MEMORY_HOST		1U

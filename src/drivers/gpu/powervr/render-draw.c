@@ -165,7 +165,7 @@
 
 /*
  * The data sequencer's triangle merging, off for a draw that neither
- * writes depth nor compares it (q1536: as Mesa does).
+ * writes depth nor compares it, as Mesa does.
  *
  * Values referenced: Mesa 26.2.5 src/imagination/csbgen/rogue/ppp.xml
  * (TA_STATE_PDS_SIZEINFO2 pds_tri_merge_disable 14);
@@ -603,9 +603,9 @@ powervr_draw_ppp_build(
 
 	/*
 	 * No varying base without a coefficient program, as Mesa leaves
-	 * pres_pds_state_ptr1 out (q1539: with this, no data sequencer
-	 * temporaries and pixel merging off, the ta trial on the board, each
-	 * extra full-screen draw cost about 0.02 ms where it cost 1.1 ms).
+	 * pres_pds_state_ptr1 out (on the board, with this, no data sequencer
+	 * temporaries and pixel merging off, each extra full-screen draw cost
+	 * about 0.02 ms where it had cost 1.1 ms).
 	 */
 	if (input->varyings->code_words == 0)
 		header &= ~HEADER_PDS_1;
@@ -932,7 +932,7 @@ fixed_fragment(
 			fixed->blending = true;
 	}
 
-	/* The blend constants a factor may name, as their float bits (q1548: they were always zero). */
+	/* The blend constants a factor may name, as their float bits. */
 	if (blend != NULL) {
 		for (index = 0; index < 4U; index++)
 			__builtin_memcpy(&fixed->blend_constants[index], &blend->blendConstants[index], sizeof(fixed->blend_constants[index]));

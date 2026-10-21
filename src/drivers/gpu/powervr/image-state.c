@@ -48,9 +48,9 @@
 
 /*
  * The features of a float format a shader samples and the transfer
- * copies and clears; a 16-bit float one filters too (ws269-p010m), and
- * is a colour attachment that blends (the compiler packs half floats
- * into two pixel output registers, ws269-p010p).
+ * copies and clears; a 16-bit float one filters too, and is a colour
+ * attachment that blends (the compiler packs half floats into two pixel
+ * output registers).
  */
 #define FEATURES_SAMPLED_F32		(VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | \
 					 VK_FORMAT_FEATURE_TRANSFER_SRC_BIT | \
@@ -260,8 +260,8 @@ powervr_image_lay_out(
 	 * A linear image's rows: the fewest whole texels that are a multiple
 	 * of the 32 bytes of a row and of the pixel back end's two-texel unit
 	 * of a line.  Its memory runs on to a whole number of 32-row tiles:
-	 * a transfer shades whole tiles, and board run 9 (q1523) showed one
-	 * reading 4032 bytes past the end of a 1920x1080 linear image.
+	 * a transfer shades whole tiles, and one was seen on the board reading
+	 * 4032 bytes past the end of a 1920x1080 linear image.
 	 *
 	 * Value referenced: Mesa 26.2.5 src/imagination/csbgen/rogue/
 	 * pbestate.xml (the unit of the line stride of the first register

@@ -13,7 +13,7 @@
  * when the client destroys it; its payload lives on while a dependent
  * object still holds it.  They are one list, and found through buckets
  * by the hash of their kind and identity (the compositor's session holds
- * hundreds, q1550).
+ * hundreds).
  */
 
 #include <stdbool.h>

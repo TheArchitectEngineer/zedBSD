@@ -20,11 +20,20 @@
  * task issue counts temporaries in blocks of four or of two, where the
  * hardware shows it.  None of them changes how memory is shared.
  *
- * Procedure referenced:
- * plan/ws256/design-peripherals.md section 2.4 (controls 0b, 1 and 6:
- * a clean line loaded before the device writes, eight rounds of 64 KiB
- * across 2 MiB, the verdict taken from the cached view only, and the
- * range dropped from the caches afterwards).
+ * The coherency rounds follow a fixed procedure.  A control first shows
+ * that the processor alone can be shown a stale line: clean lines loaded
+ * through the cached view, other values written through the uncached
+ * alias, and the old values read cached again.  Without it a matching
+ * round would prove nothing.  Each round then loads its window's lines
+ * clean before the core writes, so a write that does not reach the
+ * processor's caches reads back stale.  The eight windows of 64 KiB lie
+ * 128 KiB apart across 2 MiB, so they pass through different sets of the
+ * level-two cache, and each is small enough that no line is evicted and
+ * written back to fake a pass.  The verdict comes from the cached view
+ * only; the alias only tells whether a write reached memory at all.  The
+ * whole range is dropped from the caches afterwards, because the control
+ * and a failing round leave stale clean lines that the memory's next
+ * owner would read.
  */
 
 #include <stddef.h>
@@ -1266,13 +1275,13 @@ run_compiled_fill(
 #define DUMP_FILLER		0xdeaddeadU
 
 /*
- * Runs the compiled fill's first N groups followed by a dump of r0 to
- * r15 of every lane (lane L's register K at DUMP_OFFSET + L * 64 + K * 4),
- * for N in steps of PREFIX_STEP up to all the groups but the end, each
- * as one kernel the check's way, and reports lanes 0, 1 and 31 on one
- * line each, to compare with the host simulator's registers after the
- * same groups (plan/ws269/tests/p008/fill-registers.sh).  Stops at the
- * first that fails (the context is lost); returns that error.
+ * Runs the compiled fill's first N groups followed by a dump of r0 to r15
+ * of every lane (lane L's register K at DUMP_OFFSET + L * 64 + K * 4),
+ * for N in steps of PREFIX_STEP up to all the groups but the end, each as
+ * one kernel the check's way, and reports lanes 0, 1 and 31 on one line
+ * each, to compare with the host simulator's registers after the same
+ * groups.  Stops at the first that fails (the context is lost); returns
+ * that error.
  */
 static int
 run_prefixes(
@@ -1717,7 +1726,7 @@ run_workgroup_probe(
 
 /*
  * The rule probes: whether the shading cluster rules the board seemed to
- * show while the workgroup program was not Mesa's (before vf2-dmesg87)
+ * show while the workgroup program was not Mesa's still
  * hold with the three kernels and Mesa's program.  Each is one program
  * of groups in the order listed (no spacing added), one workgroup; its
  * words at RULE_OFFSET, lane L at +L*4.

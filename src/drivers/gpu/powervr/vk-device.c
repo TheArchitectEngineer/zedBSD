@@ -531,7 +531,8 @@ memory_properties(
 	/*
 	 * Device local, then host visible and coherent (uncached): the fewer
 	 * properties first, as the specification orders them.  Host cached is
-	 * not offered (design D7 (a)).
+	 * not offered: the user library never asks the driver to flush or
+	 * invalidate a mapping, so a cached view would go stale.
 	 */
 	record->memoryTypeCount = POWERVR_VK_MEMORY_TYPES;
 	record->memoryTypes[POWERVR_VK_MEMORY_DEVICE].propertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;

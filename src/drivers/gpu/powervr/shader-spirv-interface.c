@@ -482,7 +482,7 @@ reader_pixel_output(
 	 * blended; a missing channel is 0, a missing alpha 1.  Without
 	 * blending the pack clamps (its scaled 8-bit unsigned normalised
 	 * form saturates, as Mesa's pco relies on: pck.scale.u8888 with no
-	 * clamp before it), so the clamps are left out (q1536: eight of the
+	 * clamp before it), so the clamps are left out (they were eight of a
 	 * flat quad's 24 operations a pixel).
 	 */
 	blend = &reader->key->blend[variable->location];
@@ -497,7 +497,7 @@ reader_pixel_output(
 	}
 
 	/*
-	 * The sum-of-products form (q1548): a blend one operation does, with
+	 * The sum-of-products form: a blend one operation does, with
 	 * every channel a value or a constant the hardware holds (zero or
 	 * one), is one instruction of the clamped colour; with the raw form,
 	 * of the colour as the shader left it, for the operation to clamp
@@ -602,8 +602,8 @@ reader_pixel_output(
 
 /*
  * Works out one channel's blend factor, once a blend for the factors
- * that are the same for every colour channel (q1539: the one-minus
- * source alpha of premultiplied blending was worked out a channel).
+ * that are the same for every colour channel (otherwise the one-minus
+ * source alpha of premultiplied blending is worked out once a channel).
  */
 static struct powervr_ir_operand
 blend_factor_kept(
@@ -698,7 +698,7 @@ blend_sum(
 
 /*
  * Names the blend of POWERVR_IR_PIXEL_BLEND a pipeline's blend is, when
- * it is one (q1548): every channel written, and the colour and the
+ * it is one: every channel written, and the colour and the
  * alpha the same equation; ENOTSUP otherwise.
  */
 static int
@@ -836,8 +836,8 @@ blend_factor(
 }
 
 /*
- * Clamps a float to [0, 1]: one add of zero with the saturate (q1539:
- * the core's saturate in place of a maximum and a minimum, as Mesa's
+ * Clamps a float to [0, 1]: one add of zero with the saturate (the
+ * core's saturate in place of a maximum and a minimum, as Mesa's
  * pco lowers fsat).
  */
 static struct powervr_ir_operand

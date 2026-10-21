@@ -378,7 +378,7 @@ reader_decorate(
 		id->set = value;
 		break;
 	case DECORATION_NO_CONTRACTION:
-		/* Some result must stay as written: no fused multiply-add in the shader (q1539). */
+		/* Some result must stay as written: no fused multiply-add in the shader. */
 		reader->shader->exact = 1;
 		break;
 	default:

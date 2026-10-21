@@ -1021,7 +1021,7 @@ powervr_usc_iterate(
 }
 
 /*
- * Encodes the control unit's iterate and sample (q1546):
+ * Encodes the control unit's iterate and sample:
  * the coordinates iterated from coefficient sets the way a direct
  * iteration does, then sampled with the image and sampler state the
  * shared registers hold, into temporaries from destination on.

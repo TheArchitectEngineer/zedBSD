@@ -284,7 +284,7 @@ powervr_compute_temporaries_field(
  * PVR_ROGUE_PDSINST_DOUT_FIELDS_DOUTU_SRC0_TEMPS_ALIGNSIZE 4), for one
  * register more than the program uses.  The check's hand-written
  * kernels, issued by the plain kick program, ran with one more and not
- * without it (16384/16384 until vf2-dmesg87, 6944/16384 in vf2-dmesg88);
+ * without it (all 16384 words written with it, 6944 of 16384 without);
  * the workgroup program (Mesa's) runs with either.
  */
 int
@@ -394,7 +394,7 @@ static const uint32_t group_code[POWERVR_COMPUTE_PDS_GROUP_CODE_WORDS] = {
  * and POWERVR_COMPUTE_GROUP_USC_INPUTS unified store registers (the local
  * id).  On the board the earlier program (the task issue alone in the
  * instance pass) let the instances' registers overlap over several
- * workgroups, and Mesa's ran 4096/4096 (vf2-dmesg87, 2026-10-21).
+ * workgroups, and Mesa's ran 4096/4096.
  *
  * Procedure referenced:
  * Mesa 26.2.5 src/imagination/vulkan/pds/pvr_pds.c (pvr_pds_compute_shader
@@ -1431,8 +1431,8 @@ multiply_add_group(
  *
  * The destination pair may be the base pair: the add in place was wrong
  * on the board only while the workgroup's data sequencer program let
- * instances' registers overlap (2026-10-20); with Mesa's program it is
- * right (rule probe, vf2-dmesg95), as Mesa's compiler emits it.
+ * instances' registers overlap; with Mesa's program it is right (the
+ * rule probe shows it), as Mesa's compiler emits it.
  *
  * Procedure referenced:
  * Mesa 26.2.5 src/imagination/pco/pco_map.py (group_map O_ADD64_32:

@@ -249,12 +249,11 @@
 #define DC_STALL_TICKS		KERN_MS_TO_TICKS(100U)
 
 /*
- * How far before the next blank a commit is still taken at that blank
- * (ws270-p007 q1550), in microseconds, and the shortest and longest
- * frames the measured period may be.  A commit written earlier in the
- * frame counts from the blank before (drv_powervr_dc_commit), so it is
- * taken one blank sooner: the presents of the desktop's frames were held
- * to one every two blanks.
+ * How far before the next blank a commit is still taken at that blank, in
+ * microseconds, and the shortest and longest frames the measured period
+ * may be.  A commit written earlier in the frame counts from the blank
+ * before (drv_powervr_dc_commit), so it is taken one blank sooner: the
+ * presents of the desktop's frames were held to one every two blanks.
  */
 #define DC_EARLY_MARGIN_US	3000U
 #define DC_PERIOD_LEAST_US	8000U
@@ -754,8 +753,8 @@ drv_powervr_dc_vblank_start(
 
 	/*
 	 * Gives the source its priority: registering only routes it, and a
-	 * source of priority 0 never reaches the hart (q1529: the controller's
-	 * pending bit was set and the handler never ran).
+	 * source of priority 0 never reaches the hart (the controller's
+	 * pending bit is set and the handler never runs).
 	 */
 	kern_irq_unmask(blanks->irq);
 	kern_logf("dc8200: vblank interrupt %d unmasked\n", blanks->irq);
@@ -1030,8 +1029,8 @@ drv_powervr_dc_vblank_report(
 	/*
 	 * The PLIC's view of the source, the controller's interrupt enable and
 	 * the panel's configuration.  The pending register (0x10) is not read:
-	 * the read clears it, and only the handler may (q1529: a read here ate
-	 * the interrupt the handler waited for).
+	 * the read clears it, and only the handler may (a read here eats the
+	 * interrupt the handler waits for).
 	 */
 	plic_report(board_blanks.irq, 0);
 	kern_logf("dc8200: interrupt enable %x, panel config %x\n",

@@ -180,7 +180,7 @@ powervr_data_resolve(
 			error = load_add(loads, room, count, POWERVR_DATA_LOAD_DMA, request->shared, 4, state->blend_address);
 			break;
 		case POWERVR_SHADER_REQUEST_COMPUTED:
-			/* The program's shared program writes these words itself (q1546). */
+			/* The program's shared program writes these words itself. */
 			error = 0;
 			break;
 		default:
@@ -223,8 +223,8 @@ powervr_data_shared_build(
 
 /*
  * Builds a shared register program from its loads and, when task is not
- * NULL, the issue of a shared task after them (q1546: the fragment
- * program's shared program, which computes words into the shared
+ * NULL, the issue of a shared task after them (the fragment program's
+ * shared program, which computes words into the shared
  * registers from the ones the loads fill): the last load is still
  * marked, but the issue ends the program.  The issue's task word is the
  * 64-bit constant after the loads'.

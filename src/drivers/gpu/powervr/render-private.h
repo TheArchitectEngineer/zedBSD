@@ -94,7 +94,7 @@ struct powervr_resource {
 	int mappable;
 	uint32_t identifier;
 	struct powervr_resource *next_blob;
-	/* Diagnostics (q1523): every live handle of the session, under the core's lock, and who made it. */
+	/* Diagnostics: every live handle of the session, under the core's lock, and who made it. */
 	struct powervr_resource *next_all;
 	uintptr_t origin;
 	unsigned shareable;
@@ -154,7 +154,7 @@ struct powervr_job_done;
 
 /*
  * A render job's memory (render-job.c), and how many a session keeps
- * mapped for its next jobs (ws270-p007, q1541): every map and unmap of a
+ * mapped for its next jobs: every map and unmap of a
  * buffer waits for the firmware to flush the core's MMU cache, six of each
  * a job, so the memory of finished jobs is reused instead.
  */
@@ -282,7 +282,7 @@ struct powervr_transfer_context {
 };
 
 /*
- * Diagnostics (q1523): a compact note of the session's newest render job,
+ * Diagnostics: a compact note of the session's newest render job,
  * printed when a context reset names the session: the area, the colour
  * targets, and for each draw its pipeline, scissor and textures (the
  * image state words, and the sampler's first word).

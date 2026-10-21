@@ -441,8 +441,8 @@ static int draw_add(struct powervr_render_job *job, const struct draw_state *sta
  * Turns a command buffer's render pass instances into render jobs, in
  * order: a begin starts one, a clear attachments applies to it, each
  * draw is added to it with the state the records set before it, an end
- * closes it.  An instance with a partial area and a depth store is
- * dropped with its log line (design section 4.3).  An instance with
+ * closes it.  An instance whose job refuses a partial area with a depth
+ * store (EPERM) is dropped with its log line.  An instance with
  * more draws than a job has room for goes on in further jobs, each
  * loading what the one before stored (powervr_render_job_continue).  The
  * jobs are built in place.  Refuses more jobs or draws than room (E2BIG), records

@@ -43,7 +43,7 @@
 #define POWERVR_DRAW_VDM_WORDS		20U
 
 /*
- * Test switches of a draw's primitive state (q1539), a bit each, none as
+ * Test switches of a draw's primitive state, a bit each, none as
  * built: the pass type punch-through for opaque draws (Mesa's for a
  * shader that discards).  The former 1 and 2 (no varying base without
  * a coefficient program, no data sequencer temporaries) are built in.
@@ -54,13 +54,13 @@
 #define POWERVR_DRAW_TRIAL_PUNCH_THROUGH	4U
 
 /*
- * The fragment shader forms a pipeline takes (q1546; the compiler's
+ * The fragment shader forms a pipeline takes (the compiler's
  * POWERVR_SHADER_FORM_*), as built: the shared program, run once a draw
  * from the shared register program (0x1); the sample that iterates its
  * coordinates (0x4); the colour written by one sum of products (0x8)
  * that clamps the blended colour itself (0x10); and the iterate and
- * sample that waits for its own data (0x20).  The board saw these right
- * on d85 to d88 (q1548).
+ * sample that waits for its own data (0x20).  Each of these drew right
+ * on the board.
  */
 #define POWERVR_DRAW_FORMS			0x3dU
 
@@ -106,7 +106,7 @@ struct powervr_draw_fixed {
 	struct powervr_shader_key vertex_key;
 	struct powervr_shader_key fragment_key;
 
-	/* The colour blend's constants as the pipeline gives them, the float bits (q1548). */
+	/* The colour blend's constants as the pipeline gives them, the float bits. */
 	uint32_t blend_constants[4];
 };
 

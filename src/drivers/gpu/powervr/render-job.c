@@ -197,9 +197,9 @@ struct job_memory {
 	uint32_t vdm[POWERVR_DRAW_VDM_WORDS];
 	/*
 	 * The shaders' code in the draws' shading cluster buffer, once a
-	 * pipeline (q1541: a desktop's frame draws a few pipelines many times,
-	 * and each draw copied its code again): the pipelines met, where each
-	 * one's code is, and where each draw's is.
+	 * pipeline (a desktop's frame draws a few pipelines many times, and a
+	 * copy of the code for each draw cost that many copies): the
+	 * pipelines met, where each one's code is, and where each draw's is.
 	 */
 	const struct powervr_vk_graphics *code_pipelines[POWERVR_RENDER_DRAWS + 1U];
 	uint64_t code_pipeline_places[POWERVR_RENDER_DRAWS + 1U];
@@ -326,8 +326,8 @@ powervr_render_job_run(
 	 * A loaded colour attachment: the job runs with its background's
 	 * contents not mattering and a load draw first (LOAD_DRAW).  The first
 	 * colour target is taken as not loaded where its background is made
-	 * (load_drawn), without a copy of the job (q1541: a job of 512 draws'
-	 * room, about 144 KB, was copied for that alone).
+	 * (load_drawn), without a copy of the job (a job of 512 draws' room is
+	 * about 144 KB).
 	 */
 	given = job;
 	work = NULL;
@@ -380,7 +380,7 @@ powervr_render_job_run(
 	error = job_map(render, session, memory);
 	powervr_timing_add(POWERVR_TIMING_JOB_MAP, started);
 
-	/* The background's programs and the load draw, the first part of the build timed alone (q1541). */
+	/* The background's programs and the load draw, the first part of the build timed alone. */
 	started = powervr_timing_now();
 	if (error == 0)
 		error = job_programs(job, load_drawn, memory, &shared_registers);
@@ -410,7 +410,7 @@ powervr_render_job_run(
 			return error;
 		}
 
-		/* q1523 diagnostics: the session keeps a note of its newest job for a reset's report. */
+		/* Diagnostics: the session keeps a note of its newest job for a reset's report. */
 		powervr_session_note_job(session, job, prefix);
 	}
 
@@ -1327,7 +1327,7 @@ job_draws(
 			return error;
 	}
 
-	/* Each pipeline's two shaders' code, once (the memory's and the code's times apart, q1541). */
+	/* Each pipeline's two shaders' code, once (the memory's and the code's times apart). */
 	powervr_timing_add(POWERVR_TIMING_DRAW_MEMORY, part_started);
 	part_started = powervr_timing_now();
 	for (code = 0; code < memory->code_pipeline_count; code++) {
@@ -1595,7 +1595,7 @@ draw_place(
  * Builds and places a shader's shared register program from the bound
  * state; one halt when it takes no shared registers.  A program with a
  * shared program (its code at usc, the program's place in the shader
- * heap, plus shared_offset) has it issued after the loads (q1546).
+ * heap, plus shared_offset) has it issued after the loads.
  */
 static int
 draw_shared(
@@ -1654,7 +1654,7 @@ draw_shared(
 /*
  * Gives a job's memory back once its 3D finished, or when it was never
  * kicked: kept mapped for the session's next job while there is room and
- * the session and the core are well (ws270-p007, q1541), else freed.
+ * the session and the core are well, else freed.
  */
 static void
 job_release(
@@ -1760,8 +1760,8 @@ attribute_words(
 
 /*
  * Writes words through a buffer's uncached view, little-endian: a word at
- * a time where the place is a word's (q1541: each uncached store is a bus
- * write, so a byte at a time cost four), else a byte at a time.
+ * a time where the place is a word's (each uncached store is a bus
+ * write, so a byte at a time costs four), else a byte at a time.
  */
 static void
 put_words(
@@ -1793,7 +1793,7 @@ put_words(
 /*
  * Writes bytes through a buffer's uncached view: the bytes up to a word's
  * place one at a time, then whole words assembled from them (one store
- * each, q1541), then the bytes left.
+ * each), then the bytes left.
  */
 static void
 put_bytes(
@@ -1834,7 +1834,7 @@ put_bytes(
 
 /*
  * Tells whether a job's fragment may leave the tiles no primitive reaches
- * untouched (ws270-p007): no colour target is cleared there and there is
+ * untouched: no colour target is cleared there and there is
  * no depth target, so such a tile's memory is already what the render
  * leaves in it (a loaded target's pixels; a target whose old contents do
  * not matter).  A job loading through its load draw has that draw over
@@ -1862,7 +1862,7 @@ job_skips_empty_tiles(
 }
 
 /*
- * Tells whether a job's fragment needs no background object (ws270-p007):
+ * Tells whether a job's fragment needs no background object:
  * no depth target, and every colour target's old contents do not matter
  * (a target loaded through the load draw, load_drawn, is one, the draw
  * covering its render area), so no tile's pixels come from the background.
@@ -2023,7 +2023,7 @@ job_draw_memory_make(
 	struct powervr_buffer *buffer;
 	int error;
 
-	/* Each made larger than asked (q1541), so that the next jobs of more draws fit without mapping again. */
+	/* Each made larger than asked, so that the next jobs of more draws fit without mapping again. */
 	general_bytes = job_draw_memory_room(general_bytes);
 	pds_bytes = job_draw_memory_room(pds_bytes);
 	usc_bytes = job_draw_memory_room(usc_bytes);

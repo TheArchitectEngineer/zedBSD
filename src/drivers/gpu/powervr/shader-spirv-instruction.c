@@ -1156,9 +1156,9 @@ reader_extended(
 			break;
 		case GLSL_F_MIX:
 			/*
-			 * Towards 0 or 1 (q1539: the glass whitens and darkens
-			 * so): x * (1 - z), or x * (1 - z) + z, with 1 - z
-			 * worked out once for the words of one weight.
+			 * Towards 0 or 1 (the desktop's glass whitens and
+			 * darkens so): x * (1 - z), or x * (1 - z) + z, with
+			 * 1 - z worked out once for the words of one weight.
 			 */
 			if (y.kind == POWERVR_IR_OPERAND_CONSTANT && y.modifiers == 0 && (y.constant == 0 || y.constant == FLOAT_ONE)) {
 				if (kept_mix == 0 || !same_operand(&mix_weight, &z)) {

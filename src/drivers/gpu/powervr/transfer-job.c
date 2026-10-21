@@ -123,9 +123,9 @@ powervr_transfer_run(
 		error = transfer_one(render, session, memory, request, &request->area, request->source_y, 1U, 0U, 0U);
 	} else if (request->kind == POWERVR_TRANSFER_COPY) {
 		/*
-		 * A copy into odd rows: two jobs of doubled line stride, the even
-		 * rows and the odd ones, each sampling every second source row
-		 * (q1534; before, one job a row).
+		 * A copy into odd rows: two jobs of doubled line stride, the
+		 * even rows and the odd ones, each sampling every second
+		 * source row, rather than one job a row.
 		 */
 		single = *request;
 		single.destination.row_pitch = request->destination.row_pitch * 2U;
@@ -140,10 +140,11 @@ powervr_transfer_run(
 		}
 	} else {
 		/*
-		 * A copy's row is a surface of its own one row high at that row's
-		 * address: the line stride cannot name an odd row, so a row of
-		 * the whole surface would land at the wrong place (q1523,
-		 * copy-65).  A blit's row keeps the whole surface and mapping.
+		 * A copy's row is a surface of its own one row high at that
+		 * row's address: the line stride cannot name an odd row, so a
+		 * row of the whole surface would land at the wrong place
+		 * (vkmatrix's copy-65 case shows it).  A blit's row keeps the
+		 * whole surface and mapping.
 		 */
 		row = request->area;
 		row.height = 1;
