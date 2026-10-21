@@ -780,6 +780,14 @@ void powervr_target_catalogues(const struct powervr_target *target, unsigned hal
 uint32_t powervr_target_record_address(const struct powervr_target *target);
 
 void powervr_target_dump(const struct powervr_target *target);
+
+/*
+ * Prints what the render targets know of a recovery: the free lists a
+ * faulted parameter manager catalogue page lies in or is listed by, and
+ * the target half at the recovery's data set address; the core's lock is
+ * held (render-target.c).
+ */
+void powervr_targets_describe_fault(struct powervr_render *render, uint32_t target_data, uint64_t catalogue);
 void powervr_session_global_list_dump(const struct powervr_session *session);
 
 /* Reports the firmware address of the cleanup count of one half of a render target, which a kick names. */

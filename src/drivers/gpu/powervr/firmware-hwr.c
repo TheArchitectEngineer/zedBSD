@@ -72,6 +72,26 @@
 #define HWR_TYPE_BIF0		3U
 #define HWR_TYPE_TEXAS_BIF0	5U
 
+/*
+ * The first catalogue base the parameter manager's own catalogues take
+ * (8 to 15: VCE, TE, ZLS and ALIST of its two sets).
+ *
+ * Values referenced: StarFive Linux JH7110_VisionFive2_6.12.y_devel
+ * drivers/gpu/drm/img/img-rogue/services/server/devices/rogue/rgxdebug.c
+ * (_RGXDecodePMPC: 0x8 PM-VCE0 to 0xF PM-ALIST1; _RGXDecodeMMULevel: data
+ * type 0 page table, 1 directory, 2 catalogue, 3 catalogue base).
+ */
+#define HWR_PM_CATALOGUE_FIRST	8U
+
+/* The MMU level a fault stopped at (data type 0..3), and the parameter manager's catalogue bases 8..15. */
+static const char *const level_names[] = {
+	"page table", "page directory", "page catalogue", "catalogue base"
+};
+static const char *const pm_catalogue_names[] = {
+	"PM VCE0", "PM TE0", "PM ZLS0", "PM ALIST0", "PM VCE1", "PM TE1", "PM ZLS1", "PM ALIST1"
+};
+
+/* The requesters by tag ID. */
 static const char *const tag_names[] = {
 	"MMU", "CPU MMU", "CPU IFU", "CPU LSU", "MIPS", "CDM 0", "CDM 1", "CDM 2",
 	"CDM 3", "VDM 0", "VDM 1", "VDM 2", "VDM 3", "VDM 4", "PDS 0", "PDS 1",
@@ -102,6 +122,8 @@ powervr_hwr_dump(
 	uint32_t words[8];
 	uint32_t done;
 	uint32_t count;
+	uint32_t type;
+	uint64_t catalogue;
 
 	/* The buffer's counters, and each data master's counts. */
 	info = &core->firmware.hwr_info;
@@ -136,8 +158,18 @@ powervr_hwr_dump(
 			  (unsigned long long)get64(info, base + 88U), (unsigned long long)get64(info, base + 96U),
 			  (unsigned long long)get64(info, base + 104U), (unsigned long long)get64(info, base + 112U),
 			  (unsigned long long)get64(info, base + 32U));
-		if (powervr_object_get32(info, base + 72U) >= HWR_TYPE_BIF0 && powervr_object_get32(info, base + 72U) <= HWR_TYPE_TEXAS_BIF0)
+		catalogue = 0;
+		type = powervr_object_get32(info, base + 72U);
+		if (type >= HWR_TYPE_BIF0 && type <= HWR_TYPE_TEXAS_BIF0) {
 			bif_decode(record, get64(info, base), get64(info, base + 8U), get64(info, base + 16U));
+
+			/* A fault through a parameter manager catalogue base (8 and up) names that catalogue's page. */
+			if (((get64(info, base + 8U) >> 12) & 0xfU) >= HWR_PM_CATALOGUE_FIRST)
+				catalogue = get64(info, base + 16U) & ~0xfffULL;
+		}
+
+		/* What the render targets know of the record's data set and the catalogue. */
+		powervr_targets_describe_fault(core->render, powervr_object_get32(info, base + 56U), catalogue);
 	}
 
 	/*
@@ -197,17 +229,27 @@ bif_decode(
 	uint64_t catalogue)
 {
 	uint32_t tag;
+	uint32_t base;
 	const char *name;
+	const char *base_name;
 
 	/* The requester by its tag. */
 	tag = (uint32_t)((request >> 40) & 0x3fU);
 	name = "?";
 	if (tag < sizeof(tag_names) / sizeof(tag_names[0]))
 		name = tag_names[tag];
-	kern_logf("powervr: hwr: record %u: bif fault at 0x%llx, %s by tag %u (%s) side band %u; mmu fault %u read only %u pm/meta read only %u data type %u page size %u catalogue base %u; page catalogue 0x%llx\n",
+
+	/* The catalogue base: a context's (0 to 7) or one of the parameter manager's. */
+	base = (uint32_t)((status >> 12) & 0xfU);
+	base_name = "context";
+	if (base >= HWR_PM_CATALOGUE_FIRST)
+		base_name = pm_catalogue_names[base - HWR_PM_CATALOGUE_FIRST];
+
+	/* The fault, decoded. */
+	kern_logf("powervr: hwr: record %u: bif fault at 0x%llx, %s by tag %u (%s) side band %u; mmu fault %u read only %u pm/meta read only %u level %s page size %u catalogue base %u (%s); page catalogue 0x%llx\n",
 		  (unsigned)record, (unsigned long long)(request & 0xfffffffff0ULL), ((request >> 52) & 1U) != 0 ? "read" : "write",
 		  (unsigned)tag, name, (unsigned)((request >> 46) & 0x3fU),
 		  (unsigned)(status & 1U), (unsigned)((status >> 4) & 1U), (unsigned)((status >> 2) & 1U),
-		  (unsigned)((status >> 5) & 3U), (unsigned)((status >> 8) & 7U), (unsigned)((status >> 12) & 0xfU),
+		  level_names[(status >> 5) & 3U], (unsigned)((status >> 8) & 7U), (unsigned)base, base_name,
 		  (unsigned long long)catalogue);
 }

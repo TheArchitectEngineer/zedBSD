@@ -138,6 +138,11 @@ static void notice_statistics(struct powervr_render *render, const uint32_t noti
 static void rebuild_list(struct powervr_free_list *list);
 static struct powervr_gpu_space *program_space(struct powervr_session *session, enum powervr_program_heap heap);
 static uint64_t ms_ticks(unsigned milliseconds);
+static void describe_catalogue(struct powervr_render *render, uint64_t catalogue);
+static void describe_listing(const struct powervr_free_list *list, uint32_t frame);
+static void describe_half(struct powervr_render *render, const struct powervr_target *target, unsigned half);
+static void describe_list(const char *name, const struct powervr_free_list *list);
+static uint64_t target_word64(const struct powervr_target *target, uint32_t offset);
 
 /*
  * Sets up a session's program windows.
@@ -1101,11 +1106,14 @@ notice_rebuild(
 	if (error != 0)
 		return;
 
-	/* Each one the node knows. */
+	/* Each one the node knows; a debug kernel says first how the firmware left it. */
 	for (index = 0; index < count; index++) {
 		list = list_find(render, identities[index]);
-		if (list != NULL)
-			rebuild_list(list);
+		if (list == NULL)
+			continue;
+		if (POWERVR_DEBUG)
+			describe_list("rebuilt", list);
+		rebuild_list(list);
 	}
 	render->target_events.rebuilds++;
 
@@ -1333,4 +1341,223 @@ powervr_session_global_list_dump(
 			  (unsigned)powervr_object_get32(&list->record, offset + 16U), (unsigned)powervr_object_get32(&list->record, offset + 20U),
 			  (unsigned)powervr_object_get32(&list->record, offset + 24U), (unsigned)powervr_object_get32(&list->record, offset + 28U));
 	}
+}
+
+/*
+ * Prints what the render targets know of a recovery: for a catalogue
+ * (the page a parameter manager catalogue base named in a BIF fault, 0
+ * for none), every free list whose pages hold it or whose entries list
+ * its page with the page's words; then the target half at the data set
+ * address the recovery names, with its record's parameter manager words,
+ * its macrolist's first entries and its two lists' records.  The core's
+ * lock is held (a reset notice), so the listed free lists and their
+ * targets stay.
+ */
+void
+powervr_targets_describe_fault(
+	struct powervr_render *render,
+	uint32_t target_data,
+	uint64_t catalogue)
+{
+	struct powervr_free_list *list;
+	unsigned half;
+
+	/* Nothing without the render node. */
+	if (render == NULL)
+		return;
+
+	/* The catalogue's page, when the fault named one. */
+	if (catalogue != 0U)
+		describe_catalogue(render, catalogue);
+
+	/* The half at the data set address: each local list's target, both halves. */
+	for (list = render->free_lists; list != NULL; list = list->next) {
+		if (list->owner == NULL)
+			continue;
+		for (half = 0; half < 2U; half++) {
+			if (powervr_target_data_address(list->owner, half) == target_data)
+				describe_half(render, list->owner, half);
+		}
+	}
+}
+
+/*
+ * Prints the free lists a catalogue page belongs to: each whose pages
+ * hold it, with the page's first words and how many of its words are
+ * set (read through the uncached view, as the core sees them), and each
+ * whose entries name its page (a page two lists hand out is a page two
+ * parameter managers write).
+ */
+static void
+describe_catalogue(
+	struct powervr_render *render,
+	uint64_t catalogue)
+{
+	struct powervr_free_list *list;
+	volatile const uint32_t *words;
+	uint64_t page;
+	uint32_t frame;
+	uint32_t index;
+	unsigned set;
+	unsigned held;
+
+	/* The page and its parameter manager number. */
+	page = catalogue & ~(uint64_t)(POWERVR_PM_PAGE_BYTES - 1U);
+	frame = (uint32_t)(page >> POWERVR_PM_PAGE_SHIFT);
+	held = 0;
+
+	/* Each listed free list: whether its pages hold the page, and whether its entries name it. */
+	for (list = render->free_lists; list != NULL; list = list->next) {
+		if (list->pages != NULL && page >= list->pages->run.paddr && page < list->pages->run.paddr + list->pages->run.size) {
+			/* The page's words as the core reads them. */
+			words = (volatile const uint32_t *)(list->pages->view + (page - list->pages->run.paddr));
+			set = 0;
+			for (index = 0; index < POWERVR_PM_PAGE_BYTES / 4U; index++) {
+				if (words[index] != 0U)
+					set++;
+			}
+			held++;
+			kern_logf("powervr: hwr: catalogue 0x%llx is page %u of free list %u (%s, %u pages); %u of %u words set: %08x %08x %08x %08x %08x %08x %08x %08x\n",
+				  (unsigned long long)catalogue, (unsigned)((page - list->pages->run.paddr) >> POWERVR_PM_PAGE_SHIFT),
+				  (unsigned)list->identity, list->owner != NULL ? "local" : "global", (unsigned)list->page_count,
+				  set, (unsigned)(POWERVR_PM_PAGE_BYTES / 4U), (unsigned)words[0], (unsigned)words[1], (unsigned)words[2],
+				  (unsigned)words[3], (unsigned)words[4], (unsigned)words[5], (unsigned)words[6], (unsigned)words[7]);
+		}
+		describe_listing(list, frame);
+	}
+
+	/* A page no list holds came from elsewhere. */
+	if (held == 0U)
+		kern_logf("powervr: hwr: catalogue 0x%llx is in no free list's pages\n", (unsigned long long)catalogue);
+}
+
+/* Prints where a free list's entries name a page, and its stack top, when they do. */
+static void
+describe_listing(
+	const struct powervr_free_list *list,
+	uint32_t frame)
+{
+	volatile const uint32_t *entries;
+	uint32_t index;
+	uint32_t first;
+	uint32_t last;
+	unsigned count;
+
+	/* Nothing without the entries. */
+	if (list->entries == NULL)
+		return;
+
+	/* Every entry naming the page: how many, the first and the last. */
+	entries = (volatile const uint32_t *)list->entries->buffer->view;
+	count = 0;
+	first = 0;
+	last = 0;
+	for (index = 0; index < list->page_count; index++) {
+		if (entries[index] != frame)
+			continue;
+		if (count == 0U)
+			first = index;
+		last = index;
+		count++;
+	}
+
+	/* Said only when listed. */
+	if (count == 0U)
+		return;
+	kern_logf("powervr: hwr: free list %u (%s, %u pages) names the page %u time(s), entries %u..%u; stack top %u, allocated %u, tables %u\n",
+		  (unsigned)list->identity, list->owner != NULL ? "local" : "global", (unsigned)list->page_count, count,
+		  (unsigned)first, (unsigned)last,
+		  (unsigned)powervr_object_get32(&list->record, (uint32_t)offsetof(struct powervr_fw_free_list, stack_top)),
+		  (unsigned)powervr_object_get32(&list->record, (uint32_t)offsetof(struct powervr_fw_free_list, allocated_pages)),
+		  (unsigned)powervr_object_get32(&list->record, (uint32_t)offsetof(struct powervr_fw_free_list, allocated_table_pages)));
+}
+
+/*
+ * Prints one target half the recovery named: its record's parameter
+ * manager words (each 64-bit catalogue, its last one, the lists'
+ * stacks, flags and state), its macrolist's first entries, and its
+ * local and global lists.
+ */
+static void
+describe_half(
+	struct powervr_render *render,
+	const struct powervr_target *target,
+	unsigned half)
+{
+	const struct powervr_free_list *list;
+	volatile const uint32_t *macrolist;
+	uint32_t base;
+	uint32_t global;
+
+	/* The half and its catalogues: VCE 0..3 and their last ones, TE 0..3 and theirs, the ALIST and its last. */
+	base = POWERVR_TARGET_DATA_OFFSET(half);
+	kern_logf("powervr: hwr: target 0x%x %ux%u half %u (next %u): vce %llx %llx %llx %llx last %llx; te %llx %llx %llx %llx last %llx %llx\n",
+		  (unsigned)powervr_object_address(&target->record, 0), (unsigned)target->shape.width, (unsigned)target->shape.height,
+		  half, target->next_half,
+		  (unsigned long long)target_word64(target, base + 8U), (unsigned long long)target_word64(target, base + 16U),
+		  (unsigned long long)target_word64(target, base + 24U), (unsigned long long)target_word64(target, base + 32U),
+		  (unsigned long long)target_word64(target, base + 40U),
+		  (unsigned long long)target_word64(target, base + 72U), (unsigned long long)target_word64(target, base + 80U),
+		  (unsigned long long)target_word64(target, base + 88U), (unsigned long long)target_word64(target, base + 96U),
+		  (unsigned long long)target_word64(target, base + 104U), (unsigned long long)target_word64(target, base + 112U));
+	kern_logf("powervr: hwr: half %u: alist %llx last %llx stack %llx; macrolist stack %x flags %x state %x snapshot %x %x\n",
+		  half, (unsigned long long)target_word64(target, base + 136U), (unsigned long long)target_word64(target, base + 144U),
+		  (unsigned long long)target_word64(target, base + 152U),
+		  (unsigned)powervr_object_get32(&target->record, base + 160U), (unsigned)powervr_object_get32(&target->record, base + 168U),
+		  (unsigned)powervr_object_get32(&target->record, base + 172U), (unsigned)powervr_object_get32(&target->record, base + 188U),
+		  (unsigned)powervr_object_get32(&target->record, base + 192U));
+
+	/* The half's macrolist: the pages the parameter manager took for its tables. */
+	if (target->macrolists != NULL) {
+		macrolist = (volatile const uint32_t *)(target->macrolists->buffer->view + half * target->layout.macrolist_bytes);
+		kern_logf("powervr: hwr: half %u macrolist: %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x\n", half,
+			  (unsigned)macrolist[0], (unsigned)macrolist[1], (unsigned)macrolist[2], (unsigned)macrolist[3],
+			  (unsigned)macrolist[4], (unsigned)macrolist[5], (unsigned)macrolist[6], (unsigned)macrolist[7],
+			  (unsigned)macrolist[8], (unsigned)macrolist[9], (unsigned)macrolist[10], (unsigned)macrolist[11]);
+	}
+
+	/* Its local list, and the global list its record names. */
+	describe_list("local", &target->local);
+	global = powervr_object_get32(&target->record, base + (uint32_t)offsetof(struct powervr_fw_target_data, free_lists) + 4U);
+	for (list = render->free_lists; list != NULL; list = list->next) {
+		if (list->owner == NULL && powervr_object_address(&list->record, 0) == global)
+			describe_list("global", list);
+	}
+}
+
+/* Prints a free list's pages and its firmware record's stack. */
+static void
+describe_list(
+	const char *name,
+	const struct powervr_free_list *list)
+{
+	/* The pages, then the record's words that move. */
+	kern_logf("powervr: hwr: %s list %u: pages 0x%llx..0x%llx (%u); current %u, stack top %u, allocated %u, tables %u, ready %u, flags %x\n",
+		  name, (unsigned)list->identity,
+		  (unsigned long long)(list->pages != NULL ? list->pages->run.paddr : 0U),
+		  (unsigned long long)(list->pages != NULL ? list->pages->run.paddr + list->pages->run.size : 0U),
+		  (unsigned)list->page_count,
+		  (unsigned)powervr_object_get32(&list->record, (uint32_t)offsetof(struct powervr_fw_free_list, current_pages)),
+		  (unsigned)powervr_object_get32(&list->record, (uint32_t)offsetof(struct powervr_fw_free_list, stack_top)),
+		  (unsigned)powervr_object_get32(&list->record, (uint32_t)offsetof(struct powervr_fw_free_list, allocated_pages)),
+		  (unsigned)powervr_object_get32(&list->record, (uint32_t)offsetof(struct powervr_fw_free_list, allocated_table_pages)),
+		  (unsigned)powervr_object_get32(&list->record, (uint32_t)offsetof(struct powervr_fw_free_list, ready_pages)),
+		  (unsigned)powervr_object_get32(&list->record, (uint32_t)offsetof(struct powervr_fw_free_list, flags)));
+}
+
+/* Reads a 64-bit word of a target's record, low half first. */
+static uint64_t
+target_word64(
+	const struct powervr_target *target,
+	uint32_t offset)
+{
+	uint64_t low;
+	uint64_t high;
+
+	/* The two halves. */
+	low = powervr_object_get32(&target->record, offset);
+	high = powervr_object_get32(&target->record, offset + 4U);
+
+	/* Succeeded: the word. */
+	return low | (high << 32);
 }

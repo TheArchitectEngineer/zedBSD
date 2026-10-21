@@ -140,6 +140,7 @@ static void take_reached(struct powervr_session *session, struct delivery *deliv
 static void take_all(struct powervr_session *session, int error, struct delivery *delivery);
 static void deliver(struct powervr_render *render, struct delivery *delivery);
 static void handle_notice(void *context, uint32_t type, const struct powervr_object *buffer, uint32_t offset);
+static void describe_timelines(const struct powervr_session *session);
 /* How often the timing says its sums, and how often its thread looks whether to end, in milliseconds. */
 #define TIMING_REPORT_MS		5000U
 #define TIMING_LOOK_MS			100U
@@ -2784,6 +2785,47 @@ service_pass(
 	return pending;
 }
 
+/*
+ * Prints a reset session's timelines, each the value the core reached
+ * and the last one kicked, with its firmware address, and the syncs its
+ * newest render's geometry waited for: whether the render's geometry had
+ * finished when its 3D was reset, and what it had waited on.
+ */
+static void
+describe_timelines(
+	const struct powervr_session *session)
+{
+	const struct powervr_render_context *context;
+	const struct powervr_render_sequence *sequence;
+	const struct powervr_transfer_context *transfer;
+	unsigned waits;
+
+	/* The render context's two timelines, and its newest render's waits (the fence before the geometry). */
+	context = session->render_context;
+	if (context != NULL) {
+		sequence = &context->sequence;
+		waits = 0;
+		if (sequence->geometry_count != 0U && sequence->geometry_commands[0].type == POWERVR_CLIENT_FENCE_PARTIAL)
+			waits = sequence->geometry_commands[0].size / 8U;
+		kern_logf("powervr: reset timelines: geometry 0x%x at %u of %u, fragment 0x%x at %u of %u; the geometry waited for %u: 0x%x>=%u 0x%x>=%u 0x%x>=%u\n",
+			  (unsigned)powervr_object_address(&context->geometry.timeline, 0),
+			  (unsigned)powervr_object_get32(&context->geometry.timeline, POWERVR_SYNC_ADDRESS), (unsigned)context->geometry.submitted,
+			  (unsigned)powervr_object_address(&context->fragment.timeline, 0),
+			  (unsigned)powervr_object_get32(&context->fragment.timeline, POWERVR_SYNC_ADDRESS), (unsigned)context->fragment.submitted,
+			  waits, (unsigned)sequence->geometry_waits[0].address, (unsigned)sequence->geometry_waits[0].value,
+			  (unsigned)sequence->geometry_waits[1].address, (unsigned)sequence->geometry_waits[1].value,
+			  (unsigned)sequence->geometry_waits[2].address, (unsigned)sequence->geometry_waits[2].value);
+	}
+
+	/* The transfer context's timeline. */
+	transfer = session->transfer_context;
+	if (transfer != NULL) {
+		kern_logf("powervr: reset timelines: transfer 0x%x at %u of %u\n",
+			  (unsigned)powervr_object_address(&transfer->client.timeline, 0),
+			  (unsigned)powervr_object_get32(&transfer->client.timeline, POWERVR_SYNC_ADDRESS), (unsigned)transfer->client.submitted);
+	}
+}
+
 /* Takes, under the queue lock, the session's commands whose points were reached, in order. */
 static void
 take_reached(
@@ -2985,8 +3027,10 @@ handle_notice(
 			powervr_reset_stage_of(&notice, kind, &stage);
 			powervr_stage_fail_value(stage.stage, stage.reason, stage.value);
 			powervr_session_describe_fault(session, notice.fault_address);
-			if (POWERVR_DEBUG)
+			if (POWERVR_DEBUG) {
 				powervr_session_describe_job(session);
+				describe_timelines(session);
+			}
 
 			/* The diagnostics: the target its newest render job kicked with, its buffers and its catalogues before the kick and now. */
 			if (POWERVR_DIAGNOSTICS && session->noted_target != NULL) {
