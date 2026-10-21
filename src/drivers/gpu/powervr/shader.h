@@ -173,13 +173,16 @@ struct powervr_shader_blend {
  * multiplied, by one sum-of-products operation in place of the unpack,
  * the blend's arithmetic and the pack; with the raw form besides, the
  * blended colour handed to that operation unclamped, for it to clamp (a
- * board trial: whether the operation clamps its sources is unproven).
+ * board trial: whether the operation clamps its sources is unproven);
+ * and the iterate and sample that waits for its own data (its scheduling
+ * control) in place of a wait after it.
  */
 #define POWERVR_SHADER_FORM_SHARED_PROGRAM	0x1U
 #define POWERVR_SHADER_FORM_PACK_OUTPUT		0x2U
 #define POWERVR_SHADER_FORM_ITERATE_SAMPLE	0x4U
 #define POWERVR_SHADER_FORM_SUM_OF_PRODUCTS	0x8U
 #define POWERVR_SHADER_FORM_SUM_RAW		0x10U
+#define POWERVR_SHADER_FORM_SAMPLE_WAITS	0x20U
 
 struct powervr_shader_key {
 	uint32_t attribute_formats[POWERVR_SHADER_INPUTS];

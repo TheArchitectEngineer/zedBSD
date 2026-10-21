@@ -1028,7 +1028,8 @@ powervr_usc_iterate(
  *
  * Coefficient, w_coefficient, image and sampler are register numbers,
  * each a multiple of four; perspective multiplies by the iterated 1/w;
- * channels are one to four.
+ * channels are one to four; schedule is the scheduling control (0 none,
+ * 1 swap, 2 wait for the data the operation returns).
  */
 int
 powervr_usc_iterate_sample(
@@ -1043,6 +1044,7 @@ powervr_usc_iterate_sample(
 	unsigned channels,
 	unsigned normalised,
 	unsigned data_return,
+	unsigned schedule,
 	struct powervr_usc_operation *operation)
 {
 	/*
@@ -1054,9 +1056,9 @@ powervr_usc_iterate_sample(
 	 * 5:6, sched_ctrl_b5 5:5..4, chan 5:3..2 sent less one, nncoords
 	 * 5:1, fcnorm 5:0; I_ITRSMP without ext5, six bytes; F_CTRLOP
 	 * itrsmp 0b1000) and src/imagination/common/device_info/bxe-4-32.h
-	 * (has_usc_itrsmp, has_usc_itrsmp_enhanced).  The fields left zero
-	 * (projection, saturation, half floats, scheduling, unnormalised
-	 * coordinates) are not taken.
+	 * (has_usc_itrsmp, has_usc_itrsmp_enhanced; F_SCHED_CTRL none 0b00,
+	 * swap 0b01, wdf 0b10).  The fields left zero (projection,
+	 * saturation, half floats, unnormalised coordinates) are not taken.
 	 */
 	static const struct usc_piece pieces[] = {
 		{ 0, 0, 8, 0, 0 },
@@ -1069,10 +1071,11 @@ powervr_usc_iterate_sample(
 		{ 3, 0, 2, 7, 0 },
 		{ 4, 2, 6, 8, 0 },
 		{ 5, 2, 2, 9, 0 },
-		{ 5, 0, 1, 10, 0 }
+		{ 5, 0, 1, 10, 0 },
+		{ 5, 4, 2, 11, 0 }
 	};
-	static const struct usc_layout layout = { 6, 11, 11, { 8, 6, 2, 6, 1, 1, 6, 2, 6, 2, 1 }, pieces };
-	uint32_t values[11];
+	static const struct usc_layout layout = { 6, 12, 12, { 8, 6, 2, 6, 1, 1, 6, 2, 6, 2, 1, 2 }, pieces };
+	uint32_t values[12];
 	int error;
 
 	/* Refuses register numbers off the multiple of four, and a dimension or a channel count the fields cannot carry. */
@@ -1093,6 +1096,7 @@ powervr_usc_iterate_sample(
 	values[8] = w_coefficient >> 2;
 	values[9] = channels - 1U;
 	values[10] = normalised;
+	values[11] = schedule;
 
 	/* Places the fields after checking each fits. */
 	error = operation_build(&layout, values, operation);

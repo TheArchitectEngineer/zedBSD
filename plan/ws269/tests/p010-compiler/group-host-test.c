@@ -317,6 +317,7 @@ main(void)
 	 */
 	{
 		static const uint8_t iterate_sample[] = { 0x0a, 0x05, 0x00, 0x06, 0x00, 0x0d };
+		uint8_t iterate_waits[6] = { 0x0a, 0x05, 0x00, 0x06, 0x00, 0x0d };
 
 		operation = blank(MACHINE_ITERATE_SAMPLE);
 		operation.destination[0] = reg(1, 10);
@@ -328,6 +329,15 @@ main(void)
 		ok = ok && group.unit == POWERVR_USC_UNIT_CONTROL && group.control == 8 && phase_is(&group, 0, iterate_sample, 6);
 		ok = ok && powervr_usc_group_size(&group, &size) == 0;
 		check(ok, "iterate and sample");
+		if (!ok)
+			dump(&group);
+
+		/* Waiting for its own data (q1548): sched_ctrl wdf 0b10 at 5:5..4 (0x2d). */
+		iterate_waits[5] = 0x2d;
+		operation.variant = 2;
+		ok = shader_backend_group(&operation, 0, &group) == 0;
+		ok = ok && phase_is(&group, 0, iterate_waits, 6);
+		check(ok, "iterate and sample waiting for its data");
 		if (!ok)
 			dump(&group);
 	}

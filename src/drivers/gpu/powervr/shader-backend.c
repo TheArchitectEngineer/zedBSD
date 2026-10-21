@@ -74,7 +74,8 @@
  * lt 3, end 4; F_PCND always 0, p0_true 1, p0_false 3; F_BPRED cc 0,
  * allp 1; F_DSIZE 32bit 0b10; F_MOVW01 ft0 0, ft1 1, ft2 2, fte 3;
  * F_IS0_SEL s1 0b100, s2 0b101; F_IS4_SEL ft0 0, ft1 1, ft2 2, fte 3;
- * F_IS1_SEL ft0 0, fte 1; F_DMN 2d 0b10; ctrlop ditr 0b1100).
+ * F_IS1_SEL ft0 0, fte 1; F_DMN 2d 0b10; ctrlop ditr 0b1100; F_SCHED_CTRL
+ * wdf 0b10).
  */
 #define TEST_ZERO		0U
 #define TEST_EQUAL		4U
@@ -116,6 +117,7 @@
 #define MUX_S2			5U
 #define CONTROL_ITERATE		12U
 #define CONTROL_ITERATE_SAMPLE	8U
+#define SCHEDULE_WAIT_DATA	2U
 #define DIMENSIONS_2D		2U
 
 /* The most ifs and loops open at once. */
@@ -588,7 +590,7 @@ compile_program(
 	workspace->backend.inline_count = value_count;
 	workspace->backend.forms = 0;
 	if (key != NULL && stage == POWERVR_SHADER_FRAGMENT)
-		workspace->backend.forms = key->forms & (POWERVR_SHADER_FORM_PACK_OUTPUT | POWERVR_SHADER_FORM_ITERATE_SAMPLE | POWERVR_SHADER_FORM_SUM_OF_PRODUCTS);
+		workspace->backend.forms = key->forms & (POWERVR_SHADER_FORM_PACK_OUTPUT | POWERVR_SHADER_FORM_ITERATE_SAMPLE | POWERVR_SHADER_FORM_SUM_OF_PRODUCTS | POWERVR_SHADER_FORM_SAMPLE_WAITS);
 	moved = 0;
 	if (split != 0) {
 		error = split_shared(shader, program, &workspace->uniform, &workspace->shared_shader, &moved);
@@ -3261,6 +3263,13 @@ select_instruction(
 				operation->immediate = coefficient;
 				operation->immediate_2 = select->program->w_coefficient;
 			}
+
+			/* The wait for its data: the operation's own (q1548, a trial form), or a wait after it. */
+			if ((select->backend->forms & POWERVR_SHADER_FORM_SAMPLE_WAITS) != 0) {
+				if (operation != NULL)
+					operation->variant = SCHEDULE_WAIT_DATA;
+				break;
+			}
 			(void)append(select, MACHINE_WAIT);
 			break;
 		}
@@ -4523,7 +4532,7 @@ shader_backend_group(
 		group->unit = POWERVR_USC_UNIT_CONTROL;
 		group->control = CONTROL_ITERATE_SAMPLE;
 		error = powervr_usc_iterate_sample(operation->destination[0].index, operation->immediate, 1, operation->immediate_2, operation->source[0].index,
-						   operation->source[2].index, 0, DIMENSIONS_2D, 4, 1, 0, &group->operation[POWERVR_USC_PHASE_0]);
+						   operation->source[2].index, 0, DIMENSIONS_2D, 4, 1, 0, operation->variant, &group->operation[POWERVR_USC_PHASE_0]);
 		break;
 	case MACHINE_SAMPLE:
 		/* Image state in s0, coordinates in s1, sampler state in s2, the four words into s4's registers. */
