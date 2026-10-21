@@ -146,6 +146,16 @@ struct backend_loop {
 #define POWERVR_SHADER_PAIR		2
 #endif
 
+/*
+ * A test switch (q1539, 0 as built): every float add, multiply and
+ * multiply-add in the low precision forms (Mesa 26.2.5 pco_isa.py
+ * fadd_lp, fmul_lp, lp_fma; pco uses none), to see on the board whether
+ * they issue faster.  Results lose precision; for timing only.
+ */
+#ifndef POWERVR_SHADER_LOW_PRECISION_TRIAL
+#define POWERVR_SHADER_LOW_PRECISION_TRIAL	0
+#endif
+
 /* How far ahead pair_operations looks for an operation to move up beside another. */
 #define PAIR_WINDOW			12U
 
@@ -3284,7 +3294,9 @@ shader_backend_group(
 		group_register(&group->source[1], operation->source[1]);
 		group_register(&group->destination[0], operation->destination[0]);
 		group->internal[4] = SELECT_FT0;
-		error = powervr_usc_float_pair(operation->kind == MACHINE_FLOAT_ADD ? POWERVR_USC_FLOAT_ADD : POWERVR_USC_FLOAT_MULTIPLY, operation->saturate, negate_0, absolute_0, absolute_1, operation->variant, &group->operation[POWERVR_USC_PHASE_0]);
+		error = powervr_usc_float_pair(operation->kind == MACHINE_FLOAT_ADD ? (POWERVR_SHADER_LOW_PRECISION_TRIAL ? POWERVR_USC_FLOAT_ADD_LOW_PRECISION : POWERVR_USC_FLOAT_ADD) :
+					       (POWERVR_SHADER_LOW_PRECISION_TRIAL ? POWERVR_USC_FLOAT_MULTIPLY_LOW_PRECISION : POWERVR_USC_FLOAT_MULTIPLY),
+					       operation->saturate, negate_0, absolute_0, absolute_1, operation->variant, &group->operation[POWERVR_USC_PHASE_0]);
 		break;
 	case MACHINE_FLOAT_MULTIPLY_ADD:
 		group->unit = POWERVR_USC_UNIT_MAIN;
@@ -3294,7 +3306,7 @@ shader_backend_group(
 		group_register(&group->source[2], operation->source[2]);
 		group_register(&group->destination[0], operation->destination[0]);
 		group->internal[4] = SELECT_FT0;
-		error = powervr_usc_float_multiply_add(operation->saturate, negate_0, absolute_0, negate_1, absolute_1, negate_2, absolute_2, 0, 0, &group->operation[POWERVR_USC_PHASE_0]);
+		error = powervr_usc_float_multiply_add(operation->saturate, negate_0, absolute_0, negate_1, absolute_1, negate_2, absolute_2, 0, POWERVR_SHADER_LOW_PRECISION_TRIAL, &group->operation[POWERVR_USC_PHASE_0]);
 		break;
 	case MACHINE_SINGLE:
 		group->unit = POWERVR_USC_UNIT_MAIN;
