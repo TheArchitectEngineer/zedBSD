@@ -206,8 +206,18 @@ static void watch_thread(void *argument);
 #define DUST_EVENT_CLEAR		0x0138U
 #define DUST_EVENT_POWER_COMPLETE	0x00000400U
 #define DUST_EVENT_POWER_ABORT		0x00000800U
-/* 1 asks the host to power the dusts up itself (with the PMU event unmasked it completes, 2026-10-20, but changes nothing); 0 leaves it to the firmware. */
-#define DUST_POWER_BY_HOST		0
+/*
+ * 1 asks the host to power the dusts up itself (with the PMU event
+ * unmasked it completes, 2026-10-20) and leaves POW_RASCALDUST off, so the
+ * firmware never powers the Rascal and the dusts down between jobs; 0
+ * leaves their power to the firmware.  q1532-i04: on in a throwaway build,
+ * to see whether a power-down between one context's geometry and its 3D
+ * loses parameter manager state (two sessions lock the 3D up).
+ */
+#ifndef POWERVR_HOST_DUST_POWER
+#define POWERVR_HOST_DUST_POWER		1
+#endif
+#define DUST_POWER_BY_HOST		POWERVR_HOST_DUST_POWER
 
 /*
  * Whether the start clears every event before the processor leaves
@@ -906,7 +916,8 @@ fill_records(
 	 * wipeout" (github.com/domibel/linux commit b53c4500f133, the flag
 	 * set for the VisionFive 2).
 	 */
-	flags |= POWERVR_FLAG_POW_RASCALDUST;
+	if (!POWERVR_HOST_DUST_POWER)
+		flags |= POWERVR_FLAG_POW_RASCALDUST;
 
 	/*
 	 * The context switch: off by default, as the mainline driver leaves it
