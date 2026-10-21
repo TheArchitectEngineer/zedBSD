@@ -165,13 +165,14 @@
  *
  * Values referenced:
  * Linux v7.3 drivers/gpu/drm/imagination/pvr_rogue_fwif_check.h
- * (struct rogue_fwif_runtime_cfg, 72 bytes: the persistent latency flag
- * 8, the core clock 12, the default cluster count 16, the watchdog period
+ * (struct rogue_fwif_runtime_cfg, 72 bytes: the active power
+ * management's latency in milliseconds 0, the persistent latency flag 8, the core clock 12, the default cluster count 16, the watchdog period
  * 28; struct rogue_fwif_gpu_util_fwcb, 10280 bytes, its last word at
  * 10248; struct rogue_fwif_hwrinfobuf, 2336 bytes; struct
  * rogue_fwif_connection_ctl, 16 bytes); pvr_rogue_fwif_common.h
  * (PVR_FWIF_GPU_UTIL_STATE_IDLE 0).
  */
+#define POWERVR_RUNTIME_APM_LATENCY	0U
 #define POWERVR_RUNTIME_PERSISTENT	8U
 #define POWERVR_RUNTIME_CORE_CLOCK	12U
 #define POWERVR_RUNTIME_CLUSTERS	16U

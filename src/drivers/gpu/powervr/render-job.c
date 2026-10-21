@@ -72,6 +72,9 @@
  * shaders' code one after another in the shading cluster buffer.
  */
 #define DRAW_SLOT			0x1000U
+
+/* The least bytes a job's draw buffer is made with (job_draw_memory_room). */
+#define DRAW_MEMORY_LEAST		0x10000U
 #define DRAW_PPP			0x000U
 #define DRAW_PUSH			0x100U
 #define DRAW_BLEND			0x200U
@@ -192,19 +195,29 @@ struct job_memory {
 	struct powervr_data_vertex_program vertex;
 	uint32_t ppp[POWERVR_DRAW_PPP_WORDS];
 	uint32_t vdm[POWERVR_DRAW_VDM_WORDS];
+	/*
+	 * The shaders' code in the draws' shading cluster buffer, once a
+	 * pipeline (q1541: a desktop's frame draws a few pipelines many times,
+	 * and each draw copied its code again): the pipelines met, where each
+	 * one's code is, and where each draw's is.
+	 */
+	const struct powervr_vk_graphics *code_pipelines[POWERVR_RENDER_DRAWS + 1U];
+	uint64_t code_pipeline_places[POWERVR_RENDER_DRAWS + 1U];
+	uint32_t code_pipeline_count;
+	uint64_t code_places[POWERVR_RENDER_DRAWS + 1U];
 };
 
 static int job_check(const struct powervr_render_job *job);
 static void load_draw_free(struct powervr_render_job *work, struct load_draw *load);
 static bool job_skips_empty_tiles(const struct powervr_render_job *job);
-static bool job_needs_no_background(const struct powervr_render_job *job);
+static bool job_needs_no_background(const struct powervr_render_job *job, bool load_drawn);
 static uint32_t float_bits(uint32_t value);
 static int load_graphics(struct powervr_render *render, uint32_t vk_format, struct powervr_vk_graphics **result);
 static int load_graphics_compile(struct powervr_vk_graphics *graphics);
 static int load_graphics_shaders(struct powervr_vk_graphics *graphics, struct powervr_shader_workspace *workspace);
 static int load_draw_build(struct powervr_render *render, const struct powervr_render_job *job, struct job_memory *memory, struct load_draw *load);
 static int job_map(struct powervr_render *render, struct powervr_session *session, struct job_memory *memory);
-static int job_programs(const struct powervr_render_job *job, struct job_memory *memory, uint32_t *shared_registers);
+static int job_programs(const struct powervr_render_job *job, bool load_drawn, struct job_memory *memory, uint32_t *shared_registers);
 /*
  * The LOAD background's probe (for the board): 0 the usual load program,
  * 1 the sample at (0, 0) (POWERVR_LOAD_PROBE_ORIGIN), 2 the program with a
@@ -248,6 +261,7 @@ static struct job_memory *job_keep_take(struct powervr_render *render, struct po
 static void job_buffer_clear(struct powervr_buffer *buffer);
 static bool job_draw_memory_fits(const struct job_memory *memory, uint64_t general_bytes, uint64_t pds_bytes, uint64_t usc_bytes);
 static void job_draw_memory_free(struct powervr_render *render, struct powervr_session *session, struct job_memory *memory);
+static uint64_t job_draw_memory_room(uint64_t bytes);
 static int job_draw_memory_make(struct powervr_render *render, struct powervr_session *session, struct job_memory *memory, uint64_t general_bytes, uint64_t pds_bytes, uint64_t usc_bytes);
 static int attribute_words(uint32_t format, uint32_t components, uint32_t *words, uint32_t *defaults);
 static void put_words(struct powervr_buffer *buffer, uint32_t offset, const uint32_t *words, unsigned count);
@@ -294,8 +308,10 @@ powervr_render_job_run(
 	unsigned wait_count;
 	unsigned half;
 	unsigned long enabled;
+	uint64_t draws_started;
 	uint64_t started;
 	uint32_t at;
+	bool load_drawn;
 	int error;
 
 	/* When the job started, for the submission's timing. */
@@ -308,24 +324,20 @@ powervr_render_job_run(
 
 	/*
 	 * A loaded colour attachment: the job runs with its background's
-	 * contents not mattering and a load draw first (LOAD_DRAW), on a
-	 * copy of the job.
+	 * contents not mattering and a load draw first (LOAD_DRAW).  The first
+	 * colour target is taken as not loaded where its background is made
+	 * (load_drawn), without a copy of the job (q1541: a job of 512 draws'
+	 * room, about 144 KB, was copied for that alone).
 	 */
 	given = job;
 	work = NULL;
 	load = NULL;
+	load_drawn = false;
 	if (POWERVR_RENDER_LOAD_PROBE == 0 && job->colors[0].load_op == LOAD_OP_LOAD) {
-		work = kern_malloc(sizeof(*work));
 		load = kern_calloc(1, sizeof(*load));
-		if (work == NULL || load == NULL) {
-			kern_free(work);
-			kern_free(load);
+		if (load == NULL)
 			return ENOMEM;
-		}
-
-		*work = *job;
-		work->colors[0].load_op = LOAD_OP_DONT_CARE;
-		job = work;
+		load_drawn = true;
 	}
 
 	/* The job's shape and its first colour target's load and store, with the diagnostics. */
@@ -368,12 +380,13 @@ powervr_render_job_run(
 	error = job_map(render, session, memory);
 	powervr_timing_add(POWERVR_TIMING_JOB_MAP, started);
 
-	/* The background's programs and the load draw. */
+	/* The background's programs and the load draw, the first part of the build timed alone (q1541). */
 	started = powervr_timing_now();
 	if (error == 0)
-		error = job_programs(job, memory, &shared_registers);
+		error = job_programs(job, load_drawn, memory, &shared_registers);
 	if (error == 0 && load != NULL)
 		error = load_draw_build(render, given, memory, load);
+	powervr_timing_add(POWERVR_TIMING_BUILD_PROGRAMS, started);
 	if (error != 0) {
 		job_release(render, session, memory);
 		load_draw_free(work, load);
@@ -388,7 +401,9 @@ powervr_render_job_run(
 		prefix = NULL;
 		if (load != NULL)
 			prefix = &load->draw;
+		draws_started = powervr_timing_now();
 		error = job_draws(render, session, job, prefix, memory, &stream_words, &vertex_shareds);
+		powervr_timing_add(POWERVR_TIMING_BUILD_DRAWS, draws_started);
 		if (error != 0) {
 			job_release(render, session, memory);
 			load_draw_free(work, load);
@@ -439,7 +454,7 @@ powervr_render_job_run(
 	memory->fragment_setup.tiles_x = layout->tiles_x;
 	memory->fragment_setup.tiles_y = layout->tiles_y;
 	memory->fragment_setup.skip_empty_tiles = job_skips_empty_tiles(job);
-	memory->fragment_setup.no_background = job_needs_no_background(job);
+	memory->fragment_setup.no_background = job_needs_no_background(job, load_drawn);
 	memory->fragment_setup.border_table = powervr_session_border_table(session);
 	memory->geometry_setup.border_table = memory->fragment_setup.border_table;
 	powervr_fragment_command(&memory->fragment_setup, memory->fragment);
@@ -1023,14 +1038,17 @@ job_map(
 
 /*
  * Writes the job's programs: the end-of-tile program storing the colour
- * attachment over the render area, and the background.
+ * attachment over the render area, and the background (whose contents do
+ * not matter for a first colour target the load draw loads, load_drawn).
  */
 static int
 job_programs(
 	const struct powervr_render_job *job,
+	bool load_drawn,
 	struct job_memory *memory,
 	uint32_t *shared_registers)
 {
+	struct powervr_render_target first;
 	const struct powervr_render_target *color;
 	uint32_t state[2];
 	uint32_t event[POWERVR_RENDER_EVENT_DATA_WORDS];
@@ -1039,8 +1057,13 @@ job_programs(
 	uint32_t code_word;
 	int error;
 
+	/* The first colour target, whose contents do not matter to the background when the load draw loads it. */
+	first = job->colors[0];
+	if (load_drawn)
+		first.load_op = LOAD_OP_DONT_CARE;
+	color = &first;
+
 	/* The places as offsets from the windows' bases. */
-	color = &job->colors[0];
 	pds_base = (uint32_t)(memory->pds_place - POWERVR_PDS_HEAP_BASE);
 	usc_base = (uint32_t)(memory->usc_place - POWERVR_USC_HEAP_BASE);
 
@@ -1249,6 +1272,8 @@ job_draws(
 	uint64_t usc_total;
 	uint32_t draw_count;
 	uint32_t index;
+	uint64_t part_started;
+	uint32_t code;
 	uint32_t slot;
 	uint32_t words;
 	bool fits;
@@ -1259,16 +1284,29 @@ job_draws(
 	if (prefix != NULL)
 		draw_count++;
 
-	/* What the draws take: their shaders' code and their sets' copies, each on 16 bytes. */
+	/* What the draws take: their pipelines' code once each and their sets' copies, each on 16 bytes. */
 	sets_bytes = 0;
 	usc_bytes = 0;
+	memory->code_pipeline_count = 0;
 	for (index = 0; index < draw_count; index++) {
 		draw = job_draw(job, prefix, index);
 		graphics = draw->pipeline;
 		if (graphics == NULL)
 			return EINVAL;
-		usc_bytes += (graphics->vertex.length + 15U) & ~(uint64_t)15U;
-		usc_bytes += (graphics->fragment.length + 15U) & ~(uint64_t)15U;
+
+		/* The pipeline's code where an earlier draw's put it, else after the code so far. */
+		for (code = 0; code < memory->code_pipeline_count; code++) {
+			if (memory->code_pipelines[code] == graphics)
+				break;
+		}
+		if (code == memory->code_pipeline_count) {
+			memory->code_pipelines[code] = graphics;
+			memory->code_pipeline_places[code] = usc_bytes;
+			memory->code_pipeline_count++;
+			usc_bytes += (graphics->vertex.length + 15U) & ~(uint64_t)15U;
+			usc_bytes += (graphics->fragment.length + 15U) & ~(uint64_t)15U;
+		}
+		memory->code_places[index] = memory->code_pipeline_places[code];
 		for (slot = 0; slot < POWERVR_DRAW_SETS; slot++) {
 			set = draw->sets[slot];
 			if (set != NULL)
@@ -1280,35 +1318,41 @@ job_draws(
 	general_bytes = (uint64_t)draw_count * DRAW_SLOT + sets_bytes + 16U;
 	pds_bytes = (uint64_t)draw_count * DRAW_SLOT;
 	usc_total = usc_bytes + 16U;
+	part_started = powervr_timing_now();
 	fits = job_draw_memory_fits(memory, general_bytes, pds_bytes, usc_total);
-	if (fits) {
-		job_buffer_clear(memory->draw_general->buffer);
-		job_buffer_clear(memory->draw_pds);
-		job_buffer_clear(memory->draw_usc);
-	} else {
+	if (!fits) {
 		job_draw_memory_free(render, session, memory);
 		error = job_draw_memory_make(render, session, memory, general_bytes, pds_bytes, usc_total);
 		if (error != 0)
 			return error;
 	}
 
-	/* Each draw in order, its stream after the one before. */
+	/* Each pipeline's two shaders' code, once (the memory's and the code's times apart, q1541). */
+	powervr_timing_add(POWERVR_TIMING_DRAW_MEMORY, part_started);
+	part_started = powervr_timing_now();
+	for (code = 0; code < memory->code_pipeline_count; code++) {
+		graphics = memory->code_pipelines[code];
+		usc_place = memory->code_pipeline_places[code];
+		put_bytes(memory->draw_usc, (uint32_t)usc_place, graphics->vertex_code, graphics->vertex.length);
+		put_bytes(memory->draw_usc, (uint32_t)(usc_place + ((graphics->vertex.length + 15U) & ~(size_t)15U)), graphics->fragment_code, graphics->fragment.length);
+	}
+
+	powervr_timing_add(POWERVR_TIMING_DRAW_CODE, part_started);
+
+	/* Each draw in order, its stream after the one before, its code where its pipeline's is. */
 	*stream_words = 0;
 	*vertex_shareds = 0;
 	sets_place = (uint64_t)draw_count * DRAW_SLOT;
-	usc_place = 0;
 	for (index = 0; index < draw_count; index++) {
 		draw = job_draw(job, prefix, index);
 		graphics = draw->pipeline;
-		error = draw_place(job, draw, index, memory, sets_place, usc_place, *stream_words, &words);
+		error = draw_place(job, draw, index, memory, sets_place, memory->code_places[index], *stream_words, &words);
 		if (error != 0)
 			return error;
 
 		*stream_words += words;
 		if (graphics->vertex.shareds > *vertex_shareds)
 			*vertex_shareds = graphics->vertex.shareds;
-		usc_place += (graphics->vertex.length + 15U) & ~(uint64_t)15U;
-		usc_place += (graphics->fragment.length + 15U) & ~(uint64_t)15U;
 		for (slot = 0; slot < POWERVR_DRAW_SETS; slot++) {
 			set = draw->sets[slot];
 			if (set != NULL)
@@ -1321,9 +1365,10 @@ job_draws(
 }
 
 /*
- * Places one draw: its shaders' code, its sets' and push constants'
- * copies, its vertex, shared register, task and coefficient programs,
- * its scissor, its primitive state block and its part of the stream.
+ * Places one draw: its sets' and push constants' copies, its vertex,
+ * shared register, task and coefficient programs (pointing at its
+ * pipeline's code at usc_place, which job_draws put there once), its
+ * scissor, its primitive state block and its part of the stream.
  *
  * Procedure referenced:
  * Mesa 26.2.5 src/imagination/vulkan/pvr_arch_cmd_buffer.c
@@ -1345,6 +1390,7 @@ draw_place(
 	uint32_t stream_at,
 	uint32_t *words)
 {
+	static const uint32_t blend_zero[4] = { 0, 0, 0, 0 };
 	const struct powervr_vk_graphics *graphics;
 	const struct powervr_vk_descriptor_set *set;
 	const struct powervr_draw_attribute *attribute;
@@ -1382,10 +1428,6 @@ draw_place(
 	vertex_usc = usc_base + (uint32_t)usc_place;
 	fragment_usc = vertex_usc + (uint32_t)((graphics->vertex.length + 15U) & ~(size_t)15U);
 
-	/* The two shaders' code. */
-	put_bytes(memory->draw_usc, (uint32_t)usc_place, graphics->vertex_code, graphics->vertex.length);
-	put_bytes(memory->draw_usc, (uint32_t)(usc_place + ((graphics->vertex.length + 15U) & ~(size_t)15U)), graphics->fragment_code, graphics->fragment.length);
-
 	/* The bound sets' copies, the push constants and zero blend constants. */
 	kern_memset(&state, 0, sizeof(state));
 	at = (uint32_t)sets_place;
@@ -1399,6 +1441,7 @@ draw_place(
 		at += (set->layout.bytes + 15U) & ~15U;
 	}
 	put_bytes(memory->draw_general->buffer, index * DRAW_SLOT + DRAW_PUSH, draw->push, draw->push_bytes);
+	put_words(memory->draw_general->buffer, index * DRAW_SLOT + DRAW_BLEND, blend_zero, 4U);
 	state.push_address = general + DRAW_PUSH;
 	state.blend_address = general + DRAW_BLEND;
 
@@ -1805,12 +1848,13 @@ job_skips_empty_tiles(
 /*
  * Tells whether a job's fragment needs no background object (ws270-p007):
  * no depth target, and every colour target's old contents do not matter
- * (a target loaded through the load draw is one, the draw covering its
- * render area), so no tile's pixels come from the background.
+ * (a target loaded through the load draw, load_drawn, is one, the draw
+ * covering its render area), so no tile's pixels come from the background.
  */
 static bool
 job_needs_no_background(
-	const struct powervr_render_job *job)
+	const struct powervr_render_job *job,
+	bool load_drawn)
 {
 	uint32_t index;
 
@@ -1818,8 +1862,10 @@ job_needs_no_background(
 	if (job->depth.present)
 		return false;
 
-	/* A colour target loaded or cleared by the background needs it. */
+	/* A colour target loaded or cleared by the background needs it (the first one's load is the load draw's when load_drawn). */
 	for (index = 0; index < job->color_count; index++) {
+		if (index == 0U && load_drawn)
+			continue;
 		if (job->colors[index].load_op != LOAD_OP_DONT_CARE)
 			return false;
 	}
@@ -1961,6 +2007,11 @@ job_draw_memory_make(
 	struct powervr_buffer *buffer;
 	int error;
 
+	/* Each made larger than asked (q1541), so that the next jobs of more draws fit without mapping again. */
+	general_bytes = job_draw_memory_room(general_bytes);
+	pds_bytes = job_draw_memory_room(pds_bytes);
+	usc_bytes = job_draw_memory_room(usc_bytes);
+
 	/* The general memory: a slot per draw, then the sets. */
 	error = powervr_buffer_create(render, general_bytes, &buffer);
 	if (error != 0)
@@ -2000,4 +2051,26 @@ job_draw_memory_make(
 
 	/* Succeeded: the draws' memory is mapped. */
 	return 0;
+}
+
+/*
+ * Gives the bytes a job's draw buffer is made with for bytes asked: the
+ * next power of two, at least DRAW_MEMORY_LEAST, so that kept memory
+ * (job_keep_take) fits the following jobs and is seldom made again (each
+ * making maps three buffers, each map waiting for the firmware's MMU
+ * cache flush).
+ */
+static uint64_t
+job_draw_memory_room(
+	uint64_t bytes)
+{
+	uint64_t room;
+
+	/* Doubled from the least until it holds them. */
+	room = DRAW_MEMORY_LEAST;
+	while (room < bytes)
+		room *= 2U;
+
+	/* Succeeded: the room. */
+	return room;
 }

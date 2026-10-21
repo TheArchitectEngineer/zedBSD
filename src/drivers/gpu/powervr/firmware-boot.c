@@ -247,6 +247,21 @@ static void watch_thread(void *argument);
 #define POWERVR_FIRMWARE_DATA_CACHED	0
 #endif
 
+/*
+ * The trials of the vendor driver's settings the board's dump showed
+ * (q1541, plan/ws270/phase007/notes-p1.md): how long the firmware waits,
+ * idle, before it may power the core down (the active power management's
+ * latency; the vendor's 100 ms, ours 0 as mainline), and the system level
+ * cache's address decoding (the vendor's register read 64-byte
+ * interleaving, 0x3 in SLC_CTRL_MISC, where mainline writes the PVR hash).
+ */
+#ifndef POWERVR_APM_LATENCY_MS
+#define POWERVR_APM_LATENCY_MS		0U
+#endif
+#ifndef POWERVR_SLC_DECODE_INTERLEAVED
+#define POWERVR_SLC_DECODE_INTERLEAVED	0
+#endif
+
 #ifndef DUST_POWER_BY_HOST
 #define DUST_POWER_BY_HOST		0
 #endif
@@ -1000,6 +1015,7 @@ fill_records(
 	 */
 	clusters = 1;
 	(void)powervr_fw_image_feature_value(&firmware->image, POWERVR_FEATURE_NUM_CLUSTERS, &clusters);
+	powervr_object_put32(&firmware->runtime, POWERVR_RUNTIME_APM_LATENCY, POWERVR_APM_LATENCY_MS);
 	powervr_object_put32(&firmware->runtime, POWERVR_RUNTIME_PERSISTENT, 1);
 	powervr_object_put32(&firmware->runtime, POWERVR_RUNTIME_CORE_CLOCK, (uint32_t)core->core_rate);
 	powervr_object_put32(&firmware->runtime, POWERVR_RUNTIME_CLUSTERS, (uint32_t)clusters);
@@ -1283,10 +1299,11 @@ init_cache(
 	uint32_t control;
 	int error;
 
-	/* Keeps the hazard check and selects the hashed address decoding. */
+	/* Keeps the hazard check and selects the hashed address decoding (or, as the vendor driver's register reads on the board, 64-byte interleaving). */
 	image = &core->firmware.image;
 	control = powervr_read32(core, POWERVR_SLC_CONTROL) & POWERVR_SLC_HAZARD_CHECK;
-	control |= POWERVR_SLC_HASH_DECODE;
+	if (!POWERVR_SLC_DECODE_INTERLEAVED)
+		control |= POWERVR_SLC_HASH_DECODE;
 
 	/* Bypasses the burst combiner when the cache line is shorter than 1024 bits. */
 	error = powervr_fw_image_feature_value(image, POWERVR_FEATURE_SLC_LINE_BITS, &line_bits);
