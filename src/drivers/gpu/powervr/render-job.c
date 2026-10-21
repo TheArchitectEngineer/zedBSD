@@ -192,6 +192,16 @@ struct job_memory {
 	struct powervr_data_vertex_program vertex;
 	uint32_t ppp[POWERVR_DRAW_PPP_WORDS];
 	uint32_t vdm[POWERVR_DRAW_VDM_WORDS];
+	/*
+	 * The shaders' code in the draws' shading cluster buffer, once a
+	 * pipeline (q1541: a desktop's frame draws a few pipelines many times,
+	 * and each draw copied its code again): the pipelines met, where each
+	 * one's code is, and where each draw's is.
+	 */
+	const struct powervr_vk_graphics *code_pipelines[POWERVR_RENDER_DRAWS + 1U];
+	uint64_t code_pipeline_places[POWERVR_RENDER_DRAWS + 1U];
+	uint32_t code_pipeline_count;
+	uint64_t code_places[POWERVR_RENDER_DRAWS + 1U];
 };
 
 static int job_check(const struct powervr_render_job *job);
@@ -1253,6 +1263,7 @@ job_draws(
 	uint64_t usc_total;
 	uint32_t draw_count;
 	uint32_t index;
+	uint32_t code;
 	uint32_t slot;
 	uint32_t words;
 	bool fits;
@@ -1263,16 +1274,29 @@ job_draws(
 	if (prefix != NULL)
 		draw_count++;
 
-	/* What the draws take: their shaders' code and their sets' copies, each on 16 bytes. */
+	/* What the draws take: their pipelines' code once each and their sets' copies, each on 16 bytes. */
 	sets_bytes = 0;
 	usc_bytes = 0;
+	memory->code_pipeline_count = 0;
 	for (index = 0; index < draw_count; index++) {
 		draw = job_draw(job, prefix, index);
 		graphics = draw->pipeline;
 		if (graphics == NULL)
 			return EINVAL;
-		usc_bytes += (graphics->vertex.length + 15U) & ~(uint64_t)15U;
-		usc_bytes += (graphics->fragment.length + 15U) & ~(uint64_t)15U;
+
+		/* The pipeline's code where an earlier draw's put it, else after the code so far. */
+		for (code = 0; code < memory->code_pipeline_count; code++) {
+			if (memory->code_pipelines[code] == graphics)
+				break;
+		}
+		if (code == memory->code_pipeline_count) {
+			memory->code_pipelines[code] = graphics;
+			memory->code_pipeline_places[code] = usc_bytes;
+			memory->code_pipeline_count++;
+			usc_bytes += (graphics->vertex.length + 15U) & ~(uint64_t)15U;
+			usc_bytes += (graphics->fragment.length + 15U) & ~(uint64_t)15U;
+		}
+		memory->code_places[index] = memory->code_pipeline_places[code];
 		for (slot = 0; slot < POWERVR_DRAW_SETS; slot++) {
 			set = draw->sets[slot];
 			if (set != NULL)
@@ -1296,23 +1320,28 @@ job_draws(
 			return error;
 	}
 
-	/* Each draw in order, its stream after the one before. */
+	/* Each pipeline's two shaders' code, once. */
+	for (code = 0; code < memory->code_pipeline_count; code++) {
+		graphics = memory->code_pipelines[code];
+		usc_place = memory->code_pipeline_places[code];
+		put_bytes(memory->draw_usc, (uint32_t)usc_place, graphics->vertex_code, graphics->vertex.length);
+		put_bytes(memory->draw_usc, (uint32_t)(usc_place + ((graphics->vertex.length + 15U) & ~(size_t)15U)), graphics->fragment_code, graphics->fragment.length);
+	}
+
+	/* Each draw in order, its stream after the one before, its code where its pipeline's is. */
 	*stream_words = 0;
 	*vertex_shareds = 0;
 	sets_place = (uint64_t)draw_count * DRAW_SLOT;
-	usc_place = 0;
 	for (index = 0; index < draw_count; index++) {
 		draw = job_draw(job, prefix, index);
 		graphics = draw->pipeline;
-		error = draw_place(job, draw, index, memory, sets_place, usc_place, *stream_words, &words);
+		error = draw_place(job, draw, index, memory, sets_place, memory->code_places[index], *stream_words, &words);
 		if (error != 0)
 			return error;
 
 		*stream_words += words;
 		if (graphics->vertex.shareds > *vertex_shareds)
 			*vertex_shareds = graphics->vertex.shareds;
-		usc_place += (graphics->vertex.length + 15U) & ~(uint64_t)15U;
-		usc_place += (graphics->fragment.length + 15U) & ~(uint64_t)15U;
 		for (slot = 0; slot < POWERVR_DRAW_SETS; slot++) {
 			set = draw->sets[slot];
 			if (set != NULL)
@@ -1325,9 +1354,10 @@ job_draws(
 }
 
 /*
- * Places one draw: its shaders' code, its sets' and push constants'
- * copies, its vertex, shared register, task and coefficient programs,
- * its scissor, its primitive state block and its part of the stream.
+ * Places one draw: its sets' and push constants' copies, its vertex,
+ * shared register, task and coefficient programs (pointing at its
+ * pipeline's code at usc_place, which job_draws put there once), its
+ * scissor, its primitive state block and its part of the stream.
  *
  * Procedure referenced:
  * Mesa 26.2.5 src/imagination/vulkan/pvr_arch_cmd_buffer.c
@@ -1385,10 +1415,6 @@ draw_place(
 	usc_base = (uint32_t)(memory->draw_usc_place - POWERVR_USC_HEAP_BASE);
 	vertex_usc = usc_base + (uint32_t)usc_place;
 	fragment_usc = vertex_usc + (uint32_t)((graphics->vertex.length + 15U) & ~(size_t)15U);
-
-	/* The two shaders' code. */
-	put_bytes(memory->draw_usc, (uint32_t)usc_place, graphics->vertex_code, graphics->vertex.length);
-	put_bytes(memory->draw_usc, (uint32_t)(usc_place + ((graphics->vertex.length + 15U) & ~(size_t)15U)), graphics->fragment_code, graphics->fragment.length);
 
 	/* The bound sets' copies, the push constants and zero blend constants. */
 	kern_memset(&state, 0, sizeof(state));
