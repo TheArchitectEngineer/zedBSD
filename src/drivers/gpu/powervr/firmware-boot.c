@@ -256,7 +256,7 @@ static void watch_thread(void *argument);
  * interleaving, 0x3 in SLC_CTRL_MISC, where mainline writes the PVR hash).
  */
 #ifndef POWERVR_APM_LATENCY_MS
-#define POWERVR_APM_LATENCY_MS		100U
+#define POWERVR_APM_LATENCY_MS		0U
 #endif
 #ifndef POWERVR_SLC_DECODE_INTERLEAVED
 #define POWERVR_SLC_DECODE_INTERLEAVED	0
