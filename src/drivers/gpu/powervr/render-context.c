@@ -30,6 +30,7 @@
 #include "drivers/gpu/powervr/interface.h"
 #include "drivers/gpu/powervr/pds-encode.h"
 #include "drivers/gpu/powervr/render-sr-program.h"
+#include "drivers/gpu/powervr/vk.h"
 
 /*
  * Where the switch's memory sits in the general window: the VDM call
@@ -168,6 +169,7 @@ powervr_session_render_context(
 	struct powervr_render_context **result)
 {
 	struct powervr_render_context *context;
+	uint64_t started;
 	int error;
 
 	/* The session's own, made by its first render. */
@@ -185,7 +187,8 @@ powervr_session_render_context(
 		return ENOMEM;
 	session->render_context = context;
 
-	/* The switch's memory in the session's windows. */
+	/* The switch's memory in the session's windows, timed with the records. */
+	started = powervr_timing_now();
 	error = context_memory(render, session, context);
 	if (error != 0)
 		goto fail;
@@ -196,6 +199,7 @@ powervr_session_render_context(
 	error = context_records(render, session, context);
 
 	mutex_unlock(&render->core->lock);
+	powervr_timing_add(POWERVR_TIMING_CONTEXT_MAKE, started);
 
 	if (error != 0)
 		goto fail;

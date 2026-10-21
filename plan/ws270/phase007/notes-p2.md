@@ -344,3 +344,9 @@ branch agent/p2-q1553（基 main 782f995e4）。
   - POWERVR_POINT_TRANSFER を足した。transfer の memory は完了まで session の list に置き、最大 4 つ使い回す。
   - 確保の時の storage の clear は同期のまま。板は未確認。
 - single kick の試しの組（q1555t・q1555k）を Q1 に渡した（未評価）。
+- ef10ca4d4: single kick の試しを外した（kick は 3342c1ace の前と同じ）。Q1 に merge を依頼（2026-10-22）。
+- 次の段: submit の最長 30〜40 ms。d104 の job setup 43.7・35.9 ms（target make は最大 1 ms）から、job setup の中の target make 以外が残る。
+  - 候補: session の最初の render が作る global free list（4096 page = 16 MB）。pool に無い時は powervr_buffer_create で、memset が約 21 ms（1.3 ms/MB）と alias の write-back が約 13 ms（0.8 ms/MB）。
+  - 変更: pool に無い時は powervr_buffer_create_uncleared（page の中身は parameter manager しか読まない）。write-back は残る（dirty な line が後で GPU の data を上書きしないため）。
+  - timing に `list make`（global free list）と `context make`（render context）を足した。
+  - build/q1556t/vmunix（timing 1、sha256 64921f47…）、build/q1556k/vmunix（CI の keiland config）とも warning 0。p009 505/0、p010 PASS。板は未確認。

@@ -279,7 +279,9 @@ powervr_session_target(
 
 	/* The global free list, made once. */
 	if (!targets->global_made) {
+		started = powervr_timing_now();
 		error = list_make(render, session, POWERVR_FREE_LIST_GLOBAL_PAGES, NULL, &targets->global);
+		powervr_timing_add(POWERVR_TIMING_LIST_MAKE, started);
 		if (error != 0)
 			return error;
 		targets->global_made = 1;
@@ -530,14 +532,15 @@ list_make(
 	 * The pages the parameter manager takes from; the core reaches them
 	 * only through it, by their physical addresses, and nothing reads
 	 * what they held before, so a freed buffer of the pool serves as it
-	 * is (a new one's view cost a write-back of every cached line, a
-	 * session's first render of a 16 MB global list some tens of ms).
+	 * is, and a new one is not cleared (clearing a session's 16 MB global
+	 * list took about 21 ms of its first render, on top of the write-back
+	 * of the cached lines its view needs).
 	 */
 	list->owner = owner;
 	list->page_count = pages;
 	error = powervr_buffer_reuse(render, (uint64_t)pages * POWERVR_PM_PAGE_BYTES, &list->pages);
 	if (error != 0)
-		error = powervr_buffer_create(render, (uint64_t)pages * POWERVR_PM_PAGE_BYTES, &list->pages);
+		error = powervr_buffer_create_uncleared(render, (uint64_t)pages * POWERVR_PM_PAGE_BYTES, &list->pages);
 	if (error != 0)
 		return error;
 
