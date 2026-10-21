@@ -114,7 +114,7 @@ static void compose_log_kinds(struct kwl_server *server);
  * POWERVR_RENDER_DRAWS): a pass of more goes on in another job that
  * loads the pass's area again.  Only KWL PASSES counts with it.
  */
-#define COMPOSE_JOB_DRAWS	64U
+#define COMPOSE_JOB_DRAWS	512U
 
 /*
  * Creates the Vulkan device, the pipelines' fixed objects and the frame's
@@ -1028,7 +1028,7 @@ kwl_compose_close(
 			if (compose->panel_pipelines[index] != VK_NULL_HANDLE)
 				vkDestroyPipeline(compose->device, compose->panel_pipelines[index], NULL);
 		}
-		for (index = 0; index < 2; index++) {
+		for (index = 0; index < KWL_PANEL_INSIDES; index++) {
 			if (compose->panel_opaque_pipelines[index] != VK_NULL_HANDLE)
 				vkDestroyPipeline(compose->device, compose->panel_opaque_pipelines[index], NULL);
 		}
@@ -2031,6 +2031,7 @@ compose_panel_pipeline(
 	VkPipeline *pipeline;
 	VkResult error;
 	uint32_t mode;
+	uint32_t inside;
 
 	/* All modes share the same quad and push-constant representation. */
 	memset(&module, 0, sizeof(module));
@@ -2071,17 +2072,33 @@ compose_panel_pipeline(
 			NULL,
 			pipeline);
 
-		/* The image and solid modes also without blending (the insides of opaque shapes, glass.c). */
-		if (error == VK_SUCCESS && (mode == 2U || mode == 3U)) {
-			error = compose_pipeline(
-				compose,
-				KWL_DRAW_OPAQUE,
-				vertex,
-				fragment,
-				compose->panel_layout,
-				NULL,
-				&compose->panel_opaque_pipelines[mode - 2U]);
+		vkDestroyShaderModule(compose->device, fragment, NULL);
+		if (error != VK_SUCCESS) {
+			vkDestroyShaderModule(compose->device, vertex, NULL);
+			return error;
 		}
+	}
+
+	/* The insides of opaque shapes (glass.c), without blending, from their own variants. */
+	for (inside = 0; inside < KWL_PANEL_INSIDES; inside++) {
+		/* The variant's module, only while its pipeline is compiled. */
+		module.codeSize = kwl_panel_inside_variants[inside].bytes;
+		module.pCode = kwl_panel_inside_variants[inside].words;
+		error = vkCreateShaderModule(compose->device, &module, NULL, &fragment);
+		if (error != VK_SUCCESS) {
+			vkDestroyShaderModule(compose->device, vertex, NULL);
+			return error;
+		}
+
+		/* Written as it is: an inside's pixels are opaque. */
+		error = compose_pipeline(
+			compose,
+			KWL_DRAW_OPAQUE,
+			vertex,
+			fragment,
+			compose->panel_layout,
+			NULL,
+			&compose->panel_opaque_pipelines[inside]);
 		vkDestroyShaderModule(compose->device, fragment, NULL);
 		if (error != VK_SUCCESS) {
 			vkDestroyShaderModule(compose->device, vertex, NULL);

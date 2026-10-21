@@ -18,6 +18,10 @@ SHADERS = [("quad.vert", "kwl_quad_vert"), ("quad.frag", "kwl_quad_frag"),
            ("panel-text.vert", "kwl_text_vert"), ("panel-text.frag", "kwl_text_frag"),
            ("turn.vert", "kwl_turn_vert")]
 
+# The panel modes whose insides have a variant of their own (glass, image,
+# solid and dark glass), in the order of kwl_panel_inside_variants.
+INSIDE_MODES = (0, 2, 3, 7)
+
 
 def compile_shader(source, definitions=()):
     """Returns the validated SPIR-V words of one shader."""
@@ -43,6 +47,9 @@ def main():
     variants = [(source, name, ()) for source, name in SHADERS]
     variants.extend(("panel.frag", "kwl_panel_frag_%d" % mode,
                      ("-DKWL_PANEL_MODE=%d" % mode,)) for mode in range(8))
+    variants.extend(("panel.frag", "kwl_panel_frag_inside_%d" % mode,
+                     ("-DKWL_PANEL_MODE=%d" % mode, "-DKWL_PANEL_INSIDE"))
+                    for mode in INSIDE_MODES)
     for source, name, definitions in variants:
         words = compile_shader(HERE / source, definitions)
         lines.append("/* Validated immutable %s SPIR-V, used while creating graphics pipelines. */" % name)
@@ -56,6 +63,11 @@ def main():
                   "static const struct kwl_panel_shader kwl_panel_variants[8] = {"])
     for mode in range(8):
         lines.append("\t{kwl_panel_frag_%d, sizeof(kwl_panel_frag_%d)}," % (mode, mode))
+    lines.extend(["};", "",
+                  "/* The insides of glass, image, solid and dark glass shapes, wholly covered and off the edge (glass.c). */",
+                  "static const struct kwl_panel_shader kwl_panel_inside_variants[%d] = {" % len(INSIDE_MODES)])
+    for mode in INSIDE_MODES:
+        lines.append("\t{kwl_panel_frag_inside_%d, sizeof(kwl_panel_frag_inside_%d)}," % (mode, mode))
     lines.extend(["};", "", "#endif"])
     (HERE.parent / "shaders.h").write_text("\n".join(lines) + "\n")
 
