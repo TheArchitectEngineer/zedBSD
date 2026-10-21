@@ -187,3 +187,21 @@ Mesa 26.2.5（drm-shim、BVNC 36.50.54.182、`PVR_DEBUG=cs`、vkmatrix の perf-
 - 残る差（ours が劣る所）:
   - vertex の group 数: batch 34 と 16、texture 11 と 7。vertex の入力を temp へ移す move と、link しない出力のため。
   - temps: 変種で 18〜26 と Mesa の 13〜16。fallback で 51 と 24。
+
+### 1 group に 2 命令（phase 0 と phase 1、d6f569269・12ddbecc7・51688a583）
+
+- 板:
+  - d60（main と b3995c934）: alu 61100 us・alu4 55700 us で、ほぼ同じ → 依存の待ちではない。group あたり全画面で約 0.86 ms。
+  - d61（d6f569269 の既定）: mul4 54300 us（74 group）。
+  - d62（PAIR_TRIAL 1）: mul4 36500 us（42 group、0.67 倍）、46/46、HWR 0、見た目は同じ（Q1 の shot62.png）、desktop の全画面 frame は 71〜78 ms（81〜85 から）。
+  - → group の費用は issue で決まる。
+- 12ddbecc7（既定 on、POWERVR_SHADER_PAIR 2）:
+  - 枝の無い program で、FADD・FMUL・FMAD・plain の MOVE の 2 つを 1 group の phase 0（s0〜s2、ft0、w0）と phase 1（s3〜s5、ft1、w1）に置く。Mesa の op_ref_maps で、この 4 つは phase 1 を持つ。Mesa 自身は 1 命令 = 1 group で、組を作らない。
+  - 12 命令先まで探し、間の単純な命令と読み書きが重ならない物だけを隣へ動かす。
+  - 組の条件: 2 つ目が 1 つ目の結果を読まず、同じ register に書かない（group の中では両方が書く前に読む）。
+  - encoder が受ける組だけを作る。upper set の s4・s5 は shared を名指せない。
+- 51688a583: phase 0 に置けない組は、順を逆にして試す（shared の addend は phase 0 でしか名指せない）。
+- group 数（命令 → group）: panel[0] 84→61、[7] 93→67、[6] 61→40、[3] 48→31、quad.frag 16→12、batch.frag 49→32、text.frag 22→16、vkm mul4 74→41。
+- 残る単独の group: 依存の鎖、MINMAX・SINGLE（rcp・rsq。phase 1 を持たない）、ITER・SMP・WAIT・PACK・UNPACK・olchk の MOV。
+- host: compiler 411・22 passed、p010 全 0 failed、p009 505 passed、vkmatrix（lavapipe）46/46。
+- 板の kernel: build/q1539/vf2h/vmunix（12ddbecc7、sha256 9bad8ad4987b34be…）。FMAD・MOVE の phase 1 は hardware で初めて使う。
