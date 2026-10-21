@@ -46,6 +46,14 @@ struct powervr_vk_executor;
 #define POWERVR_VK_OBJECT_LIMIT		1024U
 
 /*
+ * The buckets a session's published identities are found by (ws270-p007
+ * q1550): the compositor's session holds hundreds of objects, and every
+ * recorded command finds its objects, so a walk of one list cost the
+ * End of a frame's command buffer about 10 ms on the VisionFive 2.
+ */
+#define POWERVR_VK_OBJECT_BUCKETS	256U
+
+/*
  * The memory types: device local only (type 0) and host visible and
  * coherent (type 1), both the same uncached system memory of one heap
  * (plan/ws269/design.md D7 (a)).
@@ -75,7 +83,8 @@ struct powervr_vk_object;
  * One executor session.
  *
  * owner is the render node's session.  objects lists every published
- * identity, newest first; live_objects counts the payloads not yet
+ * identity, newest first, and buckets holds the same ones by the hash of
+ * their kind and identity (powervr_vk_object_find); live_objects counts the payloads not yet
  * destroyed.  closing is set once the close has begun.  abandoned says a
  * submission's work did not finish in time: the core may still run it,
  * so the executor's own memory stays with the core.  timelines has bit n
@@ -85,6 +94,7 @@ struct powervr_vk_object;
 struct powervr_vk_session {
 	struct powervr_session *owner;
 	struct powervr_vk_object *objects;
+	struct powervr_vk_object *buckets[POWERVR_VK_OBJECT_BUCKETS];
 	uint32_t live_objects;
 	bool closing;
 	bool abandoned;
@@ -98,12 +108,14 @@ struct powervr_vk_session {
 /*
  * One published wire identity of a kind and the payload it stands for.
  *
- * references counts the holders: the registry while published, and
- * every dependent object that retained it; the payload is destroyed when
- * the count reaches zero.
+ * next links the session's list, bucket_next its bucket's (both while
+ * published).  references counts the holders: the registry while
+ * published, and every dependent object that retained it; the payload is
+ * destroyed when the count reaches zero.
  */
 struct powervr_vk_object {
 	struct powervr_vk_object *next;
+	struct powervr_vk_object *bucket_next;
 	struct powervr_vk_session *session;
 	enum i915_vk_object_kind kind;
 	uint64_t identity;
