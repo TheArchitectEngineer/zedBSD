@@ -49,3 +49,7 @@ clear 3.85 ms、LOAD 23.35 ms、平らな quad 15.1 ms、1/4 面積 7.2 ms、402
 - d69（D1: firmware の code を MIPS の MMU で cached、trace は全部のまま）: 48/48、gpu-selftest 13 ok、HWR 0。TA 約 300、3D 約 355 us。
 - 2026-10-21 ユーザー「浮動小数点が32bitなのはちょっと気になるので、precisionを落とせないか確認するのがいいと思います。」→ P2: BXE の main ALU に F16 の vec2 の SIMD は無い（Mesa の ISA の表）、lp の形（fadd_lp 等）の板の試しを作った。
 - 2026-10-21 ユーザー「Linuxを起動してシェーダーの実行時間を計測することができます。Linuxを起動する必要があると思ったとき、私に言ってください。」
+- d70（P2 vf2j = 99ca2cfd1 既定）: 47/47。alu4 38000（52150）、rcp（38 group）28900 → rcp は掛け算と同じ費用。d71（lp の試し）: 速さは同じ（mul4 36150、alu4 37900）→ 精度を落としても issue の速さは変わらない、lp は使わない。
+- d72（P1 af2e35267: trace groups 0x401 ＋ firmware の code cached）: 48/48、gpu-selftest 13 ok、HWR 0。small の TA 152〜186、3D 192 us（d66 639・608）。
+- main 4b7d22191（P2 99ca2cfd1）・7af26e870（P1 99adb52fc: code cached 1・data 0・trace groups 0x401・job trace 0）。
+- d73（main 7af26e870 の kernel）: 49/49、HWR 0、見た目同じ（shot73.png）。perf: flat 5950、immediate 2750、texture 12300、load 6950、load-part 3150〜3350、load-small 1950 us。desktop: 部分 frame 10.4 ms、全画面 59〜80 ms。CPU 側 timing: job build 約 1.4 ms/job が最大、wait 8.4〜10.6 ms、transfer 4.4〜4.8 ms/回。
