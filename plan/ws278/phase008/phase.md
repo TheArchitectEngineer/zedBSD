@@ -3,7 +3,7 @@
 # ws278-p008 規約の全文の見直し
 
 - 親: [ws278](../ws.md)、Queue: q1543 / q1543-i01（P3、2026-10-21）
-- Status: in-progress（第 1 部: HAL の bsp の分離と書き直しを前倒しで済ませた。WS278 の残りの C は WS の最後に）
+- Status: in-progress（第 1 部・第 2 部とも済み。rpi4 の QEMU の起動の回帰と Pi 5 の実機は T1・一括の試験の待ち）
 
 ## 目的と受け入れの条件
 
@@ -44,6 +44,16 @@ bsp-rpi-common・bsp-rpi4・bsp-rpi5 の全部の file と、arch 共通の file
 - `git diff --check`: 問題なし。
 - 未実施: rpi4 の起動の回帰（QEMU raspi4b の `plan/tools/boot-test.sh`）。Q1 経由で T1 に依頼する。Pi 5 の実機は WS278 の最後の一括の試験。
 
+## 第 2 部: p003〜p007 の C（2026-10-21 P3、q1543-i02）
+
+対象: `src/drivers/platform/rpi5/` の全部（rp1.c・rp1-gpio.c・rp1-irq.c・rp1-usb.c・rp1-ethernet.c・rpi5-gio.c・rpi5-pinctrl.c・rpi5-wifi.c・rpi5-bt.c と各 header）、`src/kern/platform/rpi5.c`、`tests/rpi5-rp1-host-test.c`、p003 の `src/hal/arm64/smp.c`・`bsp-rpi{4,5}/board.c`・`bsp-rpi5/fdt.c`。
+
+- 書いた時に全文を当て、最後に機械の確かめと読み直しをした: static の関数の forward declaration の有無（script、漏れ 0）、複数行の comment の開き（漏れ 0）、条件の中の関数の呼び出し（rp1-usb.c の 1 件を直した）、閉じ括弧の後の空行（22 か所に段落の comment を足した）、検索の関数の最後を成功の return に（rp1.c の `drv_rp1_pci_to_cpu`・`read_dma_window`、rp1-gpio.c の `find_bank`、rp1-ethernet.c の `read_mac`・`clock_rate`・`stop_transmitter`・`wait_mdio`、rpi5-pinctrl.c の `find_pin` を break と後の判定に書き直した。振る舞いは同じ。`read_mac` は multicast の filter を飛ばして次を見るようにした）、boolean を式で作らない（rpi5-gio.c）。
+- 写して書き直した rpi5-wifi.c・rpi5-bt.c は元（rpi4）の形を保ち、Pi 5 の部分を全文で書いた。rpi5-bt.c の comment から開発の管理情報（BUG・試験の回の番号）を落とした（Guardrail の source の中の管理情報の規則）。
+- 試験の file（rpi5-rp1-host-test.c）の `failures += check(cond, …)` は既存の host 試験と同じ書き方で残した。
+- 確認: rpi5 の kernel build rc=0・warning 0・vmunix check PASS、`rpi5-rp1-host-test` C1・D0 PASS、rpi5 の image の build rc=0（`build/rpi5/hdd-image.img`、root に bcm43455・brcmbt の firmware、config.txt に `pciex4_reset=0`）、rpi4 の `ARM64_KERNEL_SOURCES` は f4cdf706f と同一（291 file、make で展開して diff）。
+
 ### 残り
 
-- 第 2 部（WS の最後）: WS278 が p003 以降で変える C（smp.c、driver の Pi 5 の分岐、kern/platform/rpi5.c など）。arch 共通の file の触っていない所（asm.c・page.c・space.c の古い書き方）は WS278 の範囲の外。
+- arch 共通の file の触っていない所（asm.c・page.c・space.c の古い書き方）は WS278 の範囲の外。
+- 共有の rpi4 の driver（rpi4-sdio-host.c・rpi4-sdio.c・rpi4-mmc-irq.c・rpi4-bt-link.c・rpi4-sdhci.c・rpi4-console.c）を Pi 5 でも build している。共通の directory（例 `src/drivers/platform/rpi-common/`）へ移すかは、ユーザーの「共通部分を -common/ に」に沿う次の整理（rpi4 の path が変わるので rpi4 の回帰と一緒に、Q1 の判断）。

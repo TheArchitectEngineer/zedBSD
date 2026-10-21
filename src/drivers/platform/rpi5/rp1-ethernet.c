@@ -318,9 +318,11 @@ drv_rp1_ethernet_init(
 	if (device->registers != NULL)
 		return EALREADY;
 
+	/* Prepares the lock of the rings and the registers. */
+	spin_init(&device->lock, LOCK_RANK_DEVICE, "RP1 GEM");
+
 	/* Finds the controller and its PHY in the tree. */
 	stage = "device tree";
-	spin_init(&device->lock, LOCK_RANK_DEVICE, "RP1 GEM");
 	error = describe_controller(device);
 	if (error != 0)
 		goto fail;
@@ -346,11 +348,13 @@ drv_rp1_ethernet_init(
 	/* Resets the controller and turns the MDIO bus on. */
 	reset_controller(device);
 
-	/* Resets the PHY through its GPIO, then starts it over MDIO. */
+	/* Resets the PHY through its GPIO. */
 	stage = "PHY reset";
 	error = reset_phy(device);
 	if (error != 0)
 		goto fail;
+
+	/* Starts the PHY over MDIO. */
 	stage = "PHY";
 	device->phy.context = device;
 	device->phy.read = mdio_read;
@@ -358,6 +362,8 @@ drv_rp1_ethernet_init(
 	error = drv_bcm54213pe_initialize(&device->phy, &identity);
 	if (error != 0)
 		goto fail;
+
+	/* Records the PHY found on the bus. */
 	kern_logf("gem: PHY %u id %08x\n", device->phy_address, identity);
 
 	/* Allocates the rings and the slots before anything is published. */
@@ -366,14 +372,18 @@ drv_rp1_ethernet_init(
 	if (error != 0)
 		goto fail;
 
-	/* Routes the controller's RP1 interrupt; its sources stay disabled until open. */
+	/* Finds RP1's interrupt path. */
 	stage = "interrupt";
 	error = drv_rp1_irq_init();
 	if (error != 0)
 		goto fail;
+
+	/* Reads the controller's vector. */
 	error = drv_rp1_irq_of(device->node, 0, &vector, &trigger);
 	if (error != 0)
 		goto fail;
+
+	/* Routes it; the controller's sources stay disabled until open. */
 	error = drv_rp1_irq_establish(vector, trigger, gem_interrupt, device);
 	if (error != 0)
 		goto fail;
@@ -454,6 +464,8 @@ describe_controller(
 	enabled = drv_fdt_node_enabled(fdt, node);
 	if (!enabled)
 		return ENODEV;
+
+	/* Keeps the controller's node. */
 	device->node = node;
 
 	/* Finds the PHY and its delays. */
@@ -488,12 +500,14 @@ describe_phy(
 	if (length == 0 || property[length - 1U] != 0)
 		return EINVAL;
 
-	/* The Pi 5 has the PHY insert both delays. */
+	/* Refuses another mode: the Pi 5 has the PHY insert both delays. */
 	comparison = kern_strcmp((const char *)property, "rgmii-id");
 	if (comparison != 0) {
 		kern_logf("gem: PHY mode %s not supported\n", (const char *)property);
 		return ENOTSUP;
 	}
+
+	/* The PHY inserts both delays. */
 	device->phy.rx_delay = 1;
 	device->phy.tx_delay = 1;
 
@@ -553,13 +567,15 @@ read_mac(
 	if (nonzero != 0 && (device->mac[0] & 1U) == 0)
 		return 0;
 
-	/* Looks in the controller's filters for an address the firmware left. */
+	/* Looks in the controller's filters for a unicast address the firmware left. */
 	for (index = 0; index < GEM_LADDRNUM; index++) {
 		low = read_register(device, GEM_LADDRL + index * GEM_LADDR_STRIDE);
 		high = read_register(device, GEM_LADDRH + index * GEM_LADDR_STRIDE);
 
-		/* Skips an empty filter. */
+		/* Skips an empty filter and a multicast one. */
 		if (low == 0 && (high & 0xffffU) == 0)
+			continue;
+		if ((low & 1U) != 0)
 			continue;
 
 		/* Unpacks the filter, the first octet in the low byte. */
@@ -569,15 +585,17 @@ read_mac(
 		device->mac[3] = (uint8_t)(low >> 24);
 		device->mac[4] = (uint8_t)high;
 		device->mac[5] = (uint8_t)(high >> 8);
-
-		/* Succeeded: a unicast address from the filters. */
-		if ((device->mac[0] & 1U) == 0)
-			return 0;
+		break;
 	}
 
 	/* Refuses to invent an address. */
-	kern_logf("gem: no Ethernet address from the firmware\n");
-	return ENODEV;
+	if (index == GEM_LADDRNUM) {
+		kern_logf("gem: no Ethernet address from the firmware\n");
+		return ENODEV;
+	}
+
+	/* Succeeded: a unicast address from the filters. */
+	return 0;
 }
 
 /*
@@ -635,6 +653,8 @@ clock_rate(
 	uint32_t rates_length;
 	uint32_t node;
 	unsigned entry;
+	unsigned rate;
+	int found;
 	int error;
 
 	/* Reads the clock controller's assignments. */
@@ -650,18 +670,23 @@ clock_rate(
 		return 0;
 
 	/* Each assignment is a phandle and a clock number, with one rate. */
+	found = 0;
 	for (entry = 0; (entry + 1U) * 8U <= clocks_length && (entry + 1U) * 4U <= rates_length; entry++) {
-		/* Skips another clock. */
+		/* Stops at the clock's assignment. */
 		assigned = drv_fdt_cells_value(clocks, entry * 2U + 1U, 1U);
-		if (assigned != clock)
-			continue;
-
-		/* Succeeded: the clock's assigned rate. */
-		return (unsigned)drv_fdt_cells_value(rates, entry, 1U);
+		if (assigned == clock) {
+			found = 1;
+			break;
+		}
 	}
 
 	/* No assignment for the clock. */
-	return 0;
+	if (!found)
+		return 0;
+
+	/* Succeeded: the clock's assigned rate. */
+	rate = (unsigned)drv_fdt_cells_value(rates, entry, 1U);
+	return rate;
 }
 
 /*
@@ -768,6 +793,8 @@ read_configuration(
 		if (rate / gem_mdc_dividers[divider] <= GEM_MDC_MAX_HZ)
 			break;
 	}
+
+	/* Keeps the divider for every reset of the controller. */
 	device->mdc_divider = divider;
 
 	/* Reports the controller. */
@@ -861,12 +888,14 @@ reset_controller(
 		if ((device->queue_mask & (1U << queue)) == 0)
 			continue;
 
-		/* Empties the queue's receive base, in its bank, and its transmit base. */
+		/* Empties the queue's receive base, in its bank. */
 		if (queue < 8U) {
 			write_register(device, GEM_RXQ1BASE + (queue - 1U) * 4U, 0);
 		} else {
 			write_register(device, GEM_RXQ8BASE + (queue - 8U) * 4U, 0);
 		}
+
+		/* Empties the queue's transmit base. */
 		write_register(device, GEM_TXQ1BASE + (queue - 1U) * 4U, 0);
 	}
 
@@ -991,12 +1020,14 @@ start_controller(
 		if ((device->queue_mask & (1U << queue)) == 0)
 			continue;
 
-		/* Closes the queue's receive base, in its bank, and its transmit base. */
+		/* Closes the queue's receive base, in its bank. */
 		if (queue < 8U) {
 			write_register(device, GEM_RXQ1BASE + (queue - 1U) * 4U, (uint32_t)rx_spare | GEM_QUEUE_BASE_DISABLE);
 		} else {
 			write_register(device, GEM_RXQ8BASE + (queue - 8U) * 4U, (uint32_t)rx_spare | GEM_QUEUE_BASE_DISABLE);
 		}
+
+		/* Closes the queue's transmit base. */
 		write_register(device, GEM_TXQ1BASE + (queue - 1U) * 4U, (uint32_t)tx_spare | GEM_QUEUE_BASE_DISABLE);
 	}
 
@@ -1085,14 +1116,18 @@ stop_transmitter(
 		/* Stops once nothing is being sent. */
 		status = read_register(device, GEM_TXSR);
 		if ((status & GEM_TXSR_TXGO) == 0)
-			return 0;
+			break;
 
 		/* Lets the frame on the wire finish. */
 		kern_usleep_range(GEM_TX_IDLE_POLL_US, GEM_TX_IDLE_POLL_US);
 	}
 
-	/* Failed: the transmitter did not stop. */
-	return ETIMEDOUT;
+	/* Reports a transmitter that did not stop. */
+	if (poll == GEM_TX_IDLE_POLLS)
+		return ETIMEDOUT;
+
+	/* Succeeded: the transmitter is idle. */
+	return 0;
 }
 
 /* Reads one controller register. */
@@ -1134,14 +1169,18 @@ wait_mdio(
 		/* Stops once the bus is idle. */
 		status = read_register(device, GEM_NETSR);
 		if ((status & GEM_NETSR_PHY_MGMT_IDLE) != 0)
-			return 0;
+			break;
 
 		/* Gives the operation time. */
 		kern_usleep_range(GEM_MDIO_POLL_US, GEM_MDIO_POLL_US);
 	}
 
-	/* Failed: the bus stayed busy. */
-	return ETIMEDOUT;
+	/* Reports a bus that stayed busy. */
+	if (poll == GEM_MDIO_POLLS)
+		return ETIMEDOUT;
+
+	/* Succeeded: the bus is idle. */
+	return 0;
 }
 
 /*
@@ -1472,6 +1511,8 @@ update_link(
 	} else if (speed == 100U) {
 		netcfg |= GEM_NETCFG_100;
 	}
+
+	/* Writes the speed and the duplex. */
 	write_register(device, GEM_NETCFG, netcfg);
 }
 
@@ -1547,6 +1588,8 @@ receive_packets(
 		} else {
 			descriptor[GEM_DESC_ADDRESS_LOW] = (uint32_t)address;
 		}
+
+		/* Moves to the next slot. */
 		device->rx_next = (slot + 1U) % GEM_RING_COUNT;
 
 		spin_unlock_irqrestore(&device->lock, irq);
@@ -1582,6 +1625,8 @@ gem_poll(
 		update_link(device);
 		reclaim_transmitted(device);
 	}
+
+	/* Takes the link for the announcement outside the lock. */
 	link = device->link;
 
 	spin_unlock_irqrestore(&device->lock, irq);

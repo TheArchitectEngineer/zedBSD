@@ -113,6 +113,8 @@ drv_rpi5_gio_set_output(
 	} else {
 		bits &= ~bit;
 	}
+
+	/* Writes the level, then makes the pin an output. */
 	kern_mmio_write32(bank + GIO_DATA, bits);
 	bits = kern_mmio_read32(bank + GIO_IODIR);
 	bits &= ~bit;

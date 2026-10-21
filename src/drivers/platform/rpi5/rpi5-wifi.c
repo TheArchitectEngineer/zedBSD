@@ -225,11 +225,15 @@ drv_rpi5_wifi_probe(
 		atomic_raw_store_release(&wifi_probe_state, PROBE_REFUSED);
 		return ENODEV;
 	}
+
+	/* Maps the tree's address. */
 	blob = kern_pmem_to_kernel((hal_physaddr_t)fdt_phys);
 	if (blob == NULL) {
 		atomic_raw_store_release(&wifi_probe_state, PROBE_REFUSED);
 		return ENODEV;
 	}
+
+	/* Opens the tree, checking its header. */
 	error = drv_fdt_open(&wifi->fdt, blob, WIFI_FDT_READ_LIMIT);
 	if (error != 0) {
 		atomic_raw_store_release(&wifi_probe_state, PROBE_REFUSED);
@@ -250,6 +254,8 @@ drv_rpi5_wifi_probe(
 		atomic_raw_store_release(&wifi_probe_state, PROBE_REFUSED);
 		return error;
 	}
+
+	/* Prepares the state's lock and wait queues. */
 	spin_init(&wifi->state_lock, LOCK_RANK_DEVICE, "rpi5 wifi state");
 	waitq_init(&wifi->wake, "rpi5 wifi wake");
 	waitq_init(&wifi->finished, "rpi5 wifi finished");
@@ -546,6 +552,8 @@ wifi_thread(
 			bcm43455_device_destroy(wifi->device);
 			wifi->device = NULL;
 		}
+
+		/* Gives back the controller, the line and the power. */
 		give_back(wifi);
 	}
 
@@ -586,6 +594,8 @@ publish(
 		kern_logf("rpi5-wifi: package bcm43455-firmware not installed; no onboard Wi-Fi\n");
 		return error;
 	}
+
+	/* Reports a package that could not be read. */
 	if (error != 0)
 		return error;
 
@@ -710,6 +720,8 @@ bring_up(
 		kern_logf("rpi5-wifi: SD interrupt line %d not joined (%d)\n", wifi->irq, error);
 		return error;
 	}
+
+	/* Records the slot to give back. */
 	wifi->irq_added = 1;
 
 	/* Succeeded: the host can reach the chip once it is powered. */
@@ -955,6 +967,8 @@ give_back(
 		} else {
 			kern_logf("rpi5-wifi: chip powered down\n");
 		}
+
+		/* Records the chip's power as given back. */
 		wifi->power_touched = 0;
 	}
 }
