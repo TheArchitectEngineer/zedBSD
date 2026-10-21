@@ -58,10 +58,13 @@
  * Procedure referenced:
  * Mesa 26.2.5 src/imagination/vulkan/pvr_arch_job_render.c
  * (pvr_frag_state_stream_init: the depth's clear value in the F32Z
- * form, the mask set, the tag when a background runs).
+ * form, the mask set, the tag when a background runs);
+ * pvr_arch_cmd_buffer.c (enable_bg_tag only with an attachment loaded
+ * or cleared).
  */
 #define BACKGROUND_DEPTH_ONE		0x3f800000U
 #define BACKGROUND_TAG_AND_MASK		((1U << 9) | (1U << 8))
+#define BACKGROUND_MASK			(1U << 8)
 
 /*
  * The geometry's primitive and tiling controls: the w clamp and the
@@ -142,6 +145,8 @@ powervr_fragment_command(
 	const struct powervr_fragment_setup *setup,
 	uint8_t *command)
 {
+	uint32_t background_values;
+	uint32_t isp_control;
 	uint32_t flags;
 	unsigned index;
 
@@ -158,9 +163,27 @@ powervr_fragment_command(
 	/* The tile's pixel output, background object and tile controls. */
 	put32(command, POWERVR_FRAGMENT_PIXEL_OUTPUT, PIXEL_OUTPUT_TWO_REGISTERS);
 	put32(command, POWERVR_FRAGMENT_BACKGROUND_DEPTH, setup->has_depth ? setup->background_depth : BACKGROUND_DEPTH_ONE);
-	put32(command, POWERVR_FRAGMENT_BACKGROUND_VALUES, BACKGROUND_TAG_AND_MASK);
+	background_values = BACKGROUND_TAG_AND_MASK;
+	if (setup->no_background)
+		background_values = BACKGROUND_MASK;
+	put32(command, POWERVR_FRAGMENT_BACKGROUND_VALUES, background_values);
 	put32(command, POWERVR_FRAGMENT_ANTIALIAS, 0);
-	put32(command, POWERVR_FRAGMENT_ISP_CONTROL, powervr_fragment_isp_control(setup->tiles_x, setup->tiles_y));
+	isp_control = powervr_fragment_isp_control(setup->tiles_x, setup->tiles_y);
+
+	/*
+	 * A render that clears nothing leaves the tiles no primitive reaches
+	 * as they are in memory, as Mesa runs the background on empty tiles
+	 * only for a clear (ws270-p007): a small render area's job then
+	 * processes its own tiles, not the whole target's.
+	 *
+	 * Procedure referenced:
+	 * Mesa 26.2.5 src/imagination/vulkan/pvr_arch_cmd_buffer.c
+	 * (process_empty_tiles only when a colour attachment's load op is
+	 * VK_ATTACHMENT_LOAD_OP_CLEAR, or a clear is not by the index list).
+	 */
+	if (setup->skip_empty_tiles)
+		isp_control &= ~ISP_PROCESS_EMPTY_TILES;
+	put32(command, POWERVR_FRAGMENT_ISP_CONTROL, isp_control);
 
 	/*
 	 * The scissor and depth bias tables, each register keeping the

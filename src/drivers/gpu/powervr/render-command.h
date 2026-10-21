@@ -151,7 +151,12 @@ void powervr_render_command_single_core(int on);
  * the attachment's three pixel back end register words, and the
  * scissor and depth bias tables the draws' primitives index (zero when
  * there are no draws), and with a depth target its ZLS control, base,
- * background depth and layer stride.
+ * background depth and layer stride.  skip_empty_tiles leaves the tiles
+ * no primitive reaches untouched (no background, no store), for a render
+ * that clears nothing (ws270-p007); false processes every tile.
+ * no_background leaves the background object out of the tiles (its tag
+ * off), for a render whose old contents do not matter anywhere: its draws
+ * cover what it keeps.
  */
 struct powervr_fragment_setup {
 	uint64_t border_table;
@@ -169,6 +174,8 @@ struct powervr_fragment_setup {
 	uint64_t zls_base;
 	uint32_t background_depth;
 	uint32_t zls_stride;
+	bool skip_empty_tiles;
+	bool no_background;
 };
 
 /*

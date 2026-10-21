@@ -153,6 +153,15 @@ struct powervr_pending {
 struct powervr_job_done;
 
 /*
+ * A render job's memory (render-job.c), and how many a session keeps
+ * mapped for its next jobs (ws270-p007, q1541): every map and unmap of a
+ * buffer waits for the firmware to flush the core's MMU cache, six of each
+ * a job, so the memory of finished jobs is reused instead.
+ */
+struct job_memory;
+#define POWERVR_JOB_KEEP	4U
+
+/*
  * One job marker of a session: a reservation libvulkan makes before it
  * submits a supervised job.  Free, reserved (held by the core, counted
  * against the ring), or committed (in the ring until delivered); the
@@ -412,6 +421,14 @@ struct powervr_session {
 	struct powervr_job_done *jobs_done;
 	struct powervr_job_done *jobs_done_tail;
 
+	/*
+	 * The memory of finished render jobs kept mapped for the next ones
+	 * (render-job.c), job_keep_count of them, under the queue lock; freed
+	 * with the session (powervr_render_jobs_forget).
+	 */
+	struct job_memory *job_keep[POWERVR_JOB_KEEP];
+	unsigned job_keep_count;
+
 	/* Pending callbacks that carry an error (a command may not overtake them), under the queue lock. */
 	unsigned pending_errors;
 
@@ -554,6 +571,7 @@ void powervr_session_point_set(struct powervr_session *session, unsigned kind, u
  * (render-job.c).  Nothing is released of a lost or isolated session.
  */
 void powervr_render_jobs_reap(struct powervr_render *render, struct powervr_session *session, int wait);
+void powervr_render_jobs_forget(struct powervr_render *render, struct powervr_session *session);
 
 /*
  * Takes one command frame of the Vulkan transport (or an empty marker

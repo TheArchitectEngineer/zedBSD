@@ -196,6 +196,8 @@ struct job_memory {
 
 static int job_check(const struct powervr_render_job *job);
 static void load_draw_free(struct powervr_render_job *work, struct load_draw *load);
+static bool job_skips_empty_tiles(const struct powervr_render_job *job);
+static bool job_needs_no_background(const struct powervr_render_job *job);
 static uint32_t float_bits(uint32_t value);
 static int load_graphics(struct powervr_render *render, uint32_t vk_format, struct powervr_vk_graphics **result);
 static int load_graphics_compile(struct powervr_vk_graphics *graphics);
@@ -241,6 +243,12 @@ static int draw_place(const struct powervr_render_job *job, const struct powervr
 static const struct powervr_render_draw *job_draw(const struct powervr_render_job *job, const struct powervr_render_draw *prefix, uint32_t index);
 static int draw_shared(const struct powervr_shader_program *program, const struct powervr_data_state *state, struct job_memory *memory, uint32_t code_at, uint32_t data_at, uint32_t *data_words);
 static void job_release(struct powervr_render *render, struct powervr_session *session, struct job_memory *memory);
+static void job_free(struct powervr_render *render, struct powervr_session *session, struct job_memory *memory);
+static struct job_memory *job_keep_take(struct powervr_render *render, struct powervr_session *session);
+static void job_buffer_clear(struct powervr_buffer *buffer);
+static bool job_draw_memory_fits(const struct job_memory *memory, uint64_t general_bytes, uint64_t pds_bytes, uint64_t usc_bytes);
+static void job_draw_memory_free(struct powervr_render *render, struct powervr_session *session, struct job_memory *memory);
+static int job_draw_memory_make(struct powervr_render *render, struct powervr_session *session, struct job_memory *memory, uint64_t general_bytes, uint64_t pds_bytes, uint64_t usc_bytes);
 static int attribute_words(uint32_t format, uint32_t components, uint32_t *words, uint32_t *defaults);
 static void put_words(struct powervr_buffer *buffer, uint32_t offset, const uint32_t *words, unsigned count);
 static void put_bytes(struct powervr_buffer *buffer, uint32_t offset, const uint8_t *bytes, size_t count);
@@ -339,10 +347,12 @@ powervr_render_job_run(
 		error = powervr_session_target(render, session, &shape, &target);
 	}
 
-	/* The job's memory and its programs. */
+	/* The job's memory and its programs: kept mapped from a finished job, or new. */
 	memory = NULL;
 	if (error == 0) {
-		memory = kern_calloc(1, sizeof(*memory));
+		memory = job_keep_take(render, session);
+		if (memory == NULL)
+			memory = kern_calloc(1, sizeof(*memory));
 		if (memory == NULL)
 			error = ENOMEM;
 	}
@@ -428,6 +438,8 @@ powervr_render_job_run(
 	layout = powervr_target_layout_of(target);
 	memory->fragment_setup.tiles_x = layout->tiles_x;
 	memory->fragment_setup.tiles_y = layout->tiles_y;
+	memory->fragment_setup.skip_empty_tiles = job_skips_empty_tiles(job);
+	memory->fragment_setup.no_background = job_needs_no_background(job);
 	memory->fragment_setup.border_table = powervr_session_border_table(session);
 	memory->geometry_setup.border_table = memory->fragment_setup.border_table;
 	powervr_fragment_command(&memory->fragment_setup, memory->fragment);
@@ -595,6 +607,26 @@ powervr_render_jobs_reap(
 		load_draw_free(done->work, done->load);
 		powervr_timing_add(POWERVR_TIMING_JOB_RELEASE, started);
 		kern_free(done);
+	}
+}
+
+/*
+ * Frees the job memory a session kept mapped for its next jobs, when the
+ * session ends: its buffers are unmapped and freed.
+ */
+void
+powervr_render_jobs_forget(
+	struct powervr_render *render,
+	struct powervr_session *session)
+{
+	struct job_memory *memory;
+
+	/* Each kept memory, until none is left. */
+	for (;;) {
+		memory = job_keep_take(render, session);
+		if (memory == NULL)
+			break;
+		job_free(render, session, memory);
 	}
 }
 
@@ -939,6 +971,14 @@ job_map(
 	struct powervr_buffer *buffer;
 	int error;
 
+	/* Memory kept from a finished job is mapped already: only its old bytes go. */
+	if (memory->general != NULL) {
+		job_buffer_clear(memory->general->buffer);
+		job_buffer_clear(memory->pds);
+		job_buffer_clear(memory->usc);
+		return 0;
+	}
+
 	/* The general memory. */
 	error = powervr_buffer_create(render, GENERAL_BYTES, &buffer);
 	if (error != 0)
@@ -1199,15 +1239,18 @@ job_draws(
 	const struct powervr_vk_graphics *graphics;
 	const struct powervr_vk_descriptor_set *set;
 	const struct powervr_render_draw *draw;
-	struct powervr_buffer *buffer;
 	uint64_t sets_bytes;
 	uint64_t usc_bytes;
 	uint64_t sets_place;
 	uint64_t usc_place;
+	uint64_t general_bytes;
+	uint64_t pds_bytes;
+	uint64_t usc_total;
 	uint32_t draw_count;
 	uint32_t index;
 	uint32_t slot;
 	uint32_t words;
+	bool fits;
 	int error;
 
 	/* The job's draws after the prefix draw, when there is one. */
@@ -1232,41 +1275,20 @@ job_draws(
 		}
 	}
 
-	/* The general memory: a slot per draw, then the sets. */
-	error = powervr_buffer_create(render, (uint64_t)draw_count * DRAW_SLOT + sets_bytes + 16U, &buffer);
-	if (error != 0)
-		return error;
-
-	error = powervr_resource_make(session, buffer, POWERVR_PROGRAM_SLC_CACHED ? 0 : 1, 0, &memory->draw_general);
-	powervr_buffer_put(render, buffer);
-	if (error != 0) {
-		memory->draw_general = NULL;
-		return error;
-	}
-
-	/* The program buffers, in their windows. */
-	error = powervr_buffer_create(render, (uint64_t)draw_count * DRAW_SLOT, &memory->draw_pds);
-	if (error != 0) {
-		memory->draw_pds = NULL;
-		return error;
-	}
-
-	error = powervr_session_program_map(session, POWERVR_PROGRAM_PDS, memory->draw_pds, &memory->draw_pds_place);
-	if (error != 0) {
-		memory->draw_pds_place = 0;
-		return error;
-	}
-
-	error = powervr_buffer_create(render, usc_bytes + 16U, &memory->draw_usc);
-	if (error != 0) {
-		memory->draw_usc = NULL;
-		return error;
-	}
-
-	error = powervr_session_program_map(session, POWERVR_PROGRAM_USC, memory->draw_usc, &memory->draw_usc_place);
-	if (error != 0) {
-		memory->draw_usc_place = 0;
-		return error;
+	/* The draws' memory kept from a finished job, when it is large enough; else made anew. */
+	general_bytes = (uint64_t)draw_count * DRAW_SLOT + sets_bytes + 16U;
+	pds_bytes = (uint64_t)draw_count * DRAW_SLOT;
+	usc_total = usc_bytes + 16U;
+	fits = job_draw_memory_fits(memory, general_bytes, pds_bytes, usc_total);
+	if (fits) {
+		job_buffer_clear(memory->draw_general->buffer);
+		job_buffer_clear(memory->draw_pds);
+		job_buffer_clear(memory->draw_usc);
+	} else {
+		job_draw_memory_free(render, session, memory);
+		error = job_draw_memory_make(render, session, memory, general_bytes, pds_bytes, usc_total);
+		if (error != 0)
+			return error;
 	}
 
 	/* Each draw in order, its stream after the one before. */
@@ -1569,9 +1591,49 @@ draw_shared(
 	return 0;
 }
 
-/* Unmaps and returns the job's memory and its bookkeeping. */
+/*
+ * Gives a job's memory back once its 3D finished, or when it was never
+ * kicked: kept mapped for the session's next job while there is room and
+ * the session and the core are well (ws270-p007, q1541), else freed.
+ */
 static void
 job_release(
+	struct powervr_render *render,
+	struct powervr_session *session,
+	struct job_memory *memory)
+{
+	unsigned long enabled;
+	bool kept;
+
+	/* Only whole memory of a well session on a well core is kept. */
+	kept = false;
+	if (memory->general != NULL &&
+	    memory->pds != NULL &&
+	    memory->usc != NULL &&
+	    memory->pds_place != 0U &&
+	    memory->usc_place != 0U) {
+		enabled = spin_lock_irqsave(&render->queue_lock);
+
+		if (!render->faulted &&
+		    !session->lost &&
+		    !session->isolated &&
+		    session->job_keep_count < POWERVR_JOB_KEEP) {
+			session->job_keep[session->job_keep_count] = memory;
+			session->job_keep_count++;
+			kept = true;
+		}
+
+		spin_unlock_irqrestore(&render->queue_lock, enabled);
+	}
+
+	/* Not kept: unmapped and freed. */
+	if (!kept)
+		job_free(render, session, memory);
+}
+
+/* Unmaps and frees a job's memory and programs. */
+static void
+job_free(
 	struct powervr_render *render,
 	struct powervr_session *session,
 	struct job_memory *memory)
@@ -1590,20 +1652,7 @@ job_release(
 	}
 
 	/* The draws' program buffers and memory. */
-	if (memory->draw_usc != NULL) {
-		if (memory->draw_usc_place != 0U)
-			powervr_session_program_unmap(session, POWERVR_PROGRAM_USC, memory->draw_usc, memory->draw_usc_place);
-		powervr_buffer_put(render, memory->draw_usc);
-	}
-
-	if (memory->draw_pds != NULL) {
-		if (memory->draw_pds_place != 0U)
-			powervr_session_program_unmap(session, POWERVR_PROGRAM_PDS, memory->draw_pds, memory->draw_pds_place);
-		powervr_buffer_put(render, memory->draw_pds);
-	}
-
-	if (memory->draw_general != NULL)
-		powervr_resource_unmake(session, memory->draw_general);
+	job_draw_memory_free(render, session, memory);
 
 	/* The general memory and the bookkeeping. */
 	if (memory->general != NULL)
@@ -1681,4 +1730,233 @@ put_bytes(
 	/* One byte at a time. */
 	for (index = 0; index < count; index++)
 		buffer->view[offset + index] = bytes[index];
+}
+
+/*
+ * Tells whether a job's fragment may leave the tiles no primitive reaches
+ * untouched (ws270-p007): no colour target is cleared there and there is
+ * no depth target, so such a tile's memory is already what the render
+ * leaves in it (a loaded target's pixels; a target whose old contents do
+ * not matter).  A job loading through its load draw has that draw over
+ * its render area only (its scissor's region clip), so the tiles outside
+ * the area stay empty and are not processed at all.
+ */
+static bool
+job_skips_empty_tiles(
+	const struct powervr_render_job *job)
+{
+	uint32_t index;
+
+	/* A depth target's tiles keep the depth processing they had. */
+	if (job->depth.present)
+		return false;
+
+	/* A cleared colour target needs its background in every tile. */
+	for (index = 0; index < job->color_count; index++) {
+		if (job->colors[index].load_op == LOAD_OP_CLEAR)
+			return false;
+	}
+
+	/* Succeeded: nothing is cleared, the empty tiles are left as they are. */
+	return true;
+}
+
+/*
+ * Tells whether a job's fragment needs no background object (ws270-p007):
+ * no depth target, and every colour target's old contents do not matter
+ * (a target loaded through the load draw is one, the draw covering its
+ * render area), so no tile's pixels come from the background.
+ */
+static bool
+job_needs_no_background(
+	const struct powervr_render_job *job)
+{
+	uint32_t index;
+
+	/* A depth target keeps its background depth. */
+	if (job->depth.present)
+		return false;
+
+	/* A colour target loaded or cleared by the background needs it. */
+	for (index = 0; index < job->color_count; index++) {
+		if (job->colors[index].load_op != LOAD_OP_DONT_CARE)
+			return false;
+	}
+
+	/* Succeeded: the background is left out. */
+	return true;
+}
+
+/*
+ * Takes job memory a finished job left mapped, its buffers' places kept
+ * and everything else of it cleared, or NULL when the session keeps none.
+ */
+static struct job_memory *
+job_keep_take(
+	struct powervr_render *render,
+	struct powervr_session *session)
+{
+	struct job_memory *memory;
+	struct job_memory kept;
+	unsigned long enabled;
+
+	/* The newest kept memory, off the session's list. */
+	memory = NULL;
+	enabled = spin_lock_irqsave(&render->queue_lock);
+
+	if (session->job_keep_count != 0U) {
+		session->job_keep_count--;
+		memory = session->job_keep[session->job_keep_count];
+		session->job_keep[session->job_keep_count] = NULL;
+	}
+
+	spin_unlock_irqrestore(&render->queue_lock, enabled);
+
+	/* None kept. */
+	if (memory == NULL)
+		return NULL;
+
+	/* Its mapped buffers stay; the rest is cleared for the new job. */
+	kern_memset(&kept, 0, sizeof(kept));
+	kept.general = memory->general;
+	kept.pds = memory->pds;
+	kept.usc = memory->usc;
+	kept.pds_place = memory->pds_place;
+	kept.usc_place = memory->usc_place;
+	kept.draw_general = memory->draw_general;
+	kept.draw_pds = memory->draw_pds;
+	kept.draw_usc = memory->draw_usc;
+	kept.draw_pds_place = memory->draw_pds_place;
+	kept.draw_usc_place = memory->draw_usc_place;
+	kern_memcpy(memory, &kept, sizeof(kept));
+
+	/* Succeeded: memory ready to be written again. */
+	return memory;
+}
+
+/* Clears a buffer through its uncached view, as a new one is (powervr_buffer_create). */
+static void
+job_buffer_clear(
+	struct powervr_buffer *buffer)
+{
+	volatile uint64_t *words;
+	uint64_t index;
+
+	/* Every word of it (a last part word too), so the core reads nothing of the job before. */
+	words = (volatile uint64_t *)buffer->view;
+	for (index = 0; index < (buffer->bytes + 7U) / 8U; index++)
+		words[index] = 0;
+}
+
+/* Tells whether a job memory's draw buffers are there and large enough for the draws' bytes. */
+static bool
+job_draw_memory_fits(
+	const struct job_memory *memory,
+	uint64_t general_bytes,
+	uint64_t pds_bytes,
+	uint64_t usc_bytes)
+{
+	/* All three there. */
+	if (memory->draw_general == NULL || memory->draw_pds == NULL || memory->draw_usc == NULL)
+		return false;
+	if (memory->draw_pds_place == 0U || memory->draw_usc_place == 0U)
+		return false;
+
+	/* Each as large as asked. */
+	if (memory->draw_general->buffer->bytes < general_bytes)
+		return false;
+	if (memory->draw_pds->bytes < pds_bytes)
+		return false;
+	if (memory->draw_usc->bytes < usc_bytes)
+		return false;
+
+	/* Succeeded: they fit. */
+	return true;
+}
+
+/* Unmaps and frees a job memory's draw buffers, leaving none. */
+static void
+job_draw_memory_free(
+	struct powervr_render *render,
+	struct powervr_session *session,
+	struct job_memory *memory)
+{
+	/* The shading cluster's programs. */
+	if (memory->draw_usc != NULL) {
+		if (memory->draw_usc_place != 0U)
+			powervr_session_program_unmap(session, POWERVR_PROGRAM_USC, memory->draw_usc, memory->draw_usc_place);
+		powervr_buffer_put(render, memory->draw_usc);
+	}
+
+	/* The data sequencer's programs. */
+	if (memory->draw_pds != NULL) {
+		if (memory->draw_pds_place != 0U)
+			powervr_session_program_unmap(session, POWERVR_PROGRAM_PDS, memory->draw_pds, memory->draw_pds_place);
+		powervr_buffer_put(render, memory->draw_pds);
+	}
+
+	/* The general memory. */
+	if (memory->draw_general != NULL)
+		powervr_resource_unmake(session, memory->draw_general);
+
+	/* None left. */
+	memory->draw_usc = NULL;
+	memory->draw_usc_place = 0;
+	memory->draw_pds = NULL;
+	memory->draw_pds_place = 0;
+	memory->draw_general = NULL;
+}
+
+/* Makes and maps a job memory's draw buffers of the bytes asked (general, data sequencer, shading cluster). */
+static int
+job_draw_memory_make(
+	struct powervr_render *render,
+	struct powervr_session *session,
+	struct job_memory *memory,
+	uint64_t general_bytes,
+	uint64_t pds_bytes,
+	uint64_t usc_bytes)
+{
+	struct powervr_buffer *buffer;
+	int error;
+
+	/* The general memory: a slot per draw, then the sets. */
+	error = powervr_buffer_create(render, general_bytes, &buffer);
+	if (error != 0)
+		return error;
+
+	error = powervr_resource_make(session, buffer, POWERVR_PROGRAM_SLC_CACHED ? 0 : 1, 0, &memory->draw_general);
+	powervr_buffer_put(render, buffer);
+	if (error != 0) {
+		memory->draw_general = NULL;
+		return error;
+	}
+
+	/* The program buffers, in their windows. */
+	error = powervr_buffer_create(render, pds_bytes, &memory->draw_pds);
+	if (error != 0) {
+		memory->draw_pds = NULL;
+		return error;
+	}
+
+	error = powervr_session_program_map(session, POWERVR_PROGRAM_PDS, memory->draw_pds, &memory->draw_pds_place);
+	if (error != 0) {
+		memory->draw_pds_place = 0;
+		return error;
+	}
+
+	error = powervr_buffer_create(render, usc_bytes, &memory->draw_usc);
+	if (error != 0) {
+		memory->draw_usc = NULL;
+		return error;
+	}
+
+	error = powervr_session_program_map(session, POWERVR_PROGRAM_USC, memory->draw_usc, &memory->draw_usc_place);
+	if (error != 0) {
+		memory->draw_usc_place = 0;
+		return error;
+	}
+
+	/* Succeeded: the draws' memory is mapped. */
+	return 0;
 }
