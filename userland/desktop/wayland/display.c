@@ -110,7 +110,6 @@ kwl_schedule(
 	struct kwl_object *top;
 	uint64_t now;
 	uint64_t part;
-	uint64_t tick;
 	int direct;
 	int ready;
 	int held;
@@ -126,28 +125,19 @@ kwl_schedule(
 
 	/* The sleep's causes and its course (sleep.c, ws052-p012), before the lock screen's own tick. */
 	kwl_sleep_tick(server);
-	tick = kwl_cycles();
-	server->perf.schedule_tick_part_cycles[0] += tick - part;
 
 	/* The displays followed, and the output moved from one that is gone (output-switch.c, ws113-p004a). */
 	kwl_output_tick(server);
-	server->perf.schedule_tick_part_cycles[1] += kwl_cycles() - tick;
-	tick = kwl_cycles();
 
 	/* The light a session keeps, once its first frame is up (displays-shell.c, ws113-p005). */
 	kwl_displays_tick(server);
-	server->perf.schedule_tick_part_cycles[2] += kwl_cycles() - tick;
-	tick = kwl_cycles();
 
 	/* The glass look's clock turns over. */
 	if (server->glass)
 		kwl_glass_tick(server);
-	server->perf.schedule_tick_part_cycles[3] += kwl_cycles() - tick;
-	tick = kwl_cycles();
 
 	/* The desktop surface's program and place (desktop.c). */
 	kwl_desktop_tick(server);
-	server->perf.schedule_tick_part_cycles[4] += kwl_cycles() - tick;
 	server->perf.schedule_tick_cycles += kwl_cycles() - part;
 
 	/* Every committed surface takes its new image. */

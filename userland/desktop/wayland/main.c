@@ -143,7 +143,7 @@ main(
 	/* Reads the command line; a mistake ends the run with the usage. */
 	error = parse_options(&server, count, arguments);
 	if (error != 0) {
-		fprintf(stderr, "usage: wayland [--socket=/path] [--width=N] [--height=N] [--rotate=0|90|180|270] [--testing [--timeout=seconds] [--max-frames=N]] [--log-frames] [--no-layer-cache] [--no-glass-map] [--keyboard-blur] [--glass] [--font=/path] [--fallback-font=/path] [--wallpaper=/path.png|.jpg] [--window-opacity=1..100] [--desktop-client=COMMAND|none] [--desktop-token=TOKEN] [--session [--control-fd=N] [--lock-idle=seconds] | --greeter --auth-fd=N]\n");
+		fprintf(stderr, "usage: wayland [--socket=/path] [--width=N] [--height=N] [--rotate=0|90|180|270] [--testing [--timeout=seconds] [--max-frames=N]] [--log-frames] [--no-layer-cache] [--keyboard-blur] [--glass] [--font=/path] [--fallback-font=/path] [--wallpaper=/path.png|.jpg] [--window-opacity=1..100] [--desktop-client=COMMAND|none] [--desktop-token=TOKEN] [--session [--control-fd=N] [--lock-idle=seconds] | --greeter --auth-fd=N]\n");
 		return 2;
 	}
 
@@ -549,13 +549,6 @@ parse_options(
 		match = strcmp(argument, "--log-frames");
 		if (match == 0) {
 			server->log_frames = 1;
-			continue;
-		}
-
-		/* Flat glass worked out at each pixel, without the glass maps (the reference for their pictures). */
-		match = strcmp(argument, "--no-glass-map");
-		if (match == 0) {
-			server->glass_map_off = 1U;
 			continue;
 		}
 
@@ -1069,8 +1062,6 @@ event_loop(
 
 		/* The pass's work starts now; its parts are told apart at its end if it runs long. */
 		perf_pass_begin(server);
-		if (server->log_frames)
-			server->pass_us = kwl_log_us();
 		server->perf.passes++;
 		if (ready == 0)
 			server->perf.timeouts++;
@@ -1458,14 +1449,6 @@ kwl_perf_report(
 	    (double)perf->cursor_copy_cycles / per_ms,
 	    (double)perf->cursor_queue_present_cycles / per_ms,
 	    (double)perf->cursor_queue_present_max_cycles / per_ms);
-
-	/* The scheduler's ticks one by one. */
-	printf("KWL PERF ticks sleep=%.1f output=%.1f displays=%.1f glass=%.1f desktop=%.1f\n",
-	    (double)perf->schedule_tick_part_cycles[0] / per_ms,
-	    (double)perf->schedule_tick_part_cycles[1] / per_ms,
-	    (double)perf->schedule_tick_part_cycles[2] / per_ms,
-	    (double)perf->schedule_tick_part_cycles[3] / per_ms,
-	    (double)perf->schedule_tick_part_cycles[4] / per_ms);
 
 	/* The passes' longest work, and the cursor's box. */
 	perf_pass_report(perf, per_ms);

@@ -15,7 +15,6 @@
 #include "userland/desktop/libwayland/keiland-gpu-buffer-v1-client-protocol.h"
 #include <errno.h>
 #include <poll.h>
-#include <stdio.h>
 #include <string.h>
 #include <time.h>
 
@@ -765,7 +764,6 @@ wayland_commit(
 	struct wayland_image *image;
 	struct wayland_frame *frame;
 	VkResult error;
-	uint64_t waited;
 	uint32_t surface_version;
 	int status;
 	int socket_error;
@@ -775,14 +773,8 @@ wayland_commit(
 	surface = lease->surface;
 	image = private_image;
 	if (mode == VK_PRESENT_MODE_FIFO_KHR) {
-		/* A stalled compositor becomes terminal after the finite native watchdog (timed for VULKAN TIMING). */
-		waited = vulkan_timing_start();
+		/* A stalled compositor becomes terminal after the finite native watchdog. */
 		error = wayland_wait(lease, lease->submitted, WAYLAND_WAIT_NS);
-		vulkan_timing_add(VULKAN_TIMING_FIFO_WAIT, waited, 0U);
-		if (waited != 0U) {
-			fprintf(stderr, "VULKAN FIFO sequence=%llu waited_us=%llu at_us=%llu\n", (unsigned long long)lease->submitted,
-				(unsigned long long)((vulkan_timing_start() - waited) / 1000U), (unsigned long long)(vulkan_timing_start() / 1000U));
-		}
 		if (error == VK_TIMEOUT) {
 			__atomic_store_n(&surface->lost, VK_TRUE, __ATOMIC_RELEASE);
 			return VK_ERROR_SURFACE_LOST_KHR;
