@@ -50,17 +50,19 @@ float rounded(vec2 point, vec4 box, float radius)
 }
 
 // KWL_PANEL_INSIDE: the inside of a shape drawn by itself (glass.c, the
-// glass, image and solid modes): its pixels lie at least three pixels within
-// the box less its corner radius, where the distance is -3 or less, so every
-// pixel is covered wholly and none is on the bright edge.  The constant
-// distance gives the same colour without working the distance out.
+// glass, shadow, image and solid modes): its pixels lie far enough within the
+// box that every pixel is covered wholly, none is on the glass's bright edge
+// and a shadow there is at its full alpha (the distance at most -3 within
+// the box less its corner radius, and at most half the softness below 0 for
+// a shadow).  A distance far below any of them gives the same colour without
+// working the distance out.
 
 void main()
 {
 	float mode = panel.shape.y;
 	vec2 point = pixel;
 #if defined(KWL_PANEL_INSIDE)
-	float distance = -3.0;
+	float distance = -1000000.0;
 #else
 	float radius = panel.shape.x;
 	float distance = rounded(point, panel.box, radius);
