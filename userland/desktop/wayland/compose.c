@@ -61,6 +61,7 @@ static VkResult compose_objects(struct kwl_compose *compose);
 static VkResult compose_pass(struct kwl_compose *compose);
 static VkResult compose_pipeline(struct kwl_compose *compose, enum kwl_draw draw, VkShaderModule vertex, VkShaderModule fragment, VkPipelineLayout layout, const VkPipelineVertexInputStateCreateInfo *custom, VkPipeline *pipeline);
 static VkResult compose_panel_pipeline(struct kwl_compose *compose);
+static void compose_pipelines_destroy(struct kwl_compose *compose);
 static VkResult compose_corners(struct kwl_compose *compose);
 static VkResult compose_targets(struct kwl_compose *compose);
 static void compose_targets_destroy(struct kwl_compose *compose);
@@ -380,7 +381,15 @@ kwl_compose_output_prepare(
 		compose->format = compose->output.format;
 		result = compose_pass(compose);
 		if (result != VK_SUCCESS) {
+			/*
+			 * Nothing of a partly made family is kept, so that a
+			 * later opening makes the pass and every pipeline again
+			 * rather than drawing with the ones that are missing.
+			 */
 			printf("KWL VULKAN_ERROR operation=pipelines result=%d\n", (int)result);
+			compose_pipelines_destroy(compose);
+			vkDestroyRenderPass(compose->device, compose->pass, NULL);
+			compose->pass = VK_NULL_HANDLE;
 			vkdemo_display_close(compose->instance, compose->device, &compose->output);
 			return EIO;
 		}
@@ -1056,26 +1065,8 @@ kwl_compose_close(
 
 	/* The device's objects. */
 	if (compose->device != VK_NULL_HANDLE) {
-		for (index = 0; index < 2U; index++) {
-			if (compose->pipelines[index] != VK_NULL_HANDLE)
-				vkDestroyPipeline(compose->device, compose->pipelines[index], NULL);
-		}
-
-		/* The glass look's pipeline, layout and sampler. */
-		if (compose->panel_pipeline != VK_NULL_HANDLE)
-			vkDestroyPipeline(compose->device, compose->panel_pipeline, NULL);
-
-		/* Retires every mode, including a partially constructed family. */
-		for (index = 0; index < KWL_PANEL_MODES; index++) {
-			if (compose->panel_pipelines[index] != VK_NULL_HANDLE)
-				vkDestroyPipeline(compose->device, compose->panel_pipelines[index], NULL);
-		}
-		for (index = 0; index < KWL_PANEL_INSIDES; index++) {
-			if (compose->panel_inside_pipelines[index] != VK_NULL_HANDLE)
-				vkDestroyPipeline(compose->device, compose->panel_inside_pipelines[index], NULL);
-			if (compose->panel_opaque_pipelines[index] != VK_NULL_HANDLE)
-				vkDestroyPipeline(compose->device, compose->panel_opaque_pipelines[index], NULL);
-		}
+		/* The pass's pipelines, including a partially constructed family. */
+		compose_pipelines_destroy(compose);
 
 		/* The family shares its constants, descriptors and sampler. */
 		vkDestroyPipelineLayout(compose->device, compose->panel_layout, NULL);
@@ -2181,6 +2172,43 @@ compose_panel_pipeline(
 	/* The compositor owns pipelines until its normal or failed-open cleanup. */
 	vkDestroyShaderModule(compose->device, vertex, NULL);
 	return VK_SUCCESS;
+}
+
+/* Destroys the pass's opaque, alpha and glass pipelines that exist, leaving none. */
+static void
+compose_pipelines_destroy(
+	struct kwl_compose *compose)
+{
+	unsigned index;
+
+	/* The opaque and the alpha pipelines. */
+	for (index = 0; index < 2U; index++) {
+		if (compose->pipelines[index] != VK_NULL_HANDLE)
+			vkDestroyPipeline(compose->device, compose->pipelines[index], NULL);
+		compose->pipelines[index] = VK_NULL_HANDLE;
+	}
+
+	/* The glass look's fallback pipeline. */
+	if (compose->panel_pipeline != VK_NULL_HANDLE)
+		vkDestroyPipeline(compose->device, compose->panel_pipeline, NULL);
+	compose->panel_pipeline = VK_NULL_HANDLE;
+
+	/* Every mode's pipeline, of a whole or a partially constructed family. */
+	for (index = 0; index < KWL_PANEL_MODES; index++) {
+		if (compose->panel_pipelines[index] != VK_NULL_HANDLE)
+			vkDestroyPipeline(compose->device, compose->panel_pipelines[index], NULL);
+		compose->panel_pipelines[index] = VK_NULL_HANDLE;
+	}
+
+	/* Every inside's blended and opaque pipelines. */
+	for (index = 0; index < KWL_PANEL_INSIDES; index++) {
+		if (compose->panel_inside_pipelines[index] != VK_NULL_HANDLE)
+			vkDestroyPipeline(compose->device, compose->panel_inside_pipelines[index], NULL);
+		compose->panel_inside_pipelines[index] = VK_NULL_HANDLE;
+		if (compose->panel_opaque_pipelines[index] != VK_NULL_HANDLE)
+			vkDestroyPipeline(compose->device, compose->panel_opaque_pipelines[index], NULL);
+		compose->panel_opaque_pipelines[index] = VK_NULL_HANDLE;
+	}
 }
 
 /*
