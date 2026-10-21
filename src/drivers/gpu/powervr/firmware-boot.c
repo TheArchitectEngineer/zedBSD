@@ -259,7 +259,7 @@ static void watch_thread(void *argument);
 #define POWERVR_APM_LATENCY_MS		0U
 #endif
 #ifndef POWERVR_SLC_DECODE_INTERLEAVED
-#define POWERVR_SLC_DECODE_INTERLEAVED	0
+#define POWERVR_SLC_DECODE_INTERLEAVED	1
 #endif
 
 #ifndef DUST_POWER_BY_HOST
