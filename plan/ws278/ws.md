@@ -29,7 +29,7 @@
 | [p004](phase004/phase.md) | RP1 の USB（`pciex4_reset=0` で PCIe を引き継ぎ、DWC3 の xHCI、poll から） | p002 | in-progress（2026-10-21 実装と host の確認済み、実機は一括の試験） |
 | [p004b](phase004b/phase.md) | RP1 の割り込み（MSI-X → MIP → GIC） | p004 | in-progress（2026-10-21 実装と host の確認済み、実機は一括の試験） |
 | [p005](phase005/phase.md) | RP1 の Ethernet（Cadence GEM） | p004 | in-progress（2026-10-21 実装と build、実機は一括の試験） |
-| p006 | WiFi（sdio2 の SDIO host、bcm43455 の流用） | p002 | planning |
+| [p006](phase006/phase.md) | WiFi（sdio2 の SDIO host、bcm43455 の流用） | p002 | in-progress（2026-10-21 実装と build、実機は一括の試験） |
 | p007 | BT（uarta） | p006 | planning |
 | [p008](phase008/phase.md) | 規約の全文の見直し（第 1 部: HAL の bsp を bsp-rpi-common・bsp-rpi4・bsp-rpi5 に分け全文で書き直し、前倒し） | p002〜 | in-progress（第 1 部 2026-10-21 済み、rpi4 の QEMU 起動の回帰は T1 待ち） |
 | （別 WS の提案） | GPU: V3D 7.1 と HVS6（design.md §4 D2） | p002 | — |
