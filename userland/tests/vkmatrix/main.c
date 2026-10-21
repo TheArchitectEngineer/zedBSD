@@ -96,6 +96,7 @@
 #define PERF_DRAWS4		11
 #define PERF_ALU4		12
 #define PERF_MUL4		13
+#define PERF_RCP		14
 #define PERF_FRAMES		20U
 
 /* perf-tri128's grid of quads a side, and perf-stack4's and perf-draws4's full-screen quads. */
@@ -290,6 +291,7 @@ static VkResult case_perf_stack4(struct vkmatrix *run);
 static VkResult case_perf_draws4(struct vkmatrix *run);
 static VkResult case_perf_alu4(struct vkmatrix *run);
 static VkResult case_perf_mul4(struct vkmatrix *run);
+static VkResult case_perf_rcp(struct vkmatrix *run);
 static uint32_t perf_geometry(struct vkmatrix *run, int kind, uint32_t *vertices);
 static uint64_t perf_now_ns(void);
 static VkResult load_1080_textures(struct vkmatrix *run, uint32_t *pipeline);
@@ -354,6 +356,7 @@ static const struct vkmatrix_case cases[] = {
 	{ "perf-draws4", case_perf_draws4 },
 	{ "perf-alu4", case_perf_alu4 },
 	{ "perf-mul4", case_perf_mul4 },
+	{ "perf-rcp", case_perf_rcp },
 	{ "clear-64", case_clear_64 },
 	{ "clear-128", case_clear_128 },
 	{ "sample-linear-1180", case_sample_linear_wide },
@@ -4120,7 +4123,8 @@ load_1080_textures(
  * multiply-adds as four independent chains, so its difference from
  * perf-alu is the cost of each operation waiting on the one before.
  * perf-mul4: 64 multiplies two at a time independent, which a compiler
- * that pairs them issues two to a group.
+ * that pairs them issues two to a group.  perf-rcp: 32 dependent
+ * reciprocals, the cost of a reciprocal beside a multiply's.
  * Prints "vkmatrix: perf <kind>: <us> us a frame (min <us> us)" (integers: the libc printf of the board may lack %f).
  */
 static VkResult
@@ -4128,8 +4132,8 @@ perf_case(
 	struct vkmatrix *run,
 	int kind)
 {
-	static const char *const names[14] = {
-		"clear", "load", "flat", "texture", "immediate", "alu", "quarter", "tri1", "tri8", "tri128", "stack4", "draws4", "alu4", "mul4",
+	static const char *const names[15] = {
+		"clear", "load", "flat", "texture", "immediate", "alu", "quarter", "tri1", "tri8", "tri128", "stack4", "draws4", "alu4", "mul4", "rcp",
 	};
 	VkSubresourceLayout layout;
 	struct vkmatrix_shape shape;
@@ -4184,6 +4188,9 @@ perf_case(
 		} else if (kind == PERF_MUL4) {
 			shape.fragment = vkmatrix_mul4_frag;
 			shape.fragment_size = sizeof(vkmatrix_mul4_frag);
+		} else if (kind == PERF_RCP) {
+			shape.fragment = vkmatrix_rcp_frag;
+			shape.fragment_size = sizeof(vkmatrix_rcp_frag);
 		}
 		status = vkmatrix_pipeline(run, &shape, &pipeline);
 		if (status != VK_SUCCESS)
@@ -4814,6 +4821,22 @@ case_perf_mul4(
 
 	/* Times the kind. */
 	status = perf_case(run, PERF_MUL4);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the case ran. */
+	return VK_SUCCESS;
+}
+
+/* perf-rcp: a 1080p clear and the flat quad with 32 dependent reciprocals. */
+static VkResult
+case_perf_rcp(
+	struct vkmatrix *run)
+{
+	VkResult status;
+
+	/* Times the kind. */
+	status = perf_case(run, PERF_RCP);
 	if (status != VK_SUCCESS)
 		return status;
 

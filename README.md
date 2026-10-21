@@ -1,7 +1,7 @@
 zedBSD and Keiland Touch Desktop
 ================================
 
-It is changing the way computing is.
+It's changing the way computing is.
 
 <div align="center">
   <hr>
@@ -13,32 +13,48 @@ It is changing the way computing is.
   <hr>
 </div><br>
 
-`zedBSD` is an operating system for modern computers, including those with touch
-displays.  It consists of a POSIX-compatible kernel and base system written from
-scratch, and ships with `Keiland Desktop`, a Wayland-based desktop environment
-that unifies the classic mouse UI/UX and a futuristic touch UI/UX.
+`zedBSD` is an operating system for modern computers, including those
+with touch displays.  It consists of a POSIX-compatible kernel and
+base system written from scratch, and ships with `Keiland`, a
+Wayland-based desktop environment that unifies the classic mouse UI/UX
+and a futuristic touch UI/UX.  zedBSD and Keiland are already
+available and is currently being polished for production release.
 
-zedBSD aims to become a commercial UNIX in the line of macOS and Solaris: an
-operating system made for newly-designed cutting-edge computers, that changes
-"the way computing is".  It is written to conform to `POSIX.1-2024`, and is not
-yet a certified UNIX system.  Conformance will keep being raised, and UNIX
-certification from The Open Group is a goal.  (UNIX is a registered trademark of
-The Open Group.)
+zedBSD aims to become a commercial UNIX in the line of macOS and
+Solaris: an operating system made for newly-designed cutting-edge
+computers, that changes "the way computing is".  It is written to
+conform to `POSIX.1-2024`, and is not yet a certified UNIX system.
+Conformance will keep being raised, and UNIX certification from The
+Open Group is a goal.  (UNIX is a registered trademark of The Open
+Group.)
 
-Getting there means not being bound to an existing kernel or userland when the
-whole machine has to move together.  Most of the system is reimplemented.
-Keiland Server is a Wayland compositor, and it adds many extensions that
-existing compositors do not have, so the display, input, and apps can behave as
-one machine rather than as a set of loosely coupled clients.  The same reason
-applies to the GPU stack on zedBSD: a native, direct Vulkan path, not Linux
-DRM/KMS or Mesa.  The desktop is not locked to that kernel.  Keiland Desktop is
-also ported to Linux and FreeBSD.
+Getting there means not being bound to an existing kernel or userland
+when the whole machine has to move together.  Most of the system is
+reimplemented.  Keiland Server is a Wayland compositor, and it adds
+many extensions that existing compositors do not have, so the display,
+input, and apps can behave as one machine rather than as a set of
+loosely coupled clients.  The same reason applies to the GPU stack on
+zedBSD: a native, direct Vulkan path, not Linux DRM/KMS or Mesa.  The
+desktop is not locked to that kernel.  Keiland Desktop is also ported
+to Linux and FreeBSD.
 
-The kernel, drivers, libc, and desktop are developed so that hardware and
-software can ship as one product: tablets, phones, and PCs designed by the same
-person who directs the OS.  Everything that runs on open hardware stays free to
-use.  Features that need the project's own hardware are still published as
-source, and only run on that hardware.
+The kernel, drivers, libc, and desktop are developed so that hardware
+and software can ship as one product: tablets, phones, and PCs
+designed by the same person who directs the OS.  Everything that runs
+on open hardware stays free to use.  Features that need the project's
+own hardware are still published as source, and only run on that
+hardware.
+
+---
+
+## Keiland Desktop
+
+- The desktop server incorporates Wayland, audio, Wi-Fi, Bluetooth, SMS, and image/video media management.
+- The compositor supports Touch Mode (single app), Desktop Mode (multiple windows), and Game Mode (direct scanout).
+- Users can seamlessly switch between modes via the touch UI/UX.
+- The compositor integrates various on-screen keyboards and touch-oriented IMEs.
+- A unified UI toolkit is used for both touch and mouse inputs.
+- GTK/Qt apps can run via standard Wayland protocol.
 
 ---
 

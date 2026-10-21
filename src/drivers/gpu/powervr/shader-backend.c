@@ -136,14 +136,28 @@ struct backend_loop {
 };
 
 /*
- * A test switch (q1539, 0 as built): pair_operations puts two
- * neighbouring independent float adds or multiplies in one group's
- * phases 0 and 1, to see whether a group's cost on the board is its
- * issue (halved) or its operations.
+ * Which operations pair_operations puts two to a group (phases 0 and 1
+ * of the main unit): 0 none, 1 float adds and multiplies, 2 also
+ * multiply-adds and moves (q1539: on the board, d62, a group of two
+ * independent multiplies took the time of one, so a group's cost is its
+ * issue).
  */
-#ifndef POWERVR_SHADER_PAIR_TRIAL
-#define POWERVR_SHADER_PAIR_TRIAL	0
+#ifndef POWERVR_SHADER_PAIR
+#define POWERVR_SHADER_PAIR		2
 #endif
+
+/*
+ * A test switch (q1539, 0 as built): every float add, multiply and
+ * multiply-add in the low precision forms (Mesa 26.2.5 pco_isa.py
+ * fadd_lp, fmul_lp, lp_fma; pco uses none), to see on the board whether
+ * they issue faster.  Results lose precision; for timing only.
+ */
+#ifndef POWERVR_SHADER_LOW_PRECISION_TRIAL
+#define POWERVR_SHADER_LOW_PRECISION_TRIAL	0
+#endif
+
+/* How far ahead pair_operations looks for an operation to move up beside another. */
+#define PAIR_WINDOW			12U
 
 /* The selection's state while it walks the intermediate form. */
 struct backend_select {
@@ -164,6 +178,8 @@ static void note_reference(struct shader_backend *backend, unsigned value, unsig
 static int allocate(const struct powervr_ir_shader *shader, struct shader_backend *backend);
 static void compact_temporaries(struct powervr_shader_program *program, struct shader_backend *backend);
 static void propagate_copies(struct powervr_ir_shader *shader);
+static void simplify_products(struct powervr_ir_shader *shader);
+static void hoist_addends(struct powervr_ir_shader *shader, uint32_t stage);
 static void alias_shared(const struct powervr_ir_shader *shader, const struct powervr_shader_program *program, struct shader_backend *backend);
 static void fuse_multiply_adds(struct powervr_ir_shader *shader, uint32_t stage);
 static int fuse_multiply_add(struct powervr_ir_shader *shader, unsigned at, unsigned which);
@@ -181,7 +197,11 @@ static void merge_iterates(const struct powervr_shader_program *program, struct 
 static void reuse_immediates(struct shader_backend *backend);
 static void unpack_in_place(const struct powervr_shader_program *program, struct shader_backend *backend);
 static void pair_operations(struct shader_backend *backend);
-static int pair_two(struct shader_backend *backend, unsigned at);
+static int pairable(const struct shader_machine_operation *operation);
+static int pair_group(const struct shader_machine_operation *first, const struct shader_machine_operation *second, struct powervr_usc_group *group);
+static int commutes(const struct shader_machine_operation *a, const struct shader_machine_operation *b);
+static int pairs_with(const struct shader_machine_operation *first, const struct shader_machine_operation *second);
+static int writes_register(const struct shader_machine_operation *operation, struct shader_machine_register reg);
 static int pack_constant(const struct powervr_ir_instruction *instruction, uint32_t *packed);
 static int repeated_immediate(const struct shader_backend *backend, unsigned at);
 static unsigned temporary_block(unsigned index);
@@ -291,7 +311,7 @@ shader_backend_build(
 	merge_iterates(program, backend);
 	reuse_immediates(backend);
 	unpack_in_place(program, backend);
-	if (POWERVR_SHADER_PAIR_TRIAL)
+	if (POWERVR_SHADER_PAIR != 0)
 		pair_operations(backend);
 
 	/*
@@ -462,11 +482,13 @@ powervr_shader_compile_inline(
 		return EINVAL;
 
 	/* Reads copies' sources in place of the copies, fuses products into the adds of them, and drops the writes nothing reads. */
+	simplify_products(shader);
 	propagate_copies(shader);
 	remove_dead_writes(shader);
 	fuse_multiply_adds(shader, stage);
 	propagate_copies(shader);
 	remove_dead_writes(shader);
+	hoist_addends(shader, stage);
 
 	/* Selects and allocates the machine operations. */
 	workspace->backend.inline_values = shared_values;
@@ -918,6 +940,137 @@ alias_shared(
 	}
 }
 
+/* The most constants hoist_addends puts in values. */
+#define HOISTED_MAX			4U
+
+/*
+ * In a fragment shader without structure, gives a constant that two or
+ * more multiply-adds add a value of its own, written once at the start
+ * (q1539: a constant addend is a shared register, which the third source
+ * of a group's second phase cannot name, so such multiply-adds did not
+ * pair; a temporary can).  The core's free constants stay as they are.
+ */
+static void
+hoist_addends(
+	struct powervr_ir_shader *shader,
+	uint32_t stage)
+{
+	struct powervr_ir_instruction *instruction;
+	uint32_t constants[HOISTED_MAX];
+	unsigned values[HOISTED_MAX];
+	unsigned count;
+	unsigned uses;
+	unsigned at;
+	unsigned other;
+	unsigned index;
+	unsigned known;
+	uint32_t bits;
+
+	/* Fragment shaders without structure, with room for the moves. */
+	if (stage != POWERVR_SHADER_FRAGMENT)
+		return;
+	for (at = 0; at < shader->instruction_count; at++) {
+		if (shader->instructions[at].opcode < POWERVR_IR_MOVE)
+			return;
+	}
+
+	/* The constants added by two or more multiply-adds. */
+	count = 0;
+	for (at = 0; at < shader->instruction_count && count < HOISTED_MAX; at++) {
+		instruction = &shader->instructions[at];
+		if (instruction->opcode != POWERVR_IR_FLOAT_MULTIPLY_ADD || instruction->source[2].kind != POWERVR_IR_OPERAND_CONSTANT)
+			continue;
+		bits = instruction->source[2].constant;
+		if (free_constant(bits) || instruction->source[2].modifiers != 0)
+			continue;
+		known = 0;
+		for (index = 0; index < count; index++) {
+			if (constants[index] == bits)
+				known = 1;
+		}
+		if (known)
+			continue;
+		uses = 0;
+		for (other = at; other < shader->instruction_count; other++) {
+			if (shader->instructions[other].opcode == POWERVR_IR_FLOAT_MULTIPLY_ADD &&
+			    shader->instructions[other].source[2].kind == POWERVR_IR_OPERAND_CONSTANT &&
+			    shader->instructions[other].source[2].modifiers == 0 && shader->instructions[other].source[2].constant == bits)
+				uses++;
+		}
+		if (uses < 2 || shader->value_count >= POWERVR_IR_VALUES || shader->instruction_count + count + 1U > POWERVR_IR_INSTRUCTIONS)
+			continue;
+		constants[count] = bits;
+		values[count] = shader->value_count;
+		shader->values[shader->value_count].width = 1;
+		shader->value_count++;
+		count++;
+	}
+	if (count == 0)
+		return;
+
+	/* The addends read the values. */
+	for (at = 0; at < shader->instruction_count; at++) {
+		instruction = &shader->instructions[at];
+		if (instruction->opcode != POWERVR_IR_FLOAT_MULTIPLY_ADD || instruction->source[2].kind != POWERVR_IR_OPERAND_CONSTANT ||
+		    instruction->source[2].modifiers != 0)
+			continue;
+		for (index = 0; index < count; index++) {
+			if (instruction->source[2].constant == constants[index]) {
+				instruction->source[2].kind = POWERVR_IR_OPERAND_VALUE;
+				instruction->source[2].value = (uint16_t)values[index];
+				instruction->source[2].component = 0;
+				instruction->source[2].constant = 0;
+			}
+		}
+	}
+
+	/* The moves that write them, first. */
+	for (at = shader->instruction_count; at > 0; at--)
+		shader->instructions[at - 1U + count] = shader->instructions[at - 1U];
+	for (index = 0; index < count; index++) {
+		instruction = &shader->instructions[index];
+		*instruction = (struct powervr_ir_instruction){ 0 };
+		instruction->opcode = POWERVR_IR_MOVE;
+		instruction->destination = (uint16_t)values[index];
+		instruction->source[0].kind = POWERVR_IR_OPERAND_CONSTANT;
+		instruction->source[0].constant = constants[index];
+	}
+	shader->instruction_count += count;
+}
+
+/*
+ * Makes each unsaturated float multiply by the constant 1.0 a copy of
+ * its other source (exact; q1539: a division of 1.0 was a reciprocal and
+ * a multiply by 1.0).  The copy goes when copies are read in place.
+ */
+static void
+simplify_products(
+	struct powervr_ir_shader *shader)
+{
+	struct powervr_ir_instruction *instruction;
+	unsigned at;
+	unsigned one;
+
+	/* Each multiply with a plain 1.0 source. */
+	for (at = 0; at < shader->instruction_count; at++) {
+		instruction = &shader->instructions[at];
+		if (instruction->opcode != POWERVR_IR_FLOAT_MULTIPLY || instruction->flags != 0)
+			continue;
+		for (one = 0; one < 2U; one++) {
+			if (instruction->source[one].kind == POWERVR_IR_OPERAND_CONSTANT && instruction->source[one].modifiers == 0 &&
+			    instruction->source[one].constant == 0x3f800000U)
+				break;
+		}
+		if (one == 2U)
+			continue;
+
+		/* A copy of the other source, its modifiers kept. */
+		instruction->opcode = POWERVR_IR_MOVE;
+		instruction->source[0] = instruction->source[1U - one];
+		instruction->source[1].kind = POWERVR_IR_OPERAND_NONE;
+	}
+}
+
 /* Reports whether a constant is one the core holds in a register (zero, one, 1.0 and all ones), so reading it costs nothing. */
 static int
 free_constant(
@@ -1152,92 +1305,200 @@ pack_constant(
 }
 
 /*
- * In a program without branches, makes each two neighbouring float adds
- * or multiplies that do not depend on each other one paired operation,
- * when its group encodes (the second's sources must be names the upper
- * operand set takes).
+ * In a program without branches, puts two independent operations in one
+ * group, the first in phase 0 (sources s0 to s2, ft0, w0) and the second
+ * in phase 1 (s3 to s5, ft1, w1), marking the first paired with the
+ * next (q1539: a group's cost on the board is its issue, so a pair costs
+ * one).  An operation up to PAIR_WINDOW ahead that commutes with every
+ * one between is moved up beside the one it pairs with.  Only pairs whose
+ * group encodes are made.
  */
 static void
 pair_operations(
 	struct shader_backend *backend)
 {
+	struct shader_machine_operation moved;
+	struct shader_machine_operation *first;
+	struct powervr_usc_group group;
 	unsigned at;
-	unsigned kept;
+	unsigned next;
+	unsigned between;
+	unsigned found;
+	unsigned swap;
+	size_t size;
 
-	/* Programs without branches only (no branch targets to keep). */
+	/* Programs without branches only (moving operations keeps no branch targets). */
 	if (backend->control_flow != 0)
 		return;
 
-	/* Each pair: the first becomes the pair, the second is folded. */
+	/* Each operation not yet in a pair looks ahead for one to pair with. */
 	for (at = 0; at + 1U < backend->operation_count; at++) {
-		if (pair_two(backend, at)) {
-			backend->operations[at + 1U].kind = MACHINE_FOLDED;
-			at++;
-		}
-	}
-
-	/* The rest close up. */
-	kept = 0;
-	for (at = 0; at < backend->operation_count; at++) {
-		if (backend->operations[at].kind == MACHINE_FOLDED)
+		first = &backend->operations[at];
+		if (!pairable(first) || first->end != 0)
 			continue;
-		if (kept != at)
-			backend->operations[kept] = backend->operations[at];
-		kept++;
+		found = backend->operation_count;
+		swap = 0;
+		for (next = at + 1U; next < backend->operation_count && next <= at + PAIR_WINDOW; next++) {
+			/*
+			 * One that pairs, commutes with the first and with all
+			 * between, and whose pair encodes, the first in phase 0 or,
+			 * when that does not encode and neither reads the other's
+			 * result, in phase 1 (an addend in a shared register is
+			 * named only in phase 0).
+			 */
+			if (pairable(&backend->operations[next]) && pairs_with(first, &backend->operations[next])) {
+				for (between = at + 1U; between < next; between++) {
+					if (!commutes(&backend->operations[between], &backend->operations[next]))
+						break;
+				}
+				if (between == next && pair_group(first, &backend->operations[next], &group) == 0 &&
+				    powervr_usc_group_size(&group, &size) == 0) {
+					found = next;
+					break;
+				}
+				if (between == next && pairs_with(&backend->operations[next], first) &&
+				    pair_group(&backend->operations[next], first, &group) == 0 && powervr_usc_group_size(&group, &size) == 0) {
+					found = next;
+					swap = 1;
+					break;
+				}
+			}
+
+			/* Nothing moves past an operation it cannot be reordered with. */
+			if (!simple_kind(backend->operations[next].kind) || backend->operations[next].end != 0)
+				break;
+		}
+		if (found == backend->operation_count)
+			continue;
+
+		/* The second moves up beside the first (before it when swapped), and the earlier of the two is marked paired. */
+		moved = backend->operations[found];
+		for (next = found; next > at + 1U; next--)
+			backend->operations[next] = backend->operations[next - 1U];
+		backend->operations[at + 1U] = moved;
+		if (swap != 0) {
+			moved = backend->operations[at];
+			backend->operations[at] = backend->operations[at + 1U];
+			backend->operations[at + 1U] = moved;
+		}
+		backend->operations[at].pair = 1;
+		at++;
 	}
-	backend->operation_count = kept;
 }
 
-/* Pairs the operation at an index with the next; reports whether it did (the next is left to fold). */
+/* Reports whether an operation can take either phase of a paired group: a float add, multiply or multiply-add, or a plain move. */
 static int
-pair_two(
-	struct shader_backend *backend,
-	unsigned at)
+pairable(
+	const struct shader_machine_operation *operation)
 {
-	struct shader_machine_operation pair;
-	const struct shader_machine_operation *first;
-	const struct shader_machine_operation *second;
-	struct powervr_usc_group group;
-	size_t size;
+	/* Run on the enabled instances, writing one register. */
+	if (operation->condition != POWERVR_USC_RUN_ENABLED || operation->destination[1].bank != 0xff || operation->pair != 0)
+		return 0;
+	if (operation->kind == MACHINE_FLOAT_ADD || operation->kind == MACHINE_FLOAT_MULTIPLY)
+		return 1;
+	if (POWERVR_SHADER_PAIR < 2)
+		return 0;
+	if (operation->kind == MACHINE_FLOAT_MULTIPLY_ADD)
+		return 1;
+	return operation->kind == MACHINE_MOVE && operation->variant == 0 && operation->destination[0].bank == POWERVR_USC_BANK_TEMPORARY;
+}
+
+/*
+ * Builds the group of two paired operations: the first's group, with
+ * the second's phase 0 operation in phase 1, its sources in the upper
+ * set, its result through ft1 to the second write.
+ */
+static int
+pair_group(
+	const struct shader_machine_operation *first,
+	const struct shader_machine_operation *second,
+	struct powervr_usc_group *group)
+{
+	struct powervr_usc_group other;
+	unsigned index;
+	int error;
+
+	/* Each operation's own group. */
+	error = shader_backend_group(first, 0, group);
+	if (error != 0)
+		return error;
+	error = shader_backend_group(second, 0, &other);
+	if (error != 0)
+		return error;
+
+	/* Only plain one-phase main groups pair. */
+	if (group->unit != POWERVR_USC_UNIT_MAIN || other.unit != POWERVR_USC_UNIT_MAIN || group->repeat != 1 || other.repeat != 1 ||
+	    group->overlap_check != 0 || other.overlap_check != 0 || group->mux_used != 0 || other.mux_used != 0 ||
+	    group->operation[POWERVR_USC_PHASE_1].length != 0 || other.operation[POWERVR_USC_PHASE_1].length != 0 ||
+	    group->operation[POWERVR_USC_PHASE_2].length != 0 || other.operation[POWERVR_USC_PHASE_2].length != 0 ||
+	    group->operation[POWERVR_USC_PHASE_BACKEND].length != 0 || other.operation[POWERVR_USC_PHASE_BACKEND].length != 0 ||
+	    group->source[3].used || group->source[4].used || group->source[5].used || other.source[3].used || other.source[4].used ||
+	    other.source[5].used || group->write_1 != 0 || other.write_1 != 0)
+		return EINVAL;
+
+	/* The second's operation in phase 1, its sources in the upper set, its result to the second write. */
+	group->operation[POWERVR_USC_PHASE_1] = other.operation[POWERVR_USC_PHASE_0];
+	for (index = 0; index < 3U; index++)
+		group->source[3U + index] = other.source[index];
+	group->destination[1] = other.destination[0];
+	group->write_1 = 1;
+	group->internal[5] = SELECT_FT1;
+	group->end = other.end;
+
+	/* Succeeded: the paired group. */
+	return 0;
+}
+
+/*
+ * Reports whether two simple operations (or a simple one and a pairable
+ * one) may swap places: neither reads what the other writes, and they
+ * write different registers.
+ */
+static int
+commutes(
+	const struct shader_machine_operation *a,
+	const struct shader_machine_operation *b)
+{
 	unsigned index;
 
-	/* Two plain float adds or multiplies on the enabled instances, the first not ending the program. */
-	first = &backend->operations[at];
-	second = &backend->operations[at + 1U];
-	for (index = 0; index < 2; index++) {
-		const struct shader_machine_operation *one = index == 0 ? first : second;
+	/* Only simple operations, none ending the program or paired, are reordered. */
+	if (!simple_kind(a->kind) || !simple_kind(b->kind) || a->end != 0 || b->end != 0 || a->pair != 0 || b->pair != 0)
+		return 0;
+	if ((a->kind == MACHINE_MOVE && a->variant != 0) || (b->kind == MACHINE_MOVE && b->variant != 0))
+		return 0;
 
-		if (one->kind != MACHINE_FLOAT_ADD && one->kind != MACHINE_FLOAT_MULTIPLY)
+	/* No register written by one and read or written by the other. */
+	for (index = 0; index < 2U; index++) {
+		if (a->destination[index].bank != 0xff && (reads_register(b, a->destination[index]) || writes_register(b, a->destination[index])))
 			return 0;
-		if (one->variant != 0 || one->condition != POWERVR_USC_RUN_ENABLED || one->destination[1].bank != 0xff)
+		if (b->destination[index].bank != 0xff && reads_register(a, b->destination[index]))
 			return 0;
 	}
-	if (first->end != 0)
-		return 0;
-
-	/* Independent: the second reads nothing the first writes, and they write different registers. */
-	if (same_register(second->source[0], first->destination[0]) || same_register(second->source[1], first->destination[0]) ||
-	    same_register(second->destination[0], first->destination[0]))
-		return 0;
-
-	/* The pair. */
-	pair = *first;
-	pair.kind = MACHINE_FLOAT_PAIR;
-	pair.variant = (uint8_t)((first->kind == MACHINE_FLOAT_MULTIPLY ? 1U : 0U) | (second->kind == MACHINE_FLOAT_MULTIPLY ? 2U : 0U));
-	pair.destination[1] = second->destination[0];
-	pair.source[2] = second->source[0];
-	pair.source[3] = second->source[1];
-	pair.modifiers[2] = (uint8_t)(second->modifiers[0] | (second->modifiers[1] << 4));
-	pair.saturate = (uint8_t)(first->saturate | (second->saturate << 1));
-	pair.end = second->end;
-
-	/* Only a group that encodes. */
-	if (shader_backend_group(&pair, 0, &group) != 0 || powervr_usc_group_size(&group, &size) != 0)
-		return 0;
-
-	/* Succeeded: the first is the pair. */
-	backend->operations[at] = pair;
 	return 1;
+}
+
+/*
+ * Reports whether a second operation may share a group with a first:
+ * both read before either writes, so only the second reading what the
+ * first writes, or both writing one register, keeps them apart.
+ */
+static int
+pairs_with(
+	const struct shader_machine_operation *first,
+	const struct shader_machine_operation *second)
+{
+	/* The second does not read or write the first's result. */
+	return !reads_register(second, first->destination[0]) && !writes_register(second, first->destination[0]);
+}
+
+/* Reports whether an operation writes a register (its one or two destinations). */
+static int
+writes_register(
+	const struct shader_machine_operation *operation,
+	struct shader_machine_register reg)
+{
+	/* Either destination. */
+	return same_register(operation->destination[0], reg) || same_register(operation->destination[1], reg);
 }
 
 /* Which block a temporary is in (the back end's own three, or the values'), so a span of them stays together when compacted. */
@@ -1512,16 +1773,29 @@ shader_backend_encode(
 	if (backend->operation_count == 0)
 		return EINVAL;
 
-	/* Sizes every group; a branch's size does not depend on its offset. */
+	/*
+	 * Sizes every group (a paired operation and the next are one); a
+	 * branch's size does not depend on its offset.
+	 */
 	total = 0;
+	backend->group_count = 0;
 	for (index = 0; index < backend->operation_count; index++) {
-		error = shader_backend_group(&backend->operations[index], 0, &group);
+		if (backend->operations[index].pair != 0 && index + 1U < backend->operation_count) {
+			error = pair_group(&backend->operations[index], &backend->operations[index + 1U], &group);
+		} else {
+			error = shader_backend_group(&backend->operations[index], 0, &group);
+		}
 		if (error != 0)
 			return error;
 		error = powervr_usc_group_size(&group, &size);
 		if (error != 0)
 			return error;
+		backend->group_first[backend->group_count++] = (uint16_t)index;
 		backend->offsets[index] = (uint32_t)total;
+		if (backend->operations[index].pair != 0 && index + 1U < backend->operation_count) {
+			index++;
+			backend->offsets[index] = (uint32_t)total;
+		}
 		total += size;
 	}
 
@@ -1529,11 +1803,11 @@ shader_backend_encode(
 	 * The encoder pads the group before the last so the last ends on
 	 * the program alignment; the last group's start moves by the pad.
 	 */
-	if (backend->operation_count >= 2 && (total % POWERVR_USC_PROGRAM_ALIGN) != 0)
-		backend->offsets[backend->operation_count - 1U] += (uint32_t)(POWERVR_USC_PROGRAM_ALIGN - total % POWERVR_USC_PROGRAM_ALIGN);
+	if (backend->group_count >= 2 && (total % POWERVR_USC_PROGRAM_ALIGN) != 0)
+		backend->offsets[backend->group_first[backend->group_count - 1U]] += (uint32_t)(POWERVR_USC_PROGRAM_ALIGN - total % POWERVR_USC_PROGRAM_ALIGN);
 
 	/* Encodes the groups, the branches with their offsets. */
-	error = powervr_usc_program_build(backend->operation_count, build_group_fetch, backend, code, room, length);
+	error = powervr_usc_program_build(backend->group_count, build_group_fetch, backend, code, room, length);
 	if (error != 0)
 		return error;
 
@@ -2415,6 +2689,7 @@ append(
 	operation->end = 0;
 	operation->saturate = 0;
 	operation->overlap = 0;
+	operation->pair = 0;
 	for (index = 0; index < 2; index++) {
 		operation->destination[index].bank = 0xff;
 		operation->destination[index].index = 0;
@@ -2902,9 +3177,14 @@ build_group_fetch(
 	int32_t offset;
 	int error;
 
-	/* A branch's offset is from its own start to its target's. */
+	/* The group's first operation; a paired one builds the pair's group. */
 	backend = context;
+	index = backend->group_first[index];
 	operation = &backend->operations[index];
+	if (operation->pair != 0 && index + 1U < backend->operation_count)
+		return pair_group(operation, &backend->operations[index + 1U], group);
+
+	/* A branch's offset is from its own start to its target's. */
 	offset = 0;
 	if (operation->kind == MACHINE_BRANCH)
 		offset = (int32_t)backend->offsets[operation->target] - (int32_t)backend->offsets[index];
@@ -3014,34 +3294,9 @@ shader_backend_group(
 		group_register(&group->source[1], operation->source[1]);
 		group_register(&group->destination[0], operation->destination[0]);
 		group->internal[4] = SELECT_FT0;
-		error = powervr_usc_float_pair(operation->kind == MACHINE_FLOAT_ADD ? POWERVR_USC_FLOAT_ADD : POWERVR_USC_FLOAT_MULTIPLY, operation->saturate, negate_0, absolute_0, absolute_1, operation->variant, &group->operation[POWERVR_USC_PHASE_0]);
-		break;
-	case MACHINE_FLOAT_PAIR:
-		/*
-		 * Two float adds or multiplies, phase 0 from s0 and s1 into ft0
-		 * and w0, phase 1 from s3 and s4 into ft1 and w1 (q1539 trial).
-		 *
-		 * Procedure referenced: Mesa 26.2.5 src/imagination/pco/pco_map.py
-		 * (encode_map O_FADD and O_FMUL op_ref_maps: phase 0 ft0 from s0
-		 * and s1, phase 1 ft1 from s3 and s4).
-		 */
-		group->unit = POWERVR_USC_UNIT_MAIN;
-		group->write_0 = 1;
-		group->write_1 = 1;
-		group_register(&group->source[0], operation->source[0]);
-		group_register(&group->source[1], operation->source[1]);
-		group_register(&group->source[3], operation->source[2]);
-		group_register(&group->source[4], operation->source[3]);
-		group_register(&group->destination[0], operation->destination[0]);
-		group_register(&group->destination[1], operation->destination[1]);
-		group->internal[4] = SELECT_FT0;
-		group->internal[5] = SELECT_FT1;
-		error = powervr_usc_float_pair((operation->variant & 1U) != 0 ? POWERVR_USC_FLOAT_MULTIPLY : POWERVR_USC_FLOAT_ADD, operation->saturate & 1U,
-					       negate_0, absolute_0, absolute_1, 0, &group->operation[POWERVR_USC_PHASE_0]);
-		if (error == 0)
-			error = powervr_usc_float_pair((operation->variant & 2U) != 0 ? POWERVR_USC_FLOAT_MULTIPLY : POWERVR_USC_FLOAT_ADD, operation->saturate >> 1,
-						       (operation->modifiers[2] & POWERVR_IR_NEGATE) != 0, (operation->modifiers[2] & POWERVR_IR_ABSOLUTE) != 0,
-						       ((operation->modifiers[2] >> 4) & POWERVR_IR_ABSOLUTE) != 0, 0, &group->operation[POWERVR_USC_PHASE_1]);
+		error = powervr_usc_float_pair(operation->kind == MACHINE_FLOAT_ADD ? (POWERVR_SHADER_LOW_PRECISION_TRIAL ? POWERVR_USC_FLOAT_ADD_LOW_PRECISION : POWERVR_USC_FLOAT_ADD) :
+					       (POWERVR_SHADER_LOW_PRECISION_TRIAL ? POWERVR_USC_FLOAT_MULTIPLY_LOW_PRECISION : POWERVR_USC_FLOAT_MULTIPLY),
+					       operation->saturate, negate_0, absolute_0, absolute_1, operation->variant, &group->operation[POWERVR_USC_PHASE_0]);
 		break;
 	case MACHINE_FLOAT_MULTIPLY_ADD:
 		group->unit = POWERVR_USC_UNIT_MAIN;
@@ -3051,7 +3306,7 @@ shader_backend_group(
 		group_register(&group->source[2], operation->source[2]);
 		group_register(&group->destination[0], operation->destination[0]);
 		group->internal[4] = SELECT_FT0;
-		error = powervr_usc_float_multiply_add(operation->saturate, negate_0, absolute_0, negate_1, absolute_1, negate_2, absolute_2, 0, 0, &group->operation[POWERVR_USC_PHASE_0]);
+		error = powervr_usc_float_multiply_add(operation->saturate, negate_0, absolute_0, negate_1, absolute_1, negate_2, absolute_2, 0, POWERVR_SHADER_LOW_PRECISION_TRIAL, &group->operation[POWERVR_USC_PHASE_0]);
 		break;
 	case MACHINE_SINGLE:
 		group->unit = POWERVR_USC_UNIT_MAIN;
