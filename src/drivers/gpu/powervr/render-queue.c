@@ -1631,6 +1631,9 @@ timing_report(
 		timing_most[part] = 0;
 	}
 
+	/* The GPU ioctls' sums, of a build that times them. */
+	drv_gpu_ioctl_timing_report();
+
 	/* No interrupt came and no wait slept: nothing to say of the wakeups. */
 	if (wake_interrupts == 0U && wake_waits == 0U)
 		return;
