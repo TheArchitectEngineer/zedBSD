@@ -323,3 +323,10 @@ branch agent/p2-q1553（基 main 782f995e4）。
 - d108 の落ちは P1 1f7936510（libvulkan の WSI）が原因で、pool とは無関係だった（Q1 の切り分け: main の libvulkan では同じ kernel で 100 s の idle の後の frame-ops も落ちない）。
 - fd6732b70: (x·u1)·u2 を x·(u1·u2) にする（影 25→23、solid 21→19、ring 6→4）。
 - 試して入れなかった物: (v·w)·s を、同じ因子の積を読む v·(p·q) にする共有（演算は減るが依存の鎖で組が減り、group 数は ±1 で総和が変わらない）。
+- d109（Q1、fd6732b70 の q1553t）: buffer の作成は 5 s の窓に 45〜135 回。clear（memset）は平均 0.9〜2.6 ms・longest 21 ms、alias（flush）は平均 0.7〜1.8 ms・longest 13 ms。1 MB あたり memset 約 1.3 ms、flush 約 0.8 ms。
+- 4c636fe1d:
+  - 256 KB 以上の vkAllocateMemory は、新しい buffer も memset せずに作り（flush は alias の作成で済む）、transfer の clear で 0 にする。
+  - pool からは 1/4 増しまでの最も小さい物を取る。
+- d111（Q1、4c636fe1d の q1553t）: vkmatrix 105/109。load-1080-32・copy-1080・perf-load-part・perf-load-small が vkMapMemory -5。desktop の Terminal も起動しなかった。clear は平均 0.7〜0.8 ms（longest 5 ms）に下がった。
+  - 原因: render_map が host の view の大きさに run の大きさ（1/4 増しの物はそれだけ大きい）を返し、libvulkan の token の検査（view_bytes と一致）で拒否された。
+- af7aa8c46: render_map は buffer の大きさ（page に切り上げ）を返す。
