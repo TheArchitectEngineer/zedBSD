@@ -130,3 +130,18 @@ Mesa 26.2.5（drm-shim、BVNC 36.50.54.182、`PVR_DEBUG=cs`、vkmatrix の perf-
 - 0 と 1 だけの定数の色の pack を compile の時に畳む（immediate.frag 6→2 group）。
 - blend の時の pixel output の読みは、UNPACK が olchk 付きで直に読む（blend する shader で 1 group 減）。
 - main の config の CONFIG_INPUT_TEST_INJECT y は、riscv64 の vmunix.mk に input-inject.c が無く link できない（Q1 に報告）。板の kernel は `CONFIG_INPUT_TEST_INJECT=n` で作った: build/q1539/vf2d/vmunix（sha256 209cafbf4c0ab87e…）。
+
+### 3f1de35ac・b3995c934・92789513b（glass の math、Q1 の依頼「shader の実行の速さ」）
+
+- 3f1de35ac:
+  - fusion の前にも、誰も読まない代入を除く（fusion を外していた 2 つ目の書き込み）。
+  - 単独の結果の .sat を、それを作る FADD・FMUL・FMAD に付ける。
+  - GLSL の mix(x, 0 or 1, t) を x·(1−t)〔+t〕にし、1−t は同じ重みの語の間で 1 回だけ計算する。
+- b3995c934: vkmatrix に perf-alu4 を足した（独立した FMA の鎖 4 本・74 group）。perf-alu（依存する鎖 1 本・71 group）と比べて、依存の待ちを分ける。
+- 92789513b:
+  - fragment の float の定数は shared register の literal の request で置く（1 program に 10 個まで、request が 20 未満の時。両方の source が shared なら即値に戻す）。
+  - shared を読む和は FMAD(x, 1.0, shared)。
+  - simulator に literal の読みを足した。
+- group 数（e51fbc510 → 92789513b）: glass の [0] 100→84、dark の [7] 114→93、blur の [6] 71→61、[1]〜[5] は 53・47・48・52・27、batch.frag 55→49、fallback の panel.frag 375→351、quad.vert 21→17。
+- 調べた事（Mesa 26.2.5 の source）: pco は 1 命令 = 1 group（pco_group_instrs.c）で、uniform だけの計算を pixel の外へ出す最適化（nir_opt_preamble）も使っていない。glass の box の中心・1/screen など約 10 group は、pixel ごとの計算のまま。
+- host: compiler 411・22 passed、p010 全 0 failed、p009 505 passed、VF2 warning 0。板は未実施。
