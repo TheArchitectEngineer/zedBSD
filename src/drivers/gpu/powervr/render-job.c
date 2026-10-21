@@ -1759,9 +1759,10 @@ attribute_words(
 }
 
 /*
- * Writes words through a buffer's uncached view, little-endian: a word at
- * a time where the place is a word's (each uncached store is a bus
- * write, so a byte at a time costs four), else a byte at a time.
+ * Writes words through a buffer's uncached view, little-endian: two words
+ * a store where the place is a doubleword's, else a word a store where it
+ * is a word's (each uncached store is a bus write, so narrower stores
+ * cost more), else a byte at a time.
  */
 static void
 put_words(
@@ -1770,13 +1771,24 @@ put_words(
 	const uint32_t *words,
 	unsigned count)
 {
+	volatile uint64_t *pairs;
 	volatile uint32_t *place;
 	unsigned index;
 
-	/* A place of whole words: one store a word (the processor is little-endian, as the core reads them). */
+	/* A place of whole words: a word up to a doubleword's place, then pairs, then the word left. */
 	if ((offset & 3U) == 0U) {
 		place = (volatile uint32_t *)(buffer->view + offset);
-		for (index = 0; index < count; index++)
+		index = 0;
+		if ((offset & 7U) != 0U && count != 0) {
+			place[0] = words[0];
+			index = 1;
+		}
+		pairs = (volatile uint64_t *)(buffer->view + offset + index * 4U);
+		for (; index + 2U <= count; index += 2U) {
+			*pairs = (uint64_t)words[index] | (uint64_t)words[index + 1U] << 32;
+			pairs++;
+		}
+		if (index < count)
 			place[index] = words[index];
 		return;
 	}
@@ -1791,9 +1803,9 @@ put_words(
 }
 
 /*
- * Writes bytes through a buffer's uncached view: the bytes up to a word's
- * place one at a time, then whole words assembled from them (one store
- * each), then the bytes left.
+ * Writes bytes through a buffer's uncached view: the bytes up to a
+ * doubleword's place one at a time, then whole doublewords assembled
+ * from them (one store each), then the bytes left.
  */
 static void
 put_bytes(
@@ -1802,27 +1814,27 @@ put_bytes(
 	const uint8_t *bytes,
 	size_t count)
 {
-	volatile uint32_t *place;
-	uint32_t word;
+	volatile uint64_t *place;
+	uint64_t pair;
 	size_t index;
+	unsigned shift;
 
-	/* The bytes before a word's place. */
+	/* The bytes before a doubleword's place. */
 	index = 0;
-	while (index < count && ((offset + index) & 3U) != 0U) {
+	while (index < count && ((offset + index) & 7U) != 0U) {
 		buffer->view[offset + index] = bytes[index];
 		index++;
 	}
 
-	/* Whole words, little-endian. */
-	place = (volatile uint32_t *)(buffer->view + offset + index);
-	while (index + 4U <= count) {
-		word = (uint32_t)bytes[index];
-		word |= (uint32_t)bytes[index + 1U] << 8;
-		word |= (uint32_t)bytes[index + 2U] << 16;
-		word |= (uint32_t)bytes[index + 3U] << 24;
-		*place = word;
+	/* Whole doublewords, little-endian. */
+	place = (volatile uint64_t *)(buffer->view + offset + index);
+	while (index + 8U <= count) {
+		pair = 0;
+		for (shift = 0; shift < 8U; shift++)
+			pair |= (uint64_t)bytes[index + shift] << (shift * 8U);
+		*place = pair;
 		place++;
-		index += 4U;
+		index += 8U;
 	}
 
 	/* The bytes left. */
