@@ -79,8 +79,11 @@ static int render_atlas_ready;
 /*
  * The ZTERM PERF line's sums since it was last written: the frames drawn,
  * each part's total and longest time in microseconds (RENDER_PERF_*), and
- * when the window began (terminal_clock).  The main thread's alone.
+ * when the window began (terminal_clock).  The main thread's alone.  The
+ * line is a measurement's: written only when the environment's
+ * TERMINAL_PERF is 1 (render_perf_on, read when the window opens).
  */
+static int render_perf_on;
 static unsigned render_perf_frames;
 static uint64_t render_perf_total[RENDER_PERF_PARTS];
 static uint64_t render_perf_most[RENDER_PERF_PARTS];
@@ -109,11 +112,20 @@ terminal_renderer_open(
 	VkApplicationInfo application;
 	VkInstanceCreateInfo instance;
 	const char *extensions[2];
+	const char *perf;
 	VkResult error;
 	int failed;
 
 	/* Nothing is owned yet. */
 	memset(renderer, 0, sizeof(*renderer));
+
+	/* The ZTERM PERF line, when a measurement asks for it. */
+	perf = getenv("TERMINAL_PERF");
+	render_perf_on = 0;
+	if (perf != NULL && strcmp(perf, "1") == 0)
+		render_perf_on = 1;
+
+	/* The atlas is moved to its layout by the first frame. */
 	render_atlas_ready = 0;
 
 	/* The instance, with the surface extensions a Wayland window needs. */
@@ -317,9 +329,11 @@ terminal_renderer_draw(
 		return error;
 	render_perf_add(RENDER_PERF_PRESENT, mark);
 
-	/* The frame counted, and the sums written every few seconds. */
-	render_perf_frames++;
-	render_perf_report();
+	/* The frame counted, and the sums written every few seconds when asked for. */
+	if (render_perf_on) {
+		render_perf_frames++;
+		render_perf_report();
+	}
 
 	/* Succeeded: the grid is on the window. */
 	return VK_SUCCESS;
@@ -1779,12 +1793,16 @@ render_record(
 	vkCmdEndRenderPass(renderer->command);
 }
 
-/* Gives the monotonic clock in microseconds (0 when it cannot be read). */
+/* Gives the monotonic clock in microseconds for ZTERM PERF (0 when it is not asked for or cannot be read). */
 static uint64_t
 render_now_us(void)
 {
 	struct timespec now;
 	int status;
+
+	/* Only for a measurement. */
+	if (!render_perf_on)
+		return 0U;
 
 	/* The monotonic clock. */
 	status = clock_gettime(CLOCK_MONOTONIC, &now);
@@ -1803,6 +1821,10 @@ render_perf_add(
 {
 	uint64_t now;
 	uint64_t spent;
+
+	/* Only for a measurement. */
+	if (!render_perf_on)
+		return;
 
 	/* The time, never backwards. */
 	now = render_now_us();
