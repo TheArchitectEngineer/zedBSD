@@ -205,3 +205,12 @@ Mesa 26.2.5（drm-shim、BVNC 36.50.54.182、`PVR_DEBUG=cs`、vkmatrix の perf-
 - 残る単独の group: 依存の鎖、MINMAX・SINGLE（rcp・rsq。phase 1 を持たない）、ITER・SMP・WAIT・PACK・UNPACK・olchk の MOV。
 - host: compiler 411・22 passed、p010 全 0 failed、p009 505 passed、vkmatrix（lavapipe）46/46。
 - 板の kernel: build/q1539/vf2h/vmunix（12ddbecc7、sha256 9bad8ad4987b34be…）。FMAD・MOVE の phase 1 は hardware で初めて使う。
+
+### d64（vf2h = 12ddbecc7）と、その後（a7eb3188e・711dea277）
+
+- d64（Q1）: 46/46、HWR・reset 0、見た目は同じ（shot64.png）。perf: mul4 36050、alu 48250、alu4 52150、flat 6800（8050）、immediate 3350、quarter 4050、texture 13050（14250）、load 8000、load-small 2900。desktop は全画面 64〜74 ms（71〜78）、部分 12.0 ms。
+- repeat の費用: flat（push4 = MOV の組 2・PACK rpt4・MOV、4 group）と immediate（2 group）の差 3.45 ms は約 5 slot → rpt4 の PACK は 4 slot。unorm8 の出力の PACK rpt4 と、blend の UNPACK rpt4 は、どの shader でも pixel ごとに 8 slot かかる（Mesa も同じ）。
+- F32 の pixel output（PBE が unorm8 へ変換する案）は取り下げた。Mesa の pbestate.xml の SOURCE_FORMAT の注記で、F32 の source は F32 の packing mode でしか使えない。F16 の source は U8 へ変換できるが、pack が 6 slot で今の 5 より悪い。
+- a7eb3188e: 2 つ以上の FMAD の addend になる定数を、program の始めに temp に置く（upper set の s5 が shared を名指せないので、組を妨げていた）。alu4 73→41 group。
+- 711dea277: x·1.0 を copy にする（1.0/x が rcp と mul だったのを rcp 1 つに）。vkmatrix に perf-rcp（依存する rcp 32 個、38 group）を足した。perf-mul4 との比で rcp 1 つの slot 数を見る。
+- 板の kernel: build/q1539/vf2i/vmunix（711dea277、sha256 910e868996b965da…）、build/q1539/vf2i/bin/vkmatrix（sha256 3b1f30647707c226…）。
