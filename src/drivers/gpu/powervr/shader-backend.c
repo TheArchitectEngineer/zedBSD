@@ -151,6 +151,7 @@ struct backend_select {
 static int liveness(const struct powervr_ir_shader *shader, struct shader_backend *backend);
 static void note_reference(struct shader_backend *backend, unsigned value, unsigned at, unsigned is_definition);
 static int allocate(const struct powervr_ir_shader *shader, struct shader_backend *backend);
+static void compact_temporaries(struct powervr_shader_program *program, struct shader_backend *backend);
 static int select_instruction(struct backend_select *select, const struct powervr_ir_instruction *instruction);
 static int select_structure(struct backend_select *select, const struct powervr_ir_instruction *instruction);
 
@@ -255,9 +256,92 @@ shader_backend_build(
 	if (backend->error != 0)
 		return backend->error;
 
+	/* The back end's own temporaries a program does not use are given back. */
+	compact_temporaries(program, backend);
+
 	/* Succeeded: the operations and the register count. */
 	program->temps = backend->temps;
 	return 0;
+}
+
+/*
+ * Gives back the back end's own temporaries (0 to 8) a program does not
+ * use, in three blocks: the execution mask counter (0), the scratch (1 to
+ * 3), and the coordinates, address and store data (4 to 8, which stay
+ * together: a store reads its data from the register after the address
+ * pair).  The blocks used move down to the start, the values after them
+ * (q1536: every program took the nine whatever it used).
+ */
+static void
+compact_temporaries(
+	struct powervr_shader_program *program,
+	struct shader_backend *backend)
+{
+	static const unsigned starts[3] = { TEMP_EMC, TEMP_SCRATCH, TEMP_COORDINATES };
+	static const unsigned ends[3] = { TEMP_SCRATCH, TEMP_COORDINATES, TEMP_FIRST_VALUE };
+	struct shader_machine_operation *operation;
+	struct shader_machine_register *reg;
+	unsigned used[3];
+	unsigned bases[3];
+	unsigned total;
+	unsigned shift;
+	unsigned index;
+	unsigned slot;
+	unsigned block;
+
+	/* The blocks any operation names. */
+	for (block = 0; block < 3U; block++)
+		used[block] = 0;
+	for (index = 0; index < backend->operation_count; index++) {
+		operation = &backend->operations[index];
+		for (slot = 0; slot < 6U; slot++) {
+			reg = slot < 2U ? &operation->destination[slot] : &operation->source[slot - 2U];
+			if (reg->bank != POWERVR_USC_BANK_TEMPORARY || reg->index >= TEMP_FIRST_VALUE)
+				continue;
+			for (block = 0; block < 3U; block++) {
+				if (reg->index >= starts[block] && reg->index < ends[block])
+					used[block] = 1;
+			}
+		}
+	}
+
+	/* The used blocks' new places, and how far the values move down. */
+	total = 0;
+	for (block = 0; block < 3U; block++) {
+		bases[block] = total;
+		if (used[block])
+			total += ends[block] - starts[block];
+	}
+	shift = TEMP_FIRST_VALUE - total;
+	if (shift == 0)
+		return;
+
+	/* Every temporary renamed. */
+	for (index = 0; index < backend->operation_count; index++) {
+		operation = &backend->operations[index];
+		for (slot = 0; slot < 6U; slot++) {
+			reg = slot < 2U ? &operation->destination[slot] : &operation->source[slot - 2U];
+			if (reg->bank != POWERVR_USC_BANK_TEMPORARY)
+				continue;
+			if (reg->index >= TEMP_FIRST_VALUE) {
+				reg->index = (uint16_t)(reg->index - shift);
+				continue;
+			}
+			for (block = 0; block < 3U; block++) {
+				if (reg->index >= starts[block] && reg->index < ends[block])
+					reg->index = (uint16_t)(bases[block] + reg->index - starts[block]);
+			}
+		}
+	}
+
+	/* The fragment colours kept in temporaries, and the count. */
+	if (program->stage == POWERVR_SHADER_FRAGMENT) {
+		for (index = 0; index < program->output_count; index++) {
+			if (program->outputs[index].format == 0 && program->outputs[index].reg >= TEMP_FIRST_VALUE)
+				program->outputs[index].reg -= shift;
+		}
+	}
+	backend->temps -= shift;
 }
 
 /*
