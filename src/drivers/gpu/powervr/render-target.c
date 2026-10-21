@@ -526,10 +526,18 @@ list_make(
 	struct powervr_buffer *entries;
 	int error;
 
-	/* The pages the parameter manager takes from; the core reaches them only through it. */
+	/*
+	 * The pages the parameter manager takes from; the core reaches them
+	 * only through it, by their physical addresses, and nothing reads
+	 * what they held before, so a freed buffer of the pool serves as it
+	 * is (a new one's view cost a write-back of every cached line, a
+	 * session's first render of a 16 MB global list some tens of ms).
+	 */
 	list->owner = owner;
 	list->page_count = pages;
-	error = powervr_buffer_create(render, (uint64_t)pages * POWERVR_PM_PAGE_BYTES, &list->pages);
+	error = powervr_buffer_reuse(render, (uint64_t)pages * POWERVR_PM_PAGE_BYTES, &list->pages);
+	if (error != 0)
+		error = powervr_buffer_create(render, (uint64_t)pages * POWERVR_PM_PAGE_BYTES, &list->pages);
 	if (error != 0)
 		return error;
 

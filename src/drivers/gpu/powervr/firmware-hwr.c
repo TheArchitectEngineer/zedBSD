@@ -48,8 +48,12 @@
 #define HWR_RECOVERED		2264U
 #define HWR_FALSE_DETECT	2300U
 #define TRACE_POINTER		8U
-/* The whole ring, oldest first, so the kicks before the lockup are in it. */
-#define TRACE_TAIL_WORDS	POWERVR_TRACE_WORDS
+/*
+ * The newest words of the ring, oldest of them first: the kicks just
+ * before the lockup.  The whole ring (1500 lines) pushed the lines before
+ * it out of the kernel log's 32 KB.
+ */
+#define TRACE_TAIL_WORDS	1024U
 #define RECORD_WORDS_MAX	96U
 
 /*
@@ -133,13 +137,13 @@ powervr_hwr_dump(
 	}
 
 	/*
-	 * The whole trace from its oldest word, for decoding off line: each
+	 * The trace's newest TRACE_TAIL_WORDS words, for decoding off line: each
 	 * entry is its id, a 64-bit timestamp and its arguments, the id as
 	 * Linux's pvr_rogue_fwif_sf.h (ROGUE_FW_LOG_CREATESFID) forms it.
 	 */
 	trace = &core->firmware.trace_buffer;
 	pointer = powervr_object_get32(&core->firmware.trace_control, TRACE_POINTER) % POWERVR_TRACE_WORDS;
-	first = pointer % POWERVR_TRACE_WORDS;
+	first = (pointer + POWERVR_TRACE_WORDS - TRACE_TAIL_WORDS) % POWERVR_TRACE_WORDS;
 	kern_logf("powervr: hwr: trace pointer %u, %u words from %u\n", (unsigned)pointer, (unsigned)TRACE_TAIL_WORDS, (unsigned)first);
 	for (done = 0; done < TRACE_TAIL_WORDS; done += 8U) {
 		for (index = 0; index < 8U; index++)

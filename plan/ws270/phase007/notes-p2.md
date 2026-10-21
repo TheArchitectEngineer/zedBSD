@@ -297,3 +297,42 @@ branch agent/p2-q1553（基 main 782f995e4）。
   - timing に `target make`。
 - d5e6d9475: timing の各行に `longest`。
 - 板は未確認（Q1 待ち）。
+- d105（Q1、main ＋ P1 ＋ d5e6d9475、timing 1）:
+  - reset・HWR・fault・device lost は 0。frame-ops: drag 7/10（49 fps）、home 6/15、wiseview 8/50、type 7/42、launch 8/75。
+  - context_hold の max 31 ms（opcode 21 = ALLOCATE_MEMORY）が残る。
+  - dmesg の longest: job setup 43.7・35.9 ms（target make は最大 1 ms）、submit 74.7・37.8 ms。
+  - 読み: uncached の alias を作る時の flush（VF2 の HAL、L2 の Flush64 を 64 byte ごと、8 MB で 131072 回の MMIO）が残りの主因の疑い。session の最初の target の global の free list（4096 page = 16 MB）も同じ道を通る。
+- efc40884f: session ごとに最後の transfer の memory を map したまま使い回す。transfer-job.c の書き込みを word ごとに。
+- 3342c1ace（試し、既定 0）: `POWERVR_SINGLE_RENDER_KICK` 1 で、render の fragment を combined kick に入れる（KCCB の command 1 つ。DDK の形）。
+- cfedba86a: timing に buffer の作成の 4 段（run・clear・alias・map）。
+- 案（数字を見てから）: flush 済みで alias を持つ GPU の buffer の pool（解放した buffer を戻し、使う時に GPU の clear で 0 にする）。HAL の flush を速くする案は範囲外なので Q1 に判断を仰ぐ。
+- d106（Q1、main ＋ P1 tip ＋ efc40884f、timing 1）:
+  - vkmatrix 109/109（copy・blit・cursor-chain・clear を含む）。reset・HWR・fault・device lost は 0。文字入力・cursor も異常なし。
+  - transfer: 平均 2607 us（longest 3611）・2252 us（2646）。d102 は 2.9〜4.8 ms。
+  - context_hold の max 30 ms（opcode 21）は残る。
+- ed9c74527: GPU の buffer の pool。
+  - 最後の参照が落ちた buffer を、alias を付けたまま pool へ（256 KB 以上、合計 128 MB まで）。alias の作成と終わりは、どちらも範囲の line を 1 つずつ flush する。
+  - vkAllocateMemory は同じ大きさの pool の buffer を使い、session の transfer の clear で 0 にしてから返す（できない時は CPU で alias から）。
+  - kernel の内部の buffer は pool を使わない。板は未確認。
+- e20e1f5bf: session の global の free list の page（16 MB）は pool の物をそのまま使う（PM が物理 address で読み書きするだけで、前の中身を読まない）。
+- d108（Q1、main ＋ P1 1f7936510 の WSI ＋ ed9c74527、timing 1）:
+  - frame-ops の途中で compositor が pc 0 の SIGSEGV、続いて client 3 つが同じ pc 0x10004618c の SIGILL で落ちた。vkmatrix 109/109、reset・fault 0。
+  - 読み: compositor が先（NULL の関数 pointer の形）。client は同じ pc なので app の trap（接続が切れた時の abort）の形。pool による memory の破壊の形跡は無い。Q1 が libvulkan を戻して切り分け中。
+- e3ca344cf: pool に入れる時に buffer の page list を捨てる（display への export の識別子が、前の持ち主と同じ pointer になるのを避ける）。
+- 4182ac109: flat な varying を coefficient の register から直に読む（batch.frag 26→21 group）。
+- d108 の落ちは P1 1f7936510（libvulkan の WSI）が原因で、pool とは無関係だった（Q1 の切り分け: main の libvulkan では同じ kernel で 100 s の idle の後の frame-ops も落ちない）。
+- fd6732b70: (x·u1)·u2 を x·(u1·u2) にする（影 25→23、solid 21→19、ring 6→4）。
+- 試して入れなかった物: (v·w)·s を、同じ因子の積を読む v·(p·q) にする共有（演算は減るが依存の鎖で組が減り、group 数は ±1 で総和が変わらない）。
+- d109（Q1、fd6732b70 の q1553t）: buffer の作成は 5 s の窓に 45〜135 回。clear（memset）は平均 0.9〜2.6 ms・longest 21 ms、alias（flush）は平均 0.7〜1.8 ms・longest 13 ms。1 MB あたり memset 約 1.3 ms、flush 約 0.8 ms。
+- 4c636fe1d:
+  - 256 KB 以上の vkAllocateMemory は、新しい buffer も memset せずに作り（flush は alias の作成で済む）、transfer の clear で 0 にする。
+  - pool からは 1/4 増しまでの最も小さい物を取る。
+- d111（Q1、4c636fe1d の q1553t）: vkmatrix 105/109。load-1080-32・copy-1080・perf-load-part・perf-load-small が vkMapMemory -5。desktop の Terminal も起動しなかった。clear は平均 0.7〜0.8 ms（longest 5 ms）に下がった。
+  - 原因: render_map が host の view の大きさに run の大きさ（1/4 増しの物はそれだけ大きい）を返し、libvulkan の token の検査（view_bytes と一致）で拒否された。
+- af7aa8c46: render_map は buffer の大きさ（page に切り上げ）を返す。
+- d114（Q1、af7aa8c46 まで ＋ P1 330767e34、timing 1）:
+  - vkmatrix 109/109（d111 の 4 つも PASS）。frame-ops: launch 44 fps（7/45）、type 47（8/13）、output 47。
+  - Wiseview を開いた所で GPU の lockup → HWR 1 回 → device lost が 1 回あった。同じ kernel でさらに 3 回流して 0（4 回中 1 回）。
+  - ユーザー「GPUが固まったのは、チップにヒートシンクもファンもつけてなかったので、熱で止まったかも。再現しないなら無視していいよ。」→ e20e1f5bf は外さない。
+  - 切り分け用の kernel は作ったが未使用: build/q1553c（e20e1f5bf を抜く）、q1553a（4c636fe1d を抜く）、q1553b（fd6732b70・4182ac109 を抜く）。
+- 0f10702f0: HWR の dump の firmware の trace を最新の 1024 語に（ring 全体の 1500 行が kernel log の 32 KB を押し出し、HWR の前の行が消えていた）。

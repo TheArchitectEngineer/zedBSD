@@ -196,6 +196,9 @@ enum machine_kind {
  * The back end's state for one shader.  Forms are the key's program
  * forms it takes (POWERVR_SHADER_FORM_ITERATE_SAMPLE, _SUM_OF_PRODUCTS,
  * _SAMPLE_WAITS);
+ * coefficient_alias names, one more than its number, the coefficient
+ * register a flat varying only float adds, multiplies and multiply-adds
+ * read is read from in place (0 for none);
  * iterate_sample marks the iterated varyings a sample iterates itself;
  * sample_half marks the samples so iterated whose four channels only one
  * sum of products reads, as they are (the sample returns half floats,
@@ -209,6 +212,7 @@ struct shader_backend {
 	unsigned group_count;
 	uint16_t value_register[POWERVR_IR_VALUES];
 	uint16_t shared_alias[POWERVR_IR_VALUES];
+	uint16_t coefficient_alias[POWERVR_IR_VALUES];
 	uint32_t first_use[POWERVR_IR_VALUES];
 	uint32_t last_use[POWERVR_IR_VALUES];
 	uint32_t uses[POWERVR_IR_VALUES];

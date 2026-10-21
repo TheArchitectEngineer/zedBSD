@@ -489,7 +489,9 @@ struct powervr_switch_shaders {
  * taken from the interrupt handler, so it is held only briefly with
  * interrupts off; service wakes the service thread, retired wakes a
  * drain, and reached wakes a wait for a timeline value (the firmware's
- * interrupt and each pass of the service wake it).  Buffer_guard guards buffer references and the export list.
+ * interrupt and each pass of the service wake it).  Buffer_guard guards buffer references and the export list,
+ * and the pool of freed buffers kept with their uncached views for reuse
+ * (pool, newest first, pool_bytes in all).
  * Kept holds buffers and sessions that may still be reached by the core
  * after a fault or an isolation, until a reset frees them.  Lost, under
  * the core's lock, says a restart failed and the firmware is gone.
@@ -516,6 +518,8 @@ struct powervr_render {
 	struct powervr_shared *exports;
 	struct powervr_session *sessions;
 	struct powervr_buffer *kept_buffers;
+	struct powervr_buffer *pool;
+	uint64_t pool_bytes;
 
 	/* When the service last saw any session's timeline move (the watchdog's measure of progress). */
 	uint64_t progress_ticks;
@@ -538,6 +542,19 @@ struct powervr_render {
 
 /* Makes a zeroed buffer of at least bytes bytes. */
 int powervr_buffer_create(struct powervr_render *render, uint64_t bytes, struct powervr_buffer **result);
+
+/*
+ * The least bytes of a buffer the pool keeps; a storage of at least as
+ * many is cleared by the core (vk-memory.c), a smaller one by the
+ * processor as it is made.
+ */
+#define POWERVR_BUFFER_POOL_LEAST	(256ULL * 1024ULL)
+
+/* Makes a buffer of at least bytes bytes whose bytes the caller clears before anything reads them. */
+int powervr_buffer_create_uncleared(struct powervr_render *render, uint64_t bytes, struct powervr_buffer **result);
+
+/* Takes a freed buffer that holds bytes bytes from the pool, its contents left as they were; ENOENT when none. */
+int powervr_buffer_reuse(struct powervr_render *render, uint64_t bytes, struct powervr_buffer **result);
 
 /* Takes another reference on a buffer. */
 void powervr_buffer_retain(struct powervr_render *render, struct powervr_buffer *buffer);
