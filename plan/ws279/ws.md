@@ -15,9 +15,17 @@
 
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
-| p001 | Mesa と Linux の初期化・submit の手順の調べ（V3D 7.1 の register・control list・QPU の命令の差、TFU・CSD、HVS6 の plane・scanout、firmware との分担）、既存の Pi 4 の driver との差の表、Phase の分け方 | WS278 p002 | in-progress（2026-10-21 P2 q1544） |
-| p002 以降 | p001 で決める | p001 | planning |
+| [p001](phase001/phase.md) | Mesa と Linux の初期化・submit の手順の調べ（V3D 7.1 の register・control list・QPU の命令の差、TFU・CSD、HVS6 の plane・scanout、firmware との分担）、既存の Pi 4 の driver との差の表、Phase の分け方（[design.md](design.md)） | WS278 p002 | in-progress（2026-10-21 P2 q1544、設計の第 1 版、判定待ち） |
+| p002 | V3D 7.1 の骨格（電源 PM 0x304・clock・SMS・識別・MMU・IRQ 2 本、段 V0〜V4 の印）（design §6、4〜6 LW） | p001、WS278 p002 の実機の起動 | planning |
+| p003 | job の submit（7.1 の最小の packet、noop・clear、TFU、CSD、cache の clean、hang と reset）（6〜8 LW） | p002 | planning |
+| p004 | QPU 7.1 の encoder・scheduler・register の割り当て、固定の shader（10〜14 LW、host だけで並べられる） | p001 | planning |
+| p005 | 描画の経路（shader state record の D0 の形、texture state、tile の大きさ、Vulkan の native の部分）（8〜10 LW） | p003・p004 | planning |
+| p006 | HVS6 の display（引き継ぎ、UPM、plane、PV の vblank、flip、zero copy）（8〜10 LW） | p002 | planning |
+| p007 | `drv_gpu_interface` と Keiland の graphical login（4〜6 LW） | p005・p006、WS278 p004 | planning |
+| p008 | 速さ（4〜6 LW） | p007 | planning |
+| p009 | 規約の全文の見直しと license・類似の監査（3〜4 LW） | p002〜p008 | planning |
 
 ## 現在の状態・再開点
 
 - 2026-10-21: P2（Opus 5.5）が q1544 で p001。実装はユーザーと p001 の結果を見てから。
+- 2026-10-21 P2: p001 の設計の第 1 版（[design.md](design.md)）。p002〜p009 は案（見込み 47〜64 LW）。再開点: ユーザーの判断 D1〜D4（design §9）と WS278 p002 の実機の起動の結果。p004（compiler）は host だけで先に始められる。
