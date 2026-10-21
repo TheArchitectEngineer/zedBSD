@@ -62,7 +62,7 @@
  * clock reads back.
  */
 #ifndef POWERVR_VF2_CORE_594
-#define POWERVR_VF2_CORE_594	1
+#define POWERVR_VF2_CORE_594	0
 #endif
 #define VF2_GPU_CORE_RATE	(POWERVR_VF2_CORE_594 ? 594000000ULL : 396000000ULL)
 
