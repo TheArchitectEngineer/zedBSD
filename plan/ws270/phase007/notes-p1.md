@@ -193,3 +193,13 @@ perf-alu-pix-sq（64 段）は時間の行が Q1 の抜き出しに無かった�
 2. 1 が駄目なら: blend を F16 の pixel output（PBE の source F16）にして PACK・UNPACK を減らす（q1546 の候補 4）。
 3. 2 byte の main の header を使う（code の大きさ・fetch の減り。DDK が使うので hardware で動く事は分かった）。
 4. clear だけの job の TA を省く案は DDK に根拠が無い（DDK も TA を流す）。
+
+## q1548（2026-10-21、P1）: pixel の出力と blend を sum of products の 1 命令に（trial の form）
+
+branch agent/p1-q1548（基 main c6eebc780）。commit 7468edfdd・e8baec967・ee37f4c19（vkmatrix の sop-* case、`-C <dir>` で case ごとの pipeline cache）、5c80fe4dd（compiler の form 0x8・0x10）、e18aded3b（form 0x20）、その上に書き方だけの直し。
+
+- form（pipeline の flag の bit 24〜31 で反転、vkmatrix -t）: 0x8 = 8-bit の attachment への色の出力を sum of products の 1 命令で（不透明、blend の OVER・SUBTRACT（one, one minus src alpha）・ADD（one, one）・MULTIPLY（dst color, zero））。それ以外の blend・write mask・F16 の attachment は従来の道。選べない時は従来の道で compile し直す。0x10 = blend の色の clamp を命令に任せる（命令が clamp するかは板で確かめる）。0x20 = iterate and sample（0x4）が自分の data を待ち、後の WAIT を省く。
+- IR: POWERVR_IR_PIXEL_BLEND（色 4 つと blend の種類、色は [0,1] に clamp して blend）。machine: MACHINE_SUM_OF_PRODUCTS（usc-encode の powervr_usc_sum_of_products、group は internal selector の byte を持たない）。
+- host: compiler 試験 2827/2827（form 0x8・0x8|0x10・0x8|0x10|0x20 を含む、machine と interpreter の一致、quad.frag・texture・batch・flatblend × 4 種の blend）、group 試験 27/27、vkmatrix lavapipe 103/103。VF2 build warning 0。
+- group 数（host）: texture＋OVER 12 → 0x8: 7 → 0x18: 5 → 0x1c: 3 → 0x3c: 2。Keiland の panel の 8 変種は 0x8 で各 −5、push4 4 → 2。
+- 板（未実施、Q1 へ送った手順）: `vkmatrix -t 0,0x8,0x18,0x1c,0x3c`（sop-* の readback、sop-clamp・sop-clamp-over は範囲外の色）、同じ trial で 'perf-flat*'・'perf-texture*'。
