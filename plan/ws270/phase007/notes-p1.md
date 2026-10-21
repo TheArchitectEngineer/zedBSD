@@ -140,3 +140,56 @@ perf-texture（blend over、vkm texture.frag、1 group ≈ 0.45 ms/全画面 at 
 - perf-alu-pix を Linux（DDK）でも流し、pixel の ALU の rate（8 か 16 lane/clock か）を見る（Fable の候補 B）。
 - F16 の pixel output（上の 4）を pass 単位で設計する。
 - 未確認: secondary の USC task から sh に書いた値を pixel task が読める事（hardware の順序の保証）は Mesa に使用例が無い。板の push4・push32・push128・uniform-ramp の readback で確かめる。
+
+## q1547（2026-10-21、P1）: Linux（DDK）の計測の道具と、DDK の job の語・pixel の program の事実
+
+branch agent/p1-q1547（基 main feb645053）。commit a277c0b76（vkmatrix: perf-alu-pix-sq・perf-alu-pix-sq32・perf-flat-blend、`-c <file>` の VkPipelineCache）、
+0f9d272b1（`tools/pvr-ioctl-shim.c`、LD_PRELOAD で RGXKickTA3D2・RGXCreateHWRTDataSet の in を書く）、f5996e3fc（`tools/linux-ddk-measure.sh`、今回は Q1 が手で流したので未使用）。
+板（Linux、DDK 1.19、594 MHz）は Q1 が流した。DDK の出力（cache・shim の dump）は `build/uat/vf2-desktop/runs/linux-ddk2/` だけに置き、git に入れない。以下は値の事実だけ（DDK の byte・encoding は写さない）。
+
+### 測った値（batched、594 MHz、Q1）
+
+| case | DDK | 読み |
+| --- | --- | --- |
+| perf-alu-pix-sq32 | 28561 us | 32 段 × 2 op（fmul＋fmad）× 2073600 px ÷（28.56 ms × 594 MHz）≈ 7.8 op/clock → zedBSD と同じ 8 lane/clock |
+| perf-alu-pix | 1133 us | affine の鎖を compiler が畳む（比較に使えない） |
+| perf-flat / perf-flat-blend | 983 / 1527 us | blend +0.54 ms |
+| perf-texture / perf-texture-nob | 1974 / 1869 us | blend +0.1 ms |
+| perf-clear | 975 us | |
+
+perf-alu-pix-sq（64 段）は時間の行が Q1 の抜き出しに無かった（vkmatrix は case ごとに PASS の行に時間を書き、合計の行はその後。生の出力を確かめる）。
+
+### job の語（shim、steady な kick 12、perf-clear・flat・flat-blend・texture・texture-nob）
+
+- DDK の command の形は mainline Linux（v7.3）の形と違う: TA 64 byte、3D と 3D PR 320 byte（こちらは mainline の形）。値の一致で対応を取った。
+- 5 つの case で 3D の command は program の address の 4 語（PDS の data・code の address と思われる）以外が全部同じ。blend の有無・texture の有無は job の語に出ない → blend の差は pixel の program だけ。
+- ISP_CTL の語 0x80033000（skip_init_hdrs・process_empty_tiles・sample_pos・tiles in flight 4）、USC_PIXEL_OUTPUT_CTRL 0x1ff8（2 register/pixel、10 partition）は zedBSD と同じ値。
+- PBE の register の語: swizzle（B8G8R8A8）、twiddle の layout、line stride（2048 の padded の幅）、clip（1919・1079）、log2 の大きさ（11・11）、tilerelative は zedBSD の式の値と同じ。違いは word 0 の bit 3 が 3D で立つ（3D PR では 0、こちらは 0）。意味は Mesa の cr.xml で確かめる（未確認）。3D PR の PBE は linear・stride 1920 の別の target。
+- ZLS は無し（depth なし）。
+- clear だけの job（perf-clear・perf-clear-64）も kick_ta 1・kick_3d 1・kick_pr 1。DDK は clear だけの job でも TA を省かない（Q4 の「TA を省く」案は DDK の形ではない）。
+- HWRT data set（RGXCreateHWRTDataSet）: multi_sample_ctl 0x88、isp_mtile_size 0x00020002、mtile_stride 4、te_mtile1/2 0x00080000、rgn_header_size 16、tpc_size 128。64x64 の target は te_screen 0x1001・ppp_screen 0。
+
+### pixel の program（pipeline cache の USC の group を header で数えた）
+
+道具: group の header（usc-encode.c と同じ layout）で区切る walker（build/q1547/decode/walk-cache.py、DDK の file と一緒に repo の外）。operation の名前は Mesa 25.0.7 pco_isa.py の F_SNGL_OP・F_CTRLOP で引いた。
+
+| shader | DDK の fragment の group | zedBSD（q1546 の host の数） |
+| --- | --- | --- |
+| flat（push4） | 1: main p0 の sngl **f16sop**（olchk、w0p、end） | 1〜4（shared program 次第） |
+| flat-blend（OVER） | 1: f16sop（olchk、w0p、end）。別に 1 group の program（fmul、end）＝ push の red × 0.5 を draw ごとに 1 回 | blend は UNPACK rpt4＋FMAD×4＋PACK rpt4＋MOV |
+| texture（blend） | 2: control の **itrsmp**（ctrlop 8）＋ f16sop（olchk、end） | 6（itrsmp・pack 直書きの form で 3） |
+| texture-nob | 2: itrsmp ＋ f16sop（blend の版と operand の語だけ違う） | |
+| alu-pix-sq（64 段） | 130: ditr（ctrlop 12）1、fmul 64、fmad 64（1 op 1 group、co-issue 無し）、f16sop（end）1 | |
+
+- DDK は色の出力を **F16SOP 1 命令**で書く（U8 への変換・pixel output への書き込み・end を兼ねる）。blend も同じ 1 命令で、destination を読む（blend の版と無しの版は同じ形で operand だけ違う）。PACK・UNPACK・MOV olchk は使わない。BXE-4-32 の usc_f16sop_u8（render-program.c の pbe_source の注記）と合う。
+- texture は itrsmp（iterate＋sample を 1 つ）＋ F16SOP の 2 group。zedBSD の form 0x4（itrsmp）は DDK と同じ道。
+- DDK は main の group に 2 byte の header（ext 0、end・rpt 無し）を多く使う（vertex と alu の group）。こちらの encoder は「Mesa が出さないので未証明」として使っていない。
+- Mesa 25.0.7 の pco_isa.py は F16SOP の encoding が「TODO」で、Mesa からは field が取れない。
+
+### 次の実装の案（判断待ち、Q1 へ）
+
+1. 色の出力と blend を F16SOP 1 命令にする（flat 4→1、blend の UNPACK＋FMAD＋PACK＋MOV＝約 10 slot→1、texture 6→2）。DDK の blend の費用 +0.1〜0.5 ms は、これが pixel ごとに 1 命令である事と合う。
+   - 障害: encoding の公開の出典が無い（Mesa は TODO）。DDK の binary から encoding を写すのは license の注意（encoding を repo に写さない）に当たる。進め方はユーザーの判断が要る（例: 公開の資料を探す、DDK の cache から field の意味だけを事実として観察する事を許すか）。
+2. 1 が駄目なら: blend を F16 の pixel output（PBE の source F16）にして PACK・UNPACK を減らす（q1546 の候補 4）。
+3. 2 byte の main の header を使う（code の大きさ・fetch の減り。DDK が使うので hardware で動く事は分かった）。
+4. clear だけの job の TA を省く案は DDK に根拠が無い（DDK も TA を流す）。
