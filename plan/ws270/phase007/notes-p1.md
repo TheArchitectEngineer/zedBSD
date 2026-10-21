@@ -277,3 +277,12 @@ branch agent/p1-q1552（基 main 782f995e4）。ユーザー（2026-10-22）:「
   - 162059da7: submission の slot を 2 つ（command・copy・fence・held・callback・完了の情報、batch の vertex は slot ごとの半分）。
   - c436c7db0: render thread は最大 2 つの job を flight に（完了は submit の順）、flight 中も次の image を取り次の list を走らせる。main は compose_may_draw（flight 0、または 1 で copy・bake 無し、head・turn・scene の capture・shot 無し）の時に次の frame を描く。shm の upload は kwl_compose_host_writable の時。glass の map の破棄は flight 0 の時だけ。render thread の host 試験（plan/ws213/tests/render-thread-host-test.sh）に 2 flight の check を足して 158 PASS（TSan も）。
 - e08a5e577（glass の blurred の sample 座標を varying に）、9817b450f（Wiseview の tile の影を不透明な tile の内側で描かない）。
+- d115・d116c・d118（pipelining 以降、c436c7db0〜e588c63b0）: drag 60、home 58〜59、wiseview 58〜59（prewarm で初回の hitch 無し）、launch 56〜60、type 約 52（period p50 19、lag 11/19）、output 43〜44。scroll・hover は入力の間隔が律速。d116 の起動時の crash は SD 上の /bin/wayland の破損（offset 712705 から違う、dw-mmc の読み失敗の後）で、code の不具合ではなかった。e7ea311a9（frame callback を give の時に）は type の lag を悪くしたので 67a35db60 で戻した。
+
+### Terminal（d118 の ZTERM PERF、TERMINAL_PERF=1 の時だけ出る）
+
+- 1 frame 約 16 ms の CPU: build 4.05/7、acquire 1.74/9、record 2.44/4、submit 2.11/4、present 5.27/11、wait 0.79/2 ms（平均/最長）。
+- record: bbf66e118 で image ごとの command buffer を、同じ vertex 数・背景なら記録し直さず再 submit（vertex は同じ場所に書き直す）。fence の待ちは次の draw の頭（terminal_renderer_idle）へ。
+- build: VF2 の host-visible memory は client に uncached で map される（vk-memory.c、gpu_mmap の VM_DEVICE_UNCACHED_RAM）。1 cell 6 vertex × 12 float を 32bit の store で mapping に書いていた（1 cell 72 回の bus write）。6e8ac6693: host の memory（vertex_build）で作り、前の frame の写し（vertex_kept）と 64bit ごとに比べ、違う doubleword だけを mapping へ store する（render_upload）。ZTERM PERF に upload（store の時間）。
+- present: libvulkan の Wayland の present（frame ごとの fence の作成・export・fd、空の command の Begin/End、vkQueueSubmit）。00a8d6f6f で VULKAN TIMING に present_prepare/present_record/present_submit/present。内訳は板待ち。
+- 1920x1080 の制限: Terminal の速さは cell の数（窓の大きさ）に比例する部分（build・upload）と、frame ごとの固定の部分（acquire・present・submit の round trip）がある。後者は出力の解像度に依らない。

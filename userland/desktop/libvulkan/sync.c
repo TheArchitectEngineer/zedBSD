@@ -1191,7 +1191,7 @@ vulkan_timing_report(
 {
 	static const char *const names[VULKAN_TIMING_PARTS] = {
 		"submit", "quiesce", "queue_lock", "device_lock", "prepare", "reserve", "execute", "finish",
-		"capacity", "context_wait", "context_hold",
+		"capacity", "context_wait", "context_hold", "present_prepare", "present_record", "present_submit", "present",
 	};
 	uint64_t now;
 	unsigned part;

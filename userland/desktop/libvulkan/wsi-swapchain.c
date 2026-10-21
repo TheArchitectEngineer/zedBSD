@@ -693,6 +693,8 @@ vkQueuePresentKHR(
 	VkResult combined;
 	VkBool32 published;
 	uint64_t waited;
+	uint64_t present_started;
+	uint64_t part_started;
 	size_t bytes;
 	uint32_t index;
 	int logging;
@@ -718,10 +720,13 @@ vkQueuePresentKHR(
 	if (logging != 0)
 		present_cursor_log_start(&job->log);
 
-	/* Validates the targets and reserves their images. */
+	/* Validates the targets and reserves their images (timed for VULKAN TIMING, as the parts below). */
+	present_started = vulkan_timing_start();
+	part_started = present_started;
 	error = present_prepare(job, queue, info);
 	if (error != VK_SUCCESS)
 		goto cleanup;
+	vulkan_timing_add(VULKAN_TIMING_PRESENT_PREPARE, part_started, 0U);
 
 	/* Caller arrays and pResults cease to be valid inputs as soon as this call returns. */
 	bytes = (size_t)job->count * sizeof(*job->indices);
@@ -768,9 +773,11 @@ vkQueuePresentKHR(
 
 	/* Recording and native metadata allocation complete before waits can be consumed. */
 	job->worker = worker;
+	part_started = vulkan_timing_start();
 	error = present_record(job, info);
 	if (error != VK_SUCCESS)
 		goto cleanup;
+	vulkan_timing_add(VULKAN_TIMING_PRESENT_RECORD, part_started, 0U);
 
 	/* Queue submission and worker publication retain one issue order with other queue operations. */
 	waited = 0U;
@@ -784,11 +791,13 @@ vkQueuePresentKHR(
 		job->log.queue_wait = vulkan_wsi_cursor_clock() - waited;
 
 	/* Consumes every wait in the one submission that also carries the copy. */
+	part_started = vulkan_timing_start();
 	error = present_submit(job, info);
 	if (error != VK_SUCCESS) {
 		pthread_mutex_unlock(&queue->mutex);
 		goto cleanup;
 	}
+	vulkan_timing_add(VULKAN_TIMING_PRESENT_SUBMIT, part_started, 0U);
 
 	/* Each overlay target is held for a primary present or left to its own commit, in call order. */
 	if (job->overlays != NULL)
@@ -836,6 +845,10 @@ cleanup:
 		present_finish(job, info, error);
 		vulkan_free(&allocator, job);
 	}
+
+	/* The whole call's time, and the sums said every few seconds (VULKAN TIMING). */
+	vulkan_timing_add(VULKAN_TIMING_PRESENT, present_started, 0U);
+	vulkan_timing_report();
 
 	/* Rejected targets or failed enqueue retain their precise public error result. */
 	if (error < VK_SUCCESS)
