@@ -345,6 +345,16 @@ powervr_render_event_words(
 }
 
 /*
+ * A test switch (q1539, 0 as built): immediate groups the clear
+ * background's program runs before its moves, to time a background
+ * program as long as a draw's fragment program (14 makes 15 groups, the
+ * length of vkmatrix's immediate.frag).
+ */
+#ifndef POWERVR_CLEAR_TRIAL_PAD
+#define POWERVR_CLEAR_TRIAL_PAD	0U
+#endif
+
+/*
  * Builds the clear background's shading cluster program for a clear of
  * one word (one packed colour) or two (four half floats, the sRGB and
  * 16-bit float formats): the words in shared registers 0 and 1 moved
@@ -363,7 +373,9 @@ powervr_render_clear_usc_words(
 	uint32_t words,
 	struct powervr_render_usc *program)
 {
-	struct powervr_usc_group groups[2];
+	struct powervr_usc_group groups[POWERVR_CLEAR_TRIAL_PAD + 2U];
+	uint32_t pads;
+	uint32_t pad;
 	uint32_t word;
 	int error;
 
@@ -371,17 +383,25 @@ powervr_render_clear_usc_words(
 	if (program == NULL || words == 0 || words > 2U)
 		return EINVAL;
 
-	/* A move a word from its shared register to its pixel output, the first checked, the last ending. */
-	for (word = 0; word < words; word++) {
-		error = move_group(&groups[word], POWERVR_USC_BANK_SHARED, CLEAR_SHARED + word, POWERVR_USC_BANK_SPECIAL, USC_PIXEL_OUTPUT + word);
+	/* The test switch's padding: immediates into temporary 0, which nothing reads. */
+	pads = POWERVR_CLEAR_TRIAL_PAD;
+	for (pad = 0; pad < pads; pad++) {
+		error = immediate_group(&groups[pad], 0, pad);
 		if (error != 0)
 			return error;
 	}
-	groups[0].overlap_check = 1;
-	groups[words - 1U].end = 1;
 
-	/* Encodes them; they need no temporary. */
-	error = encode(groups, words, 0, program);
+	/* A move a word from its shared register to its pixel output, the first checked, the last ending. */
+	for (word = 0; word < words; word++) {
+		error = move_group(&groups[pad + word], POWERVR_USC_BANK_SHARED, CLEAR_SHARED + word, POWERVR_USC_BANK_SPECIAL, USC_PIXEL_OUTPUT + word);
+		if (error != 0)
+			return error;
+	}
+	groups[pad].overlap_check = 1;
+	groups[pad + words - 1U].end = 1;
+
+	/* Encodes them; they need no temporary but the padding's. */
+	error = encode(groups, pad + words, pads != 0 ? 1U : 0U, program);
 	if (error != 0)
 		return error;
 
