@@ -61,7 +61,6 @@
 #define GLASS_MAP_DRAWS		1U
 #define GLASS_SHADOW_DRAWS	2U
 
-
 static int map_key_same(const struct kwl_glass_map *map, const float *key);
 static void map_key_of(const float *constants, float *key);
 static struct kwl_glass_map *map_find(struct kwl_glass_map *maps, unsigned count, const float *key);
@@ -207,6 +206,7 @@ kwl_glass_shadow_set(
 {
 	struct kwl_glass_map *map;
 	float key[KWL_GLASS_MAP_KEY];
+	float whole[3];
 	float reach;
 	int taken;
 
@@ -215,7 +215,10 @@ kwl_glass_shadow_set(
 		return 0;
 
 	/* A box at whole pixels, of a whole softness: the picture's pixels are the output's. */
-	if (box[0] != floorf(box[0]) || box[1] != floorf(box[1]) || soft != floorf(soft))
+	whole[0] = floorf(box[0]);
+	whole[1] = floorf(box[1]);
+	whole[2] = floorf(soft);
+	if (box[0] != whole[0] || box[1] != whole[1] || soft != whole[2])
 		return 0;
 	if (box[2] <= 0.0f || box[3] <= 0.0f || soft < 1.0f)
 		return 0;
