@@ -33,6 +33,26 @@ int fixture_ioctl(int fd, unsigned long request, ...);
 #include "userland/desktop/libvulkan/content.c"
 #undef ioctl
 
+/* The submission timing (sync.c) is off in the test: nothing is timed or said. */
+uint64_t
+vulkan_timing_start(void)
+{
+	return 0;
+}
+
+void
+vulkan_timing_add(enum vulkan_timing_part part, uint64_t start, uint32_t opcode)
+{
+	(void)part;
+	(void)start;
+	(void)opcode;
+}
+
+void
+vulkan_timing_report(void)
+{
+}
+
 /* The images of every test swapchain. */
 #define FX_IMAGES 3U
 
