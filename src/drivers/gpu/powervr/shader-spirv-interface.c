@@ -22,8 +22,19 @@
 #include "drivers/gpu/powervr/shader-private.h"
 #include "drivers/gpu/powervr/shader-spirv.h"
 
+/* The blend factors that are the same for every colour channel (the alpha and constant alpha ones), each worked out once. */
+#define BLEND_FACTORS			(FACTOR_SOURCE_ALPHA_SATURATE + 1U)
+
+struct blend_factors {
+	struct powervr_ir_operand value[BLEND_FACTORS];
+	uint8_t known[BLEND_FACTORS];
+};
+
 static int reader_pixel_output(struct shader_spirv_reader *reader, const struct shader_spirv_id *variable, uint32_t words);
 static struct powervr_ir_operand blend_factor(struct shader_spirv_reader *reader, uint32_t factor, uint32_t channel, const struct powervr_ir_operand *source, const struct powervr_ir_operand *destination, uint32_t constants, int *error);
+static struct powervr_ir_operand blend_factor_kept(struct shader_spirv_reader *reader, struct blend_factors *kept, uint32_t factor, uint32_t channel, const struct powervr_ir_operand *source, const struct powervr_ir_operand *destination, uint32_t constants, int *error);
+static struct powervr_ir_operand blend_sum(struct shader_spirv_reader *reader, uint32_t operation, const struct powervr_ir_operand *source, const struct powervr_ir_operand *source_factor, const struct powervr_ir_operand *destination, const struct powervr_ir_operand *destination_factor);
+static int is_constant(const struct powervr_ir_operand *operand, uint32_t bits);
 static struct powervr_ir_operand saturate(struct shader_spirv_reader *reader, struct powervr_ir_operand x);
 static int attribute_words(struct shader_spirv_reader *reader, uint32_t location, uint32_t words, uint32_t *format_words);
 static uint32_t color_format_known(uint32_t format);
@@ -448,6 +459,7 @@ reader_pixel_output(
 	struct powervr_ir_operand a;
 	struct powervr_ir_operand b;
 	struct powervr_ir_instruction *store;
+	struct blend_factors kept;
 	uint32_t channel;
 	uint32_t factor;
 	uint32_t operation;
@@ -507,6 +519,8 @@ reader_pixel_output(
 	}
 
 	/* Each channel: the blend, then the write mask. */
+	for (channel = 0; channel < BLEND_FACTORS; channel++)
+		kept.known[channel] = 0;
 	for (channel = 0; channel < 4; channel++) {
 		result[channel] = source[channel];
 		if (blend->enable != 0) {
@@ -517,22 +531,15 @@ reader_pixel_output(
 			} else if (operation == OPERATION_MAXIMUM) {
 				result[channel] = shader_spirv_emit_value(reader, POWERVR_IR_FLOAT_MAXIMUM, &source[channel], &destination[channel], NULL);
 			} else if (operation <= OPERATION_REVERSE_SUBTRACT) {
-				/* The source and destination terms, each its value times its factor. */
+				/* The source and destination terms, each its value times its factor (the pack clamps the sum, see above). */
 				error = 0;
 				factor = channel < 3 ? blend->source_color : blend->source_alpha;
-				a = blend_factor(reader, factor, channel, source, destination, constants, &error);
-				a = shader_spirv_emit_value(reader, POWERVR_IR_FLOAT_MULTIPLY, &source[channel], &a, NULL);
+				a = blend_factor_kept(reader, &kept, factor, channel, source, destination, constants, &error);
 				factor = channel < 3 ? blend->destination_color : blend->destination_alpha;
-				b = blend_factor(reader, factor, channel, source, destination, constants, &error);
-				b = shader_spirv_emit_value(reader, POWERVR_IR_FLOAT_MULTIPLY, &destination[channel], &b, NULL);
+				b = blend_factor_kept(reader, &kept, factor, channel, source, destination, constants, &error);
 				if (error != 0)
 					return error;
-				if (operation == OPERATION_SUBTRACT)
-					b = shader_spirv_float_negate(b);
-				if (operation == OPERATION_REVERSE_SUBTRACT)
-					a = shader_spirv_float_negate(a);
-				/* The pack clamps the sum to [0, 1] (see above). */
-				result[channel] = shader_spirv_emit_value(reader, POWERVR_IR_FLOAT_ADD, &a, &b, NULL);
+				result[channel] = blend_sum(reader, operation, &source[channel], &a, &destination[channel], &b);
 			} else {
 				return ENOTSUP;
 			}
@@ -550,6 +557,112 @@ reader_pixel_output(
 
 	/* Reports what the colour came to. */
 	return reader->error;
+}
+
+/*
+ * Works out one channel's blend factor, once a blend for the factors
+ * that are the same for every colour channel (q1539: the one-minus
+ * source alpha of premultiplied blending was worked out a channel).
+ */
+static struct powervr_ir_operand
+blend_factor_kept(
+	struct shader_spirv_reader *reader,
+	struct blend_factors *kept,
+	uint32_t factor,
+	uint32_t channel,
+	const struct powervr_ir_operand *source,
+	const struct powervr_ir_operand *destination,
+	uint32_t constants,
+	int *error)
+{
+	struct powervr_ir_operand value;
+	int shared;
+
+	/* The alpha and constant alpha factors, and the saturate one for a colour channel, are the same a channel. */
+	shared = factor == FACTOR_SOURCE_ALPHA || factor == FACTOR_ONE_MINUS_SOURCE_ALPHA ||
+		 factor == FACTOR_DESTINATION_ALPHA || factor == FACTOR_ONE_MINUS_DESTINATION_ALPHA ||
+		 factor == FACTOR_CONSTANT_ALPHA || factor == FACTOR_ONE_MINUS_CONSTANT_ALPHA ||
+		 (factor == FACTOR_SOURCE_ALPHA_SATURATE && channel < 3);
+	if (shared && kept->known[factor] != 0)
+		return kept->value[factor];
+
+	/* Works it out, and keeps a shared one. */
+	value = blend_factor(reader, factor, channel, source, destination, constants, error);
+	if (shared && *error == 0) {
+		kept->value[factor] = value;
+		kept->known[factor] = 1;
+	}
+	return value;
+}
+
+/*
+ * Works out source * source factor (+, - or reversed -) destination *
+ * destination factor: a factor of one or zero takes no multiply, and a
+ * destination term with a factor is one multiply-add with the source
+ * term.
+ */
+static struct powervr_ir_operand
+blend_sum(
+	struct shader_spirv_reader *reader,
+	uint32_t operation,
+	const struct powervr_ir_operand *source,
+	const struct powervr_ir_operand *source_factor,
+	const struct powervr_ir_operand *destination,
+	const struct powervr_ir_operand *destination_factor)
+{
+	struct powervr_ir_operand a;
+	struct powervr_ir_operand b;
+	struct powervr_ir_operand result;
+	int has_a;
+	int has_b;
+
+	/* The source term: none for a zero factor, the source for one, else the product. */
+	has_a = !is_constant(source_factor, 0);
+	a = *source;
+	if (has_a && !is_constant(source_factor, FLOAT_ONE))
+		a = shader_spirv_emit_value(reader, POWERVR_IR_FLOAT_MULTIPLY, source, source_factor, NULL);
+	if (operation == OPERATION_REVERSE_SUBTRACT)
+		a = shader_spirv_float_negate(a);
+
+	/* The destination term: none for a zero factor; negated when subtracted. */
+	has_b = !is_constant(destination_factor, 0);
+	b = *destination;
+	if (operation == OPERATION_SUBTRACT)
+		b = shader_spirv_float_negate(b);
+
+	/* No destination term: the source term, or zero. */
+	if (!has_b) {
+		if (has_a)
+			return a;
+		result = shader_spirv_constant_operand(0);
+		return result;
+	}
+
+	/* A destination term of factor one: added, or alone. */
+	if (is_constant(destination_factor, FLOAT_ONE)) {
+		if (!has_a)
+			return b;
+		result = shader_spirv_emit_value(reader, POWERVR_IR_FLOAT_ADD, &a, &b, NULL);
+		return result;
+	}
+
+	/* Alone: the product; with a source term: one multiply-add. */
+	if (!has_a) {
+		result = shader_spirv_emit_value(reader, POWERVR_IR_FLOAT_MULTIPLY, &b, destination_factor, NULL);
+		return result;
+	}
+	result = shader_spirv_emit_value(reader, POWERVR_IR_FLOAT_MULTIPLY_ADD, &b, destination_factor, &a);
+	return result;
+}
+
+/* Reports whether an operand is the constant of these bits. */
+static int
+is_constant(
+	const struct powervr_ir_operand *operand,
+	uint32_t bits)
+{
+	/* A constant operand without modifiers. */
+	return operand->kind == POWERVR_IR_OPERAND_CONSTANT && operand->modifiers == 0 && operand->constant == bits;
 }
 
 /* Works out one channel's blend factor. */
@@ -624,20 +737,24 @@ blend_factor(
 	return value;
 }
 
-/* Clamps a float to [0, 1]. */
+/*
+ * Clamps a float to [0, 1]: one add of zero with the saturate (q1539:
+ * the core's saturate in place of a maximum and a minimum, as Mesa's
+ * pco lowers fsat).
+ */
 static struct powervr_ir_operand
 saturate(
 	struct shader_spirv_reader *reader,
 	struct powervr_ir_operand x)
 {
-	struct powervr_ir_operand bound;
+	struct powervr_ir_operand zero;
 	struct powervr_ir_operand result;
 
-	/* The maximum with zero, then the minimum with one. */
-	bound = shader_spirv_constant_operand(0);
-	result = shader_spirv_emit_value(reader, POWERVR_IR_FLOAT_MAXIMUM, &x, &bound, NULL);
-	bound = shader_spirv_constant_operand(FLOAT_ONE);
-	result = shader_spirv_emit_value(reader, POWERVR_IR_FLOAT_MINIMUM, &result, &bound, NULL);
+	/* x + 0, saturated. */
+	zero = shader_spirv_constant_operand(0);
+	result = shader_spirv_emit_value(reader, POWERVR_IR_FLOAT_ADD, &x, &zero, NULL);
+	if (reader->error == 0 && reader->shader->instruction_count != 0)
+		reader->shader->instructions[reader->shader->instruction_count - 1U].flags |= POWERVR_IR_SATURATE;
 	return result;
 }
 

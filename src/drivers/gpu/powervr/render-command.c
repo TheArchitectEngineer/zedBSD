@@ -184,6 +184,8 @@ powervr_fragment_command(
 		put32(command, POWERVR_FRAGMENT_ZLS_STRIDE, setup->zls_stride);
 		flags |= POWERVR_FRAGMENT_DEPTH_BUFFER;
 	}
+	if (POWERVR_FRAGMENT_PIXEL_MERGE_OFF)
+		flags |= POWERVR_FRAGMENT_DISABLE_PIXEL_MERGE;
 
 	put32(command, POWERVR_FRAGMENT_FLAGS, flags);
 

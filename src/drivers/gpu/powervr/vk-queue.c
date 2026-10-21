@@ -149,7 +149,7 @@ _Static_assert(QUEUE_PDS_OFFSET == POWERVR_PROGRAM_HEAP_START && QUEUE_PDS_BYTES
 /*
  * The most render jobs one command buffer runs: an instance takes one
  * job for each POWERVR_RENDER_DRAWS draws it records (the next job goes
- * on loading what the one before stored), so 64 jobs take 1024 draws.
+ * on loading what the one before stored), so 64 jobs take 64 times that many draws.
  * The jobs are made for each command buffer, as many as it needs.
  */
 #define QUEUE_JOBS_MAX			64U

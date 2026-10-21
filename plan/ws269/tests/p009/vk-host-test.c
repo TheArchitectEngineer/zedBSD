@@ -261,6 +261,10 @@ struct kick_entry {
 	uint32_t push_first;
 	float viewport_width;
 };
+/* The Keiland-like frame's command buffer B: two jobs' worth of draws and 8 more, so three jobs, two continuing (q1539). */
+#define KEILAND_B_DRAWS		(2U * POWERVR_RENDER_DRAWS + 8U)
+#define KEILAND_B_JOBS		3U
+
 static struct kick_entry jobs_run[64];
 static unsigned kick_count;
 static int kick_recording;
@@ -819,9 +823,10 @@ main(
 	/*
 	 * The Keiland-like frame (ws269-p011): command buffer A runs the
 	 * copy, the pass of 20 draws and the pass of 17 each as one job,
-	 * then the clear, in the records' order.  Command buffer B's 200
-	 * draws run as 4 jobs in order, 3 of 64 and one of 8 (each
-	 * continuation loads what the job before it stored).
+	 * then the clear, in the records' order.  Command buffer B's
+	 * 2 x POWERVR_RENDER_DRAWS + 8 draws run as 3 jobs in order, 2 full
+	 * and one of 8 (each continuation loads what the job before it
+	 * stored; q1539: from 200 draws of 64 a job).
 	 */
 	{
 		uint32_t submit_b;
@@ -830,7 +835,7 @@ main(
 		int ok;
 
 		kick_recording = 1;
-		bytes = frame_keiland(reply->identifier, &frame);
+		bytes = frame_keiland(reply->identifier, KEILAND_B_DRAWS, &frame);
 		error = powervr_vk_execute(session.vk, frame, (uint32_t)bytes);
 		free(frame);
 		check(error == 0, "keiland frame runs");
@@ -846,23 +851,23 @@ main(
 		printf("; submit B %d\n", (int)submit_b);
 
 		/* A: T R20 R17 T. */
-		ok = kick_count == 4U + 4U;
+		ok = kick_count == 4U + KEILAND_B_JOBS;
 		ok = ok && jobs_run[0].kind == 'T' && jobs_run[3].kind == 'T';
 		ok = ok && jobs_run[1].kind == 'R' && jobs_run[1].draws == 20 && !jobs_run[1].continued && jobs_run[1].load_op == VK_ATTACHMENT_LOAD_OP_CLEAR && jobs_run[1].store_op == VK_ATTACHMENT_STORE_OP_STORE;
 		ok = ok && jobs_run[2].kind == 'R' && jobs_run[2].draws == 17 && !jobs_run[2].continued && jobs_run[2].load_op == VK_ATTACHMENT_LOAD_OP_CLEAR && jobs_run[2].store_op == VK_ATTACHMENT_STORE_OP_STORE;
 		check(ok, "keiland A: copy, jobs of 20 and 17, clear, in order");
 
-		/* B: 4 jobs of 200 draws, the first clearing, the rest continuing. */
-		ok = submit_b == VK_SUCCESS && kick_count == 8U;
+		/* B: the jobs of its draws, the first clearing, the rest continuing. */
+		ok = submit_b == VK_SUCCESS && kick_count == 4U + KEILAND_B_JOBS;
 		draws = 0;
-		for (index = 4; ok && index < 8U; index++) {
+		for (index = 4; ok && index < 4U + KEILAND_B_JOBS; index++) {
 			ok = jobs_run[index].kind == 'R' && jobs_run[index].continued == (index != 4U);
 			ok = ok && jobs_run[index].load_op == (index == 4U ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD);
 			ok = ok && jobs_run[index].store_op == VK_ATTACHMENT_STORE_OP_STORE;
-			ok = ok && jobs_run[index].draws == (index < 7U ? 64U : 8U);
+			ok = ok && jobs_run[index].draws == (index < 3U + KEILAND_B_JOBS ? POWERVR_RENDER_DRAWS : 8U);
 			draws += jobs_run[index].draws;
 		}
-		check(ok && draws == 200U, "keiland B: 200 draws run as 4 jobs in order (3 of 64, one of 8)");
+		check(ok && draws == KEILAND_B_DRAWS, "keiland B: 2 jobs' worth of draws and 8 run as 3 jobs in order");
 		kick_recording = 0;
 	}
 

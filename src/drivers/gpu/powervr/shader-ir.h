@@ -157,6 +157,9 @@ enum powervr_ir_operand_kind {
 /* Interpolation of a fragment input. */
 #define POWERVR_IR_FLAT		0x1U
 
+/* A float add, multiply or multiply-add whose result is clamped to [0, 1] (NaN to 0), as the core's saturate does. */
+#define POWERVR_IR_SATURATE	0x2U
+
 /*
  * One source of an instruction.
  *
@@ -195,13 +198,16 @@ struct powervr_ir_value {
 /*
  * A shader in the intermediate form.
  *
- * Value 0 is never used, so a zero destination means none.
+ * Value 0 is never used, so a zero destination means none.  Exact is set
+ * when the module asks that some result not be contracted (SPIR-V
+ * NoContraction), so no multiply and add are fused anywhere in it.
  */
 struct powervr_ir_shader {
 	struct powervr_ir_instruction instructions[POWERVR_IR_INSTRUCTIONS];
 	struct powervr_ir_value values[POWERVR_IR_VALUES];
 	unsigned instruction_count;
 	unsigned value_count;
+	unsigned exact;
 };
 
 #endif /* KERN_DRIVERS_GPU_POWERVR_SHADER_IR_H */

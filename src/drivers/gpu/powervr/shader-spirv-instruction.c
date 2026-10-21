@@ -46,6 +46,7 @@ static int reader_composite(struct shader_spirv_reader *reader, const uint32_t *
 static int reader_extended(struct shader_spirv_reader *reader, const uint32_t *words, uint32_t length);
 static int reader_sample(struct shader_spirv_reader *reader, const uint32_t *words, uint32_t length);
 static struct powervr_ir_operand sine(struct shader_spirv_reader *reader, struct powervr_ir_operand x, uint32_t quarter);
+static int same_operand(const struct powervr_ir_operand *a, const struct powervr_ir_operand *b);
 
 /* Reads one instruction inside a block. */
 int
@@ -968,12 +969,15 @@ reader_extended(
 	struct powervr_ir_operand t;
 	struct powervr_ir_operand k;
 	struct powervr_ir_operand sum;
+	struct powervr_ir_operand mix_weight;
+	struct powervr_ir_operand mix_rest;
 	uint32_t instruction;
 	uint32_t count;
 	uint32_t a_count;
 	uint32_t b_count;
 	uint32_t c_count;
 	uint32_t index;
+	int kept_mix;
 	int error;
 
 	/* Only GLSL.std.450 is known. */
@@ -1034,7 +1038,8 @@ reader_extended(
 		return reader->error;
 	}
 
-	/* Word by word. */
+	/* Word by word; a mix's one minus its weight is kept for the next word with the same weight. */
+	kept_mix = 0;
 	for (index = 0; index < count; index++) {
 		x = a[a_count == 1 ? 0 : index];
 		y = shader_spirv_constant_operand(0);
@@ -1150,6 +1155,27 @@ reader_extended(
 			result[index] = shader_spirv_emit_value(reader, POWERVR_IR_SIGNED_MINIMUM, &t, &z, NULL);
 			break;
 		case GLSL_F_MIX:
+			/*
+			 * Towards 0 or 1 (q1539: the glass whitens and darkens
+			 * so): x * (1 - z), or x * (1 - z) + z, with 1 - z
+			 * worked out once for the words of one weight.
+			 */
+			if (y.kind == POWERVR_IR_OPERAND_CONSTANT && y.modifiers == 0 && (y.constant == 0 || y.constant == FLOAT_ONE)) {
+				if (kept_mix == 0 || !same_operand(&mix_weight, &z)) {
+					k = shader_spirv_constant_operand(FLOAT_ONE);
+					t = shader_spirv_float_negate(z);
+					mix_rest = shader_spirv_emit_value(reader, POWERVR_IR_FLOAT_ADD, &k, &t, NULL);
+					mix_weight = z;
+					kept_mix = 1;
+				}
+				if (y.constant == 0) {
+					result[index] = shader_spirv_emit_value(reader, POWERVR_IR_FLOAT_MULTIPLY, &x, &mix_rest, NULL);
+				} else {
+					result[index] = shader_spirv_emit_value(reader, POWERVR_IR_FLOAT_MULTIPLY_ADD, &x, &mix_rest, &z);
+				}
+				break;
+			}
+
 			/* x + (y - x) * z. */
 			t = shader_spirv_float_negate(x);
 			t = shader_spirv_emit_value(reader, POWERVR_IR_FLOAT_ADD, &y, &t, NULL);
@@ -1294,4 +1320,20 @@ reader_sample(
 
 	/* Reports what the sample came to. */
 	return reader->error;
+}
+
+/* Reports whether two operands read the same word the same way. */
+static int
+same_operand(
+	const struct powervr_ir_operand *a,
+	const struct powervr_ir_operand *b)
+{
+	/* The kind and modifiers, then the value's word or the constant. */
+	if (a->kind != b->kind || a->modifiers != b->modifiers)
+		return 0;
+	if (a->kind == POWERVR_IR_OPERAND_VALUE)
+		return a->value == b->value && a->component == b->component;
+	if (a->kind == POWERVR_IR_OPERAND_CONSTANT)
+		return a->constant == b->constant;
+	return 1;
 }

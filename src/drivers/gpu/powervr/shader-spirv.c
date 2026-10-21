@@ -100,6 +100,7 @@ powervr_shader_read(
 		bytes[index] = 0;
 	workspace->shader.instruction_count = 0;
 	workspace->shader.value_count = 1;
+	workspace->shader.exact = 0;
 
 	/* Ties the reader to the module, the shader and the program. */
 	reader = &workspace->reader;
@@ -375,6 +376,10 @@ reader_decorate(
 		break;
 	case DECORATION_DESCRIPTOR_SET:
 		id->set = value;
+		break;
+	case DECORATION_NO_CONTRACTION:
+		/* Some result must stay as written: no fused multiply-add in the shader (q1539). */
+		reader->shader->exact = 1;
 		break;
 	default:
 		break;

@@ -51,7 +51,7 @@
  * view_port_count 12..15, pres_wclamp 16, pres_outselects 17,
  * pres_varying_word0 18, _word1 19, _word2 20, pres_ppp_ctrl 21,
  * pres_stream_out_size 22; STATE_ISPCTL scenable 16; STATE_ISPA objtype
- * 28..31 TRIANGLE 0, passtype 24..26 OPAQUE 0 and TRANSLUCENT 1,
+ * 28..31 TRIANGLE 0, passtype 24..26 OPAQUE 0, TRANSLUCENT 1 and PUNCH_THROUGH 2,
  * dwritedisable 21, dcmpmode 17..19 (the VkCompareOp values),
  * pointlinewidth 8..15; STATE_ISPDBSC scindex 0..15;
  * STATE_PDS_SIZEINFO1 pds_tempsize 0..3 in units of 4, usc_varyingsize
@@ -81,6 +81,8 @@
 #define HEADER_STREAM_OUT	(1U << 22)
 #define ISPCTL_SCISSOR		(1U << 16)
 #define ISPA_TRANSLUCENT	(1U << 24)
+#define ISPA_PUNCH_THROUGH	(2U << 24)
+#define ISPA_PASS_MASK		(7U << 24)
 #define ISPA_NO_DEPTH_WRITE	(1U << 21)
 #define ISPA_COMPARE_SHIFT	17U
 #define ISPA_LINE_WIDTH_SHIFT	8U
@@ -554,8 +556,9 @@ powervr_draw_scissor_words(
  * for the attachment (no depth attachment: always, no write), the line
  * width, no ISPB without stencil; pvr_setup_fragment_state_pointers:
  * SHADERBASE, TEXUNICODEBASE, SIZEINFO1 (uniform, varying and USC
- * varying sizes, the temporaries), SIZEINFO2 the shared registers,
- * VARYINGBASE, UNIFORMDATABASE; pvr_setup_ppp_control: drawclippededges,
+ * varying sizes, no temporaries: the programs take none), SIZEINFO2
+ * the shared registers, VARYINGBASE only with a coefficient program,
+ * UNIFORMDATABASE; pvr_setup_ppp_control: drawclippededges,
  * wclampen, flat vertex 0, front and rear clipping, the cull mode by the
  * front face); src/imagination/vulkan/pvr_arch_pipeline.c (the pass type
  * opaque, translucent when the fragment shader blends).
@@ -597,6 +600,15 @@ powervr_draw_ppp_build(
 		 HEADER_REGION_CLIP | HEADER_VIEWPORT | HEADER_WCLAMP | HEADER_OUTSELECTS | HEADER_VARYING_0 |
 		 HEADER_VARYING_1 | HEADER_VARYING_2 | HEADER_PPP_CTRL | HEADER_STREAM_OUT;
 
+	/*
+	 * No varying base without a coefficient program, as Mesa leaves
+	 * pres_pds_state_ptr1 out (q1539: with this, no data sequencer
+	 * temporaries and pixel merging off, the ta trial on the board, each
+	 * extra full-screen draw cost about 0.02 ms where it cost 1.1 ms).
+	 */
+	if (input->varyings->code_words == 0)
+		header &= ~HEADER_PDS_1;
+
 	/* The depth test as the attachment allows: none without one. */
 	compare = VK_COMPARE_OP_ALWAYS;
 	ispa = ISPA_NO_DEPTH_WRITE;
@@ -607,8 +619,11 @@ powervr_draw_ppp_build(
 	}
 	ispa |= compare << ISPA_COMPARE_SHIFT;
 	ispa |= LINE_WIDTH_ONE << ISPA_LINE_WIDTH_SHIFT;
-	if (fixed->blending)
+	if (fixed->blending) {
 		ispa |= ISPA_TRANSLUCENT;
+	} else if ((POWERVR_DRAW_TRIAL & POWERVR_DRAW_TRIAL_PUNCH_THROUGH) != 0U) {
+		ispa |= ISPA_PUNCH_THROUGH;
+	}
 
 	/* The ISP words and the scissor index. */
 	index = 0;
@@ -620,12 +635,15 @@ powervr_draw_ppp_build(
 	/* The fragment's data sequencer state. */
 	words[index++] = input->fragment_kick_offset;
 	words[index++] = input->shared_code_offset;
-	words[index++] = (uniform << 23) | (varying << 10) | (input->varyings->usc_varying_size << 4) | round_units(1U, 4U);
+	words[index++] = (uniform << 23) | (varying << 10) | (input->varyings->usc_varying_size << 4);
 	merge = 0;
 	if ((ispa & ISPA_NO_DEPTH_WRITE) != 0 && compare == VK_COMPARE_OP_ALWAYS)
 		merge = SIZEINFO2_TRI_MERGE_DISABLE;
+	if ((ispa & ISPA_PASS_MASK) == ISPA_PUNCH_THROUGH)
+		merge = SIZEINFO2_TRI_MERGE_DISABLE;
 	words[index++] = (shared << 23) | merge;
-	words[index++] = input->varyings->code_words == 0 ? 0U : input->coefficient_offset;
+	if (input->varyings->code_words != 0)
+		words[index++] = input->coefficient_offset;
 	words[index++] = input->shared_data_offset;
 
 	/* The region clip and the viewport. */

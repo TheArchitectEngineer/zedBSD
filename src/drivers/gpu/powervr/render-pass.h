@@ -36,9 +36,14 @@
  * The draws one render job keeps, the vertex buffers and descriptor sets
  * of a draw, its push constant bytes.  Each job's 3D pass takes about the
  * same time whatever its draws (a full-frame compositor job about 37 ms
- * on the board at 396 MHz), so a pass split into fewer jobs is faster.
+ * on the board at 396 MHz), and each job past an instance's first loads
+ * the whole render area again, so a pass split into fewer jobs is faster
+ * (q1539: 512, from 64; a three-window desktop frame is about 263
+ * draws).  250 full-frame 1080p draws would fill the 16 MiB parameter
+ * buffer of the global free list (about 64 KiB of control stream a
+ * draw); a compositor's draws cover far less.
  */
-#define POWERVR_RENDER_DRAWS		64U
+#define POWERVR_RENDER_DRAWS		512U
 #define POWERVR_DRAW_VERTEX_BUFFERS	4U
 #define POWERVR_DRAW_SETS		4U
 #define POWERVR_DRAW_PUSH_BYTES		128U
