@@ -139,6 +139,15 @@ static void take_reached(struct powervr_session *session, struct delivery *deliv
 static void take_all(struct powervr_session *session, int error, struct delivery *delivery);
 static void deliver(struct powervr_render *render, struct delivery *delivery);
 static void handle_notice(void *context, uint32_t type, const struct powervr_object *buffer, uint32_t offset);
+/*
+ * A trial: the render's fragment in the geometry's combined kick, one
+ * command of the kernel's buffer a render as the vendor's driver sends
+ * (1), or in a kick of its own after it as Linux sends (0).
+ */
+#ifndef POWERVR_SINGLE_RENDER_KICK
+#define POWERVR_SINGLE_RENDER_KICK	0
+#endif
+
 /* How often the timing says its sums, and how often its thread looks whether to end, in milliseconds. */
 #define TIMING_REPORT_MS		5000U
 #define TIMING_LOOK_MS			100U
@@ -601,7 +610,9 @@ powervr_session_kick_compute(
  * the cleanup count.  The geometry's timeline takes the next value, the
  * fragment's the one after next (the partial render writes the one
  * between).  A fragment command that names no background after a
- * partial render takes the context's stand-in.
+ * partial render takes the context's stand-in.  With
+ * POWERVR_SINGLE_RENDER_KICK the fragment goes in the combined kick
+ * after the partial render, the cleanup count on both sides.
  *
  * Procedure referenced:
  * Linux v7.3 drivers/gpu/drm/imagination/pvr_queue.c (pvr_queue_run_job:
@@ -707,6 +718,10 @@ powervr_session_kick_render(
 	cleanup = powervr_target_cleanup_address(target, half);
 	commands_put(&context->geometry, sequence->geometry_commands, sequence->geometry_count);
 	commands_put(&context->fragment, sequence->partial_commands, sequence->partial_count);
+	if (POWERVR_SINGLE_RENDER_KICK) {
+		/* The fragment too, in the same kick, which names the target half's cleanup on both sides. */
+		commands_put(&context->fragment, sequence->fragment_commands, sequence->fragment_count);
+	}
 	geometry_kick.context = powervr_object_address(&context->record, POWERVR_RENDER_CONTEXT_GEOMETRY);
 	geometry_kick.write_offset = context->geometry.write;
 	geometry_kick.wrap_mask = POWERVR_CLIENT_CCB_BYTES - 1U;
@@ -716,6 +731,10 @@ powervr_session_kick_render(
 	partial_kick.write_offset = context->fragment.write;
 	partial_kick.wrap_mask = POWERVR_CLIENT_CCB_BYTES - 1U;
 	partial_kick.cleanup_count = 0;
+	if (POWERVR_SINGLE_RENDER_KICK) {
+		partial_kick.cleanups[0] = cleanup;
+		partial_kick.cleanup_count = 1;
+	}
 	error = powervr_kick_combined_command(&geometry_kick, &partial_kick, command);
 	if (error != 0)
 		return error;
@@ -729,19 +748,21 @@ powervr_session_kick_render(
 	context->geometry.submitted = request.geometry_value;
 	context->fragment.submitted = request.fragment_value - 1U;
 
-	/* The fragment, then its own kick. */
-	commands_put(&context->fragment, sequence->fragment_commands, sequence->fragment_count);
-	fragment_kick = partial_kick;
-	fragment_kick.write_offset = context->fragment.write;
-	fragment_kick.cleanups[0] = cleanup;
-	fragment_kick.cleanup_count = 1;
-	error = powervr_kick_command(&fragment_kick, command);
-	if (error != 0)
-		return error;
+	/* The fragment, then its own kick (none when it went with the geometry's). */
+	if (!POWERVR_SINGLE_RENDER_KICK) {
+		commands_put(&context->fragment, sequence->fragment_commands, sequence->fragment_count);
+		fragment_kick = partial_kick;
+		fragment_kick.write_offset = context->fragment.write;
+		fragment_kick.cleanups[0] = cleanup;
+		fragment_kick.cleanup_count = 1;
+		error = powervr_kick_command(&fragment_kick, command);
+		if (error != 0)
+			return error;
 
-	error = send_command(render, command);
-	if (error != 0)
-		return error;
+		error = send_command(render, command);
+		if (error != 0)
+			return error;
+	}
 
 	/* The render is the firmware's; its end is the fragment's value. */
 	context->fragment.submitted = request.fragment_value;
