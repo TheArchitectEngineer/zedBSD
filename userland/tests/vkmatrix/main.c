@@ -48,6 +48,12 @@
  *                           texels copied into an OPTIMAL image and back:
  *                           a transfer that touches past either buffer
  *                           faults on the board
+ *   blit-bgra, blit-rgba, copy-bgra, copy-image, copy-to-linear, cursor-chain
+ *                           (q1550) the image transfers of the cursor
+ *                           plane: a LINEAR host-written source blitted
+ *                           (B8G8R8A8 to R8G8B8A8) or copied into an
+ *                           OPTIMAL image, read back through a buffer or
+ *                           a LINEAR image's mapping (case_image_transfer)
  *
  * It prints one line a case and a total:
  *
@@ -282,6 +288,14 @@ struct vkmatrix_sop_probe {
 	int blend;
 };
 
+/* A LINEAR image of the image transfer cases (q1550): the image, its memory, its first texel mapped and its row pitch. */
+struct vkmatrix_linear {
+	VkImage image;
+	VkDeviceMemory memory;
+	uint8_t *texels;
+	VkDeviceSize pitch;
+};
+
 /* One case: its name and its work. */
 struct vkmatrix_case {
 	const char *name;
@@ -371,6 +385,10 @@ static VkResult case_sample_linear_wide(struct vkmatrix *run);
 static VkResult case_sample_linear_odd(struct vkmatrix *run);
 static VkResult case_copy_1080(struct vkmatrix *run);
 static VkResult case_copy_65(struct vkmatrix *run);
+static VkResult transfer_linear_image(struct vkmatrix *run, VkFormat format, VkImageUsageFlags usage, struct vkmatrix_linear *linear);
+static void transfer_linear_free(struct vkmatrix *run, struct vkmatrix_linear *linear);
+static void transfer_barrier(struct vkmatrix *run, VkImage image, VkImageLayout from, VkImageLayout to, VkAccessFlags source_access, VkAccessFlags destination_access, VkPipelineStageFlags source_stage, VkPipelineStageFlags destination_stage);
+static VkResult case_image_transfer(struct vkmatrix *run);
 static VkResult load_part_case(struct vkmatrix *run, const VkRect2D *area, uint32_t frames, const char *timed);
 static VkResult case_load_part(struct vkmatrix *run);
 static VkResult case_perf_load_part(struct vkmatrix *run);
@@ -550,6 +568,12 @@ static const struct vkmatrix_case cases[] = {
 	{ "sample-linear-65", case_sample_linear_odd },
 	{ "copy-1080", case_copy_1080 },
 	{ "copy-65", case_copy_65 },
+	{ "blit-bgra", case_image_transfer },
+	{ "blit-rgba", case_image_transfer },
+	{ "copy-bgra", case_image_transfer },
+	{ "copy-image", case_image_transfer },
+	{ "copy-to-linear", case_image_transfer },
+	{ "cursor-chain", case_image_transfer },
 	{ "load-part", case_load_part },
 	{ "perf-load-part", case_perf_load_part },
 	{ "perf-load-small", case_perf_load_small },
@@ -3354,6 +3378,294 @@ case_clear_128(
 		return status;
 
 	/* Succeeded: the case ran. */
+	return VK_SUCCESS;
+}
+
+/*
+ * Makes a 64x64 LINEAR image of the format in host-visible, coherent
+ * memory, PREINITIALIZED, bound and mapped, with the row pitch and offset
+ * of its texels (the image transfer cases, q1550).
+ */
+static VkResult
+transfer_linear_image(
+	struct vkmatrix *run,
+	VkFormat format,
+	VkImageUsageFlags usage,
+	struct vkmatrix_linear *linear)
+{
+	VkImageCreateInfo image_info;
+	VkMemoryRequirements requirements;
+	VkMemoryAllocateInfo allocate;
+	VkImageSubresource subresource;
+	VkSubresourceLayout layout;
+	void *mapped;
+	VkResult status;
+
+	/* The image, its texels written by the host before the GPU uses it. */
+	memset(&image_info, 0, sizeof(image_info));
+	image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	image_info.imageType = VK_IMAGE_TYPE_2D;
+	image_info.format = format;
+	image_info.extent.width = VKMATRIX_SIZE;
+	image_info.extent.height = VKMATRIX_SIZE;
+	image_info.extent.depth = 1;
+	image_info.mipLevels = 1;
+	image_info.arrayLayers = 1;
+	image_info.samples = VK_SAMPLE_COUNT_1_BIT;
+	image_info.tiling = VK_IMAGE_TILING_LINEAR;
+	image_info.usage = usage;
+	image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	image_info.initialLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;
+	run->failed_call = "vkCreateImage linear";
+	status = vkCreateImage(run->device, &image_info, NULL, &linear->image);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Its memory, host-visible and coherent, bound and mapped. */
+	vkGetImageMemoryRequirements(run->device, linear->image, &requirements);
+	memset(&allocate, 0, sizeof(allocate));
+	allocate.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	allocate.allocationSize = requirements.size;
+	status = vkmatrix_find_memory(run, requirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &allocate.memoryTypeIndex);
+	if (status != VK_SUCCESS)
+		return status;
+	run->failed_call = "vkAllocateMemory linear";
+	status = vkAllocateMemory(run->device, &allocate, NULL, &linear->memory);
+	if (status != VK_SUCCESS)
+		return status;
+	run->failed_call = "vkBindImageMemory linear";
+	status = vkBindImageMemory(run->device, linear->image, linear->memory, 0);
+	if (status != VK_SUCCESS)
+		return status;
+	run->failed_call = "vkMapMemory linear";
+	status = vkMapMemory(run->device, linear->memory, 0, VK_WHOLE_SIZE, 0, &mapped);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Where its texels lie. */
+	memset(&subresource, 0, sizeof(subresource));
+	subresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	vkGetImageSubresourceLayout(run->device, linear->image, &subresource, &layout);
+	linear->texels = (uint8_t *)mapped + layout.offset;
+	linear->pitch = layout.rowPitch;
+
+	/* Succeeded: the image is mapped. */
+	return VK_SUCCESS;
+}
+
+/* Destroys a linear image of the transfer cases, once the GPU is done with it. */
+static void
+transfer_linear_free(
+	struct vkmatrix *run,
+	struct vkmatrix_linear *linear)
+{
+	/* The image, then its memory (unmapped by the free). */
+	if (linear->image != VK_NULL_HANDLE)
+		vkDestroyImage(run->device, linear->image, NULL);
+	if (linear->memory != VK_NULL_HANDLE)
+		vkFreeMemory(run->device, linear->memory, NULL);
+	memset(linear, 0, sizeof(*linear));
+}
+
+/* Records a layout change of a whole colour image. */
+static void
+transfer_barrier(
+	struct vkmatrix *run,
+	VkImage image,
+	VkImageLayout from,
+	VkImageLayout to,
+	VkAccessFlags source_access,
+	VkAccessFlags destination_access,
+	VkPipelineStageFlags source_stage,
+	VkPipelineStageFlags destination_stage)
+{
+	VkImageMemoryBarrier barrier;
+
+	/* The whole colour image. */
+	memset(&barrier, 0, sizeof(barrier));
+	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.image = image;
+	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	barrier.subresourceRange.levelCount = 1;
+	barrier.subresourceRange.layerCount = 1;
+	barrier.oldLayout = from;
+	barrier.newLayout = to;
+	barrier.srcAccessMask = source_access;
+	barrier.dstAccessMask = destination_access;
+	vkCmdPipelineBarrier(run->command, source_stage, destination_stage, 0, 0, NULL, 0, NULL, 1, &barrier);
+}
+
+/*
+ * The image transfers of the compositor's cursor plane (q1550): a LINEAR
+ * host-written source of a pattern of colours and alphas, into the
+ * 64x64 OPTIMAL R8G8B8A8 image, read back as R8G8B8A8 bytes:
+ *   blit-bgra        a B8G8R8A8 source blitted one to one (the channels
+ *                    reordered), copied out to a buffer
+ *   blit-rgba        an R8G8B8A8 source blitted one to one, copied out
+ *   copy-bgra        a B8G8R8A8 source copied (its bytes as they are,
+ *                    a copy moves texels raw), copied out
+ *   copy-image       an R8G8B8A8 source copied, copied out to a buffer
+ *   copy-to-linear   an R8G8B8A8 source copied, then copied on into a
+ *                    LINEAR R8G8B8A8 image read through its mapping
+ *   cursor-chain     the cursor plane's whole way: the image cleared, a
+ *                    B8G8R8A8 source blitted over it, then copied into a
+ *                    LINEAR image read through its mapping
+ */
+static VkResult
+case_image_transfer(
+	struct vkmatrix *run)
+{
+	struct vkmatrix_linear source;
+	struct vkmatrix_linear linear;
+	VkCommandBufferBeginInfo begin;
+	VkImageSubresourceRange range;
+	VkClearColorValue clear;
+	VkImageCopy copy;
+	VkImageBlit blit;
+	uint8_t *wanted;
+	uint8_t *seen;
+	uint8_t *texel;
+	void *mapped;
+	uint32_t x;
+	uint32_t y;
+	int bgra;
+	int cleared;
+	int blitted;
+	int through_linear;
+	VkResult status;
+
+	/* What the case does, by its name. */
+	bgra = strcmp(run->case_name, "blit-bgra") == 0 || strcmp(run->case_name, "cursor-chain") == 0 || strcmp(run->case_name, "copy-bgra") == 0;
+	blitted = strcmp(run->case_name, "copy-bgra") != 0 && (bgra || strcmp(run->case_name, "blit-rgba") == 0);
+	cleared = strcmp(run->case_name, "cursor-chain") == 0;
+	through_linear = strcmp(run->case_name, "copy-to-linear") == 0 || cleared;
+	memset(&source, 0, sizeof(source));
+	memset(&linear, 0, sizeof(linear));
+	wanted = malloc((size_t)VKMATRIX_PIXELS * 4U);
+	seen = malloc((size_t)VKMATRIX_PIXELS * 4U);
+	if (wanted == NULL || seen == NULL) {
+		free(wanted);
+		free(seen);
+		run->failed_call = "malloc";
+		return VK_ERROR_OUT_OF_HOST_MEMORY;
+	}
+
+	/* The OPTIMAL image, the readback buffer and the source. */
+	status = wide_image(run, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+	if (status == VK_SUCCESS)
+		status = vkmatrix_buffer(run, (VkDeviceSize)VKMATRIX_PIXELS * 4U, VK_BUFFER_USAGE_TRANSFER_DST_BIT, &run->wide_download, &run->wide_download_memory, &mapped);
+	if (status == VK_SUCCESS)
+		status = transfer_linear_image(run, bgra ? VK_FORMAT_B8G8R8A8_UNORM : VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_TRANSFER_SRC_BIT, &source);
+	if (status == VK_SUCCESS && through_linear)
+		status = transfer_linear_image(run, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_TRANSFER_DST_BIT, &linear);
+	if (status != VK_SUCCESS)
+		goto out;
+
+	/* The pattern: red from x, green from y, blue from both, an alpha of at least half; wanted as R, G, B, A bytes. */
+	for (y = 0; y < VKMATRIX_SIZE; y++) {
+		for (x = 0; x < VKMATRIX_SIZE; x++) {
+			texel = wanted + ((size_t)y * VKMATRIX_SIZE + x) * 4U;
+			texel[0] = (uint8_t)(x * 4U + 1U);
+			texel[1] = (uint8_t)(y * 4U + 2U);
+			texel[2] = (uint8_t)((x + y) * 3U);
+			texel[3] = (uint8_t)(0x80U | ((x ^ y) & 0x7fU));
+			memcpy(source.texels + (size_t)y * source.pitch + (size_t)x * 4U, texel, 4);
+			if (bgra && blitted) {
+				source.texels[(size_t)y * source.pitch + (size_t)x * 4U + 0U] = texel[2];
+				source.texels[(size_t)y * source.pitch + (size_t)x * 4U + 2U] = texel[0];
+			}
+		}
+	}
+	memset(mapped, 0xa5, (size_t)VKMATRIX_PIXELS * 4U);
+	if (through_linear) {
+		for (y = 0; y < VKMATRIX_SIZE; y++)
+			memset(linear.texels + (size_t)y * linear.pitch, 0xa5, (size_t)VKMATRIX_SIZE * 4U);
+	}
+
+	/* The source to the transfer, the image to a destination. */
+	memset(&begin, 0, sizeof(begin));
+	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	vkResetCommandBuffer(run->command, 0);
+	vkBeginCommandBuffer(run->command, &begin);
+	transfer_barrier(run, source.image, VK_IMAGE_LAYOUT_PREINITIALIZED, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_HOST_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+	wide_barrier(run, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+
+	/* The cursor plane's clear first, transparent. */
+	if (cleared) {
+		memset(&clear, 0, sizeof(clear));
+		memset(&range, 0, sizeof(range));
+		range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		range.levelCount = 1;
+		range.layerCount = 1;
+		vkCmdClearColorImage(run->command, run->wide_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clear, 1, &range);
+		wide_barrier(run, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+	}
+
+	/* The source into the image: a one-to-one blit, or a copy. */
+	if (blitted) {
+		memset(&blit, 0, sizeof(blit));
+		blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		blit.srcSubresource.layerCount = 1;
+		blit.dstSubresource = blit.srcSubresource;
+		blit.srcOffsets[1].x = (int32_t)VKMATRIX_SIZE;
+		blit.srcOffsets[1].y = (int32_t)VKMATRIX_SIZE;
+		blit.srcOffsets[1].z = 1;
+		blit.dstOffsets[1] = blit.srcOffsets[1];
+		vkCmdBlitImage(run->command, source.image, VK_IMAGE_LAYOUT_GENERAL, run->wide_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_NEAREST);
+	} else {
+		memset(&copy, 0, sizeof(copy));
+		copy.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		copy.srcSubresource.layerCount = 1;
+		copy.dstSubresource = copy.srcSubresource;
+		copy.extent.width = VKMATRIX_SIZE;
+		copy.extent.height = VKMATRIX_SIZE;
+		copy.extent.depth = 1;
+		vkCmdCopyImage(run->command, source.image, VK_IMAGE_LAYOUT_GENERAL, run->wide_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+	}
+	wide_barrier(run, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+
+	/* Out to the buffer, or on into the LINEAR image for the host. */
+	if (through_linear) {
+		transfer_barrier(run, linear.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+		memset(&copy, 0, sizeof(copy));
+		copy.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		copy.srcSubresource.layerCount = 1;
+		copy.dstSubresource = copy.srcSubresource;
+		copy.extent.width = VKMATRIX_SIZE;
+		copy.extent.height = VKMATRIX_SIZE;
+		copy.extent.depth = 1;
+		vkCmdCopyImage(run->command, run->wide_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, linear.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+		transfer_barrier(run, linear.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_HOST_READ_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT);
+	} else {
+		wide_copy_out(run);
+	}
+	status = wide_submit(run);
+	if (status != VK_SUCCESS)
+		goto out;
+
+	/* What came back, as packed rows. */
+	if (through_linear) {
+		for (y = 0; y < VKMATRIX_SIZE; y++)
+			memcpy(seen + (size_t)y * VKMATRIX_SIZE * 4U, linear.texels + (size_t)y * linear.pitch, (size_t)VKMATRIX_SIZE * 4U);
+	} else {
+		memcpy(seen, mapped, (size_t)VKMATRIX_PIXELS * 4U);
+	}
+
+	/* Every byte. */
+	status = wide_compare(run, seen, wanted, 4);
+
+out:
+	transfer_linear_free(run, &linear);
+	transfer_linear_free(run, &source);
+	free(wanted);
+	free(seen);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the pattern came through. */
 	return VK_SUCCESS;
 }
 

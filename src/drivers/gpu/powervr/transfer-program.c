@@ -86,13 +86,18 @@
 #define SPECIAL_PIXEL_OUTPUT	32U
 
 /*
- * The sample's fields: unnormalised coordinates, a 2D lookup of four
- * channels.
+ * The sample's fields: a 2D lookup of four channels.  The coordinates are
+ * unnormalised by the sampler state (its non_normalized_coords); the
+ * sample's own fcnorm flag (the first argument of powervr_usc_sample)
+ * says whether fixed-point channels come back converted to floats: off
+ * for a copy's raw words, on for a blit, whose floats are packed again
+ * (q1550: with it off, a blit's 8-bit unorm channels came back as their
+ * integers, tiny floats the pack wrote as 0).
  *
  * Values referenced:
- * Mesa 26.2.5 src/imagination/pco/pco_isa.py (F_DIM 2d 0b10); the
- * compiler back end's sample (shader-backend.c) with the normalised flag
- * cleared, as pco_emit_nir_smp leaves it for nncoords.
+ * Mesa 26.2.5 src/imagination/pco/pco_isa.py (F_DIM 2d 0b10, the
+ * backend's fcnorm bit); src/imagination/pco/pco_nir_tex.c (fcnorm set
+ * when the sample's destination type is float).
  */
 #define SAMPLE_2D		2U
 #define SAMPLE_CHANNELS		4U
@@ -422,11 +427,11 @@ build_program(
 		count++;
 	}
 
-	/* The groups, the sample with unnormalised coordinates, the last one ending. */
+	/* The groups, the sample (its floats converted for a blit), the last one ending. */
 	error = build_groups(operations, count, groups);
 	if (error != 0)
 		return error;
-	error = powervr_usc_sample(0, 0, SAMPLE_2D, SAMPLE_CHANNELS, 0, &groups[SAMPLE_INDEX].operation[POWERVR_USC_PHASE_BACKEND]);
+	error = powervr_usc_sample(packed, 0, SAMPLE_2D, SAMPLE_CHANNELS, 0, &groups[SAMPLE_INDEX].operation[POWERVR_USC_PHASE_BACKEND]);
 	if (error != 0)
 		return error;
 	groups[count - 1U].end = 1;

@@ -49,12 +49,22 @@ float rounded(vec2 point, vec4 box, float radius)
 	return length(max(q, vec2(0.0))) + min(max(q.x, q.y), 0.0) - radius;
 }
 
+// KWL_PANEL_INSIDE: the inside of a shape drawn by itself (glass.c, the
+// glass, image and solid modes): its pixels lie at least three pixels within
+// the box less its corner radius, where the distance is -3 or less, so every
+// pixel is covered wholly and none is on the bright edge.  The constant
+// distance gives the same colour without working the distance out.
+
 void main()
 {
 	float mode = panel.shape.y;
 	vec2 point = pixel;
+#if defined(KWL_PANEL_INSIDE)
+	float distance = -3.0;
+#else
 	float radius = panel.shape.x;
 	float distance = rounded(point, panel.box, radius);
+#endif
 	float cover = clamp(0.5 - distance, 0.0, 1.0);
 	vec4 colour;
 

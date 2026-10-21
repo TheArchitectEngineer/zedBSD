@@ -206,3 +206,26 @@ branch agent/p1-q1548（基 main c6eebc780）。commit 7468edfdd・e8baec967・e
 - sop-const の原因: driver が pipeline の静的な blend 定数を使わず常に 0 を書いていた。69318f836 で直した（動的な vkCmdSetBlendConstants は未対応のまま）。
 - 9a1d07516: 既定の form を 0x1 → 0x3d（shared program・itrsmp・sum of products・raw・wdf）。板の確認待ち（vkmatrix 既定・perf・desktop の keiland-shot）。
 - 3f27c0545: 試しの切り替え（pipeline の flag の bit 24〜31、vkmatrix -t）と form 0x2 を撤去（規約 §12）。host 試験は compiler 2387/2387・group 27/27・p010 の driver 15 本・vkmatrix lavapipe 103/103。
+
+## q1550（2026-10-21、P1）: VF2 の desktop の速さ（cursor が出ない、描画が 6 fps 程度）
+
+branch agent/p1-q1550（基 main 5907c9d3b）。ユーザー（2026-10-21、板の desktop を操作して）:「まず、マウスカーソルが表示されないです。それから、描画自体も6fpsくらいでしょうか。」
+
+### cursor
+
+- d48〜d89 の保存 log には「KWL CURSOR shown」が一度も無い（測定の run で mouse を触っていない）→ 板で hardware cursor が動いた log の証拠は無かった。
+- d90（ユーザーが操作した session、runs/d90/cursor-grep.txt）: event1 の REL で「KWL CURSOR shown by=pointer」、その後「KWL CURSOR_PLANE present x=… copy=0/1」が多数（x 1616→254 と動く）、WSI の present の失敗も無い → Keiland・libvulkan は位置を plane に出している。それでも見えない → kernel の GPU_DISPLAY_CURSOR_SET・MOVE か dc8200。
+- dc8200 の register の書き方（0x1468 config、0x146c address、0x1470 location、shadow の hold と plane の commit bit）は StarFive Linux（~/visionfive-linux の vs_dc_hw.c dc_hw_commit）と同じ。
+- 診断 6ce298b0c（ecf1693be で外した）: set ごとに写した pixel の alpha・colour の数と (2,2) の pixel、dc8200 の cursor の register の読み返し。
+- d91（Q1、aat-input で mouse を動かす）: set 1〜7 の全部「alpha 0 colour 0」、dc8200 は config 0x2e・address・location とも正しく更新 → 写した image が全部 0。VK CURSOR は worker・fast とも result 0。
+- vkmatrix に image→image の 6 case を足した（c36d3ee83・69a051178: blit-bgra、blit-rgba、copy-bgra、copy-image、copy-to-linear、cursor-chain。lavapipe 109 本全 PASS）。d92（Q1）: blit-bgra・blit-rgba・cursor-chain が FAIL（4096 texel 全部 0）、copy-* は PASS → format に依らず vkCmdBlitImage が 0 を書く。
+- 原因: transfer の blit の program（transfer-program.c build_program）が sample の fcnorm（固定小数の channel を float に直す bit、usc-encode の powervr_usc_sample の第 1 引数）を 0 で出していた。8-bit unorm の channel が整数のまま返り、極小の float を PACK が 0 にした。注記は coordinates の正規化と取り違えていた（座標は sampler の non_normalized_coords）。Mesa 26.2.5 pco_nir_tex.c は destination が float の時 fcnorm 1。今日の変更とは無関係で、blit は最初から 0（板で cursor が見えた記録も無い）。
+- 直し 15ecf0e4d: blit（packed）の時だけ fcnorm 1。host の p010 の driver 試験 15 本全 PASS、VF2 build warning 0。板の確認待ち（vkmatrix blit-*・cursor-chain、desktop の矢印）。
+
+### frame（d90 の session.log）
+
+- 操作中（App Home の開閉、WiseView、窓 1 つの desktop）の frame は全部 dirty=1 damage=0 の全画面。copy_px は全 frame 0。
+- 1 frame の GPU の時間（KWL LAT の recorded→queued）を mode の pixel で回帰（d89・d90 の 265 frame、idle の後を除く）: glass 12.3 ms/Mpx、shadow 4.8、image 3.9、solid 3.2、定数 2.3 ms。host の group 数（既定の form 0x3d: glass 49、image 25、solid 22、shadow 27）× 約 0.22 ms/Mpx/group と合う。
+- 原因: panel.frag は角丸の距離（sqrt 等で約 18 group）を全 pixel で計算する。不透明な内側は blend 無しの別 draw だったが shader は同じ。
+- 94b262375・97f784be0: 内側の variant（`KWL_PANEL_INSIDE`、距離を定数 -3: cover 1・edge 0 が元の式どおりになる範囲だけ）を作り（`regenerate.py` の INSIDE_MODES 0・2・3・7）、glass（light・dark、半径+3 px 内）・image・solid の内側を、不透明なら blend 無し、そうでなければ blend 付きの inside pipeline で描く。host の group 数（scratch の p010 の複写に 8 本を足して、machine と interpreter の一致 2793/2793）: glass 49→33、image 25→6、solid 22→1（blend 無し）・3（blend）、dark glass 55→39。KWL PASSES の job の模型を driver の 512 draw に（log だけ）。VF2 build warning 0。板は未実施。
+- idle（60 s）の後の最初の frame は内容に依らず 139 ms（d90 で 60 回以上）。kernel の timing（runs/d90/timing-idle.txt）: submit 284 us、job wait（kick→retire）138.8〜139.1 ms、interrupts 4。host 側に固定の sleep は無く、firmware の idle からの復帰の疑い（APM latency 0）。切り分けは firmware の trace（MAIN・MTS・POW）の診断 kernel が要る。未着手。
