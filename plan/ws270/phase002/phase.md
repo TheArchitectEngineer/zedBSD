@@ -2,7 +2,8 @@
 
 # ws270-p002 riscv64 の desktop の build の不足（設計の判断に依らない物）
 
-- 親: [WS270](../ws.md)、Status: in-progress（2026-10-19 P1、q1336 / q1336-i01）。設計（[design.md](../design.md) 版 1）の review の結果で Phase の名前が変わり得る。
+- 親: [WS270](../ws.md)
+- Status: in-progress（2026-10-19 P1、q1336 / q1336-i01）。設計（[design.md](../design.md) 版 1）の review の結果で Phase の名前が変わり得る。
 
 ## 範囲
 

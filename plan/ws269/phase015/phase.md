@@ -2,7 +2,8 @@
 
 # ws269-p015 安定性（板の連続実行・電源の入れ直し・GPU の reset からの回復）
 
-- 親: [WS269](../ws.md)、Status: in-progress（2026-10-21 Q1。(1)(2)(3) は板で済み。(4) 長時間はユーザーの確認待ち）
+- 親: [WS269](../ws.md)
+- Status: in-progress（2026-10-21 Q1。(1)(2)(3) は板で済み。(4) 長時間はユーザーの確認待ち）
 - 起点: [proposal-next-phases.md](../proposal-next-phases.md) の N2。ユーザー 2026-10-21「続けてください。」
 - 板の kernel: build/uat/vf2-gpu/vmunix（main 06f1ba788、板の /boot/boot0/vmunix と cmp で一致）。
 

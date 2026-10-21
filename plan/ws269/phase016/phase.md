@@ -2,7 +2,8 @@
 
 # ws269-p016 VF2 の GPU の文書（N5）
 
-- 親: [WS269](../ws.md)、Status: cleared（2026-10-21 Q1。q1520 の板 103（vkmatrix 20/20）の後に F16・64・128 bit の「being verified」を外し、vkmatrix の節を 20 case に。以前: P1 q1521 で文書を書いた）
+- 親: [WS269](../ws.md)
+- Status: cleared（2026-10-21 Q1。q1520 の板 103（vkmatrix 20/20）の後に F16・64・128 bit の「being verified」を外し、vkmatrix の節を 20 case に。以前: P1 q1521 で文書を書いた）
 - 起点: [proposal-next-phases.md](../proposal-next-phases.md) の N5。
 
 ## 範囲

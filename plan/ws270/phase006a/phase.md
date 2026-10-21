@@ -2,7 +2,8 @@
 
 # ws270-p006a Keiland の起動と不足の一覧
 
-- 親: [WS270](../ws.md)、Status: in-progress（2026-10-20 P1、q1356 / q1356-i01: 2a の実装・build・host 試験。2026-10-21 P1、q1517 / q1517-i01: 2b の image・host の読み・板の手順。板の確認は Q1 待ち）
+- 親: [WS270](../ws.md)
+- Status: in-progress（2026-10-20 P1、q1356 / q1356-i01: 2a の実装・build・host 試験。2026-10-21 P1、q1517 / q1517-i01: 2b の image・host の読み・板の手順。板の確認は Q1 待ち）
 - 設計: [design.md](../design.md) 改訂 2.1 の §2.2 の 2a・2b、§3 の p006a。
 - 依存: WS269 p010、本 WS の p004、WS269 p005（powervr の遅い段が gpu1 の登録まで `hw.gpu.attaching` を数える。q1356 で同時に実装）。
 
