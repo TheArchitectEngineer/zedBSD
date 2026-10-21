@@ -2191,9 +2191,11 @@ glass_still(
 /*
  * Finds the rectangle (left, top, right, bottom) a window's body alone
  * covers, when a change of its image can be drawn there alone: the look is
- * still, the window is shown, and no window above it comes near enough
- * for its glass to blur the change in (ws035-p055).  Returns 1 with the
- * rectangle, 0 when the whole output must be drawn.
+ * still, the window is shown, and no window above it whose glass shows the
+ * scene under it blurred (backdrop.c) comes near enough to blur the change
+ * in (ws035-p055).  A window above whose glass shows the blurred wallpaper
+ * alone is drawn again over the rectangle like everything else there.
+ * Returns 1 with the rectangle, 0 when the whole output must be drawn.
  */
 int
 kwl_glass_body_damage(
@@ -2205,8 +2207,10 @@ kwl_glass_body_damage(
 	struct kwl_object *other;
 	struct shell_rect body;
 	struct shell_rect near;
+	unsigned blur;
 	int still;
 	int close;
+	int centred;
 
 	/* A still look, and a window on the desktop shown. */
 	still = kwl_glass_still(server);
@@ -2220,7 +2224,7 @@ kwl_glass_body_damage(
 	near.width = body.width + 2 * DAMAGE_REACH;
 	near.height = body.height + 2 * DAMAGE_REACH;
 
-	/* No window above it within the reach (its body and its title bar). */
+	/* No window above it within the reach (its body and its title bar) that blurs what is under it. */
 	for (client = server->clients; client != NULL; client = client->next) {
 		for (other = client->objects; other != NULL; other = other->next) {
 			if (other == surface || other->kind != KWL_SURFACE || !other->mapped)
@@ -2228,7 +2232,15 @@ kwl_glass_body_damage(
 			if (other->map_order < surface->map_order || other->minimized || other->desktop != server->desktop)
 				continue;
 			close = damage_near(server, other, &near);
-			if (close)
+			if (!close)
+				continue;
+
+			/* Its glass on the scene under it (set_blur, or centred in the docked space). */
+			blur = kwl_panels_blur(other);
+			if (blur)
+				return 0;
+			centred = window_centred_over(server, other);
+			if (centred)
 				return 0;
 		}
 	}
