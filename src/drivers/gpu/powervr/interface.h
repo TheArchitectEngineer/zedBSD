@@ -372,7 +372,7 @@
  * dropped before their pages are freed.
  */
 #ifndef POWERVR_DEVICE_MEMORY_CACHED
-#define POWERVR_DEVICE_MEMORY_CACHED	1
+#define POWERVR_DEVICE_MEMORY_CACHED	0
 #endif
 
 /*
