@@ -306,3 +306,11 @@ branch agent/p2-q1553（基 main 782f995e4）。
 - 3342c1ace（試し、既定 0）: `POWERVR_SINGLE_RENDER_KICK` 1 で、render の fragment を combined kick に入れる（KCCB の command 1 つ。DDK の形）。
 - cfedba86a: timing に buffer の作成の 4 段（run・clear・alias・map）。
 - 案（数字を見てから）: flush 済みで alias を持つ GPU の buffer の pool（解放した buffer を戻し、使う時に GPU の clear で 0 にする）。HAL の flush を速くする案は範囲外なので Q1 に判断を仰ぐ。
+- d106（Q1、main ＋ P1 tip ＋ efc40884f、timing 1）:
+  - vkmatrix 109/109（copy・blit・cursor-chain・clear を含む）。reset・HWR・fault・device lost は 0。文字入力・cursor も異常なし。
+  - transfer: 平均 2607 us（longest 3611）・2252 us（2646）。d102 は 2.9〜4.8 ms。
+  - context_hold の max 30 ms（opcode 21）は残る。
+- ed9c74527: GPU の buffer の pool。
+  - 最後の参照が落ちた buffer を、alias を付けたまま pool へ（256 KB 以上、合計 128 MB まで）。alias の作成と終わりは、どちらも範囲の line を 1 つずつ flush する。
+  - vkAllocateMemory は同じ大きさの pool の buffer を使い、session の transfer の clear で 0 にしてから返す（できない時は CPU で alias から）。
+  - kernel の内部の buffer は pool を使わない。板は未確認。
