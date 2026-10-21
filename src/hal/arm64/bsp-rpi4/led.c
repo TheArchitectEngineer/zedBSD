@@ -15,6 +15,22 @@
 #include "../defs.h"
 #include "led.h"
 
+#if defined(HAL_BOARD_RPI5)
+/*
+ * The Pi 5's activity LED: pin 9 of the first bank of the always-on GPIO
+ * block, lit when the pin is driven low.  A bank's data register holds the
+ * pin levels and its direction register a one for each input.
+ *
+ * Values referenced: Raspberry Pi Linux rpi-6.12.y
+ * arch/arm64/boot/dts/broadcom/bcm2712-rpi-5-b.dts (led_act on gio_aon 9,
+ * active low) and drivers/gpio/gpio-brcmstb.c (the bank's data and
+ * direction register offsets).
+ */
+#define GPIO_BASE		RPI5_AON_GPIO_BASE
+#define AON_GPIO_DATA		0x04U
+#define AON_GPIO_IODIR		0x08U
+#define LED_BIT			(1U << 9)
+#else
 /* The GPIO block (the default low-peripheral address) and its registers. */
 #define GPIO_BASE	0xfe200000ULL
 #define GPFSEL4		0x10U
@@ -24,6 +40,7 @@
 /* GPIO 42: bits 6 to 8 of GPFSEL4, and bit 10 of the second set and clear. */
 #define LED_FUNCTION_SHIFT	6U
 #define LED_BIT			(1U << 10)
+#endif
 
 /* How long a blink is lit and dark, and the pause after a stage. */
 #define BLINK_ON_MS		250U
@@ -34,6 +51,51 @@ static volatile uint8_t *gpio_registers(void);
 static uint64_t counter(void);
 static uint64_t counter_frequency(void);
 
+#if defined(HAL_BOARD_RPI5)
+/*
+ * Makes the activity LED's pin an output, and turns the LED off.
+ */
+void
+rpi4_led_init(
+	void)
+{
+	volatile uint8_t *base;
+	uint32_t direction;
+
+	/* Dark first, so the pin does not light it when it turns into an output. */
+	rpi4_led_set(0);
+
+	/* Clears the pin's input bit: the block drives it from now on. */
+	base = gpio_registers();
+	direction = hal_mmio_read32(base + AON_GPIO_IODIR);
+	direction &= ~LED_BIT;
+	hal_mmio_write32(base + AON_GPIO_IODIR, direction);
+}
+
+/*
+ * Turns the LED on or off.
+ */
+void
+rpi4_led_set(
+	int on)
+{
+	volatile uint8_t *base;
+	uint32_t levels;
+
+	/* Reads the bank's levels, which the other pins keep. */
+	base = gpio_registers();
+	levels = hal_mmio_read32(base + AON_GPIO_DATA);
+
+	/* A low pin lights the LED, and a high one darkens it. */
+	if (on) {
+		levels &= ~LED_BIT;
+	} else {
+		levels |= LED_BIT;
+	}
+	hal_mmio_write32(base + AON_GPIO_DATA, levels);
+}
+
+#else
 /*
  * Makes GPIO 42 an output, and turns the LED off.
  */
@@ -71,6 +133,8 @@ rpi4_led_set(
 	else
 		hal_mmio_write32(base + GPCLR1, LED_BIT);
 }
+
+#endif
 
 /*
  * Shows a stage of the boot: as many blinks as its number, then a pause.

@@ -38,8 +38,20 @@
 /* The kernel's direct map of physical memory and devices. */
 #define RPI4_DIRECT_BASE	0xffff000000000000ULL
 
+#if defined(HAL_BOARD_RPI5)
+/*
+ * The Pi 5's PL011 of the three-pin debug connector, which shares nothing
+ * with the Bluetooth controller.
+ *
+ * Value referenced: Raspberry Pi Linux rpi-6.12.y
+ * arch/arm64/boot/dts/broadcom/bcm2712.dtsi (uart10 under the soc node's
+ * ranges).
+ */
+#define RPI4_UART_BASE		0x107d001000ULL
+#else
 /* The PL011 the firmware routes to GPIO 14 and 15 (config.txt disables BT). */
 #define RPI4_UART_BASE		0xfe201000ULL
+#endif
 #define RPI4_UART_DR		0x00U
 #define RPI4_UART_FR		0x18U
 #define RPI4_UART_FR_RXFE	0x10U

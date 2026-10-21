@@ -510,6 +510,16 @@ set_clock(
 	/* Handles the base condition. */
 	if (base == 0)
 		base = 100000000U;
+#if defined(HAL_BOARD_RPI5)
+	/*
+	 * The Pi 5's SD controller runs from a fixed 200 MHz clock, whatever
+	 * its capabilities say.
+	 *
+	 * Value referenced: Raspberry Pi Linux rpi-6.12.y
+	 * arch/arm64/boot/dts/broadcom/bcm2712.dtsi (clk_emmc2, sdio1's clock).
+	 */
+	base = 200000000U;
+#endif
 	/* Continue while the operation condition remains true. */
 	while (divisor < 0x400U && base / (2U * divisor) > target)
 		divisor <<= 1;

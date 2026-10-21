@@ -113,10 +113,22 @@ arm64_el1_low:
 	add x1, x1, :lo12:arm64_l1_high
 	str x3, [x1]
 
+#if defined(HAL_BOARD_RPI5)
+	/*
+	 * Device-nGnRE mapping for 0x10_4000_0000..0x10_7fff_ffff, the
+	 * gigabyte that holds the Pi 5's debug UART, mailbox, GIC and GPIO.
+	 * The Pi 5 has RAM, not peripherals, below 4 GiB.
+	 */
+	mov x3, #0x40000000
+	movk x3, #0x10, lsl #32
+	add x3, x3, #0x405
+	mov x4, #(65 * 8)
+#else
 	/* Device-nGnRE mapping for 0xc0000000..0xffffffff. */
 	mov x3, #0xc0000000
 	add x3, x3, #0x405
 	mov x4, #(3 * 8)
+#endif
 	adrp x1, arm64_l1_low
 	add x1, x1, :lo12:arm64_l1_low
 	str x3, [x1, x4]

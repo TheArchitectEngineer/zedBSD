@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Add the canonical UFS root partition to a Raspberry Pi 4 boot image."""
+"""Add the canonical UFS root partition to a Raspberry Pi 4 or 5 boot image."""
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
 from __future__ import annotations
@@ -35,7 +35,8 @@ def build(args: argparse.Namespace) -> None:
         run('python3',str(base),'--force','--kernel',str(args.kernel),
             *arch,*cmdline,'--data-image',str(args.data_image),
             '--swapfile',str(args.swapfile),'--config',str(args.config),
-            '--firmware-dir',str(args.firmware_dir),str(temporary))
+            '--firmware-dir',str(args.firmware_dir),'--board',args.board,
+            str(temporary))
         blocks=args.ufs_root.stat().st_size//SECTOR
         required_size=(ROOT_LBA+blocks)*SECTOR
         with temporary.open('r+b') as image:
@@ -63,6 +64,7 @@ def main() -> None:
     parser.add_argument('--config',type=Path,required=True)
     parser.add_argument('--cmdline',type=Path)
     parser.add_argument('--firmware-dir',type=Path,required=True)
+    parser.add_argument('--board',choices=('rpi4','rpi5'),default='rpi4')
     parser.add_argument('--force',action='store_true')
     parser.add_argument('output',type=Path)
     build(parser.parse_args())

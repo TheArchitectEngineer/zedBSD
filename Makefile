@@ -81,7 +81,7 @@ endif
 
 ZEDBSD_PLATFORM_DIR := $(strip \
 	$(if $(filter i386,$(ZEDBSD_PLATFORM)),pcat,\
-	$(if $(filter rpi4,$(ZEDBSD_PLATFORM)),arm64,\
+	$(if $(filter rpi4 rpi5,$(ZEDBSD_PLATFORM)),arm64,\
 	$(if $(filter sun4u,$(ZEDBSD_PLATFORM)),sparcv9,\
 	$(if $(filter riscv64-virt visionfive2,$(ZEDBSD_PLATFORM)),riscv64,\
 	$(if $(filter riscv32-virt,$(ZEDBSD_PLATFORM)),riscv32,\
@@ -104,6 +104,11 @@ endif
 
 ifeq ($(ZEDBSD_PLATFORM_DIR),riscv32)
 BUILD := build/$(ZEDBSD_PLATFORM)
+endif
+
+# The Raspberry Pi 5 shares the Pi 4's platform directory, not its build tree.
+ifeq ($(ZEDBSD_PLATFORM),rpi5)
+BUILD := build/rpi5
 endif
 
 #
@@ -202,6 +207,7 @@ ZEDBSD_VARIANTS_i386_pcat := default
 ZEDBSD_VARIANTS_amd64_pcat := native hybrid uefi bios
 ZEDBSD_VARIANTS_i386_pc98 := default
 ZEDBSD_VARIANTS_arm64_rpi4 := default
+ZEDBSD_VARIANTS_arm64_rpi5 := default
 ZEDBSD_VARIANTS_riscv64_virt := default
 ZEDBSD_VARIANTS_riscv64_visionfive2 := default
 ZEDBSD_VARIANTS_riscv32_virt := default
@@ -217,6 +223,7 @@ ZEDBSD_PLATFORM_TARGET_i386 := i386_pcat
 ZEDBSD_PLATFORM_TARGET_amd64 := amd64_pcat
 ZEDBSD_PLATFORM_TARGET_pc98 := i386_pc98
 ZEDBSD_PLATFORM_TARGET_rpi4 := arm64_rpi4
+ZEDBSD_PLATFORM_TARGET_rpi5 := arm64_rpi5
 ZEDBSD_PLATFORM_TARGET_riscv64-virt := riscv64_virt
 ZEDBSD_PLATFORM_TARGET_visionfive2 := riscv64_visionfive2
 ZEDBSD_PLATFORM_TARGET_riscv32-virt := riscv32_virt
@@ -355,6 +362,10 @@ CONFIG_PCAT_SERIAL_MIRROR ?= n
 # The Raspberry Pi 4's serial console (the PL011 on GPIO 14 and 15):
 # off by default, the UART then left alone.
 CONFIG_RPI4_SERIAL_CONSOLE ?= n
+
+# The Raspberry Pi 5's serial console (the PL011 of the three-pin debug
+# connector): off by default like the Pi 4's.
+CONFIG_RPI5_SERIAL_CONSOLE ?= n
 
 CONFIG_INPUT_TEST_INJECT ?= n
 CONFIG_SECURITY_KEY_TEST_LOOPBACK ?= n
@@ -800,6 +811,10 @@ ifeq ($(CONFIG_PCAT_SERIAL_MIRROR),y)
 ZEDBSD_CONFIG_CPPFLAGS += -DPCAT_SERIAL_MIRROR
 endif
 ifeq ($(CONFIG_RPI4_SERIAL_CONSOLE),y)
+ZEDBSD_CONFIG_CPPFLAGS += -DRPI4_SERIAL_CONSOLE
+endif
+# The Pi 5 shares the Pi 4's console code, which the same switch turns to the serial line.
+ifeq ($(ZEDBSD_PLATFORM)$(CONFIG_RPI5_SERIAL_CONSOLE),rpi5y)
 ZEDBSD_CONFIG_CPPFLAGS += -DRPI4_SERIAL_CONSOLE
 endif
 ifeq ($(CONFIG_INPUT_TEST_INJECT),y)

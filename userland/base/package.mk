@@ -30,7 +30,7 @@ include $(dir $(ZEDBSD_BASE_PACKAGE_MK))../download.mk
 
 ZEDBSD_STANDALONE_PLATFORM_DIR = $(strip \
 	$(if $(filter i386,$(ZEDBSD_PLATFORM)),pcat,\
-	$(if $(filter rpi4,$(ZEDBSD_PLATFORM)),arm64,\
+	$(if $(filter rpi4 rpi5,$(ZEDBSD_PLATFORM)),arm64,\
 	$(if $(filter sun4u,$(ZEDBSD_PLATFORM)),sparcv9,\
 	$(ZEDBSD_PLATFORM)))))
 ZEDBSD_STANDALONE_BINDIR = $(strip $(if $(filter /,$(PREFIX)),\

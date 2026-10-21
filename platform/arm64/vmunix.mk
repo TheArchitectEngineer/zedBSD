@@ -10,12 +10,43 @@ ARM64_NM ?= $(ZEDBSD_TARGET_LLVM_BIN)/llvm-nm
 AWK ?= awk
 ARM64_PLATFORM := platform/arm64
 
+# The board the kernel is built for: the Raspberry Pi 4 (BCM2711) or the
+# Raspberry Pi 5 (BCM2712), which shares the Pi 4's HAL and drivers and
+# differs where HAL_BOARD_RPI5 says.
+ARM64_BOARD_DEFINE_rpi4 := -DHAL_BOARD_RPI4
+ARM64_BOARD_DEFINE_rpi5 := -DHAL_BOARD_RPI5
+
+# The Pi 5's own HAL code: its peripherals above 4 GiB and the PSCI calls.
+ARM64_BOARD_BOOT_C_rpi5 := src/hal/arm64/bsp-rpi5/board.c
+
+# The board's platform binding and the drivers it starts first: on the Pi 4
+# the SD card, the console, PCIe and the firmware mailbox; on the Pi 5 the SD
+# card and the console (the RP1 south bridge behind PCIe is not bound yet).
+ARM64_BOARD_KERNEL_SOURCES_rpi4 := \
+	src/kern/platform/rpi4.c \
+	src/drivers/platform/rpi4/rpi4-sdhci.c \
+	src/drivers/platform/rpi4/rpi4-console.c \
+	src/drivers/platform/rpi4/rpi4-pcie.c \
+	src/drivers/platform/rpi4/rpi4-board.c \
+	src/drivers/platform/rpi4/rpi4-firmware.c src/kern/dcache.c \
+	src/drivers/platform/rpi4/rpi4-gpio.c \
+	src/kern/uncached.c \
+	src/drivers/generic/fdt.c src/drivers/generic/dma.c \
+	src/drivers/pci/pci.c src/drivers/pci/pci-brcmstb.c
+ARM64_BOARD_KERNEL_SOURCES_rpi5 := \
+	src/kern/platform/rpi5.c \
+	src/drivers/platform/rpi4/rpi4-sdhci.c \
+	src/drivers/platform/rpi4/rpi4-console.c \
+	src/kern/dcache.c \
+	src/kern/uncached.c \
+	src/drivers/generic/fdt.c src/drivers/generic/dma.c
+
 # The kernel and the HAL read the compiler's freestanding headers and the
 # tree's include/ and src/, never the C library (as on amd64).  The compiler
 # knows the zedBSD target and defines __ZEDBSD__, which selects the zedBSD
 # definitions (include/uapi/hosted.h, include/kern/kcrt.h).
 ARM64_CPPFLAGS := -nostdlibinc -Iinclude -Isrc -I. \
-	-Isrc/hal/arm64 -DHAL_ARCH_ARM64 -DHAL_BOARD_RPI4 \
+	-Isrc/hal/arm64 -DHAL_ARCH_ARM64 $(ARM64_BOARD_DEFINE_$(ZEDBSD_BOARD)) \
 	-DKERN_USER_ABI_AARCH64 -DKERN_USER_ABI_LP64
 ARM64_CPPFLAGS += $(ZEDBSD_CONFIG_CPPFLAGS)
 ARM64_CFLAGS := -march=armv8-a -mno-outline-atomics -mgeneral-regs-only -ffreestanding \
@@ -38,7 +69,8 @@ ARM64_BOOT_C := src/hal/arm64/smp.c src/hal/arm64/percpu.c src/hal/arm64/watch.c
 	src/hal/arm64/bsp-rpi4/mailbox.c src/hal/arm64/bsp-rpi4/framebuffer.c \
 	src/hal/arm64/bsp-rpi4/boot.c src/hal/arm64/bsp-rpi4/gic.c \
 	src/hal/arm64/bsp-rpi4/clock.c src/hal/arm64/bsp-rpi4/font.c \
-	src/hal/arm64/bsp-rpi4/led.c
+	src/hal/arm64/bsp-rpi4/led.c \
+	$(ARM64_BOARD_BOOT_C_$(ZEDBSD_BOARD))
 ARM64_BOOT_S := src/hal/arm64/locore.S src/hal/arm64/trap.S \
 	src/hal/arm64/dispatch.S
 ARM64_BOOT_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(ARM64_BOOT_C)) \
@@ -56,16 +88,7 @@ ARM64_KERNEL_SOURCES := \
 	src/kern/test-checkpoint.c src/kern/text-display.c \
 	src/drivers/generic/loop.c \
 	src/kern/partition.c src/drivers/disklabel/mbr.c \
-	src/kern/platform/rpi4.c \
-	src/drivers/platform/rpi4/rpi4-sdhci.c \
-	src/drivers/platform/rpi4/rpi4-console.c \
-	src/drivers/platform/rpi4/rpi4-pcie.c \
-	src/drivers/platform/rpi4/rpi4-board.c \
-	src/drivers/platform/rpi4/rpi4-firmware.c src/kern/dcache.c \
-	src/drivers/platform/rpi4/rpi4-gpio.c \
-	src/kern/uncached.c \
-	src/drivers/generic/fdt.c src/drivers/generic/dma.c \
-	src/drivers/pci/pci.c src/drivers/pci/pci-brcmstb.c \
+	$(ARM64_BOARD_KERNEL_SOURCES_$(ZEDBSD_BOARD)) \
 	src/kern/panic.c src/kern/entry.c src/kern/clock.c \
 	src/kern/timer.c src/kern/klog.c \
 	src/kern/lock.c src/kern/waitq.c \
@@ -276,6 +299,22 @@ rpi4-fdt-host-test: $(BUILD)/tests/rpi4-fdt-host-test $(RPI4_BOOT_FIRMWARE_DTB)
 	$< $(RPI4_BOOT_FIRMWARE_DTB)
 
 CHECK_RUN_TARGETS += rpi4-fdt-host-test
+
+# The Pi 5's trees (C1 and D0) through the HAL's parser built for the Pi 5.
+ifeq ($(ZEDBSD_BOARD),rpi5)
+$(BUILD)/tests/rpi5-fdt-host-test: tests/rpi5-fdt-host-test.c \
+	src/hal/arm64/bsp-rpi4/fdt.c src/hal/arm64/bsp-rpi4/fdt.h
+	@mkdir -p $(dir $@)
+	$(HOSTCC) -std=c11 -O2 -Wall -Wextra -Werror -DHAL_BOARD_RPI5 -Iinclude -Isrc \
+ src/hal/arm64/bsp-rpi4/fdt.c $< -o $@
+
+.PHONY: rpi5-fdt-host-test
+rpi5-fdt-host-test: $(BUILD)/tests/rpi5-fdt-host-test $(RPI5_BOOT_FIRMWARE_DTB) $(RPI5_BOOT_FIRMWARE_D0_DTB)
+	$< $(RPI5_BOOT_FIRMWARE_DTB)
+	$< $(RPI5_BOOT_FIRMWARE_D0_DTB)
+
+CHECK_RUN_TARGETS += rpi5-fdt-host-test
+endif
 
 # The SD driver on the host against a fake controller (BUG-295): the driver
 # is copied without its kernel includes and with its two generic-timer reads
@@ -679,17 +718,26 @@ $(BUILD)/cmdline.txt: rpi4-boot-command-line
 .PHONY: rpi4-config-file
 rpi4-config-file:
 
+ifeq ($(ZEDBSD_BOARD),rpi5)
+# The Pi 5's config.txt is its source as it is: the debug UART has pins of its
+# own, so no line moves between the console and the Bluetooth controller.
+$(BUILD)/config.txt: rpi4-config-file $(ARM64_PLATFORM)/config-rpi5.txt
+	@mkdir -p $(dir $@)
+	@cp $(ARM64_PLATFORM)/config-rpi5.txt $@.tmp
+	@if cmp -s $@.tmp $@; then rm -f $@.tmp; else mv -f $@.tmp $@; fi
+else
 $(BUILD)/config.txt: rpi4-config-file $(ARM64_PLATFORM)/config.txt platform/arm64/tools/make-rpi4-config.py
 	@mkdir -p $(dir $@)
 	@$(PYTHON) platform/arm64/tools/make-rpi4-config.py --source $(ARM64_PLATFORM)/config.txt \
  --bluetooth $(CONFIG_DRIVER_BCM2711_BT) --serial $(CONFIG_RPI4_SERIAL_CONSOLE) --output $@.tmp
 	@if cmp -s $@.tmp $@; then rm -f $@.tmp; else mv -f $@.tmp $@; fi
+endif
 
 # The SD card: a FAT boot partition with the firmware and the kernel, and
 # the UFS root that the kernel's legacy autoroot finds beside it.
 $(BUILD)/hdd-image.img: $(BUILD)/vmunix $(BUILD)/ufs-root.img \
 	$(DATA_IMAGE) $(SWAP_IMAGE) $(BUILD)/config.txt $(BUILD)/cmdline.txt \
-	$(RPI4_BOOT_FIRMWARE_CACHE_FILES) \
+	$(ARM64_BOOT_FIRMWARE_CACHE_FILES) \
 	platform/arm64/tools/make-rpi4-ufs-root-hdd-image.py \
 	platform/arm64/tools/make-rpi4-hdd-image.py \
 	platform/arm64/tools/check-rpi4-hdd-image.py tools/build/check-ufs-image.py
@@ -697,7 +745,7 @@ $(BUILD)/hdd-image.img: $(BUILD)/vmunix $(BUILD)/ufs-root.img \
  --kernel $(BUILD)/vmunix --ufs-root $(BUILD)/ufs-root.img \
  --data-image $(DATA_IMAGE) --swapfile $(SWAP_IMAGE) \
  --config $(BUILD)/config.txt --cmdline $(BUILD)/cmdline.txt \
- --firmware-dir $(RPI4_BOOT_FIRMWARE_DIR) $@
+ --board $(ZEDBSD_BOARD) --firmware-dir $(ARM64_BOOT_FIRMWARE_DIR) $@
 
 $(BUILD)/kernel.elf: $(ARM64_VMUNIX_OBJS) $(ARM64_PLATFORM)/vmunix.ld \
 	platform/arm64/tools/check-arm64-vmunix.py
