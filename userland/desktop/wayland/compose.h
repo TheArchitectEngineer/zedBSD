@@ -160,22 +160,34 @@ struct kwl_backdrop {
 };
 
 /*
- * The glass maps (glass-map.c): how many colours of flat glass have one,
- * and the values that tell one colour from another (its colour and
- * opacity, whether it is lifted and whether it is darkened).
+ * The glass maps (glass-map.c): how many there are, and the values that
+ * tell one from another (a glass's colour and opacity, whether it is
+ * lifted and darkened, its sheen and the height and top of its box when it
+ * has one, and a whole-output picture's number, 0 for glass).
  */
-#define KWL_GLASS_MAPS		4U
-#define KWL_GLASS_MAP_KEY	6U
+#define KWL_GLASS_MAPS		6U
+#define KWL_GLASS_MAP_KEY	10U
+
+/* The whole-output pictures among the glass maps: App Home's stage. */
+#define KWL_GLASS_PICTURE_STAGE	1U
+
+/* Draws a whole-output picture into its map (glass-map.c), as the frame would draw it on the output. */
+typedef void (*kwl_glass_picture_draw)(struct kwl_server *server, struct kwl_list *command);
 
 /*
- * One colour of flat glass worked out for every output pixel: its key,
- * whether it is drawn, which blurred wallpaper (its generation and
- * version) and size it was drawn from, the last frame that used it, and
- * the image the map variant reads (nearest sampling).
+ * One map: a glass's colour worked out for every output pixel, or a
+ * whole-output picture that does not change (with what draws it).  Its
+ * key; whether it is wanted or drawn; how many frames asked for it and the
+ * last that did; which blurred wallpaper (its generation and version) and
+ * size it was drawn from; the last frame that used it; and the image the
+ * frame reads (nearest sampling).
  */
 struct kwl_glass_map {
 	unsigned state;
 	float key[KWL_GLASS_MAP_KEY];
+	kwl_glass_picture_draw draw;
+	unsigned asks;
+	uint64_t asked;
 	uint64_t source;
 	uint32_t version;
 	uint32_t width;
@@ -856,6 +868,7 @@ void kwl_backdrop_destroy(struct kwl_compose *compose);
 
 /* The colours of flat glass worked out beforehand (glass-map.c). */
 int kwl_glass_map_set(struct kwl_server *server, const float *constants, VkDescriptorSet set, VkDescriptorSet *map_set);
+int kwl_glass_picture_set(struct kwl_server *server, unsigned picture, kwl_glass_picture_draw draw, VkDescriptorSet *picture_set);
 void kwl_glass_maps_inband(struct kwl_server *server, struct kwl_list *command);
 void kwl_glass_maps_destroy(struct kwl_compose *compose);
 
