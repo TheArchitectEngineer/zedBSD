@@ -133,3 +133,4 @@ clear 3.85 ms、LOAD 23.35 ms、平らな quad 15.1 ms、1/4 面積 7.2 ms、402
 - d133（d132 と同じ物、電源の入れ直しの後）: HWR・lost 0。keys の段（200 ms 間隔の 22 字）の打鍵から画面まで（seat に届いてからの中央値/最大 ms）: Terminal へ 0.2/0.8、Terminal が受けた 0.7/2.4、pty へ 1.0/2.4、echo を読んだ 1.7/3.4、present 9.7/11.4、compositor の adopt 15.9/19.4、shown 30.0/36.0。
 - main 194c8c462 に P1 8afd2e814（打鍵の経路の行・key-latency.py・KWL の時刻を rdtime の μs に・notes）を merge（2026-10-22）。P1 の読み: 打鍵の遅れの大部分は描画（Terminal の 1 frame 8 ms、Terminal の GPU の完了と commit 6 ms、compositor の 1 frame 14 ms）、入力の処理と shell の echo は約 2 ms。小さな対策は既に入っている物ばかりで、Terminal の変わった行だけ作る（−3〜4 ms）だけを入れる。device lost からの回復は R2（driver が HWR の時に犯人でない context を lost にしない）を P2 へ。
 - 2026-10-22 ユーザーの回復の方針（Master の decisions-log）→ R2 の設計の条件として P2 へ。
+- main 8669be87c に P1 702fc4954（Terminal の変わった行だけ作る 0c0b7dfea、開発途中の診断を外す ad8fe3b7d、frame-ops の道具を plan/tools/frame-ops/ へ）を merge し、Master の Tools に登録（2026-10-22）。Terminal の変更の板の確認は今晩の冷却の後。
