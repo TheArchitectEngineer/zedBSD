@@ -1069,6 +1069,8 @@ event_loop(
 
 		/* The pass's work starts now; its parts are told apart at its end if it runs long. */
 		perf_pass_begin(server);
+		if (server->log_frames)
+			server->pass_us = kwl_microseconds();
 		server->perf.passes++;
 		if (ready == 0)
 			server->perf.timeouts++;

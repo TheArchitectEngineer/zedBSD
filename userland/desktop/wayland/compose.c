@@ -731,12 +731,13 @@ kwl_compose_draw(
 	/* How long the frame pacing waited for the windows since the last frame was shown. */
 	if (server->log_frames) {
 		printf(
-			"KWL LAT pace frame=%llu awaiting=%u waited_ms=%llu wait_ms=%llu at_us=%llu\n",
+			"KWL LAT pace frame=%llu awaiting=%u waited_ms=%llu wait_ms=%llu at_us=%llu pass_us=%llu\n",
 			(unsigned long long)server->frame + 1U,
 			server->awaiting,
 			(unsigned long long)(kwl_milliseconds() - server->frame_done_ms),
 			(unsigned long long)server->frame_wait_ms,
-			(unsigned long long)kwl_microseconds());
+			(unsigned long long)kwl_microseconds(),
+			(unsigned long long)server->pass_us);
 	}
 
 	/* The frame shows the pointer where it is now. */

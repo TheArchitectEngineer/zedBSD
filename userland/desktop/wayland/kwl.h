@@ -1492,6 +1492,9 @@ struct kwl_server {
 	unsigned awaiting;
 	uint64_t frame_done_ms;
 	uint64_t frame_wait_ms;
+
+	/* When the event loop's pass began (its poll returned), for the per-frame lines. */
+	uint64_t pass_us;
 	/*
 	 * Nonzero while a move of the pointer waits for the frame that shows the
 	 * cursor at its new place: that frame does not wait for the windows
