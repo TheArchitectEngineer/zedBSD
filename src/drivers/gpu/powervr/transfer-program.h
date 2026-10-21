@@ -93,6 +93,7 @@ bool powervr_transfer_needs_rows(const struct powervr_render_surface *surface, c
 int powervr_transfer_copy_usc(const struct powervr_format *format, struct powervr_render_usc *program);
 int powervr_transfer_blit_usc(const struct powervr_format *format, struct powervr_render_usc *program);
 int powervr_transfer_shared_words(const struct powervr_view_shape *source, uint32_t source_x, uint32_t source_y, const struct powervr_render_area *area, uint32_t words[POWERVR_TRANSFER_SHARED_WORDS]);
+int powervr_transfer_shared_words_rows(const struct powervr_view_shape *source, uint32_t source_x, uint32_t source_y, const struct powervr_render_area *area, uint32_t total, uint32_t step, uint32_t phase, uint32_t words[POWERVR_TRANSFER_SHARED_WORDS]);
 int powervr_transfer_blit_words(const struct powervr_view_shape *source, const struct powervr_render_area *source_area, const struct powervr_render_area *area, bool flip_x, bool flip_y, bool linear, uint32_t words[POWERVR_TRANSFER_SHARED_WORDS]);
 int powervr_transfer_shared_program(uint64_t words_address, struct powervr_data_shared_program *program);
 int powervr_transfer_clear_colour(const struct powervr_format *format, const uint32_t colour[4], uint32_t packed[4]);

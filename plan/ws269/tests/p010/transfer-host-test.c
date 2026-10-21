@@ -240,6 +240,13 @@ test_shared(void)
 	view.format = powervr_format_find(9);
 	check(powervr_transfer_shared_words(&view, 0, 0, &area, words) != 0, "shared words refuse 8-bit texels");
 
+	/* Every second row (q1534), the area at row 1: y scale 2, offset -2.5 for the even rows and -1.5 for the odd ones, the rows clamped to the whole height. */
+	view.format = powervr_format_find(37);
+	ok = powervr_transfer_shared_words_rows(&view, 0, 0, &area, 7, 2, 0, words) == 0;
+	ok = ok && words[10] == 0x40000000U && words[11] == 0xc0200000U && words[14] == 0x3f000000U && words[15] == 0x40d00000U;
+	ok = ok && powervr_transfer_shared_words_rows(&view, 0, 0, &area, 7, 2, 1, words) == 0 && words[11] == 0xbfc00000U;
+	check(ok, "shared words of every second row");
+
 	/* The program: one DMA of sixteen words, three data words, one code word. */
 	ok = powervr_transfer_shared_program(0x30000, &shared) == 0;
 	check(ok && shared.data_words == 3 && shared.code_words == 1 && shared.data[0] == 0x30000U, "shared program");
