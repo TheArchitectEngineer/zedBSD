@@ -11,8 +11,9 @@
 -->
 
 <!-- master:agents:start -->
-- **2026-10-21 12:35 引き継ぎ（このセッションの終わり）: まず [plan/agents/handover-20261021.md](agents/handover-20261021.md) の末尾の「最終の引き継ぎ」を読む**（VF2 の Keiland の desktop は PowerVR で動く、lockup は解決、残りは draw の速さ、次の手、板の注意）。
-- 担当: P1・P2 は 2026-10-21 12:30 に週次の上限で止まり終了扱い（解除 10-25 04:00）。worktree に未 merge の作業は無い。q1536・q1537 は中断。板は Q1 だけが触る。
+- **2026-10-21 19:20 ラップアップ（ユーザー「お、ついにSDカードが死んだかも。いったんラップアップして、SDイメージをください。」）**: VF2 の SD が故障の疑い。新しい SD 用の image は build/review/vf2-sd/zedbsd-vf2-desktop-5c83c16e4.img（main 5c83c16e4、594 MHz・firmware の code cached・trace 0x401・draw の buffer の使い回し、host key 入り、sha256 eb39948b…）。
+- VF2 の速さ（ws270-p007）: main まで入った成果で desktop の部分 frame 約 5.8 ms・全画面 45〜59 ms（最初は 390 ms）。DDK（純正）との差は pixel の shader の実行（LINEAR でも flat 2.0 対 4.3 ms、texture 2.5 対 8.5 ms）。P1 は止まった（ユーザーの操作）: agent/p1-q1541 の未 merge は 3c47dfc27（vkmatrix の LINEAR の case）・c90be335c（push・descriptor を PDS の DOUTW で直に、板で未確認）・7433f6481。次は c90be335c を新しい SD の板で試す。
+- Pi 5（WS278）: P3 の新しい generation が q1543-i02 で p004（RP1 の USB、未追跡の rp1.c から）を続けている（ユーザー「Pi5の作業は続けていいです」）。GPU（WS279）は design.md まで、ユーザーの判断 D1〜D4 待ち。WS280（H.264 の software decoder）は planning。
 - push はしていない。
 <!-- master:agents:end -->
 
