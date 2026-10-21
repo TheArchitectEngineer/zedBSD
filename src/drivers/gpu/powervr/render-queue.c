@@ -130,6 +130,7 @@ static int send_waiting(struct powervr_core *core, const uint32_t command[POWERV
 static void cleanup_command(uint32_t context, uint32_t command[POWERVR_COMMAND_WORDS]);
 static void service_thread(void *argument);
 static void timing_thread(void *argument);
+static void spare_thread(void *argument);
 static void timing_report(void);
 static int service_pass(struct powervr_render *render, uint64_t now, int unwoken);
 static int timeline_sleep(struct powervr_render *render, uint64_t observed, uint64_t deadline);
@@ -139,18 +140,12 @@ static void take_reached(struct powervr_session *session, struct delivery *deliv
 static void take_all(struct powervr_session *session, int error, struct delivery *delivery);
 static void deliver(struct powervr_render *render, struct delivery *delivery);
 static void handle_notice(void *context, uint32_t type, const struct powervr_object *buffer, uint32_t offset);
-/*
- * A trial: the render's fragment in the geometry's combined kick, one
- * command of the kernel's buffer a render as the vendor's driver sends
- * (1), or in a kick of its own after it as Linux sends (0).
- */
-#ifndef POWERVR_SINGLE_RENDER_KICK
-#define POWERVR_SINGLE_RENDER_KICK	0
-#endif
-
 /* How often the timing says its sums, and how often its thread looks whether to end, in milliseconds. */
 #define TIMING_REPORT_MS		5000U
 #define TIMING_LOOK_MS			100U
+
+/* How long the spare's thread waits before it tries again after a spare was not made. */
+#define SPARE_RETRY_MS			1000U
 
 /*
  * The job trace: with POWERVR_JOB_TRACE 1 every render
@@ -610,9 +605,7 @@ powervr_session_kick_compute(
  * the cleanup count.  The geometry's timeline takes the next value, the
  * fragment's the one after next (the partial render writes the one
  * between).  A fragment command that names no background after a
- * partial render takes the context's stand-in.  With
- * POWERVR_SINGLE_RENDER_KICK the fragment goes in the combined kick
- * after the partial render, the cleanup count on both sides.
+ * partial render takes the context's stand-in.
  *
  * Procedure referenced:
  * Linux v7.3 drivers/gpu/drm/imagination/pvr_queue.c (pvr_queue_run_job:
@@ -718,10 +711,6 @@ powervr_session_kick_render(
 	cleanup = powervr_target_cleanup_address(target, half);
 	commands_put(&context->geometry, sequence->geometry_commands, sequence->geometry_count);
 	commands_put(&context->fragment, sequence->partial_commands, sequence->partial_count);
-	if (POWERVR_SINGLE_RENDER_KICK) {
-		/* The fragment too, in the same kick, which names the target half's cleanup on both sides. */
-		commands_put(&context->fragment, sequence->fragment_commands, sequence->fragment_count);
-	}
 	geometry_kick.context = powervr_object_address(&context->record, POWERVR_RENDER_CONTEXT_GEOMETRY);
 	geometry_kick.write_offset = context->geometry.write;
 	geometry_kick.wrap_mask = POWERVR_CLIENT_CCB_BYTES - 1U;
@@ -731,10 +720,6 @@ powervr_session_kick_render(
 	partial_kick.write_offset = context->fragment.write;
 	partial_kick.wrap_mask = POWERVR_CLIENT_CCB_BYTES - 1U;
 	partial_kick.cleanup_count = 0;
-	if (POWERVR_SINGLE_RENDER_KICK) {
-		partial_kick.cleanups[0] = cleanup;
-		partial_kick.cleanup_count = 1;
-	}
 	error = powervr_kick_combined_command(&geometry_kick, &partial_kick, command);
 	if (error != 0)
 		return error;
@@ -748,21 +733,19 @@ powervr_session_kick_render(
 	context->geometry.submitted = request.geometry_value;
 	context->fragment.submitted = request.fragment_value - 1U;
 
-	/* The fragment, then its own kick (none when it went with the geometry's). */
-	if (!POWERVR_SINGLE_RENDER_KICK) {
-		commands_put(&context->fragment, sequence->fragment_commands, sequence->fragment_count);
-		fragment_kick = partial_kick;
-		fragment_kick.write_offset = context->fragment.write;
-		fragment_kick.cleanups[0] = cleanup;
-		fragment_kick.cleanup_count = 1;
-		error = powervr_kick_command(&fragment_kick, command);
-		if (error != 0)
-			return error;
+	/* The fragment, then its own kick. */
+	commands_put(&context->fragment, sequence->fragment_commands, sequence->fragment_count);
+	fragment_kick = partial_kick;
+	fragment_kick.write_offset = context->fragment.write;
+	fragment_kick.cleanups[0] = cleanup;
+	fragment_kick.cleanup_count = 1;
+	error = powervr_kick_command(&fragment_kick, command);
+	if (error != 0)
+		return error;
 
-		error = send_command(render, command);
-		if (error != 0)
-			return error;
-	}
+	error = send_command(render, command);
+	if (error != 0)
+		return error;
 
 	/* The render is the firmware's; its end is the fragment's value. */
 	context->fragment.submitted = request.fragment_value;
@@ -797,14 +780,17 @@ powervr_session_kick_transfer(
 	struct powervr_render *render,
 	struct powervr_session *session,
 	const uint8_t *command,
+	const struct powervr_sync *waits,
+	unsigned wait_count,
 	uint32_t *value)
 {
 	struct powervr_transfer_context *context;
-	struct powervr_client_command commands[2];
+	struct powervr_client_command commands[3];
 	struct powervr_sync update;
 	struct powervr_kick kick;
 	uint32_t words[POWERVR_COMMAND_WORDS];
 	uint32_t bytes;
+	unsigned count;
 	int error;
 
 	/* Refuses a session without a transfer context. */
@@ -817,22 +803,33 @@ powervr_session_kick_transfer(
 	if (error != 0)
 		return error;
 
-	/* The command and the update of the timeline to the next value. */
+	/* The fence of the waits, when there are any, the command and the update of the timeline to the next value. */
+	if (wait_count > POWERVR_CLIENT_FENCES_MAX)
+		return EINVAL;
 	update.address = powervr_object_address(&context->client.timeline, 0);
 	update.value = context->client.submitted + 1U;
-	commands[0].type = POWERVR_CLIENT_TRANSFER;
-	commands[0].size = POWERVR_TRANSFER_COMMAND_BYTES;
-	commands[0].data = command;
-	commands[1].type = POWERVR_CLIENT_UPDATE;
-	commands[1].size = POWERVR_SYNC_BYTES;
-	commands[1].data = (const uint8_t *)&update;
-	bytes = commands_bytes(commands, 2);
+	count = 0;
+	if (wait_count != 0U) {
+		commands[count].type = POWERVR_CLIENT_FENCE;
+		commands[count].size = wait_count * POWERVR_SYNC_BYTES;
+		commands[count].data = (const uint8_t *)waits;
+		count++;
+	}
+	commands[count].type = POWERVR_CLIENT_TRANSFER;
+	commands[count].size = POWERVR_TRANSFER_COMMAND_BYTES;
+	commands[count].data = command;
+	count++;
+	commands[count].type = POWERVR_CLIENT_UPDATE;
+	commands[count].size = POWERVR_SYNC_BYTES;
+	commands[count].data = (const uint8_t *)&update;
+	count++;
+	bytes = commands_bytes(commands, count);
 	error = client_space(&context->client, bytes);
 	if (error != 0)
 		return error;
 
 	/* Writes them, then the kick naming the context. */
-	commands_put(&context->client, commands, 2);
+	commands_put(&context->client, commands, count);
 	kick.context = powervr_object_address(&context->record, 0);
 	kick.write_offset = context->client.write;
 	kick.wrap_mask = POWERVR_CLIENT_CCB_BYTES - 1U;
@@ -1082,6 +1079,7 @@ powervr_service_start(
 	/* Starts the thread; nobody joins it, and its end releases it. */
 	render->service_done = 0;
 	render->timing_done = 1;
+	render->spare_done = 1;
 	error = kthread_create(service_thread, render, SCHED_PRIORITY_DEFAULT, &thread);
 	if (error != 0)
 		return error;
@@ -1105,6 +1103,21 @@ powervr_service_start(
 		}
 	}
 
+	/*
+	 * A session's first render takes a zeroed global free list from a
+	 * thread of its own, which makes the next one ahead (the zeroing and
+	 * the write-back of 16 MB took about 34 ms of that render).  Without
+	 * it the render makes its own.
+	 */
+	render->spare_done = 0;
+	error = kthread_create(spare_thread, render, SCHED_PRIORITY_DEFAULT, &thread);
+	if (error != 0) {
+		render->spare_done = 1;
+		kern_logf("powervr: the spare's thread did not start (%d); free lists are made as needed\n", error);
+	} else {
+		thread_start(thread);
+	}
+
 	/* Succeeded: the service runs. */
 	return 0;
 }
@@ -1119,12 +1132,13 @@ powervr_service_stop(
 	unsigned long enabled;
 	uint64_t observed;
 
-	/* Tells the threads to end, wakes the service, and sleeps until both say they have. */
+	/* Tells the threads to end, wakes the service and the spare's thread, and sleeps until each says it has. */
 	enabled = spin_lock_irqsave(&render->queue_lock);
 
 	render->running = 0;
 	waitq_wake_all(&render->service);
-	while (!render->service_done || !render->timing_done) {
+	waitq_wake_all(&render->spare_wanted);
+	while (!render->service_done || !render->timing_done || !render->spare_done) {
 		observed = waitq_sequence(&render->retired);
 		(void)waitq_sleep(&render->retired, &render->queue_lock, observed, 0, 0);
 	}
@@ -1309,8 +1323,9 @@ powervr_render_submit(
 
 /*
  * Reports whether a session's completion point was reached: no point, a
- * compute value its compute timeline reached, or a 3D value its render
- * context's fragment timeline reached.
+ * compute value its compute timeline reached, a 3D value its render
+ * context's fragment timeline reached, or a transfer value its transfer
+ * context's timeline reached.
  */
 int
 powervr_session_point_reached(
@@ -1333,6 +1348,16 @@ powervr_session_point_reached(
 		return 0;
 	}
 
+	/* The transfer context's timeline; without the context nothing of it runs. */
+	if (kind == POWERVR_POINT_TRANSFER) {
+		if (session->transfer_context == NULL)
+			return 1;
+		current = powervr_object_get32(&session->transfer_context->client.timeline, POWERVR_SYNC_ADDRESS);
+		if ((int32_t)(current - value) >= 0)
+			return 1;
+		return 0;
+	}
+
 	/* The render context's 3D timeline; without the context nothing of it runs. */
 	context = session->render_context;
 	if (context == NULL)
@@ -1342,6 +1367,44 @@ powervr_session_point_reached(
 		return 1;
 
 	/* Succeeded: not reached yet. */
+	return 0;
+}
+
+/*
+ * Names the firmware's wait for a session's completion point: the
+ * timeline's firmware address and the value, for a fence of another
+ * context's command.  Reports 1, or 0 for no point and for a timeline
+ * whose context does not exist (nothing of it runs).
+ */
+unsigned
+powervr_session_point_sync(
+	const struct powervr_session *session,
+	unsigned kind,
+	uint32_t value,
+	struct powervr_sync *sync)
+{
+	/* The compute timeline. */
+	if (kind == POWERVR_POINT_COMPUTE) {
+		sync->address = powervr_object_address(&session->compute.timeline, 0);
+		sync->value = value;
+		return 1;
+	}
+
+	/* The render context's 3D timeline. */
+	if (kind == POWERVR_POINT_FRAGMENT && session->render_context != NULL) {
+		sync->address = powervr_object_address(&session->render_context->fragment.timeline, 0);
+		sync->value = value;
+		return 1;
+	}
+
+	/* The transfer context's timeline. */
+	if (kind == POWERVR_POINT_TRANSFER && session->transfer_context != NULL) {
+		sync->address = powervr_object_address(&session->transfer_context->client.timeline, 0);
+		sync->value = value;
+		return 1;
+	}
+
+	/* Succeeded: nothing to wait for. */
 	return 0;
 }
 
@@ -1540,6 +1603,7 @@ timing_report(
 		"submit", "job setup", "job map", "job build", "job kick", "job wait", "job release", "transfer", "dispatch",
 		"wait ta", "wait 3d", "wait small job", "job build programs", "job build draws", "draw memory", "draw code",
 		"render jobs", "order wait", "reap", "target make", "buffer run", "buffer clear", "buffer alias", "buffer map",
+		"list make", "context make", "mmu flush",
 	};
 	uint64_t now;
 	uint64_t average;
@@ -1566,6 +1630,14 @@ timing_report(
 		timing_count[part] = 0;
 		timing_most[part] = 0;
 	}
+
+	/* The GPU ioctls' sums, of a build that times them. */
+	drv_gpu_ioctl_timing_report();
+
+#if SCHED_WAKE_LATENCY
+	/* The scheduler's wake-to-run histogram, of a build that keeps it. */
+	sched_wake_latency_report();
+#endif
 
 	/* No interrupt came and no wait slept: nothing to say of the wakeups. */
 	if (wake_interrupts == 0U && wake_waits == 0U)
@@ -2399,6 +2471,109 @@ timing_thread(
 }
 
 /*
+ * Takes the zeroed spare of a global free list's pages, with one
+ * reference, the caller's, and wakes the spare's thread to make the next.
+ * ENOENT when none is ready.
+ */
+int
+powervr_spare_take(
+	struct powervr_render *render,
+	struct powervr_buffer **result)
+{
+	struct powervr_buffer *buffer;
+	unsigned long enabled;
+
+	/* The spare off the node, and the thread told to make another. */
+	enabled = spin_lock_irqsave(&render->queue_lock);
+
+	buffer = render->spare;
+	render->spare = NULL;
+	waitq_wake_all(&render->spare_wanted);
+
+	spin_unlock_irqrestore(&render->queue_lock, enabled);
+
+	/* None ready. */
+	*result = buffer;
+	if (buffer == NULL)
+		return ENOENT;
+
+	/* Succeeded: the spare is the caller's. */
+	return 0;
+}
+
+/*
+ * Keeps one zeroed spare of a global free list's pages ready, made on
+ * this thread (another processor than the render that takes it), until
+ * told to end; then gives the spare back and says it has ended.
+ */
+static void
+spare_thread(
+	void *argument)
+{
+	struct powervr_render *render;
+	struct powervr_buffer *buffer;
+	unsigned long enabled;
+	uint64_t observed;
+	int error;
+
+	/* The node it runs for. */
+	render = argument;
+
+	for (;;) {
+		enabled = spin_lock_irqsave(&render->queue_lock);
+
+		/* Sleeps while the spare is ready and the node runs. */
+		for (;;) {
+			observed = waitq_sequence(&render->spare_wanted);
+			if (!render->running || render->spare == NULL)
+				break;
+			(void)waitq_sleep(&render->spare_wanted, &render->queue_lock, observed, 0, 0);
+		}
+
+		/* Told to end: gives the spare back, then says so and leaves. */
+		if (!render->running) {
+			buffer = render->spare;
+			render->spare = NULL;
+
+			spin_unlock_irqrestore(&render->queue_lock, enabled);
+
+			if (buffer != NULL)
+				powervr_buffer_put(render, buffer);
+
+			enabled = spin_lock_irqsave(&render->queue_lock);
+
+			render->spare_done = 1;
+			waitq_wake_all(&render->retired);
+
+			spin_unlock_irqrestore(&render->queue_lock, enabled);
+			return;
+		}
+
+		spin_unlock_irqrestore(&render->queue_lock, enabled);
+
+		/* A new spare, zeroed and written back; after a failure the thread tries again later. */
+		error = powervr_buffer_create(render, POWERVR_SPARE_BYTES, &buffer);
+		if (error != 0) {
+			sched_sleep(sched_ticks() + ms_ticks(SPARE_RETRY_MS));
+			continue;
+		}
+
+		/* Ready, unless another is (none makes one but this thread, so only after the end). */
+		enabled = spin_lock_irqsave(&render->queue_lock);
+
+		if (render->spare == NULL) {
+			render->spare = buffer;
+			buffer = NULL;
+		}
+
+		spin_unlock_irqrestore(&render->queue_lock, enabled);
+
+		if (buffer != NULL)
+			powervr_buffer_put(render, buffer);
+	}
+}
+
+/*
  * The service: sleeps until the firmware's interrupt, a submission or its
  * timeout wakes it, then retires what the firmware finished and reads
  * the firmware's notices, until it is told to end.
@@ -2482,6 +2657,7 @@ service_pass(
 	struct powervr_buffer *flushed;
 	uint32_t compute_now;
 	uint32_t fragment_now;
+	uint32_t transfer_now;
 	int overdue;
 	int pending;
 	int error;
@@ -2523,9 +2699,13 @@ service_pass(
 			fragment_now = 0;
 			if (session->render_context != NULL)
 				fragment_now = powervr_object_get32(&session->render_context->fragment.timeline, POWERVR_SYNC_ADDRESS);
-			if (compute_now != session->seen_compute || fragment_now != session->seen_fragment) {
+			transfer_now = 0;
+			if (session->transfer_context != NULL)
+				transfer_now = powervr_object_get32(&session->transfer_context->client.timeline, POWERVR_SYNC_ADDRESS);
+			if (compute_now != session->seen_compute || fragment_now != session->seen_fragment || transfer_now != session->seen_transfer) {
 				session->seen_compute = compute_now;
 				session->seen_fragment = fragment_now;
+				session->seen_transfer = transfer_now;
 				render->progress_ticks = now;
 			}
 

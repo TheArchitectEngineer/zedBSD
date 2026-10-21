@@ -163,6 +163,7 @@ powervr_render_start(
 	waitq_init(&render->service, "powervr-service");
 	waitq_init(&render->retired, "powervr-retired");
 	waitq_init(&render->reached, "powervr-reached");
+	waitq_init(&render->spare_wanted, "powervr-spare");
 	render->ops.version = DRV_GPU_INTERFACE_VERSION;
 	render->ops.size = sizeof(render->ops);
 	render->ops.capabilities = GPU_CAP_RESOURCE | GPU_CAP_BLOB | GPU_CAP_TRANSFER | GPU_CAP_MAPPING | GPU_CAP_SHARE | GPU_CAP_NOTIFICATION;

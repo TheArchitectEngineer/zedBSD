@@ -119,6 +119,16 @@
 #define RISCV64_SSTATUS_SUM		0x40000
 
 /*
+ * The counters user mode may read: the time counter (rdtime), so that a
+ * program can time its own work finer than the scheduler's tick.  The
+ * cycle and instruction counters stay the kernel's.
+ *
+ * Values referenced: RISC-V privileged architecture (riscv/riscv-isa-manual),
+ * the scounteren register (TM is bit 1).
+ */
+#define RISCV64_SCOUNTEREN_TM		0x2
+
+/*
  * Supervisor interrupt bits, the same in sie and sip: software (the
  * notification between harts), timer and external (the PLIC).
  *

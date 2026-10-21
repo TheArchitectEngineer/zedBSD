@@ -48,4 +48,15 @@ struct powervr_transfer_request {
  */
 int powervr_transfer_run(struct powervr_render *render, struct powervr_session *session, const struct powervr_transfer_request *request);
 
+/*
+ * Runs a transfer of a command buffer: ordered after the session's work
+ * by the firmware and left running (the session's last work is then the
+ * transfer).  A transfer that needs several kicks waits for all but the
+ * last.
+ */
+int powervr_transfer_run_async(struct powervr_render *render, struct powervr_session *session, const struct powervr_transfer_request *request);
+
+/* Frees or keeps the memory of a session's transfers the core finished. */
+void powervr_transfers_reap(struct powervr_render *render, struct powervr_session *session);
+
 #endif

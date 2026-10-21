@@ -45,6 +45,9 @@ static struct {
 	uint64_t count[2][5];
 	uint64_t total_ns[2];
 	uint64_t max_ns[2];
+	/* Wakeups whose CPU was running another thread, and of those, the ones made while some other CPU was idle. */
+	uint64_t busy_home;
+	uint64_t busy_home_idle_other;
 } wake_latency;
 
 static uint64_t
@@ -108,6 +111,9 @@ sched_wake_latency_report(void)
 		    (unsigned long long)wake_latency.count[kind][3],
 		    (unsigned long long)wake_latency.count[kind][4]);
 	}
+	kern_logf("sched: wake onto a busy CPU %llu, while another CPU was idle %llu\n",
+	    (unsigned long long)wake_latency.busy_home,
+	    (unsigned long long)wake_latency.busy_home_idle_other);
 	kern_memset(&wake_latency, 0, sizeof(wake_latency));
 }
 #endif
@@ -554,6 +560,11 @@ sched_wakeup(
 #if SCHED_WAKE_LATENCY
 	thread->sched.woken_at = wake_latency_now();
 	thread->sched.woken_same_cpu = (id == hal_cpu_current());
+	if (cpu->current != NULL && (cpu->current->flags & THREAD_FLAG_IDLE) == 0) {
+		wake_latency.busy_home++;
+		if (choose_idle_cpu(id) != HAL_CPU_MAX)
+			wake_latency.busy_home_idle_other++;
+	}
 #endif
 	wake_enqueue_locked(cpu, thread);
 

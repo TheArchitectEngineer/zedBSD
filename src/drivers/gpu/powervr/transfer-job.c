@@ -53,8 +53,14 @@
 #define USC_COPY			0x100U
 #define USC_BYTES			0x1000U
 
-/* The transfer's memory and programs while it runs. */
+/*
+ * The transfer's memory and programs while it runs; one the core may
+ * still run waits on the session's list (next) until its timeline value
+ * is reached.
+ */
 struct transfer_memory {
+	struct transfer_memory *next;
+	uint32_t value;
 	struct powervr_resource *general;
 	struct powervr_buffer *pds;
 	struct powervr_buffer *usc;
@@ -68,12 +74,26 @@ struct transfer_memory {
 	uint8_t command[POWERVR_TRANSFER_COMMAND_BYTES];
 };
 
-static int transfer_one(struct powervr_render *render, struct powervr_session *session, struct transfer_memory *memory, const struct powervr_transfer_request *request, const struct powervr_render_area *area, uint32_t source_y, uint32_t step, uint32_t phase, uint32_t total);
+/*
+ * How one kick of a transfer goes: after the waits the firmware checks
+ * (wait_count of them), waited for by the host when wait is set, and the
+ * value its timeline reaches once done.
+ */
+struct transfer_kick {
+	struct powervr_sync waits[1];
+	unsigned wait_count;
+	bool wait;
+	uint32_t value;
+};
+
+static int transfer_run(struct powervr_render *render, struct powervr_session *session, const struct powervr_transfer_request *request, bool ordered);
+static int transfer_one(struct powervr_render *render, struct powervr_session *session, struct transfer_memory *memory, const struct powervr_transfer_request *request, const struct powervr_render_area *area, uint32_t source_y, uint32_t step, uint32_t phase, uint32_t total, struct transfer_kick *kick);
 static int transfer_map(struct powervr_render *render, struct powervr_session *session, struct transfer_memory *memory);
 static void transfer_release(struct powervr_render *render, struct powervr_session *session, struct transfer_memory *memory);
 static void put_words(struct powervr_buffer *buffer, uint32_t offset, const uint32_t *words, unsigned count);
 static struct transfer_memory *transfer_keep_take(struct powervr_render *render, struct powervr_session *session);
 static bool transfer_keep_put(struct powervr_render *render, struct powervr_session *session, struct transfer_memory *memory);
+static void transfers_take(struct powervr_render *render, struct powervr_session *session, int all);
 static void put_bytes(struct powervr_buffer *buffer, uint32_t offset, const uint8_t *bytes, size_t count);
 
 /*
@@ -93,11 +113,71 @@ powervr_transfer_run(
 	struct powervr_session *session,
 	const struct powervr_transfer_request *request)
 {
+	int error;
+
+	/* Done before it returns, not ordered after the session's work. */
+	error = transfer_run(render, session, request, false);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the transfer is done. */
+	return 0;
+}
+
+/*
+ * Runs a transfer of a session's command buffer: after the session's
+ * work before it (the firmware waits for that work's point, no host
+ * wait), and left running: its memory waits on the session's list, and
+ * the session's last work is the transfer, whose point later work and
+ * fences complete after.  A transfer of several kicks (rows) waits for
+ * each but the last, which share its memory.
+ */
+int
+powervr_transfer_run_async(
+	struct powervr_render *render,
+	struct powervr_session *session,
+	const struct powervr_transfer_request *request)
+{
+	int error;
+
+	/* Ordered after the session's work and left running. */
+	error = transfer_run(render, session, request, true);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the transfer is the core's. */
+	return 0;
+}
+
+/*
+ * Releases the memory of the session's transfers whose timeline values
+ * were reached, keeping it mapped for the next ones.
+ */
+void
+powervr_transfers_reap(
+	struct powervr_render *render,
+	struct powervr_session *session)
+{
+	/* The finished ones only. */
+	transfers_take(render, session, 0);
+}
+
+/* Runs a transfer, ordered after the session's work and left running, or done before it returns. */
+static int
+transfer_run(
+	struct powervr_render *render,
+	struct powervr_session *session,
+	const struct powervr_transfer_request *request,
+	bool ordered)
+{
 	struct powervr_transfer_context *context;
 	struct transfer_memory *memory;
 	struct powervr_transfer_request single;
 	struct powervr_render_area row;
+	struct transfer_kick kick;
+	unsigned long enabled;
 	uint32_t index;
+	uint32_t kicks;
 	bool by_rows;
 	int error;
 
@@ -124,10 +204,25 @@ powervr_transfer_run(
 		}
 	}
 
-	/* The whole rectangle, or each of its rows. */
+	/*
+	 * The kicks: the first after the session's earlier work when ordered
+	 * (a transfer after the transfer context's own needs no fence); each
+	 * waited for but an ordered transfer's last, as they share the memory.
+	 */
 	by_rows = powervr_transfer_needs_rows(&request->destination, &request->area);
+	kicks = 1;
+	if (by_rows && request->kind == POWERVR_TRANSFER_COPY)
+		kicks = request->area.height < 2U ? request->area.height : 2U;
+	else if (by_rows)
+		kicks = request->area.height;
+	kern_memset(&kick, 0, sizeof(kick));
+	kick.wait = !ordered || kicks > 1U;
+	if (ordered && session->last_kind != POWERVR_POINT_TRANSFER)
+		kick.wait_count = powervr_session_point_sync(session, session->last_kind, session->last_value, &kick.waits[0]);
+
+	/* The whole rectangle, or each of its rows. */
 	if (!by_rows) {
-		error = transfer_one(render, session, memory, request, &request->area, request->source_y, 1U, 0U, 0U);
+		error = transfer_one(render, session, memory, request, &request->area, request->source_y, 1U, 0U, 0U, &kick);
 	} else if (request->kind == POWERVR_TRANSFER_COPY) {
 		/*
 		 * A copy into odd rows: two jobs of doubled line stride, the
@@ -143,7 +238,9 @@ powervr_transfer_run(
 			row.y = 0;
 			row.height = (request->area.height - index + 1U) / 2U;
 			single.destination.height = row.height;
-			error = transfer_one(render, session, memory, &single, &row, request->source_y, 2U, index, request->area.height);
+			kick.wait = !ordered || index + 1U < kicks;
+			error = transfer_one(render, session, memory, &single, &row, request->source_y, 2U, index, request->area.height, &kick);
+			kick.wait_count = 0;
 		}
 	} else {
 		/*
@@ -158,14 +255,16 @@ powervr_transfer_run(
 		single = *request;
 		for (index = 0; error == 0 && index < request->area.height; index++) {
 			row.y = request->area.y + index;
+			kick.wait = !ordered || index + 1U < kicks;
 			if (request->kind == POWERVR_TRANSFER_BLIT) {
-				error = transfer_one(render, session, memory, request, &row, request->source_y + index, 1U, 0U, 0U);
+				error = transfer_one(render, session, memory, request, &row, request->source_y + index, 1U, 0U, 0U, &kick);
 			} else {
 				single.destination.address = request->destination.address + (uint64_t)row.y * request->destination.row_pitch;
 				single.destination.height = 1;
 				row.y = 0;
-				error = transfer_one(render, session, memory, &single, &row, request->source_y + index, 1U, 0U, 0U);
+				error = transfer_one(render, session, memory, &single, &row, request->source_y + index, 1U, 0U, 0U, &kick);
 			}
+			kick.wait_count = 0;
 		}
 	}
 
@@ -176,17 +275,40 @@ powervr_transfer_run(
 		return error;
 	}
 
-	/* Done: the memory is kept mapped for the session's next transfer; refused: it goes. */
-	if (error != 0 || !transfer_keep_put(render, session, memory))
+	/* Refused: the memory goes (a kick that was not waited for left no error). */
+	if (error != 0) {
 		transfer_release(render, session, memory);
-	if (error != 0)
 		return error;
+	}
+
+	/* Left running: the memory waits on the session's list, and the session's last work is the transfer. */
+	if (!kick.wait) {
+		memory->value = kick.value;
+		memory->next = NULL;
+		enabled = spin_lock_irqsave(&render->queue_lock);
+
+		if (session->transfers_done_tail != NULL) {
+			session->transfers_done_tail->next = memory;
+		} else {
+			session->transfers_done = memory;
+		}
+		session->transfers_done_tail = memory;
+
+		spin_unlock_irqrestore(&render->queue_lock, enabled);
+
+		powervr_session_point_set(session, POWERVR_POINT_TRANSFER, kick.value);
+		return 0;
+	}
+
+	/* Done: the memory is kept mapped for the session's next transfer. */
+	if (!transfer_keep_put(render, session, memory))
+		transfer_release(render, session, memory);
 
 	/* Succeeded: the transfer is done. */
 	return 0;
 }
 
-/* Builds, kicks and waits for the transfer of one rectangle. */
+/* Builds and kicks the transfer of one rectangle, waiting for it when the kick says so. */
 static int
 transfer_one(
 	struct powervr_render *render,
@@ -197,7 +319,8 @@ transfer_one(
 	uint32_t source_y,
 	uint32_t step,
 	uint32_t phase,
-	uint32_t total)
+	uint32_t total,
+	struct transfer_kick *kick)
 {
 	struct powervr_transfer_job *job;
 	uint32_t words[POWERVR_TRANSFER_SHARED_WORDS];
@@ -286,13 +409,17 @@ transfer_one(
 	powervr_transfer_command(&memory->regs, memory->command);
 	mutex_lock(&render->core->lock);
 
-	error = powervr_session_kick_transfer(render, session, memory->command, &value);
+	error = powervr_session_kick_transfer(render, session, memory->command, kick->waits, kick->wait_count, &value);
 
 	mutex_unlock(&render->core->lock);
 
 	if (error != 0)
 		return error;
 
+	/* Its value; waited for unless the transfer is left running. */
+	kick->value = value;
+	if (!kick->wait)
+		return 0;
 	error = powervr_transfer_finish(session, value, TRANSFER_WAIT_MS);
 	if (error != 0)
 		return error;
@@ -353,9 +480,10 @@ transfer_map(
 }
 
 /*
- * Takes the memory the session's last transfer kept mapped, its buffers
- * as they are (each transfer writes what it reads of them), the rest
- * cleared.  NULL when none is kept.
+ * Takes memory a session's finished transfer kept mapped, its buffers as
+ * they are (each transfer writes what it reads of them), the rest
+ * cleared; the finished transfers' memory goes there first.  NULL when
+ * none is kept.
  */
 static struct transfer_memory *
 transfer_keep_take(
@@ -366,11 +494,18 @@ transfer_keep_take(
 	struct transfer_memory kept;
 	unsigned long enabled;
 
-	/* The kept memory, off the session. */
+	/* The finished transfers' memory, kept or freed. */
+	transfers_take(render, session, 0);
+
+	/* The newest kept memory, off the session. */
+	memory = NULL;
 	enabled = spin_lock_irqsave(&render->queue_lock);
 
-	memory = session->transfer_keep;
-	session->transfer_keep = NULL;
+	if (session->transfer_keep_count != 0U) {
+		session->transfer_keep_count--;
+		memory = session->transfer_keep[session->transfer_keep_count];
+		session->transfer_keep[session->transfer_keep_count] = NULL;
+	}
 
 	spin_unlock_irqrestore(&render->queue_lock, enabled);
 
@@ -393,7 +528,8 @@ transfer_keep_take(
 /*
  * Keeps a finished transfer's mapped memory for the session's next one
  * (mapping three buffers a transfer cost more than the copy of a glyph),
- * when the session keeps none yet and is well.  Reports whether it did.
+ * while the session keeps fewer than POWERVR_TRANSFER_KEEP and it and the
+ * core are well.  Reports whether it did.
  */
 static bool
 transfer_keep_put(
@@ -409,12 +545,13 @@ transfer_keep_put(
 	    memory->pds_place == 0U || memory->usc_place == 0U)
 		return false;
 
-	/* Into the session's one place, when free and the session and core are well. */
+	/* Into a free place, when the session and the core are well. */
 	kept = false;
 	enabled = spin_lock_irqsave(&render->queue_lock);
 
-	if (session->transfer_keep == NULL && !render->faulted && !session->lost && !session->isolated) {
-		session->transfer_keep = memory;
+	if (session->transfer_keep_count < POWERVR_TRANSFER_KEEP && !render->faulted && !session->lost && !session->isolated) {
+		session->transfer_keep[session->transfer_keep_count] = memory;
+		session->transfer_keep_count++;
 		kept = true;
 	}
 
@@ -425,7 +562,55 @@ transfer_keep_put(
 }
 
 /*
- * Frees the transfer memory a session kept mapped, when the session ends.
+ * Takes the memory of the session's transfers the core finished, oldest
+ * first, keeping it mapped for the next ones or freeing it; with all set
+ * (the session's work is over) every one.  Nothing is taken of a lost or
+ * isolated session, or on a faulted device, before then: the core may
+ * still reach it.
+ */
+static void
+transfers_take(
+	struct powervr_render *render,
+	struct powervr_session *session,
+	int all)
+{
+	struct transfer_memory *memory;
+	unsigned long enabled;
+	int reached;
+
+	/* Oldest first, while there is one to take. */
+	for (;;) {
+		enabled = spin_lock_irqsave(&render->queue_lock);
+
+		memory = session->transfers_done;
+		reached = 0;
+		if (memory != NULL) {
+			reached = powervr_session_point_reached(session, POWERVR_POINT_TRANSFER, memory->value);
+			if (render->faulted || session->lost || session->isolated)
+				reached = 0;
+		}
+		if (memory != NULL && (reached || all)) {
+			session->transfers_done = memory->next;
+			if (session->transfers_done == NULL)
+				session->transfers_done_tail = NULL;
+		}
+
+		spin_unlock_irqrestore(&render->queue_lock, enabled);
+
+		/* Nothing more, or the oldest still runs. */
+		if (memory == NULL || (!reached && !all))
+			return;
+
+		/* Kept for the next transfer, or freed (all of them when the session goes). */
+		memory->next = NULL;
+		if (all || !transfer_keep_put(render, session, memory))
+			transfer_release(render, session, memory);
+	}
+}
+
+/*
+ * Frees the transfer memory a session kept mapped and its transfers'
+ * memory, when the session ends (its work is over).
  */
 void
 powervr_transfer_forget(
@@ -433,11 +618,26 @@ powervr_transfer_forget(
 	struct powervr_session *session)
 {
 	struct transfer_memory *memory;
+	unsigned long enabled;
 
-	/* The kept memory, unmapped and freed. */
-	memory = transfer_keep_take(render, session);
-	if (memory != NULL)
+	/* The transfers' memory, then the kept memory, unmapped and freed. */
+	transfers_take(render, session, 1);
+	for (;;) {
+		memory = NULL;
+		enabled = spin_lock_irqsave(&render->queue_lock);
+
+		if (session->transfer_keep_count != 0U) {
+			session->transfer_keep_count--;
+			memory = session->transfer_keep[session->transfer_keep_count];
+			session->transfer_keep[session->transfer_keep_count] = NULL;
+		}
+
+		spin_unlock_irqrestore(&render->queue_lock, enabled);
+
+		if (memory == NULL)
+			return;
 		transfer_release(render, session, memory);
+	}
 }
 
 /* Unmaps and returns the transfer's memory and its bookkeeping. */

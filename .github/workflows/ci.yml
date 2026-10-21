@@ -21,7 +21,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            build-essential cmake curl git grub-common gzip ninja-build \
+            build-essential cmake curl device-tree-compiler git grub-common gzip ninja-build \
             mtools nasm patch xz-utils
 
       - name: Install pinned LLVM toolchain cache
@@ -67,7 +67,7 @@ jobs:
           yes | make firmware-licenses
           make -j4 native-image
           mkdir -p artifacts
-          gzip -9 -c build/riscv64/native.img > artifacts/zedbsd-vf2.img.gz
+          gzip -9 -c build/visionfive2/native.img > artifacts/zedbsd-vf2.img.gz
 
       - name: Build pc98
         run: |

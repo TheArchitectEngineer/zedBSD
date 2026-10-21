@@ -296,6 +296,62 @@ static struct spinlock gpu_registry_lock = {
 };
 
 /*
+ * Whether each GPU ioctl's time in the kernel and the user time before it
+ * (since the same thread's previous GPU ioctl returned) are summed by the
+ * pair of requests (1), or not (0).  Off by default; a measurement build
+ * turns it on (ZEDBSD_TEST_CPPFLAGS += -DGPU_IOCTL_TIMING=1) and a backend's
+ * timing thread says the sums (drv_gpu_ioctl_timing_report).
+ */
+#ifndef GPU_IOCTL_TIMING
+#define GPU_IOCTL_TIMING 0
+#endif
+
+/* The threads and the pairs of requests the timing keeps apart. */
+#define GPU_TIMING_THREADS	32U
+#define GPU_TIMING_EDGES	512U
+
+/* The longest user time counted as work between two requests (a longer one is idle), in microseconds. */
+#define GPU_TIMING_GAP_US	50000U
+
+/* The pairs said in one report, the longest in total first. */
+#define GPU_TIMING_REPORTED	32U
+
+/* The offset of the caller's opcode in a Vulkan transport frame (after its reply-stream selection). */
+#define GPU_TIMING_OPCODE_AT	36U
+
+/* One thread's last GPU request: its kind (G number, transport opcode above) and when it returned, on the counter. */
+struct gpu_timing_thread {
+	tid_t tid;
+	pid_t pid;
+	uint32_t key;
+	uint64_t returned;
+};
+
+/* One pair of a thread's consecutive requests: how often, the user time before the second and its kernel time, in counter ticks. */
+struct gpu_timing_edge {
+	tid_t tid;
+	pid_t pid;
+	uint32_t from;
+	uint32_t to;
+	uint64_t count;
+	uint64_t gaps;
+	uint64_t gap;
+	uint64_t gap_most;
+	uint64_t kernel;
+	uint64_t kernel_most;
+};
+
+/* The timing's threads, pairs and counter rate (Hz), under gpu_timing_lock. */
+static struct gpu_timing_thread gpu_timing_threads[GPU_TIMING_THREADS];
+static struct gpu_timing_edge gpu_timing_edges[GPU_TIMING_EDGES];
+static uint64_t gpu_timing_rate;
+
+/* Protects the timing's tables; taken with nothing else held. */
+static struct spinlock gpu_timing_lock = {
+	{ 0 }, LOCK_RANK_DEVICE, "GPU ioctl timing", 0, 0
+};
+
+/*
  * Forward declaration.
  */
 static int gpu_ops_validate(const struct drv_gpu_ops *ops);
@@ -388,6 +444,9 @@ static void gpu_shared_release(void *object);
 static int gpu_shared_hold_device(struct drv_gpu_device *device);
 static int gpu_export_install(struct kernel_handle *handle, void *request, size_t bytes, uint32_t policy, int32_t *fd, uintptr_t argument);
 static const struct kernel_handle_ops *gpu_shared_operations(void);
+static uint32_t gpu_timing_key(unsigned long command, uintptr_t argument);
+static void gpu_timing_record(uint32_t key, uint64_t entered, uint64_t returned);
+static uint64_t gpu_timing_us(uint64_t ticks, uint64_t rate);
 
 /*
  * Retains a protected GPU wrapper independently from device registration.
@@ -836,6 +895,99 @@ drv_gpu_capacity_changed(
 	spin_unlock_irqrestore(&gpu_registry_lock, irq);
 
 	/* Succeeded: capacity waiters may recheck both independently owned limits. */
+	return;
+}
+
+/*
+ * Says the GPU ioctl timing's sums since the last report and clears them.
+ *
+ * The pairs of one thread's consecutive requests that took the most time
+ * are said, each with its count, the user time before the second request
+ * and the second request's kernel time.  Nothing when the timing is off.
+ */
+void
+drv_gpu_ioctl_timing_report(
+	void)
+{
+	static struct gpu_timing_edge edges[GPU_TIMING_EDGES];
+	struct gpu_timing_edge swap;
+	unsigned long irq;
+	uint64_t rate;
+	uint64_t total;
+	uint64_t best_total;
+	uint64_t user;
+	uint64_t kernel;
+	unsigned index;
+	unsigned other;
+	unsigned best;
+	unsigned used;
+
+	/* Nothing when the timing is off. */
+	if (!GPU_IOCTL_TIMING)
+		return;
+
+	/* Takes the sums and clears them. */
+	irq = spin_lock_irqsave(&gpu_timing_lock);
+
+	kern_memcpy(edges, gpu_timing_edges, sizeof(edges));
+	kern_memset(gpu_timing_edges, 0, sizeof(gpu_timing_edges));
+	rate = gpu_timing_rate;
+
+	spin_unlock_irqrestore(&gpu_timing_lock, irq);
+
+	/* Nothing measured. */
+	if (rate == 0U)
+		return;
+
+	/* Moves the pairs that ran to the front. */
+	used = 0;
+	for (index = 0; index < GPU_TIMING_EDGES; index++) {
+		if (edges[index].count == 0U)
+			continue;
+		edges[used] = edges[index];
+		used++;
+	}
+
+	/* Says the pairs that took the most time, longest first. */
+	for (index = 0; index < used && index < GPU_TIMING_REPORTED; index++) {
+		/* The longest pair of those left. */
+		best = index;
+		best_total = 0;
+		for (other = index; other < used; other++) {
+			total = edges[other].gap + edges[other].kernel;
+			if (total > best_total) {
+				best = other;
+				best_total = total;
+			}
+		}
+
+		swap = edges[index];
+		edges[index] = edges[best];
+		edges[best] = swap;
+
+		/* Its averages: the user time of the pairs that were not idle, the kernel time of all. */
+		user = 0;
+		if (edges[index].gaps != 0U)
+			user = gpu_timing_us(edges[index].gap, rate) / edges[index].gaps;
+		kernel = gpu_timing_us(edges[index].kernel, rate) / edges[index].count;
+
+		/* Its line: pid and tid, the pair (G number and transport opcode), count, user and kernel time. */
+		kern_logf(
+			"gpu: ioctl pid %d tid %d G%u.%u>G%u.%u: %llu, user %llu us (most %llu), kernel %llu us (most %llu)\n",
+			(int)edges[index].pid,
+			(int)edges[index].tid,
+			edges[index].from & 0xffU,
+			edges[index].from >> 8,
+			edges[index].to & 0xffU,
+			edges[index].to >> 8,
+			(unsigned long long)edges[index].count,
+			(unsigned long long)user,
+			(unsigned long long)gpu_timing_us(edges[index].gap_most, rate),
+			(unsigned long long)kernel,
+			(unsigned long long)gpu_timing_us(edges[index].kernel_most, rate));
+	}
+
+	/* Succeeded: the sums were said and cleared. */
 	return;
 }
 
@@ -1578,12 +1730,185 @@ gpu_ioctl(
 	unsigned long command,
 	uintptr_t argument)
 {
-	int error = gpu_ioctl_body(file, command, argument);
+	uint64_t entered;
+	uint64_t returned;
+	uint64_t rate;
+	uint32_t key;
+	bool counted;
+	int error;
+
+	/* What the request is and when it entered, for the timing. */
+	entered = 0;
+	key = 0;
+	if (GPU_IOCTL_TIMING) {
+		key = gpu_timing_key(command, argument);
+		counted = hal_rtc_read_counter(&entered, &rate);
+		if (!counted)
+			entered = 0;
+	}
+
+	/* The request. */
+	error = gpu_ioctl_body(file, command, argument);
+
+	/* Its kernel time and the user time before it. */
+	if (GPU_IOCTL_TIMING && entered != 0U) {
+		counted = hal_rtc_read_counter(&returned, &rate);
+		if (counted) {
+			gpu_timing_rate = rate;
+			gpu_timing_record(key, entered, returned);
+		}
+	}
 
 	if (GPU_IOCTL_TRACE && error != 0)
 		kern_logf("gpu: ioctl G%lu (cmd 0x%lx) -> error %d\n",
 			command & 0xffUL, command, error);
 	return error;
+}
+
+/*
+ * Names a request for the timing: its G number, and for a transport frame
+ * the opcode of the caller's command in it (0 when it cannot be read).
+ */
+static uint32_t
+gpu_timing_key(
+	unsigned long command,
+	uintptr_t argument)
+{
+	struct gpu_command_submit request;
+	uint32_t opcode;
+	uint32_t key;
+	int error;
+
+	/* The G number. */
+	key = (uint32_t)(command & 0xffUL);
+	if (command != GPU_COMMAND_SUBMIT)
+		return key;
+
+	/* The frame's description. */
+	error = copyin(argument, &request, sizeof(request));
+	if (error != 0)
+		return key;
+	if (request.bytes < GPU_TIMING_OPCODE_AT + sizeof(opcode))
+		return key;
+
+	/* The caller's opcode, after the reply-stream selection. */
+	error = copyin((uintptr_t)request.address + GPU_TIMING_OPCODE_AT, &opcode, sizeof(opcode));
+	if (error != 0)
+		return key;
+
+	/* Succeeded: the G number and the opcode. */
+	return key | ((opcode & 0xffffffU) << 8);
+}
+
+/* Adds one request of the current thread to the pair it makes with the thread's previous request. */
+static void
+gpu_timing_record(
+	uint32_t key,
+	uint64_t entered,
+	uint64_t returned)
+{
+	struct gpu_timing_thread *slot;
+	struct gpu_timing_edge *edge;
+	struct thread *thread;
+	unsigned long irq;
+	uint64_t gap;
+	uint32_t from;
+	unsigned index;
+	unsigned probe;
+	bool previous;
+	tid_t tid;
+	pid_t pid;
+
+	/* The current thread. */
+	thread = curthread;
+	tid = thread->tid;
+	pid = 0;
+	if (thread->proc != NULL)
+		pid = thread->proc->pid;
+
+	irq = spin_lock_irqsave(&gpu_timing_lock);
+
+	/* The thread's slot, a free one, or the one used longest ago. */
+	slot = NULL;
+	for (index = 0; index < GPU_TIMING_THREADS; index++) {
+		if (gpu_timing_threads[index].tid == tid && gpu_timing_threads[index].pid == pid) {
+			slot = &gpu_timing_threads[index];
+			break;
+		}
+	}
+
+	if (slot == NULL) {
+		slot = &gpu_timing_threads[0];
+		for (index = 1; index < GPU_TIMING_THREADS; index++) {
+			if (gpu_timing_threads[index].returned < slot->returned)
+				slot = &gpu_timing_threads[index];
+		}
+		slot->tid = tid;
+		slot->pid = pid;
+		slot->key = 0;
+		slot->returned = 0;
+	}
+
+	/* The user time since the thread's previous request, when it had one. */
+	from = slot->key;
+	gap = 0;
+	previous = false;
+	if (slot->returned != 0U && entered > slot->returned) {
+		gap = entered - slot->returned;
+		previous = true;
+	}
+
+	slot->key = key;
+	slot->returned = returned;
+
+	/* The pair's entry, found or made. */
+	edge = NULL;
+	probe = (key * 2654435761U + from * 40503U + (uint32_t)tid * 97U) % GPU_TIMING_EDGES;
+	for (index = 0; index < GPU_TIMING_EDGES; index++) {
+		edge = &gpu_timing_edges[(probe + index) % GPU_TIMING_EDGES];
+		if (edge->count == 0U) {
+			edge->tid = tid;
+			edge->pid = pid;
+			edge->from = from;
+			edge->to = key;
+			break;
+		}
+		if (edge->tid == tid && edge->pid == pid && edge->from == from && edge->to == key)
+			break;
+		edge = NULL;
+	}
+
+	/* A full table counts nothing more. */
+	if (edge != NULL) {
+		edge->count++;
+		edge->kernel += returned - entered;
+		if (returned - entered > edge->kernel_most)
+			edge->kernel_most = returned - entered;
+
+		/* A user time longer than the idle bound is not work between the two. */
+		if (previous && gpu_timing_us(gap, gpu_timing_rate) < GPU_TIMING_GAP_US) {
+			edge->gaps++;
+			edge->gap += gap;
+			if (gap > edge->gap_most)
+				edge->gap_most = gap;
+		}
+	}
+
+	spin_unlock_irqrestore(&gpu_timing_lock, irq);
+}
+
+/* Converts counter ticks to microseconds at the counter's rate. */
+static uint64_t
+gpu_timing_us(
+	uint64_t ticks,
+	uint64_t rate)
+{
+	/* No rate converts nothing. */
+	if (rate == 0U)
+		return 0;
+
+	/* Succeeded: whole seconds and the remainder, each scaled without overflow. */
+	return (ticks / rate) * 1000000U + (ticks % rate) * 1000000U / rate;
 }
 
 static int

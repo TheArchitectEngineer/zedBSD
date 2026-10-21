@@ -36,7 +36,8 @@ struct vulkan_sync {
 	/*
 	 * True from the creation of an unsignaled fence until its first
 	 * submission is prepared: the native fence was never signaled, so the
-	 * preparation needs no native reset.
+	 * preparation needs no native reset.  A shared (exported) fence is also
+	 * true again after vkResetFences reset its native fence.
 	 */
 	VkBool32 native_unsubmitted;
 	/*
