@@ -44,7 +44,8 @@
 #define RENDER_PERF_SUBMIT	3U
 #define RENDER_PERF_PRESENT	4U
 #define RENDER_PERF_WAIT	5U
-#define RENDER_PERF_PARTS	6U
+#define RENDER_PERF_UPLOAD	6U
+#define RENDER_PERF_PARTS	7U
 #define RENDER_PERF_MS		5000U
 
 static VkResult render_device(struct terminal_renderer *renderer);
@@ -59,6 +60,7 @@ static VkResult render_vertices(struct terminal_renderer *renderer);
 static VkResult render_pipeline(struct terminal_renderer *renderer);
 static VkResult render_module(struct terminal_renderer *renderer, const uint32_t *code, size_t size, VkShaderModule *module);
 static uint32_t render_build(struct terminal_renderer *renderer, struct terminal_screen *screen, struct terminal_font *font, const struct terminal_window *window);
+static void render_upload(struct terminal_renderer *renderer, uint32_t vertex_count);
 static float *render_preedit(struct terminal_renderer *renderer, const struct terminal_screen *screen, struct terminal_font *font, const struct terminal_window *window, float *vertex, int first_row, int last_row);
 static uint32_t render_utf8_next(const char *text, size_t *at);
 static float *render_quad(float *vertex, const struct terminal_font *font, float x, float y, float width, float height, unsigned slot, uint32_t foreground, uint32_t background);
@@ -269,6 +271,9 @@ terminal_renderer_draw(
 	mark = render_now_us();
 	vertex_count = render_build(renderer, screen, font, window);
 	render_perf_add(RENDER_PERF_BUILD, mark);
+	mark = render_now_us();
+	render_upload(renderer, vertex_count);
+	render_perf_add(RENDER_PERF_UPLOAD, mark);
 
 	/* The image to draw into, once the compositor has given one back. */
 	mark = render_now_us();
@@ -425,6 +430,8 @@ terminal_renderer_close(
 			vkDestroyBuffer(renderer->device, renderer->vertices, NULL);
 		if (renderer->vertex_memory != VK_NULL_HANDLE)
 			vkFreeMemory(renderer->device, renderer->vertex_memory, NULL);
+		free(renderer->vertex_build);
+		free(renderer->vertex_kept);
 
 		/* The commands and the synchronization. */
 		if (renderer->pool != VK_NULL_HANDLE)
@@ -1021,6 +1028,13 @@ render_vertices(
 	if (error != VK_SUCCESS)
 		return error;
 
+	/* Where frames are built, and the copy of what the mapping holds (nothing yet). */
+	renderer->vertex_build = malloc(buffer.size);
+	renderer->vertex_kept = malloc(buffer.size);
+	renderer->vertex_kept_words = 0U;
+	if (renderer->vertex_build == NULL || renderer->vertex_kept == NULL)
+		return VK_ERROR_OUT_OF_HOST_MEMORY;
+
 	/* Succeeded: the host writes each frame's vertices here. */
 	return VK_SUCCESS;
 }
@@ -1266,7 +1280,7 @@ render_build(
 	top = (long long)screen->scrolled - (long long)screen->view;
 
 	/* Each cell of those lines, row after row, from the padded top left. */
-	start = renderer->vertex_map;
+	start = renderer->vertex_build;
 	vertex = start;
 	for (row = first_row; row <= last_row; row++) {
 		/* A line the terminal keeps, whose row meets the window. */
@@ -1389,6 +1403,61 @@ render_build(
 }
 
 /*
+ * Stores a frame's vertices (built in vertex_build) into the vertex
+ * buffer's mapping: only the doublewords that differ from what it holds,
+ * since the processor reaches the mapping around its cache and each store
+ * is a bus write (most of a frame is the frame before: a typed character
+ * changes a cell or two, and a line moved up changes only the atlas
+ * places of its cells).  The doublewords past what the copy knows are
+ * stored all.  The copy is then the frame built, and the frame before's
+ * copy is where the next frame is built.
+ */
+static void
+render_upload(
+	struct terminal_renderer *renderer,
+	uint32_t vertex_count)
+{
+	volatile uint64_t *mapped;
+	const unsigned char *built;
+	const unsigned char *kept;
+	float *swap;
+	uint64_t word;
+	uint64_t was;
+	size_t words;
+	size_t known;
+	size_t index;
+
+	/* The frame's doublewords (a vertex is six), and how many of them the copy knows. */
+	words = (size_t)vertex_count * RENDER_VERTEX_FLOATS * sizeof(float) / sizeof(uint64_t);
+	known = renderer->vertex_kept_words;
+	if (known > words)
+		known = words;
+	mapped = renderer->vertex_map;
+	built = (const unsigned char *)renderer->vertex_build;
+	kept = (const unsigned char *)renderer->vertex_kept;
+
+	/* The doublewords the mapping holds otherwise. */
+	for (index = 0U; index < known; index++) {
+		memcpy(&word, built + index * sizeof(word), sizeof(word));
+		memcpy(&was, kept + index * sizeof(was), sizeof(was));
+		if (word != was)
+			mapped[index] = word;
+	}
+
+	/* Those past what the copy knows. */
+	for (; index < words; index++) {
+		memcpy(&word, built + index * sizeof(word), sizeof(word));
+		mapped[index] = word;
+	}
+
+	/* The frame built is what the mapping holds now. */
+	swap = renderer->vertex_kept;
+	renderer->vertex_kept = renderer->vertex_build;
+	renderer->vertex_build = swap;
+	renderer->vertex_kept_words = words;
+}
+
+/*
  * Writes the vertices of the input method's text being composed: from the
  * cursor's cell rightward, a wide character over two cells, on the
  * selection's background with the segment being converted in reverse, cut
@@ -1438,7 +1507,7 @@ render_preedit(
 	}
 
 	/* Each character, from there, while it fits the grid and the vertex buffer. */
-	start = renderer->vertex_map;
+	start = renderer->vertex_build;
 	at = 0U;
 	while (window->preedit[at] != '\0') {
 		/* The character, and where the next one starts. */
@@ -1535,7 +1604,7 @@ render_search_bar(
 
 	/* The last row of the grid, from its first column. */
 	y = (float)(TERMINAL_PADDING + (screen->rows - 1U) * font->cell_height);
-	start = renderer->vertex_map;
+	start = renderer->vertex_build;
 	column = 0U;
 	at = 0;
 
@@ -1859,13 +1928,14 @@ render_perf_add(
  * Writes the ZTERM PERF line every RENDER_PERF_MS while frames are drawn:
  * how many, and each part's average and longest time in milliseconds
  * (the grid's vertices and new glyphs, the acquire of an image the
- * compositor gave back, the recording, the submission, the present, and
- * the wait for the GPU), then starts the next window.
+ * compositor gave back, the recording, the submission, the present, the
+ * wait for the GPU, and the stores of the vertices that changed into the
+ * mapping), then starts the next window.
  */
 static void
 render_perf_report(void)
 {
-	static const char *const names[RENDER_PERF_PARTS] = { "build", "acquire", "record", "submit", "present", "wait" };
+	static const char *const names[RENDER_PERF_PARTS] = { "build", "acquire", "record", "submit", "present", "wait", "upload" };
 	uint64_t now;
 	unsigned part;
 

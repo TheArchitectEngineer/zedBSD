@@ -467,6 +467,16 @@ struct terminal_renderer {
 	size_t vertex_capacity;
 
 	/*
+	 * The processor reaches the mapping around its cache, so a frame is
+	 * built in the host's own memory (vertex_build) and only what changed
+	 * is stored into the mapping (render_upload); vertex_kept is a copy of
+	 * the mapping's first vertex_kept_words doublewords.
+	 */
+	float *vertex_build;
+	float *vertex_kept;
+	size_t vertex_kept_words;
+
+	/*
 	 * The command pool (each image has its command buffer, its target's),
 	 * the fence that says the frame finished (pending while a frame
 	 * submitted has not been waited for) and the acquire semaphore.
