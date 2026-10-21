@@ -415,3 +415,4 @@ Keiland が使い、vkmatrix 15/15・gpu-selftest 13/13 で確かめていない
   - p010 は 0 failed、p009 は 505 passed。
   - desktop の config で VF2 の vmunix は rc 0、warning 0。
   - 板の vkmatrix は未実施。
+- d39（cd107fa41、SLC は bypass のまま、P2 の temps の詰め）: vkmatrix 33/33。perf: 1080p の clear 3.85 ms、LOAD 23.5 ms、平らな全画面の quad 20.8 ms、texture の全画面の quad 43.25 ms → 土台は速く、fragment の shader の実行が約 10 倍遅い（約 120 Mpixel/s）。`-p 2 -r 5 load-1080-6` は `no progress for 5000 ms`（watchdog の誤検出、HWR 無し）で FAIL → P1 に watchdog の見直し。P1・P2 に fragment の道（PDS の pixel program・USC の task・instance の数）を Mesa と比べるよう依頼。
