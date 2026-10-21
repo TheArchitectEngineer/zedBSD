@@ -337,3 +337,5 @@ Keiland が使い、vkmatrix 15/15・gpu-selftest 13/13 で確かめていない
 - notice の行の "pc" は page catalogue の物理 address なので、log の名を `page catalogue` にした。`powervr_session_describe_physical`（shader の address と見て探していた）は消した。
 - session を作る時に `powervr: session context 0x… memory context 0x… page catalogue 0x…` を出す。fault の page catalogue から session を引ける。
 - 確認: desktop の config で VF2 の vmunix は rc 0、warning 0。p010 の host 試験は 0 failed。
+- d27（3f8a885bd、P2 0ac34cbd9 の decode）: 3 session が同じ形で fault（`bif fault at 0x0, read by tag 37 (IPF CREQ) … catalogue base 13`、page catalogue はそれぞれ別）。session 0x1 と 0x2 の FW の memory context が同じ 0xc002b000。試験の途中で板が止まり（No route to host）、電源の入れ直しで戻った。
+- d28（7d69d8479、P1 7c5c31f0b の target の診断）: fault の page catalogue 0x5a20a001 は session の catalogue（0x4e03d000）でも target の record の PM の catalogue（0x5a21e001・0x5a221001・0x5a224001）でもなく、それらの近く → 別（解放済みか）の HWRT の PM の catalogue で ISP が読んでいる疑い。P1 に PM の catalogue の確保・解放を調べるよう依頼。
