@@ -46,3 +46,50 @@ Mesa 26.2.5（drm-shim、BVNC 36.50.54.182、`PVR_DEBUG=cs`、vkmatrix の perf-
   - build/q1539/vf2/vmunix: 既定（switch 0、512 draws）、sha256 6dec829f775fb0fa…
   - build/q1539/vf2-ta/vmunix: `POWERVR_DRAW_TRIAL` 3 と `POWERVR_FRAGMENT_PIXEL_MERGE_OFF` 1（PUNCH_THROUGH 以外を Mesa に合わせる）、sha256 fe6c1611f5bea1a2…
   - build/q1539/vf2-tb/vmunix: `POWERVR_DRAW_TRIAL` 4（PUNCH_THROUGH だけ）、sha256 590718a0dac284ab…
+
+## q1539-i02（2026-10-21、P2）
+
+### 板の d50（Q1、512 draws の既定の kernel）と ta の読み
+
+- d50: parameter の溢れ 0、HWR 0、vkmatrix 41/41。perf（us/frame）: clear 3850、flat 15700、immediate 15200、quarter 7250、tri1 15750、tri8 15700、tri128 16050、stack4 16000、draws4 19200、load 18750、texture 38150。
+  - tri128≈tri1、stack4≈flat → 三角形 × tile も parameter buffer の read も主因でない。費用は shade する pixel の数に比例する。
+  - P3 の perf-read で、texture の read はほぼ費用 0 → memory の read は遅くない。
+- ta（varying base を出さない・pds_tempsize 0・DISABLE_PIXELMERGE）: clear・flat・immediate・quarter は変化なし、draws4 は 19200 → 16050。全画面の draw を足す費用が、1 つ約 1.1 ms から約 0.02 ms になった → 3 つを既定にした（a8f297ddb）。どれが効いたかは未分離。
+- 読み（未確認）: shade の費用は fragment program の group の数。immediate.frag は 15 group、clear の background の program は 1 group。tc（clear の program を 14 個の即値で 15 group にする試し、POWERVR_CLEAR_TRIAL_PAD）で確かめる。
+
+### compiler の直し（c0a079e60）
+
+- IR:
+  - 死んだ代入の除去（次の構造の命令までに読まれず書き直される、または読まれない 1 語の値）。
+  - copy の伝播（move の先を読む所を move の元に。core の定数の register の 0・1・1.0・全 1 も）。
+- blend:
+  - 因子が channel に依らない時は 1 回だけ計算する（premultiplied の 1−a）。
+  - ONE と ZERO の乗算を省く。
+  - 目的の側の項を FMAD にまとめる。
+- clamp: MINMAX 2 つをやめ、FADD x,0 の .sat 1 つにした（Mesa の pco の fsat と同じ）。IR の flag は POWERVR_IR_SATURATE、機械の命令は saturate。
+- 機械の命令:
+  - 枝の無い fragment では、計算の結果を後の move の先へ直に書き、move を省く。
+  - 枝の無い fragment の最後の move・即値に END を乗せる（Mesa の pco_end と同じ）。
+- 試験: WS269 の compiler の simulator（machine-run.c）に end の flag と saturate を、IR の interpreter（ir-run.c）に saturate を足した（Q1 の許可）。
+
+| shader | 前 | 後 |
+| --- | --- | --- |
+| Keiland quad.frag | 51 | 19 |
+| Keiland batch.frag | 100 | 60 |
+| panel.frag の変種 [0]〜[7] | 158・104・99・96・103・69・148・174 | 123・73・65・65・72・36・108・139 |
+| vkmatrix immediate・push4・texture | 15・16・25 | 6・6・12 |
+| quad.vert | 42 | 25 |
+
+- 確認（host）: compiler 411・22 passed、p010 は全 0 failed、p009 は 505 passed・0 failed、VF2 の vmunix は warning 0。板は未実施。
+- 危険: vertex の出力の書き込みが core の定数の register（0・1.0）を直に読む。hardware で読めるかは板で確かめる。
+
+### 直した試験（Q1 の許可、a8f297ddb）
+
+- p010 command-host-test: fragment の flags に DISABLE_PIXELMERGE。
+- p010 draw-host-test: vkdemo の PPP の SIZEINFO1 の pds_tempsize を 0 に。
+- p009 vk-host-test・frame-host: keiland B を 2×POWERVR_RENDER_DRAWS+8 draws にし、R512 R512c R8c を確かめる（512 draws の前提に追従、2d3c67809 で落ちていた 2 件）。
+
+### 板の組（Q1 に送った）
+
+- build/q1539/vf2/vmunix（a8f297ddb、sha256 879a868ba79183d5…）と build/q1539/vf2/bin/vkmatrix（sha256 0aca9fc3a0f96599…）。
+- build/q1539/vf2-tc/vmunix（a8f297ddb と、clear の padding 14 の使い捨て、sha256 2a0814d907139e3a…）。
