@@ -340,6 +340,7 @@ static void glass_shape_piece(const struct glass_shape *shape, const float *part
 static int glass_shape_cover(struct kwl_server *server, struct kwl_list *command, const struct glass_shape *shape);
 static void glass_shadow_trim(struct glass_shape *shape);
 static int glass_shadow_picture(struct kwl_server *server, const struct glass_shape *shadow, struct glass_shape *picture);
+static int glass_ring_hollow(struct kwl_server *server, struct kwl_list *command, const struct glass_shape *shape);
 static unsigned glass_count_kind_of(const float *constants);
 static int wallpaper_create(struct kwl_server *server, struct kwl_glass *glass, uint32_t width, uint32_t height);
 static int glass_size_make(struct kwl_server *server, uint32_t width, uint32_t height, struct kwl_glass_size *size);
@@ -2098,6 +2099,7 @@ glass_shape_draw(
 	int opaque;
 	int split;
 	int pictured;
+	int hollow;
 
 	/* A shape of a layer faded out wholly is not drawn (the desktop behind App Home). */
 	if (server->layer_on && server->layer_opacity <= 0.0f)
@@ -2165,6 +2167,11 @@ glass_shape_draw(
 	 */
 	covered = glass_shape_cover(server, command, shape);
 	if (covered)
+		return;
+
+	/* An outline is drawn around its empty middle, where it covers nothing. */
+	hollow = glass_ring_hollow(server, command, shape);
+	if (hollow)
 		return;
 
 	/* The quad in normalized device coordinates. */
@@ -4841,5 +4848,45 @@ glass_shadow_picture(
 	picture->uv[3] = (shadow->quad[1] + shadow->quad[3] - origin[1]) / size[1];
 
 	/* Succeeded: the shadow is drawn as its picture. */
+	return 1;
+}
+
+/*
+ * Draws an outline (MODE_RING) around its middle, where the shader's two
+ * coverages are both whole and cancel (the distance at most the thickness
+ * and a pixel less: the box less its radius, the thickness and a pixel),
+ * when that middle is large: as the pieces of its quad around it.  Only in
+ * its place on the output's own plane.  Returns 1 when it was drawn so, 0
+ * when it is to be drawn whole.
+ */
+static int
+glass_ring_hollow(
+	struct kwl_server *server,
+	struct kwl_list *command,
+	const struct glass_shape *shape)
+{
+	float hole[1][4];
+	float left;
+	float top;
+	float right;
+	float bottom;
+
+	/* An outline in its place on the output's plane. */
+	if (shape->mode != MODE_RING || server->layer_on || server->view_width != 0U)
+		return 0;
+
+	/* Its empty middle. */
+	glass_opaque_inside(shape->box, shape->radius + shape->soft, hole[0]);
+
+	/* Worth cutting only where it lies within the quad over a large area. */
+	left = hole[0][0] > shape->quad[0] ? hole[0][0] : shape->quad[0];
+	top = hole[0][1] > shape->quad[1] ? hole[0][1] : shape->quad[1];
+	right = hole[0][0] + hole[0][2] < shape->quad[0] + shape->quad[2] ? hole[0][0] + hole[0][2] : shape->quad[0] + shape->quad[2];
+	bottom = hole[0][1] + hole[0][3] < shape->quad[1] + shape->quad[3] ? hole[0][1] + hole[0][3] : shape->quad[1] + shape->quad[3];
+	if (right <= left || bottom <= top || (right - left) * (bottom - top) < GLASS_SPLIT_AREA)
+		return 0;
+
+	/* Succeeded: the quad's pieces around the middle (each lies off it, so is drawn whole). */
+	glass_shape_draw_except(server, command, shape, (const float (*)[4])hole, 1U);
 	return 1;
 }
