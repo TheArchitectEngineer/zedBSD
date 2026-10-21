@@ -600,11 +600,13 @@ parse_gpio_name(
 {
 	unsigned number;
 	uint32_t index;
+	int differs;
 
 	/* Refuses a name without the prefix or without a number. */
 	if (length <= 4U)
 		return EINVAL;
-	if (kern_memcmp(name, "gpio", 4U) != 0)
+	differs = kern_memcmp(name, "gpio", 4U);
+	if (differs != 0)
 		return EINVAL;
 
 	/* Reads the decimal digits. */
@@ -657,6 +659,8 @@ publish_bus(
 		rp1_usb.dma = NULL;
 		return error;
 	}
+
+	/* Marks the bus published: refresh serves it from now on. */
 	rp1_usb.started = 1;
 
 	/* Enumerates the functions, which attaches the xHCI driver. */
@@ -1138,6 +1142,8 @@ host_intx_disestablish(
 		spin_unlock_irqrestore(&rp1_usb.lock, enabled);
 		return EINVAL;
 	}
+
+	/* Keeps the pin's enable to put back, then empties the entry. */
 	was_enabled = function->pin_enabled;
 	function->pin_enabled = 0;
 	function->run = NULL;

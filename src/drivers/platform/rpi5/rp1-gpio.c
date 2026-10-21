@@ -52,6 +52,9 @@
 #define RP1_GPIO_SET_ALIAS		0x2000U
 #define RP1_GPIO_CLEAR_ALIAS		0x3000U
 
+/* RP1's banks of pins. */
+#define RP1_GPIO_BANK_COUNT		3U
+
 /* The highest function selector a pin has. */
 #define RP1_GPIO_FUNCTION_MAX		8U
 
@@ -87,7 +90,7 @@ struct rp1_gpio_state {
  * drivers/pinctrl/pinctrl-rp1.c (rp1_iobanks: pins 0-27, 28-33 and 34-53,
  * at 0x0000, 0x4000 and 0x8000, pads after a 4-byte voltage register).
  */
-static const struct rp1_gpio_bank rp1_gpio_banks[] = {
+static const struct rp1_gpio_bank rp1_gpio_banks[RP1_GPIO_BANK_COUNT] = {
 	{ 0U, 28U, 0x0000U, 0x0000U, 0x0004U },
 	{ 28U, 6U, 0x4000U, 0x4000U, 0x4004U },
 	{ 34U, 20U, 0x8000U, 0x8000U, 0x8004U },
@@ -213,6 +216,8 @@ drv_rp1_gpio_set_output(
 	} else {
 		kern_mmio_write32(rio + RP1_GPIO_RIO_OUT + RP1_GPIO_CLEAR_ALIAS, bit);
 	}
+
+	/* Turns the output on and hands the pin to the GPIO function. */
 	kern_mmio_write32(rio + RP1_GPIO_RIO_OE + RP1_GPIO_SET_ALIAS, bit);
 	enable_pad(bank, index);
 	select_function(bank, index, DRV_RP1_GPIO_FUNCTION_GPIO);
@@ -233,21 +238,24 @@ find_bank(
 	unsigned entry;
 
 	/* Looks for the bank whose range holds the pin. */
-	for (entry = 0; entry < sizeof(rp1_gpio_banks) / sizeof(rp1_gpio_banks[0]); entry++) {
-		/* Skips a bank that starts after the pin or ends before it. */
+	for (entry = 0; entry < RP1_GPIO_BANK_COUNT; entry++) {
+		/* Skips a bank that starts after the pin. */
 		if (pin < rp1_gpio_banks[entry].first_pin)
 			continue;
-		if (pin - rp1_gpio_banks[entry].first_pin >= rp1_gpio_banks[entry].pin_count)
-			continue;
 
-		/* Succeeded: the pin's bank and its index there. */
-		*bank = &rp1_gpio_banks[entry];
-		*index = pin - rp1_gpio_banks[entry].first_pin;
-		return 0;
+		/* Stops at the bank that does not end before it. */
+		if (pin - rp1_gpio_banks[entry].first_pin < rp1_gpio_banks[entry].pin_count)
+			break;
 	}
 
-	/* Failed: RP1 has no such pin. */
-	return EINVAL;
+	/* Refuses a pin RP1 does not have. */
+	if (entry == RP1_GPIO_BANK_COUNT)
+		return EINVAL;
+
+	/* Succeeded: the pin's bank and its index there. */
+	*bank = &rp1_gpio_banks[entry];
+	*index = pin - rp1_gpio_banks[entry].first_pin;
+	return 0;
 }
 
 /* Turns a pin's input buffer on and its output disable off; the caller holds the lock. */

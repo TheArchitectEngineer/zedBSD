@@ -8,7 +8,7 @@ QEMU に raspi5 は無いので、Pi 5 の実機で確かめる（ユーザー�
 - micro SD card（8 GB 以上、中身は消える）。
 - micro HDMI → HDMI の cable と monitor。Pi 5 の HDMI0（USB-C の電源の側の port）につなぐ。
 - 任意: Raspberry Pi Debug Probe（3 pin の「UART」connector、115200 8N1）。serial の build（下）の時だけ使う。
-- 任意（p004 以降）: USB keyboard。
+- USB keyboard（p004）、USB memory（任意、p004）、LAN の cable と DHCP の router（p005）、WiFi の AP の SSID と鍵（p006）、近くの Bluetooth の device（p007、scan で見える物なら何でも）。
 
 ## image
 
@@ -31,12 +31,25 @@ QEMU に raspi5 は無いので、Pi 5 の実機で確かめる（ユーザー�
 - 画面: bootloader の画面のまま（kernel に入っていない、R1 の番地か dtb の選択）か、試験の模様まで出たか、log の最後の行。
 - `sdhci: init error=…` や `CMD8`・`ACMD41` の行があれば SD の初期化（design.md の R3）。
 
+## 一回の試験の手順（p002〜p007 をまとめて、2026-10-21 版）
+
+1. 上の image を SD に書く（serial の build も作っておくと、止まった時に 2 回目で使える）。
+2. Pi 5 に SD、HDMI0 の monitor、USB keyboard（どの口でも）、LAN の cable を挿してから電源を入れる。
+3. 起動の間、画面の log を撮る（流れて消えるので、止まったら最後の画面。login まで行ったら `dmesg > /tmp/d.txt` で後から読める）。
+4. login（USB keyboard で。p004 が動かなければ keyboard が効かない → その時点の画面を撮って終わり）。
+5. `dmesg | grep -E 'ARM64 SMP|rp1|xhci|gem|rpi5-wifi|bcm43455|rpi5-bt'` を撮る（下の表の期待と照らす）。
+6. `top`（CPU が 4 つ）、`df`・USB memory を挿して `dmesg | tail`。
+7. `ifconfig en0`、`ping -c 3 <router>`（有線）。
+8. `wifi scan`、`wifi join <SSID>`（鍵を入れる）、`ifconfig wlan0`、`ping -c 3 <router>`（無線。有線の cable を抜いて）。
+9. `bt` で scan（Bluetooth）。
+10. 余裕があれば `cmdline.txt` に `cpus=1` を足した起動も 1 回（R6 の切り分け）。
+
 ## 一括の試験で見る項目（p003 以降、実装の順に足す）
 
 | Phase | 見る物 | 期待 |
 | --- | --- | --- |
 | p003 SMP | 起動の log の `ARM64 SMP` の行、login 後の `top` | `ARM64 SMP 4 CPUs (device tree 4, limit 4)`、`ARM64 SMP cpu 1 online (core 1)`〜`cpu 3 … (core 3)`、`top` の CPU が 4 つ。止まったら最後の行の写真。`cpus=1` を cmdline.txt に足した起動でも login できるか（R6 の切り分け） |
-| p004 USB | 起動の log の `rp1:`・`rp1-usb:`・`xhci:` の行、USB keyboard で login、USB memory を挿して `dmesg` | `rp1: bus 1, peripherals at PCI 0 (410000 bytes), DMA offset 1000000000`、`rp1-usb: DWC3 … in host mode` が 2 行、`xhci: PCI controller, version=… ports=…` が 2 行、`rp1-usb: serving 2 controllers every 2 ms`。USB keyboard（どの口でも）で login できる。USB memory の disk の行。`rp1: PCIe link down … pciex4_reset=0` が出たら config.txt の問題。`rp1: inbound window N was …` の行があれば写真（firmware の値） |
+| p004 USB | 起動の log の `rp1:`・`rp1-usb:`・`xhci:` の行、USB keyboard で login、USB memory を挿して `dmesg` | `rp1: bus 1, peripherals at PCI 0 (410000 bytes), DMA offset 1000000000`、`rp1-usb: DWC3 … in host mode` が 2 行、`xhci: PCI controller, version=… ports=…` が 2 行。USB keyboard（どの口でも）で login できる。USB memory の disk の行。`rp1: PCIe link down … pciex4_reset=0` が出たら config.txt の問題。`rp1: inbound window N was …` の行があれば写真（firmware の値） |
 | p004b 割り込み | 起動の log の `rp1: interrupts …`・`rp1: vector …`・`rp1-usb: polling …` の行、keyboard の打鍵の反応 | `rp1: interrupts through the MIP at fffffff000, lines 128-191, 61 vectors`、`rp1: vector 31 (edge) on line 160`、`rp1: vector 36 (edge) on line 161`、`rp1-usb: polling 2 controllers every 50 ms`。打鍵が遅れずに出る。`every 2 ms` なら割り込みが付いていない（その前の `rp1-usb: controller N interrupt not routed` の行を撮る） |
 | p005 Ethernet | 起動の log の `gem:` の行、LAN の cable を挿して `ifconfig`・`ping` | `gem: revision …, queues …, MDIO divider 96`、`gem: PHY 1 id 600d84a…`、`gem: en0 ready MAC …`（基板の MAC）、cable で `gem: en0 link up 1000 Mbps full duplex`。DHCP の address が付き、`ping -c 3 <router>` が返る。`gem: Ethernet clock was off …`・`gem: no 64-bit DMA reported`・`gem: initialization failed at …` の行があれば写真 |
 | p006 WiFi | 起動の log の `rpi5-wifi:`・`bcm43455:` の行、`ifconfig`、`wifi scan`・接続 | `rpi5-wifi: SDIO host at 1001100000, line 306, 200000000 Hz; WL_ON gio 28`、`rpi5-wifi: SDIO and WL_ON pins routed`、`rpi5-wifi: SDIO card: 3 functions …`、`rpi5-wifi: F1 enabled …`、firmware の版の行、`wlan0` が `ifconfig` に出る。scan で AP が見え、接続して address、`ping`。止まったら `rpi5-wifi:` の最後の行の写真 |

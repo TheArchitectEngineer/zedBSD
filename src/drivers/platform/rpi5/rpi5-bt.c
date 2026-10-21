@@ -489,6 +489,8 @@ describe(
 		/* This is the controller. */
 		break;
 	}
+
+	/* Keeps the UART's node for its pins. */
 	bt->uart_node = parent;
 
 	/* The UART's registers, translated to the ARM's addresses. */
@@ -1158,6 +1160,8 @@ setup_uart(
 			break;
 		(void)read_register(bt, UART_RBR);
 	}
+
+	/* Reads the interrupt and modem status, clearing what they held. */
 	(void)read_register(bt, UART_IIR);
 	(void)read_register(bt, UART_MSR);
 

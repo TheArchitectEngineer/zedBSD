@@ -329,6 +329,8 @@ apply_node(
 				kern_logf("rpi5-pinctrl: GPIO %u has no function %s\n", pin, (const char *)function);
 				return ENOTSUP;
 			}
+
+			/* Writes the selector. */
 			write_field(entry->mux_offset, entry->mux_shift, PINCTRL_FUNCTION_MASK, selector);
 		}
 
@@ -409,15 +411,19 @@ find_pin(
 {
 	unsigned index;
 
-	/* Looks at each pin the module knows. */
+	/* Looks at each pin the module knows, up to the pin's entry. */
 	for (index = 0; index < pinctrl.variant->pin_count; index++) {
-		/* The pin's entry. */
+		/* Stops at the pin's entry. */
 		if (pinctrl.variant->pins[index].pin == pin)
-			return &pinctrl.variant->pins[index];
+			break;
 	}
 
 	/* The module does not know the pin. */
-	return NULL;
+	if (index == pinctrl.variant->pin_count)
+		return NULL;
+
+	/* Succeeded: the pin's entry. */
+	return &pinctrl.variant->pins[index];
 }
 
 /* Reports the selector of a function on a pin, or PINCTRL_FUNCTION_NONE. */

@@ -3,7 +3,7 @@
 # WS278 Raspberry Pi 5 対応
 
 - ID: ws278、Master: [plan/master.md](../master.md)、Primary Milestone: MG008（異種機での実証）。Related: MG003。
-- Status: incomplete（2026-10-21 開始。p001 設計済み、p002 image まで、実機の確認待ち）
+- Status: incomplete（2026-10-21 開始。p001〜p008 を実装と host の確認まで、実機の一括の試験の待ち）
 - 出典: 2026-10-21 ユーザー「もう1つサブエージェントを追加して、Raspberry Pi 5対応を行ってほしいです。config/ci/config-rpi5.mkを作成して、イメージを生成できるようにしてほしいです。必要ならGPUドライバの対応、WiFiドライバの対応を行ってほしいです。」「Pi5の対応は、Fableによるレビューは不要です。Opus 5.5で対応しましょう。」
 
 ## 目的と完了の条件
@@ -31,7 +31,7 @@
 | [p005](phase005/phase.md) | RP1 の Ethernet（Cadence GEM） | p004 | in-progress（2026-10-21 実装と build、実機は一括の試験） |
 | [p006](phase006/phase.md) | WiFi（sdio2 の SDIO host、bcm43455 の流用） | p002 | in-progress（2026-10-21 実装と build、実機は一括の試験） |
 | [p007](phase007/phase.md) | BT（uarta） | p006 | in-progress（2026-10-21 実装と build、実機は一括の試験） |
-| [p008](phase008/phase.md) | 規約の全文の見直し（第 1 部: HAL の bsp を bsp-rpi-common・bsp-rpi4・bsp-rpi5 に分け全文で書き直し、前倒し） | p002〜 | in-progress（第 1 部 2026-10-21 済み、rpi4 の QEMU 起動の回帰は T1 待ち） |
+| [p008](phase008/phase.md) | 規約の全文の見直し（第 1 部: HAL の bsp の分離、第 2 部: p003〜p007 の C） | p002〜 | in-progress（第 1・2 部 2026-10-21 済み、rpi4 の QEMU 起動の回帰は T1 待ち） |
 | （別 WS の提案） | GPU: V3D 7.1 と HVS6（design.md §4 D2） | p002 | — |
 
 ## 現在の状態・再開点
@@ -41,3 +41,4 @@
 
 - 2026-10-21: ユーザーの指示で HAL の bsp を分けた（p008 の第 1 部）。`src/hal/arm64/bsp-rpi-common/`（共通）・`bsp-rpi4/`・`bsp-rpi5/`（board ごと、写して書き直し）。arch 共通の file に `HAL_BOARD_` の分岐は無い。
 - 2026-10-21 ユーザーの判断: D1 serial console は不要（既定 n）、D2 GPU は別 WS（[WS279](../ws279/ws.md)）、D3 手元は Pi 5 2GB（2026-10-21 購入、D0 の見込み）、HDMI モニター・USB keyboard・Debug Probe 付き USB serial あり。p003〜p008 は実機の試験なしで続けて実装し、最後にまとめて実機（ユーザー「テストは後回しにして実装してしまって、ビッグバンでテストしましょう。」）。P3 q1543。
+- 2026-10-21 P3 q1543-i02: p004（RP1 の USB）・p004b（RP1 の割り込み）・p005（RP1 の Ethernet）・p006（WiFi）・p007（Bluetooth）を実装し、p008 第 2 部（全文の見直し）を済ませた。image（`make ZEDBSD_CONFIG=config/ci/config-rpi5.mk`）は build できる。再開点: 実機の一括の試験（[tests/rpi5-hw-test.md](tests/rpi5-hw-test.md) の「一回の試験の手順」）の結果で各 Phase を判定する。

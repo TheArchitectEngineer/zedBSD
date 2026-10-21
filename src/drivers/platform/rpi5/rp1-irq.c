@@ -331,6 +331,8 @@ drv_rp1_irq_establish(
 	} else {
 		kern_mmio_write32(config + RP1_MSIX_CFG_CLEAR, RP1_MSIX_CFG_IACK_ENABLE);
 	}
+
+	/* Enables the vector. */
 	kern_mmio_write32(config + RP1_MSIX_CFG_SET, RP1_MSIX_CFG_ENABLE);
 
 	/* Reports the route. */

@@ -532,6 +532,7 @@ drv_rp1_pci_to_cpu(
 	uint32_t entry_cells;
 	uint32_t entry;
 	uint32_t space;
+	int found;
 	int error;
 
 	/* Refuses a request with nowhere to put the answer. */
@@ -557,6 +558,7 @@ drv_rp1_pci_to_cpu(
 
 	/* Finds the memory window that holds the address. */
 	entry_cells = child_cells + parent_cells + size_cells;
+	found = 0;
 	for (entry = 0; (entry + 1U) * entry_cells * 4U <= length; entry++) {
 		space = (uint32_t)(drv_fdt_cells_value(value, entry * entry_cells, 1U) >> PCI_SPACE_SHIFT) & PCI_SPACE_MASK;
 		child_base = drv_fdt_cells_value(value, entry * entry_cells + 1U, 2U);
@@ -573,17 +575,22 @@ drv_rp1_pci_to_cpu(
 		if (pci_address - child_base >= window_size)
 			continue;
 
-		/* Moves the address up through the buses above the root complex. */
-		error = drv_fdt_translate(&rp1.fdt, rp1.pcie_node, parent_base + (pci_address - child_base), cpu_address);
-		if (error != 0)
-			return error;
-
-		/* Succeeded: the CPU address. */
-		return 0;
+		/* Stops at the window that does. */
+		found = 1;
+		break;
 	}
 
-	/* Failed: no window of the root complex holds the address. */
-	return ENOENT;
+	/* Refuses an address no window of the root complex holds. */
+	if (!found)
+		return ENOENT;
+
+	/* Moves the address up through the buses above the root complex. */
+	error = drv_fdt_translate(&rp1.fdt, rp1.pcie_node, parent_base + (pci_address - child_base), cpu_address);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the CPU address. */
+	return 0;
 }
 
 /*
@@ -1027,6 +1034,7 @@ read_dma_window(
 	uint32_t size_cells;
 	uint32_t entry_cells;
 	uint32_t entry;
+	int found;
 	int error;
 
 	/* Reads the dma-ranges and the widths of their entries. */
@@ -1040,6 +1048,7 @@ read_dma_window(
 
 	/* Looks for the entry that reaches the start of memory. */
 	entry_cells = child_cells + PCI_ADDRESS_CELLS + size_cells;
+	found = 0;
 	for (entry = 0; (entry + 1U) * entry_cells * 4U <= length; entry++) {
 		child_base = drv_fdt_cells_value(value, entry * entry_cells, child_cells);
 		pci_base = drv_fdt_cells_value(value, entry * entry_cells + child_cells + 1U, 2U);
@@ -1057,18 +1066,23 @@ read_dma_window(
 		/* The window ends at the shorter of the two. */
 		if (remaining < size)
 			size = remaining;
-		if (size == 0)
-			continue;
 
-		/* Keeps the window and whether it is coherent. */
-		rp1.dma_bus_offset = child_base;
-		rp1.dma_limit = size - 1U;
-		rp1.dma_coherent = drv_fdt_dma_coherent(&rp1.fdt, rp1.rp1_node, 0);
-
-		/* Succeeded: the peripherals' addresses for memory. */
-		return 0;
+		/* Stops at the first entry that reaches memory. */
+		if (size != 0) {
+			found = 1;
+			break;
+		}
 	}
 
-	/* Failed: no entry reaches memory. */
-	return ENOENT;
+	/* Refuses a tree where no entry reaches memory. */
+	if (!found)
+		return ENOENT;
+
+	/* Keeps the window and whether it is coherent. */
+	rp1.dma_bus_offset = child_base;
+	rp1.dma_limit = size - 1U;
+	rp1.dma_coherent = drv_fdt_dma_coherent(&rp1.fdt, rp1.rp1_node, 0);
+
+	/* Succeeded: the peripherals' addresses for memory. */
+	return 0;
 }
