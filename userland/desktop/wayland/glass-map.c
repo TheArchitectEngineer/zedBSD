@@ -22,10 +22,11 @@
  * box too; only glass over the whole output (Wiseview's, App Home's stage)
  * is mapped so, its box being the output's.
  *
- * A glass's map is drawn once two frames asked for it (a shape seen once,
- * or one whose key moves, is not worth a pass over the whole output),
- * before the next frame's own pass (kwl_glass_maps_inband), and used from
- * then on; meanwhile the glass is drawn as before.  A map is drawn again
+ * A glass's map is made once two frames asked for it (a shape seen once,
+ * or one whose key moves, is not worth a pass over the whole output, nor
+ * the map of a lasting one), drawn before the next frame's own pass
+ * (kwl_glass_maps_inband), and used from then on; meanwhile the glass is
+ * drawn as before.  A map is drawn again
  * when the blurred wallpaper changes, and all go with the output's size.
  * Plain flat glass in the light appearance (no colour, not lifted) is the
  * blurred wallpaper itself, read by the same variant with its own linear
@@ -34,11 +35,20 @@
  * A whole-output picture (App Home's stage: its glass and its light) is
  * drawn the same way by the function its user gives, the frame after the
  * first that asked; the frames then draw it as one opaque image.
+ *
+ * A soft shadow around a box depends only on the pixel's place from the
+ * box, its size, corner radius, softness and colour: its picture (as far
+ * as the shadow reaches) is drawn once, on transparent black, and a
+ * shadow at a whole pixel's place is then drawn as that picture, blended,
+ * instead of working out the distance to the box at every pixel.  The
+ * picture holds the shadow's colour in the output's bytes, so the blend
+ * may differ from the shadow worked out in the frame by a step of a byte.
  */
 
 #include "compose.h"
 #include "glass.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -47,24 +57,28 @@
 #define GLASS_MAP_WANTED	1U
 #define GLASS_MAP_READY		2U
 
-/* The most maps drawn before one frame's pass (each is a pass over the whole output). */
+/* The most maps drawn before one frame's pass (each is a pass over the whole output), and the most shadows. */
 #define GLASS_MAP_DRAWS		1U
+#define GLASS_SHADOW_DRAWS	2U
 
-/* How many frames ask for a glass's map before it is drawn. */
-#define GLASS_MAP_ASKS		2U
 
 static int map_key_same(const struct kwl_glass_map *map, const float *key);
 static void map_key_of(const float *constants, float *key);
-static struct kwl_glass_map *map_find(struct kwl_compose *compose, const float *key);
-static struct kwl_glass_map *map_claim(struct kwl_server *server, const float *key);
-static int map_take(struct kwl_server *server, const float *key, kwl_glass_picture_draw draw, VkDescriptorSet *map_set);
+static struct kwl_glass_map *map_find(struct kwl_glass_map *maps, unsigned count, const float *key);
+static struct kwl_glass_map *map_claim(struct kwl_server *server, struct kwl_glass_map *maps, unsigned count, const float *key);
+static int map_take(struct kwl_server *server, struct kwl_glass_map *maps, unsigned count, const float *key, kwl_glass_picture_draw draw, VkDescriptorSet *map_set);
+static int map_current(struct kwl_server *server, const struct kwl_glass_map *map);
+static int map_candidate(struct kwl_server *server, const float *key);
+static void maps_draw_wanted(struct kwl_server *server, struct kwl_list *command, struct kwl_glass_map *maps, unsigned count, unsigned most);
 static VkResult maps_open(struct kwl_server *server);
-static VkResult map_pass_create(struct kwl_compose *compose);
+static VkResult map_pass_create(struct kwl_compose *compose, VkAttachmentLoadOp load, VkRenderPass *created);
+static void map_image_size(struct kwl_server *server, const struct kwl_glass_map *map, uint32_t *width, uint32_t *height);
 static VkResult map_image_create(struct kwl_compose *compose, struct kwl_glass_map *map);
 static void map_image_destroy(struct kwl_compose *compose, struct kwl_glass_map *map);
 static void map_draw(struct kwl_server *server, struct kwl_list *command, struct kwl_glass_map *map, const struct kwl_import *blurred);
 static void map_draw_glass(struct kwl_server *server, struct kwl_list *command, const struct kwl_glass_map *map, const struct kwl_import *blurred);
 static void map_draw_picture(struct kwl_server *server, struct kwl_list *command, const struct kwl_glass_map *map);
+static void map_draw_shadow(struct kwl_server *server, struct kwl_list *command, const struct kwl_glass_map *map, const struct kwl_import *blurred);
 
 /*
  * Gives the descriptor set the inside of a glass shape (its constants,
@@ -126,7 +140,7 @@ kwl_glass_map_set(
 
 	/* The map of the colour, drawn over the blurred wallpaper as it is now. */
 	map_key_of(constants, key);
-	taken = map_take(server, key, NULL, map_set);
+	taken = map_take(server, compose->glass_maps.maps, KWL_GLASS_MAPS, key, NULL, map_set);
 	if (!taken)
 		return 0;
 
@@ -164,7 +178,7 @@ kwl_glass_picture_set(
 	/* The picture's key: its number alone. */
 	memset(key, 0, sizeof(key));
 	key[9] = (float)picture;
-	taken = map_take(server, key, draw, picture_set);
+	taken = map_take(server, server->compose->glass_maps.maps, KWL_GLASS_MAPS, key, draw, picture_set);
 	if (!taken)
 		return 0;
 
@@ -173,8 +187,67 @@ kwl_glass_picture_set(
 }
 
 /*
+ * Gives the picture of a soft shadow around a box (x, y, width, height on
+ * the output, at whole pixels) of a corner radius, a softness (a whole
+ * number of pixels) and a colour (straight, with its opacity): *origin is
+ * where the picture's top-left corner goes on the output, *size its width
+ * and height.  A shadow without a picture yet asks for one.  Returns 1 with
+ * the picture's set, or 0 (the shadow is worked out as before).
+ */
+int
+kwl_glass_shadow_set(
+	struct kwl_server *server,
+	const float *box,
+	float radius,
+	float soft,
+	const float *colour,
+	float *origin,
+	float *size,
+	VkDescriptorSet *shadow_set)
+{
+	struct kwl_glass_map *map;
+	float key[KWL_GLASS_MAP_KEY];
+	float reach;
+	int taken;
+
+	/* Not asked for (--no-glass-map), or not possible on this device. */
+	if (server->glass_map_off || server->compose->glass_maps.failed)
+		return 0;
+
+	/* A box at whole pixels, of a whole softness: the picture's pixels are the output's. */
+	if (box[0] != floorf(box[0]) || box[1] != floorf(box[1]) || soft != floorf(soft))
+		return 0;
+	if (box[2] <= 0.0f || box[3] <= 0.0f || soft < 1.0f)
+		return 0;
+
+	/* The shadow's key: its colour, the box's size, the radius and the softness. */
+	memset(key, 0, sizeof(key));
+	memcpy(key, colour, 4U * sizeof(float));
+	key[4] = box[2];
+	key[5] = box[3];
+	key[6] = radius;
+	key[7] = soft;
+	key[9] = (float)KWL_GLASS_PICTURE_SHADOW;
+	taken = map_take(server, server->compose->glass_maps.shadows, KWL_SHADOW_MAPS, key, NULL, shadow_set);
+	if (!taken)
+		return 0;
+
+	/* As far as the shadow reaches around the box (the trimmed quad, glass.c), and a pixel for the rounding. */
+	map = map_find(server->compose->glass_maps.shadows, KWL_SHADOW_MAPS, key);
+	reach = soft + 1.0f;
+	origin[0] = box[0] - reach;
+	origin[1] = box[1] - reach;
+	size[0] = (float)map->image_width;
+	size[1] = (float)map->image_height;
+
+	/* Succeeded: the shadow is the picture. */
+	return 1;
+}
+
+/*
  * Draws the maps the last frames asked for, before the frame's pass (no
- * frame is in flight): at most GLASS_MAP_DRAWS of them a frame.
+ * frame is in flight): at most GLASS_MAP_DRAWS glass maps or pictures and
+ * GLASS_SHADOW_DRAWS shadows a frame.
  */
 void
 kwl_glass_maps_inband(
@@ -184,10 +257,6 @@ kwl_glass_maps_inband(
 	const struct kwl_import *blurred;
 	struct kwl_compose *compose;
 	struct kwl_glass_maps *maps;
-	struct kwl_glass_map *map;
-	VkResult result;
-	unsigned drawn;
-	unsigned index;
 
 	/* Not asked for, or not possible on this device. */
 	compose = server->compose;
@@ -204,51 +273,11 @@ kwl_glass_maps_inband(
 	if (maps->pass != VK_NULL_HANDLE && (maps->width != server->width || maps->height != server->height))
 		kwl_glass_maps_destroy(compose);
 
-	/* Each map wanted, up to the frame's share. */
-	drawn = 0U;
-	for (index = 0U; index < KWL_GLASS_MAPS && drawn < GLASS_MAP_DRAWS; index++) {
-		map = &maps->maps[index];
-		if (map->state != GLASS_MAP_WANTED)
-			continue;
-
-		/* A glass's map once enough frames asked for it; a picture at once. */
-		if (map->draw == NULL && map->asks < GLASS_MAP_ASKS)
-			continue;
-
-		/* The pass and the images, made the first time (a failure is remembered). */
-		if (maps->pass == VK_NULL_HANDLE) {
-			result = maps_open(server);
-			if (result != VK_SUCCESS) {
-				printf("KWL GLASS map failed result=%d\n", (int)result);
-				kwl_glass_maps_destroy(compose);
-				maps->failed = 1U;
-				return;
-			}
-		}
-
-		/* Its image, made the first time it is drawn. */
-		if (map->image == VK_NULL_HANDLE) {
-			result = map_image_create(compose, map);
-			if (result != VK_SUCCESS) {
-				printf("KWL GLASS map failed result=%d\n", (int)result);
-				kwl_glass_maps_destroy(compose);
-				maps->failed = 1U;
-				return;
-			}
-		}
-
-		/* The colour over the blurred wallpaper, ready for the glass drawn after it. */
-		map_draw(server, command, map, blurred);
-		map->source = blurred->generation;
-		map->version = blurred->version;
-		map->width = server->width;
-		map->height = server->height;
-		map->state = GLASS_MAP_READY;
-		drawn++;
-		printf("KWL GLASS map drawn slot=%u picture=%.0f colour=%.3f,%.3f,%.3f,%.3f white=%.0f dark=%.0f sheen=%.3f\n",
-		       index, (double)map->key[9], (double)map->key[0], (double)map->key[1], (double)map->key[2], (double)map->key[3],
-		       (double)map->key[4], (double)map->key[5], (double)map->key[6]);
-	}
+	/* The maps wanted, up to the frame's share, then the shadows. */
+	maps_draw_wanted(server, command, maps->maps, KWL_GLASS_MAPS, GLASS_MAP_DRAWS);
+	if (maps->failed)
+		return;
+	maps_draw_wanted(server, command, maps->shadows, KWL_SHADOW_MAPS, GLASS_SHADOW_DRAWS);
 }
 
 /* Releases the maps' images and pass (no frame that reads them is in flight). */
@@ -260,14 +289,18 @@ kwl_glass_maps_destroy(
 	unsigned failed;
 	unsigned index;
 
-	/* Each map's image. */
+	/* Each map's image, and each shadow's. */
 	maps = &compose->glass_maps;
 	for (index = 0U; index < KWL_GLASS_MAPS; index++)
 		map_image_destroy(compose, &maps->maps[index]);
+	for (index = 0U; index < KWL_SHADOW_MAPS; index++)
+		map_image_destroy(compose, &maps->shadows[index]);
 
-	/* The pass the maps are drawn with. */
+	/* The passes the maps are drawn with. */
 	if (maps->pass != VK_NULL_HANDLE)
 		vkDestroyRenderPass(compose->device, maps->pass, NULL);
+	if (maps->clear_pass != VK_NULL_HANDLE)
+		vkDestroyRenderPass(compose->device, maps->clear_pass, NULL);
 
 	/* Nothing is left; a device that could not make them stays without. */
 	failed = maps->failed;
@@ -336,53 +369,126 @@ map_key_of(
 static int
 map_take(
 	struct kwl_server *server,
+	struct kwl_glass_map *maps,
+	unsigned count,
 	const float *key,
 	kwl_glass_picture_draw draw,
 	VkDescriptorSet *map_set)
 {
-	const struct kwl_import *blurred;
 	struct kwl_glass_map *map;
+	int current;
+	int again;
 
 	/* The map of the key, current. */
-	blurred = glass_blurred(server);
-	map = map_find(server->compose, key);
-	if (map != NULL &&
-	    map->state == GLASS_MAP_READY &&
-	    map->source == blurred->generation &&
-	    map->version == blurred->version &&
-	    map->width == server->width &&
-	    map->height == server->height) {
+	map = map_find(maps, count, key);
+	current = 0;
+	if (map != NULL)
+		current = map_current(server, map);
+	if (current) {
 		map->used = server->frame;
 		*map_set = map->set;
 		return 1;
 	}
 
-	/* None yet: a map takes the key. */
+	/* None yet: a key an earlier frame asked for too (a picture's at once) takes a map. */
 	if (map == NULL) {
-		map = map_claim(server, key);
+		if (draw == NULL) {
+			again = map_candidate(server, key);
+			if (!again)
+				return 0;
+		}
+		map = map_claim(server, maps, count, key);
 		if (map == NULL)
 			return 0;
 		map->draw = draw;
-		map->asks = 0U;
-		map->asked = 0U;
 	}
 
-	/* Stale or not drawn yet: asked for once more by this frame. */
+	/* Stale or not drawn yet: the next frame draws it. */
 	map->state = GLASS_MAP_WANTED;
 	map->used = server->frame;
-	if (map->asks == 0U || map->asked != server->frame) {
-		map->asks++;
-		map->asked = server->frame;
-	}
 
 	/* Not drawn this time. */
 	return 0;
 }
 
-/* Finds the map of a key, or NULL. */
+/*
+ * Tells whether a key without a map was asked for by an earlier frame
+ * (it is then forgotten, as it takes a map); otherwise remembers that this
+ * frame asked for it.  Returns 1 for a key asked for again.
+ */
+static int
+map_candidate(
+	struct kwl_server *server,
+	const float *key)
+{
+	struct kwl_glass_maps *maps;
+	unsigned index;
+	int same;
+
+	/* Each key remembered. */
+	maps = &server->compose->glass_maps;
+	for (index = 0U; index < KWL_GLASS_CANDIDATES; index++) {
+		if (maps->candidate_frames[index] == 0U)
+			continue;
+		same = memcmp(maps->candidates[index], key, sizeof(maps->candidates[index]));
+		if (same != 0)
+			continue;
+
+		/* Asked for already in this frame: still once. */
+		if (maps->candidate_frames[index] == server->frame + 1U)
+			return 0;
+
+		/* Asked for again: forgotten, as it takes a map. */
+		maps->candidate_frames[index] = 0U;
+		return 1;
+	}
+
+	/* Remembered as asked for by this frame (the frame being drawn). */
+	index = maps->candidate_next;
+	memcpy(maps->candidates[index], key, sizeof(maps->candidates[index]));
+	maps->candidate_frames[index] = server->frame + 1U;
+	maps->candidate_next = (index + 1U) % KWL_GLASS_CANDIDATES;
+
+	/* Asked for once. */
+	return 0;
+}
+
+/*
+ * Tells whether a map is drawn and still shows what it would show now: a
+ * glass's map or a whole-output picture drawn over the blurred wallpaper as
+ * it is and at the output's size; a shadow's picture depends on neither.
+ */
+static int
+map_current(
+	struct kwl_server *server,
+	const struct kwl_glass_map *map)
+{
+	const struct kwl_import *blurred;
+
+	/* Drawn. */
+	if (map->state != GLASS_MAP_READY)
+		return 0;
+
+	/* A shadow's picture is what its key says. */
+	if (map->key[9] == (float)KWL_GLASS_PICTURE_SHADOW)
+		return 1;
+
+	/* Over the blurred wallpaper as it is now, at the output's size. */
+	blurred = glass_blurred(server);
+	if (map->source != blurred->generation || map->version != blurred->version)
+		return 0;
+	if (map->width != server->width || map->height != server->height)
+		return 0;
+
+	/* Current. */
+	return 1;
+}
+
+/* Finds the map of a key among count maps, or NULL. */
 static struct kwl_glass_map *
 map_find(
-	struct kwl_compose *compose,
+	struct kwl_glass_map *maps,
+	unsigned count,
 	const float *key)
 {
 	struct kwl_glass_map *map;
@@ -390,8 +496,8 @@ map_find(
 	int same;
 
 	/* Each map. */
-	for (index = 0U; index < KWL_GLASS_MAPS; index++) {
-		map = &compose->glass_maps.maps[index];
+	for (index = 0U; index < count; index++) {
+		map = &maps[index];
 		same = map_key_same(map, key);
 		if (same)
 			return map;
@@ -409,18 +515,18 @@ map_find(
 static struct kwl_glass_map *
 map_claim(
 	struct kwl_server *server,
+	struct kwl_glass_map *maps,
+	unsigned count,
 	const float *key)
 {
-	struct kwl_glass_maps *maps;
 	struct kwl_glass_map *oldest;
 	struct kwl_glass_map *map;
 	unsigned index;
 
 	/* A free map first, else the oldest one not in use. */
-	maps = &server->compose->glass_maps;
 	oldest = NULL;
-	for (index = 0U; index < KWL_GLASS_MAPS; index++) {
-		map = &maps->maps[index];
+	for (index = 0U; index < count; index++) {
+		map = &maps[index];
 		if (map->state == GLASS_MAP_FREE) {
 			oldest = map;
 			break;
@@ -456,8 +562,11 @@ maps_open(
 	maps->width = server->width;
 	maps->height = server->height;
 
-	/* The pass. */
-	result = map_pass_create(server->compose);
+	/* The pass that writes every pixel, and the one that clears first (a shadow's picture). */
+	result = map_pass_create(server->compose, VK_ATTACHMENT_LOAD_OP_DONT_CARE, &maps->pass);
+	if (result != VK_SUCCESS)
+		return result;
+	result = map_pass_create(server->compose, VK_ATTACHMENT_LOAD_OP_CLEAR, &maps->clear_pass);
 	if (result != VK_SUCCESS)
 		return result;
 
@@ -466,13 +575,111 @@ maps_open(
 }
 
 /*
- * Makes the maps' pass: every pixel written (nothing loaded or cleared),
- * and left to be sampled; it waits for the reads of the map's last use,
- * and its writes are seen by the reads after it.
+ * Draws the wanted maps among count, at most most of them, each image
+ * made first at the size it needs (the output's, or a shadow's own); a
+ * failure leaves the maps failed.
+ */
+static void
+maps_draw_wanted(
+	struct kwl_server *server,
+	struct kwl_list *command,
+	struct kwl_glass_map *maps,
+	unsigned count,
+	unsigned most)
+{
+	const struct kwl_import *blurred;
+	struct kwl_compose *compose;
+	struct kwl_glass_map *map;
+	uint32_t width;
+	uint32_t height;
+	VkResult result;
+	unsigned drawn;
+	unsigned index;
+
+	/* Each map wanted, up to the share. */
+	compose = server->compose;
+	blurred = glass_blurred(server);
+	drawn = 0U;
+	for (index = 0U; index < count && drawn < most; index++) {
+		map = &maps[index];
+		if (map->state != GLASS_MAP_WANTED)
+			continue;
+
+		/* The passes, made the first time (a failure is remembered). */
+		if (compose->glass_maps.pass == VK_NULL_HANDLE) {
+			result = maps_open(server);
+			if (result != VK_SUCCESS) {
+				printf("KWL GLASS map failed result=%d\n", (int)result);
+				kwl_glass_maps_destroy(compose);
+				compose->glass_maps.failed = 1U;
+				return;
+			}
+		}
+
+		/* Its image at the size it needs, made again when another size is needed. */
+		map_image_size(server, map, &width, &height);
+		if (map->image != VK_NULL_HANDLE && (map->image_width != width || map->image_height != height))
+			map_image_destroy(compose, map);
+		if (map->image == VK_NULL_HANDLE) {
+			map->image_width = width;
+			map->image_height = height;
+			result = map_image_create(compose, map);
+			if (result != VK_SUCCESS) {
+				printf("KWL GLASS map failed result=%d\n", (int)result);
+				kwl_glass_maps_destroy(compose);
+				compose->glass_maps.failed = 1U;
+				return;
+			}
+		}
+
+		/* Drawn, ready for the shapes drawn after it. */
+		map_draw(server, command, map, blurred);
+		map->source = blurred->generation;
+		map->version = blurred->version;
+		map->width = server->width;
+		map->height = server->height;
+		map->state = GLASS_MAP_READY;
+		drawn++;
+		printf("KWL GLASS map drawn slot=%u picture=%.0f key=%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.4f size=%ux%u\n",
+		       index, (double)map->key[9], (double)map->key[0], (double)map->key[1], (double)map->key[2], (double)map->key[3],
+		       (double)map->key[4], (double)map->key[5], (double)map->key[6], (double)map->key[7], map->image_width, map->image_height);
+	}
+
+}
+
+/* Gives the size of a map's image: a shadow's reach around its box, else the output's. */
+static void
+map_image_size(
+	struct kwl_server *server,
+	const struct kwl_glass_map *map,
+	uint32_t *width,
+	uint32_t *height)
+{
+	float reach;
+
+	/* The output's size, for a glass's map and a whole-output picture. */
+	*width = server->width;
+	*height = server->height;
+	if (map->key[9] != (float)KWL_GLASS_PICTURE_SHADOW)
+		return;
+
+	/* The box (its size up to whole pixels) and the shadow's reach (its softness and a pixel) on each side. */
+	reach = map->key[7] + 1.0f;
+	*width = (uint32_t)ceilf(map->key[4] + 2.0f * reach);
+	*height = (uint32_t)ceilf(map->key[5] + 2.0f * reach);
+}
+
+/*
+ * Makes a pass of the maps: every pixel written (load DONT_CARE) or the
+ * image cleared first (CLEAR), and left to be sampled; it waits for the
+ * reads of the map's last use, and its writes are seen by the reads after
+ * it.
  */
 static VkResult
 map_pass_create(
-	struct kwl_compose *compose)
+	struct kwl_compose *compose,
+	VkAttachmentLoadOp load,
+	VkRenderPass *created)
 {
 	VkAttachmentDescription attachment;
 	VkAttachmentReference reference;
@@ -485,7 +692,7 @@ map_pass_create(
 	memset(&attachment, 0, sizeof(attachment));
 	attachment.format = compose->format;
 	attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-	attachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	attachment.loadOp = load;
 	attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 	attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 	attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -525,7 +732,7 @@ map_pass_create(
 	pass.pSubpasses = &subpass;
 	pass.dependencyCount = 2U;
 	pass.pDependencies = dependencies;
-	result = vkCreateRenderPass(compose->device, &pass, NULL, &compose->glass_maps.pass);
+	result = vkCreateRenderPass(compose->device, &pass, NULL, created);
 	if (result != VK_SUCCESS)
 		return result;
 
@@ -550,13 +757,13 @@ map_image_create(
 	uint32_t index;
 	VkResult result;
 
-	/* The image: drawn into and sampled, of the output's size and format. */
+	/* The image: drawn into and sampled, of the map's size and the output's format. */
 	memset(&image, 0, sizeof(image));
 	image.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 	image.imageType = VK_IMAGE_TYPE_2D;
 	image.format = compose->format;
-	image.extent.width = compose->glass_maps.width;
-	image.extent.height = compose->glass_maps.height;
+	image.extent.width = map->image_width;
+	image.extent.height = map->image_height;
 	image.extent.depth = 1U;
 	image.mipLevels = 1U;
 	image.arrayLayers = 1U;
@@ -621,8 +828,8 @@ map_image_create(
 	framebuffer.renderPass = compose->glass_maps.pass;
 	framebuffer.attachmentCount = 1U;
 	framebuffer.pAttachments = &map->view;
-	framebuffer.width = compose->glass_maps.width;
-	framebuffer.height = compose->glass_maps.height;
+	framebuffer.width = map->image_width;
+	framebuffer.height = map->image_height;
 	framebuffer.layers = 1U;
 	result = vkCreateFramebuffer(compose->device, &framebuffer, NULL, &map->framebuffer);
 	if (result != VK_SUCCESS)
@@ -649,7 +856,7 @@ map_image_create(
 	return VK_SUCCESS;
 }
 
-/* Releases a map's image, view, framebuffer, memory and set. */
+/* Releases a map's image, view, framebuffer, memory and set; its key and state stay. */
 static void
 map_image_destroy(
 	struct kwl_compose *compose,
@@ -667,8 +874,14 @@ map_image_destroy(
 	if (map->set != VK_NULL_HANDLE)
 		kwl_compose_set_put(compose, map->set);
 
-	/* The map holds nothing. */
-	memset(map, 0, sizeof(*map));
+	/* No image. */
+	map->framebuffer = VK_NULL_HANDLE;
+	map->view = VK_NULL_HANDLE;
+	map->image = VK_NULL_HANDLE;
+	map->memory = VK_NULL_HANDLE;
+	map->set = VK_NULL_HANDLE;
+	map->image_width = 0U;
+	map->image_height = 0U;
 }
 
 /* Draws a map: its pass on the map's image, with the pass's own viewport, scissor and quad corners, then a glass's colour or a picture. */
@@ -681,37 +894,50 @@ map_draw(
 {
 	struct kwl_compose *compose;
 	VkRenderPassBeginInfo pass;
+	VkClearValue clear;
 	VkViewport viewport;
 	VkRect2D scissor;
 	VkDeviceSize offset;
+	unsigned shadow;
 
-	/* The pass on the map's image. */
+	/* The pass on the map's image; a shadow's picture on transparent black. */
 	compose = server->compose;
+	shadow = 0U;
+	if (map->key[9] == (float)KWL_GLASS_PICTURE_SHADOW)
+		shadow = 1U;
+	memset(&clear, 0, sizeof(clear));
 	memset(&pass, 0, sizeof(pass));
 	pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
 	pass.renderPass = compose->glass_maps.pass;
+	if (shadow) {
+		pass.renderPass = compose->glass_maps.clear_pass;
+		pass.clearValueCount = 1U;
+		pass.pClearValues = &clear;
+	}
 	pass.framebuffer = map->framebuffer;
-	pass.renderArea.extent.width = compose->glass_maps.width;
-	pass.renderArea.extent.height = compose->glass_maps.height;
+	pass.renderArea.extent.width = map->image_width;
+	pass.renderArea.extent.height = map->image_height;
 	kwl_list_begin_render_pass(command, &pass, VK_SUBPASS_CONTENTS_INLINE);
 	kwl_compose_bind_forget(compose);
 
 	/* The pass's own viewport, scissor and quad corners. */
 	memset(&viewport, 0, sizeof(viewport));
-	viewport.width = (float)compose->glass_maps.width;
-	viewport.height = (float)compose->glass_maps.height;
+	viewport.width = (float)map->image_width;
+	viewport.height = (float)map->image_height;
 	viewport.maxDepth = 1.0f;
 	kwl_list_set_viewport(command, 0U, 1U, &viewport);
 	memset(&scissor, 0, sizeof(scissor));
-	scissor.extent.width = compose->glass_maps.width;
-	scissor.extent.height = compose->glass_maps.height;
+	scissor.extent.width = map->image_width;
+	scissor.extent.height = map->image_height;
 	kwl_list_set_scissor(command, 0U, 1U, &scissor);
 	offset = 0U;
 	kwl_list_bind_vertex_buffers(command, 0U, 1U, &compose->corners, &offset);
 
-	/* A picture by its own function, a glass's colour by one quad. */
+	/* A picture by its own function, a shadow or a glass's colour by one quad. */
 	if (map->draw != NULL) {
 		map_draw_picture(server, command, map);
+	} else if (shadow) {
+		map_draw_shadow(server, command, map, blurred);
 	} else {
 		map_draw_glass(server, command, map, blurred);
 	}
@@ -748,12 +974,12 @@ map_draw_glass(
 	constants[5] = map->key[5];
 	constants[6] = map->key[6];
 	constants[7] = map->key[7];
-	constants[10] = (float)compose->glass_maps.width;
-	constants[11] = (float)compose->glass_maps.height;
+	constants[10] = (float)map->image_width;
+	constants[11] = (float)map->image_height;
 	memcpy(&constants[12], map->key, 4U * sizeof(float));
 	constants[17] = (float)MODE_GLASS;
-	constants[20] = (float)compose->glass_maps.width;
-	constants[21] = (float)compose->glass_maps.height;
+	constants[20] = (float)map->image_width;
+	constants[21] = (float)map->image_height;
 	constants[23] = 1.0f;
 
 	/* The opaque inside of the glass the frame would draw: the dark glass's darkens. */
@@ -816,8 +1042,8 @@ map_draw_picture(
 	/* The whole image, unplaced. */
 	compose->scissor_now.offset.x = 0;
 	compose->scissor_now.offset.y = 0;
-	compose->scissor_now.extent.width = compose->glass_maps.width;
-	compose->scissor_now.extent.height = compose->glass_maps.height;
+	compose->scissor_now.extent.width = map->image_width;
+	compose->scissor_now.extent.height = map->image_height;
 	compose->framebuffer_now = VK_NULL_HANDLE;
 	compose->backdrop_set = VK_NULL_HANDLE;
 	compose->backdrop_recording = 0U;
@@ -849,4 +1075,49 @@ map_draw_picture(
 	server->view_width = view_width_saved;
 	server->view_height = view_height_saved;
 	server->draw_counts = counts;
+}
+
+/*
+ * Draws a shadow's picture: one quad over the whole image with the
+ * shadow's own variant, blended over transparent black, its box where the
+ * shadow's reach leaves it (a pixel more than the softness from each
+ * side), at full opacity.
+ */
+static void
+map_draw_shadow(
+	struct kwl_server *server,
+	struct kwl_list *command,
+	const struct kwl_glass_map *map,
+	const struct kwl_import *blurred)
+{
+	struct kwl_compose *compose;
+	float constants[KWL_PANEL_CONSTANTS];
+	float reach;
+
+	/* The whole image; the box inside it by the reach. */
+	compose = server->compose;
+	reach = map->key[7] + 1.0f;
+	memset(constants, 0, sizeof(constants));
+	constants[0] = -1.0f;
+	constants[1] = -1.0f;
+	constants[2] = 1.0f;
+	constants[3] = 1.0f;
+	constants[6] = 1.0f;
+	constants[7] = 1.0f;
+	constants[8] = reach;
+	constants[9] = reach;
+	constants[10] = map->key[4];
+	constants[11] = map->key[5];
+	memcpy(&constants[12], map->key, 4U * sizeof(float));
+	constants[16] = map->key[6];
+	constants[17] = (float)MODE_SHADOW;
+	constants[18] = map->key[7];
+	constants[20] = (float)map->image_width;
+	constants[21] = (float)map->image_height;
+	constants[23] = 1.0f;
+
+	/* One quad (the shadow samples nothing; the blurred wallpaper is bound as any set). */
+	kwl_compose_bind(server, command, compose->panel_pipelines[1], compose->panel_layout, blurred->set);
+	kwl_list_push_constants(command, compose->panel_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0U, sizeof(constants), constants);
+	kwl_list_draw(command, KWL_QUAD_VERTICES, 1U, 0U, 0U);
 }

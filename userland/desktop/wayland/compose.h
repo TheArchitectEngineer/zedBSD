@@ -168,8 +168,17 @@ struct kwl_backdrop {
 #define KWL_GLASS_MAPS		6U
 #define KWL_GLASS_MAP_KEY	10U
 
-/* The whole-output pictures among the glass maps: App Home's stage. */
+/*
+ * The pictures among the maps (the last value of a key, 0 for glass):
+ * App Home's stage over the whole output, and a soft shadow around a box
+ * (its own size, drawn anywhere).  How many shadows have one.
+ */
 #define KWL_GLASS_PICTURE_STAGE	1U
+#define KWL_GLASS_PICTURE_SHADOW	2U
+#define KWL_SHADOW_MAPS		12U
+
+/* How many keys without a map the maps remember (glass-map.c). */
+#define KWL_GLASS_CANDIDATES	16U
 
 /* Draws a whole-output picture into its map (glass-map.c), as the frame would draw it on the output. */
 typedef void (*kwl_glass_picture_draw)(struct kwl_server *server, struct kwl_list *command);
@@ -177,8 +186,7 @@ typedef void (*kwl_glass_picture_draw)(struct kwl_server *server, struct kwl_lis
 /*
  * One map: a glass's colour worked out for every output pixel, or a
  * whole-output picture that does not change (with what draws it).  Its
- * key; whether it is wanted or drawn; how many frames asked for it and the
- * last that did; which blurred wallpaper (its generation and version) and
+ * key; whether it is wanted or drawn; which blurred wallpaper (its generation and version) and
  * size it was drawn from; the last frame that used it; and the image the
  * frame reads (nearest sampling).
  */
@@ -186,13 +194,13 @@ struct kwl_glass_map {
 	unsigned state;
 	float key[KWL_GLASS_MAP_KEY];
 	kwl_glass_picture_draw draw;
-	unsigned asks;
-	uint64_t asked;
 	uint64_t source;
 	uint32_t version;
 	uint32_t width;
 	uint32_t height;
 	uint64_t used;
+	uint32_t image_width;
+	uint32_t image_height;
 	VkImage image;
 	VkDeviceMemory memory;
 	VkImageView view;
@@ -201,16 +209,28 @@ struct kwl_glass_map {
 };
 
 /*
- * The glass maps of the output: the pass that draws them and their size,
- * made the first time one is drawn and gone with the output's size; failed
- * when the device could not make them (the glass is then drawn as before).
+ * The glass maps of the output: the passes that draw them (every pixel
+ * written, or cleared first for a shadow) and the output's size, made the
+ * first time one is drawn and gone with the output's size; failed when the
+ * device could not make them (everything is then drawn as before).
  */
 struct kwl_glass_maps {
 	unsigned failed;
 	uint32_t width;
 	uint32_t height;
 	VkRenderPass pass;
+	VkRenderPass clear_pass;
 	struct kwl_glass_map maps[KWL_GLASS_MAPS];
+	struct kwl_glass_map shadows[KWL_SHADOW_MAPS];
+	/*
+	 * The keys asked for lately that have no map yet, each with the frame
+	 * that asked (a ring, next the slot to write): a key takes a map only
+	 * when another frame asks for it again, so that a key seen once (a
+	 * shape on its way in an animation) never takes the map of a lasting one.
+	 */
+	float candidates[KWL_GLASS_CANDIDATES][KWL_GLASS_MAP_KEY];
+	uint64_t candidate_frames[KWL_GLASS_CANDIDATES];
+	unsigned candidate_next;
 };
 
 /*
@@ -869,6 +889,7 @@ void kwl_backdrop_destroy(struct kwl_compose *compose);
 /* The colours of flat glass worked out beforehand (glass-map.c). */
 int kwl_glass_map_set(struct kwl_server *server, const float *constants, VkDescriptorSet set, VkDescriptorSet *map_set);
 int kwl_glass_picture_set(struct kwl_server *server, unsigned picture, kwl_glass_picture_draw draw, VkDescriptorSet *picture_set);
+int kwl_glass_shadow_set(struct kwl_server *server, const float *box, float radius, float soft, const float *colour, float *origin, float *size, VkDescriptorSet *shadow_set);
 void kwl_glass_maps_inband(struct kwl_server *server, struct kwl_list *command);
 void kwl_glass_maps_destroy(struct kwl_compose *compose);
 
