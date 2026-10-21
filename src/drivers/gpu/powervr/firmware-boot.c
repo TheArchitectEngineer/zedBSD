@@ -149,7 +149,7 @@ static void watch_thread(void *argument);
  * measurement build may set fewer (0 logs nothing).
  */
 #ifndef POWERVR_FIRMWARE_TRACE_GROUPS
-#define POWERVR_FIRMWARE_TRACE_GROUPS	0x7fffU
+#define POWERVR_FIRMWARE_TRACE_GROUPS	0U
 #endif
 #define DUMP_TRACE_LOG_TYPE		(POWERVR_RENDER_CHECK_FULL_TRACE || POWERVR_FIRMWARE_BOOT_TRACE ? 0x80007fffU : POWERVR_FIRMWARE_TRACE_GROUPS)
 #define BOOT_TRACE_WORDS		2048U
