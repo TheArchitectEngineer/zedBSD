@@ -885,6 +885,7 @@ output_rotate_caches(
 		kwl_layers_close(compose);
 		kwl_layers_open(server);
 		kwl_backdrop_destroy(compose);
+		kwl_glass_maps_destroy(compose);
 	}
 
 	/* No image holds the new picture yet. */

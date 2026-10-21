@@ -1305,6 +1305,8 @@ struct kwl_server {
 	unsigned cover_cutting;
 	/* Nonzero with --no-layer-cache: no layer's picture, every frame drawn whole (the reference, review-4 M4). */
 	unsigned layer_cache_off;
+	/* Nonzero with --no-glass-map: every glass worked out pixel by pixel (the reference of glass-map.c). */
+	unsigned glass_map_off;
 	unsigned home_progress_frozen;
 	float home_progress_value;
 	/* The event loop records the latest traced motion; recording a frame consumes this timestamp. */
@@ -2241,6 +2243,7 @@ int kwl_glass_still(struct kwl_server *server);
 int kwl_glass_hover_still(struct kwl_server *server);
 int kwl_glass_body_damage(struct kwl_server *server, struct kwl_object *surface, int32_t *rect);
 int kwl_glass_pointer_calm(struct kwl_server *server, int32_t x, int32_t y);
+int kwl_glass_drag_measured(struct kwl_server *server);
 void kwl_damage_pointer(struct kwl_server *server, int32_t old_x, int32_t old_y);
 void kwl_hover_probe(struct kwl_server *server, int32_t x, int32_t y, int32_t width, int32_t height);
 void kwl_hover_begin(struct kwl_server *server, int whole);

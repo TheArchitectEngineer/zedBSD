@@ -235,3 +235,30 @@ branch agent/p1-q1550（基 main 5907c9d3b）。ユーザー（2026-10-21、板�
 - d95a（Q1、fed1a5fa3 の wayland）: 1 窓の全画面 14〜18 ms（d89・d90 は 29〜35）、2 窓 17〜21 ms、窓無し 5〜7 ms。drag の区間は compose の acquire 13.9 ms・frame_ms 28.7 ms。191 ms の外れ 1 本（frame 15）は新しい client 2 つの接続・Vulkan の import と同時（app の起動）。
 - idle の 139 ms の読み（d95、ac2420800 の trace kernel）: firmware は速い（dust の電源 on 1〜2 tick、TA 0.3・3D 1.1 ms）。同期の job trace では sent 10 ms（host 側）で 139 ms は出ない。timing の job wait は kick→reap で、reap は次の submit まで遅れる（vk-queue の powervr_render_jobs_reap(…, 0)）。Keiland の vkQueueSubmit の 139 ms は kernel の powervr の submit（284 us）の外（libvulkan の capacity・semaphore の待ちか gpu.c の受け付け）。後回し（Q1）。
 - 39a097e0e（flip を 1 blank で）: zero copy の flip は commit から 2 blank 後を取り込みとしていた（DC_PANEL_LOCATION が板で常に 0 のため位置で判定できない）→ flip は 2 blank に 1 回で acquire が待つ。blank の割り込みで fine counter を記録し、直前の周期（8〜50 ms）から次の blank の 3 ms 以上前の commit はその blank で取られると数える。板の確認（tearing が無いことの目視）待ち。
+
+## q1552（2026-10-22、P1）: 全ての操作で 60 fps（16 ms）
+
+branch agent/p1-q1552（基 main 782f995e4）。ユーザー（2026-10-22）:「すべての操作で16msで描画でき、60fpsになることが目標です。ただ、どうしても難しければ、retireしてかまいません。おそらく限界まで最適化して、1280x720に落とせば、目標は自動的にクリアされています。」
+
+### 計測の道具（plan/ws270/tests/frame-ops/）
+
+- frame-ops.sh（板で root）: Terminal の起動、文字の入力、seq の出力、wheel、title bar と system bar の hover、title bar の drag 往復、App Home 開閉 ×2、Wiseview 開閉 ×2。各段の前に session.log の行数を marks に書く。
+- frame-times.py（host）: KWL LAT の行から frame ごとに pace（acquired→draw）・cpu（draw→recorded）・submit（recorded→queued、GPU）・present・work（draw→submit）・period（前の frame の draw から、100 ms 未満の時）・shown（submit→完了の受け取り）と KWL PASSES の area を表にし、段ごとに work>16・period>16 の数、p50/max、fps を出す。
+- shot-diff.py（host）: keiland-shot の 2 枚の画素の差（max、over2、over8、差の box、差の画像）。
+
+### 読み（d97・d98 の session.log、main 782f995e4 相当）
+
+- drag（d98 frame 39〜48）: 全部 dirty=1 の全画面、work 24〜27 ms（cpu 5、submit 18、present 2）、period 39〜50 ms（約 20 fps）。d97 は work 37〜43、period 61〜73。
+  - 原因 1: damage.c の kwl_damage_pointer が drag 中（button の押下で hover の記録が使えない）に dirty=1 にしていた。shell.c の motion 側（glass_motion_take）は drag_measured で部分の書き直しを選んでいたのに、pointer 側が見ていなかった。
+  - 原因 2: cursor plane の時は pointer_moved が立たないので、scene を変える pointer の move の frame も frame pacing（client の commit 待ち、前の frame の時間の半分、約 13 ms）で毎回待っていた（pace の wait_ms 13〜15）。
+- 約 1/15 の frame で submit→shown が 100〜102 ms（= KWL_RENDER_FENCE_NS の 100 ms）。vkWaitForFences（libvulkan sync.c の sync_notification_wait）が fence の signal で起きず timeout まで寝ている疑い。次の frame もその分遅れる。driver・libvulkan 側（P2 へ）。
+- App Home（d90、古い）: frame ごとに stage の全画面 glass（2 Mpx）と全画面の光の shadow（2 Mpx、内側無し）と content の picture。submit 40〜80 ms。Wiseview: 全画面 glass（sheen 付き、opacity=progress）＋全画面の solid の shade＋窓の tile。
+
+### 変更
+
+- fdc686ca4: kwl_glass_drag_measured を公開し、kwl_damage_pointer も測れる drag では damage（窓の旧と新の場所）だけに。scene を変える pointer の move（hover の probe の変化、drag、dirty）では pointer_moved を立て、pacing で待たない。
+- 99b63fedd・1ce1d3758（glass-map.c、新）: glass の内側の色は blurred wallpaper の画素と glass の色（白の lift・dark の shade・sheen）だけで決まる。色ごとに出力の大きさの map へ同じ shader（opaque の inside variant）で 1 度描き、以後の内側は map を最近傍で読む variant（KWL_PANEL_INSIDE_MAP: texture 1 回）。sheen 付きは box が全画面の時だけ（Wiseview・App Home の stage）。2 frame が求めた色だけ、次の frame の pass の前に描く（6 枚まで、1 frame に 1 枚、直前 2 frame に使った map は追い出さない）。light の無色の flat glass は blurred そのものを同じ variant で読む（map 不要、式が恒等）。blurred の generation・version と出力の大きさが変われば描き直し。`--no-glass-map` で前の描き方（比較の基準）。
+  - App Home の stage（全画面の glass と光）は frame ごとに同じなので、全画面の picture（同じ map の仕組み、描く関数を home.c が渡す）に 1 度描き、frame では opaque の image 1 枚に。
+  - shaders.h は regenerate.py で作り直し、既存の全 variant の SPIR-V が前と同一（名前の番号だけ変わった）。map variant は texture 1 回と除算 1 つ。
+- d3f2abd6e: 窓の commit の damage を全画面にする条件を「上の窓が近い」から「上の窓が近く、その glass が下の scene を blur する（set_blur か docked の中央）」に。上の窓が wallpaper の blur だけなら、その部分も damage の中で描き直される。
+- build（config-visionfive2-desktop-gpu.mk、BUILD=build/q1552）: rc 0、warning 0。板は Q1 待ち。

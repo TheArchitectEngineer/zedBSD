@@ -339,6 +339,7 @@ static void glass_shape_draw_pieces(struct kwl_server *server, struct kwl_list *
 static void glass_shape_piece(const struct glass_shape *shape, const float *part, struct glass_shape *piece);
 static int glass_shape_cover(struct kwl_server *server, struct kwl_list *command, const struct glass_shape *shape);
 static void glass_shadow_trim(struct glass_shape *shape);
+static int glass_shadow_picture(struct kwl_server *server, const struct glass_shape *shadow, struct glass_shape *picture);
 static unsigned glass_count_kind_of(const float *constants);
 static int wallpaper_create(struct kwl_server *server, struct kwl_glass *glass, uint32_t width, uint32_t height);
 static int glass_size_make(struct kwl_server *server, uint32_t width, uint32_t height, struct kwl_glass_size *size);
@@ -2086,6 +2087,7 @@ glass_shape_draw(
 	VkPipeline pipeline;
 	VkRect2D pieces[1U + KWL_CUT_PIECES];
 	struct glass_shape trimmed;
+	struct glass_shape picture;
 	uint64_t pixels;
 	unsigned count;
 	unsigned inside;
@@ -2095,6 +2097,7 @@ glass_shape_draw(
 	int covered;
 	int opaque;
 	int split;
+	int pictured;
 
 	/* A shape of a layer faded out wholly is not drawn (the desktop behind App Home). */
 	if (server->layer_on && server->layer_opacity <= 0.0f)
@@ -2108,6 +2111,11 @@ glass_shape_draw(
 		trimmed = *shape;
 		glass_shadow_trim(&trimmed);
 		shape = &trimmed;
+
+		/* Drawn from the shadow's picture when it has one (glass-map.c). */
+		pictured = glass_shadow_picture(server, &trimmed, &picture);
+		if (pictured)
+			shape = &picture;
 	}
 
 	/*
@@ -2447,21 +2455,34 @@ glass_shape_draw_split(
 	int opaque)
 {
 	struct kwl_compose *compose;
+	VkDescriptorSet inside_set;
 	VkPipeline middle;
 	uint64_t pixels;
 	unsigned index;
 	unsigned kind;
+	int mapped;
+
+	/*
+	 * The inside of flat glass on the blurred wallpaper reads its colour
+	 * from the colour's map when there is one (glass-map.c).
+	 */
+	compose = server->compose;
+	inside_set = set;
+	if (inside == KWL_PANEL_INSIDE_GLASS || inside == KWL_PANEL_INSIDE_DARK_GLASS) {
+		mapped = kwl_glass_map_set(server, constants, set, &inside_set);
+		if (mapped)
+			inside = KWL_PANEL_INSIDE_MAP;
+	}
 
 	/* The inside, counted by its shape's kind (KWL MODES). */
-	compose = server->compose;
 	kind = glass_count_kind_of(constants);
 	middle = compose->panel_inside_pipelines[inside];
 	if (opaque)
 		middle = compose->panel_opaque_pipelines[inside];
-	kwl_compose_count_draw(server, middle, set, 1U);
+	kwl_compose_count_draw(server, middle, inside_set, 1U);
 	pixels = kwl_compose_count_pixels(server, (float)pieces[0].offset.x, (float)pieces[0].offset.y, (float)pieces[0].extent.width, (float)pieces[0].extent.height, !opaque);
 	kwl_compose_count_kind(server, kind, pixels);
-	kwl_compose_bind(server, command, middle, compose->panel_layout, set);
+	kwl_compose_bind(server, command, middle, compose->panel_layout, inside_set);
 	kwl_list_push_constants(command, compose->panel_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0U, KWL_PANEL_CONSTANTS * sizeof(float), constants);
 	kwl_compose_clip_draw_rect(server, command, &pieces[0], KWL_QUAD_VERTICES);
 
@@ -3376,6 +3397,19 @@ glass_wallpaper_set(
 {
 	/* The full-size image. */
 	return server->compose->glass->wallpaper.set;
+}
+
+/* Gives the blurred wallpaper the glass samples (its set, generation and version), or NULL before the glass look opens. */
+const struct kwl_import *
+glass_blurred(
+	struct kwl_server *server)
+{
+	/* No glass look yet. */
+	if (server->compose->glass == NULL)
+		return NULL;
+
+	/* The quarter-size image. */
+	return &server->compose->glass->blurred;
 }
 
 /* Gives the version of the wallpaper's image (it grows with each new picture), for the keys of pictures that show it. */
@@ -4757,4 +4791,55 @@ glass_shadow_trim(
 	shape->quad[1] = top;
 	shape->quad[2] = right - left;
 	shape->quad[3] = bottom - top;
+}
+
+/*
+ * Gives a soft shadow (trimmed to its reach, in its place on the output)
+ * as the image of its picture (glass-map.c) over the same quad, when it has
+ * one: the box is the quad grown by a pixel (every pixel of the quad fully
+ * covered, none rounded), and the quad's corners show the picture's pixels
+ * under them.  Not in a backdrop's small passes or on a head.  Returns 1
+ * with *picture, or 0 (the shadow is drawn as itself).
+ */
+static int
+glass_shadow_picture(
+	struct kwl_server *server,
+	const struct glass_shape *shadow,
+	struct glass_shape *picture)
+{
+	VkDescriptorSet set;
+	float origin[2];
+	float size[2];
+	int pictured;
+
+	/* On the output's own plane, in the frame's own pass, with something to draw. */
+	if (server->view_width != 0U || server->compose->backdrop_recording != 0U)
+		return 0;
+	if (shadow->quad[2] <= 0.0f || shadow->quad[3] <= 0.0f)
+		return 0;
+
+	/* The shadow's picture, when it is drawn. */
+	pictured = kwl_glass_shadow_set(server, shadow->box, shadow->radius, shadow->soft, shadow->color, origin, size, &set);
+	if (!pictured)
+		return 0;
+
+	/* The picture's part under the quad, as an image of premultiplied colour. */
+	*picture = *shadow;
+	picture->mode = MODE_IMAGE;
+	picture->set = set;
+	picture->radius = 0.0f;
+	picture->soft = 0.0f;
+	picture->opaque = 0.0f;
+	picture->edge = 0.0f;
+	picture->box[0] = shadow->quad[0] - 1.0f;
+	picture->box[1] = shadow->quad[1] - 1.0f;
+	picture->box[2] = shadow->quad[2] + 2.0f;
+	picture->box[3] = shadow->quad[3] + 2.0f;
+	picture->uv[0] = (shadow->quad[0] - origin[0]) / size[0];
+	picture->uv[1] = (shadow->quad[1] - origin[1]) / size[1];
+	picture->uv[2] = (shadow->quad[0] + shadow->quad[2] - origin[0]) / size[0];
+	picture->uv[3] = (shadow->quad[1] + shadow->quad[3] - origin[1]) / size[1];
+
+	/* Succeeded: the shadow is drawn as its picture. */
+	return 1;
 }

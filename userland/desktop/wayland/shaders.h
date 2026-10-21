@@ -1411,8 +1411,8 @@ static const uint32_t kwl_panel_frag_inside_0[] = {
 	0x0000007cU, 0x0003003eU, 0x00000079U, 0x0000007dU, 0x000100fdU, 0x00010038U,
 };
 
-/* Validated immutable kwl_panel_frag_inside_2 SPIR-V, used while creating graphics pipelines. */
-static const uint32_t kwl_panel_frag_inside_2[] = {
+/* Validated immutable kwl_panel_frag_inside_1 SPIR-V, used while creating graphics pipelines. */
+static const uint32_t kwl_panel_frag_inside_1[] = {
 	0x07230203U, 0x00010000U, 0x000d000bU, 0x00000044U, 0x00000000U, 0x00020011U,
 	0x00000001U, 0x0006000bU, 0x00000001U, 0x4c534c47U, 0x6474732eU, 0x3035342eU,
 	0x00000000U, 0x0003000eU, 0x00000000U, 0x00000001U, 0x0007000fU, 0x00000004U,
@@ -1459,8 +1459,8 @@ static const uint32_t kwl_panel_frag_inside_2[] = {
 	0x000100fdU, 0x00010038U,
 };
 
-/* Validated immutable kwl_panel_frag_inside_3 SPIR-V, used while creating graphics pipelines. */
-static const uint32_t kwl_panel_frag_inside_3[] = {
+/* Validated immutable kwl_panel_frag_inside_2 SPIR-V, used while creating graphics pipelines. */
+static const uint32_t kwl_panel_frag_inside_2[] = {
 	0x07230203U, 0x00010000U, 0x000d000bU, 0x0000003cU, 0x00000000U, 0x00020011U,
 	0x00000001U, 0x0006000bU, 0x00000001U, 0x4c534c47U, 0x6474732eU, 0x3035342eU,
 	0x00000000U, 0x0003000eU, 0x00000000U, 0x00000001U, 0x0006000fU, 0x00000004U,
@@ -1498,8 +1498,8 @@ static const uint32_t kwl_panel_frag_inside_3[] = {
 	0x00000036U, 0x0000003bU, 0x000100fdU, 0x00010038U,
 };
 
-/* Validated immutable kwl_panel_frag_inside_7 SPIR-V, used while creating graphics pipelines. */
-static const uint32_t kwl_panel_frag_inside_7[] = {
+/* Validated immutable kwl_panel_frag_inside_3 SPIR-V, used while creating graphics pipelines. */
+static const uint32_t kwl_panel_frag_inside_3[] = {
 	0x07230203U, 0x00010000U, 0x000d000bU, 0x0000008eU, 0x00000000U, 0x00020011U,
 	0x00000001U, 0x0006000bU, 0x00000001U, 0x4c534c47U, 0x6474732eU, 0x3035342eU,
 	0x00000000U, 0x0003000eU, 0x00000000U, 0x00000001U, 0x0007000fU, 0x00000004U,
@@ -1598,8 +1598,8 @@ static const uint32_t kwl_panel_frag_inside_7[] = {
 	0x00000089U, 0x0000008dU, 0x000100fdU, 0x00010038U,
 };
 
-/* Validated immutable kwl_panel_frag_inside_1 SPIR-V, used while creating graphics pipelines. */
-static const uint32_t kwl_panel_frag_inside_1[] = {
+/* Validated immutable kwl_panel_frag_inside_4 SPIR-V, used while creating graphics pipelines. */
+static const uint32_t kwl_panel_frag_inside_4[] = {
 	0x07230203U, 0x00010000U, 0x000d000bU, 0x00000052U, 0x00000000U, 0x00020011U,
 	0x00000001U, 0x0006000bU, 0x00000001U, 0x4c534c47U, 0x6474732eU, 0x3035342eU,
 	0x00000000U, 0x0003000eU, 0x00000000U, 0x00000001U, 0x0006000fU, 0x00000004U,
@@ -1645,6 +1645,56 @@ static const uint32_t kwl_panel_frag_inside_1[] = {
 	0x00000011U, 0x00000047U, 0x0000000cU, 0x00000046U, 0x0000002aU, 0x0004003dU,
 	0x00000006U, 0x00000048U, 0x00000047U, 0x0005008eU, 0x00000009U, 0x00000049U,
 	0x00000042U, 0x00000048U, 0x0003003eU, 0x00000044U, 0x00000049U, 0x000100fdU,
+	0x00010038U,
+};
+
+/* Validated immutable kwl_panel_frag_inside_5 SPIR-V, used while creating graphics pipelines. */
+static const uint32_t kwl_panel_frag_inside_5[] = {
+	0x07230203U, 0x00010000U, 0x000d000bU, 0x00000045U, 0x00000000U, 0x00020011U,
+	0x00000001U, 0x0006000bU, 0x00000001U, 0x4c534c47U, 0x6474732eU, 0x3035342eU,
+	0x00000000U, 0x0003000eU, 0x00000000U, 0x00000001U, 0x0007000fU, 0x00000004U,
+	0x00000004U, 0x6e69616dU, 0x00000000U, 0x00000018U, 0x0000003fU, 0x00030010U,
+	0x00000004U, 0x00000007U, 0x00030047U, 0x0000000aU, 0x00000002U, 0x00050048U,
+	0x0000000aU, 0x00000000U, 0x00000023U, 0x00000000U, 0x00050048U, 0x0000000aU,
+	0x00000001U, 0x00000023U, 0x00000010U, 0x00050048U, 0x0000000aU, 0x00000002U,
+	0x00000023U, 0x00000020U, 0x00050048U, 0x0000000aU, 0x00000003U, 0x00000023U,
+	0x00000030U, 0x00050048U, 0x0000000aU, 0x00000004U, 0x00000023U, 0x00000040U,
+	0x00050048U, 0x0000000aU, 0x00000005U, 0x00000023U, 0x00000050U, 0x00040047U,
+	0x00000018U, 0x0000001eU, 0x00000001U, 0x00040047U, 0x00000029U, 0x00000021U,
+	0x00000000U, 0x00040047U, 0x00000029U, 0x00000022U, 0x00000000U, 0x00040047U,
+	0x0000003fU, 0x0000001eU, 0x00000000U, 0x00020013U, 0x00000002U, 0x00030021U,
+	0x00000003U, 0x00000002U, 0x00030016U, 0x00000006U, 0x00000020U, 0x00040017U,
+	0x00000009U, 0x00000006U, 0x00000004U, 0x0008001eU, 0x0000000aU, 0x00000009U,
+	0x00000009U, 0x00000009U, 0x00000009U, 0x00000009U, 0x00000009U, 0x00040020U,
+	0x0000000bU, 0x00000009U, 0x0000000aU, 0x0004003bU, 0x0000000bU, 0x0000000cU,
+	0x00000009U, 0x00040015U, 0x0000000dU, 0x00000020U, 0x00000001U, 0x00040015U,
+	0x0000000fU, 0x00000020U, 0x00000000U, 0x00040020U, 0x00000011U, 0x00000009U,
+	0x00000006U, 0x00040017U, 0x00000014U, 0x00000006U, 0x00000002U, 0x00040020U,
+	0x00000017U, 0x00000001U, 0x00000014U, 0x0004003bU, 0x00000017U, 0x00000018U,
+	0x00000001U, 0x0004002bU, 0x00000006U, 0x00000021U, 0x3f800000U, 0x00040017U,
+	0x00000023U, 0x00000006U, 0x00000003U, 0x00090019U, 0x00000026U, 0x00000006U,
+	0x00000001U, 0x00000000U, 0x00000000U, 0x00000000U, 0x00000001U, 0x00000000U,
+	0x0003001bU, 0x00000027U, 0x00000026U, 0x00040020U, 0x00000028U, 0x00000000U,
+	0x00000027U, 0x0004003bU, 0x00000028U, 0x00000029U, 0x00000000U, 0x0004002bU,
+	0x0000000dU, 0x0000002cU, 0x00000005U, 0x00040020U, 0x0000002dU, 0x00000009U,
+	0x00000009U, 0x00040020U, 0x0000003eU, 0x00000003U, 0x00000009U, 0x0004003bU,
+	0x0000003eU, 0x0000003fU, 0x00000003U, 0x0004002bU, 0x0000000fU, 0x00000041U,
+	0x00000003U, 0x00050036U, 0x00000002U, 0x00000004U, 0x00000000U, 0x00000003U,
+	0x000200f8U, 0x00000005U, 0x0004003dU, 0x00000014U, 0x00000019U, 0x00000018U,
+	0x0004003dU, 0x00000027U, 0x0000002aU, 0x00000029U, 0x00050041U, 0x0000002dU,
+	0x0000002eU, 0x0000000cU, 0x0000002cU, 0x0004003dU, 0x00000009U, 0x0000002fU,
+	0x0000002eU, 0x0007004fU, 0x00000014U, 0x00000030U, 0x0000002fU, 0x0000002fU,
+	0x00000000U, 0x00000001U, 0x00050088U, 0x00000014U, 0x00000031U, 0x00000019U,
+	0x00000030U, 0x00050057U, 0x00000009U, 0x00000032U, 0x0000002aU, 0x00000031U,
+	0x0008004fU, 0x00000023U, 0x00000033U, 0x00000032U, 0x00000032U, 0x00000000U,
+	0x00000001U, 0x00000002U, 0x0005008eU, 0x00000023U, 0x00000038U, 0x00000033U,
+	0x00000021U, 0x00050051U, 0x00000006U, 0x0000003aU, 0x00000038U, 0x00000000U,
+	0x00050051U, 0x00000006U, 0x0000003bU, 0x00000038U, 0x00000001U, 0x00050051U,
+	0x00000006U, 0x0000003cU, 0x00000038U, 0x00000002U, 0x00070050U, 0x00000009U,
+	0x0000003dU, 0x0000003aU, 0x0000003bU, 0x0000003cU, 0x00000021U, 0x00060041U,
+	0x00000011U, 0x00000042U, 0x0000000cU, 0x0000002cU, 0x00000041U, 0x0004003dU,
+	0x00000006U, 0x00000043U, 0x00000042U, 0x0005008eU, 0x00000009U, 0x00000044U,
+	0x0000003dU, 0x00000043U, 0x0003003eU, 0x0000003fU, 0x00000044U, 0x000100fdU,
 	0x00010038U,
 };
 
@@ -1735,8 +1785,8 @@ static const uint32_t kwl_panel_frag_opaque_0[] = {
 	0x0000007fU, 0x000100fdU, 0x00010038U,
 };
 
-/* Validated immutable kwl_panel_frag_opaque_2 SPIR-V, used while creating graphics pipelines. */
-static const uint32_t kwl_panel_frag_opaque_2[] = {
+/* Validated immutable kwl_panel_frag_opaque_1 SPIR-V, used while creating graphics pipelines. */
+static const uint32_t kwl_panel_frag_opaque_1[] = {
 	0x07230203U, 0x00010000U, 0x000d000bU, 0x0000004aU, 0x00000000U, 0x00020011U,
 	0x00000001U, 0x0006000bU, 0x00000001U, 0x4c534c47U, 0x6474732eU, 0x3035342eU,
 	0x00000000U, 0x0003000eU, 0x00000000U, 0x00000001U, 0x0007000fU, 0x00000004U,
@@ -1769,8 +1819,8 @@ static const uint32_t kwl_panel_frag_opaque_2[] = {
 	0x00010038U,
 };
 
-/* Validated immutable kwl_panel_frag_opaque_3 SPIR-V, used while creating graphics pipelines. */
-static const uint32_t kwl_panel_frag_opaque_3[] = {
+/* Validated immutable kwl_panel_frag_opaque_2 SPIR-V, used while creating graphics pipelines. */
+static const uint32_t kwl_panel_frag_opaque_2[] = {
 	0x07230203U, 0x00010000U, 0x000d000bU, 0x0000003dU, 0x00000000U, 0x00020011U,
 	0x00000001U, 0x0006000bU, 0x00000001U, 0x4c534c47U, 0x6474732eU, 0x3035342eU,
 	0x00000000U, 0x0003000eU, 0x00000000U, 0x00000001U, 0x0006000fU, 0x00000004U,
@@ -1809,8 +1859,8 @@ static const uint32_t kwl_panel_frag_opaque_3[] = {
 	0x00010038U,
 };
 
-/* Validated immutable kwl_panel_frag_opaque_7 SPIR-V, used while creating graphics pipelines. */
-static const uint32_t kwl_panel_frag_opaque_7[] = {
+/* Validated immutable kwl_panel_frag_opaque_3 SPIR-V, used while creating graphics pipelines. */
+static const uint32_t kwl_panel_frag_opaque_3[] = {
 	0x07230203U, 0x00010000U, 0x000d000bU, 0x00000090U, 0x00000000U, 0x00020011U,
 	0x00000001U, 0x0006000bU, 0x00000001U, 0x4c534c47U, 0x6474732eU, 0x3035342eU,
 	0x00000000U, 0x0003000eU, 0x00000000U, 0x00000001U, 0x0007000fU, 0x00000004U,
@@ -1907,8 +1957,8 @@ static const uint32_t kwl_panel_frag_opaque_7[] = {
 	0x00010038U,
 };
 
-/* Validated immutable kwl_panel_frag_opaque_1 SPIR-V, used while creating graphics pipelines. */
-static const uint32_t kwl_panel_frag_opaque_1[] = {
+/* Validated immutable kwl_panel_frag_opaque_4 SPIR-V, used while creating graphics pipelines. */
+static const uint32_t kwl_panel_frag_opaque_4[] = {
 	0x07230203U, 0x00010000U, 0x000d000bU, 0x00000053U, 0x00000000U, 0x00020011U,
 	0x00000001U, 0x0006000bU, 0x00000001U, 0x4c534c47U, 0x6474732eU, 0x3035342eU,
 	0x00000000U, 0x0003000eU, 0x00000000U, 0x00000001U, 0x0006000fU, 0x00000004U,
@@ -1953,6 +2003,51 @@ static const uint32_t kwl_panel_frag_opaque_1[] = {
 	0x00000021U, 0x0003003eU, 0x00000044U, 0x0000004aU, 0x000100fdU, 0x00010038U,
 };
 
+/* Validated immutable kwl_panel_frag_opaque_5 SPIR-V, used while creating graphics pipelines. */
+static const uint32_t kwl_panel_frag_opaque_5[] = {
+	0x07230203U, 0x00010000U, 0x000d000bU, 0x00000046U, 0x00000000U, 0x00020011U,
+	0x00000001U, 0x0006000bU, 0x00000001U, 0x4c534c47U, 0x6474732eU, 0x3035342eU,
+	0x00000000U, 0x0003000eU, 0x00000000U, 0x00000001U, 0x0007000fU, 0x00000004U,
+	0x00000004U, 0x6e69616dU, 0x00000000U, 0x00000018U, 0x0000003fU, 0x00030010U,
+	0x00000004U, 0x00000007U, 0x00030047U, 0x0000000aU, 0x00000002U, 0x00050048U,
+	0x0000000aU, 0x00000000U, 0x00000023U, 0x00000000U, 0x00050048U, 0x0000000aU,
+	0x00000001U, 0x00000023U, 0x00000010U, 0x00050048U, 0x0000000aU, 0x00000002U,
+	0x00000023U, 0x00000020U, 0x00050048U, 0x0000000aU, 0x00000003U, 0x00000023U,
+	0x00000030U, 0x00050048U, 0x0000000aU, 0x00000004U, 0x00000023U, 0x00000040U,
+	0x00050048U, 0x0000000aU, 0x00000005U, 0x00000023U, 0x00000050U, 0x00040047U,
+	0x00000018U, 0x0000001eU, 0x00000001U, 0x00040047U, 0x00000029U, 0x00000021U,
+	0x00000000U, 0x00040047U, 0x00000029U, 0x00000022U, 0x00000000U, 0x00040047U,
+	0x0000003fU, 0x0000001eU, 0x00000000U, 0x00020013U, 0x00000002U, 0x00030021U,
+	0x00000003U, 0x00000002U, 0x00030016U, 0x00000006U, 0x00000020U, 0x00040017U,
+	0x00000009U, 0x00000006U, 0x00000004U, 0x0008001eU, 0x0000000aU, 0x00000009U,
+	0x00000009U, 0x00000009U, 0x00000009U, 0x00000009U, 0x00000009U, 0x00040020U,
+	0x0000000bU, 0x00000009U, 0x0000000aU, 0x0004003bU, 0x0000000bU, 0x0000000cU,
+	0x00000009U, 0x00040015U, 0x0000000dU, 0x00000020U, 0x00000001U, 0x00040017U,
+	0x00000014U, 0x00000006U, 0x00000002U, 0x00040020U, 0x00000017U, 0x00000001U,
+	0x00000014U, 0x0004003bU, 0x00000017U, 0x00000018U, 0x00000001U, 0x0004002bU,
+	0x00000006U, 0x00000021U, 0x3f800000U, 0x00040017U, 0x00000023U, 0x00000006U,
+	0x00000003U, 0x00090019U, 0x00000026U, 0x00000006U, 0x00000001U, 0x00000000U,
+	0x00000000U, 0x00000000U, 0x00000001U, 0x00000000U, 0x0003001bU, 0x00000027U,
+	0x00000026U, 0x00040020U, 0x00000028U, 0x00000000U, 0x00000027U, 0x0004003bU,
+	0x00000028U, 0x00000029U, 0x00000000U, 0x0004002bU, 0x0000000dU, 0x0000002cU,
+	0x00000005U, 0x00040020U, 0x0000002dU, 0x00000009U, 0x00000009U, 0x00040020U,
+	0x0000003eU, 0x00000003U, 0x00000009U, 0x0004003bU, 0x0000003eU, 0x0000003fU,
+	0x00000003U, 0x00050036U, 0x00000002U, 0x00000004U, 0x00000000U, 0x00000003U,
+	0x000200f8U, 0x00000005U, 0x0004003dU, 0x00000014U, 0x00000019U, 0x00000018U,
+	0x0004003dU, 0x00000027U, 0x0000002aU, 0x00000029U, 0x00050041U, 0x0000002dU,
+	0x0000002eU, 0x0000000cU, 0x0000002cU, 0x0004003dU, 0x00000009U, 0x0000002fU,
+	0x0000002eU, 0x0007004fU, 0x00000014U, 0x00000030U, 0x0000002fU, 0x0000002fU,
+	0x00000000U, 0x00000001U, 0x00050088U, 0x00000014U, 0x00000031U, 0x00000019U,
+	0x00000030U, 0x00050057U, 0x00000009U, 0x00000032U, 0x0000002aU, 0x00000031U,
+	0x0008004fU, 0x00000023U, 0x00000033U, 0x00000032U, 0x00000032U, 0x00000000U,
+	0x00000001U, 0x00000002U, 0x0005008eU, 0x00000023U, 0x00000038U, 0x00000033U,
+	0x00000021U, 0x00050051U, 0x00000006U, 0x0000003aU, 0x00000038U, 0x00000000U,
+	0x00050051U, 0x00000006U, 0x0000003bU, 0x00000038U, 0x00000001U, 0x00050051U,
+	0x00000006U, 0x0000003cU, 0x00000038U, 0x00000002U, 0x00070050U, 0x00000009U,
+	0x00000045U, 0x0000003aU, 0x0000003bU, 0x0000003cU, 0x00000021U, 0x0003003eU,
+	0x0000003fU, 0x00000045U, 0x000100fdU, 0x00010038U,
+};
+
 /* Glass, shadow, image, solid, ring, text, blur and dark glass avoid unused branch work. */
 static const struct kwl_panel_shader kwl_panel_variants[8] = {
 	{kwl_panel_frag_0, sizeof(kwl_panel_frag_0)},
@@ -1965,22 +2060,24 @@ static const struct kwl_panel_shader kwl_panel_variants[8] = {
 	{kwl_panel_frag_7, sizeof(kwl_panel_frag_7)},
 };
 
-/* The insides of glass, image, solid, dark glass and shadow shapes, wholly covered and off the edge (glass.c). */
-static const struct kwl_panel_shader kwl_panel_inside_variants[5] = {
+/* The insides of glass, image, solid, dark glass and shadow shapes and of mapped flat glass, wholly covered and off the edge (glass.c). */
+static const struct kwl_panel_shader kwl_panel_inside_variants[6] = {
 	{kwl_panel_frag_inside_0, sizeof(kwl_panel_frag_inside_0)},
+	{kwl_panel_frag_inside_1, sizeof(kwl_panel_frag_inside_1)},
 	{kwl_panel_frag_inside_2, sizeof(kwl_panel_frag_inside_2)},
 	{kwl_panel_frag_inside_3, sizeof(kwl_panel_frag_inside_3)},
-	{kwl_panel_frag_inside_7, sizeof(kwl_panel_frag_inside_7)},
-	{kwl_panel_frag_inside_1, sizeof(kwl_panel_frag_inside_1)},
+	{kwl_panel_frag_inside_4, sizeof(kwl_panel_frag_inside_4)},
+	{kwl_panel_frag_inside_5, sizeof(kwl_panel_frag_inside_5)},
 };
 
 /* The same insides of opaque shapes at full opacity, written as they are (glass.c). */
-static const struct kwl_panel_shader kwl_panel_opaque_variants[5] = {
+static const struct kwl_panel_shader kwl_panel_opaque_variants[6] = {
 	{kwl_panel_frag_opaque_0, sizeof(kwl_panel_frag_opaque_0)},
+	{kwl_panel_frag_opaque_1, sizeof(kwl_panel_frag_opaque_1)},
 	{kwl_panel_frag_opaque_2, sizeof(kwl_panel_frag_opaque_2)},
 	{kwl_panel_frag_opaque_3, sizeof(kwl_panel_frag_opaque_3)},
-	{kwl_panel_frag_opaque_7, sizeof(kwl_panel_frag_opaque_7)},
-	{kwl_panel_frag_opaque_1, sizeof(kwl_panel_frag_opaque_1)},
+	{kwl_panel_frag_opaque_4, sizeof(kwl_panel_frag_opaque_4)},
+	{kwl_panel_frag_opaque_5, sizeof(kwl_panel_frag_opaque_5)},
 };
 
 #endif

@@ -81,6 +81,13 @@ void main()
 		// x whether the glass is white (its colour 0.9 or more in every
 		// channel), y whether it is dark glass (mode -1), z the sheen from the
 		// top (none on flat glass, shape.z 1), w one over the box's height.
+#if defined(KWL_PANEL_MAP)
+		// KWL_PANEL_MAP: the inside of flat glass whose colour was worked
+		// out for every output pixel beforehand (glass-map.c), by this
+		// shader over the same blurred wallpaper: the image is that colour,
+		// read at the pixel itself; flat glass has no sheen to add.
+		vec3 glass = texture(image, point / panel.screen.xy).rgb;
+#else
 		vec3 under = texture(image, point / panel.screen.xy).rgb;
 		vec3 glass = mix(under, panel.color.rgb, panel.color.a);
 		float luma = dot(glass, vec3(0.2126, 0.7152, 0.0722));
@@ -98,6 +105,7 @@ void main()
 
 		// A sheen from the top, except on flat glass (a window's panels).
 		glass += vec3(panel.texture.z) * (1.0 - depth);
+#endif
 #if !defined(KWL_PANEL_INSIDE)
 		// The bright edge, which an inside's pixels are off (the mix by 0 leaves the glass as it is).
 		glass = mix(glass, vec3(1.0), edge * panel.screen.z);

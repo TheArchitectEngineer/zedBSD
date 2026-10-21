@@ -143,7 +143,7 @@ main(
 	/* Reads the command line; a mistake ends the run with the usage. */
 	error = parse_options(&server, count, arguments);
 	if (error != 0) {
-		fprintf(stderr, "usage: wayland [--socket=/path] [--width=N] [--height=N] [--rotate=0|90|180|270] [--testing [--timeout=seconds] [--max-frames=N]] [--log-frames] [--no-layer-cache] [--keyboard-blur] [--glass] [--font=/path] [--fallback-font=/path] [--wallpaper=/path.png|.jpg] [--window-opacity=1..100] [--desktop-client=COMMAND|none] [--desktop-token=TOKEN] [--session [--control-fd=N] [--lock-idle=seconds] | --greeter --auth-fd=N]\n");
+		fprintf(stderr, "usage: wayland [--socket=/path] [--width=N] [--height=N] [--rotate=0|90|180|270] [--testing [--timeout=seconds] [--max-frames=N]] [--log-frames] [--no-layer-cache] [--no-glass-map] [--keyboard-blur] [--glass] [--font=/path] [--fallback-font=/path] [--wallpaper=/path.png|.jpg] [--window-opacity=1..100] [--desktop-client=COMMAND|none] [--desktop-token=TOKEN] [--session [--control-fd=N] [--lock-idle=seconds] | --greeter --auth-fd=N]\n");
 		return 2;
 	}
 
@@ -549,6 +549,13 @@ parse_options(
 		match = strcmp(argument, "--log-frames");
 		if (match == 0) {
 			server->log_frames = 1;
+			continue;
+		}
+
+		/* Flat glass worked out at each pixel, without the glass maps (the reference for their pictures). */
+		match = strcmp(argument, "--no-glass-map");
+		if (match == 0) {
+			server->glass_map_off = 1U;
 			continue;
 		}
 
