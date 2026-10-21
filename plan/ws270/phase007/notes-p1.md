@@ -42,3 +42,11 @@ Phase の本体は [phase.md](phase.md)（Q1 が書く）。ここは P1 の作�
 
 - damage は効いている。全画面になるのは dirty=1（map・configure）と、その後 swapchain 3 枚の buffer age の追いつきの 2 frame。
 - d50 の D'（terminal の出力）は command が失敗していた（画面に「test: -lt: unexpected operator」）。
+
+## 区切り（2026-10-21、Q1 の指示で Keiland の作業を止める）
+
+- ユーザー（2026-10-21、Q1 経由）:「Raspberry Pi 4の非力なGPUでも60fps近く出ているので、Keiland自体はそれなりに最適化してあると思います。そこで、PowerVRのドライバの改善にフォーカスしてみてほしいです。」
+- merge してよい範囲: agent/p1-q1538 の 3f7097df1 まで（dee85df07・720d55dbb・ef1a02591・98c7a4ccf・ec2694de6・c3dde7fc7・3f7097df1 と記録の commit）。
+- 板で確かめた: d50（glyph の batch、text=1、shot50 の文字は同じ）、d56（98c7a4ccf、shot56）、d57（c3dde7fc7、shot57、terminal の出力 37 frame が全部部分・rec submit 平均 13.5 ms、全画面 frame の shade 4.0 M px）。
+- 未確認: 3f7097df1（影の quad の切り詰め）は板で未実施（build と式の確認だけ）。desktop の set_drawn は icon の無い desktop でしか見ていない（icon がある時の見た目は未確認）。opaque region は terminal だけ（他の app は宣言しない）。全画面の frame の 85〜110 ms と、dirty=1 になる操作（hover・focus・drag）は aat-input が無く未測定。
+- 次の候補（未 commit、`git stash` の「q1538 raise_measured (untested, not merged)」に保存）: 窓を前に出す（focus）時の dirty=1 を、2 つの窓の範囲と bar の damage にする（shell.c の raise_measured）。build は rc 0・warning 0、板は未実施。
