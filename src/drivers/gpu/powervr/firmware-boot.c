@@ -86,6 +86,7 @@ enum late_stage {
 	LATE_STARTED
 };
 
+static void measure_core_clock(struct powervr_core *core);
 static void late_thread(void *argument);
 static enum powervr_stage_reason firmware_reason(const char *step, int error);
 static int bring_up(struct powervr_core *core, enum late_stage *reached, const char **step);
@@ -226,6 +227,18 @@ static void watch_thread(void *argument);
 #define POWERVR_CLEAR_EVENTS_AT_START	0
 #endif
 #define EVENT_STATUS_REGISTER		0x0130U
+
+/*
+ * Whether the start measures the core clock with the core's timer (1)
+ * and logs it; a diagnostic that delays the first jobs by a second.
+ */
+#ifndef POWERVR_MEASURE_CORE_CLOCK
+#define POWERVR_MEASURE_CORE_CLOCK	0
+#endif
+#define CORE_TIMER_REGISTER		0x0160U
+#define CORE_TIMER_MASK			0x0000FFFFFFFFFFFFULL
+#define CORE_TIMER_CYCLES		256U
+#define CORE_TIMER_MS			1000U
 #define EVENT_CLEAR_ALL			0xffffffffU
 
 #define REGISTER_CHECK_CLOCK_CONTROL	0x0000U
@@ -327,6 +340,8 @@ late_thread(
 		  (unsigned)image->version_build,
 		  (unsigned)core->firmware.interrupts,
 		  replies);
+	if (POWERVR_MEASURE_CORE_CLOCK)
+		measure_core_clock(core);
 	powervr_stage_ok(POWERVR_STAGE_FIRMWARE);
 
 	/* Publishes the render node over the running firmware; on failure the core goes down the same way. */
@@ -1565,6 +1580,45 @@ ms_deadline(
 
 	/* Succeeded: the deadline. */
 	return sched_ticks() + ticks;
+}
+
+/*
+ * Logs the rate the core really runs at: the core's timer counts one for
+ * every 256 core clocks, read before and after a second of the
+ * scheduler's clock.
+ *
+ * Values referenced:
+ * StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
+ * drivers/gpu/drm/img/img-rogue/hwdefs/rogue/km/rgx_cr_defs_km.h
+ * (RGX_CR_TIMER 0x0160, RGX_CR_TIMER_VALUE_CLRMSK 0xFFFF000000000000)
+ * and rgxdefs_km.h (RGX_CRTIME_TICK_IN_CYCLES 256).
+ */
+static void
+measure_core_clock(
+	struct powervr_core *core)
+{
+	uint64_t first;
+	uint64_t last;
+	uint64_t began;
+	uint64_t ended;
+	uint64_t ticks;
+	uint64_t rate;
+
+	/* The timer and the scheduler's clock, a second apart. */
+	began = sched_ticks();
+	first = powervr_read64(core, CORE_TIMER_REGISTER) & CORE_TIMER_MASK;
+	sched_sleep(began + kern_ms_to_ticks(CORE_TIMER_MS));
+	last = powervr_read64(core, CORE_TIMER_REGISTER) & CORE_TIMER_MASK;
+	ended = sched_ticks();
+
+	/* The core clocks over the time that passed. */
+	ticks = ended - began;
+	rate = 0;
+	if (ticks != 0U)
+		rate = (last - first) * CORE_TIMER_CYCLES * KERN_CLOCK_HZ / ticks;
+	kern_logf("powervr: core clock measured %llu Hz (timer %llu over %llu ticks at %llu Hz)\n",
+		  (unsigned long long)rate, (unsigned long long)(last - first),
+		  (unsigned long long)ticks, (unsigned long long)KERN_CLOCK_HZ);
 }
 
 /* Notes that a step of the later stage begins, on one line. */
