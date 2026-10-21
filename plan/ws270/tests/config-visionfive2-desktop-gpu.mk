@@ -13,3 +13,9 @@ ZEDBSD_USER_PROGRAMS += mount sh gpu-selftest vkmatrix powervr-firmware
 # the user's 「デスクトップが動くまで自走」). A test image only.
 ZEDBSD_TEST_SCREEN_CAPTURE := y
 ZEDBSD_USER_PROGRAMS += keiland-shot
+
+# The test-only input injection (/dev/input-inject) and aat-input, so the
+# cursor, typing and window-drag scenarios of ws270-p007 can be run over SSH
+# (Q1 2026-10-21, the user's 「描画が遅すぎて…これを解決したいです。」). A test image only.
+CONFIG_INPUT_TEST_INJECT := y
+ZEDBSD_USER_PROGRAMS += aat-input
