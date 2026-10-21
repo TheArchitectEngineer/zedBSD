@@ -11,8 +11,9 @@
  * The boot handoff names the SD card's controller (the BCM2712's sdio1);
  * the platform publishes the card as the single boot device.  The console
  * is the firmware's framebuffer, and the debug UART when the build asks for
- * it.  The USB ports behind the RP1 south bridge start after the SD card;
- * a board whose firmware reset RP1's link boots without them.
+ * it.  The USB ports and the Ethernet port behind the RP1 south bridge
+ * start after the SD card; a board whose firmware reset RP1's link boots
+ * without them.
  */
 
 #include <uapi/errno.h>
@@ -27,6 +28,7 @@
 #include "drivers/platform/rpi4/rpi4-sdhci.h"
 #include "drivers/platform/rpi5/rp1.h"
 #include "drivers/platform/rpi5/rp1-usb.h"
+#include "drivers/platform/rpi5/rp1-ethernet.h"
 #include <drivers/usb/usb-hid.h>
 
 /* The firmware's BIOS-style number of the boot disk the handoff names. */
@@ -140,6 +142,9 @@ kern_platform_refresh_devices(
 
 	/* Has the USB controllers find their devices. */
 	drv_rp1_usb_refresh();
+
+	/* Starts the Ethernet port's link and missed-interrupt service. */
+	drv_rp1_ethernet_refresh();
 }
 
 /*
@@ -249,7 +254,7 @@ kern_platform_reboot(
 }
 
 /*
- * Finds RP1 and starts the USB controllers behind it.
+ * Finds RP1 and starts the USB controllers and the Ethernet port behind it.
  *
  * A board without RP1, or whose firmware reset the link to it, boots
  * without them; the reason is in the log.
@@ -275,4 +280,9 @@ start_rp1(
 	error = drv_rp1_usb_init();
 	if (error != 0)
 		kern_logf("rpi5: USB unavailable (%d)\n", error);
+
+	/* Starts the Ethernet port. */
+	error = drv_rp1_ethernet_init();
+	if (error != 0)
+		kern_logf("rpi5: Ethernet unavailable (%d)\n", error);
 }
