@@ -430,6 +430,18 @@ powervr_buffer_put(
 	if (faulted)
 		return;
 
+	/* A buffer the cache may hold lines of: freed by the service after the cache is flushed. */
+	if (buffer->gpu_cached) {
+		enabled = spin_lock_irqsave(&render->queue_lock);
+
+		buffer->next = render->slc_pending;
+		render->slc_pending = buffer;
+		waitq_wake_all(&render->service);
+
+		spin_unlock_irqrestore(&render->queue_lock, enabled);
+		return;
+	}
+
 	/* Frees the run, its view and its page list. */
 	buffer_free(buffer);
 }

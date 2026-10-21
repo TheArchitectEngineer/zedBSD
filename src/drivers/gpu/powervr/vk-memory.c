@@ -40,7 +40,7 @@
 #include "drivers/gpu/i915/render/vulkan-codec.inc"
 
 static int allocate(struct powervr_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
-static int allocate_storage(struct powervr_vk_session *session, const struct powervr_vk_memory_chain *chain, uint64_t bytes, struct powervr_resource **storage);
+static int allocate_storage(struct powervr_vk_session *session, const struct powervr_vk_memory_chain *chain, uint64_t bytes, uint32_t type, struct powervr_resource **storage);
 static int commitment(struct powervr_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int bind(struct powervr_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int requirements(struct powervr_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
@@ -220,7 +220,7 @@ allocate(
 		memory->type = type;
 		memory->exported = parsed.exported;
 		memory->imported = parsed.imported != 0;
-		error = allocate_storage(session, &parsed, bytes, &memory->storage);
+		error = allocate_storage(session, &parsed, bytes, type, &memory->storage);
 	}
 
 	/* Publishes the record and answers; a refused one is destroyed there. */
@@ -281,12 +281,14 @@ allocate_storage(
 	struct powervr_vk_session *session,
 	const struct powervr_vk_memory_chain *chain,
 	uint64_t bytes,
+	uint32_t type,
 	struct powervr_resource **storage)
 {
 	struct powervr_render *render;
 	struct powervr_resource *blob;
 	struct powervr_buffer *buffer;
 	int shareable;
+	int mappable;
 	int error;
 
 	/* The imported blob's buffer, with a reference of the storage's own. */
@@ -303,11 +305,21 @@ allocate_storage(
 			return error;
 	}
 
-	/* The session's mapping of it; the mapping takes the reference. */
+	/*
+	 * The session's mapping of it; the mapping takes the reference.  Memory
+	 * only the GPU reaches (device-local, not shared) goes through the
+	 * system level cache; anything the processor or another device reads
+	 * goes around it.
+	 */
 	shareable = 0;
 	if (chain->exported || chain->imported != 0)
 		shareable = 1;
-	error = powervr_resource_make(session->owner, buffer, 1, shareable, storage);
+	mappable = 1;
+	if (POWERVR_DEVICE_MEMORY_CACHED && type == POWERVR_VK_MEMORY_DEVICE && !shareable) {
+		mappable = 0;
+		buffer->gpu_cached = 1;
+	}
+	error = powervr_resource_make(session->owner, buffer, mappable, shareable, storage);
 	powervr_buffer_put(render, buffer);
 	if (error != 0)
 		return error;

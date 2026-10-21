@@ -353,6 +353,29 @@
 #define POWERVR_MMU_CACHE_ALL		0x1fU
 
 /*
+ * The kernel command that writes back and drops the system level cache's
+ * lines: whole cache, invalidating as well.
+ *
+ * Values referenced:
+ * Linux v7.3 drivers/gpu/drm/imagination/pvr_rogue_fwif.h
+ * (ROGUE_FWIF_KCCB_CMD_SLCFLUSHINVAL 105; struct
+ * rogue_fwif_slcflushinvaldata: the context 0, invalidate 4, a DM
+ * context 8, the range's address 16 and size 24, zero for all).
+ */
+#define POWERVR_COMMAND_SLC_FLUSH	(POWERVR_COMMAND_MAGIC | 105U)
+#define POWERVR_SLC_FLUSH_INVALIDATE	4U
+
+/*
+ * Whether device-local Vulkan memory (only the GPU reaches it) is mapped
+ * through the system level cache (1), instead of around it like memory
+ * the processor maps; its buffers' cached lines are written back and
+ * dropped before their pages are freed.
+ */
+#ifndef POWERVR_DEVICE_MEMORY_CACHED
+#define POWERVR_DEVICE_MEMORY_CACHED	0
+#endif
+
+/*
  * The firmware's notices the host acts on.
  *
  * Values referenced:

@@ -213,6 +213,9 @@ int powervr_command_run(struct powervr_core *core, const uint32_t command[POWERV
 /* Has the firmware drop what the core's MMU cached of the page tables, and waits. */
 int powervr_command_mmu_flush(struct powervr_core *core);
 
+/* Has the firmware write back and drop every line of the system level cache; the core's lock is held. */
+int powervr_command_slc_flush(struct powervr_core *core);
+
 /*
  * Takes every notice the firmware queued, handing each well-formed one to
  * handle (which may be NULL), and reports how many there were.

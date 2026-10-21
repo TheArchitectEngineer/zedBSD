@@ -61,6 +61,9 @@
  * concurrently), with lines prefixed vkmatrix[1] to vkmatrix[N].
  */
 
+/* clock_gettime and fork under a strict C standard. */
+#define _POSIX_C_SOURCE 200809L
+
 #include <vulkan/vulkan.h>
 
 #include <stdint.h>
@@ -69,6 +72,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "shader.h"
@@ -76,6 +80,13 @@
 /* The linear case's image: the display's size. */
 #define VKMATRIX_LINEAR_WIDTH	1920U
 #define VKMATRIX_LINEAR_HEIGHT	1080U
+
+/* The perf cases' kinds and frames: a clear, a load, a full-screen flat quad, a full-screen textured quad. */
+#define PERF_CLEAR		0
+#define PERF_LOAD		1
+#define PERF_FLAT		2
+#define PERF_TEXTURE		3
+#define PERF_FRAMES		20U
 
 /* The load cases' passes over one 1920x1080 image. */
 #define VKMATRIX_LOAD_FRAMES	60U
@@ -247,6 +258,12 @@ static VkResult case_render_linear(struct vkmatrix *run);
 static VkResult linear_target(struct vkmatrix *run, VkImageTiling tiling, VkSubresourceLayout *layout);
 static VkResult case_load_1080(struct vkmatrix *run, uint32_t draws, VkImageTiling tiling, int textured);
 static VkResult case_load_1080_textured(struct vkmatrix *run);
+static VkResult perf_case(struct vkmatrix *run, int kind);
+static VkResult case_perf_clear(struct vkmatrix *run);
+static VkResult case_perf_load(struct vkmatrix *run);
+static VkResult case_perf_flat(struct vkmatrix *run);
+static VkResult case_perf_texture(struct vkmatrix *run);
+static uint64_t perf_now_ns(void);
 static VkResult load_1080_textures(struct vkmatrix *run, uint32_t *pipeline);
 static VkResult case_load_1080_6(struct vkmatrix *run);
 static VkResult case_load_1080_32(struct vkmatrix *run);
@@ -288,6 +305,10 @@ static const struct vkmatrix_case cases[] = {
 	{ "load-1080-32", case_load_1080_32 },
 	{ "load-1080-linear", case_load_1080_linear },
 	{ "load-1080-textured", case_load_1080_textured },
+	{ "perf-clear", case_perf_clear },
+	{ "perf-load", case_perf_load },
+	{ "perf-flat", case_perf_flat },
+	{ "perf-texture", case_perf_texture },
 	{ "clear-64", case_clear_64 },
 	{ "clear-128", case_clear_128 },
 	{ "sample-linear-1180", case_sample_linear_wide },
@@ -4025,5 +4046,227 @@ load_1080_textures(
 		return status;
 
 	/* Succeeded: the textures and the pipeline. */
+	return VK_SUCCESS;
+}
+
+/*
+ * perf-clear, perf-load, perf-flat and perf-texture: the time of one
+ * 1920x1080 OPTIMAL B8G8R8A8 pass, each submitted and waited for, over
+ * PERF_FRAMES frames after one not counted: a clear only; a load only (the
+ * driver's load draw); a clear and one full-screen flat quad; a clear and
+ * one full-screen quad sampling a 1024x1024 OPTIMAL texture with linear
+ * filtering.  Prints "vkmatrix: perf <kind>: <ms> ms a frame (min <ms>)".
+ */
+static VkResult
+perf_case(
+	struct vkmatrix *run,
+	int kind)
+{
+	static const char *const names[4] = { "clear", "load", "flat", "texture" };
+	VkSubresourceLayout layout;
+	struct vkmatrix_shape shape;
+	VkRenderPassBeginInfo pass;
+	VkCommandBufferBeginInfo begin;
+	VkClearValue value;
+	VkViewport viewport;
+	VkRect2D scissor;
+	VkSubmitInfo submit;
+	uint64_t started;
+	uint64_t spent;
+	uint64_t total;
+	uint64_t least;
+	uint32_t pipeline;
+	uint32_t first;
+	uint32_t frame;
+	float red;
+	VkResult status;
+
+	/* The pipeline the kind draws with. */
+	pipeline = 0;
+	first = 0;
+	if (kind == PERF_TEXTURE) {
+		status = load_1080_textures(run, &pipeline);
+		if (status != VK_SUCCESS)
+			return status;
+		first = vkmatrix_texture_quad(run, 0.0f, 0.0f, 64.0f, 64.0f);
+	} else if (kind == PERF_FLAT) {
+		memset(&shape, 0, sizeof(shape));
+		shape.vertex = vkmatrix_push4_vert;
+		shape.vertex_size = sizeof(vkmatrix_push4_vert);
+		shape.fragment = vkmatrix_push4_frag;
+		shape.fragment_size = sizeof(vkmatrix_push4_frag);
+		shape.push_size = 4;
+		shape.push_stages = VK_SHADER_STAGE_FRAGMENT_BIT;
+		status = vkmatrix_pipeline(run, &shape, &pipeline);
+		if (status != VK_SUCCESS)
+			return status;
+		first = vkmatrix_quad(run, 0.0f, 0.0f, 64.0f, 64.0f);
+	}
+
+	/* The 1920x1080 attachment. */
+	status = linear_target(run, VK_IMAGE_TILING_OPTIMAL, &layout);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* The frames, the first not counted. */
+	total = 0;
+	least = UINT64_MAX;
+	for (frame = 0; frame <= PERF_FRAMES; frame++) {
+		/* The command buffer and the pass: cleared, or loaded for the load kind (after the first frame). */
+		memset(&begin, 0, sizeof(begin));
+		begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+		vkResetCommandBuffer(run->command, 0);
+		vkBeginCommandBuffer(run->command, &begin);
+		memset(&value, 0, sizeof(value));
+		memcpy(value.color.float32, background, sizeof(value.color.float32));
+		memset(&pass, 0, sizeof(pass));
+		pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+		pass.renderPass = run->clear_pass;
+		if (kind == PERF_LOAD && frame != 0)
+			pass.renderPass = run->load_pass;
+		pass.framebuffer = run->wide_framebuffer;
+		pass.renderArea.extent.width = VKMATRIX_LINEAR_WIDTH;
+		pass.renderArea.extent.height = VKMATRIX_LINEAR_HEIGHT;
+		pass.clearValueCount = 1;
+		pass.pClearValues = &value;
+		vkCmdBeginRenderPass(run->command, &pass, VK_SUBPASS_CONTENTS_INLINE);
+
+		/* The full-screen quad of the drawing kinds. */
+		if (kind == PERF_FLAT || kind == PERF_TEXTURE) {
+			memset(&viewport, 0, sizeof(viewport));
+			viewport.width = (float)VKMATRIX_LINEAR_WIDTH;
+			viewport.height = (float)VKMATRIX_LINEAR_HEIGHT;
+			viewport.maxDepth = 1.0f;
+			vkCmdSetViewport(run->command, 0, 1, &viewport);
+			memset(&scissor, 0, sizeof(scissor));
+			scissor.extent.width = VKMATRIX_LINEAR_WIDTH;
+			scissor.extent.height = VKMATRIX_LINEAR_HEIGHT;
+			vkCmdSetScissor(run->command, 0, 1, &scissor);
+			vkmatrix_bind(run, pipeline);
+			if (kind == PERF_TEXTURE) {
+				vkCmdBindDescriptorSets(run->command, VK_PIPELINE_BIND_POINT_GRAPHICS, run->layouts[pipeline], 0, 1, &run->textures[1].set, 0, NULL);
+			} else {
+				red = 1.0f;
+				vkCmdPushConstants(run->command, run->layouts[pipeline], VK_SHADER_STAGE_FRAGMENT_BIT, 0, 4, &red);
+			}
+			vkCmdDraw(run->command, 6, 1, first, 0);
+		}
+		vkCmdEndRenderPass(run->command);
+		vkEndCommandBuffer(run->command);
+
+		/* The submit and its wait, timed. */
+		memset(&submit, 0, sizeof(submit));
+		submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		submit.commandBufferCount = 1;
+		submit.pCommandBuffers = &run->command;
+		vkResetFences(run->device, 1, &run->fence);
+		started = perf_now_ns();
+		run->failed_call = "vkQueueSubmit (perf)";
+		status = vkQueueSubmit(run->queue, 1, &submit, run->fence);
+		if (status != VK_SUCCESS)
+			return status;
+		run->failed_call = "vkWaitForFences (perf)";
+		status = vkWaitForFences(run->device, 1, &run->fence, VK_TRUE, VKMATRIX_WAIT_NS);
+		if (status != VK_SUCCESS)
+			return status;
+		spent = perf_now_ns() - started;
+
+		/* Counted after the first frame. */
+		if (frame != 0) {
+			total += spent;
+			if (spent < least)
+				least = spent;
+		}
+	}
+
+	/* The line, and nothing for the shared target's comparison to say. */
+	printf("vkmatrix: perf %s: %.2f ms a frame (min %.2f) over %u frames of 1920x1080\n", names[kind],
+	       (double)total / PERF_FRAMES / 1000000.0, (double)least / 1000000.0, (unsigned)PERF_FRAMES);
+	memcpy(run->expected, run->pixels, sizeof(run->expected));
+	run->tolerance = 0;
+
+	/* Succeeded: the timing is printed. */
+	return VK_SUCCESS;
+}
+
+/* The monotonic clock in nanoseconds. */
+static uint64_t
+perf_now_ns(
+	void)
+{
+	struct timespec now;
+	int error;
+
+	/* The clock; zero if it cannot be read. */
+	error = clock_gettime(CLOCK_MONOTONIC, &now);
+	if (error != 0)
+		return 0;
+
+	/* Succeeded: the time. */
+	return (uint64_t)now.tv_sec * 1000000000ULL + (uint64_t)now.tv_nsec;
+}
+
+/* perf-clear: a 1080p clear pass. */
+static VkResult
+case_perf_clear(
+	struct vkmatrix *run)
+{
+	VkResult status;
+
+	/* Times the kind. */
+	status = perf_case(run, PERF_CLEAR);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the case ran. */
+	return VK_SUCCESS;
+}
+
+/* perf-load: a 1080p load pass. */
+static VkResult
+case_perf_load(
+	struct vkmatrix *run)
+{
+	VkResult status;
+
+	/* Times the kind. */
+	status = perf_case(run, PERF_LOAD);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the case ran. */
+	return VK_SUCCESS;
+}
+
+/* perf-flat: a 1080p clear and one full-screen flat quad. */
+static VkResult
+case_perf_flat(
+	struct vkmatrix *run)
+{
+	VkResult status;
+
+	/* Times the kind. */
+	status = perf_case(run, PERF_FLAT);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the case ran. */
+	return VK_SUCCESS;
+}
+
+/* perf-texture: a 1080p clear and one full-screen textured quad. */
+static VkResult
+case_perf_texture(
+	struct vkmatrix *run)
+{
+	VkResult status;
+
+	/* Times the kind. */
+	status = perf_case(run, PERF_TEXTURE);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the case ran. */
 	return VK_SUCCESS;
 }
