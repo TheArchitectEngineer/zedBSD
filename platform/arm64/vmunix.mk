@@ -27,6 +27,18 @@ ARM64_BOARD_BOOT_C_rpi5 := \
 	src/hal/arm64/bsp-rpi5/uart.c src/hal/arm64/bsp-rpi5/fdt.c \
 	src/hal/arm64/bsp-rpi5/activity-led.c src/hal/arm64/bsp-rpi5/board.c
 
+# The BCM43455 driver, on the Pi 4's and the Pi 5's SDIO hosts.
+ARM64_BCM43455_SOURCES := src/drivers/wifi/bcm43455/bcm43455.c \
+	src/drivers/wifi/bcm43455/bcm43455-bcdc.c \
+	src/drivers/wifi/bcm43455/bcm43455-bus.c \
+	src/drivers/wifi/bcm43455/bcm43455-chip.c \
+	src/drivers/wifi/bcm43455/bcm43455-event.c \
+	src/drivers/wifi/bcm43455/bcm43455-files.c \
+	src/drivers/wifi/bcm43455/bcm43455-nvram.c \
+	src/drivers/wifi/bcm43455/bcm43455-radio.c \
+	src/drivers/wifi/bcm43455/bcm43455-sdpcm.c \
+	src/drivers/wifi/bcm43455/bcm43455-station.c
+
 # The board's platform binding and the drivers it starts first: on the Pi 4
 # the SD card, the console, PCIe and the firmware mailbox; on the Pi 5 the SD
 # card, the console, and the RP1 south bridge behind PCIe with its USB
@@ -52,6 +64,14 @@ ARM64_BOARD_KERNEL_SOURCES_rpi5 := \
 	src/drivers/platform/rpi5/rp1-usb.c \
 	src/drivers/platform/rpi5/rp1-ethernet.c \
 	src/drivers/ethernet/bcm54213pe.c \
+	src/drivers/platform/rpi5/rpi5-gio.c \
+	src/drivers/platform/rpi5/rpi5-pinctrl.c \
+	src/drivers/platform/rpi5/rpi5-wifi.c \
+	src/drivers/platform/rpi4/rpi4-mmc-irq.c \
+	src/drivers/platform/rpi4/rpi4-sdio-host.c \
+	src/drivers/platform/rpi4/rpi4-sdio.c \
+	src/drivers/platform/rpi4/rpi4-gpio.c \
+	$(ARM64_BCM43455_SOURCES) \
 	src/kern/dcache.c \
 	src/kern/uncached.c \
 	src/drivers/generic/fdt.c src/drivers/generic/dma.c \
@@ -138,16 +158,7 @@ ARM64_KERNEL_SOURCES += src/drivers/platform/rpi4/rpi4-mmc-irq.c \
 	src/drivers/platform/rpi4/rpi4-sdio-host.c \
 	src/drivers/platform/rpi4/rpi4-sdio.c \
 	src/drivers/platform/rpi4/rpi4-wifi.c \
-	src/drivers/wifi/bcm43455/bcm43455.c \
-	src/drivers/wifi/bcm43455/bcm43455-bcdc.c \
-	src/drivers/wifi/bcm43455/bcm43455-bus.c \
-	src/drivers/wifi/bcm43455/bcm43455-chip.c \
-	src/drivers/wifi/bcm43455/bcm43455-event.c \
-	src/drivers/wifi/bcm43455/bcm43455-files.c \
-	src/drivers/wifi/bcm43455/bcm43455-nvram.c \
-	src/drivers/wifi/bcm43455/bcm43455-radio.c \
-	src/drivers/wifi/bcm43455/bcm43455-sdpcm.c \
-	src/drivers/wifi/bcm43455/bcm43455-station.c
+	$(ARM64_BCM43455_SOURCES)
 endif
 
 # The onboard Bluetooth: the PL011 as the controller's HCI transport (ws215-p003).

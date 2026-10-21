@@ -13,7 +13,8 @@
  * is the firmware's framebuffer, and the debug UART when the build asks for
  * it.  The USB ports and the Ethernet port behind the RP1 south bridge
  * start after the SD card; a board whose firmware reset RP1's link boots
- * without them.
+ * without them.  The onboard Wi-Fi is probed once interrupts are on and
+ * comes up in the background.
  */
 
 #include <uapi/errno.h>
@@ -29,6 +30,7 @@
 #include "drivers/platform/rpi5/rp1.h"
 #include "drivers/platform/rpi5/rp1-usb.h"
 #include "drivers/platform/rpi5/rp1-ethernet.h"
+#include "drivers/platform/rpi5/rpi5-wifi.h"
 #include <drivers/usb/usb-hid.h>
 
 /* The firmware's BIOS-style number of the boot disk the handoff names. */
@@ -36,6 +38,15 @@
 
 /* The bytes of one sector of the SD card. */
 #define RPI5_SECTOR_BYTES	512U
+
+/*
+ * The device tree's physical address, for the probes that run once
+ * interrupts are on.
+ *
+ * Recorded by kern_platform_init() and never changed afterwards; zero
+ * means none.
+ */
+static uint64_t rpi5_fdt_phys;
 
 static void start_rp1(uint64_t fdt_phys);
 
@@ -86,6 +97,7 @@ kern_platform_init(
 	fdt_phys = 0;
 	if (fdt_object != NULL)
 		fdt_phys = *fdt_object;
+	rpi5_fdt_phys = fdt_phys;
 
 	/* Publishes the console as /dev/console's output. */
 	drv_rpi4_console_init();
@@ -145,6 +157,12 @@ kern_platform_refresh_devices(
 
 	/* Starts the Ethernet port's link and missed-interrupt service. */
 	drv_rp1_ethernet_refresh();
+
+	/*
+	 * Starts the onboard Wi-Fi's thread; a board without the chip goes on
+	 * without it.
+	 */
+	(void)drv_rpi5_wifi_probe(rpi5_fdt_phys);
 }
 
 /*
