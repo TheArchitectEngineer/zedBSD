@@ -32,3 +32,6 @@ clear 3.85 ms、LOAD 23.35 ms、平らな quad 15.1 ms、1/4 面積 7.2 ms、402
 - d51（ta: ptr1・pds_tempsize 0・pixel merge off）: draws4 16050 の他は不変。d52（tb）は起動の不調で未測定。
 - d53〜d55: HDMI の cable が抜けていて boot framebuffer なし（ユーザー 2026-10-21「すみませんHDMIが抜けていました。」）、desktop は出ず。d55 の perf（P2 vf2c、compiler で fragment の group 数を約半分、ta 既定）: clear 4000、flat 9200、quarter 5650、draws4 9100、load 10250、texture 17750 us、vkmatrix 41/41、HWR 0。
 - d56（vf2c + P1 98c7a4ccf 壁紙の穴）: 見た目同じ（build/review/vf2-desktop/shot56.png）。3 窓の全画面 frame 165 draws、rec submit 約 160 ms。terminal の出力の frame は部分（916x632）だが blended 2.5 M px（area の 6 倍）で約 66 ms → P1 の opaque region（案 A）へ。
+- d57（P1 c3dde7fc7: 上の窓の不透明な所の下を描かない・opaque region・desktop の描いた範囲）: 見た目同じ（shot57.png）。terminal の出力の部分 frame は rec submit 約 13.5 ms（d56 は 66）、3 窓の全画面の frame は約 85〜100 ms。
+- d58（glass を切る、ユーザーの問い「glass effectを切ったとき…それでも遅さが変わらないですか？GPUからのメモリのリードが遅い？」）: 全画面の frame 約 38 ms（MODES quad 5/4.98 M px ≈ 2.4 画面分、perf-texture の 17.75 ms/画面と合う）、部分 frame 13.3 ms（job wait 約 10 ms）。→ glass の費用は shader の計算。memory の read は d50 の perf-read で遅くない。残る driver の課題: shader の group あたりの費用（P2）と job の面積に依らない固定費（P1 q1541）。
+- 2026-10-21 ユーザーの指示で Keiland の作業は止め、driver に集中（Master の decisions-log）。
