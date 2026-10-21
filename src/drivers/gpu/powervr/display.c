@@ -130,9 +130,6 @@
 #define POWERVR_DISPLAY_CURSOR_IMAGES	3U
 #define POWERVR_DISPLAY_CURSOR_BYTES	(GPU_DISPLAY_CURSOR_MAX * GPU_DISPLAY_CURSOR_MAX * 4U)
 
-/* How many cursor image sets log the pixels they copied. */
-#define POWERVR_DISPLAY_CURSOR_LOGS	8U
-
 /* The name a query reports, and the driver name of the node. */
 #define POWERVR_DISPLAY_NAME		"powervr bootfb"
 #define POWERVR_DISPLAY_DRIVER		"powervr-display"
@@ -265,12 +262,6 @@ struct powervr_display {
 	int32_t cursor_y;
 	uint64_t cursor_sets;
 	uint64_t cursor_moves;
-
-	/*
-	 * How many image sets have logged what they copied (ws270-p007, the
-	 * cursor not seen on the board), under the mutex.
-	 */
-	unsigned cursor_logged;
 };
 
 /* Declared before the operation tables that name them. */
@@ -1975,9 +1966,6 @@ output_cursor_set(
 	uint32_t pixel;
 	uint32_t row;
 	uint32_t column;
-	uint32_t opaque;
-	uint32_t lit;
-	uint32_t corner;
 	int next;
 	int error;
 
@@ -2015,8 +2003,6 @@ output_cursor_set(
 	next = (display->cursor_image + 1) % (int)POWERVR_DISPLAY_CURSOR_IMAGES;
 	target = display->cursor_views[next];
 	kern_memset(target, 0, POWERVR_DISPLAY_CURSOR_BYTES);
-	opaque = 0;
-	lit = 0;
 	for (row = 0; row < request->height; row++) {
 		if (resource->buffer != NULL) {
 			source = (const volatile uint32_t *)(const volatile void *)(powervr_buffer_view(resource->buffer) + request->offset + (uint64_t)row * request->stride);
@@ -2028,30 +2014,9 @@ output_cursor_set(
 			if (request->format == GPU_PIXEL_RGBA8888)
 				pixel = (pixel & 0xff00ff00U) | ((pixel & 0x00ff0000U) >> 16) | ((pixel & 0x000000ffU) << 16);
 			target[row * GPU_DISPLAY_CURSOR_MAX + column] = pixel;
-			if ((pixel & 0xff000000U) != 0)
-				opaque++;
-			if ((pixel & 0x00ffffffU) != 0)
-				lit++;
 		}
 	}
 	kern_io_write_barrier();
-
-	/* The first sets say what they copied: the pixels with alpha, those with colour, and the corner's. */
-	if (display->cursor_logged < POWERVR_DISPLAY_CURSOR_LOGS) {
-		display->cursor_logged++;
-		corner = target[2U * GPU_DISPLAY_CURSOR_MAX + 2U];
-		kern_logf("powervr: cursor set %u %ux%u stride %u format %u offset %llu buffer %d: alpha %u colour %u pixel(2,2) %08x\n",
-			  display->cursor_logged,
-			  request->width,
-			  request->height,
-			  request->stride,
-			  request->format,
-			  (unsigned long long)request->offset,
-			  resource->buffer != NULL,
-			  opaque,
-			  lit,
-			  corner);
-	}
 	display->cursor_image = next;
 	display->cursor_sets++;
 
