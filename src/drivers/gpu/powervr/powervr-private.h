@@ -205,6 +205,7 @@ int powervr_command_wait(struct powervr_core *core, uint32_t slot, unsigned mill
 int powervr_command_wait_executed(struct powervr_core *core, uint32_t slot, unsigned milliseconds);
 void powervr_firmware_dump(struct powervr_core *core, uint32_t slot);
 void powervr_firmware_trace_mark(struct powervr_core *core);
+void powervr_firmware_trace_since_mark(struct powervr_core *core);
 void powervr_firmware_return_probe(struct powervr_core *core, uint32_t slot);
 
 /* Sends one command and waits, bounded, for its answer. */

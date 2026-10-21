@@ -163,6 +163,8 @@ static void watch_thread(void *argument);
 #define DUMP_TRACE_ALL_WORDS		128U
 #define DUMP_TRACE_HEAD_WORDS		32U
 #endif
+/* The most words the trace since a mark prints (powervr_firmware_trace_since_mark). */
+#define TRACE_SINCE_MARK_WORDS		4096U
 #define DUMP_OS_DATA_INTERRUPTS		560U
 #define DUMP_SYSTEM_DATA_POWER		8U
 #define DUMP_SYSTEM_INIT_STARTED_TIME	360U
@@ -207,8 +209,16 @@ static void watch_thread(void *argument);
 #define DUST_EVENT_CLEAR		0x0138U
 #define DUST_EVENT_POWER_COMPLETE	0x00000400U
 #define DUST_EVENT_POWER_ABORT		0x00000800U
-/* 1 asks the host to power the dusts up itself (with the PMU event unmasked it completes, 2026-10-20, but changes nothing); 0 leaves it to the firmware. */
+/*
+ * 1 asks the host to power the dusts up itself at the start and leaves the
+ * firmware's management of their power off (no POW_RASCALDUST), so they
+ * stay on between jobs (q1541: the firmware turned them off after every
+ * job and on again for the next); 0 leaves their power to the firmware.
+ * With the PMU event unmasked the host's power up completes (2026-10-20).
+ */
+#ifndef DUST_POWER_BY_HOST
 #define DUST_POWER_BY_HOST		0
+#endif
 
 /*
  * Whether the start clears every event before the processor leaves
@@ -921,7 +931,8 @@ fill_records(
 	 * wipeout" (github.com/domibel/linux commit b53c4500f133, the flag
 	 * set for the VisionFive 2).
 	 */
-	flags |= POWERVR_FLAG_POW_RASCALDUST;
+	if (!DUST_POWER_BY_HOST)
+		flags |= POWERVR_FLAG_POW_RASCALDUST;
 
 	/*
 	 * The context switch: off by default, as the mainline driver leaves it
@@ -1948,6 +1959,31 @@ powervr_firmware_trace_mark(
 	/* The word the firmware writes next. */
 	trace_mark = powervr_object_get32(&core->firmware.trace_control, DUMP_TRACE_POINTER) % POWERVR_TRACE_WORDS;
 	trace_marked = 1;
+}
+
+/*
+ * Prints every word of the firmware's trace from the mark to where the
+ * firmware writes next, at most TRACE_SINCE_MARK_WORDS (the job trace,
+ * q1541: a dump's head and tail left out the middle of one job).
+ */
+void
+powervr_firmware_trace_since_mark(
+	struct powervr_core *core)
+{
+	uint32_t pointer;
+	uint32_t count;
+
+	/* Nothing marked, nothing to print. */
+	if (!trace_marked)
+		return;
+
+	/* The words since the mark, the first ones when there are too many. */
+	pointer = powervr_object_get32(&core->firmware.trace_control, DUMP_TRACE_POINTER) % POWERVR_TRACE_WORDS;
+	count = (pointer + POWERVR_TRACE_WORDS - trace_mark) % POWERVR_TRACE_WORDS;
+	if (count > TRACE_SINCE_MARK_WORDS)
+		count = TRACE_SINCE_MARK_WORDS;
+	kern_logf("powervr: dump: trace since the mark, %u words from %u\n", (unsigned)count, (unsigned)trace_mark);
+	dump_trace(&core->firmware, trace_mark, count);
 }
 
 /* Prints the trace from its first word to where the firmware writes next, at most BOOT_TRACE_WORDS. */

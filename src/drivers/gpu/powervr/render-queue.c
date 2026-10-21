@@ -674,7 +674,7 @@ powervr_session_kick_render(
 		job_trace(context, marks, session->trace_pixels, trace_started);
 		if (trace_dumping) {
 			kern_logf("powervr: job trace: the firmware trace of small job %llu follows\n", (unsigned long long)trace_small_jobs);
-			powervr_firmware_dump(render->core, POWERVR_KERNEL_CCB_SLOTS);
+			powervr_firmware_trace_since_mark(render->core);
 			trace_dumping = false;
 		}
 	}
