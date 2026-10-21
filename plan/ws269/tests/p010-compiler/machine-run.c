@@ -57,8 +57,7 @@ enum {
 	KIND_END,
 	KIND_TEST_ZERO,
 	KIND_CONDITION,
-	KIND_BRANCH,
-	KIND_FLOAT_PAIR
+	KIND_BRANCH
 };
 
 static float as_float(uint32_t word);
@@ -186,22 +185,6 @@ machine_run_program(
 				break;
 			case KIND_FLOAT_MULTIPLY:
 				write_register(run, operation->destination[0], lane, saturated(as_word(as_float(a) * as_float(b)), operation->saturate));
-				break;
-			case KIND_FLOAT_PAIR:
-				/*
-				 * Two float adds or multiplies in one group (q1539), both
-				 * reading before either writes: sources 0 and 1 into
-				 * destination 0, sources 2 and 3 into destination 1.
-				 */
-				{
-					uint32_t p = modified(read_register(run, operation->source[2], lane), operation->modifiers[2] & 0xfU);
-					uint32_t q = modified(read_register(run, operation->source[3], lane), operation->modifiers[2] >> 4);
-					uint32_t first = (operation->variant & 1U) != 0 ? as_word(as_float(a) * as_float(b)) : as_word(as_float(a) + as_float(b));
-					uint32_t second = (operation->variant & 2U) != 0 ? as_word(as_float(p) * as_float(q)) : as_word(as_float(p) + as_float(q));
-
-					write_register(run, operation->destination[0], lane, saturated(first, operation->saturate & 1U));
-					write_register(run, operation->destination[1], lane, saturated(second, operation->saturate >> 1));
-				}
 				break;
 			case KIND_FLOAT_MULTIPLY_ADD:
 				write_register(run, operation->destination[0], lane, saturated(as_word(as_float(a) * as_float(b) + as_float(c)), operation->saturate));
