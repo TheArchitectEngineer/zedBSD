@@ -708,6 +708,9 @@ void kwl_glass_draw_drag_mark(struct kwl_server *server, struct kwl_list *comman
 void kwl_glass_draw_head(struct kwl_server *server, struct kwl_list *command, struct kwl_object **windows, unsigned count);
 void kwl_compose_cursor(struct kwl_server *server, struct kwl_list *command);
 void kwl_compose_count_draw(struct kwl_server *server, VkPipeline pipeline, VkDescriptorSet set, unsigned shape);
+
+/* Counts the pixels a draw covers inside the pass's area, blended or not, for the frame's log. */
+void kwl_compose_count_pixels(struct kwl_server *server, float x, float y, float width, float height, int blended);
 void kwl_compose_bind(struct kwl_server *server, struct kwl_list *command, VkPipeline pipeline, VkPipelineLayout layout, VkDescriptorSet set);
 void kwl_compose_bind_forget(struct kwl_compose *compose);
 int kwl_compose_clip_visible(struct kwl_compose *compose, float x, float y, float width, float height);

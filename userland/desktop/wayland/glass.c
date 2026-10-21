@@ -2188,6 +2188,7 @@ glass_shape_draw(
 	 * the quads waiting first, then itself alone.
 	 */
 	kwl_compose_count_draw(server, pipeline, set, 1U);
+	kwl_compose_count_pixels(server, quad[0], quad[1], quad[2], quad[3], 1);
 	if (server->batch_floors &&
 	    shape->mode == MODE_SOLID &&
 	    constants[17] == (float)MODE_SOLID &&
