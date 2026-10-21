@@ -43,3 +43,9 @@ clear 3.85 ms、LOAD 23.35 ms、平らな quad 15.1 ms、1/4 面積 7.2 ms、402
 - d62（d61 + POWERVR_SHADER_PAIR_TRIAL 1: 独立の FADD・FMUL を 1 group の phase 0・1 に）: 46/46、HWR 0。mul4 36500（0.67 倍）、texture 14250、load-small 2800。desktop の見た目は同じ（shot62.png）、全画面 71〜78 ms、部分 11.95 ms → issue が律速と確定、pairing を既定にして組を増やす（P2）。
 - d63（P1 trace の kernel、main bd7435336 + 0d54f4bc0）: 48/48。small の job は sent 約 15 us、TA 約 600 us、3D 約 650 us。clear-64 2000、load-small 3100 us → GPU の外に約 1〜2 ms、tile の数には依らない。
 - d64（P2 12ddbecc7: pairing を既定、12 命令先まで並べ替えて FADD・FMUL・FMAD・MOVE を組に）: 46/46、HWR 0、見た目同じ（shot64.png）。perf: mul4 36050、flat 6800、quarter 4050、texture 13050、load 8000、load-small 2900 us。desktop: 全画面 64〜74 ms、部分 12.0 ms。12ddbecc7 を main 3bd89fa96 に merge。
+- d65・d66（P1 の trace、firmware の trace の全部）: small の job ごとに dust の電源の on・off。GPU の hardware の仕事は TA＋3D で約 220 us、残り約 1 ms は firmware（MIPS）の処理（TA の前 225 us、TA→3D 480 us、後片付け 330 us）。
+- d67（B: host が dust の電源を入れたまま、DUST_POWER_BY_HOST 1）: 48/48、HWR 0。TA 639→500 us、3D は不変 → 電源の on・off は主因でない（既定に入れない）。
+- d68（C: firmware の trace を記録しない）: 48/48。TA 250、3D 275 us（約半分）。load-small 2350 us。→ P1 16611bb41 で既定の trace groups を 0x401（trace on と HWR だけ）に。
+- d69（D1: firmware の code を MIPS の MMU で cached、trace は全部のまま）: 48/48、gpu-selftest 13 ok、HWR 0。TA 約 300、3D 約 355 us。
+- 2026-10-21 ユーザー「浮動小数点が32bitなのはちょっと気になるので、precisionを落とせないか確認するのがいいと思います。」→ P2: BXE の main ALU に F16 の vec2 の SIMD は無い（Mesa の ISA の表）、lp の形（fadd_lp 等）の板の試しを作った。
+- 2026-10-21 ユーザー「Linuxを起動してシェーダーの実行時間を計測することができます。Linuxを起動する必要があると思ったとき、私に言ってください。」
