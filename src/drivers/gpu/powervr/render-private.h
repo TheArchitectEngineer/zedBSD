@@ -135,11 +135,16 @@ struct powervr_pending {
 
 /*
  * The timeline a completion point is on: none (already complete), the
- * session's compute context, or its render context's 3D (fragment).
+ * session's compute context, its render context's 3D (fragment), or its
+ * transfer context.
  */
 #define POWERVR_POINT_NONE	0U
 #define POWERVR_POINT_COMPUTE	1U
 #define POWERVR_POINT_FRAGMENT	2U
+#define POWERVR_POINT_TRANSFER	3U
+
+/* The most finished transfers' memory a session keeps mapped for the next ones. */
+#define POWERVR_TRANSFER_KEEP	4U
 
 /*
  * How long a session's oldest pending callback may wait without its
@@ -431,11 +436,16 @@ struct powervr_session {
 	unsigned job_keep_count;
 
 	/*
-	 * The memory of the last finished transfer kept mapped for the next
-	 * (transfer-job.c), under the queue lock; freed with the session
-	 * (powervr_transfer_forget).
+	 * The memory of finished transfers kept mapped for the next ones
+	 * (transfer-job.c), transfer_keep_count of them, and the memory of
+	 * transfers the core may still run, oldest first, each until its
+	 * transfer's timeline value is reached; under the queue lock, freed
+	 * with the session (powervr_transfer_forget).
 	 */
-	struct transfer_memory *transfer_keep;
+	struct transfer_memory *transfer_keep[POWERVR_TRANSFER_KEEP];
+	unsigned transfer_keep_count;
+	struct transfer_memory *transfers_done;
+	struct transfer_memory *transfers_done_tail;
 
 	/*
 	 * The render area's pixels of the job being kicked, which the job
@@ -449,9 +459,10 @@ struct powervr_session {
 	/* Set once the progress watchdog reported the session (under the queue lock). */
 	unsigned progress_reported;
 
-	/* The compute and 3D timeline values the service saw last, to tell the device's progress. */
+	/* The compute, 3D and transfer timeline values the service saw last, to tell the device's progress. */
 	uint32_t seen_compute;
 	uint32_t seen_fragment;
+	uint32_t seen_transfer;
 
 	/*
 	 * The target the session's newest render job kicked with, for the
@@ -884,10 +895,14 @@ void powervr_transfer_context_discard(struct powervr_session *session);
 
 /*
  * Kicks one transfer command (POWERVR_TRANSFER_COMMAND_BYTES) on a
- * session's transfer context, its timeline advancing to the next value
+ * session's transfer context after the firmware sees each of the
+ * wait_count waits reached, its timeline advancing to the next value
  * once done, which it reports; the core's lock is held.
  */
-int powervr_session_kick_transfer(struct powervr_render *render, struct powervr_session *session, const uint8_t *command, uint32_t *value);
+int powervr_session_kick_transfer(struct powervr_render *render, struct powervr_session *session, const uint8_t *command, const struct powervr_sync *waits, unsigned wait_count, uint32_t *value);
+
+/* Reports the firmware address and value a firmware wait for a session's completion point names; 0 for a point with nothing to wait for. */
+unsigned powervr_session_point_sync(const struct powervr_session *session, unsigned kind, uint32_t value, struct powervr_sync *sync);
 
 /*
  * Waits, bounded, for a transfer to finish: transfer ok once done,

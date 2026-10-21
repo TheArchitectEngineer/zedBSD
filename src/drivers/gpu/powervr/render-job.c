@@ -305,7 +305,7 @@ powervr_render_job_run(
 	const struct powervr_render_draw *prefix;
 	struct load_draw *load;
 	struct powervr_job_done *done;
-	struct powervr_sync previous;
+	struct powervr_sync previous[2];
 	unsigned wait_count;
 	unsigned half;
 	unsigned long enabled;
@@ -505,11 +505,15 @@ powervr_render_job_run(
 	powervr_target_catalogues(target, half, session->noted_catalogues);
 	wait_count = 0;
 	if (session->render_context != NULL && session->render_context->fragment.submitted != 0U) {
-		previous.address = powervr_object_address(&session->render_context->fragment.timeline, 0);
-		previous.value = session->render_context->fragment.submitted;
-		wait_count = 1;
+		previous[wait_count].address = powervr_object_address(&session->render_context->fragment.timeline, 0);
+		previous[wait_count].value = session->render_context->fragment.submitted;
+		wait_count++;
 	}
-	error = powervr_session_kick_render(render, session, target, half, memory->geometry, memory->fragment, memory->fragment, &previous, wait_count, &memory->marks);
+
+	/* A render after a transfer left running waits for it too (it may read what the transfer wrote). */
+	if (session->last_kind == POWERVR_POINT_TRANSFER)
+		wait_count += powervr_session_point_sync(session, session->last_kind, session->last_value, &previous[wait_count]);
+	error = powervr_session_kick_render(render, session, target, half, memory->geometry, memory->fragment, memory->fragment, previous, wait_count, &memory->marks);
 
 	mutex_unlock(&render->core->lock);
 

@@ -171,7 +171,8 @@ powervr_session_kick_render(struct powervr_render *render, struct powervr_sessio
 /* The transfer context and kick: each kick counted. */
 static unsigned transfer_kicks;
 int powervr_session_transfer_context(struct powervr_render *render, struct powervr_session *session, struct powervr_transfer_context **result) { (void)render; (void)session; *result = (struct powervr_transfer_context *)&context_stand_in; return 0; }
-int powervr_session_kick_transfer(struct powervr_render *render, struct powervr_session *session, const uint8_t *command, uint32_t *value) { (void)render; (void)session; (void)command; transfer_kicks++; *value = transfer_kicks; return 0; }
+int powervr_session_kick_transfer(struct powervr_render *render, struct powervr_session *session, const uint8_t *command, const struct powervr_sync *waits, unsigned wait_count, uint32_t *value) { (void)render; (void)session; (void)command; (void)waits; (void)wait_count; transfer_kicks++; *value = transfer_kicks; return 0; }
+unsigned powervr_session_point_sync(const struct powervr_session *session, unsigned kind, uint32_t value, struct powervr_sync *sync) { (void)session; (void)kind; (void)value; (void)sync; return 0; }
 int powervr_transfer_finish(struct powervr_session *session, uint32_t value, unsigned milliseconds) { (void)session; (void)value; (void)milliseconds; return 0; }
 
 int powervr_render_finish(struct powervr_render *render, struct powervr_session *session, const struct powervr_render_marks *marks, unsigned milliseconds) { (void)render; (void)session; (void)marks; (void)milliseconds; return 0; }
