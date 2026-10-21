@@ -197,6 +197,7 @@ struct job_memory {
 static int job_check(const struct powervr_render_job *job);
 static void load_draw_free(struct powervr_render_job *work, struct load_draw *load);
 static bool job_skips_empty_tiles(const struct powervr_render_job *job);
+static bool job_needs_no_background(const struct powervr_render_job *job);
 static uint32_t float_bits(uint32_t value);
 static int load_graphics(struct powervr_render *render, uint32_t vk_format, struct powervr_vk_graphics **result);
 static int load_graphics_compile(struct powervr_vk_graphics *graphics);
@@ -430,6 +431,7 @@ powervr_render_job_run(
 	memory->fragment_setup.tiles_x = layout->tiles_x;
 	memory->fragment_setup.tiles_y = layout->tiles_y;
 	memory->fragment_setup.skip_empty_tiles = job_skips_empty_tiles(job);
+	memory->fragment_setup.no_background = job_needs_no_background(job);
 	memory->fragment_setup.border_table = powervr_session_border_table(session);
 	memory->geometry_setup.border_table = memory->fragment_setup.border_table;
 	powervr_fragment_command(&memory->fragment_setup, memory->fragment);
@@ -1711,5 +1713,31 @@ job_skips_empty_tiles(
 	}
 
 	/* Succeeded: nothing is cleared, the empty tiles are left as they are. */
+	return true;
+}
+
+/*
+ * Tells whether a job's fragment needs no background object (ws270-p007):
+ * no depth target, and every colour target's old contents do not matter
+ * (a target loaded through the load draw is one, the draw covering its
+ * render area), so no tile's pixels come from the background.
+ */
+static bool
+job_needs_no_background(
+	const struct powervr_render_job *job)
+{
+	uint32_t index;
+
+	/* A depth target keeps its background depth. */
+	if (job->depth.present)
+		return false;
+
+	/* A colour target loaded or cleared by the background needs it. */
+	for (index = 0; index < job->color_count; index++) {
+		if (job->colors[index].load_op != LOAD_OP_DONT_CARE)
+			return false;
+	}
+
+	/* Succeeded: the background is left out. */
 	return true;
 }
