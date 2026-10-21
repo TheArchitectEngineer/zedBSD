@@ -206,3 +206,22 @@ branch agent/p1-q1548（基 main c6eebc780）。commit 7468edfdd・e8baec967・e
 - sop-const の原因: driver が pipeline の静的な blend 定数を使わず常に 0 を書いていた。69318f836 で直した（動的な vkCmdSetBlendConstants は未対応のまま）。
 - 9a1d07516: 既定の form を 0x1 → 0x3d（shared program・itrsmp・sum of products・raw・wdf）。板の確認待ち（vkmatrix 既定・perf・desktop の keiland-shot）。
 - 3f27c0545: 試しの切り替え（pipeline の flag の bit 24〜31、vkmatrix -t）と form 0x2 を撤去（規約 §12）。host 試験は compiler 2387/2387・group 27/27・p010 の driver 15 本・vkmatrix lavapipe 103/103。
+
+## q1550（2026-10-21、P1）: VF2 の desktop の速さ（cursor が出ない、描画が 6 fps 程度）
+
+branch agent/p1-q1550（基 main 5907c9d3b）。ユーザー（2026-10-21、板の desktop を操作して）:「まず、マウスカーソルが表示されないです。それから、描画自体も6fpsくらいでしょうか。」
+
+### cursor
+
+- d48〜d89 の保存 log には「KWL CURSOR shown」が一度も無い（測定の run で mouse を触っていない）→ 板で hardware cursor が動いた log の証拠は無かった。
+- d90（ユーザーが操作した session、runs/d90/cursor-grep.txt）: event1 の REL で「KWL CURSOR shown by=pointer」、その後「KWL CURSOR_PLANE present x=… copy=0/1」が多数（x 1616→254 と動く）、WSI の present の失敗も無い → Keiland・libvulkan は位置を plane に出している。それでも見えない → kernel の GPU_DISPLAY_CURSOR_SET・MOVE か dc8200。
+- dc8200 の register の書き方（0x1468 config、0x146c address、0x1470 location、shadow の hold と plane の commit bit）は StarFive Linux（~/visionfive-linux の vs_dc_hw.c dc_hw_commit）と同じ。
+- 診断 6ce298b0c（merge しない）: set ごとに写した pixel の alpha・colour の数と (2,2) の pixel（最初の 8 回）、dc8200 の cursor の register の読み返し（config 前→後、address、location、clock gating 0x1484、panel config。最初の 8 回）。板は未実施。
+
+### frame（d90 の session.log）
+
+- 操作中（App Home の開閉、WiseView、窓 1 つの desktop）の frame は全部 dirty=1 damage=0 の全画面。copy_px は全 frame 0。
+- 1 frame の GPU の時間（KWL LAT の recorded→queued）を mode の pixel で回帰（d89・d90 の 265 frame、idle の後を除く）: glass 12.3 ms/Mpx、shadow 4.8、image 3.9、solid 3.2、定数 2.3 ms。host の group 数（既定の form 0x3d: glass 49、image 25、solid 22、shadow 27）× 約 0.22 ms/Mpx/group と合う。
+- 原因: panel.frag は角丸の距離（sqrt 等で約 18 group）を全 pixel で計算する。不透明な内側は blend 無しの別 draw だったが shader は同じ。
+- 94b262375・97f784be0: 内側の variant（`KWL_PANEL_INSIDE`、距離を定数 -3: cover 1・edge 0 が元の式どおりになる範囲だけ）を作り（`regenerate.py` の INSIDE_MODES 0・2・3・7）、glass（light・dark、半径+3 px 内）・image・solid の内側を、不透明なら blend 無し、そうでなければ blend 付きの inside pipeline で描く。host の group 数（scratch の p010 の複写に 8 本を足して、machine と interpreter の一致 2793/2793）: glass 49→33、image 25→6、solid 22→1（blend 無し）・3（blend）、dark glass 55→39。KWL PASSES の job の模型を driver の 512 draw に（log だけ）。VF2 build warning 0。板は未実施。
+- idle（60 s）の後の最初の frame は内容に依らず 139 ms（d90 で 60 回以上）。kernel の timing（runs/d90/timing-idle.txt）: submit 284 us、job wait（kick→retire）138.8〜139.1 ms、interrupts 4。host 側に固定の sleep は無く、firmware の idle からの復帰の疑い（APM latency 0）。切り分けは firmware の trace（MAIN・MTS・POW）の診断 kernel が要る。未着手。
