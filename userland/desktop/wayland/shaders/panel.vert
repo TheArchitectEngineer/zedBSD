@@ -22,11 +22,17 @@ layout(location = 0) out vec2 texcoord;
 // i915's native compiler does not take).
 layout(location = 1) out vec2 pixel;
 
+// The fragment's place as a share of the output (pixel over screen.xy),
+// where the glass samples the blurred wallpaper: interpolated as it is,
+// so the sample needs no division of its own.
+layout(location = 2) out vec2 screen_uv;
+
 void main()
 {
 	vec2 place = mix(panel.rect.xy, panel.rect.zw, corner);
 
 	gl_Position = vec4(place, 0.0, 1.0);
 	texcoord = mix(panel.texture.xy, panel.texture.zw, corner);
-	pixel = (place * 0.5 + vec2(0.5)) * panel.screen.xy;
+	screen_uv = place * 0.5 + vec2(0.5);
+	pixel = screen_uv * panel.screen.xy;
 }
