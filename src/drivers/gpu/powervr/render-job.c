@@ -254,7 +254,7 @@ static int job_background(const struct powervr_render_target *color, struct job_
 static int job_draws(struct powervr_render *render, struct powervr_session *session, const struct powervr_render_job *job, const struct powervr_render_draw *prefix, struct job_memory *memory, uint32_t *stream_words, uint32_t *vertex_shareds);
 static int draw_place(const struct powervr_render_job *job, const struct powervr_render_draw *draw, uint32_t index, struct job_memory *memory, uint64_t sets_place, uint64_t usc_place, uint32_t stream_at, uint32_t *words);
 static const struct powervr_render_draw *job_draw(const struct powervr_render_job *job, const struct powervr_render_draw *prefix, uint32_t index);
-static int draw_shared(const struct powervr_shader_program *program, const struct powervr_data_state *state, struct job_memory *memory, uint32_t code_at, uint32_t data_at, uint32_t *data_words);
+static int draw_shared(const struct powervr_shader_program *program, uint32_t usc, const struct powervr_data_state *state, struct job_memory *memory, uint32_t code_at, uint32_t data_at, uint32_t *data_words);
 static void job_release(struct powervr_render *render, struct powervr_session *session, struct job_memory *memory);
 static void job_free(struct powervr_render *render, struct powervr_session *session, struct job_memory *memory);
 static struct job_memory *job_keep_take(struct powervr_render *render, struct powervr_session *session);
@@ -1446,11 +1446,11 @@ draw_place(
 	state.blend_address = general + DRAW_BLEND;
 
 	/* The two shared register programs. */
-	error = draw_shared(&graphics->vertex, &state, memory, pds_slot + DRAW_PDS_VSHARED_CODE, pds_slot + DRAW_PDS_VSHARED_DATA, &vertex_shared_words);
+	error = draw_shared(&graphics->vertex, vertex_usc, &state, memory, pds_slot + DRAW_PDS_VSHARED_CODE, pds_slot + DRAW_PDS_VSHARED_DATA, &vertex_shared_words);
 	if (error != 0)
 		return error;
 
-	error = draw_shared(&graphics->fragment, &state, memory, pds_slot + DRAW_PDS_FSHARED_CODE, pds_slot + DRAW_PDS_FSHARED_DATA, &fragment_shared_words);
+	error = draw_shared(&graphics->fragment, fragment_usc, &state, memory, pds_slot + DRAW_PDS_FSHARED_CODE, pds_slot + DRAW_PDS_FSHARED_DATA, &fragment_shared_words);
 	if (error != 0)
 		return error;
 
@@ -1592,16 +1592,24 @@ draw_place(
 	return 0;
 }
 
-/* Builds and places a shader's shared register program from the bound state; one halt when it takes no shared registers. */
+/*
+ * Builds and places a shader's shared register program from the bound
+ * state; one halt when it takes no shared registers.  A program with a
+ * shared program (its code at usc, the program's place in the shader
+ * heap, plus shared_offset) has it issued after the loads (q1546).
+ */
 static int
 draw_shared(
 	const struct powervr_shader_program *program,
+	uint32_t usc,
 	const struct powervr_data_state *state,
 	struct job_memory *memory,
 	uint32_t code_at,
 	uint32_t data_at,
 	uint32_t *data_words)
 {
+	const uint64_t *issue;
+	uint64_t task;
 	uint32_t halt;
 	uint32_t count;
 	int error;
@@ -1622,8 +1630,17 @@ draw_shared(
 	if (error != 0)
 		return error;
 
+	/* The shared program's task word: its code, its temporaries, one instance a task. */
+	issue = NULL;
+	if (program->shared_length != 0) {
+		error = powervr_pds_task_word(usc + (uint32_t)program->shared_offset, program->shared_temps, 0, 0, &task);
+		if (error != 0)
+			return error;
+		issue = &task;
+	}
+
 	/* The program, its code and data at their places. */
-	error = powervr_data_shared_build(memory->loads, count, &memory->shared);
+	error = powervr_data_shared_build_task(memory->loads, count, issue, &memory->shared);
 	if (error != 0)
 		return error;
 

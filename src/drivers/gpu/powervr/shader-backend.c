@@ -189,6 +189,15 @@ static int clamp_bound(const struct powervr_ir_instruction *instruction, unsigne
 static unsigned value_references(const struct powervr_ir_shader *shader, unsigned value, unsigned *writes, unsigned *writer);
 static int free_constant(uint32_t bits);
 static void remove_dead_writes(struct powervr_ir_shader *shader);
+static int compile_program(const uint32_t *words, size_t count, uint32_t stage, const struct powervr_shader_key *key, const uint32_t *shared_values, uint32_t value_count, unsigned split, struct powervr_shader_workspace *workspace, struct powervr_shader_program *program, uint8_t *code, size_t room);
+static int shared_build(struct powervr_shader_workspace *workspace, struct powervr_shader_program *program);
+static int split_shared(struct powervr_ir_shader *shader, struct powervr_shader_program *program, struct shader_uniform *uniform, struct powervr_ir_shader *shared, unsigned *moved);
+static unsigned uniform_kind(const struct powervr_ir_shader *shader, const struct powervr_shader_program *program, const struct shader_uniform *uniform, const struct powervr_ir_instruction *instruction);
+static int uniform_colour(const struct powervr_ir_shader *shader, const struct shader_uniform *uniform, const struct powervr_ir_instruction *instruction);
+static int shared_literal(struct powervr_shader_program *program, uint32_t bits, uint32_t *reg);
+static int shared_shader_build(const struct powervr_ir_shader *shader, struct shader_uniform *uniform, struct powervr_ir_shader *shared, unsigned base);
+static void shared_store(struct powervr_ir_instruction *instruction, unsigned value, unsigned reg);
+static void drop_unread(struct powervr_ir_shader *shader, struct shader_uniform *uniform, const uint8_t *candidates);
 static int end_on_last(const struct powervr_shader_program *program, const struct shader_backend *backend);
 static void fold_moves(const struct powervr_shader_program *program, struct shader_backend *backend, unsigned output_base);
 static int fold_move(struct shader_backend *backend, unsigned at, unsigned output_base);
@@ -218,6 +227,7 @@ static struct shader_machine_register destination_of(struct backend_select *sele
 static struct shader_machine_register operand_register(struct backend_select *select, const struct powervr_ir_operand *operand, unsigned *modifiers);
 static struct shader_machine_register operand_plain(struct backend_select *select, const struct powervr_ir_operand *operand, unsigned allowed);
 static struct shader_machine_register scratch_register(struct backend_select *select);
+static int adjacent_words(const struct backend_select *select, const struct powervr_ir_instruction *instruction, struct shader_machine_register *reg);
 static int literal_register(struct backend_select *select, uint32_t bits, struct shader_machine_register *reg);
 static void select_float_pair(struct backend_select *select, unsigned kind, struct shader_machine_register destination, const struct powervr_ir_operand *a, const struct powervr_ir_operand *b, unsigned floor);
 static void select_two_sourced(struct backend_select *select, unsigned kind, unsigned variant, uint32_t type, struct shader_machine_register destination, const struct powervr_ir_operand *a, const struct powervr_ir_operand *b, unsigned allowed);
@@ -468,8 +478,53 @@ powervr_shader_compile_inline(
 	uint8_t *code,
 	size_t room)
 {
+	unsigned split;
+	int error;
+
+	/* A keyed fragment program read through shared registers may move its uniform work to a shared program (q1546). */
+	split = 0;
+	if (stage == POWERVR_SHADER_FRAGMENT && key != NULL && key->shared_program != 0 && shared_values == NULL)
+		split = 1;
+
+	/* Compiles, with the shared program when it may have one. */
+	error = compile_program(words, count, stage, key, shared_values, value_count, split, workspace, program, code, room);
+
+	/* A program whose shared program could not be built is compiled again without one. */
+	if (error != 0 && split != 0)
+		error = compile_program(words, count, stage, key, shared_values, value_count, 0, workspace, program, code, room);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the program and its code. */
+	return 0;
+}
+
+/*
+ * Compiles a module once: reads it, simplifies the intermediate form,
+ * with split moves the uniform work to the shared program and builds
+ * that first (so the program's own operations stay the back end's last,
+ * for the host check's simulator), then selects, allocates and encodes
+ * the program, and puts the shared program's code after it.
+ */
+static int
+compile_program(
+	const uint32_t *words,
+	size_t count,
+	uint32_t stage,
+	const struct powervr_shader_key *key,
+	const uint32_t *shared_values,
+	uint32_t value_count,
+	unsigned split,
+	struct powervr_shader_workspace *workspace,
+	struct powervr_shader_program *program,
+	uint8_t *code,
+	size_t room)
+{
 	struct powervr_ir_shader *shader;
 	size_t length;
+	size_t offset;
+	size_t index;
+	unsigned moved;
 	int error;
 
 	/* Reads the module into the intermediate form. */
@@ -488,11 +543,26 @@ powervr_shader_compile_inline(
 	fuse_multiply_adds(shader, stage);
 	propagate_copies(shader);
 	remove_dead_writes(shader);
+
+	/* Moves the work only uniform words decide to the shared program, and builds it. */
+	workspace->backend.inline_values = shared_values;
+	workspace->backend.inline_count = value_count;
+	moved = 0;
+	if (split != 0) {
+		error = split_shared(shader, program, &workspace->uniform, &workspace->shared_shader, &moved);
+		if (error != 0)
+			return error;
+	}
+	if (moved != 0) {
+		error = shared_build(workspace, program);
+		if (error != 0)
+			return error;
+	}
+
+	/* Gives the constants several multiply-adds add values of their own. */
 	hoist_addends(shader, stage);
 
 	/* Selects and allocates the machine operations. */
-	workspace->backend.inline_values = shared_values;
-	workspace->backend.inline_count = value_count;
 	error = shader_backend_build(shader, program, &workspace->backend);
 	if (error != 0)
 		return error;
@@ -502,9 +572,544 @@ powervr_shader_compile_inline(
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the program and its length. */
+	/* The program alone, or with the shared program after it on a 16-byte boundary. */
 	program->length = length;
+	if (program->shared_length != 0) {
+		offset = (length + 15U) & ~(size_t)15U;
+		if (offset > room || program->shared_length > room - offset)
+			return ENOSPC;
+		for (index = length; index < offset; index++)
+			code[index] = 0;
+		for (index = 0; index < program->shared_length; index++)
+			code[offset + index] = workspace->shared_code[index];
+		program->shared_offset = offset;
+		program->length = offset + program->shared_length;
+	}
+
+	/* Succeeded: the program and its length. */
 	return 0;
+}
+
+/*
+ * Builds a fragment program's shared program from its intermediate form
+ * (q1546): selected as a compute task's, with the fragment program's
+ * requests, so it reads the shared registers the data sequencer fills
+ * and writes the computed ones; its operations are kept for the host
+ * check and its code encoded beside them.
+ */
+static int
+shared_build(
+	struct powervr_shader_workspace *workspace,
+	struct powervr_shader_program *program)
+{
+	struct powervr_shader_program *shared;
+	size_t length;
+	unsigned index;
+	int error;
+
+	/* A compute task's description with the program's requests and shared registers. */
+	shared = &workspace->shared_program;
+	*shared = *program;
+	shared->stage = POWERVR_SHADER_COMPUTE;
+	shared->output_count = 0;
+
+	/* Selects and allocates its operations. */
+	error = shader_backend_build(&workspace->shared_shader, shared, &workspace->backend);
+	if (error != 0)
+		return error;
+
+	/* Keeps them, as the program's own selection reuses the back end. */
+	if (workspace->backend.operation_count > SHADER_SHARED_OPERATIONS)
+		return E2BIG;
+	for (index = 0; index < workspace->backend.operation_count; index++)
+		workspace->shared_operations[index] = workspace->backend.operations[index];
+	workspace->shared_operation_count = workspace->backend.operation_count;
+
+	/* Encodes them. */
+	error = shader_backend_encode(&workspace->backend, workspace->shared_code, SHADER_SHARED_CODE, &length);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the shared program's code and its temporaries. */
+	program->shared_length = length;
+	program->shared_temps = shared->temps;
+	return 0;
+}
+
+/*
+ * Splits from a fragment program the work only uniform words decide
+ * (q1546: the board's flat quad of a push constant colour cost 2 ms a
+ * 1080p frame more than one of a constant colour, the colour's pack a
+ * pixel, where the proprietary driver's cost a tenth of that, as it
+ * works such values out once a draw).
+ *
+ * A value is uniform when it is written once, outside every if and loop,
+ * by arithmetic of constants and uniform values, or is a shared word the
+ * data sequencer loads.  Those instructions are copied to the shared
+ * program in order; each computed uniform value the rest of the program
+ * reads, and each colour packed only from uniform values, becomes a word
+ * of the computed request, which the shared program stores and the
+ * program reads in place of its own work (the colour moved into the
+ * pixel output as it is).  A colour of noughts and ones becomes a
+ * literal the data sequencer writes.  Moved reports the computed words,
+ * none when there is no shared program to build.
+ */
+static int
+split_shared(
+	struct powervr_ir_shader *shader,
+	struct powervr_shader_program *program,
+	struct shader_uniform *uniform,
+	struct powervr_ir_shader *shared,
+	unsigned *moved)
+{
+	struct powervr_ir_instruction *instruction;
+	struct powervr_shader_request *request;
+	const struct powervr_ir_operand *operand;
+	uint32_t packed;
+	uint32_t reg;
+	unsigned opcode;
+	unsigned depth;
+	int colour;
+	int constant;
+	unsigned at;
+	unsigned value;
+	unsigned source;
+	unsigned slots;
+	unsigned computed;
+	unsigned base;
+	int error;
+
+	/* Nothing known of any value or instruction yet. */
+	*moved = 0;
+	for (value = 0; value < shader->value_count; value++) {
+		uniform->writes[value] = 0;
+		uniform->kind[value] = SHADER_UNIFORM_VARYING;
+		uniform->slot[value] = 0;
+	}
+	for (at = 0; at < shader->instruction_count; at++) {
+		uniform->moved[at] = 0;
+		uniform->pack_slot[at] = 0;
+	}
+
+	/* How often each value is written. */
+	for (at = 0; at < shader->instruction_count; at++) {
+		instruction = &shader->instructions[at];
+		value = instruction->destination;
+		if (instruction->opcode < POWERVR_IR_MOVE || value == 0 || value >= shader->value_count)
+			continue;
+		if (uniform->writes[value] < UINT16_MAX)
+			uniform->writes[value]++;
+	}
+
+	/* The uniform values: written once outside every if and loop, only from uniform values and constants. */
+	depth = 0;
+	for (at = 0; at < shader->instruction_count; at++) {
+		instruction = &shader->instructions[at];
+		opcode = instruction->opcode;
+		if (opcode == POWERVR_IR_IF || opcode == POWERVR_IR_LOOP) {
+			depth++;
+			continue;
+		}
+		if (opcode == POWERVR_IR_END_IF || opcode == POWERVR_IR_END_LOOP) {
+			if (depth == 0)
+				return EINVAL;
+			depth--;
+			continue;
+		}
+		if (depth != 0 || opcode < POWERVR_IR_MOVE)
+			continue;
+		value = instruction->destination;
+		if (value == 0 ||
+		    value >= shader->value_count ||
+		    shader->values[value].width != 1 ||
+		    uniform->writes[value] != 1)
+			continue;
+		uniform->kind[value] = (uint8_t)uniform_kind(shader, program, uniform, instruction);
+		if (uniform->kind[value] != SHADER_UNIFORM_VARYING)
+			uniform->moved[at] = 1;
+	}
+
+	/*
+	 * The words: each computed uniform value an instruction left in the
+	 * program reads, and each colour packed only from uniform values
+	 * (one of noughts and ones a literal at once), while there is room.
+	 */
+	slots = 0;
+	for (at = 0; at < shader->instruction_count; at++) {
+		instruction = &shader->instructions[at];
+		if (uniform->moved[at] != 0)
+			continue;
+
+		/* A uniform colour: a literal when it is noughts and ones, else a word of its own. */
+		colour = uniform_colour(shader, uniform, instruction);
+		if (colour) {
+			constant = pack_constant(instruction, &packed);
+			error = ENOENT;
+			if (constant)
+				error = shared_literal(program, packed, &reg);
+			if (error == 0) {
+				instruction->opcode = POWERVR_IR_PIXEL_SHARED;
+				instruction->immediate_2 = reg;
+				for (source = 0; source < 4; source++)
+					instruction->source[source].kind = POWERVR_IR_OPERAND_NONE;
+			} else if (slots < SHADER_SHARED_WORDS) {
+				uniform->pack_slot[at] = (uint8_t)++slots;
+			}
+			continue;
+		}
+
+		/* The computed uniform values it reads. */
+		for (source = 0; source < 4; source++) {
+			operand = &instruction->source[source];
+			if (operand->kind != POWERVR_IR_OPERAND_VALUE || operand->value >= shader->value_count)
+				continue;
+			value = operand->value;
+			if (uniform->kind[value] != SHADER_UNIFORM_COMPUTED ||
+			    uniform->slot[value] != 0 ||
+			    slots >= SHADER_SHARED_WORDS)
+				continue;
+			uniform->slot[value] = (uint8_t)++slots;
+		}
+	}
+
+	/* No word, or no room for their request: the program stays as it is but for the literal colours. */
+	if (slots == 0 || program->request_count >= POWERVR_SHADER_REQUESTS)
+		return 0;
+
+	/* The computed words' request, after the others' shared registers. */
+	computed = program->request_count++;
+	request = &program->requests[computed];
+	request->kind = POWERVR_SHADER_REQUEST_COMPUTED;
+	request->part = 0;
+	request->words = (uint8_t)slots;
+	request->shared = (uint16_t)program->shareds;
+	request->set = 0;
+	request->binding = 0;
+	request->array_index = 0;
+	request->offset = 0;
+	request->literal = 0;
+	base = program->shareds;
+	program->shareds += slots;
+
+	/* The shared program: the uniform instructions, then the stores of the words. */
+	error = shared_shader_build(shader, uniform, shared, base);
+	if (error != 0)
+		return error;
+
+	/* The program reads the words in place of the work. */
+	for (at = 0; at < shader->instruction_count; at++) {
+		instruction = &shader->instructions[at];
+		if (uniform->pack_slot[at] != 0) {
+			/* The packed colour, moved into the pixel output. */
+			instruction->opcode = POWERVR_IR_PIXEL_SHARED;
+			instruction->immediate_2 = base + uniform->pack_slot[at] - 1U;
+			for (source = 0; source < 4; source++)
+				instruction->source[source].kind = POWERVR_IR_OPERAND_NONE;
+			continue;
+		}
+		if (uniform->moved[at] == 0 || uniform->slot[instruction->destination] == 0)
+			continue;
+
+		/* The computed word, read from its shared register, which stays. */
+		value = instruction->destination;
+		instruction->opcode = POWERVR_IR_SHARED;
+		instruction->flags = 0;
+		for (source = 0; source < 4; source++)
+			instruction->source[source].kind = POWERVR_IR_OPERAND_NONE;
+		instruction->immediate = computed;
+		instruction->immediate_2 = uniform->slot[value] - 1U;
+		uniform->moved[at] = 0;
+	}
+
+	/* The moved work nothing left reads goes. */
+	drop_unread(shader, uniform, uniform->moved);
+
+	/* Succeeded: the computed words. */
+	*moved = slots;
+	return 0;
+}
+
+/* Reports how uniform an instruction's result is (SHADER_UNIFORM_*): a loaded shared word, a copy of one or of a constant, or arithmetic of uniform values. */
+static unsigned
+uniform_kind(
+	const struct powervr_ir_shader *shader,
+	const struct powervr_shader_program *program,
+	const struct shader_uniform *uniform,
+	const struct powervr_ir_instruction *instruction)
+{
+	const struct powervr_ir_operand *operand;
+	unsigned kind;
+	unsigned source;
+
+	/* A shared word the data sequencer loads for the whole draw. */
+	if (instruction->opcode == POWERVR_IR_SHARED) {
+		if (instruction->immediate >= program->request_count)
+			return SHADER_UNIFORM_VARYING;
+		kind = program->requests[instruction->immediate].kind;
+		if (kind == POWERVR_SHADER_REQUEST_WORKGROUP_ID || kind == POWERVR_SHADER_REQUEST_COMPUTED)
+			return SHADER_UNIFORM_VARYING;
+		return SHADER_UNIFORM_FREE;
+	}
+
+	/* Only arithmetic and copies, which have no other effect. */
+	if (instruction->opcode < POWERVR_IR_MOVE || instruction->opcode > POWERVR_IR_UNSIGNED_TO_FLOAT)
+		return SHADER_UNIFORM_VARYING;
+
+	/* Every source a constant or the word of a uniform value. */
+	for (source = 0; source < 4; source++) {
+		operand = &instruction->source[source];
+		if (operand->kind == POWERVR_IR_OPERAND_NONE || operand->kind == POWERVR_IR_OPERAND_CONSTANT)
+			continue;
+		if (operand->kind != POWERVR_IR_OPERAND_VALUE ||
+		    operand->value >= shader->value_count ||
+		    operand->component != 0)
+			return SHADER_UNIFORM_VARYING;
+		if (uniform->kind[operand->value] == SHADER_UNIFORM_VARYING)
+			return SHADER_UNIFORM_VARYING;
+	}
+
+	/* A plain copy of a constant or of a loaded word costs the program what reading the word would. */
+	operand = &instruction->source[0];
+	if (instruction->opcode == POWERVR_IR_MOVE && instruction->flags == 0 && operand->modifiers == 0) {
+		if (operand->kind == POWERVR_IR_OPERAND_CONSTANT)
+			return SHADER_UNIFORM_FREE;
+		if (uniform->kind[operand->value] == SHADER_UNIFORM_FREE)
+			return SHADER_UNIFORM_FREE;
+	}
+
+	/* Succeeded: work the shared program can do. */
+	return SHADER_UNIFORM_COMPUTED;
+}
+
+/* Reports whether an instruction packs a colour of 8-bit channels only from constants and uniform values. */
+static int
+uniform_colour(
+	const struct powervr_ir_shader *shader,
+	const struct shader_uniform *uniform,
+	const struct powervr_ir_instruction *instruction)
+{
+	const struct powervr_ir_operand *operand;
+	unsigned source;
+
+	/* An 8-bit pack into one of the pixel outputs. */
+	if (instruction->opcode != POWERVR_IR_PIXEL_STORE ||
+	    instruction->immediate_2 != 0 ||
+	    instruction->immediate >= 4)
+		return 0;
+
+	/* Each channel a constant or a uniform value's word. */
+	for (source = 0; source < 4; source++) {
+		operand = &instruction->source[source];
+		if (operand->kind == POWERVR_IR_OPERAND_CONSTANT)
+			continue;
+		if (operand->kind != POWERVR_IR_OPERAND_VALUE || operand->value >= shader->value_count)
+			return 0;
+		if (uniform->kind[operand->value] == SHADER_UNIFORM_VARYING)
+			return 0;
+	}
+
+	/* Succeeded: the shared program can pack it. */
+	return 1;
+}
+
+/*
+ * Names the shared register of a literal request for a word, adding one
+ * while the table keeps room for the computed request; ENOSPC otherwise.
+ */
+static int
+shared_literal(
+	struct powervr_shader_program *program,
+	uint32_t bits,
+	uint32_t *reg)
+{
+	struct powervr_shader_request *request;
+	unsigned at;
+
+	/* The request for the same word. */
+	for (at = 0; at < program->request_count; at++) {
+		request = &program->requests[at];
+		if (request->kind == POWERVR_SHADER_REQUEST_LITERAL && request->words == 1 && request->literal == bits) {
+			*reg = request->shared;
+			return 0;
+		}
+	}
+
+	/* A new one after the others. */
+	if (program->request_count + 1U >= POWERVR_SHADER_REQUESTS)
+		return ENOSPC;
+	request = &program->requests[program->request_count++];
+	request->kind = POWERVR_SHADER_REQUEST_LITERAL;
+	request->part = 0;
+	request->words = 1;
+	request->shared = (uint16_t)program->shareds;
+	request->set = 0;
+	request->binding = 0;
+	request->array_index = 0;
+	request->offset = 0;
+	request->literal = bits;
+	program->shareds++;
+
+	/* Succeeded: the literal's shared register. */
+	*reg = request->shared;
+	return 0;
+}
+
+/*
+ * Builds the shared program's intermediate form: the program's uniform
+ * instructions in order, each word's store into its shared register from
+ * base on (a colour's pack first), and none of the work no store needs.
+ */
+static int
+shared_shader_build(
+	const struct powervr_ir_shader *shader,
+	struct shader_uniform *uniform,
+	struct powervr_ir_shader *shared,
+	unsigned base)
+{
+	const struct powervr_ir_instruction *instruction;
+	struct powervr_ir_instruction *added;
+	unsigned value;
+	unsigned at;
+	unsigned source;
+	unsigned colour;
+
+	/* The program's values, and no instruction yet. */
+	shared->instruction_count = 0;
+	shared->value_count = shader->value_count;
+	shared->exact = shader->exact;
+	for (value = 0; value < shader->value_count; value++)
+		shared->values[value] = shader->values[value];
+
+	/* The uniform instructions, as they are. */
+	for (at = 0; at < shader->instruction_count; at++) {
+		if (uniform->moved[at] == 0)
+			continue;
+		if (shared->instruction_count >= POWERVR_IR_INSTRUCTIONS)
+			return ENOSPC;
+		shared->instructions[shared->instruction_count++] = shader->instructions[at];
+	}
+
+	/* Each computed value's store. */
+	for (value = 1; value < shader->value_count; value++) {
+		if (uniform->slot[value] == 0)
+			continue;
+		if (shared->instruction_count >= POWERVR_IR_INSTRUCTIONS)
+			return ENOSPC;
+		added = &shared->instructions[shared->instruction_count++];
+		shared_store(added, value, base + uniform->slot[value] - 1U);
+	}
+
+	/* Each colour's pack into a value of its own and its store. */
+	for (at = 0; at < shader->instruction_count; at++) {
+		if (uniform->pack_slot[at] == 0)
+			continue;
+		instruction = &shader->instructions[at];
+		if (shared->instruction_count + 2U > POWERVR_IR_INSTRUCTIONS || shared->value_count >= POWERVR_IR_VALUES)
+			return ENOSPC;
+		colour = shared->value_count++;
+		shared->values[colour].width = 1;
+		added = &shared->instructions[shared->instruction_count++];
+		*added = *instruction;
+		added->opcode = POWERVR_IR_PACK;
+		added->flags = 0;
+		added->destination = (uint16_t)colour;
+		added->immediate = 0;
+		added->immediate_2 = 0;
+		for (source = 0; source < 4; source++) {
+			if (added->source[source].kind == POWERVR_IR_OPERAND_VALUE)
+				added->source[source].component = 0;
+		}
+		added = &shared->instructions[shared->instruction_count++];
+		shared_store(added, colour, base + uniform->pack_slot[at] - 1U);
+	}
+
+	/* The work no store needs goes. */
+	drop_unread(shared, uniform, NULL);
+
+	/* Succeeded: the shared program's form. */
+	return 0;
+}
+
+/*
+ * Drops, last first, the instructions that write a value no kept
+ * instruction reads (q1546: remove_dead_writes takes a pass a link, too
+ * few for a chain of uniform work): of the candidates only, or, with
+ * none given, of every instruction that writes a value (the shared
+ * program, which has no if or loop and writes each value once).
+ */
+static void
+drop_unread(
+	struct powervr_ir_shader *shader,
+	struct shader_uniform *uniform,
+	const uint8_t *candidates)
+{
+	const struct powervr_ir_instruction *instruction;
+	unsigned value;
+	unsigned at;
+	unsigned kept;
+	unsigned source;
+
+	/* No value read yet. */
+	for (value = 0; value < shader->value_count; value++)
+		uniform->needed[value] = 0;
+
+	/* From the last instruction: a candidate whose value nothing kept reads goes; what a kept one reads is needed. */
+	for (at = shader->instruction_count; at > 0; at--) {
+		instruction = &shader->instructions[at - 1U];
+		value = instruction->destination;
+		uniform->kept[at - 1U] = 1;
+		if (instruction->opcode >= POWERVR_IR_MOVE &&
+		    value != 0 &&
+		    value < shader->value_count &&
+		    (candidates == NULL || candidates[at - 1U] != 0) &&
+		    uniform->needed[value] == 0) {
+			uniform->kept[at - 1U] = 0;
+			continue;
+		}
+
+		/* What it reads is needed. */
+		for (source = 0; source < 4; source++) {
+			if (instruction->source[source].kind == POWERVR_IR_OPERAND_VALUE && instruction->source[source].value < shader->value_count)
+				uniform->needed[instruction->source[source].value] = 1;
+		}
+	}
+
+	/* The kept ones close up. */
+	kept = 0;
+	for (at = 0; at < shader->instruction_count; at++) {
+		if (uniform->kept[at] == 0)
+			continue;
+		if (kept != at)
+			shader->instructions[kept] = shader->instructions[at];
+		kept++;
+	}
+	shader->instruction_count = kept;
+}
+
+/* Fills an instruction that stores a value's word into a shared register. */
+static void
+shared_store(
+	struct powervr_ir_instruction *instruction,
+	unsigned value,
+	unsigned reg)
+{
+	unsigned source;
+
+	/* Source 0 the value, the others none. */
+	instruction->opcode = POWERVR_IR_SHARED_STORE;
+	instruction->flags = 0;
+	instruction->destination = 0;
+	for (source = 0; source < 4; source++) {
+		instruction->source[source].kind = POWERVR_IR_OPERAND_NONE;
+		instruction->source[source].modifiers = 0;
+		instruction->source[source].component = 0;
+		instruction->source[source].value = 0;
+		instruction->source[source].constant = 0;
+	}
+	instruction->source[0].kind = POWERVR_IR_OPERAND_VALUE;
+	instruction->source[0].value = (uint16_t)value;
+	instruction->immediate = reg;
+	instruction->immediate_2 = 0;
 }
 
 /*
@@ -2484,20 +3089,25 @@ select_instruction(
 			}
 			break;
 		}
-		for (channel = 0; channel < 4; channel++) {
-			select->scratch = 0;
-			source = operand_plain(select, &instruction->source[channel], 0);
-			operation = append(select, MACHINE_MOVE);
-			if (operation != NULL) {
-				operation->destination[0] = temp_register(TEMP_COORDINATES + channel);
-				operation->source[0] = source;
+		/* The words where one value holds them in order (q1546: a sample's four, two moves a pixel), else moved side by side. */
+		a = temp_register(TEMP_COORDINATES);
+		error = adjacent_words(select, instruction, &a);
+		if (error == 0) {
+			for (channel = 0; channel < 4; channel++) {
+				select->scratch = 0;
+				source = operand_plain(select, &instruction->source[channel], 0);
+				operation = append(select, MACHINE_MOVE);
+				if (operation != NULL) {
+					operation->destination[0] = temp_register(TEMP_COORDINATES + channel);
+					operation->source[0] = source;
+				}
 			}
 		}
 		for (word = 0; word < (instruction->immediate_2 != 0 ? 2U : 1U); word++) {
 			operation = append(select, MACHINE_PACK);
 			if (operation != NULL) {
 				operation->destination[0] = temp_register(TEMP_SCRATCH);
-				operation->source[0] = temp_register(TEMP_COORDINATES + word * 2U);
+				operation->source[0] = temp_register(a.index + word * 2U);
 				if (instruction->immediate_2 != 0) {
 					operation->variant = PACK_F16F16;
 					operation->immediate = 2;
@@ -2513,6 +3123,46 @@ select_instruction(
 				operation->source[0] = temp_register(TEMP_SCRATCH);
 				operation->variant = 1;
 			}
+		}
+		break;
+	case POWERVR_IR_PACK:
+		/* The four words side by side, packed as 8-bit unsigned normalised channels into the value (q1546: a shared program's colour). */
+		for (channel = 0; channel < 4; channel++) {
+			select->scratch = 0;
+			source = operand_plain(select, &instruction->source[channel], 0);
+			operation = append(select, MACHINE_MOVE);
+			if (operation != NULL) {
+				operation->destination[0] = temp_register(TEMP_COORDINATES + channel);
+				operation->source[0] = source;
+			}
+		}
+		operation = append(select, MACHINE_PACK);
+		if (operation != NULL) {
+			operation->destination[0] = destination_of(select, instruction);
+			operation->source[0] = temp_register(TEMP_COORDINATES);
+			operation->variant = PACK_U8888;
+			operation->immediate = 4;
+			operation->immediate_2 = PACK_SCALE;
+		}
+		break;
+	case POWERVR_IR_SHARED_STORE:
+		/* The word into the shared register the program's pixels read it from (q1546). */
+		source = operand_plain(select, &instruction->source[0], 0);
+		operation = append(select, MACHINE_MOVE);
+		if (operation != NULL) {
+			operation->destination[0] = bank_register(POWERVR_USC_BANK_SHARED, instruction->immediate);
+			operation->source[0] = source;
+		}
+		break;
+	case POWERVR_IR_PIXEL_SHARED:
+		/* The colour the shared program packed (or a literal), moved into the pixel output under the overlap check (q1546). */
+		if (instruction->immediate >= 4)
+			return ENOTSUP;
+		operation = append(select, MACHINE_MOVE);
+		if (operation != NULL) {
+			operation->destination[0] = bank_register(POWERVR_USC_BANK_SPECIAL, SPECIAL_PIXEL_OUTPUT + instruction->immediate);
+			operation->source[0] = bank_register(POWERVR_USC_BANK_SHARED, instruction->immediate_2);
+			operation->variant = 1;
 		}
 		break;
 	default:
@@ -2903,6 +3553,44 @@ literal_register(
 	program->shareds++;
 	*reg = bank_register(POWERVR_USC_BANK_SHARED, request->shared);
 	return 0;
+}
+
+/*
+ * Reports whether the four sources of a colour's store are the words of
+ * one four-word value in order, unmodified, and names its first
+ * register.
+ */
+static int
+adjacent_words(
+	const struct backend_select *select,
+	const struct powervr_ir_instruction *instruction,
+	struct shader_machine_register *reg)
+{
+	const struct powervr_ir_operand *operand;
+	unsigned value;
+	unsigned channel;
+
+	/* A four-word value in the first source. */
+	operand = &instruction->source[0];
+	if (operand->kind != POWERVR_IR_OPERAND_VALUE || operand->value >= select->shader->value_count)
+		return 0;
+	value = operand->value;
+	if (select->shader->values[value].width != 4)
+		return 0;
+
+	/* Its words in order, as they are. */
+	for (channel = 0; channel < 4; channel++) {
+		operand = &instruction->source[channel];
+			if (operand->kind != POWERVR_IR_OPERAND_VALUE ||
+		    operand->value != value ||
+		    operand->component != channel ||
+		    operand->modifiers != 0)
+			return 0;
+	}
+
+	/* Succeeded: the value's first register. */
+	*reg = temp_register(select->backend->value_register[value]);
+	return 1;
 }
 
 /* Takes the next scratch temporary of the instruction being selected. */

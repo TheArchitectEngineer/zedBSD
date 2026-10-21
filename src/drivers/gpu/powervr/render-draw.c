@@ -276,9 +276,10 @@ powervr_draw_fixed_build(
 		fixed->scissor = info->pViewportState->pScissors[0];
 	}
 
-	/* The compile samples. */
+	/* The compile samples, and the fragment shader's shared program. */
 	fixed->vertex_key.samples = 1;
 	fixed->fragment_key.samples = 1;
+	fixed->fragment_key.shared_program = POWERVR_DRAW_SHARED_PROGRAM;
 
 	/* Succeeded: the fixed state and the keys. */
 	return 0;

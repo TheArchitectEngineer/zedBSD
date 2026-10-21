@@ -53,6 +53,16 @@
 #endif
 #define POWERVR_DRAW_TRIAL_PUNCH_THROUGH	4U
 
+/*
+ * Whether a pipeline's fragment shader may move the work only push
+ * constants, descriptors and constants decide into a shared program,
+ * run once a draw from the shared register program (q1546; the
+ * compiler's key shared_program).  Build with 0 to compare.
+ */
+#ifndef POWERVR_DRAW_SHARED_PROGRAM
+#define POWERVR_DRAW_SHARED_PROGRAM		1U
+#endif
+
 /* The words of a viewport transform (a0, m0, a1, m1, a2, m2) and of a scissor. */
 #define POWERVR_DRAW_VIEWPORT_WORDS	6U
 #define POWERVR_DRAW_SCISSOR_WORDS	2U

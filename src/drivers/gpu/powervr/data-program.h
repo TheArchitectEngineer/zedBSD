@@ -33,8 +33,11 @@
  */
 #define POWERVR_DATA_LOADS_MAX		42U
 
-/* The most data and code words of a shared register program. */
-#define POWERVR_DATA_SHARED_DATA_MAX	(POWERVR_DATA_LOADS_MAX * 3U)
+/*
+ * The most data and code words of a shared register program: three and
+ * one a load, and two and one for the issue of a shared task (q1546).
+ */
+#define POWERVR_DATA_SHARED_DATA_MAX	(POWERVR_DATA_LOADS_MAX * 3U + 2U)
 #define POWERVR_DATA_SHARED_CODE_MAX	(POWERVR_DATA_LOADS_MAX + 1U)
 
 /* The most attribute loads of a vertex program, and its data and code words. */
@@ -107,6 +110,7 @@ struct powervr_data_shared_program {
 
 int powervr_data_resolve(const struct powervr_shader_program *program, const struct powervr_data_state *state, struct powervr_data_load *loads, uint32_t room, uint32_t *count);
 int powervr_data_shared_build(const struct powervr_data_load *loads, uint32_t count, struct powervr_data_shared_program *result);
+int powervr_data_shared_build_task(const struct powervr_data_load *loads, uint32_t count, const uint64_t *task, struct powervr_data_shared_program *result);
 int powervr_data_vertex_build(const struct powervr_data_vertex_dma *dmas, uint32_t count, uint32_t vertex_index_reg, uint32_t instance_index_reg, uint64_t task_word, struct powervr_data_vertex_program *result);
 
 #endif /* KERN_DRIVERS_GPU_POWERVR_DATA_PROGRAM_H */

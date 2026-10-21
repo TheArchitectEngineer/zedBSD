@@ -97,6 +97,7 @@
 #define PERF_ALU4		12
 #define PERF_MUL4		13
 #define PERF_RCP		14
+#define PERF_UNIFORM		15
 #define PERF_FRAMES		20U
 
 /* perf-tri128's grid of quads a side, and perf-stack4's and perf-draws4's full-screen quads. */
@@ -316,6 +317,9 @@ static VkResult case_perf_load_small(struct vkmatrix *run);
 static VkResult small_target_case(struct vkmatrix *run, int load);
 static VkResult case_perf_clear_64(struct vkmatrix *run);
 static VkResult case_perf_load_64(struct vkmatrix *run);
+static VkResult case_uniform_ramp(struct vkmatrix *run);
+static VkResult case_perf_uniform(struct vkmatrix *run);
+static void uniform_ramp_colour(const float push[8], float place, float colour[4]);
 
 /* Every case, in the order they run. */
 static const struct vkmatrix_case cases[] = {
@@ -368,6 +372,8 @@ static const struct vkmatrix_case cases[] = {
 	{ "perf-load-small", case_perf_load_small },
 	{ "perf-clear-64", case_perf_clear_64 },
 	{ "perf-load-64", case_perf_load_64 },
+	{ "uniform-ramp", case_uniform_ramp },
+	{ "perf-uniform", case_perf_uniform },
 };
 
 /* The clear colour of every case's first pass: dark blue. */
@@ -4124,7 +4130,12 @@ load_1080_textures(
  * perf-alu is the cost of each operation waiting on the one before.
  * perf-mul4: 64 multiplies two at a time independent, which a compiler
  * that pairs them issues two to a group.  perf-rcp: 32 dependent
- * reciprocals, the cost of a reciprocal beside a multiply's.
+ * reciprocals, the cost of a reciprocal beside a multiply's.  Their
+ * work only the push constant decides, so a driver that works it out
+ * once a draw (q1546, the shared program) draws them as the flat quad;
+ * perf-uniform: a ramp across the screen from push constant colours, a
+ * multiply-add a channel a pixel beside the span the push constant
+ * decides.
  * Prints "vkmatrix: perf <kind>: <us> us a frame (min <us> us)" (integers: the libc printf of the board may lack %f).
  */
 static VkResult
@@ -4132,9 +4143,11 @@ perf_case(
 	struct vkmatrix *run,
 	int kind)
 {
-	static const char *const names[15] = {
+	static const char *const names[16] = {
 		"clear", "load", "flat", "texture", "immediate", "alu", "quarter", "tri1", "tri8", "tri128", "stack4", "draws4", "alu4", "mul4", "rcp",
+		"uniform",
 	};
+	static const float ramp[8] = { 0.1f, 0.2f, 0.9f, 1.0f, 0.9f, 0.6f, 0.1f, 1.0f };
 	VkSubresourceLayout layout;
 	struct vkmatrix_shape shape;
 	VkRenderPassBeginInfo pass;
@@ -4191,6 +4204,12 @@ perf_case(
 		} else if (kind == PERF_RCP) {
 			shape.fragment = vkmatrix_rcp_frag;
 			shape.fragment_size = sizeof(vkmatrix_rcp_frag);
+		} else if (kind == PERF_UNIFORM) {
+			shape.vertex = vkmatrix_uniform_vert;
+			shape.vertex_size = sizeof(vkmatrix_uniform_vert);
+			shape.fragment = vkmatrix_uniform_frag;
+			shape.fragment_size = sizeof(vkmatrix_uniform_frag);
+			shape.push_size = sizeof(ramp);
 		}
 		status = vkmatrix_pipeline(run, &shape, &pipeline);
 		if (status != VK_SUCCESS)
@@ -4245,6 +4264,8 @@ perf_case(
 			vkmatrix_bind(run, pipeline);
 			if (kind == PERF_TEXTURE) {
 				vkCmdBindDescriptorSets(run->command, VK_PIPELINE_BIND_POINT_GRAPHICS, run->layouts[pipeline], 0, 1, &run->textures[1].set, 0, NULL);
+			} else if (kind == PERF_UNIFORM) {
+				vkCmdPushConstants(run->command, run->layouts[pipeline], VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(ramp), ramp);
 			} else if (kind != PERF_IMMEDIATE) {
 				red = 1.0f;
 				vkCmdPushConstants(run->command, run->layouts[pipeline], VK_SHADER_STAGE_FRAGMENT_BIT, 0, 4, &red);
@@ -4984,6 +5005,96 @@ case_perf_load_64(
 
 	/* Runs the small target case with the loaded pass. */
 	status = small_target_case(run, 1);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the case ran. */
+	return VK_SUCCESS;
+}
+
+/*
+ * uniform-ramp (q1546): a full-target quad of uniform.frag, a ramp from
+ * the push constant's low colour to its high one across the target,
+ * whose span and scale only the push constant decides (the work the
+ * compiler moves to the fragment shader's shared program); each column
+ * compared with the ramp at its centre.
+ */
+static VkResult
+case_uniform_ramp(
+	struct vkmatrix *run)
+{
+	static const float push[8] = { 0.1f, 0.2f, 0.9f, 1.0f, 0.9f, 0.6f, 0.1f, 1.0f };
+	struct vkmatrix_shape shape;
+	float colour[4];
+	uint32_t pipeline;
+	uint32_t first;
+	uint32_t column;
+	VkResult status;
+
+	/* The pipeline: the quad's place across the target, the 32-byte push constant of the fragment. */
+	memset(&shape, 0, sizeof(shape));
+	shape.vertex = vkmatrix_uniform_vert;
+	shape.vertex_size = sizeof(vkmatrix_uniform_vert);
+	shape.fragment = vkmatrix_uniform_frag;
+	shape.fragment_size = sizeof(vkmatrix_uniform_frag);
+	shape.push_size = sizeof(push);
+	shape.push_stages = VK_SHADER_STAGE_FRAGMENT_BIT;
+	status = vkmatrix_pipeline(run, &shape, &pipeline);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* The quad over the whole target, and each column's colour at its centre. */
+	vkmatrix_begin(run, 0, background);
+	vkmatrix_bind(run, pipeline);
+	first = vkmatrix_quad(run, 0.0f, 0.0f, (float)VKMATRIX_SIZE, (float)VKMATRIX_SIZE);
+	vkCmdPushConstants(run->command, run->layouts[pipeline], VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), push);
+	vkCmdDraw(run->command, 6, 1, first, 0);
+	for (column = 0; column < VKMATRIX_SIZE; column++) {
+		uniform_ramp_colour(push, ((float)column + 0.5f) / (float)VKMATRIX_SIZE, colour);
+		vkmatrix_fill(run, column, 0, column + 1U, VKMATRIX_SIZE, vkmatrix_pack(colour));
+	}
+	run->tolerance = 2;
+
+	/* Ends the pass, submits it and reads the image back. */
+	status = vkmatrix_finish(run, 1);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the image was read back and compared. */
+	return VK_SUCCESS;
+}
+
+/* Works out uniform.frag's colour at a place across the target, as the shader does. */
+static void
+uniform_ramp_colour(
+	const float push[8],
+	float place,
+	float colour[4])
+{
+	float sum;
+	float scale;
+	uint32_t channel;
+
+	/* The scale: one over the two alphas' sum, at least a half. */
+	sum = push[7] + push[3];
+	if (sum < 0.5f)
+		sum = 0.5f;
+	scale = 1.0f / sum;
+
+	/* Each channel: low plus the span times the place. */
+	for (channel = 0; channel < 4; channel++)
+		colour[channel] = push[channel] + (push[4U + channel] - push[channel]) * scale * place;
+}
+
+/* perf-uniform (q1546): a 1080p clear and the full-screen quad of uniform.frag. */
+static VkResult
+case_perf_uniform(
+	struct vkmatrix *run)
+{
+	VkResult status;
+
+	/* Times the kind. */
+	status = perf_case(run, PERF_UNIFORM);
 	if (status != VK_SUCCESS)
 		return status;
 

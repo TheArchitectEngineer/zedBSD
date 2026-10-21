@@ -140,6 +140,18 @@ enum powervr_ir_opcode {
 	/* Packs the four floats of sources 0 to 3 that way into pixel output register immediate (and the next for half floats). */
 	POWERVR_IR_PIXEL_STORE,
 
+	/*
+	 * The shared program's parts (q1546): a one-word value of the four
+	 * floats of sources 0 to 3 packed as 8-bit unsigned normalised
+	 * channels (red in the lowest byte); source 0 given to shared
+	 * register immediate; and, in the program that reads them, shared
+	 * register immediate_2 (a colour the shared program packed) moved
+	 * into pixel output register immediate under the overlap check.
+	 */
+	POWERVR_IR_PACK,
+	POWERVR_IR_SHARED_STORE,
+	POWERVR_IR_PIXEL_SHARED,
+
 	POWERVR_IR_OPCODE_COUNT
 };
 
