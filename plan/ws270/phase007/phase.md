@@ -117,3 +117,4 @@ clear 3.85 ms、LOAD 23.35 ms、平らな quad 15.1 ms、1/4 面積 7.2 ms、402
 - CI run 39669065355（ci.yml の image の path の直し）成功、release nightly-264 に zedbsd-vf2.img.gz が入った（2026-10-22）。
 - main 35b7dc605 に P1 cab9c60f7（Terminal の record の再利用・vertex の差分の upload・ZTERM PERF を TERMINAL_PERF=1 の時だけ、libvulkan の present の内訳の計測。285e34b07 は効果が無く revert）を merge（2026-10-22）。
 - d124（d123 の kernel ＋ P1 5409fbade の wayland（commit しない window を pacing の待ちの対象から外す））: 2 回、HWR・lost・signal 0。type 46〜47 fps（period 21〜22）、Terminal の acquire 6.7 ms → 改善は見えない。launch 57〜59、drag 60、home 58〜60、wiseview 60〜62。P1 に session.log の確かめを依頼。
+- d125（d124 ＋ P1 2d5d13052 の libvulkan（Wayland の present の worker を libwayland の reader の手順で寝かせる））: 2 回、HWR・lost・signal 0、起動・login・app 正常。type 46〜48 fps、Terminal の acquire 5.9〜6.6 ms で変わらず → P1 に acquire の待ちの実測（起床の理由・release の時刻）を依頼。
