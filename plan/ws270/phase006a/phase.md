@@ -462,3 +462,4 @@ Keiland が使い、vkmatrix 15/15・gpu-selftest 13/13 で確かめていない
   - 板は未実施。
 - d42 の上で P2 の perf の case（1c089ebee、fdcc38ee1 で merge）: clear 3.85 ms、immediate（15 op）15.1 ms、flat 15.55 ms、quarter（1/4 面積）7.2 ms、alu（402 op）268.75 ms、texture 37.95 ms → 1 op あたり 0.32 ns/pixel（約 3.2 G pixel-op/s、ALU は妥当）、命令数に依らない固定費が約 5.4 ns/pixel（約 2 clock）で軽い shader の時間の大半、面積にほぼ比例。固定費は pixel の task の起動（PDS の program・定数の取り込み）の疑い。
 - d43（P1 の試し 84eaa2f3b、program と job の general の memory を SLC に通す、main には入れない）: 入れた後に板が戻らない（電源の入れ直し 2 回）。
+- d43（P1 の試し 84eaa2f3b、program・job の general を SLC に通す）: 起動は SD の失敗 73 回で不安定だったが動いた。perf は変わらず（flat 15.7、immediate 15.0、texture 37.85、alu 268.55 ms）、vkmatrix 36/36、HWR 0 → program の取り込みは原因でない。KWL の rec submit 108 ms（max 256）。ALU も pixel の固定費も名目の約 1/2〜1/8 → GPU の実際の clock が 396 MHz より低い疑いも。板は main の kernel（55e6638ed 以降、切り替え 0）に戻す（d44）。
