@@ -8,7 +8,8 @@
 /*
  * What the Raspberry Pi 4 gives the arm64 HAL beyond the Raspberry Pi
  * common support: its peripherals in the kernel's tables, its compositor
- * for the stall watch, and the watchdog reset.
+ * for the stall watch, the release of its cores from the firmware's spin
+ * table, and the watchdog reset.
  */
 
 #include <hal/hal.h>
@@ -77,6 +78,58 @@ arm64_bsp_watch_compositor(
 
 	/* Succeeded: the compositor's registers. */
 	return (volatile uint32_t *)window;
+}
+
+/*
+ * Reports a core's number: the Cortex-A72 numbers its cores in Aff0.
+ */
+uint64_t
+arm64_bsp_core_of(
+	uint64_t mpidr)
+{
+	/* Succeeded: the lowest affinity field. */
+	return mpidr & 0xffU;
+}
+
+/*
+ * Tells whether a core waits in the firmware's spin table, which is how
+ * the Pi 4's firmware holds its cores.
+ */
+int
+arm64_bsp_cpu_startable(
+	const struct rpi_fdt_cpu *cpu)
+{
+	/* A core without a spin table, or without the address it waits on, cannot be released. */
+	if (cpu->spin_table == 0)
+		return 0;
+	if (cpu->release_addr == 0)
+		return 0;
+
+	/* Succeeded: the core can be released. */
+	return 1;
+}
+
+/*
+ * Releases a core from its spin table: writes the entry where it waits,
+ * and wakes it from its wait for an event.
+ */
+int
+arm64_bsp_cpu_release(
+	const struct rpi_fdt_cpu *cpu,
+	uint64_t entry_phys)
+{
+	volatile uint64_t *release;
+
+	/* Writes the entry's physical address where the core waits, out to memory, which it reads uncached. */
+	release = arm64_phys_to_direct((uintptr_t)cpu->release_addr);
+	*release = entry_phys;
+	hal_dcache_clean_invalidate_range((uintptr_t)release, sizeof(*release));
+
+	/* Wakes the core, after the write has reached memory. */
+	__asm__ volatile("dsb sy\n\tsev" : : : "memory");
+
+	/* Succeeded: the core goes to the entry. */
+	return HAL_OK;
 }
 
 /*

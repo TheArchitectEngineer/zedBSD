@@ -31,4 +31,13 @@
 	mov x4, #(3 * 8)
 .endm
 
+/*
+ * Turns the MPIDR_EL1 value in a register into the core's number: the
+ * Cortex-A72 numbers its cores in Aff0.  arm64_bsp_core_of() computes the
+ * same in C.
+ */
+.macro arm64_board_core_index register
+	and \register, \register, #0xff
+.endm
+
 #endif

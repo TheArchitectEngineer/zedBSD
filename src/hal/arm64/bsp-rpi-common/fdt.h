@@ -32,8 +32,11 @@ struct rpi_fdt_cpu {
 	/* Where a spin-table CPU waits for its entry address; 0 when none was given. */
 	uint64_t release_addr;
 
-	/* Nonzero when enable-method names "spin-table". */
+	/* Nonzero when enable-method names "spin-table" (the Pi 4). */
 	uint32_t spin_table;
+
+	/* Nonzero when enable-method names "psci" (the Pi 5): the firmware starts the CPU on request. */
+	uint32_t psci;
 };
 
 /*

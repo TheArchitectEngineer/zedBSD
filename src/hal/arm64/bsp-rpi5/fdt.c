@@ -67,6 +67,7 @@ struct fdt_node {
 	uint8_t is_chosen;
 	uint8_t is_cpu;
 	uint8_t spin_table;
+	uint8_t psci;
 
 	/*
 	 * The /reserved-memory node, and one of its children, whose reg is
@@ -694,7 +695,7 @@ commit_device(
 }
 
 /*
- * Records one cpu node: its affinity from reg, and its spin table.
+ * Records one cpu node: its affinity from reg, and how the firmware holds it.
  *
  * A tree with more CPUs than the table holds keeps the first ones; the
  * HAL brings up no more than four anyway.
@@ -726,6 +727,7 @@ commit_cpu(
 	cpu->mpidr = mpidr;
 	cpu->release_addr = node->release_addr;
 	cpu->spin_table = node->spin_table;
+	cpu->psci = node->psci;
 	info->cpu_count++;
 
 	/* Succeeded: the CPU is recorded. */
@@ -975,10 +977,11 @@ record_property(
 		}
 	}
 
-	/* A CPU held in the firmware's spin table. */
+	/* A CPU held in the firmware's spin table, or started through PSCI. */
 	matches = string_equal(name, name_length, "enable-method");
 	if (matches) {
 		node->spin_table = (uint8_t)compatible_has(value, length, "spin-table");
+		node->psci = (uint8_t)compatible_has(value, length, "psci");
 		return;
 	}
 
