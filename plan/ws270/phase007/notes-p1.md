@@ -216,7 +216,11 @@ branch agent/p1-q1550（基 main 5907c9d3b）。ユーザー（2026-10-21、板�
 - d48〜d89 の保存 log には「KWL CURSOR shown」が一度も無い（測定の run で mouse を触っていない）→ 板で hardware cursor が動いた log の証拠は無かった。
 - d90（ユーザーが操作した session、runs/d90/cursor-grep.txt）: event1 の REL で「KWL CURSOR shown by=pointer」、その後「KWL CURSOR_PLANE present x=… copy=0/1」が多数（x 1616→254 と動く）、WSI の present の失敗も無い → Keiland・libvulkan は位置を plane に出している。それでも見えない → kernel の GPU_DISPLAY_CURSOR_SET・MOVE か dc8200。
 - dc8200 の register の書き方（0x1468 config、0x146c address、0x1470 location、shadow の hold と plane の commit bit）は StarFive Linux（~/visionfive-linux の vs_dc_hw.c dc_hw_commit）と同じ。
-- 診断 6ce298b0c（merge しない）: set ごとに写した pixel の alpha・colour の数と (2,2) の pixel（最初の 8 回）、dc8200 の cursor の register の読み返し（config 前→後、address、location、clock gating 0x1484、panel config。最初の 8 回）。板は未実施。
+- 診断 6ce298b0c（ecf1693be で外した）: set ごとに写した pixel の alpha・colour の数と (2,2) の pixel、dc8200 の cursor の register の読み返し。
+- d91（Q1、aat-input で mouse を動かす）: set 1〜7 の全部「alpha 0 colour 0」、dc8200 は config 0x2e・address・location とも正しく更新 → 写した image が全部 0。VK CURSOR は worker・fast とも result 0。
+- vkmatrix に image→image の 6 case を足した（c36d3ee83・69a051178: blit-bgra、blit-rgba、copy-bgra、copy-image、copy-to-linear、cursor-chain。lavapipe 109 本全 PASS）。d92（Q1）: blit-bgra・blit-rgba・cursor-chain が FAIL（4096 texel 全部 0）、copy-* は PASS → format に依らず vkCmdBlitImage が 0 を書く。
+- 原因: transfer の blit の program（transfer-program.c build_program）が sample の fcnorm（固定小数の channel を float に直す bit、usc-encode の powervr_usc_sample の第 1 引数）を 0 で出していた。8-bit unorm の channel が整数のまま返り、極小の float を PACK が 0 にした。注記は coordinates の正規化と取り違えていた（座標は sampler の non_normalized_coords）。Mesa 26.2.5 pco_nir_tex.c は destination が float の時 fcnorm 1。今日の変更とは無関係で、blit は最初から 0（板で cursor が見えた記録も無い）。
+- 直し 15ecf0e4d: blit（packed）の時だけ fcnorm 1。host の p010 の driver 試験 15 本全 PASS、VF2 build warning 0。板の確認待ち（vkmatrix blit-*・cursor-chain、desktop の矢印）。
 
 ### frame（d90 の session.log）
 
