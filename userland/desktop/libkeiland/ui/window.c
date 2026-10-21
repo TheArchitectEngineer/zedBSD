@@ -22,6 +22,7 @@
 
 #include "window.h"
 #include "internal.h"
+#include "userland/desktop/libkeiland/desktop-private.h"
 
 #include "userland/desktop/libwayland/content-type-v1-client-protocol.h"
 
@@ -795,6 +796,10 @@ kl_window_present_parts(
 		return 0;
 	}
 
+	/* The desktop's surface tells which parts of it the frame draws anything in, with the frame (ws270-p007). */
+	if (window->desktop != NULL)
+		keiui_desktop_frame(window->desktop, pixels, stride, window->vulkan.extent.width, window->vulkan.extent.height, parts, count);
+
 	/* Vulkan: out of date asks for a resize and another frame. */
 	result = keiui_present_frame(&window->vulkan, pixels, stride, parts, count);
 	error = errno;
@@ -917,6 +922,42 @@ kl_window_set_content_type(
 	wp_content_type_v1_set_content_type(window->content_type, (uint32_t)type);
 
 	/* Succeeded: told. */
+	return 0;
+}
+
+/*
+ * Tells the compositor that the window's content is opaque everywhere, or
+ * no longer (KL_VERSION 95, ws270-p007): its opaque region, the whole
+ * surface or none, applied with the surface's next commit.  The region
+ * reaches past any size the window takes, which the compositor cuts to
+ * the surface.  Returns 0, EINVAL without a window, or ENOMEM.
+ */
+int
+kl_window_set_opaque(
+	struct kl_window *window,
+	int opaque)
+{
+	struct wl_region *region;
+
+	/* A window with its surface. */
+	if (window == NULL || window->surface == NULL)
+		return EINVAL;
+
+	/* Not opaque: no opaque region. */
+	if (!opaque) {
+		wl_surface_set_opaque_region(window->surface, NULL);
+		return 0;
+	}
+
+	/* The whole surface, whatever its size, through a region made for the request. */
+	region = wl_compositor_create_region(window->compositor);
+	if (region == NULL)
+		return ENOMEM;
+	wl_region_add(region, 0, 0, INT32_MAX, INT32_MAX);
+	wl_surface_set_opaque_region(window->surface, region);
+	wl_region_destroy(region);
+
+	/* Succeeded: told with the next commit. */
 	return 0;
 }
 

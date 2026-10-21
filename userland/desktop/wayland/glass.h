@@ -111,6 +111,7 @@ struct glass_shape {
 void glass_shape_init(struct glass_shape *shape, float x, float y, float width, float height);
 void glass_shape_draw(struct kwl_server *server, struct kwl_list *command, const struct glass_shape *shape);
 void glass_shape_draw_except(struct kwl_server *server, struct kwl_list *command, const struct glass_shape *shape, const float (*holes)[4], unsigned hole_count);
+int glass_shape_crop(const struct glass_shape *shape, const float *rect, struct glass_shape *piece);
 void glass_opaque_inside(const float *box, float radius, float *hole);
 void glass_draw_solid(struct kwl_server *server, struct kwl_list *command, float x, float y, float width, float height, float radius, const float *color);
 int32_t glass_text_width(struct kwl_server *server, enum glass_size size, const char *text);

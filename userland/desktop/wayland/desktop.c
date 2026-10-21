@@ -60,7 +60,11 @@
 #define DESKTOP_MANAGER_GET		1U
 #define DESKTOP_SURFACE_DESTROY		0U
 #define DESKTOP_SURFACE_ACK		1U
+#define DESKTOP_SURFACE_DRAWN		2U
 #define DESKTOP_SURFACE_CONFIGURE	0U
+
+/* The most rectangles set_drawn tells (version 2, ws270-p007); a request of more is kept as the box around them. */
+#define DESKTOP_PARTS_MAX		32U
 
 /* The manager's errors: the role taken or the surface not free for it; a token that is not the one given. */
 #define DESKTOP_ERROR_ROLE		0U
@@ -121,6 +125,19 @@ struct desktop_state {
 	int limited;
 	int drawn;
 	int welcome_decided;
+	/*
+	 * The parts of the surface its program draws anything in (set_drawn,
+	 * version 2, ws270-p007), in the surface's pixels (x, y, width,
+	 * height): told, then applied with the surface's commit.  parts_known
+	 * is 0 until the first is applied (all of the surface is drawn, as for
+	 * a program of version 1); none known after it means nothing is drawn.
+	 */
+	int32_t pending_parts[DESKTOP_PARTS_MAX][4];
+	unsigned pending_part_count;
+	unsigned pending_parts_set;
+	int32_t parts[DESKTOP_PARTS_MAX][4];
+	unsigned part_count;
+	unsigned parts_known;
 };
 
 /*
@@ -131,6 +148,7 @@ struct desktop_state {
 static struct desktop_state desk;
 
 static int desktop_get(struct kwl_object *manager, const unsigned char *bytes, size_t size);
+static int desktop_set_drawn(const unsigned char *bytes, size_t size);
 static int desktop_string(const unsigned char *bytes, size_t size, size_t offset, const char **text);
 static void desktop_place(struct kwl_server *server, int32_t *x, int32_t *y, int32_t *width, int32_t *height);
 static int desktop_configure(struct kwl_server *server);
@@ -228,6 +246,14 @@ kwl_desktop_request(
 		return 0;
 	}
 
+	/* set_drawn (version 2): the parts the next commit draws anything in. */
+	if (opcode == DESKTOP_SURFACE_DRAWN && object->version >= 2U) {
+		error = desktop_set_drawn(bytes, size);
+		if (error != 0)
+			return error;
+		return 0;
+	}
+
 	/* ack_configure: the configure the client drew for. */
 	if (opcode != DESKTOP_SURFACE_ACK || size != 4U)
 		return EPROTO;
@@ -258,6 +284,8 @@ kwl_desktop_object_gone(
 	kwl_desktop_unfocus(server);
 	desk.surface = NULL;
 	desk.object = NULL;
+	desk.parts_known = 0U;
+	desk.pending_parts_set = 0U;
 	desk.focus_top = NULL;
 	server->dirty = 1;
 
@@ -323,9 +351,15 @@ kwl_desktop_draw(
 	const struct kwl_import *image;
 	struct kwl_import alpha;
 	struct glass_shape shape;
+	struct glass_shape piece;
 	struct kwl_object *surface;
+	float rect[4];
+	float across;
+	float down;
 	uint32_t width;
 	uint32_t height;
+	unsigned index;
+	int inside;
 
 	/* Only a surface with an image. */
 	surface = kwl_desktop_surface(server);
@@ -363,10 +397,48 @@ kwl_desktop_draw(
 	shape.set = image->set;
 	if (image->draw == KWL_DRAW_OPAQUE)
 		shape.opaque = 1.0f;
-	glass_shape_draw(server, command, &shape);
+
+	/* All of it, unless its program told the parts it draws in (ws270-p007). */
+	if (!desk.parts_known) {
+		glass_shape_draw(server, command, &shape);
+		return;
+	}
+
+	/* Only those parts, from the image's pixels to the surface's place and size. */
+	across = (float)width / (float)image->width;
+	down = (float)height / (float)image->height;
+	for (index = 0U; index < desk.part_count; index++) {
+		rect[0] = (float)surface->x + (float)desk.parts[index][0] * across;
+		rect[1] = (float)surface->y + (float)desk.parts[index][1] * down;
+		rect[2] = (float)desk.parts[index][2] * across;
+		rect[3] = (float)desk.parts[index][3] * down;
+		inside = glass_shape_crop(&shape, rect, &piece);
+		if (inside)
+			glass_shape_draw(server, command, &piece);
+	}
 
 	/* Succeeded: the desktop is drawn. */
 	return;
+}
+
+/*
+ * Applies the parts its program told with a commit of the desktop's
+ * surface (set_drawn, ws270-p007); a commit of any other surface, or with
+ * nothing told since the last, changes nothing.
+ */
+void
+kwl_desktop_commit(
+	struct kwl_object *surface)
+{
+	/* Only the desktop's surface, after a set_drawn. */
+	if (surface != desk.surface || !desk.pending_parts_set)
+		return;
+
+	/* The parts told become those drawn. */
+	memcpy(desk.parts, desk.pending_parts, (size_t)desk.pending_part_count * sizeof(desk.parts[0]));
+	desk.part_count = desk.pending_part_count;
+	desk.parts_known = 1U;
+	desk.pending_parts_set = 0U;
 }
 
 /*
@@ -593,6 +665,8 @@ desktop_get(
 	created->surface = surface;
 	desk.surface = surface;
 	desk.object = created;
+	desk.parts_known = 0U;
+	desk.pending_parts_set = 0U;
 
 	/* Where it is, told to the client. */
 	error = desktop_configure(server);
@@ -922,4 +996,69 @@ desktop_word(
 
 	/* Succeeded: the word in the host's order. */
 	return word;
+}
+
+/*
+ * Takes set_drawn's rectangles (an array of x, y, width and height, 32-bit
+ * each), applied with the surface's next commit.  More than
+ * DESKTOP_PARTS_MAX are kept as the box around them.  Returns 0, or EPROTO
+ * for an array that does not fit the request or holds part of a rectangle.
+ */
+static int
+desktop_set_drawn(
+	const unsigned char *bytes,
+	size_t size)
+{
+	int32_t rect[4];
+	int32_t box[4];
+	uint32_t length;
+	uint32_t count;
+	uint32_t index;
+	unsigned side;
+
+	/* The array's length, whole rectangles, within the request (padded to words). */
+	if (size < 4U)
+		return EPROTO;
+	length = desktop_word(bytes, 0U);
+	if (length % 16U != 0U || (size_t)length + 4U != size)
+		return EPROTO;
+	count = length / 16U;
+
+	/* Each rectangle, and the box around them all. */
+	box[0] = INT32_MAX;
+	box[1] = INT32_MAX;
+	box[2] = INT32_MIN;
+	box[3] = INT32_MIN;
+	for (index = 0U; index < count; index++) {
+		for (side = 0U; side < 4U; side++)
+			rect[side] = (int32_t)desktop_word(bytes, 4U + (size_t)index * 16U + side * 4U);
+
+		/* Kept while there is room. */
+		if (index < DESKTOP_PARTS_MAX)
+			memcpy(desk.pending_parts[index], rect, sizeof(rect));
+
+		/* The box's edges. */
+		if (rect[0] < box[0])
+			box[0] = rect[0];
+		if (rect[1] < box[1])
+			box[1] = rect[1];
+		if (rect[0] + rect[2] > box[2])
+			box[2] = rect[0] + rect[2];
+		if (rect[1] + rect[3] > box[3])
+			box[3] = rect[1] + rect[3];
+	}
+
+	/* Too many: the box around them. */
+	desk.pending_part_count = count;
+	if (count > DESKTOP_PARTS_MAX) {
+		desk.pending_parts[0][0] = box[0];
+		desk.pending_parts[0][1] = box[1];
+		desk.pending_parts[0][2] = box[2] - box[0];
+		desk.pending_parts[0][3] = box[3] - box[1];
+		desk.pending_part_count = 1U;
+	}
+
+	/* Succeeded: applied with the next commit. */
+	desk.pending_parts_set = 1U;
+	return 0;
 }

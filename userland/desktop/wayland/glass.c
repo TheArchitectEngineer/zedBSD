@@ -106,6 +106,13 @@
 #define GLASS_SPLIT_AREA	4096.0f
 
 /*
+ * The least area of a shape cut around the opaque insides of the windows
+ * over it (ws270-p007): smaller ones (a glyph, a button) are drawn whole,
+ * unless wholly hidden, as their pieces would cost more draws than pixels.
+ */
+#define GLASS_COVER_AREA	(96.0f * 96.0f)
+
+/*
  * The large digits of the lock screen's clock, in an image of
  * their own at the one size the clock asks for: the image's size, its
  * glyphs (the ten digits, then the colon), and the largest size and glyph
@@ -320,6 +327,11 @@ static const unsigned glass_tile_pixels[GLASS_TILE_SIZES] = { 20U, 26U, 48U, 72U
 static int glass_shape_split(const struct kwl_server *server, const float *constants, const float *quad, const float *box, float radius, VkRect2D *pieces, unsigned *count);
 static void glass_split_rect(float x, float y, float width, float height, VkRect2D *rect);
 static void glass_shape_draw_split(struct kwl_server *server, struct kwl_list *command, const float *constants, VkDescriptorSet set, VkPipeline pipeline, const VkRect2D *pieces, unsigned count);
+static void glass_shape_draw_pieces(struct kwl_server *server, struct kwl_list *command, const struct glass_shape *shape, const float (*pieces)[4], unsigned count);
+static void glass_shape_piece(const struct glass_shape *shape, const float *part, struct glass_shape *piece);
+static int glass_shape_cover(struct kwl_server *server, struct kwl_list *command, const struct glass_shape *shape);
+static void glass_shadow_trim(struct glass_shape *shape);
+static unsigned glass_count_kind_of(const float *constants);
 static int wallpaper_create(struct kwl_server *server, struct kwl_glass *glass, uint32_t width, uint32_t height);
 static int glass_size_make(struct kwl_server *server, uint32_t width, uint32_t height, struct kwl_glass_size *size);
 static int wallpaper_fill(struct kwl_glass *glass, const char *path, uint32_t width, uint32_t height);
@@ -2065,14 +2077,28 @@ glass_shape_draw(
 	VkDescriptorSet set;
 	VkPipeline pipeline;
 	VkRect2D pieces[1U + KWL_CUT_PIECES];
+	struct glass_shape trimmed;
+	uint64_t pixels;
 	unsigned count;
+	unsigned kind;
 	int joined;
 	int visible;
+	int covered;
 	int split;
 
 	/* A shape of a layer faded out wholly is not drawn (the desktop behind App Home). */
 	if (server->layer_on && server->layer_opacity <= 0.0f)
 		return;
+
+	/*
+	 * A shadow's quad reaches past where it fades out wholly: it is drawn
+	 * only as far as it shows (ws270-p007), unless a layer scales it.
+	 */
+	if (shape->mode == MODE_SHADOW && !server->layer_on) {
+		trimmed = *shape;
+		glass_shadow_trim(&trimmed);
+		shape = &trimmed;
+	}
 
 	/*
 	 * The quad and the box, moved and scaled with the layer (the desktop
@@ -2112,6 +2138,15 @@ glass_shape_draw(
 	/* Completely clipped quads cannot affect a pixel: outside the scissor, or between the damage's rectangles. */
 	visible = kwl_compose_clip_visible(compose, quad[0], quad[1], quad[2], quad[3]);
 	if (!visible)
+		return;
+
+	/*
+	 * Under the opaque insides of windows drawn later it is not seen
+	 * (ws270-p007): it is left out under them, drawn as the pieces of its
+	 * quad around them, or not at all.
+	 */
+	covered = glass_shape_cover(server, command, shape);
+	if (covered)
 		return;
 
 	/* The quad in normalized device coordinates. */
@@ -2205,6 +2240,20 @@ glass_shape_draw(
 		if (joined)
 			return;
 	}
+
+	/*
+	 * Glyphs that follow one another are joined into one draw (batch.c,
+	 * ws270-p007): a line of text was a draw a glyph, and on the PowerVR
+	 * every 64 draws of a pass cost another load of the whole pass.
+	 */
+	if (constants[17] == (float)MODE_TEXT) {
+		joined = kwl_batch_add_text(server, command, constants, set);
+		if (joined) {
+			pixels = kwl_compose_count_pixels(server, quad[0], quad[1], quad[2], quad[3], 1);
+			kwl_compose_count_kind(server, KWL_COUNT_TEXT, pixels);
+			return;
+		}
+	}
 	kwl_batch_flush(server, command);
 
 	/* An opaque shape large enough is drawn as its opaque inside and its blended edges. */
@@ -2216,7 +2265,9 @@ glass_shape_draw(
 
 	/* The chosen pipeline keeps the same constants, image and triangle pair. */
 	kwl_compose_count_draw(server, pipeline, set, 1U);
-	kwl_compose_count_pixels(server, quad[0], quad[1], quad[2], quad[3], 1);
+	pixels = kwl_compose_count_pixels(server, quad[0], quad[1], quad[2], quad[3], 1);
+	kind = glass_count_kind_of(constants);
+	kwl_compose_count_kind(server, kind, pixels);
 	kwl_compose_bind(server, command, pipeline, compose->panel_layout, set);
 	kwl_list_push_constants(command, compose->panel_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0U, sizeof(constants), constants);
 	kwl_compose_clip_draw(server, command, quad[0], quad[1], quad[2], quad[3], KWL_QUAD_VERTICES);
@@ -2340,13 +2391,17 @@ glass_shape_draw_split(
 {
 	struct kwl_compose *compose;
 	VkPipeline opaque;
+	uint64_t pixels;
 	unsigned index;
+	unsigned kind;
 
-	/* The opaque inside. */
+	/* The opaque inside, counted by its shape's kind (KWL MODES). */
 	compose = server->compose;
+	kind = glass_count_kind_of(constants);
 	opaque = compose->panel_opaque_pipelines[constants[17] == (float)MODE_IMAGE ? 0 : 1];
 	kwl_compose_count_draw(server, opaque, set, 1U);
-	kwl_compose_count_pixels(server, (float)pieces[0].offset.x, (float)pieces[0].offset.y, (float)pieces[0].extent.width, (float)pieces[0].extent.height, 0);
+	pixels = kwl_compose_count_pixels(server, (float)pieces[0].offset.x, (float)pieces[0].offset.y, (float)pieces[0].extent.width, (float)pieces[0].extent.height, 0);
+	kwl_compose_count_kind(server, kind, pixels);
 	kwl_compose_bind(server, command, opaque, compose->panel_layout, set);
 	kwl_list_push_constants(command, compose->panel_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0U, KWL_PANEL_CONSTANTS * sizeof(float), constants);
 	kwl_compose_clip_draw_rect(server, command, &pieces[0], KWL_QUAD_VERTICES);
@@ -2355,7 +2410,8 @@ glass_shape_draw_split(
 	kwl_compose_bind(server, command, pipeline, compose->panel_layout, set);
 	for (index = 1U; index < count; index++) {
 		kwl_compose_count_draw(server, pipeline, set, 1U);
-		kwl_compose_count_pixels(server, (float)pieces[index].offset.x, (float)pieces[index].offset.y, (float)pieces[index].extent.width, (float)pieces[index].extent.height, 1);
+		pixels = kwl_compose_count_pixels(server, (float)pieces[index].offset.x, (float)pieces[index].offset.y, (float)pieces[index].extent.width, (float)pieces[index].extent.height, 1);
+		kwl_compose_count_kind(server, kind, pixels);
 		kwl_compose_clip_draw_rect(server, command, &pieces[index], KWL_QUAD_VERTICES);
 	}
 	kwl_compose_count_commands(server, count, count);
@@ -2378,12 +2434,8 @@ glass_shape_draw_except(
 	const float (*holes)[4],
 	unsigned hole_count)
 {
-	struct glass_shape piece;
 	float pieces[KWL_CUT_PIECES][4];
-	float across;
-	float down;
 	unsigned count;
-	unsigned index;
 
 	/* No hole: the whole shape. */
 	if (hole_count == 0U) {
@@ -2402,18 +2454,55 @@ glass_shape_draw_except(
 		return;
 	count = kwl_damage_rects_cut(shape->quad, holes, hole_count, pieces);
 
-	/* Each piece is the shape over a part of its quad, showing that part of the image. */
-	across = shape->uv[2] - shape->uv[0];
-	down = shape->uv[3] - shape->uv[1];
-	for (index = 0U; index < count; index++) {
-		piece = *shape;
-		memcpy(piece.quad, pieces[index], sizeof(piece.quad));
-		piece.uv[0] = shape->uv[0] + (pieces[index][0] - shape->quad[0]) / shape->quad[2] * across;
-		piece.uv[1] = shape->uv[1] + (pieces[index][1] - shape->quad[1]) / shape->quad[3] * down;
-		piece.uv[2] = shape->uv[0] + (pieces[index][0] + pieces[index][2] - shape->quad[0]) / shape->quad[2] * across;
-		piece.uv[3] = shape->uv[1] + (pieces[index][1] + pieces[index][3] - shape->quad[1]) / shape->quad[3] * down;
-		glass_shape_draw(server, command, &piece);
-	}
+	/* Each piece is the shape over a part of its quad. */
+	glass_shape_draw_pieces(server, command, shape, (const float (*)[4])pieces, count);
+}
+
+/*
+ * Gives the part of a shape inside a rectangle (x, y, width, height on the
+ * output) as a shape of its own: its quad cut to the rectangle, showing
+ * that part of the image; the box and the rest stay the shape's.  Returns
+ * 1, or 0 when nothing of the quad is inside.
+ */
+int
+glass_shape_crop(
+	const struct glass_shape *shape,
+	const float *rect,
+	struct glass_shape *piece)
+{
+	float cut[1][4];
+	float left;
+	float top;
+	float right;
+	float bottom;
+
+	/* The quad's edges cut to the rectangle's. */
+	left = shape->quad[0];
+	top = shape->quad[1];
+	right = shape->quad[0] + shape->quad[2];
+	bottom = shape->quad[1] + shape->quad[3];
+	if (left < rect[0])
+		left = rect[0];
+	if (top < rect[1])
+		top = rect[1];
+	if (right > rect[0] + rect[2])
+		right = rect[0] + rect[2];
+	if (bottom > rect[1] + rect[3])
+		bottom = rect[1] + rect[3];
+
+	/* Nothing of the quad inside. */
+	if (right <= left || bottom <= top)
+		return 0;
+
+	/* The shape over that part of its quad. */
+	cut[0][0] = left;
+	cut[0][1] = top;
+	cut[0][2] = right - left;
+	cut[0][3] = bottom - top;
+	glass_shape_piece(shape, cut[0], piece);
+
+	/* Succeeded: the part inside. */
+	return 1;
 }
 
 /*
@@ -4436,4 +4525,177 @@ glass_dark_color(
 		if (dark[index] > 1.0f)
 			dark[index] = 1.0f;
 	}
+}
+
+/* Gives the kind a shape's draw is counted as (KWL MODES): its mode, the dark glass apart. */
+static unsigned
+glass_count_kind_of(
+	const float *constants)
+{
+	float mode;
+
+	/* The dark glass is mode -1. */
+	mode = constants[17];
+	if (mode < 0.0f)
+		return KWL_COUNT_DARK_GLASS;
+
+	/* The other modes are whole numbers from 0 to 6. */
+	if (mode > 6.5f)
+		return KWL_COUNT_KINDS;
+
+	/* Succeeded: the mode itself. */
+	return (unsigned)(mode + 0.5f);
+}
+
+/* Records a shape over pieces of its quad (x, y, width, height), each showing its part of the shape's image. */
+static void
+glass_shape_draw_pieces(
+	struct kwl_server *server,
+	struct kwl_list *command,
+	const struct glass_shape *shape,
+	const float (*pieces)[4],
+	unsigned count)
+{
+	struct glass_shape piece;
+	unsigned index;
+
+	/* Each piece is the shape over a part of its quad, showing that part of the image. */
+	for (index = 0U; index < count; index++) {
+		glass_shape_piece(shape, pieces[index], &piece);
+		glass_shape_draw(server, command, &piece);
+	}
+}
+
+/* Makes the shape over a part (x, y, width, height) of its quad, showing that part of its image. */
+static void
+glass_shape_piece(
+	const struct glass_shape *shape,
+	const float *part,
+	struct glass_shape *piece)
+{
+	float across;
+	float down;
+
+	/* The shape, its quad the part, its image's corners moved in step. */
+	across = shape->uv[2] - shape->uv[0];
+	down = shape->uv[3] - shape->uv[1];
+	*piece = *shape;
+	memcpy(piece->quad, part, sizeof(piece->quad));
+	piece->uv[0] = shape->uv[0] + (part[0] - shape->quad[0]) / shape->quad[2] * across;
+	piece->uv[1] = shape->uv[1] + (part[1] - shape->quad[1]) / shape->quad[3] * down;
+	piece->uv[2] = shape->uv[0] + (part[0] + part[2] - shape->quad[0]) / shape->quad[2] * across;
+	piece->uv[3] = shape->uv[1] + (part[1] + part[3] - shape->quad[1]) / shape->quad[3] * down;
+}
+
+/*
+ * Draws a shape around the opaque insides of the windows drawn after it
+ * (server->cover_holes of a level above server->cover_level, ws270-p007),
+ * where it is never seen: a shape wholly inside one is not drawn, a large
+ * one they cut into is drawn as the pieces of its quad around them.
+ * Returns 1 when that was done (nothing more is drawn of the shape), 0 when
+ * the shape is to be drawn as it is.  Only shapes in their places on the
+ * output are covered: not while a layer moves them, on a head, or in the
+ * backdrop's small passes.
+ */
+static int
+glass_shape_cover(
+	struct kwl_server *server,
+	struct kwl_list *command,
+	const struct glass_shape *shape)
+{
+	float holes[KWL_COVER_HOLES][4];
+	float pieces[KWL_COVER_PIECES][4];
+	unsigned hole_count;
+	unsigned count;
+	unsigned index;
+
+	/* Nothing covers it, or its pieces are being drawn. */
+	if (server->cover_count == 0U || server->cover_cutting)
+		return 0;
+
+	/* Only in its own place in the output's pass: not moved by a layer, not on a head, not in the backdrop. */
+	if (server->layer_on)
+		return 0;
+	if (server->view_width != 0U)
+		return 0;
+	if (server->compose->backdrop_recording != 0U)
+		return 0;
+
+	/* The holes of the windows above it; one that holds all of the quad hides it. */
+	hole_count = 0U;
+	for (index = 0U; index < server->cover_count; index++) {
+		if (server->cover_levels[index] <= server->cover_level)
+			continue;
+		if (server->cover_holes[index][0] <= shape->quad[0] &&
+		    server->cover_holes[index][1] <= shape->quad[1] &&
+		    server->cover_holes[index][0] + server->cover_holes[index][2] >= shape->quad[0] + shape->quad[2] &&
+		    server->cover_holes[index][1] + server->cover_holes[index][3] >= shape->quad[1] + shape->quad[3])
+			return 1;
+		memcpy(holes[hole_count], server->cover_holes[index], sizeof(holes[0]));
+		hole_count++;
+	}
+
+	/* No hole above it, or a shape too small to be worth cutting: drawn as it is. */
+	if (hole_count == 0U || shape->quad[2] * shape->quad[3] < GLASS_COVER_AREA)
+		return 0;
+
+	/* The quad less the holes; uncut, it is drawn as it is. */
+	count = kwl_damage_rects_subtract(shape->quad, (const float (*)[4])holes, hole_count, pieces);
+	if (count == 1U && memcmp(pieces[0], shape->quad, sizeof(pieces[0])) == 0)
+		return 0;
+
+	/* Its pieces, drawn without being cut again. */
+	server->cover_cutting = 1U;
+	glass_shape_draw_pieces(server, command, shape, (const float (*)[4])pieces, count);
+	server->cover_cutting = 0U;
+
+	/* Succeeded: drawn around the holes. */
+	return 1;
+}
+
+/*
+ * Cuts a shadow's quad to where it shows: panel.frag's shadow is fully
+ * transparent where a pixel is its softness (at least 1) or farther from
+ * the box (smoothstep reaches 1 there), so the quad is cut to the box grown
+ * by the softness and a pixel more.  The picture is the same.
+ */
+static void
+glass_shadow_trim(
+	struct glass_shape *shape)
+{
+	float reach;
+	float left;
+	float top;
+	float right;
+	float bottom;
+
+	/* The box grown by the softness, and a pixel for the rounding. */
+	reach = shape->soft;
+	if (reach < 1.0f)
+		reach = 1.0f;
+	reach += 1.0f;
+	left = shape->box[0] - reach;
+	top = shape->box[1] - reach;
+	right = shape->box[0] + shape->box[2] + reach;
+	bottom = shape->box[1] + shape->box[3] + reach;
+
+	/* The quad cut to it on each side where it reaches farther. */
+	if (left < shape->quad[0])
+		left = shape->quad[0];
+	if (top < shape->quad[1])
+		top = shape->quad[1];
+	if (right > shape->quad[0] + shape->quad[2])
+		right = shape->quad[0] + shape->quad[2];
+	if (bottom > shape->quad[1] + shape->quad[3])
+		bottom = shape->quad[1] + shape->quad[3];
+
+	/* Nothing left: an empty quad, which is not drawn. */
+	if (right < left)
+		right = left;
+	if (bottom < top)
+		bottom = top;
+	shape->quad[0] = left;
+	shape->quad[1] = top;
+	shape->quad[2] = right - left;
+	shape->quad[3] = bottom - top;
 }

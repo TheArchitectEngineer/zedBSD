@@ -92,6 +92,9 @@ static VkResult compose_replay_commands(struct kwl_compose *compose, struct kwl_
 static void compose_rec_timed(struct kwl_server *server, const struct kwl_render_outcome *outcome);
 static void compose_hold(struct kwl_server *server, struct kwl_object **windows, unsigned count);
 static void compose_log_draws(struct kwl_server *server);
+static void compose_count_passes(struct kwl_server *server);
+static void compose_log_passes(struct kwl_server *server);
+static void compose_log_kinds(struct kwl_server *server);
 
 /* How far into its way App Home's animation shows in its first frame, in milliseconds (review-2 N4). */
 #define COMPOSE_HOME_FIRST_MS	8U
@@ -105,6 +108,13 @@ static void compose_log_draws(struct kwl_server *server);
 #define COMPOSE_STALL_MS	1000U
 #define COMPOSE_STALL_LINES	5U
 #define COMPOSE_STALL_LATER_MS	60000U
+
+/*
+ * The draws one render job of the PowerVR driver holds (its
+ * POWERVR_RENDER_DRAWS): a pass of more goes on in another job that
+ * loads the pass's area again.  Only KWL PASSES counts with it.
+ */
+#define COMPOSE_JOB_DRAWS	64U
 
 /*
  * Creates the Vulkan device, the pipelines' fixed objects and the frame's
@@ -811,6 +821,9 @@ kwl_compose_draw(
 		kwl_heads_frame_skipped(server);
 		return EIO;
 	}
+
+	/* What the frame asks of the GPU, for its lines (KWL PASSES). */
+	compose_count_passes(server);
 
 	/* The job: the output's image and every head's image held, all presented. */
 	memset(&job, 0, sizeof(job));
@@ -2784,9 +2797,9 @@ kwl_compose_count_draw(
 
 /*
  * Counts the pixels a draw covers inside the pass's area, blended or
- * not, for the frame's log (KWL DRAWS).
+ * not, for the frame's log (KWL DRAWS); returns them (0 without the log).
  */
-void
+uint64_t
 kwl_compose_count_pixels(
 	struct kwl_server *server,
 	float x,
@@ -2804,7 +2817,7 @@ kwl_compose_count_pixels(
 
 	/* Counted only for the log. */
 	if (!server->log_frames)
-		return;
+		return 0U;
 
 	/* The draw's rectangle cut to the pass's area. */
 	area = &server->compose->pass_area;
@@ -2823,7 +2836,7 @@ kwl_compose_count_pixels(
 
 	/* Nothing inside. */
 	if (right <= left || bottom <= top)
-		return;
+		return 0U;
 
 	/* The pixels, by kind. */
 	pixels = (uint64_t)((right - left) * (bottom - top));
@@ -2832,6 +2845,25 @@ kwl_compose_count_pixels(
 	} else {
 		server->draw_counts.opaque_pixels += pixels;
 	}
+
+	/* The pixels counted. */
+	return pixels;
+}
+
+/* Counts a draw of a kind and the pixels it covers for the frame's log (KWL MODES). */
+void
+kwl_compose_count_kind(
+	struct kwl_server *server,
+	unsigned kind,
+	uint64_t pixels)
+{
+	/* Counted only for the log, and only of the kinds known. */
+	if (!server->log_frames || kind >= KWL_COUNT_KINDS)
+		return;
+
+	/* One draw more of the kind, and its pixels. */
+	server->draw_counts.kind_draws[kind]++;
+	server->draw_counts.kind_pixels[kind] += pixels;
 }
 
 /* Draws a part of an image (uv: left, top, right, bottom as fractions) as a quad at a place and size on the output. */
@@ -2849,6 +2881,7 @@ compose_quad_part(
 	float constants[8];
 	float width;
 	float height;
+	uint64_t pixels;
 	int visible;
 
 	/* The output drawn: the anchor, or a head's part of the plane. */
@@ -2875,7 +2908,8 @@ compose_quad_part(
 
 	/* The pipeline for the window's way of drawing, its image, and the strip. */
 	kwl_compose_count_draw(server, server->compose->pipelines[import->draw], import->set, 0U);
-	kwl_compose_count_pixels(server, (float)x, (float)y, (float)quad_width, (float)quad_height, import->draw == KWL_DRAW_ALPHA);
+	pixels = kwl_compose_count_pixels(server, (float)x, (float)y, (float)quad_width, (float)quad_height, import->draw == KWL_DRAW_ALPHA);
+	kwl_compose_count_kind(server, KWL_COUNT_QUAD, pixels);
 	kwl_batch_flush(server, command);
 	kwl_compose_bind(server, command, server->compose->pipelines[import->draw], server->compose->layout, import->set);
 	kwl_list_push_constants(command, server->compose->layout, VK_SHADER_STAGE_VERTEX_BIT, 0U, sizeof(constants), constants);
@@ -3683,6 +3717,95 @@ compose_log_draws(
 		server->compose->pass_area.extent.height);
 }
 
+/* Counts what the frame's list asks of the GPU (KWL PASSES), only with --log-frames. */
+static void
+compose_count_passes(
+	struct kwl_server *server)
+{
+	struct kwl_compose *compose;
+	VkRenderPass loading[2];
+
+	/* Only for the frame's lines. */
+	if (!server->log_frames)
+		return;
+
+	/* The passes that keep the image's pixels: the output's, and the turn image's. */
+	compose = server->compose;
+	loading[0] = compose->pass_load;
+	loading[1] = compose->turn_load_pass;
+	kwl_list_count_passes(&compose->list, loading, 2U, COMPOSE_JOB_DRAWS, &compose->frame_passes);
+}
+
+/*
+ * Logs what the submitted frame asked of the GPU (KWL PASSES,
+ * --log-frames): its passes, the jobs they took, the pixels of their
+ * areas and those loaded again, its copies, and the first passes one by
+ * one (area, draws, l when it loaded).
+ */
+static void
+compose_log_passes(
+	struct kwl_server *server)
+{
+	const struct kwl_list_passes *passes;
+	unsigned index;
+
+	/* The frame's totals. */
+	passes = &server->compose->frame_passes;
+	printf(
+		"KWL PASSES frame=%llu passes=%u jobs=%u draws=%u loading=%u area_px=%llu load_px=%llu copies=%u copy_px=%llu",
+		(unsigned long long)server->frame,
+		passes->passes,
+		passes->jobs,
+		passes->draws,
+		passes->loading_passes,
+		(unsigned long long)passes->area_pixels,
+		(unsigned long long)passes->load_pixels,
+		passes->copies,
+		(unsigned long long)passes->copy_pixels);
+
+	/* The first passes one by one: where, how large, how many draws, and whether they loaded. */
+	for (index = 0U; index < passes->detail_count; index++) {
+		printf(
+			" %d,%d,%ux%u:%u%s",
+			passes->detail_areas[index].offset.x,
+			passes->detail_areas[index].offset.y,
+			passes->detail_areas[index].extent.width,
+			passes->detail_areas[index].extent.height,
+			passes->detail_draws[index],
+			passes->detail_loads[index] ? "l" : "");
+	}
+
+	/* The line ends. */
+	printf("\n");
+}
+
+/*
+ * Logs the submitted frame's draws by kind (KWL MODES, --log-frames): for
+ * each of the glass look's modes and the windows' quads, the draws and
+ * the pixels they cover inside the pass's area.
+ */
+static void
+compose_log_kinds(
+	struct kwl_server *server)
+{
+	static const char *const names[KWL_COUNT_KINDS] = {
+		"glass", "shadow", "image", "solid", "ring", "text", "blur", "dark", "quad"
+	};
+	const struct kwl_draw_counts *counts;
+	unsigned kind;
+
+	/* The frame, then each kind drawn as draws/pixels. */
+	counts = &server->draw_counts;
+	printf("KWL MODES frame=%llu", (unsigned long long)server->frame);
+	for (kind = 0U; kind < KWL_COUNT_KINDS; kind++) {
+		if (counts->kind_draws[kind] != 0U)
+			printf(" %s=%u/%llu", names[kind], counts->kind_draws[kind], (unsigned long long)counts->kind_pixels[kind]);
+	}
+
+	/* The line ends. */
+	printf("\n");
+}
+
 /*
  * Gives the drawing written into the list since kwl_compose_list_begin to
  * the render thread as a layer's picture that presents nothing
@@ -4106,6 +4229,8 @@ compose_frame_presented(
 		printf("KWL LAT queued frame=%llu at_us=%llu\n", (unsigned long long)compose->frame_number, (unsigned long long)outcome->queued_us);
 		printf("KWL LAT submit frame=%llu at_us=%llu\n", (unsigned long long)compose->frame_number, (unsigned long long)outcome->presented_us);
 		compose_log_draws(server);
+		compose_log_passes(server);
+		compose_log_kinds(server);
 	}
 
 	/*

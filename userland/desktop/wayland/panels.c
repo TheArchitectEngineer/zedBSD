@@ -243,6 +243,45 @@ kwl_panels_blur(
 }
 
 /*
+ * Works out the holes a surface's panels make in what is drawn under them:
+ * the inside of each card's glass, fully opaque when the panels are
+ * (opacity 1), at a place (x, y, scale across and down) on the output.
+ * Returns how many, at most room; none for see-through panels.
+ */
+unsigned
+kwl_panels_holes(
+	const struct kwl_object *surface,
+	const float *place,
+	float opacity,
+	float (*holes)[4],
+	unsigned room)
+{
+	const struct kwl_panels *panels;
+	float box[4];
+	unsigned count;
+	unsigned index;
+
+	/* See-through panels hide nothing, and a surface without panels has none. */
+	panels = surface->panels;
+	if (opacity < 1.0f || panels == NULL)
+		return 0U;
+
+	/* Each card's box on the output, less its rounded corners. */
+	count = 0U;
+	for (index = 0; index < panels->count && count < room; index++) {
+		box[0] = place[0] + (float)panels->current[index].x * place[2];
+		box[1] = place[1] + (float)panels->current[index].y * place[3];
+		box[2] = (float)panels->current[index].width * place[2];
+		box[3] = (float)panels->current[index].height * place[3];
+		glass_opaque_inside(box, (float)panels->current[index].radius * place[2], holes[count]);
+		count++;
+	}
+
+	/* Succeeded: the cards' insides. */
+	return count;
+}
+
+/*
  * Draws a surface's glass panels where its image goes: place is the
  * image's left and top on the output and its scale across and down (a
  * window being resized is stretched, a Wiseview tile is small).  The
@@ -260,7 +299,6 @@ kwl_panels_draw(
 {
 	const struct kwl_panels *panels;
 	float holes[KWL_PANELS_MAX][4];
-	float box[4];
 	unsigned hole_count;
 	unsigned index;
 	unsigned light;
@@ -275,17 +313,7 @@ kwl_panels_draw(
 	 * gaps' glass and the shadows drawn before it (ws211-p011), which are
 	 * then drawn around the cards alone.
 	 */
-	hole_count = 0U;
-	if (opacity >= 1.0f) {
-		for (index = 0; index < panels->count; index++) {
-			box[0] = place[0] + (float)panels->current[index].x * place[2];
-			box[1] = place[1] + (float)panels->current[index].y * place[3];
-			box[2] = (float)panels->current[index].width * place[2];
-			box[3] = (float)panels->current[index].height * place[3];
-			glass_opaque_inside(box, (float)panels->current[index].radius * place[2], holes[hole_count]);
-			hole_count++;
-		}
-	}
+	hole_count = kwl_panels_holes(surface, place, opacity, holes, KWL_PANELS_MAX);
 
 	/* The gaps between the panels, blurred, under the shadows and the panels. */
 	light = 0U;

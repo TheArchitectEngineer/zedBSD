@@ -64,5 +64,6 @@ void kwl_panels_object_gone(struct kwl_object *object);
 unsigned kwl_panels_count(const struct kwl_object *surface);
 unsigned kwl_panels_blur(const struct kwl_object *surface);
 void kwl_panels_draw(struct kwl_server *server, struct kwl_list *command, const struct kwl_object *surface, const float *place, float opacity, unsigned shadows);
+unsigned kwl_panels_holes(const struct kwl_object *surface, const float *place, float opacity, float (*holes)[4], unsigned room);
 
 #endif
