@@ -11,8 +11,8 @@
 -->
 
 <!-- master:agents:start -->
-- **2026-10-21 07:55 引き継ぎ: まず [plan/agents/handover-20261021.md](agents/handover-20261021.md) を読む**（VF2 の Keiland の desktop が板で動いた、残りは速さと間欠の lockup、決定、担当、板の回し方、次の順）。
-- 自走（ユーザー 06:47「デスクトップが動くまで自走をお願いします。…こまめにmainへのマージを」）、fg020、N=2: P1 `ab309998eee17b581` は q1528（非同期の submit、D-P4 の変更）、P2 `aa73ad61de6cef181` は q1529（DC8200 の zero copy の flip と cursor plane）。板は Q1 だけ。
+- **2026-10-21 12:35 引き継ぎ（このセッションの終わり）: まず [plan/agents/handover-20261021.md](agents/handover-20261021.md) の末尾の「最終の引き継ぎ」を読む**（VF2 の Keiland の desktop は PowerVR で動く、lockup は解決、残りは draw の速さ、次の手、板の注意）。
+- 担当: P1・P2 は 2026-10-21 12:30 に週次の上限で止まり終了扱い（解除 10-25 04:00）。worktree に未 merge の作業は無い。q1536・q1537 は中断。板は Q1 だけが触る。
 - push はしていない。
 <!-- master:agents:end -->
 
@@ -642,6 +642,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-21 12:32（ユーザー）: 「別のセッションに引き継ぎます。ハンドオーバーの資料をアップデートして、ラップアップ、オフボードしてください。」→ handover-20261021.md に最終の引き継ぎ、q1536・q1537 を中断として記録、担当（P1・P2、週次の上限で停止）は終了扱い。
 - 2026-10-21（ユーザー）: 「表示内容自体は完璧です。カーソル移動や画面遷移は、全画面書き換えは2fpsも出なかったり、カーソルも3fpsくらいだったりしてます。これは最適化できそうですか？」→ Q1 が WS269 D-P4（submit は ioctl の中で待つ）を問い、ユーザーがクリックで「非同期に変える (Recommended)」: submit は kick して戻り、完了は fence で待つ。別 Phase で設計 → 実装（P1）。
 - 2026-10-21（ユーザー、desktop の 8 回目の HDMI）: 「キャッシュの挙動が消えました。」→ q1526-i02（display.c の画面を uncached の alias で書く、016dfca00）でノイズが消えた。dmesg は `visionfive2: ccache at 0x2010000, cache maintenance on`、present 11.7 ms。
 - 2026-10-21（ユーザー）: 「そうですね、キャッシュが有効のように見えています。でもlinearで直接描画できるようになれば関係なくなるかもしれないです。でもHALでマップするときにcachedになってるのはおそらく間違いないです。」→ Q1 の確認: U74 は Svpbmt が無く kern_device_map の NOCACHE は DRAM を uncached にしない。正しい uncached は kern_pmem_map_uncached（alias）。P1 の cd4d667d3（device map）は板に載せず、q1526-i02 で alias に作り直す。
