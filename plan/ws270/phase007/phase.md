@@ -79,3 +79,4 @@ clear 3.85 ms、LOAD 23.35 ms、平らな quad 15.1 ms、1/4 面積 7.2 ms、402
 - d95a（P1 fed1a5fa3 の Keiland: 不透明な内側の variant、glass の内側の縁の mix を省く、影の内側を分ける）: aat-input の hover・drag、見た目正常（shot-d95a.png）。P1 の読み（KWL LAT の recorded→queued）: 窓無しの全画面 5〜7 ms（d89 は 9〜20）、1 窓 14〜18 ms（29〜35）、2 窓 17〜21 ms、drag の部分 frame 2〜11 ms、約 2 倍。drag の区間の compose: frame_ms 28.7、acquire 13.9、submit 13 ms。1 本だけ 191 ms の外れ。
 - d95（idle の診断の kernel）: idle 60 s の後の job も firmware の中は速い（TA 0.3、3D 1.1 ms）、同期の kick で sent 10 ms。前の「job wait 139 ms」は kick から reap までで reap は次の submit の時 → GPU の時間ではない。139 ms は libvulkan か gpu.c の受け付け（capacity の待ち等）の疑い、優先度を下げる。
 - main e6b12bba9（fed1a5fa3 まで）。板は main の kernel と wayland。
+- 2026-10-22 ユーザーの体感（main e6b12bba9）:「すばらしい。実用スピードです。」
