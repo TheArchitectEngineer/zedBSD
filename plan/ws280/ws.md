@@ -2,7 +2,8 @@
 
 # WS280 H.264 の software decoder（libh264dec）
 
-- Master: [plan/master.md](../master.md)。Status: planning（2026-10-21 作成、実装はまだしない）。Primary Milestone: MG006。Related: MG008（Pi 5）。
+- Master: [plan/master.md](../master.md)（2026-10-21 作成、実装はまだしない）。Primary Milestone: MG006。Related: MG008（Pi 5）。
+- Status: planning
 - 出典: 2026-10-21 ユーザー「HEVCはライセンス料が高いので、とりあえず実装しないでいいです。H.264のソフトウェアデコーダを、あとで実装するWSを作っておきましょう。既存のlibmediaにオプションでdlopenで繋ぎ込むlibh264decとして入れます。まだ実装しなくていいです。」
 
 ## 目的と完了の条件（案）

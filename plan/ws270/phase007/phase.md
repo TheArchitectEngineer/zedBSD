@@ -2,7 +2,8 @@
 
 # ws270-p007 VF2 の desktop の速さ（使える水準へ）
 
-- WS: [WS270](../ws.md)。状態: in-progress（2026-10-21 Q1）。前提: p006a（desktop が PowerVR で動く、lockup 解決）。
+- WS: [WS270](../ws.md)。
+- Status: in-progress（2026-10-21 Q1）。前提: p006a（desktop が PowerVR で動く、lockup 解決）。
 - 出典: 2026-10-21 ユーザー「lockupは解決したのですが、描画が遅すぎてデスクトップが利用可能な水準ではありません。たぶん2fpsくらいです。これを解決したいです。」
 - 板: Q1 だけが触る（kei@10.0.30.2、SwitchBot で電源）。担当は commit と板で流す手順を Q1 に送る。
 

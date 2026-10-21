@@ -2,7 +2,8 @@
 
 # WS279 Raspberry Pi 5 の GPU（V3D 7.1）と display（HVS6）
 
-- Master: [plan/master.md](../master.md)。Status: incomplete（2026-10-21 開始）。Primary Milestone: MG008。Related: MG006。
+- Master: [plan/master.md](../master.md)（2026-10-21 開始）。Primary Milestone: MG008。Related: MG006。
+- Status: incomplete
 - 出典: 2026-10-21 ユーザー「D2: 分けましょう。」「GPUは別途Mesaの初期化手順を正確にまとめてから実装しましょう。」（WS278 の D2）。担当は Opus 5.5、Fable の review は使わない（WS278 と同じ、ユーザー「Pi5の対応は、Fableによるレビューは不要です。Opus 5.5で対応しましょう。」）。
 
 ## 目的と完了の条件
