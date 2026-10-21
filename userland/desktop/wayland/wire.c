@@ -19,6 +19,22 @@
 #include <string.h>
 #include <time.h>
 
+#if defined(__riscv)
+/* How long kwl_log_us measures the time counter's rate before using it, and the step its rate is rounded to (Hz). */
+#define LOG_CALIBRATE_NS	2000000000ULL
+#define LOG_RATE_STEP		100000ULL
+
+/*
+ * kwl_log_us's state: the first readings of the time counter and of the
+ * monotonic clock, the counter's rate (Hz, 0 until measured) and its
+ * offset in nanoseconds (INT64_MIN until the first fine reading).
+ */
+static uint64_t log_first_counter;
+static uint64_t log_first_monotonic;
+static uint64_t log_rate;
+static int64_t log_offset = INT64_MIN;
+#endif
+
 static int receive_rights(struct kwl_client *client, const struct msghdr *message);
 static int decode_messages(struct kwl_client *client);
 static ssize_t send_packet(struct kwl_client *client, struct kwl_packet *packet);
@@ -60,6 +76,84 @@ kwl_microseconds(
 
 	/* Succeeded: the time. */
 	return (uint64_t)now.tv_sec * 1000000U + (uint64_t)now.tv_nsec / 1000U;
+}
+
+/*
+ * The per-frame lines' clock in microseconds: the monotonic clock, which
+ * advances once a scheduler tick, made fine with the time counter where
+ * user mode may read it (riscv64's rdtime), as libvulkan's VULKAN TIMING
+ * is, so that the compositor's and the clients' lines can be set side by
+ * side.  The counter's rate is measured against the monotonic clock over
+ * the first LOG_CALIBRATE_NS and taken as the round rate within 0.1 % of
+ * it, as timebases are (the tick makes the measure up to 0.05 % off, which
+ * would otherwise drift the lines apart over a run); the offset is the
+ * largest by which a monotonic reading was ahead of the counter.  Until
+ * the rate is known, and elsewhere, the monotonic clock as it is.  Only a
+ * diagnostic: relaxed atomics, a race only refines it later.
+ */
+uint64_t
+kwl_log_us(
+	void)
+{
+	struct timespec now;
+	uint64_t monotonic;
+#if defined(__riscv)
+	uint64_t counter;
+	uint64_t first_monotonic;
+	uint64_t first_counter;
+	uint64_t rate;
+	uint64_t round;
+	uint64_t scaled;
+	int64_t offset;
+	int64_t ahead;
+#endif
+
+	/* The monotonic clock; one that fails reads as zero. */
+	if (clock_gettime(CLOCK_MONOTONIC, &now) != 0)
+		return 0;
+	monotonic = (uint64_t)now.tv_sec * 1000000000U + (uint64_t)now.tv_nsec;
+#if defined(__riscv)
+	/* The counter now. */
+	__asm__ volatile("rdtime %0" : "=r"(counter));
+
+	/* The first reading starts the rate's measurement. */
+	first_monotonic = __atomic_load_n(&log_first_monotonic, __ATOMIC_RELAXED);
+	if (first_monotonic == 0) {
+		__atomic_store_n(&log_first_counter, counter, __ATOMIC_RELAXED);
+		__atomic_store_n(&log_first_monotonic, monotonic, __ATOMIC_RELAXED);
+		return monotonic / 1000U;
+	}
+
+	/* The rate, once the span is long enough, rounded to the 100 kHz near it when that is within 0.1 %. */
+	rate = __atomic_load_n(&log_rate, __ATOMIC_RELAXED);
+	if (rate == 0) {
+		first_counter = __atomic_load_n(&log_first_counter, __ATOMIC_RELAXED);
+		if (monotonic - first_monotonic < LOG_CALIBRATE_NS || counter <= first_counter)
+			return monotonic / 1000U;
+		rate = (counter - first_counter) * 1000000000U / (monotonic - first_monotonic);
+		round = (rate + LOG_RATE_STEP / 2U) / LOG_RATE_STEP * LOG_RATE_STEP;
+		if (round != 0 && (rate > round ? rate - round : round - rate) * 1000U <= round)
+			rate = round;
+		if (rate == 0)
+			return monotonic / 1000U;
+		__atomic_store_n(&log_rate, rate, __ATOMIC_RELAXED);
+	}
+
+	/* The counter in nanoseconds, and the largest amount the monotonic clock was ahead of it. */
+	scaled = (counter / rate) * 1000000000U + (counter % rate) * 1000000000U / rate;
+	offset = __atomic_load_n(&log_offset, __ATOMIC_RELAXED);
+	ahead = (int64_t)monotonic - (int64_t)scaled;
+	if (ahead > offset) {
+		__atomic_store_n(&log_offset, ahead, __ATOMIC_RELAXED);
+		offset = ahead;
+	}
+
+	/* Succeeded: the counter's time on the monotonic clock's scale. */
+	return (uint64_t)((int64_t)scaled + offset) / 1000U;
+#else
+	/* No counter user mode may read: the monotonic clock. */
+	return monotonic / 1000U;
+#endif
 }
 
 /*

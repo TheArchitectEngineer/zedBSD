@@ -663,6 +663,7 @@ VkResult terminal_renderer_open(struct terminal_renderer *renderer, struct termi
 VkResult terminal_renderer_resize(struct terminal_renderer *renderer, uint32_t width, uint32_t height);
 VkResult terminal_renderer_draw(struct terminal_renderer *renderer, struct terminal_screen *screen, struct terminal_font *font, const struct terminal_window *window);
 VkResult terminal_renderer_idle(struct terminal_renderer *renderer);
+void terminal_perf_step(const char *step, unsigned bytes);
 void terminal_renderer_close(struct terminal_renderer *renderer);
 
 /* The window (window.c). */

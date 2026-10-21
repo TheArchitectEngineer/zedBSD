@@ -365,6 +365,7 @@ terminal_renderer_draw(
 	if (error != VK_SUCCESS && error != VK_SUBOPTIMAL_KHR)
 		return error;
 	render_perf_add(RENDER_PERF_PRESENT, mark);
+	terminal_perf_step("present", 0U);
 
 	/* The frame counted, and the sums written every few seconds when asked for. */
 	if (render_perf_on) {
@@ -1900,6 +1901,28 @@ render_now_us(void)
 
 	/* Succeeded: microseconds. */
 	return (uint64_t)now.tv_sec * 1000000U + (uint64_t)now.tv_nsec / 1000U;
+}
+
+/*
+ * Writes a ZTERM LAT line, one step of a typed key's way to the screen
+ * (key, commit, write, read, present) with its bytes and the monotonic
+ * time in microseconds, when the measurement is on (TERMINAL_PERF=1).
+ */
+void
+terminal_perf_step(
+	const char *step,
+	unsigned bytes)
+{
+	uint64_t now;
+
+	/* Only for a measurement. */
+	now = render_now_us();
+	if (now == 0U)
+		return;
+
+	/* The step's line. */
+	printf("ZTERM LAT %s bytes=%u at_us=%llu\n", step, bytes, (unsigned long long)now);
+	fflush(stdout);
 }
 
 /* Adds the time since started (render_now_us) to a part of the frame's drawing, for ZTERM PERF. */

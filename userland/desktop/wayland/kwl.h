@@ -1041,6 +1041,8 @@ struct kwl_perf {
 	uint64_t schedule_cycles;
 	uint64_t flush_cycles;
 	uint64_t schedule_tick_cycles;
+	/* The scheduler's ticks one by one: the sleep's, the outputs', the displays' light, the glass look's and the desktop's. */
+	uint64_t schedule_tick_part_cycles[5];
 	uint64_t adopt_cycles;
 	uint64_t shm_cycles;
 	uint64_t cursor_cycles;
@@ -1492,6 +1494,9 @@ struct kwl_server {
 	unsigned awaiting;
 	uint64_t frame_done_ms;
 	uint64_t frame_wait_ms;
+
+	/* When the event loop's pass began (its poll returned), for the per-frame lines. */
+	uint64_t pass_us;
 	/*
 	 * Nonzero while a move of the pointer waits for the frame that shows the
 	 * cursor at its new place: that frame does not wait for the windows
@@ -2077,6 +2082,7 @@ struct kwl_server {
 
 uint64_t kwl_milliseconds(void);
 uint64_t kwl_microseconds(void);
+uint64_t kwl_log_us(void);
 void kwl_request_stop(void);
 void kwl_fatal(const char *format, ...) __attribute__((format(printf, 1, 2)));
 int kwl_greeter_open(struct kwl_server *server);

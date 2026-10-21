@@ -29,7 +29,7 @@
 static void *render_main(void *argument);
 static enum kwl_render_step render_idle(struct kwl_render_thread *render);
 static enum kwl_render_step render_ahead(struct kwl_render_thread *render);
-static uint64_t render_now_us(void);
+static uint64_t render_now_us(const struct kwl_render_thread *render);
 static enum kwl_render_step render_answer(struct kwl_render_thread *render);
 static enum kwl_render_step render_reap(struct kwl_render_thread *render, uint64_t timeout_ns);
 static void render_post(struct kwl_render_thread *render, struct kwl_render_message *message);
@@ -660,7 +660,7 @@ render_idle(
 		pthread_mutex_unlock(&render->lock);
 	} else if (want.kind == KWL_RENDER_FRAME) {
 		/* An image held from before (taken ahead, or kept by a cancel) is ready now. */
-		acquired_us = render_now_us();
+		acquired_us = render_now_us(render);
 	}
 
 	/* Each wanted head not held, without waiting; what came of it is told with the ready. */
@@ -932,13 +932,18 @@ render_ahead(
 	return KWL_RENDER_STEP_BLOCKED;
 }
 
-/* The monotonic clock in microseconds (kwl_microseconds' clock), 0 when it fails. */
+/* The clock of the main thread's lines in microseconds (the monotonic clock without one), 0 when it fails. */
 static uint64_t
-render_now_us(void)
+render_now_us(
+	const struct kwl_render_thread *render)
 {
 	struct timespec now;
 
-	/* The clock. */
+	/* The owner's clock. */
+	if (render->ops.now_us != NULL)
+		return render->ops.now_us();
+
+	/* The monotonic clock. */
 	if (clock_gettime(CLOCK_MONOTONIC, &now) != 0)
 		return 0U;
 

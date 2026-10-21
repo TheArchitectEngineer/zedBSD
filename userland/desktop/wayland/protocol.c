@@ -1205,7 +1205,7 @@ surface_commit(
 		if (surface->queued != NULL)
 			replaced = surface->queued->id;
 		printf("KWL COMMIT client=%llu surface=%u buffer=%u queued=%u at_us=%llu\n", (unsigned long long)surface->client->number, surface->id,
-		       surface->pending->id, replaced, (unsigned long long)kwl_microseconds());
+		       surface->pending->id, replaced, (unsigned long long)kwl_log_us());
 	}
 
 	/* New commits replace only an unpresented queued image; current scanout keeps its hold. */

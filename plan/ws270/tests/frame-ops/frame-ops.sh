@@ -13,7 +13,8 @@
 #
 # Before each step the number of lines SESSION.LOG has goes to MARKS as
 # "NAME LINE".  The steps: idle, Terminal started from App Home (launch),
-# a line typed into it (type), a long output (output), the wheel over it
+# a line typed into it (type), keys typed one at a time 200 ms apart, for
+# each key's way to the screen (keys, key-latency.py), a long output (output), the wheel over it
 # (scroll), the pointer over the title bars and the system bar (hover), the
 # Terminal's window dragged by its title bar there and back (drag), App
 # Home opened and closed twice (home), Wiseview opened and closed twice
@@ -75,6 +76,17 @@ input click left $((tx + 200)) $((ty + 150))
 pause 500
 mark type
 input type 'echo the quick brown fox jumps over the lazy dog 0123456789'
+input key enter
+sleep 1
+
+# Keys one at a time, 200 ms apart, behind a '#' so the line does nothing.
+mark keys
+input type '#'
+pause 200
+for k in a b c d e f g h i j k l m n o p q r s t; do
+	input type "$k"
+	pause 200
+done
 input key enter
 sleep 1
 

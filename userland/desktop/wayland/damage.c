@@ -108,7 +108,7 @@ kwl_damage_pointer(
 
 	/* Remember the latest accepted motion without writing a log for every input report. */
 	if (server->log_frames)
-		server->pointer_accepted_us = kwl_microseconds();
+		server->pointer_accepted_us = kwl_log_us();
 
 	/* The cursor plane shows the move by itself (cursor-plane.c); a frame is drawn only for what the move changes under it. */
 	plane = kwl_cursor_plane_takes(server);
