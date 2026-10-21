@@ -189,6 +189,8 @@ powervr_session_program_map(
 	render = session->render;
 	space = program_space(session, heap);
 	flags = powervr_gpu_buffer_flags(1, 0);
+	if (POWERVR_PROGRAM_SLC_CACHED)
+		flags = 0;
 
 	/* Takes a place and maps the run there, then has the core drop stale table entries. */
 	mutex_lock(&render->core->lock);
