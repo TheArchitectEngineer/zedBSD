@@ -313,6 +313,9 @@ static VkResult load_part_case(struct vkmatrix *run, const VkRect2D *area, uint3
 static VkResult case_load_part(struct vkmatrix *run);
 static VkResult case_perf_load_part(struct vkmatrix *run);
 static VkResult case_perf_load_small(struct vkmatrix *run);
+static VkResult small_target_case(struct vkmatrix *run, int load);
+static VkResult case_perf_clear_64(struct vkmatrix *run);
+static VkResult case_perf_load_64(struct vkmatrix *run);
 
 /* Every case, in the order they run. */
 static const struct vkmatrix_case cases[] = {
@@ -363,6 +366,8 @@ static const struct vkmatrix_case cases[] = {
 	{ "load-part", case_load_part },
 	{ "perf-load-part", case_perf_load_part },
 	{ "perf-load-small", case_perf_load_small },
+	{ "perf-clear-64", case_perf_clear_64 },
+	{ "perf-load-64", case_perf_load_64 },
 };
 
 /* The clear colour of every case's first pass: dark blue. */
@@ -4853,6 +4858,132 @@ case_perf_load_small(
 	area.extent.width = 64;
 	area.extent.height = 64;
 	status = load_part_case(run, &area, PERF_FRAMES, "load-small");
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the case ran. */
+	return VK_SUCCESS;
+}
+
+/*
+ * Passes of the 64x64 target (q1541), each submitted and waited for and
+ * timed over PERF_FRAMES after one not counted: cleared only, or loaded
+ * with a flat quad over it.  Beside perf-clear and perf-load-small (a
+ * 64x64 part of a 1920x1080 target), the time of a job whose target has a
+ * few tiles tells the cost of a 1080p target's tiles from the cost of
+ * any job.  Prints "vkmatrix: perf <kind>-64: ...".
+ */
+static VkResult
+small_target_case(
+	struct vkmatrix *run,
+	int load)
+{
+	struct vkmatrix_shape shape;
+	VkSubmitInfo submit;
+	uint64_t started;
+	uint64_t spent;
+	uint64_t total;
+	uint64_t least;
+	uint32_t pipeline;
+	uint32_t first;
+	uint32_t frame;
+	float red;
+	VkResult status;
+
+	/* The flat red pipeline and the quad over the target, for the loaded kind. */
+	pipeline = 0;
+	first = 0;
+	if (load) {
+		memset(&shape, 0, sizeof(shape));
+		shape.vertex = vkmatrix_push4_vert;
+		shape.vertex_size = sizeof(vkmatrix_push4_vert);
+		shape.fragment = vkmatrix_push4_frag;
+		shape.fragment_size = sizeof(vkmatrix_push4_frag);
+		shape.push_size = 4;
+		shape.push_stages = VK_SHADER_STAGE_FRAGMENT_BIT;
+		status = vkmatrix_pipeline(run, &shape, &pipeline);
+		if (status != VK_SUCCESS)
+			return status;
+		first = vkmatrix_quad(run, 0.0f, 0.0f, 64.0f, 64.0f);
+	}
+
+	/* The passes, the first (a clear) not counted. */
+	total = 0;
+	least = UINT64_MAX;
+	for (frame = 0; frame <= PERF_FRAMES; frame++) {
+		/* The pass: cleared, or loaded with the quad after the first. */
+		vkmatrix_begin(run, 0, background);
+		vkCmdEndRenderPass(run->command);
+		if (load && frame != 0) {
+			vkmatrix_begin(run, 1, background);
+			vkmatrix_bind(run, pipeline);
+			red = (float)((frame * 37U) % 200U + 40U) / 255.0f;
+			vkCmdPushConstants(run->command, run->layouts[pipeline], VK_SHADER_STAGE_FRAGMENT_BIT, 0, 4, &red);
+			vkCmdDraw(run->command, 6, 1, first, 0);
+			vkCmdEndRenderPass(run->command);
+		}
+		vkEndCommandBuffer(run->command);
+
+		/* The submit and its wait, timed. */
+		memset(&submit, 0, sizeof(submit));
+		submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		submit.commandBufferCount = 1;
+		submit.pCommandBuffers = &run->command;
+		vkResetFences(run->device, 1, &run->fence);
+		started = perf_now_ns();
+		run->failed_call = "vkQueueSubmit (small target)";
+		status = vkQueueSubmit(run->queue, 1, &submit, run->fence);
+		if (status != VK_SUCCESS)
+			return status;
+		run->failed_call = "vkWaitForFences (small target)";
+		status = vkWaitForFences(run->device, 1, &run->fence, VK_TRUE, VKMATRIX_WAIT_NS);
+		if (status != VK_SUCCESS)
+			return status;
+		spent = perf_now_ns() - started;
+
+		/* Counted after the first frame. */
+		if (frame != 0) {
+			total += spent;
+			if (spent < least)
+				least = spent;
+		}
+	}
+
+	/* The line; the target's pixels are not compared. */
+	snprintf(run->note, sizeof(run->note), "perf %s-64: %lu us a frame (min %lu us) over %u frames of 64x64", load ? "load" : "clear",
+		 (unsigned long)(total / PERF_FRAMES / 1000U), (unsigned long)(least / 1000U), (unsigned)PERF_FRAMES);
+	memcpy(run->expected, run->pixels, sizeof(run->expected));
+	run->tolerance = 0;
+
+	/* Succeeded: the timing is printed. */
+	return VK_SUCCESS;
+}
+
+/* perf-clear-64: clear passes of the 64x64 target, timed. */
+static VkResult
+case_perf_clear_64(
+	struct vkmatrix *run)
+{
+	VkResult status;
+
+	/* Runs the small target case, cleared only. */
+	status = small_target_case(run, 0);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the case ran. */
+	return VK_SUCCESS;
+}
+
+/* perf-load-64: a clear pass, then a loaded pass with a flat quad, of the 64x64 target, timed. */
+static VkResult
+case_perf_load_64(
+	struct vkmatrix *run)
+{
+	VkResult status;
+
+	/* Runs the small target case with the loaded pass. */
+	status = small_target_case(run, 1);
 	if (status != VK_SUCCESS)
 		return status;
 

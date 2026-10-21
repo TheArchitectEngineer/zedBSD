@@ -429,6 +429,12 @@ struct powervr_session {
 	struct job_memory *job_keep[POWERVR_JOB_KEEP];
 	unsigned job_keep_count;
 
+	/*
+	 * The render area's pixels of the job being kicked, which the job
+	 * trace (render-queue.c, POWERVR_JOB_TRACE) sorts the jobs by.
+	 */
+	uint64_t trace_pixels;
+
 	/* Pending callbacks that carry an error (a command may not overtake them), under the queue lock. */
 	unsigned pending_errors;
 

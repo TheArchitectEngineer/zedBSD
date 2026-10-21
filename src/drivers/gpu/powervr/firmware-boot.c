@@ -142,7 +142,20 @@ static void watch_thread(void *argument);
  * struct rogue_fwif_osinit: the hardware and firmware identities at 40
  * and 56, each its layout and BVNC) and pvr_rogue_fwif_check.h.
  */
-#define DUMP_TRACE_LOG_TYPE		(POWERVR_RENDER_CHECK_FULL_TRACE || POWERVR_FIRMWARE_BOOT_TRACE ? 0x80007fffU : 0x7fffU)
+/*
+ * The trace's groups the firmware logs in normal running (q1541): the
+ * trace on (bit 0) with the recovery group (HWR, 0x400) alone.  Every group
+ * (0x7fff) made about ninety entries a render, and their writing doubled
+ * the firmware's time around each job on the board (d66 and d68: the TA's
+ * share 639 to 250 us, the 3D's 608 to 276 us without them).  The groups a
+ * render logs on every job (MAIN, MTS, PM, RTD, BIF, POW) are for a
+ * diagnosis build: set 0x7fff here, or a full trace
+ * (POWERVR_RENDER_CHECK_FULL_TRACE, POWERVR_FIRMWARE_BOOT_TRACE).
+ */
+#ifndef POWERVR_FIRMWARE_TRACE_GROUPS
+#define POWERVR_FIRMWARE_TRACE_GROUPS	0x0401U
+#endif
+#define DUMP_TRACE_LOG_TYPE		(POWERVR_RENDER_CHECK_FULL_TRACE || POWERVR_FIRMWARE_BOOT_TRACE ? 0x80007fffU : POWERVR_FIRMWARE_TRACE_GROUPS)
 #define BOOT_TRACE_WORDS		2048U
 #define DUMP_TRACE_POINTER		8U
 #define DUMP_ASSERT_PATH		24U
@@ -163,6 +176,8 @@ static void watch_thread(void *argument);
 #define DUMP_TRACE_ALL_WORDS		128U
 #define DUMP_TRACE_HEAD_WORDS		32U
 #endif
+/* The most words the trace since a mark prints (powervr_firmware_trace_since_mark). */
+#define TRACE_SINCE_MARK_WORDS		4096U
 #define DUMP_OS_DATA_INTERRUPTS		560U
 #define DUMP_SYSTEM_DATA_POWER		8U
 #define DUMP_SYSTEM_INIT_STARTED_TIME	360U
@@ -207,8 +222,34 @@ static void watch_thread(void *argument);
 #define DUST_EVENT_CLEAR		0x0138U
 #define DUST_EVENT_POWER_COMPLETE	0x00000400U
 #define DUST_EVENT_POWER_ABORT		0x00000800U
-/* 1 asks the host to power the dusts up itself (with the PMU event unmasked it completes, 2026-10-20, but changes nothing); 0 leaves it to the firmware. */
+/*
+ * 1 asks the host to power the dusts up itself at the start and leaves the
+ * firmware's management of their power off (no POW_RASCALDUST), so they
+ * stay on between jobs (q1541: the firmware turned them off after every
+ * job and on again for the next); 0 leaves their power to the firmware.
+ * With the PMU event unmasked the host's power up completes (2026-10-20).
+ */
+/*
+ * Whether the firmware processor caches its own code and data sections
+ * (q1541).  Both were uncached, as mainline Linux maps them, and the
+ * firmware's work around each job (about 1 ms on the board) is far more
+ * than the core's; the host writes them only while the processor is held
+ * in reset (the load and the restart), whose reset empties its caches.
+ * The code cached (read only) halved that work on the board (d69: the TA's
+ * share 639 to 296 us, the 3D's 608 to 357 us, with every trace group on);
+ * the data cached is a trial (the firmware may have the core read some of
+ * it, which a write-back cache would leave stale).
+ */
+#ifndef POWERVR_FIRMWARE_CODE_CACHED
+#define POWERVR_FIRMWARE_CODE_CACHED	1
+#endif
+#ifndef POWERVR_FIRMWARE_DATA_CACHED
+#define POWERVR_FIRMWARE_DATA_CACHED	0
+#endif
+
+#ifndef DUST_POWER_BY_HOST
 #define DUST_POWER_BY_HOST		0
+#endif
 
 /*
  * Whether the start clears every event before the processor leaves
@@ -597,6 +638,7 @@ static int
 make_program(
 	struct powervr_core *core)
 {
+	enum powervr_mips_caching caching;
 	struct powervr_firmware *firmware;
 	const struct powervr_fw_section *private_data;
 	const struct powervr_fw_section *boot_code;
@@ -623,13 +665,19 @@ make_program(
 	/* The data's place is its private section's base within the heap. */
 	data_offset = private_data->base & (POWERVR_HEAP_BYTES - 1U);
 
-	/* The code goes first, at the bottom of the heap. */
-	error = powervr_object_create(&firmware->heap, firmware->image.code_size, 0, POWERVR_MIPS_UNCACHED, &firmware->code);
+	/* The code goes first, at the bottom of the heap, cached by the processor when chosen (q1541). */
+	caching = POWERVR_MIPS_UNCACHED;
+	if (POWERVR_FIRMWARE_CODE_CACHED)
+		caching = POWERVR_MIPS_CACHED;
+	error = powervr_object_create(&firmware->heap, firmware->image.code_size, 0, caching, &firmware->code);
 	if (error != 0)
 		return error;
 
-	/* The data goes at its fixed place. */
-	error = powervr_object_create(&firmware->heap, firmware->image.data_size, data_offset, POWERVR_MIPS_UNCACHED, &firmware->data);
+	/* The data goes at its fixed place, likewise. */
+	caching = POWERVR_MIPS_UNCACHED;
+	if (POWERVR_FIRMWARE_DATA_CACHED)
+		caching = POWERVR_MIPS_CACHED;
+	error = powervr_object_create(&firmware->heap, firmware->image.data_size, data_offset, caching, &firmware->data);
 	if (error != 0)
 		return error;
 
@@ -921,7 +969,8 @@ fill_records(
 	 * wipeout" (github.com/domibel/linux commit b53c4500f133, the flag
 	 * set for the VisionFive 2).
 	 */
-	flags |= POWERVR_FLAG_POW_RASCALDUST;
+	if (!DUST_POWER_BY_HOST)
+		flags |= POWERVR_FLAG_POW_RASCALDUST;
 
 	/*
 	 * The context switch: off by default, as the mainline driver leaves it
@@ -1948,6 +1997,31 @@ powervr_firmware_trace_mark(
 	/* The word the firmware writes next. */
 	trace_mark = powervr_object_get32(&core->firmware.trace_control, DUMP_TRACE_POINTER) % POWERVR_TRACE_WORDS;
 	trace_marked = 1;
+}
+
+/*
+ * Prints every word of the firmware's trace from the mark to where the
+ * firmware writes next, at most TRACE_SINCE_MARK_WORDS (the job trace,
+ * q1541: a dump's head and tail left out the middle of one job).
+ */
+void
+powervr_firmware_trace_since_mark(
+	struct powervr_core *core)
+{
+	uint32_t pointer;
+	uint32_t count;
+
+	/* Nothing marked, nothing to print. */
+	if (!trace_marked)
+		return;
+
+	/* The words since the mark, the first ones when there are too many. */
+	pointer = powervr_object_get32(&core->firmware.trace_control, DUMP_TRACE_POINTER) % POWERVR_TRACE_WORDS;
+	count = (pointer + POWERVR_TRACE_WORDS - trace_mark) % POWERVR_TRACE_WORDS;
+	if (count > TRACE_SINCE_MARK_WORDS)
+		count = TRACE_SINCE_MARK_WORDS;
+	kern_logf("powervr: dump: trace since the mark, %u words from %u\n", (unsigned)count, (unsigned)trace_mark);
+	dump_trace(&core->firmware, trace_mark, count);
 }
 
 /* Prints the trace from its first word to where the firmware writes next, at most BOOT_TRACE_WORDS. */
