@@ -331,6 +331,7 @@ powervr_buffer_create(
 	volatile uint64_t *words;
 	uint64_t rounded;
 	uint64_t index;
+	uint64_t started;
 	void *direct;
 	void *view;
 	int error;
@@ -346,8 +347,10 @@ powervr_buffer_create(
 	if (buffer == NULL)
 		return ENOMEM;
 
-	/* One contiguous run the core can name. */
+	/* One contiguous run the core can name (each step timed, for the buffers of large images). */
+	started = powervr_timing_now();
 	error = kern_pmem_alloc_limited((size_t)rounded, POWERVR_GPU_PAGE_BYTES, render->core->description.dma_limit, 0, &buffer->run);
+	powervr_timing_add(POWERVR_TIMING_BUFFER_RUN, started);
 	if (error != 0) {
 		kern_free(buffer);
 		return error;
@@ -358,12 +361,16 @@ powervr_buffer_create(
 	 * the uncached alias a store is a bus write: an image's 8 MB took
 	 * about 30 ms); the alias's making below writes the lines back.
 	 */
+	started = powervr_timing_now();
 	direct = kern_pmem_to_kernel(buffer->run.paddr);
 	if (direct != NULL)
 		kern_memset(direct, 0, (size_t)rounded);
+	powervr_timing_add(POWERVR_TIMING_BUFFER_CLEAR, started);
 
 	/* Its uncached alias; the run's cached lines are pushed out first. */
+	started = powervr_timing_now();
 	error = kern_pmem_map_uncached(&buffer->run, &view);
+	powervr_timing_add(POWERVR_TIMING_BUFFER_ALIAS, started);
 	if (error != 0) {
 		(void)kern_pmem_free(&buffer->run);
 		kern_free(buffer);

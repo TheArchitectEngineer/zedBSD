@@ -287,6 +287,7 @@ allocate_storage(
 	struct powervr_render *render;
 	struct powervr_resource *blob;
 	struct powervr_buffer *buffer;
+	uint64_t started;
 	int shareable;
 	int mappable;
 	int error;
@@ -319,7 +320,9 @@ allocate_storage(
 		mappable = 0;
 		buffer->gpu_cached = 1;
 	}
+	started = powervr_timing_now();
 	error = powervr_resource_make(session->owner, buffer, mappable, shareable, storage);
+	powervr_timing_add(POWERVR_TIMING_BUFFER_MAP, started);
 	powervr_buffer_put(render, buffer);
 	if (error != 0)
 		return error;
