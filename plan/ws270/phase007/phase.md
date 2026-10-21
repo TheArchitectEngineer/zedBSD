@@ -87,3 +87,4 @@ clear 3.85 ms、LOAD 23.35 ms、平らな quad 15.1 ms、1/4 面積 7.2 ms、402
 - d97（P1 39a097e0e: zero copy の flip を条件付きで 1 blank で取られたと数える）: drag の窓で acquire 13.9 → 7.3 ms、frame_ms は 34.6（rec の end 11.45 ms が次の律速）。output lost 0。tearing の目視はユーザー待ち。
 - d98（P1 41ed59242: kernel の vk-command の object の検索を 256 bucket の hash に、39a097e0e 込み）: vkmatrix 109/109、HWR 0、output lost 0。rec の end 11.45 → 0.8〜1.5 ms、drag の窓の compose frame_ms 22〜33 ms（acquire 3〜6.5、submit 12〜14）。
 - 2026-10-22 ユーザー（d98）「うん、これは素晴らしい。問題ないです。」→ tearing なし、main 8a1c69fd8 に merge。
+- d99（P2 72ecf8ec6: POWERVR_SUBMIT_TIMING の既定 0、report は submit の道から外して専用の thread）: idle 60 s の後の時計の frame の rec submit 3 ms（d90 は 139〜140 ms）、操作中の submit の max 21 ms（起動直後の窓は 80）。main に merge。
