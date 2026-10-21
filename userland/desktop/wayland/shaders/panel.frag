@@ -50,17 +50,19 @@ float rounded(vec2 point, vec4 box, float radius)
 }
 
 // KWL_PANEL_INSIDE: the inside of a shape drawn by itself (glass.c, the
-// glass, image and solid modes): its pixels lie at least three pixels within
-// the box less its corner radius, where the distance is -3 or less, so every
-// pixel is covered wholly and none is on the bright edge.  The constant
-// distance gives the same colour without working the distance out.
+// glass, shadow, image and solid modes): its pixels lie far enough within the
+// box that every pixel is covered wholly, none is on the glass's bright edge
+// and a shadow there is at its full alpha (the distance at most -3 within
+// the box less its corner radius, and at most half the softness below 0 for
+// a shadow).  A distance far below any of them gives the same colour without
+// working the distance out.
 
 void main()
 {
 	float mode = panel.shape.y;
 	vec2 point = pixel;
 #if defined(KWL_PANEL_INSIDE)
-	float distance = -3.0;
+	float distance = -1000000.0;
 #else
 	float radius = panel.shape.x;
 	float distance = rounded(point, panel.box, radius);
@@ -90,11 +92,16 @@ void main()
 		glass = mix(glass, vec3(0.0), shade);
 #endif
 		float depth = clamp((point.y - panel.box.y) * panel.texture.w, 0.0, 1.0);
+#if !defined(KWL_PANEL_INSIDE)
 		float edge = clamp(1.0 - abs(distance + 1.0), 0.0, 1.0);
+#endif
 
 		// A sheen from the top, except on flat glass (a window's panels).
 		glass += vec3(panel.texture.z) * (1.0 - depth);
+#if !defined(KWL_PANEL_INSIDE)
+		// The bright edge, which an inside's pixels are off (the mix by 0 leaves the glass as it is).
 		glass = mix(glass, vec3(1.0), edge * panel.screen.z);
+#endif
 		colour = vec4(glass * cover, cover);
 #endif
 #if !defined(KWL_PANEL_MODE) || KWL_PANEL_MODE == 1
@@ -156,6 +163,12 @@ void main()
 	}
 #endif
 
-	// The whole shape faded by its opacity.
+	// The whole shape faded by its opacity.  KWL_PANEL_OPAQUE: the inside of
+	// an opaque shape at full opacity (glass.c), whose alpha is 1 and whose
+	// opacity is 1, so its colour is written as it is.
+#if defined(KWL_PANEL_OPAQUE)
+	result = vec4(colour.rgb, 1.0);
+#else
 	result = colour * panel.screen.w;
+#endif
 }

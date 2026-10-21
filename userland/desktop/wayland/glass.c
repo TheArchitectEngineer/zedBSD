@@ -2286,10 +2286,11 @@ glass_shape_draw(
 
 /*
  * Tells whether a shape about to be drawn is drawn in parts: a glass
- * (light or dark), image or solid shape whose inside is at least
+ * (light or dark), shadow, image or solid shape whose inside is at least
  * GLASS_SPLIT_AREA pixels.  The inside is the box less its corners and
- * smoothed edge, where the shader covers every pixel fully, and for glass
- * less its bright edge too (GLASS_SPLIT_GLASS_INSET); there the shader's
+ * smoothed edge, where the shader covers every pixel fully, for glass
+ * less its bright edge too (GLASS_SPLIT_GLASS_INSET), for a shadow where
+ * it is at its full alpha; there the shader's
  * inside variant (KWL_PANEL_INSIDE) gives the same colour without working
  * out the distance to the edge.  The inside, in whole pixels, is
  * pieces[0]; the quad's rest around it follows, *count rectangles in all;
@@ -2314,6 +2315,7 @@ glass_shape_split(
 	float cuts[KWL_CUT_PIECES][4];
 	float covered[4];
 	float hole[1][4];
+	float inset;
 	float left;
 	float top;
 	float right;
@@ -2336,12 +2338,15 @@ glass_shape_split(
 	} else if (constants[17] < 0.0f) {
 		*inside = KWL_PANEL_INSIDE_DARK_GLASS;
 		*opaque = 1;
+	} else if (constants[17] == (float)MODE_SHADOW) {
+		*inside = KWL_PANEL_INSIDE_SHADOW;
+		*opaque = 0;
 	} else {
 		return 0;
 	}
 
-	/* A shape faded as a whole is seen through everywhere. */
-	if (constants[23] < 1.0f)
+	/* A shape faded as a whole is seen through everywhere; an opaque inside is written with its opacity as 1. */
+	if (constants[23] != 1.0f)
 		*opaque = 0;
 	if (quad[2] <= 0.0f || quad[3] <= 0.0f)
 		return 0;
@@ -2353,6 +2358,23 @@ glass_shape_split(
 		covered[1] += GLASS_SPLIT_GLASS_INSET - 1.0f;
 		covered[2] -= 2.0f * (GLASS_SPLIT_GLASS_INSET - 1.0f);
 		covered[3] -= 2.0f * (GLASS_SPLIT_GLASS_INSET - 1.0f);
+	}
+
+	/*
+	 * A shadow is at its full alpha where the distance is at most half its
+	 * softness below 0 (the shader's smoothstep from there): the box less
+	 * the larger of its radius and that half, and a pixel more.
+	 */
+	if (*inside == KWL_PANEL_INSIDE_SHADOW) {
+		inset = constants[18] > 1.0f ? constants[18] : 1.0f;
+		inset *= 0.5f;
+		if (inset < radius)
+			inset = radius;
+		inset += 1.0f;
+		covered[0] = box[0] + inset;
+		covered[1] = box[1] + inset;
+		covered[2] = box[2] - 2.0f * inset;
+		covered[3] = box[3] - 2.0f * inset;
 	}
 	left = covered[0] > quad[0] ? covered[0] : quad[0];
 	top = covered[1] > quad[1] ? covered[1] : quad[1];

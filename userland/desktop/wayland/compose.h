@@ -57,15 +57,16 @@
 #define KWL_PANEL_DARK_GLASS	7U
 
 /*
- * The shapes whose insides are drawn by themselves, without blending and
- * without working out the distance to the edge (glass.c): their place
+ * The shapes whose insides are drawn by themselves, without working out
+ * the distance to the edge, and without blending when opaque (glass.c): their place
  * among the inside pipelines and shaders.h's kwl_panel_inside_variants.
  */
 #define KWL_PANEL_INSIDE_GLASS		0U
 #define KWL_PANEL_INSIDE_IMAGE		1U
 #define KWL_PANEL_INSIDE_SOLID		2U
 #define KWL_PANEL_INSIDE_DARK_GLASS	3U
-#define KWL_PANEL_INSIDES		4U
+#define KWL_PANEL_INSIDE_SHADOW		4U
+#define KWL_PANEL_INSIDES		5U
 
 /* Bound the buffers that hold a descriptor set at once. */
 #define KWL_DESCRIPTOR_MAX	512U
@@ -367,7 +368,7 @@ struct kwl_compose {
 	/* Each known shape mode executes only its own fragment operations. */
 	VkPipeline panel_pipelines[KWL_PANEL_MODES];
 	/*
-	 * The insides of glass, image, solid and dark glass shapes
+	 * The insides of glass, image, solid, dark glass and shadow shapes
 	 * (KWL_PANEL_INSIDE_*): blended, and without blending for opaque ones.
 	 */
 	VkPipeline panel_inside_pipelines[KWL_PANEL_INSIDES];

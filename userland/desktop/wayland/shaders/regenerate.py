@@ -19,8 +19,9 @@ SHADERS = [("quad.vert", "kwl_quad_vert"), ("quad.frag", "kwl_quad_frag"),
            ("turn.vert", "kwl_turn_vert")]
 
 # The panel modes whose insides have a variant of their own (glass, image,
-# solid and dark glass), in the order of kwl_panel_inside_variants.
-INSIDE_MODES = (0, 2, 3, 7)
+# solid, dark glass and shadow), in the order of kwl_panel_inside_variants
+# (compose.h's KWL_PANEL_INSIDE_*).
+INSIDE_MODES = (0, 2, 3, 7, 1)
 
 
 def compile_shader(source, definitions=()):
@@ -50,6 +51,9 @@ def main():
     variants.extend(("panel.frag", "kwl_panel_frag_inside_%d" % mode,
                      ("-DKWL_PANEL_MODE=%d" % mode, "-DKWL_PANEL_INSIDE"))
                     for mode in INSIDE_MODES)
+    variants.extend(("panel.frag", "kwl_panel_frag_opaque_%d" % mode,
+                     ("-DKWL_PANEL_MODE=%d" % mode, "-DKWL_PANEL_INSIDE", "-DKWL_PANEL_OPAQUE"))
+                    for mode in INSIDE_MODES)
     for source, name, definitions in variants:
         words = compile_shader(HERE / source, definitions)
         lines.append("/* Validated immutable %s SPIR-V, used while creating graphics pipelines. */" % name)
@@ -64,10 +68,15 @@ def main():
     for mode in range(8):
         lines.append("\t{kwl_panel_frag_%d, sizeof(kwl_panel_frag_%d)}," % (mode, mode))
     lines.extend(["};", "",
-                  "/* The insides of glass, image, solid and dark glass shapes, wholly covered and off the edge (glass.c). */",
+                  "/* The insides of glass, image, solid, dark glass and shadow shapes, wholly covered and off the edge (glass.c). */",
                   "static const struct kwl_panel_shader kwl_panel_inside_variants[%d] = {" % len(INSIDE_MODES)])
     for mode in INSIDE_MODES:
         lines.append("\t{kwl_panel_frag_inside_%d, sizeof(kwl_panel_frag_inside_%d)}," % (mode, mode))
+    lines.extend(["};", "",
+                  "/* The same insides of opaque shapes at full opacity, written as they are (glass.c). */",
+                  "static const struct kwl_panel_shader kwl_panel_opaque_variants[%d] = {" % len(INSIDE_MODES)])
+    for mode in INSIDE_MODES:
+        lines.append("\t{kwl_panel_frag_opaque_%d, sizeof(kwl_panel_frag_opaque_%d)}," % (mode, mode))
     lines.extend(["};", "", "#endif"])
     (HERE.parent / "shaders.h").write_text("\n".join(lines) + "\n")
 

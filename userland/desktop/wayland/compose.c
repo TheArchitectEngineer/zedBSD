@@ -2102,17 +2102,28 @@ compose_panel_pipeline(
 			NULL,
 			&compose->panel_inside_pipelines[inside]);
 
-		/* An opaque inside is written as it is. */
-		if (error == VK_SUCCESS) {
-			error = compose_pipeline(
-				compose,
-				KWL_DRAW_OPAQUE,
-				vertex,
-				fragment,
-				compose->panel_layout,
-				NULL,
-				&compose->panel_opaque_pipelines[inside]);
+		vkDestroyShaderModule(compose->device, fragment, NULL);
+		if (error != VK_SUCCESS) {
+			vkDestroyShaderModule(compose->device, vertex, NULL);
+			return error;
 		}
+
+		/* An opaque inside at full opacity, from its own variant, written as it is. */
+		module.codeSize = kwl_panel_opaque_variants[inside].bytes;
+		module.pCode = kwl_panel_opaque_variants[inside].words;
+		error = vkCreateShaderModule(compose->device, &module, NULL, &fragment);
+		if (error != VK_SUCCESS) {
+			vkDestroyShaderModule(compose->device, vertex, NULL);
+			return error;
+		}
+		error = compose_pipeline(
+			compose,
+			KWL_DRAW_OPAQUE,
+			vertex,
+			fragment,
+			compose->panel_layout,
+			NULL,
+			&compose->panel_opaque_pipelines[inside]);
 		vkDestroyShaderModule(compose->device, fragment, NULL);
 		if (error != VK_SUCCESS) {
 			vkDestroyShaderModule(compose->device, vertex, NULL);
