@@ -53,11 +53,11 @@
  * in the shading cluster's the end-of-tile and background programs.
  */
 #define GENERAL_STREAM			0x0U
-#define GENERAL_LOAD_WORDS		0x1800U
-#define GENERAL_DBIAS			0x1900U
-#define GENERAL_SCISSORS		0x1a00U
-#define GENERAL_TERMINATE_PPP		0x1d00U
-#define GENERAL_BYTES			0x2000U
+#define GENERAL_LOAD_WORDS		0x5400U
+#define GENERAL_DBIAS			0x5500U
+#define GENERAL_SCISSORS		0x5600U
+#define GENERAL_TERMINATE_PPP		0x5f00U
+#define GENERAL_BYTES			0x6000U
 
 /* The most pixels of a job the timing counts as small (256 x 256). */
 #define JOB_SMALL_PIXELS		65536U
