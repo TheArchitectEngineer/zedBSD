@@ -143,6 +143,22 @@ static void handle_notice(void *context, uint32_t type, const struct powervr_obj
 #define TRACE_SPIN_MS			200U
 #define TRACE_PARTS			3U
 
+/*
+ * The render kick after which the core's settings registers are logged
+ * once (q1541), to set them beside the vendor driver's dump on the same
+ * board: the clocks' gating, the system level cache, the ISP, the
+ * multicore controls, the bus and the MIPS wrapper (offsets of Linux v7.3
+ * drivers/gpu/drm/imagination/pvr_rogue_cr_defs.h: CLK_CTRL 0x0000,
+ * CLK_STATUS 0x0008, CLK_CTRL2 0xD200, SLC_CTRL_MISC 0x3800,
+ * SLC_CTRL_BYPASS 0x3828, AXI_ACE_LITE_CONFIGURATION 0x38C0,
+ * MIPS_WRAPPER_CONFIG 0x0810, BIF_CTRL 0x12A8, ISP_RENDER 0x0F08, ISP_CTL
+ * 0x0F38, MULTICORE_FRAGMENT_CTRL_COMMON 0xF310, _GEOMETRY_ 0xF320,
+ * _COMPUTE_ 0xF330).  0 logs nothing.
+ */
+#ifndef POWERVR_REGISTER_LOG_KICK
+#define POWERVR_REGISTER_LOG_KICK	100U
+#endif
+
 /* The small job (counted from the first) whose firmware trace the job trace dumps, once, for sfdec.py. */
 #define TRACE_DUMP_JOB			40U
 
@@ -169,6 +185,9 @@ static uint64_t trace_reported;
 static uint64_t trace_small_jobs;
 static bool trace_dumping;
 
+/* The render kicks made, for the one log of the settings registers (register_log); only kicks count, under the core's lock. */
+static uint64_t register_log_kicks;
+
 static uint64_t timing_ticks[POWERVR_TIMING_PARTS];
 static uint64_t timing_count[POWERVR_TIMING_PARTS];
 static uint64_t timing_reported;
@@ -179,6 +198,7 @@ static uint64_t timing_rate;
 static uint64_t timing_us(uint64_t ticks);
 static void job_trace(struct powervr_render_context *context, const struct powervr_render_marks *marks, uint64_t pixels, uint64_t started);
 static void job_trace_report(void);
+static void register_log(struct powervr_core *core);
 static uint64_t ms_ticks(unsigned milliseconds);
 static unsigned is_faulted(struct powervr_render *render);
 
@@ -668,6 +688,11 @@ powervr_session_kick_render(
 	context->fragment.submitted = request.fragment_value;
 	marks->geometry_value = request.geometry_value;
 	marks->fragment_value = request.fragment_value;
+
+	/* The settings registers, once, after enough kicks for the firmware to have set its own. */
+	register_log_kicks++;
+	if (POWERVR_REGISTER_LOG_KICK != 0U && register_log_kicks == POWERVR_REGISTER_LOG_KICK)
+		register_log(render->core);
 
 	/* The job trace waits for it and times its parts; the marked job's firmware trace is dumped. */
 	if (POWERVR_JOB_TRACE) {
@@ -2862,4 +2887,22 @@ job_trace_report(
 			  (unsigned long long)most[0], (unsigned long long)most[1], (unsigned long long)most[2]);
 		trace_jobs[size] = 0;
 	}
+}
+
+/* Logs the core's settings registers once, in two lines, for the comparison with the vendor driver's dump. */
+static void
+register_log(
+	struct powervr_core *core)
+{
+	/* The clocks, the system level cache, the bus and the MIPS wrapper. */
+	kern_logf("powervr: registers: CLK_CTRL 0x%016llx CLK_STATUS 0x%016llx CLK_CTRL2 0x%016llx SLC_CTRL_MISC 0x%016llx SLC_CTRL_BYPASS 0x%016llx AXI_ACE_LITE 0x%016llx MIPS_WRAPPER 0x%016llx\n",
+		  (unsigned long long)powervr_read64(core, 0x0000U), (unsigned long long)powervr_read64(core, 0x0008U),
+		  (unsigned long long)powervr_read64(core, 0xd200U), (unsigned long long)powervr_read64(core, 0x3800U),
+		  (unsigned long long)powervr_read64(core, 0x3828U), (unsigned long long)powervr_read64(core, 0x38c0U),
+		  (unsigned long long)powervr_read64(core, 0x0810U));
+
+	/* The bus interface, the ISP and the multicore controls. */
+	kern_logf("powervr: registers: BIF_CTRL 0x%08x ISP_RENDER 0x%08x ISP_CTL 0x%08x MULTICORE_FRAGMENT 0x%08x MULTICORE_GEOMETRY 0x%08x MULTICORE_COMPUTE 0x%08x\n",
+		  (unsigned)powervr_read32(core, 0x12a8U), (unsigned)powervr_read32(core, 0x0f08U), (unsigned)powervr_read32(core, 0x0f38U),
+		  (unsigned)powervr_read32(core, 0xf310U), (unsigned)powervr_read32(core, 0xf320U), (unsigned)powervr_read32(core, 0xf330U));
 }
