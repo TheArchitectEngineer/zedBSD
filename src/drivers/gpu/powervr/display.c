@@ -109,6 +109,16 @@
  * blank: under 4, 4 to 8, 8 to 12, 12 to 14 and 14 ms or more).
  */
 #define POWERVR_FLIP_REPORT_MS		5000U
+
+/*
+ * Whether the flip report is kept and written (1) or not (0).  Off by
+ * default: the report is written to the serial console at its speed from
+ * the present's thread, under the display's mutex.  A measurement build
+ * turns it on (ZEDBSD_TEST_CPPFLAGS += -DPOWERVR_FLIP_REPORT=1).
+ */
+#ifndef POWERVR_FLIP_REPORT
+#define POWERVR_FLIP_REPORT		0
+#endif
 #define POWERVR_FLIP_WAITED_BINS	4U
 #define POWERVR_FLIP_PHASE_BINS		5U
 
@@ -987,7 +997,9 @@ output_present(
 	display = device;
 	resource = private_resource;
 	count = 0;
-	entry_us = flip_now_us();
+	entry_us = 0U;
+	if (POWERVR_FLIP_REPORT)
+		entry_us = flip_now_us();
 
 	/* Only the session's own resource; the core checked the frame lies inside it. */
 	if (resource->owner != session)
@@ -1047,7 +1059,8 @@ output_present(
 		if (direct) {
 			display->present_entry_us = entry_us;
 			error = change_plane(display, resource, freed, &count);
-			flip_report(display);
+			if (POWERVR_FLIP_REPORT)
+				flip_report(display);
 		} else {
 			if (shared)
 				show_shared_frame(display, resource, request);
@@ -1662,16 +1675,20 @@ change_plane(
 
 	/* Holds the buffer from now until the commit after it is taken. */
 	powervr_flip_commit(&display->flip, hold, base);
-	committed_us = flip_now_us();
-	drv_powervr_dc_commit_noted(&note);
+	committed_us = 0U;
+	kern_memset(&note, 0, sizeof(note));
+	if (POWERVR_FLIP_REPORT) {
+		committed_us = flip_now_us();
+		drv_powervr_dc_commit_noted(&note);
+	}
 
 	/* Waits for the plane to take it. */
 	error = await_plane(display, freed, count);
 	if (error != 0)
 		return error;
 
-	/* A frame's buffer: its commit and taking counted for the report. */
-	if (resource != NULL)
+	/* A frame's buffer: its commit and taking counted for the report, when it is kept. */
+	if (POWERVR_FLIP_REPORT && resource != NULL)
 		flip_count(display, &note, committed_us, drv_powervr_dc_sequence());
 
 	/* Succeeded: the plane took it. */
