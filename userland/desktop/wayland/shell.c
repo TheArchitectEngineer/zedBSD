@@ -121,6 +121,9 @@
 /* The corner radius of the desktop layer's wallpaper while it goes back over App Home, in the layer's own pixels. */
 #define HOME_LAYER_RADIUS	18.0f
 
+/* How far around what Home's picture holds it is drawn, in its pixels (the linear sampling reads a texel beyond). */
+#define HOME_PICTURE_MARGIN	2.0f
+
 /*
  * Placing a new window (ws035-p092): how far each cascade step moves it
  * (a title bar and its gap, so the title bar under it shows), how many
@@ -10803,6 +10806,11 @@ draw_home_picture(
 {
 	struct kwl_edge_depth depth;
 	struct glass_shape shape;
+	struct glass_shape part;
+	float bounds[4];
+	float crop[4];
+	int bounded;
+	int shown;
 	float radius;
 	float grown;
 	float size;
@@ -10827,13 +10835,29 @@ draw_home_picture(
 		printf("KWL HOME layer=content after_ms=%llu picture=1\n", (unsigned long long)(kwl_milliseconds() - server->home_asked_ms));
 	}
 
-	/* Home's picture, placed and scaled as the content is, faded in by how far Home is open. */
+	/*
+	 * Home's picture, placed and scaled as the content is, faded in by how
+	 * far Home is open: only the part that holds anything (with a margin
+	 * for the linear sampling at its edge), the rest being clear.
+	 */
 	kwl_edge_home_content(home, (int32_t)server->width, (int32_t)server->height, &depth);
 	glass_shape_init(&shape, depth.x, depth.y, (float)server->width * depth.scale, (float)server->height * depth.scale);
 	shape.mode = MODE_IMAGE;
 	shape.set = kwl_layers_set(server, KWL_LAYER_HOME);
 	shape.opacity = home;
-	glass_shape_draw_except(server, command, &shape, under, under_count);
+	shown = 1;
+	bounded = kwl_layers_home_bounds(server, bounds);
+	if (bounded) {
+		crop[0] = depth.x + (bounds[0] - HOME_PICTURE_MARGIN) * depth.scale;
+		crop[1] = depth.y + (bounds[1] - HOME_PICTURE_MARGIN) * depth.scale;
+		crop[2] = (bounds[2] - bounds[0] + 2.0f * HOME_PICTURE_MARGIN) * depth.scale;
+		crop[3] = (bounds[3] - bounds[1] + 2.0f * HOME_PICTURE_MARGIN) * depth.scale;
+		shown = glass_shape_crop(&shape, crop, &part);
+		if (shown)
+			shape = part;
+	}
+	if (shown)
+		glass_shape_draw_except(server, command, &shape, under, under_count);
 
 	/* The clock over the picture, placed and faded as the content (it is not in the picture, review-3 B6). */
 	kwl_home_draw_clock_over(server, command, home);

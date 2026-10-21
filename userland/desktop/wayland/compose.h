@@ -274,7 +274,10 @@ struct kwl_layer_image {
  * (server->anim_serial) whose first frame decided whether its frames use
  * the desktop's and the window's pictures (anim_using, until a frame could
  * not), and anim_rect the rectangle of the window's picture its body was
- * drawn in (ws211-p007).
+ * drawn in (ws211-p007).  home_bounds is the box (left, top, right,
+ * bottom, in the picture's pixels) of everything Home's picture drew, so
+ * a frame draws only that part of it (outside it the picture is clear);
+ * home_bounded says it is known.
  */
 struct kwl_layers {
 	unsigned ready;
@@ -307,6 +310,8 @@ struct kwl_layers {
 	uint64_t anim_decided;
 	unsigned anim_using;
 	int32_t anim_rect[4];
+	float home_bounds[4];
+	unsigned home_bounded;
 };
 
 /* How many new client images wait at most for their move to the general layout in the next frame (ws099-p016). */
@@ -607,6 +612,14 @@ struct kwl_compose {
 	struct kwl_layers layers;
 	/* The colours of flat glass worked out beforehand (glass-map.c). */
 	struct kwl_glass_maps glass_maps;
+	/*
+	 * While bounding is set, every draw grows bounds (left, top, right,
+	 * bottom, in the pass's pixels, within its scissor) and bounded says
+	 * one was drawn (compose-bind.c): what a layer's picture covers.
+	 */
+	unsigned bounding;
+	unsigned bounded;
+	float bounds[4];
 	/* Descriptor sets images gave back, for the next images (kwl_compose_set_get). */
 	VkDescriptorSet spare_sets[KWL_DESCRIPTOR_MAX];
 	unsigned spare_count;
@@ -826,6 +839,8 @@ uint64_t kwl_compose_count_pixels(struct kwl_server *server, float x, float y, f
 void kwl_compose_count_kind(struct kwl_server *server, unsigned kind, uint64_t pixels);
 void kwl_compose_bind(struct kwl_server *server, struct kwl_list *command, VkPipeline pipeline, VkPipelineLayout layout, VkDescriptorSet set);
 void kwl_compose_bind_forget(struct kwl_compose *compose);
+void kwl_compose_bounds_begin(struct kwl_compose *compose);
+int kwl_compose_bounds_end(struct kwl_compose *compose, float *bounds);
 int kwl_compose_clip_visible(struct kwl_compose *compose, float x, float y, float width, float height);
 void kwl_compose_clip_draw(struct kwl_server *server, struct kwl_list *command, float x, float y, float width, float height, uint32_t vertices);
 void kwl_compose_clip_draw_rect(struct kwl_server *server, struct kwl_list *command, const VkRect2D *rect, uint32_t vertices);
@@ -852,6 +867,7 @@ void kwl_layers_complete(struct kwl_server *server, uint64_t generation);
 void kwl_layers_inband(struct kwl_server *server, struct kwl_list *command, struct kwl_object **windows, unsigned count);
 int kwl_layers_pictured(struct kwl_server *server, const struct kwl_object *surface);
 int kwl_layers_home_hidden(struct kwl_server *server);
+int kwl_layers_home_bounds(struct kwl_server *server, float *bounds);
 void kwl_layers_note(struct kwl_server *server, const struct kwl_object *surface);
 int kwl_layers_showing(struct kwl_server *server);
 VkDescriptorSet kwl_layers_set(struct kwl_server *server, unsigned which);
