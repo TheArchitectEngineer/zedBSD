@@ -144,7 +144,12 @@ powervr_session_heaps_init(
 	powervr_gpu_space_init(&session->pds_space, POWERVR_PDS_HEAP_BASE + POWERVR_PROGRAM_HEAP_START, POWERVR_PDS_HEAP_BYTES - POWERVR_PROGRAM_HEAP_START);
 	powervr_gpu_space_init(&session->usc_space, POWERVR_USC_HEAP_BASE + POWERVR_PROGRAM_HEAP_START, POWERVR_USC_HEAP_BYTES - POWERVR_PROGRAM_HEAP_START);
 	powervr_gpu_space_init(&session->transfer_space, POWERVR_TRANSFER_HEAP_BASE, POWERVR_TRANSFER_HEAP_BYTES);
-	powervr_gpu_space_init(&session->region_space, POWERVR_REGION_HEADER_HEAP_BASE, POWERVR_REGION_HEADER_HEAP_BYTES);
+	/* The region header window; with POWERVR_SESSION_SPREAD one of 8 parts of 32 MiB by the session's identity. */
+	if (POWERVR_SESSION_SPREAD) {
+		powervr_gpu_space_init(&session->region_space, POWERVR_REGION_HEADER_HEAP_BASE + (uint64_t)(session->identity % 8U) * 0x2000000ULL, 0x2000000ULL);
+	} else {
+		powervr_gpu_space_init(&session->region_space, POWERVR_REGION_HEADER_HEAP_BASE, POWERVR_REGION_HEADER_HEAP_BYTES);
+	}
 
 	/* The executor's data sequencer programs: the window's first range. */
 	error = powervr_gpu_space_take(&session->pds_space, POWERVR_EXECUTOR_PDS_BYTES, &address);

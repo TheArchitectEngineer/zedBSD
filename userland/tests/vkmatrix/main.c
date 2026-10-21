@@ -341,7 +341,8 @@ main(
 		return failed;
 	}
 
-	/* Several: each its own device in its own process, all at once (sessions rendering concurrently). */
+	/* Several: each its own device in its own process, all at once (sessions rendering concurrently); nothing buffered is copied into the children. */
+	fflush(stdout);
 	for (index = 0; index < processes; index++) {
 		child = fork();
 		if (child < 0) {
@@ -350,6 +351,7 @@ main(
 		}
 		if (child == 0) {
 			failed = vkmatrix_run_cases(name, repeats, (unsigned)index + 1U);
+			fflush(stdout);
 			_exit(failed);
 		}
 	}
