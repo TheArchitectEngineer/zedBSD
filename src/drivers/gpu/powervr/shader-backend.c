@@ -1179,6 +1179,7 @@ pair_operations(
 	unsigned next;
 	unsigned between;
 	unsigned found;
+	unsigned swap;
 	size_t size;
 
 	/* Programs without branches only (moving operations keeps no branch targets). */
@@ -1191,8 +1192,15 @@ pair_operations(
 		if (!pairable(first) || first->end != 0)
 			continue;
 		found = backend->operation_count;
+		swap = 0;
 		for (next = at + 1U; next < backend->operation_count && next <= at + PAIR_WINDOW; next++) {
-			/* One that pairs, commutes with the first and with all between, and whose pair encodes. */
+			/*
+			 * One that pairs, commutes with the first and with all
+			 * between, and whose pair encodes, the first in phase 0 or,
+			 * when that does not encode and neither reads the other's
+			 * result, in phase 1 (an addend in a shared register is
+			 * named only in phase 0).
+			 */
 			if (pairable(&backend->operations[next]) && pairs_with(first, &backend->operations[next])) {
 				for (between = at + 1U; between < next; between++) {
 					if (!commutes(&backend->operations[between], &backend->operations[next]))
@@ -1201,6 +1209,12 @@ pair_operations(
 				if (between == next && pair_group(first, &backend->operations[next], &group) == 0 &&
 				    powervr_usc_group_size(&group, &size) == 0) {
 					found = next;
+					break;
+				}
+				if (between == next && pairs_with(&backend->operations[next], first) &&
+				    pair_group(&backend->operations[next], first, &group) == 0 && powervr_usc_group_size(&group, &size) == 0) {
+					found = next;
+					swap = 1;
 					break;
 				}
 			}
@@ -1212,12 +1226,17 @@ pair_operations(
 		if (found == backend->operation_count)
 			continue;
 
-		/* The second moves up beside the first, which is marked paired. */
+		/* The second moves up beside the first (before it when swapped), and the earlier of the two is marked paired. */
 		moved = backend->operations[found];
 		for (next = found; next > at + 1U; next--)
 			backend->operations[next] = backend->operations[next - 1U];
 		backend->operations[at + 1U] = moved;
-		first->pair = 1;
+		if (swap != 0) {
+			moved = backend->operations[at];
+			backend->operations[at] = backend->operations[at + 1U];
+			backend->operations[at + 1U] = moved;
+		}
+		backend->operations[at].pair = 1;
 		at++;
 	}
 }
