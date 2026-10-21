@@ -244,7 +244,7 @@ static void watch_thread(void *argument);
 #define POWERVR_FIRMWARE_CODE_CACHED	1
 #endif
 #ifndef POWERVR_FIRMWARE_DATA_CACHED
-#define POWERVR_FIRMWARE_DATA_CACHED	0
+#define POWERVR_FIRMWARE_DATA_CACHED	1
 #endif
 
 /*
@@ -256,10 +256,10 @@ static void watch_thread(void *argument);
  * interleaving, 0x3 in SLC_CTRL_MISC, where mainline writes the PVR hash).
  */
 #ifndef POWERVR_APM_LATENCY_MS
-#define POWERVR_APM_LATENCY_MS		0U
+#define POWERVR_APM_LATENCY_MS		100U
 #endif
 #ifndef POWERVR_SLC_DECODE_INTERLEAVED
-#define POWERVR_SLC_DECODE_INTERLEAVED	0
+#define POWERVR_SLC_DECODE_INTERLEAVED	1
 #endif
 
 #ifndef DUST_POWER_BY_HOST
