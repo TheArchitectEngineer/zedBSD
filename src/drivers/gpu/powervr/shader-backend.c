@@ -168,6 +168,7 @@ static void note_reference(struct shader_backend *backend, unsigned value, unsig
 static int allocate(const struct powervr_ir_shader *shader, struct shader_backend *backend);
 static void compact_temporaries(struct powervr_shader_program *program, struct shader_backend *backend);
 static void propagate_copies(struct powervr_ir_shader *shader);
+static void hoist_addends(struct powervr_ir_shader *shader, uint32_t stage);
 static void alias_shared(const struct powervr_ir_shader *shader, const struct powervr_shader_program *program, struct shader_backend *backend);
 static void fuse_multiply_adds(struct powervr_ir_shader *shader, uint32_t stage);
 static int fuse_multiply_add(struct powervr_ir_shader *shader, unsigned at, unsigned which);
@@ -475,6 +476,7 @@ powervr_shader_compile_inline(
 	fuse_multiply_adds(shader, stage);
 	propagate_copies(shader);
 	remove_dead_writes(shader);
+	hoist_addends(shader, stage);
 
 	/* Selects and allocates the machine operations. */
 	workspace->backend.inline_values = shared_values;
@@ -924,6 +926,104 @@ alias_shared(
 		if (ok)
 			backend->shared_alias[value] = (uint16_t)(request->shared + instruction->immediate_2 + 1U);
 	}
+}
+
+/* The most constants hoist_addends puts in values. */
+#define HOISTED_MAX			4U
+
+/*
+ * In a fragment shader without structure, gives a constant that two or
+ * more multiply-adds add a value of its own, written once at the start
+ * (q1539: a constant addend is a shared register, which the third source
+ * of a group's second phase cannot name, so such multiply-adds did not
+ * pair; a temporary can).  The core's free constants stay as they are.
+ */
+static void
+hoist_addends(
+	struct powervr_ir_shader *shader,
+	uint32_t stage)
+{
+	struct powervr_ir_instruction *instruction;
+	uint32_t constants[HOISTED_MAX];
+	unsigned values[HOISTED_MAX];
+	unsigned count;
+	unsigned uses;
+	unsigned at;
+	unsigned other;
+	unsigned index;
+	unsigned known;
+	uint32_t bits;
+
+	/* Fragment shaders without structure, with room for the moves. */
+	if (stage != POWERVR_SHADER_FRAGMENT)
+		return;
+	for (at = 0; at < shader->instruction_count; at++) {
+		if (shader->instructions[at].opcode < POWERVR_IR_MOVE)
+			return;
+	}
+
+	/* The constants added by two or more multiply-adds. */
+	count = 0;
+	for (at = 0; at < shader->instruction_count && count < HOISTED_MAX; at++) {
+		instruction = &shader->instructions[at];
+		if (instruction->opcode != POWERVR_IR_FLOAT_MULTIPLY_ADD || instruction->source[2].kind != POWERVR_IR_OPERAND_CONSTANT)
+			continue;
+		bits = instruction->source[2].constant;
+		if (free_constant(bits) || instruction->source[2].modifiers != 0)
+			continue;
+		known = 0;
+		for (index = 0; index < count; index++) {
+			if (constants[index] == bits)
+				known = 1;
+		}
+		if (known)
+			continue;
+		uses = 0;
+		for (other = at; other < shader->instruction_count; other++) {
+			if (shader->instructions[other].opcode == POWERVR_IR_FLOAT_MULTIPLY_ADD &&
+			    shader->instructions[other].source[2].kind == POWERVR_IR_OPERAND_CONSTANT &&
+			    shader->instructions[other].source[2].modifiers == 0 && shader->instructions[other].source[2].constant == bits)
+				uses++;
+		}
+		if (uses < 2 || shader->value_count >= POWERVR_IR_VALUES || shader->instruction_count + count + 1U > POWERVR_IR_INSTRUCTIONS)
+			continue;
+		constants[count] = bits;
+		values[count] = shader->value_count;
+		shader->values[shader->value_count].width = 1;
+		shader->value_count++;
+		count++;
+	}
+	if (count == 0)
+		return;
+
+	/* The addends read the values. */
+	for (at = 0; at < shader->instruction_count; at++) {
+		instruction = &shader->instructions[at];
+		if (instruction->opcode != POWERVR_IR_FLOAT_MULTIPLY_ADD || instruction->source[2].kind != POWERVR_IR_OPERAND_CONSTANT ||
+		    instruction->source[2].modifiers != 0)
+			continue;
+		for (index = 0; index < count; index++) {
+			if (instruction->source[2].constant == constants[index]) {
+				instruction->source[2].kind = POWERVR_IR_OPERAND_VALUE;
+				instruction->source[2].value = (uint16_t)values[index];
+				instruction->source[2].component = 0;
+				instruction->source[2].constant = 0;
+			}
+		}
+	}
+
+	/* The moves that write them, first. */
+	for (at = shader->instruction_count; at > 0; at--)
+		shader->instructions[at - 1U + count] = shader->instructions[at - 1U];
+	for (index = 0; index < count; index++) {
+		instruction = &shader->instructions[index];
+		*instruction = (struct powervr_ir_instruction){ 0 };
+		instruction->opcode = POWERVR_IR_MOVE;
+		instruction->destination = (uint16_t)values[index];
+		instruction->source[0].kind = POWERVR_IR_OPERAND_CONSTANT;
+		instruction->source[0].constant = constants[index];
+	}
+	shader->instruction_count += count;
 }
 
 /* Reports whether a constant is one the core holds in a register (zero, one, 1.0 and all ones), so reading it costs nothing. */
