@@ -184,7 +184,8 @@ enum machine_kind {
 	MACHINE_END,
 	MACHINE_TEST_ZERO,
 	MACHINE_CONDITION,
-	MACHINE_BRANCH
+	MACHINE_BRANCH,
+	MACHINE_FLOAT_PAIR
 };
 
 /* The back end's state for one shader. */
