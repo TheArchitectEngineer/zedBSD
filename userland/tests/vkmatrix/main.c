@@ -4183,6 +4183,7 @@ perf_case(
 	/* The line, and nothing for the shared target's comparison to say. */
 	printf("vkmatrix: perf %s: %.2f ms a frame (min %.2f) over %u frames of 1920x1080\n", names[kind],
 	       (double)total / PERF_FRAMES / 1000000.0, (double)least / 1000000.0, (unsigned)PERF_FRAMES);
+	(void)fflush(stdout);
 	memcpy(run->expected, run->pixels, sizeof(run->expected));
 	run->tolerance = 0;
 
