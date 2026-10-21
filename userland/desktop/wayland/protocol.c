@@ -73,7 +73,7 @@ static const struct kwl_global globals[] = {
 	{ 18, "zwp_primary_selection_device_manager_v1", 1, KWL_PRIMARY_MANAGER },
 	{ 19, "zwp_tablet_manager_v2", 1, KWL_TABLET_MANAGER },
 	{ 20, "kl_ime_status_manager_v1", 2, KWL_IME_STATUS_MANAGER },
-	{ 21, "kl_desktop_manager_v1", 1, KWL_DESKTOP_MANAGER },
+	{ 21, "kl_desktop_manager_v1", 2, KWL_DESKTOP_MANAGER },
 	{ 22, "kl_keyboard_inset_manager_v1", 1, KWL_KEYBOARD_INSET_MANAGER },
 	{ 23, "kl_edit_manager_v1", 1, KWL_EDIT_MANAGER },
 	{ 24, "org_kde_kwin_server_decoration_manager", 1, KWL_KDE_DECORATION_MANAGER },
@@ -100,6 +100,9 @@ static void append_callbacks(struct kwl_object **list, struct kwl_object *callba
 static void add_damage(struct kwl_object *surface, int32_t x, int32_t y, int32_t width, int32_t height);
 static void commit_fence(struct kwl_object *surface, unsigned attached);
 static void commit_damage(struct kwl_object *surface);
+static void region_add(struct kwl_object *region, const unsigned char *bytes);
+static void region_subtract(struct kwl_object *region, const unsigned char *bytes);
+static void surface_opaque_pending(struct kwl_object *surface, const struct kwl_object *region);
 static int send_bounds(struct kwl_object *surface);
 
 /*
@@ -184,8 +187,13 @@ kwl_dispatch(
 		if (opcode == 0 && size == 0) {
 			kwl_object_destroy(object);
 			error = 0;
-		} else if ((opcode == 1U || opcode == 2U) && size == 16U) {
-			/* Damage and input regions do not alter the single opaque scanout plane. */
+		} else if (opcode == 1U && size == 16U) {
+			/* A rectangle added: kept for an opaque region (ws270-p007). */
+			region_add(object, bytes);
+			error = 0;
+		} else if (opcode == 2U && size == 16U) {
+			/* A rectangle taken away: those it meets are dropped. */
+			region_subtract(object, bytes);
 			error = 0;
 		}
 
@@ -1008,14 +1016,18 @@ surface_request(
 		if (size != 4U)
 			return EPROTO;
 
-		/* This opaque fullscreen policy needs no retained input/opaque region geometry. */
+		/* A region named must be a live region of the same client. */
 		id = word_at(bytes, 0);
+		object = NULL;
 		if (id != 0) {
-			/* Advisory regions still require a live object of the correct interface. */
 			object = kwl_find(surface->client, id);
 			if (object == NULL || object->kind != KWL_REGION)
 				return EPROTO;
 		}
+
+		/* The opaque region's largest rectangle, taken now and applied with the commit (ws270-p007); the input region is not kept. */
+		if (opcode == 4U)
+			surface_opaque_pending(surface, object);
 
 		/* Succeeded: the region reference was valid at request time. */
 		break;
@@ -1080,6 +1092,16 @@ surface_commit(
 
 	/* So do the glass panels (panels.c). */
 	kwl_panels_commit(surface);
+
+	/* So do the desktop surface's parts drawn (desktop.c, ws270-p007). */
+	kwl_desktop_commit(surface);
+
+	/* So does the opaque region (ws270-p007). */
+	if (surface->pending_opaque_set) {
+		memcpy(surface->opaque, surface->pending_opaque, sizeof(surface->opaque));
+		surface->opaque_valid = surface->pending_opaque_valid;
+		surface->pending_opaque_set = 0U;
+	}
 
 	/* A sub-surface's commit waits for its parent's when it is synchronized (subsurface.c). */
 	if (surface->sub_role != NULL) {
@@ -2042,4 +2064,113 @@ registry_global(
 
 	/* Succeeded: the registry knows of the global. */
 	return 0;
+}
+
+/*
+ * Adds a rectangle (x, y, width, height of wl_region.add) to a region:
+ * kept while there is room, as its edges; a rectangle of no area adds
+ * nothing.
+ */
+static void
+region_add(
+	struct kwl_object *region,
+	const unsigned char *bytes)
+{
+	int64_t left;
+	int64_t top;
+	int64_t right;
+	int64_t bottom;
+	unsigned index;
+
+	/* Its edges, wide enough for any width the wire carries. */
+	left = (int32_t)word_at(bytes, 0U);
+	top = (int32_t)word_at(bytes, 4U);
+	right = left + (int32_t)word_at(bytes, 8U);
+	bottom = top + (int32_t)word_at(bytes, 12U);
+
+	/* Nothing to add, or no room for it. */
+	if (right <= left || bottom <= top)
+		return;
+	if (region->region_count == KWL_REGION_RECTS)
+		return;
+
+	/* The edges kept within 32 bits. */
+	if (right > INT32_MAX)
+		right = INT32_MAX;
+	if (bottom > INT32_MAX)
+		bottom = INT32_MAX;
+	index = region->region_count;
+	region->region[index][0] = (int32_t)left;
+	region->region[index][1] = (int32_t)top;
+	region->region[index][2] = (int32_t)right;
+	region->region[index][3] = (int32_t)bottom;
+	region->region_count = index + 1U;
+}
+
+/*
+ * Takes a rectangle (x, y, width, height of wl_region.subtract) away from a
+ * region: every rectangle kept that it meets is dropped, so what is kept
+ * never covers more than the region.
+ */
+static void
+region_subtract(
+	struct kwl_object *region,
+	const unsigned char *bytes)
+{
+	int64_t left;
+	int64_t top;
+	int64_t right;
+	int64_t bottom;
+	unsigned index;
+	unsigned kept;
+
+	/* Its edges. */
+	left = (int32_t)word_at(bytes, 0U);
+	top = (int32_t)word_at(bytes, 4U);
+	right = left + (int32_t)word_at(bytes, 8U);
+	bottom = top + (int32_t)word_at(bytes, 12U);
+
+	/* Each rectangle kept that it does not meet stays. */
+	kept = 0U;
+	for (index = 0U; index < region->region_count; index++) {
+		if (region->region[index][0] < right &&
+		    region->region[index][2] > left &&
+		    region->region[index][1] < bottom &&
+		    region->region[index][3] > top)
+			continue;
+		memmove(region->region[kept], region->region[index], sizeof(region->region[kept]));
+		kept++;
+	}
+	region->region_count = kept;
+}
+
+/*
+ * Takes a surface's pending opaque region from a region (NULL for none):
+ * its largest rectangle, applied with the surface's next commit.
+ */
+static void
+surface_opaque_pending(
+	struct kwl_object *surface,
+	const struct kwl_object *region)
+{
+	int64_t area;
+	int64_t largest;
+	unsigned index;
+
+	/* A request came: the next commit applies it, none by default. */
+	surface->pending_opaque_set = 1U;
+	surface->pending_opaque_valid = 0U;
+	if (region == NULL)
+		return;
+
+	/* The largest rectangle of the region. */
+	largest = 0;
+	for (index = 0U; index < region->region_count; index++) {
+		area = ((int64_t)region->region[index][2] - region->region[index][0]) * ((int64_t)region->region[index][3] - region->region[index][1]);
+		if (area <= largest)
+			continue;
+		largest = area;
+		memcpy(surface->pending_opaque, region->region[index], sizeof(surface->pending_opaque));
+		surface->pending_opaque_valid = 1U;
+	}
 }

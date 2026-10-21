@@ -67,6 +67,13 @@
 #define KWL_WIRE_MAX		65532U
 #define KWL_RIGHTS_MAX		32U
 #define KWL_OBJECT_MAX		4096U
+
+/*
+ * The rectangles a wl_region keeps of those added to it (ws270-p007): an
+ * opaque region needs no more than a few, and a region of more is kept as
+ * the first ones (less than it is, which is safe for an opaque region).
+ */
+#define KWL_REGION_RECTS	4U
 #define KWL_OUTPUT_MAX		1048576U
 
 /* The first ID of the range the compositor gives the objects it makes for a client. */
@@ -629,6 +636,26 @@ struct kwl_object {
 	unsigned damaged;
 	int32_t committed_damage[4];
 	unsigned committed_damaged;
+	/*
+	 * A wl_region's rectangles (x0, y0, x1, y1), those added and not taken
+	 * away since, at most KWL_REGION_RECTS (ws270-p007).  A subtracted
+	 * rectangle drops every one it meets, so the region kept is never more
+	 * than the client's.
+	 */
+	int32_t region[KWL_REGION_RECTS][4];
+	unsigned region_count;
+	/*
+	 * A surface's opaque region (wl_surface.set_opaque_region, ws270-p007):
+	 * its largest rectangle in surface coordinates (x0, y0, x1, y1), whose
+	 * pixels the client draws fully opaque, pending until the commit and
+	 * then current; opaque_set says a request came since the last commit.
+	 * Nothing under it need be drawn (shell.c's holes).
+	 */
+	int32_t pending_opaque[4];
+	unsigned pending_opaque_valid;
+	unsigned pending_opaque_set;
+	int32_t opaque[4];
+	unsigned opaque_valid;
 	/* A surface's copy of its wl_shm image that window mode samples, and whether it must be copied again. */
 	struct kwl_import *shm_image;
 	unsigned shm_upload;
@@ -1262,6 +1289,20 @@ struct kwl_server {
 	unsigned home_picture_stale;
 	/* Nonzero while App Home's floor lines are drawn: their small solid quads are joined into one draw (batch.c, ws211-p003). */
 	unsigned batch_floors;
+	/*
+	 * The insides of the windows' opaque glass and bodies in the frame
+	 * being drawn (ws270-p007, shell.c's cover_holes), each with the place
+	 * in the painter's order of the window that covers it: a shape drawn
+	 * at a lower place (cover_level, -1 for the wallpaper and the desktop's
+	 * surface) is not drawn under them (glass.c).  cover_count is 0 outside
+	 * the windows of a still desktop; cover_cutting is set while a shape's
+	 * pieces around them are drawn.
+	 */
+	float cover_holes[KWL_COVER_HOLES][4];
+	int cover_levels[KWL_COVER_HOLES];
+	unsigned cover_count;
+	int cover_level;
+	unsigned cover_cutting;
 	/* Nonzero with --no-layer-cache: no layer's picture, every frame drawn whole (the reference, review-4 M4). */
 	unsigned layer_cache_off;
 	unsigned home_progress_frozen;

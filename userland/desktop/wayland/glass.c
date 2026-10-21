@@ -106,6 +106,13 @@
 #define GLASS_SPLIT_AREA	4096.0f
 
 /*
+ * The least area of a shape cut around the opaque insides of the windows
+ * over it (ws270-p007): smaller ones (a glyph, a button) are drawn whole,
+ * unless wholly hidden, as their pieces would cost more draws than pixels.
+ */
+#define GLASS_COVER_AREA	(96.0f * 96.0f)
+
+/*
  * The large digits of the lock screen's clock, in an image of
  * their own at the one size the clock asks for: the image's size, its
  * glyphs (the ten digits, then the colon), and the largest size and glyph
@@ -321,6 +328,8 @@ static int glass_shape_split(const struct kwl_server *server, const float *const
 static void glass_split_rect(float x, float y, float width, float height, VkRect2D *rect);
 static void glass_shape_draw_split(struct kwl_server *server, struct kwl_list *command, const float *constants, VkDescriptorSet set, VkPipeline pipeline, const VkRect2D *pieces, unsigned count);
 static void glass_shape_draw_pieces(struct kwl_server *server, struct kwl_list *command, const struct glass_shape *shape, const float (*pieces)[4], unsigned count);
+static void glass_shape_piece(const struct glass_shape *shape, const float *part, struct glass_shape *piece);
+static int glass_shape_cover(struct kwl_server *server, struct kwl_list *command, const struct glass_shape *shape);
 static unsigned glass_count_kind_of(const float *constants);
 static int wallpaper_create(struct kwl_server *server, struct kwl_glass *glass, uint32_t width, uint32_t height);
 static int glass_size_make(struct kwl_server *server, uint32_t width, uint32_t height, struct kwl_glass_size *size);
@@ -2072,6 +2081,7 @@ glass_shape_draw(
 	unsigned kind;
 	int joined;
 	int visible;
+	int covered;
 	int split;
 
 	/* A shape of a layer faded out wholly is not drawn (the desktop behind App Home). */
@@ -2116,6 +2126,15 @@ glass_shape_draw(
 	/* Completely clipped quads cannot affect a pixel: outside the scissor, or between the damage's rectangles. */
 	visible = kwl_compose_clip_visible(compose, quad[0], quad[1], quad[2], quad[3]);
 	if (!visible)
+		return;
+
+	/*
+	 * Under the opaque insides of windows drawn later it is not seen
+	 * (ws270-p007): it is left out under them, drawn as the pieces of its
+	 * quad around them, or not at all.
+	 */
+	covered = glass_shape_cover(server, command, shape);
+	if (covered)
 		return;
 
 	/* The quad in normalized device coordinates. */
@@ -2428,42 +2447,50 @@ glass_shape_draw_except(
 }
 
 /*
- * Records a background shape (the wallpaper, the desktop's surface) except
- * where opaque shapes drawn after it hide it, cutting out every hole worth
- * its draws (kwl_damage_rects_subtract, ws270-p007): many windows may stand
- * on it, where glass_shape_draw_except cuts out the few largest.  In a layer
- * seen through the shape is drawn whole.
+ * Gives the part of a shape inside a rectangle (x, y, width, height on the
+ * output) as a shape of its own: its quad cut to the rectangle, showing
+ * that part of the image; the box and the rest stay the shape's.  Returns
+ * 1, or 0 when nothing of the quad is inside.
  */
-void
-glass_shape_draw_around(
-	struct kwl_server *server,
-	struct kwl_list *command,
+int
+glass_shape_crop(
 	const struct glass_shape *shape,
-	const float (*holes)[4],
-	unsigned hole_count)
+	const float *rect,
+	struct glass_shape *piece)
 {
-	float pieces[KWL_COVER_PIECES][4];
-	unsigned count;
+	float cut[1][4];
+	float left;
+	float top;
+	float right;
+	float bottom;
 
-	/* No hole: the whole shape. */
-	if (hole_count == 0U) {
-		glass_shape_draw(server, command, shape);
-		return;
-	}
+	/* The quad's edges cut to the rectangle's. */
+	left = shape->quad[0];
+	top = shape->quad[1];
+	right = shape->quad[0] + shape->quad[2];
+	bottom = shape->quad[1] + shape->quad[3];
+	if (left < rect[0])
+		left = rect[0];
+	if (top < rect[1])
+		top = rect[1];
+	if (right > rect[0] + rect[2])
+		right = rect[0] + rect[2];
+	if (bottom > rect[1] + rect[3])
+		bottom = rect[1] + rect[3];
 
-	/* The shapes over it are seen through in a fading layer: the whole shape. */
-	if (server->layer_on && server->layer_opacity < 1.0f) {
-		glass_shape_draw(server, command, shape);
-		return;
-	}
+	/* Nothing of the quad inside. */
+	if (right <= left || bottom <= top)
+		return 0;
 
-	/* The quad less the holes; an empty quad has nothing to cut. */
-	if (shape->quad[2] <= 0.0f || shape->quad[3] <= 0.0f)
-		return;
-	count = kwl_damage_rects_subtract(shape->quad, holes, hole_count, pieces);
+	/* The shape over that part of its quad. */
+	cut[0][0] = left;
+	cut[0][1] = top;
+	cut[0][2] = right - left;
+	cut[0][3] = bottom - top;
+	glass_shape_piece(shape, cut[0], piece);
 
-	/* Each piece is the shape over a part of its quad. */
-	glass_shape_draw_pieces(server, command, shape, (const float (*)[4])pieces, count);
+	/* Succeeded: the part inside. */
+	return 1;
 }
 
 /*
@@ -4518,20 +4545,98 @@ glass_shape_draw_pieces(
 	unsigned count)
 {
 	struct glass_shape piece;
-	float across;
-	float down;
 	unsigned index;
 
 	/* Each piece is the shape over a part of its quad, showing that part of the image. */
-	across = shape->uv[2] - shape->uv[0];
-	down = shape->uv[3] - shape->uv[1];
 	for (index = 0U; index < count; index++) {
-		piece = *shape;
-		memcpy(piece.quad, pieces[index], sizeof(piece.quad));
-		piece.uv[0] = shape->uv[0] + (pieces[index][0] - shape->quad[0]) / shape->quad[2] * across;
-		piece.uv[1] = shape->uv[1] + (pieces[index][1] - shape->quad[1]) / shape->quad[3] * down;
-		piece.uv[2] = shape->uv[0] + (pieces[index][0] + pieces[index][2] - shape->quad[0]) / shape->quad[2] * across;
-		piece.uv[3] = shape->uv[1] + (pieces[index][1] + pieces[index][3] - shape->quad[1]) / shape->quad[3] * down;
+		glass_shape_piece(shape, pieces[index], &piece);
 		glass_shape_draw(server, command, &piece);
 	}
+}
+
+/* Makes the shape over a part (x, y, width, height) of its quad, showing that part of its image. */
+static void
+glass_shape_piece(
+	const struct glass_shape *shape,
+	const float *part,
+	struct glass_shape *piece)
+{
+	float across;
+	float down;
+
+	/* The shape, its quad the part, its image's corners moved in step. */
+	across = shape->uv[2] - shape->uv[0];
+	down = shape->uv[3] - shape->uv[1];
+	*piece = *shape;
+	memcpy(piece->quad, part, sizeof(piece->quad));
+	piece->uv[0] = shape->uv[0] + (part[0] - shape->quad[0]) / shape->quad[2] * across;
+	piece->uv[1] = shape->uv[1] + (part[1] - shape->quad[1]) / shape->quad[3] * down;
+	piece->uv[2] = shape->uv[0] + (part[0] + part[2] - shape->quad[0]) / shape->quad[2] * across;
+	piece->uv[3] = shape->uv[1] + (part[1] + part[3] - shape->quad[1]) / shape->quad[3] * down;
+}
+
+/*
+ * Draws a shape around the opaque insides of the windows drawn after it
+ * (server->cover_holes of a level above server->cover_level, ws270-p007),
+ * where it is never seen: a shape wholly inside one is not drawn, a large
+ * one they cut into is drawn as the pieces of its quad around them.
+ * Returns 1 when that was done (nothing more is drawn of the shape), 0 when
+ * the shape is to be drawn as it is.  Only shapes in their places on the
+ * output are covered: not while a layer moves them, on a head, or in the
+ * backdrop's small passes.
+ */
+static int
+glass_shape_cover(
+	struct kwl_server *server,
+	struct kwl_list *command,
+	const struct glass_shape *shape)
+{
+	float holes[KWL_COVER_HOLES][4];
+	float pieces[KWL_COVER_PIECES][4];
+	unsigned hole_count;
+	unsigned count;
+	unsigned index;
+
+	/* Nothing covers it, or its pieces are being drawn. */
+	if (server->cover_count == 0U || server->cover_cutting)
+		return 0;
+
+	/* Only in its own place in the output's pass: not moved by a layer, not on a head, not in the backdrop. */
+	if (server->layer_on)
+		return 0;
+	if (server->view_width != 0U)
+		return 0;
+	if (server->compose->backdrop_recording != 0U)
+		return 0;
+
+	/* The holes of the windows above it; one that holds all of the quad hides it. */
+	hole_count = 0U;
+	for (index = 0U; index < server->cover_count; index++) {
+		if (server->cover_levels[index] <= server->cover_level)
+			continue;
+		if (server->cover_holes[index][0] <= shape->quad[0] &&
+		    server->cover_holes[index][1] <= shape->quad[1] &&
+		    server->cover_holes[index][0] + server->cover_holes[index][2] >= shape->quad[0] + shape->quad[2] &&
+		    server->cover_holes[index][1] + server->cover_holes[index][3] >= shape->quad[1] + shape->quad[3])
+			return 1;
+		memcpy(holes[hole_count], server->cover_holes[index], sizeof(holes[0]));
+		hole_count++;
+	}
+
+	/* No hole above it, or a shape too small to be worth cutting: drawn as it is. */
+	if (hole_count == 0U || shape->quad[2] * shape->quad[3] < GLASS_COVER_AREA)
+		return 0;
+
+	/* The quad less the holes; uncut, it is drawn as it is. */
+	count = kwl_damage_rects_subtract(shape->quad, (const float (*)[4])holes, hole_count, pieces);
+	if (count == 1U && memcmp(pieces[0], shape->quad, sizeof(pieces[0])) == 0)
+		return 0;
+
+	/* Its pieces, drawn without being cut again. */
+	server->cover_cutting = 1U;
+	glass_shape_draw_pieces(server, command, shape, (const float (*)[4])pieces, count);
+	server->cover_cutting = 0U;
+
+	/* Succeeded: drawn around the holes. */
+	return 1;
 }

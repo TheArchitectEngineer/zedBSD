@@ -117,6 +117,13 @@ terminal_window_open(
 	/* The keyboard's editing buttons come as the compositor's keys for a terminal (Ctrl+Shift+C and V), not as Ctrl+C. */
 	kl_window_edit_by_keys(window->kui);
 
+	/*
+	 * Every pixel the terminal draws is opaque (the pass clears to the
+	 * theme's background, and each cell's colour has alpha 1): the
+	 * compositor need not draw what is under the window (ws270-p007).
+	 */
+	(void)kl_window_set_opaque(window->kui, 1);
+
 	/* The window's size and full screen as the first configure left them. */
 	kl_window_size(window->kui, &window->width, &window->height);
 	window->fullscreen = kl_window_fullscreen(window->kui);
