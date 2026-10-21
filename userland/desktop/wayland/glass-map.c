@@ -98,9 +98,9 @@ kwl_glass_map_set(
 	float key[KWL_GLASS_MAP_KEY];
 	int taken;
 
-	/* Not asked for (--no-glass-map), or not possible on this device. */
+	/* Not possible on this device. */
 	compose = server->compose;
-	if (server->glass_map_off || compose->glass_maps.failed)
+	if (compose->glass_maps.failed)
 		return 0;
 
 	/* Glass on the blurred wallpaper (not on a window's backdrop). */
@@ -165,8 +165,8 @@ kwl_glass_picture_set(
 	float key[KWL_GLASS_MAP_KEY];
 	int taken;
 
-	/* Not asked for (--no-glass-map), or not possible on this device. */
-	if (server->glass_map_off || server->compose->glass_maps.failed)
+	/* Not possible on this device. */
+	if (server->compose->glass_maps.failed)
 		return 0;
 
 	/* Nothing to draw from before the glass look opens. */
@@ -212,8 +212,8 @@ kwl_glass_shadow_set(
 	float reach;
 	int taken;
 
-	/* Not asked for (--no-glass-map), or not possible on this device. */
-	if (server->glass_map_off || server->compose->glass_maps.failed)
+	/* Not possible on this device. */
+	if (server->compose->glass_maps.failed)
 		return 0;
 
 	/* A box at whole pixels, of a whole softness: the picture's pixels are the output's. */
@@ -263,10 +263,10 @@ kwl_glass_maps_inband(
 	struct kwl_compose *compose;
 	struct kwl_glass_maps *maps;
 
-	/* Not asked for, or not possible on this device. */
+	/* Not possible on this device. */
 	compose = server->compose;
 	maps = &compose->glass_maps;
-	if (server->glass_map_off || maps->failed)
+	if (maps->failed)
 		return;
 
 	/* Nothing to draw from before the glass look opens. */
@@ -302,9 +302,9 @@ kwl_glass_maps_wanted(
 	struct kwl_glass_maps *maps;
 	unsigned index;
 
-	/* Not asked for, or not possible on this device. */
+	/* Not possible on this device. */
 	maps = &server->compose->glass_maps;
-	if (server->glass_map_off || maps->failed)
+	if (maps->failed)
 		return 0;
 
 	/* Any map or shadow wanted. */

@@ -240,7 +240,7 @@ branch agent/p1-q1550（基 main 5907c9d3b）。ユーザー（2026-10-21、板�
 
 branch agent/p1-q1552（基 main 782f995e4）。ユーザー（2026-10-22）:「すべての操作で16msで描画でき、60fpsになることが目標です。ただ、どうしても難しければ、retireしてかまいません。おそらく限界まで最適化して、1280x720に落とせば、目標は自動的にクリアされています。」
 
-### 計測の道具（plan/ws270/tests/frame-ops/）
+### 計測の道具（plan/ws270/tests/frame-ops/、q1552 の終わりに plan/tools/frame-ops/ へ移した）
 
 - frame-ops.sh（板で root）: Terminal の起動、文字の入力、seq の出力、wheel、title bar と system bar の hover、title bar の drag 往復、App Home 開閉 ×2、Wiseview 開閉 ×2。各段の前に session.log の行数を marks に書く。
 - frame-times.py（host）: KWL LAT の行から frame ごとに pace（acquired→draw）・cpu（draw→recorded）・submit（recorded→queued、GPU）・present・work（draw→submit）・period（前の frame の draw から、100 ms 未満の時）・shown（submit→完了の受け取り）と KWL PASSES の area を表にし、段ごとに work>16・period>16 の数、p50/max、fps を出す。
@@ -257,7 +257,7 @@ branch agent/p1-q1552（基 main 782f995e4）。ユーザー（2026-10-22）:「
 ### 変更
 
 - fdc686ca4: kwl_glass_drag_measured を公開し、kwl_damage_pointer も測れる drag では damage（窓の旧と新の場所）だけに。scene を変える pointer の move（hover の probe の変化、drag、dirty）では pointer_moved を立て、pacing で待たない。
-- 99b63fedd・1ce1d3758（glass-map.c、新）: glass の内側の色は blurred wallpaper の画素と glass の色（白の lift・dark の shade・sheen）だけで決まる。色ごとに出力の大きさの map へ同じ shader（opaque の inside variant）で 1 度描き、以後の内側は map を最近傍で読む variant（KWL_PANEL_INSIDE_MAP: texture 1 回）。sheen 付きは box が全画面の時だけ（Wiseview・App Home の stage）。2 frame が求めた色だけ、次の frame の pass の前に描く（6 枚まで、1 frame に 1 枚、直前 2 frame に使った map は追い出さない）。light の無色の flat glass は blurred そのものを同じ variant で読む（map 不要、式が恒等）。blurred の generation・version と出力の大きさが変われば描き直し。`--no-glass-map` で前の描き方（比較の基準）。
+- 99b63fedd・1ce1d3758（glass-map.c、新）: glass の内側の色は blurred wallpaper の画素と glass の色（白の lift・dark の shade・sheen）だけで決まる。色ごとに出力の大きさの map へ同じ shader（opaque の inside variant）で 1 度描き、以後の内側は map を最近傍で読む variant（KWL_PANEL_INSIDE_MAP: texture 1 回）。sheen 付きは box が全画面の時だけ（Wiseview・App Home の stage）。2 frame が求めた色だけ、次の frame の pass の前に描く（6 枚まで、1 frame に 1 枚、直前 2 frame に使った map は追い出さない）。light の無色の flat glass は blurred そのものを同じ variant で読む（map 不要、式が恒等）。blurred の generation・version と出力の大きさが変われば描き直し。比較の基準だった `--no-glass-map` は q1552 の終わりに外した。
   - App Home の stage（全画面の glass と光）は frame ごとに同じなので、全画面の picture（同じ map の仕組み、描く関数を home.c が渡す）に 1 度描き、frame では opaque の image 1 枚に。
   - shaders.h は regenerate.py で作り直し、既存の全 variant の SPIR-V が前と同一（名前の番号だけ変わった）。map variant は texture 1 回と除算 1 つ。
 - d3f2abd6e: 窓の commit の damage を全画面にする条件を「上の窓が近い」から「上の窓が近く、その glass が下の scene を blur する（set_blur か docked の中央）」に。上の窓が wallpaper の blur だけなら、その部分も damage の中で描き直される。
@@ -290,10 +290,10 @@ branch agent/p1-q1552（基 main 782f995e4）。ユーザー（2026-10-22）:「
 ### 計測（Terminal の後）と打鍵の遅れ（2026-10-22 朝）
 
 - d120〜d129: Terminal の upload の直し（1e1296a8d、-fno-builtin で 8 byte の memcpy が call になっていた）で upload 13.5 → 1.4 ms。Terminal の 1 frame の CPU は約 10 ms で律速ではなくなった。type（aat-input は 1 字 16.4 ms＝61 字/s）は 44〜47 fps のまま。
-- type の 1 字の cycle（d126・d128、中央値）: compositor の frame の完了（frame callback）→ Terminal の commit 3 → display の acquire 2 → main の起床と pass 3〜5 → draw→recorded 4 → vkQueueSubmit 3 → vkQueuePresentKHR 3 → GPU の完了 2.5。Terminal の acquire の 6 ms は compositor が前の buffer を返すまでの FIFO の背圧（a7d6818ae の VULKAN ACQUIRE の行で release_us、timeouts 0）。
+- type の 1 字の cycle（d126・d128、中央値）: compositor の frame の完了（frame callback）→ Terminal の commit 3 → display の acquire 2 → main の起床と pass 3〜5 → draw→recorded 4 → vkQueueSubmit 3 → vkQueuePresentKHR 3 → GPU の完了 2.5。Terminal の acquire の 6 ms は compositor が前の buffer を返すまでの FIFO の背圧（a7d6818ae の acquire の計測で release の待ち、10 ms の間隔の起床 0。この計測は q1552 の終わりに外した）。
 - 効かなかった物（外した）: 285e34b07（Wayland の fence を worker が先に作る、present_record が下がらず）、5409fbade 単独・2d5d13052（Wayland の FIFO の待ちを reader の約束どおりに）。5409fbade は 8eeedadb4 の後で必要になるので 776007a31 で戻した。
 - 入れた物: 8eeedadb4（render thread が idle の時に display の次の image を先に取る → READY が adopt の +1 ms に）、776007a31（frame callback を頼んだまま commit しない window を awaited から外す、pacing の門が消える）、88deda6ff（--log-frames の行の時刻を rdtime の μs に、kwl_log_us）。
-- main の pass の重さ（d133 の KWL PERF ticks、ce090a9fa）: kwl_schedule の先頭の glass の tick が idle でも 1 pass 約 1 ms（5 s に 416 ms、main の CPU の 8%）。描く frame はその pass を draw の前に通る。kwl_glass_tick の中の 25 個ほどの tick のどれかは未特定（network・audio・bluetooth の backend の読み、時計の syscall の数が候補）。
+- main の pass の重さ（d133、ce090a9fa の tick の分割、q1552 の終わりに外した）: kwl_schedule の先頭の glass の tick が idle でも 1 pass 約 1 ms（5 s に 416 ms、main の CPU の 8%）。描く frame はその pass を draw の前に通る。kwl_glass_tick の中の 25 個ほどの tick のどれかは未特定（network・audio・bluetooth の backend の読み、時計の syscall の数が候補）。
 - 打鍵の遅れ（d133 の keys の段、200 ms 間隔 22 字、key-latency.py、seat に key が来てからの ms、中央値/最大）: Terminal が受けた 0.7/2.4、pty へ書いた 1.0/2.4、echo を読んだ 1.7/3.4、Terminal の present 9.7/11.4、compositor の adopt 15.9/19.4、compositor の frame の完了 30.0/36.0（この後 display の次の blank まで 0〜16.7）。内訳: echo → present 8 ms（Terminal の 1 frame の描画）、present → adopt 6 ms（Terminal の GPU の仕事と worker の commit、FIFO の待ちは 0.2〜0.4 ms）、adopt → 完了 14 ms（compositor の 1 frame: 先取りの READY 1、main の起床と pass 2〜5、record 3、submit 2、present 2、GPU 2）。input method は通らない（key は client へ直に、0.2 ms）。
 - 速く打った時（type の段、60 字）は Terminal が受けるまで 12.7 ms（描画中で受けられない）、完了まで中央値 80 ms: throughput が 61 字/s に届かない分の溜まり。
 - 間隔を空けた打鍵の 30 ms のうち、小さく安全に削れる所は今は無い: Terminal の描画（build 2.7・upload 1.5 は変わった行だけ作れば約 3〜4 ms 減るが中規模の変更）、compositor の main の pass の tick（約 1〜2 ms、どの tick かの特定が先）、submit・present の往復（driver 側、P2）。
@@ -305,4 +305,4 @@ branch agent/p1-q1552（基 main 782f995e4）。ユーザー（2026-10-22）:「
 - 効いた変更（大きい順）: glass の map（99b63fedd・1ce1d3758、色ごとの全画面の glass を 1 度描いて読む）と Home・Wiseview の picture（5f0acec60・95db457c4・ce44dafb4）、drag を部分の書き直しに（fdc686ca4）、libvulkan の display の primary の present が acquire を塞がない（1f7936510）、Keiland の 2 frame の重ね（162059da7・c436c7db0）、prewarm（初回の hitch）、Terminal の command buffer の使い回し（bbf66e118）と変わった doubleword だけの upload（6e8ac6693・1e1296a8d）、display の image の先取り（8eeedadb4）、awaited の残りの直し（776007a31）。
 - 効かなかった・外した変更: e7ea311a9（frame callback を give の時に、type の lag 悪化 → 67a35db60）、285e34b07、2d5d13052、5409fbade 単独（後で 776007a31 として戻した）。
 - 残り（目標の 60 fps に届かない操作）: type・output（1 字・1 塊ごとに Terminal → compositor → callback → Terminal の直列で約 20 ms。compositor の 1 frame の固定費 vkQueueSubmit・vkQueuePresentKHR の各 2〜3 ms は P2 へ、main の pass の glass の tick 約 1 ms/pass は未特定）、Terminal の描画の build（変わった行だけ作る案は未実装）。ユーザーの判断（2026-10-22）で文字入力は 60 fps を要しない、最適化はここで終わり。
-- 回帰に使う道具（plan/ws270/tests/frame-ops/、Master の Tools に登録して plan/tools/ へ移す候補）: frame-ops.sh（板で root、Keiland --log-frames・aat-input、操作の段ごとに session.log の行数を marks に）、frame-times.py（marks の段ごとの frame の work・period・fps・lag の表）、key-latency.py（間隔を空けた打鍵 1 字ごとの seat→Terminal→pty→present→adopt→完了の ms）、shot-diff.py（keiland-shot の 2 枚の画素の差、見た目が変わらない確認）。
+- 回帰に使う道具（plan/tools/frame-ops/、Master の Tools への登録は Q1）: frame-ops.sh（板で root、Keiland --log-frames・aat-input、操作の段ごとに session.log の行数を marks に）、frame-times.py（marks の段ごとの frame の work・period・fps・lag の表）、key-latency.py（間隔を空けた打鍵 1 字ごとの seat→Terminal→pty→present→adopt→完了の ms）、shot-diff.py（keiland-shot の 2 枚の画素の差、見た目が変わらない確認）。

@@ -430,6 +430,58 @@ struct terminal_target {
  * They are made once the window is configured and remade in part when the
  * window changes size.
  */
+/* The most rows of a view a renderer keeps (a view between lines shows one more at each end). */
+#define TERMINAL_RENDER_ROWS	(TERMINAL_MAX_ROWS + 4U)
+
+/* A part of a frame's vertices that was built: its first vertex and how many. */
+struct terminal_render_range {
+	size_t first;
+	size_t count;
+};
+
+/*
+ * A row of the view as it was last drawn: the frame (row_frame) it was in,
+ * where its vertices start and how many, and what they depend on besides
+ * its cells: its place, the cursor's column on it (-1 for none), whether
+ * the whole screen's selection covers it, and the columns of the
+ * pointer's range on it (from past to for none).  valid is clear for a
+ * row not kept.
+ */
+struct terminal_render_row {
+	int valid;
+	uint64_t frame;
+	size_t first;
+	size_t count;
+	float y;
+	long cursor;
+	int selected;
+	unsigned long range_from;
+	unsigned long range_to;
+};
+
+/*
+ * What every row's vertices depend on besides the row's own state: the
+ * theme, the font, its face and sizes, how many glyphs its atlas holds
+ * (fewer means the atlas started again), the blank's slot, the grid's and
+ * the image's sizes.
+ */
+struct terminal_render_key {
+	const void *theme;
+	const void *font;
+	const void *face;
+	unsigned pixels_size;
+	unsigned cell_width;
+	unsigned cell_height;
+	unsigned atlas_width;
+	unsigned atlas_height;
+	unsigned used;
+	unsigned blank;
+	unsigned columns;
+	unsigned rows;
+	uint32_t width;
+	uint32_t height;
+};
+
 struct terminal_renderer {
 	/* The instance, the surface of the window, the device and its queue. */
 	VkInstance instance;
@@ -467,14 +519,30 @@ struct terminal_renderer {
 	size_t vertex_capacity;
 
 	/*
-	 * The processor reaches the mapping around its cache, so a frame is
-	 * built in the host's own memory (vertex_build) and only what changed
-	 * is stored into the mapping (render_upload); vertex_kept is a copy of
-	 * the mapping's first vertex_kept_words doublewords.
+	 * The processor reaches the mapping around its cache, so a frame's
+	 * rows are built in the host's own memory (vertex_build, each at its
+	 * place) and only the doublewords that changed in the parts built
+	 * (ranges, range_count of them, in vertices) are stored into the
+	 * mapping (render_upload); vertex_kept is a copy of the mapping, of
+	 * which the first vertex_known doublewords were written.
 	 */
 	float *vertex_build;
 	float *vertex_kept;
-	size_t vertex_kept_words;
+	size_t vertex_known;
+	struct terminal_render_range ranges[TERMINAL_RENDER_ROWS + 1U];
+	unsigned range_count;
+
+	/*
+	 * The rows of the view as they were last drawn (rows, their cells in
+	 * row_cells, TERMINAL_MAX_COLUMNS a row): a row the same as in the
+	 * frame before, at the same place, is neither built nor stored again.
+	 * row_frame counts the frames; what every row depends on beside its
+	 * own state is kept in row_key, and a change of it drops them all.
+	 */
+	struct terminal_render_row *rows;
+	struct terminal_cell *row_cells;
+	uint64_t row_frame;
+	struct terminal_render_key row_key;
 
 	/*
 	 * The command pool (each image has its command buffer, its target's),

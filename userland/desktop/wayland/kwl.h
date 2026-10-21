@@ -1041,8 +1041,6 @@ struct kwl_perf {
 	uint64_t schedule_cycles;
 	uint64_t flush_cycles;
 	uint64_t schedule_tick_cycles;
-	/* The scheduler's ticks one by one: the sleep's, the outputs', the displays' light, the glass look's and the desktop's. */
-	uint64_t schedule_tick_part_cycles[5];
 	uint64_t adopt_cycles;
 	uint64_t shm_cycles;
 	uint64_t cursor_cycles;
@@ -1307,8 +1305,6 @@ struct kwl_server {
 	unsigned cover_cutting;
 	/* Nonzero with --no-layer-cache: no layer's picture, every frame drawn whole (the reference, review-4 M4). */
 	unsigned layer_cache_off;
-	/* Nonzero with --no-glass-map: every glass worked out pixel by pixel (the reference of glass-map.c). */
-	unsigned glass_map_off;
 	unsigned home_progress_frozen;
 	float home_progress_value;
 	/* The event loop records the latest traced motion; recording a frame consumes this timestamp. */
@@ -1494,9 +1490,6 @@ struct kwl_server {
 	unsigned awaiting;
 	uint64_t frame_done_ms;
 	uint64_t frame_wait_ms;
-
-	/* When the event loop's pass began (its poll returned), for the per-frame lines. */
-	uint64_t pass_us;
 	/*
 	 * Nonzero while a move of the pointer waits for the frame that shows the
 	 * cursor at its new place: that frame does not wait for the windows

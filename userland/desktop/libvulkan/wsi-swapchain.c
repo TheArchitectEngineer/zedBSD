@@ -354,7 +354,6 @@ static VkResult swapchain_current(struct vulkan_swapchain *chain);
 static VkResult swapchain_now(uint64_t *nanoseconds);
 static VkResult swapchain_acquire(struct vulkan_swapchain *chain, uint64_t timeout, VkSemaphore semaphore, VkFence fence, uint32_t *result, struct vulkan_wake *wake);
 static VkResult swapchain_poll(struct vulkan_swapchain *chain, struct vulkan_wake *wake, uint64_t timeout);
-static void swapchain_acquire_slept(uint64_t slept, VkBool32 released, VkBool32 timed_out, uint64_t *state_ns, uint64_t *release_ns, unsigned *sleeps, unsigned *timeouts);
 static void swapchain_notify_locked(void);
 static VkResult present_prepare(struct wsi_present_job *job, struct VkQueue_T *queue, const VkPresentInfoKHR *info);
 static VkResult present_reserve(struct wsi_present_job *job, const VkPresentInfoKHR *info);
@@ -3980,25 +3979,10 @@ swapchain_acquire(
 	VkResult error;
 	VkBool32 acquired;
 	VkBool32 available;
-	VkBool32 released;
-	uint64_t timing_started;
-	uint64_t slept;
-	uint64_t state_ns;
-	uint64_t release_ns;
-	unsigned sleeps;
-	unsigned timeouts;
 	int status;
 
 	/* The public wrapper validated and retained the caller-owned chain for this operation. */
 	device = chain->device;
-
-	/* What the acquisition waited for, for VULKAN TIMING (zero while it is off). */
-	timing_started = vulkan_timing_start();
-	released = VK_FALSE;
-	state_ns = 0U;
-	release_ns = 0U;
-	sleeps = 0U;
-	timeouts = 0U;
 
 	/* Measures the whole operation in the caller's monotonic timeout domain. */
 	error = swapchain_now(&started);
@@ -4052,7 +4036,6 @@ swapchain_acquire(
 
 		/* Selects a reusable image without imposing an application presentation order. */
 		acquired = VK_FALSE;
-		released = VK_FALSE;
 		index = chain->cursor;
 		for (offset = 0U; offset < chain->group->count; offset++) {
 			/*
@@ -4065,10 +4048,6 @@ swapchain_acquire(
 			    chain->surface->cursor == VK_FALSE &&
 			    chain->surface->platform->image_available != NULL)
 				available = chain->surface->platform->image_available(chain->presentation[index].native_image);
-
-			/* An image only the compositor still holds: the wait is for its release. */
-			if (chain->states[index] == WSI_IMAGE_AVAILABLE && available == VK_FALSE)
-				released = VK_TRUE;
 
 			/* Skips images still borrowed by application rendering or native presentation. */
 			if (chain->states[index] != WSI_IMAGE_AVAILABLE || available == VK_FALSE) {
@@ -4160,11 +4139,9 @@ swapchain_acquire(
 		/* Direct display sleeps on real fd readiness, with no periodic progress quantum. */
 		if (wake != NULL) {
 			pthread_mutex_unlock(&swapchain_mutex);
-			slept = vulkan_timing_start();
 			error = swapchain_poll(chain, wake, delay);
 			if (error != VK_SUCCESS)
 				return error;
-			swapchain_acquire_slept(slept, released, VK_FALSE, &state_ns, &release_ns, &sleeps, &timeouts);
 
 			/* Native readiness must be acknowledged and image ownership rechecked before acquisition. */
 			continue;
@@ -4179,11 +4156,9 @@ swapchain_acquire(
 		}
 
 		/* Atomically releases image serialization while monotonic time or an event wakes this caller. */
-		slept = vulkan_timing_start();
 		status = pthread_cond_clockwait(&swapchain_condition, &swapchain_mutex, CLOCK_MONOTONIC, &deadline);
 
 		pthread_mutex_unlock(&swapchain_mutex);
-		swapchain_acquire_slept(slept, released, status == ETIMEDOUT, &state_ns, &release_ns, &sleeps, &timeouts);
 
 		/* Spurious notifications and elapsed progress intervals both require another observation. */
 		if (status != 0 &&
@@ -4192,18 +4167,6 @@ swapchain_acquire(
 			vulkan_device_error(device, VK_ERROR_DEVICE_LOST);
 			return VK_ERROR_DEVICE_LOST;
 		}
-	}
-
-	/*
-	 * The acquisition's time; a Wayland one that slept is named with what it
-	 * waited for and when it got the image, to be set beside the
-	 * compositor's release lines.
-	 */
-	vulkan_timing_add(VULKAN_TIMING_ACQUIRE, timing_started, 0U);
-	if (timing_started != 0U && sleeps != 0U && wake == NULL) {
-		fprintf(stderr, "VULKAN ACQUIRE image=%u sleeps=%u timeouts=%u state_us=%llu release_us=%llu at_us=%llu\n",
-			index, sleeps, timeouts, (unsigned long long)(state_ns / 1000U), (unsigned long long)(release_ns / 1000U),
-			(unsigned long long)(vulkan_timing_start() / 1000U));
 	}
 
 	/* Software-complete acquisition does not wait behind unrelated GPU work. */
@@ -4275,49 +4238,6 @@ swapchain_poll(
 
 	/* Succeeded: the caller will consume its token before rechecking all protected predicates. */
 	return VK_SUCCESS;
-}
-
-/*
- * Counts one sleep of an acquisition for VULKAN TIMING (slept is when it
- * began, 0 while the timing is off): the time goes to the release's wait
- * when an image only the compositor held was seen, else to the wait for
- * an image's present to finish; a sleep the interval ended is counted
- * apart too.
- */
-static void
-swapchain_acquire_slept(
-	uint64_t slept,
-	VkBool32 released,
-	VkBool32 timed_out,
-	uint64_t *state_ns,
-	uint64_t *release_ns,
-	unsigned *sleeps,
-	unsigned *timeouts)
-{
-	uint64_t now;
-
-	/* Off. */
-	if (slept == 0U)
-		return;
-
-	/* The sleep's time, by what it waited for. */
-	now = vulkan_timing_start();
-	if (now < slept)
-		now = slept;
-	(*sleeps)++;
-	if (released != VK_FALSE) {
-		*release_ns += now - slept;
-		vulkan_timing_add(VULKAN_TIMING_ACQUIRE_RELEASE, slept, 0U);
-	} else {
-		*state_ns += now - slept;
-		vulkan_timing_add(VULKAN_TIMING_ACQUIRE_STATE, slept, 0U);
-	}
-
-	/* One the progress interval ended rather than a notification. */
-	if (timed_out != VK_FALSE) {
-		(*timeouts)++;
-		vulkan_timing_add(VULKAN_TIMING_ACQUIRE_TIMEOUT, slept, 0U);
-	}
 }
 
 /* Publishes image-state changes to condition waiters and independently armed fd waiters. */
