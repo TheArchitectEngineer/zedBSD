@@ -48,7 +48,7 @@
  *                           texels copied into an OPTIMAL image and back:
  *                           a transfer that touches past either buffer
  *                           faults on the board
- *   blit-bgra, copy-image, copy-to-linear, cursor-chain
+ *   blit-bgra, blit-rgba, copy-bgra, copy-image, copy-to-linear, cursor-chain
  *                           (q1550) the image transfers of the cursor
  *                           plane: a LINEAR host-written source blitted
  *                           (B8G8R8A8 to R8G8B8A8) or copied into an
@@ -569,6 +569,8 @@ static const struct vkmatrix_case cases[] = {
 	{ "copy-1080", case_copy_1080 },
 	{ "copy-65", case_copy_65 },
 	{ "blit-bgra", case_image_transfer },
+	{ "blit-rgba", case_image_transfer },
+	{ "copy-bgra", case_image_transfer },
 	{ "copy-image", case_image_transfer },
 	{ "copy-to-linear", case_image_transfer },
 	{ "cursor-chain", case_image_transfer },
@@ -3501,6 +3503,9 @@ transfer_barrier(
  * 64x64 OPTIMAL R8G8B8A8 image, read back as R8G8B8A8 bytes:
  *   blit-bgra        a B8G8R8A8 source blitted one to one (the channels
  *                    reordered), copied out to a buffer
+ *   blit-rgba        an R8G8B8A8 source blitted one to one, copied out
+ *   copy-bgra        a B8G8R8A8 source copied (its bytes as they are,
+ *                    a copy moves texels raw), copied out
  *   copy-image       an R8G8B8A8 source copied, copied out to a buffer
  *   copy-to-linear   an R8G8B8A8 source copied, then copied on into a
  *                    LINEAR R8G8B8A8 image read through its mapping
@@ -3532,8 +3537,8 @@ case_image_transfer(
 	VkResult status;
 
 	/* What the case does, by its name. */
-	bgra = strcmp(run->case_name, "blit-bgra") == 0 || strcmp(run->case_name, "cursor-chain") == 0;
-	blitted = bgra;
+	bgra = strcmp(run->case_name, "blit-bgra") == 0 || strcmp(run->case_name, "cursor-chain") == 0 || strcmp(run->case_name, "copy-bgra") == 0;
+	blitted = strcmp(run->case_name, "copy-bgra") != 0 && (bgra || strcmp(run->case_name, "blit-rgba") == 0);
 	cleared = strcmp(run->case_name, "cursor-chain") == 0;
 	through_linear = strcmp(run->case_name, "copy-to-linear") == 0 || cleared;
 	memset(&source, 0, sizeof(source));
@@ -3567,7 +3572,7 @@ case_image_transfer(
 			texel[2] = (uint8_t)((x + y) * 3U);
 			texel[3] = (uint8_t)(0x80U | ((x ^ y) & 0x7fU));
 			memcpy(source.texels + (size_t)y * source.pitch + (size_t)x * 4U, texel, 4);
-			if (bgra) {
+			if (bgra && blitted) {
 				source.texels[(size_t)y * source.pitch + (size_t)x * 4U + 0U] = texel[2];
 				source.texels[(size_t)y * source.pitch + (size_t)x * 4U + 2U] = texel[0];
 			}
