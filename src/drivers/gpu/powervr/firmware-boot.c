@@ -887,9 +887,9 @@ fill_records(
 
 	/*
 	 * The data masters' overlap (one context's geometry while another's
-	 * 3D runs) is off unless POWERVR_DM_OVERLAP: with it on, two sessions
-	 * rendering at once made a 3D job's parameter fetch walk a stale
-	 * parameter manager catalogue on the board (2026-10-21).
+	 * 3D runs) can be turned off with POWERVR_DM_OVERLAP 0.  The stale
+	 * catalogue the board showed with several sessions (2026-10-21) was
+	 * the render target halves, not the overlap.
 	 */
 	if (!POWERVR_DM_OVERLAP)
 		flags |= POWERVR_FLAG_NO_DM_OVERLAP;

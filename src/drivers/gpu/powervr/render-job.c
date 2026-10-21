@@ -198,7 +198,6 @@ static int job_check(const struct powervr_render_job *job);
 static void load_draw_free(struct powervr_render_job *work, struct load_draw *load);
 static uint32_t float_bits(uint32_t value);
 static int load_graphics(struct powervr_render *render, uint32_t vk_format, struct powervr_vk_graphics **result);
-static void debug_filter(struct powervr_render_job *job);
 static int load_graphics_compile(struct powervr_vk_graphics *graphics);
 static int load_graphics_shaders(struct powervr_vk_graphics *graphics, struct powervr_shader_workspace *workspace);
 static int load_draw_build(struct powervr_render *render, const struct powervr_render_job *job, struct job_memory *memory, struct load_draw *load);
@@ -227,20 +226,6 @@ static int job_programs(const struct powervr_render_job *job, struct job_memory 
 #else
 #define LOAD_USC_PROBE_FORM		POWERVR_LOAD_PROBE_USUAL
 #endif
-
-/* No draw limit. */
-#define DEBUG_NO_LIMIT			0xffffffffU
-
-/*
- * The test-only draw filter, for bisecting a job that locks the core up:
- * a render job keeps its own draws below debug_draw_limit whose bits in
- * debug_draw_skip are clear (the load draw is never dropped).  Set by
- * powervr_render_debug_set from a root write of hw.gpu.powervr.stages;
- * off (no limit, no skip) from boot.  Read without a lock: a job takes
- * either the old or the new setting.
- */
-static volatile uint32_t debug_draw_limit = DEBUG_NO_LIMIT;
-static volatile uint64_t debug_draw_skip;
 
 /* Reads a little-endian 32-bit word. */
 static uint32_t
@@ -333,18 +318,6 @@ powervr_render_job_run(
 		*work = *job;
 		work->colors[0].load_op = LOAD_OP_DONT_CARE;
 		job = work;
-	}
-
-	/* The test-only draw filter (hw.gpu.powervr.stages written "draws=N skip=M"), on a copy of the job. */
-	if (debug_draw_limit != DEBUG_NO_LIMIT || debug_draw_skip != 0U) {
-		if (work == NULL) {
-			work = kern_malloc(sizeof(*work));
-			if (work == NULL)
-				return ENOMEM;
-			*work = *job;
-			job = work;
-		}
-		debug_filter(work);
 	}
 
 	/* The job's shape and its first colour target's load and store, with the diagnostics. */
@@ -1708,48 +1681,4 @@ put_bytes(
 	/* One byte at a time. */
 	for (index = 0; index < count; index++)
 		buffer->view[offset + index] = bytes[index];
-}
-
-/*
- * Sets the test-only draw filter: a render job keeps its own draws below
- * limit (DEBUG_NO_LIMIT, 0xffffffff, for all) whose bits in skip are
- * clear; limit 0xffffffff and skip 0 turn it off.
- */
-void
-powervr_render_debug_set(
-	uint32_t limit,
-	uint64_t skip)
-{
-	/* The setting, for every later job. */
-	debug_draw_limit = limit;
-	debug_draw_skip = skip;
-	kern_logf("powervr: debug: render jobs keep draws below %u, skipping mask 0x%llx\n", (unsigned)limit, (unsigned long long)skip);
-}
-
-/* Drops a job's draws the test-only filter names, keeping the rest in order. */
-static void
-debug_filter(
-	struct powervr_render_job *job)
-{
-	uint32_t limit;
-	uint64_t skip;
-	uint32_t index;
-	uint32_t kept;
-
-	/* The setting, read once. */
-	limit = debug_draw_limit;
-	skip = debug_draw_skip;
-
-	/* Each draw below the limit whose bit is clear, moved down. */
-	kept = 0;
-	for (index = 0; index < job->draw_count; index++) {
-		if (index >= limit)
-			break;
-		if (index < 64U && (skip & (1ULL << index)) != 0U)
-			continue;
-		if (kept != index)
-			job->draws[kept] = job->draws[index];
-		kept++;
-	}
-	job->draw_count = kept;
 }
