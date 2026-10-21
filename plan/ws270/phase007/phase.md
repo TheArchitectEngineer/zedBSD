@@ -130,3 +130,4 @@ clear 3.85 ms、LOAD 23.35 ms、平らな quad 15.1 ms、1/4 面積 7.2 ms、402
 - 2026-10-22 ユーザー「アニメーションは60fpsでないと違和感が出ますが、文字入力はそうではないので、このあたりで最適化を終えましょう。」「あまりにも劇的な高速化を目の当たりにして驚きました。ハードウェアの性能を十分に引き出してくれたと思います。感謝します。」「キー入力のレイテンシーだけは、わかったなら教えてください。」→ 速さの作業は終了。
 - d132（kernel q1558t、P1 bedaa404b の wayland・terminal（打鍵から画面までの経路の行、frame-ops に 200 ms 間隔の keys の段））: keys の段で GPU の lockup（context 0x5 reason 1、dm 3 locked up 1、recovered 1）→ KWL RENDER stalled 4 s → device lost で compositor が終了。type の段の打鍵の遅れ（60 字、中央値/最大 ms）: seat → client 0.2/1.6、→ Terminal が受けた 8.3/18、pty へ書いた 7.7/19、echo を読んだ 8.7/18、present 8.7/17。
 - 2026-10-22 ユーザー「お、コンポジタが落ちましたね。それは解析して直しましょう。」→ 間欠の GPU の lockup（d114・d122・d130・d132）の解析を新しい P2 に、device lost からの回復の案を P1 に。
+- d133（d132 と同じ物、電源の入れ直しの後）: HWR・lost 0。keys の段（200 ms 間隔の 22 字）の打鍵から画面まで（seat に届いてからの中央値/最大 ms）: Terminal へ 0.2/0.8、Terminal が受けた 0.7/2.4、pty へ 1.0/2.4、echo を読んだ 1.7/3.4、present 9.7/11.4、compositor の adopt 15.9/19.4、shown 30.0/36.0。
