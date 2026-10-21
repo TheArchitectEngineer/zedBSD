@@ -806,8 +806,9 @@ render_close(
 	/* The render jobs' memory, whose work has all ended. */
 	powervr_render_jobs_reap(render, session, 2);
 
-	/* The job memory kept mapped for the next jobs, which will not come. */
+	/* The job and transfer memory kept mapped for the next jobs, which will not come. */
 	powervr_render_jobs_forget(render, session);
+	powervr_transfer_forget(render, session);
 
 	/* The handles whose unmapping waited for the session's work, which has all ended. */
 	resources_drain(session, 1);
