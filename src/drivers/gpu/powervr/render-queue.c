@@ -2473,8 +2473,9 @@ handle_notice(
 					  (unsigned)powervr_target_data_address(session->noted_target, 1),
 					  (unsigned long long)powervr_gpu_mmu_root(&session->mmu));
 				powervr_target_dump(session->noted_target);
-				powervr_target_catalogues(session->noted_target, 0, now_catalogues);
-				kern_logf("powervr: catalogues before the kick: vce %llx %llx te %llx %llx alist %llx; now: vce %llx %llx te %llx %llx alist %llx\n",
+				powervr_target_catalogues(session->noted_target, session->noted_half, now_catalogues);
+				kern_logf("powervr: half %u catalogues before the kick: vce %llx %llx te %llx %llx alist %llx; now: vce %llx %llx te %llx %llx alist %llx\n",
+					  session->noted_half,
 					  (unsigned long long)session->noted_catalogues[0], (unsigned long long)session->noted_catalogues[1],
 					  (unsigned long long)session->noted_catalogues[4], (unsigned long long)session->noted_catalogues[5],
 					  (unsigned long long)session->noted_catalogues[8],

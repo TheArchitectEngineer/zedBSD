@@ -427,6 +427,7 @@ struct powervr_session {
 	 * those at a reset.
 	 */
 	uint64_t noted_catalogues[POWERVR_TARGET_CATALOGUES];
+	unsigned noted_half;
 };
 
 /*
@@ -677,6 +678,9 @@ uint32_t powervr_target_data_address(const struct powervr_target *target, unsign
 
 /* Reports the layout a render target was made with. */
 const struct powervr_target_layout *powervr_target_layout_of(const struct powervr_target *target);
+
+/* Takes the half of a target the next render uses; renders alternate between the two (render-target.c). */
+unsigned powervr_target_take_half(struct powervr_target *target);
 
 /* Reads the parameter manager's catalogues from one half of a target's record (render-target.c). */
 void powervr_target_catalogues(const struct powervr_target *target, unsigned half, uint64_t catalogues[POWERVR_TARGET_CATALOGUES]);
