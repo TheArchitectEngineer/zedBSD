@@ -595,7 +595,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS273](ws273/ws.md) | MG008 | Anbernic RG350（JZ4770、MIPS32）の実機への移植（2026-10-19 ユーザー） | incomplete（2026-10-19 22:22 ユーザーの指示で中断: p001・p002 cleared、p003 途中（main 7adce0d6d）。実機 1 は beta2.md U26） | 再開は ws273/phase003/phase.md |
 | [WS274](ws274/ws.md) | MG001 | 仮想メモリの code（vm.c・vmspace.c など）を src/kern/vm/ に分けて整理する（2026-10-19 ユーザー） | completed（2026-10-19、src/kern/vm/ の 26 file、T1-741 まで PASS） | — |
 | [WS277](ws277/ws.md) | MG008 | VisionFive 2 の DC8200 の display driver（zero copy の scanout）（2026-10-20 ユーザー） | incomplete（p001 の設計を P1、q1341） | p001 設計 → design-reviewer |
-| [WS278](ws278/ws.md) | MG008 | Raspberry Pi 5 対応（config/ci/config-rpi5.mk、必要なら GPU・WiFi）（2026-10-21 ユーザー） | incomplete | p001 の調べと設計（P3 q1542） |
+| [WS278](ws278/ws.md) | MG008 | Raspberry Pi 5 対応（config/ci/config-rpi5.mk、必要なら GPU・WiFi）（2026-10-21 ユーザー） | incomplete | p001 設計・p002 起動 image は main（6757ac6f2）、実機の確認待ち（plan/ws278/tests/rpi5-hw-test.md）、判断 D1〜D3 待ち |
 | [WS275](ws275/ws.md) | MG008 | sun4u に /dev/graphics を実装し Xzed を動かす（2026-10-19 ユーザー） | incomplete（2026-10-19 停止、BUG-337。p001〜p005 cleared・main に merge 50bd10c5f） | BUG-337 |
 | [WS276](ws276/ws.md) | MG008 | m68k（x68k・m68k-virt）の静的な program の TLS を kernel と libc で支える（2026-10-19、q1301 の所見） | completed（2026-10-19、m68k の静的な TLS、T1-741） | — |
 
