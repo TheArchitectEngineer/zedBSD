@@ -460,3 +460,5 @@ Keiland が使い、vkmatrix 15/15・gpu-selftest 13/13 で確かめていない
   - lavapipe で 36/36 PASS（perf の行の形は従来どおり）。
   - VF2 の bin/vkmatrix は rc 0、warning 0。
   - 板は未実施。
+- d42 の上で P2 の perf の case（1c089ebee、fdcc38ee1 で merge）: clear 3.85 ms、immediate（15 op）15.1 ms、flat 15.55 ms、quarter（1/4 面積）7.2 ms、alu（402 op）268.75 ms、texture 37.95 ms → 1 op あたり 0.32 ns/pixel（約 3.2 G pixel-op/s、ALU は妥当）、命令数に依らない固定費が約 5.4 ns/pixel（約 2 clock）で軽い shader の時間の大半、面積にほぼ比例。固定費は pixel の task の起動（PDS の program・定数の取り込み）の疑い。
+- d43（P1 の試し 84eaa2f3b、program と job の general の memory を SLC に通す、main には入れない）: 入れた後に板が戻らない（電源の入れ直し 2 回）。
