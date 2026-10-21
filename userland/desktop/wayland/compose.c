@@ -4071,6 +4071,17 @@ compose_hold(
 		slot->held[slot->held_count++] = windows[index]->current;
 		windows[index]->fresh = 0;
 
+		/*
+		 * A window awaited after an earlier frame that has not committed
+		 * since is not awaited any more: one that asked for a frame
+		 * callback and then had nothing to draw would otherwise hold every
+		 * later frame for the pacing's whole wait.
+		 */
+		if (windows[index]->awaited && windows[index]->committed_callbacks == NULL) {
+			windows[index]->awaited = 0;
+			server->awaiting--;
+		}
+
 		/* A window with frame callbacks is awaited after the frame (frame pacing). */
 		if (windows[index]->committed_callbacks != NULL && !windows[index]->awaited) {
 			windows[index]->awaited = 1;
