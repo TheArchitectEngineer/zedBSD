@@ -102,6 +102,16 @@
 /* The page resources are allocated in, and the framebuffer's view is made in. */
 #define POWERVR_DISPLAY_PAGE_BYTES	4096U
 
+/*
+ * The flip report: how often the counts of the frames scanned directly are
+ * written to the log (milliseconds), and how many bins its histograms
+ * have (blanks waited: 1, 2, 3, 4 or more; the commit's place after a
+ * blank: under 4, 4 to 8, 8 to 12, 12 to 14 and 14 ms or more).
+ */
+#define POWERVR_FLIP_REPORT_MS		5000U
+#define POWERVR_FLIP_WAITED_BINS	4U
+#define POWERVR_FLIP_PHASE_BINS		5U
+
 /* The bytes of one pixel of the screen and of a frame. */
 #define POWERVR_DISPLAY_PIXEL_BYTES	4U
 
@@ -250,6 +260,27 @@ struct powervr_display {
 	struct wait_queue flip_done;
 
 	/*
+	 * The flip report, under the mutex: since report_tick, the frames
+	 * scanned directly, how many commits counted as early, how many blanks
+	 * each waited from its commit to its taking, where in its frame each
+	 * commit was written, and the time from the present's entry to its
+	 * commit (the change before it) and from the commit to its return
+	 * (microseconds, sum and longest).  present_entry_us is the present
+	 * under way's entry.
+	 */
+	uint64_t report_tick;
+	uint32_t report_presents;
+	uint32_t report_early;
+	uint32_t report_waited[POWERVR_FLIP_WAITED_BINS];
+	uint32_t report_phases[POWERVR_FLIP_PHASE_BINS];
+	uint64_t report_queue_us;
+	uint64_t report_queue_most_us;
+	uint64_t report_take_us;
+	uint64_t report_take_most_us;
+	uint64_t report_period_us;
+	uint64_t present_entry_us;
+
+	/*
 	 * The cursor plane, under the mutex: its images, made at the
 	 * first image set, their uncached views, the one shown or last set
 	 * (-1 before any), whether it is shown, and its corner.
@@ -344,6 +375,9 @@ static int change_plane(struct powervr_display *display, struct powervr_display_
 static int await_plane(struct powervr_display *display, struct powervr_display_resource **freed, unsigned *count);
 static int settle_lost(struct powervr_display *display, struct powervr_display_resource **freed, unsigned *count);
 static void wait_flip_over(struct powervr_display *display);
+static uint64_t flip_now_us(void);
+static void flip_count(struct powervr_display *display, const struct drv_powervr_dc_commit_note *note, uint64_t committed_us, uint64_t reached);
+static void flip_report(struct powervr_display *display);
 static void collect_freed(struct powervr_flip_hold **taken, unsigned taken_count, struct powervr_display_resource **freed, unsigned *count);
 static struct powervr_display_resource *resource_of_hold(struct powervr_flip_hold *hold);
 static void free_resource(struct powervr_display_resource *resource);
@@ -944,6 +978,7 @@ output_present(
 	struct powervr_display *display;
 	struct powervr_display_resource *resource;
 	struct powervr_display_resource *freed[POWERVR_DISPLAY_FREED_MAX];
+	uint64_t entry_us;
 	unsigned count;
 	int shared;
 	int direct;
@@ -952,6 +987,7 @@ output_present(
 	display = device;
 	resource = private_resource;
 	count = 0;
+	entry_us = flip_now_us();
 
 	/* Only the session's own resource; the core checked the frame lies inside it. */
 	if (resource->owner != session)
@@ -1009,7 +1045,9 @@ output_present(
 		}
 
 		if (direct) {
+			display->present_entry_us = entry_us;
 			error = change_plane(display, resource, freed, &count);
+			flip_report(display);
 		} else {
 			if (shared)
 				show_shared_frame(display, resource, request);
@@ -1603,7 +1641,9 @@ change_plane(
 	unsigned *count)
 {
 	const struct drv_powervr_dc_frame *frame;
+	struct drv_powervr_dc_commit_note note;
 	struct powervr_flip_hold *hold;
+	uint64_t committed_us;
 	uint64_t base;
 	int error;
 
@@ -1622,10 +1662,20 @@ change_plane(
 
 	/* Holds the buffer from now until the commit after it is taken. */
 	powervr_flip_commit(&display->flip, hold, base);
+	committed_us = flip_now_us();
+	drv_powervr_dc_commit_noted(&note);
 
 	/* Waits for the plane to take it. */
 	error = await_plane(display, freed, count);
-	return error;
+	if (error != 0)
+		return error;
+
+	/* A frame's buffer: its commit and taking counted for the report. */
+	if (resource != NULL)
+		flip_count(display, &note, committed_us, drv_powervr_dc_sequence());
+
+	/* Succeeded: the plane took it. */
+	return 0;
 }
 
 /*
@@ -1737,6 +1787,129 @@ wait_flip_over(
 		observed = waitq_sequence(&display->flip_done);
 		(void)mutex_wait(&display->mutex, &display->flip_done, observed, 0, 0);
 	}
+}
+
+/* Gives the fine counter's time in microseconds (0 without the counter). */
+static uint64_t
+flip_now_us(
+	void)
+{
+	uint64_t counter;
+	uint64_t frequency;
+	bool counting;
+
+	/* The counter, turned into microseconds. */
+	counting = kern_rtc_read_counter(&counter, &frequency);
+	if (!counting || frequency == 0U)
+		return 0U;
+
+	/* Succeeded: the time. */
+	return counter / frequency * 1000000U + counter % frequency * 1000000U / frequency;
+}
+
+/*
+ * Counts a frame scanned directly for the flip report: whether its commit
+ * was early, how many blanks it waited from the count read at its commit
+ * to the count once taken, where in its frame it was written, and how long
+ * it waited before and after its commit.  The caller holds the mutex.
+ */
+static void
+flip_count(
+	struct powervr_display *display,
+	const struct drv_powervr_dc_commit_note *note,
+	uint64_t committed_us,
+	uint64_t reached)
+{
+	uint64_t returned_us;
+	uint64_t queue_us;
+	uint64_t take_us;
+	uint64_t waited;
+	unsigned bin;
+
+	/* The frame, and an early commit. */
+	display->report_presents++;
+	if (note->early)
+		display->report_early++;
+
+	/* The blanks from the commit to its taking: 1, 2, 3, or 4 and more. */
+	waited = 0U;
+	if (reached > note->sequence)
+		waited = reached - note->sequence;
+	bin = POWERVR_FLIP_WAITED_BINS - 1U;
+	if (waited <= 1U)
+		bin = 0U;
+	else if (waited < POWERVR_FLIP_WAITED_BINS)
+		bin = (unsigned)waited - 1U;
+	display->report_waited[bin]++;
+
+	/* Where the commit was written after the newest blank. */
+	bin = 4U;
+	if (note->since_us < 4000U)
+		bin = 0U;
+	else if (note->since_us < 8000U)
+		bin = 1U;
+	else if (note->since_us < 12000U)
+		bin = 2U;
+	else if (note->since_us < 14000U)
+		bin = 3U;
+	display->report_phases[bin]++;
+	display->report_period_us = note->period_us;
+
+	/* The waits before and after the commit. */
+	returned_us = flip_now_us();
+	queue_us = 0U;
+	if (committed_us > display->present_entry_us)
+		queue_us = committed_us - display->present_entry_us;
+	take_us = 0U;
+	if (returned_us > committed_us)
+		take_us = returned_us - committed_us;
+	display->report_queue_us += queue_us;
+	if (queue_us > display->report_queue_most_us)
+		display->report_queue_most_us = queue_us;
+	display->report_take_us += take_us;
+	if (take_us > display->report_take_most_us)
+		display->report_take_most_us = take_us;
+}
+
+/*
+ * Writes the flip report to the log every POWERVR_FLIP_REPORT_MS while
+ * frames are scanned directly, then starts the next.  The caller holds the
+ * mutex.
+ */
+static void
+flip_report(
+	struct powervr_display *display)
+{
+	uint64_t now;
+	uint32_t presents;
+
+	/* Not yet time, or nothing to say. */
+	now = sched_ticks();
+	if (now - display->report_tick < KERN_MS_TO_TICKS(POWERVR_FLIP_REPORT_MS))
+		return;
+	presents = display->report_presents;
+	display->report_tick = now;
+	if (presents == 0U)
+		return;
+
+	/* The counts, then cleared for the next. */
+	kern_logf("powervr: display flips: %u, early %u, taken after 1/2/3/4+ blanks %u/%u/%u/%u, "
+		  "committed 0-4/4-8/8-12/12-14/14+ ms after a blank %u/%u/%u/%u/%u, "
+		  "before the commit %llu/%llu us, commit to taken %llu/%llu us (average/longest), period %llu us\n",
+		  presents, display->report_early,
+		  display->report_waited[0], display->report_waited[1], display->report_waited[2], display->report_waited[3],
+		  display->report_phases[0], display->report_phases[1], display->report_phases[2], display->report_phases[3], display->report_phases[4],
+		  (unsigned long long)(display->report_queue_us / presents), (unsigned long long)display->report_queue_most_us,
+		  (unsigned long long)(display->report_take_us / presents), (unsigned long long)display->report_take_most_us,
+		  (unsigned long long)display->report_period_us);
+	display->report_presents = 0U;
+	display->report_early = 0U;
+	kern_memset(display->report_waited, 0, sizeof(display->report_waited));
+	kern_memset(display->report_phases, 0, sizeof(display->report_phases));
+	display->report_queue_us = 0U;
+	display->report_queue_most_us = 0U;
+	display->report_take_us = 0U;
+	display->report_take_most_us = 0U;
 }
 
 /* Adds the buffers a taken commit let go of to the caller's list of resources to free. */

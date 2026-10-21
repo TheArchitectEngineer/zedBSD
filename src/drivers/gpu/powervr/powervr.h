@@ -192,6 +192,23 @@ int drv_powervr_dc_frame_fits(uint32_t width, uint32_t height, uint32_t stride);
  * interrupts off; must not be called with it held.
  */
 int drv_powervr_dc_commit(const struct drv_powervr_dc_frame *frame, uint64_t *base);
+
+/*
+ * Where the last commit was written in its frame (the display's flip
+ * report): the blank count read after it, how far after the newest blank
+ * and the period then (microseconds), and whether it counted as early,
+ * taken at the next blank.  drv_powervr_dc_phase() gives the same place
+ * for now.
+ */
+struct drv_powervr_dc_commit_note {
+	uint64_t sequence;
+	uint64_t since_us;
+	uint64_t period_us;
+	int early;
+};
+
+void drv_powervr_dc_commit_noted(struct drv_powervr_dc_commit_note *note);
+void drv_powervr_dc_phase(uint64_t *since_us, uint64_t *period_us);
 int drv_powervr_dc_cursor(int shown, uint64_t physical, int32_t x, int32_t y);
 
 /* Reports the HDMI panel's vertical-blank count. */
