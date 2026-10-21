@@ -473,6 +473,17 @@ pool_put(
 		return;
 	}
 
+	/*
+	 * Its page list goes: the list is an export's identity to the display
+	 * (powervr_render_lookup), which a later holder's export must not
+	 * share with one the display may still know; a new one is made when
+	 * it is exported again.
+	 */
+	if (buffer->pages != NULL)
+		kern_free(buffer->pages);
+	buffer->pages = NULL;
+	buffer->page_count = 0;
+
 	/* First in the pool, then the oldest off its end while it holds too much. */
 	evicted = NULL;
 	enabled = spin_lock_irqsave(&render->buffer_guard);
