@@ -248,6 +248,18 @@
  */
 #define DC_STALL_TICKS		KERN_MS_TO_TICKS(100U)
 
+/*
+ * How far before the next blank a commit is still taken at that blank
+ * (ws270-p007 q1550), in microseconds, and the shortest and longest
+ * frames the measured period may be.  A commit written earlier in the
+ * frame counts from the blank before (drv_powervr_dc_commit), so it is
+ * taken one blank sooner: the presents of the desktop's frames were held
+ * to one every two blanks.
+ */
+#define DC_EARLY_MARGIN_US	3000U
+#define DC_PERIOD_LEAST_US	8000U
+#define DC_PERIOD_MOST_US	50000U
+
 /* How many vertical blanks' scan positions the interrupt keeps for a test. */
 #define DC_BLANK_RING		64U
 
@@ -321,7 +333,10 @@ struct dc_adoption {
  * Started by drv_powervr_dc_vblank_start() and kept for the life of the
  * system.  The interrupt alone advances sequence and fills the ring; both
  * change under lock, and sequence is also read without it through an
- * acquire load.  Last_tick is the scheduler tick of the newest blank.  The
+ * acquire load.  Last_tick is the scheduler tick of the newest blank,
+ * last_counter the fine counter's reading at it and period_counts the
+ * counter's counts between the last two blanks (0 until two came in a
+ * row), so a commit can tell how far into the frame it is written.  The
  * ring keeps the panel's raw scan position as each interrupt read it, so
  * a test sees where in the frame the interrupt comes.  Others counts
  * interrupts for the other panel only, which do not advance the count.
@@ -333,6 +348,8 @@ struct dc_blanks {
 	int irq;
 	uint64_t sequence;
 	uint64_t last_tick;
+	uint64_t last_counter;
+	uint64_t period_counts;
 	uint64_t others;
 	uint32_t lowest;
 	uint32_t highest;
@@ -371,6 +388,7 @@ static void log_outcome(const struct dc_adoption *adoption);
 static void write_control(const struct dc_adoption *adoption, uint32_t offset, uint32_t value);
 static void write_plane(const struct dc_adoption *adoption, const struct powervr_dc_plane *plane);
 static void blank_interrupt(int irq, kern_irq_ack_t acknowledge, void *argument);
+static int commit_early(const struct dc_blanks *blanks, uint64_t sequence);
 static const struct powervr_dc_mode *choose_mode(void);
 static int own_screen(const struct powervr_dc_mode *mode, struct powervr_dc_screen *screen, uint32_t *format);
 static void draw_bars(volatile uint32_t *pixels, const struct powervr_dc_screen *screen);
@@ -840,6 +858,7 @@ drv_powervr_dc_commit(
 	unsigned long enabled;
 	uint32_t format;
 	uint32_t swizzle;
+	int early;
 
 	/* Only the controller whose screen can be taken over. */
 	adoption = &board_adoption;
@@ -886,6 +905,9 @@ drv_powervr_dc_commit(
 
 	write_plane(adoption, &plane);
 	*base = atomic_u64_load_acquire(&board_blanks.sequence);
+	early = commit_early(&board_blanks, *base);
+	if (early)
+		*base -= 1U;
 
 	spin_unlock_irqrestore(&dc_commit_lock, enabled);
 
@@ -1348,9 +1370,12 @@ blank_interrupt(
 	void *argument)
 {
 	struct dc_blanks *blanks;
+	uint64_t counter;
+	uint64_t frequency;
 	uint32_t pending;
 	uint32_t location;
 	unsigned long enabled;
+	bool counting;
 
 	(void)irq;
 	blanks = argument;
@@ -1365,6 +1390,13 @@ blank_interrupt(
 	if ((pending & (1U << DC_HDMI_PANEL)) != 0) {
 		atomic_u64_store_release(&blanks->sequence, blanks->sequence + 1U);
 		blanks->last_tick = sched_ticks();
+		counting = kern_rtc_read_counter(&counter, &frequency);
+		blanks->period_counts = 0;
+		if (counting && blanks->last_counter != 0U && counter > blanks->last_counter)
+			blanks->period_counts = counter - blanks->last_counter;
+		blanks->last_counter = 0;
+		if (counting)
+			blanks->last_counter = counter;
 		blanks->ring[blanks->next] = location;
 		blanks->next = (blanks->next + 1U) % DC_BLANK_RING;
 		if (location < blanks->lowest)
@@ -1380,6 +1412,49 @@ blank_interrupt(
 
 	/* Hands the interrupt back to the controller of interrupts. */
 	kern_irq_send_eoi(acknowledge);
+}
+
+/*
+ * Tells whether a commit written now, with the blank count at sequence,
+ * comes early enough in the frame to be taken at the blank that ends it:
+ * the newest blank is the one counted, the frames before it measured a
+ * period of a plausible length, and the next blank is at least
+ * DC_EARLY_MARGIN_US away.  Read without the blanks' lock: an interrupt
+ * meanwhile changes the count, which is then not the one counted, and
+ * the commit is not early.
+ */
+static int
+commit_early(
+	const struct dc_blanks *blanks,
+	uint64_t sequence)
+{
+	uint64_t counter;
+	uint64_t frequency;
+	uint64_t last;
+	uint64_t period;
+	uint64_t since;
+	bool counting;
+
+	/* The fine counter, and the newest blank's reading and period. */
+	counting = kern_rtc_read_counter(&counter, &frequency);
+	if (!counting || frequency == 0U)
+		return 0;
+	last = blanks->last_counter;
+	period = blanks->period_counts;
+	if (atomic_u64_load_acquire(&blanks->sequence) != sequence || last == 0U || counter < last)
+		return 0;
+
+	/* A period of a plausible frame, in the counter's counts. */
+	if (period < frequency * DC_PERIOD_LEAST_US / 1000000U || period > frequency * DC_PERIOD_MOST_US / 1000000U)
+		return 0;
+
+	/* Early: the next blank, a period after the newest, at least the margin away. */
+	since = counter - last;
+	if (since + frequency * DC_EARLY_MARGIN_US / 1000000U >= period)
+		return 0;
+
+	/* Succeeded: the blank ending this frame takes it. */
+	return 1;
 }
 
 /*
