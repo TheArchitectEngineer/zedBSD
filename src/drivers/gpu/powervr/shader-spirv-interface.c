@@ -462,10 +462,17 @@ reader_pixel_output(
 	if (reader->key->output_formats[variable->location] == FORMAT_R16G16B16A16_SFLOAT)
 		half = 1;
 
-	/* The shader's colour, clamped when the attachment is normalised; a missing channel is 0, a missing alpha 1. */
+	/*
+	 * The shader's colour, clamped when the attachment is normalised and
+	 * blended; a missing channel is 0, a missing alpha 1.  Without
+	 * blending the pack clamps (its scaled 8-bit unsigned normalised
+	 * form saturates, as Mesa's pco relies on: pck.scale.u8888 with no
+	 * clamp before it), so the clamps are left out (q1536: eight of the
+	 * flat quad's 24 operations a pixel).
+	 */
 	blend = &reader->key->blend[variable->location];
 	for (channel = 0; channel < 4; channel++) {
-		if (channel < words && half) {
+		if (channel < words && (half || blend->enable == 0)) {
 			source[channel] = shader_spirv_value_operand(variable->first + channel, 0);
 		} else if (channel < words) {
 			source[channel] = saturate(reader, shader_spirv_value_operand(variable->first + channel, 0));
@@ -524,9 +531,8 @@ reader_pixel_output(
 					b = shader_spirv_float_negate(b);
 				if (operation == OPERATION_REVERSE_SUBTRACT)
 					a = shader_spirv_float_negate(a);
+				/* The pack clamps the sum to [0, 1] (see above). */
 				result[channel] = shader_spirv_emit_value(reader, POWERVR_IR_FLOAT_ADD, &a, &b, NULL);
-				if (!half)
-					result[channel] = saturate(reader, result[channel]);
 			} else {
 				return ENOTSUP;
 			}

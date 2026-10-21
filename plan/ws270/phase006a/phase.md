@@ -417,3 +417,25 @@ Keiland が使い、vkmatrix 15/15・gpu-selftest 13/13 で確かめていない
   - 板の vkmatrix は未実施。
 - d39（cd107fa41、SLC は bypass のまま、P2 の temps の詰め）: vkmatrix 33/33。perf: 1080p の clear 3.85 ms、LOAD 23.5 ms、平らな全画面の quad 20.8 ms、texture の全画面の quad 43.25 ms → 土台は速く、fragment の shader の実行が約 10 倍遅い（約 120 Mpixel/s）。`-p 2 -r 5 load-1080-6` は `no progress for 5000 ms`（watchdog の誤検出、HWR 無し）で FAIL → P1 に watchdog の見直し。P1・P2 に fragment の道（PDS の pixel program・USC の task・instance の数）を Mesa と比べるよう依頼。
 - P2 q1536-i02（報告だけ）: clear だけの 1080p の 3D の command を Mesa（drm-shim、BVNC 36.50.54.182）と比べ、usc_pixel_output_ctrl・isp_ctl・ZLS・PBE・tiles in flight・partitions が同じ。違いは isp_bgobjvals（0x3ff と 0x300、stencil 無しなら無関係）と DISABLE_PIXELMERGE（Mesa は立てる）だけ。d39 の clear 3.85 ms と合う → 遅いのは draw（fragment の shader の実行）の側。
+
+### q1536-i02（2026-10-21、P2）: 画素ごとの仕事を減らす
+
+- Mesa（BXE-4-32、`PVR_SHIM_DEVICE_BVNC=36.50.54.182`、`PVR_DEBUG=cs`）と命令を比べた。
+  - 3D の command（usc_pixel_output_ctrl 0x1ff8、isp_ctl 0x80033000、isp_aa 0、ZLS 無し、PBE の word）は、こちらと同じ。
+  - draw の PDS state も同じ形。違いは 2 つで、Mesa は depth を書かず比較が always の時に pds_tri_merge_disable（SIZEINFO2 bit 14）を立て、pds_tempsize は 0。
+  - vkmatrix の push4.frag は Mesa で 312 byte・9 temp・28 group、こちらは 288 byte・13 temp・24 op。
+- 変更:
+  - `render-draw.c`: depth を書かず比較が always の draw に tri merge disable を付けた（Mesa の pvr_setup_triangle_merging_flag と同じ条件）。
+  - `shader-spirv-interface.c`: 正規化した attachment の色の clamp（channel ごとに MINMAX 2 つ）をやめた。
+    - blend が無い時は clamp しない。pck.scale.u8888 が飽和するので、Mesa の pco も clamp していない。
+    - blend の後の和も clamp しない。
+    - blend の前の source の clamp は残す（Vulkan の規定）。
+- 効果（host）:
+  - push4.frag は 24 op → 16 op（288 → 168 byte）。
+  - texture.frag は 33 → 25 op（336 → 216 byte）。
+  - Keiland の quad.frag は 640 → 520 byte、panel.frag は 5208 → 5088 byte。
+- 確認:
+  - compiler の host 試験は 411 と 22 passed。
+  - p010 は 0 failed。
+  - desktop の config で VF2 の vmunix は rc 0、warning 0。
+  - 板は未実施（perf-flat・perf-texture、vkmatrix の色の試験）。
