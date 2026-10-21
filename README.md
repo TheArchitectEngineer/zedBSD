@@ -74,12 +74,16 @@ Supported GPUs:
 
 ## AI Usage
 
-Both zedBSD and Keiland Desktop are [architected and directed](plan/master.md)
-by a solo developer and implemented via AI coding agents, currently targeting
-64-bit x86 PCs and the Raspberry Pi series.
+Both zedBSD and Keiland Desktop are [architected and
+directed](plan/master.md) by a solo developer and implemented via AI
+coding agents, currently targeting 64-bit x86 PCs and the Raspberry Pi
+series.
 
-Debugging is driven by a cutting-edge "Vision Language Model Loop" that captures
-the target machine's screen via camera.
+Debugging is powered by an advanced Vision-Language Model loop that
+monitors the target screen via a camera, along with serial or SSH
+console output.  Furthermore, the board power is routed through a
+SwitchBot Smart Plug, allowing the AI to autonomously reboot the
+device via API after transferring a new kernel via SCP.
 
 This project is not a clone of any existing OS.  Every layer, including the
 desktop environment, is engineered from the ground up by a professional systems
