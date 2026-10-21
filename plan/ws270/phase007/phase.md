@@ -80,3 +80,5 @@ clear 3.85 ms、LOAD 23.35 ms、平らな quad 15.1 ms、1/4 面積 7.2 ms、402
 - d95（idle の診断の kernel）: idle 60 s の後の job も firmware の中は速い（TA 0.3、3D 1.1 ms）、同期の kick で sent 10 ms。前の「job wait 139 ms」は kick から reap までで reap は次の submit の時 → GPU の時間ではない。139 ms は libvulkan か gpu.c の受け付け（capacity の待ち等）の疑い、優先度を下げる。
 - main e6b12bba9（fed1a5fa3 まで）。板は main の kernel と wayland。
 - 2026-10-22 ユーザーの体感（main e6b12bba9）:「すばらしい。実用スピードです。」
+- d97（P1 39a097e0e: zero copy の flip を条件付きで 1 blank で取られたと数える）: drag の窓で acquire 13.9 → 7.3 ms、frame_ms は 34.6（rec の end 11.45 ms が次の律速）。output lost 0。tearing の目視はユーザー待ち。
+- d98（P1 41ed59242: kernel の vk-command の object の検索を 256 bucket の hash に、39a097e0e 込み）: vkmatrix 109/109、HWR 0、output lost 0。rec の end 11.45 → 0.8〜1.5 ms、drag の窓の compose frame_ms 22〜33 ms（acquire 3〜6.5、submit 12〜14）。
