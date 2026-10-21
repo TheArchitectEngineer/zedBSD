@@ -484,6 +484,7 @@ powervr_render_job_run(
 	started = powervr_timing_now();
 	mutex_lock(&render->core->lock);
 
+	session->noted_target = target;
 	error = powervr_session_kick_render(render, session, target, 0, memory->geometry, memory->fragment, memory->fragment, NULL, 0, &memory->marks);
 
 	mutex_unlock(&render->core->lock);
