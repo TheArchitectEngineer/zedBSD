@@ -19,6 +19,7 @@
 #include "terminal.h"
 #include "shaders.h"
 
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -67,6 +68,11 @@ static VkResult render_pipeline(struct terminal_renderer *renderer);
 static VkResult render_module(struct terminal_renderer *renderer, const uint32_t *code, size_t size, VkShaderModule *module);
 static uint32_t render_build(struct terminal_renderer *renderer, struct terminal_screen *screen, struct terminal_font *font, const struct terminal_window *window);
 static void render_upload(struct terminal_renderer *renderer, uint32_t vertex_count);
+static void render_store(struct terminal_renderer *renderer, size_t first, size_t count);
+static int render_rows_usable(struct terminal_renderer *renderer, const struct terminal_screen *screen, const struct terminal_font *font, const struct terminal_theme *theme, unsigned blank);
+static void render_row_range(const struct terminal_screen *screen, unsigned long line, struct terminal_render_row *state);
+static int render_row_same(const struct terminal_renderer *renderer, const struct terminal_render_row *kept, const struct terminal_render_row *state, const struct terminal_cell *cells, unsigned columns, unsigned index);
+static void render_range_add(struct terminal_renderer *renderer, size_t first, size_t count);
 static float *render_preedit(struct terminal_renderer *renderer, const struct terminal_screen *screen, struct terminal_font *font, const struct terminal_window *window, float *vertex, int first_row, int last_row);
 static uint32_t render_utf8_next(const char *text, size_t *at);
 static float *render_quad(float *vertex, const struct terminal_font *font, float x, float y, float width, float height, unsigned slot, uint32_t foreground, uint32_t background);
@@ -439,6 +445,8 @@ terminal_renderer_close(
 			vkFreeMemory(renderer->device, renderer->vertex_memory, NULL);
 		free(renderer->vertex_build);
 		free(renderer->vertex_kept);
+		free(renderer->rows);
+		free(renderer->row_cells);
 
 		/* The commands and the synchronization. */
 		if (renderer->pool != VK_NULL_HANDLE)
@@ -1038,8 +1046,17 @@ render_vertices(
 	/* Where frames are built, and the copy of what the mapping holds (nothing yet). */
 	renderer->vertex_build = malloc(buffer.size);
 	renderer->vertex_kept = malloc(buffer.size);
-	renderer->vertex_kept_words = 0U;
+	renderer->vertex_known = 0U;
+	renderer->range_count = 0U;
 	if (renderer->vertex_build == NULL || renderer->vertex_kept == NULL)
+		return VK_ERROR_OUT_OF_HOST_MEMORY;
+
+	/* The rows as they are drawn, none yet. */
+	renderer->rows = calloc(TERMINAL_RENDER_ROWS, sizeof(*renderer->rows));
+	renderer->row_cells = malloc((size_t)TERMINAL_RENDER_ROWS * TERMINAL_MAX_COLUMNS * sizeof(*renderer->row_cells));
+	renderer->row_frame = 0U;
+	memset(&renderer->row_key, 0, sizeof(renderer->row_key));
+	if (renderer->rows == NULL || renderer->row_cells == NULL)
 		return VK_ERROR_OUT_OF_HOST_MEMORY;
 
 	/* Succeeded: the host writes each frame's vertices here. */
@@ -1258,6 +1275,15 @@ render_build(
 	unsigned blank;
 	float x;
 	float y;
+	const struct terminal_cell *base;
+	struct terminal_render_row *kept;
+	struct terminal_render_row state;
+	float *row_start;
+	size_t first;
+	int keep;
+	int store;
+	int same;
+	int index;
 
 	/* The blank glyph (a space), which empty cells and the right halves of wide characters use. */
 	blank = terminal_font_slot(font, ' ');
@@ -1267,6 +1293,21 @@ render_build(
 	query_count = 0;
 	if (window != NULL && window->search_open)
 		query_count = terminal_search_decode(window->search_query, window->search_length, query, TERMINAL_SEARCH_LENGTH);
+
+	/*
+	 * Rows drawn in the frame before may be kept as the mapping holds
+	 * them, unless what every row depends on changed; while the search
+	 * marks its matches (its marks depend on the query and the lines
+	 * around), every row is built and none is kept.
+	 */
+	renderer->row_frame++;
+	renderer->range_count = 0U;
+	keep = render_rows_usable(renderer, screen, font, theme, blank);
+	store = 1;
+	if (query_count != 0U || (window != NULL && window->search_found))
+		store = 0;
+	if (!store)
+		keep = 0;
 
 	/* The cursor's line, which the window shows only when the view reaches it (ws035-p114). */
 	cursor_line = screen->scrolled + screen->cursor_row;
@@ -1303,6 +1344,38 @@ render_build(
 		if (used + (size_t)screen->columns * RENDER_CELL_VERTICES > renderer->vertex_capacity)
 			break;
 		line = (unsigned long)signed_line;
+
+		/*
+		 * The row's own state: its place, the cursor on it, the
+		 * selections on it.  A row the same as in the frame before, at
+		 * the same place, has its vertices in the mapping already.
+		 */
+		memset(&state, 0, sizeof(state));
+		state.valid = 1;
+		state.frame = renderer->row_frame;
+		state.first = used;
+		state.y = y;
+		state.cursor = -1;
+		if (screen->cursor_visible && line == cursor_line)
+			state.cursor = (long)screen->cursor_column;
+		state.selected = 0;
+		if (screen->selected && line >= screen->scrolled)
+			state.selected = 1;
+		render_row_range(screen, line, &state);
+		base = terminal_screen_line_cell(screen, 0U, line);
+		kept = NULL;
+		index = row + 2;
+		if (base != NULL && index >= 0 && index < (int)TERMINAL_RENDER_ROWS)
+			kept = &renderer->rows[index];
+		if (keep && kept != NULL) {
+			same = render_row_same(renderer, kept, &state, base, screen->columns, (unsigned)index);
+			if (same) {
+				kept->frame = renderer->row_frame;
+				vertex += kept->count * RENDER_VERTEX_FLOATS;
+				continue;
+			}
+		}
+		row_start = vertex;
 
 		/* The cells the search's matches cover on this line. */
 		marked = 0;
@@ -1397,68 +1470,252 @@ render_build(
 			if (wide)
 				column++;
 		}
+
+		/* The row's vertices are stored into the mapping; the row is kept for the next frame, or not. */
+		state.count = (size_t)(vertex - row_start) / RENDER_VERTEX_FLOATS;
+		render_range_add(renderer, state.first, state.count);
+		if (kept != NULL && store) {
+			*kept = state;
+			memcpy(renderer->row_cells + (size_t)index * TERMINAL_MAX_COLUMNS, base, (size_t)screen->columns * sizeof(*base));
+		} else if (kept != NULL) {
+			kept->valid = 0;
+		}
 	}
+
+	/* What follows the rows is built every frame. */
+	first = (size_t)(vertex - start) / RENDER_VERTEX_FLOATS;
 
 	/* The search bar over the last row, while it is open (ws128-p006). */
 	vertex = render_search_bar(renderer, screen, font, window, theme, vertex);
 
 	/* The input method's text being composed, over the cells from the cursor (BUG-155), or from the search bar's caret while it is open (ws090-p022). */
 	vertex = render_preedit(renderer, screen, font, window, vertex, first_row, last_row);
+	render_range_add(renderer, first, (size_t)(vertex - start) / RENDER_VERTEX_FLOATS - first);
 
 	/* Reports how many vertices the frame draws. */
 	return (uint32_t)((size_t)(vertex - start) / RENDER_VERTEX_FLOATS);
 }
 
 /*
- * Stores a frame's vertices (built in vertex_build) into the vertex
- * buffer's mapping: only the doublewords that differ from what it holds,
- * since the processor reaches the mapping around its cache and each store
- * is a bus write (most of a frame is the frame before: a typed character
- * changes a cell or two, and a line moved up changes only the atlas
- * places of its cells).  The doublewords past what the copy knows are
- * stored all.  The copy is then the frame built, and the frame before's
- * copy is where the next frame is built.
+ * Tells whether the rows kept from the frame before may be used: what
+ * every row depends on beside its own state is as it was (render_key).
+ * When it is not, it is kept as it is now and every row is dropped.
+ */
+static int
+render_rows_usable(
+	struct terminal_renderer *renderer,
+	const struct terminal_screen *screen,
+	const struct terminal_font *font,
+	const struct terminal_theme *theme,
+	unsigned blank)
+{
+	struct terminal_render_key key;
+	unsigned index;
+	int same;
+
+	/* What the rows depend on now (an atlas holding fewer glyphs started again). */
+	memset(&key, 0, sizeof(key));
+	key.theme = theme;
+	key.font = font;
+	key.face = font->face;
+	key.pixels_size = font->pixels_size;
+	key.cell_width = font->cell_width;
+	key.cell_height = font->cell_height;
+	key.atlas_width = font->atlas_width;
+	key.atlas_height = font->atlas_height;
+	key.used = font->used;
+	key.blank = blank;
+	key.columns = screen->columns;
+	key.rows = screen->rows;
+	key.width = renderer->extent.width;
+	key.height = renderer->extent.height;
+	same = 1;
+	if (key.theme != renderer->row_key.theme ||
+	    key.font != renderer->row_key.font ||
+	    key.face != renderer->row_key.face ||
+	    key.pixels_size != renderer->row_key.pixels_size ||
+	    key.cell_width != renderer->row_key.cell_width ||
+	    key.cell_height != renderer->row_key.cell_height ||
+	    key.atlas_width != renderer->row_key.atlas_width ||
+	    key.atlas_height != renderer->row_key.atlas_height ||
+	    key.used < renderer->row_key.used ||
+	    key.blank != renderer->row_key.blank ||
+	    key.columns != renderer->row_key.columns ||
+	    key.rows != renderer->row_key.rows ||
+	    key.width != renderer->row_key.width ||
+	    key.height != renderer->row_key.height)
+		same = 0;
+	renderer->row_key = key;
+
+	/* Changed: no row is kept. */
+	if (!same) {
+		for (index = 0U; index < TERMINAL_RENDER_ROWS; index++)
+			renderer->rows[index].valid = 0;
+	}
+	return same;
+}
+
+/*
+ * Fills a row's columns of the pointer's range on a line: from its first
+ * column to its last, or none (from past to).
+ */
+static void
+render_row_range(
+	const struct terminal_screen *screen,
+	unsigned long line,
+	struct terminal_render_row *state)
+{
+	/* None. */
+	state->range_from = 1U;
+	state->range_to = 0U;
+	if (!screen->range || line < screen->range_from[1] || line > screen->range_to[1])
+		return;
+
+	/* The whole line, but from the range's first cell on its first line and up to its last on its last. */
+	state->range_from = 0U;
+	state->range_to = ULONG_MAX;
+	if (line == screen->range_from[1])
+		state->range_from = screen->range_from[0];
+	if (line == screen->range_to[1])
+		state->range_to = screen->range_to[0];
+}
+
+/*
+ * Tells whether a row is drawn as it was in the frame before, at the same
+ * place: kept then, with the same state and the same cells.
+ */
+static int
+render_row_same(
+	const struct terminal_renderer *renderer,
+	const struct terminal_render_row *kept,
+	const struct terminal_render_row *state,
+	const struct terminal_cell *cells,
+	unsigned columns,
+	unsigned index)
+{
+	const struct terminal_cell *was;
+	unsigned column;
+
+	/* Kept in the frame before, at the same place, in the same state. */
+	if (!kept->valid || kept->frame + 1U != renderer->row_frame)
+		return 0;
+	if (kept->first != state->first ||
+	    kept->y != state->y ||
+	    kept->cursor != state->cursor ||
+	    kept->selected != state->selected ||
+	    kept->range_from != state->range_from ||
+	    kept->range_to != state->range_to)
+		return 0;
+
+	/* The same cells. */
+	was = renderer->row_cells + (size_t)index * TERMINAL_MAX_COLUMNS;
+	for (column = 0U; column < columns; column++) {
+		if (was[column].codepoint != cells[column].codepoint ||
+		    was[column].foreground != cells[column].foreground ||
+		    was[column].background != cells[column].background ||
+		    was[column].continuation != cells[column].continuation)
+			return 0;
+	}
+
+	/* Succeeded: drawn as it was. */
+	return 1;
+}
+
+/* Adds a part of the frame's vertices that was built, joined to the part before it when they meet. */
+static void
+render_range_add(
+	struct terminal_renderer *renderer,
+	size_t first,
+	size_t count)
+{
+	struct terminal_render_range *last;
+
+	/* Nothing built. */
+	if (count == 0U)
+		return;
+
+	/* After the part before it. */
+	if (renderer->range_count != 0U) {
+		last = &renderer->ranges[renderer->range_count - 1U];
+		if (last->first + last->count == first) {
+			last->count += count;
+			return;
+		}
+	}
+
+	/* A new part; with the list full it is stored at once (no frame reads the vertices while they are built). */
+	if (renderer->range_count == sizeof(renderer->ranges) / sizeof(renderer->ranges[0])) {
+		render_store(renderer, first, count);
+		return;
+	}
+	renderer->ranges[renderer->range_count].first = first;
+	renderer->ranges[renderer->range_count].count = count;
+	renderer->range_count++;
+}
+
+/*
+ * Stores the parts of a frame's vertices that were built (in vertex_build,
+ * each at its place, the ranges) into the vertex buffer's mapping: only
+ * the doublewords that differ from what it holds, since the processor
+ * reaches the mapping around its cache and each store is a bus write (a
+ * typed character changes a cell or two, and a line moved up changes only
+ * the atlas places of its cells).  The doublewords past those ever
+ * written are stored all.  The rows not built are in the mapping already.
  */
 static void
 render_upload(
 	struct terminal_renderer *renderer,
 	uint32_t vertex_count)
 {
+	unsigned index;
+
+	/* Each part built. */
+	(void)vertex_count;
+	for (index = 0U; index < renderer->range_count; index++)
+		render_store(renderer, renderer->ranges[index].first, renderer->ranges[index].count);
+	renderer->range_count = 0U;
+}
+
+/* Stores one part of the vertices built into the mapping and its copy, the doublewords that changed. */
+static void
+render_store(
+	struct terminal_renderer *renderer,
+	size_t first,
+	size_t count)
+{
 	volatile render_word *mapped;
 	const render_word *built;
-	const render_word *kept;
-	float *swap;
+	render_word *kept;
 	uint64_t word;
-	size_t words;
-	size_t known;
 	size_t index;
+	size_t end;
+	size_t known;
 
-	/* The frame's doublewords (a vertex is six), and how many of them the copy knows. */
-	words = (size_t)vertex_count * RENDER_VERTEX_FLOATS * sizeof(float) / sizeof(uint64_t);
-	known = renderer->vertex_kept_words;
-	if (known > words)
-		known = words;
+	/* The part's doublewords (a vertex is six), and how many the mapping was ever written. */
+	index = first * RENDER_VERTEX_FLOATS * sizeof(float) / sizeof(uint64_t);
+	end = (first + count) * RENDER_VERTEX_FLOATS * sizeof(float) / sizeof(uint64_t);
+	known = renderer->vertex_known;
 	mapped = renderer->vertex_map;
 	built = (const render_word *)renderer->vertex_build;
-	kept = (const render_word *)renderer->vertex_kept;
+	kept = (render_word *)renderer->vertex_kept;
 
-	/* The doublewords the mapping holds otherwise. */
-	for (index = 0U; index < known; index++) {
+	/* Those the mapping holds otherwise, then those never written. */
+	for (; index < end && index < known; index++) {
 		word = built[index];
-		if (word != kept[index])
+		if (word != kept[index]) {
 			mapped[index] = word;
+			kept[index] = word;
+		}
+	}
+	for (; index < end; index++) {
+		word = built[index];
+		mapped[index] = word;
+		kept[index] = word;
 	}
 
-	/* Those past what the copy knows. */
-	for (; index < words; index++) {
-		mapped[index] = built[index];
-	}
-
-	/* The frame built is what the mapping holds now. */
-	swap = renderer->vertex_kept;
-	renderer->vertex_kept = renderer->vertex_build;
-	renderer->vertex_build = swap;
-	renderer->vertex_kept_words = words;
+	/* What was ever written. */
+	if (end > renderer->vertex_known)
+		renderer->vertex_known = end;
 }
 
 /*
