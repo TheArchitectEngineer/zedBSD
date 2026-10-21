@@ -50,3 +50,24 @@ Phase の本体は [phase.md](phase.md)（Q1 が書く）。ここは P1 の作�
 - 板で確かめた: d50（glyph の batch、text=1、shot50 の文字は同じ）、d56（98c7a4ccf、shot56）、d57（c3dde7fc7、shot57、terminal の出力 37 frame が全部部分・rec submit 平均 13.5 ms、全画面 frame の shade 4.0 M px）。
 - 未確認: 3f7097df1（影の quad の切り詰め）は板で未実施（build と式の確認だけ）。desktop の set_drawn は icon の無い desktop でしか見ていない（icon がある時の見た目は未確認）。opaque region は terminal だけ（他の app は宣言しない）。全画面の frame の 85〜110 ms と、dirty=1 になる操作（hover・focus・drag）は aat-input が無く未測定。
 - 次の候補（未 commit、`git stash` の「q1538 raise_measured (untested, not merged)」に保存）: 窓を前に出す（focus）時の dirty=1 を、2 つの窓の範囲と bar の damage にする（shell.c の raise_measured）。build は rc 0・warning 0、板は未実施。
+
+## q1541（2026-10-21、P1）: PowerVR の job ごとの固定費
+
+branch agent/p1-q1541（main を merge 済み）。板は Q1（d59〜d68）。
+
+### 分かった事
+
+- 部分の render area の job が全画面と同じ時間だった原因の一部: ISP_CTL の process_empty_tiles を常に立てていた（c69651a44 で clear の無い job は落とす、Mesa と同じ）。
+- 64x64 の target でも約 2 ms → tile の数ではなく job ごとの固定費。job trace（POWERVR_JOB_TRACE 1、kick から geometry・fragment の timeline までを hal_rtc_read_counter で spin）: small job で TA 639 us・3D 608 us（d66）。
+- firmware の trace（d66、全 group）を timestamp（約 0.65 us 単位）付きで読むと、hardware の TA は約 100 us・3D は約 120 us で、残りは firmware の処理（受け取り→dust on・units init 約 220、→Kick TA 約 225、TA 終わり→Kick 3D 約 480、3D 後の後片付け約 330 us）。1 render に trace の entry が約 90。
+- firmware の trace の記録を止めると（d68、groups 0）TA 250 us・3D 276 us と半分以下。dust の電源を保つ試し（d67、DUST_POWER_BY_HOST 1）は TA が約 140 us 減るだけで既定には入れない。
+- firmware の code・data の section を MIPS で uncached に map している（mainline Linux と同じ）。cached の試し D1（code）・D2（code と data）を作った（結果待ち）。
+
+### 既定に入れた変更（merge 用の形は 16611bb41）
+
+- c69651a44: clear の無い job は空の tile を処理しない。130e4d42d: old contents の要らない job は background object の tag を切る。
+- 277ef9dd8: job の memory を session で使い回す（map・unmap と MMU flush の同期の往復を無くす）。
+- 2535513c9: dmesg の timing を細かい counter で、job の memory への書き込みを 32 bit ずつ。
+- 16611bb41: firmware の trace の既定の group を HWR だけ（0x401）に。根拠: 全 group で firmware の時間が倍（d66→d68）。job ごとに記録される MAIN・MTS・PM・RTD・BIF・POW は診断の build で POWERVR_FIRMWARE_TRACE_GROUPS 0x7fff にする。HWR の記録（recovery の時の情報）は残す。
+- vkmatrix: load-part・perf-load-part・perf-load-small（42389dad2）、perf-clear-64・perf-load-64（d9ff1b38f）。
+- 計測の道具（既定は off）: POWERVR_JOB_TRACE（render-queue.c）、40 番目の small job の firmware の trace を mark から全部 dump（powervr_firmware_trace_since_mark）。
