@@ -48,7 +48,8 @@
 #define HWR_RECOVERED		2264U
 #define HWR_FALSE_DETECT	2300U
 #define TRACE_POINTER		8U
-#define TRACE_TAIL_WORDS	256U
+/* The whole ring, oldest first, so the kicks before the lockup are in it (q1532-i04). */
+#define TRACE_TAIL_WORDS	POWERVR_TRACE_WORDS
 #define RECORD_WORDS_MAX	96U
 
 /*
@@ -131,10 +132,10 @@ powervr_hwr_dump(
 			bif_decode(record, get64(info, base), get64(info, base + 8U), get64(info, base + 16U));
 	}
 
-	/* The trace's last words, for plan/tools/vf2/sfdec.py. */
+	/* The whole trace from its oldest word, for plan/tools/vf2/sfdec.py. */
 	trace = &core->firmware.trace_buffer;
 	pointer = powervr_object_get32(&core->firmware.trace_control, TRACE_POINTER) % POWERVR_TRACE_WORDS;
-	first = (pointer + POWERVR_TRACE_WORDS - TRACE_TAIL_WORDS) % POWERVR_TRACE_WORDS;
+	first = pointer % POWERVR_TRACE_WORDS;
 	kern_logf("powervr: hwr: trace pointer %u, %u words from %u\n", (unsigned)pointer, (unsigned)TRACE_TAIL_WORDS, (unsigned)first);
 	for (done = 0; done < TRACE_TAIL_WORDS; done += 8U) {
 		for (index = 0; index < 8U; index++)
