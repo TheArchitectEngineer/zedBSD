@@ -447,3 +447,19 @@ Keiland が使い、vkmatrix 15/15・gpu-selftest 13/13 で確かめていない
 - d41（373365bb9 の kernel）: run.sh が 500 s で止まり、その後 2 回電源を入れ直しても SSH に戻らない（2026-10-21 10:4x）。原因は未確認（kernel か SD か）。
 - d41 の後: 板が 2 回の電源の入れ直しでも戻らず、3 回目で戻った（kernel は d41、SD の read の失敗 46 回の起動）→ kernel ではなく SD の不安定（BUG-343）と見る。
 - d42（85d8e9ae4、P2 の短い shader・tri merge、P1 の不透明の内側、userland を overlay して session を起動し直し）: 画面は同じ（build/review/vf2-desktop/shot42.png）、vkmatrix 33/33、HWR 0。perf: clear 3.8 ms、load 23.35 ms、flat 19.25 ms（前 20.8）、texture 38.15 ms（前 43.25）→ 約 1 割。KWL の rec submit 162 ms。命令数が主因ではない。次の疑い: PDS・USC の program・定数・descriptor を SLC bypass で DRAM から読む事（P1 q1537-i02）、P2 は pixel あたりの固定費と命令あたりの費用を分ける perf の case（q1536-i03）。
+
+### q1536-i03（2026-10-21、P2）: 画素ごとの費用を分ける perf の case
+
+- vkmatrix に perf-immediate・perf-alu・perf-quarter を足した。shader は `shaders/immediate.frag`・`shaders/alu.frag` で、`regenerate.py` で shader.h を作り直した。
+  - perf-immediate: push constant 無しの固定の色。こちらの compiler で 15 op。
+  - perf-alu: 64 個の依存する乗加算。こちらの compiler で 402 op（定数の即値の移動を含む。flat の 16 op の約 25 倍）。
+  - perf-quarter: flat を 960x540 の viewport で。
+  - (b) の「最小の program」は immediate と同じなので別にしなかった。
+  - (e) の instance の数の上限は、vkmatrix からは変えられない（driver の knob が要る）。
+- 確認:
+  - lavapipe で 36/36 PASS（perf の行の形は従来どおり）。
+  - VF2 の bin/vkmatrix は rc 0、warning 0。
+  - 板は未実施。
+- d42 の上で P2 の perf の case（1c089ebee、fdcc38ee1 で merge）: clear 3.85 ms、immediate（15 op）15.1 ms、flat 15.55 ms、quarter（1/4 面積）7.2 ms、alu（402 op）268.75 ms、texture 37.95 ms → 1 op あたり 0.32 ns/pixel（約 3.2 G pixel-op/s、ALU は妥当）、命令数に依らない固定費が約 5.4 ns/pixel（約 2 clock）で軽い shader の時間の大半、面積にほぼ比例。固定費は pixel の task の起動（PDS の program・定数の取り込み）の疑い。
+- d43（P1 の試し 84eaa2f3b、program と job の general の memory を SLC に通す、main には入れない）: 入れた後に板が戻らない（電源の入れ直し 2 回）。
+- d43（P1 の試し 84eaa2f3b、program・job の general を SLC に通す）: 起動は SD の失敗 73 回で不安定だったが動いた。perf は変わらず（flat 15.7、immediate 15.0、texture 37.85、alu 268.55 ms）、vkmatrix 36/36、HWR 0 → program の取り込みは原因でない。KWL の rec submit 108 ms（max 256）。ALU も pixel の固定費も名目の約 1/2〜1/8 → GPU の実際の clock が 396 MHz より低い疑いも。板は main の kernel（55e6638ed 以降、切り替え 0）に戻す（d44）。
