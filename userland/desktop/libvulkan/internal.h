@@ -781,8 +781,9 @@ vulkan_video_profile_list_check(
 /*
  * The submission timing, a diagnostic that is off unless the environment
  * names VULKAN_ZEDBSD_SUBMIT_TIMING: where vkQueueSubmit and the
- * presentations' submissions spend their time, and how long transactions
- * wait for and hold the context lock, said to stderr every five seconds.
+ * presentations' submissions spend their time, how long transactions
+ * wait for and hold the context lock, and what acquisitions and the
+ * Wayland FIFO wait for, said to stderr every five seconds.
  */
 enum vulkan_timing_part {
 	VULKAN_TIMING_SUBMIT,
@@ -800,6 +801,11 @@ enum vulkan_timing_part {
 	VULKAN_TIMING_PRESENT_RECORD,
 	VULKAN_TIMING_PRESENT_SUBMIT,
 	VULKAN_TIMING_PRESENT,
+	VULKAN_TIMING_ACQUIRE,
+	VULKAN_TIMING_ACQUIRE_STATE,
+	VULKAN_TIMING_ACQUIRE_RELEASE,
+	VULKAN_TIMING_ACQUIRE_TIMEOUT,
+	VULKAN_TIMING_FIFO_WAIT,
 	VULKAN_TIMING_PARTS
 };
 
