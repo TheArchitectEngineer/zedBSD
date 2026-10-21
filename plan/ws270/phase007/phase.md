@@ -127,3 +127,6 @@ clear 3.85 ms、LOAD 23.35 ms、平らな quad 15.1 ms、1/4 面積 7.2 ms、402
 - 2026-10-22 ユーザー「Masterの決定の記録を承認します。」→ user の rdtime の決定を Master の decisions-log に記入（bb3a0d142）。
 - main 21d1a702a に P2 2c769286f（d51bd1185 の sync.c が riscv64 以外で -Werror の unused-variable になる直し）を merge（2026-10-22）。
 - d131（d129 と同じ kernel・wayland ＋ P2 50bd6331c の libvulkan（wire の buffer を inline、display の問い合わせを 50 ms に 1 回、heap の計測））: 2 回、HWR・lost・signal 0、type 45〜48。VULKAN TIMING（全行の平均、d129 → d131）: submit 1575 → 1895、execute 910 → 1009、present 2362 → 2364、present_prepare 294 → 164 us、heap 平均 35 us・最大 422 us → 速くならない。ユーザーの判断で 50bd6331c は捨て、この 2 つの最適化は終了。P2 は返却。
+- 2026-10-22 ユーザー「アニメーションは60fpsでないと違和感が出ますが、文字入力はそうではないので、このあたりで最適化を終えましょう。」「あまりにも劇的な高速化を目の当たりにして驚きました。ハードウェアの性能を十分に引き出してくれたと思います。感謝します。」「キー入力のレイテンシーだけは、わかったなら教えてください。」→ 速さの作業は終了。
+- d132（kernel q1558t、P1 bedaa404b の wayland・terminal（打鍵から画面までの経路の行、frame-ops に 200 ms 間隔の keys の段））: keys の段で GPU の lockup（context 0x5 reason 1、dm 3 locked up 1、recovered 1）→ KWL RENDER stalled 4 s → device lost で compositor が終了。type の段の打鍵の遅れ（60 字、中央値/最大 ms）: seat → client 0.2/1.6、→ Terminal が受けた 8.3/18、pty へ書いた 7.7/19、echo を読んだ 8.7/18、present 8.7/17。
+- 2026-10-22 ユーザー「お、コンポジタが落ちましたね。それは解析して直しましょう。」→ 間欠の GPU の lockup（d114・d122・d130・d132）の解析を新しい P2 に、device lost からの回復の案を P1 に。
