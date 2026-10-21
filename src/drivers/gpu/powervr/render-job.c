@@ -297,6 +297,8 @@ powervr_render_job_run(
 	const struct powervr_render_draw *prefix;
 	struct load_draw *load;
 	struct powervr_job_done *done;
+	struct powervr_sync previous;
+	unsigned wait_count;
 	unsigned long enabled;
 	uint64_t started;
 	uint32_t at;
@@ -484,8 +486,24 @@ powervr_render_job_run(
 	started = powervr_timing_now();
 	mutex_lock(&render->core->lock);
 
+	/*
+	 * The geometry waits for the context's earlier 3D (the render target
+	 * data's parameter manager state is rebuilt by the geometry, which a
+	 * 3D still reading it must not see), as Mesa makes the first geometry
+	 * on a data set wait for its previous fragment.
+	 *
+	 * Procedure referenced:
+	 * Mesa 26.2.5 src/imagination/vulkan/winsys/pvrsrvkm/pvr_arch_srv_job_render.c
+	 * (the geometry's wait on the data set's previous fragment sync).
+	 */
 	session->noted_target = target;
-	error = powervr_session_kick_render(render, session, target, 0, memory->geometry, memory->fragment, memory->fragment, NULL, 0, &memory->marks);
+	wait_count = 0;
+	if (session->render_context != NULL && session->render_context->fragment.submitted != 0U) {
+		previous.address = powervr_object_address(&session->render_context->fragment.timeline, 0);
+		previous.value = session->render_context->fragment.submitted;
+		wait_count = 1;
+	}
+	error = powervr_session_kick_render(render, session, target, 0, memory->geometry, memory->fragment, memory->fragment, &previous, wait_count, &memory->marks);
 
 	mutex_unlock(&render->core->lock);
 

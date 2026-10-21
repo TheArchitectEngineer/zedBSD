@@ -1028,9 +1028,11 @@ notice_grow(
 		return;
 	}
 
-	/* Counted: the render on it ran out of pages. */
+	/* Counted and said: the render on it ran out of pages. */
 	list->grow_requests++;
 	render->target_events.grow_requests++;
+	kern_logf("powervr: free list %u (%u pages) asked to grow (%u times); answered with nothing added\n",
+		  (unsigned)identity, (unsigned)list->page_count, (unsigned)list->grow_requests);
 
 	/* The answer: nothing added, nothing held ready. */
 	powervr_grow_answer(powervr_object_address(&list->record, 0), list->page_count, command);
@@ -1099,11 +1101,13 @@ notice_statistics(
 	if (error != 0)
 		return;
 
-	/* Raises the one it names. */
+	/* Raises the one it names, and says it. */
 	if (counter == POWERVR_STATISTICS_PARTIAL) {
 		render->target_events.partial_renders += (unsigned)adjustment;
+		kern_logf("powervr: partial render (%u so far)\n", render->target_events.partial_renders);
 	} else if (counter == POWERVR_STATISTICS_OUT_OF_MEMORY) {
 		render->target_events.out_of_memory += (unsigned)adjustment;
+		kern_logf("powervr: parameter memory ran out (%u so far)\n", render->target_events.out_of_memory);
 	}
 }
 
