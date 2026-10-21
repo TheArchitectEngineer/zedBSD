@@ -379,3 +379,5 @@ Keiland が使い、vkmatrix 15/15・gpu-selftest 13/13 で確かめていない
   - `plan/ws213/tests/list-replay-host-test.sh` は PASS（shm.c の vkCmd の数は 4 のまま）。
   - desktop の config で VF2 の `bin/wayland` は rc 0、warning 0。
   - 板（KWL PERF の比較）は未実施。
+- d35（ea331254e、非同期の submit と DM overlap を on）: 同時の試験 PASS・HWR 0、vkmatrix 29/29、vkcoherency PASS、vkreset PASS（5 s、`no progress for 5000 ms`）、gpu-selftest 13/13 → on のまま。
+- d36（41273725f、P2 の奇数幅の copy・Keiland の shm の damage の copy）: timing の submit 2.5 ms（非同期が効く）、job の待ち 76〜262 ms、KWL の rec submit 78〜300 ms/frame → GPU の実行時間が上限。P1 q1535 で原因を測る。
