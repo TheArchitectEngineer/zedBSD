@@ -153,6 +153,7 @@ static void note_reference(struct shader_backend *backend, unsigned value, unsig
 static int allocate(const struct powervr_ir_shader *shader, struct shader_backend *backend);
 static void compact_temporaries(struct powervr_shader_program *program, struct shader_backend *backend);
 static void propagate_copies(struct powervr_ir_shader *shader);
+static void alias_shared(const struct powervr_ir_shader *shader, const struct powervr_shader_program *program, struct shader_backend *backend);
 static void fuse_multiply_adds(struct powervr_ir_shader *shader, uint32_t stage);
 static int fuse_multiply_add(struct powervr_ir_shader *shader, unsigned at, unsigned which);
 static unsigned value_references(const struct powervr_ir_shader *shader, unsigned value, unsigned *writes, unsigned *writer);
@@ -213,6 +214,9 @@ shader_backend_build(
 	backend->temps = TEMP_FIRST_VALUE;
 	backend->control_flow = 0;
 	backend->error = 0;
+
+	/* The shared words only float operations read are read where they are. */
+	alias_shared(shader, program, backend);
 
 	/* Works out where each value is live, and gives it registers. */
 	error = liveness(shader, backend);
@@ -663,6 +667,67 @@ value_references(
 		}
 	}
 	return reads;
+}
+
+/*
+ * Finds the one-word values that are a shared register's word, written
+ * only by that read and read only by float adds, multiplies and
+ * multiply-adds, whose lower sources name a shared register as well as
+ * a temporary (q1539: as Mesa's pco reads sh registers in place, where
+ * each read was a move a pixel).  Those operations read the shared
+ * register, and the read itself selects nothing.
+ */
+static void
+alias_shared(
+	const struct powervr_ir_shader *shader,
+	const struct powervr_shader_program *program,
+	struct shader_backend *backend)
+{
+	const struct powervr_ir_instruction *instruction;
+	const struct powervr_ir_instruction *reader;
+	const struct powervr_shader_request *request;
+	unsigned value;
+	unsigned writes;
+	unsigned writer;
+	unsigned at;
+	unsigned source;
+	int ok;
+
+	/* None yet; none at all when the words are given up front. */
+	for (value = 0; value < POWERVR_IR_VALUES; value++)
+		backend->shared_alias[value] = 0;
+	if (backend->inline_values != NULL)
+		return;
+
+	/* Each shared word read into a one-word value written nowhere else. */
+	for (at = 0; at < shader->instruction_count; at++) {
+		instruction = &shader->instructions[at];
+		value = instruction->destination;
+		if (instruction->opcode != POWERVR_IR_SHARED || value == 0 || value >= shader->value_count || shader->values[value].width != 1)
+			continue;
+		if (instruction->immediate >= program->request_count)
+			continue;
+		request = &program->requests[instruction->immediate];
+		if (instruction->immediate_2 >= request->words || request->kind == POWERVR_SHADER_REQUEST_WORKGROUP_ID)
+			continue;
+		(void)value_references(shader, value, &writes, &writer);
+		if (writes != 1)
+			continue;
+
+		/* Read only by float adds, multiplies and multiply-adds. */
+		ok = 1;
+		for (writer = 0; ok && writer < shader->instruction_count; writer++) {
+			reader = &shader->instructions[writer];
+			for (source = 0; source < 4; source++) {
+				if (reader->source[source].kind != POWERVR_IR_OPERAND_VALUE || reader->source[source].value != value)
+					continue;
+				if (reader->opcode != POWERVR_IR_FLOAT_ADD && reader->opcode != POWERVR_IR_FLOAT_MULTIPLY && reader->opcode != POWERVR_IR_FLOAT_MULTIPLY_ADD)
+					ok = 0;
+			}
+		}
+		if (ok)
+			backend->shared_alias[value] = (uint16_t)(request->shared + instruction->immediate_2 + 1U);
+	}
 }
 
 /* Reports whether a constant is one the core holds in a register (zero, one, 1.0 and all ones), so reading it costs nothing. */
@@ -1371,6 +1436,25 @@ select_instruction(
 		a = operand_register(select, &instruction->source[0], &ma);
 		b = operand_register(select, &instruction->source[1], &mb);
 		c = operand_register(select, &instruction->source[2], &mc);
+		if (b.bank == POWERVR_USC_BANK_SHARED) {
+			/* A shared register cannot be the second source: the factors swap, or it is moved. */
+			if (a.bank != POWERVR_USC_BANK_SHARED) {
+				source = a;
+				a = b;
+				b = source;
+				modifiers = ma;
+				ma = mb;
+				mb = modifiers;
+			} else {
+				source = scratch_register(select);
+				operation = append(select, MACHINE_MOVE);
+				if (operation != NULL) {
+					operation->destination[0] = source;
+					operation->source[0] = b;
+				}
+				b = source;
+			}
+		}
 		operation = append(select, MACHINE_FLOAT_MULTIPLY_ADD);
 		if (operation != NULL) {
 			operation->destination[0] = destination;
@@ -1568,6 +1652,9 @@ select_instruction(
 			}
 			break;
 		}
+		/* A word read in place needs no copy. */
+		if (select->backend->shared_alias[instruction->destination] != 0)
+			break;
 		operation = append(select, MACHINE_MOVE);
 		if (operation != NULL) {
 			operation->destination[0] = destination_of(select, instruction);
@@ -1992,8 +2079,15 @@ operand_register(
 	struct shader_machine_operation *operation;
 	struct shader_machine_register reg;
 
-	/* A value's word. */
+	/* A value's word: its shared register when it is one only float operations read. */
 	*modifiers = 0;
+	if (operand->kind == POWERVR_IR_OPERAND_VALUE && select->backend->shared_alias[operand->value] != 0) {
+		*modifiers = operand->modifiers;
+		reg = bank_register(POWERVR_USC_BANK_SHARED, select->backend->shared_alias[operand->value] - 1U);
+
+		/* Succeeded: the shared register. */
+		return reg;
+	}
 	if (operand->kind == POWERVR_IR_OPERAND_VALUE) {
 		*modifiers = operand->modifiers;
 		reg = temp_register(select->backend->value_register[operand->value] + operand->component);
@@ -2159,6 +2253,30 @@ select_float_pair(
 			}
 			second = moved;
 			second_modifiers = 0;
+		}
+	}
+
+	/*
+	 * A shared register cannot be the second source (its field names
+	 * no shared bank): it swaps with a first that is not shared and
+	 * takes the second's modifiers, else it is moved.
+	 */
+	if (second.bank == POWERVR_USC_BANK_SHARED) {
+		if (first.bank != POWERVR_USC_BANK_SHARED && floor == 0 && (first_modifiers & POWERVR_IR_NEGATE) == 0) {
+			held = first;
+			held_modifiers = first_modifiers;
+			first = second;
+			first_modifiers = second_modifiers;
+			second = held;
+			second_modifiers = held_modifiers;
+		} else {
+			moved = scratch_register(select);
+			operation = append(select, MACHINE_MOVE);
+			if (operation != NULL) {
+				operation->destination[0] = moved;
+				operation->source[0] = second;
+			}
+			second = moved;
 		}
 	}
 

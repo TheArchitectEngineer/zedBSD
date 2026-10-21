@@ -192,6 +192,7 @@ struct shader_backend {
 	unsigned operation_count;
 	uint32_t offsets[SHADER_MACHINE_OPERATIONS];
 	uint16_t value_register[POWERVR_IR_VALUES];
+	uint16_t shared_alias[POWERVR_IR_VALUES];
 	uint32_t first_use[POWERVR_IR_VALUES];
 	uint32_t last_use[POWERVR_IR_VALUES];
 	uint32_t uses[POWERVR_IR_VALUES];
