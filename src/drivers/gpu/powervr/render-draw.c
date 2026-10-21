@@ -162,6 +162,18 @@
 #define FIELD_9_MAX		0x1ffU
 
 /*
+ * The data sequencer's triangle merging, off for a draw that neither
+ * writes depth nor compares it (q1536: as Mesa does).
+ *
+ * Values referenced: Mesa 26.2.5 src/imagination/csbgen/rogue/ppp.xml
+ * (TA_STATE_PDS_SIZEINFO2 pds_tri_merge_disable 14);
+ * src/imagination/vulkan/pvr_arch_cmd_buffer.c
+ * (pvr_setup_triangle_merging_flag: disabled for lines, punch-through,
+ * and a depth write disabled with the compare always).
+ */
+#define SIZEINFO2_TRI_MERGE_DISABLE	(1U << 14)
+
+/*
  * The vertex cache entries and instances of a task of the BXE-4-32 for a
  * vertex of up to 13 output words (the largest of the smallest vertex
  * vector band).
@@ -563,6 +575,7 @@ powervr_draw_ppp_build(
 	uint32_t uniform;
 	uint32_t varying;
 	uint32_t shared;
+	uint32_t merge;
 	bool ccw_front;
 
 	/* Refuses missing input or result, and programs not on 16-byte boundaries. */
@@ -608,7 +621,10 @@ powervr_draw_ppp_build(
 	words[index++] = input->fragment_kick_offset;
 	words[index++] = input->shared_code_offset;
 	words[index++] = (uniform << 23) | (varying << 10) | (input->varyings->usc_varying_size << 4) | round_units(1U, 4U);
-	words[index++] = shared << 23;
+	merge = 0;
+	if ((ispa & ISPA_NO_DEPTH_WRITE) != 0 && compare == VK_COMPARE_OP_ALWAYS)
+		merge = SIZEINFO2_TRI_MERGE_DISABLE;
+	words[index++] = (shared << 23) | merge;
 	words[index++] = input->varyings->code_words == 0 ? 0U : input->coefficient_offset;
 	words[index++] = input->shared_data_offset;
 
