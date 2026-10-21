@@ -128,8 +128,9 @@
 #define POWERVR_FRAGMENT_SINGLE_CORE		(1U << 3)
 
 /*
- * The fragment command's flag that turns pixel merging off, and a test
- * switch (q1539, 0 as built) that sets it on every render, as Mesa does.
+ * The fragment command's flag that turns pixel merging off, set on every
+ * render as Mesa does (q1539: part of the ta trial that took a
+ * full-screen draw's own cost a tile away; 0 turns it back off).
  *
  * Values referenced:
  * Mesa 26.2.5 src/imagination/vulkan/winsys/pvrsrvkm/fw-api/pvr_rogue_fwif.h
@@ -139,7 +140,7 @@
  */
 #define POWERVR_FRAGMENT_DISABLE_PIXEL_MERGE	(1U << 15)
 #ifndef POWERVR_FRAGMENT_PIXEL_MERGE_OFF
-#define POWERVR_FRAGMENT_PIXEL_MERGE_OFF	0
+#define POWERVR_FRAGMENT_PIXEL_MERGE_OFF	1
 #endif
 void powervr_render_command_single_core(int on);
 

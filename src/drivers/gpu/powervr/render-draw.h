@@ -44,17 +44,13 @@
 
 /*
  * Test switches of a draw's primitive state (q1539), a bit each, none as
- * built: the varying base left out when there is no coefficient program
- * and no data sequencer temporaries (as Mesa 26.2.5 does), and the pass
- * type punch-through for opaque draws (Mesa's for a shader that
- * discards).  The board's timing of each tells whether the draw's fixed
- * cost a pixel comes from them.
+ * built: the pass type punch-through for opaque draws (Mesa's for a
+ * shader that discards).  The former 1 and 2 (no varying base without
+ * a coefficient program, no data sequencer temporaries) are built in.
  */
 #ifndef POWERVR_DRAW_TRIAL
 #define POWERVR_DRAW_TRIAL			0U
 #endif
-#define POWERVR_DRAW_TRIAL_NO_VARYING_BASE	1U
-#define POWERVR_DRAW_TRIAL_NO_PDS_TEMPS		2U
 #define POWERVR_DRAW_TRIAL_PUNCH_THROUGH	4U
 
 /* The words of a viewport transform (a0, m0, a1, m1, a2, m2) and of a scissor. */

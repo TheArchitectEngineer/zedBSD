@@ -556,8 +556,9 @@ powervr_draw_scissor_words(
  * for the attachment (no depth attachment: always, no write), the line
  * width, no ISPB without stencil; pvr_setup_fragment_state_pointers:
  * SHADERBASE, TEXUNICODEBASE, SIZEINFO1 (uniform, varying and USC
- * varying sizes, the temporaries), SIZEINFO2 the shared registers,
- * VARYINGBASE, UNIFORMDATABASE; pvr_setup_ppp_control: drawclippededges,
+ * varying sizes, no temporaries: the programs take none), SIZEINFO2
+ * the shared registers, VARYINGBASE only with a coefficient program,
+ * UNIFORMDATABASE; pvr_setup_ppp_control: drawclippededges,
  * wclampen, flat vertex 0, front and rear clipping, the cull mode by the
  * front face); src/imagination/vulkan/pvr_arch_pipeline.c (the pass type
  * opaque, translucent when the fragment shader blends).
@@ -578,8 +579,6 @@ powervr_draw_ppp_build(
 	uint32_t varying;
 	uint32_t shared;
 	uint32_t merge;
-	uint32_t temps;
-	bool varying_base;
 	bool ccw_front;
 
 	/* Refuses missing input or result, and programs not on 16-byte boundaries. */
@@ -601,15 +600,14 @@ powervr_draw_ppp_build(
 		 HEADER_REGION_CLIP | HEADER_VIEWPORT | HEADER_WCLAMP | HEADER_OUTSELECTS | HEADER_VARYING_0 |
 		 HEADER_VARYING_1 | HEADER_VARYING_2 | HEADER_PPP_CTRL | HEADER_STREAM_OUT;
 
-	/* The test switches: no varying base without a coefficient program, no data sequencer temporaries. */
-	varying_base = true;
-	if ((POWERVR_DRAW_TRIAL & POWERVR_DRAW_TRIAL_NO_VARYING_BASE) != 0U && input->varyings->code_words == 0) {
+	/*
+	 * No varying base without a coefficient program, as Mesa leaves
+	 * pres_pds_state_ptr1 out (q1539: with this, no data sequencer
+	 * temporaries and pixel merging off, the ta trial on the board, each
+	 * extra full-screen draw cost about 0.02 ms where it cost 1.1 ms).
+	 */
+	if (input->varyings->code_words == 0)
 		header &= ~HEADER_PDS_1;
-		varying_base = false;
-	}
-	temps = round_units(1U, 4U);
-	if ((POWERVR_DRAW_TRIAL & POWERVR_DRAW_TRIAL_NO_PDS_TEMPS) != 0U)
-		temps = 0;
 
 	/* The depth test as the attachment allows: none without one. */
 	compare = VK_COMPARE_OP_ALWAYS;
@@ -637,15 +635,15 @@ powervr_draw_ppp_build(
 	/* The fragment's data sequencer state. */
 	words[index++] = input->fragment_kick_offset;
 	words[index++] = input->shared_code_offset;
-	words[index++] = (uniform << 23) | (varying << 10) | (input->varyings->usc_varying_size << 4) | temps;
+	words[index++] = (uniform << 23) | (varying << 10) | (input->varyings->usc_varying_size << 4);
 	merge = 0;
 	if ((ispa & ISPA_NO_DEPTH_WRITE) != 0 && compare == VK_COMPARE_OP_ALWAYS)
 		merge = SIZEINFO2_TRI_MERGE_DISABLE;
 	if ((ispa & ISPA_PASS_MASK) == ISPA_PUNCH_THROUGH)
 		merge = SIZEINFO2_TRI_MERGE_DISABLE;
 	words[index++] = (shared << 23) | merge;
-	if (varying_base)
-		words[index++] = input->varyings->code_words == 0 ? 0U : input->coefficient_offset;
+	if (input->varyings->code_words != 0)
+		words[index++] = input->coefficient_offset;
 	words[index++] = input->shared_data_offset;
 
 	/* The region clip and the viewport. */

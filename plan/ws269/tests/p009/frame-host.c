@@ -1518,12 +1518,13 @@ k_submit(
  * texture and sampler, a 64x64 BGRA8 target with its pass and
  * framebuffer, then command buffer A (a copy of the vertex buffer into
  * the texture, render passes of 20 and 17 draws, the clear before the
- * present) and command buffer B (a render pass of 200 draws), each
+ * present) and command buffer B (a render pass of draws_b draws), each
  * submitted with its fence.
  */
 size_t
 frame_keiland(
 	uint32_t reply_blob,
+	uint32_t draws_b,
 	uint8_t **bytes)
 {
 	VkBufferCreateInfo buffer;
@@ -1757,9 +1758,9 @@ frame_keiland(
 	append(&frame, &w);
 	k_submit(&frame, ID_K_COMMAND_A, ID_K_FENCE_A);
 
-	/* Command buffer B: one pass of 200 draws (13 jobs). */
+	/* Command buffer B: one pass of draws_b draws (as many jobs as the executor splits them into). */
 	k_command_begin(&frame, ID_K_COMMAND_B);
-	k_pass(&frame, ID_K_COMMAND_B, ID_K_QUAD_PIPELINE, ID_K_QUAD_LAYOUT, 32, 200);
+	k_pass(&frame, ID_K_COMMAND_B, ID_K_QUAD_PIPELINE, ID_K_QUAD_LAYOUT, 32, draws_b);
 	k_submit(&frame, ID_K_COMMAND_B, ID_K_FENCE_B);
 
 	return frame_end(&frame, bytes);
