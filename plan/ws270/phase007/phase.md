@@ -101,3 +101,5 @@ clear 3.85 ms、LOAD 23.35 ms、平らな quad 15.1 ms、1/4 面積 7.2 ms、402
 - d115（d114 の kernel ＋ P1 c436c7db0 の wayland（frame N+1 の記録を frame N の GPU と重ねる、2 frame in flight）＋ libvulkan 1f7936510）: 2 回（間に 100 s idle）、HWR・device lost・signal 0、見た目正常（shot-d115-1.png）。launch 51〜59 fps、drag 60、home 58〜59、wiseview 51〜55（work max 26〜40）、type 46・output 44（period p50 21〜22）、scroll 15・hover 19（入力の間隔で決まる）。
 - 2026-10-22 ユーザー: d114 の lockup は「熱で止まったかも。再現しないなら無視していいよ。」（板に heatsink・fan なし）→ 再現しない限り無視する。
 - main e01ecc21d に P1 b83d5446b（重ねの wayland・libvulkan の WSI・signal の診断）を merge（2026-10-22）。
+- d116（d114 の kernel ＋ P1 e7ea311a9 の wayland（静けさの間の prewarm c730be733、KWL の frame 番号の直し、frame callback を渡した時に送る））: 板の /bin/wayland が SD の不良で壊れ（BUG-343）、wayland が起動の最初で落ちた（d116・d116b）。書き直して d116c を 2 回: HWR・lost・signal 0、見た目正常。launch 57〜60、drag 60、home 58〜59、wiseview 58（work max 19〜24）。type 44〜45 fps で lag p50 24 ms（d115 13）に増えた → e7ea311a9 の見直しを P1 へ。
+- main 710ca1f5a に P2 91a0f488e（pool・GPU の clear・compiler・HWR の dump を最新の 1024 語に）を merge（2026-10-22）。
