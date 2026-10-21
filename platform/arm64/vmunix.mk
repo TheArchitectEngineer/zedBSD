@@ -11,13 +11,21 @@ AWK ?= awk
 ARM64_PLATFORM := platform/arm64
 
 # The board the kernel is built for: the Raspberry Pi 4 (BCM2711) or the
-# Raspberry Pi 5 (BCM2712), which shares the Pi 4's HAL and drivers and
-# differs where HAL_BOARD_RPI5 says.
+# Raspberry Pi 5 (BCM2712).  The HAL's board support is the board's own
+# directory (src/hal/arm64/bsp-rpi4/, bsp-rpi5/), which is on the include
+# path for its board.h and locore-board.h, and the Raspberry Pi common
+# support (bsp-rpi-common/).  The drivers the boards share tell them apart
+# by HAL_BOARD_RPI4 and HAL_BOARD_RPI5.
 ARM64_BOARD_DEFINE_rpi4 := -DHAL_BOARD_RPI4
 ARM64_BOARD_DEFINE_rpi5 := -DHAL_BOARD_RPI5
 
-# The Pi 5's own HAL code: its peripherals above 4 GiB and the PSCI calls.
-ARM64_BOARD_BOOT_C_rpi5 := src/hal/arm64/bsp-rpi5/board.c
+# The board's own HAL code.
+ARM64_BOARD_BOOT_C_rpi4 := \
+	src/hal/arm64/bsp-rpi4/uart.c src/hal/arm64/bsp-rpi4/fdt.c \
+	src/hal/arm64/bsp-rpi4/activity-led.c src/hal/arm64/bsp-rpi4/board.c
+ARM64_BOARD_BOOT_C_rpi5 := \
+	src/hal/arm64/bsp-rpi5/uart.c src/hal/arm64/bsp-rpi5/fdt.c \
+	src/hal/arm64/bsp-rpi5/activity-led.c src/hal/arm64/bsp-rpi5/board.c
 
 # The board's platform binding and the drivers it starts first: on the Pi 4
 # the SD card, the console, PCIe and the firmware mailbox; on the Pi 5 the SD
@@ -46,7 +54,8 @@ ARM64_BOARD_KERNEL_SOURCES_rpi5 := \
 # knows the zedBSD target and defines __ZEDBSD__, which selects the zedBSD
 # definitions (include/uapi/hosted.h, include/kern/kcrt.h).
 ARM64_CPPFLAGS := -nostdlibinc -Iinclude -Isrc -I. \
-	-Isrc/hal/arm64 -DHAL_ARCH_ARM64 $(ARM64_BOARD_DEFINE_$(ZEDBSD_BOARD)) \
+	-Isrc/hal/arm64 -Isrc/hal/arm64/bsp-$(ZEDBSD_BOARD) \
+	-DHAL_ARCH_ARM64 $(ARM64_BOARD_DEFINE_$(ZEDBSD_BOARD)) \
 	-DKERN_USER_ABI_AARCH64 -DKERN_USER_ABI_LP64
 ARM64_CPPFLAGS += $(ZEDBSD_CONFIG_CPPFLAGS)
 ARM64_CFLAGS := -march=armv8-a -mno-outline-atomics -mgeneral-regs-only -ffreestanding \
@@ -64,12 +73,11 @@ ARM64_BOOT_C := src/hal/arm64/smp.c src/hal/arm64/percpu.c src/hal/arm64/watch.c
 	src/hal/arm64/int.c src/hal/arm64/irq.c \
 	src/hal/arm64/task.c \
 	src/hal/arm64/cmain.c src/hal/arm64/debug.c \
-	src/hal/arm64/bsp-rpi4/uart.c \
-	src/hal/arm64/bsp-rpi4/cons.c src/hal/arm64/bsp-rpi4/fdt.c \
-	src/hal/arm64/bsp-rpi4/mailbox.c src/hal/arm64/bsp-rpi4/framebuffer.c \
-	src/hal/arm64/bsp-rpi4/boot.c src/hal/arm64/bsp-rpi4/gic.c \
-	src/hal/arm64/bsp-rpi4/clock.c src/hal/arm64/bsp-rpi4/font.c \
-	src/hal/arm64/bsp-rpi4/led.c \
+	src/hal/arm64/bsp-rpi-common/cons.c \
+	src/hal/arm64/bsp-rpi-common/mailbox.c src/hal/arm64/bsp-rpi-common/framebuffer.c \
+	src/hal/arm64/bsp-rpi-common/boot.c src/hal/arm64/bsp-rpi-common/gic.c \
+	src/hal/arm64/bsp-rpi-common/clock.c src/hal/arm64/bsp-rpi-common/font.c \
+	src/hal/arm64/bsp-rpi-common/led.c \
 	$(ARM64_BOARD_BOOT_C_$(ZEDBSD_BOARD))
 ARM64_BOOT_S := src/hal/arm64/locore.S src/hal/arm64/trap.S \
 	src/hal/arm64/dispatch.S
@@ -288,7 +296,7 @@ ARM64_USER_OBJS := $(ARM64_USER_SH_OBJS)
 
 vmunix: $(BUILD)/vmunix
 $(BUILD)/tests/rpi4-fdt-host-test: tests/rpi4-fdt-host-test.c \
-	src/hal/arm64/bsp-rpi4/fdt.c src/drivers/generic/fdt.c \
+	src/hal/arm64/bsp-rpi4/fdt.c src/hal/arm64/bsp-rpi-common/fdt.h src/drivers/generic/fdt.c \
 	src/drivers/platform/rpi4/rpi4-board.c
 	@mkdir -p $(dir $@)
 	$(HOSTCC) -std=c11 -O2 -Wall -Wextra -Werror -Iinclude -Isrc \
@@ -303,10 +311,10 @@ CHECK_RUN_TARGETS += rpi4-fdt-host-test
 # The Pi 5's trees (C1 and D0) through the HAL's parser built for the Pi 5.
 ifeq ($(ZEDBSD_BOARD),rpi5)
 $(BUILD)/tests/rpi5-fdt-host-test: tests/rpi5-fdt-host-test.c \
-	src/hal/arm64/bsp-rpi4/fdt.c src/hal/arm64/bsp-rpi4/fdt.h
+	src/hal/arm64/bsp-rpi5/fdt.c src/hal/arm64/bsp-rpi-common/fdt.h
 	@mkdir -p $(dir $@)
-	$(HOSTCC) -std=c11 -O2 -Wall -Wextra -Werror -DHAL_BOARD_RPI5 -Iinclude -Isrc \
- src/hal/arm64/bsp-rpi4/fdt.c $< -o $@
+	$(HOSTCC) -std=c11 -O2 -Wall -Wextra -Werror -Iinclude -Isrc \
+ src/hal/arm64/bsp-rpi5/fdt.c $< -o $@
 
 .PHONY: rpi5-fdt-host-test
 rpi5-fdt-host-test: $(BUILD)/tests/rpi5-fdt-host-test $(RPI5_BOOT_FIRMWARE_DTB) $(RPI5_BOOT_FIRMWARE_D0_DTB)

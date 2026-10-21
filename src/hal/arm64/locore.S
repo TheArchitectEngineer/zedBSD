@@ -1,4 +1,5 @@
 #include "defs.h"
+#include "locore-board.h"
 
 	.section .text.boot, "ax"
 	.balign 64
@@ -24,63 +25,10 @@ arm64_boot:
 	cbnz x1, arm64_secondary_park
 	mov x20, x0
 
-#if defined(HAL_BOARD_RPI5)
-	/*
-	 * The kernel runs only at the physical address it is linked for.  A
-	 * bootloader that put it elsewhere (above it) has it copied there
-	 * first.  The copy runs with the MMU off, where data accesses reach
-	 * memory directly.  This stub, with its literals, is copied first and
-	 * the rest is copied from the stub's new place, so no instruction is
-	 * overwritten while it runs; a forward copy to a lower address never
-	 * overwrites a byte it has still to read.
-	 */
-	adr x1, _start
-	ldr x2, =_start
-	movz x3, #0xffff, lsl #48
-	sub x2, x2, x3
-	cmp x1, x2
-	b.eq arm64_boot_placed
-	b.lo arm64_secondary_park
-
-	/* Copies the image's first bytes: the header, this stub and its literals. */
-	mov x4, x1
-	mov x5, x2
-	mov x6, #(arm64_boot_stub_end - _start)
-1:	ldp x7, x8, [x4], #16
-	stp x7, x8, [x5], #16
-	subs x6, x6, #16
-	b.hi 1b
-	dsb sy
-	ic iallu
-	dsb sy
-	isb
-	add x9, x2, #(arm64_boot_copy_rest - _start)
-	br x9
-
-arm64_boot_copy_rest:
-	/*
-	 * Copies the whole loaded image, the stub's bytes again unchanged.  Its
-	 * length is the header's image size, the raw file the bootloader read.
-	 */
-	ldr x6, [x1, #16]
-	mov x4, x1
-	mov x5, x2
-2:	ldp x7, x8, [x4], #16
-	stp x7, x8, [x5], #16
-	subs x6, x6, #16
-	b.hi 2b
-	dsb sy
-	ic iallu
-	dsb sy
-	isb
-	add x9, x2, #(arm64_boot_placed - _start)
-	br x9
-	.ltorg
-	.balign 16
-arm64_boot_stub_end:
+	/* The board puts the image where it is linked, if the bootloader did not. */
+	arm64_board_place_image
 
 arm64_boot_placed:
-#endif
 	mrs x1, CurrentEL
 	cmp x1, #(2 << 2)
 	b.eq arm64_from_el2
@@ -170,22 +118,8 @@ arm64_el1_low:
 	add x1, x1, :lo12:arm64_l1_high
 	str x3, [x1]
 
-#if defined(HAL_BOARD_RPI5)
-	/*
-	 * Device-nGnRE mapping for 0x10_4000_0000..0x10_7fff_ffff, the
-	 * gigabyte that holds the Pi 5's debug UART, mailbox, GIC and GPIO.
-	 * The Pi 5 has RAM, not peripherals, below 4 GiB.
-	 */
-	mov x3, #0x40000000
-	movk x3, #0x10, lsl #32
-	add x3, x3, #0x405
-	mov x4, #(65 * 8)
-#else
-	/* Device-nGnRE mapping for 0xc0000000..0xffffffff. */
-	mov x3, #0xc0000000
-	add x3, x3, #0x405
-	mov x4, #(3 * 8)
-#endif
+	/* Device-nGnRE mapping for the gigabyte of the board's peripherals. */
+	arm64_board_boot_device_block
 	adrp x1, arm64_l1_low
 	add x1, x1, :lo12:arm64_l1_low
 	str x3, [x1, x4]

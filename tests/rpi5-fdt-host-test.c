@@ -18,7 +18,7 @@
 #include <string.h>
 
 #include <hal/hal.h>
-#include "hal/arm64/bsp-rpi4/fdt.h"
+#include "hal/arm64/bsp-rpi-common/fdt.h"
 
 /* The largest blob the test reads. */
 #define BLOB_LIMIT		(2U * 1024U * 1024U)
@@ -37,7 +37,7 @@
 #define EXPECT_ATF_SIZE		0x80000ULL
 
 static int check(int condition, const char *what);
-static int reserves_atf(const struct rpi4_fdt_info *info);
+static int reserves_atf(const struct rpi_fdt_info *info);
 
 /* The parser's one HAL dependency, done the host's way. */
 void *
@@ -62,7 +62,7 @@ main(
 	char **argv)
 {
 	static unsigned char blob[BLOB_LIMIT];
-	struct rpi4_fdt_info info;
+	struct rpi_fdt_info info;
 	FILE *file;
 	size_t length;
 	unsigned index;
@@ -85,15 +85,15 @@ main(
 	fclose(file);
 
 	/* Parses it as the HAL does at boot. */
-	error = rpi4_fdt_parse(blob, length, &info);
+	error = rpi_fdt_parse(blob, length, &info);
 	if (error != 0) {
-		fprintf(stderr, "rpi5-fdt-host-test: FAIL: parse: %s\n", rpi4_fdt_error(error));
+		fprintf(stderr, "rpi5-fdt-host-test: FAIL: parse: %s\n", rpi_fdt_error(error));
 		return 1;
 	}
 
 	/* The board and the peripherals the boot maps. */
 	failures = 0;
-	failures += check(info.compatible_rpi4, "the tree is a Raspberry Pi 5's");
+	failures += check(info.compatible_board, "the tree is a Raspberry Pi 5's");
 	failures += check(info.uart_base == EXPECT_UART, "the debug UART is uart10");
 	failures += check(info.uart_irq != 0, "the debug UART has an interrupt");
 	failures += check(info.mailbox_base == EXPECT_MAILBOX, "the mailbox is found");
@@ -151,7 +151,7 @@ check(
 /* Tells whether the secure firmware's first 512 KiB is among the reserved ranges. */
 static int
 reserves_atf(
-	const struct rpi4_fdt_info *info)
+	const struct rpi_fdt_info *info)
 {
 	unsigned index;
 

@@ -6,16 +6,17 @@
  */
 
 /*
- * What the Raspberry Pi 5 needs of the HAL beyond the Pi 4's board support:
- * the peripherals above 4 GiB in the kernel's tables, and the firmware's
- * PSCI calls for reset and power-off.
+ * What the Raspberry Pi 5 gives the arm64 HAL beyond the Raspberry Pi
+ * common support: its peripherals above 4 GiB in the kernel's tables, and
+ * the firmware's PSCI calls for reset and power-off.
  */
 
 #include <hal/hal.h>
+#include "../asm.h"
 #include "../bsp.h"
 #include "../defs.h"
-#include "../asm.h"
 #include "../watch.h"
+#include "board.h"
 
 /*
  * The PSCI functions the HAL calls, in the SMC32 numbering every PSCI
@@ -42,10 +43,10 @@ static void psci_call(uint64_t function);
  * console and the interrupt controller would be gone after the switch.
  */
 void
-rpi5_space_map_devices(
+arm64_bsp_map_devices(
 	void)
 {
-	const struct rpi4_fdt_info *info;
+	const struct rpi_fdt_info *info;
 
 	/* The debug UART the early console writes to before the tree is read. */
 	map_one(RPI5_DEBUG_UART_BASE, "debug UART");
@@ -54,7 +55,7 @@ rpi5_space_map_devices(
 	map_one(RPI5_AON_GPIO_BASE, "always-on GPIO");
 
 	/* The firmware mailbox the framebuffer and the drivers ask through. */
-	info = rpi4_boot_info();
+	info = rpi_boot_info();
 	if (info->mailbox_base != 0)
 		map_one(info->mailbox_base, "mailbox");
 
@@ -76,10 +77,24 @@ rpi5_space_map_devices(
 }
 
 /*
+ * Leaves the stall watch's report on the framebuffer.
+ *
+ * The Pi 5's compositor (HVS6) is laid out differently from the Pi 4's the
+ * watch writes into, so the board offers none.
+ */
+volatile uint32_t *
+arm64_bsp_watch_compositor(
+	void)
+{
+	/* Succeeded: no compositor the watch knows. */
+	return NULL;
+}
+
+/*
  * Resets the board through the firmware.
  */
 void
-rpi5_psci_system_reset(
+hal_reset(
 	void)
 {
 	/* Nothing interrupts the reset request. */
@@ -98,7 +113,7 @@ rpi5_psci_system_reset(
  * Turns the board off through the firmware.
  */
 void
-rpi5_psci_system_off(
+hal_poweroff(
 	void)
 {
 	/* Nothing interrupts the power-off request. */

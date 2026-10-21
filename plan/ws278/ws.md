@@ -30,7 +30,7 @@
 | p005 | RP1 の Ethernet（Cadence GEM） | p004 | planning |
 | p006 | WiFi（sdio2 の SDIO host、bcm43455 の流用） | p002 | planning |
 | p007 | BT（uarta） | p006 | planning |
-| p008 | 規約の全文の見直し | p002〜 | planning |
+| [p008](phase008/phase.md) | 規約の全文の見直し（第 1 部: HAL の bsp を bsp-rpi-common・bsp-rpi4・bsp-rpi5 に分け全文で書き直し、前倒し） | p002〜 | in-progress（第 1 部 2026-10-21 済み、rpi4 の QEMU 起動の回帰は T1 待ち） |
 | （別 WS の提案） | GPU: V3D 7.1 と HVS6（design.md §4 D2） | p002 | — |
 
 ## 現在の状態・再開点
@@ -38,4 +38,5 @@
 - 2026-10-21: P3（phase-runner、Opus 5.5）が q1542 で p001 から始めた。p001 は design.md（版 1）。p002 は image の生成まで（c7909625c は main 7547e49c4 に merge 済み、locore の再配置の stub は dba0bf700）。
 - 再開点: 実機の試験（[tests/rpi5-hw-test.md](tests/rpi5-hw-test.md)）の結果を見て p002 を判定。ユーザーの判断 D1〜D3（design.md §4）。
 
+- 2026-10-21: ユーザーの指示で HAL の bsp を分けた（p008 の第 1 部）。`src/hal/arm64/bsp-rpi-common/`（共通）・`bsp-rpi4/`・`bsp-rpi5/`（board ごと、写して書き直し）。arch 共通の file に `HAL_BOARD_` の分岐は無い。
 - 2026-10-21 ユーザーの判断: D1 serial console は不要（既定 n）、D2 GPU は別 WS（[WS279](../ws279/ws.md)）、D3 手元は Pi 5 2GB（2026-10-21 購入、D0 の見込み）、HDMI モニター・USB keyboard・Debug Probe 付き USB serial あり。p003〜p008 は実機の試験なしで続けて実装し、最後にまとめて実機（ユーザー「テストは後回しにして実装してしまって、ビッグバンでテストしましょう。」）。P3 q1543。

@@ -1,12 +1,36 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * What the Raspberry Pi HAL keeps from the boot and hands to the kernel:
+ * the device tree's record, the kernel's handoff, and the named objects of
+ * hal_get_arch_handoff().
+ *
+ * The names start with the board's ("rpi4.fdt", "rpi5.fdt"), which
+ * board.h gives.
+ */
+
 #include <hal/hal.h>
+#include <kern/boot.h>
 #include "../bsp.h"
 #include "../defs.h"
-#include <kern/boot.h>
+#include "board.h"
 
 /* How many values of the boot framebuffer the kernel reads by name. */
-#define RPI4_FRAMEBUFFER_VALUE_COUNT 6U
+#define RPI_FRAMEBUFFER_VALUE_COUNT 6U
 
-static struct rpi4_fdt_info boot_info;
+/*
+ * The device tree's record and the tree's physical address.
+ *
+ * Filled once by rpi_boot_set_info() on the boot CPU before any other CPU
+ * starts; afterwards only the framebuffer's reservation is added to it, on
+ * the same CPU.  Every other reader only reads it.
+ */
+static struct rpi_fdt_info boot_info;
 static uintptr_t boot_fdt;
 
 /*
@@ -26,10 +50,9 @@ static char boot_command_line[KERN_BOOT_PARAMETERS_STORAGE_SIZE];
 
 /*
  * The named objects of hal_get_arch_handoff(): the device tree's physical
- * address ("rpi4.fdt", "rpi5.fdt" on a Pi 5) and the SD controller's
- * ("rpi4.sdhci", "rpi5.sdhci"), each a 64-bit word.  Filled once at boot
- * and not changed afterwards; zero means the firmware named none, and the
- * name then reports no object.
+ * address ("<board>.fdt") and the SD controller's ("<board>.sdhci"), each
+ * a 64-bit word.  Filled once at boot and not changed afterwards; zero
+ * means the firmware named none, and the name then reports no object.
  */
 static uint64_t handoff_fdt_phys;
 static uint64_t handoff_sdhci_phys;
@@ -38,7 +61,7 @@ static uint64_t handoff_sdhci_phys;
  * The names under which the kernel reads the boot framebuffer, one per
  * value, in the order of framebuffer_values[].
  */
-static const char *const framebuffer_value_names[RPI4_FRAMEBUFFER_VALUE_COUNT] = {
+static const char *const framebuffer_value_names[RPI_FRAMEBUFFER_VALUE_COUNT] = {
 	ARM64_BOARD_HANDOFF ".framebuffer.phys",
 	ARM64_BOARD_HANDOFF ".framebuffer.size",
 	ARM64_BOARD_HANDOFF ".framebuffer.width",
@@ -55,26 +78,38 @@ static const char *const framebuffer_value_names[RPI4_FRAMEBUFFER_VALUE_COUNT] =
  * and not changed afterwards; the names report no object while the size
  * is zero.
  */
-static uint64_t framebuffer_values[RPI4_FRAMEBUFFER_VALUE_COUNT];
+static uint64_t framebuffer_values[RPI_FRAMEBUFFER_VALUE_COUNT];
 
-static void copy_command_line(const struct rpi4_fdt_info *info, uintptr_t fdt_phys);
+static void copy_command_line(const struct rpi_fdt_info *info, uintptr_t fdt_phys);
 static int handoff_name_is(const char *name, const char *wanted);
 
+/*
+ * Keeps the device tree's record and prepares the kernel's handoff.
+ */
 void
-rpi4_boot_set_info(const struct rpi4_fdt_info *info, uintptr_t fdt_phys)
+rpi_boot_set_info(
+	const struct rpi_fdt_info *info,
+	uintptr_t fdt_phys)
 {
+	/* Keeps the record and where the tree is, for the rest of the HAL. */
 	boot_info = *info;
 	boot_fdt = fdt_phys;
-	hal_memset(&kernel_handoff,0,sizeof(kernel_handoff));
-	kernel_handoff.magic=KERN_HANDOFF_MAGIC;
-	kernel_handoff.version=KERN_HANDOFF_VERSION_MULTIBOOT;
-	kernel_handoff.size=sizeof(kernel_handoff);
-	kernel_handoff.device_count=1;
-	kernel_handoff.boot_bios_id=0x80;
-	kernel_handoff.boot_partition_scheme=KERN_PARTITION_SCHEME_MBR;
-	kernel_handoff.boot_partition_index=1;
-	kernel_handoff.boot_partition_lba=KERN_BOOT_PARTITION_LBA_UNKNOWN;
-	hal_memset(framebuffer_values,0,sizeof(framebuffer_values));
+
+	/* Describes one SD boot device, the first partition of an MBR disk. */
+	hal_memset(&kernel_handoff, 0, sizeof(kernel_handoff));
+	kernel_handoff.magic = KERN_HANDOFF_MAGIC;
+	kernel_handoff.version = KERN_HANDOFF_VERSION_MULTIBOOT;
+	kernel_handoff.size = sizeof(kernel_handoff);
+	kernel_handoff.device_count = 1;
+	kernel_handoff.boot_bios_id = 0x80;
+	kernel_handoff.boot_partition_scheme = KERN_PARTITION_SCHEME_MBR;
+	kernel_handoff.boot_partition_index = 1;
+	kernel_handoff.boot_partition_lba = KERN_BOOT_PARTITION_LBA_UNKNOWN;
+
+	/* No framebuffer yet: its names report nothing until one is allocated. */
+	hal_memset(framebuffer_values, 0, sizeof(framebuffer_values));
+
+	/* Copies the command line while the tree is known to be intact. */
 	copy_command_line(info, fdt_phys);
 
 	/* Keeps the tree's and the SD controller's addresses for their names. */
@@ -82,36 +117,83 @@ rpi4_boot_set_info(const struct rpi4_fdt_info *info, uintptr_t fdt_phys)
 	handoff_sdhci_phys = info->sdhci_base;
 }
 
+/*
+ * Keeps the firmware's framebuffer for the kernel and out of the allocator.
+ */
 void
-rpi4_boot_set_framebuffer(uint64_t phys,uint64_t size,uint32_t width,uint32_t height,
-	uint32_t pitch,uint32_t format)
+rpi_boot_set_framebuffer(
+	uint64_t phys,
+	uint64_t size,
+	uint32_t width,
+	uint32_t height,
+	uint32_t pitch,
+	uint32_t format)
 {
-	framebuffer_values[0]=phys;
-	framebuffer_values[1]=size;
-	framebuffer_values[2]=width;
-	framebuffer_values[3]=height;
-	framebuffer_values[4]=pitch;
-	framebuffer_values[5]=format;
-	if(size&&boot_info.reserved_count<RPI4_FDT_MAX_RESERVED){
-		boot_info.reserved[boot_info.reserved_count].base=phys;
-		boot_info.reserved[boot_info.reserved_count].size=size;
-		boot_info.reserved_count++;
-	}
+	struct rpi_fdt_range *range;
+
+	/* Publishes the values under their names, in the order of the names. */
+	framebuffer_values[0] = phys;
+	framebuffer_values[1] = size;
+	framebuffer_values[2] = width;
+	framebuffer_values[3] = height;
+	framebuffer_values[4] = pitch;
+	framebuffer_values[5] = format;
+
+	/* An empty framebuffer reserves nothing, and a full table takes no more. */
+	if (size == 0)
+		return;
+	if (boot_info.reserved_count >= RPI_FDT_MAX_RESERVED)
+		return;
+
+	/* Keeps the framebuffer's memory out of the page allocator. */
+	range = &boot_info.reserved[boot_info.reserved_count];
+	range->base = phys;
+	range->size = size;
+	boot_info.reserved_count++;
 }
 
-const struct rpi4_fdt_info *rpi4_boot_info(void) { return &boot_info; }
-uintptr_t rpi4_boot_fdt_phys(void) { return boot_fdt; }
-const void *rpi4_kernel_handoff(void){return &kernel_handoff;}
+/*
+ * Reports the device tree's record kept at boot.
+ */
+const struct rpi_fdt_info *
+rpi_boot_info(
+	void)
+{
+	/* Succeeded: the record, which lives as long as the kernel. */
+	return &boot_info;
+}
+
+/*
+ * Reports the device tree's physical address.
+ */
+uintptr_t
+rpi_boot_fdt_phys(
+	void)
+{
+	/* Succeeded: the address the firmware passed. */
+	return boot_fdt;
+}
+
+/*
+ * Reports the handoff the kernel's entry reads.
+ */
+const void *
+rpi_kernel_handoff(
+	void)
+{
+	/* Succeeded: the handoff, filled by rpi_boot_set_info(). */
+	return &kernel_handoff;
+}
 
 /*
  * Returns one named architecture handoff object.
  *
- * "boot.command-line" is the firmware's command line; "rpi4.fdt" and
- * "rpi4.sdhci" are the physical addresses of the device tree and of the
- * SD controller it names, each a 64-bit word; "rpi4.framebuffer.phys",
+ * "boot.command-line" is the firmware's command line; "<board>.fdt" and
+ * "<board>.sdhci" are the physical addresses of the device tree and of the
+ * SD controller it names, each a 64-bit word; "<board>.framebuffer.phys",
  * ".size", ".width", ".height", ".pitch" and ".format" are the firmware's
- * framebuffer, each a 64-bit word, all present or all absent.  A Pi 5
- * names them "rpi5." instead of "rpi4.".
+ * framebuffer, each a 64-bit word, all present or all absent.  <board> is
+ * "rpi4" on a Pi 4 and "rpi5" on a Pi 5.
  */
 void *
 hal_get_arch_handoff(
@@ -144,7 +226,7 @@ hal_get_arch_handoff(
 	/* Exposes the framebuffer's values when the firmware allocated one. */
 	if (framebuffer_values[1] != 0) {
 		/* Returns one of the framebuffer's values under its own name. */
-		for (index = 0; index < RPI4_FRAMEBUFFER_VALUE_COUNT; index++) {
+		for (index = 0; index < RPI_FRAMEBUFFER_VALUE_COUNT; index++) {
 			match = handoff_name_is(name, framebuffer_value_names[index]);
 			if (match)
 				return &framebuffer_values[index];
@@ -163,7 +245,7 @@ hal_get_arch_handoff(
  */
 static void
 copy_command_line(
-	const struct rpi4_fdt_info *info,
+	const struct rpi_fdt_info *info,
 	uintptr_t fdt_phys)
 {
 	const char *line;
@@ -174,12 +256,13 @@ copy_command_line(
 	boot_command_line[0] = '\0';
 
 	/* Leaves the line empty when the firmware passed none. */
-	if (info->bootargs_offset == 0U || info->bootargs_length == 0U)
+	if (info->bootargs_offset == 0U)
+		return;
+	if (info->bootargs_length == 0U)
 		return;
 
 	/* Measures the line up to its terminator, within the property. */
-	line = (const char *)(ARM64_DIRECT_BASE + fdt_phys +
-	    info->bootargs_offset);
+	line = (const char *)(ARM64_DIRECT_BASE + fdt_phys + info->bootargs_offset);
 	length = 0;
 	while (length < info->bootargs_length && line[length] != '\0')
 		length++;
@@ -197,9 +280,7 @@ copy_command_line(
 	boot_command_line[length] = '\0';
 }
 
-/*
- * Tells whether a handoff name is the one wanted.
- */
+/* Tells whether a handoff name is the one wanted. */
 static int
 handoff_name_is(
 	const char *name,
@@ -211,14 +292,16 @@ handoff_name_is(
 	if (name == NULL)
 		return 0;
 
-	/* Compares the names character by character, terminator included. */
+	/* Compares the names character by character up to the wanted one's end. */
 	for (index = 0; wanted[index] != '\0'; index++) {
 		if (name[index] != wanted[index])
 			return 0;
 	}
 
-	/* Reports whether the name ends where the wanted one does. */
+	/* A longer name is a different one. */
 	if (name[index] != '\0')
 		return 0;
+
+	/* Succeeded: the names are the same. */
 	return 1;
 }

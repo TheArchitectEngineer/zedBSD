@@ -112,7 +112,7 @@ fabricated held key. Truthful platform declarations are in the
 [PC/AT](../../src/hal/amd64/bsp-pcat/cons.c),
 [PC-98](../../src/hal/i386/bsp-pc98/cons.c),
 [X68000](../../src/hal/m68k/bsp-x68k/keyboard.c),
-[arm64](../../src/hal/arm64/bsp-rpi4/cons.c), and
+[arm64](../../src/hal/arm64/bsp-rpi-common/cons.c), and
 [sparcv9](../../src/hal/sparcv9/bsp-sun4u/console.c) HAL sources. The q044
 runner retains the physical x86/m68k paths and generic momentary behavior;
 arm64/sparcv9 declarations are source-audited because their cross compilers
