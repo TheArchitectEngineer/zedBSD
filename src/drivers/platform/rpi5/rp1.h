@@ -37,6 +37,9 @@ const struct drv_fdt *drv_rp1_fdt(void);
 /* Reports the rp1 node, the bus of RP1's peripherals; DRV_FDT_NO_NODE before drv_rp1_init(). */
 uint32_t drv_rp1_node(void);
 
+/* Reports the root complex above RP1; DRV_FDT_NO_NODE before drv_rp1_init(). */
+uint32_t drv_rp1_root_complex_node(void);
+
 /*
  * Finds the next child of the rp1 node with a compatible string, after the
  * child named by after (DRV_FDT_NO_NODE for the first).  ENOENT when there

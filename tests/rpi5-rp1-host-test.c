@@ -6,10 +6,11 @@
  */
 
 /*
- * Runs the Raspberry Pi 5's RP1 module (rp1.c, rp1-gpio.c) on the host
- * against a Pi 5 device tree and a root complex kept in memory, and checks
- * what the RP1 drivers are given: their registers on the CPU's bus, the
- * DMA window, the inbound windows the module sets, and a pin's function.
+ * Runs the Raspberry Pi 5's RP1 module (rp1.c, rp1-gpio.c, rp1-irq.c) on
+ * the host against a Pi 5 device tree and a root complex kept in memory,
+ * and checks what the RP1 drivers are given: their registers on the CPU's
+ * bus, the DMA window, the inbound windows the module sets, a pin's
+ * function, and the route of a USB controller's interrupt.
  */
 
 #include <stdarg.h>
@@ -19,7 +20,9 @@
 
 #include <drivers/platform/rpi5/rp1.h>
 #include <drivers/platform/rpi5/rp1-gpio.h>
+#include <drivers/platform/rpi5/rp1-irq.h>
 #include <kern/device-io.h>
+#include <kern/irq.h>
 #include <kern/klog.h>
 #include <kern/lock.h>
 #include <kern/pmem.h>
@@ -52,6 +55,23 @@
 #define VBUS_CONTROL		0x8044U
 #define VBUS_PAD		0x8024U
 
+/*
+ * RP1's MSI-X capability in the fake configuration space, its table in
+ * the first BAR, the MIP, and the GIC lines the USB vectors get.
+ */
+#define FAKE_CAPABILITY		0x40U
+#define FAKE_MSIX_ENTRIES	61U
+#define EXPECT_MSIX_TABLE	0x1f00410000ULL
+#define EXPECT_MSIX_CONFIG	0x1f00108000ULL
+#define EXPECT_MIP		0x1000130000ULL
+#define EXPECT_DOORBELL		0xfffffff000ULL
+#define EXPECT_USB0_VECTOR	31U
+#define EXPECT_USB1_VECTOR	36U
+#define EXPECT_FIRST_LINE	(32 + 128)
+
+/* The most GIC lines the test records. */
+#define LINE_LIMIT		8U
+
 /* One block the module mapped, kept in host memory. */
 struct mapping {
 	uint64_t address;
@@ -62,12 +82,16 @@ struct mapping {
 static struct mapping mappings[MAPPING_LIMIT];
 static unsigned mapping_count;
 static const void *tree;
+static int lines[LINE_LIMIT];
+static unsigned line_count;
 
 static int check(int condition, const char *what);
 static uint8_t *find_block(uint64_t address);
 static uint32_t read_le32(const uint8_t *bytes, unsigned offset);
 static void write_le32(uint8_t *bytes, unsigned offset, uint32_t value);
 static int check_tree(const char *path);
+static int check_interrupts(uint32_t usb0, uint32_t usb1);
+static void ignore_interrupt(void *argument);
 
 /* The tree is the only memory the module asks for through the direct map. */
 void *
@@ -172,6 +196,49 @@ kern_logf(
 	printf("  log: ");
 	vprintf(format, arguments);
 	va_end(arguments);
+}
+
+/* Any line can be edge triggered. */
+int
+kern_irq_set_mode(
+	int irq,
+	unsigned trigger,
+	unsigned polarity)
+{
+	(void)irq;
+	(void)trigger;
+	(void)polarity;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/* Records the lines the module takes. */
+int
+kern_irq_register(
+	int irq,
+	kern_irq_handler_t handler,
+	void *argument)
+{
+	(void)handler;
+	(void)argument;
+
+	/* Refuses more lines than the test keeps. */
+	if (line_count == LINE_LIMIT)
+		return 12;
+
+	/* Succeeded: the line is recorded. */
+	lines[line_count] = irq;
+	line_count++;
+	return 0;
+}
+
+/* Ending an interrupt is not called on the host. */
+void
+kern_irq_send_eoi(
+	kern_irq_ack_t acknowledge)
+{
+	(void)acknowledge;
 }
 
 /* The lock has no other user on the host. */
@@ -327,8 +394,81 @@ check_tree(
 	error = drv_rp1_gpio_set_function(54U, 0);
 	failures += check(error != 0, "a pin RP1 does not have is refused");
 
+	/* The USB controllers' interrupts. */
+	write_le32(pcie, 0x8004U, read_le32(pcie, 0x8004U) | (1U << 20));
+	write_le32(pcie, 0x8034U, FAKE_CAPABILITY);
+	write_le32(pcie, 0x8000U + FAKE_CAPABILITY, ((FAKE_MSIX_ENTRIES - 1U) << 16) | 0x11U);
+	write_le32(pcie, 0x8000U + FAKE_CAPABILITY + 4U, 0);
+	failures += check_interrupts(usb0, usb1);
+
 	/* Succeeded: the failures counted. */
 	return failures;
+}
+
+/* Routes the two USB controllers' interrupts and checks the route. */
+static int
+check_interrupts(
+	uint32_t usb0,
+	uint32_t usb1)
+{
+	uint8_t *pcie;
+	uint8_t *table;
+	uint8_t *config;
+	unsigned vector;
+	unsigned trigger;
+	unsigned entry;
+	int failures;
+	int error;
+
+	/* The specifiers of the two controllers. */
+	failures = 0;
+	error = drv_rp1_irq_of(usb0, 0, &vector, &trigger);
+	failures += check(error == 0 && vector == EXPECT_USB0_VECTOR && trigger == DRV_RP1_IRQ_EDGE, "the first controller's vector");
+	error = drv_rp1_irq_of(usb1, 0, &vector, &trigger);
+	failures += check(error == 0 && vector == EXPECT_USB1_VECTOR && trigger == DRV_RP1_IRQ_EDGE, "the second controller's vector");
+
+	/* The path. */
+	error = drv_rp1_irq_init();
+	failures += check(error == 0, "the interrupt path is found");
+	if (error != 0)
+		return failures;
+	pcie = find_block(EXPECT_PCIE_REGISTERS);
+	failures += check((read_le32(pcie, 0x8000U + FAKE_CAPABILITY) & 0xc0000000U) == 0x80000000U, "MSI-X is on without the function mask");
+	failures += check(find_block(EXPECT_MIP) != NULL, "the MIP is mapped");
+
+	/* The two routes. */
+	error = drv_rp1_irq_establish(EXPECT_USB0_VECTOR, DRV_RP1_IRQ_EDGE, ignore_interrupt, NULL);
+	failures += check(error == 0, "the first vector is routed");
+	error = drv_rp1_irq_establish(EXPECT_USB1_VECTOR, DRV_RP1_IRQ_EDGE, ignore_interrupt, NULL);
+	failures += check(error == 0, "the second vector is routed");
+	failures += check(line_count == 2U && lines[0] == EXPECT_FIRST_LINE && lines[1] == EXPECT_FIRST_LINE + 1, "the vectors take the MIP's first lines");
+	error = drv_rp1_irq_establish(FAKE_MSIX_ENTRIES, DRV_RP1_IRQ_EDGE, ignore_interrupt, NULL);
+	failures += check(error != 0, "a vector RP1 does not have is refused");
+
+	/* The table entries and the vector configuration. */
+	table = find_block(EXPECT_MSIX_TABLE);
+	config = find_block(EXPECT_MSIX_CONFIG);
+	failures += check(table != NULL && config != NULL, "the table and the vector configuration are mapped");
+	if (table == NULL || config == NULL)
+		return failures;
+	entry = EXPECT_USB1_VECTOR * 16U;
+	failures += check(read_le32(table, entry) == (uint32_t)EXPECT_DOORBELL, "the entry's address is the doorbell's low half");
+	failures += check(read_le32(table, entry + 4U) == (uint32_t)(EXPECT_DOORBELL >> 32), "the entry's address is the doorbell's high half");
+	failures += check(read_le32(table, entry + 8U) == 1U, "the entry's message is the second line");
+	failures += check(read_le32(table, entry + 12U) == 0, "the entry is unmasked");
+	failures += check(read_le32(table, 5U * 16U + 12U) == 1U, "an unrouted entry stays masked");
+	failures += check(read_le32(config, 0x800U + 8U + EXPECT_USB1_VECTOR * 4U) == 1U, "the vector is enabled in RP1");
+
+	/* Succeeded: the failures counted. */
+	return failures;
+}
+
+/* The handler of the routed vectors, which the host never calls. */
+static void
+ignore_interrupt(
+	void *argument)
+{
+	(void)argument;
 }
 
 /* Finds the host memory of a block mapped at an address. */

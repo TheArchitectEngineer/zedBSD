@@ -16,11 +16,15 @@
  * xHCI driver binds to the functions by their class, as to any xHCI.
  *
  * The functions' interrupt is a pin of this host.  The host serves it by
- * calling the PCI core's line from a polling thread.
+ * calling the PCI core's line from the controller's RP1 interrupt, and
+ * from a polling thread: often when the interrupt could not be routed,
+ * rarely otherwise, so an edge that came while the pin was masked is not
+ * lost.
  */
 
 #include <drivers/platform/rpi5/rp1.h>
 #include <drivers/platform/rpi5/rp1-gpio.h>
+#include <drivers/platform/rpi5/rp1-irq.h>
 #include <drivers/platform/rpi5/rp1-usb.h>
 #include <drivers/generic/dma.h>
 #include <drivers/pci/pci.h>
@@ -118,8 +122,12 @@
 #define RP1_USB_DMA_MAX_SEGMENT		(16U * 1024U * 1024U)
 #define RP1_USB_DMA_ADDRESS_BITS	64U
 
-/* How often the polling thread serves the controllers, in milliseconds. */
+/*
+ * How often the polling thread serves the controllers, in milliseconds:
+ * when a controller has no interrupt, and when every one has.
+ */
 #define RP1_USB_POLL_MS			2U
+#define RP1_USB_SAFETY_POLL_MS		50U
 
 /* How long a removal waits for a running service, in steps of a millisecond. */
 #define RP1_USB_DRAIN_POLLS		1000U
@@ -136,6 +144,7 @@
  */
 struct rp1_usb_function {
 	int present;
+	int interrupt;
 	uint32_t node;
 	uint64_t pci_base;
 	uint64_t cpu_base;
@@ -155,7 +164,8 @@ struct rp1_usb_function {
  *
  * It lives for as long as the kernel runs: the PCI core keeps it as the
  * host of the root bus.  started is set once the root bus is published,
- * polling once the polling thread exists.
+ * polling once the polling thread exists, and poll_ms, the thread's
+ * interval, before it starts.
  */
 struct rp1_usb_host {
 	struct spinlock lock;
@@ -166,6 +176,7 @@ struct rp1_usb_host {
 	struct thread *poll_thread;
 	int started;
 	int polling;
+	unsigned poll_ms;
 };
 
 /* One pin's VBUS function. */
@@ -232,9 +243,11 @@ static void register_usb_drivers(void);
 static struct rp1_usb_function *function_at(const struct drv_pci_address *address);
 static uint32_t function_dword(const struct rp1_usb_function *function, unsigned offset);
 static void function_store(struct rp1_usb_function *function, unsigned offset, uint32_t dword);
+static void establish_interrupts(void);
+static void controller_interrupt(void *argument);
 static void start_polling(void);
 static void poll_worker(void *argument);
-static void serve_function(unsigned index);
+static void serve_function(struct rp1_usb_function *function);
 
 /*
  * Starts the USB core and RP1's controllers.
@@ -297,7 +310,8 @@ drv_rp1_usb_refresh(
 	if (!rp1_usb.started)
 		return;
 
-	/* Starts the service of the controllers' interrupt pin. */
+	/* Routes the controllers' RP1 interrupts, then starts the polling service. */
+	establish_interrupts();
 	start_polling();
 
 	/* Has each xHCI controller look at its root ports. */
@@ -1212,6 +1226,75 @@ host_intx_unmask(
 	spin_unlock_irqrestore(&rp1_usb.lock, enabled);
 }
 
+/*
+ * Routes each controller's RP1 interrupt to its pin's service and chooses
+ * the polling interval: rare when every controller has its interrupt.
+ */
+static void
+establish_interrupts(
+	void)
+{
+	struct rp1_usb_function *function;
+	unsigned vector;
+	unsigned trigger;
+	unsigned index;
+	unsigned routed;
+	unsigned present;
+	int error;
+
+	/* Polls often unless every controller gets its interrupt. */
+	rp1_usb.poll_ms = RP1_USB_POLL_MS;
+
+	/* Finds RP1's interrupt path; without it the polling serves alone. */
+	error = drv_rp1_irq_init();
+	if (error != 0)
+		return;
+
+	/* Routes the interrupt of each controller on the bus. */
+	routed = 0;
+	present = 0;
+	for (index = 0; index < rp1_usb.count; index++) {
+		/* Skips a controller that is not on the bus. */
+		function = &rp1_usb.functions[index];
+		if (!function->present)
+			continue;
+
+		/* Counts the controller on the bus. */
+		present++;
+
+		/* Reads the controller's vector. */
+		error = drv_rp1_irq_of(function->node, 0, &vector, &trigger);
+		if (error != 0) {
+			kern_logf("rp1-usb: controller %u has no interrupt (%d)\n", index, error);
+			continue;
+		}
+
+		/* Routes it to the pin's service. */
+		error = drv_rp1_irq_establish(vector, trigger, controller_interrupt, function);
+		if (error != 0) {
+			kern_logf("rp1-usb: controller %u interrupt not routed (%d)\n", index, error);
+			continue;
+		}
+
+		/* Counts the routed controller. */
+		function->interrupt = 1;
+		routed++;
+	}
+
+	/* Polls rarely once every controller interrupts. */
+	if (present != 0 && routed == present)
+		rp1_usb.poll_ms = RP1_USB_SAFETY_POLL_MS;
+}
+
+/* Serves a controller's pin from its RP1 interrupt. */
+static void
+controller_interrupt(
+	void *argument)
+{
+	/* Runs the pin's line as the interrupt asks. */
+	serve_function(argument);
+}
+
 /* Starts the thread that serves the controllers' pins. */
 static void
 start_polling(
@@ -1233,7 +1316,7 @@ start_polling(
 	/* Makes it runnable for as long as the kernel runs. */
 	rp1_usb.polling = 1;
 	thread_start(rp1_usb.poll_thread);
-	kern_logf("rp1-usb: serving %u controllers every %u ms\n", rp1_usb.count, RP1_USB_POLL_MS);
+	kern_logf("rp1-usb: polling %u controllers every %u ms\n", rp1_usb.count, rp1_usb.poll_ms);
 }
 
 /* Serves every controller's pin, then sleeps, for as long as the kernel runs. */
@@ -1250,10 +1333,10 @@ poll_worker(
 	for (;;) {
 		/* Serves each controller in turn. */
 		for (index = 0; index < rp1_usb.count; index++)
-			serve_function(index);
+			serve_function(&rp1_usb.functions[index]);
 
 		/* Sleeps on scheduler ticks until the next round. */
-		deadline = sched_ticks() + KERN_MS_TO_TICKS(RP1_USB_POLL_MS);
+		deadline = sched_ticks() + kern_ms_to_ticks(rp1_usb.poll_ms);
 		sched_sleep(deadline);
 	}
 }
@@ -1265,16 +1348,14 @@ poll_worker(
  */
 static void
 serve_function(
-	unsigned index)
+	struct rp1_usb_function *function)
 {
-	struct rp1_usb_function *function;
 	drv_pci_intx_run_t run;
 	unsigned long enabled;
 	bool interrupts;
 	void *line;
 
 	/* Takes the pin's entry and counts this service on it. */
-	function = &rp1_usb.functions[index];
 	run = NULL;
 	line = NULL;
 	enabled = spin_lock_irqsave(&rp1_usb.lock);
