@@ -1634,6 +1634,11 @@ timing_report(
 	/* The GPU ioctls' sums, of a build that times them. */
 	drv_gpu_ioctl_timing_report();
 
+#if SCHED_WAKE_LATENCY
+	/* The scheduler's wake-to-run histogram, of a build that keeps it. */
+	sched_wake_latency_report();
+#endif
+
 	/* No interrupt came and no wait slept: nothing to say of the wakeups. */
 	if (wake_interrupts == 0U && wake_waits == 0U)
 		return;
