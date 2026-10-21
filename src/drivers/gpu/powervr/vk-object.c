@@ -11,18 +11,22 @@
  *
  * An identity is published once, found by kind and identity, and removed
  * when the client destroys it; its payload lives on while a dependent
- * object still holds it.  A session holds few objects (the compute path
- * makes some tens), so they are one list.
+ * object still holds it.  They are one list, and found through buckets
+ * by the hash of their kind and identity (the compositor's session holds
+ * hundreds, q1550).
  */
 
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
+#include <kern/kcrt.h>
 #include <kern/kmem.h>
 #include <uapi/errno.h>
 
 #include "drivers/gpu/powervr/vk.h"
+
+static unsigned object_bucket(enum i915_vk_object_kind kind, uint64_t identity);
 
 /*
  * Opens an executor session for a render node session, with its decode
@@ -72,10 +76,11 @@ powervr_vk_close(
 	if (session == NULL)
 		return;
 
-	/* Nothing is published from now on; the list is taken whole. */
+	/* Nothing is published from now on; the list is taken whole, and the buckets emptied. */
 	session->closing = true;
 	object = session->objects;
 	session->objects = NULL;
+	kern_memset(session->buckets, 0, sizeof(session->buckets));
 
 	/* Lets each registry reference go; the next entry is taken first, the release may free this one. */
 	while (object != NULL) {
@@ -109,6 +114,7 @@ powervr_vk_object_publish(
 {
 	struct powervr_vk_object *existing;
 	struct powervr_vk_object *created;
+	unsigned bucket;
 
 	/* A null identity, an unknown kind or a missing payload names nothing. */
 	if (identity == 0 || payload == NULL || destroy == NULL)
@@ -139,9 +145,12 @@ powervr_vk_object_publish(
 	created->payload = payload;
 	created->destroy = destroy;
 
-	/* Links it at the head of the list. */
+	/* Links it at the head of the list and of its bucket. */
+	bucket = object_bucket(kind, identity);
 	created->next = session->objects;
 	session->objects = created;
+	created->bucket_next = session->buckets[bucket];
+	session->buckets[bucket] = created;
 	session->live_objects++;
 
 	/* Succeeded: the identity is found from now on. */
@@ -161,8 +170,8 @@ powervr_vk_object_find(
 	if (identity == 0)
 		return NULL;
 
-	/* Walks the list for the kind and identity. */
-	for (object = session->objects; object != NULL; object = object->next) {
+	/* Walks the bucket of the kind and identity. */
+	for (object = session->buckets[object_bucket(kind, identity)]; object != NULL; object = object->bucket_next) {
 		if (object->kind == kind && object->identity == identity)
 			return object;
 	}
@@ -233,10 +242,11 @@ powervr_vk_object_remove(
 	uint64_t identity)
 {
 	struct powervr_vk_object **link;
+	struct powervr_vk_object **bucket_link;
 	struct powervr_vk_object *object;
 	int error;
 
-	/* Finds the link that points at the identity. */
+	/* Finds the link that points at the identity, in the list and in its bucket. */
 	object = NULL;
 	for (link = &session->objects; *link != NULL; link = &(*link)->next) {
 		if ((*link)->kind == kind && (*link)->identity == identity) {
@@ -248,9 +258,16 @@ powervr_vk_object_remove(
 	if (object == NULL)
 		return ENOENT;
 
-	/* Unlinks it, then lets the registry's reference go. */
+	bucket_link = &session->buckets[object_bucket(kind, identity)];
+	while (*bucket_link != NULL && *bucket_link != object)
+		bucket_link = &(*bucket_link)->bucket_next;
+
+	/* Unlinks it from both, then lets the registry's reference go. */
 	*link = object->next;
 	object->next = NULL;
+	if (*bucket_link == object)
+		*bucket_link = object->bucket_next;
+	object->bucket_next = NULL;
 	object->published = false;
 	error = powervr_vk_object_release(object);
 	if (error != 0)
@@ -432,4 +449,19 @@ powervr_vk_free_payload(
 
 	/* Succeeded: the payload is gone. */
 	return 0;
+}
+
+/* Gives the bucket of a kind and identity: the identity's bits folded, with the kind. */
+static unsigned
+object_bucket(
+	enum i915_vk_object_kind kind,
+	uint64_t identity)
+{
+	uint64_t folded;
+
+	/* The identity's halves and its kind mixed into the low bits. */
+	folded = identity ^ (identity >> 32) ^ (identity >> 16) ^ ((uint64_t)kind * 0x9e37U);
+
+	/* Succeeded: its bucket. */
+	return (unsigned)(folded & (POWERVR_VK_OBJECT_BUCKETS - 1U));
 }
