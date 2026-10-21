@@ -706,6 +706,7 @@ kwl_compose_draw(
 	unsigned subsurfaces;
 	unsigned index;
 	int partial;
+	int moving;
 	unsigned cursor_id;
 	VkResult result;
 
@@ -849,6 +850,16 @@ kwl_compose_draw(
 
 	/* The new images' layouts went with the frame. */
 	kwl_import_layouts_done(compose);
+
+	/*
+	 * While the compositor's own animation moves, the next frame is
+	 * wanted at once: the render thread acquires its image as soon as this
+	 * frame completes, instead of after the main thread has heard of the
+	 * completion and asked again (two wakeups of each thread less).
+	 */
+	moving = kwl_compositor_moving(server);
+	if (moving)
+		kwl_compose_want_frame(server);
 
 	/* The CPU time of the main thread's part of the frame. */
 	server->perf.compose_draw_cycles += kwl_cycles() - compose->frame_start_cycles;

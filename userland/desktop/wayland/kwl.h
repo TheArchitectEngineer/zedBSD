@@ -2188,6 +2188,7 @@ void kwl_buffer_size(const struct kwl_object *buffer, uint32_t *width, uint32_t 
 void kwl_callbacks_done(struct kwl_object **callbacks);
 void kwl_schedule(struct kwl_server *server);
 void kwl_transition_request(struct kwl_server *server, const char *what);
+int kwl_compositor_moving(const struct kwl_server *server);
 void kwl_frame_done(struct kwl_server *server);
 int kwl_compose_open(struct kwl_server *server);
 int kwl_compose_output_prepare(struct kwl_server *server);

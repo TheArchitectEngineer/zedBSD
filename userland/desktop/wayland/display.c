@@ -113,6 +113,7 @@ kwl_schedule(
 	int direct;
 	int ready;
 	int held;
+	int moving;
 	int error;
 
 	/* An OS-paused display cannot compose or present until authority returns. */
@@ -241,15 +242,12 @@ kwl_schedule(
 	 * review-2 N3).
 	 */
 	now = kwl_milliseconds();
+	moving = kwl_compositor_moving(server);
 	if (server->awaiting != 0 &&
 	    !server->pointer_moved &&
 	    server->transition == NULL &&
-	    server->anim == NULL &&
-	    !server->home_moving &&
-	    !server->home_page_moving &&
+	    !moving &&
 	    !server->home_dragging &&
-	    !server->wiseview_moving &&
-	    !server->desktop_moving &&
 	    now - server->frame_done_ms < server->frame_wait_ms)
 		return;
 
@@ -279,6 +277,27 @@ kwl_schedule(
 		/* The frame's time, a failed one too. */
 		server->perf.draw_cycles += kwl_cycles() - part;
 	}
+}
+
+/*
+ * Tells whether the compositor's own animation moves (a window's, App
+ * Home's or its pages', Wiseview's, the desktops sliding): each of its
+ * frames is followed by another.
+ */
+int
+kwl_compositor_moving(
+	const struct kwl_server *server)
+{
+	/* Any of them. */
+	if (server->anim != NULL)
+		return 1;
+	if (server->home_moving || server->home_page_moving)
+		return 1;
+	if (server->wiseview_moving || server->desktop_moving)
+		return 1;
+
+	/* Still. */
+	return 0;
 }
 
 /*
