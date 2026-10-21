@@ -129,6 +129,7 @@
  * the glass look's modes (glass.h's MODE_*, the dark glass after them)
  * and the windows' own quads.
  */
+#define KWL_COUNT_TEXT		5U
 #define KWL_COUNT_DARK_GLASS	7U
 #define KWL_COUNT_QUAD		8U
 #define KWL_COUNT_KINDS		9U

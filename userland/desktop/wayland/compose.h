@@ -483,10 +483,16 @@ struct kwl_compose {
 	 * box around them in the pass's pixels (left, top, right, bottom;
 	 * ws211-p009, for the damage's rectangles they are drawn in).  ready
 	 * once made; off with KWL_BATCH=0 or when it could not be made.
+	 * Glyphs are drawn together the same way with their own pipeline
+	 * (ws270-p007; text_ready once it is made), in the same buffer: text
+	 * says the quads waiting are glyphs.
 	 */
 	struct {
 		unsigned ready;
+		unsigned text_ready;
+		unsigned text;
 		VkPipeline pipeline;
+		VkPipeline text_pipeline;
 		VkBuffer buffer;
 		VkDeviceMemory memory;
 		uint8_t *map;
@@ -732,6 +738,7 @@ void kwl_batch_open(struct kwl_server *server);
 void kwl_batch_close(struct kwl_compose *compose);
 void kwl_batch_begin(struct kwl_compose *compose);
 int kwl_batch_add(struct kwl_server *server, struct kwl_list *command, const float *constants, VkDescriptorSet set);
+int kwl_batch_add_text(struct kwl_server *server, struct kwl_list *command, const float *constants, VkDescriptorSet set);
 void kwl_batch_flush(struct kwl_server *server, struct kwl_list *command);
 void kwl_compose_count_commands(struct kwl_server *server, unsigned pushes, unsigned draws);
 VkResult kwl_compose_submit_quiet(struct kwl_server *server);

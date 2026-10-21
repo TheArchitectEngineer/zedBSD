@@ -2208,6 +2208,20 @@ glass_shape_draw(
 		if (joined)
 			return;
 	}
+
+	/*
+	 * Glyphs that follow one another are joined into one draw (batch.c,
+	 * ws270-p007): a line of text was a draw a glyph, and on the PowerVR
+	 * every 64 draws of a pass cost another load of the whole pass.
+	 */
+	if (constants[17] == (float)MODE_TEXT) {
+		joined = kwl_batch_add_text(server, command, constants, set);
+		if (joined) {
+			pixels = kwl_compose_count_pixels(server, quad[0], quad[1], quad[2], quad[3], 1);
+			kwl_compose_count_kind(server, KWL_COUNT_TEXT, pixels);
+			return;
+		}
+	}
 	kwl_batch_flush(server, command);
 
 	/* An opaque shape large enough is drawn as its opaque inside and its blended edges. */
