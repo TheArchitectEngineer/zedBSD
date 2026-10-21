@@ -886,6 +886,15 @@ fill_records(
 		flags |= POWERVR_FLAG_NO_DM_OVERLAP;
 
 	/*
+	 * The data masters' overlap (one context's geometry while another's
+	 * 3D runs) is off unless POWERVR_DM_OVERLAP: with it on, two sessions
+	 * rendering at once made a 3D job's parameter fetch walk a stale
+	 * parameter manager catalogue on the board (2026-10-21).
+	 */
+	if (!POWERVR_DM_OVERLAP)
+		flags |= POWERVR_FLAG_NO_DM_OVERLAP;
+
+	/*
 	 * The firmware manages the power of the Rascal and the dusts.  On the
 	 * JH7110 their island is off after reset and no one else turns it on,
 	 * so without this every data master kick locks up without a fault.

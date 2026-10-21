@@ -720,6 +720,14 @@ target_make(
 	if (error != 0)
 		goto fail;
 
+	/* Names the target's record and the physical pages its lists give the parameter manager (whose catalogues come from them). */
+	kern_logf("powervr: target made: session 0x%x record 0x%x, local list 0x%llx..0x%llx, global list 0x%llx..0x%llx\n",
+		  (unsigned)session->identity, (unsigned)powervr_object_address(&target->record, 0),
+		  (unsigned long long)target->local.pages->run.paddr,
+		  (unsigned long long)(target->local.pages->run.paddr + target->local.pages->run.size),
+		  (unsigned long long)(session->targets->global.pages != NULL ? session->targets->global.pages->run.paddr : 0U),
+		  (unsigned long long)(session->targets->global.pages != NULL ? session->targets->global.pages->run.paddr + session->targets->global.pages->run.size : 0U));
+
 	/* Succeeded: the target is ready for its first render. */
 	*result = target;
 	return 0;
