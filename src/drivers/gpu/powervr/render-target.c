@@ -1181,6 +1181,27 @@ ms_ticks(
 	return ((uint64_t)milliseconds * KERN_CLOCK_HZ + 999U) / 1000U;
 }
 
+/* Reads the parameter manager's catalogues (VCE 0 to 3, TE 0 to 3, ALIST) from one half of a target's record. */
+void
+powervr_target_catalogues(
+	const struct powervr_target *target,
+	unsigned half,
+	uint64_t catalogues[POWERVR_TARGET_CATALOGUES])
+{
+	static const uint32_t places[POWERVR_TARGET_CATALOGUES] = {
+		8U, 16U, 24U, 32U, 72U, 80U, 88U, 96U, 136U,
+	};
+	uint32_t base;
+	uint32_t index;
+
+	/* Each 64-bit word, low half first. */
+	base = POWERVR_TARGET_DATA_OFFSET(half);
+	for (index = 0; index < POWERVR_TARGET_CATALOGUES; index++) {
+		catalogues[index] = (uint64_t)powervr_object_get32(&target->record, base + places[index]) |
+		    (uint64_t)powervr_object_get32(&target->record, base + places[index] + 4U) << 32;
+	}
+}
+
 /* Reports the firmware address of a target's render target data record. */
 uint32_t
 powervr_target_record_address(

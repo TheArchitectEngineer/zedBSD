@@ -344,3 +344,5 @@ Keiland が使い、vkmatrix 15/15・gpu-selftest 13/13 で確かめていない
 - d30（f2c8a64a1、P1 679e119bb: geometry が前の 3D を firmware で待つ、grow・partial render・OOM の log）: login は reset 0。同時の試験は 3 回とも FAIL（3 つのうち 2 つ）、grow・partial render・OOM の行は 0 → 原因は PM の state の保存と戻し（別 context の TA が間に入る時、HWRT ごとの mlist・vheap の表など）の疑い。P1 に Mesa の rt_data と項目ごとに照らすよう依頼。
 - d30 追試: `vkmatrix -p 2 -r 10 load-1080-6`（texture 無し）でも FAIL → 最小の再現。1 process の push4 は PASS。
 - d31（fe34c86a7、P1 6d1e187c1 で session ごとに render target の address をずらす、vkmatrix -p の出力の直し）: login は HWR 0、`-p 2 -r 10 load-1080-6` は 3 回とも FAIL（HWR 2→3→4）→ address の cache の取り違えではない。P1 は half の交互と per-half の macrolist、render context の TA・3D の state の保存先を調べる（q1530-i06）。
+- d32（P2 の使い捨て 7a71c351c、dust の電源を host が保つ、system flags 0x00080000）: 試験の途中で SSH が 2 回切れ、3 回目も FAIL → 電源の管理は原因でない、main に入れない。
+- **d33（c6407c84f、P1 403974796 の catalogue の比較）: `-p 2 -r 10 load-1080-6` FAIL。fault の catalogue 0x5cd0a001 = kick の前の TE の catalogue、今の TE は 0x5ccef001 → 私たちの 3D が、私たちの TA が置き換えた前の render の TE の表を辿っている。** P1 に half の交互（per-half の macrolist・region header）と fragment が自分の geometry を待つ事を依頼。P2 に trace（runs/d33/capture.txt、1500 行）の解読を依頼。

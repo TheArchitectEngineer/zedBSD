@@ -124,6 +124,9 @@ struct powervr_pending {
 	unsigned marker;
 };
 
+/* The catalogues powervr_target_catalogues reports: VCE 0 to 3, TE 0 to 3, ALIST. */
+#define POWERVR_TARGET_CATALOGUES	9U
+
 /* No job marker. */
 #define POWERVR_NO_MARKER	0xffffffffU
 
@@ -417,6 +420,13 @@ struct powervr_session {
 	 * description after a reset; targets live until the session closes.
 	 */
 	struct powervr_target *noted_target;
+
+	/*
+	 * The parameter manager's catalogues in the noted target's first
+	 * half before the kick (VCE 0..3, TE 0..3, ALIST), to set beside
+	 * those at a reset.
+	 */
+	uint64_t noted_catalogues[POWERVR_TARGET_CATALOGUES];
 };
 
 /*
@@ -667,6 +677,9 @@ uint32_t powervr_target_data_address(const struct powervr_target *target, unsign
 
 /* Reports the layout a render target was made with. */
 const struct powervr_target_layout *powervr_target_layout_of(const struct powervr_target *target);
+
+/* Reads the parameter manager's catalogues from one half of a target's record (render-target.c). */
+void powervr_target_catalogues(const struct powervr_target *target, unsigned half, uint64_t catalogues[POWERVR_TARGET_CATALOGUES]);
 
 /* Reports the firmware address of a target's render target data record (render-target.c). */
 uint32_t powervr_target_record_address(const struct powervr_target *target);
