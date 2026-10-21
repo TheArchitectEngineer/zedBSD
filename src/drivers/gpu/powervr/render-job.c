@@ -72,6 +72,9 @@
  * shaders' code one after another in the shading cluster buffer.
  */
 #define DRAW_SLOT			0x1000U
+
+/* The least bytes a job's draw buffer is made with (job_draw_memory_room). */
+#define DRAW_MEMORY_LEAST		0x10000U
 #define DRAW_PPP			0x000U
 #define DRAW_PUSH			0x100U
 #define DRAW_BLEND			0x200U
@@ -258,6 +261,7 @@ static struct job_memory *job_keep_take(struct powervr_render *render, struct po
 static void job_buffer_clear(struct powervr_buffer *buffer);
 static bool job_draw_memory_fits(const struct job_memory *memory, uint64_t general_bytes, uint64_t pds_bytes, uint64_t usc_bytes);
 static void job_draw_memory_free(struct powervr_render *render, struct powervr_session *session, struct job_memory *memory);
+static uint64_t job_draw_memory_room(uint64_t bytes);
 static int job_draw_memory_make(struct powervr_render *render, struct powervr_session *session, struct job_memory *memory, uint64_t general_bytes, uint64_t pds_bytes, uint64_t usc_bytes);
 static int attribute_words(uint32_t format, uint32_t components, uint32_t *words, uint32_t *defaults);
 static void put_words(struct powervr_buffer *buffer, uint32_t offset, const uint32_t *words, unsigned count);
@@ -1311,11 +1315,7 @@ job_draws(
 	usc_total = usc_bytes + 16U;
 	part_started = powervr_timing_now();
 	fits = job_draw_memory_fits(memory, general_bytes, pds_bytes, usc_total);
-	if (fits) {
-		job_buffer_clear(memory->draw_general->buffer);
-		job_buffer_clear(memory->draw_pds);
-		job_buffer_clear(memory->draw_usc);
-	} else {
+	if (!fits) {
 		job_draw_memory_free(render, session, memory);
 		error = job_draw_memory_make(render, session, memory, general_bytes, pds_bytes, usc_total);
 		if (error != 0)
@@ -1385,6 +1385,7 @@ draw_place(
 	uint32_t stream_at,
 	uint32_t *words)
 {
+	static const uint32_t blend_zero[4] = { 0, 0, 0, 0 };
 	const struct powervr_vk_graphics *graphics;
 	const struct powervr_vk_descriptor_set *set;
 	const struct powervr_draw_attribute *attribute;
@@ -1435,6 +1436,7 @@ draw_place(
 		at += (set->layout.bytes + 15U) & ~15U;
 	}
 	put_bytes(memory->draw_general->buffer, index * DRAW_SLOT + DRAW_PUSH, draw->push, draw->push_bytes);
+	put_words(memory->draw_general->buffer, index * DRAW_SLOT + DRAW_BLEND, blend_zero, 4U);
 	state.push_address = general + DRAW_PUSH;
 	state.blend_address = general + DRAW_BLEND;
 
@@ -1997,6 +1999,11 @@ job_draw_memory_make(
 	struct powervr_buffer *buffer;
 	int error;
 
+	/* Each made larger than asked (q1541), so that the next jobs of more draws fit without mapping again. */
+	general_bytes = job_draw_memory_room(general_bytes);
+	pds_bytes = job_draw_memory_room(pds_bytes);
+	usc_bytes = job_draw_memory_room(usc_bytes);
+
 	/* The general memory: a slot per draw, then the sets. */
 	error = powervr_buffer_create(render, general_bytes, &buffer);
 	if (error != 0)
@@ -2036,4 +2043,26 @@ job_draw_memory_make(
 
 	/* Succeeded: the draws' memory is mapped. */
 	return 0;
+}
+
+/*
+ * Gives the bytes a job's draw buffer is made with for bytes asked: the
+ * next power of two, at least DRAW_MEMORY_LEAST, so that kept memory
+ * (job_keep_take) fits the following jobs and is seldom made again (each
+ * making maps three buffers, each map waiting for the firmware's MMU
+ * cache flush).
+ */
+static uint64_t
+job_draw_memory_room(
+	uint64_t bytes)
+{
+	uint64_t room;
+
+	/* Doubled from the least until it holds them. */
+	room = DRAW_MEMORY_LEAST;
+	while (room < bytes)
+		room *= 2U;
+
+	/* Succeeded: the room. */
+	return room;
 }
