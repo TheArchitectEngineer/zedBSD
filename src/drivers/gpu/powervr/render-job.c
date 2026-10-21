@@ -210,14 +210,14 @@ struct job_memory {
 static int job_check(const struct powervr_render_job *job);
 static void load_draw_free(struct powervr_render_job *work, struct load_draw *load);
 static bool job_skips_empty_tiles(const struct powervr_render_job *job);
-static bool job_needs_no_background(const struct powervr_render_job *job);
+static bool job_needs_no_background(const struct powervr_render_job *job, bool load_drawn);
 static uint32_t float_bits(uint32_t value);
 static int load_graphics(struct powervr_render *render, uint32_t vk_format, struct powervr_vk_graphics **result);
 static int load_graphics_compile(struct powervr_vk_graphics *graphics);
 static int load_graphics_shaders(struct powervr_vk_graphics *graphics, struct powervr_shader_workspace *workspace);
 static int load_draw_build(struct powervr_render *render, const struct powervr_render_job *job, struct job_memory *memory, struct load_draw *load);
 static int job_map(struct powervr_render *render, struct powervr_session *session, struct job_memory *memory);
-static int job_programs(const struct powervr_render_job *job, struct job_memory *memory, uint32_t *shared_registers);
+static int job_programs(const struct powervr_render_job *job, bool load_drawn, struct job_memory *memory, uint32_t *shared_registers);
 /*
  * The LOAD background's probe (for the board): 0 the usual load program,
  * 1 the sample at (0, 0) (POWERVR_LOAD_PROBE_ORIGIN), 2 the program with a
@@ -311,6 +311,7 @@ powervr_render_job_run(
 	uint64_t draws_started;
 	uint64_t started;
 	uint32_t at;
+	bool load_drawn;
 	int error;
 
 	/* When the job started, for the submission's timing. */
@@ -323,24 +324,20 @@ powervr_render_job_run(
 
 	/*
 	 * A loaded colour attachment: the job runs with its background's
-	 * contents not mattering and a load draw first (LOAD_DRAW), on a
-	 * copy of the job.
+	 * contents not mattering and a load draw first (LOAD_DRAW).  The first
+	 * colour target is taken as not loaded where its background is made
+	 * (load_drawn), without a copy of the job (q1541: a job of 512 draws'
+	 * room, about 144 KB, was copied for that alone).
 	 */
 	given = job;
 	work = NULL;
 	load = NULL;
+	load_drawn = false;
 	if (POWERVR_RENDER_LOAD_PROBE == 0 && job->colors[0].load_op == LOAD_OP_LOAD) {
-		work = kern_malloc(sizeof(*work));
 		load = kern_calloc(1, sizeof(*load));
-		if (work == NULL || load == NULL) {
-			kern_free(work);
-			kern_free(load);
+		if (load == NULL)
 			return ENOMEM;
-		}
-
-		*work = *job;
-		work->colors[0].load_op = LOAD_OP_DONT_CARE;
-		job = work;
+		load_drawn = true;
 	}
 
 	/* The job's shape and its first colour target's load and store, with the diagnostics. */
@@ -386,7 +383,7 @@ powervr_render_job_run(
 	/* The background's programs and the load draw, the first part of the build timed alone (q1541). */
 	started = powervr_timing_now();
 	if (error == 0)
-		error = job_programs(job, memory, &shared_registers);
+		error = job_programs(job, load_drawn, memory, &shared_registers);
 	if (error == 0 && load != NULL)
 		error = load_draw_build(render, given, memory, load);
 	powervr_timing_add(POWERVR_TIMING_BUILD_PROGRAMS, started);
@@ -457,7 +454,7 @@ powervr_render_job_run(
 	memory->fragment_setup.tiles_x = layout->tiles_x;
 	memory->fragment_setup.tiles_y = layout->tiles_y;
 	memory->fragment_setup.skip_empty_tiles = job_skips_empty_tiles(job);
-	memory->fragment_setup.no_background = job_needs_no_background(job);
+	memory->fragment_setup.no_background = job_needs_no_background(job, load_drawn);
 	memory->fragment_setup.border_table = powervr_session_border_table(session);
 	memory->geometry_setup.border_table = memory->fragment_setup.border_table;
 	powervr_fragment_command(&memory->fragment_setup, memory->fragment);
@@ -1041,14 +1038,17 @@ job_map(
 
 /*
  * Writes the job's programs: the end-of-tile program storing the colour
- * attachment over the render area, and the background.
+ * attachment over the render area, and the background (whose contents do
+ * not matter for a first colour target the load draw loads, load_drawn).
  */
 static int
 job_programs(
 	const struct powervr_render_job *job,
+	bool load_drawn,
 	struct job_memory *memory,
 	uint32_t *shared_registers)
 {
+	struct powervr_render_target first;
 	const struct powervr_render_target *color;
 	uint32_t state[2];
 	uint32_t event[POWERVR_RENDER_EVENT_DATA_WORDS];
@@ -1057,8 +1057,13 @@ job_programs(
 	uint32_t code_word;
 	int error;
 
+	/* The first colour target, whose contents do not matter to the background when the load draw loads it. */
+	first = job->colors[0];
+	if (load_drawn)
+		first.load_op = LOAD_OP_DONT_CARE;
+	color = &first;
+
 	/* The places as offsets from the windows' bases. */
-	color = &job->colors[0];
 	pds_base = (uint32_t)(memory->pds_place - POWERVR_PDS_HEAP_BASE);
 	usc_base = (uint32_t)(memory->usc_place - POWERVR_USC_HEAP_BASE);
 
@@ -1843,12 +1848,13 @@ job_skips_empty_tiles(
 /*
  * Tells whether a job's fragment needs no background object (ws270-p007):
  * no depth target, and every colour target's old contents do not matter
- * (a target loaded through the load draw is one, the draw covering its
- * render area), so no tile's pixels come from the background.
+ * (a target loaded through the load draw, load_drawn, is one, the draw
+ * covering its render area), so no tile's pixels come from the background.
  */
 static bool
 job_needs_no_background(
-	const struct powervr_render_job *job)
+	const struct powervr_render_job *job,
+	bool load_drawn)
 {
 	uint32_t index;
 
@@ -1856,8 +1862,10 @@ job_needs_no_background(
 	if (job->depth.present)
 		return false;
 
-	/* A colour target loaded or cleared by the background needs it. */
+	/* A colour target loaded or cleared by the background needs it (the first one's load is the load draw's when load_drawn). */
 	for (index = 0; index < job->color_count; index++) {
+		if (index == 0U && load_drawn)
+			continue;
 		if (job->colors[index].load_op != LOAD_OP_DONT_CARE)
 			return false;
 	}
