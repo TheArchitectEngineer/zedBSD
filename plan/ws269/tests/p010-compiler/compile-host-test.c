@@ -335,6 +335,7 @@ run_prepare(
 }
 
 static void machine_compare_once(const uint32_t *words, size_t count, uint32_t stage, const char *name);
+static void test_sum_blends(void);
 
 /*
  * Compiles a module that was read, runs it on the machine simulator
@@ -354,9 +355,13 @@ machine_compare(
 		const char *name;
 	} forms[] = {
 		{ POWERVR_SHADER_FORM_SHARED_PROGRAM, "with its shared program" },
-		{ POWERVR_SHADER_FORM_PACK_OUTPUT, "packed into the output" },
 		{ POWERVR_SHADER_FORM_ITERATE_SAMPLE, "iterating its samples" },
-		{ POWERVR_SHADER_FORM_SHARED_PROGRAM | POWERVR_SHADER_FORM_PACK_OUTPUT | POWERVR_SHADER_FORM_ITERATE_SAMPLE, "in every form" },
+		{ POWERVR_SHADER_FORM_SUM_OF_PRODUCTS, "by its sum of products" },
+		{ POWERVR_SHADER_FORM_SHARED_PROGRAM | POWERVR_SHADER_FORM_SUM_OF_PRODUCTS, "shared, by its sum of products" },
+		{ POWERVR_SHADER_FORM_SUM_OF_PRODUCTS | POWERVR_SHADER_FORM_SUM_RAW, "by its raw sum of products" },
+		{ POWERVR_SHADER_FORM_SHARED_PROGRAM | POWERVR_SHADER_FORM_ITERATE_SAMPLE | POWERVR_SHADER_FORM_SUM_OF_PRODUCTS, "in every form but the raw" },
+		{ POWERVR_SHADER_FORM_SHARED_PROGRAM | POWERVR_SHADER_FORM_ITERATE_SAMPLE | POWERVR_SHADER_FORM_SUM_OF_PRODUCTS | POWERVR_SHADER_FORM_SUM_RAW, "in every form but the wait" },
+		{ POWERVR_SHADER_FORM_SHARED_PROGRAM | POWERVR_SHADER_FORM_ITERATE_SAMPLE | POWERVR_SHADER_FORM_SUM_OF_PRODUCTS | POWERVR_SHADER_FORM_SUM_RAW | POWERVR_SHADER_FORM_SAMPLE_WAITS, "in every form (the driver's)" },
 	};
 	struct powervr_shader_key key;
 	const struct powervr_shader_key *saved_key;
@@ -1029,6 +1034,66 @@ test_keyed(void)
 }
 
 /*
+ * The blends the sum of products writes (q1548): quad.frag over every
+ * channel (the compositor's blend), and vkmatrix's sample and batch
+ * colour blended over, subtracted, added and multiplied, each compared
+ * between the machine and the interpreter in every form.
+ */
+static void
+test_sum_blends(void)
+{
+	static const struct {
+		uint8_t source_color;
+		uint8_t destination_color;
+		uint8_t source_alpha;
+		uint8_t destination_alpha;
+		uint8_t operation;
+		const char *name;
+	} blends[] = {
+		{ 1, 7, 1, 7, 0, "over" },
+		{ 1, 7, 1, 7, 1, "subtracted" },
+		{ 1, 1, 1, 1, 0, "added" },
+		{ 4, 0, 8, 0, 0, "multiplied" }
+	};
+	static const struct {
+		const char *name;
+		const uint32_t *words;
+		size_t bytes;
+	} shaders[] = {
+		{ "kwl quad.frag", kwl_quad_frag, sizeof(kwl_quad_frag) },
+		{ "vkmatrix texture.frag", vkmatrix_texture_frag, sizeof(vkmatrix_texture_frag) },
+		{ "vkmatrix batch.frag", vkmatrix_batch_frag, sizeof(vkmatrix_batch_frag) },
+		{ "vkmatrix flatblend.frag", vkmatrix_flatblend_frag, sizeof(vkmatrix_flatblend_frag) }
+	};
+	static struct powervr_shader_key key;
+	struct powervr_shader_program program;
+	char name[96];
+	unsigned blend;
+	unsigned shader;
+
+	/* Each shader in each blend, all channels written to a B8G8R8A8 attachment. */
+	for (blend = 0; blend < sizeof(blends) / sizeof(blends[0]); blend++) {
+		for (shader = 0; shader < sizeof(shaders) / sizeof(shaders[0]); shader++) {
+			memset(&key, 0, sizeof(key));
+			key.output_formats[0] = 44;
+			key.blend[0].enable = 1;
+			key.blend[0].source_color = blends[blend].source_color;
+			key.blend[0].destination_color = blends[blend].destination_color;
+			key.blend[0].color_operation = blends[blend].operation;
+			key.blend[0].source_alpha = blends[blend].source_alpha;
+			key.blend[0].destination_alpha = blends[blend].destination_alpha;
+			key.blend[0].alpha_operation = blends[blend].operation;
+			key.blend[0].write_mask = 0xf;
+			current_key = &key;
+			snprintf(name, sizeof(name), "keyed %s %s", shaders[shader].name, blends[blend].name);
+			if (prepare(shaders[shader].words, shaders[shader].bytes / 4U, POWERVR_SHADER_FRAGMENT, &program, name, 0xffffffffU) == 0)
+				machine_compare(shaders[shader].words, shaders[shader].bytes / 4U, POWERVR_SHADER_FRAGMENT, name);
+		}
+	}
+	current_key = NULL;
+}
+
+/*
  * A vertex shader of vkstage that copies its attributes: the first to the
  * position (padded with 0 and 1), the second to its one varying.
  */
@@ -1263,6 +1328,7 @@ main(
 	}
 
 	test_keyed();
+	test_sum_blends();
 	test_vkstage();
 
 	printf("powervr compiler host test: %u passed, %u failed\n", passed, failed);

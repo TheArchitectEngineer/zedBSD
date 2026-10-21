@@ -276,6 +276,18 @@ ir_run(
 				result[2] = 0;
 				result[3] = 0;
 				break;
+			case POWERVR_IR_PIXEL_BLEND:
+				/* The colour blended with the 8-bit one in the pixel output, packed back (q1548). */
+				result[0] = a;
+				result[1] = b;
+				result[2] = c;
+				result[3] = d;
+				run->pixels[instruction->immediate & 3U][lane] = ir_run_blend(instruction->immediate_2, result, run->pixels[instruction->immediate & 3U][lane]);
+				result[0] = 0;
+				result[1] = 0;
+				result[2] = 0;
+				result[3] = 0;
+				break;
 			default:
 				result[0] = float_op(instruction->opcode, a, b, c);
 				if ((instruction->flags & POWERVR_IR_SATURATE) != 0)
@@ -430,6 +442,43 @@ ir_run_pack(
 		packed |= (uint32_t)(value * 255.0f + 0.5f) << (channel * 8U);
 	}
 	return packed;
+}
+
+/*
+ * Blends a colour of four floats, clamped, with an 8-bit unsigned
+ * normalised one as POWERVR_IR_PIXEL_BLEND of the kind does, each channel
+ * worked out in single precision the way the blend's arithmetic is, and
+ * packs it.
+ */
+uint32_t
+ir_run_blend(
+	uint32_t kind,
+	const uint32_t source[4],
+	uint32_t packed)
+{
+	uint32_t destination[4];
+	uint32_t blended[4];
+	unsigned channel;
+	float s;
+	float d;
+	float a;
+
+	/* The destination's channels, then each channel's equation of the clamped colour. */
+	ir_run_unpack(packed, destination);
+	a = as_float(saturated(source[3]));
+	for (channel = 0; channel < 4; channel++) {
+		s = as_float(saturated(source[channel]));
+		d = as_float(destination[channel]);
+		if (kind == POWERVR_IR_BLEND_OVER)
+			blended[channel] = as_word(d * (1.0f - a) + s);
+		else if (kind == POWERVR_IR_BLEND_SUBTRACT)
+			blended[channel] = as_word(-d * (1.0f - a) + s);
+		else if (kind == POWERVR_IR_BLEND_ADD)
+			blended[channel] = as_word(s + d);
+		else
+			blended[channel] = as_word(s * d);
+	}
+	return ir_run_pack(blended);
 }
 
 /* Unpacks 8-bit unsigned normalised channels to floats. */

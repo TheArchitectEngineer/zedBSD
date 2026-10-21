@@ -186,12 +186,14 @@ enum machine_kind {
 	MACHINE_TEST_ZERO,
 	MACHINE_CONDITION,
 	MACHINE_BRANCH,
-	MACHINE_ITERATE_SAMPLE
+	MACHINE_ITERATE_SAMPLE,
+	MACHINE_SUM_OF_PRODUCTS
 };
 
 /*
  * The back end's state for one shader.  Forms are the key's program
- * forms it takes (POWERVR_SHADER_FORM_PACK_OUTPUT, _ITERATE_SAMPLE);
+ * forms it takes (POWERVR_SHADER_FORM_ITERATE_SAMPLE, _SUM_OF_PRODUCTS,
+ * _SAMPLE_WAITS);
  * iterate_sample marks the iterated varyings a sample iterates itself.
  */
 struct shader_backend {

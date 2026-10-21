@@ -1390,7 +1390,6 @@ draw_place(
 	uint32_t stream_at,
 	uint32_t *words)
 {
-	static const uint32_t blend_zero[4] = { 0, 0, 0, 0 };
 	const struct powervr_vk_graphics *graphics;
 	const struct powervr_vk_descriptor_set *set;
 	const struct powervr_draw_attribute *attribute;
@@ -1428,7 +1427,7 @@ draw_place(
 	vertex_usc = usc_base + (uint32_t)usc_place;
 	fragment_usc = vertex_usc + (uint32_t)((graphics->vertex.length + 15U) & ~(size_t)15U);
 
-	/* The bound sets' copies, the push constants and zero blend constants. */
+	/* The bound sets' copies, the push constants and the pipeline's blend constants. */
 	kern_memset(&state, 0, sizeof(state));
 	at = (uint32_t)sets_place;
 	for (slot = 0; slot < POWERVR_DRAW_SETS; slot++) {
@@ -1441,7 +1440,7 @@ draw_place(
 		at += (set->layout.bytes + 15U) & ~15U;
 	}
 	put_bytes(memory->draw_general->buffer, index * DRAW_SLOT + DRAW_PUSH, draw->push, draw->push_bytes);
-	put_words(memory->draw_general->buffer, index * DRAW_SLOT + DRAW_BLEND, blend_zero, 4U);
+	put_words(memory->draw_general->buffer, index * DRAW_SLOT + DRAW_BLEND, graphics->fixed.blend_constants, 4U);
 	state.push_address = general + DRAW_PUSH;
 	state.blend_address = general + DRAW_BLEND;
 

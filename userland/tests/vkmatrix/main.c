@@ -60,7 +60,15 @@
  * N processes at once, each with its own device (sessions rendering
  * concurrently), with lines prefixed vkmatrix[1] to vkmatrix[N].  -c F
  * (q1547, one process only) makes every pipeline through one
- * VkPipelineCache and writes its data to the file F at the end of the run.
+ * VkPipelineCache and writes its data to the file F at the end of the run;
+ * -C D (q1548, one process only) makes each case's pipelines through a
+ * cache of their own and writes it to D/<case>.bin after the case.
+ *
+ *   sop-*                   (q1548) a 4x4 texture of sixteen colours and
+ *                           alphas drawn (nearest) over a cleared colour
+ *                           of alpha 0.5 in one form of the colour output
+ *                           or one blend each: the forms a driver can
+ *                           write with one sum-of-products operation
  */
 
 /* clock_gettime and fork under a strict C standard. */
@@ -112,9 +120,6 @@
 #define PERF_GRID_SIDE		8U
 #define PERF_LAYERS		4U
 
-/* The most trials one run takes (-t). */
-#define VKMATRIX_TRIALS_MAX	8U
-
 /* The load cases' passes over one 1920x1080 image. */
 #define VKMATRIX_LOAD_FRAMES	60U
 
@@ -152,6 +157,27 @@ enum vkmatrix_blend {
 	VKMATRIX_ADD
 };
 
+/* The colour forms of the sop cases' shaders (q1548), t the sample. */
+enum vkmatrix_sop_form {
+	SOP_SAMPLE,
+	SOP_RED,
+	SOP_GREEN,
+	SOP_BLUE,
+	SOP_ALPHA,
+	SOP_RED_SPREAD,
+	SOP_REVERSED,
+	SOP_RED_ONES,
+	SOP_INVERTED,
+	SOP_HALF,
+	SOP_SQUARED,
+	SOP_TIMES_ALPHA,
+	SOP_MULTIPLY_ADD,
+	SOP_PLACE,
+	SOP_PUSH,
+	SOP_TEXTURE_CONSTANTS,
+	SOP_PUSH_DRAWN
+};
+
 /* What one pipeline is built from. */
 struct vkmatrix_shape {
 	const uint32_t *vertex;
@@ -163,6 +189,12 @@ struct vkmatrix_shape {
 	uint32_t push_size;
 	VkShaderStageFlags push_stages;
 	int texture;
+
+	/* A blend of its own in place of the kind's (q1548), NULL for none. */
+	const VkPipelineColorBlendAttachmentState *attachment;
+
+	/* The blend constants with it, NULL for zeros. */
+	const float *constants;
 };
 
 /* One texture: the image, its memory, view and sampler, and the set that names it. */
@@ -233,6 +265,21 @@ struct vkmatrix {
 
 	/* A case's own line after its PASS (the perf cases' timing), empty for none. */
 	char note[VKMATRIX_REASON_MAX];
+
+	/* The name of the case running, for the cases one function runs (q1548). */
+	const char *case_name;
+};
+
+/*
+ * One sop case (q1548): its name, its fragment shader and the colour it
+ * writes, and its blend (an index of sop_blends, -1 for none).
+ */
+struct vkmatrix_sop_probe {
+	const char *name;
+	const uint32_t *fragment;
+	size_t fragment_size;
+	enum vkmatrix_sop_form form;
+	int blend;
 };
 
 /* One case: its name and its work. */
@@ -340,25 +387,122 @@ static VkResult case_perf_alu_pix_sq(struct vkmatrix *run);
 static VkResult case_perf_alu_pix_sq32(struct vkmatrix *run);
 static VkResult case_perf_flat_blend(struct vkmatrix *run);
 static VkResult vkmatrix_cache_open(struct vkmatrix *run);
-static void vkmatrix_cache_write(struct vkmatrix *run, const char *prefix);
+static void vkmatrix_cache_write(struct vkmatrix *run, const char *prefix, const char *path);
+static VkResult vkmatrix_cache_begin(struct vkmatrix *run);
+static void vkmatrix_cache_end(struct vkmatrix *run, const char *prefix);
+static VkResult case_sop(struct vkmatrix *run);
+static void sop_shade(int form, const float texel[4], float colour[4]);
+static void sop_blend(const VkPipelineColorBlendAttachmentState *blend, const float constants[4], const float source[4], const float destination[4], float colour[4]);
+static float sop_factor(VkBlendFactor factor, uint32_t channel, const float source[4], const float destination[4], const float constants[4]);
 static void perf_record(struct vkmatrix *run, int kind, uint32_t pipeline, uint32_t first, uint32_t vertices, uint32_t draws, uint32_t frame);
 static VkResult perf_submit(struct vkmatrix *run, uint64_t *spent);
 static int vkmatrix_case_named(const char *pattern, const char *name);
 static void uniform_ramp_colour(const float push[8], float place, float colour[4]);
 
 /*
- * The trial of the driver's fragment shader forms (-t, q1546): bits 24
- * to 31 of every pipeline's create flags, which the PowerVR driver
- * flips its forms by (render-draw.h POWERVR_DRAW_FORM_TRIAL_SHIFT).  Set
- * by main before each run of the cases; one process reads it.
- */
-static uint32_t vkmatrix_trial;
-
-/*
  * The file the pipeline cache's data is written to (-c, q1547), NULL for
  * no cache.  Set by main before the cases run; one process reads it.
  */
 static const char *vkmatrix_cache_file;
+
+/*
+ * The directory each case's own pipeline cache is written to (-C,
+ * q1548), NULL for none.  Set by main before the cases run; one process
+ * reads it.
+ */
+static const char *vkmatrix_cache_directory;
+
+/*
+ * The sop cases' blends (q1548): the factors and operations of the
+ * colour and the alpha and the channels written, in the order of
+ * VkPipelineColorBlendAttachmentState.
+ */
+static const VkPipelineColorBlendAttachmentState sop_blends[] = {
+	{ VK_TRUE, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA, VK_BLEND_OP_ADD, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA, VK_BLEND_OP_ADD, 0xf },
+	{ VK_TRUE, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ONE, VK_BLEND_OP_ADD, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ONE, VK_BLEND_OP_ADD, 0xf },
+	{ VK_TRUE, VK_BLEND_FACTOR_SRC_ALPHA, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA, VK_BLEND_OP_ADD, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA, VK_BLEND_OP_ADD, 0xf },
+	{ VK_TRUE, VK_BLEND_FACTOR_DST_COLOR, VK_BLEND_FACTOR_ZERO, VK_BLEND_OP_ADD, VK_BLEND_FACTOR_DST_ALPHA, VK_BLEND_FACTOR_ZERO, VK_BLEND_OP_ADD, 0xf },
+	{ VK_TRUE, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR, VK_BLEND_OP_ADD, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA, VK_BLEND_OP_ADD, 0xf },
+	{ VK_TRUE, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA, VK_BLEND_OP_SUBTRACT, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA, VK_BLEND_OP_SUBTRACT, 0xf },
+	{ VK_TRUE, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA, VK_BLEND_OP_REVERSE_SUBTRACT, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA, VK_BLEND_OP_REVERSE_SUBTRACT, 0xf },
+	{ VK_TRUE, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ONE, VK_BLEND_OP_MIN, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ONE, VK_BLEND_OP_MIN, 0xf },
+	{ VK_TRUE, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ONE, VK_BLEND_OP_MAX, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ONE, VK_BLEND_OP_MAX, 0xf },
+	{ VK_TRUE, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA, VK_BLEND_OP_ADD, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA, VK_BLEND_OP_ADD, 0x7 },
+	{ VK_TRUE, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA, VK_BLEND_OP_ADD, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA, VK_BLEND_OP_ADD, 0x2 },
+	{ VK_TRUE, VK_BLEND_FACTOR_ONE_MINUS_DST_ALPHA, VK_BLEND_FACTOR_ONE, VK_BLEND_OP_ADD, VK_BLEND_FACTOR_ONE_MINUS_DST_ALPHA, VK_BLEND_FACTOR_ONE, VK_BLEND_OP_ADD, 0xf },
+	{ VK_TRUE, VK_BLEND_FACTOR_CONSTANT_COLOR, VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR, VK_BLEND_OP_ADD, VK_BLEND_FACTOR_CONSTANT_ALPHA, VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA, VK_BLEND_OP_ADD, 0xf },
+	{ VK_TRUE, VK_BLEND_FACTOR_ZERO, VK_BLEND_FACTOR_ONE, VK_BLEND_OP_ADD, VK_BLEND_FACTOR_ZERO, VK_BLEND_FACTOR_ONE, VK_BLEND_OP_ADD, 0xf },
+	{ VK_TRUE, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA, VK_BLEND_OP_ADD, VK_BLEND_FACTOR_ZERO, VK_BLEND_FACTOR_ONE, VK_BLEND_OP_ADD, 0xf },
+	{ VK_TRUE, VK_BLEND_FACTOR_SRC_ALPHA_SATURATE, VK_BLEND_FACTOR_ONE, VK_BLEND_OP_ADD, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ZERO, VK_BLEND_OP_ADD, 0xf },
+	{ VK_TRUE, VK_BLEND_FACTOR_DST_COLOR, VK_BLEND_FACTOR_SRC_COLOR, VK_BLEND_OP_ADD, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ZERO, VK_BLEND_OP_ADD, 0xf },
+	{ VK_TRUE, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA, VK_BLEND_OP_ADD, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA, VK_BLEND_OP_ADD, 0x9 }
+};
+
+/* The blend constants of the sop cases (q1548). */
+static const float sop_constants[4] = { 0.25f, 0.5f, 0.75f, 0.5f };
+
+/*
+ * The two push constant colours sop-clamp and sop-clamp-over draw
+ * (q1548), each with channels outside [0, 1] that the attachment's
+ * normalised range clamps, before the blend and in the output.
+ */
+static const float sop_push_colours[2][4] = {
+	{ 1.5f, -0.5f, 0.25f, 0.5f },
+	{ -0.25f, 2.0f, 0.75f, 1.25f }
+};
+
+/* The colour the sop cases clear to (q1548): half transparent, so the destination alpha factors count. */
+static const float sop_clear[4] = { 0.25f, 0.5f, 0.75f, 0.5f };
+
+/* The sop cases (q1548), each a form of the colour output or a blend of the sample. */
+static const struct vkmatrix_sop_probe sop_probes[] = {
+	{ "sop-t", vkmatrix_texture_frag, sizeof(vkmatrix_texture_frag), SOP_SAMPLE, -1 },
+	{ "sop-r000", vkmatrix_sopr000_frag, sizeof(vkmatrix_sopr000_frag), SOP_RED, -1 },
+	{ "sop-0g00", vkmatrix_sop0g00_frag, sizeof(vkmatrix_sop0g00_frag), SOP_GREEN, -1 },
+	{ "sop-00b0", vkmatrix_sop00b0_frag, sizeof(vkmatrix_sop00b0_frag), SOP_BLUE, -1 },
+	{ "sop-000a", vkmatrix_sop000a_frag, sizeof(vkmatrix_sop000a_frag), SOP_ALPHA, -1 },
+	{ "sop-rrrr", vkmatrix_soprrrr_frag, sizeof(vkmatrix_soprrrr_frag), SOP_RED_SPREAD, -1 },
+	{ "sop-abgr", vkmatrix_sopabgr_frag, sizeof(vkmatrix_sopabgr_frag), SOP_REVERSED, -1 },
+	{ "sop-r111", vkmatrix_sopr111_frag, sizeof(vkmatrix_sopr111_frag), SOP_RED_ONES, -1 },
+	{ "sop-inv", vkmatrix_sopinv_frag, sizeof(vkmatrix_sopinv_frag), SOP_INVERTED, -1 },
+	{ "sop-half", vkmatrix_sophalf_frag, sizeof(vkmatrix_sophalf_frag), SOP_HALF, -1 },
+	{ "sop-sq", vkmatrix_sopsq_frag, sizeof(vkmatrix_sopsq_frag), SOP_SQUARED, -1 },
+	{ "sop-ta", vkmatrix_sopta_frag, sizeof(vkmatrix_sopta_frag), SOP_TIMES_ALPHA, -1 },
+	{ "sop-mad", vkmatrix_sopmad_frag, sizeof(vkmatrix_sopmad_frag), SOP_MULTIPLY_ADD, -1 },
+	{ "sop-xy01", vkmatrix_sopxy01_frag, sizeof(vkmatrix_sopxy01_frag), SOP_PLACE, -1 },
+	{ "sop-xyzw-over", vkmatrix_sopxyzw_frag, sizeof(vkmatrix_sopxyzw_frag), SOP_PLACE, 0 },
+	{ "sop-push-over", vkmatrix_soppush_frag, sizeof(vkmatrix_soppush_frag), SOP_PUSH, 0 },
+	{ "sop-f4", vkmatrix_sopf4_frag, sizeof(vkmatrix_sopf4_frag), SOP_PLACE, -1 },
+	{ "sop-fyx", vkmatrix_sopfyx_frag, sizeof(vkmatrix_sopfyx_frag), SOP_PLACE, -1 },
+	{ "sop-fc", vkmatrix_sopfc_frag, sizeof(vkmatrix_sopfc_frag), SOP_PLACE, -1 },
+	{ "sop-f4-add", vkmatrix_sopf4_frag, sizeof(vkmatrix_sopf4_frag), SOP_PLACE, 1 },
+	{ "sop-f4-alpha", vkmatrix_sopf4_frag, sizeof(vkmatrix_sopf4_frag), SOP_PLACE, 2 },
+	{ "sop-f4-mul", vkmatrix_sopf4_frag, sizeof(vkmatrix_sopf4_frag), SOP_PLACE, 3 },
+	{ "sop-f4-sub", vkmatrix_sopf4_frag, sizeof(vkmatrix_sopf4_frag), SOP_PLACE, 5 },
+	{ "sop-f4-mask-ra", vkmatrix_sopf4_frag, sizeof(vkmatrix_sopf4_frag), SOP_PLACE, 17 },
+	{ "sop-fc-over", vkmatrix_sopfc_frag, sizeof(vkmatrix_sopfc_frag), SOP_PLACE, 0 },
+	{ "sop-tc", vkmatrix_soptc_frag, sizeof(vkmatrix_soptc_frag), SOP_TEXTURE_CONSTANTS, -1 },
+	{ "sop-tc-over", vkmatrix_soptc_frag, sizeof(vkmatrix_soptc_frag), SOP_TEXTURE_CONSTANTS, 0 },
+	{ "sop-clamp", vkmatrix_soppush_frag, sizeof(vkmatrix_soppush_frag), SOP_PUSH_DRAWN, -1 },
+	{ "sop-clamp-over", vkmatrix_soppush_frag, sizeof(vkmatrix_soppush_frag), SOP_PUSH_DRAWN, 0 },
+	{ "sop-over", vkmatrix_texture_frag, sizeof(vkmatrix_texture_frag), SOP_SAMPLE, 0 },
+	{ "sop-add", vkmatrix_texture_frag, sizeof(vkmatrix_texture_frag), SOP_SAMPLE, 1 },
+	{ "sop-alpha", vkmatrix_texture_frag, sizeof(vkmatrix_texture_frag), SOP_SAMPLE, 2 },
+	{ "sop-mul", vkmatrix_texture_frag, sizeof(vkmatrix_texture_frag), SOP_SAMPLE, 3 },
+	{ "sop-screen", vkmatrix_texture_frag, sizeof(vkmatrix_texture_frag), SOP_SAMPLE, 4 },
+	{ "sop-sub", vkmatrix_texture_frag, sizeof(vkmatrix_texture_frag), SOP_SAMPLE, 5 },
+	{ "sop-rsub", vkmatrix_texture_frag, sizeof(vkmatrix_texture_frag), SOP_SAMPLE, 6 },
+	{ "sop-min", vkmatrix_texture_frag, sizeof(vkmatrix_texture_frag), SOP_SAMPLE, 7 },
+	{ "sop-max", vkmatrix_texture_frag, sizeof(vkmatrix_texture_frag), SOP_SAMPLE, 8 },
+	{ "sop-mask-rgb", vkmatrix_texture_frag, sizeof(vkmatrix_texture_frag), SOP_SAMPLE, 9 },
+	{ "sop-mask-g", vkmatrix_texture_frag, sizeof(vkmatrix_texture_frag), SOP_SAMPLE, 10 },
+	{ "sop-dsta", vkmatrix_texture_frag, sizeof(vkmatrix_texture_frag), SOP_SAMPLE, 11 },
+	{ "sop-const", vkmatrix_texture_frag, sizeof(vkmatrix_texture_frag), SOP_SAMPLE, 12 },
+	{ "sop-keep", vkmatrix_texture_frag, sizeof(vkmatrix_texture_frag), SOP_SAMPLE, 13 },
+	{ "sop-sep", vkmatrix_texture_frag, sizeof(vkmatrix_texture_frag), SOP_SAMPLE, 14 },
+	{ "sop-sat", vkmatrix_texture_frag, sizeof(vkmatrix_texture_frag), SOP_SAMPLE, 15 },
+	{ "sop-dcsc", vkmatrix_texture_frag, sizeof(vkmatrix_texture_frag), SOP_SAMPLE, 16 }
+};
 
 /* Every case, in the order they run. */
 static const struct vkmatrix_case cases[] = {
@@ -419,6 +563,52 @@ static const struct vkmatrix_case cases[] = {
 	{ "perf-alu-pix-sq", case_perf_alu_pix_sq },
 	{ "perf-alu-pix-sq32", case_perf_alu_pix_sq32 },
 	{ "perf-flat-blend", case_perf_flat_blend },
+	{ "sop-t", case_sop },
+	{ "sop-r000", case_sop },
+	{ "sop-0g00", case_sop },
+	{ "sop-00b0", case_sop },
+	{ "sop-000a", case_sop },
+	{ "sop-rrrr", case_sop },
+	{ "sop-abgr", case_sop },
+	{ "sop-r111", case_sop },
+	{ "sop-inv", case_sop },
+	{ "sop-half", case_sop },
+	{ "sop-sq", case_sop },
+	{ "sop-ta", case_sop },
+	{ "sop-mad", case_sop },
+	{ "sop-xy01", case_sop },
+	{ "sop-xyzw-over", case_sop },
+	{ "sop-push-over", case_sop },
+	{ "sop-f4", case_sop },
+	{ "sop-fyx", case_sop },
+	{ "sop-fc", case_sop },
+	{ "sop-f4-add", case_sop },
+	{ "sop-f4-alpha", case_sop },
+	{ "sop-f4-mul", case_sop },
+	{ "sop-f4-sub", case_sop },
+	{ "sop-f4-mask-ra", case_sop },
+	{ "sop-fc-over", case_sop },
+	{ "sop-tc", case_sop },
+	{ "sop-tc-over", case_sop },
+	{ "sop-clamp", case_sop },
+	{ "sop-clamp-over", case_sop },
+	{ "sop-over", case_sop },
+	{ "sop-add", case_sop },
+	{ "sop-alpha", case_sop },
+	{ "sop-mul", case_sop },
+	{ "sop-screen", case_sop },
+	{ "sop-sub", case_sop },
+	{ "sop-rsub", case_sop },
+	{ "sop-min", case_sop },
+	{ "sop-max", case_sop },
+	{ "sop-mask-rgb", case_sop },
+	{ "sop-mask-g", case_sop },
+	{ "sop-dsta", case_sop },
+	{ "sop-const", case_sop },
+	{ "sop-keep", case_sop },
+	{ "sop-sep", case_sop },
+	{ "sop-sat", case_sop },
+	{ "sop-dcsc", case_sop },
 };
 
 /* The clear colour of every case's first pass: dark blue. */
@@ -433,10 +623,6 @@ main(
 	unsigned long processes;
 	unsigned long repeats;
 	unsigned long index;
-	uint32_t trials[VKMATRIX_TRIALS_MAX];
-	uint32_t trial_count;
-	uint32_t trial;
-	char *list;
 	char *end;
 	pid_t child;
 	pid_t done;
@@ -446,15 +632,13 @@ main(
 
 	/*
 	 * The options: -p N processes at once, -r R runs of the cases each,
-	 * -t T[,T...] the driver's trials one after another (q1546), -c F
-	 * the pipeline cache's file (q1547), then the case's name (a
-	 * trailing * matches names starting so).
+	 * -c F the pipeline cache's file (q1547), -C D a cache file a case
+	 * in the directory D (q1548), then the case's name (a trailing *
+	 * matches names starting so).
 	 */
 	processes = 1;
 	repeats = 1;
 	name = NULL;
-	trials[0] = 0;
-	trial_count = 1;
 	for (arg = 1; arg < argc; arg++) {
 		if (strcmp(argv[arg], "-p") == 0 && arg + 1 < argc) {
 			arg++;
@@ -466,49 +650,28 @@ main(
 			repeats = strtoul(argv[arg], &end, 10);
 			if (*end != '\0' || repeats == 0)
 				return 2;
-		} else if (strcmp(argv[arg], "-t") == 0 && arg + 1 < argc) {
-			/* Each trial of the list, in order. */
-			arg++;
-			trial_count = 0;
-			list = argv[arg];
-			while (*list != '\0') {
-				if (trial_count == VKMATRIX_TRIALS_MAX)
-					return 2;
-				trials[trial_count] = (uint32_t)strtoul(list, &end, 0);
-				if (end == list || trials[trial_count] > 0xffU || (*end != ',' && *end != '\0'))
-					return 2;
-				trial_count++;
-				list = *end == ',' ? end + 1 : end;
-			}
-			if (trial_count == 0)
-				return 2;
 		} else if (strcmp(argv[arg], "-c") == 0 && arg + 1 < argc) {
 			arg++;
 			vkmatrix_cache_file = argv[arg];
+		} else if (strcmp(argv[arg], "-C") == 0 && arg + 1 < argc) {
+			arg++;
+			vkmatrix_cache_directory = argv[arg];
 		} else {
 			name = argv[arg];
 		}
 	}
 
-	/* The pipeline cache is one process's. */
-	if (vkmatrix_cache_file != NULL && processes != 1)
+	/* The pipeline cache is one process's, and of one kind. */
+	if ((vkmatrix_cache_file != NULL || vkmatrix_cache_directory != NULL) && processes != 1)
+		return 2;
+	if (vkmatrix_cache_file != NULL && vkmatrix_cache_directory != NULL)
 		return 2;
 
-	/* One process: the cases here, once a trial. */
+	/* One process: the cases here. */
 	if (processes == 1) {
-		failed = 0;
-		for (trial = 0; trial < trial_count; trial++) {
-			vkmatrix_trial = trials[trial];
-			if (trial_count > 1 || trials[trial] != 0)
-				printf("vkmatrix: trial 0x%02x\n", (unsigned)trials[trial]);
-			if (vkmatrix_run_cases(name, repeats, 0) != 0)
-				failed = 1;
-		}
+		failed = vkmatrix_run_cases(name, repeats, 0);
 		return failed;
 	}
-
-	/* Several processes take the first trial. */
-	vkmatrix_trial = trials[0];
 
 	/* Several: each its own device in its own process, all at once (sessions rendering concurrently); nothing buffered is copied into the children. */
 	fflush(stdout);
@@ -609,7 +772,10 @@ vkmatrix_run_cases(
 			run->wide_width = VKMATRIX_SIZE;
 			run->wide_height = VKMATRIX_SIZE;
 			run->pipeline_pass = VK_NULL_HANDLE;
-			status = cases[index].run(run);
+			run->case_name = cases[index].name;
+			status = vkmatrix_cache_begin(run);
+			if (status == VK_SUCCESS)
+				status = cases[index].run(run);
 			ran++;
 			if (status != VK_SUCCESS)
 				printf("%s: %s: FAIL(%s %d)\n", prefix, cases[index].name, run->failed_call, (int)status);
@@ -621,12 +787,13 @@ vkmatrix_run_cases(
 			}
 
 			vkmatrix_release_case(run);
+			vkmatrix_cache_end(run, prefix);
 		}
 	}
 
 	/* The total, then the pipeline cache's data to its file. */
 	printf("%s: %u/%u passed\n", prefix, (unsigned)passed, (unsigned)ran);
-	vkmatrix_cache_write(run, prefix);
+	vkmatrix_cache_write(run, prefix, vkmatrix_cache_file);
 	vkmatrix_destroy(run);
 	free(run);
 
@@ -1142,15 +1309,20 @@ vkmatrix_pipeline(
 		blend_attachment.alphaBlendOp = VK_BLEND_OP_ADD;
 	}
 
+	/* A blend of the shape's own (q1548). */
+	if (shape->attachment != NULL)
+		blend_attachment = *shape->attachment;
+
 	memset(&blend, 0, sizeof(blend));
 	blend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
 	blend.attachmentCount = 1;
 	blend.pAttachments = &blend_attachment;
+	if (shape->constants != NULL)
+		memcpy(blend.blendConstants, shape->constants, sizeof(blend.blendConstants));
 
 	/* The pipeline, then the modules go. */
 	memset(&pipeline_info, 0, sizeof(pipeline_info));
 	pipeline_info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-	pipeline_info.flags = vkmatrix_trial << 24;
 	pipeline_info.stageCount = 2;
 	pipeline_info.pStages = stages;
 	pipeline_info.pVertexInputState = &input;
@@ -5428,11 +5600,12 @@ vkmatrix_cache_open(
 	return VK_SUCCESS;
 }
 
-/* Writes the pipeline cache's data to the -c file and prints its size (q1547). */
+/* Writes the pipeline cache's data to a file (-c, -C) and prints its size (q1547). */
 static void
 vkmatrix_cache_write(
 	struct vkmatrix *run,
-	const char *prefix)
+	const char *prefix,
+	const char *path)
 {
 	FILE *file;
 	void *data;
@@ -5468,9 +5641,9 @@ vkmatrix_cache_write(
 	}
 
 	/* The file. */
-	file = fopen(vkmatrix_cache_file, "wb");
+	file = fopen(path, "wb");
 	if (file == NULL) {
-		printf("%s: pipeline cache: cannot open %s\n", prefix, vkmatrix_cache_file);
+		printf("%s: pipeline cache: cannot open %s\n", prefix, path);
 		free(data);
 		return;
 	}
@@ -5480,10 +5653,372 @@ vkmatrix_cache_write(
 	fclose(file);
 	free(data);
 	if (written != size) {
-		printf("%s: pipeline cache: wrote %lu of %lu bytes to %s\n", prefix, (unsigned long)written, (unsigned long)size, vkmatrix_cache_file);
+		printf("%s: pipeline cache: wrote %lu of %lu bytes to %s\n", prefix, (unsigned long)written, (unsigned long)size, path);
 		return;
 	}
-	printf("%s: pipeline cache: %lu bytes to %s\n", prefix, (unsigned long)size, vkmatrix_cache_file);
+	printf("%s: pipeline cache: %lu bytes to %s\n", prefix, (unsigned long)size, path);
+}
+
+/* Makes a case's own empty pipeline cache when -C names a directory (q1548). */
+static VkResult
+vkmatrix_cache_begin(
+	struct vkmatrix *run)
+{
+	VkPipelineCacheCreateInfo info;
+	VkResult status;
+
+	/* No directory: the run's cache, or none. */
+	if (vkmatrix_cache_directory == NULL)
+		return VK_SUCCESS;
+
+	/* An empty cache the case's pipelines are made through. */
+	memset(&info, 0, sizeof(info));
+	info.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+	run->failed_call = "vkCreatePipelineCache";
+	status = vkCreatePipelineCache(run->device, &info, NULL, &run->cache);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the case's cache is made. */
+	return VK_SUCCESS;
+}
+
+/* Writes a case's own pipeline cache to <directory>/<case>.bin and destroys it (-C, q1548). */
+static void
+vkmatrix_cache_end(
+	struct vkmatrix *run,
+	const char *prefix)
+{
+	char path[512];
+
+	/* No directory or no cache: nothing to write. */
+	if (vkmatrix_cache_directory == NULL || run->cache == VK_NULL_HANDLE)
+		return;
+
+	/* The case's file, then the cache goes. */
+	snprintf(path, sizeof(path), "%s/%s.bin", vkmatrix_cache_directory, run->case_name);
+	vkmatrix_cache_write(run, prefix, path);
+	vkDestroyPipelineCache(run->device, run->cache, NULL);
+	run->cache = VK_NULL_HANDLE;
+}
+
+/*
+ * sop-* (q1548): a 4x4 texture of sixteen colours and alphas drawn
+ * (nearest) on a 32x32 quad over the cleared colour, in the case's form
+ * of the colour output and its blend; each texel's square is the colour
+ * worked out here.  The pipelines of the probes of float colours (the
+ * varying across the quad, a push constant) are only made; sop-clamp and
+ * sop-clamp-over draw two push constant colours outside [0, 1].
+ */
+static VkResult
+case_sop(
+	struct vkmatrix *run)
+{
+	const struct vkmatrix_sop_probe *probe;
+	const VkPipelineColorBlendAttachmentState *blend;
+	struct vkmatrix_shape shape;
+	uint32_t texels[16];
+	float destination[4];
+	float texel[4];
+	float shaded[4];
+	float colour[4];
+	uint32_t clear_word;
+	uint32_t pipeline;
+	uint32_t first;
+	uint32_t index;
+	uint32_t channel;
+	VkResult status;
+
+	/* The case's probe. */
+	probe = NULL;
+	for (index = 0; index < sizeof(sop_probes) / sizeof(sop_probes[0]); index++) {
+		if (strcmp(sop_probes[index].name, run->case_name) == 0) {
+			probe = &sop_probes[index];
+			break;
+		}
+	}
+
+	run->failed_call = "sop probe";
+	if (probe == NULL)
+		return VK_ERROR_FEATURE_NOT_PRESENT;
+	blend = NULL;
+	if (probe->blend >= 0)
+		blend = &sop_blends[probe->blend];
+
+	/* The texture: sixteen colours, the alpha rising from 0 to 255. */
+	for (index = 0; index < 16; index++) {
+		texels[index] = ((index * 16U) & 0xffU) | ((255U - index * 16U) << 8) | (((index % 4U) * 80U) << 16) | ((index * 17U) << 24);
+	}
+	status = vkmatrix_texture(run, 4, texels, VK_FILTER_NEAREST);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* The pipeline: the textured quad's, or the place's for the ones only made. */
+	memset(&shape, 0, sizeof(shape));
+	shape.vertex = vkmatrix_texture_vert;
+	shape.vertex_size = sizeof(vkmatrix_texture_vert);
+	shape.fragment = probe->fragment;
+	shape.fragment_size = probe->fragment_size;
+	shape.layout = VKMATRIX_TEXTURE;
+	shape.texture = 1;
+	shape.attachment = blend;
+	shape.constants = sop_constants;
+	if (probe->form == SOP_PLACE || probe->form == SOP_PUSH || probe->form == SOP_PUSH_DRAWN) {
+		shape.vertex = vkmatrix_uniform_vert;
+		shape.vertex_size = sizeof(vkmatrix_uniform_vert);
+		shape.layout = VKMATRIX_POSITION;
+		shape.texture = 0;
+	}
+	if (probe->form == SOP_PUSH || probe->form == SOP_PUSH_DRAWN) {
+		shape.push_size = 16;
+		shape.push_stages = VK_SHADER_STAGE_FRAGMENT_BIT;
+	}
+
+	status = vkmatrix_pipeline(run, &shape, &pipeline);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* The cleared colour everywhere, as the attachment holds it. */
+	clear_word = vkmatrix_pack(sop_clear);
+	vkmatrix_fill(run, 0, 0, VKMATRIX_SIZE, VKMATRIX_SIZE, clear_word);
+	destination[0] = (float)((clear_word >> 16) & 0xffU) / 255.0f;
+	destination[1] = (float)((clear_word >> 8) & 0xffU) / 255.0f;
+	destination[2] = (float)(clear_word & 0xffU) / 255.0f;
+	destination[3] = (float)((clear_word >> 24) & 0xffU) / 255.0f;
+	vkmatrix_begin(run, 0, sop_clear);
+
+	/* Two quads of the push constant colours, each clamped and blended over the cleared colour. */
+	if (probe->form == SOP_PUSH_DRAWN) {
+		vkmatrix_bind(run, pipeline);
+		for (index = 0; index < 2; index++) {
+			vkCmdPushConstants(run->command, run->layouts[pipeline], VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(sop_push_colours[index]), sop_push_colours[index]);
+			first = vkmatrix_quad(run, 16.0f + 16.0f * (float)index, 16.0f, 32.0f + 16.0f * (float)index, 48.0f);
+			vkCmdDraw(run->command, 6, 1, first, 0);
+			for (channel = 0; channel < 4; channel++)
+				colour[channel] = unit_clamp(sop_push_colours[index][channel]);
+			if (blend != NULL)
+				sop_blend(blend, sop_constants, colour, destination, colour);
+			vkmatrix_fill(run, 16U + 16U * index, 16U, 32U + 16U * index, 48U, vkmatrix_pack(colour));
+		}
+	}
+
+	/* The quad, each texel's square its colour blended over the cleared one. */
+	if (probe->form != SOP_PLACE && probe->form != SOP_PUSH && probe->form != SOP_PUSH_DRAWN) {
+		vkmatrix_bind(run, pipeline);
+		vkCmdBindDescriptorSets(run->command, VK_PIPELINE_BIND_POINT_GRAPHICS, run->layouts[pipeline], 0, 1, &run->textures[0].set, 0, NULL);
+		first = vkmatrix_texture_quad(run, 16.0f, 16.0f, 48.0f, 48.0f);
+		vkCmdDraw(run->command, 6, 1, first, 0);
+		for (index = 0; index < 16; index++) {
+			texel_colour(texels[index], texel);
+			sop_shade(probe->form, texel, shaded);
+
+			/* Opaque: the colour clamped, as the attachment is normalised. */
+			for (channel = 0; channel < 4; channel++)
+				colour[channel] = unit_clamp(shaded[channel]);
+			if (blend != NULL)
+				sop_blend(blend, sop_constants, colour, destination, colour);
+
+			vkmatrix_fill(run, 16U + (index % 4U) * 8U, 16U + (index / 4U) * 8U, 24U + (index % 4U) * 8U, 24U + (index / 4U) * 8U, vkmatrix_pack(colour));
+		}
+	}
+
+	/* Half floats in the blend of a sum of products: two steps of 8 bits. */
+	run->tolerance = 2;
+
+	/* Ends the pass, submits it and reads the image back. */
+	status = vkmatrix_finish(run, 1);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the image was read back and compared. */
+	return VK_SUCCESS;
+}
+
+/* Works out a sop case's colour from its texel, as its shader does. */
+static void
+sop_shade(
+	int form,
+	const float texel[4],
+	float colour[4])
+{
+	uint32_t channel;
+
+	/* The shader's expression, t the texel. */
+	for (channel = 0; channel < 4; channel++)
+		colour[channel] = texel[channel];
+
+	switch (form) {
+	case SOP_RED:
+		colour[1] = 0.0f;
+		colour[2] = 0.0f;
+		colour[3] = 0.0f;
+		break;
+	case SOP_GREEN:
+		colour[0] = 0.0f;
+		colour[2] = 0.0f;
+		colour[3] = 0.0f;
+		break;
+	case SOP_BLUE:
+		colour[0] = 0.0f;
+		colour[1] = 0.0f;
+		colour[3] = 0.0f;
+		break;
+	case SOP_ALPHA:
+		colour[0] = 0.0f;
+		colour[1] = 0.0f;
+		colour[2] = 0.0f;
+		break;
+	case SOP_RED_SPREAD:
+		for (channel = 1; channel < 4; channel++)
+			colour[channel] = texel[0];
+		break;
+	case SOP_REVERSED:
+		for (channel = 0; channel < 4; channel++)
+			colour[channel] = texel[3U - channel];
+		break;
+	case SOP_RED_ONES:
+		for (channel = 1; channel < 4; channel++)
+			colour[channel] = 1.0f;
+		break;
+	case SOP_INVERTED:
+		for (channel = 0; channel < 4; channel++)
+			colour[channel] = 1.0f - texel[channel];
+		break;
+	case SOP_HALF:
+		for (channel = 0; channel < 4; channel++)
+			colour[channel] = texel[channel] * 0.5f;
+		break;
+	case SOP_SQUARED:
+		for (channel = 0; channel < 4; channel++)
+			colour[channel] = texel[channel] * texel[channel];
+		break;
+	case SOP_TIMES_ALPHA:
+		for (channel = 0; channel < 4; channel++)
+			colour[channel] = texel[channel] * texel[3];
+		break;
+	case SOP_MULTIPLY_ADD:
+		for (channel = 0; channel < 4; channel++)
+			colour[channel] = texel[channel] * texel[3] + texel[1];
+		break;
+	case SOP_TEXTURE_CONSTANTS:
+		colour[1] = 0.5f;
+		colour[3] = 0.25f;
+		break;
+	default:
+		break;
+	}
+}
+
+/*
+ * Blends a source colour over a destination as the Vulkan blend
+ * equations do for a normalised attachment, its unwritten channels kept;
+ * the result is clamped.  The colour may be the source.
+ */
+static void
+sop_blend(
+	const VkPipelineColorBlendAttachmentState *blend,
+	const float constants[4],
+	const float source[4],
+	const float destination[4],
+	float colour[4])
+{
+	float result[4];
+	float source_term;
+	float destination_term;
+	VkBlendOp operation;
+	uint32_t channel;
+
+	/* Each channel: the colour's factors and operation, or the alpha's. */
+	for (channel = 0; channel < 4; channel++) {
+		if (channel < 3) {
+			operation = blend->colorBlendOp;
+			source_term = source[channel] * sop_factor(blend->srcColorBlendFactor, channel, source, destination, constants);
+			destination_term = destination[channel] * sop_factor(blend->dstColorBlendFactor, channel, source, destination, constants);
+		} else {
+			operation = blend->alphaBlendOp;
+			source_term = source[channel] * sop_factor(blend->srcAlphaBlendFactor, channel, source, destination, constants);
+			destination_term = destination[channel] * sop_factor(blend->dstAlphaBlendFactor, channel, source, destination, constants);
+		}
+
+		/* The operation; min and max take no factors. */
+		switch (operation) {
+		case VK_BLEND_OP_SUBTRACT:
+			result[channel] = source_term - destination_term;
+			break;
+		case VK_BLEND_OP_REVERSE_SUBTRACT:
+			result[channel] = destination_term - source_term;
+			break;
+		case VK_BLEND_OP_MIN:
+			result[channel] = source[channel] < destination[channel] ? source[channel] : destination[channel];
+			break;
+		case VK_BLEND_OP_MAX:
+			result[channel] = source[channel] > destination[channel] ? source[channel] : destination[channel];
+			break;
+		default:
+			result[channel] = source_term + destination_term;
+			break;
+		}
+
+		/* An unwritten channel keeps the destination. */
+		if ((blend->colorWriteMask & (1U << channel)) == 0)
+			result[channel] = destination[channel];
+	}
+
+	/* The clamped result. */
+	for (channel = 0; channel < 4; channel++)
+		colour[channel] = unit_clamp(result[channel]);
+}
+
+/* Works out one channel's blend factor. */
+static float
+sop_factor(
+	VkBlendFactor factor,
+	uint32_t channel,
+	const float source[4],
+	const float destination[4],
+	const float constants[4])
+{
+	float saturated;
+
+	/* The factor's value. */
+	switch (factor) {
+	case VK_BLEND_FACTOR_ONE:
+		return 1.0f;
+	case VK_BLEND_FACTOR_SRC_COLOR:
+		return source[channel];
+	case VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR:
+		return 1.0f - source[channel];
+	case VK_BLEND_FACTOR_DST_COLOR:
+		return destination[channel];
+	case VK_BLEND_FACTOR_ONE_MINUS_DST_COLOR:
+		return 1.0f - destination[channel];
+	case VK_BLEND_FACTOR_SRC_ALPHA:
+		return source[3];
+	case VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA:
+		return 1.0f - source[3];
+	case VK_BLEND_FACTOR_DST_ALPHA:
+		return destination[3];
+	case VK_BLEND_FACTOR_ONE_MINUS_DST_ALPHA:
+		return 1.0f - destination[3];
+	case VK_BLEND_FACTOR_CONSTANT_COLOR:
+		return constants[channel];
+	case VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR:
+		return 1.0f - constants[channel];
+	case VK_BLEND_FACTOR_CONSTANT_ALPHA:
+		return constants[3];
+	case VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA:
+		return 1.0f - constants[3];
+	case VK_BLEND_FACTOR_SRC_ALPHA_SATURATE:
+		/* The alpha channel's factor is one; the colour's the smaller of the alpha and one minus the destination's. */
+		if (channel == 3)
+			return 1.0f;
+		saturated = 1.0f - destination[3];
+		if (source[3] < saturated)
+			saturated = source[3];
+		return saturated;
+	default:
+		return 0.0f;
+	}
 }
 
 /* Reports whether a case's name is the one asked for, or starts with what comes before a trailing '*'. */

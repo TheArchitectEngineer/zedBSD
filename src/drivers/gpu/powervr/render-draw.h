@@ -55,21 +55,14 @@
 
 /*
  * The fragment shader forms a pipeline takes (q1546; the compiler's
- * POWERVR_SHADER_FORM_*): the shared program, run once a draw from the
- * shared register program, as built; the pack into the pixel output and
- * the sample that iterates its coordinates are not yet seen on the
- * board.
- *
- * The board's comparison flips forms without a rebuild: bits 24 to 31
- * of a pipeline's VkPipelineCreateFlags, which no Vulkan flag the
- * desktop or the driver uses takes, flip the forms of their bit
- * (POWERVR_DRAW_FORM_TRIAL_SHIFT; vkmatrix -t).
+ * POWERVR_SHADER_FORM_*), as built: the shared program, run once a draw
+ * from the shared register program (0x1); the sample that iterates its
+ * coordinates (0x4); the colour written by one sum of products (0x8)
+ * that clamps the blended colour itself (0x10); and the iterate and
+ * sample that waits for its own data (0x20).  The board saw these right
+ * on d85 to d88 (q1548).
  */
-#ifndef POWERVR_DRAW_FORMS
-#define POWERVR_DRAW_FORMS			0x1U
-#endif
-#define POWERVR_DRAW_FORM_TRIAL_SHIFT		24U
-#define POWERVR_DRAW_FORM_TRIAL_MASK		0xffU
+#define POWERVR_DRAW_FORMS			0x3dU
 
 /* The words of a viewport transform (a0, m0, a1, m1, a2, m2) and of a scissor. */
 #define POWERVR_DRAW_VIEWPORT_WORDS	6U
@@ -112,6 +105,9 @@ struct powervr_draw_fixed {
 	struct powervr_draw_attribute attributes[POWERVR_DRAW_ATTRIBUTES];
 	struct powervr_shader_key vertex_key;
 	struct powervr_shader_key fragment_key;
+
+	/* The colour blend's constants as the pipeline gives them, the float bits (q1548). */
+	uint32_t blend_constants[4];
 };
 
 /*

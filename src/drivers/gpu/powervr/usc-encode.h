@@ -27,8 +27,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* The largest encoded size of one phase's operation, in bytes. */
-#define POWERVR_USC_OPERATION_MAX	8U
+/*
+ * The largest encoded size of one phase's operation, in bytes: the
+ * sum of products of the main unit, at fourteen, is the longest.
+ */
+#define POWERVR_USC_OPERATION_MAX	16U
 
 /* The largest encoded size of one instruction group, in bytes. */
 #define POWERVR_USC_GROUP_MAX		32U
@@ -191,6 +194,34 @@ enum powervr_usc_memory {
 };
 
 /*
+ * The forms of the main unit's sum of products this encoder builds: one
+ * operation writing a pixel's four 8-bit unsigned normalised channels
+ * into its destination from 32-bit float sources, each channel a
+ * multiply-add of the sources it names.
+ *
+ * Opaque writes red, green, blue and alpha from sources 0 to 3.  Over
+ * and subtract take the destination's channels in source 0, the alpha
+ * in source 1 and red, green and blue in sources 2 to 4: each channel
+ * is the colour's plus (or minus) the destination's times one minus the
+ * alpha (Vulkan's one and one minus source alpha, add or subtract).
+ * Add and multiply take the destination in source 0 and red to alpha in
+ * sources 1 to 4: the destination plus the colour, and the destination
+ * times the colour.
+ *
+ * The encodings are derived from observation of the operation; each
+ * form is the one byte pattern seen for it, with the registers in the
+ * group's sources.
+ */
+enum powervr_usc_sum {
+	POWERVR_USC_SUM_OPAQUE = 0,
+	POWERVR_USC_SUM_OVER,
+	POWERVR_USC_SUM_SUBTRACT,
+	POWERVR_USC_SUM_ADD,
+	POWERVR_USC_SUM_MULTIPLY,
+	POWERVR_USC_SUM_COUNT
+};
+
+/*
  * One register an operand word routes into or out of a group.
  *
  * An unused operand has used == 0.  An indexed bank's index field holds
@@ -239,6 +270,13 @@ struct powervr_usc_group {
 	uint8_t mux;
 	uint8_t internal[6];
 	struct powervr_usc_register destination[2];
+
+	/*
+	 * A main group whose operation takes no internal selectors (the sum
+	 * of products): the group carries no selector byte, and its mux and
+	 * selectors must be zero.
+	 */
+	uint8_t internal_absent;
 };
 
 int powervr_usc_group_size(const struct powervr_usc_group *group, size_t *size);
@@ -250,6 +288,7 @@ int powervr_usc_float_multiply_add(unsigned saturate, unsigned negate_0, unsigne
 int powervr_usc_single(enum powervr_usc_single kind, unsigned negate, unsigned absolute, struct powervr_usc_operation *operation);
 int powervr_usc_pack(unsigned format, unsigned programmable, unsigned round_to_zero, unsigned scale, struct powervr_usc_operation *operation);
 int powervr_usc_unpack(unsigned format, unsigned element, unsigned scale_round, struct powervr_usc_operation *operation);
+int powervr_usc_sum_of_products(enum powervr_usc_sum form, struct powervr_usc_operation *operation);
 int powervr_usc_integer(enum powervr_usc_integer kind, unsigned is_signed, unsigned carry_in, unsigned negate_0, unsigned absolute_0, unsigned negate_1, unsigned absolute_1, unsigned negate_2, unsigned absolute_2, struct powervr_usc_operation *operation);
 int powervr_usc_test(unsigned comparison, unsigned type, unsigned element, unsigned predicate_write, unsigned phase_2_end, unsigned extended, struct powervr_usc_operation *operation);
 int powervr_usc_move(unsigned select_1, unsigned select_0, unsigned mask_0, unsigned all_write, unsigned phase_2_end, unsigned extended, struct powervr_usc_operation *operation);
@@ -260,7 +299,7 @@ int powervr_usc_atomic(unsigned kind, unsigned source, unsigned destination, uns
 int powervr_usc_sample(unsigned normalised, unsigned data_return, unsigned dimensions, unsigned channels, unsigned lod_mode, struct powervr_usc_operation *operation);
 int powervr_usc_emit_pixel(unsigned free_partition, struct powervr_usc_operation *operation);
 int powervr_usc_iterate(unsigned destination, unsigned coefficient, unsigned perspective, unsigned w_coefficient, unsigned mode, unsigned count, unsigned data_return, struct powervr_usc_operation *operation);
-int powervr_usc_iterate_sample(unsigned destination, unsigned coefficient, unsigned perspective, unsigned w_coefficient, unsigned image, unsigned sampler, unsigned mode, unsigned dimensions, unsigned channels, unsigned normalised, unsigned data_return, struct powervr_usc_operation *operation);
+int powervr_usc_iterate_sample(unsigned destination, unsigned coefficient, unsigned perspective, unsigned w_coefficient, unsigned image, unsigned sampler, unsigned mode, unsigned dimensions, unsigned channels, unsigned normalised, unsigned data_return, unsigned schedule, struct powervr_usc_operation *operation);
 int powervr_usc_vertex_output(unsigned kind, unsigned write_select, unsigned source, unsigned immediate, unsigned address, struct powervr_usc_operation *operation);
 int powervr_usc_bit_count_shift(unsigned count_source, unsigned count_kind, unsigned mask_from_source, unsigned shift_kind, struct powervr_usc_operation *operation);
 int powervr_usc_bit_immediate(uint32_t value, unsigned wide, unsigned count_source, unsigned count_kind, unsigned shift_kind, struct powervr_usc_operation *operation);

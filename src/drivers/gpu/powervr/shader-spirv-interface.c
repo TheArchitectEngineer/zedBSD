@@ -35,6 +35,7 @@ static struct powervr_ir_operand blend_factor(struct shader_spirv_reader *reader
 static struct powervr_ir_operand blend_factor_kept(struct shader_spirv_reader *reader, struct blend_factors *kept, uint32_t factor, uint32_t channel, const struct powervr_ir_operand *source, const struct powervr_ir_operand *destination, uint32_t constants, int *error);
 static struct powervr_ir_operand blend_sum(struct shader_spirv_reader *reader, uint32_t operation, const struct powervr_ir_operand *source, const struct powervr_ir_operand *source_factor, const struct powervr_ir_operand *destination, const struct powervr_ir_operand *destination_factor);
 static int is_constant(const struct powervr_ir_operand *operand, uint32_t bits);
+static int blend_sum_kind(const struct powervr_shader_blend *blend, uint32_t *kind);
 static struct powervr_ir_operand saturate(struct shader_spirv_reader *reader, struct powervr_ir_operand x);
 static int attribute_words(struct shader_spirv_reader *reader, uint32_t location, uint32_t words, uint32_t *format_words);
 static uint32_t color_format_known(uint32_t format);
@@ -466,7 +467,9 @@ reader_pixel_output(
 	uint32_t constants;
 	uint32_t loaded;
 	uint32_t needs_destination;
+	uint32_t sum_kind;
 	uint32_t half;
+	int held;
 	int error;
 
 	/* Half floats (a 16-bit float attachment) are neither clamped nor normalised. */
@@ -490,6 +493,44 @@ reader_pixel_output(
 			source[channel] = saturate(reader, shader_spirv_value_operand(variable->first + channel, 0));
 		} else {
 			source[channel] = shader_spirv_constant_operand(channel == 3 ? FLOAT_ONE : 0);
+		}
+	}
+
+	/*
+	 * The sum-of-products form (q1548): a blend one operation does, with
+	 * every channel a value or a constant the hardware holds (zero or
+	 * one), is one instruction of the clamped colour; with the raw form,
+	 * of the colour as the shader left it, for the operation to clamp
+	 * (the clamps above then go as dead writes).
+	 */
+	if ((reader->key->forms & POWERVR_SHADER_FORM_SUM_OF_PRODUCTS) != 0 && half == 0 && blend->enable != 0) {
+		error = blend_sum_kind(blend, &sum_kind);
+		for (channel = 0; channel < 4 && error == 0; channel++) {
+			/* A constant channel must be one the hardware holds. */
+			if (source[channel].kind != POWERVR_IR_OPERAND_CONSTANT)
+				continue;
+			held = is_constant(&source[channel], 0);
+			if (!held)
+				held = is_constant(&source[channel], FLOAT_ONE);
+			if (!held)
+				error = ENOTSUP;
+		}
+		if (error == 0) {
+			if ((reader->key->forms & POWERVR_SHADER_FORM_SUM_RAW) != 0) {
+				/* The raw form: the colour as the shader left it. */
+				for (channel = 0; channel < words && channel < 4; channel++)
+					source[channel] = shader_spirv_value_operand(variable->first + channel, 0);
+			}
+
+			/* The blend, reading the fourth channel beside the three the emit takes. */
+			shader_spirv_emit(reader, POWERVR_IR_PIXEL_BLEND, 0, &source[0], &source[1], &source[2], variable->interface, sum_kind);
+			if (reader->error != 0)
+				return reader->error;
+			store = &reader->shader->instructions[reader->shader->instruction_count - 1U];
+			store->source[3] = source[3];
+
+			/* Reports what the colour came to. */
+			return reader->error;
 		}
 	}
 
@@ -653,6 +694,63 @@ blend_sum(
 	}
 	result = shader_spirv_emit_value(reader, POWERVR_IR_FLOAT_MULTIPLY_ADD, &b, destination_factor, &a);
 	return result;
+}
+
+/*
+ * Names the blend of POWERVR_IR_PIXEL_BLEND a pipeline's blend is, when
+ * it is one (q1548): every channel written, and the colour and the
+ * alpha the same equation; ENOTSUP otherwise.
+ */
+static int
+blend_sum_kind(
+	const struct powervr_shader_blend *blend,
+	uint32_t *kind)
+{
+	/* Every channel written. */
+	if ((blend->write_mask & 0xfU) != 0xfU)
+		return ENOTSUP;
+
+	/* One and one minus the source alpha, added or subtracted: over. */
+	if (blend->source_color == FACTOR_ONE &&
+	    blend->destination_color == FACTOR_ONE_MINUS_SOURCE_ALPHA &&
+	    blend->source_alpha == FACTOR_ONE &&
+	    blend->destination_alpha == FACTOR_ONE_MINUS_SOURCE_ALPHA &&
+	    blend->color_operation == blend->alpha_operation) {
+		if (blend->color_operation == OPERATION_ADD) {
+			*kind = POWERVR_IR_BLEND_OVER;
+			return 0;
+		}
+		if (blend->color_operation == OPERATION_SUBTRACT) {
+			*kind = POWERVR_IR_BLEND_SUBTRACT;
+			return 0;
+		}
+		return ENOTSUP;
+	}
+
+	/* One and one, added. */
+	if (blend->source_color == FACTOR_ONE &&
+	    blend->destination_color == FACTOR_ONE &&
+	    blend->source_alpha == FACTOR_ONE &&
+	    blend->destination_alpha == FACTOR_ONE &&
+	    blend->color_operation == OPERATION_ADD &&
+	    blend->alpha_operation == OPERATION_ADD) {
+		*kind = POWERVR_IR_BLEND_ADD;
+		return 0;
+	}
+
+	/* The destination's colour (its alpha for the alpha) and zero, added: the product. */
+	if (blend->source_color == FACTOR_DESTINATION_COLOR &&
+	    blend->destination_color == FACTOR_ZERO &&
+	    (blend->source_alpha == FACTOR_DESTINATION_ALPHA || blend->source_alpha == FACTOR_DESTINATION_COLOR) &&
+	    blend->destination_alpha == FACTOR_ZERO &&
+	    blend->color_operation == OPERATION_ADD &&
+	    blend->alpha_operation == OPERATION_ADD) {
+		*kind = POWERVR_IR_BLEND_MULTIPLY;
+		return 0;
+	}
+
+	/* Any other blend takes the arithmetic. */
+	return ENOTSUP;
 }
 
 /* Reports whether an operand is the constant of these bits. */

@@ -19,6 +19,9 @@
 /* The field number that always holds the value one, for fixed set bits. */
 #define USC_FIELD_ONE		15U
 
+/* The length of a sum-of-products operation, in bytes. */
+#define USC_SUM_LENGTH		14U
+
 /* The operand fields of a source or destination word. */
 #define OPERAND_BANK_A		0U
 #define OPERAND_INDEX_A		1U
@@ -369,6 +372,20 @@ static const struct usc_operand_form dual_destination_forms[] = {
 static const int8_t main_organisation[16] = {
 	-1, 0, -1, 3, 1, 4, -1, 5,
 	2, -1, -1, -1, -1, 6, -1, 7
+};
+
+/*
+ * The sum-of-products operations, one per form of enum powervr_usc_sum,
+ * derived from observation.  The first byte is the main unit's single
+ * operation with its extension; the rest select, for each channel, the
+ * sources and halves of its multiply-add and their modifiers.
+ */
+static const uint8_t sum_operations[POWERVR_USC_SUM_COUNT][USC_SUM_LENGTH] = {
+	{ 0x94, 0x99, 0x99, 0x0f, 0x06, 0x4f, 0x32, 0x42, 0x00, 0x00, 0x0b, 0x99, 0x99, 0xf0 },
+	{ 0x94, 0x22, 0x22, 0x0f, 0xfe, 0x7f, 0xa8, 0xb9, 0xd0, 0x00, 0x0f, 0x73, 0x24, 0x00 },
+	{ 0x94, 0x22, 0x22, 0x0f, 0xfe, 0x7f, 0xa8, 0xb9, 0xdf, 0x00, 0x0f, 0x73, 0x24, 0x00 },
+	{ 0x94, 0x99, 0x99, 0x0f, 0xfe, 0x4f, 0xa8, 0xb9, 0x20, 0x00, 0x0f, 0x42, 0x73, 0x00 },
+	{ 0x94, 0x42, 0x73, 0x00, 0x06, 0x7f, 0xa8, 0xb9, 0xc0, 0x00, 0x6f, 0x99, 0x99, 0xf0 }
 };
 
 static int layout_place(const struct usc_layout *layout, const uint32_t *values, uint8_t *bytes);
@@ -823,6 +840,31 @@ powervr_usc_unpack(
 }
 
 /*
+ * Encodes the main unit's sum of products in one of its forms (enum
+ * powervr_usc_sum): the operation of phase 0 alone, in a group without
+ * internal selectors.  The encodings are derived from observation.
+ */
+int
+powervr_usc_sum_of_products(
+	enum powervr_usc_sum form,
+	struct powervr_usc_operation *operation)
+{
+	unsigned index;
+
+	/* Refuses a form this encoder does not build. */
+	if ((unsigned)form >= POWERVR_USC_SUM_COUNT || operation == NULL)
+		return EINVAL;
+
+	/* The form's bytes. */
+	for (index = 0; index < USC_SUM_LENGTH; index++)
+		operation->bytes[index] = sum_operations[form][index];
+	operation->length = USC_SUM_LENGTH;
+
+	/* Succeeded: the fourteen-byte operation. */
+	return 0;
+}
+
+/*
  * Encodes the back end's texture sample in its brief form: no
  * extensions, the coordinates as floats, normalised or not.
  */
@@ -979,14 +1021,15 @@ powervr_usc_iterate(
 }
 
 /*
- * Encodes the control unit's iterate and sample (q1546, a trial form):
+ * Encodes the control unit's iterate and sample (q1546):
  * the coordinates iterated from coefficient sets the way a direct
  * iteration does, then sampled with the image and sampler state the
  * shared registers hold, into temporaries from destination on.
  *
  * Coefficient, w_coefficient, image and sampler are register numbers,
  * each a multiple of four; perspective multiplies by the iterated 1/w;
- * channels are one to four.
+ * channels are one to four; schedule is the scheduling control (0 none,
+ * 1 swap, 2 wait for the data the operation returns).
  */
 int
 powervr_usc_iterate_sample(
@@ -1001,6 +1044,7 @@ powervr_usc_iterate_sample(
 	unsigned channels,
 	unsigned normalised,
 	unsigned data_return,
+	unsigned schedule,
 	struct powervr_usc_operation *operation)
 {
 	/*
@@ -1012,9 +1056,9 @@ powervr_usc_iterate_sample(
 	 * 5:6, sched_ctrl_b5 5:5..4, chan 5:3..2 sent less one, nncoords
 	 * 5:1, fcnorm 5:0; I_ITRSMP without ext5, six bytes; F_CTRLOP
 	 * itrsmp 0b1000) and src/imagination/common/device_info/bxe-4-32.h
-	 * (has_usc_itrsmp, has_usc_itrsmp_enhanced).  The fields left zero
-	 * (projection, saturation, half floats, scheduling, unnormalised
-	 * coordinates) are not taken.
+	 * (has_usc_itrsmp, has_usc_itrsmp_enhanced; F_SCHED_CTRL none 0b00,
+	 * swap 0b01, wdf 0b10).  The fields left zero (projection,
+	 * saturation, half floats, unnormalised coordinates) are not taken.
 	 */
 	static const struct usc_piece pieces[] = {
 		{ 0, 0, 8, 0, 0 },
@@ -1027,10 +1071,11 @@ powervr_usc_iterate_sample(
 		{ 3, 0, 2, 7, 0 },
 		{ 4, 2, 6, 8, 0 },
 		{ 5, 2, 2, 9, 0 },
-		{ 5, 0, 1, 10, 0 }
+		{ 5, 0, 1, 10, 0 },
+		{ 5, 4, 2, 11, 0 }
 	};
-	static const struct usc_layout layout = { 6, 11, 11, { 8, 6, 2, 6, 1, 1, 6, 2, 6, 2, 1 }, pieces };
-	uint32_t values[11];
+	static const struct usc_layout layout = { 6, 12, 12, { 8, 6, 2, 6, 1, 1, 6, 2, 6, 2, 1, 2 }, pieces };
+	uint32_t values[12];
 	int error;
 
 	/* Refuses register numbers off the multiple of four, and a dimension or a channel count the fields cannot carry. */
@@ -1051,6 +1096,7 @@ powervr_usc_iterate_sample(
 	values[8] = w_coefficient >> 2;
 	values[9] = channels - 1U;
 	values[10] = normalised;
+	values[11] = schedule;
 
 	/* Places the fields after checking each fits. */
 	error = operation_build(&layout, values, operation);
@@ -2300,6 +2346,18 @@ group_check(
 	if (group->mux_used > 1 || (group->mux_used != 0 && group->mux > 5))
 		return EINVAL;
 
+	/* A group without internal selectors names none and no source selector. */
+	if (group->internal_absent > 1)
+		return EINVAL;
+	if (group->internal_absent != 0) {
+		if (group->unit != POWERVR_USC_UNIT_MAIN || group->mux_used != 0)
+			return EINVAL;
+		for (phase = 0; phase < 6; phase++) {
+			if (group->internal[phase] != 0)
+				return EINVAL;
+		}
+	}
+
 	/* Refuses internal selectors outside their codes. */
 	if (group->internal[0] != 0 ||
 	    group->internal[1] > 1 ||
@@ -2427,9 +2485,9 @@ group_plan(
 			return error;
 	}
 
-	/* Only a main group carries the internal selector byte. */
+	/* Only a main group carries the internal selector byte, and not the sum of products. */
 	plan->internal_length = 0;
-	if (group->unit == POWERVR_USC_UNIT_MAIN)
+	if (group->unit == POWERVR_USC_UNIT_MAIN && group->internal_absent == 0)
 		plan->internal_length = 1;
 
 	/* Works out the phase organisation from the slots in use. */
