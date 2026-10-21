@@ -355,6 +355,8 @@ struct kwl_compose {
 	VkPipeline panel_pipeline;
 	/* Each known shape mode executes only its own fragment operations. */
 	VkPipeline panel_pipelines[KWL_PANEL_MODES];
+	/* The image and solid modes without blending, for the insides of opaque shapes (index 0 image, 1 solid). */
+	VkPipeline panel_opaque_pipelines[2];
 	VkSampler linear_sampler;
 	struct kwl_glass *glass;
 	VkDescriptorPool descriptors;
@@ -708,10 +710,14 @@ void kwl_glass_draw_drag_mark(struct kwl_server *server, struct kwl_list *comman
 void kwl_glass_draw_head(struct kwl_server *server, struct kwl_list *command, struct kwl_object **windows, unsigned count);
 void kwl_compose_cursor(struct kwl_server *server, struct kwl_list *command);
 void kwl_compose_count_draw(struct kwl_server *server, VkPipeline pipeline, VkDescriptorSet set, unsigned shape);
+
+/* Counts the pixels a draw covers inside the pass's area, blended or not, for the frame's log. */
+void kwl_compose_count_pixels(struct kwl_server *server, float x, float y, float width, float height, int blended);
 void kwl_compose_bind(struct kwl_server *server, struct kwl_list *command, VkPipeline pipeline, VkPipelineLayout layout, VkDescriptorSet set);
 void kwl_compose_bind_forget(struct kwl_compose *compose);
 int kwl_compose_clip_visible(struct kwl_compose *compose, float x, float y, float width, float height);
 void kwl_compose_clip_draw(struct kwl_server *server, struct kwl_list *command, float x, float y, float width, float height, uint32_t vertices);
+void kwl_compose_clip_draw_rect(struct kwl_server *server, struct kwl_list *command, const VkRect2D *rect, uint32_t vertices);
 VkResult kwl_compose_pipeline_input(struct kwl_compose *compose, VkShaderModule vertex, VkShaderModule fragment, VkPipelineLayout layout, const VkPipelineVertexInputStateCreateInfo *input, VkPipeline *pipeline);
 void kwl_batch_open(struct kwl_server *server);
 void kwl_batch_close(struct kwl_compose *compose);

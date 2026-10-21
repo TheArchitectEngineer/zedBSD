@@ -102,6 +102,9 @@
 /* The largest side, in output pixels, of a quad joined to others into one draw (batch.c). */
 #define GLASS_BATCH_SIDE	128.0f
 
+/* The smallest inside of an opaque shape drawn apart without blending, in pixels (smaller ones are not worth the draws). */
+#define GLASS_SPLIT_AREA	4096.0f
+
 /*
  * The large digits of the lock screen's clock, in an image of
  * their own at the one size the clock asks for: the image's size, its
@@ -314,6 +317,9 @@ static const unsigned glass_icon_pixels[GLASS_ICON_SIZES] = { 16U, 20U };
 /* The applications' tiles' sizes in pixels, smallest first. */
 static const unsigned glass_tile_pixels[GLASS_TILE_SIZES] = { 20U, 26U, 48U, 72U };
 
+static int glass_shape_split(const struct kwl_server *server, const float *constants, const float *quad, const float *box, float radius, VkRect2D *pieces, unsigned *count);
+static void glass_split_rect(float x, float y, float width, float height, VkRect2D *rect);
+static void glass_shape_draw_split(struct kwl_server *server, struct kwl_list *command, const float *constants, VkDescriptorSet set, VkPipeline pipeline, const VkRect2D *pieces, unsigned count);
 static int wallpaper_create(struct kwl_server *server, struct kwl_glass *glass, uint32_t width, uint32_t height);
 static int glass_size_make(struct kwl_server *server, uint32_t width, uint32_t height, struct kwl_glass_size *size);
 static int wallpaper_fill(struct kwl_glass *glass, const char *path, uint32_t width, uint32_t height);
@@ -2058,8 +2064,11 @@ glass_shape_draw(
 	float height;
 	VkDescriptorSet set;
 	VkPipeline pipeline;
+	VkRect2D pieces[1U + KWL_CUT_PIECES];
+	unsigned count;
 	int joined;
 	int visible;
+	int split;
 
 	/* A shape of a layer faded out wholly is not drawn (the desktop behind App Home). */
 	if (server->layer_on && server->layer_opacity <= 0.0f)
@@ -2187,7 +2196,6 @@ glass_shape_draw(
 	 * (batch.c, the floors first); anything else draws
 	 * the quads waiting first, then itself alone.
 	 */
-	kwl_compose_count_draw(server, pipeline, set, 1U);
 	if (server->batch_floors &&
 	    shape->mode == MODE_SOLID &&
 	    constants[17] == (float)MODE_SOLID &&
@@ -2199,11 +2207,158 @@ glass_shape_draw(
 	}
 	kwl_batch_flush(server, command);
 
+	/* An opaque shape large enough is drawn as its opaque inside and its blended edges. */
+	split = glass_shape_split(server, constants, quad, box, radius, pieces, &count);
+	if (split) {
+		glass_shape_draw_split(server, command, constants, set, pipeline, pieces, count);
+		return;
+	}
+
 	/* The chosen pipeline keeps the same constants, image and triangle pair. */
+	kwl_compose_count_draw(server, pipeline, set, 1U);
+	kwl_compose_count_pixels(server, quad[0], quad[1], quad[2], quad[3], 1);
 	kwl_compose_bind(server, command, pipeline, compose->panel_layout, set);
 	kwl_list_push_constants(command, compose->panel_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0U, sizeof(constants), constants);
 	kwl_compose_clip_draw(server, command, quad[0], quad[1], quad[2], quad[3], KWL_QUAD_VERTICES);
 	kwl_compose_count_commands(server, 1U, 1U);
+}
+
+/*
+ * Tells whether a shape about to be drawn is drawn in parts: an image
+ * whose pixels are all opaque, or a solid colour of full alpha, at full
+ * opacity, whose inside (the box less its corners and smoothed edge, where
+ * the shader covers every pixel fully) is at least GLASS_SPLIT_AREA pixels.
+ * The inside, in whole pixels, is pieces[0]; the quad's rest around it
+ * follows, *count rectangles in all.  The inside then needs no blending:
+ * the blend of a colour of alpha 1 is that colour, so the picture is the
+ * same, and the GPU can drop what is drawn under it.
+ */
+static int
+glass_shape_split(
+	const struct kwl_server *server,
+	const float *constants,
+	const float *quad,
+	const float *box,
+	float radius,
+	VkRect2D *pieces,
+	unsigned *count)
+{
+	float cuts[KWL_CUT_PIECES][4];
+	float inside[4];
+	float hole[1][4];
+	float left;
+	float top;
+	float right;
+	float bottom;
+	unsigned found;
+	unsigned index;
+
+	/* Only the image and solid modes as themselves, at full opacity, in the frame's own pass. */
+	if (constants[23] < 1.0f || server->compose->backdrop_recording != 0U)
+		return 0;
+	if (constants[17] == (float)MODE_IMAGE) {
+		if (constants[19] < 1.0f)
+			return 0;
+	} else if (constants[17] == (float)MODE_SOLID) {
+		if (constants[15] < 1.0f)
+			return 0;
+	} else {
+		return 0;
+	}
+	if (quad[2] <= 0.0f || quad[3] <= 0.0f)
+		return 0;
+
+	/* The inside in whole pixels, within the quad (every pixel centre there is covered). */
+	glass_opaque_inside(box, radius, inside);
+	left = inside[0] > quad[0] ? inside[0] : quad[0];
+	top = inside[1] > quad[1] ? inside[1] : quad[1];
+	right = inside[0] + inside[2] < quad[0] + quad[2] ? inside[0] + inside[2] : quad[0] + quad[2];
+	bottom = inside[1] + inside[3] < quad[1] + quad[3] ? inside[1] + inside[3] : quad[1] + quad[3];
+	left = ceilf(left);
+	top = ceilf(top);
+	right = floorf(right);
+	bottom = floorf(bottom);
+	if (right <= left || bottom <= top || (right - left) * (bottom - top) < GLASS_SPLIT_AREA)
+		return 0;
+	glass_split_rect(left, top, right - left, bottom - top, &pieces[0]);
+
+	/* The quad's rest, whose outer edges are taken outward (nothing is drawn outside the quad). */
+	hole[0][0] = left;
+	hole[0][1] = top;
+	hole[0][2] = right - left;
+	hole[0][3] = bottom - top;
+	found = kwl_damage_rects_cut(quad, (const float (*)[4])hole, 1U, cuts);
+	for (index = 0U; index < found; index++)
+		glass_split_rect(cuts[index][0], cuts[index][1], cuts[index][2], cuts[index][3], &pieces[1U + index]);
+	*count = 1U + found;
+	return 1;
+}
+
+/* A rectangle of the pass's pixels around a part of a quad: its edges taken outward to whole pixels. */
+static void
+glass_split_rect(
+	float x,
+	float y,
+	float width,
+	float height,
+	VkRect2D *rect)
+{
+	float left;
+	float top;
+	float right;
+	float bottom;
+
+	/* Whole pixels, never below 0 (the pass begins there). */
+	left = floorf(x);
+	top = floorf(y);
+	right = ceilf(x + width);
+	bottom = ceilf(y + height);
+	if (left < 0.0f)
+		left = 0.0f;
+	if (top < 0.0f)
+		top = 0.0f;
+	if (right < left)
+		right = left;
+	if (bottom < top)
+		bottom = top;
+	rect->offset.x = (int32_t)left;
+	rect->offset.y = (int32_t)top;
+	rect->extent.width = (uint32_t)(right - left);
+	rect->extent.height = (uint32_t)(bottom - top);
+}
+
+/* Draws a shape split by glass_shape_split: its inside without blending first, then its edges blended. */
+static void
+glass_shape_draw_split(
+	struct kwl_server *server,
+	struct kwl_list *command,
+	const float *constants,
+	VkDescriptorSet set,
+	VkPipeline pipeline,
+	const VkRect2D *pieces,
+	unsigned count)
+{
+	struct kwl_compose *compose;
+	VkPipeline opaque;
+	unsigned index;
+
+	/* The opaque inside. */
+	compose = server->compose;
+	opaque = compose->panel_opaque_pipelines[constants[17] == (float)MODE_IMAGE ? 0 : 1];
+	kwl_compose_count_draw(server, opaque, set, 1U);
+	kwl_compose_count_pixels(server, (float)pieces[0].offset.x, (float)pieces[0].offset.y, (float)pieces[0].extent.width, (float)pieces[0].extent.height, 0);
+	kwl_compose_bind(server, command, opaque, compose->panel_layout, set);
+	kwl_list_push_constants(command, compose->panel_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0U, KWL_PANEL_CONSTANTS * sizeof(float), constants);
+	kwl_compose_clip_draw_rect(server, command, &pieces[0], KWL_QUAD_VERTICES);
+
+	/* The edges around it, blended over what is under them; the constants stay. */
+	kwl_compose_bind(server, command, pipeline, compose->panel_layout, set);
+	for (index = 1U; index < count; index++) {
+		kwl_compose_count_draw(server, pipeline, set, 1U);
+		kwl_compose_count_pixels(server, (float)pieces[index].offset.x, (float)pieces[index].offset.y, (float)pieces[index].extent.width, (float)pieces[index].extent.height, 1);
+		kwl_compose_clip_draw_rect(server, command, &pieces[index], KWL_QUAD_VERTICES);
+	}
+	kwl_compose_count_commands(server, count, count);
 }
 
 /*

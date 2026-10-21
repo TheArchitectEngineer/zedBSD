@@ -143,6 +143,14 @@ struct kwl_draw_counts {
 	uint32_t cmd_pushes;
 	uint64_t last_pipeline;
 	uint64_t last_set;
+	/*
+	 * The pixels the draws cover inside the pass's area (ws270-p006a,
+	 * q1537): those drawn without blending, which the GPU's hidden
+	 * surface removal can skip under later opaque draws, and those
+	 * blended, which are all shaded.
+	 */
+	uint64_t opaque_pixels;
+	uint64_t blended_pixels;
 };
 
 /*

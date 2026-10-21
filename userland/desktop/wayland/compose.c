@@ -1015,6 +1015,10 @@ kwl_compose_close(
 			if (compose->panel_pipelines[index] != VK_NULL_HANDLE)
 				vkDestroyPipeline(compose->device, compose->panel_pipelines[index], NULL);
 		}
+		for (index = 0; index < 2; index++) {
+			if (compose->panel_opaque_pipelines[index] != VK_NULL_HANDLE)
+				vkDestroyPipeline(compose->device, compose->panel_opaque_pipelines[index], NULL);
+		}
 
 		/* The family shares its constants, descriptors and sampler. */
 		vkDestroyPipelineLayout(compose->device, compose->panel_layout, NULL);
@@ -2053,6 +2057,18 @@ compose_panel_pipeline(
 			compose->panel_layout,
 			NULL,
 			pipeline);
+
+		/* The image and solid modes also without blending (the insides of opaque shapes, glass.c). */
+		if (error == VK_SUCCESS && (mode == 2U || mode == 3U)) {
+			error = compose_pipeline(
+				compose,
+				KWL_DRAW_OPAQUE,
+				vertex,
+				fragment,
+				compose->panel_layout,
+				NULL,
+				&compose->panel_opaque_pipelines[mode - 2U]);
+		}
 		vkDestroyShaderModule(compose->device, fragment, NULL);
 		if (error != VK_SUCCESS) {
 			vkDestroyShaderModule(compose->device, vertex, NULL);
@@ -2766,6 +2782,58 @@ kwl_compose_count_draw(
 	counts->last_set = (uint64_t)(uintptr_t)set;
 }
 
+/*
+ * Counts the pixels a draw covers inside the pass's area, blended or
+ * not, for the frame's log (KWL DRAWS).
+ */
+void
+kwl_compose_count_pixels(
+	struct kwl_server *server,
+	float x,
+	float y,
+	float width,
+	float height,
+	int blended)
+{
+	const VkRect2D *area;
+	float left;
+	float top;
+	float right;
+	float bottom;
+	uint64_t pixels;
+
+	/* Counted only for the log. */
+	if (!server->log_frames)
+		return;
+
+	/* The draw's rectangle cut to the pass's area. */
+	area = &server->compose->pass_area;
+	left = x;
+	top = y;
+	right = x + width;
+	bottom = y + height;
+	if (left < (float)area->offset.x)
+		left = (float)area->offset.x;
+	if (top < (float)area->offset.y)
+		top = (float)area->offset.y;
+	if (right > (float)area->offset.x + (float)area->extent.width)
+		right = (float)area->offset.x + (float)area->extent.width;
+	if (bottom > (float)area->offset.y + (float)area->extent.height)
+		bottom = (float)area->offset.y + (float)area->extent.height;
+
+	/* Nothing inside. */
+	if (right <= left || bottom <= top)
+		return;
+
+	/* The pixels, by kind. */
+	pixels = (uint64_t)((right - left) * (bottom - top));
+	if (blended) {
+		server->draw_counts.blended_pixels += pixels;
+	} else {
+		server->draw_counts.opaque_pixels += pixels;
+	}
+}
+
 /* Draws a part of an image (uv: left, top, right, bottom as fractions) as a quad at a place and size on the output. */
 static void
 compose_quad_part(
@@ -2807,6 +2875,7 @@ compose_quad_part(
 
 	/* The pipeline for the window's way of drawing, its image, and the strip. */
 	kwl_compose_count_draw(server, server->compose->pipelines[import->draw], import->set, 0U);
+	kwl_compose_count_pixels(server, (float)x, (float)y, (float)quad_width, (float)quad_height, import->draw == KWL_DRAW_ALPHA);
 	kwl_batch_flush(server, command);
 	kwl_compose_bind(server, command, server->compose->pipelines[import->draw], server->compose->layout, import->set);
 	kwl_list_push_constants(command, server->compose->layout, VK_SHADER_STAGE_VERTEX_BIT, 0U, sizeof(constants), constants);
@@ -3591,7 +3660,7 @@ compose_log_draws(
 	/* The counts compose_record and the drawing made. */
 	counts = &server->draw_counts;
 	printf(
-		"KWL DRAWS frame=%llu draws=%u shapes=%u quads=%u home=%u layer=%u bar=%u other=%u pipelines=%u sets=%u capture=%u copies=%u cmds draw=%u pipeline=%u set=%u push=%u\n",
+		"KWL DRAWS frame=%llu draws=%u shapes=%u quads=%u home=%u layer=%u bar=%u other=%u pipelines=%u sets=%u capture=%u copies=%u cmds draw=%u pipeline=%u set=%u push=%u pixels opaque=%llu blended=%llu area=%ux%u\n",
 		(unsigned long long)server->frame,
 		counts->shapes + counts->quads,
 		counts->shapes,
@@ -3607,7 +3676,11 @@ compose_log_draws(
 		counts->cmd_draws,
 		counts->cmd_pipelines,
 		counts->cmd_sets,
-		counts->cmd_pushes);
+		counts->cmd_pushes,
+		(unsigned long long)counts->opaque_pixels,
+		(unsigned long long)counts->blended_pixels,
+		server->compose->pass_area.extent.width,
+		server->compose->pass_area.extent.height);
 }
 
 /*
