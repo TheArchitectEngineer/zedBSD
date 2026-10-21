@@ -19,10 +19,17 @@ For each frame (the compositor's KWL LAT lines, times in ms):
     period   from the previous frame's draw, when that was less than 100 ms
              before (frames of one movement; a frame after a pause has none)
     shown    submit -> the frame's completion on the main loop
+    next     submit -> the next frame's acquired image (a wait here is the
+             display's: an image comes back only when a flip is taken)
+    lag      the input the frame shows -> its submit: the pointer's latest
+             accepted motion (input_us), or the latest window commit
+             (KWL LAT adopt) since the frame before
 The KWL PASSES line gives the pixels the frame drew (area) and loaded (load);
 dirty 1 is a frame drawn whole.
 
-The summary counts the frames whose work, or whose period, is over 16 ms.
+The summary counts the frames whose work, or whose period, is over 16 ms;
+the period of type, scroll, hover and drag is also bounded by how fast
+frame-ops.sh gives the input, so for them work and lag are the measure.
 --frames prints every frame too.  The step's KWL PERF compose and rec lines
 (5 s windows that end in the step) are printed under it.
 """
@@ -35,6 +42,7 @@ BUDGET_MS = 16.0
 MOVEMENT_MS = 100.0
 
 LAT = re.compile(r"KWL LAT (acquired|pace|draw|recorded|queued|submit|shown) frame=(\d+)(.*)")
+ADOPT = re.compile(r"KWL LAT adopt surface=\d+ at_us=(\d+)")
 FIELD = re.compile(r"(\w+)=(-?[\d.]+)")
 PASSES = re.compile(r"KWL PASSES frame=(\d+) .*?area_px=(\d+) load_px=(\d+)")
 
@@ -47,7 +55,12 @@ def fields(text: str) -> dict[str, float]:
 def read_frames(lines: list[str]) -> dict[int, dict]:
 	"""Each frame's times (ms) and the line of its draw."""
 	frames: dict[int, dict] = {}
+	adopted = None
 	for number, line in enumerate(lines, 1):
+		match = ADOPT.search(line)
+		if match:
+			adopted = int(match.group(1)) / 1000.0
+			continue
 		match = LAT.search(line)
 		if match:
 			kind, frame, rest = match.group(1), int(match.group(2)), match.group(3)
@@ -58,6 +71,12 @@ def read_frames(lines: list[str]) -> dict[int, dict]:
 			if kind == "draw":
 				entry["line"] = number
 				entry["dirty"] = int(values.get("dirty", 0))
+				entry["input"] = None
+				if values.get("input_us", 0.0) > 0.0:
+					entry["input"] = values["input_us"] / 1000.0
+				if adopted is not None and (entry["input"] is None or adopted > entry["input"]):
+					entry["input"] = adopted
+				adopted = None
 			if kind == "pace":
 				entry["waited"] = values.get("waited_ms", 0.0)
 			continue
@@ -99,6 +118,15 @@ def main() -> int:
 	ordered = sorted((entry for entry in frames.values() if "line" in entry), key=lambda entry: entry["line"])
 	previous = None
 	for entry in ordered:
+		entry["next"] = None
+		following = frames.get(entry["frame"] + 1)
+		if following is not None and "acquired" in following and "submit" in entry:
+			gap = following["acquired"] - entry["submit"]
+			if gap < MOVEMENT_MS:
+				entry["next"] = gap
+		entry["lag"] = None
+		if entry.get("input") is not None and "submit" in entry:
+			entry["lag"] = entry["submit"] - entry["input"]
 		entry["period"] = None
 		if previous is not None and "draw" in previous and "draw" in entry:
 			gap = entry["draw"] - previous["draw"]
@@ -107,13 +135,16 @@ def main() -> int:
 		previous = entry
 
 	print(f"{'step':<14} {'frames':>6} {'whole':>5} {'work>16':>7} {'period>16':>9} "
-		f"{'work p50/max':>12} {'submit p50/max':>14} {'period p50/max':>14} {'fps':>5}")
+		f"{'work p50/max':>12} {'submit p50/max':>14} {'period p50/max':>14} {'fps':>5} "
+		f"{'next p50/max':>12} {'lag p50/max':>11}")
 	for index, (name, start) in enumerate(marks):
 		end = marks[index + 1][1] if index + 1 < len(marks) else len(lines) + 1
 		chosen = [entry for entry in ordered if start < entry["line"] <= end]
 		works = [value for value in (span(entry, "draw", "submit") for entry in chosen) if value is not None]
 		submits = [value for value in (span(entry, "recorded", "queued") for entry in chosen) if value is not None]
 		periods = [entry["period"] for entry in chosen if entry["period"] is not None]
+		nexts = [entry["next"] for entry in chosen if entry["next"] is not None]
+		lags = [entry["lag"] for entry in chosen if entry["lag"] is not None]
 		whole = sum(1 for entry in chosen if entry.get("dirty"))
 
 		def stat(values: list[float]) -> str:
@@ -127,16 +158,17 @@ def main() -> int:
 			fps = f"{1000.0 * len(periods) / sum(periods):.0f}"
 		print(f"{name:<14} {len(chosen):>6} {whole:>5} {sum(1 for value in works if value > BUDGET_MS):>7} "
 			f"{sum(1 for value in periods if value > BUDGET_MS + 0.7):>9} {stat(works):>12} {stat(submits):>14} "
-			f"{stat(periods):>14} {fps:>5}")
+			f"{stat(periods):>14} {fps:>5} {stat(nexts):>12} {stat(lags):>11}")
 		if every:
 			print(f"  {'frame':>6} {'dirty':>5} {'area':>8} {'load':>8} {'pace':>4} {'cpu':>4} {'submit':>6} "
-				f"{'present':>7} {'work':>4} {'period':>6} {'shown':>5}")
+				f"{'present':>7} {'work':>4} {'period':>6} {'shown':>5} {'next':>4} {'lag':>4}")
 			for entry in chosen:
 				print(f"  {entry['frame']:>6} {entry.get('dirty', '-'):>5} {entry.get('area', '-'):>8} "
 					f"{entry.get('load', '-'):>8} {text(span(entry, 'acquired', 'draw')):>4} "
 					f"{text(span(entry, 'draw', 'recorded')):>4} {text(span(entry, 'recorded', 'queued')):>6} "
 					f"{text(span(entry, 'queued', 'submit')):>7} {text(span(entry, 'draw', 'submit')):>4} "
-					f"{text(entry['period']):>6} {text(span(entry, 'submit', 'shown')):>5}")
+					f"{text(entry['period']):>6} {text(span(entry, 'submit', 'shown')):>5} "
+					f"{text(entry['next']):>4} {text(entry['lag']):>4}")
 			for line in lines[start:end - 1]:
 				if line.startswith("KWL PERF compose") or line.startswith("KWL PERF rec "):
 					print(f"  {line}")
