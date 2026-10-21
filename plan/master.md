@@ -643,6 +643,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-21 Q1: userland/base/noct/Makefile の platform の一覧に rpi5 を足した（toolchain の build の規則、Q1 = main の許可、WS278 の P3 の依頼。rpi4 と同じ arm64）。
 - 2026-10-21 ユーザー「もう1つサブエージェントを追加して、Raspberry Pi 5対応を行ってほしいです。config/ci/config-rpi5.mkを作成して、イメージを生成できるようにしてほしいです。必要ならGPUドライバの対応、WiFiドライバの対応を行ってほしいです。」「Pi5の対応は、Fableによるレビューは不要です。Opus 5.5で対応しましょう。」→ [WS278](ws278/ws.md) を作り P3（Opus 5.5）に q1542。
 - 2026-10-21 ユーザー「Mesaと比較するのではなく、proprietaryなドライバと比較するのがよさそうです」→ VF2 の Linux（StarFive の 6.12.5、IMG DDK 1.19）の initramfs に firmware と shader の binary を入れて driver を初期化（hook /etc/initramfs-tools/hooks/pvr-firmware、元の initrd は .before-pvr）。
 - 2026-10-21 17:0x ユーザー「SDは今晩新品が届くので今は我慢して使ってください。電源投入から40秒でSSHがアップしなかったら、再起動するといいです。」→ plan/tools/vf2/run.sh は 40 秒で SSH が無ければ電源を入れ直す（最大 8 回）。
