@@ -149,6 +149,11 @@
 #define POWERVR_OS_FLAGS_CSW_ALL	0xfU
 
 /* Whether the firmware switches contexts (preempts a job for another context's): 0 by default, as mainline. */
+/* Whether the data masters may overlap (geometry with another context's 3D): 0 while the overlap's 3D faults are looked into. */
+#ifndef POWERVR_DM_OVERLAP
+#define POWERVR_DM_OVERLAP		0
+#endif
+
 #ifndef POWERVR_CONTEXT_SWITCH
 #define POWERVR_CONTEXT_SWITCH		0
 #endif
