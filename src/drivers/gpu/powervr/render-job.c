@@ -294,6 +294,7 @@ powervr_render_job_run(
 	unsigned wait_count;
 	unsigned half;
 	unsigned long enabled;
+	uint64_t draws_started;
 	uint64_t started;
 	uint32_t at;
 	int error;
@@ -368,12 +369,13 @@ powervr_render_job_run(
 	error = job_map(render, session, memory);
 	powervr_timing_add(POWERVR_TIMING_JOB_MAP, started);
 
-	/* The background's programs and the load draw. */
+	/* The background's programs and the load draw, the first part of the build timed alone (q1541). */
 	started = powervr_timing_now();
 	if (error == 0)
 		error = job_programs(job, memory, &shared_registers);
 	if (error == 0 && load != NULL)
 		error = load_draw_build(render, given, memory, load);
+	powervr_timing_add(POWERVR_TIMING_BUILD_PROGRAMS, started);
 	if (error != 0) {
 		job_release(render, session, memory);
 		load_draw_free(work, load);
@@ -388,7 +390,9 @@ powervr_render_job_run(
 		prefix = NULL;
 		if (load != NULL)
 			prefix = &load->draw;
+		draws_started = powervr_timing_now();
 		error = job_draws(render, session, job, prefix, memory, &stream_words, &vertex_shareds);
+		powervr_timing_add(POWERVR_TIMING_BUILD_DRAWS, draws_started);
 		if (error != 0) {
 			job_release(render, session, memory);
 			load_draw_free(work, load);

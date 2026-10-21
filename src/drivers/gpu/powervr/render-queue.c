@@ -1382,7 +1382,7 @@ powervr_timing_report(
 {
 	static const char *const names[POWERVR_TIMING_PARTS] = {
 		"submit", "job setup", "job map", "job build", "job kick", "job wait", "job release", "transfer", "dispatch",
-		"wait ta", "wait 3d", "wait small job",
+		"wait ta", "wait 3d", "wait small job", "job build programs", "job build draws",
 	};
 	uint64_t now;
 	uint64_t average;
