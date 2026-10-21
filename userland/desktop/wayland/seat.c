@@ -1061,6 +1061,10 @@ kwl_seat_key(
 	int tapped;
 	int taken;
 
+	/* When the key came to the seat, and its event's time (ms), for the key's latency (the per-frame lines). */
+	if (server->log_frames)
+		printf("KWL KEY in key=%u state=%u time_ms=%u at_us=%llu\n", key, state, time, (unsigned long long)kwl_log_us());
+
 	/* The release of a key a titlebar's field repeats ends the repeat, whatever takes the release (titlebar-shell.c). */
 	if (state == 0U)
 		kwl_titlebar_key_released(key);
@@ -1218,6 +1222,10 @@ kwl_seat_key_deliver(
 		/* Queue the key for this keyboard. */
 		deliver(object->client, object->id, KEYBOARD_KEY, words, sizeof(words));
 	}
+
+	/* When the key went to the client, for the key's latency (the per-frame lines). */
+	if (server->log_frames)
+		printf("KWL KEY to=client key=%u state=%u at_us=%llu\n", key, state, (unsigned long long)kwl_log_us());
 
 	/* Succeeded: the focused client has heard the key. */
 	return;

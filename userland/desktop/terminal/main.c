@@ -958,6 +958,7 @@ main_read_shell(
 	for (rounds = 0; rounds < 16; rounds++) {
 		count = read(master, buffer, sizeof(buffer));
 		if (count > 0) {
+			terminal_perf_step("read", (unsigned)count);
 			terminal_screen_write(screen, buffer, (size_t)count);
 			continue;
 		}
@@ -1047,6 +1048,7 @@ main_write_shell(
 	}
 
 	/* What was written leaves the buffer. */
+	terminal_perf_step("write", (unsigned)count);
 	memmove(main_window.input, main_window.input + count, main_window.input_length - (size_t)count);
 	main_window.input_length -= (size_t)count;
 

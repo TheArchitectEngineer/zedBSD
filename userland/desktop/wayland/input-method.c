@@ -2169,6 +2169,10 @@ ime_send_key(
 	words[2] = key;
 	words[3] = state;
 	ime_emit(server->ime->grab, GRAB_KEY, words, sizeof(words));
+
+	/* When the key went to the input method, for the key's latency (the per-frame lines). */
+	if (server->log_frames)
+		printf("KWL KEY to=ime key=%u state=%u at_us=%llu\n", key, state, (unsigned long long)kwl_log_us());
 }
 
 /*
@@ -2759,6 +2763,8 @@ ime_deliver(
 		return;
 	}
 
-	/* An application's text input. */
+	/* An application's text input; when its commit went, for the key's latency (the per-frame lines). */
 	kwl_text_input_deliver(input, preedit, begin, end, commit, before, after);
+	if (server->log_frames && commit != NULL && commit[0] != '\0')
+		printf("KWL KEY ime_commit bytes=%u at_us=%llu\n", (unsigned)strlen(commit), (unsigned long long)kwl_log_us());
 }

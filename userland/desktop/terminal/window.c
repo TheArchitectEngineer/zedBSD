@@ -530,6 +530,7 @@ window_press(
 	/* The bytes, if they fit in what is left of the buffer. */
 	length = terminal_key_bytes(key, window->modifiers, window->input + window->input_length, sizeof(window->input) - window->input_length);
 	window->input_length += length;
+	terminal_perf_step("key", (unsigned)length);
 
 	/* A key typed after a commit stands between it and the cursor: a later deletion cannot take it back. */
 	if (length != 0U)
@@ -565,6 +566,7 @@ window_text_commit(
 	/* The bytes after those typed before; the main loop writes them to the shell. */
 	memcpy(window->input + window->input_length, text, length);
 	window->input_length += length;
+	terminal_perf_step("commit", (unsigned)length);
 
 	/* Kept for a deletion that replaces it. */
 	(void)snprintf(window->last_commit, sizeof(window->last_commit), "%s", text);
