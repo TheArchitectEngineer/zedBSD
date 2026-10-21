@@ -71,3 +71,28 @@ branch agent/p1-q1541（main を merge 済み）。板は Q1（d59〜d68）。
 - 16611bb41: firmware の trace の既定の group を HWR だけ（0x401）に。根拠: 全 group で firmware の時間が倍（d66→d68）。job ごとに記録される MAIN・MTS・PM・RTD・BIF・POW は診断の build で POWERVR_FIRMWARE_TRACE_GROUPS 0x7fff にする。HWR の記録（recovery の時の情報）は残す。
 - vkmatrix: load-part・perf-load-part・perf-load-small（42389dad2）、perf-clear-64・perf-load-64（d9ff1b38f）。
 - 計測の道具（既定は off）: POWERVR_JOB_TRACE（render-queue.c）、40 番目の small job の firmware の trace を mark から全部 dump（powervr_firmware_trace_since_mark）。
+
+### VF2 の Linux（IMG DDK 1.19@6345021）と zedBSD の設定の比べ（2026-10-21、Q1 の dump: build/uat/vf2-desktop/runs/linux-ddk/）
+
+値と手順の事実だけ（DDK の文は写さない）。zedBSD の register の値は 4d20d12be の one-shot の log（100 回目の render の kick の後、「powervr: registers:」）で板が戻ったら埋める。
+
+| 項目 | DDK（Linux） | zedBSD（今） | 試し |
+| --- | --- | --- | --- |
+| gpu_core / noc_bus_gpu_axi | 594 / 594 MHz | 396 / 396 MHz（axi は core の gate） | POWERVR_VF2_CORE_594 1 |
+| gpu_sys_clk（isp_axi） | 297 MHz | 297 MHz | 同じ |
+| FW system config | 0x00020010（CSW medium、RD power island） | 0x00000010（RD power island、CSW なし） | CSW は入れない（2 session の lockup の過去） |
+| FW OS config | 0xF（CSW TDM・TA・3D・CDM） | 0 | 同上 |
+| firmware の trace | none | 0x401（HWR だけ、q1541 で 0x7fff から） | 済み |
+| APM の latency | 100 ms | 0 ms（mainline と同じ） | POWERVR_APM_LATENCY_MS 100 |
+| MIPS の firmware の code・data | cached（MIPS の TLB の C の印、stack も） | code cached（q1541）、data uncached | POWERVR_FIRMWARE_DATA_CACHED 1 |
+| CLK_CTRL / CLK_CTRL2 | 0x002AAA002A22AAAA / 0（自動の gating） | host は書かない（値は log で） | 比べてから |
+| SLC_CTRL_MISC | 0x3（64-byte interleave、hazard check、burst combiner の bypass） | hazard ＋ PVR hash（0x200000）＋ combiner の bypass | POWERVR_SLC_DECODE_INTERLEAVED 1 |
+| SLC_CTRL_BYPASS（0x3828） | 0x00001D1F01000000 | host は書かない（値は log で） | 比べてから |
+| ISP_CTL（最後の job） | 0x00023000 | 0x80033000 / 0x80013000（skip_init_hdrs・sample_pos、空 tile の skip） | 比べてから |
+| MULTICORE_FRAGMENT / COMPUTE_CTRL_COMMON | 1 / 0x101 | log で | 比べてから |
+| device-local の memory | SLC を通す（GPU だけの memory） | SLC bypass（POWERVR_DEVICE_MEMORY_CACHED 0、1 で板が再起動した） | 別の調べ（q1540） |
+| frame buffer の圧縮 | FBCDC v3.1 の flag（UM が OPTIMAL の image に使う可能性） | 無し | Keiland の linear の swapchain には効かない |
+
+DDK の vkmatrix（594 MHz）: flat 1372、texture 2325、quarter 1324、clear-64 348、load-64 581、load-small 1964 us。flat と quarter がほぼ同じ → 全画面でも固定費が主で、pixel の費用は小さい（圧縮か SLC の効果の疑い）。
+
+試しの kernel: 01c0e812f（594 MHz ＋ APM 100 ＋ SLC 64-byte interleave ＋ firmware の data cached、build/q1541k）。既定（merge 用）は 5bced8f66（全部 0、register の one-shot の log だけ入る）。
