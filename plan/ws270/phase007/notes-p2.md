@@ -282,3 +282,18 @@ branch agent/p2-q1553（基 main 782f995e4）。
   - draw memory 平均 400〜500 us（kept の job の memory が足りず作り直している疑い）
   - job setup が 1.6 ms の窓がある
   - transfer 2.9〜4.8 ms/回（同期の transfer）
+
+### d103 と、その後（52a0ce932・d5e6d9475）
+
+- d103（Q1、b60c38183 の q1553t ＋ P1 95db457c4 の wayland）:
+  - vkmatrix 109/109。context reset・HWR・page fault・device lost は 0。desktop の操作（app の起動・窓の drag・Home・Wiseview の開閉）で異常なし。
+  - VULKAN TIMING: submit 平均 1471〜1884 us（前 7660〜8785）、execute 957〜1326 us（前 7196〜8452）。
+  - frame-ops の work p50/max: launch 8/76、type 7/32、drag 8/10、home 6/14（前 17/31）、wiseview 7/50（前 24/64）。
+  - 残る context_hold の max 32 ms は opcode 21（ALLOCATE_MEMORY）と 18（QUEUE_SUBMIT）。
+- d5e6d9475: powervr_buffer_create の 0 埋めを、uncached の alias（store 1 回ごとに bus の write、8 MB で約 30 ms の見積）から、direct map の kern_memset に変えた。その後の alias の作成が、範囲の line を書き戻して捨てる。
+- 52a0ce932:
+  - session の render target を 4 → 8（framebuffer の大きさが 5 種以上で毎 frame 作り直していた疑い）。
+  - 取った kept の job の memory の draw の buffer が小さい時、keep の中の合う物と交換する。
+  - timing に `target make`。
+- d5e6d9475: timing の各行に `longest`。
+- 板は未確認（Q1 待ち）。
