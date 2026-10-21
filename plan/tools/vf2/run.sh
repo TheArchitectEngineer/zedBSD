@@ -22,9 +22,12 @@ sshpass -e scp -o StrictHostKeyChecking=no "$VF2_HOST:/boot/boot0/vmunix" "$out/
 cmp "$vmunix" "$out/vmunix.back" || exit 1
 echo deployed
 python3 -I plan/tools/switchbot.py cycle "$plug" 10 >/dev/null
-for try in 1 2; do
-	for i in $(seq 1 36); do sleep 5; ssh_run true 2>/dev/null && break 2; done
-	echo "no ssh after 3 min, cycling again"
+# SSH comes up within 40 s of power-on when the SD card reads well; a boot
+# that misses it is cycled again (the user, 2026-10-21, while the card is
+# flaky): up to 8 tries.
+for try in 1 2 3 4 5 6 7 8; do
+	for i in $(seq 1 10); do sleep 4; ssh_run true 2>/dev/null && break 2; done
+	echo "no ssh after 40 s, cycling again"
 	python3 -I plan/tools/switchbot.py cycle "$plug" 10 >/dev/null
 done
 : > "$out/dmesg-all.txt"
