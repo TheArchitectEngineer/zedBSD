@@ -417,11 +417,8 @@ submit(
 	if (error != 0)
 		kern_logf("powervr: vk: a submission did not run (%d)\n", error);
 
-	/* The submission's time, and the sums every few seconds. */
-	if (POWERVR_SUBMIT_TIMING) {
-		powervr_timing_add(POWERVR_TIMING_SUBMIT, started);
-		powervr_timing_report();
-	}
+	/* The submission's time (the timing's own thread says the sums). */
+	powervr_timing_add(POWERVR_TIMING_SUBMIT, started);
 
 	/* The fence completes at the submission's last point, which may already be reached. */
 	fence = powervr_vk_payload(session, I915_VK_OBJ_FENCE, fence_id);
