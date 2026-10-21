@@ -419,3 +419,26 @@ Keiland が使い、vkmatrix 15/15・gpu-selftest 13/13 で確かめていない
 - P2 q1536-i02（報告だけ）: clear だけの 1080p の 3D の command を Mesa（drm-shim、BVNC 36.50.54.182）と比べ、usc_pixel_output_ctrl・isp_ctl・ZLS・PBE・tiles in flight・partitions が同じ。違いは isp_bgobjvals（0x3ff と 0x300、stencil 無しなら無関係）と DISABLE_PIXELMERGE（Mesa は立てる）だけ。d39 の clear 3.85 ms と合う → 遅いのは draw（fragment の shader の実行）の側。
 - d40（28d74195c、P1 b88dc3975: watchdog は全 session の timeline が 5 s 動かない時だけ）: `-p 2 -r 5 load-1080-6` PASS、`-p 3 -r 3 load-1080-textured` PASS、`no progress` 0、HWR 0、vkreset PASS（hang 5059 ms で DEVICE_LOST）。
 - P1 の読み（driver 側、commit なし）: pixel の task（DOUTU）と draw ごとの PPP・ISP の state は Mesa と同じ。残るのは fragment の program の長さ: vkmatrix の push4.frag（定数の色だけ）が 288 byte・temps 13、texture.frag が 336 byte・19。約 36 命令/pixel × 1080p ÷ 16 lane ≈ 12 ms at 396 MHz で、測った +17 ms に近い。P2 に Mesa pco との比較と短縮、Keiland の quad.frag・panel.frag の重さの判断を依頼。
+
+
+### q1536-i02（2026-10-21、P2）: 画素ごとの仕事を減らす
+
+- Mesa（BXE-4-32、`PVR_SHIM_DEVICE_BVNC=36.50.54.182`、`PVR_DEBUG=cs`）と命令を比べた。
+  - 3D の command（usc_pixel_output_ctrl 0x1ff8、isp_ctl 0x80033000、isp_aa 0、ZLS 無し、PBE の word）は、こちらと同じ。
+  - draw の PDS state も同じ形。違いは 2 つで、Mesa は depth を書かず比較が always の時に pds_tri_merge_disable（SIZEINFO2 bit 14）を立て、pds_tempsize は 0。
+  - vkmatrix の push4.frag は Mesa で 312 byte・9 temp・28 group、こちらは 288 byte・13 temp・24 op。
+- 変更:
+  - `render-draw.c`: depth を書かず比較が always の draw に tri merge disable を付けた（Mesa の pvr_setup_triangle_merging_flag と同じ条件）。
+  - `shader-spirv-interface.c`: 正規化した attachment の色の clamp（channel ごとに MINMAX 2 つ）をやめた。
+    - blend が無い時は clamp しない。pck.scale.u8888 が飽和するので、Mesa の pco も clamp していない。
+    - blend の後の和も clamp しない。
+    - blend の前の source の clamp は残す（Vulkan の規定）。
+- 効果（host）:
+  - push4.frag は 24 op → 16 op（288 → 168 byte）。
+  - texture.frag は 33 → 25 op（336 → 216 byte）。
+  - Keiland の quad.frag は 640 → 520 byte、panel.frag は 5208 → 5088 byte。
+- 確認:
+  - compiler の host 試験は 411 と 22 passed。
+  - p010 は 0 failed。
+  - desktop の config で VF2 の vmunix は rc 0、warning 0。
+  - 板は未実施（perf-flat・perf-texture、vkmatrix の色の試験）。
