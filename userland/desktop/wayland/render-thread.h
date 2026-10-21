@@ -221,13 +221,16 @@ struct kwl_render_status {
  * cycles and when it ended, for the main thread's lines), acquire a head's
  * next image
  * without waiting, record and submit and present a job, and wait for the
- * job's fence (at most timeout_ns; VK_TIMEOUT to be asked again).
+ * job's fence (at most timeout_ns; VK_TIMEOUT to be asked again), and
+ * the clock of the main thread's lines in microseconds (NULL for the
+ * monotonic clock).
  */
 struct kwl_render_ops {
 	VkResult (*acquire_output)(void *context, uint64_t timeout_ns, uint32_t *image, uint64_t *cycles, uint64_t *at_us);
 	VkResult (*acquire_head)(void *context, unsigned slot, uint32_t *image);
 	void (*run)(void *context, const struct kwl_render_job *job, struct kwl_render_outcome *outcome);
 	VkResult (*wait)(void *context, unsigned slot, uint64_t timeout_ns);
+	uint64_t (*now_us)(void);
 };
 
 /*

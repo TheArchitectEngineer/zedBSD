@@ -251,7 +251,7 @@ kwl_buffer_put(
 		/* Names the release when the per-frame lines were asked for. */
 		if (buffer->client->server->log_frames)
 			printf("KWL RELEASE client=%llu buffer=%u dead=%u at_us=%llu\n", (unsigned long long)buffer->client->number, buffer->id, buffer->dead,
-			       (unsigned long long)kwl_microseconds());
+			       (unsigned long long)kwl_log_us());
 
 		/* Only a surviving protocol identity may tell its producer to reuse storage. */
 		if (!buffer->dead && !buffer->client->fatal) {

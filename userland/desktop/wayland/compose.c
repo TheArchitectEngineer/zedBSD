@@ -736,7 +736,7 @@ kwl_compose_draw(
 			server->awaiting,
 			(unsigned long long)(kwl_milliseconds() - server->frame_done_ms),
 			(unsigned long long)server->frame_wait_ms,
-			(unsigned long long)kwl_microseconds(),
+			(unsigned long long)kwl_log_us(),
 			(unsigned long long)server->pass_us);
 	}
 
@@ -788,7 +788,7 @@ kwl_compose_draw(
 			(unsigned)server->damaged,
 			cursor_id,
 			(double)server->window_opacity,
-			(unsigned long long)kwl_microseconds());
+			(unsigned long long)kwl_log_us());
 		server->pointer_accepted_us = 0U;
 	}
 
@@ -1141,6 +1141,7 @@ kwl_compose_render_start(
 	ops.acquire_head = compose_op_acquire_head;
 	ops.run = compose_op_run;
 	ops.wait = compose_op_wait;
+	ops.now_us = kwl_log_us;
 	error = kwl_render_init(&compose->render, &ops, compose, server->wake[1]);
 	if (error != 0)
 		return error;
@@ -4299,7 +4300,7 @@ compose_message(
 		server->perf.compose_acquire_cycles += message->acquire_cycles;
 		if (server->log_frames && message->want_kind == KWL_RENDER_FRAME)
 			printf("KWL LAT acquired frame=%llu at_us=%llu main_us=%llu\n", (unsigned long long)server->frame + 1U, (unsigned long long)message->acquired_us,
-			       (unsigned long long)kwl_microseconds());
+			       (unsigned long long)kwl_log_us());
 
 		/* The loop draws at its next look. */
 		break;
@@ -4413,7 +4414,7 @@ compose_completed(
 	/* A test image's capture sends the frame it copied (shot.c). */
 	kwl_shot_complete(server);
 	if (server->log_frames)
-		printf("KWL LAT shown frame=%llu at_us=%llu\n", (unsigned long long)slot->number, (unsigned long long)kwl_microseconds());
+		printf("KWL LAT shown frame=%llu at_us=%llu\n", (unsigned long long)slot->number, (unsigned long long)kwl_log_us());
 
 	/* The time from the start of the frame to its completion (reported by KWL PERF). */
 	elapsed = kwl_cycles() - slot->start_cycles;
@@ -4517,7 +4518,7 @@ compose_op_acquire_output(
 	mark = kwl_cycles();
 	result = vkAcquireNextImageKHR(compose->device, compose->output.swapchain, timeout_ns, compose->acquired, VK_NULL_HANDLE, image);
 	*cycles = kwl_cycles() - mark;
-	*at_us = kwl_microseconds();
+	*at_us = kwl_log_us();
 
 	/* Reports the acquire's result. */
 	return result;
@@ -4589,7 +4590,7 @@ compose_op_run(
 	start = kwl_cycles();
 	result = compose_replay_commands(compose, job->slot % KWL_FRAME_SLOTS, outcome);
 	outcome->replay_cycles = kwl_cycles() - start;
-	outcome->recorded_us = kwl_microseconds();
+	outcome->recorded_us = kwl_log_us();
 	outcome->present_result = VK_SUCCESS;
 	if (result != VK_SUCCESS) {
 		outcome->result = result;
@@ -4644,7 +4645,7 @@ compose_op_run(
 	mark = kwl_cycles();
 	result = vkQueueSubmit(compose->queue, 1U, &submit, slot->fence);
 	outcome->submit_cycles = kwl_cycles() - mark;
-	outcome->queued_us = kwl_microseconds();
+	outcome->queued_us = kwl_log_us();
 	if (result != VK_SUCCESS) {
 		outcome->result = result;
 		return;
@@ -4685,7 +4686,7 @@ compose_op_run(
 
 	/* The present's end, and the render thread's time of the job. */
 	outcome->present_cycles = kwl_cycles() - mark;
-	outcome->presented_us = kwl_microseconds();
+	outcome->presented_us = kwl_log_us();
 	outcome->run_cycles = kwl_cycles() - start;
 }
 

@@ -495,7 +495,7 @@ adopt_commit(
 
 	/* The time the image was taken, when the per-frame lines were asked for (ws099-p015's pen latency). */
 	if (server->log_frames)
-		printf("KWL LAT adopt surface=%u at_us=%llu\n", surface->id, (unsigned long long)kwl_microseconds());
+		printf("KWL LAT adopt surface=%u at_us=%llu\n", surface->id, (unsigned long long)kwl_log_us());
 
 	/* A window an output's turn waits for may have drawn the new size (output-rotate.c). */
 	kwl_output_rotate_committed(server, surface);
