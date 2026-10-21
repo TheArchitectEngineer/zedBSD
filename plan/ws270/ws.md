@@ -30,5 +30,6 @@ WS270-D1 (c)（config-visionfive2.mk を desktop、最小は config-visionfive2-
 | [p003](phase003/phase.md) | QEMU riscv64-virt の画面なしの確かめ（service・USB keyboard の login・mouse の event・display が無い時の道・`keiland-preview` の static の実行）。試験の config、rootfs 73 MiB（256 MiB の root に入る）、riscv64 の native の cfg に `login=graphical` | p002 | cleared（2026-10-20 Q1、T1-752） |
 | [p004](phase004/phase.md) | VF2 の実機の画面なしの確かめ（graphical login の失敗の道 E → `gpu-bars`・`display-inventory` D、USB keyboard・mouse C）。試験の config（graphical login y、firmware なし）、native.img 404,750,336 B、rootfs 73 MiB、`display-inventory` の platform に visionfive2 | p003 | in-progress（2026-10-20 P1、q1355。image と手順は準備済み、実機待ち） |
 | [p006a](phase006a/phase.md) | Keiland の起動と不足の一覧。必須項目 2a: sessiond が `hw.gpu.attaching` の間は gpu0 があっても待つ | WS269 p010、p004、WS269 p005 | in-progress（2026-10-20 P1、q1356: 2a の host 試験 PASS、T1 待ち。2026-10-21 q1517: 2b の image `build/q1517/native.img`（sha256 7b4faada…）、Keiland の shader 15/15 が compile、不足の候補 G1〜G8、板の手順。板は Q1 待ち） |
+| [p007](phase007/phase.md) | desktop の速さ（使える水準へ、2026-10-21 ユーザー「描画が遅すぎて…これを解決したいです。」）: Keiland の damage 描画、driver の draw の道、GPU の memory の read | p006a | in-progress（2026-10-21 Q1: q1538 P1・q1539 P2・q1540 P3） |
 
 残りの Phase は p001 の設計から作る。
