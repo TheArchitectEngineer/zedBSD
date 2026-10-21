@@ -95,6 +95,7 @@ static VkResult wayland_commit(void *private_lease, void *private_image, VkPrese
 static VkBool32 wayland_commit_early(void *private_lease);
 static VkResult wayland_composite_alpha(void *private_lease, VkCompositeAlphaFlagBitsKHR alpha);
 static VkResult wayland_progress(void *private_lease);
+static VkResult wayland_sleep(struct wayland_lease *lease, uint64_t sequence, int milliseconds);
 static void wayland_damage(void *private_lease, int32_t x, int32_t y, int32_t width, int32_t height);
 static VkBool32 wayland_available(void *private_image);
 static void wayland_destroy_image(void *private_image);
@@ -498,7 +499,6 @@ wayland_wait(
 	uint64_t timeout)
 {
 	struct wayland_lease *lease;
-	struct pollfd descriptor;
 	struct timespec started;
 	struct timespec now;
 	uint64_t elapsed;
@@ -544,15 +544,83 @@ wayland_wait(
 		remaining = WAYLAND_WAIT_SLICE_MS;
 		if (timeout != UINT64_MAX && (timeout - elapsed) / 1000000ULL < (uint64_t)remaining)
 			remaining = (int)((timeout - elapsed) / 1000000ULL) + 1;
-		descriptor.fd = wl_display_get_fd(lease->surface->display);
-		descriptor.events = POLLIN;
-		descriptor.revents = 0;
-		status = poll(&descriptor, 1U, remaining);
-		if (status < 0 && errno != EINTR)
-			return VK_ERROR_SURFACE_LOST_KHR;
+		error = wayland_sleep(lease, sequence, remaining);
+		if (error != VK_SUCCESS)
+			return error;
 	}
 
 	/* Succeeded: the selected frame sequence completed on the private queue. */
+	return VK_SUCCESS;
+}
+
+/*
+ * Sleeps on the connection for a frame callback, up to a number of
+ * milliseconds, as one of its readers: the read is prepared before the
+ * sleep, so that another thread reading the connection meanwhile (the
+ * application's own event loop) waits for this one to read too, instead
+ * of taking the callback's bytes while this thread sleeps on a descriptor
+ * that is then no longer readable.
+ */
+static VkResult
+wayland_sleep(
+	struct wayland_lease *lease,
+	uint64_t sequence,
+	int milliseconds)
+{
+	struct wayland_surface *surface;
+	struct pollfd descriptor;
+	uint64_t completed;
+	int status;
+
+	/* The private events read so far are dispatched before the read is prepared. */
+	surface = lease->surface;
+	pthread_mutex_lock(&surface->mutex);
+
+	for (;;) {
+		status = wl_display_dispatch_queue_pending(surface->display, surface->queue);
+		if (status < 0) {
+			pthread_mutex_unlock(&surface->mutex);
+			return VK_ERROR_SURFACE_LOST_KHR;
+		}
+		status = wl_display_prepare_read_queue(surface->display, surface->queue);
+		if (status == 0)
+			break;
+		if (errno != EAGAIN) {
+			pthread_mutex_unlock(&surface->mutex);
+			return VK_ERROR_SURFACE_LOST_KHR;
+		}
+	}
+
+	pthread_mutex_unlock(&surface->mutex);
+
+	/* A callback another thread read and this one dispatched ends the wait without a sleep. */
+	completed = __atomic_load_n(&lease->completed, __ATOMIC_ACQUIRE);
+	if (completed >= sequence) {
+		wl_display_cancel_read(surface->display);
+		return VK_SUCCESS;
+	}
+
+	/* The requests out, then the sleep. */
+	(void)wl_display_flush(surface->display);
+	descriptor.fd = wl_display_get_fd(surface->display);
+	descriptor.events = POLLIN;
+	descriptor.revents = 0;
+	status = poll(&descriptor, 1U, milliseconds);
+
+	/* Readable: the read (the last reader's, which the others wait for); else the read is given up. */
+	if (status > 0 && (descriptor.revents & POLLIN) != 0) {
+		status = wl_display_read_events(surface->display);
+		if (status < 0)
+			return VK_ERROR_SURFACE_LOST_KHR;
+		return VK_SUCCESS;
+	}
+	wl_display_cancel_read(surface->display);
+	if (status < 0 && errno != EINTR)
+		return VK_ERROR_SURFACE_LOST_KHR;
+	if ((descriptor.revents & (POLLERR | POLLHUP | POLLNVAL)) != 0)
+		return VK_ERROR_SURFACE_LOST_KHR;
+
+	/* Succeeded: the next look dispatches what came. */
 	return VK_SUCCESS;
 }
 
