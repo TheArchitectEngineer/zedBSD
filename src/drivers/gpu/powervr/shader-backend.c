@@ -168,6 +168,7 @@ static void note_reference(struct shader_backend *backend, unsigned value, unsig
 static int allocate(const struct powervr_ir_shader *shader, struct shader_backend *backend);
 static void compact_temporaries(struct powervr_shader_program *program, struct shader_backend *backend);
 static void propagate_copies(struct powervr_ir_shader *shader);
+static void simplify_products(struct powervr_ir_shader *shader);
 static void hoist_addends(struct powervr_ir_shader *shader, uint32_t stage);
 static void alias_shared(const struct powervr_ir_shader *shader, const struct powervr_shader_program *program, struct shader_backend *backend);
 static void fuse_multiply_adds(struct powervr_ir_shader *shader, uint32_t stage);
@@ -471,6 +472,7 @@ powervr_shader_compile_inline(
 		return EINVAL;
 
 	/* Reads copies' sources in place of the copies, fuses products into the adds of them, and drops the writes nothing reads. */
+	simplify_products(shader);
 	propagate_copies(shader);
 	remove_dead_writes(shader);
 	fuse_multiply_adds(shader, stage);
@@ -1024,6 +1026,39 @@ hoist_addends(
 		instruction->source[0].constant = constants[index];
 	}
 	shader->instruction_count += count;
+}
+
+/*
+ * Makes each unsaturated float multiply by the constant 1.0 a copy of
+ * its other source (exact; q1539: a division of 1.0 was a reciprocal and
+ * a multiply by 1.0).  The copy goes when copies are read in place.
+ */
+static void
+simplify_products(
+	struct powervr_ir_shader *shader)
+{
+	struct powervr_ir_instruction *instruction;
+	unsigned at;
+	unsigned one;
+
+	/* Each multiply with a plain 1.0 source. */
+	for (at = 0; at < shader->instruction_count; at++) {
+		instruction = &shader->instructions[at];
+		if (instruction->opcode != POWERVR_IR_FLOAT_MULTIPLY || instruction->flags != 0)
+			continue;
+		for (one = 0; one < 2U; one++) {
+			if (instruction->source[one].kind == POWERVR_IR_OPERAND_CONSTANT && instruction->source[one].modifiers == 0 &&
+			    instruction->source[one].constant == 0x3f800000U)
+				break;
+		}
+		if (one == 2U)
+			continue;
+
+		/* A copy of the other source, its modifiers kept. */
+		instruction->opcode = POWERVR_IR_MOVE;
+		instruction->source[0] = instruction->source[1U - one];
+		instruction->source[1].kind = POWERVR_IR_OPERAND_NONE;
+	}
 }
 
 /* Reports whether a constant is one the core holds in a register (zero, one, 1.0 and all ones), so reading it costs nothing. */
