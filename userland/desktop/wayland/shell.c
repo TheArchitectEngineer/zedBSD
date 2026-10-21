@@ -631,6 +631,9 @@ kwl_glass_draw(
 	float home;
 	float position;
 
+	/* Nothing covers what is drawn until the windows' holes are worked out for this frame (ws270-p007). */
+	server->cover_count = 0U;
+
 	/* A screen the closed lid put out is black (backend-host.c, ws132-p008). */
 	if (server->screen_off) {
 		glass_draw_solid(server, command, 0.0f, 0.0f, (float)server->width, (float)server->height, 0.0f, screen_black);
@@ -771,6 +774,7 @@ kwl_glass_draw(
 	/* Wiseview, opening, open or closing, takes the windows' place. */
 	progress = wiseview_progress(server);
 	if (progress > 0.0f) {
+		server->cover_count = 0U;
 		draw_wiseview(server, command, windows, count, progress);
 		server->layer_on = 0;
 		server->draw_section = KWL_SECTION_BAR;
