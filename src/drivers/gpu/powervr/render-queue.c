@@ -2175,6 +2175,7 @@ service_pass(
 	struct powervr_session *stalled[SERVICE_STALLED_MAX];
 	unsigned stalled_count;
 	uint64_t progress;
+	struct powervr_buffer *flushed;
 	int overdue;
 	int pending;
 	int error;
@@ -2225,6 +2226,20 @@ service_pass(
 		spin_unlock_irqrestore(&render->queue_lock, enabled);
 	}
 
+	/* Cached buffers let go: the cache written back and dropped, then they are freed after the lock. */
+	enabled = spin_lock_irqsave(&render->queue_lock);
+
+	flushed = render->slc_pending;
+	render->slc_pending = NULL;
+
+	spin_unlock_irqrestore(&render->queue_lock, enabled);
+
+	if (flushed != NULL && !render->faulted) {
+		error = powervr_command_slc_flush(render->core);
+		if (error != 0)
+			kern_logf("powervr: cache flush before freeing failed (%d)\n", error);
+	}
+
 	/* A command overdue: asks the firmware whether it is alive. */
 	error = 0;
 	faulted = is_faulted(render);
@@ -2237,8 +2252,9 @@ service_pass(
 
 	mutex_unlock(&render->core->lock);
 
-	/* Delivers what retired. */
+	/* Delivers what retired, and frees the flushed buffers. */
 	deliver(render, &delivery);
+	powervr_buffers_free(flushed);
 
 	/* Sessions whose work made no progress: the core stops each (it lives while its callbacks are pending). */
 	for (index = 0; index < stalled_count; index++) {

@@ -274,6 +274,34 @@ powervr_command_mmu_flush(
 }
 
 /*
+ * Has the firmware write back and drop every line of the system level
+ * cache, and waits for it; the core's lock is held.
+ */
+int
+powervr_command_slc_flush(
+	struct powervr_core *core)
+{
+	uint32_t command[POWERVR_COMMAND_WORDS];
+	uint32_t answer;
+	uint32_t index;
+	int error;
+
+	/* The whole cache, invalidated as well. */
+	for (index = 0; index < POWERVR_COMMAND_WORDS; index++)
+		command[index] = 0;
+	command[POWERVR_COMMAND_TYPE / 4U] = POWERVR_COMMAND_SLC_FLUSH;
+	command[(POWERVR_COMMAND_DATA + POWERVR_SLC_FLUSH_INVALIDATE) / 4U] = 1U;
+
+	/* Sends it and waits for the firmware to execute it. */
+	error = powervr_command_run(core, command, POWERVR_COMMAND_WAIT_MS, &answer);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: nothing of freed memory stays in the cache. */
+	return 0;
+}
+
+/*
  * Takes every notice the firmware queued for the host, handing each
  * well-formed one to a callback, and reports how many there were.
  *

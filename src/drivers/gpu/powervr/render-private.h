@@ -75,6 +75,9 @@ struct powervr_buffer {
 	uint64_t bytes;
 	uint64_t *pages;
 	uint64_t page_count;
+
+	/* Mapped through the system level cache: its lines are written back and dropped before the pages are freed. */
+	unsigned gpu_cached;
 };
 
 /*
@@ -476,6 +479,9 @@ struct powervr_render {
 	struct powervr_shared *exports;
 	struct powervr_session *sessions;
 	struct powervr_buffer *kept_buffers;
+
+	/* Cached buffers whose last holder let go, under the queue lock; the service flushes the cache, then frees them. */
+	struct powervr_buffer *slc_pending;
 	struct powervr_session *kept_sessions;
 	struct powervr_free_list *free_lists;
 	struct powervr_target_events target_events;
