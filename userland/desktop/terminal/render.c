@@ -10,9 +10,10 @@
  * that sample the glyph atlas, with standard Vulkan and Wayland WSI.
  *
  * Each frame rebuilds the vertices of the whole grid in host-visible
- * memory, draws them in one call and waits for the frame to finish before
- * the next one, so the host may write the atlas and the vertices between
- * frames without further synchronization.
+ * memory and draws them in one call.  The frame before is waited for
+ * first (terminal_renderer_idle), not right after its present, so the
+ * terminal reads its shells while the GPU draws; the host writes the atlas
+ * and the vertices only after that wait.
  */
 
 #include "terminal.h"
@@ -240,6 +241,13 @@ terminal_renderer_draw(
 	uint64_t mark;
 	VkResult error;
 
+	/* The frame before is finished before the host touches the vertices or the atlas again. */
+	mark = render_now_us();
+	error = terminal_renderer_idle(renderer);
+	if (error != VK_SUCCESS)
+		return error;
+	render_perf_add(RENDER_PERF_WAIT, mark);
+
 	/* The vertices of the grid and the composed text (drawing any new glyph into the atlas). */
 	mark = render_now_us();
 	vertex_count = render_build(renderer, screen, font, window);
@@ -290,6 +298,7 @@ terminal_renderer_draw(
 	error = vkQueueSubmit(renderer->queue, 1U, &submit, renderer->fence);
 	if (error != VK_SUCCESS)
 		return error;
+	renderer->pending = 1;
 	render_perf_add(RENDER_PERF_SUBMIT, mark);
 
 	/* Presents the image to the window. */
@@ -307,19 +316,36 @@ terminal_renderer_draw(
 		return error;
 	render_perf_add(RENDER_PERF_PRESENT, mark);
 
-	/* The frame is finished before the host touches the vertices or the atlas again. */
-	mark = render_now_us();
-	renderer->operation = "vkWaitForFences";
-	error = vkWaitForFences(renderer->device, 1U, &renderer->fence, VK_TRUE, RENDER_TIMEOUT);
-	if (error != VK_SUCCESS)
-		return error;
-	render_perf_add(RENDER_PERF_WAIT, mark);
-
 	/* The frame counted, and the sums written every few seconds. */
 	render_perf_frames++;
 	render_perf_report();
 
 	/* Succeeded: the grid is on the window. */
+	return VK_SUCCESS;
+}
+
+/*
+ * Waits for the frame submitted last, if it was not waited for: after
+ * this the host may write the vertices and the atlas.
+ */
+VkResult
+terminal_renderer_idle(
+	struct terminal_renderer *renderer)
+{
+	VkResult error;
+
+	/* Nothing submitted since the last wait. */
+	if (!renderer->pending)
+		return VK_SUCCESS;
+
+	/* The frame's fence. */
+	renderer->operation = "vkWaitForFences";
+	error = vkWaitForFences(renderer->device, 1U, &renderer->fence, VK_TRUE, RENDER_TIMEOUT);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Succeeded: no frame reads them now. */
+	renderer->pending = 0;
 	return VK_SUCCESS;
 }
 
