@@ -1270,10 +1270,15 @@ render_map(
 	if (resource->session != opaque || !resource->mappable)
 		return ENOTSUP;
 
-	/* The whole run, non-cacheable RAM: the user mapping keeps the kernel's policy. */
+	/*
+	 * The buffer's whole pages, non-cacheable RAM: the user mapping keeps
+	 * the kernel's policy.  A buffer from the pool may have a larger run;
+	 * the view is the buffer's own size, which the allocation's mapping
+	 * expects.
+	 */
 	mapping->physical = resource->buffer->run.paddr;
 	mapping->address = (void *)resource->buffer->view;
-	mapping->bytes = resource->buffer->run.size;
+	mapping->bytes = (resource->buffer->bytes + POWERVR_GPU_PAGE_BYTES - 1U) & ~(uint64_t)(POWERVR_GPU_PAGE_BYTES - 1U);
 	mapping->attributes = DRV_GPU_MAPPING_UNCACHED_RAM;
 
 	/* Succeeded: the core maps the run with the same attributes. */
