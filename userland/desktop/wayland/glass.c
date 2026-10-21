@@ -330,6 +330,7 @@ static void glass_shape_draw_split(struct kwl_server *server, struct kwl_list *c
 static void glass_shape_draw_pieces(struct kwl_server *server, struct kwl_list *command, const struct glass_shape *shape, const float (*pieces)[4], unsigned count);
 static void glass_shape_piece(const struct glass_shape *shape, const float *part, struct glass_shape *piece);
 static int glass_shape_cover(struct kwl_server *server, struct kwl_list *command, const struct glass_shape *shape);
+static void glass_shadow_trim(struct glass_shape *shape);
 static unsigned glass_count_kind_of(const float *constants);
 static int wallpaper_create(struct kwl_server *server, struct kwl_glass *glass, uint32_t width, uint32_t height);
 static int glass_size_make(struct kwl_server *server, uint32_t width, uint32_t height, struct kwl_glass_size *size);
@@ -2076,6 +2077,7 @@ glass_shape_draw(
 	VkDescriptorSet set;
 	VkPipeline pipeline;
 	VkRect2D pieces[1U + KWL_CUT_PIECES];
+	struct glass_shape trimmed;
 	uint64_t pixels;
 	unsigned count;
 	unsigned kind;
@@ -2087,6 +2089,16 @@ glass_shape_draw(
 	/* A shape of a layer faded out wholly is not drawn (the desktop behind App Home). */
 	if (server->layer_on && server->layer_opacity <= 0.0f)
 		return;
+
+	/*
+	 * A shadow's quad reaches past where it fades out wholly: it is drawn
+	 * only as far as it shows (ws270-p007), unless a layer scales it.
+	 */
+	if (shape->mode == MODE_SHADOW && !server->layer_on) {
+		trimmed = *shape;
+		glass_shadow_trim(&trimmed);
+		shape = &trimmed;
+	}
 
 	/*
 	 * The quad and the box, moved and scaled with the layer (the desktop
@@ -4639,4 +4651,51 @@ glass_shape_cover(
 
 	/* Succeeded: drawn around the holes. */
 	return 1;
+}
+
+/*
+ * Cuts a shadow's quad to where it shows: panel.frag's shadow is fully
+ * transparent where a pixel is its softness (at least 1) or farther from
+ * the box (smoothstep reaches 1 there), so the quad is cut to the box grown
+ * by the softness and a pixel more.  The picture is the same.
+ */
+static void
+glass_shadow_trim(
+	struct glass_shape *shape)
+{
+	float reach;
+	float left;
+	float top;
+	float right;
+	float bottom;
+
+	/* The box grown by the softness, and a pixel for the rounding. */
+	reach = shape->soft;
+	if (reach < 1.0f)
+		reach = 1.0f;
+	reach += 1.0f;
+	left = shape->box[0] - reach;
+	top = shape->box[1] - reach;
+	right = shape->box[0] + shape->box[2] + reach;
+	bottom = shape->box[1] + shape->box[3] + reach;
+
+	/* The quad cut to it on each side where it reaches farther. */
+	if (left < shape->quad[0])
+		left = shape->quad[0];
+	if (top < shape->quad[1])
+		top = shape->quad[1];
+	if (right > shape->quad[0] + shape->quad[2])
+		right = shape->quad[0] + shape->quad[2];
+	if (bottom > shape->quad[1] + shape->quad[3])
+		bottom = shape->quad[1] + shape->quad[3];
+
+	/* Nothing left: an empty quad, which is not drawn. */
+	if (right < left)
+		right = left;
+	if (bottom < top)
+		bottom = top;
+	shape->quad[0] = left;
+	shape->quad[1] = top;
+	shape->quad[2] = right - left;
+	shape->quad[3] = bottom - top;
 }
