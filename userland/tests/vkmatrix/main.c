@@ -86,6 +86,9 @@
 #define PERF_LOAD		1
 #define PERF_FLAT		2
 #define PERF_TEXTURE		3
+#define PERF_IMMEDIATE		4
+#define PERF_ALU		5
+#define PERF_QUARTER		6
 #define PERF_FRAMES		20U
 
 /* The load cases' passes over one 1920x1080 image. */
@@ -266,6 +269,9 @@ static VkResult case_perf_clear(struct vkmatrix *run);
 static VkResult case_perf_load(struct vkmatrix *run);
 static VkResult case_perf_flat(struct vkmatrix *run);
 static VkResult case_perf_texture(struct vkmatrix *run);
+static VkResult case_perf_immediate(struct vkmatrix *run);
+static VkResult case_perf_alu(struct vkmatrix *run);
+static VkResult case_perf_quarter(struct vkmatrix *run);
 static uint64_t perf_now_ns(void);
 static VkResult load_1080_textures(struct vkmatrix *run, uint32_t *pipeline);
 static VkResult case_load_1080_6(struct vkmatrix *run);
@@ -312,6 +318,9 @@ static const struct vkmatrix_case cases[] = {
 	{ "perf-load", case_perf_load },
 	{ "perf-flat", case_perf_flat },
 	{ "perf-texture", case_perf_texture },
+	{ "perf-immediate", case_perf_immediate },
+	{ "perf-alu", case_perf_alu },
+	{ "perf-quarter", case_perf_quarter },
 	{ "clear-64", case_clear_64 },
 	{ "clear-128", case_clear_128 },
 	{ "sample-linear-1180", case_sample_linear_wide },
@@ -4059,14 +4068,19 @@ load_1080_textures(
  * PERF_FRAMES frames after one not counted: a clear only; a load only (the
  * driver's load draw); a clear and one full-screen flat quad; a clear and
  * one full-screen quad sampling a 1024x1024 OPTIMAL texture with linear
- * filtering.  Prints "vkmatrix: perf <kind>: <us> us a frame (min <us> us)" (integers: the libc printf of the board may lack %f).
+ * filtering.  perf-immediate, perf-alu and perf-quarter (q1536): the flat
+ * quad with an immediate colour and no push constants, with 64 dependent
+ * multiply-adds (about 25 times the flat shader's operations), and at a
+ * 960x540 viewport (a quarter of the pixels); the slope between immediate
+ * and alu is the cost of an operation, the rest a pixel's fixed cost.
+ * Prints "vkmatrix: perf <kind>: <us> us a frame (min <us> us)" (integers: the libc printf of the board may lack %f).
  */
 static VkResult
 perf_case(
 	struct vkmatrix *run,
 	int kind)
 {
-	static const char *const names[4] = { "clear", "load", "flat", "texture" };
+	static const char *const names[7] = { "clear", "load", "flat", "texture", "immediate", "alu", "quarter" };
 	VkSubresourceLayout layout;
 	struct vkmatrix_shape shape;
 	VkRenderPassBeginInfo pass;
@@ -4093,7 +4107,7 @@ perf_case(
 		if (status != VK_SUCCESS)
 			return status;
 		first = vkmatrix_texture_quad(run, 0.0f, 0.0f, 64.0f, 64.0f);
-	} else if (kind == PERF_FLAT) {
+	} else if (kind == PERF_FLAT || kind == PERF_IMMEDIATE || kind == PERF_ALU || kind == PERF_QUARTER) {
 		memset(&shape, 0, sizeof(shape));
 		shape.vertex = vkmatrix_push4_vert;
 		shape.vertex_size = sizeof(vkmatrix_push4_vert);
@@ -4101,6 +4115,15 @@ perf_case(
 		shape.fragment_size = sizeof(vkmatrix_push4_frag);
 		shape.push_size = 4;
 		shape.push_stages = VK_SHADER_STAGE_FRAGMENT_BIT;
+		if (kind == PERF_IMMEDIATE) {
+			shape.fragment = vkmatrix_immediate_frag;
+			shape.fragment_size = sizeof(vkmatrix_immediate_frag);
+			shape.push_size = 0;
+			shape.push_stages = 0;
+		} else if (kind == PERF_ALU) {
+			shape.fragment = vkmatrix_alu_frag;
+			shape.fragment_size = sizeof(vkmatrix_alu_frag);
+		}
 		status = vkmatrix_pipeline(run, &shape, &pipeline);
 		if (status != VK_SUCCESS)
 			return status;
@@ -4137,10 +4160,14 @@ perf_case(
 		vkCmdBeginRenderPass(run->command, &pass, VK_SUBPASS_CONTENTS_INLINE);
 
 		/* The full-screen quad of the drawing kinds. */
-		if (kind == PERF_FLAT || kind == PERF_TEXTURE) {
+		if (kind != PERF_CLEAR && kind != PERF_LOAD) {
 			memset(&viewport, 0, sizeof(viewport));
 			viewport.width = (float)VKMATRIX_LINEAR_WIDTH;
 			viewport.height = (float)VKMATRIX_LINEAR_HEIGHT;
+			if (kind == PERF_QUARTER) {
+				viewport.width /= 2.0f;
+				viewport.height /= 2.0f;
+			}
 			viewport.maxDepth = 1.0f;
 			vkCmdSetViewport(run->command, 0, 1, &viewport);
 			memset(&scissor, 0, sizeof(scissor));
@@ -4150,7 +4177,7 @@ perf_case(
 			vkmatrix_bind(run, pipeline);
 			if (kind == PERF_TEXTURE) {
 				vkCmdBindDescriptorSets(run->command, VK_PIPELINE_BIND_POINT_GRAPHICS, run->layouts[pipeline], 0, 1, &run->textures[1].set, 0, NULL);
-			} else {
+			} else if (kind != PERF_IMMEDIATE) {
 				red = 1.0f;
 				vkCmdPushConstants(run->command, run->layouts[pipeline], VK_SHADER_STAGE_FRAGMENT_BIT, 0, 4, &red);
 			}
@@ -4273,4 +4300,28 @@ case_perf_texture(
 
 	/* Succeeded: the case ran. */
 	return VK_SUCCESS;
+}
+
+/* perf-immediate: the flat quad with an immediate colour and no push constants. */
+static VkResult
+case_perf_immediate(
+	struct vkmatrix *run)
+{
+	return perf_case(run, PERF_IMMEDIATE);
+}
+
+/* perf-alu: the flat quad with 64 dependent multiply-adds a pixel. */
+static VkResult
+case_perf_alu(
+	struct vkmatrix *run)
+{
+	return perf_case(run, PERF_ALU);
+}
+
+/* perf-quarter: the flat quad at a 960x540 viewport. */
+static VkResult
+case_perf_quarter(
+	struct vkmatrix *run)
+{
+	return perf_case(run, PERF_QUARTER);
 }
