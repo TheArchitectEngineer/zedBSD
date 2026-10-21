@@ -369,11 +369,15 @@ int powervr_vk_image_address(const struct powervr_vk_image *image, uint64_t *add
 void powervr_vk_executor_free(struct powervr_vk_session *session);
 
 /*
- * Whether the executor sums where a submission's time goes and says it
- * every five seconds in which submissions ran (1), or not (0).
+ * Whether the executor sums where a submission's time goes and a thread
+ * of its own says the sums every five seconds in which submissions ran
+ * (1), or not (0).  Off by default: the report is written to the serial
+ * console at its speed, which takes a CPU for about a tenth of a second.
+ * A measurement build turns it on (ZEDBSD_TEST_CPPFLAGS +=
+ * -DPOWERVR_SUBMIT_TIMING=1).
  */
 #ifndef POWERVR_SUBMIT_TIMING
-#define POWERVR_SUBMIT_TIMING	1
+#define POWERVR_SUBMIT_TIMING	0
 #endif
 
 /* The parts of a submission's time the executor sums, in timer ticks. */
@@ -403,7 +407,5 @@ void powervr_timing_add(enum powervr_timing_part part, uint64_t start);
 /* The timer's ticks now, for a part's start (render-queue.c). */
 uint64_t powervr_timing_now(void);
 
-/* Says the sums every TIMING_REPORT_MS and clears them (render-queue.c). */
-void powervr_timing_report(void);
 
 #endif /* KERN_DRIVERS_GPU_POWERVR_VK_H */
