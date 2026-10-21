@@ -469,6 +469,7 @@ reader_pixel_output(
 	uint32_t needs_destination;
 	uint32_t sum_kind;
 	uint32_t half;
+	int held;
 	int error;
 
 	/* Half floats (a 16-bit float attachment) are neither clamped nor normalised. */
@@ -505,9 +506,13 @@ reader_pixel_output(
 	if ((reader->key->forms & POWERVR_SHADER_FORM_SUM_OF_PRODUCTS) != 0 && half == 0 && blend->enable != 0) {
 		error = blend_sum_kind(blend, &sum_kind);
 		for (channel = 0; channel < 4 && error == 0; channel++) {
-			if (source[channel].kind == POWERVR_IR_OPERAND_CONSTANT &&
-			    !is_constant(&source[channel], 0) &&
-			    !is_constant(&source[channel], FLOAT_ONE))
+			/* A constant channel must be one the hardware holds. */
+			if (source[channel].kind != POWERVR_IR_OPERAND_CONSTANT)
+				continue;
+			held = is_constant(&source[channel], 0);
+			if (!held)
+				held = is_constant(&source[channel], FLOAT_ONE);
+			if (!held)
 				error = ENOTSUP;
 		}
 		if (error == 0) {

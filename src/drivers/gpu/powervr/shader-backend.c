@@ -3346,6 +3346,7 @@ select_instruction(
 			select_sum(select, instruction, POWERVR_USC_SUM_OPAQUE);
 			break;
 		}
+
 		/* The words where one value holds them in order (q1546: a sample's four, two moves a pixel), else moved side by side. */
 		a = temp_register(TEMP_COORDINATES);
 		error = adjacent_words(select, instruction, &a);
