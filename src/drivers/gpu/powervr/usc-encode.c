@@ -19,6 +19,9 @@
 /* The field number that always holds the value one, for fixed set bits. */
 #define USC_FIELD_ONE		15U
 
+/* The length of a sum-of-products operation, in bytes. */
+#define USC_SUM_LENGTH		14U
+
 /* The operand fields of a source or destination word. */
 #define OPERAND_BANK_A		0U
 #define OPERAND_INDEX_A		1U
@@ -369,6 +372,20 @@ static const struct usc_operand_form dual_destination_forms[] = {
 static const int8_t main_organisation[16] = {
 	-1, 0, -1, 3, 1, 4, -1, 5,
 	2, -1, -1, -1, -1, 6, -1, 7
+};
+
+/*
+ * The sum-of-products operations, one per form of enum powervr_usc_sum,
+ * derived from observation.  The first byte is the main unit's single
+ * operation with its extension; the rest select, for each channel, the
+ * sources and halves of its multiply-add and their modifiers.
+ */
+static const uint8_t sum_operations[POWERVR_USC_SUM_COUNT][USC_SUM_LENGTH] = {
+	{ 0x94, 0x99, 0x99, 0x0f, 0x06, 0x4f, 0x32, 0x42, 0x00, 0x00, 0x0b, 0x99, 0x99, 0xf0 },
+	{ 0x94, 0x22, 0x22, 0x0f, 0xfe, 0x7f, 0xa8, 0xb9, 0xd0, 0x00, 0x0f, 0x73, 0x24, 0x00 },
+	{ 0x94, 0x22, 0x22, 0x0f, 0xfe, 0x7f, 0xa8, 0xb9, 0xdf, 0x00, 0x0f, 0x73, 0x24, 0x00 },
+	{ 0x94, 0x99, 0x99, 0x0f, 0xfe, 0x4f, 0xa8, 0xb9, 0x20, 0x00, 0x0f, 0x42, 0x73, 0x00 },
+	{ 0x94, 0x42, 0x73, 0x00, 0x06, 0x7f, 0xa8, 0xb9, 0xc0, 0x00, 0x6f, 0x99, 0x99, 0xf0 }
 };
 
 static int layout_place(const struct usc_layout *layout, const uint32_t *values, uint8_t *bytes);
@@ -819,6 +836,31 @@ powervr_usc_unpack(
 		return error;
 
 	/* Succeeded: the two-byte unpack. */
+	return 0;
+}
+
+/*
+ * Encodes the main unit's sum of products in one of its forms (enum
+ * powervr_usc_sum): the operation of phase 0 alone, in a group without
+ * internal selectors.  The encodings are derived from observation.
+ */
+int
+powervr_usc_sum_of_products(
+	enum powervr_usc_sum form,
+	struct powervr_usc_operation *operation)
+{
+	unsigned index;
+
+	/* Refuses a form this encoder does not build. */
+	if ((unsigned)form >= POWERVR_USC_SUM_COUNT || operation == NULL)
+		return EINVAL;
+
+	/* The form's bytes. */
+	for (index = 0; index < USC_SUM_LENGTH; index++)
+		operation->bytes[index] = sum_operations[form][index];
+	operation->length = USC_SUM_LENGTH;
+
+	/* Succeeded: the fourteen-byte operation. */
 	return 0;
 }
 
@@ -2300,6 +2342,18 @@ group_check(
 	if (group->mux_used > 1 || (group->mux_used != 0 && group->mux > 5))
 		return EINVAL;
 
+	/* A group without internal selectors names none and no source selector. */
+	if (group->internal_absent > 1)
+		return EINVAL;
+	if (group->internal_absent != 0) {
+		if (group->unit != POWERVR_USC_UNIT_MAIN || group->mux_used != 0)
+			return EINVAL;
+		for (phase = 0; phase < 6; phase++) {
+			if (group->internal[phase] != 0)
+				return EINVAL;
+		}
+	}
+
 	/* Refuses internal selectors outside their codes. */
 	if (group->internal[0] != 0 ||
 	    group->internal[1] > 1 ||
@@ -2427,9 +2481,9 @@ group_plan(
 			return error;
 	}
 
-	/* Only a main group carries the internal selector byte. */
+	/* Only a main group carries the internal selector byte, and not the sum of products. */
 	plan->internal_length = 0;
-	if (group->unit == POWERVR_USC_UNIT_MAIN)
+	if (group->unit == POWERVR_USC_UNIT_MAIN && group->internal_absent == 0)
 		plan->internal_length = 1;
 
 	/* Works out the phase organisation from the slots in use. */

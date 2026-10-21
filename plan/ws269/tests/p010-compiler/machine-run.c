@@ -58,7 +58,8 @@ enum {
 	KIND_TEST_ZERO,
 	KIND_CONDITION,
 	KIND_BRANCH,
-	KIND_ITERATE_SAMPLE
+	KIND_ITERATE_SAMPLE,
+	KIND_SUM_OF_PRODUCTS
 };
 
 static float as_float(uint32_t word);
@@ -333,6 +334,23 @@ machine_run_program(
 
 					next.index = (uint16_t)(next.index + word);
 					write_register(run, next, lane, run->iterate_word(lane, operation->immediate + word * 4U, 0));
+				}
+				break;
+			case KIND_SUM_OF_PRODUCTS:
+				/*
+				 * The four floats packed into the pixel output, or blended
+				 * with the colour there first (q1548; the forms of enum
+				 * powervr_usc_sum in their order, over to multiply).
+				 */
+				for (word = 0; word < 4; word++)
+					words[word] = read_register(run, operation->source[word], lane);
+				if (operation->variant == POWERVR_USC_SUM_OPAQUE) {
+					write_register(run, operation->destination[0], lane, ir_run_pack(words));
+				} else if (operation->variant < POWERVR_USC_SUM_COUNT) {
+					result = read_register(run, operation->destination[0], lane);
+					write_register(run, operation->destination[0], lane, ir_run_blend(operation->variant - 1U, words, result));
+				} else {
+					return -1;
 				}
 				break;
 			case KIND_ITERATE_SAMPLE:

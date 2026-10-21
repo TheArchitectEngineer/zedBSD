@@ -177,7 +177,8 @@ enum vkmatrix_sop_form {
 	SOP_MULTIPLY_ADD,
 	SOP_PLACE,
 	SOP_PUSH,
-	SOP_TEXTURE_CONSTANTS
+	SOP_TEXTURE_CONSTANTS,
+	SOP_PUSH_DRAWN
 };
 
 /* What one pipeline is built from. */
@@ -451,6 +452,16 @@ static const VkPipelineColorBlendAttachmentState sop_blends[] = {
 /* The blend constants of the sop cases (q1548). */
 static const float sop_constants[4] = { 0.25f, 0.5f, 0.75f, 0.5f };
 
+/*
+ * The two push constant colours sop-clamp and sop-clamp-over draw
+ * (q1548), each with channels outside [0, 1] that the attachment's
+ * normalised range clamps, before the blend and in the output.
+ */
+static const float sop_push_colours[2][4] = {
+	{ 1.5f, -0.5f, 0.25f, 0.5f },
+	{ -0.25f, 2.0f, 0.75f, 1.25f }
+};
+
 /* The colour the sop cases clear to (q1548): half transparent, so the destination alpha factors count. */
 static const float sop_clear[4] = { 0.25f, 0.5f, 0.75f, 0.5f };
 
@@ -483,6 +494,8 @@ static const struct vkmatrix_sop_probe sop_probes[] = {
 	{ "sop-fc-over", vkmatrix_sopfc_frag, sizeof(vkmatrix_sopfc_frag), SOP_PLACE, 0 },
 	{ "sop-tc", vkmatrix_soptc_frag, sizeof(vkmatrix_soptc_frag), SOP_TEXTURE_CONSTANTS, -1 },
 	{ "sop-tc-over", vkmatrix_soptc_frag, sizeof(vkmatrix_soptc_frag), SOP_TEXTURE_CONSTANTS, 0 },
+	{ "sop-clamp", vkmatrix_soppush_frag, sizeof(vkmatrix_soppush_frag), SOP_PUSH_DRAWN, -1 },
+	{ "sop-clamp-over", vkmatrix_soppush_frag, sizeof(vkmatrix_soppush_frag), SOP_PUSH_DRAWN, 0 },
 	{ "sop-over", vkmatrix_texture_frag, sizeof(vkmatrix_texture_frag), SOP_SAMPLE, 0 },
 	{ "sop-add", vkmatrix_texture_frag, sizeof(vkmatrix_texture_frag), SOP_SAMPLE, 1 },
 	{ "sop-alpha", vkmatrix_texture_frag, sizeof(vkmatrix_texture_frag), SOP_SAMPLE, 2 },
@@ -588,6 +601,8 @@ static const struct vkmatrix_case cases[] = {
 	{ "sop-fc-over", case_sop },
 	{ "sop-tc", case_sop },
 	{ "sop-tc-over", case_sop },
+	{ "sop-clamp", case_sop },
+	{ "sop-clamp-over", case_sop },
 	{ "sop-over", case_sop },
 	{ "sop-add", case_sop },
 	{ "sop-alpha", case_sop },
@@ -5736,9 +5751,9 @@ vkmatrix_cache_end(
  * sop-* (q1548): a 4x4 texture of sixteen colours and alphas drawn
  * (nearest) on a 32x32 quad over the cleared colour, in the case's form
  * of the colour output and its blend; each texel's square is the colour
- * worked out here.  sop-xy01, sop-xyzw-over and sop-push-over only make
- * their pipelines (their colours, the varying across the quad and a push
- * constant, are not drawn here).
+ * worked out here.  The pipelines of the probes of float colours (the
+ * varying across the quad, a push constant) are only made; sop-clamp and
+ * sop-clamp-over draw two push constant colours outside [0, 1].
  */
 static VkResult
 case_sop(
@@ -5793,13 +5808,13 @@ case_sop(
 	shape.texture = 1;
 	shape.attachment = blend;
 	shape.constants = sop_constants;
-	if (probe->form == SOP_PLACE || probe->form == SOP_PUSH) {
+	if (probe->form == SOP_PLACE || probe->form == SOP_PUSH || probe->form == SOP_PUSH_DRAWN) {
 		shape.vertex = vkmatrix_uniform_vert;
 		shape.vertex_size = sizeof(vkmatrix_uniform_vert);
 		shape.layout = VKMATRIX_POSITION;
 		shape.texture = 0;
 	}
-	if (probe->form == SOP_PUSH) {
+	if (probe->form == SOP_PUSH || probe->form == SOP_PUSH_DRAWN) {
 		shape.push_size = 16;
 		shape.push_stages = VK_SHADER_STAGE_FRAGMENT_BIT;
 	}
@@ -5817,8 +5832,23 @@ case_sop(
 	destination[3] = (float)((clear_word >> 24) & 0xffU) / 255.0f;
 	vkmatrix_begin(run, 0, sop_clear);
 
+	/* Two quads of the push constant colours, each clamped and blended over the cleared colour. */
+	if (probe->form == SOP_PUSH_DRAWN) {
+		vkmatrix_bind(run, pipeline);
+		for (index = 0; index < 2; index++) {
+			vkCmdPushConstants(run->command, run->layouts[pipeline], VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(sop_push_colours[index]), sop_push_colours[index]);
+			first = vkmatrix_quad(run, 16.0f + 16.0f * (float)index, 16.0f, 32.0f + 16.0f * (float)index, 48.0f);
+			vkCmdDraw(run->command, 6, 1, first, 0);
+			for (channel = 0; channel < 4; channel++)
+				colour[channel] = unit_clamp(sop_push_colours[index][channel]);
+			if (blend != NULL)
+				sop_blend(blend, sop_constants, colour, destination, colour);
+			vkmatrix_fill(run, 16U + 16U * index, 16U, 32U + 16U * index, 48U, vkmatrix_pack(colour));
+		}
+	}
+
 	/* The quad, each texel's square its colour blended over the cleared one. */
-	if (probe->form != SOP_PLACE && probe->form != SOP_PUSH) {
+	if (probe->form != SOP_PLACE && probe->form != SOP_PUSH && probe->form != SOP_PUSH_DRAWN) {
 		vkmatrix_bind(run, pipeline);
 		vkCmdBindDescriptorSets(run->command, VK_PIPELINE_BIND_POINT_GRAPHICS, run->layouts[pipeline], 0, 1, &run->textures[0].set, 0, NULL);
 		first = vkmatrix_texture_quad(run, 16.0f, 16.0f, 48.0f, 48.0f);

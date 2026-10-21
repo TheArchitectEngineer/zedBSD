@@ -36,6 +36,7 @@ struct ir_run {
 
 uint32_t ir_run_pack(const uint32_t words[4]);
 void ir_run_unpack(uint32_t packed, uint32_t words[4]);
+uint32_t ir_run_blend(uint32_t kind, const uint32_t source[4], uint32_t packed);
 uint32_t ir_run_pack_half(uint32_t low, uint32_t high);
 void ir_run_unpack_half(uint32_t packed, uint32_t words[2]);
 int ir_run(struct ir_run *run, const struct powervr_ir_shader *shader, uint32_t lanes);

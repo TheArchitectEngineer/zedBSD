@@ -152,8 +152,26 @@ enum powervr_ir_opcode {
 	POWERVR_IR_SHARED_STORE,
 	POWERVR_IR_PIXEL_SHARED,
 
+	/*
+	 * Blends the four floats of sources 0 to 3, each clamped to [0, 1]
+	 * (NaN to 0), with the 8-bit unsigned normalised colour in pixel
+	 * output register immediate and packs the result back into it
+	 * (q1548); immediate_2 is the blend (POWERVR_IR_BLEND_*).
+	 */
+	POWERVR_IR_PIXEL_BLEND,
+
 	POWERVR_IR_OPCODE_COUNT
 };
+
+/*
+ * The blends of POWERVR_IR_PIXEL_BLEND, s the source colour and d the
+ * destination's, the same equation on every channel: s + d * (1 - s.a),
+ * s - d * (1 - s.a), s + d, and s * d.
+ */
+#define POWERVR_IR_BLEND_OVER		0U
+#define POWERVR_IR_BLEND_SUBTRACT	1U
+#define POWERVR_IR_BLEND_ADD		2U
+#define POWERVR_IR_BLEND_MULTIPLY	3U
 
 /* What an operand names: a value's word, or a constant word. */
 enum powervr_ir_operand_kind {

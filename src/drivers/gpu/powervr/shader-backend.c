@@ -121,6 +121,10 @@
 /* The most ifs and loops open at once. */
 #define NESTING_MAX		32U
 
+/* A sum of products' source that is the pixel output, and one it leaves unused (sum_slots). */
+#define SUM_DESTINATION		4U
+#define SUM_UNUSED		5U
+
 /* One open if: the branch to its else or end, and the else's branch to the end. */
 struct backend_if {
 	unsigned branch;
@@ -237,10 +241,26 @@ static int literal_register(struct backend_select *select, uint32_t bits, struct
 static void select_float_pair(struct backend_select *select, unsigned kind, struct shader_machine_register destination, const struct powervr_ir_operand *a, const struct powervr_ir_operand *b, unsigned floor);
 static void select_two_sourced(struct backend_select *select, unsigned kind, unsigned variant, uint32_t type, struct shader_machine_register destination, const struct powervr_ir_operand *a, const struct powervr_ir_operand *b, unsigned allowed);
 static void select_address(struct backend_select *select, const struct powervr_ir_instruction *instruction);
+static void select_sum(struct backend_select *select, const struct powervr_ir_instruction *instruction, enum powervr_usc_sum form);
 static void select_condition(struct backend_select *select, unsigned kind, unsigned predicate, unsigned adjust, struct shader_machine_register source);
 static unsigned select_branch(struct backend_select *select, unsigned prediction, unsigned condition);
 static int build_group_fetch(void *context, size_t index, struct powervr_usc_group *group);
 static void group_register(struct powervr_usc_register *operand, struct shader_machine_register reg);
+
+/*
+ * Where a sum of products (q1548) takes its registers, one row per form
+ * of enum powervr_usc_sum and one entry per source of the group: the
+ * colour's channel (0 red to 3 alpha), SUM_DESTINATION for the pixel
+ * output it blends with, or SUM_UNUSED.  Sources 1 and 4 are the second
+ * of their operand words, whose bank field has two bits.
+ */
+static const uint8_t sum_slots[POWERVR_USC_SUM_COUNT][6] = {
+	{ 0, 1, 2, 3, SUM_UNUSED, SUM_UNUSED },
+	{ SUM_DESTINATION, 3, 0, 1, 2, SUM_UNUSED },
+	{ SUM_DESTINATION, 3, 0, 1, 2, SUM_UNUSED },
+	{ SUM_DESTINATION, 0, 1, 2, 3, SUM_UNUSED },
+	{ SUM_DESTINATION, 0, 1, 2, 3, SUM_UNUSED }
+};
 
 /* A group with no operation, no operand and a repeat count of one. */
 static const struct powervr_usc_group blank_group = {
@@ -486,6 +506,7 @@ powervr_shader_compile_inline(
 	uint8_t *code,
 	size_t room)
 {
+	struct powervr_shader_key plain;
 	unsigned split;
 	int error;
 
@@ -503,6 +524,13 @@ powervr_shader_compile_inline(
 	/* A program whose shared program could not be built is compiled again without one. */
 	if (error != 0 && split != 0)
 		error = compile_program(words, count, stage, key, shared_values, value_count, 0, workspace, program, code, room);
+
+	/* A program the sum of products could not write is compiled again with the arithmetic (q1548). */
+	if (error != 0 && key != NULL && (key->forms & POWERVR_SHADER_FORM_SUM_OF_PRODUCTS) != 0) {
+		plain = *key;
+		plain.forms &= ~POWERVR_SHADER_FORM_SUM_OF_PRODUCTS;
+		error = powervr_shader_compile_inline(words, count, stage, &plain, shared_values, value_count, workspace, program, code, room);
+	}
 	if (error != 0)
 		return error;
 
@@ -560,7 +588,7 @@ compile_program(
 	workspace->backend.inline_count = value_count;
 	workspace->backend.forms = 0;
 	if (key != NULL && stage == POWERVR_SHADER_FRAGMENT)
-		workspace->backend.forms = key->forms & (POWERVR_SHADER_FORM_PACK_OUTPUT | POWERVR_SHADER_FORM_ITERATE_SAMPLE);
+		workspace->backend.forms = key->forms & (POWERVR_SHADER_FORM_PACK_OUTPUT | POWERVR_SHADER_FORM_ITERATE_SAMPLE | POWERVR_SHADER_FORM_SUM_OF_PRODUCTS);
 	moved = 0;
 	if (split != 0) {
 		error = split_shared(shader, program, &workspace->uniform, &workspace->shared_shader, &moved);
@@ -1142,10 +1170,11 @@ end_on_last(
 	if (program->stage != POWERVR_SHADER_FRAGMENT || backend->control_flow != 0 || backend->operation_count == 0)
 		return 0;
 
-	/* A move, an immediate, or a pack into the pixel output (q1546), on the enabled instances. */
+	/* A move, an immediate, a pack into the pixel output (q1546) or a sum of products (q1548), on the enabled instances. */
 	last = &backend->operations[backend->operation_count - 1U];
 	if (last->kind != MACHINE_MOVE &&
 	    last->kind != MACHINE_IMMEDIATE &&
+	    last->kind != MACHINE_SUM_OF_PRODUCTS &&
 	    (last->kind != MACHINE_PACK || last->overlap == 0))
 		return 0;
 	if (last->condition != POWERVR_USC_RUN_ENABLED)
@@ -2431,8 +2460,16 @@ reads_register(
 	if (operation->kind == MACHINE_IMMEDIATE || operation->kind == MACHINE_WAIT || operation->kind == MACHINE_ITERATE || operation->kind == MACHINE_END)
 		return 0;
 
+	/* A blending sum of products reads the pixel output it writes (q1548). */
+	if (operation->kind == MACHINE_SUM_OF_PRODUCTS && operation->variant != POWERVR_USC_SUM_OPAQUE && same_register(operation->destination[0], reg))
+		return 1;
+
 	/* The kinds whose sources are known: each source, a span for the pack and the sample's coordinates. */
-	if (!simple_kind(operation->kind) && operation->kind != MACHINE_PACK && operation->kind != MACHINE_UNPACK && operation->kind != MACHINE_SAMPLE)
+	if (!simple_kind(operation->kind) &&
+	    operation->kind != MACHINE_PACK &&
+	    operation->kind != MACHINE_UNPACK &&
+	    operation->kind != MACHINE_SAMPLE &&
+	    operation->kind != MACHINE_SUM_OF_PRODUCTS)
 		return 1;
 	for (source = 0; source < 4; source++) {
 		if (operation->source[source].bank != reg.bank)
@@ -3295,6 +3332,11 @@ select_instruction(
 			}
 			break;
 		}
+		if ((select->backend->forms & POWERVR_SHADER_FORM_SUM_OF_PRODUCTS) != 0 && instruction->immediate_2 == 0) {
+			/* The sum-of-products form (q1548): the four floats written by one operation. */
+			select_sum(select, instruction, POWERVR_USC_SUM_OPAQUE);
+			break;
+		}
 		/* The words where one value holds them in order (q1546: a sample's four, two moves a pixel), else moved side by side. */
 		a = temp_register(TEMP_COORDINATES);
 		error = adjacent_words(select, instruction, &a);
@@ -3358,6 +3400,27 @@ select_instruction(
 		if (operation != NULL) {
 			operation->destination[0] = bank_register(POWERVR_USC_BANK_SHARED, instruction->immediate);
 			operation->source[0] = source;
+		}
+		break;
+	case POWERVR_IR_PIXEL_BLEND:
+		/* The blend of the sum-of-products form (q1548): one operation of the colour and the destination's. */
+		if (instruction->immediate >= 4)
+			return ENOTSUP;
+		switch (instruction->immediate_2) {
+		case POWERVR_IR_BLEND_OVER:
+			select_sum(select, instruction, POWERVR_USC_SUM_OVER);
+			break;
+		case POWERVR_IR_BLEND_SUBTRACT:
+			select_sum(select, instruction, POWERVR_USC_SUM_SUBTRACT);
+			break;
+		case POWERVR_IR_BLEND_ADD:
+			select_sum(select, instruction, POWERVR_USC_SUM_ADD);
+			break;
+		case POWERVR_IR_BLEND_MULTIPLY:
+			select_sum(select, instruction, POWERVR_USC_SUM_MULTIPLY);
+			break;
+		default:
+			return ENOTSUP;
 		}
 		break;
 	case POWERVR_IR_PIXEL_SHARED:
@@ -4016,6 +4079,56 @@ select_address(
 	}
 }
 
+/*
+ * Selects a sum of products (q1548) writing an instruction's four floats
+ * (sources 0 to 3) into its pixel output register in a form: each
+ * channel's register, moved into a scratch temporary first when its
+ * modifiers need applying or when its source's bank field cannot name
+ * it.  Constants are read from the hardware's or the shared registers.
+ */
+static void
+select_sum(
+	struct backend_select *select,
+	const struct powervr_ir_instruction *instruction,
+	enum powervr_usc_sum form)
+{
+	struct shader_machine_operation *operation;
+	struct shader_machine_register channels[4];
+	struct shader_machine_register moved;
+	unsigned channel;
+	unsigned slot;
+
+	/* Each channel's register, constants from the shared registers as a float operation reads them. */
+	select->literals = 1;
+	for (channel = 0; channel < 4; channel++)
+		channels[channel] = operand_plain(select, &instruction->source[channel], 0);
+	select->literals = 0;
+
+	/* A channel in the second source of an operand word: a temporary unless its bank fits two bits. */
+	for (slot = 1; slot < 6; slot += 3) {
+		channel = sum_slots[form][slot];
+		if (channel >= 4 || channels[channel].bank <= POWERVR_USC_BANK_COEFFICIENT)
+			continue;
+		moved = scratch_register(select);
+		operation = append(select, MACHINE_MOVE);
+		if (operation != NULL) {
+			operation->destination[0] = moved;
+			operation->source[0] = channels[channel];
+		}
+		channels[channel] = moved;
+	}
+
+	/* The operation into the pixel output under the overlap check. */
+	operation = append(select, MACHINE_SUM_OF_PRODUCTS);
+	if (operation != NULL) {
+		operation->variant = (uint8_t)form;
+		operation->overlap = 1;
+		operation->destination[0] = bank_register(POWERVR_USC_BANK_SPECIAL, SPECIAL_PIXEL_OUTPUT + instruction->immediate);
+		for (channel = 0; channel < 4; channel++)
+			operation->source[channel] = channels[channel];
+	}
+}
+
 /* Appends one step of the execution mask counter, run on every lane. */
 static void
 select_condition(
@@ -4135,6 +4248,7 @@ shader_backend_group(
 	unsigned absolute_2;
 	unsigned extended;
 	unsigned length;
+	unsigned slot;
 	int error;
 
 	/* Starts from a blank group under the operation's condition. */
@@ -4428,6 +4542,26 @@ shader_backend_group(
 		group->mux = 0;
 		group->internal[4] = SELECT_FTE;
 		error = powervr_usc_vertex_output(0, 0, 0, 1, operation->immediate, &group->operation[POWERVR_USC_PHASE_BACKEND]);
+		break;
+	case MACHINE_SUM_OF_PRODUCTS:
+		/* Phase 0's sum of products of the form, its registers in the form's sources, into the pixel output under the overlap check (q1548). */
+		group->unit = POWERVR_USC_UNIT_MAIN;
+		group->write_0 = 1;
+		group->overlap_check = operation->overlap;
+		group->end = operation->end;
+		group->internal_absent = 1;
+		if (operation->variant >= POWERVR_USC_SUM_COUNT) {
+			error = EINVAL;
+			break;
+		}
+		for (slot = 0; slot < 6U; slot++) {
+			if (sum_slots[operation->variant][slot] == SUM_DESTINATION)
+				group_register(&group->source[slot], operation->destination[0]);
+			else if (sum_slots[operation->variant][slot] < 4U)
+				group_register(&group->source[slot], operation->source[sum_slots[operation->variant][slot]]);
+		}
+		group_register(&group->destination[0], operation->destination[0]);
+		error = powervr_usc_sum_of_products((enum powervr_usc_sum)operation->variant, &group->operation[POWERVR_USC_PHASE_0]);
 		break;
 	case MACHINE_VERTEX_END:
 		group->unit = POWERVR_USC_UNIT_MAIN;

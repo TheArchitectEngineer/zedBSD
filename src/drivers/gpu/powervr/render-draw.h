@@ -58,7 +58,7 @@
  * POWERVR_SHADER_FORM_*): the shared program, run once a draw from the
  * shared register program, as built; the pack into the pixel output and
  * the sample that iterates its coordinates are not yet seen on the
- * board.
+ * board, nor the sum of products (0x8) and its raw colour (0x10, q1548).
  *
  * The board's comparison flips forms without a rebuild: bits 24 to 31
  * of a pipeline's VkPipelineCreateFlags, which no Vulkan flag the

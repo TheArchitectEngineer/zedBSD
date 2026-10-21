@@ -530,6 +530,55 @@ main(void)
 		check(ok, "pixel output move with the overlap check");
 	}
 
+	/*
+	 * The sum of products (q1548): the whole group of the opaque, over
+	 * and add forms with the program's alignment, byte for byte against
+	 * the groups the forms were derived from by observation (registers
+	 * r0 to r2, the internal register 0 and the pixel output).
+	 */
+	{
+		static const struct {
+			unsigned form;
+			struct { unsigned bank; unsigned index; } sources[4];
+			uint8_t bytes[32];
+			unsigned length;
+			const char *name;
+		} sums[] = {
+			{ POWERVR_USC_SUM_OPAQUE, { { 1, 0 }, { 1, 1 }, { 1, 2 }, { 0, 36 } },
+			  { 0x3c, 0x8a, 0x80, 0x94, 0x99, 0x99, 0x0f, 0x06, 0x4f, 0x32, 0x42, 0x00, 0x00, 0x0b, 0x99, 0x99,
+			    0xf0, 0xc0, 0x61, 0x00, 0x42, 0x24, 0x20, 0xff }, 24, "opaque sum of products group" },
+			{ POWERVR_USC_SUM_OVER, { { 1, 0 }, { 1, 1 }, { 1, 2 }, { 0, 36 } },
+			  { 0x3c, 0x8a, 0x80, 0x94, 0x22, 0x22, 0x0f, 0xfe, 0x7f, 0xa8, 0xb9, 0xd0, 0x00, 0x0f, 0x73, 0x24,
+			    0x00, 0xa0, 0x44, 0x01, 0x40, 0xc1, 0xa2, 0x20 }, 24, "over sum of products group" },
+			{ POWERVR_USC_SUM_ADD, { { 1, 0 }, { 1, 1 }, { 1, 2 }, { 0, 36 } },
+			  { 0x30, 0x8a, 0x80, 0x94, 0x99, 0x99, 0x0f, 0xfe, 0x4f, 0xa8, 0xb9, 0x20, 0x00, 0x0f, 0x42, 0x73,
+			    0x00, 0xa0, 0x60, 0x00, 0x41, 0xc2, 0xc4, 0x01, 0x20, 0xff, 0xf3, 0xff, 0xff, 0xff, 0xff, 0xff }, 32, "add sum of products group" }
+		};
+		uint8_t code[64];
+		size_t length;
+		unsigned sum;
+		unsigned word;
+
+		for (sum = 0; sum < sizeof(sums) / sizeof(sums[0]); sum++) {
+			operation = blank(MACHINE_SUM_OF_PRODUCTS);
+			operation.variant = (uint8_t)sums[sum].form;
+			operation.overlap = 1;
+			operation.end = 1;
+			operation.destination[0] = reg(0, 32);
+			for (word = 0; word < 4; word++)
+				operation.source[word] = reg(sums[sum].sources[word].bank, sums[sum].sources[word].index);
+			ok = shader_backend_group(&operation, 0, &group) == 0;
+			ok = ok && powervr_usc_program_encode(&group, 1, code, sizeof(code), &length) == 0;
+			ok = ok && length == sums[sum].length && memcmp(code, sums[sum].bytes, length) == 0;
+			check(ok, sums[sum].name);
+			if (!ok) {
+				for (word = 0; word < length; word++)
+					printf(" %02x", code[word]);
+				printf("\n");
+			}
+		}
+	}
+
 	printf("powervr compiler group host test: %u passed, %u failed\n", passed, failed);
 	return failed == 0 ? 0 : 1;
 }
