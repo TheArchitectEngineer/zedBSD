@@ -1459,6 +1459,14 @@ kwl_perf_report(
 	    (double)perf->cursor_queue_present_cycles / per_ms,
 	    (double)perf->cursor_queue_present_max_cycles / per_ms);
 
+	/* The scheduler's ticks one by one. */
+	printf("KWL PERF ticks sleep=%.1f output=%.1f displays=%.1f glass=%.1f desktop=%.1f\n",
+	    (double)perf->schedule_tick_part_cycles[0] / per_ms,
+	    (double)perf->schedule_tick_part_cycles[1] / per_ms,
+	    (double)perf->schedule_tick_part_cycles[2] / per_ms,
+	    (double)perf->schedule_tick_part_cycles[3] / per_ms,
+	    (double)perf->schedule_tick_part_cycles[4] / per_ms);
+
 	/* The passes' longest work, and the cursor's box. */
 	perf_pass_report(perf, per_ms);
 	perf_box_report(perf, &stats);

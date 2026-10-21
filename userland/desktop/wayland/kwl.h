@@ -1041,6 +1041,8 @@ struct kwl_perf {
 	uint64_t schedule_cycles;
 	uint64_t flush_cycles;
 	uint64_t schedule_tick_cycles;
+	/* The scheduler's ticks one by one: the sleep's, the outputs', the displays' light, the glass look's and the desktop's. */
+	uint64_t schedule_tick_part_cycles[5];
 	uint64_t adopt_cycles;
 	uint64_t shm_cycles;
 	uint64_t cursor_cycles;
