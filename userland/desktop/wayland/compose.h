@@ -98,6 +98,15 @@ struct kwl_import {
 	unsigned written;
 	/* Counts the staging's writes (kwl_host_image_written), so that a copy of it can tell it is stale. */
 	uint32_t version;
+	/*
+	 * The staging's rows written since the last take (dirty, last
+	 * excluded), and the rows taken but not yet copied (copy): a frame
+	 * copies only those rows (q1534).  Empty when first equals last.
+	 */
+	uint32_t dirty_first;
+	uint32_t dirty_last;
+	uint32_t copy_first;
+	uint32_t copy_last;
 	struct kwl_import *host_next;
 	/* A client's image waiting for its move to the general layout in the next frame (ws099-p016). */
 	unsigned layout_pending;
@@ -671,6 +680,7 @@ VkResult kwl_host_image_create(struct kwl_compose *compose, uint32_t width, uint
 void kwl_host_image_release(struct kwl_compose *compose, struct kwl_import *import);
 void kwl_host_image_move(struct kwl_compose *compose, struct kwl_import *from, struct kwl_import *to);
 void kwl_host_image_written(struct kwl_import *import);
+void kwl_host_image_written_rows(struct kwl_import *import, uint32_t first, uint32_t last);
 void kwl_host_images_take(struct kwl_compose *compose, struct kwl_list *list);
 unsigned kwl_host_images_record(const struct kwl_list *list, VkCommandBuffer command);
 void kwl_host_image_batch_begin(struct kwl_compose *compose);

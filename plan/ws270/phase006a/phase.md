@@ -363,3 +363,19 @@ Keiland が使い、vkmatrix 15/15・gpu-selftest 13/13 で確かめていない
   - その後 `image_copy_record` が、staging から sampled image へ image の全体を 1 回 vkCmdCopyImage する（傷んだ行だけではない）。
   - 傷んだ行の範囲に絞れば、transfer の大きさが減る（Keiland の変更、未実施）。
 - 確認: p010 の host 試験は 0 failed（transfer-program 33 passed、1 行おきの shared words を足した）。desktop の config で VF2 の vmunix は rc 0、warning 0。板は未実施。
+
+### q1534-i02（2026-10-21、P2）: Keiland の shm の copy を傷んだ行に絞る
+
+- `struct kwl_import`（compose.h）に、書かれた行（dirty）と、取られてまだ写していない行（copy）の範囲を持たせた。
+- 書き込みの印:
+  - `kwl_host_image_written_rows(import, first, last)`: 行の範囲を、まだ取られていない範囲と合わせる。
+  - `kwl_host_image_written` は全部の行（glass などは従来どおり全体）。
+  - shm の `surface_upload` は、傷んだ行（大きさが変われば全部）だけを印す。
+- frame の取り込みと copy:
+  - `kwl_host_images_take` は dirty を copy の範囲へ合わせて、dirty を空にする。
+  - `image_copy_record` は copy の範囲の行だけを vkCmdCopyImage し（空なら copy しない）、範囲を空にする。
+  - 作ったばかりの image は全部の行を写す。
+- 確認:
+  - `plan/ws213/tests/list-replay-host-test.sh` は PASS（shm.c の vkCmd の数は 4 のまま）。
+  - desktop の config で VF2 の `bin/wayland` は rc 0、warning 0。
+  - 板（KWL PERF の比較）は未実施。

@@ -350,6 +350,37 @@ void
 kwl_host_image_written(
 	struct kwl_import *import)
 {
+	/* Every row. */
+	kwl_host_image_written_rows(import, 0U, import->height);
+}
+
+/*
+ * Marks rows first to last (excluded) of a host image's staging as
+ * written, so the next frame copies them into the sampled image.
+ */
+void
+kwl_host_image_written_rows(
+	struct kwl_import *import,
+	uint32_t first,
+	uint32_t last)
+{
+	/* The rows within the image; none is nothing to copy. */
+	if (last > import->height)
+		last = import->height;
+	if (first >= last)
+		return;
+
+	/* Joined with the rows written before and not yet taken. */
+	if (import->dirty_first >= import->dirty_last) {
+		import->dirty_first = first;
+		import->dirty_last = last;
+	} else {
+		if (first < import->dirty_first)
+			import->dirty_first = first;
+		if (last > import->dirty_last)
+			import->dirty_last = last;
+	}
+
 	/* The next kwl_host_images_take gives this image to its frame and clears the mark; copies elsewhere see a new version. */
 	import->written = 1U;
 	import->version++;
@@ -373,9 +404,20 @@ kwl_host_images_take(
 		if (!import->written)
 			continue;
 
-		/* The frame copies it; a later write marks it for the next frame. */
+		/* The frame copies its written rows (joined with any taken and not yet copied); a later write marks it for the next frame. */
 		kwl_list_add_copy(list, import);
 		import->written = 0U;
+		if (import->copy_first >= import->copy_last) {
+			import->copy_first = import->dirty_first;
+			import->copy_last = import->dirty_last;
+		} else {
+			if (import->dirty_first < import->copy_first)
+				import->copy_first = import->dirty_first;
+			if (import->dirty_last > import->copy_last)
+				import->copy_last = import->dirty_last;
+		}
+		import->dirty_first = 0U;
+		import->dirty_last = 0U;
 	}
 }
 
@@ -676,7 +718,7 @@ surface_upload(
 	target = image->map;
 	for (y = first; y < last; y++)
 		memcpy(target + (size_t)y * image->row_pitch, source + (size_t)y * shm->stride, (size_t)shm->width * 4U);
-	kwl_host_image_written(image);
+	kwl_host_image_written_rows(image, (uint32_t)first, (uint32_t)last);
 	server->perf.shm_copies++;
 	server->perf.shm_copy_cycles += kwl_cycles() - mark;
 	surface->committed_damaged = 0;
@@ -854,9 +896,13 @@ image_create(
 	/* Its own number, which tells it apart from an earlier image at the same address (ws213-p003). */
 	import->generation = kwl_compose_generation(compose);
 
-	/* The first frame copies whatever the creator writes before it. */
+	/* The first frame copies whatever the creator writes before it: every row. */
 	import->written = 1U;
 	import->version = 1U;
+	import->dirty_first = 0U;
+	import->dirty_last = height;
+	import->copy_first = 0U;
+	import->copy_last = 0U;
 	import->host_next = compose->host_images;
 	compose->host_images = import;
 
@@ -1086,15 +1132,21 @@ image_copy_record(
 	barriers[1].image = import->image;
 	vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_HOST_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0U, 0U, NULL, 0U, NULL, 2U, barriers);
 
-	/* The whole image, staging to sampled. */
-	memset(&copy, 0, sizeof(copy));
-	copy.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	copy.srcSubresource.layerCount = 1U;
-	copy.dstSubresource = copy.srcSubresource;
-	copy.extent.width = import->width;
-	copy.extent.height = import->height;
-	copy.extent.depth = 1U;
-	vkCmdCopyImage(command, import->staging, VK_IMAGE_LAYOUT_GENERAL, import->image, VK_IMAGE_LAYOUT_GENERAL, 1U, &copy);
+	/* The rows taken, staging to sampled (the whole image when every row was written, q1534). */
+	if (import->copy_first < import->copy_last) {
+		memset(&copy, 0, sizeof(copy));
+		copy.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		copy.srcSubresource.layerCount = 1U;
+		copy.dstSubresource = copy.srcSubresource;
+		copy.srcOffset.y = (int32_t)import->copy_first;
+		copy.dstOffset.y = (int32_t)import->copy_first;
+		copy.extent.width = import->width;
+		copy.extent.height = import->copy_last - import->copy_first;
+		copy.extent.depth = 1U;
+		vkCmdCopyImage(command, import->staging, VK_IMAGE_LAYOUT_GENERAL, import->image, VK_IMAGE_LAYOUT_GENERAL, 1U, &copy);
+	}
+	import->copy_first = 0U;
+	import->copy_last = 0U;
 
 	/* The copy reaches the fragment shader of this frame and the next ones. */
 	barriers[1].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
