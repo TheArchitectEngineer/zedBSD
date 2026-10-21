@@ -381,3 +381,5 @@ Keiland が使い、vkmatrix 15/15・gpu-selftest 13/13 で確かめていない
   - 板（KWL PERF の比較）は未実施。
 - d35（ea331254e、非同期の submit と DM overlap を on）: 同時の試験 PASS・HWR 0、vkmatrix 29/29、vkcoherency PASS、vkreset PASS（5 s、`no progress for 5000 ms`）、gpu-selftest 13/13 → on のまま。
 - d36（41273725f、P2 の奇数幅の copy・Keiland の shm の damage の copy）: timing の submit 2.5 ms（非同期が効く）、job の待ち 76〜262 ms、KWL の rec submit 78〜300 ms/frame → GPU の実行時間が上限。P1 q1535 で原因を測る。
+- d37（3af4571d6、P1 の perf の case、SLC bypass は今まで通り）: 板の vkmatrix は perf の時間の行を出さない（host では出る、原因未確認、a6f76d321 で整数の表示にしたが出ず）。kernel の timing で代わりに: 1080p の clear だけの job で約 20〜40 ms、LOAD 約 21 ms、平らな quad 約 20 ms、texture の quad 約 42 ms（desktop の job も混ざる粗い値）→ 描画の中身より土台（tile・ISP・PBE・memory）が遅い。
+- d38（8e7b784f8、P1 1db3be24d で device-local の memory を SLC に通す）: 試験の途中で板が log 無しで再起動（2 回、kernel.log.old が途中で切れる）→ Q1 が POWERVR_DEVICE_MEMORY_CACHED を 0 に戻した（main）。P1 に原因（SLC の flush の command か解放の順）を調べるよう依頼。
