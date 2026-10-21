@@ -529,18 +529,19 @@ list_make(
 	int error;
 
 	/*
-	 * The pages the parameter manager takes from; the core reaches them
-	 * only through it, by their physical addresses, and nothing reads
-	 * what they held before, so a freed buffer of the pool serves as it
-	 * is, and a new one is not cleared (clearing a session's 16 MB global
-	 * list took about 21 ms of its first render, on top of the write-back
-	 * of the cached lines its view needs).
+	 * The pages the parameter manager takes from, zeroed (with pages of
+	 * the pool used as they were, or not cleared, the core locked up on
+	 * the board).  A global list takes the spare made ahead by
+	 * its own thread; a local list, or a global one with none ready, is
+	 * made here.
 	 */
 	list->owner = owner;
 	list->page_count = pages;
-	error = powervr_buffer_reuse(render, (uint64_t)pages * POWERVR_PM_PAGE_BYTES, &list->pages);
+	error = ENOENT;
+	if (owner == NULL && (uint64_t)pages * POWERVR_PM_PAGE_BYTES == POWERVR_SPARE_BYTES)
+		error = powervr_spare_take(render, &list->pages);
 	if (error != 0)
-		error = powervr_buffer_create_uncleared(render, (uint64_t)pages * POWERVR_PM_PAGE_BYTES, &list->pages);
+		error = powervr_buffer_create(render, (uint64_t)pages * POWERVR_PM_PAGE_BYTES, &list->pages);
 	if (error != 0)
 		return error;
 
