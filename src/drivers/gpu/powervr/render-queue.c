@@ -2379,6 +2379,7 @@ handle_notice(
 	const struct powervr_object *buffer,
 	uint32_t offset)
 {
+	uint64_t now_catalogues[POWERVR_TARGET_CATALOGUES];
 	struct notice_outcome *outcome;
 	struct powervr_render *render;
 	struct powervr_session *session;
@@ -2472,6 +2473,14 @@ handle_notice(
 					  (unsigned)powervr_target_data_address(session->noted_target, 1),
 					  (unsigned long long)powervr_gpu_mmu_root(&session->mmu));
 				powervr_target_dump(session->noted_target);
+				powervr_target_catalogues(session->noted_target, 0, now_catalogues);
+				kern_logf("powervr: catalogues before the kick: vce %llx %llx te %llx %llx alist %llx; now: vce %llx %llx te %llx %llx alist %llx\n",
+					  (unsigned long long)session->noted_catalogues[0], (unsigned long long)session->noted_catalogues[1],
+					  (unsigned long long)session->noted_catalogues[4], (unsigned long long)session->noted_catalogues[5],
+					  (unsigned long long)session->noted_catalogues[8],
+					  (unsigned long long)now_catalogues[0], (unsigned long long)now_catalogues[1],
+					  (unsigned long long)now_catalogues[4], (unsigned long long)now_catalogues[5],
+					  (unsigned long long)now_catalogues[8]);
 			}
 			if (powervr_hwr_dump != NULL)
 				powervr_hwr_dump(render->core, kind == POWERVR_CONTEXT_RENDER ? &session->render_context->record :
