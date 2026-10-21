@@ -142,6 +142,7 @@ powervr_fragment_command(
 	const struct powervr_fragment_setup *setup,
 	uint8_t *command)
 {
+	uint32_t isp_control;
 	uint32_t flags;
 	unsigned index;
 
@@ -160,7 +161,22 @@ powervr_fragment_command(
 	put32(command, POWERVR_FRAGMENT_BACKGROUND_DEPTH, setup->has_depth ? setup->background_depth : BACKGROUND_DEPTH_ONE);
 	put32(command, POWERVR_FRAGMENT_BACKGROUND_VALUES, BACKGROUND_TAG_AND_MASK);
 	put32(command, POWERVR_FRAGMENT_ANTIALIAS, 0);
-	put32(command, POWERVR_FRAGMENT_ISP_CONTROL, powervr_fragment_isp_control(setup->tiles_x, setup->tiles_y));
+	isp_control = powervr_fragment_isp_control(setup->tiles_x, setup->tiles_y);
+
+	/*
+	 * A render that clears nothing leaves the tiles no primitive reaches
+	 * as they are in memory, as Mesa runs the background on empty tiles
+	 * only for a clear (ws270-p007): a small render area's job then
+	 * processes its own tiles, not the whole target's.
+	 *
+	 * Procedure referenced:
+	 * Mesa 26.2.5 src/imagination/vulkan/pvr_arch_cmd_buffer.c
+	 * (process_empty_tiles only when a colour attachment's load op is
+	 * VK_ATTACHMENT_LOAD_OP_CLEAR, or a clear is not by the index list).
+	 */
+	if (setup->skip_empty_tiles)
+		isp_control &= ~ISP_PROCESS_EMPTY_TILES;
+	put32(command, POWERVR_FRAGMENT_ISP_CONTROL, isp_control);
 
 	/*
 	 * The scissor and depth bias tables, each register keeping the

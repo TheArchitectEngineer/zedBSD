@@ -196,6 +196,7 @@ struct job_memory {
 
 static int job_check(const struct powervr_render_job *job);
 static void load_draw_free(struct powervr_render_job *work, struct load_draw *load);
+static bool job_skips_empty_tiles(const struct powervr_render_job *job);
 static uint32_t float_bits(uint32_t value);
 static int load_graphics(struct powervr_render *render, uint32_t vk_format, struct powervr_vk_graphics **result);
 static int load_graphics_compile(struct powervr_vk_graphics *graphics);
@@ -428,6 +429,7 @@ powervr_render_job_run(
 	layout = powervr_target_layout_of(target);
 	memory->fragment_setup.tiles_x = layout->tiles_x;
 	memory->fragment_setup.tiles_y = layout->tiles_y;
+	memory->fragment_setup.skip_empty_tiles = job_skips_empty_tiles(job);
 	memory->fragment_setup.border_table = powervr_session_border_table(session);
 	memory->geometry_setup.border_table = memory->fragment_setup.border_table;
 	powervr_fragment_command(&memory->fragment_setup, memory->fragment);
@@ -1681,4 +1683,33 @@ put_bytes(
 	/* One byte at a time. */
 	for (index = 0; index < count; index++)
 		buffer->view[offset + index] = bytes[index];
+}
+
+/*
+ * Tells whether a job's fragment may leave the tiles no primitive reaches
+ * untouched (ws270-p007): no colour target is cleared there and there is
+ * no depth target, so such a tile's memory is already what the render
+ * leaves in it (a loaded target's pixels; a target whose old contents do
+ * not matter).  A job loading through its load draw has that draw over
+ * its render area only (its scissor's region clip), so the tiles outside
+ * the area stay empty and are not processed at all.
+ */
+static bool
+job_skips_empty_tiles(
+	const struct powervr_render_job *job)
+{
+	uint32_t index;
+
+	/* A depth target's tiles keep the depth processing they had. */
+	if (job->depth.present)
+		return false;
+
+	/* A cleared colour target needs its background in every tile. */
+	for (index = 0; index < job->color_count; index++) {
+		if (job->colors[index].load_op == LOAD_OP_CLEAR)
+			return false;
+	}
+
+	/* Succeeded: nothing is cleared, the empty tiles are left as they are. */
+	return true;
 }
