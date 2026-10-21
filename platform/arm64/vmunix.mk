@@ -48,6 +48,7 @@ ARM64_BOARD_KERNEL_SOURCES_rpi5 := \
 	src/drivers/platform/rpi4/rpi4-console.c \
 	src/drivers/platform/rpi5/rp1.c \
 	src/drivers/platform/rpi5/rp1-gpio.c \
+	src/drivers/platform/rpi5/rp1-irq.c \
 	src/drivers/platform/rpi5/rp1-usb.c \
 	src/kern/dcache.c \
 	src/kern/uncached.c \
@@ -328,16 +329,17 @@ rpi5-fdt-host-test: $(BUILD)/tests/rpi5-fdt-host-test $(RPI5_BOOT_FIRMWARE_DTB) 
 
 CHECK_RUN_TARGETS += rpi5-fdt-host-test
 
-# RP1's module (rp1.c, rp1-gpio.c) on the Pi 5's trees, against a root
-# complex kept in host memory.
+# RP1's module (rp1.c, rp1-gpio.c, rp1-irq.c) on the Pi 5's trees, against
+# a root complex kept in host memory.
 $(BUILD)/tests/rpi5-rp1-host-test: tests/rpi5-rp1-host-test.c \
 	src/drivers/platform/rpi5/rp1.c src/drivers/platform/rpi5/rp1-gpio.c \
+	src/drivers/platform/rpi5/rp1-irq.c src/drivers/platform/rpi5/rp1-irq.h \
 	src/drivers/platform/rpi5/rp1.h src/drivers/platform/rpi5/rp1-gpio.h \
 	src/drivers/generic/fdt.c
 	@mkdir -p $(dir $@)
 	$(HOSTCC) -std=c11 -O2 -Wall -Wextra -Werror -Iinclude -Isrc \
  src/drivers/platform/rpi5/rp1.c src/drivers/platform/rpi5/rp1-gpio.c \
- src/drivers/generic/fdt.c $< -o $@
+ src/drivers/platform/rpi5/rp1-irq.c src/drivers/generic/fdt.c $< -o $@
 
 .PHONY: rpi5-rp1-host-test
 rpi5-rp1-host-test: $(BUILD)/tests/rpi5-rp1-host-test $(RPI5_BOOT_FIRMWARE_DTB) $(RPI5_BOOT_FIRMWARE_D0_DTB)

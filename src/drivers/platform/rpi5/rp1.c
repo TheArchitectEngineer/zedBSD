@@ -261,6 +261,21 @@ drv_rp1_node(
 }
 
 /*
+ * Reports the root complex above RP1.
+ */
+uint32_t
+drv_rp1_root_complex_node(
+	void)
+{
+	/* No node before RP1 was found. */
+	if (!rp1.valid)
+		return DRV_FDT_NO_NODE;
+
+	/* Succeeded: the PCIe x4 root complex. */
+	return rp1.pcie_node;
+}
+
+/*
  * Finds the next child of the rp1 node with a compatible string.
  */
 int

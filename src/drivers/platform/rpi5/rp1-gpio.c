@@ -132,8 +132,10 @@ drv_rp1_gpio_init(
 		}
 	}
 
-	/* Succeeded: the pins can be set. */
+	/* Prepares the lock of the control and pad registers. */
 	spin_init(&rp1_gpio.lock, LOCK_RANK_DEVICE, "RP1 GPIO");
+
+	/* Succeeded: the pins can be set. */
 	rp1_gpio.mapped = 1;
 	return 0;
 }
