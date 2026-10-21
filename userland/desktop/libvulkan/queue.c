@@ -284,8 +284,11 @@ queue_enqueue(
 	uint64_t capacity_sequence;
 	uint32_t request;
 	uint32_t waits;
+	uint64_t started;
+	uint64_t mark;
 
 	/* Counts temporary rollback storage before any native work or payload transition. */
+	started = vulkan_timing_start();
 	device = queue->device;
 	capacity = 0;
 	for (request = 0; request < count; request++) {
@@ -322,15 +325,20 @@ queue_enqueue(
 
 	/* The host must finish borrowing a public completion proof before its next submission. */
 	completion = vulkan_sync_object((uint64_t)(uintptr_t)fence);
+	mark = vulkan_timing_start();
 	vulkan_sync_quiesce(completion);
+	vulkan_timing_add(VULKAN_TIMING_QUIESCE, mark, 0);
 	private_fence = NULL;
 	accepted = VK_FALSE;
 	prepared = VK_FALSE;
 	status = VK_SUCCESS;
 
 	/* WSI callers already own queue serialization and receive it back on every return. */
-	if (locked == VK_FALSE)
+	if (locked == VK_FALSE) {
+		mark = vulkan_timing_start();
 		pthread_mutex_lock(&queue->mutex);
+		vulkan_timing_add(VULKAN_TIMING_QUEUE_LOCK, mark, 0);
+	}
 
 	/* A preparing private slot stays exclusive even while capacity waiting drops the queue lock. */
 	if (fence == VK_NULL_HANDLE) {
@@ -360,7 +368,9 @@ queue_enqueue(
 		/* Device and context locks were released by the unaccepted attempt before this queue unlock. */
 		pthread_mutex_unlock(&queue->mutex);
 
+		mark = vulkan_timing_start();
 		status = vulkan_sync_capacity_wait(queue, capacity_sequence);
+		vulkan_timing_add(VULKAN_TIMING_CAPACITY, mark, 0);
 
 		pthread_mutex_lock(&queue->mutex);
 	}
@@ -381,6 +391,8 @@ queue_enqueue(
 
 	/* Temporary payload observations never outlive this synchronous API call. */
 	vulkan_free(&device->object.allocator, transaction.waits);
+	vulkan_timing_add(VULKAN_TIMING_SUBMIT, started, 0);
+	vulkan_timing_report();
 	if (status != VK_SUCCESS)
 		return status;
 
@@ -410,6 +422,7 @@ queue_attempt(
 	VkResult status;
 	size_t index;
 	uint32_t request;
+	uint64_t mark;
 
 	/* Each attempt owns fresh wire and reply storage, with no reserved K job initially. */
 	device = queue->device;
@@ -419,7 +432,9 @@ queue_attempt(
 	vulkan_writer_init_for_object(&writer, &queue->object);
 
 	/* Rechecks shared payload state only while both queue and logical device are serialized. */
+	mark = vulkan_timing_start();
 	pthread_mutex_lock(&device->mutex);
+	vulkan_timing_add(VULKAN_TIMING_DEVICE_LOCK, mark, 0);
 
 	/* Both native entrypoints use the same count and binary synchronization layout. */
 	if (sparse != VK_FALSE) {
@@ -457,7 +472,9 @@ queue_attempt(
 		writer.error = status;
 
 	/* The decoded native result alone decides whether this transaction consumed its waits. */
+	mark = vulkan_timing_start();
 	status = vulkan_command_execute(device->object.context, &writer, 8, &reader, VK_TRUE);
+	vulkan_timing_add(VULKAN_TIMING_EXECUTE, mark, 0);
 	if (status == VK_SUCCESS) {
 		*accepted = VK_TRUE;
 
@@ -477,7 +494,9 @@ queue_attempt(
 	}
 
 	/* Committed work retains K supervision; definite native refusal releases only its unused reservation. */
+	mark = vulkan_timing_start();
 	status = vulkan_sync_job_finish(queue, completion, reservation, status, *accepted);
+	vulkan_timing_add(VULKAN_TIMING_FINISH, mark, 0);
 	vulkan_sync_device_error(device, status);
 
 	pthread_mutex_unlock(&device->mutex);

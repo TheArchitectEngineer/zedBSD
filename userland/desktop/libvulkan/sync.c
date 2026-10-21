@@ -22,6 +22,24 @@
 
 #define VULKAN_SYNC_POLL_NS UINT64_C(1000000)
 
+/* How often the submission timing says its sums, in nanoseconds, and the environment variable that turns it on. */
+#define VULKAN_TIMING_REPORT_NS UINT64_C(5000000000)
+#define VULKAN_TIMING_VARIABLE "VULKAN_ZEDBSD_SUBMIT_TIMING"
+
+/*
+ * The submission timing's state: whether it is on (0 not yet read, 1 off,
+ * 2 on), each part's summed nanoseconds, count and largest, the opcode
+ * of the longest context hold, and when the sums were last said.  Only a
+ * diagnostic: the sums are added without a lock, and a race may lose an
+ * addition, which the averages tolerate.
+ */
+static int timing_state;
+static uint64_t timing_sums[VULKAN_TIMING_PARTS];
+static uint64_t timing_counts[VULKAN_TIMING_PARTS];
+static uint64_t timing_most[VULKAN_TIMING_PARTS];
+static uint32_t timing_hold_opcode;
+static uint64_t timing_reported;
+
 static VkResult sync_create(struct VkDevice_T *device, enum vulkan_object_kind kind, uint32_t opcode, uint32_t destroy_opcode, uint32_t structure, VkFlags flags, const VkAllocationCallbacks *allocator, struct vulkan_sync **result);
 static void sync_destroy(struct VkDevice_T *device, struct vulkan_sync *sync, uint32_t opcode, const VkAllocationCallbacks *allocator);
 static VkResult sync_event_operation(VkDevice device, VkEvent event, uint32_t opcode);
@@ -577,6 +595,7 @@ vulkan_sync_job_reserve(
 	int descriptor;
 	int error;
 	int saved_error;
+	uint64_t mark;
 
 	/* A failed reservation cannot leave a caller with partially published job storage. */
 	*reserved = NULL;
@@ -590,9 +609,12 @@ vulkan_sync_job_reserve(
 		prepare_native = VK_TRUE;
 
 	/* Shared generation validation runs on every attempt while native reset runs only once. */
+	mark = vulkan_timing_start();
 	status = vulkan_external_fence_prepare_locked(queue->device, sync, &descriptor, &generation, prepare_native);
+	vulkan_timing_add(VULKAN_TIMING_PREPARE, mark, 0);
 	if (status != VK_SUCCESS)
 		return status;
+	mark = vulkan_timing_start();
 
 	/* Later capacity retries revalidate the shared generation without repeating native preparation. */
 	*prepared = VK_TRUE;
@@ -664,6 +686,9 @@ vulkan_sync_job_reserve(
 	*reserved = notification;
 
 	pthread_mutex_unlock(&context->mutex);
+
+	/* The reservation's time, of a successful one. */
+	vulkan_timing_add(VULKAN_TIMING_RESERVE, mark, 0);
 
 	/* Succeeded: producer supervision remains active even if userspace now stops. */
 	return VK_SUCCESS;
@@ -1087,6 +1112,115 @@ vulkan_sync_job_status(
 
 	/* Succeeded: the strict host marker has ended every access to this native fence. */
 	return VK_SUCCESS;
+}
+
+/*
+ * Reads the clock for the start of a timed part, when the submission
+ * timing is on.
+ */
+uint64_t
+vulkan_timing_start(
+	void)
+{
+	struct timespec sample;
+	const char *variable;
+	int state;
+
+	/* Whether the timing is on, read from the environment once. */
+	state = __atomic_load_n(&timing_state, __ATOMIC_ACQUIRE);
+	if (state == 0) {
+		variable = getenv(VULKAN_TIMING_VARIABLE);
+		state = 1;
+		if (variable != NULL && variable[0] != '\0' && strcmp(variable, "0") != 0)
+			state = 2;
+		__atomic_store_n(&timing_state, state, __ATOMIC_RELEASE);
+	}
+
+	/* Off: nothing is timed. */
+	if (state != 2)
+		return 0;
+
+	/* A clock that fails times nothing. */
+	if (clock_gettime(CLOCK_MONOTONIC, &sample) != 0)
+		return 0;
+
+	/* Succeeded: the time now, never 0. */
+	return (uint64_t)sample.tv_sec * UINT64_C(1000000000) + (uint64_t)sample.tv_nsec + 1U;
+}
+
+/*
+ * Adds the time since start to a part's sum, count and largest.
+ */
+void
+vulkan_timing_add(
+	enum vulkan_timing_part part,
+	uint64_t start,
+	uint32_t opcode)
+{
+	uint64_t now;
+	uint64_t spent;
+
+	/* A part started while the timing was off. */
+	if (start == 0)
+		return;
+
+	/* Its time. */
+	now = vulkan_timing_start();
+	if (now < start)
+		return;
+	spent = now - start;
+
+	/* The sums, and the largest with its transaction. */
+	timing_sums[part] += spent;
+	timing_counts[part]++;
+	if (spent > timing_most[part]) {
+		timing_most[part] = spent;
+		if (part == VULKAN_TIMING_CONTEXT_HOLD)
+			timing_hold_opcode = opcode;
+	}
+}
+
+/*
+ * Says the submission timing's sums to stderr every
+ * VULKAN_TIMING_REPORT_NS: each part's count, average and largest in
+ * microseconds, then clears them.
+ */
+void
+vulkan_timing_report(
+	void)
+{
+	static const char *const names[VULKAN_TIMING_PARTS] = {
+		"submit", "quiesce", "queue_lock", "device_lock", "prepare", "reserve", "execute", "finish",
+		"capacity", "context_wait", "context_hold",
+	};
+	uint64_t now;
+	unsigned part;
+
+	/* Off, or not yet time. */
+	now = vulkan_timing_start();
+	if (now == 0)
+		return;
+	if (timing_reported == 0)
+		timing_reported = now;
+	if (now - timing_reported < VULKAN_TIMING_REPORT_NS)
+		return;
+	timing_reported = now;
+
+	/* One line: each part that ran. */
+	fprintf(stderr, "VULKAN TIMING");
+	for (part = 0; part < VULKAN_TIMING_PARTS; part++) {
+		if (timing_counts[part] == 0)
+			continue;
+		fprintf(stderr, " %s=%llu/%llu/%llu", names[part],
+			(unsigned long long)timing_counts[part],
+			(unsigned long long)(timing_sums[part] / timing_counts[part] / 1000U),
+			(unsigned long long)(timing_most[part] / 1000U));
+		timing_sums[part] = 0;
+		timing_counts[part] = 0;
+		timing_most[part] = 0;
+	}
+	fprintf(stderr, " hold_opcode=%u (count/average us/largest us)\n", (unsigned)timing_hold_opcode);
+	timing_hold_opcode = 0;
 }
 
 /*

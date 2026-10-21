@@ -778,6 +778,36 @@ vulkan_video_profile_list_check(
 	struct VkPhysicalDevice_T *physical,
 	const VkVideoProfileListInfoKHR *list);
 
+/*
+ * The submission timing, a diagnostic that is off unless the environment
+ * names VULKAN_ZEDBSD_SUBMIT_TIMING: where vkQueueSubmit and the
+ * presentations' submissions spend their time, and how long transactions
+ * wait for and hold the context lock, said to stderr every five seconds.
+ */
+enum vulkan_timing_part {
+	VULKAN_TIMING_SUBMIT,
+	VULKAN_TIMING_QUIESCE,
+	VULKAN_TIMING_QUEUE_LOCK,
+	VULKAN_TIMING_DEVICE_LOCK,
+	VULKAN_TIMING_PREPARE,
+	VULKAN_TIMING_RESERVE,
+	VULKAN_TIMING_EXECUTE,
+	VULKAN_TIMING_FINISH,
+	VULKAN_TIMING_CAPACITY,
+	VULKAN_TIMING_CONTEXT_WAIT,
+	VULKAN_TIMING_CONTEXT_HOLD,
+	VULKAN_TIMING_PARTS
+};
+
+/* The clock now in nanoseconds when the timing is on, else 0 (a part started at 0 is not added). */
+uint64_t vulkan_timing_start(void);
+
+/* Adds the time since start to a part; opcode names the transaction of a context hold. */
+void vulkan_timing_add(enum vulkan_timing_part part, uint64_t start, uint32_t opcode);
+
+/* Says the sums when five seconds passed since the last report, and clears them. */
+void vulkan_timing_report(void);
+
 /* The caller owns queue->mutex across submission and presentation publication. */
 void vulkan_queue_finish(struct VkQueue_T *queue);
 VkResult vulkan_queue_submit_locked(struct VkQueue_T *queue, uint32_t count, const VkSubmitInfo *submits, VkFence fence);

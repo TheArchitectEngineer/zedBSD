@@ -358,6 +358,7 @@ submit(
 	uint64_t fence_id;
 	uint64_t started;
 	uint32_t result;
+	uint64_t reaped;
 	int reached;
 	int error;
 
@@ -386,7 +387,9 @@ submit(
 		return EINVAL;
 
 	/* The render jobs of earlier submissions that finished give their memory back. */
+	reaped = powervr_timing_now();
 	powervr_render_jobs_reap(session->owner->render, session->owner, 0);
+	powervr_timing_add(POWERVR_TIMING_REAP, reaped);
 
 	/* The executor's memory, made at the first submission. */
 	error = 0;
@@ -820,7 +823,9 @@ build_command_buffer(
 		jobs = kern_calloc(expected + 1U, sizeof(*jobs));
 		if (jobs == NULL)
 			return ENOMEM;
+		started = powervr_timing_now();
 		error = powervr_vk_render_jobs(command, jobs, expected + 1U, &job_count);
+		powervr_timing_add(POWERVR_TIMING_RENDER_JOBS, started);
 		if (error != 0) {
 			kern_free(jobs);
 			return error;
@@ -1442,6 +1447,7 @@ order_after(
 	unsigned kind)
 {
 	struct powervr_session *owner;
+	uint64_t started;
 	int error;
 
 	/* The same context: the firmware runs its kicks in order. */
@@ -1450,7 +1456,9 @@ order_after(
 		return 0;
 
 	/* The last work's point. */
+	started = powervr_timing_now();
 	error = powervr_session_point_wait(owner, owner->last_kind, owner->last_value, POWERVR_PROGRESS_MS);
+	powervr_timing_add(POWERVR_TIMING_ORDER_WAIT, started);
 	if (error != 0) {
 		kern_logf("powervr: vk: earlier work did not finish (%d); the session is abandoned\n", error);
 		build->session->abandoned = true;

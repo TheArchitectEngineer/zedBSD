@@ -342,11 +342,20 @@ machine_run_program(
 				 * with the colour there first (q1548; the forms of enum
 				 * powervr_usc_sum in their order, over to multiply).
 				 */
-				for (word = 0; word < 4; word++)
-					words[word] = read_register(run, operation->source[word], lane);
-				if (operation->variant == POWERVR_USC_SUM_OPAQUE) {
+				if (operation->variant == POWERVR_USC_SUM_OPAQUE_HALF || operation->variant == POWERVR_USC_SUM_OVER_HALF) {
+					/* The half forms: red and green, then blue and alpha, as half-float pairs in two registers. */
+					ir_run_unpack_half(read_register(run, operation->source[0], lane), words);
+					ir_run_unpack_half(read_register(run, operation->source[1], lane), words + 2);
+				} else {
+					for (word = 0; word < 4; word++)
+						words[word] = read_register(run, operation->source[word], lane);
+				}
+				if (operation->variant == POWERVR_USC_SUM_OPAQUE || operation->variant == POWERVR_USC_SUM_OPAQUE_HALF) {
 					write_register(run, operation->destination[0], lane, ir_run_pack(words));
-				} else if (operation->variant < POWERVR_USC_SUM_COUNT) {
+				} else if (operation->variant == POWERVR_USC_SUM_OVER_HALF) {
+					result = read_register(run, operation->destination[0], lane);
+					write_register(run, operation->destination[0], lane, ir_run_blend(POWERVR_USC_SUM_OVER - 1U, words, result));
+				} else if (operation->variant < POWERVR_USC_SUM_OPAQUE_HALF) {
 					result = read_register(run, operation->destination[0], lane);
 					write_register(run, operation->destination[0], lane, ir_run_blend(operation->variant - 1U, words, result));
 				} else {
@@ -367,6 +376,12 @@ machine_run_program(
 						return -1;
 					run->sample_words((unsigned)image, (unsigned)sampler, run->iterate_word(lane, operation->immediate, 0),
 							  run->iterate_word(lane, operation->immediate + 4U, 0), words);
+					if (operation->half) {
+						/* Half floats, two to a register. */
+						run->temps[operation->destination[0].index][lane] = ir_run_pack_half(words[0], words[1]);
+						run->temps[operation->destination[0].index + 1U][lane] = ir_run_pack_half(words[2], words[3]);
+						break;
+					}
 					for (word = 0; word < 4; word++)
 						run->temps[operation->destination[0].index + word][lane] = words[word];
 				}
