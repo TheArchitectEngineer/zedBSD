@@ -89,6 +89,14 @@ struct powervr_target {
 	struct powervr_free_list local;
 	uint64_t used;
 	unsigned cleaned;
+
+	/*
+	 * The half the next render takes; renders alternate between the two
+	 * (each with its own macrolist and region headers), as Mesa
+	 * alternates a data set's two render target datas, so a render never
+	 * reuses the parameter manager state its predecessor's 3D read.
+	 */
+	unsigned next_half;
 };
 
 /*
@@ -1200,6 +1208,21 @@ powervr_target_catalogues(
 		catalogues[index] = (uint64_t)powervr_object_get32(&target->record, base + places[index]) |
 		    (uint64_t)powervr_object_get32(&target->record, base + places[index] + 4U) << 32;
 	}
+}
+
+/* Takes the half of a target the next render uses, and makes the other half the one after it. */
+unsigned
+powervr_target_take_half(
+	struct powervr_target *target)
+{
+	unsigned half;
+
+	/* This render's half, the next render's the other. */
+	half = target->next_half;
+	target->next_half = half ^ 1U;
+
+	/* Succeeded: the half. */
+	return half;
 }
 
 /* Reports the firmware address of a target's render target data record. */
