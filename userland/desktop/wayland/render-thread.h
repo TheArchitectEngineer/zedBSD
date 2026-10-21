@@ -239,7 +239,8 @@ struct kwl_render_ops {
  * flight, and whether a job is being recorded, submitted and presented
  * (running); the message queue and whether the main thread was woken for it;
  * the held images (the thread's, written by the main thread only while
- * parked); the numbers of the last ready and the last completion posted
+ * parked) and whether the output's may be acquired ahead (a frame's
+ * acquire succeeded since the output was last forgotten); the numbers of the last ready and the last completion posted
  * (for kwl_render_status); and sequence, which counts every change the
  * thread waits for.
  * The thread's own: the operations and their context, where it is in the
@@ -268,6 +269,7 @@ struct kwl_render_thread {
 	unsigned main_woken;
 	unsigned dropped;
 	struct kwl_render_held held;
+	unsigned ahead;
 	uint64_t last_ready;
 	uint64_t last_completed;
 	struct kwl_render_ops ops;

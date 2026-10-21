@@ -28,6 +28,8 @@
 
 static void *render_main(void *argument);
 static enum kwl_render_step render_idle(struct kwl_render_thread *render);
+static enum kwl_render_step render_ahead(struct kwl_render_thread *render);
+static uint64_t render_now_us(void);
 static enum kwl_render_step render_answer(struct kwl_render_thread *render);
 static enum kwl_render_step render_reap(struct kwl_render_thread *render, uint64_t timeout_ns);
 static void render_post(struct kwl_render_thread *render, struct kwl_render_message *message);
@@ -443,8 +445,10 @@ kwl_render_forget(
 	/* The held images, the thread parked. */
 	pthread_mutex_lock(&render->lock);
 
-	if (output)
+	if (output) {
 		render->held.output = 0U;
+		render->ahead = 0U;
+	}
 	for (slot = 0; slot < KWL_RENDER_HEADS; slot++) {
 		if ((heads_mask & (1U << slot)) != 0U)
 			render->held.heads[slot] = 0U;
@@ -582,6 +586,7 @@ render_idle(
 	unsigned index;
 	unsigned slot;
 	unsigned held;
+	unsigned ahead;
 	VkResult result;
 	VkResult head_results[KWL_RENDER_HEADS];
 
@@ -590,10 +595,16 @@ render_idle(
 
 	want = render->want;
 	held = render->held.output;
+	ahead = render->ahead;
 
 	pthread_mutex_unlock(&render->lock);
-	if (want.kind == KWL_RENDER_NONE)
+
+	/* Nothing wanted: the output's next image is taken ahead when it may be, with nothing in flight. */
+	if (want.kind == KWL_RENDER_NONE) {
+		if (ahead && !held && render->flight_count == 0U)
+			return render_ahead(render);
 		return KWL_RENDER_STEP_BLOCKED;
+	}
 
 	/* The ready's message, made first: without memory the step is tried again. */
 	message = calloc(1, sizeof(*message));
@@ -626,6 +637,7 @@ render_idle(
 
 			if (render->want.number == want.number)
 				render->want.kind = KWL_RENDER_NONE;
+			render->ahead = 0U;
 
 			pthread_mutex_unlock(&render->lock);
 
@@ -643,8 +655,12 @@ render_idle(
 
 		render->held.output = 1U;
 		render->held.output_image = image;
+		render->ahead = 1U;
 
 		pthread_mutex_unlock(&render->lock);
+	} else if (want.kind == KWL_RENDER_FRAME) {
+		/* An image held from before (taken ahead, or kept by a cancel) is ready now. */
+		acquired_us = render_now_us();
 	}
 
 	/* Each wanted head not held, without waiting; what came of it is told with the ready. */
@@ -876,6 +892,58 @@ render_post(
 	/* The main thread's poll returns. */
 	if (wake)
 		render_wake(render->wake_main);
+}
+
+/*
+ * Acquires the output's next image while nothing is wanted, without
+ * waiting, so that the next frame's ready goes out at once instead of
+ * after the acquire (the time it takes is the display's round trip).
+ * Taken only when the output may be (render_idle), it is held as an image
+ * kept by a cancel is; a failure other than none being free stops the
+ * taking ahead until a frame's acquire succeeds again.
+ */
+static enum kwl_render_step
+render_ahead(
+	struct kwl_render_thread *render)
+{
+	uint64_t cycles;
+	uint64_t at_us;
+	uint32_t image;
+	VkResult result;
+
+	/* The next image if one is free now. */
+	result = render->ops.acquire_output(render->context, 0U, &image, &cycles, &at_us);
+
+	/* Held, or not taken. */
+	pthread_mutex_lock(&render->lock);
+
+	if (result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR) {
+		render->held.output = 1U;
+		render->held.output_image = image;
+	} else if (result != VK_TIMEOUT && result != VK_NOT_READY) {
+		render->ahead = 0U;
+	}
+
+	pthread_mutex_unlock(&render->lock);
+
+	/* Held: the next step finds the want; none free: the next change is waited for. */
+	if (result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR)
+		return KWL_RENDER_STEP_WORKED;
+	return KWL_RENDER_STEP_BLOCKED;
+}
+
+/* The monotonic clock in microseconds (kwl_microseconds' clock), 0 when it fails. */
+static uint64_t
+render_now_us(void)
+{
+	struct timespec now;
+
+	/* The clock. */
+	if (clock_gettime(CLOCK_MONOTONIC, &now) != 0)
+		return 0U;
+
+	/* Succeeded: microseconds. */
+	return (uint64_t)now.tv_sec * 1000000U + (uint64_t)now.tv_nsec / 1000U;
 }
 
 /* Gives the deadline wait_ms from now on the monotonic clock. */
