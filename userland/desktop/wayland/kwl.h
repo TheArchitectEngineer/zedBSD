@@ -125,6 +125,15 @@
 #define KWL_SECTIONS		4U
 
 /*
+ * The kinds of draw a frame's log counts apart (KWL MODES, ws270-p007):
+ * the glass look's modes (glass.h's MODE_*, the dark glass after them)
+ * and the windows' own quads.
+ */
+#define KWL_COUNT_DARK_GLASS	7U
+#define KWL_COUNT_QUAD		8U
+#define KWL_COUNT_KINDS		9U
+
+/*
  * A frame's draws (--log-frames, ws211-p002): the glass look's shapes and
  * the windows' quads, those in each section, and how often the pipeline and
  * the descriptor set differed from the draw before (what binding only on a
@@ -151,6 +160,9 @@ struct kwl_draw_counts {
 	 */
 	uint64_t opaque_pixels;
 	uint64_t blended_pixels;
+	/* The draws and their pixels inside the pass's area by kind (KWL MODES, ws270-p007). */
+	uint32_t kind_draws[KWL_COUNT_KINDS];
+	uint64_t kind_pixels[KWL_COUNT_KINDS];
 };
 
 /*

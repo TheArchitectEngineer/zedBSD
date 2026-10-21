@@ -320,6 +320,7 @@ static const unsigned glass_tile_pixels[GLASS_TILE_SIZES] = { 20U, 26U, 48U, 72U
 static int glass_shape_split(const struct kwl_server *server, const float *constants, const float *quad, const float *box, float radius, VkRect2D *pieces, unsigned *count);
 static void glass_split_rect(float x, float y, float width, float height, VkRect2D *rect);
 static void glass_shape_draw_split(struct kwl_server *server, struct kwl_list *command, const float *constants, VkDescriptorSet set, VkPipeline pipeline, const VkRect2D *pieces, unsigned count);
+static unsigned glass_count_kind_of(const float *constants);
 static int wallpaper_create(struct kwl_server *server, struct kwl_glass *glass, uint32_t width, uint32_t height);
 static int glass_size_make(struct kwl_server *server, uint32_t width, uint32_t height, struct kwl_glass_size *size);
 static int wallpaper_fill(struct kwl_glass *glass, const char *path, uint32_t width, uint32_t height);
@@ -2065,7 +2066,9 @@ glass_shape_draw(
 	VkDescriptorSet set;
 	VkPipeline pipeline;
 	VkRect2D pieces[1U + KWL_CUT_PIECES];
+	uint64_t pixels;
 	unsigned count;
+	unsigned kind;
 	int joined;
 	int visible;
 	int split;
@@ -2216,7 +2219,9 @@ glass_shape_draw(
 
 	/* The chosen pipeline keeps the same constants, image and triangle pair. */
 	kwl_compose_count_draw(server, pipeline, set, 1U);
-	kwl_compose_count_pixels(server, quad[0], quad[1], quad[2], quad[3], 1);
+	pixels = kwl_compose_count_pixels(server, quad[0], quad[1], quad[2], quad[3], 1);
+	kind = glass_count_kind_of(constants);
+	kwl_compose_count_kind(server, kind, pixels);
 	kwl_compose_bind(server, command, pipeline, compose->panel_layout, set);
 	kwl_list_push_constants(command, compose->panel_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0U, sizeof(constants), constants);
 	kwl_compose_clip_draw(server, command, quad[0], quad[1], quad[2], quad[3], KWL_QUAD_VERTICES);
@@ -2340,13 +2345,17 @@ glass_shape_draw_split(
 {
 	struct kwl_compose *compose;
 	VkPipeline opaque;
+	uint64_t pixels;
 	unsigned index;
+	unsigned kind;
 
-	/* The opaque inside. */
+	/* The opaque inside, counted by its shape's kind (KWL MODES). */
 	compose = server->compose;
+	kind = glass_count_kind_of(constants);
 	opaque = compose->panel_opaque_pipelines[constants[17] == (float)MODE_IMAGE ? 0 : 1];
 	kwl_compose_count_draw(server, opaque, set, 1U);
-	kwl_compose_count_pixels(server, (float)pieces[0].offset.x, (float)pieces[0].offset.y, (float)pieces[0].extent.width, (float)pieces[0].extent.height, 0);
+	pixels = kwl_compose_count_pixels(server, (float)pieces[0].offset.x, (float)pieces[0].offset.y, (float)pieces[0].extent.width, (float)pieces[0].extent.height, 0);
+	kwl_compose_count_kind(server, kind, pixels);
 	kwl_compose_bind(server, command, opaque, compose->panel_layout, set);
 	kwl_list_push_constants(command, compose->panel_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0U, KWL_PANEL_CONSTANTS * sizeof(float), constants);
 	kwl_compose_clip_draw_rect(server, command, &pieces[0], KWL_QUAD_VERTICES);
@@ -2355,7 +2364,8 @@ glass_shape_draw_split(
 	kwl_compose_bind(server, command, pipeline, compose->panel_layout, set);
 	for (index = 1U; index < count; index++) {
 		kwl_compose_count_draw(server, pipeline, set, 1U);
-		kwl_compose_count_pixels(server, (float)pieces[index].offset.x, (float)pieces[index].offset.y, (float)pieces[index].extent.width, (float)pieces[index].extent.height, 1);
+		pixels = kwl_compose_count_pixels(server, (float)pieces[index].offset.x, (float)pieces[index].offset.y, (float)pieces[index].extent.width, (float)pieces[index].extent.height, 1);
+		kwl_compose_count_kind(server, kind, pixels);
 		kwl_compose_clip_draw_rect(server, command, &pieces[index], KWL_QUAD_VERTICES);
 	}
 	kwl_compose_count_commands(server, count, count);
@@ -4436,4 +4446,24 @@ glass_dark_color(
 		if (dark[index] > 1.0f)
 			dark[index] = 1.0f;
 	}
+}
+
+/* Gives the kind a shape's draw is counted as (KWL MODES): its mode, the dark glass apart. */
+static unsigned
+glass_count_kind_of(
+	const float *constants)
+{
+	float mode;
+
+	/* The dark glass is mode -1. */
+	mode = constants[17];
+	if (mode < 0.0f)
+		return KWL_COUNT_DARK_GLASS;
+
+	/* The other modes are whole numbers from 0 to 6. */
+	if (mode > 6.5f)
+		return KWL_COUNT_KINDS;
+
+	/* Succeeded: the mode itself. */
+	return (unsigned)(mode + 0.5f);
 }
