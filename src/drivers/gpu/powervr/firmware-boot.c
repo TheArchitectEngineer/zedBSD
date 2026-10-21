@@ -225,6 +225,20 @@ static void watch_thread(void *argument);
  * job and on again for the next); 0 leaves their power to the firmware.
  * With the PMU event unmasked the host's power up completes (2026-10-20).
  */
+/*
+ * Whether the firmware processor caches its own code and data sections
+ * (q1541).  Both were uncached, as mainline Linux maps them, and the
+ * firmware's work around each job (about 1 ms on the board) is far more
+ * than the core's; the host writes them only while the processor is held
+ * in reset (the load and the restart), whose reset empties its caches.
+ */
+#ifndef POWERVR_FIRMWARE_CODE_CACHED
+#define POWERVR_FIRMWARE_CODE_CACHED	0
+#endif
+#ifndef POWERVR_FIRMWARE_DATA_CACHED
+#define POWERVR_FIRMWARE_DATA_CACHED	0
+#endif
+
 #ifndef DUST_POWER_BY_HOST
 #define DUST_POWER_BY_HOST		0
 #endif
@@ -616,6 +630,7 @@ static int
 make_program(
 	struct powervr_core *core)
 {
+	enum powervr_mips_caching caching;
 	struct powervr_firmware *firmware;
 	const struct powervr_fw_section *private_data;
 	const struct powervr_fw_section *boot_code;
@@ -642,13 +657,19 @@ make_program(
 	/* The data's place is its private section's base within the heap. */
 	data_offset = private_data->base & (POWERVR_HEAP_BYTES - 1U);
 
-	/* The code goes first, at the bottom of the heap. */
-	error = powervr_object_create(&firmware->heap, firmware->image.code_size, 0, POWERVR_MIPS_UNCACHED, &firmware->code);
+	/* The code goes first, at the bottom of the heap, cached by the processor when chosen (q1541). */
+	caching = POWERVR_MIPS_UNCACHED;
+	if (POWERVR_FIRMWARE_CODE_CACHED)
+		caching = POWERVR_MIPS_CACHED;
+	error = powervr_object_create(&firmware->heap, firmware->image.code_size, 0, caching, &firmware->code);
 	if (error != 0)
 		return error;
 
-	/* The data goes at its fixed place. */
-	error = powervr_object_create(&firmware->heap, firmware->image.data_size, data_offset, POWERVR_MIPS_UNCACHED, &firmware->data);
+	/* The data goes at its fixed place, likewise. */
+	caching = POWERVR_MIPS_UNCACHED;
+	if (POWERVR_FIRMWARE_DATA_CACHED)
+		caching = POWERVR_MIPS_CACHED;
+	error = powervr_object_create(&firmware->heap, firmware->image.data_size, data_offset, caching, &firmware->data);
 	if (error != 0)
 		return error;
 
