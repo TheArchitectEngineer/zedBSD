@@ -37,3 +37,5 @@
 
 - 2026-10-21: P3（phase-runner、Opus 5.5）が q1542 で p001 から始めた。p001 は design.md（版 1）。p002 は image の生成まで（c7909625c は main 7547e49c4 に merge 済み、locore の再配置の stub は dba0bf700）。
 - 再開点: 実機の試験（[tests/rpi5-hw-test.md](tests/rpi5-hw-test.md)）の結果を見て p002 を判定。ユーザーの判断 D1〜D3（design.md §4）。
+
+- 2026-10-21 ユーザーの判断: D1 serial console は不要（既定 n）、D2 GPU は別 WS（[WS279](../ws279/ws.md)）、D3 手元は Pi 5 2GB（2026-10-21 購入、D0 の見込み）、HDMI モニター・USB keyboard・Debug Probe 付き USB serial あり。p003〜p008 は実機の試験なしで続けて実装し、最後にまとめて実機（ユーザー「テストは後回しにして実装してしまって、ビッグバンでテストしましょう。」）。P3 q1543。
