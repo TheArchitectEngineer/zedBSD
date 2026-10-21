@@ -833,13 +833,6 @@ kwl_compose_draw(
 	/* What the frame asks of the GPU, for its lines (KWL PASSES). */
 	compose_count_passes(server);
 
-	/* The frame's lines, while its counts are this frame's (--log-frames). */
-	if (server->log_frames) {
-		compose_log_draws(server);
-		compose_log_passes(server);
-		compose_log_kinds(server);
-	}
-
 	/* What the frame's completion applies, in its slot. */
 	slot = &compose->slots[compose->walk_slot];
 	slot->bake = 0U;
@@ -902,6 +895,13 @@ kwl_compose_draw(
 	compose->scene.changed = 0U;
 	server->frame++;
 	compose->frame_number = server->frame;
+
+	/* The frame's lines, while its counts are this frame's (--log-frames). */
+	if (server->log_frames) {
+		compose_log_draws(server);
+		compose_log_passes(server);
+		compose_log_kinds(server);
+	}
 
 	/* The next drawing goes into the next slot. */
 	compose->walk_slot = (compose->walk_slot + 1U) % KWL_FRAME_SLOTS;

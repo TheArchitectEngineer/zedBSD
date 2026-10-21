@@ -1304,7 +1304,8 @@ main_zoom(
 	if (pixels == run->pixels)
 		return 0;
 
-	/* The font at the new size; a size it cannot give keeps the old one. */
+	/* The font at the new size, once no frame reads the atlas; a size it cannot give keeps the old one. */
+	(void)terminal_renderer_idle(&main_renderer);
 	error = terminal_font_resize(&main_font, pixels);
 	if (error == ENOMEM) {
 		run->operation = "terminal_font_resize";

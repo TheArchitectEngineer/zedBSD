@@ -456,10 +456,14 @@ struct terminal_renderer {
 	void *vertex_map;
 	size_t vertex_capacity;
 
-	/* One command buffer, the fence that says it finished and the acquire semaphore. */
+	/*
+	 * One command buffer, the fence that says it finished (pending while a
+	 * frame submitted has not been waited for) and the acquire semaphore.
+	 */
 	VkCommandPool pool;
 	VkCommandBuffer command;
 	VkFence fence;
+	int pending;
 	VkSemaphore acquired;
 
 	/* The Vulkan call that failed last, for the error line. */
@@ -638,6 +642,7 @@ void terminal_font_close(struct terminal_font *font);
 VkResult terminal_renderer_open(struct terminal_renderer *renderer, struct terminal_window *window, struct terminal_font *font);
 VkResult terminal_renderer_resize(struct terminal_renderer *renderer, uint32_t width, uint32_t height);
 VkResult terminal_renderer_draw(struct terminal_renderer *renderer, struct terminal_screen *screen, struct terminal_font *font, const struct terminal_window *window);
+VkResult terminal_renderer_idle(struct terminal_renderer *renderer);
 void terminal_renderer_close(struct terminal_renderer *renderer);
 
 /* The window (window.c). */

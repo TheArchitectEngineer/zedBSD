@@ -944,6 +944,7 @@ int kwl_glass_map_set(struct kwl_server *server, const float *constants, VkDescr
 int kwl_glass_picture_set(struct kwl_server *server, unsigned picture, kwl_glass_picture_draw draw, VkDescriptorSet *picture_set);
 int kwl_glass_shadow_set(struct kwl_server *server, const float *box, float radius, float soft, const float *colour, float *origin, float *size, VkDescriptorSet *shadow_set);
 void kwl_glass_maps_inband(struct kwl_server *server, struct kwl_list *command);
+int kwl_glass_maps_wanted(struct kwl_server *server);
 void kwl_glass_maps_destroy(struct kwl_compose *compose);
 
 /* The clients' new images' move to the general layout, in the next frame (import.c). */
