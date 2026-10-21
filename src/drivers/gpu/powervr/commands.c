@@ -135,8 +135,9 @@ powervr_command_wait(
 		executed = powervr_object_get32(&firmware->os_data, POWERVR_OS_DATA_KCCB_EXECUTED);
 		if ((int32_t)(executed - firmware->kccb_expect[slot]) >= 0) {
 			if (!firmware->return_fallback_noted) {
-				kern_logf("powervr: firmware: slot %u: return 0x%x not seen, executed count %u reached; taken as executed\n",
-					  (unsigned)slot, (unsigned)value, (unsigned)executed);
+				if (POWERVR_DEBUG)
+					kern_logf("powervr: firmware: slot %u: return 0x%x not seen, executed count %u reached; taken as executed\n",
+						  (unsigned)slot, (unsigned)value, (unsigned)executed);
 				firmware->return_fallback_noted = true;
 				if (POWERVR_DIAGNOSTICS)
 					powervr_firmware_return_probe(core, slot);

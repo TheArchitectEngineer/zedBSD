@@ -48,8 +48,12 @@
 #define HWR_RECOVERED		2264U
 #define HWR_FALSE_DETECT	2300U
 #define TRACE_POINTER		8U
-/* The whole ring, oldest first, so the kicks before the lockup are in it. */
-#define TRACE_TAIL_WORDS	POWERVR_TRACE_WORDS
+/*
+ * The newest words of the ring, oldest of them first: the kicks just
+ * before the lockup.  The whole ring (1500 lines) pushed the lines before
+ * it out of the kernel log's 32 KB.
+ */
+#define TRACE_TAIL_WORDS	1024U
 #define RECORD_WORDS_MAX	96U
 
 /*
@@ -81,7 +85,7 @@ static const char *const tag_names[] = {
 static uint64_t get64(const struct powervr_object *object, uint32_t offset);
 static void bif_decode(uint32_t record, uint64_t request, uint64_t status, uint64_t catalogue);
 
-/* Prints the recovery records, the trace's tail and the reset context's record. */
+/* Prints the recovery records, the trace's tail and the reset context's record (a release image only the counters). */
 void
 powervr_hwr_dump(
 	struct powervr_core *core,
@@ -103,6 +107,10 @@ powervr_hwr_dump(
 	info = &core->firmware.hwr_info;
 	kern_logf("powervr: hwr: counter %u write index %u\n",
 		  (unsigned)powervr_object_get32(info, HWR_COUNTER), (unsigned)powervr_object_get32(info, HWR_WRITE_INDEX));
+
+	/* A release image says only that: the reset's own notice names the context, its reason and its data master. */
+	if (!POWERVR_DEBUG)
+		return;
 	for (dm = 0; dm < HWR_DM_COUNT; dm++) {
 		if (powervr_object_get32(info, HWR_LOCKED_UP + dm * 4U) == 0 && powervr_object_get32(info, HWR_OVERRAN + dm * 4U) == 0 &&
 		    powervr_object_get32(info, HWR_RECOVERED + dm * 4U) == 0 && powervr_object_get32(info, HWR_FALSE_DETECT + dm * 4U) == 0)
@@ -133,13 +141,13 @@ powervr_hwr_dump(
 	}
 
 	/*
-	 * The whole trace from its oldest word, for decoding off line: each
+	 * The trace's newest TRACE_TAIL_WORDS words, for decoding off line: each
 	 * entry is its id, a 64-bit timestamp and its arguments, the id as
 	 * Linux's pvr_rogue_fwif_sf.h (ROGUE_FW_LOG_CREATESFID) forms it.
 	 */
 	trace = &core->firmware.trace_buffer;
 	pointer = powervr_object_get32(&core->firmware.trace_control, TRACE_POINTER) % POWERVR_TRACE_WORDS;
-	first = pointer % POWERVR_TRACE_WORDS;
+	first = (pointer + POWERVR_TRACE_WORDS - TRACE_TAIL_WORDS) % POWERVR_TRACE_WORDS;
 	kern_logf("powervr: hwr: trace pointer %u, %u words from %u\n", (unsigned)pointer, (unsigned)TRACE_TAIL_WORDS, (unsigned)first);
 	for (done = 0; done < TRACE_TAIL_WORDS; done += 8U) {
 		for (index = 0; index < 8U; index++)
