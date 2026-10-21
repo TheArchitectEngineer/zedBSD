@@ -5886,6 +5886,18 @@ drag_measured(
 	return 1;
 }
 
+/* Tells whether the window being moved marks its old and new places itself (for the pointer's damage, damage.c). */
+int
+kwl_glass_drag_measured(
+	struct kwl_server *server)
+{
+	int measured;
+
+	/* The move's own test. */
+	measured = drag_measured(server);
+	return measured;
+}
+
 /* Marks a moving window's place as damage: its title bar and body, with the reach of its shadow and the glass's blur. */
 static void
 drag_damage(

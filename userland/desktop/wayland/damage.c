@@ -113,7 +113,11 @@ kwl_damage_pointer(
 	/* The cursor plane shows the move by itself (cursor-plane.c); a frame is drawn only for what the move changes under it. */
 	plane = kwl_cursor_plane_takes(server);
 
-	/* The next frame shows the move without waiting for the windows (frame pacing, display.c). */
+	/*
+	 * The next frame shows the move without waiting for the windows (frame
+	 * pacing, display.c); with the plane, only a move that changes the
+	 * scene draws a frame, and that frame does not wait either.
+	 */
 	if (!plane)
 		server->pointer_moved = 1U;
 
@@ -134,10 +138,18 @@ kwl_damage_pointer(
 			calm = kwl_glass_pointer_calm(server, server->pointer_x, server->pointer_y);
 		if (!calm)
 			calm = kwl_hover_damage(server);
+
+		/* A window being moved has marked its old and new places itself (shell.c). */
+		if (!calm)
+			calm = kwl_glass_drag_measured(server);
 		if (!calm) {
+			server->pointer_moved = 1U;
 			server->dirty = 1;
 			return;
 		}
+
+		/* Whatever the move changes is drawn without waiting for the windows. */
+		server->pointer_moved = 1U;
 	}
 
 	/* The plane moves the cursor; the frame keeps its pixels. */
