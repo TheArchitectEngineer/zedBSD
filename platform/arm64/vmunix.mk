@@ -67,6 +67,8 @@ ARM64_BOARD_KERNEL_SOURCES_rpi5 := \
 	src/drivers/platform/rpi5/rpi5-gio.c \
 	src/drivers/platform/rpi5/rpi5-pinctrl.c \
 	src/drivers/platform/rpi5/rpi5-wifi.c \
+	src/drivers/platform/rpi5/rpi5-bt.c \
+	src/drivers/platform/rpi4/rpi4-bt-link.c \
 	src/drivers/platform/rpi4/rpi4-mmc-irq.c \
 	src/drivers/platform/rpi4/rpi4-sdio-host.c \
 	src/drivers/platform/rpi4/rpi4-sdio.c \
@@ -226,8 +228,8 @@ endif
 ifeq ($(CONFIG_DRIVER_USB_BT),y)
 ARM64_USB_SOURCES += src/drivers/usb/usb-bt.c
 endif
-# The Bluetooth HCI class, for a USB controller or the Pi 4's onboard one (ws215-p003).
-ifneq ($(filter y,$(CONFIG_DRIVER_USB_BT) $(CONFIG_DRIVER_BCM2711_BT)),)
+# The Bluetooth HCI class, for a USB controller or the Pi 4's or the Pi 5's onboard one.
+ifneq ($(filter y,$(CONFIG_DRIVER_USB_BT) $(CONFIG_DRIVER_BCM2711_BT) $(if $(filter rpi5,$(ZEDBSD_BOARD)),y)),)
 ARM64_KERNEL_SOURCES += src/drivers/generic/bt-hci.c src/drivers/generic/bt-hci-proto.c
 endif
 ifeq ($(CONFIG_DRIVER_USB_RTL8822BU),y)

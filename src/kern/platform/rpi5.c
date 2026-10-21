@@ -13,8 +13,8 @@
  * is the firmware's framebuffer, and the debug UART when the build asks for
  * it.  The USB ports and the Ethernet port behind the RP1 south bridge
  * start after the SD card; a board whose firmware reset RP1's link boots
- * without them.  The onboard Wi-Fi is probed once interrupts are on and
- * comes up in the background.
+ * without them.  The onboard Wi-Fi and Bluetooth are probed once
+ * interrupts are on and come up in the background.
  */
 
 #include <uapi/errno.h>
@@ -31,6 +31,7 @@
 #include "drivers/platform/rpi5/rp1-usb.h"
 #include "drivers/platform/rpi5/rp1-ethernet.h"
 #include "drivers/platform/rpi5/rpi5-wifi.h"
+#include "drivers/platform/rpi5/rpi5-bt.h"
 #include <drivers/usb/usb-hid.h>
 
 /* The firmware's BIOS-style number of the boot disk the handoff names. */
@@ -163,6 +164,12 @@ kern_platform_refresh_devices(
 	 * without it.
 	 */
 	(void)drv_rpi5_wifi_probe(rpi5_fdt_phys);
+
+	/*
+	 * Starts the onboard Bluetooth's thread; a board without the
+	 * controller goes on without it.
+	 */
+	(void)drv_rpi5_bt_probe(rpi5_fdt_phys);
 }
 
 /*
