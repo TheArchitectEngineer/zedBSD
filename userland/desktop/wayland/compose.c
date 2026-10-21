@@ -884,15 +884,8 @@ kwl_compose_draw(
 	/* The CPU time of the main thread's part of the frame. */
 	server->perf.compose_draw_cycles += kwl_cycles() - compose->frame_start_cycles;
 
-	/*
-	 * The frame holds what it sampled until it completes, the popups and
-	 * sub-surfaces too.  Their frame callbacks are sent now, with the frame
-	 * given: a client draws its next image while this frame is recorded
-	 * and runs on the GPU, instead of after it completed (its buffers come
-	 * back only then).
-	 */
+	/* The frame holds what it sampled until it completes, the popups and sub-surfaces too. */
 	compose_hold(server, windows, all + popups + subsurfaces);
-	kwl_callbacks_done(&compose->slots[compose->walk_slot].callbacks);
 	compose->frame_heads = NULL;
 	compose->frame_head_count = 0U;
 	server->dirty = 0;
@@ -4054,9 +4047,8 @@ compose_may_draw(
 }
 
 /*
- * Holds the buffers a frame sampled until the frame completes, and takes
- * the frame callbacks of the surfaces it showed into its slot (the caller
- * sends them).
+ * Holds the buffers a frame sampled, and takes the frame callbacks of the
+ * surfaces it showed, until the frame completes.
  */
 static void
 compose_hold(
