@@ -86,4 +86,13 @@ arm64_boot_stub_end:
 	mov x4, #(65 * 8)
 .endm
 
+/*
+ * Turns the MPIDR_EL1 value in a register into the core's number: the
+ * Cortex-A76 has MT set and numbers its cores in Aff1 (bits 8-15), with
+ * Aff0 always 0.  arm64_bsp_core_of() computes the same in C.
+ */
+.macro arm64_board_core_index register
+	ubfx \register, \register, #8, #8
+.endm
+
 #endif

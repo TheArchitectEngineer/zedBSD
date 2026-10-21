@@ -20,8 +20,9 @@ _start:
 
 arm64_boot:
 	msr daifset, #0xf
+	/* Only core 0 boots; any other core that enters here waits for ever. */
 	mrs x1, mpidr_el1
-	and x1, x1, #0xff
+	arm64_board_core_index x1
 	cbnz x1, arm64_secondary_park
 	mov x20, x0
 
@@ -179,10 +180,10 @@ arm64_secondary_park:
 	.size _start, . - _start
 
 	/*
-	 * The entry of a secondary CPU released from the firmware's spin
-	 * table (smp.c writes this address's physical form there).  It runs
+	 * The entry of a secondary CPU the board releases (a spin table on
+	 * the Pi 4, PSCI CPU_ON on the Pi 5) to this address's physical form.  It runs
 	 * with the MMU off, at EL2 or EL1, and finds its own boot block by
-	 * its MPIDR affinity: arm64_secondary_boot[Aff0], 32 bytes each, as
+	 * its core number: arm64_secondary_boot[core], 32 bytes each, as
 	 * TTBR1 (the kernel's final tables), the stack top and the CPU number.
 	 */
 	.global arm64_secondary_entry
@@ -232,9 +233,9 @@ arm64_secondary_el1:
 	msr cntkctl_el1, x1
 	isb
 
-	/* Finds this CPU's boot block by its affinity, at its physical address. */
+	/* Finds this CPU's boot block by its core number, at its physical address. */
 	mrs x2, mpidr_el1
-	and x2, x2, #0xff
+	arm64_board_core_index x2
 	cmp x2, #4
 	b.hs arm64_secondary_park
 	adrp x3, arm64_secondary_boot

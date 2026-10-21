@@ -41,4 +41,20 @@ void arm64_bsp_map_devices(void);
  */
 volatile uint32_t *arm64_bsp_watch_compositor(void);
 
+/*
+ * Reports a core's number from its MPIDR affinity: the field the board
+ * numbers its cores by.  It names the core's GIC CPU interface and its
+ * boot block (locore-board.h's arm64_board_core_index computes the same).
+ */
+uint64_t arm64_bsp_core_of(uint64_t mpidr);
+
+/* Tells whether the board can release a core the way the device tree says it is held. */
+int arm64_bsp_cpu_startable(const struct rpi_fdt_cpu *cpu);
+
+/*
+ * Releases a secondary core to a physical entry point, with its MMU off;
+ * reports HAL_OK when the core was let go.
+ */
+int arm64_bsp_cpu_release(const struct rpi_fdt_cpu *cpu, uint64_t entry_phys);
+
 #endif

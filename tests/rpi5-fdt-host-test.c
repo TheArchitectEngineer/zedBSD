@@ -113,6 +113,7 @@ main(
 		failures += check(info.cpus[index].mpidr == (unsigned long long)index << 8,
 				  "a CPU's affinity is its index in Aff1");
 		failures += check(info.cpus[index].spin_table == 0, "a CPU is not held in a spin table");
+		failures += check(info.cpus[index].psci != 0, "a CPU is started through PSCI");
 	}
 
 	/* Reports a failed tree. */

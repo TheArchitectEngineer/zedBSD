@@ -7,11 +7,13 @@
 
 /*
  * The arm64 CPU lifecycle: which CPUs exist, how the secondary cores are
- * released from the firmware's spin table, and how CPUs reach each other.
+ * released from the firmware, and how CPUs reach each other.
  *
- * The device tree lists the cores and the address each one waits on.  The
- * boot CPU writes the physical entry of arm64_secondary_entry (locore.S)
- * there, and the core comes up through its own boot block.  The kernel is
+ * The device tree lists the cores and how the firmware holds each one: a
+ * spin table on the Pi 4, PSCI on the Pi 5.  The board releases a core to
+ * the physical entry of arm64_secondary_entry (locore.S), and the core
+ * comes up through its own boot block, which it finds by its core number
+ * (the MPIDR affinity field the board numbers its cores by).  The kernel is
  * told the number of CPUs before any is released; one that does not come
  * up stops the boot, with the advice to start with cpus=1 (ws208, D6).
  */
@@ -37,7 +39,7 @@
 /*
  * What a secondary core reads, with its MMU off, to come up.
  *
- * locore.S finds the block by the core's MPIDR affinity and reads it at
+ * locore.S finds the block by the core's number and reads it at
  * fixed offsets: the kernel's TTBR1 (0 means "not released"), the stack
  * top in the kernel half, and the CPU's logical number.
  */
@@ -55,7 +57,7 @@ void arm64_secondary_entry(void);
 void arm64_secondary_main(uint64_t cpu);
 
 /*
- * The boot blocks, one per core affinity (0-3).
+ * The boot blocks, one per core number (0-3).
  *
  * The boot CPU fills a block and cleans it to memory before it releases
  * the core; the core reads it with its caches off.  Not changed afterwards.
@@ -72,11 +74,14 @@ struct arm64_secondary_boot arm64_secondary_boot[ARM64_CPU_MAX] __attribute__((a
 static unsigned cpu_count = 1;
 
 /*
- * Each logical CPU's MPIDR affinity and spin-table address, logical 0
- * being the boot CPU.  Filled by arm64_smp_configure().
+ * Each logical CPU's core number, which also numbers its GIC CPU interface
+ * and its boot block, and the device tree's entry for it, which says how
+ * the board releases it; logical 0 is the boot CPU, whose entry is not
+ * used.  The boot CPU's number is set by arm64_smp_bootstrap() and the
+ * others' by arm64_smp_configure(); not changed afterwards.
  */
-static uint64_t cpu_mpidr[ARM64_CPU_MAX];
-static uint64_t cpu_release_addr[ARM64_CPU_MAX];
+static uint64_t cpu_core[ARM64_CPU_MAX];
+static struct rpi_fdt_cpu cpu_entry[ARM64_CPU_MAX];
 
 /*
  * The CPUs that are up, one bit per CPU.
@@ -105,7 +110,7 @@ arm64_smp_bootstrap(
 
 	/* Makes the record the boot CPU's own before any lock is taken. */
 	arm64_percpu_bootstrap(0, mpidr);
-	cpu_mpidr[0] = mpidr & 0xffU;
+	cpu_core[0] = arm64_bsp_core_of(mpidr);
 
 	/* The boot CPU is up from here on. */
 	hal_cpu_mask_zero(&ready_mask);
@@ -116,8 +121,8 @@ arm64_smp_bootstrap(
 /*
  * Decides how many CPUs the kernel gets, from the device tree and cpus=N.
  *
- * The boot CPU is logical 0; the other spin-table cores follow in the
- * tree's order, up to four and up to the boot parameter.
+ * The boot CPU is logical 0; the other cores the board can release follow
+ * in the tree's order, up to four and up to the boot parameter.
  */
 void
 arm64_smp_configure(
@@ -127,35 +132,40 @@ arm64_smp_configure(
 	const struct rpi_fdt_cpu *entry;
 	unsigned limit;
 	unsigned index;
-	uint64_t affinity;
+	uint64_t core;
+	int startable;
 
 	/* The boot parameter caps the count; absent, every core is used. */
 	limit = boot_parameter_cpus();
 	if (limit == 0 || limit > ARM64_CPU_MAX)
 		limit = ARM64_CPU_MAX;
 
-	/* Takes each other core the firmware holds in a spin table. */
+	/* Takes each other core the board can release. */
 	info = rpi_boot_info();
 	for (index = 0; index < info->cpu_count; index++) {
 		entry = &info->cpus[index];
-		affinity = entry->mpidr & 0xffU;
+		core = arm64_bsp_core_of(entry->mpidr);
 
 		/* The boot CPU is already logical 0. */
-		if (affinity == cpu_mpidr[0])
+		if (core == cpu_core[0])
 			continue;
 
-		/* A core this HAL cannot index, or cannot release, is left alone. */
-		if (affinity >= ARM64_CPU_MAX)
+		/* A core this HAL cannot index is left alone. */
+		if (core >= ARM64_CPU_MAX)
 			continue;
-		if (entry->spin_table == 0 || entry->release_addr == 0)
+
+		/* A core the firmware holds in a way the board cannot release is left alone. */
+		startable = arm64_bsp_cpu_startable(entry);
+		if (!startable)
 			continue;
 
 		/* Stops at the limit. */
 		if (cpu_count >= limit)
 			break;
 
-		cpu_mpidr[cpu_count] = affinity;
-		cpu_release_addr[cpu_count] = entry->release_addr;
+		/* Gives the core the next logical number. */
+		cpu_core[cpu_count] = core;
+		cpu_entry[cpu_count] = *entry;
 		cpu_count++;
 	}
 
@@ -495,15 +505,15 @@ boot_parameter_cpus(
 	return 0;
 }
 
-/* Reports a CPU's bit in the GIC's target list: its interface is its affinity. */
+/* Reports a CPU's bit in the GIC's target list: its interface is its core number. */
 static uint32_t
 cpu_interface_bit(
 	hal_cpu_id_t cpu)
 {
 	uint32_t bit;
 
-	/* The Pi 4's GIC-400 numbers its CPU interfaces by core. */
-	bit = 1U << (uint32_t)cpu_mpidr[cpu];
+	/* The GIC-400 of the Pi 4 and 5 numbers its CPU interfaces by core. */
+	bit = 1U << (uint32_t)cpu_core[cpu];
 
 	/* Succeeded: the target-list bit. */
 	return bit;
@@ -530,19 +540,19 @@ cpu_is_ready(
 }
 
 /*
- * Releases one core from its spin table and waits until it is up.
+ * Releases one core through the board and waits until it is up.
  *
- * A core that does not come up stops the boot: the kernel was already
- * told it exists (D6).
+ * A core that is not released, or does not come up, stops the boot: the
+ * kernel was already told it exists (D6).
  */
 static int
 start_one(
 	hal_cpu_id_t cpu)
 {
 	struct arm64_secondary_boot *block;
-	volatile uint64_t *release;
 	hal_physaddr_t stack;
-	uint64_t affinity;
+	uint64_t entry_phys;
+	uint64_t core;
 	uint64_t frequency;
 	uint64_t deadline;
 	uint64_t now;
@@ -555,23 +565,31 @@ start_one(
 		return error;
 
 	/* Fills the core's boot block and cleans it to memory for the uncached reader. */
-	affinity = cpu_mpidr[cpu];
-	block = &arm64_secondary_boot[affinity];
+	core = cpu_core[cpu];
+	block = &arm64_secondary_boot[core];
 	block->stack_top = (uint64_t)(uintptr_t)hal_pmem_to_kernel(stack) + ARM64_SECONDARY_STACK_SIZE;
 	block->cpu = cpu;
 	block->ttbr1 = arm64_space_kernel_ttbr1();
 	hal_dcache_clean_range((uintptr_t)block, sizeof(*block));
 
-	/* Writes the entry's physical address where the core waits, and wakes it. */
-	release = arm64_phys_to_direct((uintptr_t)cpu_release_addr[cpu]);
-	*release = arm64_direct_to_phys((const void *)arm64_secondary_entry);
-	hal_dcache_clean_invalidate_range((uintptr_t)release, sizeof(*release));
-	__asm__ volatile("dsb sy\n\tsev" : : : "memory");
+	/* Asks the board to start the core at the entry's physical address. */
+	entry_phys = arm64_direct_to_phys((const void *)arm64_secondary_entry);
+	error = arm64_bsp_cpu_release(&cpu_entry[cpu], entry_phys);
+	if (error != HAL_OK) {
+		hal_printf("ARM64 SMP cpu %u (core %u) was not released (%d); "
+			   "add cpus=1 to cmdline.txt to boot on one CPU\n",
+			   (uint32_t)cpu,
+			   (uint32_t)core,
+			   error);
+		HAL_FATAL("arm64 secondary CPU was not released");
+	}
 
-	/* Waits for the core to publish itself, up to the limit. */
+	/* The limit of the wait for the core to publish itself. */
 	__asm__ volatile("mrs %0, cntfrq_el0" : "=r"(frequency));
 	__asm__ volatile("isb\n\tmrs %0, cntpct_el0" : "=r"(now) : : "memory");
 	deadline = now + frequency * ARM64_SECONDARY_WAIT_MS / 1000U;
+
+	/* Waits for the core to publish itself, up to the limit. */
 	for (;;) {
 		ready = cpu_is_ready(cpu);
 		if (ready)
@@ -580,15 +598,19 @@ start_one(
 		/* A core that does not come up stops the boot. */
 		__asm__ volatile("isb\n\tmrs %0, cntpct_el0" : "=r"(now) : : "memory");
 		if (now >= deadline) {
-			hal_printf("ARM64 SMP cpu %u (affinity %u) did not come up; "
+			hal_printf("ARM64 SMP cpu %u (core %u) did not come up; "
 				   "add cpus=1 to cmdline.txt to boot on one CPU\n",
-				   (uint32_t)cpu, (uint32_t)affinity);
+				   (uint32_t)cpu,
+				   (uint32_t)core);
 			HAL_FATAL("arm64 secondary CPU did not come up");
 		}
+
+		/* Lets the other hardware thread run while the core starts. */
 		hal_atomic_relax();
 	}
 
-	hal_printf("ARM64 SMP cpu %u online (affinity %u)\n", (uint32_t)cpu, (uint32_t)affinity);
+	/* Reports the core in the boot log. */
+	hal_printf("ARM64 SMP cpu %u online (core %u)\n", (uint32_t)cpu, (uint32_t)core);
 
 	/* Succeeded: the core runs its initial task. */
 	return HAL_OK;

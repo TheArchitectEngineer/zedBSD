@@ -30,3 +30,9 @@ QEMU に raspi5 は無いので、Pi 5 の実機で確かめる（ユーザー�
 - LED の点滅の回数と、点灯・消灯のどちらで止まったか。
 - 画面: bootloader の画面のまま（kernel に入っていない、R1 の番地か dtb の選択）か、試験の模様まで出たか、log の最後の行。
 - `sdhci: init error=…` や `CMD8`・`ACMD41` の行があれば SD の初期化（design.md の R3）。
+
+## 一括の試験で見る項目（p003 以降、実装の順に足す）
+
+| Phase | 見る物 | 期待 |
+| --- | --- | --- |
+| p003 SMP | 起動の log の `ARM64 SMP` の行、login 後の `top` | `ARM64 SMP 4 CPUs (device tree 4, limit 4)`、`ARM64 SMP cpu 1 online (core 1)`〜`cpu 3 … (core 3)`、`top` の CPU が 4 つ。止まったら最後の行の写真。`cpus=1` を cmdline.txt に足した起動でも login できるか（R6 の切り分け） |
