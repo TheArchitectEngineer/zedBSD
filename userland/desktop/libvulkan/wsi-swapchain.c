@@ -212,13 +212,6 @@ struct wsi_present_fence {
 	VkBool32 sent;
 	VkBool32 busy;
 	/*
-	 * For a slot whose fences are sent: true when the worker, after the
-	 * slot's last job retired, already made the next present's fence, its
-	 * fd and generation, so that the present does not wait for them.
-	 */
-	VkBool32 renewed;
-	uint64_t generation;
-	/*
 	 * What the command buffer holds after its last successful End, or no
 	 * recording.  Only the job that has the slot busy changes it.
 	 */
@@ -272,8 +265,6 @@ struct wsi_present_job {
 	 */
 	struct wsi_present_recording recording;
 	VkBool32 reused;
-	/* The worker makes the next fence of the job's slot after the job retires, the slot staying busy till then. */
-	VkBool32 renew;
 	/*
 	 * Each target's overlay present (ws214-p004), allocated when a target
 	 * is an overlay plane: the swapchain fills what it asks, the output's
@@ -359,8 +350,6 @@ static VkResult present_prepare(struct wsi_present_job *job, struct VkQueue_T *q
 static VkResult present_reserve(struct wsi_present_job *job, const VkPresentInfoKHR *info);
 static VkResult present_regions(struct wsi_present_job *job, const VkPresentInfoKHR *info);
 static VkResult present_fence_prepare(struct wsi_present_job *job);
-static VkResult present_fence_make(struct VkDevice_T *device, const VkAllocationCallbacks *allocator, struct wsi_present_fence *completion);
-static void present_fence_renew(struct wsi_present_job *job);
 static VkResult present_record(struct wsi_present_job *job, const VkPresentInfoKHR *info);
 static void present_recording_key(struct wsi_present_job *job, const VkPresentInfoKHR *info);
 static VkBool32 present_recording_same(const struct wsi_present_recording *kept, const struct wsi_present_recording *wanted);
@@ -2856,15 +2845,6 @@ present_fence_prepare(
 	job->completion = completion;
 	allocator = swapchain_allocator(&job->allocator);
 
-	/* The fence the worker already made for this present, with its fd and generation. */
-	if (fresh != VK_FALSE && completion->renewed != VK_FALSE) {
-		completion->renewed = VK_FALSE;
-		job->fence = completion->fence;
-		job->fence_fd = completion->fd;
-		job->fence_generation = completion->generation;
-		return VK_SUCCESS;
-	}
-
 	/* Gives up the previous present's fence of a reused slot whose fences are sent. */
 	if (fresh != VK_FALSE && completion->fence != VK_NULL_HANDLE) {
 		vkDestroyFence((VkDevice)job->queue->device, completion->fence, allocator);
@@ -2946,107 +2926,6 @@ present_fence_prepare(
 
 	/* Succeeded: fence and exported descriptor ownership remain with the queue until its final join. */
 	return VK_SUCCESS;
-}
-
-/*
- * Replaces a sent slot's fence with a new one: gives up the previous
- * present's fence and this library's fd of it (the compositor holds its
- * own), then makes an exported fence, its fd and the kernel payload's
- * generation.  On failure the slot holds no fence, and the
- * next present makes one itself.
- */
-static VkResult
-present_fence_make(
-	struct VkDevice_T *device,
-	const VkAllocationCallbacks *allocator,
-	struct wsi_present_fence *completion)
-{
-	VkFenceCreateInfo fence;
-	VkExportFenceCreateInfo export;
-	VkFenceGetFdInfoKHR get_fd;
-	struct gpu_fence_state state;
-	VkResult error;
-	int status;
-
-	/* The previous present's fence and fd. */
-	if (completion->fence != VK_NULL_HANDLE) {
-		vkDestroyFence((VkDevice)device, completion->fence, allocator);
-		completion->fence = VK_NULL_HANDLE;
-	}
-	if (completion->fd >= 0) {
-		close(completion->fd);
-		completion->fd = -1;
-	}
-
-	/* An unsignaled fence the kernel payload can be exported from. */
-	memset(&fence, 0, sizeof(fence));
-	fence.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-	memset(&export, 0, sizeof(export));
-	export.sType = VK_STRUCTURE_TYPE_EXPORT_FENCE_CREATE_INFO;
-	export.handleTypes = VK_EXTERNAL_FENCE_HANDLE_TYPE_OPAQUE_FD_BIT;
-	fence.pNext = &export;
-	error = vkCreateFence((VkDevice)device, &fence, allocator, &completion->fence);
-	if (error != VK_SUCCESS) {
-		completion->fence = VK_NULL_HANDLE;
-		return error;
-	}
-
-	/* Its fd, which the slot owns. */
-	memset(&get_fd, 0, sizeof(get_fd));
-	get_fd.sType = VK_STRUCTURE_TYPE_FENCE_GET_FD_INFO_KHR;
-	get_fd.fence = completion->fence;
-	get_fd.handleType = VK_EXTERNAL_FENCE_HANDLE_TYPE_OPAQUE_FD_BIT;
-	error = vkGetFenceFdKHR((VkDevice)device, &get_fd, &completion->fd);
-	if (error != VK_SUCCESS) {
-		completion->fd = -1;
-		return error;
-	}
-
-	/* The payload's generation, which nothing changes before the fence's submission. */
-	memset(&state, 0, sizeof(state));
-	state.version = GPU_ABI_VERSION;
-	state.size = sizeof(state);
-	state.fd = completion->fd;
-
-	vulkan_context_lock(device->object.context);
-
-	status = ioctl(device->object.context->fd, GPU_FENCE_QUERY, &state);
-
-	vulkan_context_unlock(device->object.context);
-
-	if (status != 0 || state.generation == 0U)
-		return VK_ERROR_DEVICE_LOST;
-
-	/* Succeeded: the next present's fence. */
-	completion->generation = state.generation;
-	return VK_SUCCESS;
-}
-
-/*
- * Makes the next fence of a retired job's slot, whose fences are sent,
- * then frees the slot (present_finish left it busy).  A failure leaves
- * the slot to make its fence at its next present.
- */
-static void
-present_fence_renew(
-	struct wsi_present_job *job)
-{
-	struct wsi_present_fence *completion;
-	VkResult error;
-
-	/* The fence, its fd and generation. */
-	completion = job->completion;
-	error = present_fence_make(job->queue->device, swapchain_allocator(&job->allocator), completion);
-
-	/* The slot is free, holding them when they were made. */
-	pthread_mutex_lock(&swapchain_mutex);
-
-	completion->renewed = VK_FALSE;
-	if (error == VK_SUCCESS)
-		completion->renewed = VK_TRUE;
-	completion->busy = VK_FALSE;
-
-	pthread_mutex_unlock(&swapchain_mutex);
 }
 
 /* Copies one image read-only and restores its public present-source layout. */
@@ -3376,7 +3255,7 @@ present_finish(
 	pthread_mutex_lock(&swapchain_mutex);
 
 	/* Cache reuse begins only after GPU completion or terminal device loss has retired this job. */
-	if (job->completion != NULL && job->renew == VK_FALSE)
+	if (job->completion != NULL)
 		job->completion->busy = VK_FALSE;
 
 	/* Each reservation contributes one lifetime hold and one independently acquired public image. */
@@ -3820,28 +3699,9 @@ present_worker_main(
 			present_cursor_log(job, path);
 		}
 
-		/*
-		 * A slot whose fences are sent gets the next present's fence after
-		 * the images are released, so the present that takes the slot finds
-		 * it made; not while another job waits for this worker, whose commit
-		 * would wait behind it.
-		 */
-		if (error == VK_SUCCESS &&
-		    job->completion != NULL &&
-		    job->completion->sent != VK_FALSE) {
-			pthread_mutex_lock(&swapchain_mutex);
-
-			if (worker->head == NULL)
-				job->renew = VK_TRUE;
-
-			pthread_mutex_unlock(&swapchain_mutex);
-		}
-
 		/* Completion retires command storage and releases every job-owned image and chain hold. */
 		allocator = job->allocator;
 		present_finish(job, &job->info, error);
-		if (job->renew != VK_FALSE)
-			present_fence_renew(job);
 
 		/* A completed current pointer is cleared before device idle may observe an empty queue. */
 		pthread_mutex_lock(&swapchain_mutex);
