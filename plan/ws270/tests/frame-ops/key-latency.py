@@ -7,8 +7,9 @@ Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
 The keys of a frame-ops.sh step (keys by default: one key every 200 ms)
 need Keiland's --log-frames and the Terminal's TERMINAL_PERF=1.  For each
-key press (not Shift) the steps after it, before the next press, in ms
-from the press reaching the compositor's seat (KWL KEY in):
+key press (not Shift) the first of each step after it, in that order and
+by time (keys typed quickly share a step, which may come after the next
+press), in ms from the press reaching the compositor's seat (KWL KEY in):
     ime       the key sent to the input method (KWL KEY to=ime), or
     client    the key sent to the window's client (KWL KEY to=client)
     commit    the input method's text sent to the client (KWL KEY ime_commit)
@@ -68,29 +69,32 @@ def main() -> int:
 		print(f"no step {step_name} in the marks", file=sys.stderr)
 		return 1
 
-	# The presses, and each step's first line after a press (before the next press).
+	# The presses, and every step's lines with their times (ms).
 	keys = []
-	current = None
+	events = {name: [] for name in STEPS}
 	for line in span:
 		match = PRESS.search(line)
 		if match and int(match.group(1)) not in SHIFT_KEYS:
-			current = {"key": int(match.group(1)), "in": int(match.group(2)) / 1000.0}
-			keys.append(current)
-			continue
-		if current is None:
+			keys.append({"key": int(match.group(1)), "in": int(match.group(2)) / 1000.0})
 			continue
 		for name, pattern in PATTERNS:
-			if name in current or not pattern.search(line):
+			if pattern.search(line):
+				found = AT.search(line)
+				if found is not None:
+					events[name].append(int(found.group(1)) / 1000.0)
+
+	# For each press, each step's first time at or after the step before it (keys typed quickly
+	# share a write, a frame and a present); the compositor's ways (ime, client, commit) from the press.
+	for entry in keys:
+		after = entry["in"]
+		for name in STEPS:
+			start = entry["in"] if name in ("ime", "client", "commit") else after
+			later = [time for time in events[name] if time >= start]
+			if not later:
 				continue
-			found = AT.search(line)
-			if found is None:
-				continue
-			# The compositor's adopt and shown count only after the Terminal presented.
-			if name in ("adopt", "shown") and "present" not in current:
-				continue
-			if name == "shown" and "adopt" not in current:
-				continue
-			current[name] = int(found.group(1)) / 1000.0 - current["in"]
+			entry[name] = later[0] - entry["in"]
+			if name not in ("ime", "client", "commit"):
+				after = later[0]
 
 	if every:
 		print("  key " + " ".join(f"{name:>7}" for name in STEPS))
