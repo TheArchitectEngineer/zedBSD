@@ -26,9 +26,10 @@ static char boot_command_line[KERN_BOOT_PARAMETERS_STORAGE_SIZE];
 
 /*
  * The named objects of hal_get_arch_handoff(): the device tree's physical
- * address ("rpi4.fdt") and the SD controller's ("rpi4.sdhci"), each a
- * 64-bit word.  Filled once at boot and not changed afterwards; zero means
- * the firmware named none, and the name then reports no object.
+ * address ("rpi4.fdt", "rpi5.fdt" on a Pi 5) and the SD controller's
+ * ("rpi4.sdhci", "rpi5.sdhci"), each a 64-bit word.  Filled once at boot
+ * and not changed afterwards; zero means the firmware named none, and the
+ * name then reports no object.
  */
 static uint64_t handoff_fdt_phys;
 static uint64_t handoff_sdhci_phys;
@@ -38,12 +39,12 @@ static uint64_t handoff_sdhci_phys;
  * value, in the order of framebuffer_values[].
  */
 static const char *const framebuffer_value_names[RPI4_FRAMEBUFFER_VALUE_COUNT] = {
-	"rpi4.framebuffer.phys",
-	"rpi4.framebuffer.size",
-	"rpi4.framebuffer.width",
-	"rpi4.framebuffer.height",
-	"rpi4.framebuffer.pitch",
-	"rpi4.framebuffer.format",
+	ARM64_BOARD_HANDOFF ".framebuffer.phys",
+	ARM64_BOARD_HANDOFF ".framebuffer.size",
+	ARM64_BOARD_HANDOFF ".framebuffer.width",
+	ARM64_BOARD_HANDOFF ".framebuffer.height",
+	ARM64_BOARD_HANDOFF ".framebuffer.pitch",
+	ARM64_BOARD_HANDOFF ".framebuffer.format",
 };
 
 /*
@@ -109,7 +110,8 @@ const void *rpi4_kernel_handoff(void){return &kernel_handoff;}
  * "rpi4.sdhci" are the physical addresses of the device tree and of the
  * SD controller it names, each a 64-bit word; "rpi4.framebuffer.phys",
  * ".size", ".width", ".height", ".pitch" and ".format" are the firmware's
- * framebuffer, each a 64-bit word, all present or all absent.
+ * framebuffer, each a 64-bit word, all present or all absent.  A Pi 5
+ * names them "rpi5." instead of "rpi4.".
  */
 void *
 hal_get_arch_handoff(
@@ -127,14 +129,14 @@ hal_get_arch_handoff(
 
 	/* Exposes the device tree when the firmware passed one. */
 	if (handoff_fdt_phys != 0) {
-		match = handoff_name_is(name, "rpi4.fdt");
+		match = handoff_name_is(name, ARM64_BOARD_HANDOFF ".fdt");
 		if (match)
 			return &handoff_fdt_phys;
 	}
 
 	/* Exposes the SD controller when the device tree names one. */
 	if (handoff_sdhci_phys != 0) {
-		match = handoff_name_is(name, "rpi4.sdhci");
+		match = handoff_name_is(name, ARM64_BOARD_HANDOFF ".sdhci");
 		if (match)
 			return &handoff_sdhci_phys;
 	}

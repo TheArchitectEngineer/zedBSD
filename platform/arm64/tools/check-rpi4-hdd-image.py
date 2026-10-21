@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the Raspberry Pi 4 MBR/FAT32 image and boot payloads."""
+"""Validate the Raspberry Pi 4 or 5 MBR/FAT32 image and boot payloads."""
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
 import argparse
@@ -15,6 +15,12 @@ PARTITION_BLOCKS = 262144
 PARTITION_TYPE = 0x0C
 IMAGE_BLOCKS = 524288
 ROOT_LBA = 264192
+# The firmware files each board's boot partition must carry.
+BOOT_FILES = {
+    "rpi4": ("start4.elf", "fixup4.dat", "bcm2711-rpi-4-b.dtb",
+             "overlays/disable-bt.dtbo", "LICENCE.broadcom"),
+    "rpi5": ("bcm2712-rpi-5-b.dtb", "bcm2712d0-rpi-5-b.dtb", "COPYING.linux"),
+}
 
 
 def fail(message: str) -> None:
@@ -87,8 +93,7 @@ def check(args: argparse.Namespace) -> None:
     same_file(args.image, "config.txt", args.config)
     if args.cmdline is not None:
         same_file(args.image, "cmdline.txt", args.cmdline)
-    for name in ("start4.elf", "fixup4.dat", "bcm2711-rpi-4-b.dtb",
-                 "overlays/disable-bt.dtbo", "LICENCE.broadcom"):
+    for name in BOOT_FILES[args.board]:
         if not extract(args.image, name):
             fail(f"/{name} is missing or empty")
     kernel = extract(args.image, "vmunix")
@@ -115,6 +120,7 @@ def main() -> None:
     parser.add_argument("--swapfile", type=Path, required=True)
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--cmdline", type=Path)
+    parser.add_argument("--board", choices=sorted(BOOT_FILES), default="rpi4")
     parser.add_argument("image", type=Path)
     check(parser.parse_args())
 

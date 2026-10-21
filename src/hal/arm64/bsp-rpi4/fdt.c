@@ -27,6 +27,15 @@ struct fdt_node {
 	uint8_t is_chosen;
 	uint8_t is_cpu;
 	uint8_t spin_table;
+#if defined(HAL_BOARD_RPI5)
+	/*
+	 * The /reserved-memory node, and one of its children, whose reg is
+	 * memory the firmware keeps (the secure monitor, the bootloader's
+	 * configuration).
+	 */
+	uint8_t is_reserved_memory;
+	uint8_t is_reserved_child;
+#endif
 	uint64_t release_addr;
 	uint32_t reg[FDT_MAX_CELLS];
 	uint32_t reg_count;
@@ -165,6 +174,9 @@ static int commit_node(struct fdt_node *node, const struct fdt_node *parent, str
 static int commit_memory(const struct fdt_node *node, struct rpi4_fdt_info *info);
 static int commit_device(const struct fdt_node *node, const struct fdt_node *parent, struct rpi4_fdt_info *info);
 static int commit_cpu(const struct fdt_node *node, struct rpi4_fdt_info *info);
+#if defined(HAL_BOARD_RPI5)
+static int commit_reserved(const struct fdt_node *node, struct rpi4_fdt_info *info);
+#endif
 static int read_reserve_map(const uint8_t *data, uint32_t total, uint32_t off_reserve, struct rpi4_fdt_info *info);
 static int begin_node(struct fdt_parse *parse);
 static int read_property(struct fdt_parse *parse);
@@ -321,6 +333,15 @@ commit_node(
 			return error;
 	}
 
+#if defined(HAL_BOARD_RPI5)
+	/* Memory the firmware keeps for itself. */
+	if (node->is_reserved_child) {
+		error = commit_reserved(node, info);
+		if (error != FDT_OK)
+			return error;
+	}
+#endif
+
 	/* A peripheral the HAL uses. */
 	error = commit_device(node, parent, info);
 	if (error != FDT_OK)
@@ -476,6 +497,54 @@ commit_cpu(
 	return FDT_OK;
 }
 
+#if defined(HAL_BOARD_RPI5)
+/*
+ * Records every range of a /reserved-memory child's reg as reserved.
+ *
+ * A child without reg (a pool the firmware lets the system place) adds
+ * nothing.
+ */
+static int
+commit_reserved(
+	const struct fdt_node *node,
+	struct rpi4_fdt_info *info)
+{
+	unsigned stride;
+	unsigned offset;
+	uint64_t base;
+	uint64_t size;
+	int error;
+
+	/* A node whose parent gives no cells has no ranges to read. */
+	stride = node->parent_addr_cells + node->parent_size_cells;
+	if (stride == 0)
+		return FDT_OK;
+
+	/* Reads each base and size pair. */
+	for (offset = 0; offset + stride <= node->reg_count; offset += stride) {
+		/* The base of the range. */
+		error = cells_to_u64(node->reg + offset, node->parent_addr_cells, &base);
+		if (error != FDT_OK)
+			return error;
+
+		/* Its size. */
+		error = cells_to_u64(node->reg + offset + node->parent_addr_cells,
+				     node->parent_size_cells,
+				     &size);
+		if (error != FDT_OK)
+			return error;
+
+		/* Keeps the range out of the allocator. */
+		error = add_range(info->reserved, &info->reserved_count, RPI4_FDT_MAX_RESERVED, base, size);
+		if (error != FDT_OK)
+			return error;
+	}
+
+	/* Succeeded: every range is recorded. */
+	return FDT_OK;
+}
+#endif
+
 /* Reads the memory reservation block, up to its empty entry. */
 static int
 read_reserve_map(
@@ -515,6 +584,9 @@ begin_node(
 	struct fdt_node *node;
 	size_t length;
 	int chosen;
+#if defined(HAL_BOARD_RPI5)
+	int reserved;
+#endif
 	int error;
 
 	/* Refuses a tree deeper than the stack. */
@@ -545,6 +617,16 @@ begin_node(
 	/* The /chosen node carries the firmware's command line. */
 	chosen = string_equal(parse->cursor, length, "chosen");
 	node->is_chosen = (uint8_t)(parse->depth == 1 && chosen);
+
+#if defined(HAL_BOARD_RPI5)
+	/* The /reserved-memory node, and each child of it. */
+	if (parse->depth == 1) {
+		reserved = string_equal(parse->cursor, length, "reserved-memory");
+		node->is_reserved_memory = (uint8_t)reserved;
+	}
+	if (parse->depth == 2 && parse->stack[1].is_reserved_memory)
+		node->is_reserved_child = 1;
+#endif
 
 	/* Steps over the name and its padding. */
 	parse->cursor += (length + 1 + 3) & ~(size_t)3;
@@ -656,6 +738,26 @@ record_property(
 
 	/* The board and the peripherals the HAL uses, by compatible string. */
 	matches = string_equal(name, name_length, "compatible");
+#if defined(HAL_BOARD_RPI5)
+	/*
+	 * On a Pi 5 the board is "raspberrypi,5-model-b" (a BCM2712), the UART
+	 * the debug connector's PL011, and the SD card's controller sdio1, the
+	 * one SDHCI that is also "brcm,sdhci-brcmstb" (sdio2, the Wi-Fi's, is
+	 * not).  The RP1's UARTs are "arm,pl011-axi" alone.
+	 *
+	 * Values referenced: Raspberry Pi Linux rpi-6.12.y
+	 * arch/arm64/boot/dts/broadcom/bcm2712.dtsi, bcm2712-ds.dtsi and
+	 * rp1.dtsi (the compatible strings).
+	 */
+	if (matches) {
+		node->is_rpi4 |= compatible_has(value, length, "raspberrypi,5-model-b");
+		node->is_rpi4 |= compatible_has(value, length, "brcm,bcm2712");
+		node->is_uart |= compatible_has(value, length, "arm,pl011");
+		node->is_mailbox |= compatible_has(value, length, "brcm,bcm2835-mbox");
+		node->is_gic |= compatible_has(value, length, "arm,gic-400");
+		node->is_sdhci |= compatible_has(value, length, "brcm,sdhci-brcmstb");
+	}
+#else
 	if (matches) {
 		node->is_rpi4 |= compatible_has(value, length, "raspberrypi,4-model-b");
 		node->is_rpi4 |= compatible_has(value, length, "brcm,bcm2711");
@@ -664,6 +766,7 @@ record_property(
 		node->is_gic |= compatible_has(value, length, "arm,gic-400");
 		node->is_sdhci |= compatible_has(value, length, "brcm,bcm2711-emmc2");
 	}
+#endif
 }
 
 /* Copies reg, ranges or interrupts into the node's cells, up to their room. */

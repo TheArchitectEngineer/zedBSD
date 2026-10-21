@@ -85,9 +85,9 @@ console output.  Furthermore, the board power is routed through a
 SwitchBot Smart Plug, allowing the AI to autonomously reboot the
 device via API after transferring a new kernel via SCP.
 
-This project is not a clone of any existing OS.  Every layer, including the
-desktop environment, is engineered from the ground up by a professional systems
-architect.
+This project is not a clone of any existing OS.  Every layer,
+including the desktop environment, is engineered from the ground up by
+a professional systems architect.
 
 ---
 

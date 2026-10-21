@@ -25,6 +25,9 @@
 /* The most bytes of the firmware's device tree the parser may read. */
 #define RPI4_FDT_READ_LIMIT (2U * 1024U * 1024U)
 
+/* The RAM locore.S maps for the boot: the first gigabyte. */
+#define RPI5_BOOT_RAM_LIMIT 0x40000000UL
+
 /*
  * Brings the boot CPU from locore.S to kernel_entry().
  *
@@ -49,25 +52,30 @@ arm64_cmain(
 	prekern_bsp_cons_init();
 	rpi4_led_init();
 	rpi4_led_stage(1);
-	hal_puts("RPI4 ENTRY\n");
+	hal_puts(ARM64_BOARD_TAG " ENTRY\n");
 
 	/* The kernel runs at EL1; locore.S has left EL2 if it entered there. */
 	if (arm64_current_el() != 1)
 		HAL_FATAL("AArch64 kernel did not enter EL1");
-	hal_puts("RPI4 EL1 PASS\n");
+	hal_puts(ARM64_BOARD_TAG " EL1 PASS\n");
 
 	/* Parses the firmware's device tree through the direct map. */
 	if (fdt_phys == 0)
 		HAL_FATAL("missing firmware FDT");
+#if defined(HAL_BOARD_RPI5)
+	/* The boot tables map only the first gigabyte of RAM, where the tree must lie. */
+	if (fdt_phys >= RPI5_BOOT_RAM_LIMIT - RPI4_FDT_READ_LIMIT)
+		HAL_FATAL("firmware FDT above the boot map");
+#endif
 	fdt = (const void *)(ARM64_DIRECT_BASE + fdt_phys);
 	error = rpi4_fdt_parse(fdt, RPI4_FDT_READ_LIMIT, &info);
 	if (error != 0) {
 		hal_printf("FDT parse error: %s\n", rpi4_fdt_error(error));
 		HAL_FATAL("invalid firmware FDT");
 	}
-	hal_printf("RPI4 FDT PASS phys=%p size=%u\n", (void *)fdt_phys, info.totalsize);
+	hal_printf(ARM64_BOARD_TAG " FDT PASS phys=%p size=%u\n", (void *)fdt_phys, info.totalsize);
 	rpi4_led_stage(2);
-	hal_printf("RPI4 MMIO uart=%llx gic=%llx/%llx sd=%llx\n",
+	hal_printf(ARM64_BOARD_TAG " MMIO uart=%llx gic=%llx/%llx sd=%llx\n",
 		   info.uart_base,
 		   info.gic_dist_base,
 		   info.gic_cpu_base,
@@ -80,13 +88,13 @@ arm64_cmain(
 	/* Brings up the framebuffer console, or stays on the UART without one. */
 	framebuffer = rpi4_framebuffer_init(info.mailbox_base);
 	if (framebuffer == 0) {
-		hal_puts("RPI4 FRAMEBUFFER PASS\n");
+		hal_puts(ARM64_BOARD_TAG " FRAMEBUFFER PASS\n");
 		rpi4_framebuffer_describe();
 		rpi4_led_stage(3);
 		rpi4_framebuffer_test_pattern();
 		rpi4_framebuffer_describe();
 	} else {
-		hal_puts("RPI4 framebuffer unavailable; UART-only console\n");
+		hal_puts(ARM64_BOARD_TAG " framebuffer unavailable; UART-only console\n");
 		rpi4_led_stage(6);
 	}
 

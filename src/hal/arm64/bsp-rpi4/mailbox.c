@@ -24,7 +24,18 @@ rpi4_mailbox_property(uintptr_t mailbox_phys,uint32_t *message,size_t bytes)
 	   virtual_address<ARM64_DIRECT_BASE)return -1;
 	physical=virtual_address-ARM64_DIRECT_BASE;
 	if(physical>=0x40000000ULL)return -1;
+#if defined(HAL_BOARD_RPI5)
+	/*
+	 * The Pi 5's VideoCore sees the ARM's physical addresses as they are:
+	 * the firmware node's dma-ranges is empty, an identity.
+	 *
+	 * Value referenced: Raspberry Pi Linux rpi-6.12.y
+	 * arch/arm64/boot/dts/broadcom/bcm2712-rpi.dtsi (the firmware node).
+	 */
+	request = (uint32_t)physical | MBOX_PROPERTY;
+#else
 	request=(uint32_t)(physical|0xc0000000U)|MBOX_PROPERTY;
+#endif
 	hal_dcache_clean_range(virtual_address,bytes);
 	deadline=now()+freq();
 	while(hal_mmio_read32(base+MBOX_STATUS)&MBOX_FULL)

@@ -1,0 +1,32 @@
+# WS278 Raspberry Pi 5 の実機の試験の手順
+
+QEMU に raspi5 は無いので、Pi 5 の実機で確かめる（ユーザーの手元の機材、Q1 経由で依頼）。
+
+## 用意
+
+- Raspberry Pi 5（RAM の量と、基板の stepping C1/D0 が分かれば記録）、電源（5V 5A の USB-C 推奨）。
+- micro SD card（8 GB 以上、中身は消える）。
+- micro HDMI → HDMI の cable と monitor。Pi 5 の HDMI0（USB-C の電源の側の port）につなぐ。
+- 任意: Raspberry Pi Debug Probe（3 pin の「UART」connector、115200 8N1）。serial の build（下）の時だけ使う。
+- 任意（p004 以降）: USB keyboard。
+
+## image
+
+- build: `make ZEDBSD_CONFIG=config/ci/config-rpi5.mk -j16`（出来る物は `build/rpi5/hdd-image.img`）。
+- serial の console も出す build（解析用）: `make ZEDBSD_CONFIG=config/ci/config-rpi5.mk BUILD=build/rpi5-serial CONFIG_RPI5_SERIAL_CONSOLE=y -j16`。
+- SD に書く: `sudo dd if=build/rpi5/hdd-image.img of=/dev/sdX bs=4M conv=fsync status=progress`（/dev/sdX は SD card の device。間違えると host の disk が消えるので `lsblk` で確かめる）。
+
+## 手順と期待（p002）
+
+1. SD を Pi 5 に入れ、monitor をつないでから電源を入れる。
+2. 期待:
+   - 緑の ACT LED（HAL が段階を点滅の回数で示す）: 1 回＝kernel に入った、2 回＝device tree を読めた、3 回＝framebuffer ができた（6 回なら framebuffer が無く UART だけ）、4 回＝memory・表・割り込みの用意が済み kernel に入る、その後は点灯のまま。1 回も点滅しなければ kernel に入っていない（design.md の R1、番地か dtb の選択）。
+   - HDMI: bootloader の画面の後、3 秒の赤・緑・青の試験の模様、その後に黒地の文字の log（`RPI5 ENTRY`、`RPI5 FDT PASS phys=…`、`RPI5 FRAMEBUFFER …`、`ARM64 MEMORY MAP PASS`、`ARM64 PAGING PASS`、kernel の log、`sdhci: mmcblk0 ready`）、最後に `login:` の prompt。
+3. 撮る: 画面の写真（login の prompt、または止まった所の最後の数行）と、LED の点滅の回数。
+4. serial の build なら Debug Probe の log（115200）も保存する。
+
+## 止まった時に知りたい事
+
+- LED の点滅の回数と、点灯・消灯のどちらで止まったか。
+- 画面: bootloader の画面のまま（kernel に入っていない、R1 の番地か dtb の選択）か、試験の模様まで出たか、log の最後の行。
+- `sdhci: init error=…` や `CMD8`・`ACMD41` の行があれば SD の初期化（design.md の R3）。

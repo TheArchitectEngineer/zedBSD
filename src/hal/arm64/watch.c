@@ -249,6 +249,14 @@ arm64_watch_init(
 	if (frequency == 0)
 		return;
 
+#if defined(HAL_BOARD_RPI5)
+	/*
+	 * The Pi 5's compositor is elsewhere and laid out differently, and the
+	 * Pi 4's address is RAM there: the report stays on the framebuffer.
+	 */
+	(void)window;
+	(void)error;
+#else
 	/* Maps the compositor's registers and display-list memory, uncached. */
 	window = NULL;
 	error = hal_space_map_device(WATCH_HVS_BASE,
@@ -257,6 +265,7 @@ arm64_watch_init(
 				     &window);
 	if (error == HAL_OK)
 		watch_hvs = (volatile uint32_t *)window;
+#endif
 
 	/* The thresholds come last: a nonzero frequency turns the watch on. */
 	watch_stall_ticks = frequency * WATCH_STALL_SECONDS;
