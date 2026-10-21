@@ -358,7 +358,7 @@ varying の補間（M `nir_to_vir.c` 1041〜1110 行）: ldvary で係数を受�
   - 暗黙の rf0 の書き込みと、同じ時の他の signal による register file の書き込みが重なる時（「rf0 の flop の衝突」）は、thrsw の最後の遅延の slot に register file を書く signal を置かない（qpu_schedule.c 1669〜1720・2088 行）。
   - SFU の命令は thrend の最後の 2 つの slot に置かない（7.1 は slot 2、qpu_schedule.c 2058〜2068 行）。
 - accumulator が thrsw で消える、という 4.2 の制約（Z `shader-schedule.c` が扱う物）は無くなる。
-- register の割り当て: 物理 register は 64 個を thread の数で分ける（4 thread なら 16、M `vir_register_allocate.c` 1055〜1072 行）のは同じ。7.1 は rf0 を ldunif のためになるべく空けておく（同 926〜1010 行）。最後の 3 命令が使えない register がある（同 977〜990 行、版で違う。7.1 は rf2・rf3 が thrend の後で壊れる）。
+- register の割り当て: 物理 register は 64 個を thread の数で分けるのは同じ（訂正 2026-10-21 p004: 4 thread なら rf0〜rf31 の 32 個。M `vir_register_allocate.c` 1055〜1072 行は thread の index ごとに 64 を半分にし、4.x 以降は 2 thread が index 0）。7.1 は rf0 を ldunif のためになるべく空けておく（同 926〜1010 行）。最後の 3 命令が使えない register がある（同 977〜990 行、版で違う。7.1 は rf2・rf3 が thrend の後で壊れる）。
 
 ### 3.6 TMU・TLB・VPM
 
@@ -376,7 +376,7 @@ Z の構成: 共通の SPIR-V の frontend と IR（`src/drivers/gpu/compiler/`�
 | lowering（scalar の op、varying、TMU、TLB、VPM の epilogue） | 大半は共有。SFU の op 化、fsat の unpack、payload の register（rf3）、C 係数の rf0、MOV の扱いを版で分ける | 中 |
 | scheduler・register の割り当て | 7.1 用を新しく（accumulator 無し、4 つの読み口、small immediate の置き場所、rf0 の暗黙の書き込み、ldvary の遅れ、SFU の latency 2、thrsw/thrend の 7.1 の決まり） | 大（4.2 の 2,360 行と同じ程度） |
 | encoder | 7.1 用を新しく（field の位置、signal の表、op の番号の表、raddr） | 中（4.2 の 871 行と同じ程度） |
-| 固定の shader（`meta/texture.*.spvasm`、`texture-words.inc` の機械語） | 7.1 用に作り直す（機械語は版で違う） | 小 |
+| 固定の shader（`meta/texture.*.spvasm`、`texture-words.inc`） | 訂正（2026-10-21 p004）: `texture-words.inc` は SPIR-V の word で実行時に compile するので版に依らず共有。7.1 の compiler で compile できる事を試験で確かめる | 0 |
 
 ---
 

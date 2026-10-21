@@ -3,7 +3,7 @@
 # ws279-p004 QPU 7.1 の encoder・scheduler・register の割り当て・固定の shader
 
 - 親: [ws279](../ws.md)、Queue: q1545 / q1545-i01（P2、2026-10-21）
-- Status: in-progress
+- Status: in-progress（host の受け入れの条件 1〜4 を満たした、2026-10-21 P2。Q1 の判定待ち。実機の確認は p005 の最初の三角形で）
 - 依頼の元: 2026-10-21 ユーザー「Pi5のdecisionは推しでOKです」（design §9 の D1 = 7.1 の file を `src/drivers/gpu/bcm2711/` に足し rpi5 の build だけで選ぶ、Pi 4 の kernel は不変）、「Pi5の作業は続けていいです」。Fable の review は使わない（「Pi5の対応は、Fableによるレビューは不要です。Opus 5.5で対応しましょう。」）。board の違いは `#if` で分けず写して書き直し、本当に同じ物だけ共通にする（「無理に共通化しないで rpi4のコピーでrpi5を作って、共通部分をまとめるのが私の好みです。」）。
 
 ## 目的と受け入れの条件
@@ -58,8 +58,25 @@ zedBSD の Pi 4 の compiler は、共有の SPIR-V の前段（`src/drivers/gpu
 
 ## 記録
 
-- 2026-10-21 P2: 設計（上）。design §3.5 の「4 thread なら 16」は誤り（M `vir_register_allocate.c` は thread の index で 64 を半分にするだけで、4 thread は rf0〜rf31。zedBSD の 4.2 と同じ）。
+- 2026-10-21 P2: 設計（上）。design §3.5 の「4 thread なら 16」は誤り（M `vir_register_allocate.c` は thread の index で 64 を半分にするだけで、4 thread は rf0〜rf31。zedBSD の 4.2 と同じ）。design §3.5・§3.7 に訂正を書いた。
+- 2026-10-21 P2 実装（commit b54b15cc4 = encoder と試験、Q1 が main 1fac4c55e に merge 済み。lowering・出力・scheduler・lane の model・shader の試験・mk は 562e610bb）:
+  - `src/drivers/gpu/bcm2711/qpu71.c`（新規）: 7.1 の encoder。
+  - `shader71-lower.c`・`shader71-output.c`・`shader71-schedule.c`（4.2 の file の写しを 7.1 に書き直した物）。
+    - lowering: C 係数は rf0、W は rf3、2 つの small constant は等しくても 1 つを register に、選択の 0 の判定は MOV の pushz（M `nir_to_vir.c` 458・1271 行と同じ形）。
+    - 出力: vertex の最後の VPMWT を出さない。XY の .8 固定小数は floor でなく最近接偶数への丸め（M `v3d_nir_lower_io.c` 528〜541 行: floor は 4.2 だけの二重丸めの対策、7.x は fround_even）。fragment の色の 2 つの定数は等しくても 1 つを register に。
+    - scheduler: accumulator への昇格を外し 1 回の試み。資源は rf0〜rf63 と flag。ldvary は rf0 に 1 語後、SFU は 1 語後に着き、SFU の開始は 2 語空ける。rf0 の読みは switch を越えない。peripheral は 7.1 の restricted の規則（TLB の書き込み・ldtmu は SFU・TMU と同じ語に置ける）。thread end の窓は 4.2 の厳しい規則のまま（register に書かない、rf0〜rf3 を読まない）。
+  - 共有して変えない file: `qpu.h`・`shader.h`・`shader-private.h`・`shader.c`・`shader-analyze.c`（Pi 4 の file は 1 行も変えていない）。
+  - `platform/arm64/vmunix.mk`: `CONFIG_DRIVER_BCM2712_GPU` が y の時に 7.1 の compiler の source を足す block。switch の定義（Makefile・menuconfig）は p002 で他の driver の部分と一緒に足す。今は何も選ばない。
+- 試験（host、2026-10-21 19:50 までに流した）:
+  - `sh plan/ws279/tests/qpu71-format-host-test.sh`: PASS。全部の semantic な op を add・mul の各 ALU で 64 通りの register の組で encode し、Mesa 25.3.6 の 7.1 decoder で op・unpack・raddr・waddr を確かめ、Mesa の packer が decode した命令からも semantic な記述だけからも同じ語を作る事を確かめた。idle の語 0x38003186bb03f000、全 signal と addressed な書き先、thrsw との組、48 個の small immediate を 4 つの読み口で、条件の全部の組、拒む組（small immediate 2 つ・signal や thrsw との組・accumulator・7.1 で予約の magic・addressed な signal と条件・両 ALU の push・FMAX の同じ入力）。
+  - `sh plan/ws279/tests/shader71-host-test.sh`: PASS。WS141 の試験の写しで、木の全部の shader（Keiland・app・driver の texture の copy の meta の vert/frag）を 7.1 の compiler で compile し、7.1 の lane の model（`qpu71-machine.c`、WS141 の 4.2 の model を 7.1 の決まりに書き直した物）で走らせ、source の program の解釈と bit 単位で比べた。fragment は全部 schedule され（4 thread が多い）、program の長さは 4.2 と同じか短い（例 kwl panel 254→229 語、monitor shape 175→147 語、kwl panel 7 98→95 語）。拒む shader は 4.2 と同じ（mview cutout・pixel、libGL の frag、vkdemo の vert）。
+  - 試験の試験（変異）: W を rf0 に戻す、SFU の間を 1 にする、rf0 の着きを 0 語にする、rf0 の読みを switch で守らない、の 4 つの変更はどれも試験が落とした。
+  - Pi 4 の `sh plan/ws141/tests/shader-host-test.sh`: PASS（共有の file を変えていない事の確かめ）。
+  - kernel の flag での compile: `build/llvm/bin/clang --target=aarch64-unknown-zedbsd` に `platform/arm64/vmunix.mk` の ARM64_CPPFLAGS・ARM64_CFLAGS（`-Os -Wall -Wextra -Werror`、rpi5 の define）と kernel の object の `-fno-builtin -fno-strict-aliasing` で qpu71・shader71-lower・shader71-output・shader71-schedule・shader・shader-analyze を compile し、warning 0。rpi5 の kernel の全体の build と link はしていない（switch が無いので）。
+- 規約: 新しく書いた所（qpu71.c、試験、各 file の 7.1 の差の部分）は coding-style の全文で書いた。4.2 の file から写した本体は元の file の書き方のまま。全文の見直しは p009。
+- 未実施: 実機・QEMU（Pi 5 の V3D の emulation は無い）。lane の model は test の model で、cycle の model ではない。7.1 で緩められる決まり（thrsw の遅延の語の ldvary、thread end の遅延の語の register の書き込み、SFU の次の語の読み）は使っていない（確かな側）。
 
 ## 再開の条件
 
-（実装の後に書く）
+- Q1 の判定。p005（描画の経路）で 7.1 の shader state record から呼ぶ。最初の三角形（実機）で TLB の書き込みの形（design §8 U5）と payload の rf3 を確かめる。
+- p002 で `CONFIG_DRIVER_BCM2712_GPU` を定義した時、rpi5 の kernel の build と link で warning 0 を確かめる。
