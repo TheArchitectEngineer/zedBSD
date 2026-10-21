@@ -155,12 +155,11 @@ _Static_assert(QUEUE_PDS_OFFSET == POWERVR_PROGRAM_HEAP_START && QUEUE_PDS_BYTES
 #define QUEUE_JOBS_MAX			64U
 
 /*
- * Whether a submission returns once it kicked its work (1), or waits for
- * each render job and compute stream to finish as before (0, the default
- * until the board runs the asynchronous submission without faults).
+ * Whether a submission returns once it kicked its work (1, the default),
+ * or waits for each render job and compute stream to finish (0).
  */
 #ifndef POWERVR_ASYNC_SUBMIT
-#define POWERVR_ASYNC_SUBMIT		0
+#define POWERVR_ASYNC_SUBMIT		1
 #endif
 
 /* How long a submission waits for the core. */
