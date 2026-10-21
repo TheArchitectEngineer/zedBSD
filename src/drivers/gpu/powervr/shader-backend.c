@@ -167,6 +167,8 @@ static int fold_move(struct shader_backend *backend, unsigned at, unsigned outpu
 static int simple_kind(unsigned kind);
 static void merge_iterates(const struct powervr_shader_program *program, struct shader_backend *backend);
 static void reuse_immediates(struct shader_backend *backend);
+static void unpack_in_place(const struct powervr_shader_program *program, struct shader_backend *backend);
+static int pack_constant(const struct powervr_ir_instruction *instruction, uint32_t *packed);
 static int repeated_immediate(const struct shader_backend *backend, unsigned at);
 static unsigned temporary_block(unsigned index);
 static int reads_register(const struct shader_machine_operation *operation, struct shader_machine_register reg);
@@ -272,6 +274,7 @@ shader_backend_build(
 	fold_moves(program, backend, select.output_base);
 	merge_iterates(program, backend);
 	reuse_immediates(backend);
+	unpack_in_place(program, backend);
 
 	/*
 	 * The ending: a vertex emits its outputs, every task ends; a
@@ -973,6 +976,97 @@ repeated_immediate(
 	return 0;
 }
 
+/*
+ * In a fragment program without branches, unpacks the colour already in
+ * a pixel output register from the register itself under the overlap
+ * check, where it was moved into a temporary first (q1539: a group a
+ * blended pixel).
+ */
+static void
+unpack_in_place(
+	const struct powervr_shader_program *program,
+	struct shader_backend *backend)
+{
+	struct shader_machine_operation *move;
+	struct shader_machine_operation *unpack;
+	unsigned at;
+	unsigned next;
+	unsigned kept;
+	int read;
+
+	/* Fragment programs without branches only (no branch targets to keep). */
+	if (program->stage != POWERVR_SHADER_FRAGMENT || backend->control_flow != 0)
+		return;
+
+	/* A checked move out of a pixel output register into a temporary only the unpack after it reads. */
+	for (at = 0; at + 1U < backend->operation_count; at++) {
+		move = &backend->operations[at];
+		unpack = &backend->operations[at + 1U];
+		if (move->kind != MACHINE_MOVE || move->variant != 1 || move->modifiers[0] != 0 || move->source[0].bank != POWERVR_USC_BANK_SPECIAL ||
+		    move->destination[0].bank != POWERVR_USC_BANK_TEMPORARY || move->condition != POWERVR_USC_RUN_ENABLED || move->end != 0)
+			continue;
+		if (unpack->kind != MACHINE_UNPACK || !same_register(unpack->source[0], move->destination[0]) || unpack->condition != move->condition)
+			continue;
+		read = 0;
+		for (next = at + 2U; next < backend->operation_count; next++) {
+			if (reads_register(&backend->operations[next], move->destination[0])) {
+				read = 1;
+				break;
+			}
+			if (same_register(backend->operations[next].destination[0], move->destination[0]))
+				break;
+		}
+		if (read)
+			continue;
+		unpack->source[0] = move->source[0];
+		unpack->overlap = 1;
+		move->kind = MACHINE_FOLDED;
+	}
+
+	/* The rest close up. */
+	kept = 0;
+	for (at = 0; at < backend->operation_count; at++) {
+		if (backend->operations[at].kind == MACHINE_FOLDED)
+			continue;
+		if (kept != at)
+			backend->operations[kept] = backend->operations[at];
+		kept++;
+	}
+	backend->operation_count = kept;
+}
+
+/*
+ * Works out the packed 8-bit word of a pixel store whose four channels
+ * are the constants 0.0 (or -0.0) and 1.0, red in the lowest byte; other
+ * constants are left to the pack (the kernel does no float arithmetic).
+ */
+static int
+pack_constant(
+	const struct powervr_ir_instruction *instruction,
+	uint32_t *packed)
+{
+	const struct powervr_ir_operand *operand;
+	unsigned channel;
+
+	/* Eight-bit channels only. */
+	if (instruction->immediate_2 != 0)
+		return 0;
+
+	/* Each channel nought or one. */
+	*packed = 0;
+	for (channel = 0; channel < 4; channel++) {
+		operand = &instruction->source[channel];
+		if (operand->kind != POWERVR_IR_OPERAND_CONSTANT || operand->modifiers != 0)
+			return 0;
+		if (operand->constant == 0x3f800000U) {
+			*packed |= 0xffU << (channel * 8U);
+		} else if (operand->constant != 0 && operand->constant != 0x80000000U) {
+			return 0;
+		}
+	}
+	return 1;
+}
+
 /* Which block a temporary is in (the back end's own three, or the values'), so a span of them stays together when compacted. */
 static unsigned
 temporary_block(
@@ -1078,7 +1172,7 @@ fold_move(
 		other = &backend->operations[next];
 		if (reads_register(other, source))
 			return 0;
-		if (same_register(other->destination[0], source) && simple_kind(other->kind))
+		if (same_register(other->destination[0], source))
 			break;
 	}
 
@@ -1490,6 +1584,7 @@ select_instruction(
 	unsigned word;
 	unsigned opcode;
 	unsigned variant;
+	uint32_t packed;
 	int error;
 
 	/* Structure has its own selection. */
@@ -1906,6 +2001,21 @@ select_instruction(
 		/* The four words side by side, packed, into the pixel output under the overlap check (8-bit unorm, or half floats into two registers). */
 		if (instruction->immediate >= 4 || (instruction->immediate_2 != 0 && instruction->immediate >= 3))
 			return ENOTSUP;
+		if (pack_constant(instruction, &packed)) {
+			/* A constant colour of noughts and ones: its packed word, moved under the overlap check (q1539). */
+			operation = append(select, MACHINE_IMMEDIATE);
+			if (operation != NULL) {
+				operation->destination[0] = temp_register(TEMP_SCRATCH);
+				operation->immediate = packed;
+			}
+			operation = append(select, MACHINE_MOVE);
+			if (operation != NULL) {
+				operation->destination[0] = bank_register(POWERVR_USC_BANK_SPECIAL, SPECIAL_PIXEL_OUTPUT + instruction->immediate);
+				operation->source[0] = temp_register(TEMP_SCRATCH);
+				operation->variant = 1;
+			}
+			break;
+		}
 		for (channel = 0; channel < 4; channel++) {
 			select->scratch = 0;
 			source = operand_plain(select, &instruction->source[channel], 0);
@@ -2110,6 +2220,7 @@ append(
 	operation->modifiers[2] = 0;
 	operation->end = 0;
 	operation->saturate = 0;
+	operation->overlap = 0;
 	for (index = 0; index < 2; index++) {
 		operation->destination[index].bank = 0xff;
 		operation->destination[index].index = 0;
@@ -2812,6 +2923,7 @@ shader_backend_group(
 		group_register(&group->destination[0], operation->destination[0]);
 		group->internal[4] = SELECT_FT0;
 		group->repeat = (uint8_t)operation->immediate;
+		group->overlap_check = operation->overlap;
 		error = powervr_usc_unpack(operation->variant, 0, operation->immediate_2 & PACK_SCALE, &group->operation[POWERVR_USC_PHASE_0]);
 		break;
 	case MACHINE_LOAD:

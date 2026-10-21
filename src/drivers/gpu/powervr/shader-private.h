@@ -148,6 +148,7 @@ struct shader_machine_operation {
 	uint8_t modifiers[3];
 	uint8_t end;
 	uint8_t saturate;
+	uint8_t overlap;
 	struct shader_machine_register destination[2];
 	struct shader_machine_register source[4];
 	uint32_t immediate;
