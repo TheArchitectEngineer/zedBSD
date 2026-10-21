@@ -198,6 +198,9 @@ static void remove_dead_writes(struct powervr_ir_shader *shader);
 static int compile_program(const uint32_t *words, size_t count, uint32_t stage, const struct powervr_shader_key *key, const uint32_t *shared_values, uint32_t value_count, unsigned split, struct powervr_shader_workspace *workspace, struct powervr_shader_program *program, uint8_t *code, size_t room);
 static int shared_build(struct powervr_shader_workspace *workspace, struct powervr_shader_program *program);
 static int split_shared(struct powervr_ir_shader *shader, struct powervr_shader_program *program, struct shader_uniform *uniform, struct powervr_ir_shader *shared, unsigned *moved);
+static int uniform_mark(const struct powervr_ir_shader *shader, const struct powervr_shader_program *program, struct shader_uniform *uniform);
+static int uniform_mixes(struct powervr_ir_shader *shader, const struct powervr_shader_program *program, struct shader_uniform *uniform);
+static int uniform_operand(const struct powervr_ir_shader *shader, const struct shader_uniform *uniform, const struct powervr_ir_operand *operand);
 static unsigned uniform_kind(const struct powervr_ir_shader *shader, const struct powervr_shader_program *program, const struct shader_uniform *uniform, const struct powervr_ir_instruction *instruction);
 static int uniform_colour(const struct powervr_ir_shader *shader, const struct shader_uniform *uniform, const struct powervr_ir_instruction *instruction);
 static int shared_literal(struct powervr_shader_program *program, uint32_t bits, uint32_t *reg);
@@ -593,6 +596,9 @@ compile_program(
 		workspace->backend.forms = key->forms & (POWERVR_SHADER_FORM_ITERATE_SAMPLE | POWERVR_SHADER_FORM_SUM_OF_PRODUCTS | POWERVR_SHADER_FORM_SAMPLE_WAITS);
 	moved = 0;
 	if (split != 0) {
+		error = uniform_mixes(shader, program, &workspace->uniform);
+		if (error != 0)
+			return error;
 		error = split_shared(shader, program, &workspace->uniform, &workspace->shared_shader, &moved);
 		if (error != 0)
 			return error;
@@ -711,8 +717,6 @@ split_shared(
 	const struct powervr_ir_operand *operand;
 	uint32_t packed;
 	uint32_t reg;
-	unsigned opcode;
-	unsigned depth;
 	int colour;
 	int constant;
 	unsigned at;
@@ -723,55 +727,11 @@ split_shared(
 	unsigned base;
 	int error;
 
-	/* Nothing known of any value or instruction yet. */
+	/* The uniform values and the instructions that write them. */
 	*moved = 0;
-	for (value = 0; value < shader->value_count; value++) {
-		uniform->writes[value] = 0;
-		uniform->kind[value] = SHADER_UNIFORM_VARYING;
-		uniform->slot[value] = 0;
-	}
-	for (at = 0; at < shader->instruction_count; at++) {
-		uniform->moved[at] = 0;
-		uniform->pack_slot[at] = 0;
-	}
-
-	/* How often each value is written. */
-	for (at = 0; at < shader->instruction_count; at++) {
-		instruction = &shader->instructions[at];
-		value = instruction->destination;
-		if (instruction->opcode < POWERVR_IR_MOVE || value == 0 || value >= shader->value_count)
-			continue;
-		if (uniform->writes[value] < UINT16_MAX)
-			uniform->writes[value]++;
-	}
-
-	/* The uniform values: written once outside every if and loop, only from uniform values and constants. */
-	depth = 0;
-	for (at = 0; at < shader->instruction_count; at++) {
-		instruction = &shader->instructions[at];
-		opcode = instruction->opcode;
-		if (opcode == POWERVR_IR_IF || opcode == POWERVR_IR_LOOP) {
-			depth++;
-			continue;
-		}
-		if (opcode == POWERVR_IR_END_IF || opcode == POWERVR_IR_END_LOOP) {
-			if (depth == 0)
-				return EINVAL;
-			depth--;
-			continue;
-		}
-		if (depth != 0 || opcode < POWERVR_IR_MOVE)
-			continue;
-		value = instruction->destination;
-		if (value == 0 ||
-		    value >= shader->value_count ||
-		    shader->values[value].width != 1 ||
-		    uniform->writes[value] != 1)
-			continue;
-		uniform->kind[value] = (uint8_t)uniform_kind(shader, program, uniform, instruction);
-		if (uniform->kind[value] != SHADER_UNIFORM_VARYING)
-			uniform->moved[at] = 1;
-	}
+	error = uniform_mark(shader, program, uniform);
+	if (error != 0)
+		return error;
 
 	/*
 	 * The words: each computed uniform value an instruction left in the
@@ -871,6 +831,238 @@ split_shared(
 	/* Succeeded: the computed words. */
 	*moved = slots;
 	return 0;
+}
+
+/*
+ * Marks the uniform values (split_shared): written once outside every if
+ * and loop, only from uniform values and constants, or a shared word the
+ * data sequencer loads; moved marks the instructions that write them.
+ */
+static int
+uniform_mark(
+	const struct powervr_ir_shader *shader,
+	const struct powervr_shader_program *program,
+	struct shader_uniform *uniform)
+{
+	const struct powervr_ir_instruction *instruction;
+	unsigned opcode;
+	unsigned depth;
+	unsigned value;
+	unsigned at;
+
+	/* Nothing known of any value or instruction yet. */
+	for (value = 0; value < shader->value_count; value++) {
+		uniform->writes[value] = 0;
+		uniform->kind[value] = SHADER_UNIFORM_VARYING;
+		uniform->slot[value] = 0;
+	}
+	for (at = 0; at < shader->instruction_count; at++) {
+		uniform->moved[at] = 0;
+		uniform->pack_slot[at] = 0;
+	}
+
+	/* How often each value is written. */
+	for (at = 0; at < shader->instruction_count; at++) {
+		instruction = &shader->instructions[at];
+		value = instruction->destination;
+		if (instruction->opcode < POWERVR_IR_MOVE || value == 0 || value >= shader->value_count)
+			continue;
+		if (uniform->writes[value] < UINT16_MAX)
+			uniform->writes[value]++;
+	}
+
+	/* The uniform values, in order. */
+	depth = 0;
+	for (at = 0; at < shader->instruction_count; at++) {
+		instruction = &shader->instructions[at];
+		opcode = instruction->opcode;
+		if (opcode == POWERVR_IR_IF || opcode == POWERVR_IR_LOOP) {
+			depth++;
+			continue;
+		}
+		if (opcode == POWERVR_IR_END_IF || opcode == POWERVR_IR_END_LOOP) {
+			if (depth == 0)
+				return EINVAL;
+			depth--;
+			continue;
+		}
+		if (depth != 0 || opcode < POWERVR_IR_MOVE)
+			continue;
+		value = instruction->destination;
+		if (value == 0 ||
+		    value >= shader->value_count ||
+		    shader->values[value].width != 1 ||
+		    uniform->writes[value] != 1)
+			continue;
+		uniform->kind[value] = (uint8_t)uniform_kind(shader, program, uniform, instruction);
+		if (uniform->kind[value] != SHADER_UNIFORM_VARYING)
+			uniform->moved[at] = 1;
+	}
+
+	/* Succeeded: the values are marked. */
+	return 0;
+}
+
+/* The most different weights uniform_mixes keeps one minus of. */
+#define UNIFORM_MIX_WEIGHTS	8U
+
+/*
+ * Rewrites each mix of a varying x towards a uniform y by a uniform
+ * weight z, x + (y - x) * z (the reader's two instructions, a pixel's
+ * add and multiply-add), as x * (1 - z) + y * z: both products' factors
+ * then are uniform, so the shared program works them out once a draw
+ * and the pixel's work is one multiply-add.  One minus a weight is
+ * worked out once for the mixes of that weight.
+ */
+static int
+uniform_mixes(
+	struct powervr_ir_shader *shader,
+	const struct powervr_shader_program *program,
+	struct shader_uniform *uniform)
+{
+	struct powervr_ir_instruction *mix;
+	struct powervr_ir_instruction *difference;
+	struct powervr_ir_instruction *inserted;
+	struct powervr_ir_operand weights[UNIFORM_MIX_WEIGHTS];
+	struct powervr_ir_operand x;
+	struct powervr_ir_operand y;
+	struct powervr_ir_operand rest;
+	struct powervr_ir_operand product;
+	unsigned rests[UNIFORM_MIX_WEIGHTS];
+	unsigned weight_count;
+	unsigned writes;
+	unsigned writer;
+	unsigned reads;
+	unsigned slot;
+	unsigned side;
+	unsigned at;
+	unsigned index;
+	unsigned found;
+	int error;
+
+	/* Only a fragment program's work moves to a shared program. */
+	if (program->stage != POWERVR_SHADER_FRAGMENT)
+		return 0;
+	error = uniform_mark(shader, program, uniform);
+	if (error != 0)
+		return error;
+
+	/* Each multiply-add of a difference read once and a uniform weight, adding the difference's subtrahend. */
+	weight_count = 0;
+	for (at = 0; at < shader->instruction_count; at++) {
+		mix = &shader->instructions[at];
+		if (mix->opcode != POWERVR_IR_FLOAT_MULTIPLY_ADD || mix->source[2].kind != POWERVR_IR_OPERAND_VALUE || mix->source[2].modifiers != 0)
+			continue;
+		x = mix->source[2];
+		if (x.value >= shader->value_count || uniform->kind[x.value] != SHADER_UNIFORM_VARYING)
+			continue;
+		for (slot = 0; slot < 2; slot++) {
+			/* The difference, written once by an add, read only here. */
+			if (mix->source[slot].kind != POWERVR_IR_OPERAND_VALUE ||
+			    mix->source[slot].modifiers != 0 ||
+			    mix->source[slot].component != 0 ||
+			    mix->source[slot].value >= shader->value_count ||
+			    shader->values[mix->source[slot].value].width != 1 ||
+			    !uniform_operand(shader, uniform, &mix->source[1U - slot]))
+				continue;
+			reads = value_references(shader, mix->source[slot].value, &writes, &writer);
+			if (reads != 1 || writes != 1 || writer >= at)
+				continue;
+			difference = &shader->instructions[writer];
+			if (difference->opcode != POWERVR_IR_FLOAT_ADD || difference->flags != 0)
+				continue;
+
+			/* Its uniform minuend y, and x negated. */
+			for (side = 0; side < 2; side++) {
+				if (difference->source[1U - side].kind == POWERVR_IR_OPERAND_VALUE &&
+				    difference->source[1U - side].value == x.value &&
+				    difference->source[1U - side].component == x.component &&
+				    difference->source[1U - side].modifiers == POWERVR_IR_NEGATE &&
+				    uniform_operand(shader, uniform, &difference->source[side]))
+					break;
+			}
+			if (side == 2)
+				continue;
+			y = difference->source[side];
+
+			/* The weight written before the difference (a constant always is). */
+			if (mix->source[1U - slot].kind == POWERVR_IR_OPERAND_VALUE) {
+				(void)value_references(shader, mix->source[1U - slot].value, &writes, &writer);
+				if (writer >= (unsigned)(difference - shader->instructions))
+					continue;
+			}
+
+			/* One minus the weight, once for the weight: inserted before the mix. */
+			found = UNIFORM_MIX_WEIGHTS;
+			for (index = 0; index < weight_count; index++) {
+				if (weights[index].kind == mix->source[1U - slot].kind &&
+				    weights[index].value == mix->source[1U - slot].value &&
+				    weights[index].constant == mix->source[1U - slot].constant &&
+				    weights[index].component == mix->source[1U - slot].component)
+					found = index;
+			}
+			if (found == UNIFORM_MIX_WEIGHTS) {
+				if (weight_count == UNIFORM_MIX_WEIGHTS ||
+				    shader->instruction_count >= POWERVR_IR_INSTRUCTIONS ||
+				    shader->value_count >= POWERVR_IR_VALUES)
+					continue;
+				for (index = shader->instruction_count; index > at; index--)
+					shader->instructions[index] = shader->instructions[index - 1U];
+				shader->instruction_count++;
+				inserted = &shader->instructions[at];
+				mix = &shader->instructions[at + 1U];
+				*inserted = (struct powervr_ir_instruction){ 0 };
+				inserted->opcode = POWERVR_IR_FLOAT_ADD;
+				inserted->destination = (uint16_t)shader->value_count;
+				inserted->source[0].kind = POWERVR_IR_OPERAND_CONSTANT;
+				inserted->source[0].constant = 0x3f800000U;
+				inserted->source[1] = mix->source[1U - slot];
+				inserted->source[1].modifiers = POWERVR_IR_NEGATE;
+				shader->values[shader->value_count].width = 1;
+				weights[weight_count] = mix->source[1U - slot];
+				rests[weight_count] = shader->value_count;
+				found = weight_count;
+				weight_count++;
+				shader->value_count++;
+				at++;
+			}
+			rest = (struct powervr_ir_operand){ 0 };
+			rest.kind = POWERVR_IR_OPERAND_VALUE;
+			rest.value = (uint16_t)rests[found];
+
+			/* The difference becomes y * z, and the mix x * (1 - z) + y * z. */
+			product = mix->source[slot];
+			difference->opcode = POWERVR_IR_FLOAT_MULTIPLY;
+			difference->source[0] = y;
+			difference->source[1] = mix->source[1U - slot];
+			mix->source[0] = x;
+			mix->source[1] = rest;
+			mix->source[2] = product;
+			break;
+		}
+	}
+
+	/* Succeeded: the mixes read uniform products. */
+	return 0;
+}
+
+/* Reports whether an operand is a constant or a word of a uniform value, without modifiers. */
+static int
+uniform_operand(
+	const struct powervr_ir_shader *shader,
+	const struct shader_uniform *uniform,
+	const struct powervr_ir_operand *operand)
+{
+	/* A plain constant. */
+	if (operand->modifiers != 0)
+		return 0;
+	if (operand->kind == POWERVR_IR_OPERAND_CONSTANT)
+		return 1;
+
+	/* A uniform value's only word. */
+	if (operand->kind != POWERVR_IR_OPERAND_VALUE || operand->component != 0 || operand->value >= shader->value_count)
+		return 0;
+	return uniform->kind[operand->value] != SHADER_UNIFORM_VARYING;
 }
 
 /* Reports how uniform an instruction's result is (SHADER_UNIFORM_*): a loaded shared word, a copy of one or of a constant, or arithmetic of uniform values. */
