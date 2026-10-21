@@ -35,6 +35,16 @@
 /* The vertices of one cell: two triangles. */
 #define RENDER_CELL_VERTICES	6U
 
+/* The parts of a frame's drawing the ZTERM PERF line sums, and how often it is written (milliseconds). */
+#define RENDER_PERF_BUILD	0U
+#define RENDER_PERF_ACQUIRE	1U
+#define RENDER_PERF_RECORD	2U
+#define RENDER_PERF_SUBMIT	3U
+#define RENDER_PERF_PRESENT	4U
+#define RENDER_PERF_WAIT	5U
+#define RENDER_PERF_PARTS	6U
+#define RENDER_PERF_MS		5000U
+
 static VkResult render_device(struct terminal_renderer *renderer);
 static VkResult render_swapchain(struct terminal_renderer *renderer, uint32_t width, uint32_t height, VkSwapchainKHR old);
 static VkResult render_pass(struct terminal_renderer *renderer);
@@ -53,6 +63,9 @@ static float *render_quad(float *vertex, const struct terminal_font *font, float
 static void render_record(struct terminal_renderer *renderer, uint32_t image, uint32_t vertex_count, uint32_t ground);
 static const struct terminal_theme *render_theme(const struct terminal_window *window);
 static uint32_t render_color(const struct terminal_theme *theme, uint32_t color);
+static uint64_t render_now_us(void);
+static void render_perf_add(unsigned part, uint64_t started);
+static void render_perf_report(void);
 static float *render_search_bar(struct terminal_renderer *renderer, const struct terminal_screen *screen, struct terminal_font *font, const struct terminal_window *window, const struct terminal_theme *theme, float *vertex);
 
 /*
@@ -60,6 +73,16 @@ static float *render_search_bar(struct terminal_renderer *renderer, const struct
  * GENERAL (with the host's writes kept); nonzero once that is done.
  */
 static int render_atlas_ready;
+
+/*
+ * The ZTERM PERF line's sums since it was last written: the frames drawn,
+ * each part's total and longest time in microseconds (RENDER_PERF_*), and
+ * when the window began (terminal_clock).  The main thread's alone.
+ */
+static unsigned render_perf_frames;
+static uint64_t render_perf_total[RENDER_PERF_PARTS];
+static uint64_t render_perf_most[RENDER_PERF_PARTS];
+static uint64_t render_perf_since;
 
 /*
  * The colour themes of View > Theme (ws128-p006), by TERMINAL_THEME_*:
@@ -214,18 +237,24 @@ terminal_renderer_draw(
 	VkPipelineStageFlags stage;
 	uint32_t vertex_count;
 	uint32_t image;
+	uint64_t mark;
 	VkResult error;
 
 	/* The vertices of the grid and the composed text (drawing any new glyph into the atlas). */
+	mark = render_now_us();
 	vertex_count = render_build(renderer, screen, font, window);
+	render_perf_add(RENDER_PERF_BUILD, mark);
 
 	/* The image to draw into, once the compositor has given one back. */
+	mark = render_now_us();
 	renderer->operation = "vkAcquireNextImageKHR";
 	error = vkAcquireNextImageKHR(renderer->device, renderer->swapchain, RENDER_TIMEOUT, renderer->acquired, VK_NULL_HANDLE, &image);
 	if (error != VK_SUCCESS && error != VK_SUBOPTIMAL_KHR)
 		return error;
+	render_perf_add(RENDER_PERF_ACQUIRE, mark);
 
 	/* The frame's commands. */
+	mark = render_now_us();
 	renderer->operation = "vkResetCommandBuffer";
 	error = vkResetCommandBuffer(renderer->command, 0U);
 	if (error != VK_SUCCESS)
@@ -243,6 +272,7 @@ terminal_renderer_draw(
 	error = vkResetFences(renderer->device, 1U, &renderer->fence);
 	if (error != VK_SUCCESS)
 		return error;
+	render_perf_add(RENDER_PERF_RECORD, mark);
 
 	/* Submits the frame after the acquire, signalling the image's present semaphore. */
 	stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
@@ -255,10 +285,12 @@ terminal_renderer_draw(
 	submit.pCommandBuffers = &renderer->command;
 	submit.signalSemaphoreCount = 1U;
 	submit.pSignalSemaphores = &renderer->targets[image].rendered;
+	mark = render_now_us();
 	renderer->operation = "vkQueueSubmit";
 	error = vkQueueSubmit(renderer->queue, 1U, &submit, renderer->fence);
 	if (error != VK_SUCCESS)
 		return error;
+	render_perf_add(RENDER_PERF_SUBMIT, mark);
 
 	/* Presents the image to the window. */
 	memset(&present, 0, sizeof(present));
@@ -268,16 +300,24 @@ terminal_renderer_draw(
 	present.swapchainCount = 1U;
 	present.pSwapchains = &renderer->swapchain;
 	present.pImageIndices = &image;
+	mark = render_now_us();
 	renderer->operation = "vkQueuePresentKHR";
 	error = vkQueuePresentKHR(renderer->queue, &present);
 	if (error != VK_SUCCESS && error != VK_SUBOPTIMAL_KHR)
 		return error;
+	render_perf_add(RENDER_PERF_PRESENT, mark);
 
 	/* The frame is finished before the host touches the vertices or the atlas again. */
+	mark = render_now_us();
 	renderer->operation = "vkWaitForFences";
 	error = vkWaitForFences(renderer->device, 1U, &renderer->fence, VK_TRUE, RENDER_TIMEOUT);
 	if (error != VK_SUCCESS)
 		return error;
+	render_perf_add(RENDER_PERF_WAIT, mark);
+
+	/* The frame counted, and the sums written every few seconds. */
+	render_perf_frames++;
+	render_perf_report();
 
 	/* Succeeded: the grid is on the window. */
 	return VK_SUCCESS;
@@ -1710,4 +1750,76 @@ render_record(
 
 	/* The pass ends with the image ready to present. */
 	vkCmdEndRenderPass(renderer->command);
+}
+
+/* Gives the monotonic clock in microseconds (0 when it cannot be read). */
+static uint64_t
+render_now_us(void)
+{
+	struct timespec now;
+	int status;
+
+	/* The monotonic clock. */
+	status = clock_gettime(CLOCK_MONOTONIC, &now);
+	if (status != 0)
+		return 0U;
+
+	/* Succeeded: microseconds. */
+	return (uint64_t)now.tv_sec * 1000000U + (uint64_t)now.tv_nsec / 1000U;
+}
+
+/* Adds the time since started (render_now_us) to a part of the frame's drawing, for ZTERM PERF. */
+static void
+render_perf_add(
+	unsigned part,
+	uint64_t started)
+{
+	uint64_t now;
+	uint64_t spent;
+
+	/* The time, never backwards. */
+	now = render_now_us();
+	spent = 0U;
+	if (now > started)
+		spent = now - started;
+
+	/* The part's total and longest. */
+	render_perf_total[part] += spent;
+	if (spent > render_perf_most[part])
+		render_perf_most[part] = spent;
+}
+
+/*
+ * Writes the ZTERM PERF line every RENDER_PERF_MS while frames are drawn:
+ * how many, and each part's average and longest time in milliseconds
+ * (the grid's vertices and new glyphs, the acquire of an image the
+ * compositor gave back, the recording, the submission, the present, and
+ * the wait for the GPU), then starts the next window.
+ */
+static void
+render_perf_report(void)
+{
+	static const char *const names[RENDER_PERF_PARTS] = { "build", "acquire", "record", "submit", "present", "wait" };
+	uint64_t now;
+	unsigned part;
+
+	/* Not yet time. */
+	now = terminal_clock();
+	if (render_perf_since == 0U)
+		render_perf_since = now;
+	if (now - render_perf_since < RENDER_PERF_MS)
+		return;
+
+	/* The frames, then each part's average and longest. */
+	printf("ZTERM PERF frames=%u", render_perf_frames);
+	for (part = 0U; part < RENDER_PERF_PARTS; part++)
+		printf(" %s=%.2f/%.2f", names[part], (double)render_perf_total[part] / 1000.0 / (double)render_perf_frames, (double)render_perf_most[part] / 1000.0);
+	printf(" ms (average/longest)\n");
+	fflush(stdout);
+
+	/* The next window. */
+	render_perf_frames = 0U;
+	memset(render_perf_total, 0, sizeof(render_perf_total));
+	memset(render_perf_most, 0, sizeof(render_perf_most));
+	render_perf_since = now;
 }
