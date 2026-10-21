@@ -30,7 +30,7 @@ ARM64_BOARD_BOOT_C_rpi5 := \
 # The board's platform binding and the drivers it starts first: on the Pi 4
 # the SD card, the console, PCIe and the firmware mailbox; on the Pi 5 the SD
 # card, the console, and the RP1 south bridge behind PCIe with its USB
-# controllers shown to the PCI core.
+# controllers shown to the PCI core and its Ethernet controller.
 ARM64_BOARD_KERNEL_SOURCES_rpi4 := \
 	src/kern/platform/rpi4.c \
 	src/drivers/platform/rpi4/rpi4-sdhci.c \
@@ -50,6 +50,8 @@ ARM64_BOARD_KERNEL_SOURCES_rpi5 := \
 	src/drivers/platform/rpi5/rp1-gpio.c \
 	src/drivers/platform/rpi5/rp1-irq.c \
 	src/drivers/platform/rpi5/rp1-usb.c \
+	src/drivers/platform/rpi5/rp1-ethernet.c \
+	src/drivers/ethernet/bcm54213pe.c \
 	src/kern/dcache.c \
 	src/kern/uncached.c \
 	src/drivers/generic/fdt.c src/drivers/generic/dma.c \
