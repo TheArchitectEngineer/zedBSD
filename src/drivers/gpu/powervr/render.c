@@ -88,6 +88,7 @@ static int check_image(const struct powervr_buffer *buffer, const struct gpu_ima
 static int make_pages(struct powervr_buffer *buffer);
 static int same_image(const struct gpu_image_descriptor *first, const struct gpu_image_descriptor *second);
 static void buffer_free(struct powervr_buffer *buffer);
+static void pool_put(struct powervr_render *render, struct powervr_buffer *buffer);
 static void copy_out(volatile const uint8_t *view, uint8_t *bytes, uint32_t length);
 static void copy_in(volatile uint8_t *view, const uint8_t *bytes, uint32_t length);
 static int register_attempt(void *context);
@@ -319,6 +320,16 @@ powervr_buffer_release(
 }
 
 /*
+ * The pool of freed buffers: kept with their uncached views, so a buffer
+ * of the same size is made again without a new view, whose making and
+ * ending each write back and drop the run's cached lines one by one (an
+ * image's 8 MB took about 30 ms on the board).  Only buffers of at least
+ * BUFFER_POOL_LEAST bytes, and at most BUFFER_POOL_BYTES in all.
+ */
+#define BUFFER_POOL_LEAST	(256ULL * 1024ULL)
+#define BUFFER_POOL_BYTES	(128ULL * 1024ULL * 1024ULL)
+
+/*
  * Makes a zeroed buffer of at least bytes bytes.
  */
 int
@@ -393,6 +404,104 @@ powervr_buffer_create(
 }
 
 /*
+ * Takes a freed buffer whose run has the size a new buffer of bytes
+ * bytes would have from the pool, with one reference, the caller's.  Its
+ * contents are what its last holder left, so the caller clears it
+ * before anything reads it.  ENOENT when the pool has none.
+ */
+int
+powervr_buffer_reuse(
+	struct powervr_render *render,
+	uint64_t bytes,
+	struct powervr_buffer **result)
+{
+	struct powervr_buffer **link;
+	struct powervr_buffer *buffer;
+	unsigned long enabled;
+	uint64_t rounded;
+
+	/* The run's size such a buffer has. */
+	*result = NULL;
+	if (bytes == 0U || bytes > POWERVR_RENDER_MAX_BYTES)
+		return EINVAL;
+	rounded = (bytes + POWERVR_GPU_PAGE_BYTES - 1U) & ~(uint64_t)(POWERVR_GPU_PAGE_BYTES - 1U);
+
+	/* The newest pooled buffer of that size, off the pool. */
+	buffer = NULL;
+	enabled = spin_lock_irqsave(&render->buffer_guard);
+
+	for (link = &render->pool; *link != NULL; link = &(*link)->next) {
+		if ((*link)->run.size == rounded) {
+			buffer = *link;
+			*link = buffer->next;
+			render->pool_bytes -= buffer->run.size;
+			break;
+		}
+	}
+
+	spin_unlock_irqrestore(&render->buffer_guard, enabled);
+
+	if (buffer == NULL)
+		return ENOENT;
+
+	/* A buffer of the new size, held by the caller. */
+	buffer->next = NULL;
+	buffer->bytes = bytes;
+	buffer->references = 1;
+	buffer->gpu_cached = 0;
+	*result = buffer;
+	return 0;
+}
+
+/*
+ * Puts a freed buffer in the pool, newest first, and frees the oldest
+ * past BUFFER_POOL_BYTES; a buffer too small or too large is freed.
+ */
+static void
+pool_put(
+	struct powervr_render *render,
+	struct powervr_buffer *buffer)
+{
+	struct powervr_buffer **link;
+	struct powervr_buffer *evicted;
+	struct powervr_buffer *next;
+	unsigned long enabled;
+
+	/* Freed at once: too small to matter, or too large to keep. */
+	if (buffer->run.size < BUFFER_POOL_LEAST || buffer->run.size > BUFFER_POOL_BYTES || buffer->view == NULL) {
+		buffer_free(buffer);
+		return;
+	}
+
+	/* First in the pool, then the oldest off its end while it holds too much. */
+	evicted = NULL;
+	enabled = spin_lock_irqsave(&render->buffer_guard);
+
+	buffer->next = render->pool;
+	render->pool = buffer;
+	render->pool_bytes += buffer->run.size;
+	while (render->pool_bytes > BUFFER_POOL_BYTES) {
+		link = &render->pool;
+		while ((*link)->next != NULL)
+			link = &(*link)->next;
+		next = *link;
+		*link = NULL;
+		render->pool_bytes -= next->run.size;
+		next->next = evicted;
+		evicted = next;
+	}
+
+	spin_unlock_irqrestore(&render->buffer_guard, enabled);
+
+	/* The evicted ones, freed outside the guard. */
+	while (evicted != NULL) {
+		next = evicted->next;
+		buffer_free(evicted);
+		evicted = next;
+	}
+}
+
+/*
  * Takes another reference on a buffer.
  */
 void
@@ -462,8 +571,8 @@ powervr_buffer_put(
 		return;
 	}
 
-	/* Frees the run, its view and its page list. */
-	buffer_free(buffer);
+	/* Into the pool for reuse, or freed with its run, view and page list. */
+	pool_put(render, buffer);
 }
 
 /*
@@ -516,6 +625,17 @@ powervr_render_abandon(
 	render->kept_buffers = NULL;
 
 	spin_unlock_irqrestore(&render->queue_lock, enabled);
+
+	powervr_buffers_free(list);
+
+	/* The pooled buffers, which no work reaches. */
+	enabled = spin_lock_irqsave(&render->buffer_guard);
+
+	list = render->pool;
+	render->pool = NULL;
+	render->pool_bytes = 0;
+
+	spin_unlock_irqrestore(&render->buffer_guard, enabled);
 
 	powervr_buffers_free(list);
 }

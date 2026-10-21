@@ -108,6 +108,19 @@ powervr_buffer_create(
 	return 0;
 }
 
+/* The host keeps no pool of freed buffers. */
+int
+powervr_buffer_reuse(
+	struct powervr_render *render,
+	uint64_t bytes,
+	struct powervr_buffer **result)
+{
+	(void)render;
+	(void)bytes;
+	*result = NULL;
+	return ENOENT;
+}
+
 void
 powervr_buffer_retain(
 	struct powervr_render *render,

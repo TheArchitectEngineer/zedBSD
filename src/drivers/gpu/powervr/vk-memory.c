@@ -35,12 +35,15 @@
 #include <uapi/gpu-op.h>
 
 #include "drivers/gpu/powervr/render-private.h"
+#include "drivers/gpu/powervr/image-state.h"
+#include "drivers/gpu/powervr/transfer-job.h"
 #include "drivers/gpu/powervr/vk.h"
 
 #include "drivers/gpu/i915/render/vulkan-codec.inc"
 
 static int allocate(struct powervr_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int allocate_storage(struct powervr_vk_session *session, const struct powervr_vk_memory_chain *chain, uint64_t bytes, uint32_t type, struct powervr_resource **storage);
+static void storage_clear(struct powervr_vk_session *session, const struct powervr_resource *storage);
 static int commitment(struct powervr_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int bind(struct powervr_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int requirements(struct powervr_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
@@ -270,6 +273,65 @@ powervr_vk_memory_chain(
 }
 
 /*
+ * The rows a clear of reused storage writes: a linear surface of 4-byte
+ * texels, STORAGE_CLEAR_ROW bytes a row, at most STORAGE_CLEAR_ROWS rows
+ * a transfer.
+ */
+#define STORAGE_CLEAR_ROW	4096U
+#define STORAGE_CLEAR_ROWS	2048U
+#define STORAGE_CLEAR_FORMAT	37U
+
+/*
+ * Clears reused storage to zero: the core's transfer writes it as rows
+ * of 4-byte texels (an uncached store a word from the processor was
+ * about 30 ms for an image's 8 MB), else, when the transfer cannot run,
+ * the processor through the uncached view.
+ */
+static void
+storage_clear(
+	struct powervr_vk_session *session,
+	const struct powervr_resource *storage)
+{
+	struct powervr_transfer_request request;
+	const struct powervr_format *format;
+	volatile uint64_t *words;
+	uint64_t size;
+	uint64_t done;
+	uint64_t index;
+	uint32_t rows;
+	int error;
+
+	/* The whole run, a run of whole rows (its size is whole pages). */
+	size = storage->buffer->run.size;
+	format = powervr_format_find(STORAGE_CLEAR_FORMAT);
+	error = format == NULL || size % STORAGE_CLEAR_ROW != 0U ? EINVAL : 0;
+	for (done = 0; error == 0 && done < size; done += (uint64_t)rows * STORAGE_CLEAR_ROW) {
+		rows = (uint32_t)((size - done) / STORAGE_CLEAR_ROW);
+		if (rows > STORAGE_CLEAR_ROWS)
+			rows = STORAGE_CLEAR_ROWS;
+		kern_memset(&request, 0, sizeof(request));
+		request.kind = POWERVR_TRANSFER_CLEAR;
+		request.destination.format = format;
+		request.destination.address = storage->address + done;
+		request.destination.width = STORAGE_CLEAR_ROW / 4U;
+		request.destination.height = rows;
+		request.destination.linear = true;
+		request.destination.row_pitch = STORAGE_CLEAR_ROW;
+		request.destination.padded_width = STORAGE_CLEAR_ROW / 4U;
+		request.area.width = STORAGE_CLEAR_ROW / 4U;
+		request.area.height = rows;
+		error = powervr_transfer_run(session->owner->render, session->owner, &request);
+	}
+	if (error == 0)
+		return;
+
+	/* The processor, a doubleword a store. */
+	words = (volatile uint64_t *)storage->buffer->view;
+	for (index = 0; index < size / 8U; index++)
+		words[index] = 0;
+}
+
+/*
  * Makes an allocation's storage: the imported blob's buffer, which must
  * hold the allocation, or a buffer of its own.  Either is mapped for the
  * core as the processor's mappings are, around the system level cache
@@ -288,11 +350,13 @@ allocate_storage(
 	struct powervr_resource *blob;
 	struct powervr_buffer *buffer;
 	uint64_t started;
+	bool reused;
 	int shareable;
 	int mappable;
 	int error;
 
 	/* The imported blob's buffer, with a reference of the storage's own. */
+	reused = false;
 	render = session->owner->render;
 	if (chain->imported != 0) {
 		blob = powervr_session_blob(session->owner, chain->imported);
@@ -301,9 +365,13 @@ allocate_storage(
 		buffer = blob->buffer;
 		powervr_buffer_retain(render, buffer);
 	} else {
-		error = powervr_buffer_create(render, bytes, &buffer);
-		if (error != 0)
-			return error;
+		/* A freed buffer of the size from the pool, cleared below, else a new zeroed one. */
+		reused = powervr_buffer_reuse(render, bytes, &buffer) == 0;
+		if (!reused) {
+			error = powervr_buffer_create(render, bytes, &buffer);
+			if (error != 0)
+				return error;
+		}
 	}
 
 	/*
@@ -326,6 +394,13 @@ allocate_storage(
 	powervr_buffer_put(render, buffer);
 	if (error != 0)
 		return error;
+
+	/* A reused buffer holds its last holder's bytes: cleared before anything reads it. */
+	if (reused) {
+		started = powervr_timing_now();
+		storage_clear(session, *storage);
+		powervr_timing_add(POWERVR_TIMING_BUFFER_CLEAR, started);
+	}
 
 	/* Succeeded: the allocation's storage. */
 	return 0;
