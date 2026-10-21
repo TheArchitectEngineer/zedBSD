@@ -116,21 +116,6 @@ void
 kern_gpu_stages_set(
 	kern_gpu_stages_read_t read);
 
-/*
- * Takes a root write of hw.gpu.powervr.stages (bytes of text, not
- * terminated): the driver's test-only settings.  Returns 0 or EINVAL.
- */
-typedef int (*kern_gpu_stages_write_t)(const char *text, size_t length);
-
-/*
- * Installs the function behind writes of hw.gpu.powervr.stages; called
- * once, on the boot thread, before user space runs.  Without one the
- * leaf is read only.
- */
-void
-kern_gpu_stages_write_set(
-	kern_gpu_stages_write_t write);
-
 int
 kern_sysctl(
 	const int *name,

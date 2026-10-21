@@ -123,3 +123,34 @@
 1. 3 つの同時の vkmatrix（上と同じコマンド）を数回流し、reset が出ないこと。
 2. desktop の login で 3D の reset が出ないこと。
 3. gpu-selftest 13/13・vkmatrix の全部（1 つずつ）。
+
+### 原因と直し（q1530、2026-10-21、Q1 が cleared）
+
+- **原因**: 我々は render target の 2 つの half のうち、いつも half 0 だけで描いていた。
+- **何が起きたか**（P2 が firmware の trace を読んだ、板 33）:
+  1. 我々の TA と 3D の間に、別の session の transfer（3D の data master の TQ）だけが入る。
+  2. firmware は、3D の側に載っている free list と render target data が同じなので、PM（parameter manager）の状態の読み直し（"Loading stack-pointers"）を省く。
+  3. 我々の TA が書き換えた TE の catalogue（例 0x5cd0a001 → 0x5ccef001）が 3D に渡らない。
+  4. 3D の parameter fetch（IPF）は前の render の catalogue をたどり、もう使い回された page で address 0 を読んで BIF fault → lockup になる。
+- **2 つ以上の session でだけ起きた理由**: 別の session の render の 3D が間に入ると、firmware は読み直すので起きない。
+- **直し**（562c6550c）: Mesa と同じく、render ごとに half を交互に使う。各 half は自前の macrolist と region headers を持つ。
+- **合わせて入れた物**:
+  - geometry は context の前の 3D を firmware の側で待つ（679e119bb）。
+  - fragment は自分の geometry を待つ（前から）。
+- **板 34**:
+  - `vkmatrix -p 2 -r 10 load-1080-6` PASS ×2、`-p 3 -r 3 load-1080-textured` PASS、HWR 0。
+  - desktop（Settings・Terminal・Files を開いた状態）で vkmatrix 29/29、vkcoherency PASS、reset 0。
+- **途中の試しで原因でなかった物**: context switch の on・off（f9aa75bc9）、session ごとの address の分け（6d1e187c1）、free list の不足（grow・partial render の行は 0）。
+
+### 片付け（q1533、2026-10-21 P1）
+
+- 外した物:
+  - 試験用の draw の filter（`hw.gpu.powervr.stages` への書き込み、`src/kern/sysctl.c`・`include/kern/sysctl.h` の hook、`stage-log.c` の解析、`render-job.c` の filter）。coding-style §12 の一時の例外は終わり。
+  - `POWERVR_SESSION_SPREAD`。
+- `POWERVR_DIAGNOSTICS` の時だけ出すようにした物:
+  - `target made` の行。
+  - reset の時の noted target・catalogue の行。
+- 残した物（既定で出る）:
+  - reset の通知の page catalogue。
+  - HWR の dump の switch。
+  - grow・partial render・out of memory の行。
