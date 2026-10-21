@@ -314,3 +314,9 @@ branch agent/p2-q1553（基 main 782f995e4）。
   - 最後の参照が落ちた buffer を、alias を付けたまま pool へ（256 KB 以上、合計 128 MB まで）。alias の作成と終わりは、どちらも範囲の line を 1 つずつ flush する。
   - vkAllocateMemory は同じ大きさの pool の buffer を使い、session の transfer の clear で 0 にしてから返す（できない時は CPU で alias から）。
   - kernel の内部の buffer は pool を使わない。板は未確認。
+- e20e1f5bf: session の global の free list の page（16 MB）は pool の物をそのまま使う（PM が物理 address で読み書きするだけで、前の中身を読まない）。
+- d108（Q1、main ＋ P1 1f7936510 の WSI ＋ ed9c74527、timing 1）:
+  - frame-ops の途中で compositor が pc 0 の SIGSEGV、続いて client 3 つが同じ pc 0x10004618c の SIGILL で落ちた。vkmatrix 109/109、reset・fault 0。
+  - 読み: compositor が先（NULL の関数 pointer の形）。client は同じ pc なので app の trap（接続が切れた時の abort）の形。pool による memory の破壊の形跡は無い。Q1 が libvulkan を戻して切り分け中。
+- e3ca344cf: pool に入れる時に buffer の page list を捨てる（display への export の識別子が、前の持ち主と同じ pointer になるのを避ける）。
+- 4182ac109: flat な varying を coefficient の register から直に読む（batch.frag 26→21 group）。
