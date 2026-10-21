@@ -157,7 +157,7 @@
  * rendering at once are looked into.
  */
 #ifndef POWERVR_SESSION_SPREAD
-#define POWERVR_SESSION_SPREAD		1
+#define POWERVR_SESSION_SPREAD		0
 #endif
 
 #ifndef POWERVR_DM_OVERLAP

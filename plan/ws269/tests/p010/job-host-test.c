@@ -66,6 +66,7 @@ void *kern_calloc(size_t count, size_t size) { return calloc(count, size); }
 void kern_free(void *pointer) { free(pointer); }
 void kern_logf(const char *format, ...) { va_list list; va_start(list, format); printf("  log: "); vprintf(format, list); va_end(list); }
 uint64_t powervr_timing_now(void) { return 0; }
+void powervr_target_catalogues(const struct powervr_target *target, unsigned half, uint64_t catalogues[POWERVR_TARGET_CATALOGUES]) { unsigned i; (void)target; (void)half; for (i = 0; i < POWERVR_TARGET_CATALOGUES; i++) catalogues[i] = 0; }
 uint32_t powervr_object_address(const struct powervr_object *object, uint32_t offset) { (void)object; return offset; }
 unsigned long spin_lock_irqsave(struct spinlock *lock) { (void)lock; return 0; }
 void spin_unlock_irqrestore(struct spinlock *lock, unsigned long enabled) { (void)lock; (void)enabled; }
