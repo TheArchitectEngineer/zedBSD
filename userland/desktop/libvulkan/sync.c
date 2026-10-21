@@ -49,10 +49,12 @@ static uint64_t timing_reported;
  * until measured) and its offset in nanoseconds (INT64_MIN until the first
  * fine reading).  Relaxed atomics.
  */
+#if defined(__riscv)
 static uint64_t timing_first_counter;
 static uint64_t timing_first_monotonic;
 static uint64_t timing_rate;
 static int64_t timing_offset = INT64_MIN;
+#endif
 
 static VkResult sync_create(struct VkDevice_T *device, enum vulkan_object_kind kind, uint32_t opcode, uint32_t destroy_opcode, uint32_t structure, VkFlags flags, const VkAllocationCallbacks *allocator, struct vulkan_sync **result);
 static void sync_destroy(struct VkDevice_T *device, struct vulkan_sync *sync, uint32_t opcode, const VkAllocationCallbacks *allocator);
