@@ -297,3 +297,12 @@ branch agent/p2-q1553（基 main 782f995e4）。
   - timing に `target make`。
 - d5e6d9475: timing の各行に `longest`。
 - 板は未確認（Q1 待ち）。
+- d105（Q1、main ＋ P1 ＋ d5e6d9475、timing 1）:
+  - reset・HWR・fault・device lost は 0。frame-ops: drag 7/10（49 fps）、home 6/15、wiseview 8/50、type 7/42、launch 8/75。
+  - context_hold の max 31 ms（opcode 21 = ALLOCATE_MEMORY）が残る。
+  - dmesg の longest: job setup 43.7・35.9 ms（target make は最大 1 ms）、submit 74.7・37.8 ms。
+  - 読み: uncached の alias を作る時の flush（VF2 の HAL、L2 の Flush64 を 64 byte ごと、8 MB で 131072 回の MMIO）が残りの主因の疑い。session の最初の target の global の free list（4096 page = 16 MB）も同じ道を通る。
+- efc40884f: session ごとに最後の transfer の memory を map したまま使い回す。transfer-job.c の書き込みを word ごとに。
+- 3342c1ace（試し、既定 0）: `POWERVR_SINGLE_RENDER_KICK` 1 で、render の fragment を combined kick に入れる（KCCB の command 1 つ。DDK の形）。
+- cfedba86a: timing に buffer の作成の 4 段（run・clear・alias・map）。
+- 案（数字を見てから）: flush 済みで alias を持つ GPU の buffer の pool（解放した buffer を戻し、使う時に GPU の clear で 0 にする）。HAL の flush を速くする案は範囲外なので Q1 に判断を仰ぐ。
