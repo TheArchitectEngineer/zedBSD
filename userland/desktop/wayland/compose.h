@@ -165,16 +165,19 @@ struct kwl_backdrop {
  * lifted and darkened, its sheen and the height and top of its box when it
  * has one, and a whole-output picture's number, 0 for glass).
  */
-#define KWL_GLASS_MAPS		6U
+#define KWL_GLASS_MAPS		8U
 #define KWL_GLASS_MAP_KEY	10U
 
 /*
  * The pictures among the maps (the last value of a key, 0 for glass):
- * App Home's stage over the whole output, and a soft shadow around a box
- * (its own size, drawn anywhere).  How many shadows have one.
+ * App Home's stage over the whole output, a soft shadow around a box (its
+ * own size, drawn anywhere), and Wiseview's ground (the wallpaper, and its
+ * glass, each under Wiseview's shade).  How many shadows have one.
  */
 #define KWL_GLASS_PICTURE_STAGE	1U
 #define KWL_GLASS_PICTURE_SHADOW	2U
+#define KWL_GLASS_PICTURE_WISEVIEW_WALL	3U
+#define KWL_GLASS_PICTURE_WISEVIEW_GLASS	4U
 #define KWL_SHADOW_MAPS		12U
 
 /* How many keys without a map the maps remember (glass-map.c). */

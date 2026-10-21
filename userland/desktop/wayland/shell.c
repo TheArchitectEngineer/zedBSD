@@ -344,6 +344,9 @@ static const char *const shell_square_apps[] = {
 	"terminal"
 };
 
+/* Wiseview's shade over its blurred ground, a little darker (premultiplied by the shape: straight colour and opacity). */
+static const float wiseview_shade[4] = { 0.0f, 0.02f, 0.06f, 0.08f };
+
 /* Where the pointer is over a window. */
 enum shell_hit {
 	HIT_NONE,
@@ -532,7 +535,11 @@ static void wiseview_key(struct kwl_server *server, uint32_t key, uint32_t state
 static void wiseview_close_key(struct kwl_server *server);
 static unsigned wiseview_windows(struct kwl_server *server, struct kwl_object **windows, unsigned capacity);
 static void wiseview_layout(struct kwl_server *server, struct kwl_object **windows, unsigned count, struct shell_rect *tiles);
-static void draw_wiseview(struct kwl_server *server, struct kwl_list *command, struct kwl_object **stacked, unsigned stacked_count, float progress);
+static void draw_wiseview(struct kwl_server *server, struct kwl_list *command, struct kwl_object **stacked, unsigned stacked_count, float progress, VkDescriptorSet ground);
+static int wiseview_ground(struct kwl_server *server, VkDescriptorSet *sets);
+static void wiseview_wall_picture(struct kwl_server *server, struct kwl_list *command);
+static void wiseview_glass_picture(struct kwl_server *server, struct kwl_list *command);
+static void wiseview_glass(struct kwl_server *server, struct kwl_list *command, float opacity);
 static void draw_tile(struct kwl_server *server, struct kwl_list *command, struct kwl_object *surface, const struct shell_rect *tile, float progress, unsigned current, unsigned over);
 static int wiseview_button(struct kwl_server *server, uint32_t button, uint32_t state);
 static void wiseview_log(struct kwl_server *server);
@@ -625,8 +632,10 @@ kwl_glass_draw(
 	struct kwl_object *top;
 	struct kwl_object *cover;
 	struct shell_bar bar;
+	VkDescriptorSet ground_sets[2];
 	float under[1][4];
 	unsigned under_count;
+	int ground;
 	unsigned hidden;
 	int whole;
 	float progress;
@@ -762,15 +771,39 @@ kwl_glass_draw(
 	    home <= 0.0f)
 		server->cover_count = cover_holes(server, windows, count, server->cover_holes, server->cover_levels);
 
-	/* The wallpaper over the whole output (with round corners while it is pushed aside), unless Home hides the layer. */
+	/*
+	 * Wiseview, opening, open or closing, stands on its ground: the
+	 * wallpaper under its shade, and over it the blurred glass under the
+	 * shade as far as Wiseview is open, from their pictures when they are
+	 * drawn (wiseview_ground).
+	 */
+	progress = wiseview_progress(server);
+	ground = 0;
+	if (progress > 0.0f &&
+	    !hidden &&
+	    !pictures &&
+	    !anim_pictures &&
+	    home <= 0.0f &&
+	    !server->layer_on)
+		ground = wiseview_ground(server, ground_sets);
+	if (!ground)
+		ground_sets[1] = VK_NULL_HANDLE;
+
+	/*
+	 * The wallpaper over the whole output (with round corners while it is
+	 * pushed aside), unless Home hides the layer; under Wiseview's shade
+	 * from its picture, and not at all under its glass once it is open.
+	 */
 	server->draw_section = KWL_SECTION_LAYER;
-	if (!hidden) {
+	if (!hidden && (!ground || progress < 1.0f)) {
 		glass_shape_init(&shape, 0.0f, 0.0f, (float)server->width, (float)server->height);
 		shape.mode = MODE_IMAGE;
 		shape.opaque = 1.0f;
 		shape.set = glass_wallpaper_set(server);
 		if (pictures || anim_pictures)
 			shape.set = kwl_layers_set(server, KWL_LAYER_DESKTOP);
+		if (ground)
+			shape.set = ground_sets[0];
 		if (home > 0.0f)
 			shape.radius = HOME_LAYER_RADIUS;
 		glass_shape_draw(server, command, &shape);
@@ -780,11 +813,10 @@ kwl_glass_draw(
 	server->draw_section = KWL_SECTION_OTHER;
 	bar_layout(server, &bar);
 
-	/* Wiseview, opening, open or closing, takes the windows' place. */
-	progress = wiseview_progress(server);
+	/* Wiseview takes the windows' place. */
 	if (progress > 0.0f) {
 		server->cover_count = 0U;
-		draw_wiseview(server, command, windows, count, progress);
+		draw_wiseview(server, command, windows, count, progress, ground_sets[1]);
 		server->layer_on = 0;
 		server->draw_section = KWL_SECTION_BAR;
 		draw_system_bar(server, command, &bar);
@@ -8538,6 +8570,75 @@ wiseview_layout(
 }
 
 /*
+ * Gives Wiseview's ground from its two pictures (glass-map.c): sets[0] the
+ * wallpaper under Wiseview's shade, sets[1] its blurred glass under the
+ * shade.  Fading the second in over the first is the same blend as fading
+ * the glass in over the wallpaper and the shade over both.  Returns 1 when
+ * both are drawn (each not drawn yet is asked for).
+ */
+static int
+wiseview_ground(
+	struct kwl_server *server,
+	VkDescriptorSet *sets)
+{
+	int wall;
+	int glass;
+
+	/* Both pictures, each asked for when it is not drawn. */
+	wall = kwl_glass_picture_set(server, KWL_GLASS_PICTURE_WISEVIEW_WALL, wiseview_wall_picture, &sets[0]);
+	glass = kwl_glass_picture_set(server, KWL_GLASS_PICTURE_WISEVIEW_GLASS, wiseview_glass_picture, &sets[1]);
+	if (!wall || !glass)
+		return 0;
+
+	/* Succeeded: the ground is the two pictures. */
+	return 1;
+}
+
+/* Draws the wallpaper under Wiseview's shade into its picture. */
+static void
+wiseview_wall_picture(
+	struct kwl_server *server,
+	struct kwl_list *command)
+{
+	struct glass_shape shape;
+
+	/* The sharp wallpaper, then the shade. */
+	glass_shape_init(&shape, 0.0f, 0.0f, (float)server->width, (float)server->height);
+	shape.mode = MODE_IMAGE;
+	shape.opaque = 1.0f;
+	shape.set = glass_wallpaper_set(server);
+	glass_shape_draw(server, command, &shape);
+	glass_draw_solid(server, command, 0.0f, 0.0f, (float)server->width, (float)server->height, 0.0f, wiseview_shade);
+}
+
+/* Draws Wiseview's glass at full opacity under its shade into its picture. */
+static void
+wiseview_glass_picture(
+	struct kwl_server *server,
+	struct kwl_list *command)
+{
+	/* The glass opaque over the whole output, so nothing under it shows. */
+	wiseview_glass(server, command, 1.0f);
+}
+
+/* Draws Wiseview's blurred glass over the whole output faded by opacity, and the shade over it. */
+static void
+wiseview_glass(
+	struct kwl_server *server,
+	struct kwl_list *command,
+	float opacity)
+{
+	struct glass_shape shape;
+
+	/* The blurred wallpaper over the sharp one, and a little darker. */
+	glass_shape_init(&shape, 0.0f, 0.0f, (float)server->width, (float)server->height);
+	shape.mode = MODE_GLASS;
+	shape.opacity = opacity;
+	glass_shape_draw(server, command, &shape);
+	glass_draw_solid(server, command, 0.0f, 0.0f, (float)server->width, (float)server->height, 0.0f, wiseview_shade);
+}
+
+/*
  * Draws Wiseview as far as it is open: the wallpaper blurred and darkened,
  * each window on its way from its place to its tile (the stacking order
  * kept, so the top window stays in front while they move), the labels, the
@@ -8549,9 +8650,9 @@ draw_wiseview(
 	struct kwl_list *command,
 	struct kwl_object **stacked,
 	unsigned stacked_count,
-	float progress)
+	float progress,
+	VkDescriptorSet ground)
 {
-	static const float shade[4] = { 0.0f, 0.02f, 0.06f, 0.08f };
 	static const float dark[4] = { 0.10f, 0.14f, 0.22f, 1.0f };
 	struct kwl_object *windows[WISEVIEW_WINDOWS];
 	struct shell_rect tiles[WISEVIEW_WINDOWS];
@@ -8568,12 +8669,22 @@ draw_wiseview(
 	unsigned over;
 	int32_t width;
 
-	/* The blurred wallpaper over the sharp one, and a little darker. */
-	glass_shape_init(&shape, 0.0f, 0.0f, (float)server->width, (float)server->height);
-	shape.mode = MODE_GLASS;
-	shape.opacity = progress;
-	glass_shape_draw(server, command, &shape);
-	glass_draw_solid(server, command, 0.0f, 0.0f, (float)server->width, (float)server->height, 0.0f, shade);
+	/*
+	 * The blurred wallpaper over the sharp one, and a little darker: the
+	 * glass's picture under the shade, faded in over the wallpaper's under
+	 * the shade (kwl_glass_draw), which is the same blend; or the glass and
+	 * the shade themselves.
+	 */
+	if (ground != VK_NULL_HANDLE) {
+		glass_shape_init(&shape, 0.0f, 0.0f, (float)server->width, (float)server->height);
+		shape.mode = MODE_IMAGE;
+		shape.opaque = 1.0f;
+		shape.set = ground;
+		shape.opacity = progress;
+		glass_shape_draw(server, command, &shape);
+	} else {
+		wiseview_glass(server, command, progress);
+	}
 
 	/* The windows and their tiles. */
 	count = wiseview_windows(server, windows, WISEVIEW_WINDOWS);

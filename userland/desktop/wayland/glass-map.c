@@ -149,9 +149,9 @@ kwl_glass_map_set(
 
 /*
  * Gives the descriptor set of a whole-output picture that does not change
- * while the blurred wallpaper and the output's size stay (picture,
- * KWL_GLASS_PICTURE_*), drawn by draw; a picture not drawn yet is drawn
- * before the next frame's pass.  Returns 1 with *picture_set, or 0 (the
+ * while the blurred wallpaper, the appearance and the output's size stay
+ * (picture, KWL_GLASS_PICTURE_*), drawn by draw; a picture not drawn yet
+ * is drawn before the next frame's pass.  Returns 1 with *picture_set, or 0 (the
  * caller draws it itself this time).
  */
 int
@@ -174,8 +174,10 @@ kwl_glass_picture_set(
 	if (blurred == NULL || blurred->set == VK_NULL_HANDLE)
 		return 0;
 
-	/* The picture's key: its number alone. */
+	/* The picture's key: its number, and the appearance it was drawn in. */
 	memset(key, 0, sizeof(key));
+	if (server->dark != 0)
+		key[0] = 1.0f;
 	key[9] = (float)picture;
 	taken = map_take(server, server->compose->glass_maps.maps, KWL_GLASS_MAPS, key, draw, picture_set);
 	if (!taken)
