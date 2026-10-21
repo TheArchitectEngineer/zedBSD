@@ -217,7 +217,7 @@ static void watch_thread(void *argument);
  * With the PMU event unmasked the host's power up completes (2026-10-20).
  */
 #ifndef DUST_POWER_BY_HOST
-#define DUST_POWER_BY_HOST		1
+#define DUST_POWER_BY_HOST		0
 #endif
 
 /*
