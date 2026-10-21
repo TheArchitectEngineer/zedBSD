@@ -476,6 +476,9 @@ read_register(
 		request = request_at(run->program, reg.index, &word);
 		if (request < 0)
 			return 0xdead0004U;
+		/* A literal the data sequencer writes (q1539: the back end's constants of float operations). */
+		if (run->program->requests[request].kind == POWERVR_SHADER_REQUEST_LITERAL)
+			return run->program->requests[request].literal;
 		return run->shared_word(run->program, (uint32_t)request, word);
 	default:
 		return 0;

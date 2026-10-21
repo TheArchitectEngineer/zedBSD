@@ -146,6 +146,7 @@ struct backend_select {
 	unsigned loop_depth;
 	unsigned scratch;
 	uint32_t output_base;
+	unsigned literals;
 };
 
 static int liveness(const struct powervr_ir_shader *shader, struct shader_backend *backend);
@@ -185,6 +186,7 @@ static struct shader_machine_register destination_of(struct backend_select *sele
 static struct shader_machine_register operand_register(struct backend_select *select, const struct powervr_ir_operand *operand, unsigned *modifiers);
 static struct shader_machine_register operand_plain(struct backend_select *select, const struct powervr_ir_operand *operand, unsigned allowed);
 static struct shader_machine_register scratch_register(struct backend_select *select);
+static int literal_register(struct backend_select *select, uint32_t bits, struct shader_machine_register *reg);
 static void select_float_pair(struct backend_select *select, unsigned kind, struct shader_machine_register destination, const struct powervr_ir_operand *a, const struct powervr_ir_operand *b, unsigned floor);
 static void select_two_sourced(struct backend_select *select, unsigned kind, unsigned variant, uint32_t type, struct shader_machine_register destination, const struct powervr_ir_operand *a, const struct powervr_ir_operand *b, unsigned allowed);
 static void select_address(struct backend_select *select, const struct powervr_ir_instruction *instruction);
@@ -239,6 +241,7 @@ shader_backend_build(
 	select.loop_depth = 0;
 	select.scratch = 0;
 	select.output_base = backend->temps;
+	select.literals = 0;
 	if (program->stage == POWERVR_SHADER_FRAGMENT) {
 		for (index = 0; index < program->output_count; index++) {
 			if (program->outputs[index].format != 0)
@@ -1656,6 +1659,7 @@ select_instruction(
 
 	/* Structure has its own selection. */
 	opcode = instruction->opcode;
+	select->literals = 0;
 	if (opcode <= POWERVR_IR_CONTINUE) {
 		error = select_structure(select, instruction);
 		if (error != 0)
@@ -1664,6 +1668,16 @@ select_instruction(
 		/* Succeeded: the structure's operations. */
 		return 0;
 	}
+
+	/*
+	 * A float add, multiply or multiply-add of a fragment program reads a
+	 * constant from a shared register the data sequencer fills (q1539),
+	 * not an immediate a pixel; the shared register never goes in the
+	 * second source (select_float_pair and the multiply-add swap or move
+	 * it).
+	 */
+	select->literals = (opcode == POWERVR_IR_FLOAT_ADD || opcode == POWERVR_IR_FLOAT_MULTIPLY || opcode == POWERVR_IR_FLOAT_MULTIPLY_ADD) &&
+			   select->program->stage == POWERVR_SHADER_FRAGMENT && select->backend->inline_values == NULL;
 
 	/* The operations that write a value. */
 	switch (opcode) {
@@ -1699,6 +1713,16 @@ select_instruction(
 		a = operand_register(select, &instruction->source[0], &ma);
 		b = operand_register(select, &instruction->source[1], &mb);
 		c = operand_register(select, &instruction->source[2], &mc);
+		if (a.bank == POWERVR_USC_BANK_SHARED && b.bank == POWERVR_USC_BANK_SHARED && select->literals != 0) {
+			/* Two shared factors would need a move: a constant of the two is an immediate instead. */
+			select->literals = 0;
+			if (instruction->source[1].kind == POWERVR_IR_OPERAND_CONSTANT) {
+				b = operand_register(select, &instruction->source[1], &mb);
+			} else if (instruction->source[0].kind == POWERVR_IR_OPERAND_CONSTANT) {
+				a = operand_register(select, &instruction->source[0], &ma);
+			}
+			select->literals = 1;
+		}
 		if (b.bank == POWERVR_USC_BANK_SHARED) {
 			/* A shared register cannot be the second source: the factors swap, or it is moved. */
 			if (a.bank != POWERVR_USC_BANK_SHARED) {
@@ -2404,7 +2428,9 @@ operand_register(
 		return reg;
 	}
 
-	/* Any other constant in a scratch temporary. */
+	/* Any other constant: a shared register the data sequencer fills when a float operation reads it, else a scratch temporary. */
+	if (select->literals != 0 && literal_register(select, operand->constant, &reg) == 0)
+		return reg;
 	reg = scratch_register(select);
 	operation = append(select, MACHINE_IMMEDIATE);
 	if (operation != NULL) {
@@ -2443,6 +2469,62 @@ operand_plain(
 		operation->modifiers[0] = (uint8_t)modifiers;
 	}
 	return moved;
+}
+
+/*
+ * The most literals the back end adds, and the most requests a program
+ * may have for it to add one, so the requests stay well within the data
+ * sequencer's loads (POWERVR_DATA_LOADS_MAX, a load or two a request).
+ */
+#define LITERALS_MAX			10U
+#define LITERAL_REQUESTS_MAX		20U
+
+/*
+ * Names the shared register that holds a constant word: the program's
+ * literal request for it, added (one more shared register) when there is
+ * none and the table has room; ENOSPC otherwise.
+ */
+static int
+literal_register(
+	struct backend_select *select,
+	uint32_t bits,
+	struct shader_machine_register *reg)
+{
+	struct powervr_shader_program *program;
+	struct powervr_shader_request *request;
+	unsigned literals;
+	unsigned at;
+
+	/* The request for the same word. */
+	program = select->program;
+	literals = 0;
+	for (at = 0; at < program->request_count; at++) {
+		request = &program->requests[at];
+		if (request->kind != POWERVR_SHADER_REQUEST_LITERAL)
+			continue;
+		literals++;
+		if (request->words == 1 && request->literal == bits) {
+			*reg = bank_register(POWERVR_USC_BANK_SHARED, request->shared);
+			return 0;
+		}
+	}
+
+	/* A new one after the others, while the data sequencer's loads have room for the rest (one each). */
+	if (program->request_count >= LITERAL_REQUESTS_MAX || literals >= LITERALS_MAX)
+		return ENOSPC;
+	request = &program->requests[program->request_count++];
+	request->kind = POWERVR_SHADER_REQUEST_LITERAL;
+	request->part = 0;
+	request->words = 1;
+	request->shared = (uint16_t)program->shareds;
+	request->set = 0;
+	request->binding = 0;
+	request->array_index = 0;
+	request->offset = 0;
+	request->literal = bits;
+	program->shareds++;
+	*reg = bank_register(POWERVR_USC_BANK_SHARED, request->shared);
+	return 0;
 }
 
 /* Takes the next scratch temporary of the instruction being selected. */
@@ -2504,6 +2586,17 @@ select_float_pair(
 		second_modifiers = 0;
 	}
 
+	/* Two shared registers would need a move: a constant of the two is an immediate instead. */
+	if (first.bank == POWERVR_USC_BANK_SHARED && second.bank == POWERVR_USC_BANK_SHARED && select->literals != 0) {
+		select->literals = 0;
+		if (b != NULL && b->kind == POWERVR_IR_OPERAND_CONSTANT) {
+			second = operand_register(select, b, &second_modifiers);
+		} else if (a->kind == POWERVR_IR_OPERAND_CONSTANT) {
+			first = operand_register(select, a, &first_modifiers);
+		}
+		select->literals = 1;
+	}
+
 	/* A negated second source of a product moves its sign to the first. */
 	if (kind == MACHINE_FLOAT_MULTIPLY && (second_modifiers & POWERVR_IR_NEGATE) != 0) {
 		second_modifiers &= ~POWERVR_IR_NEGATE;
@@ -2548,6 +2641,18 @@ select_float_pair(
 			first_modifiers = second_modifiers;
 			second = held;
 			second_modifiers = held_modifiers;
+		} else if (kind == MACHINE_FLOAT_ADD && floor == 0) {
+			/* A sum: first * 1.0 + second, the shared register third (exact: the product is the first). */
+			operation = append(select, MACHINE_FLOAT_MULTIPLY_ADD);
+			if (operation != NULL) {
+				operation->destination[0] = destination;
+				operation->source[0] = first;
+				operation->source[1] = bank_register(POWERVR_USC_BANK_SPECIAL, SPECIAL_FLOAT_ONE);
+				operation->source[2] = second;
+				operation->modifiers[0] = (uint8_t)first_modifiers;
+				operation->modifiers[2] = (uint8_t)second_modifiers;
+			}
+			return;
 		} else {
 			moved = scratch_register(select);
 			operation = append(select, MACHINE_MOVE);
