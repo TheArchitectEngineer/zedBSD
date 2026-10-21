@@ -3,7 +3,7 @@
 # ws279-p004 QPU 7.1 の encoder・scheduler・register の割り当て・固定の shader
 
 - 親: [ws279](../ws.md)、Queue: q1545 / q1545-i01（P2、2026-10-21）
-- Status: in-progress（host の受け入れの条件 1〜4 を満たした、2026-10-21 P2。Q1 の判定待ち。実機の確認は p005 の最初の三角形で）
+- Status: cleared（2026-10-21 Q1 の判定: host の受け入れの条件 1〜4 を満たした、q1545。実機の確認は p005 の最初の三角形で）
 - 依頼の元: 2026-10-21 ユーザー「Pi5のdecisionは推しでOKです」（design §9 の D1 = 7.1 の file を `src/drivers/gpu/bcm2711/` に足し rpi5 の build だけで選ぶ、Pi 4 の kernel は不変）、「Pi5の作業は続けていいです」。Fable の review は使わない（「Pi5の対応は、Fableによるレビューは不要です。Opus 5.5で対応しましょう。」）。board の違いは `#if` で分けず写して書き直し、本当に同じ物だけ共通にする（「無理に共通化しないで rpi4のコピーでrpi5を作って、共通部分をまとめるのが私の好みです。」）。
 
 ## 目的と受け入れの条件
