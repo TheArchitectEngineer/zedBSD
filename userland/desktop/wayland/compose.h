@@ -67,7 +67,8 @@
 #define KWL_PANEL_INSIDE_DARK_GLASS	3U
 #define KWL_PANEL_INSIDE_SHADOW		4U
 #define KWL_PANEL_INSIDE_MAP		5U
-#define KWL_PANEL_INSIDES		6U
+#define KWL_PANEL_INSIDE_CROSSFADE	6U
+#define KWL_PANEL_INSIDES		7U
 
 /* Bound the buffers that hold a descriptor set at once. */
 #define KWL_DESCRIPTOR_MAX	512U
@@ -172,12 +173,14 @@ struct kwl_backdrop {
  * The pictures among the maps (the last value of a key, 0 for glass):
  * App Home's stage over the whole output, a soft shadow around a box (its
  * own size, drawn anywhere), and Wiseview's ground (the wallpaper, and its
- * glass, each under Wiseview's shade).  How many shadows have one.
+ * glass, each under Wiseview's shade, and both side by side in one image
+ * twice the output's width).  How many shadows have one.
  */
 #define KWL_GLASS_PICTURE_STAGE	1U
 #define KWL_GLASS_PICTURE_SHADOW	2U
 #define KWL_GLASS_PICTURE_WISEVIEW_WALL	3U
 #define KWL_GLASS_PICTURE_WISEVIEW_GLASS	4U
+#define KWL_GLASS_PICTURE_WISEVIEW_GROUND	5U
 #define KWL_SHADOW_MAPS		12U
 
 /* How many keys without a map the maps remember (glass-map.c). */

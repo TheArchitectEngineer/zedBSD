@@ -652,7 +652,7 @@ maps_draw_wanted(
 
 }
 
-/* Gives the size of a map's image: a shadow's reach around its box, else the output's. */
+/* Gives the size of a map's image: a shadow's reach around its box, Wiseview's ground twice the output's width, else the output's. */
 static void
 map_image_size(
 	struct kwl_server *server,
@@ -662,9 +662,11 @@ map_image_size(
 {
 	float reach;
 
-	/* The output's size, for a glass's map and a whole-output picture. */
+	/* The output's size, for a glass's map and a whole-output picture; two outputs side by side for Wiseview's ground. */
 	*width = server->width;
 	*height = server->height;
+	if (map->key[9] == (float)KWL_GLASS_PICTURE_WISEVIEW_GROUND)
+		*width = 2U * server->width;
 	if (map->key[9] != (float)KWL_GLASS_PICTURE_SHADOW)
 		return;
 

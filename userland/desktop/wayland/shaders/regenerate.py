@@ -19,10 +19,10 @@ SHADERS = [("quad.vert", "kwl_quad_vert"), ("quad.frag", "kwl_quad_frag"),
            ("turn.vert", "kwl_turn_vert")]
 
 # The insides that have a variant of their own (glass, image, solid, dark
-# glass, shadow, and flat glass read from its map), each its panel mode and
-# its own definitions, in the order of kwl_panel_inside_variants (compose.h's
-# KWL_PANEL_INSIDE_*).
-INSIDE_MODES = ((0, ()), (2, ()), (3, ()), (7, ()), (1, ()), (0, ("-DKWL_PANEL_MAP",)))
+# glass, shadow, flat glass read from its map, and two pictures cross-faded),
+# each its panel mode and its own definitions, in the order of
+# kwl_panel_inside_variants (compose.h's KWL_PANEL_INSIDE_*).
+INSIDE_MODES = ((0, ()), (2, ()), (3, ()), (7, ()), (1, ()), (0, ("-DKWL_PANEL_MAP",)), (2, ("-DKWL_PANEL_CROSSFADE",)))
 
 
 def compile_shader(source, definitions=()):

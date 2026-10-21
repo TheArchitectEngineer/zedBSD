@@ -4890,3 +4890,109 @@ glass_ring_hollow(
 	glass_shape_draw_except(server, command, shape, (const float (*)[4])hole, 1U);
 	return 1;
 }
+
+/*
+ * Draws two whole-output pictures side by side into an image twice the
+ * output's width (the pass's viewport), left and right, each a texel for a
+ * pixel: the picture glass_draw_crossfade fades between.
+ */
+void
+glass_draw_halves(
+	struct kwl_server *server,
+	struct kwl_list *command,
+	VkDescriptorSet left,
+	VkDescriptorSet right)
+{
+	struct kwl_compose *compose;
+	float constants[KWL_PANEL_CONSTANTS];
+	VkPipeline pipeline;
+
+	/* An opaque image over each half; its box is the whole image, so every pixel is covered. */
+	compose = server->compose;
+	memset(constants, 0, sizeof(constants));
+	constants[0] = -1.0f;
+	constants[1] = -1.0f;
+	constants[2] = 0.0f;
+	constants[3] = 1.0f;
+	constants[6] = 1.0f;
+	constants[7] = 1.0f;
+	constants[10] = 2.0f * (float)server->width;
+	constants[11] = (float)server->height;
+	constants[15] = 1.0f;
+	constants[17] = MODE_IMAGE;
+	constants[19] = 1.0f;
+	constants[20] = 2.0f * (float)server->width;
+	constants[21] = (float)server->height;
+	constants[23] = 1.0f;
+	pipeline = compose->panel_opaque_pipelines[KWL_PANEL_INSIDE_IMAGE];
+
+	/* The left half. */
+	kwl_compose_bind(server, command, pipeline, compose->panel_layout, left);
+	kwl_list_push_constants(command, compose->panel_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0U, sizeof(constants), constants);
+	kwl_list_draw(command, KWL_QUAD_VERTICES, 1U, 0U, 0U);
+
+	/* The right half. */
+	constants[0] = 0.0f;
+	constants[2] = 1.0f;
+	kwl_compose_bind(server, command, pipeline, compose->panel_layout, right);
+	kwl_list_push_constants(command, compose->panel_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0U, sizeof(constants), constants);
+	kwl_list_draw(command, KWL_QUAD_VERTICES, 1U, 0U, 0U);
+	kwl_compose_count_draw(server, pipeline, right, 2U);
+}
+
+/*
+ * Draws over the whole output, opaque, the left half of a picture of two
+ * (glass_draw_halves) with its right half faded in over it by mix: the
+ * same as the left drawn and the right blended over it at that opacity,
+ * in one draw.
+ */
+void
+glass_draw_crossfade(
+	struct kwl_server *server,
+	struct kwl_list *command,
+	VkDescriptorSet set,
+	float mix)
+{
+	struct kwl_compose *compose;
+	float constants[KWL_PANEL_CONSTANTS];
+	float width;
+	float height;
+	VkPipeline pipeline;
+	uint64_t pixels;
+	int visible;
+
+	/* Not seen where the frame's damage leaves nothing. */
+	compose = server->compose;
+	width = (float)server->width;
+	height = (float)server->height;
+	visible = kwl_compose_clip_visible(compose, 0.0f, 0.0f, width, height);
+	if (!visible)
+		return;
+
+	/* The whole output, sampling the left half; the right half is half the image along. */
+	memset(constants, 0, sizeof(constants));
+	constants[0] = -1.0f;
+	constants[1] = -1.0f;
+	constants[2] = 1.0f;
+	constants[3] = 1.0f;
+	constants[6] = 0.5f;
+	constants[7] = 1.0f;
+	constants[10] = width;
+	constants[11] = height;
+	constants[15] = mix;
+	constants[17] = MODE_IMAGE;
+	constants[19] = 1.0f;
+	constants[20] = width;
+	constants[21] = height;
+	constants[23] = 1.0f;
+	pipeline = compose->panel_opaque_pipelines[KWL_PANEL_INSIDE_CROSSFADE];
+
+	/* One opaque quad, counted as an image (KWL MODES). */
+	kwl_compose_count_draw(server, pipeline, set, 1U);
+	pixels = kwl_compose_count_pixels(server, 0.0f, 0.0f, width, height, 0);
+	kwl_compose_count_kind(server, glass_count_kind_of(constants), pixels);
+	kwl_compose_bind(server, command, pipeline, compose->panel_layout, set);
+	kwl_list_push_constants(command, compose->panel_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0U, sizeof(constants), constants);
+	kwl_compose_clip_draw(server, command, 0.0f, 0.0f, width, height, KWL_QUAD_VERTICES);
+	kwl_compose_count_commands(server, 1U, 1U);
+}
