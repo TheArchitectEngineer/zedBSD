@@ -213,6 +213,7 @@ static void reuse_immediates(struct shader_backend *backend);
 static void unpack_in_place(const struct powervr_shader_program *program, struct shader_backend *backend);
 static void mark_iterate_samples(const struct powervr_ir_shader *shader, const struct powervr_shader_program *program, struct shader_backend *backend);
 static int lone_iterate(const struct powervr_ir_shader *shader, const struct powervr_ir_operand *operand, const struct powervr_ir_instruction **iterate);
+static int half_reader(const struct powervr_ir_shader *shader, unsigned value);
 static uint32_t iterate_coefficient(const struct powervr_ir_shader *shader, unsigned value);
 static void pair_operations(struct shader_backend *backend);
 static int pairable(const struct shader_machine_operation *operation);
@@ -242,6 +243,7 @@ static void select_float_pair(struct backend_select *select, unsigned kind, stru
 static void select_two_sourced(struct backend_select *select, unsigned kind, unsigned variant, uint32_t type, struct shader_machine_register destination, const struct powervr_ir_operand *a, const struct powervr_ir_operand *b, unsigned allowed);
 static void select_address(struct backend_select *select, const struct powervr_ir_instruction *instruction);
 static void select_sum(struct backend_select *select, const struct powervr_ir_instruction *instruction, enum powervr_usc_sum form);
+static int select_sum_half(struct backend_select *select, const struct powervr_ir_instruction *instruction, enum powervr_usc_sum form);
 static void select_condition(struct backend_select *select, unsigned kind, unsigned predicate, unsigned adjust, struct shader_machine_register source);
 static unsigned select_branch(struct backend_select *select, unsigned prediction, unsigned condition);
 static int build_group_fetch(void *context, size_t index, struct powervr_usc_group *group);
@@ -259,7 +261,9 @@ static const uint8_t sum_slots[POWERVR_USC_SUM_COUNT][6] = {
 	{ SUM_DESTINATION, 3, 0, 1, 2, SUM_UNUSED },
 	{ SUM_DESTINATION, 3, 0, 1, 2, SUM_UNUSED },
 	{ SUM_DESTINATION, 0, 1, 2, 3, SUM_UNUSED },
-	{ SUM_DESTINATION, 0, 1, 2, 3, SUM_UNUSED }
+	{ SUM_DESTINATION, 0, 1, 2, 3, SUM_UNUSED },
+	{ 0, 1, SUM_UNUSED, SUM_UNUSED, SUM_UNUSED, SUM_UNUSED },
+	{ SUM_DESTINATION, 1, 0, SUM_UNUSED, SUM_UNUSED, SUM_UNUSED }
 };
 
 /* A group with no operation, no operand and a repeat count of one. */
@@ -1941,8 +1945,10 @@ mark_iterate_samples(
 	int found;
 
 	/* None yet; none at all unless the key takes the form. */
-	for (value = 0; value < shader->value_count; value++)
+	for (value = 0; value < shader->value_count; value++) {
 		backend->iterate_sample[value] = 0;
+		backend->sample_half[value] = 0;
+	}
 	if ((backend->forms & POWERVR_SHADER_FORM_ITERATE_SAMPLE) == 0 || program->stage != POWERVR_SHADER_FRAGMENT)
 		return;
 
@@ -1963,7 +1969,76 @@ mark_iterate_samples(
 			continue;
 		backend->iterate_sample[instruction->source[0].value] = 1;
 		backend->iterate_sample[instruction->source[1].value] = 1;
+
+		/* Its channels as half floats when one sum of products alone reads them. */
+		if ((backend->forms & POWERVR_SHADER_FORM_SUM_OF_PRODUCTS) != 0 &&
+		    instruction->destination < shader->value_count &&
+		    half_reader(shader, instruction->destination))
+			backend->sample_half[instruction->destination] = 1;
 	}
+}
+
+/*
+ * Reports whether a sample's four-word value is read only by one pixel
+ * store into an 8-bit attachment or one blend over, as its four words
+ * in order without modifiers: the store or blend the half forms of the
+ * sum of products do.
+ */
+static int
+half_reader(
+	const struct powervr_ir_shader *shader,
+	unsigned value)
+{
+	const struct powervr_ir_instruction *instruction;
+	const struct powervr_ir_instruction *reader;
+	unsigned at;
+	unsigned source;
+	unsigned reads;
+
+	/* A four-word value. */
+	if (shader->values[value].width != 4)
+		return 0;
+
+	/* The one instruction reading it. */
+	reader = NULL;
+	for (at = 0; at < shader->instruction_count; at++) {
+		instruction = &shader->instructions[at];
+		reads = 0;
+		for (source = 0; source < 4; source++) {
+			if (instruction->source[source].kind == POWERVR_IR_OPERAND_VALUE && instruction->source[source].value == value)
+				reads++;
+		}
+		if (reads == 0)
+			continue;
+		if (reader != NULL)
+			return 0;
+		reader = instruction;
+	}
+	if (reader == NULL)
+		return 0;
+
+	/* An 8-bit store, or a blend over. */
+	if (reader->opcode == POWERVR_IR_PIXEL_STORE) {
+		if (reader->immediate_2 != 0 || reader->immediate >= 4)
+			return 0;
+	} else if (reader->opcode == POWERVR_IR_PIXEL_BLEND) {
+		if (reader->immediate_2 != POWERVR_IR_BLEND_OVER || reader->immediate >= 4)
+			return 0;
+	} else {
+		return 0;
+	}
+
+	/* Its words in order, as they are. */
+	for (source = 0; source < 4; source++) {
+		if (reader->source[source].kind != POWERVR_IR_OPERAND_VALUE ||
+		    reader->source[source].value != value ||
+		    reader->source[source].component != source ||
+		    reader->source[source].modifiers != 0)
+			return 0;
+	}
+
+	/* Succeeded: the half forms can read it. */
+	return 1;
 }
 
 /* Reports whether a sample's coordinate is a one-word value only one varying word's iteration writes and only it reads, and names that iteration. */
@@ -2384,7 +2459,8 @@ reads_register(
 		return 0;
 
 	/* A blending sum of products reads the pixel output it writes. */
-	if (operation->kind == MACHINE_SUM_OF_PRODUCTS && operation->variant != POWERVR_USC_SUM_OPAQUE && same_register(operation->destination[0], reg))
+	if (operation->kind == MACHINE_SUM_OF_PRODUCTS && operation->variant != POWERVR_USC_SUM_OPAQUE &&
+	    operation->variant != POWERVR_USC_SUM_OPAQUE_HALF && same_register(operation->destination[0], reg))
 		return 1;
 
 	/* The kinds whose sources are known: each source, a span for the pack and the sample's coordinates. */
@@ -2728,10 +2804,12 @@ allocate(
 			if (backend->first_use[value] != at)
 				continue;
 
-			/* The lowest run of temporaries free at this instruction. */
+			/* The lowest run of temporaries free at this instruction (a sample returning half floats takes two). */
 			width = shader->values[value].width;
 			if (width == 0 || width > 4)
 				return EINVAL;
+			if (backend->sample_half[value] != 0)
+				width = 2;
 			found = 0;
 			for (reg = TEMP_FIRST_VALUE; reg + width <= SHADER_MACHINE_TEMPORARIES; reg++) {
 				for (word = 0; word < width; word++) {
@@ -3183,6 +3261,7 @@ select_instruction(
 				operation->source[2] = bank_register(POWERVR_USC_BANK_SHARED, sampler->shared);
 				operation->immediate = coefficient;
 				operation->immediate_2 = select->program->w_coefficient;
+				operation->half = select->backend->sample_half[instruction->destination];
 			}
 
 			/* The wait for its data: the operation's own (the form that waits), or a wait after it. */
@@ -3263,8 +3342,9 @@ select_instruction(
 			break;
 		}
 		if ((select->backend->forms & POWERVR_SHADER_FORM_SUM_OF_PRODUCTS) != 0 && instruction->immediate_2 == 0) {
-			/* The sum-of-products form: the four floats written by one operation. */
-			select_sum(select, instruction, POWERVR_USC_SUM_OPAQUE);
+			/* The sum-of-products form: the four floats (or a sample's half floats) written by one operation. */
+			if (!select_sum_half(select, instruction, POWERVR_USC_SUM_OPAQUE_HALF))
+				select_sum(select, instruction, POWERVR_USC_SUM_OPAQUE);
 			break;
 		}
 
@@ -3339,7 +3419,8 @@ select_instruction(
 			return ENOTSUP;
 		switch (instruction->immediate_2) {
 		case POWERVR_IR_BLEND_OVER:
-			select_sum(select, instruction, POWERVR_USC_SUM_OVER);
+			if (!select_sum_half(select, instruction, POWERVR_USC_SUM_OVER_HALF))
+				select_sum(select, instruction, POWERVR_USC_SUM_OVER);
 			break;
 		case POWERVR_IR_BLEND_SUBTRACT:
 			select_sum(select, instruction, POWERVR_USC_SUM_SUBTRACT);
@@ -3540,6 +3621,7 @@ append(
 	operation->saturate = 0;
 	operation->overlap = 0;
 	operation->pair = 0;
+	operation->half = 0;
 	for (index = 0; index < 2; index++) {
 		operation->destination[index].bank = 0xff;
 		operation->destination[index].index = 0;
@@ -4060,6 +4142,46 @@ select_sum(
 	}
 }
 
+/*
+ * Selects a sum of products in a half form when the instruction's four
+ * floats are a sample's that returns half floats (sample_half): the
+ * sample's two registers, red and green then blue and alpha, are the
+ * operation's sources 0 and 1.  Reports whether it did.
+ */
+static int
+select_sum_half(
+	struct backend_select *select,
+	const struct powervr_ir_instruction *instruction,
+	enum powervr_usc_sum form)
+{
+	struct shader_machine_operation *operation;
+	struct shader_machine_register pair;
+	unsigned value;
+	int found;
+
+	/* A sample's four words, which it returns as half floats. */
+	found = adjacent_words(select, instruction, &pair);
+	if (!found)
+		return 0;
+	value = instruction->source[0].value;
+	if (select->backend->sample_half[value] == 0)
+		return 0;
+
+	/* The operation into the pixel output under the overlap check. */
+	operation = append(select, MACHINE_SUM_OF_PRODUCTS);
+	if (operation != NULL) {
+		operation->variant = (uint8_t)form;
+		operation->overlap = 1;
+		operation->destination[0] = bank_register(POWERVR_USC_BANK_SPECIAL, SPECIAL_PIXEL_OUTPUT + instruction->immediate);
+		operation->source[0] = pair;
+		operation->source[1] = pair;
+		operation->source[1].index = (uint16_t)(pair.index + 1U);
+	}
+
+	/* Succeeded: the half form. */
+	return 1;
+}
+
 /* Appends one step of the execution mask counter, run on every lane. */
 static void
 select_condition(
@@ -4454,7 +4576,7 @@ shader_backend_group(
 		group->unit = POWERVR_USC_UNIT_CONTROL;
 		group->control = CONTROL_ITERATE_SAMPLE;
 		error = powervr_usc_iterate_sample(operation->destination[0].index, operation->immediate, 1, operation->immediate_2, operation->source[0].index,
-						   operation->source[2].index, 0, DIMENSIONS_2D, 4, 1, 0, operation->variant, &group->operation[POWERVR_USC_PHASE_0]);
+						   operation->source[2].index, 0, DIMENSIONS_2D, 4, 1, 0, operation->variant, operation->half, &group->operation[POWERVR_USC_PHASE_0]);
 		break;
 	case MACHINE_SAMPLE:
 		/* Image state in s0, coordinates in s1, sampler state in s2, the four words into s4's registers. */

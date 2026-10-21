@@ -206,7 +206,12 @@ enum powervr_usc_memory {
  * alpha (Vulkan's one and one minus source alpha, add or subtract).
  * Add and multiply take the destination in source 0 and red to alpha in
  * sources 1 to 4: the destination plus the colour, and the destination
- * times the colour.
+ * times the colour.  The half forms read the colour as two registers of
+ * half-float pairs, red and green in the low and high halves of one,
+ * blue and alpha of the other (as an iterate and sample returning half
+ * floats writes them): opaque half takes red and green in source 0 and
+ * blue and alpha in source 1; over half the destination in source 0,
+ * blue and alpha in source 1 and red and green in source 2.
  *
  * The encodings are derived from observation of the operation; each
  * form is the one byte pattern seen for it, with the registers in the
@@ -218,6 +223,8 @@ enum powervr_usc_sum {
 	POWERVR_USC_SUM_SUBTRACT,
 	POWERVR_USC_SUM_ADD,
 	POWERVR_USC_SUM_MULTIPLY,
+	POWERVR_USC_SUM_OPAQUE_HALF,
+	POWERVR_USC_SUM_OVER_HALF,
 	POWERVR_USC_SUM_COUNT
 };
 
@@ -299,7 +306,7 @@ int powervr_usc_atomic(unsigned kind, unsigned source, unsigned destination, uns
 int powervr_usc_sample(unsigned normalised, unsigned data_return, unsigned dimensions, unsigned channels, unsigned lod_mode, struct powervr_usc_operation *operation);
 int powervr_usc_emit_pixel(unsigned free_partition, struct powervr_usc_operation *operation);
 int powervr_usc_iterate(unsigned destination, unsigned coefficient, unsigned perspective, unsigned w_coefficient, unsigned mode, unsigned count, unsigned data_return, struct powervr_usc_operation *operation);
-int powervr_usc_iterate_sample(unsigned destination, unsigned coefficient, unsigned perspective, unsigned w_coefficient, unsigned image, unsigned sampler, unsigned mode, unsigned dimensions, unsigned channels, unsigned normalised, unsigned data_return, unsigned schedule, struct powervr_usc_operation *operation);
+int powervr_usc_iterate_sample(unsigned destination, unsigned coefficient, unsigned perspective, unsigned w_coefficient, unsigned image, unsigned sampler, unsigned mode, unsigned dimensions, unsigned channels, unsigned normalised, unsigned data_return, unsigned schedule, unsigned half, struct powervr_usc_operation *operation);
 int powervr_usc_vertex_output(unsigned kind, unsigned write_select, unsigned source, unsigned immediate, unsigned address, struct powervr_usc_operation *operation);
 int powervr_usc_bit_count_shift(unsigned count_source, unsigned count_kind, unsigned mask_from_source, unsigned shift_kind, struct powervr_usc_operation *operation);
 int powervr_usc_bit_immediate(uint32_t value, unsigned wide, unsigned count_source, unsigned count_kind, unsigned shift_kind, struct powervr_usc_operation *operation);
