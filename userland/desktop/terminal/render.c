@@ -37,6 +37,12 @@
 /* The vertices of one cell: two triangles. */
 #define RENDER_CELL_VERTICES	6U
 
+/*
+ * A doubleword of the vertices, read and written over the floats they
+ * were built as (the build compiles memcpy as a call, too slow for this).
+ */
+typedef uint64_t render_word __attribute__((__may_alias__));
+
 /* The parts of a frame's drawing the ZTERM PERF line sums, and how often it is written (milliseconds). */
 #define RENDER_PERF_BUILD	0U
 #define RENDER_PERF_ACQUIRE	1U
@@ -1417,12 +1423,11 @@ render_upload(
 	struct terminal_renderer *renderer,
 	uint32_t vertex_count)
 {
-	volatile uint64_t *mapped;
-	const unsigned char *built;
-	const unsigned char *kept;
+	volatile render_word *mapped;
+	const render_word *built;
+	const render_word *kept;
 	float *swap;
 	uint64_t word;
-	uint64_t was;
 	size_t words;
 	size_t known;
 	size_t index;
@@ -1433,21 +1438,19 @@ render_upload(
 	if (known > words)
 		known = words;
 	mapped = renderer->vertex_map;
-	built = (const unsigned char *)renderer->vertex_build;
-	kept = (const unsigned char *)renderer->vertex_kept;
+	built = (const render_word *)renderer->vertex_build;
+	kept = (const render_word *)renderer->vertex_kept;
 
 	/* The doublewords the mapping holds otherwise. */
 	for (index = 0U; index < known; index++) {
-		memcpy(&word, built + index * sizeof(word), sizeof(word));
-		memcpy(&was, kept + index * sizeof(was), sizeof(was));
-		if (word != was)
+		word = built[index];
+		if (word != kept[index])
 			mapped[index] = word;
 	}
 
 	/* Those past what the copy knows. */
 	for (; index < words; index++) {
-		memcpy(&word, built + index * sizeof(word), sizeof(word));
-		mapped[index] = word;
+		mapped[index] = built[index];
 	}
 
 	/* The frame built is what the mapping holds now. */
