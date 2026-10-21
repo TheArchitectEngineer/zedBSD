@@ -479,8 +479,9 @@ struct powervr_switch_shaders {
  * Sessions are listed under the core's lock.  Queue_lock guards every
  * session's pending ring and stop flags and the faulted flag, and is
  * taken from the interrupt handler, so it is held only briefly with
- * interrupts off; service wakes the service thread and retired wakes a
- * drain.  Buffer_guard guards buffer references and the export list.
+ * interrupts off; service wakes the service thread, retired wakes a
+ * drain, and reached wakes a wait for a timeline value (the firmware's
+ * interrupt and each pass of the service wake it).  Buffer_guard guards buffer references and the export list.
  * Kept holds buffers and sessions that may still be reached by the core
  * after a fault or an isolation, until a reset frees them.  Lost, under
  * the core's lock, says a restart failed and the firmware is gone.
@@ -502,6 +503,7 @@ struct powervr_render {
 	struct spinlock queue_lock;
 	struct wait_queue service;
 	struct wait_queue retired;
+	struct wait_queue reached;
 	struct spinlock buffer_guard;
 	struct powervr_shared *exports;
 	struct powervr_session *sessions;
