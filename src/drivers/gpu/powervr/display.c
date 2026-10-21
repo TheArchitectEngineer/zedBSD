@@ -25,9 +25,9 @@
  * framebuffer, row by row, clipped to the screen, swapping red and blue
  * when the screen's order is not the frame's.  The framebuffer is written
  * through the direct map and then cleaned out of the caches, as the text
- * console draws it (WS256 p011, drawing (β)); a framebuffer outside the
- * direct map is written through an uncached device view instead.  The
- * presentation has completed on the screen when it returns.
+ * console draws it; a framebuffer outside the direct map is written
+ * through an uncached device view instead.  The presentation has
+ * completed on the screen when it returns.
  *
  * A render buffer is shown through the scanout import: the render node's
  * private lookup finds and retains the buffer behind the exported image,
@@ -250,7 +250,7 @@ struct powervr_display {
 	struct wait_queue flip_done;
 
 	/*
-	 * The cursor plane (q1529), under the mutex: its images, made at the
+	 * The cursor plane, under the mutex: its images, made at the
 	 * first image set, their uncached views, the one shown or last set
 	 * (-1 before any), whether it is shown, and its corner.
 	 */
@@ -851,7 +851,7 @@ output_claim(
 
 	/*
 	 * Starts counting frames when attach could not: the board lights its
-	 * own mode only after the GPU attached (q1529), so the controller was
+	 * own mode only after the GPU attached, so the controller was
 	 * not yet read then and every present was copied.
 	 */
 	if (!display->scanout)

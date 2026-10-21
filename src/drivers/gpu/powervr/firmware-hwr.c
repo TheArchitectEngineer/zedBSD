@@ -6,7 +6,7 @@
  */
 
 /*
- * What the firmware knows of a context reset (q1532): its hardware
+ * What the firmware knows of a context reset: its hardware
  * recovery records, the last words of its trace, and the reset context's
  * firmware record.  Built only into a kernel with CONFIG_POWERVR_HWR_DUMP
  * (the desktop test kernels); the reset path calls it through a weak
@@ -48,7 +48,7 @@
 #define HWR_RECOVERED		2264U
 #define HWR_FALSE_DETECT	2300U
 #define TRACE_POINTER		8U
-/* The whole ring, oldest first, so the kicks before the lockup are in it (q1532-i04). */
+/* The whole ring, oldest first, so the kicks before the lockup are in it. */
 #define TRACE_TAIL_WORDS	POWERVR_TRACE_WORDS
 #define RECORD_WORDS_MAX	96U
 
@@ -132,7 +132,11 @@ powervr_hwr_dump(
 			bif_decode(record, get64(info, base), get64(info, base + 8U), get64(info, base + 16U));
 	}
 
-	/* The whole trace from its oldest word, for plan/tools/vf2/sfdec.py. */
+	/*
+	 * The whole trace from its oldest word, for decoding off line: each
+	 * entry is its id, a 64-bit timestamp and its arguments, the id as
+	 * Linux's pvr_rogue_fwif_sf.h (ROGUE_FW_LOG_CREATESFID) forms it.
+	 */
 	trace = &core->firmware.trace_buffer;
 	pointer = powervr_object_get32(&core->firmware.trace_control, TRACE_POINTER) % POWERVR_TRACE_WORDS;
 	first = pointer % POWERVR_TRACE_WORDS;

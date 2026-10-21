@@ -663,7 +663,7 @@ render_open(
 	/* The texture unit's border colour table, all zero (transparent black); without it the commands name none. */
 	border_table_make(render, session);
 
-	/* Names the session's page catalogue, which a reset's notice and a BIF fault name (q1532). */
+	/* Names the session's page catalogue, which a reset's notice and a BIF fault name. */
 	kern_logf("powervr: session context 0x%x memory context 0x%x page catalogue 0x%llx\n",
 		  (unsigned)session->identity, (unsigned)powervr_object_address(&session->memory_context, 0),
 		  (unsigned long long)powervr_gpu_mmu_root(&session->mmu));
@@ -1403,10 +1403,10 @@ resource_make_flags(
 /*
  * Undoes a handle: unmaps it and drops its buffer, unless the core may
  * still reach the session, when the mapping and the buffer both stay.
- * While the session has work in flight the unmapping waits (q1523: a
- * compositor dropped a client buffer's import while its last frame
- * still sampled it, and the core read a page that was gone or mapped
- * again): the handle is kept, mapped, on the session's deferred list
+ * While the session has work in flight the unmapping waits (a
+ * compositor may drop a client buffer's import while its last frame
+ * still samples it, and the core would read a page that is gone or
+ * mapped again): the handle is kept, mapped, on the session's deferred list
  * until a later handle operation of the session finds no work left.
  */
 static void
@@ -1895,7 +1895,7 @@ resource_log(
 }
 
 /*
- * Names what a session maps at a fault address (q1523 diagnostics): the
+ * Names what a session maps at a fault address, for diagnostics: the
  * handle that covers it, else the nearest below and above, and the fixed
  * area; the core's lock is held.
  */
@@ -1977,7 +1977,7 @@ note_textures(
 }
 
 /*
- * Keeps a compact note of the session's newest render job (q1523), for
+ * Keeps a compact note of the session's newest render job, for
  * powervr_session_describe_job after a reset: the area, the colour
  * targets, and the draws (the load draw first when there is one).
  */
@@ -2029,7 +2029,7 @@ powervr_session_note_job(
 }
 
 /*
- * Prints the note of the session's newest render job (q1523): for each
+ * Prints the note of the session's newest render job: for each
  * texture the decoded state (kind, format, size, linear row, address) and
  * the live handle its address lies in, with how far the texture's last
  * linear row reaches past the handle's end.  The core's lock is held.

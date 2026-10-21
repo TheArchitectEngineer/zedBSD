@@ -143,10 +143,10 @@ static void watch_thread(void *argument);
  * and 56, each its layout and BVNC) and pvr_rogue_fwif_check.h.
  */
 /*
- * The trace's groups the firmware logs in normal running (q1541): the
+ * The trace's groups the firmware logs in normal running: the
  * trace on (bit 0) with the recovery group (HWR, 0x400) alone.  Every group
  * (0x7fff) made about ninety entries a render, and their writing doubled
- * the firmware's time around each job on the board (d66 and d68: the TA's
+ * the firmware's time around each job on the board (the TA's
  * share 639 to 250 us, the 3D's 608 to 276 us without them).  The groups a
  * render logs on every job (MAIN, MTS, PM, RTD, BIF, POW) are for a
  * diagnosis build: set 0x7fff here, or a full trace
@@ -225,17 +225,18 @@ static void watch_thread(void *argument);
 /*
  * 1 asks the host to power the dusts up itself at the start and leaves the
  * firmware's management of their power off (no POW_RASCALDUST), so they
- * stay on between jobs (q1541: the firmware turned them off after every
- * job and on again for the next); 0 leaves their power to the firmware.
- * With the PMU event unmasked the host's power up completes (2026-10-20).
+ * stay on between jobs (the firmware turns them off after every job and
+ * on again for the next); 0 leaves their power to the firmware.  The
+ * host's power up completes only while the PMU's hardware turn-on event
+ * of the GPU (bit 7 of its mask at 0x4) is unmasked.
  */
 /*
- * Whether the firmware processor caches its own code and data sections
- * (q1541).  Both were uncached, as mainline Linux maps them, and the
+ * Whether the firmware processor caches its own code and data sections.
+ * Both were uncached, as mainline Linux maps them, and the
  * firmware's work around each job (about 1 ms on the board) is far more
  * than the core's; the host writes them only while the processor is held
  * in reset (the load and the restart), whose reset empties its caches.
- * The code cached (read only) halved that work on the board (d69: the TA's
+ * The code cached (read only) halved that work on the board (the TA's
  * share 639 to 296 us, the 3D's 608 to 357 us, with every trace group on);
  * the data cached is a trial (the firmware may have the core read some of
  * it, which a write-back cache would leave stale).
@@ -248,12 +249,12 @@ static void watch_thread(void *argument);
 #endif
 
 /*
- * The trials of the vendor driver's settings the board's dump showed
- * (q1541, plan/ws270/phase007/notes-p1.md): how long the firmware waits,
- * idle, before it may power the core down (the active power management's
- * latency; the vendor's 100 ms, ours 0 as mainline), and the system level
- * cache's address decoding (the vendor's register read 64-byte
- * interleaving, 0x3 in SLC_CTRL_MISC, where mainline writes the PVR hash).
+ * The trials of the vendor driver's settings the board's dump showed: how
+ * long the firmware waits, idle, before it may power the core down (the
+ * active power management's latency; the vendor's 100 ms, ours 0 as
+ * mainline), and the system level cache's address decoding (the vendor's
+ * register read 64-byte interleaving, 0x3 in SLC_CTRL_MISC, where
+ * mainline writes the PVR hash).
  */
 #ifndef POWERVR_APM_LATENCY_MS
 #define POWERVR_APM_LATENCY_MS		0U
@@ -680,7 +681,7 @@ make_program(
 	/* The data's place is its private section's base within the heap. */
 	data_offset = private_data->base & (POWERVR_HEAP_BYTES - 1U);
 
-	/* The code goes first, at the bottom of the heap, cached by the processor when chosen (q1541). */
+	/* The code goes first, at the bottom of the heap, cached by the processor when chosen. */
 	caching = POWERVR_MIPS_UNCACHED;
 	if (POWERVR_FIRMWARE_CODE_CACHED)
 		caching = POWERVR_MIPS_CACHED;
@@ -2018,8 +2019,9 @@ powervr_firmware_trace_mark(
 
 /*
  * Prints every word of the firmware's trace from the mark to where the
- * firmware writes next, at most TRACE_SINCE_MARK_WORDS (the job trace,
- * q1541: a dump's head and tail left out the middle of one job).
+ * firmware writes next, at most TRACE_SINCE_MARK_WORDS, for the job
+ * trace (a dump of only the ring's head and tail leaves out the middle
+ * of one job).
  */
 void
 powervr_firmware_trace_since_mark(

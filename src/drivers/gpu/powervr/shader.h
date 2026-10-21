@@ -161,17 +161,17 @@ struct powervr_shader_blend {
  * fragment colours as floats in temporaries.
  *
  * Forms (POWERVR_SHADER_FORM_*) turns on fragment program forms the
- * driver takes (q1546): the shared program, which moves the work only
+ * driver takes: the shared program, which moves the work only
  * push constants, descriptors and constants decide into one task a draw
  * that the data sequencer's shared register program issues after its
  * loads, writing the results to shared registers the pixels read (the
  * driver starts it: powervr_shader_program.shared_length); a sample
  * whose coordinates are a varying iterated by the sample itself; and
- * (q1548) the colour written to an 8-bit attachment, opaque or blended
+ * the colour written to an 8-bit attachment, opaque or blended
  * over, added, subtracted or multiplied, by one sum-of-products
  * operation in place of the unpack, the blend's arithmetic and the pack;
  * with the raw form besides, the blended colour handed to that operation
- * unclamped, which it clamps itself (seen on the board, d87); and the
+ * unclamped, which it clamps itself (seen on the board); and the
  * iterate and sample that waits for its own data (its scheduling
  * control) in place of a wait after it.  Bit 0x2 (the pack written into
  * the pixel output, which lost the device on the board) is no form.

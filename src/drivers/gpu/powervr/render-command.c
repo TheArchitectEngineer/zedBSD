@@ -173,7 +173,7 @@ powervr_fragment_command(
 	/*
 	 * A render that clears nothing leaves the tiles no primitive reaches
 	 * as they are in memory, as Mesa runs the background on empty tiles
-	 * only for a clear (ws270-p007): a small render area's job then
+	 * only for a clear: a small render area's job then
 	 * processes its own tiles, not the whole target's.
 	 *
 	 * Procedure referenced:

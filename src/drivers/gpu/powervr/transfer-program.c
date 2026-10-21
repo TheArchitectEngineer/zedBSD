@@ -35,8 +35,8 @@
  * they are moved first).  The coordinates are clamped to the centres of
  * the source rectangle's edge texels: a transfer shades whole tiles, and
  * a pixel outside the destination's rectangle must not read past a
- * linear source's memory (q1523: a read 4032 bytes past a 1920x1080
- * image).
+ * linear source's memory (unclamped, a read went 4032 bytes past a
+ * 1920x1080 image).
  *
  * Procedure referenced:
  * Mesa 26.2.5 src/imagination/vulkan/pvr_usc.c (pvr_uscgen_tq with
@@ -91,8 +91,8 @@
  * sample's own fcnorm flag (the first argument of powervr_usc_sample)
  * says whether fixed-point channels come back converted to floats: off
  * for a copy's raw words, on for a blit, whose floats are packed again
- * (q1550: with it off, a blit's 8-bit unorm channels came back as their
- * integers, tiny floats the pack wrote as 0).
+ * (with it off, a blit's 8-bit unorm channels come back as their
+ * integers, tiny floats the pack writes as 0).
  *
  * Values referenced:
  * Mesa 26.2.5 src/imagination/pco/pco_isa.py (F_DIM 2d 0b10, the
@@ -509,7 +509,7 @@ powervr_transfer_shared_words(
  * row k (from area->y) reads source row source_y + phase + step * k, and
  * the rows are clamped to the whole rectangle.  A linear destination of
  * odd rows is written as two jobs of doubled line stride, the even rows
- * and the odd ones (q1534).
+ * and the odd ones.
  *
  * Procedure referenced: Mesa 26.2.5 src/imagination/vulkan/
  * pvr_arch_job_transfer.c (pvr_double_stride: an odd destination stride

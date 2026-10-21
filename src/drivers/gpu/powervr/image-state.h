@@ -41,7 +41,7 @@
 /* The bytes a row of a linear image is a multiple of (the display's import takes such rows). */
 #define POWERVR_IMAGE_ROW_ALIGN		32U
 
-/* The rows a linear image's memory is rounded up to: whole tiles a transfer may touch (q1523). */
+/* The rows a linear image's memory is rounded up to: whole tiles a transfer may touch. */
 #define POWERVR_IMAGE_LINEAR_ROWS	32U
 
 /*
@@ -49,11 +49,11 @@
  * report sampling (and linear filtering).  libvulkan tries a shared,
  * linear swapchain image only when linear sampling is reported; while it
  * is not, a client's window system presents through copies of optimal
- * images.  The executor takes the shared path's external images,
- * exports and imports either way (ws269-p010l).  It is on (q1523): the
- * Wayland client WSI has no copied route, so with it off every Wayland
- * swapchain failed with VK_ERROR_FORMAT_NOT_SUPPORTED.  A host test may
- * define it to 0 to check both values.
+ * images.  The executor takes the shared path's external images, exports
+ * and imports either way.  It is on: the Wayland client WSI has no copied
+ * route, so with it off every Wayland swapchain fails with
+ * VK_ERROR_FORMAT_NOT_SUPPORTED.  A host test may define it to 0 to check
+ * both values.
  */
 #ifndef POWERVR_FORMAT_LINEAR_SAMPLED
 #define POWERVR_FORMAT_LINEAR_SAMPLED	1

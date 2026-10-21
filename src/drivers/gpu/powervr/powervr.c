@@ -366,10 +366,10 @@ identity_known(
  * A pattern written cached and pushed out of the caches must read back
  * through the uncached view; a pattern written uncached must read back
  * cached once lines a speculative read may have brought in are dropped.
- * Only plain loads and stores touch the uncached view.
- *
- * Procedure referenced:
- * plan/ws256/design-peripherals.md section 2.4 (control 0a).
+ * Only plain loads and stores touch the uncached view.  Both directions
+ * must match before anything relies on the alias: a mismatch means the
+ * alias does not name the same memory, or a write through it does not
+ * arrive.
  */
 static enum powervr_alias_result
 check_alias(

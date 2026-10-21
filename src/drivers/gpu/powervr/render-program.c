@@ -345,7 +345,7 @@ powervr_render_event_words(
 }
 
 /*
- * A test switch (q1539, 0 as built): immediate groups the clear
+ * A test switch (0 as built): immediate groups the clear
  * background's program runs before its moves, to time a background
  * program as long as a draw's fragment program (14 makes 15 groups, the
  * length of vkmatrix's immediate.frag).
@@ -669,7 +669,7 @@ powervr_render_kick_build(
 }
 
 /*
- * A test switch (q1536): the temporaries a draw's fragment task asks for,
+ * A test switch: the temporaries a draw's fragment task asks for,
  * at least this many (0: the program's own).  32 or 48 measures how much
  * the number of instances the shading cluster keeps resident matters.
  */
@@ -1235,7 +1235,7 @@ round_units(
  * Mesa 26.2.5 src/imagination/vulkan/pvr_arch_formats.c
  * (pvr_arch_pbe_get_src_format_and_gamma: a 16-bit float channel takes
  * F16_PER_CHANNEL; a format with 32-bit channels, or an integer one,
- * 8_PER_CHANNEL: the source words taken whole); board 101 (q1520): a
+ * 8_PER_CHANNEL: the source words taken whole); on the board a
  * raw R32G32/R32G32B32A32 store with F16_PER_CHANNEL repeated the first
  * half of the source.
  */

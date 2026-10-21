@@ -129,8 +129,10 @@
 
 /*
  * The fragment command's flag that turns pixel merging off, set on every
- * render as Mesa does (q1539: part of the ta trial that took a
- * full-screen draw's own cost a tile away; 0 turns it back off).
+ * render as Mesa does (measured on the board together with the varying
+ * base and the data sequencer temporaries left out, an extra full-screen
+ * draw then cost about 0.02 ms where it had cost 1.1 ms; 0 leaves the
+ * flag clear).
  *
  * Values referenced:
  * Mesa 26.2.5 src/imagination/vulkan/winsys/pvrsrvkm/fw-api/pvr_rogue_fwif.h
@@ -153,7 +155,7 @@ void powervr_render_command_single_core(int on);
  * there are no draws), and with a depth target its ZLS control, base,
  * background depth and layer stride.  skip_empty_tiles leaves the tiles
  * no primitive reaches untouched (no background, no store), for a render
- * that clears nothing (ws270-p007); false processes every tile.
+ * that clears nothing; false processes every tile.
  * no_background leaves the background object out of the tiles (its tag
  * off), for a render whose old contents do not matter anywhere: its draws
  * cover what it keeps.

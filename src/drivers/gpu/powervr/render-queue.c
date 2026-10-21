@@ -141,7 +141,7 @@ static void handle_notice(void *context, uint32_t type, const struct powervr_obj
 #define TIMING_REPORT_MS		5000U
 
 /*
- * The job trace (ws270-p007, q1541): with POWERVR_JOB_TRACE 1 every render
+ * The job trace: with POWERVR_JOB_TRACE 1 every render
  * kick waits, spinning on the fine counter (hal_rtc_read_counter), for its
  * geometry's and its fragment's timeline values, and the times from the
  * kick's start to its commands sent, to the TA's end and to the 3D's end
@@ -160,8 +160,8 @@ static void handle_notice(void *context, uint32_t type, const struct powervr_obj
 
 /*
  * The traced render (POWERVR_JOB_TRACE) during whose 3D the core's
- * settings registers are logged once (q1541; read between jobs they read
- * 0, the core powered down), to set them beside the vendor driver's dump
+ * settings registers are logged once (read between jobs they read 0, the
+ * core powered down), to set them beside the vendor driver's dump
  * on the same board: the clocks' gating, the system level cache, the ISP, the
  * multicore controls, the bus and the MIPS wrapper (offsets of Linux v7.3
  * drivers/gpu/drm/imagination/pvr_rogue_cr_defs.h: CLK_CTRL 0x0000,
@@ -175,14 +175,14 @@ static void handle_notice(void *context, uint32_t type, const struct powervr_obj
 #define POWERVR_REGISTER_LOG_KICK	100U
 #endif
 
-/* The small job (counted from the first) whose firmware trace the job trace dumps, once, for sfdec.py. */
+/* The small job (counted from the first) whose firmware trace the job trace dumps, once, for decoding off line. */
 #define TRACE_DUMP_JOB			40U
 
 /*
  * The job trace also dumps the firmware trace of a small job kicked after
  * no kick for TRACE_IDLE_MS, at most TRACE_IDLE_DUMPS times, with its own
- * times (q1550: after a minute idle the desktop's first frame took 139 ms
- * from its kick to its end, whatever it drew).
+ * times (after a minute idle the desktop's first frame took 139 ms from
+ * its kick to its end, whatever it drew).
  */
 #define TRACE_IDLE_MS			10000U
 #define TRACE_IDLE_DUMPS		3U
@@ -1439,7 +1439,7 @@ powervr_render_drain(
 
 /*
  * Reads the timing's clock now, for the start of a timed part: the fine
- * counter (hal_rtc_read_counter, q1541: the scheduler's 1 ms tick hid the
+ * counter (hal_rtc_read_counter; the scheduler's 1 ms tick hides the
  * parts of a job), else the scheduler's ticks.
  */
 uint64_t

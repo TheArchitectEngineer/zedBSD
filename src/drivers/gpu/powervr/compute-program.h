@@ -53,10 +53,10 @@
  * allocation kernel (powervr_compute_shared_kernel_words), the work (its
  * shared data the shading cluster's, sd_type USC), and the fence kernel
  * that waits for the work and frees the registers.  A fence without the
- * first kernel locked the compute data master up on the VF2
- * (vf2-dmesg65); with it the fence ran (P1, vf2-dmesg91), and without a
- * fence the kick finished before the stores of the check's hand-written
- * kernel did (6944 to 9456 of 16384 words from vf2-dmesg69 on).
+ * first kernel locked the compute data master up on the VF2; with it
+ * the fence ran, and without a fence the kick finished before the stores
+ * of the check's hand-written kernel did (only 6944 to 9456 of its 16384
+ * words written when the kick was reported done).
  */
 #ifndef POWERVR_COMPUTE_FENCE_KERNEL
 #define POWERVR_COMPUTE_FENCE_KERNEL	1

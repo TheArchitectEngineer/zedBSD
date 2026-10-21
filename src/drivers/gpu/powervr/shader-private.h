@@ -219,7 +219,7 @@ struct shader_backend {
 
 /*
  * The most words a fragment program's shared program computes, and the
- * most machine operations and code bytes it may have (q1546).
+ * most machine operations and code bytes it may have.
  */
 #define SHADER_SHARED_WORDS		16U
 #define SHADER_SHARED_OPERATIONS	512U

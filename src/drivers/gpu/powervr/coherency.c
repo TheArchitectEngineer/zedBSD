@@ -16,11 +16,19 @@
  * MIPS side, and nothing done about the core's system level cache.  What
  * the core's data masters do is another path.
  *
- * Procedure referenced:
- * plan/ws256/design-peripherals.md section 2.4 (controls 0b, 1 and 6:
- * a clean line loaded before the device writes, eight rounds of 64 KiB
- * across 2 MiB, the verdict taken from the cached view only, and the
- * range dropped from the caches afterwards).
+ * The procedure: a control first shows that the processor alone can be
+ * shown a stale line (clean lines loaded through the cached view, other
+ * values written through the uncached alias, and the old values read
+ * cached again); without it a matching round would prove nothing.  Each
+ * round then loads its window's lines clean before the firmware writes,
+ * so a write that does not reach the processor's caches reads back
+ * stale.  The eight windows of 64 KiB lie 128 KiB apart across 2 MiB,
+ * so they pass through different sets of the level-two cache, and each
+ * is small enough that no line is evicted and written back to fake a
+ * pass.  The verdict comes from the cached view only; the alias only
+ * tells whether a write reached memory at all.  The whole range is
+ * dropped from the caches afterwards, because the control and a failing
+ * round leave stale clean lines that the memory's next owner would read.
  */
 
 #include <stddef.h>

@@ -141,7 +141,7 @@ enum powervr_ir_opcode {
 	POWERVR_IR_PIXEL_STORE,
 
 	/*
-	 * The shared program's parts (q1546): a one-word value of the four
+	 * The shared program's parts: a one-word value of the four
 	 * floats of sources 0 to 3 packed as 8-bit unsigned normalised
 	 * channels (red in the lowest byte); source 0 given to shared
 	 * register immediate; and, in the program that reads them, shared
@@ -155,8 +155,8 @@ enum powervr_ir_opcode {
 	/*
 	 * Blends the four floats of sources 0 to 3, each clamped to [0, 1]
 	 * (NaN to 0), with the 8-bit unsigned normalised colour in pixel
-	 * output register immediate and packs the result back into it
-	 * (q1548); immediate_2 is the blend (POWERVR_IR_BLEND_*).
+	 * output register immediate and packs the result back into it;
+	 * immediate_2 is the blend (POWERVR_IR_BLEND_*).
 	 */
 	POWERVR_IR_PIXEL_BLEND,
 

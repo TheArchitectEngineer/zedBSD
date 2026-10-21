@@ -35,7 +35,7 @@
  * counter, scratch words, the coordinate pair of a sample, the address
  * pair of a memory access and the store's data right after it (the
  * hardware's st32 takes the data from the register after the address
- * pair, as Mesa lays them out in one vector; vf2-dmesg95).  Values start
+ * pair, as Mesa lays them out in one vector).  Values start
  * after them.
  */
 #define TEMP_EMC		0U
@@ -145,16 +145,15 @@ struct backend_loop {
 /*
  * Which operations pair_operations puts two to a group (phases 0 and 1
  * of the main unit): 0 none, 1 float adds and multiplies, 2 also
- * multiply-adds and moves (q1539: on the board, d62, a group of two
- * independent multiplies took the time of one, so a group's cost is its
- * issue).
+ * multiply-adds and moves (on the board a group of two independent
+ * multiplies took the time of one, so a group's cost is its issue).
  */
 #ifndef POWERVR_SHADER_PAIR
 #define POWERVR_SHADER_PAIR		2
 #endif
 
 /*
- * A test switch (q1539, 0 as built): every float add, multiply and
+ * A test switch (0 as built): every float add, multiply and
  * multiply-add in the low precision forms (Mesa 26.2.5 pco_isa.py
  * fadd_lp, fmul_lp, lp_fma; pco uses none), to see on the board whether
  * they issue faster.  Results lose precision; for timing only.
@@ -249,7 +248,7 @@ static int build_group_fetch(void *context, size_t index, struct powervr_usc_gro
 static void group_register(struct powervr_usc_register *operand, struct shader_machine_register reg);
 
 /*
- * Where a sum of products (q1548) takes its registers, one row per form
+ * Where a sum of products takes its registers, one row per form
  * of enum powervr_usc_sum and one entry per source of the group: the
  * colour's channel (0 red to 3 alpha), SUM_DESTINATION for the pixel
  * output it blends with, or SUM_UNUSED.  Sources 1 and 4 are the second
@@ -354,7 +353,7 @@ shader_backend_build(
 	/*
 	 * The ending: a vertex emits its outputs, every task ends; a
 	 * fragment program without branches ends on its last move or
-	 * immediate when nothing branches past it (q1539: one group less a
+	 * immediate when nothing branches past it (one group less a
 	 * pixel, as Mesa's pco_end sets the end on the last instruction).
 	 */
 	if (program->stage == POWERVR_SHADER_VERTEX) {
@@ -383,7 +382,7 @@ shader_backend_build(
  * 3), and the coordinates, address and store data (4 to 8, which stay
  * together: a store reads its data from the register after the address
  * pair).  The blocks used move down to the start, the values after them
- * (q1536: every program took the nine whatever it used).
+ * (every program took the nine whatever it used).
  */
 static void
 compact_temporaries(
@@ -509,7 +508,7 @@ powervr_shader_compile_inline(
 	unsigned split;
 	int error;
 
-	/* A keyed fragment program read through shared registers may move its uniform work to a shared program (q1546). */
+	/* A keyed fragment program read through shared registers may move its uniform work to a shared program. */
 	split = 0;
 	if (stage == POWERVR_SHADER_FRAGMENT &&
 	    key != NULL &&
@@ -524,7 +523,7 @@ powervr_shader_compile_inline(
 	if (error != 0 && split != 0)
 		error = compile_program(words, count, stage, key, shared_values, value_count, 0, workspace, program, code, room);
 
-	/* A program the sum of products could not write is compiled again with the arithmetic (q1548). */
+	/* A program the sum of products could not write is compiled again with the arithmetic. */
 	if (error != 0 && key != NULL && (key->forms & POWERVR_SHADER_FORM_SUM_OF_PRODUCTS) != 0) {
 		plain = *key;
 		plain.forms &= ~POWERVR_SHADER_FORM_SUM_OF_PRODUCTS;
@@ -632,8 +631,8 @@ compile_program(
 }
 
 /*
- * Builds a fragment program's shared program from its intermediate form
- * (q1546): selected as a compute task's, with the fragment program's
+ * Builds a fragment program's shared program from its intermediate
+ * form: selected as a compute task's, with the fragment program's
  * requests, so it reads the shared registers the data sequencer fills
  * and writes the computed ones; its operations are kept for the host
  * check and its code encoded beside them.
@@ -679,7 +678,7 @@ shared_build(
 
 /*
  * Splits from a fragment program the work only uniform words decide
- * (q1546: the board's flat quad of a push constant colour cost 2 ms a
+ * (the board's flat quad of a push constant colour cost 2 ms a
  * 1080p frame more than one of a constant colour, the colour's pack a
  * pixel, where the proprietary driver's cost a tenth of that, as it
  * works such values out once a draw).
@@ -1073,7 +1072,7 @@ shared_shader_build(
 
 /*
  * Drops, last first, the instructions that write a value no kept
- * instruction reads (q1546: remove_dead_writes takes a pass a link, too
+ * instruction reads (remove_dead_writes takes a pass a link, too
  * few for a chain of uniform work): of the candidates only, or, with
  * none given, of every instruction that writes a value (the shared
  * program, which has no if or loop and writes each value once).
@@ -1169,7 +1168,7 @@ end_on_last(
 	if (program->stage != POWERVR_SHADER_FRAGMENT || backend->control_flow != 0 || backend->operation_count == 0)
 		return 0;
 
-	/* A move, an immediate or a sum of products (q1548), on the enabled instances. */
+	/* A move, an immediate or a sum of products, on the enabled instances. */
 	last = &backend->operations[backend->operation_count - 1U];
 	if (last->kind != MACHINE_MOVE &&
 	    last->kind != MACHINE_IMMEDIATE &&
@@ -1183,7 +1182,7 @@ end_on_last(
 }
 
 /*
- * Reads a plain copy's source in place of the copy (q1539: a sample's
+ * Reads a plain copy's source in place of the copy (a sample's
  * words and an iterated varying were copied into the shader's variables
  * before every use, a move a word a pixel): after a move of a value's
  * word, or of a constant the core holds in a register, into a one-word
@@ -1245,7 +1244,7 @@ propagate_copies(
 
 /*
  * In a fragment shader that allows contraction, makes an add of a product
- * one multiply-add (q1539: Mesa's NIR fuses them the same way): a float
+ * one multiply-add (Mesa's NIR fuses them the same way): a float
  * add whose one source is (or is minus) a one-word value written once by
  * an unsaturated multiply, read only there, in the same run of
  * instructions with neither of the multiply's sources written in
@@ -1280,7 +1279,7 @@ fuse_multiply_adds(
 /*
  * Makes the saturated add of zero of a float add, multiply or
  * multiply-add's result that nothing else reads a plain copy, and has
- * that operation saturate instead (q1539: the blend's clamp of a
+ * that operation saturate instead (the blend's clamp of a
  * computed colour was an operation a channel), when it is written once,
  * in the same run of instructions with its sources unchanged in between.
  * The copy goes when copies are read in place again.
@@ -1339,7 +1338,7 @@ fuse_saturate(
 
 /*
  * Makes min(max(x, 0), 1) or max(min(x, 1), 0) one saturated add of
- * zero (q1539: GLSL's clamp to [0, 1] was two operations a pixel), when
+ * zero (GLSL's clamp to [0, 1] was two operations a pixel), when
  * the inner result is a one-word value written once, read only there, in
  * the same run of instructions with x unchanged in between.  The inner
  * one goes when nothing reads it (remove_dead_writes).
@@ -1531,7 +1530,7 @@ value_references(
  * Finds the one-word values that are a shared register's word, written
  * only by that read and read only by float adds, multiplies and
  * multiply-adds, whose lower sources name a shared register as well as
- * a temporary (q1539: as Mesa's pco reads sh registers in place, where
+ * a temporary (as Mesa's pco reads sh registers in place, where
  * each read was a move a pixel).  Those operations read the shared
  * register, and the read itself selects nothing.
  */
@@ -1594,7 +1593,7 @@ alias_shared(
 /*
  * In a fragment shader without structure, gives a constant that two or
  * more multiply-adds add a value of its own, written once at the start
- * (q1539: a constant addend is a shared register, which the third source
+ * (a constant addend is a shared register, which the third source
  * of a group's second phase cannot name, so such multiply-adds did not
  * pair; a temporary can).  The core's free constants stay as they are.
  */
@@ -1688,7 +1687,7 @@ hoist_addends(
 
 /*
  * Makes each unsaturated float multiply by the constant 1.0 a copy of
- * its other source (exact; q1539: a division of 1.0 was a reciprocal and
+ * its other source (exact; a division of 1.0 was a reciprocal and
  * a multiply by 1.0).  The copy goes when copies are read in place.
  */
 static void
@@ -1737,7 +1736,7 @@ free_constant(
 /*
  * In a fragment program without branches, iterates one set of words in
  * one operation where the reader iterated a word at a time, each with
- * its wait (q1539: Mesa's pco iterates a vector in one fitr): an iterate
+ * its wait (Mesa's pco iterates a vector in one fitr): an iterate
  * and its wait followed by the iterate of the next coefficient set into
  * the next register become one iterate of both, the second's wait kept.
  */
@@ -1798,7 +1797,7 @@ merge_iterates(
 /*
  * In a program without branches, drops an immediate into a register that
  * already holds that value from the last immediate into it, nothing
- * having written it since (q1539: the reader names a constant operand by
+ * having written it since (the reader names a constant operand by
  * an immediate into the scratch temporary at each use, four in a row
  * for a vector scaled by one constant).
  */
@@ -1864,7 +1863,7 @@ repeated_immediate(
 /*
  * In a fragment program without branches, unpacks the colour already in
  * a pixel output register from the register itself under the overlap
- * check, where it was moved into a temporary first (q1539: a group a
+ * check, where it was moved into a temporary first (a group a
  * blended pixel).
  */
 static void
@@ -1921,7 +1920,7 @@ unpack_in_place(
 }
 
 /*
- * Marks the varyings a sample iterates itself (q1546; the iterate and sample form:
+ * Marks the varyings a sample iterates itself (the iterate and sample form:
  * BXE-4-32 has the control unit's iterate and sample): the two
  * coordinates of a sample, unmodified, each a one-word value written
  * only by the iteration of a varying word and read only there, the
@@ -2053,7 +2052,7 @@ pack_constant(
  * In a program without branches, puts two independent operations in one
  * group, the first in phase 0 (sources s0 to s2, ft0, w0) and the second
  * in phase 1 (s3 to s5, ft1, w1), marking the first paired with the
- * next (q1539: a group's cost on the board is its issue, so a pair costs
+ * next (a group's cost on the board is its issue, so a pair costs
  * one).  An operation up to PAIR_WINDOW ahead that commutes with every
  * one between is moved up beside the one it pairs with.  Only pairs whose
  * group encodes are made.
@@ -2265,7 +2264,7 @@ temporary_block(
  * In a fragment program without branches, has the operation that
  * computes a temporary write it where a later plain move copies it, and
  * drops the move, when nothing else reads the temporary and nothing in
- * between touches either register (q1539: the four words of a colour
+ * between touches either register (the four words of a colour
  * were moved side by side for the pack after being computed, a move a
  * word a pixel).
  */
@@ -2384,7 +2383,7 @@ reads_register(
 	if (operation->kind == MACHINE_IMMEDIATE || operation->kind == MACHINE_WAIT || operation->kind == MACHINE_ITERATE || operation->kind == MACHINE_END)
 		return 0;
 
-	/* A blending sum of products reads the pixel output it writes (q1548). */
+	/* A blending sum of products reads the pixel output it writes. */
 	if (operation->kind == MACHINE_SUM_OF_PRODUCTS && operation->variant != POWERVR_USC_SUM_OPAQUE && same_register(operation->destination[0], reg))
 		return 1;
 
@@ -2425,7 +2424,7 @@ same_register(
 
 /*
  * Drops the writes of one-word values that are written again or never
- * read before the next structure instruction (q1539: a fragment colour
+ * read before the next structure instruction (a fragment colour
  * the reader starts at zero and the shader then writes cost four
  * operations a pixel).  Only operations without side effects go; a
  * write before an if, a loop or their ends stays, as the value may be
@@ -2802,7 +2801,7 @@ select_instruction(
 
 	/*
 	 * A float add, multiply or multiply-add of a fragment program reads a
-	 * constant from a shared register the data sequencer fills (q1539),
+	 * constant from a shared register the data sequencer fills,
 	 * not an immediate a pixel; the shared register never goes in the
 	 * second source (select_float_pair and the multiply-add swap or move
 	 * it).
@@ -2973,8 +2972,8 @@ select_instruction(
 	case POWERVR_IR_INTEGER_MULTIPLY:
 		/*
 		 * The sources as they are, a constant one or zero from its special
-		 * register: the multiply-add reads special registers (rule probe,
-		 * vf2-dmesg95, as Mesa's compiler does).
+		 * register: the multiply-add reads special registers (the rule
+		 * probe shows it, as Mesa's compiler does).
 		 */
 		destination = destination_of(select, instruction);
 		a = operand_plain(select, &instruction->source[0], 0);
@@ -3096,7 +3095,7 @@ select_instruction(
 	case POWERVR_IR_ITERATE:
 		destination = destination_of(select, instruction);
 		if (select->backend->iterate_sample[instruction->destination] != 0) {
-			/* A coordinate the sample that reads it iterates itself (q1546). */
+			/* A coordinate the sample that reads it iterates itself. */
 			break;
 		}
 		if ((instruction->flags & POWERVR_IR_FLAT) != 0) {
@@ -3132,8 +3131,8 @@ select_instruction(
 		/*
 		 * The data moved right after the address pair, the address, the
 		 * store, the wait for it: the store reads its data from the
-		 * register after the pair, whatever its data source names (rule
-		 * probe, vf2-dmesg95: data elsewhere was not stored; Mesa's
+		 * register after the pair, whatever its data source names (the
+		 * rule probe showed data elsewhere was not stored; Mesa's
 		 * compiler places it the same way).
 		 */
 		source = operand_plain(select, &instruction->source[3], 0);
@@ -3175,7 +3174,7 @@ select_instruction(
 		image = &select->program->requests[instruction->immediate];
 		sampler = &select->program->requests[instruction->immediate_2];
 		if (instruction->source[0].kind == POWERVR_IR_OPERAND_VALUE && select->backend->iterate_sample[instruction->source[0].value] != 0) {
-			/* Its coordinates iterated by the sample itself, then the wait for it (q1546). */
+			/* Its coordinates iterated by the sample itself, then the wait for it. */
 			coefficient = iterate_coefficient(select->shader, instruction->source[0].value);
 			operation = append(select, MACHINE_ITERATE_SAMPLE);
 			if (operation != NULL) {
@@ -3186,7 +3185,7 @@ select_instruction(
 				operation->immediate_2 = select->program->w_coefficient;
 			}
 
-			/* The wait for its data: the operation's own (q1548, the form that waits), or a wait after it. */
+			/* The wait for its data: the operation's own (the form that waits), or a wait after it. */
 			if ((select->backend->forms & POWERVR_SHADER_FORM_SAMPLE_WAITS) != 0) {
 				if (operation != NULL)
 					operation->variant = SCHEDULE_WAIT_DATA;
@@ -3249,7 +3248,7 @@ select_instruction(
 		if (instruction->immediate >= 4 || (instruction->immediate_2 != 0 && instruction->immediate >= 3))
 			return ENOTSUP;
 		if (pack_constant(instruction, &packed)) {
-			/* A constant colour of noughts and ones: its packed word, moved under the overlap check (q1539). */
+			/* A constant colour of noughts and ones: its packed word, moved under the overlap check. */
 			operation = append(select, MACHINE_IMMEDIATE);
 			if (operation != NULL) {
 				operation->destination[0] = temp_register(TEMP_SCRATCH);
@@ -3264,12 +3263,12 @@ select_instruction(
 			break;
 		}
 		if ((select->backend->forms & POWERVR_SHADER_FORM_SUM_OF_PRODUCTS) != 0 && instruction->immediate_2 == 0) {
-			/* The sum-of-products form (q1548): the four floats written by one operation. */
+			/* The sum-of-products form: the four floats written by one operation. */
 			select_sum(select, instruction, POWERVR_USC_SUM_OPAQUE);
 			break;
 		}
 
-		/* The words where one value holds them in order (q1546: a sample's four, two moves a pixel), else moved side by side. */
+		/* The words where one value holds them in order (a sample's four, two moves a pixel), else moved side by side. */
 		a = temp_register(TEMP_COORDINATES);
 		error = adjacent_words(select, instruction, &a);
 		if (error == 0) {
@@ -3306,7 +3305,7 @@ select_instruction(
 		}
 		break;
 	case POWERVR_IR_PACK:
-		/* The four words side by side, packed as 8-bit unsigned normalised channels into the value (q1546: a shared program's colour). */
+		/* The four words side by side, packed as 8-bit unsigned normalised channels into the value (a shared program's colour). */
 		for (channel = 0; channel < 4; channel++) {
 			select->scratch = 0;
 			source = operand_plain(select, &instruction->source[channel], 0);
@@ -3326,7 +3325,7 @@ select_instruction(
 		}
 		break;
 	case POWERVR_IR_SHARED_STORE:
-		/* The word into the shared register the program's pixels read it from (q1546). */
+		/* The word into the shared register the program's pixels read it from. */
 		source = operand_plain(select, &instruction->source[0], 0);
 		operation = append(select, MACHINE_MOVE);
 		if (operation != NULL) {
@@ -3335,7 +3334,7 @@ select_instruction(
 		}
 		break;
 	case POWERVR_IR_PIXEL_BLEND:
-		/* The blend of the sum-of-products form (q1548): one operation of the colour and the destination's. */
+		/* The blend of the sum-of-products form: one operation of the colour and the destination's. */
 		if (instruction->immediate >= 4)
 			return ENOTSUP;
 		switch (instruction->immediate_2) {
@@ -3356,7 +3355,7 @@ select_instruction(
 		}
 		break;
 	case POWERVR_IR_PIXEL_SHARED:
-		/* The colour the shared program packed (or a literal), moved into the pixel output under the overlap check (q1546). */
+		/* The colour the shared program packed (or a literal), moved into the pixel output under the overlap check. */
 		if (instruction->immediate >= 4)
 			return ENOTSUP;
 		operation = append(select, MACHINE_MOVE);
@@ -4012,7 +4011,7 @@ select_address(
 }
 
 /*
- * Selects a sum of products (q1548) writing an instruction's four floats
+ * Selects a sum of products writing an instruction's four floats
  * (sources 0 to 3) into its pixel output register in a form: each
  * channel's register, moved into a scratch temporary first when its
  * modifiers need applying or when its source's bank field cannot name
@@ -4451,7 +4450,7 @@ shader_backend_group(
 		error = powervr_usc_iterate(operation->destination[0].index, operation->immediate, 1, operation->immediate_2, 0, operation->variant + 1U, 0, &group->operation[POWERVR_USC_PHASE_0]);
 		break;
 	case MACHINE_ITERATE_SAMPLE:
-		/* Two words iterated with perspective from consecutive coefficient sets, sampled with the shared registers' states, through data return counter 0 (q1546). */
+		/* Two words iterated with perspective from consecutive coefficient sets, sampled with the shared registers' states, through data return counter 0. */
 		group->unit = POWERVR_USC_UNIT_CONTROL;
 		group->control = CONTROL_ITERATE_SAMPLE;
 		error = powervr_usc_iterate_sample(operation->destination[0].index, operation->immediate, 1, operation->immediate_2, operation->source[0].index,
@@ -4476,7 +4475,7 @@ shader_backend_group(
 		error = powervr_usc_vertex_output(0, 0, 0, 1, operation->immediate, &group->operation[POWERVR_USC_PHASE_BACKEND]);
 		break;
 	case MACHINE_SUM_OF_PRODUCTS:
-		/* Phase 0's sum of products of the form, its registers in the form's sources, into the pixel output under the overlap check (q1548). */
+		/* Phase 0's sum of products of the form, its registers in the form's sources, into the pixel output under the overlap check. */
 		group->unit = POWERVR_USC_UNIT_MAIN;
 		group->write_0 = 1;
 		group->overlap_check = operation->overlap;

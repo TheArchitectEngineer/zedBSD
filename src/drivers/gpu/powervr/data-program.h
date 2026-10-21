@@ -35,7 +35,7 @@
 
 /*
  * The most data and code words of a shared register program: three and
- * one a load, and two and one for the issue of a shared task (q1546).
+ * one a load, and two and one for the issue of a shared task.
  */
 #define POWERVR_DATA_SHARED_DATA_MAX	(POWERVR_DATA_LOADS_MAX * 3U + 2U)
 #define POWERVR_DATA_SHARED_CODE_MAX	(POWERVR_DATA_LOADS_MAX + 1U)
