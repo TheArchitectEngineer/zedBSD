@@ -411,6 +411,12 @@ struct powervr_session {
 
 	/* Set once the progress watchdog reported the session (under the queue lock). */
 	unsigned progress_reported;
+
+	/*
+	 * The target the session's newest render job kicked with, for the
+	 * description after a reset; targets live until the session closes.
+	 */
+	struct powervr_target *noted_target;
 };
 
 /*
@@ -661,6 +667,10 @@ uint32_t powervr_target_data_address(const struct powervr_target *target, unsign
 
 /* Reports the layout a render target was made with. */
 const struct powervr_target_layout *powervr_target_layout_of(const struct powervr_target *target);
+
+/* Reports the firmware address of a target's render target data record (render-target.c). */
+uint32_t powervr_target_record_address(const struct powervr_target *target);
+
 void powervr_target_dump(const struct powervr_target *target);
 void powervr_session_global_list_dump(const struct powervr_session *session);
 

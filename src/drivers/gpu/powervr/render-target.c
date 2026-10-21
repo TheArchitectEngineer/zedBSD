@@ -1164,6 +1164,20 @@ ms_ticks(
 	return ((uint64_t)milliseconds * KERN_CLOCK_HZ + 999U) / 1000U;
 }
 
+/* Reports the firmware address of a target's render target data record. */
+uint32_t
+powervr_target_record_address(
+	const struct powervr_target *target)
+{
+	uint32_t address;
+
+	/* The record's place in the firmware's heap. */
+	address = powervr_object_address(&target->record, 0);
+
+	/* Succeeded: the address. */
+	return address;
+}
+
 /*
  * Prints a target's records for a render the firmware reset: the
  * buffers' device addresses, the first half's data record, the common

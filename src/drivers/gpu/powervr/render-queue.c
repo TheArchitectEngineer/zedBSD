@@ -2463,6 +2463,16 @@ handle_notice(
 			powervr_stage_fail_value(stage.stage, stage.reason, stage.value);
 			powervr_session_describe_fault(session, notice.fault_address);
 			powervr_session_describe_job(session);
+
+			/* The target its newest render job kicked with: its record's firmware address and the buffers the 3D reads. */
+			if (session->noted_target != NULL) {
+				kern_logf("powervr: noted target record 0x%x, data halves 0x%x 0x%x, session catalogue 0x%llx\n",
+					  (unsigned)powervr_target_record_address(session->noted_target),
+					  (unsigned)powervr_target_data_address(session->noted_target, 0),
+					  (unsigned)powervr_target_data_address(session->noted_target, 1),
+					  (unsigned long long)powervr_gpu_mmu_root(&session->mmu));
+				powervr_target_dump(session->noted_target);
+			}
 			if (powervr_hwr_dump != NULL)
 				powervr_hwr_dump(render->core, kind == POWERVR_CONTEXT_RENDER ? &session->render_context->record :
 							       kind == POWERVR_CONTEXT_TRANSFER ? &session->transfer_context->record : &session->context);
