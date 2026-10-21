@@ -109,3 +109,4 @@ clear 3.85 ms、LOAD 23.35 ms、平らな quad 15.1 ms、1/4 面積 7.2 ms、402
 - main 56076b56c に P1 e588c63b0（静けさの間の prewarm、KWL の frame 番号の直し、Terminal の ZTERM PERF と GPU 待ちの移動）を merge（2026-10-22）。
 - d119t・d119k（P2 の single kick の評価、main 975c1fdba、timing 1）: どちらも vkmatrix 109/109、HWR 0。clear-64 1200/1050、load-small 2000/2100、load-64 1550/1750、clear 2200/2400 us、frame-ops も差なし → 効果なし、試しは消す。
 - d120（P2 ff7d64cba: command buffer の transfer を待たずに kick、timing 1 ＋ P1 6e8ac6693 の terminal（record の再利用、vertex の差分の upload）＋ 00a8d6f6f の libvulkan（present の内訳の計測））: vkmatrix 109/109、HWR 0。kernel の transfer の最長 8356 → 356 us。frame-ops: launch 55、drag 60、home 60、wiseview 61、type 44（period 23、lag 9）。Terminal: record 2.4 → 0.5 ms、present 1.8 ms、upload 13.6 ms（悪化、P1 へ）。
+- main f70274147 に P2 ef10ca4d4（command buffer の transfer の非同期、single kick の除去）を merge（2026-10-22、d120 で確認した kernel と同じ中身）。
