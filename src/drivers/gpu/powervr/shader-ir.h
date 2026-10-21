@@ -198,13 +198,16 @@ struct powervr_ir_value {
 /*
  * A shader in the intermediate form.
  *
- * Value 0 is never used, so a zero destination means none.
+ * Value 0 is never used, so a zero destination means none.  Exact is set
+ * when the module asks that some result not be contracted (SPIR-V
+ * NoContraction), so no multiply and add are fused anywhere in it.
  */
 struct powervr_ir_shader {
 	struct powervr_ir_instruction instructions[POWERVR_IR_INSTRUCTIONS];
 	struct powervr_ir_value values[POWERVR_IR_VALUES];
 	unsigned instruction_count;
 	unsigned value_count;
+	unsigned exact;
 };
 
 #endif /* KERN_DRIVERS_GPU_POWERVR_SHADER_IR_H */

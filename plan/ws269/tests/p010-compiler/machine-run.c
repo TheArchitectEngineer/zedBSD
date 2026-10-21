@@ -326,7 +326,13 @@ machine_run_program(
 			case KIND_WAIT:
 				break;
 			case KIND_ITERATE:
-				write_register(run, operation->destination[0], lane, run->iterate_word(lane, operation->immediate, 0));
+				/* Variant + 1 words from consecutive coefficient sets into consecutive registers (q1539). */
+				for (word = 0; word <= operation->variant; word++) {
+					struct shader_machine_register next = operation->destination[0];
+
+					next.index = (uint16_t)(next.index + word);
+					write_register(run, next, lane, run->iterate_word(lane, operation->immediate + word * 4U, 0));
+				}
 				break;
 			case KIND_SAMPLE:
 				{

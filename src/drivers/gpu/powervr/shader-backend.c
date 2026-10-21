@@ -153,12 +153,19 @@ static void note_reference(struct shader_backend *backend, unsigned value, unsig
 static int allocate(const struct powervr_ir_shader *shader, struct shader_backend *backend);
 static void compact_temporaries(struct powervr_shader_program *program, struct shader_backend *backend);
 static void propagate_copies(struct powervr_ir_shader *shader);
+static void fuse_multiply_adds(struct powervr_ir_shader *shader, uint32_t stage);
+static int fuse_multiply_add(struct powervr_ir_shader *shader, unsigned at, unsigned which);
+static unsigned value_references(const struct powervr_ir_shader *shader, unsigned value, unsigned *writes, unsigned *writer);
 static int free_constant(uint32_t bits);
 static void remove_dead_writes(struct powervr_ir_shader *shader);
 static int end_on_last(const struct powervr_shader_program *program, const struct shader_backend *backend);
 static void fold_moves(const struct powervr_shader_program *program, struct shader_backend *backend, unsigned output_base);
 static int fold_move(struct shader_backend *backend, unsigned at, unsigned output_base);
 static int simple_kind(unsigned kind);
+static void merge_iterates(const struct powervr_shader_program *program, struct shader_backend *backend);
+static void reuse_immediates(struct shader_backend *backend);
+static int repeated_immediate(const struct shader_backend *backend, unsigned at);
+static unsigned temporary_block(unsigned index);
 static int reads_register(const struct shader_machine_operation *operation, struct shader_machine_register reg);
 static int same_register(struct shader_machine_register a, struct shader_machine_register b);
 static int dead_write(const struct powervr_ir_shader *shader, unsigned at);
@@ -255,8 +262,10 @@ shader_backend_build(
 	if (select.if_depth != 0 || select.loop_depth != 0)
 		return EINVAL;
 
-	/* Moves whose source was just computed for them write in place. */
+	/* Moves whose source was just computed for them write in place; neighbouring iterates go as one. */
 	fold_moves(program, backend, select.output_base);
+	merge_iterates(program, backend);
+	reuse_immediates(backend);
 
 	/*
 	 * The ending: a vertex emits its outputs, every task ends; a
@@ -425,8 +434,9 @@ powervr_shader_compile_inline(
 	if (shared_values != NULL && value_count < program->shareds)
 		return EINVAL;
 
-	/* Reads copies' sources in place of the copies, and drops the writes nothing reads. */
+	/* Reads copies' sources in place of the copies, fuses products into the adds of them, and drops the writes nothing reads. */
 	propagate_copies(shader);
+	fuse_multiply_adds(shader, stage);
 	remove_dead_writes(shader);
 
 	/* Selects and allocates the machine operations. */
@@ -534,6 +544,127 @@ propagate_copies(
 	}
 }
 
+/*
+ * In a fragment shader that allows contraction, makes an add of a product
+ * one multiply-add (q1539: Mesa's NIR fuses them the same way): a float
+ * add whose one source is (or is minus) a one-word value written once by
+ * an unsaturated multiply, read only there, in the same run of
+ * instructions with neither of the multiply's sources written in
+ * between.  The multiply goes when nothing reads it (remove_dead_writes).
+ */
+static void
+fuse_multiply_adds(
+	struct powervr_ir_shader *shader,
+	uint32_t stage)
+{
+	unsigned at;
+
+	/* Fragment shaders without a NoContraction result only. */
+	if (stage != POWERVR_SHADER_FRAGMENT || shader->exact != 0)
+		return;
+
+	/* Each add, by its first source, else its second. */
+	for (at = 0; at < shader->instruction_count; at++) {
+		if (shader->instructions[at].opcode != POWERVR_IR_FLOAT_ADD)
+			continue;
+		if (!fuse_multiply_add(shader, at, 0))
+			(void)fuse_multiply_add(shader, at, 1);
+	}
+}
+
+/* Fuses the product an add's source (which) reads into it; reports whether it did. */
+static int
+fuse_multiply_add(
+	struct powervr_ir_shader *shader,
+	unsigned at,
+	unsigned which)
+{
+	struct powervr_ir_instruction *add;
+	const struct powervr_ir_instruction *product;
+	const struct powervr_ir_instruction *between;
+	struct powervr_ir_operand a;
+	struct powervr_ir_operand b;
+	struct powervr_ir_operand c;
+	const struct powervr_ir_operand *term;
+	unsigned writes;
+	unsigned writer;
+	unsigned next;
+
+	/* A plain or negated one-word value, written once and read once. */
+	add = &shader->instructions[at];
+	term = &add->source[which];
+	if (term->kind != POWERVR_IR_OPERAND_VALUE || (term->modifiers & ~POWERVR_IR_NEGATE) != 0)
+		return 0;
+	if (term->value == 0 || term->value >= shader->value_count || shader->values[term->value].width != 1)
+		return 0;
+	if (value_references(shader, term->value, &writes, &writer) != 1 || writes != 1 || writer >= at)
+		return 0;
+
+	/* By an unsaturated multiply. */
+	product = &shader->instructions[writer];
+	if (product->opcode != POWERVR_IR_FLOAT_MULTIPLY || product->flags != 0)
+		return 0;
+	a = product->source[0];
+	b = product->source[1];
+
+	/* No structure between, and the multiply's sources unchanged. */
+	for (next = writer + 1U; next < at; next++) {
+		between = &shader->instructions[next];
+		if (between->opcode < POWERVR_IR_MOVE)
+			return 0;
+		if ((a.kind == POWERVR_IR_OPERAND_VALUE && between->destination == a.value) ||
+		    (b.kind == POWERVR_IR_OPERAND_VALUE && between->destination == b.value))
+			return 0;
+	}
+
+	/* The multiply-add: minus the product negates its first factor; the add's saturate stays. */
+	if ((term->modifiers & POWERVR_IR_NEGATE) != 0) {
+		if (a.kind == POWERVR_IR_OPERAND_CONSTANT) {
+			a.constant ^= 0x80000000U;
+		} else {
+			a.modifiers ^= POWERVR_IR_NEGATE;
+		}
+	}
+	c = add->source[which == 0 ? 1U : 0U];
+	add->opcode = POWERVR_IR_FLOAT_MULTIPLY_ADD;
+	add->source[0] = a;
+	add->source[1] = b;
+	add->source[2] = c;
+	add->source[3].kind = POWERVR_IR_OPERAND_NONE;
+	return 1;
+}
+
+/* Counts the reads of a value over the shader, and its writes and the last writer. */
+static unsigned
+value_references(
+	const struct powervr_ir_shader *shader,
+	unsigned value,
+	unsigned *writes,
+	unsigned *writer)
+{
+	const struct powervr_ir_instruction *instruction;
+	unsigned reads;
+	unsigned at;
+	unsigned source;
+
+	/* Every instruction's sources and destination. */
+	reads = 0;
+	*writes = 0;
+	*writer = 0;
+	for (at = 0; at < shader->instruction_count; at++) {
+		instruction = &shader->instructions[at];
+		for (source = 0; source < 4; source++) {
+			if (instruction->source[source].kind == POWERVR_IR_OPERAND_VALUE && instruction->source[source].value == value)
+				reads++;
+		}
+		if (instruction->opcode >= POWERVR_IR_MOVE && instruction->destination == value) {
+			(*writes)++;
+			*writer = at;
+		}
+	}
+	return reads;
+}
+
 /* Reports whether a constant is one the core holds in a register (zero, one, 1.0 and all ones), so reading it costs nothing. */
 static int
 free_constant(
@@ -543,8 +674,153 @@ free_constant(
 	return bits == 0 || bits == 1U || bits == 0x3f800000U || bits == 0xffffffffU;
 }
 
-/* A move fold_moves folded away, until the operations close up. */
+/* An operation fold_moves or merge_iterates folded away, until the operations close up. */
 #define MACHINE_FOLDED			0xffU
+
+/* The most words one iterate takes (a vector of four). */
+#define ITERATE_WORDS_MAX		4U
+
+/*
+ * In a fragment program without branches, iterates one set of words in
+ * one operation where the reader iterated a word at a time, each with
+ * its wait (q1539: Mesa's pco iterates a vector in one fitr): an iterate
+ * and its wait followed by the iterate of the next coefficient set into
+ * the next register become one iterate of both, the second's wait kept.
+ */
+static void
+merge_iterates(
+	const struct powervr_shader_program *program,
+	struct shader_backend *backend)
+{
+	struct shader_machine_operation *first;
+	const struct shader_machine_operation *wait;
+	const struct shader_machine_operation *next;
+	unsigned words;
+	unsigned at;
+	unsigned last;
+	unsigned kept;
+
+	/* Fragment programs without branches only (no branch targets to keep). */
+	if (program->stage != POWERVR_SHADER_FRAGMENT || backend->control_flow != 0)
+		return;
+
+	/* Each iterate takes the iterates that follow it (each with its wait after it), marking them and the waits between folded. */
+	for (at = 0; at < backend->operation_count; at++) {
+		first = &backend->operations[at];
+		if (first->kind != MACHINE_ITERATE || first->destination[0].bank != POWERVR_USC_BANK_TEMPORARY || first->condition != POWERVR_USC_RUN_ENABLED)
+			continue;
+		last = at;
+		while (last + 3U < backend->operation_count) {
+			wait = &backend->operations[last + 1U];
+			next = &backend->operations[last + 2U];
+			words = first->variant + 1U;
+			if (wait->kind != MACHINE_WAIT || next->kind != MACHINE_ITERATE || backend->operations[last + 3U].kind != MACHINE_WAIT || words >= ITERATE_WORDS_MAX)
+				break;
+			if (next->destination[0].bank != POWERVR_USC_BANK_TEMPORARY || next->destination[0].index != first->destination[0].index + words ||
+			    temporary_block(next->destination[0].index) != temporary_block(first->destination[0].index) ||
+			    next->immediate != first->immediate + 4U * words || next->immediate_2 != first->immediate_2 ||
+			    next->variant != 0 || next->condition != first->condition)
+				break;
+			first->variant++;
+			backend->operations[last + 1U].kind = MACHINE_FOLDED;
+			backend->operations[last + 2U].kind = MACHINE_FOLDED;
+			last += 2U;
+		}
+		at = last;
+	}
+
+	/* The rest close up. */
+	kept = 0;
+	for (at = 0; at < backend->operation_count; at++) {
+		if (backend->operations[at].kind == MACHINE_FOLDED)
+			continue;
+		if (kept != at)
+			backend->operations[kept] = backend->operations[at];
+		kept++;
+	}
+	backend->operation_count = kept;
+}
+
+/*
+ * In a program without branches, drops an immediate into a register that
+ * already holds that value from the last immediate into it, nothing
+ * having written it since (q1539: the reader names a constant operand by
+ * an immediate into the scratch temporary at each use, four in a row
+ * for a vector scaled by one constant).
+ */
+static void
+reuse_immediates(
+	struct shader_backend *backend)
+{
+	unsigned at;
+	unsigned kept;
+
+	/* Programs without branches only (no paths join). */
+	if (backend->control_flow != 0)
+		return;
+
+	/* Each repeated immediate is marked folded, then the rest close up. */
+	for (at = 0; at < backend->operation_count; at++) {
+		if (repeated_immediate(backend, at))
+			backend->operations[at].kind = MACHINE_FOLDED;
+	}
+	kept = 0;
+	for (at = 0; at < backend->operation_count; at++) {
+		if (backend->operations[at].kind == MACHINE_FOLDED)
+			continue;
+		if (kept != at)
+			backend->operations[kept] = backend->operations[at];
+		kept++;
+	}
+	backend->operation_count = kept;
+}
+
+/* Reports whether the immediate at an index writes the value its register holds from an earlier immediate. */
+static int
+repeated_immediate(
+	const struct shader_backend *backend,
+	unsigned at)
+{
+	const struct shader_machine_operation *immediate;
+	const struct shader_machine_operation *other;
+	unsigned before;
+
+	/* A plain immediate into a temporary. */
+	immediate = &backend->operations[at];
+	if (immediate->kind != MACHINE_IMMEDIATE || immediate->end != 0 || immediate->condition != POWERVR_USC_RUN_ENABLED ||
+	    immediate->destination[0].bank != POWERVR_USC_BANK_TEMPORARY)
+		return 0;
+
+	/* Back to the last write of its register: through simple operations, waits and vertex writes that leave it. */
+	for (before = at; before > 0; before--) {
+		other = &backend->operations[before - 1U];
+		if (other->kind == MACHINE_FOLDED || other->kind == MACHINE_WAIT || other->kind == MACHINE_VERTEX_WRITE)
+			continue;
+		if (!simple_kind(other->kind))
+			return 0;
+		if (same_register(other->destination[1], immediate->destination[0]))
+			return 0;
+		if (same_register(other->destination[0], immediate->destination[0]))
+			return other->kind == MACHINE_IMMEDIATE && other->immediate == immediate->immediate &&
+			       other->condition == POWERVR_USC_RUN_ENABLED;
+	}
+	return 0;
+}
+
+/* Which block a temporary is in (the back end's own three, or the values'), so a span of them stays together when compacted. */
+static unsigned
+temporary_block(
+	unsigned index)
+{
+	/* The execution mask counter, the scratch, the coordinates and address, then the values. */
+	if (index < TEMP_SCRATCH)
+		return 0;
+	if (index < TEMP_COORDINATES)
+		return 1;
+	if (index < TEMP_FIRST_VALUE)
+		return 2;
+	return 3;
+}
 
 /*
  * In a fragment program without branches, has the operation that
@@ -736,7 +1012,7 @@ remove_dead_writes(
 	}
 }
 
-/* Reports whether an instruction only writes a one-word value that is written again or not read before the next structure instruction. */
+/* Reports whether an instruction only writes a one-word value that nothing reads, or that is written again or not read before the next structure instruction. */
 static int
 dead_write(
 	const struct powervr_ir_shader *shader,
@@ -748,6 +1024,8 @@ dead_write(
 	unsigned value;
 	unsigned next;
 	unsigned source;
+	unsigned writes;
+	unsigned writer;
 
 	/* Operations that only compute a one-word value. */
 	instruction = &shader->instructions[at];
@@ -758,6 +1036,10 @@ dead_write(
 		return 0;
 	if (value == 0 || value >= shader->value_count || shader->values[value].width != 1)
 		return 0;
+
+	/* A value nothing reads anywhere. */
+	if (value_references(shader, value, &writes, &writer) == 0)
+		return 1;
 
 	/* The instructions after it, up to the next structure instruction. */
 	for (next = at + 1U; next < shader->instruction_count; next++) {
@@ -2334,10 +2616,10 @@ shader_backend_group(
 		error = powervr_usc_empty(&group->operation[POWERVR_USC_PHASE_0]);
 		break;
 	case MACHINE_ITERATE:
-		/* One word iterated with perspective, through data return counter 0. */
+		/* Variant + 1 words iterated with perspective from consecutive coefficient sets, through data return counter 0. */
 		group->unit = POWERVR_USC_UNIT_CONTROL;
 		group->control = CONTROL_ITERATE;
-		error = powervr_usc_iterate(operation->destination[0].index, operation->immediate, 1, operation->immediate_2, 0, 1, 0, &group->operation[POWERVR_USC_PHASE_0]);
+		error = powervr_usc_iterate(operation->destination[0].index, operation->immediate, 1, operation->immediate_2, 0, operation->variant + 1U, 0, &group->operation[POWERVR_USC_PHASE_0]);
 		break;
 	case MACHINE_SAMPLE:
 		/* Image state in s0, coordinates in s1, sampler state in s2, the four words into s4's registers. */
