@@ -543,7 +543,17 @@ struct powervr_render {
 /* Makes a zeroed buffer of at least bytes bytes. */
 int powervr_buffer_create(struct powervr_render *render, uint64_t bytes, struct powervr_buffer **result);
 
-/* Takes a freed buffer of the same size from the pool, its contents left as they were; ENOENT when none. */
+/*
+ * The least bytes of a buffer the pool keeps; a storage of at least as
+ * many is cleared by the core (vk-memory.c), a smaller one by the
+ * processor as it is made.
+ */
+#define POWERVR_BUFFER_POOL_LEAST	(256ULL * 1024ULL)
+
+/* Makes a buffer of at least bytes bytes whose bytes the caller clears before anything reads them. */
+int powervr_buffer_create_uncleared(struct powervr_render *render, uint64_t bytes, struct powervr_buffer **result);
+
+/* Takes a freed buffer that holds bytes bytes from the pool, its contents left as they were; ENOENT when none. */
 int powervr_buffer_reuse(struct powervr_render *render, uint64_t bytes, struct powervr_buffer **result);
 
 /* Takes another reference on a buffer. */

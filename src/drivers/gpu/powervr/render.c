@@ -89,6 +89,7 @@ static int make_pages(struct powervr_buffer *buffer);
 static int same_image(const struct gpu_image_descriptor *first, const struct gpu_image_descriptor *second);
 static void buffer_free(struct powervr_buffer *buffer);
 static void pool_put(struct powervr_render *render, struct powervr_buffer *buffer);
+static int buffer_make(struct powervr_render *render, uint64_t bytes, bool clear, struct powervr_buffer **result);
 static void copy_out(volatile const uint8_t *view, uint8_t *bytes, uint32_t length);
 static void copy_in(volatile uint8_t *view, const uint8_t *bytes, uint32_t length);
 static int register_attempt(void *context);
@@ -324,9 +325,8 @@ powervr_buffer_release(
  * of the same size is made again without a new view, whose making and
  * ending each write back and drop the run's cached lines one by one (an
  * image's 8 MB took about 30 ms on the board).  Only buffers of at least
- * BUFFER_POOL_LEAST bytes, and at most BUFFER_POOL_BYTES in all.
+ * POWERVR_BUFFER_POOL_LEAST bytes, and at most BUFFER_POOL_BYTES in all.
  */
-#define BUFFER_POOL_LEAST	(256ULL * 1024ULL)
 #define BUFFER_POOL_BYTES	(128ULL * 1024ULL * 1024ULL)
 
 /*
@@ -336,6 +336,48 @@ int
 powervr_buffer_create(
 	struct powervr_render *render,
 	uint64_t bytes,
+	struct powervr_buffer **result)
+{
+	int error;
+
+	/* Made and cleared. */
+	error = buffer_make(render, bytes, true, result);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: one reference, the caller's. */
+	return 0;
+}
+
+/*
+ * Makes a buffer of at least bytes bytes without clearing it: its bytes
+ * are what the RAM held, so the caller clears it (the core's transfer
+ * clears an image's 8 MB in a few ms, the processor's stores and their
+ * write-back took about 20 ms) before anything reads it.
+ */
+int
+powervr_buffer_create_uncleared(
+	struct powervr_render *render,
+	uint64_t bytes,
+	struct powervr_buffer **result)
+{
+	int error;
+
+	/* Made, not cleared. */
+	error = buffer_make(render, bytes, false, result);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: one reference, the caller's. */
+	return 0;
+}
+
+/* Makes a buffer of at least bytes bytes, cleared when clear is set. */
+static int
+buffer_make(
+	struct powervr_render *render,
+	uint64_t bytes,
+	bool clear,
 	struct powervr_buffer **result)
 {
 	struct powervr_buffer *buffer;
@@ -374,9 +416,10 @@ powervr_buffer_create(
 	 */
 	started = powervr_timing_now();
 	direct = kern_pmem_to_kernel(buffer->run.paddr);
-	if (direct != NULL)
+	if (clear && direct != NULL)
 		kern_memset(direct, 0, (size_t)rounded);
-	powervr_timing_add(POWERVR_TIMING_BUFFER_CLEAR, started);
+	if (clear)
+		powervr_timing_add(POWERVR_TIMING_BUFFER_CLEAR, started);
 
 	/* Its uncached alias; the run's cached lines are pushed out first. */
 	started = powervr_timing_now();
@@ -390,7 +433,7 @@ powervr_buffer_create(
 
 	/* Without a direct map, cleared through the alias, so neither the core nor a reader sees old bytes. */
 	buffer->view = view;
-	if (direct == NULL) {
+	if (clear && direct == NULL) {
 		words = (volatile uint64_t *)buffer->view;
 		for (index = 0; index < rounded / 8U; index++)
 			words[index] = 0;
@@ -404,8 +447,9 @@ powervr_buffer_create(
 }
 
 /*
- * Takes a freed buffer whose run has the size a new buffer of bytes
- * bytes would have from the pool, with one reference, the caller's.  Its
+ * Takes a freed buffer whose run holds a new buffer of bytes bytes, and
+ * is at most a quarter larger, from the pool, with one reference, the
+ * caller's.  Its
  * contents are what its last holder left, so the caller clears it
  * before anything reads it.  ENOENT when the pool has none.
  */
@@ -416,6 +460,7 @@ powervr_buffer_reuse(
 	struct powervr_buffer **result)
 {
 	struct powervr_buffer **link;
+	struct powervr_buffer **best;
 	struct powervr_buffer *buffer;
 	unsigned long enabled;
 	uint64_t rounded;
@@ -426,17 +471,21 @@ powervr_buffer_reuse(
 		return EINVAL;
 	rounded = (bytes + POWERVR_GPU_PAGE_BYTES - 1U) & ~(uint64_t)(POWERVR_GPU_PAGE_BYTES - 1U);
 
-	/* The newest pooled buffer of that size, off the pool. */
+	/* The smallest pooled buffer that holds it and is at most a quarter larger, off the pool. */
 	buffer = NULL;
+	best = NULL;
 	enabled = spin_lock_irqsave(&render->buffer_guard);
 
 	for (link = &render->pool; *link != NULL; link = &(*link)->next) {
-		if ((*link)->run.size == rounded) {
-			buffer = *link;
-			*link = buffer->next;
-			render->pool_bytes -= buffer->run.size;
-			break;
-		}
+		if ((*link)->run.size < rounded || (*link)->run.size > rounded + rounded / 4U)
+			continue;
+		if (best == NULL || (*link)->run.size < (*best)->run.size)
+			best = link;
+	}
+	if (best != NULL) {
+		buffer = *best;
+		*best = buffer->next;
+		render->pool_bytes -= buffer->run.size;
 	}
 
 	spin_unlock_irqrestore(&render->buffer_guard, enabled);
@@ -468,7 +517,7 @@ pool_put(
 	unsigned long enabled;
 
 	/* Freed at once: too small to matter, or too large to keep. */
-	if (buffer->run.size < BUFFER_POOL_LEAST || buffer->run.size > BUFFER_POOL_BYTES || buffer->view == NULL) {
+	if (buffer->run.size < POWERVR_BUFFER_POOL_LEAST || buffer->run.size > BUFFER_POOL_BYTES || buffer->view == NULL) {
 		buffer_free(buffer);
 		return;
 	}

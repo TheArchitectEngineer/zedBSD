@@ -108,6 +108,16 @@ powervr_buffer_create(
 	return 0;
 }
 
+/* The host's buffers are calloc'd, already zero. */
+int
+powervr_buffer_create_uncleared(
+	struct powervr_render *render,
+	uint64_t bytes,
+	struct powervr_buffer **result)
+{
+	return powervr_buffer_create(render, bytes, result);
+}
+
 /* The host keeps no pool of freed buffers. */
 int
 powervr_buffer_reuse(
@@ -289,9 +299,13 @@ powervr_transfer_run(
 {
 	(void)render;
 	(void)session;
-	(void)request;
 	if (!kick_recording)
 		return ENOTSUP;
+
+	/* An allocation's clear of its storage (vk-memory.c storage_clear: linear rows of 4096 bytes) is not a command buffer's work. */
+	if (request->kind == POWERVR_TRANSFER_CLEAR && request->destination.linear && request->destination.row_pitch == 4096U &&
+	    request->destination.width == 1024U)
+		return 0;
 	if (kick_count < 64U) {
 		memset(&jobs_run[kick_count], 0, sizeof(jobs_run[0]));
 		jobs_run[kick_count++].kind = 'T';

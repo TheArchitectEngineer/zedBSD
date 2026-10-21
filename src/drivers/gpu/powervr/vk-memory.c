@@ -273,7 +273,7 @@ powervr_vk_memory_chain(
 }
 
 /*
- * The rows a clear of reused storage writes: a linear surface of 4-byte
+ * The rows a clear of uncleared storage writes: a linear surface of 4-byte
  * texels, STORAGE_CLEAR_ROW bytes a row, at most STORAGE_CLEAR_ROWS rows
  * a transfer.
  */
@@ -282,10 +282,10 @@ powervr_vk_memory_chain(
 #define STORAGE_CLEAR_FORMAT	37U
 
 /*
- * Clears reused storage to zero: the core's transfer writes it as rows
- * of 4-byte texels (an uncached store a word from the processor was
- * about 30 ms for an image's 8 MB), else, when the transfer cannot run,
- * the processor through the uncached view.
+ * Clears storage made or reused without clearing to zero: the core's
+ * transfer writes it as rows of 4-byte texels (an uncached store a word
+ * from the processor was about 30 ms for an image's 8 MB), else, when
+ * the transfer cannot run, the processor through the uncached view.
  */
 static void
 storage_clear(
@@ -350,13 +350,13 @@ allocate_storage(
 	struct powervr_resource *blob;
 	struct powervr_buffer *buffer;
 	uint64_t started;
-	bool reused;
+	bool uncleared;
 	int shareable;
 	int mappable;
 	int error;
 
 	/* The imported blob's buffer, with a reference of the storage's own. */
-	reused = false;
+	uncleared = false;
 	render = session->owner->render;
 	if (chain->imported != 0) {
 		blob = powervr_session_blob(session->owner, chain->imported);
@@ -365,13 +365,17 @@ allocate_storage(
 		buffer = blob->buffer;
 		powervr_buffer_retain(render, buffer);
 	} else {
-		/* A freed buffer of the size from the pool, cleared below, else a new zeroed one. */
-		reused = powervr_buffer_reuse(render, bytes, &buffer) == 0;
-		if (!reused) {
-			error = powervr_buffer_create(render, bytes, &buffer);
+		/* A large one: a freed buffer from the pool, else a new one, either cleared below; a small one made zeroed. */
+		uncleared = bytes >= POWERVR_BUFFER_POOL_LEAST;
+		if (uncleared) {
+			error = powervr_buffer_reuse(render, bytes, &buffer);
 			if (error != 0)
-				return error;
+				error = powervr_buffer_create_uncleared(render, bytes, &buffer);
+		} else {
+			error = powervr_buffer_create(render, bytes, &buffer);
 		}
+		if (error != 0)
+			return error;
 	}
 
 	/*
@@ -395,8 +399,8 @@ allocate_storage(
 	if (error != 0)
 		return error;
 
-	/* A reused buffer holds its last holder's bytes: cleared before anything reads it. */
-	if (reused) {
+	/* A reused or new buffer holds earlier bytes: cleared before anything reads it. */
+	if (uncleared) {
 		started = powervr_timing_now();
 		storage_clear(session, *storage);
 		powervr_timing_add(POWERVR_TIMING_BUFFER_CLEAR, started);
