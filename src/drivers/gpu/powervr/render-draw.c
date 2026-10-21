@@ -222,7 +222,6 @@ powervr_draw_fixed_build(
 	struct powervr_draw_fixed *fixed)
 {
 	uint32_t index;
-	uint32_t trial;
 	bool vertex;
 	bool fragment;
 	int error;
@@ -277,11 +276,10 @@ powervr_draw_fixed_build(
 		fixed->scissor = info->pViewportState->pScissors[0];
 	}
 
-	/* The compile samples, and the fragment shader's forms with the board's trial flips. */
+	/* The compile samples, and the fragment shader's forms. */
 	fixed->vertex_key.samples = 1;
 	fixed->fragment_key.samples = 1;
-	trial = (info->flags >> POWERVR_DRAW_FORM_TRIAL_SHIFT) & POWERVR_DRAW_FORM_TRIAL_MASK;
-	fixed->fragment_key.forms = POWERVR_DRAW_FORMS ^ trial;
+	fixed->fragment_key.forms = POWERVR_DRAW_FORMS;
 
 	/* Succeeded: the fixed state and the keys. */
 	return 0;

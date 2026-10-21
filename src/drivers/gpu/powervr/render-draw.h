@@ -60,19 +60,9 @@
  * coordinates (0x4); the colour written by one sum of products (0x8)
  * that clamps the blended colour itself (0x10); and the iterate and
  * sample that waits for its own data (0x20).  The board saw these right
- * on d85 to d88 (q1548).  The pack into the pixel output (0x2) loses the
- * device on the board and is not built.
- *
- * The board's comparison flips forms without a rebuild: bits 24 to 31
- * of a pipeline's VkPipelineCreateFlags, which no Vulkan flag the
- * desktop or the driver uses takes, flip the forms of their bit
- * (POWERVR_DRAW_FORM_TRIAL_SHIFT; vkmatrix -t).
+ * on d85 to d88 (q1548).
  */
-#ifndef POWERVR_DRAW_FORMS
 #define POWERVR_DRAW_FORMS			0x3dU
-#endif
-#define POWERVR_DRAW_FORM_TRIAL_SHIFT		24U
-#define POWERVR_DRAW_FORM_TRIAL_MASK		0xffU
 
 /* The words of a viewport transform (a0, m0, a1, m1, a2, m2) and of a scissor. */
 #define POWERVR_DRAW_VIEWPORT_WORDS	6U

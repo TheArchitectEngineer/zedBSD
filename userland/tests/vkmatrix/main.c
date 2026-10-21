@@ -120,9 +120,6 @@
 #define PERF_GRID_SIDE		8U
 #define PERF_LAYERS		4U
 
-/* The most trials one run takes (-t). */
-#define VKMATRIX_TRIALS_MAX	8U
-
 /* The load cases' passes over one 1920x1080 image. */
 #define VKMATRIX_LOAD_FRAMES	60U
 
@@ -403,14 +400,6 @@ static int vkmatrix_case_named(const char *pattern, const char *name);
 static void uniform_ramp_colour(const float push[8], float place, float colour[4]);
 
 /*
- * The trial of the driver's fragment shader forms (-t, q1546): bits 24
- * to 31 of every pipeline's create flags, which the PowerVR driver
- * flips its forms by (render-draw.h POWERVR_DRAW_FORM_TRIAL_SHIFT).  Set
- * by main before each run of the cases; one process reads it.
- */
-static uint32_t vkmatrix_trial;
-
-/*
  * The file the pipeline cache's data is written to (-c, q1547), NULL for
  * no cache.  Set by main before the cases run; one process reads it.
  */
@@ -634,10 +623,6 @@ main(
 	unsigned long processes;
 	unsigned long repeats;
 	unsigned long index;
-	uint32_t trials[VKMATRIX_TRIALS_MAX];
-	uint32_t trial_count;
-	uint32_t trial;
-	char *list;
 	char *end;
 	pid_t child;
 	pid_t done;
@@ -647,16 +632,13 @@ main(
 
 	/*
 	 * The options: -p N processes at once, -r R runs of the cases each,
-	 * -t T[,T...] the driver's trials one after another (q1546), -c F
-	 * the pipeline cache's file (q1547), -C D a cache file a case in the
-	 * directory D (q1548), then the case's name (a trailing * matches
-	 * names starting so).
+	 * -c F the pipeline cache's file (q1547), -C D a cache file a case
+	 * in the directory D (q1548), then the case's name (a trailing *
+	 * matches names starting so).
 	 */
 	processes = 1;
 	repeats = 1;
 	name = NULL;
-	trials[0] = 0;
-	trial_count = 1;
 	for (arg = 1; arg < argc; arg++) {
 		if (strcmp(argv[arg], "-p") == 0 && arg + 1 < argc) {
 			arg++;
@@ -667,22 +649,6 @@ main(
 			arg++;
 			repeats = strtoul(argv[arg], &end, 10);
 			if (*end != '\0' || repeats == 0)
-				return 2;
-		} else if (strcmp(argv[arg], "-t") == 0 && arg + 1 < argc) {
-			/* Each trial of the list, in order. */
-			arg++;
-			trial_count = 0;
-			list = argv[arg];
-			while (*list != '\0') {
-				if (trial_count == VKMATRIX_TRIALS_MAX)
-					return 2;
-				trials[trial_count] = (uint32_t)strtoul(list, &end, 0);
-				if (end == list || trials[trial_count] > 0xffU || (*end != ',' && *end != '\0'))
-					return 2;
-				trial_count++;
-				list = *end == ',' ? end + 1 : end;
-			}
-			if (trial_count == 0)
 				return 2;
 		} else if (strcmp(argv[arg], "-c") == 0 && arg + 1 < argc) {
 			arg++;
@@ -701,21 +667,11 @@ main(
 	if (vkmatrix_cache_file != NULL && vkmatrix_cache_directory != NULL)
 		return 2;
 
-	/* One process: the cases here, once a trial. */
+	/* One process: the cases here. */
 	if (processes == 1) {
-		failed = 0;
-		for (trial = 0; trial < trial_count; trial++) {
-			vkmatrix_trial = trials[trial];
-			if (trial_count > 1 || trials[trial] != 0)
-				printf("vkmatrix: trial 0x%02x\n", (unsigned)trials[trial]);
-			if (vkmatrix_run_cases(name, repeats, 0) != 0)
-				failed = 1;
-		}
+		failed = vkmatrix_run_cases(name, repeats, 0);
 		return failed;
 	}
-
-	/* Several processes take the first trial. */
-	vkmatrix_trial = trials[0];
 
 	/* Several: each its own device in its own process, all at once (sessions rendering concurrently); nothing buffered is copied into the children. */
 	fflush(stdout);
@@ -1367,7 +1323,6 @@ vkmatrix_pipeline(
 	/* The pipeline, then the modules go. */
 	memset(&pipeline_info, 0, sizeof(pipeline_info));
 	pipeline_info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-	pipeline_info.flags = vkmatrix_trial << 24;
 	pipeline_info.stageCount = 2;
 	pipeline_info.pStages = stages;
 	pipeline_info.pVertexInputState = &input;

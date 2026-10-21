@@ -212,7 +212,6 @@ static int simple_kind(unsigned kind);
 static void merge_iterates(const struct powervr_shader_program *program, struct shader_backend *backend);
 static void reuse_immediates(struct shader_backend *backend);
 static void unpack_in_place(const struct powervr_shader_program *program, struct shader_backend *backend);
-static void pack_in_place(const struct powervr_shader_program *program, struct shader_backend *backend);
 static void mark_iterate_samples(const struct powervr_ir_shader *shader, const struct powervr_shader_program *program, struct shader_backend *backend);
 static int lone_iterate(const struct powervr_ir_shader *shader, const struct powervr_ir_operand *operand, const struct powervr_ir_instruction **iterate);
 static uint32_t iterate_coefficient(const struct powervr_ir_shader *shader, unsigned value);
@@ -349,8 +348,6 @@ shader_backend_build(
 	merge_iterates(program, backend);
 	reuse_immediates(backend);
 	unpack_in_place(program, backend);
-	if ((backend->forms & POWERVR_SHADER_FORM_PACK_OUTPUT) != 0)
-		pack_in_place(program, backend);
 	if (POWERVR_SHADER_PAIR != 0)
 		pair_operations(backend);
 
@@ -590,7 +587,7 @@ compile_program(
 	workspace->backend.inline_count = value_count;
 	workspace->backend.forms = 0;
 	if (key != NULL && stage == POWERVR_SHADER_FRAGMENT)
-		workspace->backend.forms = key->forms & (POWERVR_SHADER_FORM_PACK_OUTPUT | POWERVR_SHADER_FORM_ITERATE_SAMPLE | POWERVR_SHADER_FORM_SUM_OF_PRODUCTS | POWERVR_SHADER_FORM_SAMPLE_WAITS);
+		workspace->backend.forms = key->forms & (POWERVR_SHADER_FORM_ITERATE_SAMPLE | POWERVR_SHADER_FORM_SUM_OF_PRODUCTS | POWERVR_SHADER_FORM_SAMPLE_WAITS);
 	moved = 0;
 	if (split != 0) {
 		error = split_shared(shader, program, &workspace->uniform, &workspace->shared_shader, &moved);
@@ -1172,12 +1169,11 @@ end_on_last(
 	if (program->stage != POWERVR_SHADER_FRAGMENT || backend->control_flow != 0 || backend->operation_count == 0)
 		return 0;
 
-	/* A move, an immediate, a pack into the pixel output (q1546) or a sum of products (q1548), on the enabled instances. */
+	/* A move, an immediate or a sum of products (q1548), on the enabled instances. */
 	last = &backend->operations[backend->operation_count - 1U];
 	if (last->kind != MACHINE_MOVE &&
 	    last->kind != MACHINE_IMMEDIATE &&
-	    last->kind != MACHINE_SUM_OF_PRODUCTS &&
-	    (last->kind != MACHINE_PACK || last->overlap == 0))
+	    last->kind != MACHINE_SUM_OF_PRODUCTS)
 		return 0;
 	if (last->condition != POWERVR_USC_RUN_ENABLED)
 		return 0;
@@ -1925,81 +1921,7 @@ unpack_in_place(
 }
 
 /*
- * In a fragment program without branches, has a colour's pack write the
- * pixel output register itself under the overlap check, where it packed
- * into a temporary that a checked move then copied (q1546, Mesa 26.2.5
- * src/imagination/pco/pco_legalize.c: a pck carries olchk with the pixel
- * output as its destination; pco_ops.py: pck takes olchk, end and the
- * repeat).  The pack then ends the program as the move did.
- */
-static void
-pack_in_place(
-	const struct powervr_shader_program *program,
-	struct shader_backend *backend)
-{
-	struct shader_machine_operation *pack;
-	struct shader_machine_operation *move;
-	unsigned at;
-	unsigned next;
-	unsigned kept;
-	int read;
-
-	/* Fragment programs without branches only (no branch targets to keep). */
-	if (program->stage != POWERVR_SHADER_FRAGMENT || backend->control_flow != 0)
-		return;
-
-	/* A pack into a temporary that only the checked move into a pixel output after it reads. */
-	for (at = 0; at + 1U < backend->operation_count; at++) {
-		pack = &backend->operations[at];
-		move = &backend->operations[at + 1U];
-		if (pack->kind != MACHINE_PACK ||
-		    pack->condition != POWERVR_USC_RUN_ENABLED ||
-		    pack->destination[0].bank != POWERVR_USC_BANK_TEMPORARY ||
-		    pack->overlap != 0 ||
-		    pack->end != 0)
-			continue;
-		if (move->kind != MACHINE_MOVE ||
-		    move->variant != 1 ||
-		    move->modifiers[0] != 0 ||
-		    move->destination[0].bank != POWERVR_USC_BANK_SPECIAL ||
-		    !same_register(move->source[0], pack->destination[0]) ||
-		    move->condition != pack->condition)
-			continue;
-
-		/* Nothing after the move reads the temporary before writing it. */
-		read = 0;
-		for (next = at + 2U; next < backend->operation_count; next++) {
-			if (reads_register(&backend->operations[next], pack->destination[0])) {
-				read = 1;
-				break;
-			}
-			if (same_register(backend->operations[next].destination[0], pack->destination[0]))
-				break;
-		}
-		if (read)
-			continue;
-
-		/* The pack writes the pixel output under the check, ending where the move ended. */
-		pack->destination[0] = move->destination[0];
-		pack->overlap = 1;
-		pack->end = move->end;
-		move->kind = MACHINE_FOLDED;
-	}
-
-	/* The rest close up. */
-	kept = 0;
-	for (at = 0; at < backend->operation_count; at++) {
-		if (backend->operations[at].kind == MACHINE_FOLDED)
-			continue;
-		if (kept != at)
-			backend->operations[kept] = backend->operations[at];
-		kept++;
-	}
-	backend->operation_count = kept;
-}
-
-/*
- * Marks the varyings a sample iterates itself (q1546, a trial form:
+ * Marks the varyings a sample iterates itself (q1546; the iterate and sample form:
  * BXE-4-32 has the control unit's iterate and sample): the two
  * coordinates of a sample, unmodified, each a one-word value written
  * only by the iteration of a varying word and read only there, the
@@ -3264,7 +3186,7 @@ select_instruction(
 				operation->immediate_2 = select->program->w_coefficient;
 			}
 
-			/* The wait for its data: the operation's own (q1548, a trial form), or a wait after it. */
+			/* The wait for its data: the operation's own (q1548, the form that waits), or a wait after it. */
 			if ((select->backend->forms & POWERVR_SHADER_FORM_SAMPLE_WAITS) != 0) {
 				if (operation != NULL)
 					operation->variant = SCHEDULE_WAIT_DATA;
