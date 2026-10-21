@@ -84,6 +84,7 @@
 
 /* Opcodes (Khronos SPIR-V spec, section 3.37). */
 #define OP_NOP 0U
+#define OP_UNDEF 1U
 #define OP_SOURCE_CONTINUED 2U
 #define OP_SOURCE 3U
 #define OP_SOURCE_EXTENSION 4U
@@ -511,7 +512,10 @@ enum drv_gpu_spirv_id_kind {
 	ID_TYPE_POINTER,
 	ID_TYPE_FUNCTION,
 
-	/* A scalar int, float or Boolean constant. */
+	/*
+	 * A scalar int, float or Boolean constant, or an undefined scalar or
+	 * vector read as zero in every component.
+	 */
 	ID_CONSTANT,
 
 	/*
@@ -947,6 +951,7 @@ static int drv_gpu_spirv_declare_member_decoration(struct drv_gpu_spirv_parser *
 static int drv_gpu_spirv_declare_type(struct drv_gpu_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int drv_gpu_spirv_declare_constant(struct drv_gpu_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int drv_gpu_spirv_declare_constant_bool(struct drv_gpu_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode);
+static int drv_gpu_spirv_declare_undef(struct drv_gpu_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int drv_gpu_spirv_declare_constant_composite(struct drv_gpu_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int drv_gpu_spirv_declare_variable(struct drv_gpu_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int drv_gpu_spirv_decoration_ignored(uint32_t decoration);
@@ -1534,6 +1539,23 @@ drv_gpu_spirv_declare(
 		/*
 		 * Succeeded: this instruction has a complete scalar lowering.
 		 */
+		return 0;
+
+	case OP_UNDEF:
+		/*
+		 * An undefined value, which glslc's optimizer makes of a
+		 * component whose value never matters: zero is one of its
+		 * values.
+		 */
+		error = drv_gpu_spirv_declare_undef(parser,
+						    word,
+						    count,
+						    opcode,
+						    offset);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the undefined value reads as zero. */
 		return 0;
 
 	case OP_CONSTANT_TRUE:
@@ -2131,6 +2153,53 @@ drv_gpu_spirv_declare_constant_bool(
 	}
 
 	/* Succeeded: the constant becomes IR the first time it is used. */
+	return 0;
+}
+
+/*
+ * Records OpUndef of a float, integer or Boolean scalar or vector as the
+ * constant zero (every component): any value is a correct reading of an
+ * undefined one.
+ */
+static int
+drv_gpu_spirv_declare_undef(
+	struct drv_gpu_spirv_parser *parser,
+	const uint32_t *word,
+	uint32_t count,
+	uint32_t opcode,
+	uint32_t offset)
+{
+	int error;
+	struct drv_gpu_spirv_id *record;
+	uint32_t components;
+
+	/* Resolves the undefined value's result id. */
+	record = NULL;
+	if (count == 3U)
+		record = drv_gpu_spirv_id(parser, word[2]);
+	if (record == NULL)
+		return EINVAL;
+
+	/* Only a scalar or a vector reads as one repeated constant. */
+	components = drv_gpu_spirv_value_components(parser, word[1]);
+	if (components == 0U) {
+		/*
+		 * Records the unsupported instruction in the caller's
+		 * diagnostic.
+		 */
+		error = drv_gpu_spirv_refuse(parser,
+					     opcode,
+					     offset,
+					     "undefined value that is not a scalar or vector");
+		return error;
+	}
+
+	/* Records the type and the bits of every component. */
+	record->kind = ID_CONSTANT;
+	record->type = word[1];
+	record->constant = 0U;
+
+	/* Succeeded: the value becomes IR the first time it is used. */
 	return 0;
 }
 
@@ -3213,6 +3282,23 @@ drv_gpu_spirv_lower(
 		/*
 		 * Succeeded: this instruction has a complete scalar lowering.
 		 */
+		return 0;
+
+	case OP_UNDEF:
+		/*
+		 * An undefined value, which glslc's optimizer makes of a
+		 * component whose value never matters: zero is one of its
+		 * values.
+		 */
+		error = drv_gpu_spirv_declare_undef(parser,
+						    word,
+						    count,
+						    opcode,
+						    offset);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the undefined value reads as zero. */
 		return 0;
 
 	case OP_VARIABLE:
@@ -15848,6 +15934,8 @@ drv_gpu_spirv_constant_operand(
 	uint32_t floats;
 	uint32_t integers;
 	uint32_t booleans;
+	uint32_t components;
+	uint32_t index;
 
 	/*
 	 * A float constant is a CONST, an integer one an ICONST, a Boolean one
@@ -15856,12 +15944,15 @@ drv_gpu_spirv_constant_operand(
 	floats = drv_gpu_spirv_float_components(parser, record->type);
 	integers = drv_gpu_spirv_int_components(parser, record->type);
 	booleans = drv_gpu_spirv_bool_components(parser, record->type);
-	if (floats == 1U) {
+	if (floats != 0U) {
 		op = DRV_GPU_IR_CONST;
-	} else if (integers == 1U) {
+		components = floats;
+	} else if (integers != 0U) {
 		op = DRV_GPU_IR_ICONST;
-	} else if (booleans == 1U) {
+		components = integers;
+	} else if (booleans != 0U) {
 		op = DRV_GPU_IR_BOOL;
+		components = booleans;
 	} else {
 		return 0U;
 	}
@@ -15875,9 +15966,13 @@ drv_gpu_spirv_constant_operand(
 			inst->immediate = record->constant;
 	}
 
-	/* Succeeded: the constant's one scalar. */
-	comp[0] = record->comp[0];
-	return 1U;
+	/*
+	 * Succeeded: the constant's one scalar, in every component of a vector
+	 * (only an undefined value is a vector here).
+	 */
+	for (index = 0U; index < components; index++)
+		comp[index] = record->comp[0];
+	return components;
 }
 
 /*
