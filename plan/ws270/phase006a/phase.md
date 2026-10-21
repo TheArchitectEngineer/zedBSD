@@ -383,3 +383,35 @@ Keiland が使い、vkmatrix 15/15・gpu-selftest 13/13 で確かめていない
 - d36（41273725f、P2 の奇数幅の copy・Keiland の shm の damage の copy）: timing の submit 2.5 ms（非同期が効く）、job の待ち 76〜262 ms、KWL の rec submit 78〜300 ms/frame → GPU の実行時間が上限。P1 q1535 で原因を測る。
 - d37（3af4571d6、P1 の perf の case、SLC bypass は今まで通り）: 板の vkmatrix は perf の時間の行を出さない（host では出る、原因未確認、a6f76d321 で整数の表示にしたが出ず）。kernel の timing で代わりに: 1080p の clear だけの job で約 20〜40 ms、LOAD 約 21 ms、平らな quad 約 20 ms、texture の quad 約 42 ms（desktop の job も混ざる粗い値）→ 描画の中身より土台（tile・ISP・PBE・memory）が遅い。
 - d38（8e7b784f8、P1 1db3be24d で device-local の memory を SLC に通す）: 試験の途中で板が log 無しで再起動（2 回、kernel.log.old が途中で切れる）→ Q1 が POWERVR_DEVICE_MEMORY_CACHED を 0 に戻した（main）。P1 に原因（SLC の flush の command か解放の順）を調べるよう依頼。
+
+
+### q1536-i01（2026-10-21、P2）: compiler と Mesa pco の比較
+
+- Mesa 26.2.5 pco（host、drm-shim、`PCO_DEBUG_PRINT=all,stats`）で、Keiland の shader の組を pipeline にして数を取り、こちらの compiler（`shader-probe`）と比べた。
+  Mesa の側の道具は scratchpad の pcostats.c（repository の外）。
+
+| shader | Mesa の code byte | Mesa の temp | Mesa の group | こちらの code byte | こちらの temp（前 → 後） |
+| --- | --- | --- | --- | --- | --- |
+| quad.vert | 232 | 10 | 21 | 440 | 22 → 13 |
+| quad.frag | 720 | 32 | 67 | 640 | 20 → 19 |
+| panel.vert | 296 | 11 | 27 | 648 | 26 → 20 |
+| panel.frag | 4128 | 24 | 393 | 5208 | 55 → 55 |
+| batch.vert | 168 | 4 | 16 | 848 | 38 → 32 |
+| batch.frag | 936 | 13 | 83 | 1144 | 25 → 24 |
+| turn.vert | 216 | 5 | 19 | 520 | 21 → 15 |
+| panel.frag[0..7] | 880〜1688 | 13〜32 | 83〜153 | 816〜1984 | 21〜31 → 20〜30 |
+
+- 読み:
+  - fragment の code はどれも Mesa の 0.9〜1.3 倍。temp は quad.frag と panel.frag[5]・[6] で Mesa より少なく、ほかは 1〜2.3 倍。
+  - 実行が 10〜30 倍遅い理由を、compiler だけでは説明できない。
+  - 差が大きいのは次の 2 つ:
+    - panel.frag の temp（55 と 24）;
+    - vertex の temp と code（2〜8 倍。vertex の入力を temp に移している見込み）。
+- 修正（`shader-backend.c` の `compact_temporaries`）:
+  - back end が固定で取っていた 9 個の temp（0〜8）のうち、program が使わない block を返す。block は EMC 0、scratch 1〜3、座標・address・store data 4〜8（store は address の対の次の register を読むので、4〜8 は分けない）。
+  - 値の temp は詰める。temp の register の場所の値だけを変え、動作は変えない。
+- 確認:
+  - compiler の host 試験は 411 passed と 22 passed で、0 failed。
+  - p010 は 0 failed、p009 は 505 passed。
+  - desktop の config で VF2 の vmunix は rc 0、warning 0。
+  - 板の vkmatrix は未実施。
