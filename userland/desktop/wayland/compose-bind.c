@@ -18,6 +18,10 @@
  * rectangles apart, a quad is drawn once for each of them it meets, with
  * the scissor cut to that rectangle; the rectangles do not overlap, so no
  * pixel is drawn twice.
+ *
+ * While a layer's picture is drawn, the draws' box is gathered
+ * (kwl_compose_bounds_begin and _end), so that a frame draws only the part
+ * of the picture that holds anything.
  */
 
 #include "compose.h"
@@ -27,6 +31,7 @@ static int clip_cut(const VkRect2D *clip, const VkRect2D *scissor, VkRect2D *cut
 static int clip_meets(const VkRect2D *rect, float x, float y, float width, float height);
 static int clip_same(const VkRect2D *first, const VkRect2D *second);
 static void clip_box(float *x, float *y, float *width, float *height);
+static void bounds_add(struct kwl_compose *compose, float left, float top, float right, float bottom);
 
 /*
  * Binds a pipeline and a descriptor set (set 0, with the pipeline layout it
@@ -185,6 +190,10 @@ kwl_compose_clip_draw(
 	if (compose->clip_scissor_valid && command->scissor_serial == compose->clip_serial)
 		known = 1;
 
+	/* The box of what is drawn, when it is gathered. */
+	if (compose->bounding)
+		bounds_add(compose, x, y, x + width, y + height);
+
 	/* Without rectangles drawn apart: one draw, within the frame's scissor, set back if a rectangle's was left. */
 	active = clip_active(compose);
 	if (!active) {
@@ -257,6 +266,10 @@ kwl_compose_clip_draw_rect(
 	if (!left)
 		return;
 
+	/* The box of what is drawn, when it is gathered. */
+	if (compose->bounding)
+		bounds_add(compose, (float)inside.offset.x, (float)inside.offset.y, (float)inside.offset.x + (float)inside.extent.width, (float)inside.offset.y + (float)inside.extent.height);
+
 	/* Without rectangles drawn apart: one draw within the rectangle. */
 	active = clip_active(compose);
 	if (!active) {
@@ -279,6 +292,38 @@ kwl_compose_clip_draw_rect(
 		compose->clip_scissor_valid = 1U;
 		kwl_list_draw(command, vertices, 1U, 0U, 0U);
 	}
+}
+
+/* Starts gathering the box of the draws (a layer's picture being drawn). */
+void
+kwl_compose_bounds_begin(
+	struct kwl_compose *compose)
+{
+	/* Nothing drawn yet. */
+	compose->bounding = 1U;
+	compose->bounded = 0U;
+}
+
+/*
+ * Ends gathering the box of the draws, giving it (left, top, right,
+ * bottom) through bounds.  Returns 1 when anything was drawn.
+ */
+int
+kwl_compose_bounds_end(
+	struct kwl_compose *compose,
+	float *bounds)
+{
+	/* No longer gathered. */
+	compose->bounding = 0U;
+	if (!compose->bounded)
+		return 0;
+
+	/* Succeeded: the box. */
+	bounds[0] = compose->bounds[0];
+	bounds[1] = compose->bounds[1];
+	bounds[2] = compose->bounds[2];
+	bounds[3] = compose->bounds[3];
+	return 1;
 }
 
 /* Tells whether the damage's rectangles are drawn apart in the pass being recorded: only the anchor's, not a backdrop's or a layer's. */
@@ -404,4 +449,47 @@ clip_box(
 		*y += *height;
 		*height = -*height;
 	}
+}
+
+/* Grows the box of the draws by a draw's rectangle (left, top, right, bottom), within the scissor. */
+static void
+bounds_add(
+	struct kwl_compose *compose,
+	float left,
+	float top,
+	float right,
+	float bottom)
+{
+	const VkRect2D *scissor;
+
+	/* The rectangle within the scissor; nothing of it is drawn outside. */
+	scissor = &compose->scissor_now;
+	if (left < (float)scissor->offset.x)
+		left = (float)scissor->offset.x;
+	if (top < (float)scissor->offset.y)
+		top = (float)scissor->offset.y;
+	if (right > (float)scissor->offset.x + (float)scissor->extent.width)
+		right = (float)scissor->offset.x + (float)scissor->extent.width;
+	if (bottom > (float)scissor->offset.y + (float)scissor->extent.height)
+		bottom = (float)scissor->offset.y + (float)scissor->extent.height;
+	if (right <= left || bottom <= top)
+		return;
+
+	/* The first rectangle is the box; later ones grow it. */
+	if (!compose->bounded) {
+		compose->bounds[0] = left;
+		compose->bounds[1] = top;
+		compose->bounds[2] = right;
+		compose->bounds[3] = bottom;
+		compose->bounded = 1U;
+		return;
+	}
+	if (left < compose->bounds[0])
+		compose->bounds[0] = left;
+	if (top < compose->bounds[1])
+		compose->bounds[1] = top;
+	if (right > compose->bounds[2])
+		compose->bounds[2] = right;
+	if (bottom > compose->bounds[3])
+		compose->bounds[3] = bottom;
 }

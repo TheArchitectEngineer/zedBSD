@@ -121,6 +121,9 @@
 /* The corner radius of the desktop layer's wallpaper while it goes back over App Home, in the layer's own pixels. */
 #define HOME_LAYER_RADIUS	18.0f
 
+/* How far around what Home's picture holds it is drawn, in its pixels (the linear sampling reads a texel beyond). */
+#define HOME_PICTURE_MARGIN	2.0f
+
 /*
  * Placing a new window (ws035-p092): how far each cascade step moves it
  * (a title bar and its gap, so the title bar under it shows), how many
@@ -535,10 +538,12 @@ static void wiseview_key(struct kwl_server *server, uint32_t key, uint32_t state
 static void wiseview_close_key(struct kwl_server *server);
 static unsigned wiseview_windows(struct kwl_server *server, struct kwl_object **windows, unsigned capacity);
 static void wiseview_layout(struct kwl_server *server, struct kwl_object **windows, unsigned count, struct shell_rect *tiles);
-static void draw_wiseview(struct kwl_server *server, struct kwl_list *command, struct kwl_object **stacked, unsigned stacked_count, float progress, VkDescriptorSet ground);
+static void draw_wiseview(struct kwl_server *server, struct kwl_list *command, struct kwl_object **stacked, unsigned stacked_count, float progress, VkDescriptorSet ground, int crossfaded);
 static int wiseview_ground(struct kwl_server *server, VkDescriptorSet *sets);
+static int wiseview_crossfade(struct kwl_server *server, VkDescriptorSet *set);
 static void wiseview_wall_picture(struct kwl_server *server, struct kwl_list *command);
 static void wiseview_glass_picture(struct kwl_server *server, struct kwl_list *command);
+static void wiseview_ground_picture(struct kwl_server *server, struct kwl_list *command);
 static void wiseview_glass(struct kwl_server *server, struct kwl_list *command, float opacity);
 static void draw_tile(struct kwl_server *server, struct kwl_list *command, struct kwl_object *surface, const struct shell_rect *tile, float progress, unsigned current, unsigned over);
 static int wiseview_button(struct kwl_server *server, uint32_t button, uint32_t state);
@@ -633,6 +638,8 @@ kwl_glass_draw(
 	struct kwl_object *cover;
 	struct shell_bar bar;
 	VkDescriptorSet ground_sets[2];
+	VkDescriptorSet crossfade_set;
+	int crossfade;
 	float under[1][4];
 	unsigned under_count;
 	int ground;
@@ -789,13 +796,21 @@ kwl_glass_draw(
 	if (!ground)
 		ground_sets[1] = VK_NULL_HANDLE;
 
+	/* Both in one draw, from their picture side by side, once that is drawn too. */
+	crossfade = 0;
+	if (ground)
+		crossfade = wiseview_crossfade(server, &crossfade_set);
+
 	/*
 	 * The wallpaper over the whole output (with round corners while it is
 	 * pushed aside), unless Home hides the layer; under Wiseview's shade
 	 * from its picture, and not at all under its glass once it is open.
 	 */
 	server->draw_section = KWL_SECTION_LAYER;
-	if (!hidden && (!ground || progress < 1.0f)) {
+	if (crossfade) {
+		glass_draw_crossfade(server, command, crossfade_set, progress);
+		ground_sets[1] = VK_NULL_HANDLE;
+	} else if (!hidden && (!ground || progress < 1.0f)) {
 		glass_shape_init(&shape, 0.0f, 0.0f, (float)server->width, (float)server->height);
 		shape.mode = MODE_IMAGE;
 		shape.opaque = 1.0f;
@@ -816,7 +831,7 @@ kwl_glass_draw(
 	/* Wiseview takes the windows' place. */
 	if (progress > 0.0f) {
 		server->cover_count = 0U;
-		draw_wiseview(server, command, windows, count, progress, ground_sets[1]);
+		draw_wiseview(server, command, windows, count, progress, ground_sets[1], crossfade);
 		server->layer_on = 0;
 		server->draw_section = KWL_SECTION_BAR;
 		draw_system_bar(server, command, &bar);
@@ -8594,6 +8609,45 @@ wiseview_ground(
 	return 1;
 }
 
+/*
+ * Gives the picture of Wiseview's two grounds side by side (the wallpaper
+ * and the glass, each under the shade), drawn from their own pictures once
+ * both are drawn (wiseview_ground).  Returns 1 with its set when drawn.
+ */
+static int
+wiseview_crossfade(
+	struct kwl_server *server,
+	VkDescriptorSet *set)
+{
+	int drawn;
+
+	/* The picture, asked for when it is not drawn. */
+	drawn = kwl_glass_picture_set(server, KWL_GLASS_PICTURE_WISEVIEW_GROUND, wiseview_ground_picture, set);
+	if (!drawn)
+		return 0;
+
+	/* Succeeded: Wiseview's ground in one draw. */
+	return 1;
+}
+
+/* Draws Wiseview's two grounds side by side into their picture, from their own pictures. */
+static void
+wiseview_ground_picture(
+	struct kwl_server *server,
+	struct kwl_list *command)
+{
+	VkDescriptorSet sets[2];
+	int ground;
+
+	/* The two pictures, drawn before (wiseview_crossfade asks only then); without them nothing. */
+	ground = wiseview_ground(server, sets);
+	if (!ground)
+		return;
+
+	/* The wallpaper's on the left, the glass's on the right. */
+	glass_draw_halves(server, command, sets[0], sets[1]);
+}
+
 /* Draws the wallpaper under Wiseview's shade into its picture. */
 static void
 wiseview_wall_picture(
@@ -8651,7 +8705,8 @@ draw_wiseview(
 	struct kwl_object **stacked,
 	unsigned stacked_count,
 	float progress,
-	VkDescriptorSet ground)
+	VkDescriptorSet ground,
+	int crossfaded)
 {
 	static const float dark[4] = { 0.10f, 0.14f, 0.22f, 1.0f };
 	struct kwl_object *windows[WISEVIEW_WINDOWS];
@@ -8675,7 +8730,9 @@ draw_wiseview(
 	 * the shade (kwl_glass_draw), which is the same blend; or the glass and
 	 * the shade themselves.
 	 */
-	if (ground != VK_NULL_HANDLE) {
+	if (crossfaded) {
+		/* Drawn already, with the wallpaper (kwl_glass_draw). */
+	} else if (ground != VK_NULL_HANDLE) {
 		glass_shape_init(&shape, 0.0f, 0.0f, (float)server->width, (float)server->height);
 		shape.mode = MODE_IMAGE;
 		shape.opaque = 1.0f;
@@ -10803,6 +10860,11 @@ draw_home_picture(
 {
 	struct kwl_edge_depth depth;
 	struct glass_shape shape;
+	struct glass_shape part;
+	float bounds[4];
+	float crop[4];
+	int bounded;
+	int shown;
 	float radius;
 	float grown;
 	float size;
@@ -10827,13 +10889,29 @@ draw_home_picture(
 		printf("KWL HOME layer=content after_ms=%llu picture=1\n", (unsigned long long)(kwl_milliseconds() - server->home_asked_ms));
 	}
 
-	/* Home's picture, placed and scaled as the content is, faded in by how far Home is open. */
+	/*
+	 * Home's picture, placed and scaled as the content is, faded in by how
+	 * far Home is open: only the part that holds anything (with a margin
+	 * for the linear sampling at its edge), the rest being clear.
+	 */
 	kwl_edge_home_content(home, (int32_t)server->width, (int32_t)server->height, &depth);
 	glass_shape_init(&shape, depth.x, depth.y, (float)server->width * depth.scale, (float)server->height * depth.scale);
 	shape.mode = MODE_IMAGE;
 	shape.set = kwl_layers_set(server, KWL_LAYER_HOME);
 	shape.opacity = home;
-	glass_shape_draw_except(server, command, &shape, under, under_count);
+	shown = 1;
+	bounded = kwl_layers_home_bounds(server, bounds);
+	if (bounded) {
+		crop[0] = depth.x + (bounds[0] - HOME_PICTURE_MARGIN) * depth.scale;
+		crop[1] = depth.y + (bounds[1] - HOME_PICTURE_MARGIN) * depth.scale;
+		crop[2] = (bounds[2] - bounds[0] + 2.0f * HOME_PICTURE_MARGIN) * depth.scale;
+		crop[3] = (bounds[3] - bounds[1] + 2.0f * HOME_PICTURE_MARGIN) * depth.scale;
+		shown = glass_shape_crop(&shape, crop, &part);
+		if (shown)
+			shape = part;
+	}
+	if (shown)
+		glass_shape_draw_except(server, command, &shape, under, under_count);
 
 	/* The clock over the picture, placed and faded as the content (it is not in the picture, review-3 B6). */
 	kwl_home_draw_clock_over(server, command, home);

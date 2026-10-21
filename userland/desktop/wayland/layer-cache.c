@@ -384,6 +384,31 @@ kwl_layers_set(
 }
 
 /*
+ * Gives the box (left, top, right, bottom, in the picture's pixels) of
+ * what Home's picture holds; outside it the picture is clear.  Returns 0
+ * when it is not known (the whole picture is then drawn).
+ */
+int
+kwl_layers_home_bounds(
+	struct kwl_server *server,
+	float *bounds)
+{
+	struct kwl_layers *layers;
+
+	/* Known once the picture was drawn with it. */
+	layers = &server->compose->layers;
+	if (!layers->home_bounded)
+		return 0;
+
+	/* Succeeded: the box. */
+	bounds[0] = layers->home_bounds[0];
+	bounds[1] = layers->home_bounds[1];
+	bounds[2] = layers->home_bounds[2];
+	bounds[3] = layers->home_bounds[3];
+	return 1;
+}
+
+/*
  * Draws, in the frame being recorded and before its pass, the pictures the
  * animation of a docking or returning window shows (ws211-p007): decided
  * once, at its first frame, when shell.c says its frames may show them.
@@ -714,9 +739,12 @@ layers_record_pass(
 	server->view_height = 0U;
 	memset(&server->draw_counts, 0, sizeof(server->draw_counts));
 
-	/* Home's content as it opens, no icon lit, no clock; the desktop layer, noting the windows it draws; or the animated window. */
+	/* Home's content as it opens, no icon lit, no clock, and the box of it; the desktop layer, noting the windows it draws; or the animated window. */
 	if (which == KWL_LAYER_HOME) {
+		kwl_compose_bounds_begin(compose);
 		kwl_home_draw_content(server, command, 1.0f, 1U);
+		kwl_batch_flush(server, command);
+		layers->home_bounded = (unsigned)kwl_compose_bounds_end(compose, layers->home_bounds);
 	} else if (which == KWL_LAYER_DESKTOP) {
 		layers->window_count = 0U;
 		layers->noting = 1U;

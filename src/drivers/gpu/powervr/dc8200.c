@@ -377,6 +377,15 @@ static struct spinlock dc_commit_lock = {
  */
 static volatile unsigned dc_fatal;
 
+/*
+ * The last commit's place in its frame, for the display's flip report: how
+ * far after the newest blank it was written (microseconds, the fine
+ * counter), the period the blanks measured then, and whether it counted as
+ * early (taken at the next blank).  Written under dc_commit_lock by a
+ * commit, read by its caller under the display's mutex after it.
+ */
+static struct drv_powervr_dc_commit_note dc_last_commit;
+
 static uint32_t read_control(const struct dc_adoption *adoption, uint32_t offset);
 static uint32_t read_display(const struct dc_adoption *adoption, uint32_t offset);
 static void write_display(const struct dc_adoption *adoption, uint32_t offset, uint32_t value);
@@ -388,6 +397,7 @@ static void write_control(const struct dc_adoption *adoption, uint32_t offset, u
 static void write_plane(const struct dc_adoption *adoption, const struct powervr_dc_plane *plane);
 static void blank_interrupt(int irq, kern_irq_ack_t acknowledge, void *argument);
 static int commit_early(const struct dc_blanks *blanks, uint64_t sequence);
+static void dc_phase(const struct dc_blanks *blanks, uint64_t *since_us, uint64_t *period_us);
 static const struct powervr_dc_mode *choose_mode(void);
 static int own_screen(const struct powervr_dc_mode *mode, struct powervr_dc_screen *screen, uint32_t *format);
 static void draw_bars(volatile uint32_t *pixels, const struct powervr_dc_screen *screen);
@@ -905,6 +915,9 @@ drv_powervr_dc_commit(
 	write_plane(adoption, &plane);
 	*base = atomic_u64_load_acquire(&board_blanks.sequence);
 	early = commit_early(&board_blanks, *base);
+	dc_phase(&board_blanks, &dc_last_commit.since_us, &dc_last_commit.period_us);
+	dc_last_commit.early = early;
+	dc_last_commit.sequence = *base;
 	if (early)
 		*base -= 1U;
 
@@ -912,6 +925,28 @@ drv_powervr_dc_commit(
 
 	/* Succeeded: the plane takes the commit at one of the next blanks. */
 	return 0;
+}
+
+/* Gives the last commit's place in its frame (dc_last_commit). */
+void
+drv_powervr_dc_commit_noted(
+	struct drv_powervr_dc_commit_note *note)
+{
+	/* A copy; the caller's mutex keeps the next commit out. */
+	*note = dc_last_commit;
+}
+
+/*
+ * Gives how far after the newest blank it is now and the period the blanks
+ * measured, in microseconds (both 0 without the fine counter or a period).
+ */
+void
+drv_powervr_dc_phase(
+	uint64_t *since_us,
+	uint64_t *period_us)
+{
+	/* The board's blanks. */
+	dc_phase(&board_blanks, since_us, period_us);
 }
 
 /*
@@ -1411,6 +1446,37 @@ blank_interrupt(
 
 	/* Hands the interrupt back to the controller of interrupts. */
 	kern_irq_send_eoi(acknowledge);
+}
+
+/*
+ * Gives how far after the newest blank it is now and the period between
+ * the last two blanks, in microseconds, from the fine counter; 0 for what
+ * cannot be told.  Read without the blanks' lock, as commit_early reads it.
+ */
+static void
+dc_phase(
+	const struct dc_blanks *blanks,
+	uint64_t *since_us,
+	uint64_t *period_us)
+{
+	uint64_t counter;
+	uint64_t frequency;
+	uint64_t last;
+	bool counting;
+
+	/* Nothing without the counter or a blank. */
+	*since_us = 0U;
+	*period_us = 0U;
+	counting = kern_rtc_read_counter(&counter, &frequency);
+	if (!counting || frequency == 0U)
+		return;
+	last = blanks->last_counter;
+	if (last == 0U || counter < last)
+		return;
+
+	/* The counts turned into microseconds. */
+	*since_us = (counter - last) * 1000000U / frequency;
+	*period_us = blanks->period_counts * 1000000U / frequency;
 }
 
 /*

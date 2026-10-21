@@ -127,7 +127,14 @@ void main()
 	} else if (mode < 2.5) {
 #endif
 		// A window's image with rounded corners (an opaque image has no alpha of its own).
+#if defined(KWL_PANEL_CROSSFADE)
+		// KWL_PANEL_CROSSFADE: two pictures side by side in one image (the
+		// left half and the right), the second faded in over the first by
+		// color.a, in one draw instead of two (glass.c).
+		vec4 texel = mix(texture(image, texcoord), texture(image, texcoord + vec2(0.5, 0.0)), panel.color.a);
+#else
 		vec4 texel = texture(image, texcoord);
+#endif
 
 		colour = vec4(texel.rgb, max(texel.a, panel.shape.w)) * cover;
 #endif
