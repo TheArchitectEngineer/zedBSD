@@ -98,10 +98,19 @@ powervr_render_runtime_bind(
 }
 
 /*
- * Takes one command frame (or an empty marker frame): runs it at once
- * and puts its callback in the ring after the session's work, with the
- * frame's error.  A submission that was abandoned also reports the
- * session lost, so the core stops it.
+ * Takes one command frame (or an empty marker frame): runs it at once.
+ * A command frame's callback says the frame was decoded and its reply
+ * written, which it is on return, so it completes at once (a callback
+ * held until the GPU finished the session's work made every
+ * transaction, vkQueueSubmit's among them, wait for the GPU); an entry
+ * without a callback stays in the ring after the session's work, so the
+ * work the frame kicked still counts as in flight (resource_unmake keeps
+ * what it reads mapped).  A frame that failed, or one after a callback
+ * of the session that carries an error, puts its callback in the ring
+ * instead, with the frame's error, so errors are seen in order; so does
+ * an empty marker frame, a fence after the session's work.  A
+ * submission that was abandoned also reports the session lost, so the
+ * core stops it.
  */
 int
 powervr_render_frame(
@@ -113,6 +122,8 @@ powervr_render_frame(
 	uint32_t timeline,
 	struct drv_gpu_completion *completion)
 {
+	unsigned long enabled;
+	unsigned pending;
 	int error;
 
 	/* Only the context's fence flag; a timeline only with it. */
@@ -139,14 +150,25 @@ powervr_render_frame(
 	if (bytes != 0U)
 		error = run_frame(session, command, bytes);
 
-	/* The callback, after everything the session sent the core. */
-	powervr_session_pend(render, session, session->last_kind, session->last_value, completion, error, POWERVR_NO_MARKER);
+	/* The callback at once when nothing holds it back, else after everything the session sent the core. */
+	enabled = spin_lock_irqsave(&render->queue_lock);
+
+	pending = session->pending_errors;
+
+	spin_unlock_irqrestore(&render->queue_lock, enabled);
+
+	if (bytes != 0U && error == 0 && pending == 0U) {
+		powervr_session_pend(render, session, session->last_kind, session->last_value, NULL, 0, POWERVR_NO_MARKER);
+		drv_gpu_complete(completion, 0);
+	} else {
+		powervr_session_pend(render, session, session->last_kind, session->last_value, completion, error, POWERVR_NO_MARKER);
+	}
 
 	/* Work the core may still run: the core stops the session. */
 	if (session->vk != NULL && session->vk->abandoned)
 		drv_gpu_report_session_error(render->device, session, EIO);
 
-	/* Succeeded: the callback is held until the session's work before it retired. */
+	/* Succeeded: the callback completed, or is held until the session's work before it retired. */
 	return 0;
 }
 

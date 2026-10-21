@@ -129,6 +129,8 @@ static int kick_refused(struct powervr_render *render, struct powervr_session *s
 static int send_waiting(struct powervr_core *core, const uint32_t command[POWERVR_COMMAND_WORDS], uint32_t *slot);
 static void cleanup_command(uint32_t context, uint32_t command[POWERVR_COMMAND_WORDS]);
 static void service_thread(void *argument);
+static void timing_thread(void *argument);
+static void timing_report(void);
 static int service_pass(struct powervr_render *render, uint64_t now, int unwoken);
 static int timeline_sleep(struct powervr_render *render, uint64_t observed, uint64_t deadline);
 static void note_wait(int slept, int late);
@@ -137,8 +139,9 @@ static void take_reached(struct powervr_session *session, struct delivery *deliv
 static void take_all(struct powervr_session *session, int error, struct delivery *delivery);
 static void deliver(struct powervr_render *render, struct delivery *delivery);
 static void handle_notice(void *context, uint32_t type, const struct powervr_object *buffer, uint32_t offset);
-/* How often the timing says its sums, in milliseconds. */
+/* How often the timing says its sums, and how often its thread looks whether to end, in milliseconds. */
 #define TIMING_REPORT_MS		5000U
+#define TIMING_LOOK_MS			100U
 
 /*
  * The job trace: with POWERVR_JOB_TRACE 1 every render
@@ -1056,12 +1059,29 @@ powervr_service_start(
 
 	/* Starts the thread; nobody joins it, and its end releases it. */
 	render->service_done = 0;
+	render->timing_done = 1;
 	error = kthread_create(service_thread, render, SCHED_PRIORITY_DEFAULT, &thread);
 	if (error != 0)
 		return error;
 
 	/* Makes it runnable: kthread_create leaves a new thread stopped. */
 	thread_start(thread);
+
+	/*
+	 * The timing's sums are said by a thread of their own: the report is
+	 * written to the consoles at their speed, which no submission, retire
+	 * or interrupt may wait for.  Without it the sums are only not said.
+	 */
+	if (POWERVR_SUBMIT_TIMING) {
+		render->timing_done = 0;
+		error = kthread_create(timing_thread, render, SCHED_PRIORITY_DEFAULT, &thread);
+		if (error != 0) {
+			render->timing_done = 1;
+			kern_logf("powervr: the timing's thread did not start (%d); its sums are not said\n", error);
+		} else {
+			thread_start(thread);
+		}
+	}
 
 	/* Succeeded: the service runs. */
 	return 0;
@@ -1077,12 +1097,12 @@ powervr_service_stop(
 	unsigned long enabled;
 	uint64_t observed;
 
-	/* Tells the thread to end, wakes it, and sleeps until it says it has. */
+	/* Tells the threads to end, wakes the service, and sleeps until both say they have. */
 	enabled = spin_lock_irqsave(&render->queue_lock);
 
 	render->running = 0;
 	waitq_wake_all(&render->service);
-	while (!render->service_done) {
+	while (!render->service_done || !render->timing_done) {
 		observed = waitq_sequence(&render->retired);
 		(void)waitq_sleep(&render->retired, &render->queue_lock, observed, 0, 0);
 	}
@@ -1486,15 +1506,16 @@ powervr_timing_add(
 /*
  * Says the submission timing's sums once TIMING_REPORT_MS passed since
  * the last report: for each part its count and its average and total in
- * microseconds, then clears them.
+ * microseconds, then clears them.  Only the timing's thread calls it.
  */
-void
-powervr_timing_report(
+static void
+timing_report(
 	void)
 {
 	static const char *const names[POWERVR_TIMING_PARTS] = {
 		"submit", "job setup", "job map", "job build", "job kick", "job wait", "job release", "transfer", "dispatch",
 		"wait ta", "wait 3d", "wait small job", "job build programs", "job build draws", "draw memory", "draw code",
+		"render jobs", "order wait", "reap",
 	};
 	uint64_t now;
 	uint64_t average;
@@ -2316,6 +2337,40 @@ cleanup_command(
 	command[POWERVR_COMMAND_TYPE / 4U] = POWERVR_COMMAND_CLEANUP;
 	command[(POWERVR_COMMAND_DATA + POWERVR_CLEANUP_TYPE) / 4U] = POWERVR_CLEANUP_COMMON_CONTEXT;
 	command[(POWERVR_COMMAND_DATA + POWERVR_CLEANUP_CONTEXT) / 4U] = context;
+}
+
+/*
+ * The timing's thread: every TIMING_LOOK_MS looks whether it is told to
+ * end, and says the sums when TIMING_REPORT_MS passed since the last
+ * report (timing_report).
+ */
+static void
+timing_thread(
+	void *argument)
+{
+	struct powervr_render *render;
+	unsigned long enabled;
+
+	/* The node it runs for. */
+	render = argument;
+
+	/* Sleeps, then says the sums when due, until told to end. */
+	for (;;) {
+		enabled = spin_lock_irqsave(&render->queue_lock);
+
+		/* Told to end: says so and leaves. */
+		if (!render->running) {
+			render->timing_done = 1;
+			waitq_wake_all(&render->retired);
+			spin_unlock_irqrestore(&render->queue_lock, enabled);
+			return;
+		}
+
+		spin_unlock_irqrestore(&render->queue_lock, enabled);
+
+		sched_sleep(sched_ticks() + ms_ticks(TIMING_LOOK_MS));
+		timing_report();
+	}
 }
 
 /*

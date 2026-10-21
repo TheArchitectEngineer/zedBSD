@@ -134,7 +134,8 @@ struct shader_spirv_reader {
  *
  * Each becomes one instruction group.  Kind says which group; the
  * registers, modifiers and fields follow it.  Target is the operation a
- * branch goes to.
+ * branch goes to.  Half says an iterate and sample returns its channels
+ * as half floats, two to a register.
  */
 struct shader_machine_register {
 	uint8_t bank;
@@ -150,6 +151,7 @@ struct shader_machine_operation {
 	uint8_t saturate;
 	uint8_t overlap;
 	uint8_t pair;
+	uint8_t half;
 	struct shader_machine_register destination[2];
 	struct shader_machine_register source[4];
 	uint32_t immediate;
@@ -194,7 +196,10 @@ enum machine_kind {
  * The back end's state for one shader.  Forms are the key's program
  * forms it takes (POWERVR_SHADER_FORM_ITERATE_SAMPLE, _SUM_OF_PRODUCTS,
  * _SAMPLE_WAITS);
- * iterate_sample marks the iterated varyings a sample iterates itself.
+ * iterate_sample marks the iterated varyings a sample iterates itself;
+ * sample_half marks the samples so iterated whose four channels only one
+ * sum of products reads, as they are (the sample returns half floats,
+ * which the operation reads).
  */
 struct shader_backend {
 	struct shader_machine_operation operations[SHADER_MACHINE_OPERATIONS];
@@ -214,6 +219,7 @@ struct shader_backend {
 	uint32_t inline_count;
 	uint32_t forms;
 	uint8_t iterate_sample[POWERVR_IR_VALUES];
+	uint8_t sample_half[POWERVR_IR_VALUES];
 	int error;
 };
 

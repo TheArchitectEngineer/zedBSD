@@ -485,9 +485,9 @@ struct powervr_switch_shaders {
  * Kept holds buffers and sessions that may still be reached by the core
  * after a fault or an isolation, until a reset frees them.  Lost, under
  * the core's lock, says a restart failed and the firmware is gone.
- * Table_memory is where sessions' page tables come from.  Running and
- * service_done, under the queue lock, tell the service thread to end and
- * say it has.  Free_lists lists every session's free lists by the
+ * Table_memory is where sessions' page tables come from.  Running,
+ * service_done and timing_done, under the queue lock, tell the service
+ * thread and the timing's thread to end and say they have.  Free_lists lists every session's free lists by the
  * identity the firmware names them by, next_free_list is the identity
  * the next one takes, and target_events counts what the firmware
  * reported of them; all three are under the core's lock.  Load_draws
@@ -524,6 +524,7 @@ struct powervr_render {
 	unsigned lost;
 	unsigned running;
 	unsigned service_done;
+	unsigned timing_done;
 	uint32_t next_identity;
 };
 

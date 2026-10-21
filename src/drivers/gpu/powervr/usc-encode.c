@@ -14,7 +14,7 @@
 #include <uapi/errno.h>
 
 /* The largest number of fields one encoded form carries. */
-#define USC_FIELD_MAX		12U
+#define USC_FIELD_MAX		13U
 
 /* The field number that always holds the value one, for fixed set bits. */
 #define USC_FIELD_ONE		15U
@@ -385,7 +385,9 @@ static const uint8_t sum_operations[POWERVR_USC_SUM_COUNT][USC_SUM_LENGTH] = {
 	{ 0x94, 0x22, 0x22, 0x0f, 0xfe, 0x7f, 0xa8, 0xb9, 0xd0, 0x00, 0x0f, 0x73, 0x24, 0x00 },
 	{ 0x94, 0x22, 0x22, 0x0f, 0xfe, 0x7f, 0xa8, 0xb9, 0xdf, 0x00, 0x0f, 0x73, 0x24, 0x00 },
 	{ 0x94, 0x99, 0x99, 0x0f, 0xfe, 0x4f, 0xa8, 0xb9, 0x20, 0x00, 0x0f, 0x42, 0x73, 0x00 },
-	{ 0x94, 0x42, 0x73, 0x00, 0x06, 0x7f, 0xa8, 0xb9, 0xc0, 0x00, 0x6f, 0x99, 0x99, 0xf0 }
+	{ 0x94, 0x42, 0x73, 0x00, 0x06, 0x7f, 0xa8, 0xb9, 0xc0, 0x00, 0x6f, 0x99, 0x99, 0xf0 },
+	{ 0x94, 0x99, 0x99, 0x0f, 0x06, 0x4f, 0xa0, 0xb1, 0x00, 0x00, 0x00, 0x99, 0x99, 0xf0 },
+	{ 0x94, 0xbb, 0xbb, 0x0f, 0xf6, 0x7f, 0xa8, 0xb9, 0xc0, 0x00, 0x0f, 0xa3, 0xb4, 0x00 }
 };
 
 static int layout_place(const struct usc_layout *layout, const uint32_t *values, uint8_t *bytes);
@@ -1029,7 +1031,9 @@ powervr_usc_iterate(
  * Coefficient, w_coefficient, image and sampler are register numbers,
  * each a multiple of four; perspective multiplies by the iterated 1/w;
  * channels are one to four; schedule is the scheduling control (0 none,
- * 1 swap, 2 wait for the data the operation returns).
+ * 1 swap, 2 wait for the data the operation returns); half returns the
+ * channels as half floats, two to a register (the first in the low
+ * half).
  */
 int
 powervr_usc_iterate_sample(
@@ -1045,6 +1049,7 @@ powervr_usc_iterate_sample(
 	unsigned normalised,
 	unsigned data_return,
 	unsigned schedule,
+	unsigned half,
 	struct powervr_usc_operation *operation)
 {
 	/*
@@ -1058,7 +1063,7 @@ powervr_usc_iterate_sample(
 	 * itrsmp 0b1000) and src/imagination/common/device_info/bxe-4-32.h
 	 * (has_usc_itrsmp, has_usc_itrsmp_enhanced; F_SCHED_CTRL none 0b00,
 	 * swap 0b01, wdf 0b10).  The fields left zero (projection,
-	 * saturation, half floats, unnormalised coordinates) are not taken.
+	 * saturation, unnormalised coordinates) are not taken.
 	 */
 	static const struct usc_piece pieces[] = {
 		{ 0, 0, 8, 0, 0 },
@@ -1072,10 +1077,11 @@ powervr_usc_iterate_sample(
 		{ 4, 2, 6, 8, 0 },
 		{ 5, 2, 2, 9, 0 },
 		{ 5, 0, 1, 10, 0 },
-		{ 5, 4, 2, 11, 0 }
+		{ 5, 4, 2, 11, 0 },
+		{ 5, 6, 1, 12, 0 }
 	};
-	static const struct usc_layout layout = { 6, 12, 12, { 8, 6, 2, 6, 1, 1, 6, 2, 6, 2, 1, 2 }, pieces };
-	uint32_t values[12];
+	static const struct usc_layout layout = { 6, 13, 13, { 8, 6, 2, 6, 1, 1, 6, 2, 6, 2, 1, 2, 1 }, pieces };
+	uint32_t values[13];
 	int error;
 
 	/* Refuses register numbers off the multiple of four, and a dimension or a channel count the fields cannot carry. */
@@ -1097,6 +1103,7 @@ powervr_usc_iterate_sample(
 	values[9] = channels - 1U;
 	values[10] = normalised;
 	values[11] = schedule;
+	values[12] = half;
 
 	/* Places the fields after checking each fits. */
 	error = operation_build(&layout, values, operation);
