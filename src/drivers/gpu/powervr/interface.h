@@ -393,7 +393,7 @@
  * place reused for other contents may still read stale lines (a trial).
  */
 #ifndef POWERVR_PROGRAM_SLC_CACHED
-#define POWERVR_PROGRAM_SLC_CACHED	1
+#define POWERVR_PROGRAM_SLC_CACHED	0
 #endif
 
 /*
