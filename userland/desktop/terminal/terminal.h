@@ -412,6 +412,16 @@ struct terminal_target {
 	VkImageView view;
 	VkFramebuffer framebuffer;
 	VkSemaphore rendered;
+	/*
+	 * The image's frame recorded (made at its first frame, recorded again
+	 * only when what it records changes: the vertices' count or the
+	 * background), and what it was recorded with; recorded is zero until
+	 * a recording may be submitted again as it is.
+	 */
+	VkCommandBuffer command;
+	uint32_t vertex_count;
+	uint32_t ground;
+	int recorded;
 };
 
 /*
@@ -457,11 +467,11 @@ struct terminal_renderer {
 	size_t vertex_capacity;
 
 	/*
-	 * One command buffer, the fence that says it finished (pending while a
-	 * frame submitted has not been waited for) and the acquire semaphore.
+	 * The command pool (each image has its command buffer, its target's),
+	 * the fence that says the frame finished (pending while a frame
+	 * submitted has not been waited for) and the acquire semaphore.
 	 */
 	VkCommandPool pool;
-	VkCommandBuffer command;
 	VkFence fence;
 	int pending;
 	VkSemaphore acquired;

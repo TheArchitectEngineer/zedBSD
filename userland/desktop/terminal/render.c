@@ -62,7 +62,7 @@ static uint32_t render_build(struct terminal_renderer *renderer, struct terminal
 static float *render_preedit(struct terminal_renderer *renderer, const struct terminal_screen *screen, struct terminal_font *font, const struct terminal_window *window, float *vertex, int first_row, int last_row);
 static uint32_t render_utf8_next(const char *text, size_t *at);
 static float *render_quad(float *vertex, const struct terminal_font *font, float x, float y, float width, float height, unsigned slot, uint32_t foreground, uint32_t background);
-static void render_record(struct terminal_renderer *renderer, uint32_t image, uint32_t vertex_count, uint32_t ground);
+static void render_record(struct terminal_renderer *renderer, VkCommandBuffer command, uint32_t image, uint32_t vertex_count, uint32_t ground);
 static const struct terminal_theme *render_theme(const struct terminal_window *window);
 static uint32_t render_color(const struct terminal_theme *theme, uint32_t color);
 static uint64_t render_now_us(void);
@@ -248,10 +248,14 @@ terminal_renderer_draw(
 {
 	VkSubmitInfo submit;
 	VkPresentInfoKHR present;
+	VkCommandBufferAllocateInfo allocate;
 	VkPipelineStageFlags stage;
+	struct terminal_target *target;
 	uint32_t vertex_count;
+	uint32_t ground;
 	uint32_t image;
 	uint64_t mark;
+	int kept;
 	VkResult error;
 
 	/* The frame before is finished before the host touches the vertices or the atlas again. */
@@ -274,19 +278,41 @@ terminal_renderer_draw(
 		return error;
 	render_perf_add(RENDER_PERF_ACQUIRE, mark);
 
-	/* The frame's commands. */
+	/* The image's command buffer, made at its first frame. */
 	mark = render_now_us();
-	renderer->operation = "vkResetCommandBuffer";
-	error = vkResetCommandBuffer(renderer->command, 0U);
-	if (error != VK_SUCCESS)
-		return error;
+	target = &renderer->targets[image];
+	if (target->command == VK_NULL_HANDLE) {
+		memset(&allocate, 0, sizeof(allocate));
+		allocate.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+		allocate.commandPool = renderer->pool;
+		allocate.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+		allocate.commandBufferCount = 1U;
+		renderer->operation = "vkAllocateCommandBuffers";
+		error = vkAllocateCommandBuffers(renderer->device, &allocate, &target->command);
+		if (error != VK_SUCCESS)
+			return error;
+		target->recorded = 0;
+	}
 
-	/* Records the frame and closes the recording. */
-	render_record(renderer, image, vertex_count, render_theme(window)->background);
-	renderer->operation = "vkEndCommandBuffer";
-	error = vkEndCommandBuffer(renderer->command);
-	if (error != VK_SUCCESS)
-		return error;
+	/*
+	 * Records the frame and closes the recording, unless the image's
+	 * recording draws the same: the vertices are rewritten in place, so a
+	 * recording of the same count and background is submitted again as it
+	 * is (each Begin and End is a round trip to the GPU's driver).  The
+	 * first frame's recording moves the atlas too, and is not kept.
+	 */
+	ground = render_theme(window)->background;
+	if (!target->recorded || target->vertex_count != vertex_count || target->ground != ground) {
+		kept = render_atlas_ready;
+		render_record(renderer, target->command, image, vertex_count, ground);
+		renderer->operation = "vkEndCommandBuffer";
+		error = vkEndCommandBuffer(target->command);
+		if (error != VK_SUCCESS)
+			return error;
+		target->vertex_count = vertex_count;
+		target->ground = ground;
+		target->recorded = kept;
+	}
 
 	/* The frame's fence starts unsignalled. */
 	renderer->operation = "vkResetFences";
@@ -303,7 +329,7 @@ terminal_renderer_draw(
 	submit.pWaitSemaphores = &renderer->acquired;
 	submit.pWaitDstStageMask = &stage;
 	submit.commandBufferCount = 1U;
-	submit.pCommandBuffers = &renderer->command;
+	submit.pCommandBuffers = &target->command;
 	submit.signalSemaphoreCount = 1U;
 	submit.pSignalSemaphores = &renderer->targets[image].rendered;
 	mark = render_now_us();
@@ -704,8 +730,10 @@ render_targets_free(
 {
 	uint32_t index;
 
-	/* Each image's semaphore, framebuffer and view, where made. */
+	/* Each image's command buffer, semaphore, framebuffer and view, where made. */
 	for (index = 0U; renderer->targets != NULL && index < renderer->count; index++) {
+		if (renderer->targets[index].command != VK_NULL_HANDLE)
+			vkFreeCommandBuffers(renderer->device, renderer->pool, 1U, &renderer->targets[index].command);
 		if (renderer->targets[index].rendered != VK_NULL_HANDLE)
 			vkDestroySemaphore(renderer->device, renderer->targets[index].rendered, NULL);
 		if (renderer->targets[index].framebuffer != VK_NULL_HANDLE)
@@ -726,29 +754,17 @@ render_commands(
 	struct terminal_renderer *renderer)
 {
 	VkCommandPoolCreateInfo pool;
-	VkCommandBufferAllocateInfo command;
 	VkFenceCreateInfo fence;
 	VkSemaphoreCreateInfo semaphore;
 	VkResult error;
 
-	/* A pool whose one buffer is reset every frame. */
+	/* A pool whose buffers (one an image, made by the draw) are reset when recorded again. */
 	memset(&pool, 0, sizeof(pool));
 	pool.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 	pool.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 	pool.queueFamilyIndex = renderer->family;
 	renderer->operation = "vkCreateCommandPool";
 	error = vkCreateCommandPool(renderer->device, &pool, NULL, &renderer->pool);
-	if (error != VK_SUCCESS)
-		return error;
-
-	/* The buffer. */
-	memset(&command, 0, sizeof(command));
-	command.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-	command.commandPool = renderer->pool;
-	command.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-	command.commandBufferCount = 1U;
-	renderer->operation = "vkAllocateCommandBuffers";
-	error = vkAllocateCommandBuffers(renderer->device, &command, &renderer->command);
 	if (error != VK_SUCCESS)
 		return error;
 
@@ -1714,6 +1730,7 @@ render_quad(
 static void
 render_record(
 	struct terminal_renderer *renderer,
+	VkCommandBuffer command,
 	uint32_t image,
 	uint32_t vertex_count,
 	uint32_t ground)
@@ -1727,11 +1744,11 @@ render_record(
 	VkDeviceSize offset;
 	float size[4];
 
-	/* One submission of this recording. */
+	/* A recording that may be submitted again (Begin resets it: the pool lets its buffers be reset). */
 	memset(&begin, 0, sizeof(begin));
 	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-	(void)vkBeginCommandBuffer(renderer->command, &begin);
+	begin.flags = 0U;
+	(void)vkBeginCommandBuffer(command, &begin);
 
 	/* The first frame moves the atlas from preinitialized (the host's writes kept) to general. */
 	if (render_atlas_ready == 0) {
@@ -1747,7 +1764,7 @@ render_record(
 		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		barrier.subresourceRange.levelCount = 1U;
 		barrier.subresourceRange.layerCount = 1U;
-		vkCmdPipelineBarrier(renderer->command, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0U, 0U, NULL, 0U, NULL, 1U, &barrier);
+		vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0U, 0U, NULL, 0U, NULL, 1U, &barrier);
 		render_atlas_ready = 1;
 	}
 
@@ -1764,7 +1781,7 @@ render_record(
 	pass.renderArea.extent = renderer->extent;
 	pass.clearValueCount = 1U;
 	pass.pClearValues = &clear;
-	vkCmdBeginRenderPass(renderer->command, &pass, VK_SUBPASS_CONTENTS_INLINE);
+	vkCmdBeginRenderPass(command, &pass, VK_SUBPASS_CONTENTS_INLINE);
 
 	/* The whole image is the viewport. */
 	memset(&viewport, 0, sizeof(viewport));
@@ -1773,8 +1790,8 @@ render_record(
 	viewport.maxDepth = 1.0f;
 	memset(&scissor, 0, sizeof(scissor));
 	scissor.extent = renderer->extent;
-	vkCmdSetViewport(renderer->command, 0U, 1U, &viewport);
-	vkCmdSetScissor(renderer->command, 0U, 1U, &scissor);
+	vkCmdSetViewport(command, 0U, 1U, &viewport);
+	vkCmdSetScissor(command, 0U, 1U, &scissor);
 
 	/* The cells: the pipeline, the atlas, the vertices and the window's size. */
 	size[0] = (float)renderer->extent.width;
@@ -1782,15 +1799,15 @@ render_record(
 	size[2] = 0.0f;
 	size[3] = 0.0f;
 	offset = 0U;
-	vkCmdBindPipeline(renderer->command, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->pipeline);
-	vkCmdBindDescriptorSets(renderer->command, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->layout, 0U, 1U, &renderer->set, 0U, NULL);
-	vkCmdBindVertexBuffers(renderer->command, 0U, 1U, &renderer->vertices, &offset);
-	vkCmdPushConstants(renderer->command, renderer->layout, VK_SHADER_STAGE_VERTEX_BIT, 0U, sizeof(size), size);
+	vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->pipeline);
+	vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->layout, 0U, 1U, &renderer->set, 0U, NULL);
+	vkCmdBindVertexBuffers(command, 0U, 1U, &renderer->vertices, &offset);
+	vkCmdPushConstants(command, renderer->layout, VK_SHADER_STAGE_VERTEX_BIT, 0U, sizeof(size), size);
 	if (vertex_count != 0U)
-		vkCmdDraw(renderer->command, vertex_count, 1U, 0U, 0U);
+		vkCmdDraw(command, vertex_count, 1U, 0U, 0U);
 
 	/* The pass ends with the image ready to present. */
-	vkCmdEndRenderPass(renderer->command);
+	vkCmdEndRenderPass(command);
 }
 
 /* Gives the monotonic clock in microseconds for ZTERM PERF (0 when it is not asked for or cannot be read). */
