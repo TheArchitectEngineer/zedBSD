@@ -240,7 +240,7 @@ branch agent/p1-q1550（基 main 5907c9d3b）。ユーザー（2026-10-21、板�
 
 branch agent/p1-q1552（基 main 782f995e4）。ユーザー（2026-10-22）:「すべての操作で16msで描画でき、60fpsになることが目標です。ただ、どうしても難しければ、retireしてかまいません。おそらく限界まで最適化して、1280x720に落とせば、目標は自動的にクリアされています。」
 
-### 計測の道具（plan/ws270/tests/frame-ops/）
+### 計測の道具（plan/ws270/tests/frame-ops/、q1552 の終わりに plan/tools/frame-ops/ へ移した）
 
 - frame-ops.sh（板で root）: Terminal の起動、文字の入力、seq の出力、wheel、title bar と system bar の hover、title bar の drag 往復、App Home 開閉 ×2、Wiseview 開閉 ×2。各段の前に session.log の行数を marks に書く。
 - frame-times.py（host）: KWL LAT の行から frame ごとに pace（acquired→draw）・cpu（draw→recorded）・submit（recorded→queued、GPU）・present・work（draw→submit）・period（前の frame の draw から、100 ms 未満の時）・shown（submit→完了の受け取り）と KWL PASSES の area を表にし、段ごとに work>16・period>16 の数、p50/max、fps を出す。
@@ -305,4 +305,4 @@ branch agent/p1-q1552（基 main 782f995e4）。ユーザー（2026-10-22）:「
 - 効いた変更（大きい順）: glass の map（99b63fedd・1ce1d3758、色ごとの全画面の glass を 1 度描いて読む）と Home・Wiseview の picture（5f0acec60・95db457c4・ce44dafb4）、drag を部分の書き直しに（fdc686ca4）、libvulkan の display の primary の present が acquire を塞がない（1f7936510）、Keiland の 2 frame の重ね（162059da7・c436c7db0）、prewarm（初回の hitch）、Terminal の command buffer の使い回し（bbf66e118）と変わった doubleword だけの upload（6e8ac6693・1e1296a8d）、display の image の先取り（8eeedadb4）、awaited の残りの直し（776007a31）。
 - 効かなかった・外した変更: e7ea311a9（frame callback を give の時に、type の lag 悪化 → 67a35db60）、285e34b07、2d5d13052、5409fbade 単独（後で 776007a31 として戻した）。
 - 残り（目標の 60 fps に届かない操作）: type・output（1 字・1 塊ごとに Terminal → compositor → callback → Terminal の直列で約 20 ms。compositor の 1 frame の固定費 vkQueueSubmit・vkQueuePresentKHR の各 2〜3 ms は P2 へ、main の pass の glass の tick 約 1 ms/pass は未特定）、Terminal の描画の build（変わった行だけ作る案は未実装）。ユーザーの判断（2026-10-22）で文字入力は 60 fps を要しない、最適化はここで終わり。
-- 回帰に使う道具（plan/ws270/tests/frame-ops/、Master の Tools に登録して plan/tools/ へ移す候補）: frame-ops.sh（板で root、Keiland --log-frames・aat-input、操作の段ごとに session.log の行数を marks に）、frame-times.py（marks の段ごとの frame の work・period・fps・lag の表）、key-latency.py（間隔を空けた打鍵 1 字ごとの seat→Terminal→pty→present→adopt→完了の ms）、shot-diff.py（keiland-shot の 2 枚の画素の差、見た目が変わらない確認）。
+- 回帰に使う道具（plan/tools/frame-ops/、Master の Tools への登録は Q1）: frame-ops.sh（板で root、Keiland --log-frames・aat-input、操作の段ごとに session.log の行数を marks に）、frame-times.py（marks の段ごとの frame の work・period・fps・lag の表）、key-latency.py（間隔を空けた打鍵 1 字ごとの seat→Terminal→pty→present→adopt→完了の ms）、shot-diff.py（keiland-shot の 2 枚の画素の差、見た目が変わらない確認）。
