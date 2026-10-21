@@ -1,9 +1,10 @@
 # The Raspberry Pi 5 (BCM2712) image: the Pi 4's arm64 userland on the Pi 5's
 # board support.  The console is the firmware's framebuffer (and the debug
 # UART with CONFIG_RPI5_SERIAL_CONSOLE=y); the root is the SD card's UFS
-# partition.  The GPU, the Wi-Fi, the Bluetooth and the devices behind the
-# RP1 south bridge (USB, Ethernet) are not bound yet, so the login is the
-# text console's and the Pi 4's chip drivers and firmware packages are off.
+# partition.  The USB ports behind the RP1 south bridge take keyboards,
+# hubs and disks.  The GPU, the Wi-Fi, the Bluetooth and the Ethernet are
+# not bound yet, so the login is the text console's and the Pi 4's chip
+# drivers and firmware packages are off.
 ZEDBSD_MENU_VERSION := 3
 ZEDBSD_PLATFORM := rpi5
 ZEDBSD_ARCHITECTURE := arm64
@@ -28,7 +29,7 @@ ZEDBSD_NOCT_ACCEL := n
 CONFIG_DRIVER_NE2000 := n
 CONFIG_DRIVER_PCI_UHCI := n
 CONFIG_DRIVER_PCI_EHCI := n
-CONFIG_DRIVER_PCI_XHCI := n
+CONFIG_DRIVER_PCI_XHCI := y
 CONFIG_DRIVER_PCI_NVME := n
 CONFIG_DRIVER_PCI_AHCI := n
 CONFIG_DRIVER_PCI_INTEL_AX211 := n
@@ -38,11 +39,11 @@ CONFIG_DRIVER_PCI_NVRTX := n
 CONFIG_DRIVER_PCI_AMDRDNA := n
 CONFIG_DRIVER_PCI_HDA := n
 CONFIG_DRIVER_PCI_LPSS_I2C := n
-CONFIG_DRIVER_USB_STORAGE := n
+CONFIG_DRIVER_USB_STORAGE := y
 CONFIG_DRIVER_USB_CDC_NCM := n
 CONFIG_DRIVER_USB_CDC_ECM := n
-CONFIG_DRIVER_USB_HID := n
-CONFIG_DRIVER_USB_HUB := n
+CONFIG_DRIVER_USB_HID := y
+CONFIG_DRIVER_USB_HUB := y
 CONFIG_DRIVER_USB_CCID := n
 CONFIG_DRIVER_USB_BT := n
 CONFIG_DRIVER_USB_RTL8822BU := n

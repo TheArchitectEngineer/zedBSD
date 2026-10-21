@@ -11,7 +11,8 @@
  * The boot handoff names the SD card's controller (the BCM2712's sdio1);
  * the platform publishes the card as the single boot device.  The console
  * is the firmware's framebuffer, and the debug UART when the build asks for
- * it.  The devices behind the RP1 south bridge are not bound here.
+ * it.  The USB ports behind the RP1 south bridge start after the SD card;
+ * a board whose firmware reset RP1's link boots without them.
  */
 
 #include <uapi/errno.h>
@@ -24,12 +25,17 @@
 #include <kern/klog.h>
 #include "drivers/platform/rpi4/rpi4-console.h"
 #include "drivers/platform/rpi4/rpi4-sdhci.h"
+#include "drivers/platform/rpi5/rp1.h"
+#include "drivers/platform/rpi5/rp1-usb.h"
+#include <drivers/usb/usb-hid.h>
 
 /* The firmware's BIOS-style number of the boot disk the handoff names. */
 #define RPI5_BOOT_DISK_ID	0x80U
 
 /* The bytes of one sector of the SD card. */
 #define RPI5_SECTOR_BYTES	512U
+
+static void start_rp1(uint64_t fdt_phys);
 
 /*
  * Publishes the boot devices described by the Raspberry Pi 5 boot handoff.
@@ -44,8 +50,10 @@ kern_platform_init(
 	size_t capacity)
 {
 	const uint64_t *sdhci_object;
+	const uint64_t *fdt_object;
 	struct kern_boot_device *device;
 	uint64_t sdhci_phys;
+	uint64_t fdt_phys;
 	unsigned index;
 	int error;
 
@@ -71,6 +79,12 @@ kern_platform_init(
 		return 0;
 	sdhci_phys = *sdhci_object;
 
+	/* Finds the device tree; zero tells the drivers below that none came. */
+	fdt_object = hal_get_arch_handoff("rpi5.fdt");
+	fdt_phys = 0;
+	if (fdt_object != NULL)
+		fdt_phys = *fdt_object;
+
 	/* Publishes the console as /dev/console's output. */
 	drv_rpi4_console_init();
 
@@ -84,6 +98,9 @@ kern_platform_init(
 		kern_logf("rpi5: SD card unavailable (%d)\n", error);
 		return 0;
 	}
+
+	/* Starts the USB ports behind RP1; without RP1 the boot goes on. */
+	start_rp1(fdt_phys);
 
 	/* Publishes the SD card as the boot device. */
 	device = &devices[0];
@@ -110,7 +127,8 @@ kern_platform_init(
 /*
  * Finishes device discovery once interrupts are enabled.
  *
- * The SD card is published already, and no other device is bound yet.
+ * The SD card is published already; the USB controllers behind RP1 look
+ * at their root ports now.
  */
 void
 kern_platform_refresh_devices(
@@ -119,6 +137,9 @@ kern_platform_refresh_devices(
 {
 	(void)d;
 	(void)n;
+
+	/* Has the USB controllers find their devices. */
+	drv_rp1_usb_refresh();
 }
 
 /*
@@ -129,6 +150,11 @@ kern_platform_input_init(
 	void)
 {
 	int error;
+
+#if CONFIG_DRIVER_USB_HID
+	/* Activates pending USB keyboards and mice after the console claims event0. */
+	drv_usb_hid_input_ready();
+#endif
 
 	/* Starts the serial reader, which a build without the serial console leaves off. */
 	error = drv_rpi4_console_start_input();
@@ -220,4 +246,33 @@ kern_platform_reboot(
 	/* Halts in case the reset request returns. */
 	for (;;)
 		hal_halt();
+}
+
+/*
+ * Finds RP1 and starts the USB controllers behind it.
+ *
+ * A board without RP1, or whose firmware reset the link to it, boots
+ * without them; the reason is in the log.
+ */
+static void
+start_rp1(
+	uint64_t fdt_phys)
+{
+	int error;
+
+	/* Leaves a boot without a device tree alone. */
+	if (fdt_phys == 0)
+		return;
+
+	/* Finds RP1 as the firmware left it. */
+	error = drv_rp1_init(fdt_phys);
+	if (error != 0) {
+		kern_logf("rpi5: RP1 unavailable (%d)\n", error);
+		return;
+	}
+
+	/* Starts the USB controllers. */
+	error = drv_rp1_usb_init();
+	if (error != 0)
+		kern_logf("rpi5: USB unavailable (%d)\n", error);
 }
