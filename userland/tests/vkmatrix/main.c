@@ -175,7 +175,8 @@ enum vkmatrix_sop_form {
 	SOP_SQUARED,
 	SOP_TIMES_ALPHA,
 	SOP_MULTIPLY_ADD,
-	SOP_PLACE
+	SOP_PLACE,
+	SOP_PUSH
 };
 
 /* What one pipeline is built from. */
@@ -467,6 +468,8 @@ static const struct vkmatrix_sop_probe sop_probes[] = {
 	{ "sop-ta", vkmatrix_sopta_frag, sizeof(vkmatrix_sopta_frag), SOP_TIMES_ALPHA, -1 },
 	{ "sop-mad", vkmatrix_sopmad_frag, sizeof(vkmatrix_sopmad_frag), SOP_MULTIPLY_ADD, -1 },
 	{ "sop-xy01", vkmatrix_sopxy01_frag, sizeof(vkmatrix_sopxy01_frag), SOP_PLACE, -1 },
+	{ "sop-xyzw-over", vkmatrix_sopxyzw_frag, sizeof(vkmatrix_sopxyzw_frag), SOP_PLACE, 0 },
+	{ "sop-push-over", vkmatrix_soppush_frag, sizeof(vkmatrix_soppush_frag), SOP_PUSH, 0 },
 	{ "sop-over", vkmatrix_texture_frag, sizeof(vkmatrix_texture_frag), SOP_SAMPLE, 0 },
 	{ "sop-add", vkmatrix_texture_frag, sizeof(vkmatrix_texture_frag), SOP_SAMPLE, 1 },
 	{ "sop-alpha", vkmatrix_texture_frag, sizeof(vkmatrix_texture_frag), SOP_SAMPLE, 2 },
@@ -559,6 +562,8 @@ static const struct vkmatrix_case cases[] = {
 	{ "sop-ta", case_sop },
 	{ "sop-mad", case_sop },
 	{ "sop-xy01", case_sop },
+	{ "sop-xyzw-over", case_sop },
+	{ "sop-push-over", case_sop },
 	{ "sop-over", case_sop },
 	{ "sop-add", case_sop },
 	{ "sop-alpha", case_sop },
@@ -5707,8 +5712,9 @@ vkmatrix_cache_end(
  * sop-* (q1548): a 4x4 texture of sixteen colours and alphas drawn
  * (nearest) on a 32x32 quad over the cleared colour, in the case's form
  * of the colour output and its blend; each texel's square is the colour
- * worked out here.  sop-xy01 only makes its pipeline (its colour is the
- * varying across the quad, which is not worked out here).
+ * worked out here.  sop-xy01, sop-xyzw-over and sop-push-over only make
+ * their pipelines (their colours, the varying across the quad and a push
+ * constant, are not drawn here).
  */
 static VkResult
 case_sop(
@@ -5753,7 +5759,7 @@ case_sop(
 	if (status != VK_SUCCESS)
 		return status;
 
-	/* The pipeline: the textured quad's, or the place's for sop-xy01. */
+	/* The pipeline: the textured quad's, or the place's for the ones only made. */
 	memset(&shape, 0, sizeof(shape));
 	shape.vertex = vkmatrix_texture_vert;
 	shape.vertex_size = sizeof(vkmatrix_texture_vert);
@@ -5763,11 +5769,15 @@ case_sop(
 	shape.texture = 1;
 	shape.attachment = blend;
 	shape.constants = sop_constants;
-	if (probe->form == SOP_PLACE) {
+	if (probe->form == SOP_PLACE || probe->form == SOP_PUSH) {
 		shape.vertex = vkmatrix_uniform_vert;
 		shape.vertex_size = sizeof(vkmatrix_uniform_vert);
 		shape.layout = VKMATRIX_POSITION;
 		shape.texture = 0;
+	}
+	if (probe->form == SOP_PUSH) {
+		shape.push_size = 16;
+		shape.push_stages = VK_SHADER_STAGE_FRAGMENT_BIT;
 	}
 
 	status = vkmatrix_pipeline(run, &shape, &pipeline);
@@ -5784,7 +5794,7 @@ case_sop(
 	vkmatrix_begin(run, 0, sop_clear);
 
 	/* The quad, each texel's square its colour blended over the cleared one. */
-	if (probe->form != SOP_PLACE) {
+	if (probe->form != SOP_PLACE && probe->form != SOP_PUSH) {
 		vkmatrix_bind(run, pipeline);
 		vkCmdBindDescriptorSets(run->command, VK_PIPELINE_BIND_POINT_GRAPHICS, run->layouts[pipeline], 0, 1, &run->textures[0].set, 0, NULL);
 		first = vkmatrix_texture_quad(run, 16.0f, 16.0f, 48.0f, 48.0f);

@@ -15,7 +15,7 @@ SHADERS = ["push4.vert", "push4.frag", "push32.vert", "push32.frag", "push128.ve
            "batch.vert", "batch.frag", "texture.vert", "texture.frag", "immediate.frag", "alu.frag", "alu4.frag", "mul4.frag", "rcp.frag",
            "uniform.vert", "uniform.frag", "alupix.frag", "alusq.frag", "alusq32.frag", "flatblend.frag",
            "sopr000.frag", "sop0g00.frag", "sop00b0.frag", "sop000a.frag", "soprrrr.frag", "sopabgr.frag", "sopr111.frag",
-           "sopinv.frag", "sophalf.frag", "sopsq.frag", "sopta.frag", "sopmad.frag", "sopxy01.frag"]
+           "sopinv.frag", "sophalf.frag", "sopsq.frag", "sopta.frag", "sopmad.frag", "sopxy01.frag", "sopxyzw.frag", "soppush.frag"]
 
 
 def compile_shader(source):
