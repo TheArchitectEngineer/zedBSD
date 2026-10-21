@@ -43,14 +43,16 @@
 #define VF2_GPU_CORE_RESET	22U
 
 /*
- * The core clock's source and rate: PLL2 divided by three.
+ * The core clock's source and rate: PLL2, divided by two (594 MHz) or by
+ * three (396 MHz, POWERVR_VF2_CORE_594 0).
  *
  * Values referenced:
  * StarFive Linux JH7110_VisionFive2_6.12.y_devel 4cecf169f38e
  * drivers/gpu/drm/img/img-rogue/services/system/rogue/sf_7110/sysconfig.h
- * (RGX_STARFIVE_7100_CORE_CLOCK_SPEED_BIN2, 396 MHz, the rate the vendor
- * kernel runs every board at); StarFive JH7110 TRM Preliminary V2,
- * Table 2-53 Clock GPU Root (PLL2 as selector 0).
+ * (RGX_STARFIVE_7100_CORE_CLOCK_SPEED 594 MHz, the vendor kernel's rate
+ * unless the device tree has the 1.25 GHz operating point, whose binned
+ * parts take RGX_STARFIVE_7100_CORE_CLOCK_SPEED_BIN2 396 MHz); StarFive
+ * JH7110 TRM Preliminary V2, Table 2-53 Clock GPU Root (PLL2 as selector 0).
  */
 #define VF2_GPU_ROOT_CLOCK	3U
 #define VF2_GPU_ROOT_PLL	2U
@@ -59,10 +61,12 @@
  * MHz (PLL2 divided by two; RGX_STARFIVE_7100_CORE_CLOCK_SPEED, used
  * unless the device tree has /opp-table-0/opp-1250000000) instead of
  * the 396 MHz of the binned parts.  The firmware is told the rate the
- * clock reads back.
+ * clock reads back.  594 MHz is the default since q1541 (2026-10-21): the
+ * vendor's Linux on the same board runs it, and the board ran vkmatrix and
+ * the desktop at it without a lockup (d78); 0 keeps 396 MHz.
  */
 #ifndef POWERVR_VF2_CORE_594
-#define POWERVR_VF2_CORE_594	0
+#define POWERVR_VF2_CORE_594	1
 #endif
 #define VF2_GPU_CORE_RATE	(POWERVR_VF2_CORE_594 ? 594000000ULL : 396000000ULL)
 
