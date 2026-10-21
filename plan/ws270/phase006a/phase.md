@@ -442,3 +442,6 @@ Keiland が使い、vkmatrix 15/15・gpu-selftest 13/13 で確かめていない
   - p010 は 0 failed。
   - desktop の config で VF2 の vmunix は rc 0、warning 0。
   - 板は未実施（perf-flat・perf-texture、vkmatrix の色の試験）。
+- P2 q1536-i02（4a1c53e4b・06f2bcf9f、373365bb9 で merge）: depth を使わない draw で tri merge を止める（Mesa と同じ）、blend 無しの時の色の clamp を外す（pack が飽和する）→ push4.frag 24→16 op、texture.frag 33→25 op、Keiland quad.frag 640→520 byte。板は未確認。
+- P1 q1537（9b9bf968b の数え、3402d837e の不透明の内側を blend 無しで描く、merge 済み）: 板と PNG の比べは未確認。
+- d41（373365bb9 の kernel）: run.sh が 500 s で止まり、その後 2 回電源を入れ直しても SSH に戻らない（2026-10-21 10:4x）。原因は未確認（kernel か SD か）。
