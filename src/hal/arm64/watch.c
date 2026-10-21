@@ -40,13 +40,14 @@
 
 #include <hal/hal.h>
 #include "asm.h"
+#include "bsp.h"
 #include "defs.h"
 #include "percpu.h"
 #include "space.h"
 #include "watch.h"
-#include "bsp-rpi4/cons.h"
-#include "bsp-rpi4/font.h"
-#include "bsp-rpi4/framebuffer.h"
+#include "bsp-rpi-common/cons.h"
+#include "bsp-rpi-common/font.h"
+#include "bsp-rpi-common/framebuffer.h"
 
 /* How long a CPU may go without its tick before it counts as stopped, in seconds. */
 #define WATCH_STALL_SECONDS 2U
@@ -70,9 +71,10 @@
 /* How many return addresses a CPU records of its own call chain. */
 #define WATCH_CHAIN_DEPTH 6U
 
-/* The BCM2711 compositor (HVS): its registers, its display-list memory and its size in words. */
-#define WATCH_HVS_BASE 0xfe400000U
-#define WATCH_HVS_WINDOW 0x8000U
+/*
+ * The BCM2711 compositor (HVS) the board maps (arm64_bsp_watch_compositor()):
+ * its display-list register, its display-list memory and its size in words.
+ */
 #define WATCH_HVS_DISPLIST0 0x20U
 #define WATCH_HVS_DLIST 0x4000U
 #define WATCH_HVS_DLIST_WORDS 2048U
@@ -241,31 +243,14 @@ arm64_watch_init(
 	void)
 {
 	uint64_t frequency;
-	void *window;
-	int error;
 
 	/* Reads the counter's frequency, which turns seconds into counter ticks. */
 	__asm__ volatile("mrs %0, cntfrq_el0" : "=r"(frequency));
 	if (frequency == 0)
 		return;
 
-#if defined(HAL_BOARD_RPI5)
-	/*
-	 * The Pi 5's compositor is elsewhere and laid out differently, and the
-	 * Pi 4's address is RAM there: the report stays on the framebuffer.
-	 */
-	(void)window;
-	(void)error;
-#else
-	/* Maps the compositor's registers and display-list memory, uncached. */
-	window = NULL;
-	error = hal_space_map_device(WATCH_HVS_BASE,
-				     WATCH_HVS_WINDOW,
-				     HAL_SPACE_READ | HAL_SPACE_WRITE | HAL_SPACE_NOCACHE | HAL_SPACE_DEVICE,
-				     &window);
-	if (error == HAL_OK)
-		watch_hvs = (volatile uint32_t *)window;
-#endif
+	/* Maps the compositor the board has, whose display list the report is written into. */
+	watch_hvs = arm64_bsp_watch_compositor();
 
 	/* The thresholds come last: a nonzero frequency turns the watch on. */
 	watch_stall_ticks = frequency * WATCH_STALL_SECONDS;
@@ -1103,7 +1088,7 @@ report_show(
 	watch_last_report = now;
 
 	/* The firmware's framebuffer when no display driver owns the screen. */
-	suspended = rpi4_cons_output_suspended();
+	suspended = rpi_cons_output_suspended();
 	if (!suspended || watch_hvs == NULL) {
 		draw_cells();
 		return;
@@ -1226,9 +1211,9 @@ draw_plane(
 
 	/* Every pixel row of every text line. */
 	for (line = 0; line < WATCH_LINES; line++) {
-		for (glyph_row = 0; glyph_row < RPI4_FONT_HEIGHT; glyph_row++) {
+		for (glyph_row = 0; glyph_row < RPI_FONT_HEIGHT; glyph_row++) {
 			/* The row on the screen, and in the plane when the plane covers it. */
-			screen_y = WATCH_ORIGIN_Y + line * RPI4_FONT_HEIGHT + glyph_row;
+			screen_y = WATCH_ORIGIN_Y + line * RPI_FONT_HEIGHT + glyph_row;
 			if (screen_y < plane->y)
 				continue;
 			local_y = screen_y - plane->y;
@@ -1249,7 +1234,7 @@ draw_plane(
 						character = ' ';
 					}
 				}
-				glyph = &rpi4_font8x16[((unsigned)(unsigned char)character) * RPI4_FONT_HEIGHT];
+				glyph = &rpi_font8x16[((unsigned)(unsigned char)character) * RPI_FONT_HEIGHT];
 				for (bit = 0; bit < 8U; bit++) {
 					screen_x = WATCH_ORIGIN_X + column * 8U + bit;
 					if (screen_x < plane->x)
@@ -1303,7 +1288,7 @@ draw_cells(
 					character = ' ';
 				}
 			}
-			rpi4_framebuffer_cell(row, column, character, WATCH_CELL_ATTRIBUTE);
+			rpi_framebuffer_cell(row, column, character, WATCH_CELL_ATTRIBUTE);
 		}
 	}
 }

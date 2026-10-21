@@ -77,9 +77,13 @@ reserve_range(uint64_t base, uint64_t size)
 void
 arm64_page_init(void)
 {
-	const struct rpi4_fdt_info *info = rpi4_boot_info();
-	uint64_t top = 0;
+	const struct rpi_fdt_info *info;
+	uint64_t top;
 	unsigned i;
+
+	/* Finds the top of RAM the device tree lists. */
+	info = rpi_boot_info();
+	top = 0;
 	for (i = 0; i < info->memory_count; i++) {
 		uint64_t end = info->memory[i].base + info->memory[i].size;
 		if (end > top) top = end;
@@ -87,7 +91,7 @@ arm64_page_init(void)
 	/* An unpatched standalone DTB has a zero-sized memory node in QEMU. */
 	if (top == 0) {
 		top = 2ULL * 1024ULL * 1024ULL * 1024ULL;
-		hal_puts("RPI4 FDT memory unavailable; QEMU 2 GiB fallback\n");
+		hal_puts(ARM64_BOARD_TAG " FDT memory unavailable; QEMU 2 GiB fallback\n");
 	}
 	if (top > ARM64_MAX_PHYS) top = ARM64_MAX_PHYS;
 	phys_pages = (uint32_t)(top / ARM64_PAGE_SIZE);
@@ -101,7 +105,7 @@ arm64_page_init(void)
 	reserve_range(0, 0x100000);
 	reserve_range(arm64_direct_to_phys(__kernel_vma_start),
 	    (uintptr_t)(__kernel_vma_end - __kernel_vma_start));
-	reserve_range(rpi4_boot_fdt_phys(), info->totalsize);
+	reserve_range(rpi_boot_fdt_phys(), info->totalsize);
 	for (i = 0; i < info->reserved_count; i++)
 		reserve_range(info->reserved[i].base, info->reserved[i].size);
 

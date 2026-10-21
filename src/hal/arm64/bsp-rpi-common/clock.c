@@ -6,13 +6,15 @@
  */
 
 /*
- * The Raspberry Pi 4 scheduling tick and counter, from the generic timer.
+ * The Raspberry Pi scheduling tick and counter, from the generic timer.
  */
 
 #include <hal/hal.h>
 #include "../asm.h"
+#include "../defs.h"
 #include "../percpu.h"
 #include "../watch.h"
+#include "clock.h"
 #include "gic.h"
 
 /* The private interrupt of each CPU's physical timer (CNTP). */
@@ -36,17 +38,23 @@ static void set_cval(uint64_t value);
  * 30; the boot CPU also reads the counter's frequency.
  */
 void
-rpi4_timer_init(
+rpi_timer_init(
 	void)
 {
 	struct arm64_percpu *cpu;
 
-	/* The boot CPU reads the frequency and derives the tick's length. */
+	/* Finds the calling CPU's record, which holds its deadline. */
 	cpu = arm64_percpu_current();
+
+	/* The boot CPU reads the frequency and derives the tick's length. */
 	if (cpu->logical_id == 0) {
 		__asm__ volatile("mrs %0, cntfrq_el0" : "=r"(timer_frequency));
+
+		/* A timer that does not count cannot tick. */
 		if (timer_frequency == 0)
 			HAL_FATAL("zero AArch64 timer frequency");
+
+		/* The counter ticks of one scheduling tick, at least one. */
 		timer_interval = timer_frequency / HAL_TIMER_FREQUENCY;
 		if (timer_interval == 0)
 			timer_interval = 1;
@@ -58,7 +66,7 @@ rpi4_timer_init(
 
 	/* Enables the timer and its interrupt on this CPU. */
 	__asm__ volatile("msr cntp_ctl_el0, %0\n\tisb" : : "r"((uint64_t)1) : "memory");
-	rpi4_gic_unmask(ARM64_CNTP_INTID);
+	rpi_gic_unmask(ARM64_CNTP_INTID);
 }
 
 /*
@@ -68,7 +76,7 @@ rpi4_timer_init(
  * came late does not make the following ones come early.
  */
 void
-rpi4_timer_interrupt(
+rpi_timer_interrupt(
 	hal_irq_ack_t acknowledge)
 {
 	struct arm64_percpu *cpu;
@@ -106,9 +114,11 @@ hal_rtc_read_counter(
 	uint64_t *value,
 	uint64_t *freq_hz)
 {
-	/* Refuses a caller with nowhere to put the answer, or a timer not set up. */
+	/* Refuses a caller with nowhere to put the answer. */
 	if (value == NULL || freq_hz == NULL)
 		return false;
+
+	/* Refuses before the timer is set up. */
 	if (timer_frequency == 0U)
 		return false;
 
@@ -127,7 +137,7 @@ bool
 hal_rtc_read_epoch_time(
 	uint64_t *unix_seconds)
 {
-	(void)unix_seconds;
+	UNUSED_PARAMETER(unix_seconds);
 
 	/* Failed: there is no clock to read. */
 	return false;

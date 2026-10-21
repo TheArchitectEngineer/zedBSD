@@ -27,7 +27,7 @@
 
 #include <hal/hal.h>
 
-#include "hal/arm64/bsp-rpi4/cons.h"
+#include "hal/arm64/bsp-rpi-common/cons.h"
 #include <kern/clock.h>
 #include <kern/device-io.h>
 #include <kern/sched.h>
@@ -310,7 +310,7 @@ console_suspend(
 	void)
 {
 	/* Stops only the early console's pixel writes under its own output lock. */
-	rpi4_cons_suspend_output();
+	rpi_cons_suspend_output();
 
 	/* Succeeded: subsequent text cannot paint into graphics-owned scanout. */
 	return;
@@ -322,7 +322,7 @@ console_resume(
 	void)
 {
 	/* Repaints the retained early console without discarding newer log messages. */
-	rpi4_cons_resume_output();
+	rpi_cons_resume_output();
 
 	/* Succeeded: serial and framebuffer output both show the console again. */
 	return;

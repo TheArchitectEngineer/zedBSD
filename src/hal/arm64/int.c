@@ -4,17 +4,17 @@
 #include "task.h"
 #include "irq.h"
 #include "watch.h"
-#include "bsp-rpi4/gic.h"
+#include "bsp-rpi-common/clock.h"
+#include "bsp-rpi-common/gic.h"
 #include <uapi/errno.h>
 
 extern char arm64_vectors[];
-void rpi4_timer_init(void);
 
 void arm64_int_init(void)
 {
 	__asm__ volatile("msr vbar_el1, %0\n\tisb"::"r"(arm64_vectors):"memory");
-	rpi4_gic_init();
-	rpi4_timer_init();
+	rpi_gic_init();
+	rpi_timer_init();
 	hal_puts("ARM64 EXCEPTION PASS\nARM64 IRQ READY\n");
 }
 
@@ -32,7 +32,7 @@ arm64_int_init_secondary(
 	__asm__ volatile("msr vbar_el1, %0\n\tisb" : : "r"(arm64_vectors) : "memory");
 
 	/* Sets up this CPU's private lines and CPU interface. */
-	rpi4_gic_init_cpu();
+	rpi_gic_init_cpu();
 }
 
 /* Maps an exception class onto the generic cause, mode and address. */
@@ -162,7 +162,7 @@ arm64_irq_handler(
 		arm64_task_enter_user_frame(f);
 
 	/* Acknowledges the interrupt and reads its number. */
-	iar = rpi4_gic_ack();
+	iar = rpi_gic_ack();
 	id = iar & 0x3ffU;
 
 	/* Tells the stall watch what this CPU serves now. */

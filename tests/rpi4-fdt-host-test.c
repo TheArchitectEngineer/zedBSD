@@ -20,7 +20,7 @@
 #include <string.h>
 
 #include <hal/hal.h>
-#include "hal/arm64/bsp-rpi4/fdt.h"
+#include "hal/arm64/bsp-rpi-common/fdt.h"
 #include <drivers/generic/fdt.h>
 #include "drivers/platform/rpi4/rpi4-board.h"
 #include <uapi/errno.h>
@@ -99,7 +99,7 @@ main(
 {
 	static unsigned char blob[BLOB_LIMIT];
 	static const unsigned long long release[4] = {0xd8, 0xe0, 0xe8, 0xf0};
-	struct rpi4_fdt_info info;
+	struct rpi_fdt_info info;
 	FILE *file;
 	size_t length;
 	unsigned index;
@@ -122,15 +122,15 @@ main(
 	fclose(file);
 
 	/* Parses it as the HAL does at boot. */
-	error = rpi4_fdt_parse(blob, length, &info);
+	error = rpi_fdt_parse(blob, length, &info);
 	if (error != 0) {
-		fprintf(stderr, "rpi4-fdt-host-test: FAIL: parse: %s\n", rpi4_fdt_error(error));
+		fprintf(stderr, "rpi4-fdt-host-test: FAIL: parse: %s\n", rpi_fdt_error(error));
 		return 1;
 	}
 
 	/* The peripherals the boot maps. */
 	failures = 0;
-	failures += check(info.compatible_rpi4, "the tree is a Raspberry Pi 4's");
+	failures += check(info.compatible_board, "the tree is a Raspberry Pi 4's");
 	failures += check(info.uart_base != 0, "the PL011 is found");
 	failures += check(info.mailbox_base != 0, "the mailbox is found");
 	failures += check(info.gic_dist_base != 0, "the GIC distributor is found");

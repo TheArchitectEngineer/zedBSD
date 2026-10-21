@@ -109,19 +109,27 @@ void *arm64_phys_to_direct(uintptr_t p) { return (void *)(ARM64_DIRECT_BASE+p); 
 static uint64_t table_desc(const void *table)
 { return arm64_direct_to_phys(table)|PTE_VALID|PTE_TABLE; }
 
-#if !defined(HAL_BOARD_RPI5)
-static void
-map_device_block(uint64_t physical)
+/*
+ * Maps the 2 MiB block that holds a peripheral as Device-nGnRE memory, in
+ * the 3-4 GiB window of the tables arm64_space_init() builds.
+ *
+ * Only a board whose peripherals lie in that window calls it, from
+ * arm64_bsp_map_devices(); an address outside the window is left alone.
+ */
+void
+arm64_space_map_device_block(
+	uint64_t physical)
 {
 	unsigned index;
+
+	/* An address outside the window has no entry here. */
 	if (physical < 0xc0000000ULL || physical >= 0x100000000ULL)
 		return;
+
+	/* Replaces the window's 2 MiB block with a device block, never executable. */
 	index = (unsigned)((physical - 0xc0000000ULL) >> 21);
-	system_kernel_l2_high[index] =
-	    (physical & ~0x1fffffULL) | BLOCK_FLAGS | PTE_ATTR(1) |
-	    PTE_PXN | PTE_UXN;
+	system_kernel_l2_high[index] = (physical & ~0x1fffffULL) | BLOCK_FLAGS | PTE_ATTR(1) | PTE_PXN | PTE_UXN;
 }
-#endif
 
 /*
  * Builds the kernel's final tables and switches the boot CPU to them.
@@ -135,7 +143,6 @@ void
 arm64_space_init(
 	void)
 {
-	const struct rpi4_fdt_info *info;
 	uint64_t total;
 	uint64_t physical;
 	uint64_t flags;
@@ -187,19 +194,8 @@ arm64_space_init(
 			system_kernel_l2_high[index] = physical | BLOCK_FLAGS | PTE_PXN | PTE_UXN;
 	}
 
-	/* Maps the peripherals the HAL itself uses. */
-	info = rpi4_boot_info();
-#if defined(HAL_BOARD_RPI5)
-	/* The Pi 5's peripherals lie above 4 GiB, in level-2 tables of their own. */
-	(void)info;
-	rpi5_space_map_devices();
-#else
-	map_device_block(info->uart_base);
-	map_device_block(info->mailbox_base);
-	map_device_block(info->gic_dist_base);
-	map_device_block(info->gic_cpu_base);
-	map_device_block(info->sdhci_base);
-#endif
+	/* Maps the peripherals the HAL itself uses, where the board has them. */
+	arm64_bsp_map_devices();
 
 	/* Splits the first GiB into 2 MiB blocks. */
 	system_kernel_l1[0] = table_desc(system_kernel_l2_low);
@@ -1173,13 +1169,13 @@ range_touches_ram(
 	uint64_t physical,
 	uint64_t size)
 {
-	const struct rpi4_fdt_info *info;
+	const struct rpi_fdt_info *info;
 	uint64_t ram_end;
 	uint64_t end;
 	unsigned i;
 
 	/* Compares the range with every memory range of the firmware's tree. */
-	info = rpi4_boot_info();
+	info = rpi_boot_info();
 	end = physical + size;
 	for (i = 0; i < info->memory_count; i++) {
 		/* Skips a memory range that ends before the range starts. */
@@ -1205,12 +1201,12 @@ range_is_ram(
 	uint64_t physical,
 	uint64_t size)
 {
-	const struct rpi4_fdt_info *info;
+	const struct rpi_fdt_info *info;
 	uint64_t ram_end;
 	unsigned i;
 
 	/* Looks for a memory range of the firmware's tree that holds it all. */
-	info = rpi4_boot_info();
+	info = rpi_boot_info();
 	for (i = 0; i < info->memory_count; i++) {
 		/* Skips a memory range that starts after the range. */
 		if (info->memory[i].base > physical)

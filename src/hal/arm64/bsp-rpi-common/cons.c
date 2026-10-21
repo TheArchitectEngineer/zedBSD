@@ -1,5 +1,3 @@
-/* -*- mode: c; c-file-style: "linux"; tab-width: 8; -*- */
-
 /*
  * zedBSD
  * Copyright (C) 2026 Awe Morris
@@ -8,7 +6,7 @@
  */
 
 /*
- * The Raspberry Pi 4 early console.
+ * The Raspberry Pi early console.
  *
  * This exists so the HAL and the early part of kernel start-up have
  * somewhere to print. It is output only, and it writes to both the UART
@@ -23,25 +21,29 @@
  * keyboard.
  *
  * The serial line is used only when the build asks for it
- * (CONFIG_RPI4_SERIAL_CONSOLE, off by default: the board's serial port is
- * not used, 2026-10-12 user); otherwise the UART is never set up or
- * written.  While a display driver owns the screen the console does
- * nothing at all: characters are dropped, not kept for later (the same
- * day's user decision), and only the kernel's log keeps them.
+ * (CONFIG_RPI4_SERIAL_CONSOLE or CONFIG_RPI5_SERIAL_CONSOLE, off by
+ * default: the board's serial port is not used, 2026-10-12 user);
+ * otherwise the UART is never set up or written.  While a display driver
+ * owns the screen the console does nothing at all: characters are dropped,
+ * not kept for later (the same day's user decision), and only the kernel's
+ * log keeps them.
  */
 
 #include <hal/hal.h>
-
 #include "../bsp.h"
+#include "../watch.h"
 #include "cons.h"
 #include "framebuffer.h"
 #include "uart.h"
-#include "../watch.h"
 
+/* The console's grid of text cells. */
 #define CONS_COLUMNS	80U
 #define CONS_ROWS	25U
 
-/* Whether the serial line carries the console (CONFIG_RPI4_SERIAL_CONSOLE). */
+/*
+ * Whether the serial line carries the console.  The build defines
+ * RPI4_SERIAL_CONSOLE for either board's serial-console option.
+ */
 #ifdef RPI4_SERIAL_CONSOLE
 #define CONS_SERIAL	1
 #else
@@ -51,15 +53,38 @@
 /* Light grey on black, the default text attribute. */
 #define CONS_ATTRIBUTE	0x07U
 
+/*
+ * One text cell of the console as it should look: a character and its
+ * colour attribute.  The shadow grid keeps every cell, so the screen can
+ * be repainted after scrolling or after a display driver gives it back.
+ */
 struct cell {
 	uint8_t character;
 	uint8_t attribute;
 };
 
+/*
+ * The text of the whole screen.  Written only under the output lock;
+ * blank cells from prekern_bsp_cons_init() on.
+ */
 static struct cell shadow[CONS_ROWS][CONS_COLUMNS];
+
+/* Where the next character goes; changed only under the output lock. */
 static unsigned cursor_row;
 static unsigned cursor_column;
+
+/*
+ * The output lock: nonzero while one CPU renders.  Taken with interrupts
+ * off, so output from an interrupt cannot interleave with a character
+ * half drawn.
+ */
 static volatile unsigned output_lock;
+
+/*
+ * Nonzero while a display driver owns the screen.  Set and cleared under
+ * the output lock with a release, and read without it by the stall watch
+ * and by hal_putc() with an acquire.
+ */
 static int output_suspended;
 
 static bool output_enter(void);
@@ -82,6 +107,7 @@ hal_putc(
 {
 	void (*kernel_output)(int c);
 	bool interrupts_enabled;
+	int suspended;
 
 	/* Keeps the character for a stall report, which shows the log's last lines. */
 	arm64_watch_note_char(character);
@@ -93,13 +119,21 @@ hal_putc(
 		return;
 	}
 
-	/* A screen another driver owns, without the serial line, has nowhere to put it: dropped without the lock. */
-	if (!CONS_SERIAL && __atomic_load_n(&output_suspended, __ATOMIC_ACQUIRE) != 0)
-		return;
+	/*
+	 * A screen another driver owns, without the serial line, has nowhere
+	 * to put the character: it is dropped without taking the lock.
+	 */
+	if (!CONS_SERIAL) {
+		suspended = __atomic_load_n(&output_suspended, __ATOMIC_ACQUIRE);
+		if (suspended != 0)
+			return;
+	}
 
 	/* Serializes character rendering with all console output. */
 	interrupts_enabled = output_enter();
+
 	putc_locked(character);
+
 	output_leave(interrupts_enabled);
 }
 
@@ -110,18 +144,27 @@ hal_putc(
  * release needs; it is opaque to the caller.
  */
 uint32_t
-rpi4_cons_output_begin(
+rpi_cons_output_begin(
 	void)
 {
-	/* Reports the saved interrupt state as the release token. */
-	return output_enter() ? 1U : 0U;
+	bool interrupts_enabled;
+
+	/* Takes the output lock with interrupts off. */
+	interrupts_enabled = output_enter();
+
+	/* Succeeded: the token 1 says interrupts were on. */
+	if (interrupts_enabled)
+		return 1U;
+
+	/* Succeeded: the token 0 says interrupts were off. */
+	return 0U;
 }
 
 /*
  * Releases console-output ownership.
  */
 void
-rpi4_cons_output_end(
+rpi_cons_output_end(
 	uint32_t token)
 {
 	/* Restores the interrupt state the matching acquire saved. */
@@ -129,7 +172,7 @@ rpi4_cons_output_end(
 }
 
 /*
- * Stops and resumes writes to the framebuffer.
+ * Stops writes to the framebuffer.
  *
  * A display driver that takes the hardware calls this so late HAL
  * diagnostics do not corrupt the screen.  From then on the console keeps
@@ -138,14 +181,16 @@ rpi4_cons_output_end(
  * before.
  */
 void
-rpi4_cons_suspend_output(
+rpi_cons_suspend_output(
 	void)
 {
 	bool interrupts_enabled;
 
 	/* Publishes the suspension under the output lock. */
 	interrupts_enabled = output_enter();
+
 	__atomic_store_n(&output_suspended, 1, __ATOMIC_RELEASE);
+
 	output_leave(interrupts_enabled);
 }
 
@@ -153,7 +198,7 @@ rpi4_cons_suspend_output(
  * Restores retained console cells after the display driver gives back scanout.
  */
 void
-rpi4_cons_resume_output(
+rpi_cons_resume_output(
 	void)
 {
 	bool interrupts_enabled;
@@ -179,11 +224,7 @@ rpi4_cons_resume_output(
 	/* Restores the cursor only after its underlying retained cell is visible. */
 	update_cursor_locked();
 
-	/* Releases output ownership after the retained grid and cursor are visible. */
 	output_leave(interrupts_enabled);
-
-	/* Succeeded: framebuffer output is active with the retained console contents. */
-	return;
 }
 
 /*
@@ -191,7 +232,7 @@ rpi4_cons_resume_output(
  * leaves the framebuffer alone.
  */
 int
-rpi4_cons_output_suspended(
+rpi_cons_output_suspended(
 	void)
 {
 	int suspended;
@@ -214,7 +255,7 @@ prekern_bsp_cons_init(
 {
 	/* Brings up the serial line the HAL prints to, when the build uses it. */
 	if (CONS_SERIAL)
-		rpi4_uart_init();
+		rpi_uart_init();
 
 	/* Starts from a known screen and cursor position. */
 	output_lock = 0;
@@ -235,10 +276,12 @@ void
 prekern_bsp_cons_irq_init(
 	void)
 {
-	const struct rpi4_fdt_info *info;
+	const struct rpi_fdt_info *info;
+
+	/* Finds the UART's interrupt in the device tree's record. */
+	info = rpi_boot_info();
 
 	/* Keeps the line quiet until its driver claims it. */
-	info = rpi4_boot_info();
 	if (info != NULL && info->uart_irq != 0)
 		hal_irq_mask((int)info->uart_irq);
 }
@@ -249,6 +292,7 @@ output_enter(
 	void)
 {
 	bool interrupts_enabled;
+	unsigned previous;
 	unsigned tries;
 
 	/* Keeps rendering atomic against interrupt-context output. */
@@ -256,14 +300,21 @@ output_enter(
 
 	/* Spins until this CPU owns the output lock, now and then looking for its own stall. */
 	tries = 0;
-	while (__atomic_exchange_n(&output_lock, 1U, __ATOMIC_ACQUIRE) != 0U) {
+	for (;;) {
+		previous = __atomic_exchange_n(&output_lock, 1U, __ATOMIC_ACQUIRE);
+		if (previous == 0U)
+			break;
+
+		/* Lets the other hardware thread run while the owner renders. */
 		__asm__ volatile("yield" : : : "memory");
+
+		/* Now and then checks whether this CPU itself has stalled. */
 		tries++;
 		if ((tries % ARM64_WATCH_SPIN_INTERVAL) == 0)
 			arm64_watch_self_check();
 	}
 
-	/* Reports the interrupt state the release has to restore. */
+	/* Succeeded: the interrupt state the release has to restore. */
 	return interrupts_enabled;
 }
 
@@ -289,10 +340,16 @@ draw_locked(
 	const struct cell *c;
 
 	/* Leaves the screen alone while another driver owns it. */
-	if (output_suspended || row >= CONS_ROWS || column >= CONS_COLUMNS)
+	if (output_suspended)
 		return;
+
+	/* A cell outside the grid has nothing to paint. */
+	if (row >= CONS_ROWS || column >= CONS_COLUMNS)
+		return;
+
+	/* Paints the cell's character in its attribute. */
 	c = &shadow[row][column];
-	rpi4_framebuffer_cell(row, column, c->character, c->attribute);
+	rpi_framebuffer_cell(row, column, c->character, c->attribute);
 }
 
 /* Draws the cursor at the tracked position. */
@@ -303,7 +360,9 @@ update_cursor_locked(
 	/* Leaves the screen alone while another driver owns it. */
 	if (output_suspended)
 		return;
-	rpi4_framebuffer_cursor(cursor_row, cursor_column, 1);
+
+	/* Draws the cursor under the cell the next character goes to. */
+	rpi_framebuffer_cursor(cursor_row, cursor_column, 1);
 }
 
 /* Fills one row with blanks. */
@@ -387,9 +446,11 @@ static void
 putc_locked(
 	int character)
 {
+	uint8_t stored;
+
 	/* The serial line, when the build uses it, carries every byte, control characters too. */
 	if (CONS_SERIAL)
-		rpi4_uart_putc(character);
+		rpi_uart_putc(character);
 
 	/* A screen another driver owns: the character is dropped, not kept for later. */
 	if (output_suspended)
@@ -400,16 +461,16 @@ putc_locked(
 
 	/* Handles the line and column control characters. */
 	if (character == '\n') {
+		/* A new line moves to the start of the next row. */
 		newline_locked();
 		update_cursor_locked();
 		return;
-	}
-	if (character == '\r') {
+	} else if (character == '\r') {
+		/* A carriage return moves to the start of the row. */
 		cursor_column = 0;
 		update_cursor_locked();
 		return;
-	}
-	if (character == '\b') {
+	} else if (character == '\b') {
 		/* Steps back and erases within the current row only. */
 		if (cursor_column > 0)
 			cursor_column--;
@@ -417,8 +478,7 @@ putc_locked(
 		draw_locked(cursor_row, cursor_column);
 		update_cursor_locked();
 		return;
-	}
-	if (character == '\t') {
+	} else if (character == '\t') {
 		/* Advances to the next eight-column stop. */
 		cursor_column = (cursor_column + 8U) & ~7U;
 
@@ -433,9 +493,13 @@ putc_locked(
 	if (cursor_column >= CONS_COLUMNS)
 		newline_locked();
 
-	/* Stores one printable cell, substituting anything else. */
-	shadow[cursor_row][cursor_column].character =
-	    (uint8_t)(character >= 0x20 && character < 0x7f ? character : '?');
+	/* Keeps a printable character, and substitutes anything else. */
+	stored = '?';
+	if (character >= 0x20 && character < 0x7f)
+		stored = (uint8_t)character;
+
+	/* Stores and paints the cell, then moves past it. */
+	shadow[cursor_row][cursor_column].character = stored;
 	shadow[cursor_row][cursor_column].attribute = CONS_ATTRIBUTE;
 	draw_locked(cursor_row, cursor_column);
 	cursor_column++;

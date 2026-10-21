@@ -6,27 +6,27 @@
  */
 
 /*
- * The Raspberry Pi 4 boot CPU's first C code: from locore.S to the kernel.
+ * The Raspberry Pi boot CPU's first C code: from locore.S to the kernel.
  */
 
 #include <hal/hal.h>
 #include "asm.h"
-#include "defs.h"
-#include "bsp-rpi4/fdt.h"
 #include "bsp.h"
-#include "space.h"
+#include "defs.h"
 #include "int.h"
-#include "task.h"
-#include "bsp-rpi4/framebuffer.h"
-#include "bsp-rpi4/led.h"
 #include "percpu.h"
+#include "space.h"
+#include "task.h"
 #include "watch.h"
+#include "bsp-rpi-common/fdt.h"
+#include "bsp-rpi-common/framebuffer.h"
+#include "bsp-rpi-common/led.h"
 
 /* The most bytes of the firmware's device tree the parser may read. */
-#define RPI4_FDT_READ_LIMIT (2U * 1024U * 1024U)
+#define RPI_FDT_READ_LIMIT (2U * 1024U * 1024U)
 
 /* The RAM locore.S maps for the boot: the first gigabyte. */
-#define RPI5_BOOT_RAM_LIMIT 0x40000000UL
+#define BOOT_RAM_LIMIT 0x40000000UL
 
 /*
  * Brings the boot CPU from locore.S to kernel_entry().
@@ -41,7 +41,8 @@ arm64_cmain(
 	uintptr_t fdt_phys)
 {
 	const void *fdt;
-	struct rpi4_fdt_info info;
+	struct rpi_fdt_info info;
+	uint64_t level;
 	int error;
 	int framebuffer;
 
@@ -50,52 +51,58 @@ arm64_cmain(
 
 	/* Opens the early console and starts counting stages on the LED. */
 	prekern_bsp_cons_init();
-	rpi4_led_init();
-	rpi4_led_stage(1);
+	rpi_led_init();
+	rpi_led_stage(1);
 	hal_puts(ARM64_BOARD_TAG " ENTRY\n");
 
 	/* The kernel runs at EL1; locore.S has left EL2 if it entered there. */
-	if (arm64_current_el() != 1)
+	level = arm64_current_el();
+	if (level != 1)
 		HAL_FATAL("AArch64 kernel did not enter EL1");
 	hal_puts(ARM64_BOARD_TAG " EL1 PASS\n");
 
-	/* Parses the firmware's device tree through the direct map. */
+	/* Requires the firmware's device tree. */
 	if (fdt_phys == 0)
 		HAL_FATAL("missing firmware FDT");
-#if defined(HAL_BOARD_RPI5)
+
 	/* The boot tables map only the first gigabyte of RAM, where the tree must lie. */
-	if (fdt_phys >= RPI5_BOOT_RAM_LIMIT - RPI4_FDT_READ_LIMIT)
+	if (fdt_phys >= BOOT_RAM_LIMIT - RPI_FDT_READ_LIMIT)
 		HAL_FATAL("firmware FDT above the boot map");
-#endif
+
+	/* Parses the tree through the direct map. */
 	fdt = (const void *)(ARM64_DIRECT_BASE + fdt_phys);
-	error = rpi4_fdt_parse(fdt, RPI4_FDT_READ_LIMIT, &info);
+	error = rpi_fdt_parse(fdt, RPI_FDT_READ_LIMIT, &info);
 	if (error != 0) {
-		hal_printf("FDT parse error: %s\n", rpi4_fdt_error(error));
+		hal_printf("FDT parse error: %s\n", rpi_fdt_error(error));
 		HAL_FATAL("invalid firmware FDT");
 	}
+
+	/* Reports the tree and the peripherals it names, and counts the stage. */
 	hal_printf(ARM64_BOARD_TAG " FDT PASS phys=%p size=%u\n", (void *)fdt_phys, info.totalsize);
-	rpi4_led_stage(2);
+	rpi_led_stage(2);
 	hal_printf(ARM64_BOARD_TAG " MMIO uart=%llx gic=%llx/%llx sd=%llx\n",
 		   info.uart_base,
 		   info.gic_dist_base,
 		   info.gic_cpu_base,
 		   info.sdhci_base);
-	rpi4_boot_set_info(&info, fdt_phys);
+
+	/* Keeps the tree's record for the rest of the HAL and the kernel's handoff. */
+	rpi_boot_set_info(&info, fdt_phys);
 
 	/* Fixes the number of CPUs before the kernel can ask for it. */
 	arm64_smp_configure();
 
 	/* Brings up the framebuffer console, or stays on the UART without one. */
-	framebuffer = rpi4_framebuffer_init(info.mailbox_base);
+	framebuffer = rpi_framebuffer_init(info.mailbox_base);
 	if (framebuffer == 0) {
 		hal_puts(ARM64_BOARD_TAG " FRAMEBUFFER PASS\n");
-		rpi4_framebuffer_describe();
-		rpi4_led_stage(3);
-		rpi4_framebuffer_test_pattern();
-		rpi4_framebuffer_describe();
+		rpi_framebuffer_describe();
+		rpi_led_stage(3);
+		rpi_framebuffer_test_pattern();
+		rpi_framebuffer_describe();
 	} else {
 		hal_puts(ARM64_BOARD_TAG " framebuffer unavailable; UART-only console\n");
-		rpi4_led_stage(6);
+		rpi_led_stage(6);
 	}
 
 	/* Sets up memory, the tables, the task switch, interrupts and debug. */
@@ -109,9 +116,9 @@ arm64_cmain(
 	hal_irq_enable();
 
 	/* The LED stays lit once the kernel proper starts. */
-	rpi4_led_stage(4);
-	rpi4_led_set(1);
-	kernel_entry(rpi4_kernel_handoff());
+	rpi_led_stage(4);
+	rpi_led_set(1);
+	kernel_entry(rpi_kernel_handoff());
 
 	/* The kernel never returns; a halt keeps the CPU if it does. */
 	for (;;)

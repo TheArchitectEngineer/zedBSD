@@ -1,6 +1,5 @@
 #include <hal/hal.h>
 #include "asm.h"
-#include "bsp.h"
 #include "watch.h"
 
 void arm64_irq_mask(void) { __asm__ volatile("msr daifset, #2" ::: "memory"); }
@@ -102,51 +101,6 @@ void hal_sync_instruction_stream(void*p,size_t n)
 	__asm__ volatile("dsb ish":::"memory");
 	for(;a<end;a+=line)__asm__ volatile("ic ivau,%0"::"r"(a):"memory");
 	__asm__ volatile("dsb ish\n\tisb":::"memory");
-}
-#if defined(HAL_BOARD_RPI5)
-/*
- * Resets the board: the Pi 5's secure firmware owns the reset.
- */
-void
-hal_reset(
-	void)
-{
-	/* Asks the firmware through PSCI; it does not return. */
-	rpi5_psci_system_reset();
-}
-#else
-void hal_reset(void)
-{
-	volatile uint8_t *pm=(volatile uint8_t *)(0xffff000000000000ULL+0xfe100000ULL);
-	arm64_irq_mask();hal_mmio_write32(pm+0x24,0x5a00000aU);
-	hal_mmio_write32(pm+0x1c,0x5a000020U);for(;;)arm64_wfi();
-}
-#endif
-
-/*
- * Stops the calling CPU for good when the board is to be powered off.
- *
- * The board has no power switch the kernel can reach, so the CPU halts
- * with interrupts off; the stall watch is told that its silence is meant.
- */
-void
-hal_poweroff(
-	void)
-{
-#if defined(HAL_BOARD_RPI5)
-	/* The Pi 5's secure firmware can turn the board off; it does not return. */
-	rpi5_psci_system_off();
-#endif
-
-	/* Nothing wakes the CPU into the kernel again. */
-	arm64_irq_mask();
-
-	/* The other CPUs do not report this one as stalled. */
-	arm64_watch_park();
-
-	/* Halts for ever. */
-	for (;;)
-		arm64_wfi();
 }
 
 /*
