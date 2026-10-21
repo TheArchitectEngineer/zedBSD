@@ -142,7 +142,16 @@ static void watch_thread(void *argument);
  * struct rogue_fwif_osinit: the hardware and firmware identities at 40
  * and 56, each its layout and BVNC) and pvr_rogue_fwif_check.h.
  */
-#define DUMP_TRACE_LOG_TYPE		(POWERVR_RENDER_CHECK_FULL_TRACE || POWERVR_FIRMWARE_BOOT_TRACE ? 0x80007fffU : 0x7fffU)
+/*
+ * The trace's groups the firmware logs in normal running (q1541): every
+ * one but the debug group, as before.  Each entry costs the firmware's
+ * processor time on every job (about ninety entries a render), so a
+ * measurement build may set fewer (0 logs nothing).
+ */
+#ifndef POWERVR_FIRMWARE_TRACE_GROUPS
+#define POWERVR_FIRMWARE_TRACE_GROUPS	0x7fffU
+#endif
+#define DUMP_TRACE_LOG_TYPE		(POWERVR_RENDER_CHECK_FULL_TRACE || POWERVR_FIRMWARE_BOOT_TRACE ? 0x80007fffU : POWERVR_FIRMWARE_TRACE_GROUPS)
 #define BOOT_TRACE_WORDS		2048U
 #define DUMP_TRACE_POINTER		8U
 #define DUMP_ASSERT_PATH		24U
