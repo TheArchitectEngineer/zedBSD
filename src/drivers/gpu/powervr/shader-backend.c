@@ -146,6 +146,16 @@ struct backend_loop {
 #define POWERVR_SHADER_PAIR		2
 #endif
 
+/*
+ * A test switch (q1539, 0 as built): every float add, multiply and
+ * multiply-add in the low precision forms (Mesa 26.2.5 pco_isa.py
+ * fadd_lp, fmul_lp, lp_fma; pco uses none), to see on the board whether
+ * they issue faster.  Results lose precision; for timing only.
+ */
+#ifndef POWERVR_SHADER_LOW_PRECISION_TRIAL
+#define POWERVR_SHADER_LOW_PRECISION_TRIAL	0
+#endif
+
 /* How far ahead pair_operations looks for an operation to move up beside another. */
 #define PAIR_WINDOW			12U
 
@@ -168,6 +178,8 @@ static void note_reference(struct shader_backend *backend, unsigned value, unsig
 static int allocate(const struct powervr_ir_shader *shader, struct shader_backend *backend);
 static void compact_temporaries(struct powervr_shader_program *program, struct shader_backend *backend);
 static void propagate_copies(struct powervr_ir_shader *shader);
+static void simplify_products(struct powervr_ir_shader *shader);
+static void hoist_addends(struct powervr_ir_shader *shader, uint32_t stage);
 static void alias_shared(const struct powervr_ir_shader *shader, const struct powervr_shader_program *program, struct shader_backend *backend);
 static void fuse_multiply_adds(struct powervr_ir_shader *shader, uint32_t stage);
 static int fuse_multiply_add(struct powervr_ir_shader *shader, unsigned at, unsigned which);
@@ -470,11 +482,13 @@ powervr_shader_compile_inline(
 		return EINVAL;
 
 	/* Reads copies' sources in place of the copies, fuses products into the adds of them, and drops the writes nothing reads. */
+	simplify_products(shader);
 	propagate_copies(shader);
 	remove_dead_writes(shader);
 	fuse_multiply_adds(shader, stage);
 	propagate_copies(shader);
 	remove_dead_writes(shader);
+	hoist_addends(shader, stage);
 
 	/* Selects and allocates the machine operations. */
 	workspace->backend.inline_values = shared_values;
@@ -926,6 +940,137 @@ alias_shared(
 	}
 }
 
+/* The most constants hoist_addends puts in values. */
+#define HOISTED_MAX			4U
+
+/*
+ * In a fragment shader without structure, gives a constant that two or
+ * more multiply-adds add a value of its own, written once at the start
+ * (q1539: a constant addend is a shared register, which the third source
+ * of a group's second phase cannot name, so such multiply-adds did not
+ * pair; a temporary can).  The core's free constants stay as they are.
+ */
+static void
+hoist_addends(
+	struct powervr_ir_shader *shader,
+	uint32_t stage)
+{
+	struct powervr_ir_instruction *instruction;
+	uint32_t constants[HOISTED_MAX];
+	unsigned values[HOISTED_MAX];
+	unsigned count;
+	unsigned uses;
+	unsigned at;
+	unsigned other;
+	unsigned index;
+	unsigned known;
+	uint32_t bits;
+
+	/* Fragment shaders without structure, with room for the moves. */
+	if (stage != POWERVR_SHADER_FRAGMENT)
+		return;
+	for (at = 0; at < shader->instruction_count; at++) {
+		if (shader->instructions[at].opcode < POWERVR_IR_MOVE)
+			return;
+	}
+
+	/* The constants added by two or more multiply-adds. */
+	count = 0;
+	for (at = 0; at < shader->instruction_count && count < HOISTED_MAX; at++) {
+		instruction = &shader->instructions[at];
+		if (instruction->opcode != POWERVR_IR_FLOAT_MULTIPLY_ADD || instruction->source[2].kind != POWERVR_IR_OPERAND_CONSTANT)
+			continue;
+		bits = instruction->source[2].constant;
+		if (free_constant(bits) || instruction->source[2].modifiers != 0)
+			continue;
+		known = 0;
+		for (index = 0; index < count; index++) {
+			if (constants[index] == bits)
+				known = 1;
+		}
+		if (known)
+			continue;
+		uses = 0;
+		for (other = at; other < shader->instruction_count; other++) {
+			if (shader->instructions[other].opcode == POWERVR_IR_FLOAT_MULTIPLY_ADD &&
+			    shader->instructions[other].source[2].kind == POWERVR_IR_OPERAND_CONSTANT &&
+			    shader->instructions[other].source[2].modifiers == 0 && shader->instructions[other].source[2].constant == bits)
+				uses++;
+		}
+		if (uses < 2 || shader->value_count >= POWERVR_IR_VALUES || shader->instruction_count + count + 1U > POWERVR_IR_INSTRUCTIONS)
+			continue;
+		constants[count] = bits;
+		values[count] = shader->value_count;
+		shader->values[shader->value_count].width = 1;
+		shader->value_count++;
+		count++;
+	}
+	if (count == 0)
+		return;
+
+	/* The addends read the values. */
+	for (at = 0; at < shader->instruction_count; at++) {
+		instruction = &shader->instructions[at];
+		if (instruction->opcode != POWERVR_IR_FLOAT_MULTIPLY_ADD || instruction->source[2].kind != POWERVR_IR_OPERAND_CONSTANT ||
+		    instruction->source[2].modifiers != 0)
+			continue;
+		for (index = 0; index < count; index++) {
+			if (instruction->source[2].constant == constants[index]) {
+				instruction->source[2].kind = POWERVR_IR_OPERAND_VALUE;
+				instruction->source[2].value = (uint16_t)values[index];
+				instruction->source[2].component = 0;
+				instruction->source[2].constant = 0;
+			}
+		}
+	}
+
+	/* The moves that write them, first. */
+	for (at = shader->instruction_count; at > 0; at--)
+		shader->instructions[at - 1U + count] = shader->instructions[at - 1U];
+	for (index = 0; index < count; index++) {
+		instruction = &shader->instructions[index];
+		*instruction = (struct powervr_ir_instruction){ 0 };
+		instruction->opcode = POWERVR_IR_MOVE;
+		instruction->destination = (uint16_t)values[index];
+		instruction->source[0].kind = POWERVR_IR_OPERAND_CONSTANT;
+		instruction->source[0].constant = constants[index];
+	}
+	shader->instruction_count += count;
+}
+
+/*
+ * Makes each unsaturated float multiply by the constant 1.0 a copy of
+ * its other source (exact; q1539: a division of 1.0 was a reciprocal and
+ * a multiply by 1.0).  The copy goes when copies are read in place.
+ */
+static void
+simplify_products(
+	struct powervr_ir_shader *shader)
+{
+	struct powervr_ir_instruction *instruction;
+	unsigned at;
+	unsigned one;
+
+	/* Each multiply with a plain 1.0 source. */
+	for (at = 0; at < shader->instruction_count; at++) {
+		instruction = &shader->instructions[at];
+		if (instruction->opcode != POWERVR_IR_FLOAT_MULTIPLY || instruction->flags != 0)
+			continue;
+		for (one = 0; one < 2U; one++) {
+			if (instruction->source[one].kind == POWERVR_IR_OPERAND_CONSTANT && instruction->source[one].modifiers == 0 &&
+			    instruction->source[one].constant == 0x3f800000U)
+				break;
+		}
+		if (one == 2U)
+			continue;
+
+		/* A copy of the other source, its modifiers kept. */
+		instruction->opcode = POWERVR_IR_MOVE;
+		instruction->source[0] = instruction->source[1U - one];
+		instruction->source[1].kind = POWERVR_IR_OPERAND_NONE;
+	}
+}
+
 /* Reports whether a constant is one the core holds in a register (zero, one, 1.0 and all ones), so reading it costs nothing. */
 static int
 free_constant(
@@ -1179,6 +1324,7 @@ pair_operations(
 	unsigned next;
 	unsigned between;
 	unsigned found;
+	unsigned swap;
 	size_t size;
 
 	/* Programs without branches only (moving operations keeps no branch targets). */
@@ -1191,8 +1337,15 @@ pair_operations(
 		if (!pairable(first) || first->end != 0)
 			continue;
 		found = backend->operation_count;
+		swap = 0;
 		for (next = at + 1U; next < backend->operation_count && next <= at + PAIR_WINDOW; next++) {
-			/* One that pairs, commutes with the first and with all between, and whose pair encodes. */
+			/*
+			 * One that pairs, commutes with the first and with all
+			 * between, and whose pair encodes, the first in phase 0 or,
+			 * when that does not encode and neither reads the other's
+			 * result, in phase 1 (an addend in a shared register is
+			 * named only in phase 0).
+			 */
 			if (pairable(&backend->operations[next]) && pairs_with(first, &backend->operations[next])) {
 				for (between = at + 1U; between < next; between++) {
 					if (!commutes(&backend->operations[between], &backend->operations[next]))
@@ -1201,6 +1354,12 @@ pair_operations(
 				if (between == next && pair_group(first, &backend->operations[next], &group) == 0 &&
 				    powervr_usc_group_size(&group, &size) == 0) {
 					found = next;
+					break;
+				}
+				if (between == next && pairs_with(&backend->operations[next], first) &&
+				    pair_group(&backend->operations[next], first, &group) == 0 && powervr_usc_group_size(&group, &size) == 0) {
+					found = next;
+					swap = 1;
 					break;
 				}
 			}
@@ -1212,12 +1371,17 @@ pair_operations(
 		if (found == backend->operation_count)
 			continue;
 
-		/* The second moves up beside the first, which is marked paired. */
+		/* The second moves up beside the first (before it when swapped), and the earlier of the two is marked paired. */
 		moved = backend->operations[found];
 		for (next = found; next > at + 1U; next--)
 			backend->operations[next] = backend->operations[next - 1U];
 		backend->operations[at + 1U] = moved;
-		first->pair = 1;
+		if (swap != 0) {
+			moved = backend->operations[at];
+			backend->operations[at] = backend->operations[at + 1U];
+			backend->operations[at + 1U] = moved;
+		}
+		backend->operations[at].pair = 1;
 		at++;
 	}
 }
@@ -3130,7 +3294,9 @@ shader_backend_group(
 		group_register(&group->source[1], operation->source[1]);
 		group_register(&group->destination[0], operation->destination[0]);
 		group->internal[4] = SELECT_FT0;
-		error = powervr_usc_float_pair(operation->kind == MACHINE_FLOAT_ADD ? POWERVR_USC_FLOAT_ADD : POWERVR_USC_FLOAT_MULTIPLY, operation->saturate, negate_0, absolute_0, absolute_1, operation->variant, &group->operation[POWERVR_USC_PHASE_0]);
+		error = powervr_usc_float_pair(operation->kind == MACHINE_FLOAT_ADD ? (POWERVR_SHADER_LOW_PRECISION_TRIAL ? POWERVR_USC_FLOAT_ADD_LOW_PRECISION : POWERVR_USC_FLOAT_ADD) :
+					       (POWERVR_SHADER_LOW_PRECISION_TRIAL ? POWERVR_USC_FLOAT_MULTIPLY_LOW_PRECISION : POWERVR_USC_FLOAT_MULTIPLY),
+					       operation->saturate, negate_0, absolute_0, absolute_1, operation->variant, &group->operation[POWERVR_USC_PHASE_0]);
 		break;
 	case MACHINE_FLOAT_MULTIPLY_ADD:
 		group->unit = POWERVR_USC_UNIT_MAIN;
@@ -3140,7 +3306,7 @@ shader_backend_group(
 		group_register(&group->source[2], operation->source[2]);
 		group_register(&group->destination[0], operation->destination[0]);
 		group->internal[4] = SELECT_FT0;
-		error = powervr_usc_float_multiply_add(operation->saturate, negate_0, absolute_0, negate_1, absolute_1, negate_2, absolute_2, 0, 0, &group->operation[POWERVR_USC_PHASE_0]);
+		error = powervr_usc_float_multiply_add(operation->saturate, negate_0, absolute_0, negate_1, absolute_1, negate_2, absolute_2, 0, POWERVR_SHADER_LOW_PRECISION_TRIAL, &group->operation[POWERVR_USC_PHASE_0]);
 		break;
 	case MACHINE_SINGLE:
 		group->unit = POWERVR_USC_UNIT_MAIN;
