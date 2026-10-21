@@ -157,6 +157,7 @@ static void alias_shared(const struct powervr_ir_shader *shader, const struct po
 static void fuse_multiply_adds(struct powervr_ir_shader *shader, uint32_t stage);
 static int fuse_multiply_add(struct powervr_ir_shader *shader, unsigned at, unsigned which);
 static int fuse_clamp(struct powervr_ir_shader *shader, unsigned at);
+static int fuse_saturate(struct powervr_ir_shader *shader, unsigned at);
 static int clamp_bound(const struct powervr_ir_instruction *instruction, unsigned opcode, uint32_t bound, unsigned *other);
 static unsigned value_references(const struct powervr_ir_shader *shader, unsigned value, unsigned *writes, unsigned *writer);
 static int free_constant(uint32_t bits);
@@ -445,7 +446,9 @@ powervr_shader_compile_inline(
 
 	/* Reads copies' sources in place of the copies, fuses products into the adds of them, and drops the writes nothing reads. */
 	propagate_copies(shader);
+	remove_dead_writes(shader);
 	fuse_multiply_adds(shader, stage);
+	propagate_copies(shader);
 	remove_dead_writes(shader);
 
 	/* Selects and allocates the machine operations. */
@@ -581,6 +584,70 @@ fuse_multiply_adds(
 		if (!fuse_multiply_add(shader, at, 0))
 			(void)fuse_multiply_add(shader, at, 1);
 	}
+
+	/* Then each saturate of a lone result, by the operation that computes it. */
+	for (at = 0; at < shader->instruction_count; at++)
+		(void)fuse_saturate(shader, at);
+}
+
+/*
+ * Makes the saturated add of zero of a float add, multiply or
+ * multiply-add's result that nothing else reads a plain copy, and has
+ * that operation saturate instead (q1539: the blend's clamp of a
+ * computed colour was an operation a channel), when it is written once,
+ * in the same run of instructions with its sources unchanged in between.
+ * The copy goes when copies are read in place again.
+ */
+static int
+fuse_saturate(
+	struct powervr_ir_shader *shader,
+	unsigned at)
+{
+	struct powervr_ir_instruction *add;
+	struct powervr_ir_instruction *producer;
+	const struct powervr_ir_instruction *between;
+	const struct powervr_ir_operand *term;
+	unsigned writes;
+	unsigned writer;
+	unsigned next;
+	unsigned source;
+
+	/* A saturated add of zero to a plain one-word value, written once and read only here. */
+	add = &shader->instructions[at];
+	if (add->opcode != POWERVR_IR_FLOAT_ADD || add->flags != POWERVR_IR_SATURATE)
+		return 0;
+	if (add->source[1].kind != POWERVR_IR_OPERAND_CONSTANT || add->source[1].modifiers != 0 || add->source[1].constant != 0)
+		return 0;
+	term = &add->source[0];
+	if (term->kind != POWERVR_IR_OPERAND_VALUE || term->modifiers != 0 || term->value == 0 || term->value >= shader->value_count ||
+	    shader->values[term->value].width != 1)
+		return 0;
+	if (value_references(shader, term->value, &writes, &writer) != 1 || writes != 1 || writer >= at)
+		return 0;
+
+	/* By an unsaturated float add, multiply or multiply-add. */
+	producer = &shader->instructions[writer];
+	if ((producer->opcode != POWERVR_IR_FLOAT_ADD && producer->opcode != POWERVR_IR_FLOAT_MULTIPLY &&
+	     producer->opcode != POWERVR_IR_FLOAT_MULTIPLY_ADD) || producer->flags != 0)
+		return 0;
+
+	/* No structure between, and the producer's sources unchanged. */
+	for (next = writer + 1U; next < at; next++) {
+		between = &shader->instructions[next];
+		if (between->opcode < POWERVR_IR_MOVE)
+			return 0;
+		for (source = 0; source < 3; source++) {
+			if (producer->source[source].kind == POWERVR_IR_OPERAND_VALUE && between->destination == producer->source[source].value)
+				return 0;
+		}
+	}
+
+	/* The producer saturates; the add copies its result. */
+	producer->flags = POWERVR_IR_SATURATE;
+	add->opcode = POWERVR_IR_MOVE;
+	add->flags = 0;
+	add->source[1].kind = POWERVR_IR_OPERAND_NONE;
+	return 1;
 }
 
 /*
