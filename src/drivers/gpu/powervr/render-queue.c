@@ -222,6 +222,7 @@ static uint64_t register_log_kicks;
 
 static uint64_t timing_ticks[POWERVR_TIMING_PARTS];
 static uint64_t timing_count[POWERVR_TIMING_PARTS];
+static uint64_t timing_most[POWERVR_TIMING_PARTS];
 static uint64_t timing_reported;
 
 /* The rate of the timing's clock (powervr_timing_now), in ticks a second; 0 before its first reading. */
@@ -1497,15 +1498,17 @@ powervr_timing_add(
 	if (!POWERVR_SUBMIT_TIMING)
 		return;
 
-	/* The part's time and count, on the timing's clock. */
+	/* The part's time, count and longest, on the timing's clock. */
 	now = powervr_timing_now();
 	timing_ticks[part] += now - start;
 	timing_count[part]++;
+	if (now - start > timing_most[part])
+		timing_most[part] = now - start;
 }
 
 /*
  * Says the submission timing's sums once TIMING_REPORT_MS passed since
- * the last report: for each part its count and its average and total in
+ * the last report: for each part its count, its average and total and its longest in
  * microseconds, then clears them.  Only the timing's thread calls it.
  */
 static void
@@ -1535,11 +1538,12 @@ timing_report(
 
 		/* Its count, average and total. */
 		average = timing_us(timing_ticks[part]) / timing_count[part];
-		kern_logf("powervr: timing: %s: %llu, average %llu us, total %llu us\n", names[part],
+		kern_logf("powervr: timing: %s: %llu, average %llu us, total %llu us, longest %llu us\n", names[part],
 			  (unsigned long long)timing_count[part], (unsigned long long)average,
-			  (unsigned long long)timing_us(timing_ticks[part]));
+			  (unsigned long long)timing_us(timing_ticks[part]), (unsigned long long)timing_us(timing_most[part]));
 		timing_ticks[part] = 0;
 		timing_count[part] = 0;
+		timing_most[part] = 0;
 	}
 
 	/* No interrupt came and no wait slept: nothing to say of the wakeups. */
