@@ -649,6 +649,30 @@ powervr_render_kick_build(
 }
 
 /*
+ * A test switch (q1536): the temporaries a draw's fragment task asks for,
+ * at least this many (0: the program's own).  32 or 48 measures how much
+ * the number of instances the shading cluster keeps resident matters.
+ */
+#ifndef POWERVR_FRAGMENT_TEMPS_FORCE
+#define POWERVR_FRAGMENT_TEMPS_FORCE	0
+#endif
+
+/* Builds a draw's fragment task program: powervr_render_kick_build with the test switch's temporaries. */
+int
+powervr_render_fragment_kick_build(
+	uint32_t usc_offset,
+	unsigned temps,
+	struct powervr_render_kick *kick)
+{
+	/* The program's temporaries, raised by the test switch. */
+#if POWERVR_FRAGMENT_TEMPS_FORCE > 0
+	if (temps < POWERVR_FRAGMENT_TEMPS_FORCE)
+		temps = POWERVR_FRAGMENT_TEMPS_FORCE;
+#endif
+	return powervr_render_kick_build(usc_offset, temps, kick);
+}
+
+/*
  * Packs the fragment command's three background words (the pds_bgnd
  * and pds_pr_bgnd registers): the task program's and the shared
  * register program's code, the shared register program's data, and the
