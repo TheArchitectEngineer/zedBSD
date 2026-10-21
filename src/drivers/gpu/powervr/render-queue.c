@@ -143,6 +143,9 @@ static void handle_notice(void *context, uint32_t type, const struct powervr_obj
 #define TRACE_SPIN_MS			200U
 #define TRACE_PARTS			3U
 
+/* The small job (counted from the first) whose firmware trace the job trace dumps, once, for sfdec.py. */
+#define TRACE_DUMP_JOB			40U
+
 /*
  * The submission timing: each part's summed ticks and count since the
  * last report, and when that was.
@@ -161,6 +164,10 @@ static uint64_t trace_most[2][TRACE_PARTS];
 static uint64_t trace_jobs[2];
 static uint64_t trace_rate;
 static uint64_t trace_reported;
+
+/* The small jobs the job trace saw, and whether the next kick's firmware trace is marked to be dumped. */
+static uint64_t trace_small_jobs;
+static bool trace_dumping;
 
 static uint64_t timing_ticks[POWERVR_TIMING_PARTS];
 static uint64_t timing_count[POWERVR_TIMING_PARTS];
@@ -562,10 +569,18 @@ powervr_session_kick_render(
 	uint64_t trace_started;
 	int error;
 
-	/* When the kick began, for the job trace. */
+	/* When the kick began, for the job trace; one small job's firmware trace is marked to be dumped. */
 	trace_started = 0;
-	if (POWERVR_JOB_TRACE)
+	if (POWERVR_JOB_TRACE) {
 		(void)hal_rtc_read_counter(&trace_started, &trace_rate);
+		if (session->trace_pixels < TRACE_SMALL_PIXELS) {
+			trace_small_jobs++;
+			if (trace_small_jobs == TRACE_DUMP_JOB) {
+				powervr_firmware_trace_mark(render->core);
+				trace_dumping = true;
+			}
+		}
+	}
 
 	/* Refuses a session without a render context and a half that does not exist. */
 	context = session->render_context;
@@ -654,9 +669,15 @@ powervr_session_kick_render(
 	marks->geometry_value = request.geometry_value;
 	marks->fragment_value = request.fragment_value;
 
-	/* The job trace waits for it and times its parts. */
-	if (POWERVR_JOB_TRACE)
+	/* The job trace waits for it and times its parts; the marked job's firmware trace is dumped. */
+	if (POWERVR_JOB_TRACE) {
 		job_trace(context, marks, session->trace_pixels, trace_started);
+		if (trace_dumping) {
+			kern_logf("powervr: job trace: the firmware trace of small job %llu follows\n", (unsigned long long)trace_small_jobs);
+			powervr_firmware_dump(render->core, POWERVR_KERNEL_CCB_SLOTS);
+			trace_dumping = false;
+		}
+	}
 
 	/* Succeeded: the render is kicked. */
 	return 0;
