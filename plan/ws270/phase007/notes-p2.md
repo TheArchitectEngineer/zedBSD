@@ -330,3 +330,9 @@ branch agent/p2-q1553（基 main 782f995e4）。
 - d111（Q1、4c636fe1d の q1553t）: vkmatrix 105/109。load-1080-32・copy-1080・perf-load-part・perf-load-small が vkMapMemory -5。desktop の Terminal も起動しなかった。clear は平均 0.7〜0.8 ms（longest 5 ms）に下がった。
   - 原因: render_map が host の view の大きさに run の大きさ（1/4 増しの物はそれだけ大きい）を返し、libvulkan の token の検査（view_bytes と一致）で拒否された。
 - af7aa8c46: render_map は buffer の大きさ（page に切り上げ）を返す。
+- d114（Q1、af7aa8c46 まで ＋ P1 330767e34、timing 1）:
+  - vkmatrix 109/109（d111 の 4 つも PASS）。frame-ops: launch 44 fps（7/45）、type 47（8/13）、output 47。
+  - Wiseview を開いた所で GPU の lockup → HWR 1 回 → device lost が 1 回あった。同じ kernel でさらに 3 回流して 0（4 回中 1 回）。
+  - ユーザー「GPUが固まったのは、チップにヒートシンクもファンもつけてなかったので、熱で止まったかも。再現しないなら無視していいよ。」→ e20e1f5bf は外さない。
+  - 切り分け用の kernel は作ったが未使用: build/q1553c（e20e1f5bf を抜く）、q1553a（4c636fe1d を抜く）、q1553b（fd6732b70・4182ac109 を抜く）。
+- 0f10702f0: HWR の dump の firmware の trace を最新の 1024 語に（ring 全体の 1500 行が kernel log の 32 KB を押し出し、HWR の前の行が消えていた）。
