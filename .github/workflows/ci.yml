@@ -61,6 +61,14 @@ jobs:
           mkdir -p artifacts
           gzip -9 -c build/arm64/hdd-image.img > artifacts/zedbsd-rpi4-server.img.gz
 
+      - name: Build vf2-keiland
+        run: |
+          cp config/ci/config-visionfive2-keiland.mk config.mk
+          yes | make firmware-licenses
+          make -j4 native-image
+          mkdir -p artifacts
+          gzip -9 -c build/riscv64/native.img > artifacts/zedbsd-vf2.img.gz
+
       - name: Build pc98
         run: |
           cp config/ci/config-pc98.mk config.mk
@@ -124,6 +132,7 @@ jobs:
             | Intel Server  | x86_64  | UEFI           | `zedbsd-intel-server.img.gz` | USB image                                    |
             | Pi4 Keiland   | Arm64   | Raspberry Pi 4 | `zedbsd-rpi4.img.gz`         | SD image                                     |
             | Pi4 Server    | Arm64   | Raspberry Pi 4 | `zedbsd-rpi4-server.img.gz`  | SD image                                     |
+            | VF2 Keiland   | RISC-V  | VisionFive 2   | `zedbsd-vf2.img.gz`          | SD image                                     |
             | NEC PC-9800   | i386    | NEC PC-9800    | `zedbsd-pc98.img.gz`         | CF image                                     |
             | QEMU Win64    | x86_64  | Windows        | `zedbsd-qemu.zip`            | NVMe image with QEMU binary. Run `boot.bat`. |
 
@@ -132,5 +141,6 @@ jobs:
             artifacts/zedbsd-intel-server.img.gz
             artifacts/zedbsd-rpi4.img.gz
             artifacts/zedbsd-rpi4-server.img.gz
+            artifacts/zedbsd-vf2.img.gz
             artifacts/zedbsd-pc98.img.gz
             artifacts/zedbsd-qemu.zip
