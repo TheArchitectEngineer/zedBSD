@@ -1263,6 +1263,7 @@ job_draws(
 	uint64_t usc_total;
 	uint32_t draw_count;
 	uint32_t index;
+	uint64_t part_started;
 	uint32_t code;
 	uint32_t slot;
 	uint32_t words;
@@ -1308,6 +1309,7 @@ job_draws(
 	general_bytes = (uint64_t)draw_count * DRAW_SLOT + sets_bytes + 16U;
 	pds_bytes = (uint64_t)draw_count * DRAW_SLOT;
 	usc_total = usc_bytes + 16U;
+	part_started = powervr_timing_now();
 	fits = job_draw_memory_fits(memory, general_bytes, pds_bytes, usc_total);
 	if (fits) {
 		job_buffer_clear(memory->draw_general->buffer);
@@ -1320,13 +1322,17 @@ job_draws(
 			return error;
 	}
 
-	/* Each pipeline's two shaders' code, once. */
+	/* Each pipeline's two shaders' code, once (the memory's and the code's times apart, q1541). */
+	powervr_timing_add(POWERVR_TIMING_DRAW_MEMORY, part_started);
+	part_started = powervr_timing_now();
 	for (code = 0; code < memory->code_pipeline_count; code++) {
 		graphics = memory->code_pipelines[code];
 		usc_place = memory->code_pipeline_places[code];
 		put_bytes(memory->draw_usc, (uint32_t)usc_place, graphics->vertex_code, graphics->vertex.length);
 		put_bytes(memory->draw_usc, (uint32_t)(usc_place + ((graphics->vertex.length + 15U) & ~(size_t)15U)), graphics->fragment_code, graphics->fragment.length);
 	}
+
+	powervr_timing_add(POWERVR_TIMING_DRAW_CODE, part_started);
 
 	/* Each draw in order, its stream after the one before, its code where its pipeline's is. */
 	*stream_words = 0;
