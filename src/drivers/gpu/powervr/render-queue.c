@@ -42,6 +42,7 @@
 #include <kern/waitq.h>
 #include <uapi/errno.h>
 #include <uapi/gpu.h>
+#include <hal/hal.h>
 
 #include "drivers/gpu/powervr/render-private.h"
 #include "drivers/gpu/powervr/fixed-area.h"
@@ -125,17 +126,49 @@ static void handle_notice(void *context, uint32_t type, const struct powervr_obj
 #define TIMING_REPORT_MS		5000U
 
 /*
+ * The job trace (ws270-p007, q1541): with POWERVR_JOB_TRACE 1 every render
+ * kick waits, spinning on the fine counter (hal_rtc_read_counter), for its
+ * geometry's and its fragment's timeline values, and the times from the
+ * kick's start to its commands sent, to the TA's end and to the 3D's end
+ * are summed for small jobs (a render area of less than TRACE_SMALL_PIXELS)
+ * and the rest, said every TRACE_REPORT_MS.  The submission is synchronous
+ * then: a measurement build, not a release one.  TRACE_SPIN_MS bounds the
+ * wait.
+ */
+#ifndef POWERVR_JOB_TRACE
+#define POWERVR_JOB_TRACE		1
+#endif
+#define TRACE_SMALL_PIXELS		(1920ULL * 1080ULL / 4ULL)
+#define TRACE_REPORT_MS			2000U
+#define TRACE_SPIN_MS			200U
+#define TRACE_PARTS			3U
+
+/*
  * The submission timing: each part's summed ticks and count since the
  * last report, and when that was.
  *
  * Only a diagnostic: parts added by sessions at the same time may race
  * on a sum and lose an addition, which a report's averages tolerate.
  */
+/*
+ * The job trace's sums in counter ticks, for the small jobs and the rest
+ * (index 0 and 1), each part (sent, TA, 3D) and its largest, the jobs
+ * counted, the counter's rate and when it last said them.  Only kicks
+ * write them, under the core's lock.
+ */
+static uint64_t trace_sums[2][TRACE_PARTS];
+static uint64_t trace_most[2][TRACE_PARTS];
+static uint64_t trace_jobs[2];
+static uint64_t trace_rate;
+static uint64_t trace_reported;
+
 static uint64_t timing_ticks[POWERVR_TIMING_PARTS];
 static uint64_t timing_count[POWERVR_TIMING_PARTS];
 static uint64_t timing_reported;
 
 static uint64_t timing_us(uint64_t ticks);
+static void job_trace(struct powervr_render_context *context, const struct powervr_render_marks *marks, uint64_t pixels, uint64_t started);
+static void job_trace_report(void);
 static uint64_t ms_ticks(unsigned milliseconds);
 static unsigned is_faulted(struct powervr_render *render);
 
@@ -523,7 +556,13 @@ powervr_session_kick_render(
 	uint32_t command[POWERVR_COMMAND_WORDS];
 	uint32_t cleanup;
 	uint32_t bytes;
+	uint64_t trace_started;
 	int error;
+
+	/* When the kick began, for the job trace. */
+	trace_started = 0;
+	if (POWERVR_JOB_TRACE)
+		(void)hal_rtc_read_counter(&trace_started, &trace_rate);
 
 	/* Refuses a session without a render context and a half that does not exist. */
 	context = session->render_context;
@@ -607,10 +646,16 @@ powervr_session_kick_render(
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the render is the firmware's; its end is the fragment's value. */
+	/* The render is the firmware's; its end is the fragment's value. */
 	context->fragment.submitted = request.fragment_value;
 	marks->geometry_value = request.geometry_value;
 	marks->fragment_value = request.fragment_value;
+
+	/* The job trace waits for it and times its parts. */
+	if (POWERVR_JOB_TRACE)
+		job_trace(context, marks, session->trace_pixels, trace_started);
+
+	/* Succeeded: the render is kicked. */
 	return 0;
 }
 
@@ -2664,4 +2709,116 @@ timing_us(
 {
 	/* Succeeded: the whole seconds and the rest, each scaled. */
 	return ticks / KERN_CLOCK_HZ * 1000000U + ticks % KERN_CLOCK_HZ * 1000000U / KERN_CLOCK_HZ;
+}
+
+/*
+ * Waits for a kicked render's geometry and fragment timeline values,
+ * spinning on the fine counter, and adds the times from the kick's start
+ * to its commands sent (now), to the TA's end and to the 3D's end to the
+ * job trace; says the sums when it is time.
+ */
+static void
+job_trace(
+	struct powervr_render_context *context,
+	const struct powervr_render_marks *marks,
+	uint64_t pixels,
+	uint64_t started)
+{
+	uint64_t times[TRACE_PARTS];
+	uint64_t now;
+	uint64_t rate;
+	uint64_t limit;
+	uint32_t geometry_now;
+	uint32_t fragment_now;
+	unsigned size;
+	unsigned part;
+	bool geometry_done;
+	bool ok;
+
+	/* Without the counter, nothing is traced. */
+	ok = hal_rtc_read_counter(&now, &rate);
+	if (!ok || rate == 0U || started == 0U)
+		return;
+
+	/* The commands sent; then the TA's end and the 3D's end, spinning, bounded. */
+	times[0] = now - started;
+	times[1] = 0;
+	times[2] = 0;
+	limit = now + rate * TRACE_SPIN_MS / 1000U;
+	geometry_done = false;
+	for (;;) {
+		(void)hal_rtc_read_counter(&now, &rate);
+		geometry_now = powervr_object_get32(&context->geometry.timeline, POWERVR_SYNC_ADDRESS);
+		fragment_now = powervr_object_get32(&context->fragment.timeline, POWERVR_SYNC_ADDRESS);
+
+		/* The TA's end, the first time its value is seen. */
+		if (!geometry_done && (int32_t)(geometry_now - marks->geometry_value) >= 0) {
+			times[1] = now - started;
+			geometry_done = true;
+		}
+
+		/* The 3D's end ends the wait. */
+		if ((int32_t)(fragment_now - marks->fragment_value) >= 0) {
+			times[2] = now - started;
+			if (!geometry_done)
+				times[1] = times[2];
+			break;
+		}
+
+		/* Out of time: not counted. */
+		if (now >= limit)
+			return;
+	}
+
+	/* The parts as sent, TA and 3D, into the small jobs' sums or the rest's. */
+	size = 1U;
+	if (pixels < TRACE_SMALL_PIXELS)
+		size = 0U;
+	times[2] -= times[1];
+	times[1] -= times[0];
+	for (part = 0; part < TRACE_PARTS; part++) {
+		trace_sums[size][part] += times[part];
+		if (times[part] > trace_most[size][part])
+			trace_most[size][part] = times[part];
+	}
+	trace_jobs[size]++;
+
+	/* Said when it is time. */
+	if (trace_reported == 0U)
+		trace_reported = now;
+	if (now - trace_reported >= rate * TRACE_REPORT_MS / 1000U) {
+		trace_reported = now;
+		job_trace_report();
+	}
+}
+
+/* Says the job trace's averages and largest in microseconds, small jobs and the rest, then clears them. */
+static void
+job_trace_report(
+	void)
+{
+	static const char *const sizes[2] = { "small", "large" };
+	uint64_t average[TRACE_PARTS];
+	uint64_t most[TRACE_PARTS];
+	unsigned size;
+	unsigned part;
+
+	/* Each size that had jobs. */
+	for (size = 0; size < 2U; size++) {
+		if (trace_jobs[size] == 0U)
+			continue;
+
+		/* Its parts in microseconds. */
+		for (part = 0; part < TRACE_PARTS; part++) {
+			average[part] = trace_sums[size][part] * 1000000U / trace_rate / trace_jobs[size];
+			most[part] = trace_most[size][part] * 1000000U / trace_rate;
+			trace_sums[size][part] = 0;
+			trace_most[size][part] = 0;
+		}
+		kern_logf("powervr: job trace: %s %llu jobs, average sent %llu us, ta %llu us, 3d %llu us (most %llu, %llu, %llu)\n",
+			  sizes[size], (unsigned long long)trace_jobs[size],
+			  (unsigned long long)average[0], (unsigned long long)average[1], (unsigned long long)average[2],
+			  (unsigned long long)most[0], (unsigned long long)most[1], (unsigned long long)most[2]);
+		trace_jobs[size] = 0;
+	}
 }

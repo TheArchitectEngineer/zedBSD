@@ -483,6 +483,7 @@ powervr_render_job_run(
 	 * (the geometry's wait on the data set's previous fragment sync).
 	 */
 	half = powervr_target_take_half(target);
+	session->trace_pixels = (uint64_t)job->area.width * job->area.height;
 	session->noted_target = target;
 	session->noted_half = half;
 	powervr_target_catalogues(target, half, session->noted_catalogues);
