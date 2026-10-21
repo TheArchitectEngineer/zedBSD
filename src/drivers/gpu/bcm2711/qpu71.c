@@ -970,6 +970,8 @@ read_field(
 			return error;
 		read->address = immediate;
 		read->constant = 1;
+
+		/* Succeeded: the source is the small immediate of this index. */
 		return 0;
 	}
 

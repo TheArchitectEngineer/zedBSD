@@ -256,6 +256,16 @@ ARM64_KERNEL_SOURCES += src/drivers/gpu/bcm2711/attach.c \
 	src/drivers/gpu/bcm2711/display-device.c \
 	src/drivers/gpu/bcm2711/display-irq.c
 endif
+# The Raspberry Pi 5's V3D 7.1 shader compiler (ws279-p004): the version-independent compiler files and the 7.1
+# copies of the encoder, lowering, epilogues and scheduler, which take the place of the 4.2 ones.  The switch is
+# defined with the rest of the BCM2712 graphics driver (ws279-p002); until then nothing selects these sources.
+ifeq ($(CONFIG_DRIVER_BCM2712_GPU),y)
+ARM64_KERNEL_SOURCES += $(filter-out $(KERN_GPU_SOURCES),src/drivers/gpu/compiler/spirv.c src/drivers/gpu/compiler/optimize.c src/drivers/gpu/i915/render/codec.c)
+ARM64_KERNEL_SOURCES += src/drivers/gpu/bcm2711/qpu71.c \
+	src/drivers/gpu/bcm2711/shader.c src/drivers/gpu/bcm2711/shader-analyze.c \
+	src/drivers/gpu/bcm2711/shader71-lower.c src/drivers/gpu/bcm2711/shader71-output.c \
+	src/drivers/gpu/bcm2711/shader71-schedule.c
+endif
 # The H.264 decode as Vulkan Video on the V3D device (ws236-p004), with the VideoCore firmware's decoder.
 ifeq ($(CONFIG_DRIVER_BCM2711_GPU)$(CONFIG_DRIVER_BCM2711_VIDEO),yy)
 ARM64_KERNEL_SOURCES += src/drivers/gpu/bcm2711/vulkan-video.c
