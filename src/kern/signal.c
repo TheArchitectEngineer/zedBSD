@@ -37,6 +37,13 @@
 #define SIGNAL_TIMER_COMPLETION_MAX (SIGNAL_QUEUE_MAX + NSIG)
 
 /*
+ * How many words at the stack pointer of a thread killed by a fault are
+ * written with its line: the return addresses saved there tell where the
+ * fault was reached from.
+ */
+#define SIGNAL_FAULT_STACK_WORDS	16U
+
+/*
  * The bytes below the interrupted stack pointer that the user ABI lets a
  * function keep data in without moving the pointer: the System V amd64
  * red zone.  A signal frame pushed on the interrupted stack goes below
@@ -62,6 +69,7 @@ struct signal_frame {
 };
 
 static int signal_valid(int signo);
+static void signal_log_fault_context(const struct process *process, const struct thread *thread);
 static int signal_stop(int s);
 static int signal_ignored_default(int s);
 static int signal_ignored_disposition_locked(const struct process *process, int signo);
@@ -931,13 +939,15 @@ retry:
 		 * with SIGTERM takes the default action too, and says nothing.
 		 */
 		if (signo == SIGSEGV || signo == SIGBUS || signo == SIGILL ||
-		    signo == SIGFPE || signo == SIGTRAP || signo == SIGABRT)
+		    signo == SIGFPE || signo == SIGTRAP || signo == SIGABRT) {
 			kern_logf("kern: pid %ld killed by signal %d "
 				  "(vector %u) at %p, address %p\n",
 				  (long)process->pid, signo,
 				  (unsigned)thread->fault_vector,
 				  (void *)thread->fault_eip,
 				  (void *)thread->fault_address);
+			signal_log_fault_context(process, thread);
+		}
 
 		exit1_signal(signo);
 	}
@@ -1660,4 +1670,48 @@ signal_permitted(
 
 	/* Reports the permission. */
 	return permitted;
+}
+
+/*
+ * Writes, after the line of a thread a fault killed, which thread of which
+ * program it was and its user stack: the stack pointer, the first
+ * argument register, and the words at the stack pointer (where the
+ * functions called on the way saved their return addresses), as far as
+ * they can be read.
+ */
+static void
+signal_log_fault_context(
+	const struct process *process,
+	const struct thread *thread)
+{
+	uint64_t words[SIGNAL_FAULT_STACK_WORDS];
+	uintptr_t pc;
+	uintptr_t sp;
+	intptr_t argument;
+	unsigned index;
+	int error;
+
+	/* The context the thread left user mode with; without one, nothing more. */
+	error = hal_task_get_user_context(&pc, &sp, &argument);
+	if (error != 0)
+		return;
+	kern_logf("kern: pid %ld tid %ld (%s) pc %p sp %p a0 %p\n",
+		  (long)process->pid, (long)thread->tid, process->command,
+		  (void *)pc, (void *)sp, (void *)argument);
+
+	/* The words at the stack pointer, when they can be read. */
+	kern_memset(words, 0, sizeof(words));
+	error = copyin(sp, words, sizeof(words));
+	if (error != 0)
+		return;
+
+	/* Eight words a line. */
+	for (index = 0U; index < SIGNAL_FAULT_STACK_WORDS; index += 8U) {
+		kern_logf("kern: pid %ld stack +%u: %llx %llx %llx %llx %llx %llx %llx %llx\n",
+			  (long)process->pid, index * 8U,
+			  (unsigned long long)words[index], (unsigned long long)words[index + 1U],
+			  (unsigned long long)words[index + 2U], (unsigned long long)words[index + 3U],
+			  (unsigned long long)words[index + 4U], (unsigned long long)words[index + 5U],
+			  (unsigned long long)words[index + 6U], (unsigned long long)words[index + 7U]);
+	}
 }
