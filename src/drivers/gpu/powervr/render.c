@@ -650,6 +650,11 @@ render_open(
 	/* The texture unit's border colour table, all zero (transparent black); without it the commands name none. */
 	border_table_make(render, session);
 
+	/* Names the session's page catalogue, which a reset's notice and a BIF fault name (q1532). */
+	kern_logf("powervr: session context 0x%x memory context 0x%x page catalogue 0x%llx\n",
+		  (unsigned)session->identity, (unsigned)powervr_object_address(&session->memory_context, 0),
+		  (unsigned long long)powervr_gpu_mmu_root(&session->mmu));
+
 	/* Succeeded: the session is the core's. */
 	*result = session;
 	return 0;
@@ -1916,39 +1921,6 @@ powervr_session_describe_fault(
 		resource_log("above handle", below, fault);
 	if (above != NULL)
 		resource_log("below handle", above, fault);
-}
-
-/*
- * Names the handle whose pages hold a physical address (q1523: the
- * reset's pc looks like a physical address in memory), by each live
- * handle's run; the core's lock is held.
- */
-void
-powervr_session_describe_physical(
-	struct powervr_session *session,
-	uint64_t physical)
-{
-	const struct powervr_resource *resource;
-	uint64_t start;
-	uint64_t size;
-
-	/* Nothing to name. */
-	if (physical == 0)
-		return;
-
-	/* The handle whose contiguous run holds it. */
-	for (resource = session->all; resource != NULL; resource = resource->next_all) {
-		start = resource->buffer->run.paddr;
-		size = resource->buffer->run.size;
-		if (physical >= start && physical < start + size) {
-			kern_logf("powervr: pc 0x%llx is at +0x%llx of the handle at 0x%llx (physical 0x%llx, %llu bytes) host %u shared %u blob %u deferred %u maker %p\n",
-				  (unsigned long long)physical, (unsigned long long)(physical - start), (unsigned long long)resource->address,
-				  (unsigned long long)start, (unsigned long long)size, (unsigned)resource->mappable, resource->shareable,
-				  (unsigned)resource->identifier, resource->deferred, (void *)resource->origin);
-			return;
-		}
-	}
-	kern_logf("powervr: pc 0x%llx is in no live handle's pages\n", (unsigned long long)physical);
 }
 
 /* Notes the textures of one draw's sets: each image binding's state words and its sampler's first word. */
