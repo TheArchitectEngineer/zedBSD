@@ -93,7 +93,7 @@ static void operation(void);
 static VkResult fake_acquire_output(void *context, uint64_t timeout_ns, uint32_t *image, uint64_t *cycles, uint64_t *at_us);
 static VkResult fake_acquire_head(void *context, unsigned slot, uint32_t *image);
 static void fake_run(void *context, const struct kwl_render_job *job, struct kwl_render_outcome *outcome);
-static VkResult fake_wait(void *context, uint64_t timeout_ns);
+static VkResult fake_wait(void *context, unsigned slot, uint64_t timeout_ns);
 static struct kwl_render_message *take_one(void);
 static unsigned drain(struct kwl_render_message **list, unsigned room);
 static void reset_fakes(void);
@@ -263,9 +263,11 @@ fake_run(
 static VkResult
 fake_wait(
 	void *context,
+	unsigned slot,
 	uint64_t timeout_ns)
 {
 	(void)context;
+	(void)slot;
 	(void)timeout_ns;
 	operation();
 	atomic_fetch_add(&waits, 1U);
@@ -370,6 +372,7 @@ stepwise(void)
 	unsigned heads[2];
 	unsigned before;
 	unsigned count;
+	unsigned index;
 	uint64_t number;
 	uint64_t layer_number;
 
@@ -609,6 +612,49 @@ stepwise(void)
 	message = take_one();
 	check(message != NULL && message->kind == KWL_RENDER_COMPLETED && message->outcome.result == VK_ERROR_DEVICE_LOST && atomic_load(&waits) == before, "a failed job completes at once");
 	free(message);
+
+	/*
+	 * Two jobs in flight (q1552): while the first's fence is not signalled
+	 * the next frame is readied and run in the other slot; no third is
+	 * readied; the completions come in submission order.
+	 */
+	reset_fakes();
+	atomic_store(&wait_answer, VK_TIMEOUT);
+	kwl_render_set_want(&render, KWL_RENDER_FRAME, NULL, 0U, &number);
+	(void)kwl_render_step(&render);
+	message = take_one();
+	check(message != NULL && message->kind == KWL_RENDER_READY, "ready for the first of two");
+	job_from(message, &job);
+	job.slot = 0U;
+	free(message);
+	kwl_render_answer(&render, job.number, KWL_RENDER_ANSWER_LIST, &job);
+	(void)kwl_render_step(&render);
+	check(render.flight_count == 1U, "the first is in flight");
+	kwl_render_set_want(&render, KWL_RENDER_FRAME, NULL, 0U, &number);
+	(void)kwl_render_step(&render);
+	message = take_one();
+	check(message != NULL && message->kind == KWL_RENDER_READY && render.flight_count == 1U, "the second is readied while the first runs on");
+	job_from(message, &job);
+	job.slot = 1U;
+	free(message);
+	kwl_render_answer(&render, job.number, KWL_RENDER_ANSWER_LIST, &job);
+	(void)kwl_render_step(&render);
+	check(render.flight_count == 2U, "both in flight");
+	kwl_render_set_want(&render, KWL_RENDER_FRAME, NULL, 0U, &number);
+	before = atomic_load(&output_acquires);
+	(void)kwl_render_step(&render);
+	(void)kwl_render_step(&render);
+	check(atomic_load(&output_acquires) == before && kwl_render_take(&render) == NULL, "no third is readied");
+	atomic_store(&wait_answer, VK_SUCCESS);
+	(void)kwl_render_step(&render);
+	(void)kwl_render_step(&render);
+	count = drain(list, 8U);
+	check(count >= 2U && list[0]->kind == KWL_RENDER_COMPLETED && list[0]->job.slot == 0U &&
+	      list[1]->kind == KWL_RENDER_COMPLETED && list[1]->job.slot == 1U, "the completions in submission order");
+	for (index = 0U; index < count; index++)
+		free(list[index]);
+	check(render.flight_count == 0U && !render.busy, "nothing in flight, not busy");
+
 	check(atomic_load(&walk_calls) == 0U && atomic_load(&locked_calls) == 0U, "no operation with the lock held");
 	kwl_render_destroy(&render);
 }

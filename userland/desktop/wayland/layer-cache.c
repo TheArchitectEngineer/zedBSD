@@ -31,7 +31,7 @@
  * (kwl_home_picture_key) says what it shows, and is made again only when
  * something it shows may have changed (home_picture_stale).  A stale
  * picture is drawn again in-band in an animation's frame, or, while Home is
- * closed, as a frame of its own that presents nothing (compose->frame_bake)
+ * closed, as a frame of its own that presents nothing (the bake of its slot, compose.c)
  * when there has been no input and no window commit for LAYER_QUIET_MS, at
  * most twice a second.
  *
@@ -207,7 +207,6 @@ kwl_layers_tick(
 	}
 
 	/* In flight: the picture is taken when it completes, if no glyph it uses was evicted meanwhile. */
-	compose->frame_bake = 1U;
 	layers->keys[KWL_LAYER_HOME] = key;
 	layers->bake_times[0] = layers->bake_times[1];
 	layers->bake_times[1] = now;

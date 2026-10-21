@@ -29,7 +29,7 @@
 static void *render_main(void *argument);
 static enum kwl_render_step render_idle(struct kwl_render_thread *render);
 static enum kwl_render_step render_answer(struct kwl_render_thread *render);
-static enum kwl_render_step render_flight(struct kwl_render_thread *render);
+static enum kwl_render_step render_reap(struct kwl_render_thread *render, uint64_t timeout_ns);
 static void render_post(struct kwl_render_thread *render, struct kwl_render_message *message);
 static void render_deadline(struct timespec *deadline, unsigned wait_ms);
 static void render_wake(int descriptor);
@@ -106,9 +106,14 @@ kwl_render_destroy(
 		free(message);
 	}
 
-	/* A completion never posted. */
+	/* A completion never posted, and those of jobs never seen complete. */
 	free(render->completion);
 	render->completion = NULL;
+	while (render->flight_count > 0U) {
+		render->flight_count--;
+		free(render->flights[render->flight_count]);
+		render->flights[render->flight_count] = NULL;
+	}
 
 	/* The signals, then the lock. */
 	pthread_cond_destroy(&render->answered);
@@ -187,7 +192,7 @@ kwl_render_step(
 	    render->answer == KWL_RENDER_ANSWER_LIST &&
 	    render->answer_number == render->ready_number)
 		listed = 1U;
-	if (render->state != KWL_RENDER_STATE_FLIGHT && !listed) {
+	if (render->flight_count == 0U && !listed) {
 		/* A stop ends the thread. */
 		if (render->stop) {
 			pthread_mutex_unlock(&render->lock);
@@ -212,17 +217,34 @@ kwl_render_step(
 
 	pthread_mutex_unlock(&render->lock);
 
-	/* By where the thread is in the pull. */
+	/* A job in flight that completed is told first, without waiting. */
+	if (render->flight_count > 0U) {
+		step = render_reap(render, 0U);
+		if (step == KWL_RENDER_STEP_WORKED)
+			return step;
+	}
+
+	/* By where the thread is in the pull; a want waits while as many jobs as there are slots are in flight. */
+	step = KWL_RENDER_STEP_BLOCKED;
 	switch (render->state) {
 	case KWL_RENDER_STATE_IDLE:
-		step = render_idle(render);
+		if (render->flight_count < KWL_RENDER_FLIGHTS)
+			step = render_idle(render);
 		break;
 	case KWL_RENDER_STATE_ANSWER:
 		step = render_answer(render);
 		break;
 	default:
-		step = render_flight(render);
 		break;
+	}
+
+	/*
+	 * Blocked with a job in flight: the oldest's fence for a moment, so
+	 * that the main thread's next want or answer is looked at soon too.
+	 */
+	if (step == KWL_RENDER_STEP_BLOCKED && render->flight_count > 0U) {
+		(void)render_reap(render, KWL_RENDER_POLL_NS);
+		step = KWL_RENDER_STEP_WORKED;
 	}
 
 	/* Reports what the step came to. */
@@ -451,6 +473,30 @@ kwl_render_wait_idle(
 }
 
 /*
+ * Tells whether the render thread is recording, submitting or presenting a
+ * job now: while it is, the main thread uses neither the frames' command
+ * pool nor the queue.  Returns 1 while it is.
+ */
+int
+kwl_render_running(
+	struct kwl_render_thread *render)
+{
+	unsigned running;
+
+	/* The flag, at one moment. */
+	pthread_mutex_lock(&render->lock);
+
+	running = render->running;
+
+	pthread_mutex_unlock(&render->lock);
+
+	/* Succeeded: whether a job runs. */
+	if (running)
+		return 1;
+	return 0;
+}
+
+/*
  * Gives what the render thread shares with the main thread now, for the
  * main thread's line when a want goes unanswered.
  */
@@ -531,6 +577,7 @@ render_idle(
 	struct kwl_render_want want;
 	uint64_t acquired_us;
 	uint64_t acquire_cycles;
+	uint64_t timeout;
 	uint32_t image;
 	unsigned index;
 	unsigned slot;
@@ -555,11 +602,17 @@ render_idle(
 		return KWL_RENDER_STEP_WORKED;
 	}
 
-	/* The output's image for a frame, unless held from before. */
+	/*
+	 * The output's image for a frame, unless held from before; with a job
+	 * in flight only for a moment, so that its completion is told soon.
+	 */
 	acquired_us = 0U;
 	acquire_cycles = 0U;
+	timeout = KWL_RENDER_ACQUIRE_NS;
+	if (render->flight_count > 0U)
+		timeout = KWL_RENDER_POLL_NS;
 	if (want.kind == KWL_RENDER_FRAME && !held) {
-		result = render->ops.acquire_output(render->context, KWL_RENDER_ACQUIRE_NS, &image, &acquire_cycles, &acquired_us);
+		result = render->ops.acquire_output(render->context, timeout, &image, &acquire_cycles, &acquired_us);
 
 		/* None free yet: the requests are looked at, then the acquire is tried again. */
 		if (result == VK_TIMEOUT || result == VK_NOT_READY) {
@@ -698,63 +751,83 @@ render_answer(
 			render->held.heads[slot] = 0U;
 	}
 
-	/* A job in flight from now on. */
+	/* A job in flight from now on, being run. */
 	render->busy = 1U;
+	render->running = 1U;
 
 	pthread_mutex_unlock(&render->lock);
 
-	/* Recorded, submitted and presented. */
+	/* Recorded, submitted and presented; the thread looks for the next want from now on. */
 	completion = render->completion;
+	render->completion = NULL;
 	completion->kind = KWL_RENDER_COMPLETED;
 	completion->number = job.number;
 	completion->want_kind = job.kind;
 	completion->job = job;
 	render->ops.run(render->context, &job, &completion->outcome);
-	render->state = KWL_RENDER_STATE_FLIGHT;
+	render->state = KWL_RENDER_STATE_IDLE;
+	pthread_mutex_lock(&render->lock);
 
-	/* A job that was not submitted has no fence: it completes now. */
+	render->running = 0U;
+
+	pthread_mutex_unlock(&render->lock);
+
+	/* A job that was not submitted has no fence: it completes now, after the jobs before it. */
 	if (completion->outcome.result != VK_SUCCESS) {
-		render->completion = NULL;
-		render->state = KWL_RENDER_STATE_IDLE;
+		while (render->flight_count > 0U)
+			(void)render_reap(render, KWL_RENDER_FENCE_NS);
 		pthread_mutex_lock(&render->lock);
 
 		render->busy = 0U;
 
 		pthread_mutex_unlock(&render->lock);
 		render_post(render, completion);
+		return KWL_RENDER_STEP_WORKED;
 	}
 
-	/* Succeeded: in flight. */
+	/* Succeeded: in flight after the jobs before it. */
+	render->flights[render->flight_count] = completion;
+	render->flight_count++;
 	return KWL_RENDER_STEP_WORKED;
 }
 
 /*
- * Waits a while for the job's fence: once signalled, the completion goes
- * to the main thread, and the thread looks for the next want.
+ * Waits at most timeout_ns for the oldest job in flight's fence: once
+ * signalled (or its wait failed), its completion goes to the main thread,
+ * in submission order.  Returns WORKED when one was told, BLOCKED when it
+ * is still running.
  */
 static enum kwl_render_step
-render_flight(
-	struct kwl_render_thread *render)
+render_reap(
+	struct kwl_render_thread *render,
+	uint64_t timeout_ns)
 {
 	struct kwl_render_message *completion;
+	unsigned index;
 	VkResult result;
 
-	/* The fence, for a while. */
-	result = render->ops.wait(render->context, KWL_RENDER_FENCE_NS);
+	/* The oldest's fence, for a while. */
+	completion = render->flights[0];
+	result = render->ops.wait(render->context, completion->job.slot, timeout_ns);
 	if (result == VK_TIMEOUT)
-		return KWL_RENDER_STEP_WORKED;
+		return KWL_RENDER_STEP_BLOCKED;
 
-	/* Done, or its wait failed (the compositor's failure). */
-	completion = render->completion;
-	render->completion = NULL;
+	/* Done, or its wait failed (the compositor's failure): the others move up. */
 	if (result != VK_SUCCESS)
 		completion->outcome.result = result;
-	render->state = KWL_RENDER_STATE_IDLE;
-	pthread_mutex_lock(&render->lock);
+	for (index = 1U; index < render->flight_count; index++)
+		render->flights[index - 1U] = render->flights[index];
+	render->flight_count--;
+	render->flights[render->flight_count] = NULL;
 
-	render->busy = 0U;
+	/* Nothing in flight any more: not busy (unless a job is taken meanwhile, which only this thread does). */
+	if (render->flight_count == 0U) {
+		pthread_mutex_lock(&render->lock);
 
-	pthread_mutex_unlock(&render->lock);
+		render->busy = 0U;
+
+		pthread_mutex_unlock(&render->lock);
+	}
 
 	/* Told in order, before any ready that follows. */
 	render_post(render, completion);

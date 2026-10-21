@@ -19,6 +19,7 @@ layout(set = 0, binding = 0) uniform sampler2D image;
 
 layout(location = 0) in vec2 texcoord;
 layout(location = 1) in vec2 pixel;
+layout(location = 2) in vec2 screen_uv;
 layout(location = 0) out vec4 result;
 
 // The modes are whole numbers in a float, compared in ranges (an integer
@@ -86,9 +87,9 @@ void main()
 		// out for every output pixel beforehand (glass-map.c), by this
 		// shader over the same blurred wallpaper: the image is that colour,
 		// read at the pixel itself; flat glass has no sheen to add.
-		vec3 glass = texture(image, point / panel.screen.xy).rgb;
+		vec3 glass = texture(image, screen_uv).rgb;
 #else
-		vec3 under = texture(image, point / panel.screen.xy).rgb;
+		vec3 under = texture(image, screen_uv).rgb;
 		vec3 glass = mix(under, panel.color.rgb, panel.color.a);
 		float luma = dot(glass, vec3(0.2126, 0.7152, 0.0722));
 		float lift = panel.texture.x * clamp((GLASS_LEAST_LUMA - luma) / max(1.0 - luma, 0.001), 0.0, 1.0);

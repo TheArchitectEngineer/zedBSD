@@ -427,6 +427,38 @@ struct kwl_turn {
 #define KWL_DAMAGE_HISTORY	8U
 
 /* The Vulkan device, the display output and the frame in flight. */
+/*
+ * How many frames (or layers' pictures) may be recorded and submitted
+ * before the oldest completes: each has a slot of its own.
+ */
+#define KWL_FRAME_SLOTS		KWL_RENDER_FLIGHTS
+
+/*
+ * What one submission owns until it completes: the command buffers it is
+ * recorded into (its host images' copies, then its drawing), its fence,
+ * the client buffers it samples and the frame callbacks it is to send,
+ * whether it copies host images, and what its completion applies (the
+ * frame's number and start, whether it draws a layer's picture and the
+ * layers' generation then, whether it wrote the cursor-free scene).  The
+ * joined quads' vertices of the slot are its part of the batch buffer.
+ */
+struct kwl_frame_slot {
+	VkCommandBuffer command;
+	VkCommandBuffer copy_command;
+	VkFence fence;
+	struct kwl_object *held[KWL_FRAME_WINDOWS + 3U];
+	struct kwl_object *callbacks;
+	unsigned held_count;
+	unsigned copies;
+	uint64_t number;
+	uint64_t start_cycles;
+	uint64_t start_ms;
+	unsigned bake;
+	uint64_t layers_generation;
+	unsigned scene_written;
+	unsigned flying;
+};
+
 struct kwl_compose {
 	VkInstance instance;
 	VkPhysicalDevice physical;
@@ -463,9 +495,12 @@ struct kwl_compose {
 	struct kwl_glass *glass;
 	VkDescriptorPool descriptors;
 	VkCommandPool pool;
-	VkCommandBuffer command;
-	/* Recorded from the list's copies when it is replayed, and run before command. */
-	VkCommandBuffer copy_command;
+	/*
+	 * The submissions' slots (each its command buffers, fence, holds and
+	 * callbacks), and the slot the drawing being recorded goes into.
+	 */
+	struct kwl_frame_slot slots[KWL_FRAME_SLOTS];
+	unsigned walk_slot;
 	/*
 	 * The display list the drawing writes (draw-list.c, ws213-p003): reset
 	 * when a frame's or a layer's drawing begins, and replayed into command
@@ -489,7 +524,6 @@ struct kwl_compose {
 	VkCommandBuffer setup_command;
 	/* Every host image, whose written staging the next frame copies into its sampled image (shm.c). */
 	struct kwl_import *host_images;
-	VkFence fence;
 	VkSemaphore acquired;
 	struct vkdemo_display output;
 	/*
@@ -559,9 +593,7 @@ struct kwl_compose {
 	VkImageView views[KWL_SWAPCHAIN_MAX];
 	VkFramebuffer framebuffers[KWL_SWAPCHAIN_MAX];
 	VkSemaphore rendered[KWL_SWAPCHAIN_MAX];
-	struct kwl_object *held[KWL_FRAME_WINDOWS + 3U];
-	struct kwl_object *callbacks;
-	unsigned held_count;
+	/* How many submissions are in flight (their slots, oldest first from walk_slot back). */
 	unsigned in_flight;
 	/* The host images the last submitted frame copied first (KWL DRAWS, ws211-p002). */
 	unsigned frame_copies;
@@ -607,9 +639,7 @@ struct kwl_compose {
 		float bounds[4];
 		unsigned overflowed;
 	} batch;
-	/* Nonzero while the frame in flight draws a layer's picture and presents nothing (layer-cache.c). */
-	unsigned frame_bake;
-	/* The layers' generation when the submission in flight was recorded (layer-cache.c). */
+	/* The layers' generation when the drawing being recorded began (layer-cache.c); its slot keeps it. */
 	uint64_t frame_layers_generation;
 	/* The layers' pictures (layer-cache.c, ws211-p002). */
 	struct kwl_layers layers;
@@ -858,6 +888,7 @@ void kwl_compose_count_commands(struct kwl_server *server, unsigned pushes, unsi
 VkResult kwl_compose_submit_quiet(struct kwl_server *server);
 int kwl_compose_render_start(struct kwl_server *server);
 int kwl_compose_want_layer(struct kwl_server *server);
+int kwl_compose_host_writable(struct kwl_server *server);
 void kwl_compose_park(struct kwl_server *server);
 void kwl_compose_unpark(struct kwl_server *server);
 void kwl_compose_forget(struct kwl_server *server, unsigned output, unsigned heads_mask);

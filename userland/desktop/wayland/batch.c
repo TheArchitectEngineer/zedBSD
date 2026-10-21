@@ -330,8 +330,8 @@ kwl_batch_flush(
 	memcpy(&constants[BATCH_SCREEN_OFFSET / sizeof(float)], compose->batch.screen, sizeof(compose->batch.screen));
 	kwl_list_push_constants(command, compose->panel_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0U, sizeof(constants), constants);
 
-	/* The quads' vertices, then the corners again. */
-	offset = compose->batch.first;
+	/* The quads' vertices, in the part of the buffer of the slot the drawing goes into, then the corners again. */
+	offset = (VkDeviceSize)compose->walk_slot * compose->batch.capacity + compose->batch.first;
 	kwl_list_bind_vertex_buffers(command, 0U, 1U, &compose->batch.buffer, &offset);
 	kwl_compose_clip_draw(
 		server,
@@ -472,7 +472,11 @@ batch_text_pipeline(
 	return VK_SUCCESS;
 }
 
-/* Makes the vertex buffer: host-visible and coherent, mapped while the compositor runs (as the corners', review-1 L3). */
+/*
+ * Makes the vertex buffer: host-visible and coherent, mapped while the
+ * compositor runs (as the corners', review-1 L3), a part of BATCH_BYTES
+ * for each submission's slot (capacity is one part).
+ */
 static VkResult
 batch_buffer(
 	struct kwl_compose *compose)
@@ -489,7 +493,7 @@ batch_buffer(
 	/* The buffer. */
 	memset(&buffer, 0, sizeof(buffer));
 	buffer.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	buffer.size = BATCH_BYTES;
+	buffer.size = (VkDeviceSize)BATCH_BYTES * KWL_FRAME_SLOTS;
 	buffer.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
 	buffer.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	result = vkCreateBuffer(compose->device, &buffer, NULL, &compose->batch.buffer);
@@ -519,7 +523,7 @@ batch_buffer(
 	result = vkBindBufferMemory(compose->device, compose->batch.buffer, compose->batch.memory, 0U);
 	if (result != VK_SUCCESS)
 		return result;
-	result = vkMapMemory(compose->device, compose->batch.memory, 0U, BATCH_BYTES, 0U, &map);
+	result = vkMapMemory(compose->device, compose->batch.memory, 0U, (VkDeviceSize)BATCH_BYTES * KWL_FRAME_SLOTS, 0U, &map);
 	if (result != VK_SUCCESS)
 		return result;
 

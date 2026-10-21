@@ -262,3 +262,18 @@ branch agent/p1-q1552（基 main 782f995e4）。ユーザー（2026-10-22）:「
   - shaders.h は regenerate.py で作り直し、既存の全 variant の SPIR-V が前と同一（名前の番号だけ変わった）。map variant は texture 1 回と除算 1 つ。
 - d3f2abd6e: 窓の commit の damage を全画面にする条件を「上の窓が近い」から「上の窓が近く、その glass が下の scene を blur する（set_blur か docked の中央）」に。上の窓が wallpaper の blur だけなら、その部分も damage の中で描き直される。
 - build（config-visionfive2-desktop-gpu.mk、BUILD=build/q1552）: rc 0、warning 0。板は Q1 待ち。
+
+### 板の結果と続き（2026-10-22）
+
+- d101（f67a811c0 の wayland）: drag は全画面でなくなり work p50 11 ms。Home・Wiseview は work 17〜24。Home の frame は period ちょうど 33.3 ms、次の frame の acquired が 2 blank ごと。
+- d103（P2 b60c38183: command の frame の fence を即時完了 → submit が非同期、KWL LAT の shown が GPU の完了に）: work p50 は全部 5〜9 ms。Home の後半（GPU 4〜5 ms）は 60 fps、GPU 9〜14 ms の frame は 30 fps。
+- d104（flip の診断 0b95ffc6d）: flip の 80〜87% は 1 blank で取られる。commit の多くは blank の後 8〜14 ms、14 ms 以降は 2 blank。
+- d105: 60 fps の frame でも次の acquired は blank ちょうど（78028・78044・78061）。
+- 原因（1f7936510）: libvulkan の display の primary の present は display_mutex を持ったまま present の ioctl（flip が取られるまで返らない）を呼び、acquire の空き確認（display_image_available）も同じ mutex を取る → 次の frame は前の frame の flip の blank まで始まらない。primary の image の holds を atomic にし、空き確認は mutex 無しで読む。前の frame の flip 待ちと次の frame の CPU・GPU が重なる。
+- Keiland 側の追加: 81bc03d70（animation 中は frame を渡した直後に次の want を出す）、5f0acec60（Home の content の picture を描いた box だけ描く）、9a05eba91（ring の空の中を描かない）、ce44dafb4（Wiseview の地を 2 倍幅の picture と KWL_PANEL_CROSSFADE の 1 回の draw に）、95db457c4（Wiseview の地の picture）、6beb321c7（Home の下がる desktop の layer の下を描かない）。
+- 2ec8fa710: flip の report は既定 off（POWERVR_FLIP_REPORT、測る build で 1）。
+- d110（1f7936510 の libvulkan）: home 55 fps（period p50 17）、drag 60、wiseview 38、launch 48、type 50、next p50 8〜11。一方 d108・d110 で compositor が落ちた（pc 0・0x29900、null か壊れた pointer への jump、P2 の pool の kernel と組の時）。d113（pool 無しの main＋1f7936510、100 s idle → frame-ops ×3）では落ちない。原因は未特定。330767e34: fault で殺される時に tid・command・pc・sp・a0 と sp から 16 語を出す（hal の user context は ra を返さない）。
+- 残りの律速は Keiland の直列（frame N の GPU の完了まで N+1 を描かない）。(A) を実装:
+  - 162059da7: submission の slot を 2 つ（command・copy・fence・held・callback・完了の情報、batch の vertex は slot ごとの半分）。
+  - c436c7db0: render thread は最大 2 つの job を flight に（完了は submit の順）、flight 中も次の image を取り次の list を走らせる。main は compose_may_draw（flight 0、または 1 で copy・bake 無し、head・turn・scene の capture・shot 無し）の時に次の frame を描く。shm の upload は kwl_compose_host_writable の時。glass の map の破棄は flight 0 の時だけ。render thread の host 試験（plan/ws213/tests/render-thread-host-test.sh）に 2 flight の check を足して 158 PASS（TSan も）。
+- e08a5e577（glass の blurred の sample 座標を varying に）、9817b450f（Wiseview の tile の影を不透明な tile の内側で描かない）。

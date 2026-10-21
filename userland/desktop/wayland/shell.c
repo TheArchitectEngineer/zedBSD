@@ -8843,8 +8843,11 @@ draw_tile(
 	int32_t cx;
 	int32_t cy;
 	float colour[4];
+	float inside[4];
+	float hole[1][4];
 	float appear;
 	float radius;
+	unsigned holes;
 	unsigned square;
 	int decorated;
 
@@ -8878,11 +8881,24 @@ draw_tile(
 			shape.color[3] = 0.70f;
 	}
 
-	/* Drawn under the tile, unless the window is glass panels, whose own glass shows under the image. */
+	/*
+	 * Drawn under the tile, unless the window is glass panels, whose own
+	 * glass shows under the image; not under the inside of an opaque
+	 * image, which hides it.
+	 */
 	image = kwl_compose_surface_image(surface);
 	panels = kwl_panels_count(surface);
+	holes = 0U;
+	if (image->draw == KWL_DRAW_OPAQUE) {
+		inside[0] = (float)tile->x;
+		inside[1] = (float)tile->y;
+		inside[2] = (float)tile->width;
+		inside[3] = (float)tile->height;
+		glass_opaque_inside(inside, radius, hole[0]);
+		holes = 1U;
+	}
 	if (panels == 0U || current || over)
-		glass_shape_draw(server, command, &shape);
+		glass_shape_draw_except(server, command, &shape, (const float (*)[4])hole, holes);
 
 	/* The window's size (its viewport's, else its image's), for its glass panels' scale. */
 	window_size(surface, &width, &height);

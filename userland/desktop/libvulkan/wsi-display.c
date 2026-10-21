@@ -139,7 +139,13 @@ struct wsi_display_plane {
 	VkBool32 watch_stop;
 };
 
-/* One swapchain-owned imported image may be retained by several shared-swapchain planes. */
+/*
+ * One swapchain-owned imported image may be retained by several
+ * shared-swapchain planes.  Holds count the planes that may read it: an
+ * overlay image's under display_overlay_mutex, any other's changed under
+ * display_mutex with atomic stores, so that acquisition reads them without
+ * waiting for a present that holds display_mutex until its frame is taken.
+ */
 struct wsi_display_image {
 	struct wsi_display_connection *connection;
 	struct gpu_resource_import imported;
@@ -1196,7 +1202,7 @@ display_release_native(
 
 		/* A completed release ends this plane's independent native-image use. */
 		if (status == 0 && plane->front != NULL) {
-			plane->front->holds--;
+			__atomic_sub_fetch(&plane->front->holds, 1U, __ATOMIC_RELEASE);
 			plane->front = NULL;
 		}
 
@@ -1414,7 +1420,7 @@ display_present_image_sync(
 	pthread_mutex_lock(&display_mutex);
 
 	/* A retained image cannot acquire another plane reference after counter exhaustion. */
-	if (image->holds == UINT32_MAX || lease->plane->frame == UINT64_MAX) {
+	if (__atomic_load_n(&image->holds, __ATOMIC_ACQUIRE) == UINT32_MAX || lease->plane->frame == UINT64_MAX) {
 		pthread_mutex_unlock(&display_mutex);
 		return VK_ERROR_OUT_OF_HOST_MEMORY;
 	}
@@ -1475,12 +1481,12 @@ display_present_image_sync(
 
 	/* Current blob ownership survives sequence completion until replacement or release. */
 	previous = lease->plane->front;
-	image->holds++;
+	__atomic_add_fetch(&image->holds, 1U, __ATOMIC_RELEASE);
 	lease->plane->front = image;
 
 	/* Checked replacement ends only the displaced image's independent native read hold. */
 	if (previous != NULL)
-		previous->holds--;
+		__atomic_sub_fetch(&previous->holds, 1U, __ATOMIC_RELEASE);
 
 	/* The completed sequence describes selection, not reuse of the newly selected allocation. */
 	*sequence = request.sequence;
@@ -1509,12 +1515,14 @@ display_image_available(
 
 		pthread_mutex_unlock(&display_overlay_mutex);
 	} else {
-		/* Any other image's holds are display_mutex's. */
-		pthread_mutex_lock(&display_mutex);
-
-		holds = image->holds;
-
-		pthread_mutex_unlock(&display_mutex);
+		/*
+		 * Any other image's holds change under display_mutex, which a
+		 * primary present keeps until its frame is taken: read without it,
+		 * so the next image is acquired while the frame before waits for
+		 * its blank.  A hold is only ever added to an image being
+		 * presented, which is not available anyway.
+		 */
+		holds = __atomic_load_n(&image->holds, __ATOMIC_ACQUIRE);
 	}
 
 	/* A selected scanout still borrows storage even after its presentation fence has completed. */
@@ -1859,7 +1867,7 @@ display_present_native(
 
 	/* Successful copied selection also ends any earlier GPU-resident front image hold. */
 	if (lease->plane->front != NULL) {
-		lease->plane->front->holds--;
+		__atomic_sub_fetch(&lease->plane->front->holds, 1U, __ATOMIC_RELEASE);
 		lease->plane->front = NULL;
 	}
 
@@ -2385,7 +2393,7 @@ display_primary_commit(
 	pthread_mutex_lock(&display_mutex);
 
 	/* A retained image cannot acquire another plane reference after counter exhaustion. */
-	if (image->holds == UINT32_MAX || plane->frame == UINT64_MAX) {
+	if (__atomic_load_n(&image->holds, __ATOMIC_ACQUIRE) == UINT32_MAX || plane->frame == UINT64_MAX) {
 		pthread_mutex_unlock(&display_mutex);
 		return VK_ERROR_OUT_OF_HOST_MEMORY;
 	}
@@ -2489,10 +2497,10 @@ display_primary_commit(
 	if (request.planes[0].result == GPU_DISPLAY_PLANE_APPLIED) {
 		__atomic_store_n(&plane->frame, plane->frame + 1U, __ATOMIC_RELEASE);
 		previous = plane->front;
-		image->holds++;
+		__atomic_add_fetch(&image->holds, 1U, __ATOMIC_RELEASE);
 		plane->front = image;
 		if (previous != NULL)
-			previous->holds--;
+			__atomic_sub_fetch(&previous->holds, 1U, __ATOMIC_RELEASE);
 	}
 	*sequence = request.sequence;
 
