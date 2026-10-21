@@ -55,11 +55,13 @@
 
 /*
  * The fragment shader forms a pipeline takes (q1546; the compiler's
- * POWERVR_SHADER_FORM_*): the shared program, run once a draw from the
- * shared register program, as built; the pack into the pixel output and
- * the sample that iterates its coordinates are not yet seen on the
- * board, nor the sum of products (0x8), its raw colour (0x10) and the
- * iterate and sample that waits itself (0x20, q1548).
+ * POWERVR_SHADER_FORM_*), as built: the shared program, run once a draw
+ * from the shared register program (0x1); the sample that iterates its
+ * coordinates (0x4); the colour written by one sum of products (0x8)
+ * that clamps the blended colour itself (0x10); and the iterate and
+ * sample that waits for its own data (0x20).  The board saw these right
+ * on d85 to d88 (q1548).  The pack into the pixel output (0x2) loses the
+ * device on the board and is not built.
  *
  * The board's comparison flips forms without a rebuild: bits 24 to 31
  * of a pipeline's VkPipelineCreateFlags, which no Vulkan flag the
@@ -67,7 +69,7 @@
  * (POWERVR_DRAW_FORM_TRIAL_SHIFT; vkmatrix -t).
  */
 #ifndef POWERVR_DRAW_FORMS
-#define POWERVR_DRAW_FORMS			0x1U
+#define POWERVR_DRAW_FORMS			0x3dU
 #endif
 #define POWERVR_DRAW_FORM_TRIAL_SHIFT		24U
 #define POWERVR_DRAW_FORM_TRIAL_MASK		0xffU
