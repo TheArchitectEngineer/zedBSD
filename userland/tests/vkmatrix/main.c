@@ -288,6 +288,10 @@ static VkResult case_sample_linear_wide(struct vkmatrix *run);
 static VkResult case_sample_linear_odd(struct vkmatrix *run);
 static VkResult case_copy_1080(struct vkmatrix *run);
 static VkResult case_copy_65(struct vkmatrix *run);
+static VkResult load_part_case(struct vkmatrix *run, const VkRect2D *area, uint32_t frames, const char *timed);
+static VkResult case_load_part(struct vkmatrix *run);
+static VkResult case_perf_load_part(struct vkmatrix *run);
+static VkResult case_perf_load_small(struct vkmatrix *run);
 
 /* Every case, in the order they run. */
 static const struct vkmatrix_case cases[] = {
@@ -327,6 +331,9 @@ static const struct vkmatrix_case cases[] = {
 	{ "sample-linear-65", case_sample_linear_odd },
 	{ "copy-1080", case_copy_1080 },
 	{ "copy-65", case_copy_65 },
+	{ "load-part", case_load_part },
+	{ "perf-load-part", case_perf_load_part },
+	{ "perf-load-small", case_perf_load_small },
 };
 
 /* The clear colour of every case's first pass: dark blue. */
@@ -4324,4 +4331,287 @@ case_perf_quarter(
 	struct vkmatrix *run)
 {
 	return perf_case(run, PERF_QUARTER);
+}
+
+/*
+ * A loaded pass of a part of a 1920x1080 OPTIMAL B8G8R8A8 target
+ * (ws270-p007, q1541): the target cleared whole once, then frames passes
+ * loading it with their render area and scissor the part, each drawing a
+ * flat quad over the whole viewport (so over the part alone) in a red of
+ * its own.  The last pass's pixels must be that red inside the part and
+ * the clear's colour outside it (the tiles outside a small render area
+ * are left as they are).  With timed, the passes after the clear are
+ * timed and "vkmatrix: perf <timed>: ..." printed.
+ */
+static VkResult
+load_part_case(
+	struct vkmatrix *run,
+	const VkRect2D *area,
+	uint32_t frames,
+	const char *timed)
+{
+	VkSubresourceLayout layout;
+	struct vkmatrix_shape shape;
+	VkRenderPassBeginInfo pass;
+	VkCommandBufferBeginInfo begin;
+	VkClearValue value;
+	VkViewport viewport;
+	VkImageMemoryBarrier barrier;
+	VkBufferImageCopy copy;
+	VkMemoryBarrier host;
+	VkSubmitInfo submit;
+	const uint8_t *bytes;
+	const uint32_t *row;
+	uint64_t started;
+	uint64_t spent;
+	uint64_t total;
+	uint64_t least;
+	uint32_t wanted;
+	uint32_t bad;
+	uint32_t first_x;
+	uint32_t first_y;
+	uint32_t first_seen;
+	uint32_t pipeline;
+	uint32_t first;
+	uint32_t frame;
+	uint32_t x;
+	uint32_t y;
+	float red;
+	float colour[4];
+	void *mapped;
+	VkResult status;
+
+	/* The flat red pipeline and the full-screen quad. */
+	memset(&shape, 0, sizeof(shape));
+	shape.vertex = vkmatrix_push4_vert;
+	shape.vertex_size = sizeof(vkmatrix_push4_vert);
+	shape.fragment = vkmatrix_push4_frag;
+	shape.fragment_size = sizeof(vkmatrix_push4_frag);
+	shape.push_size = 4;
+	shape.push_stages = VK_SHADER_STAGE_FRAGMENT_BIT;
+	status = vkmatrix_pipeline(run, &shape, &pipeline);
+	if (status != VK_SUCCESS)
+		return status;
+	first = vkmatrix_quad(run, 0.0f, 0.0f, 64.0f, 64.0f);
+
+	/* The attachment and a buffer to copy it out to. */
+	status = linear_target(run, VK_IMAGE_TILING_OPTIMAL, &layout);
+	if (status != VK_SUCCESS)
+		return status;
+	status = vkmatrix_buffer(run, (VkDeviceSize)VKMATRIX_LINEAR_WIDTH * VKMATRIX_LINEAR_HEIGHT * 4U, VK_BUFFER_USAGE_TRANSFER_DST_BIT, &run->wide_download, &run->wide_download_memory, &mapped);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* The clear, then the passes of the part; the clear is not timed. */
+	total = 0;
+	least = UINT64_MAX;
+	red = 0.0f;
+	for (frame = 0; frame <= frames; frame++) {
+		/* The pass: the whole target cleared first, then the part loaded. */
+		memset(&begin, 0, sizeof(begin));
+		begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+		vkResetCommandBuffer(run->command, 0);
+		vkBeginCommandBuffer(run->command, &begin);
+		memset(&value, 0, sizeof(value));
+		memcpy(value.color.float32, background, sizeof(value.color.float32));
+		memset(&pass, 0, sizeof(pass));
+		pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+		pass.renderPass = run->clear_pass;
+		pass.framebuffer = run->wide_framebuffer;
+		pass.renderArea.extent.width = VKMATRIX_LINEAR_WIDTH;
+		pass.renderArea.extent.height = VKMATRIX_LINEAR_HEIGHT;
+		if (frame != 0) {
+			pass.renderPass = run->load_pass;
+			pass.renderArea = *area;
+		}
+		pass.clearValueCount = 1;
+		pass.pClearValues = &value;
+		vkCmdBeginRenderPass(run->command, &pass, VK_SUBPASS_CONTENTS_INLINE);
+
+		/* The part's quad, in a red of the pass's own. */
+		if (frame != 0) {
+			memset(&viewport, 0, sizeof(viewport));
+			viewport.width = (float)VKMATRIX_LINEAR_WIDTH;
+			viewport.height = (float)VKMATRIX_LINEAR_HEIGHT;
+			viewport.maxDepth = 1.0f;
+			vkCmdSetViewport(run->command, 0, 1, &viewport);
+			vkCmdSetScissor(run->command, 0, 1, area);
+			vkmatrix_bind(run, pipeline);
+			red = (float)((frame * 37U) % 200U + 40U) / 255.0f;
+			vkCmdPushConstants(run->command, run->layouts[pipeline], VK_SHADER_STAGE_FRAGMENT_BIT, 0, 4, &red);
+			vkCmdDraw(run->command, 6, 1, first, 0);
+		}
+		vkCmdEndRenderPass(run->command);
+
+		/* The last pass is copied out. */
+		if (frame == frames) {
+			memset(&barrier, 0, sizeof(barrier));
+			barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+			barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+			barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+			barrier.image = run->wide_image;
+			barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			barrier.subresourceRange.levelCount = 1;
+			barrier.subresourceRange.layerCount = 1;
+			barrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+			barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+			barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+			barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+			vkCmdPipelineBarrier(run->command, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1, &barrier);
+			memset(&copy, 0, sizeof(copy));
+			copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			copy.imageSubresource.layerCount = 1;
+			copy.imageExtent.width = VKMATRIX_LINEAR_WIDTH;
+			copy.imageExtent.height = VKMATRIX_LINEAR_HEIGHT;
+			copy.imageExtent.depth = 1;
+			vkCmdCopyImageToBuffer(run->command, run->wide_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, run->wide_download, 1, &copy);
+			memset(&host, 0, sizeof(host));
+			host.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+			host.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+			host.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+			vkCmdPipelineBarrier(run->command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &host, 0, NULL, 0, NULL);
+		}
+		vkEndCommandBuffer(run->command);
+
+		/* The submit and its wait, timed. */
+		memset(&submit, 0, sizeof(submit));
+		submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		submit.commandBufferCount = 1;
+		submit.pCommandBuffers = &run->command;
+		vkResetFences(run->device, 1, &run->fence);
+		started = perf_now_ns();
+		run->failed_call = "vkQueueSubmit (load part)";
+		status = vkQueueSubmit(run->queue, 1, &submit, run->fence);
+		if (status != VK_SUCCESS)
+			return status;
+		run->failed_call = "vkWaitForFences (load part)";
+		status = vkWaitForFences(run->device, 1, &run->fence, VK_TRUE, VKMATRIX_WAIT_NS);
+		if (status != VK_SUCCESS)
+			return status;
+		spent = perf_now_ns() - started;
+
+		/* The passes of the part are counted (the last also copies out, so it is left out of the least). */
+		if (frame != 0) {
+			total += spent;
+			if (spent < least && frame != frames)
+				least = spent;
+		}
+	}
+
+	/* Each pixel: the last red inside the part, the clear's colour outside. */
+	bytes = mapped;
+	bad = 0;
+	first_x = 0;
+	first_y = 0;
+	first_seen = 0;
+	colour[0] = red;
+	colour[1] = 0.0f;
+	colour[2] = 0.0f;
+	colour[3] = 1.0f;
+	for (y = 0; y < VKMATRIX_LINEAR_HEIGHT; y++) {
+		row = (const uint32_t *)(bytes + (size_t)y * VKMATRIX_LINEAR_WIDTH * 4U);
+		for (x = 0; x < VKMATRIX_LINEAR_WIDTH; x++) {
+			/* The pixel's colour: the part's, or the clear's. */
+			wanted = vkmatrix_pack(background);
+			if (x >= (uint32_t)area->offset.x &&
+			    x < (uint32_t)area->offset.x + area->extent.width &&
+			    y >= (uint32_t)area->offset.y &&
+			    y < (uint32_t)area->offset.y + area->extent.height)
+				wanted = vkmatrix_pack(colour);
+
+			/* A wrong pixel. */
+			if (row[x] != wanted) {
+				if (bad == 0) {
+					first_x = x;
+					first_y = y;
+					first_seen = row[x];
+				}
+				bad++;
+			}
+		}
+	}
+
+	/* A wrong pixel names itself. */
+	if (bad != 0) {
+		snprintf(run->reason, sizeof(run->reason), "%u bad pixels after %u passes of %ux%u at (%d,%d), first (%u,%u) 0x%08x", (unsigned)bad, (unsigned)frames,
+			 (unsigned)area->extent.width, (unsigned)area->extent.height, (int)area->offset.x, (int)area->offset.y, (unsigned)first_x, (unsigned)first_y, (unsigned)first_seen);
+		run->failed_call = run->reason;
+		return VK_ERROR_UNKNOWN;
+	}
+
+	/* The timing, when asked for. */
+	if (timed != NULL) {
+		snprintf(run->note, sizeof(run->note), "perf %s: %lu us a frame (min %lu us) over %u frames of %ux%u of 1920x1080", timed,
+			 (unsigned long)(total / frames / 1000U), (unsigned long)(least / 1000U), (unsigned)frames,
+			 (unsigned)area->extent.width, (unsigned)area->extent.height);
+	}
+
+	/* Succeeded: every pixel right; the shared target's comparison has nothing to say. */
+	memcpy(run->expected, run->pixels, sizeof(run->expected));
+	run->tolerance = 0;
+	return VK_SUCCESS;
+}
+
+/* load-part: three loaded passes of Keiland's terminal's part (916x632 at 598,368), checked. */
+static VkResult
+case_load_part(
+	struct vkmatrix *run)
+{
+	VkRect2D area;
+	VkResult status;
+
+	/* The part, and the case. */
+	area.offset.x = 598;
+	area.offset.y = 368;
+	area.extent.width = 916;
+	area.extent.height = 632;
+	status = load_part_case(run, &area, 3U, NULL);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the case ran. */
+	return VK_SUCCESS;
+}
+
+/* perf-load-part: the same part's loaded passes, timed (a terminal's frame of Keiland). */
+static VkResult
+case_perf_load_part(
+	struct vkmatrix *run)
+{
+	VkRect2D area;
+	VkResult status;
+
+	/* The part, and the timed case. */
+	area.offset.x = 598;
+	area.offset.y = 368;
+	area.extent.width = 916;
+	area.extent.height = 632;
+	status = load_part_case(run, &area, PERF_FRAMES, "load-part");
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the case ran. */
+	return VK_SUCCESS;
+}
+
+/* perf-load-small: loaded passes of a 64x64 part, timed (the job's cost that does not grow with its area). */
+static VkResult
+case_perf_load_small(
+	struct vkmatrix *run)
+{
+	VkRect2D area;
+	VkResult status;
+
+	/* The part, and the timed case. */
+	area.offset.x = 128;
+	area.offset.y = 96;
+	area.extent.width = 64;
+	area.extent.height = 64;
+	status = load_part_case(run, &area, PERF_FRAMES, "load-small");
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the case ran. */
+	return VK_SUCCESS;
 }
