@@ -35,9 +35,15 @@
 #include "drivers/gpu/powervr/render-private.h"
 #include "drivers/gpu/powervr/interface.h"
 #include "drivers/gpu/powervr/render-target-layout.h"
+#include "drivers/gpu/powervr/vk.h"
 
-/* The most render targets a session keeps. */
-#define TARGETS_MAX			4U
+/*
+ * The most render targets a session keeps, one a framebuffer size: a
+ * compositor's frame renders to its output, its windows' layers and its
+ * blur targets, and a target made again for each costs firmware
+ * commands a job.
+ */
+#define TARGETS_MAX			8U
 
 /*
  * How long a cleanup of a target or a list may stay busy: this many
@@ -258,6 +264,7 @@ powervr_session_target(
 	struct powervr_target *target;
 	unsigned oldest;
 	unsigned index;
+	uint64_t started;
 	int error;
 
 	/* The session's targets, made by its first render. */
@@ -294,6 +301,7 @@ powervr_session_target(
 	}
 
 	/* Every slot taken: the least recently used target goes, once the firmware lets it go. */
+	started = powervr_timing_now();
 	if (targets->count == TARGETS_MAX) {
 		oldest = 0;
 		for (index = 1; index < targets->count; index++) {
@@ -311,6 +319,7 @@ powervr_session_target(
 
 	/* A new target. */
 	error = target_make(render, session, shape, &target);
+	powervr_timing_add(POWERVR_TIMING_TARGET_MAKE, started);
 	if (error != 0)
 		return error;
 

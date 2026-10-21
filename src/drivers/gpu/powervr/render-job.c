@@ -260,6 +260,7 @@ static void job_free(struct powervr_render *render, struct powervr_session *sess
 static struct job_memory *job_keep_take(struct powervr_render *render, struct powervr_session *session);
 static void job_buffer_clear(struct powervr_buffer *buffer);
 static bool job_draw_memory_fits(const struct job_memory *memory, uint64_t general_bytes, uint64_t pds_bytes, uint64_t usc_bytes);
+static bool job_draw_memory_swap(struct powervr_render *render, struct powervr_session *session, struct job_memory *memory, uint64_t general_bytes, uint64_t pds_bytes, uint64_t usc_bytes);
 static void job_draw_memory_free(struct powervr_render *render, struct powervr_session *session, struct job_memory *memory);
 static uint64_t job_draw_memory_room(uint64_t bytes);
 static int job_draw_memory_make(struct powervr_render *render, struct powervr_session *session, struct job_memory *memory, uint64_t general_bytes, uint64_t pds_bytes, uint64_t usc_bytes);
@@ -1320,6 +1321,8 @@ job_draws(
 	usc_total = usc_bytes + 16U;
 	part_started = powervr_timing_now();
 	fits = job_draw_memory_fits(memory, general_bytes, pds_bytes, usc_total);
+	if (!fits)
+		fits = job_draw_memory_swap(render, session, memory, general_bytes, pds_bytes, usc_total);
 	if (!fits) {
 		job_draw_memory_free(render, session, memory);
 		error = job_draw_memory_make(render, session, memory, general_bytes, pds_bytes, usc_total);
@@ -1987,6 +1990,65 @@ job_draw_memory_fits(
 
 	/* Succeeded: they fit. */
 	return true;
+}
+
+/*
+ * Trades the job's draw buffers for those of a memory the session keeps
+ * that are large enough, when one has them (the jobs of a frame differ
+ * in size, and the newest kept memory a job takes may be a smaller
+ * job's: making the buffers again cost a mapping a job).  Reports
+ * whether the job's buffers fit now.
+ */
+static bool
+job_draw_memory_swap(
+	struct powervr_render *render,
+	struct powervr_session *session,
+	struct job_memory *memory,
+	uint64_t general_bytes,
+	uint64_t pds_bytes,
+	uint64_t usc_bytes)
+{
+	struct powervr_resource *general;
+	struct powervr_buffer *pds;
+	struct powervr_buffer *usc;
+	struct job_memory *kept;
+	unsigned long enabled;
+	uint64_t pds_place;
+	uint64_t usc_place;
+	unsigned index;
+	bool fits;
+
+	/* The first kept memory whose draw buffers fit, traded under the queue lock. */
+	fits = false;
+	enabled = spin_lock_irqsave(&render->queue_lock);
+
+	for (index = 0; index < session->job_keep_count; index++) {
+		kept = session->job_keep[index];
+		if (kept == NULL || !job_draw_memory_fits(kept, general_bytes, pds_bytes, usc_bytes))
+			continue;
+		general = kept->draw_general;
+		pds = kept->draw_pds;
+		usc = kept->draw_usc;
+		pds_place = kept->draw_pds_place;
+		usc_place = kept->draw_usc_place;
+		kept->draw_general = memory->draw_general;
+		kept->draw_pds = memory->draw_pds;
+		kept->draw_usc = memory->draw_usc;
+		kept->draw_pds_place = memory->draw_pds_place;
+		kept->draw_usc_place = memory->draw_usc_place;
+		memory->draw_general = general;
+		memory->draw_pds = pds;
+		memory->draw_usc = usc;
+		memory->draw_pds_place = pds_place;
+		memory->draw_usc_place = usc_place;
+		fits = true;
+		break;
+	}
+
+	spin_unlock_irqrestore(&render->queue_lock, enabled);
+
+	/* Succeeded: whether the job's buffers fit. */
+	return fits;
 }
 
 /* Unmaps and frees a job memory's draw buffers, leaving none. */
