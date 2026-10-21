@@ -28,6 +28,7 @@
 
 #include "drivers/gpu/powervr/powervr-private.h"
 #include "drivers/gpu/powervr/interface.h"
+#include "drivers/gpu/powervr/vk.h"
 
 /*
  * How many times a wait reads a return slot before it starts sleeping a
@@ -254,6 +255,7 @@ powervr_command_mmu_flush(
 	uint32_t command[POWERVR_COMMAND_WORDS];
 	uint32_t answer;
 	uint32_t index;
+	uint64_t started;
 	int error;
 
 	/* Builds the command: every table level and the TLBs, the sync word written with zero. */
@@ -265,8 +267,10 @@ powervr_command_mmu_flush(
 	command[(POWERVR_COMMAND_DATA + POWERVR_MMU_CACHE_SYNC) / 4U] = powervr_object_address(&firmware->mmu_sync, 0);
 	command[(POWERVR_COMMAND_DATA + POWERVR_MMU_CACHE_VALUE) / 4U] = 0;
 
-	/* Sends it and waits for the firmware to execute it. */
+	/* Sends it and waits for the firmware to execute it, timed for the submission's timing. */
+	started = powervr_timing_now();
 	error = powervr_command_run(core, command, POWERVR_COMMAND_WAIT_MS, &answer);
+	powervr_timing_add(POWERVR_TIMING_MMU_FLUSH, started);
 	if (error != 0)
 		return error;
 
