@@ -115,3 +115,18 @@ Mesa 26.2.5（drm-shim、BVNC 36.50.54.182、`PVR_DEBUG=cs`、vkmatrix の perf-
 
 - host: compiler 411・22 passed、p010 全 0 failed、p009 505 passed、VF2 warning 0。板は未実施。
 - 板の kernel: build/q1539/vf2b/vmunix（93546829a、sha256 1a64b714de5ccba4…）、build/q1539/vf2c/vmunix（e51fbc510、sha256 9a4d5f32aeb635b4…）。
+
+### 板の d55（Q1、vf2c = e51fbc510）
+
+- vkmatrix 41/41、HWR 0、parameter の溢れ 0。
+- perf（us、前は d50）: clear 4000、flat 9200（15700）、immediate 9200（15200）、quarter 5650（7250）、tri1 9000、tri8 9200、tri128 9500、stack4 9300、draws4 9100（19200）、load 10250（18750）、texture 17750（38150）。
+- 読み:
+  - group の数が主因と裏付いた。
+  - flat と quarter から、6 group の program は面積に比例する費用が全画面あたり約 4.7 ms、面積に依らない費用が約 4.5 ms。group 1 つは全画面 1080p あたり約 0.8 ms。
+  - Mesa の pco も 1 命令 = 1 group で、別の命令を 1 group にまとめる事はしない（pco_group_instrs.c）。Mesa の quad.frag は 67 group、こちらは 16 なので、残りは shader の math と描く pixel の数（Keiland の側）になる。
+
+### d4bd75b22（main 3029404e9 を merge した後）
+
+- 0 と 1 だけの定数の色の pack を compile の時に畳む（immediate.frag 6→2 group）。
+- blend の時の pixel output の読みは、UNPACK が olchk 付きで直に読む（blend する shader で 1 group 減）。
+- main の config の CONFIG_INPUT_TEST_INJECT y は、riscv64 の vmunix.mk に input-inject.c が無く link できない（Q1 に報告）。板の kernel は `CONFIG_INPUT_TEST_INJECT=n` で作った: build/q1539/vf2d/vmunix（sha256 209cafbf4c0ab87e…）。
