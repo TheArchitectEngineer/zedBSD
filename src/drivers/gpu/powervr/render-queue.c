@@ -179,6 +179,15 @@ static void handle_notice(void *context, uint32_t type, const struct powervr_obj
 #define TRACE_DUMP_JOB			40U
 
 /*
+ * The job trace also dumps the firmware trace of a small job kicked after
+ * no kick for TRACE_IDLE_MS, at most TRACE_IDLE_DUMPS times, with its own
+ * times (q1550: after a minute idle the desktop's first frame took 139 ms
+ * from its kick to its end, whatever it drew).
+ */
+#define TRACE_IDLE_MS			10000U
+#define TRACE_IDLE_DUMPS		3U
+
+/*
  * The submission timing: each part's summed ticks and count since the
  * last report, and when that was.
  *
@@ -200,6 +209,10 @@ static uint64_t trace_reported;
 /* The small jobs the job trace saw, and whether the next kick's firmware trace is marked to be dumped. */
 static uint64_t trace_small_jobs;
 static bool trace_dumping;
+
+/* When the job trace last saw a kick start (counter ticks, 0 before any), and the idle jobs it dumped; under the core's lock. */
+static uint64_t trace_last_kick;
+static unsigned trace_idle_dumps;
 
 /* The traced renders whose TA finished, for the one log of the settings registers (register_log); under the core's lock. */
 static uint64_t register_log_kicks;
@@ -629,7 +642,19 @@ powervr_session_kick_render(
 				powervr_firmware_trace_mark(render->core);
 				trace_dumping = true;
 			}
+
+			/* The first small job after an idle, a few times. */
+			if (trace_last_kick != 0U && trace_rate != 0U &&
+			    trace_started - trace_last_kick >= trace_rate * TRACE_IDLE_MS / 1000U &&
+			    trace_idle_dumps < TRACE_IDLE_DUMPS) {
+				trace_idle_dumps++;
+				kern_logf("powervr: job trace: idle %llu ms before small job %llu\n",
+					  (unsigned long long)((trace_started - trace_last_kick) * 1000U / trace_rate), (unsigned long long)trace_small_jobs);
+				powervr_firmware_trace_mark(render->core);
+				trace_dumping = true;
+			}
 		}
+		trace_last_kick = trace_started;
 	}
 
 	/* Refuses a session without a render context and a half that does not exist. */
@@ -2986,9 +3011,12 @@ job_trace(
 			break;
 		}
 
-		/* Out of time: not counted. */
-		if (now >= limit)
+		/* Out of time: not counted (a dumped job says so). */
+		if (now >= limit) {
+			if (trace_dumping)
+				kern_logf("powervr: job trace: this job did not end in %u ms (ta %s)\n", TRACE_SPIN_MS, geometry_done ? "done" : "not done");
 			return;
+		}
 	}
 
 	/* The parts as sent, TA and 3D, into the small jobs' sums or the rest's. */
@@ -2997,6 +3025,13 @@ job_trace(
 		size = 0U;
 	times[2] -= times[1];
 	times[1] -= times[0];
+
+	/* A job whose firmware trace is dumped says its own times too. */
+	if (trace_dumping) {
+		kern_logf("powervr: job trace: this job sent %llu us, ta %llu us, 3d %llu us\n",
+			  (unsigned long long)(times[0] * 1000000U / rate), (unsigned long long)(times[1] * 1000000U / rate),
+			  (unsigned long long)(times[2] * 1000000U / rate));
+	}
 	for (part = 0; part < TRACE_PARTS; part++) {
 		trace_sums[size][part] += times[part];
 		if (times[part] > trace_most[size][part])
