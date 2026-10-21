@@ -156,6 +156,8 @@ static void propagate_copies(struct powervr_ir_shader *shader);
 static void alias_shared(const struct powervr_ir_shader *shader, const struct powervr_shader_program *program, struct shader_backend *backend);
 static void fuse_multiply_adds(struct powervr_ir_shader *shader, uint32_t stage);
 static int fuse_multiply_add(struct powervr_ir_shader *shader, unsigned at, unsigned which);
+static int fuse_clamp(struct powervr_ir_shader *shader, unsigned at);
+static int clamp_bound(const struct powervr_ir_instruction *instruction, unsigned opcode, uint32_t bound, unsigned *other);
 static unsigned value_references(const struct powervr_ir_shader *shader, unsigned value, unsigned *writes, unsigned *writer);
 static int free_constant(uint32_t bits);
 static void remove_dead_writes(struct powervr_ir_shader *shader);
@@ -567,13 +569,112 @@ fuse_multiply_adds(
 	if (stage != POWERVR_SHADER_FRAGMENT || shader->exact != 0)
 		return;
 
-	/* Each add, by its first source, else its second. */
+	/* Each clamp to [0, 1] as a saturate, then each add, by its first source, else its second. */
+	for (at = 0; at < shader->instruction_count; at++)
+		(void)fuse_clamp(shader, at);
 	for (at = 0; at < shader->instruction_count; at++) {
 		if (shader->instructions[at].opcode != POWERVR_IR_FLOAT_ADD)
 			continue;
 		if (!fuse_multiply_add(shader, at, 0))
 			(void)fuse_multiply_add(shader, at, 1);
 	}
+}
+
+/*
+ * Makes min(max(x, 0), 1) or max(min(x, 1), 0) one saturated add of
+ * zero (q1539: GLSL's clamp to [0, 1] was two operations a pixel), when
+ * the inner result is a one-word value written once, read only there, in
+ * the same run of instructions with x unchanged in between.  The inner
+ * one goes when nothing reads it (remove_dead_writes).
+ */
+static int
+fuse_clamp(
+	struct powervr_ir_shader *shader,
+	unsigned at)
+{
+	struct powervr_ir_instruction *outer;
+	const struct powervr_ir_instruction *inner;
+	const struct powervr_ir_instruction *between;
+	const struct powervr_ir_operand *term;
+	struct powervr_ir_operand x;
+	unsigned inner_opcode;
+	uint32_t inner_bound;
+	unsigned which;
+	unsigned other;
+	unsigned writes;
+	unsigned writer;
+	unsigned next;
+
+	/* A minimum with 1.0 of a maximum with 0, or a maximum with 0 of a minimum with 1.0. */
+	outer = &shader->instructions[at];
+	if (clamp_bound(outer, POWERVR_IR_FLOAT_MINIMUM, 0x3f800000U, &which)) {
+		inner_opcode = POWERVR_IR_FLOAT_MAXIMUM;
+		inner_bound = 0;
+	} else if (clamp_bound(outer, POWERVR_IR_FLOAT_MAXIMUM, 0, &which)) {
+		inner_opcode = POWERVR_IR_FLOAT_MINIMUM;
+		inner_bound = 0x3f800000U;
+	} else {
+		return 0;
+	}
+
+	/* The other source: a plain one-word value written once and read only here. */
+	term = &outer->source[which];
+	if (term->kind != POWERVR_IR_OPERAND_VALUE || term->modifiers != 0 || term->value == 0 || term->value >= shader->value_count ||
+	    shader->values[term->value].width != 1)
+		return 0;
+	if (value_references(shader, term->value, &writes, &writer) != 1 || writes != 1 || writer >= at)
+		return 0;
+	inner = &shader->instructions[writer];
+	if (!clamp_bound(inner, inner_opcode, inner_bound, &other))
+		return 0;
+	x = inner->source[other];
+
+	/* No structure between, and x unchanged. */
+	for (next = writer + 1U; next < at; next++) {
+		between = &shader->instructions[next];
+		if (between->opcode < POWERVR_IR_MOVE)
+			return 0;
+		if (x.kind == POWERVR_IR_OPERAND_VALUE && between->destination == x.value)
+			return 0;
+	}
+
+	/* x + 0, saturated. */
+	outer->opcode = POWERVR_IR_FLOAT_ADD;
+	outer->flags = POWERVR_IR_SATURATE;
+	outer->source[0] = x;
+	outer->source[1].kind = POWERVR_IR_OPERAND_CONSTANT;
+	outer->source[1].modifiers = 0;
+	outer->source[1].component = 0;
+	outer->source[1].value = 0;
+	outer->source[1].constant = 0;
+	outer->source[2].kind = POWERVR_IR_OPERAND_NONE;
+	outer->source[3].kind = POWERVR_IR_OPERAND_NONE;
+	return 1;
+}
+
+/* Reports whether an instruction is the opcode with one source the plain constant bound, and which source is the other. */
+static int
+clamp_bound(
+	const struct powervr_ir_instruction *instruction,
+	unsigned opcode,
+	uint32_t bound,
+	unsigned *other)
+{
+	unsigned source;
+
+	/* The opcode, unsaturated. */
+	if (instruction->opcode != opcode || instruction->flags != 0)
+		return 0;
+
+	/* The bound in either source. */
+	for (source = 0; source < 2; source++) {
+		if (instruction->source[source].kind == POWERVR_IR_OPERAND_CONSTANT && instruction->source[source].modifiers == 0 &&
+		    instruction->source[source].constant == bound) {
+			*other = 1U - source;
+			return 1;
+		}
+	}
+	return 0;
 }
 
 /* Fuses the product an add's source (which) reads into it; reports whether it did. */
