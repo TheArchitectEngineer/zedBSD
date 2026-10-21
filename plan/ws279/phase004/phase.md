@@ -59,7 +59,7 @@ zedBSD の Pi 4 の compiler は、共有の SPIR-V の前段（`src/drivers/gpu
 ## 記録
 
 - 2026-10-21 P2: 設計（上）。design §3.5 の「4 thread なら 16」は誤り（M `vir_register_allocate.c` は thread の index で 64 を半分にするだけで、4 thread は rf0〜rf31。zedBSD の 4.2 と同じ）。design §3.5・§3.7 に訂正を書いた。
-- 2026-10-21 P2 実装（commit b54b15cc4 = encoder と試験、Q1 が main 1fac4c55e に merge 済み。以後の commit は下の SHA）:
+- 2026-10-21 P2 実装（commit b54b15cc4 = encoder と試験、Q1 が main 1fac4c55e に merge 済み。lowering・出力・scheduler・lane の model・shader の試験・mk は 562e610bb）:
   - `src/drivers/gpu/bcm2711/qpu71.c`（新規）: 7.1 の encoder。
   - `shader71-lower.c`・`shader71-output.c`・`shader71-schedule.c`（4.2 の file の写しを 7.1 に書き直した物）。
     - lowering: C 係数は rf0、W は rf3、2 つの small constant は等しくても 1 つを register に、選択の 0 の判定は MOV の pushz（M `nir_to_vir.c` 458・1271 行と同じ形）。
