@@ -2176,6 +2176,8 @@ service_pass(
 	unsigned stalled_count;
 	uint64_t progress;
 	struct powervr_buffer *flushed;
+	uint32_t compute_now;
+	uint32_t fragment_now;
 	int overdue;
 	int pending;
 	int error;
@@ -2212,11 +2214,27 @@ service_pass(
 			if (!session->lost && now - session->pending[session->pending_head].submitted > watchdog)
 				overdue = 1;
 
-			/* Work without progress for POWERVR_PROGRESS_MS: the session is reported lost, once. */
+			/* The device's progress: any change of the session's timelines since the last pass. */
+			compute_now = powervr_session_timeline(session);
+			fragment_now = 0;
+			if (session->render_context != NULL)
+				fragment_now = powervr_object_get32(&session->render_context->fragment.timeline, POWERVR_SYNC_ADDRESS);
+			if (compute_now != session->seen_compute || fragment_now != session->seen_fragment) {
+				session->seen_compute = compute_now;
+				session->seen_fragment = fragment_now;
+				render->progress_ticks = now;
+			}
+
+			/*
+			 * Work that waits while no timeline of any session moved for
+			 * POWERVR_PROGRESS_MS (the core is stuck, not merely busy with
+			 * other work queued ahead): the session is reported lost, once.
+			 */
 			if (!session->lost &&
 			    !session->progress_reported &&
 			    stalled_count < SERVICE_STALLED_MAX &&
-			    now - session->pending[session->pending_head].submitted > progress) {
+			    now - session->pending[session->pending_head].submitted > progress &&
+			    now - render->progress_ticks > progress) {
 				session->progress_reported = 1;
 				stalled[stalled_count] = session;
 				stalled_count++;

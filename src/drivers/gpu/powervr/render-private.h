@@ -418,6 +418,10 @@ struct powervr_session {
 	/* Set once the progress watchdog reported the session (under the queue lock). */
 	unsigned progress_reported;
 
+	/* The compute and 3D timeline values the service saw last, to tell the device's progress. */
+	uint32_t seen_compute;
+	uint32_t seen_fragment;
+
 	/*
 	 * The target the session's newest render job kicked with, for the
 	 * description after a reset; targets live until the session closes.
@@ -479,6 +483,9 @@ struct powervr_render {
 	struct powervr_shared *exports;
 	struct powervr_session *sessions;
 	struct powervr_buffer *kept_buffers;
+
+	/* When the service last saw any session's timeline move (the watchdog's measure of progress). */
+	uint64_t progress_ticks;
 
 	/* Cached buffers whose last holder let go, under the queue lock; the service flushes the cache, then frees them. */
 	struct powervr_buffer *slc_pending;
