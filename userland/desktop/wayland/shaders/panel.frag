@@ -90,11 +90,16 @@ void main()
 		glass = mix(glass, vec3(0.0), shade);
 #endif
 		float depth = clamp((point.y - panel.box.y) * panel.texture.w, 0.0, 1.0);
+#if !defined(KWL_PANEL_INSIDE)
 		float edge = clamp(1.0 - abs(distance + 1.0), 0.0, 1.0);
+#endif
 
 		// A sheen from the top, except on flat glass (a window's panels).
 		glass += vec3(panel.texture.z) * (1.0 - depth);
+#if !defined(KWL_PANEL_INSIDE)
+		// The bright edge, which an inside's pixels are off (the mix by 0 leaves the glass as it is).
 		glass = mix(glass, vec3(1.0), edge * panel.screen.z);
+#endif
 		colour = vec4(glass * cover, cover);
 #endif
 #if !defined(KWL_PANEL_MODE) || KWL_PANEL_MODE == 1
