@@ -58,7 +58,9 @@
  * The exit status is 0 only when every case passes.  An argument names
  * the one case to run; -r R runs the cases R times, and -p N runs them in
  * N processes at once, each with its own device (sessions rendering
- * concurrently), with lines prefixed vkmatrix[1] to vkmatrix[N].
+ * concurrently), with lines prefixed vkmatrix[1] to vkmatrix[N].  -c F
+ * (q1547, one process only) makes every pipeline through one
+ * VkPipelineCache and writes its data to the file F at the end of the run.
  */
 
 /* clock_gettime and fork under a strict C standard. */
@@ -101,6 +103,9 @@
 #define PERF_TEXTURE_NOB	16
 #define PERF_ALU_PIX		17
 #define PERF_LOAD_DRAW		18
+#define PERF_ALU_PIX_SQ		19
+#define PERF_ALU_PIX_SQ32	20
+#define PERF_FLAT_BLEND		21
 #define PERF_FRAMES		20U
 
 /* perf-tri128's grid of quads a side, and perf-stack4's and perf-draws4's full-screen quads. */
@@ -200,6 +205,9 @@ struct vkmatrix {
 	VkPipelineLayout layouts[VKMATRIX_PIPELINES_MAX];
 	VkPipeline pipelines[VKMATRIX_PIPELINES_MAX];
 	uint32_t pipeline_count;
+
+	/* The pipeline cache every pipeline is made through (-c), VK_NULL_HANDLE for none. */
+	VkPipelineCache cache;
 	struct vkmatrix_texture textures[VKMATRIX_TEXTURES_MAX];
 	uint32_t texture_count;
 	VkFormat texture_format;
@@ -328,6 +336,11 @@ static VkResult case_perf_uniform(struct vkmatrix *run);
 static VkResult case_perf_texture_nob(struct vkmatrix *run);
 static VkResult case_perf_alu_pix(struct vkmatrix *run);
 static VkResult case_perf_load_draw(struct vkmatrix *run);
+static VkResult case_perf_alu_pix_sq(struct vkmatrix *run);
+static VkResult case_perf_alu_pix_sq32(struct vkmatrix *run);
+static VkResult case_perf_flat_blend(struct vkmatrix *run);
+static VkResult vkmatrix_cache_open(struct vkmatrix *run);
+static void vkmatrix_cache_write(struct vkmatrix *run, const char *prefix);
 static void perf_record(struct vkmatrix *run, int kind, uint32_t pipeline, uint32_t first, uint32_t vertices, uint32_t draws, uint32_t frame);
 static VkResult perf_submit(struct vkmatrix *run, uint64_t *spent);
 static int vkmatrix_case_named(const char *pattern, const char *name);
@@ -340,6 +353,12 @@ static void uniform_ramp_colour(const float push[8], float place, float colour[4
  * by main before each run of the cases; one process reads it.
  */
 static uint32_t vkmatrix_trial;
+
+/*
+ * The file the pipeline cache's data is written to (-c, q1547), NULL for
+ * no cache.  Set by main before the cases run; one process reads it.
+ */
+static const char *vkmatrix_cache_file;
 
 /* Every case, in the order they run. */
 static const struct vkmatrix_case cases[] = {
@@ -397,6 +416,9 @@ static const struct vkmatrix_case cases[] = {
 	{ "perf-texture-nob", case_perf_texture_nob },
 	{ "perf-alu-pix", case_perf_alu_pix },
 	{ "perf-load-draw", case_perf_load_draw },
+	{ "perf-alu-pix-sq", case_perf_alu_pix_sq },
+	{ "perf-alu-pix-sq32", case_perf_alu_pix_sq32 },
+	{ "perf-flat-blend", case_perf_flat_blend },
 };
 
 /* The clear colour of every case's first pass: dark blue. */
@@ -424,8 +446,9 @@ main(
 
 	/*
 	 * The options: -p N processes at once, -r R runs of the cases each,
-	 * -t T[,T...] the driver's trials one after another (q1546), then
-	 * the case's name (a trailing * matches names starting so).
+	 * -t T[,T...] the driver's trials one after another (q1546), -c F
+	 * the pipeline cache's file (q1547), then the case's name (a
+	 * trailing * matches names starting so).
 	 */
 	processes = 1;
 	repeats = 1;
@@ -459,10 +482,17 @@ main(
 			}
 			if (trial_count == 0)
 				return 2;
+		} else if (strcmp(argv[arg], "-c") == 0 && arg + 1 < argc) {
+			arg++;
+			vkmatrix_cache_file = argv[arg];
 		} else {
 			name = argv[arg];
 		}
 	}
+
+	/* The pipeline cache is one process's. */
+	if (vkmatrix_cache_file != NULL && processes != 1)
+		return 2;
 
 	/* One process: the cases here, once a trial. */
 	if (processes == 1) {
@@ -546,6 +576,8 @@ vkmatrix_run_cases(
 		status = vkmatrix_target(run);
 	if (status == VK_SUCCESS)
 		status = vkmatrix_passes(run);
+	if (status == VK_SUCCESS)
+		status = vkmatrix_cache_open(run);
 	if (status != VK_SUCCESS) {
 		printf("%s: no Vulkan device (%s %d)\n", prefix, run->failed_call, (int)status);
 		vkmatrix_destroy(run);
@@ -592,8 +624,9 @@ vkmatrix_run_cases(
 		}
 	}
 
-	/* The total. */
+	/* The total, then the pipeline cache's data to its file. */
 	printf("%s: %u/%u passed\n", prefix, (unsigned)passed, (unsigned)ran);
+	vkmatrix_cache_write(run, prefix);
 	vkmatrix_destroy(run);
 	free(run);
 
@@ -1132,7 +1165,7 @@ vkmatrix_pipeline(
 	if (run->pipeline_pass != VK_NULL_HANDLE)
 		pipeline_info.renderPass = run->pipeline_pass;
 	run->failed_call = "vkCreateGraphicsPipelines";
-	status = vkCreateGraphicsPipelines(run->device, VK_NULL_HANDLE, 1, &pipeline_info, NULL, &run->pipelines[slot]);
+	status = vkCreateGraphicsPipelines(run->device, run->cache, 1, &pipeline_info, NULL, &run->pipelines[slot]);
 	vkDestroyShaderModule(run->device, modules[0], NULL);
 	vkDestroyShaderModule(run->device, modules[1], NULL);
 	if (status != VK_SUCCESS)
@@ -1802,6 +1835,8 @@ vkmatrix_destroy(
 			vkDestroyFence(run->device, run->fence, NULL);
 		if (run->command_pool != VK_NULL_HANDLE)
 			vkDestroyCommandPool(run->device, run->command_pool, NULL);
+		if (run->cache != VK_NULL_HANDLE)
+			vkDestroyPipelineCache(run->device, run->cache, NULL);
 		vkDestroyDevice(run->device, NULL);
 	}
 
@@ -4199,7 +4234,10 @@ load_1080_textures(
  * perf-alu-pix, perf-alu's chain seeded by a varying, so no driver can
  * work it out once a draw (the pixel rate of the arithmetic);
  * perf-load-draw, a load with a small flat quad, so no driver can drop
- * the load.
+ * the load.  q1547: perf-alu-pix-sq and perf-alu-pix-sq32, 64 and 32
+ * dependent squares (x = x * x * 0.999 + 0.0005) from a varying, whose
+ * difference is the rate of 32 operations; perf-flat-blend, perf-flat at
+ * alpha 0.5 blended over, whose difference from perf-flat is the blend.
  *
  * The frames are timed one a submit, and again all in one command
  * buffer, one submit and one wait (batched: the clock's tick and the
@@ -4211,9 +4249,9 @@ perf_case(
 	struct vkmatrix *run,
 	int kind)
 {
-	static const char *const names[19] = {
+	static const char *const names[22] = {
 		"clear", "load", "flat", "texture", "immediate", "alu", "quarter", "tri1", "tri8", "tri128", "stack4", "draws4", "alu4", "mul4", "rcp",
-		"uniform", "texture-nob", "alu-pix", "load-draw",
+		"uniform", "texture-nob", "alu-pix", "load-draw", "alu-pix-sq", "alu-pix-sq32", "flat-blend",
 	};
 	VkSubresourceLayout layout;
 	struct vkmatrix_shape shape;
@@ -4291,6 +4329,27 @@ perf_case(
 			shape.fragment_size = sizeof(vkmatrix_alupix_frag);
 			shape.push_size = 0;
 			shape.push_stages = 0;
+		} else if (kind == PERF_ALU_PIX_SQ) {
+			/* q1547: 64 dependent squares from the varying. */
+			shape.vertex = vkmatrix_uniform_vert;
+			shape.vertex_size = sizeof(vkmatrix_uniform_vert);
+			shape.fragment = vkmatrix_alusq_frag;
+			shape.fragment_size = sizeof(vkmatrix_alusq_frag);
+			shape.push_size = 0;
+			shape.push_stages = 0;
+		} else if (kind == PERF_ALU_PIX_SQ32) {
+			/* q1547: 32 of them, the other point of the slope. */
+			shape.vertex = vkmatrix_uniform_vert;
+			shape.vertex_size = sizeof(vkmatrix_uniform_vert);
+			shape.fragment = vkmatrix_alusq32_frag;
+			shape.fragment_size = sizeof(vkmatrix_alusq32_frag);
+			shape.push_size = 0;
+			shape.push_stages = 0;
+		} else if (kind == PERF_FLAT_BLEND) {
+			/* q1547: the flat quad at alpha 0.5, blended over. */
+			shape.fragment = vkmatrix_flatblend_frag;
+			shape.fragment_size = sizeof(vkmatrix_flatblend_frag);
+			shape.blend = VKMATRIX_OVER;
 		}
 		status = vkmatrix_pipeline(run, &shape, &pipeline);
 		if (status != VK_SUCCESS)
@@ -4408,7 +4467,10 @@ perf_record(
 			vkCmdBindDescriptorSets(run->command, VK_PIPELINE_BIND_POINT_GRAPHICS, run->layouts[pipeline], 0, 1, &run->textures[1].set, 0, NULL);
 		} else if (kind == PERF_UNIFORM) {
 			vkCmdPushConstants(run->command, run->layouts[pipeline], VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(ramp), ramp);
-		} else if (kind != PERF_IMMEDIATE && kind != PERF_ALU_PIX) {
+		} else if (kind != PERF_IMMEDIATE &&
+			   kind != PERF_ALU_PIX &&
+			   kind != PERF_ALU_PIX_SQ &&
+			   kind != PERF_ALU_PIX_SQ32) {
 			red = 1.0f;
 			vkCmdPushConstants(run->command, run->layouts[pipeline], VK_SHADER_STAGE_FRAGMENT_BIT, 0, 4, &red);
 		}
@@ -5292,6 +5354,136 @@ case_perf_load_draw(
 
 	/* Succeeded: the case ran. */
 	return VK_SUCCESS;
+}
+
+/* perf-alu-pix-sq (q1547): 64 dependent squares a pixel from a varying. */
+static VkResult
+case_perf_alu_pix_sq(
+	struct vkmatrix *run)
+{
+	VkResult status;
+
+	/* Times the kind. */
+	status = perf_case(run, PERF_ALU_PIX_SQ);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the case ran. */
+	return VK_SUCCESS;
+}
+
+/* perf-alu-pix-sq32 (q1547): 32 dependent squares a pixel from a varying. */
+static VkResult
+case_perf_alu_pix_sq32(
+	struct vkmatrix *run)
+{
+	VkResult status;
+
+	/* Times the kind. */
+	status = perf_case(run, PERF_ALU_PIX_SQ32);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the case ran. */
+	return VK_SUCCESS;
+}
+
+/* perf-flat-blend (q1547): a 1080p clear and one full-screen flat quad blended over. */
+static VkResult
+case_perf_flat_blend(
+	struct vkmatrix *run)
+{
+	VkResult status;
+
+	/* Times the kind. */
+	status = perf_case(run, PERF_FLAT_BLEND);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the case ran. */
+	return VK_SUCCESS;
+}
+
+/* Makes the run's empty pipeline cache when -c names a file (q1547). */
+static VkResult
+vkmatrix_cache_open(
+	struct vkmatrix *run)
+{
+	VkPipelineCacheCreateInfo info;
+	VkResult status;
+
+	/* No file: no cache. */
+	if (vkmatrix_cache_file == NULL)
+		return VK_SUCCESS;
+
+	/* An empty cache every pipeline is made through. */
+	memset(&info, 0, sizeof(info));
+	info.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+	run->failed_call = "vkCreatePipelineCache";
+	status = vkCreatePipelineCache(run->device, &info, NULL, &run->cache);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the cache is made. */
+	return VK_SUCCESS;
+}
+
+/* Writes the pipeline cache's data to the -c file and prints its size (q1547). */
+static void
+vkmatrix_cache_write(
+	struct vkmatrix *run,
+	const char *prefix)
+{
+	FILE *file;
+	void *data;
+	size_t size;
+	size_t written;
+	VkResult status;
+
+	/* No cache: nothing to write. */
+	if (run->cache == VK_NULL_HANDLE)
+		return;
+
+	/* The data's size. */
+	size = 0;
+	status = vkGetPipelineCacheData(run->device, run->cache, &size, NULL);
+	if (status != VK_SUCCESS) {
+		printf("%s: pipeline cache: vkGetPipelineCacheData %d\n", prefix, (int)status);
+		return;
+	}
+
+	/* Room for it (one byte for an empty cache). */
+	data = malloc(size + 1U);
+	if (data == NULL) {
+		printf("%s: pipeline cache: no memory for %lu bytes\n", prefix, (unsigned long)size);
+		return;
+	}
+
+	/* The data itself. */
+	status = vkGetPipelineCacheData(run->device, run->cache, &size, data);
+	if (status != VK_SUCCESS) {
+		printf("%s: pipeline cache: vkGetPipelineCacheData %d\n", prefix, (int)status);
+		free(data);
+		return;
+	}
+
+	/* The file. */
+	file = fopen(vkmatrix_cache_file, "wb");
+	if (file == NULL) {
+		printf("%s: pipeline cache: cannot open %s\n", prefix, vkmatrix_cache_file);
+		free(data);
+		return;
+	}
+
+	/* The data into it, then its size printed. */
+	written = fwrite(data, 1, size, file);
+	fclose(file);
+	free(data);
+	if (written != size) {
+		printf("%s: pipeline cache: wrote %lu of %lu bytes to %s\n", prefix, (unsigned long)written, (unsigned long)size, vkmatrix_cache_file);
+		return;
+	}
+	printf("%s: pipeline cache: %lu bytes to %s\n", prefix, (unsigned long)size, vkmatrix_cache_file);
 }
 
 /* Reports whether a case's name is the one asked for, or starts with what comes before a trailing '*'. */

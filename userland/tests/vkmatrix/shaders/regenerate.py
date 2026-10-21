@@ -13,7 +13,7 @@ import tempfile
 HERE = pathlib.Path(__file__).resolve().parent
 SHADERS = ["push4.vert", "push4.frag", "push32.vert", "push32.frag", "push128.vert", "push128.frag",
            "batch.vert", "batch.frag", "texture.vert", "texture.frag", "immediate.frag", "alu.frag", "alu4.frag", "mul4.frag", "rcp.frag",
-           "uniform.vert", "uniform.frag", "alupix.frag"]
+           "uniform.vert", "uniform.frag", "alupix.frag", "alusq.frag", "alusq32.frag", "flatblend.frag"]
 
 
 def compile_shader(source):
