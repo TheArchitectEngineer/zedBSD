@@ -118,6 +118,9 @@
 #define FRAME_BAND		8
 #define FRAME_CORNER		24
 
+/* The corner radius of the desktop layer's wallpaper while it goes back over App Home, in the layer's own pixels. */
+#define HOME_LAYER_RADIUS	18.0f
+
 /*
  * Placing a new window (ws035-p092): how far each cascade step moves it
  * (a title bar and its gap, so the title bar under it shows), how many
@@ -602,7 +605,8 @@ static float desktop_position(struct kwl_server *server);
 static void desktop_turn(struct kwl_server *server, int target, const char *via);
 static void desktop_release(struct kwl_server *server);
 static unsigned desktop_windows(struct kwl_server *server, unsigned desktop);
-static void draw_home_picture(struct kwl_server *server, struct kwl_list *command, float home);
+static void draw_home_picture(struct kwl_server *server, struct kwl_list *command, float home, const float (*under)[4], unsigned under_count);
+static unsigned home_under_layer(struct kwl_server *server, float home, float (*under)[4]);
 static void draw_layer_animated(struct kwl_server *server, struct kwl_list *command, struct kwl_object **windows, unsigned count, float home, const struct shell_bar *bar);
 
 /*
@@ -621,6 +625,8 @@ kwl_glass_draw(
 	struct kwl_object *top;
 	struct kwl_object *cover;
 	struct shell_bar bar;
+	float under[1][4];
+	unsigned under_count;
 	unsigned hidden;
 	int whole;
 	float progress;
@@ -668,12 +674,15 @@ kwl_glass_draw(
 	home = kwl_home_progress(server);
 	hidden = 0U;
 	pictures = 0;
+	under_count = 0U;
 	if (home > 0.0f)
 		pictures = kwl_layers_showing(server);
+	if (home > 0.0f)
+		under_count = home_under_layer(server, home, under);
 	if (home > 0.0f) {
 		server->draw_section = KWL_SECTION_HOME;
 		if (pictures)
-			draw_home_picture(server, command, home);
+			draw_home_picture(server, command, home, (const float (*)[4])under, under_count);
 		else
 			kwl_home_draw(server, command, home);
 		server->draw_section = KWL_SECTION_LAYER;
@@ -713,7 +722,7 @@ kwl_glass_draw(
 		shape.color[1] = 0.12f;
 		shape.color[2] = 0.24f;
 		shape.color[3] = 0.40f * home * server->layer_opacity;
-		glass_shape_draw(server, command, &shape);
+		glass_shape_draw_except(server, command, &shape, (const float (*)[4])under, under_count);
 	}
 
 	/* The layer's place over Home is where the wallpaper and the windows are drawn. */
@@ -763,7 +772,7 @@ kwl_glass_draw(
 		if (pictures || anim_pictures)
 			shape.set = kwl_layers_set(server, KWL_LAYER_DESKTOP);
 		if (home > 0.0f)
-			shape.radius = 18.0f;
+			shape.radius = HOME_LAYER_RADIUS;
 		glass_shape_draw(server, command, &shape);
 	}
 
@@ -10631,6 +10640,43 @@ home_layer_log(
 }
 
 /*
+ * Works out where the desktop layer, going back into the distance over
+ * App Home (kwl_home_layer), hides what is drawn under it: the inside of
+ * its wallpaper's rounded rectangle, when the layer is drawn at full
+ * opacity (its wallpaper and windows are then opaque there).  Returns the
+ * number of such holes (0 or 1) in under.
+ */
+static unsigned
+home_under_layer(
+	struct kwl_server *server,
+	float home,
+	float (*under)[4])
+{
+	float rect[4];
+	float opacity;
+	float scale;
+	float x;
+	float y;
+
+	/* The layer's place over Home this far open; a layer fading out hides nothing. */
+	kwl_home_layer(server, home, &x, &y, &scale, &opacity);
+	if (opacity < 1.0f || scale <= 0.0f)
+		return 0U;
+
+	/* The wallpaper's rectangle (the whole output, scaled) less its rounded corners (scaled) and a pixel. */
+	rect[0] = x;
+	rect[1] = y;
+	rect[2] = (float)server->width * scale;
+	rect[3] = (float)server->height * scale;
+	glass_opaque_inside(rect, HOME_LAYER_RADIUS * scale, under[0]);
+	if (under[0][2] <= 0.0f || under[0][3] <= 0.0f)
+		return 0U;
+
+	/* Succeeded: one hole. */
+	return 1U;
+}
+
+/*
  * Draws App Home from the pictures (layer-cache.c, ws211-p002): the stage,
  * then Home's picture coming forward from the distance as far as Home is
  * open (kwl_edge_home_content), faded in by it.  The first frames of the
@@ -10640,7 +10686,9 @@ static void
 draw_home_picture(
 	struct kwl_server *server,
 	struct kwl_list *command,
-	float home)
+	float home,
+	const float (*under)[4],
+	unsigned under_count)
 {
 	struct kwl_edge_depth depth;
 	struct glass_shape shape;
@@ -10652,7 +10700,7 @@ draw_home_picture(
 	int launched;
 
 	/* The stage, in Home's own colours; an opening's first frame shows only it (Home's picture comes next, review-4 H3). */
-	kwl_home_draw_stage(server, command);
+	kwl_home_draw_stage(server, command, under, under_count);
 	if (kwl_layers_home_hidden(server)) {
 		server->keep_colours = 0U;
 		return;
@@ -10674,7 +10722,7 @@ draw_home_picture(
 	shape.mode = MODE_IMAGE;
 	shape.set = kwl_layers_set(server, KWL_LAYER_HOME);
 	shape.opacity = home;
-	glass_shape_draw(server, command, &shape);
+	glass_shape_draw_except(server, command, &shape, under, under_count);
 
 	/* The clock over the picture, placed and faded as the content (it is not in the picture, review-3 B6). */
 	kwl_home_draw_clock_over(server, command, home);

@@ -304,7 +304,7 @@ static void home_read_apps(struct kwl_server *server);
 static int home_present(const char *name, const char *command);
 static void home_add_app(const char *name, const char *command, const char *keywords, uint32_t rgb, const char *picture);
 static void home_draw_letter(struct kwl_server *server, struct kwl_list *command, const struct home_app *app, int32_t x, int32_t y, float left, float top, float size, int over, float opacity);
-static void home_stage(struct kwl_server *server, struct kwl_list *command, float x, float y, float width, float height);
+static void home_stage(struct kwl_server *server, struct kwl_list *command, float x, float y, float width, float height, const float (*under)[4], unsigned under_count);
 static void home_stage_shapes(struct kwl_server *server, struct kwl_list *command, float x, float y, float width, float height);
 static void home_stage_picture(struct kwl_server *server, struct kwl_list *command);
 static void home_draw_tile(struct kwl_server *server, struct kwl_list *command, float left, float top, float size, const float *color);
@@ -594,7 +594,7 @@ kwl_home_draw_head(
 	struct kwl_list *command)
 {
 	/* The stage over the head, then the appearance's colours again. */
-	home_stage(server, command, (float)server->view_x, (float)server->view_y, (float)server->view_width, (float)server->view_height);
+	home_stage(server, command, (float)server->view_x, (float)server->view_y, (float)server->view_width, (float)server->view_height, NULL, 0U);
 	server->keep_colours = 0U;
 }
 
@@ -602,8 +602,9 @@ kwl_home_draw_head(
  * Draws the stage over a rectangle of the plane (ws099-p035b, its own
  * colours in both appearances).  Over the whole output, where it is the
  * same in every frame, it is drawn once into a picture (glass-map.c) and
- * shown as that opaque image; elsewhere, and until the picture is drawn,
- * as its shapes.
+ * shown as that opaque image, except under the holes (under, under_count:
+ * where what is drawn over the stage hides it); elsewhere, and until the
+ * picture is drawn, as its shapes.
  */
 static void
 home_stage(
@@ -612,7 +613,9 @@ home_stage(
 	float x,
 	float y,
 	float width,
-	float height)
+	float height,
+	const float (*under)[4],
+	unsigned under_count)
 {
 	struct glass_shape shape;
 	VkDescriptorSet set;
@@ -644,7 +647,7 @@ home_stage(
 	shape.mode = MODE_IMAGE;
 	shape.opaque = 1.0f;
 	shape.set = set;
-	glass_shape_draw(server, command, &shape);
+	glass_shape_draw_except(server, command, &shape, under, under_count);
 }
 
 /* Draws the stage over the whole output into its picture (glass-map.c). */
@@ -723,7 +726,7 @@ kwl_home_draw(
 	 * blurred desktop under black glass, in its own colours.
 	 */
 	width = (float)server->width;
-	home_stage(server, command, 0.0f, 0.0f, width, (float)server->height);
+	home_stage(server, command, 0.0f, 0.0f, width, (float)server->height, NULL, 0U);
 
 	/* The stage's first frame since Home was asked to open (BUG-225's wait, measured). */
 	if (!server->home_cover_logged && server->home_to > 0.0f) {
@@ -820,10 +823,12 @@ kwl_home_clock_damage(
 void
 kwl_home_draw_stage(
 	struct kwl_server *server,
-	struct kwl_list *command)
+	struct kwl_list *command,
+	const float (*under)[4],
+	unsigned under_count)
 {
-	/* The dark stage, whole. */
-	home_stage(server, command, 0.0f, 0.0f, (float)server->width, (float)server->height);
+	/* The dark stage, whole, except where the layer over it hides it. */
+	home_stage(server, command, 0.0f, 0.0f, (float)server->width, (float)server->height, under, under_count);
 }
 
 /*
