@@ -35,3 +35,6 @@ clear 3.85 ms、LOAD 23.35 ms、平らな quad 15.1 ms、1/4 面積 7.2 ms、402
 - d57（P1 c3dde7fc7: 上の窓の不透明な所の下を描かない・opaque region・desktop の描いた範囲）: 見た目同じ（shot57.png）。terminal の出力の部分 frame は rec submit 約 13.5 ms（d56 は 66）、3 窓の全画面の frame は約 85〜100 ms。
 - d58（glass を切る、ユーザーの問い「glass effectを切ったとき…それでも遅さが変わらないですか？GPUからのメモリのリードが遅い？」）: 全画面の frame 約 38 ms（MODES quad 5/4.98 M px ≈ 2.4 画面分、perf-texture の 17.75 ms/画面と合う）、部分 frame 13.3 ms（job wait 約 10 ms）。→ glass の費用は shader の計算。memory の read は d50 の perf-read で遅くない。残る driver の課題: shader の group あたりの費用（P2）と job の面積に依らない固定費（P1 q1541）。
 - 2026-10-21 ユーザーの指示で Keiland の作業は止め、driver に集中（Master の decisions-log）。
+- d59（P1 c69651a44 だけ、main 基で P2 の compiler 無し）: 比較にならない（shader が古い）。timing: 部分 frame の job wait 15.3 ms、map 0.3・build 1.1・release 0.6 ms。
+- d60（Q1 の合成 c53546e6a = main 9bfff4fe3 + P2 b3995c934 + P1 42389dad2）: vkmatrix 45/45、HWR 0。perf: clear 3850、flat 9250、immediate 4750（2 group）、alu 61100・alu4 55700（依存でなく issue の速さ、約 0.86 ms/group/全画面）、load 10350、texture 16650、load-part（916x632）5850、load-small（64x64）4050 us → 面積に依らない固定費 約 4 ms は残る（空 tile の skip の効果なし）。desktop: 部分 frame 12.5 ms、全画面 frame 80〜88 ms。
+- 2026-10-21 ユーザー「同じシェーダについて、Mesaのコンパイラが出力したものと、我々の出力で、どれくらい違うかも見てください。命令数、分岐の扱い、レジスタspillなど、最適化ができていないところは直しましょう。」→ P2 q1539 に追加。
