@@ -67,7 +67,7 @@ jobs:
           yes | make firmware-licenses
           make -j4 native-image
           mkdir -p artifacts
-          gzip -9 -c build/riscv64/native.img > artifacts/zedbsd-vf2.img.gz
+          gzip -9 -c build/visionfive2/native.img > artifacts/zedbsd-vf2.img.gz
 
       - name: Build pc98
         run: |
