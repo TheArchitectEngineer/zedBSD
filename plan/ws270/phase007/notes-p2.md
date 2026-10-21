@@ -145,3 +145,45 @@ Mesa 26.2.5（drm-shim、BVNC 36.50.54.182、`PVR_DEBUG=cs`、vkmatrix の perf-
 - group 数（e51fbc510 → 92789513b）: glass の [0] 100→84、dark の [7] 114→93、blur の [6] 71→61、[1]〜[5] は 53・47・48・52・27、batch.frag 55→49、fallback の panel.frag 375→351、quad.vert 21→17。
 - 調べた事（Mesa 26.2.5 の source）: pco は 1 命令 = 1 group（pco_group_instrs.c）で、uniform だけの計算を pixel の外へ出す最適化（nir_opt_preamble）も使っていない。glass の box の中心・1/screen など約 10 group は、pixel ごとの計算のまま。
 - host: compiler 411・22 passed、p010 全 0 failed、p009 505 passed、VF2 warning 0。板は未実施。
+
+### Mesa pco と我々の compiler の比較（2026-10-21、ユーザーの指示「同じシェーダについて、Mesaのコンパイラが出力したものと、我々の出力で、どれくらい違うかも見てください。命令数、分岐の扱い、レジスタspillなど、最適化ができていないところは直しましょう。」）
+
+- 条件:
+  - 同じ SPIR-V（userland/desktop/wayland/shaders.h、libkeiland/ui/shaders.h、userland/tests/vkmatrix/shader.h）、同じ key（B8G8R8A8_UNORM、Keiland は premultiplied の blend ONE/ONE_MINUS_SRC_ALPHA、vkmatrix は blend 無し）。
+  - Mesa 26.2.5 は drm-shim、BVNC 36.50.54.182、`PVR_I_WANT_A_BROKEN_VULKAN_DRIVER=1 PCO_DEBUG_PRINT=all,stats`、vertex と fragment を 1 つの pipeline にした（Mesa の vertex は link された数）。
+  - ours は 92789513b を host の probe で数えた。
+  - 道具: scratchpad の mesa-stats.c（build/mesa-pco/pcostats.c の拡張）と stats.c。repository には入れていない。
+
+| shader | Mesa FS group（temps、control group） | ours FS group（temps） | Mesa VS | ours VS |
+| --- | --- | --- | --- | --- |
+| quad | 67（32、8） | 16（18） | 21 | 17 |
+| panel（fallback） | 393（24、46） | 351（51） | 27 | 26 |
+| batch | 83（13、7） | 49（20） | 16 | 34 |
+| turn | （quad.frag） | （quad.frag） | 19 | 21 |
+| panel[0] glass | 141（16、8） | 84（20） | 19 | 26 |
+| panel[1] shadow | 101（13、7） | 50（18） | 19 | 26 |
+| panel[2] image | 91（13、8） | 47（18） | 27 | 26 |
+| panel[3] solid | 92（13、7） | 48（18） | 19 | 26 |
+| panel[4] ring | 97（13、7） | 52（18） | 19 | 26 |
+| panel[5] text | 83（32、8） | 27（18） | 21 | 26 |
+| panel[6] blur | 138（31、12） | 61（26） | 21 | 26 |
+| panel[7] dark glass | 153（16、8） | 93（20） | 19 | 26 |
+| canvas（libkeiland） | 67（32、8） | 16（18） | 17 | 21 |
+| vkm push4 | 28（9、1） | 6（9） | 6 | 7 |
+| vkm immediate | 35（6、1） | 2（3） | 6 | 7 |
+| vkm alu | 220（6、1） | 70（10） | 6 | 7 |
+| vkm alu4 | 225（10、1） | 73（13） | 6 | 7 |
+| vkm texture | 59（32、8） | 10（14） | 7 | 11 |
+
+- spill: どちらも全部 0。ours は spill を持たず、temps が 96 を越えると compile が失敗する。今の最大は fallback の 51。
+- 分岐:
+  - 変種の panel・quad・batch・canvas は、どちらも分岐なし。
+  - fallback の panel.frag は、どちらも本当の branch と EMC の predication。Mesa は br 16・cndst 7・cndef 6・cndend 6・wdf 10、ours は BR 12・COND 19・WAIT 12。
+  - divergence は、どちらも EMC で無効の instance を止め、全部が無効の時だけ branch で飛ぶ。
+- texture: sample 1 つにつき wait 1 つで、どちらも同じ。vec2 の iterate はどちらも 1 命令。
+- 定数と shared:
+  - Mesa は定数ごとに movi32（alu で 136 の bitwise group）、shared は mbyp で temp に移してから使う所が多い。
+  - ours は shared をそのまま読み、定数は literal の shared。
+- 残る差（ours が劣る所）:
+  - vertex の group 数: batch 34 と 16、texture 11 と 7。vertex の入力を temp へ移す move と、link しない出力のため。
+  - temps: 変種で 18〜26 と Mesa の 13〜16。fallback で 51 と 24。
