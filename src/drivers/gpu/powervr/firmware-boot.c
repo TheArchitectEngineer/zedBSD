@@ -235,9 +235,13 @@ static void watch_thread(void *argument);
  * firmware's work around each job (about 1 ms on the board) is far more
  * than the core's; the host writes them only while the processor is held
  * in reset (the load and the restart), whose reset empties its caches.
+ * The code cached (read only) halved that work on the board (d69: the TA's
+ * share 639 to 296 us, the 3D's 608 to 357 us, with every trace group on);
+ * the data cached is a trial (the firmware may have the core read some of
+ * it, which a write-back cache would leave stale).
  */
 #ifndef POWERVR_FIRMWARE_CODE_CACHED
-#define POWERVR_FIRMWARE_CODE_CACHED	0
+#define POWERVR_FIRMWARE_CODE_CACHED	1
 #endif
 #ifndef POWERVR_FIRMWARE_DATA_CACHED
 #define POWERVR_FIRMWARE_DATA_CACHED	0
