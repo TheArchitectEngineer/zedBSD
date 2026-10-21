@@ -103,3 +103,4 @@ clear 3.85 ms、LOAD 23.35 ms、平らな quad 15.1 ms、1/4 面積 7.2 ms、402
 - main e01ecc21d に P1 b83d5446b（重ねの wayland・libvulkan の WSI・signal の診断）を merge（2026-10-22）。
 - d116（d114 の kernel ＋ P1 e7ea311a9 の wayland（静けさの間の prewarm c730be733、KWL の frame 番号の直し、frame callback を渡した時に送る））: 板の /bin/wayland が SD の不良で壊れ（BUG-343）、wayland が起動の最初で落ちた（d116・d116b）。書き直して d116c を 2 回: HWR・lost・signal 0、見た目正常。launch 57〜60、drag 60、home 58〜59、wiseview 58（work max 19〜24）。type 44〜45 fps で lag p50 24 ms（d115 13）に増えた → e7ea311a9 の見直しを P1 へ。
 - main 710ca1f5a に P2 91a0f488e（pool・GPU の clear・compiler・HWR の dump を最新の 1024 語に）を merge（2026-10-22）。
+- d117（P2 13d714e21 の CI の config（`CONFIG_POWERVR_DEBUG := n`）の kernel、ユーザー「CIのVF2イメージGPUがデバッグ用のダンプとかログを使わないようにできる？」）: 板で起動し desktop が出た（shot-d117.png）。dmesg の GPU の行は probe・firmware・render node ready の 3 行と、前からある `dc8200: no-go (power domain off, loader removed its output at exit)` の 1 行だけ。main に merge。
