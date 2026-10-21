@@ -51,6 +51,8 @@ static void sync_release_storage(struct vulkan_object *object);
 static VkResult sync_fences_wait(struct VkDevice_T *device, uint32_t count, const VkFence *fences, VkBool32 all, uint64_t timeout_ns, struct vulkan_notification **pins, struct pollfd *descriptors);
 static void sync_notifications_unpin(struct vulkan_context *context, uint32_t count, struct vulkan_notification **pins);
 static VkBool32 sync_context_lost(struct vulkan_context *context);
+static VkResult sync_fence_status(VkDevice device, VkFence fence, VkBool32 trust_marker);
+static VkResult sync_fence_native_status(struct VkDevice_T *owner, struct vulkan_sync *sync, VkBool32 trust_marker);
 
 /*
  * Creates a fence with the application's requested initial native state.
@@ -207,48 +209,10 @@ vkGetFenceStatus(
 	VkDevice device,
 	VkFence fence)
 {
-	struct VkDevice_T *owner;
-	struct vulkan_sync *sync;
 	VkResult status;
-	VkBool32 fired;
 
-	/* Resolve the ordinary fence object before its brief payload transaction. */
-	owner = vulkan_device(device);
-	sync = vulkan_sync_object((uint64_t)(uintptr_t)fence);
-	pthread_mutex_lock(&owner->mutex);
-
-	status = vulkan_sync_device_status_locked(owner);
-	if (status == VK_SUCCESS) {
-		/* Observes a pending display event of the fence's permanent payload. */
-		fired = VK_FALSE;
-		if (sync->external == NULL &&
-		    !sync->software_signaled &&
-		    sync->event != VULKAN_SYNC_EVENT_NONE)
-			fired = vulkan_display_event_poll(owner, sync);
-
-		/* An observed display event stays signaled until the fence is reset. */
-		if (fired)
-			sync->software_signaled = VK_TRUE;
-
-		/* Software completion is valid only after WSI released the actual image. */
-		if (sync->external != NULL) {
-			status = vulkan_external_fence_status_locked(owner, sync);
-		} else if (sync->software_signaled) {
-			status = VK_SUCCESS;
-		} else if (sync->event != VULKAN_SYNC_EVENT_NONE && sync->native_unsubmitted) {
-			/* No queue ever had this event fence: the native payload is unsignaled. */
-			status = VK_NOT_READY;
-		} else {
-			status = vulkan_sync_status_locked(owner, sync, GPU_OP_GET_FENCE_STATUS);
-		}
-	}
-
-	/* Shared producer failure follows the same sticky device-loss rule as native failure. */
-	vulkan_sync_device_error(owner, status);
-
-	pthread_mutex_unlock(&owner->mutex);
-
-	/* Preserve native NOT_READY and device-loss results without coercion. */
+	/* The fence's state; a pending queue marker is asked of the renderer. */
+	status = sync_fence_status(device, fence, VK_FALSE);
 	if (status != VK_SUCCESS)
 		return status;
 
@@ -1266,6 +1230,105 @@ vulkan_sync_quiesce(
 	return;
 }
 
+/*
+ * Observes a fence for vkGetFenceStatus and the waits.  A native fence whose
+ * queue marker already ended is complete without a renderer round trip (the
+ * marker follows all the work submitted with the fence); with trust_marker a
+ * marker still pending also reports it unsignaled without one, for a wait
+ * that sleeps on the marker next.
+ */
+static VkResult
+sync_fence_status(
+	VkDevice device,
+	VkFence fence,
+	VkBool32 trust_marker)
+{
+	struct VkDevice_T *owner;
+	struct vulkan_sync *sync;
+	VkResult status;
+	VkBool32 fired;
+
+	/* Resolve the ordinary fence object before its brief payload transaction. */
+	owner = vulkan_device(device);
+	sync = vulkan_sync_object((uint64_t)(uintptr_t)fence);
+	pthread_mutex_lock(&owner->mutex);
+
+	status = vulkan_sync_device_status_locked(owner);
+	if (status == VK_SUCCESS) {
+		/* Observes a pending display event of the fence's permanent payload. */
+		fired = VK_FALSE;
+		if (sync->external == NULL &&
+		    !sync->software_signaled &&
+		    sync->event != VULKAN_SYNC_EVENT_NONE)
+			fired = vulkan_display_event_poll(owner, sync);
+
+		/* An observed display event stays signaled until the fence is reset. */
+		if (fired)
+			sync->software_signaled = VK_TRUE;
+
+		/* Software completion is valid only after WSI released the actual image. */
+		if (sync->external != NULL) {
+			status = vulkan_external_fence_status_locked(owner, sync);
+		} else if (sync->software_signaled) {
+			status = VK_SUCCESS;
+		} else if (sync->event != VULKAN_SYNC_EVENT_NONE && sync->native_unsubmitted) {
+			/* No queue ever had this event fence: the native payload is unsignaled. */
+			status = VK_NOT_READY;
+		} else {
+			status = sync_fence_native_status(owner, sync, trust_marker);
+		}
+	}
+
+	/* Shared producer failure follows the same sticky device-loss rule as native failure. */
+	vulkan_sync_device_error(owner, status);
+
+	pthread_mutex_unlock(&owner->mutex);
+
+	/* Preserve native NOT_READY and device-loss results without coercion. */
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: this fence's actual active payload is complete. */
+	return VK_SUCCESS;
+}
+
+/*
+ * Observes a native fence while its caller owns the device mutex: by its
+ * queue marker when the fence has one that ended (complete), or that is
+ * pending when trust_marker (unsignaled), else by the renderer.
+ */
+static VkResult
+sync_fence_native_status(
+	struct VkDevice_T *owner,
+	struct vulkan_sync *sync,
+	VkBool32 trust_marker)
+{
+	VkResult status;
+
+	/* A fence with a queue marker: the marker's state, without waiting. */
+	if (sync->notification != 0) {
+		status = vulkan_sync_job_status(sync, 0);
+		if (status < 0)
+			return status;
+
+		/* The marker ended after the fence's work: the fence is signaled. */
+		if (status == VK_SUCCESS)
+			return VK_SUCCESS;
+
+		/* A wait that sleeps on the marker next takes the pending marker as unsignaled. */
+		if (trust_marker)
+			return VK_NOT_READY;
+	}
+
+	/* The renderer's answer, for a fence without a marker or one still pending. */
+	status = vulkan_sync_status_locked(owner, sync, GPU_OP_GET_FENCE_STATUS);
+	if (status < 0)
+		return status;
+
+	/* Succeeded: the native status, signaled or not. */
+	return status;
+}
+
 /* Observes native payloads while retaining any-wait notification ownership. */
 static VkResult
 sync_fences_wait(
@@ -1294,9 +1357,15 @@ sync_fences_wait(
 	struct vulkan_notification *notification;
 	struct vulkan_context *context;
 	VkResult status;
+	VkBool32 trust_marker;
 
 	/* Keep candidate records under the same context ledger as every consumer. */
 	context = device->object.context;
+
+	/* A wait that sleeps takes a pending queue marker as unsignaled; a zero timeout asks the renderer. */
+	trust_marker = VK_FALSE;
+	if (timeout_ns != 0)
+		trust_marker = VK_TRUE;
 
 	/* Measure one deadline before the first observation, including transaction time. */
 	status = vulkan_sync_clock(&started);
@@ -1338,7 +1407,7 @@ sync_fences_wait(
 				pthread_mutex_unlock(&device->mutex);
 			}
 
-			status = vkGetFenceStatus((VkDevice)device, fences[index]);
+			status = sync_fence_status((VkDevice)device, fences[index], trust_marker);
 			if (status < 0)
 				return status;
 
