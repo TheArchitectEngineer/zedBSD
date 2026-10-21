@@ -499,6 +499,46 @@ powervr_transfer_shared_words(
 }
 
 /*
+ * Fills the sixteen shared words of a copy that writes every step-th row
+ * of a source rectangle of height total, from row phase on: destination
+ * row k (from area->y) reads source row source_y + phase + step * k, and
+ * the rows are clamped to the whole rectangle.  A linear destination of
+ * odd rows is written as two jobs of doubled line stride, the even rows
+ * and the odd ones (q1534).
+ *
+ * Procedure referenced: Mesa 26.2.5 src/imagination/vulkan/
+ * pvr_arch_job_transfer.c (pvr_double_stride: an odd destination stride
+ * doubled, the height halved, each half sampling every second source row).
+ */
+int
+powervr_transfer_shared_words_rows(
+	const struct powervr_view_shape *source,
+	uint32_t source_x,
+	uint32_t source_y,
+	const struct powervr_render_area *area,
+	uint32_t total,
+	uint32_t step,
+	uint32_t phase,
+	uint32_t words[POWERVR_TRANSFER_SHARED_WORDS])
+{
+	int error;
+
+	/* The copy's words at one row a row, then the rows' scale, offset and limits. */
+	if (step == 0 || total == 0 || phase >= step)
+		return EINVAL;
+	error = powervr_transfer_shared_words(source, source_x, source_y, area, words);
+	if (error != 0)
+		return error;
+	words[SHARED_FLOATS + 2] = float_from_ratio((int64_t)step, 1);
+	words[SHARED_FLOATS + 3] = float_from_ratio(2 * ((int64_t)source_y + (int64_t)phase) + 1 - (int64_t)step * (2 * (int64_t)area->y + 1), 2);
+	words[SHARED_LIMITS + 2] = float_from_ratio(2 * (int64_t)source_y + 1, 2);
+	words[SHARED_LIMITS + 3] = float_from_ratio(2 * ((int64_t)source_y + (int64_t)total) - 1, 2);
+
+	/* Succeeded: the sixteen words. */
+	return 0;
+}
+
+/*
  * Fills the sixteen shared words of a blit: the source's image state as
  * the view gives it, a sampler that clamps and takes unnormalised
  * coordinates (linear when linear and the rectangles differ in size,

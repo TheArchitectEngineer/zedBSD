@@ -67,7 +67,7 @@ struct transfer_memory {
 	uint8_t command[POWERVR_TRANSFER_COMMAND_BYTES];
 };
 
-static int transfer_one(struct powervr_render *render, struct powervr_session *session, struct transfer_memory *memory, const struct powervr_transfer_request *request, const struct powervr_render_area *area, uint32_t source_y);
+static int transfer_one(struct powervr_render *render, struct powervr_session *session, struct transfer_memory *memory, const struct powervr_transfer_request *request, const struct powervr_render_area *area, uint32_t source_y, uint32_t step, uint32_t phase, uint32_t total);
 static int transfer_map(struct powervr_render *render, struct powervr_session *session, struct transfer_memory *memory);
 static void transfer_release(struct powervr_render *render, struct powervr_session *session, struct transfer_memory *memory);
 static void put_words(struct powervr_buffer *buffer, uint32_t offset, const uint32_t *words, unsigned count);
@@ -120,7 +120,24 @@ powervr_transfer_run(
 	/* The whole rectangle, or each of its rows. */
 	by_rows = powervr_transfer_needs_rows(&request->destination, &request->area);
 	if (!by_rows) {
-		error = transfer_one(render, session, memory, request, &request->area, request->source_y);
+		error = transfer_one(render, session, memory, request, &request->area, request->source_y, 1U, 0U, 0U);
+	} else if (request->kind == POWERVR_TRANSFER_COPY) {
+		/*
+		 * A copy into odd rows: two jobs of doubled line stride, the even
+		 * rows and the odd ones, each sampling every second source row
+		 * (q1534; before, one job a row).
+		 */
+		single = *request;
+		single.destination.row_pitch = request->destination.row_pitch * 2U;
+		single.destination.padded_width = request->destination.padded_width * 2U;
+		row = request->area;
+		for (index = 0; error == 0 && index < 2U && index < request->area.height; index++) {
+			single.destination.address = request->destination.address + (uint64_t)(request->area.y + index) * request->destination.row_pitch;
+			row.y = 0;
+			row.height = (request->area.height - index + 1U) / 2U;
+			single.destination.height = row.height;
+			error = transfer_one(render, session, memory, &single, &row, request->source_y, 2U, index, request->area.height);
+		}
 	} else {
 		/*
 		 * A copy's row is a surface of its own one row high at that row's
@@ -134,12 +151,12 @@ powervr_transfer_run(
 		for (index = 0; error == 0 && index < request->area.height; index++) {
 			row.y = request->area.y + index;
 			if (request->kind == POWERVR_TRANSFER_BLIT) {
-				error = transfer_one(render, session, memory, request, &row, request->source_y + index);
+				error = transfer_one(render, session, memory, request, &row, request->source_y + index, 1U, 0U, 0U);
 			} else {
 				single.destination.address = request->destination.address + (uint64_t)row.y * request->destination.row_pitch;
 				single.destination.height = 1;
 				row.y = 0;
-				error = transfer_one(render, session, memory, &single, &row, request->source_y + index);
+				error = transfer_one(render, session, memory, &single, &row, request->source_y + index, 1U, 0U, 0U);
 			}
 		}
 	}
@@ -168,7 +185,10 @@ transfer_one(
 	struct transfer_memory *memory,
 	const struct powervr_transfer_request *request,
 	const struct powervr_render_area *area,
-	uint32_t source_y)
+	uint32_t source_y,
+	uint32_t step,
+	uint32_t phase,
+	uint32_t total)
 {
 	struct powervr_transfer_job *job;
 	uint32_t words[POWERVR_TRANSFER_SHARED_WORDS];
@@ -215,7 +235,10 @@ transfer_one(
 		if (request->kind == POWERVR_TRANSFER_BLIT) {
 			error = powervr_transfer_blit_words(request->source, &request->source_area, &request->area, request->flip_x, request->flip_y, request->linear, words);
 		} else {
-			error = powervr_transfer_shared_words(request->source, request->source_x, source_y, area, words);
+			if (step > 1U)
+				error = powervr_transfer_shared_words_rows(request->source, request->source_x, source_y, area, total, step, phase, words);
+			else
+				error = powervr_transfer_shared_words(request->source, request->source_x, source_y, area, words);
 		}
 		if (error != 0)
 			return error;

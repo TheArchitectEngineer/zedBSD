@@ -349,3 +349,17 @@ Keiland が使い、vkmatrix 15/15・gpu-selftest 13/13 で確かめていない
 - **d33 の firmware の trace（P2 q1532-i05 の解読、build/uat/vf2-desktop/runs/d33/trace-decoded.txt）**: 通常は TA の終わりに「FL different between TA/3D: global:0x1, local:0x2」→ 3D の前に Store/Load Freelist と「Loading stack-pointers … MLIST ALIST」→ 3D は新しい表。失敗の時は、私たちの TA の前に別 session の 3D の transfer（Kick 3D TQ）が入り、TA の終わりに「FL different … 0x0/0x0」→ 引き継ぎを飛ばし、fence だけの DM3 の命令の後の 3D が古い TE（0x5cd0a001）で fault。別の TA・電源・context switch は無い。どの session も free list が同じ GPU の address（local 0x8002063000、global 0x800205e000）。P1 に (1) free list の address を session ごとに変える、(2) 3D の前の fence だけの命令を調べるよう依頼。
 - **d34（9b35cf3fd、P1 562c6550c: render が target の 2 つの half を交互に使う、Mesa と同じ）: lockup が直った。** `vkmatrix -p 2 -r 10 load-1080-6` 2 回・`-p 3 -r 3 load-1080-textured` 1 回が全部 PASS、HWR 0。desktop で Settings・Terminal・Files の window を開いたまま vkmatrix 29/29、vkcoherency PASS、HWR 0（build/review/vf2-desktop/shot34.png）。gpu-selftest の 2 つの fail は present の段で、desktop が display を持っているため。
 - 原因（d33 の trace と P1 の読み）: 毎回 half 0 だけを使っていたので、別 session の 3D の transfer（TQ）だけが間に入ると、firmware が「TA と 3D の free list・render target data が同じ」と見て 3D の前の PM の stack pointer の読み込みを飛ばし、TA が書き換えた前の TE の表で 3D が走った。Mesa は rt_data を交互にする前提。
+
+### q1534-i01（2026-10-21、P2）: 奇数の行の linear への copy を 2 job に
+
+- 以前（cf79f8703）は、奇数の行（PBE の line stride は 2 pixel 単位）の linear destination への copy を、1 行に 1 job で書いていた。
+  1180x800 の copy out なら 800 job になる。
+- 変更（Mesa の pvr_double_stride と同じ考え）:
+  - copy は 2 job。偶数の行と奇数の行で、それぞれ line stride を 2 倍にし、高さを半分にする。
+  - 各 job は source の 1 行おきを読む。`powervr_transfer_shared_words_rows`（transfer-program.c）が y の scale 2 と offset を作り、clamp は全体の高さで取る。
+  - blit と clear は従来どおり 1 行ずつ。
+- Keiland の shm（`userland/desktop/wayland/shm.c`）:
+  - commit のたびに、client の傷んだ行を CPU で linear の staging に写す。
+  - その後 `image_copy_record` が、staging から sampled image へ image の全体を 1 回 vkCmdCopyImage する（傷んだ行だけではない）。
+  - 傷んだ行の範囲に絞れば、transfer の大きさが減る（Keiland の変更、未実施）。
+- 確認: p010 の host 試験は 0 failed（transfer-program 33 passed、1 行おきの shared words を足した）。desktop の config で VF2 の vmunix は rc 0、warning 0。板は未実施。
