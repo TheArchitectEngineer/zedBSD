@@ -12,9 +12,11 @@
  * buffer of its own and a timeline word the firmware advances.  A native
  * command becomes one job in that buffer, followed by an update of the
  * timeline; a kick through the kernel's buffer tells the firmware the
- * buffer grew.  A service thread, woken by the firmware's interrupt and
- * once a tick while work is pending, retires the commands whose timeline
- * value was reached and reads the firmware's notices.
+ * buffer grew.  A service thread, woken by the firmware's interrupt,
+ * retires the commands whose timeline value was reached and reads the
+ * firmware's notices.  A wait for a timeline value sleeps until the
+ * interrupt, or the service after its pass, wakes it; neither looks at
+ * the timelines on the scheduler's tick.
  *
  * Recovery follows the GPU core's contract: a session is stopped by
  * having the firmware clean its context up, isolated when that cannot be
@@ -69,6 +71,17 @@
 #define KICK_WAIT_MS		1000U
 #define WATCHDOG_MS		(POWERVR_DEADLINE_MS + 5000U)
 
+/*
+ * How long a wait for a timeline value, and the service while work is
+ * pending, sleep before they look again with no wakeup.  The firmware
+ * interrupts the host when a command finishes, which wakes both at once;
+ * the guard only bounds an interrupt that did not come (the timing's
+ * report counts the waits it ended).
+ */
+#ifndef POWERVR_WAIT_GUARD_MS
+#define POWERVR_WAIT_GUARD_MS	10U
+#endif
+
 /* The most sessions one service pass reports for no progress. */
 #define SERVICE_STALLED_MAX	8U
 
@@ -116,7 +129,9 @@ static int kick_refused(struct powervr_render *render, struct powervr_session *s
 static int send_waiting(struct powervr_core *core, const uint32_t command[POWERVR_COMMAND_WORDS], uint32_t *slot);
 static void cleanup_command(uint32_t context, uint32_t command[POWERVR_COMMAND_WORDS]);
 static void service_thread(void *argument);
-static int service_pass(struct powervr_render *render, uint64_t now);
+static int service_pass(struct powervr_render *render, uint64_t now, int unwoken);
+static int timeline_sleep(struct powervr_render *render, uint64_t observed, uint64_t deadline);
+static void note_wait(int slept, int late);
 static void take_entry(struct powervr_session *session, int error, struct delivery *delivery);
 static void take_reached(struct powervr_session *session, struct delivery *delivery);
 static void take_all(struct powervr_session *session, int error, struct delivery *delivery);
@@ -195,6 +210,20 @@ static uint64_t timing_reported;
 
 /* The rate of the timing's clock (powervr_timing_now), in ticks a second; 0 before its first reading. */
 static uint64_t timing_rate;
+
+/*
+ * The wakeups since the timing's last report: the firmware's interrupts
+ * the render node took, the waits for a timeline value that slept, those
+ * of them that found the value only after the guard ran out (an
+ * interrupt that did not come), and the service's passes that retired
+ * work after a sleep no wakeup ended.  Only a diagnostic: written with
+ * no lock, from the interrupt handler too, a lost addition is tolerated
+ * like the timing's sums.
+ */
+static uint64_t wake_interrupts;
+static uint64_t wake_waits;
+static uint64_t wake_waits_late;
+static uint64_t wake_retires_late;
 
 static uint64_t timing_us(uint64_t ticks);
 static void job_trace(struct powervr_core *core, struct powervr_render_context *context, const struct powervr_render_marks *marks, uint64_t pixels, uint64_t started);
@@ -781,18 +810,27 @@ powervr_transfer_finish(
 	unsigned milliseconds)
 {
 	struct powervr_transfer_context *context;
+	struct powervr_render *render;
+	uint64_t observed;
 	uint64_t deadline;
 	uint64_t now;
 	uint32_t current;
+	int slept;
+	int late;
 
 	/* Refuses a session without a transfer context. */
 	context = session->transfer_context;
 	if (context == NULL)
 		return EINVAL;
 
-	/* Reads the timeline once a tick until it reaches the value or the bound is spent. */
+	/* Reads the timeline after each wakeup until it reaches the value or the bound is spent. */
+	render = session->render;
+	slept = 0;
+	late = 0;
 	deadline = sched_ticks() + ms_ticks(milliseconds);
 	for (;;) {
+		/* The wakeups' sequence before the read, so a wakeup after the read is not slept past. */
+		observed = waitq_sequence(&render->reached);
 		current = powervr_object_get32(&context->client.timeline, POWERVR_SYNC_ADDRESS);
 		if ((int32_t)(current - value) >= 0)
 			break;
@@ -804,9 +842,13 @@ powervr_transfer_finish(
 			return ETIMEDOUT;
 		}
 
-		/* Sleeps one tick. */
-		sched_sleep(now + 1U);
+		/* Sleeps until the firmware's interrupt or the service wakes it. */
+		late = timeline_sleep(render, observed, deadline);
+		slept = 1;
 	}
+
+	/* The wait, for the timing's count of wakeups. */
+	note_wait(slept, late);
 
 	/* Succeeded: the transfer finished. */
 	powervr_stage_ok(POWERVR_STAGE_TRANSFER);
@@ -830,6 +872,7 @@ powervr_render_finish(
 {
 	struct powervr_render_context *context;
 	enum powervr_stage stage;
+	uint64_t observed;
 	uint64_t deadline;
 	uint64_t now;
 	uint32_t geometry_now;
@@ -837,17 +880,23 @@ powervr_render_finish(
 	uint64_t started;
 	uint64_t geometry_done;
 	int stalled;
+	int slept;
+	int late;
 
 	/* Refuses a session without a render context. */
 	context = session->render_context;
 	if (context == NULL)
 		return EINVAL;
 
-	/* Reads the fragment's timeline once a tick until it reaches the value or the bound is spent; the parts on the timing's clock. */
+	/* Reads the timelines after each wakeup until the fragment's reaches the value or the bound is spent; the parts on the timing's clock. */
 	started = powervr_timing_now();
 	geometry_done = 0;
+	slept = 0;
+	late = 0;
 	deadline = sched_ticks() + ms_ticks(milliseconds);
 	for (;;) {
+		/* The wakeups' sequence before the reads, so a wakeup after them is not slept past. */
+		observed = waitq_sequence(&render->reached);
 		geometry_now = powervr_object_get32(&context->geometry.timeline, POWERVR_SYNC_ADDRESS);
 		fragment_now = powervr_object_get32(&context->fragment.timeline, POWERVR_SYNC_ADDRESS);
 		stalled = powervr_render_stalled(geometry_now, marks->geometry_value, fragment_now, marks->fragment_value, &stage);
@@ -871,9 +920,13 @@ powervr_render_finish(
 			return ETIMEDOUT;
 		}
 
-		/* Sleeps one tick. */
-		sched_sleep(now + 1U);
+		/* Sleeps until the firmware's interrupt or the service wakes it. */
+		late = timeline_sleep(render, observed, deadline);
+		slept = 1;
 	}
+
+	/* The wait, for the timing's count of wakeups. */
+	note_wait(slept, late);
 
 	/*
 	 * A render whose context the firmware reset reaches its timelines
@@ -1236,13 +1289,22 @@ powervr_session_point_wait(
 	uint32_t value,
 	unsigned milliseconds)
 {
+	struct powervr_render *render;
+	uint64_t observed;
 	uint64_t deadline;
 	uint64_t now;
 	int reached;
+	int slept;
+	int late;
 
-	/* Reads the point once a tick until it is reached or the bound is spent. */
+	/* Reads the point after each wakeup until it is reached or the bound is spent. */
+	render = session->render;
+	slept = 0;
+	late = 0;
 	deadline = sched_ticks() + ms_ticks(milliseconds);
 	for (;;) {
+		/* The wakeups' sequence before the read, so a wakeup after the read is not slept past. */
+		observed = waitq_sequence(&render->reached);
 		reached = powervr_session_point_reached(session, kind, value);
 		if (reached)
 			break;
@@ -1256,9 +1318,13 @@ powervr_session_point_wait(
 		if (now >= deadline)
 			return ETIMEDOUT;
 
-		/* Sleeps one tick. */
-		sched_sleep(now + 1U);
+		/* Sleeps until the firmware's interrupt or the service wakes it. */
+		late = timeline_sleep(render, observed, deadline);
+		slept = 1;
 	}
+
+	/* The wait, for the timing's count of wakeups. */
+	note_wait(slept, late);
 
 	/* Succeeded: the point was reached. */
 	return 0;
@@ -1429,6 +1495,19 @@ powervr_timing_report(
 		timing_ticks[part] = 0;
 		timing_count[part] = 0;
 	}
+
+	/* No interrupt came and no wait slept: nothing to say of the wakeups. */
+	if (wake_interrupts == 0U && wake_waits == 0U)
+		return;
+
+	/* The wakeups since the last report, then cleared for the next. */
+	kern_logf("powervr: timing: interrupts %llu, timeline waits %llu (%llu found after the guard), retires after the guard %llu\n",
+		  (unsigned long long)wake_interrupts, (unsigned long long)wake_waits,
+		  (unsigned long long)wake_waits_late, (unsigned long long)wake_retires_late);
+	wake_interrupts = 0;
+	wake_waits = 0;
+	wake_waits_late = 0;
+	wake_retires_late = 0;
 }
 
 
@@ -1736,12 +1815,19 @@ powervr_render_interrupt(
 	if (render == NULL)
 		return;
 
-	/* Wakes the service. */
+	/*
+	 * Wakes the service, which retires what finished, and every wait for
+	 * a timeline value, which reads its own timeline at once.
+	 */
 	enabled = spin_lock_irqsave(&render->queue_lock);
 
 	waitq_wake_all(&render->service);
+	waitq_wake_all(&render->reached);
 
 	spin_unlock_irqrestore(&render->queue_lock, enabled);
+
+	/* The interrupt, for the timing's count of wakeups. */
+	wake_interrupts++;
 }
 
 /* Takes one zeroed table page below the core's limit, with its uncached view. */
@@ -2220,7 +2306,9 @@ service_thread(
 	unsigned long enabled;
 	uint64_t observed;
 	uint64_t deadline;
+	int unwoken;
 	int busy;
+	int error;
 
 	/* The node the service runs for. */
 	render = argument;
@@ -2238,30 +2326,41 @@ service_thread(
 			return;
 		}
 
-		/* Sleeps a tick while work is pending, longer otherwise. */
+		/*
+		 * Wakes the waits for a timeline value after the last pass, which
+		 * may have marked their sessions lost; then sleeps until the
+		 * firmware's interrupt or a submission, bounded by the guard while
+		 * work is pending and longer otherwise.
+		 */
+		waitq_wake_all(&render->reached);
 		observed = waitq_sequence(&render->service);
-		deadline = sched_ticks() + 1U;
+		deadline = sched_ticks() + ms_ticks(POWERVR_WAIT_GUARD_MS);
 		if (!busy)
 			deadline = sched_ticks() + ms_ticks(SERVICE_IDLE_MS);
-		(void)waitq_sleep(&render->service, &render->queue_lock, observed, deadline, 0);
+		error = waitq_sleep(&render->service, &render->queue_lock, observed, deadline, 0);
 
 		spin_unlock_irqrestore(&render->queue_lock, enabled);
 
-		/* One pass over the firmware's notices and the sessions' timelines. */
-		busy = service_pass(render, sched_ticks());
+		/* One pass over the firmware's notices and the sessions' timelines; whether no wakeup ended the sleep. */
+		unwoken = 0;
+		if (error == ETIMEDOUT)
+			unwoken = 1;
+		busy = service_pass(render, sched_ticks(), unwoken);
 	}
 }
 
 /*
  * One pass: reads the firmware's notices, retires every command whose
  * timeline value was reached, and asks the firmware whether it is alive
- * when a command waited past its deadline.  Reports whether work is
- * still pending.
+ * when a command waited past its deadline.  Unwoken says no wakeup ended
+ * the sleep before it, for the timing's count of retires the interrupt
+ * did not announce.  Reports whether work is still pending.
  */
 static int
 service_pass(
 	struct powervr_render *render,
-	uint64_t now)
+	uint64_t now,
+	int unwoken)
 {
 	struct powervr_session *session;
 	struct notice_outcome outcome;
@@ -2369,6 +2468,10 @@ service_pass(
 	}
 
 	mutex_unlock(&render->core->lock);
+
+	/* Work retired with no wakeup: the interrupt did not announce it. */
+	if (unwoken && delivery.count != 0U)
+		wake_retires_late++;
 
 	/* Delivers what retired, and frees the flushed buffers. */
 	deliver(render, &delivery);
@@ -2727,6 +2830,58 @@ list_marks(
 	marks->grow_requests = events.grow_requests;
 	marks->partial_renders = events.partial_renders;
 	marks->out_of_memory = events.out_of_memory;
+}
+
+/*
+ * Sleeps until the firmware's interrupt or the service may have moved a
+ * timeline, the guard runs out or the deadline passes.  Observed is the
+ * sequence of render->reached the caller read before it looked at its
+ * timeline.  Reports whether the sleep ran out with no wakeup.
+ */
+static int
+timeline_sleep(
+	struct powervr_render *render,
+	uint64_t observed,
+	uint64_t deadline)
+{
+	unsigned long enabled;
+	uint64_t until;
+	int error;
+
+	/* The guard's end, never past the caller's deadline. */
+	until = sched_ticks() + ms_ticks(POWERVR_WAIT_GUARD_MS);
+	if (until > deadline)
+		until = deadline;
+
+	/* Sleeps, unless a wakeup came after the caller read the sequence. */
+	enabled = spin_lock_irqsave(&render->queue_lock);
+
+	error = waitq_sleep(&render->reached, &render->queue_lock, observed, until, 0);
+
+	spin_unlock_irqrestore(&render->queue_lock, enabled);
+
+	/* The guard or the deadline ran out with no wakeup. */
+	if (error == ETIMEDOUT)
+		return 1;
+
+	/* Succeeded: a wakeup ended the sleep or came before it. */
+	return 0;
+}
+
+/* Counts a finished wait for a timeline value for the timing's report. */
+static void
+note_wait(
+	int slept,
+	int late)
+{
+	/* A wait that found its value at once says nothing of the wakeups. */
+	if (!slept)
+		return;
+
+	/* The wait, and whether only the guard found its value. */
+	wake_waits++;
+	if (late)
+		wake_waits_late++;
 }
 
 /* Converts milliseconds to scheduler ticks, rounding up. */
