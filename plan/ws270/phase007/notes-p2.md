@@ -214,3 +214,86 @@ Mesa 26.2.5（drm-shim、BVNC 36.50.54.182、`PVR_DEBUG=cs`、vkmatrix の perf-
 - a7eb3188e: 2 つ以上の FMAD の addend になる定数を、program の始めに temp に置く（upper set の s5 が shared を名指せないので、組を妨げていた）。alu4 73→41 group。
 - 711dea277: x·1.0 を copy にする（1.0/x が rcp と mul だったのを rcp 1 つに）。vkmatrix に perf-rcp（依存する rcp 32 個、38 group）を足した。perf-mul4 との比で rcp 1 つの slot 数を見る。
 - 板の kernel: build/q1539/vf2i/vmunix（711dea277、sha256 910e868996b965da…）、build/q1539/vf2i/bin/vkmatrix（sha256 3b1f30647707c226…）。
+
+## q1553（2026-10-22、P2）: 全ての操作で 60 fps（driver 側）
+
+branch agent/p2-q1553（基 main 782f995e4）。
+
+### idle の後の 139 ms（72ecf8ec6）
+
+- 原因（読みからの推定）: vk-queue.c の submit() が POWERVR_TIMING_SUBMIT を足した直後に powervr_timing_report() を呼んでいた。5 s ごとに約 9〜14 行を kern_logf で同期に出し、debug の UART と text console に書く。idle の後の最初の submit で必ず出る（kick の後、vkQueueSubmit の中）。
+  - 「job wait（kick → present の submit での reap）139 ms ＝ Keiland の rec submit 139 ms」と合う。kernel の submit の計測（284 us）は report の前で終わる。
+  - d95a の app の起動時の 191 ms（frame 15）も `pace waited_ms=41101` の idle の後の最初の frame だった（同じ原因に import の待ちが足された物と読む）。
+- 直し:
+  - POWERVR_SUBMIT_TIMING の既定を 0 に（計測の build は `ZEDBSD_TEST_CPPFLAGS += -DPOWERVR_SUBMIT_TIMING=1`）。
+  - 1 の時も report は専用の kernel thread（timing_thread、100 ms ごとに終了を見て 5 s ごとに出す）が出す。
+- 他の 5 s ごとの report の点検: submit・present・割り込みの道で同期に出す物は timing だけ。job trace の report は POWERVR_JOB_TRACE の計測 build だけ。
+
+### vkQueueSubmit の 7〜14 ms（b44f248a7 の診断、b60c38183 の直し）
+
+- 診断: libvulkan に `VULKAN_ZEDBSD_SUBMIT_TIMING=1` の時だけの submit の内訳（5 s ごとに stderr へ `VULKAN TIMING`）を足した。
+- d101・d102（Q1）の結果:
+  - frame の vkQueueSubmit の大半が execute（QUEUE_SUBMIT の ioctl）で 13〜15 ms。
+  - kernel の powervr の submit() は 0.7 ms。render jobs 0.2 ms、order wait 0、reap 2 us。
+- 原因:
+  - libvulkan の transaction は decoder の fence（GPU_COMMAND_SUBMIT の CONTEXT_FENCE）の完了を待って reply を読む。
+  - powervr_render_frame はその fence を、session の最後の GPU の point の後に ring へ入れていた。そのため全ての transaction が、直前に kick した GPU の仕事の完了まで返らなかった。
+  - libvulkan はその間 context->mutex を持つので、compositor の他の thread も止まっていた。
+- 直し b60c38183:
+  - command の frame の callback はその場で完了する。
+  - 同じ point に callback の無い entry を入れる。これで、仕事が in flight の間は resource_unmake の遅延 unmap が効く。
+  - 失敗した frame・error の後の frame・空の marker の frame は従来どおり。
+- 板は未確認（Q1 待ち）。
+
+### compiler（363d9226d・2feac9314・9d7db594a）
+
+- 363d9226d: iterate and sample の 4 channel をそのまま 1 つの sum of products（不透明・OVER）だけが読む時、f16 で 2 register に返し、sum of products の half の form で読む。
+  - form の byte は DDK の perf-texture・perf-texture-nob の cache に合わせた（derived from observation）。temps 6→4。
+  - d101: texture 2950・texture-nob 2900 us で変化なし。
+- 2feac9314: mix(x, y, z)（y・z は uniform）を x·(1−z) + y·z に（1−z と y·z は shared program）。
+- 9d7db594a の 1: clamp の内側の操作を saturate の融合の前に消す（clamp の saturate が演算に付かずに残っていた）。
+- 9d7db594a の 2: float の min・max の定数の bound を shared の literal で読む（即値の group が減る）。
+- 9d7db594a の 3: (x + u1)·u2 を x·u2 + u1·u2 にする（factor が sum より後で読まれる時は、sum を product の直前へ動かす）。
+- group 数（782f995e4 → 9d7db594a、host）:
+
+| shader | 前 | 後 |
+| --- | --- | --- |
+| glass | 49 | 40 |
+| 不透明な glass の内側 | 28 | 19 |
+| glass の内側 | 30 | 22 |
+| dark glass | 55 | 47 |
+| dark の内側 | 37 | 30 |
+| 不透明な dark の内側 | 34 | 27 |
+| 影 | 27 | 25 |
+| image | 25 | 24 |
+| solid | 22 | 21 |
+| batch | 27 | 26 |
+
+- d102（Q1）: 見た目は正常（glass も）。
+- 試した物:
+  - 解放の古い register から割り当てる allocator: shader ごとに ±1〜2 group で、総和はほぼ同じなので入れない。
+  - ITR＋WAIT の WAIT を iterate 自身の wdf に: itrsmp の 0x20 が速さを変えなかったので、やめた。
+- Keiland への提案（P1）: glass は `point / panel.screen.xy` を pixel ごとに 2 つの FMUL で作り、SMP と WAIT を挟む。vertex の側で uv を別の varying にすれば itrsmp に乗る（約 4 group 減）。
+
+### その他
+
+- ef034bd05: render-job.c の uncached の alias への job の書き込みを 64-bit の store に。
+- d102 の kernel の timing（全 session の合計）に見える物:
+  - draw memory 平均 400〜500 us（kept の job の memory が足りず作り直している疑い）
+  - job setup が 1.6 ms の窓がある
+  - transfer 2.9〜4.8 ms/回（同期の transfer）
+
+### d103 と、その後（52a0ce932・d5e6d9475）
+
+- d103（Q1、b60c38183 の q1553t ＋ P1 95db457c4 の wayland）:
+  - vkmatrix 109/109。context reset・HWR・page fault・device lost は 0。desktop の操作（app の起動・窓の drag・Home・Wiseview の開閉）で異常なし。
+  - VULKAN TIMING: submit 平均 1471〜1884 us（前 7660〜8785）、execute 957〜1326 us（前 7196〜8452）。
+  - frame-ops の work p50/max: launch 8/76、type 7/32、drag 8/10、home 6/14（前 17/31）、wiseview 7/50（前 24/64）。
+  - 残る context_hold の max 32 ms は opcode 21（ALLOCATE_MEMORY）と 18（QUEUE_SUBMIT）。
+- d5e6d9475: powervr_buffer_create の 0 埋めを、uncached の alias（store 1 回ごとに bus の write、8 MB で約 30 ms の見積）から、direct map の kern_memset に変えた。その後の alias の作成が、範囲の line を書き戻して捨てる。
+- 52a0ce932:
+  - session の render target を 4 → 8（framebuffer の大きさが 5 種以上で毎 frame 作り直していた疑い）。
+  - 取った kept の job の memory の draw の buffer が小さい時、keep の中の合う物と交換する。
+  - timing に `target make`。
+- d5e6d9475: timing の各行に `longest`。
+- 板は未確認（Q1 待ち）。

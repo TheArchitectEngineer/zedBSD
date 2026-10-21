@@ -331,6 +331,7 @@ powervr_buffer_create(
 	volatile uint64_t *words;
 	uint64_t rounded;
 	uint64_t index;
+	void *direct;
 	void *view;
 	int error;
 
@@ -352,6 +353,15 @@ powervr_buffer_create(
 		return error;
 	}
 
+	/*
+	 * Cleared through the direct map, where the stores are cached (through
+	 * the uncached alias a store is a bus write: an image's 8 MB took
+	 * about 30 ms); the alias's making below writes the lines back.
+	 */
+	direct = kern_pmem_to_kernel(buffer->run.paddr);
+	if (direct != NULL)
+		kern_memset(direct, 0, (size_t)rounded);
+
 	/* Its uncached alias; the run's cached lines are pushed out first. */
 	error = kern_pmem_map_uncached(&buffer->run, &view);
 	if (error != 0) {
@@ -360,11 +370,13 @@ powervr_buffer_create(
 		return error;
 	}
 
-	/* Clears it through the alias, so neither the core nor a reader sees old bytes. */
+	/* Without a direct map, cleared through the alias, so neither the core nor a reader sees old bytes. */
 	buffer->view = view;
-	words = (volatile uint64_t *)buffer->view;
-	for (index = 0; index < rounded / 8U; index++)
-		words[index] = 0;
+	if (direct == NULL) {
+		words = (volatile uint64_t *)buffer->view;
+		for (index = 0; index < rounded / 8U; index++)
+			words[index] = 0;
+	}
 
 	/* Succeeded: one reference, the caller's. */
 	buffer->bytes = bytes;
@@ -794,8 +806,9 @@ render_close(
 	/* The render jobs' memory, whose work has all ended. */
 	powervr_render_jobs_reap(render, session, 2);
 
-	/* The job memory kept mapped for the next jobs, which will not come. */
+	/* The job and transfer memory kept mapped for the next jobs, which will not come. */
 	powervr_render_jobs_forget(render, session);
+	powervr_transfer_forget(render, session);
 
 	/* The handles whose unmapping waited for the session's work, which has all ended. */
 	resources_drain(session, 1);

@@ -159,6 +159,7 @@ struct powervr_job_done;
  * a job, so the memory of finished jobs is reused instead.
  */
 struct job_memory;
+struct transfer_memory;
 #define POWERVR_JOB_KEEP	4U
 
 /*
@@ -430,6 +431,13 @@ struct powervr_session {
 	unsigned job_keep_count;
 
 	/*
+	 * The memory of the last finished transfer kept mapped for the next
+	 * (transfer-job.c), under the queue lock; freed with the session
+	 * (powervr_transfer_forget).
+	 */
+	struct transfer_memory *transfer_keep;
+
+	/*
 	 * The render area's pixels of the job being kicked, which the job
 	 * trace (render-queue.c, POWERVR_JOB_TRACE) sorts the jobs by.
 	 */
@@ -581,6 +589,9 @@ void powervr_session_point_set(struct powervr_session *session, unsigned kind, u
  */
 void powervr_render_jobs_reap(struct powervr_render *render, struct powervr_session *session, int wait);
 void powervr_render_jobs_forget(struct powervr_render *render, struct powervr_session *session);
+
+/* Frees the transfer memory a session kept mapped, when the session ends (transfer-job.c). */
+void powervr_transfer_forget(struct powervr_render *render, struct powervr_session *session);
 
 /*
  * Takes one command frame of the Vulkan transport (or an empty marker

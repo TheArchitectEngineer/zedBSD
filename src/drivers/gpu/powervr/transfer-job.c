@@ -15,6 +15,7 @@
  * the session's windows, and returned once it is done.
  */
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -71,6 +72,8 @@ static int transfer_one(struct powervr_render *render, struct powervr_session *s
 static int transfer_map(struct powervr_render *render, struct powervr_session *session, struct transfer_memory *memory);
 static void transfer_release(struct powervr_render *render, struct powervr_session *session, struct transfer_memory *memory);
 static void put_words(struct powervr_buffer *buffer, uint32_t offset, const uint32_t *words, unsigned count);
+static struct transfer_memory *transfer_keep_take(struct powervr_render *render, struct powervr_session *session);
+static bool transfer_keep_put(struct powervr_render *render, struct powervr_session *session, struct transfer_memory *memory);
 static void put_bytes(struct powervr_buffer *buffer, uint32_t offset, const uint8_t *bytes, size_t count);
 
 /*
@@ -107,14 +110,18 @@ powervr_transfer_run(
 	if (error != 0)
 		return error;
 
-	memory = kern_calloc(1, sizeof(*memory));
-	if (memory == NULL)
-		return ENOMEM;
+	/* The memory the session's last transfer kept mapped, else new memory, mapped. */
+	memory = transfer_keep_take(render, session);
+	if (memory == NULL) {
+		memory = kern_calloc(1, sizeof(*memory));
+		if (memory == NULL)
+			return ENOMEM;
 
-	error = transfer_map(render, session, memory);
-	if (error != 0) {
-		transfer_release(render, session, memory);
-		return error;
+		error = transfer_map(render, session, memory);
+		if (error != 0) {
+			transfer_release(render, session, memory);
+			return error;
+		}
 	}
 
 	/* The whole rectangle, or each of its rows. */
@@ -169,8 +176,9 @@ powervr_transfer_run(
 		return error;
 	}
 
-	/* Done or refused: the memory goes. */
-	transfer_release(render, session, memory);
+	/* Done: the memory is kept mapped for the session's next transfer; refused: it goes. */
+	if (error != 0 || !transfer_keep_put(render, session, memory))
+		transfer_release(render, session, memory);
 	if (error != 0)
 		return error;
 
@@ -344,6 +352,94 @@ transfer_map(
 	return 0;
 }
 
+/*
+ * Takes the memory the session's last transfer kept mapped, its buffers
+ * as they are (each transfer writes what it reads of them), the rest
+ * cleared.  NULL when none is kept.
+ */
+static struct transfer_memory *
+transfer_keep_take(
+	struct powervr_render *render,
+	struct powervr_session *session)
+{
+	struct transfer_memory *memory;
+	struct transfer_memory kept;
+	unsigned long enabled;
+
+	/* The kept memory, off the session. */
+	enabled = spin_lock_irqsave(&render->queue_lock);
+
+	memory = session->transfer_keep;
+	session->transfer_keep = NULL;
+
+	spin_unlock_irqrestore(&render->queue_lock, enabled);
+
+	if (memory == NULL)
+		return NULL;
+
+	/* Its mapped buffers stay; the rest is cleared for the new transfer. */
+	kern_memset(&kept, 0, sizeof(kept));
+	kept.general = memory->general;
+	kept.pds = memory->pds;
+	kept.usc = memory->usc;
+	kept.pds_place = memory->pds_place;
+	kept.usc_place = memory->usc_place;
+	kern_memcpy(memory, &kept, sizeof(kept));
+
+	/* Succeeded: memory ready to be written again. */
+	return memory;
+}
+
+/*
+ * Keeps a finished transfer's mapped memory for the session's next one
+ * (mapping three buffers a transfer cost more than the copy of a glyph),
+ * when the session keeps none yet and is well.  Reports whether it did.
+ */
+static bool
+transfer_keep_put(
+	struct powervr_render *render,
+	struct powervr_session *session,
+	struct transfer_memory *memory)
+{
+	unsigned long enabled;
+	bool kept;
+
+	/* Only whole memory. */
+	if (memory->general == NULL || memory->pds == NULL || memory->usc == NULL ||
+	    memory->pds_place == 0U || memory->usc_place == 0U)
+		return false;
+
+	/* Into the session's one place, when free and the session and core are well. */
+	kept = false;
+	enabled = spin_lock_irqsave(&render->queue_lock);
+
+	if (session->transfer_keep == NULL && !render->faulted && !session->lost && !session->isolated) {
+		session->transfer_keep = memory;
+		kept = true;
+	}
+
+	spin_unlock_irqrestore(&render->queue_lock, enabled);
+
+	/* Succeeded: whether it was kept. */
+	return kept;
+}
+
+/*
+ * Frees the transfer memory a session kept mapped, when the session ends.
+ */
+void
+powervr_transfer_forget(
+	struct powervr_render *render,
+	struct powervr_session *session)
+{
+	struct transfer_memory *memory;
+
+	/* The kept memory, unmapped and freed. */
+	memory = transfer_keep_take(render, session);
+	if (memory != NULL)
+		transfer_release(render, session, memory);
+}
+
 /* Unmaps and returns the transfer's memory and its bookkeeping. */
 static void
 transfer_release(
@@ -370,7 +466,11 @@ transfer_release(
 	kern_free(memory);
 }
 
-/* Writes words through a buffer's uncached view, low byte first. */
+/*
+ * Writes words through a buffer's uncached view, little-endian: a word a
+ * store where the place is a word's (each uncached store is a bus write),
+ * else a byte at a time.
+ */
 static void
 put_words(
 	struct powervr_buffer *buffer,
@@ -378,9 +478,18 @@ put_words(
 	const uint32_t *words,
 	unsigned count)
 {
+	volatile uint32_t *place;
 	unsigned index;
 
-	/* One word at a time. */
+	/* A word's place: one store a word (the processor is little-endian, as the core reads them). */
+	if ((offset & 3U) == 0U) {
+		place = (volatile uint32_t *)(buffer->view + offset);
+		for (index = 0; index < count; index++)
+			place[index] = words[index];
+		return;
+	}
+
+	/* Otherwise one byte at a time, low byte first. */
 	for (index = 0; index < count; index++) {
 		buffer->view[offset + index * 4U + 0U] = (uint8_t)words[index];
 		buffer->view[offset + index * 4U + 1U] = (uint8_t)(words[index] >> 8);
@@ -389,7 +498,11 @@ put_words(
 	}
 }
 
-/* Writes bytes through a buffer's uncached view. */
+/*
+ * Writes bytes through a buffer's uncached view: the bytes up to a word's
+ * place one at a time, then whole words assembled from them, then the
+ * bytes left.
+ */
 static void
 put_bytes(
 	struct powervr_buffer *buffer,
@@ -397,9 +510,32 @@ put_bytes(
 	const uint8_t *bytes,
 	size_t count)
 {
+	volatile uint32_t *place;
+	uint32_t word;
 	size_t index;
 
-	/* One byte at a time. */
-	for (index = 0; index < count; index++)
+	/* The bytes before a word's place. */
+	index = 0;
+	while (index < count && ((offset + index) & 3U) != 0U) {
 		buffer->view[offset + index] = bytes[index];
+		index++;
+	}
+
+	/* Whole words, little-endian. */
+	place = (volatile uint32_t *)(buffer->view + offset + index);
+	while (index + 4U <= count) {
+		word = (uint32_t)bytes[index];
+		word |= (uint32_t)bytes[index + 1U] << 8;
+		word |= (uint32_t)bytes[index + 2U] << 16;
+		word |= (uint32_t)bytes[index + 3U] << 24;
+		*place = word;
+		place++;
+		index += 4U;
+	}
+
+	/* The bytes left. */
+	while (index < count) {
+		buffer->view[offset + index] = bytes[index];
+		index++;
+	}
 }
