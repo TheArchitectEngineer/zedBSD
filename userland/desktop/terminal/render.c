@@ -22,6 +22,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 /* How long a frame may take on the GPU, in nanoseconds. */
 #define RENDER_TIMEOUT		10000000000ULL
