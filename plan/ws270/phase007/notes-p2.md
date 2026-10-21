@@ -93,3 +93,25 @@ Mesa 26.2.5（drm-shim、BVNC 36.50.54.182、`PVR_DEBUG=cs`、vkmatrix の perf-
 
 - build/q1539/vf2/vmunix（a8f297ddb、sha256 879a868ba79183d5…）と build/q1539/vf2/bin/vkmatrix（sha256 0aca9fc3a0f96599…）。
 - build/q1539/vf2-tc/vmunix（a8f297ddb と、clear の padding 14 の使い捨て、sha256 2a0814d907139e3a…）。
+
+### compiler の 2〜4 回目（7b613a1c0・93546829a・e51fbc510）
+
+- 7b613a1c0:
+  - 連続する iterate を 1 つにする（count を variant＋1 に）。
+  - 枝の無い program で、同じ即値の作り直しを省く。
+  - fragment の add(mul, x) を FMAD にする。SPIR-V の NoContraction がある shader ではしない（IR の exact）。
+  - 誰も読まない値の代入は、構造を越えて除く。
+  - simulator に複数語の iterate を足した。
+- 93546829a: shared register の語を float の演算（FADD・FMUL・FMAD）が直に読み、move を省く。encoder の form では s1 が shared を名指せないので、s0・s2 に置く（入れ替え、だめなら move）。
+- e51fbc510: fragment の clamp(x, 0, 1)（min・max の 2 つ）を FADD.sat 1 つにする。
+
+| shader | 元（c0a079e60 の前） | e51fbc510 |
+| --- | --- | --- |
+| quad.frag | 51 | 17 |
+| batch.frag | 100 | 55 |
+| panel.frag の変種 [0]〜[7] | 158・104・99・96・103・69・148・174 | 100・58・52・53・57・32・71・114 |
+| panel.frag（fallback） | 511 | 375 |
+| quad.vert・panel.vert | 42・62 | 21・30 |
+
+- host: compiler 411・22 passed、p010 全 0 failed、p009 505 passed、VF2 warning 0。板は未実施。
+- 板の kernel: build/q1539/vf2b/vmunix（93546829a、sha256 1a64b714de5ccba4…）、build/q1539/vf2c/vmunix（e51fbc510、sha256 9a4d5f32aeb635b4…）。
