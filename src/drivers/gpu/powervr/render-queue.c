@@ -144,9 +144,10 @@ static void handle_notice(void *context, uint32_t type, const struct powervr_obj
 #define TRACE_PARTS			3U
 
 /*
- * The render kick after which the core's settings registers are logged
- * once (q1541), to set them beside the vendor driver's dump on the same
- * board: the clocks' gating, the system level cache, the ISP, the
+ * The traced render (POWERVR_JOB_TRACE) during whose 3D the core's
+ * settings registers are logged once (q1541; read between jobs they read
+ * 0, the core powered down), to set them beside the vendor driver's dump
+ * on the same board: the clocks' gating, the system level cache, the ISP, the
  * multicore controls, the bus and the MIPS wrapper (offsets of Linux v7.3
  * drivers/gpu/drm/imagination/pvr_rogue_cr_defs.h: CLK_CTRL 0x0000,
  * CLK_STATUS 0x0008, CLK_CTRL2 0xD200, SLC_CTRL_MISC 0x3800,
@@ -185,7 +186,7 @@ static uint64_t trace_reported;
 static uint64_t trace_small_jobs;
 static bool trace_dumping;
 
-/* The render kicks made, for the one log of the settings registers (register_log); only kicks count, under the core's lock. */
+/* The traced renders whose TA finished, for the one log of the settings registers (register_log); under the core's lock. */
 static uint64_t register_log_kicks;
 
 static uint64_t timing_ticks[POWERVR_TIMING_PARTS];
@@ -196,7 +197,7 @@ static uint64_t timing_reported;
 static uint64_t timing_rate;
 
 static uint64_t timing_us(uint64_t ticks);
-static void job_trace(struct powervr_render_context *context, const struct powervr_render_marks *marks, uint64_t pixels, uint64_t started);
+static void job_trace(struct powervr_core *core, struct powervr_render_context *context, const struct powervr_render_marks *marks, uint64_t pixels, uint64_t started);
 static void job_trace_report(void);
 static void register_log(struct powervr_core *core);
 static uint64_t ms_ticks(unsigned milliseconds);
@@ -689,14 +690,9 @@ powervr_session_kick_render(
 	marks->geometry_value = request.geometry_value;
 	marks->fragment_value = request.fragment_value;
 
-	/* The settings registers, once, after enough kicks for the firmware to have set its own. */
-	register_log_kicks++;
-	if (POWERVR_REGISTER_LOG_KICK != 0U && register_log_kicks == POWERVR_REGISTER_LOG_KICK)
-		register_log(render->core);
-
 	/* The job trace waits for it and times its parts; the marked job's firmware trace is dumped. */
 	if (POWERVR_JOB_TRACE) {
-		job_trace(context, marks, session->trace_pixels, trace_started);
+		job_trace(render->core, context, marks, session->trace_pixels, trace_started);
 		if (trace_dumping) {
 			kern_logf("powervr: job trace: the firmware trace of small job %llu follows\n", (unsigned long long)trace_small_jobs);
 			powervr_firmware_trace_since_mark(render->core);
@@ -2785,6 +2781,7 @@ timing_us(
  */
 static void
 job_trace(
+	struct powervr_core *core,
 	struct powervr_render_context *context,
 	const struct powervr_render_marks *marks,
 	uint64_t pixels,
@@ -2817,10 +2814,13 @@ job_trace(
 		geometry_now = powervr_object_get32(&context->geometry.timeline, POWERVR_SYNC_ADDRESS);
 		fragment_now = powervr_object_get32(&context->fragment.timeline, POWERVR_SYNC_ADDRESS);
 
-		/* The TA's end, the first time its value is seen. */
+		/* The TA's end, the first time its value is seen; then, once, the settings registers while the 3D runs (the core powered). */
 		if (!geometry_done && (int32_t)(geometry_now - marks->geometry_value) >= 0) {
 			times[1] = now - started;
 			geometry_done = true;
+			register_log_kicks++;
+			if (register_log_kicks == POWERVR_REGISTER_LOG_KICK)
+				register_log(core);
 		}
 
 		/* The 3D's end ends the wait. */
