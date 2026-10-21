@@ -2,7 +2,8 @@
 
 # WS278 Raspberry Pi 5 対応
 
-- Master: [plan/master.md](../master.md)。Status: incomplete（2026-10-21 開始）。Primary Milestone: MG008（異種機での実証）。Related: MG003。
+- ID: ws278、Master: [plan/master.md](../master.md)、Primary Milestone: MG008（異種機での実証）。Related: MG003。
+- Status: incomplete（2026-10-21 開始。p001 設計済み、p002 image まで、実機の確認待ち）
 - 出典: 2026-10-21 ユーザー「もう1つサブエージェントを追加して、Raspberry Pi 5対応を行ってほしいです。config/ci/config-rpi5.mkを作成して、イメージを生成できるようにしてほしいです。必要ならGPUドライバの対応、WiFiドライバの対応を行ってほしいです。」「Pi5の対応は、Fableによるレビューは不要です。Opus 5.5で対応しましょう。」
 
 ## 目的と完了の条件
