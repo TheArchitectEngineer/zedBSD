@@ -136,7 +136,7 @@ static void handle_notice(void *context, uint32_t type, const struct powervr_obj
  * wait.
  */
 #ifndef POWERVR_JOB_TRACE
-#define POWERVR_JOB_TRACE		1
+#define POWERVR_JOB_TRACE		0
 #endif
 #define TRACE_SMALL_PIXELS		(1920ULL * 1080ULL / 4ULL)
 #define TRACE_REPORT_MS			2000U
@@ -165,6 +165,9 @@ static uint64_t trace_reported;
 static uint64_t timing_ticks[POWERVR_TIMING_PARTS];
 static uint64_t timing_count[POWERVR_TIMING_PARTS];
 static uint64_t timing_reported;
+
+/* The rate of the timing's clock (powervr_timing_now), in ticks a second; 0 before its first reading. */
+static uint64_t timing_rate;
 
 static uint64_t timing_us(uint64_t ticks);
 static void job_trace(struct powervr_render_context *context, const struct powervr_render_marks *marks, uint64_t pixels, uint64_t started);
@@ -798,10 +801,10 @@ powervr_render_finish(
 	if (context == NULL)
 		return EINVAL;
 
-	/* Reads the fragment's timeline once a tick until it reaches the value or the bound is spent. */
-	started = sched_ticks();
+	/* Reads the fragment's timeline once a tick until it reaches the value or the bound is spent; the parts on the timing's clock. */
+	started = powervr_timing_now();
 	geometry_done = 0;
-	deadline = started + ms_ticks(milliseconds);
+	deadline = sched_ticks() + ms_ticks(milliseconds);
 	for (;;) {
 		geometry_now = powervr_object_get32(&context->geometry.timeline, POWERVR_SYNC_ADDRESS);
 		fragment_now = powervr_object_get32(&context->fragment.timeline, POWERVR_SYNC_ADDRESS);
@@ -809,7 +812,7 @@ powervr_render_finish(
 
 		/* The timing: when the TA was first seen done, which starts the 3D's share. */
 		if (geometry_done == 0 && (!stalled || stage == POWERVR_STAGE_3D)) {
-			geometry_done = sched_ticks();
+			geometry_done = powervr_timing_now();
 			powervr_timing_add(POWERVR_TIMING_WAIT_TA, started);
 		}
 
@@ -1302,18 +1305,28 @@ powervr_render_drain(
 }
 
 /*
- * Reads the timer's ticks now, for the start of a timed part.
+ * Reads the timing's clock now, for the start of a timed part: the fine
+ * counter (hal_rtc_read_counter, q1541: the scheduler's 1 ms tick hid the
+ * parts of a job), else the scheduler's ticks.
  */
 uint64_t
 powervr_timing_now(
 	void)
 {
 	uint64_t now;
+	uint64_t rate;
+	bool ok;
 
-	/* The scheduler's clock. */
+	/* The fine counter, its rate kept for timing_us. */
+	ok = hal_rtc_read_counter(&now, &rate);
+	if (ok && rate != 0U) {
+		timing_rate = rate;
+		return now;
+	}
+
+	/* Succeeded: the scheduler's clock, at its own rate. */
+	timing_rate = KERN_CLOCK_HZ;
 	now = sched_ticks();
-
-	/* Succeeded: the ticks. */
 	return now;
 }
 
@@ -1331,8 +1344,8 @@ powervr_timing_add(
 	if (!POWERVR_SUBMIT_TIMING)
 		return;
 
-	/* The part's time and count. */
-	now = sched_ticks();
+	/* The part's time and count, on the timing's clock. */
+	now = powervr_timing_now();
 	timing_ticks[part] += now - start;
 	timing_count[part]++;
 }
@@ -2707,8 +2720,15 @@ static uint64_t
 timing_us(
 	uint64_t ticks)
 {
+	uint64_t rate;
+
+	/* The timing clock's rate; the scheduler's before the first reading. */
+	rate = timing_rate;
+	if (rate == 0U)
+		rate = KERN_CLOCK_HZ;
+
 	/* Succeeded: the whole seconds and the rest, each scaled. */
-	return ticks / KERN_CLOCK_HZ * 1000000U + ticks % KERN_CLOCK_HZ * 1000000U / KERN_CLOCK_HZ;
+	return ticks / rate * 1000000U + ticks % rate * 1000000U / rate;
 }
 
 /*

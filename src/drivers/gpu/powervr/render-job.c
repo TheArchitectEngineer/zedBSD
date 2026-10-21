@@ -1699,7 +1699,11 @@ attribute_words(
 	return 0;
 }
 
-/* Writes words through a buffer's uncached view, low byte first. */
+/*
+ * Writes words through a buffer's uncached view, little-endian: a word at
+ * a time where the place is a word's (q1541: each uncached store is a bus
+ * write, so a byte at a time cost four), else a byte at a time.
+ */
 static void
 put_words(
 	struct powervr_buffer *buffer,
@@ -1707,9 +1711,18 @@ put_words(
 	const uint32_t *words,
 	unsigned count)
 {
+	volatile uint32_t *place;
 	unsigned index;
 
-	/* One word at a time. */
+	/* A place of whole words: one store a word (the processor is little-endian, as the core reads them). */
+	if ((offset & 3U) == 0U) {
+		place = (volatile uint32_t *)(buffer->view + offset);
+		for (index = 0; index < count; index++)
+			place[index] = words[index];
+		return;
+	}
+
+	/* Otherwise one byte at a time, low byte first. */
 	for (index = 0; index < count; index++) {
 		buffer->view[offset + index * 4U + 0U] = (uint8_t)words[index];
 		buffer->view[offset + index * 4U + 1U] = (uint8_t)(words[index] >> 8);
@@ -1718,7 +1731,11 @@ put_words(
 	}
 }
 
-/* Writes bytes through a buffer's uncached view. */
+/*
+ * Writes bytes through a buffer's uncached view: the bytes up to a word's
+ * place one at a time, then whole words assembled from them (one store
+ * each, q1541), then the bytes left.
+ */
 static void
 put_bytes(
 	struct powervr_buffer *buffer,
@@ -1726,11 +1743,34 @@ put_bytes(
 	const uint8_t *bytes,
 	size_t count)
 {
+	volatile uint32_t *place;
+	uint32_t word;
 	size_t index;
 
-	/* One byte at a time. */
-	for (index = 0; index < count; index++)
+	/* The bytes before a word's place. */
+	index = 0;
+	while (index < count && ((offset + index) & 3U) != 0U) {
 		buffer->view[offset + index] = bytes[index];
+		index++;
+	}
+
+	/* Whole words, little-endian. */
+	place = (volatile uint32_t *)(buffer->view + offset + index);
+	while (index + 4U <= count) {
+		word = (uint32_t)bytes[index];
+		word |= (uint32_t)bytes[index + 1U] << 8;
+		word |= (uint32_t)bytes[index + 2U] << 16;
+		word |= (uint32_t)bytes[index + 3U] << 24;
+		*place = word;
+		place++;
+		index += 4U;
+	}
+
+	/* The bytes left. */
+	while (index < count) {
+		buffer->view[offset + index] = bytes[index];
+		index++;
+	}
 }
 
 /*
