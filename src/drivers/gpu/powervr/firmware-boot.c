@@ -150,10 +150,11 @@ static void watch_thread(void *argument);
  * share 639 to 250 us, the 3D's 608 to 276 us without them).  The groups a
  * render logs on every job (MAIN, MTS, PM, RTD, BIF, POW) are for a
  * diagnosis build: set 0x7fff here, or a full trace
- * (POWERVR_RENDER_CHECK_FULL_TRACE, POWERVR_FIRMWARE_BOOT_TRACE).
+ * (POWERVR_RENDER_CHECK_FULL_TRACE, POWERVR_FIRMWARE_BOOT_TRACE).  A
+ * release image (POWERVR_DEBUG 0) keeps no trace at all.
  */
 #ifndef POWERVR_FIRMWARE_TRACE_GROUPS
-#define POWERVR_FIRMWARE_TRACE_GROUPS	0x0401U
+#define POWERVR_FIRMWARE_TRACE_GROUPS	(POWERVR_DEBUG ? 0x0401U : 0U)
 #endif
 #define DUMP_TRACE_LOG_TYPE		(POWERVR_RENDER_CHECK_FULL_TRACE || POWERVR_FIRMWARE_BOOT_TRACE ? 0x80007fffU : POWERVR_FIRMWARE_TRACE_GROUPS)
 #define BOOT_TRACE_WORDS		2048U
@@ -1008,7 +1009,8 @@ fill_records(
 	}
 	powervr_object_put32(&firmware->system_data, POWERVR_SYSTEM_DATA_FLAGS, flags);
 	powervr_object_put32(&firmware->os_data, POWERVR_OS_DATA_CONFIG_FLAGS, os_flags);
-	kern_logf("powervr: firmware: system flags 0x%08x, os flags 0x%08x, core clock %u Hz\n", (unsigned)flags, (unsigned)os_flags, (unsigned)core->core_rate);
+	if (POWERVR_DEBUG)
+		kern_logf("powervr: firmware: system flags 0x%08x, os flags 0x%08x, core clock %u Hz\n", (unsigned)flags, (unsigned)os_flags, (unsigned)core->core_rate);
 
 	/*
 	 * The runtime configuration: the core clock's real rate, every
@@ -1237,14 +1239,16 @@ start_processor(
 	fence_reset(core, second_reset);
 
 	/* Sets up the system level cache, the MIPS wrapper and the bus attributes. */
-	kern_logf("powervr: firmware: start: out of reset but the Garten; cache\n");
+	if (POWERVR_DEBUG)
+		kern_logf("powervr: firmware: start: out of reset but the Garten; cache\n");
 	init_cache(core);
 
 	/* The diagnostics: the registers' values after the cache is set up. */
 	if (POWERVR_DIAGNOSTICS)
 		register_check(core);
 
-	kern_logf("powervr: firmware: start: MIPS wrapper\n");
+	if (POWERVR_DEBUG)
+		kern_logf("powervr: firmware: start: MIPS wrapper\n");
 	init_wrapper(core);
 	powervr_write64(core, POWERVR_AXI_ACE_LITE, POWERVR_AXI_ACE_LITE_VALUE);
 
@@ -1256,8 +1260,9 @@ start_processor(
 	}
 
 	/* Lets the processor out of reset with a pause on each side. */
-	kern_logf("powervr: firmware: start: processor out of reset (started flag before 0x%x)\n",
-		  (unsigned)powervr_object_get32(&core->firmware.system_init, POWERVR_SYSTEM_INIT_STARTED));
+	if (POWERVR_DEBUG)
+		kern_logf("powervr: firmware: start: processor out of reset (started flag before 0x%x)\n",
+			  (unsigned)powervr_object_get32(&core->firmware.system_init, POWERVR_SYSTEM_INIT_STARTED));
 	kern_usleep_range(RELEASE_PAUSE_US, RELEASE_PAUSE_US * 2U);
 	powervr_write64(core, POWERVR_SOFT_RESET, 0);
 	(void)powervr_read64(core, POWERVR_SOFT_RESET);
@@ -1403,14 +1408,15 @@ wait_started(
 	}
 
 	/* What the firmware wrote at its start: the flag, its time, and the identities it filled. */
-	kern_logf("powervr: firmware: boot: started 0x%x at %u, marker %u, hardware identity %u/0x%x, firmware identity %u/0x%x\n",
-		  (unsigned)started,
-		  (unsigned)powervr_object_get32(&core->firmware.system_init, DUMP_SYSTEM_INIT_STARTED_TIME),
-		  (unsigned)powervr_object_get32(&core->firmware.system_init, POWERVR_SYSTEM_INIT_MARKER),
-		  (unsigned)powervr_object_get32(&core->firmware.os_init, POWERVR_OS_INIT_HW_IDENTITY),
-		  (unsigned)powervr_object_get32(&core->firmware.os_init, POWERVR_OS_INIT_HW_IDENTITY + 8U),
-		  (unsigned)powervr_object_get32(&core->firmware.os_init, POWERVR_OS_INIT_FW_IDENTITY),
-		  (unsigned)powervr_object_get32(&core->firmware.os_init, POWERVR_OS_INIT_FW_IDENTITY + 8U));
+	if (POWERVR_DEBUG)
+		kern_logf("powervr: firmware: boot: started 0x%x at %u, marker %u, hardware identity %u/0x%x, firmware identity %u/0x%x\n",
+			  (unsigned)started,
+			  (unsigned)powervr_object_get32(&core->firmware.system_init, DUMP_SYSTEM_INIT_STARTED_TIME),
+			  (unsigned)powervr_object_get32(&core->firmware.system_init, POWERVR_SYSTEM_INIT_MARKER),
+			  (unsigned)powervr_object_get32(&core->firmware.os_init, POWERVR_OS_INIT_HW_IDENTITY),
+			  (unsigned)powervr_object_get32(&core->firmware.os_init, POWERVR_OS_INIT_HW_IDENTITY + 8U),
+			  (unsigned)powervr_object_get32(&core->firmware.os_init, POWERVR_OS_INIT_FW_IDENTITY),
+			  (unsigned)powervr_object_get32(&core->firmware.os_init, POWERVR_OS_INIT_FW_IDENTITY + 8U));
 
 	/* Succeeded: the firmware runs. */
 	return 0;
@@ -1696,7 +1702,8 @@ step_start(
 	/* The tick first, so the thread that reports never sees a name with an old tick. */
 	__atomic_store_n(&step_began, sched_ticks(), __ATOMIC_RELEASE);
 	__atomic_store_n(&step_name, name, __ATOMIC_RELEASE);
-	kern_logf("powervr: firmware: %s start\n", name);
+	if (POWERVR_DEBUG)
+		kern_logf("powervr: firmware: %s start\n", name);
 }
 
 /* Notes that a step ended, with how long it took and how it went, on one line. */
@@ -1715,7 +1722,8 @@ step_done(
 
 	/* Done, or failed with its error. */
 	if (error == 0) {
-		kern_logf("powervr: firmware: %s done (%u ms)\n", name, milliseconds);
+		if (POWERVR_DEBUG)
+			kern_logf("powervr: firmware: %s done (%u ms)\n", name, milliseconds);
 	} else {
 		kern_logf("powervr: firmware: %s failed (%d) after %u ms\n", name, error, milliseconds);
 	}
@@ -1856,7 +1864,9 @@ powervr_firmware_dump(
 	text[DUMP_ASSERT_TEXT] = '\0';
 	kern_logf("powervr: dump: assert info \"%s\"\n", text);
 
-	/* The trace: where the firmware writes next, then the words since the mark (or the last ones), eight a line. */
+	/* The trace: where the firmware writes next, then the words since the mark (or the last ones), eight a line; a release image keeps none. */
+	if (!POWERVR_DEBUG)
+		return;
 	pointer = powervr_object_get32(trace, DUMP_TRACE_POINTER);
 	kern_logf("powervr: dump: trace log type 0x%x, pointer %u of %u, mark %u\n",
 		  (unsigned)powervr_object_get32(trace, POWERVR_TRACE_LOG_TYPE), (unsigned)pointer, (unsigned)POWERVR_TRACE_WORDS,

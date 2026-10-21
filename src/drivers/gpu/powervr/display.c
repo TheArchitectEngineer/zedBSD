@@ -479,11 +479,12 @@ drv_powervr_display_attach(
 		display->scanout = 1;
 
 	display->ready = 1;
-	kern_logf("powervr: display %ux%u on the boot framebuffer, scanout %d (vblank start %d)\n",
-		  display->screen.width,
-		  display->screen.height,
-		  display->scanout,
-		  error);
+	if (POWERVR_DEBUG)
+		kern_logf("powervr: display %ux%u on the boot framebuffer, scanout %d (vblank start %d)\n",
+			  display->screen.width,
+			  display->screen.height,
+			  display->scanout,
+			  error);
 
 	/* Succeeded: the screen is a display node. */
 	return 0;
@@ -928,11 +929,12 @@ output_claim(
 
 	mutex_unlock(&display->mutex);
 
-	kern_logf("powervr: display lease %llu claimed; the text console is suspended, zero copy %d (scanout %d, asked %d)\n",
-		  (unsigned long long)request->lease,
-		  display->zero_copy,
-		  display->scanout,
-		  zero_copy_requested());
+	if (POWERVR_DEBUG)
+		kern_logf("powervr: display lease %llu claimed; the text console is suspended, zero copy %d (scanout %d, asked %d)\n",
+			  (unsigned long long)request->lease,
+			  display->zero_copy,
+			  display->scanout,
+			  zero_copy_requested());
 
 	/* Succeeded: the session holds the screen. */
 	return 0;
@@ -1047,7 +1049,7 @@ output_present(
 			direct = scan_directly(display, resource, request);
 
 		/* Says the route when it changes: scanned directly, or copied and why. */
-		if (direct != display->logged_route) {
+		if (POWERVR_DEBUG && direct != display->logged_route) {
 			display->logged_route = direct;
 			if (direct) {
 				kern_logf("powervr: display lease %llu: frames scanned directly\n", (unsigned long long)display->lease);
@@ -1569,20 +1571,23 @@ end_lease(
 
 	/* Writes what the flips did, for a test to check. */
 	if (display->scanout) {
-		kern_logf("powervr: display flips %llu, mismatches %u, lost %d\n",
-			  (unsigned long long)display->flip.recorded,
-			  display->flip.mismatches,
-			  display->flip.lost);
+		if (POWERVR_DEBUG)
+			kern_logf("powervr: display flips %llu, mismatches %u, lost %d\n",
+				  (unsigned long long)display->flip.recorded,
+				  display->flip.mismatches,
+				  display->flip.lost);
 		drv_powervr_dc_vblank_report();
 	}
 
-	kern_logf("powervr: display lease %llu released after %llu frame(s); the text console resumes\n",
-		  (unsigned long long)display->lease,
-		  (unsigned long long)display->sequence);
+	if (POWERVR_DEBUG)
+		kern_logf("powervr: display lease %llu released after %llu frame(s); the text console resumes\n",
+			  (unsigned long long)display->lease,
+			  (unsigned long long)display->sequence);
 
 	/* The lease's cursor goes with it; its image is kept for the next. */
-	kern_logf("powervr: display lease %llu: cursor plane sets %llu moves %llu\n",
-		  (unsigned long long)display->lease, (unsigned long long)display->cursor_sets, (unsigned long long)display->cursor_moves);
+	if (POWERVR_DEBUG)
+		kern_logf("powervr: display lease %llu: cursor plane sets %llu moves %llu\n",
+			  (unsigned long long)display->lease, (unsigned long long)display->cursor_sets, (unsigned long long)display->cursor_moves);
 	display->cursor_sets = 0;
 	display->cursor_moves = 0;
 	cursor_off(display);
@@ -2091,7 +2096,8 @@ display_scanout_start(
 	error = drv_powervr_dc_vblank_start();
 	if (error == 0 || error == EALREADY)
 		display->scanout = 1;
-	kern_logf("powervr: display scanout %d (late vblank start %d)\n", display->scanout, error);
+	if (POWERVR_DEBUG)
+		kern_logf("powervr: display scanout %d (late vblank start %d)\n", display->scanout, error);
 	drv_powervr_dc_vblank_report();
 }
 

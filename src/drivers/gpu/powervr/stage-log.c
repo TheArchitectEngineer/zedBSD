@@ -55,8 +55,8 @@ powervr_stage_ok(
 
 	spin_unlock(&stage_lock);
 
-	/* The line, outside the lock. */
-	if (print)
+	/* The line, outside the lock (a release image says only what failed). */
+	if (print && POWERVR_DEBUG)
 		kern_logf("%s\n", line);
 }
 
