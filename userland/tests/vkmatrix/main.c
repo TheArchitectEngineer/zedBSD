@@ -4055,7 +4055,7 @@ load_1080_textures(
  * PERF_FRAMES frames after one not counted: a clear only; a load only (the
  * driver's load draw); a clear and one full-screen flat quad; a clear and
  * one full-screen quad sampling a 1024x1024 OPTIMAL texture with linear
- * filtering.  Prints "vkmatrix: perf <kind>: <ms> ms a frame (min <ms>)".
+ * filtering.  Prints "vkmatrix: perf <kind>: <us> us a frame (min <us> us)" (integers: the libc printf of the board may lack %f).
  */
 static VkResult
 perf_case(
@@ -4181,8 +4181,8 @@ perf_case(
 	}
 
 	/* The line, and nothing for the shared target's comparison to say. */
-	printf("vkmatrix: perf %s: %.2f ms a frame (min %.2f) over %u frames of 1920x1080\n", names[kind],
-	       (double)total / PERF_FRAMES / 1000000.0, (double)least / 1000000.0, (unsigned)PERF_FRAMES);
+	printf("vkmatrix: perf %s: %lu us a frame (min %lu us) over %u frames of 1920x1080\n", names[kind],
+	       (unsigned long)(total / PERF_FRAMES / 1000U), (unsigned long)(least / 1000U), (unsigned)PERF_FRAMES);
 	(void)fflush(stdout);
 	memcpy(run->expected, run->pixels, sizeof(run->expected));
 	run->tolerance = 0;
