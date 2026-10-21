@@ -143,13 +143,17 @@ static void watch_thread(void *argument);
  * and 56, each its layout and BVNC) and pvr_rogue_fwif_check.h.
  */
 /*
- * The trace's groups the firmware logs in normal running (q1541): every
- * one but the debug group, as before.  Each entry costs the firmware's
- * processor time on every job (about ninety entries a render), so a
- * measurement build may set fewer (0 logs nothing).
+ * The trace's groups the firmware logs in normal running (q1541): the
+ * trace on (bit 0) with the recovery group (HWR, 0x400) alone.  Every group
+ * (0x7fff) made about ninety entries a render, and their writing doubled
+ * the firmware's time around each job on the board (d66 and d68: the TA's
+ * share 639 to 250 us, the 3D's 608 to 276 us without them).  The groups a
+ * render logs on every job (MAIN, MTS, PM, RTD, BIF, POW) are for a
+ * diagnosis build: set 0x7fff here, or a full trace
+ * (POWERVR_RENDER_CHECK_FULL_TRACE, POWERVR_FIRMWARE_BOOT_TRACE).
  */
 #ifndef POWERVR_FIRMWARE_TRACE_GROUPS
-#define POWERVR_FIRMWARE_TRACE_GROUPS	0x7fffU
+#define POWERVR_FIRMWARE_TRACE_GROUPS	0x0401U
 #endif
 #define DUMP_TRACE_LOG_TYPE		(POWERVR_RENDER_CHECK_FULL_TRACE || POWERVR_FIRMWARE_BOOT_TRACE ? 0x80007fffU : POWERVR_FIRMWARE_TRACE_GROUPS)
 #define BOOT_TRACE_WORDS		2048U
