@@ -71,6 +71,8 @@ static float cut_overlap(const float *quad, const float *hole);
 static unsigned cut_piece(const float *piece, const float *hole, float (*into)[4]);
 static int32_t edge_min(int32_t first, int32_t second);
 static int32_t edge_max(int32_t first, int32_t second);
+static unsigned subtract_edges(const float *quad, const float (*holes)[4], unsigned count, float *edges);
+static unsigned subtract_band(const float *quad, const float (*holes)[4], unsigned count, float top, float bottom, float (*spans)[2]);
 static void damage_client_part(const struct kwl_object *surface, uint32_t width, uint32_t height, int32_t *rect);
 static int cursor_unseen(struct kwl_server *server, int32_t x, int32_t y);
 static int probes_changed(struct kwl_server *server);
@@ -391,6 +393,132 @@ kwl_damage_rects_cut(
 	return length;
 }
 
+
+/*
+ * Cuts a quad (x, y, width, height) into pieces that do not overlap and
+ * together cover the quad less every hole (x, y, width, height), for a
+ * background drawn under many opaque shapes (ws270-p007): the wallpaper and
+ * the desktop's surface under the windows.  Returns the number of pieces,
+ * at most KWL_COVER_PIECES; 0 when the holes cover the whole quad.
+ *
+ * Unlike kwl_damage_rects_cut, every hole worth cutting is cut: the quad is
+ * split into bands at the holes' top and bottom edges, each band into the
+ * spans between the holes across it, and a piece goes on down while the
+ * bands under it have the same span.  Each hole is shrunk to whole pixels
+ * first and is cut only when it covers at least DAMAGE_CUT_AREA of the quad
+ * (at most DAMAGE_CUT_HOLES of them); when the pieces would be more than
+ * KWL_COVER_PIECES the quad is its own one piece.
+ */
+unsigned
+kwl_damage_rects_subtract(
+	const float *quad,
+	const float (*holes)[4],
+	unsigned hole_count,
+	float (*pieces)[4])
+{
+	float kept[DAMAGE_CUT_HOLES][4];
+	float edges[2U * DAMAGE_CUT_HOLES + 2U];
+	float spans[DAMAGE_CUT_HOLES + 1U][2];
+	float right;
+	float bottom;
+	unsigned open[KWL_COVER_PIECES];
+	unsigned open_count;
+	unsigned still[KWL_COVER_PIECES];
+	unsigned still_count;
+	unsigned edge_count;
+	unsigned span_count;
+	unsigned count;
+	unsigned length;
+	unsigned index;
+	unsigned band;
+	unsigned span;
+	unsigned piece;
+	int joined;
+
+	/* Each hole shrunk to whole pixels and cut to the quad, those covering too little left out. */
+	count = 0U;
+	right = quad[0] + quad[2];
+	bottom = quad[1] + quad[3];
+	for (index = 0U; index < hole_count && count < DAMAGE_CUT_HOLES; index++) {
+		kept[count][0] = ceilf(holes[index][0]);
+		kept[count][1] = ceilf(holes[index][1]);
+		kept[count][2] = floorf(holes[index][0] + holes[index][2]);
+		kept[count][3] = floorf(holes[index][1] + holes[index][3]);
+		if (kept[count][0] < quad[0])
+			kept[count][0] = quad[0];
+		if (kept[count][1] < quad[1])
+			kept[count][1] = quad[1];
+		if (kept[count][2] > right)
+			kept[count][2] = right;
+		if (kept[count][3] > bottom)
+			kept[count][3] = bottom;
+
+		/* A hole worth its draws is kept. */
+		if (kept[count][2] > kept[count][0] &&
+		    kept[count][3] > kept[count][1] &&
+		    (kept[count][2] - kept[count][0]) * (kept[count][3] - kept[count][1]) >= DAMAGE_CUT_AREA)
+			count++;
+	}
+
+	/* No hole: the quad itself. */
+	if (count == 0U) {
+		memcpy(pieces[0], quad, sizeof(pieces[0]));
+		return 1U;
+	}
+
+	/* The bands' edges, top to bottom. */
+	edge_count = subtract_edges(quad, (const float (*)[4])kept, count, edges);
+
+	/*
+	 * Each band's spans, top to bottom: a span the piece above it also has
+	 * makes that piece taller; any other starts a piece.  open lists the
+	 * pieces the band above ended on.
+	 */
+	length = 0U;
+	open_count = 0U;
+	for (band = 0U; band + 1U < edge_count; band++) {
+		span_count = subtract_band(quad, (const float (*)[4])kept, count, edges[band], edges[band + 1U], spans);
+		still_count = 0U;
+		for (span = 0U; span < span_count; span++) {
+			/* The piece above with the same span goes on down. */
+			joined = 0;
+			for (index = 0U; index < open_count; index++) {
+				piece = open[index];
+				if (pieces[piece][0] != spans[span][0] || pieces[piece][0] + pieces[piece][2] != spans[span][1])
+					continue;
+				pieces[piece][3] = edges[band + 1U] - pieces[piece][1];
+				still[still_count] = piece;
+				still_count++;
+				joined = 1;
+				break;
+			}
+			if (joined)
+				continue;
+
+			/* Too many pieces: the quad is drawn whole instead. */
+			if (length == KWL_COVER_PIECES) {
+				memcpy(pieces[0], quad, sizeof(pieces[0]));
+				return 1U;
+			}
+
+			/* A new piece from this band. */
+			pieces[length][0] = spans[span][0];
+			pieces[length][1] = edges[band];
+			pieces[length][2] = spans[span][1] - spans[span][0];
+			pieces[length][3] = edges[band + 1U] - edges[band];
+			still[still_count] = length;
+			still_count++;
+			length++;
+		}
+
+		/* The pieces this band ended on are those the next one may go on. */
+		memcpy(open, still, (size_t)still_count * sizeof(open[0]));
+		open_count = still_count;
+	}
+
+	/* Succeeded: the quad less the holes. */
+	return length;
+}
 
 /*
  * Records one rectangle a whole scene's drawing tests the pointer against.
@@ -1071,4 +1199,117 @@ cut_piece(
 
 	/* Succeeded: the piece less the hole. */
 	return count;
+}
+
+/*
+ * Lists the edges a quad less its holes is cut into bands at: the quad's
+ * top and bottom and every hole's, inside the quad, each once, top to
+ * bottom.  Returns how many.
+ */
+static unsigned
+subtract_edges(
+	const float *quad,
+	const float (*holes)[4],
+	unsigned count,
+	float *edges)
+{
+	float value;
+	unsigned edge_count;
+	unsigned index;
+	unsigned place;
+	unsigned side;
+
+	/* The quad's own edges. */
+	edges[0] = quad[1];
+	edges[1] = quad[1] + quad[3];
+	edge_count = 2U;
+
+	/* Each hole's top and bottom, kept in order, each value once. */
+	for (index = 0U; index < count; index++) {
+		for (side = 1U; side <= 3U; side += 2U) {
+			/* Where the edge goes among those listed. */
+			value = holes[index][side];
+			place = 0U;
+			while (place < edge_count && edges[place] < value)
+				place++;
+			if (place < edge_count && edges[place] == value)
+				continue;
+
+			/* The edge put in its place. */
+			memmove(&edges[place + 1U], &edges[place], (size_t)(edge_count - place) * sizeof(edges[0]));
+			edges[place] = value;
+			edge_count++;
+		}
+	}
+
+	/* Succeeded: the edges in order. */
+	return edge_count;
+}
+
+/*
+ * Lists the spans (left, right) of a band of a quad (from top to bottom)
+ * that no hole covers, left to right; a hole crossing the band covers all
+ * of it, as the band's edges include every hole's.  Returns how many.
+ */
+static unsigned
+subtract_band(
+	const float *quad,
+	const float (*holes)[4],
+	unsigned count,
+	float top,
+	float bottom,
+	float (*spans)[2])
+{
+	float covers[DAMAGE_CUT_HOLES][2];
+	float swap[2];
+	float left;
+	unsigned cover_count;
+	unsigned span_count;
+	unsigned index;
+	unsigned other;
+
+	/* The holes across the band, as their left and right. */
+	cover_count = 0U;
+	for (index = 0U; index < count; index++) {
+		if (holes[index][1] > top || holes[index][3] < bottom)
+			continue;
+		covers[cover_count][0] = holes[index][0];
+		covers[cover_count][1] = holes[index][2];
+		cover_count++;
+	}
+
+	/* Those holes from the left (few, so sorted by insertion). */
+	for (index = 1U; index < cover_count; index++) {
+		for (other = index; other > 0U && covers[other - 1U][0] > covers[other][0]; other--) {
+			memcpy(swap, covers[other], sizeof(swap));
+			memcpy(covers[other], covers[other - 1U], sizeof(swap));
+			memcpy(covers[other - 1U], swap, sizeof(swap));
+		}
+	}
+
+	/* The spans between them, left to right, from the quad's left edge to its right. */
+	span_count = 0U;
+	left = quad[0];
+	for (index = 0U; index < cover_count; index++) {
+		/* The span before this hole, when there is room. */
+		if (covers[index][0] > left) {
+			spans[span_count][0] = left;
+			spans[span_count][1] = covers[index][0];
+			span_count++;
+		}
+
+		/* The next span starts after the hole (holes may overlap). */
+		if (covers[index][1] > left)
+			left = covers[index][1];
+	}
+
+	/* The span after the last hole. */
+	if (quad[0] + quad[2] > left) {
+		spans[span_count][0] = left;
+		spans[span_count][1] = quad[0] + quad[2];
+		span_count++;
+	}
+
+	/* Succeeded: the uncovered spans. */
+	return span_count;
 }

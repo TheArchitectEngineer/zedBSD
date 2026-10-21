@@ -1174,6 +1174,14 @@ struct kwl_apps_bar {
  */
 #define KWL_CUT_PIECES 8U
 
+/*
+ * The most opaque insides a frame's background (the wallpaper and the
+ * desktop's surface) is drawn around, and the most pieces it is drawn as
+ * then (kwl_damage_rects_subtract, ws270-p007).
+ */
+#define KWL_COVER_HOLES 32U
+#define KWL_COVER_PIECES 64U
+
 struct kwl_server {
 	struct kwl_perf perf;
 	int listener;
@@ -2202,6 +2210,7 @@ void kwl_damage_rect(struct kwl_server *server, int32_t left, int32_t top, int32
 void kwl_damage_commit(struct kwl_server *server, struct kwl_object *surface, struct kwl_object *previous);
 void kwl_damage_rects_add(int32_t (*rects)[4], unsigned *count, const int32_t *rect);
 unsigned kwl_damage_rects_cut(const float *quad, const float (*holes)[4], unsigned hole_count, float (*pieces)[4]);
+unsigned kwl_damage_rects_subtract(const float *quad, const float (*holes)[4], unsigned hole_count, float (*pieces)[4]);
 void kwl_window_bounds(struct kwl_server *server, int32_t *width, int32_t *height);
 void kwl_window_bounds_refresh(struct kwl_server *server);
 int kwl_window_send_configure(struct kwl_object *surface);

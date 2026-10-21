@@ -320,6 +320,7 @@ static const unsigned glass_tile_pixels[GLASS_TILE_SIZES] = { 20U, 26U, 48U, 72U
 static int glass_shape_split(const struct kwl_server *server, const float *constants, const float *quad, const float *box, float radius, VkRect2D *pieces, unsigned *count);
 static void glass_split_rect(float x, float y, float width, float height, VkRect2D *rect);
 static void glass_shape_draw_split(struct kwl_server *server, struct kwl_list *command, const float *constants, VkDescriptorSet set, VkPipeline pipeline, const VkRect2D *pieces, unsigned count);
+static void glass_shape_draw_pieces(struct kwl_server *server, struct kwl_list *command, const struct glass_shape *shape, const float (*pieces)[4], unsigned count);
 static unsigned glass_count_kind_of(const float *constants);
 static int wallpaper_create(struct kwl_server *server, struct kwl_glass *glass, uint32_t width, uint32_t height);
 static int glass_size_make(struct kwl_server *server, uint32_t width, uint32_t height, struct kwl_glass_size *size);
@@ -2402,12 +2403,8 @@ glass_shape_draw_except(
 	const float (*holes)[4],
 	unsigned hole_count)
 {
-	struct glass_shape piece;
 	float pieces[KWL_CUT_PIECES][4];
-	float across;
-	float down;
 	unsigned count;
-	unsigned index;
 
 	/* No hole: the whole shape. */
 	if (hole_count == 0U) {
@@ -2426,18 +2423,47 @@ glass_shape_draw_except(
 		return;
 	count = kwl_damage_rects_cut(shape->quad, holes, hole_count, pieces);
 
-	/* Each piece is the shape over a part of its quad, showing that part of the image. */
-	across = shape->uv[2] - shape->uv[0];
-	down = shape->uv[3] - shape->uv[1];
-	for (index = 0U; index < count; index++) {
-		piece = *shape;
-		memcpy(piece.quad, pieces[index], sizeof(piece.quad));
-		piece.uv[0] = shape->uv[0] + (pieces[index][0] - shape->quad[0]) / shape->quad[2] * across;
-		piece.uv[1] = shape->uv[1] + (pieces[index][1] - shape->quad[1]) / shape->quad[3] * down;
-		piece.uv[2] = shape->uv[0] + (pieces[index][0] + pieces[index][2] - shape->quad[0]) / shape->quad[2] * across;
-		piece.uv[3] = shape->uv[1] + (pieces[index][1] + pieces[index][3] - shape->quad[1]) / shape->quad[3] * down;
-		glass_shape_draw(server, command, &piece);
+	/* Each piece is the shape over a part of its quad. */
+	glass_shape_draw_pieces(server, command, shape, (const float (*)[4])pieces, count);
+}
+
+/*
+ * Records a background shape (the wallpaper, the desktop's surface) except
+ * where opaque shapes drawn after it hide it, cutting out every hole worth
+ * its draws (kwl_damage_rects_subtract, ws270-p007): many windows may stand
+ * on it, where glass_shape_draw_except cuts out the few largest.  In a layer
+ * seen through the shape is drawn whole.
+ */
+void
+glass_shape_draw_around(
+	struct kwl_server *server,
+	struct kwl_list *command,
+	const struct glass_shape *shape,
+	const float (*holes)[4],
+	unsigned hole_count)
+{
+	float pieces[KWL_COVER_PIECES][4];
+	unsigned count;
+
+	/* No hole: the whole shape. */
+	if (hole_count == 0U) {
+		glass_shape_draw(server, command, shape);
+		return;
 	}
+
+	/* The shapes over it are seen through in a fading layer: the whole shape. */
+	if (server->layer_on && server->layer_opacity < 1.0f) {
+		glass_shape_draw(server, command, shape);
+		return;
+	}
+
+	/* The quad less the holes; an empty quad has nothing to cut. */
+	if (shape->quad[2] <= 0.0f || shape->quad[3] <= 0.0f)
+		return;
+	count = kwl_damage_rects_subtract(shape->quad, holes, hole_count, pieces);
+
+	/* Each piece is the shape over a part of its quad. */
+	glass_shape_draw_pieces(server, command, shape, (const float (*)[4])pieces, count);
 }
 
 /*
@@ -4480,4 +4506,32 @@ glass_count_kind_of(
 
 	/* Succeeded: the mode itself. */
 	return (unsigned)(mode + 0.5f);
+}
+
+/* Records a shape over pieces of its quad (x, y, width, height), each showing its part of the shape's image. */
+static void
+glass_shape_draw_pieces(
+	struct kwl_server *server,
+	struct kwl_list *command,
+	const struct glass_shape *shape,
+	const float (*pieces)[4],
+	unsigned count)
+{
+	struct glass_shape piece;
+	float across;
+	float down;
+	unsigned index;
+
+	/* Each piece is the shape over a part of its quad, showing that part of the image. */
+	across = shape->uv[2] - shape->uv[0];
+	down = shape->uv[3] - shape->uv[1];
+	for (index = 0U; index < count; index++) {
+		piece = *shape;
+		memcpy(piece.quad, pieces[index], sizeof(piece.quad));
+		piece.uv[0] = shape->uv[0] + (pieces[index][0] - shape->quad[0]) / shape->quad[2] * across;
+		piece.uv[1] = shape->uv[1] + (pieces[index][1] - shape->quad[1]) / shape->quad[3] * down;
+		piece.uv[2] = shape->uv[0] + (pieces[index][0] + pieces[index][2] - shape->quad[0]) / shape->quad[2] * across;
+		piece.uv[3] = shape->uv[1] + (pieces[index][1] + pieces[index][3] - shape->quad[1]) / shape->quad[3] * down;
+		glass_shape_draw(server, command, &piece);
+	}
 }

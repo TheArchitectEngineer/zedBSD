@@ -320,6 +320,23 @@ kwl_desktop_draw(
 	struct kwl_server *server,
 	struct kwl_list *command)
 {
+	/* All of it: nothing known to cover it. */
+	kwl_desktop_draw_around(server, command, NULL, 0U);
+}
+
+/*
+ * Draws the desktop surface's image as kwl_desktop_draw does, except under
+ * holes (x, y, width, height): the insides of opaque shapes drawn after it,
+ * which hide it there (ws270-p007; the glass look only, as the plain look
+ * draws it by its alpha as one quad).
+ */
+void
+kwl_desktop_draw_around(
+	struct kwl_server *server,
+	struct kwl_list *command,
+	const float (*holes)[4],
+	unsigned hole_count)
+{
 	const struct kwl_import *image;
 	struct kwl_import alpha;
 	struct glass_shape shape;
@@ -363,7 +380,7 @@ kwl_desktop_draw(
 	shape.set = image->set;
 	if (image->draw == KWL_DRAW_OPAQUE)
 		shape.opaque = 1.0f;
-	glass_shape_draw(server, command, &shape);
+	glass_shape_draw_around(server, command, &shape, holes, hole_count);
 
 	/* Succeeded: the desktop is drawn. */
 	return;
