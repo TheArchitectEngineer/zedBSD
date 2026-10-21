@@ -1446,7 +1446,7 @@ draw_place(
 	put_words(memory->draw_pds, pds_slot + DRAW_PDS_VERTEX_CODE, memory->vertex.code, memory->vertex.code_words);
 
 	/* The fragment's task program, and the coefficient program: data, then code after it. */
-	error = powervr_render_kick_build(fragment_usc, graphics->fragment.temps, &memory->kick);
+	error = powervr_render_fragment_kick_build(fragment_usc, graphics->fragment.temps, &memory->kick);
 	if (error != 0)
 		return error;
 

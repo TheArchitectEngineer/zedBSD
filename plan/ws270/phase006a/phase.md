@@ -464,3 +464,14 @@ Keiland が使い、vkmatrix 15/15・gpu-selftest 13/13 で確かめていない
 - d43（P1 の試し 84eaa2f3b、program と job の general の memory を SLC に通す、main には入れない）: 入れた後に板が戻らない（電源の入れ直し 2 回）。
 - d43（P1 の試し 84eaa2f3b、program・job の general を SLC に通す）: 起動は SD の失敗 73 回で不安定だったが動いた。perf は変わらず（flat 15.7、immediate 15.0、texture 37.85、alu 268.55 ms）、vkmatrix 36/36、HWR 0 → program の取り込みは原因でない。KWL の rec submit 108 ms（max 256）。ALU も pixel の固定費も名目の約 1/2〜1/8 → GPU の実際の clock が 396 MHz より低い疑いも。板は main の kernel（55e6638ed 以降、切り替え 0）に戻す（d44）。
 - P2 q1536-i04（報告だけ）: pixel の task の起動は Mesa と同じ（DOUTU 1 つ、group は hardware、max_instances_per_pds_task 32）。違いは fragment の program: Mesa は phase change（phase2end）と DOUTU の dual_phase を使う、temps は Mesa 6・ours 12、END が別の group。dual-phase が無いと program 全体が overlap check の待ちを受けるので、命令数に依らない pixel の固定費と合う → P2 に dual-phase の opt-in の build と temps の field を変える knob を依頼（q1536-i05）。
+
+### q1536-i05（2026-10-21、P2）: dual-phase の訂正と、temps の試しの switch
+
+- 訂正: i04 で「Mesa は dual-phase」と書いたのは誤りだった。
+  - `phase2end` は TST・MOVC の encoding の bit（命令の group の中の phase 2 の終わり）で、program の phase の切り替えではない。
+  - `pco_data.fs.uses.phase_change` は宣言だけで、pco はどこでも立てない。Mesa の fragment の DOUTU の dual_phase は常に 0 で、こちらと同じ。
+  - dual-phase の switch は作らなかった。
+- temps の試し: `POWERVR_FRAGMENT_TEMPS_FORCE`（render-program.c、既定 0）。
+  - draw の fragment の task は、`powervr_render_fragment_kick_build` で少なくともこの数の temp を求める。
+  - render-job.c の呼び出しを 1 行替えた。
+- 確認: p010 は 0 failed、p009 は 505 passed、desktop の config で VF2 の vmunix は rc 0、warning 0。

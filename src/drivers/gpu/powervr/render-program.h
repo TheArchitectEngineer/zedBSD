@@ -154,6 +154,7 @@ int powervr_render_colour_usc(uint32_t colour, struct powervr_render_usc *progra
 int powervr_render_vertex_usc(struct powervr_render_usc *program);
 int powervr_render_vertex_pds(uint64_t vertices, uint32_t usc_offset, unsigned temps, struct powervr_data_vertex_program *program);
 int powervr_render_kick_build(uint32_t usc_offset, unsigned temps, struct powervr_render_kick *kick);
+int powervr_render_fragment_kick_build(uint32_t usc_offset, unsigned temps, struct powervr_render_kick *kick);
 int powervr_render_background_words(const struct powervr_render_background *background, uint64_t words[3]);
 int powervr_render_pbe_words(const struct powervr_render_surface *surface, const struct powervr_render_area *area, uint32_t state[2], uint64_t reg[3]);
 int powervr_render_triangle_ppp(const struct powervr_render_triangle *triangle, uint32_t words[POWERVR_RENDER_PPP_WORDS]);
