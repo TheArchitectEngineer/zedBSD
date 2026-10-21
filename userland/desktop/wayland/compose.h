@@ -431,7 +431,7 @@ struct kwl_turn {
  * How many frames (or layers' pictures) may be recorded and submitted
  * before the oldest completes: each has a slot of its own.
  */
-#define KWL_FRAME_SLOTS		2U
+#define KWL_FRAME_SLOTS		KWL_RENDER_FLIGHTS
 
 /*
  * What one submission owns until it completes: the command buffers it is
@@ -456,6 +456,7 @@ struct kwl_frame_slot {
 	unsigned bake;
 	uint64_t layers_generation;
 	unsigned scene_written;
+	unsigned flying;
 };
 
 struct kwl_compose {
@@ -887,6 +888,7 @@ void kwl_compose_count_commands(struct kwl_server *server, unsigned pushes, unsi
 VkResult kwl_compose_submit_quiet(struct kwl_server *server);
 int kwl_compose_render_start(struct kwl_server *server);
 int kwl_compose_want_layer(struct kwl_server *server);
+int kwl_compose_host_writable(struct kwl_server *server);
 void kwl_compose_park(struct kwl_server *server);
 void kwl_compose_unpark(struct kwl_server *server);
 void kwl_compose_forget(struct kwl_server *server, unsigned output, unsigned heads_mask);

@@ -49,6 +49,15 @@
 #define KWL_RENDER_ACQUIRE_NS	50000000ULL
 #define KWL_RENDER_FENCE_NS	100000000ULL
 
+/*
+ * How many jobs may be submitted before the oldest completes (each has its
+ * own command buffers and fence, a slot of the owner's), and how long the
+ * thread waits at a time for the oldest's fence while it also looks for
+ * the main thread's want and answer.
+ */
+#define KWL_RENDER_FLIGHTS	2U
+#define KWL_RENDER_POLL_NS	1000000ULL
+
 /* What the main thread may draw. */
 enum kwl_render_kind {
 	/* Nothing: the thread acquires nothing. */
@@ -82,10 +91,8 @@ enum kwl_render_step {
 enum kwl_render_state {
 	/* Looking for a want. */
 	KWL_RENDER_STATE_IDLE = 0,
-	/* A ready is out; waiting for the main thread's answer. */
-	KWL_RENDER_STATE_ANSWER,
-	/* A job is submitted; waiting for its fence. */
-	KWL_RENDER_STATE_FLIGHT
+	/* A ready is out; waiting for the main thread's answer (jobs submitted earlier may be in flight meanwhile). */
+	KWL_RENDER_STATE_ANSWER
 };
 
 /* What one message of the render thread to the main thread says. */
@@ -229,15 +236,18 @@ struct kwl_render_ops {
  * Under lock: the want; the answer to the ready outstanding (for which
  * number) and the job it carries; the park and stop requests and whether
  * the thread is parked (it answers on answered); whether a frame is in
- * flight; the message queue and whether the main thread was woken for it;
+ * flight, and whether a job is being recorded, submitted and presented
+ * (running); the message queue and whether the main thread was woken for it;
  * the held images (the thread's, written by the main thread only while
  * parked); the numbers of the last ready and the last completion posted
  * (for kwl_render_status); and sequence, which counts every change the
  * thread waits for.
  * The thread's own: the operations and their context, where it is in the
  * pull (state), the number of the ready it waits to have answered, the
- * completion message of the job in flight (made before the job is taken,
- * so that a completion is never lost), and the main thread's wake pipe.
+ * completion message of the next job (made before the job is taken, so
+ * that a completion is never lost), the completions of the jobs in flight,
+ * oldest first (flight_count of them; busy says any is, or a job runs),
+ * and the main thread's wake pipe.
  */
 struct kwl_render_thread {
 	pthread_mutex_t lock;
@@ -252,6 +262,7 @@ struct kwl_render_thread {
 	unsigned parked;
 	unsigned stop;
 	unsigned busy;
+	unsigned running;
 	struct kwl_render_message *messages;
 	struct kwl_render_message *messages_tail;
 	unsigned main_woken;
@@ -264,6 +275,8 @@ struct kwl_render_thread {
 	enum kwl_render_state state;
 	uint64_t ready_number;
 	struct kwl_render_message *completion;
+	struct kwl_render_message *flights[KWL_RENDER_FLIGHTS];
+	unsigned flight_count;
 	uint64_t seen_sequence;
 	int wake_main;
 	pthread_t thread;
@@ -283,6 +296,7 @@ int kwl_render_park(struct kwl_render_thread *render, unsigned wait_ms);
 void kwl_render_unpark(struct kwl_render_thread *render);
 void kwl_render_forget(struct kwl_render_thread *render, unsigned output, unsigned heads_mask);
 void kwl_render_wait_idle(struct kwl_render_thread *render);
+int kwl_render_running(struct kwl_render_thread *render);
 void kwl_render_status(struct kwl_render_thread *render, struct kwl_render_status *status);
 
 #endif

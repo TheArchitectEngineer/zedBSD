@@ -84,6 +84,7 @@ static void compose_stalled(struct kwl_server *server);
 static void compose_message(struct kwl_server *server, const struct kwl_render_message *message);
 static void compose_completed(struct kwl_server *server, const struct kwl_render_message *message);
 static void compose_frame_presented(struct kwl_server *server, const struct kwl_render_outcome *outcome, uint64_t number);
+static int compose_may_draw(struct kwl_server *server);
 static VkResult compose_op_acquire_output(void *context, uint64_t timeout_ns, uint32_t *image, uint64_t *cycles, uint64_t *at_us);
 static VkResult compose_op_acquire_head(void *context, unsigned slot, uint32_t *image);
 static void compose_op_run(void *context, const struct kwl_render_job *job, struct kwl_render_outcome *outcome);
@@ -708,12 +709,16 @@ kwl_compose_draw(
 	unsigned index;
 	int partial;
 	int moving;
+	int allowed;
 	unsigned cursor_id;
 	VkResult result;
 
-	/* One frame at a time, and only with an output. */
+	/* Only with an output, and while another frame may be drawn now (compose_may_draw). */
 	compose = server->compose;
-	if (compose->in_flight || !compose->output_open || compose->output_lost)
+	if (!compose->output_open || compose->output_lost)
+		return 0;
+	allowed = compose_may_draw(server);
+	if (!allowed)
 		return 0;
 
 	/* The frame is wanted; it is drawn once the render thread holds its images. */
@@ -847,6 +852,7 @@ kwl_compose_draw(
 	slot->number = server->frame + 1U;
 	slot->start_cycles = compose->frame_start_cycles;
 	slot->start_ms = compose->frame_start_ms;
+	slot->flying = 1U;
 
 	/* The job: the output's image and every head's image held, all presented. */
 	memset(&job, 0, sizeof(job));
@@ -3930,6 +3936,7 @@ kwl_compose_submit_quiet(
 	slot->number = server->frame;
 	slot->start_cycles = kwl_cycles();
 	slot->start_ms = kwl_milliseconds();
+	slot->flying = 1U;
 
 	/* The job: no image is acquired and none is presented. */
 	memset(&job, 0, sizeof(job));
@@ -3948,6 +3955,95 @@ kwl_compose_submit_quiet(
 
 	/* Succeeded: the drawing is in flight. */
 	return VK_SUCCESS;
+}
+
+/*
+ * Tells whether the main thread may write host images' staging, make
+ * images and use the queue and the frames' command pool outside a walk
+ * now (the wl_shm copies, shm.c): nothing in flight, or only frames that
+ * copy no host image while the render thread runs no job.  Returns 1 when
+ * it may.
+ */
+int
+kwl_compose_host_writable(
+	struct kwl_server *server)
+{
+	struct kwl_compose *compose;
+	unsigned index;
+	int running;
+
+	/* Nothing in flight. */
+	compose = server->compose;
+	if (compose->in_flight == 0U)
+		return 1;
+
+	/* No frame in flight copies a host image's staging. */
+	for (index = 0U; index < KWL_FRAME_SLOTS; index++) {
+		if (compose->slots[index].flying && (compose->slots[index].copies || compose->slots[index].bake))
+			return 0;
+	}
+
+	/* The render thread records, submits and presents nothing meanwhile. */
+	running = kwl_render_running(&compose->render);
+	if (running)
+		return 0;
+
+	/* Succeeded: the frames in flight read none of it. */
+	return 1;
+}
+
+/*
+ * Tells whether a frame may be drawn now: nothing in flight, or one frame
+ * that the next may follow before it completes.  A frame drawn then
+ * records and submits while the one before runs on the GPU (the slots'
+ * command buffers, fences, vertices and holds are apart; what both use in
+ * the GPU's memory is ordered by the queue).  The CPU writes host images'
+ * staging while it draws, so the frame in flight must copy none; and a
+ * layer's picture, the heads, a turned output, the cursor-free scene's
+ * capture and a test's screen capture keep one at a time.
+ */
+static int
+compose_may_draw(
+	struct kwl_server *server)
+{
+	struct kwl_compose *compose;
+	struct kwl_frame_slot *slot;
+	unsigned index;
+	int waiting;
+
+	/* Nothing in flight, or every slot taken. */
+	compose = server->compose;
+	if (compose->in_flight == 0U)
+		return 1;
+	if (compose->in_flight >= KWL_FRAME_SLOTS)
+		return 0;
+
+	/* The frame in flight copies no host image and draws no layer's picture. */
+	for (index = 0U; index < KWL_FRAME_SLOTS; index++) {
+		slot = &compose->slots[index];
+		if (!slot->flying)
+			continue;
+		if (slot->copies || slot->bake)
+			return 0;
+	}
+
+	/* No head, no turned output, no capture of the cursor-free scene. */
+	for (index = 0U; index < KWL_HEADS; index++) {
+		if (compose->heads[index].open)
+			return 0;
+	}
+	if (compose->turn.image != VK_NULL_HANDLE)
+		return 0;
+	if (compose->scene.buffer != VK_NULL_HANDLE && !compose->cursor_plane.shown)
+		return 0;
+
+	/* No test's screen capture waiting for a frame. */
+	waiting = kwl_shot_waiting();
+	if (waiting)
+		return 0;
+
+	/* Succeeded: the next frame may follow the one in flight. */
+	return 1;
 }
 
 /*
@@ -4246,6 +4342,7 @@ compose_completed(
 	compose = server->compose;
 	outcome = &message->outcome;
 	slot = &compose->slots[message->job.slot % KWL_FRAME_SLOTS];
+	slot->flying = 0U;
 	quiet = 0U;
 	if (message->want_kind == KWL_RENDER_LAYER)
 		quiet = 1U;

@@ -274,9 +274,15 @@ kwl_glass_maps_inband(
 	if (blurred == NULL || blurred->set == VK_NULL_HANDLE)
 		return;
 
-	/* The maps of another size go first (the output turned or changed its mode). */
-	if (maps->pass != VK_NULL_HANDLE && (maps->width != server->width || maps->height != server->height))
+	/*
+	 * The maps of another size go first (the output turned or changed its
+	 * mode), once no frame in flight may read them.
+	 */
+	if (maps->pass != VK_NULL_HANDLE && (maps->width != server->width || maps->height != server->height)) {
+		if (compose->in_flight != 0U)
+			return;
 		kwl_glass_maps_destroy(compose);
+	}
 
 	/* The maps wanted, up to the frame's share, then the shadows. */
 	maps_draw_wanted(server, command, maps->maps, KWL_GLASS_MAPS, GLASS_MAP_DRAWS);
@@ -621,10 +627,16 @@ maps_draw_wanted(
 			}
 		}
 
-		/* Its image at the size it needs, made again when another size is needed. */
+		/*
+		 * Its image at the size it needs, made again when another size is
+		 * needed, once no frame in flight may read the old one.
+		 */
 		map_image_size(server, map, &width, &height);
-		if (map->image != VK_NULL_HANDLE && (map->image_width != width || map->image_height != height))
+		if (map->image != VK_NULL_HANDLE && (map->image_width != width || map->image_height != height)) {
+			if (compose->in_flight != 0U)
+				continue;
 			map_image_destroy(compose, map);
+		}
 		if (map->image == VK_NULL_HANDLE) {
 			map->image_width = width;
 			map->image_height = height;

@@ -141,10 +141,14 @@ kwl_shm_upload(
 	struct kwl_client *client;
 	struct kwl_object *surface;
 	uint64_t mark;
+	int writable;
 	int error;
 
-	/* Without window mode, or with a frame in flight, the copies wait. */
-	if (server->compose == NULL || server->compose->in_flight)
+	/* Without window mode, or while a frame in flight may read what they write, the copies wait. */
+	if (server->compose == NULL)
+		return 0;
+	writable = kwl_compose_host_writable(server);
+	if (!writable)
 		return 0;
 
 	/* The copies and the images made for them are the main thread's work outside a walk (KWL PERF pass, ws213-p004). */
