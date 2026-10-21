@@ -93,7 +93,7 @@ static void operation(void);
 static VkResult fake_acquire_output(void *context, uint64_t timeout_ns, uint32_t *image, uint64_t *cycles, uint64_t *at_us);
 static VkResult fake_acquire_head(void *context, unsigned slot, uint32_t *image);
 static void fake_run(void *context, const struct kwl_render_job *job, struct kwl_render_outcome *outcome);
-static VkResult fake_wait(void *context, uint64_t timeout_ns);
+static VkResult fake_wait(void *context, unsigned slot, uint64_t timeout_ns);
 static struct kwl_render_message *take_one(void);
 static unsigned drain(struct kwl_render_message **list, unsigned room);
 static void reset_fakes(void);
@@ -263,9 +263,11 @@ fake_run(
 static VkResult
 fake_wait(
 	void *context,
+	unsigned slot,
 	uint64_t timeout_ns)
 {
 	(void)context;
+	(void)slot;
 	(void)timeout_ns;
 	operation();
 	atomic_fetch_add(&waits, 1U);

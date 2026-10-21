@@ -125,12 +125,14 @@ struct kwl_render_held {
 
 /*
  * What the main thread gives with its list: the want's number and kind,
- * and for a frame the output's image and the heads it drew (every held
- * head, which the thread presents).
+ * the slot it was recorded for (its command buffers and fence), and for a
+ * frame the output's image and the heads it drew (every held head, which
+ * the thread presents).
  */
 struct kwl_render_job {
 	uint64_t number;
 	enum kwl_render_kind kind;
+	unsigned slot;
 	uint32_t output_image;
 	unsigned heads[KWL_RENDER_HEADS];
 	uint32_t head_images[KWL_RENDER_HEADS];
@@ -218,7 +220,7 @@ struct kwl_render_ops {
 	VkResult (*acquire_output)(void *context, uint64_t timeout_ns, uint32_t *image, uint64_t *cycles, uint64_t *at_us);
 	VkResult (*acquire_head)(void *context, unsigned slot, uint32_t *image);
 	void (*run)(void *context, const struct kwl_render_job *job, struct kwl_render_outcome *outcome);
-	VkResult (*wait)(void *context, uint64_t timeout_ns);
+	VkResult (*wait)(void *context, unsigned slot, uint64_t timeout_ns);
 };
 
 /*

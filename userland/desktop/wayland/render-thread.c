@@ -740,7 +740,7 @@ render_flight(
 	VkResult result;
 
 	/* The fence, for a while. */
-	result = render->ops.wait(render->context, KWL_RENDER_FENCE_NS);
+	result = render->ops.wait(render->context, render->completion->job.slot, KWL_RENDER_FENCE_NS);
 	if (result == VK_TIMEOUT)
 		return KWL_RENDER_STEP_WORKED;
 
