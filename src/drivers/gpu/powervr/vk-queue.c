@@ -41,6 +41,7 @@
 #include "drivers/gpu/powervr/interface.h"
 #include "drivers/gpu/powervr/compute-program.h"
 #include "drivers/gpu/powervr/render-job.h"
+#include "drivers/gpu/powervr/transfer-job.h"
 #include "drivers/gpu/powervr/vk.h"
 
 /* The most submits of one vkQueueSubmit, and the most command buffers and semaphores of one submit. */
@@ -386,9 +387,10 @@ submit(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* The render jobs of earlier submissions that finished give their memory back. */
+	/* The render jobs and transfers of earlier submissions that finished give their memory back. */
 	reaped = powervr_timing_now();
 	powervr_render_jobs_reap(session->owner->render, session->owner, 0);
+	powervr_transfers_reap(session->owner->render, session->owner);
 	powervr_timing_add(POWERVR_TIMING_REAP, reaped);
 
 	/* The executor's memory, made at the first submission. */
@@ -854,19 +856,17 @@ build_command_buffer(
 			error = build_dispatch(build, entry->values[0]);
 		} else if (entry->opcode == GPU_OP_CMD_COPY_BUFFER_TO_IMAGE || entry->opcode == GPU_OP_CMD_COPY_IMAGE_TO_BUFFER ||
 		    entry->opcode == GPU_OP_CMD_COPY_IMAGE || entry->opcode == GPU_OP_CMD_BLIT_IMAGE || entry->opcode == GPU_OP_CMD_CLEAR_COLOR_IMAGE) {
-			/* A transfer: the dispatches before it run first. */
+			/*
+			 * A transfer: the dispatches before it run first; the firmware
+			 * runs it after the session's earlier work and it is left
+			 * running, the session's last work.
+			 */
 			error = run_flush(build);
-			if (error == 0)
-				error = order_after(build, POWERVR_POINT_NONE);
 			if (error == 0) {
 				started = powervr_timing_now();
 				error = powervr_vk_transfer_run(build->session, entry);
 				powervr_timing_add(POWERVR_TIMING_TRANSFER, started);
 			}
-
-			/* A transfer finishes before it returns: nothing of the session is left running. */
-			if (error == 0)
-				powervr_session_point_set(build->session->owner, POWERVR_POINT_NONE, 0);
 		} else if (entry->opcode == GPU_OP_CMD_BEGIN_RENDER_PASS) {
 			/* The dispatches before it run first, then the instance's jobs in order. */
 			error = run_flush(build);
@@ -920,8 +920,12 @@ build_dispatch(
 	if (groups == 0)
 		return 0;
 
-	/* The executor's programs and stream are rewritten: a stream still running finishes first. */
-	if (build->session->owner->last_kind == POWERVR_POINT_COMPUTE) {
+	/*
+	 * The executor's programs and stream are rewritten: a stream still
+	 * running finishes first, as does a transfer left running (which may
+	 * follow a stream still running).
+	 */
+	if (build->session->owner->last_kind == POWERVR_POINT_COMPUTE || build->session->owner->last_kind == POWERVR_POINT_TRANSFER) {
 		error = order_after(build, POWERVR_POINT_NONE);
 		if (error != 0)
 			return error;
@@ -1450,9 +1454,14 @@ order_after(
 	uint64_t started;
 	int error;
 
-	/* The same context: the firmware runs its kicks in order. */
+	/*
+	 * The same context: the firmware runs its kicks in order; a render
+	 * after a transfer has the firmware wait for it (render-job.c).
+	 */
 	owner = build->session->owner;
 	if (kind != POWERVR_POINT_NONE && owner->last_kind == kind)
+		return 0;
+	if (kind == POWERVR_POINT_FRAGMENT && owner->last_kind == POWERVR_POINT_TRANSFER)
 		return 0;
 
 	/* The last work's point. */

@@ -139,15 +139,6 @@ static void take_reached(struct powervr_session *session, struct delivery *deliv
 static void take_all(struct powervr_session *session, int error, struct delivery *delivery);
 static void deliver(struct powervr_render *render, struct delivery *delivery);
 static void handle_notice(void *context, uint32_t type, const struct powervr_object *buffer, uint32_t offset);
-/*
- * A trial: the render's fragment in the geometry's combined kick, one
- * command of the kernel's buffer a render as the vendor's driver sends
- * (1), or in a kick of its own after it as Linux sends (0).
- */
-#ifndef POWERVR_SINGLE_RENDER_KICK
-#define POWERVR_SINGLE_RENDER_KICK	0
-#endif
-
 /* How often the timing says its sums, and how often its thread looks whether to end, in milliseconds. */
 #define TIMING_REPORT_MS		5000U
 #define TIMING_LOOK_MS			100U
@@ -610,9 +601,7 @@ powervr_session_kick_compute(
  * the cleanup count.  The geometry's timeline takes the next value, the
  * fragment's the one after next (the partial render writes the one
  * between).  A fragment command that names no background after a
- * partial render takes the context's stand-in.  With
- * POWERVR_SINGLE_RENDER_KICK the fragment goes in the combined kick
- * after the partial render, the cleanup count on both sides.
+ * partial render takes the context's stand-in.
  *
  * Procedure referenced:
  * Linux v7.3 drivers/gpu/drm/imagination/pvr_queue.c (pvr_queue_run_job:
@@ -718,10 +707,6 @@ powervr_session_kick_render(
 	cleanup = powervr_target_cleanup_address(target, half);
 	commands_put(&context->geometry, sequence->geometry_commands, sequence->geometry_count);
 	commands_put(&context->fragment, sequence->partial_commands, sequence->partial_count);
-	if (POWERVR_SINGLE_RENDER_KICK) {
-		/* The fragment too, in the same kick, which names the target half's cleanup on both sides. */
-		commands_put(&context->fragment, sequence->fragment_commands, sequence->fragment_count);
-	}
 	geometry_kick.context = powervr_object_address(&context->record, POWERVR_RENDER_CONTEXT_GEOMETRY);
 	geometry_kick.write_offset = context->geometry.write;
 	geometry_kick.wrap_mask = POWERVR_CLIENT_CCB_BYTES - 1U;
@@ -731,10 +716,6 @@ powervr_session_kick_render(
 	partial_kick.write_offset = context->fragment.write;
 	partial_kick.wrap_mask = POWERVR_CLIENT_CCB_BYTES - 1U;
 	partial_kick.cleanup_count = 0;
-	if (POWERVR_SINGLE_RENDER_KICK) {
-		partial_kick.cleanups[0] = cleanup;
-		partial_kick.cleanup_count = 1;
-	}
 	error = powervr_kick_combined_command(&geometry_kick, &partial_kick, command);
 	if (error != 0)
 		return error;
@@ -748,21 +729,19 @@ powervr_session_kick_render(
 	context->geometry.submitted = request.geometry_value;
 	context->fragment.submitted = request.fragment_value - 1U;
 
-	/* The fragment, then its own kick (none when it went with the geometry's). */
-	if (!POWERVR_SINGLE_RENDER_KICK) {
-		commands_put(&context->fragment, sequence->fragment_commands, sequence->fragment_count);
-		fragment_kick = partial_kick;
-		fragment_kick.write_offset = context->fragment.write;
-		fragment_kick.cleanups[0] = cleanup;
-		fragment_kick.cleanup_count = 1;
-		error = powervr_kick_command(&fragment_kick, command);
-		if (error != 0)
-			return error;
+	/* The fragment, then its own kick. */
+	commands_put(&context->fragment, sequence->fragment_commands, sequence->fragment_count);
+	fragment_kick = partial_kick;
+	fragment_kick.write_offset = context->fragment.write;
+	fragment_kick.cleanups[0] = cleanup;
+	fragment_kick.cleanup_count = 1;
+	error = powervr_kick_command(&fragment_kick, command);
+	if (error != 0)
+		return error;
 
-		error = send_command(render, command);
-		if (error != 0)
-			return error;
-	}
+	error = send_command(render, command);
+	if (error != 0)
+		return error;
 
 	/* The render is the firmware's; its end is the fragment's value. */
 	context->fragment.submitted = request.fragment_value;
@@ -797,14 +776,17 @@ powervr_session_kick_transfer(
 	struct powervr_render *render,
 	struct powervr_session *session,
 	const uint8_t *command,
+	const struct powervr_sync *waits,
+	unsigned wait_count,
 	uint32_t *value)
 {
 	struct powervr_transfer_context *context;
-	struct powervr_client_command commands[2];
+	struct powervr_client_command commands[3];
 	struct powervr_sync update;
 	struct powervr_kick kick;
 	uint32_t words[POWERVR_COMMAND_WORDS];
 	uint32_t bytes;
+	unsigned count;
 	int error;
 
 	/* Refuses a session without a transfer context. */
@@ -817,22 +799,33 @@ powervr_session_kick_transfer(
 	if (error != 0)
 		return error;
 
-	/* The command and the update of the timeline to the next value. */
+	/* The fence of the waits, when there are any, the command and the update of the timeline to the next value. */
+	if (wait_count > POWERVR_CLIENT_FENCES_MAX)
+		return EINVAL;
 	update.address = powervr_object_address(&context->client.timeline, 0);
 	update.value = context->client.submitted + 1U;
-	commands[0].type = POWERVR_CLIENT_TRANSFER;
-	commands[0].size = POWERVR_TRANSFER_COMMAND_BYTES;
-	commands[0].data = command;
-	commands[1].type = POWERVR_CLIENT_UPDATE;
-	commands[1].size = POWERVR_SYNC_BYTES;
-	commands[1].data = (const uint8_t *)&update;
-	bytes = commands_bytes(commands, 2);
+	count = 0;
+	if (wait_count != 0U) {
+		commands[count].type = POWERVR_CLIENT_FENCE;
+		commands[count].size = wait_count * POWERVR_SYNC_BYTES;
+		commands[count].data = (const uint8_t *)waits;
+		count++;
+	}
+	commands[count].type = POWERVR_CLIENT_TRANSFER;
+	commands[count].size = POWERVR_TRANSFER_COMMAND_BYTES;
+	commands[count].data = command;
+	count++;
+	commands[count].type = POWERVR_CLIENT_UPDATE;
+	commands[count].size = POWERVR_SYNC_BYTES;
+	commands[count].data = (const uint8_t *)&update;
+	count++;
+	bytes = commands_bytes(commands, count);
 	error = client_space(&context->client, bytes);
 	if (error != 0)
 		return error;
 
 	/* Writes them, then the kick naming the context. */
-	commands_put(&context->client, commands, 2);
+	commands_put(&context->client, commands, count);
 	kick.context = powervr_object_address(&context->record, 0);
 	kick.write_offset = context->client.write;
 	kick.wrap_mask = POWERVR_CLIENT_CCB_BYTES - 1U;
@@ -1309,8 +1302,9 @@ powervr_render_submit(
 
 /*
  * Reports whether a session's completion point was reached: no point, a
- * compute value its compute timeline reached, or a 3D value its render
- * context's fragment timeline reached.
+ * compute value its compute timeline reached, a 3D value its render
+ * context's fragment timeline reached, or a transfer value its transfer
+ * context's timeline reached.
  */
 int
 powervr_session_point_reached(
@@ -1333,6 +1327,16 @@ powervr_session_point_reached(
 		return 0;
 	}
 
+	/* The transfer context's timeline; without the context nothing of it runs. */
+	if (kind == POWERVR_POINT_TRANSFER) {
+		if (session->transfer_context == NULL)
+			return 1;
+		current = powervr_object_get32(&session->transfer_context->client.timeline, POWERVR_SYNC_ADDRESS);
+		if ((int32_t)(current - value) >= 0)
+			return 1;
+		return 0;
+	}
+
 	/* The render context's 3D timeline; without the context nothing of it runs. */
 	context = session->render_context;
 	if (context == NULL)
@@ -1342,6 +1346,44 @@ powervr_session_point_reached(
 		return 1;
 
 	/* Succeeded: not reached yet. */
+	return 0;
+}
+
+/*
+ * Names the firmware's wait for a session's completion point: the
+ * timeline's firmware address and the value, for a fence of another
+ * context's command.  Reports 1, or 0 for no point and for a timeline
+ * whose context does not exist (nothing of it runs).
+ */
+unsigned
+powervr_session_point_sync(
+	const struct powervr_session *session,
+	unsigned kind,
+	uint32_t value,
+	struct powervr_sync *sync)
+{
+	/* The compute timeline. */
+	if (kind == POWERVR_POINT_COMPUTE) {
+		sync->address = powervr_object_address(&session->compute.timeline, 0);
+		sync->value = value;
+		return 1;
+	}
+
+	/* The render context's 3D timeline. */
+	if (kind == POWERVR_POINT_FRAGMENT && session->render_context != NULL) {
+		sync->address = powervr_object_address(&session->render_context->fragment.timeline, 0);
+		sync->value = value;
+		return 1;
+	}
+
+	/* The transfer context's timeline. */
+	if (kind == POWERVR_POINT_TRANSFER && session->transfer_context != NULL) {
+		sync->address = powervr_object_address(&session->transfer_context->client.timeline, 0);
+		sync->value = value;
+		return 1;
+	}
+
+	/* Succeeded: nothing to wait for. */
 	return 0;
 }
 
@@ -2482,6 +2524,7 @@ service_pass(
 	struct powervr_buffer *flushed;
 	uint32_t compute_now;
 	uint32_t fragment_now;
+	uint32_t transfer_now;
 	int overdue;
 	int pending;
 	int error;
@@ -2523,9 +2566,13 @@ service_pass(
 			fragment_now = 0;
 			if (session->render_context != NULL)
 				fragment_now = powervr_object_get32(&session->render_context->fragment.timeline, POWERVR_SYNC_ADDRESS);
-			if (compute_now != session->seen_compute || fragment_now != session->seen_fragment) {
+			transfer_now = 0;
+			if (session->transfer_context != NULL)
+				transfer_now = powervr_object_get32(&session->transfer_context->client.timeline, POWERVR_SYNC_ADDRESS);
+			if (compute_now != session->seen_compute || fragment_now != session->seen_fragment || transfer_now != session->seen_transfer) {
 				session->seen_compute = compute_now;
 				session->seen_fragment = fragment_now;
+				session->seen_transfer = transfer_now;
 				render->progress_ticks = now;
 			}
 

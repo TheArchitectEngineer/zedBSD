@@ -336,3 +336,11 @@ branch agent/p2-q1553（基 main 782f995e4）。
   - ユーザー「GPUが固まったのは、チップにヒートシンクもファンもつけてなかったので、熱で止まったかも。再現しないなら無視していいよ。」→ e20e1f5bf は外さない。
   - 切り分け用の kernel は作ったが未使用: build/q1553c（e20e1f5bf を抜く）、q1553a（4c636fe1d を抜く）、q1553b（fd6732b70・4182ac109 を抜く）。
 - 0f10702f0: HWR の dump の firmware の trace を最新の 1024 語に（ring 全体の 1500 行が kernel log の 32 KB を押し出し、HWR の前の行が消えていた）。
+- 13d714e21: `CONFIG_POWERVR_DEBUG`（既定 y、CI の config-visionfive2-keiland.mk で n）。
+  - n の時は start の各段・clock・coherency の試し・stage の ok・session・display の lease や flips の行・firmware の trace（groups 0、HWR の時は counter の 1 行だけ）を止める。
+  - d117（Q1、n の kernel）: desktop は表示 OK。GPU の行は probe・firmware・render node ready の 3 行と、前からの dc8200 の no-go の 1 行。main 78dc6864f。
+- ff7d64cba: command buffer の transfer の非同期化。
+  - transfer の kick は、session の最後の point を firmware の fence で待つ。後の render は、transfer の timeline を待つ。
+  - POWERVR_POINT_TRANSFER を足した。transfer の memory は完了まで session の list に置き、最大 4 つ使い回す。
+  - 確保の時の storage の clear は同期のまま。板は未確認。
+- single kick の試しの組（q1555t・q1555k）を Q1 に渡した（未評価）。

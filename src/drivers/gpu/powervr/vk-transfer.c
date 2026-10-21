@@ -468,7 +468,10 @@ blit_request(
 	request->linear = filter == 1U;
 }
 
-/* Runs one region's transfer; one that did not finish abandons the session. */
+/*
+ * Runs one region's transfer, after the session's work before it and
+ * left running; one that did not finish abandons the session.
+ */
 static int
 run_one(
 	struct powervr_vk_session *session,
@@ -479,7 +482,7 @@ run_one(
 
 	/* The transfer on the session's transfer context. */
 	owner = session->owner;
-	error = powervr_transfer_run(owner->render, owner, request);
+	error = powervr_transfer_run_async(owner->render, owner, request);
 	if (error == ETIMEDOUT)
 		session->abandoned = true;
 	if (error != 0) {

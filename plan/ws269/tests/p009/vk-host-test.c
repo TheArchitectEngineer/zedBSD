@@ -313,6 +313,26 @@ powervr_transfer_run(
 	return 0;
 }
 
+/* The command buffers' transfers: recorded as the synchronous ones are. */
+int
+powervr_transfer_run_async(
+	struct powervr_render *render,
+	struct powervr_session *session,
+	const struct powervr_transfer_request *request)
+{
+	return powervr_transfer_run(render, session, request);
+}
+
+/* No transfer memory is held on the host. */
+void
+powervr_transfers_reap(
+	struct powervr_render *render,
+	struct powervr_session *session)
+{
+	(void)render;
+	(void)session;
+}
+
 int
 powervr_render_job_run(
 	struct powervr_render *render,
