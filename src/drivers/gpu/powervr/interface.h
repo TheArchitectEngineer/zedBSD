@@ -148,22 +148,12 @@
 #define POWERVR_OS_DATA_CONFIG_FLAGS	0U
 #define POWERVR_OS_FLAGS_CSW_ALL	0xfU
 
-/* Whether the firmware switches contexts (preempts a job for another context's): 0 by default, as mainline. */
-/* Whether the data masters may overlap (geometry with another context's 3D): 0 while the overlap's 3D faults are looked into. */
-/*
- * Whether each session's general allocations and region headers start at
- * a device address of their own (1), so no two sessions' render target
- * buffers share an address, while the 3D faults of two sessions
- * rendering at once are looked into.
- */
-#ifndef POWERVR_SESSION_SPREAD
-#define POWERVR_SESSION_SPREAD		0
-#endif
-
+/* Whether the data masters may overlap (geometry with another context's 3D): 1, as mainline on a core whose cache is big enough. */
 #ifndef POWERVR_DM_OVERLAP
-#define POWERVR_DM_OVERLAP		0
+#define POWERVR_DM_OVERLAP		1
 #endif
 
+/* Whether the firmware switches contexts (preempts a job for another context's): 0 by default, as mainline. */
 #ifndef POWERVR_CONTEXT_SWITCH
 #define POWERVR_CONTEXT_SWITCH		0
 #endif

@@ -582,7 +582,6 @@ render_open(
 	void *device,
 	void **result)
 {
-	uint64_t spread;
 	struct powervr_render *render;
 	struct powervr_session *session;
 	unsigned long enabled;
@@ -607,16 +606,8 @@ render_open(
 		return ENOMEM;
 	session->render = render;
 
-	/*
-	 * The general heap's allocations start on the page after the fixed
-	 * area; with POWERVR_SESSION_SPREAD each session's start is moved by
-	 * its turn (4 GiB apart, 16 turns), so two sessions' render target
-	 * buffers never share a device address.
-	 */
-	spread = 0;
-	if (POWERVR_SESSION_SPREAD)
-		spread = (uint64_t)(render->next_identity % 16U) * 0x100000000ULL;
-	powervr_gpu_space_init(&session->space, POWERVR_GENERAL_HEAP_BASE + POWERVR_FIXED_GENERAL_BYTES + spread, POWERVR_GENERAL_HEAP_BYTES - POWERVR_FIXED_GENERAL_BYTES - spread);
+	/* The general heap's allocations start on the page after the fixed area. */
+	powervr_gpu_space_init(&session->space, POWERVR_GENERAL_HEAP_BASE + POWERVR_FIXED_GENERAL_BYTES, POWERVR_GENERAL_HEAP_BYTES - POWERVR_FIXED_GENERAL_BYTES);
 
 	/* The fixed area's pages, with its programs. */
 	error = powervr_session_fixed_make(render, session);
