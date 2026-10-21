@@ -216,6 +216,9 @@ RISCV64_KERNEL_SOURCES += $(KERN_NET_SOURCES) $(KERN_BLOCK_IDENTITY_SOURCES) \
 RISCV64_KERNEL_SOURCES += $(KERN_BOOT_SOURCES)
 RISCV64_KERNEL_SOURCES += $(KERN_ACL_SOURCES)
 RISCV64_KERNEL_SOURCES += $(KERN_QUOTA_SOURCES)
+ifeq ($(CONFIG_INPUT_TEST_INJECT),y)
+RISCV64_KERNEL_SOURCES += src/drivers/generic/input-inject.c
+endif
 
 # The drivers behind a board's PCI hosts that the configuration selects:
 # xHCI with USB keyboards, and NVMe.
