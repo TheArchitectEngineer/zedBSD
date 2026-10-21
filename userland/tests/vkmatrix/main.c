@@ -89,7 +89,16 @@
 #define PERF_IMMEDIATE		4
 #define PERF_ALU		5
 #define PERF_QUARTER		6
+#define PERF_TRI1		7
+#define PERF_TRI8		8
+#define PERF_TRI128		9
+#define PERF_STACK4		10
+#define PERF_DRAWS4		11
 #define PERF_FRAMES		20U
+
+/* perf-tri128's grid of quads a side, and perf-stack4's and perf-draws4's full-screen quads. */
+#define PERF_GRID_SIDE		8U
+#define PERF_LAYERS		4U
 
 /* The load cases' passes over one 1920x1080 image. */
 #define VKMATRIX_LOAD_FRAMES	60U
@@ -272,6 +281,12 @@ static VkResult case_perf_texture(struct vkmatrix *run);
 static VkResult case_perf_immediate(struct vkmatrix *run);
 static VkResult case_perf_alu(struct vkmatrix *run);
 static VkResult case_perf_quarter(struct vkmatrix *run);
+static VkResult case_perf_tri1(struct vkmatrix *run);
+static VkResult case_perf_tri8(struct vkmatrix *run);
+static VkResult case_perf_tri128(struct vkmatrix *run);
+static VkResult case_perf_stack4(struct vkmatrix *run);
+static VkResult case_perf_draws4(struct vkmatrix *run);
+static uint32_t perf_geometry(struct vkmatrix *run, int kind, uint32_t *vertices);
 static uint64_t perf_now_ns(void);
 static VkResult load_1080_textures(struct vkmatrix *run, uint32_t *pipeline);
 static VkResult case_load_1080_6(struct vkmatrix *run);
@@ -321,6 +336,11 @@ static const struct vkmatrix_case cases[] = {
 	{ "perf-immediate", case_perf_immediate },
 	{ "perf-alu", case_perf_alu },
 	{ "perf-quarter", case_perf_quarter },
+	{ "perf-tri1", case_perf_tri1 },
+	{ "perf-tri8", case_perf_tri8 },
+	{ "perf-tri128", case_perf_tri128 },
+	{ "perf-stack4", case_perf_stack4 },
+	{ "perf-draws4", case_perf_draws4 },
 	{ "clear-64", case_clear_64 },
 	{ "clear-128", case_clear_128 },
 	{ "sample-linear-1180", case_sample_linear_wide },
@@ -4073,6 +4093,12 @@ load_1080_textures(
  * multiply-adds (about 25 times the flat shader's operations), and at a
  * 960x540 viewport (a quarter of the pixels); the slope between immediate
  * and alu is the cost of an operation, the rest a pixel's fixed cost.
+ * perf-tri1, perf-tri8 and perf-tri128 (q1539): the flat full screen as
+ * one triangle past its edges, a 2 x 2 and an 8 x 8 grid of quads;
+ * perf-stack4: four full-screen quads in one draw; perf-draws4: four
+ * full-screen quads, a draw each.  Their slopes tell a cost of the
+ * primitives each tile reads from one of the pixels shaded (opaque
+ * quads over each other shade a pixel once).
  * Prints "vkmatrix: perf <kind>: <us> us a frame (min <us> us)" (integers: the libc printf of the board may lack %f).
  */
 static VkResult
@@ -4080,7 +4106,9 @@ perf_case(
 	struct vkmatrix *run,
 	int kind)
 {
-	static const char *const names[7] = { "clear", "load", "flat", "texture", "immediate", "alu", "quarter" };
+	static const char *const names[12] = {
+		"clear", "load", "flat", "texture", "immediate", "alu", "quarter", "tri1", "tri8", "tri128", "stack4", "draws4",
+	};
 	VkSubresourceLayout layout;
 	struct vkmatrix_shape shape;
 	VkRenderPassBeginInfo pass;
@@ -4095,6 +4123,9 @@ perf_case(
 	uint64_t least;
 	uint32_t pipeline;
 	uint32_t first;
+	uint32_t vertices;
+	uint32_t draws;
+	uint32_t draw;
 	uint32_t frame;
 	float red;
 	VkResult status;
@@ -4102,12 +4133,14 @@ perf_case(
 	/* The pipeline the kind draws with. */
 	pipeline = 0;
 	first = 0;
+	vertices = 6;
+	draws = kind == PERF_DRAWS4 ? PERF_LAYERS : 1U;
 	if (kind == PERF_TEXTURE) {
 		status = load_1080_textures(run, &pipeline);
 		if (status != VK_SUCCESS)
 			return status;
 		first = vkmatrix_texture_quad(run, 0.0f, 0.0f, 64.0f, 64.0f);
-	} else if (kind == PERF_FLAT || kind == PERF_IMMEDIATE || kind == PERF_ALU || kind == PERF_QUARTER) {
+	} else if (kind != PERF_CLEAR && kind != PERF_LOAD) {
 		memset(&shape, 0, sizeof(shape));
 		shape.vertex = vkmatrix_push4_vert;
 		shape.vertex_size = sizeof(vkmatrix_push4_vert);
@@ -4127,7 +4160,7 @@ perf_case(
 		status = vkmatrix_pipeline(run, &shape, &pipeline);
 		if (status != VK_SUCCESS)
 			return status;
-		first = vkmatrix_quad(run, 0.0f, 0.0f, 64.0f, 64.0f);
+		first = perf_geometry(run, kind, &vertices);
 	}
 
 	/* The 1920x1080 attachment. */
@@ -4181,7 +4214,8 @@ perf_case(
 				red = 1.0f;
 				vkCmdPushConstants(run->command, run->layouts[pipeline], VK_SHADER_STAGE_FRAGMENT_BIT, 0, 4, &red);
 			}
-			vkCmdDraw(run->command, 6, 1, first, 0);
+			for (draw = 0; draw < draws; draw++)
+				vkCmdDraw(run->command, vertices, 1, first, 0);
 		}
 		vkCmdEndRenderPass(run->command);
 		vkEndCommandBuffer(run->command);
@@ -4219,6 +4253,65 @@ perf_case(
 
 	/* Succeeded: the timing is printed. */
 	return VK_SUCCESS;
+}
+
+/*
+ * Appends a kind's flat geometry and returns its first vertex and its
+ * vertex count: one triangle over the whole screen (its far corners
+ * past the edges), grids of quads, quads over each other, or the
+ * full-screen quad.
+ */
+static uint32_t
+perf_geometry(
+	struct vkmatrix *run,
+	int kind,
+	uint32_t *vertices)
+{
+	const float side = (float)VKMATRIX_SIZE;
+	uint32_t first;
+	uint32_t count;
+	uint32_t row;
+	uint32_t column;
+	float step;
+
+	/* One triangle: (0, 0), (2, 0) and (0, 2) screens. */
+	if (kind == PERF_TRI1) {
+		first = run->vertex_floats / 2U;
+		run->vertex_map[run->vertex_floats++] = -1.0f;
+		run->vertex_map[run->vertex_floats++] = -1.0f;
+		run->vertex_map[run->vertex_floats++] = 3.0f;
+		run->vertex_map[run->vertex_floats++] = -1.0f;
+		run->vertex_map[run->vertex_floats++] = -1.0f;
+		run->vertex_map[run->vertex_floats++] = 3.0f;
+		*vertices = 3;
+		return first;
+	}
+
+	/* A grid of quads, 2 x 2 or 8 x 8. */
+	if (kind == PERF_TRI8 || kind == PERF_TRI128) {
+		count = kind == PERF_TRI8 ? 2U : PERF_GRID_SIDE;
+		step = side / (float)count;
+		first = run->vertex_floats / 2U;
+		for (row = 0; row < count; row++) {
+			for (column = 0; column < count; column++)
+				(void)vkmatrix_quad(run, step * (float)column, step * (float)row, step * (float)(column + 1U), step * (float)(row + 1U));
+		}
+		*vertices = count * count * 6U;
+		return first;
+	}
+
+	/* Full-screen quads over each other in one draw. */
+	if (kind == PERF_STACK4) {
+		first = vkmatrix_quad(run, 0.0f, 0.0f, side, side);
+		for (row = 1; row < PERF_LAYERS; row++)
+			(void)vkmatrix_quad(run, 0.0f, 0.0f, side, side);
+		*vertices = PERF_LAYERS * 6U;
+		return first;
+	}
+
+	/* Succeeded: the full-screen quad (drawn once a draw). */
+	*vertices = 6;
+	return vkmatrix_quad(run, 0.0f, 0.0f, side, side);
 }
 
 /* The monotonic clock in nanoseconds. */
@@ -4324,4 +4417,84 @@ case_perf_quarter(
 	struct vkmatrix *run)
 {
 	return perf_case(run, PERF_QUARTER);
+}
+
+/* perf-tri1: a 1080p clear and the full screen as one triangle. */
+static VkResult
+case_perf_tri1(
+	struct vkmatrix *run)
+{
+	VkResult status;
+
+	/* Times the kind. */
+	status = perf_case(run, PERF_TRI1);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the case ran. */
+	return VK_SUCCESS;
+}
+
+/* perf-tri8: a 1080p clear and a 2 x 2 grid of quads. */
+static VkResult
+case_perf_tri8(
+	struct vkmatrix *run)
+{
+	VkResult status;
+
+	/* Times the kind. */
+	status = perf_case(run, PERF_TRI8);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the case ran. */
+	return VK_SUCCESS;
+}
+
+/* perf-tri128: a 1080p clear and an 8 x 8 grid of quads. */
+static VkResult
+case_perf_tri128(
+	struct vkmatrix *run)
+{
+	VkResult status;
+
+	/* Times the kind. */
+	status = perf_case(run, PERF_TRI128);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the case ran. */
+	return VK_SUCCESS;
+}
+
+/* perf-stack4: a 1080p clear and four full-screen quads in one draw. */
+static VkResult
+case_perf_stack4(
+	struct vkmatrix *run)
+{
+	VkResult status;
+
+	/* Times the kind. */
+	status = perf_case(run, PERF_STACK4);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the case ran. */
+	return VK_SUCCESS;
+}
+
+/* perf-draws4: a 1080p clear and four full-screen quads, a draw each. */
+static VkResult
+case_perf_draws4(
+	struct vkmatrix *run)
+{
+	VkResult status;
+
+	/* Times the kind. */
+	status = perf_case(run, PERF_DRAWS4);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the case ran. */
+	return VK_SUCCESS;
 }

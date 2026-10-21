@@ -51,7 +51,7 @@
  * view_port_count 12..15, pres_wclamp 16, pres_outselects 17,
  * pres_varying_word0 18, _word1 19, _word2 20, pres_ppp_ctrl 21,
  * pres_stream_out_size 22; STATE_ISPCTL scenable 16; STATE_ISPA objtype
- * 28..31 TRIANGLE 0, passtype 24..26 OPAQUE 0 and TRANSLUCENT 1,
+ * 28..31 TRIANGLE 0, passtype 24..26 OPAQUE 0, TRANSLUCENT 1 and PUNCH_THROUGH 2,
  * dwritedisable 21, dcmpmode 17..19 (the VkCompareOp values),
  * pointlinewidth 8..15; STATE_ISPDBSC scindex 0..15;
  * STATE_PDS_SIZEINFO1 pds_tempsize 0..3 in units of 4, usc_varyingsize
@@ -81,6 +81,8 @@
 #define HEADER_STREAM_OUT	(1U << 22)
 #define ISPCTL_SCISSOR		(1U << 16)
 #define ISPA_TRANSLUCENT	(1U << 24)
+#define ISPA_PUNCH_THROUGH	(2U << 24)
+#define ISPA_PASS_MASK		(7U << 24)
 #define ISPA_NO_DEPTH_WRITE	(1U << 21)
 #define ISPA_COMPARE_SHIFT	17U
 #define ISPA_LINE_WIDTH_SHIFT	8U
@@ -576,6 +578,8 @@ powervr_draw_ppp_build(
 	uint32_t varying;
 	uint32_t shared;
 	uint32_t merge;
+	uint32_t temps;
+	bool varying_base;
 	bool ccw_front;
 
 	/* Refuses missing input or result, and programs not on 16-byte boundaries. */
@@ -597,6 +601,16 @@ powervr_draw_ppp_build(
 		 HEADER_REGION_CLIP | HEADER_VIEWPORT | HEADER_WCLAMP | HEADER_OUTSELECTS | HEADER_VARYING_0 |
 		 HEADER_VARYING_1 | HEADER_VARYING_2 | HEADER_PPP_CTRL | HEADER_STREAM_OUT;
 
+	/* The test switches: no varying base without a coefficient program, no data sequencer temporaries. */
+	varying_base = true;
+	if ((POWERVR_DRAW_TRIAL & POWERVR_DRAW_TRIAL_NO_VARYING_BASE) != 0U && input->varyings->code_words == 0) {
+		header &= ~HEADER_PDS_1;
+		varying_base = false;
+	}
+	temps = round_units(1U, 4U);
+	if ((POWERVR_DRAW_TRIAL & POWERVR_DRAW_TRIAL_NO_PDS_TEMPS) != 0U)
+		temps = 0;
+
 	/* The depth test as the attachment allows: none without one. */
 	compare = VK_COMPARE_OP_ALWAYS;
 	ispa = ISPA_NO_DEPTH_WRITE;
@@ -607,8 +621,11 @@ powervr_draw_ppp_build(
 	}
 	ispa |= compare << ISPA_COMPARE_SHIFT;
 	ispa |= LINE_WIDTH_ONE << ISPA_LINE_WIDTH_SHIFT;
-	if (fixed->blending)
+	if (fixed->blending) {
 		ispa |= ISPA_TRANSLUCENT;
+	} else if ((POWERVR_DRAW_TRIAL & POWERVR_DRAW_TRIAL_PUNCH_THROUGH) != 0U) {
+		ispa |= ISPA_PUNCH_THROUGH;
+	}
 
 	/* The ISP words and the scissor index. */
 	index = 0;
@@ -620,12 +637,15 @@ powervr_draw_ppp_build(
 	/* The fragment's data sequencer state. */
 	words[index++] = input->fragment_kick_offset;
 	words[index++] = input->shared_code_offset;
-	words[index++] = (uniform << 23) | (varying << 10) | (input->varyings->usc_varying_size << 4) | round_units(1U, 4U);
+	words[index++] = (uniform << 23) | (varying << 10) | (input->varyings->usc_varying_size << 4) | temps;
 	merge = 0;
 	if ((ispa & ISPA_NO_DEPTH_WRITE) != 0 && compare == VK_COMPARE_OP_ALWAYS)
 		merge = SIZEINFO2_TRI_MERGE_DISABLE;
+	if ((ispa & ISPA_PASS_MASK) == ISPA_PUNCH_THROUGH)
+		merge = SIZEINFO2_TRI_MERGE_DISABLE;
 	words[index++] = (shared << 23) | merge;
-	words[index++] = input->varyings->code_words == 0 ? 0U : input->coefficient_offset;
+	if (varying_base)
+		words[index++] = input->varyings->code_words == 0 ? 0U : input->coefficient_offset;
 	words[index++] = input->shared_data_offset;
 
 	/* The region clip and the viewport. */
