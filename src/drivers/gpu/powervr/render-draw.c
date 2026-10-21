@@ -934,6 +934,12 @@ fixed_fragment(
 			fixed->blending = true;
 	}
 
+	/* The blend constants a factor may name, as their float bits (q1548: they were always zero). */
+	if (blend != NULL) {
+		for (index = 0; index < 4U; index++)
+			__builtin_memcpy(&fixed->blend_constants[index], &blend->blendConstants[index], sizeof(fixed->blend_constants[index]));
+	}
+
 	/* Succeeded: the colours. */
 	return 0;
 }

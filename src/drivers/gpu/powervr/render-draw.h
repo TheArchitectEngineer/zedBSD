@@ -113,6 +113,9 @@ struct powervr_draw_fixed {
 	struct powervr_draw_attribute attributes[POWERVR_DRAW_ATTRIBUTES];
 	struct powervr_shader_key vertex_key;
 	struct powervr_shader_key fragment_key;
+
+	/* The colour blend's constants as the pipeline gives them, the float bits (q1548). */
+	uint32_t blend_constants[4];
 };
 
 /*
