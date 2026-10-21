@@ -430,8 +430,8 @@ powervr_buffer_put(
 	if (faulted)
 		return;
 
-	/* A buffer the cache may hold lines of: freed by the service after the cache is flushed. */
-	if (buffer->gpu_cached) {
+	/* A buffer the cache may hold lines of: freed by the service after the cache is flushed (unless the flush is turned off, as mainline never flushes). */
+	if (buffer->gpu_cached && POWERVR_SLC_FLUSH_ON_FREE) {
 		enabled = spin_lock_irqsave(&render->queue_lock);
 
 		buffer->next = render->slc_pending;

@@ -371,6 +371,16 @@
  * the processor maps; its buffers' cached lines are written back and
  * dropped before their pages are freed.
  */
+/*
+ * Whether a cached buffer's pages wait for a flush of the system level
+ * cache before they are freed (1).  With 0 they are freed at once, as
+ * the mainline driver frees its buffers without flushing the cache; the
+ * board rebooted with the flush on (2026-10-21), which this tells apart.
+ */
+#ifndef POWERVR_SLC_FLUSH_ON_FREE
+#define POWERVR_SLC_FLUSH_ON_FREE	1
+#endif
+
 #ifndef POWERVR_DEVICE_MEMORY_CACHED
 #define POWERVR_DEVICE_MEMORY_CACHED	0
 #endif

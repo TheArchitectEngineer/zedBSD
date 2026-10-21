@@ -200,6 +200,9 @@ struct vkmatrix {
 	int tolerance;
 	const char *failed_call;
 	char reason[VKMATRIX_REASON_MAX];
+
+	/* A case's own line after its PASS (the perf cases' timing), empty for none. */
+	char note[VKMATRIX_REASON_MAX];
 };
 
 /* One case: its name and its work. */
@@ -449,6 +452,7 @@ vkmatrix_run_cases(
 
 			run->failed_call = "";
 			run->reason[0] = '\0';
+			run->note[0] = '\0';
 			run->tolerance = 0;
 			run->vertex_floats = 0;
 			run->texture_format = VK_FORMAT_UNDEFINED;
@@ -465,7 +469,7 @@ vkmatrix_run_cases(
 			else if (vkmatrix_compare(run) != 0)
 				printf("%s: %s: FAIL(%s)\n", prefix, cases[index].name, run->reason);
 			else {
-				printf("%s: %s: PASS\n", prefix, cases[index].name);
+				printf("%s: %s: PASS%s%s%s\n", prefix, cases[index].name, run->note[0] != '\0' ? " (" : "", run->note, run->note[0] != '\0' ? ")" : "");
 				passed++;
 			}
 
@@ -4181,9 +4185,8 @@ perf_case(
 	}
 
 	/* The line, and nothing for the shared target's comparison to say. */
-	printf("vkmatrix: perf %s: %lu us a frame (min %lu us) over %u frames of 1920x1080\n", names[kind],
-	       (unsigned long)(total / PERF_FRAMES / 1000U), (unsigned long)(least / 1000U), (unsigned)PERF_FRAMES);
-	(void)fflush(stdout);
+	snprintf(run->note, sizeof(run->note), "perf %s: %lu us a frame (min %lu us) over %u frames of 1920x1080", names[kind],
+		 (unsigned long)(total / PERF_FRAMES / 1000U), (unsigned long)(least / 1000U), (unsigned)PERF_FRAMES);
 	memcpy(run->expected, run->pixels, sizeof(run->expected));
 	run->tolerance = 0;
 
