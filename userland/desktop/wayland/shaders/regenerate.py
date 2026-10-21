@@ -50,6 +50,9 @@ def main():
     variants.extend(("panel.frag", "kwl_panel_frag_inside_%d" % mode,
                      ("-DKWL_PANEL_MODE=%d" % mode, "-DKWL_PANEL_INSIDE"))
                     for mode in INSIDE_MODES)
+    variants.extend(("panel.frag", "kwl_panel_frag_opaque_%d" % mode,
+                     ("-DKWL_PANEL_MODE=%d" % mode, "-DKWL_PANEL_INSIDE", "-DKWL_PANEL_OPAQUE"))
+                    for mode in INSIDE_MODES)
     for source, name, definitions in variants:
         words = compile_shader(HERE / source, definitions)
         lines.append("/* Validated immutable %s SPIR-V, used while creating graphics pipelines. */" % name)
@@ -68,6 +71,11 @@ def main():
                   "static const struct kwl_panel_shader kwl_panel_inside_variants[%d] = {" % len(INSIDE_MODES)])
     for mode in INSIDE_MODES:
         lines.append("\t{kwl_panel_frag_inside_%d, sizeof(kwl_panel_frag_inside_%d)}," % (mode, mode))
+    lines.extend(["};", "",
+                  "/* The same insides of opaque shapes at full opacity, written as they are (glass.c). */",
+                  "static const struct kwl_panel_shader kwl_panel_opaque_variants[%d] = {" % len(INSIDE_MODES)])
+    for mode in INSIDE_MODES:
+        lines.append("\t{kwl_panel_frag_opaque_%d, sizeof(kwl_panel_frag_opaque_%d)}," % (mode, mode))
     lines.extend(["};", "", "#endif"])
     (HERE.parent / "shaders.h").write_text("\n".join(lines) + "\n")
 

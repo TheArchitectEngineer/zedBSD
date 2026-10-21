@@ -156,6 +156,12 @@ void main()
 	}
 #endif
 
-	// The whole shape faded by its opacity.
+	// The whole shape faded by its opacity.  KWL_PANEL_OPAQUE: the inside of
+	// an opaque shape at full opacity (glass.c), whose alpha is 1 and whose
+	// opacity is 1, so its colour is written as it is.
+#if defined(KWL_PANEL_OPAQUE)
+	result = vec4(colour.rgb, 1.0);
+#else
 	result = colour * panel.screen.w;
+#endif
 }

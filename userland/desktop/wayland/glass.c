@@ -2340,8 +2340,8 @@ glass_shape_split(
 		return 0;
 	}
 
-	/* A shape faded as a whole is seen through everywhere. */
-	if (constants[23] < 1.0f)
+	/* A shape faded as a whole is seen through everywhere; an opaque inside is written with its opacity as 1. */
+	if (constants[23] != 1.0f)
 		*opaque = 0;
 	if (quad[2] <= 0.0f || quad[3] <= 0.0f)
 		return 0;
