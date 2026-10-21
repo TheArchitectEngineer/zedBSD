@@ -233,10 +233,10 @@ static void watch_thread(void *argument);
  * in reset (the load and the restart), whose reset empties its caches.
  */
 #ifndef POWERVR_FIRMWARE_CODE_CACHED
-#define POWERVR_FIRMWARE_CODE_CACHED	1
+#define POWERVR_FIRMWARE_CODE_CACHED	0
 #endif
 #ifndef POWERVR_FIRMWARE_DATA_CACHED
-#define POWERVR_FIRMWARE_DATA_CACHED	1
+#define POWERVR_FIRMWARE_DATA_CACHED	0
 #endif
 
 #ifndef DUST_POWER_BY_HOST
