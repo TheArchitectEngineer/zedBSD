@@ -39,6 +39,9 @@ static int list_room(void **memory, size_t *capacity, size_t needed, size_t firs
 static const void *list_at(const struct kwl_list *list, size_t offset, uint32_t count);
 static void list_replay_op(const struct kwl_list *list, const struct kwl_list_op *op, VkCommandBuffer command);
 static void list_replay_copy(const struct kwl_list *list, const struct kwl_list_op *op, VkCommandBuffer command);
+static int list_pass_loads(VkRenderPass pass, const VkRenderPass *loading, unsigned loading_count);
+static uint64_t list_copy_pixels(const struct kwl_list *list, const struct kwl_list_op *op);
+static void list_pass_end(struct kwl_list_passes *passes, const VkRect2D *area, unsigned draws, int loads, unsigned job_draws);
 
 /*
  * Empties a list for a new drawing, keeping its memory.
@@ -114,6 +117,66 @@ kwl_list_things(
 
 	/* The number of things drawn. */
 	return things;
+}
+
+/*
+ * Counts what a list asks of the GPU: its passes, the jobs they take when
+ * a job holds at most job_draws draws, the pixels of their areas and those
+ * loaded, and its copies (KWL PASSES).
+ *
+ * A pass loads the image's pixels when its render pass is one of the
+ * loading ones (count of them); every job after a pass's first loads its
+ * area again, whatever the pass.
+ */
+void
+kwl_list_count_passes(
+	const struct kwl_list *list,
+	const VkRenderPass *loading,
+	unsigned loading_count,
+	unsigned job_draws,
+	struct kwl_list_passes *passes)
+{
+	const struct kwl_list_op *op;
+	VkRect2D area;
+	size_t index;
+	unsigned draws;
+	int loads;
+	int open;
+
+	/* Nothing counted yet, and no pass open. */
+	memset(passes, 0, sizeof(*passes));
+	memset(&area, 0, sizeof(area));
+	draws = 0U;
+	loads = 0;
+	open = 0;
+
+	/* Each operation in the order the GPU is given them. */
+	for (index = 0U; index < list->op_count; index++) {
+		op = &list->ops[index];
+		if (op->kind == KWL_LIST_BEGIN_PASS) {
+			/* A pass begins: its area and whether it keeps the image's pixels. */
+			area = op->args.begin.area;
+			loads = list_pass_loads(op->args.begin.pass, loading, loading_count);
+			draws = 0U;
+			open = 1;
+		} else if (op->kind == KWL_LIST_DRAW) {
+			/* One draw more, in the pass open (or in none, which the GPU refuses). */
+			draws++;
+			passes->draws++;
+		} else if (op->kind == KWL_LIST_END_PASS) {
+			/* The pass ends: its jobs and pixels are counted. */
+			if (open)
+				list_pass_end(passes, &area, draws, loads, job_draws);
+			open = 0;
+		} else if (op->kind == KWL_LIST_COPY_IMAGE ||
+			   op->kind == KWL_LIST_COPY_BUFFER_TO_IMAGE ||
+			   op->kind == KWL_LIST_COPY_IMAGE_TO_BUFFER ||
+			   op->kind == KWL_LIST_BLIT) {
+			/* A copy outside the passes, and the pixels it writes. */
+			passes->copies++;
+			passes->copy_pixels += list_copy_pixels(list, op);
+		}
+	}
 }
 
 /* Appends vertices of the quads drawn together, at the next byte of the list's vertices. */
@@ -864,5 +927,114 @@ list_replay_copy(
 	default:
 		/* The kinds list_replay_op records itself never come here. */
 		break;
+	}
+}
+
+/* Tells whether a render pass is one of those that keep the image's pixels (its colour attachment loaded). */
+static int
+list_pass_loads(
+	VkRenderPass pass,
+	const VkRenderPass *loading,
+	unsigned loading_count)
+{
+	unsigned index;
+
+	/* One of the loading passes the caller named. */
+	for (index = 0U; index < loading_count; index++) {
+		if (loading[index] != VK_NULL_HANDLE && loading[index] == pass)
+			return 1;
+	}
+
+	/* A pass that clears, or whose old pixels do not matter. */
+	return 0;
+}
+
+/* Counts the pixels a copy or a blit writes: each region's extent at the destination. */
+static uint64_t
+list_copy_pixels(
+	const struct kwl_list *list,
+	const struct kwl_list_op *op)
+{
+	const VkImageCopy *copies;
+	const VkBufferImageCopy *buffer_copies;
+	const VkImageBlit *blits;
+	uint64_t pixels;
+	int64_t width;
+	int64_t height;
+	uint32_t index;
+
+	/* The regions of the copy's kind, their pixels added up. */
+	pixels = 0U;
+	if (op->kind == KWL_LIST_COPY_IMAGE) {
+		/* An image's copy: the regions' extents. */
+		copies = list_at(list, op->args.images.regions, op->args.images.count);
+		for (index = 0U; index < op->args.images.count; index++)
+			pixels += (uint64_t)copies[index].extent.width * copies[index].extent.height;
+	} else if (op->kind == KWL_LIST_BLIT) {
+		/* A blit: the destination's corners of each region. */
+		blits = list_at(list, op->args.images.regions, op->args.images.count);
+		for (index = 0U; index < op->args.images.count; index++) {
+			width = (int64_t)blits[index].dstOffsets[1].x - blits[index].dstOffsets[0].x;
+			height = (int64_t)blits[index].dstOffsets[1].y - blits[index].dstOffsets[0].y;
+			if (width < 0)
+				width = -width;
+			if (height < 0)
+				height = -height;
+			pixels += (uint64_t)(width * height);
+		}
+	} else {
+		/* A copy between a buffer and an image: the image's extents. */
+		buffer_copies = list_at(list, op->args.buffer_image.regions, op->args.buffer_image.count);
+		for (index = 0U; index < op->args.buffer_image.count; index++)
+			pixels += (uint64_t)buffer_copies[index].imageExtent.width * buffer_copies[index].imageExtent.height;
+	}
+
+	/* The pixels written. */
+	return pixels;
+}
+
+/*
+ * Counts a pass that ended: one job, and one more for each further run of
+ * job_draws draws, each of which loads the pass's area again; the pass's
+ * own load when it keeps the image's pixels; and its line of the summary
+ * while there is room for one.
+ */
+static void
+list_pass_end(
+	struct kwl_list_passes *passes,
+	const VkRect2D *area,
+	unsigned draws,
+	int loads,
+	unsigned job_draws)
+{
+	uint64_t pixels;
+	unsigned jobs;
+	unsigned loaded;
+
+	/* The jobs the pass takes: one without draws, else one for each job's worth of them. */
+	jobs = 1U;
+	if (job_draws != 0U && draws > job_draws)
+		jobs = (draws + job_draws - 1U) / job_draws;
+
+	/* The loads: the pass's own when it keeps the pixels, and one for each job that goes on from another. */
+	loaded = jobs - 1U;
+	if (loads)
+		loaded++;
+
+	/* The pass's pixels, and those its jobs load. */
+	pixels = (uint64_t)area->extent.width * area->extent.height;
+	passes->passes++;
+	passes->jobs += jobs;
+	passes->area_pixels += pixels;
+	passes->load_pixels += pixels * loaded;
+	if (loads)
+		passes->loading_passes++;
+
+	/* The pass one by one, while there is room. */
+	if (passes->detail_count < KWL_LIST_PASS_DETAIL) {
+		passes->detail_areas[passes->detail_count] = *area;
+		passes->detail_draws[passes->detail_count] = draws;
+		passes->detail_loads[passes->detail_count] = (unsigned)loads;
+		passes->detail_count++;
 	}
 }

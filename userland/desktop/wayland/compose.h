@@ -624,6 +624,12 @@ struct kwl_compose {
 	 */
 	VkRect2D pass_area;
 	/*
+	 * What the frame's list asks of the GPU (KWL PASSES, --log-frames,
+	 * ws270-p007): counted when the list goes to the render thread, printed
+	 * with the frame's draws when it completes.
+	 */
+	struct kwl_list_passes frame_passes;
+	/*
 	 * The damage's rectangles the frame draws apart (ws211-p009 D3,
 	 * compose-bind.c): clip_count of them, disjoint, set only while the
 	 * anchor's pass on clip_framebuffer is recorded and the damage has two
