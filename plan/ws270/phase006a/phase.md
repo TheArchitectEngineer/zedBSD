@@ -445,3 +445,5 @@ Keiland が使い、vkmatrix 15/15・gpu-selftest 13/13 で確かめていない
 - P2 q1536-i02（4a1c53e4b・06f2bcf9f、373365bb9 で merge）: depth を使わない draw で tri merge を止める（Mesa と同じ）、blend 無しの時の色の clamp を外す（pack が飽和する）→ push4.frag 24→16 op、texture.frag 33→25 op、Keiland quad.frag 640→520 byte。板は未確認。
 - P1 q1537（9b9bf968b の数え、3402d837e の不透明の内側を blend 無しで描く、merge 済み）: 板と PNG の比べは未確認。
 - d41（373365bb9 の kernel）: run.sh が 500 s で止まり、その後 2 回電源を入れ直しても SSH に戻らない（2026-10-21 10:4x）。原因は未確認（kernel か SD か）。
+- d41 の後: 板が 2 回の電源の入れ直しでも戻らず、3 回目で戻った（kernel は d41、SD の read の失敗 46 回の起動）→ kernel ではなく SD の不安定（BUG-343）と見る。
+- d42（85d8e9ae4、P2 の短い shader・tri merge、P1 の不透明の内側、userland を overlay して session を起動し直し）: 画面は同じ（build/review/vf2-desktop/shot42.png）、vkmatrix 33/33、HWR 0。perf: clear 3.8 ms、load 23.35 ms、flat 19.25 ms（前 20.8）、texture 38.15 ms（前 43.25）→ 約 1 割。KWL の rec submit 162 ms。命令数が主因ではない。次の疑い: PDS・USC の program・定数・descriptor を SLC bypass で DRAM から読む事（P1 q1537-i02）、P2 は pixel あたりの固定費と命令あたりの費用を分ける perf の case（q1536-i03）。
