@@ -8648,6 +8648,29 @@ wiseview_ground_picture(
 	glass_draw_halves(server, command, sets[0], sets[1]);
 }
 
+/*
+ * Asks for the pictures App Home's and Wiseview's frames show (the stage,
+ * Wiseview's grounds and the two side by side) while the compositor is
+ * quiet, so that their first frames do not draw them (layer-cache.c draws
+ * what is asked for in a bake of its own).
+ */
+void
+kwl_glass_prewarm(
+	struct kwl_server *server)
+{
+	VkDescriptorSet sets[2];
+	VkDescriptorSet set;
+	int ground;
+
+	/* App Home's stage. */
+	kwl_home_stage_prewarm(server);
+
+	/* Wiseview's grounds, then the two side by side once both are drawn. */
+	ground = wiseview_ground(server, sets);
+	if (ground)
+		(void)wiseview_crossfade(server, &set);
+}
+
 /* Draws the wallpaper under Wiseview's shade into its picture. */
 static void
 wiseview_wall_picture(

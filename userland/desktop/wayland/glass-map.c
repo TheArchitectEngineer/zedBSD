@@ -291,6 +291,36 @@ kwl_glass_maps_inband(
 	maps_draw_wanted(server, command, maps->shadows, KWL_SHADOW_MAPS, GLASS_SHADOW_DRAWS);
 }
 
+/*
+ * Tells whether a map or a picture waits to be drawn before the next pass
+ * (a quiet bake may draw it, layer-cache.c).  Returns 1 when one does.
+ */
+int
+kwl_glass_maps_wanted(
+	struct kwl_server *server)
+{
+	struct kwl_glass_maps *maps;
+	unsigned index;
+
+	/* Not asked for, or not possible on this device. */
+	maps = &server->compose->glass_maps;
+	if (server->glass_map_off || maps->failed)
+		return 0;
+
+	/* Any map or shadow wanted. */
+	for (index = 0U; index < KWL_GLASS_MAPS; index++) {
+		if (maps->maps[index].state == GLASS_MAP_WANTED)
+			return 1;
+	}
+	for (index = 0U; index < KWL_SHADOW_MAPS; index++) {
+		if (maps->shadows[index].state == GLASS_MAP_WANTED)
+			return 1;
+	}
+
+	/* None. */
+	return 0;
+}
+
 /* Releases the maps' images and pass (no frame that reads them is in flight). */
 void
 kwl_glass_maps_destroy(

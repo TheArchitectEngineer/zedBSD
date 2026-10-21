@@ -157,6 +157,8 @@ kwl_layers_tick(
 	uint64_t now;
 	uint64_t key;
 	int ready;
+	int home_due;
+	int maps_due;
 
 	/* Only with the pictures, the output, no frame in flight, in the glass look, with nothing else on the screen. */
 	compose = server->compose;
@@ -174,9 +176,20 @@ kwl_layers_tick(
 	if (kwl_home_progress(server) > 0.0f || server->home_moving || server->home_dragging)
 		return 0;
 
-	/* Only when what Home shows may have changed. */
+	/*
+	 * Only when what Home shows may have changed, or when a glass map or
+	 * picture waits (those App Home's and Wiseview's first frames would
+	 * draw are asked for now, glass-map.c).
+	 */
+	home_due = 1;
 	if (!server->home_picture_stale && layers_home_current(server))
-		return 0;
+		home_due = 0;
+	if (!home_due) {
+		kwl_glass_prewarm(server);
+		maps_due = kwl_glass_maps_wanted(server);
+		if (!maps_due)
+			return 0;
+	}
 
 	/* Only in the quiet: no input and no window commit for a while, no frame just done, two drawings a second at most. */
 	now = kwl_milliseconds();
@@ -187,9 +200,14 @@ kwl_layers_tick(
 	    (layers->bake_times[0] != 0U && now - layers->bake_times[0] < LAYER_TURN_MS))
 		return 0;
 
-	/* The key made again: a picture that shows it already is kept. */
-	if (layers_home_current(server))
-		return 0;
+	/* The key made again: a picture that shows it already is kept, and then only the maps are drawn. */
+	if (home_due && layers_home_current(server))
+		home_due = 0;
+	if (!home_due) {
+		maps_due = kwl_glass_maps_wanted(server);
+		if (!maps_due)
+			return 0;
+	}
 
 	/* The render thread is told a picture may be drawn; the walk waits for its ready (ws213-p004). */
 	ready = kwl_compose_want_layer(server);
@@ -197,9 +215,11 @@ kwl_layers_tick(
 		return 0;
 	key = kwl_home_picture_key(server);
 
-	/* Drawn into the list and given as a frame that presents nothing. */
+	/* Drawn into the list (the glass maps waiting first) and given as a frame that presents nothing. */
 	kwl_compose_list_begin(compose);
-	layers_record_pass(server, &compose->list, KWL_LAYER_HOME, NULL, 0U);
+	kwl_glass_maps_inband(server, &compose->list);
+	if (home_due)
+		layers_record_pass(server, &compose->list, KWL_LAYER_HOME, NULL, 0U);
 	result = kwl_compose_submit_quiet(server);
 	if (result != VK_SUCCESS) {
 		printf("KWL VULKAN_ERROR operation=layer result=%d\n", (int)result);
@@ -207,9 +227,11 @@ kwl_layers_tick(
 	}
 
 	/* In flight: the picture is taken when it completes, if no glyph it uses was evicted meanwhile. */
-	layers->keys[KWL_LAYER_HOME] = key;
 	layers->bake_times[0] = layers->bake_times[1];
 	layers->bake_times[1] = now;
+	if (!home_due)
+		return 1;
+	layers->keys[KWL_LAYER_HOME] = key;
 	printf("KWL LAYER baked what=home inband=0 draws=%u us=%llu at_us=%llu\n", layers->bake_draws, (unsigned long long)layers->bake_us, (unsigned long long)kwl_microseconds());
 	return 1;
 }

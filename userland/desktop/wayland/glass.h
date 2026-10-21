@@ -187,6 +187,8 @@ int kwl_home_launch_tile(struct kwl_server *server, float *x, float *y, float *s
 void kwl_home_draw_clock_over(struct kwl_server *server, struct kwl_list *command, float progress);
 void kwl_home_clock_damage(struct kwl_server *server);
 void kwl_home_draw_stage(struct kwl_server *server, struct kwl_list *command, const float (*under)[4], unsigned under_count);
+void kwl_home_stage_prewarm(struct kwl_server *server);
+void kwl_glass_prewarm(struct kwl_server *server);
 void kwl_home_draw_content(struct kwl_server *server, struct kwl_list *command, float progress, unsigned neutral);
 uint64_t kwl_home_picture_key(struct kwl_server *server);
 uint32_t glass_wallpaper_version(struct kwl_server *server);

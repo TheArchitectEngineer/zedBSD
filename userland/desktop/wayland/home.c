@@ -650,6 +650,20 @@ home_stage(
 	glass_shape_draw_except(server, command, &shape, under, under_count);
 }
 
+/*
+ * Asks for the stage's picture (glass-map.c) before App Home first opens,
+ * so that a quiet moment draws it instead of the opening's first frames.
+ */
+void
+kwl_home_stage_prewarm(
+	struct kwl_server *server)
+{
+	VkDescriptorSet set;
+
+	/* Asked for, or already drawn. */
+	(void)kwl_glass_picture_set(server, KWL_GLASS_PICTURE_STAGE, home_stage_picture, &set);
+}
+
 /* Draws the stage over the whole output into its picture (glass-map.c). */
 static void
 home_stage_picture(
