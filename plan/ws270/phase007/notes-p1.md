@@ -286,3 +286,23 @@ branch agent/p1-q1552（基 main 782f995e4）。ユーザー（2026-10-22）:「
 - build: VF2 の host-visible memory は client に uncached で map される（vk-memory.c、gpu_mmap の VM_DEVICE_UNCACHED_RAM）。1 cell 6 vertex × 12 float を 32bit の store で mapping に書いていた（1 cell 72 回の bus write）。6e8ac6693: host の memory（vertex_build）で作り、前の frame の写し（vertex_kept）と 64bit ごとに比べ、違う doubleword だけを mapping へ store する（render_upload）。ZTERM PERF に upload（store の時間）。
 - present: libvulkan の Wayland の present（frame ごとの fence の作成・export・fd、空の command の Begin/End、vkQueueSubmit）。00a8d6f6f で VULKAN TIMING に present_prepare/present_record/present_submit/present。内訳は板待ち。
 - 1920x1080 の制限: Terminal の速さは cell の数（窓の大きさ）に比例する部分（build・upload）と、frame ごとの固定の部分（acquire・present・submit の round trip）がある。後者は出力の解像度に依らない。
+
+### 計測（Terminal の後）と打鍵の遅れ（2026-10-22 朝）
+
+- d120〜d129: Terminal の upload の直し（1e1296a8d、-fno-builtin で 8 byte の memcpy が call になっていた）で upload 13.5 → 1.4 ms。Terminal の 1 frame の CPU は約 10 ms で律速ではなくなった。type（aat-input は 1 字 16.4 ms＝61 字/s）は 44〜47 fps のまま。
+- type の 1 字の cycle（d126・d128、中央値）: compositor の frame の完了（frame callback）→ Terminal の commit 3 → display の acquire 2 → main の起床と pass 3〜5 → draw→recorded 4 → vkQueueSubmit 3 → vkQueuePresentKHR 3 → GPU の完了 2.5。Terminal の acquire の 6 ms は compositor が前の buffer を返すまでの FIFO の背圧（a7d6818ae の VULKAN ACQUIRE の行で release_us、timeouts 0）。
+- 効かなかった物（外した）: 285e34b07（Wayland の fence を worker が先に作る、present_record が下がらず）、5409fbade 単独・2d5d13052（Wayland の FIFO の待ちを reader の約束どおりに）。5409fbade は 8eeedadb4 の後で必要になるので 776007a31 で戻した。
+- 入れた物: 8eeedadb4（render thread が idle の時に display の次の image を先に取る → READY が adopt の +1 ms に）、776007a31（frame callback を頼んだまま commit しない window を awaited から外す、pacing の門が消える）、88deda6ff（--log-frames の行の時刻を rdtime の μs に、kwl_log_us）。
+- main の pass の重さ（d133 の KWL PERF ticks、ce090a9fa）: kwl_schedule の先頭の glass の tick が idle でも 1 pass 約 1 ms（5 s に 416 ms、main の CPU の 8%）。描く frame はその pass を draw の前に通る。kwl_glass_tick の中の 25 個ほどの tick のどれかは未特定（network・audio・bluetooth の backend の読み、時計の syscall の数が候補）。
+- 打鍵の遅れ（d133 の keys の段、200 ms 間隔 22 字、key-latency.py、seat に key が来てからの ms、中央値/最大）: Terminal が受けた 0.7/2.4、pty へ書いた 1.0/2.4、echo を読んだ 1.7/3.4、Terminal の present 9.7/11.4、compositor の adopt 15.9/19.4、compositor の frame の完了 30.0/36.0（この後 display の次の blank まで 0〜16.7）。内訳: echo → present 8 ms（Terminal の 1 frame の描画）、present → adopt 6 ms（Terminal の GPU の仕事と worker の commit、FIFO の待ちは 0.2〜0.4 ms）、adopt → 完了 14 ms（compositor の 1 frame: 先取りの READY 1、main の起床と pass 2〜5、record 3、submit 2、present 2、GPU 2）。input method は通らない（key は client へ直に、0.2 ms）。
+- 速く打った時（type の段、60 字）は Terminal が受けるまで 12.7 ms（描画中で受けられない）、完了まで中央値 80 ms: throughput が 61 字/s に届かない分の溜まり。
+- 間隔を空けた打鍵の 30 ms のうち、小さく安全に削れる所は今は無い: Terminal の描画（build 2.7・upload 1.5 は変わった行だけ作れば約 3〜4 ms 減るが中規模の変更）、compositor の main の pass の tick（約 1〜2 ms、どの tick かの特定が先）、submit・present の往復（driver 側、P2）。
+
+### ws270-p007 の成果（2026-10-22、q1552 のまとめ）
+
+- 朝（d97・d98、main 782f995e4 相当）: drag は毎 frame 全画面 work 24〜43 ms・period 39〜73 ms（14〜25 fps）、App Home・Wiseview は全画面 glass で submit 40〜80 ms、Home の frame は 2 blank ごと（30 fps）。
+- 今（d128・d129、frame-ops.sh、1920x1080）: drag 60 fps、App Home 58〜60、Wiseview 60〜62、Terminal の起動 55〜58、type 44（入力 61 字/s に対し 1 字の cycle 20 ms）、output 35〜40、scroll・hover は aat-input の間隔が律速（lag 9〜15 ms）。打鍵 → compositor の frame の完了 30 ms（200 ms 間隔）。
+- 効いた変更（大きい順）: glass の map（99b63fedd・1ce1d3758、色ごとの全画面の glass を 1 度描いて読む）と Home・Wiseview の picture（5f0acec60・95db457c4・ce44dafb4）、drag を部分の書き直しに（fdc686ca4）、libvulkan の display の primary の present が acquire を塞がない（1f7936510）、Keiland の 2 frame の重ね（162059da7・c436c7db0）、prewarm（初回の hitch）、Terminal の command buffer の使い回し（bbf66e118）と変わった doubleword だけの upload（6e8ac6693・1e1296a8d）、display の image の先取り（8eeedadb4）、awaited の残りの直し（776007a31）。
+- 効かなかった・外した変更: e7ea311a9（frame callback を give の時に、type の lag 悪化 → 67a35db60）、285e34b07、2d5d13052、5409fbade 単独（後で 776007a31 として戻した）。
+- 残り（目標の 60 fps に届かない操作）: type・output（1 字・1 塊ごとに Terminal → compositor → callback → Terminal の直列で約 20 ms。compositor の 1 frame の固定費 vkQueueSubmit・vkQueuePresentKHR の各 2〜3 ms は P2 へ、main の pass の glass の tick 約 1 ms/pass は未特定）、Terminal の描画の build（変わった行だけ作る案は未実装）。ユーザーの判断（2026-10-22）で文字入力は 60 fps を要しない、最適化はここで終わり。
+- 回帰に使う道具（plan/ws270/tests/frame-ops/、Master の Tools に登録して plan/tools/ へ移す候補）: frame-ops.sh（板で root、Keiland --log-frames・aat-input、操作の段ごとに session.log の行数を marks に）、frame-times.py（marks の段ごとの frame の work・period・fps・lag の表）、key-latency.py（間隔を空けた打鍵 1 字ごとの seat→Terminal→pty→present→adopt→完了の ms）、shot-diff.py（keiland-shot の 2 枚の画素の差、見た目が変わらない確認）。
