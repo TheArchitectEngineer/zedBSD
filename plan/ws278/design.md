@@ -91,7 +91,7 @@ QEMU に raspi5 の machine は無い。確認は host の試験と実機だけ�
 
 ## 6. 危険と確かめる点
 
-- R1: Pi 5 の bootloader が `kernel_address=0x80000` を守るか。守らなければ 0x200000 に置かれ、locore の絶対の飛び先がずれて何も出ない。対策: 位置に依らない入口（locore が自分を 0x80000 へ写す）を p002b として足す。
+- R1: Pi 5 の bootloader が `kernel_address=0x80000` を守るか。守らなければ 0x200000 等に置かれ、locore の絶対の飛び先がずれる。対策（p002 で実装済み）: Pi 5 の locore は読み込まれた番地が 0x80000 より上なら、header の image size の分を 0x80000 へ写してから続ける（先に stub だけを写してそこから全体を写す）。残る危険: 0x80000 へ写した後の bss が、firmware が kernel の直後に置いた dtb に重なる場合（firmware は今まで dtb を高い所に置く）。
 - R2: dtb の置き場所が 1 GiB の上なら起動時の表で読めない。firmware は今まで低い所に置く。実機の log の `FDT PASS phys=` で確かめる。
 - R3: SD の card が bootloader の後に 1.8 V の signalling のまま残っていると、3.3 V の前提の初期化が通らない事がある。対策: 失敗したら aon_gpio4（SD の電源）で電源を入れ直し、aon_gpio3 を 3.3 V にしてやり直す（p002 の実機の結果を見て足す）。
 - R4: mailbox の framebuffer の address が 1 GiB の上なら mask で壊れる。log の値で確かめる。
