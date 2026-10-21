@@ -19,6 +19,9 @@
 
 #include <vulkan/vulkan.h>
 
+/* The passes a list's summary describes one by one (KWL PASSES); the rest are only counted. */
+#define KWL_LIST_PASS_DETAIL	8U
+
 /* A host-written image whose staging a frame copies first (compose.h). */
 struct kwl_import;
 
@@ -173,10 +176,35 @@ struct kwl_list {
 	uint64_t scissor_serial;
 };
 
+/*
+ * What a frame's list asks of the GPU (KWL PASSES, --log-frames,
+ * ws270-p007): its render passes, the render jobs they take when a job
+ * holds at most a given number of draws (a pass of more goes on in a
+ * next job that loads what the one before stored), the pixels of the
+ * passes' areas and those loaded (a pass that keeps the image's pixels,
+ * and every job that goes on from another), and the copies and blits
+ * outside the passes.  The first passes are kept one by one.
+ */
+struct kwl_list_passes {
+	unsigned passes;
+	unsigned jobs;
+	unsigned draws;
+	unsigned loading_passes;
+	uint64_t area_pixels;
+	uint64_t load_pixels;
+	unsigned copies;
+	uint64_t copy_pixels;
+	unsigned detail_count;
+	VkRect2D detail_areas[KWL_LIST_PASS_DETAIL];
+	unsigned detail_draws[KWL_LIST_PASS_DETAIL];
+	unsigned detail_loads[KWL_LIST_PASS_DETAIL];
+};
+
 void kwl_list_reset(struct kwl_list *list);
 void kwl_list_free(struct kwl_list *list);
 void kwl_list_replay(const struct kwl_list *list, VkCommandBuffer command);
 unsigned kwl_list_things(const struct kwl_list *list);
+void kwl_list_count_passes(const struct kwl_list *list, const VkRenderPass *loading, unsigned loading_count, unsigned job_draws, struct kwl_list_passes *passes);
 void kwl_list_add_vertices(struct kwl_list *list, const void *vertices, uint32_t bytes);
 void kwl_list_add_copy(struct kwl_list *list, struct kwl_import *import);
 void kwl_list_begin_render_pass(struct kwl_list *list, const VkRenderPassBeginInfo *begin, VkSubpassContents contents);

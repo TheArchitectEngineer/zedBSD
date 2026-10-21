@@ -90,7 +90,7 @@ main(void)
 	expect(read64(fragment, 192) == 0, "attachment 1 empty");
 	expect(read64(fragment, 368) == 0x100U && read64(fragment, 384) == 0x102U, "background");
 	expect(read64(fragment, 416) == 0x200U && read64(fragment, 432) == 0x202U, "partial render background");
-	expect(read32(fragment, 464) == 0, "fragment flags");
+	expect(read32(fragment, 464) == (POWERVR_FRAGMENT_PIXEL_MERGE_OFF ? POWERVR_FRAGMENT_DISABLE_PIXEL_MERGE : 0U), "fragment flags: pixel merging off (q1539)");
 
 	/* A depth target: ZLS control 120+16, base 128+16, background depth, stride 468, flags bit 7. */
 	setup.has_depth = 1;
@@ -101,7 +101,7 @@ main(void)
 	memset(fragment, 0, sizeof(fragment));
 	powervr_fragment_command(&setup, fragment);
 	expect(read64(fragment, 136) == 0x1234U && read64(fragment, 144) == 0x8000002000ULL, "zls control and base");
-	expect(read32(fragment, 52) == 0x3f000000U && read32(fragment, 468) == 0x4000U && read32(fragment, 464) == 0x80U, "background depth, stride, depth buffer flag");
+	expect(read32(fragment, 52) == 0x3f000000U && read32(fragment, 468) == 0x4000U && read32(fragment, 464) == (0x80U | (POWERVR_FRAGMENT_PIXEL_MERGE_OFF ? POWERVR_FRAGMENT_DISABLE_PIXEL_MERGE : 0U)), "background depth, stride, depth buffer flag");
 	setup.has_depth = 0;
 
 	/* The quirks: no skip for 2 tiles wide with 1 or 3 tile group rows, or 2 rows. */

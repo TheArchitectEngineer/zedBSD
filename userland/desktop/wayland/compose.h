@@ -483,10 +483,16 @@ struct kwl_compose {
 	 * box around them in the pass's pixels (left, top, right, bottom;
 	 * ws211-p009, for the damage's rectangles they are drawn in).  ready
 	 * once made; off with KWL_BATCH=0 or when it could not be made.
+	 * Glyphs are drawn together the same way with their own pipeline
+	 * (ws270-p007; text_ready once it is made), in the same buffer: text
+	 * says the quads waiting are glyphs.
 	 */
 	struct {
 		unsigned ready;
+		unsigned text_ready;
+		unsigned text;
 		VkPipeline pipeline;
+		VkPipeline text_pipeline;
 		VkBuffer buffer;
 		VkDeviceMemory memory;
 		uint8_t *map;
@@ -624,6 +630,12 @@ struct kwl_compose {
 	 */
 	VkRect2D pass_area;
 	/*
+	 * What the frame's list asks of the GPU (KWL PASSES, --log-frames,
+	 * ws270-p007): counted when the list goes to the render thread, printed
+	 * with the frame's draws when it completes.
+	 */
+	struct kwl_list_passes frame_passes;
+	/*
 	 * The damage's rectangles the frame draws apart (ws211-p009 D3,
 	 * compose-bind.c): clip_count of them, disjoint, set only while the
 	 * anchor's pass on clip_framebuffer is recorded and the damage has two
@@ -711,8 +723,11 @@ void kwl_glass_draw_head(struct kwl_server *server, struct kwl_list *command, st
 void kwl_compose_cursor(struct kwl_server *server, struct kwl_list *command);
 void kwl_compose_count_draw(struct kwl_server *server, VkPipeline pipeline, VkDescriptorSet set, unsigned shape);
 
-/* Counts the pixels a draw covers inside the pass's area, blended or not, for the frame's log. */
-void kwl_compose_count_pixels(struct kwl_server *server, float x, float y, float width, float height, int blended);
+/* Counts the pixels a draw covers inside the pass's area, blended or not, for the frame's log; returns them. */
+uint64_t kwl_compose_count_pixels(struct kwl_server *server, float x, float y, float width, float height, int blended);
+
+/* Counts a draw of a kind and its pixels for the frame's log (KWL MODES). */
+void kwl_compose_count_kind(struct kwl_server *server, unsigned kind, uint64_t pixels);
 void kwl_compose_bind(struct kwl_server *server, struct kwl_list *command, VkPipeline pipeline, VkPipelineLayout layout, VkDescriptorSet set);
 void kwl_compose_bind_forget(struct kwl_compose *compose);
 int kwl_compose_clip_visible(struct kwl_compose *compose, float x, float y, float width, float height);
@@ -723,6 +738,7 @@ void kwl_batch_open(struct kwl_server *server);
 void kwl_batch_close(struct kwl_compose *compose);
 void kwl_batch_begin(struct kwl_compose *compose);
 int kwl_batch_add(struct kwl_server *server, struct kwl_list *command, const float *constants, VkDescriptorSet set);
+int kwl_batch_add_text(struct kwl_server *server, struct kwl_list *command, const float *constants, VkDescriptorSet set);
 void kwl_batch_flush(struct kwl_server *server, struct kwl_list *command);
 void kwl_compose_count_commands(struct kwl_server *server, unsigned pushes, unsigned draws);
 VkResult kwl_compose_submit_quiet(struct kwl_server *server);

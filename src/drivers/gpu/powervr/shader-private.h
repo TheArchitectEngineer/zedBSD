@@ -147,6 +147,8 @@ struct shader_machine_operation {
 	uint8_t variant;
 	uint8_t modifiers[3];
 	uint8_t end;
+	uint8_t saturate;
+	uint8_t overlap;
 	struct shader_machine_register destination[2];
 	struct shader_machine_register source[4];
 	uint32_t immediate;
@@ -182,7 +184,8 @@ enum machine_kind {
 	MACHINE_END,
 	MACHINE_TEST_ZERO,
 	MACHINE_CONDITION,
-	MACHINE_BRANCH
+	MACHINE_BRANCH,
+	MACHINE_FLOAT_PAIR
 };
 
 /* The back end's state for one shader. */
@@ -191,6 +194,7 @@ struct shader_backend {
 	unsigned operation_count;
 	uint32_t offsets[SHADER_MACHINE_OPERATIONS];
 	uint16_t value_register[POWERVR_IR_VALUES];
+	uint16_t shared_alias[POWERVR_IR_VALUES];
 	uint32_t first_use[POWERVR_IR_VALUES];
 	uint32_t last_use[POWERVR_IR_VALUES];
 	uint32_t uses[POWERVR_IR_VALUES];

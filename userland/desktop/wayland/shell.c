@@ -408,7 +408,7 @@ static void draw_backdrop(struct kwl_server *server, struct kwl_list *command, s
 static void draw_window_blurred(struct kwl_server *server, struct kwl_list *command, struct kwl_object *surface);
 static void draw_body(struct kwl_server *server, struct kwl_list *command, struct kwl_object *surface, const struct shell_rect *body, unsigned focused);
 static void draw_body_part(struct kwl_server *server, struct kwl_list *command, struct kwl_object *surface, const struct shell_rect *body, unsigned focused, unsigned part);
-static unsigned body_shadow_hole(struct kwl_server *server, const struct kwl_import *image, const struct shell_rect *body, int32_t shown_width, int32_t shown_height, float raise, float radius, unsigned part, float (*hole)[4]);
+static unsigned body_shadow_hole(struct kwl_server *server, const struct kwl_object *surface, const struct kwl_import *image, const struct shell_rect *body, int32_t shown_width, int32_t shown_height, const float *scale, float raise, float radius, unsigned part, float (*hole)[4]);
 static void draw_title_bar(struct kwl_server *server, struct kwl_list *command, struct kwl_object *surface, const struct shell_rect *panel, float fade, float buttons, unsigned focused);
 static void draw_title(struct kwl_server *server, struct kwl_list *command, struct kwl_object *surface, int32_t x, int32_t middle, int32_t limit, const float *ink);
 static int draw_picture_mark(struct kwl_server *server, struct kwl_list *command, struct kwl_object *surface, int32_t x, int32_t middle, const float *ink);
@@ -541,6 +541,8 @@ static void band_replay(struct kwl_server *server, int release);
 static void band_tick(struct kwl_server *server);
 static void band_handback(struct kwl_server *server, int lifted);
 static void draw_desktop_layer(struct kwl_server *server, struct kwl_list *command, struct kwl_object **windows, unsigned count, float home, const struct shell_bar *bar);
+static unsigned cover_holes(struct kwl_server *server, struct kwl_object **windows, unsigned count, float (*holes)[4], int *levels);
+static unsigned cover_window_holes(struct kwl_server *server, struct kwl_object *surface, float (*holes)[4], unsigned room);
 static void home_layer_log(unsigned hidden);
 
 /*
@@ -628,6 +630,9 @@ kwl_glass_draw(
 	int anim_pictures;
 	float home;
 	float position;
+
+	/* Nothing covers what is drawn until the windows' holes are worked out for this frame (ws270-p007). */
+	server->cover_count = 0U;
 
 	/* A screen the closed lid put out is black (backend-host.c, ws132-p008). */
 	if (server->screen_off) {
@@ -734,6 +739,20 @@ kwl_glass_draw(
 		return;
 	}
 
+	/*
+	 * Where the windows' opaque glass and bodies stand on the desktop,
+	 * nothing drawn under them is seen (ws270-p007): with the windows drawn
+	 * plainly in their places, the wallpaper, the desktop's surface and the
+	 * windows lower down are drawn around them (glass.c).
+	 */
+	server->cover_count = 0U;
+	server->cover_level = -1;
+	if (!hidden &&
+	    !pictures &&
+	    !anim_pictures &&
+	    home <= 0.0f)
+		server->cover_count = cover_holes(server, windows, count, server->cover_holes, server->cover_levels);
+
 	/* The wallpaper over the whole output (with round corners while it is pushed aside), unless Home hides the layer. */
 	server->draw_section = KWL_SECTION_LAYER;
 	if (!hidden) {
@@ -755,6 +774,7 @@ kwl_glass_draw(
 	/* Wiseview, opening, open or closing, takes the windows' place. */
 	progress = wiseview_progress(server);
 	if (progress > 0.0f) {
+		server->cover_count = 0U;
 		draw_wiseview(server, command, windows, count, progress);
 		server->layer_on = 0;
 		server->draw_section = KWL_SECTION_BAR;
@@ -3875,6 +3895,7 @@ draw_body_part(
 	int waits;
 	VkDescriptorSet picture;
 	float hole[1][4];
+	float scale[2];
 	unsigned hole_count;
 
 	/* The window's size (its viewport's, else its image's), whose scale to the rectangle stretches it while it changes size. */
@@ -3975,7 +3996,9 @@ draw_body_part(
 	shape.color[1] = 0.18f;
 	shape.color[2] = 0.35f;
 	shape.color[3] = 0.20f;
-	hole_count = body_shadow_hole(server, image, body, shown_width, shown_height, raise, radius, part, hole);
+	scale[0] = scale_x;
+	scale[1] = scale_y;
+	hole_count = body_shadow_hole(server, surface, image, body, shown_width, shown_height, scale, raise, radius, part, hole);
 	if (panels == 0U && !whole && part != BODY_INTO_PICTURE)
 		glass_shape_draw_except(server, command, &shape, (const float (*)[4])hole, hole_count);
 
@@ -4041,23 +4064,32 @@ draw_body_part(
 /*
  * Works out the hole a window's opaque body makes in its own shadow
  * (ws211-p011): the inside of the frosted glass under a see-through body,
- * or else of an opaque image drawn fully opaque.  Only a whole body's
+ * of an opaque image drawn fully opaque, or of the part of an image with
+ * alpha that its client says is opaque (its opaque region, ws270-p007,
+ * placed by the body's scale across and down).  Only a whole body's
  * drawing has one (an animation's picture may be see-through).  Returns the
  * number of holes, 0 or 1.
  */
 static unsigned
 body_shadow_hole(
 	struct kwl_server *server,
+	const struct kwl_object *surface,
 	const struct kwl_import *image,
 	const struct shell_rect *body,
 	int32_t shown_width,
 	int32_t shown_height,
+	const float *scale,
 	float raise,
 	float radius,
 	unsigned part,
 	float (*hole)[4])
 {
 	float box[4];
+	float inside[4];
+	float left;
+	float top;
+	float right;
+	float bottom;
 
 	/* An animation's picture of the body may show what is under it. */
 	if (part != BODY_WHOLE)
@@ -4073,16 +4105,46 @@ body_shadow_hole(
 		return 1U;
 	}
 
-	/* An image with alpha shows the shadow through it. */
-	if (image->draw != KWL_DRAW_OPAQUE)
-		return 0U;
-
-	/* Succeeded: the opaque image, drawn fully opaque, over its own rectangle. */
+	/* The image over its own rectangle, less its rounded corners. */
 	box[0] = (float)body->x;
 	box[1] = (float)body->y - raise;
 	box[2] = (float)shown_width;
 	box[3] = (float)shown_height + raise;
-	glass_opaque_inside(box, radius, hole[0]);
+	glass_opaque_inside(box, radius, inside);
+
+	/* An opaque image drawn fully opaque hides all of it. */
+	if (image->draw == KWL_DRAW_OPAQUE) {
+		memcpy(hole[0], inside, sizeof(inside));
+		return 1U;
+	}
+
+	/* An image with alpha shows the shadow through it, but where its client says it is opaque. */
+	if (!surface->opaque_valid)
+		return 0U;
+
+	/* The opaque region on the output, within the image's inside. */
+	left = (float)body->x + (float)surface->opaque[0] * scale[0];
+	top = (float)body->y + (float)surface->opaque[1] * scale[1];
+	right = (float)body->x + (float)surface->opaque[2] * scale[0];
+	bottom = (float)body->y + (float)surface->opaque[3] * scale[1];
+	if (left < inside[0])
+		left = inside[0];
+	if (top < inside[1])
+		top = inside[1];
+	if (right > inside[0] + inside[2])
+		right = inside[0] + inside[2];
+	if (bottom > inside[1] + inside[3])
+		bottom = inside[1] + inside[3];
+
+	/* Nothing of it inside the image. */
+	if (right <= left || bottom <= top)
+		return 0U;
+
+	/* Succeeded: the opaque part of the image. */
+	hole[0][0] = left;
+	hole[0][1] = top;
+	hole[0][2] = right - left;
+	hole[0][3] = bottom - top;
 	return 1U;
 }
 
@@ -10442,7 +10504,9 @@ desktop_alt_shift_key(
 /*
  * Draws the desktop layer's content over its wallpaper: the desktop's
  * icons, then the windows bottom to top (kwl_glass_draw), the one on top
- * focused.
+ * focused.  Each window is drawn at its place in the painter's order
+ * (server->cover_level), which tells glass.c which windows' opaque insides
+ * cover it (cover_holes); nothing drawn after the windows is covered.
  */
 static void
 draw_desktop_layer(
@@ -10502,6 +10566,9 @@ draw_desktop_layer(
 			kwl_backdrop_reset(server);
 		}
 
+		/* The window's place in the painter's order: the windows above it cover it (glass.c). */
+		server->cover_level = (int)index;
+
 		/* One more window drawn; the desktop's picture being drawn notes it (layer-cache.c). */
 		drawn++;
 		kwl_layers_note(server, windows[index]);
@@ -10517,6 +10584,9 @@ draw_desktop_layer(
 			draw_dock_hint(server, command);
 		draw_window(server, command, windows[index], focused, bar);
 	}
+
+	/* What is drawn after the windows is over them all: nothing covers it. */
+	server->cover_count = 0U;
 
 	/* Succeeded: the layer is drawn. */
 	return;
@@ -10808,4 +10878,147 @@ kwl_glass_anim_picturable(
 
 	/* Succeeded: the frame may show the pictures. */
 	return 1;
+}
+
+/*
+ * Works out the holes the windows make in what is drawn under them (the
+ * wallpaper, the desktop's surface, the windows lower down): the insides
+ * of their opaque title bars, bodies and panels' glass, where nothing under
+ * them is seen (ws270-p007), each with its window's place in windows (its
+ * level).  Only a still desktop, its windows in their places on
+ * it, has them: while the desktops slide or Wiseview shows, the windows are
+ * not where they stand.  Returns how many, at most KWL_COVER_HOLES.
+ */
+static unsigned
+cover_holes(
+	struct kwl_server *server,
+	struct kwl_object **windows,
+	unsigned count,
+	float (*holes)[4],
+	int *levels)
+{
+	unsigned hole_count;
+	unsigned added;
+	unsigned index;
+	unsigned hole;
+	int shown;
+
+	/* The desktops still, Wiseview not shown. */
+	if (server->desktop_moving || server->desktop_dragging)
+		return 0U;
+	if (server->wiseview > 0.0f || server->wiseview_gesture || server->wiseview_moving)
+		return 0U;
+
+	/* Each window of the desktop shown, drawn plainly where it is. */
+	hole_count = 0U;
+	for (index = 0U; index < count; index++) {
+		shown = window_shown(server, windows[index], 0.0f, (float)server->desktop);
+		if (!shown || windows[index] == server->layer_skip || windows[index]->desktop != server->desktop)
+			continue;
+		added = cover_window_holes(server, windows[index], &holes[hole_count], KWL_COVER_HOLES - hole_count);
+
+		/* Each of its holes at the window's place in the painter's order. */
+		for (hole = hole_count; hole < hole_count + added; hole++)
+			levels[hole] = (int)index;
+		hole_count += added;
+	}
+
+	/* Succeeded: the windows' opaque insides. */
+	return hole_count;
+}
+
+/*
+ * Works out the holes one window makes in the background, at most room of
+ * them: a floating window with its title bar, drawn neither animated nor
+ * pulled nor as a sheet, has its title bar's glass (opaque when not faded)
+ * and its body's opaque inside (body_shadow_hole), or its panels' cards
+ * (kwl_panels_holes).  Any other window makes none.
+ */
+static unsigned
+cover_window_holes(
+	struct kwl_server *server,
+	struct kwl_object *surface,
+	float (*holes)[4],
+	unsigned room)
+{
+	const struct kwl_import *image;
+	struct shell_rect body;
+	struct shell_rect panel;
+	struct kwl_object *parent;
+	float box[4];
+	float place[4];
+	float scale[2];
+	float radius;
+	unsigned panels;
+	unsigned count;
+	int32_t width;
+	int32_t height;
+	int decorated;
+	int centred;
+	unsigned square;
+
+	/* Room for the title bar's and the body's holes. */
+	if (room < 2U)
+		return 0U;
+
+	/* A floating window with the compositor's title bar, drawn plainly. */
+	if (surface->maximized || surface->fullscreen)
+		return 0U;
+	if (surface == server->anim || surface == server->pull)
+		return 0U;
+	parent = kwl_sheet_parent(surface);
+	if (parent != NULL)
+		return 0U;
+	decorated = kwl_decoration_server(surface);
+	if (!decorated)
+		return 0U;
+	centred = window_centred_over(server, surface);
+	if (centred)
+		return 0U;
+	image = kwl_compose_surface_image(surface);
+	if (image == NULL)
+		return 0U;
+
+	/* The title bar's glass over its rectangle, less its rounded corners (draw_title_bar, not faded). */
+	body_rect(server, surface, &body);
+	floating_title(&body, &panel);
+	box[0] = (float)panel.x;
+	box[1] = (float)panel.y;
+	box[2] = (float)panel.width;
+	box[3] = (float)panel.height;
+	glass_opaque_inside(box, GLASS_RADIUS, holes[0]);
+	count = 1U;
+
+	/* A window with glass panels: its cards' glass, when the panels are opaque (draw_body_part's place for them). */
+	panels = kwl_panels_count(surface);
+	if (panels > 0U) {
+		window_size(surface, &width, &height);
+		if (width <= 0 || height <= 0) {
+			width = (int32_t)image->width;
+			height = (int32_t)image->height;
+		}
+		place[0] = (float)body.x;
+		place[1] = (float)body.y;
+		place[2] = (float)body.width / (float)width;
+		place[3] = (float)body.height / (float)height;
+		count += kwl_panels_holes(surface, place, server->window_opacity, &holes[count], room - count);
+		return count;
+	}
+
+	/* Otherwise its body: opaque frosted glass under a see-through body, or an opaque image (draw_body_part's corners). */
+	radius = GLASS_RADIUS;
+	square = window_square(surface);
+	if (square)
+		radius = 0.0f;
+	window_size(surface, &width, &height);
+	if (width <= 0 || height <= 0) {
+		width = (int32_t)image->width;
+		height = (int32_t)image->height;
+	}
+	scale[0] = (float)body.width / (float)width;
+	scale[1] = (float)body.height / (float)height;
+	count += body_shadow_hole(server, surface, image, &body, body.width, body.height, scale, 0.0f, radius, BODY_WHOLE, &holes[count]);
+
+	/* Succeeded: the title bar's hole and the body's. */
+	return count;
 }

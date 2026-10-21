@@ -40,6 +40,7 @@ static float as_float(uint32_t word);
 static uint32_t as_word(float value);
 static uint32_t read_operand(const struct ir_run *run, const struct powervr_ir_operand *operand, unsigned lane);
 static uint32_t float_op(unsigned opcode, uint32_t a, uint32_t b, uint32_t c);
+static uint32_t saturated(uint32_t word);
 
 /*
  * Runs a shader on the lanes of a mask; reports 0, or -1 for a shader
@@ -277,6 +278,8 @@ ir_run(
 				break;
 			default:
 				result[0] = float_op(instruction->opcode, a, b, c);
+				if ((instruction->flags & POWERVR_IR_SATURATE) != 0)
+					result[0] = saturated(result[0]);
 				break;
 			}
 
@@ -524,4 +527,18 @@ ir_run_unpack_half(
 {
 	words[0] = float_from_half(packed & 0xffffU);
 	words[1] = float_from_half(packed >> 16);
+}
+
+/* Clamps a float word to [0, 1], NaN to 0, as a saturated operation does (q1539). */
+static uint32_t
+saturated(
+	uint32_t word)
+{
+	float value;
+
+	/* The maximum with zero (NaN to 0), then the minimum with one. */
+	value = as_float(word);
+	value = value > 0.0f ? value : 0.0f;
+	value = value < 1.0f ? value : 1.0f;
+	return as_word(value);
 }

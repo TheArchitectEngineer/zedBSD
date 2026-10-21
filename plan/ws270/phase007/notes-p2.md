@@ -1,0 +1,189 @@
+# ws270-p007 P2 の記録（q1539、driver の draw の道）
+
+板は Q1 だけが触る。ここには host の確認と、板で見る手順を書く。板の結果は Q1 が phase.md に書く。
+
+## q1539-i01（2026-10-21、P2）
+
+### 1. 1 job の draw の上限（P1 の報告と d48 の実測から）
+
+- d48（Q1）: 3 window の desktop の frame は全画面 1 pass で 263 draws → job 5 個・全画面の LOAD 4 回、rec submit 約 390 ms/frame。103 draws → job 2・LOAD 1 回で約 275 ms。
+- 変更（2d3c67809）: `POWERVR_RENDER_DRAWS` 64 → 512（render-pass.h）。job の general の配置を広げた（render-job.c: stream 0xa100 byte、scissor 表 513 個、`GENERAL_BYTES` 0x2000 → 0xc000）。365cf27ec は 256 にした途中の版。
+  - job の struct は 144 KB（draw 1 つ 280 byte）。submit ごとに kern_calloc で job の数 + 1 個分を取り、build の後に返す。LOAD の job は 3D の間 1 個の写しを持つ。
+  - draw ごとの memory（general・PDS 各 4 KiB/draw）は従来どおり draw の数で取る。
+- 危険: 1 job の primitive が増えると parameter buffer（global の free list 16 MiB、grow しない、SPM 無し）を多く使う。全画面 1080p の draw 1 つで約 64 KiB の control stream の見込みで、全画面の draw が約 250 個で尽きる。尽きると dmesg に `asked to grow`・`partial render`・`parameter memory ran out` が出る。出たら上限を下げる。
+- 確認（host）: p010 の host 試験 14 本すべて 0 failed。VF2 の vmunix rc 0、warning 0。板は未実施。
+
+### 2. 全画面の quad の語の Mesa との比較
+
+Mesa 26.2.5（drm-shim、BVNC 36.50.54.182、`PVR_DEBUG=cs`、vkmatrix の perf-flat、harness は build/mesa-pco/flat.txt の job 20）とこちらの render-draw.c の語。
+
+| 項目 | Mesa | こちら |
+| --- | --- | --- |
+| ISPA passtype | PUNCH_THROUGH（Mesa の pco が sample mask を discard に lowering するため。discard 無しの shader なら OPAQUE） | OPAQUE（blend の時 TRANSLUCENT） |
+| ISPA dwritedisable・dcmpmode | 1・ALWAYS | 同じ |
+| ISPB（pres_ispctl_fb） | あり（stencil の既定） | 無し |
+| ISPCTL scenable・bpres | 1・1 | 1・0 |
+| pres_pds_state_ptr1（varying base） | 無し（coefficient program が無い時） | 常にあり、無い時は 0 |
+| pds_tempsize | 0 | 1（4 語） |
+| pds_tri_merge_disable | 1 | 1（depth を使わない時、q1536 で Mesa と同じに） |
+| usc_sharedsize・pds_uniformsize | 16 語・12 語 | shader の数による |
+| region clip | OUTSIDE、16 px の tile で right 119・bottom 67 | 同じ式 |
+| viewport・wclamp・ppp_ctrl | 同じ値 | 同じ |
+| output select | vtxsize 5、psprite_size_pres | vertex の出力の数、psprite 無し |
+| VDM state | cam 31・16 instances | 同じ表（cam_size） |
+| frag の command の flags | DISABLE_PIXELMERGE（常に） | 無し |
+| frag の command の他の語 | clear だけの job と同じ（address 以外） | q1536-i02 で clear と同じと確認済み |
+
+- 読み: 3D の時間の主は draw の側（d4 の timing で TA 1.6 ms、3D が大半）。固定費は約 1.4 µs/tile（全画面 8160 tile で約 11 ms）で、tile ごとに parameter buffer（region header → control stream → primitive block）を読む費用の疑いが強い。GPU の read が約 400 MB/s 相当（LOAD・texture）なら tile あたり約 300 byte で数 ms になる。これは P3 の memory の read の速さと同じ根の可能性がある。
+
+### 3. 試しの switch と perf の case（fc1e5f0a5）
+
+- `POWERVR_DRAW_TRIAL`（render-draw.h、既定 0）: bit 0 coefficient program が無い時に varying base を出さない、bit 1 pds_tempsize 0、bit 2 blend の無い draw を PUNCH_THROUGH に。
+- `POWERVR_FRAGMENT_PIXEL_MERGE_OFF`（render-command.h、既定 0）: frag の command に DISABLE_PIXELMERGE（0x8000）。
+- vkmatrix に perf-tri1（全画面を三角形 1 つ）、perf-tri8（2 x 2 の quad）、perf-tri128（8 x 8 の quad）、perf-stack4（全画面の quad 4 枚を 1 draw）、perf-draws4（全画面の quad 4 枚を 4 draw）を足した。不透明の quad は重ねても pixel を 1 回だけ shade するので、stack4・draws4 の傾きは tile ごとの primitive の費用、tri の数の傾きは三角形 × tile の費用を表す。
+- 確認（host）: lavapipe で vkmatrix 41/41 PASS。p010 の host 試験 0 failed。trial の値（DRAW_TRIAL=7、PIXEL_MERGE_OFF=1）で render-draw.c・render-command.c が -Werror で通る。VF2 の vmunix・bin/vkmatrix rc 0、warning 0。板は未実施。
+- 板の試しの kernel（commit しない使い捨て、fc1e5f0a5 の header の既定だけを替えて build）:
+  - build/q1539/vf2/vmunix: 既定（switch 0、512 draws）、sha256 6dec829f775fb0fa…
+  - build/q1539/vf2-ta/vmunix: `POWERVR_DRAW_TRIAL` 3 と `POWERVR_FRAGMENT_PIXEL_MERGE_OFF` 1（PUNCH_THROUGH 以外を Mesa に合わせる）、sha256 fe6c1611f5bea1a2…
+  - build/q1539/vf2-tb/vmunix: `POWERVR_DRAW_TRIAL` 4（PUNCH_THROUGH だけ）、sha256 590718a0dac284ab…
+
+## q1539-i02（2026-10-21、P2）
+
+### 板の d50（Q1、512 draws の既定の kernel）と ta の読み
+
+- d50: parameter の溢れ 0、HWR 0、vkmatrix 41/41。perf（us/frame）: clear 3850、flat 15700、immediate 15200、quarter 7250、tri1 15750、tri8 15700、tri128 16050、stack4 16000、draws4 19200、load 18750、texture 38150。
+  - tri128≈tri1、stack4≈flat → 三角形 × tile も parameter buffer の read も主因でない。費用は shade する pixel の数に比例する。
+  - P3 の perf-read で、texture の read はほぼ費用 0 → memory の read は遅くない。
+- ta（varying base を出さない・pds_tempsize 0・DISABLE_PIXELMERGE）: clear・flat・immediate・quarter は変化なし、draws4 は 19200 → 16050。全画面の draw を足す費用が、1 つ約 1.1 ms から約 0.02 ms になった → 3 つを既定にした（a8f297ddb）。どれが効いたかは未分離。
+- 読み（未確認）: shade の費用は fragment program の group の数。immediate.frag は 15 group、clear の background の program は 1 group。tc（clear の program を 14 個の即値で 15 group にする試し、POWERVR_CLEAR_TRIAL_PAD）で確かめる。
+
+### compiler の直し（c0a079e60）
+
+- IR:
+  - 死んだ代入の除去（次の構造の命令までに読まれず書き直される、または読まれない 1 語の値）。
+  - copy の伝播（move の先を読む所を move の元に。core の定数の register の 0・1・1.0・全 1 も）。
+- blend:
+  - 因子が channel に依らない時は 1 回だけ計算する（premultiplied の 1−a）。
+  - ONE と ZERO の乗算を省く。
+  - 目的の側の項を FMAD にまとめる。
+- clamp: MINMAX 2 つをやめ、FADD x,0 の .sat 1 つにした（Mesa の pco の fsat と同じ）。IR の flag は POWERVR_IR_SATURATE、機械の命令は saturate。
+- 機械の命令:
+  - 枝の無い fragment では、計算の結果を後の move の先へ直に書き、move を省く。
+  - 枝の無い fragment の最後の move・即値に END を乗せる（Mesa の pco_end と同じ）。
+- 試験: WS269 の compiler の simulator（machine-run.c）に end の flag と saturate を、IR の interpreter（ir-run.c）に saturate を足した（Q1 の許可）。
+
+| shader | 前 | 後 |
+| --- | --- | --- |
+| Keiland quad.frag | 51 | 19 |
+| Keiland batch.frag | 100 | 60 |
+| panel.frag の変種 [0]〜[7] | 158・104・99・96・103・69・148・174 | 123・73・65・65・72・36・108・139 |
+| vkmatrix immediate・push4・texture | 15・16・25 | 6・6・12 |
+| quad.vert | 42 | 25 |
+
+- 確認（host）: compiler 411・22 passed、p010 は全 0 failed、p009 は 505 passed・0 failed、VF2 の vmunix は warning 0。板は未実施。
+- 危険: vertex の出力の書き込みが core の定数の register（0・1.0）を直に読む。hardware で読めるかは板で確かめる。
+
+### 直した試験（Q1 の許可、a8f297ddb）
+
+- p010 command-host-test: fragment の flags に DISABLE_PIXELMERGE。
+- p010 draw-host-test: vkdemo の PPP の SIZEINFO1 の pds_tempsize を 0 に。
+- p009 vk-host-test・frame-host: keiland B を 2×POWERVR_RENDER_DRAWS+8 draws にし、R512 R512c R8c を確かめる（512 draws の前提に追従、2d3c67809 で落ちていた 2 件）。
+
+### 板の組（Q1 に送った）
+
+- build/q1539/vf2/vmunix（a8f297ddb、sha256 879a868ba79183d5…）と build/q1539/vf2/bin/vkmatrix（sha256 0aca9fc3a0f96599…）。
+- build/q1539/vf2-tc/vmunix（a8f297ddb と、clear の padding 14 の使い捨て、sha256 2a0814d907139e3a…）。
+
+### compiler の 2〜4 回目（7b613a1c0・93546829a・e51fbc510）
+
+- 7b613a1c0:
+  - 連続する iterate を 1 つにする（count を variant＋1 に）。
+  - 枝の無い program で、同じ即値の作り直しを省く。
+  - fragment の add(mul, x) を FMAD にする。SPIR-V の NoContraction がある shader ではしない（IR の exact）。
+  - 誰も読まない値の代入は、構造を越えて除く。
+  - simulator に複数語の iterate を足した。
+- 93546829a: shared register の語を float の演算（FADD・FMUL・FMAD）が直に読み、move を省く。encoder の form では s1 が shared を名指せないので、s0・s2 に置く（入れ替え、だめなら move）。
+- e51fbc510: fragment の clamp(x, 0, 1)（min・max の 2 つ）を FADD.sat 1 つにする。
+
+| shader | 元（c0a079e60 の前） | e51fbc510 |
+| --- | --- | --- |
+| quad.frag | 51 | 17 |
+| batch.frag | 100 | 55 |
+| panel.frag の変種 [0]〜[7] | 158・104・99・96・103・69・148・174 | 100・58・52・53・57・32・71・114 |
+| panel.frag（fallback） | 511 | 375 |
+| quad.vert・panel.vert | 42・62 | 21・30 |
+
+- host: compiler 411・22 passed、p010 全 0 failed、p009 505 passed、VF2 warning 0。板は未実施。
+- 板の kernel: build/q1539/vf2b/vmunix（93546829a、sha256 1a64b714de5ccba4…）、build/q1539/vf2c/vmunix（e51fbc510、sha256 9a4d5f32aeb635b4…）。
+
+### 板の d55（Q1、vf2c = e51fbc510）
+
+- vkmatrix 41/41、HWR 0、parameter の溢れ 0。
+- perf（us、前は d50）: clear 4000、flat 9200（15700）、immediate 9200（15200）、quarter 5650（7250）、tri1 9000、tri8 9200、tri128 9500、stack4 9300、draws4 9100（19200）、load 10250（18750）、texture 17750（38150）。
+- 読み:
+  - group の数が主因と裏付いた。
+  - flat と quarter から、6 group の program は面積に比例する費用が全画面あたり約 4.7 ms、面積に依らない費用が約 4.5 ms。group 1 つは全画面 1080p あたり約 0.8 ms。
+  - Mesa の pco も 1 命令 = 1 group で、別の命令を 1 group にまとめる事はしない（pco_group_instrs.c）。Mesa の quad.frag は 67 group、こちらは 16 なので、残りは shader の math と描く pixel の数（Keiland の側）になる。
+
+### d4bd75b22（main 3029404e9 を merge した後）
+
+- 0 と 1 だけの定数の色の pack を compile の時に畳む（immediate.frag 6→2 group）。
+- blend の時の pixel output の読みは、UNPACK が olchk 付きで直に読む（blend する shader で 1 group 減）。
+- main の config の CONFIG_INPUT_TEST_INJECT y は、riscv64 の vmunix.mk に input-inject.c が無く link できない（Q1 に報告）。板の kernel は `CONFIG_INPUT_TEST_INJECT=n` で作った: build/q1539/vf2d/vmunix（sha256 209cafbf4c0ab87e…）。
+
+### 3f1de35ac・b3995c934・92789513b（glass の math、Q1 の依頼「shader の実行の速さ」）
+
+- 3f1de35ac:
+  - fusion の前にも、誰も読まない代入を除く（fusion を外していた 2 つ目の書き込み）。
+  - 単独の結果の .sat を、それを作る FADD・FMUL・FMAD に付ける。
+  - GLSL の mix(x, 0 or 1, t) を x·(1−t)〔+t〕にし、1−t は同じ重みの語の間で 1 回だけ計算する。
+- b3995c934: vkmatrix に perf-alu4 を足した（独立した FMA の鎖 4 本・74 group）。perf-alu（依存する鎖 1 本・71 group）と比べて、依存の待ちを分ける。
+- 92789513b:
+  - fragment の float の定数は shared register の literal の request で置く（1 program に 10 個まで、request が 20 未満の時。両方の source が shared なら即値に戻す）。
+  - shared を読む和は FMAD(x, 1.0, shared)。
+  - simulator に literal の読みを足した。
+- group 数（e51fbc510 → 92789513b）: glass の [0] 100→84、dark の [7] 114→93、blur の [6] 71→61、[1]〜[5] は 53・47・48・52・27、batch.frag 55→49、fallback の panel.frag 375→351、quad.vert 21→17。
+- 調べた事（Mesa 26.2.5 の source）: pco は 1 命令 = 1 group（pco_group_instrs.c）で、uniform だけの計算を pixel の外へ出す最適化（nir_opt_preamble）も使っていない。glass の box の中心・1/screen など約 10 group は、pixel ごとの計算のまま。
+- host: compiler 411・22 passed、p010 全 0 failed、p009 505 passed、VF2 warning 0。板は未実施。
+
+### Mesa pco と我々の compiler の比較（2026-10-21、ユーザーの指示「同じシェーダについて、Mesaのコンパイラが出力したものと、我々の出力で、どれくらい違うかも見てください。命令数、分岐の扱い、レジスタspillなど、最適化ができていないところは直しましょう。」）
+
+- 条件:
+  - 同じ SPIR-V（userland/desktop/wayland/shaders.h、libkeiland/ui/shaders.h、userland/tests/vkmatrix/shader.h）、同じ key（B8G8R8A8_UNORM、Keiland は premultiplied の blend ONE/ONE_MINUS_SRC_ALPHA、vkmatrix は blend 無し）。
+  - Mesa 26.2.5 は drm-shim、BVNC 36.50.54.182、`PVR_I_WANT_A_BROKEN_VULKAN_DRIVER=1 PCO_DEBUG_PRINT=all,stats`、vertex と fragment を 1 つの pipeline にした（Mesa の vertex は link された数）。
+  - ours は 92789513b を host の probe で数えた。
+  - 道具: scratchpad の mesa-stats.c（build/mesa-pco/pcostats.c の拡張）と stats.c。repository には入れていない。
+
+| shader | Mesa FS group（temps、control group） | ours FS group（temps） | Mesa VS | ours VS |
+| --- | --- | --- | --- | --- |
+| quad | 67（32、8） | 16（18） | 21 | 17 |
+| panel（fallback） | 393（24、46） | 351（51） | 27 | 26 |
+| batch | 83（13、7） | 49（20） | 16 | 34 |
+| turn | （quad.frag） | （quad.frag） | 19 | 21 |
+| panel[0] glass | 141（16、8） | 84（20） | 19 | 26 |
+| panel[1] shadow | 101（13、7） | 50（18） | 19 | 26 |
+| panel[2] image | 91（13、8） | 47（18） | 27 | 26 |
+| panel[3] solid | 92（13、7） | 48（18） | 19 | 26 |
+| panel[4] ring | 97（13、7） | 52（18） | 19 | 26 |
+| panel[5] text | 83（32、8） | 27（18） | 21 | 26 |
+| panel[6] blur | 138（31、12） | 61（26） | 21 | 26 |
+| panel[7] dark glass | 153（16、8） | 93（20） | 19 | 26 |
+| canvas（libkeiland） | 67（32、8） | 16（18） | 17 | 21 |
+| vkm push4 | 28（9、1） | 6（9） | 6 | 7 |
+| vkm immediate | 35（6、1） | 2（3） | 6 | 7 |
+| vkm alu | 220（6、1） | 70（10） | 6 | 7 |
+| vkm alu4 | 225（10、1） | 73（13） | 6 | 7 |
+| vkm texture | 59（32、8） | 10（14） | 7 | 11 |
+
+- spill: どちらも全部 0。ours は spill を持たず、temps が 96 を越えると compile が失敗する。今の最大は fallback の 51。
+- 分岐:
+  - 変種の panel・quad・batch・canvas は、どちらも分岐なし。
+  - fallback の panel.frag は、どちらも本当の branch と EMC の predication。Mesa は br 16・cndst 7・cndef 6・cndend 6・wdf 10、ours は BR 12・COND 19・WAIT 12。
+  - divergence は、どちらも EMC で無効の instance を止め、全部が無効の時だけ branch で飛ぶ。
+- texture: sample 1 つにつき wait 1 つで、どちらも同じ。vec2 の iterate はどちらも 1 命令。
+- 定数と shared:
+  - Mesa は定数ごとに movi32（alu で 136 の bitwise group）、shared は mbyp で temp に移してから使う所が多い。
+  - ours は shared をそのまま読み、定数は literal の shared。
+- 残る差（ours が劣る所）:
+  - vertex の group 数: batch 34 と 16、texture 11 と 7。vertex の入力を temp へ移す move と、link しない出力のため。
+  - temps: 変種で 18〜26 と Mesa の 13〜16。fallback で 51 と 24。
