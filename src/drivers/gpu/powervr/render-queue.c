@@ -130,6 +130,7 @@ static int send_waiting(struct powervr_core *core, const uint32_t command[POWERV
 static void cleanup_command(uint32_t context, uint32_t command[POWERVR_COMMAND_WORDS]);
 static void service_thread(void *argument);
 static void timing_thread(void *argument);
+static void spare_thread(void *argument);
 static void timing_report(void);
 static int service_pass(struct powervr_render *render, uint64_t now, int unwoken);
 static int timeline_sleep(struct powervr_render *render, uint64_t observed, uint64_t deadline);
@@ -142,6 +143,9 @@ static void handle_notice(void *context, uint32_t type, const struct powervr_obj
 /* How often the timing says its sums, and how often its thread looks whether to end, in milliseconds. */
 #define TIMING_REPORT_MS		5000U
 #define TIMING_LOOK_MS			100U
+
+/* How long the spare's thread waits before it tries again after a spare was not made. */
+#define SPARE_RETRY_MS			1000U
 
 /*
  * The job trace: with POWERVR_JOB_TRACE 1 every render
@@ -1075,6 +1079,7 @@ powervr_service_start(
 	/* Starts the thread; nobody joins it, and its end releases it. */
 	render->service_done = 0;
 	render->timing_done = 1;
+	render->spare_done = 1;
 	error = kthread_create(service_thread, render, SCHED_PRIORITY_DEFAULT, &thread);
 	if (error != 0)
 		return error;
@@ -1098,6 +1103,21 @@ powervr_service_start(
 		}
 	}
 
+	/*
+	 * A session's first render takes a zeroed global free list from a
+	 * thread of its own, which makes the next one ahead (the zeroing and
+	 * the write-back of 16 MB took about 34 ms of that render).  Without
+	 * it the render makes its own.
+	 */
+	render->spare_done = 0;
+	error = kthread_create(spare_thread, render, SCHED_PRIORITY_DEFAULT, &thread);
+	if (error != 0) {
+		render->spare_done = 1;
+		kern_logf("powervr: the spare's thread did not start (%d); free lists are made as needed\n", error);
+	} else {
+		thread_start(thread);
+	}
+
 	/* Succeeded: the service runs. */
 	return 0;
 }
@@ -1112,12 +1132,13 @@ powervr_service_stop(
 	unsigned long enabled;
 	uint64_t observed;
 
-	/* Tells the threads to end, wakes the service, and sleeps until both say they have. */
+	/* Tells the threads to end, wakes the service and the spare's thread, and sleeps until each says it has. */
 	enabled = spin_lock_irqsave(&render->queue_lock);
 
 	render->running = 0;
 	waitq_wake_all(&render->service);
-	while (!render->service_done || !render->timing_done) {
+	waitq_wake_all(&render->spare_wanted);
+	while (!render->service_done || !render->timing_done || !render->spare_done) {
 		observed = waitq_sequence(&render->retired);
 		(void)waitq_sleep(&render->retired, &render->queue_lock, observed, 0, 0);
 	}
@@ -1582,6 +1603,7 @@ timing_report(
 		"submit", "job setup", "job map", "job build", "job kick", "job wait", "job release", "transfer", "dispatch",
 		"wait ta", "wait 3d", "wait small job", "job build programs", "job build draws", "draw memory", "draw code",
 		"render jobs", "order wait", "reap", "target make", "buffer run", "buffer clear", "buffer alias", "buffer map",
+		"list make", "context make", "mmu flush",
 	};
 	uint64_t now;
 	uint64_t average;
@@ -2437,6 +2459,109 @@ timing_thread(
 
 		sched_sleep(sched_ticks() + ms_ticks(TIMING_LOOK_MS));
 		timing_report();
+	}
+}
+
+/*
+ * Takes the zeroed spare of a global free list's pages, with one
+ * reference, the caller's, and wakes the spare's thread to make the next.
+ * ENOENT when none is ready.
+ */
+int
+powervr_spare_take(
+	struct powervr_render *render,
+	struct powervr_buffer **result)
+{
+	struct powervr_buffer *buffer;
+	unsigned long enabled;
+
+	/* The spare off the node, and the thread told to make another. */
+	enabled = spin_lock_irqsave(&render->queue_lock);
+
+	buffer = render->spare;
+	render->spare = NULL;
+	waitq_wake_all(&render->spare_wanted);
+
+	spin_unlock_irqrestore(&render->queue_lock, enabled);
+
+	/* None ready. */
+	*result = buffer;
+	if (buffer == NULL)
+		return ENOENT;
+
+	/* Succeeded: the spare is the caller's. */
+	return 0;
+}
+
+/*
+ * Keeps one zeroed spare of a global free list's pages ready, made on
+ * this thread (another processor than the render that takes it), until
+ * told to end; then gives the spare back and says it has ended.
+ */
+static void
+spare_thread(
+	void *argument)
+{
+	struct powervr_render *render;
+	struct powervr_buffer *buffer;
+	unsigned long enabled;
+	uint64_t observed;
+	int error;
+
+	/* The node it runs for. */
+	render = argument;
+
+	for (;;) {
+		enabled = spin_lock_irqsave(&render->queue_lock);
+
+		/* Sleeps while the spare is ready and the node runs. */
+		for (;;) {
+			observed = waitq_sequence(&render->spare_wanted);
+			if (!render->running || render->spare == NULL)
+				break;
+			(void)waitq_sleep(&render->spare_wanted, &render->queue_lock, observed, 0, 0);
+		}
+
+		/* Told to end: gives the spare back, then says so and leaves. */
+		if (!render->running) {
+			buffer = render->spare;
+			render->spare = NULL;
+
+			spin_unlock_irqrestore(&render->queue_lock, enabled);
+
+			if (buffer != NULL)
+				powervr_buffer_put(render, buffer);
+
+			enabled = spin_lock_irqsave(&render->queue_lock);
+
+			render->spare_done = 1;
+			waitq_wake_all(&render->retired);
+
+			spin_unlock_irqrestore(&render->queue_lock, enabled);
+			return;
+		}
+
+		spin_unlock_irqrestore(&render->queue_lock, enabled);
+
+		/* A new spare, zeroed and written back; after a failure the thread tries again later. */
+		error = powervr_buffer_create(render, POWERVR_SPARE_BYTES, &buffer);
+		if (error != 0) {
+			sched_sleep(sched_ticks() + ms_ticks(SPARE_RETRY_MS));
+			continue;
+		}
+
+		/* Ready, unless another is (none makes one but this thread, so only after the end). */
+		enabled = spin_lock_irqsave(&render->queue_lock);
+
+		if (render->spare == NULL) {
+			render->spare = buffer;
+			buffer = NULL;
+		}
+
+		spin_unlock_irqrestore(&render->queue_lock, enabled);
+
+		if (buffer != NULL)
+			powervr_buffer_put(render, buffer);
 	}
 }
 

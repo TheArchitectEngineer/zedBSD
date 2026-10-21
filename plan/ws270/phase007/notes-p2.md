@@ -344,3 +344,14 @@ branch agent/p2-q1553（基 main 782f995e4）。
   - POWERVR_POINT_TRANSFER を足した。transfer の memory は完了まで session の list に置き、最大 4 つ使い回す。
   - 確保の時の storage の clear は同期のまま。板は未確認。
 - single kick の試しの組（q1555t・q1555k）を Q1 に渡した（未評価）。
+- ef10ca4d4: single kick の試しを外した（kick は 3342c1ace の前と同じ）。Q1 に merge を依頼（2026-10-22）。
+- 次の段: submit の最長 30〜40 ms。d105 の job setup 43.7・35.9 ms（target make は最大 1 ms）から、job setup の中の target make 以外が残る。
+  - 候補: session の最初の render が作る global free list（4096 page = 16 MB）。pool に無い時は powervr_buffer_create で、memset が約 21 ms（1.3 ms/MB）と alias の write-back が約 13 ms（0.8 ms/MB）。
+  - 変更: pool に無い時は powervr_buffer_create_uncleared（page の中身は parameter manager しか読まない）。write-back は残る（dirty な line が後で GPU の data を上書きしないため）。
+  - timing に `list make`（global free list）、`context make`（render context）、`mmu flush`（同期の MMU の cache の flush、map ごと）を足した。
+  - build/q1556t/vmunix（timing 1、sha256 08e9c15e…）、build/q1556k/vmunix（CI の keiland config）とも warning 0。p009 505/0、p010 PASS。板は未確認。
+- d122（Q1、64921f47 の q1556t）: list make 1 回 9272 us、context make 521 us、job setup 最長 10412 us（list make を除くと 586 us）、submit 最長 17301 us。frame-ops の scroll〜hover の辺りで GPU の lockup → HWR 2 回 → session lost、compositor も終了。d114 の 1 回目と同じ形。Q1 の読み: free list の page は 0 の前提がある（pool の page をそのまま使う e20e1f5bf と、uncleared の f27df5780 で頻度が上がった）。
+- 直し（Q1 の依頼「両方を 0 にする形に戻して、0 にする費用は host の thread の外で」）:
+  - free list の page は常に 0 にした物を使う（pool からの再利用と uncleared をやめた）。
+  - global list の page（16 MB）は、render node の spare の thread が 0 にして write-back まで済ませた物を 1 つ先に作って置く。session の最初の render はそれを取り、thread が次を作る。無い時（続けて起動した時）は render の中で 0 にして作る（前と同じ約 34 ms）。local list はその場で 0 にして作る。
+  - build/q1556t/vmunix（timing 1）sha256 ad8698212baabaaa…、build/q1556k/vmunix（CI の keiland config）7712eaf6…、どちらも warning 0。p009 505/0、p010 15 本 0 failed。板は未確認。

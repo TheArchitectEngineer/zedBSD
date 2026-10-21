@@ -507,8 +507,11 @@ struct powervr_switch_shaders {
  * after a fault or an isolation, until a reset frees them.  Lost, under
  * the core's lock, says a restart failed and the firmware is gone.
  * Table_memory is where sessions' page tables come from.  Running,
- * service_done and timing_done, under the queue lock, tell the service
- * thread and the timing's thread to end and say they have.  Free_lists lists every session's free lists by the
+ * service_done, timing_done and spare_done, under the queue lock, tell
+ * the service thread, the timing's thread and the spare's thread to end
+ * and say they have.  Spare, under the queue lock, is a zeroed buffer
+ * of a global free list's pages that the spare's thread makes ahead
+ * (spare_wanted wakes it when the spare is taken).  Free_lists lists every session's free lists by the
  * identity the firmware names them by, next_free_list is the identity
  * the next one takes, and target_events counts what the firmware
  * reported of them; all three are under the core's lock.  Load_draws
@@ -525,6 +528,7 @@ struct powervr_render {
 	struct wait_queue service;
 	struct wait_queue retired;
 	struct wait_queue reached;
+	struct wait_queue spare_wanted;
 	struct spinlock buffer_guard;
 	struct powervr_shared *exports;
 	struct powervr_session *sessions;
@@ -542,14 +546,22 @@ struct powervr_render {
 	struct powervr_target_events target_events;
 	struct powervr_switch_shaders switch_shaders;
 	struct powervr_load_draws *load_draws;
+	struct powervr_buffer *spare;
 	uint32_t next_free_list;
 	unsigned faulted;
 	unsigned lost;
 	unsigned running;
 	unsigned service_done;
 	unsigned timing_done;
+	unsigned spare_done;
 	uint32_t next_identity;
 };
+
+/* The bytes of the spare: a global free list's pages. */
+#define POWERVR_SPARE_BYTES		((uint64_t)POWERVR_FREE_LIST_GLOBAL_PAGES * POWERVR_PM_PAGE_BYTES)
+
+/* Takes the zeroed spare of a global free list's pages and has another made; ENOENT when none is ready (render-queue.c). */
+int powervr_spare_take(struct powervr_render *render, struct powervr_buffer **result);
 
 /* Makes a zeroed buffer of at least bytes bytes. */
 int powervr_buffer_create(struct powervr_render *render, uint64_t bytes, struct powervr_buffer **result);
