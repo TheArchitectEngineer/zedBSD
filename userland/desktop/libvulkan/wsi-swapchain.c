@@ -212,6 +212,15 @@ struct wsi_present_fence {
 	VkBool32 sent;
 	VkBool32 busy;
 	/*
+	 * True while a display slot's fence is already reset for the slot's
+	 * next job, generation then being its payload generation: the worker
+	 * resets it as the job retires, so the next present spares the reset's
+	 * round trips to the renderer.  Only the job that has the slot busy
+	 * changes these.
+	 */
+	VkBool32 rearmed;
+	uint64_t generation;
+	/*
 	 * What the command buffer holds after its last successful End, or no
 	 * recording.  Only the job that has the slot busy changes it.
 	 */
@@ -360,6 +369,7 @@ static struct wsi_present_fence *present_slot_of_chain(const struct vulkan_swapc
 static void present_copy(VkCommandBuffer command, struct vulkan_swapchain *chain, uint32_t index, uint32_t family, const VkDisplayPresentInfoKHR *display);
 static void present_copy_shared(VkCommandBuffer command, struct vulkan_swapchain *chain, uint32_t index, uint32_t family, const VkDisplayPresentInfoKHR *display);
 static VkResult present_submit(struct wsi_present_job *job, const VkPresentInfoKHR *info);
+static void present_fence_rearm(struct wsi_present_job *job);
 static void present_compose(struct wsi_present_job *job, uint32_t index, struct vulkan_wsi_pixels *pixels);
 static VkResult present_native(struct wsi_present_job *job, const VkPresentInfoKHR *info);
 static VkBool32 present_early(const struct wsi_present_job *job);
@@ -2846,6 +2856,15 @@ present_fence_prepare(
 	job->completion = completion;
 	allocator = swapchain_allocator(&job->allocator);
 
+	/* A slot the worker already reset needs neither the reset nor the generation's query. */
+	if (completion->rearmed != VK_FALSE) {
+		completion->rearmed = VK_FALSE;
+		job->fence = completion->fence;
+		job->fence_fd = completion->fd;
+		job->fence_generation = completion->generation;
+		return VK_SUCCESS;
+	}
+
 	/* Gives up the previous present's fence of a reused slot whose fences are sent. */
 	if (fresh != VK_FALSE && completion->fence != VK_NULL_HANDLE) {
 		vkDestroyFence((VkDevice)job->queue->device, completion->fence, allocator);
@@ -3056,6 +3075,61 @@ present_submit(
 
 	/* Succeeded: the ordered worker will wait for actual completion before any native image read. */
 	return VK_SUCCESS;
+}
+
+/*
+ * Resets a retired display job's fence for its slot's next job, and notes
+ * the new generation, so that the next present takes the slot without the
+ * reset's round trips (the reset and the query of present_fence_prepare).
+ *
+ * Only an ordinary-lane job whose fence is not sent anywhere, was submitted,
+ * completed and was presented: the native present waited for the fence in
+ * the kernel and returned, so nothing reads the old generation any more.
+ * A failure leaves the slot as before, for present_fence_prepare to reset.
+ */
+static void
+present_fence_rearm(
+	struct wsi_present_job *job)
+{
+	struct wsi_present_fence *completion;
+	struct gpu_fence_state state;
+	VkResult error;
+	int status;
+
+	/* Only a submitted ordinary-lane job, whose GPU work completed, of a display slot. */
+	completion = job->completion;
+	if (completion == NULL || job->submitted == VK_FALSE || job->native_only != VK_FALSE)
+		return;
+	if (job->lane != WSI_LANE_ORDINARY)
+		return;
+	if (completion->shared == VK_FALSE || completion->sent != VK_FALSE)
+		return;
+	if (completion->fence == VK_NULL_HANDLE || completion->fd < 0)
+		return;
+
+	/* The fence, unsignaled for the next job. */
+	error = vkResetFences((VkDevice)job->queue->device, 1U, &completion->fence);
+	if (error != VK_SUCCESS)
+		return;
+
+	/* Its new payload generation, read from the kernel as present_fence_prepare reads it. */
+	memset(&state, 0, sizeof(state));
+	state.version = GPU_ABI_VERSION;
+	state.size = sizeof(state);
+	state.fd = completion->fd;
+	vulkan_context_lock(job->queue->device->object.context);
+
+	status = ioctl(job->queue->device->object.context->fd, GPU_FENCE_QUERY, &state);
+
+	vulkan_context_unlock(job->queue->device->object.context);
+
+	/* A missing payload leaves the reset to the next job's preparation. */
+	if (status != 0 || state.generation == 0U)
+		return;
+
+	/* Succeeded: the next job takes the reset fence and its generation. */
+	completion->generation = state.generation;
+	completion->rearmed = VK_TRUE;
 }
 
 /* Applies optional display rectangle scaling to a separate native pixel copy. */
@@ -3699,6 +3773,10 @@ present_worker_main(
 				path = "busy";
 			present_cursor_log(job, path);
 		}
+
+		/* A display slot's fence is reset for its next job now, off the presenting thread. */
+		if (error == VK_SUCCESS && presented != VK_FALSE)
+			present_fence_rearm(job);
 
 		/* Completion retires command storage and releases every job-owned image and chain hold. */
 		allocator = job->allocator;

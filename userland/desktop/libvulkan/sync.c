@@ -165,6 +165,16 @@ vkResetFences(
 			if (status != VK_SUCCESS)
 				break;
 
+			/*
+			 * The native fence of a shared payload is now unsignaled and
+			 * unsubmitted, as a new one, so its next submission needs no
+			 * second native reset (vulkan_external_fence_prepare_locked):
+			 * only this library's submissions signal the native object,
+			 * whatever an alias does to the shared payload.
+			 */
+			if (sync->external != NULL)
+				sync->native_unsubmitted = VK_TRUE;
+
 			/* A signaled display event is not replayed; a pending one keeps observing. */
 			if (sync->event != VULKAN_SYNC_EVENT_NONE && sync->software_signaled)
 				sync->event = VULKAN_SYNC_EVENT_SPENT;
