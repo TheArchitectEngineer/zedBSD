@@ -176,7 +176,8 @@ enum vkmatrix_sop_form {
 	SOP_TIMES_ALPHA,
 	SOP_MULTIPLY_ADD,
 	SOP_PLACE,
-	SOP_PUSH
+	SOP_PUSH,
+	SOP_TEXTURE_CONSTANTS
 };
 
 /* What one pipeline is built from. */
@@ -443,7 +444,8 @@ static const VkPipelineColorBlendAttachmentState sop_blends[] = {
 	{ VK_TRUE, VK_BLEND_FACTOR_ZERO, VK_BLEND_FACTOR_ONE, VK_BLEND_OP_ADD, VK_BLEND_FACTOR_ZERO, VK_BLEND_FACTOR_ONE, VK_BLEND_OP_ADD, 0xf },
 	{ VK_TRUE, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA, VK_BLEND_OP_ADD, VK_BLEND_FACTOR_ZERO, VK_BLEND_FACTOR_ONE, VK_BLEND_OP_ADD, 0xf },
 	{ VK_TRUE, VK_BLEND_FACTOR_SRC_ALPHA_SATURATE, VK_BLEND_FACTOR_ONE, VK_BLEND_OP_ADD, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ZERO, VK_BLEND_OP_ADD, 0xf },
-	{ VK_TRUE, VK_BLEND_FACTOR_DST_COLOR, VK_BLEND_FACTOR_SRC_COLOR, VK_BLEND_OP_ADD, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ZERO, VK_BLEND_OP_ADD, 0xf }
+	{ VK_TRUE, VK_BLEND_FACTOR_DST_COLOR, VK_BLEND_FACTOR_SRC_COLOR, VK_BLEND_OP_ADD, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ZERO, VK_BLEND_OP_ADD, 0xf },
+	{ VK_TRUE, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA, VK_BLEND_OP_ADD, VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA, VK_BLEND_OP_ADD, 0x9 }
 };
 
 /* The blend constants of the sop cases (q1548). */
@@ -470,6 +472,17 @@ static const struct vkmatrix_sop_probe sop_probes[] = {
 	{ "sop-xy01", vkmatrix_sopxy01_frag, sizeof(vkmatrix_sopxy01_frag), SOP_PLACE, -1 },
 	{ "sop-xyzw-over", vkmatrix_sopxyzw_frag, sizeof(vkmatrix_sopxyzw_frag), SOP_PLACE, 0 },
 	{ "sop-push-over", vkmatrix_soppush_frag, sizeof(vkmatrix_soppush_frag), SOP_PUSH, 0 },
+	{ "sop-f4", vkmatrix_sopf4_frag, sizeof(vkmatrix_sopf4_frag), SOP_PLACE, -1 },
+	{ "sop-fyx", vkmatrix_sopfyx_frag, sizeof(vkmatrix_sopfyx_frag), SOP_PLACE, -1 },
+	{ "sop-fc", vkmatrix_sopfc_frag, sizeof(vkmatrix_sopfc_frag), SOP_PLACE, -1 },
+	{ "sop-f4-add", vkmatrix_sopf4_frag, sizeof(vkmatrix_sopf4_frag), SOP_PLACE, 1 },
+	{ "sop-f4-alpha", vkmatrix_sopf4_frag, sizeof(vkmatrix_sopf4_frag), SOP_PLACE, 2 },
+	{ "sop-f4-mul", vkmatrix_sopf4_frag, sizeof(vkmatrix_sopf4_frag), SOP_PLACE, 3 },
+	{ "sop-f4-sub", vkmatrix_sopf4_frag, sizeof(vkmatrix_sopf4_frag), SOP_PLACE, 5 },
+	{ "sop-f4-mask-ra", vkmatrix_sopf4_frag, sizeof(vkmatrix_sopf4_frag), SOP_PLACE, 17 },
+	{ "sop-fc-over", vkmatrix_sopfc_frag, sizeof(vkmatrix_sopfc_frag), SOP_PLACE, 0 },
+	{ "sop-tc", vkmatrix_soptc_frag, sizeof(vkmatrix_soptc_frag), SOP_TEXTURE_CONSTANTS, -1 },
+	{ "sop-tc-over", vkmatrix_soptc_frag, sizeof(vkmatrix_soptc_frag), SOP_TEXTURE_CONSTANTS, 0 },
 	{ "sop-over", vkmatrix_texture_frag, sizeof(vkmatrix_texture_frag), SOP_SAMPLE, 0 },
 	{ "sop-add", vkmatrix_texture_frag, sizeof(vkmatrix_texture_frag), SOP_SAMPLE, 1 },
 	{ "sop-alpha", vkmatrix_texture_frag, sizeof(vkmatrix_texture_frag), SOP_SAMPLE, 2 },
@@ -564,6 +577,17 @@ static const struct vkmatrix_case cases[] = {
 	{ "sop-xy01", case_sop },
 	{ "sop-xyzw-over", case_sop },
 	{ "sop-push-over", case_sop },
+	{ "sop-f4", case_sop },
+	{ "sop-fyx", case_sop },
+	{ "sop-fc", case_sop },
+	{ "sop-f4-add", case_sop },
+	{ "sop-f4-alpha", case_sop },
+	{ "sop-f4-mul", case_sop },
+	{ "sop-f4-sub", case_sop },
+	{ "sop-f4-mask-ra", case_sop },
+	{ "sop-fc-over", case_sop },
+	{ "sop-tc", case_sop },
+	{ "sop-tc-over", case_sop },
 	{ "sop-over", case_sop },
 	{ "sop-add", case_sop },
 	{ "sop-alpha", case_sop },
@@ -5890,6 +5914,10 @@ sop_shade(
 	case SOP_MULTIPLY_ADD:
 		for (channel = 0; channel < 4; channel++)
 			colour[channel] = texel[channel] * texel[3] + texel[1];
+		break;
+	case SOP_TEXTURE_CONSTANTS:
+		colour[1] = 0.5f;
+		colour[3] = 0.25f;
 		break;
 	default:
 		break;
