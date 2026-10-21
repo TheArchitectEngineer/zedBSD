@@ -201,6 +201,7 @@ static int split_shared(struct powervr_ir_shader *shader, struct powervr_shader_
 static int uniform_mark(const struct powervr_ir_shader *shader, const struct powervr_shader_program *program, struct shader_uniform *uniform);
 static int uniform_mixes(struct powervr_ir_shader *shader, const struct powervr_shader_program *program, struct shader_uniform *uniform);
 static int uniform_operand(const struct powervr_ir_shader *shader, const struct shader_uniform *uniform, const struct powervr_ir_operand *operand);
+static int uniform_scaled_sums(struct powervr_ir_shader *shader, const struct powervr_shader_program *program, struct shader_uniform *uniform);
 static unsigned uniform_kind(const struct powervr_ir_shader *shader, const struct powervr_shader_program *program, const struct shader_uniform *uniform, const struct powervr_ir_instruction *instruction);
 static int uniform_colour(const struct powervr_ir_shader *shader, const struct shader_uniform *uniform, const struct powervr_ir_instruction *instruction);
 static int shared_literal(struct powervr_shader_program *program, uint32_t bits, uint32_t *reg);
@@ -597,6 +598,8 @@ compile_program(
 	moved = 0;
 	if (split != 0) {
 		error = uniform_mixes(shader, program, &workspace->uniform);
+		if (error == 0)
+			error = uniform_scaled_sums(shader, program, &workspace->uniform);
 		if (error != 0)
 			return error;
 		error = split_shared(shader, program, &workspace->uniform, &workspace->shared_shader, &moved);
@@ -1046,6 +1049,123 @@ uniform_mixes(
 	return 0;
 }
 
+/*
+ * Rewrites each product of a sum and a uniform factor u2, (x + u1) * u2
+ * with u1 uniform (either term may be negated, as a difference is; the
+ * product may be a multiply-add of zero, a saturated multiply), as
+ * x * u2 + u1 * u2: the shared program works out u1 * u2 once a draw,
+ * and the pixel's add and multiply become one multiply-add.
+ */
+static int
+uniform_scaled_sums(
+	struct powervr_ir_shader *shader,
+	const struct powervr_shader_program *program,
+	struct shader_uniform *uniform)
+{
+	struct powervr_ir_instruction *product;
+	struct powervr_ir_instruction *sum;
+	struct powervr_ir_operand x;
+	struct powervr_ir_operand scale;
+	struct powervr_ir_operand term;
+	struct powervr_ir_instruction moved;
+	unsigned writes;
+	unsigned writer;
+	unsigned reads;
+	unsigned slot;
+	unsigned side;
+	unsigned first;
+	unsigned index;
+	unsigned at;
+	int error;
+
+	/* Only a fragment program's work moves to a shared program. */
+	if (program->stage != POWERVR_SHADER_FRAGMENT)
+		return 0;
+	error = uniform_mark(shader, program, uniform);
+	if (error != 0)
+		return error;
+
+	/* Each multiply of a sum read once by a uniform factor. */
+	for (at = 0; at < shader->instruction_count; at++) {
+		product = &shader->instructions[at];
+		if (product->opcode != POWERVR_IR_FLOAT_MULTIPLY &&
+		    !(product->opcode == POWERVR_IR_FLOAT_MULTIPLY_ADD && product->source[2].kind == POWERVR_IR_OPERAND_CONSTANT &&
+		      product->source[2].constant == 0 && product->source[2].modifiers == 0))
+			continue;
+		for (slot = 0; slot < 2; slot++) {
+			/* The sum, written once by an unsaturated add, read only here; the factor uniform. */
+			if (product->source[slot].kind != POWERVR_IR_OPERAND_VALUE ||
+			    product->source[slot].modifiers != 0 ||
+			    product->source[slot].component != 0 ||
+			    product->source[slot].value >= shader->value_count ||
+			    shader->values[product->source[slot].value].width != 1 ||
+			    !uniform_operand(shader, uniform, &product->source[1U - slot]))
+				continue;
+			reads = value_references(shader, product->source[slot].value, &writes, &writer);
+			if (reads != 1 || writes != 1 || writer >= at)
+				continue;
+			sum = &shader->instructions[writer];
+			if (sum->opcode != POWERVR_IR_FLOAT_ADD || sum->flags != 0)
+				continue;
+
+			/* One term a varying value, the other uniform, each plain or negated. */
+			for (side = 0; side < 2; side++) {
+				if (sum->source[side].kind == POWERVR_IR_OPERAND_VALUE &&
+				    sum->source[side].value < shader->value_count &&
+				    uniform->kind[sum->source[side].value] == SHADER_UNIFORM_VARYING &&
+				    (sum->source[side].modifiers & ~POWERVR_IR_NEGATE) == 0 &&
+				    (sum->source[1U - side].modifiers & ~POWERVR_IR_NEGATE) == 0)
+					break;
+			}
+			if (side == 2)
+				continue;
+			x = sum->source[side];
+			term = sum->source[1U - side];
+			term.modifiers = 0;
+			if (!uniform_operand(shader, uniform, &term))
+				continue;
+			term.modifiers = sum->source[1U - side].modifiers;
+
+			/*
+			 * The factor written after the sum (a shared word read late): the
+			 * sum moves to just before the product, with no structure
+			 * between, as nothing else reads it.
+			 */
+			scale = product->source[1U - slot];
+			if (scale.kind == POWERVR_IR_OPERAND_VALUE) {
+				(void)value_references(shader, scale.value, &writes, &writer);
+				first = (unsigned)(sum - shader->instructions);
+				if (writer >= first) {
+					for (index = first + 1U; index < at; index++) {
+						if (shader->instructions[index].opcode < POWERVR_IR_MOVE)
+							break;
+					}
+					if (index != at)
+						continue;
+					moved = *sum;
+					for (index = first; index + 1U < at; index++)
+						shader->instructions[index] = shader->instructions[index + 1U];
+					shader->instructions[at - 1U] = moved;
+					sum = &shader->instructions[at - 1U];
+				}
+			}
+
+			/* The sum becomes u1 * u2, and the product x * u2 + u1 * u2. */
+			sum->opcode = POWERVR_IR_FLOAT_MULTIPLY;
+			sum->source[0] = term;
+			sum->source[1] = scale;
+			product->opcode = POWERVR_IR_FLOAT_MULTIPLY_ADD;
+			product->source[2] = product->source[slot];
+			product->source[0] = x;
+			product->source[1] = scale;
+			break;
+		}
+	}
+
+	/* Succeeded: the products read uniform terms. */
+	return 0;
+}
+
 /* Reports whether an operand is a constant or a word of a uniform value, without modifiers. */
 static int
 uniform_operand(
@@ -1457,9 +1577,15 @@ fuse_multiply_adds(
 	if (stage != POWERVR_SHADER_FRAGMENT || shader->exact != 0)
 		return;
 
-	/* Each clamp to [0, 1] as a saturate, then each add, by its first source, else its second. */
+	/*
+	 * Each clamp to [0, 1] as a saturate, its inner operation then read by
+	 * nothing gone (else its read keeps the saturate from the operation
+	 * that computes the clamped value), then each add, by its first
+	 * source, else its second.
+	 */
 	for (at = 0; at < shader->instruction_count; at++)
 		(void)fuse_clamp(shader, at);
+	remove_dead_writes(shader);
 	for (at = 0; at < shader->instruction_count; at++) {
 		if (shader->instructions[at].opcode != POWERVR_IR_FLOAT_ADD)
 			continue;
@@ -3176,10 +3302,23 @@ select_instruction(
 		}
 		break;
 	case POWERVR_IR_FLOAT_MINIMUM:
-		select_two_sourced(select, MACHINE_MINMAX, TEST_LESS, TYPE_F32, destination_of(select, instruction), &instruction->source[0], &instruction->source[1], POWERVR_IR_NEGATE | POWERVR_IR_ABSOLUTE);
-		break;
 	case POWERVR_IR_FLOAT_MAXIMUM:
-		select_two_sourced(select, MACHINE_MINMAX, TEST_GREATER, TYPE_F32, destination_of(select, instruction), &instruction->source[0], &instruction->source[1], POWERVR_IR_NEGATE | POWERVR_IR_ABSOLUTE);
+		/*
+		 * A constant bound is read first, from a shared register the data
+		 * sequencer fills like a float operation's constant (an immediate
+		 * was a group a pixel); a shared register cannot be the second
+		 * source, so the other source must not be one.
+		 */
+		variant = opcode == POWERVR_IR_FLOAT_MINIMUM ? TEST_LESS : TEST_GREATER;
+		select->literals = select->program->stage == POWERVR_SHADER_FRAGMENT && select->backend->inline_values == NULL &&
+				   instruction->source[1].kind == POWERVR_IR_OPERAND_CONSTANT && instruction->source[0].kind == POWERVR_IR_OPERAND_VALUE &&
+				   select->backend->shared_alias[instruction->source[0].value] == 0;
+		if (select->literals != 0) {
+			select_two_sourced(select, MACHINE_MINMAX, variant, TYPE_F32, destination_of(select, instruction), &instruction->source[1], &instruction->source[0], POWERVR_IR_NEGATE | POWERVR_IR_ABSOLUTE);
+			select->literals = 0;
+			break;
+		}
+		select_two_sourced(select, MACHINE_MINMAX, variant, TYPE_F32, destination_of(select, instruction), &instruction->source[0], &instruction->source[1], POWERVR_IR_NEGATE | POWERVR_IR_ABSOLUTE);
 		break;
 	case POWERVR_IR_UNSIGNED_MINIMUM:
 		select_two_sourced(select, MACHINE_MINMAX, TEST_LESS, TYPE_U32, destination_of(select, instruction), &instruction->source[0], &instruction->source[1], 0);
