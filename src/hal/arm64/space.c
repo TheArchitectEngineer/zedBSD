@@ -109,6 +109,7 @@ void *arm64_phys_to_direct(uintptr_t p) { return (void *)(ARM64_DIRECT_BASE+p); 
 static uint64_t table_desc(const void *table)
 { return arm64_direct_to_phys(table)|PTE_VALID|PTE_TABLE; }
 
+#if !defined(HAL_BOARD_RPI5)
 static void
 map_device_block(uint64_t physical)
 {
@@ -120,6 +121,7 @@ map_device_block(uint64_t physical)
 	    (physical & ~0x1fffffULL) | BLOCK_FLAGS | PTE_ATTR(1) |
 	    PTE_PXN | PTE_UXN;
 }
+#endif
 
 /*
  * Builds the kernel's final tables and switches the boot CPU to them.
@@ -187,11 +189,17 @@ arm64_space_init(
 
 	/* Maps the peripherals the HAL itself uses. */
 	info = rpi4_boot_info();
+#if defined(HAL_BOARD_RPI5)
+	/* The Pi 5's peripherals lie above 4 GiB, in level-2 tables of their own. */
+	(void)info;
+	rpi5_space_map_devices();
+#else
 	map_device_block(info->uart_base);
 	map_device_block(info->mailbox_base);
 	map_device_block(info->gic_dist_base);
 	map_device_block(info->gic_cpu_base);
 	map_device_block(info->sdhci_base);
+#endif
 
 	/* Splits the first GiB into 2 MiB blocks. */
 	system_kernel_l1[0] = table_desc(system_kernel_l2_low);

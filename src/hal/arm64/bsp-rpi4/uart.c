@@ -18,6 +18,56 @@
 #define UART_IRQ_RX  (1U << 4)
 #define UART_IRQ_RT  (1U << 6)
 
+#if defined(HAL_BOARD_RPI5)
+/* The control register's bits: the UART, its transmitter and its receiver. */
+#define UART_CR_UARTEN (1U << 0)
+#define UART_CR_TXE (1U << 8)
+#define UART_CR_RXE (1U << 9)
+
+/*
+ * The divisor of 115200 baud from the Pi 5 debug UART's 9.216 MHz clock:
+ * 9216000 / (16 * 115200) is 5 exactly, with no fraction.
+ *
+ * Value referenced: Raspberry Pi Linux rpi-6.12.y
+ * arch/arm64/boot/dts/broadcom/bcm2712.dtsi (clk_uart's clock-frequency).
+ */
+#define RPI5_UART_IBRD 5U
+#define RPI5_UART_FBRD 0U
+
+/* The PL011 of the debug connector, which the firmware leaves set up. */
+static volatile uint32_t *const uart = MMIO32(RPI5_DEBUG_UART_BASE);
+
+/*
+ * Starts the Pi 5 debug UART at 115200 baud, 8 bits, no parity.
+ *
+ * The connector has pins of its own, so no GPIO function is chosen.  A
+ * UART the firmware already runs keeps the firmware's rate and framing;
+ * only its interrupts are masked.
+ */
+void
+rpi4_uart_init(
+	void)
+{
+	uint32_t control;
+
+	/* Keeps a line the firmware started, with interrupts masked. */
+	control = uart[UART_CR / 4];
+	if ((control & UART_CR_UARTEN) != 0) {
+		uart[UART_IMSC / 4] = 0;
+		uart[UART_ICR / 4] = 0x7ff;
+		uart[UART_CR / 4] = control | UART_CR_TXE | UART_CR_RXE;
+		return;
+	}
+
+	/* Programs a stopped UART: the rate first, then the framing, then the start. */
+	uart[UART_ICR / 4] = 0x7ff;
+	uart[UART_IBRD / 4] = RPI5_UART_IBRD;
+	uart[UART_FBRD / 4] = RPI5_UART_FBRD;
+	uart[UART_LCRH / 4] = (3U << 5) | (1U << 4);
+	uart[UART_IMSC / 4] = 0;
+	uart[UART_CR / 4] = UART_CR_RXE | UART_CR_TXE | UART_CR_UARTEN;
+}
+#else
 static volatile uint32_t *const gpio = MMIO32(RPI4_GPIO_BASE);
 static volatile uint32_t *const uart = MMIO32(RPI4_PL011_BASE);
 
@@ -43,6 +93,7 @@ rpi4_uart_init(void)
 	uart[UART_IMSC / 4] = 0;
 	uart[UART_CR / 4] = (1U << 9) | (1U << 8) | 1U;
 }
+#endif
 
 void
 rpi4_uart_putc(int c)

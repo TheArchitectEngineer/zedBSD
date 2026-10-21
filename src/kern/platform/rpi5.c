@@ -1,0 +1,223 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The Raspberry Pi 5 platform binding.
+ *
+ * The boot handoff names the SD card's controller (the BCM2712's sdio1);
+ * the platform publishes the card as the single boot device.  The console
+ * is the firmware's framebuffer, and the debug UART when the build asks for
+ * it.  The devices behind the RP1 south bridge are not bound here.
+ */
+
+#include <uapi/errno.h>
+#include <hal/hal.h>
+#include <drivers/disklabel/disklabel.h>
+#include <kern/disk.h>
+#include <kern/partition.h>
+#include <kern/platform.h>
+#include <kern/boot.h>
+#include <kern/klog.h>
+#include "drivers/platform/rpi4/rpi4-console.h"
+#include "drivers/platform/rpi4/rpi4-sdhci.h"
+
+/* The firmware's BIOS-style number of the boot disk the handoff names. */
+#define RPI5_BOOT_DISK_ID	0x80U
+
+/* The bytes of one sector of the SD card. */
+#define RPI5_SECTOR_BYTES	512U
+
+/*
+ * Publishes the boot devices described by the Raspberry Pi 5 boot handoff.
+ *
+ * Returns the number of devices published, which is zero for a handoff the
+ * platform does not understand or an SD card that does not answer.
+ */
+size_t
+kern_platform_init(
+	const struct kern_boot_handoff *handoff,
+	struct kern_boot_device *devices,
+	size_t capacity)
+{
+	const uint64_t *sdhci_object;
+	struct kern_boot_device *device;
+	uint64_t sdhci_phys;
+	unsigned index;
+	int error;
+
+	/* Rejects a missing handoff or nowhere to publish. */
+	if (handoff == NULL)
+		return 0;
+	if (devices == NULL)
+		return 0;
+	if (capacity == 0)
+		return 0;
+
+	/* Rejects a handoff that is not the common record. */
+	if (handoff->magic != KERN_HANDOFF_MAGIC)
+		return 0;
+	if (handoff->version != KERN_HANDOFF_VERSION_MULTIBOOT)
+		return 0;
+	if (handoff->size < sizeof(*handoff))
+		return 0;
+
+	/* Finds the SD controller the device tree names; without it nothing boots. */
+	sdhci_object = hal_get_arch_handoff("rpi5.sdhci");
+	if (sdhci_object == NULL)
+		return 0;
+	sdhci_phys = *sdhci_object;
+
+	/* Publishes the console as /dev/console's output. */
+	drv_rpi4_console_init();
+
+	/* Selects the MBR partition scheme the SD card carries. */
+	partition_set_scheme(&drv_partition_scheme_mbr);
+	disk_registry_reset();
+
+	/* Starts the SD controller and the card the firmware booted from. */
+	error = drv_rpi4_sdhci_init((uintptr_t)sdhci_phys);
+	if (error != 0) {
+		kern_logf("rpi5: SD card unavailable (%d)\n", error);
+		return 0;
+	}
+
+	/* Publishes the SD card as the boot device. */
+	device = &devices[0];
+	device->device_class = KERN_DEV_SD;
+	device->display_index = 0;
+	device->bios_id = RPI5_BOOT_DISK_ID;
+	device->flags = KERN_DEV_PRESENT;
+	if (handoff->boot_bios_id == RPI5_BOOT_DISK_ID)
+		device->flags |= KERN_DEV_BOOT_ORIGIN;
+	device->sector_size = RPI5_SECTOR_BYTES;
+	device->cylinders = 0;
+	device->heads = 0;
+	device->sectors = 0;
+	device->controller_location = 0;
+
+	/* Clears the record's reserved bytes. */
+	for (index = 0; index < sizeof(device->reserved); index++)
+		device->reserved[index] = 0;
+
+	/* Succeeded: the single published device. */
+	return 1;
+}
+
+/*
+ * Finishes device discovery once interrupts are enabled.
+ *
+ * The SD card is published already, and no other device is bound yet.
+ */
+void
+kern_platform_refresh_devices(
+	const struct kern_boot_device *d,
+	size_t n)
+{
+	(void)d;
+	(void)n;
+}
+
+/*
+ * Starts the console's serial input once the input core is ready.
+ */
+int
+kern_platform_input_init(
+	void)
+{
+	int error;
+
+	/* Starts the serial reader, which a build without the serial console leaves off. */
+	error = drv_rpi4_console_start_input();
+	if (error != 0)
+		return error;
+
+	/* Succeeded: platform input is available to the console. */
+	return 0;
+}
+
+/*
+ * Resolves a published boot device to its disk.
+ */
+struct disk *
+kern_platform_block_device(
+	const struct kern_boot_device *d)
+{
+	struct disk *disk;
+
+	/* Only the SD boot device has a disk. */
+	if (d == NULL)
+		return NULL;
+	if (d->device_class != KERN_DEV_SD)
+		return NULL;
+
+	/* Resolves the SD card's disk. */
+	disk = drv_rpi4_sdhci_disk();
+
+	/* Succeeded: the SD card's disk, or none before it was published. */
+	return disk;
+}
+
+/*
+ * Writes a debug string to the console.
+ */
+void
+kern_platform_debug_write(
+	const char *s)
+{
+	/* Ignores a missing string. */
+	if (s == NULL)
+		return;
+
+	/* Emits every byte through the early console. */
+	while (*s != '\0') {
+		hal_putc((unsigned char)*s);
+		s++;
+	}
+}
+
+/*
+ * Halts the machine permanently.
+ */
+void
+kern_platform_halt(
+	void)
+{
+	/* Halts with interrupts disabled. */
+	(void)hal_irq_disable();
+	for (;;)
+		hal_halt();
+}
+
+/*
+ * Turns the power off through the HAL, halting if that returns.
+ */
+int
+kern_platform_poweroff(
+	void)
+{
+	/* Asks the firmware to turn the board off. */
+	hal_poweroff();
+
+	/* Halts in case the firmware refused. */
+	for (;;)
+		hal_halt();
+}
+
+/*
+ * Reboots the machine.
+ */
+void
+kern_platform_reboot(
+	void)
+{
+	/* Asks the firmware to reset the board. */
+	hal_reset();
+
+	/* Halts in case the reset request returns. */
+	for (;;)
+		hal_halt();
+}
