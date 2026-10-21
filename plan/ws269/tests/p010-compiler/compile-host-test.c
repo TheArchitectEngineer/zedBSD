@@ -51,6 +51,7 @@ static const struct {
 	{ "mul4.frag", vkmatrix_mul4_frag, sizeof(vkmatrix_mul4_frag) },
 	{ "rcp.frag", vkmatrix_rcp_frag, sizeof(vkmatrix_rcp_frag) },
 	{ "uniform.frag", vkmatrix_uniform_frag, sizeof(vkmatrix_uniform_frag) },
+	{ "alupix.frag", vkmatrix_alupix_frag, sizeof(vkmatrix_alupix_frag) },
 };
 
 /* The bytes of program room per shader. */
@@ -348,20 +349,32 @@ machine_compare(
 	uint32_t stage,
 	const char *name)
 {
+	static const struct {
+		uint32_t forms;
+		const char *name;
+	} forms[] = {
+		{ POWERVR_SHADER_FORM_SHARED_PROGRAM, "with its shared program" },
+		{ POWERVR_SHADER_FORM_PACK_OUTPUT, "packed into the output" },
+		{ POWERVR_SHADER_FORM_ITERATE_SAMPLE, "iterating its samples" },
+		{ POWERVR_SHADER_FORM_SHARED_PROGRAM | POWERVR_SHADER_FORM_PACK_OUTPUT | POWERVR_SHADER_FORM_ITERATE_SAMPLE, "in every form" },
+	};
 	struct powervr_shader_key key;
 	const struct powervr_shader_key *saved_key;
 	char label[160];
+	unsigned index;
 
-	/* As the key says, then with the shared program. */
+	/* As the key says, then in each of the forms (q1546). */
 	machine_compare_once(words, count, stage, name);
 	if (stage != POWERVR_SHADER_FRAGMENT || current_key == NULL)
 		return;
 	saved_key = current_key;
-	key = *current_key;
-	key.shared_program = 1;
-	current_key = &key;
-	snprintf(label, sizeof(label), "%s with its shared program", name);
-	machine_compare_once(words, count, stage, label);
+	for (index = 0; index < sizeof(forms) / sizeof(forms[0]); index++) {
+		key = *saved_key;
+		key.forms = forms[index].forms;
+		current_key = &key;
+		snprintf(label, sizeof(label), "%s %s", name, forms[index].name);
+		machine_compare_once(words, count, stage, label);
+	}
 	current_key = saved_key;
 }
 

@@ -185,10 +185,15 @@ enum machine_kind {
 	MACHINE_END,
 	MACHINE_TEST_ZERO,
 	MACHINE_CONDITION,
-	MACHINE_BRANCH
+	MACHINE_BRANCH,
+	MACHINE_ITERATE_SAMPLE
 };
 
-/* The back end's state for one shader. */
+/*
+ * The back end's state for one shader.  Forms are the key's program
+ * forms it takes (POWERVR_SHADER_FORM_PACK_OUTPUT, _ITERATE_SAMPLE);
+ * iterate_sample marks the iterated varyings a sample iterates itself.
+ */
 struct shader_backend {
 	struct shader_machine_operation operations[SHADER_MACHINE_OPERATIONS];
 	unsigned operation_count;
@@ -205,6 +210,8 @@ struct shader_backend {
 	uint32_t control_flow;
 	const uint32_t *inline_values;
 	uint32_t inline_count;
+	uint32_t forms;
+	uint8_t iterate_sample[POWERVR_IR_VALUES];
 	int error;
 };
 

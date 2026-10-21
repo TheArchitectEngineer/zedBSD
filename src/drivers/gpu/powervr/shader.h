@@ -160,19 +160,26 @@ struct powervr_shader_blend {
  * its blend, and the sample count.  A compile without a key leaves
  * fragment colours as floats in temporaries.
  *
- * Shared_program 1 lets a fragment program's work that only push
- * constants, descriptors and constants decide move into a shared
- * program: one task a draw that the data sequencer's shared register
- * program issues after its loads, writing the results to shared
- * registers the pixels read (q1546).  The driver that sets it starts
- * that program (powervr_shader_program.shared_length).
+ * Forms (POWERVR_SHADER_FORM_*) turns on fragment program forms the
+ * driver takes (q1546): the shared program, which moves the work only
+ * push constants, descriptors and constants decide into one task a draw
+ * that the data sequencer's shared register program issues after its
+ * loads, writing the results to shared registers the pixels read (the
+ * driver starts it: powervr_shader_program.shared_length); the pack of
+ * a colour written into the pixel output under the overlap check,
+ * ending the program there; and a sample whose coordinates are a
+ * varying iterated by the sample itself.
  */
+#define POWERVR_SHADER_FORM_SHARED_PROGRAM	0x1U
+#define POWERVR_SHADER_FORM_PACK_OUTPUT		0x2U
+#define POWERVR_SHADER_FORM_ITERATE_SAMPLE	0x4U
+
 struct powervr_shader_key {
 	uint32_t attribute_formats[POWERVR_SHADER_INPUTS];
 	uint32_t output_formats[POWERVR_SHADER_OUTPUTS];
 	struct powervr_shader_blend blend[POWERVR_SHADER_OUTPUTS];
 	uint32_t samples;
-	uint32_t shared_program;
+	uint32_t forms;
 };
 
 /*

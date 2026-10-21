@@ -98,11 +98,17 @@
 #define PERF_MUL4		13
 #define PERF_RCP		14
 #define PERF_UNIFORM		15
+#define PERF_TEXTURE_NOB	16
+#define PERF_ALU_PIX		17
+#define PERF_LOAD_DRAW		18
 #define PERF_FRAMES		20U
 
 /* perf-tri128's grid of quads a side, and perf-stack4's and perf-draws4's full-screen quads. */
 #define PERF_GRID_SIDE		8U
 #define PERF_LAYERS		4U
+
+/* The most trials one run takes (-t). */
+#define VKMATRIX_TRIALS_MAX	8U
 
 /* The load cases' passes over one 1920x1080 image. */
 #define VKMATRIX_LOAD_FRAMES	60U
@@ -319,7 +325,21 @@ static VkResult case_perf_clear_64(struct vkmatrix *run);
 static VkResult case_perf_load_64(struct vkmatrix *run);
 static VkResult case_uniform_ramp(struct vkmatrix *run);
 static VkResult case_perf_uniform(struct vkmatrix *run);
+static VkResult case_perf_texture_nob(struct vkmatrix *run);
+static VkResult case_perf_alu_pix(struct vkmatrix *run);
+static VkResult case_perf_load_draw(struct vkmatrix *run);
+static void perf_record(struct vkmatrix *run, int kind, uint32_t pipeline, uint32_t first, uint32_t vertices, uint32_t draws, uint32_t frame);
+static VkResult perf_submit(struct vkmatrix *run, uint64_t *spent);
+static int vkmatrix_case_named(const char *pattern, const char *name);
 static void uniform_ramp_colour(const float push[8], float place, float colour[4]);
+
+/*
+ * The trial of the driver's fragment shader forms (-t, q1546): bits 24
+ * to 31 of every pipeline's create flags, which the PowerVR driver
+ * flips its forms by (render-draw.h POWERVR_DRAW_FORM_TRIAL_SHIFT).  Set
+ * by main before each run of the cases; one process reads it.
+ */
+static uint32_t vkmatrix_trial;
 
 /* Every case, in the order they run. */
 static const struct vkmatrix_case cases[] = {
@@ -374,6 +394,9 @@ static const struct vkmatrix_case cases[] = {
 	{ "perf-load-64", case_perf_load_64 },
 	{ "uniform-ramp", case_uniform_ramp },
 	{ "perf-uniform", case_perf_uniform },
+	{ "perf-texture-nob", case_perf_texture_nob },
+	{ "perf-alu-pix", case_perf_alu_pix },
+	{ "perf-load-draw", case_perf_load_draw },
 };
 
 /* The clear colour of every case's first pass: dark blue. */
@@ -388,6 +411,10 @@ main(
 	unsigned long processes;
 	unsigned long repeats;
 	unsigned long index;
+	uint32_t trials[VKMATRIX_TRIALS_MAX];
+	uint32_t trial_count;
+	uint32_t trial;
+	char *list;
 	char *end;
 	pid_t child;
 	pid_t done;
@@ -395,10 +422,16 @@ main(
 	int failed;
 	int arg;
 
-	/* The options: -p N processes at once, -r R runs of the cases each, then the case's name. */
+	/*
+	 * The options: -p N processes at once, -r R runs of the cases each,
+	 * -t T[,T...] the driver's trials one after another (q1546), then
+	 * the case's name (a trailing * matches names starting so).
+	 */
 	processes = 1;
 	repeats = 1;
 	name = NULL;
+	trials[0] = 0;
+	trial_count = 1;
 	for (arg = 1; arg < argc; arg++) {
 		if (strcmp(argv[arg], "-p") == 0 && arg + 1 < argc) {
 			arg++;
@@ -410,16 +443,42 @@ main(
 			repeats = strtoul(argv[arg], &end, 10);
 			if (*end != '\0' || repeats == 0)
 				return 2;
+		} else if (strcmp(argv[arg], "-t") == 0 && arg + 1 < argc) {
+			/* Each trial of the list, in order. */
+			arg++;
+			trial_count = 0;
+			list = argv[arg];
+			while (*list != '\0') {
+				if (trial_count == VKMATRIX_TRIALS_MAX)
+					return 2;
+				trials[trial_count] = (uint32_t)strtoul(list, &end, 0);
+				if (end == list || trials[trial_count] > 0xffU || (*end != ',' && *end != '\0'))
+					return 2;
+				trial_count++;
+				list = *end == ',' ? end + 1 : end;
+			}
+			if (trial_count == 0)
+				return 2;
 		} else {
 			name = argv[arg];
 		}
 	}
 
-	/* One process: the cases here. */
+	/* One process: the cases here, once a trial. */
 	if (processes == 1) {
-		failed = vkmatrix_run_cases(name, repeats, 0);
+		failed = 0;
+		for (trial = 0; trial < trial_count; trial++) {
+			vkmatrix_trial = trials[trial];
+			if (trial_count > 1 || trials[trial] != 0)
+				printf("vkmatrix: trial 0x%02x\n", (unsigned)trials[trial]);
+			if (vkmatrix_run_cases(name, repeats, 0) != 0)
+				failed = 1;
+		}
 		return failed;
 	}
+
+	/* Several processes take the first trial. */
+	vkmatrix_trial = trials[0];
 
 	/* Several: each its own device in its own process, all at once (sessions rendering concurrently); nothing buffered is copied into the children. */
 	fflush(stdout);
@@ -499,10 +558,10 @@ vkmatrix_run_cases(
 	passed = 0;
 	for (repeat = 0; repeat < repeats; repeat++) {
 		for (index = 0; index < sizeof(cases) / sizeof(cases[0]); index++) {
-			/* Skips a case other than the one named. */
+			/* Skips a case other than the ones named. */
 			if (name != NULL) {
-				named = strcmp(name, cases[index].name);
-				if (named != 0)
+				named = vkmatrix_case_named(name, cases[index].name);
+				if (!named)
 					continue;
 			}
 
@@ -1058,6 +1117,7 @@ vkmatrix_pipeline(
 	/* The pipeline, then the modules go. */
 	memset(&pipeline_info, 0, sizeof(pipeline_info));
 	pipeline_info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+	pipeline_info.flags = vkmatrix_trial << 24;
 	pipeline_info.stageCount = 2;
 	pipeline_info.pStages = stages;
 	pipeline_info.pVertexInputState = &input;
@@ -4132,41 +4192,41 @@ load_1080_textures(
  * that pairs them issues two to a group.  perf-rcp: 32 dependent
  * reciprocals, the cost of a reciprocal beside a multiply's.  Their
  * work only the push constant decides, so a driver that works it out
- * once a draw (q1546, the shared program) draws them as the flat quad;
- * perf-uniform: a ramp across the screen from push constant colours, a
- * multiply-add a channel a pixel beside the span the push constant
- * decides.
- * Prints "vkmatrix: perf <kind>: <us> us a frame (min <us> us)" (integers: the libc printf of the board may lack %f).
+ * once a draw (q1546, the shared program) draws them as the flat quad.
+ * q1546: perf-uniform, a ramp across the screen from push constant
+ * colours, a multiply-add a channel a pixel beside the span the push
+ * constant decides; perf-texture-nob, perf-texture without the blend;
+ * perf-alu-pix, perf-alu's chain seeded by a varying, so no driver can
+ * work it out once a draw (the pixel rate of the arithmetic);
+ * perf-load-draw, a load with a small flat quad, so no driver can drop
+ * the load.
+ *
+ * The frames are timed one a submit, and again all in one command
+ * buffer, one submit and one wait (batched: the clock's tick and the
+ * wait's poll fall on the whole batch, not on each frame).
+ * Prints "vkmatrix: perf <kind>: <us> us a frame (min <us> us), <us> us batched" (integers: the libc printf of the board may lack %f).
  */
 static VkResult
 perf_case(
 	struct vkmatrix *run,
 	int kind)
 {
-	static const char *const names[16] = {
+	static const char *const names[19] = {
 		"clear", "load", "flat", "texture", "immediate", "alu", "quarter", "tri1", "tri8", "tri128", "stack4", "draws4", "alu4", "mul4", "rcp",
-		"uniform",
+		"uniform", "texture-nob", "alu-pix", "load-draw",
 	};
-	static const float ramp[8] = { 0.1f, 0.2f, 0.9f, 1.0f, 0.9f, 0.6f, 0.1f, 1.0f };
 	VkSubresourceLayout layout;
 	struct vkmatrix_shape shape;
-	VkRenderPassBeginInfo pass;
 	VkCommandBufferBeginInfo begin;
-	VkClearValue value;
-	VkViewport viewport;
-	VkRect2D scissor;
-	VkSubmitInfo submit;
-	uint64_t started;
 	uint64_t spent;
 	uint64_t total;
 	uint64_t least;
+	uint64_t batched;
 	uint32_t pipeline;
 	uint32_t first;
 	uint32_t vertices;
 	uint32_t draws;
-	uint32_t draw;
 	uint32_t frame;
-	float red;
 	VkResult status;
 
 	/* The pipeline the kind draws with. */
@@ -4174,10 +4234,24 @@ perf_case(
 	first = 0;
 	vertices = 6;
 	draws = kind == PERF_DRAWS4 ? PERF_LAYERS : 1U;
-	if (kind == PERF_TEXTURE) {
+	if (kind == PERF_TEXTURE || kind == PERF_TEXTURE_NOB) {
 		status = load_1080_textures(run, &pipeline);
 		if (status != VK_SUCCESS)
 			return status;
+		if (kind == PERF_TEXTURE_NOB) {
+			/* The same textured pipeline without the blend. */
+			memset(&shape, 0, sizeof(shape));
+			shape.vertex = vkmatrix_texture_vert;
+			shape.vertex_size = sizeof(vkmatrix_texture_vert);
+			shape.fragment = vkmatrix_texture_frag;
+			shape.fragment_size = sizeof(vkmatrix_texture_frag);
+			shape.layout = VKMATRIX_TEXTURE;
+			shape.texture = 1;
+			shape.blend = VKMATRIX_OPAQUE;
+			status = vkmatrix_pipeline(run, &shape, &pipeline);
+			if (status != VK_SUCCESS)
+				return status;
+		}
 		first = vkmatrix_texture_quad(run, 0.0f, 0.0f, 64.0f, 64.0f);
 	} else if (kind != PERF_CLEAR && kind != PERF_LOAD) {
 		memset(&shape, 0, sizeof(shape));
@@ -4209,7 +4283,14 @@ perf_case(
 			shape.vertex_size = sizeof(vkmatrix_uniform_vert);
 			shape.fragment = vkmatrix_uniform_frag;
 			shape.fragment_size = sizeof(vkmatrix_uniform_frag);
-			shape.push_size = sizeof(ramp);
+			shape.push_size = 32;
+		} else if (kind == PERF_ALU_PIX) {
+			shape.vertex = vkmatrix_uniform_vert;
+			shape.vertex_size = sizeof(vkmatrix_uniform_vert);
+			shape.fragment = vkmatrix_alupix_frag;
+			shape.fragment_size = sizeof(vkmatrix_alupix_frag);
+			shape.push_size = 0;
+			shape.push_stages = 0;
 		}
 		status = vkmatrix_pipeline(run, &shape, &pipeline);
 		if (status != VK_SUCCESS)
@@ -4222,76 +4303,20 @@ perf_case(
 	if (status != VK_SUCCESS)
 		return status;
 
-	/* The frames, the first not counted. */
+	/* The frames a submit each, the first not counted. */
 	total = 0;
 	least = UINT64_MAX;
 	for (frame = 0; frame <= PERF_FRAMES; frame++) {
-		/* The command buffer and the pass: cleared, or loaded for the load kind (after the first frame). */
 		memset(&begin, 0, sizeof(begin));
 		begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 		begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 		vkResetCommandBuffer(run->command, 0);
 		vkBeginCommandBuffer(run->command, &begin);
-		memset(&value, 0, sizeof(value));
-		memcpy(value.color.float32, background, sizeof(value.color.float32));
-		memset(&pass, 0, sizeof(pass));
-		pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-		pass.renderPass = run->clear_pass;
-		if (kind == PERF_LOAD && frame != 0)
-			pass.renderPass = run->load_pass;
-		pass.framebuffer = run->wide_framebuffer;
-		pass.renderArea.extent.width = VKMATRIX_LINEAR_WIDTH;
-		pass.renderArea.extent.height = VKMATRIX_LINEAR_HEIGHT;
-		pass.clearValueCount = 1;
-		pass.pClearValues = &value;
-		vkCmdBeginRenderPass(run->command, &pass, VK_SUBPASS_CONTENTS_INLINE);
-
-		/* The full-screen quad of the drawing kinds. */
-		if (kind != PERF_CLEAR && kind != PERF_LOAD) {
-			memset(&viewport, 0, sizeof(viewport));
-			viewport.width = (float)VKMATRIX_LINEAR_WIDTH;
-			viewport.height = (float)VKMATRIX_LINEAR_HEIGHT;
-			if (kind == PERF_QUARTER) {
-				viewport.width /= 2.0f;
-				viewport.height /= 2.0f;
-			}
-			viewport.maxDepth = 1.0f;
-			vkCmdSetViewport(run->command, 0, 1, &viewport);
-			memset(&scissor, 0, sizeof(scissor));
-			scissor.extent.width = VKMATRIX_LINEAR_WIDTH;
-			scissor.extent.height = VKMATRIX_LINEAR_HEIGHT;
-			vkCmdSetScissor(run->command, 0, 1, &scissor);
-			vkmatrix_bind(run, pipeline);
-			if (kind == PERF_TEXTURE) {
-				vkCmdBindDescriptorSets(run->command, VK_PIPELINE_BIND_POINT_GRAPHICS, run->layouts[pipeline], 0, 1, &run->textures[1].set, 0, NULL);
-			} else if (kind == PERF_UNIFORM) {
-				vkCmdPushConstants(run->command, run->layouts[pipeline], VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(ramp), ramp);
-			} else if (kind != PERF_IMMEDIATE) {
-				red = 1.0f;
-				vkCmdPushConstants(run->command, run->layouts[pipeline], VK_SHADER_STAGE_FRAGMENT_BIT, 0, 4, &red);
-			}
-			for (draw = 0; draw < draws; draw++)
-				vkCmdDraw(run->command, vertices, 1, first, 0);
-		}
-		vkCmdEndRenderPass(run->command);
+		perf_record(run, kind, pipeline, first, vertices, draws, frame);
 		vkEndCommandBuffer(run->command);
-
-		/* The submit and its wait, timed. */
-		memset(&submit, 0, sizeof(submit));
-		submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-		submit.commandBufferCount = 1;
-		submit.pCommandBuffers = &run->command;
-		vkResetFences(run->device, 1, &run->fence);
-		started = perf_now_ns();
-		run->failed_call = "vkQueueSubmit (perf)";
-		status = vkQueueSubmit(run->queue, 1, &submit, run->fence);
+		status = perf_submit(run, &spent);
 		if (status != VK_SUCCESS)
 			return status;
-		run->failed_call = "vkWaitForFences (perf)";
-		status = vkWaitForFences(run->device, 1, &run->fence, VK_TRUE, VKMATRIX_WAIT_NS);
-		if (status != VK_SUCCESS)
-			return status;
-		spent = perf_now_ns() - started;
 
 		/* Counted after the first frame. */
 		if (frame != 0) {
@@ -4301,13 +4326,126 @@ perf_case(
 		}
 	}
 
+	/* The counted frames again in one command buffer, one submit and one wait. */
+	memset(&begin, 0, sizeof(begin));
+	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	vkResetCommandBuffer(run->command, 0);
+	vkBeginCommandBuffer(run->command, &begin);
+	for (frame = 1; frame <= PERF_FRAMES; frame++)
+		perf_record(run, kind, pipeline, first, vertices, draws, frame);
+	vkEndCommandBuffer(run->command);
+	status = perf_submit(run, &batched);
+	if (status != VK_SUCCESS)
+		return status;
+
 	/* The line, and nothing for the shared target's comparison to say. */
-	snprintf(run->note, sizeof(run->note), "perf %s: %lu us a frame (min %lu us) over %u frames of 1920x1080", names[kind],
-		 (unsigned long)(total / PERF_FRAMES / 1000U), (unsigned long)(least / 1000U), (unsigned)PERF_FRAMES);
+	snprintf(run->note, sizeof(run->note), "perf %s: %lu us a frame (min %lu us), %lu us batched, over %u frames of 1920x1080", names[kind],
+		 (unsigned long)(total / PERF_FRAMES / 1000U), (unsigned long)(least / 1000U), (unsigned long)(batched / PERF_FRAMES / 1000U),
+		 (unsigned)PERF_FRAMES);
 	memcpy(run->expected, run->pixels, sizeof(run->expected));
 	run->tolerance = 0;
 
 	/* Succeeded: the timing is printed. */
+	return VK_SUCCESS;
+}
+
+/*
+ * Records one frame of a perf kind into the command buffer: the pass,
+ * cleared, or loaded for the load kinds after the first frame, and the
+ * kind's draws over the viewport with its push constants or texture.
+ */
+static void
+perf_record(
+	struct vkmatrix *run,
+	int kind,
+	uint32_t pipeline,
+	uint32_t first,
+	uint32_t vertices,
+	uint32_t draws,
+	uint32_t frame)
+{
+	static const float ramp[8] = { 0.1f, 0.2f, 0.9f, 1.0f, 0.9f, 0.6f, 0.1f, 1.0f };
+	VkRenderPassBeginInfo pass;
+	VkClearValue value;
+	VkViewport viewport;
+	VkRect2D scissor;
+	uint32_t draw;
+	float red;
+
+	/* The pass: cleared, or loaded for the load kinds after the first frame. */
+	memset(&value, 0, sizeof(value));
+	memcpy(value.color.float32, background, sizeof(value.color.float32));
+	memset(&pass, 0, sizeof(pass));
+	pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+	pass.renderPass = run->clear_pass;
+	if ((kind == PERF_LOAD || kind == PERF_LOAD_DRAW) && frame != 0)
+		pass.renderPass = run->load_pass;
+	pass.framebuffer = run->wide_framebuffer;
+	pass.renderArea.extent.width = VKMATRIX_LINEAR_WIDTH;
+	pass.renderArea.extent.height = VKMATRIX_LINEAR_HEIGHT;
+	pass.clearValueCount = 1;
+	pass.pClearValues = &value;
+	vkCmdBeginRenderPass(run->command, &pass, VK_SUBPASS_CONTENTS_INLINE);
+
+	/* The quads of the drawing kinds. */
+	if (kind != PERF_CLEAR && kind != PERF_LOAD) {
+		memset(&viewport, 0, sizeof(viewport));
+		viewport.width = (float)VKMATRIX_LINEAR_WIDTH;
+		viewport.height = (float)VKMATRIX_LINEAR_HEIGHT;
+		if (kind == PERF_QUARTER) {
+			viewport.width /= 2.0f;
+			viewport.height /= 2.0f;
+		}
+		viewport.maxDepth = 1.0f;
+		vkCmdSetViewport(run->command, 0, 1, &viewport);
+		memset(&scissor, 0, sizeof(scissor));
+		scissor.extent.width = VKMATRIX_LINEAR_WIDTH;
+		scissor.extent.height = VKMATRIX_LINEAR_HEIGHT;
+		vkCmdSetScissor(run->command, 0, 1, &scissor);
+		vkmatrix_bind(run, pipeline);
+		if (kind == PERF_TEXTURE || kind == PERF_TEXTURE_NOB) {
+			vkCmdBindDescriptorSets(run->command, VK_PIPELINE_BIND_POINT_GRAPHICS, run->layouts[pipeline], 0, 1, &run->textures[1].set, 0, NULL);
+		} else if (kind == PERF_UNIFORM) {
+			vkCmdPushConstants(run->command, run->layouts[pipeline], VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(ramp), ramp);
+		} else if (kind != PERF_IMMEDIATE && kind != PERF_ALU_PIX) {
+			red = 1.0f;
+			vkCmdPushConstants(run->command, run->layouts[pipeline], VK_SHADER_STAGE_FRAGMENT_BIT, 0, 4, &red);
+		}
+		for (draw = 0; draw < draws; draw++)
+			vkCmdDraw(run->command, vertices, 1, first, 0);
+	}
+	vkCmdEndRenderPass(run->command);
+}
+
+/* Submits the recorded command buffer and waits for it, timing the two. */
+static VkResult
+perf_submit(
+	struct vkmatrix *run,
+	uint64_t *spent)
+{
+	VkSubmitInfo submit;
+	uint64_t started;
+	VkResult status;
+
+	/* The submit and its wait, timed. */
+	memset(&submit, 0, sizeof(submit));
+	submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submit.commandBufferCount = 1;
+	submit.pCommandBuffers = &run->command;
+	vkResetFences(run->device, 1, &run->fence);
+	started = perf_now_ns();
+	run->failed_call = "vkQueueSubmit (perf)";
+	status = vkQueueSubmit(run->queue, 1, &submit, run->fence);
+	if (status != VK_SUCCESS)
+		return status;
+	run->failed_call = "vkWaitForFences (perf)";
+	status = vkWaitForFences(run->device, 1, &run->fence, VK_TRUE, VKMATRIX_WAIT_NS);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the time from the submit to the wait's return. */
+	*spent = perf_now_ns() - started;
 	return VK_SUCCESS;
 }
 
@@ -4363,6 +4501,12 @@ perf_geometry(
 			(void)vkmatrix_quad(run, 0.0f, 0.0f, side, side);
 		*vertices = PERF_LAYERS * 6U;
 		return first;
+	}
+
+	/* A small quad at the top left, about 60x34 pixels of the load's frame. */
+	if (kind == PERF_LOAD_DRAW) {
+		*vertices = 6;
+		return vkmatrix_quad(run, 0.0f, 0.0f, 2.0f, 2.0f);
 	}
 
 	/* Succeeded: the full-screen quad (drawn once a draw). */
@@ -5100,4 +5244,79 @@ case_perf_uniform(
 
 	/* Succeeded: the case ran. */
 	return VK_SUCCESS;
+}
+
+/* perf-texture-nob (q1546): perf-texture without the blend. */
+static VkResult
+case_perf_texture_nob(
+	struct vkmatrix *run)
+{
+	VkResult status;
+
+	/* Times the kind. */
+	status = perf_case(run, PERF_TEXTURE_NOB);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the case ran. */
+	return VK_SUCCESS;
+}
+
+/* perf-alu-pix (q1546): 64 dependent multiply-adds a pixel from a varying. */
+static VkResult
+case_perf_alu_pix(
+	struct vkmatrix *run)
+{
+	VkResult status;
+
+	/* Times the kind. */
+	status = perf_case(run, PERF_ALU_PIX);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the case ran. */
+	return VK_SUCCESS;
+}
+
+/* perf-load-draw (q1546): a 1080p load pass with a small flat quad. */
+static VkResult
+case_perf_load_draw(
+	struct vkmatrix *run)
+{
+	VkResult status;
+
+	/* Times the kind. */
+	status = perf_case(run, PERF_LOAD_DRAW);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the case ran. */
+	return VK_SUCCESS;
+}
+
+/* Reports whether a case's name is the one asked for, or starts with what comes before a trailing '*'. */
+static int
+vkmatrix_case_named(
+	const char *pattern,
+	const char *name)
+{
+	size_t length;
+	int differs;
+
+	/* A trailing star: the start of the name. */
+	length = strlen(pattern);
+	if (length != 0 && pattern[length - 1U] == '*') {
+		differs = strncmp(pattern, name, length - 1U);
+		if (differs != 0)
+			return 0;
+		return 1;
+	}
+
+	/* Otherwise the whole name. */
+	differs = strcmp(pattern, name);
+	if (differs != 0)
+		return 0;
+
+	/* Succeeded: the case is named. */
+	return 1;
 }

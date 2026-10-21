@@ -57,7 +57,8 @@ enum {
 	KIND_END,
 	KIND_TEST_ZERO,
 	KIND_CONDITION,
-	KIND_BRANCH
+	KIND_BRANCH,
+	KIND_ITERATE_SAMPLE
 };
 
 static float as_float(uint32_t word);
@@ -332,6 +333,24 @@ machine_run_program(
 
 					next.index = (uint16_t)(next.index + word);
 					write_register(run, next, lane, run->iterate_word(lane, operation->immediate + word * 4U, 0));
+				}
+				break;
+			case KIND_ITERATE_SAMPLE:
+				{
+					unsigned image_word;
+					unsigned sampler_word;
+					int image;
+					int sampler;
+
+					/* The two coordinates iterated, then sampled (q1546). */
+					image = request_at(run->program, operation->source[0].index, &image_word);
+					sampler = request_at(run->program, operation->source[2].index, &sampler_word);
+					if (image < 0 || sampler < 0)
+						return -1;
+					run->sample_words((unsigned)image, (unsigned)sampler, run->iterate_word(lane, operation->immediate, 0),
+							  run->iterate_word(lane, operation->immediate + 4U, 0), words);
+					for (word = 0; word < 4; word++)
+						run->temps[operation->destination[0].index + word][lane] = words[word];
 				}
 				break;
 			case KIND_SAMPLE:

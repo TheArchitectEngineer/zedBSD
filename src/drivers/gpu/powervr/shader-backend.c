@@ -115,6 +115,7 @@
 #define MUX_S1			4U
 #define MUX_S2			5U
 #define CONTROL_ITERATE		12U
+#define CONTROL_ITERATE_SAMPLE	8U
 #define DIMENSIONS_2D		2U
 
 /* The most ifs and loops open at once. */
@@ -205,6 +206,10 @@ static int simple_kind(unsigned kind);
 static void merge_iterates(const struct powervr_shader_program *program, struct shader_backend *backend);
 static void reuse_immediates(struct shader_backend *backend);
 static void unpack_in_place(const struct powervr_shader_program *program, struct shader_backend *backend);
+static void pack_in_place(const struct powervr_shader_program *program, struct shader_backend *backend);
+static void mark_iterate_samples(const struct powervr_ir_shader *shader, const struct powervr_shader_program *program, struct shader_backend *backend);
+static int lone_iterate(const struct powervr_ir_shader *shader, const struct powervr_ir_operand *operand, const struct powervr_ir_instruction **iterate);
+static uint32_t iterate_coefficient(const struct powervr_ir_shader *shader, unsigned value);
 static void pair_operations(struct shader_backend *backend);
 static int pairable(const struct shader_machine_operation *operation);
 static int pair_group(const struct shader_machine_operation *first, const struct shader_machine_operation *second, struct powervr_usc_group *group);
@@ -264,8 +269,9 @@ shader_backend_build(
 	backend->control_flow = 0;
 	backend->error = 0;
 
-	/* The shared words only float operations read are read where they are. */
+	/* The shared words only float operations read are read where they are; the varyings samples iterate themselves. */
 	alias_shared(shader, program, backend);
+	mark_iterate_samples(shader, program, backend);
 
 	/* Works out where each value is live, and gives it registers. */
 	error = liveness(shader, backend);
@@ -321,6 +327,8 @@ shader_backend_build(
 	merge_iterates(program, backend);
 	reuse_immediates(backend);
 	unpack_in_place(program, backend);
+	if ((backend->forms & POWERVR_SHADER_FORM_PACK_OUTPUT) != 0)
+		pack_in_place(program, backend);
 	if (POWERVR_SHADER_PAIR != 0)
 		pair_operations(backend);
 
@@ -483,7 +491,10 @@ powervr_shader_compile_inline(
 
 	/* A keyed fragment program read through shared registers may move its uniform work to a shared program (q1546). */
 	split = 0;
-	if (stage == POWERVR_SHADER_FRAGMENT && key != NULL && key->shared_program != 0 && shared_values == NULL)
+	if (stage == POWERVR_SHADER_FRAGMENT &&
+	    key != NULL &&
+	    (key->forms & POWERVR_SHADER_FORM_SHARED_PROGRAM) != 0 &&
+	    shared_values == NULL)
 		split = 1;
 
 	/* Compiles, with the shared program when it may have one. */
@@ -544,9 +555,12 @@ compile_program(
 	propagate_copies(shader);
 	remove_dead_writes(shader);
 
-	/* Moves the work only uniform words decide to the shared program, and builds it. */
+	/* Moves the work only uniform words decide to the shared program, and builds it; the other forms the key takes. */
 	workspace->backend.inline_values = shared_values;
 	workspace->backend.inline_count = value_count;
+	workspace->backend.forms = 0;
+	if (key != NULL && stage == POWERVR_SHADER_FRAGMENT)
+		workspace->backend.forms = key->forms & (POWERVR_SHADER_FORM_PACK_OUTPUT | POWERVR_SHADER_FORM_ITERATE_SAMPLE);
 	moved = 0;
 	if (split != 0) {
 		error = split_shared(shader, program, &workspace->uniform, &workspace->shared_shader, &moved);
@@ -1128,9 +1142,11 @@ end_on_last(
 	if (program->stage != POWERVR_SHADER_FRAGMENT || backend->control_flow != 0 || backend->operation_count == 0)
 		return 0;
 
-	/* A move or an immediate on the enabled instances. */
+	/* A move, an immediate, or a pack into the pixel output (q1546), on the enabled instances. */
 	last = &backend->operations[backend->operation_count - 1U];
-	if (last->kind != MACHINE_MOVE && last->kind != MACHINE_IMMEDIATE)
+	if (last->kind != MACHINE_MOVE &&
+	    last->kind != MACHINE_IMMEDIATE &&
+	    (last->kind != MACHINE_PACK || last->overlap == 0))
 		return 0;
 	if (last->condition != POWERVR_USC_RUN_ENABLED)
 		return 0;
@@ -1875,6 +1891,177 @@ unpack_in_place(
 		kept++;
 	}
 	backend->operation_count = kept;
+}
+
+/*
+ * In a fragment program without branches, has a colour's pack write the
+ * pixel output register itself under the overlap check, where it packed
+ * into a temporary that a checked move then copied (q1546, Mesa 26.2.5
+ * src/imagination/pco/pco_legalize.c: a pck carries olchk with the pixel
+ * output as its destination; pco_ops.py: pck takes olchk, end and the
+ * repeat).  The pack then ends the program as the move did.
+ */
+static void
+pack_in_place(
+	const struct powervr_shader_program *program,
+	struct shader_backend *backend)
+{
+	struct shader_machine_operation *pack;
+	struct shader_machine_operation *move;
+	unsigned at;
+	unsigned next;
+	unsigned kept;
+	int read;
+
+	/* Fragment programs without branches only (no branch targets to keep). */
+	if (program->stage != POWERVR_SHADER_FRAGMENT || backend->control_flow != 0)
+		return;
+
+	/* A pack into a temporary that only the checked move into a pixel output after it reads. */
+	for (at = 0; at + 1U < backend->operation_count; at++) {
+		pack = &backend->operations[at];
+		move = &backend->operations[at + 1U];
+		if (pack->kind != MACHINE_PACK ||
+		    pack->condition != POWERVR_USC_RUN_ENABLED ||
+		    pack->destination[0].bank != POWERVR_USC_BANK_TEMPORARY ||
+		    pack->overlap != 0 ||
+		    pack->end != 0)
+			continue;
+		if (move->kind != MACHINE_MOVE ||
+		    move->variant != 1 ||
+		    move->modifiers[0] != 0 ||
+		    move->destination[0].bank != POWERVR_USC_BANK_SPECIAL ||
+		    !same_register(move->source[0], pack->destination[0]) ||
+		    move->condition != pack->condition)
+			continue;
+
+		/* Nothing after the move reads the temporary before writing it. */
+		read = 0;
+		for (next = at + 2U; next < backend->operation_count; next++) {
+			if (reads_register(&backend->operations[next], pack->destination[0])) {
+				read = 1;
+				break;
+			}
+			if (same_register(backend->operations[next].destination[0], pack->destination[0]))
+				break;
+		}
+		if (read)
+			continue;
+
+		/* The pack writes the pixel output under the check, ending where the move ended. */
+		pack->destination[0] = move->destination[0];
+		pack->overlap = 1;
+		pack->end = move->end;
+		move->kind = MACHINE_FOLDED;
+	}
+
+	/* The rest close up. */
+	kept = 0;
+	for (at = 0; at < backend->operation_count; at++) {
+		if (backend->operations[at].kind == MACHINE_FOLDED)
+			continue;
+		if (kept != at)
+			backend->operations[kept] = backend->operations[at];
+		kept++;
+	}
+	backend->operation_count = kept;
+}
+
+/*
+ * Marks the varyings a sample iterates itself (q1546, a trial form:
+ * BXE-4-32 has the control unit's iterate and sample): the two
+ * coordinates of a sample, unmodified, each a one-word value written
+ * only by the iteration of a varying word and read only there, the
+ * second's coefficient set the one after the first's, with the image
+ * and sampler states on multiples of four shared registers.
+ */
+static void
+mark_iterate_samples(
+	const struct powervr_ir_shader *shader,
+	const struct powervr_shader_program *program,
+	struct shader_backend *backend)
+{
+	const struct powervr_ir_instruction *instruction;
+	const struct powervr_ir_instruction *first;
+	const struct powervr_ir_instruction *second;
+	unsigned value;
+	unsigned at;
+	int found;
+
+	/* None yet; none at all unless the key takes the form. */
+	for (value = 0; value < shader->value_count; value++)
+		backend->iterate_sample[value] = 0;
+	if ((backend->forms & POWERVR_SHADER_FORM_ITERATE_SAMPLE) == 0 || program->stage != POWERVR_SHADER_FRAGMENT)
+		return;
+
+	/* Each sample whose coordinates are two iterated words in order. */
+	for (at = 0; at < shader->instruction_count; at++) {
+		instruction = &shader->instructions[at];
+		if (instruction->opcode != POWERVR_IR_SAMPLE)
+			continue;
+		if (instruction->immediate >= program->request_count || instruction->immediate_2 >= program->request_count)
+			continue;
+		if ((program->requests[instruction->immediate].shared & 3U) != 0 || (program->requests[instruction->immediate_2].shared & 3U) != 0)
+			continue;
+		found = lone_iterate(shader, &instruction->source[0], &first);
+		if (!found)
+			continue;
+		found = lone_iterate(shader, &instruction->source[1], &second);
+		if (!found || second->immediate != first->immediate + 4U)
+			continue;
+		backend->iterate_sample[instruction->source[0].value] = 1;
+		backend->iterate_sample[instruction->source[1].value] = 1;
+	}
+}
+
+/* Reports whether a sample's coordinate is a one-word value only one varying word's iteration writes and only it reads, and names that iteration. */
+static int
+lone_iterate(
+	const struct powervr_ir_shader *shader,
+	const struct powervr_ir_operand *operand,
+	const struct powervr_ir_instruction **iterate)
+{
+	const struct powervr_ir_instruction *writer_instruction;
+	unsigned writes;
+	unsigned writer;
+	unsigned reads;
+
+	/* A plain read of a one-word value. */
+	if (operand->kind != POWERVR_IR_OPERAND_VALUE ||
+	    operand->modifiers != 0 ||
+	    operand->component != 0 ||
+	    operand->value == 0 ||
+	    operand->value >= shader->value_count ||
+	    shader->values[operand->value].width != 1)
+		return 0;
+
+	/* Written once by an iteration, read once. */
+	reads = value_references(shader, operand->value, &writes, &writer);
+	if (reads != 1 || writes != 1)
+		return 0;
+	writer_instruction = &shader->instructions[writer];
+	if (writer_instruction->opcode != POWERVR_IR_ITERATE || (writer_instruction->flags & POWERVR_IR_FLAT) != 0)
+		return 0;
+
+	/* Succeeded: the iteration. */
+	*iterate = writer_instruction;
+	return 1;
+}
+
+/* Names the coefficient set of the iteration that writes a value (mark_iterate_samples found it). */
+static uint32_t
+iterate_coefficient(
+	const struct powervr_ir_shader *shader,
+	unsigned value)
+{
+	unsigned writes;
+	unsigned writer;
+
+	/* The value's one writer. */
+	(void)value_references(shader, value, &writes, &writer);
+
+	/* Succeeded: its coefficient set. */
+	return shader->instructions[writer].immediate;
 }
 
 /*
@@ -2637,6 +2824,7 @@ select_instruction(
 	unsigned opcode;
 	unsigned variant;
 	uint32_t packed;
+	uint32_t coefficient;
 	int error;
 
 	/* Structure has its own selection. */
@@ -2946,6 +3134,10 @@ select_instruction(
 		break;
 	case POWERVR_IR_ITERATE:
 		destination = destination_of(select, instruction);
+		if (select->backend->iterate_sample[instruction->destination] != 0) {
+			/* A coordinate the sample that reads it iterates itself (q1546). */
+			break;
+		}
 		if ((instruction->flags & POWERVR_IR_FLAT) != 0) {
 			/* A flat varying is its C coefficient. */
 			operation = append(select, MACHINE_MOVE);
@@ -3021,6 +3213,20 @@ select_instruction(
 			return EINVAL;
 		image = &select->program->requests[instruction->immediate];
 		sampler = &select->program->requests[instruction->immediate_2];
+		if (instruction->source[0].kind == POWERVR_IR_OPERAND_VALUE && select->backend->iterate_sample[instruction->source[0].value] != 0) {
+			/* Its coordinates iterated by the sample itself, then the wait for it (q1546). */
+			coefficient = iterate_coefficient(select->shader, instruction->source[0].value);
+			operation = append(select, MACHINE_ITERATE_SAMPLE);
+			if (operation != NULL) {
+				operation->destination[0] = destination_of(select, instruction);
+				operation->source[0] = bank_register(POWERVR_USC_BANK_SHARED, image->shared);
+				operation->source[2] = bank_register(POWERVR_USC_BANK_SHARED, sampler->shared);
+				operation->immediate = coefficient;
+				operation->immediate_2 = select->program->w_coefficient;
+			}
+			(void)append(select, MACHINE_WAIT);
+			break;
+		}
 		a = operand_plain(select, &instruction->source[0], 0);
 		operation = append(select, MACHINE_MOVE);
 		if (operation != NULL) {
@@ -4159,6 +4365,7 @@ shader_backend_group(
 		group->internal[3] = SELECT_FTE;
 		group->internal[4] = SELECT_FT2;
 		group->repeat = (uint8_t)operation->immediate;
+		group->overlap_check = operation->overlap;
 		error = powervr_usc_pack(operation->variant, 0, (operation->immediate_2 & PACK_ROUND_TO_ZERO) != 0, operation->immediate_2 & PACK_SCALE, &group->operation[POWERVR_USC_PHASE_2]);
 		break;
 	case MACHINE_UNPACK:
@@ -4196,6 +4403,13 @@ shader_backend_group(
 		group->unit = POWERVR_USC_UNIT_CONTROL;
 		group->control = CONTROL_ITERATE;
 		error = powervr_usc_iterate(operation->destination[0].index, operation->immediate, 1, operation->immediate_2, 0, operation->variant + 1U, 0, &group->operation[POWERVR_USC_PHASE_0]);
+		break;
+	case MACHINE_ITERATE_SAMPLE:
+		/* Two words iterated with perspective from consecutive coefficient sets, sampled with the shared registers' states, through data return counter 0 (q1546). */
+		group->unit = POWERVR_USC_UNIT_CONTROL;
+		group->control = CONTROL_ITERATE_SAMPLE;
+		error = powervr_usc_iterate_sample(operation->destination[0].index, operation->immediate, 1, operation->immediate_2, operation->source[0].index,
+						   operation->source[2].index, 0, DIMENSIONS_2D, 4, 1, 0, &group->operation[POWERVR_USC_PHASE_0]);
 		break;
 	case MACHINE_SAMPLE:
 		/* Image state in s0, coordinates in s1, sampler state in s2, the four words into s4's registers. */
