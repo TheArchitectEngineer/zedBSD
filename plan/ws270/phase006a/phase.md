@@ -475,3 +475,6 @@ Keiland が使い、vkmatrix 15/15・gpu-selftest 13/13 で確かめていない
   - draw の fragment の task は、`powervr_render_fragment_kick_build` で少なくともこの数の temp を求める。
   - render-job.c の呼び出しを 1 行替えた。
 - 確認: p010 は 0 failed、p009 は 505 passed、desktop の config で VF2 の vmunix は rc 0、warning 0。
+- d45（P1 の試し 434ca0566）: `powervr: core clock measured 395651840 Hz` → GPU の clock は 396 MHz で設定どおり。P2 の dual-phase の読みは誤り（Mesa も dual_phase 0）と P2 が訂正。
+- d46（fragment の temps を 48 に固定した使い捨て、main の tree で build、commit しない）: immediate 14.95、flat 15.65、alu 268.7、quarter 7.05 ms → temps（同時に動く pixel の数）は無関係。clear（background object も pixel ごとに USC）3.85 ms と全画面の draw 約 15 ms の差は draw の道（TA・ISP の primitive の処理、coefficient の PDS、pixel の出力）→ P2 に PPP・ISP・PDS の語の Mesa との比較と PUNCH_THROUGH の試し、P1 に三角形の数を変える perf と TA・ISP の道。
+- d47: 板を main の kernel（91885aec7、knob 0）に戻した。
