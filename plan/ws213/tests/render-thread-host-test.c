@@ -614,6 +614,33 @@ stepwise(void)
 	free(message);
 
 	/*
+	 * Nothing wanted and nothing in flight: the output's next image is
+	 * taken ahead, once; the next frame's ready holds it without an
+	 * acquire of its own.
+	 */
+	atomic_store(&run_answer, VK_SUCCESS);
+	before = atomic_load(&output_acquires);
+	step = kwl_render_step(&render);
+	check(step == KWL_RENDER_STEP_WORKED && render.held.output && atomic_load(&output_acquires) == before + 1U, "nothing wanted: the output's next image is taken ahead");
+	step = kwl_render_step(&render);
+	check(step == KWL_RENDER_STEP_BLOCKED && atomic_load(&output_acquires) == before + 1U, "it is taken once");
+	kwl_render_set_want(&render, KWL_RENDER_FRAME, NULL, 0U, &number);
+	(void)kwl_render_step(&render);
+	message = take_one();
+	check(message != NULL && message->kind == KWL_RENDER_READY && message->held.output && message->acquired_us != 0U, "the frame's ready holds the image taken ahead");
+	check(atomic_load(&output_acquires) == before + 1U, "without an acquire of its own");
+	job_from(message, &job);
+	job.slot = 0U;
+	free(message);
+	kwl_render_answer(&render, job.number, KWL_RENDER_ANSWER_LIST, &job);
+	(void)kwl_render_step(&render);
+	(void)kwl_render_step(&render);
+	message = take_one();
+	check(message != NULL && message->kind == KWL_RENDER_COMPLETED, "its list completed");
+	free(message);
+	check(atomic_load(&bad_presents) == 0U, "the image taken ahead was presented as acquired");
+
+	/*
 	 * Two jobs in flight (q1552): while the first's fence is not signalled
 	 * the next frame is readied and run in the other slot; no third is
 	 * readied; the completions come in submission order.

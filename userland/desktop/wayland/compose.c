@@ -731,11 +731,12 @@ kwl_compose_draw(
 	/* How long the frame pacing waited for the windows since the last frame was shown. */
 	if (server->log_frames) {
 		printf(
-			"KWL LAT pace frame=%llu awaiting=%u waited_ms=%llu wait_ms=%llu\n",
+			"KWL LAT pace frame=%llu awaiting=%u waited_ms=%llu wait_ms=%llu at_us=%llu\n",
 			(unsigned long long)server->frame + 1U,
 			server->awaiting,
 			(unsigned long long)(kwl_milliseconds() - server->frame_done_ms),
-			(unsigned long long)server->frame_wait_ms);
+			(unsigned long long)server->frame_wait_ms,
+			(unsigned long long)kwl_microseconds());
 	}
 
 	/* The frame shows the pointer where it is now. */
@@ -4070,6 +4071,17 @@ compose_hold(
 		slot->held[slot->held_count++] = windows[index]->current;
 		windows[index]->fresh = 0;
 
+		/*
+		 * A window awaited after an earlier frame that has not committed
+		 * since is not awaited any more: one that asked for a frame
+		 * callback and then had nothing to draw would otherwise hold every
+		 * later frame for the pacing's whole wait.
+		 */
+		if (windows[index]->awaited && windows[index]->committed_callbacks == NULL) {
+			windows[index]->awaited = 0;
+			server->awaiting--;
+		}
+
 		/* A window with frame callbacks is awaited after the frame (frame pacing). */
 		if (windows[index]->committed_callbacks != NULL && !windows[index]->awaited) {
 			windows[index]->awaited = 1;
@@ -4285,7 +4297,8 @@ compose_message(
 		compose->ready_valid = 1U;
 		server->perf.compose_acquire_cycles += message->acquire_cycles;
 		if (server->log_frames && message->want_kind == KWL_RENDER_FRAME)
-			printf("KWL LAT acquired frame=%llu at_us=%llu\n", (unsigned long long)server->frame + 1U, (unsigned long long)message->acquired_us);
+			printf("KWL LAT acquired frame=%llu at_us=%llu main_us=%llu\n", (unsigned long long)server->frame + 1U, (unsigned long long)message->acquired_us,
+			       (unsigned long long)kwl_microseconds());
 
 		/* The loop draws at its next look. */
 		break;
