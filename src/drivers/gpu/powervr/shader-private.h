@@ -185,10 +185,15 @@ enum machine_kind {
 	MACHINE_END,
 	MACHINE_TEST_ZERO,
 	MACHINE_CONDITION,
-	MACHINE_BRANCH
+	MACHINE_BRANCH,
+	MACHINE_ITERATE_SAMPLE
 };
 
-/* The back end's state for one shader. */
+/*
+ * The back end's state for one shader.  Forms are the key's program
+ * forms it takes (POWERVR_SHADER_FORM_PACK_OUTPUT, _ITERATE_SAMPLE);
+ * iterate_sample marks the iterated varyings a sample iterates itself.
+ */
 struct shader_backend {
 	struct shader_machine_operation operations[SHADER_MACHINE_OPERATIONS];
 	unsigned operation_count;
@@ -205,14 +210,59 @@ struct shader_backend {
 	uint32_t control_flow;
 	const uint32_t *inline_values;
 	uint32_t inline_count;
+	uint32_t forms;
+	uint8_t iterate_sample[POWERVR_IR_VALUES];
 	int error;
 };
 
-/* The compiler's working memory. */
+/*
+ * The most words a fragment program's shared program computes, and the
+ * most machine operations and code bytes it may have (q1546).
+ */
+#define SHADER_SHARED_WORDS		16U
+#define SHADER_SHARED_OPERATIONS	512U
+#define SHADER_SHARED_CODE		8192U
+
+/*
+ * What the split of a fragment program into its shared program knows of
+ * each value: how often it is written, whether only uniform words decide
+ * it (SHADER_UNIFORM_FREE: a shared word or a constant the program
+ * already reads as it is; SHADER_UNIFORM_COMPUTED: worked out from
+ * them), the computed word it became (its slot plus one) and whether a
+ * kept instruction reads it; and of each instruction, whether it moves
+ * to the shared program, the word of the colour it packs, and whether
+ * it is kept.
+ */
+#define SHADER_UNIFORM_VARYING		0U
+#define SHADER_UNIFORM_FREE		1U
+#define SHADER_UNIFORM_COMPUTED		2U
+
+struct shader_uniform {
+	uint16_t writes[POWERVR_IR_VALUES];
+	uint8_t kind[POWERVR_IR_VALUES];
+	uint8_t slot[POWERVR_IR_VALUES];
+	uint8_t needed[POWERVR_IR_VALUES];
+	uint8_t moved[POWERVR_IR_INSTRUCTIONS];
+	uint8_t pack_slot[POWERVR_IR_INSTRUCTIONS];
+	uint8_t kept[POWERVR_IR_INSTRUCTIONS];
+};
+
+/*
+ * The compiler's working memory.  The shared part holds a fragment
+ * program's shared program while it is built: its intermediate form, the
+ * program description it is selected with (a compute task's, with the
+ * fragment program's requests), its machine operations and its code.
+ */
 struct powervr_shader_workspace {
 	struct shader_spirv_reader reader;
 	struct powervr_ir_shader shader;
 	struct shader_backend backend;
+	struct shader_uniform uniform;
+	struct powervr_ir_shader shared_shader;
+	struct powervr_shader_program shared_program;
+	struct shader_machine_operation shared_operations[SHADER_SHARED_OPERATIONS];
+	unsigned shared_operation_count;
+	uint8_t shared_code[SHADER_SHARED_CODE];
 };
 
 int shader_backend_build(const struct powervr_ir_shader *shader, struct powervr_shader_program *program, struct shader_backend *backend);

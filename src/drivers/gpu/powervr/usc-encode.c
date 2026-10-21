@@ -979,6 +979,89 @@ powervr_usc_iterate(
 }
 
 /*
+ * Encodes the control unit's iterate and sample (q1546, a trial form):
+ * the coordinates iterated from coefficient sets the way a direct
+ * iteration does, then sampled with the image and sampler state the
+ * shared registers hold, into temporaries from destination on.
+ *
+ * Coefficient, w_coefficient, image and sampler are register numbers,
+ * each a multiple of four; perspective multiplies by the iterated 1/w;
+ * channels are one to four.
+ */
+int
+powervr_usc_iterate_sample(
+	unsigned destination,
+	unsigned coefficient,
+	unsigned perspective,
+	unsigned w_coefficient,
+	unsigned image,
+	unsigned sampler,
+	unsigned mode,
+	unsigned dimensions,
+	unsigned channels,
+	unsigned normalised,
+	unsigned data_return,
+	struct powervr_usc_operation *operation)
+{
+	/*
+	 * Values referenced:
+	 * Mesa 26.2.5 src/imagination/pco/pco_isa.py (I_CTRL pieces
+	 * dest_7_0 0:7..0, coff_7_2 1:7..2, p_itr 1:1..0, texoff_7_2
+	 * 2:7..2, drc_b2 2:1, itrsmp_mode_0 2:0, smpoff_7_2 3:7..2, dmn
+	 * 3:1..0, woff_b4_7_2 4:7..2, proj 4:1, sat 4:0, ext5 5:7, f16_b5
+	 * 5:6, sched_ctrl_b5 5:5..4, chan 5:3..2 sent less one, nncoords
+	 * 5:1, fcnorm 5:0; I_ITRSMP without ext5, six bytes; F_CTRLOP
+	 * itrsmp 0b1000) and src/imagination/common/device_info/bxe-4-32.h
+	 * (has_usc_itrsmp, has_usc_itrsmp_enhanced).  The fields left zero
+	 * (projection, saturation, half floats, scheduling, unnormalised
+	 * coordinates) are not taken.
+	 */
+	static const struct usc_piece pieces[] = {
+		{ 0, 0, 8, 0, 0 },
+		{ 1, 2, 6, 1, 0 },
+		{ 1, 0, 2, 2, 0 },
+		{ 2, 2, 6, 3, 0 },
+		{ 2, 1, 1, 4, 0 },
+		{ 2, 0, 1, 5, 0 },
+		{ 3, 2, 6, 6, 0 },
+		{ 3, 0, 2, 7, 0 },
+		{ 4, 2, 6, 8, 0 },
+		{ 5, 2, 2, 9, 0 },
+		{ 5, 0, 1, 10, 0 }
+	};
+	static const struct usc_layout layout = { 6, 11, 11, { 8, 6, 2, 6, 1, 1, 6, 2, 6, 2, 1 }, pieces };
+	uint32_t values[11];
+	int error;
+
+	/* Refuses register numbers off the multiple of four, and a dimension or a channel count the fields cannot carry. */
+	if ((coefficient & 3U) != 0 || (w_coefficient & 3U) != 0 || (image & 3U) != 0 || (sampler & 3U) != 0)
+		return EINVAL;
+	if (dimensions < 1 || dimensions > 3 || channels < 1 || channels > 4)
+		return EINVAL;
+
+	/* Collects the fields in the layout's order. */
+	values[0] = destination;
+	values[1] = coefficient >> 2;
+	values[2] = perspective;
+	values[3] = image >> 2;
+	values[4] = data_return;
+	values[5] = mode;
+	values[6] = sampler >> 2;
+	values[7] = dimensions;
+	values[8] = w_coefficient >> 2;
+	values[9] = channels - 1U;
+	values[10] = normalised;
+
+	/* Places the fields after checking each fits. */
+	error = operation_build(&layout, values, operation);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the six-byte iterate and sample. */
+	return 0;
+}
+
+/*
  * Encodes the main unit's 32- and 64-bit integer add and multiply-add.
  *
  * The short form carries the signedness, the addend's negation and the

@@ -48,7 +48,10 @@ enum powervr_shader_request_kind {
 	POWERVR_SHADER_REQUEST_LITERAL,
 	POWERVR_SHADER_REQUEST_WORKGROUP_ID,
 	POWERVR_SHADER_REQUEST_NUM_WORKGROUPS,
-	POWERVR_SHADER_REQUEST_BLEND_CONSTANTS
+	POWERVR_SHADER_REQUEST_BLEND_CONSTANTS,
+
+	/* Words the program's shared program computes: the data sequencer loads nothing for them. */
+	POWERVR_SHADER_REQUEST_COMPUTED
 };
 
 /*
@@ -156,12 +159,27 @@ struct powervr_shader_blend {
  * colour location's attachment format (0 for none, the output dropped),
  * its blend, and the sample count.  A compile without a key leaves
  * fragment colours as floats in temporaries.
+ *
+ * Forms (POWERVR_SHADER_FORM_*) turns on fragment program forms the
+ * driver takes (q1546): the shared program, which moves the work only
+ * push constants, descriptors and constants decide into one task a draw
+ * that the data sequencer's shared register program issues after its
+ * loads, writing the results to shared registers the pixels read (the
+ * driver starts it: powervr_shader_program.shared_length); the pack of
+ * a colour written into the pixel output under the overlap check,
+ * ending the program there; and a sample whose coordinates are a
+ * varying iterated by the sample itself.
  */
+#define POWERVR_SHADER_FORM_SHARED_PROGRAM	0x1U
+#define POWERVR_SHADER_FORM_PACK_OUTPUT		0x2U
+#define POWERVR_SHADER_FORM_ITERATE_SAMPLE	0x4U
+
 struct powervr_shader_key {
 	uint32_t attribute_formats[POWERVR_SHADER_INPUTS];
 	uint32_t output_formats[POWERVR_SHADER_OUTPUTS];
 	struct powervr_shader_blend blend[POWERVR_SHADER_OUTPUTS];
 	uint32_t samples;
+	uint32_t forms;
 };
 
 /*
@@ -177,10 +195,19 @@ struct powervr_shader_key {
  * the attributes' registers; POWERVR_SHADER_NO_REG when not read.  The
  * vertex index includes the draw's first vertex or vertex offset, the
  * instance index the first instance.
+ *
+ * A fragment program with a shared program (shared_length not 0) has
+ * it in the same code at shared_offset (16-byte aligned, after the
+ * program; length counts both): the driver issues it from the shared
+ * register program, with shared_temps temporaries, after the loads.
+ * It fills the words of the program's computed request.
  */
 struct powervr_shader_program {
 	uint32_t stage;
 	size_t length;
+	size_t shared_offset;
+	size_t shared_length;
+	uint32_t shared_temps;
 	uint32_t temps;
 	uint32_t shareds;
 	uint32_t vertex_inputs;

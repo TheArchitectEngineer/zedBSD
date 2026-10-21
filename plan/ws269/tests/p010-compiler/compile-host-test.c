@@ -31,7 +31,28 @@
 #include "userland/desktop/wayland/shaders.h"
 #include "userland/tests/vkcompute/shader.h"
 #include "userland/tests/vkdemo/shaders.h"
+#include "userland/tests/vkmatrix/shader.h"
 #include "userland/tests/vkstage/shader.h"
+
+/* vkmatrix's fragment shaders the keyed check compiles. */
+static const struct {
+	const char *name;
+	const uint32_t *words;
+	size_t bytes;
+} vkmatrix_fragments[] = {
+	{ "push4.frag", vkmatrix_push4_frag, sizeof(vkmatrix_push4_frag) },
+	{ "push32.frag", vkmatrix_push32_frag, sizeof(vkmatrix_push32_frag) },
+	{ "push128.frag", vkmatrix_push128_frag, sizeof(vkmatrix_push128_frag) },
+	{ "batch.frag", vkmatrix_batch_frag, sizeof(vkmatrix_batch_frag) },
+	{ "texture.frag", vkmatrix_texture_frag, sizeof(vkmatrix_texture_frag) },
+	{ "immediate.frag", vkmatrix_immediate_frag, sizeof(vkmatrix_immediate_frag) },
+	{ "alu.frag", vkmatrix_alu_frag, sizeof(vkmatrix_alu_frag) },
+	{ "alu4.frag", vkmatrix_alu4_frag, sizeof(vkmatrix_alu4_frag) },
+	{ "mul4.frag", vkmatrix_mul4_frag, sizeof(vkmatrix_mul4_frag) },
+	{ "rcp.frag", vkmatrix_rcp_frag, sizeof(vkmatrix_rcp_frag) },
+	{ "uniform.frag", vkmatrix_uniform_frag, sizeof(vkmatrix_uniform_frag) },
+	{ "alupix.frag", vkmatrix_alupix_frag, sizeof(vkmatrix_alupix_frag) },
+};
 
 /* The bytes of program room per shader. */
 #define CODE_ROOM	65536
@@ -313,10 +334,13 @@ run_prepare(
 	run->context = program;
 }
 
+static void machine_compare_once(const uint32_t *words, size_t count, uint32_t stage, const char *name);
+
 /*
  * Compiles a module that was read, runs it on the machine simulator
  * with the same inputs, and compares memory and outputs with the
- * interpreter's.
+ * interpreter's; a keyed fragment shader again with its shared program
+ * (q1546), which runs first on one instance.
  */
 static void
 machine_compare(
@@ -325,11 +349,51 @@ machine_compare(
 	uint32_t stage,
 	const char *name)
 {
+	static const struct {
+		uint32_t forms;
+		const char *name;
+	} forms[] = {
+		{ POWERVR_SHADER_FORM_SHARED_PROGRAM, "with its shared program" },
+		{ POWERVR_SHADER_FORM_PACK_OUTPUT, "packed into the output" },
+		{ POWERVR_SHADER_FORM_ITERATE_SAMPLE, "iterating its samples" },
+		{ POWERVR_SHADER_FORM_SHARED_PROGRAM | POWERVR_SHADER_FORM_PACK_OUTPUT | POWERVR_SHADER_FORM_ITERATE_SAMPLE, "in every form" },
+	};
+	struct powervr_shader_key key;
+	const struct powervr_shader_key *saved_key;
+	char label[160];
+	unsigned index;
+
+	/* As the key says, then in each of the forms (q1546). */
+	machine_compare_once(words, count, stage, name);
+	if (stage != POWERVR_SHADER_FRAGMENT || current_key == NULL)
+		return;
+	saved_key = current_key;
+	for (index = 0; index < sizeof(forms) / sizeof(forms[0]); index++) {
+		key = *saved_key;
+		key.forms = forms[index].forms;
+		current_key = &key;
+		snprintf(label, sizeof(label), "%s %s", name, forms[index].name);
+		machine_compare_once(words, count, stage, label);
+	}
+	current_key = saved_key;
+}
+
+/* Compiles and simulates a module once with the current key (machine_compare). */
+static void
+machine_compare_once(
+	const uint32_t *words,
+	size_t count,
+	uint32_t stage,
+	const char *name)
+{
+	static struct shader_backend shared_backend;
 	struct powervr_shader_program program;
 	uint32_t saved[MEMORY_WORDS];
 	char label[160];
 	unsigned lane;
 	unsigned word;
+	unsigned groups;
+	unsigned words_computed;
 	int error;
 	int same;
 
@@ -357,6 +421,25 @@ machine_compare(
 	machine->memory = memory;
 	machine->memory_base = MEMORY_BASE;
 	machine->memory_words = MEMORY_WORDS;
+	groups = workspace->backend.group_count;
+	if (program.shared_length != 0) {
+		/* The shared program on one instance, its words kept, the registers cleared after it. */
+		shared_backend.operation_count = workspace->shared_operation_count;
+		memcpy(shared_backend.operations, workspace->shared_operations, sizeof(workspace->shared_operations[0]) * workspace->shared_operation_count);
+		error = machine_run_program(machine, &shared_backend, 1U);
+		snprintf(label, sizeof(label), "%s shared program runs on the machine simulator (%d)", name, error);
+		check(error == 0, label);
+		memset(machine->temps, 0, sizeof(machine->temps));
+		memset(machine->predicate, 0, sizeof(machine->predicate));
+		words_computed = 0;
+		for (word = 0; word < program.request_count; word++) {
+			if (program.requests[word].kind == POWERVR_SHADER_REQUEST_COMPUTED)
+				words_computed = program.requests[word].words;
+		}
+		printf("  %s: %u groups, shared program %u operations, %u words\n", name, groups, workspace->shared_operation_count, words_computed);
+	} else if (stage == POWERVR_SHADER_FRAGMENT && current_key != NULL) {
+		printf("  %s: %u groups\n", name, groups);
+	}
 	error = machine_run_program(machine, &workspace->backend, stage == POWERVR_SHADER_COMPUTE ? lane_mask(program.workgroup[0]) : 0xffffffffU);
 	snprintf(label, sizeof(label), "%s runs on the machine simulator (%d)", name, error);
 	check(error == 0, label);
@@ -920,6 +1003,18 @@ test_keyed(void)
 		snprintf(name, sizeof(name), "keyed kwl panel.frag mode %u", channel);
 		if (prepare(kwl_panel_variants[channel].words, kwl_panel_variants[channel].bytes / 4U, POWERVR_SHADER_FRAGMENT, &program, name, 0xffffffffU) == 0)
 			machine_compare(kwl_panel_variants[channel].words, kwl_panel_variants[channel].bytes / 4U, POWERVR_SHADER_FRAGMENT, name);
+	}
+
+	/* vkmatrix's fragment shaders on B8G8R8A8 without a blend (q1546: the push constant colours and the uniform ramp). */
+	memset(&key, 0, sizeof(key));
+	key.output_formats[0] = 44;
+	key.blend[0].write_mask = 0xf;
+	for (channel = 0; channel < sizeof(vkmatrix_fragments) / sizeof(vkmatrix_fragments[0]); channel++) {
+		char name[64];
+
+		snprintf(name, sizeof(name), "keyed vkmatrix %s", vkmatrix_fragments[channel].name);
+		if (prepare(vkmatrix_fragments[channel].words, vkmatrix_fragments[channel].bytes / 4U, POWERVR_SHADER_FRAGMENT, &program, name, 0xffffffffU) == 0)
+			machine_compare(vkmatrix_fragments[channel].words, vkmatrix_fragments[channel].bytes / 4U, POWERVR_SHADER_FRAGMENT, name);
 	}
 
 	/* vkdemo's vertex shader with its attribute formats: three floats and two. */

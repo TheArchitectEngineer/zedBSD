@@ -57,7 +57,8 @@ enum {
 	KIND_END,
 	KIND_TEST_ZERO,
 	KIND_CONDITION,
-	KIND_BRANCH
+	KIND_BRANCH,
+	KIND_ITERATE_SAMPLE
 };
 
 static float as_float(uint32_t word);
@@ -334,6 +335,24 @@ machine_run_program(
 					write_register(run, next, lane, run->iterate_word(lane, operation->immediate + word * 4U, 0));
 				}
 				break;
+			case KIND_ITERATE_SAMPLE:
+				{
+					unsigned image_word;
+					unsigned sampler_word;
+					int image;
+					int sampler;
+
+					/* The two coordinates iterated, then sampled (q1546). */
+					image = request_at(run->program, operation->source[0].index, &image_word);
+					sampler = request_at(run->program, operation->source[2].index, &sampler_word);
+					if (image < 0 || sampler < 0)
+						return -1;
+					run->sample_words((unsigned)image, (unsigned)sampler, run->iterate_word(lane, operation->immediate, 0),
+							  run->iterate_word(lane, operation->immediate + 4U, 0), words);
+					for (word = 0; word < 4; word++)
+						run->temps[operation->destination[0].index + word][lane] = words[word];
+				}
+				break;
 			case KIND_SAMPLE:
 				{
 					unsigned image;
@@ -479,6 +498,12 @@ read_register(
 		/* A literal the data sequencer writes (q1539: the back end's constants of float operations). */
 		if (run->program->requests[request].kind == POWERVR_SHADER_REQUEST_LITERAL)
 			return run->program->requests[request].literal;
+		/* A word the shared program wrote (q1546). */
+		if (run->program->requests[request].kind == POWERVR_SHADER_REQUEST_COMPUTED) {
+			if (reg.index >= MACHINE_RUN_SHAREDS || run->shared_written[reg.index] == 0)
+				return 0xdead0005U;
+			return run->shareds[reg.index];
+		}
 		return run->shared_word(run->program, (uint32_t)request, word);
 	default:
 		return 0;
@@ -508,6 +533,11 @@ write_register(
 {
 	if (reg.bank == 0 && reg.index >= 32 && reg.index < 36) {
 		run->pixels[reg.index - 32U][lane] = word;
+		return;
+	}
+	if (reg.bank == 4 && reg.index < MACHINE_RUN_SHAREDS) {
+		run->shareds[reg.index] = word;
+		run->shared_written[reg.index] = 1;
 		return;
 	}
 	if (reg.bank != 1 || reg.index >= SHADER_MACHINE_TEMPORARIES)

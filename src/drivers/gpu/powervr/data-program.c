@@ -179,6 +179,10 @@ powervr_data_resolve(
 				return EINVAL;
 			error = load_add(loads, room, count, POWERVR_DATA_LOAD_DMA, request->shared, 4, state->blend_address);
 			break;
+		case POWERVR_SHADER_REQUEST_COMPUTED:
+			/* The program's shared program writes these words itself (q1546). */
+			error = 0;
+			break;
 		default:
 			return ENOTSUP;
 		}
@@ -199,15 +203,6 @@ powervr_data_resolve(
  *
  * The 64-bit constants come first, in the order of the loads, and the
  * 32-bit ones after them.
- *
- * Procedure referenced:
- * Mesa 26.2.5 src/imagination/vulkan/pds/pvr_pipeline_pds.c
- * (pvr_pds_generate_descriptor_upload_program: data_size_in_dwords =
- * consts64 * 2 + consts32, next_const32 starting at consts64 * 2, the
- * last DMA with LAST_EN and the halt bit, a halt when empty and
- * must_not_be_empty; pvr_encode_burst: the DOUTD control of
- * size, address, cached common store; pvr_encode_direct_write: the
- * DOUTW control with the store, address and write mask).
  */
 int
 powervr_data_shared_build(
@@ -215,13 +210,52 @@ powervr_data_shared_build(
 	uint32_t count,
 	struct powervr_data_shared_program *result)
 {
+	int error;
+
+	/* The program without a shared task. */
+	error = powervr_data_shared_build_task(loads, count, NULL, result);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the program. */
+	return 0;
+}
+
+/*
+ * Builds a shared register program from its loads and, when task is not
+ * NULL, the issue of a shared task after them (q1546: the fragment
+ * program's shared program, which computes words into the shared
+ * registers from the ones the loads fill): the last load is still
+ * marked, but the issue ends the program.  The issue's task word is the
+ * 64-bit constant after the loads'.
+ *
+ * Procedure referenced:
+ * Mesa 26.2.5 src/imagination/vulkan/pds/pvr_pipeline_pds.c
+ * (pvr_pds_generate_descriptor_upload_program: data_size_in_dwords =
+ * consts64 * 2 + consts32, next_const32 starting at consts64 * 2, the
+ * last DMA with LAST_EN and the halt bit unless secondary_program_present,
+ * then for it a 64-bit constant and pvr_pds_encode_doutu without cc and
+ * with end, a halt when empty and must_not_be_empty; pvr_encode_burst:
+ * the DOUTD control of size, address, cached common store;
+ * pvr_encode_direct_write: the DOUTW control with the store, address and
+ * write mask).
+ */
+int
+powervr_data_shared_build_task(
+	const struct powervr_data_load *loads,
+	uint32_t count,
+	const uint64_t *task,
+	struct powervr_data_shared_program *result)
+{
 	const struct powervr_data_load *load;
 	enum powervr_pds_output output;
 	uint64_t address;
 	uint32_t control;
 	uint32_t index;
+	uint32_t constants64;
 	uint32_t constant32;
 	unsigned last;
+	unsigned end;
 	int error;
 
 	/* Refuses a missing table or result, and more loads than the constants hold. */
@@ -230,8 +264,8 @@ powervr_data_shared_build(
 	if (count > POWERVR_DATA_LOADS_MAX)
 		return E2BIG;
 
-	/* No load: the program only halts. */
-	if (count == 0) {
+	/* No load and no task: the program only halts. */
+	if (count == 0 && task == NULL) {
 		result->data_words = 0;
 		error = powervr_pds_halt(0, &result->code[0]);
 		if (error != 0)
@@ -240,11 +274,19 @@ powervr_data_shared_build(
 		return 0;
 	}
 
+	/* The 64-bit constants: one a load, and the task word's. */
+	constants64 = count;
+	if (task != NULL)
+		constants64++;
+
 	/* Each load's constants and its output. */
 	for (index = 0; index < count; index++) {
 		load = &loads[index];
 		last = index + 1U == count ? 1U : 0U;
-		constant32 = count * 2U + index;
+		end = last;
+		if (task != NULL)
+			end = 0;
+		constant32 = constants64 * 2U + index;
 		if (load->shared > STORE_ADDRESS_MAX || load->words == 0)
 			return EINVAL;
 
@@ -279,15 +321,24 @@ powervr_data_shared_build(
 		result->data[index * 2U + 1U] = (uint32_t)(address >> 32);
 		result->data[constant32] = control;
 
-		/* The output from the 64-bit constant and the 32-bit one; the last ends the program. */
-		error = powervr_pds_output(0, last, output, index, constant32, &result->code[index]);
+		/* The output from the 64-bit constant and the 32-bit one; the last ends the program unless a task follows. */
+		error = powervr_pds_output(0, end, output, index, constant32, &result->code[index]);
 		if (error != 0)
 			return error;
 	}
 
-	/* Succeeded: three data words and one code word per load. */
-	result->data_words = count * 3U;
-	result->code_words = count;
+	/* The shared task's issue from its constant, ending the program. */
+	if (task != NULL) {
+		result->data[count * 2U] = (uint32_t)*task;
+		result->data[count * 2U + 1U] = (uint32_t)(*task >> 32);
+		error = powervr_pds_output(0, 1, POWERVR_PDS_OUTPUT_SHADER_TASK, count, 0, &result->code[count]);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: the constants and a code word a load and for the issue. */
+	result->data_words = constants64 * 2U + count;
+	result->code_words = constants64;
 	return 0;
 }
 

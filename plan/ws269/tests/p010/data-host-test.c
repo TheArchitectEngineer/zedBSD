@@ -213,6 +213,7 @@ test_shared(void)
 	struct powervr_set_layout layout;
 	struct powervr_data_state state;
 	struct powervr_data_load loads[POWERVR_DATA_LOADS_MAX];
+	uint64_t task;
 	uint32_t count;
 	uint32_t c32;
 	int error;
@@ -243,9 +244,10 @@ test_shared(void)
 	program.requests[6] = (struct powervr_shader_request){ POWERVR_SHADER_REQUEST_NUM_WORKGROUPS, 0, 3, 18, 0, 0, 0, 0, 0 };
 	program.requests[7] = (struct powervr_shader_request){ POWERVR_SHADER_REQUEST_BLEND_CONSTANTS, 0, 4, 22, 0, 0, 0, 0, 0 };
 	program.requests[8] = (struct powervr_shader_request){ POWERVR_SHADER_REQUEST_WORKGROUP_ID, 0, 1, 26, 0, 0, 0, 0, 0 };
-	program.request_count = 9;
+	program.requests[9] = (struct powervr_shader_request){ POWERVR_SHADER_REQUEST_COMPUTED, 0, 3, 27, 0, 0, 0, 0, 0 };
+	program.request_count = 10;
 	error = powervr_data_resolve(&program, &state, loads, POWERVR_DATA_LOADS_MAX, &count);
-	check(error == 0 && count == 11, "resolve: 11 loads");
+	check(error == 0 && count == 11, "resolve: 11 loads, none for the shared program's words");
 	check(loads[0].kind == POWERVR_DATA_LOAD_DMA && loads[0].shared == 0 && loads[0].words == 2 && loads[0].source == 0x100000ULL, "resolve: buffer address from the set");
 	check(loads[1].kind == POWERVR_DATA_LOAD_DMA && loads[1].shared == 2 && loads[1].words == 4 && loads[1].source == 0x100010ULL, "resolve: image words at the binding");
 	check(loads[2].kind == POWERVR_DATA_LOAD_DMA && loads[2].shared == 6 && loads[2].source == 0x100030ULL, "resolve: sampler words 32 bytes on");
@@ -281,6 +283,25 @@ test_shared(void)
 	/* No load: a halt (must_not_be_empty), no data. */
 	error = powervr_data_shared_build(loads, 0, &shared);
 	check(error == 0 && shared.code_words == 1 && shared.code[0] == ((0xdU << 28) | (6U << 23)) && shared.data_words == 0, "shared: empty is a halt");
+
+	/*
+	 * The loads and a shared task's issue (q1546, Mesa's
+	 * secondary_program_present): the task word the 64-bit constant after
+	 * the loads', the 32-bit constants after it, the last load marked but
+	 * not ending, a DOUTU without cc ending the program.
+	 */
+	task = 0x0000004000000123ULL;
+	error = powervr_data_shared_build_task(loads, count, &task, &shared);
+	check(error == 0 && shared.data_words == 35 && shared.code_words == 12, "shared task: 35 data words, 12 code words");
+	c32 = 24;
+	check(shared.data[22] == 0x123U && shared.data[23] == 0x40U, "shared task: task word in const64 11");
+	check(shared.data[c32] == ((2U << 0) | (0U << 13) | 0x10000000U), "shared task: DOUTD control after the task word");
+	check(shared.data[c32 + 10] == (0x80000000U | 0x10000000U | (26U << 13) | 0U), "shared task: last DOUTW keeps LAST_EN");
+	check(shared.code[0] == mesa_dout(0, 0, c32, 0, 0), "shared task: DOUTD 0");
+	check(shared.code[10] == mesa_dout(0, 0, c32 + 10, 10, 1), "shared task: last DOUTW does not end the program");
+	check(shared.code[11] == mesa_dout(0, 1, 0, 11, 2), "shared task: DOUTU ends the program");
+	error = powervr_data_shared_build_task(loads, 0, &task, &shared);
+	check(error == 0 && shared.data_words == 2 && shared.code_words == 1 && shared.code[0] == mesa_dout(0, 1, 0, 0, 2), "shared task: the issue alone");
 
 	/* Refusals: an unbound set, a descriptor past the set, a two-word write to an odd register, no push buffer. */
 	state.layouts[0] = NULL;

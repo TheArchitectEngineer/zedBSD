@@ -309,6 +309,30 @@ main(void)
 	}
 
 	/*
+	 * An iterate and sample (q1546, I_ITRSMP without ext5): dest 10,
+	 * coefficient 4 (quartered 1 at 1:7..2) with p iter_mul (0x05),
+	 * texoff 0 and drc 0 and mode pixel (0x00), smpoff 4 (quartered 1
+	 * at 3:7..2) with dmn 2d 0b10 (0x06), woff 0 (0x00), chan 4 sent as
+	 * 3 at 5:3..2 and fcnorm 1 (0x0d); control op itrsmp 0b1000.
+	 */
+	{
+		static const uint8_t iterate_sample[] = { 0x0a, 0x05, 0x00, 0x06, 0x00, 0x0d };
+
+		operation = blank(MACHINE_ITERATE_SAMPLE);
+		operation.destination[0] = reg(1, 10);
+		operation.source[0] = reg(4, 0);
+		operation.source[2] = reg(4, 4);
+		operation.immediate = 4;
+		operation.immediate_2 = 0;
+		ok = shader_backend_group(&operation, 0, &group) == 0;
+		ok = ok && group.unit == POWERVR_USC_UNIT_CONTROL && group.control == 8 && phase_is(&group, 0, iterate_sample, 6);
+		ok = ok && powervr_usc_group_size(&group, &size) == 0;
+		check(ok, "iterate and sample");
+		if (!ok)
+			dump(&group);
+	}
+
+	/*
 	 * A sample: the brief form (dma 0b111, fcnorm 1, drc 0, smp 0b100:
 	 * 0xf4; dmn 2d 0b10 at 1:6..5, chan 4 sent as 3 at 1:3..2: 0x4c);
 	 * image state s0, coordinates s1, sampler state s2, results s4.
