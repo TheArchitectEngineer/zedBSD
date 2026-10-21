@@ -133,6 +133,10 @@
 #define DC_CURSOR_HIDDEN_CLEAR	0x3U
 #define DC_CURSOR_HOT_MAX	63
 
+/* The cursor's clock gating (read back only), and how many cursor writes log their registers. */
+#define DC_CURSOR_CLOCK_GATING	0x1484U
+#define DC_CURSOR_LOGS		8U
+
 /*
  * The panel registers the driver sets when it lights the output itself:
  * the dither, the DPI and DP output formats, the four timing words, and
@@ -360,6 +364,13 @@ static struct spinlock dc_commit_lock = {
  * writes the planes.  Read under dc_commit_lock by a commit.
  */
 static volatile unsigned dc_fatal;
+
+/*
+ * How many cursor writes have logged the cursor's registers read back
+ * (ws270-p007, the cursor not seen on the board): the first
+ * DC_CURSOR_LOGS only.  Counted under dc_commit_lock.
+ */
+static unsigned dc_cursor_logged;
 
 static uint32_t read_control(const struct dc_adoption *adoption, uint32_t offset);
 static uint32_t read_display(const struct dc_adoption *adoption, uint32_t offset);
@@ -1578,6 +1589,13 @@ drv_powervr_dc_cursor(
 	uint32_t config;
 	uint32_t hot_x;
 	uint32_t hot_y;
+	uint32_t before;
+	uint32_t read_config;
+	uint32_t read_address;
+	uint32_t read_location;
+	uint32_t read_gating;
+	uint32_t read_panel;
+	unsigned logged;
 
 	/* Only the controller whose screen is the driver's, and an image it can name. */
 	adoption = &board_adoption;
@@ -1625,6 +1643,7 @@ drv_powervr_dc_cursor(
 	write_display(adoption, panel, adoption->panel_extra | DC_PANEL_EXTRA_HOLD);
 	write_display(adoption, DC_PLANE_EXTRA + step, plane->extra & ~POWERVR_DC_EXTRA_COMMIT);
 	config = read_display(adoption, DC_CURSOR_CONFIG + base);
+	before = config;
 	if (shown) {
 		write_display(adoption, DC_CURSOR_ADDRESS + base, (uint32_t)physical);
 		write_display(adoption, DC_CURSOR_LOCATION + base, (uint32_t)x | ((uint32_t)y << 16));
@@ -1636,7 +1655,39 @@ drv_powervr_dc_cursor(
 	write_display(adoption, DC_PLANE_EXTRA + step, plane->extra | POWERVR_DC_EXTRA_COMMIT);
 	write_display(adoption, panel, adoption->panel_extra & ~DC_PANEL_EXTRA_HOLD);
 
+	/* The first writes read the cursor's registers back, for the log below. */
+	logged = dc_cursor_logged;
+	read_config = 0;
+	read_address = 0;
+	read_location = 0;
+	read_gating = 0;
+	read_panel = 0;
+	if (logged < DC_CURSOR_LOGS) {
+		dc_cursor_logged = logged + 1U;
+		read_config = read_display(adoption, DC_CURSOR_CONFIG + base);
+		read_address = read_display(adoption, DC_CURSOR_ADDRESS + base);
+		read_location = read_display(adoption, DC_CURSOR_LOCATION + base);
+		read_gating = read_display(adoption, DC_CURSOR_CLOCK_GATING + base);
+		read_panel = read_display(adoption, DC_PANEL_CONFIG + DC_UNIT_STEP * DC_HDMI_PANEL);
+	}
+
 	spin_unlock_irqrestore(&dc_commit_lock, enabled);
+
+	/* What the controller holds after the write, logged with no lock held. */
+	if (logged < DC_CURSOR_LOGS) {
+		kern_logf("dc8200: cursor %u shown %d at %llx %d,%d: config %x -> %x address %x location %x gating %x panel %x\n",
+			  logged,
+			  shown,
+			  (unsigned long long)physical,
+			  (int)x,
+			  (int)y,
+			  before,
+			  read_config,
+			  read_address,
+			  read_location,
+			  read_gating,
+			  read_panel);
+	}
 
 	/* Succeeded: the cursor changes at one of the next blanks. */
 	return 0;
