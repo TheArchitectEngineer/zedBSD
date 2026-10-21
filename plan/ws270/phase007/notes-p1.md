@@ -96,3 +96,47 @@ branch agent/p1-q1541（main を merge 済み）。板は Q1（d59〜d68）。
 DDK の vkmatrix（594 MHz）: flat 1372、texture 2325、quarter 1324、clear-64 348、load-64 581、load-small 1964 us。flat と quarter がほぼ同じ → 全画面でも固定費が主で、pixel の費用は小さい（圧縮か SLC の効果の疑い）。
 
 試しの kernel: 01c0e812f（594 MHz ＋ APM 100 ＋ SLC 64-byte interleave ＋ firmware の data cached、build/q1541k）。既定（merge 用）は 5bced8f66（全部 0、register の one-shot の log だけ入る）。
+
+## q1546（2026-10-21、P1）: uniform の work を shared program へ、pixel の出力の道
+
+branch agent/p1-q1546（基 main 9c0672c58）。commit 83d4df7e3（hoist・pack の元を直に・vkmatrix uniform-ramp/perf-uniform）、f9f2a7929（form と runtime の trial、PACK の pixout 直書き、itrsmp、vkmatrix -t・batched・新 case）。板は未実施（Q1 へ: build/q1546/vf2/vmunix sha256 a1b4323b…、bin/vkmatrix c5c8b7cc…）。
+
+### 仕組み
+
+- compiler（shader-backend.c split_shared）: fragment で、if・loop の外で 1 回だけ書かれ、push・descriptor・定数だけから決まる値を uniform とし、その命令を shared program（compute の形で select、同じ request 表）へ写す。pixel 側が読む computed の値と、uniform だけの色の pack は、新しい request（POWERVR_SHADER_REQUEST_COMPUTED、PDS は load しない）の語になる。shared program が SHARED_STORE（mov → sh）で書き、pixel 側は SHARED で読む（色は PIXEL_SHARED で sh → pixout の mov 1 つ）。0・1 だけの定数の色は literal の request（PDS の DOUTW）にする。
+- 使われなくなった uniform の命令は後ろから消す（drop_unread）。remove_dead_writes は 1 pass に 1 段しか消えず、64 段の鎖が残っていた。
+- driver: shared register program の最後の load の END を外し、DOUTU（cc なし、END）で shared program を issue する（Mesa の pvr_pds_generate_descriptor_upload_program の secondary_program_present と同じ形、data-program.c powervr_data_shared_build_task）。code は fragment の code の後ろ、16 byte 境界（program.shared_offset）。temps は program.shared_temps。sample rate instance。
+- PACK の pixout 直書き（form 0x2）: PACK を olchk 付きで pixel output に書かせ、mov を消す。program は PACK で END（Mesa pco_ops.py の pck は olchk・end・rpt を持つ。pco_legalize.c は pixout を名指せない時だけ mov を挟む）。
+- itrsmp（form 0x4）: sample の座標が 2 語の iterate の値で、他に読まれない時、ITER＋WDF＋SMP を control の itrsmp（ctrlop 0b1000、6 byte、Mesa pco_isa.py の I_ITRSMP、BXE-4-32 は has_usc_itrsmp・_enhanced）1 つにする。image・sampler の state は 4 の倍数の sh。Mesa 自身はこの命令を出さないので、encoding の意味（count が dmn から決まる等）は推定。
+- sample の 4 語をそのまま pack する時は、移さずに sample の register から PACK する（texture 8→6 group、form に依らず既定）。
+- 試しの切り替え: VkPipelineCreateFlags の bit 24〜31 で form を反転する（render-draw.c）。vkmatrix -t 0x0,0x1,… で 1 回の起動で順に流す。
+
+### group 数（host、pixel 側。括弧は shared program の命令数）
+
+| shader | 前 | shared program | pack 直書き | itrsmp | 全部 |
+| --- | --- | --- | --- | --- | --- |
+| vkm push4（flat） | 4 | 1（8） | 3 | 4 | 1 |
+| vkm immediate | 2 | 1（literal） | | | |
+| vkm alu・alu4・mul4・rcp | 68・41・41・38 | 1 | | | |
+| vkm uniform（新） | 18 | 8（17） | 17 | 18 | 7 |
+| vkm texture | 6（pack の元を直に、前は 8） | 6 | 5 | 4 | 3 |
+| kwl quad.frag（blend） | 12 | 12 | 11 | 10 | 9 |
+| panel[0] glass | 61 | 54（16） | 60 | 61 | 53 |
+| panel[1]〜[7] | 39・36・31・33・18・40・67 | 32・33・27・29・14・36・60 | 各 −1 | | |
+
+### texture の内訳（DDK は texture−clear 約 1.0 ms、こちら 6.0 ms）
+
+perf-texture（blend over、vkm texture.frag、1 group ≈ 0.45 ms/全画面 at 594 MHz の model）の前の pixel あたり: ITER（1）、WAIT（1）、SMP（1）、WAIT（1）、MOV×2 の組（sample の 4 語を pack の連続 register へ、2）、PACK rpt4（4 slot）、MOV olchk（1）、blend の UNPACK rpt4（4 slot）と FMAD 4 つ（組で 2）。model で 9〜15 slot ≈ 4〜7 ms で、測った 6 ms と合う。
+減らせる所と今回の扱い:
+1. MOV×2（sample の語を移す）: 既定で消した。
+2. MOV olchk（pack の後）: form 0x2（板で確認待ち）。
+3. ITER＋WAIT＋SMP: form 0x4 の itrsmp（板で確認待ち）。
+4. PACK rpt4・UNPACK rpt4（8 slot）が残りの最大。手は TPU に F16 で返させ（smp の f16、pco_isa.py smp_extb）、pixel output を F16 にして PBE に U8 へ変換させる事。ただし pixel output の形は pass の全部の draw と end-of-tile の PBE の source format（render-program.c pbe_source）、clear の色の pack（image-state.c）、load draw で揃える必要がある。BXE-4-32 は usc_min_output_registers_per_pix 2 なので、F16 にしても tile の register は増えない見込み。今回は入れていない（次の候補）。
+5. WAIT の latency: task が十分あれば隠れるはず。perf-texture-nob（blend 無し）との差で blend 分を分ける。
+
+### 次（板の結果を見てから）
+
+- -t の組の perf: shared program の効果（flat 4.3 → clear 2.3 ms に近づくか）、0x2・0x4 の効果と正しさ・HWR。
+- perf-alu-pix を Linux（DDK）でも流し、pixel の ALU の rate（8 か 16 lane/clock か）を見る（Fable の候補 B）。
+- F16 の pixel output（上の 4）を pass 単位で設計する。
+- 未確認: secondary の USC task から sh に書いた値を pixel task が読める事（hardware の順序の保証）は Mesa に使用例が無い。板の push4・push32・push128・uniform-ramp の readback で確かめる。
