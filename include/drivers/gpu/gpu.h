@@ -194,6 +194,12 @@ void drv_gpu_report_session_error(struct drv_gpu_device *device, void *session, 
 void drv_gpu_capacity_changed(struct drv_gpu_device *device);
 
 /*
+ * Says and clears the GPU ioctl timing's sums (a build with -DGPU_IOCTL_TIMING=1;
+ * nothing otherwise), from a backend's timing thread.
+ */
+void drv_gpu_ioctl_timing_report(void);
+
+/*
  * Registers one initialized device using borrowed operations and private data.
  *
  *  - Every call creates an independent device, even when operations are shared.

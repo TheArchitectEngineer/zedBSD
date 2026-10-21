@@ -26,6 +26,9 @@
 #define VULKAN_TIMING_REPORT_NS UINT64_C(5000000000)
 #define VULKAN_TIMING_VARIABLE "VULKAN_ZEDBSD_SUBMIT_TIMING"
 
+/* How long the fine clock measures the time counter's rate before using it, in nanoseconds. */
+#define TIMING_CALIBRATE_NS UINT64_C(2000000000)
+
 /*
  * The submission timing's state: whether it is on (0 not yet read, 1 off,
  * 2 on), each part's summed nanoseconds, count and largest, the opcode
@@ -40,6 +43,17 @@ static uint64_t timing_most[VULKAN_TIMING_PARTS];
 static uint32_t timing_hold_opcode;
 static uint64_t timing_reported;
 
+/*
+ * The fine clock's state (timing_fine): the first reading of the time
+ * counter and of the monotonic clock, the counter's measured rate (Hz, 0
+ * until measured) and its offset in nanoseconds (INT64_MIN until the first
+ * fine reading).  Relaxed atomics.
+ */
+static uint64_t timing_first_counter;
+static uint64_t timing_first_monotonic;
+static uint64_t timing_rate;
+static int64_t timing_offset = INT64_MIN;
+
 static VkResult sync_create(struct VkDevice_T *device, enum vulkan_object_kind kind, uint32_t opcode, uint32_t destroy_opcode, uint32_t structure, VkFlags flags, const VkAllocationCallbacks *allocator, struct vulkan_sync **result);
 static void sync_destroy(struct VkDevice_T *device, struct vulkan_sync *sync, uint32_t opcode, const VkAllocationCallbacks *allocator);
 static VkResult sync_event_operation(VkDevice device, VkEvent event, uint32_t opcode);
@@ -51,6 +65,9 @@ static void sync_release_storage(struct vulkan_object *object);
 static VkResult sync_fences_wait(struct VkDevice_T *device, uint32_t count, const VkFence *fences, VkBool32 all, uint64_t timeout_ns, struct vulkan_notification **pins, struct pollfd *descriptors);
 static void sync_notifications_unpin(struct vulkan_context *context, uint32_t count, struct vulkan_notification **pins);
 static VkBool32 sync_context_lost(struct vulkan_context *context);
+static uint64_t timing_fine(uint64_t monotonic);
+static VkResult sync_fence_status(VkDevice device, VkFence fence, VkBool32 trust_marker);
+static VkResult sync_fence_native_status(struct VkDevice_T *owner, struct vulkan_sync *sync, VkBool32 trust_marker);
 
 /*
  * Creates a fence with the application's requested initial native state.
@@ -165,6 +182,16 @@ vkResetFences(
 			if (status != VK_SUCCESS)
 				break;
 
+			/*
+			 * The native fence of a shared payload is now unsignaled and
+			 * unsubmitted, as a new one, so its next submission needs no
+			 * second native reset (vulkan_external_fence_prepare_locked):
+			 * only this library's submissions signal the native object,
+			 * whatever an alias does to the shared payload.
+			 */
+			if (sync->external != NULL)
+				sync->native_unsubmitted = VK_TRUE;
+
 			/* A signaled display event is not replayed; a pending one keeps observing. */
 			if (sync->event != VULKAN_SYNC_EVENT_NONE && sync->software_signaled)
 				sync->event = VULKAN_SYNC_EVENT_SPENT;
@@ -197,48 +224,10 @@ vkGetFenceStatus(
 	VkDevice device,
 	VkFence fence)
 {
-	struct VkDevice_T *owner;
-	struct vulkan_sync *sync;
 	VkResult status;
-	VkBool32 fired;
 
-	/* Resolve the ordinary fence object before its brief payload transaction. */
-	owner = vulkan_device(device);
-	sync = vulkan_sync_object((uint64_t)(uintptr_t)fence);
-	pthread_mutex_lock(&owner->mutex);
-
-	status = vulkan_sync_device_status_locked(owner);
-	if (status == VK_SUCCESS) {
-		/* Observes a pending display event of the fence's permanent payload. */
-		fired = VK_FALSE;
-		if (sync->external == NULL &&
-		    !sync->software_signaled &&
-		    sync->event != VULKAN_SYNC_EVENT_NONE)
-			fired = vulkan_display_event_poll(owner, sync);
-
-		/* An observed display event stays signaled until the fence is reset. */
-		if (fired)
-			sync->software_signaled = VK_TRUE;
-
-		/* Software completion is valid only after WSI released the actual image. */
-		if (sync->external != NULL) {
-			status = vulkan_external_fence_status_locked(owner, sync);
-		} else if (sync->software_signaled) {
-			status = VK_SUCCESS;
-		} else if (sync->event != VULKAN_SYNC_EVENT_NONE && sync->native_unsubmitted) {
-			/* No queue ever had this event fence: the native payload is unsignaled. */
-			status = VK_NOT_READY;
-		} else {
-			status = vulkan_sync_status_locked(owner, sync, GPU_OP_GET_FENCE_STATUS);
-		}
-	}
-
-	/* Shared producer failure follows the same sticky device-loss rule as native failure. */
-	vulkan_sync_device_error(owner, status);
-
-	pthread_mutex_unlock(&owner->mutex);
-
-	/* Preserve native NOT_READY and device-loss results without coercion. */
+	/* The fence's state; a pending queue marker is asked of the renderer. */
+	status = sync_fence_status(device, fence, VK_FALSE);
 	if (status != VK_SUCCESS)
 		return status;
 
@@ -1115,6 +1104,70 @@ vulkan_sync_job_status(
 }
 
 /*
+ * Makes a monotonic reading (nanoseconds, advancing once a scheduler tick)
+ * fine with the time counter, where user mode may read it (riscv64's
+ * rdtime): the counter's rate is measured against the monotonic clock over
+ * the first TIMING_CALIBRATE_NS, and its offset is the largest by which a
+ * reading of the monotonic clock was ahead of the counter (negative when
+ * the counter started before the monotonic clock), which the tick makes
+ * at most one tick short.  Until the rate is known, and elsewhere,
+ * the reading is returned as it is.  Only a diagnostic: the shared state
+ * is kept with relaxed atomics, and a race only refines it later.
+ */
+static uint64_t
+timing_fine(
+	uint64_t monotonic)
+{
+#if defined(__riscv)
+	uint64_t counter;
+	uint64_t first_counter;
+	uint64_t first_monotonic;
+	uint64_t rate;
+	uint64_t scaled;
+	int64_t offset;
+	int64_t ahead;
+
+	/* The counter now. */
+	__asm__ volatile("rdtime %0" : "=r"(counter));
+
+	/* The first reading starts the rate's measurement. */
+	first_monotonic = __atomic_load_n(&timing_first_monotonic, __ATOMIC_RELAXED);
+	if (first_monotonic == 0) {
+		__atomic_store_n(&timing_first_counter, counter, __ATOMIC_RELAXED);
+		__atomic_store_n(&timing_first_monotonic, monotonic, __ATOMIC_RELAXED);
+		return monotonic;
+	}
+
+	/* The rate, measured once the span is long enough for the tick to matter little (the span's counts times 10^9 fit for any rate below 9 GHz). */
+	rate = __atomic_load_n(&timing_rate, __ATOMIC_RELAXED);
+	if (rate == 0) {
+		first_counter = __atomic_load_n(&timing_first_counter, __ATOMIC_RELAXED);
+		if (monotonic - first_monotonic < TIMING_CALIBRATE_NS || counter <= first_counter)
+			return monotonic;
+		rate = (counter - first_counter) * UINT64_C(1000000000) / (monotonic - first_monotonic);
+		if (rate == 0)
+			return monotonic;
+		__atomic_store_n(&timing_rate, rate, __ATOMIC_RELAXED);
+	}
+
+	/* The counter in nanoseconds, and the largest amount the monotonic clock was ahead of it. */
+	scaled = (counter / rate) * UINT64_C(1000000000) + (counter % rate) * UINT64_C(1000000000) / rate;
+	offset = __atomic_load_n(&timing_offset, __ATOMIC_RELAXED);
+	ahead = (int64_t)monotonic - (int64_t)scaled;
+	if (ahead > offset) {
+		__atomic_store_n(&timing_offset, ahead, __ATOMIC_RELAXED);
+		offset = ahead;
+	}
+
+	/* Succeeded: the counter's time on the monotonic clock's scale. */
+	return (uint64_t)((int64_t)scaled + offset);
+#else
+	/* No counter user mode may read: the reading as it is. */
+	return monotonic;
+#endif
+}
+
+/*
  * Reads the clock for the start of a timed part, when the submission
  * timing is on.
  */
@@ -1144,8 +1197,8 @@ vulkan_timing_start(
 	if (clock_gettime(CLOCK_MONOTONIC, &sample) != 0)
 		return 0;
 
-	/* Succeeded: the time now, never 0. */
-	return (uint64_t)sample.tv_sec * UINT64_C(1000000000) + (uint64_t)sample.tv_nsec + 1U;
+	/* Succeeded: the time now, finer than the tick where the counter is readable, never 0. */
+	return timing_fine((uint64_t)sample.tv_sec * UINT64_C(1000000000) + (uint64_t)sample.tv_nsec) + 1U;
 }
 
 /*
@@ -1256,6 +1309,105 @@ vulkan_sync_quiesce(
 	return;
 }
 
+/*
+ * Observes a fence for vkGetFenceStatus and the waits.  A native fence whose
+ * queue marker already ended is complete without a renderer round trip (the
+ * marker follows all the work submitted with the fence); with trust_marker a
+ * marker still pending also reports it unsignaled without one, for a wait
+ * that sleeps on the marker next.
+ */
+static VkResult
+sync_fence_status(
+	VkDevice device,
+	VkFence fence,
+	VkBool32 trust_marker)
+{
+	struct VkDevice_T *owner;
+	struct vulkan_sync *sync;
+	VkResult status;
+	VkBool32 fired;
+
+	/* Resolve the ordinary fence object before its brief payload transaction. */
+	owner = vulkan_device(device);
+	sync = vulkan_sync_object((uint64_t)(uintptr_t)fence);
+	pthread_mutex_lock(&owner->mutex);
+
+	status = vulkan_sync_device_status_locked(owner);
+	if (status == VK_SUCCESS) {
+		/* Observes a pending display event of the fence's permanent payload. */
+		fired = VK_FALSE;
+		if (sync->external == NULL &&
+		    !sync->software_signaled &&
+		    sync->event != VULKAN_SYNC_EVENT_NONE)
+			fired = vulkan_display_event_poll(owner, sync);
+
+		/* An observed display event stays signaled until the fence is reset. */
+		if (fired)
+			sync->software_signaled = VK_TRUE;
+
+		/* Software completion is valid only after WSI released the actual image. */
+		if (sync->external != NULL) {
+			status = vulkan_external_fence_status_locked(owner, sync);
+		} else if (sync->software_signaled) {
+			status = VK_SUCCESS;
+		} else if (sync->event != VULKAN_SYNC_EVENT_NONE && sync->native_unsubmitted) {
+			/* No queue ever had this event fence: the native payload is unsignaled. */
+			status = VK_NOT_READY;
+		} else {
+			status = sync_fence_native_status(owner, sync, trust_marker);
+		}
+	}
+
+	/* Shared producer failure follows the same sticky device-loss rule as native failure. */
+	vulkan_sync_device_error(owner, status);
+
+	pthread_mutex_unlock(&owner->mutex);
+
+	/* Preserve native NOT_READY and device-loss results without coercion. */
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: this fence's actual active payload is complete. */
+	return VK_SUCCESS;
+}
+
+/*
+ * Observes a native fence while its caller owns the device mutex: by its
+ * queue marker when the fence has one that ended (complete), or that is
+ * pending when trust_marker (unsignaled), else by the renderer.
+ */
+static VkResult
+sync_fence_native_status(
+	struct VkDevice_T *owner,
+	struct vulkan_sync *sync,
+	VkBool32 trust_marker)
+{
+	VkResult status;
+
+	/* A fence with a queue marker: the marker's state, without waiting. */
+	if (sync->notification != 0) {
+		status = vulkan_sync_job_status(sync, 0);
+		if (status < 0)
+			return status;
+
+		/* The marker ended after the fence's work: the fence is signaled. */
+		if (status == VK_SUCCESS)
+			return VK_SUCCESS;
+
+		/* A wait that sleeps on the marker next takes the pending marker as unsignaled. */
+		if (trust_marker)
+			return VK_NOT_READY;
+	}
+
+	/* The renderer's answer, for a fence without a marker or one still pending. */
+	status = vulkan_sync_status_locked(owner, sync, GPU_OP_GET_FENCE_STATUS);
+	if (status < 0)
+		return status;
+
+	/* Succeeded: the native status, signaled or not. */
+	return status;
+}
+
 /* Observes native payloads while retaining any-wait notification ownership. */
 static VkResult
 sync_fences_wait(
@@ -1284,9 +1436,15 @@ sync_fences_wait(
 	struct vulkan_notification *notification;
 	struct vulkan_context *context;
 	VkResult status;
+	VkBool32 trust_marker;
 
 	/* Keep candidate records under the same context ledger as every consumer. */
 	context = device->object.context;
+
+	/* A wait that sleeps takes a pending queue marker as unsignaled; a zero timeout asks the renderer. */
+	trust_marker = VK_FALSE;
+	if (timeout_ns != 0)
+		trust_marker = VK_TRUE;
 
 	/* Measure one deadline before the first observation, including transaction time. */
 	status = vulkan_sync_clock(&started);
@@ -1328,7 +1486,7 @@ sync_fences_wait(
 				pthread_mutex_unlock(&device->mutex);
 			}
 
-			status = vkGetFenceStatus((VkDevice)device, fences[index]);
+			status = sync_fence_status((VkDevice)device, fences[index], trust_marker);
 			if (status < 0)
 				return status;
 

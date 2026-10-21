@@ -1165,5 +1165,9 @@ VKAPI_ATTR void VKAPI_CALL vkCmdClearColorImage(VkCommandBuffer buffer, VkImage 
 VKAPI_ATTR void VKAPI_CALL vkCmdCopyImageToBuffer(VkCommandBuffer buffer, VkImage image, VkImageLayout layout, VkBuffer destination, uint32_t count, const VkBufferImageCopy *regions) { (void)buffer; (void)image; (void)layout; (void)destination; (void)count; (void)regions; assert(0); }
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateFence(VkDevice device, const VkFenceCreateInfo *info, const VkAllocationCallbacks *allocator, VkFence *fence) { (void)device; (void)info; (void)allocator; *fence = (VkFence)(uintptr_t)calloc(1, sizeof(struct fx_fence)); return VK_SUCCESS; }
 VKAPI_ATTR VkResult VKAPI_CALL vkResetFences(VkDevice device, uint32_t count, const VkFence *fences) { (void)device; (void)count; assert(((struct fx_fence *)(uintptr_t)fences[0])->pending == 0); return VK_SUCCESS; }
+/* The submission timing (sync.c) is off in this test: nothing is timed. */
+uint64_t vulkan_timing_start(void) { return 0; }
+void vulkan_timing_add(enum vulkan_timing_part part, uint64_t start, uint32_t opcode) { (void)part; (void)start; (void)opcode; }
+void vulkan_timing_report(void) { }
 VKAPI_ATTR void VKAPI_CALL vkDestroyFence(VkDevice device, VkFence fence, const VkAllocationCallbacks *allocator) { (void)device; (void)allocator; free((void *)(uintptr_t)fence); }
 VKAPI_ATTR VkResult VKAPI_CALL vkGetFenceFdKHR(VkDevice device, const VkFenceGetFdInfoKHR *info, int *fd) { (void)device; (void)info; (void)fd; return VK_ERROR_FEATURE_NOT_PRESENT; }

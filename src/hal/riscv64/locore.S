@@ -53,6 +53,10 @@ _start:
 	li t0, RISCV64_SSTATUS_FS_INITIAL
 	csrs sstatus, t0
 
+	/* User mode may read the time counter, and no other counter. */
+	li t0, RISCV64_SCOUNTEREN_TM
+	csrw scounteren, t0
+
 	/* Keeps the hart id, the boot argument and the image's physical start. */
 	mv s0, a0
 	mv s1, a1
@@ -183,6 +187,10 @@ riscv64_secondary_entry:
 	csrc sstatus, t0
 	li t0, RISCV64_SSTATUS_FS_INITIAL
 	csrs sstatus, t0
+
+	/* User mode may read the time counter, and no other counter. */
+	li t0, RISCV64_SCOUNTEREN_TM
+	csrw scounteren, t0
 
 	/* Reads the boot block before translation changes. */
 	ld t0, RISCV64_BOOT_BLOCK_SATP(a1)
