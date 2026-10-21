@@ -320,3 +320,6 @@ branch agent/p2-q1553（基 main 782f995e4）。
   - 読み: compositor が先（NULL の関数 pointer の形）。client は同じ pc なので app の trap（接続が切れた時の abort）の形。pool による memory の破壊の形跡は無い。Q1 が libvulkan を戻して切り分け中。
 - e3ca344cf: pool に入れる時に buffer の page list を捨てる（display への export の識別子が、前の持ち主と同じ pointer になるのを避ける）。
 - 4182ac109: flat な varying を coefficient の register から直に読む（batch.frag 26→21 group）。
+- d108 の落ちは P1 1f7936510（libvulkan の WSI）が原因で、pool とは無関係だった（Q1 の切り分け: main の libvulkan では同じ kernel で 100 s の idle の後の frame-ops も落ちない）。
+- fd6732b70: (x·u1)·u2 を x·(u1·u2) にする（影 25→23、solid 21→19、ring 6→4）。
+- 試して入れなかった物: (v·w)·s を、同じ因子の積を読む v·(p·q) にする共有（演算は減るが依存の鎖で組が減り、group 数は ±1 で総和が変わらない）。
