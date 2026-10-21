@@ -134,3 +134,12 @@ clear 3.85 ms、LOAD 23.35 ms、平らな quad 15.1 ms、1/4 面積 7.2 ms、402
 - main 194c8c462 に P1 8afd2e814（打鍵の経路の行・key-latency.py・KWL の時刻を rdtime の μs に・notes）を merge（2026-10-22）。P1 の読み: 打鍵の遅れの大部分は描画（Terminal の 1 frame 8 ms、Terminal の GPU の完了と commit 6 ms、compositor の 1 frame 14 ms）、入力の処理と shell の echo は約 2 ms。小さな対策は既に入っている物ばかりで、Terminal の変わった行だけ作る（−3〜4 ms）だけを入れる。device lost からの回復は R2（driver が HWR の時に犯人でない context を lost にしない）を P2 へ。
 - 2026-10-22 ユーザーの回復の方針（Master の decisions-log）→ R2 の設計の条件として P2 へ。
 - main 8669be87c に P1 702fc4954（Terminal の変わった行だけ作る 0c0b7dfea、開発途中の診断を外す ad8fe3b7d、frame-ops の道具を plan/tools/frame-ops/ へ）を merge し、Master の Tools に登録（2026-10-22）。Terminal の変更の板の確認は今晩の冷却の後。
+
+## 2026-10-22 ラップアップ（速さの作業の終了）
+
+- 出発点（2026-10-21 朝）: 全画面の 1 frame 約 390 ms（体感 2 fps）。
+- 今（1920x1080、main 8669be87c 相当、frame-ops）: drag 60 fps、App Home 58〜60、Wiseview 58〜61、Terminal の起動 55〜60、文字の連打（61 字/s）44〜48、出力 37〜45。scroll・hover は試験の入力の間隔で決まる。打鍵から compositor の frame の完了まで中央値 30 ms・最大 36 ms（d133、200 ms 間隔）、入力の処理と shell の echo は約 2 ms。
+- 効いた変更（大きい順の目安）: compiler（pairing・shared の program・F16SOP・itrsmp f16）、GPU の clock 594 MHz、job の作り直しの削減と firmware の trace の削減、LINEAR の zero copy の scanout と flip の latch、Keiland の damage・不透明な面の下を描かない・prewarm・2 frame の重ね、command の frame の fence を即時に完了、transfer の非同期、buffer の pool、Terminal の差分の upload と変わった行だけ作る。
+- 効かなかった・捨てた変更: single kick、scheduler の起床の変更（device lost）、free list の page を 0 にしない（lockup）、Wayland の reader の手順・present の fence の前作り、libvulkan の buffer の使い回し（submit・present は速くならず、ユーザーの判断で 2 つの最適化は終了）。
+- 残り: 文字の連打は Terminal → compositor → callback の直列で 60 fps に届かない（ユーザー: 文字入力は 60 fps でなくてよい）。間欠の GPU の lockup（d114・d122・d130・d132）と device lost からの回復（ユーザーの方針で R2）は P2。冷却（heatsink・ファン）の後に安定化の試験と、0c0b7dfea・ad8fe3b7d の板の確認。
+- 道具: [plan/tools/frame-ops/](../../tools/frame-ops/)（Master の Tools）。詳しい経過は notes-p1.md・notes-p2.md。
