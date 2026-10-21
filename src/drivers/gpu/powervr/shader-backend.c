@@ -215,6 +215,7 @@ static int simple_kind(unsigned kind);
 static void merge_iterates(const struct powervr_shader_program *program, struct shader_backend *backend);
 static void reuse_immediates(struct shader_backend *backend);
 static void unpack_in_place(const struct powervr_shader_program *program, struct shader_backend *backend);
+static void alias_coefficients(const struct powervr_ir_shader *shader, const struct powervr_shader_program *program, struct shader_backend *backend);
 static void mark_iterate_samples(const struct powervr_ir_shader *shader, const struct powervr_shader_program *program, struct shader_backend *backend);
 static int lone_iterate(const struct powervr_ir_shader *shader, const struct powervr_ir_operand *operand, const struct powervr_ir_instruction **iterate);
 static int half_reader(const struct powervr_ir_shader *shader, unsigned value);
@@ -299,6 +300,7 @@ shader_backend_build(
 
 	/* The shared words only float operations read are read where they are; the varyings samples iterate themselves. */
 	alias_shared(shader, program, backend);
+	alias_coefficients(shader, program, backend);
 	mark_iterate_samples(shader, program, backend);
 
 	/* Works out where each value is live, and gives it registers. */
@@ -1909,6 +1911,65 @@ alias_shared(
 	}
 }
 
+/*
+ * Finds the flat varyings, each a one-word value a flat iteration writes
+ * once, read only by float adds, multiplies and multiply-adds: those
+ * read the varying's C coefficient register in place, as any source of
+ * theirs can name a coefficient register, and the iteration selects
+ * nothing (a move into a temporary was an operation a word a pixel).
+ */
+/* The highest coefficient register a source of any operand form names (the narrowest index field has 8 bits). */
+#define COEFFICIENT_ALIAS_MOST	255U
+
+static void
+alias_coefficients(
+	const struct powervr_ir_shader *shader,
+	const struct powervr_shader_program *program,
+	struct shader_backend *backend)
+{
+	const struct powervr_ir_instruction *instruction;
+	const struct powervr_ir_instruction *reader;
+	unsigned value;
+	unsigned writes;
+	unsigned writer;
+	unsigned at;
+	unsigned source;
+	int ok;
+
+	/* None yet; only a fragment program's varyings. */
+	for (value = 0; value < POWERVR_IR_VALUES; value++)
+		backend->coefficient_alias[value] = 0;
+	if (program->stage != POWERVR_SHADER_FRAGMENT)
+		return;
+
+	/* Each flat iteration into a one-word value written nowhere else. */
+	for (at = 0; at < shader->instruction_count; at++) {
+		instruction = &shader->instructions[at];
+		value = instruction->destination;
+		if (instruction->opcode != POWERVR_IR_ITERATE || (instruction->flags & POWERVR_IR_FLAT) == 0 ||
+		    value == 0 || value >= shader->value_count || shader->values[value].width != 1 ||
+		    instruction->immediate + 2U > COEFFICIENT_ALIAS_MOST)
+			continue;
+		(void)value_references(shader, value, &writes, &writer);
+		if (writes != 1)
+			continue;
+
+		/* Read only by float adds, multiplies and multiply-adds. */
+		ok = 1;
+		for (writer = 0; ok && writer < shader->instruction_count; writer++) {
+			reader = &shader->instructions[writer];
+			for (source = 0; source < 4; source++) {
+				if (reader->source[source].kind != POWERVR_IR_OPERAND_VALUE || reader->source[source].value != value)
+					continue;
+				if (reader->opcode != POWERVR_IR_FLOAT_ADD && reader->opcode != POWERVR_IR_FLOAT_MULTIPLY && reader->opcode != POWERVR_IR_FLOAT_MULTIPLY_ADD)
+					ok = 0;
+			}
+		}
+		if (ok)
+			backend->coefficient_alias[value] = (uint16_t)(instruction->immediate + 2U + 1U);
+	}
+}
+
 /* The most constants hoist_addends puts in values. */
 #define HOISTED_MAX			4U
 
@@ -3508,7 +3569,9 @@ select_instruction(
 			break;
 		}
 		if ((instruction->flags & POWERVR_IR_FLAT) != 0) {
-			/* A flat varying is its C coefficient. */
+			/* A flat varying is its C coefficient, read in place when only float operations read it. */
+			if (select->backend->coefficient_alias[instruction->destination] != 0)
+				break;
 			operation = append(select, MACHINE_MOVE);
 			if (operation != NULL) {
 				operation->destination[0] = destination;
@@ -4023,8 +4086,15 @@ operand_register(
 	struct shader_machine_operation *operation;
 	struct shader_machine_register reg;
 
-	/* A value's word: its shared register when it is one only float operations read. */
+	/* A value's word: its shared register, or its coefficient register, when it is one only float operations read. */
 	*modifiers = 0;
+	if (operand->kind == POWERVR_IR_OPERAND_VALUE && select->backend->coefficient_alias[operand->value] != 0) {
+		*modifiers = operand->modifiers;
+		reg = bank_register(POWERVR_USC_BANK_COEFFICIENT, select->backend->coefficient_alias[operand->value] - 1U);
+
+		/* Succeeded: the coefficient register. */
+		return reg;
+	}
 	if (operand->kind == POWERVR_IR_OPERAND_VALUE && select->backend->shared_alias[operand->value] != 0) {
 		*modifiers = operand->modifiers;
 		reg = bank_register(POWERVR_USC_BANK_SHARED, select->backend->shared_alias[operand->value] - 1U);
