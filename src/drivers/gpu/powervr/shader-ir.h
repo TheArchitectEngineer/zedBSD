@@ -157,6 +157,9 @@ enum powervr_ir_operand_kind {
 /* Interpolation of a fragment input. */
 #define POWERVR_IR_FLAT		0x1U
 
+/* A float add, multiply or multiply-add whose result is clamped to [0, 1] (NaN to 0), as the core's saturate does. */
+#define POWERVR_IR_SATURATE	0x2U
+
 /*
  * One source of an instruction.
  *

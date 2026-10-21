@@ -62,6 +62,7 @@ enum {
 
 static float as_float(uint32_t word);
 static uint32_t as_word(float value);
+static uint32_t saturated(uint32_t word, unsigned saturate);
 static uint32_t read_register(const struct machine_run *run, struct shader_machine_register reg, unsigned lane);
 static uint32_t modified(uint32_t word, unsigned modifiers);
 static void write_register(struct machine_run *run, struct shader_machine_register reg, unsigned lane, uint32_t word);
@@ -180,13 +181,13 @@ machine_run_program(
 			case KIND_FLOAT_ADD:
 				if (operation->variant != 0)
 					a = as_word(floorf(as_float(a)));
-				write_register(run, operation->destination[0], lane, as_word(as_float(a) + as_float(b)));
+				write_register(run, operation->destination[0], lane, saturated(as_word(as_float(a) + as_float(b)), operation->saturate));
 				break;
 			case KIND_FLOAT_MULTIPLY:
-				write_register(run, operation->destination[0], lane, as_word(as_float(a) * as_float(b)));
+				write_register(run, operation->destination[0], lane, saturated(as_word(as_float(a) * as_float(b)), operation->saturate));
 				break;
 			case KIND_FLOAT_MULTIPLY_ADD:
-				write_register(run, operation->destination[0], lane, as_word(as_float(a) * as_float(b) + as_float(c)));
+				write_register(run, operation->destination[0], lane, saturated(as_word(as_float(a) * as_float(b) + as_float(c)), operation->saturate));
 				break;
 			case KIND_SINGLE:
 				switch (operation->variant) {
@@ -399,6 +400,10 @@ machine_run_program(
 					enabled |= 1U << lane;
 			}
 		}
+
+		/* An operation with the end flag ends the program after it runs (q1539). */
+		if (operation->end != 0)
+			break;
 		pc++;
 	}
 
@@ -587,4 +592,23 @@ as_word(
 
 	memcpy(&word, &value, sizeof(word));
 	return word;
+}
+
+/* Clamps a float word to [0, 1] (NaN to 0) when the operation saturates (q1539). */
+static uint32_t
+saturated(
+	uint32_t word,
+	unsigned saturate)
+{
+	float value;
+
+	/* As it is without the saturate. */
+	if (saturate == 0)
+		return word;
+
+	/* The maximum with zero (NaN to 0), then the minimum with one. */
+	value = as_float(word);
+	value = value > 0.0f ? value : 0.0f;
+	value = value < 1.0f ? value : 1.0f;
+	return as_word(value);
 }
