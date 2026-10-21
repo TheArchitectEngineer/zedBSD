@@ -944,7 +944,7 @@ job_map(
 	if (error != 0)
 		return error;
 
-	error = powervr_resource_make(session, buffer, 1, 0, &memory->general);
+	error = powervr_resource_make(session, buffer, POWERVR_PROGRAM_SLC_CACHED ? 0 : 1, 0, &memory->general);
 	powervr_buffer_put(render, buffer);
 	if (error != 0) {
 		memory->general = NULL;
@@ -1237,7 +1237,7 @@ job_draws(
 	if (error != 0)
 		return error;
 
-	error = powervr_resource_make(session, buffer, 1, 0, &memory->draw_general);
+	error = powervr_resource_make(session, buffer, POWERVR_PROGRAM_SLC_CACHED ? 0 : 1, 0, &memory->draw_general);
 	powervr_buffer_put(render, buffer);
 	if (error != 0) {
 		memory->draw_general = NULL;

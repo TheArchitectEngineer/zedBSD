@@ -386,6 +386,17 @@
 #endif
 
 /*
+ * Whether a job's programs (the data sequencer's and the shading
+ * cluster's windows) and its general memory (draw slots, descriptor sets)
+ * go through the system level cache.  The processor writes them before
+ * the kick and the core only reads them; no flush command is sent, so a
+ * place reused for other contents may still read stale lines (a trial).
+ */
+#ifndef POWERVR_PROGRAM_SLC_CACHED
+#define POWERVR_PROGRAM_SLC_CACHED	0
+#endif
+
+/*
  * The firmware's notices the host acts on.
  *
  * Values referenced:
