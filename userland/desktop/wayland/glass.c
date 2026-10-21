@@ -2447,21 +2447,34 @@ glass_shape_draw_split(
 	int opaque)
 {
 	struct kwl_compose *compose;
+	VkDescriptorSet inside_set;
 	VkPipeline middle;
 	uint64_t pixels;
 	unsigned index;
 	unsigned kind;
+	int mapped;
+
+	/*
+	 * The inside of flat glass on the blurred wallpaper reads its colour
+	 * from the colour's map when there is one (glass-map.c).
+	 */
+	compose = server->compose;
+	inside_set = set;
+	if (inside == KWL_PANEL_INSIDE_GLASS || inside == KWL_PANEL_INSIDE_DARK_GLASS) {
+		mapped = kwl_glass_map_set(server, constants, set, &inside_set);
+		if (mapped)
+			inside = KWL_PANEL_INSIDE_MAP;
+	}
 
 	/* The inside, counted by its shape's kind (KWL MODES). */
-	compose = server->compose;
 	kind = glass_count_kind_of(constants);
 	middle = compose->panel_inside_pipelines[inside];
 	if (opaque)
 		middle = compose->panel_opaque_pipelines[inside];
-	kwl_compose_count_draw(server, middle, set, 1U);
+	kwl_compose_count_draw(server, middle, inside_set, 1U);
 	pixels = kwl_compose_count_pixels(server, (float)pieces[0].offset.x, (float)pieces[0].offset.y, (float)pieces[0].extent.width, (float)pieces[0].extent.height, !opaque);
 	kwl_compose_count_kind(server, kind, pixels);
-	kwl_compose_bind(server, command, middle, compose->panel_layout, set);
+	kwl_compose_bind(server, command, middle, compose->panel_layout, inside_set);
 	kwl_list_push_constants(command, compose->panel_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0U, KWL_PANEL_CONSTANTS * sizeof(float), constants);
 	kwl_compose_clip_draw_rect(server, command, &pieces[0], KWL_QUAD_VERTICES);
 
@@ -3376,6 +3389,19 @@ glass_wallpaper_set(
 {
 	/* The full-size image. */
 	return server->compose->glass->wallpaper.set;
+}
+
+/* Gives the blurred wallpaper the glass samples (its set, generation and version), or NULL before the glass look opens. */
+const struct kwl_import *
+glass_blurred(
+	struct kwl_server *server)
+{
+	/* No glass look yet. */
+	if (server->compose->glass == NULL)
+		return NULL;
+
+	/* The quarter-size image. */
+	return &server->compose->glass->blurred;
 }
 
 /* Gives the version of the wallpaper's image (it grows with each new picture), for the keys of pictures that show it. */

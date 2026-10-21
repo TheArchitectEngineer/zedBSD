@@ -66,7 +66,8 @@
 #define KWL_PANEL_INSIDE_SOLID		2U
 #define KWL_PANEL_INSIDE_DARK_GLASS	3U
 #define KWL_PANEL_INSIDE_SHADOW		4U
-#define KWL_PANEL_INSIDES		5U
+#define KWL_PANEL_INSIDE_MAP		5U
+#define KWL_PANEL_INSIDES		6U
 
 /* Bound the buffers that hold a descriptor set at once. */
 #define KWL_DESCRIPTOR_MAX	512U
@@ -156,6 +157,48 @@ struct kwl_backdrop {
 	uint32_t height;
 	VkRenderPass pass;
 	struct kwl_backdrop_target targets[2];
+};
+
+/*
+ * The glass maps (glass-map.c): how many colours of flat glass have one,
+ * and the values that tell one colour from another (its colour and
+ * opacity, whether it is lifted and whether it is darkened).
+ */
+#define KWL_GLASS_MAPS		4U
+#define KWL_GLASS_MAP_KEY	6U
+
+/*
+ * One colour of flat glass worked out for every output pixel: its key,
+ * whether it is drawn, which blurred wallpaper (its generation and
+ * version) and size it was drawn from, the last frame that used it, and
+ * the image the map variant reads (nearest sampling).
+ */
+struct kwl_glass_map {
+	unsigned state;
+	float key[KWL_GLASS_MAP_KEY];
+	uint64_t source;
+	uint32_t version;
+	uint32_t width;
+	uint32_t height;
+	uint64_t used;
+	VkImage image;
+	VkDeviceMemory memory;
+	VkImageView view;
+	VkFramebuffer framebuffer;
+	VkDescriptorSet set;
+};
+
+/*
+ * The glass maps of the output: the pass that draws them and their size,
+ * made the first time one is drawn and gone with the output's size; failed
+ * when the device could not make them (the glass is then drawn as before).
+ */
+struct kwl_glass_maps {
+	unsigned failed;
+	uint32_t width;
+	uint32_t height;
+	VkRenderPass pass;
+	struct kwl_glass_map maps[KWL_GLASS_MAPS];
 };
 
 /*
@@ -527,6 +570,8 @@ struct kwl_compose {
 	uint64_t frame_layers_generation;
 	/* The layers' pictures (layer-cache.c, ws211-p002). */
 	struct kwl_layers layers;
+	/* The colours of flat glass worked out beforehand (glass-map.c). */
+	struct kwl_glass_maps glass_maps;
 	/* Descriptor sets images gave back, for the next images (kwl_compose_set_get). */
 	VkDescriptorSet spare_sets[KWL_DESCRIPTOR_MAX];
 	unsigned spare_count;
@@ -808,6 +853,11 @@ int kwl_backdrop_begin(struct kwl_server *server, struct kwl_list *command);
 void kwl_backdrop_end(struct kwl_server *server, struct kwl_list *command);
 void kwl_backdrop_reset(struct kwl_server *server);
 void kwl_backdrop_destroy(struct kwl_compose *compose);
+
+/* The colours of flat glass worked out beforehand (glass-map.c). */
+int kwl_glass_map_set(struct kwl_server *server, const float *constants, VkDescriptorSet set, VkDescriptorSet *map_set);
+void kwl_glass_maps_inband(struct kwl_server *server, struct kwl_list *command);
+void kwl_glass_maps_destroy(struct kwl_compose *compose);
 
 /* The clients' new images' move to the general layout, in the next frame (import.c). */
 void kwl_import_layouts_record(struct kwl_compose *compose, struct kwl_list *command);

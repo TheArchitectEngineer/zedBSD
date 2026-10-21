@@ -657,6 +657,7 @@ kwl_compose_output_close(
 	kwl_layers_close(compose);
 	kwl_scene_close(&compose->scene, compose->device);
 	kwl_backdrop_destroy(compose);
+	kwl_glass_maps_destroy(compose);
 	kwl_turn_close(compose, &compose->turn);
 	compose_targets_destroy(compose);
 	vkdemo_display_close(compose->instance, compose->device, &compose->output);
@@ -3350,6 +3351,10 @@ compose_record(
 
 	/* The clients' images imported since the last frame go to the layout they are sampled in. */
 	kwl_import_layouts_record(compose, command);
+
+	/* The colours of flat glass the last frames asked for, before anything samples them (glass-map.c). */
+	if (server->glass)
+		kwl_glass_maps_inband(server, command);
 
 	/* The pictures App Home's animation lacks, drawn before the frame's pass (layer-cache.c). */
 	compose->frame_layers_generation = compose->layers.generation;

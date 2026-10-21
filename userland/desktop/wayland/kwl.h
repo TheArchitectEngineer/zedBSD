@@ -1305,6 +1305,8 @@ struct kwl_server {
 	unsigned cover_cutting;
 	/* Nonzero with --no-layer-cache: no layer's picture, every frame drawn whole (the reference, review-4 M4). */
 	unsigned layer_cache_off;
+	/* Nonzero with --no-glass-map: every glass worked out pixel by pixel (the reference of glass-map.c). */
+	unsigned glass_map_off;
 	unsigned home_progress_frozen;
 	float home_progress_value;
 	/* The event loop records the latest traced motion; recording a frame consumes this timestamp. */

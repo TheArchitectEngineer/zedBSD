@@ -128,6 +128,7 @@ void glass_draw_app_tile(struct kwl_server *server, struct kwl_list *command, un
 void glass_draw_app_tile_reflection(struct kwl_server *server, struct kwl_list *command, unsigned icon, float x, float y, float pixels, float height, float opacity);
 void glass_draw_mark(struct kwl_server *server, struct kwl_list *command, int32_t x, int32_t y, unsigned pixels, enum glass_mark_look look, float opacity);
 VkDescriptorSet glass_wallpaper_set(struct kwl_server *server);
+const struct kwl_import *glass_blurred(struct kwl_server *server);
 
 /*
  * The system bar's colours in the appearance shown (ws099-p034b, the
