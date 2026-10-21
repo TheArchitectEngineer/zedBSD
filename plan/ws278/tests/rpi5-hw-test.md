@@ -36,3 +36,4 @@ QEMU に raspi5 は無いので、Pi 5 の実機で確かめる（ユーザー�
 | Phase | 見る物 | 期待 |
 | --- | --- | --- |
 | p003 SMP | 起動の log の `ARM64 SMP` の行、login 後の `top` | `ARM64 SMP 4 CPUs (device tree 4, limit 4)`、`ARM64 SMP cpu 1 online (core 1)`〜`cpu 3 … (core 3)`、`top` の CPU が 4 つ。止まったら最後の行の写真。`cpus=1` を cmdline.txt に足した起動でも login できるか（R6 の切り分け） |
+| p004 USB | 起動の log の `rp1:`・`rp1-usb:`・`xhci:` の行、USB keyboard で login、USB memory を挿して `dmesg` | `rp1: bus 1, peripherals at PCI 0 (410000 bytes), DMA offset 1000000000`、`rp1-usb: DWC3 … in host mode` が 2 行、`xhci: PCI controller, version=… ports=…` が 2 行、`rp1-usb: serving 2 controllers every 2 ms`。USB keyboard（どの口でも）で login できる。USB memory の disk の行。`rp1: PCIe link down … pciex4_reset=0` が出たら config.txt の問題。`rp1: inbound window N was …` の行があれば写真（firmware の値） |

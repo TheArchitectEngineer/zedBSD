@@ -26,7 +26,8 @@
 | [p001](phase001/phase.md) | 調べと設計（[design.md](design.md)）: BCM2712 と BCM2711 の差、Phase の分け方、試験の方法 | — | in-progress（2026-10-21 P3 q1542、設計を書いた、Q1 の判定待ち） |
 | [p002](phase002/phase.md) | config/ci/config-rpi5.mk と platform の起動（console・timer・interrupt・memory）、SD の root、image の生成 | p001 | in-progress（2026-10-21 image まで済み、実機の確認待ち） |
 | [p003](phase003/phase.md) | SMP（PSCI の CPU_ON、A76 の Aff1） | p002 | in-progress（2026-10-21 実装と host の確認済み、実機は一括の試験） |
-| p004・p004b | RP1 の USB（`pciex4_reset=0` で PCIe を引き継ぎ、DWC3 の xHCI、poll から）、RP1 の割り込み | p002 | planning |
+| [p004](phase004/phase.md) | RP1 の USB（`pciex4_reset=0` で PCIe を引き継ぎ、DWC3 の xHCI、poll から） | p002 | in-progress（2026-10-21 実装と host の確認済み、実機は一括の試験） |
+| p004b | RP1 の割り込み（MSI-X → MIP → GIC） | p004 | planning |
 | p005 | RP1 の Ethernet（Cadence GEM） | p004 | planning |
 | p006 | WiFi（sdio2 の SDIO host、bcm43455 の流用） | p002 | planning |
 | p007 | BT（uarta） | p006 | planning |

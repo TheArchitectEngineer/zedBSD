@@ -29,7 +29,8 @@ ARM64_BOARD_BOOT_C_rpi5 := \
 
 # The board's platform binding and the drivers it starts first: on the Pi 4
 # the SD card, the console, PCIe and the firmware mailbox; on the Pi 5 the SD
-# card and the console (the RP1 south bridge behind PCIe is not bound yet).
+# card, the console, and the RP1 south bridge behind PCIe with its USB
+# controllers shown to the PCI core.
 ARM64_BOARD_KERNEL_SOURCES_rpi4 := \
 	src/kern/platform/rpi4.c \
 	src/drivers/platform/rpi4/rpi4-sdhci.c \
@@ -45,9 +46,13 @@ ARM64_BOARD_KERNEL_SOURCES_rpi5 := \
 	src/kern/platform/rpi5.c \
 	src/drivers/platform/rpi4/rpi4-sdhci.c \
 	src/drivers/platform/rpi4/rpi4-console.c \
+	src/drivers/platform/rpi5/rp1.c \
+	src/drivers/platform/rpi5/rp1-gpio.c \
+	src/drivers/platform/rpi5/rp1-usb.c \
 	src/kern/dcache.c \
 	src/kern/uncached.c \
-	src/drivers/generic/fdt.c src/drivers/generic/dma.c
+	src/drivers/generic/fdt.c src/drivers/generic/dma.c \
+	src/drivers/pci/pci.c
 
 # The kernel and the HAL read the compiler's freestanding headers and the
 # tree's include/ and src/, never the C library (as on amd64).  The compiler
@@ -322,6 +327,24 @@ rpi5-fdt-host-test: $(BUILD)/tests/rpi5-fdt-host-test $(RPI5_BOOT_FIRMWARE_DTB) 
 	$< $(RPI5_BOOT_FIRMWARE_D0_DTB)
 
 CHECK_RUN_TARGETS += rpi5-fdt-host-test
+
+# RP1's module (rp1.c, rp1-gpio.c) on the Pi 5's trees, against a root
+# complex kept in host memory.
+$(BUILD)/tests/rpi5-rp1-host-test: tests/rpi5-rp1-host-test.c \
+	src/drivers/platform/rpi5/rp1.c src/drivers/platform/rpi5/rp1-gpio.c \
+	src/drivers/platform/rpi5/rp1.h src/drivers/platform/rpi5/rp1-gpio.h \
+	src/drivers/generic/fdt.c
+	@mkdir -p $(dir $@)
+	$(HOSTCC) -std=c11 -O2 -Wall -Wextra -Werror -Iinclude -Isrc \
+ src/drivers/platform/rpi5/rp1.c src/drivers/platform/rpi5/rp1-gpio.c \
+ src/drivers/generic/fdt.c $< -o $@
+
+.PHONY: rpi5-rp1-host-test
+rpi5-rp1-host-test: $(BUILD)/tests/rpi5-rp1-host-test $(RPI5_BOOT_FIRMWARE_DTB) $(RPI5_BOOT_FIRMWARE_D0_DTB)
+	$< $(RPI5_BOOT_FIRMWARE_DTB)
+	$< $(RPI5_BOOT_FIRMWARE_D0_DTB)
+
+CHECK_RUN_TARGETS += rpi5-rp1-host-test
 endif
 
 # The SD driver on the host against a fake controller (BUG-295): the driver
