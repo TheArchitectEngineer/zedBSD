@@ -202,4 +202,7 @@ branch agent/p1-q1548（基 main c6eebc780）。commit 7468edfdd・e8baec967・e
 - IR: POWERVR_IR_PIXEL_BLEND（色 4 つと blend の種類、色は [0,1] に clamp して blend）。machine: MACHINE_SUM_OF_PRODUCTS（usc-encode の powervr_usc_sum_of_products、group は internal selector の byte を持たない）。
 - host: compiler 試験 2827/2827（form 0x8・0x8|0x10・0x8|0x10|0x20 を含む、machine と interpreter の一致、quad.frag・texture・batch・flatblend × 4 種の blend）、group 試験 27/27、vkmatrix lavapipe 103/103。VF2 build warning 0。
 - group 数（host）: texture＋OVER 12 → 0x8: 7 → 0x18: 5 → 0x1c: 3 → 0x3c: 2。Keiland の panel の 8 変種は 0x8 で各 −5、push4 4 → 2。
-- 板（未実施、Q1 へ送った手順）: `vkmatrix -t 0,0x8,0x18,0x1c,0x3c`（sop-* の readback、sop-clamp・sop-clamp-over は範囲外の色）、同じ trial で 'perf-flat*'・'perf-texture*'。
+- 板 d87（5c80fe4dd）・d88（e18aded3b）、Q1: trial 0・0x8・0x18・0x1c・0x3c とも 102/103（FAIL は sop-const だけ、trial に依らない）、HWR・reset 0。sop-clamp・sop-clamp-over は 0x18 でも PASS → 命令が clamp する。perf（batched、us）: flat 2300→2250、flat-blend 7300→2850（0x8）→2700（0x18）→2750（0x1c・0x3c）、texture 8300→3250→3050→2950（0x1c・0x3c）、texture-nob 3600→3000→3000→2900。0x20 は正しく、速さは変わらない。
+- sop-const の原因: driver が pipeline の静的な blend 定数を使わず常に 0 を書いていた。69318f836 で直した（動的な vkCmdSetBlendConstants は未対応のまま）。
+- 9a1d07516: 既定の form を 0x1 → 0x3d（shared program・itrsmp・sum of products・raw・wdf）。板の確認待ち（vkmatrix 既定・perf・desktop の keiland-shot）。
+- 3f27c0545: 試しの切り替え（pipeline の flag の bit 24〜31、vkmatrix -t）と form 0x2 を撤去（規約 §12）。host 試験は compiler 2387/2387・group 27/27・p010 の driver 15 本・vkmatrix lavapipe 103/103。
