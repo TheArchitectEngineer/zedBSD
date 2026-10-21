@@ -85,7 +85,7 @@ static const char *const tag_names[] = {
 static uint64_t get64(const struct powervr_object *object, uint32_t offset);
 static void bif_decode(uint32_t record, uint64_t request, uint64_t status, uint64_t catalogue);
 
-/* Prints the recovery records, the trace's tail and the reset context's record. */
+/* Prints the recovery records, the trace's tail and the reset context's record (a release image only the counters). */
 void
 powervr_hwr_dump(
 	struct powervr_core *core,
@@ -107,6 +107,10 @@ powervr_hwr_dump(
 	info = &core->firmware.hwr_info;
 	kern_logf("powervr: hwr: counter %u write index %u\n",
 		  (unsigned)powervr_object_get32(info, HWR_COUNTER), (unsigned)powervr_object_get32(info, HWR_WRITE_INDEX));
+
+	/* A release image says only that: the reset's own notice names the context, its reason and its data master. */
+	if (!POWERVR_DEBUG)
+		return;
 	for (dm = 0; dm < HWR_DM_COUNT; dm++) {
 		if (powervr_object_get32(info, HWR_LOCKED_UP + dm * 4U) == 0 && powervr_object_get32(info, HWR_OVERRAN + dm * 4U) == 0 &&
 		    powervr_object_get32(info, HWR_RECOVERED + dm * 4U) == 0 && powervr_object_get32(info, HWR_FALSE_DETECT + dm * 4U) == 0)

@@ -20,6 +20,21 @@
 #include <stdint.h>
 
 /*
+ * Whether the driver and its board's glue say how the start and the
+ * sessions went (1, the build's CONFIG_POWERVR_DEBUG=y, the default):
+ * each start step's start and end, the clocks, the coherency checks
+ * (which run only then), the self-test's and the stages' lines, each
+ * session's contexts and each display lease's counts; the firmware keeps
+ * a trace, which a reset prints with its records.  0
+ * (CONFIG_POWERVR_DEBUG=n, a release image) says only the core found,
+ * the firmware run and what failed; the firmware keeps no trace.
+ */
+#ifndef CONFIG_POWERVR_DEBUG
+#define CONFIG_POWERVR_DEBUG	1
+#endif
+#define POWERVR_DEBUG	CONFIG_POWERVR_DEBUG
+
+/*
  * The SoC's steps around the core.
  *
  * Power_up powers the core's domain, starts its clocks at their rates and

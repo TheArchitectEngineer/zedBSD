@@ -2805,7 +2805,8 @@ handle_notice(
 			powervr_reset_stage_of(&notice, kind, &stage);
 			powervr_stage_fail_value(stage.stage, stage.reason, stage.value);
 			powervr_session_describe_fault(session, notice.fault_address);
-			powervr_session_describe_job(session);
+			if (POWERVR_DEBUG)
+				powervr_session_describe_job(session);
 
 			/* The diagnostics: the target its newest render job kicked with, its buffers and its catalogues before the kick and now. */
 			if (POWERVR_DIAGNOSTICS && session->noted_target != NULL) {

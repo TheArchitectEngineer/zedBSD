@@ -150,8 +150,9 @@ powervr_render_start(
 	if (error != 0)
 		return error;
 
-	/* Checks what the processor sees of the firmware processor's writes; it only reports. */
-	powervr_coherency_check(core);
+	/* Checks what the processor sees of the firmware processor's writes; it only reports, so a release image skips it. */
+	if (POWERVR_DEBUG)
+		powervr_coherency_check(core);
 
 	/* Sets up the node's state and its operation table. */
 	kern_memset(render, 0, sizeof(*render));
@@ -863,9 +864,10 @@ render_open(
 	border_table_make(render, session);
 
 	/* Names the session's page catalogue, which a reset's notice and a BIF fault name. */
-	kern_logf("powervr: session context 0x%x memory context 0x%x page catalogue 0x%llx\n",
-		  (unsigned)session->identity, (unsigned)powervr_object_address(&session->memory_context, 0),
-		  (unsigned long long)powervr_gpu_mmu_root(&session->mmu));
+	if (POWERVR_DEBUG)
+		kern_logf("powervr: session context 0x%x memory context 0x%x page catalogue 0x%llx\n",
+			  (unsigned)session->identity, (unsigned)powervr_object_address(&session->memory_context, 0),
+			  (unsigned long long)powervr_gpu_mmu_root(&session->mmu));
 
 	/* Succeeded: the session is the core's. */
 	*result = session;
@@ -2065,7 +2067,8 @@ self_test(
 	} else {
 		reverse = "seen after a clean only";
 	}
-	kern_logf("powervr: coherency (firmware reads of cached writes): %s\n", reverse);
+	if (POWERVR_DEBUG)
+		kern_logf("powervr: coherency (firmware reads of cached writes): %s\n", reverse);
 
 destroy:
 	/* Destroys the blob. */

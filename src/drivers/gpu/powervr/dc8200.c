@@ -612,17 +612,18 @@ drv_powervr_dc_own_mode(
 
 	/* Records the outcome, which the screen shows when the loader's console draws on it. */
 	adoption->probed = 1;
-	kern_logf("dc8200: own mode %ux%u@%u clock %u kHz model %x rev %x cid %x fb %llx/%u format %u\n",
-		  mode->width,
-		  mode->height,
-		  mode->refresh,
-		  mode->clock_khz,
-		  adoption->state.model,
-		  adoption->state.revision,
-		  adoption->state.customer,
-		  (unsigned long long)screen.physical,
-		  screen.pitch,
-		  format);
+	if (POWERVR_DEBUG)
+		kern_logf("dc8200: own mode %ux%u@%u clock %u kHz model %x rev %x cid %x fb %llx/%u format %u\n",
+			  mode->width,
+			  mode->height,
+			  mode->refresh,
+			  mode->clock_khz,
+			  adoption->state.model,
+			  adoption->state.revision,
+			  adoption->state.customer,
+			  (unsigned long long)screen.physical,
+			  screen.pitch,
+			  format);
 
 	/* Succeeded: the output runs at the mode and shows the framebuffer. */
 	return 0;
@@ -767,14 +768,16 @@ drv_powervr_dc_vblank_start(
 	 * pending bit is set and the handler never runs).
 	 */
 	kern_irq_unmask(blanks->irq);
-	kern_logf("dc8200: vblank interrupt %d unmasked\n", blanks->irq);
+	if (POWERVR_DEBUG)
+		kern_logf("dc8200: vblank interrupt %d unmasked\n", blanks->irq);
 	plic_report(blanks->irq, 1);
 
 	/* Lets the HDMI panel raise it, leaving the other panel's bit as it was. */
 	enabled_panels = read_control(adoption, DC_INTERRUPT_ENABLE);
 	enabled_panels |= 1U << DC_HDMI_PANEL;
 	write_control(adoption, DC_INTERRUPT_ENABLE, enabled_panels);
-	kern_logf("dc8200: vblank interrupt %d on, panel %u\n", blanks->irq, DC_HDMI_PANEL);
+	if (POWERVR_DEBUG)
+		kern_logf("dc8200: vblank interrupt %d on, panel %u\n", blanks->irq, DC_HDMI_PANEL);
 
 	/* Succeeded: the panel's frames are counted from now on. */
 	return 0;
@@ -1038,9 +1041,9 @@ drv_powervr_dc_vblank_report(
 	uint32_t highest;
 	uint32_t newest;
 
-	/* Nothing to say before the interrupt was started. */
+	/* Nothing to say before the interrupt was started, nor in a release image. */
 	blanks = &board_blanks;
-	if (!blanks->started)
+	if (!blanks->started || !POWERVR_DEBUG)
 		return;
 
 	/* Samples the counters together. */
@@ -1121,10 +1124,11 @@ plic_report(
 	}
 
 	/* One line: the priority, whether it is pending, and where it is enabled. */
-	kern_logf("dc8200: plic source %u priority %u pending %u contexts %x\n", source,
-		  kern_mmio_read32(plic + source * 4U),
-		  (kern_mmio_read32(plic + 0x1000U + (source / 32U) * 4U) >> (source % 32U)) & 1U,
-		  enabled);
+	if (POWERVR_DEBUG)
+		kern_logf("dc8200: plic source %u priority %u pending %u contexts %x\n", source,
+			  kern_mmio_read32(plic + source * 4U),
+			  (kern_mmio_read32(plic + 0x1000U + (source / 32U) * 4U) >> (source % 32U)) & 1U,
+			  enabled);
 }
 
 /* Reads one of the identity registers. */
@@ -1311,28 +1315,29 @@ log_outcome(
 	if (adoption->verdict == POWERVR_DC_GO)
 		outcome = "go";
 
-	kern_logf("dc8200: %s (%s) model %x rev %x cid %x plane %u addr %x stride %u size %x cfg %x ex %x panel %x/%x loc %x %x-%x wraps %u reads %u commit %u fb %llx/%u\n",
-		  outcome,
-		  powervr_dc_verdict_name(adoption->verdict),
-		  adoption->state.model,
-		  adoption->state.revision,
-		  adoption->state.customer,
-		  shown,
-		  plane->address,
-		  plane->stride,
-		  plane->size,
-		  plane->config,
-		  plane->extra,
-		  adoption->panel_config,
-		  adoption->panel_extra,
-		  adoption->watch.first,
-		  adoption->watch.lowest,
-		  adoption->watch.highest,
-		  adoption->watch.wraps,
-		  adoption->watch.reads,
-		  adoption->watch.commit_seen,
-		  (unsigned long long)adoption->screen.physical,
-		  adoption->screen.pitch);
+	if (POWERVR_DEBUG)
+		kern_logf("dc8200: %s (%s) model %x rev %x cid %x plane %u addr %x stride %u size %x cfg %x ex %x panel %x/%x loc %x %x-%x wraps %u reads %u commit %u fb %llx/%u\n",
+			  outcome,
+			  powervr_dc_verdict_name(adoption->verdict),
+			  adoption->state.model,
+			  adoption->state.revision,
+			  adoption->state.customer,
+			  shown,
+			  plane->address,
+			  plane->stride,
+			  plane->size,
+			  plane->config,
+			  plane->extra,
+			  adoption->panel_config,
+			  adoption->panel_extra,
+			  adoption->watch.first,
+			  adoption->watch.lowest,
+			  adoption->watch.highest,
+			  adoption->watch.wraps,
+			  adoption->watch.reads,
+			  adoption->watch.commit_seen,
+			  (unsigned long long)adoption->screen.physical,
+			  adoption->screen.pitch);
 }
 
 /* Writes one of the control window's registers. */

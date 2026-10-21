@@ -277,8 +277,9 @@ power_up(
 	if (error != 0)
 		goto fail;
 
-	/* Logs the rate of every clock the core runs on, to see which is stopped (2026-10-20, the GPU's data masters lock up). */
-	log_clock_rates();
+	/* Logs the rate of every clock the core runs on, to see which is stopped; a release image does not. */
+	if (POWERVR_DEBUG)
+		log_clock_rates();
 
 	/* Succeeded: the core is powered, clocked and out of reset. */
 	return 0;
