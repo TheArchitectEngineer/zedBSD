@@ -1029,6 +1029,8 @@ kwl_compose_close(
 				vkDestroyPipeline(compose->device, compose->panel_pipelines[index], NULL);
 		}
 		for (index = 0; index < KWL_PANEL_INSIDES; index++) {
+			if (compose->panel_inside_pipelines[index] != VK_NULL_HANDLE)
+				vkDestroyPipeline(compose->device, compose->panel_inside_pipelines[index], NULL);
 			if (compose->panel_opaque_pipelines[index] != VK_NULL_HANDLE)
 				vkDestroyPipeline(compose->device, compose->panel_opaque_pipelines[index], NULL);
 		}
@@ -2079,9 +2081,9 @@ compose_panel_pipeline(
 		}
 	}
 
-	/* The insides of opaque shapes (glass.c), without blending, from their own variants. */
+	/* The insides of shapes (glass.c) from their own variants, blended and, for opaque ones, written as they are. */
 	for (inside = 0; inside < KWL_PANEL_INSIDES; inside++) {
-		/* The variant's module, only while its pipeline is compiled. */
+		/* The variant's module, only while its pipelines are compiled. */
 		module.codeSize = kwl_panel_inside_variants[inside].bytes;
 		module.pCode = kwl_panel_inside_variants[inside].words;
 		error = vkCreateShaderModule(compose->device, &module, NULL, &fragment);
@@ -2090,15 +2092,27 @@ compose_panel_pipeline(
 			return error;
 		}
 
-		/* Written as it is: an inside's pixels are opaque. */
+		/* The premultiplied source-over blend, as the whole shape's. */
 		error = compose_pipeline(
 			compose,
-			KWL_DRAW_OPAQUE,
+			KWL_DRAW_ALPHA,
 			vertex,
 			fragment,
 			compose->panel_layout,
 			NULL,
-			&compose->panel_opaque_pipelines[inside]);
+			&compose->panel_inside_pipelines[inside]);
+
+		/* An opaque inside is written as it is. */
+		if (error == VK_SUCCESS) {
+			error = compose_pipeline(
+				compose,
+				KWL_DRAW_OPAQUE,
+				vertex,
+				fragment,
+				compose->panel_layout,
+				NULL,
+				&compose->panel_opaque_pipelines[inside]);
+		}
 		vkDestroyShaderModule(compose->device, fragment, NULL);
 		if (error != VK_SUCCESS) {
 			vkDestroyShaderModule(compose->device, vertex, NULL);

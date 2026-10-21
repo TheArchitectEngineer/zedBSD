@@ -102,7 +102,7 @@
 /* The largest side, in output pixels, of a quad joined to others into one draw (batch.c). */
 #define GLASS_BATCH_SIDE	128.0f
 
-/* The smallest inside of an opaque shape drawn apart without blending, in pixels (smaller ones are not worth the draws). */
+/* The smallest inside of a shape drawn apart from its edges, in pixels (smaller ones are not worth the draws). */
 #define GLASS_SPLIT_AREA	4096.0f
 
 /*
@@ -332,9 +332,9 @@ static const unsigned glass_icon_pixels[GLASS_ICON_SIZES] = { 16U, 20U };
 /* The applications' tiles' sizes in pixels, smallest first. */
 static const unsigned glass_tile_pixels[GLASS_TILE_SIZES] = { 20U, 26U, 48U, 72U };
 
-static int glass_shape_split(const struct kwl_server *server, const float *constants, const float *quad, const float *box, float radius, VkRect2D *pieces, unsigned *count, unsigned *inside);
+static int glass_shape_split(const struct kwl_server *server, const float *constants, const float *quad, const float *box, float radius, VkRect2D *pieces, unsigned *count, unsigned *inside, int *opaque);
 static void glass_split_rect(float x, float y, float width, float height, VkRect2D *rect);
-static void glass_shape_draw_split(struct kwl_server *server, struct kwl_list *command, const float *constants, VkDescriptorSet set, VkPipeline pipeline, const VkRect2D *pieces, unsigned count, unsigned inside);
+static void glass_shape_draw_split(struct kwl_server *server, struct kwl_list *command, const float *constants, VkDescriptorSet set, VkPipeline pipeline, const VkRect2D *pieces, unsigned count, unsigned inside, int opaque);
 static void glass_shape_draw_pieces(struct kwl_server *server, struct kwl_list *command, const struct glass_shape *shape, const float (*pieces)[4], unsigned count);
 static void glass_shape_piece(const struct glass_shape *shape, const float *part, struct glass_shape *piece);
 static int glass_shape_cover(struct kwl_server *server, struct kwl_list *command, const struct glass_shape *shape);
@@ -2093,6 +2093,7 @@ glass_shape_draw(
 	int joined;
 	int visible;
 	int covered;
+	int opaque;
 	int split;
 
 	/* A shape of a layer faded out wholly is not drawn (the desktop behind App Home). */
@@ -2265,10 +2266,10 @@ glass_shape_draw(
 	}
 	kwl_batch_flush(server, command);
 
-	/* An opaque shape large enough is drawn as its opaque inside and its blended edges. */
-	split = glass_shape_split(server, constants, quad, box, radius, pieces, &count, &inside);
+	/* A glass, image or solid shape large enough is drawn as its inside and its edges. */
+	split = glass_shape_split(server, constants, quad, box, radius, pieces, &count, &inside, &opaque);
 	if (split) {
-		glass_shape_draw_split(server, command, constants, set, pipeline, pieces, count, inside);
+		glass_shape_draw_split(server, command, constants, set, pipeline, pieces, count, inside, opaque);
 		return;
 	}
 
@@ -2284,17 +2285,19 @@ glass_shape_draw(
 }
 
 /*
- * Tells whether a shape about to be drawn is drawn in parts: at full
- * opacity, an image whose pixels are all opaque, a solid colour of full
- * alpha, or glass (light or dark, whose inside is always opaque), whose
- * inside is at least GLASS_SPLIT_AREA pixels.  The inside is the box less
- * its corners and smoothed edge, where the shader covers every pixel
- * fully, and for glass less its bright edge too (GLASS_SPLIT_GLASS_INSET).
- * The inside, in whole pixels, is pieces[0]; the quad's rest around it
- * follows, *count rectangles in all; *inside is the inside's pipeline
- * (KWL_PANEL_INSIDE_*).  The inside then needs no blending (the blend of
- * a colour of alpha 1 is that colour) nor the distance to the edge, so
- * the picture is the same, and the GPU can drop what is drawn under it.
+ * Tells whether a shape about to be drawn is drawn in parts: a glass
+ * (light or dark), image or solid shape whose inside is at least
+ * GLASS_SPLIT_AREA pixels.  The inside is the box less its corners and
+ * smoothed edge, where the shader covers every pixel fully, and for glass
+ * less its bright edge too (GLASS_SPLIT_GLASS_INSET); there the shader's
+ * inside variant (KWL_PANEL_INSIDE) gives the same colour without working
+ * out the distance to the edge.  The inside, in whole pixels, is
+ * pieces[0]; the quad's rest around it follows, *count rectangles in all;
+ * *inside is the inside's variant (KWL_PANEL_INSIDE_*).  *opaque says the
+ * inside is opaque (at full opacity, glass, an image whose pixels are all
+ * opaque or a solid colour of full alpha): it then needs no blending, the
+ * blend of a colour of alpha 1 being that colour, and the GPU can drop
+ * what is drawn under it.
  */
 static int
 glass_shape_split(
@@ -2305,10 +2308,11 @@ glass_shape_split(
 	float radius,
 	VkRect2D *pieces,
 	unsigned *count,
-	unsigned *inside)
+	unsigned *inside,
+	int *opaque)
 {
 	float cuts[KWL_CUT_PIECES][4];
-	float opaque[4];
+	float covered[4];
 	float hole[1][4];
 	float left;
 	float top;
@@ -2317,39 +2321,43 @@ glass_shape_split(
 	unsigned found;
 	unsigned index;
 
-	/* Only the glass, image and solid modes as themselves, at full opacity, in the frame's own pass. */
-	if (constants[23] < 1.0f || server->compose->backdrop_recording != 0U)
+	/* Only the glass, image and solid modes as themselves, in the frame's own pass. */
+	if (server->compose->backdrop_recording != 0U)
 		return 0;
 	if (constants[17] == (float)MODE_IMAGE) {
-		if (constants[19] < 1.0f)
-			return 0;
 		*inside = KWL_PANEL_INSIDE_IMAGE;
+		*opaque = constants[19] >= 1.0f;
 	} else if (constants[17] == (float)MODE_SOLID) {
-		if (constants[15] < 1.0f)
-			return 0;
 		*inside = KWL_PANEL_INSIDE_SOLID;
+		*opaque = constants[15] >= 1.0f;
 	} else if (constants[17] == (float)MODE_GLASS) {
 		*inside = KWL_PANEL_INSIDE_GLASS;
+		*opaque = 1;
 	} else if (constants[17] < 0.0f) {
 		*inside = KWL_PANEL_INSIDE_DARK_GLASS;
+		*opaque = 1;
 	} else {
 		return 0;
 	}
+
+	/* A shape faded as a whole is seen through everywhere. */
+	if (constants[23] < 1.0f)
+		*opaque = 0;
 	if (quad[2] <= 0.0f || quad[3] <= 0.0f)
 		return 0;
 
 	/* The inside in whole pixels, within the quad (every pixel centre there is covered, and off a glass edge). */
-	glass_opaque_inside(box, radius, opaque);
+	glass_opaque_inside(box, radius, covered);
 	if (*inside == KWL_PANEL_INSIDE_GLASS || *inside == KWL_PANEL_INSIDE_DARK_GLASS) {
-		opaque[0] += GLASS_SPLIT_GLASS_INSET - 1.0f;
-		opaque[1] += GLASS_SPLIT_GLASS_INSET - 1.0f;
-		opaque[2] -= 2.0f * (GLASS_SPLIT_GLASS_INSET - 1.0f);
-		opaque[3] -= 2.0f * (GLASS_SPLIT_GLASS_INSET - 1.0f);
+		covered[0] += GLASS_SPLIT_GLASS_INSET - 1.0f;
+		covered[1] += GLASS_SPLIT_GLASS_INSET - 1.0f;
+		covered[2] -= 2.0f * (GLASS_SPLIT_GLASS_INSET - 1.0f);
+		covered[3] -= 2.0f * (GLASS_SPLIT_GLASS_INSET - 1.0f);
 	}
-	left = opaque[0] > quad[0] ? opaque[0] : quad[0];
-	top = opaque[1] > quad[1] ? opaque[1] : quad[1];
-	right = opaque[0] + opaque[2] < quad[0] + quad[2] ? opaque[0] + opaque[2] : quad[0] + quad[2];
-	bottom = opaque[1] + opaque[3] < quad[1] + quad[3] ? opaque[1] + opaque[3] : quad[1] + quad[3];
+	left = covered[0] > quad[0] ? covered[0] : quad[0];
+	top = covered[1] > quad[1] ? covered[1] : quad[1];
+	right = covered[0] + covered[2] < quad[0] + quad[2] ? covered[0] + covered[2] : quad[0] + quad[2];
+	bottom = covered[1] + covered[3] < quad[1] + quad[3] ? covered[1] + covered[3] : quad[1] + quad[3];
 	left = ceilf(left);
 	top = ceilf(top);
 	right = floorf(right);
@@ -2403,7 +2411,7 @@ glass_split_rect(
 	rect->extent.height = (uint32_t)(bottom - top);
 }
 
-/* Draws a shape split by glass_shape_split: its inside without blending first, then its edges blended. */
+/* Draws a shape split by glass_shape_split: its inside first (without blending when opaque), then its edges blended. */
 static void
 glass_shape_draw_split(
 	struct kwl_server *server,
@@ -2413,22 +2421,25 @@ glass_shape_draw_split(
 	VkPipeline pipeline,
 	const VkRect2D *pieces,
 	unsigned count,
-	unsigned inside)
+	unsigned inside,
+	int opaque)
 {
 	struct kwl_compose *compose;
-	VkPipeline opaque;
+	VkPipeline middle;
 	uint64_t pixels;
 	unsigned index;
 	unsigned kind;
 
-	/* The opaque inside, counted by its shape's kind (KWL MODES). */
+	/* The inside, counted by its shape's kind (KWL MODES). */
 	compose = server->compose;
 	kind = glass_count_kind_of(constants);
-	opaque = compose->panel_opaque_pipelines[inside];
-	kwl_compose_count_draw(server, opaque, set, 1U);
-	pixels = kwl_compose_count_pixels(server, (float)pieces[0].offset.x, (float)pieces[0].offset.y, (float)pieces[0].extent.width, (float)pieces[0].extent.height, 0);
+	middle = compose->panel_inside_pipelines[inside];
+	if (opaque)
+		middle = compose->panel_opaque_pipelines[inside];
+	kwl_compose_count_draw(server, middle, set, 1U);
+	pixels = kwl_compose_count_pixels(server, (float)pieces[0].offset.x, (float)pieces[0].offset.y, (float)pieces[0].extent.width, (float)pieces[0].extent.height, !opaque);
 	kwl_compose_count_kind(server, kind, pixels);
-	kwl_compose_bind(server, command, opaque, compose->panel_layout, set);
+	kwl_compose_bind(server, command, middle, compose->panel_layout, set);
 	kwl_list_push_constants(command, compose->panel_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0U, KWL_PANEL_CONSTANTS * sizeof(float), constants);
 	kwl_compose_clip_draw_rect(server, command, &pieces[0], KWL_QUAD_VERTICES);
 

@@ -366,7 +366,11 @@ struct kwl_compose {
 	VkPipeline panel_pipeline;
 	/* Each known shape mode executes only its own fragment operations. */
 	VkPipeline panel_pipelines[KWL_PANEL_MODES];
-	/* The insides of opaque glass, image, solid and dark glass shapes, without blending (KWL_PANEL_INSIDE_*). */
+	/*
+	 * The insides of glass, image, solid and dark glass shapes
+	 * (KWL_PANEL_INSIDE_*): blended, and without blending for opaque ones.
+	 */
+	VkPipeline panel_inside_pipelines[KWL_PANEL_INSIDES];
 	VkPipeline panel_opaque_pipelines[KWL_PANEL_INSIDES];
 	VkSampler linear_sampler;
 	struct kwl_glass *glass;
