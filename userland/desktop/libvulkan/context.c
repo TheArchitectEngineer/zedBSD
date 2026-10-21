@@ -488,6 +488,8 @@ vulkan_context_execute(
 	VkResult error;
 	int status;
 	int unlocked;
+	uint64_t waited;
+	uint64_t held;
 
 	/* Makes failed preflight safe for the caller's unconditional reader cleanup. */
 	vulkan_reader_init(reader, NULL, 0);
@@ -499,15 +501,19 @@ vulkan_context_execute(
 		return VK_ERROR_INITIALIZATION_FAILED;
 
 	/* Serializes reply-resource reuse, not GPU fence or presentation completion. */
+	waited = vulkan_timing_start();
 	status = pthread_mutex_lock(&context->mutex);
 	if (status != 0)
 		return VK_ERROR_DEVICE_LOST;
+	vulkan_timing_add(VULKAN_TIMING_CONTEXT_WAIT, waited, writer->opcode);
 
 	/* Does not submit new work after any caller has observed a lost context. */
+	held = vulkan_timing_start();
 	error = __atomic_load_n(&context->error, __ATOMIC_ACQUIRE);
 	if (error == VK_SUCCESS)
 		error = vulkan_context_transaction(context, writer, reply_capacity, reader);
 
+	vulkan_timing_add(VULKAN_TIMING_CONTEXT_HOLD, held, writer->opcode);
 	unlocked = pthread_mutex_unlock(&context->mutex);
 
 	/* Preserves the transaction failure before reporting an internal unlock failure. */
