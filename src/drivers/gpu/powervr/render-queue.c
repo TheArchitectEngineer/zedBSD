@@ -136,7 +136,7 @@ static void handle_notice(void *context, uint32_t type, const struct powervr_obj
  * wait.
  */
 #ifndef POWERVR_JOB_TRACE
-#define POWERVR_JOB_TRACE		0
+#define POWERVR_JOB_TRACE		1
 #endif
 #define TRACE_SMALL_PIXELS		(1920ULL * 1080ULL / 4ULL)
 #define TRACE_REPORT_MS			2000U
