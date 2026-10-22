@@ -29,14 +29,14 @@
 /*
  * The size of the ring.  amd64 keeps 512 KiB, so a driver's long start log
  * (the i915's, read over SSH after a start root asked for) is
- * still whole when dmesg reads it.  The Raspberry Pi 4 keeps 256 KiB, so
+ * still whole when dmesg reads it.  The Raspberry Pi 4 and 5 keep 256 KiB, so
  * the start of a boot that failed is still there when the bootlog service
  * keeps the log on the boot FAT.  The smaller machines keep
  * 32 KiB.
  */
 #if defined(__x86_64__)
 #define KLOG_CAPACITY (512U * 1024U)
-#elif defined(HAL_BOARD_RPI4)
+#elif defined(HAL_BOARD_RPI4) || defined(HAL_BOARD_RPI5)
 #define KLOG_CAPACITY (256U * 1024U)
 #else
 #define KLOG_CAPACITY (32U * 1024U)

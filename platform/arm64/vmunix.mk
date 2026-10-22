@@ -17,7 +17,8 @@ ARM64_PLATFORM := platform/arm64
 # support (bsp-rpi-common/).  The drivers the boards share tell them apart
 # by HAL_BOARD_RPI4 and HAL_BOARD_RPI5.
 ARM64_BOARD_DEFINE_rpi4 := -DHAL_BOARD_RPI4
-ARM64_BOARD_DEFINE_rpi5 := -DHAL_BOARD_RPI5
+ARM64_BOARD_DEFINE_rpi5 := -DHAL_BOARD_RPI5 \
+	-DCONFIG_DRIVER_RPI5_BT=$(if $(filter y,$(CONFIG_DRIVER_RPI5_BT)),1,0)
 
 # The board's own HAL code.
 ARM64_BOARD_BOOT_C_rpi4 := \
@@ -67,8 +68,6 @@ ARM64_BOARD_KERNEL_SOURCES_rpi5 := \
 	src/drivers/platform/rpi5/rpi5-gio.c \
 	src/drivers/platform/rpi5/rpi5-pinctrl.c \
 	src/drivers/platform/rpi5/rpi5-wifi.c \
-	src/drivers/platform/rpi5/rpi5-bt.c \
-	src/drivers/platform/rpi4/rpi4-bt-link.c \
 	src/drivers/platform/rpi4/rpi4-mmc-irq.c \
 	src/drivers/platform/rpi4/rpi4-sdio-host.c \
 	src/drivers/platform/rpi4/rpi4-sdio.c \
@@ -78,6 +77,12 @@ ARM64_BOARD_KERNEL_SOURCES_rpi5 := \
 	src/kern/uncached.c \
 	src/drivers/generic/fdt.c src/drivers/generic/dma.c \
 	src/drivers/pci/pci.c
+# The Pi 5's onboard Bluetooth on uarta, when the build asks for it.
+ifeq ($(CONFIG_DRIVER_RPI5_BT),y)
+ARM64_BOARD_KERNEL_SOURCES_rpi5 += \
+	src/drivers/platform/rpi5/rpi5-bt.c \
+	src/drivers/platform/rpi4/rpi4-bt-link.c
+endif
 
 # The kernel and the HAL read the compiler's freestanding headers and the
 # tree's include/ and src/, never the C library (as on amd64).  The compiler
@@ -229,7 +234,7 @@ ifeq ($(CONFIG_DRIVER_USB_BT),y)
 ARM64_USB_SOURCES += src/drivers/usb/usb-bt.c
 endif
 # The Bluetooth HCI class, for a USB controller or the Pi 4's or the Pi 5's onboard one.
-ifneq ($(filter y,$(CONFIG_DRIVER_USB_BT) $(CONFIG_DRIVER_BCM2711_BT) $(if $(filter rpi5,$(ZEDBSD_BOARD)),y)),)
+ifneq ($(filter y,$(CONFIG_DRIVER_USB_BT) $(CONFIG_DRIVER_BCM2711_BT) $(if $(filter rpi5,$(ZEDBSD_BOARD)),$(CONFIG_DRIVER_RPI5_BT))),)
 ARM64_KERNEL_SOURCES += src/drivers/generic/bt-hci.c src/drivers/generic/bt-hci-proto.c
 endif
 ifeq ($(CONFIG_DRIVER_USB_RTL8822BU),y)

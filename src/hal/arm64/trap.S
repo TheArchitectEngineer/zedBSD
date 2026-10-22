@@ -9,19 +9,19 @@ arm64_vectors:
 	VECTOR arm64_sync_current, 0
 	VECTOR arm64_irq_current, 1
 	VECTOR arm64_sync_current, 2
-	VECTOR arm64_sync_current, 3
+	VECTOR arm64_serror_current, 3
 	VECTOR arm64_sync_current, 4
 	VECTOR arm64_irq_current, 5
 	VECTOR arm64_sync_current, 6
-	VECTOR arm64_sync_current, 7
+	VECTOR arm64_serror_current, 7
 	VECTOR arm64_sync_lower, 8
 	VECTOR arm64_irq_lower, 9
 	VECTOR arm64_sync_lower, 10
-	VECTOR arm64_sync_lower, 11
+	VECTOR arm64_serror_lower, 11
 	VECTOR arm64_sync_lower, 12
 	VECTOR arm64_irq_lower, 13
 	VECTOR arm64_sync_lower, 14
-	VECTOR arm64_sync_lower, 15
+	VECTOR arm64_serror_lower, 15
 
 	.macro SAVE_FRAME
 	sub sp,sp,#288
@@ -51,6 +51,12 @@ arm64_vectors:
 	str x4,[sp,#280]
 	.endm
 	.macro RESTORE_FRAME
+	/*
+	 * Keeps an SError out until the eret: one taken after the writes of
+	 * ELR and SPSR below would overwrite them.  The eret restores the
+	 * interrupted code's own mask from SPSR.
+	 */
+	msr daifset,#4
 	ldp x0,x1,[sp,#248]
 	msr elr_el1,x0
 	msr spsr_el1,x1
@@ -100,3 +106,20 @@ arm64_sync_lower:
 	bl arm64_sync_handler
 	RESTORE_FRAME
 	eret
+
+	/*
+	 * An SError: an asynchronous abort a device access raised earlier.
+	 * The handler reports it and the interrupted code goes on.
+	 */
+	.macro SERROR_ENTRY from_user
+	SAVE_FRAME
+	mov x0,sp
+	mov x1,#\from_user
+	bl arm64_serror_handler
+	RESTORE_FRAME
+	eret
+	.endm
+arm64_serror_current:
+	SERROR_ENTRY 0
+arm64_serror_lower:
+	SERROR_ENTRY 1

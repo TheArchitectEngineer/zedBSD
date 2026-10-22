@@ -482,10 +482,10 @@ kern_vfs_init(
 		if (error != 0)
 			return error;
 
-#if defined(HAL_BOARD_RPI4)
+#if defined(HAL_BOARD_RPI4) || defined(HAL_BOARD_RPI5)
 		/*
 		 * Keeps the firmware's FAT beside a native UFS root for kernel
-		 * updates.  An overlay already owns its FAT mount, and a root
+		 * updates and the bootlog service's logs.  An overlay already owns its FAT mount, and a root
 		 * on the boot partition must not mount that partition twice.
 		 */
 		if (root_partition != NULL &&
@@ -496,7 +496,7 @@ kern_vfs_init(
 			    loader_boot_partition,
 			    NULL);
 			if (error != 0) {
-				VFS_LOG("vfs: RPi4 boot FAT unavailable (error %d)\n",
+				VFS_LOG("vfs: Raspberry Pi boot FAT unavailable (error %d)\n",
 				    error);
 			}
 		}

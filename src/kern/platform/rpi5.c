@@ -13,8 +13,9 @@
  * is the firmware's framebuffer, and the debug UART when the build asks for
  * it.  The USB ports and the Ethernet port behind the RP1 south bridge
  * start after the SD card; a board whose firmware reset RP1's link boots
- * without them.  The onboard Wi-Fi and Bluetooth are probed once
- * interrupts are on and come up in the background.
+ * without them.  The onboard Wi-Fi, and the onboard Bluetooth when the
+ * build has its driver (CONFIG_DRIVER_RPI5_BT, off by default), are probed
+ * once interrupts are on and come up in the background.
  */
 
 #include <uapi/errno.h>
@@ -31,7 +32,9 @@
 #include "drivers/platform/rpi5/rp1-usb.h"
 #include "drivers/platform/rpi5/rp1-ethernet.h"
 #include "drivers/platform/rpi5/rpi5-wifi.h"
+#if CONFIG_DRIVER_RPI5_BT
 #include "drivers/platform/rpi5/rpi5-bt.h"
+#endif
 #include <drivers/usb/usb-hid.h>
 
 /* The firmware's BIOS-style number of the boot disk the handoff names. */
@@ -165,11 +168,13 @@ kern_platform_refresh_devices(
 	 */
 	(void)drv_rpi5_wifi_probe(rpi5_fdt_phys);
 
+#if CONFIG_DRIVER_RPI5_BT
 	/*
 	 * Starts the onboard Bluetooth's thread; a board without the
 	 * controller goes on without it.
 	 */
 	(void)drv_rpi5_bt_probe(rpi5_fdt_phys);
+#endif
 }
 
 /*
@@ -291,8 +296,10 @@ start_rp1(
 	int error;
 
 	/* Leaves a boot without a device tree alone. */
-	if (fdt_phys == 0)
+	if (fdt_phys == 0) {
+		kern_logf("rpi5: no device tree; no RP1, USB or Ethernet\n");
 		return;
+	}
 
 	/* Finds RP1 as the firmware left it. */
 	error = drv_rp1_init(fdt_phys);
