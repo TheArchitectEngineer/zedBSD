@@ -94,6 +94,9 @@ _Static_assert(POWERVR_KICK_COMMAND_WORDS == POWERVR_COMMAND_WORDS, "a kick is o
 /* The most callbacks one pass of the service delivers. */
 #define DELIVER_MAX		64U
 
+/* Nanoseconds in a second, for the busy time's clock. */
+#define BUSY_NS_PER_SECOND	1000000000ULL
+
 /* Callbacks taken under the queue lock, delivered after it. */
 struct delivery {
 	struct drv_gpu_completion *completion[DELIVER_MAX];
@@ -1493,6 +1496,10 @@ powervr_session_pend(
 {
 	unsigned long enabled;
 	unsigned slot;
+	uint64_t now;
+
+	/* The time, for the busy time when the GPU had nothing pending. */
+	now = powervr_busy_clock();
 
 	/* The entry after the last one, and the service woken to look at it. */
 	enabled = spin_lock_irqsave(&render->queue_lock);
@@ -1512,6 +1519,11 @@ powervr_session_pend(
 
 	session->outstanding++;
 	waitq_wake_all(&render->service);
+
+	/* The GPU is busy from the first pending callback on. */
+	if (render->busy_pending == 0U)
+		render->busy_since = now;
+	render->busy_pending++;
 
 	spin_unlock_irqrestore(&render->queue_lock, enabled);
 }
@@ -1541,6 +1553,37 @@ powervr_render_drain(
 	}
 
 	spin_unlock_irqrestore(&render->queue_lock, enabled);
+}
+
+/*
+ * Reads the fine monotonic counter in nanoseconds for the busy time
+ * hw.gputelemetry reports; zero when there is none.
+ */
+uint64_t
+powervr_busy_clock(
+	void)
+{
+	uint64_t counter;
+	uint64_t frequency;
+	uint64_t seconds;
+	uint64_t rest;
+	bool available;
+
+	/* Samples the counter and its rate; without either there is no time. */
+	counter = 0;
+	frequency = 0;
+	available = kern_rtc_read_counter(&counter, &frequency);
+	if (!available)
+		return 0;
+	if (frequency == 0U)
+		return 0;
+
+	/* Converts in two parts, so the product never overflows. */
+	seconds = counter / frequency;
+	rest = counter % frequency;
+
+	/* Succeeded: the counter in nanoseconds. */
+	return seconds * BUSY_NS_PER_SECOND + rest * BUSY_NS_PER_SECOND / frequency;
 }
 
 /*
@@ -2901,6 +2944,7 @@ deliver(
 {
 	unsigned long enabled;
 	unsigned index;
+	uint64_t now;
 
 	/* Nothing taken. */
 	if (delivery->count == 0U) {
@@ -2912,12 +2956,23 @@ deliver(
 	for (index = 0; index < delivery->count; index++)
 		drv_gpu_complete(delivery->completion[index], delivery->error[index]);
 
+	/* The time, for the busy time when the last pending callback goes. */
+	now = powervr_busy_clock();
+
 	/* Counts them off and wakes a drain. */
 	enabled = spin_lock_irqsave(&render->queue_lock);
 
 	for (index = 0; index < delivery->count; index++)
 		delivery->session[index]->outstanding--;
 	waitq_wake_all(&render->retired);
+
+	/* The busy time ends with the last pending callback over every session. */
+	if (render->busy_pending >= delivery->count)
+		render->busy_pending -= delivery->count;
+	else
+		render->busy_pending = 0;
+	if (render->busy_pending == 0U && now > render->busy_since)
+		render->busy_total += now - render->busy_since;
 
 	spin_unlock_irqrestore(&render->queue_lock, enabled);
 	delivery->count = 0;

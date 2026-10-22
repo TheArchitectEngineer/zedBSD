@@ -519,6 +519,7 @@ clock_start(
 		return EIO;
 	}
 	v3d->clock_hz = rate;
+	v3d->engine.clock_asked_hz = maximum;
 
 	/* Succeeded: the engine's clock runs. */
 	return 0;

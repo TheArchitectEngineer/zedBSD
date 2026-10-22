@@ -555,7 +555,20 @@ struct powervr_render {
 	unsigned timing_done;
 	unsigned spare_done;
 	uint32_t next_identity;
+
+	/*
+	 * The busy time hw.gputelemetry reports, under the queue lock: the
+	 * callbacks pending over every session (each from its kick until its
+	 * delivery), when that count last rose from zero, and the nanoseconds
+	 * it was above zero before then.  The time only grows.
+	 */
+	unsigned busy_pending;
+	uint64_t busy_since;
+	uint64_t busy_total;
 };
+
+/* Reads the fine monotonic counter in nanoseconds for the busy time; zero when there is none (render-queue.c). */
+uint64_t powervr_busy_clock(void);
 
 /* The bytes of the spare: a global free list's pages. */
 #define POWERVR_SPARE_BYTES		((uint64_t)POWERVR_FREE_LIST_GLOBAL_PAGES * POWERVR_PM_PAGE_BYTES)

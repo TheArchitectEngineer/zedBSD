@@ -12,10 +12,11 @@
  * monitor's frames.
  *
  * A field the system does not give (the CPU's frequency everywhere, a
- * GPU's use and temperature on a virtual GPU, ...) is filled by the
- * simulation's model and marked simulated, so that the screen moves as it
- * would and the rules never grade the system by it (rules.c).  The
- * simulation is calm here: it never lifts a value over a threshold.  No
+ * GPU's use and temperature on a virtual GPU, ...) is shown as 0, not a
+ * stand-in (2026-10-22 user:
+ * "テレメトリが取れないときは0表示にしてください。"): only the
+ * simulation's own source makes values up.  Such a field is not valid, so
+ * the rules never grade the system by it (rules.c).  No
  * device is made up: the GPUs are the system's, or the one that draws the
  * window when the system names none.
  */
@@ -34,8 +35,7 @@ static void system_frame(struct sm_source *source, struct sm_system *system, uin
 
 /*
  * Opens the system's source on the window's display: the desktop's system,
- * its monitor sampled every period_ms, the first info, and the calm
- * simulation that fills what the system does not give.  gpu_name names
+ * its monitor sampled every period_ms and the first info.  gpu_name names
  * the GPU that draws the window.  Returns 0, or ENOTSUP when the desktop
  * offers no monitor, or another errno value.
  */
@@ -52,6 +52,7 @@ sm_system_open(
 	unsigned changes;
 	unsigned tries;
 	unsigned gpus;
+	unsigned index;
 	int status;
 
 	/* Nothing yet. */
@@ -81,13 +82,19 @@ sm_system_open(
 		(void)kl_system_monitor_info(system->monitor, &changes);
 	}
 
-	/* The simulation for what the system does not give: the system's CPUs, its GPUs or the drawing one. */
+	/* The machine's shape: the system's CPUs, its GPUs or the drawing one. */
 	info = kl_system_monitor_info(system->monitor, &changes);
 	gpus = info->gpu_count;
 	if (gpus == 0U)
 		gpus = 1;
 	(void)sm_source_open_sim(source, seed, period_ms, info->cpu_count, gpus, 1);
 	source->kind = SM_SOURCE_SYSTEM;
+
+	/* No size is made up: each total is 0 until the system gives it. */
+	source->info.memory_total = 0;
+	source->info.swap_total = 0;
+	for (index = 0; index < SM_GPU_MAX; index++)
+		source->info.gpu_memory_total[index] = 0;
 
 	/* The machine as the system tells it; the first GPU is named after the drawing device. */
 	system_info(source, system);
@@ -186,9 +193,9 @@ system_info(
 }
 
 /*
- * Makes the monitor's frame from the system's: the simulation's frame for
- * the time first (every field simulated), then each field the system
- * gave, no longer simulated.
+ * Makes the monitor's frame from the system's: every value 0, then each
+ * field the system gave, marked valid.  Nothing is simulated: a field the
+ * system left out is drawn as 0 and, not being valid, grades nothing.
  */
 static void
 system_frame(
@@ -202,9 +209,12 @@ system_frame(
 	unsigned count;
 	unsigned index;
 
-	/* The simulation's frame for what the system leaves out. */
+	/* A frame at the time with every value 0 and no field given yet. */
 	real = &system->frame;
-	sm_sim_frame(&source->sim, &source->info, now_ms, frame);
+	memset(frame, 0, sizeof(*frame));
+	frame->time_ms = now_ms;
+	frame->valid = 0;
+	frame->simulated = 0;
 
 	/* The CPUs: the whole and each. */
 	if ((real->valid & KL_MONITOR_FRAME_CPU) != 0U && real->cpu_count != 0U) {
@@ -214,7 +224,7 @@ system_frame(
 			count = SM_CPU_MAX;
 		for (index = 0; index < count; index++)
 			frame->cpu_core[index] = real->cpu_core[index];
-		frame->simulated &= ~SM_HAVE_CPU;
+		frame->valid |= SM_HAVE_CPU;
 	}
 
 	/* The memory: in use is what is neither free nor a cache; available is the free and the caches that can be dropped. */
@@ -226,21 +236,21 @@ system_frame(
 		frame->memory_used = used;
 		frame->memory_cache = real->memory_cache;
 		frame->memory_available = real->memory_free + real->memory_reclaimable;
-		frame->simulated &= ~SM_HAVE_MEMORY;
+		frame->valid |= SM_HAVE_MEMORY;
 	}
 
 	/* The swap. */
 	if ((real->valid & KL_MONITOR_FRAME_SWAP) != 0U) {
 		source->info.swap_total = real->swap_total;
 		frame->swap_used = real->swap_used;
-		frame->simulated &= ~SM_HAVE_SWAP;
+		frame->valid |= SM_HAVE_SWAP;
 	}
 
 	/* The network's bytes a second. */
 	if ((real->valid & KL_MONITOR_FRAME_LINKS) != 0U) {
 		frame->rx_rate = real->rx_rate;
 		frame->tx_rate = real->tx_rate;
-		frame->simulated &= ~SM_HAVE_NETWORK;
+		frame->valid |= SM_HAVE_NETWORK;
 	}
 
 	/* The disks' bytes a second and their latency. */
@@ -248,11 +258,11 @@ system_frame(
 		frame->read_rate = real->read_rate;
 		frame->write_rate = real->write_rate;
 		frame->disk_latency_ms = real->disk_latency_ms;
-		frame->simulated &= ~SM_HAVE_DISK;
-		frame->simulated &= ~SM_HAVE_DISK_LATENCY;
+		frame->valid |= SM_HAVE_DISK;
+		frame->valid |= SM_HAVE_DISK_LATENCY;
 	}
 
-	/* The GPUs the system has (none on a virtual GPU: the drawing one stays simulated). */
+	/* The GPUs the system has (none on a virtual GPU: the drawing one stays at 0). */
 	count = real->gpu_count;
 	if (count > source->info.gpu_count)
 		count = source->info.gpu_count;
@@ -260,26 +270,26 @@ system_frame(
 		/* Its use. */
 		if ((real->valid & KL_MONITOR_FRAME_GPU_BUSY) != 0U) {
 			frame->gpu_busy[index] = real->gpu[index].busy;
-			frame->simulated &= ~SM_HAVE_GPU_BUSY;
+			frame->valid |= SM_HAVE_GPU_BUSY;
 		}
 
-		/* Its memory. */
-		if ((real->valid & KL_MONITOR_FRAME_GPU_MEMORY) != 0U && real->gpu[index].memory_total != 0U) {
+		/* Its memory, and the limit it is held within. */
+		if ((real->valid & KL_MONITOR_FRAME_GPU_MEMORY) != 0U) {
 			source->info.gpu_memory_total[index] = real->gpu[index].memory_total;
 			frame->gpu_memory_used[index] = real->gpu[index].memory_used;
-			frame->simulated &= ~SM_HAVE_GPU_MEMORY;
+			frame->valid |= SM_HAVE_GPU_MEMORY;
 		}
 
-		/* Its temperature. */
+		/* Its temperature (the frame's temperatures may be the CPU's alone: a GPU without one reads 0). */
 		if ((real->valid & KL_MONITOR_FRAME_TEMPERATURE) != 0U && real->gpu[index].milli_celsius != 0) {
 			frame->gpu_celsius[index] = (double)real->gpu[index].milli_celsius / 1000.0;
-			frame->simulated &= ~SM_HAVE_GPU_TEMPERATURE;
+			frame->valid |= SM_HAVE_GPU_TEMPERATURE;
 		}
 
-		/* Its power. */
+		/* Its power, likewise. */
 		if ((real->valid & KL_MONITOR_FRAME_POWER) != 0U && real->gpu[index].milli_watts != 0U) {
 			frame->gpu_watts[index] = (double)real->gpu[index].milli_watts / 1000.0;
-			frame->simulated &= ~SM_HAVE_GPU_POWER;
+			frame->valid |= SM_HAVE_GPU_POWER;
 		}
 	}
 }

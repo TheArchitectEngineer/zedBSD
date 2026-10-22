@@ -184,6 +184,14 @@ struct bcm2711_v3d_hardware {
 	uint64_t maintenance_yields;
 	/* The controller mutex serializes the periodic submission cost report. */
 	struct bcm2711_v3d_perf perf;
+
+	/*
+	 * The time the jobs ran from launch to retirement, in nanoseconds,
+	 * summed over every job that ended (the boot self-tests too).  Only
+	 * bcm2711_v3d_busy_add raises it, atomically; hw.gputelemetry reads it
+	 * without a lock.  It lives as long as the engine and is never reset.
+	 */
+	volatile uint64_t busy_ns;
 	/* A boot self-test proved TFU raster-to-UIF output equal to the CPU conversion; until then textures use the CPU. */
 	bool tfu_uif_ready;
 	/* The performance counters have their sources and run (cleared by a reset). */
