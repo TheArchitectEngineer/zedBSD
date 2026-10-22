@@ -224,6 +224,8 @@ nvrtx_sm75_reorder(
 		*reason = "no memory for the branch targets";
 		return 1;
 	}
+
+	/* Each branch target is a cut. */
 	nvrtx_sm75_mark_targets(code, count, cut);
 
 	/* Every instruction's operands and words. */
@@ -236,6 +238,8 @@ nvrtx_sm75_reorder(
 			*reason = "the reordering does not know an instruction";
 			return 1;
 		}
+
+		/* Its words, and the opcode of the encodings of their own. */
 		kern_memcpy(nodes[index].words, code + (size_t)index * NVRTX_SM75_INSTRUCTION_WORDS, sizeof(nodes[index].words));
 		nodes[index].opcode = nodes[index].words[0] & 0xfffU;
 	}
@@ -270,9 +274,12 @@ nvrtx_sm75_reorder(
 				*reason = "no memory for the reordering";
 			}
 		}
+
+		/* The next block starts at this one's end. */
 		start = end;
 	}
 
+	/* The cuts and the nodes are only this call's. */
 	kern_free(cut);
 	kern_free(nodes);
 
@@ -335,6 +342,8 @@ nvrtx_sm75_schedule(
 		*reason = "no memory for the branch targets";
 		return 1;
 	}
+
+	/* Each branch target is marked. */
 	nvrtx_sm75_mark_targets(code, count, target);
 
 	/* The shader model's latencies, and nothing in flight at the program's start. */
@@ -394,6 +403,8 @@ nvrtx_sm75_schedule(
 				*reason = "a wait longer than the delay field holds";
 				return 1;
 			}
+
+			/* The delay into the instruction before. */
 			kern_memcpy(word.w, previous, sizeof(word.w));
 			nvrtx_sm75_set(&word, NVRTX_SM75_DELAY_LOW, NVRTX_SM75_DELAY_BITS, delay);
 			kern_memcpy(previous, word.w, sizeof(word.w));
@@ -412,6 +423,7 @@ nvrtx_sm75_schedule(
 		if (operands.boundary != 0)
 			nvrtx_sm75_clear(scheduler);
 
+		/* The next instruction counts from this one: its cycle, its fewest cycles, and whether it is a barrier. */
 		scheduler->cycle = earliest;
 		previous = slot;
 		previous_min = operands.min_delay;
@@ -420,6 +432,7 @@ nvrtx_sm75_schedule(
 			previous_sync = 1;
 	}
 
+	/* The targets and the state are only this call's. */
 	kern_free(target);
 	kern_free(scheduler);
 
@@ -463,6 +476,8 @@ nvrtx_sm75_reorder_block(
 			if (latency + nodes[after].priority > path)
 				path = latency + nodes[after].priority;
 		}
+
+		/* The longest path is its priority. */
 		nodes[before - 1U].priority = path;
 	}
 
@@ -521,6 +536,8 @@ nvrtx_sm75_reorder_block(
 			if (cycle + latency > nodes[after].earliest)
 				nodes[after].earliest = cycle + latency;
 		}
+
+		/* The next issues a cycle later at the earliest. */
 		cycle++;
 	}
 
@@ -528,6 +545,7 @@ nvrtx_sm75_reorder_block(
 	for (issued = 0U; issued < count; issued++)
 		kern_memcpy(code + (size_t)issued * NVRTX_SM75_INSTRUCTION_WORDS, nodes[order[issued]].words, sizeof(nodes[0].words));
 
+	/* The order is only this call's. */
 	kern_free(order);
 
 	/* Succeeded: the block is reordered. */
@@ -555,6 +573,7 @@ nvrtx_sm75_dependence(
 	int first_memory;
 	int second_memory;
 
+	/* The two instructions' operands, and no dependence found yet. */
 	first = &before->operands;
 	second = &after->operands;
 	latency = NVRTX_SM75_NO_DEPENDENCE;
@@ -564,26 +583,43 @@ nvrtx_sm75_dependence(
 		for (j = 0U; j < second->read_count; j++) {
 			if (first->writes[i] != second->reads[j])
 				continue;
-			if (first->class_of == NVRTX_SM75_CLASS_DECOUPLED)
-				return nvrtx_sm75_guess(before);
-			return nvrtx_sm75_raw(sm, first->class_of, second->read_class[j]);
+
+			/* A variable-latency result: the estimate of its latency. */
+			if (first->class_of == NVRTX_SM75_CLASS_DECOUPLED) {
+				latency = nvrtx_sm75_guess(before);
+				return latency;
+			}
+
+			/* A fixed-latency result: the shader model's table. */
+			latency = nvrtx_sm75_raw(sm, first->class_of, second->read_class[j]);
+			return latency;
 		}
 	}
 
 	/* A predicate the second reads (as its guard or its source) that the first writes. */
 	if (first->predicate_write != NVRTX_SM75_NO_PREDICATE) {
-		if (first->predicate_write == second->guard)
-			return nvrtx_sm75_predicate_raw(sm, NVRTX_SM75_CLASS_DECOUPLED);
-		if (first->predicate_write == second->predicate_read)
-			return nvrtx_sm75_predicate_raw(sm, second->class_of);
+		/* A guard waits as a variable-latency reader does. */
+		if (first->predicate_write == second->guard) {
+			latency = nvrtx_sm75_predicate_raw(sm, NVRTX_SM75_CLASS_DECOUPLED);
+			return latency;
+		}
+
+		/* A predicate source waits as its instruction's class does. */
+		if (first->predicate_write == second->predicate_read) {
+			latency = nvrtx_sm75_predicate_raw(sm, second->class_of);
+			return latency;
+		}
 	}
 
 	/* A register the second writes that the first reads or writes. */
 	for (j = 0U; j < second->write_count; j++) {
+		/* A write after a read. */
 		for (i = 0U; i < first->read_count; i++) {
 			if (first->reads[i] == second->writes[j])
 				latency = 1U;
 		}
+
+		/* A write after a write. */
 		for (i = 0U; i < first->write_count; i++) {
 			if (first->writes[i] == second->writes[j])
 				latency = 1U;
@@ -767,6 +803,8 @@ nvrtx_sm75_clear(
 		kern_memset(&scheduler->gpr[index], 0, sizeof(scheduler->gpr[index]));
 		scheduler->gpr[index].write_bar = NVRTX_SM75_NO_BAR;
 	}
+
+	/* The predicates likewise. */
 	for (index = 0U; index < NVRTX_SM75_TRACKED_PREDICATES; index++) {
 		kern_memset(&scheduler->predicate[index], 0, sizeof(scheduler->predicate[index]));
 		scheduler->predicate[index].write_bar = NVRTX_SM75_NO_BAR;
@@ -804,6 +842,8 @@ nvrtx_sm75_constrain(
 			*wait |= 1U << track->write_bar;
 			continue;
 		}
+
+		/* A fixed-latency writer is waited out by the shader model's latency. */
 		*earliest = nvrtx_sm75_later(*earliest, track->write_cycle + nvrtx_sm75_raw(scheduler->sm, track->write_class, operands->read_class[index]));
 	}
 
@@ -834,6 +874,8 @@ nvrtx_sm75_constrain(
 		if (track->written != 0)
 			*earliest = nvrtx_sm75_later(*earliest, track->write_cycle + nvrtx_sm75_predicate_raw(scheduler->sm, NVRTX_SM75_CLASS_DECOUPLED));
 	}
+
+	/* A predicate source waits as its instruction's class does, a branch's as a variable-latency reader. */
 	if (operands->predicate_read != NVRTX_SM75_NO_PREDICATE) {
 		track = &scheduler->predicate[operands->predicate_read];
 		reader = operands->class_of;
@@ -927,6 +969,8 @@ nvrtx_sm75_take_bars(
 		} else {
 			*read_bar = bar;
 		}
+
+		/* One fewer is needed. */
 		need--;
 	}
 }
@@ -982,6 +1026,8 @@ nvrtx_sm75_record(
 		scheduler->bar_busy |= 1U << write_bar;
 		scheduler->bar_set_cycle[write_bar] = issue;
 	}
+
+	/* The sources' scoreboard likewise. */
 	if (read_bar != NVRTX_SM75_BAR_NONE) {
 		scheduler->bar_busy |= 1U << read_bar;
 		scheduler->bar_set_cycle[read_bar] = issue;

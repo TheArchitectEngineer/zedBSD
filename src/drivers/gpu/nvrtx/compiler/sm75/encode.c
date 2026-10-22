@@ -26,7 +26,9 @@ static void nvrtx_sm75_place_wide(struct nvrtx_sm75_word *word, const struct nvr
 static void nvrtx_sm75_place_cb(struct nvrtx_sm75_word *word, const struct nvrtx_sm75_src *src);
 static void nvrtx_sm75_memory(struct nvrtx_sm75_word *word);
 
-/* Writes a field of up to 64 bits at a bit position. */
+/*
+ * Writes a field of up to 64 bits at a bit position.
+ */
 void
 nvrtx_sm75_set(
 	struct nvrtx_sm75_word *word,
@@ -52,7 +54,9 @@ nvrtx_sm75_set(
 	}
 }
 
-/* Reads a field of up to 64 bits at a bit position. */
+/*
+ * Reads a field of up to 64 bits at a bit position.
+ */
 uint64_t
 nvrtx_sm75_get(
 	const struct nvrtx_sm75_word *word,
@@ -77,7 +81,9 @@ nvrtx_sm75_get(
 	return value;
 }
 
-/* Starts an instruction: all bits zero, guarded by PT, no scoreboard. */
+/*
+ * Starts an instruction: all bits zero, guarded by PT, no scoreboard.
+ */
 void
 nvrtx_sm75_begin(
 	struct nvrtx_sm75_word *word)
@@ -138,7 +144,9 @@ nvrtx_sm75_control(
 	nvrtx_sm75_set(word, NVRTX_SM75_WAIT_LOW, NVRTX_SM75_WAIT_BITS, wait_mask);
 }
 
-/* Makes a register source. */
+/*
+ * Makes a register source.
+ */
 struct nvrtx_sm75_src
 nvrtx_sm75_reg(
 	uint32_t reg)
@@ -156,7 +164,9 @@ nvrtx_sm75_reg(
 	return src;
 }
 
-/* Makes an immediate source. */
+/*
+ * Makes an immediate source.
+ */
 struct nvrtx_sm75_src
 nvrtx_sm75_imm(
 	uint32_t bits)
@@ -174,7 +184,9 @@ nvrtx_sm75_imm(
 	return src;
 }
 
-/* Makes a constant buffer source: the word at a byte offset of a bound buffer. */
+/*
+ * Makes a constant buffer source: the word at a byte offset of a bound buffer.
+ */
 struct nvrtx_sm75_src
 nvrtx_sm75_cb(
 	uint32_t index,
@@ -286,6 +298,7 @@ nvrtx_sm75_fadd(
 {
 	struct nvrtx_sm75_src zero;
 
+	/* RZ, the zero register, as an operand. */
 	zero = nvrtx_sm75_reg(NVRTX_SM75_RZ);
 
 	/* The operands by the kind of b. */
@@ -314,6 +327,7 @@ nvrtx_sm75_fmul(
 {
 	struct nvrtx_sm75_src zero;
 
+	/* RZ, the zero register, as an operand. */
 	zero = nvrtx_sm75_reg(NVRTX_SM75_RZ);
 
 	/* The product, RZ as the third operand. */
@@ -358,6 +372,7 @@ nvrtx_sm75_fmnmx(
 {
 	struct nvrtx_sm75_src zero;
 
+	/* RZ, the zero register, as an operand. */
 	zero = nvrtx_sm75_reg(NVRTX_SM75_RZ);
 
 	/* The two operands, RZ as the third, and the choice. */
@@ -555,6 +570,7 @@ nvrtx_sm75_shift(
 	struct nvrtx_sm75_src zero;
 	uint32_t type;
 
+	/* The shifted register and RZ, the zero register, as operands. */
 	source = nvrtx_sm75_reg(value);
 	zero = nvrtx_sm75_reg(NVRTX_SM75_RZ);
 
@@ -613,6 +629,7 @@ nvrtx_sm75_mufu(
 {
 	struct nvrtx_sm75_src source;
 
+	/* The source register as an operand. */
 	source = nvrtx_sm75_reg(src);
 
 	/* The source is the second operand. */
@@ -635,6 +652,7 @@ nvrtx_sm75_i2f(
 {
 	struct nvrtx_sm75_src source;
 
+	/* The source register as an operand. */
 	source = nvrtx_sm75_reg(src);
 
 	/* The source, its signedness, both sizes 32 bits, the rounding. */
@@ -660,6 +678,7 @@ nvrtx_sm75_f2i(
 {
 	struct nvrtx_sm75_src source;
 
+	/* The source register as an operand. */
 	source = nvrtx_sm75_reg(src);
 
 	/* The source, the result's signedness, both sizes 32 bits, the rounding. */
@@ -685,6 +704,7 @@ nvrtx_sm75_frnd(
 {
 	struct nvrtx_sm75_src source;
 
+	/* The source register as an operand. */
 	source = nvrtx_sm75_reg(src);
 
 	/* The source, both sizes 32 bits, the rounding. */

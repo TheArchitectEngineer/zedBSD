@@ -40,6 +40,7 @@ nvrtx_sm75_operands(
 	uint32_t opcode;
 	int unknown;
 
+	/* A copy of the four words the field readers take. */
 	word.w[0] = words[0];
 	word.w[1] = words[1];
 	word.w[2] = words[2];
@@ -60,6 +61,7 @@ nvrtx_sm75_operands(
 	if (unknown == 0)
 		return 0;
 
+	/* Any other is an ALU instruction or not known. */
 	opcode = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_OPCODE_LOW, NVRTX_SM75_ALU_OPCODE_BITS);
 	unknown = nvrtx_sm75_operands_alu(&word, opcode, operands);
 	if (unknown != 0)
@@ -94,6 +96,7 @@ nvrtx_sm75_operands_alu(
 	int has_src2;
 	int writes_dst;
 
+	/* The form, the destination and the three register slots. */
 	form = (uint32_t)nvrtx_sm75_get(word, NVRTX_SM75_ALU_FORM_LOW, NVRTX_SM75_ALU_FORM_BITS);
 	dst = (uint32_t)nvrtx_sm75_get(word, NVRTX_SM75_DST_LOW, NVRTX_SM75_REG_BITS);
 	src0 = (uint32_t)nvrtx_sm75_get(word, NVRTX_SM75_SRC0_LOW, NVRTX_SM75_REG_BITS);
@@ -214,6 +217,7 @@ nvrtx_sm75_operands_other(
 	uint32_t extra;
 	uint32_t index;
 
+	/* The destination and the three register slots; an instruction of its own encoding has a scoreboard unless it says otherwise. */
 	dst = (uint32_t)nvrtx_sm75_get(word, NVRTX_SM75_DST_LOW, NVRTX_SM75_REG_BITS);
 	src0 = (uint32_t)nvrtx_sm75_get(word, NVRTX_SM75_SRC0_LOW, NVRTX_SM75_REG_BITS);
 	src1 = (uint32_t)nvrtx_sm75_get(word, NVRTX_SM75_SRC1_LOW, NVRTX_SM75_REG_BITS);

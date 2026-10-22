@@ -37,8 +37,12 @@ nvrtx_sm75_lower_storage(
 	int error;
 
 	/* The access names a storage buffer of the list. */
-	if (instruction->location >= lowering->ir->uniform_count || lowering->ir->uniforms[instruction->location].kind != DRV_GPU_IR_UNIFORM_STORAGE)
-		return nvrtx_sm75_refuse(lowering, EINVAL, "a storage access names no storage buffer");
+	if (instruction->location >= lowering->ir->uniform_count || lowering->ir->uniforms[instruction->location].kind != DRV_GPU_IR_UNIFORM_STORAGE) {
+		error = nvrtx_sm75_refuse(lowering, EINVAL, "a storage access names no storage buffer");
+		return error;
+	}
+
+	/* The buffer's entry of the storage table. */
 	slot = lowering->slot[instruction->location];
 
 	/* The size is a word of the buffer's entry. */
@@ -49,6 +53,8 @@ nvrtx_sm75_lower_storage(
 		error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_FIXED);
 		if (error != 0)
 			return error;
+
+		/* Succeeded: the size is in dst. */
 		return 0;
 	}
 
@@ -79,6 +85,8 @@ nvrtx_sm75_lower_storage(
 		} else {
 			nvrtx_sm75_stg(&word, address, lowering->reg[instruction->src[1]]);
 		}
+
+		/* PT, or P0 for a predicated access. */
 		nvrtx_sm75_guard(&word, guard, 0);
 
 		/* A load writes a result; a store only reads its sources. */
@@ -160,7 +168,8 @@ nvrtx_sm75_lower_atomic(
 		operation = NVRTX_SM75_ATOM_MAX;
 		break;
 	default:
-		return nvrtx_sm75_refuse(lowering, EINVAL, "an atomic operation the IR does not define");
+		error = nvrtx_sm75_refuse(lowering, EINVAL, "an atomic operation the IR does not define");
+		return error;
 	}
 
 	/* Where the word is: shared memory by its offset, or a storage buffer's word by its address. */
@@ -169,8 +178,12 @@ nvrtx_sm75_lower_atomic(
 		shared = 1;
 	address = lowering->reg[instruction->src[0]];
 	if (shared == 0) {
-		if (instruction->location >= lowering->ir->uniform_count || lowering->ir->uniforms[instruction->location].kind != DRV_GPU_IR_UNIFORM_STORAGE)
-			return nvrtx_sm75_refuse(lowering, EINVAL, "an atomic names no storage buffer");
+		if (instruction->location >= lowering->ir->uniform_count || lowering->ir->uniforms[instruction->location].kind != DRV_GPU_IR_UNIFORM_STORAGE) {
+			error = nvrtx_sm75_refuse(lowering, EINVAL, "an atomic names no storage buffer");
+			return error;
+		}
+
+		/* The word's address. */
 		error = nvrtx_sm75_storage_address(lowering, lowering->slot[instruction->location], address, &address);
 		if (error != 0)
 			return error;
@@ -209,8 +222,12 @@ nvrtx_sm75_lower_atomic(
 		} else {
 			nvrtx_sm75_atomic(&word, shared, dst, address, data, operation, is_signed);
 		}
+
+		/* A predicated one runs under P0. */
 		if (instruction->component == DRV_GPU_IR_ATOMIC_PREDICATED)
 			nvrtx_sm75_guard(&word, NVRTX_SM75_P0, 0);
+
+		/* Appends the atomic. */
 		error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_VARIABLE_WRITE);
 	}
 
@@ -244,6 +261,7 @@ nvrtx_sm75_lower_shared(
 	uint32_t offset;
 	int error;
 
+	/* The word's offset in shared memory. */
 	offset = lowering->reg[instruction->src[0]];
 
 	/* P0 from the predicate of a predicated access. */
@@ -263,6 +281,8 @@ nvrtx_sm75_lower_shared(
 	} else {
 		nvrtx_sm75_sts(&word, offset, lowering->reg[instruction->src[1]]);
 	}
+
+	/* A predicated one runs under P0. */
 	if (instruction->component != 0U)
 		nvrtx_sm75_guard(&word, NVRTX_SM75_P0, 0);
 
@@ -272,6 +292,8 @@ nvrtx_sm75_lower_shared(
 	} else {
 		error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_VARIABLE_STORE);
 	}
+
+	/* Reports an emission past the code's room. */
 	if (error != 0)
 		return error;
 
@@ -322,6 +344,7 @@ nvrtx_sm75_lower_sync(
 		if (error != 0)
 			return error;
 
+		/* The NOP of two cycles after it. */
 		nvrtx_sm75_begin(&word);
 		nvrtx_sm75_nop(&word);
 		error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_FIXED);
@@ -340,6 +363,7 @@ nvrtx_sm75_lower_sync(
 	if (error != 0)
 		return error;
 
+	/* The NOP of two cycles after it. */
 	nvrtx_sm75_begin(&word);
 	nvrtx_sm75_nop(&word);
 	error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_FIXED);

@@ -161,6 +161,8 @@ nvrtx_sm75_compile_stage_sm(
 			diagnostic->instruction = parse_diagnostic.word_offset;
 			diagnostic->reason = parse_diagnostic.reason;
 		}
+
+		/* Reports the frontend's refusal. */
 		return error;
 	}
 
@@ -183,7 +185,9 @@ nvrtx_sm75_compile_stage_sm(
 	}
 
 	/* A rewritten program refused for any reason but memory is lowered from the parsed one. */
-	if (optimized.instructions != NULL && error != 0 && error != ENOMEM) {
+	if (optimized.instructions != NULL &&
+	    error != 0 &&
+	    error != ENOMEM) {
 		if (diagnostic != NULL)
 			kern_memset(diagnostic, 0, sizeof(*diagnostic));
 		error = nvrtx_sm75_compile_ir_sm(ir, sm, binary, diagnostic);
@@ -235,6 +239,8 @@ nvrtx_sm75_compile_ir_sm(
 			diagnostic->instruction = 0U;
 			diagnostic->reason = "the shader model is not one the compiler targets (75, 86 or 89)";
 		}
+
+		/* Reports the shader model as not covered. */
 		return ENOTSUP;
 	}
 
@@ -272,6 +278,8 @@ nvrtx_sm75_compile_ir_sm(
 					break;
 				lowering.reg[instruction->dst] = (uint16_t)dst;
 			}
+
+			/* The value's register, just taken or its own. */
 			dst = lowering.reg[instruction->dst];
 		}
 
@@ -304,7 +312,9 @@ nvrtx_sm75_compile_ir_sm(
 	return 0;
 }
 
-/* Frees a compiled program. */
+/*
+ * Frees a compiled program.
+ */
 void
 nvrtx_sm75_binary_free(
 	struct nvrtx_sm75_binary *binary)
@@ -357,35 +367,54 @@ nvrtx_sm75_emit(
 	int variable;
 	int ends_block;
 	int global;
+	int error;
 
 	/* The code has room for every expansion; running out is a bug of the lowering. */
-	if (lowering->count >= lowering->capacity)
-		return nvrtx_sm75_refuse(lowering, EINVAL, "the code outgrew its room");
+	if (lowering->count >= lowering->capacity) {
+		error = nvrtx_sm75_refuse(lowering, EINVAL, "the code outgrew its room");
+		return error;
+	}
 
 	/* How the dependence marking reads the instruction. */
 	unknown = nvrtx_sm75_operands(word->w, &operands);
-	if (unknown != 0)
-		return nvrtx_sm75_refuse(lowering, EINVAL, "the dependence marking does not know an instruction the lowering emitted");
+	if (unknown != 0) {
+		error = nvrtx_sm75_refuse(lowering, EINVAL, "the dependence marking does not know an instruction the lowering emitted");
+		return error;
+	}
 
-	/* The kind agrees with it. */
+	/* The variable-latency kinds, which the marking gives a scoreboard. */
 	variable = 0;
 	if (kind == NVRTX_SM75_VARIABLE_WRITE ||
 	    kind == NVRTX_SM75_VARIABLE_STORE ||
 	    kind == NVRTX_SM75_VARIABLE_SPECIAL)
 		variable = 1;
+
+	/* The kinds that end a block: branches, convergence and barriers. */
 	ends_block = 0;
 	if (kind == NVRTX_SM75_CONTROL || kind == NVRTX_SM75_SYNC)
 		ends_block = 1;
-	if (ends_block != operands.boundary)
-		return nvrtx_sm75_refuse(lowering, EINVAL, "an instruction emitted as a block's end that does not end one, or the reverse");
+
+	/* The marking ends a block at the same instructions as the kind says. */
+	if (ends_block != operands.boundary) {
+		error = nvrtx_sm75_refuse(lowering, EINVAL, "an instruction emitted as a block's end that does not end one, or the reverse");
+		return error;
+	}
+
+	/* A variable-latency kind is an instruction the marking gives a scoreboard. */
 	if (ends_block == 0 &&
 	    variable != 0 &&
-	    operands.class_of != NVRTX_SM75_CLASS_DECOUPLED)
-		return nvrtx_sm75_refuse(lowering, EINVAL, "an instruction emitted as variable-latency that has no scoreboard");
+	    operands.class_of != NVRTX_SM75_CLASS_DECOUPLED) {
+		error = nvrtx_sm75_refuse(lowering, EINVAL, "an instruction emitted as variable-latency that has no scoreboard");
+		return error;
+	}
+
+	/* A fixed-latency kind is one the marking does not. */
 	if (ends_block == 0 &&
 	    variable == 0 &&
-	    operands.class_of == NVRTX_SM75_CLASS_DECOUPLED)
-		return nvrtx_sm75_refuse(lowering, EINVAL, "an instruction emitted as fixed-latency that needs a scoreboard");
+	    operands.class_of == NVRTX_SM75_CLASS_DECOUPLED) {
+		error = nvrtx_sm75_refuse(lowering, EINVAL, "an instruction emitted as fixed-latency that needs a scoreboard");
+		return error;
+	}
 
 	/* A global access gets the shader model's memory order field. */
 	global = nvrtx_sm75_is_global(word);
@@ -463,18 +492,24 @@ nvrtx_sm75_prepare(
 	int count;
 	int error;
 
+	/* The program and the result being built. */
 	ir = lowering->ir;
 	binary = lowering->binary;
 
 	/* Compute, vertex and fragment programs are compiled. */
-	if (ir->stage != DRV_GPU_STAGE_COMPUTE && ir->stage != DRV_GPU_STAGE_VERTEX && ir->stage != DRV_GPU_STAGE_FRAGMENT)
-		return nvrtx_sm75_refuse(lowering, ENOTSUP, "only compute, vertex and fragment shaders are compiled");
+	if (ir->stage != DRV_GPU_STAGE_COMPUTE &&
+	    ir->stage != DRV_GPU_STAGE_VERTEX &&
+	    ir->stage != DRV_GPU_STAGE_FRAGMENT) {
+		error = nvrtx_sm75_refuse(lowering, ENOTSUP, "only compute, vertex and fragment shaders are compiled");
+		return error;
+	}
 
-	/* The per-value arrays. */
+	/* Each value's register. */
 	lowering->reg = kern_calloc(ir->value_count + 1U, sizeof(*lowering->reg));
 	if (lowering->reg == NULL)
 		return ENOMEM;
 
+	/* Each value's last read. */
 	lowering->last_use = kern_calloc(ir->value_count + 1U, sizeof(*lowering->last_use));
 	if (lowering->last_use == NULL)
 		return ENOMEM;
@@ -490,24 +525,37 @@ nvrtx_sm75_prepare(
 
 		/* The sources of an operation the compiler covers. */
 		count = nvrtx_sm75_sources(instruction, sources);
-		if (count < 0)
-			return nvrtx_sm75_refuse(lowering, ENOTSUP, "the operation is not compiled yet");
+		if (count < 0) {
+			error = nvrtx_sm75_refuse(lowering, ENOTSUP, "the operation is not compiled yet");
+			return error;
+		}
 
 		/* The destination is a value of the program. */
 		defines = nvrtx_sm75_defines(instruction);
-		if (defines != 0 && instruction->dst >= ir->value_count)
-			return nvrtx_sm75_refuse(lowering, EINVAL, "a destination is not a value of the program");
+		if (defines != 0 && instruction->dst >= ir->value_count) {
+			error = nvrtx_sm75_refuse(lowering, EINVAL, "a destination is not a value of the program");
+			return error;
+		}
 
 		/* A sample's four results are values of the program. */
 		defines = nvrtx_sm75_is_sample(instruction->op);
-		if (defines != 0 && (instruction->dst >= ir->value_count || ir->value_count - instruction->dst < 4U))
-			return nvrtx_sm75_refuse(lowering, EINVAL, "a sample's results are not values of the program");
+		if (defines != 0 &&
+		    (instruction->dst >= ir->value_count ||
+		     ir->value_count - instruction->dst < 4U)) {
+			error = nvrtx_sm75_refuse(lowering, EINVAL, "a sample's results are not values of the program");
+			return error;
+		}
 
 		/* Each source is a value of the program, read last here so far. */
 		source_count = (uint32_t)count;
 		for (source = 0U; source < source_count; source++) {
-			if (sources[source] >= ir->value_count)
-				return nvrtx_sm75_refuse(lowering, EINVAL, "a source is not a value of the program");
+			/* A source outside the program's values is refused. */
+			if (sources[source] >= ir->value_count) {
+				error = nvrtx_sm75_refuse(lowering, EINVAL, "a source is not a value of the program");
+				return error;
+			}
+
+			/* The value is read here, the last time so far. */
 			lowering->last_use[sources[source]] = index + 1U;
 		}
 	}
@@ -560,7 +608,9 @@ nvrtx_sm75_map_uniforms(
 	const struct drv_gpu_shader_ir_uniform *uniform;
 	struct nvrtx_sm75_binary *binary;
 	uint32_t index;
+	int error;
 
+	/* The program and the result being built. */
 	ir = lowering->ir;
 	binary = lowering->binary;
 
@@ -574,26 +624,39 @@ nvrtx_sm75_map_uniforms(
 		uniform = &ir->uniforms[index];
 		lowering->slot[index] = NVRTX_SM75_NO_SLOT;
 
-		/* A storage buffer takes the next entry of the table. */
+		/* Each kind of buffer takes the next place of its own. */
 		if (uniform->kind == DRV_GPU_IR_UNIFORM_STORAGE) {
-			if (binary->storage_count == NVRTX_SM75_CB_STORAGE_MAX)
-				return nvrtx_sm75_refuse(lowering, ENOTSUP, "more storage buffers than the table holds");
+			/* A storage buffer takes the next entry of the table, which must have one. */
+			if (binary->storage_count == NVRTX_SM75_CB_STORAGE_MAX) {
+				error = nvrtx_sm75_refuse(lowering, ENOTSUP, "more storage buffers than the table holds");
+				return error;
+			}
+
+			/* The entry is the buffer's. */
 			lowering->slot[index] = binary->storage_count;
 			binary->storage[binary->storage_count].set = uniform->set;
 			binary->storage[binary->storage_count].binding = uniform->binding;
 			binary->storage_count++;
 		} else if (uniform->kind == DRV_GPU_IR_UNIFORM_SAMPLED_IMAGE) {
-			/* A sampled image takes the next texture handle. */
-			if (binary->texture_count == NVRTX_SM75_CB_TEXTURES_MAX)
-				return nvrtx_sm75_refuse(lowering, ENOTSUP, "more sampled images than texture handles");
+			/* A sampled image takes the next texture handle, which must have one. */
+			if (binary->texture_count == NVRTX_SM75_CB_TEXTURES_MAX) {
+				error = nvrtx_sm75_refuse(lowering, ENOTSUP, "more sampled images than texture handles");
+				return error;
+			}
+
+			/* The handle is the image's. */
 			lowering->slot[index] = binary->texture_count;
 			binary->textures[binary->texture_count].set = uniform->set;
 			binary->textures[binary->texture_count].binding = uniform->binding;
 			binary->texture_count++;
 		} else if (uniform->kind == DRV_GPU_IR_UNIFORM_BLOCK) {
-			/* A uniform buffer takes the next constant buffer. */
-			if (binary->uniform_count == NVRTX_SM75_CB_UNIFORM_MAX)
-				return nvrtx_sm75_refuse(lowering, ENOTSUP, "more uniform buffers than constant buffers");
+			/* A uniform buffer takes the next constant buffer, which must have one. */
+			if (binary->uniform_count == NVRTX_SM75_CB_UNIFORM_MAX) {
+				error = nvrtx_sm75_refuse(lowering, ENOTSUP, "more uniform buffers than constant buffers");
+				return error;
+			}
+
+			/* The constant buffer is the buffer's, its size the bytes the program reads. */
 			lowering->slot[index] = NVRTX_SM75_CB_UNIFORM_FIRST + binary->uniform_count;
 			binary->uniforms[binary->uniform_count].set = uniform->set;
 			binary->uniforms[binary->uniform_count].binding = uniform->binding;
@@ -650,14 +713,16 @@ nvrtx_sm75_finish(
 	error = nvrtx_sm75_reorder(lowering->binary->code, lowering->count, lowering->sm, &instruction, &reason);
 	if (error != 0) {
 		lowering->index = instruction;
-		return nvrtx_sm75_refuse(lowering, EINVAL, reason);
+		error = nvrtx_sm75_refuse(lowering, EINVAL, reason);
+		return error;
 	}
 
 	/* The dependences of every instruction. */
 	error = nvrtx_sm75_schedule(lowering->binary->code, lowering->count, lowering->sm, &instruction, &reason);
 	if (error != 0) {
 		lowering->index = instruction;
-		return nvrtx_sm75_refuse(lowering, EINVAL, reason);
+		error = nvrtx_sm75_refuse(lowering, EINVAL, reason);
+		return error;
 	}
 
 	/* A graphics program's header. */

@@ -136,10 +136,18 @@ nvrtx_sm75_lower(
 	case DRV_GPU_IR_LOAD_PUSH:
 		/* A push constant word lies in the first 256 bytes of constant buffer 0. */
 		end = instruction->immediate + 4U;
-		if (end > NVRTX_SM75_CB_PUSH_BYTES || end < instruction->immediate || (instruction->immediate & 3U) != 0U)
-			return nvrtx_sm75_refuse(lowering, ENOTSUP, "a push constant beyond the 256 bytes of the root buffer");
+		if (end > NVRTX_SM75_CB_PUSH_BYTES ||
+		    end < instruction->immediate ||
+		    (instruction->immediate & 3U) != 0U) {
+			error = nvrtx_sm75_refuse(lowering, ENOTSUP, "a push constant beyond the 256 bytes of the root buffer");
+			return error;
+		}
+
+		/* The program reads the push constants up to this word. */
 		if (end > lowering->binary->push_bytes)
 			lowering->binary->push_bytes = end;
+
+		/* The word in constant buffer 0. */
 		source = nvrtx_sm75_cb(NVRTX_SM75_CB_ROOT, NVRTX_SM75_CB_PUSH + instruction->immediate);
 		break;
 	case DRV_GPU_IR_LOAD_UBO:
@@ -151,10 +159,18 @@ nvrtx_sm75_lower(
 		 * src/nouveau/compiler/nak/sm70_encode.rs
 		 * (SM70Encoder::set_src_cb: the offset field of 16 bits).
 		 */
-		if (instruction->location >= lowering->ir->uniform_count || lowering->ir->uniforms[instruction->location].kind != DRV_GPU_IR_UNIFORM_BLOCK)
-			return nvrtx_sm75_refuse(lowering, EINVAL, "a uniform load names no uniform buffer");
-		if (instruction->immediate > 0xfffcU || (instruction->immediate & 3U) != 0U)
-			return nvrtx_sm75_refuse(lowering, ENOTSUP, "a uniform buffer offset beyond 64 KiB");
+		if (instruction->location >= lowering->ir->uniform_count || lowering->ir->uniforms[instruction->location].kind != DRV_GPU_IR_UNIFORM_BLOCK) {
+			error = nvrtx_sm75_refuse(lowering, EINVAL, "a uniform load names no uniform buffer");
+			return error;
+		}
+
+		/* The offset is a whole word the field holds. */
+		if (instruction->immediate > 0xfffcU || (instruction->immediate & 3U) != 0U) {
+			error = nvrtx_sm75_refuse(lowering, ENOTSUP, "a uniform buffer offset beyond 64 KiB");
+			return error;
+		}
+
+		/* The word in the uniform buffer's constant buffer. */
 		source = nvrtx_sm75_cb(lowering->slot[instruction->location], instruction->immediate);
 		break;
 	case DRV_GPU_IR_MOVE:
@@ -193,6 +209,7 @@ nvrtx_sm75_predicate(
 	struct nvrtx_sm75_src zero;
 	int error;
 
+	/* The Boolean and RZ, the zero register, as operands. */
 	a = nvrtx_sm75_value(lowering, value);
 	zero = nvrtx_sm75_reg(NVRTX_SM75_RZ);
 
@@ -221,6 +238,7 @@ nvrtx_sm75_lower_alu(
 	struct nvrtx_sm75_src mask;
 	int error;
 
+	/* The instruction, its first source, and RZ for a second source it may not have. */
 	nvrtx_sm75_begin(&word);
 	zero = nvrtx_sm75_reg(NVRTX_SM75_RZ);
 	a = nvrtx_sm75_value(lowering, instruction->src[0]);
@@ -301,7 +319,8 @@ nvrtx_sm75_lower_alu(
 		nvrtx_sm75_shift(&word, dst, a.value, &b, 1, 1);
 		break;
 	default:
-		return nvrtx_sm75_refuse(lowering, ENOTSUP, "the operation is not compiled yet");
+		error = nvrtx_sm75_refuse(lowering, ENOTSUP, "the operation is not compiled yet");
+		return error;
 	}
 
 	/* One instruction of fixed latency. */
@@ -330,6 +349,7 @@ nvrtx_sm75_lower_compare(
 	struct nvrtx_sm75_src truth;
 	int error;
 
+	/* RZ, the Boolean true, and the two sources as operands. */
 	zero = nvrtx_sm75_reg(NVRTX_SM75_RZ);
 	truth = nvrtx_sm75_imm(NVRTX_SM75_TRUE);
 	a = nvrtx_sm75_value(lowering, instruction->src[0]);
@@ -374,6 +394,7 @@ nvrtx_sm75_lower_compare(
 		break;
 	}
 
+	/* Appends the comparison. */
 	error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_FIXED_PREDICATE);
 	if (error != 0)
 		return error;
@@ -392,6 +413,7 @@ nvrtx_sm75_lower_compare(
 		nvrtx_sm75_sel(&word, dst, &zero, &truth, NVRTX_SM75_P0, 1);
 	}
 
+	/* Appends the selection. */
 	error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_FIXED);
 	if (error != 0)
 		return error;
@@ -420,6 +442,7 @@ nvrtx_sm75_lower_unit(
 	uint32_t function;
 	int error;
 
+	/* The source's register, and no temporary yet. */
 	source = lowering->reg[instruction->src[0]];
 	temporary = NVRTX_SM75_RZ;
 
@@ -435,6 +458,7 @@ nvrtx_sm75_lower_unit(
 		if (error != 0)
 			return error;
 
+		/* The angle times 1 / (2 pi) into the temporary. */
 		a = nvrtx_sm75_reg(source);
 		turns = nvrtx_sm75_imm(NVRTX_SM75_INV_TWO_PI);
 		nvrtx_sm75_begin(&word);
@@ -444,6 +468,8 @@ nvrtx_sm75_lower_unit(
 			nvrtx_sm75_give(lowering, temporary);
 			return error;
 		}
+
+		/* The unit reads the turns. */
 		source = temporary;
 	}
 
@@ -511,6 +537,7 @@ nvrtx_sm75_lower_unit(
 		break;
 	}
 
+	/* Appends the unit's instruction. */
 	error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_VARIABLE_WRITE);
 
 	/* The fraction subtracts the rounded value. */
@@ -579,7 +606,8 @@ nvrtx_sm75_lower_system(
 	case DRV_GPU_IR_SYSTEM_LOCAL_INDEX:
 		break;
 	default:
-		return nvrtx_sm75_refuse(lowering, ENOTSUP, "a built-in value a compute shader does not have");
+		error = nvrtx_sm75_refuse(lowering, ENOTSUP, "a built-in value a compute shader does not have");
+		return error;
 	}
 
 	/* A single built-in is one read of its special register. */
@@ -589,6 +617,8 @@ nvrtx_sm75_lower_system(
 		error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_VARIABLE_SPECIAL);
 		if (error != 0)
 			return error;
+
+		/* Succeeded: the built-in is in dst. */
 		return 0;
 	}
 
@@ -600,9 +630,12 @@ nvrtx_sm75_lower_system(
 				axis--;
 				nvrtx_sm75_give(lowering, ids[axis]);
 			}
+
+			/* Reports the shortage of registers, the ones taken given back. */
 			return error;
 		}
 
+		/* S2R of the axis's local id. */
 		nvrtx_sm75_begin(&word);
 		nvrtx_sm75_s2r(&word, ids[axis], NVRTX_SM75_SR_TID_X + axis);
 		error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_VARIABLE_SPECIAL);
@@ -619,6 +652,8 @@ nvrtx_sm75_lower_system(
 		nvrtx_sm75_imad(&word, ids[2], &a, &b, &c, 0);
 		error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_FIXED);
 	}
+
+	/* That times the width plus x into dst. */
 	if (error == 0) {
 		a = nvrtx_sm75_reg(ids[2]);
 		b = nvrtx_sm75_imm(lowering->ir->local_size[0]);
@@ -667,9 +702,12 @@ nvrtx_sm75_lower_loop(
 	/* LOOP_BEGIN: the BSSY (its target is set at the loop's end), and the loop starts after it. */
 	if (instruction->op == DRV_GPU_IR_LOOP_BEGIN) {
 		depth = lowering->loop_depth;
-		if (depth == NVRTX_SM75_LOOP_DEPTH)
-			return nvrtx_sm75_refuse(lowering, ENOTSUP, "loops nested deeper than the convergence barriers");
+		if (depth == NVRTX_SM75_LOOP_DEPTH) {
+			error = nvrtx_sm75_refuse(lowering, ENOTSUP, "loops nested deeper than the convergence barriers");
+			return error;
+		}
 
+		/* The BSSY, remembered so that the loop's end can set its target. */
 		nvrtx_sm75_begin(&word);
 		nvrtx_sm75_bssy(&word, depth, 0);
 		lowering->loop_bssy[depth] = lowering->count;
@@ -677,14 +715,19 @@ nvrtx_sm75_lower_loop(
 		if (error != 0)
 			return error;
 
+		/* Succeeded: the loop starts after the BSSY, one level deeper. */
 		lowering->loop_start[depth] = lowering->count;
 		lowering->loop_depth++;
 		return 0;
 	}
 
 	/* LOOP_END closes the innermost loop. */
-	if (lowering->loop_depth == 0U)
-		return nvrtx_sm75_refuse(lowering, EINVAL, "a loop's end without its beginning");
+	if (lowering->loop_depth == 0U) {
+		error = nvrtx_sm75_refuse(lowering, EINVAL, "a loop's end without its beginning");
+		return error;
+	}
+
+	/* The loop being closed is one level out. */
 	lowering->loop_depth--;
 	depth = lowering->loop_depth;
 

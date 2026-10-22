@@ -171,14 +171,20 @@ nvrtx_sm75_sources(
 		sources[0] = instruction->src[0];
 		sources[1] = instruction->src[1];
 		count = 2;
+
+		/* A compare and exchange reads the value it compares with. */
 		if (instruction->immediate == DRV_GPU_IR_ATOMIC_CMPXCHG) {
 			sources[count] = instruction->src[count];
 			count++;
 		}
+
+		/* A predicated one reads its predicate last. */
 		if (instruction->component == DRV_GPU_IR_ATOMIC_PREDICATED) {
 			sources[count] = instruction->src[count];
 			count++;
 		}
+
+		/* Succeeded: the atomic's sources. */
 		return count;
 	default:
 		break;
@@ -254,15 +260,21 @@ nvrtx_sm75_extend_loops(
 	uint32_t source;
 	int defines;
 	int count;
+	int error;
 
+	/* The program. */
 	ir = lowering->ir;
 
 	/* Each value's first definition. */
 	first_def = kern_calloc(ir->value_count + 1U, sizeof(*first_def));
 	if (first_def == NULL)
 		return ENOMEM;
+
+	/* No value is defined before the program starts. */
 	for (index = 0U; index <= ir->value_count; index++)
 		first_def[index] = NVRTX_SM75_NOT_DEFINED;
+
+	/* The first instruction that defines each value. */
 	for (index = 0U; index < ir->instruction_count; index++) {
 		instruction = &ir->instructions[index];
 		defines = nvrtx_sm75_defines(instruction);
@@ -274,27 +286,41 @@ nvrtx_sm75_extend_loops(
 	depth = 0U;
 	for (index = 0U; index < ir->instruction_count; index++) {
 		instruction = &ir->instructions[index];
+
+		/* A loop's beginning goes one level deeper, as deep as the convergence barriers allow. */
 		if (instruction->op == DRV_GPU_IR_LOOP_BEGIN) {
 			if (depth == NVRTX_SM75_LOOP_DEPTH) {
 				kern_free(first_def);
 				lowering->index = index;
-				return nvrtx_sm75_refuse(lowering, ENOTSUP, "loops nested deeper than the convergence barriers");
+				error = nvrtx_sm75_refuse(lowering, ENOTSUP, "loops nested deeper than the convergence barriers");
+				return error;
 			}
+
+			/* The loop begins here. */
 			begins[depth] = index;
 			depth++;
 			continue;
 		}
+
+		/* Only a loop's end has more to do. */
 		if (instruction->op != DRV_GPU_IR_LOOP_END)
 			continue;
+
+		/* A loop's end closes the innermost loop, which must have begun. */
 		if (depth == 0U) {
 			kern_free(first_def);
 			lowering->index = index;
-			return nvrtx_sm75_refuse(lowering, EINVAL, "a loop's end without its beginning");
+			error = nvrtx_sm75_refuse(lowering, EINVAL, "a loop's end without its beginning");
+			return error;
 		}
+
+		/* The loop being closed. */
 		depth--;
 		begin = begins[depth];
 
+		/* Each instruction of its body. */
 		for (inner = begin + 1U; inner <= index; inner++) {
+			/* Each value the instruction reads that was defined before the loop lives to the loop's end. */
 			count = nvrtx_sm75_sources(&ir->instructions[inner], sources);
 			for (source = 0U; count > 0 && source < (uint32_t)count; source++) {
 				if (first_def[sources[source]] >= begin)
@@ -304,11 +330,15 @@ nvrtx_sm75_extend_loops(
 			}
 		}
 	}
+
+	/* The first definitions are only this pass's. */
 	kern_free(first_def);
 
 	/* Every loop must end. */
-	if (depth != 0U)
-		return nvrtx_sm75_refuse(lowering, EINVAL, "a loop without its end");
+	if (depth != 0U) {
+		error = nvrtx_sm75_refuse(lowering, EINVAL, "a loop without its end");
+		return error;
+	}
 
 	/* Succeeded: the values live through their loops. */
 	return 0;
@@ -327,6 +357,7 @@ nvrtx_sm75_take(
 	uint32_t index;
 	uint32_t limit;
 	uint32_t best;
+	int error;
 
 	/* The pool. */
 	limit = lowering->highest;
@@ -349,8 +380,10 @@ nvrtx_sm75_take(
 	}
 
 	/* None is free: the compiler does not spill. */
-	if (best == NVRTX_SM75_GPR_USABLE)
-		return nvrtx_sm75_refuse(lowering, ENOTSUP, "the program needs more registers than there are (no spilling yet)");
+	if (best == NVRTX_SM75_GPR_USABLE) {
+		error = nvrtx_sm75_refuse(lowering, ENOTSUP, "the program needs more registers than there are (no spilling yet)");
+		return error;
+	}
 
 	/* It is taken from here on. */
 	lowering->taken[best] = 1U;
@@ -375,6 +408,7 @@ nvrtx_sm75_take_pair(
 	uint32_t best;
 	uint32_t age;
 	uint32_t best_age;
+	int error;
 
 	/* The pool. */
 	limit = lowering->highest;
@@ -402,13 +436,17 @@ nvrtx_sm75_take_pair(
 			best = index;
 			best_age = age;
 		}
+
+		/* Past the pool, the first free pair is enough. */
 		if (index >= limit)
 			break;
 	}
 
 	/* None is free: the compiler does not spill. */
-	if (best == NVRTX_SM75_GPR_USABLE)
-		return nvrtx_sm75_refuse(lowering, ENOTSUP, "the program needs more registers than there are (no spilling yet)");
+	if (best == NVRTX_SM75_GPR_USABLE) {
+		error = nvrtx_sm75_refuse(lowering, ENOTSUP, "the program needs more registers than there are (no spilling yet)");
+		return error;
+	}
 
 	/* Both are taken from here on. */
 	lowering->taken[best] = 1U;
@@ -468,6 +506,7 @@ nvrtx_sm75_retire(
 		if (defines != 0 && value == instruction->dst)
 			continue;
 
+		/* Its register goes back. */
 		nvrtx_sm75_give(lowering, lowering->reg[value]);
 		lowering->reg[value] = NVRTX_SM75_NO_REG;
 	}
@@ -480,6 +519,8 @@ nvrtx_sm75_retire(
 			continue;
 		if (lowering->reg[value] == NVRTX_SM75_NO_REG)
 			continue;
+
+		/* Its register goes back. */
 		nvrtx_sm75_give(lowering, lowering->reg[value]);
 		lowering->reg[value] = NVRTX_SM75_NO_REG;
 	}
@@ -493,6 +534,7 @@ nvrtx_sm75_retire(
 	if (lowering->reg[value] == NVRTX_SM75_NO_REG)
 		return;
 
+	/* Its register goes back. */
 	nvrtx_sm75_give(lowering, lowering->reg[value]);
 	lowering->reg[value] = NVRTX_SM75_NO_REG;
 }

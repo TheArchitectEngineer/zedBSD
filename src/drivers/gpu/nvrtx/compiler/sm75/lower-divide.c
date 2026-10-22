@@ -53,6 +53,7 @@ nvrtx_sm75_lower_divide(
 	int is_signed;
 	int error;
 
+	/* The operands' registers, and whether the division is signed. */
 	numerator = lowering->reg[instruction->src[0]];
 	denominator = lowering->reg[instruction->src[1]];
 	is_signed = 0;
@@ -61,29 +62,42 @@ nvrtx_sm75_lower_divide(
 
 	/* The unsigned ones: the quotient or the remainder into dst, the other into a temporary. */
 	if (is_signed == 0) {
+		/* The temporary for the result not asked for. */
 		error = nvrtx_sm75_take(lowering, &other);
 		if (error != 0)
 			return error;
+
+		/* The division, the result asked for into dst. */
 		if (instruction->op == DRV_GPU_IR_UDIV) {
 			error = nvrtx_sm75_divide_unsigned(lowering, numerator, denominator, dst, other);
 		} else {
 			error = nvrtx_sm75_divide_unsigned(lowering, numerator, denominator, other, dst);
 		}
+
+		/* The temporary goes back. */
 		nvrtx_sm75_give(lowering, other);
+
+		/* Reports an emission past the code's room. */
 		if (error != 0)
 			return error;
+
+		/* Succeeded: the result is in dst. */
 		return 0;
 	}
 
-	/* The signed ones: the magnitudes first. */
+	/* The signed ones: the dividend's magnitude first. */
 	error = nvrtx_sm75_take(lowering, &magnitude_n);
 	if (error != 0)
 		return error;
+
+	/* The divisor's magnitude. */
 	error = nvrtx_sm75_take(lowering, &magnitude_d);
 	if (error != 0) {
 		nvrtx_sm75_give(lowering, magnitude_n);
 		return error;
 	}
+
+	/* The temporary for the result not asked for, and for the sign. */
 	error = nvrtx_sm75_take(lowering, &other);
 	if (error != 0) {
 		nvrtx_sm75_give(lowering, magnitude_n);
@@ -91,6 +105,7 @@ nvrtx_sm75_lower_divide(
 		return error;
 	}
 
+	/* The two magnitudes. */
 	error = nvrtx_sm75_absolute(lowering, numerator, magnitude_n);
 	if (error == 0)
 		error = nvrtx_sm75_absolute(lowering, denominator, magnitude_d);
@@ -112,6 +127,8 @@ nvrtx_sm75_lower_divide(
 		error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_FIXED);
 		sign = other;
 	}
+
+	/* P0 where the sign's word is negative. */
 	if (error == 0) {
 		a = nvrtx_sm75_reg(sign);
 		nvrtx_sm75_begin(&word);
@@ -167,17 +184,22 @@ nvrtx_sm75_divide_unsigned(
 	unsigned step;
 	int error;
 
+	/* RZ, the zero register, as an operand. */
 	zero = nvrtx_sm75_reg(NVRTX_SM75_RZ);
 
-	/* A register for the reciprocal, one for the products, and a pair for the high halves. */
+	/* A register for the reciprocal. */
 	error = nvrtx_sm75_take(lowering, &reciprocal);
 	if (error != 0)
 		return error;
+
+	/* One for the products. */
 	error = nvrtx_sm75_take(lowering, &scratch);
 	if (error != 0) {
 		nvrtx_sm75_give(lowering, reciprocal);
 		return error;
 	}
+
+	/* A pair for the high halves. */
 	error = nvrtx_sm75_take_pair(lowering, &pair);
 	if (error != 0) {
 		nvrtx_sm75_give(lowering, reciprocal);
@@ -185,15 +207,19 @@ nvrtx_sm75_divide_unsigned(
 		return error;
 	}
 
-	/* The float reciprocal of the divisor, scaled and made an integer. */
+	/* The float reciprocal of the divisor, scaled and made an integer: first the divisor as a float. */
 	nvrtx_sm75_begin(&word);
 	nvrtx_sm75_i2f(&word, scratch, denominator, 0);
 	error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_VARIABLE_WRITE);
+
+	/* Its reciprocal. */
 	if (error == 0) {
 		nvrtx_sm75_begin(&word);
 		nvrtx_sm75_mufu(&word, scratch, NVRTX_SM75_MUFU_RCP, scratch);
 		error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_VARIABLE_WRITE);
 	}
+
+	/* Scaled by 2^32 less 512. */
 	if (error == 0) {
 		a = nvrtx_sm75_reg(scratch);
 		b = nvrtx_sm75_imm(NVRTX_SM75_RECIPROCAL_SCALE);
@@ -201,13 +227,15 @@ nvrtx_sm75_divide_unsigned(
 		nvrtx_sm75_fmul(&word, scratch, &a, &b);
 		error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_FIXED);
 	}
+
+	/* Made an unsigned integer: r. */
 	if (error == 0) {
 		nvrtx_sm75_begin(&word);
 		nvrtx_sm75_f2i(&word, reciprocal, scratch, 0);
 		error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_VARIABLE_WRITE);
 	}
 
-	/* The refinement: -d * r, its product's high half with r, added to r. */
+	/* The refinement: -d * r, its product's high half with r, added to r.  First -d. */
 	if (error == 0) {
 		a = nvrtx_sm75_reg(denominator);
 		a.neg = 1;
@@ -215,6 +243,8 @@ nvrtx_sm75_divide_unsigned(
 		nvrtx_sm75_iadd3(&word, scratch, &a, &zero, &zero);
 		error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_FIXED);
 	}
+
+	/* -d * r. */
 	if (error == 0) {
 		a = nvrtx_sm75_reg(scratch);
 		b = nvrtx_sm75_reg(reciprocal);
@@ -222,6 +252,8 @@ nvrtx_sm75_divide_unsigned(
 		nvrtx_sm75_imad(&word, scratch, &a, &b, &zero, 0);
 		error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_FIXED);
 	}
+
+	/* r times it, into the pair. */
 	if (error == 0) {
 		a = nvrtx_sm75_reg(reciprocal);
 		b = nvrtx_sm75_reg(scratch);
@@ -229,6 +261,8 @@ nvrtx_sm75_divide_unsigned(
 		nvrtx_sm75_imad_wide(&word, pair, &a, &b, &zero);
 		error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_FIXED);
 	}
+
+	/* The high half added to r. */
 	if (error == 0) {
 		a = nvrtx_sm75_reg(reciprocal);
 		b = nvrtx_sm75_reg(pair + 1U);
@@ -245,6 +279,8 @@ nvrtx_sm75_divide_unsigned(
 		nvrtx_sm75_imad_wide(&word, pair, &a, &b, &zero);
 		error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_FIXED);
 	}
+
+	/* Its high half into the quotient's register. */
 	if (error == 0) {
 		b = nvrtx_sm75_reg(pair + 1U);
 		nvrtx_sm75_begin(&word);
@@ -252,7 +288,7 @@ nvrtx_sm75_divide_unsigned(
 		error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_FIXED);
 	}
 
-	/* The remainder: n - q * d. */
+	/* The remainder: n - q * d.  First q * d. */
 	if (error == 0) {
 		a = nvrtx_sm75_reg(quotient);
 		b = nvrtx_sm75_reg(denominator);
@@ -260,6 +296,8 @@ nvrtx_sm75_divide_unsigned(
 		nvrtx_sm75_imad(&word, scratch, &a, &b, &zero, 0);
 		error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_FIXED);
 	}
+
+	/* n less it. */
 	if (error == 0) {
 		a = nvrtx_sm75_reg(numerator);
 		b = nvrtx_sm75_reg(scratch);
@@ -271,6 +309,7 @@ nvrtx_sm75_divide_unsigned(
 
 	/* The two corrections, each where the remainder is still the divisor or more. */
 	for (step = 0U; error == 0 && step < 2U; step++) {
+		/* P0 where m >= d. */
 		a = nvrtx_sm75_reg(remainder);
 		b = nvrtx_sm75_reg(denominator);
 		nvrtx_sm75_begin(&word);
@@ -279,6 +318,7 @@ nvrtx_sm75_divide_unsigned(
 		if (error != 0)
 			break;
 
+		/* @P0 q = q + 1. */
 		a = nvrtx_sm75_reg(quotient);
 		c = nvrtx_sm75_imm(1U);
 		nvrtx_sm75_begin(&word);
@@ -288,6 +328,7 @@ nvrtx_sm75_divide_unsigned(
 		if (error != 0)
 			break;
 
+		/* @P0 m = m - d. */
 		a = nvrtx_sm75_reg(remainder);
 		b = nvrtx_sm75_reg(denominator);
 		b.neg = 1;
@@ -323,6 +364,7 @@ nvrtx_sm75_absolute(
 	struct nvrtx_sm75_src zero;
 	int error;
 
+	/* RZ, the zero register, as an operand. */
 	zero = nvrtx_sm75_reg(NVRTX_SM75_RZ);
 
 	/* P0: the value is negative. */
@@ -340,6 +382,7 @@ nvrtx_sm75_absolute(
 	if (error != 0)
 		return error;
 
+	/* -value where P0 holds. */
 	error = nvrtx_sm75_negate_if_p0(lowering, result);
 	if (error != 0)
 		return error;
@@ -359,6 +402,7 @@ nvrtx_sm75_negate_if_p0(
 	struct nvrtx_sm75_src zero;
 	int error;
 
+	/* RZ, the zero register, as an operand. */
 	zero = nvrtx_sm75_reg(NVRTX_SM75_RZ);
 
 	/* @P0 IADD3 value, -value, RZ, RZ. */
