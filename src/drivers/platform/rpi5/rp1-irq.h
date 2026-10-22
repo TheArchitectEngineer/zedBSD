@@ -42,8 +42,8 @@ int drv_rp1_irq_of(uint32_t node, unsigned index, unsigned *vector, unsigned *tr
 
 /*
  * Routes one of RP1's vectors to a handler: a free MIP line is taken, the
- * vector's MSI-X entry is pointed at it, and the vector is enabled in
- * RP1.  Returns 0, ENOSPC when no MIP line is free, or another errno.
+ * vector's MSI-X entry is pointed at it, the vector is enabled in RP1
+ * and the line is unmasked in the GIC.  Returns 0, ENOSPC when no MIP line is free, or another errno.
  */
 int drv_rp1_irq_establish(unsigned vector, unsigned trigger, drv_rp1_irq_handler_t handler, void *argument);
 
