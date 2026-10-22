@@ -27,6 +27,8 @@ static int validate_images(const struct bcm2711_native_pass *state, const struct
 static void write_word(uint8_t *bytes, uint32_t word);
 static void write_half(uint8_t *bytes, uint32_t half);
 static void write_raster(uint8_t *bytes, uint8_t opcode, uint32_t pitch, uint32_t address);
+static void write_depth(uint8_t *bytes, uint8_t opcode, const struct bcm2711_native_pass *state);
+static int validate_depth(const struct bcm2711_native_pass *state);
 static void encode_render(const struct bcm2711_native_pass *state, const struct bcm2711_native_pass_image *tile, const struct bcm2711_native_pass_sizes *sizes, uint8_t *bytes);
 static void encode_tile(const struct bcm2711_native_pass *state, uint8_t *bytes);
 static bool supertile_selected(const struct bcm2711_native_pass *state, uint32_t group, uint32_t x, uint32_t y);
@@ -88,6 +90,11 @@ bcm2711_native_pass_measure(
 			return EINVAL;
 	}
 
+	/* The depth/stencil attachment's kind, clear values and raster image are representable. */
+	error = validate_depth(state);
+	if (error != 0)
+		return error;
+
 	/* The complete selected tile rectangle must lie inside the framebuffer's binning grid. */
 	columns = (state->width + 63U) / 64U;
 	rows = (state->height + 63U) / 64U;
@@ -117,6 +124,12 @@ bcm2711_native_pass_measure(
 	measured.bin = 14U + draws * BCM2711_NATIVE_BIN_BYTES;
 	measured.tile = 28U;
 	if (state->load != 0)
+		measured.tile += 13U;
+
+	/* A depth/stencil load adds its packet; a depth/stencil store adds one unless it takes the place of the NONE store. */
+	if (state->depth_load != 0)
+		measured.tile += 13U;
+	if (state->depth_store != 0 && state->store != 0)
 		measured.tile += 13U;
 
 	/* Square power-of-two groups cover all binning tiles within the native maximum of 256 supertiles. */
@@ -281,7 +294,7 @@ validate_images(
 	struct bcm2711_native_pass_image *render,
 	struct bcm2711_native_pass_image *tile)
 {
-	struct native_pass_span spans[7];
+	struct native_pass_span spans[8];
 	struct native_pass_span cpu[3];
 	struct bcm2711_native_pass_image *images[3];
 	uint32_t required[3];
@@ -307,6 +320,16 @@ validate_images(
 		if (error != 0)
 			return error;
 		count = 7U;
+	}
+
+	/* A loaded or stored depth/stencil image supplies every row its tiles read or write. */
+	if (state->depth_load != 0 || state->depth_store != 0) {
+		if ((uint64_t)state->depth_pitch * state->height > state->depth_bytes)
+			return ENOSPC;
+		error = prepare_span(state->depth_output, state->depth_bytes, 64U, &spans[count]);
+		if (error != 0)
+			return error;
+		count++;
 	}
 
 	/* The output, first-block pool and tile state are distinct from all command storage. */
@@ -422,6 +445,39 @@ write_raster(
 	return;
 }
 
+/*
+ * Encodes one raster load or store of the depth/stencil tile buffer: Z and
+ * stencil for a D24S8 image, Z alone for an X8_D24 one, both in the d24s8
+ * memory format (43).
+ *
+ * Values referenced: Mesa 25.3.6 src/broadcom/cle/v3d_packet.xml (Load and
+ * Store Tile Buffer General, buffers Z 9 and Z+Stencil 11, Output Image
+ * Format d24s8 43) and vulkan/v3dvx_cmd_buffer.c (the depth/stencil loads
+ * and stores, which use the image's D24S8 render-target type).
+ */
+static void
+write_depth(
+	uint8_t *bytes,
+	uint8_t opcode,
+	const struct bcm2711_native_pass *state)
+{
+	uint32_t buffer;
+
+	/* A combined image moves both aspects; a depth-only image only Z. */
+	buffer = 11U;
+	if (state->depth == 2U)
+		buffer = 9U;
+
+	/* The buffer, the d24s8 format and the raster byte stride, then the image's address. */
+	bytes[0] = opcode;
+	write_word(bytes + 1, buffer | (43U << 12) | (state->depth_pitch << 28));
+	write_word(bytes + 5, state->depth_pitch >> 4);
+	write_word(bytes + 9, state->depth_output);
+
+	/* Succeeded: the complete packet references only the owned depth/stencil image. */
+	return;
+}
+
 /* Emits complete rendering state, both required dummy stores and exactly one invocation per selected tile. */
 static void
 encode_render(
@@ -450,6 +506,17 @@ encode_render(
 	bytes[27] = 121;
 	bytes[28] = 2;
 	write_word(bytes + 30, 0x3f800000U);
+
+	/*
+	 * A depth/stencil attachment makes the tile buffer's depth 24-bit
+	 * (Internal Depth Type depth_24, bit 47 of Common) and clears it to the
+	 * pass's values instead of 1.0 and stencil 0.
+	 */
+	if (state->depth != 0) {
+		bytes[6] |= 0x80U;
+		bytes[29] = (uint8_t)state->stencil_clear;
+		write_word(bytes + 30, state->depth_clear);
+	}
 
 	/* Auto-chained sixty-four-byte first blocks precede all branches into bin-produced lists. */
 	bytes[36] = 126;
@@ -528,6 +595,12 @@ encode_tile(
 		cursor += 13U;
 	}
 
+	/* A loaded depth/stencil attachment fills the tile's depth and stencil before any fragment is tested. */
+	if (state->depth_load != 0) {
+		write_depth(bytes + cursor, 30, state);
+		cursor += 13U;
+	}
+
 	/* Loads finish before triangle-list mode and the PTB-assumed zero instance ID are established. */
 	bytes[cursor] = 26;
 	bytes[cursor + 1U] = 56;
@@ -537,16 +610,23 @@ encode_tile(
 	bytes[cursor] = 21;
 	cursor += 2U;
 
-	/* Store writes the colour target, or the mandatory NONE packet when attachment storage is discarded. */
+	/* A stored depth/stencil attachment is written first, as Mesa orders the stores. */
+	if (state->depth_store != 0) {
+		write_depth(bytes + cursor, 29, state);
+		cursor += 13U;
+	}
+
+	/* Store writes the colour target, or the mandatory NONE packet when no attachment is stored. */
 	if (state->store != 0) {
 		write_raster(bytes + cursor, 29, state->pitch, state->output);
-	} else {
+		cursor += 13U;
+	} else if (state->depth_store == 0) {
 		bytes[cursor] = 29;
 		bytes[cursor + 1U] = 8;
+		cursor += 13U;
 	}
 
 	/* Both tile buffers clear between invocations; depth/stencil uses the explicit 4.2 clear command. */
-	cursor += 13U;
 	bytes[cursor] = 25;
 	bytes[cursor + 1U] = 3;
 	bytes[cursor + 2U] = 27;
@@ -554,6 +634,47 @@ encode_tile(
 
 	/* Succeeded: one complete generic tile invocation returns to the next selected supertile. */
 	return;
+}
+
+/* Refuses a depth/stencil attachment the pass's packets cannot describe. */
+static int
+validate_depth(
+	const struct bcm2711_native_pass *state)
+{
+	uint32_t magnitude;
+
+	/* No attachment, D24S8 or X8_D24; loads and stores are Boolean. */
+	if (state->depth > 2U ||
+	    state->depth_load > 1 ||
+	    state->depth_store > 1)
+		return EINVAL;
+
+	/* Without an attachment nothing is loaded or stored and the default clear values stand. */
+	if (state->depth == 0) {
+		if (state->depth_load != 0 || state->depth_store != 0)
+			return EINVAL;
+		return 0;
+	}
+
+	/* The clear values: depth in zero through one (either signed zero), stencil eight-bit. */
+	magnitude = state->depth_clear & 0x7fffffffU;
+	if (magnitude > 0x3f800000U)
+		return EINVAL;
+	if ((state->depth_clear & 0x80000000U) != 0 && magnitude != 0)
+		return EINVAL;
+	if (state->stencil_clear > 0xffU)
+		return EINVAL;
+
+	/* A raster image moved through the tile buffer obeys the colour target's pitch limits. */
+	if (state->depth_load != 0 || state->depth_store != 0) {
+		if (state->depth_pitch < state->width * 4U ||
+		    state->depth_pitch > 0xfffffU ||
+		    (state->depth_pitch & 63U) != 0)
+			return EINVAL;
+	}
+
+	/* Succeeded: the attachment fits the render configuration and tile packets. */
+	return 0;
 }
 
 /*

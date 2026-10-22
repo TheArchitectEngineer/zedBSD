@@ -36,36 +36,49 @@ def main():
         "Width (in pixels)": 130, "Height (in pixels)": 129, **tile_size})
     bin_prefix += packet("Flush VCD cache") + packet("Start Tile Binning")
     expected = {
-        "load-bin": bin_prefix + bytes((index * 17 + 3) & 255 for index in range(242)) + packet("Flush"),
+        "load-bin": bin_prefix + bytes((index * 17 + 3) & 255 for index in range(266)) + packet("Flush"),
         "clear-bin": bin_prefix + packet("Flush"),
     }
-    for load, store, name in ((True, True, "load"), (False, True, "clear"), (False, False, "discard")):
+    # The depth/stencil variants (ws141-p017): buffer Z+Stencil 11 or Z 9, d24s8 43, raster stride 576.
+    depth_image = {"Address": 0xc00000, "Height in UB or Stride": 576}
+    variants = ((True, True, "load", None, False, False), (False, True, "clear", None, False, False),
+                (False, False, "discard", None, False, False), (True, True, "depth", 11, True, True),
+                (False, False, "depth-store", 9, False, True))
+    for load, store, name, depth, depth_load, depth_store in variants:
         tile = packet("Tile Coordinates Implicit")
         if load:
             tile += packet("Load Tile Buffer General", **{
                 "Address": 0x400000, "Height in UB or Stride": 576,
                 "Input Image Format": 27})
+        if depth_load:
+            tile += packet("Load Tile Buffer General", **dict(depth_image, **{
+                "Buffer to Load": depth, "Input Image Format": 43}))
         tile += packet("End of Loads")
         tile += packet("Prim List Format", **{"primitive type": 2})
         tile += packet("Set InstanceID")
         tile += packet("Branch to Implicit Tile List")
+        if depth_store:
+            tile += packet("Store Tile Buffer General", **dict(depth_image, **{
+                "Buffer to Store": depth, "Output Image Format": 43}))
         if store:
             tile += packet("Store Tile Buffer General", **{
                 "Address": 0x400000, "Height in UB or Stride": 576,
                 "Output Image Format": 27})
-        else:
+        elif not depth_store:
             tile += packet("Store Tile Buffer General", **{"Buffer to Store": 8})
         tile += packet("Clear Render Targets")
         tile += packet("End of Tile Marker") + packet("Return from sub-list")
         expected[f"{name}-tile"] = tile
-        if name == "discard":
+        if name in ("discard", "depth-store"):
             continue
+        depth_type = {"Internal Depth Type": 1} if depth else {}
+        zs_clear = {"Z Clear Value": 0x3f000000, "Stencil Clear Value": 0x7f} if depth else {"Z Clear Value": 0x3f800000}
         render = packet("Tile Rendering Mode Cfg (Common)", **{
             "Image Width (pixels)": 130, "Image Height (pixels)": 129,
-            "Number of Render Targets": 1, "Early-Z disable": 1, **tile_size})
+            "Number of Render Targets": 1, "Early-Z disable": 1, **depth_type, **tile_size})
         render += packet("Tile Rendering Mode Cfg (Render Target Part1)", **{
             "Clear Color low bits": 0x12345678, "Internal Type and Clamping": 8, "Stride": 32})
-        render += packet("Tile Rendering Mode Cfg (ZS Clear Values)", **{"Z Clear Value": 0x3f800000})
+        render += packet("Tile Rendering Mode Cfg (ZS Clear Values)", **zs_clear)
         render += packet("Tile List Initial Block Size", **{"Use auto-chained tile lists": 1})
         render += packet("Multicore Rendering Supertile Cfg", **{
             "Number of Bin Tile Lists": 1, "Total Frame Height in Tiles": 3,
@@ -93,7 +106,7 @@ def main():
     for name, encoded in expected.items():
         if observed[name] != encoded:
             raise SystemExit(f"{name} differs from the 7.1 XML: {encoded.hex()} != {observed[name].hex()}")
-    print("native71-pass-check: PASS (7 complete 7.1 pass streams; load, clear, discard, relocations)")
+    print("native71-pass-check: PASS (10 complete 7.1 pass streams; load, clear, discard, depth/stencil, relocations)")
 
 
 if __name__ == "__main__":

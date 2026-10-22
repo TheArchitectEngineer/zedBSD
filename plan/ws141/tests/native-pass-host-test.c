@@ -70,7 +70,7 @@ main(
 	state.store = 1;
 	state.clear_colour = 0x12345678U;
 	error = bcm2711_native_pass_measure(&state, 2, &sizes);
-	assert(error == 0 && sizes.bin == 256U && sizes.render == 121U && sizes.tile == 41U);
+	assert(error == 0 && sizes.bin == 280U && sizes.render == 121U && sizes.tile == 41U);
 	assert(sizes.pool == state.pool_bytes && sizes.state == 2304U);
 	for (index = 0; index < 2U * BCM2711_NATIVE_BIN_BYTES; index++)
 		images[0].bytes[BCM2711_NATIVE_PASS_BIN_PREFIX + index] = (uint8_t)(index * 17U + 3U);
@@ -123,6 +123,67 @@ main(
 	error = bcm2711_native_pass_encode(&state, 0, &images[0], &images[1], &images[2]);
 	assert(error == 0);
 	print_image("discard-tile", &images[2]);
+
+	/*
+	 * A D24S8 attachment (ws141-p017) loaded and stored with the colour:
+	 * the render configuration's depth type and clear values, and the
+	 * tile's Z+S load before and store ahead of the colour's.
+	 */
+	state.load = 1;
+	state.store = 1;
+	state.depth = 1;
+	state.depth_clear = 0x3f000000U;
+	state.stencil_clear = 0x7fU;
+	state.depth_load = 1;
+	state.depth_store = 1;
+	state.depth_output = 0xc00000U;
+	state.depth_pitch = 576U;
+	state.depth_bytes = 0x13000U;
+	error = bcm2711_native_pass_encode(&state, 0, &images[0], &images[1], &images[2]);
+	assert(error == 0 && images[2].used == 67U);
+	print_image("depth-render", &images[1]);
+	print_image("depth-tile", &images[2]);
+
+	/* An X8_D24 attachment stored alone takes the place of the NONE store and moves Z only. */
+	state.load = 0;
+	state.store = 0;
+	state.depth = 2;
+	state.depth_load = 0;
+	error = bcm2711_native_pass_encode(&state, 0, &images[0], &images[1], &images[2]);
+	assert(error == 0 && images[2].used == 28U);
+	print_image("depth-store-tile", &images[2]);
+
+	/* An unknown kind, a move without an attachment, unrepresentable clears, short or aliased images and a bad pitch refuse. */
+	state.depth = 3;
+	verify_refusal(&state, images, EINVAL);
+	state.depth = 0;
+	verify_refusal(&state, images, EINVAL);
+	state.depth = 1;
+	state.depth_clear = 0x3f800001U;
+	verify_refusal(&state, images, EINVAL);
+	state.depth_clear = 0xbf000000U;
+	verify_refusal(&state, images, EINVAL);
+	state.depth_clear = 0x80000000U;
+	state.stencil_clear = 0x100U;
+	verify_refusal(&state, images, EINVAL);
+	state.stencil_clear = 0x7fU;
+	state.depth_bytes = 576U * 129U - 1U;
+	verify_refusal(&state, images, ENOSPC);
+	state.depth_bytes = 0x13000U;
+	state.depth_output = state.output;
+	verify_refusal(&state, images, EINVAL);
+	state.depth_output = 0xc00000U;
+	state.depth_pitch = 600U;
+	verify_refusal(&state, images, EINVAL);
+
+	/* The colour-only pass's fields return for the refusals below. */
+	state.depth = 0;
+	state.depth_clear = 0;
+	state.stencil_clear = 0;
+	state.depth_store = 0;
+	state.depth_output = 0;
+	state.depth_pitch = 0;
+	state.depth_bytes = 0;
 
 	/* Short geometry storage and complete-span aliasing refuse before changing any previously encoded byte. */
 	state.output_bytes = state.pitch * state.height - 1U;

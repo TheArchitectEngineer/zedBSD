@@ -21,14 +21,18 @@
 static void write_word(uint8_t *bytes, uint32_t word);
 static void write_half(uint8_t *bytes, uint32_t half);
 static void write_varyings(uint8_t *bytes, uint8_t opcode, uint32_t mask);
+static int validate_stencil(const struct bcm2711_native_stencil *stencil);
+static void write_stencil(uint8_t *bytes, const struct bcm2711_native_stencil *stencil, uint32_t front, uint32_t back);
 
 /*
  * Encodes complete fixed graphics state followed by one non-indexed triangle-list draw rebased to vertex zero.
  *
  * Every inherited flag is reset explicitly.  A blending draw uses the tile
  * buffer's premultiplied source-over, so fragment code never reads the tile
- * buffer.  Depth/stencil, multisampling, transform feedback and queries
- * remain disabled.  The caller owns every referenced native interval and
+ * buffer.  The depth and stencil tests and the colour write mask follow the
+ * draw; both faces' stencil configurations are always written, so no
+ * draw inherits another's.  Early-Z, multisampling, transform feedback and
+ * queries remain disabled.  The caller owns every referenced native interval and
  * cleans the enclosing BCL.
  *
  * Values referenced: Mesa 25.3.6 src/broadcom/cle/v3d_packet.xml (the 7.1
@@ -44,6 +48,7 @@ bcm2711_native_bin_encode(
 {
 	uint32_t config;
 	uint32_t index;
+	int error;
 
 	/* Missing storage or short capacity refuses before any caller-owned byte is touched. */
 	if (state == NULL || bytes == NULL)
@@ -67,6 +72,26 @@ bcm2711_native_bin_encode(
 	    state->clockwise > 1 ||
 	    state->blend > 1)
 		return EINVAL;
+
+	/* Depth, stencil and colour-mask state names only the hardware's fields and codes. */
+	if (state->colour_skip > 15U ||
+	    state->depth_test > 1 ||
+	    state->depth_compare > 7U ||
+	    state->depth_write > 1 ||
+	    state->stencil > 1)
+		return EINVAL;
+
+	/* A depth write without a depth test has no hardware meaning here. */
+	if (state->depth_test == 0 && state->depth_write != 0)
+		return EINVAL;
+
+	/* Both faces' stencil configurations fit their packet fields. */
+	error = validate_stencil(&state->front);
+	if (error != 0)
+		return error;
+	error = validate_stencil(&state->back);
+	if (error != 0)
+		return error;
 
 	/* Clipping stays inside the advertised drawable extent, including empty intersections. */
 	for (index = 0; index < 4; index++) {
@@ -124,8 +149,19 @@ bcm2711_native_bin_encode(
 	write_word(bytes + 52, state->clipper.x_offset);
 	write_word(bytes + 56, state->clipper.y_offset);
 
-	/* Vulkan clips depth to [0, 1] and uses the first provoking vertex; depth updates and stencil stay off, and blending follows the draw. */
-	config = (2U << 22) | (1U << 21) | (7U << 12) | (1U << 4);
+	/* Vulkan clips depth to [0, 1] and uses the first provoking vertex; blending, depth and stencil follow the draw. */
+	config = (2U << 22) | (1U << 21) | (1U << 4);
+
+	/* Without a depth test every fragment passes it (function always, 7) and no depth is written. */
+	if (state->depth_test != 0) {
+		config |= state->depth_compare << 12;
+		config |= state->depth_write << 15;
+	} else {
+		config |= 7U << 12;
+	}
+
+	/* The stencil test, the facing choices and blending follow the draw. */
+	config |= state->stencil << 18;
 	config |= state->forward;
 	config |= state->reverse << 1;
 	config |= state->clockwise << 2;
@@ -135,9 +171,9 @@ bcm2711_native_bin_encode(
 	bytes[62] = (uint8_t)(config >> 8);
 	bytes[63] = (uint8_t)(config >> 16);
 
-	/* Only target zero writes all channels and only it may blend; unused targets stay disabled. */
+	/* Only target zero is written, in the channels the draw keeps, and only it may blend; unused targets stay disabled. */
 	bytes[64] = 87;
-	write_word(bytes + 65, 0xfff0U);
+	write_word(bytes + 65, 0xfff0U | state->colour_skip);
 	bytes[69] = 83;
 	bytes[70] = (uint8_t)state->blend;
 
@@ -164,11 +200,19 @@ bcm2711_native_bin_encode(
 	bytes[106] = 84;
 	write_word(bytes + 107, (1U << 24) | (7U << 20) | (1U << 16) | (7U << 8) | (1U << 4));
 
+	/*
+	 * The forward-facing (front) and the reverse-facing (back) stencil
+	 * configurations, each written alone so that the two faces may differ.
+	 * They take effect only while the stencil enable above is set.
+	 */
+	write_stencil(bytes + 111, &state->front, 1, 0);
+	write_stencil(bytes + 117, &state->back, 0, 1);
+
 	/* Packed fetch already applied source firstVertex; this hardware array starts at zero and consumes exactly copied vertices. */
-	bytes[111] = 36;
-	bytes[112] = 4;
-	write_word(bytes + 113, state->vertices);
-	write_word(bytes + 117, 0);
+	bytes[123] = 36;
+	bytes[124] = 4;
+	write_word(bytes + 125, state->vertices);
+	write_word(bytes + 129, 0);
 
 	/* Succeeded: the complete atomic sequence can be copied into the owned enclosing bin list before native launch. */
 	return 0;
@@ -226,5 +270,62 @@ write_varyings(
 	bytes[9] = 0;
 
 	/* Succeeded: interpolation metadata has no dependence on a previous native draw's flags. */
+	return;
+}
+
+/* Refuses a face's stencil configuration that the packet's fields cannot hold. */
+static int
+validate_stencil(
+	const struct bcm2711_native_stencil *stencil)
+{
+	/* Each operation and the compare function have three-bit codes. */
+	if (stencil->fail > 7U ||
+	    stencil->pass > 7U ||
+	    stencil->depth_fail > 7U ||
+	    stencil->compare > 7U)
+		return EINVAL;
+
+	/* The masks and the reference are eight-bit, as the stencil buffer is. */
+	if (stencil->compare_mask > 0xffU ||
+	    stencil->write_mask > 0xffU ||
+	    stencil->reference > 0xffU)
+		return EINVAL;
+
+	/* Succeeded: every field fits its packet field. */
+	return 0;
+}
+
+/*
+ * Writes one Stencil Cfg packet for the faces named by front and back.
+ *
+ * Values referenced: Mesa 25.3.6 src/broadcom/cle/v3d_packet.xml (Stencil
+ * Cfg, code 80, the same for 4.2 and 7.1) and vulkan/v3dvx_pipeline.c
+ * pack_single_stencil_cfg.
+ */
+static void
+write_stencil(
+	uint8_t *bytes,
+	const struct bcm2711_native_stencil *stencil,
+	uint32_t front,
+	uint32_t back)
+{
+	uint32_t word;
+
+	/* The reference, the compare mask and function, the three operations and the faces fill the first word. */
+	word = stencil->reference;
+	word |= stencil->compare_mask << 8;
+	word |= stencil->compare << 16;
+	word |= stencil->fail << 19;
+	word |= stencil->depth_fail << 22;
+	word |= stencil->pass << 25;
+	word |= front << 28;
+	word |= back << 29;
+	bytes[0] = 80;
+	write_word(bytes + 1, word);
+
+	/* The write mask is the fifth payload byte. */
+	bytes[5] = (uint8_t)stencil->write_mask;
+
+	/* Succeeded: the face's complete configuration occupies its six bytes. */
 	return;
 }

@@ -775,6 +775,55 @@ verify_bins(
 		assert(bytes[index] == 0xa5);
 	memcpy(saved, bytes, sizeof(saved));
 
+	/*
+	 * The same draw with a depth test that writes, both faces' stencil
+	 * tests (different on each face) and three colour channels masked;
+	 * every field has a distinct value for the oracle.
+	 */
+	state.colour_skip = 0x5U;
+	state.depth_test = 1;
+	state.depth_compare = 3;
+	state.depth_write = 1;
+	state.stencil = 1;
+	state.front.fail = 1;
+	state.front.pass = 6;
+	state.front.depth_fail = 2;
+	state.front.compare = 7;
+	state.front.compare_mask = 0x0fU;
+	state.front.write_mask = 0xf0U;
+	state.front.reference = 0x12U;
+	state.back.fail = 0;
+	state.back.pass = 7;
+	state.back.depth_fail = 5;
+	state.back.compare = 5;
+	state.back.compare_mask = 0xffU;
+	state.back.write_mask = 0x80U;
+	state.back.reference = 0x34U;
+	error = bcm2711_native_bin_encode(&state, bytes, sizeof(bytes));
+	assert(error == 0);
+	print_bytes("bin-stencil", bytes, BCM2711_NATIVE_BIN_BYTES);
+
+	/* An unrepresentable compare, mask or write-without-test refuses without changing a byte. */
+	memcpy(saved, bytes, sizeof(saved));
+	state.back.compare = 8;
+	error = bcm2711_native_bin_encode(&state, bytes, sizeof(bytes));
+	assert(error == EINVAL);
+	state.back.compare = 5;
+	state.front.reference = 0x100U;
+	error = bcm2711_native_bin_encode(&state, bytes, sizeof(bytes));
+	assert(error == EINVAL);
+	state.front.reference = 0x12U;
+	state.depth_test = 0;
+	error = bcm2711_native_bin_encode(&state, bytes, sizeof(bytes));
+	assert(error == EINVAL);
+	state.depth_test = 1;
+	state.colour_skip = 16;
+	error = bcm2711_native_bin_encode(&state, bytes, sizeof(bytes));
+	assert(error == EINVAL);
+	state.colour_skip = 0x5U;
+	same = memcmp(bytes, saved, sizeof(saved));
+	assert(same == 0);
+
 	/* Short capacity, mandatory dummy fetch omission and a wrapped complete shader-record span leave all previous bytes unchanged. */
 	error = bcm2711_native_bin_encode(&state, bytes, BCM2711_NATIVE_BIN_BYTES - 1U);
 	assert(error == ENOSPC);
