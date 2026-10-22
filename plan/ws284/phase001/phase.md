@@ -3,7 +3,7 @@
 # ws284-p001 YOLOX-Nano の推論の設計
 
 - 親: [ws284](../ws.md)、担当 P1（2026-10-23、worktree `agent/p1-yolo`）
-- Status: in-progress（設計の第 2 版を書いた〈2026-10-23 P1、worktree `agent/p1-yolo2`〉。Q1 の判定とユーザーの D10・D11 の待ち）
+- Status: in-progress（設計の第 2 版を書いた〈2026-10-23 P1、worktree `agent/p1-yolo2`〉。D10・D11 は 2026-10-23 に決定、実装は後日（ユーザー「設計だけ残してラップアップして、後日実装することにします。」））
 - 依頼の元: 2026-10-23 ユーザーの WS282〜WS285 の目標（[ws.md](../ws.md) の出典）。model はユーザーが YOLOX-Nano（Apache-2.0）を選んだ（Q1 の依頼文）。
 
 ## 目的と受け入れの条件
@@ -38,7 +38,7 @@
 - 入力: [review](review-20261023.md)（F1〜F22）と、ユーザーの判断（2026-10-23）「decisionは推しでいいです。重みはダウンロードしてビルドする形にしましょう。それならソースツリーにライセンスを混入させないはずです。」→ D1〜D9 は推し、ただし D1 は「build が公式の .pth を取得・確かめ・変換、変換した重みはどの repository にも置かない」。
 - [graph.py](graph.py): F13 の数え方を直し（入力の画像を両方の数で op 0 まで生かす）、`gpu` の mode を足した（融合と分割の後の dispatch、arena、DRAM の量）。`python3 -I graph.py 416 gpu 8` → 融合 119 dispatch、8 M MAC で分けて 149、実行する MAC 544.0 M、arena 5.28 MiB、DRAM 94 MB（下限）〜625 MB（上限）。320 は 129 dispatch・3.12 MiB・58〜380 MB。
 - 見込み: 計 35〜49 LW（第 1 版 29〜41）。p002 5〜7、p003 7〜9、p004 10〜13、p005 3〜4、p006 6〜10、p007 2〜3、新しい p008（V3D 7.1 の host の compile の確かめ）2〜3。Pi 5 は 416 で 40〜100 ms（WS283 p008 の後）、最初は 170〜380 ms。
-- ユーザーに確かめたい事: D10（image の build で license の yes/no を出すか。推し: 出さない）、D11（COCO の license 7・8 の試験の画像を tree に入れてよいか。推し: 入れる）。
+- ユーザーの決定（2026-10-23）: D10 image の build で license の yes/no を出さない、D11 COCO の license 7・8 の試験の画像を tree に入れる（ユーザー「D10は出さない、D11は入れる、で記録しておいてください。」）。
 
 | 指摘 | 変えた事 | design の節 |
 | --- | --- | --- |
