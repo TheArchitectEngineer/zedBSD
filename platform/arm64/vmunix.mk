@@ -19,6 +19,7 @@ ARM64_PLATFORM := platform/arm64
 ARM64_BOARD_DEFINE_rpi4 := -DHAL_BOARD_RPI4
 ARM64_BOARD_DEFINE_rpi5 := -DHAL_BOARD_RPI5 \
 	-DCONFIG_DRIVER_RPI5_BT=$(if $(filter y,$(CONFIG_DRIVER_RPI5_BT)),1,0) \
+	-DCONFIG_DRIVER_RPI5_FAN=$(if $(filter y,$(CONFIG_DRIVER_RPI5_FAN)),1,0) \
 	-DCONFIG_DRIVER_BCM2712_GPU=$(if $(filter y,$(CONFIG_DRIVER_BCM2712_GPU)),1,0)
 
 # The board's own HAL code.
@@ -84,6 +85,13 @@ ifeq ($(CONFIG_DRIVER_RPI5_BT),y)
 ARM64_BOARD_KERNEL_SOURCES_rpi5 += \
 	src/drivers/platform/rpi5/rpi5-bt.c \
 	src/drivers/platform/rpi4/rpi4-bt-link.c
+endif
+
+# The Pi 5's processor temperature and fan connector, when the build asks
+# for them.
+ifeq ($(CONFIG_DRIVER_RPI5_FAN),y)
+ARM64_BOARD_KERNEL_SOURCES_rpi5 += \
+	src/drivers/platform/rpi5/rpi5-fan.c
 endif
 
 # The kernel and the HAL read the compiler's freestanding headers and the
