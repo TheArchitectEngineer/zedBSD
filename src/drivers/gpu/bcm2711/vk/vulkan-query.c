@@ -14,6 +14,8 @@
 #endif
 #include "drivers/gpu/bcm2711/vk/vulkan-device.h"
 #include "drivers/gpu/bcm2711/vk/vulkan-memory.h"
+#include "drivers/gpu/bcm2711/bcm2711-private.h"
+#include "drivers/gpu/bcm2711/render-device.h"
 
 /* Generated device-independent Zlib record encoding remains shared read-only source. */
 #include "drivers/gpu/i915/render/vulkan-codec.inc"
@@ -29,7 +31,7 @@ static int queue_properties(struct bcm2711_vulkan_session *session, struct i915_
 static int format_query(struct bcm2711_vulkan_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int image_query(struct bcm2711_vulkan_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int identity_query(struct bcm2711_vulkan_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
-static void device_properties(VkPhysicalDeviceProperties *properties);
+static void device_properties(const struct bcm2711_vulkan_session *session, VkPhysicalDeviceProperties *properties);
 static void format_properties(VkFormat format, VkFormatProperties *properties);
 static void set_float(float *destination, uint32_t bits);
 
@@ -132,7 +134,7 @@ fixed_query(
 		properties = i915_vkc_array(reader, &session->arena, 1, sizeof(*properties));
 		if (properties == NULL)
 			return ENOMEM;
-		device_properties(properties);
+		device_properties(session, properties);
 		drv_i915_wire_reply_u64(reply, 1);
 		i915_vkc_enc_VkPhysicalDeviceProperties(reply, properties);
 		return 0;
@@ -214,7 +216,7 @@ identity_query(
 	properties = i915_vkc_array(reader, &session->arena, 1, sizeof(*properties));
 	if (properties == NULL)
 		return ENOMEM;
-	device_properties(properties);
+	device_properties(session, properties);
 
 	/* The chain's two headers, the identity (no Windows adapter: no LUID), then the properties. */
 	drv_i915_wire_reply_u64(reply, 1);
@@ -391,29 +393,39 @@ image_query(
 	return 0;
 }
 
-/* Fills independent bounded graphics limits that the final native runtime must enforce before capability publication. */
+/*
+ * Fills independent bounded graphics limits that the final native runtime must enforce before capability publication.
+ *
+ * The name and the device number follow the engine's identified version:
+ * V3D 4.2 on the Raspberry Pi 4, 7.1 on the Pi 5.
+ */
 static void
 device_properties(
+	const struct bcm2711_vulkan_session *session,
 	VkPhysicalDeviceProperties *properties)
 {
-#if defined(HAL_BOARD_RPI5)
-	/* The Raspberry Pi 5's engine is a V3D 7.1. */
-	static const char name[] = "zedBSD V3D 7.1 (Keiland graphics)";
-#else
-	static const char name[] = "zedBSD V3D 4.2 (Keiland graphics)";
-#endif
+	static const char name_42[] = "zedBSD V3D 4.2 (Keiland graphics)";
+	static const char name_71[] = "zedBSD V3D 7.1 (Keiland graphics)";
+	const struct bcm2711_v3d *engine;
 	VkPhysicalDeviceLimits *limits;
+	uint32_t layout;
 
 	/* The private 1.1 version is a transport requirement; optional features and unimplemented stages remain absent. */
 	properties->apiVersion = VK_MAKE_VERSION(1, 1, 0);
 	properties->driverVersion = 1;
 	properties->vendorID = 0x14e4;
-	properties->deviceID = 0x0402;
-#if defined(HAL_BOARD_RPI5)
-	properties->deviceID = 0x0701;
-#endif
 	properties->deviceType = VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
-	kern_memcpy(properties->deviceName, name, sizeof(name));
+
+	/* The hub's identification says 4.2 or 7.1 (technology version 7 in its low four bits). */
+	engine = session->render->device->space.native;
+	layout = engine->hardware.hub_ident[1];
+	if ((layout & 15U) == 7U) {
+		properties->deviceID = 0x0701;
+		kern_memcpy(properties->deviceName, name_71, sizeof(name_71));
+	} else {
+		properties->deviceID = 0x0402;
+		kern_memcpy(properties->deviceName, name_42, sizeof(name_42));
+	}
 	limits = &properties->limits;
 
 	/* One-level 2D images, bounded memory and immutable kernel-owned shader programs use explicit finite budgets. */

@@ -22,7 +22,7 @@
 | [p004](phase004/phase.md) | QPU 7.1 の encoder・scheduler・register の割り当て、固定の shader（10〜14 LW、host だけで並べられる） | p001 | cleared（2026-10-21 Q1、q1545、host の試験 PASS、実機は p005） |
 | [p005](phase005/phase.md) | 描画の経路（shader state record の D0 の形、texture state、tile の大きさ、Vulkan の native の部分）（8〜10 LW） | p003・p004 | in-progress（2026-10-22 P2、compositor の quad が実機で全 pixel 一致、Keiland の画面が残り） |
 | [p006](phase006/phase.md) | HVS6 の display（引き継ぎ、UPM、plane、PV の vblank、flip、zero copy）（8〜10 LW） | p002 | in-progress（2026-10-22 P2、P0〜R3 実機 PASS、`/dev/gpu0` の display device、client からの確認と scaled overlay が残り） |
-| p007 | `drv_gpu_interface` と Keiland の graphical login（4〜6 LW） | p005・p006、WS278 p004 | planning |
+| [p007](phase007/phase.md) | `drv_gpu_interface` と Keiland の graphical login（4〜6 LW） | p005・p006、WS278 p004 | in-progress（2026-10-22 P2、`rpi5gpu.start=boot` で Keiland の desktop の session が起動、目視が残り） |
 | p008 | 速さ（4〜6 LW） | p007 | planning |
 | p009 | 規約の全文の見直しと license・類似の監査（3〜4 LW） | p002〜p008 | planning |
 
@@ -37,3 +37,4 @@
 - 2026-10-22 P2: p006 の段 P0〜R2（readout・自分の dlist・PV の vblank・overlay の flip）が D0 の実機で PASS。残りは display device（lease・3 slot・cursor・zero copy）と p005。
 - 2026-10-22 P2: p006 R3（HVS6 の flip の写し `hvs6-flip.c` と共有の display device）が実機で PASS、`/dev/gpu0`。次は p005（描画の経路）。
 - 2026-10-22 P2: p005 の 7.1 の encoder の写し（pass・bin・shader record・texture・viewport）と Pi 4 の Vulkan の実行器で、`vkquad-pi` が実機で `VKQUAD ok device=zedBSD V3D 7.1 (Keiland graphics) pixels=4096`。次は p007（Keiland）。
+- 2026-10-22 P2: p007 `rpi5gpu.start=boot`（既定は sysctl での開始のまま）で、`login=graphical` の起動で sessiond が `DESKTOP shown`（/dev/gpu0・gpu1、wayland・files・settings）。目視は未。Q1 の指摘で `#if HAL_BOARD_RPI5` 2 つを実行時の版と board の encoder の関数に置き換えた。

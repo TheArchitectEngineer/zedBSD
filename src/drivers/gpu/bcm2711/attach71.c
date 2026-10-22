@@ -18,6 +18,10 @@
  * and returns the first error.  A board where the engine hangs the bus is
  * therefore recovered by a power cycle, and the next boot comes up with the
  * engine untouched.
+ *
+ * The boot parameter rpi5gpu.start=boot runs the same start at once, on the
+ * boot thread before user space, so the graphical login finds the display
+ * and render nodes; a failure there is logged and the boot goes on.
  */
 
 #include <stdbool.h>
@@ -25,7 +29,9 @@
 
 #include <drivers/generic/fdt.h>
 #include <kern/atomic.h>
+#include <kern/boot.h>
 #include <kern/klog.h>
+#include <kern/platform.h>
 #include <kern/pmem.h>
 #include <kern/sysctl.h>
 #include <uapi/errno.h>
@@ -42,6 +48,9 @@
  * and the tree's header states its real size inside it.
  */
 #define ATTACH_FDT_READ_LIMIT	(2U * 1024U * 1024U)
+
+/* The whole token that starts the engine and the display at boot. */
+#define ATTACH_START_BOOT_TOKEN	"rpi5gpu.start=boot"
 
 /*
  * The V3D 7.1 engine, as discovery found it.
@@ -92,9 +101,11 @@ drv_bcm2712_gpu_attach(
 	struct drv_fdt fdt;
 	struct kern_boot_framebuffer screen;
 	const void *blob;
+	const char *line;
 	bool off;
 	int screen_error;
 	int display_error;
+	int start_at_boot;
 	int error;
 
 	/* Stays out entirely when the boot asked for it. */
@@ -134,8 +145,21 @@ drv_bcm2712_gpu_attach(
 	if (error != 0 && display_error != 0)
 		return ENODEV;
 
-	/* Holds the bring-up until root asks for it. */
+	/* Offers the start to root. */
 	kern_gpu_start_ops_set(&attach_start_ops);
+
+	/* Starts at once when the boot asked for it; the result is logged either way. */
+	line = kern_boot_handoff("boot.command-line");
+	start_at_boot = kern_boot_parameters_token_present(line, ATTACH_START_BOOT_TOKEN);
+	if (start_at_boot) {
+		bcm2711_stage_mark(BCM2711_FAMILY_V3D, "%s: starting at boot", ATTACH_START_BOOT_TOKEN);
+		error = start_engine();
+		if (error != 0)
+			bcm2711_stage_mark(BCM2711_FAMILY_V3D, "start at boot failed (%d); the boot goes on", error);
+		return 0;
+	}
+
+	/* Holds the bring-up until root asks for it. */
 	bcm2711_stage_mark(BCM2711_FAMILY_V3D, "held; root starts it with: sysctl hw.gpu.start=1");
 
 	/* Succeeded: the engine was found and waits for its start. */

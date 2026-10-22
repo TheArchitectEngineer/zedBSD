@@ -58,7 +58,7 @@ bcm2711_native_bin_encode(
 	    state->attributes > 16U ||
 	    state->vertices == 0)
 		return EINVAL;
-	if ((uint64_t)state->shader + BCM2711_NATIVE_SHADER_BYTES + state->attributes * 16U > ((uint64_t)1 << 32))
+	if ((uint64_t)state->shader + BCM2712_NATIVE_SHADER_BYTES + state->attributes * 16U > ((uint64_t)1 << 32))
 		return EINVAL;
 
 	/* Finite raster state can encode only the implemented Boolean facing choices. */

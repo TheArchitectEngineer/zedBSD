@@ -773,6 +773,7 @@ prepare_records(
 	struct bcm2711_native_attribute attributes[BCM2711_VULKAN_VERTEX_ATTRIBUTES];
 	uint32_t records;
 	uint8_t *destination;
+	uint32_t record_bytes;
 	uint32_t bytes;
 	uint32_t index;
 	int error;
@@ -793,8 +794,9 @@ prepare_records(
 		draw->attributes = 1;
 	}
 
-	/* The mandatory unused fetch reuses owned defaults and requires no extra physical allocation. */
-	bytes = BCM2711_NATIVE_SHADER_BYTES + draw->attributes * BCM2711_NATIVE_ATTRIBUTE_BYTES;
+	/* The mandatory unused fetch reuses owned defaults and requires no extra physical allocation; the record's size is the board encoder's. */
+	record_bytes = bcm2711_native_shader_bytes();
+	bytes = record_bytes + draw->attributes * BCM2711_NATIVE_ATTRIBUTE_BYTES;
 	error = upload_take(draw, bytes, available, &destination, &records);
 	if (error != 0)
 		return error;
@@ -802,9 +804,9 @@ prepare_records(
 	if (error != 0)
 		return error;
 
-	/* Hardware locates each attribute immediately after the 36-byte shader state record. */
+	/* Hardware locates each attribute immediately after the shader state record. */
 	for (index = 0; index < draw->attributes; index++) {
-		error = bcm2711_native_attribute_encode(&attributes[index], destination + BCM2711_NATIVE_SHADER_BYTES + index * BCM2711_NATIVE_ATTRIBUTE_BYTES, BCM2711_NATIVE_ATTRIBUTE_BYTES);
+		error = bcm2711_native_attribute_encode(&attributes[index], destination + record_bytes + index * BCM2711_NATIVE_ATTRIBUTE_BYTES, BCM2711_NATIVE_ATTRIBUTE_BYTES);
 		if (error != 0)
 			return error;
 	}

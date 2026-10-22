@@ -15,7 +15,7 @@
 ## 作った物
 
 - `src/drivers/gpu/bcm2711/` の 7.1 の写し（同じ関数名、Pi 5 の source の一覧で選ぶ）: `native71-pass.c`（render の前置き 93 byte、tile list 27 byte）、`native71-bin.c`（Cfg Bits に Z clip mode 2）、`native71-shader.c`（32 byte の record、`bcm2712_v3d_draw_index_record` で D0 の形）、`native71-texture.c`（array stride を bit 33 から）、`native71-viewport.c`（XY の scale を ×32、1/64 pixel）。
-- 共有の file の最小の `#if defined(HAL_BOARD_RPI5)`: `native-state.h` の `BCM2711_NATIVE_SHADER_BYTES`（32）、`vk/vulkan-query.c` の device の名前（"zedBSD V3D 7.1 (Keiland graphics)"）と deviceID 0x0701。Pi 4 の object は変わらない（kernel.elf を cmp で確かめた）。
+- 共有の file: 最初は `#if defined(HAL_BOARD_RPI5)` 2 つ（record の大きさ・device の名前）だったが、Q1 の指摘（2026-10-22、ユーザーは board の違いを `#if` より写して分ける方を好む）で、record の大きさは board の encoder の `bcm2711_native_shader_bytes()`（`native-shader.c` 36、`native71-shader.c` 32）に、device の名前と ID は `vk/vulkan-query.c` が engine の識別（hub IDENT1 の版 7 か）で選ぶ形に直した（2d52638b8）。Pi 4 の kernel.elf はこの直しで変わる（実行時の選択の code が入る、warning 0）。
 - `v3d71-hardware.c`: 識別で rev ≥ 10 なら draw index の形。`attach71.c`: self-test の後に `bcm2711_render_register()`（render の node）。
 - build: Pi 5 の GPU の switch の時、`vk/` の全部（video を除く）・`render-*.c`・`v3d-memory.c`・`native-colour.c`・`native-storage.c`・7.1 の compiler。
 - 試験: `plan/ws279/tests/native71-pass-host-test.c`・`native71-pass-check.py`・`native71-state-host-test.c`・`native71-state-check.py`（WS141 の 4.2 の試験の 7.1 版、`v3d71-host-test.sh` から流す）、`vkquad-pi.c` と `vkquad-pi-build.sh`（vkquad を Pi の実行器が受け付ける形に: layout の変更を全て barrier で、render pass の最後の layout は GENERAL。image には入れず手で板に写す）。
