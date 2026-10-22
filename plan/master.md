@@ -600,7 +600,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS281](ws281/ws.md) | MG002 | libc の malloc を速くする（first fit・1 本の list・1 つの lock の作り直し）（2026-10-22 ユーザー） | planning | 着手は後日（ユーザー） |
 | [WS282](ws282/ws.md) | MG006 | camera の driver の枠組み（/dev/camN）と USB Video Class の driver（CSI の rpicam は今回やらない） | planning | p001 の設計 版 1（design.md、p002〜p009 で 25〜34 LW）、D1〜D7 はユーザーの判断待ち |
 | [WS283](ws283/ws.md) | MG006 | bcm2711 の Vulkan の compute（Pi 4・Pi 5） | planning | p001 の設計済み（design.md、p002〜p010 で 51〜77 LW）、D1〜D4 はユーザーの判断待ち。D5（qpu-machine.c・qpu71-machine.c を plan/tools へ移す）は Q1 が可とした |
-| [WS284](ws284/ws.md) | MG006 | YOLOX-Nano の推論（C と Vulkan compute、Apache-2.0） | planning | p001 の設計済み（design.md、p002〜p007 で 29〜41 LW）、D1〜D9 はユーザーの判断待ち |
+| [WS284](ws284/ws.md) | MG006 | YOLOX-Nano の推論（C と Vulkan compute、Apache-2.0） | planning | p001 の設計 版 2（review の F1〜F22 を反映、p002〜p008 で 35〜49 LW、重みは build の時に取得して変換）、D10・D11 はユーザーの判断待ち |
 | [WS285](ws285/ws.md) | MG006 | camera の object detection の demo の app（WS282〜WS284 の上） | planning | p001 の設計 |
 | [WS279](ws279/ws.md) | MG008 | Raspberry Pi 5 の GPU（V3D 7.1）と display（HVS6）（2026-10-21 ユーザー） | incomplete | p001 design.md（約 47〜64 LW の Phase 表）、ユーザーの判断 D1〜D4 待ち |
 | [WS278](ws278/ws.md) | MG008 | Raspberry Pi 5 対応（config/ci/config-rpi5.mk、必要なら GPU・WiFi）（2026-10-21 ユーザー） | incomplete | p001 設計・p002 起動 image は main（6757ac6f2）、実機の確認待ち（plan/ws278/tests/rpi5-hw-test.md）、判断 D1〜D3 待ち |
