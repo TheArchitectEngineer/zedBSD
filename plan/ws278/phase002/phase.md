@@ -47,3 +47,8 @@
 - 読み: user への戻りで受けた = SError を止めた状態の kernel の code が起こした。system call・割り込みの中か、SError を止めた状態から切り替わった worker。RP1 の側は `the root port has no bus behind it` で root complex の register 以外に触れずに戻っていたので、RP1 の BAR・設定空間ではない。時刻（20 s、Wi-Fi の thread の直後）から Wi-Fi の段が最も疑わしい。
 - 対処: `src/drivers/platform/rpi5/rpi5-serror.c`（Pi 5 だけ）。SError を止め、`dsb sy; isb` の後に ISR_EL1.A を読み、立っていれば `rpi5: SError pending after <段>` を log に出してから SError を一瞬許して HAL に受けさせる（次の段は clean で始まる。HAL は `ARM64 SError N … in the kernel at pc …` を出す）。段: SD の起動の後、RP1 を探した後、USB・Ethernet の起動と refresh の後、Wi-Fi の file の読み・WL_ON の読み・pin・cfg・host の起動・電源・列挙・返却・電源断の後。
 - 未実施: 実機（3 回目の試験）。
+
+## 3 回目の実機の結果と対処（2026-10-22 P3）
+
+- 実機: `rpi5: SError pending after rpi5-wifi: routing the pins`（直後に `ARM64 SError 1 esr=be000011 … on return to user`）。段の名指しが効き、原因は Wi-Fi の pin の routing（p006 の 3 回目: D0 の chip に C1 の tree が渡され、C0 の配置で D0 の pin controller の block の外 0x24 に書いた）。対処は p006。
+- 未実施: 実機（4 回目の試験）。

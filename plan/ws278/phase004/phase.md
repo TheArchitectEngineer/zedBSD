@@ -52,3 +52,12 @@ Pi 5 の USB の 4 つの口（RP1 の 2 つの DWC3、各々 xHCI）で USB key
 - 対処（`rp1.c`）: 列挙と同じく、root port が bridge（header type 1）なら primary 0・secondary/subordinate 1 を付け、memory の窓を 32 bit 全体に、prefetch の窓を閉じ、command に MEM・MASTER。MISC_CTRL の CFG_READ_UR_MODE を立て、答えの無い設定空間の読みを abort でなく all ones に（Linux と同じ）。outbound の窓 0 が空なら pcie の ranges から設定（Linux の brcm_pcie_set_outbound_win と同じ形）。RP1 の BAR0 と BAR1 が同じ番地（未配置）なら、size を測り BAR1 を rp1 の ranges の PCI 番地に、残りを後ろに置く。firmware の値を `rp1: root port: …`・`rp1: outbound window: …` の 2 行で log に残す。
 - host 試験 `rpi5-rp1-host-test`（偽の root complex を UAT と同じ「bus 番号 0・header type 1」にした）: C1・D0 とも PASS（bus 番号 0x00010100、outbound の窓 0x4070=fff00000・0x4080/0x4084=0x1f）。
 - 未実施: 実機（3 回目の試験）。
+
+## 3 回目の実機の結果と対処（2026-10-22 P3）
+
+- 実機（log `build/review/rpi5/uat-20261022-3-boot-000001.txt`）: link・bus 1・RP1 の ID（00011de4）まで通った。RP1 の周辺の読みは全部 `deaddead`（`rp1-usb: DWC3 deaddead at 1f80200000`、xhci の caps、`gem: revision deaddead`）。
+- 原因: firmware は自分の都合の配置を残す。outbound の窓 0 は CPU 0x1c_0000_0000〜（1 GiB）→ PCI 0x8000_0000（log の `MiB 3ff00000 high 1c/1c`）、RP1 の BAR は PCI 0x8000_0000（周辺）・0x8041_0000（MSI-X）。device tree の pcie2 の ranges は CPU 0x1f_0000_0000 → PCI 0（32 bit、約 4 GiB）と CPU 0x1c_0000_0000 → PCI 4_0000_0000（64 bit）。module は ranges で CPU 番地を計算して 0x1f_8020_0000 を読んだが、そこはどの窓にも入らない（root complex は答えの無い読みに 0xdeaddead を返す）。「firmware が窓を設定していれば残す」としていたのが誤り。
+- 対処（`rp1.c`）: Linux の brcm_pcie_setup と同じく、ranges の memory の範囲ごとに outbound の窓（0〜3）を毎回設定する（前の値と違えば `rp1: outbound window N was … now …`）。RP1 の周辺の BAR が rp1 node の ranges の PCI 番地（0）と違えば BAR を並べ直す（周辺 → PCI 0、共有 memory → 0x40_0000、MSI-X → 0x41_0000。Linux の配置と同じ。`rp1: BAR N was at PCI … now at …`）。root port の memory の窓（32 bit 全体）と command（MEM・MASTER）は bus 番号の有無に関わらず毎回。これで outbound の窓・root port の窓・BAR・driver の CPU 番地（0x1f_0020_0000 など）が device tree の一つの絵にそろう。
+- xHCI の `MASTER off` は pci-xhci.c の手順どおり（caps を読む間は bus master を切り、検査の後に入れる）。RP1 自身の command には MEM・MASTER を立てている。
+- host 試験 `rpi5-rp1-host-test`: 偽の root complex を UAT の firmware の状態（窓 0 = CPU 0x1c → PCI 0x8000_0000、BAR 0x8041_0000/0x8000_0000、BAR の大きさに答える）にし、窓 0・1 の値と BAR の並べ直しを確かめる項目を足した。C1・D0 とも PASS（2026-10-22）。
+- 未実施: 実機（4 回目の試験）。

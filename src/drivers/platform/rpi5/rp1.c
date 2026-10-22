@@ -14,12 +14,15 @@
  * is device 0.  RP1's second BAR is the window of its peripherals; an
  * address in the rp1 node's space is an offset into that window.
  *
- * The firmware trains the link and, with pciex4_reset=0, leaves it up.
- * It may leave the root port without bus numbers, the outbound window
- * unset or RP1's BARs unplaced; the module fills in what is missing as an
- * enumeration would.  It sets the root complex's inbound windows from the
- * device tree again, because RP1's DMA and its interrupt messages travel
- * through them and the firmware has no use of its own for the latter.
+ * The firmware trains the link and, with pciex4_reset=0, leaves it up,
+ * but the rest of what it leaves follows its own plan, not the device
+ * tree's: the root port without bus numbers, its outbound window at a CPU
+ * address the tree does not name and RP1's BARs elsewhere on the PCI bus.
+ * The module sets all of them from the tree as an enumeration would: the
+ * root port's buses and memory window, the outbound windows from the
+ * ranges, RP1's peripheral BAR where the rp1 node's ranges place it, and
+ * the inbound windows from the dma-ranges, because RP1's DMA and its
+ * interrupt messages travel through them.
  */
 
 #include <drivers/platform/rpi5/rp1.h>
@@ -68,12 +71,12 @@
 #define PCIE_RC_BAR_SIZE_LARGE_BIAS	15U
 
 /*
- * The root complex's controls the module sets when the firmware left them
- * unset: the mode in which a configuration read that no function answers
- * returns all ones instead of aborting, and the first outbound window,
- * the CPU's way to the PCI bus (its PCI base, and its CPU base and limit
- * in MiB, the low twelve bits in one register and the high bits in two
- * more).
+ * The root complex's controls the module sets: the mode in which a
+ * configuration read that no function answers returns all ones instead
+ * of aborting, and the outbound windows, the CPU's ways to the PCI bus
+ * (each one's PCI base, and its CPU base and limit in MiB, the low twelve
+ * bits in one register and the high bits in two more; the windows' PCI
+ * bases and high bits are eight bytes apart, their low bits four).
  *
  * Values referenced: Raspberry Pi Linux rpi-6.12.y
  * drivers/pci/controller/pcie-brcmstb.c (PCIE_MISC_MISC_CTRL and its
@@ -95,6 +98,11 @@
 #define PCIE_OUTBOUND_HIGH_MIB_SHIFT	12U
 #define PCIE_OUTBOUND_HIGH_MIB_MASK	0xffU
 #define PCIE_MIB_SHIFT			20U
+#define PCIE_OUTBOUND_COUNT		4U
+#define PCIE_OUTBOUND_PAIR_STRIDE	8U
+#define PCIE_OUTBOUND_LOW_STRIDE	4U
+#define PCIE_OUTBOUND_BASE_FIELD	0x0000fff0U
+#define PCIE_OUTBOUND_LIMIT_FIELD	0xfff00000U
 
 /* The bytes of the root complex's register block the module maps. */
 #define PCIE_REGISTER_BYTES		0xa000U
@@ -120,8 +128,9 @@
 /*
  * The bus numbers the module gives the root port the firmware left
  * unnumbered (primary 0, secondary and subordinate 1, the latency byte
- * kept), its memory window (all of the 32-bit space) and its prefetchable
- * window (base above limit: closed).
+ * kept), and the windows it gives every root port: memory (all of the
+ * 32-bit space, where the outbound window and RP1's BARs are) and
+ * prefetchable (base above limit: closed).
  */
 #define ROOT_PORT_BUS			1U
 #define PCI_BUS_NUMBERS_KEEP		0xff000000U
@@ -182,7 +191,7 @@ struct rp1_state {
 /* The one RP1 a Pi 5 has. */
 static struct rp1_state rp1;
 
-/* The order in which unplaced BARs are placed: the peripheral BAR first, the MSI-X table's last. */
+/* The order in which the BARs are placed: the peripheral BAR first, the MSI-X table's last. */
 static const uint8_t rp1_bar_order[] = { 1U, 2U, 3U, 4U, 5U, 0U };
 
 static int find_rp1(void);
@@ -192,8 +201,10 @@ static int map_root_complex(void);
 static int check_link(void);
 static void report_root_port(void);
 static int number_root_port(void);
+static void open_root_port(void);
+static int read_range(uint32_t entry, uint32_t *space, uint64_t *pci_base, uint64_t *cpu_base, uint64_t *size);
 static int find_memory_range(uint64_t pci_address, uint64_t *pci_base, uint64_t *cpu_base, uint64_t *size);
-static int open_outbound_window(void);
+static int program_outbound_windows(void);
 static int assign_bars(void);
 static uint32_t config_read32(unsigned offset);
 static void config_write32(unsigned offset, uint32_t value);
@@ -265,8 +276,11 @@ drv_rp1_init(
 			return error;
 	}
 
-	/* Opens the CPU's way to the PCI bus when the firmware left it shut. */
-	error = open_outbound_window();
+	/* Lets the root port pass the 32-bit memory space both ways. */
+	open_root_port();
+
+	/* Sets the CPU's ways to the PCI bus from the tree's ranges. */
+	error = program_outbound_windows();
 	if (error != 0) {
 		kern_logf("rp1: no outbound window (%d)\n", error);
 		return error;
@@ -288,8 +302,13 @@ drv_rp1_init(
 	if (error != 0)
 		return error;
 
-	/* Places the BARs when the firmware left them unplaced, both at one address. */
-	if (rp1.bar_pci_base[RP1_MSIX_BAR] == rp1.bar_pci_base[RP1_PERIPHERAL_BAR]) {
+	/*
+	 * Places the BARs as the tree has them when the firmware left them
+	 * unplaced (both at one address) or put the peripheral window
+	 * elsewhere than the rp1 node's ranges say.
+	 */
+	if (rp1.bar_pci_base[RP1_MSIX_BAR] == rp1.bar_pci_base[RP1_PERIPHERAL_BAR] ||
+	    rp1.bar_pci_base[RP1_PERIPHERAL_BAR] != rp1.window_pci_base) {
 		error = assign_bars();
 		if (error != 0)
 			return error;
@@ -842,8 +861,7 @@ report_root_port(
 
 /*
  * Numbers the bus behind a root port the firmware left unnumbered, as an
- * enumeration would: the root port's secondary bus is 1, its memory window
- * passes the whole 32-bit space, and it forwards memory both ways.
+ * enumeration would: the root port's secondary bus is 1.
  */
 static int
 number_root_port(
@@ -852,7 +870,6 @@ number_root_port(
 	volatile uint8_t *registers;
 	uint32_t header;
 	uint32_t numbers;
-	uint32_t command;
 
 	registers = rp1.pcie_registers;
 
@@ -869,18 +886,6 @@ number_root_port(
 	numbers |= ROOT_PORT_BUS << 8;
 	kern_mmio_write32(registers + PCI_BUS_NUMBERS, numbers);
 
-	/* Passes all of the 32-bit memory space downstream and closes the prefetchable window. */
-	kern_mmio_write32(registers + PCI_MEMORY_WINDOW, PCI_MEMORY_WINDOW_ALL);
-	kern_mmio_write32(registers + PCI_PREFETCH_WINDOW, PCI_PREFETCH_WINDOW_CLOSED);
-	kern_mmio_write32(registers + PCI_PREFETCH_BASE_HIGH, 0);
-	kern_mmio_write32(registers + PCI_PREFETCH_LIMIT_HIGH, 0);
-
-	/* Forwards memory accesses down and RP1's up. */
-	command = kern_mmio_read32(registers + PCI_COMMAND) & 0xffffU;
-	command |= PCI_COMMAND_MEMORY;
-	command |= PCI_COMMAND_MASTER;
-	kern_mmio_write32(registers + PCI_COMMAND, command);
-
 	/* Records the change. */
 	rp1.bus = (uint8_t)ROOT_PORT_BUS;
 	kern_logf("rp1: the root port had no bus behind it; numbered bus %u (buses now %08x)\n",
@@ -892,29 +897,53 @@ number_root_port(
 }
 
 /*
- * Finds the root complex's memory range that holds a PCI address: its PCI
- * base, the CPU address of that base and its size.  ENOENT when no memory
- * range holds the address.
+ * Opens the root port's windows as the module places RP1's BARs: the
+ * memory window passes the whole 32-bit space, the prefetchable one is
+ * closed, and the port forwards memory accesses down and RP1's up.
+ */
+static void
+open_root_port(
+	void)
+{
+	volatile uint8_t *registers;
+	uint32_t command;
+
+	registers = rp1.pcie_registers;
+
+	/* Passes all of the 32-bit memory space downstream and closes the prefetchable window. */
+	kern_mmio_write32(registers + PCI_MEMORY_WINDOW, PCI_MEMORY_WINDOW_ALL);
+	kern_mmio_write32(registers + PCI_PREFETCH_WINDOW, PCI_PREFETCH_WINDOW_CLOSED);
+	kern_mmio_write32(registers + PCI_PREFETCH_BASE_HIGH, 0);
+	kern_mmio_write32(registers + PCI_PREFETCH_LIMIT_HIGH, 0);
+
+	/* Forwards memory accesses down and RP1's up. */
+	command = kern_mmio_read32(registers + PCI_COMMAND) & 0xffffU;
+	command |= PCI_COMMAND_MEMORY;
+	command |= PCI_COMMAND_MASTER;
+	kern_mmio_write32(registers + PCI_COMMAND, command);
+}
+
+/*
+ * Reads one entry of the root complex's ranges: its space code, its PCI
+ * base, the CPU address of that base and its size.  ENOENT past the last
+ * entry.
  */
 static int
-find_memory_range(
-	uint64_t pci_address,
+read_range(
+	uint32_t entry,
+	uint32_t *space,
 	uint64_t *pci_base,
 	uint64_t *cpu_base,
 	uint64_t *size)
 {
 	const uint8_t *value;
-	uint64_t child_base;
 	uint64_t parent_base;
-	uint64_t window_size;
 	uint32_t length;
 	uint32_t above;
 	uint32_t child_cells;
 	uint32_t parent_cells;
 	uint32_t size_cells;
 	uint32_t entry_cells;
-	uint32_t entry;
-	uint32_t space;
 	int error;
 
 	/* Reads the root complex's ranges and the widths of their entries. */
@@ -934,51 +963,87 @@ find_memory_range(
 	if (size_cells == 0 || size_cells > 2U)
 		return ERANGE;
 
-	/* Looks at each memory range in turn. */
+	/* Refuses an entry past the last. */
 	entry_cells = child_cells + parent_cells + size_cells;
-	for (entry = 0; (entry + 1U) * entry_cells * 4U <= length; entry++) {
-		space = (uint32_t)(drv_fdt_cells_value(value, entry * entry_cells, 1U) >> PCI_SPACE_SHIFT) & PCI_SPACE_MASK;
-		child_base = drv_fdt_cells_value(value, entry * entry_cells + 1U, 2U);
-		parent_base = drv_fdt_cells_value(value, entry * entry_cells + child_cells, parent_cells);
-		window_size = drv_fdt_cells_value(value, entry * entry_cells + child_cells + parent_cells, size_cells);
+	if ((uint64_t)(entry + 1U) * entry_cells * 4U > length)
+		return ENOENT;
+
+	/* Reads the entry's space code, PCI base, CPU-side base and size. */
+	*space = (uint32_t)(drv_fdt_cells_value(value, entry * entry_cells, 1U) >> PCI_SPACE_SHIFT) & PCI_SPACE_MASK;
+	*pci_base = drv_fdt_cells_value(value, entry * entry_cells + 1U, 2U);
+	parent_base = drv_fdt_cells_value(value, entry * entry_cells + child_cells, parent_cells);
+	*size = drv_fdt_cells_value(value, entry * entry_cells + child_cells + parent_cells, size_cells);
+
+	/* Moves the CPU side up through the buses above the root complex. */
+	error = drv_fdt_translate(&rp1.fdt, rp1.pcie_node, parent_base, cpu_base);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the entry's values. */
+	return 0;
+}
+
+/*
+ * Finds the root complex's memory range that holds a PCI address: its PCI
+ * base, the CPU address of that base and its size.  ENOENT when no memory
+ * range holds the address.
+ */
+static int
+find_memory_range(
+	uint64_t pci_address,
+	uint64_t *pci_base,
+	uint64_t *cpu_base,
+	uint64_t *size)
+{
+	uint64_t range_pci_base;
+	uint64_t range_cpu_base;
+	uint64_t range_size;
+	uint32_t entry;
+	uint32_t space;
+	int error;
+
+	/* Looks at each range in turn. */
+	for (entry = 0;
+	     ;
+	     entry++) {
+		error = read_range(entry, &space, &range_pci_base, &range_cpu_base, &range_size);
+		if (error != 0)
+			return error;
 
 		/* Only a memory range carries a BAR. */
 		if (space != PCI_SPACE_MEMORY32 && space != PCI_SPACE_MEMORY64)
 			continue;
 
 		/* Skips a range that does not hold the address. */
-		if (pci_address < child_base)
+		if (pci_address < range_pci_base)
 			continue;
-		if (pci_address - child_base >= window_size)
+		if (pci_address - range_pci_base >= range_size)
 			continue;
-
-		/* Moves the range's base up through the buses above the root complex. */
-		error = drv_fdt_translate(&rp1.fdt, rp1.pcie_node, parent_base, cpu_base);
-		if (error != 0)
-			return error;
 
 		/* Succeeded: the range. */
-		*pci_base = child_base;
-		*size = window_size;
+		*pci_base = range_pci_base;
+		*cpu_base = range_cpu_base;
+		*size = range_size;
 		return 0;
 	}
-
-	/* No memory range holds the address. */
-	return ENOENT;
 }
 
 /*
- * Sets the first outbound window from the memory range that holds RP1's
- * peripheral window, when the firmware left the window unset; the CPU
- * could not reach RP1's BARs otherwise.
+ * Sets one outbound window for each memory range of the root complex, in
+ * the ranges' order, logging any window the firmware had left otherwise.
+ * The firmware leaves its own window (on a Pi 5 seen at CPU
+ * 0x1c_0000_0000 for PCI 0x8000_0000), which is not where the tree, and
+ * so the module, reaches RP1.
  *
  * Procedure referenced: Raspberry Pi Linux rpi-6.12.y
- * drivers/pci/controller/pcie-brcmstb.c (brcm_pcie_set_outbound_win():
- * the PCI base in two registers, the CPU base and limit in MiB, their low
- * twelve bits in one register and their high bits in two more).
+ * drivers/pci/controller/pcie-brcmstb.c (brcm_pcie_setup(): one window
+ * per memory range, up to BRCM_NUM_PCIE_OUT_WINS; and
+ * brcm_pcie_set_outbound_win(): the PCI base in two registers, the CPU
+ * base and limit in MiB, their low twelve bits in one register and their
+ * high bits in two more).
  */
 static int
-open_outbound_window(
+program_outbound_windows(
 	void)
 {
 	volatile uint8_t *registers;
@@ -987,52 +1052,96 @@ open_outbound_window(
 	uint64_t size;
 	uint64_t base_mib;
 	uint64_t limit_mib;
+	uint32_t old_pci_low;
+	uint32_t old_base_limit;
+	uint32_t old_base_high;
 	uint32_t base_limit;
 	uint32_t base_high;
+	uint32_t limit_high;
+	uint32_t entry;
+	uint32_t space;
+	unsigned window;
+	unsigned pair;
+	unsigned low;
 	int error;
 
 	registers = rp1.pcie_registers;
 
-	/* Leaves a window the firmware set. */
-	base_limit = kern_mmio_read32(registers + PCIE_OUTBOUND_BASE_LIMIT);
-	base_high = kern_mmio_read32(registers + PCIE_OUTBOUND_BASE_HI);
-	if (base_limit != 0 || base_high != 0)
-		return 0;
+	/* Walks the ranges, giving each memory range the next window. */
+	window = 0;
+	for (entry = 0;
+	     window < PCIE_OUTBOUND_COUNT;
+	     entry++) {
+		error = read_range(entry, &space, &pci_base, &cpu_base, &size);
+		if (error == ENOENT)
+			break;
+		if (error != 0)
+			return error;
 
-	/* Finds the memory range RP1's window is in. */
-	error = find_memory_range(rp1.window_pci_base, &pci_base, &cpu_base, &size);
-	if (error != 0)
-		return error;
+		/* Only a memory range needs a window. */
+		if (space != PCI_SPACE_MEMORY32 && space != PCI_SPACE_MEMORY64)
+			continue;
+		if (size == 0)
+			continue;
 
-	/* The CPU's side in MiB: the first and the last. */
-	base_mib = cpu_base >> PCIE_MIB_SHIFT;
-	limit_mib = (cpu_base + size - 1U) >> PCIE_MIB_SHIFT;
+		/* The CPU's side in MiB: the first and the last. */
+		base_mib = cpu_base >> PCIE_MIB_SHIFT;
+		limit_mib = (cpu_base + size - 1U) >> PCIE_MIB_SHIFT;
 
-	/* Writes the PCI base, then the CPU base and limit. */
-	kern_mmio_write32(registers + PCIE_OUTBOUND_PCI_LO, (uint32_t)pci_base);
-	kern_mmio_write32(registers + PCIE_OUTBOUND_PCI_HI, (uint32_t)(pci_base >> 32));
-	base_limit = ((uint32_t)(base_mib & PCIE_OUTBOUND_LOW_MIB_MASK) << PCIE_OUTBOUND_BASE_SHIFT) |
-		     ((uint32_t)(limit_mib & PCIE_OUTBOUND_LOW_MIB_MASK) << PCIE_OUTBOUND_LIMIT_SHIFT);
-	kern_mmio_write32(registers + PCIE_OUTBOUND_BASE_LIMIT, base_limit);
-	kern_mmio_write32(registers + PCIE_OUTBOUND_BASE_HI,
-			  (uint32_t)(base_mib >> PCIE_OUTBOUND_HIGH_MIB_SHIFT) & PCIE_OUTBOUND_HIGH_MIB_MASK);
-	kern_mmio_write32(registers + PCIE_OUTBOUND_LIMIT_HI,
-			  (uint32_t)(limit_mib >> PCIE_OUTBOUND_HIGH_MIB_SHIFT) & PCIE_OUTBOUND_HIGH_MIB_MASK);
+		/* The window's registers. */
+		pair = window * PCIE_OUTBOUND_PAIR_STRIDE;
+		low = window * PCIE_OUTBOUND_LOW_STRIDE;
 
-	/* Records the window. */
-	kern_logf("rp1: outbound window was unset; now PCI %llx at CPU %llx (%llx bytes)\n",
-		  (unsigned long long)pci_base,
-		  (unsigned long long)cpu_base,
-		  (unsigned long long)size);
+		/* Reads what the firmware left, to report a difference. */
+		old_pci_low = kern_mmio_read32(registers + PCIE_OUTBOUND_PCI_LO + pair);
+		old_base_limit = kern_mmio_read32(registers + PCIE_OUTBOUND_BASE_LIMIT + low);
+		old_base_high = kern_mmio_read32(registers + PCIE_OUTBOUND_BASE_HI + pair);
 
-	/* Succeeded: the CPU reaches the PCI bus. */
+		/* The low twelve bits of the base and the limit, the other bits kept. */
+		base_limit = old_base_limit & ~(PCIE_OUTBOUND_BASE_FIELD | PCIE_OUTBOUND_LIMIT_FIELD);
+		base_limit |= (uint32_t)(base_mib & PCIE_OUTBOUND_LOW_MIB_MASK) << PCIE_OUTBOUND_BASE_SHIFT;
+		base_limit |= (uint32_t)(limit_mib & PCIE_OUTBOUND_LOW_MIB_MASK) << PCIE_OUTBOUND_LIMIT_SHIFT;
+
+		/* The high bits of the base and the limit, the other bits kept. */
+		base_high = old_base_high & ~PCIE_OUTBOUND_HIGH_MIB_MASK;
+		base_high |= (uint32_t)(base_mib >> PCIE_OUTBOUND_HIGH_MIB_SHIFT) & PCIE_OUTBOUND_HIGH_MIB_MASK;
+		limit_high = kern_mmio_read32(registers + PCIE_OUTBOUND_LIMIT_HI + pair) & ~PCIE_OUTBOUND_HIGH_MIB_MASK;
+		limit_high |= (uint32_t)(limit_mib >> PCIE_OUTBOUND_HIGH_MIB_SHIFT) & PCIE_OUTBOUND_HIGH_MIB_MASK;
+
+		/* Writes the PCI base, then the CPU base and limit. */
+		kern_mmio_write32(registers + PCIE_OUTBOUND_PCI_LO + pair, (uint32_t)pci_base);
+		kern_mmio_write32(registers + PCIE_OUTBOUND_PCI_HI + pair, (uint32_t)(pci_base >> 32));
+		kern_mmio_write32(registers + PCIE_OUTBOUND_BASE_LIMIT + low, base_limit);
+		kern_mmio_write32(registers + PCIE_OUTBOUND_BASE_HI + pair, base_high);
+		kern_mmio_write32(registers + PCIE_OUTBOUND_LIMIT_HI + pair, limit_high);
+
+		/* Reports a window the firmware had set otherwise. */
+		if (old_pci_low != (uint32_t)pci_base || old_base_limit != base_limit || old_base_high != base_high) {
+			kern_logf("rp1: outbound window %u was PCI %08x MiB %08x high %08x; now PCI %llx at CPU %llx (%llx bytes)\n",
+				  window,
+				  old_pci_low,
+				  old_base_limit,
+				  old_base_high,
+				  (unsigned long long)pci_base,
+				  (unsigned long long)cpu_base,
+				  (unsigned long long)size);
+		}
+
+		window++;
+	}
+
+	/* Refuses a root complex without any memory range: the CPU could not reach RP1. */
+	if (window == 0)
+		return ENOENT;
+
+	/* Succeeded: the CPU reaches the PCI bus where the tree says. */
 	return 0;
 }
 
 /*
- * Places RP1's 32-bit memory BARs the firmware left unplaced: the
- * peripheral BAR at the PCI base the rp1 node's ranges name, and each
- * other BAR after it in turn, aligned to its size.
+ * Places RP1's 32-bit memory BARs where the tree has them: the peripheral
+ * BAR at the PCI base the rp1 node's ranges name, and each other BAR
+ * after it in turn, aligned to its size.
  */
 static int
 assign_bars(
@@ -1077,8 +1186,9 @@ assign_bars(
 		size &= 0xffffffffULL;
 		next = (next + size - 1U) & ~(size - 1U);
 		config_write32(offset, (uint32_t)next);
-		kern_logf("rp1: BAR %u was unplaced; now at PCI %llx (%llx bytes)\n",
+		kern_logf("rp1: BAR %u was at PCI %08x; now at PCI %llx (%llx bytes)\n",
 			  (unsigned)rp1_bar_order[index],
+			  saved & PCI_BAR_ADDRESS_MASK,
 			  (unsigned long long)next,
 			  (unsigned long long)size);
 		next += size;

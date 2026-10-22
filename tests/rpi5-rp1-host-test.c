@@ -36,7 +36,23 @@
 /* The root complex's registers in the trees, and the RP1 behind it. */
 #define EXPECT_PCIE_REGISTERS	0x1000120000ULL
 #define FAKE_RP1_BUS		1U
-#define FAKE_MSIX_BAR		0x00410000U
+
+/*
+ * Where the firmware leaves RP1's BARs and its own outbound window (seen
+ * on a Pi 5 on 2026-10-22: CPU 0x1c_0000_0000 to PCI 0x8000_0000), the
+ * BARs' sizes (16 KiB, 4 MiB, 64 KiB), and where the module moves the
+ * BARs: the peripheral one to PCI 0 as the rp1 node's ranges say, the
+ * shared memory and the MSI-X table after it.
+ */
+#define FIRMWARE_MSIX_BAR	0x80410000U
+#define FIRMWARE_PERIPHERAL_BAR	0x80000000U
+#define FIRMWARE_WINDOW_PCI	0x80000000U
+#define FIRMWARE_WINDOW_MIB	0x3ff00000U
+#define FIRMWARE_WINDOW_HIGH	0x1cU
+#define FAKE_BAR_COUNT		3U
+#define EXPECT_MSIX_BAR		0x00410000U
+#define EXPECT_PERIPHERAL_BAR	0x00000000U
+#define EXPECT_SHARED_BAR	0x00400000U
 
 /* Where the drivers find their registers. */
 #define EXPECT_USB0		0x1f00200000ULL
@@ -79,8 +95,12 @@ struct mapping {
 	uint8_t *bytes;
 };
 
+/* The size masks a BAR answers all ones with: the MSI-X table, the peripherals, the shared memory. */
+static const uint32_t fake_bar_masks[FAKE_BAR_COUNT] = { 0xffffc000U, 0xffc00000U, 0xffff0000U };
+
 static struct mapping mappings[MAPPING_LIMIT];
 static unsigned mapping_count;
+static uint8_t *fake_pcie;
 static const void *tree;
 static int lines[LINE_LIMIT];
 static unsigned line_count;
@@ -131,15 +151,22 @@ kern_device_map(
 	/*
 	 * A root complex as the Pi 5's firmware leaves it with
 	 * pciex4_reset=0: the link up, the root port a bridge without bus
-	 * numbers, and RP1 behind it.
+	 * numbers, its own outbound window, and RP1 behind it with its BARs
+	 * where the firmware put them.
 	 */
 	if (address == EXPECT_PCIE_REGISTERS) {
 		write_le32(bytes, 0x4068U, 0x30U);
 		write_le32(bytes, 0x0cU, 0x00010000U);
 		write_le32(bytes, 0x18U, 0);
+		write_le32(bytes, 0x400cU, FIRMWARE_WINDOW_PCI);
+		write_le32(bytes, 0x4070U, FIRMWARE_WINDOW_MIB);
+		write_le32(bytes, 0x4080U, FIRMWARE_WINDOW_HIGH);
+		write_le32(bytes, 0x4084U, FIRMWARE_WINDOW_HIGH);
 		write_le32(bytes, 0x8000U, 0x00011de4U);
-		write_le32(bytes, 0x8010U, FAKE_MSIX_BAR);
-		write_le32(bytes, 0x8014U, 0);
+		write_le32(bytes, 0x8010U, FIRMWARE_MSIX_BAR);
+		write_le32(bytes, 0x8014U, FIRMWARE_PERIPHERAL_BAR);
+		write_le32(bytes, 0x8018U, 0);
+		fake_pcie = bytes;
 	}
 
 	/* Succeeded: the block. */
@@ -178,12 +205,24 @@ kern_mmio_read32(
 	return value;
 }
 
-/* Writes a register to host memory. */
+/* Writes a register to host memory; RP1's BARs answer all ones with their size. */
 void
 kern_mmio_write32(
 	volatile void *address,
 	uint32_t value)
 {
+	uint8_t *bytes;
+	unsigned bar;
+
+	/* A BAR sized with all ones reads back its size mask. */
+	bytes = (uint8_t *)address;
+	if (fake_pcie != NULL && value == 0xffffffffU) {
+		for (bar = 0; bar < FAKE_BAR_COUNT; bar++) {
+			if (bytes == fake_pcie + 0x8010U + 4U * bar)
+				value = fake_bar_masks[bar];
+		}
+	}
+
 	/* Copies the bytes. */
 	memcpy((void *)address, &value, sizeof(value));
 }
@@ -391,6 +430,14 @@ check_tree(
 	failures += check(read_le32(pcie, 0x400cU) == 0 && read_le32(pcie, 0x4010U) == 0, "the outbound window starts at PCI 0");
 	failures += check(read_le32(pcie, 0x4070U) == 0xfff00000U, "the outbound window's low MiB bits");
 	failures += check(read_le32(pcie, 0x4080U) == 0x1fU && read_le32(pcie, 0x4084U) == 0x1fU, "the outbound window is at 124 GiB");
+	failures += check(read_le32(pcie, 0x4014U) == 0 && read_le32(pcie, 0x4018U) == 4U, "the second outbound window starts at PCI 16 GiB");
+	failures += check(read_le32(pcie, 0x4074U) == 0xfff00000U, "the second outbound window's low MiB bits");
+	failures += check(read_le32(pcie, 0x4088U) == 0x1cU && read_le32(pcie, 0x408cU) == 0x1eU, "the second outbound window is at 112 GiB");
+
+	/* RP1's BARs, moved from the firmware's places to the tree's. */
+	failures += check(read_le32(pcie, 0x8014U) == EXPECT_PERIPHERAL_BAR, "the peripheral BAR is at PCI 0");
+	failures += check(read_le32(pcie, 0x8018U) == EXPECT_SHARED_BAR, "the shared memory BAR follows it");
+	failures += check(read_le32(pcie, 0x8010U) == EXPECT_MSIX_BAR, "the MSI-X table's BAR comes last");
 
 	/* A pin's function. */
 	error = drv_rp1_gpio_init();

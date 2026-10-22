@@ -19,7 +19,8 @@
 #include <drivers/generic/fdt.h>
 
 /*
- * Finds and maps the pin controller of the tree, the C0 or the D0 one.
+ * Finds and maps the pin controller of the tree, the C0 or the D0 one,
+ * taking the stepping from the chip when the tree names the other one.
  * Calling it again does nothing.
  */
 int drv_rpi5_pinctrl_init(const struct drv_fdt *fdt);

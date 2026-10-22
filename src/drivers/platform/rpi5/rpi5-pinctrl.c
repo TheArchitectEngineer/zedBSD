@@ -15,6 +15,13 @@
  * the registers' places.  The module knows the functions the onboard
  * radios' pins take: the GPIO function, the second SD controller's (sd2)
  * and the UART's (uart0).
+ *
+ * The stepping is read from the chip, not only from the device tree: a
+ * Pi 5 was seen (2026-10-22) booting with the C1 board's tree on a D0
+ * chip, where the C0 places name registers past the D0 block's end (an
+ * SError) and miss the SD pins.  The boot loader leaves the four pins of
+ * its boot flash (GPIO 1 to 4) on the flash's SPI function, whose
+ * selectors sit at different places in the two steppings.
  */
 
 #include <drivers/platform/rpi5/rpi5-pinctrl.h>
@@ -41,8 +48,31 @@
 /* A selector the pin does not have. */
 #define PINCTRL_FUNCTION_NONE	0xffU
 
-/* The bytes of the controller's registers the module maps. */
+/* The bytes of the controller's registers the module maps: the larger, C0, block. */
 #define PINCTRL_REGISTER_BYTES	0x30U
+
+/* The bytes each stepping's controller has. */
+#define PINCTRL_C0_BYTES	0x30U
+#define PINCTRL_D0_BYTES	0x20U
+
+/*
+ * The boot flash's pins (GPIO 1 to 4) on its SPI function (vc_spi0), as
+ * the first mux register shows them in each stepping: in D0 the pins are
+ * the register's first four fields with selectors 7, 7, 6 and 6; in C0
+ * they are its second to fifth fields with selectors 7, 6, 5 and 6.
+ *
+ * Values referenced: Raspberry Pi Linux rpi-6.12.y
+ * drivers/pinctrl/bcm/pinctrl-bcm2712.c (bcm2712_c0_gpio_pin_regs and
+ * bcm2712_d0_gpio_pin_regs rows 1 to 4; the vc_spi0 places in
+ * bcm2712_c0_gpio_pin_funcs and bcm2712_d0_gpio_pin_funcs rows 1 to 4),
+ * and the gpio-line-names 2712_BOOT_CS_N to 2712_BOOT_SCLK of the Pi 5's
+ * device trees.
+ */
+#define PINCTRL_C0_SPI_SHIFT	4U
+#define PINCTRL_C0_SPI_VALUE	0x6567U
+#define PINCTRL_D0_SPI_SHIFT	0U
+#define PINCTRL_D0_SPI_VALUE	0x6677U
+#define PINCTRL_SPI_MASK	0xffffU
 
 /* The most registers the report shows (the C0 controller's twelve). */
 #define PINCTRL_REPORT_WORDS	12U
@@ -60,9 +90,15 @@ struct pinctrl_pin {
 	uint8_t sd2;
 };
 
-/* One stepping's controller: its compatible string and its pins. */
+/*
+ * One stepping's controller: its compatible string, its size, where the
+ * boot flash's pins show in its first register, and its pins.
+ */
 struct pinctrl_variant {
 	const char *compatible;
+	uint32_t register_bytes;
+	unsigned spi_shift;
+	uint32_t spi_value;
 	const struct pinctrl_pin *pins;
 	unsigned pin_count;
 };
@@ -129,13 +165,28 @@ static const struct pinctrl_pin pinctrl_d0_pins[] = {
 
 /* The two steppings, by the compatible string of their controller. */
 static const struct pinctrl_variant pinctrl_variants[] = {
-	{ "brcm,bcm2712c0-pinctrl", pinctrl_c0_pins, sizeof(pinctrl_c0_pins) / sizeof(pinctrl_c0_pins[0]) },
-	{ "brcm,bcm2712d0-pinctrl", pinctrl_d0_pins, sizeof(pinctrl_d0_pins) / sizeof(pinctrl_d0_pins[0]) },
+	{
+		"brcm,bcm2712c0-pinctrl",
+		PINCTRL_C0_BYTES,
+		PINCTRL_C0_SPI_SHIFT,
+		PINCTRL_C0_SPI_VALUE,
+		pinctrl_c0_pins,
+		sizeof(pinctrl_c0_pins) / sizeof(pinctrl_c0_pins[0])
+	},
+	{
+		"brcm,bcm2712d0-pinctrl",
+		PINCTRL_D0_BYTES,
+		PINCTRL_D0_SPI_SHIFT,
+		PINCTRL_D0_SPI_VALUE,
+		pinctrl_d0_pins,
+		sizeof(pinctrl_d0_pins) / sizeof(pinctrl_d0_pins[0])
+	},
 };
 
 /* The tree's one pin controller. */
 static struct pinctrl_state pinctrl;
 
+static unsigned chip_variant(unsigned tree_variant);
 static int apply_node(const struct drv_fdt *fdt, uint32_t node);
 static unsigned read_pull(const struct drv_fdt *fdt, uint32_t node);
 static int parse_gpio_name(const char *name, uint32_t length, unsigned *pin);
@@ -154,6 +205,7 @@ drv_rpi5_pinctrl_init(
 	uint64_t size;
 	uint32_t node;
 	unsigned variant;
+	unsigned tree_variant;
 	void *mapped;
 	int error;
 
@@ -176,23 +228,33 @@ drv_rpi5_pinctrl_init(
 		return ENODEV;
 	}
 
-	/* Maps the registers, at least as far as the module reaches. */
+	/* Maps the registers, as far as the larger stepping's block reaches. */
 	error = drv_fdt_reg(fdt, node, 0, &address, &size);
 	if (error != 0)
 		return error;
-	pinctrl.size = size;
 	if (size < PINCTRL_REGISTER_BYTES)
 		size = PINCTRL_REGISTER_BYTES;
 	error = kern_device_map(address, (size_t)size, KERN_DEVICE_UNCACHED, &mapped);
 	if (error != 0)
 		return error;
+	pinctrl.registers = mapped;
+
+	/* Decides the stepping by the chip, the tree's when the chip does not tell. */
+	tree_variant = variant;
+	variant = chip_variant(tree_variant);
+	kern_logf("rpi5-pinctrl: %s registers (the tree names %s, register 0 is %08x)\n",
+		  pinctrl_variants[variant].compatible,
+		  pinctrl_variants[tree_variant].compatible,
+		  kern_mmio_read32(pinctrl.registers));
+
+	/* Only the stepping's own registers are ever touched. */
+	pinctrl.size = pinctrl_variants[variant].register_bytes;
 
 	/* Prepares the lock of the registers. */
 	spin_init(&pinctrl.lock, LOCK_RANK_DEVICE, "rpi5 pinctrl");
 
 	/* Succeeded: the pins can be set. */
 	pinctrl.variant = &pinctrl_variants[variant];
-	pinctrl.registers = mapped;
 	pinctrl.ready = 1;
 	return 0;
 }
@@ -295,7 +357,7 @@ drv_rpi5_pinctrl_report(
 	if (!pinctrl.ready)
 		return;
 
-	/* Reads the registers the tree gives the controller, as far as the report shows. */
+	/* Reads the stepping's registers, as far as the report shows. */
 	count = (unsigned)(pinctrl.size / 4U);
 	if (count > PINCTRL_REPORT_WORDS)
 		count = PINCTRL_REPORT_WORDS;
@@ -311,6 +373,43 @@ drv_rpi5_pinctrl_report(
 		  when,
 		  words[0], words[1], words[2], words[3], words[4], words[5],
 		  words[6], words[7], words[8], words[9], words[10], words[11]);
+}
+
+/*
+ * Tells the chip's stepping by where its first mux register shows the
+ * boot flash's pins on their SPI function; the tree's stepping when that
+ * shows neither (the pins moved off the flash).
+ */
+static unsigned
+chip_variant(
+	unsigned tree_variant)
+{
+	uint32_t first;
+	uint32_t fields;
+	unsigned variant;
+	unsigned found;
+	unsigned matches;
+
+	/* The first mux register, which both steppings have. */
+	first = kern_mmio_read32(pinctrl.registers);
+
+	/* Finds the steppings whose flash pins the register shows. */
+	found = tree_variant;
+	matches = 0;
+	for (variant = 0; variant < sizeof(pinctrl_variants) / sizeof(pinctrl_variants[0]); variant++) {
+		fields = (first >> pinctrl_variants[variant].spi_shift) & PINCTRL_SPI_MASK;
+		if (fields == pinctrl_variants[variant].spi_value) {
+			found = variant;
+			matches++;
+		}
+	}
+
+	/* Keeps the tree's stepping unless exactly one stepping matched. */
+	if (matches != 1)
+		return tree_variant;
+
+	/* Succeeded: the chip's stepping. */
+	return found;
 }
 
 /*
@@ -502,6 +601,10 @@ write_field(
 {
 	unsigned long enabled;
 	uint32_t bits;
+
+	/* Never reaches past the stepping's block, where a write raises an SError. */
+	if ((uint64_t)offset + 4U > pinctrl.size)
+		return;
 
 	/* Reads the register, replaces the field and writes it back. */
 	enabled = spin_lock_irqsave(&pinctrl.lock);
