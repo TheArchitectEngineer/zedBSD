@@ -296,6 +296,16 @@ ARM64_KERNEL_SOURCES += src/drivers/gpu/bcm2711/attach71.c src/drivers/gpu/bcm27
 	src/drivers/gpu/bcm2711/v3d71-diagnostic.c src/drivers/gpu/bcm2711/display/hvs6.c \
 	src/drivers/gpu/bcm2711/display/hvs6-flip.c src/drivers/gpu/bcm2711/display/display-device.c \
 	src/drivers/gpu/bcm2711/share.c \
+	src/drivers/gpu/bcm2711/native71-bin.c src/drivers/gpu/bcm2711/native71-pass.c src/drivers/gpu/bcm2711/native-colour.c \
+	src/drivers/gpu/bcm2711/native71-shader.c src/drivers/gpu/bcm2711/native71-texture.c src/drivers/gpu/bcm2711/native-storage.c \
+	src/drivers/gpu/bcm2711/native71-viewport.c \
+	src/drivers/gpu/bcm2711/vk/vulkan-object.c src/drivers/gpu/bcm2711/vk/vulkan-session.c \
+	src/drivers/gpu/bcm2711/vk/vulkan-stream.c src/drivers/gpu/bcm2711/vk/vulkan-dispatch.c src/drivers/gpu/bcm2711/vk/vulkan-device.c src/drivers/gpu/bcm2711/vk/vulkan-sync.c src/drivers/gpu/bcm2711/vk/vulkan-queue.c src/drivers/gpu/bcm2711/vk/vulkan-query.c src/drivers/gpu/bcm2711/vk/vulkan-memory.c src/drivers/gpu/bcm2711/vk/vulkan-resource.c src/drivers/gpu/bcm2711/vk/vulkan-input.c src/drivers/gpu/bcm2711/vk/vulkan-layout.c src/drivers/gpu/bcm2711/vk/vulkan-layout-compat.c src/drivers/gpu/bcm2711/vk/vulkan-descriptor-pool.c src/drivers/gpu/bcm2711/vk/vulkan-descriptor-sets.c src/drivers/gpu/bcm2711/vk/vulkan-descriptor-update.c src/drivers/gpu/bcm2711/vk/vulkan-target.c \
+	src/drivers/gpu/bcm2711/vk/vulkan-pipeline-build.c src/drivers/gpu/bcm2711/vk/vulkan-pipeline-state.c src/drivers/gpu/bcm2711/vk/vulkan-pipeline.c src/drivers/gpu/bcm2711/vk/vulkan-pipeline-decode.c \
+	src/drivers/gpu/bcm2711/vk/vulkan-command-pool.c src/drivers/gpu/bcm2711/vk/vulkan-command-batch.c src/drivers/gpu/bcm2711/vk/vulkan-command-buffer.c \
+	src/drivers/gpu/bcm2711/vk/vulkan-barrier.c src/drivers/gpu/bcm2711/vk/vulkan-barrier-decode.c src/drivers/gpu/bcm2711/vk/vulkan-barrier-validate.c src/drivers/gpu/bcm2711/vk/vulkan-record.c src/drivers/gpu/bcm2711/vk/vulkan-record-decode.c src/drivers/gpu/bcm2711/vk/vulkan-record-validate.c src/drivers/gpu/bcm2711/vk/vulkan-draw.c src/drivers/gpu/bcm2711/vk/vulkan-draw-validate.c src/drivers/gpu/bcm2711/vk/vulkan-prepared.c src/drivers/gpu/bcm2711/vk/vulkan-uniform.c src/drivers/gpu/bcm2711/vk/vulkan-native-draw.c src/drivers/gpu/bcm2711/vk/vulkan-native-bin.c src/drivers/gpu/bcm2711/vk/vulkan-native-pass.c src/drivers/gpu/bcm2711/vk/vulkan-native-execute.c src/drivers/gpu/bcm2711/vk/vulkan-native-job.c src/drivers/gpu/bcm2711/vk/vulkan-buffer-copy.c src/drivers/gpu/bcm2711/vk/vulkan-transfer.c src/drivers/gpu/bcm2711/vk/vulkan-native-image.c \
+	src/drivers/gpu/bcm2711/v3d-memory.c \
+	src/drivers/gpu/bcm2711/render-device.c src/drivers/gpu/bcm2711/render-runtime.c src/drivers/gpu/bcm2711/render-worker.c \
 	src/drivers/gpu/bcm2711/stage.c src/drivers/gpu/bcm2711/fdt-util.c \
 	src/drivers/gpu/bcm2711/mmu.c src/drivers/gpu/bcm2711/buffer.c
 ARM64_KERNEL_SOURCES += $(filter-out $(KERN_GPU_SOURCES),src/drivers/gpu/compiler/spirv.c src/drivers/gpu/compiler/optimize.c src/drivers/gpu/i915/render/codec.c)

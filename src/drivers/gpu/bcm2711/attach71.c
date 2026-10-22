@@ -32,6 +32,7 @@
 
 #include "drivers/gpu/bcm2711/bcm2712-gpu.h"
 #include "drivers/gpu/bcm2711/display/hvs6.h"
+#include "drivers/gpu/bcm2711/render-device.h"
 #include "drivers/gpu/bcm2711/v3d71-private.h"
 
 /*
@@ -215,6 +216,15 @@ start_engine(void)
 		attach_v3d.stage_failed = "V5-V9";
 		attach_v3d.error = error;
 		bcm2711_stage_mark(BCM2711_FAMILY_V3D, "self-test failed (%d)", error);
+		return error;
+	}
+
+	/* Publishes the render node only after the self-test retired its storage. */
+	error = bcm2711_render_register(engine);
+	if (error != 0) {
+		attach_v3d.stage_failed = "render";
+		attach_v3d.error = error;
+		bcm2711_stage_mark(BCM2711_FAMILY_V3D, "render registration failed (%d)", error);
 		return error;
 	}
 

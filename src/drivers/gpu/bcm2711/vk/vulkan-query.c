@@ -396,7 +396,12 @@ static void
 device_properties(
 	VkPhysicalDeviceProperties *properties)
 {
+#if defined(HAL_BOARD_RPI5)
+	/* The Raspberry Pi 5's engine is a V3D 7.1. */
+	static const char name[] = "zedBSD V3D 7.1 (Keiland graphics)";
+#else
 	static const char name[] = "zedBSD V3D 4.2 (Keiland graphics)";
+#endif
 	VkPhysicalDeviceLimits *limits;
 
 	/* The private 1.1 version is a transport requirement; optional features and unimplemented stages remain absent. */
@@ -404,6 +409,9 @@ device_properties(
 	properties->driverVersion = 1;
 	properties->vendorID = 0x14e4;
 	properties->deviceID = 0x0402;
+#if defined(HAL_BOARD_RPI5)
+	properties->deviceID = 0x0701;
+#endif
 	properties->deviceType = VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
 	kern_memcpy(properties->deviceName, name, sizeof(name));
 	limits = &properties->limits;
