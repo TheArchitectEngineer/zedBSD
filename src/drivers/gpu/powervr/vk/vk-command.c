@@ -15,7 +15,7 @@
  * between each (vk-queue.c).  Any other recorded command fails the
  * recording, which its End reports.
  *
- * Procedure referenced: zedBSD src/drivers/gpu/bcm2711/vulkan-command-pool.c,
+ * Procedure referenced: zedBSD src/drivers/gpu/bcm2711/vk/vulkan-command-pool.c,
  * vulkan-command-buffer.c and vulkan-record-decode.c (the wire of each
  * command).
  */

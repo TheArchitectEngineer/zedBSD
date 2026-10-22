@@ -15,7 +15,7 @@
  * reply to the instance version query, written last with a release store:
  * libvulkan trusts the replies only once it sees it.
  *
- * Procedure referenced: zedBSD src/drivers/gpu/bcm2711/vulkan-stream.c
+ * Procedure referenced: zedBSD src/drivers/gpu/bcm2711/vk/vulkan-stream.c
  * (the framing of a frame and its transport commands).
  */
 

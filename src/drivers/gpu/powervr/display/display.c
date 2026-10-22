@@ -57,7 +57,7 @@
  * core fails to come up.
  *
  * Procedure referenced:
- * src/drivers/gpu/bcm2711/display-device.c and
+ * src/drivers/gpu/bcm2711/display/display-device.c and
  * src/drivers/gpu/i915/display/bootfb.c (the display operations' contract
  * on a boot framebuffer).
  */

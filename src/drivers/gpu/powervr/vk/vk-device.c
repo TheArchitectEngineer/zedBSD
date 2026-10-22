@@ -91,7 +91,7 @@ static void set_float(float *destination, uint32_t bits);
  * Runs an instance, physical-device, device or queue command; *handled
  * stays clear for another handler's opcode.
  *
- * Procedure referenced: zedBSD src/drivers/gpu/bcm2711/vulkan-device.c
+ * Procedure referenced: zedBSD src/drivers/gpu/bcm2711/vk/vulkan-device.c
  * and vulkan-query.c (the wire of each command).
  */
 int
@@ -280,7 +280,7 @@ properties(
  * The UUIDs pair an exported allocation with its importer: every session
  * of the device reports the same ones.  ENOTSUP for another chain.
  *
- * Procedure referenced: zedBSD src/drivers/gpu/bcm2711/vulkan-query.c
+ * Procedure referenced: zedBSD src/drivers/gpu/bcm2711/vk/vulkan-query.c
  * (identity_query); include/uapi/gpu-op.h
  * (GPU_OP_GET_PHYSICAL_DEVICE_PROPERTIES2).
  */

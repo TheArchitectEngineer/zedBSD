@@ -22,7 +22,7 @@
 
 #include <uapi/errno.h>
 
-#include "drivers/gpu/bcm2711/vulkan-private.h"
+#include "drivers/gpu/bcm2711/vk/vulkan-private.h"
 
 /* The session's limit of live identities (VULKAN_SESSION_OBJECT_LIMIT in vulkan-object.c). */
 #define TEST_OBJECT_LIMIT 4096U

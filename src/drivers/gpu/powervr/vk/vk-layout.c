@@ -17,7 +17,7 @@
  * storage buffers; other descriptors are read and refused when a
  * pipeline would need them.
  *
- * Procedure referenced: zedBSD src/drivers/gpu/bcm2711/vulkan-layout.c,
+ * Procedure referenced: zedBSD src/drivers/gpu/bcm2711/vk/vulkan-layout.c,
  * vulkan-descriptor-sets.c, vulkan-descriptor-update.c and
  * vulkan-pipeline-decode.c (the wire of each command).
  */

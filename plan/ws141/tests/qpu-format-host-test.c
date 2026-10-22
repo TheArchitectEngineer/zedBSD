@@ -12,7 +12,7 @@
 #include <string.h>
 #include <uapi/errno.h>
 
-#include "drivers/gpu/bcm2711/qpu.h"
+#include "drivers/gpu/bcm2711/compiler/qpu.h"
 #include "broadcom/common/v3d_device_info.h"
 #include "broadcom/qpu/qpu_instr.h"
 

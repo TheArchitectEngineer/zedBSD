@@ -6,7 +6,7 @@ set -eu
 out=${1:-build/ws211-host}
 mkdir -p "$out"
 cc -std=c99 -D_POSIX_C_SOURCE=200809L -O2 -Wall -Wextra -Werror -Iinclude -Isrc -I. \
-	plan/ws211/tests/object-index-host-test.c src/drivers/gpu/bcm2711/vulkan-object.c \
+	plan/ws211/tests/object-index-host-test.c src/drivers/gpu/bcm2711/vk/vulkan-object.c \
 	-o "$out/object-index-host-test"
 "$out/object-index-host-test"
 

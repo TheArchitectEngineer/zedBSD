@@ -222,7 +222,7 @@ static uint32_t instance_jobs(const struct powervr_vk_command_buffer *command, u
  * another handler's opcode.
  *
  * Procedure referenced:
- * zedBSD src/drivers/gpu/bcm2711/vulkan-queue.c and vulkan-sync.c (the
+ * zedBSD src/drivers/gpu/bcm2711/vk/vulkan-queue.c and vulkan-sync.c (the
  * wire of each command).
  */
 int

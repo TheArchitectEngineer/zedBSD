@@ -38,6 +38,6 @@ cc -std=gnu11 -Wall -Werror -I"$out/mesa-host" -I"$mesa" \
 cc -std=gnu11 -Wall -Werror -I"$out/mesa-host" -I"$mesa" \
     -c "$mesa/broadcom/qpu/qpu_instr.c" -o "$out/mesa-instr.o"
 cc -std=c99 -Wall -Wextra -Werror -Iinclude -Isrc -I"$out/mesa-host" -I"$mesa" \
-    plan/ws141/tests/qpu-format-host-test.c src/drivers/gpu/bcm2711/qpu.c \
+    plan/ws141/tests/qpu-format-host-test.c src/drivers/gpu/bcm2711/compiler/qpu.c \
     "$out/mesa-pack.o" "$out/mesa-instr.o" -o "$out/qpu-format-host-test"
 "$out/qpu-format-host-test"

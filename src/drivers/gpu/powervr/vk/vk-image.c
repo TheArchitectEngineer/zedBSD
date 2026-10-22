@@ -65,7 +65,7 @@ static int view_destroy(struct powervr_vk_session *session, void *payload);
  * another handler's opcode.
  *
  * Procedure referenced:
- * zedBSD src/drivers/gpu/bcm2711/vulkan-resource.c and vulkan-input.c
+ * zedBSD src/drivers/gpu/bcm2711/vk/vulkan-resource.c and vulkan-input.c
  * (the wire of each command).
  */
 int
@@ -220,7 +220,7 @@ create_image(
  * record's decoder steps over it.  ENOTSUP for another extension, one
  * that chains more, or a handle type the session does not share by.
  *
- * Procedure referenced: zedBSD src/drivers/gpu/bcm2711/vulkan-resource.c
+ * Procedure referenced: zedBSD src/drivers/gpu/bcm2711/vk/vulkan-resource.c
  * (external_declaration).
  */
 static int

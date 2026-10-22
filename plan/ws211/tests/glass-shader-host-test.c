@@ -32,7 +32,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "drivers/gpu/bcm2711/shader.h"
+#include "drivers/gpu/bcm2711/compiler/shader.h"
 #include "drivers/gpu/compiler/spirv.h"
 #include "plan/ws141/tests/qpu-machine.h"
 #include "userland/desktop/wayland/shaders.h"

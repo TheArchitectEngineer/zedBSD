@@ -55,7 +55,7 @@ static int buffer_destroy(struct powervr_vk_session *session, void *payload);
  * Runs a memory, buffer, binding or requirements command; *handled stays
  * clear for another handler's opcode.
  *
- * Procedure referenced: zedBSD src/drivers/gpu/bcm2711/vulkan-memory.c
+ * Procedure referenced: zedBSD src/drivers/gpu/bcm2711/vk/vulkan-memory.c
  * and vulkan-resource.c (the wire of each command).
  */
 int

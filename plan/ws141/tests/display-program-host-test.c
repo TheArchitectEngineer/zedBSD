@@ -14,7 +14,7 @@
 #include <uapi/errno.h>
 
 #include "drivers/gpu/bcm2711/bcm2711-private.h"
-#include "drivers/gpu/bcm2711/display-program.h"
+#include "drivers/gpu/bcm2711/display/display-program.h"
 
 /* The test owns one bounded program and its simulated register observations. */
 static struct bcm2711_display_program test_program;

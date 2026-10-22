@@ -260,42 +260,42 @@ ARM64_KERNEL_SOURCES += $(filter-out $(KERN_GPU_SOURCES),src/drivers/gpu/gpu.c s
 ARM64_KERNEL_SOURCES += $(filter-out $(KERN_GPU_SOURCES),src/drivers/gpu/compiler/spirv.c src/drivers/gpu/compiler/optimize.c src/drivers/gpu/i915/render/codec.c)
 ARM64_KERNEL_SOURCES += src/drivers/gpu/bcm2711/attach.c \
 	src/drivers/gpu/bcm2711/stage.c src/drivers/gpu/bcm2711/fdt-util.c \
-	src/drivers/gpu/bcm2711/firmware.c src/drivers/gpu/bcm2711/display.c \
-	src/drivers/gpu/bcm2711/readout.c src/drivers/gpu/bcm2711/list.c \
+	src/drivers/gpu/bcm2711/firmware.c src/drivers/gpu/bcm2711/display/display.c \
+	src/drivers/gpu/bcm2711/display/readout.c src/drivers/gpu/bcm2711/display/list.c \
 	src/drivers/gpu/bcm2711/v3d.c src/drivers/gpu/bcm2711/v3d-power.c \
 	src/drivers/gpu/bcm2711/v3d-hardware.c src/drivers/gpu/bcm2711/mmu.c \
 	src/drivers/gpu/bcm2711/v3d-job.c src/drivers/gpu/bcm2711/v3d-diagnostic.c src/drivers/gpu/bcm2711/v3d-tfu-probe.c \
-	src/drivers/gpu/bcm2711/cl.c src/drivers/gpu/bcm2711/qpu.c src/drivers/gpu/bcm2711/buffer.c \
-	src/drivers/gpu/bcm2711/shader.c src/drivers/gpu/bcm2711/shader-analyze.c \
-	src/drivers/gpu/bcm2711/shader-lower.c src/drivers/gpu/bcm2711/shader-output.c src/drivers/gpu/bcm2711/shader-schedule.c \
+	src/drivers/gpu/bcm2711/cl.c src/drivers/gpu/bcm2711/compiler/qpu.c src/drivers/gpu/bcm2711/buffer.c \
+	src/drivers/gpu/bcm2711/compiler/shader.c src/drivers/gpu/bcm2711/compiler/shader-analyze.c \
+	src/drivers/gpu/bcm2711/compiler/shader-lower.c src/drivers/gpu/bcm2711/compiler/shader-output.c src/drivers/gpu/bcm2711/compiler/shader-schedule.c \
 	src/drivers/gpu/bcm2711/native-bin.c src/drivers/gpu/bcm2711/native-pass.c src/drivers/gpu/bcm2711/native-colour.c src/drivers/gpu/bcm2711/native-shader.c src/drivers/gpu/bcm2711/native-texture.c src/drivers/gpu/bcm2711/native-storage.c src/drivers/gpu/bcm2711/native-viewport.c \
-	src/drivers/gpu/bcm2711/vulkan-object.c src/drivers/gpu/bcm2711/vulkan-session.c \
-	src/drivers/gpu/bcm2711/vulkan-stream.c src/drivers/gpu/bcm2711/vulkan-dispatch.c src/drivers/gpu/bcm2711/vulkan-device.c src/drivers/gpu/bcm2711/vulkan-sync.c src/drivers/gpu/bcm2711/vulkan-queue.c src/drivers/gpu/bcm2711/vulkan-query.c src/drivers/gpu/bcm2711/vulkan-memory.c src/drivers/gpu/bcm2711/vulkan-resource.c src/drivers/gpu/bcm2711/vulkan-input.c src/drivers/gpu/bcm2711/vulkan-layout.c src/drivers/gpu/bcm2711/vulkan-layout-compat.c src/drivers/gpu/bcm2711/vulkan-descriptor-pool.c src/drivers/gpu/bcm2711/vulkan-descriptor-sets.c src/drivers/gpu/bcm2711/vulkan-descriptor-update.c src/drivers/gpu/bcm2711/vulkan-target.c \
-	src/drivers/gpu/bcm2711/vulkan-pipeline-build.c src/drivers/gpu/bcm2711/vulkan-pipeline-state.c src/drivers/gpu/bcm2711/vulkan-pipeline.c src/drivers/gpu/bcm2711/vulkan-pipeline-decode.c \
-	src/drivers/gpu/bcm2711/vulkan-command-pool.c src/drivers/gpu/bcm2711/vulkan-command-batch.c src/drivers/gpu/bcm2711/vulkan-command-buffer.c \
-	src/drivers/gpu/bcm2711/vulkan-barrier.c src/drivers/gpu/bcm2711/vulkan-barrier-decode.c src/drivers/gpu/bcm2711/vulkan-barrier-validate.c src/drivers/gpu/bcm2711/vulkan-record.c src/drivers/gpu/bcm2711/vulkan-record-decode.c src/drivers/gpu/bcm2711/vulkan-record-validate.c src/drivers/gpu/bcm2711/vulkan-draw.c src/drivers/gpu/bcm2711/vulkan-draw-validate.c src/drivers/gpu/bcm2711/vulkan-prepared.c src/drivers/gpu/bcm2711/vulkan-uniform.c src/drivers/gpu/bcm2711/vulkan-native-draw.c src/drivers/gpu/bcm2711/vulkan-native-bin.c src/drivers/gpu/bcm2711/vulkan-native-pass.c src/drivers/gpu/bcm2711/vulkan-native-execute.c src/drivers/gpu/bcm2711/vulkan-native-job.c src/drivers/gpu/bcm2711/vulkan-buffer-copy.c src/drivers/gpu/bcm2711/vulkan-transfer.c src/drivers/gpu/bcm2711/vulkan-native-image.c \
+	src/drivers/gpu/bcm2711/vk/vulkan-object.c src/drivers/gpu/bcm2711/vk/vulkan-session.c \
+	src/drivers/gpu/bcm2711/vk/vulkan-stream.c src/drivers/gpu/bcm2711/vk/vulkan-dispatch.c src/drivers/gpu/bcm2711/vk/vulkan-device.c src/drivers/gpu/bcm2711/vk/vulkan-sync.c src/drivers/gpu/bcm2711/vk/vulkan-queue.c src/drivers/gpu/bcm2711/vk/vulkan-query.c src/drivers/gpu/bcm2711/vk/vulkan-memory.c src/drivers/gpu/bcm2711/vk/vulkan-resource.c src/drivers/gpu/bcm2711/vk/vulkan-input.c src/drivers/gpu/bcm2711/vk/vulkan-layout.c src/drivers/gpu/bcm2711/vk/vulkan-layout-compat.c src/drivers/gpu/bcm2711/vk/vulkan-descriptor-pool.c src/drivers/gpu/bcm2711/vk/vulkan-descriptor-sets.c src/drivers/gpu/bcm2711/vk/vulkan-descriptor-update.c src/drivers/gpu/bcm2711/vk/vulkan-target.c \
+	src/drivers/gpu/bcm2711/vk/vulkan-pipeline-build.c src/drivers/gpu/bcm2711/vk/vulkan-pipeline-state.c src/drivers/gpu/bcm2711/vk/vulkan-pipeline.c src/drivers/gpu/bcm2711/vk/vulkan-pipeline-decode.c \
+	src/drivers/gpu/bcm2711/vk/vulkan-command-pool.c src/drivers/gpu/bcm2711/vk/vulkan-command-batch.c src/drivers/gpu/bcm2711/vk/vulkan-command-buffer.c \
+	src/drivers/gpu/bcm2711/vk/vulkan-barrier.c src/drivers/gpu/bcm2711/vk/vulkan-barrier-decode.c src/drivers/gpu/bcm2711/vk/vulkan-barrier-validate.c src/drivers/gpu/bcm2711/vk/vulkan-record.c src/drivers/gpu/bcm2711/vk/vulkan-record-decode.c src/drivers/gpu/bcm2711/vk/vulkan-record-validate.c src/drivers/gpu/bcm2711/vk/vulkan-draw.c src/drivers/gpu/bcm2711/vk/vulkan-draw-validate.c src/drivers/gpu/bcm2711/vk/vulkan-prepared.c src/drivers/gpu/bcm2711/vk/vulkan-uniform.c src/drivers/gpu/bcm2711/vk/vulkan-native-draw.c src/drivers/gpu/bcm2711/vk/vulkan-native-bin.c src/drivers/gpu/bcm2711/vk/vulkan-native-pass.c src/drivers/gpu/bcm2711/vk/vulkan-native-execute.c src/drivers/gpu/bcm2711/vk/vulkan-native-job.c src/drivers/gpu/bcm2711/vk/vulkan-buffer-copy.c src/drivers/gpu/bcm2711/vk/vulkan-transfer.c src/drivers/gpu/bcm2711/vk/vulkan-native-image.c \
 	src/drivers/gpu/bcm2711/share.c src/drivers/gpu/bcm2711/v3d-memory.c \
 	src/drivers/gpu/bcm2711/render-device.c src/drivers/gpu/bcm2711/render-runtime.c src/drivers/gpu/bcm2711/render-worker.c \
-	src/drivers/gpu/bcm2711/display-program.c \
-	src/drivers/gpu/bcm2711/display-start.c \
-	src/drivers/gpu/bcm2711/display-execute.c \
-	src/drivers/gpu/bcm2711/display-flip.c \
-	src/drivers/gpu/bcm2711/display-device.c \
-	src/drivers/gpu/bcm2711/display-irq.c
+	src/drivers/gpu/bcm2711/display/display-program.c \
+	src/drivers/gpu/bcm2711/display/display-start.c \
+	src/drivers/gpu/bcm2711/display/display-execute.c \
+	src/drivers/gpu/bcm2711/display/display-flip.c \
+	src/drivers/gpu/bcm2711/display/display-device.c \
+	src/drivers/gpu/bcm2711/display/display-irq.c
 endif
 # The Raspberry Pi 5's V3D 7.1 shader compiler (ws279-p004): the version-independent compiler files and the 7.1
 # copies of the encoder, lowering, epilogues and scheduler, which take the place of the 4.2 ones.  The switch is
 # defined with the rest of the BCM2712 graphics driver (ws279-p002); until then nothing selects these sources.
 ifeq ($(CONFIG_DRIVER_BCM2712_GPU),y)
 ARM64_KERNEL_SOURCES += $(filter-out $(KERN_GPU_SOURCES),src/drivers/gpu/compiler/spirv.c src/drivers/gpu/compiler/optimize.c src/drivers/gpu/i915/render/codec.c)
-ARM64_KERNEL_SOURCES += src/drivers/gpu/bcm2711/qpu71.c \
-	src/drivers/gpu/bcm2711/shader.c src/drivers/gpu/bcm2711/shader-analyze.c \
-	src/drivers/gpu/bcm2711/shader71-lower.c src/drivers/gpu/bcm2711/shader71-output.c \
-	src/drivers/gpu/bcm2711/shader71-schedule.c
+ARM64_KERNEL_SOURCES += src/drivers/gpu/bcm2711/compiler/qpu71.c \
+	src/drivers/gpu/bcm2711/compiler/shader.c src/drivers/gpu/bcm2711/compiler/shader-analyze.c \
+	src/drivers/gpu/bcm2711/compiler/shader71-lower.c src/drivers/gpu/bcm2711/compiler/shader71-output.c \
+	src/drivers/gpu/bcm2711/compiler/shader71-schedule.c
 endif
 # The H.264 decode as Vulkan Video on the V3D device (ws236-p004), with the VideoCore firmware's decoder.
 ifeq ($(CONFIG_DRIVER_BCM2711_GPU)$(CONFIG_DRIVER_BCM2711_VIDEO),yy)
-ARM64_KERNEL_SOURCES += src/drivers/gpu/bcm2711/vulkan-video.c
+ARM64_KERNEL_SOURCES += src/drivers/gpu/bcm2711/vk/vulkan-video.c
 endif
 ARM64_KERNEL_SOURCES += $(KERN_NET_SOURCES) $(KERN_BLOCK_IDENTITY_SOURCES) \
 	$(KERN_UFS_SOURCES)

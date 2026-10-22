@@ -22,7 +22,7 @@
 #include <drivers/generic/fdt.h>
 
 #include "drivers/gpu/bcm2711/bcm2711-gpu.h"
-#include "drivers/gpu/bcm2711/display-flip.h"
+#include "drivers/gpu/bcm2711/display/display-flip.h"
 #include "drivers/gpu/bcm2711/v3d-hardware.h"
 
 /* The stage-mark family of the display path, and its boot parameter prefix. */
