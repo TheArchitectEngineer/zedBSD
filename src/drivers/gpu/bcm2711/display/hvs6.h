@@ -93,6 +93,7 @@ struct bcm2712_display {
 	uint32_t firmware_head;
 	uint32_t firmware_end;
 	uint32_t plane_count;
+	uint32_t skipped_elements;
 	struct bcm2712_hvs_plane planes[BCM2712_HVS_LIST_PLANES];
 
 	/* The driver's own list, once it took the channel over. */

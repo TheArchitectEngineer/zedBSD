@@ -87,7 +87,7 @@
 #define LIST_ADDRESSABLE_WORDS		4096U
 
 /* The driver's own lists: three regions of 128 words near the top of the addressable memory. */
-#define OWN_REGION_WORDS		128U
+#define OWN_REGION_WORDS		256U
 #define OWN_REGIONS			3U
 
 /* The words of a plane. */
@@ -349,11 +349,12 @@ bcm2712_display_readout(
 				   display->planes[index].upm_base,
 				   (display->screen_known && display->planes[index].address == display->screen.physical_base) ? " = boot framebuffer" : "");
 	}
-	bcm2711_stage_mark(BCM2712_FAMILY_DISPLAY, "P1 ok ch%u list %u-%u, %u planes, framebuffer %llx %ux%u pitch %u",
+	bcm2711_stage_mark(BCM2712_FAMILY_DISPLAY, "P1 ok ch%u list %u-%u, %u planes %u unused, fb %llx %ux%u pitch %u",
 			   display->channel,
 			   display->firmware_head,
 			   display->firmware_end,
 			   display->plane_count,
+			   display->skipped_elements,
 			   (unsigned long long)display->screen.physical_base,
 			   display->screen.width,
 			   display->screen.height,
@@ -378,6 +379,8 @@ bcm2712_display_adopt(
 	uint32_t limit;
 	uint32_t words;
 	uint32_t index;
+	uint32_t plane;
+	uint32_t at;
 	uint32_t waited_us;
 	bool allowed;
 	int error;
@@ -399,16 +402,24 @@ bcm2712_display_adopt(
 	}
 	display->own_head = limit - OWN_REGIONS * OWN_REGION_WORDS;
 
-	/* Refuses regions that overlap the firmware's list or a list too long for one region. */
-	words = display->firmware_end - display->firmware_head + 1U;
-	if (display->firmware_end >= display->own_head || words > OWN_REGION_WORDS) {
-		bcm2711_stage_mark(BCM2712_FAMILY_DISPLAY, "R0 firmware list %u-%u collides with %u", display->firmware_head, display->firmware_end, display->own_head);
+	/* Refuses regions that overlap the firmware's list, or planes that do not fit one region. */
+	words = 1U;
+	for (plane = 0; plane < display->plane_count; plane++)
+		words += display->planes[plane].words;
+	if (display->firmware_end >= display->own_head || words + PLANE_WORDS > OWN_REGION_WORDS) {
+		bcm2711_stage_mark(BCM2712_FAMILY_DISPLAY, "R0 firmware list %u-%u (%u words) does not fit below %u", display->firmware_head, display->firmware_end, words, display->own_head);
 		return ENOSPC;
 	}
 
-	/* Copies the firmware's list, its END word last. */
-	for (index = 0; index < words; index++)
-		list_write(display, display->own_head + index, list_read(display, display->firmware_head + index));
+	/* Copies the firmware's valid planes one after another, then the END word. */
+	at = display->own_head;
+	for (plane = 0; plane < display->plane_count; plane++) {
+		/* Copies one plane's element word for word; its length field is relative. */
+		for (index = 0; index < display->planes[plane].words; index++)
+			list_write(display, at + index, list_read(display, display->planes[plane].start + index));
+		at += display->planes[plane].words;
+	}
+	list_write(display, at, PLANE_END);
 	display->own_words = words;
 	kern_io_write_barrier();
 
@@ -750,6 +761,7 @@ decode_list(
 	word = head;
 	count = 0;
 	display->firmware_end = head;
+	display->skipped_elements = 0;
 	while (word < limit) {
 		/* Stops at the END word. */
 		control = list_read(display, word);
@@ -761,36 +773,55 @@ decode_list(
 
 		/* Refuses an element that does not say how long it is. */
 		next = (control >> PLANE_NEXT_SHIFT) & PLANE_NEXT_MASK;
-		if (next < 7U || (control & PLANE_VALID) == 0) {
+		if (next == 0) {
 			display->firmware_end = word;
 			display->plane_count = count;
 			return EINVAL;
 		}
 
-		/* Decodes the plane's words; a scaled plane has one more before the source size. */
-		if (count < BCM2712_HVS_LIST_PLANES) {
-			plane = &display->planes[count];
-			plane->start = word;
-			plane->words = next;
-			plane->control = control;
-			plane->format = control & 0x1fU;
-			plane->order = (control >> PLANE_ORDER_SHIFT) & 3U;
-			plane->address_mode = (control >> PLANE_ADDRESS_MODE_SHIFT) & 7U;
-			plane->scaled = (control & PLANE_UNITY) == 0;
-			plane->x = list_read(display, word + 1U) & 0x1fffU;
-			plane->y = (list_read(display, word + 1U) >> 16) & 0x1fffU;
-			at = word + 3U;
-			if (plane->scaled)
-				at++;
-			pos2 = list_read(display, at);
-			plane->width = (pos2 & 0x1fffU) + 1U;
-			plane->height = ((pos2 >> 16) & 0x1fffU) + 1U;
-			plane->pointer0 = list_read(display, at + 2U);
-			plane->address = ((uint64_t)(plane->pointer0 & 0xffU) << 32) | list_read(display, at + 3U);
-			plane->pitch = list_read(display, at + 4U) & 0x1ffffU;
-			plane->upm_handle = ((plane->pointer0 >> 10) & 0x1fU) + 1U;
-			plane->upm_base = (plane->pointer0 >> 16) & 0x1fffU;
+		/* Skips an element the firmware keeps but marks not valid. */
+		if ((control & PLANE_VALID) == 0) {
+			display->skipped_elements++;
+			word += next;
+			continue;
 		}
+
+		/* Refuses a valid element too short for a plane. */
+		if (next < PLANE_WORDS) {
+			display->firmware_end = word;
+			display->plane_count = count;
+			return EINVAL;
+		}
+
+		/* Refuses more valid planes than the readout keeps. */
+		if (count >= BCM2712_HVS_LIST_PLANES) {
+			display->firmware_end = word;
+			display->plane_count = count;
+			return E2BIG;
+		}
+
+		/* Decodes the plane's words; a scaled plane has one more before the source size. */
+		plane = &display->planes[count];
+		plane->start = word;
+		plane->words = next;
+		plane->control = control;
+		plane->format = control & 0x1fU;
+		plane->order = (control >> PLANE_ORDER_SHIFT) & 3U;
+		plane->address_mode = (control >> PLANE_ADDRESS_MODE_SHIFT) & 7U;
+		plane->scaled = (control & PLANE_UNITY) == 0;
+		plane->x = list_read(display, word + 1U) & 0x1fffU;
+		plane->y = (list_read(display, word + 1U) >> 16) & 0x1fffU;
+		at = word + 3U;
+		if (plane->scaled)
+			at++;
+		pos2 = list_read(display, at);
+		plane->width = (pos2 & 0x1fffU) + 1U;
+		plane->height = ((pos2 >> 16) & 0x1fffU) + 1U;
+		plane->pointer0 = list_read(display, at + 2U);
+		plane->address = ((uint64_t)(plane->pointer0 & 0xffU) << 32) | list_read(display, at + 3U);
+		plane->pitch = list_read(display, at + 4U) & 0x1ffffU;
+		plane->upm_handle = ((plane->pointer0 >> 10) & 0x1fU) + 1U;
+		plane->upm_base = (plane->pointer0 >> 16) & 0x1fffU;
 		count++;
 		word += next;
 	}
@@ -800,7 +831,7 @@ decode_list(
 	return EINVAL;
 }
 
-/* Shows the words of a list, eight to a line, at most 32. */
+/* Shows the words of a list, four to a line, through its END word and at most 48 words. */
 static void
 show_list(
 	const struct bcm2712_display *display,
@@ -808,16 +839,16 @@ show_list(
 	uint32_t end)
 {
 	uint32_t word;
-	uint32_t words[8];
+	uint32_t words[4];
 	uint32_t index;
 
-	/* Shows each group of eight words. */
-	for (word = head; word <= end && word < head + 32U; word += 8U) {
+	/* Shows each group of four words. */
+	for (word = head; word <= end + 3U && word < head + 48U; word += 4U) {
 		/* Reads the group. */
-		for (index = 0; index < 8U; index++)
+		for (index = 0; index < 4U; index++)
 			words[index] = list_read(display, word + index);
-		bcm2711_stage_mark(BCM2712_FAMILY_DISPLAY, "P1 @%u %08x %08x %08x %08x %08x %08x %08x %08x",
-				   word, words[0], words[1], words[2], words[3], words[4], words[5], words[6], words[7]);
+		bcm2711_stage_mark(BCM2712_FAMILY_DISPLAY, "P1 @%u %08x %08x %08x %08x",
+				   word, words[0], words[1], words[2], words[3]);
 	}
 }
 
