@@ -28,6 +28,19 @@ struct bcm2711_vulkan_pipeline {
 	VkCullModeFlags cull;
 	VkFrontFace front;
 	bool blend;
+	/* The colour channels the pipeline leaves unwritten: bit 0 red through bit 3 alpha, the native mask's order. */
+	uint32_t colour_skip;
+	/*
+	 * The depth/stencil state (ws141-p017), which takes effect only in a
+	 * pass whose depth/stencil attachment has the aspect: the depth test,
+	 * whether it writes, and the stencil test of each face.
+	 */
+	bool depth_test;
+	bool depth_write;
+	VkCompareOp depth_compare;
+	bool stencil;
+	VkStencilOpState stencil_front;
+	VkStencilOpState stencil_back;
 };
 
 int bcm2711_vulkan_pipeline_dispatch(struct bcm2711_vulkan_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);

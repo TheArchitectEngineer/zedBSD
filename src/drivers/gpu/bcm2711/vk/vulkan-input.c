@@ -362,7 +362,8 @@ build_view(
 /*
  * Finds the plane a view reads.
  *
- * A colour view of the image's own format reads the whole image (plane 0).
+ * A colour view of the image's own format reads the whole image (plane 0),
+ * as does the view of a depth/stencil image.
  * A view of an NV12 picture that the GPU samples may read its luma plane
  * as R8 (plane 1) or its interleaved chroma plane as RG8 (plane 2).
  */
@@ -372,8 +373,29 @@ view_plane(
 	const struct bcm2711_vulkan_resource *image,
 	uint32_t *plane)
 {
-	/* The whole image's colour in its own format. */
+	VkImageAspectFlags aspects;
+
+	/*
+	 * A depth/stencil image (ws141-p017) is viewed whole, with every aspect
+	 * its format has, as the framebuffer attachment it only can be.
+	 */
 	*plane = 0;
+	if (image->format == VK_FORMAT_D24_UNORM_S8_UINT || image->format == VK_FORMAT_X8_D24_UNORM_PACK32) {
+		if (info->format != image->format)
+			return EINVAL;
+
+		/* A combined image is viewed with depth and stencil, a depth-only one with depth alone. */
+		aspects = VK_IMAGE_ASPECT_DEPTH_BIT;
+		if (image->format == VK_FORMAT_D24_UNORM_S8_UINT)
+			aspects |= VK_IMAGE_ASPECT_STENCIL_BIT;
+		if (info->subresourceRange.aspectMask != aspects)
+			return ENOTSUP;
+
+		/* Succeeded: the attachment's whole image. */
+		return 0;
+	}
+
+	/* The whole image's colour in its own format. */
 	if (info->subresourceRange.aspectMask == VK_IMAGE_ASPECT_COLOR_BIT) {
 		if (info->format != image->format)
 			return EINVAL;

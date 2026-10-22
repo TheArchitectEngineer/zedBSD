@@ -41,6 +41,22 @@ struct bcm2711_native_pass {
 	uint32_t source_pitch;
 	uint32_t source_bytes;
 	/*
+	 * The depth/stencil attachment: depth 0 has none (the tile buffer's
+	 * depth is unused, cleared to 1.0 and stencil 0); 1 a D24S8 image, 2 an
+	 * X8_D24 image (depth only).  Its tile buffer is cleared to
+	 * depth_clear (IEEE bits) and stencil_clear in every tile; depth_load
+	 * and depth_store move it from and to the raster image at
+	 * depth_output with depth_pitch.
+	 */
+	uint32_t depth;
+	uint32_t depth_clear;
+	uint32_t stencil_clear;
+	uint32_t depth_load;
+	uint32_t depth_store;
+	uint32_t depth_output;
+	uint32_t depth_pitch;
+	uint32_t depth_bytes;
+	/*
 	 * The tile boxes (first x, first y, last x, last y, inclusive, inside
 	 * the rectangle above) whose tiles the pass changes: only
 	 * the supertiles that meet one of them are rendered.  A tile no box

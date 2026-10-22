@@ -3,9 +3,9 @@
 # ws141-p017: bcm2711 の Vulkan の stencil（Notes の winding の stencil で塗る線）
 
 Parent: [WS141](../ws.md)
-Status: planning（調べと見積もり。2026-10-12 P3。Q1 の判断で driver の stencil の対応で直す。順は ws141-p016 の (b) の後。入る時は設計を先に Q1 に出し、review に回す）
+Status: in-progress（2026-10-22 P2。ユーザー「stencil の対応をお願いします。」。Pi 5 実機で readback PASS、Notes 起動。線の目視と Pi 4 実機が残り）
 Phase disposition: normal
-Queue: なし（候補。Q1 の判断の後）
+Queue: 2026-10-22 Q1 が P2 に割当（agent/p2-stencil）
 
 ## 由来
 
@@ -70,3 +70,25 @@ Queue: なし（候補。Q1 の判断の後）
 
 - Notes は driver の stencil の対応（この Phase）で直す。stencil は Vulkan の標準の機能で、他の app も使い得るため。Notes の側の回避（上の代わりの案）はしない。
 - 順は (b) の後。この Phase に入る時は、正本の調べと設計を先に Q1 に出し、design-reviewer の review に回す。
+
+## 設計（2026-10-22 P2）
+
+正本: Mesa 25.3.6（`06f9e2830`）の `src/broadcom/cle/v3d_packet.xml`、`vulkan/v3dvx_pipeline.c`（`pack_stencil_cfg`・`translate_stencil_op`）、`vulkan/v3dvx_cmd_buffer.c`（cfg bits の depth/stencil、RCL の Z/S の clear・load・store）。Pi 4（4.2）と Pi 5（7.1）は同じ形で、版の差は `native-*.c` と `native71-*.c` の中だけ。
+
+- **format**: `D24_UNORM_S8_UINT`（depth+stencil）と `X8_D24_UNORM_PACK32`（depth）。optimal tiling の `DEPTH_STENCIL_ATTACHMENT` だけを出す（sample・transfer は出さない）。`framebufferDepth/StencilSampleCounts` = 1。
+- **image**: 1 level・1 layer、usage は `DEPTH_STENCIL_ATTACHMENT`（と `TRANSIENT_ATTACHMENT`）だけ。memory は colour と同じ raster（pitch = 幅×4 を 64 に丸め）。v3dv も linear の Z/S を raster で load/store する。view は format の全 aspect（D24S8 は DEPTH|STENCIL、X8_D24 は DEPTH）。
+- **render pass・framebuffer**: attachment は colour 1 つ、または colour と depth-stencil の 2 つ。subpass は depth を attachment 1 で参照する。depth/stencil の load は LOAD・CLEAR・DONT_CARE、store は STORE・DONT_CARE。一方の aspect が LOAD で他方が CLEAR は ENOTSUP（Z+S を 1 回で load するため）。layout は UNDEFINED（load 以外）・GENERAL・DEPTH_STENCIL_ATTACHMENT_OPTIMAL。互換は colour と depth の format と有無が同じこと。
+- **begin**: clear value の depth の枝（float・u32）を record に写す。
+- **RCL（native pass）**: depth-stencil がある時、Common の Internal Depth Type を depth_24、ZS Clear Values に clear の depth と stencil。tile ごとに、load が要れば `Load Tile Buffer General`（buffer Z+S=11 か Z=9、format d24s8=43、raster、stride）、store が要れば `Store Tile Buffer General`（同じ）。Z/S の毎 tile の clear は今のまま（4.2 は Clear Tile Buffers の Z/S の bit、7.1 は自動）。早い Z/S の clear・early-Z は使わない（今の off のまま）。render area が image 全体でない時に store する aspect は先に load して外を保つ（CLEAR と STORE の部分 area は ENOTSUP）。
+- **pipeline**: `pDepthStencilState` を decode して持つ。depth test・write・compare（8 種）、stencil test、front と back の failOp・passOp・depthFailOp・compareOp・compareMask・writeMask・reference（下 8 bit）。depth bounds は ENOTSUP。colorWriteMask は任意（channel ごと）。
+- **BCL（native bin）**: Cfg Bits に depth test function（bits 12-14）・Z updates（15）・stencil enable（18）。描画列の前に Stencil Cfg を 2 つ（front: Front Config、back: Back Config）を常に出す。Color Write Masks に RT0 の書かない channel。stencil・depth は pass に該当の aspect がある時だけ有効（X8_D24 の stencil は無効）。front は今の cull と同じ forward facing。
+- **barrier**: depth-stencil の image の aspect と layout（DEPTH_STENCIL_ATTACHMENT_OPTIMAL・GENERAL）を受ける。
+- 試験: host で packet を Mesa の XML と照合（4.2 と 7.1）、実機（Pi 5）で stencil の winding・colour mask 0・store と load・depth test を readback で確かめ、Notes を起動する。
+
+## 結果（2026-10-22 P2）
+
+- 実装: format（D24S8・X8_D24 の optimal に DEPTH_STENCIL_ATTACHMENT）、image・view、2 attachment の pass と framebuffer、begin の depth/stencil の clear、pipeline の depth/stencil の state と colorWriteMask、BCL（Cfg Bits の depth・stencil、Stencil Cfg 2 つ、Color Write Masks）、RCL（Internal Depth Type depth_24、ZS Clear Values、Z/S の raster の load と store）、barrier。4.2 は `native-bin.c`・`native-pass.c`、7.1 は `native71-bin.c`・`native71-pass.c`。bin の 1 draw は 121 → 133 byte。
+- host: `plan/ws141/tests/native-pass-host-test.sh`・`native-state-host-test.sh`（4.2）、`plan/ws279/tests/v3d71-host-test.sh`（7.1）で新しい packet を Mesa 25.3.6 の XML と照合して PASS。`vulkan-device-host-test.sh` に depth の節（実 client の encoder と native の decoder、pass・framebuffer・begin・pipeline・native pass・bin の state）を足して PASS。`vulkan-object`・`vulkan-stream`・`native-colour`・`clear` も PASS。
+- build: `config-rpi5-gpu.mk` と `config/ci/config-rpi4.mk` の vmunix、Pi 5 の `dynamic/libvulkan.so`、warning 0（main ebe662778 を merge した後）。userland の全体（rootfs）は未実施（userland の source は変えていない）。
+- 実機（Pi 5 D0、kei@10.0.30.5、上の Pi 5 kernel）: `plan/ws141/tests/vkstencil-pi.c`（Notes の shader と stencil・fringe・cover の pipeline、winding の両面・colour mask 0・Z/S の store と load・less の depth test）が `VKSTENCIL ok device=zedBSD V3D 7.1 (Keiland graphics) pixels=12288`。同じ kernel で `VKQUAD ok`・`VKMON ok`。Notes は `stencil format failed` なしに起動し `NOTES FRAME first draws=52`。線を引く確認（自己交差・消しゴム）はユーザーの操作が要り、未実施。
+- Pi 4（4.2）の実機は未実施（板が無い）。

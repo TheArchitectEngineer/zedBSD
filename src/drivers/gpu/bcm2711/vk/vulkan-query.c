@@ -363,6 +363,10 @@ image_query(
 	if (tiling == VK_IMAGE_TILING_LINEAR)
 		features = formats.linearTilingFeatures;
 	known_usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+
+	/* A depth/stencil format is an attachment and nothing else; a colour format is never one. */
+	if ((features & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) != 0)
+		known_usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT;
 	status = VK_SUCCESS;
 	if (features == 0 ||
 	    type != VK_IMAGE_TYPE_2D ||
@@ -469,6 +473,8 @@ device_properties(
 	limits->maxFramebufferLayers = 1;
 	limits->maxColorAttachments = 1;
 	limits->framebufferColorSampleCounts = VK_SAMPLE_COUNT_1_BIT;
+	limits->framebufferDepthSampleCounts = VK_SAMPLE_COUNT_1_BIT;
+	limits->framebufferStencilSampleCounts = VK_SAMPLE_COUNT_1_BIT;
 	limits->sampledImageColorSampleCounts = VK_SAMPLE_COUNT_1_BIT;
 	limits->maxSampleMaskWords = 1;
 	limits->standardSampleLocations = VK_TRUE;
@@ -489,13 +495,13 @@ device_properties(
 	return;
 }
 
-/* Defines only colour formats used by the native compositor and float vertex inputs consumed by VPM. */
+/* Defines only the colour formats the native compositor uses, the tile buffer's depth/stencil formats and float vertex inputs consumed by VPM. */
 static void
 format_properties(
 	VkFormat format,
 	VkFormatProperties *properties)
 {
-	/* Unknown, depth, compressed, integer and sRGB images stay unsupported until their complete native paths exist. */
+	/* Unknown, compressed, integer and sRGB images stay unsupported until their complete native paths exist. */
 	kern_memset(properties, 0, sizeof(*properties));
 	if (format == VK_FORMAT_R8G8B8A8_UNORM || format == VK_FORMAT_B8G8R8A8_UNORM) {
 		properties->optimalTilingFeatures = VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT |
@@ -504,6 +510,14 @@ format_properties(
 						    VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT;
 		properties->linearTilingFeatures = properties->optimalTilingFeatures;
 	}
+
+	/*
+	 * Depth/stencil attachments live only in the tile buffer and their own
+	 * raster image (ws141-p017): a combined D24S8 and a depth-only X8_D24,
+	 * the tile buffer's 24-bit depth, optimally tiled and not sampled.
+	 */
+	if (format == VK_FORMAT_D24_UNORM_S8_UINT || format == VK_FORMAT_X8_D24_UNORM_PACK32)
+		properties->optimalTilingFeatures = VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
 
 #if CONFIG_DRIVER_BCM2711_VIDEO
 	/* The planes of a sampled NV12 picture are viewed as R8 (luma) and RG8 (chroma) textures. */

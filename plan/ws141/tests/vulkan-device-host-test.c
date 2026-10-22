@@ -146,6 +146,8 @@ void ws141_client_encode_clear(struct vulkan_writer *writer, uint64_t command_id
 void ws141_client_encode_barrier(struct vulkan_writer *writer, uint64_t command_id, uint64_t buffer_id, const uint64_t *image_ids, const VkImageLayout *layouts);
 
 void ws141_client_encode_graphics(struct vulkan_writer *writer, const VkGraphicsPipelineCreateInfo *source);
+void ws141_client_encode_graphics_depth(struct vulkan_writer *writer, const VkGraphicsPipelineCreateInfo *source);
+void ws141_client_encode_depth_begin(struct vulkan_writer *writer, uint64_t command_id);
 
 static void native_job_test(struct bcm2711_vulkan_session *session, struct bcm2711_vulkan_object *command);
 static void native_execute_test(struct bcm2711_vulkan_session *session, const struct bcm2711_vulkan_prepared_event *begin);
@@ -168,6 +170,8 @@ static void clear_test(struct bcm2711_vulkan_session *session);
 static void barrier_test(struct bcm2711_vulkan_session *session, struct bcm2711_vulkan_object *primary);
 static void command_test(struct bcm2711_vulkan_session *session);
 static void pipeline_test(struct bcm2711_vulkan_session *session);
+static void depth_test(struct bcm2711_vulkan_session *session, struct bcm2711_vulkan_object *device, const VkGraphicsPipelineCreateInfo *colour_info);
+static void depth_refused(struct bcm2711_vulkan_session *session, struct vulkan_writer *writer, uint64_t identity);
 static void target_test(struct bcm2711_vulkan_session *session);
 static void descriptor_test(struct bcm2711_vulkan_session *session);
 static void encode_image_write(struct vulkan_writer *writer, uint64_t set, uint64_t sampler, uint64_t view);
@@ -1983,7 +1987,7 @@ native_pass_test(
 	bytes = pass->bytes;
 	assert(bytes == 1687552U && available == 8U * 1024U * 1024U - bytes);
 	assert(native_cleans == cleans + 21U && pass->job.kind == BCM2711_V3D_JOB_CL);
-	assert(pass->job.command.cl.bin_end - pass->job.command.cl.bin_start == 135U);
+	assert(pass->job.command.cl.bin_end - pass->job.command.cl.bin_start == 147U);
 	assert(pass->job.command.cl.render_end - pass->job.command.cl.render_start == 106U);
 	assert(pass->job.command.cl.pool_bytes == 0x83000U && pass->job.command.cl.state_bytes == 4096U);
 	assert(pass->job.command.cl.overflow_count == 4U && pass->job.command.cl.clean_output);
@@ -7112,6 +7116,9 @@ pipeline_test(
 	error = bcm2711_vulkan_object_release(published);
 	assert(error == 0);
 
+	/* The depth/stencil attachment path uses the same modules, layout and colour view (ws141-p017). */
+	depth_test(session, device, &info);
+
 	/* Source modules and public layout identities may retire without invalidating independently owned native code/interface metadata. */
 	destroy(session, GPU_OP_DESTROY_SHADER_MODULE, 133);
 	destroy(session, GPU_OP_DESTROY_SHADER_MODULE, 134);
@@ -7168,4 +7175,480 @@ write_log_test(
 	known = bcm2711_v3d_memory_changes(&buffer, 4096, buffer.generation - BCM2711_BUFFER_WRITES - 1U, box);
 	assert(!known);
 	puts("WS141 run write log unions/forgotten/unknown/other-image refusal: PASS");
+}
+
+/*
+ * Exercises the depth/stencil attachment path (ws141-p017) through the actual client encoders and native decoders.
+ *
+ * Formats, a D24S8 image and its view, a colour and depth/stencil pass in
+ * Notes' shape and its framebuffer, the begin's depth/stencil clear values,
+ * and pipelines whose stencil and depth tests lower to native draw state.
+ */
+static void
+depth_test(
+	struct bcm2711_vulkan_session *session,
+	struct bcm2711_vulkan_object *device,
+	const VkGraphicsPipelineCreateInfo *colour_info)
+{
+	struct vulkan_writer writer;
+	struct vulkan_reader reader;
+	struct vulkan_object client_image;
+	struct vulkan_object client_views[2];
+	struct vulkan_object client_pass;
+	struct bcm2711_vulkan_object *pass_object;
+	struct bcm2711_vulkan_object *colour_object;
+	struct bcm2711_vulkan_object *view_object;
+	struct bcm2711_vulkan_object *framebuffer_object;
+	struct bcm2711_vulkan_object *published;
+	struct bcm2711_vulkan_pass *pass;
+	struct bcm2711_vulkan_framebuffer *framebuffer;
+	struct bcm2711_vulkan_pipeline *pipeline;
+	struct bcm2711_vulkan_record record;
+	struct bcm2711_vulkan_prepared_event event;
+	struct bcm2711_vulkan_native_draw draw;
+	struct bcm2711_vulkan_prepared_event pass_event;
+	struct bcm2711_vulkan_prepared_event end_event;
+	struct bcm2711_vulkan_native_pass *native_pass;
+	const struct bcm2711_vulkan_prepared_event *following;
+	struct i915_wire_reader native;
+	uint64_t available;
+	VkFormatProperties format;
+	VkImageFormatProperties properties;
+	VkImageCreateInfo image_info;
+	VkImageViewCreateInfo view_info;
+	VkAttachmentDescription attachments[2];
+	VkAttachmentReference colour;
+	VkAttachmentReference stencil;
+	VkSubpassDescription subpass;
+	VkSubpassDependency dependency;
+	VkRenderPassCreateInfo pass_info;
+	VkFramebufferCreateInfo framebuffer_info;
+	VkImageView views[2];
+	VkPipelineColorBlendAttachmentState blend_attachment;
+	VkPipelineColorBlendStateCreateInfo blend;
+	VkPipelineDepthStencilStateCreateInfo depth;
+	VkGraphicsPipelineCreateInfo info;
+	uint8_t wire[8192];
+	uint32_t references;
+	uint32_t config;
+	int error;
+
+	/* D24S8 and X8_D24 are optimally tiled attachments and nothing else; S8 stays unsupported. */
+	begin(&writer, wire, sizeof(wire), GPU_OP_GET_PHYSICAL_DEVICE_FORMAT_PROPERTIES, 1);
+	vulkan_write_u64(&writer, 20);
+	vulkan_write_u32(&writer, VK_FORMAT_D24_UNORM_S8_UINT);
+	vulkan_write_u64(&writer, 1);
+	error = execute(session, &writer, &reader);
+	assert(error == 0 && vulkan_read_u64(&reader) == 1);
+	vulkan_decode_VkFormatProperties(&reader, &format);
+	assert(reader.error == VK_SUCCESS && format.optimalTilingFeatures == VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
+	assert(format.linearTilingFeatures == 0 && format.bufferFeatures == 0);
+	begin(&writer, wire, sizeof(wire), GPU_OP_GET_PHYSICAL_DEVICE_FORMAT_PROPERTIES, 1);
+	vulkan_write_u64(&writer, 20);
+	vulkan_write_u32(&writer, VK_FORMAT_S8_UINT);
+	vulkan_write_u64(&writer, 1);
+	error = execute(session, &writer, &reader);
+	assert(error == 0 && vulkan_read_u64(&reader) == 1);
+	vulkan_decode_VkFormatProperties(&reader, &format);
+	assert(reader.error == VK_SUCCESS && format.optimalTilingFeatures == 0);
+
+	/* The image query admits the attachment usage and refuses sampling. */
+	begin(&writer, wire, sizeof(wire), GPU_OP_GET_PHYSICAL_DEVICE_IMAGE_FORMAT_PROPERTIES, 1);
+	vulkan_write_u64(&writer, 20);
+	vulkan_write_u32(&writer, VK_FORMAT_D24_UNORM_S8_UINT);
+	vulkan_write_u32(&writer, VK_IMAGE_TYPE_2D);
+	vulkan_write_u32(&writer, VK_IMAGE_TILING_OPTIMAL);
+	vulkan_write_u32(&writer, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
+	vulkan_write_u32(&writer, 0);
+	vulkan_write_u64(&writer, 1);
+	error = execute(session, &writer, &reader);
+	assert(error == 0 && vulkan_read_u32(&reader) == VK_SUCCESS && vulkan_read_u64(&reader) == 1);
+	vulkan_decode_VkImageFormatProperties(&reader, &properties);
+	assert(reader.error == VK_SUCCESS && properties.maxExtent.width == 4096 && properties.sampleCounts == VK_SAMPLE_COUNT_1_BIT);
+	begin(&writer, wire, sizeof(wire), GPU_OP_GET_PHYSICAL_DEVICE_IMAGE_FORMAT_PROPERTIES, 1);
+	vulkan_write_u64(&writer, 20);
+	vulkan_write_u32(&writer, VK_FORMAT_D24_UNORM_S8_UINT);
+	vulkan_write_u32(&writer, VK_IMAGE_TYPE_2D);
+	vulkan_write_u32(&writer, VK_IMAGE_TILING_OPTIMAL);
+	vulkan_write_u32(&writer, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+	vulkan_write_u32(&writer, 0);
+	vulkan_write_u64(&writer, 1);
+	error = execute(session, &writer, &reader);
+	assert(error == 0 && vulkan_read_u32(&reader) == (uint32_t)VK_ERROR_FORMAT_NOT_SUPPORTED);
+
+	/* A 16x8 D24S8 attachment image bound after the colour image in the shared allocation. */
+	memset(&image_info, 0, sizeof(image_info));
+	image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	image_info.imageType = VK_IMAGE_TYPE_2D;
+	image_info.format = VK_FORMAT_D24_UNORM_S8_UINT;
+	image_info.extent.width = 16;
+	image_info.extent.height = 8;
+	image_info.extent.depth = 1;
+	image_info.mipLevels = 1;
+	image_info.arrayLayers = 1;
+	image_info.samples = VK_SAMPLE_COUNT_1_BIT;
+	image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+	image_info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+	begin(&writer, wire, sizeof(wire), GPU_OP_CREATE_IMAGE, 1);
+	vulkan_write_u64(&writer, 30);
+	vulkan_write_u64(&writer, 1);
+	vulkan_encode_VkImageCreateInfo(&writer, &image_info);
+	error = input_created(session, &writer, 150);
+	assert(error == VK_SUCCESS);
+	begin(&writer, wire, sizeof(wire), GPU_OP_BIND_IMAGE_MEMORY, 1);
+	vulkan_write_u64(&writer, 30);
+	vulkan_write_u64(&writer, 150);
+	vulkan_write_u64(&writer, 102);
+	vulkan_write_u64(&writer, 1024);
+	error = execute(session, &writer, &reader);
+	assert(error == 0 && vulkan_read_u32(&reader) == VK_SUCCESS);
+
+	/* A sampled or linear depth image is refused. */
+	image_info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+	begin(&writer, wire, sizeof(wire), GPU_OP_CREATE_IMAGE, 1);
+	vulkan_write_u64(&writer, 30);
+	vulkan_write_u64(&writer, 1);
+	vulkan_encode_VkImageCreateInfo(&writer, &image_info);
+	depth_refused(session, &writer, 151);
+	image_info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+	image_info.tiling = VK_IMAGE_TILING_LINEAR;
+	begin(&writer, wire, sizeof(wire), GPU_OP_CREATE_IMAGE, 1);
+	vulkan_write_u64(&writer, 30);
+	vulkan_write_u64(&writer, 1);
+	vulkan_encode_VkImageCreateInfo(&writer, &image_info);
+	depth_refused(session, &writer, 151);
+
+	/* The image's view has both aspects; a depth-only view of it is refused. */
+	memset(&client_image, 0, sizeof(client_image));
+	client_image.wire_id = 150;
+	memset(&view_info, 0, sizeof(view_info));
+	view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	view_info.image = (VkImage)(uintptr_t)&client_image;
+	view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	view_info.format = VK_FORMAT_D24_UNORM_S8_UINT;
+	view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+	view_info.subresourceRange.levelCount = 1;
+	view_info.subresourceRange.layerCount = 1;
+	begin(&writer, wire, sizeof(wire), GPU_OP_CREATE_IMAGE_VIEW, 1);
+	vulkan_write_u64(&writer, 30);
+	vulkan_write_u64(&writer, 1);
+	vulkan_encode_VkImageViewCreateInfo(&writer, &view_info);
+	error = input_created(session, &writer, 152);
+	assert(error == VK_SUCCESS);
+	view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+	begin(&writer, wire, sizeof(wire), GPU_OP_CREATE_IMAGE_VIEW, 1);
+	vulkan_write_u64(&writer, 30);
+	vulkan_write_u64(&writer, 1);
+	vulkan_encode_VkImageViewCreateInfo(&writer, &view_info);
+	depth_refused(session, &writer, 153);
+
+	/* Notes' pass: the colour cleared and stored, the depth/stencil cleared and discarded. */
+	memset(attachments, 0, sizeof(attachments));
+	attachments[0].format = VK_FORMAT_R8G8B8A8_UNORM;
+	attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
+	attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	attachments[0].finalLayout = VK_IMAGE_LAYOUT_GENERAL;
+	attachments[1].format = VK_FORMAT_D24_UNORM_S8_UINT;
+	attachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
+	attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	attachments[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	attachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	attachments[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+	memset(&colour, 0, sizeof(colour));
+	colour.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	memset(&stencil, 0, sizeof(stencil));
+	stencil.attachment = 1;
+	stencil.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+	memset(&subpass, 0, sizeof(subpass));
+	subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+	subpass.colorAttachmentCount = 1;
+	subpass.pColorAttachments = &colour;
+	subpass.pDepthStencilAttachment = &stencil;
+	memset(&dependency, 0, sizeof(dependency));
+	dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+	dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+	dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+	dependency.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+	dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+	memset(&pass_info, 0, sizeof(pass_info));
+	pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+	pass_info.attachmentCount = 2;
+	pass_info.pAttachments = attachments;
+	pass_info.subpassCount = 1;
+	pass_info.pSubpasses = &subpass;
+	pass_info.dependencyCount = 1;
+	pass_info.pDependencies = &dependency;
+	begin(&writer, wire, sizeof(wire), GPU_OP_CREATE_RENDER_PASS, 1);
+	vulkan_write_u64(&writer, 30);
+	vulkan_write_u64(&writer, 1);
+	vulkan_encode_VkRenderPassCreateInfo(&writer, &pass_info);
+	error = input_created(session, &writer, 154);
+	assert(error == VK_SUCCESS);
+	pass_object = bcm2711_vulkan_object_find(session, I915_VK_OBJ_RENDER_PASS, 154);
+	colour_object = bcm2711_vulkan_object_find(session, I915_VK_OBJ_RENDER_PASS, 120);
+	assert(pass_object != NULL && colour_object != NULL);
+	pass = pass_object->payload;
+	assert(pass->depth && pass->depth_stencil.format == VK_FORMAT_D24_UNORM_S8_UINT);
+	assert(pass->depth_stencil.stencilLoadOp == VK_ATTACHMENT_LOAD_OP_CLEAR && pass->depth_stencil.storeOp == VK_ATTACHMENT_STORE_OP_DONT_CARE);
+	error = bcm2711_vulkan_pass_compatible(pass, colour_object->payload);
+	assert(error == EINVAL);
+
+	/* One aspect loading while the other clears, and a depth/stencil attachment the subpass does not use, are refused. */
+	attachments[1].initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+	attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+	begin(&writer, wire, sizeof(wire), GPU_OP_CREATE_RENDER_PASS, 1);
+	vulkan_write_u64(&writer, 30);
+	vulkan_write_u64(&writer, 1);
+	vulkan_encode_VkRenderPassCreateInfo(&writer, &pass_info);
+	depth_refused(session, &writer, 155);
+	attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	attachments[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	subpass.pDepthStencilAttachment = NULL;
+	begin(&writer, wire, sizeof(wire), GPU_OP_CREATE_RENDER_PASS, 1);
+	vulkan_write_u64(&writer, 30);
+	vulkan_write_u64(&writer, 1);
+	vulkan_encode_VkRenderPassCreateInfo(&writer, &pass_info);
+	depth_refused(session, &writer, 155);
+	subpass.pDepthStencilAttachment = &stencil;
+
+	/* The framebuffer retains the colour view 103 and the depth/stencil view; a colour-only one is refused. */
+	view_object = bcm2711_vulkan_object_find(session, I915_VK_OBJ_IMAGE_VIEW, 152);
+	assert(view_object != NULL);
+	references = view_object->references;
+	memset(&client_pass, 0, sizeof(client_pass));
+	memset(client_views, 0, sizeof(client_views));
+	client_pass.wire_id = 154;
+	client_views[0].wire_id = 103;
+	client_views[1].wire_id = 152;
+	views[0] = (VkImageView)(uintptr_t)&client_views[0];
+	views[1] = (VkImageView)(uintptr_t)&client_views[1];
+	memset(&framebuffer_info, 0, sizeof(framebuffer_info));
+	framebuffer_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+	framebuffer_info.renderPass = (VkRenderPass)(uintptr_t)&client_pass;
+	framebuffer_info.attachmentCount = 1;
+	framebuffer_info.pAttachments = views;
+	framebuffer_info.width = 16;
+	framebuffer_info.height = 8;
+	framebuffer_info.layers = 1;
+	begin(&writer, wire, sizeof(wire), GPU_OP_CREATE_FRAMEBUFFER, 1);
+	vulkan_write_u64(&writer, 30);
+	vulkan_write_u64(&writer, 1);
+	vulkan_encode_VkFramebufferCreateInfo(&writer, &framebuffer_info);
+	depth_refused(session, &writer, 156);
+	framebuffer_info.attachmentCount = 2;
+	begin(&writer, wire, sizeof(wire), GPU_OP_CREATE_FRAMEBUFFER, 1);
+	vulkan_write_u64(&writer, 30);
+	vulkan_write_u64(&writer, 1);
+	vulkan_encode_VkFramebufferCreateInfo(&writer, &framebuffer_info);
+	error = input_created(session, &writer, 156);
+	assert(error == VK_SUCCESS);
+	framebuffer_object = bcm2711_vulkan_object_find(session, I915_VK_OBJ_FRAMEBUFFER, 156);
+	assert(framebuffer_object != NULL);
+	framebuffer = framebuffer_object->payload;
+	assert(framebuffer->depth == view_object && view_object->references == references + 1U);
+
+	/* The actual client's begin carries the depth/stencil clear branch, which the decoder keeps in words four and five. */
+	begin(&writer, wire, sizeof(wire), GPU_OP_CMD_BEGIN_RENDER_PASS, 1);
+	writer.bytes = 0;
+	ws141_client_encode_depth_begin(&writer, 7);
+	assert(writer.error == VK_SUCCESS && writer.bytes > 16U);
+	native.base = writer.data + 16U;
+	native.size = writer.bytes - 16U;
+	native.offset = 0;
+	native.error = 0;
+	memset(&record, 0, sizeof(record));
+	record.opcode = GPU_OP_CMD_BEGIN_RENDER_PASS;
+	error = bcm2711_vulkan_record_decode(session, &native, &record);
+	assert(error == 0 && native.offset == native.size && record.count == 2);
+	assert(record.objects[0] == pass_object && record.objects[1] == framebuffer_object);
+	assert(record.words[3] == 0x3f800000U && record.words[4] == 0x3f000000U && record.words[5] == 0x5aU);
+
+	/* A native pass of the begin keeps the attachment in the tile buffer, cleared to the begin's values. */
+	memset(&pass_event, 0, sizeof(pass_event));
+	pass_event.opcode = GPU_OP_CMD_BEGIN_RENDER_PASS;
+	pass_event.record = &record;
+	pass_event.pass = &record;
+	pass_event.next = &end_event;
+	memset(&end_event, 0, sizeof(end_event));
+	end_event.opcode = GPU_OP_CMD_END_RENDER_PASS;
+	end_event.pass = &record;
+	available = 8U * 1024U * 1024U;
+	error = bcm2711_vulkan_native_pass_create(&session->render->device->space, &pass_event, &available, &native_pass, &following);
+	assert(error == 0 && native_pass != NULL && following == NULL);
+	assert(native_pass->state.depth == 1U && native_pass->state.depth_clear == 0x3f000000U && native_pass->state.stencil_clear == 0x5aU);
+	assert(native_pass->state.depth_load == 0 && native_pass->state.depth_store == 0 && native_pass->depth == NULL);
+	assert(native_pass->depth_target == ((struct bcm2711_vulkan_image_view *)view_object->payload)->owner.parent->payload);
+	assert(native_pass->depth_final_layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+	error = bcm2711_vulkan_native_pass_release(&native_pass, true);
+	assert(error == 0);
+
+	/* A compatible pass that stores the attachment holds the image and stores it from every tile. */
+	attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	begin(&writer, wire, sizeof(wire), GPU_OP_CREATE_RENDER_PASS, 1);
+	vulkan_write_u64(&writer, 30);
+	vulkan_write_u64(&writer, 1);
+	vulkan_encode_VkRenderPassCreateInfo(&writer, &pass_info);
+	error = input_created(session, &writer, 158);
+	assert(error == VK_SUCCESS);
+	attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	record.objects[0] = bcm2711_vulkan_object_find(session, I915_VK_OBJ_RENDER_PASS, 158);
+	assert(record.objects[0] != NULL);
+	error = bcm2711_vulkan_native_pass_create(&session->render->device->space, &pass_event, &available, &native_pass, &following);
+	assert(error == 0 && native_pass->state.depth_store == 1U && native_pass->state.depth_load == 0 && native_pass->depth != NULL);
+	assert(native_pass->state.depth_pitch == 64U && native_pass->state.depth_bytes == 512U);
+	assert(native_pass->state.depth_output == native_pass->depth->address + 1024U && native_pass->state.box_count == 0);
+	error = bcm2711_vulkan_native_pass_release(&native_pass, true);
+	assert(error == 0);
+
+	/* Storing from a smaller render area cannot clear the attachment there. */
+	record.area.extent.width = 8;
+	error = bcm2711_vulkan_native_pass_create(&session->render->device->space, &pass_event, &available, &native_pass, &following);
+	assert(error == ENOTSUP && native_pass == NULL);
+	record.area.extent.width = 16;
+	record.objects[0] = pass_object;
+	destroy(session, GPU_OP_DESTROY_RENDER_PASS, 158);
+
+	/* Notes' stencil pipeline: both faces counting the winding, no colour written. */
+	info = *colour_info;
+	info.renderPass = (VkRenderPass)(uintptr_t)154;
+	blend_attachment = colour_info->pColorBlendState->pAttachments[0];
+	blend_attachment.colorWriteMask = 0;
+	blend = *colour_info->pColorBlendState;
+	blend.pAttachments = &blend_attachment;
+	info.pColorBlendState = &blend;
+	memset(&depth, 0, sizeof(depth));
+	depth.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+	depth.stencilTestEnable = VK_TRUE;
+	depth.front.failOp = VK_STENCIL_OP_KEEP;
+	depth.front.passOp = VK_STENCIL_OP_INCREMENT_AND_WRAP;
+	depth.front.depthFailOp = VK_STENCIL_OP_KEEP;
+	depth.front.compareOp = VK_COMPARE_OP_ALWAYS;
+	depth.front.compareMask = 0x1ffU;
+	depth.front.writeMask = 0xffU;
+	depth.back = depth.front;
+	depth.back.passOp = VK_STENCIL_OP_DECREMENT_AND_WRAP;
+	depth.back.failOp = VK_STENCIL_OP_ZERO;
+	depth.back.reference = 0x3U;
+	info.pDepthStencilState = &depth;
+	error = bcm2711_vulkan_pipeline_build(session, device, &info, &pipeline);
+	assert(error == 0 && pipeline != NULL && pipeline->stencil && !pipeline->depth_test && pipeline->colour_skip == 0xfU);
+	assert(pipeline->stencil_front.passOp == VK_STENCIL_OP_INCREMENT_AND_WRAP && pipeline->stencil_front.compareMask == 0xffU);
+
+	/* Its native draw state: the stencil enable, the face packets in V3D codes and every channel masked. */
+	memset(&event, 0, sizeof(event));
+	event.pipeline = pipeline;
+	event.width = 16;
+	event.height = 8;
+	event.area.extent.width = 16;
+	event.area.extent.height = 8;
+	event.scissor.extent.width = 16;
+	event.scissor.extent.height = 8;
+	event.viewport[2] = 0x41800000U;
+	event.viewport[3] = 0x41000000U;
+	event.viewport[5] = 0x3f800000U;
+	memset(&draw, 0, sizeof(draw));
+	draw.shader = 0x100000U;
+	draw.attributes = 1;
+	draw.vertices = 3;
+	error = bcm2711_vulkan_native_bin_prepare(&event, &draw);
+	assert(error == 0 && draw.bin_bytes == BCM2711_NATIVE_BIN_BYTES);
+	config = draw.bin[61] | ((uint32_t)draw.bin[62] << 8) | ((uint32_t)draw.bin[63] << 16);
+	assert(draw.bin[60] == 96 && (config & (1U << 18)) != 0 && ((config >> 12) & 7U) == 7U && (config & (1U << 15)) == 0);
+	assert(draw.bin[64] == 87 && draw.bin[65] == 0xffU);
+	/*
+	 * Front: reference 0, compare mask 0xff, always (7), fail keep (V3D 1,
+	 * bit 19) and depth-fail keep (bit 22), pass increment-wrap (6, bits
+	 * 25-27), Front Config (bit 28), write mask 0xff.  Back: reference 3, fail
+	 * zero (0), pass decrement-wrap (7), Back Config (bit 29).
+	 */
+	assert(draw.bin[111] == 80 && draw.bin[112] == 0 && draw.bin[113] == 0xffU && draw.bin[114] == 0x4fU);
+	assert(draw.bin[115] == 0x1cU && draw.bin[116] == 0xffU);
+	assert(draw.bin[117] == 80 && draw.bin[118] == 3 && draw.bin[119] == 0xffU && draw.bin[120] == 0x47U);
+	assert(draw.bin[121] == 0x2eU && draw.bin[122] == 0xffU && draw.bin[123] == 36);
+	error = bcm2711_vulkan_pipeline_release(session, pipeline);
+	assert(error == 0);
+
+	/* The same pipeline through the actual client encoder and native decoder keeps the stencil state. */
+	begin(&writer, wire, sizeof(wire), GPU_OP_CREATE_GRAPHICS_PIPELINES, 1);
+	vulkan_write_u64(&writer, 30);
+	vulkan_write_u64(&writer, 0);
+	vulkan_write_u32(&writer, 1);
+	vulkan_write_u64(&writer, 1);
+	ws141_client_encode_graphics_depth(&writer, &info);
+	vulkan_write_u64(&writer, 0);
+	vulkan_write_u64(&writer, 1);
+	vulkan_write_u64(&writer, 157);
+	error = execute(session, &writer, &reader);
+	assert(error == 0 && vulkan_read_u32(&reader) == VK_SUCCESS);
+	published = bcm2711_vulkan_object_find(session, I915_VK_OBJ_PIPELINE, 157);
+	assert(published != NULL);
+	pipeline = published->payload;
+	assert(pipeline->stencil && pipeline->colour_skip == 0xfU && pipeline->stencil_back.reference == 0x3U);
+	assert(pipeline->stencil_back.failOp == VK_STENCIL_OP_ZERO && pipeline->stencil_back.passOp == VK_STENCIL_OP_DECREMENT_AND_WRAP);
+	destroy(session, GPU_OP_DESTROY_PIPELINE, 157);
+
+	/* A depth test that writes lowers to its function and the write; the colour is written whole. */
+	blend_attachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+	depth.stencilTestEnable = VK_FALSE;
+	depth.depthTestEnable = VK_TRUE;
+	depth.depthWriteEnable = VK_TRUE;
+	depth.depthCompareOp = VK_COMPARE_OP_LESS;
+	error = bcm2711_vulkan_pipeline_build(session, device, &info, &pipeline);
+	assert(error == 0 && pipeline->depth_test && pipeline->depth_write && !pipeline->stencil && pipeline->colour_skip == 0);
+	event.pipeline = pipeline;
+	error = bcm2711_vulkan_native_bin_prepare(&event, &draw);
+	assert(error == 0);
+	config = draw.bin[61] | ((uint32_t)draw.bin[62] << 8) | ((uint32_t)draw.bin[63] << 16);
+	assert((config & (1U << 18)) == 0 && ((config >> 12) & 7U) == 1U && (config & (1U << 15)) != 0);
+	assert(draw.bin[65] == 0xf0U);
+	error = bcm2711_vulkan_pipeline_release(session, pipeline);
+	assert(error == 0);
+
+	/* The colour pass's pipeline tests nothing even when it states a depth test, and depth bounds are refused. */
+	info.renderPass = (VkRenderPass)(uintptr_t)120;
+	error = bcm2711_vulkan_pipeline_build(session, device, &info, &pipeline);
+	assert(error == 0);
+	event.pipeline = pipeline;
+	error = bcm2711_vulkan_native_bin_prepare(&event, &draw);
+	assert(error == 0);
+	config = draw.bin[61] | ((uint32_t)draw.bin[62] << 8) | ((uint32_t)draw.bin[63] << 16);
+	assert(((config >> 12) & 7U) == 7U && (config & (1U << 15)) == 0);
+	error = bcm2711_vulkan_pipeline_release(session, pipeline);
+	assert(error == 0);
+	depth.depthBoundsTestEnable = VK_TRUE;
+	error = bcm2711_vulkan_pipeline_build(session, device, &info, &pipeline);
+	assert(error == ENOTSUP);
+
+	/* The framebuffer, pass, view and image retire, and the colour view keeps its own references. */
+	destroy(session, GPU_OP_DESTROY_FRAMEBUFFER, 156);
+	assert(view_object->references == references);
+	destroy(session, GPU_OP_DESTROY_RENDER_PASS, 154);
+	destroy(session, GPU_OP_DESTROY_IMAGE_VIEW, 152);
+	destroy(session, GPU_OP_DESTROY_IMAGE, 150);
+	puts("WS141 Vulkan depth/stencil formats/image/view/pass/framebuffer/begin clears/stencil and depth pipelines/native draw state: PASS");
+}
+
+/* Completes one creation command that the native decoders must refuse as a transport error. */
+static void
+depth_refused(
+	struct bcm2711_vulkan_session *session,
+	struct vulkan_writer *writer,
+	uint64_t identity)
+{
+	struct vulkan_reader reader;
+	int error;
+
+	/* The null allocator and output identity close the record as the client does. */
+	vulkan_write_u64(writer, 0);
+	vulkan_write_u64(writer, 1);
+	vulkan_write_u64(writer, identity);
+	error = execute(session, writer, &reader);
+	assert(error != 0);
+
+	/* Succeeded: the refusal is reported. */
+	return;
 }

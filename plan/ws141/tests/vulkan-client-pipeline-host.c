@@ -12,6 +12,8 @@
 #include "userland/desktop/libvulkan/sync.c"
 #include "userland/desktop/libvulkan/queue.c"
 
+static void encode_graphics(struct vulkan_writer *writer, const VkGraphicsPipelineCreateInfo *source, VkBool32 depth_stencil);
+
 /*
  * Refuses host transport because this wrapper exercises finite real client recording without a kernel device descriptor.
  */
@@ -391,6 +393,102 @@ ws141_client_encode_graphics(
 	struct vulkan_writer *writer,
 	const VkGraphicsPipelineCreateInfo *source)
 {
+	/* The single-colour subpass of the native fixture's colour passes. */
+	encode_graphics(writer, source, VK_FALSE);
+
+	/* Succeeded: the writer holds the record. */
+	return;
+}
+
+/*
+ * Encodes one actual client graphics record for a subpass with a depth/stencil attachment (ws141-p017).
+ */
+void
+ws141_client_encode_graphics_depth(
+	struct vulkan_writer *writer,
+	const VkGraphicsPipelineCreateInfo *source)
+{
+	/* The colour and depth/stencil subpass, so the client sends the depth/stencil state. */
+	encode_graphics(writer, source, VK_TRUE);
+
+	/* Succeeded: the writer holds the record. */
+	return;
+}
+
+/*
+ * Appends an actual public vkCmdBeginRenderPass record of a colour and depth/stencil pass (ws141-p017).
+ *
+ * The local pass metadata clears both attachments, so the real clear encoder
+ * sends the colour union and the depth/stencil branch with depth 0.5 and
+ * stencil 0x5a.
+ */
+void
+ws141_client_encode_depth_begin(
+	struct vulkan_writer *writer,
+	uint64_t command_id)
+{
+	struct vulkan_context context;
+	struct VkCommandBuffer_T command;
+	struct vulkan_render_pass pass;
+	struct vulkan_object framebuffer;
+	VkAttachmentDescription attachments[2];
+	VkRenderPassBeginInfo begin;
+	VkClearValue clears[2];
+
+	/* A recording primary and the local metadata of a cleared colour and D24S8 pass. */
+	memset(&context, 0, sizeof(context));
+	context.max_resource_bytes = 1024U * 1024U;
+	memset(&command, 0, sizeof(command));
+	command.object.context = &context;
+	command.object.wire_id = command_id;
+	command.state = VULKAN_COMMAND_RECORDING;
+	vulkan_writer_init(&command.recording);
+	memset(attachments, 0, sizeof(attachments));
+	attachments[0].format = VK_FORMAT_R8G8B8A8_UNORM;
+	attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	attachments[1].format = VK_FORMAT_D24_UNORM_S8_UINT;
+	attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	attachments[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	memset(&pass, 0, sizeof(pass));
+	pass.object.kind = VULKAN_OBJECT_RENDER_PASS;
+	pass.object.wire_id = 154;
+	pass.attachment_count = 2;
+	pass.attachments = attachments;
+	memset(&framebuffer, 0, sizeof(framebuffer));
+	framebuffer.wire_id = 156;
+
+	/* The colour's clear and the depth/stencil's, as an application gives them. */
+	memset(clears, 0, sizeof(clears));
+	clears[0].color.float32[3] = 1.0f;
+	clears[1].depthStencil.depth = 0.5f;
+	clears[1].depthStencil.stencil = 0x5aU;
+	memset(&begin, 0, sizeof(begin));
+	begin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+	begin.renderPass = (VkRenderPass)(uintptr_t)&pass;
+	begin.framebuffer = (VkFramebuffer)(uintptr_t)&framebuffer;
+	begin.renderArea.extent.width = 16;
+	begin.renderArea.extent.height = 8;
+	begin.clearValueCount = 2;
+	begin.pClearValues = clears;
+	vkCmdBeginRenderPass(&command, &begin, VK_SUBPASS_CONTENTS_INLINE);
+
+	/* The caller receives the complete recorded bytes. */
+	if (command.error != VK_SUCCESS)
+		writer->error = command.error;
+	vulkan_write_bytes(writer, command.recording.data, command.recording.bytes);
+	vulkan_writer_finish(&command.recording);
+
+	/* Succeeded: the record was copied before the local metadata retired. */
+	return;
+}
+
+/* Encodes one graphics record whose subpass has a colour attachment and, when depth is set, a depth/stencil one. */
+static void
+encode_graphics(
+	struct vulkan_writer *writer,
+	const VkGraphicsPipelineCreateInfo *source,
+	VkBool32 depth_stencil)
+{
 	struct VkDevice_T device;
 	struct vulkan_render_pass pass;
 	struct vulkan_object layout;
@@ -408,7 +506,7 @@ ws141_client_encode_graphics(
 	pass.object.wire_id = (uint64_t)(uintptr_t)source->renderPass;
 	pass.subpass_count = 1;
 	colour = VK_TRUE;
-	depth = VK_FALSE;
+	depth = depth_stencil;
 	pass.color = &colour;
 	pass.depth_stencil = &depth;
 	memset(&layout, 0, sizeof(layout));

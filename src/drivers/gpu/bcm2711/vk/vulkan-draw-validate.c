@@ -38,6 +38,15 @@ bcm2711_vulkan_draw_target(
 	if (error != 0)
 		return error;
 
+	/* A depth/stencil attachment's image is bound to current storage as well. */
+	if (framebuffer->depth != NULL) {
+		image_view = framebuffer->depth->payload;
+		image = image_view->owner.parent->payload;
+		error = bcm2711_vulkan_resource_backing(image, 0, image->bytes, &view, &address, &cpu);
+		if (error != 0)
+			return error;
+	}
+
 	/* Succeeded: even a pass containing no draw can own the exact complete attachment storage. */
 	return 0;
 }

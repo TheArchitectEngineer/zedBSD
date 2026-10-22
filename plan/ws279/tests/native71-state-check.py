@@ -153,7 +153,7 @@ def main():
             "Number of values read by Vertex shader": components - 1,
             "Stride": 2048, "Maximum Index": 0x12345678,
         })
-    if observed.keys() != expected.keys() | {"tiled", "raster", "bin"}:
+    if observed.keys() != expected.keys() | {"tiled", "raster", "bin", "bin-stencil"}:
         raise ValueError("missing or unexpected native images")
     for name, (structure, fields) in expected.items():
         encoded = structure_image(root, structure, fields)
@@ -196,13 +196,35 @@ def main():
         ("Blend Cfg", {"Render Target Mask": 1,
                        "Color blend dst factor": 7, "Color blend src factor": 1, "Color blend mode": 0,
                        "Alpha blend dst factor": 7, "Alpha blend src factor": 1, "Alpha blend mode": 0}),
+        ("Stencil Cfg", {"Front Config": 1}),
+        ("Stencil Cfg", {"Back Config": 1}),
         ("Vertex Array Prims", {"mode": 4, "Length": 9}),
     ])
     bin_image = b"".join(oracle["packet_image"](root, name, fields) for name, fields in packets)
     if observed["bin"] != bin_image:
         raise ValueError(f"bin differs from fixed XML: {bin_image.hex()} != {observed['bin'].hex()}")
+
+    # The same draw with depth, both faces' stencil and a colour mask (ws141-p017).
+    stencil = []
+    for name, fields in packets:
+        if name == "Cfg Bits":
+            fields = dict(fields, **{"Depth-Test Function": 3, "Z updates enable": 1, "Stencil enable": 1})
+        elif name == "Color Write Masks":
+            fields = {"Mask": 0xfff5}
+        elif name == "Stencil Cfg" and "Front Config" in fields:
+            fields = {"Front Config": 1, "Stencil Write Mask": 0xf0, "Stencil Pass Op": 6,
+                      "Depth Test Fail Op": 2, "Stencil Test Fail Op": 1, "Stencil Test Function": 7,
+                      "Stencil Test Mask": 0x0f, "Stencil Ref Value": 0x12}
+        elif name == "Stencil Cfg":
+            fields = {"Back Config": 1, "Stencil Write Mask": 0x80, "Stencil Pass Op": 7,
+                      "Depth Test Fail Op": 5, "Stencil Test Fail Op": 0, "Stencil Test Function": 5,
+                      "Stencil Test Mask": 0xff, "Stencil Ref Value": 0x34}
+        stencil.append((name, fields))
+    stencil_image = b"".join(oracle["packet_image"](root, name, fields) for name, fields in stencil)
+    if observed["bin-stencil"] != stencil_image:
+        raise ValueError(f"stencil bin differs from fixed XML: {stencil_image.hex()} != {observed['bin-stencil'].hex()}")
     decode_pixels(observed["tiled"], observed["raster"])
-    print("native71-state-check: PASS (9 full 7.1 records and complete draw BCL; 4847 pixels, zero UIF padding and unchanged raster)")
+    print("native71-state-check: PASS (9 full 7.1 records and complete draw BCL with and without depth/stencil; 4847 pixels, zero UIF padding and unchanged raster)")
 
 
 if __name__ == "__main__":

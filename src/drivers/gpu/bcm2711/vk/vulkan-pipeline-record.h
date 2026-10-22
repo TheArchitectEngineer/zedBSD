@@ -24,6 +24,7 @@ struct bcm2711_vulkan_pipeline_record {
 	VkPipelineRasterizationStateCreateInfo raster;
 	VkPipelineMultisampleStateCreateInfo samples;
 	VkSampleMask mask;
+	VkPipelineDepthStencilStateCreateInfo depth;
 	VkPipelineColorBlendStateCreateInfo blend;
 	VkPipelineColorBlendAttachmentState colour;
 	VkPipelineDynamicStateCreateInfo dynamic;

@@ -24,6 +24,8 @@ static int validate_entry(const struct bcm2711_vulkan_barrier_entry *entry, stru
 static int validate_family(const struct bcm2711_vulkan_barrier_entry *entry, const struct bcm2711_vulkan_resource *resource);
 static int validate_image(const struct bcm2711_vulkan_barrier_entry *entry, const struct bcm2711_vulkan_resource *resource);
 static int colour_layout(VkImageLayout layout, bool destination);
+static int validate_depth_image(const struct bcm2711_vulkan_barrier_entry *entry, const struct bcm2711_vulkan_resource *resource);
+static int depth_layout(VkImageLayout layout, bool destination);
 
 /*
  * Validates complete copied synchronization scopes and independently retainable resources without changing layout state.
@@ -155,6 +157,14 @@ validate_image(
 	uint32_t required;
 	int error;
 
+	/* A depth/stencil attachment image has its own aspects and layouts (ws141-p017). */
+	if (resource->format == VK_FORMAT_D24_UNORM_S8_UINT || resource->format == VK_FORMAT_X8_D24_UNORM_PACK32) {
+		error = validate_depth_image(entry, resource);
+		if (error != 0)
+			return error;
+		return 0;
+	}
+
 	/* One mip and one array layer have no depth/stencil or partial-subresource ownership transition. */
 	if (entry->range.aspectMask != VK_IMAGE_ASPECT_COLOR_BIT ||
 	    entry->range.baseMipLevel != 0 || entry->range.baseArrayLayer != 0)
@@ -240,5 +250,63 @@ colour_layout(
 	}
 
 	/* Succeeded: this source or destination describes one implemented colour image state. */
+	return 0;
+}
+
+/*
+ * Checks a depth/stencil image's transition: every aspect of its format at
+ * its only level and layer, between the layouts a depth/stencil pass uses.
+ */
+static int
+validate_depth_image(
+	const struct bcm2711_vulkan_barrier_entry *entry,
+	const struct bcm2711_vulkan_resource *resource)
+{
+	VkImageAspectFlags aspects;
+	int error;
+
+	/* A combined image moves with both aspects, a depth-only one with depth alone. */
+	aspects = VK_IMAGE_ASPECT_DEPTH_BIT;
+	if (resource->format == VK_FORMAT_D24_UNORM_S8_UINT)
+		aspects |= VK_IMAGE_ASPECT_STENCIL_BIT;
+	if (entry->range.aspectMask != aspects ||
+	    entry->range.baseMipLevel != 0 ||
+	    entry->range.baseArrayLayer != 0)
+		return ENOTSUP;
+	if (entry->range.levelCount != 1 && entry->range.levelCount != VK_REMAINING_MIP_LEVELS)
+		return EINVAL;
+	if (entry->range.layerCount != 1 && entry->range.layerCount != VK_REMAINING_ARRAY_LAYERS)
+		return EINVAL;
+
+	/* The source and destination layouts are the attachment's, the destination a defined one. */
+	error = depth_layout(entry->before, false);
+	if (error != 0)
+		return error;
+	error = depth_layout(entry->after, true);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the image's whole layout lifecycle is one the native pass tracks. */
+	return 0;
+}
+
+/* Refuses layouts a depth/stencil attachment image is never in, and undefined destinations. */
+static int
+depth_layout(
+	VkImageLayout layout,
+	bool destination)
+{
+	/* Undefined describes source state only. */
+	if (layout == VK_IMAGE_LAYOUT_UNDEFINED) {
+		if (destination)
+			return EINVAL;
+		return 0;
+	}
+
+	/* The attachment layout itself, or the general one. */
+	if (layout != VK_IMAGE_LAYOUT_GENERAL && layout != VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+		return ENOTSUP;
+
+	/* Succeeded: the layout is a depth/stencil attachment's. */
 	return 0;
 }
