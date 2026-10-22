@@ -60,3 +60,12 @@ Pi 5 の内蔵 WiFi（CYW43455、BCM2712 の 2 つ目の SD controller の sdio2
 - 対処（`rpi5-pinctrl.c`）: stepping を chip から決める。boot loader は boot flash の pin（GPIO 1〜4）を SPI の function に残すので、mux の word 0 で D0 は下位 16 bit = 0x6677、C0 は bit 4〜19 = 0x6567（Linux の pinctrl-bcm2712.c の C0・D0 の表から）。ちょうど一方だけ合えばそれ、どちらでもなければ tree の compatible。log `rpi5-pinctrl: <stepping> registers (the tree names …, register 0 is …)`。読み書きはその stepping の block の大きさ（C0 0x30・D0 0x20）の中だけ（write_field にも防御）。
 - host の確認（scratch の使い捨ての試験、tree に入れない）: UAT の register の値と C1 の tree で、D0 と判定し、GPIO 30〜35 が mux 1・pull CLK 0/他 2、block の外への access 0。C0 の値では C0 の表（mux 4/4/4/3/4/3、pad 0x24）。
 - 未実施: 実機（4 回目の試験）。
+
+## 5 回目の実機の結果と対処（2026-10-22 P3）
+
+- 実機（kernel 9d78dc950、ssh で dmesg を読んだ）: SDIO の bus が動き、firmware 7.45.241 が走り 20 channel を scan、その後 `bcm43455: chip reports the NVRAM's placeholder address` → `rpi5-wifi: onboard Wi-Fi not published (37)`。
+- 原因: Pi 4 では chip の OTP に基板の address があり、driver は `cur_etheraddr` でそれを読む（Pi 4 の側は何も渡さない）。Pi 5 の chip の OTP には address が無く、chip は NVRAM の `macaddr`（全基板共通の placeholder）を返す。Pi 5 では boot の firmware が device tree の Wi-Fi の node（`brcm,bcm4329-fmac`、alias `wifi0`、dts の `local-mac-address = [00 00 00 00 00 00]` を埋める）に address を入れ、Linux の brcmfmac は `of_get_mac_address` で読んで chip に `cur_etheraddr` を set する（bcm2712-rpi-5-b.dts・bcm2712-rpi.dtsi rpi-6.12.y を取得して確かめた。live の tree は zedBSD から読めない）。
+- 対処: bcm43455 に `bcm43455_device_set_address()`（probe の前に呼ぶ、0・multicast を拒む）を足し、start ごとの `read_identity()` が読む前に `cur_etheraddr` を set する（set されない Pi 4 は変わらない）。`rpi5-wifi.c` の `describe_address()` が Wi-Fi の node の `local-mac-address` を読み、0 なら Ethernet（`cdns,macb`）の `local-mac-address` の次（下位 3 octet + 1、Raspberry Pi の番号の振り方）を使う。どちらから取ったかを log に出す。
+- 確認（host）: rpi5 の image の build rc=0・warning 0・vmunix check PASS、rpi4 の kernel の build rc=0・warning 0・vmunix check PASS。
+- 未実施: 実機（6 回目）。見る所: `rpi5-wifi: address …:… from the tree's Wi-Fi node`（または `after the Ethernet's`）、`bcm43455: chip address` がその値、`published as wlan0`。
+- 注: `usb-hid-diag: usb0 device 1 interface 2 refused error=21 stage=parse item=0x0036` は keyboard の vendor の interface で、Pi 4 でも同じ。keyboard は動いており、変えていない。

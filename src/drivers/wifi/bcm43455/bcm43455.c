@@ -256,6 +256,42 @@ fail:
 }
 
 /*
+ * Keeps the board's address for every start to give the chip.
+ */
+int
+bcm43455_device_set_address(
+	struct bcm43455_device *device,
+	const uint8_t mac[6])
+{
+	unsigned i;
+	unsigned zero;
+
+	/* Refuses a missing device or address. */
+	if (device == NULL || mac == NULL)
+		return EINVAL;
+
+	/* An address of all zeros names no interface. */
+	zero = 1;
+	for (i = 0; i < 6U; i++) {
+		if (mac[i] != 0)
+			zero = 0;
+	}
+
+	/* Refuses an address of all zeros. */
+	if (zero)
+		return EINVAL;
+
+	/* Refuses a multicast address. */
+	if ((mac[0] & 0x01U) != 0)
+		return EINVAL;
+
+	/* Keeps the address; read_identity() gives it to the chip at every start. */
+	kern_memcpy(device->board_mac, mac, sizeof(device->board_mac));
+	device->has_board_mac = 1;
+	return 0;
+}
+
+/*
  * Brings the chip up once to learn its identity, then powers it down.
  */
 int
@@ -1166,7 +1202,19 @@ read_identity(
 	/* Fills the device's identity. */
 	identity = &device->identity;
 
-	/* The address from the chip's OTP. */
+	/*
+	 * Gives the chip the board's address, if the board has one: the chip
+	 * then reports it instead of its OTP's or the NVRAM's placeholder.
+	 */
+	if (device->has_board_mac) {
+		error = bcm43455_bus_iovar_set(&device->bus, "cur_etheraddr", device->board_mac, sizeof(device->board_mac));
+		if (error != 0) {
+			kern_logf("bcm43455: board address not set (%d)\n", error);
+			return error;
+		}
+	}
+
+	/* The address the chip uses: the board's, or its OTP's. */
 	answered = 0;
 	error = bcm43455_bus_iovar_get(&device->bus, "cur_etheraddr", identity->mac, sizeof(identity->mac), &answered);
 	if (error != 0) {
