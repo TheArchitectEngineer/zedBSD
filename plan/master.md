@@ -11,68 +11,56 @@
 -->
 
 <!-- master:agents:start -->
-- **2026-10-21 19:20 ラップアップ（ユーザー「お、ついにSDカードが死んだかも。いったんラップアップして、SDイメージをください。」）**: VF2 の SD が故障の疑い。新しい SD 用の image は build/review/vf2-sd/zedbsd-vf2-desktop-5c83c16e4.img（main 5c83c16e4、594 MHz・firmware の code cached・trace 0x401・draw の buffer の使い回し、host key 入り、sha256 eb39948b…）。
-- VF2 の速さ（ws270-p007）: main まで入った成果で desktop の部分 frame 約 5.8 ms・全画面 45〜59 ms（最初は 390 ms）。DDK（純正）との差は pixel の shader の実行（LINEAR でも flat 2.0 対 4.3 ms、texture 2.5 対 8.5 ms）。P1 は止まった（ユーザーの操作）: agent/p1-q1541 の未 merge は 3c47dfc27（vkmatrix の LINEAR の case）・c90be335c（push・descriptor を PDS の DOUTW で直に、板で未確認）・7433f6481。次は c90be335c を新しい SD の板で試す。
-- Pi 5（WS278）: P3 の新しい generation が q1543-i02 で p004（RP1 の USB、未追跡の rp1.c から）を続けている（ユーザー「Pi5の作業は続けていいです」）。GPU（WS279）は D1〜D4 推しで決定、P2 が q1545 で p004（QPU 7.1 の compiler、host）。WS280（H.264 の software decoder）は planning。
-- push はしていない。
+- **2026-10-23 整理（ユーザー「作業内容が大きく変わってきたので、master.mdを整理しておいてください。」「OSCデモは完了したので、それも整理ですね」）**: OSC（2026-10-17）のデモとベータ2 は完了。今の主線は ZYBO（WS286）。
+- **ZYBO（[WS286](ws286/ws.md)、fg021）**: 設計 版 2 は main、Opus の review（plan/ws286/phase001/review-20261023.md: Critical 2・High 5、virt の memory map と ELF の DTB・initrd の受け渡し）を受けた版 3 が要る。p002（JTAG の道具・U-Boot SPL・板の probe）を P1 が実行中（agent/p1-zybo-p002）。Fable は使わない（ユーザー）。
+- **Pi 5（[WS278](ws278/ws.md)・[WS279](ws279/ws.md)）**: LAN・USB・Wi-Fi（WPA2 の接続まで）・fan・GPU（V3D 7.1、HVS6、Keiland の desktop、Vulkan の描画・stencil）が実機で動作。BT は無効、BUG-345（click が画面に出ない窓、未再現）を追跡。
+- **設計だけで止めた物（実装は後日、ユーザー）**: camera・compute・YOLO（[WS282](ws282/ws.md) 版 3・[WS283](ws283/ws.md) 版 2・[WS284](ws284/ws.md) 版 2・[WS285](ws285/ws.md)）。
+- **VF2（ws270-p007）**: 速さの作業は 2026-10-22 に終了（ラップアップ済み）。SwitchBot の plug AC276E42B252 は ZYBO 用に付け替える予定（今は ZYBO は USB 給電で未接続、VF2 の遠隔の電源の操作はしない）。
+- push: origin/main は 3f7fb3742。それ以降の commit は未 push（push はユーザーの指示の時だけ）。
 <!-- master:agents:end -->
 
 ### 統合と試験の待ち
 
 <!-- master:merge:start -->
-- 全担当の成果は main に merge 済み（2026-10-15 15:50 に全 worktree を確かめた、未 merge の commit なし。ユーザー「よほどのことがないかぎりすべてをmainに入れてください。」）。
-- Pi の Bluetooth: 8e8d69ae2 で config/ci/config-rpi4.mk の CONFIG_DRIVER_BCM2711_BT・CONFIG_DRIVER_USB_BT を n（ユーザー「Pi4はBluetoothドライバのカーネルモードエラーでうまく動作しない…一度Bluetoothをmainから外してください」）。その後 ae3bb07c4（10-15 14:10、Q1 以外の commit）で CONFIG_DRIVER_USB_BT を y に戻した。ユーザーの意図した変更として扱う（2026-10-15 ユーザーの承認、Q1 の提案どおり）。
-- 既定: nvrtx は on（config/ci/config-amd64.mk・config/drivers/pci.drivers が y。repo の config.mk は n で、これもユーザーの意図として扱う）、Pi の VCHIQ・VIDEO は on（config/ci/config-rpi4.mk）、Gen9 の display は常に全部を駆動（WS260 で xd9 に書き直し、起動の語 i915.gen9.display= は 2026-10-18 に廃止）。
+- 全担当の成果は main に merge 済み（2026-10-23 時点、走っている担当は P1 の WS286 p002 だけ）。
+- 既定の config の注意: Pi の BT は config-rpi4.mk・config-rpi5.mk で n（ユーザー）、Pi 5 の GPU（CONFIG_DRIVER_BCM2712_GPU）は CI では n、fan（CONFIG_DRIVER_RPI5_FAN）は y、CI の VF2 は CONFIG_POWERVR_DEBUG n。
+- firmware は全部 zedBSD-firmware（rev e13c96f）から取る（VF2 の dtb、Pi 5 の起動の dtb、NVIDIA の GSP を含む）。vendor/raspberrypi-firmware の submodule は削除済み（plan/tools/rpi4-dtb.sh が shallow clone の予備）。
 <!-- master:merge:end -->
 
 ### Q1 の次の手順
 
 <!-- master:next:start -->
-- **2026-10-15 の訂正**: WS245 の p002〜p005（adl の骨組み・EDID・VBT・opregion）の cleared の記録と D1〜D6 は、Q1 が実在しない commit を merge できたと誤って書いた物で、485ad5be6 で取り消した。本物は p001 の design.md（6bccaef57、レビュー未完）だけ。報告の page は誤りを含むのでユーザーの指示で削除した。
-0. **まず [plan/agents/handover-20261021.md](agents/handover-20261021.md) を読む**（その前の [handover-20261015b.md](agents/handover-20261015b.md) は古い）（この session の異常と点検、未完の担当、ユーザーの判断待ち、残っている仕事）。
-1. 新しい Q1 は AGENTS.md・この block・plan/beta2.md の先頭（「ユーザーが今できる試験」）を読む。**ユーザーへは日本語で、聞かれた 1 件だけを答える。ユーザーに試験を頼まない（試験の一覧を示す）。**
-2. **merge・試験の出力は必ず読んで確かめてから記録・報告する**（merge_one の後に `git log -1 --format='%h %p'`、担当の SHA は `git cat-file -t`。memory の verify-merge-before-reporting）。
-3. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-346、q1554、WS288、KL_VERSION 96（95 は ws270-p007 の kl_window_set_opaque）（q1537 は P1 の Keiland の overdraw、2026-10-21。q1536 は P2 の shader の重さ、2026-10-21。q1535 は P1 の GPU の実行時間、2026-10-21。非同期の submit と DM overlap は on で安定（d35）。q1533 は P1 の lockup の後片付けと非同期の試し直し、q1534 は P2 の transfer の速さ、2026-10-21。d34 で 3D の lockup が直った（HWRT の half の交互）。q1532 は P2 の lockup の firmware 側の情報、2026-10-21。q1531 は P2 の VF2 の SD の read の失敗（BUG-343）、2026-10-21。q1530 は P1 の desktop の 3D の lockup、2026-10-21。d22 で DC8200 の zero copy が動いた。q1528 は P1 の非同期の submit（D-P4 の変更）、q1529 は P2 の DC8200 の zero copy と cursor plane、2026-10-21。q1527 は P1 の VF2 の desktop の速さ、2026-10-21。desktop の 10 回目で Settings・Terminal の window が出た。q1526 は P1 の framebuffer の copy のノイズ（ユーザーの観察）、2026-10-21。q1525 は P1 の linear の描画と DC8200 への直接の scanout（ユーザーの指示）、2026-10-21。q1523 は P2 の VF2 の client の swapchain、q1524 は P1 の desktop の submit の遅さ、2026-10-21。板で Keiland の desktop が表示された（overlay.sh）。q1522 は P1 の WS269 p012 の 2 回目、2026-10-21。q1521 は P1 の WS269 p016 の docs、2026-10-21。q1520 は P2 の 64・128 bit の texel の板の不一致、2026-10-21。q1519 は P1 の WS269 p015 の reset からの回復の試験、2026-10-21。q1517 は P1 の WS270 p006a 2b（VF2 で Keiland）、q1518 は P2 の WS269 p010p・p011 の残り、2026-10-21。q1516 は P1 の ws.md への知見と制約の記録（ユーザー依頼）、2026-10-21。板 96: vkmatrix 15/15・gpu-selftest 13/13。高性能モデルの 3 件（compiler の制約・graphics の行列・cache の整合）は完了。板 96: compiler の整理後も 13/13、vkcoherency PASS、vkmatrix 10/13。高性能モデルで「compiler の制約の再検証 → graphics の行列 → cache の整合」を済ませてから下位モデルへ戻す（ユーザー 2026-10-21「了解です。続けて下さい。」）。板 89 で gpu-selftest 13/13、板 91 で fence kernel も通る、手書き kernel の退行は fence の除去（板 69）。板 84/85 で compute の根本原因は instance の register の重なり（slot の instance 数）。板 81 で gpu-selftest 11 ok（draw・sample・depth・present-clear）。q1453 は P1 の device lost の理由、2026-10-20。q1452 は P2 の temps の field の式、2026-10-20。q1450 は P1 の TA の set と static state、q1451 は P2 の 4 step の store、2026-10-20。q1448 は P2 の temps の単位、q1449 は P1 の TA の PC set、2026-10-20。q1446 は P2 の program のそろえ直し、q1447 は P1 の PC set の切り分け、2026-10-20。q1445 は P1 の TA の register set、2026-10-20。q1443 は P1 の TA の trace、q1444 は P2 の in place の add64、2026-10-20。q1442 は P1 の TA の trace の読み、2026-10-20。q1440 は P1 の TA の trace の group、q1441 は P2 の encoder の register の field、2026-10-20。q1438 は P2 の compute の fault の場所、2026-10-20。q1437 は P2 の compute の step の進み、2026-10-20。q1436 は P1 の need_zeroing と VDM sync、2026-10-20。q1434 は P1 の VDM の terminate、q1435 は P2 の IMADD32 の address、2026-10-20。q1433 は P1 の render context の照合、2026-10-20。q1432 は P2 の compute の address の probe、2026-10-20。q1430 は P2 の compute の store、q1431 は P1 の HWRT の照合、2026-10-20。q1429 は P1 の geometry の lockup の直し、2026-10-20。q1427 は P1 の TA の lockup、q1428 は P2 の compute の部分の書き込み、2026-10-20。q1426 は Q1 の VF2 の GPU の電源の直し（PMU の mask・POW_RASCALDUST）、BUG-343 は VF2 の SD の root の mount の失敗、2026-10-20。q1425 は P1 の共同体の VF2 の GPU の stack との照合、2026-10-20。q1424 は P1 の XE の register の配置、2026-10-20。q1423 は P1 の PMU の mask と register の地図、2026-10-20。q1422 は P1 の 64 bit の register の書き込み、2026-10-20。q1421 は P1 の効かない register の領域、2026-10-20。q1420 は P1 の FW の register の書き込みの確かめ、2026-10-20。q1419 は P1 の FW の register の書き込みの調べ、2026-10-20。q1418 は P1 の BXE の register の offset、2026-10-20。q1417 は P1 の GPU の MMU の walk の調べ、2026-10-20。q1416 は P1 の compute の lockup の trace の読み、2026-10-20。q1415 は P1 の compute の lockup の trace と context の照合、2026-10-20。q1414 は P1 の reset を起こす kick の特定、2026-10-20。q1413 は P1 の compute の context の直し、2026-10-20。q1412 は P1 の compute の lockup の切り分け、2026-10-20。q1411 は P1 の compute の reset lockup、2026-10-20。q1410 は P1 の os init の offset、2026-10-20。q1409 は P1 の return slot の写像・TA の lockup、2026-10-20。q1407 は P1 の health check の workaround（6c920790f）、q1408 は P1 の GPU の書き込みの coherency、2026-10-20。q1406 は P1 の health check の timeout の調べ、2026-10-20。q1405 は P1 の firmware の起動の段の行、2026-10-20。q1404 は P2 の gpu-selftest の attach の待ち、2026-10-20。q1402・q1403 は P1・P2 の WS269 の wire の相互点検、2026-10-20。q1400 は P2 の R8G8B8A8 vertex と sRGB の clear、q1401 は P1 の vertex の DMA と blit の行、2026-10-20。q1399 は P2 の WS269 P1 の file の使い方の点検、2026-10-20。q1397 は P2 の keiland の期待の直しと p012 の後半、q1398 は P1 の vkstage・vkdemo の frame の host 試験、2026-10-20。q1396 は P1 の WS269 p012 の前半、2026-10-20。q1395 は P1 の WS269 実機の前の coherency・MMU の点検、2026-10-20。q1394 は P2 の WS269 p011 の後半、Keiland の frame の host 試験、2026-10-20。q1393 は P1 の WS269 present の判定と p010l の後半、2026-10-20。q1392 は P2 の WS269 p011 の前半、2026-10-20。q1391 は P1 の WS269 M9・job check・p010k2 の準備、2026-10-20。q1390 は P2 の WS269 p010l の前半、2026-10-20。q1389 は P2 の WS269 format の広げ、2026-10-20。q1388 は P1 の WS269 CDM の cswitch・render-job の host 試験・present の段、2026-10-20。q1387 は P2 の WS269 p010j の前半、2026-10-20。q1385 は P1 の WS269 p010i の後半と p010o の組み込み、q1386 は P2 の vk-pass の警告と p010k1、2026-10-20。q1383 は P1 の WS269 p010g・p010f の後半、q1384 は P2 の WS269 p010i の前半、2026-10-20。q1382 は P2 の WS269 p010g の前半、2026-10-20。q1380 は P1 の p010n の merge と p010e の後半、q1381 は P2 の design §6 の注記・attachment の load・p010o の前半、2026-10-20。q1379 は P2 の WS269 p010f の前半、2026-10-20。q1378 は P2 の WS269 p010e の前半、2026-10-20。q1377 は P1 の WS269 p010n の残り、2026-10-20。q1376 は P2 の gpu-selftest の試験 program、2026-10-20。q1375 は P1 の WS269 p010n、2026-10-20。q1374 は P2 の WS269 p010h、2026-10-20。q1373 は P1 の WS269 p010d、2026-10-20。q1372 は P2 の WS269 p014 の続き、2026-10-20。q1371 は P2 の WS269 p014、2026-10-20。q1370 は P1 の design-p010 版 2.1、2026-10-20。q1369 は P2 の p008 の movs1 と p013・p014 の記録、2026-10-20。q1368 は P1 の WS269 p010c、2026-10-20。q1367 は P1 の WS269 design-p010 の版 2、2026-10-20。q1366 は P1 の WS269 p010b の残り、2026-10-20。q1365 は P1 の WS269 p010b、2026-10-20。q1362 は P1 の WS269 p010 の設計の追補と graphics、q1363 は P2 の WS269 の SPIR-V の compiler、q1364 は P1 の WS269 p010a、2026-10-20。q1361 は P1 の BUG-339、2026-10-20。q1360 は P1 の BUG-341、2026-10-20。q1358 は P2 の BUG-340、q1359 は P1 の dc8200 の PD の読み、2026-10-20。q1357 は P2 の vkcompute、2026-10-20。q1356 は P1 の attaching と sessiond の gpu1 の待ち、2026-10-20。q1355 は P1 の WS270 p004 の準備、2026-10-20。q1354 は P1 の WS277 の R1b、2026-10-20。q1353 は P1 の WS277 p005、2026-10-20。q1351 は P1 の WS277 p003、q1352 は P2 の WS269 p009、2026-10-20。q1350 は P1 の WS277 の R1・R2・R4、2026-10-20。q1348 は P1 の WS277 p002、q1349 は P2 の WS269 p008 の後半、2026-10-20。q1347 は P1 の WS277 p001 の改訂 3.1、2026-10-20。q1346 は P1 の WS277 p001 の改訂 3、2026-10-20。q1345 は P2 の WS269 p008 の前半、2026-10-20。q1344 は P2 の WS277 の依頼 R3・R5（WS269 p006）、2026-10-20。q1343 は P1 の WS277 p001 の改訂 2、2026-10-20。q1342 は P2 の WS270 p003、2026-10-20。WS277 は VF2 の DC8200 の display driver、q1341 は P1 の WS277 p001、2026-10-20。q1340 は P2 の WS269 p007 の後半、2026-10-19。q1339 は P1 の WS270 p001 の改訂 2.1、2026-10-19。q1338 は P1 の WS270 p001 の改訂 2、2026-10-19。q1337 は P2 の WS269 p006、2026-10-19。q1336 は P1 の WS270 の build の直し、2026-10-19。q1335 は P1 の WS270 p001 の設計、2026-10-19。q1334 は P1 の WS269 p007 の試験の program、2026-10-19。q1333 は P1 の WS269 p007 の前半、2026-10-19。q1332 は P2 の WS269 p005 の前半、2026-10-19。q1331 は P1 の MIPS の判定の行の `?`、2026-10-19。q1330 は P2 の WS269 p004、2026-10-19。q1328 は P2 の WS269 p003、q1329 は P1 の WS273 p003、2026-10-19。q1327 は P1 の WS273 p002、2026-10-19。q1326 は P2 の ps の直しと WS269 p002、2026-10-19。q1324 は P2 の WS269 p001 の改訂 3.1、q1325 は P1 の WS275 p006 の X の FAIL の解析、2026-10-19。q1323 は P2 の WS273 p001 の改訂 2.1、2026-10-19。q1322 は P1 の WS275 p004 の cursor の残り、2026-10-19。q1321 は P2 の WS269 p001 の改訂 3、2026-10-19。q1320 は P1 の WS273 p001 の改訂 2、2026-10-19。q1319 は P2 の WS269 p001 の改訂 2、2026-10-19。q1318 は P1 の WS275 p005、2026-10-19。q1317 は P2 の WS273 p001 の設計、2026-10-19。q1316 は P2 の WS269 p001 の設計、2026-10-19。q1312 は P1 の WS275 p003、q1313 は P2 の elf.c の machine、q1314 は P1 の WS275 p004、q1315 は P2 の pc98 の y の位相、2026-10-19。q1311 は P1 の WS275 改訂 3.1 と p002、2026-10-19。q1310 は P2 の WS256 p006 の後半、2026-10-19。q1309 は P1 の WS275 p001 の改訂 3、2026-10-19。q1308 は P1 の WS275 p001 の改訂 2、2026-10-19。q1307 は P2 の WS256 の規約の見直しの前半、2026-10-19。q1306 は P1 の WS274 p008、2026-10-19。q1305 は P1 の WS274 p007、2026-10-19。WS276 は m68k の静的な TLS、q1304 は P2 の WS276 p001、2026-10-19。q1303 は P1 の WS275 p001、2026-10-19。WS275 は sun4u の /dev/graphics と Xzed、2026-10-19。q1302 は P1 の WS274 p006、2026-10-19。q1301 は P2 の x68k の root と p015 の D、2026-10-19。q1300 は P1 の WS274 S5、2026-10-19。q1299 は P1 の WS274 S4、2026-10-19。q1297 は P1 の WS274 S3、q1298 は P2 の WS274 S6、2026-10-19。q1296 は P1 の WS274 S0〜S2、2026-10-19。q1295 は P2 の net UP と WS256 p015、2026-10-19。q1294 は P1 の WS256 p023、2026-10-19。q1293 は P1 の WS256 p019、2026-10-19。q1292 は P2 の WS256 p018、2026-10-19。q1291 は P1 の WS256 p020、2026-10-19。q1290 は P1 の MIPS の規約の見直し、2026-10-19。q1289 は P1 の WS272 p003 の FAIL の解析、2026-10-19。q1288 は P2 の WS256 p014、2026-10-19。q1287 は P1 の WS272 p003、2026-10-19。q1286 は P1 の WS272 p002、2026-10-19。q1285 は P2 の WS256 p013、2026-10-19。WS274 は VM の src/kern/vm/ への分割、2026-10-19。q1283 は P1 の WS271 p004、q1284 は P2 の WS256 p011 (2)、2026-10-19。q1282 は P2 の WS256 p011 (1)、2026-10-19。q1281 は P1 の WS271 p003、2026-10-19。q1280 は P1 の BUG-336、2026-10-19。q1279 は P1 の WS271 p002、2026-10-19。q1278 は P2 の WS256 p012 改訂 4・p021・p025、2026-10-19。q1277 は P1 の WS271 p001 の改訂 2、2026-10-19。q1276 は P1 の WS272 p001、2026-10-19。q1275 は P2 の WS256 design.md の直し、2026-10-19。q1274 は P1 の WS256 p017 の NVMe の I/O の確かめ、2026-10-19。q1273 は P1 の WS271 p001 の設計、2026-10-19。WS271〜WS273 は MIPS32・MIPS64 の malta と RG350、2026-10-19。q1272 は P2 の WS256 p012 の改訂 3、2026-10-19。q1271 は P1 の WS256 p016→p017 の virt、2026-10-19。q1269 は P2 の WS256 p008→p007→p004、q1270 は P1 の WS256 p012、2026-10-19。WS269 は VF2 の PowerVR、WS270 は VF2 の Keiland、2026-10-19。q1268 は P2 の firmware の license の登録、2026-10-19。q1267 は P2 の WS259 の license の package の削除、2026-10-19。q1266 は P2 の bootloader/README.md の追補、2026-10-19。q1265 は P1 の WS252 p001 の版 3.1、2026-10-19。q1264 は P1 の WS252 p001 の改訂 3、2026-10-19。q1263 は P1 の WS252 p001 の改訂 2、2026-10-19。q1262 は P1 の WS252 の設計、2026-10-19。q1261 は P2 の WS245 p046 の残りと WS252 の設計、2026-10-19。q1260 は P1 の WS244・WS251・WS252、2026-10-19。q1259 は P2 の WS244・WS245・WS248・WS249・WS251 p002・WS252、2026-10-19。q1257 は P1 の WS263〜WS266、q1258 は P2 の WS267・WS268・WS259、2026-10-18 夜。WS267 は sun4u、WS268 は x68k の build、2026-10-18。WS263〜WS266 は riscv32・ppc32・ppc64・m68k の QEMU の移植、2026-10-18。WS262 は boot loader の規約、q1255 は P3 の WS261 p002、q1256 は P2 の WS262、2026-10-18 夜。WS261 は boot.h の固有の構造体の削除、q1254 は P3、2026-10-18 夜。q1253 は P1 の WS260 p002〜、2026-10-18 夜。q1252 は P1 の WS260 p001、2026-10-18 夜。WS260 は Gen9 の display の書き直し、2026-10-18。WS259 は RTL8822B の表、q1251 は P1 の WS258 の照合と WS244 p002〜、2026-10-18 夜。q1250 は P1 の WS244 の再開、2026-10-18 夜。q1249 は P2 の WS256 p009・p003、2026-10-18 夜。WS258 は全ドライバの出典の監査、q1248 は P1、2026-10-18。q1246・q1247 は P1、2026-10-18 夕。q1243 は P2 の WS256 p001、q1244・q1245 は P1。WS257 は Haswell・Broadwell の i915、2026-10-18。q1241・q1242 は P1 の WS245・WS251、2026-10-18。WS256 は VisionFive 2 に予約）。（q1240 は P1 の WS251 p002 GPU ドライバ。q1239 は Q1 の BUG-315 MS OS 1.0 列挙時 probe。q1238 は P2 の BUG-333 Pi 4 の touch。q1236 は P6 の WS245 p040・p044・p045、q1237 は P7 の WS039 p016。q1235 は P5 の WS039 p019 描画の速さ。q1233 は P5 の WS039 p007、q1234 は P3 の WS039 p013〜p016。BUG-331 は RDNA 機のフリーズ。q1232 は P4 の BUG-330 console のスクロール。q1231 は P3 の WS039 p017。q1230 は P3 の WS039 p012 の実機。q1229 は P1 の WS245 p022〜。q1228 は P1 の WS245 p020。q1226 は P4 の WS254 p001、q1227 は P4 の WS255 p001。q1225 は P1 の WS245 p019。q1224 は P1 の WS245 p053。q1223 は P1 の WS245 p018。q1222 は P3 の WS039 p009 desktop。q1221 は WS253 p001 の起動の時間。q1220 は P3 の WS039 p006。q1219 は P5 の WS039 p008。q1218 は P1 の WS245 の実装の再開。q1217 は P4 の WS039 p012 の code。q1216 は P3 の WS039 p011。q1215 は P3 の WS039 p005。q1214 は P5 の WS039 compiler・executor。q1213 は P3 の WS039 p004。q1212 は P3 の WS039 p003。q1211 は P3 の WS039 p002。q1209 は P1 の WS245 改訂 4、q1210 は P3 の WS039 改訂 2。q1208 は P3 の ws039-p001 の改訂 2。q1207 は P1 の ws245-p004 → p006。q1206 は P4 の ws250-p001。q1205 は P2 の WS249 の予約。q1204 は P1 の ws245-p002 の実装。q1203 は P5 の ws039-p007 compiler の再開。q1202 は P3 の ws039-p001 の再開。q1201 は P2 の WS248 AX211 の整理。q1200 は P1 の ws245-p001 改訂 3。q1000〜q1199 は WS074 の lane が使った。2026-10-15 ユーザーの承認）、T1-757（T1-742 は WS256 p006 の前半の riscv64 の回帰。T1-741 は WS274 p008 と WS276 の起動の回帰。T1-740 は WS274 p007 の全 platform の起動の回帰。T1-739 は WS256 p015 の D のやり直しと x68k の build。T1-738 は WS274 p006 の起動の回帰。T1-737 は WS274 S3〜S6 の起動の回帰と x68k の build。T1-736 は WS274 p001 の起動の回帰。T1-735 は WS256 p015 と net UP の直しと Makefile の回帰。T1-734 は MIPS の規約の見直しの回帰。T1-733 は WS272 p003 の再試験。T1-732 は WS272 p003 の MIPS64 の VFS の段と MIPS32 の回帰。T1-731 は WS272 p002 の MIPS64 malta の画面と MIPS32 の回帰。T1-730 は WS271 p004 の MIPS32 の TLB・space と VFS の段。T1-729 は WS256 p011 (2) の riscv64 virt・uboot の回帰と bochs-display の GOP の道。T1-728 は WS271 p003 の MIPS32 の例外・timer と WS256 p011 (1) の loader の回帰。T1-727 は WS256 p021 の PCI core の INTx の hook の回帰。T1-726 は BUG-336 の amd64・pcat・m68k-virt の起動の回帰。T1-725 は WS271 p002 の MIPS32 malta の画面。T1-724 は WS256 p017 の NVMe の INTx の I/O のやり直し。T1-723 は WS256 p016・p017 の virt の PCIe・USB・NVMe。T1-722 は WS256 p004 の riscv64 の UEFI loader と amd64 の回帰。T1-721 は WS256 p007 の riscv64 の userland と amd64 の回帰。T1-720 は WS256 p008 の riscv64 virt と amd64 の回帰。T1-719 は WS245 p050d4d の QEMU の起動。T1-718 は sun4u の login の BOOT_THEN のやり直し。T1-717 は WS267 の sun4u と amd64・新 port の回帰。T1-716 は WS263〜266 の p003 の回帰。T1-715 は WS265 の ppc64。T1-714 は WS264 の ppc32。T1-713 は WS266 の m68k の virt。T1-712 は WS262 の boot loader の起動。T1-711 は WS263 の riscv32。T1-710 は WS260 の SV7・5330 の実機。T1-709 は WS261 の Pi 4・PC-98・amd64 の起動。T1-708 は WS256 の riscv64 の再試験。T1-707 は WS256 の riscv64 の QEMU、2026-10-18。T1-706 は WS039 p017 の 2 段目の QEMU の起動。T1-705 は BUG-327 の 5330 の USB の計測、pending。T1-704 は WS245 p019 の 5330 の回帰。T1-703 は WS253 の 5330 の起動の時間の測定。T1-702 は WS245 p053 の 5330 の回帰。T1-701 は今の main の 5330 の display の回帰、T1-700 は WS248 の AX211 の association、T1-699 は WS245 p002 の QEMU の起動、T2。T1-698 は WS248 の AX211 の試験）。次の KL_VERSION は 95。
-4. 日付（2026-10-15 ユーザー「host の時計は 2026-10-15（木）です。10-16は明らかにおかしいです。」）: 10-15 04:36 以降の記録が 1 日進んだ 2026-10-16 と書かれていたので、出来事の日付を 2026-10-15 に直した（予定の 7 行は 10-16 のまま）。日付は host の時計（`date`）で書く。 記録の整合を保つ手順は [record-integrity.md](record-integrity.md)（AGENTS.md の「記録の整合」）。LW は 1 LW ≈ 実時間 15〜25 分（2026-10-14 の較正、10-15 に正と承認）。
+1. 新しい Q1 は AGENTS.md・この block を読む。**ユーザーへは日本語で、聞かれた 1 件だけを答える。ユーザーに試験を頼まない。**
+2. **merge・試験の出力は必ず読んで確かめてから記録・報告する**（merge の後に `git log -1 --format='%h %p'`、担当の SHA は `git cat-file -t`）。担当の branch に捨てた変更が残っていないか（例: 2026-10-22 の P2 の buffer の使い回し）を diff の file の一覧で確かめ、必要なら cherry-pick。
+3. 次の番号: BUG-346、q1554、WS288、KL_VERSION 96。古い q・T1 の番号の経緯は git の履歴（2026-10-23 以前の master.md）。
+4. WS286 の次: (a) review に沿った design 版 3（HAL の物理の base を BSP ごとに、virt は raw の vmunix.bin で r2・initrd・/chosen、QEMU と実機の判別は PSS_IDCODE、shadow の page table、ACTLR.SMP と SCU、rtld と libc の armv7、KERN_USER_ABI_ARMV7、__aeabi_*、devcfg の手順の直し、VFP の lazy の後始末、errata）。(b) LLVM の ARM の target と zedbsd11（Q1 の toolchain の変更、cache の asset の upload はユーザーの確認の後）。(c) openXC7 の導入はユーザー（p003 の前）。(d) U8: SMP・L2・SD・LAN・SD 起動の後の WS を作る。
+5. 日付は host の `date`。記録の整合は [record-integrity.md](record-integrity.md)。1 LW ≈ 実時間 15〜25 分。
 <!-- master:next:end -->
 
 ### ユーザーの未決の判断
 
 <!-- master:open-decisions:start -->
-- （解決 2026-10-15 ユーザー、クリック）WS247 の 2 点: (1) path の省略は「省略を認める」、(2) sm75.c の出典はユーザーの 8c8b74671（CUDA → SASS）で「解決（今のまま）」→ WS247 completed。WS245 の design.md §7 の判断 #0〜#10 は改訂 3 の後にまとめて聞く。
-- （解決 2026-10-15 ユーザー）nvrtx の sm75-schedule.c の Collabora の著作権表示:「削除してOKです。削除済みと思います。」→ 178e969d0 で削除済み（今は compiler/sm75.c、nvrtx に Collabora・Red Hat の語なし）。
-- （解決 2026-10-15 ユーザー）WS242: 「GTX 16・RTX 30・40 はデフォルトで有効にします。」→ 記録のみ、実装は WS247 の後（[WS242](ws242/ws.md)）。
-- （解決 2026-10-15 ユーザー「再起動の時にGSPを、止めます」）WS037: reboot・shutdown の時に P7（GSP の unload）を流し、GPU の hub の状態を次の boot に持ち越さない。P2 が実装。
-- （解決 2026-10-15 ユーザー: 1080p・60 fps は要件から外し、720p30 がゴール。A3・A1 は revert、ws236-p012 canceled） WS236 Pi の 60 fps（2026-10-15 P3 の切り分け、phase011）: 窓の中の 60 fps は GPU の仕事（compositor の合成の pass＋窓の TFU＋videoplayer の pass、executor 72〜90% busy）で律速、videoplayer だけでは届かない。案 (A) compositor の合成を短く（不透明の窓の下の層を描かない、WS141 p013・WS211）、(B) WS214 p005 で再生中の窓を HVS の plane に、(C) 60 fps は全画面（game mode、HVS の直の scanout）だけを目標に。P3 は (C) を先に試す。先読み 3→2 の妥協（30p の late が増えたら戻す）。 追記（2026-10-15 P3）: (C) の game mode は 2026-10-13 のユーザーの決定（WS223「Video Playerは、Game Modeをやめます…全画面ではコンポジターを利用しましょう」）と衝突するので実装しない。60 fps には (A) compositor の合成を軽く／(B) HVS の plane（WS214）／WS223 の決定を見直す、のどれかの判断が要る。 P3 の提案: WS223 p002（game mode の条件を game の content だけに）が入れば、Video Player の全画面の無駄な swapchain の閉じ開き（約 60 ms）も消える。 P3 の見積もり（phase011）: 表示は compositor の frame で律速（窓の 1080p60 で 23.6 fps、frame_ms 25 ms、V3D の executor 86〜91%、表示 1 frame に約 37 ms）。60 fps には 16 ms 未満が要る。候補 A1（出力と同じ大きさの不透明な全画面の窓は TFU と quad をやめ 1 回の写し）、A2（compositor の frame を 2 つ重ねる）、B（WS214 p005 の HVS の plane）、V1（要調べ: TMU が raster を読めれば Y・UV の TFU 2 回を省ける）。 2026-10-15 Q1 の判断（委任の範囲、ユーザーは就寝中）: A3＝libvulkan の WSI で bcm2711（optimal＝linear）の時は swapchain の image を共有の image そのものにして present の GPU の copy（1 表示 frame で 2 回）と submit の往復を無くす、を P3 が設計→design-reviewer→実装（4〜8 LW、Pi の全 Vulkan の app に効く、i915・Venus は不変）。T1-688: A1 は効いた（全画面で copy）が frame の速さは不変（律速は present の copy と往復の待ち）。 A3 の design-reviewer（2026-10-15）: blocker 0・major 8・minor 7。Q1 の判断（委任の範囲、挙動を変えない形を選んだ）: M1 は kernel の capset の native の word に direct 可の bit（bcm2711 だけ）、M2 は VK_KHR_display の chain は compositor の opt-in の時だけ direct（第三者の KHR_display の app は今の道）、M3 は executor の display の印の意味を保つ、m7 は ws236-p012 に独立。ユーザーに後で報告。 2026-10-15 ユーザー:「A3をなしにして、720pででーたをとり、A3の有り無しで比較します。」「測定の結果によっては A3はリバートします。」→ T2 の T1-690 で 720p の A3 の有無の比較。結果を見てユーザーが A3 の revert を決める（revert の時は 849ea5b1a・15d2de40b・1eba9a16b と kernel の capset の bit を戻す）。
-- boot loader の GOP の mode の選び方（2026-10-15 P2 の案、bootloader/uefi/video.c の zbl_uefi_video_select）: video= が無く 1920x1080 が無い時、今は firmware の mode のまま（RTX 機の monitor で 640x480）。案: 1920x1080 以下で面積が一番大きい mode を選ぶ（例 1280x1024）。nvrtx は 640x480 でも拡大で desktop まで行く直しを入れたので急ぎではない（boot の画面の画質）。
-- WS037: RTX に console が無い時（パススルー・GOP が別の GPU）に nvrtx が自前の surface で takeover する（`nvrtx.disp.own=1`）を既定にするか（2026-10-15 P2 の問い、desktop が出た後に聞く）。
-- （解決 2026-10-15 ユーザー、クリック）WS236 の表示の道: 案 1 を WS236 の Phase で進める、値の補正（2〜15 が 1 小さい）は表示では直さない（probe の読み戻しだけ補正）、TFU の YUV の probe はする。
-- WS204（HD Audio の録音と HFP の通話の音）・WS205（Bluetooth audio A2DP と headset）がベータ2 に入るか（WS197 の HFP は 2026-10-13 にベータ3 と決定）。
-- WS202 H1〜H6・J1〜J10: software は main に統合済み、判断がまだ要るかは WS202 の記録で確かめる。
-- BUG-222 を既知の問題にするか close か。
-- WS129 の release notes・既知の問題・手引きの review。
-- **WS084 の 10 回の reboot（素の起動）**: ユーザーが zedBSD で起動する時。
-- WS153 U2〜U15 はユーザーが検討中（聞かない）。
-- （解決 2026-10-11）WS157 Photos の削除の統合: P1 の q924 で行う（ユーザー）。
-- （解決 2026-10-10）WS197 p005 Pc1〜Pc6: 6 項目とも推しどおり。
+- WS286: openXC7 の host への導入（ユーザー、p003 の前）。LLVM の cache の asset を GitHub の release に upload してよいか（toolchain の変更の時に確かめる）。
+- WS282〜WS285: 実装を始める時期（ユーザー「設計だけ残してラップアップして、後日実装することにします。」）。再開の時に WS282 の試験の画面を出す PC（D11）と買う webcam（D12）。
+- BUG-345（Pi 5 の click が画面に出ない窓）: 再発したら再起動の前に Q1 に知らせてもらう。
+- 以前からの未決（ベータ2 の後も残る物）: WS037 の nvrtx の takeover を既定にするか、boot loader の GOP の mode の選び方、WS204・WS205 の扱い、BUG-222、WS153 U2〜U15（ユーザーが検討中、聞かない）。
 <!-- master:open-decisions:end -->
 
 ### Focus
 
 <!-- master:focus:start -->
-- **fg020 VisionFive 2（2026-10-19 22:58 ユーザー「VisionFive 2にフォーカスします.」）**: WS256（移植、残りは実機）→ WS269（PowerVR）→ WS270（Keiland、D5 (a) で画面なしの立ち上げを先行）。WS275（sun4u、BUG-337 で停止）・WS273（RG350、中断）は止めたまま。
-- （達成 2026-10-15）前のゴール「RTXでデスクトップが描画できること。」（R9k・方法 A）と Pi の再生（720p30 を遅れなく、T1-690。1080p・60 fps は要件から外した）。今の焦点は fg019 ベータ2 の公開（期限 2026-10-16 夕、10-17 OSC）と、ユーザーが指示する WS（WS245・WS247 など）。
-- **fg019 ベータ2 の公開（10/17、RC 10/13）**。優先順（2026-10-07 ユーザー）: Settings Display（WS113）→ USB-C/DP Alt（WS051・WS050、BUG-256）→ Vulkan Video（WS083）→ widget（WS090）→ 通知（WS156）→ touchpad の割り込み・タップ（WS183）→ YubiKey（WS161）→ 写真（WS157）→ カレンダー（WS155）→ Bluetooth（WS143）→ 残り。空き時間だけ: IME（WS095）・RTL8822C（WS186）・Vulkan executor（WS031）・i915 の高度化（WS075、shader の compiler を含む）。ベータ3 と 10/13 以降の物は decisions-log。
+- **fg021 ZYBO（2026-10-23〜）**: 初代 Digilent ZYBO（Zynq Z-7010）で zedBSD を JTAG から起動し、PL（FPGA）の block を動かす（ユーザー「今はFPGAブロックを動作させるということをゴールにして最短で進みましょう。」）。[WS286](ws286/ws.md)。OSS の道具だけ（AMD の tool は難しい時だけ）。
+- **Pi 5 の仕上げ（WS278・WS279）**: 実機で主要な device と GPU の desktop まで動作。残りは BT・BUG-345・C1 の板・GPU の速さ（p008）。
+- 達成・終了: fg019 ベータ2（2026-10-17 OSC で公開、ユーザー「OSCデモは完了した」）、fg010 OSC のデモ。fg020 VF2 は速さの作業を終えて保留（残りは表の行）。
 <!-- master:focus:end -->
 
 ### 止まっている物
 
 <!-- master:blocked:start -->
-- **BUG-317**（Pi の main の kernel が起動 54 秒で停止、namei の context->lock）: 解析は途中で停止、結論なし。a9f0765..73476664c で src/kern は無変更、候補は usb-hid・hid-input（BUG-313 の遅い公開）、WS236 の V3D・MMAL、rpi4-bt。
-- WS037 RTX: R8・R9（パススルー）と方法 A の desktop は達成。T1-691 で P4m の間欠の失敗が再発（解析は ws037/phase007 の終わり）。
-- BUG-315（Pi の touch）: 2026-10-17 解決（BUG-333 と同じ件）。panel は数え上げの最初の GET_DESCRIPTOR(Device) で ID を選び、Linux・Windows と同じ 64 byte・full-speed の EP0 64 で Goodix 27c6:8191（全幅）、zedBSD の旧い 8 byte で Wacom 互換 056a:8191（中央 1/3）。既定を 64 byte に（93bb1db8c）。BUG-311（Pi の BT）: 7 回目は main に入った、未試験。
-- WS239（compositor の失敗時の console の login）: p001 は main、p002 の QEMU 試験は T3 が途中で停止、結果なし。
-- GitHub への記録の公開は保留。push はユーザーの指示の時だけ。
+- WS286 p003（PL の block）: host に openXC7 が無い（ユーザーの導入待ち）。openXC7 が Zynq の PS7 を扱えるかは未確認（だめなら AMD の tool、ユーザー）。
+- WS286 p004 以降: LLVM に ARM の target が無い（Q1 の toolchain の変更待ち）。
+- VF2: 遠隔の電源（SwitchBot）を ZYBO に回す予定で、VF2 の板は遠隔で再起動しない。
+- GitHub への公開は push の指示の時だけ。
 <!-- master:blocked:end -->
 
 <!-- awesome-plan-current:end -->
@@ -114,11 +102,11 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 
 | Goal | 当面の成果 | Milestone | 担当の WS | 出典 |
 | --- | --- | --- | --- | --- |
+| **fg021** | 初代 ZYBO（Zynq Z-7010）で JTAG から起動し、PL（FPGA）の block を zedBSD から動かす | MG008 | [WS286](ws286/ws.md) | 2026-10-23 user |
 | **fg020** | VisionFive 2 で OS を完全に動かす（framebuffer・SD・rootfs・USB keyboard・LAN・sound・NVMe の実機、PowerVR の driver、Keiland） | MG008 | [WS256](ws256/ws.md)、[WS269](ws269/ws.md)、[WS277](ws277/ws.md)、[WS270](ws270/ws.md) | 2026-10-19 22:58 ユーザー「VisionFive 2にフォーカスします.」 |
-| **fg019** | **最初の公開ベータ＝ベータ2 のリリース（目標 2026-10-17、2026-10-06 夜 ユーザー「ベータ1は難なく前倒しできるので、実際には最初のベータはベータ2で、2026年10月17日に公開するのはベータ2に変更です。」）**。旧: ベータ1 のリリース。凍結なし、できた所までをベータ1 にし、安定化は後のベータの版で。版と tag は `zedbsd-0.1.0-beta1`、CI が Prerelease を作りユーザーが動作確認して Latest に手で昇格、配布物は USB の image と Windows の QEMU/Venus の zip | MG003・MG006・MG007・MG002 | 下の「fg019 の内容」 | 2026-10-02 user「次のFeature Goalはベータ1のリリースにします」ほか |
 | **fg018** | Linux 標準 GTK4 の実測と互換性の改善 | MG006 | [WS114](ws114/ws.md) | 2026-10-02 user。p007・p008 まで達成 |
 
-### fg019 の内容（2026-10-02〜03 のユーザーとの議論で決定）
+### fg019 の内容（2026-10-02〜03 のユーザーとの議論で決定、2026-10-17 OSC で達成）
 
 | 区分 | WS | 状態・メモ |
 | --- | --- | --- |
@@ -141,7 +129,8 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 
 | Goal | 成果 | 達成 |
 | --- | --- | --- |
-| fg010 | 2026-10-17 の OSC のデモの Kei Operating System（Latitude 5330） | 2026-10-02 user 判断（実装で到達、nightly の release で公開） |
+| fg019 | 最初の公開ベータ＝ベータ2 のリリース（2026-10-17 OSC） | 2026-10-23 user「OSCデモは完了した」 |
+| fg010 | 2026-10-17 の OSC のデモの Kei Operating System（Latitude 5330） | 2026-10-02 user 判断（実装で到達）、2026-10-17 OSC でデモ完了（2026-10-23 user） |
 | fg012 | Keiland の OS の境界の整理と Linux の Keiland（[WS104](ws104/ws.md)・[WS105](ws105/ws.md)） | 2026-10-01 |
 | fg013 | test・見本を userland/tests へ（[WS106](ws106/ws.md)） | 2026-10-01（WS106 は残りあり） |
 | fg014 | libbrowser の component 化（[WS107](ws107/ws.md)） | 2026-10-02 |
@@ -155,16 +144,11 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 依存による実行の順とは別のもの。Queue の権限は変えない。古い順位（2026-10-03〜04）は付録の history-log。
 
 <!-- master:priority:start -->
-2026-10-19 22:58 ユーザー「VisionFive 2にフォーカスします.」→ 最優先は WS256 → WS269 → WS270（fg020）。
-2026-10-06 夜 ユーザーの作業の順（原文の要旨）:「ベータ1のWS＋ベータ2の一部実装をまずすべて実装してください。P1,P2でフルに実装してしまってください。デバッグ項目としてカウントされているものを除きます。正常系が通ればいいです。準正常系と異常系で未実装な部分は、そういった積み残しを管理するWSを作って、そこにPhaseとして積みましょう。それはすべての実装が1パス通って疎通確認できてからでいいです。」「そのあとで、デバッグに専念して、すべてのバグを消化します。」
-
-- **規則**: 正常系だけを実装して疎通を確かめる。準正常系・異常系の未実装は各 phase.md の「積み残し」の節に書いておき、全ての実装の 1 パスの後に、積み残しを管理する新しい WS に Phase として集める。デバッグとして数えた項目（Bug・実機の確認）は除く。
-1. **第 1 段**（今）: WS131 p018〜p026（app を kl_app へ）、WS089 Settings の残り、WS128 標準 app の仕上げ（PDF の検索）、WS127 Files の残り、WS132 /dev/system・PnP・自動 mount、WS099 compositor の残り、WS159 native の touchpad（実装の分）、WS090 widget・Mahora（p023 を含む）、WS129 ベータ1 の release 作業、WS094 desktop の icon、WS095 IME の残り。desktop・compositor（WS113 複数 display、WS156 通知、WS102・WS110・WS138・WS142・WS164・WS078）。security・system（WS161 YubiKey、WS172 passkey、WS148・WS149・WS151。WS152 はベータ3 へ、2026-10-06 夜 ユーザー）。IME・言語（WS165 手書き、WS154 SKK、WS166 予測変換、WS158 翻訳）。
-2. **第 2 段**: WS139 desktop の速さ（最適化、2026-10-06 夜 ユーザー: 第 1 段から移す）、app（WS175 PDF の編集、WS169 メール、WS120 音楽、WS122 動画、WS121・WS145・WS157・WS170、WS079、WS155）、WS130 IPv6 の残り（2026-10-06 夜 ユーザー: 第 3 段から移す）、WS009 文書、WS112 Debian の package（3 つの deb、2026-10-06 夜 ユーザー）、WS117（Qt6 の Linux の互換、ユーザーが検討中）。
-3. **第 3 段**（不確実性のある hardware 関連、2026-10-06 夜 ユーザー）: WS083 Vulkan Video（第 2 段から移す）、kernel・driver・電源（WS031、WS052、WS051、WS075、WS050、WS167、WS084）、base・libc・試験（WS001、WS168 の残り、WS173、ほか）。続けて [WS179](ws179/ws.md)（アクセントカラー、2026-10-07 ユーザー）、最後に低い優先度で [WS178](ws178/ws.md)（OpenGL を Desktop へ、GLX を xserver へ、2026-10-07 ユーザー）。
-4. **[WS177 ベータ2 積み残し](ws177/ws.md)**（2026-10-06 ユーザー「積み残しWSはベータ2積み残しという形でWSを作りましょう。」）に準正常系・異常系を Phase として集める。
-5. **デバッグに専念**して全ての Bug を消化する。
-- ベータ3 へ: WS068・WS101・WS171・WS176・WS152・WS115 GTK4・WS116 Qt6・WS126 Python（2026-10-06 夜 ユーザー「私たちのOSの価値は先進的なタブレットとデスクトップの融合したUI/UXであって、既存のデスクトップUIのツールキットはコアコンピタンスではない」「私たちには、私たちがよいと考えるスクリプト言語であるNoctがすでにある」）。ベータ4 以降（2026-10-05 ユーザー、Q1 の表の誤りを訂正）: WS112・WS124・WS125・WS143・WS118・WS119 ほか。止める: WS074 の描画（B1）・WS153（U2〜U15）。
+2026-10-23 ユーザー（ZYBO）「今はFPGAブロックを動作させるということをゴールにして最短で進みましょう。」→ 最優先は WS286（fg021）。
+1. WS286 ZYBO: design 版 3 → p002 JTAG・SPL → p003 PL の plio（openXC7）→ LLVM の ARM → p004 HAL（QEMU virt）→ p005 BSP → p006 → p007 ramdisk の login → p008 PL を zedBSD から（到達目標）→ p009 規約。
+2. Pi 5 の残り（WS278・WS279）: ユーザーの指示の時。
+3. 設計だけの物（WS282〜WS285、WS281 malloc、WS287 EHCI の LS/FS、WS280 H.264）: 後日、ユーザーの指示まで着手しない。
+- それ以前の優先順（ベータ2・2026-10-06 の段階）は付録の history-log と git の履歴。
 <!-- master:priority:end -->
 
 ## 工数の見積もり（残り、LW）
@@ -598,9 +582,9 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS277](ws277/ws.md) | MG008 | VisionFive 2 の DC8200 の display driver（zero copy の scanout）（2026-10-20 ユーザー） | incomplete（p001 の設計を P1、q1341） | p001 設計 → design-reviewer |
 | [WS280](ws280/ws.md) | MG006 | H.264 の software decoder（libh264dec、libmedia から dlopen、任意）（2026-10-21 ユーザー） | planning | 実装はユーザーの指示まで |
 | [WS281](ws281/ws.md) | MG002 | libc の malloc を速くする（first fit・1 本の list・1 つの lock の作り直し）（2026-10-22 ユーザー） | planning | 着手は後日（ユーザー） |
-| [WS282](ws282/ws.md) | MG006 | camera の driver の枠組み（/dev/camN）と USB Video Class の driver（CSI の rpicam は今回やらない） | planning | p001 の設計 版 3（/dev/camN ＋ UVC、review-v2 を反映、p002〜p011 で 32〜43 LW、p005 は WS197 p007a2 の実機の loopback の後、実装は後日）。Q1: D9 GPU の差分・D10 xHCI の拡張は WS282 の担当が入れてよい（T1 の回帰付き） |
-| [WS283](ws283/ws.md) | MG006 | bcm2711 の Vulkan の compute（Pi 4・Pi 5） | planning | p001 の設計 版 2（review の H1〜H6・M1〜M10・L1〜L7 を反映、p002〜p014 で 77〜121 LW、7.1 を先に 4.2 は p013 で移植）。Q1: 7.1 先・NonWritable の印（p011）・CONFIG_DRIVER_BCM2711_COMPUTE（p005）を可 |
-| [WS284](ws284/ws.md) | MG006 | YOLOX-Nano の推論（C と Vulkan compute、Apache-2.0） | planning | p001 の設計 版 2（review の F1〜F22 を反映、p002〜p008 で 35〜49 LW、重みは build の時に取得して変換）、D10（license の確認を出さない）・D11（試験の画像を tree に入れる）は 2026-10-23 に決定、実装は後日 |
+| [WS282](ws282/ws.md) | MG006 | camera の driver の枠組み（/dev/camN）と USB Video Class の driver（CSI の rpicam は今回やらない） | incomplete | p001 の設計 版 3（/dev/camN ＋ UVC、review-v2 を反映、p002〜p011 で 32〜43 LW、p005 は WS197 p007a2 の実機の loopback の後、実装は後日）。Q1: D9 GPU の差分・D10 xHCI の拡張は WS282 の担当が入れてよい（T1 の回帰付き） |
+| [WS283](ws283/ws.md) | MG006 | bcm2711 の Vulkan の compute（Pi 4・Pi 5） | incomplete | p001 の設計 版 2（review の H1〜H6・M1〜M10・L1〜L7 を反映、p002〜p014 で 77〜121 LW、7.1 を先に 4.2 は p013 で移植）。Q1: 7.1 先・NonWritable の印（p011）・CONFIG_DRIVER_BCM2711_COMPUTE（p005）を可 |
+| [WS284](ws284/ws.md) | MG006 | YOLOX-Nano の推論（C と Vulkan compute、Apache-2.0） | incomplete | p001 の設計 版 2（review の F1〜F22 を反映、p002〜p008 で 35〜49 LW、重みは build の時に取得して変換）、D10（license の確認を出さない）・D11（試験の画像を tree に入れる）は 2026-10-23 に決定、実装は後日 |
 | [WS285](ws285/ws.md) | MG006 | camera の object detection の demo の app（WS282〜WS284 の上） | planning | p001 の設計 |
 | [WS286](ws286/ws.md) | MG008 | Digilent ZYBO（初代、Zynq Z-7010）への移植: ARMv7-A の HAL と JTAG の起動、PL（FPGA）の block を動かすまで（USB は外す） | incomplete | p001 の設計 版 2（JTAG の起動・ramdisk の root・PL の plio まで、p002〜p009 で 87 LW＋設計 10）。U1・U3〜U7 はユーザーの判断待ち、LLVM の ARM の target は Q1 の判断 |
 | [WS287](ws287/ws.md) | MG008 | EHCI の full-speed・low-speed の device（split transaction、ZYBO の ChipIdea を含む） | planning | 着手は後日 |
@@ -616,15 +600,14 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 見込みであって、約束や実行許可ではない。
 
 <!-- master:outlook:start -->
-2026-10-05 夜 Q1:
+2026-10-23 Q1（見込み、約束ではない）:
 
 | 線 | 順 |
 | --- | --- |
-| T1 | T1-206 IPv6 → T1-203 の再実行（P1 の直しの後）→ T1-202 AAT → T1-205・T1-207 → 5330 の AAT の image の boot-test → WS101 の 5330 の測定（合間、lock の下） |
-| P1 | T1-203 の解析と修正 → WS168 p002 の残り → WS130 p003 → WS172 p003 → WS161 p005〜p007 |
-| P2 | AAT の直し（T1-202 の後）→ WS158 p004 → WS154 → WS145 → WS169・WS170 |
-| ユーザー | 5330 の AAT の USB の起動 → UAT（時刻は追って）。WS153 の U2〜U15 |
-| 後 | WS074 の B1（ユーザーの指示）、ベータ1 の release（WS129） |
+| P1 | WS286 p002（実行中）→ p003（openXC7 の後）→ p005 以降 |
+| Q1 | WS286 design 版 3 の手配 → LLVM の ARM の target（zedbsd11）→ WS286 の後の WS（U8）の作成 |
+| T1 | WS286 p004 以降の QEMU virt・zynq と実機の受け入れ |
+| ユーザー | openXC7 の導入、LLVM の cache の upload の確認 |
 <!-- master:outlook:end -->
 
 ---
