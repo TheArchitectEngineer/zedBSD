@@ -18,17 +18,19 @@
 
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 設計（/dev/camN の API、uvc、xHCI の isochronous の制約、試験、Phase）→ [design.md](design.md)（版 2。版 1 の review は [phase001/review-20261023.md](phase001/review-20261023.md)） | — | in-progress（2026-10-23 P3、版 2。Q1 の判定待ち） |
-| p002 | 枠組み: `include/uapi/camera.h`、`src/drivers/camera/cam.c`（cdev と退役、所有、buffer と mmap、slot の API、queue、poll、metadata、counters、状態機械）、host の試験（design §11、6〜8 LW） | p001 | planned |
-| p003 | uvc の bind と descriptor の解析と dump、VS の claim、PROBE/COMMIT、登録、build。devfs の 0600（Q1）。板（5330 + HDMI capture）で dump（3〜4 LW） | p002 | planned |
-| p004 | streaming（isochronous・bulk、worker、payload の組み立て、停止）、`camcap`。板で最初の frame（5〜7 LW） | p003 | planned |
-| p005 | xHCI の isochronous の拡張（HS の high-bandwidth、SS、WS197 の source、Q1 の承認）、T1 に SCO・HID の回帰（3〜4 LW） | p004（並行可） | planned |
-| p006 | `camcheck` と pattern で画素の試験、drop の測定、堅牢化（stop/start・抜去・2 つ目の open）、device の quirk（2〜3 LW） | p004 | planned |
-| p007 | Pi 5・Pi 4・VF2 の確認（T1、1〜2 LW） | p006 | planned |
-| p008 | `CAM_MEMORY_IMPORT`（GPU が確保した buffer を camera が取り込む、D3。GPU core と bcm2711 の share の差分）、`camvk`（4〜5 LW） | p004、WS279 の V3D | planned |
-| p009 | `docs/reference/camera.md`、sessiond の seat（Q1 に依頼）、`camcap`・`camcheck` を Tools に（1〜2 LW） | p006 | planned |
-| p010 | control（UVC の processing unit、id 32 以降。ユーザー「最初は無し」なので後で、2〜3 LW） | p004 | planning |
+| [p001](phase001/phase.md) | 設計（/dev/camN の API、uvc、xHCI の isochronous の制約、試験、Phase）→ [design.md](design.md)（版 3。版 1 の review は [phase001/review-20261023.md](phase001/review-20261023.md)、版 2 の review は [phase001/review-v2-20261023.md](phase001/review-v2-20261023.md)） | — | in-progress（2026-10-23 P3、版 3。Q1 の判定と版 3 の review 待ち） |
+| p002 | 枠組み: `include/uapi/camera.h`（layout と `_Static_assert`）、`src/drivers/camera/cam.c`（cdev と退役（停止の一本化・admission）、所有、0 埋めの buffer と mmap、slot の API、queue、DEQUEUE の timeout、poll、metadata、counters、状態機械、FAULT）、host の試験（design §11、6〜8 LW） | p001 | planned |
+| p003 | uvc の bind と descriptor の解析（MJPEG の 11 byte の形、GUID の byte 列）と dump、VS の claim、PROBE/COMMIT と補正、`ENOSPC`、登録、build。devfs の 0600（Q1）。板（5330 + HDMI capture + webcam）で dump、仕様の節の確定（3〜4 LW） | p002 | planned |
+| p004a | xHCI の HS isoch IN の実地（URB の予約・投入の順の ring・worker・halt だけ、`camcap --probe-only`）。xHCI の不具合は BUG の ticket にして WS197 へ（2〜3 LW） | p003 | planned |
+| p004b | streaming（payload の解析と frame の組み立て、COMMIT の再送、watchdog、bulk は host 試験のみ）、`camcap`・`camcommon`。板で最初の frame（P ≤ 1024 の mode、5〜7 LW） | p004a | planned |
+| p005 | xHCI の HS の high-bandwidth（encoder・TBC/TLBPC・enqueue、WS197 の source、D10）。**前提: WS197 p007a2 の L2 が PASS して main にある事**、Q1 が順を決める。T1 に `bt-sco-loopback` の前後比較と HID（4〜5 LW） | p004b、WS197 p007a2 | planned |
+| p006 | `camcheck` と `pattern.html`（D11）で画素の試験、HDMI capture の YUYV と 1080p の受け入れ、drop の測定、stop/start 100 回の leak、2 つ目の open、device の quirk、bulk の device があれば実地（3〜4 LW） | p004b（高い mode は p005） | planned |
+| p007 | Linux の xHCI の quirk の表 → Pi 5・Pi 4・VF2 の確認（T1）、IRQ の中の staging の複写の時間（1.5〜2.5 LW） | p006 | planned |
+| p008 | `CAM_MEMORY_IMPORT`（GPU core と bcm2711 の share の差分は WS282 の担当が書き Q1 が merge、D9）、`camvk`（4〜5 LW） | p004b、p007（Pi 5）、WS279 の V3D | planned |
+| p009 | `docs/reference/camera.md`、`KERN_SYSTEM_EVENT_CAMERA` と sessiond の seat（Q1 に依頼）、`camcap`・`camcheck` を Tools に（1〜2 LW） | p006 | planned |
+| p010 | control（UVC の processing unit、id 32 以降。ユーザー「最初は無し」なので後で、2〜3 LW） | p004b | planning |
 | p011 | 規約の全文の見直しと license の監査（2 LW） | p008・p009 | planned |
+| p012 | SuperSpeed の isochronous（TD の分割、FIFO の定数、WS197 の source）。USB 3 の device を買ってから（見積もり未定） | p005、device | planning |
 
 ## 現在の状態・再開点
 
@@ -36,3 +38,4 @@
 - 2026-10-23 P3: p001 の設計の版 1（CSI）。ユーザーの判断 D1〜D7 は推しで決定。Q1 の手配の review（H3・M11・L7）。
 - 2026-10-23 P3: 範囲の変更（UVC を優先、CSI は今回やらない）を受けて版 2。review の枠組み・buffer・cache・所有・devfs/sessiond の指摘を反映、CSI は付録 A に。HDMI capture は使える（制約: 今の xHCI の isochronous は 1024 byte/interval まで、p005 で拡張）。再開点: Q1 の判定と版 2 の review の後、p002 から。Q1 の判断 D9〜D11（design §6.2）。
 - 2026-10-23: ユーザーの判断で設計だけ残して止める（「設計だけ残してラップアップして、後日実装することにします。」）。再開は実装の指示から。
+- 2026-10-23 P3: 版 2 の review（H 4・M 10・L 8）を受けて版 3。要点: HS の isoch IN は未実地なので p004 を p004a（実地）と p004b に分け、p005 は WS197 p007a2 の L2 の後（計画に無い依存）。帯域の足りない mode は `ENOSPC`（HDMI capture の YUYV は p005 の後）。bulk は 1 本で未実地。URB は投入の順の ring、32 KiB の予約。frame の組み立てを書き直し。停止は枠組みだけ。合計 32〜43 LW（p010 を除く）。再開点: Q1 の判定と版 3 の review の後、p002 から。ユーザーに提示中: D11（pattern は PC の browser）、D12（webcam）。
