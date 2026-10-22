@@ -40,6 +40,7 @@
 ### ユーザーの未決の判断
 
 <!-- master:open-decisions:start -->
+- KC705（本命の FPGA の target、XC7K325T）: Vivado の無償版で 325T が使えるか（ユーザー「最近のVivadoのライセンス体系変更で、325Tも無料になったそうです。あとで確かめないと。」2026-10-23）。KC705 の WS を作る時に確かめる。
 - WS286: openXC7 の host への導入（ユーザー、p003 の前）。LLVM の cache の asset を GitHub の release に upload してよいか（toolchain の変更の時に確かめる）。
 - WS282〜WS285: 実装を始める時期（ユーザー「設計だけ残してラップアップして、後日実装することにします。」）。再開の時に WS282 の試験の画面を出す PC（D11）と買う webcam（D12）。
 - BUG-345（Pi 5 の click が画面に出ない窓）: 再発したら再起動の前に Q1 に知らせてもらう。
