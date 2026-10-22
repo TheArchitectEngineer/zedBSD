@@ -26,3 +26,11 @@
 ## 板の状態
 
 - 板は `login=graphical rpi5gpu.start=boot` のまま（Keiland の desktop が出ているはず）。戻すには `sudo cp /boot/boot0/cmdline.txt.good /boot/boot0/cmdline.txt`。kernel は GPU 入りの試験の build、`/boot/boot0/vmunix.good` は元の kernel。
+
+## cursor が 10 fps に見える件（2026-10-22 P2）
+
+- ユーザー「Pi5での描画は、カーソルが10fpsくらいに見えます。…App Homeへの遷移のアニメはかなりスムーズなので、描画は大丈夫そう。」
+- 原因は display ではなく入力の側。session.log の `KWL PERF cursor` では box_writes が 5 秒で 54〜86、`box_gap_p99_us=50000` で、presents は box_writes と同じ数。pointer の報告が 50 ms ごとにしか届いていなかった。`rp1-usb: polling 2 controllers every 50 ms` は割り込みが route 済みの時の safety poll だが、`drv_rp1_irq_establish()`（`src/drivers/platform/rpi5/rp1-irq.c`）が GIC の line を unmask していなかった（arm64 の `hal_irq_register` は line を有効にしない）。このため RP1 の割り込み（USB 31・36、Ethernet 6）は一度も来ず、USB は 50 ms の poll、Ethernet は 20 ms の poll だけで動いていた。hvs6-flip の cursor の経路（record して待たずに publish）は Pi 4 と同じ。「copy FIFO」は stage の名前に過ぎない。
+- 修正: establish の最後に `kern_irq_unmask(irq)`（Q1 の許可、WS278 の file）。commit ae592a9b8・0c02104a2。
+- build: `config-rpi5-gpu.mk`（main 366310c25 の fan 入り、merge 239bb232b）と Pi 4（config/ci/config-rpi4.mk）の vmunix、どちらも warning 0。
+- 実機（D0、kernel = 239bb232b の config-rpi5-gpu.mk の build）: host から板への ping の rtt は avg 9.9 ms（0.5〜19 ms）から 0.15 ms に下がった。xHCI の handler の入りは 10 秒で 420（poll の 400 と IRQ）。`rpi5-fan:` の行・V3D・display node・Keiland の起動は前と同じ。mouse を動かした時の `box_gap` の測定は未完了（下に追記する）。
