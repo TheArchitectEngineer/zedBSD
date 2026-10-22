@@ -630,6 +630,9 @@ main_loop(
 	int ready[TERMINAL_TABS];
 	int status;
 	int timeout;
+	int wait;
+	int asked;
+	int error;
 
 	/* One round per event: wait, read the shell, send the keys, redraw what changed. */
 	started = terminal_clock();
@@ -657,6 +660,17 @@ main_loop(
 				timeout = 0;
 			else if ((uint64_t)timeout > main_edge_at - now)
 				timeout = (int)(main_edge_at - now);
+		}
+
+		/*
+		 * A change waiting for the compositor to take the last frame is
+		 * drawn when it answers (which wakes the wait), or at the latest
+		 * when the pace gives up waiting (pace.h).
+		 */
+		if (main_screen->changed) {
+			wait = terminal_window_frame_wait(&main_window, now);
+			if (wait < timeout)
+				timeout = wait;
 		}
 
 		/* Runs the compositor's events and learns which shells wrote. */
@@ -782,9 +796,24 @@ main_loop(
 		if (!main_screen->changed)
 			continue;
 
-		/* Draws the grid; a swapchain out of date is remade and drawn again next round. */
+		/*
+		 * The compositor has not taken the last frame yet: the change
+		 * waits for it, and whatever else changes meanwhile (a selection
+		 * dragged on, the shell's output) is drawn in the same frame, as
+		 * it is then, instead of a frame for each (pace.h).
+		 */
+		wait = terminal_window_frame_wait(&main_window, terminal_clock());
+		if (wait != 0)
+			continue;
+
+		/* Draws the grid with the frame callback asked for it; a swapchain out of date is remade and drawn again next round. */
+		asked = terminal_window_frame_ask(&main_window, terminal_clock());
 		run->result = terminal_renderer_draw(&main_renderer, main_screen, &main_font, &main_window);
 		run->operation = main_renderer.operation;
+		error = 0;
+		if (run->result != VK_SUCCESS)
+			error = EIO;
+		terminal_window_frame_shown(&main_window, asked, error);
 		if (run->result == VK_ERROR_OUT_OF_DATE_KHR) {
 			stale++;
 			if (stale > MAIN_STALE_LIMIT)
@@ -2442,6 +2471,8 @@ main_range(
 	unsigned to_column,
 	unsigned long to_line)
 {
+	unsigned long first[2];
+	unsigned long last[2];
 	int later;
 
 	/* The first in reading order first. */
@@ -2451,18 +2482,30 @@ main_range(
 	else if (from_line == to_line && from_column > to_column)
 		later = 1;
 	if (later) {
-		main_screen->range_from[0] = to_column;
-		main_screen->range_from[1] = to_line;
-		main_screen->range_to[0] = from_column;
-		main_screen->range_to[1] = from_line;
+		first[0] = to_column;
+		first[1] = to_line;
+		last[0] = from_column;
+		last[1] = from_line;
 	} else {
-		main_screen->range_from[0] = from_column;
-		main_screen->range_from[1] = from_line;
-		main_screen->range_to[0] = to_column;
-		main_screen->range_to[1] = to_line;
+		first[0] = from_column;
+		first[1] = from_line;
+		last[0] = to_column;
+		last[1] = to_line;
 	}
 
+	/* The same range as shown (the pointer moved within a cell): nothing to draw anew. */
+	if (main_screen->range &&
+	    main_screen->range_from[0] == first[0] &&
+	    main_screen->range_from[1] == first[1] &&
+	    main_screen->range_to[0] == last[0] &&
+	    main_screen->range_to[1] == last[1])
+		return;
+
 	/* Succeeded: drawn anew. */
+	main_screen->range_from[0] = first[0];
+	main_screen->range_from[1] = first[1];
+	main_screen->range_to[0] = last[0];
+	main_screen->range_to[1] = last[1];
 	main_screen->range = 1;
 	main_screen->changed = 1;
 }
