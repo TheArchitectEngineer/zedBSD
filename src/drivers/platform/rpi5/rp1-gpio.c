@@ -31,7 +31,8 @@
  * Values referenced: Raspberry Pi Linux rpi-6.12.y
  * drivers/pinctrl/pinctrl-rp1.c (RP1_GPIO_CTRL, RP1_GPIO_CTRL_FUNCSEL_MASK,
  * RP1_GPIO_CTRL_OUTOVER_MASK, RP1_GPIO_CTRL_OEOVER_MASK, RP1_OUTOVER_PERI,
- * RP1_OEOVER_PERI, RP1_PAD_IN_ENABLE_MASK, RP1_PAD_OUT_DISABLE_MASK,
+ * RP1_OEOVER_PERI, RP1_PAD_PULL_MASK, RP1_PAD_PULL_LSB,
+ * RP1_PAD_IN_ENABLE_MASK, RP1_PAD_OUT_DISABLE_MASK,
  * RP1_RIO_OUT, RP1_RIO_OE, RP1_SET_OFFSET, RP1_CLR_OFFSET, the stride of
  * a pin's registers in rp1_pinctrl_probe()).
  */
@@ -45,6 +46,8 @@
 #define RP1_GPIO_OUTOVER_MASK		0x00003000U
 #define RP1_GPIO_OEOVER_MASK		0x0000c000U
 #define RP1_GPIO_PAD_STRIDE		4U
+#define RP1_GPIO_PAD_PULL_MASK		0x0000000cU
+#define RP1_GPIO_PAD_PULL_SHIFT		2U
 #define RP1_GPIO_PAD_INPUT_ENABLE	0x00000040U
 #define RP1_GPIO_PAD_OUTPUT_DISABLE	0x00000080U
 #define RP1_GPIO_RIO_OUT		0x00U
@@ -176,6 +179,47 @@ drv_rp1_gpio_set_function(
 	spin_unlock_irqrestore(&rp1_gpio.lock, enabled);
 
 	/* Succeeded: the pin carries the function. */
+	return 0;
+}
+
+/*
+ * Sets the pull of a pin's pad.
+ */
+int
+drv_rp1_gpio_set_pull(
+	unsigned pin,
+	unsigned pull)
+{
+	const struct rp1_gpio_bank *bank;
+	volatile uint8_t *pad;
+	unsigned long enabled;
+	unsigned index;
+	uint32_t bits;
+	int error;
+
+	/* Refuses a request before the block was mapped, or a pull the pad does not have. */
+	if (!rp1_gpio.mapped)
+		return ENODEV;
+	if (pull > DRV_RP1_GPIO_PULL_UP)
+		return EINVAL;
+
+	/* Finds the pin's bank. */
+	error = find_bank(pin, &bank, &index);
+	if (error != 0)
+		return error;
+	pad = rp1_gpio.blocks[RP1_GPIO_BLOCK_PADS] + bank->pads_offset + index * RP1_GPIO_PAD_STRIDE;
+
+	/* Rewrites the pad's pull field, leaving its other settings. */
+	enabled = spin_lock_irqsave(&rp1_gpio.lock);
+
+	bits = kern_mmio_read32(pad);
+	bits &= ~RP1_GPIO_PAD_PULL_MASK;
+	bits |= pull << RP1_GPIO_PAD_PULL_SHIFT;
+	kern_mmio_write32(pad, bits);
+
+	spin_unlock_irqrestore(&rp1_gpio.lock, enabled);
+
+	/* Succeeded: the pad has the pull. */
 	return 0;
 }
 
