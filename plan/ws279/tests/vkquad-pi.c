@@ -9,8 +9,9 @@
  * vkquad-pi: vkquad (the compositor's textured quad drawn offscreen through
  * the public Vulkan 1.0 API, and read back; ws037-p007 stage D3) in the
  * shape the Raspberry Pi's V3D executor admits (ws279-p005, test images
- * only): the render pass leaves the target in GENERAL, and the copies read
- * it in GENERAL.
+ * only): every image layout change is an explicit barrier (the executor
+ * checks that a command's layout is the image's), the render pass leaves the
+ * target in GENERAL, and the copies read it in GENERAL.
  *
  * It uses only what the Keiland compositor uses: a 32x32 R8G8B8A8 texture
  * of four coloured quadrants uploaded from a buffer, a 64x64 B8G8R8A8
@@ -102,6 +103,7 @@ static VkResult quad_image(struct quad *quad, VkFormat format, uint32_t side, Vk
 static VkResult quad_buffer(struct quad *quad, VkDeviceSize bytes, VkBufferUsageFlags usage, VkDeviceSize at, VkBuffer *buffer);
 static VkResult quad_view(struct quad *quad, VkImage image, VkFormat format, VkImageView *view);
 static VkResult quad_pipeline(struct quad *quad);
+static void quad_layout(struct quad *quad, VkImage image, VkImageLayout from, VkImageLayout to, VkAccessFlags source, VkAccessFlags destination);
 static VkResult quad_record(struct quad *quad);
 static VkResult quad_submit(struct quad *quad);
 static int quad_check(const struct quad *quad);
@@ -748,7 +750,10 @@ quad_record(
 	upload.imageExtent.width = QUAD_TEXTURE;
 	upload.imageExtent.height = QUAD_TEXTURE;
 	upload.imageExtent.depth = 1U;
+	quad_layout(quad, quad->texture, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0, VK_ACCESS_TRANSFER_WRITE_BIT);
 	vkCmdCopyBufferToImage(quad->command, quad->staging, quad->texture, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1U, &upload);
+	quad_layout(quad, quad->texture, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+		    VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
 
 	/* The pass: cleared blue, the quad over the middle 32x32 showing the whole texture. */
 	memset(&clear, 0, sizeof(clear));
@@ -795,6 +800,7 @@ quad_record(
 	whole.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	whole.levelCount = 1U;
 	whole.layerCount = 1U;
+	quad_layout(quad, quad->corner, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0, VK_ACCESS_TRANSFER_WRITE_BIT);
 	vkCmdClearColorImage(quad->command, quad->corner, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &corner_clear, 1U, &whole);
 	memset(&copy, 0, sizeof(copy));
 	copy.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -1037,4 +1043,33 @@ quad_free(
 		vkDestroyDevice(quad->device, NULL);
 	if (quad->instance != VK_NULL_HANDLE)
 		vkDestroyInstance(quad->instance, NULL);
+}
+
+/* Records one whole-image layout change of a colour image. */
+static void
+quad_layout(
+	struct quad *quad,
+	VkImage image,
+	VkImageLayout from,
+	VkImageLayout to,
+	VkAccessFlags source,
+	VkAccessFlags destination)
+{
+	VkImageMemoryBarrier barrier;
+
+	/* The whole single-level colour image changes layout between all graphics and transfer work. */
+	memset(&barrier, 0, sizeof(barrier));
+	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	barrier.srcAccessMask = source;
+	barrier.dstAccessMask = destination;
+	barrier.oldLayout = from;
+	barrier.newLayout = to;
+	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.image = image;
+	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	barrier.subresourceRange.levelCount = 1U;
+	barrier.subresourceRange.layerCount = 1U;
+	vkCmdPipelineBarrier(quad->command, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+			     0, 0U, NULL, 0U, NULL, 1U, &barrier);
 }
