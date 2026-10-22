@@ -193,11 +193,14 @@
 #define GEM_RING_ALIGN			4096U
 #define GEM_PACKET_ALIGN		2048U
 
-/* Bounded waits and the periodic service. */
-#define GEM_MDIO_POLLS			10000U
-#define GEM_MDIO_POLL_US		10U
-#define GEM_TX_IDLE_POLLS		1000U
-#define GEM_TX_IDLE_POLL_US		10U
+/*
+ * Bounded waits and the periodic service.  The MDIO and transmit-idle
+ * waits run under the device lock and spin on the monotonic counter; a
+ * clause-22 frame at the 2.5 MHz MDIO clock takes about 26 us.
+ */
+#define GEM_MDIO_TIMEOUT_US		2000U
+#define GEM_TX_IDLE_TIMEOUT_US		10000U
+#define GEM_WAIT_MAX_READS		1000000U
 #define GEM_PHY_RESET_SETTLE_MS		1U
 #define GEM_PHY_RESET_MAX_MS		1000U
 #define GEM_POLL_MS			20U
@@ -285,6 +288,7 @@ static void reset_controller(struct gem_device *device);
 static void initialize_rings(struct gem_device *device);
 static void start_controller(struct gem_device *device);
 static int stop_transmitter(struct gem_device *device);
+static int wait_register(struct gem_device *device, unsigned offset, uint32_t mask, uint32_t wanted, unsigned microseconds);
 static uint32_t read_register(struct gem_device *device, unsigned offset);
 static void write_register(struct gem_device *device, unsigned offset, uint32_t bits);
 static int wait_mdio(struct gem_device *device);
@@ -1103,31 +1107,60 @@ start_controller(
 
 /*
  * Waits for the transmitter to go idle after transmit was turned off.
+ * The caller holds the lock.
  */
 static int
 stop_transmitter(
 	struct gem_device *device)
 {
-	uint32_t status;
-	unsigned poll;
+	/* Lets the frame on the wire finish. */
+	return wait_register(device, GEM_TXSR, GEM_TXSR_TXGO, 0, GEM_TX_IDLE_TIMEOUT_US);
+}
 
-	/* Polls the transmit status a bounded number of times. */
-	for (poll = 0; poll < GEM_TX_IDLE_POLLS; poll++) {
-		/* Stops once nothing is being sent. */
-		status = read_register(device, GEM_TXSR);
-		if ((status & GEM_TXSR_TXGO) == 0)
-			break;
+/*
+ * Waits until the masked bits of a register read as wanted, spinning on
+ * the monotonic counter.  It never yields: the callers hold the device
+ * lock with interrupts off, and a thread that slept here would leave the
+ * lock held while another thread on the same CPU spun on it for ever.
+ */
+static int
+wait_register(
+	struct gem_device *device,
+	unsigned offset,
+	uint32_t mask,
+	uint32_t wanted,
+	unsigned microseconds)
+{
+	uint64_t start;
+	uint64_t frequency;
+	uint64_t now;
+	uint64_t current_frequency;
+	uint64_t duration;
+	unsigned reads;
 
-		/* Lets the frame on the wire finish. */
-		kern_usleep_range(GEM_TX_IDLE_POLL_US, GEM_TX_IDLE_POLL_US);
+	/* Fixes the deadline once, from one time base. */
+	if (!kern_rtc_read_counter(&start, &frequency) || frequency == 0)
+		return EIO;
+	duration = frequency / 1000000U * microseconds;
+	duration += (frequency % 1000000U * microseconds + 999999U) / 1000000U;
+
+	/* Bounds the reads as well, in case the counter stops. */
+	for (reads = 0; reads < GEM_WAIT_MAX_READS; reads++) {
+		/* Stops once the register shows the wanted state. */
+		if ((read_register(device, offset) & mask) == wanted)
+			return 0;
+
+		/* Refuses a changed or unavailable time base. */
+		if (!kern_rtc_read_counter(&now, &current_frequency) || current_frequency != frequency)
+			return EIO;
+
+		/* Reports a register that kept its state past the deadline. */
+		if (now - start >= duration)
+			return ETIMEDOUT;
 	}
 
-	/* Reports a transmitter that did not stop. */
-	if (poll == GEM_TX_IDLE_POLLS)
-		return ETIMEDOUT;
-
-	/* Succeeded: the transmitter is idle. */
-	return 0;
+	/* Reports a wait that ran out of reads. */
+	return ETIMEDOUT;
 }
 
 /* Reads one controller register. */
@@ -1156,31 +1189,16 @@ write_register(
 	kern_mmio_write32(device->registers + offset, bits);
 }
 
-/* Waits for the MDIO bus to finish its operation. */
+/*
+ * Waits for the MDIO bus to finish its operation without yielding: the
+ * link check runs it under the device lock.
+ */
 static int
 wait_mdio(
 	struct gem_device *device)
 {
-	uint32_t status;
-	unsigned poll;
-
-	/* Polls the network status a bounded number of times. */
-	for (poll = 0; poll < GEM_MDIO_POLLS; poll++) {
-		/* Stops once the bus is idle. */
-		status = read_register(device, GEM_NETSR);
-		if ((status & GEM_NETSR_PHY_MGMT_IDLE) != 0)
-			break;
-
-		/* Gives the operation time. */
-		kern_usleep_range(GEM_MDIO_POLL_US, GEM_MDIO_POLL_US);
-	}
-
-	/* Reports a bus that stayed busy. */
-	if (poll == GEM_MDIO_POLLS)
-		return ETIMEDOUT;
-
-	/* Succeeded: the bus is idle. */
-	return 0;
+	/* Waits for the idle bit. */
+	return wait_register(device, GEM_NETSR, GEM_NETSR_PHY_MGMT_IDLE, GEM_NETSR_PHY_MGMT_IDLE, GEM_MDIO_TIMEOUT_US);
 }
 
 /*
