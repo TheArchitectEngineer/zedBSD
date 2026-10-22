@@ -18,7 +18,8 @@ ARM64_PLATFORM := platform/arm64
 # by HAL_BOARD_RPI4 and HAL_BOARD_RPI5.
 ARM64_BOARD_DEFINE_rpi4 := -DHAL_BOARD_RPI4
 ARM64_BOARD_DEFINE_rpi5 := -DHAL_BOARD_RPI5 \
-	-DCONFIG_DRIVER_RPI5_BT=$(if $(filter y,$(CONFIG_DRIVER_RPI5_BT)),1,0)
+	-DCONFIG_DRIVER_RPI5_BT=$(if $(filter y,$(CONFIG_DRIVER_RPI5_BT)),1,0) \
+	-DCONFIG_DRIVER_BCM2712_GPU=$(if $(filter y,$(CONFIG_DRIVER_BCM2712_GPU)),1,0)
 
 # The board's own HAL code.
 ARM64_BOARD_BOOT_C_rpi4 := \
@@ -283,10 +284,17 @@ ARM64_KERNEL_SOURCES += src/drivers/gpu/bcm2711/attach.c \
 	src/drivers/gpu/bcm2711/display/display-device.c \
 	src/drivers/gpu/bcm2711/display/display-irq.c
 endif
-# The Raspberry Pi 5's V3D 7.1 shader compiler (ws279-p004): the version-independent compiler files and the 7.1
-# copies of the encoder, lowering, epilogues and scheduler, which take the place of the 4.2 ones.  The switch is
-# defined with the rest of the BCM2712 graphics driver (ws279-p002); until then nothing selects these sources.
-ifeq ($(CONFIG_DRIVER_BCM2712_GPU),y)
+# The Raspberry Pi 5's V3D 7.1 driver (ws279): the 7.1 engine files, which keep the names of the Pi 4's 4.2
+# hardware and job files and take their place, with the shared device-tree, stage-mark, page-table and buffer
+# files; and the shader compiler (ws279-p004): the version-independent compiler files and the 7.1 copies of the
+# encoder, lowering, epilogues and scheduler, which take the place of the 4.2 ones.  Only the Pi 5 builds it.
+ifeq ($(ZEDBSD_BOARD)$(CONFIG_DRIVER_BCM2712_GPU),rpi5y)
+ARM64_KERNEL_SOURCES += src/drivers/gpu/bcm2711/attach71.c src/drivers/gpu/bcm2711/v3d71.c \
+	src/drivers/gpu/bcm2711/v3d71-firmware.c src/drivers/gpu/bcm2711/v3d71-hardware.c \
+	src/drivers/gpu/bcm2711/v3d71-job.c src/drivers/gpu/bcm2711/v3d71-cl.c \
+	src/drivers/gpu/bcm2711/v3d71-diagnostic.c \
+	src/drivers/gpu/bcm2711/stage.c src/drivers/gpu/bcm2711/fdt-util.c \
+	src/drivers/gpu/bcm2711/mmu.c src/drivers/gpu/bcm2711/buffer.c
 ARM64_KERNEL_SOURCES += $(filter-out $(KERN_GPU_SOURCES),src/drivers/gpu/compiler/spirv.c src/drivers/gpu/compiler/optimize.c src/drivers/gpu/i915/render/codec.c)
 ARM64_KERNEL_SOURCES += src/drivers/gpu/bcm2711/compiler/qpu71.c \
 	src/drivers/gpu/bcm2711/compiler/shader.c src/drivers/gpu/bcm2711/compiler/shader-analyze.c \

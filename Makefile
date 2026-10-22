@@ -377,6 +377,12 @@ CONFIG_RPI5_SERIAL_CONSOLE ?= n
 # either, so its driver is off until the chip's power is solved).
 CONFIG_DRIVER_RPI5_BT ?= n
 
+# The Raspberry Pi 5's V3D 7.1 render engine (ws279): off by default.  With
+# it the kernel finds the engine at boot and holds it; root powers it and
+# runs its self-test with sysctl hw.gpu.start=1, and the result is in the
+# kernel log (dmesg | grep v3d).
+CONFIG_DRIVER_BCM2712_GPU ?= n
+
 CONFIG_INPUT_TEST_INJECT ?= n
 CONFIG_SECURITY_KEY_TEST_LOOPBACK ?= n
 CONFIG_BT_TEST_LOOPBACK ?= n

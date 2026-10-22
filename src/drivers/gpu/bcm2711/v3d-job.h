@@ -47,6 +47,12 @@ struct bcm2711_v3d_cl_job {
  *
  * chroma and u_plane are the second and third input planes of a YUV input;
  * zero leaves the register zero, as a packed or single-plane input has it.
+ *
+ * On a V3D 7.1 (the Raspberry Pi 5) the unit's fields moved: configuration
+ * carries the 7.1 input configuration word (texture type at bit 16, input
+ * format at bit 23) and output_format the whole 7.1 output control word
+ * (output format at bit 12, mipmap count at bit 4, output stride at bit 16),
+ * which 4.2 does not have; the 7.1 job runner writes them as given.
  */
 struct bcm2711_v3d_tfu_job {
 	uint32_t input;
