@@ -113,6 +113,17 @@ bcm2711_native_shader_encode(
 }
 
 /*
+ * Reports the bytes of the shader state record this encoder writes (the
+ * 4.2 record), after which the attribute records follow.
+ */
+uint32_t
+bcm2711_native_shader_bytes(void)
+{
+	/* Succeeded: the record's size. */
+	return BCM2711_NATIVE_SHADER_BYTES;
+}
+
+/*
  * Encodes one complete per-vertex float fetch record after logical interval validation by its owner.
  */
 int

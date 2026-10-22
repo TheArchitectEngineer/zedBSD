@@ -11,12 +11,14 @@
 
 #include "drivers/gpu/bcm2711/compiler/shader.h"
 
-/* The shader state record: 36 bytes on V3D 4.2, 32 on the Raspberry Pi 5's 7.1, which has no default-value pointer. */
-#if defined(HAL_BOARD_RPI5)
-#define BCM2711_NATIVE_SHADER_BYTES 32U
-#else
+/*
+ * The shader state record: 36 bytes on V3D 4.2, 32 on the Raspberry Pi 5's
+ * 7.1, which has no default-value pointer.  The encoder the board builds
+ * reports its own size (bcm2711_native_shader_bytes()); the attribute
+ * records follow the record at once.
+ */
 #define BCM2711_NATIVE_SHADER_BYTES 36U
-#endif
+#define BCM2712_NATIVE_SHADER_BYTES 32U
 #define BCM2711_NATIVE_ATTRIBUTE_BYTES 16U
 #define BCM2711_NATIVE_TEXTURE_BYTES 24U
 #define BCM2711_NATIVE_SAMPLER_BYTES 24U
@@ -78,6 +80,7 @@ struct bcm2711_native_sampler {
 	uint32_t wrap_v;
 };
 
+uint32_t bcm2711_native_shader_bytes(void);
 int bcm2711_native_shader_encode(const struct bcm2711_native_shader *shader, uint8_t *bytes, size_t capacity);
 int bcm2711_native_attribute_encode(const struct bcm2711_native_attribute *attribute, uint8_t *bytes, size_t capacity);
 int bcm2711_native_texture_encode(const struct bcm2711_native_texture *texture, uint8_t *bytes, size_t capacity);

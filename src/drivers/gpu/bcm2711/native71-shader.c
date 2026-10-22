@@ -58,7 +58,7 @@ bcm2711_native_shader_encode(
 		return EINVAL;
 
 	/* No failed validation modifies even a prefix of the caller's reservation. */
-	if (capacity < BCM2711_NATIVE_SHADER_BYTES)
+	if (capacity < BCM2712_NATIVE_SHADER_BYTES)
 		return ENOSPC;
 
 	/* Default float attribute values live in independently retained aligned GPU storage. */
@@ -103,7 +103,7 @@ bcm2711_native_shader_encode(
 	 * stay off: bits 1, 9, 12 and 18, or 1, 13, 15 and 21 in the draw-index
 	 * form of revision 10 and later.
 	 */
-	kern_memset(bytes, 0, BCM2711_NATIVE_SHADER_BYTES);
+	kern_memset(bytes, 0, BCM2712_NATIVE_SHADER_BYTES);
 	bytes[0] = 2U;
 	bytes[1] = 0x12U;
 	bytes[2] = 4U;
@@ -126,6 +126,17 @@ bcm2711_native_shader_encode(
 
 	/* Succeeded: the complete record is ready for its owner's later GPU publication. */
 	return 0;
+}
+
+/*
+ * Reports the bytes of the shader state record this encoder writes (the
+ * 7.1 record), after which the attribute records follow.
+ */
+uint32_t
+bcm2711_native_shader_bytes(void)
+{
+	/* Succeeded: the record's size. */
+	return BCM2712_NATIVE_SHADER_BYTES;
 }
 
 /*
