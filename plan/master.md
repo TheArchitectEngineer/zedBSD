@@ -602,7 +602,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS283](ws283/ws.md) | MG006 | bcm2711 の Vulkan の compute（Pi 4・Pi 5） | planning | p001 の設計 版 2（review の H1〜H6・M1〜M10・L1〜L7 を反映、p002〜p014 で 77〜121 LW、7.1 を先に 4.2 は p013 で移植）。Q1: 7.1 先・NonWritable の印（p011）・CONFIG_DRIVER_BCM2711_COMPUTE（p005）を可 |
 | [WS284](ws284/ws.md) | MG006 | YOLOX-Nano の推論（C と Vulkan compute、Apache-2.0） | planning | p001 の設計 版 2（review の F1〜F22 を反映、p002〜p008 で 35〜49 LW、重みは build の時に取得して変換）、D10（license の確認を出さない）・D11（試験の画像を tree に入れる）は 2026-10-23 に決定、実装は後日 |
 | [WS285](ws285/ws.md) | MG006 | camera の object detection の demo の app（WS282〜WS284 の上） | planning | p001 の設計 |
-| [WS286](ws286/ws.md) | MG008 | Digilent ZYBO（初代、Zynq Z-7010）への移植: ARMv7-A の HAL と JTAG の起動、PL（FPGA）の block を動かすまで（USB は外す） | planning | p001 の設計 |
+| [WS286](ws286/ws.md) | MG008 | Digilent ZYBO（初代、Zynq Z-7010）への移植: ARMv7-A の HAL と JTAG の起動、PL（FPGA）の block を動かすまで（USB は外す） | incomplete | p001 の設計 版 2（JTAG の起動・ramdisk の root・PL の plio まで、p002〜p009 で 87 LW＋設計 10）。U1・U3〜U7 はユーザーの判断待ち、LLVM の ARM の target は Q1 の判断 |
 | [WS287](ws287/ws.md) | MG008 | EHCI の full-speed・low-speed の device（split transaction、ZYBO の ChipIdea を含む） | planning | 着手は後日 |
 | [WS279](ws279/ws.md) | MG008 | Raspberry Pi 5 の GPU（V3D 7.1）と display（HVS6）（2026-10-21 ユーザー） | incomplete | p001 design.md（約 47〜64 LW の Phase 表）、ユーザーの判断 D1〜D4 待ち |
 | [WS278](ws278/ws.md) | MG008 | Raspberry Pi 5 対応（config/ci/config-rpi5.mk、必要なら GPU・WiFi）（2026-10-21 ユーザー） | incomplete | p001 設計・p002 起動 image は main（6757ac6f2）、実機の確認待ち（plan/ws278/tests/rpi5-hw-test.md）、判断 D1〜D3 待ち |
