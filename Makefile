@@ -377,6 +377,11 @@ CONFIG_RPI5_SERIAL_CONSOLE ?= n
 # either, so its driver is off until the chip's power is solved).
 CONFIG_DRIVER_RPI5_BT ?= n
 
+# The Raspberry Pi 5's processor temperature (sysctl hw.thermal) and its
+# fan connector, driven from the temperature as Linux's pwm-fan does: on
+# by default, since the fan protects the board.
+CONFIG_DRIVER_RPI5_FAN ?= y
+
 # The Raspberry Pi 5's V3D 7.1 render engine (ws279): off by default.  With
 # it the kernel finds the engine at boot and holds it; root powers it and
 # runs its self-test with sysctl hw.gpu.start=1, and the result is in the

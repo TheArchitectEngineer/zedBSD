@@ -15,7 +15,9 @@
  * start after the SD card; a board whose firmware reset RP1's link boots
  * without them.  The onboard Wi-Fi, and the onboard Bluetooth when the
  * build has its driver (CONFIG_DRIVER_RPI5_BT, off by default), are probed
- * once interrupts are on and come up in the background.  The V3D render
+ * once interrupts are on and come up in the background.  The processor's
+ * temperature and the fan connector, when the build has their driver
+ * (CONFIG_DRIVER_RPI5_FAN, on by default), start then too.  The V3D render
  * engine, when the build has its driver (CONFIG_DRIVER_BCM2712_GPU, off by
  * default), is found then and waits for root to start it.
  */
@@ -37,6 +39,9 @@
 #include "drivers/platform/rpi5/rpi5-serror.h"
 #if CONFIG_DRIVER_RPI5_BT
 #include "drivers/platform/rpi5/rpi5-bt.h"
+#endif
+#if CONFIG_DRIVER_RPI5_FAN
+#include "drivers/platform/rpi5/rpi5-fan.h"
 #endif
 #if CONFIG_DRIVER_BCM2712_GPU
 #include "drivers/gpu/bcm2711/bcm2712-gpu.h"
@@ -169,6 +174,15 @@ kern_platform_refresh_devices(
 	/* Starts the Ethernet port's link and missed-interrupt service. */
 	drv_rp1_ethernet_refresh();
 	(void)drv_rpi5_serror_check("gem: starting the service");
+
+#if CONFIG_DRIVER_RPI5_FAN
+	/*
+	 * Starts reading the temperature and driving the fan connector; a
+	 * board without RP1 goes on without them.
+	 */
+	(void)drv_rpi5_fan_start();
+	(void)drv_rpi5_serror_check("rpi5-fan: starting the fan");
+#endif
 
 	/*
 	 * Starts the onboard Wi-Fi's thread; a board without the chip goes on

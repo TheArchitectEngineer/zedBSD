@@ -32,6 +32,7 @@
 | [p006](phase006/phase.md) | WiFi（sdio2 の SDIO host、bcm43455 の流用） | p002 | in-progress（2026-10-21 実装と build、実機は一括の試験） |
 | [p007](phase007/phase.md) | BT（uarta） | p006 | in-progress（2026-10-21 実装と build、実機は一括の試験） |
 | [p008](phase008/phase.md) | 規約の全文の見直し（第 1 部: HAL の bsp の分離、第 2 部: p003〜p007 の C） | p002〜 | in-progress（第 1・2 部 2026-10-21 済み、rpi4 の QEMU 起動の回帰は T1 待ち） |
+| [p009](phase009/phase.md) | ファンと温度（RP1 の PWM1 のファン端子、AVS の温度を hw.thermal に） | p004 | in-progress（2026-10-22 実装と板の確認済み、Q1 の判定待ち） |
 | （別 WS の提案） | GPU: V3D 7.1 と HVS6（design.md §4 D2） | p002 | — |
 
 ## 現在の状態・再開点
@@ -49,3 +50,4 @@
 - 2026-10-22 5 回目の UAT（kernel 9d78dc950、LAN の deadlock の直し）: LAN・USB keyboard・RP1・Wi-Fi の SDIO の bus が動作。1 分ごとの SSH の確認 40 回全部成功（16:59〜17:38、4 回目は約 40 分で停止）→ ユーザー「安定しているようなので、40回で切り上げて合格にしましょう。」で合格。Wi-Fi は MAC が NVRAM の仮の値で止まる → bd4744521（device tree の local-mac-address）を main 4cc0e5001 に merge、板で確認する。
 - 2026-10-22 板で bd4744521 の kernel: rpi5-wifi が MAC を得て bcm43455 が 98:fe:54:22:65:c4 で wlan0 として publish（ifconfig に wlan0）。接続の試験はまだ。
 - 2026-10-22 P3: Wi-Fi の接続。`connect` の EOPNOTSUPP は driver が supplicant を `cap` の list の idsup で確かめていたため（7.45.241 の list には無い、Pi 4 も同じ）。Linux と同じく `sup_wpa` の iovar で確かめるように直し（p006）、板で elecom-84a0c3-5G に自動接続（authorized）・DHCP 192.168.2.156・ping 192.168.2.1 20/20。残り: rx の glom の取りこぼしの log 1 回、切断・再接続・Pi 4 は未実施。
+- 2026-10-22 P3: ファン（ユーザー「Pi5のファンが回ってないんですが」）。kernel にファン・温度の code が無く、firmware は RP1 の PWM1 の clock を止めて渡していた。rpi5-fan を足し（p009）、板で 58 °C で level 1（2352 rpm）、60.6 °C で level 2（3877 rpm）、54.5 °C で level 1 に戻るのを見た。hw.thermal に温度。
