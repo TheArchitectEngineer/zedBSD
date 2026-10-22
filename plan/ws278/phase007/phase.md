@@ -35,3 +35,9 @@ Pi 5 の内蔵 Bluetooth（CYW43455 の HCI、BCM2712 の uarta）を HCI の cl
 
 - R18: bcm7271 の UART の FIFO の大きさ・AFE の扱いが 16550A と違えば、送受信の取りこぼしや CTS の待ちの失敗。log の `rpi5-bt: the line at … LCR …, MCR …, LSR …, MSR …` で register を見る。
 - R19: firmware の uarta の設定（dts の `skip-init`）を上書きする。driver は自分で divisor を設定するので影響しない見込み。
+
+## 1 回目の実機の結果と対処（2026-10-22 P3）
+
+- 実機: `rpi5-bt: controller's CTS did not rise in 500 ms`、`rpi5-bt: controller did not come up (42)`。
+- 2026-10-22 ユーザー「BTはPi4でも動作していないため、いったんドライバを無効にしてください。その上で、電源を解決しましょう。」→ `CONFIG_DRIVER_RPI5_BT`（Makefile の既定 n、`config-rpi5.mk` で n）を足し、n の時は `rpi5-bt.c`・`rpi4-bt-link.c`・HCI の class を build せず、`rpi5.c` は probe を呼ばない。code は残す。Pi 4 の `config-rpi4.mk` は前から `CONFIG_DRIVER_BCM2711_BT := n`。CTS の調べは今回しない（Wi-Fi の電源の後）。
+- Status: in-progress のまま（driver は無効、再開は Wi-Fi の chip の電源が解けてから）。

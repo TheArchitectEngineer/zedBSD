@@ -38,3 +38,9 @@ Pi 5 の USB の 4 つの口（RP1 の 2 つの DWC3、各々 xHCI）で USB key
 - R7: firmware が `pciex4_reset=0` でも RP1 の link や BAR を残さない版なら `rp1: PCIe link down …` で USB 無しの起動（止まりはしない）。
 - R8: inbound の窓の設定し直しで firmware の設定を壊す可能性。log の `rp1: inbound window N was …` で firmware の値が分かる。
 - R9: SD から起動した時に bootloader が USB を触っていなければ VBUS の pin の mux は kernel が付ける（GPIO 42/43）。keyboard に電源が来なければ、ここを疑う。
+
+## 1 回目の実機の結果と対処（2026-10-22 P3）
+
+- 実機: USB・LAN とも使えない（ユーザー）。写真では前半が流れて `rp1`・`rp1-usb`・`xhci`・`gem` の行が見えない。
+- 黙って失敗し得る所（code から）: device tree が無い（`start_rp1` が何も言わずに戻っていた）、firmware が `pciex4_reset=0` でも link を落とす（`rp1: PCIe link down`）、RP1 の BAR が無い、inbound の窓の設定し直し（`rp1: inbound window N was …`）、DWC3 の identity が読めない（`start_core` が何も言わずに ENODEV）、xHCI の bind・enable slot の completion が来ない（MSI-X → MIP の経路か DMA の窓）、RP1 の割り込みの初期化の失敗。
+- 対処: 段ごとの 1 行を足した。`rpi5: no device tree; …`、`rp1: PCIe link up (status …), bus … device 0 is …`、`rp1: bus …, MSI-X table at PCI …, peripherals at …`、`rp1-usb: no DWC3 at … (identity …)`、`rp1-usb: no controllers to start`。pci-xhci.c の Pi 4 の enable slot の追跡の行を Pi 5 でも出す。全部の log は bootlog の file で読む（p002）。
