@@ -16,8 +16,15 @@
 
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
-| p001 | 設計（model の構造、重みの形式と変換、層の shader、精度 fp32/fp16、参照の結果の作り方） | — | planning |
+| [p001](phase001/phase.md) | 設計（model の構造、重みの形式と変換、層の shader、精度 fp32/fp16、参照の結果の作り方）→ [design.md](design.md) | — | in-progress |
+| p002 | 重み: 変換の script・ZNET・参照の生成（PyTorch の venv）・試験の画像・firmware の repository の file・package（4〜6 LW） | p001、D1・D2・D4・D5 | planning |
+| p003 | libyolox の骨格と CPU の参照、host の照合 T2（6〜8 LW） | p002 | planning |
+| p004 | Vulkan の backend と 7 つの shader、lavapipe の T3〜T5（8〜10 LW） | p003 | planning |
+| p005 | zedBSD の package と試験の program `yolox-test`（3〜4 LW） | p004 | planning |
+| p006 | Pi 5 の実機の照合と速さの調整（6〜10 LW） | p005、WS283 | planning |
+| p007 | 規約の全文の見直しと license の監査（2〜3 LW） | p006 | planning |
 
 ## 現在の状態・再開点
 
 - 2026-10-23: 作成。p001 の設計から始める。
+- 2026-10-23 P1: p001 の設計の第 1 版（[design.md](design.md)）。Phase の案 p002〜p007（計 29〜41 LW）。再開: design-reviewer とユーザーの判断 D1〜D9（design §7）の後に p002。
