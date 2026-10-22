@@ -44,4 +44,10 @@ int drv_rpi5_gio_set_output(struct drv_rpi5_gio *gio, unsigned pin, int level);
 /* Reads a pin's level and whether it is an output. */
 int drv_rpi5_gio_get(struct drv_rpi5_gio *gio, unsigned pin, int *level, int *output);
 
+/*
+ * Reads the data and direction words of the bank that holds a pin: every
+ * pin's level, and a set bit for each input.
+ */
+int drv_rpi5_gio_get_bank(struct drv_rpi5_gio *gio, unsigned pin, uint32_t *data, uint32_t *direction);
+
 #endif

@@ -44,6 +44,9 @@
 /* The bytes of the controller's registers the module maps. */
 #define PINCTRL_REGISTER_BYTES	0x30U
 
+/* The most registers the report shows (the C0 controller's twelve). */
+#define PINCTRL_REPORT_WORDS	12U
+
 /*
  * One pin's places and the selectors of the functions the module knows.
  */
@@ -74,6 +77,7 @@ struct pinctrl_state {
 	int ready;
 	const struct pinctrl_variant *variant;
 	volatile uint8_t *registers;
+	uint64_t size;
 	struct spinlock lock;
 };
 
@@ -176,6 +180,7 @@ drv_rpi5_pinctrl_init(
 	error = drv_fdt_reg(fdt, node, 0, &address, &size);
 	if (error != 0)
 		return error;
+	pinctrl.size = size;
 	if (size < PINCTRL_REGISTER_BYTES)
 		size = PINCTRL_REGISTER_BYTES;
 	error = kern_device_map(address, (size_t)size, KERN_DEVICE_UNCACHED, &mapped);
@@ -272,6 +277,40 @@ drv_rpi5_pinctrl_apply_default(
 
 	/* Succeeded: the node's pins are set. */
 	return 0;
+}
+
+/*
+ * Logs the controller's stepping and its registers, the function
+ * selectors first and the pulls after them.
+ */
+void
+drv_rpi5_pinctrl_report(
+	const char *when)
+{
+	uint32_t words[PINCTRL_REPORT_WORDS];
+	unsigned count;
+	unsigned index;
+
+	/* Nothing to show before the controller was found. */
+	if (!pinctrl.ready)
+		return;
+
+	/* Reads the registers the tree gives the controller, as far as the report shows. */
+	count = (unsigned)(pinctrl.size / 4U);
+	if (count > PINCTRL_REPORT_WORDS)
+		count = PINCTRL_REPORT_WORDS;
+	for (index = 0; index < PINCTRL_REPORT_WORDS; index++) {
+		words[index] = 0;
+		if (index < count)
+			words[index] = kern_mmio_read32(pinctrl.registers + 4U * index);
+	}
+
+	/* Prints them in one line. */
+	kern_logf("rpi5-pinctrl: %s %s: %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x\n",
+		  pinctrl.variant->compatible,
+		  when,
+		  words[0], words[1], words[2], words[3], words[4], words[5],
+		  words[6], words[7], words[8], words[9], words[10], words[11]);
 }
 
 /*

@@ -34,4 +34,7 @@ int drv_rpi5_pinctrl_apply(const struct drv_fdt *fdt, uint32_t group);
 /* Applies every group a node's pinctrl-0 names. */
 int drv_rpi5_pinctrl_apply_default(const struct drv_fdt *fdt, uint32_t node);
 
+/* Logs the controller's stepping and registers, saying when they were read. */
+void drv_rpi5_pinctrl_report(const char *when);
+
 #endif

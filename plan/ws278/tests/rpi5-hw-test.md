@@ -64,3 +64,11 @@ QEMU に raspi5 は無いので、Pi 5 の実機で確かめる（ユーザー�
 - Wi-Fi: `rpi5-wifi: controller configuration … now …`（card の検出を「有り」に固定し SD の pin を選んだ）、`rpi5-wifi: host started: present …`・`host before CMD5: present …`（bit 16 が 1 なら card 有り）、`rpi5-wifi: WL_ON level 1, output` の後に `rpi5-wifi: SDIO card: …` が出るか。
 - USB・LAN: `rp1: PCIe link up (status …), bus 1 device 0 is 00011de4`、`rp1: bus 1, MSI-X table at PCI …`、`rp1-usb: DWC3 …`、`xhci: …`、`gem: …` のどこで止まるか。`rp1: PCIe link down` なら config.txt の `pciex4_reset=0` が効いていない。
 - Bluetooth は driver を外した（2026-10-22 ユーザー「BTはPi4でも動作していないため、いったんドライバを無効にしてください。」）。`rpi5-bt:` の行は出ない。
+
+## 3 回目の試験（2026-10-22、2 回目への直し）
+
+2 回目（ユーザー「まだだめですね」、log `build/review/rpi5/uat-20261022-2-boot-000001.txt`、写真 `build/review/rpi5/uat-20261022-2.webp`）を受けた版。手順は 2 回目と同じ（起動の後 1〜2 分おいて電源を切り、FAT の `log/boot-NNNNNN.txt` の最も大きい番号の物と、最後の画面の写真）。
+
+- USB・LAN: firmware は link を残すが root port の bus 番号を 0 のまま渡していた。今は kernel が bus 1 を付ける。見る行: `rp1: root port: …`・`rp1: outbound window: …`（firmware の値）、`rp1: the root port had no bus behind it; numbered bus 1 …`、`rp1: PCIe link up (status …), bus 1 device 0 is 00011de4`（RP1 なら 00011de4）、`rp1: bus 1, MSI-X table at PCI …`、`rp1-usb: DWC3 …`、`xhci: …`、`gem: …`。`device 0 is ffffffff` なら bus 1 の設定空間に届いていない。`rp1: BAR N was unplaced …` や `rp1: outbound window was unset …` が出たら firmware がそこも残していない（kernel が設定した）。USB keyboard で login できるか、LAN の cable で `ifconfig`・`ping`。
+- Wi-Fi: 原因は未特定で、今回は絞るための log。`rpi5-pinctrl: brcm,bcm2712d0-pinctrl before: …`・`after: …`（pin の mux と pull の register）、`rpi5-wifi: GPIO bank levels …, inputs …`（bit 30〜35 = SDIO の CLK・CMD・DAT0〜3 の pad の level）、`rpi5-wifi: command line low; present by pin selection 0-3: …`、`rpi4-sdio: command failed, interrupt status …`。
+- SError: `rpi5: SError pending after <段>` の行が原因の段を名指す（その直後に `ARM64 SError N … in the kernel at pc …` も出る。pc は `build/review/rpi5/zedbsd-rpi5-<sha>-kernel.elf` で引ける）。名指しが無く `on return to user` だけなら、計った段の外（SD の読み書きなど）。

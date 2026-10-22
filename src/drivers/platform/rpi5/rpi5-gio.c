@@ -169,6 +169,35 @@ drv_rpi5_gio_get(
 	return 0;
 }
 
+/*
+ * Reads the data and direction words of the bank that holds a pin.
+ */
+int
+drv_rpi5_gio_get_bank(
+	struct drv_rpi5_gio *gio,
+	unsigned pin,
+	uint32_t *data,
+	uint32_t *direction)
+{
+	volatile uint8_t *bank;
+	uint32_t bit;
+	int error;
+
+	/* Refuses nowhere to put the answers. */
+	if (data == NULL || direction == NULL)
+		return EINVAL;
+
+	/* Finds the pin's bank. */
+	error = find_pin(gio, pin, &bank, &bit);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the bank's two words. */
+	*data = kern_mmio_read32(bank + GIO_DATA);
+	*direction = kern_mmio_read32(bank + GIO_IODIR);
+	return 0;
+}
+
 /* Finds the bank of a pin and the pin's bit in it. */
 static int
 find_pin(

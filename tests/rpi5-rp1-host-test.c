@@ -128,10 +128,15 @@ kern_device_map(
 	if (bytes == NULL)
 		return 12;
 
-	/* A root complex with the link up, bus 1 behind it, and RP1 there. */
+	/*
+	 * A root complex as the Pi 5's firmware leaves it with
+	 * pciex4_reset=0: the link up, the root port a bridge without bus
+	 * numbers, and RP1 behind it.
+	 */
 	if (address == EXPECT_PCIE_REGISTERS) {
 		write_le32(bytes, 0x4068U, 0x30U);
-		write_le32(bytes, 0x18U, FAKE_RP1_BUS << 8);
+		write_le32(bytes, 0x0cU, 0x00010000U);
+		write_le32(bytes, 0x18U, 0);
 		write_le32(bytes, 0x8000U, 0x00011de4U);
 		write_le32(bytes, 0x8010U, FAKE_MSIX_BAR);
 		write_le32(bytes, 0x8014U, 0);
@@ -377,6 +382,15 @@ check_tree(
 	failures += check(read_le32(pcie, 0x403cU) == 0xfffff01cU && read_le32(pcie, 0x4040U) == 0xffU, "window 3 covers the MSI page");
 	failures += check(read_le32(pcie, 0x40bcU) == 0x00130001U && read_le32(pcie, 0x40c0U) == 0x10U, "window 3 lands on the MSI receiver");
 	failures += check((read_le32(pcie, 0x8004U) & 0x6U) == 0x6U, "RP1 decodes memory and masters");
+
+	/* The root port the firmware left unnumbered, and the outbound window it left unset. */
+	failures += check(read_le32(pcie, 0x18U) == ((FAKE_RP1_BUS << 16) | (FAKE_RP1_BUS << 8)), "the root port's secondary bus is 1");
+	failures += check((read_le32(pcie, 0x04U) & 0x6U) == 0x6U, "the root port forwards memory both ways");
+	failures += check(read_le32(pcie, 0x20U) == 0xfff00000U, "the root port passes the 32-bit memory space");
+	failures += check((read_le32(pcie, 0x4008U) & 0x2000U) != 0, "an unanswered configuration read returns ones");
+	failures += check(read_le32(pcie, 0x400cU) == 0 && read_le32(pcie, 0x4010U) == 0, "the outbound window starts at PCI 0");
+	failures += check(read_le32(pcie, 0x4070U) == 0xfff00000U, "the outbound window's low MiB bits");
+	failures += check(read_le32(pcie, 0x4080U) == 0x1fU && read_le32(pcie, 0x4084U) == 0x1fU, "the outbound window is at 124 GiB");
 
 	/* A pin's function. */
 	error = drv_rp1_gpio_init();

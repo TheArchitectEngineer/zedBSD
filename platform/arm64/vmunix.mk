@@ -68,6 +68,7 @@ ARM64_BOARD_KERNEL_SOURCES_rpi5 := \
 	src/drivers/platform/rpi5/rpi5-gio.c \
 	src/drivers/platform/rpi5/rpi5-pinctrl.c \
 	src/drivers/platform/rpi5/rpi5-wifi.c \
+	src/drivers/platform/rpi5/rpi5-serror.c \
 	src/drivers/platform/rpi4/rpi4-mmc-irq.c \
 	src/drivers/platform/rpi4/rpi4-sdio-host.c \
 	src/drivers/platform/rpi4/rpi4-sdio.c \

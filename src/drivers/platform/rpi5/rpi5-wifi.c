@@ -34,6 +34,7 @@
 #include "drivers/platform/rpi5/rpi5-wifi.h"
 #include "drivers/platform/rpi5/rpi5-gio.h"
 #include "drivers/platform/rpi5/rpi5-pinctrl.h"
+#include "drivers/platform/rpi5/rpi5-serror.h"
 #include "drivers/platform/rpi4/rpi4-mmc-irq.h"
 #include "drivers/platform/rpi4/rpi4-sdio.h"
 #include "drivers/wifi/bcm43455/bcm43455.h"
@@ -103,8 +104,9 @@
 #define SDIO_CFG_SD_PIN_SEL_SD		0x2U
 #define SDIO_CFG_REGISTER_SPAN		0x48U
 
-/* The host's present state register, read for the bring-up's log. */
+/* The host's present state register, read for the bring-up's log, and its command line's level. */
 #define SDHCI_PRESENT_STATE		0x24U
+#define SDHCI_PRESENT_CMD_LEVEL		(1U << 24)
 #define SDHCI_HOST_CONTROL		0x28U
 #define SDHCI_CLOCK_CONTROL		0x2cU
 
@@ -191,6 +193,7 @@ static int bring_up(struct rpi5_wifi *wifi);
 static void report_power_line(struct rpi5_wifi *wifi);
 static int configure_controller(struct rpi5_wifi *wifi);
 static void report_host(struct rpi5_wifi *wifi, const char *when);
+static void report_pin_selections(struct rpi5_wifi *wifi);
 static int route_pins(struct rpi5_wifi *wifi);
 static int set_power(struct rpi5_wifi *wifi, int on);
 static int pulse_power(struct rpi5_wifi *wifi);
@@ -722,6 +725,9 @@ bring_up(
 {
 	int error;
 
+	/* Names the reading of the files (SD card accesses) if it left an SError. */
+	(void)drv_rpi5_serror_check("rpi5-wifi: reading the firmware files");
+
 	/* Opens the GPIO block of the power line. */
 	error = drv_rpi5_gio_open(&wifi->fdt, wifi->gio_node, &wifi->gio);
 	if (error != 0) {
@@ -731,9 +737,11 @@ bring_up(
 
 	/* Records how the firmware left the chip's power line. */
 	report_power_line(wifi);
+	(void)drv_rpi5_serror_check("rpi5-wifi: reading WL_ON");
 
 	/* Routes the SDIO pins to the controller and WL_ON to its GPIO. */
 	error = route_pins(wifi);
+	(void)drv_rpi5_serror_check("rpi5-wifi: routing the pins");
 	if (error != 0)
 		return error;
 
@@ -750,11 +758,13 @@ bring_up(
 
 	/* Forces the card present and selects the SD pins, before the host powers the bus. */
 	error = configure_controller(wifi);
+	(void)drv_rpi5_serror_check("rpi5-wifi: the controller configuration");
 	if (error != 0)
 		return error;
 
 	/* Resets the controller and starts the 400 kHz bus. */
 	error = drv_rpi4_sdio_host_init(&wifi->host, wifi->registers, wifi->base_clock_hz);
+	(void)drv_rpi5_serror_check("rpi5-wifi: starting the host");
 	if (error != 0)
 		return error;
 	wifi->host_ready = 1;
@@ -840,6 +850,50 @@ report_host(
 }
 
 /*
+ * Logs the lines' levels under each of the controller's pin selections
+ * when the command line reads low under the SD one; a powered chip and the
+ * pull-up hold it high on the pins the controller drives.  The controller
+ * takes a selection when its clock starts, so the clock is restarted after
+ * each.  The SD selection is restored.
+ */
+static void
+report_pin_selections(
+	struct rpi5_wifi *wifi)
+{
+	volatile uint8_t *cfg;
+	volatile uint8_t *registers;
+	uint32_t pins;
+	uint32_t present[SDIO_CFG_SD_PIN_SEL_MASK + 1U];
+	unsigned selection;
+
+	registers = wifi->registers;
+	cfg = wifi->cfg_registers;
+
+	/* Nothing to learn when the command line is high. */
+	if ((kern_mmio_read32(registers + SDHCI_PRESENT_STATE) & SDHCI_PRESENT_CMD_LEVEL) != 0)
+		return;
+
+	/* Reads the lines under each selection. */
+	pins = kern_mmio_read32(cfg + SDIO_CFG_SD_PIN_SEL) & ~SDIO_CFG_SD_PIN_SEL_MASK;
+	for (selection = 0; selection <= SDIO_CFG_SD_PIN_SEL_MASK; selection++) {
+		kern_mmio_write32(cfg + SDIO_CFG_SD_PIN_SEL, pins | selection);
+		(void)drv_rpi4_sdio_host_set_clock(&wifi->host, DRV_RPI4_SDIO_HOST_IDENTIFY_HZ);
+		present[selection] = kern_mmio_read32(registers + SDHCI_PRESENT_STATE);
+	}
+
+	/* Restores the SD pins. */
+	kern_mmio_write32(cfg + SDIO_CFG_SD_PIN_SEL, pins | SDIO_CFG_SD_PIN_SEL_SD);
+	(void)drv_rpi4_sdio_host_set_clock(&wifi->host, DRV_RPI4_SDIO_HOST_IDENTIFY_HZ);
+
+	/* Records the levels. */
+	kern_logf("rpi5-wifi: command line low; present by pin selection 0-3: %08x %08x %08x %08x\n",
+		  present[0],
+		  present[1],
+		  present[2],
+		  present[3]);
+}
+
+/*
  * Logs WL_ON's level and direction: as the firmware left it, and as the
  * chip's power-up left it.
  */
@@ -847,6 +901,8 @@ static void
 report_power_line(
 	struct rpi5_wifi *wifi)
 {
+	uint32_t data;
+	uint32_t direction;
 	int level;
 	int output;
 	int error;
@@ -861,6 +917,16 @@ report_power_line(
 		  level,
 		  output ? "output" : "input",
 		  error);
+
+	/*
+	 * Records the levels of the whole bank, which holds the SDIO lines
+	 * (GPIO 30 to 35) too, as the pads see them.
+	 */
+	data = 0;
+	direction = 0;
+	error = drv_rpi5_gio_get_bank(&wifi->gio, wifi->power_pin, &data, &direction);
+	if (error == 0)
+		kern_logf("rpi5-wifi: GPIO bank levels %08x, inputs %08x\n", data, direction);
 }
 
 /*
@@ -873,10 +939,11 @@ route_pins(
 {
 	int error;
 
-	/* Finds the pin controller. */
+	/* Finds the pin controller and records how the firmware left it. */
 	error = drv_rpi5_pinctrl_init(&wifi->fdt);
 	if (error != 0)
 		return error;
+	drv_rpi5_pinctrl_report("before");
 
 	/* Routes the SDIO pins. */
 	error = drv_rpi5_pinctrl_apply_default(&wifi->fdt, wifi->controller_node);
@@ -893,6 +960,7 @@ route_pins(
 	}
 
 	/* Succeeded: the bus and the power line reach the chip. */
+	drv_rpi5_pinctrl_report("after");
 	kern_logf("rpi5-wifi: SDIO and WL_ON pins routed\n");
 	return 0;
 }
@@ -960,6 +1028,8 @@ pulse_power(
 	/* Records the power line and the bus as CMD5 finds them. */
 	report_power_line(wifi);
 	report_host(wifi, "before CMD5");
+	report_pin_selections(wifi);
+	(void)drv_rpi5_serror_check("rpi5-wifi: powering the chip");
 
 	/* Succeeded: the chip is out of reset. */
 	return 0;
@@ -1087,6 +1157,9 @@ give_back(
 		/* Records the chip's power as given back. */
 		wifi->power_touched = 0;
 	}
+
+	/* Names this step if giving back raised an SError. */
+	(void)drv_rpi5_serror_check("rpi5-wifi: giving the controller back");
 }
 
 /* Reports ECANCELED once a stop has been asked for. */
@@ -1406,6 +1479,7 @@ bus_power_up(
 
 	/* Enumerates the SDIO interface up to a selected card on the fast bus. */
 	error = drv_rpi4_sdio_enumerate(&wifi->card, &wifi->host, &wifi->waiter);
+	(void)drv_rpi5_serror_check("rpi5-wifi: enumerating the card");
 	if (error != 0)
 		return error;
 
@@ -1441,4 +1515,7 @@ bus_power_down(
 	error = set_power(wifi, 0);
 	if (error != 0)
 		kern_logf("rpi5-wifi: WL_ON not turned off (%d)\n", error);
+
+	/* Names this step if powering down raised an SError. */
+	(void)drv_rpi5_serror_check("rpi5-wifi: powering the chip down");
 }
