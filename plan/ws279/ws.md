@@ -21,7 +21,7 @@
 | [p003](phase003/phase.md) | job の submit（7.1 の最小の packet、noop・clear、TFU、CSD、cache の clean、hang と reset）（6〜8 LW） | p002 | in-progress（2026-10-22 P2、実機で self-test 全 PASS、判定待ち） |
 | [p004](phase004/phase.md) | QPU 7.1 の encoder・scheduler・register の割り当て、固定の shader（10〜14 LW、host だけで並べられる） | p001 | cleared（2026-10-21 Q1、q1545、host の試験 PASS、実機は p005） |
 | p005 | 描画の経路（shader state record の D0 の形、texture state、tile の大きさ、Vulkan の native の部分）（8〜10 LW） | p003・p004 | planning |
-| [p006](phase006/phase.md) | HVS6 の display（引き継ぎ、UPM、plane、PV の vblank、flip、zero copy）（8〜10 LW） | p002 | in-progress（2026-10-22 P2、P0〜R2 実機 PASS、display device への接続が残り） |
+| [p006](phase006/phase.md) | HVS6 の display（引き継ぎ、UPM、plane、PV の vblank、flip、zero copy）（8〜10 LW） | p002 | in-progress（2026-10-22 P2、P0〜R3 実機 PASS、`/dev/gpu0` の display device、client からの確認と scaled overlay が残り） |
 | p007 | `drv_gpu_interface` と Keiland の graphical login（4〜6 LW） | p005・p006、WS278 p004 | planning |
 | p008 | 速さ（4〜6 LW） | p007 | planning |
 | p009 | 規約の全文の見直しと license・類似の監査（3〜4 LW） | p002〜p008 | planning |
@@ -35,3 +35,4 @@
 - 2026-10-21 P2 q1545: p004 の 7.1 の compiler（qpu71.c と shader71-*.c、shared の shader.c・shader-analyze.c）と host 試験（Mesa の oracle、7.1 の lane の model で木の全 shader を source と比較）が PASS。再開点: Q1 の判定、p005 で使う。
 - 2026-10-22 P2: p002・p003 を実装（`CONFIG_DRIVER_BCM2712_GPU`、起動時は V0 だけ、`sysctl hw.gpu.start=1` で V1〜V9）。Pi 5 D0 の実機で V3D 7.1.10・12 QPU・1.15 GHz、noop・clear・TFU・CSD・hang と reset が全 PASS（dmesg）。Pi 4 と Pi 5 既定の kernel.elf は不変。再開点: Q1 の判定、次は p005・p006。
 - 2026-10-22 P2: p006 の段 P0〜R2（readout・自分の dlist・PV の vblank・overlay の flip）が D0 の実機で PASS。残りは display device（lease・3 slot・cursor・zero copy）と p005。
+- 2026-10-22 P2: p006 R3（HVS6 の flip の写し `hvs6-flip.c` と共有の display device）が実機で PASS、`/dev/gpu0`。次は p005（描画の経路）。

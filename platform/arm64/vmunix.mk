@@ -289,10 +289,13 @@ endif
 # files; and the shader compiler (ws279-p004): the version-independent compiler files and the 7.1 copies of the
 # encoder, lowering, epilogues and scheduler, which take the place of the 4.2 ones.  Only the Pi 5 builds it.
 ifeq ($(ZEDBSD_BOARD)$(CONFIG_DRIVER_BCM2712_GPU),rpi5y)
+ARM64_KERNEL_SOURCES += $(filter-out $(KERN_GPU_SOURCES),src/drivers/gpu/gpu.c src/drivers/gpu/gpu-fence.c)
 ARM64_KERNEL_SOURCES += src/drivers/gpu/bcm2711/attach71.c src/drivers/gpu/bcm2711/v3d71.c \
 	src/drivers/gpu/bcm2711/v3d71-firmware.c src/drivers/gpu/bcm2711/v3d71-hardware.c \
 	src/drivers/gpu/bcm2711/v3d71-job.c src/drivers/gpu/bcm2711/v3d71-cl.c \
 	src/drivers/gpu/bcm2711/v3d71-diagnostic.c src/drivers/gpu/bcm2711/display/hvs6.c \
+	src/drivers/gpu/bcm2711/display/hvs6-flip.c src/drivers/gpu/bcm2711/display/display-device.c \
+	src/drivers/gpu/bcm2711/share.c \
 	src/drivers/gpu/bcm2711/stage.c src/drivers/gpu/bcm2711/fdt-util.c \
 	src/drivers/gpu/bcm2711/mmu.c src/drivers/gpu/bcm2711/buffer.c
 ARM64_KERNEL_SOURCES += $(filter-out $(KERN_GPU_SOURCES),src/drivers/gpu/compiler/spirv.c src/drivers/gpu/compiler/optimize.c src/drivers/gpu/i915/render/codec.c)

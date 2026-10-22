@@ -234,7 +234,7 @@ start_engine(void)
 
 /*
  * Runs the display's stages: the readout (P1), the takeover (R0), the
- * vertical blank (R1) and the overlay flips (R2).
+ * vertical blank (R1), the overlay flips (R2) and the display device (R3).
  *
  * Returns 0 when there is no display to start, otherwise the first stage's
  * error after logging it.  The channel keeps the driver's own copy of the
@@ -270,6 +270,11 @@ start_display(void)
 		bcm2711_stage_mark(BCM2712_FAMILY_DISPLAY, "R2 failed (%d)", error);
 		return error;
 	}
+
+	/* Publishes the display device on the console list. */
+	error = bcm2712_display_attach_device(&attach_display);
+	if (error != 0)
+		return error;
 
 	/* Succeeded: the display stages passed. */
 	bcm2711_stage_mark(BCM2712_FAMILY_DISPLAY, "display self-test ok");

@@ -43,6 +43,7 @@
 
 #include "drivers/gpu/bcm2711/buffer.h"
 #include "drivers/gpu/bcm2711/display/hvs6.h"
+#include "drivers/gpu/bcm2711/v3d71-private.h"
 
 /* The device tree names of the parts (binding facts). */
 #define HVS_COMPATIBLE			"brcm,bcm2712-hvs"
@@ -139,6 +140,7 @@ static int decode_list(struct bcm2712_display *display, uint32_t head);
 static void show_list(const struct bcm2712_display *display, uint32_t head, uint32_t end);
 static int switch_list(struct bcm2712_display *display, uint32_t head, uint32_t *waited_us);
 static bool valve_service(void *owner);
+static bool device_vblank_service(void *owner);
 static uint32_t overlay_pixel(uint32_t x, uint32_t y, uint32_t step);
 
 /*
@@ -163,8 +165,8 @@ bcm2712_display_discover(
 
 	/* Starts from an empty description. */
 	kern_memset(display, 0, sizeof(*display));
-	display->valve_irq[0].irq = BCM2711_NO_IRQ;
-	display->valve_irq[1].irq = BCM2711_NO_IRQ;
+	display->base.timing_irq[0].irq = BCM2711_NO_IRQ;
+	display->base.timing_irq[1].irq = BCM2711_NO_IRQ;
 	spin_init(&display->guard, LOCK_RANK_DEVICE, "bcm2712-hvs");
 	if (screen != NULL) {
 		display->screen = *screen;
@@ -184,12 +186,12 @@ bcm2712_display_discover(
 		bcm2711_stage_mark(BCM2712_FAMILY_DISPLAY, "P0 no hvs node: no display");
 		return ENODEV;
 	}
-	error = bcm2711_fdt_window(fdt, node, 0, &display->compositor);
-	if (error != 0 || display->compositor.size < LIST_MEMORY_OFFSET + 4U * LIST_BOOT_WORDS) {
+	error = bcm2711_fdt_window(fdt, node, 0, &display->base.compositor);
+	if (error != 0 || display->base.compositor.size < LIST_MEMORY_OFFSET + 4U * LIST_BOOT_WORDS) {
 		bcm2711_stage_mark(BCM2712_FAMILY_DISPLAY, "P0 hvs reg unusable (%d)", error);
 		return ENODEV;
 	}
-	error = bcm2711_map_window(&display->compositor);
+	error = bcm2711_map_window(&display->base.compositor);
 	if (error != 0) {
 		bcm2711_stage_mark(BCM2712_FAMILY_DISPLAY, "P0 hvs map failed (%d)", error);
 		return ENODEV;
@@ -215,13 +217,13 @@ bcm2712_display_discover(
 
 	/* Shows what was found. */
 	bcm2711_stage_mark(BCM2712_FAMILY_DISPLAY, "P0 hvs %llx+%llx iommu %llx pv0 %llx irq %d pv1 %llx irq %d",
-			   (unsigned long long)display->compositor.physical,
-			   (unsigned long long)display->compositor.size,
+			   (unsigned long long)display->base.compositor.physical,
+			   (unsigned long long)display->base.compositor.size,
 			   (unsigned long long)display->iommu.physical,
-			   (unsigned long long)display->valve[0].physical,
-			   display->valve_irq[0].irq,
-			   (unsigned long long)display->valve[1].physical,
-			   display->valve_irq[1].irq);
+			   (unsigned long long)display->base.timing[0].physical,
+			   display->base.timing_irq[0].irq,
+			   (unsigned long long)display->base.timing[1].physical,
+			   display->base.timing_irq[1].irq);
 	display->present = true;
 
 	/* Succeeded: the compositor is mapped. */
@@ -255,7 +257,7 @@ bcm2712_display_readout(
 	allowed = bcm2711_stage_allowed(BCM2712_FAMILY_DISPLAY, "P1");
 	if (!allowed)
 		return ECANCELED;
-	hvs = display->compositor.mapped;
+	hvs = display->base.compositor.mapped;
 
 	/* Reads the layout: C0 and D0 place the channel blocks differently. */
 	display->version = kern_mmio_read32(hvs + HVS_VERSION) & 0xffU;
@@ -349,6 +351,20 @@ bcm2712_display_readout(
 				   display->planes[index].upm_base,
 				   (display->screen_known && display->planes[index].address == display->screen.physical_base) ? " = boot framebuffer" : "");
 	}
+	/* Describes the console to the shared record from the firmware's first plane. */
+	display->base.channel = display->channel;
+	display->base.port = display->channel;
+	display->base.screen.physical = display->planes[0].address;
+	display->base.screen.size = display->screen.size;
+	display->base.screen.width = display->planes[0].width;
+	display->base.screen.height = display->planes[0].height;
+	display->base.screen.pitch = display->planes[0].pitch;
+	display->base.screen.format = 0;
+	if (display->planes[0].order == 3U)
+		display->base.screen.format = 1;
+	display->base.screen.uncached = false;
+	if (display->base.screen.size < (uint64_t)display->base.screen.pitch * display->base.screen.height)
+		display->base.screen.size = (uint64_t)display->base.screen.pitch * display->base.screen.height;
 	bcm2711_stage_mark(BCM2712_FAMILY_DISPLAY, "P1 ok ch%u list %u-%u, %u planes %u unused, fb %llx %ux%u pitch %u",
 			   display->channel,
 			   display->firmware_head,
@@ -455,6 +471,7 @@ bcm2712_display_vblank_test(
 	uint32_t status;
 	uint64_t count;
 	uint64_t started;
+	uint64_t elapsed;
 	unsigned step;
 	bool allowed;
 
@@ -464,8 +481,8 @@ bcm2712_display_vblank_test(
 	allowed = bcm2711_stage_allowed(BCM2712_FAMILY_DISPLAY, "R1");
 	if (!allowed)
 		return ECANCELED;
-	valve = display->valve[display->channel].mapped;
-	line = &display->valve_irq[display->channel];
+	valve = display->base.timing[display->channel].mapped;
+	line = &display->base.timing_irq[display->channel];
 	if (valve == NULL || !line->registered)
 		return ENODEV;
 
@@ -500,13 +517,17 @@ bcm2712_display_vblank_test(
 	kern_irq_mask(line->irq);
 	kern_mmio_write32(valve + VALVE_INTEN, enable);
 	kern_mmio_write32(valve + VALVE_INTSTAT, VALVE_VFP_START);
+	elapsed = kern_ticks_to_ms(clock_ticks() - started);
 	bcm2711_stage_mark(BCM2712_FAMILY_DISPLAY, "R1 %llu vblanks in %llu ms",
 			   (unsigned long long)count,
-			   (unsigned long long)kern_ticks_to_ms(clock_ticks() - started));
+			   (unsigned long long)elapsed);
 
 	/* Refuses a valve that gave no interrupt. */
-	if (count == 0)
+	if (count == 0 || elapsed == 0)
 		return EIO;
+
+	/* Records the measured refresh, rounded to the whole hertz (the flip code budgets with it). */
+	display->base.refresh_millihz = (uint32_t)((count * 1000U + elapsed / 2U) / elapsed) * 1000U;
 
 	/* Succeeded: the valve's vertical blank reaches the driver. */
 	return 0;
@@ -661,6 +682,112 @@ bcm2712_display_overlay_test(
 	return 0;
 }
 
+/*
+ * Reports the window offset of one register of the shown channel.
+ */
+uint32_t
+bcm2712_display_register_offset(
+	const struct bcm2712_display *display,
+	enum bcm2712_hvs_register which)
+{
+	uint32_t offset;
+
+	/* Picks the register's place in each layout. */
+	switch (which) {
+	case BCM2712_HVS_CTRL0:
+		offset = channel_register(display, display->channel, CHANNEL_CTRL0, CHANNEL_CTRL0);
+		break;
+	case BCM2712_HVS_LPTRS:
+		offset = channel_register(display, display->channel, CHANNEL_C0_LPTRS, CHANNEL_D0_LPTRS);
+		break;
+	default:
+		offset = channel_register(display, display->channel, CHANNEL_C0_DL, CHANNEL_D0_DL);
+		break;
+	}
+
+	/* Reports the offset. */
+	return offset;
+}
+
+/*
+ * Publishes the display device on the driver's console list.
+ *
+ * Fills the shared record's mode, clocks and screen, starts the persistent
+ * vertical-blank service of the shown channel's pixel valve, and has the
+ * shared display device check its flips and register its node.  Needs R0
+ * and R1.
+ */
+int
+bcm2712_display_attach_device(
+	struct bcm2712_display *display)
+{
+	struct bcm2711_irq_line *line;
+	volatile uint8_t *valve;
+	uint32_t rate;
+	uint32_t plane;
+	uint32_t enable;
+	bool allowed;
+	int error;
+
+	/* Honors hvs6.stop=R3; needs the driver's console list and a measured refresh. */
+	if (!display->adopted || display->base.refresh_millihz == 0)
+		return ENODEV;
+	if (display->channel >= BCM2712_HVS_VALVES)
+		return ENODEV;
+	allowed = bcm2711_stage_allowed(BCM2712_FAMILY_DISPLAY, "R3");
+	if (!allowed)
+		return ECANCELED;
+	valve = display->base.timing[display->channel].mapped;
+	line = &display->base.timing_irq[display->channel];
+	if (valve == NULL || !line->registered)
+		return ENODEV;
+
+	/* Refuses firmware planes whose pixel memory the driver's planes would share. */
+	for (plane = 0; plane < display->plane_count && plane < BCM2712_HVS_LIST_PLANES; plane++) {
+		/* A handle or a base inside the driver's ranges collides. */
+		if (display->planes[plane].upm_handle >= BCM2712_UPM_LOWEST_HANDLE ||
+		    display->planes[plane].upm_base + 129U > BCM2712_UPM_LOWEST_BASE) {
+			bcm2711_stage_mark(BCM2712_FAMILY_DISPLAY, "R3 firmware plane%u upm %u@%u collides", plane, display->planes[plane].upm_handle, display->planes[plane].upm_base);
+			return ENOSPC;
+		}
+	}
+
+	/* The compositor's clock stays the firmware's: its rate is both the floor and the ceiling. */
+	rate = 0;
+	error = bcm2712_clock_get(0x00030002U, 4U, &rate);
+	if (error != 0 || rate == 0)
+		rate = 500000000U;
+	display->base.console_core_hz = rate;
+	display->base.max_core_hz = rate;
+	display->attach_control0 = kern_mmio_read32(display->base.compositor.mapped + bcm2712_display_register_offset(display, BCM2712_HVS_CTRL0));
+
+	/* Starts the flip state, then the persistent vertical-blank service that feeds it. */
+	bcm2711_display_flip_init(&display->base);
+	if (!display->base.flip.initialized)
+		return ENOMEM;
+	line->owner = display;
+	line->service = device_vblank_service;
+	kern_mmio_write32(valve + BCM2712_VALVE_INTSTAT, BCM2712_VALVE_VFP_START);
+	enable = kern_mmio_read32(valve + BCM2712_VALVE_INTEN);
+	kern_mmio_write32(valve + BCM2712_VALVE_INTEN, enable | BCM2712_VALVE_VFP_START);
+	kern_irq_unmask(line->irq);
+	display->base.scanout_started = true;
+	bcm2711_stage_mark(BCM2712_FAMILY_DISPLAY, "R3 device on console list %u, %u mHz, core %u Hz",
+			   display->own_head,
+			   display->base.refresh_millihz,
+			   rate);
+
+	/* Has the shared display device exercise the flips and publish its node. */
+	error = bcm2711_display_register(&display->base);
+	if (error != 0) {
+		bcm2711_stage_mark(BCM2712_FAMILY_DISPLAY, "R3 display device not registered (%d)", error);
+		return error;
+	}
+
+	/* Succeeded: the display node is published. */
+	return 0;
+}
+
 /* Finds one pixel valve, maps it and installs its (masked) interrupt handler. */
 static void
 discover_valve(
@@ -676,22 +803,22 @@ discover_valve(
 	error = bcm2711_fdt_find(fdt, compatible, &node);
 	if (error != 0)
 		return;
-	error = bcm2711_fdt_window(fdt, node, 0, &display->valve[index]);
+	error = bcm2711_fdt_window(fdt, node, 0, &display->base.timing[index]);
 	if (error != 0)
 		return;
-	error = bcm2711_map_window(&display->valve[index]);
+	error = bcm2711_map_window(&display->base.timing[index]);
 	if (error != 0) {
-		display->valve[index].mapped = NULL;
+		display->base.timing[index].mapped = NULL;
 		return;
 	}
 
 	/* Installs the handler on the valve's line, masked. */
-	error = bcm2711_fdt_gic_irq(fdt, node, 0, &display->valve_irq[index].irq);
+	error = bcm2711_fdt_gic_irq(fdt, node, 0, &display->base.timing_irq[index].irq);
 	if (error != 0) {
-		display->valve_irq[index].irq = BCM2711_NO_IRQ;
+		display->base.timing_irq[index].irq = BCM2711_NO_IRQ;
 		return;
 	}
-	(void)bcm2711_irq_install(&display->valve_irq[index]);
+	(void)bcm2711_irq_install(&display->base.timing_irq[index]);
 }
 
 /* Reports the window offset of one channel register in the layout read at P1. */
@@ -722,7 +849,7 @@ list_read(
 	uint32_t value;
 
 	/* The memory starts at 0x4000 in the compositor's window. */
-	value = kern_mmio_read32(display->compositor.mapped + LIST_MEMORY_OFFSET + word * 4U);
+	value = kern_mmio_read32(display->base.compositor.mapped + LIST_MEMORY_OFFSET + word * 4U);
 
 	/* Reports the word. */
 	return value;
@@ -736,7 +863,7 @@ list_write(
 	uint32_t value)
 {
 	/* The memory starts at 0x4000 in the compositor's window. */
-	kern_mmio_write32(display->compositor.mapped + LIST_MEMORY_OFFSET + word * 4U, value);
+	kern_mmio_write32(display->base.compositor.mapped + LIST_MEMORY_OFFSET + word * 4U, value);
 }
 
 /* Walks a list from its head, decoding up to BCM2712_HVS_LIST_PLANES unscaled-layout planes. */
@@ -865,7 +992,7 @@ switch_list(
 	uint32_t poll;
 
 	/* Writes the new head into the channel's list pointer, keeping the other bits. */
-	hvs = display->compositor.mapped;
+	hvs = display->base.compositor.mapped;
 	pointers = kern_mmio_read32(hvs + channel_register(display, display->channel, CHANNEL_C0_LPTRS, CHANNEL_D0_LPTRS));
 	pointers = (pointers & ~CHANNEL_HEAD_MASK) | head;
 	kern_mmio_write32(hvs + channel_register(display, display->channel, CHANNEL_C0_LPTRS, CHANNEL_D0_LPTRS), pointers);
@@ -900,7 +1027,7 @@ valve_service(
 
 	/* Ignores an interrupt that is not the vertical blank. */
 	display = owner;
-	valve = display->valve[display->channel].mapped;
+	valve = display->base.timing[display->channel].mapped;
 	status = kern_mmio_read32(valve + VALVE_INTSTAT);
 	if ((status & VALVE_VFP_START) == 0)
 		return false;
@@ -930,4 +1057,40 @@ overlay_pixel(
 
 	/* The other cells are green. */
 	return 0xff00ff00U;
+}
+
+/*
+ * Quiets the shown channel's vertical blank and hands the list the hardware
+ * now uses to the flip state.
+ */
+static bool
+device_vblank_service(
+	void *owner)
+{
+	struct bcm2712_display *display;
+	volatile uint8_t *valve;
+	uint32_t status;
+	uint32_t current;
+	unsigned long enabled;
+
+	/* Ignores an interrupt that is not the vertical blank. */
+	display = owner;
+	valve = display->base.timing[display->channel].mapped;
+	enabled = spin_lock_irqsave(&display->base.flip.guard);
+
+	status = kern_mmio_read32(valve + BCM2712_VALVE_INTSTAT);
+	if ((status & BCM2712_VALVE_VFP_START) == 0) {
+		spin_unlock_irqrestore(&display->base.flip.guard, enabled);
+		return false;
+	}
+
+	/* Acknowledges it and tells the flip state which list the hardware shows. */
+	kern_mmio_write32(valve + BCM2712_VALVE_INTSTAT, BCM2712_VALVE_VFP_START);
+	current = kern_mmio_read32(display->base.compositor.mapped + bcm2712_display_register_offset(display, BCM2712_HVS_DL)) & BCM2712_HVS_HEAD_MASK;
+	bcm2711_display_flip_vblank_locked(&display->base, current);
+
+	spin_unlock_irqrestore(&display->base.flip.guard, enabled);
+
+	/* Succeeded: the vertical blank was quieted. */
+	return true;
 }
