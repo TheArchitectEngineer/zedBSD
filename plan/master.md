@@ -598,7 +598,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS277](ws277/ws.md) | MG008 | VisionFive 2 の DC8200 の display driver（zero copy の scanout）（2026-10-20 ユーザー） | incomplete（p001 の設計を P1、q1341） | p001 設計 → design-reviewer |
 | [WS280](ws280/ws.md) | MG006 | H.264 の software decoder（libh264dec、libmedia から dlopen、任意）（2026-10-21 ユーザー） | planning | 実装はユーザーの指示まで |
 | [WS281](ws281/ws.md) | MG002 | libc の malloc を速くする（first fit・1 本の list・1 つの lock の作り直し）（2026-10-22 ユーザー） | planning | 着手は後日（ユーザー） |
-| [WS282](ws282/ws.md) | MG006 | camera の driver の枠組み（/dev/cam0）と Pi 5 の CSI の driver rpicam（RAW） | planning | p001 の設計 |
+| [WS282](ws282/ws.md) | MG006 | camera の driver の枠組み（/dev/cam0）と Pi 5 の CSI の driver rpicam（RAW） | planning | p001 の設計 版 1（design.md、p002〜p009 で 25〜34 LW）、D1〜D7 はユーザーの判断待ち |
 | [WS283](ws283/ws.md) | MG006 | bcm2711 の Vulkan の compute（Pi 4・Pi 5） | planning | p001 の設計済み（design.md、p002〜p010 で 51〜77 LW）、D1〜D4 はユーザーの判断待ち。D5（qpu-machine.c・qpu71-machine.c を plan/tools へ移す）は Q1 が可とした |
 | [WS284](ws284/ws.md) | MG006 | YOLOX-Nano の推論（C と Vulkan compute、Apache-2.0） | planning | p001 の設計済み（design.md、p002〜p007 で 29〜41 LW）、D1〜D9 はユーザーの判断待ち |
 | [WS285](ws285/ws.md) | MG006 | camera の object detection の demo の app（WS282〜WS284 の上） | planning | p001 の設計 |
