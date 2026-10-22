@@ -29,7 +29,7 @@
 #include <uapi/gpu-op.h>
 
 #include "drivers/gpu/powervr/render-private.h"
-#include "drivers/gpu/powervr/vk.h"
+#include "drivers/gpu/powervr/vk/vk.h"
 
 /* What all command streams of one frame copy at most, and how deep streams nest. */
 #define STREAM_COPY_BYTES		(16U << 20)

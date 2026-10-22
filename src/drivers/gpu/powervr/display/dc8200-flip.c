@@ -20,7 +20,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "drivers/gpu/powervr/dc8200-flip.h"
+#include "drivers/gpu/powervr/display/dc8200-flip.h"
 
 static void record(struct powervr_flip *flip, enum powervr_flip_event event, const struct powervr_flip_hold *buffer, uint64_t sequence);
 static int drop(struct powervr_flip *flip, struct powervr_flip_hold *buffer, uint64_t sequence);

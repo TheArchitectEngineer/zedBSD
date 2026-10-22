@@ -16,9 +16,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "drivers/gpu/powervr/shader.h"
-#include "drivers/gpu/powervr/shader-ir.h"
-#include "drivers/gpu/powervr/usc-encode.h"
+#include "drivers/gpu/powervr/compiler/shader.h"
+#include "drivers/gpu/powervr/compiler/shader-ir.h"
+#include "drivers/gpu/powervr/compiler/usc-encode.h"
 
 /* The highest id bound, struct member, and pooled operand a module may use. */
 #define SHADER_SPIRV_IDS		4096U

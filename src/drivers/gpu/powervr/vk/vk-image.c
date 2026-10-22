@@ -30,7 +30,7 @@
 #include <uapi/gpu-op.h>
 
 #include "drivers/gpu/powervr/render-private.h"
-#include "drivers/gpu/powervr/vk.h"
+#include "drivers/gpu/powervr/vk/vk.h"
 
 #include "drivers/gpu/i915/render/vulkan-codec.inc"
 

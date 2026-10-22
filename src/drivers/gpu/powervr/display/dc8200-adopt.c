@@ -19,7 +19,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "drivers/gpu/powervr/dc8200-adopt.h"
+#include "drivers/gpu/powervr/display/dc8200-adopt.h"
 
 static int find_plane(const struct powervr_dc_state *state, uint32_t panel, unsigned *plane);
 

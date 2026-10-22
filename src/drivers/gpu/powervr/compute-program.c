@@ -16,8 +16,8 @@
 #include <uapi/errno.h>
 
 #include "drivers/gpu/powervr/compute-program.h"
-#include "drivers/gpu/powervr/pds-encode.h"
-#include "drivers/gpu/powervr/usc-encode.h"
+#include "drivers/gpu/powervr/compiler/pds-encode.h"
+#include "drivers/gpu/powervr/compiler/usc-encode.h"
 
 /*
  * The control stream's block types, task targets and shared data loaders,
@@ -1438,7 +1438,7 @@ multiply_add_group(
  * Mesa 26.2.5 src/imagination/pco/pco_map.py (group_map O_ADD64_32:
  * phase 0, both writes, the sources in s0, s1 and s2, is4 from ft0 and
  * is5 from fte; encode_map O_ADD64_32: the short form, add6432);
- * zedBSD src/drivers/gpu/powervr/shader-backend.c (MACHINE_ADD64).
+ * zedBSD src/drivers/gpu/powervr/compiler/shader-backend.c (MACHINE_ADD64).
  */
 static int
 add64_group(

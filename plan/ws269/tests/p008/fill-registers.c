@@ -19,8 +19,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "drivers/gpu/powervr/shader.h"
-#include "drivers/gpu/powervr/shader-private.h"
+#include "drivers/gpu/powervr/compiler/shader.h"
+#include "drivers/gpu/powervr/compiler/shader-private.h"
 #include "machine-run.h"
 
 #include "userland/tests/vkcompute/shader.h"

@@ -33,9 +33,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "drivers/gpu/powervr/dc8200-adopt.h"
-#include "drivers/gpu/powervr/dc8200-hdmi.h"
-#include "drivers/gpu/powervr/dc8200-mode.h"
+#include "drivers/gpu/powervr/display/dc8200-adopt.h"
+#include "drivers/gpu/powervr/display/dc8200-hdmi.h"
+#include "drivers/gpu/powervr/display/dc8200-mode.h"
 #include "drivers/gpu/powervr/powervr.h"
 #include <hal/hal.h>
 #include <kern/atomic.h>

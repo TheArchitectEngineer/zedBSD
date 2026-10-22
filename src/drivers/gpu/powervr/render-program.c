@@ -20,10 +20,10 @@
 #include "drivers/gpu/powervr/data-program.h"
 #include "drivers/gpu/powervr/fixed-area.h"
 #include "drivers/gpu/powervr/image-state.h"
-#include "drivers/gpu/powervr/pds-encode.h"
+#include "drivers/gpu/powervr/compiler/pds-encode.h"
 #include "drivers/gpu/powervr/render-program.h"
-#include "drivers/gpu/powervr/shader.h"
-#include "drivers/gpu/powervr/usc-encode.h"
+#include "drivers/gpu/powervr/compiler/shader.h"
+#include "drivers/gpu/powervr/compiler/usc-encode.h"
 
 /*
  * The shading cluster's registers and fields these programs name: the

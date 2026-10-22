@@ -28,11 +28,11 @@
 #include "drivers/gpu/powervr/render-private.h"
 #include "drivers/gpu/powervr/interface.h"
 #include "drivers/gpu/powervr/compute-program.h"
-#include "drivers/gpu/powervr/shader.h"
+#include "drivers/gpu/powervr/compiler/shader.h"
 #include "drivers/gpu/powervr/render-job.h"
 #include "drivers/gpu/powervr/transfer-job.h"
-#include "drivers/gpu/powervr/vk.h"
-#include "drivers/gpu/powervr/vk-draw.h"
+#include "drivers/gpu/powervr/vk/vk.h"
+#include "drivers/gpu/powervr/vk/vk-draw.h"
 #include "frame-host.h"
 
 /* Where the stand-in hands out device addresses, and how far apart. */

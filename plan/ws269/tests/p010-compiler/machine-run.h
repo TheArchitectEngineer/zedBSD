@@ -12,8 +12,8 @@
 
 #include <stdint.h>
 
-#include "drivers/gpu/powervr/shader.h"
-#include "drivers/gpu/powervr/shader-private.h"
+#include "drivers/gpu/powervr/compiler/shader.h"
+#include "drivers/gpu/powervr/compiler/shader-private.h"
 
 /* The output words the simulator keeps, and the shared registers a shared program may write. */
 #define MACHINE_RUN_OUTPUTS	64

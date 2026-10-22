@@ -21,7 +21,7 @@
 #include <uapi/errno.h>
 
 #include "drivers/gpu/powervr/data-program.h"
-#include "drivers/gpu/powervr/pds-encode.h"
+#include "drivers/gpu/powervr/compiler/pds-encode.h"
 
 /*
  * The 32-bit control constant of a data sequencer write.

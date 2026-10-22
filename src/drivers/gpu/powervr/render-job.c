@@ -26,7 +26,7 @@
 
 #include "drivers/gpu/powervr/render-job.h"
 #include "drivers/gpu/powervr/interface.h"
-#include "drivers/gpu/powervr/pds-encode.h"
+#include "drivers/gpu/powervr/compiler/pds-encode.h"
 #include "drivers/gpu/powervr/render-command.h"
 #include "drivers/gpu/powervr/render-kick-layout.h"
 #include "drivers/gpu/powervr/render-load-program.h"
@@ -36,10 +36,10 @@
 #include "drivers/gpu/powervr/image-state.h"
 #include "drivers/gpu/powervr/render-draw.h"
 #include "drivers/gpu/powervr/render-depth.h"
-#include "drivers/gpu/powervr/vk-draw.h"
-#include "drivers/gpu/powervr/vk.h"
+#include "drivers/gpu/powervr/vk/vk-draw.h"
+#include "drivers/gpu/powervr/vk/vk.h"
 #include "drivers/gpu/powervr/descriptor-set.h"
-#include "drivers/gpu/powervr/shader.h"
+#include "drivers/gpu/powervr/compiler/shader.h"
 #include "drivers/gpu/powervr/load-draw-shader.h"
 
 /* How long a render may take. */
@@ -813,7 +813,7 @@ load_graphics_shaders(
  * pixel's own texel.
  *
  * Procedure referenced:
- * zedBSD src/drivers/gpu/powervr/vk-layout.c (set_image: the image's
+ * zedBSD src/drivers/gpu/powervr/vk/vk-layout.c (set_image: the image's
  * descriptor and the sampler's in a combined binding).
  */
 static int

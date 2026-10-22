@@ -29,10 +29,10 @@
 
 #include <uapi/errno.h>
 
-#include "drivers/gpu/powervr/shader.h"
-#include "drivers/gpu/powervr/shader-ir.h"
-#include "drivers/gpu/powervr/shader-private.h"
-#include "drivers/gpu/powervr/shader-spirv.h"
+#include "drivers/gpu/powervr/compiler/shader.h"
+#include "drivers/gpu/powervr/compiler/shader-ir.h"
+#include "drivers/gpu/powervr/compiler/shader-private.h"
+#include "drivers/gpu/powervr/compiler/shader-spirv.h"
 
 static int reader_declarations(struct shader_spirv_reader *reader);
 static int reader_declaration(struct shader_spirv_reader *reader, const uint32_t *words, uint32_t length, uint32_t at);

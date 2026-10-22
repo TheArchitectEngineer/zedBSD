@@ -25,7 +25,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "drivers/gpu/powervr/shader-ir.h"
+#include "drivers/gpu/powervr/compiler/shader-ir.h"
 
 /* The stages the compiler takes. */
 enum powervr_shader_stage {

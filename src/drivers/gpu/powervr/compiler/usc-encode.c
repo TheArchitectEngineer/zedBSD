@@ -10,7 +10,7 @@
  * instruction groups and of the operations placed in them.
  */
 
-#include "drivers/gpu/powervr/usc-encode.h"
+#include "drivers/gpu/powervr/compiler/usc-encode.h"
 #include <uapi/errno.h>
 
 /* The largest number of fields one encoded form carries. */

@@ -17,10 +17,10 @@
 
 #include <uapi/errno.h>
 
-#include "drivers/gpu/powervr/shader.h"
-#include "drivers/gpu/powervr/shader-ir.h"
-#include "drivers/gpu/powervr/shader-private.h"
-#include "drivers/gpu/powervr/shader-spirv.h"
+#include "drivers/gpu/powervr/compiler/shader.h"
+#include "drivers/gpu/powervr/compiler/shader-ir.h"
+#include "drivers/gpu/powervr/compiler/shader-private.h"
+#include "drivers/gpu/powervr/compiler/shader-spirv.h"
 
 /* The blend factors that are the same for every colour channel (the alpha and constant alpha ones), each worked out once. */
 #define BLEND_FACTORS			(FACTOR_SOURCE_ALPHA_SATURATE + 1U)

@@ -24,7 +24,7 @@
 #include <kern/kmem.h>
 #include <uapi/errno.h>
 
-#include "drivers/gpu/powervr/vk.h"
+#include "drivers/gpu/powervr/vk/vk.h"
 
 static unsigned object_bucket(enum i915_vk_object_kind kind, uint64_t identity);
 

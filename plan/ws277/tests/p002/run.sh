@@ -9,6 +9,6 @@ here=$root/plan/ws277/tests/p002
 out=$1
 mkdir -p "$out"
 cc -std=c99 -O2 -Wall -Wextra -Werror -I"$root/include" -I"$root/src" \
-	"$root/src/drivers/gpu/powervr/dc8200-adopt.c" \
+	"$root/src/drivers/gpu/powervr/display/dc8200-adopt.c" \
 	"$here/adopt-host-test.c" -o "$out/adopt-host-test"
 "$out/adopt-host-test"

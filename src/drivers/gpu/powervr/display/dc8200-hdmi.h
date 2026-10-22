@@ -13,7 +13,7 @@
 #ifndef KERN_DRIVERS_GPU_POWERVR_DC8200_HDMI_H
 #define KERN_DRIVERS_GPU_POWERVR_DC8200_HDMI_H
 
-#include "drivers/gpu/powervr/dc8200-mode.h"
+#include "drivers/gpu/powervr/display/dc8200-mode.h"
 
 /*
  * Sets the transmitter's PLLs, timing and drive for a mode and starts its

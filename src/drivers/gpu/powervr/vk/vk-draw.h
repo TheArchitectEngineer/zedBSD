@@ -19,7 +19,7 @@
 
 #include "drivers/gpu/powervr/render-pass.h"
 #include "drivers/gpu/powervr/render-draw.h"
-#include "drivers/gpu/powervr/shader.h"
+#include "drivers/gpu/powervr/compiler/shader.h"
 
 /* The data of a vertex buffer bind: the first binding, the buffers' offsets. */
 struct powervr_vk_vertex_bind {

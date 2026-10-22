@@ -17,7 +17,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#include "drivers/gpu/powervr/dc8200-flip.h"
+#include "drivers/gpu/powervr/display/dc8200-flip.h"
 
 static int failures;
 static unsigned passes;

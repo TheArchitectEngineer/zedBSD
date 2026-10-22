@@ -17,7 +17,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "drivers/gpu/powervr/dc8200-hdmi.h"
+#include "drivers/gpu/powervr/display/dc8200-hdmi.h"
 #include <kern/clock.h>
 #include <kern/device-io.h>
 #include <uapi/errno.h>

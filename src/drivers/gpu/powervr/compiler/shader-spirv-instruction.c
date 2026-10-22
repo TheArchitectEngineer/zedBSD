@@ -16,10 +16,10 @@
 
 #include <uapi/errno.h>
 
-#include "drivers/gpu/powervr/shader.h"
-#include "drivers/gpu/powervr/shader-ir.h"
-#include "drivers/gpu/powervr/shader-private.h"
-#include "drivers/gpu/powervr/shader-spirv.h"
+#include "drivers/gpu/powervr/compiler/shader.h"
+#include "drivers/gpu/powervr/compiler/shader-ir.h"
+#include "drivers/gpu/powervr/compiler/shader-private.h"
+#include "drivers/gpu/powervr/compiler/shader-spirv.h"
 
 /*
  * The sine polynomial: the odd powers' coefficients of sin(y) for y in

@@ -24,7 +24,7 @@
 
 #include "drivers/gpu/powervr/render-draw.h"
 #include "drivers/gpu/powervr/render-pass.h"
-#include "drivers/gpu/powervr/shader.h"
+#include "drivers/gpu/powervr/compiler/shader.h"
 #include "userland/tests/vkdemo/shaders.h"
 #include "userland/tests/vkstage/shader.h"
 

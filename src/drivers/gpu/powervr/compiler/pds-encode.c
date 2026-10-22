@@ -10,7 +10,7 @@
  * instructions and of the data words its output instructions take.
  */
 
-#include "drivers/gpu/powervr/pds-encode.h"
+#include "drivers/gpu/powervr/compiler/pds-encode.h"
 #include <stddef.h>
 
 #include <uapi/errno.h>

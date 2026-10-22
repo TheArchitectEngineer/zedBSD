@@ -19,7 +19,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "drivers/gpu/powervr/dc8200-mode.h"
+#include "drivers/gpu/powervr/display/dc8200-mode.h"
 #include <uapi/errno.h>
 
 /* The boot line's word that names a mode. */

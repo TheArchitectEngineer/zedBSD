@@ -28,7 +28,7 @@
 
 #include "drivers/gpu/powervr/powervr-private.h"
 #include "drivers/gpu/powervr/interface.h"
-#include "drivers/gpu/powervr/vk.h"
+#include "drivers/gpu/powervr/vk/vk.h"
 
 /*
  * How many times a wait reads a return slot before it starts sleeping a

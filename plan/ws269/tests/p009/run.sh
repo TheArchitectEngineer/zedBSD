@@ -27,10 +27,11 @@ done
 cc -std=c11 -O1 -Wall -Wextra -Werror $define -I"$root" -I"$root/include" -I"$out/inc" -I"$root/userland/desktop/libvulkan" \
 	-c "$here/frame-host.c" -o "$out/vk/frame-host.o"
 objects=""
-for file in vk-object vk-stream vk-device vk-memory vk-image image-state descriptor-set data-program vk-layout vk-command vk-queue vk-pass vk-transfer vk-draw render-draw render-pass render-program transfer-program shader-spirv shader-spirv-interface shader-spirv-control shader-spirv-instruction shader-backend compute-program render-sr-program usc-encode pds-encode; do
+for file in vk/vk-object vk/vk-stream vk/vk-device vk/vk-memory vk/vk-image image-state descriptor-set data-program vk/vk-layout vk/vk-command vk/vk-queue vk/vk-pass vk/vk-transfer vk/vk-draw render-draw render-pass render-program transfer-program compiler/shader-spirv compiler/shader-spirv-interface compiler/shader-spirv-control compiler/shader-spirv-instruction compiler/shader-backend compute-program render-sr-program compiler/usc-encode compiler/pds-encode; do
+	name=${file##*/}
 	cc -std=c11 -O1 -Wall -Wextra -Werror $define -I"$root/include" -I"$root/src" \
-		-c "$root/src/drivers/gpu/powervr/$file.c" -o "$out/vk/$file.o"
-	objects="$objects $out/vk/$file.o"
+		-c "$root/src/drivers/gpu/powervr/$file.c" -o "$out/vk/$name.o"
+	objects="$objects $out/vk/$name.o"
 done
 cc -std=c11 -O1 -Wall -Wextra -Werror $define -I"$root/include" -I"$root/src" \
 	-c "$root/src/drivers/gpu/i915/render/codec.c" -o "$out/vk/i915-codec.o"

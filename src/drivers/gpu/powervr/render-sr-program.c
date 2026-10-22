@@ -16,9 +16,9 @@
 #include <uapi/errno.h>
 
 #include "drivers/gpu/powervr/render-sr-program.h"
-#include "drivers/gpu/powervr/pds-encode.h"
-#include "drivers/gpu/powervr/shader-private.h"
-#include "drivers/gpu/powervr/usc-encode.h"
+#include "drivers/gpu/powervr/compiler/pds-encode.h"
+#include "drivers/gpu/powervr/compiler/shader-private.h"
+#include "drivers/gpu/powervr/compiler/usc-encode.h"
 
 /*
  * The data write's part of the 64-bit source, and the data sequencer's

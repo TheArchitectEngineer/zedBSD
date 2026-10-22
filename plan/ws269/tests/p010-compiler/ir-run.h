@@ -12,7 +12,7 @@
 
 #include <stdint.h>
 
-#include "drivers/gpu/powervr/shader-ir.h"
+#include "drivers/gpu/powervr/compiler/shader-ir.h"
 
 /* The output words the interpreter keeps. */
 #define IR_RUN_OUTPUTS	64

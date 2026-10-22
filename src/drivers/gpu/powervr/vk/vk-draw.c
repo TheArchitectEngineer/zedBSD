@@ -27,9 +27,9 @@
 
 #include "drivers/gpu/powervr/render-draw.h"
 #include "drivers/gpu/powervr/render-pass.h"
-#include "drivers/gpu/powervr/shader.h"
-#include "drivers/gpu/powervr/vk-draw.h"
-#include "drivers/gpu/powervr/vk.h"
+#include "drivers/gpu/powervr/compiler/shader.h"
+#include "drivers/gpu/powervr/vk/vk-draw.h"
+#include "drivers/gpu/powervr/vk/vk.h"
 
 #include "drivers/gpu/i915/render/vulkan-codec.inc"
 

@@ -15,10 +15,10 @@
 
 #include <uapi/errno.h>
 
-#include "drivers/gpu/powervr/shader.h"
-#include "drivers/gpu/powervr/shader-ir.h"
-#include "drivers/gpu/powervr/shader-private.h"
-#include "drivers/gpu/powervr/shader-spirv.h"
+#include "drivers/gpu/powervr/compiler/shader.h"
+#include "drivers/gpu/powervr/compiler/shader-ir.h"
+#include "drivers/gpu/powervr/compiler/shader-private.h"
+#include "drivers/gpu/powervr/compiler/shader-spirv.h"
 
 static int reader_region(struct shader_spirv_reader *reader, uint32_t start, uint32_t stop, uint32_t through_first, uint32_t *returned);
 static int reader_loop(struct shader_spirv_reader *reader, uint32_t header);

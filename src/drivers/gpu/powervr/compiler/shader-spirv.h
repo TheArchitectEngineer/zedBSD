@@ -16,9 +16,9 @@
 
 #include <stdint.h>
 
-#include "drivers/gpu/powervr/shader.h"
-#include "drivers/gpu/powervr/shader-ir.h"
-#include "drivers/gpu/powervr/shader-private.h"
+#include "drivers/gpu/powervr/compiler/shader.h"
+#include "drivers/gpu/powervr/compiler/shader-ir.h"
+#include "drivers/gpu/powervr/compiler/shader-private.h"
 
 /*
  * The module's header and the opcodes, decorations, built-ins, storage

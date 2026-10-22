@@ -42,7 +42,7 @@
 #include "drivers/gpu/powervr/compute-program.h"
 #include "drivers/gpu/powervr/render-job.h"
 #include "drivers/gpu/powervr/transfer-job.h"
-#include "drivers/gpu/powervr/vk.h"
+#include "drivers/gpu/powervr/vk/vk.h"
 
 /* The most submits of one vkQueueSubmit, and the most command buffers and semaphores of one submit. */
 #define QUEUE_SUBMITS_MAX		8U

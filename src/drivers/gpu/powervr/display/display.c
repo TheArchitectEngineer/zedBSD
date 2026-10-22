@@ -64,7 +64,7 @@
 
 #include <stddef.h>
 
-#include "drivers/gpu/powervr/dc8200-flip.h"
+#include "drivers/gpu/powervr/display/dc8200-flip.h"
 #include "drivers/gpu/powervr/powervr.h"
 #include "drivers/gpu/powervr/render.h"
 #include <drivers/gpu/gpu.h>
