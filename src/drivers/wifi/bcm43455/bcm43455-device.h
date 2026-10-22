@@ -220,6 +220,8 @@ struct bcm43455_connection {
  * read and change.  powered and firmware_running record what a stop must
  * undo; runtime_active is set while the bus thread serves an opened
  * device; opened while the interface is up, which a restart needs.
+ * board_mac, set before the probe when has_board_mac is, is the address
+ * every start gives a chip whose OTP carries none.
  *
  * work_key and work_buffer belong to the bus thread's radio work: the key
  * message and the commands it builds, cleared as soon as they are sent.
@@ -234,6 +236,8 @@ struct bcm43455_device {
 	size_t nvram_length;
 	uint8_t placeholder_mac[6];
 	unsigned has_placeholder;
+	uint8_t board_mac[6];
+	unsigned has_board_mac;
 	struct bcm43455_identity identity;
 
 	struct bcm43455_bus bus;

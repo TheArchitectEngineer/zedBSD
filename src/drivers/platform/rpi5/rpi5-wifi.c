@@ -42,6 +42,7 @@
 #include <kern/atomic.h>
 #include <kern/clock.h>
 #include <kern/device-io.h>
+#include <kern/kcrt.h>
 #include <kern/klog.h>
 #include <kern/lock.h>
 #include <kern/pmem.h>
@@ -82,6 +83,14 @@
 /* The chip's functions. */
 #define FUNCTION_BACKPLANE		1U
 #define FUNCTION_FRAMES			2U
+
+/*
+ * The length of an Ethernet address, and the octets that number one
+ * board's interfaces: the Raspberry Pi gives the Wi-Fi the address after
+ * the Ethernet's.
+ */
+#define ADDRESS_LENGTH			6U
+#define ADDRESS_SERIAL_FIRST		3U
 
 /*
  * The BCM2712 SD controller's own configuration block (the node's second
@@ -139,6 +148,7 @@
  */
 struct rpi5_wifi {
 	struct drv_fdt fdt;
+	uint32_t chip_node;
 	uint32_t controller_node;
 	uint32_t regulator_node;
 	uint32_t gio_node;
@@ -149,6 +159,8 @@ struct rpi5_wifi {
 	unsigned power_pin;
 	unsigned power_active_high;
 	unsigned power_settle_ms;
+	uint8_t mac[ADDRESS_LENGTH];
+	unsigned has_mac;
 	struct drv_rpi5_gio gio;
 	struct drv_rpi4_sdio_host host;
 	struct drv_rpi4_sdio_card card;
@@ -186,6 +198,8 @@ static int describe(struct rpi5_wifi *wifi);
 static int describe_interrupt(struct rpi5_wifi *wifi);
 static int describe_clock(struct rpi5_wifi *wifi);
 static int describe_power(struct rpi5_wifi *wifi);
+static void describe_address(struct rpi5_wifi *wifi);
+static int read_tree_address(struct rpi5_wifi *wifi, uint32_t node, uint8_t mac[ADDRESS_LENGTH]);
 static void wifi_thread(void *argument);
 static int publish(struct rpi5_wifi *wifi);
 static int wait_for_root(struct rpi5_wifi *wifi);
@@ -392,18 +406,17 @@ describe(
 	struct rpi5_wifi *wifi)
 {
 	uint64_t size;
-	uint32_t chip;
 	unsigned index;
 	bool enabled;
 	int error;
 
 	/* Finds the chip. */
-	error = drv_fdt_find_compatible(&wifi->fdt, "brcm,bcm4329-fmac", DRV_FDT_NO_NODE, &chip);
+	error = drv_fdt_find_compatible(&wifi->fdt, "brcm,bcm4329-fmac", DRV_FDT_NO_NODE, &wifi->chip_node);
 	if (error != 0)
 		return ENODEV;
 
 	/* Its parent is the SD controller, which must be the BCM2712's and enabled. */
-	error = drv_fdt_parent(&wifi->fdt, chip, &wifi->controller_node);
+	error = drv_fdt_parent(&wifi->fdt, wifi->chip_node, &wifi->controller_node);
 	if (error != 0)
 		return error;
 	error = drv_fdt_string_index(&wifi->fdt, wifi->controller_node, "compatible", "brcm,bcm2712-sdhci", &index);
@@ -439,6 +452,9 @@ describe(
 	error = describe_power(wifi);
 	if (error != 0)
 		return error;
+
+	/* Finds the board's address for the chip, whose OTP carries none. */
+	describe_address(wifi);
 
 	/* Reports what was found. */
 	kern_logf("rpi5-wifi: SDIO host at %llx, line %d, %u Hz; WL_ON gio %u\n",
@@ -567,6 +583,125 @@ describe_power(
 	return 0;
 }
 
+/*
+ * Finds the board's Wi-Fi address.
+ *
+ * The chip's OTP carries no address on the Pi 5: the boot firmware puts
+ * it in the local-mac-address of the chip's node (the tree's wifi0
+ * alias), which Linux's brcmfmac gives the chip.  A tree that left it
+ * zero gets the address after the Ethernet's local-mac-address, the
+ * numbering of the board's interfaces.  Without either the chip keeps its
+ * own, and the BCM43455 driver refuses the NVRAM's placeholder.
+ */
+static void
+describe_address(
+	struct rpi5_wifi *wifi)
+{
+	uint8_t ethernet[ADDRESS_LENGTH];
+	uint32_t ethernet_node;
+	uint32_t serial;
+	unsigned index;
+	int error;
+
+	/* Takes the chip node's own address. */
+	wifi->has_mac = 0;
+	error = read_tree_address(wifi, wifi->chip_node, wifi->mac);
+	if (error == 0) {
+		wifi->has_mac = 1;
+		kern_logf("rpi5-wifi: address %02x:%02x:%02x:%02x:%02x:%02x from the tree's Wi-Fi node\n",
+			  wifi->mac[0],
+			  wifi->mac[1],
+			  wifi->mac[2],
+			  wifi->mac[3],
+			  wifi->mac[4],
+			  wifi->mac[5]);
+		return;
+	}
+
+	/* Finds the Ethernet's node. */
+	error = drv_fdt_find_compatible(&wifi->fdt, "cdns,macb", DRV_FDT_NO_NODE, &ethernet_node);
+	if (error != 0) {
+		kern_logf("rpi5-wifi: no address in the tree's Wi-Fi node and no Ethernet node; the chip keeps its own\n");
+		return;
+	}
+
+	/* Reads the Ethernet's address. */
+	error = read_tree_address(wifi, ethernet_node, ethernet);
+	if (error != 0) {
+		kern_logf("rpi5-wifi: no address in the tree's Wi-Fi or Ethernet node; the chip keeps its own\n");
+		return;
+	}
+
+	/* Reads the serial part of the Ethernet's address, its last three octets. */
+	serial = 0;
+	for (index = ADDRESS_SERIAL_FIRST; index < ADDRESS_LENGTH; index++)
+		serial = (serial << 8) | ethernet[index];
+
+	/* Numbers the Wi-Fi after the Ethernet within the same serial part. */
+	serial = (serial + 1U) & 0xffffffU;
+	kern_memcpy(wifi->mac, ethernet, ADDRESS_SERIAL_FIRST);
+
+	/* Writes the serial part back, its last octet last. */
+	for (index = ADDRESS_LENGTH; index > ADDRESS_SERIAL_FIRST; index--) {
+		wifi->mac[index - 1U] = (uint8_t)serial;
+		serial >>= 8;
+	}
+
+	/* Reports the derived address. */
+	wifi->has_mac = 1;
+	kern_logf("rpi5-wifi: address %02x:%02x:%02x:%02x:%02x:%02x after the Ethernet's (the tree's Wi-Fi node has none)\n",
+		  wifi->mac[0],
+		  wifi->mac[1],
+		  wifi->mac[2],
+		  wifi->mac[3],
+		  wifi->mac[4],
+		  wifi->mac[5]);
+}
+
+/*
+ * Reads a node's local-mac-address into mac.  Returns ENOENT for a node
+ * without one, and EINVAL for one of the wrong length, of all zeros (the
+ * tree's own, which the firmware did not fill) or multicast.
+ */
+static int
+read_tree_address(
+	struct rpi5_wifi *wifi,
+	uint32_t node,
+	uint8_t mac[ADDRESS_LENGTH])
+{
+	const uint8_t *value;
+	uint32_t length;
+	unsigned nonzero;
+	unsigned index;
+	int error;
+
+	/* Reads the property. */
+	error = drv_fdt_property(&wifi->fdt, node, "local-mac-address", &value, &length);
+	if (error != 0)
+		return ENOENT;
+
+	/* Refuses a property that is not one address. */
+	if (length != ADDRESS_LENGTH)
+		return EINVAL;
+
+	/* Looks for a nonzero octet. */
+	nonzero = 0;
+	for (index = 0; index < ADDRESS_LENGTH; index++)
+		nonzero |= value[index];
+
+	/* Refuses the tree's unfilled zeros. */
+	if (nonzero == 0)
+		return EINVAL;
+
+	/* Refuses a multicast address. */
+	if ((value[0] & 0x01U) != 0)
+		return EINVAL;
+
+	/* Succeeded: the node names the address. */
+	kern_memcpy(mac, value, ADDRESS_LENGTH);
+	return 0;
+}
+
 /* Publishes the chip, or gives everything back when it cannot be. */
 static void
 wifi_thread(
@@ -647,6 +782,13 @@ publish(
 	if (error != 0) {
 		bcm43455_files_release(&files);
 		return error;
+	}
+
+	/* Gives the chip the board's address, which every start sets. */
+	if (wifi->has_mac) {
+		error = bcm43455_device_set_address(wifi->device, wifi->mac);
+		if (error != 0)
+			return error;
 	}
 
 	/* Prepares the pins, the power line and the host. */

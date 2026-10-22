@@ -69,6 +69,15 @@ struct bcm43455_device;
 int bcm43455_device_create(const struct bcm43455_bus_ops *ops, void *context, struct bcm43455_files *files, struct bcm43455_device **result);
 
 /*
+ * Gives the chip the board's address, which every start sets before the
+ * address is read: for a chip whose OTP carries none (Raspberry Pi 5,
+ * where the boot firmware puts it in the device tree's local-mac-address).
+ * Returns EINVAL for an address of all zeros or a multicast one.  Call it
+ * before bcm43455_device_probe(); touches no hardware.
+ */
+int bcm43455_device_set_address(struct bcm43455_device *device, const uint8_t mac[6]);
+
+/*
  * Brings the chip up once to learn its address, firmware version,
  * capabilities and channels, then powers it down.
  *
