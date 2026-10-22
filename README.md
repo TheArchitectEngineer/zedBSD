@@ -20,13 +20,13 @@ Wayland-based desktop environment that unifies the classic mouse UI/UX
 and a futuristic touch UI/UX.  zedBSD and Keiland are already
 available and is currently being polished for production release.
 
-zedBSD aims to become a commercial UNIX in the line of macOS and
+zedBSD aims to become a commercial `UNIX` in the line of macOS and
 Solaris: an operating system made for newly-designed cutting-edge
-computers, that changes "the way computing is".  It is written to
+computers, that changes "the way computing is."  It is written to
 conform to `POSIX.1-2024`, and is not yet a certified UNIX system.
-Conformance will keep being raised, and UNIX certification from The
-Open Group is a goal.  (UNIX is a registered trademark of The Open
-Group.)
+Conformance will keep being raised, and UNIX certification from `The
+Open Group` is a goal.  (`UNIX` is a registered trademark of `The Open
+Group`.)
 
 Getting there means not being bound to an existing kernel or userland
 when the whole machine has to move together.  Most of the system is
@@ -47,6 +47,51 @@ hardware.
 
 ---
 
+## Design
+
+zedBSD adopts a layered architecture. Within this design, a component accesses
+only components in the layer directly below it and provides functionality
+exclusively to the layer directly above it. Furthermore, dependencies between
+adjacent layers are kept strictly one-to-one, preventing tangled cross-layer
+interactions.
+
+In the case of Linux desktops, the user environment is typically formed by
+numerous components with small, focused responsibilities communicating with one
+another. This represents a distributed object design, where the benefit lies in
+each component having limited scope, making individual parts relatively easy to
+develop. On the other hand, this inevitably creates complex many-to-many
+relationships among components. In my personal view, while systems with
+many-to-many relationships are straightforward to implement in isolation, they
+often struggle with overall system integration—as is often seen in
+microkernel-based operating systems.
+
+zedBSD adopts a layered architecture to resolve these trade-offs and deliver a
+tightly integrated, cohesive desktop experience directly at the OS level.
+
+```
++----------------------------------------+
+| Desktop Apps                           |
++----------------------------------------+
+| Desktop Server [platform-neutral]      |
++----------------------------------------+
+| Desktop HAL (OS-dependent)             |
++----------------------------------------+
+| Base programs (/bin)                   |
++----------------------------------------+
+| Base services (networkd, audiod, ...)  |
++----------------------------------------+
+| Modern init (/sbin/init)               |
++----------------------------------------+
+| Drivers                                |
++----------------------------------------+
+| Kernel [platform-neutral]              |
++----------------------------------------+
+| Kernel HAL (CPU + BSP)                 |
++----------------------------------------+
+```
+
+---
+
 ## Keiland Desktop
 
 - The desktop server incorporates Wayland, audio, Wi-Fi, Bluetooth, SMS, and image/video media management.
@@ -58,17 +103,22 @@ hardware.
 
 ---
 
-## Vulkan-direct GPU Drivers
+## In-kernel Direct Vulkan GPU Drivers
 
-GPU support is a native, Vulkan-direct stack.  It does not require
-Linux DRM/KMS or Mesa, and it does not use user-space drivers and
-compilers.
+The driver support for GPUs is a native, direct Vulkan stack.  It does
+not require Linux DRM/KMS or Mesa, and it does not use user-space
+drivers and compilers.  Our JIT shader compiler is small and simple
+enough to fit in the kernel.
 
 Supported GPUs:
-- Intel iGPU (6th Skylake to 14th Raptor Lake Refresh)
-- Raspberry Pi (RPi4 VideoCore VI)
-- NVIDIA (RTX 20+)
-- AMD (RDNA+)
+
+| Vendor         | IP                | Confirmed on            | Description      |
+|----------------|-------------------|-------------------------|------------------|
+| Imagination    | PowerVR           | StarFive Vision Five 2  | Well-optimized   |
+| Broadcom       | VideoCore VI      | Raspberry Pi 4          | Well-optimized   |
+| Intel          | GEN9 to GEN12     | 6th to 12th Intel Core  | Well-optimized   |
+| NVIDIA         | Turing or later   | NVIDIA GeForce RTX 2070 | Modest           |
+| AMD            | RDNA or later     | AMD Radeon RX 5600 XT   | Modest           |
 
 ---
 
@@ -76,18 +126,21 @@ Supported GPUs:
 
 Both zedBSD and Keiland Desktop are [architected and
 directed](plan/master.md) by a solo developer and implemented via AI
-coding agents, currently targeting 64-bit x86 PCs and the Raspberry Pi
-series.
+coding agents.
+
+Please note that the author is an enterprise systems architect who
+typically directs teams rather than writing code manually.  Applying
+that same architectural leadership to AI agents, this project is
+systematically engineered.  So, please do not call it "vibe-coded."
 
 Debugging is powered by an advanced Vision-Language Model loop that
-monitors the target screen via a camera, along with serial or SSH
-console output.  Furthermore, the board power is routed through a
-SwitchBot Smart Plug, allowing the AI to autonomously reboot the
-device via API after transferring a new kernel via SCP.
+monitors the target screen via a camera, alongside serial and SSH
+console outputs.  Furthermore, the board's power is routed through a
+SwitchBot smart plug, allowing the AI to autonomously reboot the
+device via API after deploying a new kernel using SCP.
 
 This project is not a clone of any existing OS.  Every layer,
-including the desktop environment, is engineered from the ground up by
-a professional systems architect.
+including the desktop, is engineered from the ground up.
 
 ---
 
@@ -301,51 +354,6 @@ CLI-only targets:
 | Sun SPARC V9 (sun4u)        | OK     | OK (UP)  | Few              | No                       |
 | Sharp X68000 (m68k)         | OK     | OK (UP)  | Few              | No                       |
 | virt-riscv64                | OK     | OK (SMP) | No               | No                       |
-
----
-
-## Design
-
-zedBSD adopts a layered architecture. Within this design, a component accesses
-only components in the layer directly below it and provides functionality
-exclusively to the layer directly above it. Furthermore, dependencies between
-adjacent layers are kept strictly one-to-one, preventing tangled cross-layer
-interactions.
-
-In the case of Linux desktops, the user environment is typically formed by
-numerous components with small, focused responsibilities communicating with one
-another. This represents a distributed object design, where the benefit lies in
-each component having limited scope, making individual parts relatively easy to
-develop. On the other hand, this inevitably creates complex many-to-many
-relationships among components. In my personal view, while systems with
-many-to-many relationships are straightforward to implement in isolation, they
-often struggle with overall system integration—as is often seen in
-microkernel-based operating systems.
-
-zedBSD adopts a layered architecture to resolve these trade-offs and deliver a
-tightly integrated, cohesive desktop experience directly at the OS level.
-
-```
-+-----------------------------------------------------------------------------------+
-| Desktop Apps                                                                      |
-+-----------------------------------------------------------------------------------+
-| Desktop Server (Wayland-based and X11-compatible, with device control extensions) |
-+-----------------------------------------------------------------------------------+
-| Desktop HAL Backend (Uses device drivers and base services)                       |
-+-----------------------------------------------------------------------------------+
-| Base programs (/bin)                                                              |
-+-----------------------------------------------------------------------------------+
-| Base services (networkd, audiod, mountd, ...)                                     |
-+-----------------------------------------------------------------------------------+
-| Modern init (/sbin/init)                                                          |
-+-----------------------------------------------------------------------------------+
-| Drivers (PCI, USB, GPU, disk, ethernet, IP, wifi, filesystem, ...)                |
-+-----------------------------------------------------------------------------------+
-| Kernel [platform-neutral]                                                         |
-+-----------------------------------------------------------------------------------+
-| Kernel HAL (CPU + BSP)                                                            |
-+-----------------------------------------------------------------------------------+
-```
 
 ---
 
