@@ -113,11 +113,22 @@ bcm2711_native_shader_encode(
 	}
 	bytes[3] = (uint8_t)shader->programs[2].binary->input_count;
 
-	/* Shared input/output segments use one input segment and no additional output segment. */
+	/*
+	 * Shared input/output segments: 7.1 has no separate-segments flag, so
+	 * the input segment size is 0 (a size of 1 made the inputs a separate
+	 * segment of one sector, and every attribute component past the eighth
+	 * read as zero); one input segment in play (encoded minus one) and no
+	 * additional output segment.
+	 *
+	 * Values referenced: Mesa 25.3.6 src/broadcom/vulkan/v3dvx_pipeline.c
+	 * (V3D_VERSION == 71: the input segment sizes are prog_data's
+	 * vpm_input_size) and compiler/vir.c (vpm_input_size = 0 with the
+	 * output size the larger of the two).
+	 */
 	bytes[4] = (uint8_t)coordinate_segments;
-	bytes[5] = 1U;
+	bytes[5] = 0U;
 	bytes[6] = (uint8_t)vertex_segments;
-	bytes[7] = 1U;
+	bytes[7] = 0U;
 
 	/* Hardware orders fragment, vertex and coordinate programs; 7.1 has no default-value pointer. */
 	write_program(bytes + 8, &shader->programs[2]);
