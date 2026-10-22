@@ -1366,7 +1366,7 @@ command_ex(
 	if (enabled)
 		kern_irq_enable();
 
-#if defined(HAL_BOARD_RPI4)
+#if defined(HAL_BOARD_RPI4) || defined(HAL_BOARD_RPI5)
 	/* Distinguishes a blocked PCI doorbell access from missing DMA events. */
 	if (((control >> 10) & 0x3fU) == 9U) {
 		kern_logf("xhci: enable slot doorbell begin command=%llx\n",
@@ -1376,7 +1376,7 @@ command_ex(
 
 	/* Publishes the command before polling its completion. */
 	xhci_ring_doorbell(c, 0, 0);
-#if defined(HAL_BOARD_RPI4)
+#if defined(HAL_BOARD_RPI4) || defined(HAL_BOARD_RPI5)
 	/* Confirms that the posted write and its readback returned. */
 	if (((control >> 10) & 0x3fU) == 9U)
 		kern_logf("xhci: enable slot doorbell complete\n");
@@ -1405,7 +1405,7 @@ command_ex(
 				break;
 		}
 
-#if defined(HAL_BOARD_RPI4)
+#if defined(HAL_BOARD_RPI4) || defined(HAL_BOARD_RPI5)
 		/* Marks the first completion wait before giving up this CPU. */
 		if (n == 0U && ((control >> 10) & 0x3fU) == 9U) {
 			kern_logf("xhci: enable slot completion wait irq=%u\n",
@@ -1419,7 +1419,7 @@ command_ex(
 			(void)kern_irq_disable();
 		}
 
-#if defined(HAL_BOARD_RPI4)
+#if defined(HAL_BOARD_RPI4) || defined(HAL_BOARD_RPI5)
 		/* Marks polling entry, including callers that cannot yield with IRQ off. */
 		if (n == 0U && ((control >> 10) & 0x3fU) == 9U) {
 			kern_logf(
@@ -1430,7 +1430,7 @@ command_ex(
 		/* Serializes polling and fault publication against the controller IRQ. */
 		event_lock(c);
 
-#if defined(HAL_BOARD_RPI4)
+#if defined(HAL_BOARD_RPI4) || defined(HAL_BOARD_RPI5)
 		/* Distinguishes lock contention from a stall while reading event DMA. */
 		if (n == 0U && ((control >> 10) & 0x3fU) == 9U) {
 			kern_logf(
@@ -1472,7 +1472,7 @@ command_ex(
 		if (enabled)
 			kern_irq_enable();
 
-#if defined(HAL_BOARD_RPI4)
+#if defined(HAL_BOARD_RPI4) || defined(HAL_BOARD_RPI5)
 		/* Confirms that event sampling and any dequeue acknowledgement returned. */
 		if (n == 0U && ((control >> 10) & 0x3fU) == 9U) {
 			kern_logf("xhci: enable slot completion event poll done "

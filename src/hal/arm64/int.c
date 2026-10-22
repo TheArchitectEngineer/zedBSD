@@ -3,6 +3,7 @@
 #include "int.h"
 #include "task.h"
 #include "irq.h"
+#include "percpu.h"
 #include "watch.h"
 #include "bsp-rpi-common/clock.h"
 #include "bsp-rpi-common/gic.h"
@@ -10,9 +11,43 @@
 
 extern char arm64_vectors[];
 
+/* How many SErrors are reported one by one; after them, one in every SERROR_REPORT_EVERY. */
+#define SERROR_REPORT_FIRST	16U
+#define SERROR_REPORT_EVERY	256U
+
+/* The states of the kernel's SError record. */
+#define SERROR_RECORD_EMPTY	0U
+#define SERROR_RECORD_WRITING	1U
+#define SERROR_RECORD_FULL	2U
+
+/*
+ * The last SError taken while the kernel ran, until an interrupt reports
+ * it: the SError handler cannot print, since the code it interrupted may
+ * hold the console's lock.  A record is written only when the slot is
+ * empty; one that arrives while the slot is full is only counted.
+ */
+static struct {
+	uint64_t esr;
+	uint64_t elr;
+	uint64_t lr;
+	uint32_t cpu;
+	uint32_t number;
+	uint32_t state;
+} serror_record;
+
+/* How many SErrors every CPU took since the boot. */
+static uint32_t serror_count;
+
+static int serror_reported(uint32_t number);
+static uint32_t serror_cpu(void);
+static void serror_report_kernel(void);
+
 void arm64_int_init(void)
 {
 	__asm__ volatile("msr vbar_el1, %0\n\tisb"::"r"(arm64_vectors):"memory");
+
+	/* Takes SErrors in the kernel from here on, near the access that raised one. */
+	__asm__ volatile("msr daifclr, #4" ::: "memory");
 	rpi_gic_init();
 	rpi_timer_init();
 	hal_puts("ARM64 EXCEPTION PASS\nARM64 IRQ READY\n");
@@ -30,6 +65,9 @@ arm64_int_init_secondary(
 {
 	/* Points this CPU's exceptions at the shared vector table. */
 	__asm__ volatile("msr vbar_el1, %0\n\tisb" : : "r"(arm64_vectors) : "memory");
+
+	/* Takes SErrors in the kernel, as the boot CPU does. */
+	__asm__ volatile("msr daifclr, #4" ::: "memory");
 
 	/* Sets up this CPU's private lines and CPU interface. */
 	rpi_gic_init_cpu();
@@ -181,9 +219,119 @@ arm64_irq_handler(
 	cpu = arm64_watch_record();
 	__atomic_store_n(&cpu->watch_irq_id, 0U, __ATOMIC_RELAXED);
 
+	/* Reports an SError the kernel took since the last interrupt. */
+	serror_report_kernel();
+
 	/* A user context goes back through the kernel's return path. */
 	if (from_user) {
 		kernel_user_return_handler();
 		arm64_task_leave_user_frame();
 	}
+}
+
+/*
+ * Takes an SError: an asynchronous external abort that a device access
+ * raised, usually a read or write of an address no device answers.
+ *
+ * The abort belongs to the access, not to the code that was running when
+ * the CPU took it, so nothing is stopped or signalled.  One taken from
+ * user mode is reported at once (the CPU holds no kernel lock there): it
+ * was raised by the kernel before it last returned to user mode, since
+ * the kernel takes SErrors only in its workers.  One taken in the kernel
+ * is kept, with where the kernel was, for the next interrupt to report.
+ */
+void
+arm64_serror_handler(
+	struct arm64_exception_frame *f,
+	int from_user)
+{
+	uint32_t number;
+	uint32_t expected;
+	int report;
+
+	/* Counts the SError. */
+	number = __atomic_add_fetch(&serror_count, 1U, __ATOMIC_RELAXED);
+	report = serror_reported(number);
+
+	/* Reports one taken on the way back to user mode now. */
+	if (from_user) {
+		if (report) {
+			hal_printf("ARM64 SError %u esr=%llx cpu %u on return to user pc %llx; "
+			    "a kernel device access raised it earlier\n",
+			    number, f->esr, serror_cpu(), f->elr);
+		}
+		return;
+	}
+
+	/* Keeps one taken in the kernel when the record is free. */
+	if (!report)
+		return;
+	expected = SERROR_RECORD_EMPTY;
+	if (!__atomic_compare_exchange_n(&serror_record.state, &expected,
+	    SERROR_RECORD_WRITING, 0, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED))
+		return;
+	serror_record.esr = f->esr;
+	serror_record.elr = f->elr;
+	serror_record.lr = f->x[30];
+	serror_record.cpu = serror_cpu();
+	serror_record.number = number;
+	__atomic_store_n(&serror_record.state, SERROR_RECORD_FULL, __ATOMIC_RELEASE);
+}
+
+/* Reports whether the SError of a number is printed: the first ones, then one in a stretch. */
+static int
+serror_reported(
+	uint32_t number)
+{
+	/* The first ones are all printed. */
+	if (number <= SERROR_REPORT_FIRST)
+		return 1;
+
+	/* After them, one in every stretch. */
+	if (number % SERROR_REPORT_EVERY == 0)
+		return 1;
+
+	/* The others are only counted. */
+	return 0;
+}
+
+/*
+ * Reports the CPU's number from its record directly: hal_cpu_current()
+ * also runs the stall watch's self check, which may print.
+ */
+static uint32_t
+serror_cpu(
+	void)
+{
+	struct arm64_percpu *record;
+
+	/* The record TPIDR_EL1 names, which every CPU has before it takes SErrors. */
+	record = arm64_percpu_current();
+	if (record == NULL)
+		return 0;
+
+	/* Succeeded: the CPU's number. */
+	return (uint32_t)record->logical_id;
+}
+
+/* Prints the kept SError of the kernel, if there is one, and frees the record. */
+static void
+serror_report_kernel(
+	void)
+{
+	uint32_t expected;
+
+	/* Nothing to do without a full record; another CPU may claim it first. */
+	expected = SERROR_RECORD_FULL;
+	if (!__atomic_compare_exchange_n(&serror_record.state, &expected,
+	    SERROR_RECORD_WRITING, 0, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED))
+		return;
+
+	/* Prints where the kernel was; ELR is just after the access, or a little later. */
+	hal_printf("ARM64 SError %u esr=%llx cpu %u in the kernel at pc %llx lr %llx\n",
+	    serror_record.number, serror_record.esr, serror_record.cpu,
+	    serror_record.elr, serror_record.lr);
+
+	/* Frees the record for the next one. */
+	__atomic_store_n(&serror_record.state, SERROR_RECORD_EMPTY, __ATOMIC_RELEASE);
 }

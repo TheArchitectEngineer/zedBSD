@@ -36,3 +36,10 @@ Pi 5 の内蔵 WiFi（CYW43455、BCM2712 の 2 つ目の SD controller の sdio2
 - R15: BCM2712 の SDHCI（sdhci-brcmstb）が `cfg` の領域の設定を要すれば PIO の host が動かない。log の `SDIO card:` の行が出なければここ。
 - R16: sdio2 の IO 電圧。3.3 V の前提（dts の `mmc-ddr-3_3v`）。
 - R17: `bcm43455-firmware` の manifest の device の記述は Pi 4 のまま（WS206 の package、中身は同じ）。
+
+## 1 回目の実機の結果と対処（2026-10-22 P3）
+
+- 実機: `rpi5-wifi: WL_ON was level 0, input (0)`、`SDIO and WL_ON pins routed`、`rpi4-sdio: host specification 2, capabilities 55eec832 (200 MHz)`、`rpi4-sdio: no answer to CMD5 (5)`、`bcm43455: chip did not power up (5)`。
+- 原因の見込み: BCM2712 の SD controller には SDHCI の外に「cfg」の block（node の 2 つ目の reg、0x10_0110_0400）がある。Linux の sdhci-brcmstb は non-removable の card で `SDIO_CFG_CTRL` の card detect を test の値で「有り」に固定し（`sdhci_brcmstb_cfginit_2712`）、clock の設定ごとに `SDIO_CFG_SD_PIN_SEL` で SD の pin を選ぶ（`sdhci_bcm2712_set_clock`）。zedBSD はどちらもしていなかった。card が無いと見える controller は bus の電源と clock を出さないので、CMD5 に答えが無い。pin の mux（D0 の GPIO 28・30〜35）と GIO の register は Linux の pinctrl-bcm2712.c・gpio-brcmstb.c と照らして合っていた。32 kHz の LPO は Pi 5 の dts に software の制御が無い（Pi 4 と同じく基板の側）。
+- 対処: `rpi5-wifi.c` に `configure_controller()`（cfg の block を写像し、`CTRL` の bit 31 を立て bit 30 を落とし、`SD_PIN_SEL` を SD（2）に）を host の初期化の前に置いた。log に前後の値、host の present state（bit 16 = card 有り）・host control・clock を「started」と「before CMD5」で、WL_ON の電源を入れた後の level を足した。
+- 未実施: 実機（2 回目の試験）。

@@ -85,6 +85,7 @@
  */
 #define RP1_IDENTITY			0x00011de4U
 #define RP1_BAR_COUNT			2U
+#define RP1_MSIX_BAR			0U
 #define RP1_PERIPHERAL_BAR		1U
 
 /* A BAR's type bits: a 64-bit memory BAR carries its high half in the next register. */
@@ -188,6 +189,10 @@ drv_rp1_init(
 
 	/* Checks that the function behind the root port is RP1. */
 	identity = config_read32(PCI_ID);
+	kern_logf("rp1: PCIe link up (status %08x), bus %u device 0 is %08x\n",
+		  kern_mmio_read32(rp1.pcie_registers + PCIE_MISC_PCIE_STATUS),
+		  (unsigned)rp1.bus,
+		  identity);
 	if (identity != RP1_IDENTITY) {
 		kern_logf("rp1: bus %u device 0 is %08x, not RP1\n", (unsigned)rp1.bus, identity);
 		return ENODEV;
@@ -219,8 +224,9 @@ drv_rp1_init(
 	config_write32(PCI_COMMAND, command);
 
 	/* Reports what was found. */
-	kern_logf("rp1: bus %u, peripherals at PCI %llx (%llx bytes), DMA offset %llx\n",
+	kern_logf("rp1: bus %u, MSI-X table at PCI %llx, peripherals at PCI %llx (%llx bytes), DMA offset %llx\n",
 		  (unsigned)rp1.bus,
+		  (unsigned long long)rp1.bar_pci_base[RP1_MSIX_BAR],
 		  (unsigned long long)rp1.bar_pci_base[RP1_PERIPHERAL_BAR],
 		  (unsigned long long)rp1.window_size,
 		  (unsigned long long)rp1.dma_bus_offset);

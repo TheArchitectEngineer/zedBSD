@@ -54,3 +54,13 @@ QEMU に raspi5 は無いので、Pi 5 の実機で確かめる（ユーザー�
 | p005 Ethernet | 起動の log の `gem:` の行、LAN の cable を挿して `ifconfig`・`ping` | `gem: revision …, queues …, MDIO divider 96`、`gem: PHY 1 id 600d84a…`、`gem: en0 ready MAC …`（基板の MAC）、cable で `gem: en0 link up 1000 Mbps full duplex`。DHCP の address が付き、`ping -c 3 <router>` が返る。`gem: Ethernet clock was off …`・`gem: no 64-bit DMA reported`・`gem: initialization failed at …` の行があれば写真 |
 | p006 WiFi | 起動の log の `rpi5-wifi:`・`bcm43455:` の行、`ifconfig`、`wifi scan`・接続 | `rpi5-wifi: SDIO host at 1001100000, line 306, 200000000 Hz; WL_ON gio 28`、`rpi5-wifi: SDIO and WL_ON pins routed`、`rpi5-wifi: SDIO card: 3 functions …`、`rpi5-wifi: F1 enabled …`、firmware の版の行、`wlan0` が `ifconfig` に出る。scan で AP が見え、接続して address、`ping`。止まったら `rpi5-wifi:` の最後の行の写真 |
 | p007 Bluetooth | 起動の log の `rpi5-bt:` の行、login 後に `bt` で scan | `rpi5-bt: UART at 107d50c000, irq 308, clock 96000000 Hz, speed up to 3000000 baud`、`rpi5-bt: UART and BT_ON pins routed`、`rpi5-bt: the line at 115200 baud: …`、`rpi5-bt: controller ready after about … ms`、`rpi5-bt: in step …`、bluetoothd が patch を当てた後に 3 Mbaud（`rpi5-bt: line at 3000000 baud`）。`bt` の scan で近くの device が出る。`CTS did not rise` や `too many resets` が出たら写真 |
+
+## 2 回目の試験（2026-10-22、image `zedbsd-rpi5-493271454.img`）
+
+1 回目（2026-10-22 ユーザー「Pi5のUATです。カーネルは起動しますが、USB, LAN, SDIOなどいろいろ使えないようです。」、写真 `build/review/rpi5/uat-20261022-1.webp`）を受けた版。
+
+- 全部の log: 起動の後 1〜2 分おいてから電源を切り、SD card を PC に挿して、FAT（最初の区画）の `log/boot-NNNNNN.txt`（番号の最も大きい物）を持ち帰る。bootlog の service が kernel の log をそこに書く（Pi 5 でも boot の FAT を `/boot/boot0` に出すようにした）。画面の写真は従来どおり最後の画面だけでよい。
+- `ARM64 SError …` の行（画面だけに出る。log の file には入らない）: 出たら写真。`in the kernel at pc …` の番地は `build/review/rpi5/zedbsd-rpi5-493271454-kernel.elf` で引く。1 回目の init の異常終了（signal 10、vector 47）はこれで、今は process を止めずに報告だけする。
+- Wi-Fi: `rpi5-wifi: controller configuration … now …`（card の検出を「有り」に固定し SD の pin を選んだ）、`rpi5-wifi: host started: present …`・`host before CMD5: present …`（bit 16 が 1 なら card 有り）、`rpi5-wifi: WL_ON level 1, output` の後に `rpi5-wifi: SDIO card: …` が出るか。
+- USB・LAN: `rp1: PCIe link up (status …), bus 1 device 0 is 00011de4`、`rp1: bus 1, MSI-X table at PCI …`、`rp1-usb: DWC3 …`、`xhci: …`、`gem: …` のどこで止まるか。`rp1: PCIe link down` なら config.txt の `pciex4_reset=0` が効いていない。
+- Bluetooth は driver を外した（2026-10-22 ユーザー「BTはPi4でも動作していないため、いったんドライバを無効にしてください。」）。`rpi5-bt:` の行は出ない。

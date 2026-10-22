@@ -372,6 +372,11 @@ CONFIG_RPI4_SERIAL_CONSOLE ?= n
 # connector): off by default like the Pi 4's.
 CONFIG_RPI5_SERIAL_CONSOLE ?= n
 
+# The Raspberry Pi 5's onboard Bluetooth on uarta: off by default
+# (2026-10-22 user: the onboard Bluetooth does not work on the Pi 4
+# either, so its driver is off until the chip's power is solved).
+CONFIG_DRIVER_RPI5_BT ?= n
+
 CONFIG_INPUT_TEST_INJECT ?= n
 CONFIG_SECURITY_KEY_TEST_LOOPBACK ?= n
 CONFIG_BT_TEST_LOOPBACK ?= n

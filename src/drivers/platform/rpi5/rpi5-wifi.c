@@ -10,7 +10,9 @@
  * SDIO bus the BCM43455 driver runs on.
  *
  * The chip sits on the BCM2712's second SD controller (sdio2), an SD Host
- * Controller 3.0 that the SDIO host of the Pi 4 drives as it is, and its
+ * Controller 3.0 that the SDIO host of the Pi 4 drives once the
+ * controller's own configuration block forces the card present and
+ * selects the SD pins, and its
  * power is the wl-on regulator, a GPIO of the gio block.  The boot probe
  * only reads the device tree and starts one thread, so the boot does not
  * wait on the chip.  The thread first waits for the root file system and
@@ -38,6 +40,7 @@
 #include <drivers/generic/fdt.h>
 #include <kern/atomic.h>
 #include <kern/clock.h>
+#include <kern/device-io.h>
 #include <kern/klog.h>
 #include <kern/lock.h>
 #include <kern/pmem.h>
@@ -80,6 +83,32 @@
 #define FUNCTION_FRAMES			2U
 
 /*
+ * The BCM2712 SD controller's own configuration block (the node's second
+ * reg, "cfg"): the card detect the controller sees, which a non-removable
+ * card forces to present (a controller that sees no card keeps the bus
+ * unpowered and unclocked), and the pins the controller drives, the SD
+ * ones rather than the eMMC ones.
+ *
+ * Values referenced: Raspberry Pi Linux rpi-6.12.y
+ * drivers/mmc/host/sdhci-brcmstb.c (SDIO_CFG_CTRL with its
+ * SDCD_N_TEST_EN and SDCD_N_TEST_LEV bits, SDIO_CFG_SD_PIN_SEL with its
+ * SD and MMC selectors, and their use in sdhci_brcmstb_cfginit_2712() and
+ * sdhci_bcm2712_set_clock()).
+ */
+#define SDIO_CFG_CTRL			0x00U
+#define SDIO_CFG_CTRL_CD_TEST_ENABLE	(1U << 31)
+#define SDIO_CFG_CTRL_CD_TEST_LEVEL	(1U << 30)
+#define SDIO_CFG_SD_PIN_SEL		0x44U
+#define SDIO_CFG_SD_PIN_SEL_MASK	0x3U
+#define SDIO_CFG_SD_PIN_SEL_SD		0x2U
+#define SDIO_CFG_REGISTER_SPAN		0x48U
+
+/* The host's present state register, read for the bring-up's log. */
+#define SDHCI_PRESENT_STATE		0x24U
+#define SDHCI_HOST_CONTROL		0x28U
+#define SDHCI_CLOCK_CONTROL		0x2cU
+
+/*
  * The steps of the probe.
  *
  * NONE: not probed.  CLAIMED: one caller is probing.  RUNNING: the thread
@@ -112,6 +141,7 @@ struct rpi5_wifi {
 	uint32_t regulator_node;
 	uint32_t gio_node;
 	uint64_t registers_phys;
+	uint64_t cfg_phys;
 	int irq;
 	uint32_t base_clock_hz;
 	unsigned power_pin;
@@ -122,6 +152,7 @@ struct rpi5_wifi {
 	struct drv_rpi4_sdio_card card;
 	struct drv_rpi4_sdio_waiter waiter;
 	void *registers;
+	void *cfg_registers;
 	struct bcm43455_device *device;
 	unsigned published;
 	unsigned card_reported;
@@ -158,6 +189,8 @@ static int publish(struct rpi5_wifi *wifi);
 static int wait_for_root(struct rpi5_wifi *wifi);
 static int bring_up(struct rpi5_wifi *wifi);
 static void report_power_line(struct rpi5_wifi *wifi);
+static int configure_controller(struct rpi5_wifi *wifi);
+static void report_host(struct rpi5_wifi *wifi, const char *when);
 static int route_pins(struct rpi5_wifi *wifi);
 static int set_power(struct rpi5_wifi *wifi, int on);
 static int pulse_power(struct rpi5_wifi *wifi);
@@ -382,6 +415,13 @@ describe(
 	if (error != 0)
 		return error;
 	if (size < DRV_RPI4_SDIO_HOST_REGISTER_SPAN)
+		return ERANGE;
+
+	/* Finds the controller's configuration block; without it the card cannot be forced present. */
+	error = drv_fdt_reg(&wifi->fdt, wifi->controller_node, 1U, &wifi->cfg_phys, &size);
+	if (error != 0)
+		return error;
+	if (size < SDIO_CFG_REGISTER_SPAN)
 		return ERANGE;
 
 	/* Finds its interrupt line and its clock. */
@@ -708,11 +748,17 @@ bring_up(
 		return error;
 	}
 
+	/* Forces the card present and selects the SD pins, before the host powers the bus. */
+	error = configure_controller(wifi);
+	if (error != 0)
+		return error;
+
 	/* Resets the controller and starts the 400 kHz bus. */
 	error = drv_rpi4_sdio_host_init(&wifi->host, wifi->registers, wifi->base_clock_hz);
 	if (error != 0)
 		return error;
 	wifi->host_ready = 1;
+	report_host(wifi, "started");
 
 	/* Joins the controller's interrupt line; the card's interrupt stays disarmed until the chip's driver arms it. */
 	error = drv_rpi4_mmc_irq_add(wifi->irq, drv_rpi4_sdio_host_interrupt, &wifi->host);
@@ -729,7 +775,73 @@ bring_up(
 }
 
 /*
- * Logs the level and direction the firmware left WL_ON at.
+ * Forces the card present in the controller's configuration block and
+ * makes the controller drive the SD pins, logging what the firmware left.
+ */
+static int
+configure_controller(
+	struct rpi5_wifi *wifi)
+{
+	volatile uint8_t *cfg;
+	uint32_t control;
+	uint32_t pins;
+	int error;
+
+	/* Maps the block. */
+	error = kern_device_map(wifi->cfg_phys, SDIO_CFG_REGISTER_SPAN, KERN_DEVICE_UNCACHED, &wifi->cfg_registers);
+	if (error != 0) {
+		kern_logf("rpi5-wifi: controller configuration not mapped (%d)\n", error);
+		return error;
+	}
+	cfg = wifi->cfg_registers;
+
+	/* Reads what the firmware left. */
+	control = kern_mmio_read32(cfg + SDIO_CFG_CTRL);
+	pins = kern_mmio_read32(cfg + SDIO_CFG_SD_PIN_SEL);
+
+	/* Forces the card detect to present: the test enable on, the test level low. */
+	kern_mmio_write32(cfg + SDIO_CFG_CTRL,
+			  (control & ~SDIO_CFG_CTRL_CD_TEST_LEVEL) | SDIO_CFG_CTRL_CD_TEST_ENABLE);
+
+	/* Selects the SD pins. */
+	kern_mmio_write32(cfg + SDIO_CFG_SD_PIN_SEL,
+			  (pins & ~SDIO_CFG_SD_PIN_SEL_MASK) | SDIO_CFG_SD_PIN_SEL_SD);
+
+	/* Records the change. */
+	kern_logf("rpi5-wifi: controller configuration %08x pins %08x, now %08x pins %08x\n",
+		  control,
+		  pins,
+		  kern_mmio_read32(cfg + SDIO_CFG_CTRL),
+		  kern_mmio_read32(cfg + SDIO_CFG_SD_PIN_SEL));
+
+	/* Succeeded: the controller sees the card and reaches its pins. */
+	return 0;
+}
+
+/*
+ * Logs the host's present state (bit 16 the card inserted, bits 20 to 23
+ * the data lines' levels, bit 24 the command line's), its power and its
+ * clock.
+ */
+static void
+report_host(
+	struct rpi5_wifi *wifi,
+	const char *when)
+{
+	volatile uint8_t *registers;
+
+	/* Reads the registers through the host's mapping. */
+	registers = wifi->registers;
+	kern_logf("rpi5-wifi: host %s: present %08x, control %08x, clock %08x\n",
+		  when,
+		  kern_mmio_read32(registers + SDHCI_PRESENT_STATE),
+		  kern_mmio_read32(registers + SDHCI_HOST_CONTROL),
+		  kern_mmio_read32(registers + SDHCI_CLOCK_CONTROL));
+}
+
+/*
+ * Logs WL_ON's level and direction: as the firmware left it, and as the
+ * chip's power-up left it.
  */
 static void
 report_power_line(
@@ -745,7 +857,7 @@ report_power_line(
 	error = drv_rpi5_gio_get(&wifi->gio, wifi->power_pin, &level, &output);
 
 	/* Records the answer, or why it is missing. */
-	kern_logf("rpi5-wifi: WL_ON was level %d, %s (%d)\n",
+	kern_logf("rpi5-wifi: WL_ON level %d, %s (%d)\n",
 		  level,
 		  output ? "output" : "input",
 		  error);
@@ -844,6 +956,10 @@ pulse_power(
 	error = wifi_sleep(wifi, wifi->power_settle_ms);
 	if (error != 0)
 		return error;
+
+	/* Records the power line and the bus as CMD5 finds them. */
+	report_power_line(wifi);
+	report_host(wifi, "before CMD5");
 
 	/* Succeeded: the chip is out of reset. */
 	return 0;

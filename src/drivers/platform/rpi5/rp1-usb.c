@@ -307,8 +307,10 @@ drv_rp1_usb_refresh(
 	void)
 {
 	/* Leaves a board without the bus alone. */
-	if (!rp1_usb.started)
+	if (!rp1_usb.started) {
+		kern_logf("rp1-usb: no controllers to start\n");
 		return;
+	}
 
 	/* Routes the controllers' RP1 interrupts, then starts the polling service. */
 	establish_interrupts();
@@ -464,6 +466,9 @@ start_core(
 	/* Reads the core's identity, which a missing core reads as all ones. */
 	function->snpsid = kern_mmio_read32(registers + DWC3_GSNPSID);
 	if (function->snpsid == 0xffffffffU || function->snpsid == 0) {
+		kern_logf("rp1-usb: no DWC3 at %llx (identity %08x)\n",
+			  (unsigned long long)function->cpu_base,
+			  function->snpsid);
 		(void)kern_device_unmap(mapped, (size_t)function->size);
 		return ENODEV;
 	}

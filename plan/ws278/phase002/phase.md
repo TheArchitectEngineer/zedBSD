@@ -33,3 +33,10 @@
 
 - 実機で R1（読み込みの番地）・R2（dtb の位置）・R3（SD の 1.8 V）・R4（framebuffer の番地）を確かめる。
 - p003（PSCI の SMP）以降は design.md §3。
+
+## 1 回目の実機の結果と対処（2026-10-22 P3）
+
+- 実機（ユーザー、Pi 5 2 GB D0、main の CI config の build）: kernel は起動し、`init: started getty_console` まで。直後に `kern: pid 1 killed by signal 10 (vector 47) at 0x1000775b0`（写真 `build/review/rpi5/uat-20261022-1.webp`）。
+- 解析: pc 0x1000775b0 は libc.so（ld.so の後、0x100020000 に置かれる）の +0x575b0 = syscall の `svc #0` の直後の `ret`。戻り番地 0x1000427ac・0x10004278c は `nanosleep`、0x100043d18 は `sleep`（libc.so は 2026-10-21 の build と 2026-10-22 09:03 の main の build で同一を `cmp` で確かめた）。vector 47 = ESR の EC 0x2f = SError。init は sleep から戻る所で、kernel が先に起こした非同期の外部 abort（device の access）を EL0 への戻りで受けた被害者で、init の誤りではない。SError の vector（3・7・11・15）は同期の例外の handler に流れ、user の fault として SIGBUS になっていた。
+- 対処（HAL の実装、hal.h は変えない）: `trap.S` に SError の入口を分け、`int.c` の `arm64_serror_handler` は止めも signal もせずに報告する（user への戻りで受けた物は即座に画面へ、kernel で受けた物は記録して次の割り込みで `ARM64 SError N esr=… cpu C in the kernel at pc … lr …`）。kernel の worker（`arm64_kernel_task_entry`）と起動の CPU は SError を受けるようにし（`daifclr #4`）、ELR・SPSR を書いてから eret までは SError を止める（`RESTORE_FRAME` と user への入口に `daifset #4`）。元の device の access はまだ分からない。次の試験の pc で特定する。
+- 記録の file: bootlog の service（BUG-288）は Pi 4 だけ boot の FAT を出していた（`vfs.c` の `HAL_BOARD_RPI4`）。Pi 5 も出し、kernel の log の ring を Pi 4 と同じ 256 KiB にした（`klog.c`）。次の試験から SD の FAT の `log/boot-NNNNNN.txt` に全部の log が残る。

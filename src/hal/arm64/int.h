@@ -16,5 +16,6 @@ void arm64_int_init(void);
 void arm64_int_init_secondary(void);
 void arm64_sync_handler(struct arm64_exception_frame *frame, uint64_t vector);
 void arm64_irq_handler(struct arm64_exception_frame *frame, int from_user);
+void arm64_serror_handler(struct arm64_exception_frame *frame, int from_user);
 
 #endif
