@@ -12,9 +12,8 @@ set -e
 IMAGE=${1:?image}
 shift
 KERNEL=${KERNEL:-$(dirname "$IMAGE")/vmunix}
-# The device tree beside the image (ws233-p001), else the old submodule's copy of the same file.
-DTB=${DTB:-$(dirname "$IMAGE")/bcm2711-rpi-4-b.dtb}
-test -f "$DTB" || DTB=vendor/raspberrypi-firmware/boot/bcm2711-rpi-4-b.dtb
+# The device tree beside the image (ws233-p001), else rpi4-dtb.sh's shallow clone of the same file.
+DTB=${DTB:-$(sh plan/tools/rpi4-dtb.sh "$IMAGE")}
 D=${RUN:-build/rpi4-serial-run}
 SNAPSHOT=,snapshot=on
 test "${KEEP:-0}" = 1 && SNAPSHOT=

@@ -1,3 +1,0 @@
-[submodule "vendor/raspberrypi-firmware"]
-	path = vendor/raspberrypi-firmware
-	url = https://github.com/raspberrypi/firmware.git
