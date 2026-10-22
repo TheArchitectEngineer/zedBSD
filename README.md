@@ -19,8 +19,8 @@ It's changing "the way computing is."
 
 `zedBSD` is an operating system written from scratch.  It is intended
 to run on modern computers, especially on tablets.  `Keiland` is a
-next-generation desktop environment especially for computers with
-touch displays.
+next-generation desktop environment especially for power-constrained
+computers with touch displays.
 
 ---
 
@@ -36,7 +36,7 @@ Ourt current targets are the following:
 | StarFive                | Vision Five 2    | RISC-V 64   | StarFive JH7110  | PowerVR        | IMG BXE-4-32 MC1 |
 | Raspberry Pi Foundation | Raspberry Pi 5   | Arm64       | Arm Cortex-A76   | VideoCore      | VideoCore VII    |
 | Raspberry Pi Foundation | Raspberry Pi 4   | Arm64       | Arm Cortex-A72   | VideoCore      | VideoCore VI     |
-| PC                      | -                | x86_64      | -                | -              | Intel/NVIDIA/AMD |
+| PC                      | Any              | x86_64      | Any              | Any            | Intel/NVIDIA/AMD |
 
 ---
 
