@@ -31,6 +31,7 @@
 #include <uapi/errno.h>
 
 #include "drivers/gpu/bcm2711/bcm2712-gpu.h"
+#include "drivers/gpu/bcm2711/display/hvs6.h"
 #include "drivers/gpu/bcm2711/v3d71-private.h"
 
 /*
@@ -51,6 +52,15 @@
 static struct bcm2712_v3d attach_v3d;
 
 /*
+ * The HVS6 display path, as discovery found it.
+ *
+ * Filled by discovery during attachment and by the display stages of the
+ * start, which runs once, like attach_v3d.  present is false until
+ * discovery succeeds.
+ */
+static struct bcm2712_display attach_display;
+
+/*
  * Whether the start has been claimed: zero until the first hw.gpu.start=1.
  *
  * Taken with an atomic test-and-set, so two writers cannot run the bring-up
@@ -60,6 +70,7 @@ static volatile unsigned attach_starting;
 
 static uint64_t start_held(void);
 static int start_engine(void);
+static int start_display(void);
 
 /*
  * The operations behind hw.gpu.start on this board, installed once by the
@@ -78,8 +89,11 @@ drv_bcm2712_gpu_attach(
 	uint64_t fdt_phys)
 {
 	struct drv_fdt fdt;
+	struct kern_boot_framebuffer screen;
 	const void *blob;
 	bool off;
+	int screen_error;
+	int display_error;
 	int error;
 
 	/* Stays out entirely when the boot asked for it. */
@@ -108,9 +122,15 @@ drv_bcm2712_gpu_attach(
 	if (error != 0)
 		bcm2711_stage_mark(BCM2711_FAMILY_V3D, "firmware mailbox unavailable (%d)", error);
 
+	/* Finds the display path; the firmware's screen is what it will show. */
+	screen_error = kern_boot_framebuffer("rpi5.framebuffer", &screen);
+	display_error = ENODEV;
+	if (screen_error == 0)
+		display_error = bcm2712_display_discover(&fdt, &attach_display, &screen);
+
 	/* Runs discovery, which reads nothing behind the engine's power domain. */
 	error = bcm2712_v3d_discover(&fdt, &attach_v3d);
-	if (error != 0)
+	if (error != 0 && display_error != 0)
 		return ENODEV;
 
 	/* Holds the bring-up until root asks for it. */
@@ -127,8 +147,8 @@ start_held(void)
 {
 	unsigned claimed;
 
-	/* An engine that was not found is never held. */
-	if (!attach_v3d.engine.present)
+	/* Nothing found is never held. */
+	if (!attach_v3d.engine.present && !attach_display.present)
 		return 0;
 
 	/* A claimed start no longer holds the engine. */
@@ -151,10 +171,11 @@ start_engine(void)
 {
 	struct bcm2711_v3d *engine;
 	int taken;
+	int display_error;
 	int error;
 
-	/* Refuses a start when no engine was found or the start already ran. */
-	if (!attach_v3d.engine.present)
+	/* Refuses a start when nothing was found or the start already ran. */
+	if (!attach_v3d.engine.present && !attach_display.present)
 		return ENODEV;
 	taken = atomic_raw_try_acquire_zero(&attach_starting);
 	if (!taken)
@@ -162,6 +183,13 @@ start_engine(void)
 	engine = &attach_v3d.engine;
 	attach_v3d.started = true;
 	bcm2711_stage_mark(BCM2711_FAMILY_V3D, "start requested");
+
+	/* Runs the display's stages first; their result does not stop the engine's. */
+	display_error = start_display();
+
+	/* Leaves the engine alone when it was not found. */
+	if (!engine->present)
+		return display_error;
 
 	/* Powers the engine and wakes its sequencer (V1). */
 	error = bcm2712_v3d_power_start(&attach_v3d);
@@ -190,12 +218,60 @@ start_engine(void)
 		return error;
 	}
 
-	/* Succeeded: the engine is up and every self-test job passed. */
+	/* Shows the engine's state; a display failure is the start's result. */
 	bcm2711_stage_mark(BCM2711_FAMILY_V3D, "ready: V3D %u.%u.%u, %u QPUs, %u Hz",
 			   attach_v3d.version / 10U,
 			   attach_v3d.version % 10U,
 			   attach_v3d.revision,
 			   attach_v3d.qpus,
 			   attach_v3d.clock_hz);
+	if (display_error != 0)
+		return display_error;
+
+	/* Succeeded: the display and the engine are up and every self-test passed. */
+	return 0;
+}
+
+/*
+ * Runs the display's stages: the readout (P1), the takeover (R0), the
+ * vertical blank (R1) and the overlay flips (R2).
+ *
+ * Returns 0 when there is no display to start, otherwise the first stage's
+ * error after logging it.  The channel keeps the driver's own copy of the
+ * firmware's list afterwards, which shows the same console.
+ */
+static int
+start_display(void)
+{
+	int error;
+
+	/* Leaves a board without the display path alone. */
+	if (!attach_display.present)
+		return 0;
+
+	/* Reads what the firmware shows. */
+	error = bcm2712_display_readout(&attach_display);
+	if (error != 0)
+		return error;
+
+	/* Takes the firmware's list over. */
+	error = bcm2712_display_adopt(&attach_display);
+	if (error != 0)
+		return error;
+
+	/* Counts the vertical blanks. */
+	error = bcm2712_display_vblank_test(&attach_display);
+	if (error != 0)
+		bcm2711_stage_mark(BCM2712_FAMILY_DISPLAY, "R1 failed (%d)", error);
+
+	/* Moves an overlay with flips. */
+	error = bcm2712_display_overlay_test(&attach_display);
+	if (error != 0) {
+		bcm2711_stage_mark(BCM2712_FAMILY_DISPLAY, "R2 failed (%d)", error);
+		return error;
+	}
+
+	/* Succeeded: the display stages passed. */
+	bcm2711_stage_mark(BCM2712_FAMILY_DISPLAY, "display self-test ok");
 	return 0;
 }

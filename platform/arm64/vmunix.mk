@@ -292,7 +292,7 @@ ifeq ($(ZEDBSD_BOARD)$(CONFIG_DRIVER_BCM2712_GPU),rpi5y)
 ARM64_KERNEL_SOURCES += src/drivers/gpu/bcm2711/attach71.c src/drivers/gpu/bcm2711/v3d71.c \
 	src/drivers/gpu/bcm2711/v3d71-firmware.c src/drivers/gpu/bcm2711/v3d71-hardware.c \
 	src/drivers/gpu/bcm2711/v3d71-job.c src/drivers/gpu/bcm2711/v3d71-cl.c \
-	src/drivers/gpu/bcm2711/v3d71-diagnostic.c \
+	src/drivers/gpu/bcm2711/v3d71-diagnostic.c src/drivers/gpu/bcm2711/display/hvs6.c \
 	src/drivers/gpu/bcm2711/stage.c src/drivers/gpu/bcm2711/fdt-util.c \
 	src/drivers/gpu/bcm2711/mmu.c src/drivers/gpu/bcm2711/buffer.c
 ARM64_KERNEL_SOURCES += $(filter-out $(KERN_GPU_SOURCES),src/drivers/gpu/compiler/spirv.c src/drivers/gpu/compiler/optimize.c src/drivers/gpu/i915/render/codec.c)
