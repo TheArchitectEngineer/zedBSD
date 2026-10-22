@@ -20,7 +20,7 @@
 #include <uapi/errno.h>
 #include <uapi/gpu-op.h>
 
-#include "drivers/gpu/nvrtx/nvrtx-vk-objects.h"
+#include "drivers/gpu/nvrtx/vk/nvrtx-vk-objects.h"
 #include "userland/desktop/libvulkan/internal.h"
 #include "userland/desktop/libvulkan/codec.h"
 #include "drivers/gpu/nvrtx/compiler/sm75.h"

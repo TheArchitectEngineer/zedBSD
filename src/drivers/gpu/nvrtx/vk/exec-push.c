@@ -17,7 +17,7 @@
 #include <kern/kcrt.h>
 #include <libc/vulkan/vulkan_core.h>
 
-#include "drivers/gpu/nvrtx/nvrtx-exec.h"
+#include "drivers/gpu/nvrtx/vk/nvrtx-exec.h"
 #include "drivers/gpu/nvrtx/nvrtx-gsp.h"
 
 /*

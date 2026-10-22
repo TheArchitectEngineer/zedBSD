@@ -36,7 +36,7 @@
 #include <uapi/gpu-job.h>
 
 #include "drivers/gpu/nvrtx/nvrtx-node.h"
-#include "drivers/gpu/nvrtx/nvrtx-vk.h"
+#include "drivers/gpu/nvrtx/vk/nvrtx-vk.h"
 
 /* The protocol's capset: its id, its bytes, the XML version (1.3.269), and the vendor suffix ("SDBZ") with its flags. */
 #define RUNTIME_CAPSET_ID		4U

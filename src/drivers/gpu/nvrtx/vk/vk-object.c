@@ -23,7 +23,7 @@
 #include <kern/kmem.h>
 #include <uapi/errno.h>
 
-#include "drivers/gpu/nvrtx/nvrtx-vk.h"
+#include "drivers/gpu/nvrtx/vk/nvrtx-vk.h"
 
 /*
  * The multiplier of the index's hash: 2^64 divided by the golden ratio,

@@ -21,7 +21,7 @@
 #include <drivers/pci/pci.h>
 #include <kern/lock.h>
 
-#include "drivers/gpu/nvrtx/nvrtx-disp.h"
+#include "drivers/gpu/nvrtx/display/nvrtx-disp.h"
 #include "drivers/gpu/nvrtx/nvrtx-gsp.h"
 #include "drivers/gpu/nvrtx/nvrtx-mem.h"
 #include "drivers/gpu/nvrtx/nvrtx-private.h"

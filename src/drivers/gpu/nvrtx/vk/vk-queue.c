@@ -26,7 +26,7 @@
 #include <uapi/errno.h>
 #include <uapi/gpu-op.h>
 
-#include "drivers/gpu/nvrtx/nvrtx-vk-objects.h"
+#include "drivers/gpu/nvrtx/vk/nvrtx-vk-objects.h"
 
 /* The most submits one vkQueueSubmit carries, and the most command buffers and semaphores of one submit. */
 #define QUEUE_SUBMITS_MAX		16U

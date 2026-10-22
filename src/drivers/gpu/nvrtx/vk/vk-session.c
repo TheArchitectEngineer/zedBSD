@@ -18,7 +18,7 @@
 #include <kern/kmem.h>
 #include <uapi/errno.h>
 
-#include "drivers/gpu/nvrtx/nvrtx-vk.h"
+#include "drivers/gpu/nvrtx/vk/nvrtx-vk.h"
 
 /*
  * Opens an executor session for an owner (the node's session).

@@ -33,7 +33,7 @@
 #include <uapi/errno.h>
 #include <uapi/gpu-op.h>
 
-#include "drivers/gpu/nvrtx/nvrtx-vk-objects.h"
+#include "drivers/gpu/nvrtx/vk/nvrtx-vk-objects.h"
 #include "drivers/gpu/nvrtx/compiler/sm75.h"
 
 #include "drivers/gpu/i915/render/vulkan-codec.inc"

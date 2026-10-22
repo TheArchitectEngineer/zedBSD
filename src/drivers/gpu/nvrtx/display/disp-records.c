@@ -17,7 +17,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "drivers/gpu/nvrtx/nvrtx-disp.h"
+#include "drivers/gpu/nvrtx/display/nvrtx-disp.h"
 #include "drivers/gpu/nvrtx/nvrtx-gsp.h"
 
 /*

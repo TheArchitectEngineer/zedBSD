@@ -17,7 +17,7 @@
 #include <kern/kmem.h>
 #include <uapi/errno.h>
 
-#include "drivers/gpu/nvrtx/nvrtx-vk-objects.h"
+#include "drivers/gpu/nvrtx/vk/nvrtx-vk-objects.h"
 
 /*
  * Reports the VkResult an executor errno becomes: success, out of device

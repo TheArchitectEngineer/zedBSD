@@ -16,7 +16,7 @@
 #include <kern/klog.h>
 #include <uapi/errno.h>
 
-#include "drivers/gpu/nvrtx/nvrtx-vk-objects.h"
+#include "drivers/gpu/nvrtx/vk/nvrtx-vk-objects.h"
 
 /* The refusals shown so far (only the first ones are; the node's lock guards the count). */
 #define DISPATCH_SHOWN_MAX		32U

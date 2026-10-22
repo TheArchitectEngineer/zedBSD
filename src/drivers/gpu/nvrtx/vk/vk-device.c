@@ -27,7 +27,7 @@
 #include <uapi/errno.h>
 #include <uapi/gpu-op.h>
 
-#include "drivers/gpu/nvrtx/nvrtx-vk.h"
+#include "drivers/gpu/nvrtx/vk/nvrtx-vk.h"
 
 #include "drivers/gpu/i915/render/vulkan-codec.inc"
 

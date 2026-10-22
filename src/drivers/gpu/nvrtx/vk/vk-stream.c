@@ -29,7 +29,7 @@
 #include <uapi/errno.h>
 #include <uapi/gpu-op.h>
 
-#include "drivers/gpu/nvrtx/nvrtx-vk.h"
+#include "drivers/gpu/nvrtx/vk/nvrtx-vk.h"
 
 /* The most bytes of blob streams one frame copies, and how deeply streams may name further streams. */
 #define STREAM_COPY_BYTES		(64ULL << 20)
