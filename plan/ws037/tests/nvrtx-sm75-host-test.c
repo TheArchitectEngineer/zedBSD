@@ -41,7 +41,8 @@
  * Nothing here is evidence about the GPU.
  */
 
-#include "drivers/gpu/nvrtx/compiler/sm75.h"
+#include "drivers/gpu/nvrtx/compiler/sm75/encode.h"
+#include "drivers/gpu/nvrtx/compiler/sm75/sm75.h"
 #include "drivers/gpu/nvrtx/nvrtx-compute.h"
 #include "drivers/gpu/nvrtx/nvrtx-draw.h"
 #include "drivers/gpu/nvrtx/nvrtx-gsp.h"

@@ -32,7 +32,7 @@
  * Nothing here is evidence about the GPU.
  */
 
-#include "drivers/gpu/nvrtx/compiler/sm75.h"
+#include "drivers/gpu/nvrtx/compiler/sm75/sm75.h"
 #include "drivers/gpu/compiler/spirv.h"
 #include "plan/ws037/tests/sm75-machine.h"
 #include "plan/ws037/tests/sm75-reference.h"

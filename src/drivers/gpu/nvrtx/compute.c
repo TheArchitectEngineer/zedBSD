@@ -41,7 +41,7 @@
 
 #include "drivers/gpu/nvrtx/nvrtx-compute.h"
 #include "drivers/gpu/nvrtx/nvrtx-gpu.h"
-#include "drivers/gpu/nvrtx/compiler/sm75.h"
+#include "drivers/gpu/nvrtx/compiler/sm75/sm75.h"
 
 /* The arena: its size (its reserve below the top, under the graphics arena, is NVRTX_COMPUTE_ARENA_RESERVE). */
 #define COMPUTE_ARENA_BYTES		0x2000000ULL

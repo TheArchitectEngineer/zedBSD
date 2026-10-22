@@ -24,7 +24,7 @@
 #ifndef PLAN_WS037_TESTS_SM75_MACHINE_H
 #define PLAN_WS037_TESTS_SM75_MACHINE_H
 
-#include "drivers/gpu/nvrtx/compiler/sm75.h"
+#include "drivers/gpu/nvrtx/compiler/sm75/sm75.h"
 
 #include <stdint.h>
 
