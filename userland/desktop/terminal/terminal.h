@@ -33,8 +33,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "pace.h"
 #include "touch.h"
 #include "width.h"
+
+/* The compositor's frame callback the window awaits (window.c). */
+struct wl_callback;
 
 /* The largest grid the terminal keeps, whatever the window's size. */
 #define TERMINAL_MAX_COLUMNS	240U
@@ -677,6 +681,14 @@ struct terminal_window {
 
 	/* A drop on the window waiting for the main loop to paste it (clipboard.c, ws035-p088). */
 	int drop_pending;
+
+	/*
+	 * The pacing of the frames (pace.h): the frame callback asked for with
+	 * the frame last shown, until the compositor answers it (NULL when
+	 * none is awaited), and the state it keeps with the inputs.
+	 */
+	struct wl_callback *pace_callback;
+	struct terminal_pace pace;
 };
 
 /* The clipboard, drops and drags (clipboard.c). */
@@ -740,6 +752,9 @@ int terminal_window_dispatch(struct terminal_window *window, const int *others, 
 void terminal_window_close(struct terminal_window *window);
 void terminal_window_type(struct terminal_window *window, const char *bytes, size_t length);
 void terminal_window_set_fullscreen(struct terminal_window *window, int fullscreen);
+int terminal_window_frame_wait(const struct terminal_window *window, uint64_t now);
+int terminal_window_frame_ask(struct terminal_window *window, uint64_t now);
+void terminal_window_frame_shown(struct terminal_window *window, int asked, int error);
 uint64_t terminal_clock(void);
 
 /* The tabs in the titlebar (tabs.c). */
