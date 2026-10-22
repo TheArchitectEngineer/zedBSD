@@ -17,8 +17,8 @@
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | Mesa と Linux の初期化・submit の手順の調べ（V3D 7.1 の register・control list・QPU の命令の差、TFU・CSD、HVS6 の plane・scanout、firmware との分担）、既存の Pi 4 の driver との差の表、Phase の分け方（[design.md](design.md)） | WS278 p002 | in-progress（2026-10-21 P2 q1544、設計の第 1 版、判定待ち） |
-| p002 | V3D 7.1 の骨格（電源 PM 0x304・clock・SMS・識別・MMU・IRQ 2 本、段 V0〜V4 の印）（design §6、4〜6 LW） | p001、WS278 p002 の実機の起動 | planning |
-| p003 | job の submit（7.1 の最小の packet、noop・clear、TFU、CSD、cache の clean、hang と reset）（6〜8 LW） | p002 | planning |
+| [p002](phase002/phase.md) | V3D 7.1 の骨格（電源 PM 0x304・clock・SMS・識別・MMU・IRQ 2 本、段 V0〜V4 の印）（design §6、4〜6 LW） | p001、WS278 p002 の実機の起動 | in-progress（2026-10-22 P2、実機で V0〜V4 PASS、判定待ち） |
+| [p003](phase003/phase.md) | job の submit（7.1 の最小の packet、noop・clear、TFU、CSD、cache の clean、hang と reset）（6〜8 LW） | p002 | in-progress（2026-10-22 P2、実機で self-test 全 PASS、判定待ち） |
 | [p004](phase004/phase.md) | QPU 7.1 の encoder・scheduler・register の割り当て、固定の shader（10〜14 LW、host だけで並べられる） | p001 | cleared（2026-10-21 Q1、q1545、host の試験 PASS、実機は p005） |
 | p005 | 描画の経路（shader state record の D0 の形、texture state、tile の大きさ、Vulkan の native の部分）（8〜10 LW） | p003・p004 | planning |
 | p006 | HVS6 の display（引き継ぎ、UPM、plane、PV の vblank、flip、zero copy）（8〜10 LW） | p002 | planning |
@@ -33,3 +33,4 @@
 
 - 2026-10-21 ユーザー「Pi5のdecisionは推しでOKです」→ D1〜D4 は design.md §9 の推しどおり。p004（QPU 7.1、host だけ）を P2 q1545 で始める。p002・p003・p005〜は WS278 の起動の実機の確認の後。
 - 2026-10-21 P2 q1545: p004 の 7.1 の compiler（qpu71.c と shader71-*.c、shared の shader.c・shader-analyze.c）と host 試験（Mesa の oracle、7.1 の lane の model で木の全 shader を source と比較）が PASS。再開点: Q1 の判定、p005 で使う。
+- 2026-10-22 P2: p002・p003 を実装（`CONFIG_DRIVER_BCM2712_GPU`、起動時は V0 だけ、`sysctl hw.gpu.start=1` で V1〜V9）。Pi 5 D0 の実機で V3D 7.1.10・12 QPU・1.15 GHz、noop・clear・TFU・CSD・hang と reset が全 PASS（dmesg）。Pi 4 と Pi 5 既定の kernel.elf は不変。再開点: Q1 の判定、次は p005・p006。
