@@ -89,6 +89,9 @@
 #define VERSION_READ_BYTES		256U
 #define CAPABILITIES_READ_BYTES		768U
 
+/* The bytes of the supplicant's variable, a 32-bit number. */
+#define SUPPLICANT_READ_BYTES		4U
+
 /* The radio's 2.4 GHz and 5 GHz channel numbering. */
 #define BAND_2G_BASE_MHZ		2407U
 #define CHANNEL_14_MHZ			2484U
@@ -1197,6 +1200,7 @@ read_identity(
 	size_t copied;
 	int in_file;
 	int in_list;
+	int answers_variable;
 	int error;
 
 	/* Fills the device's identity. */
@@ -1258,19 +1262,37 @@ read_identity(
 	kern_logf("bcm43455: capabilities %s\n", identity->capabilities);
 
 	/*
-	 * The supplicant must be named by both the file's build features and
-	 * the running list.
+	 * Whether the running firmware has the supplicant: the 7.45.241 build
+	 * names idsup in its features but leaves it out of the "cap" list, so a
+	 * firmware that answers the supplicant's own variable has it too.
+	 *
+	 * Values referenced: Linux 6.8.12
+	 * drivers/net/wireless/broadcom/brcm80211/brcmfmac/feature.c
+	 * (brcmf_feat_attach, BRCMF_FEAT_FWSUP from "sup_wpa").
 	 */
-	in_file = bcm43455_device_has_feature(device->file_version, "idsup");
 	in_list = bcm43455_device_has_capability(identity->capabilities, "idsup");
+	answers_variable = 0;
+	if (!in_list) {
+		/* Asks for the variable; a firmware without the supplicant refuses it. */
+		answered = 0;
+		error = bcm43455_bus_iovar_get(&device->bus, "sup_wpa", text, SUPPLICANT_READ_BYTES, &answered);
+		if (error == 0 && answered >= SUPPLICANT_READ_BYTES)
+			answers_variable = 1;
+	}
+
+	/* The supplicant must be named by the file's build features and by the running firmware. */
+	in_file = bcm43455_device_has_feature(device->file_version, "idsup");
 	identity->supplicant = 0;
 	if (in_file && in_list)
 		identity->supplicant = 1;
+	if (in_file && answers_variable)
+		identity->supplicant = 1;
 	if (!identity->supplicant) {
 		kern_logf(
-			"bcm43455: firmware has no supplicant (idsup: build %d, capabilities %d); connecting will be refused\n",
+			"bcm43455: firmware has no supplicant (idsup: build %d, capabilities %d, sup_wpa %d); connecting will be refused\n",
 			in_file,
-			in_list);
+			in_list,
+			answers_variable);
 	}
 
 	/* Succeeded: the identity is known. */

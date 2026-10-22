@@ -69,3 +69,13 @@ Pi 5 の内蔵 WiFi（CYW43455、BCM2712 の 2 つ目の SD controller の sdio2
 - 確認（host）: rpi5 の image の build rc=0・warning 0・vmunix check PASS、rpi4 の kernel の build rc=0・warning 0・vmunix check PASS。
 - 未実施: 実機（6 回目）。見る所: `rpi5-wifi: address …:… from the tree's Wi-Fi node`（または `after the Ethernet's`）、`bcm43455: chip address` がその値、`published as wlan0`。
 - 注: `usb-hid-diag: usb0 device 1 interface 2 refused error=21 stage=parse item=0x0036` は keyboard の vendor の interface で、Pi 4 でも同じ。keyboard は動いており、変えていない。
+
+## 6 回目の実機（接続）の結果と対処（2026-10-22 P3）
+
+- 板（kernel bd4744521）: wlan0 が publish され scan も動く（elecom-84a0c3 の 2.4 GHz・5 GHz が見える）が、`net wifi connect elecom-84a0c3-5G` → `Operation not supported (21)`。boot の log `bcm43455: firmware has no supplicant (idsup: build 1, capabilities 0)`。Pi 4 の T1 の dmesg（plan/agents/T2/t1-687/dmesg-all.log）も同じ行で、Pi 4 でも接続は断られていた（WS206 は接続の実機の確認の前）。
+- 原因: driver は firmware の supplicant を「file の build の feature に idsup」と「`cap` の list に idsup」の両方で確かめていたが、7.45.241 の `cap` の list（`… bsstrans mfp idauth`）には idsup が無い。Linux の brcmfmac は supplicant（BRCMF_FEAT_FWSUP）を `cap` ではなく `sup_wpa` の iovar が読めるかで決める（feature.c の brcmf_feat_attach）。
+- 対処（`bcm43455.c` の read_identity）: `cap` に idsup が無ければ `sup_wpa` を get し、4 byte の答えがあれば running firmware に supplicant がある。build の feature の idsup は引き続き要る。log の行に `sup_wpa %d` を足した。Pi 4 も同じ code（Pi 4 でも接続が断られなくなる）。
+- `net wifi add … --auto yes` が何も出さないのは成功の時の正しい動き（/etc/wifi.conf 78 byte を確かめた）。`store=-` は接続の間だけ番号を出す欄で、未接続の時は `-`。
+- 確認（板、この kernel を /boot/boot0/vmunix に入れ、前の物は vmunix.old、cksum 一致）: boot で supplicant の拒否の行が無く、auto の profile で自動に接続: `net wifi list` → `wifi state=connected interface=wlan0 … ssid=656c…3547`（elecom-84a0c3-5G）、`connect state=6 … authorized=1`。DHCP で wlan0 に `192.168.2.156/24`、route `192.168.2.0/24 link wlan0`。`ping -c 5 192.168.2.1` 5/5、`ping -c 20 -i 0.2` 20/20（平均 1.2 ms）、wlan0 の RX/TX の数が増えた。
+- host: rpi5 kernel・image の build rc=0・warning 0（vmunix check PASS）、rpi4 kernel（BUILD=build/p3-rpi4）rc=0・warning 0・vmunix check PASS、`plan/ws206/tests/bcm43455-host-test.sh` PASS（model の cap は idsup を含むので新しい経路は host では通らない）。
+- 残り: `bcm43455: glommed frame dropped; the firmware still gloms received frames` が接続の直後に 1 回（rxglom 0 を set しても firmware が gloms する。負荷時の取りこぼしの恐れ、未調査）。切断・再接続、2.4 GHz、Pi 4 での接続は未実施。

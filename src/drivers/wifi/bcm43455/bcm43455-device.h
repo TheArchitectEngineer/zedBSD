@@ -81,8 +81,10 @@ struct bcm43455_frame_ring {
  * The firmware's identity, as the running firmware reports it.
  *
  * mac is the chip's address from its OTP, version the firmware's
- * version text, capabilities its feature list, supplicant whether both
- * name the in-firmware supplicant (idsup) this driver relies on, and
+ * version text, capabilities its feature list, supplicant whether the
+ * file's build features name the in-firmware supplicant (idsup) this
+ * driver relies on and the running firmware has it (in the list, or by
+ * answering its variable sup_wpa), and
  * profile the channels the firmware allows, as the WLAN station scans
  * them.  io_type is how the firmware lays out channel specifications,
  * scan_layout which escan request it takes.
