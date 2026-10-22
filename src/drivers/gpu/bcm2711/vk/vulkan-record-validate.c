@@ -233,6 +233,13 @@ validate_pass(
 	/* Clear selection is mandatory only for the actual CLEAR attachment; ignored colour entries were still consumed. */
 	if (pass->colour.loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR && record->count == 0)
 		return EINVAL;
+
+	/* A cleared depth/stencil attachment takes its values from the second entry. */
+	if (pass->depth &&
+	    (pass->depth_stencil.loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR ||
+	     pass->depth_stencil.stencilLoadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) &&
+	    record->count < 2)
+		return EINVAL;
 	if (record->area.offset.x < 0 || record->area.offset.y < 0)
 		return EINVAL;
 	if ((uint32_t)record->area.offset.x > framebuffer->width || (uint32_t)record->area.offset.y > framebuffer->height)

@@ -26,6 +26,9 @@
 #define VULKAN_BUFFER_USAGE (VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)
 #define VULKAN_IMAGE_USAGE (VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
 
+/* A depth/stencil image is only ever an attachment, transient or not; the tile buffer loads and stores it. */
+#define VULKAN_DEPTH_USAGE (VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT)
+
 /* The create flags a two-plane picture may carry so its planes can be viewed in their own formats. */
 #define VULKAN_IMAGE_PLANE_FLAGS (VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT | VK_IMAGE_CREATE_EXTENDED_USAGE_BIT)
 
@@ -249,6 +252,7 @@ create_image(
 	uint64_t chroma;
 #endif
 	bool nv12;
+	bool depth;
 	int error;
 
 	/* The codec accepts the client's stripped external declaration; native storage capabilities remain separate. */
@@ -289,14 +293,29 @@ create_image(
 	}
 #endif
 
+	/*
+	 * A depth/stencil image (ws141-p017) is an optimally tiled attachment
+	 * with the tile buffer's 32-bit D24S8 or X8_D24 pixels, kept in the
+	 * same raster form as a colour image.
+	 */
+	depth = false;
+	if (info.format == VK_FORMAT_D24_UNORM_S8_UINT || info.format == VK_FORMAT_X8_D24_UNORM_PACK32) {
+		depth = true;
+		if (info.flags != 0 ||
+		    info.tiling != VK_IMAGE_TILING_OPTIMAL ||
+		    (info.usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) == 0 ||
+		    (info.usage & ~VULKAN_DEPTH_USAGE) != 0)
+			return ENOTSUP;
+	}
+
 	/* Only an NV12 picture's plane views reinterpret the image's format. */
 	if (!nv12 && info.flags != 0)
 		return ENOTSUP;
-	if (!nv12 && info.format != VK_FORMAT_R8G8B8A8_UNORM && info.format != VK_FORMAT_B8G8R8A8_UNORM)
+	if (!nv12 && !depth && info.format != VK_FORMAT_R8G8B8A8_UNORM && info.format != VK_FORMAT_B8G8R8A8_UNORM)
 		return ENOTSUP;
 	if (info.tiling != VK_IMAGE_TILING_LINEAR && info.tiling != VK_IMAGE_TILING_OPTIMAL)
 		return ENOTSUP;
-	if (!nv12 && (info.usage == 0 || (info.usage & ~VULKAN_IMAGE_USAGE) != 0))
+	if (!nv12 && !depth && (info.usage == 0 || (info.usage & ~VULKAN_IMAGE_USAGE) != 0))
 		return ENOTSUP;
 	if (info.initialLayout != VK_IMAGE_LAYOUT_UNDEFINED &&
 	    (info.initialLayout != VK_IMAGE_LAYOUT_PREINITIALIZED || info.tiling != VK_IMAGE_TILING_LINEAR))

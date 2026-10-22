@@ -17,6 +17,8 @@ static int vertex_state(struct i915_wire_reader *reader, struct bcm2711_vulkan_p
 static int assembly_viewport(struct i915_wire_reader *reader, struct bcm2711_vulkan_pipeline_record *record);
 static int raster_samples(struct i915_wire_reader *reader, struct bcm2711_vulkan_pipeline_record *record);
 static int colour_dynamic(struct i915_wire_reader *reader, struct bcm2711_vulkan_pipeline_record *record);
+static int depth_stencil(struct i915_wire_reader *reader, struct bcm2711_vulkan_pipeline_record *record);
+static void stencil_face(struct i915_wire_reader *reader, VkStencilOpState *face);
 
 /*
  * Decodes one complete admitted graphics creation record without allocating arrays or retaining pointers into the stream.
@@ -255,7 +257,7 @@ assembly_viewport(
 	return 0;
 }
 
-/* Decodes exact fixed raster and single-sample state while refusing unimplemented depth/stencil attachments. */
+/* Decodes exact fixed raster, single-sample and depth/stencil state. */
 static int
 raster_samples(
 	struct i915_wire_reader *reader,
@@ -304,13 +306,15 @@ raster_samples(
 		record->samples.pSampleMask = &record->mask;
 	}
 
-	/* Optional per-sample alpha effects and any following depth record remain explicit native validation inputs. */
+	/* Optional per-sample alpha effects remain explicit native validation inputs. */
 	record->samples.alphaToCoverageEnable = drv_i915_wire_read_u32(reader);
 	record->samples.alphaToOneEnable = drv_i915_wire_read_u32(reader);
 	record->info.pMultisampleState = &record->samples;
-	present = drv_i915_wire_read_u64(reader);
-	if (reader->error != 0 || present != 0)
-		return ENOTSUP;
+
+	/* The depth/stencil state follows for a subpass with a depth/stencil attachment (ws141-p017). */
+	error = depth_stencil(reader, record);
+	if (error != 0)
+		return error;
 
 	/* Succeeded: raster and sample semantics are entirely represented in finite temporary storage. */
 	return 0;
@@ -382,4 +386,63 @@ colour_dynamic(
 
 	/* Succeeded: selected graphics state is self-contained and ready for exact same-device/native compiler validation. */
 	return 0;
+}
+
+/* Decodes the optional depth/stencil state into the record, leaving its pointer null when the client sent none. */
+static int
+depth_stencil(
+	struct i915_wire_reader *reader,
+	struct bcm2711_vulkan_pipeline_record *record)
+{
+	uint64_t present;
+	int error;
+
+	/* A subpass without a depth/stencil attachment, or a pipeline that gave none, sends an absent record. */
+	present = drv_i915_wire_read_u64(reader);
+	if (reader->error != 0 || present > 1)
+		return EINVAL;
+	if (present == 0)
+		return 0;
+
+	/* The chainless zero-flag header, then the depth test's fields. */
+	error = structure_header(reader, VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO);
+	if (error != 0)
+		return error;
+	record->depth.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+	record->depth.depthTestEnable = drv_i915_wire_read_u32(reader);
+	record->depth.depthWriteEnable = drv_i915_wire_read_u32(reader);
+	record->depth.depthCompareOp = drv_i915_wire_read_u32(reader);
+	record->depth.depthBoundsTestEnable = drv_i915_wire_read_u32(reader);
+
+	/* The stencil test and its two faces, then the depth bounds as raw IEEE words. */
+	record->depth.stencilTestEnable = drv_i915_wire_read_u32(reader);
+	stencil_face(reader, &record->depth.front);
+	stencil_face(reader, &record->depth.back);
+	i915_vkc_read_float(reader, &record->depth.minDepthBounds);
+	i915_vkc_read_float(reader, &record->depth.maxDepthBounds);
+	if (reader->error != 0)
+		return EINVAL;
+	record->info.pDepthStencilState = &record->depth;
+
+	/* Succeeded: the state belongs to the record, checked by the native builder. */
+	return 0;
+}
+
+/* Reads one stencil face's seven words in their wire order. */
+static void
+stencil_face(
+	struct i915_wire_reader *reader,
+	VkStencilOpState *face)
+{
+	/* The operations, the compare function, the masks and the reference. */
+	face->failOp = drv_i915_wire_read_u32(reader);
+	face->passOp = drv_i915_wire_read_u32(reader);
+	face->depthFailOp = drv_i915_wire_read_u32(reader);
+	face->compareOp = drv_i915_wire_read_u32(reader);
+	face->compareMask = drv_i915_wire_read_u32(reader);
+	face->writeMask = drv_i915_wire_read_u32(reader);
+	face->reference = drv_i915_wire_read_u32(reader);
+
+	/* Succeeded: a short stream is reported by the reader's error. */
+	return;
 }

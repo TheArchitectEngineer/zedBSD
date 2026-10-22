@@ -23,6 +23,17 @@ struct bcm2711_vulkan_native_pass {
 	struct bcm2711_v3d_view *output;
 	/* A TLB copy's source view is retained like the output through native retirement. */
 	struct bcm2711_v3d_view *source;
+	/*
+	 * A loaded or stored depth/stencil attachment's view is retained like
+	 * the output (ws141-p017); depth_target is its image, whose layout the
+	 * pass checks and commits like the colour target's.  Both are NULL for a
+	 * pass without one; depth alone is NULL when the attachment stays in the
+	 * tile buffer.
+	 */
+	struct bcm2711_v3d_view *depth;
+	struct bcm2711_vulkan_resource *depth_target;
+	VkImageLayout depth_initial_layout;
+	VkImageLayout depth_final_layout;
 	void *cpu;
 	/* The enclosing pending primary retains this logical image through implicit pass layout transitions. */
 	struct bcm2711_vulkan_resource *target;

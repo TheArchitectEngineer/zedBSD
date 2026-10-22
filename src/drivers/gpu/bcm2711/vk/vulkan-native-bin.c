@@ -11,6 +11,9 @@
 
 #include "drivers/gpu/bcm2711/vk/vulkan-native-draw.h"
 
+static void depth_tests(const struct bcm2711_vulkan_pipeline *pipeline, struct bcm2711_native_bin *state);
+static void stencil_face(const VkStencilOpState *face, struct bcm2711_native_stencil *native);
+static uint32_t stencil_op(VkStencilOp op);
 static void clip_axis(int32_t viewport_begin, int32_t viewport_end, int32_t area_begin, uint32_t area_size, int32_t scissor_begin, uint32_t scissor_size, uint32_t limit, uint32_t *begin, uint32_t *size);
 
 /*
@@ -79,6 +82,12 @@ bcm2711_vulkan_native_bin_prepare(
 	/* A blending pipeline's premultiplied source-over happens in the tile buffer, not in its fragment code. */
 	if (event->pipeline->blend)
 		state.blend = 1;
+
+	/* The channels the pipeline does not write are masked in the tile buffer. */
+	state.colour_skip = event->pipeline->colour_skip;
+
+	/* The depth and stencil tests apply in a pass whose attachment has the aspect. */
+	depth_tests(event->pipeline, &state);
 
 	/* Native varying flag order follows the exact fragment scalar FIFO, including locations crossing group twenty-four. */
 	fragment = event->pipeline->programs[BCM2711_SHADER_FRAGMENT];
@@ -160,4 +169,89 @@ clip_axis(
 
 	/* Succeeded: native geometry never underflows or wraps a logical empty rectangle. */
 	return;
+}
+
+/*
+ * Lowers a pipeline's depth and stencil tests to the native draw state.
+ *
+ * The pipeline's pass, which every compatible pass matches in its
+ * depth/stencil attachment, decides which aspects exist: no attachment
+ * tests nothing, X8_D24 only depth, D24S8 both.  A private meta pipeline
+ * has no pass and tests nothing.
+ */
+static void
+depth_tests(
+	const struct bcm2711_vulkan_pipeline *pipeline,
+	struct bcm2711_native_bin *state)
+{
+	const struct bcm2711_vulkan_pass *pass;
+
+	/* Without a depth/stencil attachment both tests stay off. */
+	if (pipeline->pass == NULL || pipeline->pass->payload == NULL)
+		return;
+	pass = pipeline->pass->payload;
+	if (!pass->depth)
+		return;
+
+	/* The depth test and its write, in the codes Vulkan and V3D share. */
+	if (pipeline->depth_test) {
+		state->depth_test = 1;
+		state->depth_compare = (uint32_t)pipeline->depth_compare;
+		if (pipeline->depth_write)
+			state->depth_write = 1;
+	}
+
+	/* The stencil test needs the stencil aspect, which X8_D24 lacks. */
+	if (pipeline->stencil && pass->depth_stencil.format == VK_FORMAT_D24_UNORM_S8_UINT) {
+		state->stencil = 1;
+		stencil_face(&pipeline->stencil_front, &state->front);
+		stencil_face(&pipeline->stencil_back, &state->back);
+	}
+
+	/* Succeeded: the draw tests what its pass can hold. */
+	return;
+}
+
+/*
+ * Translates one face's stencil test to the hardware's codes.
+ *
+ * Values referenced: Mesa 25.3.6 src/broadcom/vulkan/v3dvx_pipeline.c
+ * translate_stencil_op and pack_single_stencil_cfg (the compare function is
+ * Vulkan's VkCompareOp unchanged).
+ */
+static void
+stencil_face(
+	const VkStencilOpState *face,
+	struct bcm2711_native_stencil *native)
+{
+	/* The three operations, the compare function, the masks and the reference. */
+	native->fail = stencil_op(face->failOp);
+	native->pass = stencil_op(face->passOp);
+	native->depth_fail = stencil_op(face->depthFailOp);
+	native->compare = (uint32_t)face->compareOp;
+	native->compare_mask = face->compareMask;
+	native->write_mask = face->writeMask;
+	native->reference = face->reference;
+
+	/* Succeeded: the face is in the Stencil Cfg packet's codes. */
+	return;
+}
+
+/* Reports the V3D Stencil Op code of a Vulkan stencil operation. */
+static uint32_t
+stencil_op(
+	VkStencilOp op)
+{
+	/* Keep and zero are swapped between the two numberings; the rest agree. */
+	switch (op) {
+	case VK_STENCIL_OP_KEEP:
+		return 1U;
+	case VK_STENCIL_OP_ZERO:
+		return 0U;
+	default:
+		break;
+	}
+
+	/* Replace 2, the clamped increment 3 and decrement 4, invert 5 and the wrapping 6 and 7. */
+	return (uint32_t)op;
 }

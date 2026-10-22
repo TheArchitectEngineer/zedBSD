@@ -245,6 +245,7 @@ decode_pass(
 	uint32_t index;
 	uint32_t component;
 	uint32_t bits;
+	uint32_t stencil;
 
 	/* Complete pass begin selects the exact render pass, framebuffer and signed render area. */
 	present = drv_i915_wire_read_u64(reader);
@@ -268,9 +269,25 @@ decode_pass(
 		return ENOTSUP;
 	record->count = clears;
 
-	/* Colour branch zero carries representation two and four words; extra clear entries remain ignored but fully consumed. */
+	/*
+	 * Colour branch zero carries representation two and four words; the
+	 * depth/stencil branch one a depth float and a stencil word, which the
+	 * second entry keeps in words four and five (ws141-p017).  Extra clear
+	 * entries remain ignored but fully consumed.
+	 */
 	for (index = 0; index < clears; index++) {
 		branch = drv_i915_wire_read_u32(reader);
+		if (branch == 1) {
+			bits = drv_i915_wire_read_u32(reader);
+			stencil = drv_i915_wire_read_u32(reader);
+			if (index == 1) {
+				record->words[4] = bits;
+				record->words[5] = stencil;
+			}
+			continue;
+		}
+
+		/* Any other branch is the colour's. */
 		representation = drv_i915_wire_read_u32(reader);
 		array = drv_i915_wire_read_u64(reader);
 		if (branch != 0 ||

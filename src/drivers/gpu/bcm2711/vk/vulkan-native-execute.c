@@ -246,6 +246,10 @@ bcm2711_vulkan_native_pass_finish(
 	/* The completed implicit render-pass transition becomes FIFO-visible only after successful native output retirement. */
 	pass->target->layout = pass->final_layout;
 
+	/* The depth/stencil attachment's transition is committed with it. */
+	if (pass->depth_target != NULL)
+		pass->depth_target->layout = pass->depth_final_layout;
+
 	/* Succeeded: native bin/render completion and output visibility were proved by the existing IRQ/cache runner. */
 	return 0;
 }
@@ -283,6 +287,12 @@ validate_pass(
 	if (pass->target == NULL)
 		return EINVAL;
 	if (pass->initial_layout != VK_IMAGE_LAYOUT_UNDEFINED && pass->initial_layout != pass->target->layout)
+		return EINVAL;
+
+	/* A loaded or stored depth/stencil image starts in the layout the pass names, unless the pass discards it. */
+	if (pass->depth_target != NULL &&
+	    pass->depth_initial_layout != VK_IMAGE_LAYOUT_UNDEFINED &&
+	    pass->depth_initial_layout != pass->depth_target->layout)
 		return EINVAL;
 
 	/* Actual output RAM stays coherent, mapped and independently referenced through every device write. */
@@ -328,6 +338,18 @@ validate_pass(
 	/* Widen before adding logical render bounds to their signed origins. */
 	if ((uint64_t)pass->area.offset.x + pass->area.extent.width > pass->state.width || (uint64_t)pass->area.offset.y + pass->area.extent.height > pass->state.height)
 		return EINVAL;
+
+	/* A loaded or stored depth/stencil image stays mapped and covers every row its tiles move. */
+	if (pass->depth != NULL) {
+		if (pass->depth->quarantined || pass->depth->references == 0)
+			return EIO;
+		offset = (uint64_t)pass->state.depth_output - pass->depth->address;
+		bytes = (uint64_t)pass->state.depth_pitch * pass->state.height;
+		if (offset > pass->depth->bytes ||
+		    pass->state.depth_bytes > pass->depth->bytes - offset ||
+		    bytes > pass->state.depth_bytes)
+			return EINVAL;
+	}
 
 	/* A TLB copy's source stays mapped and covers every row its tile loads read. */
 	if (pass->source != NULL) {

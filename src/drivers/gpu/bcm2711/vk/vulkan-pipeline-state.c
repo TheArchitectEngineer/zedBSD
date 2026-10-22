@@ -15,6 +15,8 @@ static int fetch_state(struct bcm2711_vulkan_pipeline *pipeline, const VkPipelin
 static int raster_state(struct bcm2711_vulkan_pipeline *pipeline, const VkPipelineRasterizationStateCreateInfo *raster);
 static int blend_state(struct bcm2711_vulkan_pipeline *pipeline, const VkPipelineColorBlendStateCreateInfo *blend);
 static int dynamic_state(const VkPipelineDynamicStateCreateInfo *dynamic);
+static int depth_state(struct bcm2711_vulkan_pipeline *pipeline, const VkPipelineDepthStencilStateCreateInfo *depth);
+static int stencil_face(const VkStencilOpState *face, VkStencilOpState *copy);
 
 /*
  * Validates the admitted dynamic-viewport/scissor single-sample triangle state and copies its exact native fetch/raster semantics.
@@ -29,14 +31,13 @@ bcm2711_vulkan_pipeline_state(
 	const VkPipelineMultisampleStateCreateInfo *samples;
 	int error;
 
-	/* Unsupported derivative, optional-stage, depth and rasterizer-discard contracts cannot enter this finite path implicitly. */
+	/* Unsupported derivative, optional-stage and rasterizer-discard contracts cannot enter this finite path implicitly. */
 	if (info->sType != VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO ||
 	    info->pNext != NULL ||
 	    info->flags != 0 ||
 	    info->subpass != 0)
 		return ENOTSUP;
 	if (info->pTessellationState != NULL ||
-	    info->pDepthStencilState != NULL ||
 	    info->basePipelineHandle != VK_NULL_HANDLE ||
 	    info->basePipelineIndex != -1)
 		return ENOTSUP;
@@ -91,6 +92,11 @@ bcm2711_vulkan_pipeline_state(
 
 	/* Exact colour state selects opaque replacement or the compiler's supported premultiplied source-over path. */
 	error = blend_state(pipeline, info->pColorBlendState);
+	if (error != 0)
+		return error;
+
+	/* The depth and stencil tests, when the pipeline states them, become native test state. */
+	error = depth_state(pipeline, info->pDepthStencilState);
 	if (error != 0)
 		return error;
 
@@ -208,7 +214,7 @@ raster_state(
 	return 0;
 }
 
-/* Selects exact opaque replacement or premultiplied alpha source-over, preserving full RGBA write semantics. */
+/* Selects exact opaque replacement or premultiplied alpha source-over, and the channels written. */
 static int
 blend_state(
 	struct bcm2711_vulkan_pipeline *pipeline,
@@ -225,8 +231,14 @@ blend_state(
 	if (blend->attachmentCount != 1 || blend->pAttachments == NULL)
 		return ENOTSUP;
 	attachment = &blend->pAttachments[0];
-	if (attachment->colorWriteMask != (VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT))
-		return ENOTSUP;
+	if ((attachment->colorWriteMask & ~(VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT)) != 0)
+		return EINVAL;
+
+	/*
+	 * The channels not written are masked in the tile buffer; Vulkan's R, G,
+	 * B and A bits are the native mask's bits 0 to 3 (set: not written).
+	 */
+	pipeline->colour_skip = ~attachment->colorWriteMask & 0xfU;
 	if (attachment->blendEnable != VK_FALSE && attachment->blendEnable != VK_TRUE)
 		return EINVAL;
 	pipeline->blend = false;
@@ -280,5 +292,87 @@ dynamic_state(
 		return EINVAL;
 
 	/* Succeeded: every admitted pipeline has the exact two dynamic commands used by Keiland. */
+	return 0;
+}
+
+/*
+ * Copies the depth test and both faces' stencil tests.
+ *
+ * An absent state disables both tests.  Depth bounds are refused; the
+ * compare masks, write masks and references keep their low eight bits, the
+ * stencil buffer's width, as Vulkan defines the comparison.
+ */
+static int
+depth_state(
+	struct bcm2711_vulkan_pipeline *pipeline,
+	const VkPipelineDepthStencilStateCreateInfo *depth)
+{
+	int error;
+
+	/* A pipeline without the state tests nothing. */
+	pipeline->depth_test = false;
+	pipeline->depth_write = false;
+	pipeline->depth_compare = VK_COMPARE_OP_ALWAYS;
+	pipeline->stencil = false;
+	if (depth == NULL)
+		return 0;
+
+	/* A chainless zero-flag record without depth bounds, whose enables are Booleans. */
+	if (depth->sType != VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO ||
+	    depth->pNext != NULL ||
+	    depth->flags != 0)
+		return ENOTSUP;
+	if (depth->depthBoundsTestEnable != VK_FALSE)
+		return ENOTSUP;
+	if (depth->depthTestEnable > VK_TRUE ||
+	    depth->depthWriteEnable > VK_TRUE ||
+	    depth->stencilTestEnable > VK_TRUE)
+		return EINVAL;
+
+	/* The depth test's function is one of the eight shared Vulkan and V3D codes. */
+	if (depth->depthTestEnable == VK_TRUE) {
+		if ((uint32_t)depth->depthCompareOp > (uint32_t)VK_COMPARE_OP_ALWAYS)
+			return EINVAL;
+		pipeline->depth_test = true;
+		pipeline->depth_compare = depth->depthCompareOp;
+		if (depth->depthWriteEnable == VK_TRUE)
+			pipeline->depth_write = true;
+	}
+
+	/* Each face's stencil test is copied with eight-bit masks and reference. */
+	if (depth->stencilTestEnable == VK_TRUE) {
+		error = stencil_face(&depth->front, &pipeline->stencil_front);
+		if (error != 0)
+			return error;
+		error = stencil_face(&depth->back, &pipeline->stencil_back);
+		if (error != 0)
+			return error;
+		pipeline->stencil = true;
+	}
+
+	/* Succeeded: the tests are immutable native pipeline state. */
+	return 0;
+}
+
+/* Checks one face's operations and compare function and copies it with eight-bit masks and reference. */
+static int
+stencil_face(
+	const VkStencilOpState *face,
+	VkStencilOpState *copy)
+{
+	/* The operations are the eight core ones, the compare function one of the eight codes. */
+	if ((uint32_t)face->failOp > (uint32_t)VK_STENCIL_OP_DECREMENT_AND_WRAP ||
+	    (uint32_t)face->passOp > (uint32_t)VK_STENCIL_OP_DECREMENT_AND_WRAP ||
+	    (uint32_t)face->depthFailOp > (uint32_t)VK_STENCIL_OP_DECREMENT_AND_WRAP ||
+	    (uint32_t)face->compareOp > (uint32_t)VK_COMPARE_OP_ALWAYS)
+		return EINVAL;
+
+	/* The stencil buffer has eight bits, so only those of the masks and reference matter. */
+	*copy = *face;
+	copy->compareMask = face->compareMask & 0xffU;
+	copy->writeMask = face->writeMask & 0xffU;
+	copy->reference = face->reference & 0xffU;
+
+	/* Succeeded: the face is native stencil state. */
 	return 0;
 }

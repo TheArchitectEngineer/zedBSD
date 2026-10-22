@@ -22,6 +22,7 @@
 static int prepare_clear(struct bcm2711_vulkan_native_pass *pass, const struct bcm2711_vulkan_record *record);
 static int prepare_target(struct bcm2711_vulkan_native_pass *pass, const struct bcm2711_vulkan_prepared_event *begin);
 static int prepare_target_clear(struct bcm2711_vulkan_native_pass *pass);
+static int prepare_depth(struct bcm2711_vulkan_native_pass *pass, const struct bcm2711_vulkan_pass *description, const struct bcm2711_vulkan_framebuffer *framebuffer, const struct bcm2711_vulkan_record *record);
 static int collect_draws(struct bcm2711_vulkan_native_pass *pass, const struct bcm2711_vulkan_prepared_event *begin, uint64_t *remaining, const struct bcm2711_vulkan_prepared_event **next);
 static int allocate_storage(struct bcm2711_vulkan_native_pass *pass, uint64_t bytes, unsigned fill, uint64_t *remaining, struct bcm2711_native_storage **storage);
 static int prepare_lists(struct bcm2711_vulkan_native_pass *pass, uint64_t *remaining);
@@ -301,6 +302,13 @@ bcm2711_vulkan_native_pass_release(
 			first = error;
 	}
 
+	/* A depth/stencil image's hold retires with the output, after the tiles that moved it stopped. */
+	if (owned->depth != NULL) {
+		error = bcm2711_v3d_memory_release(owned->space, owned->depth);
+		if (first == 0 && error != 0)
+			first = error;
+	}
+
 	/* Only the consumed CPU root disappears; uncertain failed-unmap storage remains native-space owned. */
 	kern_free(owned);
 	if (first != 0)
@@ -480,7 +488,114 @@ prepare_target(
 	if (error != 0)
 		return error;
 
+	/* A depth/stencil attachment is cleared, loaded and stored in the tile buffer. */
+	if (description->depth) {
+		error = prepare_depth(pass, description, framebuffer, record);
+		if (error != 0)
+			return error;
+	}
+
 	/* Succeeded: all later target references borrow this independently retained view, never a public framebuffer identity. */
+	return 0;
+}
+
+/*
+ * Prepares the pass's depth/stencil attachment (ws141-p017).
+ *
+ * The tile buffer clears it in every tile to the begin's values.  An aspect
+ * that loads makes the tiles load the image; one that stores makes them
+ * store it.  A store from a render area smaller than the framebuffer first
+ * loads the image, so pixels outside the area keep their values; one that
+ * also clears there cannot, and is refused.
+ */
+static int
+prepare_depth(
+	struct bcm2711_vulkan_native_pass *pass,
+	const struct bcm2711_vulkan_pass *description,
+	const struct bcm2711_vulkan_framebuffer *framebuffer,
+	const struct bcm2711_vulkan_record *record)
+{
+	const VkAttachmentDescription *attachment;
+	const struct bcm2711_vulkan_image_view *image_view;
+	struct bcm2711_vulkan_resource *image;
+	struct bcm2711_v3d_view *view;
+	uint32_t address;
+	void *cpu;
+	bool whole;
+	bool clears;
+	int error;
+
+	/* The framebuffer's depth/stencil view names the attachment's image. */
+	attachment = &description->depth_stencil;
+	if (framebuffer->depth == NULL ||
+	    framebuffer->depth->kind != I915_VK_OBJ_IMAGE_VIEW ||
+	    framebuffer->depth->payload == NULL)
+		return EINVAL;
+	image_view = framebuffer->depth->payload;
+	if (image_view->owner.parent == NULL || image_view->owner.parent->kind != I915_VK_OBJ_IMAGE)
+		return EINVAL;
+	image = image_view->owner.parent->payload;
+	if (image == NULL ||
+	    (image->usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) == 0 ||
+	    image->format != attachment->format ||
+	    image->bytes > 0xffffffffU)
+		return EINVAL;
+
+	/* The kind of attachment, and its clear values from the begin's second entry. */
+	pass->state.depth = 1;
+	if (attachment->format == VK_FORMAT_X8_D24_UNORM_PACK32)
+		pass->state.depth = 2;
+	pass->state.depth_clear = 0x3f800000U;
+	pass->state.stencil_clear = 0;
+	if (attachment->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR)
+		pass->state.depth_clear = record->words[4];
+	if (attachment->stencilLoadOp == VK_ATTACHMENT_LOAD_OP_CLEAR)
+		pass->state.stencil_clear = record->words[5] & 0xffU;
+
+	/* Loads and stores follow the aspects' operations. */
+	if (attachment->loadOp == VK_ATTACHMENT_LOAD_OP_LOAD || attachment->stencilLoadOp == VK_ATTACHMENT_LOAD_OP_LOAD)
+		pass->state.depth_load = 1;
+	if (attachment->storeOp == VK_ATTACHMENT_STORE_OP_STORE || attachment->stencilStoreOp == VK_ATTACHMENT_STORE_OP_STORE)
+		pass->state.depth_store = 1;
+
+	/* A stored attachment outside a smaller render area keeps its values by being loaded first. */
+	whole = false;
+	if (record->area.offset.x == 0 &&
+	    record->area.offset.y == 0 &&
+	    record->area.extent.width == framebuffer->width &&
+	    record->area.extent.height == framebuffer->height)
+		whole = true;
+	clears = false;
+	if (attachment->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR || attachment->stencilLoadOp == VK_ATTACHMENT_LOAD_OP_CLEAR)
+		clears = true;
+	if (pass->state.depth_store != 0 && !whole) {
+		if (clears)
+			return ENOTSUP;
+		pass->state.depth_load = 1;
+	}
+
+	/* The image's layout is checked and committed like the colour target's, whether or not the tiles move it. */
+	pass->depth_target = image;
+	pass->depth_initial_layout = attachment->initialLayout;
+	pass->depth_final_layout = attachment->finalLayout;
+
+	/* An attachment kept in the tile buffer needs no image storage. */
+	if (pass->state.depth_load == 0 && pass->state.depth_store == 0)
+		return 0;
+
+	/* The image's coherent storage is held through the pass's retirement, like the output's. */
+	error = bcm2711_vulkan_resource_backing(image, 0, image->bytes, &view, &address, &cpu);
+	if (error != 0)
+		return error;
+	if (view->references == 0 || view->references == 0xffffffffU)
+		return EOVERFLOW;
+	bcm2711_v3d_memory_retain(view);
+	pass->depth = view;
+	pass->state.depth_output = address;
+	pass->state.depth_pitch = image->pitch;
+	pass->state.depth_bytes = (uint32_t)image->bytes;
+
+	/* Succeeded: the tiles move the attachment through its retained image. */
 	return 0;
 }
 
@@ -630,6 +745,10 @@ select_boxes(
 	/* Only a pass whose tiles start from its own output can leave a tile as it is. */
 	pass->state.box_count = 0;
 	if (pass->state.load == 0 || pass->state.source != 0)
+		return;
+
+	/* A stored depth/stencil attachment not loaded first must be written in every tile. */
+	if (pass->state.depth_store != 0 && pass->state.depth_load == 0)
 		return;
 
 	/* Each draw's window, as the tiles it covers inside the pass's rectangle. */
