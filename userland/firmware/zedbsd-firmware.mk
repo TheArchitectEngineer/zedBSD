@@ -1,10 +1,12 @@
 # The zedBSD firmware repository, awemorris/zedBSD-firmware
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 #
-# Every firmware file the build fetches (the packages below this directory
-# and the Raspberry Pi 4 boot firmware, platform/arm64/firmware.mk) is also
-# kept, byte for byte, in one GitHub repository, one directory per package,
-# together with its license texts (plan/ws233/phase001/phase.md).  A package
+# Every firmware file the build fetches (the packages below this directory,
+# the Raspberry Pi 4 and 5 boot files, platform/arm64/firmware.mk and
+# rpi5-firmware.mk, and the VisionFive 2 device trees, platform/riscv64/
+# visionfive2/dtb.mk) is also kept, byte for byte, in one GitHub repository,
+# one directory per package, together with its license texts
+# (plan/ws233/phase001/phase.md).  A package
 # fetches FILE from
 #
 #	$(ZEDBSD_FIRMWARE_REPOSITORY_URL)/PACKAGE/FILE
@@ -16,7 +18,7 @@
 # The revision is a full commit SHA of the repository.  While it is empty
 # no package consults the mirror and each one fetches from its upstream
 # alone, as before the repository existed.
-override ZEDBSD_FIRMWARE_REPOSITORY_REVISION := df57bb4b778ace43df7d472185d041e5bd4ef9ce
+override ZEDBSD_FIRMWARE_REPOSITORY_REVISION := e13c96fc71f274cd8c94860ad0d9e55e93e1999f
 override ZEDBSD_FIRMWARE_REPOSITORY_BASE_URL := https://raw.githubusercontent.com/awemorris/zedBSD-firmware
 
 ifneq ($(ZEDBSD_FIRMWARE_REPOSITORY_REVISION),)
