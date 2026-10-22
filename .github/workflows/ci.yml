@@ -68,6 +68,8 @@ jobs:
           gzip -9 -c build/arm64/hdd-image.img > artifacts/zedbsd-rpi4-server.img.gz
 
       - name: Build vf2-keiland
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cp config/ci/config-visionfive2-keiland.mk config.mk
           yes | make firmware-licenses

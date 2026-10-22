@@ -17,6 +17,7 @@
 # boot.scr serves a U-Boot that scans for boot scripts.
 override VF2_DTS_REVISION := adc218676eef25575469234709c2d87185ca223a
 override VF2_DTS_BASE_URL := https://raw.githubusercontent.com/torvalds/linux/$(VF2_DTS_REVISION)
+override VF2_DTS_MIRROR := https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/plain/{path}?id=$(VF2_DTS_REVISION)
 override VF2_DTS_MANIFEST := platform/riscv64/visionfive2/dts.sources
 VF2_DTS_CACHE_ROOT ?= build/sources/linux-dts
 override VF2_DTS_DIR := $(VF2_DTS_CACHE_ROOT)/$(VF2_DTS_REVISION)
@@ -43,7 +44,7 @@ visionfive2-boot-files: $(VF2_ESP_INPUTS)
 
 $(VF2_DTS_DIR)/.verified: $(VF2_DTS_MANIFEST) platform/riscv64/tools/fetch-pinned-files.py
 	$(PYTHON) platform/riscv64/tools/fetch-pinned-files.py --base-url $(VF2_DTS_BASE_URL) \
- --manifest $(VF2_DTS_MANIFEST) $(VF2_DTS_DIR)
+ --mirror '$(VF2_DTS_MIRROR)' --manifest $(VF2_DTS_MANIFEST) $(VF2_DTS_DIR)
 	@touch $@
 
 # The host's preprocessor and compiler, the way Linux's scripts/Makefile.lib
