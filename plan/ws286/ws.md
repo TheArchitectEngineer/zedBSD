@@ -39,3 +39,4 @@
 - 2026-10-23: OSS だけで進める（ユーザー）。openocd・openFPGALoader を host に導入、`sudo openFPGALoader -c digilent --detect` で Cortex-A9 の DAP と xc7z010 を確認。ZYBO は USB 給電、SwitchBot は未接続（JTAG で reset する）。
 - 2026-10-23 P1: design.md 版 1（§0〜§11）。ユーザーの決定（JTAG の起動を SD より先、OSS だけ、SwitchBot は未接続）は design §12 に原文で置き、反映は引き継ぎの担当（§4・§8・§10 の書き直し）。
 - 2026-10-23 P1（worktree p1-zybo2）: design.md 版 2。§12 の決定（OSS だけ、JTAG が先、JTAG で reset、SwitchBot 無し）と、到達目標を PL の block に絞る決定（USB は外す）を反映。§4（JTAG の流れ、SPL の JTAG での振る舞い、OpenOCD の cfg、道具）、§5.6・§5.10（devcfg、窓、block）、§7〜§10、§12 を書き直し、`proposed/hal-armv7.md`・`proposed/boot-test-armv7.md` を書いた。再開点: U1・U3〜U8 の判断、review、Q1 の LLVM。p002 は判断 U4 の後すぐ始められる。
+- 2026-10-23: ユーザー「U項目は読みましたが、全部推しでOKでした。」 → U1・U3〜U7 は推しで決定（Master の decisions-log、AGENTS.md の検証の例外、Guardrail の表）。
