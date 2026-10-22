@@ -2,13 +2,14 @@
 """Fetch files of one pinned upstream revision into a verified cache.
 
   fetch-pinned-files.py --base-url URL [--mirror TEMPLATE] --manifest FILE CACHE-DIRECTORY
+  fetch-pinned-files.py --verify --manifest FILE DIRECTORY
 
 Each manifest line (after # comments) is PATH SIZE SHA-256; the file is
 fetched from URL/PATH (or, when that fails, from the mirror TEMPLATE with
 {path} replaced by PATH) and kept at CACHE-DIRECTORY/PATH.  An existing cache
 is verified and never updated: a mismatch is an error.  A missing cache is
 filled in a sibling directory and published with one rename only after
-every file passes its size and SHA-256 check.
+every file passes its size and SHA-256 check.  --verify only checks DIRECTORY.
 """
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
@@ -17,6 +18,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import os
+import sys
 import tempfile
 import time
 import urllib.error
@@ -79,12 +81,18 @@ def fetch(url: str, attempts: int, fallback: bool) -> bytes | None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--base-url", required=True)
+    parser.add_argument("--base-url")
+    parser.add_argument("--verify", action="store_true")
     parser.add_argument("--mirror")
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("cache", type=Path)
     args = parser.parse_args()
     entries = read_manifest(args.manifest)
+    if args.verify:
+        verify(args.cache, entries)
+        return
+    if args.base_url is None:
+        parser.error("--base-url is required unless --verify is given")
 
     # A cache once published is only checked.
     if args.cache.exists():
@@ -97,9 +105,14 @@ def main() -> None:
         for name, _, _ in entries:
             target = temporary / name
             target.parent.mkdir(parents=True, exist_ok=True)
-            data = fetch(f"{args.base_url}/{name}", 4 if args.mirror else 8, args.mirror is not None)
-            if data is None and args.mirror:
-                data = fetch(args.mirror.replace("{path}", name), 8, False)
+            try:
+                data = fetch(f"{args.base_url}/{name}", 4 if args.mirror else 8, args.mirror is not None)
+                if data is None and args.mirror:
+                    print(f"could not fetch {name} from {args.base_url}; fetching it from the mirror",
+                          file=sys.stderr)
+                    data = fetch(args.mirror.replace("{path}", name), 8, False)
+            except urllib.error.HTTPError as error:
+                raise SystemExit(f"could not fetch {name}: {error}")
             if data is None:
                 raise SystemExit(f"could not fetch {name}")
             target.write_bytes(data)

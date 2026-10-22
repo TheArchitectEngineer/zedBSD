@@ -24,12 +24,6 @@ jobs:
             build-essential cmake curl device-tree-compiler git grub-common gzip ninja-build \
             mtools nasm patch xz-utils
 
-      - name: Cache pinned device tree sources
-        uses: actions/cache@v4
-        with:
-          path: build/sources/linux-dts
-          key: linux-dts-${{ hashFiles('platform/riscv64/visionfive2/dts.sources', 'platform/riscv64/visionfive2/dtb.mk') }}
-
       - name: Install pinned LLVM toolchain cache
         run: |
           make toolchain-cache

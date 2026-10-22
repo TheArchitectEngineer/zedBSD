@@ -7,8 +7,8 @@
 # bootloader picks from by the chip's stepping (bcm2712-rpi-5-b.dtb for C1,
 # bcm2712d0-rpi-5-b.dtb for D0) and their license, fetched file by file from
 # the same raspberrypi/firmware commit as the Pi 4's (platform/arm64/firmware.mk)
-# into a verified cache, from the zedBSD firmware repository first when it
-# has them (userland/firmware/zedbsd-firmware.mk).
+# into a verified cache, from the zedBSD firmware repository's rpi5-boot/
+# first (userland/firmware/zedbsd-firmware.mk).
 include userland/firmware/zedbsd-firmware.mk
 
 # Each entry is CACHE-NAME|UPSTREAM-PATH|SIZE|SHA-256.
@@ -118,8 +118,11 @@ rpi5-boot-firmware-cache:
 	repository='$(RPI5_BOOT_FIRMWARE_ZEDBSD_URL)'; \
 	fetch() { \
 		if test -n "$$repository" && \
-			$(RPI5_BOOT_FIRMWARE_FETCH) --output "$$temporary/$$1" "$$repository/$$1" 2>/dev/null; then \
+			$(RPI5_BOOT_FIRMWARE_FETCH) --output "$$temporary/$$1" "$$repository/$$1"; then \
 			return 0; \
+		fi; \
+		if test -n "$$repository"; then \
+			echo "rpi5-boot-firmware: could not fetch $$1 from the zedBSD firmware repository; fetching it from upstream" >&2; \
 		fi; \
 		$(RPI5_BOOT_FIRMWARE_FETCH) --output "$$temporary/$$1" "$$2"; \
 	}; \
