@@ -600,7 +600,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS281](ws281/ws.md) | MG002 | libc の malloc を速くする（first fit・1 本の list・1 つの lock の作り直し）（2026-10-22 ユーザー） | planning | 着手は後日（ユーザー） |
 | [WS282](ws282/ws.md) | MG006 | camera の driver の枠組み（/dev/camN）と USB Video Class の driver（CSI の rpicam は今回やらない） | planning | p001 の設計 版 2（/dev/camN ＋ UVC、p002〜p011 で 29〜40 LW、CSI は付録）。Q1: D9 GPU の差分・D10 xHCI の拡張は WS282 の担当が入れてよい（T1 の回帰付き） |
 | [WS283](ws283/ws.md) | MG006 | bcm2711 の Vulkan の compute（Pi 4・Pi 5） | planning | p001 の設計 版 2（review の H1〜H6・M1〜M10・L1〜L7 を反映、p002〜p014 で 77〜121 LW、7.1 を先に 4.2 は p013 で移植）。Q1: 7.1 先・NonWritable の印（p011）・CONFIG_DRIVER_BCM2711_COMPUTE（p005）を可 |
-| [WS284](ws284/ws.md) | MG006 | YOLOX-Nano の推論（C と Vulkan compute、Apache-2.0） | planning | p001 の設計 版 2（review の F1〜F22 を反映、p002〜p008 で 35〜49 LW、重みは build の時に取得して変換）、D10・D11 はユーザーの判断待ち |
+| [WS284](ws284/ws.md) | MG006 | YOLOX-Nano の推論（C と Vulkan compute、Apache-2.0） | planning | p001 の設計 版 2（review の F1〜F22 を反映、p002〜p008 で 35〜49 LW、重みは build の時に取得して変換）、D10（license の確認を出さない）・D11（試験の画像を tree に入れる）は 2026-10-23 に決定、実装は後日 |
 | [WS285](ws285/ws.md) | MG006 | camera の object detection の demo の app（WS282〜WS284 の上） | planning | p001 の設計 |
 | [WS279](ws279/ws.md) | MG008 | Raspberry Pi 5 の GPU（V3D 7.1）と display（HVS6）（2026-10-21 ユーザー） | incomplete | p001 design.md（約 47〜64 LW の Phase 表）、ユーザーの判断 D1〜D4 待ち |
 | [WS278](ws278/ws.md) | MG008 | Raspberry Pi 5 対応（config/ci/config-rpi5.mk、必要なら GPU・WiFi）（2026-10-21 ユーザー） | incomplete | p001 設計・p002 起動 image は main（6757ac6f2）、実機の確認待ち（plan/ws278/tests/rpi5-hw-test.md）、判断 D1〜D3 待ち |
@@ -651,6 +651,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-23 ユーザー「D10は出さない、D11は入れる、で記録しておいてください。」→ WS284 D10: 重み（Apache-2.0）の image の build で license の yes/no の確認を出さない（LICENSE・NOTICE を重みの横に置く）。D11: 試験用の COCO val2017 の画像 3 枚（license 7・8）を tree に入れる。
 - 2026-10-23 ユーザー「おっと、意外と工数がかかりそうですね……。設計だけ残してラップアップして、後日実装することにします。」→ WS282〜WS285 は設計で止める（WS282 版 3 の設計の直しは仕上げる）。実装は後日。未決: WS284 D10・D11、WS282 の試験の画面を出す PC。
 - 2026-10-23 ユーザー「USB Video classを優先しましょう。CSIは今回はやりません。/dev/camNのAPIはそのまま使います。uvcドライバを実装します。カメラは今から購入します。まずは手元にあるHDMIキャプチャでもデバッグには使えそうですか？」→ WS282 は /dev/camN の枠組み＋ UVC の driver に変更、rpicam（CSI）は今回の範囲外。最初の試験の device は手元の HDMI capture（UVC）。
 - 2026-10-23 ユーザー「decisionは推しでいいです。重みはダウンロードしてビルドする形にしましょう。それならソースツリーにライセンスを混入させないはずです。」「カメラケーブルは手元にあります。」→ WS282 D1〜D7・WS283 D1〜D4・WS284 D1〜D9 は推しで決定。ただし WS284 の重みは、公式の yolox_nano.pth を build の時に取得（size・SHA-256 の確かめ）して build の中で ZNET に変換する（変換済みの重みを repository に置かない）。Pi 5 用の camera のケーブルは手元にある。
