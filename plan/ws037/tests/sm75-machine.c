@@ -12,7 +12,8 @@
 
 #include "plan/ws037/tests/sm75-machine.h"
 
-#include "drivers/gpu/nvrtx/compiler/sm75.h"
+#include "drivers/gpu/nvrtx/compiler/sm75/encode.h"
+#include "drivers/gpu/nvrtx/compiler/sm75/sm75.h"
 
 #include <math.h>
 #include <stdint.h>
