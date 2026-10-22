@@ -17,6 +17,8 @@ import argparse
 import hashlib
 import os
 import tempfile
+import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -46,6 +48,27 @@ def verify(directory: Path, entries: list[tuple[str, int, str]]) -> None:
             raise SystemExit(f"SHA-256 mismatch: {path}")
 
 
+def fetch(url: str) -> bytes:
+    # A busy server (429, 5xx) or a dropped connection is retried with a growing pause.
+    pause = 2.0
+    for attempt in range(8):
+        try:
+            with urllib.request.urlopen(url, timeout=60) as reply:
+                return reply.read()
+        except urllib.error.HTTPError as error:
+            if error.code != 429 and error.code < 500:
+                raise
+            wait = error.headers.get("Retry-After") if error.headers else None
+            delay = float(wait) if wait and wait.isdigit() else pause
+        except (urllib.error.URLError, TimeoutError):
+            delay = pause
+        if attempt == 7:
+            break
+        time.sleep(min(delay, 120.0))
+        pause = min(pause * 2.0, 60.0)
+    raise SystemExit(f"could not fetch {url}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", required=True)
@@ -65,8 +88,7 @@ def main() -> None:
         for name, _, _ in entries:
             target = temporary / name
             target.parent.mkdir(parents=True, exist_ok=True)
-            with urllib.request.urlopen(f"{args.base_url}/{name}", timeout=60) as reply:
-                target.write_bytes(reply.read())
+            target.write_bytes(fetch(f"{args.base_url}/{name}"))
         verify(temporary, entries)
         os.replace(temporary, args.cache)
 

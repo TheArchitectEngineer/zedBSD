@@ -27,6 +27,7 @@
 #include <drivers/gpu/gpu.h>
 #include <drivers/gpu/gpu-scanout.h>
 #include <drivers/gpu/gpu-share.h>
+#include <kern/atomic.h>
 #include <kern/clock.h>
 #include <kern/dcache.h>
 #include <kern/kcrt.h>
@@ -35,9 +36,11 @@
 #include <kern/lock.h>
 #include <kern/pmem.h>
 #include <kern/sched.h>
+#include <kern/sysctl.h>
 #include <uapi/errno.h>
 #include <uapi/gpu.h>
 #include <uapi/gpu-scanout.h>
+#include <uapi/sysctl.h>
 
 #include "drivers/gpu/powervr/render-command.h"
 #include "drivers/gpu/powervr/render-private.h"
@@ -95,6 +98,7 @@ static void copy_in(volatile uint8_t *view, const uint8_t *bytes, uint32_t lengt
 static int register_attempt(void *context);
 static void register_pause(void *context);
 static int self_test(struct powervr_render *render, const char **step);
+static int render_telemetry(void *context, struct gpu_telemetry_entry *entry);
 
 /*
  * The board's one render node.  Filled by powervr_render_start() on the
@@ -102,6 +106,14 @@ static int self_test(struct powervr_render *render, const char **step);
  * guarded as struct powervr_render says.
  */
 static struct powervr_render board_render;
+
+/*
+ * The bytes of every render buffer's run that exists, the pooled ones
+ * too: buffer_make adds a run's size and buffer_free takes it off, both
+ * atomically, so hw.gputelemetry reads it without a lock.  Zero before
+ * the first buffer; it lives as long as the kernel.
+ */
+static volatile uint64_t buffer_run_bytes;
 
 /* The node's sharing operations. */
 static const struct drv_gpu_share_ops share_operations = {
@@ -230,6 +242,9 @@ powervr_render_start(
 		core->render = NULL;
 		return error;
 	}
+
+	/* Lists the GPU in hw.gputelemetry, which only reads what the node keeps; a full list leaves it out. */
+	(void)kern_gpu_telemetry_register("powervr", render_telemetry, render);
 
 	/* Succeeded: the node is published. */
 	kern_logf("powervr: render node ready (self-test ok: empty job, fence, memory)\n");
@@ -440,6 +455,9 @@ buffer_make(
 		for (index = 0; index < rounded / 8U; index++)
 			words[index] = 0;
 	}
+
+	/* The run counts in the render buffers' bytes until it is freed. */
+	(void)atomic_u64_fetch_add_relaxed(&buffer_run_bytes, (uint64_t)buffer->run.size);
 
 	/* Succeeded: one reference, the caller's. */
 	buffer->bytes = bytes;
@@ -1850,6 +1868,9 @@ static void
 buffer_free(
 	struct powervr_buffer *buffer)
 {
+	/* The run no longer counts in the render buffers' bytes (an add of its size's two's complement). */
+	(void)atomic_u64_fetch_add_relaxed(&buffer_run_bytes, 0U - (uint64_t)buffer->run.size);
+
 	/* Ends the alias, which drops the run's lines, then returns the run. */
 	(void)kern_pmem_unmap_uncached((void *)buffer->view, buffer->run.size);
 	(void)kern_pmem_free(&buffer->run);
@@ -2306,4 +2327,72 @@ powervr_session_describe_job(
 				  kind == 4U ? " strided rows" : "", kind == 4U ? (long long)(reach - (resource->address + resource->buffer->run.size)) : 0LL);
 		}
 	}
+}
+
+/*
+ * Reads the GPU's telemetry for hw.gputelemetry: the time callbacks were
+ * pending (from a kick to its delivery), the core clock the power-up set
+ * (the core has no frequency scaling), and the render buffers in use (not
+ * those kept in the pool for reuse) of the heap the device offers.
+ */
+static int
+render_telemetry(
+	void *context,
+	struct gpu_telemetry_entry *entry)
+{
+	struct powervr_render *render;
+	unsigned long enabled;
+	uint64_t now;
+	uint64_t busy;
+	uint64_t pooled;
+	uint64_t runs;
+	uint32_t core_mhz;
+
+	/* The node, and the time the busy time is read at. */
+	render = context;
+	now = powervr_busy_clock();
+
+	/* The busy time to now: what ended, and the pending callbacks' time so far. */
+	enabled = spin_lock_irqsave(&render->queue_lock);
+
+	busy = render->busy_total;
+	if (render->busy_pending != 0U && now > render->busy_since)
+		busy += now - render->busy_since;
+
+	spin_unlock_irqrestore(&render->queue_lock, enabled);
+
+	entry->time_ns = now;
+	entry->busy_ns = busy;
+	entry->valid |= GPU_TELEMETRY_BUSY;
+
+	/* The core clock's rate, which is what the core runs at and the whole range. */
+	core_mhz = (uint32_t)(render->core->core_rate / 1000000U);
+	if (core_mhz != 0U) {
+		entry->cur_mhz = core_mhz;
+		entry->req_mhz = core_mhz;
+		entry->min_mhz = core_mhz;
+		entry->max_mhz = core_mhz;
+		entry->valid |= GPU_TELEMETRY_CUR_MHZ;
+		entry->valid |= GPU_TELEMETRY_REQ_MHZ;
+		entry->valid |= GPU_TELEMETRY_RANGE_MHZ;
+	}
+
+	/* The pooled buffers' bytes, then every buffer's: read apart, so a buffer that moves between them is off for one read. */
+	enabled = spin_lock_irqsave(&render->buffer_guard);
+
+	pooled = render->pool_bytes;
+
+	spin_unlock_irqrestore(&render->buffer_guard, enabled);
+
+	runs = atomic_u64_load_acquire(&buffer_run_bytes);
+
+	/* The buffers in use, of the heap the device offers. */
+	entry->objects_bytes = 0;
+	if (runs > pooled)
+		entry->objects_bytes = runs - pooled;
+	entry->objects_limit = POWERVR_RENDER_MAX_BYTES;
+	entry->valid |= GPU_TELEMETRY_OBJECTS;
+
+	/* Succeeded: the entry holds what the node keeps. */
+	return 0;
 }

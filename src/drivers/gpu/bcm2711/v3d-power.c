@@ -188,6 +188,7 @@ bcm2711_v3d_power_start(
 	if (current == 0 || current < maximum)
 		return EIO;
 	v3d->power.ready = true;
+	v3d->clock_asked_hz = maximum;
 	bcm2711_stage_mark(BCM2711_FAMILY_V3D, "V2 ready clock %u min %u max %u", current, minimum, maximum);
 
 	/* Succeeded: the caller may now identify and initialize V3D registers. */

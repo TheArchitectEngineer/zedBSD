@@ -53,6 +53,7 @@ bcm2711_v3d_job_run(
 	const struct bcm2711_v3d_job *job,
 	struct bcm2711_v3d_job_result *result)
 {
+	uint64_t started;
 	bool failed_dma;
 	int error;
 
@@ -70,8 +71,9 @@ bcm2711_v3d_job_run(
 		return error;
 	}
 
-	/* The caller's cache clean must become visible before any queue consumes inputs. */
+	/* The caller's cache clean must become visible before any queue consumes inputs; the job's run is timed for hw.gputelemetry. */
 	kern_io_write_barrier();
+	started = bcm2711_v3d_busy_clock();
 	if (job->kind == BCM2711_V3D_JOB_CL) {
 		error = run_cl(engine, &job->command.cl, result);
 	} else if (job->kind == BCM2711_V3D_JOB_TFU) {
@@ -79,6 +81,9 @@ bcm2711_v3d_job_run(
 	} else {
 		error = run_compute(engine, &job->command.compute, result);
 	}
+
+	/* The time the job ran, ended or failed, counts in the engine's busy time. */
+	bcm2711_v3d_busy_add(engine, started);
 
 	/* Record the failed native queues before masking or reset discards their fault state. */
 	if (error != 0) {

@@ -6,10 +6,14 @@
  */
 
 /* The native V3D node owns independently shareable RAM and verified GPU mappings. */
+#include <kern/atomic.h>
+#include <kern/clock.h>
 #include <kern/kcrt.h>
 #include <kern/kmem.h>
+#include <kern/sysctl.h>
 #include <uapi/errno.h>
 #include <uapi/gpu-allocation.h>
+#include <uapi/sysctl.h>
 
 #include "drivers/gpu/bcm2711/bcm2711-private.h"
 #include "drivers/gpu/bcm2711/render-device.h"
@@ -22,6 +26,12 @@
 #define RENDER_CAPABILITIES (GPU_CAP_RESOURCE | GPU_CAP_BLOB | GPU_CAP_TRANSFER | GPU_CAP_MAPPING | GPU_CAP_SHARE | GPU_CAP_ALLOCATION_SHARE)
 #define RENDER_RESOURCE_COUNT 128U
 #define RENDER_RESOURCE_BYTES (256ULL * 1024U * 1024U)
+
+/* Nanoseconds in a second, for the fine counter's conversion. */
+#define RENDER_NS_PER_SECOND 1000000000ULL
+
+/* Hertz in a megahertz, for hw.gputelemetry's frequencies. */
+#define RENDER_HZ_PER_MHZ 1000000U
 
 /* The node, operation tables and native VA owner persist for the kernel lifetime. */
 static struct bcm2711_render_device render_controller;
@@ -50,6 +60,7 @@ static int import_buffer(struct bcm2711_render_device *controller, struct bcm271
 static bool render_ready(struct bcm2711_render_device *controller);
 static bool session_ready(struct bcm2711_render_session *session);
 static void bind_render(struct bcm2711_render_device *controller);
+static int render_telemetry(void *context, struct gpu_telemetry_entry *entry);
 
 /*
  * Publishes the native renderer only after V1 through V10 safely retire boot work.
@@ -95,6 +106,9 @@ bcm2711_render_register(
 	controller->registered = true;
 	bcm2711_stage_mark(BCM2711_FAMILY_V3D, "render node ready native Vulkan/strict queue");
 
+	/* Lists the engine in hw.gputelemetry, which only reads what the node keeps; a full list leaves it out. */
+	(void)kern_gpu_telemetry_register("v3d", render_telemetry, controller);
+
 	/* Succeeded: userspace can allocate, map, share and submit the complete native Vulkan profile. */
 	return 0;
 }
@@ -134,6 +148,61 @@ bcm2711_render_fail(
 
 	/* Succeeded: the renderer refusal has been recorded for subsequent admission. */
 	return;
+}
+
+/*
+ * Reads the fine monotonic counter in nanoseconds; zero when there is none.
+ */
+uint64_t
+bcm2711_v3d_busy_clock(
+	void)
+{
+	uint64_t counter;
+	uint64_t frequency;
+	uint64_t seconds;
+	uint64_t rest;
+	bool available;
+
+	/* Samples the counter and its rate; without either there is no time. */
+	counter = 0;
+	frequency = 0;
+	available = kern_rtc_read_counter(&counter, &frequency);
+	if (!available)
+		return 0;
+	if (frequency == 0U)
+		return 0;
+
+	/* Converts in two parts, so the product never overflows. */
+	seconds = counter / frequency;
+	rest = counter % frequency;
+
+	/* Succeeded: the counter in nanoseconds. */
+	return seconds * RENDER_NS_PER_SECOND + rest * RENDER_NS_PER_SECOND / frequency;
+}
+
+/*
+ * Adds the time since started (from bcm2711_v3d_busy_clock) to the
+ * engine's busy time, which hw.gputelemetry reports.
+ *
+ * A job is counted once it ended, so the sum only grows; a start of zero
+ * (no counter) adds nothing.
+ */
+void
+bcm2711_v3d_busy_add(
+	struct bcm2711_v3d *engine,
+	uint64_t started)
+{
+	uint64_t now;
+
+	/* Nothing to measure without the counter. */
+	if (started == 0U)
+		return;
+
+	/* The time the job ran, added for the readers that take no lock. */
+	now = bcm2711_v3d_busy_clock();
+	if (now <= started)
+		return;
+	(void)atomic_u64_fetch_add_relaxed(&engine->hardware.busy_ns, now - started);
 }
 
 /* Opens one independent renderer namespace without granting native command access. */
@@ -919,4 +988,53 @@ session_ready(
 
 	/* Succeeded: the caller sees both global native admission and this namespace's stop. */
 	return ready;
+}
+
+/*
+ * Reads the engine's telemetry for hw.gputelemetry: the time its jobs ran,
+ * the clock the power start asked for, and the Vulkan memory the sessions
+ * hold of the heap the device offers.
+ *
+ * It takes no lock: the busy time is added atomically, the clock is set
+ * once before the node is published, and the memory in use is one aligned
+ * word the controller mutex's holders write, so a read sees a whole value,
+ * the last or the one before.
+ */
+static int
+render_telemetry(
+	void *context,
+	struct gpu_telemetry_entry *entry)
+{
+	struct bcm2711_render_device *controller;
+	struct bcm2711_v3d *engine;
+	uint32_t asked_mhz;
+
+	/* The node and its engine. */
+	controller = context;
+	engine = controller->space.native;
+	if (engine == NULL)
+		return ENODEV;
+
+	/* The time the jobs ran, at the counter's time now. */
+	entry->time_ns = bcm2711_v3d_busy_clock();
+	entry->busy_ns = atomic_u64_load_acquire(&engine->hardware.busy_ns);
+	entry->valid |= GPU_TELEMETRY_BUSY;
+
+	/* The clock asked for, which is also the whole range: the driver asks for the highest rate only. */
+	asked_mhz = engine->clock_asked_hz / RENDER_HZ_PER_MHZ;
+	if (asked_mhz != 0U) {
+		entry->req_mhz = asked_mhz;
+		entry->min_mhz = asked_mhz;
+		entry->max_mhz = asked_mhz;
+		entry->valid |= GPU_TELEMETRY_REQ_MHZ;
+		entry->valid |= GPU_TELEMETRY_RANGE_MHZ;
+	}
+
+	/* The Vulkan allocations the sessions hold, of the heap the device offers. */
+	entry->objects_bytes = atomic_u64_load_acquire(&controller->vulkan_memory_bytes);
+	entry->objects_limit = BCM2711_VULKAN_MEMORY_BUDGET;
+	entry->valid |= GPU_TELEMETRY_OBJECTS;
+
+	/* Succeeded: the entry holds what the node keeps. */
+	return 0;
 }

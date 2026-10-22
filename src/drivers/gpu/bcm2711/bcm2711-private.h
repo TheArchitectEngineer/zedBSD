@@ -293,6 +293,9 @@ struct bcm2711_v3d {
 	bool has_power_domain;
 	bool has_reset;
 	uint32_t clock_id;
+
+	/* The engine clock's rate the power start asked the firmware for (its highest), in hertz; zero before. */
+	uint32_t clock_asked_hz;
 };
 
 /* Stage marks and the driver's boot parameters (stage.c). */
@@ -313,6 +316,10 @@ int bcm2711_fdt_gic_irq(const struct drv_fdt *fdt, uint32_t node, unsigned index
 uint32_t bcm2711_fdt_reg_count(const struct drv_fdt *fdt, uint32_t node);
 int bcm2711_map_window(struct bcm2711_window *window);
 int bcm2711_irq_install(struct bcm2711_irq_line *line);
+
+/* The engine's busy time for hw.gputelemetry (render-device.c). */
+uint64_t bcm2711_v3d_busy_clock(void);
+void bcm2711_v3d_busy_add(struct bcm2711_v3d *engine, uint64_t started);
 
 /* Questions to the firmware through the mailbox (firmware.c). */
 int bcm2711_firmware_get(uint32_t tag, uint32_t *values, unsigned request_count, unsigned answer_words);
