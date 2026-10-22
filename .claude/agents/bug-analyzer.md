@@ -1,7 +1,7 @@
 ---
 name: bug-analyzer
 description: バグの原因解析だけを行うサブエージェント。バグが出たら自動で起動する。修正は実装しない。機能性だけを確認し、セキュリティは確認しない。
-model: claude-fable-5-1
+model: claude-opus-5-5
 effort: high
 ---
 

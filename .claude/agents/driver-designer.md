@@ -1,7 +1,7 @@
 ---
 name: kernel-and-driver-designer
 description: カーネルとデバイスドライバの設計 Phase を実行するサブエージェント。人間の判断なしで自動起動する。コードは書かず設計文書を作る。
-model: claude-fable-5-1
+model: claude-opus-5-5
 effort: high
 ---
 
