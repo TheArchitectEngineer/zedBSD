@@ -335,6 +335,13 @@ drv_rp1_irq_establish(
 	/* Enables the vector. */
 	kern_mmio_write32(config + RP1_MSIX_CFG_SET, RP1_MSIX_CFG_ENABLE);
 
+	/*
+	 * Unmasks the GIC line: registering a handler leaves the line
+	 * disabled, so without this every RP1 vector was served only by its
+	 * driver's polling (the USB ports every 50 ms, the pointer at 20 Hz).
+	 */
+	kern_irq_unmask(irq);
+
 	/* Reports the route. */
 	kern_logf("rp1: vector %u (%s) on line %d\n", vector, slot->level ? "level" : "edge", irq);
 

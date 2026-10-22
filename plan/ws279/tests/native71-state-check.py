@@ -58,10 +58,10 @@ def shader_fields():
         "Disable implicit point/line varyings": 1,
         "Number of varyings in Fragment Shader": 32,
         "Coordinate Shader output VPM segment size": 4,
-        "Coordinate Shader input VPM segment size": 1,
+        "Coordinate Shader input VPM segment size": 0,
         "Min Coord Shader input segments required in play": 1,
         "Vertex Shader output VPM segment size": 5,
-        "Vertex Shader input VPM segment size": 1,
+        "Vertex Shader input VPM segment size": 0,
         "Min Vertex Shader input segments required in play": 1,
     }
     for stage, index in (("Coordinate", 0), ("Vertex", 1), ("Fragment", 2)):
