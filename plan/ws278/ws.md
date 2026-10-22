@@ -51,3 +51,4 @@
 - 2026-10-22 板で bd4744521 の kernel: rpi5-wifi が MAC を得て bcm43455 が 98:fe:54:22:65:c4 で wlan0 として publish（ifconfig に wlan0）。接続の試験はまだ。
 - 2026-10-22 P3: Wi-Fi の接続。`connect` の EOPNOTSUPP は driver が supplicant を `cap` の list の idsup で確かめていたため（7.45.241 の list には無い、Pi 4 も同じ）。Linux と同じく `sup_wpa` の iovar で確かめるように直し（p006）、板で elecom-84a0c3-5G に自動接続（authorized）・DHCP 192.168.2.156・ping 192.168.2.1 20/20。残り: rx の glom の取りこぼしの log 1 回、切断・再接続・Pi 4 は未実施。
 - 2026-10-22 P3: ファン（ユーザー「Pi5のファンが回ってないんですが」）。kernel にファン・温度の code が無く、firmware は RP1 の PWM1 の clock を止めて渡していた。rpi5-fan を足し（p009）、板で 58 °C で level 1（2352 rpm）、60.6 °C で level 2（3877 rpm）、54.5 °C で level 1 に戻るのを見た。hw.thermal に温度。
+- 2026-10-23 ユーザー「ファンが回転していますね。」→ ws278-p009 の fan を実機で目視確認。
