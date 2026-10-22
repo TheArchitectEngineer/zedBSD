@@ -15,7 +15,9 @@
  * start after the SD card; a board whose firmware reset RP1's link boots
  * without them.  The onboard Wi-Fi, and the onboard Bluetooth when the
  * build has its driver (CONFIG_DRIVER_RPI5_BT, off by default), are probed
- * once interrupts are on and come up in the background.
+ * once interrupts are on and come up in the background.  The V3D render
+ * engine, when the build has its driver (CONFIG_DRIVER_BCM2712_GPU, off by
+ * default), is found then and waits for root to start it.
  */
 
 #include <uapi/errno.h>
@@ -35,6 +37,9 @@
 #include "drivers/platform/rpi5/rpi5-serror.h"
 #if CONFIG_DRIVER_RPI5_BT
 #include "drivers/platform/rpi5/rpi5-bt.h"
+#endif
+#if CONFIG_DRIVER_BCM2712_GPU
+#include "drivers/gpu/bcm2711/bcm2712-gpu.h"
 #endif
 #include <drivers/usb/usb-hid.h>
 
@@ -177,6 +182,16 @@ kern_platform_refresh_devices(
 	 * controller goes on without it.
 	 */
 	(void)drv_rpi5_bt_probe(rpi5_fdt_phys);
+#endif
+
+#if CONFIG_DRIVER_BCM2712_GPU
+	/*
+	 * Finds the V3D render engine and holds it for root's start (sysctl
+	 * hw.gpu.start=1); a board without it, or a boot with rpi4gpu.off=1,
+	 * goes on without it.
+	 */
+	if (rpi5_fdt_phys != 0)
+		(void)drv_bcm2712_gpu_attach(rpi5_fdt_phys);
 #endif
 }
 
