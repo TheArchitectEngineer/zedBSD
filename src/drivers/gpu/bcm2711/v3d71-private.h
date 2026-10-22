@@ -115,6 +115,13 @@ bcm2712_v3d_of(
 	return (struct bcm2712_v3d *)(void *)engine;
 }
 
+/*
+ * Whether the shader state record is the draw-index form (revision 10 and
+ * later, the BCM2712 D0).  Set by identification before any job runs and
+ * read by the record encoder (native71-shader.c).
+ */
+extern bool bcm2712_v3d_draw_index_record;
+
 /* The Pi 5's firmware mailbox for the clock questions (v3d71-firmware.c). */
 int bcm2712_firmware_init(const struct drv_fdt *fdt);
 int bcm2712_firmware_property(uint32_t tag, uint32_t *values, unsigned request_count, unsigned capacity, uint32_t *answered);

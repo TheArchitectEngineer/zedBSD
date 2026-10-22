@@ -80,6 +80,13 @@
  */
 #define MMU_CONFIGURATION 0x060d0c01U
 
+/*
+ * Whether the shader state record is the draw-index form: set by
+ * identification from the revision (10 and later) before any job runs, and
+ * never changed by a reset, which keeps the same identification.
+ */
+bool bcm2712_v3d_draw_index_record;
+
 static int identify(struct bcm2712_v3d *v3d);
 static int allocate_tables(struct bcm2711_v3d *engine);
 static int bind_tables(struct bcm2711_v3d *engine);
@@ -658,6 +665,11 @@ identify(
 	/* Requires the 32-bit GPU addresses the page table covers. */
 	if (hardware->physical_bits < 32U || hardware->virtual_bits < 32U)
 		return ENOTSUP;
+
+	/* Revision 10 and later take the draw-index form of the shader state record. */
+	bcm2712_v3d_draw_index_record = false;
+	if (v3d->revision >= 10U)
+		bcm2712_v3d_draw_index_record = true;
 
 	/* The page table names at most 36 physical bits whatever the MMU could reach. */
 	v3d->table_physical_bits = hardware->physical_bits;
