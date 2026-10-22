@@ -32,6 +32,7 @@
 #include "drivers/platform/rpi5/rp1-usb.h"
 #include "drivers/platform/rpi5/rp1-ethernet.h"
 #include "drivers/platform/rpi5/rpi5-wifi.h"
+#include "drivers/platform/rpi5/rpi5-serror.h"
 #if CONFIG_DRIVER_RPI5_BT
 #include "drivers/platform/rpi5/rpi5-bt.h"
 #endif
@@ -158,9 +159,11 @@ kern_platform_refresh_devices(
 
 	/* Has the USB controllers find their devices. */
 	drv_rp1_usb_refresh();
+	(void)drv_rpi5_serror_check("rp1-usb: finding devices");
 
 	/* Starts the Ethernet port's link and missed-interrupt service. */
 	drv_rp1_ethernet_refresh();
+	(void)drv_rpi5_serror_check("gem: starting the service");
 
 	/*
 	 * Starts the onboard Wi-Fi's thread; a board without the chip goes on
@@ -301,8 +304,12 @@ start_rp1(
 		return;
 	}
 
+	/* Names the SD card's start if it left an SError, so that RP1's steps start clean. */
+	(void)drv_rpi5_serror_check("sdhci: starting the SD card");
+
 	/* Finds RP1 as the firmware left it. */
 	error = drv_rp1_init(fdt_phys);
+	(void)drv_rpi5_serror_check("rp1: finding RP1");
 	if (error != 0) {
 		kern_logf("rpi5: RP1 unavailable (%d)\n", error);
 		return;
@@ -310,11 +317,13 @@ start_rp1(
 
 	/* Starts the USB controllers. */
 	error = drv_rp1_usb_init();
+	(void)drv_rpi5_serror_check("rp1-usb: starting the controllers");
 	if (error != 0)
 		kern_logf("rpi5: USB unavailable (%d)\n", error);
 
 	/* Starts the Ethernet port. */
 	error = drv_rp1_ethernet_init();
+	(void)drv_rpi5_serror_check("gem: starting the port");
 	if (error != 0)
 		kern_logf("rpi5: Ethernet unavailable (%d)\n", error);
 }

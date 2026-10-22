@@ -40,3 +40,10 @@
 - 解析: pc 0x1000775b0 は libc.so（ld.so の後、0x100020000 に置かれる）の +0x575b0 = syscall の `svc #0` の直後の `ret`。戻り番地 0x1000427ac・0x10004278c は `nanosleep`、0x100043d18 は `sleep`（libc.so は 2026-10-21 の build と 2026-10-22 09:03 の main の build で同一を `cmp` で確かめた）。vector 47 = ESR の EC 0x2f = SError。init は sleep から戻る所で、kernel が先に起こした非同期の外部 abort（device の access）を EL0 への戻りで受けた被害者で、init の誤りではない。SError の vector（3・7・11・15）は同期の例外の handler に流れ、user の fault として SIGBUS になっていた。
 - 対処（HAL の実装、hal.h は変えない）: `trap.S` に SError の入口を分け、`int.c` の `arm64_serror_handler` は止めも signal もせずに報告する（user への戻りで受けた物は即座に画面へ、kernel で受けた物は記録して次の割り込みで `ARM64 SError N esr=… cpu C in the kernel at pc … lr …`）。kernel の worker（`arm64_kernel_task_entry`）と起動の CPU は SError を受けるようにし（`daifclr #4`）、ELR・SPSR を書いてから eret までは SError を止める（`RESTORE_FRAME` と user への入口に `daifset #4`）。元の device の access はまだ分からない。次の試験の pc で特定する。
 - 記録の file: bootlog の service（BUG-288）は Pi 4 だけ boot の FAT を出していた（`vfs.c` の `HAL_BOARD_RPI4`）。Pi 5 も出し、kernel の log の ring を Pi 4 と同じ 256 KiB にした（`klog.c`）。次の試験から SD の FAT の `log/boot-NNNNNN.txt` に全部の log が残る。
+
+## 2 回目の実機の結果と対処（2026-10-22 P3）
+
+- 実機: `ARM64 SError 1 esr=be000011 cpu 0 on return to user pc 1000775b0; a kernel device access raised it earlier`。画面では Wi-Fi の `chip powered down` の直後。init は止まらず login まで（1 回目の対処は効いた）。
+- 読み: user への戻りで受けた = SError を止めた状態の kernel の code が起こした。system call・割り込みの中か、SError を止めた状態から切り替わった worker。RP1 の側は `the root port has no bus behind it` で root complex の register 以外に触れずに戻っていたので、RP1 の BAR・設定空間ではない。時刻（20 s、Wi-Fi の thread の直後）から Wi-Fi の段が最も疑わしい。
+- 対処: `src/drivers/platform/rpi5/rpi5-serror.c`（Pi 5 だけ）。SError を止め、`dsb sy; isb` の後に ISR_EL1.A を読み、立っていれば `rpi5: SError pending after <段>` を log に出してから SError を一瞬許して HAL に受けさせる（次の段は clean で始まる。HAL は `ARM64 SError N … in the kernel at pc …` を出す）。段: SD の起動の後、RP1 を探した後、USB・Ethernet の起動と refresh の後、Wi-Fi の file の読み・WL_ON の読み・pin・cfg・host の起動・電源・列挙・返却・電源断の後。
+- 未実施: 実機（3 回目の試験）。

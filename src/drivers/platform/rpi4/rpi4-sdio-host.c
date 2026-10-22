@@ -989,6 +989,10 @@ fail_command_locked(
 			error = ETIMEDOUT;
 	}
 
+	/* Names the controller's errors of a failure that was no timeout. */
+	if (error == EIO)
+		kern_logf("rpi4-sdio: command failed, interrupt status %08x\n", status);
+
 	/* Clears what the command left in the status. */
 	write_register(host, REG_INTERRUPT_STATUS, STATUS_CLEARABLE);
 

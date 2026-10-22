@@ -44,3 +44,11 @@ Pi 5 の USB の 4 つの口（RP1 の 2 つの DWC3、各々 xHCI）で USB key
 - 実機: USB・LAN とも使えない（ユーザー）。写真では前半が流れて `rp1`・`rp1-usb`・`xhci`・`gem` の行が見えない。
 - 黙って失敗し得る所（code から）: device tree が無い（`start_rp1` が何も言わずに戻っていた）、firmware が `pciex4_reset=0` でも link を落とす（`rp1: PCIe link down`）、RP1 の BAR が無い、inbound の窓の設定し直し（`rp1: inbound window N was …`）、DWC3 の identity が読めない（`start_core` が何も言わずに ENODEV）、xHCI の bind・enable slot の completion が来ない（MSI-X → MIP の経路か DMA の窓）、RP1 の割り込みの初期化の失敗。
 - 対処: 段ごとの 1 行を足した。`rpi5: no device tree; …`、`rp1: PCIe link up (status …), bus … device 0 is …`、`rp1: bus …, MSI-X table at PCI …, peripherals at …`、`rp1-usb: no DWC3 at … (identity …)`、`rp1-usb: no controllers to start`。pci-xhci.c の Pi 4 の enable slot の追跡の行を Pi 5 でも出す。全部の log は bootlog の file で読む（p002）。
+
+## 2 回目の実機の結果と対処（2026-10-22 P3）
+
+- 実機（ユーザー「まだだめですね」、log `build/review/rpi5/uat-20261022-2-boot-000001.txt`）: `rp1: the root port has no bus behind it` → `rpi5: RP1 unavailable (13)` → `rp1-usb: no controllers to start`。link（PHYLINKUP・DL_ACTIVE）は上がっていた（`rp1: PCIe link down` は出ない）ので、config.txt の `pciex4_reset=0`（image の FAT の config.txt にある）は効いている。
+- 原因: firmware は link を残すが、root port（root complex 自身の設定空間）の secondary bus 番号を 0 のまま渡す。zedBSD は firmware が bus を番号付けした前提で、0 なら諦めていた。Linux（pcie-brcmstb.c）は root bus の設定空間を root complex の register に、その下の bus を EXT_CFG_INDEX の bus 番号で引き、bus 番号は自分の列挙で付ける（firmware の値に頼らない）。
+- 対処（`rp1.c`）: 列挙と同じく、root port が bridge（header type 1）なら primary 0・secondary/subordinate 1 を付け、memory の窓を 32 bit 全体に、prefetch の窓を閉じ、command に MEM・MASTER。MISC_CTRL の CFG_READ_UR_MODE を立て、答えの無い設定空間の読みを abort でなく all ones に（Linux と同じ）。outbound の窓 0 が空なら pcie の ranges から設定（Linux の brcm_pcie_set_outbound_win と同じ形）。RP1 の BAR0 と BAR1 が同じ番地（未配置）なら、size を測り BAR1 を rp1 の ranges の PCI 番地に、残りを後ろに置く。firmware の値を `rp1: root port: …`・`rp1: outbound window: …` の 2 行で log に残す。
+- host 試験 `rpi5-rp1-host-test`（偽の root complex を UAT と同じ「bus 番号 0・header type 1」にした）: C1・D0 とも PASS（bus 番号 0x00010100、outbound の窓 0x4070=fff00000・0x4080/0x4084=0x1f）。
+- 未実施: 実機（3 回目の試験）。

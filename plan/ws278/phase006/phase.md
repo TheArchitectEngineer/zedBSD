@@ -43,3 +43,11 @@ Pi 5 の内蔵 WiFi（CYW43455、BCM2712 の 2 つ目の SD controller の sdio2
 - 原因の見込み: BCM2712 の SD controller には SDHCI の外に「cfg」の block（node の 2 つ目の reg、0x10_0110_0400）がある。Linux の sdhci-brcmstb は non-removable の card で `SDIO_CFG_CTRL` の card detect を test の値で「有り」に固定し（`sdhci_brcmstb_cfginit_2712`）、clock の設定ごとに `SDIO_CFG_SD_PIN_SEL` で SD の pin を選ぶ（`sdhci_bcm2712_set_clock`）。zedBSD はどちらもしていなかった。card が無いと見える controller は bus の電源と clock を出さないので、CMD5 に答えが無い。pin の mux（D0 の GPIO 28・30〜35）と GIO の register は Linux の pinctrl-bcm2712.c・gpio-brcmstb.c と照らして合っていた。32 kHz の LPO は Pi 5 の dts に software の制御が無い（Pi 4 と同じく基板の側）。
 - 対処: `rpi5-wifi.c` に `configure_controller()`（cfg の block を写像し、`CTRL` の bit 31 を立て bit 30 を落とし、`SD_PIN_SEL` を SD（2）に）を host の初期化の前に置いた。log に前後の値、host の present state（bit 16 = card 有り）・host control・clock を「started」と「before CMD5」で、WL_ON の電源を入れた後の level を足した。
 - 未実施: 実機（2 回目の試験）。
+
+## 2 回目の実機の結果と対処（2026-10-22 P3）
+
+- 実機（log `build/review/rpi5/uat-20261022-2-boot-000001.txt`）: cfg の書き込みは効いた（`controller configuration 40003c03 pins 00000000, now 80003c03 pins 00000002`、present の bit 16 = card 有り）。bus の電源 0x0f00（on・3.3 V）、clock 0x000efa07（内部 clock・SD clock on、分周 250 = 200 MHz / 500 = 400 kHz）、WL_ON は 1・出力。それでも `rpi4-sdio: no answer to CMD5 (5)`。
+- 読み: error 5 は EIO で、timeout ではない（controller が CRC・end bit などの誤りを見た）。present の bit 24（CMD の level）が 0、DAT0・DAT2・DAT3 も 0、DAT1 だけが WL_ON の後に 1。pull-up の付いた CMD が low に見えるので、controller は CMD を low のまま読んでいる（応答の start bit を即座に見て崩れた応答）。
+- 確かめて合っていた物（Linux の値と照合）: 識別の clock 400 kHz、IO 電圧（sdio2 は `mmc-ddr-3_3v`、vqmmc の regulator は無い）、WL_ON の後の待ち 150 ms（wl-on-reg の startup-delay-us）、pin の function（D0 は GPIO 30〜35 の sd2 = 1、C0 は 4/4/4/3/4/3）と pad の pull の位置（pinctrl-bcm2712.c の GPIO_REGS と一致）、SD_PIN_SEL = SD（Linux の sdhci_bcm2712_set_clock と同じ）、32 kHz の LPO（Pi 5 の dts に software の制御は無い）。原因は code からは特定できなかった。
+- 対処（次の試験で原因を絞る log）: pin controller の stepping と register の全部を routing の前後で（`rpi5-pinctrl: brcm,bcm2712d0-pinctrl before/after: …`）、GIO の bank 0 の level と方向（pad から見た GPIO 30〜35 の level、`rpi5-wifi: GPIO bank levels …`）、CMD が low の時は pin の選択 0〜3 ごとの present（clock を掛け直して）、CMD5 が timeout でない時の interrupt status（`rpi4-sdio: command failed, interrupt status …`）。
+- 未実施: 実機（3 回目の試験）。
