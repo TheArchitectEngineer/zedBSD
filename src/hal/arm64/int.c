@@ -3,6 +3,7 @@
 #include "int.h"
 #include "task.h"
 #include "irq.h"
+#include "percpu.h"
 #include "watch.h"
 #include "bsp-rpi-common/clock.h"
 #include "bsp-rpi-common/gic.h"
@@ -38,6 +39,7 @@ static struct {
 static uint32_t serror_count;
 
 static int serror_reported(uint32_t number);
+static uint32_t serror_cpu(void);
 static void serror_report_kernel(void);
 
 void arm64_int_init(void)
@@ -256,7 +258,7 @@ arm64_serror_handler(
 		if (report) {
 			hal_printf("ARM64 SError %u esr=%llx cpu %u on return to user pc %llx; "
 			    "a kernel device access raised it earlier\n",
-			    number, f->esr, (uint32_t)hal_cpu_current(), f->elr);
+			    number, f->esr, serror_cpu(), f->elr);
 		}
 		return;
 	}
@@ -271,7 +273,7 @@ arm64_serror_handler(
 	serror_record.esr = f->esr;
 	serror_record.elr = f->elr;
 	serror_record.lr = f->x[30];
-	serror_record.cpu = (uint32_t)hal_cpu_current();
+	serror_record.cpu = serror_cpu();
 	serror_record.number = number;
 	__atomic_store_n(&serror_record.state, SERROR_RECORD_FULL, __ATOMIC_RELEASE);
 }
@@ -291,6 +293,25 @@ serror_reported(
 
 	/* The others are only counted. */
 	return 0;
+}
+
+/*
+ * Reports the CPU's number from its record directly: hal_cpu_current()
+ * also runs the stall watch's self check, which may print.
+ */
+static uint32_t
+serror_cpu(
+	void)
+{
+	struct arm64_percpu *record;
+
+	/* The record TPIDR_EL1 names, which every CPU has before it takes SErrors. */
+	record = arm64_percpu_current();
+	if (record == NULL)
+		return 0;
+
+	/* Succeeded: the CPU's number. */
+	return (uint32_t)record->logical_id;
 }
 
 /* Prints the kept SError of the kernel, if there is one, and frees the record. */
