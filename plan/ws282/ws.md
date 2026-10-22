@@ -1,33 +1,37 @@
 <!-- awesome-plan project=zedbsd record=ws282 -->
 
-# WS282 camera の driver の枠組み（/dev/cam0）と CSI の camera の driver「rpicam」
+# WS282 camera の driver の枠組み（/dev/camN）と USB Video Class の driver「uvc」
 
 - Master: [plan/master.md](../master.md)（2026-10-23 作成）。Primary Milestone: MG006。Related: MG008（Pi 5）。
 - Status: planning
 - 出典: 2026-10-23 ユーザー「では、MIPI CSIのカメラから取り込んだ画像をYOLOで画像認識することをゴールにして、・/dev/cam0 ... camera driver frameworkと、それに準拠した CSI camera driver "rpicam"・Pi5 VideoCore VIIでの compute・YOLOシリーズの非常に小さなモデルをC言語とVulkan Computeで実装・カメラ入力をobject detectionしてbounding boxを表示するデモアプリを構築 ここまでやりたいです。」
-- 関係: WS282（camera）・WS283（compute）・WS284（YOLOX-Nano）・WS285（demo）の 4 つで 1 つの到達目標（Pi 5 の CSI の camera の画像を YOLOX-Nano で検出し、bounding box を表示する）。
+- 範囲の変更（2026-10-23 ユーザー、Q1 経由）:「USB Video classを優先しましょう。CSIは今回はやりません。/dev/camNのAPIはそのまま使います。uvcドライバを実装します。カメラは今から購入します。まずは手元にあるHDMIキャプチャでもデバッグには使えそうですか？」→ 最初の source は UVC。CSI（rpicam）は [design.md](design.md) §13 と付録 A（版 1 の調べ）に残し、別の WS で。
+- 関係: WS282（camera）・WS283（compute）・WS284（YOLOX-Nano）・WS285（demo）の 4 つで 1 つの到達目標（camera の画像を YOLOX-Nano で検出し、bounding box を表示する）。
 
-## 目的と完了の条件（案）
+## 目的と完了の条件
 
-- `/dev/cam0`…: camera の driver の枠組み。format は YUV・RGB・RAW を取れる interface とし、今回は RAW だけ実装する（ユーザー「/dev/cam0 はYUV, RGB, RAWで取得できるインターフェースとする。今回はRAWのみ実装。あとでPiSPを通したYUV/RGBも実装。」）。
-- `rpicam`: Pi 5 の CSI（RP1 の camera front end、MIPI CSI-2）と sensor（I2C）の driver。sensor はユーザーの手元の 5 MP の module（ユーザー「5MPのものです。v2ですかね。」→ 5 MP は Camera Module v1 の OV5647 の見込み、v2 は 8 MP の IMX219。chip ID を I2C で読んで判定し、実機で確かめる）。
-- 完了: Pi 5 の実機で RAW の frame が連続して取れ、userland の試験の program で画像として確かめられる。
+- `/dev/camN`: camera の driver の枠組み。format は YUV・RGB・RAW・圧縮（MJPEG）を取れる interface（ユーザー「/dev/cam0 はYUV, RGB, RAWで取得できるインターフェースとする。」）。今回は uvc が YUYV と MJPEG を実装。
+- `uvc`: USB Video Class の driver（descriptor の解析、PROBE/COMMIT、isochronous と bulk、payload の組み立て）。対象の板は x86（xHCI）・Pi 5・Pi 4・VF2。最初の device は手元の HDMI capture、次に買う webcam。
+- 完了: HDMI capture（または webcam）から YUYV と MJPEG の frame が連続して取れ、PC の既知の画面の画素が `camcheck` で許容内、x86 と Pi 5/Pi 4/VF2 で同じ。GPU への取り込み（p008）は WS285 の前提。
 
 ## Phase
 
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 設計（/dev/cam0 の API、RP1 の CSI-2 と CFE、sensor の I2C、firmware の device tree、Linux の rp1-cfe・ov5647・imx219 との照合）→ [design.md](design.md) | — | in-progress（2026-10-23 P3、版 1。Q1 の review と判定待ち） |
-| p002 | 枠組み: `include/uapi/camera.h`、`src/drivers/camera/cam.c`（cdev、所有、format、buffer と mmap、queue、poll、control、counters、状態機械）、host の試験（design §11、5〜7 LW） | p001 | planned |
-| p003 | RP1 の DesignWare I2C（D2）、`rpicam.c`（dtb、電源の GPIO、両 connector の sensor の検出）、`ov5647.c` の検出、IMX219 の ID の読み。板で chip ID（3〜4 LW） | p002 | planned |
-| p004 | `rp1-cfe.c`（clock、DPHY、CSI2 channel、割り込み）、OV5647 の mode と stream、`camcap`。板で最初の RAW の frame（6〜8 LW） | p003 | planned |
-| p005 | control・metadata・poll・堅牢化・FAULT の診断・cache の計測（3〜4 LW） | p004 | planned |
-| p006 | `CAM_MEMORY_IMPORT`（GPU が確保した buffer を camera が取り込む、D3）、`camvk`（3〜4 LW） | p004、WS279 の V3D | planned |
-| p007 | IMX219（D5、module がある時だけ、2〜3 LW） | p004 | planning |
-| p008 | `docs/reference/camera.md`、devfs の 0600 と sessiond の seat（Q1 に依頼）、`camcap` を Tools に（1〜2 LW） | p005 | planned |
-| p009 | 規約の全文の見直しと license の類似の監査（2 LW） | p006 | planned |
+| [p001](phase001/phase.md) | 設計（/dev/camN の API、uvc、xHCI の isochronous の制約、試験、Phase）→ [design.md](design.md)（版 2。版 1 の review は [phase001/review-20261023.md](phase001/review-20261023.md)） | — | in-progress（2026-10-23 P3、版 2。Q1 の判定待ち） |
+| p002 | 枠組み: `include/uapi/camera.h`、`src/drivers/camera/cam.c`（cdev と退役、所有、buffer と mmap、slot の API、queue、poll、metadata、counters、状態機械）、host の試験（design §11、6〜8 LW） | p001 | planned |
+| p003 | uvc の bind と descriptor の解析と dump、VS の claim、PROBE/COMMIT、登録、build。devfs の 0600（Q1）。板（5330 + HDMI capture）で dump（3〜4 LW） | p002 | planned |
+| p004 | streaming（isochronous・bulk、worker、payload の組み立て、停止）、`camcap`。板で最初の frame（5〜7 LW） | p003 | planned |
+| p005 | xHCI の isochronous の拡張（HS の high-bandwidth、SS、WS197 の source、Q1 の承認）、T1 に SCO・HID の回帰（3〜4 LW） | p004（並行可） | planned |
+| p006 | `camcheck` と pattern で画素の試験、drop の測定、堅牢化（stop/start・抜去・2 つ目の open）、device の quirk（2〜3 LW） | p004 | planned |
+| p007 | Pi 5・Pi 4・VF2 の確認（T1、1〜2 LW） | p006 | planned |
+| p008 | `CAM_MEMORY_IMPORT`（GPU が確保した buffer を camera が取り込む、D3。GPU core と bcm2711 の share の差分）、`camvk`（4〜5 LW） | p004、WS279 の V3D | planned |
+| p009 | `docs/reference/camera.md`、sessiond の seat（Q1 に依頼）、`camcap`・`camcheck` を Tools に（1〜2 LW） | p006 | planned |
+| p010 | control（UVC の processing unit、id 32 以降。ユーザー「最初は無し」なので後で、2〜3 LW） | p004 | planning |
+| p011 | 規約の全文の見直しと license の監査（2 LW） | p008・p009 | planned |
 
 ## 現在の状態・再開点
 
 - 2026-10-23: 作成。p001 の設計から始める。
-- 2026-10-23 P3: p001 の設計の版 1（[design.md](design.md)）。ユーザーの判断 D1〜D7（design §6: connector、I2C の code の置き方、GPU との共有の向き、node の権限、IMX219 の時期、既定の mode と露光、RAW10 の既定の形）。再開点: Q1 の review の結果と D1〜D7 の答えを受けて p002 から。
+- 2026-10-23 P3: p001 の設計の版 1（CSI）。ユーザーの判断 D1〜D7 は推しで決定。Q1 の手配の review（H3・M11・L7）。
+- 2026-10-23 P3: 範囲の変更（UVC を優先、CSI は今回やらない）を受けて版 2。review の枠組み・buffer・cache・所有・devfs/sessiond の指摘を反映、CSI は付録 A に。HDMI capture は使える（制約: 今の xHCI の isochronous は 1024 byte/interval まで、p005 で拡張）。再開点: Q1 の判定と版 2 の review の後、p002 から。Q1 の判断 D9〜D11（design §6.2）。
