@@ -20,9 +20,9 @@
 #include "drivers/gpu/powervr/data-program.h"
 #include "drivers/gpu/powervr/image-state.h"
 #include "drivers/gpu/powervr/render-program.h"
-#include "drivers/gpu/powervr/shader-private.h"
+#include "drivers/gpu/powervr/compiler/shader-private.h"
 #include "drivers/gpu/powervr/transfer-program.h"
-#include "drivers/gpu/powervr/usc-encode.h"
+#include "drivers/gpu/powervr/compiler/usc-encode.h"
 
 /*
  * The copy program's registers: the shared registers of the image state

@@ -22,7 +22,7 @@
 #include <libc/vulkan/vulkan_core.h>
 
 #include "drivers/gpu/powervr/descriptor-set.h"
-#include "drivers/gpu/powervr/shader.h"
+#include "drivers/gpu/powervr/compiler/shader.h"
 
 /*
  * The pack information's fields.

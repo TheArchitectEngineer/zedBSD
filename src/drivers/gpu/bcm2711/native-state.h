@@ -9,7 +9,7 @@
 #ifndef KERN_DRIVERS_GPU_BCM2711_NATIVE_STATE_H
 #define KERN_DRIVERS_GPU_BCM2711_NATIVE_STATE_H
 
-#include "drivers/gpu/bcm2711/shader.h"
+#include "drivers/gpu/bcm2711/compiler/shader.h"
 
 #define BCM2711_NATIVE_SHADER_BYTES 36U
 #define BCM2711_NATIVE_ATTRIBUTE_BYTES 16U

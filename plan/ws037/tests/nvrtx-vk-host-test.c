@@ -18,7 +18,7 @@
 #include <uapi/errno.h>
 #include <uapi/gpu-op.h>
 
-#include "drivers/gpu/nvrtx/nvrtx-vk.h"
+#include "drivers/gpu/nvrtx/vk/nvrtx-vk.h"
 #include "userland/desktop/libvulkan/internal.h"
 
 /* A body only this test sends: it echoes one word, so forwarding and the external copy show. */

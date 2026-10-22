@@ -16,8 +16,8 @@
 #include <uapi/errno.h>
 
 #include "drivers/gpu/powervr/fixed-area.h"
-#include "drivers/gpu/powervr/pds-encode.h"
-#include "drivers/gpu/powervr/usc-encode.h"
+#include "drivers/gpu/powervr/compiler/pds-encode.h"
+#include "drivers/gpu/powervr/compiler/usc-encode.h"
 
 /*
  * The 32-bit words the synchronisation program's data takes before its

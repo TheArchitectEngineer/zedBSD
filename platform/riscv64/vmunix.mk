@@ -93,12 +93,12 @@ ifeq ($(CONFIG_DRIVER_POWERVR),y)
 RISCV64_PLATFORM_SOURCES_visionfive2 += src/drivers/platform/visionfive2/vf2-pmu.c \
 	src/drivers/platform/visionfive2/vf2-gpu.c \
 	src/drivers/gpu/powervr/powervr.c \
-	src/drivers/gpu/powervr/display.c \
-	src/drivers/gpu/powervr/dc8200.c \
-	src/drivers/gpu/powervr/dc8200-adopt.c \
-	src/drivers/gpu/powervr/dc8200-flip.c \
-	src/drivers/gpu/powervr/dc8200-hdmi.c \
-	src/drivers/gpu/powervr/dc8200-mode.c \
+	src/drivers/gpu/powervr/display/display.c \
+	src/drivers/gpu/powervr/display/dc8200.c \
+	src/drivers/gpu/powervr/display/dc8200-adopt.c \
+	src/drivers/gpu/powervr/display/dc8200-flip.c \
+	src/drivers/gpu/powervr/display/dc8200-hdmi.c \
+	src/drivers/gpu/powervr/display/dc8200-mode.c \
 	src/drivers/gpu/powervr/firmware-image.c \
 	src/drivers/gpu/powervr/mips-table.c \
 	src/drivers/gpu/powervr/retry.c \
@@ -121,36 +121,36 @@ RISCV64_PLATFORM_SOURCES_visionfive2 += src/drivers/platform/visionfive2/vf2-pmu
 	src/drivers/gpu/powervr/transfer-job.c \
 	src/drivers/gpu/powervr/render-target-layout.c \
 	src/drivers/gpu/powervr/render-target.c \
-	src/drivers/gpu/powervr/usc-encode.c \
-	src/drivers/gpu/powervr/pds-encode.c \
+	src/drivers/gpu/powervr/compiler/usc-encode.c \
+	src/drivers/gpu/powervr/compiler/pds-encode.c \
 	src/drivers/gpu/powervr/compute-program.c \
 	src/drivers/gpu/powervr/fixed-area.c \
 	src/drivers/gpu/powervr/render-runtime.c \
-	src/drivers/gpu/powervr/shader-spirv.c \
-	src/drivers/gpu/powervr/shader-spirv-interface.c \
-	src/drivers/gpu/powervr/shader-spirv-control.c \
-	src/drivers/gpu/powervr/shader-spirv-instruction.c \
-	src/drivers/gpu/powervr/shader-backend.c \
-	src/drivers/gpu/powervr/vk-object.c \
-	src/drivers/gpu/powervr/vk-stream.c \
-	src/drivers/gpu/powervr/vk-device.c \
-	src/drivers/gpu/powervr/vk-memory.c \
-	src/drivers/gpu/powervr/vk-image.c \
+	src/drivers/gpu/powervr/compiler/shader-spirv.c \
+	src/drivers/gpu/powervr/compiler/shader-spirv-interface.c \
+	src/drivers/gpu/powervr/compiler/shader-spirv-control.c \
+	src/drivers/gpu/powervr/compiler/shader-spirv-instruction.c \
+	src/drivers/gpu/powervr/compiler/shader-backend.c \
+	src/drivers/gpu/powervr/vk/vk-object.c \
+	src/drivers/gpu/powervr/vk/vk-stream.c \
+	src/drivers/gpu/powervr/vk/vk-device.c \
+	src/drivers/gpu/powervr/vk/vk-memory.c \
+	src/drivers/gpu/powervr/vk/vk-image.c \
 	src/drivers/gpu/powervr/image-state.c \
 	src/drivers/gpu/powervr/descriptor-set.c \
 	src/drivers/gpu/powervr/data-program.c \
 	src/drivers/gpu/powervr/render-program.c \
 	src/drivers/gpu/powervr/transfer-program.c \
 	src/drivers/gpu/powervr/render-load-program.c \
-	src/drivers/gpu/powervr/vk-layout.c \
-	src/drivers/gpu/powervr/vk-command.c \
-	src/drivers/gpu/powervr/vk-queue.c \
-	src/drivers/gpu/powervr/vk-pass.c \
-	src/drivers/gpu/powervr/vk-transfer.c \
+	src/drivers/gpu/powervr/vk/vk-layout.c \
+	src/drivers/gpu/powervr/vk/vk-command.c \
+	src/drivers/gpu/powervr/vk/vk-queue.c \
+	src/drivers/gpu/powervr/vk/vk-pass.c \
+	src/drivers/gpu/powervr/vk/vk-transfer.c \
 	src/drivers/gpu/powervr/render-pass.c \
 	src/drivers/gpu/powervr/render-draw.c \
 	src/drivers/gpu/powervr/render-depth.c \
-	src/drivers/gpu/powervr/vk-draw.c \
+	src/drivers/gpu/powervr/vk/vk-draw.c \
 	src/drivers/gpu/i915/render/codec.c
 # The test kernel's check of the core's compute path (ws269-p008).
 ifeq ($(CONFIG_POWERVR_COMPUTE_CHECK),y)

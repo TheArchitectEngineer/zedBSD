@@ -18,7 +18,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "drivers/gpu/powervr/dc8200-adopt.h"
+#include "drivers/gpu/powervr/display/dc8200-adopt.h"
 #include "drivers/gpu/powervr/powervr.h"
 #include <hal/hal.h>
 #include <kern/clock.h>

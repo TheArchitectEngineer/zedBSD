@@ -19,8 +19,8 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "drivers/gpu/powervr/shader-private.h"
-#include "drivers/gpu/powervr/usc-encode.h"
+#include "drivers/gpu/powervr/compiler/shader-private.h"
+#include "drivers/gpu/powervr/compiler/usc-encode.h"
 
 static unsigned passed;
 static unsigned failed;

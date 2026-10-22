@@ -20,7 +20,7 @@
 #include <uapi/errno.h>
 
 #include "drivers/gpu/bcm2711/bcm2711-private.h"
-#include "drivers/gpu/bcm2711/display-program.h"
+#include "drivers/gpu/bcm2711/display/display-program.h"
 #include "drivers/platform/rpi4/rpi4-firmware.h"
 
 /* One model owns the complete register space for each private window role. */

@@ -45,7 +45,7 @@
 #include "drivers/gpu/powervr/interface.h"
 #include "drivers/gpu/powervr/retry.h"
 #include "drivers/gpu/powervr/render-pass.h"
-#include "drivers/gpu/powervr/vk.h"
+#include "drivers/gpu/powervr/vk/vk.h"
 
 /*
  * How often, and how far apart, a refused registration is tried again.

@@ -25,7 +25,7 @@
 #include <libc/vulkan/vulkan_core.h>
 
 #include "drivers/gpu/powervr/render-pass.h"
-#include "drivers/gpu/powervr/shader.h"
+#include "drivers/gpu/powervr/compiler/shader.h"
 
 /* The vertex bindings and attributes a pipeline takes. */
 #define POWERVR_DRAW_BINDINGS		8U

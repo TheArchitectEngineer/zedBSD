@@ -183,7 +183,7 @@ AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/channel.c
 # P5g: the graphics golden context and the TU10x scrubber (ws037-p005 5f, nvrtx.gr=1).
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/gr.c
 # P8a: the display under the GSP, its objects and the readout of the lit heads (ws037-p006).
-AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/display.c
+AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/display/display.c
 # The shader compiler: SPIR-V to SM75 through the shared frontend and optimizer (ws037-p008).
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/compiler/sm75.c \
 	$(filter-out $(AMD64_I915_SOURCES),src/drivers/gpu/compiler/spirv.c src/drivers/gpu/compiler/optimize.c)
@@ -192,17 +192,17 @@ AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/compute-launch.c src/drivers/gpu/nv
 # P9g: the first draw on the compute launch's channel (ws037-p007, nvrtx.draw=1).
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/draw-push.c src/drivers/gpu/nvrtx/draw.c
 # P8b: the takeover of the firmware's head, the display channels and a flip (ws037-p006, nvrtx.disp=1).
-AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/disp-records.c src/drivers/gpu/nvrtx/disp-first.c src/drivers/gpu/nvrtx/scanout.c
+AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/display/disp-records.c src/drivers/gpu/nvrtx/display/disp-first.c src/drivers/gpu/nvrtx/display/scanout.c
 # P4m: the VRAM allocator and the BAR1 window (ws037-p005).
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/heap.c src/drivers/gpu/nvrtx/vram.c
 # D2: the Vulkan executor's object registry, sessions, transport and dispatcher (ws037-p007), with the
 # i915 executor's wire codec it shares (built here only when the i915 driver does not build it).
-AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/vk-object.c src/drivers/gpu/nvrtx/vk-session.c \
-	src/drivers/gpu/nvrtx/vk-stream.c src/drivers/gpu/nvrtx/vk-dispatch.c src/drivers/gpu/nvrtx/vk-device.c \
-	src/drivers/gpu/nvrtx/runtime.c src/drivers/gpu/nvrtx/vk-reply.c src/drivers/gpu/nvrtx/vk-memory.c src/drivers/gpu/nvrtx/vk-resource.c \
-	src/drivers/gpu/nvrtx/vk-node.c src/drivers/gpu/nvrtx/vk-layout.c src/drivers/gpu/nvrtx/vk-target.c src/drivers/gpu/nvrtx/vk-pipeline.c \
-	src/drivers/gpu/nvrtx/vk-command.c src/drivers/gpu/nvrtx/vk-record.c src/drivers/gpu/nvrtx/vk-execute.c src/drivers/gpu/nvrtx/vk-queue.c \
-	src/drivers/gpu/nvrtx/exec-push.c
+AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/vk/vk-object.c src/drivers/gpu/nvrtx/vk/vk-session.c \
+	src/drivers/gpu/nvrtx/vk/vk-stream.c src/drivers/gpu/nvrtx/vk/vk-dispatch.c src/drivers/gpu/nvrtx/vk/vk-device.c \
+	src/drivers/gpu/nvrtx/runtime.c src/drivers/gpu/nvrtx/vk/vk-reply.c src/drivers/gpu/nvrtx/vk/vk-memory.c src/drivers/gpu/nvrtx/vk/vk-resource.c \
+	src/drivers/gpu/nvrtx/vk-node.c src/drivers/gpu/nvrtx/vk/vk-layout.c src/drivers/gpu/nvrtx/vk/vk-target.c src/drivers/gpu/nvrtx/vk/vk-pipeline.c \
+	src/drivers/gpu/nvrtx/vk/vk-command.c src/drivers/gpu/nvrtx/vk/vk-record.c src/drivers/gpu/nvrtx/vk/vk-execute.c src/drivers/gpu/nvrtx/vk/vk-queue.c \
+	src/drivers/gpu/nvrtx/vk/exec-push.c
 ifneq ($(CONFIG_DRIVER_PCI_I915),y)
 AMD64_NVRTX_SOURCES += src/drivers/gpu/i915/render/codec.c
 endif
@@ -211,7 +211,7 @@ AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/work-records.c src/drivers/gpu/nvrt
 # P9p: the GPU's performance state, and its boost with nvrtx.boost=1 (ws241-p001).
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/perf.c
 # P8c: the GPU device, its display (events, refresh, cursor) and blob sharing (ws037-p006, nvrtx.resident=1).
-AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/node.c src/drivers/gpu/nvrtx/present.c src/drivers/gpu/nvrtx/cursor.c src/drivers/gpu/nvrtx/share.c
+AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/node.c src/drivers/gpu/nvrtx/display/present.c src/drivers/gpu/nvrtx/display/cursor.c src/drivers/gpu/nvrtx/share.c
 endif
 # The AMD RDNA driver: the driver's files, then the shader compiler's.
 AMD64_AMDRDNA_SOURCES :=

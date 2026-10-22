@@ -22,7 +22,7 @@
 #include <stdint.h>
 
 #include "drivers/gpu/powervr/descriptor-set.h"
-#include "drivers/gpu/powervr/shader.h"
+#include "drivers/gpu/powervr/compiler/shader.h"
 
 /* The most sets a shader reads. */
 #define POWERVR_DATA_SETS		4U

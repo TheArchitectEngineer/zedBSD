@@ -17,10 +17,10 @@
 #include <libc/vulkan/vulkan_core.h>
 #include <uapi/errno.h>
 
-#include "drivers/gpu/powervr/pds-encode.h"
+#include "drivers/gpu/powervr/compiler/pds-encode.h"
 #include "drivers/gpu/powervr/render-draw.h"
 #include "drivers/gpu/powervr/render-pass.h"
-#include "drivers/gpu/powervr/shader.h"
+#include "drivers/gpu/powervr/compiler/shader.h"
 
 /*
  * The coefficient program's iterator words.

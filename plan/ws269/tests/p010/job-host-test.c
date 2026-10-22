@@ -27,8 +27,8 @@
 #include "drivers/gpu/powervr/transfer-job.h"
 #include "drivers/gpu/powervr/render-command.h"
 #include "drivers/gpu/powervr/interface.h"
-#include "drivers/gpu/powervr/vk-draw.h"
-#include "drivers/gpu/powervr/vk.h"
+#include "drivers/gpu/powervr/vk/vk-draw.h"
+#include "drivers/gpu/powervr/vk/vk.h"
 
 #define HOST_GENERAL_BASE	0x8000100000ULL
 #define HOST_STEP		0x100000ULL

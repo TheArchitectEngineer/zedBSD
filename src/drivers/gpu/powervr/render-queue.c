@@ -51,7 +51,7 @@
 #include "drivers/gpu/powervr/interface.h"
 #include "drivers/gpu/powervr/render-kick-layout.h"
 #include "drivers/gpu/powervr/render-command.h"
-#include "drivers/gpu/powervr/vk.h"
+#include "drivers/gpu/powervr/vk/vk.h"
 
 /* The program heaps' base registers (sources: see send_command). */
 #define EXEC_BASE_PDS		0x0610U

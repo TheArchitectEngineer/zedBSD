@@ -22,8 +22,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "drivers/gpu/bcm2711/qpu.h"
-#include "drivers/gpu/bcm2711/shader.h"
+#include "drivers/gpu/bcm2711/compiler/qpu.h"
+#include "drivers/gpu/bcm2711/compiler/shader.h"
 #include "drivers/gpu/compiler/spirv.h"
 
 static int count_load(const char *path, uint32_t **words, size_t *count);

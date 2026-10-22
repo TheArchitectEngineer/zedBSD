@@ -24,7 +24,7 @@
 
 #include "broadcom/common/v3d_device_info.h"
 #include "broadcom/qpu/qpu_instr.h"
-#include "drivers/gpu/bcm2711/shader.h"
+#include "drivers/gpu/bcm2711/compiler/shader.h"
 
 /* What the program's environment supplies; the callbacks receive the context. */
 struct qpu_machine_setup {

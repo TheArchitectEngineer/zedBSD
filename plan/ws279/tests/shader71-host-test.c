@@ -30,7 +30,7 @@
 
 #include "broadcom/common/v3d_device_info.h"
 #include "broadcom/qpu/qpu_instr.h"
-#include "drivers/gpu/bcm2711/shader.h"
+#include "drivers/gpu/bcm2711/compiler/shader.h"
 #include "drivers/gpu/compiler/optimize.h"
 #include "drivers/gpu/compiler/spirv.h"
 #include <uapi/errno.h>
@@ -48,7 +48,7 @@
 #include "userland/desktop/terminal/shaders.h"
 #include "userland/desktop/imageview/shaders.h"
 /* The driver's own texture-copy program (vulkan-native-image.c), compiled at run time like any other. */
-#include "drivers/gpu/bcm2711/meta/texture-words.inc"
+#include "drivers/gpu/bcm2711/vk/meta/texture-words.inc"
 
 /* Random trials per native program, besides the deterministic Keiland ones. */
 #define RANDOM_TRIALS 96U

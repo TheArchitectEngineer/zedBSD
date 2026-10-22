@@ -40,7 +40,7 @@ assert all(sum(full[phase::8]) == 256 for phase in range(8))
 assert full == list(reversed(full))
 assert all(-256 <= value < 256 for value in full)
 expected = full[:16] + [full[15], 0]
-source = Path('src/drivers/gpu/bcm2711/display-program.c').read_text()
+source = Path('src/drivers/gpu/bcm2711/display/display-program.c').read_text()
 array = re.search(r'program_filter_samples\[18\]\s*=\s*\{([^}]+)\}', source).group(1)
 actual = [int(value) for value in re.findall(r'-?\d+', array)]
 assert actual == expected, (actual, expected)

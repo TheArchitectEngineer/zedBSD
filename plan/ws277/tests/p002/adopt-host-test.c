@@ -14,7 +14,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "drivers/gpu/powervr/dc8200-adopt.h"
+#include "drivers/gpu/powervr/display/dc8200-adopt.h"
 
 static int failures;
 static int passes;

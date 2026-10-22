@@ -11,7 +11,7 @@
  * target, premultiplied blending), and prints each result.
  *   shader-probe
  */
-#include "src/drivers/gpu/powervr/shader.h"
+#include "src/drivers/gpu/powervr/compiler/shader.h"
 #include "userland/desktop/wayland/shaders.h"
 #include <stdio.h>
 #include <stdlib.h>

@@ -41,7 +41,7 @@
 #include <uapi/gpu-display.h>
 
 #include "drivers/gpu/nvrtx/nvrtx-node.h"
-#include "drivers/gpu/nvrtx/nvrtx-vk.h"
+#include "drivers/gpu/nvrtx/vk/nvrtx-vk.h"
 
 /*
  * The device's capabilities: storage, VRAM blobs, transfers, CPU mappings,

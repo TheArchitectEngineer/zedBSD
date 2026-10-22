@@ -53,9 +53,9 @@
 #include "drivers/gpu/powervr/render-sr-program.h"
 #include "drivers/gpu/powervr/interface.h"
 #include "drivers/gpu/powervr/compute-program.h"
-#include "drivers/gpu/powervr/shader.h"
-#include "drivers/gpu/powervr/shader-private.h"
-#include "drivers/gpu/powervr/usc-encode.h"
+#include "drivers/gpu/powervr/compiler/shader.h"
+#include "drivers/gpu/powervr/compiler/shader-private.h"
+#include "drivers/gpu/powervr/compiler/usc-encode.h"
 
 /* The vkcompute fill shader the compiled-fill probe compiles (its SPIR-V words, a header of the test program). */
 #include "../userland/tests/vkcompute/shader.h"

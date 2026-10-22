@@ -28,8 +28,8 @@
 #include "drivers/gpu/bcm2711/native-state.h"
 #include "drivers/gpu/bcm2711/render-device.h"
 #include "drivers/gpu/bcm2711/native-storage.h"
-#include "drivers/gpu/bcm2711/vulkan-memory.h"
-#include "drivers/gpu/bcm2711/vulkan-private.h"
+#include "drivers/gpu/bcm2711/vk/vulkan-memory.h"
+#include "drivers/gpu/bcm2711/vk/vulkan-private.h"
 
 /* One prepared native job independently retains its mapped input allocation. */
 struct test_payload {

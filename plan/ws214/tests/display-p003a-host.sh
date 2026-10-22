@@ -13,7 +13,7 @@ mkdir -p "$out"
 core="$repo/plan/ws014/tests/gpu-test-fd.c $repo/src/drivers/gpu/gpu.c $repo/src/kern/cdev.c \
     $repo/src/drivers/gpu/gpu-fence.c $repo/src/kern/handle.c $repo/src/kern/fd-object.c \
     $repo/src/kern/filedesc.c $repo/src/kern/vm/device.c $repo/src/drivers/pci/pci.c"
-flip="$repo/plan/ws141/tests/display-lock-host.c $repo/plan/ws141/tests/display-wait-host.c $repo/src/drivers/gpu/bcm2711/display-flip.c $repo/src/drivers/gpu/bcm2711/display-irq.c"
+flip="$repo/plan/ws141/tests/display-lock-host.c $repo/plan/ws141/tests/display-wait-host.c $repo/src/drivers/gpu/bcm2711/display/display-flip.c $repo/src/drivers/gpu/bcm2711/display/display-irq.c"
 for mode in ordinary sanitize; do
 	extra=
 	if test "$mode" = sanitize; then
@@ -39,7 +39,7 @@ for mode in ordinary sanitize; do
 	for test in display-flip display-device; do
 		extra_sources=
 		if test "$test" = display-device; then
-			extra_sources="$repo/src/drivers/gpu/bcm2711/buffer.c $repo/src/drivers/gpu/bcm2711/share.c $repo/src/drivers/gpu/bcm2711/display-device.c"
+			extra_sources="$repo/src/drivers/gpu/bcm2711/buffer.c $repo/src/drivers/gpu/bcm2711/share.c $repo/src/drivers/gpu/bcm2711/display/display-device.c"
 		fi
 		# shellcheck disable=SC2086
 		cc -std=c99 -D_POSIX_C_SOURCE=200809L -include time.h -O1 -g -Wall -Wextra -Werror $extra \

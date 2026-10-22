@@ -21,7 +21,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "drivers/gpu/bcm2711/shader.h"
+#include "drivers/gpu/bcm2711/compiler/shader.h"
 #include <uapi/errno.h>
 #include "userland/desktop/videoplayer/shaders.h"
 

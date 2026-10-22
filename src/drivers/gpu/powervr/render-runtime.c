@@ -34,7 +34,7 @@
 #include <uapi/gpu-job.h>
 
 #include "drivers/gpu/powervr/render-private.h"
-#include "drivers/gpu/powervr/vk.h"
+#include "drivers/gpu/powervr/vk/vk.h"
 
 /*
  * The protocol's capset: its id, its bytes and the places of its words,

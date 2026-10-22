@@ -21,8 +21,8 @@
 #include "drivers/gpu/powervr/image-state.h"
 #include "drivers/gpu/powervr/render-load-program.h"
 #include "drivers/gpu/powervr/render-program.h"
-#include "drivers/gpu/powervr/shader-private.h"
-#include "drivers/gpu/powervr/usc-encode.h"
+#include "drivers/gpu/powervr/compiler/shader-private.h"
+#include "drivers/gpu/powervr/compiler/usc-encode.h"
 
 /*
  * The program's registers: the image state in shared registers 0 to 3,

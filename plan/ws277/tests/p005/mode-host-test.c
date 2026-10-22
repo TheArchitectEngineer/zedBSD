@@ -10,7 +10,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "drivers/gpu/powervr/dc8200-mode.h"
+#include "drivers/gpu/powervr/display/dc8200-mode.h"
 #include <uapi/errno.h>
 
 static int passes;

@@ -9,9 +9,9 @@ mesa=plan/ws141/temp/mesa/src
 sh plan/ws141/tests/qpu-format-host-test.sh "$out"
 cc -std=c99 -O1 -Wall -Wextra -Werror -Iinclude -Isrc -I. -I"$out/mesa-host" -I"$mesa" \
     plan/ws141/tests/shader-host-test.c plan/ws141/tests/qpu-machine.c src/drivers/gpu/compiler/spirv.c src/drivers/gpu/compiler/optimize.c \
-    src/drivers/gpu/bcm2711/shader.c src/drivers/gpu/bcm2711/shader-analyze.c \
-    src/drivers/gpu/bcm2711/shader-lower.c src/drivers/gpu/bcm2711/shader-output.c \
-    src/drivers/gpu/bcm2711/shader-schedule.c src/drivers/gpu/bcm2711/qpu.c \
+    src/drivers/gpu/bcm2711/compiler/shader.c src/drivers/gpu/bcm2711/compiler/shader-analyze.c \
+    src/drivers/gpu/bcm2711/compiler/shader-lower.c src/drivers/gpu/bcm2711/compiler/shader-output.c \
+    src/drivers/gpu/bcm2711/compiler/shader-schedule.c src/drivers/gpu/bcm2711/compiler/qpu.c \
     "$out/mesa-pack.o" "$out/mesa-instr.o" \
     -lm -o "$out/shader-host-test"
 timeout 600 "$out/shader-host-test"

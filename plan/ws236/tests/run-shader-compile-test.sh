@@ -11,8 +11,8 @@ cc -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined \
 	-I"$repo/include" -I"$repo/src" -I"$repo" \
 	"$repo/plan/ws236/tests/shader-compile-host-test.c" \
 	"$repo/src/drivers/gpu/compiler/spirv.c" "$repo/src/drivers/gpu/compiler/optimize.c" \
-	"$repo/src/drivers/gpu/bcm2711/shader.c" "$repo/src/drivers/gpu/bcm2711/shader-analyze.c" \
-	"$repo/src/drivers/gpu/bcm2711/shader-lower.c" "$repo/src/drivers/gpu/bcm2711/shader-output.c" \
-	"$repo/src/drivers/gpu/bcm2711/shader-schedule.c" "$repo/src/drivers/gpu/bcm2711/qpu.c" \
+	"$repo/src/drivers/gpu/bcm2711/compiler/shader.c" "$repo/src/drivers/gpu/bcm2711/compiler/shader-analyze.c" \
+	"$repo/src/drivers/gpu/bcm2711/compiler/shader-lower.c" "$repo/src/drivers/gpu/bcm2711/compiler/shader-output.c" \
+	"$repo/src/drivers/gpu/bcm2711/compiler/shader-schedule.c" "$repo/src/drivers/gpu/bcm2711/compiler/qpu.c" \
 	-lm -o "$work/shader-compile-test"
 ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 "$work/shader-compile-test"

@@ -11,13 +11,13 @@ here=$root/plan/ws269/tests/p008
 out=$1
 mkdir -p "$out"
 cc -std=c11 -O2 -Wall -Wextra -Werror -I"$root/include" -I"$root/src" \
-	"$root/src/drivers/gpu/powervr/usc-encode.c" \
-	"$root/src/drivers/gpu/powervr/pds-encode.c" \
+	"$root/src/drivers/gpu/powervr/compiler/usc-encode.c" \
+	"$root/src/drivers/gpu/powervr/compiler/pds-encode.c" \
 	"$here/encode-host-test.c" -o "$out/encode-host-test"
 "$out/encode-host-test"
 cc -std=c11 -O2 -Wall -Wextra -Werror -I"$root/include" -I"$root/src" \
-	"$root/src/drivers/gpu/powervr/usc-encode.c" \
-	"$root/src/drivers/gpu/powervr/pds-encode.c" \
+	"$root/src/drivers/gpu/powervr/compiler/usc-encode.c" \
+	"$root/src/drivers/gpu/powervr/compiler/pds-encode.c" \
 	"$root/src/drivers/gpu/powervr/compute-program.c" \
 	"$here/compute-host-test.c" -o "$out/compute-host-test"
 "$out/compute-host-test"

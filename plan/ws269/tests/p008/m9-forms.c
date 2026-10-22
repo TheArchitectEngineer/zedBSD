@@ -1,5 +1,5 @@
 /* M9: the USC operand forms of usc-encode.c (its lower, upper and destination layouts, random registers) against Mesa 26.2.5's generated pco_isa.h encoders.  Run by m9-forms.sh. */
-#include "src/drivers/gpu/powervr/usc-encode.c"
+#include "src/drivers/gpu/powervr/compiler/usc-encode.c"
 #include "pco_isa.h"
 #include <stdio.h>
 #include <string.h>

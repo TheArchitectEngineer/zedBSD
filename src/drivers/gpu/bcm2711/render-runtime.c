@@ -16,9 +16,9 @@
 #include "drivers/gpu/bcm2711/bcm2711-private.h"
 #include "drivers/gpu/bcm2711/render-device.h"
 #include "drivers/gpu/bcm2711/render-runtime.h"
-#include "drivers/gpu/bcm2711/vulkan-dispatch.h"
+#include "drivers/gpu/bcm2711/vk/vulkan-dispatch.h"
 #if CONFIG_DRIVER_BCM2711_VIDEO
-#include "drivers/gpu/bcm2711/vulkan-video.h"
+#include "drivers/gpu/bcm2711/vk/vulkan-video.h"
 
 /* The native word after the vendor suffix ("TANZ" read little endian), and its H.264 decode bit. */
 #define VULKAN_NATIVE_MAGIC 0x5a4e4154U

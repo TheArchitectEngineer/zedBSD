@@ -14,7 +14,7 @@
 #include <uapi/errno.h>
 
 #include "drivers/gpu/bcm2711/render-device.h"
-#include "drivers/gpu/bcm2711/vulkan-private.h"
+#include "drivers/gpu/bcm2711/vk/vulkan-private.h"
 #include "userland/desktop/libvulkan/internal.h"
 
 /* One fixture-only typed body exposes transport forwarding, reply cursor order and immutable external copies. */

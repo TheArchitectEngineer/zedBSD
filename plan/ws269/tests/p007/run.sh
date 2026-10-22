@@ -11,6 +11,6 @@ here=$root/plan/ws269/tests/p007
 out=$1
 mkdir -p "$out"
 cc -std=gnu11 -O2 -Wall -Wextra -Werror -I"$root/include" -I"$root/src" \
-	"$root/src/drivers/gpu/powervr/display.c" \
+	"$root/src/drivers/gpu/powervr/display/display.c" \
 	"$here/display-host-test.c" -o "$out/display-host-test"
 "$out/display-host-test"

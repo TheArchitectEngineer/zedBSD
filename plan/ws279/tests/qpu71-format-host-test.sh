@@ -1,5 +1,5 @@
 #!/bin/sh
-# Checks the V3D 7.1 encoder (src/drivers/gpu/bcm2711/qpu71.c) with the unmodified fixed MIT Mesa packer and
+# Checks the V3D 7.1 encoder (src/drivers/gpu/bcm2711/compiler/qpu71.c) with the unmodified fixed MIT Mesa packer and
 # decoder in the ignored WS141 temp tree (ws279-p004).  Builds the Mesa oracle objects that the 7.1 lane model
 # and the 7.1 shader test reuse.
 # Usage: sh plan/ws279/tests/qpu71-format-host-test.sh [output-directory]
@@ -40,6 +40,6 @@ cc -std=gnu11 -Wall -Werror -I"$out/mesa-host" -I"$mesa" \
 cc -std=gnu11 -Wall -Werror -I"$out/mesa-host" -I"$mesa" \
     -c "$mesa/broadcom/qpu/qpu_instr.c" -o "$out/mesa-instr.o"
 cc -std=c99 -Wall -Wextra -Werror -Iinclude -Isrc -I"$out/mesa-host" -I"$mesa" \
-    plan/ws279/tests/qpu71-format-host-test.c src/drivers/gpu/bcm2711/qpu71.c \
+    plan/ws279/tests/qpu71-format-host-test.c src/drivers/gpu/bcm2711/compiler/qpu71.c \
     "$out/mesa-pack.o" "$out/mesa-instr.o" -o "$out/qpu71-format-host-test"
 "$out/qpu71-format-host-test"

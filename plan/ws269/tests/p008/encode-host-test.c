@@ -22,8 +22,8 @@
 
 #include <uapi/errno.h>
 
-#include "drivers/gpu/powervr/pds-encode.h"
-#include "drivers/gpu/powervr/usc-encode.h"
+#include "drivers/gpu/powervr/compiler/pds-encode.h"
+#include "drivers/gpu/powervr/compiler/usc-encode.h"
 
 static int failures;
 static int passes;

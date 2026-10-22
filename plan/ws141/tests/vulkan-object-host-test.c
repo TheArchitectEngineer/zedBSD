@@ -12,7 +12,7 @@
 #include <string.h>
 #include <uapi/errno.h>
 
-#include "drivers/gpu/bcm2711/vulkan-private.h"
+#include "drivers/gpu/bcm2711/vk/vulkan-private.h"
 #include "drivers/gpu/bcm2711/render-device.h"
 
 /* One fixture payload optionally owns an independent dependency and one injected native-retirement outcome. */

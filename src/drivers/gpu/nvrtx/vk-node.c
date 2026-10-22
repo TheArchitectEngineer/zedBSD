@@ -25,7 +25,7 @@
 #include <uapi/errno.h>
 
 #include "drivers/gpu/nvrtx/nvrtx-node.h"
-#include "drivers/gpu/nvrtx/nvrtx-vk.h"
+#include "drivers/gpu/nvrtx/vk/nvrtx-vk.h"
 
 /* How long a push buffer may run before the executor calls the GPU lost. */
 #define VK_NODE_RUN_US			2000000U
