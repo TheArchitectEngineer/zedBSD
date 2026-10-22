@@ -66,15 +66,17 @@ struct bcm2712_hvs_plane {
 /*
  * The display path.
  *
- * One instance exists for the system.  Discovery fills the windows and the
- * interrupt lines; the readout fills the rest from the hardware.  guard
- * protects vblank_count against the pixel valve's handler.
+ * One instance exists for the system.  base is the Pi 4's display record,
+ * which the shared display device and the HVS6 flip code (hvs6-flip.c, which
+ * keeps the names of the Pi 4's display-flip.c) are handed: its compositor
+ * window is the HVS6's, its timing windows and lines the pixel valves', its
+ * port and channel the channel the firmware shows.  Discovery fills the
+ * windows and the interrupt lines; the readout fills the rest from the
+ * hardware.  guard protects vblank_count against the R1 test's handler.
  */
 struct bcm2712_display {
+	struct bcm2711_display base;
 	bool present;
-	struct bcm2711_window compositor;
-	struct bcm2711_window valve[BCM2712_HVS_VALVES];
-	struct bcm2711_irq_line valve_irq[BCM2712_HVS_VALVES];
 	struct bcm2711_window iommu;
 	struct kern_boot_framebuffer screen;
 	bool screen_known;
@@ -96,20 +98,77 @@ struct bcm2712_display {
 	uint32_t skipped_elements;
 	struct bcm2712_hvs_plane planes[BCM2712_HVS_LIST_PLANES];
 
-	/* The driver's own list, once it took the channel over. */
+	/* The driver's own list, once it took the channel over: the console list, and its words with the END word. */
 	bool adopted;
 	uint32_t own_head;
 	uint32_t own_words;
+
+	/* The shown channel's control word when the device attached, which the flip code checks stays the same. */
+	uint32_t attach_control0;
 
 	/* Vertical blanks counted by the pixel valve's handler. */
 	struct spinlock guard;
 	volatile uint64_t vblank_count;
 };
 
+/* The channel registers the flip code reads and writes. */
+enum bcm2712_hvs_register {
+	BCM2712_HVS_CTRL0,
+	BCM2712_HVS_LPTRS,
+	BCM2712_HVS_DL
+};
+
+/* The display list memory's place in the compositor's window, and the list-head field of LPTRS and DL. */
+#define BCM2712_HVS_LIST_MEMORY		0x4000U
+#define BCM2712_HVS_HEAD_MASK		0xfffU
+
+/* The flip slots: three lists of 128 words after the console list's 256. */
+#define BCM2712_HVS_CONSOLE_WORDS	256U
+#define BCM2712_HVS_SLOT_WORDS		128U
+
+/* The pixel valve's control registers and their enable bits, and its interrupt status and the vertical blank's bit. */
+#define BCM2712_VALVE_CONTROL		0x00U
+#define BCM2712_VALVE_V_CONTROL		0x04U
+#define BCM2712_VALVE_INTEN		0x24U
+#define BCM2712_VALVE_INTSTAT		0x28U
+#define BCM2712_VALVE_VFP_START		0x80U
+
+/*
+ * The unified-pixel-memory handles and bases (in 256-byte words) of the
+ * driver's planes: the primary, the two overlays and the cursor, from the
+ * top of the 1024-word memory, each sized for a 16384-byte row (129 words)
+ * but the cursor's 256-byte row (3 words).  The firmware's console plane
+ * keeps its own.
+ */
+#define BCM2712_UPM_PRIMARY		((634U << 16) | (27U << 10))
+#define BCM2712_UPM_OVERLAY0		((763U << 16) | (28U << 10))
+#define BCM2712_UPM_OVERLAY1		((892U << 16) | (29U << 10))
+#define BCM2712_UPM_CURSOR		((1021U << 16) | (30U << 10))
+#define BCM2712_UPM_LOWEST_BASE		634U
+#define BCM2712_UPM_LOWEST_HANDLE	28U
+
+/*
+ * Converts the shared display record to the HVS6 record that holds it.
+ *
+ * Only the BCM2712 attachment creates displays on this board, inside a
+ * struct bcm2712_display, so the conversion always holds.
+ */
+static __inline struct bcm2712_display *
+bcm2712_display_of(
+	struct bcm2711_display *display)
+{
+	/* The shared record is the first member of the HVS6 record. */
+	return (struct bcm2712_display *)(void *)display;
+}
+
+/* Reports the window offset of one register of the shown channel. */
+uint32_t bcm2712_display_register_offset(const struct bcm2712_display *display, enum bcm2712_hvs_register which);
+
 int bcm2712_display_discover(const struct drv_fdt *fdt, struct bcm2712_display *display, const struct kern_boot_framebuffer *screen);
 int bcm2712_display_readout(struct bcm2712_display *display);
 int bcm2712_display_adopt(struct bcm2712_display *display);
 int bcm2712_display_vblank_test(struct bcm2712_display *display);
 int bcm2712_display_overlay_test(struct bcm2712_display *display);
+int bcm2712_display_attach_device(struct bcm2712_display *display);
 
 #endif
