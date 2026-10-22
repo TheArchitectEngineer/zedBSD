@@ -17,10 +17,11 @@
 
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
-| p001 | 調べと設計 | — | planning |
+| p001 | 調べと設計（[design.md](design.md) 版 1。§12 の JTAG 先行の決定は未反映、別の担当に引き継ぎ） | — | in-progress |
 
 ## 現在の状態・再開点
 
 - 2026-10-23: 作成。p001 の設計から。
 - 2026-10-23: 実機の接続。ZYBO の USB（FT2232H、Digilent Adept、serial 210279785182）を host に接続: /dev/ttyUSB0 = if00（JTAG）、/dev/ttyUSB1 = if01（UART、115200、console）。電源は SwitchBot のプラグ AC276E42B252（VF2 から付け替え、ユーザー「AC276E42B252をプラグします。認識の通りです。」）。boot mode の jumper は今は JTAG。host の user awe を dialout に追加（次の login から sudo 無しで読める）。
 - 2026-10-23: OSS だけで進める（ユーザー）。openocd・openFPGALoader を host に導入、`sudo openFPGALoader -c digilent --detect` で Cortex-A9 の DAP と xc7z010 を確認。ZYBO は USB 給電、SwitchBot は未接続（JTAG で reset する）。
+- 2026-10-23 P1: design.md 版 1（§0〜§11）。ユーザーの決定（JTAG の起動を SD より先、OSS だけ、SwitchBot は未接続）は design §12 に原文で置き、反映は引き継ぎの担当（§4・§8・§10 の書き直し）。
