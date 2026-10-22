@@ -22,3 +22,4 @@
 ## 現在の状態・再開点
 
 - 2026-10-23: 作成。p001 の設計から。
+- 2026-10-23: 実機の接続。ZYBO の USB（FT2232H、Digilent Adept、serial 210279785182）を host に接続: /dev/ttyUSB0 = if00（JTAG）、/dev/ttyUSB1 = if01（UART、115200、console）。電源は SwitchBot のプラグ AC276E42B252（VF2 から付け替え、ユーザー「AC276E42B252をプラグします。認識の通りです。」）。boot mode の jumper は今は JTAG。host の user awe を dialout に追加（次の login から sudo 無しで読める）。
