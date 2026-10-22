@@ -9,22 +9,24 @@
 
 ## 目的と完了の条件（案）
 
-- YOLOX-Nano（Apache-2.0、ユーザーが選択）を C と Vulkan compute で実装する library（conv・depthwise・BN の畳み込み・SiLU・upsample・concat・head の decode・NMS）。重みは変換して配る（置き場所は設計で決める、license の表示を付ける）。
+- YOLOX-Nano（Apache-2.0、ユーザーが選択）を C と Vulkan compute で実装する library（conv・depthwise・BN の畳み込み・SiLU・upsample・concat・head の decode・NMS）。重みは build が公式の .pth を取得して変換する（2026-10-23 ユーザーの判断、変換した重みはどの repository にも置かない）。LICENSE と NOTICE を重みの横に install する。
 - 完了: host（Linux の Vulkan）と Pi 5 で、基準の画像の検出の結果が参照の実装と一致する。
 
 ## Phase
 
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 設計（model の構造、重みの形式と変換、層の shader、精度 fp32/fp16、参照の結果の作り方）→ [design.md](design.md) | — | in-progress |
-| p002 | 重み: 変換の script・ZNET・参照の生成（PyTorch の venv）・試験の画像・firmware の repository の file・package（4〜6 LW） | p001、D1・D2・D4・D5 | planning |
-| p003 | libyolox の骨格と CPU の参照、host の照合 T2（6〜8 LW） | p002 | planning |
-| p004 | Vulkan の backend と 7 つの shader、lavapipe の T3〜T5（8〜10 LW） | p003 | planning |
+| [p001](phase001/phase.md) | 設計（model の構造、重みの取得と変換、層の shader、精度、参照の結果の作り方）→ [design.md](design.md)（第 2 版） | — | in-progress |
+| p002 | 重み: build の中の変換の script・ZNET・package `yolox-nano-weights`（取得・確かめ・変換・固定の SHA-256）・T0・参照の生成（PyTorch の venv、416・320）・試験の画像（5〜7 LW） | p001 | planning |
+| p003 | libyolox の骨格と CPU の参照、ZNET の確かめ、host の照合 T2・T2b（7〜9 LW） | p002 | planning |
+| p004 | Vulkan の backend と 15 の SPIR-V、入力の段と固定の graph、分割、debug、lavapipe＋validation の T3〜T6・T9（10〜13 LW） | p003 | planning |
 | p005 | zedBSD の package と試験の program `yolox-test`（3〜4 LW） | p004 | planning |
-| p006 | Pi 5 の実機の照合と速さの調整（6〜10 LW） | p005、WS283 | planning |
-| p007 | 規約の全文の見直しと license の監査（2〜3 LW） | p006 | planning |
+| p006 | Pi 5 の実機の照合と速さの調整（6〜10 LW） | p005、p008、WS283 p004・p006・p007 | planning |
+| p007 | 規約の全文の見直しと license の監査、回帰の試験と data を tests/・Tools へ（2〜3 LW） | p006 | planning |
+| p008 | V3D 7.1 の host の compile の確かめ（15 の SPIR-V、2〜3 LW） | p004、WS283 p004 | planning |
 
 ## 現在の状態・再開点
 
 - 2026-10-23: 作成。p001 の設計から始める。
 - 2026-10-23 P1: p001 の設計の第 1 版（[design.md](design.md)）。Phase の案 p002〜p007（計 29〜41 LW）。再開: design-reviewer とユーザーの判断 D1〜D9（design §7）の後に p002。
+- 2026-10-23 P1: p001 の第 2 版（review F1〜F22 とユーザーの判断。重みは build の中で変換）。Phase に p008（V3D 7.1 の host の compile）を足し、計 35〜49 LW。再開: Q1 の判定とユーザーの D10（license の yes/no を出すか、推し: 出さない）・D11（COCO の試験の画像を tree に、推し: 入れる）の後に p002。
