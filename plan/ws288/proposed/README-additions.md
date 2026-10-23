@@ -1,8 +1,8 @@
 <!-- awesome-plan project=zedbsd record=ws288-p001-readme-additions -->
 
-# amaterrace-gpu の README.md への書き足しの案（版 3、2026-10-23 P1。版 2 は Q1 が cdaaf42 で適用済み）
+# amaterrace-gpu の README.md への書き足しの案（版 4、2026-10-23 P1。版 2 は Q1 が cdaaf42 で適用済み、版 3 の分は未適用）
 
-Q1 が適用した README（amaterrace-gpu の `README.md`、版 2 の文）のうち、版 3 の設計（[design.md](../design.md) §2.4・§3）で変わる段落の置き換えの案。適用は Q1（P1 は `/home/awe/amaterrace-gpu` に書かない）。U18〜U27 の決定の前は「proposed」の印のまま置く。
+Q1 が適用した README（amaterrace-gpu の `README.md`、版 2 の文）のうち、版 3 の設計（[design.md](../design.md) §2.4・§3）で変わる段落の置き換えの案。適用は Q1（P1 は `/home/awe/amaterrace-gpu` に書かない）。U18〜U40 の決定の前は「proposed」の印のまま置く。README（a217bf8）の「Systolic Array: 32 x 32, 0.8 TOPS/SU @200MHz」と LLM の流れの行は U39 の答えで直す（案: 「32 x 32 per SU, 0.41 TOPS per array @200MHz (MAC = 2 ops); the KC705 prototype carries one array on SU0」）。
 
 ## 置き換える段落 1: 「Blocks:」の CP の行
 
@@ -115,8 +115,9 @@ GHCI (GPU Host Controller Interface):
   2 x fp16 packed arithmetic and the transcendental unit. Comparisons produce
   all-ones/zero Booleans; there is no x0, no separate FP register file and no
   privileged state. Register 63 (rq) is reserved as a FIFO port: writing it
-  pushes a wavefront (32 lanes x 32 bits) into the systolic array, reading it
-  pops one; a read of an empty FIFO or a write to a full one stalls that warp
+  pushes one SA row vector (32 x FP16; a 32-lane warp moves two entries per
+  instruction, lanes 0-15 then 16-31) into the systolic array, reading it pops
+  one; a read of an empty FIFO or a write to a full one stalls that warp
   at issue (qstat gives the counts without blocking, qtag the token-boundary
   tags). Packed-FP16 transcendentals (exp2h2/log2h2/rcph2/rsqh2) and the
   subgroup shuffles are optional in GSI1 and required on the SA configuration.
