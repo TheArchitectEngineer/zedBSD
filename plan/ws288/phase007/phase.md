@@ -53,3 +53,9 @@
 4. `boards/zybo/atg_zybo_raster.xdc`（2d の物を写す）、`tools/vivado-build.sh zybo atg_zybo_raster`、WNS を見る（setup の fp と ds/wb の乗算が怪しい）。
 5. `plan/tools/zybo/ghci-raster-board.py`（ghci-blt-board.py の形、fpgareg + ring で DRAW_RAW、DBG で framebuffer を model と照合）と板の確認、DC の bitstream で目視の手順。
 6. 残す物: stencil の op（KC705）、warp の道（p009）、ROP に facing が届かない（back の stencil 用、port の追加は p009 で）。
+
+## 2026-10-24 Q1: 再開点 2（atg_top の raster の TB）— 統合の不具合を見つけた
+
+- amaterrace-gpu の branch `p007-raster`（main に未 merge。TB が FAIL するので main の `sim/run.sh` を壊さないため）: `tools/rx-raster-scene.py`（64×48 の RGBA8 と D32F、depth LESS + write、DEBUG_COLOR の 10 三角形、後の 3 つは src-alpha の blend、最後に FENCE。期待値は rxmodel）、`sim/vec/raster_scene.txt`、`sim/tb/atg_top_raster_tb.v`（HAS_RX・HAS_ROP、host の口だけ、ZYBO と KC705 の形）。
+- 結果: ring は最後の FENCE まで走る（FAULT 無し）が、**塗られた画素の depth（2,327 word）が全部 model と違う**。色の違い 340 は depth の違いによる隠れ方の差。例: 0x300c4 GPU 3f274403 / model 3f275eab、0x300d0 GPU 3f293b40 / model 3f2b947b（近いが違う）。unit の TB（setup 160・scan 3879 quad の vector）は PASS なので、top での z の受け渡し（RX の scan の quad の z → ROP の ds、lane の順・z の plane の基点・raw の時の viewport の z の扱い）のどこかの食い違いとみる（未解析）。
+- 次: VCD か $display で、最初の三角形の 1 quad の z を RX の出口と ROP の入口と model で比べる。直したら branch を main に merge して sim/run.sh に入れる。
