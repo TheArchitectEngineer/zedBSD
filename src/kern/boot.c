@@ -56,6 +56,7 @@ static const struct parameter_name parameter_names[KERN_BOOT_PARAMETER_COUNT] = 
 	PARAMETER_NAME("i915.debug"),
 	PARAMETER_NAME("i915.gen9"),
 	PARAMETER_NAME("dc8200.zerocopy"),
+	PARAMETER_NAME("mac0"),
 };
 
 static char firmware_source[KERN_BOOT_SOURCE_SELECTOR_SIZE];

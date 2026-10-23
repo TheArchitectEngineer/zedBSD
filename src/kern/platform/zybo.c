@@ -23,6 +23,8 @@
  * ramdisk is the first device, the one the handoff names, and the card
  * the second; without a ramdisk the card is the first.  A root named by
  * the boot parameters (rootpart=/dev/mmcblk0p2) is found on either.
+ * The board's Ethernet port (GEM0 and its RTL8211E) is the network
+ * interface en0.
  * Halting and rebooting go through the hardware layer (the SLCR's system
  * reset); the board is powered from USB and has no power-off.
  *
@@ -38,6 +40,7 @@
 #include <drivers/disklabel/disklabel.h>
 #include <drivers/generic/ramdisk.h>
 #include <drivers/generic/serial-console.h>
+#include <drivers/platform/zybo/zynq-ethernet.h>
 #include <drivers/platform/zybo/zynq-sdhci.h>
 #include <drivers/serial/cdns-uart.h>
 #include <kern/boot.h>
@@ -154,6 +157,11 @@ kern_platform_init(
 		sd_card = NULL;
 	}
 
+	/* Starts the Ethernet port; the boot goes on without the network. */
+	error = drv_zynq_ethernet_init();
+	if (error != 0)
+		kern_logf("zybo: Ethernet unavailable (%d)\n", error);
+
 	/* The ramdisk comes first: a loader that placed one boots from it. */
 	boot_disk_count = 0;
 	if (ramdisk != NULL && boot_disk_count < capacity)
@@ -168,8 +176,8 @@ kern_platform_init(
 }
 
 /*
- * Finishes device discovery once interrupts are enabled; the board has
- * nothing more to find.
+ * Finishes device discovery once interrupts are enabled: starts the
+ * Ethernet port's periodic service.
  */
 void
 kern_platform_refresh_devices(
@@ -178,6 +186,9 @@ kern_platform_refresh_devices(
 {
 	UNUSED_PARAMETER(devices);
 	UNUSED_PARAMETER(count);
+
+	/* Starts the service of the link and of missed interrupts. */
+	drv_zynq_ethernet_refresh();
 }
 
 /*
