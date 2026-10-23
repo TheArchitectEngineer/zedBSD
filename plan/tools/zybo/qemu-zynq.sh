@@ -7,8 +7,12 @@
 # nothing in r2; the kernel then takes the tree at 0x01F00000).  UART1, the
 # console, is the second serial port, a Unix socket.
 #   plan/tools/zybo/qemu-zynq.sh KERNEL [--append TEXT] [--initrd root.img]
-#       [--expect REGEX]... [--then STEP]... [--timeout S] [--stamp]
-#       [--gdb PORT] [--print]
+#       [--sd zybo-sd.img] [--expect REGEX]... [--then STEP]... [--timeout S]
+#       [--stamp] [--gdb PORT] [--print]
+# --sd puts a disk image in the SD slot of SDIO0 (make sd-image,
+# build/zybo/zybo-sd.img, a power of two in size); the machine writes to
+# it.  With --sd and no --initrd, --append 'rootpart=/dev/mmcblk0p2' takes
+# the root from the card.
 # --expect waits on the live serial line for each REGEX and gives the exit
 # status (the U3 exception: nothing is kept in a file); --stamp puts the
 # host's seconds before each line, for the TIMER 0S/10S check; --then holds
@@ -25,12 +29,13 @@ set -u
 
 dtb_addr=0x01f00000
 initrd_addr=0x04000000
-kernel= append= initrd= timeout=60 stamp= gdb_port= print_only=
+kernel= append= initrd= sd= timeout=60 stamp= gdb_port= print_only=
 patterns= steps=
 while [ $# -gt 0 ]; do
 	case "$1" in
 	--append) append=$2; shift 2 ;;
 	--initrd) initrd=$2; shift 2 ;;
+	--sd) sd=$2; shift 2 ;;
 	--expect) patterns="$patterns$2
 "; shift 2 ;;
 	--then) steps="$steps$2
@@ -68,6 +73,7 @@ set -- -M xilinx-zynq-a9 -smp 1 -m 512M -kernel "$kernel" \
 	-serial null -serial "unix:$sock,server=on,wait=off" \
 	-device "loader,file=$dtb,addr=$dtb_addr,force-raw=on"
 [ -n "$initrd" ] && set -- "$@" -device "loader,file=$initrd,addr=$initrd_addr,force-raw=on"
+[ -n "$sd" ] && set -- "$@" -drive "if=sd,index=0,file=$sd,format=raw"
 set -- "$@" -display none -monitor none -no-reboot
 [ -n "$gdb_port" ] && set -- "$@" -S -gdb "tcp:127.0.0.1:$gdb_port"
 # shellcheck disable=SC2086
