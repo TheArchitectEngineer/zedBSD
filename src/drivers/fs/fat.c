@@ -10425,9 +10425,23 @@ fat_readdir_unlocked(
 	int result;
 	int error;
 
-	/* A position past any directory's records is its end. */
-	if (file->f_offset < 0 || file->f_offset > (off_t)UINT32_MAX) {
+	/*
+	 * A position past any directory's records is its end.  The position
+	 * is compared as an unsigned 64-bit count: where off_t has 32 bits
+	 * (the 32-bit ABI), UINT32_MAX cast to it is -1, and every position
+	 * would then read as the end.
+	 */
+	if (file->f_offset < 0) {
 		*eof = 1;
+
+		/* Succeeded: the directory has no more entries. */
+		return 0;
+	}
+
+	if ((uint64_t)file->f_offset > (uint64_t)UINT32_MAX) {
+		*eof = 1;
+
+		/* Succeeded: the directory has no more entries. */
 		return 0;
 	}
 
