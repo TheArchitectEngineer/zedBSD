@@ -5,7 +5,7 @@
 - 親: [ws286](../ws.md)、設計: [design.md](../design.md) 版 3 の §2.3・§3.9・§7.2〜§7.4・§8 の p007 の行。
 - Queue: Q1 の割当（P2、2026-10-23、worktree `/home/awe/zedBSD-worktrees/p2-zybo-p007`、branch `agent/p2-zybo-p007`、基点 main fe7c8aad8）。
 - 判断と許可: U3（QEMU zynq と実機は生きた serial で判定）、U4（担当が板を JTAG で直に操作）。toolchain: Q1（main）の許可 2026-10-23「you MAY edit the sysroot rules (the sysroot .mk and its manifests) to add the armv7 entries and builtin manifest … and build that sysroot only inside your worktree's build/」。共有の LLVM は作り直していない（`build/llvm`・`llvm-source`・`llvm-build`・`NoctLang` は main の物への symlink、読むだけ）。HAL の API は変えていない。
-- Status: test-wait（T1 の QEMU virt・zynq）。実機は PASS（下）。
+- Status: cleared（2026-10-23 Q1: 実機の ZYBO（JTAG、--initrd abi.img、init=/abitest）で ABI 1〜8 と ABI PASS、T1 の QEMU zynq（exit 0、ABI 1〜8・ABI PASS）と virt（boot-test PASS、PNG build/review/ws286-p007-virt.png に ABI PASS）、zybo・virt・amd64・rpi4 の build warning 0。merge 771026557。abitest の link の -z undefs と --provider の確かめは Q1 が承認、login の program の扱いは p010）
 
 ## 受け入れの条件（design §8 の p007、§7.2〜§7.4）
 
