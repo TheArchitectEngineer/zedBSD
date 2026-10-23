@@ -3,7 +3,7 @@
 # WS288 p003 CP v0 + BLT + ZYBO の top: 板で `fpgareg` だけの最初の端から端
 
 - 親: [ws.md](../ws.md)。設計: [design.md](../design.md) §8 の p003 の行（§1.3、§2.2〜§2.7 の host interface、§3.6）。前の Phase: [phase002](../phase002/phase.md)。
-- 状態: in-progress（2026-10-23 P3。clear の判定は Q1）。受け入れの板の確認は全部 PASS（下の「板の証拠」）。
+- 状態: cleared（2026-10-23 Q1: 実機の ZYBO（SD 起動、fpgareg だけ、driver 無し）で ghci-blt-board.py が 5 回とも全 case PASS（fill32・copy32 の非整列・fill16・copy16・blend・tile・untile・重なりの逆向き/順向き・reset の後の fill、識別・CAPS・EXTCAP/PERF・aperture・DBG、IRQ・HALT・FAULT → RESET）。amaterrace-gpu の lint 11 clean、sim 5 本 PASS（seed 2・3・42 も）、Verilator PASS。Vivado: LUT 3802・FF 3719・BRAM 0.5・100 MHz WNS +0.190 ns。HP0 は reset の値で 64 bit、level shifter 有効、FCLK0 100 MHz を JTAG で確認。速さ: FILL 640 MB/s、COPY 64 MB/s（read の prefetch は残件）。merge 01847a20a）
 - 範囲（Q1 の指示、2026-10-23）: design v3（command = Kei GPU command protocol、ISA = RISC-V 基）に依らない物だけ。CP v0 は KICK と DBG だけ（HCR、CP の状態、IRQ、STATE、KICK、非同期の DBG、EXTCAP）。ring と command は p004（v3 の後）。design.md の §2.4・§3 は触らない（P1 が書いている）。
 - 受け入れ（design §8）: 板で driver 無しに `fpgareg` だけで fill/copy を DBG で照合、`IRQ_SET` → `fpgareg wait`。加えて p002 の残り: zedBSD の ps7_init が HP0 を 64 bit の mode にしているか、level shifter。
 
