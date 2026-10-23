@@ -72,7 +72,7 @@ p002 の残り（`plan/tools/zybo/ps-regs.sh`: JTAG の AHB-AP で zedBSD の動
 
 HP0 の 64 bit は機能でも確かめた: DBG で 64 bit の beat の上下（0x1C000000 と 0x1C000004）を書いて読み戻し一致。
 
-板の受け入れ: `plan/tools/zybo/ghci-blt-board.py`（host から SSH で `fpgaload` と 1 本の shell script を流し、DBG で各 blit の窓を前後に読み、host の model（TB と同じ）と比べる。seed で pattern と色を変える。約 2 分）。最終の bitstream（65a5b91f27a6c0fb）で 4 回、全部 PASS（`--bit` の fpgaload で seed 1792753777、seed 7 を 2 回、JTAG で書いた PL で 1 回）:
+板の受け入れ: `plan/tools/zybo/ghci-blt-board.py`（host から SSH で `fpgaload` と 1 本の shell script を流し、DBG で各 blit の窓を前後に読み、host の model（TB と同じ）と比べる。seed で pattern と色を変える。約 2 分）。最終の bitstream（65a5b91f27a6c0fb）で 5 回、全部 PASS: `pl-jtag.sh`（JTAG）で書いた PL で 1 回、`--bit`（fpgaload）で 1 回（この 2 回は seed を足す前で、窓に前の回の結果が残り変化した word が少なかった。seed はそのために足した）、その fpgaload の PL のまま seed 1792753777 で 1 回と seed 7 で 2 回。表は seed 1792753777 の回:
 
 | check | 結果（seed 1792753777） |
 | --- | --- |
