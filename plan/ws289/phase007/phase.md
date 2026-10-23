@@ -4,7 +4,7 @@
 
 - 親: [ws289](../ws.md)。対象: WS289 p002〜p006 が変えた C の source（style だけ。動作・API・ABI は変えない）。
 - Queue: Q1 の割当（P1、2026-10-23、worktree `/home/awe/zedBSD-worktrees/p1-ws289-p007`、branch `agent/p1-ws289-p007`、基点 main c327d0c73）。
-- Status: in-progress（Q1 の判定待ち）。
+- Status: cleared（2026-10-23 Q1: WS289 の C の source を plan/coding-style.md の全文で見直し、書き方だけ直した（7c2985e9b）。残した物（共有の cleanup への goto fail など）と理由は phase007/phase.md。zybo・armv7-virt・rpi4・rpi5・amd64 の kernel warning 0、sdhci-host-test・cadence-gem-host-test PASS（rp1 の trace 一致）。merge 0c3c26c75）
 
 ## 読んだ file（全部を読んだ）
 
