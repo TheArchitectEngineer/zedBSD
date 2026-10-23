@@ -5,7 +5,7 @@
 - 親: [ws286](../ws.md)、設計: [design.md](../design.md) 版 3 の §5.6・§5.6.1〜§5.6.3・§5.10・§7.3・§7.7・§8 の p008 の行。**WS286 の到達目標**。
 - Queue: Q1 の割当（P2、2026-10-23、worktree `/home/awe/zedBSD-worktrees/p2-zybo-p008`、branch `agent/p2-zybo-p008`、基点 main 1a2a6b79c、途中で main 4f2ab03bc（WS289 p004 の SD を含む）を merge）。
 - 判断と許可: U3（QEMU zynq と実機は生きた serial で判定）、U4（担当が板を JTAG で直に操作、host の lock を取って。P3 の WS289 p004 と共有）、U6（a）（`pl-build.sh` の出力を image に `--file` で入れる）。2026-10-23 ユーザー（Q1 経由）「FPGA work uses Vivado (2026.1, BASIC) unless something blocks it; the existing openXC7 plio bitstream may be used as is」→ RTL は変えず、既存の openXC7 の plio をそのまま使った（Vivado は使っていない）。HAL の API は変えていない。toolchain に触れていない。
-- Status: in-progress（実機で §7.7 の 1〜5 PASS。T1 の QEMU zynq と Q1 の判定待ち）
+- Status: cleared（2026-10-23 Q1: 実機の ZYBO（JTAG、ramdisk の root）で design §7.7 の 1〜5 PASS（fpgaload で plio.bit 2083740 byte、ID 0x504c494f、SCRATCH・COUNTER・LED、IRQ 61 の wait・ack・ETIMEDOUT、--disable で EIO、JTAG で書いた後の --enable）、/dev/fpga0 は 0600。T1 の QEMU zynq は縮めた受け入れで PASS（3 回目、11e6a6038）: Debian の QEMU 10.0.11 の devcfg の model は reset の時に領域を無効にして PCAP を完了できない（upstream b9b3ca738d で修正、10.0.11 に無い）ので、emulator の判別・窓の EIO・DONE 無しの --enable の EIO・program の timeout（42）と状態の記録・その後の shell を確かめた。zybo・virt・amd64・rpi4 の build warning 0。merge 4536e2e6f・053999fab・de58b1dd9。LED・SW・BTN の目視はユーザーの試験の一覧 U37）
 
 ## 受け入れの条件（design §8 の p008、§7.7、§7.3）
 
