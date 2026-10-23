@@ -12,14 +12,18 @@
  * A task's kernel context is its supervisor stack; its user context is
  * the trap frame it entered the kernel with, at the top of that stack.
  * The user's thread pointer is TPIDRURO, which the switch loads for the
- * arriving task.  The floating-point unit stays off: the kernel never
- * uses it, and a task's registers are kept only as the debugging
- * interface wrote them.
+ * arriving task.  The floating-point registers are switched lazily
+ * (fpu.c): the switch only names the arriving task's registers, and each
+ * place that copies or replaces a task's registers first brings them up
+ * to date with the unit (a fork, a signal's entry, a debugger's read) or
+ * makes the unit drop them (an exec, a signal's return, a debugger's
+ * write, the task's end).
  */
 
 #include <hal/hal.h>
 #include "asm.h"
 #include "defs.h"
+#include "fpu.h"
 #include "int.h"
 #include "percpu.h"
 #include "spin.h"
@@ -113,10 +117,12 @@ hal_task_create_for_init_context(
 	task->space = HAL_SPACE_SYS;
 	task->run_cpu = (int)cpu->logical_id;
 	task->target_cpu = cpu->logical_id;
+	armv7_fpu_context_init(&task->fpu);
 
-	/* Lists the task and makes it this processor's running task. */
+	/* Lists the task and makes it this processor's running task, with its floating-point registers. */
 	task_add(task);
 	cpu->running_task = task;
+	armv7_fpu_select(&task->fpu);
 
 	/* Succeeded: the processor's initial task. */
 	return task;
@@ -156,6 +162,7 @@ hal_task_create(
 	if (task == NULL)
 		return NULL;
 	hal_memset(task, 0, sizeof(*task));
+	armv7_fpu_context_init(&task->fpu);
 
 	/* Allocates the kernel stack, aligned inside a larger block. */
 	task->sys_stack_allocation = kernel_alloc(ARMV7_SYS_STACK_SIZE + TASK_STACK_ALIGNMENT - 1U);
@@ -274,9 +281,10 @@ hal_task_fork_current(
 	*copy = *source;
 	copy->r[ARMV7_FRAME_R0] = (uint32_t)child_result;
 
-	/* The child inherits the thread pointer and the kept floating-point registers. */
+	/* The child inherits the thread pointer and the floating-point registers as the unit has them. */
 	child->tls = parent->tls;
-	child->fpregs = parent->fpregs;
+	armv7_fpu_sync(&parent->fpu);
+	child->fpu.regs = parent->fpu.regs;
 
 	/* Succeeded: the child is ready to be switched to. */
 	return child;
@@ -349,7 +357,8 @@ hal_task_exec_current(
 	task->space = new_space;
 	task->tls = 0;
 	task->signal_depth = 0;
-	hal_memset(&task->fpregs, 0, sizeof(task->fpregs));
+	armv7_fpu_context_init(&task->fpu);
+	armv7_fpu_forget(&task->fpu);
 	armv7_write_tpidruro(0);
 	hal_space_switch(new_space);
 
@@ -443,9 +452,11 @@ hal_task_signal_enter(
 	if (token == 0)
 		return -1;
 
-	/* Keeps the interrupted context under the token. */
+	/* Keeps the interrupted context under the token, its floating-point registers as the unit has them. */
 	depth = task->signal_depth;
 	task->signal_frame[depth] = *frame;
+	armv7_fpu_sync(&task->fpu);
+	task->signal_fpregs[depth] = task->fpu.regs;
 	task->signal_token[depth] = token;
 	task->signal_depth = depth + 1U;
 
@@ -491,9 +502,15 @@ hal_task_signal_return(
 	if (token != task->signal_token[depth])
 		return -1;
 
-	/* Restores the interrupted frame. */
+	/*
+	 * Restores the interrupted frame and its floating-point registers,
+	 * which the unit loads at the next floating-point instruction instead
+	 * of the handler's.
+	 */
 	*frame = task->signal_frame[depth];
 	*value = (intptr_t)frame->r[ARMV7_FRAME_R0];
+	task->fpu.regs = task->signal_fpregs[depth];
+	armv7_fpu_forget(&task->fpu);
 	task->signal_token[depth] = 0;
 	task->signal_depth = depth;
 
@@ -520,6 +537,9 @@ hal_task_destroy(
 	run_cpu = __atomic_load_n(&task->run_cpu, __ATOMIC_ACQUIRE);
 	if (run_cpu >= 0)
 		HAL_FATAL("destroy current armv7 task");
+
+	/* No unit may take the freed record for the task's registers. */
+	armv7_fpu_forget(&task->fpu);
 
 	/* Unlists the task, then measures and frees its stack. */
 	task_del(task);
@@ -585,10 +605,11 @@ hal_task_context_switch(
 	cpu->switching_from = from;
 	__atomic_store_n(&to->run_cpu, (int)cpu->logical_id, __ATOMIC_RELEASE);
 
-	/* Installs the arriving task's space and thread pointer. */
+	/* Installs the arriving task's space, thread pointer and floating-point registers. */
 	cpu->running_task = to;
 	hal_space_switch(to->space);
 	armv7_write_tpidruro((uint32_t)to->tls);
+	armv7_fpu_select(&to->fpu);
 
 	/* Switches the stack and the callee-saved registers. */
 	asm_task_dispatch(&from->resume_sp, &to->resume_sp);

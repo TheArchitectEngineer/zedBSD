@@ -12,12 +12,13 @@
  * that everything after can report.  The board names the device tree (the
  * loader's r2, or where the board's loader puts it), which is read through
  * the boot map's direct map; RAM the board keeps out (ARMV7_LOW_RAM_SKIP)
- * is taken out of what it describes.  The board's display is set up, the run-time ABI
- * and the exclusives are checked, then physical memory, the kernel's
+ * is taken out of what it describes.  The board's display is set up, the
+ * run-time ABI and the exclusives are checked, the floating-point unit is
+ * given to the modes and turned off, then physical memory, the kernel's
  * table, the interrupt controller and the tick, which is seen running
  * before the kernel starts.  The kernel calls back into
  * hal_cpu_start_others() once its heap exists, where the address spaces
- * are checked and the bring-up is summed up.
+ * and the floating-point switch are checked and the bring-up is summed up.
  */
 
 #include <hal/hal.h>
@@ -27,6 +28,7 @@
 #include "clock.h"
 #include "defs.h"
 #include "fdt.h"
+#include "fpu.h"
 #include "int.h"
 #include "irq.h"
 #include "page.h"
@@ -142,6 +144,9 @@ armv7_cmain(
 	/* The run-time ABI's helpers and the exclusives, which the kernel's code relies on. */
 	armv7_aeabi_selftest();
 	armv7_atomic_selftest();
+
+	/* The floating-point unit, given to user contexts lazily and off until one uses it. */
+	armv7_fpu_init();
 
 	/* Physical memory, then the kernel's table, then the task switch. */
 	armv7_page_init();

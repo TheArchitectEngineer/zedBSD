@@ -9,6 +9,10 @@
  * The armv7 traps: interrupts, system calls and faults, from vectors.S to
  * the kernel.
  *
+ * An undefined instruction is first offered to the floating-point unit's
+ * lazy switch (fpu.c): the first floating-point instruction of a context
+ * runs again once the unit holds the context's registers.
+ *
  * A data or prefetch abort on a user page is first offered to the address
  * spaces: the first access and the first store of a page fault on this
  * processor only so that the HAL can record them (space.c), and those are
@@ -24,6 +28,7 @@
 #include <hal/hal.h>
 #include "asm.h"
 #include "defs.h"
+#include "fpu.h"
 #include "int.h"
 #include "irq.h"
 #include "percpu.h"
@@ -364,8 +369,10 @@ take_abort(
 }
 
 /*
- * Serves an undefined instruction: the user's is an illegal instruction
- * for the kernel to signal, the kernel's its own fault.
+ * Serves an undefined instruction: one the floating-point unit refused
+ * while it was off runs again once the unit is on; any other is, for the
+ * user, an illegal instruction or a floating-point exception for the
+ * kernel to signal, and for the kernel its own fault.
  */
 static void
 take_undefined(
@@ -373,11 +380,29 @@ take_undefined(
 	int from_user)
 {
 	struct int_fault fault;
+	int taken;
+	int exception;
+
+	/* A Thumb instruction lies 2 bytes below the link register, not 4 as vectors.S took. */
+	if ((frame->cpsr & ARMV7_PSR_T) != 0)
+		frame->pc += 2U;
+
+	/* The first floating-point instruction of the running context runs again with the unit on. */
+	taken = armv7_fpu_take_trap(from_user);
+	if (taken)
+		return;
 
 	/* An illegal instruction at the address of the instruction. */
 	fault.cause = HAL_TRAP_CAUSE_ILLEGAL_INSN;
 	fault.mode = HAL_TRAP_MODE_EXEC;
 	fault.address = frame->pc;
+
+	/* A user floating-point instruction the unit stopped with an exception is an arithmetic fault. */
+	if (from_user) {
+		exception = armv7_fpu_take_exception();
+		if (exception)
+			fault.cause = HAL_TRAP_CAUSE_ARITHMETIC;
+	}
 
 	/* The user's goes to the kernel with the frame recorded. */
 	if (from_user) {

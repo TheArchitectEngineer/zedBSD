@@ -16,6 +16,7 @@
 #include "defs.h"
 
 struct armv7_task;
+struct armv7_fpu_context;
 
 /* The reasons one processor interrupts another, as bits of the receiver's word. */
 #define ARMV7_IPI_NOTIFY	0x1UL
@@ -83,6 +84,22 @@ struct armv7_percpu {
 	uintptr_t selftest_fault_address;
 	int selftest_fault_taken;
 	unsigned selftest_fault_status;
+
+	/*
+	 * The floating-point unit's lazy switch (fpu.c): the context whose
+	 * registers the unit holds, or NULL; and the context that runs now,
+	 * whose registers the unit loads at its first floating-point
+	 * instruction.  Changed with interrupts off.
+	 */
+	struct armv7_fpu_context *fpu_owner;
+	struct armv7_fpu_context *fpu_selected;
+
+	/*
+	 * Set only while the boot's floating-point self-test runs: a kernel
+	 * floating-point instruction then takes the unit for the selected
+	 * context, as a user one does, instead of stopping the kernel.
+	 */
+	int fpu_kernel_test;
 };
 
 void

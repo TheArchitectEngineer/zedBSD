@@ -16,17 +16,37 @@
  * arch/arm/mm/cache-v7.S, v7_dma_inv_range).  The board's outer cache, if
  * it has one, is off.
  *
- * Values referenced: ARM DDI 0406C, CTR (DminLine and IminLine), and the
- * maintenance operations DCCMVAC, DCIMVAC, DCCIMVAC, DCCMVAU, ICIMVAU and
- * BPIALL.
+ * The Cortex-A9's instruction cache is indexed by virtual address, so a
+ * line of the range fetched through another mapping (a user's, while the
+ * kernel wrote the code through the direct map) may lie at another index
+ * than the range's own; there the whole instruction cache is dropped.  An
+ * instruction cache indexed and tagged by physical address (the
+ * Cortex-A15's) is dropped by address.  Procedure referenced: Linux v6.12
+ * arch/arm/kernel/setup.c, cacheid_init (any ARMv7 instruction cache but
+ * a PIPT or an ASID-tagged one taken as aliasing) and arch/arm/mm/flush.c,
+ * __sync_icache_dcache (the whole instruction cache then).
+ *
+ * The instruction cache and the branch predictor are dropped on every
+ * processor of the inner shareable domain, as the multiprocessing
+ * extensions of both processors allow.
+ *
+ * Values referenced: ARM DDI 0406C, CTR (DminLine, IminLine and L1Ip),
+ * and the maintenance operations DCCMVAC, DCIMVAC, DCCIMVAC, DCCMVAU,
+ * ICIMVAU, ICIALLUIS and BPIALLIS.
  */
 
 #include <hal/hal.h>
 #include "asm.h"
 #include "defs.h"
 
+/* CTR.L1Ip: the instruction cache's indexing and tagging, and the value of a PIPT one. */
+#define CACHE_CTR_L1IP_SHIFT	14U
+#define CACHE_CTR_L1IP_MASK	0x3U
+#define CACHE_CTR_L1IP_PIPT	0x3U
+
 static uint32_t data_line_size(void);
 static uint32_t instruction_line_size(void);
+static int instruction_cache_by_address(void);
 
 /*
  * Writes the cached lines of a range back to memory.
@@ -141,6 +161,7 @@ hal_sync_instruction_stream(
 	uintptr_t line;
 	uintptr_t end;
 	uint32_t step;
+	int by_address;
 
 	/* An empty range needs nothing. */
 	if (size == 0)
@@ -156,14 +177,21 @@ hal_sync_instruction_stream(
 	}
 	armv7_dsb();
 
-	/* Drops each instruction line, then the branch predictor. */
-	step = instruction_line_size();
-	line = (uintptr_t)addr & ~(uintptr_t)(step - 1U);
-	while (line < end) {
-		__asm__ volatile("mcr p15, 0, %0, c7, c5, 1" : : "r"(line) : "memory");
-		line += step;
+	/* Drops each instruction line of a cache indexed by physical address, or the whole of one that is not. */
+	by_address = instruction_cache_by_address();
+	if (by_address) {
+		step = instruction_line_size();
+		line = (uintptr_t)addr & ~(uintptr_t)(step - 1U);
+		while (line < end) {
+			__asm__ volatile("mcr p15, 0, %0, c7, c5, 1" : : "r"(line) : "memory");
+			line += step;
+		}
+	} else {
+		__asm__ volatile("mcr p15, 0, %0, c7, c1, 0" : : "r"(0) : "memory");
 	}
-	__asm__ volatile("mcr p15, 0, %0, c7, c5, 6" : : "r"(0) : "memory");
+
+	/* Drops the branch predictor's entries, which may name the old instructions. */
+	__asm__ volatile("mcr p15, 0, %0, c7, c1, 6" : : "r"(0) : "memory");
 
 	/* Completes the maintenance and refetches what follows. */
 	armv7_dsb();
@@ -208,4 +236,24 @@ instruction_line_size(
 
 	/* Succeeded: four bytes a word. */
 	return 4U << (type & 0xfU);
+}
+
+/* Reports whether the instruction cache is indexed and tagged by physical address. */
+static int
+instruction_cache_by_address(
+	void)
+{
+	uint32_t type;
+	uint32_t policy;
+
+	/* L1Ip, bits 15 to 14, says how the instruction cache is indexed. */
+	__asm__ volatile("mrc p15, 0, %0, c0, c0, 1" : "=r"(type));
+	policy = (type >> CACHE_CTR_L1IP_SHIFT) & CACHE_CTR_L1IP_MASK;
+
+	/* A PIPT cache holds a line at the index of its physical address only. */
+	if (policy == CACHE_CTR_L1IP_PIPT)
+		return 1;
+
+	/* Any other may hold a line of the range at another mapping's index. */
+	return 0;
 }

@@ -24,4 +24,8 @@ void
 armv7_paging_selftest(
 	void);
 
+int
+armv7_vfp_selftest(
+	void);
+
 #endif

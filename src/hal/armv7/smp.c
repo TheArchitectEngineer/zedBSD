@@ -17,8 +17,9 @@
  * per-CPU word set before the interrupt is raised.
  *
  * hal_cpu_start_others() is the HAL's last step of the boot, once the
- * kernel's heap exists: it checks the address spaces and writes the
- * bring-up's summary line.
+ * kernel's heap exists: it checks the address spaces and the
+ * floating-point unit's lazy switch and writes the bring-up's summary
+ * line.
  */
 
 #include <hal/hal.h>
@@ -31,7 +32,7 @@
 #include "space.h"
 
 /* The pieces of the bring-up's summary line. */
-#define SMP_READY_PIECES	5U
+#define SMP_READY_PIECES	6U
 
 /*
  * The processors that are up, one bit per logical processor.  A processor
@@ -124,11 +125,19 @@ hal_cpu_start_others(
 {
 	const char *pieces[SMP_READY_PIECES];
 	const char *timer;
+	const char *vfp;
 	unsigned long ticks;
 	unsigned index;
+	int vfp_checked;
 
 	/* Stops at the first check that fails; returns only when all passed. */
 	armv7_paging_selftest();
+	vfp_checked = armv7_vfp_selftest();
+
+	/* Words whether the floating-point unit was there to check. */
+	vfp = "VFP NONE";
+	if (vfp_checked)
+		vfp = "VFP PASS";
 
 	/* Words whether the tick has arrived. */
 	timer = "TIMER NO TICK";
@@ -139,13 +148,15 @@ hal_cpu_start_others(
 	/*
 	 * Writes the line, which stays in view after the kernel's own lines.
 	 * The checks before it stopped the boot if they failed, so each of them
-	 * passed.
+	 * passed.  The floating-point piece comes last, so a line read up to
+	 * the tick's piece reads as it did before the unit was checked.
 	 */
 	pieces[0] = "ARMV7 HAL READY";
 	pieces[1] = "AEABI PASS";
 	pieces[2] = "ATOMIC PASS";
 	pieces[3] = "PAGING PASS";
 	pieces[4] = timer;
+	pieces[5] = vfp;
 	for (index = 0; index < SMP_READY_PIECES; index++) {
 		if (index != 0)
 			hal_putc(' ');

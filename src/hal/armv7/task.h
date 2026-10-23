@@ -13,6 +13,7 @@
 #define KERN_HAL_ARMV7_TASK_H
 
 #include <hal/hal.h>
+#include "fpu.h"
 #include "int.h"
 
 /*
@@ -61,10 +62,10 @@ struct armv7_task {
 	uintptr_t resume_sp;
 
 	/*
-	 * The floating-point registers as the debugging interface reads and
-	 * writes them.  The kernel never uses the floating-point unit.
+	 * The task's floating-point and Advanced SIMD registers, switched
+	 * lazily (fpu.c).  The kernel never uses the unit.
 	 */
-	struct hal_fpregs fpregs __attribute__((aligned(8)));
+	struct armv7_fpu_context fpu;
 
 	void *private_data;
 
@@ -80,8 +81,12 @@ struct armv7_task {
 	 */
 	struct armv7_trap_frame *initial_user_frame;
 
-	/* The contexts interrupted by signal handlers, innermost last. */
+	/*
+	 * The contexts interrupted by signal handlers, innermost last, and
+	 * their floating-point registers.
+	 */
 	struct armv7_trap_frame signal_frame[HAL_SIGNAL_NEST_MAX];
+	struct hal_fpregs signal_fpregs[HAL_SIGNAL_NEST_MAX] __attribute__((aligned(8)));
 	uint32_t signal_token[HAL_SIGNAL_NEST_MAX];
 	unsigned signal_depth;
 };
