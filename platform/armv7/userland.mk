@@ -192,8 +192,13 @@ ARMV7_ROOT_COMMANDS += $(if $(filter openssh,$(ZEDBSD_USER_PROGRAMS)),chmod mkdi
 # ping and hostname to look at the result.
 ARMV7_ROOT_NETWORK_COMMANDS := dhcpc hostname ifconfig net networkd ping route
 ARMV7_ROOT_COMMANDS += $(filter $(ARMV7_ROOT_NETWORK_COMMANDS),$(ZEDBSD_USER_PROGRAMS))
-# A configuration adds programs to the default set here (the ZYBO's
-# programmable logic tools: plan/tools/zybo/config-zybo-fpga.mk).
+# The programmable logic's tools, those a configuration names (the ZYBO's
+# default root, config/ci/config-zybo.mk, has them for the GPU in the
+# logic, WS288): fpgaload writes a bitstream, fpgareg reaches the block's
+# registers and waits for its interrupt.
+ARMV7_ROOT_PL_COMMANDS := fpgaload fpgareg
+ARMV7_ROOT_COMMANDS += $(filter $(ARMV7_ROOT_PL_COMMANDS),$(ZEDBSD_USER_PROGRAMS))
+# A configuration adds other programs to the default set here.
 ARMV7_ROOT_EXTRA_COMMANDS ?=
 ARMV7_ROOT_COMMANDS += $(ARMV7_ROOT_EXTRA_COMMANDS)
 ARMV7_APP_OBJ := $(DYNAMIC_DIR)/obj
