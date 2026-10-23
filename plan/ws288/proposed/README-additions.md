@@ -19,6 +19,15 @@ Q1 が適用した README（amaterrace-gpu の `README.md`、版 2 の文）の�
   the shader units' work (proposed).
 ```
 
+## 足す行 1b: 「Blocks:」の MC の行の前（proposed）
+
+```
+- SA: optional systolic array, a unit decoupled from the SU: a 32-row x N-column
+  PE array (int16/int8 MAC on DSPs, output-stationary) whose horizontal edge is
+  read and written from the shader ISA through FIFOs (one wavefront = 32 lanes)
+  and whose weights stream in from the MC. Absent on the XC7Z010.
+```
+
 ## 置き換える段落 2: 「GHCI (GPU Host Controller Interface):」の節の全部
 
 ````markdown
@@ -95,7 +104,10 @@ GHCI (GPU Host Controller Interface):
   exports and varying fetch, quad derivatives, optional shuffle/vote/ballot,
   2 x fp16 packed arithmetic and the transcendental unit. Comparisons produce
   all-ones/zero Booleans; there is no x0, no separate FP register file and no
-  privileged state.
+  privileged state. Register 63 (rq) is reserved as a FIFO port: writing it
+  pushes a wavefront (32 lanes x 32 bits) into the systolic array, reading it
+  pops one; a read of an empty FIFO or a write to a full one stalls that warp
+  at issue (qstat gives the counts without blocking).
 ```
 
 ## 置き換える段落 4: 「Targets:」の KC705 の行
@@ -117,7 +129,7 @@ GHCI (GPU Host Controller Interface):
 ```
 →
 ```
-- rtl/common, rtl/gpu/{cp,blt,vf,rx,su,tu,rop,mc}, rtl/dc (cp/ holds atg_cpu)
+- rtl/common, rtl/gpu/{cp,blt,vf,rx,su,tu,rop,mc,sa}, rtl/dc (cp/ holds atg_cpu)
 - fw/cp (the command processor firmware, C for RV32IM, built with clang)
 - include/ (RTL constants and the shared C headers)
 ```
