@@ -133,3 +133,5 @@ T1（実機、板の lock、生きた serial）:
 - docs の howto（ZYBO の SD 起動の手順）: 道具が `plan/` に有る間は書けない（上の差 9）。
 
 - 2026-10-23 Q1: `plan/ws289/tests/config-zybo-ssh.mk` を git rm（既定の `config/ci/config-zybo.mk` と同じ組）、Master の Tools を直し `spl-build.sh`・`deploy.sh`・`make-zybo-boot-files.py`・`qemu-zynq.sh --dtb` を登録。p005 の phase.md の command の記録はその時の物として残す（今は `config/ci/config-zybo.mk` で同じ image）。
+
+- 2026-10-23 Q1: ユーザーの許可（「書き込みを許可します」）で、新しい card に main 5a28d28ca の `zybo-sd.img`（FAT32、BOOT.BIN = spl-build.sh の boot.bin b743c8f8…）を dd して cmp で一致。次: ユーザーが card を ZYBO に差し JP5 を SD に、T1 が serial を監視して電源。
