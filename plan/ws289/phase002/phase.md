@@ -5,7 +5,7 @@
 - 親: [ws289](../ws.md)。設計: [design.md](../design.md) 版 2 の §2 D1・§3.1〜§3.3・§3.7・§8・§9 の p002 の行・§11 の U6。
 - Queue: Q1 の割当（P1、2026-10-23、worktree `/home/awe/zedBSD-worktrees/p1-ws289-p002`、branch `agent/p1-ws289-p002`、基点 main 1680183ed）。Fable は使わない（ユーザー）。
 - 出典の決定: 2026-10-23 ユーザー（Q1 経由）「rpi4を参照するよりも、共通部分は分離しましょう。」
-- Status: in-progress — **test-wait（T1、QEMU raspi4b の boot-test）**。実装・build・host 試験は済み。T1 の PASS を Q1 が判定するまで cleared にしない。
+- Status: cleared（2026-10-23 Q1: T1 の QEMU raspi4b の boot-test PASS（main 8b2837d2d、試験の config plan/ws289/tests/config-rpi4-sd.mk、SD の root で init が進み login:、PNG build/review/ws289-p002-raspi4b.png）、host 試験の register の書き込み 45,664 回が一致、rpi4・rpi5・amd64 の kernel の warning 0（build の warning は openssl など外部 package だけ）。merge 803d0dbfb。boot-test.sh は raspi4b の SD を 2 の冪に（2d9fe7019）。Pi 4 の実機はユーザーの試験の一覧 U39）
 
 ## 範囲と到達点
 
