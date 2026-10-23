@@ -528,10 +528,13 @@ read_configuration(
 
 	/* Reads the queues and the screeners of a version that has CFG6 and CFG8. */
 	if (version >= GEM_VERSION_WITH_CFG) {
+		/* Reads the queues the controller has, and whether it reports 64-bit DMA. */
 		config = read_register(gem, GEM_CFG6);
 		gem->queue_mask |= config & GEM_CFG6_PRIQ_MASK;
 		if ((config & GEM_CFG6_DMA64) == 0)
 			kern_logf("gem: no 64-bit DMA reported\n");
+
+		/* Reads how many screeners of each type the controller has. */
 		config = read_register(gem, GEM_CFG8);
 		gem->type1_screeners = (config >> GEM_CFG8_TYPE1_SHIFT) & 0xffU;
 		gem->type2_screeners = (config >> GEM_CFG8_TYPE2_SHIFT) & 0xffU;
@@ -569,11 +572,15 @@ choose_mac(
 	unsigned nonzero;
 	unsigned index;
 
-	/* Keeps a described unicast address that is not all zeros. */
+	/* Takes the described address. */
 	kern_memcpy(gem->mac, gem->config.mac, sizeof(gem->mac));
+
+	/* Finds out whether any octet of it is set. */
 	nonzero = 0;
 	for (index = 0; index < sizeof(gem->mac); index++)
 		nonzero |= gem->mac[index];
+
+	/* Keeps a described unicast address that is not all zeros. */
 	if (nonzero != 0 && (gem->mac[0] & 1U) == 0)
 		return 0;
 
@@ -806,9 +813,11 @@ reset_controller(
 		write_register(gem, GEM_TXQ1BASE + (queue - 1U) * 4U, 0);
 	}
 
-	/* Turns every screener off so all frames arrive on queue 0. */
+	/* Turns every type 1 screener off so all frames arrive on queue 0. */
 	for (index = 0; index < gem->type1_screeners; index++)
 		write_register(gem, GEM_SCR_TYPE1 + index * 4U, 0);
+
+	/* Turns every type 2 screener off for the same reason. */
 	for (index = 0; index < gem->type2_screeners; index++)
 		write_register(gem, GEM_SCR_TYPE2 + index * 4U, 0);
 
@@ -1098,6 +1107,8 @@ wait_register(
 	counted = kern_rtc_read_counter(&start, &frequency);
 	if (!counted || frequency == 0)
 		return EIO;
+
+	/* Converts the wait to counter ticks, rounded up. */
 	duration = frequency / 1000000U * microseconds;
 	duration += (frequency % 1000000U * microseconds + 999999U) / 1000000U;
 

@@ -36,6 +36,9 @@
 #include <uapi/errno.h>
 #include <uapi/sysctl.h>
 
+/* Marks a parameter that the disk operations table passes but this driver does not need. */
+#define UNUSED_PARAMETER(parameter) ((void)(parameter))
+
 /* The controller's registers, as offsets from its base. */
 #define REG_BLOCK_SIZE 0x04
 #define REG_BLOCK_COUNT 0x06
@@ -1908,9 +1911,9 @@ sd_ioctl(
 	unsigned long request,
 	void *argument)
 {
-	(void)disk;
-	(void)request;
-	(void)argument;
+	UNUSED_PARAMETER(disk);
+	UNUSED_PARAMETER(request);
+	UNUSED_PARAMETER(argument);
 
 	/* Failed: no request is supported. */
 	return EOPNOTSUPP;
