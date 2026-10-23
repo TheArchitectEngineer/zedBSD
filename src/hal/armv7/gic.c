@@ -298,7 +298,6 @@ armv7_gic_set_trigger(
 	line_enabled = read_distributor(GICD_ISENABLER + (intid / 32U) * 4U) & (1U << (intid % 32U));
 	if (line_enabled != 0) {
 		armv7_spin_unlock(&distributor_lock, enabled);
-
 		return HAL_ERR_BUSY;
 	}
 

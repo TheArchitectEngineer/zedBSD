@@ -188,6 +188,7 @@ hal_irq_unregister(
 	/* Removes the pair, which must be the caller's. */
 	enabled = armv7_spin_lock(&slots_lock);
 
+	/* Refuses a pair the slot does not hold. */
 	if (slots[irq].handler != handler || slots[irq].argument != argument) {
 		armv7_spin_unlock(&slots_lock, enabled);
 		return HAL_ERR_INVALID;

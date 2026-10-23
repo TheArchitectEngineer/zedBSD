@@ -143,28 +143,38 @@ main(
 	printf("ABI armv7 user ABI test\n");
 	fflush(stdout);
 
-	/* Each step stops the test where it fails, with the last line naming it. */
+	/*
+	 * Each step stops the test where it fails, with the last line naming
+	 * it.  1. The system calls' results and errors.
+	 */
 	passed = check_syscalls();
 	report(1, "syscall", passed);
 
+	/* 2. The thread-local variables, two threads and errno. */
 	passed = check_tls();
 	report(2, "tls", passed);
 
+	/* 3. A child and its exit status. */
 	passed = check_fork();
 	report(3, "fork", passed);
 
+	/* 4. The VFP registers across switches to another process. */
 	passed = check_vfp_switch();
 	report(4, "vfp-switch", passed);
 
+	/* 5. The VFP registers across a signal handler that changes them. */
 	passed = check_vfp_signal();
 	report(5, "vfp-signal", passed);
 
+	/* 6. The same across a signal that interrupts a loop. */
 	passed = check_vfp_alarm();
 	report(6, "vfp-alarm", passed);
 
+	/* 7. The VFP state a new image starts with. */
 	passed = check_exec();
 	report(7, "exec", passed);
 
+	/* 8. The machine name uname reports. */
 	passed = check_machine();
 	report(8, "uname", passed);
 
@@ -227,6 +237,7 @@ check_tls(
 	if (error != 0)
 		return 0;
 
+	/* Waits for it to end. */
 	error = pthread_join(thread, &thread_result);
 	if (error != 0)
 		return 0;
@@ -372,6 +383,7 @@ check_vfp_signal(
 	struct abi_vfp_state pattern;
 	struct abi_vfp_state seen;
 	struct sigaction action;
+	int same;
 	int error;
 
 	/* Installs the handler that overwrites the registers. */
@@ -392,7 +404,8 @@ check_vfp_signal(
 		return 0;
 
 	/* The values survived it. */
-	if (!same_state(&pattern, &seen))
+	same = same_state(&pattern, &seen);
+	if (!same)
 		return 0;
 
 	/* Succeeded: the handler's registers did not leak back. */
@@ -410,6 +423,7 @@ check_vfp_alarm(
 	struct abi_vfp_state pattern;
 	struct abi_vfp_state seen;
 	struct sigaction action;
+	int same;
 	int error;
 
 	/* Installs the handler that overwrites the registers. */
@@ -431,7 +445,8 @@ check_vfp_alarm(
 		return 0;
 
 	/* The values survived it. */
-	if (!same_state(&pattern, &seen))
+	same = same_state(&pattern, &seen);
+	if (!same)
 		return 0;
 
 	/* Succeeded: the interrupted loop kept its registers. */
@@ -480,6 +495,7 @@ check_machine(
 	void)
 {
 	struct utsname name;
+	int different;
 	int error;
 
 	/* Asks the C library for the names. */
@@ -489,7 +505,8 @@ check_machine(
 
 	/* The machine name is the port's. */
 	printf("ABI machine=%s\n", name.machine);
-	if (strcmp(name.machine, "armv7") != 0)
+	different = strcmp(name.machine, "armv7");
+	if (different != 0)
 		return 0;
 
 	/* Succeeded: the name is right. */
@@ -530,6 +547,7 @@ fill_pattern(
 	for (index = 0; index < ABI_VFP_REGISTERS; index++)
 		state->d[index] = seed | ((uint64_t)index << 8) | (uint64_t)(index * 7U + 1U);
 
+	/* The status register the image carries. */
 	state->fpscr = fpscr;
 }
 
@@ -604,6 +622,7 @@ vfp_hold_across_yields(
 	      "d16", "d17", "d18", "d19", "d20", "d21", "d22", "d23",
 	      "d24", "d25", "d26", "d27", "d28", "d29", "d30", "d31");
 
+	/* Keeps the status register the registers came back with. */
 	seen->fpscr = fpscr;
 }
 
@@ -644,6 +663,7 @@ vfp_hold_across_signal(
 	      "d16", "d17", "d18", "d19", "d20", "d21", "d22", "d23",
 	      "d24", "d25", "d26", "d27", "d28", "d29", "d30", "d31");
 
+	/* Keeps the status register the registers came back with. */
 	seen->fpscr = fpscr;
 }
 
@@ -686,6 +706,7 @@ vfp_hold_until_alarm(
 	      "d16", "d17", "d18", "d19", "d20", "d21", "d22", "d23",
 	      "d24", "d25", "d26", "d27", "d28", "d29", "d30", "d31");
 
+	/* Keeps the status register the registers came back with. */
 	seen->fpscr = fpscr;
 }
 

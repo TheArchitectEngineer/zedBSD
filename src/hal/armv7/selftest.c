@@ -149,6 +149,7 @@ armv7_aeabi_selftest(
 	if (!passed)
 		aeabi_fail(10);
 
+	/* Succeeded: every helper kept its register convention. */
 	hal_puts("ARMV7 AEABI PASS\n");
 }
 
@@ -178,10 +179,14 @@ armv7_atomic_selftest(
 			retries++;
 			failed = exclusive_add_once(&atomic_word);
 		}
+
+		/* A store that never succeeded in its bound fails the test. */
 		if (failed != 0) {
 			hal_printf("ARMV7 ATOMIC FAIL 1 round=%u\n", round);
 			HAL_FATAL("armv7 exclusive store never succeeds");
 		}
+
+		/* Keeps the worst round's retries for the report. */
 		if (retries > most_retries)
 			most_retries = retries;
 	}
@@ -201,6 +206,7 @@ armv7_atomic_selftest(
 		HAL_FATAL("armv7 64-bit atomic addition wrong");
 	}
 
+	/* Succeeded: every exclusive pair completed in its bound. */
 	hal_printf("ARMV7 ATOMIC PASS retries=%u\n", most_retries);
 }
 
@@ -330,6 +336,7 @@ armv7_paging_selftest(
 	(void)hal_pmem_free(&page_a, ARMV7_PAGE_SIZE);
 	(void)hal_pmem_free(&page_b, ARMV7_PAGE_SIZE);
 
+	/* Succeeded: every mapping and fault behaved as the HAL promises. */
 	hal_printf("ARMV7 PAGING PASS asid=%u,%u\n", asid_a, asid_b);
 }
 

@@ -103,6 +103,8 @@ main(
 		printf("FAIL devcfg-host-test (%d)\n", failures);
 		return 1;
 	}
+
+	/* Succeeded: every check held. */
 	printf("PASS devcfg-host-test\n");
 	return 0;
 }

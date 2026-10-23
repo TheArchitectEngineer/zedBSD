@@ -162,6 +162,8 @@ hal_cpu_start_others(
 			hal_putc(' ');
 		hal_puts(pieces[index]);
 	}
+
+	/* The count of processors, the line the tests look for. */
 	hal_puts("\nARMV7 CPU 1 ONLINE\n");
 
 	/* Succeeded: the one processor is up. */
@@ -175,10 +177,12 @@ int
 hal_cpu_notify(
 	hal_cpu_id_t cpu)
 {
+	unsigned count;
 	int ready;
 
 	/* A processor the kernel was not told about does not exist. */
-	if (cpu >= hal_cpu_count())
+	count = hal_cpu_count();
+	if (cpu >= count)
 		return HAL_ERR_INVALID;
 
 	/* A processor that is not up cannot take the interrupt. */

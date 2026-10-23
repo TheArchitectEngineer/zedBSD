@@ -90,6 +90,7 @@ main(
 		status = load_file(device, argument);
 	}
 
+	/* Lets the device go. */
 	close(device);
 
 	/* Reports how it went. */
@@ -174,29 +175,37 @@ read_file(
 	size_t got;
 	int error;
 
-	/* Opens the file and finds its length. */
+	/* Opens the file. */
 	stream = fopen(path, "rb");
 	if (stream == NULL)
 		return errno;
+
+	/* Finds its length at its end. */
 	error = fseek(stream, 0, SEEK_END);
 	if (error != 0) {
 		error = errno;
 		fclose(stream);
 		return error;
 	}
+
+	/* Refuses an empty file, and one larger than any bitstream with its header. */
 	length = ftell(stream);
 	if (length <= 0 || (unsigned long)length > FPGA_BITSTREAM_MAX + WRITE_CHUNK) {
 		fclose(stream);
 		return EFBIG;
 	}
+
+	/* Goes back to the start for the read. */
 	rewind(stream);
 
-	/* Reads it whole. */
+	/* The buffer the whole file goes in. */
 	buffer = malloc((size_t)length);
 	if (buffer == NULL) {
 		fclose(stream);
 		return ENOMEM;
 	}
+
+	/* Reads it whole; a short read is an error. */
 	got = fread(buffer, 1, (size_t)length, stream);
 	fclose(stream);
 	if (got != (size_t)length) {
@@ -229,12 +238,17 @@ write_all(
 			chunk = WRITE_CHUNK;
 		written = write(device, data + offset, chunk);
 		if (written < 0) {
+			/* A signal only interrupts the write; anything else ends it. */
 			if (errno == EINTR)
 				continue;
 			return errno;
 		}
+
+		/* A device that takes nothing would loop for ever. */
 		if (written == 0)
 			return EIO;
+
+		/* The next chunk starts after what was taken. */
 		offset += (size_t)written;
 	}
 

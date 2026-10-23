@@ -88,6 +88,8 @@ main(
 		printf("armv7 aeabi host test FAIL (%d)\n", failures);
 		return 1;
 	}
+
+	/* Succeeded: every form agreed with the host. */
 	printf("armv7 aeabi host test PASS\n");
 	return 0;
 }

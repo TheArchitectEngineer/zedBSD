@@ -402,6 +402,7 @@ wait_for(
 	unsigned milliseconds)
 {
 	uint64_t deadline;
+	uint64_t now;
 	uint32_t value;
 
 	/* Reads the register a tick at a time until the bits say so or time is up. */
@@ -410,9 +411,12 @@ wait_for(
 		value = devcfg_read(offset);
 		if ((value & mask) == expected)
 			break;
-		if (sched_ticks() >= deadline)
+
+		/* Gives up at the deadline, or waits a tick for the next read. */
+		now = sched_ticks();
+		if (now >= deadline)
 			return ETIMEDOUT;
-		sched_sleep(sched_ticks() + 1U);
+		sched_sleep(now + 1U);
 	}
 
 	/* Succeeded: the bits read as expected. */
@@ -510,6 +514,7 @@ fpga_write(
 			return -ENOMEM;
 		}
 
+		/* The buffer stays with the open until its close. */
 		state->allocated = 1;
 	}
 
@@ -639,10 +644,15 @@ program_logic(
 	/* Closes the window, which the new logic will not answer until it is enabled again. */
 	disable_logic();
 
-	/* Writes the bitstream while the status says the logic is being programmed. */
+	/*
+	 * Writes the bitstream.  PROGRAMMING tells FPGA_STATUS, which does not
+	 * wait for the device's lock, that the logic is being written.
+	 */
 	fpga.programming = 1;
 	error = configure_logic(state);
 	fpga.programming = 0;
+
+	/* Reports a configuration that did not complete. */
 	if (error != 0)
 		return error;
 
@@ -672,6 +682,7 @@ configure_logic(
 	uint32_t status;
 	uint32_t interrupts;
 	uint64_t deadline;
+	uint64_t now;
 	int error;
 
 	/* Turns the PCAP's clock on when the loader left it off. */
@@ -689,7 +700,7 @@ configure_logic(
 	slcr_write_unlocked(SLCR_LVL_SHFTR_EN, LVL_SHFTR_PS_TO_PL);
 	devcfg_write(DEVCFG_UNLOCK, DRV_ZYNQ_DEVCFG_UNLOCK_KEY);
 
-	/* Clears the logic with PROG_B: high and INIT, low and no INIT, high and INIT again. */
+	/* Clears the logic with PROG_B: first high, until INIT. */
 	ctrl_update(DRV_ZYNQ_DEVCFG_CTRL_PCFG_PROG_B, 0);
 	if (!fpga.skip_waits) {
 		error = wait_for(DEVCFG_STATUS, STATUS_PCFG_INIT, STATUS_PCFG_INIT, INIT_WAIT_MS);
@@ -697,6 +708,7 @@ configure_logic(
 			return error;
 	}
 
+	/* Then low, until INIT falls: the logic is cleared. */
 	ctrl_update(0, DRV_ZYNQ_DEVCFG_CTRL_PCFG_PROG_B);
 	if (!fpga.skip_waits) {
 		error = wait_for(DEVCFG_STATUS, STATUS_PCFG_INIT, 0, INIT_WAIT_MS);
@@ -704,6 +716,7 @@ configure_logic(
 			return error;
 	}
 
+	/* Then high again, until INIT: the logic is ready for the data. */
 	ctrl_update(DRV_ZYNQ_DEVCFG_CTRL_PCFG_PROG_B, 0);
 	if (!fpga.skip_waits) {
 		error = wait_for(DEVCFG_STATUS, STATUS_PCFG_INIT, STATUS_PCFG_INIT, INIT_WAIT_MS);
@@ -745,21 +758,25 @@ configure_logic(
 			break;
 		if ((interrupts & IXR_D_P_DONE) != 0)
 			break;
-		if (sched_ticks() >= deadline)
+
+		/* Gives up at the deadline, or waits a tick for the next read. */
+		now = sched_ticks();
+		if (now >= deadline)
 			break;
-		sched_sleep(sched_ticks() + 1U);
+		sched_sleep(now + 1U);
 	}
 
 	/* Clears what the transfer raised, but not PCFG_DONE, which is the logic's answer. */
 	devcfg_write(DEVCFG_INT_STS, interrupts & ~IXR_PCFG_DONE);
 
-	/* Reports a transfer the interface stopped, or one that never ended. */
+	/* Reports a transfer the interface stopped. */
 	if ((interrupts & IXR_ERROR_FLAGS) != 0) {
 		kern_logf("fpga: configuration error, int_sts %08x\n", (unsigned)interrupts);
 		ctrl_update(0, DRV_ZYNQ_DEVCFG_CTRL_PCAP_PR);
 		return EIO;
 	}
 
+	/* Reports a transfer that did not end in time. */
 	if ((interrupts & IXR_D_P_DONE) == 0) {
 		ctrl_update(0, DRV_ZYNQ_DEVCFG_CTRL_PCAP_PR);
 		return ETIMEDOUT;
@@ -861,6 +878,7 @@ ioctl_status(
 	uint32_t devcfg_status;
 	int error;
 
+	/* Starts from a status that says nothing. */
 	kern_memset(&status, 0, sizeof(status));
 
 	/*
@@ -869,6 +887,8 @@ ioctl_status(
 	 */
 	interrupts = devcfg_read(DEVCFG_INT_STS);
 	devcfg_status = devcfg_read(DEVCFG_STATUS);
+
+	/* The flags: what the interface says of the logic, and the driver's own state. */
 	if ((interrupts & IXR_PCFG_DONE) != 0)
 		status.flags |= FPGA_STATUS_DONE;
 	if ((devcfg_status & STATUS_PCFG_INIT) != 0)
@@ -968,11 +988,13 @@ ioctl_reg_read(
 	/* Reads only while the logic is enabled: otherwise nothing answers. */
 	mutex_lock(&fpga.lock);
 
+	/* A logic that is not enabled leaves the window unmapped. */
 	if (!fpga.enabled) {
 		mutex_unlock(&fpga.lock);
 		return EIO;
 	}
 
+	/* One 32-bit read of the register. */
 	reg.value = kern_mmio_read32(fpga.window + reg.offset);
 
 	mutex_unlock(&fpga.lock);
@@ -1006,11 +1028,13 @@ ioctl_reg_write(
 	/* Writes only while the logic is enabled: otherwise nothing answers. */
 	mutex_lock(&fpga.lock);
 
+	/* A logic that is not enabled leaves the window unmapped. */
 	if (!fpga.enabled) {
 		mutex_unlock(&fpga.lock);
 		return EIO;
 	}
 
+	/* One 32-bit write of the register. */
 	kern_mmio_write32(fpga.window + reg.offset, reg.value);
 
 	mutex_unlock(&fpga.lock);
@@ -1052,14 +1076,21 @@ ioctl_irq_wait(
 	error = 0;
 	irq_state = spin_lock_irqsave(&fpga.irq_lock);
 
+	/* Refuses a second waiter: the count goes to one. */
 	if (fpga.irq_waiting) {
 		spin_unlock_irqrestore(&fpga.irq_lock, irq_state);
 		return EBUSY;
 	}
 
+	/*
+	 * Marks the wait, and lets the line through only when nothing is
+	 * pending: a pending interrupt left it masked and returns at once.
+	 */
 	fpga.irq_waiting = 1;
 	if (fpga.irq_pending == 0)
 		kern_irq_unmask(PL_IRQ);
+
+	/* Sleeps until an interrupt is counted, the time is up or a signal comes. */
 	while (fpga.irq_pending == 0) {
 		observed = waitq_sequence(&fpga.irq_wake);
 		error = waitq_sleep(&fpga.irq_wake, &fpga.irq_lock, observed, deadline, WAITQ_INTERRUPTIBLE);
@@ -1067,6 +1098,8 @@ ioctl_irq_wait(
 			error = 0;
 			continue;
 		}
+
+		/* A timeout or a signal ends the wait. */
 		if (error != 0)
 			break;
 	}
@@ -1078,6 +1111,8 @@ ioctl_irq_wait(
 	request.count = fpga.irq_pending;
 	fpga.irq_pending = 0;
 	fpga.irq_waiting = 0;
+
+	/* An interrupt that came with the timeout or the signal still counts. */
 	if (request.count != 0)
 		error = 0;
 

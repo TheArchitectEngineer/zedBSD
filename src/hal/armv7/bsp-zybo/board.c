@@ -187,6 +187,8 @@ bsp_describe(
 	} else if (part != BOARD_IDCODE_Z7010) {
 		hal_printf("ZYBO IDCODE UNKNOWN 0x%08x\n", board_idcode);
 	}
+
+	/* The machine and its IDCODE, the line the tests look for. */
 	hal_printf("ZYBO PLATFORM %s idcode=0x%08x\n", machine, board_idcode);
 
 	/* The coherency the boot set up: ACTLR's SMP and FW, the SCU, the coherent walk, the L2. */
