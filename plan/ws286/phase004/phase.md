@@ -5,7 +5,7 @@
 - 親: [ws286](../ws.md)、設計: [design.md](../design.md) 版 3 の §2.2・§3・§4.6・§7.1・§7.2・§7.6・§8 の p004 の行、boot-test の案: [proposed/boot-test-armv7.md](../proposed/boot-test-armv7.md) 版 3。
 - Queue: Q1 の割当（P2、2026-10-23、worktree `/home/awe/zedBSD-worktrees/p2-zybo-p004`、branch `agent/p2-zybo-p004`）。前の担当が誤って止められた後、Q1 が作業を 3b7ccc090（本体）・4db317270（未 commit だった gic.c と host 試験 2 つ）に救い、P2 が新しい context で続けた（ユーザー「WS286を間違ってキャンセルしてしまったので、サルベージして継続をお願いします。」）。
 - 判断: U1（HAL の事前承認の 3 点、Guardrail 2026-10-23 の行）。boot-test.sh の `armv7-virt` mode は Q1 の許可（2026-10-23 の割当）。
-- Status: in-progress（受け入れの 4 項目は満たした。clearance は Q1 の判定待ち）
+- Status: cleared（2026-10-23 Q1 の判定: 受け入れの 4 条件を満たした。残り: hal_pmem_map_uncached（p006 まで）、zybo の config と bsp（p005））
 
 ## 受け入れの条件（design §8 の p004、§7.1・§7.2）
 
