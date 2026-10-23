@@ -87,6 +87,12 @@
 
 ### 2.1 GHCI が決める物と決めない物（AHCI・xHCI の類推）
 
+- **2026-10-23 ユーザーの決定（版 2 の「shader の ISA は決めない」を改める）**:「GHCIは標準のシェーダーISAを定義し、ベンダ独自のシェーダISAはオプションで利用可能。標準ISAの実装は、このGPUではハードウェアでそのまま実装されるが、コマンドプロセッサがJITコンパイルしてネイティブISAに変換してもOK。」
+  - GHCI は **標準の shader の ISA**（命令・符号化・binary の形・実行の model のうち driver から見える所）を決める。GHCI の GPU は全部この標準の ISA の program を受ける。
+  - vendor 独自の ISA は **任意**。`ISA_ID` などで標準の ISA に加えて持てる（driver は使ってもよい）。
+  - 標準の ISA の実装の仕方は自由: **Amaterrace は hardware がそのまま実行する**（native = 標準）。他の実装は **CP が受け取った標準の ISA を JIT して自分の native の ISA に変えてよい**（driver からは見えない）。
+  - これで汎用の driver（zedBSD の `src/drivers/gpu/ghci/`）は ISA の backend を 1 つ（標準の ISA）持てば、どの GHCI の GPU でも shader まで動かせる。下の「決めない」の shader の ISA の行と、§3 の "ATS1" の扱い（標準の ISA の名前と符号化にするか、Amaterrace の native を標準として採るか）、§6.6 の `isa/ats1/` の名前は、p002 の `docs/ghci.md` の草稿と p008 で直す（Amaterrace の native の ISA を GHCI の標準の ISA として書く案が自然）。
+
 - **決める（公開・版付き・vendor に依らない。amaterrace-gpu の `docs/ghci.md` が正本、GHCI 1.0）**: (a) Host Control Register（HCR）の配置と意味（§2.2）、(b) extended capability の list（DC・debug・vendor の register の見つけ方）、(c) command ring と packet の封筒と標準の opcode（§2.4）、(d) state register file のうち **Vulkan の固定機能に当たる標準の領域**（§2.3）、(e) fence・割り込み・fault・watchdog・aperture・quiesce・reset の約束（§2.5〜§2.7）、(f) memory の model（32 bit の GPU address、aperture、将来の MMU の capability）、(g) CP の状態遷移（§2.6）と ring の約束（§2.7）。
 - **決めない（vendor、`VENDOR`・`DEVICE`・`ISA` の ID で識別）**: shader の ISA と binary の形と **shader の実行の model**（register の番号、constant bank、I$、warp の数。§3 は Amaterrace の "ATS1" の文書 `docs/ats1.md` の内容で、GHCI は「属性 k は ISA の入力 slot k」「fragment の入力は ISA が決める」「program の base と word 数」「constant の領域 k」とだけ言う）、texture の tile の並び（capability で「linear だけ」「4×4 tile」を名乗る）、vendor の opcode（0x80〜0xFF）、vendor の state（0x1E0〜0x1FF）、vendor の register（extended capability `VEND`。Amaterrace は NWARPS・NREGS・NPHYS・PACKED をここに置き、ISA の backend が読む）。
 - 汎用の driver（zedBSD の `src/drivers/gpu/ghci/`、§6）は HCR・ring・fence・割り込み・memory・標準の state・標準の opcode・DC の capability を扱い、**ISA の ID で compiler の backend を選ぶ**（最初は "ATS1" だけ）。ISA の backend が無い GPU は BLT と DC だけで attach する（display + 2D の device として使える。Vulkan は出さない）。**「汎用」の意味はここまで**: host interface・BLT・DC は汎用、shader は ISA の backend が要る（README-additions の文もこの形）。
