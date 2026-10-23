@@ -421,9 +421,10 @@ readable boot from a machine whose configuration is graphical and quiet.
 Its model of the device configuration interface never raises the logic's
 INIT nor PCFG_DONE, so a program of `/dev/fpga0` would wait for them and
 time out.  With the token, and only when the SLCR's `PSS_IDCODE` reads 0
-(the emulator), the driver skips those two waits, still runs the rest of
-the configuration (the unlock, the PROG_B writes, the DMA of the
-bitstream), and reports `FPGA_STATUS_EMULATED`; the logic is not enabled
+(the emulator), the driver skips those two waits and the DMA queue's
+empty bit, which the model never sets, still runs the rest of the
+configuration (the unlock, the PROG_B writes, the DMA of the bitstream),
+and reports `FPGA_STATUS_EMULATED`; the logic is not enabled
 and its window stays closed.  On the board the token is ignored with the
 message `fpga: fpga.no-pl-wait=1 ignored on the board`.  The token is read
 as a whole word of the command line, like `kmsg=quiet`, not through the
