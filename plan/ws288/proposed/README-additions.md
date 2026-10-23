@@ -1,89 +1,138 @@
 <!-- awesome-plan project=zedbsd record=ws288-p001-readme-additions -->
 
-# amaterrace-gpu の README.md への書き足しの案（2026-10-23 P2、ws288-p001、版 2）
+# amaterrace-gpu の README.md への書き足しの案（版 3、2026-10-23 P1。版 2 は Q1 が cdaaf42 で適用済み）
 
-ユーザーの README.md（commit 1791b32）の本文はそのまま保ち、「Register File: xxx」の行を置き換え、その後ろに短い節を足す案。適用は Q1（P2 は `/home/awe/amaterrace-gpu` に書かない）。根拠は [design.md](../design.md) の §2（GHCI）、§3（SU、U12）、§4（MC、host link）、§7（repository の配置、license U1）。**U1・U3・U12・U15 の決定の前は「proposed」の印のまま置く**（決まったら印を外す）。
+Q1 が適用した README（amaterrace-gpu の `README.md`、版 2 の文）のうち、版 3 の設計（[design.md](../design.md) §2.4・§3）で変わる段落の置き換えの案。適用は Q1（P1 は `/home/awe/amaterrace-gpu` に書かない）。U18〜U27 の決定の前は「proposed」の印のまま置く。
 
-## 置き換える行
+## 置き換える段落 1: 「Blocks:」の CP の行
 
 ```
-- Register File: xxx
+- CP: GHCI host registers, command ring, state register file, fences, interrupts,
+  and a debug memory port (DBG_ADDR/DBG_DATA) for bring-up without a driver.
 ```
 →
 ```
-- Register File (proposed): 32 lanes x NREGS x NWARPS x 32-bit in BRAM, replicated
-  for 3 read ports. XC7Z010: NREGS 32, NWARPS 4 (12 BRAM36). XC7K325T: NREGS 64,
-  NWARPS 4 (24 BRAM36 per SU).
+- CP: GHCI host registers, command ring, state register file, fences, interrupts,
+  a debug memory port (DBG_ADDR/DBG_DATA) for bring-up without a driver, and a
+  small RISC-V-style control processor (atg_cpu, RV32IM) whose firmware decodes
+  the Vulkan command stream on the ring into the fixed-function blocks' state and
+  the shader units' work (proposed).
 ```
 
-## 足す節（「Shader Architecture:」の list の後ろ）
+## 足す行 1b: 「Blocks:」の MC の行の前（proposed）
+
+```
+- SA: optional systolic array, a unit decoupled from the SU: a 32-row x N-column
+  PE array (int16/int8 MAC on DSPs, output-stationary) whose horizontal edge is
+  read and written from the shader ISA through FIFOs (one wavefront = 32 lanes)
+  and whose weights stream in from the MC. Absent on the XC7Z010.
+```
+
+## 置き換える段落 2: 「GHCI (GPU Host Controller Interface):」の節の全部
 
 ````markdown
-Blocks:
-- CP: GHCI host registers, command ring, state register file, fences, interrupts,
-  and a debug memory port (DBG_ADDR/DBG_DATA) for bring-up without a driver.
-- BLT: 2D fill, copy (with optional alpha-over), and linear<->tiled copy for textures.
-- VF: index/vertex fetch, attribute format conversion, instancing, primitive assembly.
-- SU: shader unit; runs vertex, fragment and compute warps (see below).
-- RX: near-plane clipping, viewport transform, edge-function rasterizer, quad traversal.
-- TU: sampler with a small texture cache (nearest / bilinear, 2D, mipmaps).
-- ROP: depth/stencil test, blending, buffer write-back in primitive order.
-- MC: internal memory bus (AMB, 32- or 64-byte lines) arbiter with an address
-  aperture, quiesce, and one AXI master (AXI3 64-bit on Zynq HP ports, AXI4
-  512-bit to MIG DDR3).
-- DC: display controller; a separate IP (own top) with its own memory port.
-
 GHCI (GPU Host Controller Interface):
 - A public, versioned host interface for Vulkan-class GPUs, in the spirit of
   AHCI/xHCI. What it standardizes: the host control registers (magic, version,
   vendor/device/ISA IDs, capabilities, extended-capability list, control/status/
   IRQ, command ring base/size/pointers, address aperture, fault, watchdog, perf,
-  debug port), the command processor state machine and ring rules, the packet
-  envelope and the standard opcodes (NOP, SET_REG, BLIT, DRAW, DISPATCH, FENCE,
-  WAIT_IDLE, WAIT_FENCE, LOAD_CONST, LOAD_PROGRAM, WAIT_VSYNC, INVALIDATE), the
-  standard state register file for fixed-function state (vertex attributes,
-  viewport/scissor/cull, depth/stencil/blend, render targets, textures/samplers,
-  program bases), fence/interrupt/fault/reset semantics, and the display
-  controller as an extended capability.
-- Vendor-specific: the shader ISA, binary format and execution model (identified
-  by ISA_ID), texture tiling, vendor opcodes (0x80-0xFF), vendor state and the
-  VEND capability registers. Amaterrace GPU implements GHCI 1.0 with vendor
-  "AMAT", device "ATG1", ISA "ATS1".
-- What a generic GHCI driver gets without vendor code: the host interface, 2D
-  blits and the display controller. Shaders need an ISA back end in the driver
-  (zedBSD's driver selects it by ISA_ID).
-- The specification lives in docs/ghci.md; the C headers in include/
-  (ghci_regs.h, ghci_packets.h, ats1_isa.h) are the ones an OS driver copies.
+  debug port, firmware load), the command processor state machine and ring
+  rules, the packet envelope and two packet classes, the standard state
+  register file for fixed-function state, fence/interrupt/fault/reset
+  semantics, the standard shader ISA (GSI1, below), and the display controller
+  as an extended capability.
+- Packet class V ("Vulkan"): the commands of the Kei GPU command protocol
+  (zedBSD's include/uapi/gpu-op.h; the numbers are those of the Venus wire
+  format 1), carried on the ring almost as the Vulkan loader library sends
+  them. The GPU's command processor firmware keeps the Vulkan objects
+  (pipelines, descriptor sets, render passes, command buffer recordings) and
+  turns a queue submission into fixed-function state and draws/dispatches. The
+  OS driver only validates and relays the stream, answers the queries it owns
+  (device properties, memory requirements, fences), allocates memory and
+  compiles SPIR-V to GSI1 (per pipeline stage). A few GHCI-specific commands
+  (session open/close, memory, per-stage program, frame) carry what the driver
+  resolved on the host; command frames live in a staging area in GPU memory and
+  the ring carries one small packet per frame. The firmware fills result records
+  as it decodes; the driver writes every reply from them.
+- Packet class N ("native"): the micro-operations the hardware sequencer
+  executes (SET_REG, BLIT, DRAW, DISPATCH, FENCE, WAIT_IDLE, WAIT_FENCE,
+  LOAD_CONST, LOAD_PROGRAM, WAIT_VSYNC, INVALIDATE, RESULT), usable directly
+  for bring-up and tests, and the form the firmware emits internally.
+- Vendor-specific: the firmware itself, an optional native shader ISA
+  (NATIVE_ISA_ID; a program may be submitted in it directly), texture tiling,
+  vendor micro-operations, vendor state and the VEND capability registers.
+  Amaterrace GPU implements GHCI 1.0 with vendor "AMAT", device "ATG1";
+  its native ISA is the standard GSI1.
+- What a generic GHCI driver gets without vendor code: everything, including
+  Vulkan through the standard ISA. A GPU without firmware (CAPS.VKCP = 0) or
+  without shaders is driven as a 2D blit and display device.
+- The specification lives in docs/ghci.md and docs/gsi1.md; the C headers in
+  include/ (ghci_regs.h, ghci_packets.h, ghci_layout.h, gsi1_isa.h) are the
+  ones an OS driver copies.
+````
 
-Shader Unit:
-- Warp: 32 lanes, scalar 32-bit per lane, with 16-bit packed (2 x fp16/int16
-  per register) operations. A warp executes over 32/NPHYS cycles on NPHYS
-  physical lanes (proposed: 8 on XC7Z010, 16 on XC7K325T), so one binary runs
-  on both. The XC7Z010 build may omit the packed arithmetic (PACKH/UNPACKH stay).
-- Execution mask and long-operation waits are managed by the compiler
-  (EXEC_* instructions, WAIT with per-class counters); no hardware
-  divergence stack or per-register scoreboard.
+## 置き換える段落 3: 「Shader Unit:」の節の「ISA "ATS1"」の行と、その前の 2 項目
+
+```
+- Execution mask is managed by the compiler (EXEC_* instructions; no
+  hardware divergence stack). A small per-warp hardware scoreboard tracks the
+  destination registers of outstanding long operations (memory, texture,
+  transcendental, divide) and stalls only the instructions that depend on
+  them; WAIT with per-class counters stays for store completion and memory
+  ordering.
 - Per unit: BRAM register file, small instruction and data caches, shared
   memory (LDS), constant bank, post-transform buffer and primitive table for
   varying interpolation, one shared transcendental unit and one divider.
 - ISA "ATS1": 64-bit fixed-width instructions (docs/ats1.md).
+```
+→
+```
+- Execution mask is managed by the compiler (exec.* instructions; no
+  hardware divergence stack). A small per-warp hardware scoreboard tracks the
+  destination registers of outstanding long operations (memory, texture,
+  transcendental, divide) and stalls only the instructions that depend on
+  them; wait with per-class counters stays for store completion and memory
+  ordering.
+- Per unit: BRAM register file, small instruction and data caches, shared
+  memory (LDS), constant bank, post-transform buffer and primitive table for
+  varying interpolation, one shared transcendental unit and one divider.
+- ISA: the GHCI standard shader ISA "GSI1" (docs/gsi1.md), executed directly
+  (native = standard). GSI1 is RISC-V-based but not RISC-V-compliant: 64-bit
+  fixed-width instructions whose low word is a RISC-V 32-bit format (R/R4/I/
+  S/B/U, the RV32IMF/Zfa/Zbb opcodes and mnemonics) and whose high word
+  extends the register fields to 64 registers plus 32 constant-bank and 32
+  special operands, adds source modifiers (neg/abs/sat) and packed-half
+  selection, and carries the GPU extensions on the custom opcodes: exec-mask
+  control, warp-level branches, LDS/atomics/barriers, texture sampling,
+  exports and varying fetch, quad derivatives, optional shuffle/vote/ballot,
+  2 x fp16 packed arithmetic and the transcendental unit. Comparisons produce
+  all-ones/zero Booleans; there is no x0, no separate FP register file and no
+  privileged state. Register 63 (rq) is reserved as a FIFO port: writing it
+  pushes a wavefront (32 lanes x 32 bits) into the systolic array, reading it
+  pops one; a read of an empty FIFO or a write to a full one stalls that warp
+  at issue (qstat gives the counts without blocking).
+```
 
-Targets:
-- Digilent ZYBO (XC7Z010): workflow bring-up with per-block bitstreams
-  (CP+BLT, DC, CP+RX+ROP, CP+SU compute); the whole pipeline does not fit the
-  7010 and is verified in simulation and on the KC705.
-- Xilinx KC705 (XC7K325T): main target. MIG DDR3, several SUs, PCIe host link.
+## 置き換える段落 4: 「Targets:」の KC705 の行
 
-Repository layout (planned):
+```
+- Xilinx KC705 (XC7K325T): main target. MIG DDR3, several SUs; host link to be decided (USB JTAG or PCIe).
+```
+→
+```
+- Xilinx KC705 (XC7K325T): main target. MIG DDR3, several SUs, the CP firmware
+  path; USB JTAG for now (PCIe later).
+```
+
+## 置き換える段落 5: 「Repository layout (planned):」
+
+```
 - rtl/common, rtl/gpu/{cp,blt,vf,rx,su,tu,rop,mc}, rtl/dc
 - include/ (RTL constants and the shared C headers)
-- boards/zybo, boards/kc705 (constraints, Vivado TCL, IP regeneration scripts;
-  Vivado projects, IP output products and bitstreams are not committed)
-- sim/ (iverilog unit testbenches, Verilator system harness, ISA model)
-- tools/ (assembler/disassembler for tests), docs/
-
-Tools: Vivado 2026.1 (batch, BASIC license), Icarus Verilog, Verilator
-(proposed), openFPGALoader / OpenOCD for JTAG. openXC7 remains usable for the ZYBO.
-
-License: TBD (Zlib proposed, same as zedBSD).
-````
+```
+→
+```
+- rtl/common, rtl/gpu/{cp,blt,vf,rx,su,tu,rop,mc,sa}, rtl/dc (cp/ holds atg_cpu)
+- fw/cp (the command processor firmware, C for RV32IM, built with clang)
+- include/ (RTL constants and the shared C headers)
+```
