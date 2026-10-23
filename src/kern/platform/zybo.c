@@ -20,7 +20,8 @@
  * placed, when there is one: a disk image with an MBR, so the kernel's
  * root search finds the root on it as on a Raspberry Pi 4's SD card.
  * Halting and rebooting go through the hardware layer (the SLCR's system
- * reset); the board is powered from USB and has no power-off.
+ * reset); the board is powered from USB and has no power-off.  Once
+ * interrupts are on, the programmable logic is published as /dev/fpga0.
  *
  * Values referenced: Linux v6.12 arch/arm/boot/dts/xilinx/zynq-7000.dtsi,
  * uart1's reg (0xe0001000) and its shared peripheral interrupt 50, GIC
@@ -34,6 +35,7 @@
 #include <drivers/disklabel/disklabel.h>
 #include <drivers/generic/ramdisk.h>
 #include <drivers/generic/serial-console.h>
+#include <drivers/platform/zybo/zynq-devcfg.h>
 #include <drivers/serial/cdns-uart.h>
 #include <kern/boot.h>
 #include <kern/disk.h>
@@ -74,6 +76,12 @@ static int uart_present;
  * life of the system; NULL when the loader placed no ramdisk.
  */
 static struct disk *ramdisk;
+
+/*
+ * Nonzero once kern_platform_refresh_devices() has tried to publish the
+ * programmable logic, so that it is tried only once.
+ */
+static int fpga_attached;
 
 static void attach_uart(void);
 static int publish_ramdisk(void);
@@ -143,16 +151,28 @@ kern_platform_init(
 }
 
 /*
- * Finishes device discovery once interrupts are enabled; the board has
- * nothing more to find.
+ * Finishes device discovery once interrupts are enabled: publishes the
+ * programmable logic, once.
  */
 void
 kern_platform_refresh_devices(
 	const struct kern_boot_device *devices,
 	size_t count)
 {
+	int error;
+
 	UNUSED_PARAMETER(devices);
 	UNUSED_PARAMETER(count);
+
+	/* The logic is published once; a later refresh finds it there. */
+	if (fpga_attached)
+		return;
+	fpga_attached = 1;
+
+	/* Publishes /dev/fpga0; without it the board runs without its logic. */
+	error = drv_zynq_devcfg_attach();
+	if (error != 0)
+		kern_logf("zybo: programmable logic unavailable (%d)\n", error);
 }
 
 /*
