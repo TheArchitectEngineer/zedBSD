@@ -3,7 +3,7 @@
 # §5.6) over SSH, and reboots it into the new one: U-Boot SPL reads the
 # kernel from the card's FAT, which the running system has at /boot/boot0.
 #   plan/tools/zybo/deploy.sh KERNEL [--host HOST] [--port PORT]
-#       [--dtb FILE] [--no-reboot]
+#       [--dtb FILE] [--wait S] [--no-reboot]
 # KERNEL is the kernel's ELF (such as build/zybo/vmunix) with its raw image
 # vmunix.bin beside it.  The FIT vmunix.itb is made beside them with
 # platform/armv7/tools/make-zybo-boot-files.py, which refuses a kernel that
@@ -16,7 +16,9 @@
 # boot-mode jumper goes back to JTAG and jtag-boot.sh boots it (the .old
 # files are still on the card).
 # HOST is the board's address (default zybo), PORT its SSH port (default
-# 22).  The login is root's: with SSHPASS set in the environment the
+# 22).  --wait keeps trying to reach the board for up to S seconds, for a
+# board still booting: its SSH server starts only once the first boot has
+# made the host keys, which takes minutes.  The login is root's: with SSHPASS set in the environment the
 # password is taken from it (sshpass -e), otherwise ssh asks or uses a key.
 # The board's host key is not recorded: a new card makes a new one.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
@@ -24,19 +26,20 @@ set -u
 root=$(cd "$(dirname -- "$0")/../../.." && pwd)
 tool=$root/platform/armv7/tools/make-zybo-boot-files.py
 
-kernel= host=zybo port=22 dtb= reboot=1
+kernel= host=zybo port=22 dtb= wait=0 reboot=1
 while [ $# -gt 0 ]; do
 	case "$1" in
 	--host) host=$2; shift 2 ;;
 	--port) port=$2; shift 2 ;;
 	--dtb) dtb=$2; shift 2 ;;
+	--wait) wait=$2; shift 2 ;;
 	--no-reboot) reboot=; shift ;;
 	-*) echo "deploy: unknown option $1" >&2; exit 2 ;;
 	*) kernel=$1; shift ;;
 	esac
 done
 if [ -z "$kernel" ]; then
-	echo "usage: deploy.sh KERNEL [--host HOST] [--port PORT] [--dtb FILE] [--no-reboot]" >&2
+	echo "usage: deploy.sh KERNEL [--host HOST] [--port PORT] [--dtb FILE] [--wait S] [--no-reboot]" >&2
 	exit 2
 fi
 raw=$kernel.bin
@@ -63,9 +66,16 @@ fit=$(dirname -- "$kernel")/vmunix.itb
 python3 -I "$tool" fit --kernel "$raw" --elf "$kernel" "$fit" || exit 1
 
 # The board must be the ZYBO booted from its card: armv7, with the boot
-# files on /boot/boot0.
-machine=$(board_run 'uname -m; test -f /boot/boot0/vmunix.itb && echo boot0-ok') ||
-	{ echo "deploy: cannot reach root@$host:$port" >&2; exit 1; }
+# files on /boot/boot0.  A board that does not answer is tried again every
+# ten seconds while --wait allows.
+start=$(date +%s)
+until machine=$(board_run 'uname -m; test -f /boot/boot0/vmunix.itb && echo boot0-ok'); do
+	if [ $(($(date +%s) - start)) -ge "$wait" ]; then
+		echo "deploy: cannot reach root@$host:$port" >&2
+		exit 1
+	fi
+	sleep 10
+done
 case "$machine" in
 armv7*boot0-ok*) ;;
 *) echo "deploy: $host is not a ZYBO with /boot/boot0/vmunix.itb: $machine" >&2; exit 1 ;;

@@ -3,8 +3,8 @@
 
 ifeq ($(ZEDBSD_BOARD),zybo)
 # An MBR disk of a power of two in size (the emulator's SD card model
-# takes no other): partition 1 a bootable FAT16 of ZYBO_SD_FAT_MIB, which
-# the kernel mounts as /boot/boot0, partition 2 the UFS root
+# takes no other): partition 1 a bootable FAT32 of ZYBO_SD_FAT_MIB (at
+# least 64), which the kernel mounts as /boot/boot0, partition 2 the UFS root
 # ($(BUILD)/root.ufs), which the boot parameter rootpart=/dev/mmcblk0p2
 # names.
 #

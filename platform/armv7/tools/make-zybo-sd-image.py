@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Build the ZYBO's SD card image: a FAT16 boot partition and the UFS root.
+"""Build the ZYBO's SD card image: a FAT32 boot partition and the UFS root.
 
-The image is an MBR disk with two partitions.  Partition 1 is FAT16, marked
+The image is an MBR disk with two partitions.  Partition 1 is FAT32, marked
 bootable, and carries the files the board's boot ROM and first stage loader
 read (given with --boot-file; none is needed when the kernel is loaded some
 other way, as in the emulator).  Partition 2 is the UFS root (--root-ufs, a
@@ -31,10 +31,14 @@ SECTOR = 512
 MIB_SECTORS = 1024 * 1024 // SECTOR
 
 # The boot partition starts on the first MiB, as partitioning tools put it.
-# 0x06 is FAT16 of more than 32 MiB, 0x80 marks it bootable.  The root
+# 0x0C is FAT32 addressed by LBA, 0x80 marks it bootable.  The boot
+# partition is FAT32, as on the other boards' cards: the kernel's FAT
+# driver keeps long file names only on FAT32, and the kernel update over
+# SSH (plan/tools/zybo/deploy.sh) writes vmunix.itb.new beside the running
+# vmunix.itb.  The board's boot ROM and U-Boot SPL read FAT32.  The root
 # follows it, of the type the other zedBSD images give their UFS root.
 BOOT_LBA = 2048
-BOOT_TYPE = 0x06
+BOOT_TYPE = 0x0C
 BOOT_ACTIVE = 0x80
 ROOT_TYPE = 0xA5
 
@@ -85,8 +89,8 @@ def build(args: argparse.Namespace) -> None:
     image_mib = args.image_mib
     if image_mib <= 0 or image_mib & (image_mib - 1):
         raise SystemExit("the image size must be a power of two MiB")
-    if args.fat_mib < 16:
-        raise SystemExit("the boot partition must be at least 16 MiB")
+    if args.fat_mib < 64:
+        raise SystemExit("the boot partition must be at least the 64 MiB of a FAT32 of small clusters")
     root_size = args.root_ufs.stat().st_size
     if root_size == 0 or root_size % SECTOR:
         raise SystemExit(f"invalid UFS root size: {root_size}")
@@ -115,10 +119,11 @@ def build(args: argparse.Namespace) -> None:
         image.write(mbr)
         copy_into(image, args.root_ufs, root_lba)
 
-    # The FAT is made in place with mtools; at this size mformat lays out
-    # FAT16, which the checker confirms.
+    # The FAT is made in place with mtools.  At 64 MiB mformat -F gives
+    # clusters small enough for the count to make it FAT32 by the count
+    # every reader goes by, which the checker confirms.
     spec = f"{partial}@@{BOOT_LBA * SECTOR}"
-    run("mformat", "-i", spec, "-T", str(boot_sectors), "-H", str(BOOT_LBA),
+    run("mformat", "-i", spec, "-F", "-T", str(boot_sectors), "-H", str(BOOT_LBA),
         "-h", "64", "-s", "32", "-N", FAT_SERIAL, "-v", FAT_LABEL, "::")
     directories = []
     for destination, _ in files:

@@ -35,6 +35,7 @@
 ## 現在の状態・再開点
 
 - 2026-10-23 P3（worktree p3-ws289-p006、[p006](phase006/phase.md)）: `spl-build.sh` に Falcon の fragment（`vmunix.itb`・`system.dtb` を `0x01F00000`、SPL の BSS・stack・pool を `0x1F000000` 以上）と `spl/boot.bin`、`make-zybo-boot-files.py`（FIT と DTB、layout の検査）、`zybo-sd.dts`、`sd-image` の FAT に `vmunix.itb`・`system.dtb`・`BOOT.BIN`（`ZYBO_BOOT_BIN`）、`check-zybo-sd-image.py --kernel`、`deploy.sh`、`qemu-zynq.sh --dtb`。既定の `config-zybo.mk` に network と SSH を入れた（理由は phase.md。`tests/config-zybo-ssh.mk` は不要になった）。U-Boot v2025.07 の source で、FIT は SPL の pool に読まれる事、configuration に `description` が要る事を見つけた（design §5.1 との差）。再開点: T1 の QEMU A・B、Q1 の判定、card（U41）の後の実機の手順（phase.md）。
+- 2026-10-23 P3（同じ worktree）: T1 の 1 回目の A は FAIL（`ls /boot/boot0` が空）。kernel の FAT の driver が FAT16 では長い名前を扱わない（deploy の `vmunix.itb.new` が作れない）ので、SD の image の p1 を FAT32（0x0C、64 MiB、cluster 129022）にした（design L13 を取り消し）。`ls` が空だった直接の原因は未特定。`deploy.sh --wait`。T1 の 2 回目は短い A1（network 無し）→ A2（deploy）→ B（mtools で FAT を読む）。
 - 2026-10-23: U1〜U7 はユーザー「はい」で推しのとおり決定（design §11、Master の decisions-log）。p001 は Q1 が merge（1680183ed）。p002 は P1 が開始。
 
 - 2026-10-23: 作成。p001 の設計から。
