@@ -97,3 +97,5 @@ VGA と HDMI の別に、各 # で「映った / 映らない / 色やずれの�
 - I2C（atg_dc_i2c）は p012（KC705）。この Phase では stub のまま。
 - zedBSD の driver の側（display device）は p006。
 - 試験の整理: `ghci-dc-board.py` は板の回帰として Master の Tools に載せる候補（Q1）。
+
+- 2026-10-24 Q1: V1 は済み。Q1 が amaterrace 903f861 の DC の bitstream で `ghci-dc-board.py --leave pattern`（板の試験 PASS）の後、ユーザー「テストパターンを、目視できました」。V2〜V5 は未実施。
