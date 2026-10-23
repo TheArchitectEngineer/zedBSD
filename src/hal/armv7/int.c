@@ -14,6 +14,11 @@
  * processor only so that the HAL can record them (space.c), and those are
  * resolved without the kernel.  Every other fault is classified by its
  * fault status and given to the kernel.
+ *
+ * locore.S unmasks asynchronous aborts before the boot processor has its
+ * record; one that the loader left pending is taken right there.  That
+ * first one is noted for the boot log and the boot goes on; any other trap
+ * before the record exists stops the processor.
  */
 
 #include <hal/hal.h>
@@ -34,6 +39,17 @@ struct int_fault {
 	uintptr_t address;
 };
 
+/*
+ * The asynchronous abort the loader left pending, taken before the boot
+ * processor had its record: its fault status and address, and whether
+ * there was one.  Written at most once, by that trap, before C runs, and
+ * read by the boot afterwards.
+ */
+static int pending_abort_seen;
+static uint32_t pending_abort_status;
+static uint32_t pending_abort_address;
+
+static int take_early_abort(uint32_t kind);
 static unsigned fault_status(uint32_t status_register);
 static void classify(unsigned status, int prefetch, int write, uintptr_t address, struct int_fault *fault);
 static void take_interrupt(struct armv7_trap_frame *frame, int from_user);
@@ -55,10 +71,14 @@ armv7_trap(
 {
 	struct armv7_percpu *cpu;
 	int from_user;
+	int taken;
 
-	/* A trap before the processor has a record cannot be served. */
+	/* A trap before the processor has a record cannot be served, but for the loader's pending abort. */
 	cpu = armv7_percpu_current();
 	if (cpu == NULL) {
+		taken = take_early_abort(kind);
+		if (taken)
+			return;
 		describe_frame(frame, kind);
 		armv7_halt_forever();
 	}
@@ -96,6 +116,25 @@ armv7_trap(
 }
 
 /*
+ * Reports the asynchronous abort the loader left pending, which the boot
+ * took and went past, and whether there was one.
+ */
+int
+armv7_trap_pending_abort(
+	uint32_t *status,
+	uint32_t *address)
+{
+	/* No abort was pending when the boot unmasked them. */
+	if (!pending_abort_seen)
+		return 0;
+
+	/* Succeeded: the abort's fault status and address. */
+	*status = pending_abort_status;
+	*address = pending_abort_address;
+	return 1;
+}
+
+/*
  * Stops the kernel at a frame that would return to user mode with
  * interrupts masked, which vectors.S refuses.
  */
@@ -106,6 +145,37 @@ armv7_trap_return_refused(
 	/* Shows the frame, then stops. */
 	describe_frame(frame, ARMV7_TRAP_UNUSED);
 	HAL_FATAL("armv7 return to user mode with interrupts masked");
+}
+
+/*
+ * Notes the first asynchronous abort taken before the boot processor has
+ * its record, which the loader left pending, and reports whether it was
+ * one.  The interrupted code resumes where it was.
+ */
+static int
+take_early_abort(
+	uint32_t kind)
+{
+	uint32_t status_register;
+	unsigned status;
+
+	/* Only a data abort can be the pending one, and only one is let through. */
+	if (kind != ARMV7_TRAP_DATA_ABORT)
+		return 0;
+	if (pending_abort_seen)
+		return 0;
+
+	/* Only an asynchronous external abort is the loader's. */
+	status_register = armv7_read_dfsr();
+	status = fault_status(status_register);
+	if (status != ARMV7_FS_ASYNC_EXTERNAL)
+		return 0;
+
+	/* Succeeded: kept for the boot log, and the boot goes on. */
+	pending_abort_status = status_register;
+	pending_abort_address = armv7_read_dfar();
+	pending_abort_seen = 1;
+	return 1;
 }
 
 /* Reads the five-bit fault status from a fault status register. */

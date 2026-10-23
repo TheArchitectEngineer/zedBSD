@@ -8,10 +8,12 @@
 ARMV7_PHYS_BASE := 0x40000000
 ARMV7_KERNEL_PHYS := 0x40010000
 ARMV7_BOOT_MAP_BYTES := 0x40000000
+ARMV7_LOW_RAM_SKIP := 0
 
 ARMV7_BOARD_DEFINE := -DHAL_BOARD_VIRT
 ARMV7_BSP_DIR := bsp-virt
 ARMV7_BSP_SOURCES := board.c uart.c psci.c timer.c cons.c fwcfg.c framebuffer.c font.c
+ARMV7_BSP_ASM_SOURCES := early.S
 
 # The board's console is the HAL's and it publishes no boot device.
 ARMV7_PLATFORM_SOURCES := src/kern/platform/hal-console.c

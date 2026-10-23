@@ -18,8 +18,10 @@
  * the assembler reads them.
  *
  * The platform's makefile gives ARMV7_PHYS_BASE, the physical address
- * the direct map starts at (the board's first byte of RAM), and
- * ARMV7_KERNEL_PHYS, where the loader puts the image.
+ * the direct map starts at (the board's first byte of RAM),
+ * ARMV7_KERNEL_PHYS, where the loader puts the image, and
+ * ARMV7_LOW_RAM_SKIP, how many bytes at the start of RAM the kernel never
+ * maps nor uses (a whole number of sections, zero on most boards).
  */
 
 #ifndef KERN_HAL_ARMV7_DEFS_H
@@ -27,6 +29,9 @@
 
 #if !defined(ARMV7_PHYS_BASE) || !defined(ARMV7_KERNEL_PHYS) || !defined(ARMV7_BOOT_MAP_BYTES)
 #error "the armv7 platform makefile defines ARMV7_PHYS_BASE, ARMV7_KERNEL_PHYS and ARMV7_BOOT_MAP_BYTES"
+#endif
+#if !defined(ARMV7_LOW_RAM_SKIP)
+#error "the armv7 platform makefile defines ARMV7_LOW_RAM_SKIP"
 #endif
 
 /* Marks a parameter a function does not use. */

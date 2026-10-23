@@ -52,6 +52,17 @@ bsp_early_init(
 }
 
 /*
+ * Names the device tree: the one the emulator's loader passes in r2.
+ */
+uintptr_t
+bsp_find_fdt(
+	uintptr_t loader_argument)
+{
+	/* Succeeded: the loader's argument, which the boot checks. */
+	return loader_argument;
+}
+
+/*
  * Sets up what the device tree describes: the UART it names, the firmware
  * call conduit, and the display, on which the early console's lines are
  * then drawn.

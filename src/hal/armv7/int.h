@@ -44,6 +44,11 @@ armv7_trap(
 	struct armv7_trap_frame *frame,
 	uint32_t kind);
 
+int
+armv7_trap_pending_abort(
+	uint32_t *status,
+	uint32_t *address);
+
 void
 armv7_trap_return_refused(
 	struct armv7_trap_frame *frame);
