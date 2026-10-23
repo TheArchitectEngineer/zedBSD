@@ -23,9 +23,16 @@ Q1 が適用した README（amaterrace-gpu の `README.md`、版 2 の文）の�
 
 ```
 - SA: optional systolic array, a unit decoupled from the SU: a 32-row x N-column
-  PE array (int16/int8 MAC on DSPs, output-stationary) whose horizontal edge is
-  read and written from the shader ISA through FIFOs (one wavefront = 32 lanes)
-  and whose weights stream in from the MC. Absent on the XC7Z010.
+  output-stationary PE array (SIMD-1 PEs) whose horizontal edge is read and
+  written from the shader ISA through FIFOs (one entry = one SA row = 32 x FP16),
+  and whose INT8 weights and per-column scales stream in from the MC.
+  Activations enter as FP16 and are aligned per row to a shared exponent (block
+  floating point), so the FPGA PEs are integer (12 x 8 -> 32-bit accumulate);
+  results stream out one column per cycle with token-boundary tags while the
+  next tile accumulates in a second accumulator bank, so the SU can run online
+  softmax / layer norm on the stream and push the finished rows back in.
+  KC705 "SA configuration": 2 SUs + a 32x32 SA (proposed). Absent on the XC7Z010;
+  an ASIC configuration uses FP16 PEs with FP32 accumulation.
 ```
 
 ## 置き換える段落 2: 「GHCI (GPU Host Controller Interface):」の節の全部
@@ -110,7 +117,9 @@ GHCI (GPU Host Controller Interface):
   privileged state. Register 63 (rq) is reserved as a FIFO port: writing it
   pushes a wavefront (32 lanes x 32 bits) into the systolic array, reading it
   pops one; a read of an empty FIFO or a write to a full one stalls that warp
-  at issue (qstat gives the counts without blocking).
+  at issue (qstat gives the counts without blocking, qtag the token-boundary
+  tags). Packed-FP16 transcendentals (exp2h2/log2h2/rcph2/rsqh2) and the
+  subgroup shuffles are optional in GSI1 and required on the SA configuration.
 ```
 
 ## 置き換える段落 4: 「Targets:」の KC705 の行
