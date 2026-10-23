@@ -9,17 +9,20 @@
  * The GIC of the armv7 boards: its distributor, which routes the shared
  * lines, and each processor's banked private lines and CPU interface.
  *
- * Every line is in Group 0 as the GIC resets it, and the CPU interface
- * signals Group 0 as IRQ (FIQEn stays clear).  On a board whose processor
- * runs in the secure state (the ZYBO under JTAG) the HAL also enables
- * Group 1, which the secure interface acknowledges too; on the emulator's
- * virt board the processor is non-secure and the GIC has no security
- * extensions, and only the enable bits are written.
+ * Every line is put in Group 0, and the CPU interface signals both groups
+ * as IRQ (FIQEn stays clear) and acknowledges a Group 1 interrupt too
+ * (AckCtl), so a line the GIC kept in Group 1 is still served.  On the
+ * ZYBO the processor runs in the secure state under JTAG; on the
+ * emulator's virt board it is non-secure and the GIC has no security
+ * extensions, so every register written here is the processor's to write.
+ * Where a non-secure processor meets a GIC with security extensions the
+ * group registers ignore the writes, which is harmless.
  *
  * Values referenced: ARM IHI 0048B (GIC architecture version 1 and 2), the
- * distributor's GICD_CTLR, GICD_TYPER, GICD_ISENABLER, GICD_ICENABLER,
- * GICD_ICPENDR, GICD_IPRIORITYR, GICD_ITARGETSR, GICD_ICFGR and GICD_SGIR,
- * and the CPU interface's GICC_CTLR, GICC_PMR, GICC_IAR and GICC_EOIR.
+ * distributor's GICD_CTLR, GICD_TYPER, GICD_IGROUPR, GICD_ISENABLER,
+ * GICD_ICENABLER, GICD_ICPENDR, GICD_IPRIORITYR, GICD_ITARGETSR, GICD_ICFGR
+ * and GICD_SGIR, and the CPU interface's GICC_CTLR (EnableGrp0, EnableGrp1,
+ * AckCtl, FIQEn), GICC_PMR, GICC_IAR and GICC_EOIR.
  */
 
 #include <hal/hal.h>
@@ -34,6 +37,7 @@
 /* The distributor's registers. */
 #define GICD_CTLR		0x000U
 #define GICD_TYPER		0x004U
+#define GICD_IGROUPR		0x080U
 #define GICD_ISENABLER		0x100U
 #define GICD_ICENABLER		0x180U
 #define GICD_ICPENDR		0x280U
@@ -48,9 +52,13 @@
 #define GICC_IAR		0x00cU
 #define GICC_EOIR		0x010U
 
-/* The enable bits of both groups, in GICD_CTLR and GICC_CTLR. */
+/*
+ * The enable bits of both groups, in GICD_CTLR and GICC_CTLR, and the
+ * CPU interface's acknowledgement of Group 1.
+ */
 #define GIC_ENABLE_GROUP0	0x1U
 #define GIC_ENABLE_GROUP1	0x2U
+#define GIC_ACK_CONTROL		0x4U
 
 /* The bytes of the two blocks the HAL maps. */
 #define GIC_DISTRIBUTOR_BYTES	0x1000U
@@ -65,9 +73,9 @@
 
 /*
  * The distributor and the CPU interface through the device window, the
- * number of lines the distributor has, and whether the processor is
- * secure.  Set once by armv7_gic_init() on the boot processor before any
- * line is used; NULL and zero before.
+ * number of lines the distributor has, and whether the board says the
+ * processor is secure (for the boot log).  Set once by armv7_gic_init()
+ * on the boot processor before any line is used; NULL and zero before.
  */
 static volatile uint8_t *distributor;
 static volatile uint8_t *cpu_interface;
@@ -100,7 +108,6 @@ armv7_gic_init(
 	uint64_t cpu_interface_physical;
 	void *mapped;
 	uint32_t index;
-	uint32_t control;
 	int error;
 
 	/* Asks the board where the two blocks are and whether the processor is secure. */
@@ -124,10 +131,11 @@ armv7_gic_init(
 	if (line_count > GIC_LINES_MAX)
 		line_count = GIC_LINES_MAX;
 
-	/* Disables every shared line and drops what is pending. */
+	/* Disables every shared line, drops what is pending, and puts it in Group 0. */
 	for (index = 1; index < (line_count + 31U) / 32U; index++) {
 		write_distributor(GICD_ICENABLER + index * 4U, 0xffffffffU);
 		write_distributor(GICD_ICPENDR + index * 4U, 0xffffffffU);
+		write_distributor(GICD_IGROUPR + index * 4U, 0);
 	}
 
 	/* Gives every shared line the same priority and routes it to the boot processor. */
@@ -143,12 +151,13 @@ armv7_gic_init(
 	/* The boot processor's private lines and CPU interface, as every other processor's. */
 	armv7_gic_init_cpu();
 
-	/* Starts the distributor, for both groups where the processor may enable them. */
-	control = GIC_ENABLE_GROUP0;
-	if (gic_secure)
-		control |= GIC_ENABLE_GROUP1;
-	write_distributor(GICD_CTLR, control);
+	/* Starts the distributor for both groups. */
+	write_distributor(GICD_CTLR, GIC_ENABLE_GROUP0 | GIC_ENABLE_GROUP1);
 	hal_io_mb();
+	hal_printf("ARMV7 GIC distributor=%llx cpu=%llx secure=%u\n",
+		   distributor_physical,
+		   cpu_interface_physical,
+		   (uint32_t)gic_secure);
 }
 
 /*
@@ -160,11 +169,11 @@ armv7_gic_init_cpu(
 	void)
 {
 	uint32_t line;
-	uint32_t control;
 
-	/* Starts with every private line disabled and nothing pending. */
+	/* Starts with every private line disabled, nothing pending, all in Group 0. */
 	write_distributor(GICD_ICENABLER, 0xffffffffU);
 	write_distributor(GICD_ICPENDR, 0xffffffffU);
+	write_distributor(GICD_IGROUPR, 0);
 
 	/* Gives the private lines the same priority as the shared ones. */
 	for (line = 0; line < 32U; line++)
@@ -173,12 +182,9 @@ armv7_gic_init_cpu(
 	/* Enables the HAL's SGIs; a GIC that keeps SGIs enabled ignores it. */
 	write_distributor(GICD_ISENABLER, (1U << ARMV7_SGI_STOP) | (1U << ARMV7_SGI_NOTIFY));
 
-	/* Lets every priority through and enables the interface, as IRQ only. */
-	control = GIC_ENABLE_GROUP0;
-	if (gic_secure)
-		control |= GIC_ENABLE_GROUP1;
+	/* Lets every priority through and enables the interface, both groups as IRQ. */
 	write_cpu_interface(GICC_PMR, GIC_PRIORITY_MASK_ALL);
-	write_cpu_interface(GICC_CTLR, control);
+	write_cpu_interface(GICC_CTLR, GIC_ENABLE_GROUP0 | GIC_ENABLE_GROUP1 | GIC_ACK_CONTROL);
 	hal_io_mb();
 }
 
