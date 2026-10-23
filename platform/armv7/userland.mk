@@ -165,4 +165,50 @@ $(BUILD)/abi.img: $(BUILD)/abitest $(DYNAMIC_DIR)/ld.so $(DYNAMIC_DIR)/libc.so \
 .PHONY: abi-image
 abi-image: $(BUILD)/abi.img
 
+# The programs of the console root (platform/armv7/rootfs.mk), the fewest
+# that log in on the console and give a shell: init with the system log
+# daemon its console login is ordered after and the setup commands it runs
+# (mount, swapon), getty, login, the shell, and a few commands.  The board
+# loads the root over JTAG into its 512 MiB, so the root carries nothing
+# else; a configuration may name more.  None of them has thread-local
+# variables of its own, so each links as an ordinary application: every
+# symbol it names is the C library's.
+ARMV7_ROOT_COMMANDS ?= cat dmesg echo getty init login ls mount ps reboot \
+	sh swapon syslogd umount uname
+ARMV7_APP_OBJ := $(DYNAMIC_DIR)/obj
+ARMV7_APP_CHECK = $(PYTHON) tools/build/check-dynamic-elf.py --machine armv7 \
+ --role application --needed libc.so
+
+ARMV7_APP_SH_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(ARMV7_APP_OBJ),sh) \
+	$(ARMV7_APP_OBJ)/userland/base/libedit/readline.o
+$(ARMV7_APP_SH_OBJS): DYNAMIC_CPPFLAGS += -Iuserland/base/libedit
+
+$(BUILD)/bin/sh: $(ARMV7_APP_INPUTS) $(ARMV7_APP_SH_OBJS)
+	@mkdir -p $(dir $@)
+	$(ARMV7_APP_LINK) $(ARMV7_APP_SH_OBJS) $(ARMV7_APP_LIBS) -o $@
+	$(ARMV7_APP_CHECK) $@
+
+$(BUILD)/bin/mount: $(ARMV7_APP_INPUTS) $(ARMV7_APP_OBJ)/userland/base/mount/main.o
+	@mkdir -p $(dir $@)
+	$(ARMV7_APP_LINK) $(ARMV7_APP_OBJ)/userland/base/mount/main.o $(ARMV7_APP_LIBS) -o $@
+	$(ARMV7_APP_CHECK) $@
+$(BUILD)/bin/umount: $(BUILD)/bin/mount
+	@mkdir -p $(dir $@)
+	cp -f $< $@
+
+# Every other program of the root is its objects with the shared command
+# helpers.
+ARMV7_APP_COMMON_OBJS := $(addprefix $(ARMV7_APP_OBJ)/userland/base/common/,command.o pager.o)
+
+define ARMV7_APP_BASIC_COMMAND
+$(BUILD)/bin/$(1): $(ARMV7_APP_INPUTS) $(ARMV7_APP_COMMON_OBJS) \
+	$(call ZEDBSD_USERLAND_OBJECTS,$(ARMV7_APP_OBJ),$(1))
+	@mkdir -p $$(dir $$@)
+	$(ARMV7_APP_LINK) $(ARMV7_APP_COMMON_OBJS) \
+ $(call ZEDBSD_USERLAND_OBJECTS,$(ARMV7_APP_OBJ),$(1)) $(ARMV7_APP_LIBS) -o $$@
+	$(ARMV7_APP_CHECK) $$@
+endef
+$(foreach command,$(filter-out sh mount umount,$(ARMV7_ROOT_COMMANDS)),\
+	$(eval $(call ARMV7_APP_BASIC_COMMAND,$(command))))
+
 -include $(wildcard $(DYNAMIC_DIR)/obj/*/*/*.d $(DYNAMIC_DIR)/obj/*/*/*/*.d $(DYNAMIC_DIR)/obj/*/*/*/*/*.d)

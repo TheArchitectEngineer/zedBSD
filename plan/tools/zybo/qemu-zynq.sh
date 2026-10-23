@@ -7,10 +7,13 @@
 # nothing in r2; the kernel then takes the tree at 0x01F00000).  UART1, the
 # console, is the second serial port, a Unix socket.
 #   plan/tools/zybo/qemu-zynq.sh KERNEL [--append TEXT] [--initrd root.img]
-#       [--expect REGEX]... [--timeout S] [--stamp] [--gdb PORT] [--print]
+#       [--expect REGEX]... [--then STEP]... [--timeout S] [--stamp]
+#       [--gdb PORT] [--print]
 # --expect waits on the live serial line for each REGEX and gives the exit
 # status (the U3 exception: nothing is kept in a file); --stamp puts the
-# host's seconds before each line, for the TIMER 0S/10S check.  Without
+# host's seconds before each line, for the TIMER 0S/10S check; --then holds
+# a dialogue on the line once every REGEX has matched (uart-expect.py:
+# type:TEXT, expect:REGEX), such as a login.  Without
 # --expect the machine runs until --timeout and the socket can be attached
 # to (plan/tools/guest/serial.py --socket).  --gdb PORT starts it stopped
 # with a gdbstub on 127.0.0.1:PORT.  --print shows the command and stops.
@@ -23,12 +26,14 @@ set -u
 dtb_addr=0x01f00000
 initrd_addr=0x04000000
 kernel= append= initrd= timeout=60 stamp= gdb_port= print_only=
-patterns=
+patterns= steps=
 while [ $# -gt 0 ]; do
 	case "$1" in
 	--append) append=$2; shift 2 ;;
 	--initrd) initrd=$2; shift 2 ;;
 	--expect) patterns="$patterns$2
+"; shift 2 ;;
+	--then) steps="$steps$2
 "; shift 2 ;;
 	--timeout) timeout=$2; shift 2 ;;
 	--stamp) stamp=--stamp; shift ;;
@@ -88,6 +93,7 @@ if [ -n "$patterns" ]; then
 '
 	set --
 	for pattern in $patterns; do set -- "$@" "$pattern"; done
+	for step in $steps; do set -- "$@" --then "$step"; done
 	IFS=$old_ifs
 	python3 -I -B "$zybo_dir/uart-expect.py" --socket "$sock" --timeout "$timeout" $stamp "$@"
 	status=$?
