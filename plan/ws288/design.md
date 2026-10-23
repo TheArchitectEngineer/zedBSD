@@ -534,6 +534,8 @@ code_offset〜 命令（8 byte 揃え）
 
 ### 3.6 大きさ（LUT/FF/BRAM36/DSP）の見積もり — **推定**、内訳から計算し直した（版 2）。実測で置き換える
 
+- **2026-10-24 ユーザー（FP16 だけの GPU の話の後）「了解です。そのまま勧めましょう。」→ KC705 の SU は案 A: fp32 は FPU の少ない lane（例: NPHYS 8 の SU に FPU 1〜2 lane、32 lane を順に流す）、fp16 の packed の演算（PACKED）は全 lane。Vulkan の fp32 の正しさは保ち、速さを fp16 に寄せる。案 B（頂点の変換は VF/RX の固定の回路で fp32、SU は fp16 を主に）は合わせて検討。FPU の lane の数は p012〜p015 の合成で決める。** 測った根拠: ZYBO の構成（NPHYS 8）で SU 70,735 LUT のうち FPU 39,281（1 lane ≈ 4.9k、組み合わせの fp32。乗算はほぼ DSP、LUT は shifter・正規化・丸め）。
+
 版 3 の追加（推定、表には未反映。p008・p017 の実測で直す）: 64 bit の decode と scoreboard（§3.1.1）+0.4k LUT/SU、`shfl`/`vote`/`ballot` の staging RAM +0.5k LUT/SU（KC705 だけ、U27）、`atg_cpu` 2.5k LUT + DSP 1 + BRAM36 12（bitstream 1' と KC705。§2.4.7）。`atg_sa` は延期（Appendix A の sketch に資源の表）。
 
 内訳（LUT）: fp32 の FMA は物理 lane あたり DSP 3 + **LUT 400**（正規化・丸め。版 1 の 250 は楽観。幅は 300〜700）、整数 ALU LUT 150、packed の fp16 LUT +150 + DSP 2。超越 1.5k + DSP 4、除算 0.3k、scheduler・decode・interlock・sequencing 1.8k、D$ と coalescer 1.5k、LDS/const/EXP/LDA/PT の制御 0.6k。固定の block: CP 1.8k、BLT 1.0k、VF 1.5k（instancing 入り 1.7k）、RX 3.3k（DSP 15）、ROP 1.5k（DSP 8。stencil 無しで 1.2k）、TU 2.2k（DSP 12。最近傍だけで 1.4k、DSP 4）、MC 1.5k、regs 0.4k。
