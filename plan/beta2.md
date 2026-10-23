@@ -45,6 +45,7 @@
 | U37 | ZYBO（JTAG の USB を host に） | Q1 が `plan/ws286/tests/plio-jtag.sh` を流した後（Q1 が知らせる） | LED と switch・button を見る・動かす | LD0 と LD2 が点く。SW を動かすと Q1 の `zybo_rd 0x43C0000C` が変わる、BTN で IRQ_STATUS[0] |
 | U38 | KC705 | 板に bringup の bitstream が載っている時（2026-10-23 の物） | N/E/S/W の button、C の button、DIP を動かす | 押す間 LED[7:4] に {N,E,S,W}、C で walking one が止まる、DIP で LED[3:0]（LED の walking one は 2026-10-23 にユーザーが確認済み） |
 | U39 | Pi 4 | main 803d0dbfb 以降の Pi 4 の image（SD の driver を汎用の SDHCI の core に分けた、WS289 p002） | 普通に SD から起動して使う。可能なら大きな file の複写 | 今までと同じに起動し、SD の読み書きに error が無い |
+| U40 | Pi 5（電源を入れて LAN に） | main ccf175eae 以降の rpi5 の kernel（WS289 p003 の汎用 GEM・p002 の汎用 SDHCI、`build/rpi5/vmunix` sha256 d055d483…） | Pi 5 を起動して address を Q1 に知らせる（T1 が kernel を入れ替えて SD・DHCP・SSH・ping 100 回を確かめる）か、自分で普通に使う | SD から起動、`ifconfig en0` に address、SSH で入れる、`dmesg` に `gem: en0 link up` があり `gem: DMA error` が無い |
 
 ## 日程
 

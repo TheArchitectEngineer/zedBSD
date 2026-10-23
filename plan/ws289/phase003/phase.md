@@ -58,3 +58,5 @@
 
 - Master の Tools に `tests/cadence-gem-host-test.c`（`make … cadence-gem-host-test`、`cmp` と `cadence-gem-host-test: PASS`）を載せる事（担当は master.md を書かない）。
 - p005 で core に足す物は無い見込み（32 bit・RXUBR・USRIO・走査は入れた）。Zynq の glue・RTL8211E・SLCR の tx clock は p005。
+
+- 2026-10-23 Q1: T1 の実機の Pi 5 の試験は未実施。10.0.30.5 に届かない（ping「Destination Host Unreachable」、ssh「No route to host」）。板に何も書いていない。再開の条件: Pi 5 の電源と address（ユーザーの試験の一覧 U40）。
