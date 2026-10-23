@@ -296,6 +296,7 @@ MOVI / 32 bit の即値を持つ命令: [31:0] = imm32
 | SU、NPHYS 4、NWARPS 2、A' | 4×550 + 1.5k + 0.3k + 1.5k + 1.2k + 0.5k | 7.2k | 6 + 1 + 1 + 1 + 0.5 + 2 + 2 ≈ 14 | 12 + 6 = 18 | 41% | — |
 | ZYBO 全部（NPHYS 4、TU 最近傍、stencil 無し） | 13.4k − 0.8k − 0.3k + 7.2k | **19.5k** | 26 | 45 | **111%** | **入らない** |
 | **ZYBO bitstream 1「2D」** | CP+BLT+MC+regs | 4.7k | 5 | 0 | 27% | p003・p004 |
+| ZYBO bitstream 1 の **実測**（p002、Vivado 2026.1、xc7z010clg400-1、配線後） | CP の stub（ring 無し）+ BLT の骨（32 bpp の FILL/COPY、clip）+ MC（client 2）+ regs | **2.45k**（regs 0.28k、CP 0.60k、BLT 1.39k、MC 0.17k）、FF 2.63k | 0.5（STATE の BRAM18） | 0 | 14% | 100 MHz で WNS +0.473 ns。[phase002](phase002/phase.md) |
 | **ZYBO bitstream 2「DC」** | DC（regs、dma、tgen、VGA/TMDS、I2C 無し） | 2.0k | 3 | 0 | 11% | p005 |
 | **ZYBO bitstream 3「raster」** | CP+MC+regs+RX+ROP（stencil 無し）+ VF（DRAW_RAW だけなら VF 無し） | 8.2k（VF 入り 9.9k） | 7 | 23 | 47〜56% | p007 |
 | **ZYBO bitstream 4「compute」** | CP+MC+regs+SU（NPHYS 8、A） | 13.8k | 27 | 30 | **78%** | p008。閉じなければ NPHYS 4（10.9k、62%） |
@@ -305,7 +306,7 @@ MOVI / 32 bit の即値を持つ命令: [31:0] = imm32
 | KC705 N=8 | 8 × 16.9k + 上 + RX 2 本（+3.3k） | **172k（84%）** | 435（**98%**） | 723（86%） | 325T | **BRAM が限界**: N=8 は RF を B（NREGS 32）か複製 2 にするか、primitive table の複製を減らす（p015 で実測して決める）。N=6 なら LUT 138k（68%）・BRAM 335（75%） |
 
 - 結論（R1・U17）: **7010 では GPU の全 block を 1 つの bitstream に載せない**。block ごとの bitstream で workflow と各 block を板で確かめ、全体の結合は Verilator と KC705。KC705 の本命は **N=4 から始めて N=6〜8 を実測で決める**（README の「複数の SU」は満たす。128 lane の目標は N=8 × 16）。
-- p002 の最初の仕事は CP+MC+BLT（bitstream 1）を合成して LUT を実測し、この表の係数を直す事。SU の係数は p008 の最初の合成で直す。
+- p002 の実測（2026-10-23、[phase002](phase002/phase.md)）で直す係数: **BLT は 1.0k → 1.4k**（32 bpp の FILL/COPY と clip だけで 1.39k: 2 line の buffer と word 単位の shifter が大半。16 bpp・blend・tile を足す p003 で 1.8〜2.2k の見込み）、**MC は 2 client で 0.17k**（そのうち AXI master が 0.15k。client の間の mux は合成の最適化で BLT の側に吸収されて分けて測れない。1 client あたり line 幅の wdata の mux が要るので **推定** で 32 byte の line で約 0.1〜0.15k/client、N=8 の 22 client で 2.5〜3.5k。版 2 の 1.5k は少なめの恐れ。p015 で測る）、**regs 0.4k → 0.3k**、**CP は stub で 0.6k**（ring・fence・状態遷移の全部は p003・p004 で測る。1.8k は据え置き）。BRAM は 5 の見込みに対して 0.5（MC と BLT に FIFO の BRAM が無い）。bitstream 1 の全体は 4.7k の見込みに対して 2.45k（CP を 1.8k にしても 3.7k、21%）。SU の係数は p008 の最初の合成で直す。
 
 ### 3.7 board ごとの parameter と Vulkan の limit
 
