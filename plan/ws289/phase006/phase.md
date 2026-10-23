@@ -5,7 +5,7 @@
 - 親: [ws289](../ws.md)。設計: [design.md](../design.md) 版 2 の §5（SD からの起動）・§6・§7・§8 の p006 の行・§9 の p006 の行・§10 の R5〜R8・R13・R18・R19。
 - Queue: Q1 の割当（P3、2026-10-23、worktree `/home/awe/zedBSD-worktrees/p3-ws289-p006`、branch `agent/p3-ws289-p006`、基点 main d3c9f6505）。Fable は使わない（ユーザー）。
 - 判断と許可: U1（JP5 の jumper、card の差し込み、host の `dd` はユーザー。Q1 が頼む）・U2（復旧は JTAG だけ、U-Boot 本体は FAT に入れない）はユーザー「はい」で推しのとおり（design §11）。WS286 の U3（ZYBO の実機は生きた serial で判定）・U4（担当が板を JTAG で直に操作、板の lock）。U-Boot は tree の外（`build/` の中）で build し、commit・配布しない（design §12）。host の block device には書いていない。toolchain・HAL の API は変えていない。共有の LLVM・NoctLang は main の物への symlink で読むだけ。
-- Status: in-progress（実装と host の確認、実機の JTAG の道の確認は済み。QEMU は T1 の結果待ち。**実機の SD からの起動は未実施**: 板の今の microSD は ACMD41 が busy から出ず初期化できない（p004、U-Boot でも同じ。ユーザーの試験 U41）。card が使えるようになったら下の「実機の SD 起動の手順」）
+- Status: cleared（2026-10-23 Q1: 実機の ZYBO（新しい card、JP5 = SD）で BootROM が FAT32 の BOOT.BIN を読み、SPL の Falcon で kernel、root mmcblk0p2、LAN 1000 Mbps・DHCP 10.0.30.2、host から ssh-check PASS。main 89576f824 の kernel を deploy.sh で SSH から差し替えて reboot（vmunix.itb・system.dtb の .new → rename、.old を保持）し、新しい kernel で ls /boot/boot0 が BOOT.BIN・system.dtb(.old)・vmunix.itb(.old) を出した。その後 SSH の reboot と JTAG からの reset（SD の mode のまま）でも SD から戻った（R8）。ls の原因は armv7 の 32 bit の off_t で fat_readdir_unlocked の (off_t)UINT32_MAX が -1 になる事（5931e4629 で直した）。T1 の QEMU A1 は 5931e4629 で ls -la に system.dtb 413・vmunix.itb 1033303 が出た（expect の順の都合で rc 1、中身で PASS と判定）。merge 3caf97354・5a28d28ca・89576f824）
 
 ## 受け入れの条件（design §8.2・§8.3・§9 の p006）
 
