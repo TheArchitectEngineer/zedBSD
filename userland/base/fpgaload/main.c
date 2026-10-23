@@ -51,6 +51,9 @@ main(
 	char **argv)
 {
 	const char *argument;
+	int is_status;
+	int is_enable;
+	int is_disable;
 	int device;
 	int status;
 
@@ -59,7 +62,12 @@ main(
 		usage();
 		return 2;
 	}
+
+	/* Names what the argument asks for. */
 	argument = argv[1];
+	is_status = strcmp(argument, "--status") == 0;
+	is_enable = strcmp(argument, "--enable") == 0;
+	is_disable = strcmp(argument, "--disable") == 0;
 
 	/* Opens the device; only root may. */
 	device = open(FPGA_DEVICE, O_RDWR);
@@ -69,11 +77,11 @@ main(
 	}
 
 	/* Selects what to do. */
-	if (strcmp(argument, "--status") == 0) {
+	if (is_status) {
 		status = show_status(device);
-	} else if (strcmp(argument, "--enable") == 0) {
+	} else if (is_enable) {
 		status = simple_request(device, FPGA_ENABLE, "enable");
-	} else if (strcmp(argument, "--disable") == 0) {
+	} else if (is_disable) {
 		status = simple_request(device, FPGA_DISABLE, "disable");
 	} else if (argument[0] == '-') {
 		usage();

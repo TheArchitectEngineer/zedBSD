@@ -233,6 +233,8 @@ drv_zynq_devcfg_attach(
 	const char *command_line;
 	void *mapped;
 	uint32_t idcode;
+	uint32_t status;
+	uint32_t interrupts;
 	int asked;
 	int error;
 
@@ -293,10 +295,12 @@ drv_zynq_devcfg_attach(
 		return error;
 
 	/* Reports what the configuration interface says of the logic. */
+	status = devcfg_read(DEVCFG_STATUS);
+	interrupts = devcfg_read(DEVCFG_INT_STS);
 	kern_logf("fpga: devcfg at %x, status %08x, int_sts %08x%s\n",
 		  (unsigned)DEVCFG_PHYS,
-		  (unsigned)devcfg_read(DEVCFG_STATUS),
-		  (unsigned)devcfg_read(DEVCFG_INT_STS),
+		  (unsigned)status,
+		  (unsigned)interrupts,
 		  fpga.skip_waits ? ", emulated" : "");
 
 	/* Succeeded: /dev/fpga0 is there. */
@@ -664,6 +668,7 @@ configure_logic(
 	struct fpga_open *state)
 {
 	uint32_t clock;
+	uint32_t control;
 	uint32_t status;
 	uint32_t interrupts;
 	uint64_t deadline;
@@ -715,7 +720,8 @@ configure_logic(
 		return EBUSY;
 
 	/* Sends the data to the logic, not back to memory. */
-	devcfg_write(DEVCFG_MCTRL, devcfg_read(DEVCFG_MCTRL) & ~MCTRL_PCAP_LPBK);
+	control = devcfg_read(DEVCFG_MCTRL);
+	devcfg_write(DEVCFG_MCTRL, control & ~MCTRL_PCAP_LPBK);
 
 	/*
 	 * Clears every interrupt status, so that a DONE left by the BootROM, a

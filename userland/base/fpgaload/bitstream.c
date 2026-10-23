@@ -61,6 +61,7 @@ bitstream_prepare(
 {
 	uint8_t *found;
 	size_t found_size;
+	uint32_t first_field;
 	enum sync_order order;
 	int error;
 
@@ -71,7 +72,10 @@ bitstream_prepare(
 	/* A .bit file starts with its header's length; anything else is taken as data alone. */
 	found = *data;
 	found_size = *size;
-	if (found_size >= BIT_FIELD_LENGTH_BYTES && read_be16(found) == BIT_HEADER_LENGTH) {
+	first_field = 0;
+	if (found_size >= BIT_FIELD_LENGTH_BYTES)
+		first_field = read_be16(found);
+	if (first_field == BIT_HEADER_LENGTH) {
 		error = find_bit_data(*data, *size, &found, &found_size);
 		if (error != 0)
 			return error;

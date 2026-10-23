@@ -52,6 +52,9 @@ main(
 	int argc,
 	char **argv)
 {
+	int is_read;
+	int is_write;
+	int is_wait;
 	int device;
 	int status;
 
@@ -61,6 +64,11 @@ main(
 		return 2;
 	}
 
+	/* Names the subcommand. */
+	is_read = strcmp(argv[1], "read") == 0;
+	is_write = strcmp(argv[1], "write") == 0;
+	is_wait = strcmp(argv[1], "wait") == 0;
+
 	/* Opens the device; only root may. */
 	device = open(FPGA_DEVICE, O_RDWR);
 	if (device < 0) {
@@ -69,11 +77,11 @@ main(
 	}
 
 	/* Selects the subcommand. */
-	if (strcmp(argv[1], "read") == 0) {
+	if (is_read) {
 		status = command_read(device, argc - 2, argv + 2);
-	} else if (strcmp(argv[1], "write") == 0) {
+	} else if (is_write) {
 		status = command_write(device, argc - 2, argv + 2);
-	} else if (strcmp(argv[1], "wait") == 0) {
+	} else if (is_wait) {
 		status = command_wait(device, argc - 2, argv + 2);
 	} else {
 		usage();
@@ -223,6 +231,7 @@ command_wait(
 	struct fpga_reg reg;
 	uint32_t ack_offset;
 	uint32_t status;
+	int has_ack;
 	int index;
 	int error;
 
@@ -231,7 +240,10 @@ command_wait(
 	request.timeout_ms = DEFAULT_TIMEOUT_MS;
 	request.count = 0;
 	index = 0;
-	if (index + 1 < argc && strcmp(argv[index], "--ack") == 0) {
+	has_ack = 0;
+	if (argc >= 2)
+		has_ack = strcmp(argv[0], "--ack") == 0;
+	if (has_ack) {
 		error = parse_number(argv[index + 1], &ack_offset);
 		if (error != 0) {
 			usage();
