@@ -84,6 +84,19 @@ worktree `/home/awe/zedBSD-worktrees/p2-zybo-p008`（4861dd5ce 以降）。image
 - A（zynq、serial、U3）: `plan/tools/zybo/qemu-zynq.sh build/zybo-fpga/vmunix --initrd build/zybo-fpga/root.img --append 'fpga.no-pl-wait=1' --timeout 240 --expect 'fpga: devcfg at f8007000.*emulated' --expect 'login: *$' --then type:root --then expect:Password: --then type:root --then 'expect:root@kei' --then 'type:fpgaload --status' --then 'expect:EMULATED 1' --then 'type:fpgaload /usr/share/fpga/plio.bit' --then 'expect:EMULATED 1' --then 'type:fpgareg read 0' --then 'expect:Input/output error'` → exit 0 で PASS。`fpga:` の行と login 以降の行を返す。
 - 失敗の時（例: `fpgaload: program: Device or resource busy` は model の DMA の queue の STATUS、`Connection timed out` は D_P_DONE）: 最後の行を返す（解析は担当）。
 
+### QEMU zynq の 1 回目（T1、2026-10-23、f327ed43b）と直し
+
+- T1 の結果（Q1 経由）: FAIL。`fpga: devcfg at f8007000, status 00000000, int_sts 00000000, emulated`、login は通り、`fpgaload --status` → `DONE 0 INIT 0 ENABLED 0 PROGRAMMING 0 EMULATED 1 …`、`fpgaload plio.bit` → kernel `fpga: program failed (17)`・`fpgaload: program: Device or resource busy`。原因: QEMU の devcfg の model は STATUS の DMA の queue の bit を持たず 0 を読む（空の印 `DMA_Q_E` が立たない）ので、手順 5 の queue の確かめが `EBUSY` を返した（担当の予想どおり）。
+- 直し（worktree `p2-zybo-p008b`、93d2a053f）: `fpga.skip_waits`（QEMU で `fpga.no-pl-wait=1` の時だけ）の時は queue の空の bit を見ず、満ちた bit だけで拒む。実機の道（skip_waits は 0）は変わらない。`docs/reference/kernel-boot-parameters.md` §7d に 1 文。
+- host: `make ZEDBSD_CONFIG=config/ci/config-zybo.mk -j16 vmunix` と `… config-zybo-fpga.mk BUILD=build/zybo-fpga … root.img` は rc 0・warning 0。実機の再試験はしていない（実機で通る道は変わらないため）。T1 の 2 回目を依頼（同じ command、vmunix `b3d60374…`、root.img `05b0c30b…`）。
+
+### QEMU zynq の 2 回目（T1、2026-10-23、fae06f885）と QEMU の限り
+
+- T1 の結果（Q1 経由）: FAIL。`fpgaload plio.bit` → kernel `fpga: program failed (42)`、`fpgaload: program: Connection timed out`（その前の status は `devcfg_status 0x00000000`、`EMULATED 1`）。
+- 原因（QEMU の source を読んだ、推測でない）: host の QEMU は Debian の 10.0.11。その版の `hw/dma/xlnx-zynq-devcfg.c`（local の `/home/awe/qemu-pc98` の履歴で、2026-05-18 の修正の前の版 = commit 32222dc3bb の file）では、machine の reset で全 register の reset が `UNLOCK` の `post_write`（`r_unlock_post_write`）を値 0 で呼び、0 は magic でないので「failed unlock」として devcfg の memory region を無効にする（`memory_region_set_enabled(&s->iomem, false)`）。無効の region は読みが 0、書き込みが捨てられ（machine の `ignore_memory_transaction_failures`）、driver の `UNLOCK` の書き込みも届かないので二度と有効にならない。だから STATUS・INT_STS が 0 のまま（attach の行の `status 00000000, int_sts 00000000` もこれ）、`DMA_DST_LEN` の書き込みも DMA を始めず、`D_P_DONE` は来ない。上流の修正は QEMU commit b9b3ca738d「hw/arm/zynq-devcfg: Prevent unintended unlock during initialization」（2026-05-18、`device_is_in_reset` の間は unlock の処理をしない）とその後の b9528999b3（DST 0xFFFFFFFF の bitstream の load で DMA_DONE・DMA_P_DONE・PCFG_DONE）・d5fb3d22d1・0b397a40ff・6457fa3b9d で、10.0.11 には入っていない。
+- 判断（Q1 の指示 2026-10-23「if the model cannot complete a PCAP transfer at all, instead change the QEMU acceptance to what it can show (status, EIO window guard, EBUSY/timeout handling) and record that in phase008/phase.md as a QEMU limitation」）: **QEMU zynq の受け入れを、10.0.11 の model が示せる物に改める**: (1) attach の行に `emulated`、(2) `fpgaload --status` が `EMULATED 1`・`DONE 0`、(3) 窓の守り: `fpgareg read 0` が `EIO`、`fpgaload --enable` が `EIO`（DONE 0）、(4) program の timeout の扱い: `fpgaload plio.bit` が 5 s 余りで `Connection timed out` を返して止まらず、続く `fpgaload --status` が `error 42`（ETIMEDOUT）・`ENABLED 0` を示し、shell が使えたまま。PCAP の転送の完了・`EMULATED` での program の成功は QEMU 10.0.11 では示せない（QEMU の限り）。上流の修正の入った QEMU なら示せる見込み（未確認）。driver は変えない（p008b の queue の直しは残す: 修正の入った model では STATUS の reset 値に `DMA_CMD_Q_E` が有るので害はない）。
+- T1 の 3 回目を依頼（改めた受け入れ、同じ image: vmunix `b3d60374…`、root.img `05b0c30b…`）。
+
 ## design との違い
 
 - userland は 2 つの dir（上）。
