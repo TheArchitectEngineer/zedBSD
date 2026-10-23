@@ -5,4 +5,5 @@ include platform/armv7/$(ZEDBSD_BOARD).mk
 include platform/armv7/vmunix.mk
 include platform/armv7/userland.mk
 include platform/armv7/rootfs.mk
+include platform/armv7/disk-image.mk
 include platform/armv7/run.mk

@@ -8,14 +8,16 @@ partition itself as the root.  There is no FAT boot partition: the board
 loads the kernel and the ramdisk over JTAG, so nothing reads one, and the
 image stays small enough to load that way.
 
-  make-armv7-root-image.py [--ufs-size-mib N] [--tree ROOTFS] [--dir DEST]...
-      [--file DEST=SOURCE]... OUTPUT
+  make-armv7-root-image.py [--ufs-size-mib N] [--raw] [--tree ROOTFS]
+      [--dir DEST]... [--file DEST=SOURCE]... OUTPUT
 
 --tree copies a staged root tree (the build's rootfs, which carries the
 marker itself) with its permission bits and symbolic links; --dir makes an
 empty directory; --file copies a host file to DEST with the host file's
 permission bits.  The UFS root is 4 MiB unless --ufs-size-mib
-says otherwise (4 MiB is the smallest the format tool makes).
+says otherwise (4 MiB is the smallest the format tool makes).  --raw writes
+the UFS root alone, without the MBR, for a disk image that places it as one
+of its partitions (the ZYBO's SD card image, make-zybo-sd-image.py).
 """
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
@@ -99,6 +101,7 @@ def check_root(root: bytes) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--ufs-size-mib", type=int, default=4)
+    parser.add_argument("--raw", action="store_true")
     parser.add_argument("--tree", type=Path)
     parser.add_argument("--dir", action="append", default=[])
     parser.add_argument("--file", action="append", default=[])
@@ -126,6 +129,10 @@ def main() -> None:
     # Written beside the output and moved over it only when complete, so a
     # failed build never leaves an image that looks finished.
     partial = args.output.with_name(args.output.name + ".partial")
+    if args.raw:
+        partial.write_bytes(root)
+        os.replace(partial, args.output)
+        return
     with partial.open("wb") as image:
         image.truncate((ROOT_LBA + root_blocks) * SECTOR)
         mbr = bytearray(SECTOR)

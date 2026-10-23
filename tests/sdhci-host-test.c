@@ -11,7 +11,8 @@
  * the block count and the automatic CMD12, a single block is CMD17 or CMD24,
  * and a run that fails is recovered (CMD13, CMD12) and moved again one block
  * at a time.  It also checks the clock divisor a controller older than
- * version 3.00 is limited to.
+ * version 3.00 is limited to, and the card size the driver takes from the
+ * CSD of either version, with an unknown version left without a size.
  *
  * The build copies the driver with its include lines removed, and this file
  * includes that copy after the driver's own header and the few kernel types
@@ -38,6 +39,10 @@
 
 /* The fake card's capacity in blocks. */
 #define CARD_BLOCKS 1024U
+
+/* The bytes of a CSD, and the response words the controller holds it in. */
+#define CSD_BYTES 16U
+#define CSD_WORDS 4U
 
 /* The most commands one test records. */
 #define LOG_MAX 512U
@@ -113,6 +118,12 @@ static uint16_t fake_mode;
 
 /* The card: its blocks, its state in the R1 status, and a pending ACMD. */
 static uint8_t card_data[CARD_BLOCKS * 512U];
+
+/*
+ * The CSD the card answers CMD9 with, as the four response words: filled
+ * by main() before the attach, a version 2 CSD of CARD_BLOCKS blocks.
+ */
+static uint32_t card_csd[CSD_WORDS];
 static uint32_t card_state;
 static int card_app_command;
 
@@ -181,6 +192,10 @@ static void test_write_fault(void);
 static void test_read_fault(void);
 static void test_persistent_fault(void);
 static void test_version_2_divisor(void);
+static void test_csd_sizes(void);
+static void pack_csd(const uint8_t csd[CSD_BYTES], uint32_t response[CSD_WORDS]);
+static void make_csd_v1(uint32_t device_size, uint32_t multiplier, uint32_t block_length, uint32_t response[CSD_WORDS]);
+static void make_csd_v2(uint32_t device_size, uint32_t response[CSD_WORDS]);
 
 #include "sdhci-under-test.c"
 
@@ -211,6 +226,9 @@ main(
 	if (different == 0)
 		trace = 1;
 
+	/* Gives the card a version 2 CSD of its CARD_BLOCKS blocks: one 512 KiB unit. */
+	make_csd_v2(0, card_csd);
+
 	/* Describes the fake controller as a glue would, with nothing but its registers. */
 	memset(&config, 0, sizeof(config));
 	config.registers = (volatile uint8_t *)fake_registers;
@@ -228,6 +246,7 @@ main(
 	check(sdhci_units[0].card.high_capacity == 1, "the card is addressed in blocks");
 	check(sdhci_units[0].card.bus_width == 4U, "the card runs on four lines");
 	check(sdhci_units[0].card.card_clock == 25000000U, "the card runs at 25 MHz");
+	check(fake_disk.d_block_count == CARD_BLOCKS, "the disk has the size the CSD gives");
 	if (failures != 0) {
 		fprintf(stderr, "sdhci-host-test: FAIL (%d)\n", failures);
 		return 1;
@@ -242,6 +261,7 @@ main(
 	test_read_fault();
 	test_persistent_fault();
 	test_version_2_divisor();
+	test_csd_sizes();
 
 	/* Reports the failed checks. */
 	if (failures != 0) {
@@ -495,6 +515,13 @@ fake_command(
 		break;
 	case 3U:
 		response = 0x12340000U;
+		break;
+	case 9U:
+		/* CMD9: the CSD fills all four response words. */
+		fake_registers[REG_RESPONSE0 / 4U + 1U] = card_csd[1];
+		fake_registers[REG_RESPONSE0 / 4U + 2U] = card_csd[2];
+		fake_registers[REG_RESPONSE0 / 4U + 3U] = card_csd[3];
+		response = card_csd[0];
 		break;
 	case 7U:
 		/* CMD7 selects the card, which enters the transfer state. */
@@ -1012,4 +1039,131 @@ test_version_2_divisor(
 
 	/* Leaves the unit as the attach found it. */
 	unit->spec_version = saved_version;
+}
+
+/*
+ * The driver takes a card's size from either version of the CSD: a
+ * version 1 CSD multiplies its device size by two powers of two, a
+ * version 2 CSD counts 512 KiB units.  A CSD of another version, or one
+ * whose size comes to less than a block, gives no size.
+ */
+static void
+test_csd_sizes(
+	void)
+{
+	uint32_t response[CSD_WORDS];
+	uint64_t blocks;
+
+	/* A 512 MiB standard-capacity card as the emulator describes one. */
+	make_csd_v1(2047U, 7U, 9U, response);
+	blocks = csd_block_count(response);
+	check(blocks == 1048576U, "csd v1: 512 MiB is 1048576 blocks");
+
+	/* A 2 GiB standard-capacity card, which counts 1024-byte blocks. */
+	make_csd_v1(4095U, 7U, 10U, response);
+	blocks = csd_block_count(response);
+	check(blocks == 4194304U, "csd v1: 2 GiB is 4194304 blocks");
+
+	/* A 32 GB high-capacity card. */
+	make_csd_v2(60719U, response);
+	blocks = csd_block_count(response);
+	check(blocks == 62177280U, "csd v2: 60720 units of 512 KiB");
+
+	/* The largest version 2 device size, all 22 bits of the field. */
+	make_csd_v2(0x3fffffU, response);
+	blocks = csd_block_count(response);
+	check(blocks == 0x100000000ULL, "csd v2: the 22-bit device size is read whole");
+
+	/* An ultra-capacity card's version 3 CSD gives no size. */
+	make_csd_v2(60719U, response);
+	response[3] &= ~0x00c00000U;
+	response[3] |= 0x00800000U;
+	blocks = csd_block_count(response);
+	check(blocks == 0, "csd v3: no size");
+
+	/* A version 1 CSD of less than a block gives no size. */
+	make_csd_v1(0, 0, 0, response);
+	blocks = csd_block_count(response);
+	check(blocks == 0, "csd v1: a size below one block is none");
+}
+
+/*
+ * Packs a CSD, most significant byte first, into the four response words
+ * the way a controller holds a long response: without its last byte (the
+ * CRC), the rest shifted down by eight bits.
+ */
+static void
+pack_csd(
+	const uint8_t csd[CSD_BYTES],
+	uint32_t response[CSD_WORDS])
+{
+	/* The lowest word holds bytes 11 to 14, the highest bytes 0 to 2. */
+	response[0] = ((uint32_t)csd[11] << 24) | ((uint32_t)csd[12] << 16) |
+		((uint32_t)csd[13] << 8) | csd[14];
+	response[1] = ((uint32_t)csd[7] << 24) | ((uint32_t)csd[8] << 16) |
+		((uint32_t)csd[9] << 8) | csd[10];
+	response[2] = ((uint32_t)csd[3] << 24) | ((uint32_t)csd[4] << 16) |
+		((uint32_t)csd[5] << 8) | csd[6];
+	response[3] = ((uint32_t)csd[0] << 16) | ((uint32_t)csd[1] << 8) | csd[2];
+}
+
+/*
+ * Builds the response words of a version 1 CSD with the given device
+ * size (C_SIZE, bits 73:62), multiplier (C_SIZE_MULT, bits 49:47) and
+ * read block length (READ_BL_LEN, bits 83:80), the other fields as the
+ * emulator sets them.
+ */
+static void
+make_csd_v1(
+	uint32_t device_size,
+	uint32_t multiplier,
+	uint32_t block_length,
+	uint32_t response[CSD_WORDS])
+{
+	uint8_t csd[CSD_BYTES];
+
+	/* Fills the fields byte by byte, most significant first. */
+	memset(csd, 0, sizeof(csd));
+	csd[0] = 0x00;
+	csd[1] = 0x26;
+	csd[3] = 0x32;
+	csd[4] = 0x5f;
+	csd[5] = (uint8_t)(0x50U | (block_length & 0x0fU));
+	csd[6] = (uint8_t)(0xe0U | ((device_size >> 10) & 0x03U));
+	csd[7] = (uint8_t)((device_size >> 2) & 0xffU);
+	csd[8] = (uint8_t)(0x3fU | ((device_size << 6) & 0xc0U));
+	csd[9] = (uint8_t)(0xfcU | ((multiplier >> 1) & 0x03U));
+	csd[10] = (uint8_t)(0x40U | ((multiplier << 7) & 0x80U) | 0x1fU);
+	csd[15] = 0x01;
+
+	/* Hands the CSD over as the controller would. */
+	pack_csd(csd, response);
+}
+
+/* Builds the response words of a version 2 CSD with the given device size (C_SIZE, bits 69:48). */
+static void
+make_csd_v2(
+	uint32_t device_size,
+	uint32_t response[CSD_WORDS])
+{
+	uint8_t csd[CSD_BYTES];
+
+	/* Fills the fields byte by byte, most significant first. */
+	memset(csd, 0, sizeof(csd));
+	csd[0] = 0x40;
+	csd[1] = 0x0e;
+	csd[3] = 0x32;
+	csd[4] = 0x5b;
+	csd[5] = 0x59;
+	csd[7] = (uint8_t)((device_size >> 16) & 0x3fU);
+	csd[8] = (uint8_t)((device_size >> 8) & 0xffU);
+	csd[9] = (uint8_t)(device_size & 0xffU);
+	csd[10] = 0x7f;
+	csd[11] = 0x80;
+	csd[12] = 0x0a;
+	csd[13] = 0x40;
+	csd[15] = 0x01;
+
+	/* Hands the CSD over as the controller would. */
+	pack_csd(csd, response);
 }

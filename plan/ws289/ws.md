@@ -3,7 +3,7 @@
 # WS289 ZYBO の単独起動: SD・LAN・SD からの起動
 
 - Master: [plan/master.md](../master.md)（2026-10-23 作成）。Primary Milestone: MG008（HAL の移植と異種機）。Related: [WS286](../ws286/ws.md)（ARMv7 の HAL・ZYBO の BSP、この WS の前提）。
-- Status: incomplete（2026-10-23 p002 の実装が始まった。p001 は Q1 の判定待ち）
+- Status: incomplete（2026-10-23 p002 cleared、p004 in-progress（T1 待ち、実機の card は初期化できず））
 - 出典: 2026-10-23 ユーザー（WS286 p005 の cleared の報告の後）「メモリがあまり多くないのでSDドライバがあるとうれしいです。LANのドライバもついでに動かしてしまえませんか？単独ブートできるといいと思います。」。WS286 を作った時のユーザーの希望「まずはSDブートで、SSHでカーネルを更新して、Switchbotで再起動、というのがいいですね。」も同じ方向。WS286 の design の U8（SMP・L2・SD・LAN・SD 起動は後の WS）のうち SD・LAN・SD 起動をこの WS にした。
 
 ## 目的と完了の条件
@@ -23,7 +23,7 @@
 | [p001](phase001/phase.md) | 調べと設計（[design.md](design.md)） | 10 | WS286 p005 | in-progress（版 2 = review の全指摘に対応、Q1 の判定待ち） |
 | [p002](phase002/phase.md) | 汎用の SDHCI の core（`src/drivers/mmc/sdhci.c`）を rpi4-sdhci.c から分離、rpi4 は glue、host 試験、T1 の raspi4b で Pi 4 の SD の回帰 | 10 | p001 | cleared（2026-10-23 Q1: T1 の QEMU raspi4b の boot-test PASS（main 8b2837d2d、試験の config plan/ws289/tests/config-rpi4-sd.mk、SD の root で init が進み login:、PNG build/review/ws289-p002-raspi4b.png）、host 試験の register の書き込み 45,664 回が一致、rpi4・rpi5・amd64 の kernel の warning 0（build の warning は openssl など外部 package だけ）。merge 803d0dbfb。boot-test.sh は raspi4b の SD を 2 の冪に（2d9fe7019）。Pi 4 の実機はユーザーの試験の一覧 U39） |
 | [p003](phase003/phase.md) | 汎用の Cadence GEM の core（`src/drivers/ethernet/cadence-gem.c`、32/64 bit の descriptor）を rp1-ethernet.c から分離、rp1 は glue、host 試験、実機の Pi 5 で SD と Ethernet の回帰（T1、kernel は p002 を含む） | 14 | p001、p002（実機の kernel に含める） | in-progress — test-wait（T1、実機の Pi 5。実装・build warning 0・host 試験 PASS・Pi 5 の trace 812 行が分離の前と byte 一致） |
-| p004 | ZYBO の SD（SDIO0 の glue、SLCR、CSD）と root を SD の partition に、SD の image の tool、QEMU の `--sd` | 12 | p002、WS286 p006、WS286 p010 | planning |
+| [p004](phase004/phase.md) | ZYBO の SD（SDIO0 の glue、SLCR、CSD）と root を SD の partition に、SD の image の tool、QEMU の `--sd` | 12 | p002、WS286 p006、WS286 p010 | in-progress（2026-10-23 P3: 実装と host の確認済み（5 つの kernel の warning 0、sdhci-host-test PASS、image の check PASS）。T1 の QEMU zynq A〜C・raspi4b D 待ち。実機は card が ACMD41 の busy から出ず（U-Boot でも初期化できず）未実施） |
 | p005 | ZYBO の LAN（GEM0 の glue、RTL8211E、SLCR の tx clock、`mac0=`）、DHCP・SSH（net.conf の en0、openssh） | 14 | p003、p004、WS286 p007、Q1: armv7 の package | planning |
 | p006 | SD からの起動（SPL の Falcon の BOOT.BIN、FIT の `vmunix.itb` ＋ `system.dtb`、`make sd-image`、`deploy.sh`、JP5 はユーザー） | 12 | p004、p005、U1・U2 | planning |
 | p007 | 規約の全文の見直し | 6 | p002〜p006 | planning |
@@ -39,4 +39,5 @@
 - 2026-10-23: 作成。p001 の設計から。
 - 2026-10-23 P1（worktree p1-ws289-p001）: design.md 版 1（§0〜§14）と phase001。ユーザーの決定（共通部分の分離、Q1 経由）を D1・D2・p002・p003 に反映。design-reviewer（Opus）の Critical 1・High 1・Medium 7・Low 15 の全部に対応して版 2（§15 の表。主な変更: SD の kernel は legacy の uImage でなく FIT、SD と ramdisk の両方が有る時は initrd の有無で boot device を決める）。再開点: Q1 の判定、U1〜U7、Q1 への依頼（design §11）。
 - 2026-10-23 P1（worktree p1-ws289-p003、[p003](phase003/phase.md)）: 汎用の Cadence GEM の core `src/drivers/ethernet/cadence-gem.c`・`include/drivers/ethernet/cadence-gem.h`（32/64 bit の descriptor、RXUBR の restart・USRIO の RGMII・PHY の走査の flag）を作り、`rp1-ethernet.c` を glue にした。rpi5・rpi4・amd64 の vmunix は warning 0、`cadence-gem-host-test` PASS、Pi 5 の glue の全 access の trace が分離の前と byte 一致（812 行、`tests/cadence-gem-rp1.trace` に固定）。再開点: T1 の実機の Pi 5（SD・DHCP・SSH・ping）の結果（Q1 の判定）。
+- 2026-10-23 P3（worktree p3-ws289-p004、[p004](phase004/phase.md)）: core に CSD の復号、失敗した command の後の CMD line の reset と電源・ACMD41 の待ち（実機で見つけた）、`zynq-slcr.c`・`zynq-sdhci.c`、`zybo.c` の boot device（initrd が有れば ramdisk が 0x80）、`root.ufs`・`make-zybo-sd-image.py`・`check-zybo-sd-image.py`・`make sd-image`、`qemu-zynq.sh --sd`、root に `cksum dd df rm sync time`。実機の ZYBO（JTAG）では card は有るが ACMD41 が busy のまま（U-Boot 2025.07 の `mmc dev 0` も失敗）。再開点: T1 の A〜E、ユーザーの card の確認、Q1 の判定。
 - 2026-10-23 P1（worktree p1-ws289-p002、[p002](phase002/phase.md)）: 汎用の SDHCI の core `src/drivers/mmc/sdhci.c`・`include/drivers/mmc/sdhci.h` を作り、`rpi4-sdhci.c` を glue（90 行）にした。rpi4・rpi5・amd64 の vmunix は warning 0、`sdhci-host-test` PASS、前の driver と register の書き込みの列が一致。再開点: T1 の QEMU raspi4b の boot-test の結果（Q1 の判定）。

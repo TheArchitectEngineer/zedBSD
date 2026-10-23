@@ -172,13 +172,14 @@ abi-image: $(BUILD)/abi.img
 # The programs of the console root (platform/armv7/rootfs.mk), the fewest
 # that log in on the console and give a shell: init with the system log
 # daemon its console login is ordered after and the setup commands it runs
-# (mount, swapon), getty, login, the shell, and a few commands.  The board
-# loads the root over JTAG into its 512 MiB, so the root carries nothing
-# else; a configuration may name more.  None of them has thread-local
-# variables of its own, so each links as an ordinary application: every
-# symbol it names is the C library's.
-ARMV7_ROOT_COMMANDS ?= cat dmesg echo getty init login ls mount ps reboot \
-	sh swapon syslogd umount uname
+# (mount, swapon), getty, login, the shell, and a few commands, among them
+# the ones that check a disk root (cksum, dd, df, rm, sync, time).  The
+# board loads the root over JTAG into its 512 MiB, so the root carries
+# nothing else; a configuration may name more.  None of them has
+# thread-local variables of its own, so each links as an ordinary
+# application: every symbol it names is the C library's.
+ARMV7_ROOT_COMMANDS ?= cat cksum dd df dmesg echo getty init login ls mount \
+	ps reboot rm sh swapon sync syslogd time umount uname
 # The script that starts OpenSSH's server makes /var/empty and sets the
 # modes of the host keys it makes, so a root with OpenSSH has those commands.
 ARMV7_ROOT_COMMANDS += $(if $(filter openssh,$(ZEDBSD_USER_PROGRAMS)),chmod mkdir)
