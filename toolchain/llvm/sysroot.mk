@@ -1,4 +1,4 @@
-# Deterministic zedBSD target sysroots (amd64, i386, arm64 and riscv64).
+# Deterministic zedBSD target sysroots (amd64, i386, arm64, riscv64 and armv7).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
 ZEDBSD_SYSROOT_MAKEFILE := $(lastword $(MAKEFILE_LIST))
@@ -6,6 +6,7 @@ ZEDBSD_SYSROOT_AMD64 := $(abspath $(ZEDBSD_LLVM_ROOT)/build/amd64/sysroot)
 ZEDBSD_SYSROOT_I386 := $(abspath $(ZEDBSD_LLVM_ROOT)/build/i386/sysroot)
 ZEDBSD_SYSROOT_ARM64 := $(abspath $(ZEDBSD_LLVM_ROOT)/build/arm64/sysroot)
 ZEDBSD_SYSROOT_RISCV64 := $(abspath $(ZEDBSD_LLVM_ROOT)/build/riscv64/sysroot)
+ZEDBSD_SYSROOT_ARMV7 := $(abspath $(ZEDBSD_LLVM_ROOT)/build/armv7/sysroot)
 ZEDBSD_SYSROOT_CLANG := $(ZEDBSD_LLVM_INSTALL)/bin/clang
 ZEDBSD_SYSROOT_AR := $(ZEDBSD_LLVM_INSTALL)/bin/llvm-ar
 ZEDBSD_SYSROOT_LD := $(ZEDBSD_LLVM_INSTALL)/bin/ld.lld
@@ -55,6 +56,22 @@ ZEDBSD_SYSROOT_RISCV64_LIBC_SOURCES := src/libc/setjmp-riscv64.S
 ZEDBSD_SYSROOT_RISCV64_COMPILER_RT_SOURCES := \
 	src/libc/softfloat128.c src/libc/compiler-runtime128.c
 
+# 32-bit ARM carries setjmp in assembly as well.  Its long double is the
+# 64-bit double, and the floating-point unit does the arithmetic, so the
+# compiler runtime needs nothing beyond the common sources.
+ZEDBSD_SYSROOT_ARMV7_LIBC_SOURCES := src/libc/setjmp-armv7.S
+
+# The Cortex-A9 with its VFPv3 and NEON unit, the ARM instruction set, the
+# thread pointer in TPIDRURO and no unaligned access the compiler would
+# make up.  The 32-bit user interface's packed structures (struct stat)
+# hold 64-bit members on 4-byte boundaries, which -Wunaligned-access
+# reports; every load and store ARMv7 makes of them, ldrd and strd
+# included, needs only that alignment, so the warning is not taken, as in
+# the kernel (platform/armv7/vmunix.mk).
+ZEDBSD_SYSROOT_ARMV7_CODE_FLAGS := -march=armv7-a -mcpu=cortex-a9 -marm \
+	-mfloat-abi=hard -mfpu=neon-vfpv3 -mtp=cp15 -mno-unaligned-access \
+	-Wno-unaligned-access
+
 # zedBSD owns its floating-point compiler ABI so i386 kernels do not acquire
 # an x87 dependency. Integer compiler builtins come from the same verified LLVM
 # release used to build Clang. This explicit manifest is the supported ABI and
@@ -85,12 +102,36 @@ ZEDBSD_SYSROOT_LLVM_BUILTIN_SOURCES := $(addprefix \
 # caches itself (SCTLR_EL1.UCI and UCT).
 ZEDBSD_SYSROOT_ARM64_LLVM_BUILTIN_SOURCES := \
 	$(ZEDBSD_LLVM_SOURCE)/compiler-rt/lib/builtins/clear_cache.c
+# The Cortex-A9 has no divide instruction in the ARM instruction set, and
+# its floating-point unit converts between floating point and 32-bit
+# integers only.  The compiler therefore calls the run-time ABI's helpers
+# (__aeabi_idivmod, __aeabi_uldivmod, __aeabi_l2d, __aeabi_d2lz and their
+# kin) for those operations, and the memory helpers (__aeabi_memcpy and
+# the others, which pass on to the C library's functions) for block
+# copies.  The integer helpers of the common list give the division's
+# remaining entry points their run-time ABI names.  The helpers keep the
+# base calling convention, with floating-point values in core registers,
+# as the run-time ABI requires; COMPILER_RT_ARMHF_TARGET gives the plain
+# functions the floating-point unit's convention, which code built with
+# -mfloat-abi=hard calls them with.
+ZEDBSD_SYSROOT_ARMV7_LLVM_BUILTIN_NAMES := \
+	arm/aeabi_idivmod.S arm/aeabi_uidivmod.S \
+	arm/aeabi_ldivmod.S arm/aeabi_uldivmod.S \
+	arm/aeabi_memcpy.S arm/aeabi_memmove.S arm/aeabi_memset.S \
+	arm/aeabi_memcmp.S arm/aeabi_div0.c \
+	fixdfdi.c fixunsdfdi.c floatdidf.c floatundidf.c \
+	fixsfdi.c fixunssfdi.c floatdisf.c floatundisf.c
+ZEDBSD_SYSROOT_ARMV7_LLVM_BUILTIN_SOURCES := $(addprefix \
+	$(ZEDBSD_LLVM_SOURCE)/compiler-rt/lib/builtins/,\
+	$(ZEDBSD_SYSROOT_ARMV7_LLVM_BUILTIN_NAMES))
+ZEDBSD_SYSROOT_ARMV7_LLVM_BUILTIN_FLAGS := -DCOMPILER_RT_ARMHF_TARGET
 
 # A clean cache-based bootstrap has build/llvm but no extracted LLVM source.
 # Give each compiler-rt input a real generating prerequisite so parallel Make
 # completes the verified source extraction before it diagnoses a missing file.
 $(ZEDBSD_SYSROOT_LLVM_BUILTIN_SOURCES) \
-$(ZEDBSD_SYSROOT_ARM64_LLVM_BUILTIN_SOURCES): | $(ZEDBSD_LLVM_SOURCE_STAMP)
+$(ZEDBSD_SYSROOT_ARM64_LLVM_BUILTIN_SOURCES) \
+$(ZEDBSD_SYSROOT_ARMV7_LLVM_BUILTIN_SOURCES): | $(ZEDBSD_LLVM_SOURCE_STAMP)
 	@test -f '$@'
 
 # The desktop's public headers (keiland.h, the Wayland client headers and the
@@ -113,6 +154,7 @@ ZEDBSD_SYSROOT_LINKER_SCRIPTS := \
 	platform/pcat/user.ld platform/pcat/vmunix.ld \
 	platform/pc98/noct-user.ld platform/pc98/user-init.ld \
 	platform/pc98/stage2.ld platform/arm64/user.ld platform/riscv64/user.ld \
+	platform/armv7/user.ld \
 	bootloader/pcat/stage1.ld bootloader/pcat/stage2.ld \
 	bootloader/pcat/bootzbsd.ld \
 	bootloader/pc98/stage1.ld bootloader/pc98/stage2.ld
@@ -121,23 +163,27 @@ ZEDBSD_SYSROOT_INPUTS := $(ZEDBSD_SYSROOT_LIBC_SOURCES) \
 	$(ZEDBSD_SYSROOT_ARM64_LIBC_SOURCES) \
 	$(ZEDBSD_SYSROOT_ARM64_COMPILER_RT_SOURCES) \
 	$(ZEDBSD_SYSROOT_RISCV64_LIBC_SOURCES) \
+	$(ZEDBSD_SYSROOT_ARMV7_LIBC_SOURCES) \
 	$(ZEDBSD_SYSROOT_LLVM_BUILTIN_SOURCES) \
 	$(ZEDBSD_SYSROOT_ARM64_LLVM_BUILTIN_SOURCES) \
+	$(ZEDBSD_SYSROOT_ARMV7_LLVM_BUILTIN_SOURCES) \
 	$(ZEDBSD_SYSROOT_PUBLIC_HEADERS) $(ZEDBSD_SYSROOT_LINKER_SCRIPTS) \
 	src/libc/crt/crt0-amd64.S src/libc/crt/crt1-amd64.S \
 	src/libc/crt/crt0-i386.S src/libc/crt/crt1-i386.S \
 	src/libc/crt/crt0-aarch64.S src/libc/crt/crt1-aarch64.S \
 	src/libc/crt/crt0-riscv64.S src/libc/crt/crt1-riscv64.S \
+	src/libc/crt/crt0-armv7.S src/libc/crt/crt1-armv7.S \
 	include/hal/arch.h include/hal/arch/amd64.h include/hal/arch/i386.h \
-	include/hal/arch/aarch64.h include/hal/arch/riscv64.h
+	include/hal/arch/aarch64.h include/hal/arch/riscv64.h \
+	include/hal/arch/armv7.h
 
 # $(1) sysroot, $(2) its name, $(3) target triple, $(4) code generation
 # flags, $(5) HAL architecture macro, $(6) crt0 and $(7) crt1 sources,
 # $(8) and $(9) the linker script the smoke program is linked with, $(10) the
 # ELF machine llvm-readelf names, $(11) user ABI macros, $(12) the C library's
 # assembly sources, $(13) the compiler runtime's floating-point ABI flags and
-# $(14) its sources beyond the common ones and $(15) the LLVM builtins beyond
-# the common ones.
+# $(14) its sources beyond the common ones, $(15) the LLVM builtins beyond
+# the common ones and $(16) the flags the LLVM builtins alone are built with.
 
 define ZEDBSD_BUILD_SYSROOT
 $(1)/.zedbsd-sysroot-complete: $(ZEDBSD_SYSROOT_INPUTS) \
@@ -153,7 +199,8 @@ $(1)/.zedbsd-sysroot-complete: $(ZEDBSD_SYSROOT_INPUTS) \
 		"$$$$temporary/usr/lib/zedbsd/pcat" \
 		"$$$$temporary/usr/lib/zedbsd/pc98" \
 		"$$$$temporary/usr/lib/zedbsd/arm64" \
-		"$$$$temporary/usr/lib/zedbsd/riscv64" "$$$$temporary/obj"; \
+		"$$$$temporary/usr/lib/zedbsd/riscv64" \
+		"$$$$temporary/usr/lib/zedbsd/armv7" "$$$$temporary/obj"; \
 	for header in $$(ZEDBSD_SYSROOT_PUBLIC_HEADERS); do \
 		case "$$$$header" in \
 		include/libc/*) relative=$$$${header#include/libc/} ;; \
@@ -200,7 +247,7 @@ $(1)/.zedbsd-sysroot-complete: $(ZEDBSD_SYSROOT_INPUTS) \
 	for source in $$(ZEDBSD_SYSROOT_LLVM_BUILTIN_SOURCES) $(15); do \
 		object="$$$$temporary/obj/$$$${source##*/}.o"; \
 		'$(ZEDBSD_SYSROOT_CLANG)' --target='$(3)' --sysroot="$$$$temporary" \
-			$(4) -D$(5) $(11) -nostdinc -isystem "$$$$temporary/usr/include" \
+			$(4) -D$(5) $(11) $(16) -nostdinc -isystem "$$$$temporary/usr/include" \
 			-I'$(ZEDBSD_LLVM_SOURCE)/compiler-rt/lib/builtins' \
 			-ffreestanding -fno-builtin -fno-pic -fno-pie \
 			-fno-stack-protector -fno-asynchronous-unwind-tables \
@@ -210,7 +257,7 @@ $(1)/.zedbsd-sysroot-complete: $(ZEDBSD_SYSROOT_INPUTS) \
 			-c "$$$$source" -o "$$$$object"; \
 	done; \
 	'$(ZEDBSD_SYSROOT_AR)' rcsD "$$$$temporary/usr/lib/libclang_rt.builtins.a" \
-		$$$$(find "$$$$temporary/obj" -type f -name '*.c.o' -print | LC_ALL=C sort); \
+		$$$$(find "$$$$temporary/obj" -type f \( -name '*.c.o' -o -name '*.S.o' \) -print | LC_ALL=C sort); \
 	'$(ZEDBSD_SYSROOT_CLANG)' --target='$(3)' --sysroot="$$$$temporary" \
 		$(4) -nostdinc -Iinclude -D$(5) $(11) \
 		-ffreestanding -fno-pic -fno-pie -fno-stack-protector \
@@ -236,6 +283,7 @@ $(1)/.zedbsd-sysroot-complete: $(ZEDBSD_SYSROOT_INPUTS) \
 		"$$$$temporary/usr/lib/zedbsd/pc98/platform-stage2.ld"; \
 	cp platform/arm64/user.ld "$$$$temporary/usr/lib/zedbsd/arm64/"; \
 	cp platform/riscv64/user.ld "$$$$temporary/usr/lib/zedbsd/riscv64/"; \
+	cp platform/armv7/user.ld "$$$$temporary/usr/lib/zedbsd/armv7/"; \
 	cp bootloader/pc98/stage2.ld \
 		"$$$$temporary/usr/lib/zedbsd/pc98/bootloader-stage2.ld"; \
 	printf '%s\n' 'arch=$(2)' 'triple=$(3)' \
@@ -279,13 +327,15 @@ $(eval $(call ZEDBSD_BUILD_SYSROOT,$(ZEDBSD_SYSROOT_AMD64),amd64,x86_64-unknown-
 $(eval $(call ZEDBSD_BUILD_SYSROOT,$(ZEDBSD_SYSROOT_I386),i386,i386-unknown-zedbsd,-m32 -march=i386 -msoft-float -mno-mmx -mno-sse -mno-sse2,HAL_ARCH_I386,src/libc/crt/crt0-i386.S,src/libc/crt/crt1-i386.S,pcat,user.ld,Intel 80386,,,-mlong-double-64,))
 $(eval $(call ZEDBSD_BUILD_SYSROOT,$(ZEDBSD_SYSROOT_ARM64),arm64,aarch64-unknown-zedbsd,-march=armv8-a -mno-outline-atomics,HAL_ARCH_ARM64,src/libc/crt/crt0-aarch64.S,src/libc/crt/crt1-aarch64.S,arm64,user.ld,AArch64,-DKERN_USER_ABI_AARCH64 -DKERN_USER_ABI_LP64,$(ZEDBSD_SYSROOT_ARM64_LIBC_SOURCES),,$(ZEDBSD_SYSROOT_ARM64_COMPILER_RT_SOURCES),$(ZEDBSD_SYSROOT_ARM64_LLVM_BUILTIN_SOURCES)))
 $(eval $(call ZEDBSD_BUILD_SYSROOT,$(ZEDBSD_SYSROOT_RISCV64),riscv64,riscv64-unknown-zedbsd,-march=rv64gc -mabi=lp64d -mno-relax,HAL_ARCH_RISCV64,src/libc/crt/crt0-riscv64.S,src/libc/crt/crt1-riscv64.S,riscv64,user.ld,RISC-V,-DKERN_USER_ABI_RISCV64 -DKERN_USER_ABI_LP64,$(ZEDBSD_SYSROOT_RISCV64_LIBC_SOURCES),,$(ZEDBSD_SYSROOT_RISCV64_COMPILER_RT_SOURCES),))
+$(eval $(call ZEDBSD_BUILD_SYSROOT,$(ZEDBSD_SYSROOT_ARMV7),armv7,armv7-unknown-zedbsd-eabihf,$(ZEDBSD_SYSROOT_ARMV7_CODE_FLAGS),HAL_ARCH_ARMV7,src/libc/crt/crt0-armv7.S,src/libc/crt/crt1-armv7.S,armv7,user.ld,ARM,-DKERN_USER_ABI_ARMV7,$(ZEDBSD_SYSROOT_ARMV7_LIBC_SOURCES),,,$(ZEDBSD_SYSROOT_ARMV7_LLVM_BUILTIN_SOURCES),$(ZEDBSD_SYSROOT_ARMV7_LLVM_BUILTIN_FLAGS)))
 
-.PHONY: sysroot-amd64 sysroot-i386 sysroot-arm64 sysroot-riscv64 sysroots
+.PHONY: sysroot-amd64 sysroot-i386 sysroot-arm64 sysroot-riscv64 sysroot-armv7 sysroots
 sysroot-amd64: $(ZEDBSD_SYSROOT_AMD64)/.zedbsd-sysroot-complete
 sysroot-i386: $(ZEDBSD_SYSROOT_I386)/.zedbsd-sysroot-complete
 sysroot-arm64: $(ZEDBSD_SYSROOT_ARM64)/.zedbsd-sysroot-complete
 sysroot-riscv64: $(ZEDBSD_SYSROOT_RISCV64)/.zedbsd-sysroot-complete
-sysroots: sysroot-amd64 sysroot-i386 sysroot-arm64 sysroot-riscv64
+sysroot-armv7: $(ZEDBSD_SYSROOT_ARMV7)/.zedbsd-sysroot-complete
+sysroots: sysroot-amd64 sysroot-i386 sysroot-arm64 sysroot-riscv64 sysroot-armv7
 
 $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt0.o \
 $(ZEDBSD_SYSROOT_AMD64)/usr/lib/crt1.o \
@@ -325,4 +375,14 @@ $(ZEDBSD_SYSROOT_RISCV64)/usr/lib/libzedbsd-compiler-rt.a \
 $(ZEDBSD_SYSROOT_RISCV64)/usr/lib/libzedbsd-compiler-rt.o \
 $(ZEDBSD_SYSROOT_RISCV64)/usr/lib/libclang_rt.builtins.a: \
 	$(ZEDBSD_SYSROOT_RISCV64)/.zedbsd-sysroot-complete
+	@test -f '$@'
+
+$(ZEDBSD_SYSROOT_ARMV7)/usr/lib/crt0.o \
+$(ZEDBSD_SYSROOT_ARMV7)/usr/lib/crt1.o \
+$(ZEDBSD_SYSROOT_ARMV7)/usr/lib/libc.a \
+$(ZEDBSD_SYSROOT_ARMV7)/usr/lib/libc.o \
+$(ZEDBSD_SYSROOT_ARMV7)/usr/lib/libzedbsd-compiler-rt.a \
+$(ZEDBSD_SYSROOT_ARMV7)/usr/lib/libzedbsd-compiler-rt.o \
+$(ZEDBSD_SYSROOT_ARMV7)/usr/lib/libclang_rt.builtins.a: \
+	$(ZEDBSD_SYSROOT_ARMV7)/.zedbsd-sysroot-complete
 	@test -f '$@'

@@ -291,4 +291,24 @@ typedef uint32_t Elf_Off;
 #define R_RISCV_TLS_DTPREL64 9
 #define R_RISCV_TLS_TPREL64 11
 
+/*
+ * 32-bit ARM.  Every relocation is a REL one, its addend in the word it
+ * relocates.  TLS_TPOFF32 (initial exec) has no place here: every
+ * module's TLS is dynamic, so the loader refuses it.
+ *
+ * Values referenced: LLVM 23.1
+ * llvm/include/llvm/BinaryFormat/ELFRelocs/ARM.def (R_ARM_NONE,
+ * R_ARM_ABS32, R_ARM_TLS_DTPMOD32, R_ARM_TLS_DTPOFF32, R_ARM_TLS_TPOFF32,
+ * R_ARM_COPY, R_ARM_GLOB_DAT, R_ARM_JUMP_SLOT, R_ARM_RELATIVE).
+ */
+#define R_ARM_NONE 0
+#define R_ARM_ABS32 2
+#define R_ARM_TLS_DTPMOD32 17
+#define R_ARM_TLS_DTPOFF32 18
+#define R_ARM_TLS_TPOFF32 19
+#define R_ARM_COPY 20
+#define R_ARM_GLOB_DAT 21
+#define R_ARM_JUMP_SLOT 22
+#define R_ARM_RELATIVE 23
+
 #endif

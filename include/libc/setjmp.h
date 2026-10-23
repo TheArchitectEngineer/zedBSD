@@ -24,11 +24,14 @@ extern "C" {
  * the frame pointer, the link register, the stack pointer, and the low
  * halves of v8 to v15.  Nor has it one for RISC-V, where the saved
  * registers are s0 through s11, the return address, the stack pointer and
- * fs0 to fs11.
+ * fs0 to fs11.  32-bit ARM keeps the same state by hand too: r4 to r11,
+ * the stack pointer, the link register and d8 to d15, two words each.
  */
 #if defined(__aarch64__)
 #define __ZED_JMP_BUF_WORDS 21
 #elif defined(__riscv)
+#define __ZED_JMP_BUF_WORDS 26
+#elif defined(__arm__)
 #define __ZED_JMP_BUF_WORDS 26
 #else
 #define __ZED_JMP_BUF_WORDS 5
@@ -39,7 +42,7 @@ typedef struct {
 	int result;
 } jmp_buf[1];
 
-#if defined(__aarch64__) || defined(__riscv)
+#if defined(__aarch64__) || defined(__riscv) || defined(__arm__)
 int __zed_setjmp(void *context);
 
 #define setjmp(environment)                                                    \

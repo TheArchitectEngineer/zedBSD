@@ -5383,6 +5383,8 @@ uname(
 	static const char machine[] = "sparcv9";
 #elif defined(__riscv) && __riscv_xlen == 64
 	static const char machine[] = "riscv64";
+#elif defined(__arm__)
+	static const char machine[] = "armv7";
 #else
 	static const char machine[] = "unknown";
 

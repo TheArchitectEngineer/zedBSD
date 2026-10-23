@@ -43,6 +43,16 @@
 #define EM_X86_64	62
 #define EM_AARCH64	183
 #define EM_RISCV	243
+
+/*
+ * The 32-bit ARM header flag that says the image passes floating-point
+ * values in the floating-point unit's registers, the only convention the
+ * armv7 port runs.
+ *
+ * Value referenced: LLVM 23.1 llvm/include/llvm/BinaryFormat/ELF.h
+ * (EF_ARM_ABI_FLOAT_HARD).
+ */
+#define EF_ARM_ABI_FLOAT_HARD	0x00000400U
 #define PT_NULL		0
 #define PT_LOAD		1
 #define PT_DYNAMIC	2
