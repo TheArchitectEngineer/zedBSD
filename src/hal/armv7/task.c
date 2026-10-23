@@ -894,6 +894,7 @@ armv7_context_selftest(
 	if (self_count != 2)
 		HAL_FATAL("armv7 context selftest second switch");
 
+	/* Succeeded: the task ran and resumed across both switches. */
 	hal_puts("ARMV7 CONTEXT PASS\n");
 }
 

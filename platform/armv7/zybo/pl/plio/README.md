@@ -19,7 +19,7 @@ The block is not built by zedBSD's `make`: it needs a host FPGA toolchain.
 - openXC7 (yosys, nextpnr-himbaechel, fpga-as):
   `plan/tools/zybo/pl-build.sh platform/armv7/zybo/pl/plio` writes
   `build/zybo-pl/plio/plio.bit`.
-- The host simulation: `plan/ws286/tests/plio-tb.sh` (Icarus Verilog).
+- The host simulation: `platform/armv7/zybo/pl/tests/plio-tb.sh` (Icarus Verilog).
 - Over JTAG, with SPL holding the PS: `plan/tools/zybo/pl-jtag.sh plio.bit`,
   then OpenOCD's `zybo_pl_enable` (`plan/tools/zybo/openocd-zybo.cfg`).
 

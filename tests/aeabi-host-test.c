@@ -15,7 +15,7 @@
  * the target's self-test's.
  *
  * cc -m32 -std=c11 -Wall -Wextra -Werror \
- *    plan/ws286/tests/aeabi-host-test.c src/hal/armv7/aeabi-divide.c -o <out> && <out>
+ *    tests/aeabi-host-test.c src/hal/armv7/aeabi-divide.c -o <out> && <out>
  */
 
 #include <stdint.h>
@@ -88,6 +88,8 @@ main(
 		printf("armv7 aeabi host test FAIL (%d)\n", failures);
 		return 1;
 	}
+
+	/* Succeeded: every form agreed with the host. */
 	printf("armv7 aeabi host test PASS\n");
 	return 0;
 }

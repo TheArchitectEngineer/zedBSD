@@ -341,6 +341,8 @@ take_abort(
 		if ((status_register & ARMV7_DFSR_WNR) != 0)
 			write = 1;
 	}
+
+	/* The fault's kind, from the status register's FS bits. */
 	status = fault_status(status_register);
 
 	/* A fault of a cache maintenance operation is never the page's first use. */

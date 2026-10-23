@@ -143,10 +143,10 @@ ARMV7_APP_LINK = $(ARMV7_USER_CC) $(ARMV7_USER_ARCH_FLAGS) -nostdlib -pie \
  -Wl,--dynamic-linker=/lib/ld.so $(ARMV7_SYSROOT)/usr/lib/crt1.o
 ARMV7_APP_LIBS = -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) -l:libc.so
 
-# The ABI test (plan/ws286/tests/abitest.c), run as init from a root that
+# The ABI test (platform/armv7/tests/abitest.c), run as init from a root that
 # holds nothing else: the loader, the C library and the test.
-ARMV7_ABITEST_SOURCE := plan/ws286/tests/abitest.c
-ARMV7_ABITEST_OBJ := $(DYNAMIC_DIR)/obj/plan/ws286/tests/abitest.o
+ARMV7_ABITEST_SOURCE := platform/armv7/tests/abitest.c
+ARMV7_ABITEST_OBJ := $(DYNAMIC_DIR)/obj/platform/armv7/tests/abitest.o
 ARMV7_ROOT_IMAGE_TOOL := platform/armv7/tools/make-armv7-root-image.py
 
 # The test has thread-local variables of its own, which it reaches through
@@ -190,6 +190,10 @@ ARMV7_ROOT_COMMANDS += $(if $(filter openssh,$(ZEDBSD_USER_PROGRAMS)),chmod mkdi
 # ping and hostname to look at the result.
 ARMV7_ROOT_NETWORK_COMMANDS := dhcpc hostname ifconfig net networkd ping route
 ARMV7_ROOT_COMMANDS += $(filter $(ARMV7_ROOT_NETWORK_COMMANDS),$(ZEDBSD_USER_PROGRAMS))
+# A configuration adds programs to the default set here (the ZYBO's
+# programmable logic tools: plan/tools/zybo/config-zybo-fpga.mk).
+ARMV7_ROOT_EXTRA_COMMANDS ?=
+ARMV7_ROOT_COMMANDS += $(ARMV7_ROOT_EXTRA_COMMANDS)
 ARMV7_APP_OBJ := $(DYNAMIC_DIR)/obj
 ARMV7_APP_CHECK = $(PYTHON) tools/build/check-dynamic-elf.py --machine armv7 \
  --role application --needed libc.so

@@ -9,7 +9,7 @@
  * Host simulation of plio (platform/armv7/zybo/pl/plio/plio.v) with Icarus
  * Verilog: stand-ins for PS7 and BUFG drive the M_AXI_GP0 port the way the PS
  * does, and the checks follow the register table and design §7.5.
- *   plan/ws286/tests/plio-tb.sh
+ *   platform/armv7/zybo/pl/tests/plio-tb.sh
  */
 
 `timescale 1ns / 1ps

@@ -2,9 +2,10 @@
 
 # WS286 の設計: Digilent ZYBO（初代、Zynq-7000 XC7Z010）への移植 — ARMv7-A の HAL・toolchain・BSP・driver
 
-2026-10-23 P1（[ws286-p001](phase001/phase.md)、worktree p1-zybo、基点 main 6206d397e）。親: [WS286](ws.md)。
+2026-10-23 P1（ws286-p001、worktree p1-zybo、基点 main 6206d397e）。親: [WS286](ws.md)。
+**WS286 の完了後（2026-10-23）**: この文書は板の事実と設計の根拠を残す参照として保つ（WS289・WS287・後の画面の RTL が節番号で引く）。本文の中の phase001〜phase010、proposed/boot-test-armv7.md、review-20261023.md、WS 専用の tests/ は完了の時に削除した（main 463911ab9 の git の履歴にある）。残した試験は platform/armv7/tests/abitest.c、tests/ の aeabi・armv7-pte・zynq-devcfg・fpgaload-bitstream の host 試験、platform/armv7/zybo/pl/tests/plio-tb.sh、plan/tools/zybo/plio-jtag.sh・config-zybo-fpga.mk。結果は [ws.md](ws.md)。
 **版 2**（2026-10-23 P1、worktree p1-zybo2、基点 main 151b879de）: §12 のユーザーの決定（OSS だけ、JTAG の起動が先、JTAG で reset、SwitchBot 無し）と、同日の Q1 経由の決定（WS286 の到達目標を「JTAG で起動し PL の block を zedBSD から動かす」に絞る、USB は外す）を反映した。書き直した節: 冒頭、§1.3、§3.7・§3.11〜§3.13、§4（全部）、§5（SD・LAN・USB を外へ、§5.6 の改訂、§5.10 の新設）、§7〜§10、§12。版 1 の SD・LAN・USB・SMP の設計は後の WS の参考として残す（各節の頭に「WS286 の外」と書いた）。
-**版 3**（2026-10-23 P2、worktree p2-zybo-d3、基点 main cee5b9421）: 敵対的レビュー [review-20261023.md](phase001/review-20261023.md)（Critical 2・High 5・Medium 11・Low 7）の全部の指摘に対応した。指摘ごとの対応の表は [phase001/phase.md](phase001/phase.md) の「版 3: review の指摘と対応」。書き直した節: §0（版 3 で読んだ物）、§1.3・§1.4、§2.2〜§2.4、§3.2・§3.3・§3.5〜§3.7・§3.10〜§3.14、§4.1・§4.3・§4.6、§5.1・§5.6、§6〜§11（§8 の Phase の表は p006・p007 の範囲を改め、p010 を新設）。各節の版 3 の変更は「版 3:」で始まる文か、置き換えた文そのもの。HAL の API（hal.h）の追加の変更は無い（U1 の 3 点のまま）。
+**版 3**（2026-10-23 P2、worktree p2-zybo-d3、基点 main cee5b9421）: 敵対的レビュー review-20261023.md（Critical 2・High 5・Medium 11・Low 7）の全部の指摘に対応した。指摘ごとの対応の表は phase001/phase.md の「版 3: review の指摘と対応」。書き直した節: §0（版 3 で読んだ物）、§1.3・§1.4、§2.2〜§2.4、§3.2・§3.3・§3.5〜§3.7・§3.10〜§3.14、§4.1・§4.3・§4.6、§5.1・§5.6、§6〜§11（§8 の Phase の表は p006・p007 の範囲を改め、p010 を新設）。各節の版 3 の変更は「版 3:」で始まる文か、置き換えた文そのもの。HAL の API（hal.h）の追加の変更は無い（U1 の 3 点のまま）。
 
 **到達目標（版 2、2026-10-23 Q1 経由のユーザーの決定、§12）**: ZYBO で zedBSD が **JTAG から起動**し（reset も JTAG）、UART の shell から **PL を書き込み**（openFPGALoader の JTAG と、zedBSD の devcfg/PCAP ＋ `fpgaload` の両方）、**PS と PL の間の小さな block**（AXI GP0 の slave の register・LED・switch・button・PL の割り込み、§5.10）を zedBSD から読み書きして動作を確かめる。最短の道は「ARMv7 の HAL（UART・timer・GIC・MMU・task、1 CPU）→ JTAG の起動 → ramdisk の root で shell → devcfg と block」。SMP の CPU1・L2・SD・LAN・SD の起動は PL の動作に要らないので後の WS、USB は WS286 から外す（split の対応は Q1 が WS287 を作る）。
 手本は [WS263](../ws263/design.md)（riscv32）・[WS271](../ws271/design.md)（mips32）の「新しい arch の足し方」と、`src/hal/arm64/`（GIC・SMP・BSP の分け方）。
@@ -77,7 +78,7 @@
 
 `qemu-system-arm --version` = 10.0.11（Debian 1:10.0.11+ds-0+deb13u1）。`-M help` に `virt`（10.0）と `xilinx-zynq-a9`（Cortex-A9、Zynq 7000）、`-cpu help` に `cortex-a9`・`cortex-a15`・`cortex-a7`。zynq の model に有る物: SLCR、GIC（PL390 の register 互換）、private/global timer、Cadence UART ×2、Cadence GEM ×2、SDHCI ×2（capabilities 0x69ec0080）、ChipIdea ×2、QSPI、TTC、devcfg（`0xF8007000`、`hw/dma/xlnx-zynq-devcfg`）、OCM。無い物（unimplemented）: GPIO、I2C、CAN、SWDT、DDRC、SMC。
 版 3（H1）: 版 2 の「PL310 の model は無い」は誤り。QEMU zynq は `l2x0` の model を `0xF8F02000` に持ち（`xilinx_zynq.c` 271 行）、`CACHE_ID` は ARM の `0x410000C8`（`arm_l2x0.c` 30・75 行）を返す。model は register の箱だけで cache の振る舞いは無い。MIDR も実機と同じ `0x413FC090`（r3p0、`xilinx_zynq.c` 58・223 行）。→ PL310 と MIDR は判別に使えない。
-**QEMU か実機かの判別（版 3）: SLCR の `PSS_IDCODE`（`0xF8000530`）が 0 なら QEMU**。QEMU の `zynq_slcr.c` は `PSS_IDCODE` を read only にするだけで reset の値を入れない（135・455 行、325〜378 行の reset に無い）ので 0 を読む見込み（QEMU での実測は p005 の最初の T1 の起動）。**実機の値は `0x13722093`**（p002 の probe、§4.8・[phase002](phase002/phase.md)）。BSP は下位 28 bit を `0x3722093` と比べ（上位 4 bit は silicon の版）、0 でも一致でもなければ `ZYBO IDCODE UNKNOWN 0x…` を出し実機として続ける。実機にも PL310 が有り（`CACHE_ID` 0x410000c8、SPL の後は無効、§4.8）、L2 の扱い（§3.11）は両方で同じ。判別の結果は boot の 1 行 `ZYBO PLATFORM qemu|board idcode=0x…` で出す。DTB の property での判別（`/chosen/zedbsd,platform`）は道具が書き忘れると誤るので主にしない（表示の照合だけ）。判別を使う所は 2 つだけ: timer の周波数（§3.6、QEMU は 100 MHz）と devcfg の QEMU 用の待ちの省略の許可（§5.6、boot parameter と二重の条件）。
+**QEMU か実機かの判別（版 3）: SLCR の `PSS_IDCODE`（`0xF8000530`）が 0 なら QEMU**。QEMU の `zynq_slcr.c` は `PSS_IDCODE` を read only にするだけで reset の値を入れない（135・455 行、325〜378 行の reset に無い）ので 0 を読む見込み（QEMU での実測は p005 の最初の T1 の起動）。**実機の値は `0x13722093`**（p002 の probe、§4.8・phase002）。BSP は下位 28 bit を `0x3722093` と比べ（上位 4 bit は silicon の版）、0 でも一致でもなければ `ZYBO IDCODE UNKNOWN 0x…` を出し実機として続ける。実機にも PL310 が有り（`CACHE_ID` 0x410000c8、SPL の後は無効、§4.8）、L2 の扱い（§3.11）は両方で同じ。判別の結果は boot の 1 行 `ZYBO PLATFORM qemu|board idcode=0x…` で出す。DTB の property での判別（`/chosen/zedbsd,platform`）は道具が書き忘れると誤るので主にしない（表示の照合だけ）。判別を使う所は 2 つだけ: timer の周波数（§3.6、QEMU は 100 MHz）と devcfg の QEMU 用の待ちの省略の許可（§5.6、boot parameter と二重の条件）。
 
 ## 2. toolchain と sysroot
 
@@ -400,7 +401,7 @@ void bsp_cpu_early_setup(void);          /* 版 3: MMU on の前。zybo は SCU 
 
 ### 4.4 道具（p002 で書く。Q1 が Master の Tools に登録する）
 
-版 3: 下の表は版 2 の計画。p002 で実際に作った道具と名前（`spl-build.sh`、`jtag-probe.sh`、`uart-expect.py`、`zybo-common.sh`、`adapter serial`）は §4.8 と [phase002](phase002/phase.md) が正。`pl-jtag.sh`・`pl-build.sh` は p003、`qemu-zynq.sh` は p005 で作る。
+版 3: 下の表は版 2 の計画。p002 で実際に作った道具と名前（`spl-build.sh`、`jtag-probe.sh`、`uart-expect.py`、`zybo-common.sh`、`adapter serial`）は §4.8 と phase002 が正。`pl-jtag.sh`・`pl-build.sh` は p003、`qemu-zynq.sh` は p005 で作る。
 
 | 道具 | 中身 |
 | --- | --- |
@@ -423,7 +424,7 @@ void bsp_cpu_early_setup(void);          /* 版 3: MMU on の前。zybo は SCU 
 
 ### 4.6 QEMU の起動
 
-- `virt`（HAL の立ち上げ、boot-test.sh の新しい mode、[proposed/boot-test-armv7.md](proposed/boot-test-armv7.md) 版 3）: `qemu-system-arm -M virt,gic-version=2 -cpu cortex-a15 -smp 1 -m 512M -device ramfb -kernel build/armv7-virt/vmunix.bin [-initrd root.img] [-append …] -serial unix:… -qmp unix:… -display none`。版 3（C2）: **`-kernel` は raw の `vmunix.bin`**（ELF でない）。QEMU は Linux の約束で `0x40010000` に置き、`r2` に DTB、`-initrd` を読んで `/chosen` の `linux,initrd-start`/`-end` に、`-append` を `bootargs` に書く（§1.3 の根拠）。ELF の `vmunix` は gdb の symbol にだけ使う（`file vmunix` で VMA が合う）。最初の T1 の起動（p004）の前の確かめ: `-S -gdb tcp::PORT` で止め、gdb-multiarch で `hbreak *0x40010000`・`continue` の後に `p/x $r2` と `x/wx $r2`（FDT の magic `0xd00dfeed` は little endian の word で `0xedfe0dd0`）を見る（log を読まない判定、T1 の依頼に入れる）。console は HAL が ramfb に描く（riscv32 の bsp-virt の `framebuffer.c`・`fwcfg.c`・`cons.c`・`font.c` の写し。arm の virt の fw_cfg も MMIO で、selector と DMA の address は big endian、`docs/specs/fw_cfg.rst`）。
+- `virt`（HAL の立ち上げ、boot-test.sh の新しい mode、proposed/boot-test-armv7.md 版 3）: `qemu-system-arm -M virt,gic-version=2 -cpu cortex-a15 -smp 1 -m 512M -device ramfb -kernel build/armv7-virt/vmunix.bin [-initrd root.img] [-append …] -serial unix:… -qmp unix:… -display none`。版 3（C2）: **`-kernel` は raw の `vmunix.bin`**（ELF でない）。QEMU は Linux の約束で `0x40010000` に置き、`r2` に DTB、`-initrd` を読んで `/chosen` の `linux,initrd-start`/`-end` に、`-append` を `bootargs` に書く（§1.3 の根拠）。ELF の `vmunix` は gdb の symbol にだけ使う（`file vmunix` で VMA が合う）。最初の T1 の起動（p004）の前の確かめ: `-S -gdb tcp::PORT` で止め、gdb-multiarch で `hbreak *0x40010000`・`continue` の後に `p/x $r2` と `x/wx $r2`（FDT の magic `0xd00dfeed` は little endian の word で `0xedfe0dd0`）を見る（log を読まない判定、T1 の依頼に入れる）。console は HAL が ramfb に描く（riscv32 の bsp-virt の `framebuffer.c`・`fwcfg.c`・`cons.c`・`font.c` の写し。arm の virt の fw_cfg も MMIO で、selector と DMA の address は big endian、`docs/specs/fw_cfg.rst`）。
 - `xilinx-zynq-a9`（zybo の BSP の早い確かめ、`qemu-zynq.sh`）: `qemu-system-arm -M xilinx-zynq-a9 -smp 1 -m 512M -kernel vmunix -serial null -serial unix:… -device loader,file=jtag.dtb,addr=0x01f00000 [-device loader,file=root.img,addr=0x04000000] -display none`（UART1 は 2 つ目の `-serial`）。DTB は `jtag-boot.sh` と同じ DTS の雛形を `qemu-zynq.sh` が `dtc` で作り（`bootargs` も `linux,initrd-start`/`-end` もその中）、`-device loader` で JTAG と同じ `0x01F00000` に置く。ELF の道の QEMU は `r2` を設定しない → **zybo の HAL は `r2` が RAM の中の FDT の magic（`0xd00dfeed`）を指す時はそれ、無ければ `0x01F00000` に magic が有る時だけそれ、どちらも無ければ DTB 無し**（固定の address と既定の command line）。
   - 版 3（L1）: `-dtb` を渡せば ELF の時も QEMU は DTB を PA 0 に置いて `-append` を書く（§1.3）が、`r2` は設定されず置き場所が JTAG と違うので使わない。
   - 版 3（C2 の zynq 側の比較）: QEMU zynq も raw の image で Linux の約束に乗せられる（`zynq_binfo.loader_start = 0`、`xilinx_zynq.c` 449 行）が、採らない。(1) raw の置き場所は `0x00010000`（`loader_start + 0x10000`）で zybo の `ARMV7_KERNEL_PHYS` = `0x00100000`（JTAG・実機）と違い、zybo の build が 2 つになる、(2) Linux の道は A9（EL2 無し、EL3 有り）を **Non-secure の SVC** で入れる（`do_cpu_reset` の `arm_emulate_firmware_reset`、`secure_board_setup` も無い）ので、Secure で入る実機の BSP（GIC の Group、ACTLR、SCU）と違う状態を試す事になる。ELF の道は cpu reset のままの Secure の SVC で実機に近い。
@@ -436,7 +437,7 @@ void bsp_cpu_early_setup(void);          /* 版 3: MMU on の前。zybo は SCU 
 - 再起動: `reboot`（`hal_reset`、BootROM が SD から読み直す）。止まった時は `jtag-reset.sh`（SD の mode でも同じ DAP の書き込みで reset できる）。SwitchBot は使わない（未接続）。
 - kernel の更新: LAN の WS の後は `deploy.sh`（scp + `reboot`）、それまでは JTAG。
 
-### 4.8 p002 の実測（2026-10-23 P1、実機。詳細は [phase002](phase002/phase.md)）
+### 4.8 p002 の実測（2026-10-23 P1、実機。詳細は phase002）
 
 - 道具は §4.4 のとおり（SPL の build の script の名前は `spl-build.sh`、既定の出力 `build/zybo-spl/out/spl/`）。追加: `jtag-probe.sh`（状態を変えない probe）、`uart-expect.py`（UART の生きた line の expect、`serial.py --device` の代わり）、`zybo-common.sh`（lock）。
 - SPL は `CONFIG_SPL_RAM_DEVICE` を外して build（breakpoint が外れても `hang()` で止まる）。banner `U-Boot SPL 2025.07 (Jul 07 2025 - 19:58:33 +0000)`、breakpoint `board_boot_order` = `0x00000fd8` に毎回当たる。
@@ -593,7 +594,7 @@ AGENTS.md の試験の方針（2026-10-03）に従い、細かい修正ごとに
 ### 7.1 host（担当が流す）
 
 - `make ZEDBSD_PLATFORM=armv7-virt vmunix`・`zybo`（warning 0）。`llvm-nm -u` で `__atomic_*` と、§2.2 の表に無い `__aeabi_*` が出ない（出た物で表を確定する）。`readelf -S` で `.ARM.exidx` が無く、text が RX の section に収まる。版 3（C1）: `readelf -h` の `e_entry` が platform の物理の入口（zybo `0x00100000`、virt `0x40010000`）、`llvm-nm` の `_start` が VMA の先頭（zybo `0x80100000`、virt `0x80010000`）、`vmunix.bin` の大きさが `_edata - _start` と合う。
-- host の unit test（`plan/ws286/tests/`、`plan/tools/ports/mips-pte-host-test.c` の形）:
+- host の unit test（`tests/`（host の試験）、`plan/tools/ports/mips-pte-host-test.c` の形）:
   - `pte-host-test.c`（版 3、H2・C1）: descriptor の組み立て（属性・AP・AF・XN・nG・ASID・TTBR の IRGN の bit 6/bit 0）、影の table の位置（page + 0x000 / + 0x800 / + 0xC00）、状態遷移 3 つ（論理 W・RO 中 → write fault → DIRTY・RW、本当の RO → write fault → kernel へ `PAGE_FAULT`、AF=0 → AF fault → ACCESSED）、`prot_query` の write の取り消しで DIRTY が返る事、`PHYS_BASE` 0 と `0x40000000` の両方で `pmem_to_kernel` の範囲の端。
   - `aeabi-host-test.c`（版 3、M1）: int64.c の armv7 の C の部分の算術（divmod の商と余りの両方、境界の値）。
   - `devcfg-host-test.c`（版 3、M4）: `CTRL` の helper が mask の外を拒む、`UNLOCK` の定数、DMA の 8 byte 揃え・4 の倍数の確かめ、`INT_STS` を消す値。
@@ -602,14 +603,14 @@ AGENTS.md の試験の方針（2026-10-03）に従い、細かい修正ごとに
 
 ### 7.2 QEMU virt（T1、`boot-test.sh` の `BOOT_MODE=armv7-virt`、PNG の判定 = 既定の規則）
 
-- [proposed/boot-test-armv7.md](proposed/boot-test-armv7.md)（版 3: raw の `vmunix.bin`、`gic-version=2`）の mode を Q1 が足す。HAL が ramfb に描く console の文字を `boot-test.py` が読む（riscv32-virt と同じ）。`BOOT_PATTERN` で各 Phase の文字列、`BOOT_THEN` の `type:` で serial（PL011）から打つ。
+- proposed/boot-test-armv7.md（版 3: raw の `vmunix.bin`、`gic-version=2`）の mode を Q1 が足す。HAL が ramfb に描く console の文字を `boot-test.py` が読む（riscv32-virt と同じ）。`BOOT_PATTERN` で各 Phase の文字列、`BOOT_THEN` の `type:` で serial（PL011）から打つ。
 - p004 の最初の T1 の依頼に §4.6 の gdb の確かめ（`r2` が DTB の magic を指す、`/chosen` の `bootargs`）を入れる。
 - 到達点:
   - p004: `ARMV7 HAL READY`・`AEABI PASS`・`ATOMIC PASS`・`PAGING PASS`・`TIMER TICK`。
   - p006: `VFP PASS`（HAL の self-test）と `VFS initialization failed`。
   - p007: `abitest` を init にした最小の root（`INITRD=abi.img`、`BOOT_APPEND='init=/abitest'`）で `ABI PASS`。
   - p010: `INITRD=root.img` の `login:`、`type:root`・`type:uname -m` → `armv7`。
-- `abitest`（版 3、`plan/ws286/tests/abitest.c`、zedBSD の libc で動的に link する普通の program。p007 で書く）が順に確かめて 1 行ずつ `/dev/console` に出す: (1) syscall の往復（`getpid`・`write` の戻り値）、(2) TLS（`__thread` の変数を 2 つの thread で別の値、errno）、(3) `fork` と `waitpid`（子の終了の値）、(4) VFP: 親と子が d0〜d31 と FPSCR に別の値を置き、互いに `sched_yield` を挟んで 1000 回 switch しても値が保たれる、(5) signal: `SIGALRM` の handler が VFP の register を壊して戻っても、割り込まれた側の値が保たれる、handler の中の `sigreturn` の道、(6) `execve` の後の子で VFP が初期値（FPSCR 0）、(7) `uname -m` 相当（`uname(2)` の machine が `armv7`）。全部通れば `ABI PASS`、どれかが落ちれば `ABI FAIL <番号>`。VFP の値は inline asm で置いて読む（compiler の最適化に頼らない）。
+- `abitest`（版 3、`platform/armv7/tests/abitest.c`、zedBSD の libc で動的に link する普通の program。p007 で書く）が順に確かめて 1 行ずつ `/dev/console` に出す: (1) syscall の往復（`getpid`・`write` の戻り値）、(2) TLS（`__thread` の変数を 2 つの thread で別の値、errno）、(3) `fork` と `waitpid`（子の終了の値）、(4) VFP: 親と子が d0〜d31 と FPSCR に別の値を置き、互いに `sched_yield` を挟んで 1000 回 switch しても値が保たれる、(5) signal: `SIGALRM` の handler が VFP の register を壊して戻っても、割り込まれた側の値が保たれる、handler の中の `sigreturn` の道、(6) `execve` の後の子で VFP が初期値（FPSCR 0）、(7) `uname -m` 相当（`uname(2)` の machine が `armv7`）。全部通れば `ABI PASS`、どれかが落ちれば `ABI FAIL <番号>`。VFP の値は inline asm で置いて読む（compiler の最適化に頼らない）。
 - 解析は gdbstub（`QEMU_EXTRA='-S -gdb tcp::PORT'`、host の `gdb-multiarch`、`set architecture armv7`、`file build/armv7-virt/vmunix`）。
 
 ### 7.3 QEMU xilinx-zynq-a9（T1、`plan/tools/zybo/qemu-zynq.sh`、serial の判定 = **U3 の例外**、2026-10-23 決定）
@@ -653,7 +654,7 @@ ramdisk に `fpgaload`・`fpgareg` と `plio.bit`（U6 は (a): `pl-build.sh` �
 | Phase | 目的と到達点 | LW | 依存 |
 | --- | --- | --- | --- |
 | p001 | この設計（版 1 6 + 版 2 4 + 版 3 4） | 14 | — |
-| p002 | **JTAG の道具と SPL**（cleared 2026-10-23、[phase002](phase002/phase.md)、§4.8） | 8 | U4 |
+| p002 | **JTAG の道具と SPL**（cleared 2026-10-23、phase002、§4.8） | 8 | U4 |
 | p003 | **PL の block（kernel 無し）**: `platform/armv7/zybo/pl/plio/`（§5.10、U5）、`pl-build.sh`（openXC7）、`pl-jtag.sh`、§7.5。最初に PS7 の place・route の可否（R14） | 8 | p002、**openXC7 の導入（ユーザー）**、U5 |
 | p004 | **HAL の入口（virt、1 CPU）**: `include/hal/arch.h`・`arch/armv7.h`（U1）、`src/hal/armv7/` の locore（`PHYS_BASE`、一時の identity、BSS の前の DTB/initrd の重なりの確かめ）・vectors（Linux 形の入口、8 byte 揃え、monitor の閉じ）・page（影の table）・space（ASID）・int（例外の分類）・gic・clock・lib・cmain・debug・selftest・aeabi.S、bsp-virt（PL011、FDT、GICv2、generic timer、ramfb の console、PSCI の method）、`platform/armv7/`（toolchain.mk・vmunix.mk（`-DKERN_USER_ABI_ARMV7`）・vmunix.ld（platform ごとの address）・Makefile）、`Makefile`・`menuconfig.py` の `armv7-virt`・`zybo`、`config/ci/config-armv7-virt.mk`・`config-zybo.mk`、`int64.c` の armv7 の節、`stat.h` の枝と `#error`、host 試験（pte・aeabi）。到達点: virt の画面に `ARMV7 HAL READY`・`AEABI PASS`・`ATOMIC PASS`・`PAGING PASS`・`TIMER TICK`、gdb で `r2` の確かめ（T1） | 16 | **Q1: LLVM に ARM と armv7 の triple（1 回の作り直し、cache asset の upload はユーザー）**、**Q1: boot-test の `armv7-virt`（版 3 の案）**、U1 |
 | p005 | **zybo の BSP を JTAG で**: bsp-zybo（Cadence UART の early console と QEMU の初期化、memory（先頭 1 MiB を外す）、SLCR の読み、`PSS_IDCODE` の判別、SCU と ACTLR.SMP|FW、erratum 754322 の順、`cpsie a`、private/global timer、DTB の fallback、`hal_reset` の QEMU の park）、`qemu-zynq.sh`、`jtag-boot.sh` の kernel の load の直し（raw の時の `_end`）。到達点: §7.3・§7.4 の p005 | 12 | p002、p004、**U3**、`uart-expect.py`（p002、済み）か Q1 の `serial.py --device` |
@@ -710,7 +711,7 @@ ramdisk に `fpgaload`・`fpgareg` と `plio.bit`（U6 は (a): `pl-build.sh` �
 
 **Q1 への依頼**（版 3）:
 1. **toolchain**（Q1 の許可、担当は適用しない）: 共有の LLVM に `ARM`（`llvm.mk` 361 行の `LLVM_TARGETS_TO_BUILD` に `;ARM`）と zedBSD の armv7 の triple（`0001-add-zedbsd-x86-target.patch` に §2.1 案 2 の 60〜80 行）を **1 回の作り直し**で、`version.mk` `zedbsd10` → `zedbsd11`。memory の「LLVM patch level needs new cache」により **rev-0 の cache asset の upload と digest の更新を同じ commit で**行う必要があり、upload は GitHub への公開なので **ユーザーの指示が要る**（誰がいつ upload するかを Q1 がユーザーに聞く）。p004 の前に要る。大きさの見積もり（未計測）: 4 並列で 30〜60 分、`build/llvm-build`（今 1.6 GB）が 200〜300 MB 増、`clang` の binary（今 177 MB）が 15〜25 MB 増。sysroot.mk の armv7 の呼び出しと ARMV7 の 2 つの manifest（§2.3、compiler-rt の `arm/*` は既存の監査の境界と同じ license）は p007 の前（Q1 の許可）。
-2. `boot-test.sh` の `armv7-virt` の mode（[proposed/boot-test-armv7.md](proposed/boot-test-armv7.md) **版 3**: 既定の image は raw の `vmunix.bin`、`gic-version=2`）。版 2 の案は適用しない（review M11 の 5）。
+2. `boot-test.sh` の `armv7-virt` の mode（proposed/boot-test-armv7.md **版 3**: 既定の image は raw の `vmunix.bin`、`gic-version=2`）。版 2 の案は適用しない（review M11 の 5）。
 3. `plan/tools/guest/serial.py` に `--device PATH [--baud N]`。p002 の `uart-expect.py` が当座の代わりになるので、p005 の前には必須でない。
 4. `src/kern/devfs.c` の名前の表に `fpga`（p008 の前）。
 5. Master の Tools に `plan/tools/zybo/*`（p002 で作った）。

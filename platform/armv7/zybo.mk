@@ -21,12 +21,15 @@ ARMV7_BSP_ASM_SOURCES := early.S
 # The board's binding: the teletype console on the Cadence UART1, whose
 # receive interrupt types into it, the boot devices: the initial ramdisk,
 # and the SD card on SDIO0 (the SDHCI driver with the Zynq's glue and the
-# SLCR's clocks), and the Ethernet port en0 (the Cadence GEM driver with
-# the Zynq's glue for GEM0, and the RTL8211E PHY).
+# SLCR's clocks), the Ethernet port en0 (the Cadence GEM driver with the
+# Zynq's glue for GEM0, and the RTL8211E PHY); and the programmable logic
+# as /dev/fpga0.
 ARMV7_PLATFORM_SOURCES := src/kern/platform/zybo.c \
 	src/drivers/platform/zybo/zynq-slcr.c src/drivers/platform/zybo/zynq-sdhci.c \
 	src/drivers/mmc/sdhci.c \
 	src/drivers/platform/zybo/zynq-ethernet.c src/drivers/ethernet/cadence-gem.c \
 	src/drivers/ethernet/mii-phy.c src/drivers/ethernet/rtl8211e.c \
 	src/drivers/serial/cdns-uart.c src/drivers/generic/serial-console.c \
-	src/drivers/generic/ramdisk.c
+	src/drivers/generic/ramdisk.c \
+	src/drivers/platform/zybo/zynq-devcfg.c \
+	src/drivers/platform/zybo/zynq-devcfg-check.c

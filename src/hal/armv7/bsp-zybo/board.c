@@ -49,7 +49,7 @@
  * silicon's revision.
  *
  * Values referenced: the board's value 0x13722093, read over JTAG
- * (plan/ws286/phase002/phase.md).
+ * (plan/ws286/design.md section 4.8).
  */
 #define BOARD_IDCODE_Z7010	0x03722093U
 #define BOARD_IDCODE_PART_MASK	0x0fffffffU
@@ -187,6 +187,8 @@ bsp_describe(
 	} else if (part != BOARD_IDCODE_Z7010) {
 		hal_printf("ZYBO IDCODE UNKNOWN 0x%08x\n", board_idcode);
 	}
+
+	/* The machine and its IDCODE, the line the tests look for. */
 	hal_printf("ZYBO PLATFORM %s idcode=0x%08x\n", machine, board_idcode);
 
 	/* The coherency the boot set up: ACTLR's SMP and FW, the SCU, the coherent walk, the L2. */

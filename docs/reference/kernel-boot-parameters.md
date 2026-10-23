@@ -416,6 +416,21 @@ readable boot from a machine whose configuration is graphical and quiet.
   power-on.  Tapping Space with the modifier after POST avoids both.
 - The BIOS loaders (i386 PC/AT, PC-98, amd64 BIOS) do not read these keys.
 
+## 7d. The ZYBO's programmable logic in the emulator: fpga.no-pl-wait=1
+
+`fpga.no-pl-wait=1` is for the emulator's `xilinx-zynq-a9` machine only.
+Its model of the device configuration interface never raises the logic's
+INIT nor PCFG_DONE, so a program of `/dev/fpga0` would wait for them and
+time out.  With the token, and only when the SLCR's `PSS_IDCODE` reads 0
+(the emulator), the driver skips those two waits and the DMA queue's
+empty bit, which the model never sets, still runs the rest of the
+configuration (the unlock, the PROG_B writes, the DMA of the bitstream),
+and reports `FPGA_STATUS_EMULATED`; the logic is not enabled
+and its window stays closed.  On the board the token is ignored with the
+message `fpga: fpga.no-pl-wait=1 ignored on the board`.  The token is read
+as a whole word of the command line, like `kmsg=quiet`, not through the
+parameter table, so `boot: ignored 1 unknown parameter` is also logged.
+
 ## 7e. The Ethernet address: mac0=
 
 `mac0=` gives the first Ethernet port its station address on a board that

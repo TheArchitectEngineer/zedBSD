@@ -175,6 +175,8 @@ hal_sync_instruction_stream(
 		__asm__ volatile("mcr p15, 0, %0, c7, c11, 1" : : "r"(line) : "memory");
 		line += step;
 	}
+
+	/* Waits for the cleans to reach the point of unification. */
 	armv7_dsb();
 
 	/* Drops each instruction line of a cache indexed by physical address, or the whole of one that is not. */
