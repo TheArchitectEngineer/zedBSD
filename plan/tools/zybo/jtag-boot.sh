@@ -6,11 +6,13 @@
 # must be on JTAG; nothing is loaded otherwise.
 #   plan/tools/zybo/jtag-boot.sh KERNEL [--dtb FILE] [--append TEXT]
 #       [--initrd root.img] [--no-reset] [--expect REGEX]... [--timeout S]
+#       [--stamp]
 #   plan/tools/zybo/jtag-boot.sh --spl-only [--expect REGEX]...
 # --spl-only stops with SPL halted (DDR up, the PL still off): for DDR and PL
 # tests over JTAG.  --no-reset skips the reset and SPL and loads into a DDR
 # that an earlier run set up (such as --spl-only).  --expect waits on the live UART for each REGEX (SPL's
 # banner is always one) and gives the exit status; nothing is kept in a file.
+# --stamp puts the host's seconds before each UART line (the TIMER 0S/10S check).
 # KERNEL is a raw image entered at its first byte, 0x00100000, or an ELF:
 # OpenOCD then loads each PT_LOAD at its physical address (BSS is not zeroed;
 # the kernel clears its own) and it is entered at e_entry's physical address.
@@ -30,7 +32,7 @@ set -u
 kernel_addr=0x00100000
 dtb_addr=0x01F00000
 initrd_addr=0x04000000
-kernel= dtb= append= initrd= reset=1 spl_only= timeout=60
+kernel= dtb= append= initrd= reset=1 spl_only= timeout=60 stamp=
 patterns=
 while [ $# -gt 0 ]; do
 	case "$1" in
@@ -42,6 +44,7 @@ while [ $# -gt 0 ]; do
 	--expect) patterns="$patterns$2
 "; shift 2 ;;
 	--timeout) timeout=$2; shift 2 ;;
+	--stamp) stamp=--stamp; shift ;;
 	-*) echo "jtag-boot: unknown option $1" >&2; exit 2 ;;
 	*) kernel=$1; shift ;;
 	esac
@@ -129,7 +132,7 @@ if [ -n "$reset" ] || [ -n "$patterns" ]; then
 	for pattern in $patterns; do set -- "$@" "$pattern"; done
 	IFS=$old_ifs
 	zybo_with_uart python3 -I "$zybo_dir/uart-expect.py" --device "$zybo_uart" \
-		--timeout "$timeout" "$@" &
+		--timeout "$timeout" $stamp "$@" &
 	watcher=$!
 	sleep 1
 fi
