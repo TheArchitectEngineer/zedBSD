@@ -4,6 +4,7 @@
 
 - 親: [ws.md](../ws.md)。設計: [design.md](../design.md) §1.3（pclk・pclk5）、§4.2（DC の memory の口 = HP1）、§5（DC）、§8 の p005 の行。
 - 担当: P3（2026-10-23、Q1 の依頼）。状態: in-progress（host と板の機械の確認は全部 PASS。**残りはユーザーの目視**（下の「ユーザーの目視の手順」）。clear の判定は Q1）。
+- 状態: in-progress（host と板の機械の確認は全部 PASS、残りはユーザーの目視 V1〜V5、試験の一覧 U42）
 - 受け入れ（design §8）: color bar の目視、framebuffer の目視、`fpgareg wait` で VSYNC。
 - ユーザーの方法: 「トップダウンにVerilig実装を進めてください。スタブ、ドライバの使用は恐れずに、パズルのように部分的に進めてください。」
 

@@ -45,6 +45,7 @@
 | U37 | ZYBO（JTAG の USB を host に） | Q1 が zedBSD を JTAG で起動し `fpgaload /usr/share/fpga/plio.bit` と `fpgareg write 8 5` を済ませた後（main 4536e2e6f 以降、WS286 p008。Q1 が知らせる） | LED を見る・SW と BTN を動かす | LD0 と LD2 が点く。SW を動かすと `fpgareg read 0xc` が変わる、BTN を押すと `fpgareg wait` が戻る（IRQ_STATUS の bit 0） |
 | U38 | KC705 | 板に bringup の bitstream が載っている時（2026-10-23 の物） | N/E/S/W の button、C の button、DIP を動かす | 押す間 LED[7:4] に {N,E,S,W}、C で walking one が止まる、DIP で LED[3:0]（LED の walking one は 2026-10-23 にユーザーが確認済み） |
 | U39 | Pi 4 | main 803d0dbfb 以降の Pi 4 の image（SD の driver を汎用の SDHCI の core に分けた、WS289 p002） | 普通に SD から起動して使う。可能なら大きな file の複写 | 今までと同じに起動し、SD の読み書きに error が無い |
+| U42 | ZYBO（VGA と HDMI に monitor） | Q1 が `plan/tools/zybo/ghci-dc-board.py --leave …` で表示を残した後（V1〜V5 の 1 つずつ、Q1 が知らせる。手順は plan/ws288/phase005/phase.md の「ユーザーの目視の手順」） | monitor を見る | V1 640×480 の 8 本の色の bar と白枠、V2 640×480 の framebuffer（段々の bar、中央の緑の箱、白枠）、V3 720p の bar（HDMI で 720p と認識するか）、V4 720p の framebuffer、V5 画面が消える。VGA と HDMI は同じ絵 |
 
 ## 日程
 

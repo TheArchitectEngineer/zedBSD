@@ -4,6 +4,7 @@
 
 - 親: [ws.md](../ws.md)。設計: [design.md](../design.md) §1.3、§2.2〜§2.7、§7.6、§8 の p004 の行。前の Phase: [phase003](../phase003/phase.md)、[phase023](../phase023/specs-existing.md)（spec と RTL の差）。
 - 担当: P3（2026-10-23、Q1 の依頼）。状態: cleared（2026-10-23 Q1、ws.md の p004 の行）。
+- 状態: cleared（2026-10-23 Q1、ws.md の p004 の行）
 - 範囲（Q1 の依頼）: (1) spec/gpu/cp/ の `atg_cp_regs/state/ring/seq/fence/ctl/irq/dbg` を spec から実装し、`atg_cp` の inline の logic を移して `atg_cp` を結線だけにする（module ごとの TB）。ring は版 3 の封筒、完全な FENCE、watchdog、FAULT、RESET の順。class V は firmware が無いので FAULT 種別 2。(2) bug 1: RESET で BLT の設定が消える（STATE は残るのに BLT の写しが消える）。(3) bug 2: HALTED/FAULTED で DBG が MC の quiesce に止められる。(4) atg_top_tb の「FAULTED の時の STATE の書き込み」が mask 0 で比べていて何も見ていない。lint 0 warning、sim/run.sh・Verilator を通す、振る舞いの変わる spec を直す。最後に ZYBO の 2D の bitstream を作り直し、板で ghci-blt-board.py と ring/fence を確かめる。
 - ユーザーの方法: 「トップダウンにVerilig実装を進めてください。スタブ、ドライバの使用は恐れずに、パズルのように部分的に進めてください。」
 
