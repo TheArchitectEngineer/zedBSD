@@ -135,3 +135,5 @@ T1（実機、板の lock、生きた serial）:
 - 2026-10-23 Q1: `plan/ws289/tests/config-zybo-ssh.mk` を git rm（既定の `config/ci/config-zybo.mk` と同じ組）、Master の Tools を直し `spl-build.sh`・`deploy.sh`・`make-zybo-boot-files.py`・`qemu-zynq.sh --dtb` を登録。p005 の phase.md の command の記録はその時の物として残す（今は `config/ci/config-zybo.mk` で同じ image）。
 
 - 2026-10-23 Q1: ユーザーの許可（「書き込みを許可します」）で、新しい card に main 5a28d28ca の `zybo-sd.img`（FAT32、BOOT.BIN = spl-build.sh の boot.bin b743c8f8…）を dd して cmp で一致。次: ユーザーが card を ZYBO に差し JP5 を SD に、T1 が serial を監視して電源。
+
+- 2026-10-23 16:57 Q1（実機、JP5 = SD、ユーザーが電源）: BootROM が FAT32 の BOOT.BIN を読み（R7 は FAT32 で可）、SPL の Falcon で kernel、root mmcblk0p2、login、en0 1000 Mbps・DHCP 10.0.30.2、host から ssh-check PASS（cksum 3415062331 8388608、scp 6 s/10 s）。`uname -a` は 5a28d28。不具合: `ls -la /boot/boot0` が `.`・`..` だけ（FAT32 でも）。名前を指定すれば読める（system.dtb 480521733 413、BOOT.BIN 3575930974 129496 が build と一致）。P3 に解析を依頼。deploy と reboot（R8）は未実施。

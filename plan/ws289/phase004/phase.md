@@ -5,7 +5,7 @@
 - 親: [ws289](../ws.md)。設計: [design.md](../design.md) 版 2 の §3.4（glue）・§3.6（root と boot device）・§3.8（CSD）・§4.4 の SLCR の kernel 側・§5.3〜§5.4（image の tool）・§6（`qemu-zynq.sh --sd`）・§7・§8 の p004 の行・§9 の p004 の行。
 - Queue: Q1 の割当（P3、2026-10-23、worktree `/home/awe/zedBSD-worktrees/p3-ws289-p004`、branch `agent/p3-ws289-p004`、基点 main 61d52bd54）。Fable は使わない（ユーザー）。
 - 判断と許可: U1〜U7 はユーザー「はい」で推しのとおり（design §11）。U3: SD は PIO、p004 の dd の実測が 2 MB/s 未満の時だけ SDMA を前倒し。WS286 の U3（ZYBO の QEMU と実機は生きた serial で判定）・U4（担当が板を JTAG で直に操作）。host の block device には書かない（WS289 U1）。toolchain・HAL の API は変えていない。共有の LLVM・NoctLang は main の物への symlink で読むだけ。
-- Status: in-progress（実装と host の確認は済み。QEMU は T1 の結果待ち。実機の SD の確認は板の card が初期化できず止まっている（下の「実機」）。）
+- Status: cleared（2026-10-23 Q1: 実機の ZYBO（新しい card、SD から単独起動、main 5a28d28ca）で root /dev/mmcblk0p2・/boot/boot0 = mmcblk0p1、dd 16 MiB + sync 約 2.7 MB/s・64 MiB の読み 5.32 s（約 12 MB/s）、cksum 4215202376 16777216。U3 の 2 MB/s を上回るので SDMA は前倒ししない。前の card の ACMD41 の busy は card の側（U41 は新しい card で解決）。QEMU は A〜E PASS（前の記録）。merge bf5ee6a10）
 
 ## 受け入れの条件（design §8.2・§8.3・§9 の p004）
 
