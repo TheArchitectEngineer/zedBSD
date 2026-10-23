@@ -5,8 +5,8 @@
       [--fat-mib N] [--kernel VMUNIX.BIN [--bootarg PARAMETER]...] IMAGE
 
 It checks that the image is a power of two in size, that its MBR holds the
-bootable FAT16 boot partition at the first MiB and the UFS root right after
-it, that the boot partition is FAT16 and carries every --boot-file with the
+bootable FAT32 boot partition at the first MiB and the UFS root right after
+it, that the boot partition is FAT32 and carries every --boot-file with the
 same contents, and that partition 2 is the UFS root given, a valid UFS with
 the zedBSD root marker.
 
@@ -32,7 +32,9 @@ from pathlib import Path
 SECTOR = 512
 MIB_SECTORS = 1024 * 1024 // SECTOR
 BOOT_LBA = 2048
-BOOT_TYPE = 0x06
+BOOT_TYPE = 0x0C
+# The fewest clusters a FAT32 has: a reader takes a volume of fewer for FAT16.
+FAT32_MINIMUM_CLUSTERS = 65525
 BOOT_ACTIVE = 0x80
 ROOT_TYPE = 0xA5
 ROOT_MARKER = b"zedBSD ufs root v1\n"
@@ -151,7 +153,7 @@ def check(args: argparse.Namespace) -> None:
         root = struct.unpack_from("<B3sB3sII", mbr, 0x1CE)
         if (boot[0], boot[2], boot[4], boot[5]) != \
                 (BOOT_ACTIVE, BOOT_TYPE, BOOT_LBA, boot_sectors):
-            fail(f"partition 1 is not the bootable FAT16 at {BOOT_LBA}: {boot}")
+            fail(f"partition 1 is not the bootable FAT32 at {BOOT_LBA}: {boot}")
         if (root[0], root[2], root[4], root[5]) != \
                 (0, ROOT_TYPE, root_lba, root_size // SECTOR):
             fail(f"partition 2 is not the UFS root at {root_lba}: {root}")
@@ -163,13 +165,31 @@ def check(args: argparse.Namespace) -> None:
 
         stream.seek(BOOT_LBA * SECTOR)
         fat = stream.read(SECTOR)
-        if fat[510:512] != b"\x55\xaa" or fat[0x36:0x3E] != b"FAT16   ":
-            fail("partition 1 is not FAT16")
+        if fat[510:512] != b"\x55\xaa" or fat[0x52:0x5A] != b"FAT32   ":
+            fail("partition 1 is not FAT32")
         fat_sectors = struct.unpack_from("<H", fat, 0x13)[0]
         if fat_sectors == 0:
             fat_sectors = struct.unpack_from("<I", fat, 0x20)[0]
         if fat_sectors != boot_sectors:
             fail(f"the FAT spans {fat_sectors} sectors, not {boot_sectors}")
+
+        # A FAT32 has no fixed root and no 16-bit table size, and enough
+        # clusters that the kernel's driver, U-Boot and the boot ROM, which
+        # tell the width by the count, all take it for FAT32.
+        sector_bytes = struct.unpack_from("<H", fat, 0x0B)[0]
+        cluster_sectors = fat[0x0D]
+        reserved = struct.unpack_from("<H", fat, 0x0E)[0]
+        tables = fat[0x10]
+        root_entries = struct.unpack_from("<H", fat, 0x11)[0]
+        table_sectors16 = struct.unpack_from("<H", fat, 0x16)[0]
+        table_sectors = struct.unpack_from("<I", fat, 0x24)[0]
+        if sector_bytes != SECTOR or cluster_sectors == 0 or tables == 0:
+            fail("partition 1 has a malformed FAT32 boot sector")
+        if root_entries != 0 or table_sectors16 != 0 or table_sectors == 0:
+            fail("partition 1 does not have the FAT32 layout")
+        clusters = (fat_sectors - reserved - tables * table_sectors) // cluster_sectors
+        if clusters < FAT32_MINIMUM_CLUSTERS:
+            fail(f"partition 1 has {clusters} clusters, too few for FAT32")
 
         stream.seek(root_lba * SECTOR)
         root_bytes = stream.read(root_size)

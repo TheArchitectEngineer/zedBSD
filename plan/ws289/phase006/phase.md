@@ -47,6 +47,7 @@
 7. `jtag-hello.sh` は tree に無い。同じ確かめを `jtag-boot.sh`（新しい SPL）で行った（下）。
 8. root に `mv` を足した（deploy の rename）。
 9. README（docs の howto）は書いていない: 道具（`spl-build.sh`・`deploy.sh`）が `plan/tools/zybo/` に有り、`docs/` は `plan/` を指せない（docs/style.md）。手順は下の「実機の SD 起動の手順」に置いた。docs に書くなら道具の置き場所を先に決める（Q1）。
+10. （2026-10-23、T1 の 1 回目の後）boot の FAT は design L13 の FAT16 でなく **FAT32**（下の「T1 の 1 回目」）。kernel の FAT の driver は FAT16 で長い名前を扱わず、deploy の `.new`・`.old` が作れない。
 
 ## 確認
 
@@ -57,7 +58,9 @@
 | `plan/tools/zybo/spl-build.sh build/p006-spl` | rc 0、fragment の 11 行と `SPL_OS_BOOT=y` が `.config` に、`spl-build: 127253 bytes, board_boot_order 0x00000fd8, BSS 0x1f000000`、`u-boot-spl.bin` sha256 `e6ca79da…`、`boot.bin` 129496 byte sha256 `b743c8f8…`（header `aa995566 584c4e58`、offset 0x8c0、checksum `fd165fd1` を手で検算）。`make.out` に warning 0 |
 | `make ZEDBSD_CONFIG=config/ci/config-zybo.mk BUILD=build/p006-zybo -j16 vmunix build/p006-zybo/root.img build/p006-zybo/root.ufs` | rc 0。tree の code の warning 0（warning は OpenSSL・OpenSSH の package の deprecated・unused と OpenSSH の Makefile、perl の locale だけ）。`vmunix.bin` 1032800 byte、kernel の PT_LOAD `0x100000`〜`0x7ce000`（BSS 込み）、`root.img` 17825792 byte（16 MiB の UFS）、root に `/bin/mv`・`/sbin/networkd`・`/usr/sbin/sshd` |
 | `make … BUILD=build/p006-zybo ZYBO_BOOT_BIN=build/p006-spl/out/spl/boot.bin zybo-sd-image-host-test sd-image` | `ZYBO SD image check: PASS build/p006-zybo/tests/zybo-sd-image-test.img`、FIT でない kernel で `the FIT's kernel data is not the raw kernel`、無い bootarg で `… lacks rootpart=/dev/mmcblk0p3`（どちらも期待どおり FAIL）、`zybo-sd-image-host-test: PASS`、`ZYBO SD image check: PASS build/p006-zybo/zybo-sd.img` |
-| `mdir -i build/p006-zybo/zybo-sd.img@@1048576 ::/` と MBR | FAT16 `ZEDBSD` に `vmunix.itb` 1033303・`system.dtb` 413・`BOOT.BIN` 129496。MBR p1 = active 0x80・type 0x06・LBA 2048・131072 sector、p2 = type 0xA5・LBA 133120・524288 sector |
+| `mdir -i build/p006-zybo/zybo-sd.img@@1048576 ::/` と MBR | FAT16 `ZEDBSD` に `vmunix.itb` 1033303・`system.dtb` 413・`BOOT.BIN` 129496。MBR p1 = active 0x80・type 0x06・LBA 2048・131072 sector、p2 = type 0xA5・LBA 133120・524288 sector（1 回目。FAT32 にした後は下の追記） |
+| FAT32 にした後（2026-10-23、main cab2a803b を merge した後）: `make … ZYBO_BOOT_BIN=… -j16 zybo-sd-image-host-test sd-image` | `ZYBO SD image check: PASS build/p006-zybo/zybo-sd.img`、`… zybo-sd-image-test.img`、期待どおりの 2 つの FAIL、`zybo-sd-image-host-test: PASS`。BPB: 512 byte の cluster、reserved 32、table 1009 sector、cluster 129022、root cluster 2、`FAT32   `。MBR p1 = 0x80・type 0x0C・LBA 2048・131072。`mdir` に `vmunix.itb`・`system.dtb`・`BOOT.BIN`。`cksum build/p006-zybo/system.dtb` = `480521733 413` |
+| `deploy.sh … --host 127.0.0.1 --port 1 --wait 12` | 0・10・20 s に 3 回試して `deploy: cannot reach root@127.0.0.1:1`、rc 1 |
 | `dtc -I dtb -O dts` で FIT と DTB を戻す | FIT: `load = <0x100000>`、`entry = <0x100000>`、`os = "linux"`、`arch = "arm"`、`type = "kernel"`、`compression = "none"`、`configurations { default = "zybo"; zybo { description; kernel = "kernel"; }; }`。DTB（`--bootargs 'mac0=02:5a:59:42:4f:31 x"y'` の試し）: `bootargs = "rootpart=/dev/mmcblk0p2 mac0=02:5a:59:42:4f:31 x\"y"`（引用符の escape） |
 | `plan/tools/zybo/deploy.sh build/p006-zybo/vmunix --host 127.0.0.1 --port 1` | FIT を作り、`deploy: cannot reach root@127.0.0.1:1` で rc 1。引数無しで usage・rc 2。`sh -n`（deploy.sh・spl-build.sh・qemu-zynq.sh）OK。shellcheck は host に無い |
 | `qemu-zynq.sh … --dtb build/p006-zybo/system.dtb --sd … --net 2289 --print` | `-device loader,file=build/p006-zybo/system.dtb,addr=0x01f00000` が入る（QEMU は起動していない）。`--dtb` と `--append` の併用は rc 2 |
@@ -75,20 +78,31 @@
 
 ### 未実施
 
-- **実機の SD からの起動の全部**（BootROM が FAT16 の BOOT.BIN を読む事（R7）、SPL の MMC の初期化、Falcon の load と jump、SD の root、`deploy.sh` と `reboot` 後の boot mode（R8）、R5 の memreserve の影響）: card が初期化できないため（U41）。JTAG で SPL に card から FIT を読ませる試しも、同じ card の問題で意味が無いので行っていない。SPL の Falcon の道は source を読んで確かめただけ（上）。
+- **実機の SD からの起動の全部**（BootROM が FAT32 の BOOT.BIN を読む事（R7）、SPL の MMC の初期化、Falcon の load と jump、SD の root、`deploy.sh` と `reboot` 後の boot mode（R8）、R5 の memreserve の影響）: card が初期化できないため（U41）。JTAG で SPL に card から FIT を読ませる試しも、同じ card の問題で意味が無いので行っていない。SPL の Falcon の道は source を読んで確かめただけ（上）。
 - QEMU（T1）: 下の依頼。
 
-## T1 への依頼（2026-10-23、Q1 経由。QEMU、BOOT.BIN 無し）
+## T1 の 1 回目（2026-10-23、283f1a191 = main 3caf97354）: A が FAIL
+
+- Q1 の報告: login までは PASS（`vfs: boot0 <loader-origin> -> /dev/mmcblk0p1 (private FAT)`、`rootpart selector /dev/mmcblk0p2 resolved`、`vfs: boot0 (BOOT) published at /boot/boot0`、en0 1000 Mbps、DHCP 10.0.2.15、sshd の起動）。`ls /boot/boot0; echo boot0-rc=$?` で `ls` が何も出さず `boot0-rc=0` だけ → `vmunix.itb` が見えず、ssh-check と deploy は走らなかった。QEMU の後の `mdir` では FAT に `vmunix.itb` 1033303・`system.dtb` 413 が有る。25 分（timeout まで待った）。
+- 解析（担当、source を読んで。QEMU と板は使っていない）: zedBSD の FAT の driver（`src/drivers/fs/fat.c`）は FAT16 では長い名前を扱わない（`fat_raw_readdir` と名前の探しの両方で「Only FAT32 volumes carry long names at all」、FAT16 は 8.3 の短い名前だけ）。`deploy.sh` の `vmunix.itb.new`・`.old` は 8.3 に収まらないので、FAT16 の card では `ls` が見えても deploy は失敗する。他の板の boot の FAT（Pi 4/5 の SD、VF2 の ESP）は全部 FAT32 で、zedBSD の FAT の driver が実際に使われている道も FAT32。FAT16 の root（固定の root directory）の readdir が空を返した直接の原因は source の上では特定できていない（BPB からの root の位置・cluster の数（65264 で FAT16）・volume label の飛ばし・短い名前の復号は読んだ限り正しい）。**未確認**: FAT32 にして `ls` が見えるかは下の A1 で確かめる。
+- 直し（design L13 の FAT16 を取り消す）: p1 を **FAT32**（type `0x0C`、`mformat -F`、64 MiB で 512 byte の cluster 129022 個 = FAT32 の下限 65525 を超え、kernel・U-Boot・BootROM の誰が数えても FAT32）。`make-zybo-sd-image.py` は `--fat-mib` の下限を 64 に、checker は `FAT32   `・固定の root が無い・16 bit の table の大きさ 0・cluster の数 ≥ 65525 を見る。BootROM が FAT32 を読む事は UG585 で未確認（Xilinx の SD 起動の手順は FAT32 の card が普通、R7 は実機で）。`deploy.sh --wait S`（sshd が host key を作り終えるまで再試行。QEMU で数分、実機の初回の起動でも）。
+
+## T1 への依頼（2 回目、2026-10-23、Q1 経由。QEMU、BOOT.BIN 無し）
 
 tree: branch `agent/p3-ws289-p006` の最新（Q1 が merge した後なら main）。build（worktree に main の `build/llvm`・`llvm-source`・`llvm-build`・`NoctLang` への symlink、`build/distfiles` に `openssh-10.5p1.tar.gz`・`openssl-3.5.8.tar.gz`・`zlib-1.3.2.tar.xz`・`cacert-2026-08-13.pem`、host に `sshpass`・mtools）:
-`make ZEDBSD_CONFIG=config/ci/config-zybo.mk BUILD=build/p006-zybo -j16 vmunix sd-image`
-`cp build/p006-zybo/zybo-sd.img build/tmp/p006-sd.img`（QEMU が書くので写しを使う）
+`make ZEDBSD_CONFIG=config/ci/config-zybo.mk BUILD=build/p006-zybo -j16 vmunix sd-image`（`ZYBO SD image check: PASS` を見る）
+`cp build/p006-zybo/zybo-sd.img build/tmp/p006-sd.img`（QEMU が書くので写し。A1 と A2 は同じ写しを続けて使う）
 
-- A（zynq、card の `system.dtb` の bootargs で SD の root、LAN、serial U3 ＋ SSH U4、deploy）:
-  `plan/tools/zybo/qemu-zynq.sh build/p006-zybo/vmunix --dtb build/p006-zybo/system.dtb --sd build/tmp/p006-sd.img --net 2289 --timeout 1500 --expect 'rootpart selector /dev/mmcblk0p2 resolved to /dev/mmcblk0p2' --expect 'gem: en0 link up' --expect 'init: system running' --then 'run:sleep 60' --then 'type:' --then 'expect:login: *$' --then type:root --then expect:Password: --then type:root --then 'expect:root@kei' --then 'type:ls /boot/boot0; echo boot0-rc=$?' --then 'expect:vmunix.itb' --then 'expect:boot0-rc=0' --then 'run:plan/ws289/tests/ssh-check.sh 127.0.0.1 2289 build/tmp/p006-qemu' --then 'run:env SSHPASS=root plan/tools/zybo/deploy.sh build/p006-zybo/vmunix --host 127.0.0.1 --port 2289 --dtb build/p006-zybo/system.dtb --no-reboot' --then 'type:ls /boot/boot0; sync; echo ls-done' --then 'expect:vmunix.itb.old' --then 'expect:ls-done'`
-  → exit 0 で PASS。`rootpart`・`gem:`・`ssh-check:`・`deploy:` の行（`host|`）を写して返す。
-- B（A の後、QEMU を終えてから host で FAT を読む: zedBSD の FAT の書き込みを別の実装（mtools = SPL の FAT と同じく外の読み手）が読める事）:
-  `mdir -i build/tmp/p006-sd.img@@1048576 ::/` → `vmunix.itb`・`vmunix.itb.old`・`system.dtb`・`system.dtb.old` が有り `.new` が無い。`mcopy -n -i build/tmp/p006-sd.img@@1048576 ::/vmunix.itb build/tmp/p006-vmunix.itb && cmp build/tmp/p006-vmunix.itb build/p006-zybo/vmunix.itb` と `system.dtb` も同じく `cmp` → 一致で PASS。
+短くするため network の無い A1（数分）を先に、A1 が PASS の時だけ A2。A1 が FAIL なら A2・B は流さずに返す。
+
+- A1（zynq、card の `system.dtb` で SD の root、FAT32 の読み・長い名前の作成と rename、serial U3。network 無し）:
+  `plan/tools/zybo/qemu-zynq.sh build/p006-zybo/vmunix --dtb build/p006-zybo/system.dtb --sd build/tmp/p006-sd.img --timeout 600 --expect 'rootpart selector /dev/mmcblk0p2 resolved to /dev/mmcblk0p2' --expect 'login: *$' --then type:root --then expect:Password: --then type:root --then 'expect:root@kei' --then 'type:ls -la /boot/boot0' --then 'expect:vmunix\.itb' --then 'type:cksum /boot/boot0/system.dtb' --then 'expect:^480521733 413' --then 'type:echo zybo > /boot/boot0/longname-test.new && mv /boot/boot0/longname-test.new /boot/boot0/longname-test.old && sync && test -f /boot/boot0/longname-test.old && echo lfn-ok' --then 'expect:^lfn-ok'`
+  → exit 0 で PASS。`ls -la /boot/boot0` の出力の行と `vfs:` の行を写して返す（`cksum` の値は 283f1a191 以降の `system.dtb` の物。build が違う値を出したら `cksum build/p006-zybo/system.dtb` の値で読み替える）。
+- A2（同じ写しで QEMU を起動し直し、LAN、SSH U4、deploy）:
+  `plan/tools/zybo/qemu-zynq.sh build/p006-zybo/vmunix --dtb build/p006-zybo/system.dtb --sd build/tmp/p006-sd.img --net 2289 --timeout 1200 --expect 'gem: en0 link up' --expect 'login: *$' --then 'run:env SSHPASS=root plan/tools/zybo/deploy.sh build/p006-zybo/vmunix --host 127.0.0.1 --port 2289 --dtb build/p006-zybo/system.dtb --wait 900 --no-reboot'`
+  → exit 0 で PASS。`deploy:` の行（`host|`）を写して返す。
+- B（A2 の後、QEMU を終えてから host で FAT を読む: zedBSD の FAT の書き込みを外の読み手（mtools、SPL の FAT と同じく別の実装）が読める事）:
+  `mdir -i build/tmp/p006-sd.img@@1048576 ::/` → `vmunix.itb`・`vmunix.itb.old`・`system.dtb`・`system.dtb.old`・`longname-test.old` が有り `.new` が無い。`mcopy -n -i build/tmp/p006-sd.img@@1048576 ::/vmunix.itb build/tmp/p006-vmunix.itb && cmp build/tmp/p006-vmunix.itb build/p006-zybo/vmunix.itb`、`system.dtb` も同じく `cmp` → 一致で PASS。
 - 失敗の時: 最後に見えた serial の行と `host|` の行、B の `mdir` の出力を返す（解析は担当）。`build/tmp/p006-*` は Q1 が `q1-clean.sh` で消す。
 
 ## 実機の SD 起動の手順（card が使えるようになってから。Q1 がユーザーと T1 に渡す）
@@ -105,14 +119,14 @@ tree: branch `agent/p3-ws289-p006` の最新（Q1 が merge した後なら main
 7. （T1 が serial の監視を始めてから）電源を入れる。
 
 T1（実機、板の lock、生きた serial）:
-8. 電源の前に監視を始める: `sg dialout -c "python3 -I plan/tools/zybo/uart-expect.py --device /dev/serial/by-id/usb-Digilent_Digilent_Adept_USB_Device_210279785182-if01-port0 --timeout 600 'U-Boot SPL 2025\.07' 'ARMV7 MEMORY' 'sdhci: mmcblk0 ready' 'rootpart selector /dev/mmcblk0p2 resolved' 'login: *\$'"`（lock は `flock /tmp/zedbsd-zybo-board.lock` の中で）。合格: SPL の banner、`ARMV7 MEMORY … total=511 MiB`（R5: memory node が壊れていない）、SD の root、`login:`。SPL の後に何も出なければ SPL の行（`spl: … error reading image …` など）を返す。何も出なければ（SPL の banner も無い）BootROM が BOOT.BIN を読めていない（R7: FAT16 を疑う）。
+8. 電源の前に監視を始める: `sg dialout -c "python3 -I plan/tools/zybo/uart-expect.py --device /dev/serial/by-id/usb-Digilent_Digilent_Adept_USB_Device_210279785182-if01-port0 --timeout 600 'U-Boot SPL 2025\.07' 'ARMV7 MEMORY' 'sdhci: mmcblk0 ready' 'rootpart selector /dev/mmcblk0p2 resolved' 'login: *\$'"`（lock は `flock /tmp/zedbsd-zybo-board.lock` の中で）。合格: SPL の banner、`ARMV7 MEMORY … total=511 MiB`（R5: memory node が壊れていない）、SD の root、`login:`。SPL の後に何も出なければ SPL の行（`spl: … error reading image …` など）を返す。何も出なければ（SPL の banner も無い）BootROM が BOOT.BIN を読めていない（R7: FAT32 の読みを疑う。BOOT.BIN が FAT の最初の file である必要は無いと見込むが未確認）。
 9. login して `df /`（`/dev/mmcblk0p2`）、`ls /boot/boot0`（BOOT.BIN・system.dtb・vmunix.itb）。DHCP の address で `plan/ws289/tests/ssh-check.sh ADDR 22 build/tmp/p006-board-sd`。
 10. host で `make ZEDBSD_CONFIG=config/ci/config-zybo.mk ZYBO_BOOTARGS=mac0=02:5a:59:42:4f:31 build/zybo/system.dtb` → `SSHPASS=root plan/tools/zybo/deploy.sh build/zybo/vmunix --host ADDR --dtb build/zybo/system.dtb`（kernel は別の commit の build なら `uname -v` の git hash も変わる）。合格: serial に再び SPL の banner と kernel、`zynq-ethernet: address from mac0=`・`gem: en0 ready MAC 02:5a:59:42:4f:31`（入れ替えた DTB を SPL が読んだ）、`login:`。`reboot` をもう 1 回して `login:`（R8: soft reset の後も SD の boot mode）。
 11. 終わったらユーザーが JP5 を JTAG に戻し、T1 が `plan/tools/zybo/jtag-boot.sh --spl-only`（JTAG の道が生きている）。戻らない時の復旧も JP5 を JTAG にして `jtag-boot.sh`（U2）。card の `.old` の file で戻すなら JTAG の ramdisk の起動から `mv`。
 
 ## 残り・引き継ぎ（Q1 へ）
 
-- T1 の A・B の結果と Q1 の判定・merge。
+- T1 の 2 回目の A1・A2・B の結果と Q1 の判定・merge。
 - 実機の SD 起動: card が初期化できるようになってから（U41）。上の手順の 3〜7 をユーザーに。
 - Master の Tools: `spl-build.sh`（Falcon の fragment と `boot.bin`）、`deploy.sh`、`qemu-zynq.sh --dtb`、`make-zybo-boot-files.py`、`check-zybo-sd-image.py --kernel`、`ZYBO_BOOT_BIN`・`ZYBO_BOOTARGS` の行（担当は master.md を書かない）。master.md の ssh-check.sh の行の「image は `plan/ws289/tests/config-zybo-ssh.mk`」は `config/ci/config-zybo.mk` に。
 - 削除の依頼（担当は rm しない）: `plan/ws289/tests/config-zybo-ssh.mk`（既定の config と同じ組になった。p005 の記録の中の参照は履歴として残す）、`/home/awe/zedBSD-worktrees/p3-ws289-p006/platform/armv7/tools/__pycache__/`（py_compile と checker の import が作った、ignore の対象）、`build/tmp/p006-board/`、`build/p006-spl/zybo-jtag.config`（直す前の script が残した）。
