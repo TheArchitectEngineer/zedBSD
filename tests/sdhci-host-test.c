@@ -6,24 +6,30 @@
  */
 
 /*
- * Runs the Raspberry Pi 4 SD driver on the host against a fake controller
- * and card, and checks the commands it sends (BUG-295): a run of blocks is
- * one CMD18 or CMD25 with the block count and the automatic CMD12, a single
- * block is CMD17 or CMD24, and a run that fails is recovered (CMD13, CMD12)
- * and moved again one block at a time.
+ * Runs the SDHCI driver on the host against a fake controller and card, and
+ * checks the commands it sends: a run of blocks is one CMD18 or CMD25 with
+ * the block count and the automatic CMD12, a single block is CMD17 or CMD24,
+ * and a run that fails is recovered (CMD13, CMD12) and moved again one block
+ * at a time.  It also checks the clock divisor a controller older than
+ * version 3.00 is limited to.
  *
- * The build copies the driver with its include lines removed and its two
- * reads of the generic timer replaced by host_counter() and
- * host_frequency(), and this file includes that copy after the few kernel
- * types and functions it uses.
+ * The build copies the driver with its include lines removed, and this file
+ * includes that copy after the driver's own header and the few kernel types
+ * and functions it uses, among them a fake monotonic counter.
+ *
+ * "-t" prints every register access, so the accesses of two builds of the
+ * driver can be compared line by line.
  */
 
 #include <errno.h>
 #include <stdarg.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+
+#include <drivers/mmc/sdhci.h>
 
 /* The disk flag and the statistics kind the driver sets. */
 #define DISK_REMOVABLE 0x1U
@@ -93,8 +99,8 @@ struct log_entry {
 };
 
 /*
- * The fake controller's registers, the word at each offset.  The driver
- * reaches them through DIRECT_BASE, which the test cancels out.
+ * The fake controller's registers, the word at each offset, which the test
+ * hands to the driver as the mapped registers.
  */
 static uint32_t fake_registers[0x100U / 4U];
 
@@ -131,11 +137,14 @@ static unsigned fault_remaining;
 static struct log_entry command_log[LOG_MAX];
 static unsigned command_count;
 
-/* The fake generic timer. */
+/* The fake monotonic counter. */
 static uint64_t host_time;
 
 /* Whether the driver's messages are printed. */
 static int verbose;
+
+/* Whether every register access is printed. */
+static int trace;
 
 /* The disk the driver allocates. */
 static struct disk fake_disk;
@@ -143,8 +152,7 @@ static struct disk fake_disk;
 /* How many checks failed. */
 static int failures;
 
-static uint64_t host_counter(void);
-static uint64_t host_frequency(void);
+bool kern_rtc_read_counter(uint64_t *counter, uint64_t *frequency_hz);
 struct disk *disk_alloc(void);
 int disk_create(struct disk *disk);
 void disk_set_stats_kind(struct disk *disk, int kind);
@@ -172,8 +180,9 @@ static void test_long_request(void);
 static void test_write_fault(void);
 static void test_read_fault(void);
 static void test_persistent_fault(void);
+static void test_version_2_divisor(void);
 
-#include "rpi4-sdhci-under-test.c"
+#include "sdhci-under-test.c"
 
 /*
  * Runs every test and reports the result.
@@ -183,29 +192,44 @@ main(
 	int argc,
 	char **argv)
 {
-	uintptr_t physical;
+	struct drv_sdhci_config config;
+	struct disk *disk;
 	int different;
 	int error;
 
-	/* "-v" prints the driver's own messages. */
+	/* "-v" prints the driver's own messages, "-t" every register access. */
 	verbose = 0;
+	trace = 0;
 	different = 1;
 	if (argc > 1)
 		different = strcmp(argv[1], "-v");
 	if (different == 0)
 		verbose = 1;
+	different = 1;
+	if (argc > 1)
+		different = strcmp(argv[1], "-t");
+	if (different == 0)
+		trace = 1;
 
-	/* The physical base that DIRECT_BASE turns into the fake registers. */
-	physical = (uintptr_t)fake_registers - (uintptr_t)DIRECT_BASE;
+	/* Describes the fake controller as a glue would, with nothing but its registers. */
+	memset(&config, 0, sizeof(config));
+	config.registers = (volatile uint8_t *)fake_registers;
+	config.physical_base = 0xfe340000U;
+	config.unit = 0;
 
 	/* Brings the driver up against the fake card. */
-	error = drv_rpi4_sdhci_init(physical);
+	disk = NULL;
+	error = drv_sdhci_attach(&config, &disk);
 	check(error == 0, "the driver initializes the fake card");
+	check(disk == &fake_disk, "the attach hands back the disk");
+	check(strcmp(fake_disk.d_name, "mmcblk0") == 0, "the disk is mmcblk0");
 	check(fake_disk.d_max_transfer_blocks == SD_RUN_BLOCKS,
 	      "the disk takes 128-block requests");
-	check(unit.high_capacity == 1, "the card is addressed in blocks");
+	check(sdhci_units[0].card.high_capacity == 1, "the card is addressed in blocks");
+	check(sdhci_units[0].card.bus_width == 4U, "the card runs on four lines");
+	check(sdhci_units[0].card.card_clock == 25000000U, "the card runs at 25 MHz");
 	if (failures != 0) {
-		fprintf(stderr, "rpi4-sdhci-host-test: FAIL (%d)\n", failures);
+		fprintf(stderr, "sdhci-host-test: FAIL (%d)\n", failures);
 		return 1;
 	}
 
@@ -217,39 +241,38 @@ main(
 	test_write_fault();
 	test_read_fault();
 	test_persistent_fault();
+	test_version_2_divisor();
 
 	/* Reports the failed checks. */
 	if (failures != 0) {
-		fprintf(stderr, "rpi4-sdhci-host-test: FAIL (%d)\n", failures);
+		fprintf(stderr, "sdhci-host-test: FAIL (%d)\n", failures);
 		return 1;
 	}
 
 	/* Reports that every check held. */
-	printf("rpi4-sdhci-host-test: PASS\n");
+	printf("sdhci-host-test: PASS\n");
 
 	/* Succeeded: every check held. */
 	return 0;
 }
 
-/* Advances the fake generic timer a little on every read. */
-static uint64_t
-host_counter(
-	void)
+/*
+ * Reads the fake monotonic counter, which runs at one million ticks a
+ * second and advances a thousandth of that on every read, so a deadline
+ * passes in a few thousand polls.
+ */
+bool
+kern_rtc_read_counter(
+	uint64_t *counter,
+	uint64_t *frequency_hz)
 {
-	/* A thousandth of the frequency per read, so a deadline passes in a few thousand polls. */
+	/* Advances the counter. */
 	host_time += 1000U;
 
-	/* Reports the time now. */
-	return host_time;
-}
-
-/* Reports the fake generic timer's frequency. */
-static uint64_t
-host_frequency(
-	void)
-{
-	/* One million ticks a second. */
-	return 1000000U;
+	/* Succeeded: the time now and the counter's rate. */
+	*counter = host_time;
+	*frequency_hz = 1000000U;
+	return true;
 }
 
 /* Hands out the one disk the driver needs. */
@@ -364,6 +387,10 @@ kern_mmio_read32(
 	/* The register's offset from the fake base. */
 	offset = (uint32_t)((uintptr_t)address - (uintptr_t)fake_registers);
 
+	/* Prints the access when asked to. */
+	if (trace)
+		printf("R %02x\n", (unsigned)offset);
+
 	/* The buffer port gives the next word of the block being read. */
 	if (offset == REG_BUFFER)
 		return fake_buffer_read();
@@ -403,6 +430,10 @@ kern_mmio_write32(
 
 	/* The register's offset from the fake base. */
 	offset = (uint32_t)((uintptr_t)address - (uintptr_t)fake_registers);
+
+	/* Prints the access when asked to. */
+	if (trace)
+		printf("W %02x %08x\n", (unsigned)offset, (unsigned)value);
 
 	/* Picks the register's behaviour. */
 	switch (offset) {
@@ -638,7 +669,7 @@ check(
 		return;
 
 	/* Names the failed check and counts it. */
-	fprintf(stderr, "rpi4-sdhci-host-test: FAIL: %s\n", what);
+	fprintf(stderr, "sdhci-host-test: FAIL: %s\n", what);
 	failures++;
 }
 
@@ -869,7 +900,7 @@ test_write_fault(
 	check(in_order, "write fault: the single blocks go in order");
 	check(memcmp(card_data + 300U * 512U, data, sizeof(data)) == 0,
 	      "write fault: the card holds the data");
-	check(unit.failed == 0, "write fault: the card is not marked failed");
+	check(sdhci_units[0].failed == 0, "write fault: the card is not marked failed");
 }
 
 /* A read run that fails before its first block is read again one block at a time. */
@@ -942,5 +973,43 @@ test_persistent_fault(
 
 	/* The block had its three tries, and the card still takes commands. */
 	check(singles == SD_TRANSFER_ATTEMPTS, "persistent fault: the first block is tried three times");
-	check(unit.failed == 0, "persistent fault: a card that recovers is not marked failed");
+	check(sdhci_units[0].failed == 0, "persistent fault: a card that recovers is not marked failed");
+}
+
+/*
+ * A controller older than version 3.00 holds the clock divisor in eight
+ * bits: a slow target stops at 128, encoded in bits 15:8 with bits 7:6
+ * clear, where a version 3.00 controller goes on to 512.
+ */
+static void
+test_version_2_divisor(
+	void)
+{
+	struct sdhci_unit *unit;
+	uint32_t word;
+	unsigned saved_version;
+	int error;
+
+	/* Sets a 100 kHz clock as a version 2.00 controller. */
+	unit = &sdhci_units[0];
+	saved_version = unit->spec_version;
+	unit->spec_version = 1U;
+	error = set_clock(unit, 100000U);
+	word = fake_registers[REG_CLOCK_CONTROL / 4U];
+	check(error == 0, "version 2 divisor: the clock is set");
+	check(((word >> 8) & 0xffU) == 0x80U, "version 2 divisor: 128 in bits 15:8");
+	check((word & 0xc0U) == 0, "version 2 divisor: bits 7:6 clear");
+	check(unit->card.card_clock == 390625U, "version 2 divisor: 100 MHz / 256");
+
+	/* Sets the same clock as a version 3.00 controller. */
+	unit->spec_version = 2U;
+	error = set_clock(unit, 100000U);
+	word = fake_registers[REG_CLOCK_CONTROL / 4U];
+	check(error == 0, "version 3 divisor: the clock is set");
+	check(((word >> 8) & 0xffU) == 0, "version 3 divisor: 512 has no low eight bits");
+	check((word & 0xc0U) == 0x80U, "version 3 divisor: 512's upper bits in 7:6");
+	check(unit->card.card_clock == 97656U, "version 3 divisor: 100 MHz / 1024");
+
+	/* Leaves the unit as the attach found it. */
+	unit->spec_version = saved_version;
 }
