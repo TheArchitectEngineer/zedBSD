@@ -33,5 +33,7 @@
 
 ## 現在の状態・再開点
 
+- 2026-10-23: U1〜U7 はユーザー「はい」で推しのとおり決定（design §11、Master の decisions-log）。p001 は Q1 が merge（1680183ed）。p002 は P1 が開始。
+
 - 2026-10-23: 作成。p001 の設計から。
 - 2026-10-23 P1（worktree p1-ws289-p001）: design.md 版 1（§0〜§14）と phase001。ユーザーの決定（共通部分の分離、Q1 経由）を D1・D2・p002・p003 に反映。design-reviewer（Opus）の Critical 1・High 1・Medium 7・Low 15 の全部に対応して版 2（§15 の表。主な変更: SD の kernel は legacy の uImage でなく FIT、SD と ramdisk の両方が有る時は initrd の有無で boot device を決める）。再開点: Q1 の判定、U1〜U7、Q1 への依頼（design §11）。

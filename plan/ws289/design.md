@@ -418,13 +418,13 @@ AGENTS.md の方針（細かい修正ごとに回帰を回さない。build の 
 
 | # | 問い | 勧め | 状態 |
 | --- | --- | --- | --- |
-| U1 | SD の boot mode への切り替え（JP5 の jumper）と card の差し込み・`dd` での書き込みはユーザーが行う。p006 の実機の確認の前に、Q1 がユーザーに頼む形でよいか | はい。手順は p006 の README（`lsblk` で device を確かめてから `dd`）。SwitchBot は繋がないまま（電源の入れ直しはユーザー） | 未決 |
-| U2 | 復旧の道は JTAG だけ（U-Boot 本体を FAT に入れない）でよいか | はい（D5）。U-Boot 本体を足すと image と env の面倒が増える。JTAG は jumper を戻すだけ | 未決 |
-| U3 | SD は PIO（DMA 無し）で始め、p004 の速さの実測（`dd`）が 2 MB/s を下回った時だけ SDMA（bounce）を Future Work から前倒しする | はい（D3） | 未決 |
-| U4 | QEMU zynq の guest に host の `127.0.0.1` の転送 port から SSH で入って LAN を判定する（WS105・WS108・WS109 と同じ例外。serial の判定 U3 は WS286 で決定済み） | 認める（T1 が流す。AGENTS.md の検証の例外に 1 行） | 未決 |
-| U5 | 固定の MAC `02:5a:59:42:4f:30`（locally administered）を既定にし、`mac0=` の boot parameter で変えられるようにする | はい（DHCP の lease と known_hosts が安定する。板が 1 つ） | 未決 |
-| U6 | Pi 4 の SD（p002）と Pi 5 の Ethernet・SD（p003）の実機の確認: Pi 5 は T1 が実機で行い p003 の clear の条件にする（kernel は p002 を含む）。Pi 4 は QEMU の raspi4b を clear の条件にし、実機はユーザーの試験の一覧に入れる | はい（§8.3、R1・R2、M5） | 未決 |
-| U7（版 2） | `src/drivers/platform/rpi4/rpi4-sdio-host.c`（Pi 4・Pi 5 の Wi-Fi の SDIO の host、1183 行。32 bit の書き込みと clock の手順が SDHCI と重なる）は「共通部分の分離」の範囲に**入れない**（Future Work に記録。SDIO の CMD52/53 と割り込みは SD の block の driver と形が違い、Wi-Fi の回帰（実機の Pi 4/5 の WPA2）が要る） | 入れない | 未決 |
+| U1 | SD の boot mode への切り替え（JP5 の jumper）と card の差し込み・`dd` での書き込みはユーザーが行う。p006 の実機の確認の前に、Q1 がユーザーに頼む形でよいか | はい。手順は p006 の README（`lsblk` で device を確かめてから `dd`）。SwitchBot は繋がないまま（電源の入れ直しはユーザー） | 決定（2026-10-23 ユーザー「はい」、推しのとおり） |
+| U2 | 復旧の道は JTAG だけ（U-Boot 本体を FAT に入れない）でよいか | はい（D5）。U-Boot 本体を足すと image と env の面倒が増える。JTAG は jumper を戻すだけ | 決定（2026-10-23 ユーザー「はい」、推しのとおり） |
+| U3 | SD は PIO（DMA 無し）で始め、p004 の速さの実測（`dd`）が 2 MB/s を下回った時だけ SDMA（bounce）を Future Work から前倒しする | はい（D3） | 決定（2026-10-23 ユーザー「はい」、推しのとおり） |
+| U4 | QEMU zynq の guest に host の `127.0.0.1` の転送 port から SSH で入って LAN を判定する（WS105・WS108・WS109 と同じ例外。serial の判定 U3 は WS286 で決定済み） | 認める（T1 が流す。AGENTS.md の検証の例外に 1 行） | 決定（2026-10-23 ユーザー「はい」、推しのとおり） |
+| U5 | 固定の MAC `02:5a:59:42:4f:30`（locally administered）を既定にし、`mac0=` の boot parameter で変えられるようにする | はい（DHCP の lease と known_hosts が安定する。板が 1 つ） | 決定（2026-10-23 ユーザー「はい」、推しのとおり） |
+| U6 | Pi 4 の SD（p002）と Pi 5 の Ethernet・SD（p003）の実機の確認: Pi 5 は T1 が実機で行い p003 の clear の条件にする（kernel は p002 を含む）。Pi 4 は QEMU の raspi4b を clear の条件にし、実機はユーザーの試験の一覧に入れる | はい（§8.3、R1・R2、M5） | 決定（2026-10-23 ユーザー「はい」、推しのとおり） |
+| U7（版 2） | `src/drivers/platform/rpi4/rpi4-sdio-host.c`（Pi 4・Pi 5 の Wi-Fi の SDIO の host、1183 行。32 bit の書き込みと clock の手順が SDHCI と重なる）は「共通部分の分離」の範囲に**入れない**（Future Work に記録。SDIO の CMD52/53 と割り込みは SD の block の driver と形が違い、Wi-Fi の回帰（実機の Pi 4/5 の WPA2）が要る） | 入れない | 決定（2026-10-23 ユーザー「はい」、推しのとおり） |
 
 **Q1 への依頼**: (1) armv7 の package の build（zlib・openssl・openssh・ca-certificates。`--machine armv7`、sysroot は WS286 p007 の後）を p005 の前の Queue に。(2) `src/kern/boot.c` の parameter の表に `mac0=` を足す事（p005 が行うが、boot.c は共有の file なので Q1 の承知）。vfs.c は変えない（H1 は platform の file で解く）。(3) ws.md の Phase の表を §9 に合わせる（この設計で直した）。(4) Master の Tools に `deploy.sh`・`qemu-zynq.sh` の `--sd`/`--net`・`make-zybo-sd-image.py` を p006 の後に。(5) ユーザーの試験の一覧に「Pi 4 の SD の起動（p002 の後、CSD の後にもう 1 回）」「JP5 を SD に（p006）」。(6) Future Work に `rpi4-sdio-host.c` の SDHCI の core への乗せ替え（U7）と SD の SDMA（§3.5）。（版 1 の (6)「WS286 design の訂正」は不要: WS286 §1.1 は正しい、L5）
 

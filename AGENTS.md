@@ -674,6 +674,7 @@ primary docs for operational syntax:
 - WS131 の Linux の backend（seat・session・logind・VT の切り替え・電源）の確認には Debian の QEMU+KVM guest を使う（2026-10-03 ユーザー「LinuxでのテストはQEMU+KVMを使ってください。」）。上と同じ SSH/QMP PNG の例外で、T1・T2 が流す。
 - WS109 の専用 FreeBSD 15 QEMU guest も上記の SSH/QMP PNG 例外の対象（2026-10-02 ユーザー「FreeBSDにも例外を適用します」）。接続は `127.0.0.1` の転送ポートのみ、serial/console log は判定に使わない。
 - WS286 の ZYBO（Zynq-7000、表示が無い）の QEMU `xilinx-zynq-a9` と実機は、生きた serial を対話で読んで判定してよい（2026-10-23 ユーザー「U項目は読みましたが、全部推しでOKでした。」、design の U3）。armv7 の QEMU `virt` は従来どおり `boot-test.sh` の PNG で判定する。
+- WS289 の ZYBO の LAN（QEMU `xilinx-zynq-a9` の GEM）は、ホストの `127.0.0.1` の転送ポートから guest の SSH に接続して判定してよい（2026-10-23 ユーザー「はい」、WS289 design の U4。上の WS105・WS108・WS109 と同じ形）。
 - QEMU の console log・serial log を読んで判定しない（解析・回帰・受け入れのどれでも）。guest の操作はシリアル
   （`plan/tools/guest/serial.py`）か SSH（`plan/tools/guest/guest.sh`）で対話し、不具合は gdbstub・monitor・QMP で解析する。
 - **試験の方針（2026-10-03 ユーザー）**: 「全体的に言って、1つの細かい修正に対して、テストが厚すぎます。回帰テストを全部回すのは、理想的にはいいかもしれませんが、このプロジェクトでは不要にします。」

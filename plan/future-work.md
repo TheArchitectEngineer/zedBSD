@@ -130,6 +130,7 @@ Future Work は実行を許可しない。
 | fw-audiod-client | video player（ws122-p002）に内蔵した audiod の client（48 kHz S16 stereo）を共有の library に移し、音楽の app（WS120）や通知の音でも使う | 同じ client の重複を避ける | 2026-10-05 ws122-p002（P2） | 後回し | WS120 の着手、または 2 つ目の audiod の client が要る時 | ws122-p002 の phase.md（git の履歴、2026-10-08 の WS の完了で削除） |
 | fw-bt-goep2 | L2CAP ERTM と GOEP 2.0（SRM）、MAP 1.4・PBAP 1.2（通知の送り主の名前、電話帳の差分の同期）。約 10 LW | MAP 1.4・PBAP 1.2 は仕様で GOEP 2.0 が必須（2026-10-09 P1 の確かめ） | WS197 Q16（2026-10-09 ユーザー「(a) 1.1 で RFCOMM だけ」） | defer | WS197 の完了の後、またはスマホの側が GOEP 1.1 の相手を断るようになった時 | [WS197](ws197/ws.md) |
 | fw-vf2-linux-gpu-walk | Linux（StarFive の DDK）の GPU の control stream・PPP state・CDM の kernel 語を page table を歩いて読む道具（plan/ws269/tests/p010-linux/ の walk.py・capture2.py・capture-cdm.py）。StarFive の Debian の kernel は /dev/mem で RAM を読めず /proc/kcore も無いので kernel module（または kcore のある kernel で drgn）が要る | IMG の stack と bit 単位で比べる基準が取れる（command の capture までは動いた） | WS269 p010q（q1483・q1495、2026-10-21） | deferred | IMG の stack との差をまた調べる必要が出た時 | plan/ws269/phase010q/phase.md |
+| fw-sdio-host-split | Pi 4・Pi 5 の Wi-Fi の SDIO host（`src/drivers/platform/rpi4/rpi4-sdio-host.c`）を WS289 の汎用 SDHCI の core に乗せ替える。あわせて SD の SDMA（bounce）も | SDHCI の重複を無くす、SD の速さ | 2026-10-23 WS289 design U7・U3（ユーザー「はい」） | defer | WS289 の完了の後、または SDIO host に手を入れる時・SD の PIO が遅すぎる時 | plan/ws289/design.md §11 |
 
 2026-10-05 Q1（WS140 の結果の反映）: F-070（ld.so の上限の動的化）は WS140 で実装した（0484201b・360c7dbe・a555c47a、T1-164 PASS、amd64）。ws115-p010 の手順 1（定数を上げる）は不要になったので、再開の時は gtk4-widget-factory の起動から確かめる。
 
