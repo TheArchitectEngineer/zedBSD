@@ -551,8 +551,8 @@ QEMU と実機の証拠は分けて書く。やっていない確認は「未実
 | p010 | compiler の backend（zedBSD `isa/ats1/`）、host の試験 | host PASS | p008 | 20 |
 | p011 | Vulkan の executor `vk/`（vkdemo の部分集合） | vkdemo の 1 frame の readback が参照と一致（**Verilator**。板は p014） | p006、p009、p010 | 48（±50%） |
 | p012 | KC705: MIG、MMCM、`LINE_BYTES` 64、JTAG の bridge、CP + BLT + DC（HDMI は U7）、`vivado-build-ip.tcl` | `jtag-reg.sh` で fill → `DBG`、color bar | p004、p005、U7 | 20 |
-| p013 | KC705 の host link A': PCIe + XDMA、BAR、MSI、`pci-attach.c`、`pcie-reload.sh`（SBR、rescan、flash か realloc） | **guest の zedBSD から `ghci-blit` PASS**（vkdemo は p014） | p006、p012、U2 | 24 |
-| p014 | KC705 の全 pipeline の bitstream（N=1: VF+SU+RX+TU+ROP、`PACKED`）、vkdemo を板で | **vkdemo が KC705 で参照と一致** | p009、p011、p013 | 16 |
+| p013 | KC705 の host link A': PCIe + XDMA、BAR、MSI、`pci-attach.c`、`pcie-reload.sh`（SBR、rescan、flash か realloc） | **guest の zedBSD から `ghci-blit` PASS**（vkdemo は p014） | p006、p012、U2 | 24 | （2026-10-23 後回し: fw-kc705-pcie）
+| p014 | KC705 の全 pipeline の bitstream（N=1: VF+SU+RX+TU+ROP、`PACKED`）、vkdemo を板で | **vkdemo が KC705 で参照と一致** | p009、p011、p012（JTAG の bridge。p013 は後回し） | 16 |
 | p015 | 複数の SU（N=4 → 6〜8）、work の分配、RX 2 本、150 MHz、PERF、BRAM の実測で N を決める | N=4 で vkdemo、N≥6 で合成が閉じる | p014 | 18 |
 | p016 | 規約の全文の見直し（C）、RTL の lint、`docs/ghci.md` 1.0 の確定 | 動作は不変 | p015 | 8 |
 
@@ -568,7 +568,7 @@ QEMU と実機の証拠は分けて書く。やっていない確認は「未実
 | --- | --- | --- |
 | R1 | **7010 に全 block が入らない**（§3.6: 全部で 111%、graphics+SU で 97%） | **block を分けた bitstream**（§3.6 の 1〜4）で板の workflow と各 block を確かめ、結合は Verilator と KC705（U17）。p002・p008 の実測で係数を直す。係数が 20% 良ければ「graphics + SU」を試す |
 | R2 | fp32 の pipeline が 100 MHz で閉じない（7010-1） | DSP の pipeline を全段。閉じなければ ZYBO は 50 MHz（`GCLK_HZ`） |
-| R3 | KC705 で 100 → 150 MHz | p015 で。100 MHz でも N=8 で 25.6 GFLOPS |
+| R3 | KC705 で 100 → 200 MHz（2026-10-23 README のユーザーの目標。150 MHz は版 2 の値） | p015 で。100 MHz でも N=8 で 25.6 GFLOPS |
 | R4 | HP の AXI3 の細部（WID、WSTRB、outstanding）の誤り | p002 の TB の protocol checker、p003 の板で `DBG` を先に。UG585 を p002 で読む |
 | R5 | PS の DDR の non-coherent で uncached の alias が遅い | ZYBO は workflow の板。cache を使う道は後 |
 | R6 | 1 ring・1 queue | v1 の限界。p015 の後に複数 |
@@ -590,6 +590,9 @@ QEMU と実機の証拠は分けて書く。やっていない確認は「未実
 | R22 | detach の競合で device が offline のまま残る（§6.2 の 3） | retry と 5 s の上限。次の attach は新しい登録 |
 
 ### 9.2 U 項目（ユーザーの判断。各々に推し）
+
+2026-10-23 ユーザー（U2）: PCIe は「フリーズしたときホストPCの再起動は必要ですか？」等の問いの後「了解です。安定してきたらPCIeにしましょう。PCをSwitchbotで電源ON/OFFはできますが、BIOSが停電後の自動電源ONができるかは不明です。」→ U2 は「当面 KC705 は USB JTAG だけ（構成も操作も JTAG の bridge）。GPU が安定したら PCIe（Alveo 型: USB JTAG で構成し PCIe で Linux から。flash の基本の bitstream か部分再構成の固定の領域で link を保つ）」。p013 は Future Work fw-kc705-pcie。README の目標「Synthesis goal is 200MHz on KC705 board and 800MHz for ASIC processes.」（ユーザー、c840a0a）により KC705 の gclk の目標は 200 MHz（p015、R3 の 150 MHz を改める）。
+
 
 2026-10-23 ユーザー「U項目は推奨で承認します。」→ U1・U3〜U17 は推しで決定。U2 は同時の問い「KC705はUSB JTAGで運用できませんか？」への答えの後に確定（保留）。
 
