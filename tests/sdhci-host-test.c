@@ -412,8 +412,12 @@ kern_mmio_read32(
 		printf("R %02x\n", (unsigned)offset);
 
 	/* The buffer port gives the next word of the block being read. */
-	if (offset == REG_BUFFER)
-		return fake_buffer_read();
+	if (offset == REG_BUFFER) {
+		word = fake_buffer_read();
+
+		/* Reports the word the buffer port gave. */
+		return word;
+	}
 
 	/* The interrupt status is what the fake raised. */
 	if (offset == REG_INT_STATUS)

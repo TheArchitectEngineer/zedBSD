@@ -953,6 +953,8 @@ check_32_bit(
 		if (descriptors[index * 2U] != expected || descriptors[index * 2U + 1U] != 0)
 			found = 0;
 	}
+
+	/* Compares the receive ring and its spare descriptor with what was expected. */
 	check(found, "receive descriptors");
 	check(descriptors[FAKE_RING_COUNT * 2U] == (FAKE_RXD_USED | FAKE_RXD_WRAP), "receive spare descriptor");
 	check(descriptors[FAKE_RING_COUNT * 2U + 1U] == 0, "receive spare status");
@@ -967,6 +969,8 @@ check_32_bit(
 		if (descriptors[index * 2U] != 0 || descriptors[index * 2U + 1U] != expected)
 			found = 0;
 	}
+
+	/* Compares the transmit ring and its spare descriptor with what was expected. */
 	check(found, "transmit descriptors");
 	check(descriptors[FAKE_RING_COUNT * 2U + 1U] == (FAKE_TXD_USED | FAKE_TXD_WRAP), "transmit spare descriptor");
 	found = guard_intact(0);
@@ -1016,6 +1020,8 @@ check_32_bit(
 		    (accesses[index + 1U].value & FAKE_NETCTL_RXEN) != 0)
 			found = 1;
 	}
+
+	/* The restart wrote receive off and then on again. */
 	check(found, "receive turned off and on");
 
 	/* The worker's pass delivers the frame and unmasks both receive interrupts. */
@@ -1304,6 +1310,8 @@ kern_logf(
 		snprintf(log_lines[log_count], sizeof(log_lines[log_count]), "%s", line);
 		log_count++;
 	}
+
+	/* Prints it in the trace. */
 	trace("log %s", line);
 }
 
@@ -1855,7 +1863,7 @@ drv_rp1_map(
 	volatile uint8_t **mapped,
 	uint64_t *size)
 {
-	/* Maps the controller or the clock controller. */
+	/* Maps the controller's registers. */
 	(void)index;
 	trace("map %x", node);
 	if (node == NODE_GEM) {
@@ -1863,6 +1871,8 @@ drv_rp1_map(
 		*size = 0x4000U;
 		return 0;
 	}
+
+	/* Maps the clock controller's registers. */
 	if (node == NODE_CLOCKS) {
 		*mapped = (volatile uint8_t *)clock_registers;
 		*size = sizeof(clock_registers);

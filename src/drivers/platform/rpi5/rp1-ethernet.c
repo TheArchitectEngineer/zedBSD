@@ -47,6 +47,9 @@
 #define RP1_CLK_SYS			12U
 #define RP1_CLK_SYS_DEFAULT_HZ		200000000U
 
+/* Marks a parameter that the driver's hook interface passes but this board does not need. */
+#define UNUSED_PARAMETER(parameter)	((void)(parameter))
+
 /* The largest DMA allocation the driver makes: one ring's 256 slots of 2 KiB. */
 #define RP1_GEM_DMA_SEGMENT_BYTES	(256U * 2048U)
 
@@ -240,11 +243,13 @@ describe_phy(
 	int comparison;
 	int error;
 
-	/* Requires a terminated interface-mode string. */
+	/* Reads the interface-mode string. */
 	fdt = drv_rp1_fdt();
 	error = drv_fdt_property(fdt, ethernet->node, "phy-mode", &property, &length);
 	if (error != 0)
 		return error;
+
+	/* Requires the string to be terminated. */
 	if (length == 0 || property[length - 1U] != 0)
 		return EINVAL;
 
@@ -259,23 +264,27 @@ describe_phy(
 	ethernet->phy.rx_delay = 1;
 	ethernet->phy.tx_delay = 1;
 
-	/* Follows the phy-handle to the PHY node. */
+	/* Reads the phy-handle, which is one cell. */
 	error = drv_fdt_property(fdt, ethernet->node, "phy-handle", &property, &length);
 	if (error != 0)
 		return error;
 	if (length != 4U)
 		return EINVAL;
+
+	/* Follows the phy-handle to the PHY node. */
 	phandle = (uint32_t)drv_fdt_cells_value(property, 0, 1U);
 	error = drv_fdt_find_phandle(fdt, phandle, &phy);
 	if (error != 0)
 		return error;
 
-	/* Reads the PHY's clause-22 address. */
+	/* Reads the PHY's clause-22 address, which is one cell. */
 	error = drv_fdt_property(fdt, phy, "reg", &property, &length);
 	if (error != 0)
 		return error;
 	if (length != 4U)
 		return EINVAL;
+
+	/* Keeps the address, which MDIO's five bits can name. */
 	ethernet->phy_address = (unsigned)drv_fdt_cells_value(property, 0, 1U);
 	if (ethernet->phy_address > 31U)
 		return EINVAL;
@@ -320,13 +329,17 @@ enable_clocks(
 	uint32_t control;
 	int error;
 
-	/* Finds and maps RP1's clock controller. */
+	/* Finds RP1's clock controller; without one the clocks stay as they are. */
 	error = drv_rp1_find_child("raspberrypi,rp1-clocks", DRV_FDT_NO_NODE, &node);
 	if (error != 0)
 		return;
+
+	/* Maps the clock controller's registers. */
 	error = drv_rp1_map(node, 0, &clocks, &size);
 	if (error != 0)
 		return;
+
+	/* Refuses a window too small to hold the two control registers. */
 	if (size < RP1_CLK_ETH_TSU_CTRL + 4U)
 		return;
 
@@ -365,14 +378,18 @@ clock_rate(
 	int found;
 	int error;
 
-	/* Reads the clock controller's assignments. */
+	/* Finds the clock controller. */
 	fdt = drv_rp1_fdt();
 	error = drv_rp1_find_child("raspberrypi,rp1-clocks", DRV_FDT_NO_NODE, &node);
 	if (error != 0)
 		return 0;
+
+	/* Reads the clocks the tree assigns. */
 	error = drv_fdt_property(fdt, node, "assigned-clocks", &clocks, &clocks_length);
 	if (error != 0)
 		return 0;
+
+	/* Reads the rates assigned to them. */
 	error = drv_fdt_property(fdt, node, "assigned-clock-rates", &rates, &rates_length);
 	if (error != 0)
 		return 0;
@@ -458,8 +475,12 @@ reset_phy(
 	error = drv_fdt_property(fdt, ethernet->node, "phy-reset-gpios", &property, &length);
 	if (error != 0)
 		return 0;
+
+	/* Refuses a reset line that is not a controller, a pin and its flags. */
 	if (length != 12U)
 		return EINVAL;
+
+	/* Reads the pin and which level asserts the reset. */
 	pin = (unsigned)drv_fdt_cells_value(property, 1U, 1U);
 	active_low = (unsigned)drv_fdt_cells_value(property, 2U, 1U) & 1U;
 
@@ -468,21 +489,27 @@ reset_phy(
 	if (duration > RP1_GEM_PHY_RESET_MAX_MS)
 		duration = 1U;
 
-	/* Asserts the reset. */
+	/* Brings up the GPIO controller the reset line is on. */
 	error = drv_rp1_gpio_init();
 	if (error != 0)
 		return error;
+
+	/* Asserts the reset line. */
 	error = drv_rp1_gpio_set_output(pin, active_low == 0);
 	if (error != 0)
 		return error;
+
+	/* Holds the reset for the pulse's length and a millisecond more. */
 	error = delay_milliseconds(duration + 1U);
 	if (error != 0)
 		return error;
 
-	/* Releases it and lets the PHY come out of reset. */
+	/* Releases the reset line. */
 	error = drv_rp1_gpio_set_output(pin, active_low != 0);
 	if (error != 0)
 		return error;
+
+	/* Lets the PHY come out of reset. */
 	error = delay_milliseconds(RP1_GEM_PHY_RESET_SETTLE_MS);
 	if (error != 0)
 		return error;
@@ -505,9 +532,10 @@ setup_phy(
 	struct rp1_ethernet *ethernet;
 	int error;
 
+	UNUSED_PARAMETER(phy);
+
 	/* Points the PHY driver at the controller's bus, at the tree's address. */
 	ethernet = context;
-	(void)phy;
 	ethernet->bus = bus;
 	ethernet->phy.context = ethernet;
 	ethernet->phy.read = phy_read;
@@ -536,10 +564,11 @@ read_link(
 	unsigned speed;
 	int error;
 
+	UNUSED_PARAMETER(bus);
+	UNUSED_PARAMETER(phy);
+
 	/* Reads the speed through the PHY driver. */
 	ethernet = context;
-	(void)bus;
-	(void)phy;
 	error = drv_bcm54213pe_read_link(&ethernet->phy, &speed);
 	if (error != 0)
 		return error;

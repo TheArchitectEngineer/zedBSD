@@ -10429,7 +10429,7 @@ fat_readdir_unlocked(
 	 * A position past any directory's records is its end.  The position
 	 * is compared as an unsigned 64-bit count: where off_t has 32 bits
 	 * (the 32-bit ABI), UINT32_MAX cast to it is -1, and every position
-	 * would then read as the end.
+	 * would then read as the end.  A negative position names no record.
 	 */
 	if (file->f_offset < 0) {
 		*eof = 1;
@@ -10438,6 +10438,7 @@ fat_readdir_unlocked(
 		return 0;
 	}
 
+	/* A position beyond the largest record offset is past the last entry. */
 	if ((uint64_t)file->f_offset > (uint64_t)UINT32_MAX) {
 		*eof = 1;
 

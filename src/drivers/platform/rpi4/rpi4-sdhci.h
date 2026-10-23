@@ -13,6 +13,7 @@
 #define KERN_DRIVERS_RPI4_SDHCI_H
 
 #include <stdint.h>
+
 struct disk;
 
 int drv_rpi4_sdhci_init(uintptr_t physical_base);
