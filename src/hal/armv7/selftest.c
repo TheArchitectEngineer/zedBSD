@@ -11,13 +11,15 @@
  * Each check prints one PASS line, or a FAIL line with the number of the
  * step that failed and stops the boot: the run-time ABI's helpers with the
  * registers they return in, the exclusive load and store on the memory the
- * kernel uses, and the user address spaces with the access and dirty
- * state the HAL records through faults.
+ * kernel uses, the user address spaces with the access and dirty state the
+ * HAL records through faults, and the floating-point unit's lazy switch
+ * between two contexts.
  */
 
 #include <hal/hal.h>
 #include "asm.h"
 #include "defs.h"
+#include "fpu.h"
 #include "percpu.h"
 #include "selftest.h"
 #include "space.h"
@@ -37,6 +39,15 @@
 
 /* The bytes the memory helpers are checked on. */
 #define SELFTEST_BYTES			16U
+
+/*
+ * The status and control values of the floating-point check's three
+ * patterns: each sets a condition flag or a cumulative exception bit and
+ * a rounding or flush mode the others do not.
+ */
+#define SELFTEST_FPSCR_FIRST		0x80c00000U
+#define SELFTEST_FPSCR_SECOND		0x03000010U
+#define SELFTEST_FPSCR_THIRD		0x40400001U
 
 /*
  * The run-time ABI's helpers, by the prototypes the calling convention
@@ -62,6 +73,18 @@ void armv7_aeabi_call_ldivmod(int64_t numerator, int64_t denominator, uint32_t *
 static volatile uint32_t atomic_word;
 static uint64_t atomic_doubleword;
 
+/*
+ * The floating-point check's two contexts, the registers it loads into
+ * the unit and the registers it reads back.  Used once by the boot
+ * processor, with interrupts off.
+ */
+static struct armv7_fpu_context vfp_first;
+static struct armv7_fpu_context vfp_second;
+static struct hal_fpregs vfp_pattern_first __attribute__((aligned(8)));
+static struct hal_fpregs vfp_pattern_second __attribute__((aligned(8)));
+static struct hal_fpregs vfp_pattern_third __attribute__((aligned(8)));
+static struct hal_fpregs vfp_read __attribute__((aligned(8)));
+
 static void aeabi_fail(unsigned step);
 static int check_unsigned_division(volatile uint32_t numerator, volatile uint32_t denominator, uint32_t quotient, uint32_t remainder);
 static int check_signed_division(volatile int32_t numerator, volatile int32_t denominator, int32_t quotient, int32_t remainder);
@@ -73,6 +96,10 @@ static uint32_t user_read(uintptr_t address);
 static void user_write(uintptr_t address, uint32_t value);
 static int store_is_refused(uintptr_t address, uint32_t value);
 static int page_state(hal_space_t space, uintptr_t address, uint32_t *flags);
+static void vfp_fail(unsigned step);
+static void vfp_fill(struct hal_fpregs *registers, uint64_t base, uint32_t fpscr);
+static int vfp_same(const struct hal_fpregs *left, const struct hal_fpregs *right);
+static void vfp_run_checks(void);
 
 /*
  * Checks the run-time ABI's helpers through the registers they return in,
@@ -304,6 +331,60 @@ armv7_paging_selftest(
 	(void)hal_pmem_free(&page_b, ARMV7_PAGE_SIZE);
 
 	hal_printf("ARMV7 PAGING PASS asid=%u,%u\n", asid_a, asid_b);
+}
+
+/*
+ * Checks the floating-point unit's lazy switch: two contexts take the
+ * unit in turn through the trap of their first floating-point
+ * instruction, and each reads back its own registers; a context the unit
+ * still holds is not loaded again; a sync brings the unit's newer
+ * registers to memory; a forget turns the unit off without saving.
+ *
+ * Reports whether the unit was checked: a processor without a usable
+ * unit has nothing to check.  A failed step stops the boot.
+ */
+int
+armv7_vfp_selftest(
+	void)
+{
+	struct armv7_fpu_context *previous;
+	struct armv7_percpu *cpu;
+	bool enabled;
+	int usable;
+
+	/* A processor without the unit has no switch to check. */
+	usable = armv7_fpu_usable();
+	if (!usable) {
+		hal_puts("ARMV7 VFP NONE\n");
+		return 0;
+	}
+
+	/* Three patterns that differ in every register and in the status and control register. */
+	vfp_fill(&vfp_pattern_first, 0x1000000000000000ULL, SELFTEST_FPSCR_FIRST);
+	vfp_fill(&vfp_pattern_second, 0x2000000000000000ULL, SELFTEST_FPSCR_SECOND);
+	vfp_fill(&vfp_pattern_third, 0x3000000000000000ULL, SELFTEST_FPSCR_THIRD);
+	armv7_fpu_context_init(&vfp_first);
+	armv7_fpu_context_init(&vfp_second);
+
+	/*
+	 * Runs the checks with interrupts off, so no switch selects another
+	 * context meanwhile, and with the kernel's floating-point instructions
+	 * taken as a user's are.
+	 */
+	enabled = armv7_irq_save();
+
+	cpu = armv7_percpu_current();
+	previous = cpu->fpu_selected;
+	cpu->fpu_kernel_test = 1;
+	vfp_run_checks();
+	cpu->fpu_kernel_test = 0;
+	armv7_fpu_select(previous);
+
+	armv7_irq_restore(enabled);
+
+	/* Succeeded: the switch keeps each context's registers. */
+	hal_printf("ARMV7 VFP PASS registers=%u\n", armv7_fpu_register_count());
+	return 1;
 }
 
 /* Reports a failed step of the run-time ABI check and stops. */
@@ -555,4 +636,149 @@ page_state(
 
 	/* Succeeded: the flags are filled. */
 	return HAL_OK;
+}
+
+/* Reports a failed step of the floating-point check and stops. */
+static void
+vfp_fail(
+	unsigned step)
+{
+	/* The step, then the stop. */
+	hal_printf("ARMV7 VFP FAIL %u\n", step);
+	HAL_FATAL("armv7 floating-point switch check failed");
+}
+
+/* Fills a register set with a pattern: base plus the register's number, and a status value. */
+static void
+vfp_fill(
+	struct hal_fpregs *registers,
+	uint64_t base,
+	uint32_t fpscr)
+{
+	unsigned index;
+
+	/* Each doubleword register its own value. */
+	for (index = 0; index < 32U; index++)
+		registers->d[index] = base + index;
+
+	/* The status and control register, and no exception state. */
+	registers->fpscr = fpscr;
+	registers->fpexc = 0;
+}
+
+/* Reports whether two register sets agree in the registers the unit has and in FPSCR. */
+static int
+vfp_same(
+	const struct hal_fpregs *left,
+	const struct hal_fpregs *right)
+{
+	unsigned count;
+	unsigned index;
+
+	/* Compares the doubleword registers the unit moves. */
+	count = armv7_fpu_register_count();
+	for (index = 0; index < count; index++) {
+		if (left->d[index] != right->d[index])
+			return 0;
+	}
+
+	/* Compares the status and control register. */
+	if (left->fpscr != right->fpscr)
+		return 0;
+
+	/* Succeeded: the sets agree. */
+	return 1;
+}
+
+/*
+ * Runs the floating-point check's steps, with interrupts off and the
+ * kernel's floating-point instructions taken as a user's are.  Each load
+ * or save below that finds the unit off traps, and the trap gives the
+ * unit to the selected context before the instruction runs again.
+ */
+static void
+vfp_run_checks(
+	void)
+{
+	struct armv7_fpu_context *owner;
+	unsigned long loads_before;
+	unsigned long loads_after;
+	uint32_t upper_bank;
+	uint32_t fpexc;
+	unsigned count;
+	int same;
+
+	/* The upper sixteen registers are moved only on a unit that has them. */
+	count = armv7_fpu_register_count();
+	upper_bank = 0;
+	if (count == 32U)
+		upper_bank = 1U;
+
+	/* Step 1: the first context's first instruction takes the unit and loads its registers. */
+	armv7_fpu_select(&vfp_first);
+	loads_before = armv7_fpu_load_count();
+	armv7_fpu_load(&vfp_pattern_first, upper_bank);
+	owner = armv7_fpu_owner();
+	if (owner != &vfp_first)
+		vfp_fail(1);
+	loads_after = armv7_fpu_load_count();
+	if (loads_after != loads_before + 1U)
+		vfp_fail(1);
+
+	/* Step 2: a switch keeps the first context's registers in memory; the second takes the unit. */
+	armv7_fpu_select(&vfp_second);
+	same = vfp_same(&vfp_first.regs, &vfp_pattern_first);
+	if (!same)
+		vfp_fail(2);
+	armv7_fpu_load(&vfp_pattern_second, upper_bank);
+	owner = armv7_fpu_owner();
+	if (owner != &vfp_second)
+		vfp_fail(2);
+
+	/* Step 3: back on the first context, the unit holds the first context's registers again. */
+	armv7_fpu_select(&vfp_first);
+	armv7_fpu_save(&vfp_read, upper_bank);
+	same = vfp_same(&vfp_read, &vfp_pattern_first);
+	if (!same)
+		vfp_fail(3);
+	same = vfp_same(&vfp_second.regs, &vfp_pattern_second);
+	if (!same)
+		vfp_fail(3);
+
+	/* Step 4: a context the unit still holds is not loaded again after a switch to itself. */
+	loads_before = armv7_fpu_load_count();
+	armv7_fpu_select(&vfp_first);
+	armv7_fpu_save(&vfp_read, upper_bank);
+	loads_after = armv7_fpu_load_count();
+	if (loads_after != loads_before)
+		vfp_fail(4);
+	same = vfp_same(&vfp_read, &vfp_pattern_first);
+	if (!same)
+		vfp_fail(4);
+
+	/* Step 5: a sync brings the unit's newer registers to the context's memory. */
+	armv7_fpu_load(&vfp_pattern_third, upper_bank);
+	armv7_fpu_sync(&vfp_first);
+	same = vfp_same(&vfp_first.regs, &vfp_pattern_third);
+	if (!same)
+		vfp_fail(5);
+
+	/* Step 6: a forget leaves the unit off and owned by no context. */
+	armv7_fpu_forget(&vfp_first);
+	owner = armv7_fpu_owner();
+	if (owner != NULL)
+		vfp_fail(6);
+	fpexc = armv7_fpu_read_fpexc();
+	if ((fpexc & ARMV7_FPEXC_EN) != 0)
+		vfp_fail(6);
+
+	/* Step 7: the second context's registers come back from its memory after the forget. */
+	armv7_fpu_select(&vfp_second);
+	armv7_fpu_save(&vfp_read, upper_bank);
+	same = vfp_same(&vfp_read, &vfp_pattern_second);
+	if (!same)
+		vfp_fail(7);
+
+	/* Leaves the unit off and owned by no test context. */
+	armv7_fpu_forget(&vfp_second);
 }

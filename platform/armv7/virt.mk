@@ -15,5 +15,8 @@ ARMV7_BSP_DIR := bsp-virt
 ARMV7_BSP_SOURCES := board.c uart.c psci.c timer.c cons.c fwcfg.c framebuffer.c font.c
 ARMV7_BSP_ASM_SOURCES := early.S
 
-# The board's console is the HAL's and it publishes no boot device.
-ARMV7_PLATFORM_SOURCES := src/kern/platform/hal-console.c
+# The board's binding: the teletype console on the PL011, whose receive
+# interrupt types into it, and the initial ramdisk as the boot device.
+ARMV7_PLATFORM_SOURCES := src/kern/platform/armv7-virt.c \
+	src/drivers/serial/pl011.c src/drivers/generic/serial-console.c \
+	src/drivers/generic/ramdisk.c

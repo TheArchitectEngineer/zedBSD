@@ -9,14 +9,16 @@
  * The armv7 registers of a task, for a debugger.
  *
  * A task's user registers are its user frame and its thread pointer; its
- * floating-point registers are the copy the task keeps.  ARMv7 has no
- * single-step facility and the HAL gives no hardware debug points to a
- * task yet, so neither is offered.
+ * floating-point registers are the copy the task keeps, brought up to date
+ * with the unit before a read and dropped by the unit after a write
+ * (fpu.c).  ARMv7 has no single-step facility and the HAL gives no
+ * hardware debug points to a task yet, so neither is offered.
  */
 
 #include <hal/hal.h>
 #include "asm.h"
 #include "defs.h"
+#include "fpu.h"
 #include "int.h"
 #include "task.h"
 
@@ -115,10 +117,11 @@ hal_task_get_user_fpregs(
 		return HAL_ERR_INVALID;
 	target = task;
 
-	/* Copies the task's registers as one step against a switch. */
+	/* Copies the task's registers, as the unit has them, as one step against a switch. */
 	enabled = armv7_irq_save();
 
-	*registers = target->fpregs;
+	armv7_fpu_sync(&target->fpu);
+	*registers = target->fpu.regs;
 
 	armv7_irq_restore(enabled);
 
@@ -128,7 +131,8 @@ hal_task_get_user_fpregs(
 
 /*
  * Writes a task's floating-point registers.  The exception register is
- * read only, so the task keeps its own.
+ * read only, so the task keeps its own, and the status and control
+ * register keeps only the bits the unit holds.
  */
 int
 hal_task_set_user_fpregs(
@@ -147,9 +151,11 @@ hal_task_set_user_fpregs(
 	/* Replaces the task's registers as one step against a switch. */
 	enabled = armv7_irq_save();
 
-	exception = target->fpregs.fpexc;
-	target->fpregs = *registers;
-	target->fpregs.fpexc = exception;
+	exception = target->fpu.regs.fpexc;
+	target->fpu.regs = *registers;
+	target->fpu.regs.fpexc = exception;
+	target->fpu.regs.fpscr = armv7_fpu_sanitize_fpscr(registers->fpscr);
+	armv7_fpu_forget(&target->fpu);
 
 	armv7_irq_restore(enabled);
 

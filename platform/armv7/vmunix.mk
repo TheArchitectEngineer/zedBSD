@@ -46,10 +46,10 @@ ARMV7_BOOT_C := src/hal/armv7/cmain.c src/hal/armv7/bootinfo.c \
 	src/hal/armv7/clock.c src/hal/armv7/page.c src/hal/armv7/space.c \
 	src/hal/armv7/task.c src/hal/armv7/debug.c src/hal/armv7/asm.c \
 	src/hal/armv7/cache.c src/hal/armv7/lib.c src/hal/armv7/selftest.c \
-	src/hal/idle-suspend-unsupported.c \
+	src/hal/armv7/fpu.c src/hal/idle-suspend-unsupported.c \
 	$(ARMV7_BSP_C)
 ARMV7_BOOT_S := src/hal/armv7/locore.S src/hal/armv7/vectors.S \
-	src/hal/armv7/dispatch.S src/hal/armv7/aeabi.S \
+	src/hal/armv7/dispatch.S src/hal/armv7/aeabi.S src/hal/armv7/fpregs.S \
 	$(ARMV7_BSP_S)
 ARMV7_BOOT_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(ARMV7_BOOT_C)) \
 	$(patsubst %.S,$(BUILD)/%.o,$(ARMV7_BOOT_S))

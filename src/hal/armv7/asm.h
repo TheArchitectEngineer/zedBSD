@@ -14,10 +14,10 @@
  * takes the register as an argument.
  *
  * Values referenced: ARM DDI 0406C, the CP15 register encodings (opc1,
- * CRn, CRm, opc2) of SCTLR, ACTLR, TTBR0, TTBR1, TTBCR, DACR, DFSR, IFSR,
- * DFAR, IFAR, VBAR, CONTEXTIDR, TPIDRURW, TPIDRURO, TPIDRPRW, MIDR, MPIDR,
- * ID_MMFR3, the TLB maintenance operations and the generic timer's
- * CNTFRQ, CNTPCT, CNTP_CTL and CNTP_CVAL.
+ * CRn, CRm, opc2) of SCTLR, ACTLR, CPACR, TTBR0, TTBR1, TTBCR, DACR,
+ * DFSR, IFSR, DFAR, IFAR, VBAR, CONTEXTIDR, TPIDRURW, TPIDRURO, TPIDRPRW,
+ * MIDR, MPIDR, ID_MMFR3, the TLB maintenance operations and the generic
+ * timer's CNTFRQ, CNTPCT, CNTP_CTL and CNTP_CVAL.
  */
 
 #ifndef KERN_HAL_ARMV7_ASM_H
@@ -167,6 +167,33 @@ armv7_read_actlr(
 
 	/* Succeeded: the register's value. */
 	return value;
+}
+
+/*
+ * Reads the coprocessor access control register.
+ */
+static __inline uint32_t
+armv7_read_cpacr(
+	void)
+{
+	uint32_t value;
+
+	/* Which coprocessors, the floating-point unit's cp10 and cp11 among them, each mode may use. */
+	__asm__ volatile("mrc p15, 0, %0, c1, c0, 2" : "=r"(value));
+
+	/* Succeeded: the register's value. */
+	return value;
+}
+
+/*
+ * Writes the coprocessor access control register.
+ */
+static __inline void
+armv7_write_cpacr(
+	uint32_t value)
+{
+	/* The new access takes effect for the instructions after the barrier. */
+	__asm__ volatile("mcr p15, 0, %0, c1, c0, 2\n\tisb" : : "r"(value) : "memory");
 }
 
 /*

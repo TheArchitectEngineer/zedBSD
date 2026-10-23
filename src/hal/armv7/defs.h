@@ -282,6 +282,13 @@
 #define ARMV7_FRAME_CPSR		76
 #define ARMV7_FRAME_SIZE		80
 
+/*
+ * Where struct hal_fpregs keeps the floating-point status and control
+ * register, past the thirty-two doubleword registers; fpregs.S and fpu.c
+ * agree on it.
+ */
+#define ARMV7_FPREGS_FPSCR		256
+
 /* The exception that built a trap frame, as vectors.S passes it to C. */
 #define ARMV7_TRAP_RESET		0
 #define ARMV7_TRAP_UNDEFINED		1
