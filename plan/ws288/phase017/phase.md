@@ -1,9 +1,9 @@
 <!-- awesome-plan project=zedbsd record=ws288-p017 -->
 
-# WS288 p017 CP の CPU と firmware の土台（この記録は RTL の `atg_cpu` の部分）
+# WS288 p017 CP の CPU と firmware の土台
 
 - 親: [ws.md](../ws.md)。設計: [design.md](../design.md) §8 の p017 の行（§2.4.7 の `atg_cpu`、§2.4.8 の firmware、§2.4.10 の `CPFW`、§6.9）。module の仕様は amaterrace-gpu の `spec/gpu/cp/atg_cpu*.md`。
-- 状態: in-progress。RTL の部分（`atg_cpu` の子の全部と TB）は終わった（2026-10-23 P2、下）。p017 の残り（`fw/cp/` の firmware と runtime、class V の最初の道、`atg_cp_regs` の CPFW の EXTCAP の entry と `x_rdata` の配線、`zybo_2dfw` の bitstream 1'、Verilator の harness に CPU と firmware、板の確認）は未着手で、この記録の範囲の外。
+- 状態: in-progress（clear の判定は Q1）。RTL の部分（`atg_cpu` の子の全部と TB）は 2026-10-23 P2（下の前半）。残り（CPFW の配線の確認、`fw/cp/` の firmware、class V の最初の道、sim の TB、bitstream 1'、板の確認）は 2026-10-23〜24 P2（下の「後半」）。未実施: Verilator の harness に CPU と firmware を入れること、host の C の単体試験（`fw/cp/tests/`）、M21 の draw の測定（draw はまだ無い）。
 - 範囲（Q1 の指示、2026-10-23）: `atg_cpu_alu`・`atg_cpu_muldiv`・`atg_cpu_core`・`atg_cpu_mem`・`atg_cpu_win`・`atg_cpu_dma`・`atg_cpu_fw` を spec から実装し、各 module の unit TB と、riscv32 の試験 program を流す CPU の TB を作る。`atg_cp_*`（P3）と `fw/cp/` は触らない。進め方はユーザーの指示（2026-10-23「トップダウンにVerilig実装を進めてください。スタブ、ドライバの使用は恐れずに、パズルのように部分的に進めてください。」）。
 
 ## 置き場所と commit
@@ -69,3 +69,53 @@ ZYBO の内訳（階層）: core 1089（muldiv 472、alu 82 + 分岐の比較器
 - design の M21（draw 1 つの変換の時間）と R26（firmware の大きさ）の測定は firmware が出来てから。
 - `atg_cpu_core_tb` の data port の model は即答と random な待ちで、atg_cpu_win の 2 cycle の形そのものは `atg_cpu_tb` で通している。
 - 試験 program の `.hex` は commit してあり、`tools/cpu-tests.sh` で作り直せる（gen.py は決まった seed で同じ物を出す）。
+
+
+## 後半: firmware と class V の道（2026-10-23〜24 P2、Q1 の指示「the CP firmware base and the class V path」）
+
+置き場所: amaterrace-gpu の worktree `/home/awe/amaterrace-worktrees/p2-fw`、branch `p2-fw`（main 122817f から、push していない）。commit **23b7379**（firmware、TB、watchdog、文書）、**d0ad3bb**（STATE の broadcast の register、timing）。zedBSD: worktree `/home/awe/zedBSD-worktrees/p2-ws288-p017b`（branch `agent/p2-ws288-p017b`）、この phase.md と `plan/tools/zybo/ghci-blt-board.py` の `--fw`。
+
+### 作った物・変えた物（amaterrace-gpu）
+
+| path | 中身 |
+| --- | --- |
+| `fw/cp/`（`boot.S`・`link.ld`・`hw.h`・`fw.h`・`main.c`・`packet.c`・`cmd.c`・`object.c`・`uop.c`・`dma.c`・`heap.c`・`lib.c`・`README.md`） | C の firmware（freestanding、rv32im、compiler-rt 無しで memcpy/memset/memcmp/`__udivdi3`/`__umoddi3` を自前）。起動ごとに `.data` を像の原本から写す、poll の loop（WFI は使わない: IRQ_EN を開けてから WFI の間の割り込みで戻り先の WFI を誰も起こさない）、halt の要求で PARK、heartbeat。GHCI_FRAME の parser と結果の record、session・memory・buffer と bind・command pool と buffer・BEGIN/END/RESET・記録の CMD_FILL_BUFFER と CMD_COPY_BUFFER（32 bit か 16 bit の pixel の BLT の µop）・QUEUE_SUBMIT（記録の µop を再生） |
+| `fw/cp/images/atg1-cp-{zybo,kc705}.{imem,dmem}.hex` | BRAM の初期値（commit してある。IMEM 12.8 KB、DMEM の像 588 B、line 32/64） |
+| `tools/fw-build.sh` | 共有の clang（読むだけ）で build して上の像を書く |
+| `include/ghci_frame.h`、`docs/ghci.md` §9・付録 | GHCI の gpu-op（0x10100〜、案）、GHCI_FRAME（n = 8）、staging の record `[number][flags][result index][引数]`、result `{VkResult, aux}`、frame の result `{VkResult, 解いた record の数}` |
+| `rtl/gpu/cp/atg_cp_ctl.v`（+ spec・TB） | port `wdt_hold`: watchdog の数えを止める（reset しない）。TB に「hold の間は数えない」を追加 |
+| `rtl/gpu/cp/atg_cp.v`（+ spec） | watchdog は class V の packet が開いている間（`v_valid`）も数え、µop の無い時の `cpu_stall` で止める（design §2.4.7）。STATE の broadcast（`st_*`）を 1 段の register に（下の timing） |
+| `sim/tb/atg_top_fw_tb.v` | atg_top（HAS_CPU、firmware の像）を ZYBO と KC705 の形で、host の port だけで |
+| `boards/zybo/atg_zybo_2dfw.v`・`.xdc`、`tools/vivado-build.tcl`、spec | bitstream 1'（板で実績のある atg_zybo_2d の写しに HAS_CPU と像）。tcl は `fw/cp/images/*.hex` を run の directory に写す |
+
+CPFW の EXTCAP の entry（0x108: id 6 → 0x120）、`x_rdata`、CAPS[17]/[18] は main 122817f で既に配線されていた（確認だけ、TB と板で確認）。
+
+### 確認
+
+| 確認 | コマンド | 結果 |
+| --- | --- | --- |
+| sim | `sim/run.sh`（iverilog 12.0） | d0ad3bb で 30/30 PASS（新しい `atg_top_fw` を含む） |
+| `atg_top_fw` | 同上 | ZYBO・KC705 とも `.frame`（class V の frame の fill + copy が class N の packet と同じ memory、model とも一致、13 record の結果、frame の結果、RESULT・RETIRE の IRQ）、`.unknown`（未知の command で frame が止まり後ろの record は走らない）、`.watchdog`（RUN 0 で誰も取らない class V packet → FAULT 種別 4 → RESET → firmware の再起動で `.data` が戻る）、`.reload`（CPFW LOAD: 0 の像で PC 0 の fault、次に memory の像（`.data` を変えた物）が走り frame が通る） |
+| TB の感度 | fill の値を `data ^ 1` にした firmware | `atg_top_fw` が FAIL（戻して PASS） |
+| lint | `tools/lint.sh`（Verilator 5.032） | 全 97 clean |
+| Verilator の harness | `sim/verilator/run.sh` | PASS（CPU は入っていない、既存の物） |
+| 合成（Vivado 2026.1、`tools/vivado-build.sh zybo atg_zybo_2dfw`） | 1 回目 | WNS −0.158 ns（ring → sequencer → index の decode → BLT の shadow の CE、route 80%） |
+| 同上 | STATE の broadcast を register にした後（d0ad3bb） | **LUT 8257（46.9%）、FF 8065、BRAM36 13、DSP 4、100 MHz で WNS +0.463 ns、WHS +0.034 ns**、bitstream sha256 f1fd6c61698991f8…、`$readmem` の像を読んだと log に有る |
+| **板（実機の ZYBO、SD 起動、10.0.30.2、fpgaload + fpgareg だけ）** | `plan/tools/zybo/ghci-blt-board.py --fw --bit …/atg_zybo_2dfw.bit`、続けて 2 回（load 済み） | 1 回目は RESULT の確認の誤り（`fpgareg wait --ack` が IRQ_STATUS を消す）だけ FAIL、record と frame の結果は正しかった。script を直して **3/3 PASS**: 識別（CAPS 0x00561803、EXTCAP PERF → CPFW）、既存の BLT・ring・HALT・fault・RESET の全 case、firmware の起動（state 2、VERSION、MBOX3 の `.data`）、class V の frame の fill + copy（64 word を model と照合）、13 record と frame の結果、起きた時の status に RESULT と RETIRE。2・3 回目は最初の RESET の後の再起動で `.data` が戻ることも板で見えた |
+
+性能（M21 の代わりの測定、TB の ZYBO の形）: 13 record の frame が doorbell から fence まで 32.5k cycle（同じ byte の class N の fill + copy は 12.5k）。firmware の仕事は 1 command あたり約 1.5k cycle（100 MHz で 15 µs）。reader の slow path を noinline にする前は 44k。
+
+### 設計からの違い・決めた事（Q1 の確認が要る物は ※）
+
+- ※ GHCI_FRAME の「frame done」は、packet の dword3（RESULT flag）に `{VkResult, 解いた record の数}` を書く形にした（design §2.4.6 は場所を決めていない）。未知の command は frame をそこで終える（wire に長さが無い）。
+- ※ heap は DMEM（32 word の chunk 48 個、object 96 個）。design §2.4.7 の CP_HEAP_BASE/LIMIT は window に出ていないので、GPU memory の heap は後（window に 2 register と ctl の port が要る）。
+- 記録は wire の写しでなく µop の packet そのもの（SET_REG 11 組 + BLIT(wait)）。p017 の fill/copy には同じ意味で、p018 の状態の有る command では wire の記録が要るかもしれない。
+- CPFW_CTRL.RUN は RESET で 0（atg_cpu_fw の spec のまま）。driver は RESET の後に RUN を書く（docs/ghci.md の付録に書いた）。
+- STATE の broadcast の 1 cycle の遅れ: kick は最後の STATE の書き込みから 2 cycle 以上後（header の後に kick）なので block は kick の前に状態を持つ。全 sim と板で確認。
+
+### 残り
+
+- Verilator の harness に CPU と firmware（`sim/verilator/`）、`fw/cp/tests/` の host の単体試験: 未実施。
+- HALTED での STEP の class V packet は走らない（CTRL.HALT の間 core は PARK）。
+- `ghci-blt-board.py` の `--fw` 無しの形（bitstream 1）は今回の変更の後に板で流していない（`py_compile` だけ）。
+- 規約の全文の見直し（p016）は未。
