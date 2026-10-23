@@ -53,6 +53,15 @@ $(BUILD)/root.img: $(BUILD)/rootfs/.stamp $(ARMV7_ROOT_IMAGE_TOOL) \
  --tree $(BUILD)/rootfs $@
 root-image: $(BUILD)/root.img
 
+# The same tree as a raw UFS for a partition of a disk image: the root on
+# the ZYBO's SD card (platform/armv7/disk-image.mk).  On the card the root
+# costs no RAM, so it has room for what the system writes.
+ARMV7_SD_ROOT_MIB ?= 256
+$(BUILD)/root.ufs: $(BUILD)/rootfs/.stamp $(ARMV7_ROOT_IMAGE_TOOL) \
+	tools/build/ufs_format.py tools/build/check-ufs-image.py
+	$(PYTHON) $(ARMV7_ROOT_IMAGE_TOOL) --raw --ufs-size-mib $(ARMV7_SD_ROOT_MIB) \
+ --tree $(BUILD)/rootfs $@
+
 # The external packages the ZYBO's root is to carry for the network login
 # (WS289): built here on their own, and put into the root only by a
 # configuration that names them (plan/ws289/tests/config-zybo-ssh.mk).

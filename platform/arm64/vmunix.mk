@@ -66,6 +66,8 @@ ARM64_BOARD_KERNEL_SOURCES_rpi5 := \
 	src/drivers/platform/rpi5/rp1-irq.c \
 	src/drivers/platform/rpi5/rp1-usb.c \
 	src/drivers/platform/rpi5/rp1-ethernet.c \
+	src/drivers/ethernet/cadence-gem.c \
+	src/drivers/ethernet/mii-phy.c \
 	src/drivers/ethernet/bcm54213pe.c \
 	src/drivers/platform/rpi5/rpi5-gio.c \
 	src/drivers/platform/rpi5/rpi5-pinctrl.c \
@@ -424,6 +426,36 @@ sdhci-host-test: $(BUILD)/tests/sdhci-host-test
 	$<
 
 CHECK_RUN_TARGETS += sdhci-host-test
+
+# The Cadence GEM driver on the host with the Pi 5's glue and the PHY
+# drivers, against a fake controller, fake PHYs and fake DMA memory: each
+# driver is copied without its include lines and compiled with the test's
+# view of the kernel in front of it.  The Pi 5's trace must match the one
+# recorded from the driver before its generic part was split from the glue
+# (the error numbers in it are the Linux host's).
+CADENCE_GEM_HOST_TEST_DRIVERS := src/drivers/ethernet/cadence-gem.c \
+	src/drivers/platform/rpi5/rp1-ethernet.c \
+	src/drivers/ethernet/bcm54213pe.c \
+	src/drivers/ethernet/mii-phy.c
+
+$(BUILD)/tests/cadence-gem-host-test: tests/cadence-gem-host-test.c \
+	tests/cadence-gem-host-test.h $(CADENCE_GEM_HOST_TEST_DRIVERS) \
+	include/drivers/ethernet/cadence-gem.h include/drivers/ethernet/mii-phy.h \
+	include/drivers/ethernet/bcm54213pe.h src/drivers/platform/rpi5/rp1-ethernet.h
+	@mkdir -p $(BUILD)/tests/cadence-gem
+	for driver in $(CADENCE_GEM_HOST_TEST_DRIVERS); do \
+		sed -e '/^#include/d' $$driver > $(BUILD)/tests/cadence-gem/$$(basename $$driver) || exit 1; \
+	done
+	$(HOSTCC) -std=c11 -O2 -Wall -Wextra -Werror -Iinclude -Isrc -Itests \
+		-include tests/cadence-gem-host-test.h tests/cadence-gem-host-test.c \
+		$(addprefix $(BUILD)/tests/cadence-gem/,$(notdir $(CADENCE_GEM_HOST_TEST_DRIVERS))) -o $@
+
+cadence-gem-host-test: $(BUILD)/tests/cadence-gem-host-test
+	$< -t > $(BUILD)/tests/cadence-gem-rp1.trace
+	cmp tests/cadence-gem-rp1.trace $(BUILD)/tests/cadence-gem-rp1.trace
+	$<
+
+CHECK_RUN_TARGETS += cadence-gem-host-test
 
 $(BUILD)/src/hal/cpu-up.o: src/hal/cpu-up.c
 	@mkdir -p $(dir $@)
@@ -855,7 +887,7 @@ $(BUILD)/vmunix: $(BUILD)/kernel.elf \
  --elf $< --image $@ --fix-image
 	$(PYTHON) platform/arm64/tools/check-arm64-vmunix.py --elf $< --image $@
 
-.PHONY: rpi4-fdt-host-test sdhci-host-test
+.PHONY: rpi4-fdt-host-test sdhci-host-test cadence-gem-host-test
 
 -include $(ARM64_BOOT_OBJS:.o=.d) $(ARM64_KERNEL_OBJS:.o=.d)
 
