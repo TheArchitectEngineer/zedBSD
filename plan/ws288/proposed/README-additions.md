@@ -49,8 +49,11 @@ GHCI (GPU Host Controller Interface):
   turns a queue submission into fixed-function state and draws/dispatches. The
   OS driver only validates and relays the stream, answers the queries it owns
   (device properties, memory requirements, fences), allocates memory and
-  compiles SPIR-V to GSI1. Four GHCI-specific commands (session open/close,
-  memory, program) carry what the driver resolved on the host.
+  compiles SPIR-V to GSI1 (per pipeline stage). A few GHCI-specific commands
+  (session open/close, memory, per-stage program, frame) carry what the driver
+  resolved on the host; command frames live in a staging area in GPU memory and
+  the ring carries one small packet per frame. The firmware fills result records
+  as it decodes; the driver writes every reply from them.
 - Packet class N ("native"): the micro-operations the hardware sequencer
   executes (SET_REG, BLIT, DRAW, DISPATCH, FENCE, WAIT_IDLE, WAIT_FENCE,
   LOAD_CONST, LOAD_PROGRAM, WAIT_VSYNC, INVALIDATE, RESULT), usable directly

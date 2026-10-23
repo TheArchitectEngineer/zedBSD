@@ -2,7 +2,7 @@
 
 # WS288 の設計: FPGA の GPU の IP「Amaterrace GPU」と GHCI — ZYBO（XC7Z010）で workflow、本命は KC705（XC7K325T）
 
-2026-10-23 P2（ws288-p001、worktree p2-ws288-p001、基点 main c327d0c73）。親: [WS288](ws.md)。**版 3**（同日 P1、worktree p1-ws288-d3、基点 main 01f261168: ユーザーの 4 つの決定（§2.1 の冒頭）に合わせて §2.4（ring の command = Kei GPU command protocol の gpu-op、CP は RISC-V 風の `atg_cpu` の firmware が解く）と §3（GHCI の標準の shader ISA「GSI1」、RISC-V の 32 bit の形を低位に持つ 64 bit 固定、小さな hardware の scoreboard）を書き直し、§6.6・§6.7・§6.9・§8（p017〜p019 の新設、392 LW）・§3.9（systolic array と ISA の FIFO の register `rq`、同日のユーザーの要件）・§6.10・§9（R23〜R30、U18〜U30）・§10（21〜30）・§11・§13 を足した。版 2 の節の番号は保った。design-reviewer の指摘と対応は §13）。**版 2**（同日: design-reviewer の指摘 38 件（Critical 3・High 15・Medium 14・Low 6）の全部に対応。対応の表は §12。版 1 からの主な変更: detach と reset の順序（§1.3・§6.2）、FENCE の意味（§2.4）、drv_gpu の capability と jobs と capset（§6.4）、window と IRQ の devcfg の事実への修正（§5.1・§6.2）、CP の状態遷移と ring の約束（§2.6・§2.7）、fault は v1 は device 全体（§2.5）、統一 shader の deadlock と ROP の順序（§3.8）、cache の無効化（§2.4 `INVALIDATE`）、見積もりの計算し直しと **7010 では block を分けた bitstream で確かめる**方針（§3.6・R1）、GHCI の標準と vendor の境（§2.1）、KC705 は 1 device（§6.5）、Phase の循環の解消（§8）。）
+2026-10-23 P2（ws288-p001、worktree p2-ws288-p001、基点 main c327d0c73）。親: [WS288](ws.md)。**版 3**（同日 P1、worktree p1-ws288-d3、基点 main 01f261168: ユーザーの 4 つの決定（§2.1 の冒頭）に合わせて §2.4（ring の command = Kei GPU command protocol の gpu-op、CP は RISC-V 風の `atg_cpu` の firmware が解く）と §3（GHCI の標準の shader ISA「GSI1」、RISC-V の 32 bit の形を低位に持つ 64 bit 固定、小さな hardware の scoreboard）を書き直し、§6.6・§6.7・§6.9・§8（p017〜p019 の新設、392 LW）・§3.9（systolic array と ISA の FIFO の register `rq`、同日のユーザーの要件）・§6.10・§9（R23〜R30、U18〜U30）・§10（21〜30）・§11・§13 を足した。版 2 の節の番号は保った。design-reviewer の指摘（Critical 2・High 10・Medium 22・Low 15）と対応は §13（末尾）。**版 2**（同日: design-reviewer の指摘 38 件（Critical 3・High 15・Medium 14・Low 6）の全部に対応。対応の表は §12。版 1 からの主な変更: detach と reset の順序（§1.3・§6.2）、FENCE の意味（§2.4）、drv_gpu の capability と jobs と capset（§6.4）、window と IRQ の devcfg の事実への修正（§5.1・§6.2）、CP の状態遷移と ring の約束（§2.6・§2.7）、fault は v1 は device 全体（§2.5）、統一 shader の deadlock と ROP の順序（§3.8）、cache の無効化（§2.4 `INVALIDATE`）、見積もりの計算し直しと **7010 では block を分けた bitstream で確かめる**方針（§3.6・R1）、GHCI の標準と vendor の境（§2.1）、KC705 は 1 device（§6.5）、Phase の循環の解消（§8）。）
 この Phase は設計だけで、RTL も C も書かない。RTL の置き場所は https://github.com/awemorris/amaterrace-gpu （この Phase では書かない。clone `/home/awe/amaterrace-gpu` は commit 1791b32「Initial」= ユーザーの `README.md` だけ）、計画はこの zedBSD の `plan/ws288/`（2026-10-23 ユーザー「planはこのままzedBSDを使いましょう。」）。FPGA の CPU は https://github.com/awemorris/sukuna-risc.git （2026-10-23 ユーザー「mc64をsukuna-riscに改名しました。」）。
 
 **ユーザーの仕様（amaterrace-gpu の README.md、1791b32、2026-10-23「概略を書きました。書き足してOKです。」）が上位**。この設計はそれに従う: block の名前と略号 **GHCI**（この project が提案する、Vulkan 互換の GPU のための標準の HCI）、**DC**（Display Controller）、**CP**（Command Processor）、**BLT**（Blitter）、**VF**（Vertex Fetcher）、**RX**（Rasterizer）、**SU**（Shader Unit）、**TU**（Texture Unit）、**ROP**（Buffer Writer）、**MC**（Memory Controller）。全体は `CPU -- (AXI4) -- CP`、fill/copy は `CP → BLT → MC`、primitive は `CP → VF → SU → RX → SU → ROP → MC`（TU は 2 段目の SU から）。shader は「Warp: 32-lane scalar with 16-bit packed」、register file は未定（「xxx」→ §3.5 と U12 で提案、[proposed/README-additions.md](proposed/README-additions.md) に README への書き足しの案）。
@@ -104,7 +104,7 @@
   - これで汎用の driver（zedBSD の `src/drivers/gpu/ghci/`）は ISA の backend を 1 つ（標準の ISA）持てば、どの GHCI の GPU でも shader まで動かせる。版 3 で決めた: 標準の ISA は §3 の **GSI1**（RISC-V を基にした 64 bit 固定）、Amaterrace の native = GSI1、driver の backend は `isa/gsi1/`（§6.6）。command の側は §2.4（ring の class V = gpu-op、CP の firmware が解く）。
 
 - **決める（公開・版付き・vendor に依らない。amaterrace-gpu の `docs/ghci.md` が正本、GHCI 1.0）**: (a) Host Control Register（HCR）の配置と意味（§2.2）、(b) extended capability の list（DC・debug・vendor の register の見つけ方）、(c) command ring と packet の封筒、class V（Vulkan の command = Kei GPU command protocol の gpu-op）の意味と GHCI 固有の command（session・memory・program・native）、class N の標準の µop（§2.4）、(c') 標準の shader ISA「GSI1」と program の binary の形、native の ISA の送り方（§3）、(d) state register file のうち **Vulkan の固定機能に当たる標準の領域**（§2.3）、(e) fence・割り込み・fault・watchdog・aperture・quiesce・reset の約束（§2.5〜§2.7）、(f) memory の model（32 bit の GPU address、aperture、将来の MMU の capability）、(g) CP の状態遷移（§2.6）と ring の約束（§2.7）。
-- **決めない（vendor、`VENDOR`・`DEVICE`・`ISA` の ID で識別）**: vendor の native の ISA（`NATIVE_ISA_ID`、任意。GSI1 の上位集合でも別物でもよい）、CP の firmware の中身（GHCI は class V の意味だけを決める）、**実装の都合**（NPHYS、NWARPS、NREGS、cache の大きさ、SB_ENTRIES、`PACKED`・subgroup の有無 = `VEND` の register と `CAPS` の bit。GSI1 の program は `nregs` などを header に持ち、firmware が実装に合うかを検査する、§3.4.4）、texture の tile の並び（capability で「linear だけ」「4×4 tile」を名乗る）、vendor の opcode（0x80〜0xFF）、vendor の state（0x1E0〜0x1FF）、vendor の register（extended capability `VEND`。Amaterrace は NWARPS・NREGS・NPHYS・PACKED をここに置き、ISA の backend が読む）。
+- **決めない（vendor、`VENDOR`・`DEVICE`・`ISA` の ID で識別）**: vendor の native の ISA（`NATIVE_ISA_ID`、任意。GSI1 の上位集合でも別物でもよい）、CP の firmware の中身（GHCI は class V の意味だけを決める）、**実装の都合**（NPHYS、NWARPS、NREGS、cache の大きさ、SB_ENTRIES、`PACKED`・subgroup の有無 = `VEND` の register と `CAPS` の bit。GSI1 の program は `nregs` などを header に持ち、firmware が実装に合うかを検査する、§3.4.4）、texture の tile の並び（capability で「linear だけ」「4×4 tile」を名乗る）、vendor の µop（class 1 の 0〜63、§2.4.2）、vendor の state（0x1E0〜0x1FF）、vendor の register（extended capability `VEND`。Amaterrace は NWARPS・NREGS・NPHYS・PACKED をここに置き、ISA の backend が読む）。
 - 汎用の driver（zedBSD の `src/drivers/gpu/ghci/`、§6）は HCR・ring・fence・割り込み・memory・標準の state・標準の opcode・DC の capability を扱い、**ISA の ID で compiler の backend を選ぶ**（標準の "GSI1" は必ず持つ。`NATIVE_ISA_ID` の backend は任意）。shader の無い GPU（`ISA_ID` = 0）と firmware の無い構成（`CAPS[17]` = 0）は BLT と DC だけで attach する（display + 2D の device として使える。Vulkan は出さない）。**「汎用」の意味（版 3）**: host interface・BLT・DC・Vulkan の中継（`vk/`）・GSI1 の backend の全部が汎用で、Amaterrace に固有の driver の code は無い。vendor の違いは firmware と `VEND` の register に閉じる（README-additions の文もこの形）。
 - 版: HCR の `GHCI_VERSION` の major が変わる時だけ互換を壊す。minor の追加は末尾の register と新しい capability と opcode だけ。zedBSD の driver は major 1 だけを受ける。R19: v1 は Amaterrace が実装する物だけを標準に書く。
 
@@ -128,8 +128,8 @@
 | 0x02C | COUNTER | R | `gclk` の数（free running） |
 | 0x030 | CTRL | RW | [0] RUN、[1] RESET（W1S、§1.3 の順で self-clear）、[2] HALT、[3] STEP（HALTED で 1 command）、[4] WDT_EN。状態遷移は §2.6 |
 | 0x034 | STATUS | R | [0] CP busy、[1] BLT busy、[2] VF busy、[3] RX busy、[4] ROP busy、[5] TU busy、[6] SU busy（OR）、[7] SA busy（版 3）、[8] AXI_IDLE（GPU の client の outstanding が 0）、[9] FAULT、[10] HALTED、[11] RING_EMPTY、[12] MEM_READY（KC705: MIG の calibration 完了。ZYBO: 1）、[13] AXI_STUCK、[14] QUIESCED（新しい発行を止めている）、[19:16] 状態（§2.6 の番号） |
-| 0x038 | IRQ_STATUS | R/W1C | [0] FENCE、[1] FAULT、[2] RING_EMPTY、[3] WATCHDOG、[4] DBG_DONE、[5] SOFT（IRQ_SET で立てる）、[6] HALTED（HALT の完了） |
-| 0x03C | IRQ_ENABLE | RW | [6:0]。IRQ の線 = OR(IRQ_STATUS & IRQ_ENABLE)（level、plio と同じ約束） |
+| 0x038 | IRQ_STATUS | R/W1C | [0] FENCE、[1] FAULT、[2] RING_EMPTY、[3] WATCHDOG、[4] DBG_DONE、[5] SOFT（IRQ_SET で立てる）、[6] HALTED（HALT の完了）、**[7] RESULT**（firmware が frame の result を書き終えた。版 3）、**[8] RETIRE**（`RPTR` が packet を越えた。版 3） |
+| 0x03C | IRQ_ENABLE | RW | [8:0]。IRQ の線 = OR(IRQ_STATUS & IRQ_ENABLE)（level、plio と同じ約束） |
 | 0x040 | IRQ_SET | W1S | [5] |
 | 0x044 | WDT_CYCLES | RW | 1 command の上限の cycle 数（既定 2^28 ≈ 2.7 s @ 100 MHz） |
 | 0x050 | RING_BASE | RW | ring の GPU address（32 byte 揃え）。RUNNING では書けない（無視、FAULT 種別 7） |
@@ -144,14 +144,16 @@
 | 0x048 | NATIVE_ISA_ID | R | 版 3。vendor の native の ISA の FourCC（`GHCI_PROGRAM` で直接送れる物）。`ISA_ID` と同じなら native = 標準（Amaterrace: "GSI1"）。0 = native を直接は受けない |
 | 0x0B0 | CP_HEAP_BASE | RW | 版 3。firmware の object の heap（aperture の中、32 byte 揃え）。RUNNING では書けない（FAULT 種別 7） |
 | 0x0B4 | CP_HEAP_LIMIT | RW | 同上（終わり、含まない）。既定は driver が 8 MiB を与える |
-| 0x0D0〜0x0DF | CPFW_CTRL / CPFW_STATUS / CPFW_BASE / CPFW_WORDS / CPFW_VERSION / CPFW_MBOX0..3 | RW/R | 版 3、extended capability `CPFW`（id 6）。`CPFW_CTRL` [0] LOAD（W1S: `CPFW_BASE` から `CPFW_WORDS` を IMEM に DMA、`READY` で終わり）、[1] RUN、[2] HALT。`CPFW_STATUS` [0] READY、[1] FAULT、[2] ALIVE（heartbeat）、[15:8] firmware の状態。IDLE・HALTED でだけ LOAD できる |
+| 0x0C0〜0x0DF | VEND（Amaterrace） | R | 8 word: NWARPS、NREGS、NPHYS、PACKED、SB_ENTRIES、PT の entry 数、reserved × 2 |
+| 0x120〜0x13F | CPFW_CTRL / CPFW_STATUS / CPFW_IBASE / CPFW_IWORDS / CPFW_DBASE / CPFW_DWORDS / CPFW_VERSION / CPFW_MBOX0..3 | RW/R | 版 3、extended capability `CPFW`（id 6）。`CPFW_CTRL` [0] LOAD（W1S: IMEM の像と DMEM の像を DMA、`READY` で終わり）、[1] RUN、[2] HALT（今の packet の後で止める）。`CPFW_STATUS` [0] READY、[1] FAULT、[2] ALIVE（heartbeat）、[15:8] firmware の状態。LOAD は IDLE・HALTED で CPU が止まっている時だけ（§2.4.7） |
+| 0x140〜0x14F | SA_CAPS / SA_SU | R / RW | 版 3、extended capability `SA`（id 7、§3.9.3） |
 | 0x080〜0x08C | PERF0〜3 | R | busy の cycle の合計（標準の意味は「busy の cycle」4 本まで。Amaterrace: SU、RX、TU、MC）。`PERF_CTRL` 0x090 [0] で clear |
 | 0x0A0 | DBG_ADDR | RW | AMB を通した memory の読み書きの address（4 byte 揃え、aperture の検査を受ける）。書くと read を始める（非同期） |
 | 0x0A4 | DBG_DATA | RW | 読み: `DBG_STATUS.busy` が 0 の時の最後の read の値（slave は **待たせない**）。書き: `DBG_ADDR` へ write を始める |
 | 0x0A8 | DBG_STATUS | R | [0] busy、[1] error（aperture の外）。完了で `IRQ_STATUS.DBG_DONE` |
 | 0x0F00 | KICK | W | [0] BLIT、[1] DRAW、[2] DISPATCH（STATE の値で直接 kick。ring 無しの最初の試験と debug 用。IDLE と HALTED でだけ受ける。RUNNING では FAULT 種別 6） |
 | 0x1000〜0x17FC | STATE[0..511] | RW | state register file の alias（§2.3）。IDLE・HALTED でだけ書ける（RUNNING は無視して種別 7）。ring の `SET_REG` と同じ場所 |
-| 0x100〜 | EXTCAP の entry | R | `DISP`（KC705: +0x10000 を指す。ZYBO の DC だけの bitstream: +0x0200）、`DBG`、`PERF`（0x080）、`VEND`（0x0C0: Amaterrace の NWARPS・NREGS・NPHYS・PACKED・SB_ENTRIES・PT の大きさ）、`CPFW`（0x0D0）、`SA`（0x0E0: `SA_CAPS`・`SA_SU`、§3.9.3） |
+| 0x100〜 | EXTCAP の entry の list | R | `DISP`（KC705: +0x10000 を指す。ZYBO の DC だけの bitstream: +0x0200）、`DBG`、`PERF`（P2 の実装: capability の register `PERF_SRCn` は 0x110〜、counter は 0x080〜）、`VEND`（0x0C0）、`CPFW`（0x120）、`SA`（0x140）。版 3 の追加は P2 の 0x110 の後ろに置く（M5） |
 | 他 | — | R | 0（書き込みは無視、応答は OKAY） |
 
 ### 2.3 state register file（STATE[0..511]。0x000〜0x1DF は GHCI の標準、0x1E0〜0x1FF は vendor）
@@ -159,22 +161,23 @@
 | index | block | 中身（32 bit の word。float は IEEE の bit） |
 | --- | --- | --- |
 | 0x000〜0x01F | BLT | 0 OP（[1:0] 0 FILL、1 COPY、2 TILE（linear → vendor の tile）、3 UNTILE。[4] blend over。[9:8] bpp（0 = 32、1 = 16）。[12] COPY の向き）、1 DST_BASE、2 DST_STRIDE（byte）、3 SRC_BASE、4 SRC_STRIDE、5 DST_XY、6 SRC_XY、7 SIZE、8 COLOR、9 CLIP_MIN、10 CLIP_MAX |
-| 0x020〜0x04F | VF | 0 TOPOLOGY（[2:0] 0 points、1 lines、2 line strip、3 triangles、4 triangle strip、5 triangle fan）、1 INDEX_BASE、2 INDEX_FORMAT（0 無し、1 u16、2 u32）、3 FIRST（first vertex / first index）、4 COUNT、5 PRIM_RESTART（[0]）、6 INSTANCE_COUNT、7 FIRST_INSTANCE、8 VERTEX_OFFSET（base vertex、signed）、9〜15 reserved、16+2k ATTR[k]_BASE、17+2k ATTR[k]_DESC（[15:0] stride、[19:16] format（0 R32F、1 RG32F、2 RGB32F、3 RGBA32F、4 RGBA8_UNORM、5 RGBA8_UINT、6 RG16F、7 RGBA16F、8 R32_UINT、9 RG32_UINT）、[20] per-instance、[31:24] instance の divisor）、k < 16。**属性 k の行き先は ISA の入力 slot k**（Amaterrace: r_k） |
+| 0x020〜0x04F | VF | 0 TOPOLOGY（[2:0] 0 points、1 lines、2 line strip、3 triangles、4 triangle strip、5 triangle fan）、1 INDEX_BASE、2 INDEX_FORMAT（0 無し、1 u16、2 u32）、3 FIRST（first vertex / first index）、4 COUNT、5 PRIM_RESTART（[0]）、6 INSTANCE_COUNT、7 FIRST_INSTANCE、8 VERTEX_OFFSET（base vertex、signed）、9〜15 reserved、16+2k ATTR[k]_BASE、17+2k ATTR[k]_DESC（[15:0] stride、[19:16] format（0 R32F、1 RG32F、2 RGB32F、3 RGBA32F、4 RGBA8_UNORM、5 RGBA8_UINT、6 RG16F、7 RGBA16F、8 R32_UINT、9 RG32_UINT）、[20] per-instance、[31:24] instance の divisor）、k < 16。**属性 k の行き先の register と component の数は STATE `ATTR_DST[k]`**（0x1C0〜0x1CF、版 3、M12） |
 | 0x050〜0x06F | RX | 0〜5 VIEWPORT（float: x_scale、y_scale、x_off、y_off、z_scale、z_off）、6 SCISSOR_MIN、7 SCISSOR_MAX、8 CULL（[1:0] none/front/back、[2] front = CCW）、9 DEPTH_CLAMP、10 RAST_MODE、11 VARYING_COUNT（0〜32 word）、12 DEBUG_COLOR（shader 無しの定数色、p007）、13 PROVOKING（[0] 0 = first、1 = last） |
 | 0x070〜0x08F | ROP | 0 RT_BASE、1 RT_STRIDE、2 RT_FORMAT（0 BGRA8、1 RGBA8、2 RGB565）、3 RT_SIZE、4 DS_BASE、5 DS_STRIDE、6 DEPTH（[0] test、[1] write、[4:2] func、[5] D24S8、[6] D32F）、7 STENCIL_FRONT、8 STENCIL_OPS、9 STENCIL_BACK、10 BLEND（版 1 と同じ bit）、11 BLEND_CONST、12 WRITE_MASK |
 | 0x090〜0x18F | TU（**16 slot × 16 word**） | 16s+0 BASE（level 0）、+1 SIZE（[15:0] w、[31:16] h）、+2 LEVELS（[3:0] mip の数 ≤ 13）、+3 SAMPLER（[1:0] wrap u、[3:2] wrap v、[4] mag linear、[5] min linear、[6] mip linear、[7] compare、[10:8] compare func、[12] format）、+4〜+15 MIP_OFFSET[1..12]（level 0 からの byte の offset。driver が計算） |
 | 0x190〜0x1AF | program | 0 VS_BASE、1 VS_WORDS、2 FS_BASE、3 FS_WORDS、4 CS_BASE、5 CS_WORDS、6 CONST_BASE、7 CONST_WORDS（constant の領域 0。ISA が意味を決める）、8 LDS_BYTES、9 WG_SIZE（[7:0] x、[15:8] y、[23:16] z）、10 VS_OUT_WORDS（position の後の varying の word 数） |
 | 0x1B0〜0x1BF | SA（版 3、§3.9.3） | 0 SA_CTRL、1 SA_W_BASE、2 SA_W_STRIDE、3 SA_K、4 SA_TILES、5 SA_W_TILE_STRIDE、6 SA_COLS_USED、7〜15 reserved |
-| 0x1C0〜0x1DF | reserved | 0 |
+| 0x1C0〜0x1CF | VF（版 3） | ATTR_DST[k]: [5:0] 先頭の register、[7:6] component の数 − 1（program の header の interface の表から firmware が書く） |
+| 0x1D0〜0x1DF | reserved | 0 |
 | 0x1E0〜0x1FF | vendor | Amaterrace v1 は 0x1FF を DBG_MARK に使う |
 
 ### 2.4 command（ring の中、32 bit の dword の列。版 3: Vulkan の command（gpu-op）の class と native の µop の class）
 
 #### 2.4.1 方針（2026-10-23 ユーザー「コマンドは、現在のカーネルのコマンド（Venus由来）を使いましょう。」）
 
-- ring が運ぶ command は **zedBSD の Kei GPU command protocol 版 1**（`include/uapi/gpu-op.h`。番号は Venus の wire format 1 と同じ、zedBSD だけの物は `GPU_OP_OWN_FIRST` = 0x10000 から）。libvulkan が `GPU_COMMAND_SUBMIT` で kernel に渡す stream（`[u32 番号][u32 flags][引数…]` の列、1 submission の枠は `SET_REPLY_STREAM(178)` → command… → `SEEK_REPLY_STREAM(179)` → `ENUMERATE_INSTANCE_VERSION(137)` の trailer、gpu-op.h の 93〜123 行）を、zedBSD の driver（§6.7）が**検証して ring にほぼそのまま写し**、GPU の CP がそれを解く。
+- ring が運ぶ command は **zedBSD の Kei GPU command protocol 版 1**（`include/uapi/gpu-op.h`。番号は Venus の wire format 1 と同じ、zedBSD だけの物は `GPU_OP_OWN_FIRST` = 0x10000 から）。libvulkan が `GPU_COMMAND_SUBMIT` で kernel に渡す stream（`[u32 番号][u32 flags][引数…]` の列、1 submission の枠は `SET_REPLY_STREAM(178)` → command… → `SEEK_REPLY_STREAM(179)` → `ENUMERATE_INSTANCE_VERSION(137)` の trailer、gpu-op.h の 93〜123 行）を、zedBSD の driver（§6.7）が**検証して GPU の memory の staging にほぼそのまま写し、ring には frame の packet を置き**（§2.4.6）、GPU の CP がそれを解く。
 - CP の中で gpu-op を解くのは **firmware**（小さな RISC-V 風の制御 processor `atg_cpu`、§2.4.7。hardware で解く案は採らない。理由は §2.4.7 の表と §10 の 21）。firmware は Vulkan の object（pipeline・descriptor set・render pass・framebuffer・image view・sampler・command buffer の記録）を GPU の memory の中の heap に持ち、`QUEUE_SUBMIT` で記録を辿って、固定機能の block と SU を動かす **µop**（版 2 の `SET_REG`・`BLIT`・`DRAW`・`DISPATCH`・`FENCE`・`WAIT_IDLE`・`LOAD_CONST`・`LOAD_PROGRAM`・`INVALIDATE`…）に直して hardware の sequencer に流す。
-- µop は GHCI の **class N（native）の packet** として ring にも直接書ける（driver 無しの bring-up、`ghci-blit` の試験、SU の compute の試験、CP に firmware が無い構成の GPU）。class N の標準の µop（0〜63）は GHCI が決め、vendor の µop（64〜127）は vendor が決める。**Amaterrace の v1 は class N の標準の µop だけで固定機能を動かせる**（版 2 の設計が成立する）ので、p003・p004・p007・p008 の板の受け入れは firmware 無しで行える。
+- µop は GHCI の **class N（native）の packet** として ring にも直接書ける（driver 無しの bring-up、`ghci-blit` の試験、SU の compute の試験、CP に firmware が無い構成の GPU）。class N の標準の µop（class 0 の op 0〜63）は GHCI が決め、vendor の µop（class 1 の op 0〜63）は vendor が決める。**Amaterrace の v1 は class N の標準の µop だけで固定機能を動かせる**（版 2 の設計が成立する）ので、p003・p004・p007・p008 の板の受け入れは firmware 無しで行える。
 - 1 本の ring に class N と class V（Vulkan）の packet が混ざってよい。CP は ring の順に処理し、class V の packet を firmware が解いている間は次の packet を取らない（µop の列は 1 本、順序は ring の順）。
 
 #### 2.4.2 packet の封筒（envelope）
@@ -191,7 +194,7 @@ dword0（共通）: [31:30] class   [29:24] op（class N だけ）   [23:16] JOB
 
 - 版 2 の header（`[31:24] opcode [23:16] flags [15:8] JOB_TAG [7:0] n`）は**この形に置き換える**（p004 で ring を作る時にこの封筒で作る。p002 の `ghci_packets.h` は placeholder のまま）。JOB_TAG の位置が class に依らず同じなので、`FAULT_INFO[31:24]` への写しは 1 本の配線。
 - class V の `n` は driver が各 command の引数を**解いて**数える（gpu-op の wire には長さが無い: gpu-op.h 71〜73 行）。driver は中継する command の構造体の形を全部知っている（検証のために解く、§6.7）ので、長さは副産物。CP の firmware は `n` を使って packet の終わりを知り、解けない command は packet ごと捨てて result に `VK_ERROR_FEATURE_NOT_PRESENT` を書く（stream を止めない。gpu-op.h 117〜119 行の「executor が止める」は driver の段で起きる: driver が中継しない番号は driver が `ENOTSUP` で止める）。
-- 1 packet は環の端を跨がない（§2.7）。class V の 1 packet は最大 256 KiB（ring は最大 1 MiB、`RING_SIZE` 10〜20）。gpu-op の command で 1 つが 256 KiB を超える物は無い（`CMD_UPDATE_BUFFER` の inline の byte は Vulkan の規格で 64 KiB まで。`CREATE_SHADER_MODULE` の SPIR-V は ring に載せない、§2.4.4）。
+- 1 packet は環の端を跨がない（§2.7）。class V の 1 packet は最大 256 KiB（ring は最大 1 MiB、`RING_SIZE` 10〜20）。**v1 の driver は class V の packet を `GHCI_FRAME`（8 dword。command の列は staging に置く、§2.4.6）だけにする**ので、この上限にも ring の満にも当たらない。command を直に ring に載せる形は封筒として許す（他の実装・試験用）。
 - `RPTR`（§2.2）の意味は変わらない: class N は sequencer に渡した位置、class V は firmware が packet を解き終えて µop を sequencer に渡し終えた位置。driver は `RPTR` より前の ring を書き換えてよい（firmware は packet の中身を heap に写してから `RPTR` を進める。RTL と firmware の規則）。
 
 #### 2.4.3 class N（µop）: hardware の sequencer が実行する物
@@ -223,100 +226,105 @@ dword0（共通）: [31:30] class   [29:24] op（class N だけ）   [23:16] JOB
 
 #### 2.4.4 class V: どの gpu-op を GPU が扱い、どれを driver が host で解くか
 
-分類（zedBSD の driver の `vk/` が決める、§6.7）: **D** = driver だけ（ring に載せない）、**R** = そのまま中継（driver は検証と長さの計算だけ）、**R'** = driver が解いて書き換えた GHCI 固有の command（`GPU_OP_GHCI_*`、§2.4.5）にして中継、**X** = 拒む（`ENOTSUP`、libvulkan は `VK_ERROR_DEVICE_LOST`。bcm2711 と同じ）。原則: **host の memory・CPU の mapping・kernel の資源・SPIR-V・driver が返事を作る物は D、GPU の object と GPU の仕事は R/R'**。
+分類（zedBSD の driver の `vk/` が決める、§6.7）: **D** = driver だけ（ring に載せない）、**R** = そのまま中継（driver は検証と長さの計算だけ）、**R'** = driver が解いて書き換えた GHCI 固有の command（`GPU_OP_GHCI_*`、§2.4.5）にして中継、**X** = 拒む（`ENOTSUP`、libvulkan は `VK_ERROR_DEVICE_LOST`。bcm2711 と同じ）。原則: **host の memory・CPU の mapping・kernel の資源・SPIR-V と compile・driver が返事を作る物は D、GPU の object と GPU の仕事は R/R'**。
 
 | gpu-op（番号） | 分類 | 根拠・中身 |
 | --- | --- | --- |
-| 0〜8、11、12、155（instance・physical device・device・queue） | **D**（+ 11・12・155 は R' の `SESSION_OPEN/CLOSE` を伴う） | 返事は driver が HCR の CAPS/CAPS2/VEND と §3.7 の limit から作る（bcm2711 の `fixed_query` と同じ形）。`CREATE_DEVICE` で driver は `GHCI_SESSION_OPEN`（JOB_TAG = session の 8 bit）を ring に送り、firmware が session の文脈（object の表、heap の割当）を作る。`DESTROY_DEVICE`/session の close で `SESSION_CLOSE`（firmware が tag の object を全部返す）。`GET_DEVICE_QUEUE2` の timeline は 0 だけ（1 queue） |
+| 0〜8、11、12、155（instance・physical device・device・queue） | **D**（12 は R も伴う） | 返事は driver が HCR の CAPS/CAPS2/VEND と §3.7 の limit から作る（bcm2711 の `fixed_query` と同じ形）。session の文脈（JOB_TAG）は node の `open` で作り（`GHCI_SESSION_OPEN`）、`close` で消す（`GHCI_SESSION_CLOSE`）。`CREATE_DEVICE` は D（driver の帳簿）、`DESTROY_DEVICE` は D + R（firmware はその device の識別子の下の object を返す。他の device の object は残る: 1 session に VkDevice が 2 つあってもよい）。`GET_DEVICE_QUEUE2` の timeline は 0 だけ（1 queue） |
 | 9・10・13〜17（proc addr、layer、extension、GetDeviceQueue） | D | libvulkan が送らない（gpu-op.h） |
-| 18 `QUEUE_SUBMIT` | **R** + FENCE | driver は `jobs.reserve` の sequence を fence の値にし、packet の後に class N `FENCE(addr = fence page, value, IRQ)` を置く。semaphore は 1 queue の in-order では順序に効かないので firmware は無視（識別子の存在だけ確かめる）。result（RESULT）= 受理の VkResult（記録が閉じていない command buffer → `VK_ERROR_DEVICE_LOST` は返さず driver が先に検証して `EINVAL`） |
+| 18 `QUEUE_SUBMIT` | **R** + FENCE | driver は packet の後に class N `FENCE(fence page, value = device の fence の次の値, IRQ)` を置き、session の「最後の fence の値」を更新する（jobs との結びは §6.4）。semaphore は 1 queue の in-order では順序に効かないので firmware は識別子の存在だけ確かめる。result = 受理の VkResult（firmware が packet を解いた時点で書く。§2.4.6） |
 | 19・20（WaitIdle） | D | 送られない |
 | 21 `ALLOCATE_MEMORY` | **R'** → `GHCI_MEMORY` | driver の allocator（§6.3）が GPU の address を取り（import の record なら blob の address）、`[memory の識別子][GPU address][bytes][flags]` を firmware に知らせる。firmware は memory の識別子 → address の表を持つだけ |
-| 22 `FREE_MEMORY` | R | firmware は表から消す。driver は fence の規則で遅延解放（§6.3） |
+| 22 `FREE_MEMORY` | R | firmware は表から消す。driver は「その時点の session の最後の fence の値」が過ぎてから返す（§6.3） |
 | 23〜27（map、flush、commitment） | D / X（27 は X） | |
-| 28・29 `BIND_*_MEMORY` | R | firmware が buffer/image の object に address を結ぶ |
-| 30・31 memory requirements | **D** | driver が計算（layout の規則は GHCI の文書に書き、driver と firmware が同じ式を持つ: 共有 header `ghci_layout.h`、§7.2。R23） |
+| 28・29 `BIND_*_MEMORY` | R | firmware が buffer/image の object に address を結ぶ。driver も帳簿に bind を記録する（56 の返事と scanout の import のため） |
+| 30・31 memory requirements、56 subresource layout、84 granularity | **D** | driver が buffer/image の create info（driver の帳簿、下の「driver が持つ物」）から計算。layout の式は `ghci_layout.h`（R23） |
 | 32〜34 sparse | X | |
-| 35〜39 fence | D | fence page と job の sequence で driver が答える（§2.5）。GPU に fence の object は無い |
+| 35〜39 fence | D | driver の fence の帳簿: VkFence → 「それを signal する submit の fence の値」。fence page と `FENCE_LAST` で答える（§2.5、§6.4） |
 | 40・41 semaphore | R | firmware は識別子を覚えるだけ |
-| 42〜46 event、47〜49 query pool | X | v1 は無し（i915 も query は部分的） |
-| 50〜58 buffer・buffer view・image・subresource layout・image view | R（56 は **D**） | 56 の返事は driver の layout の計算。buffer view（52）は v1 の shader が使わない → R だが firmware は object を作るだけ |
-| 59・60 `CREATE/DESTROY_SHADER_MODULE` | **R'** → `GHCI_PROGRAM` | driver が SPIR-V を §3 の GSI1 に compile（Guardrail: compile は kernel 空間）、binary を GPU の memory に置き、`[module の識別子][ISA の FourCC][stage][binary の address][bytes][flags]` を送る。60 は R（firmware は object を消し、driver は binary を遅延解放） |
+| 42〜46 event、47〜49 query pool | X | v1 は無し |
+| 50〜55、57・58 buffer・buffer view・image・image view | R（driver は 50・54 の create info の形も帳簿に写す） | buffer view（52）は v1 の shader が使わない → R だが firmware は object を作るだけ |
+| 59・60 `CREATE/DESTROY_SHADER_MODULE` | **D** | driver が SPIR-V の word を帳簿に持つだけ（compile は pipeline の作成の時。C1） |
+| 65・66 `CREATE_GRAPHICS/COMPUTE_PIPELINES` | **R'**（`GHCI_PROGRAM` × stage の後に、command 自体を R で中継） | driver が `pStages[]` の module・stage・entry の名前を解き、stage ごとに SPIR-V を GSI1 に compile（`drv_gpu_shader_parse(words, count, stage, …)`、Guardrail: compile は kernel 空間）、binary（§3.4.4、interface の表を含む）を GPU の memory に置き、`GHCI_PROGRAM [pipeline の識別子][stage][ISA][address][bytes]` を pipeline ごと・stage ごとに送ってから create の command を中継する。firmware は (pipeline, stage) で program を引く。entry の名前: v1 は「その stage の entry が 1 つの module」だけ受け、複数なら `VK_ERROR_FEATURE_NOT_PRESENT`（共有の compiler に entry の選択を足すのは別の判断、§6.6）。compile の失敗は driver が返事に `VK_ERROR_INVALID_SHADER_NV` 相当（`VK_ERROR_INITIALIZATION_FAILED`）で書き、command を中継しない |
+| 67 `DESTROY_PIPELINE` | R | firmware は object を消す。driver は pipeline の binary を「その時点の session の最後の fence」が過ぎてから返す（module の寿命とは無関係。H3） |
+| 68・69 pipeline layout、70〜79 sampler・descriptor set layout・pool・set・update | R | firmware が descriptor set の内容を持ち、draw/dispatch の時に program の interface の表で (set, binding) → TU の slot・constant の領域・storage の base に写す |
 | 61〜64 pipeline cache | D | 空の cache（`GET_PIPELINE_CACHE_DATA` は 0 byte） |
-| 65〜69 pipeline・pipeline layout | **R** | firmware が `VkGraphicsPipelineCreateInfo` を解き、固定機能の STATE の word の列（RX・ROP・VF の属性・depth/stencil/blend）と program の参照を pipeline の object に**事前に組んで**持つ（draw の時は `SET_REG` の列を流すだけ）。使えない状態（§3.7 の未達: geometry/tessellation の stage、multisample、dynamic state の一部）は result に `VK_ERROR_FEATURE_NOT_PRESENT` |
-| 70〜79 sampler・descriptor set layout・pool・set・update | R | firmware が descriptor set の内容（buffer の address、image view、sampler）を持ち、draw/dispatch の時に TU の slot・constant の領域・storage の base に写す |
-| 80〜83 framebuffer・render pass、84 granularity | R（84 は D: 1×1） | |
+| 80〜83 framebuffer・render pass | R | |
 | 85〜89 command pool・buffers | R | firmware が記録の置き場（heap）を持つ |
-| 90〜92 begin/end/reset | R | firmware が記録の状態を変える。**`END_COMMAND_BUFFER` の返事は driver が `VK_SUCCESS` を待たずに書く**（記録の誤りは `QUEUE_SUBMIT` の result か fence の error で出る。bcm2711 の「記録の最初の失敗を返す」とは違うが規格の中） |
-| 93〜95、98、100〜107、110、112〜116、119、121、126、132、133、135（記録される command のうち v1 が実装する物） | **R** | firmware が記録に積む（wire のまま写す）。`QUEUE_SUBMIT` で辿って µop にする。barrier（126）は `WAIT_IDLE` + `INVALIDATE`（§6.4 の規則）に |
+| 90〜92 begin/end/reset | R | firmware が記録の状態を変え、result を解いた時点で書く（§2.4.6）。driver は 90・91・92 の返事をその result から書く |
+| 93〜95、98、100〜107、110、112〜116、119、121、126、132、133、135（記録される command のうち v1 が実装する物） | **R** | firmware が記録に積む（wire のまま写す）。`QUEUE_SUBMIT` で辿って µop にする。barrier（126）は `WAIT_IDLE` + `INVALIDATE`（§6.4 の規則）に。114 の拡大・縮小、121、115/116 の format の変換は BLT では出来ない → **firmware の内蔵の GSI1 の program**（firmware の像に入れた blit・clear の kernel。p018 の範囲、M16） |
 | 96・97・99（line width、depth bias、depth bounds） | R（firmware が読んで捨てる） | i915 と同じ |
 | 108・109・111（indirect） | X | v1 は `DRAW_INDIRECT` の µop が無い（§3.7） |
-| 117・118（update/fill buffer） | **R** | firmware が BLT の µop（FILL、COPY）に。118 は BLT の FILL、117 は inline の byte を heap に写して COPY |
+| 117・118（update/fill buffer） | **R** | firmware が BLT の µop（FILL、COPY）に。118 は BLT の FILL、117 は inline の byte を heap に写して COPY（M6 の規則で書き込みの応答を待ってから） |
 | 120・122（clear depth/stencil、resolve） | 120 R（BLT の FILL で D24S8/D32F）、122 X | |
 | 123〜125 event、127〜131 query、134 next subpass、136 execute commands | X | |
 | 137 trailer、178 reply stream、179 seek | **D** | driver が返事と trailer を書く（§2.4.6）。ring に載せない |
 | 180 `EXECUTE_STREAMS` | D | driver が blob の stream を自分で解いて（入れ子）、中の command を上の規則で扱う |
+| 148・150・161（properties2、image format properties2、external buffer properties） | **D** | libvulkan が external memory の fd の道で送る（`external-properties.c`、`memory.c`）。driver が UUID と external の properties を答える |
 | 0x10000〜0x1000d video | X | |
-| `GPU_OP_GHCI_*`（§2.4.5） | — | driver が作る。libvulkan からは来ない（来たら `EINVAL`） |
+| `GPU_OP_GHCI_*`（§2.4.5） | — | driver が作る。libvulkan は送らない（userland からは `GHCI_NATIVE` だけを試験の build で受ける。他は `EINVAL`） |
 
-- **GPU が「扱う」の意味**: firmware が object の意味（Vulkan の規格の、v1 の部分集合）を解いて µop にする。driver は Vulkan の object の意味を**知らなくてよい**（識別子と長さと、D の返事だけ）。これが「汎用の driver」の中身（§2.1）: 他の GHCI の GPU でも `vk/` は同じで、違うのは firmware。
-- **どの session の仕事か**: JOB_TAG = session の番号（`open` ごとに 1〜255。0 は driver 自身の試験用）。firmware は tag ごとに object の表を分け、他の tag の識別子は見えない（識別子は libvulkan が session ごとに採るので衝突しない: gpu-op.h 59〜60 行）。v1 の fault の回復は device 全体のまま（§2.5）。
+- **driver が持つ物**（M1。「driver は Vulkan の object の意味を知らなくてよい」の正確な範囲）: 識別子の帳簿（種類と親の device）、buffer/image の create info（大きさ・format・tiling・usage・mip・layer: memory requirements・subresource layout・scanout の import のため）、memory の割当と bind、shader module の SPIR-V、pipeline → binary、fence の帳簿、command buffer の「begin 済み・end 済み」の状態（`QUEUE_SUBMIT` の検証）。持たない物: pipeline の状態の意味、descriptor の内容、render pass・framebuffer の意味、記録の中身。
+- **GPU が「扱う」の意味**: firmware が object の意味（Vulkan の規格の、v1 の部分集合）を解いて µop にする。他の GHCI の GPU でも `vk/` は同じで、違うのは firmware。
+- **どの session の仕事か**: JOB_TAG = session の番号（node の `open` ごとに 1〜255。0 は driver 自身の試験用）。firmware は tag ごとに object の表を分け、他の tag の識別子は見えない（識別子は libvulkan が session ごとに採るので衝突しない: gpu-op.h 59〜60 行）。v1 の fault の回復は device 全体のまま（§2.5）。
 
-#### 2.4.5 GHCI 固有の gpu-op（`GPU_OP_GHCI_*`、`include/uapi/gpu-op.h` に足す。番号は **0x10100〜の案**、Q1 が確定（U10））
+#### 2.4.5 GHCI 固有の gpu-op（`GPU_OP_GHCI_*`、`include/uapi/gpu-op.h` に足す。番号は **0x10100〜の案**、Q1 が確定（U10・U26））
 
-| 番号（案） | 名前 | 引数（class V の dword4〜） | 意味 |
+| 番号（案） | 名前 | 引数（class V の wire） | 意味 |
 | --- | --- | --- | --- |
 | 0x10100 | `GPU_OP_GHCI_SESSION_OPEN` | [u32 tag][u32 flags][u64 heap の上限 byte] | firmware が tag の文脈を作る。result = 0 か `VK_ERROR_OUT_OF_DEVICE_MEMORY` |
 | 0x10101 | `GPU_OP_GHCI_SESSION_CLOSE` | [u32 tag] | tag の object を全部返す。完了は後ろの FENCE で |
 | 0x10102 | `GPU_OP_GHCI_MEMORY` | [u64 memory の識別子][u64 GPU address][u64 bytes][u32 flags（[0] host visible、[1] import）] | `ALLOCATE_MEMORY` の置き換え |
-| 0x10103 | `GPU_OP_GHCI_PROGRAM` | [u64 module の識別子][u32 ISA の FourCC][u32 stage][u64 binary の address][u32 bytes][u32 flags] | `CREATE_SHADER_MODULE` の置き換え。ISA は `ISA_ID`（標準 "GSI1"）か `NATIVE_ISA_ID`。それ以外は result = `VK_ERROR_INCOMPATIBLE_DRIVER`。他の実装の CP が JIT するのはここ（§3.4.5） |
-| 0x10104 | `GPU_OP_GHCI_NATIVE` | [u32 count][count × class N の packet] | **試験用**（版 2 §6.4 の native の packet）: driver が白表で検査して class N として ring に写す。`CONFIG_GHCI_NATIVE` と root だけ |
+| 0x10103 | `GPU_OP_GHCI_PROGRAM` | [u64 pipeline の識別子][u32 stage][u32 ISA の FourCC][u64 binary の address][u32 bytes][u32 flags] | pipeline の stage の program（C1）。ISA は `ISA_ID`（標準 "GSI1"）か `NATIVE_ISA_ID`。それ以外は result = `VK_ERROR_INCOMPATIBLE_DRIVER`。他の実装の CP が JIT するのはここ（§3.4.5） |
+| 0x10104 | `GPU_OP_GHCI_NATIVE` | [u32 count][count × class N の packet] | **試験用**: driver が白表で検査して class N として ring に写す。`CONFIG_GHCI_NATIVE` の build と root だけ。白表（試験の build）: NOP・SET_REG（index は全部）・BLIT・DRAW・DISPATCH（flags[1] の SA を含む）・FENCE・WAIT_IDLE・LOAD_CONST・LOAD_PROGRAM・INVALIDATE・RESULT。address の word は aperture の中かを見る（M20） |
 
-- これらは libvulkan が送らない（`vk/` の中継が作る）。userland からの `GPU_OP_GHCI_NATIVE` だけは試験の道として受ける。
 - `GPU_OP_PROTOCOL_VERSION` は変えない（番号の追加だけ。i915 の video と同じ「自分の番号」の扱い。gpu-op.h の冒頭の文に GHCI の行を足すのは実装の Phase）。
 
-#### 2.4.6 返事（reply）と result
+#### 2.4.6 frame の運び方（staging）、返事（reply）と result、完了の通知
 
-- **返事は driver が全部書く**（gpu-op.h 75〜79 行の形、trailer を最後に release store で。powervr の `vk-stream.c` の `version_reply` と同じ）。firmware は返事を書かない（返事の cursor は frame の中で順に進むので、driver と firmware が同じ stream に書き分けると順序が守れない。§10 の 22）。
-- firmware の結果は **result の record**（2 word `{status, aux}`、GPU の memory の「result page」。driver が frame ごとに record を割り当て、packet の dword3 に address を入れる）で返る。driver は frame の中に REPLY を求める R/R' の command が 1 つでも有れば、frame の packet の後ろに class N `FENCE(IRQ)` を置き、**fence を待ってから**（ioctl の中で眠る。watchdog と `execution_timeout_ns` で有限）record を読んで返事（VkResult、作った識別子の echo）を書く。REPLY の無い frame（記録の送り、`END_COMMAND_BUFFER` の `VK_SUCCESS`）は待たない。
-- 待つ frame は object の作成が主で draw の経路には無い（1 frame あたり CP の往復 1 回、数十 µs）。`QUEUE_SUBMIT` は REPLY を求める（受理の VkResult）ので待つ: v1 は 1 submit = 1 往復 + fence。十分速くなければ受理を `VK_SUCCESS` で先に返す案（record の誤りは fence の error）を p019 で選ぶ。
-- 誤りの種類: (1) driver の検証で落ちる（`EINVAL`/`ENOTSUP`、ring に載せない、libvulkan は `DEVICE_LOST`）、(2) firmware が packet を解けない/状態が使えない（result に VkResult、stream は続く、libvulkan はその command の VkResult を見る）、(3) 実行中の fault（§2.5、device 全体）。
+- **class V の frame は ring に直接は載せない**（H2・L6）: driver は 1 submission の中継する command の列（各 command に `[u32 番号][u32 flags][u32 result の index][引数…]` の封筒を付けた物）を **staging**（driver が GPU の memory に持つ環: 既定 4 MiB、aperture の中、session で共有）に写し、ring には class V の packet を 1 つだけ置く: dword1 = `GPU_OP_GHCI_FRAME`（0x10105、driver 内部）、dword4〜 = `[u64 staging の address][u32 bytes][u32 result page の address][u32 record の数]`。firmware はそこから読む。1 frame に割り込み 1 回、大きさの上限は staging（libvulkan の 1 MiB の記録の flush も入る）、ring の packet は小さいので ring が満ちる事は実質無い（満ちたら driver は `IRQ_STATUS[8] RETIRE`（版 3 で追加: `RPTR` が packet を越えるたび）を待つ）。
+- **result の record**（2 word `{status, aux}` の列、frame ごとの result page）: firmware は **各 command を解いた時点で**（block の完了を待たず）その command の record を書く。`QUEUE_SUBMIT` の result は「記録を辿って µop を出せた」= 受理で、draw の完了ではない。frame の最後に firmware は「frame done」の record を書き、`IRQ_STATUS[7] RESULT` を立てる（CPU の制御 window から。H1）。firmware の DMA の書き込みが MC に受理された順で record が見えるよう、record の書き込みは firmware の DMA の応答を待ってから IRQ（M6）。
+- **返事は driver が全部書く**（gpu-op.h 75〜79 行の形、trailer を最後に release store で。powervr の `vk-stream.c` の `version_reply` と同じ）。firmware は返事を書かない（U24）。返事の cursor の順序（M2）: driver は frame を解く時に、D の返事はその場で書き、R/R' の REPLY を求める command の返事の **大きさを計算して cursor の場所を空け**（返事の形は gpu-op.h の「Reply」で全部決まっている: `[number][VkResult]`、create の form の `[u64 1][識別子]`、`ALLOCATE_COMMAND_BUFFERS` の `[u64 count][…]` など）、result が来てから埋める。
+- **ioctl の中で眠らない**（M3）: `commands.submit`（`GPU_COMMAND_SUBMIT`、`drv_gpu_completion` 付き）は staging に写し、ring に packet を置き、doorbell を鳴らして返る。device ごとの **reply thread**（kernel の thread）が `RESULT` の IRQ で起き、frame の record を読んで返事を埋め、trailer を release store で書き、**その後に** `drv_gpu_complete(completion, 0)`（libvulkan は通知を待ってから trailer を poll する: `context.c` の `vulkan_decoder_wait` → `vulkan_context_poll`）。REPLY を求める R/R' の無い frame（記録の送り）も同じ道（firmware の「frame done」で完了。順序を保つため）。fault の時は reply thread が pending の frame を error で完了する（`recovery.fault`）。
+- 誤りの種類: (1) driver の検証で落ちる（`EINVAL`/`ENOTSUP`、ring に載せない。libvulkan は `DEVICE_LOST` にする）、(2) firmware が command を解けない/状態が使えない（record に VkResult、frame は続く、libvulkan はその command の VkResult を見る）、(3) 実行中の fault（§2.5、device 全体）。
 
 #### 2.4.7 CP の構成: firmware か hardware か（推し: firmware。U19）
 
 | 案 | 中身 | 7010 の資源（推定） | 工数 | 判断 |
 | --- | --- | --- | --- | --- |
-| **F. firmware**（推し） | `atg_cp`（HCR、ring の DMA、class N の sequencer、fence、IRQ、fault = P2 が作っている物）+ **`atg_cpu`**（RV32IM、in-order 3 段、IMEM 32 KiB、DMEM 16 KiB、AMB の port 1 つ、µop の FIFO、mailbox）+ firmware（C、`fw/cp/`）。firmware が gpu-op の wire を解き、object を heap（`CP_HEAP_*`、GPU の memory）に持ち、µop を出す | CPU LUT 2.5k、FF 1.5k、DSP 1（mul）、BRAM36 12（IMEM 8 + DMEM 4）。bitstream 1「2D」4.7k → **7.2k（41%）**、BRAM 5 → 17 | core 12 LW + firmware の runtime 20 LW + Vulkan の object model 44 LW（±50%）= 76 LW | 柔軟（Vulkan の規格の変化は firmware で吸収）。RTL は小さいまま。性能: draw 1 つの変換 ≈ 100〜300 命令 × 1 命令/cycle → 1〜3 µs @100 MHz（vkdemo・compositor の数百 draw/frame で ≤ 1 ms） |
+| **F. firmware**（推し） | `atg_cp`（HCR、ring の DMA、class N の sequencer、fence、IRQ、fault = P2 が作っている物）+ **`atg_cpu`**（RV32IM、in-order 3 段、IMEM 32 KiB、DMEM 16 KiB、AMB の port 1 つ、µop の FIFO、mailbox）+ firmware（C、`fw/cp/`）。firmware が gpu-op の wire を解き、object を heap（`CP_HEAP_*`、GPU の memory）に持ち、µop を出す | CPU LUT 2.5k、FF 1.5k、DSP 1（mul）+ 除算器 0.3k LUT、BRAM36 12（IMEM 8 + DMEM 4）。bitstream 1「2D」4.7k → **7.5k（43%）**、BRAM 5 → 17 | core 12 LW + firmware の runtime 20 LW + Vulkan の object model 44 LW（±50%）= 76 LW | 柔軟（Vulkan の規格の変化は firmware で吸収）。RTL は小さいまま。性能: draw 1 つの変換は object を heap（uncached の DDR、DMA 経由）から読むので **数 µs〜十数 µs** の見込み（M21。p017 の最初に測る。vkdemo・compositor の数百 draw/frame で数 ms なら v1 は受け、足りなければ object を DMEM に cache） |
 | H. hardware で解く | RTL の状態機械が gpu-op の wire（pNext の chain、配列、入れ子の構造体、u64 の識別子の表）を解く | 部分集合（BIND・DRAW・SET_VIEWPORT・PUSH_CONSTANTS・BEGIN_RENDER_PASS）だけでも LUT 6〜10k + object の表の BRAM。pipeline の作成は不可能に近い | 30 LW 以上、変更のたびに合成 | **採らない**。結局 driver が object を解いて µop を作る事になり、「ring は gpu-op」の決定に反する |
 | F'. firmware、CPU は sukuna-risc | ユーザーの CPU をそのまま | README: RV64GC、2-issue、SMT、**約 22,000 LUT**（7010 の 125%） | — | v1 では不可。**RV32 の最小の構成が sukuna-risc に出来たら `atg_cpu` を差し替えられる形**にする（同じ bus の口: 命令 fetch は IMEM の BRAM、data は DMEM + AMB の port + 制御 register の window。U20） |
 
-- **`atg_cpu` の仕様（案）**: RV32IM（C 無し、FPU 無し。`mul` は DSP、`div` は software）、Machine mode だけ、割り込みは 1 本（ring に class V の packet が来た、fence の完了、HALT の要求）、`mcycle`、`csr` の代わりに memory-mapped の制御 window（`0xF000_0000`〜: 自分の packet の address と長さ、`UOP_FIFO`（µop の dword を書く。満なら stall）、`STATE` の読み書き、`RPTR` の進め、DMA（AMB の line の読み書き、heap ↔ DMEM）、`FENCE_LAST`、`COUNTER`、mailbox 4 word（`CPFW_MBOX`）、`DONE`（packet の処理の終わり）。3 段 pipeline（fetch、decode/execute、writeback）で 7010 -1 で 100 MHz、325T -2 で 200 MHz（R25）。**RTL は amaterrace-gpu の `rtl/gpu/cp/atg_cpu.v`**（U20）。
-- **firmware**: C、`-ffreestanding -march=rv32im -mabi=ilp32`、共有の LLVM の clang（`build/llvm/bin/clang --print-targets` に riscv32 が有る、実測）で build（toolchain は変えない、使うだけ。build の規則は amaterrace-gpu の `fw/cp/Makefile`）。大きさの目標: 64 KiB 以内（IMEM 32 KiB に入らなければ IMEM を 64 KiB = BRAM36 16 に。7010 の 60 個の内）。**firmware は bitstream の BRAM に初期値として入れる**（`$readmemh`、同じ commit の RTL と firmware を 1 つの bitstream に。driver は file を要らない）+ **`CPFW` の extended capability で host から載せ替えられる**（開発の反復: Vivado を回さずに firmware だけ変える。`CPFW_BASE/WORDS/CTRL/STATUS/VERSION`、§2.2 の追加の行。`ghcictl fw-load` は root だけ）。zedBSD の tree に firmware の blob を置くか（`userland/firmware/amaterrace/`）は U21。
-- **heap**: driver が attach で `CP_HEAP_BASE/LIMIT`（aperture の中、既定 8 MiB）を与える。firmware の allocator（first-fit、session ごとの上限）。object の表は識別子の hash（64 bit → 12 bit、chain）。記録（command buffer）は heap の中の chunk の list。
-- **watchdog**: class V の 1 packet の処理も `WDT_CYCLES` の対象（CP は packet の開始で counter を始め、firmware の `DONE` で止める）。firmware が止まった（無限 loop）時は FAULT 種別 4 → §2.5 の回復（`RESET` は `atg_cpu` も reset し、firmware は BRAM の初期値から再起動。heap は driver が作り直す）。firmware の heartbeat（`CPFW_STATUS.ALIVE` を 1 ms ごとに反転）は debug 用。
+- **`atg_cpu` の仕様（案）**: **RV32IM の全部を hardware**（`mul*` は DSP、`div*`/`rem*` は 32 cycle の逐次の除算器 ≈ 0.3k LUT。H5: `-march=rv32im` の clang は `div` を出すので software にはしない）、C 無し、FPU 無し、Machine mode だけ、割り込みは 1 本（ring に class V の packet が来た、fence の完了、HALT の要求）、`mcycle`、`csr` の代わりに memory-mapped の制御 window（`0xF000_0000`〜: 自分の packet の address と長さ、`UOP_FIFO`（µop の dword を書く。満なら stall）、**STATE の読み**（書きは `UOP_FIFO` の `SET_REG` だけ: 非同期の block が読んでいる STATE を直に書かない。H10）、`RPTR` の進め、DMA（AMB の line の読み書き、heap ↔ DMEM。書き込みの応答の数が読める）、`FENCE_LAST`、`COUNTER`、mailbox 4 word（`CPFW_MBOX`）、`RESULT` の IRQ、`DONE`（packet の処理の終わり）。3 段 pipeline（fetch、decode/execute、writeback）で 7010 -1 で 100 MHz、325T -2 で 200 MHz（R25）。**RTL は amaterrace-gpu の `rtl/gpu/cp/atg_cpu.v`**（U20）。
+- **firmware**: C、`-ffreestanding -nostdlib -march=rv32im -mabi=ilp32`、共有の LLVM の clang（`build/llvm/bin/clang --print-targets` に riscv32 が有る、実測。**compiler-rt の builtins は無い**（`build/llvm/lib/clang/<版>/` に `lib/` が無い、実測）ので `fw/cp/` に `memcpy`・`memset`・`memcmp`・`__udivdi3`・`__umoddi3` 等を自前で持つ。toolchain は変えない）。大きさの目標: 64 KiB 以内（IMEM 32 KiB に入らなければ IMEM を 64 KiB = BRAM36 16 に。p017 の最初に測る、R26）。**firmware は bitstream の BRAM に初期値として入れる**（IMEM と DMEM の 2 つの像。`$readmemh`。driver は file を要らない）+ **`CPFW` の extended capability で host から載せ替えられる**（`CPFW_IBASE/IWORDS`（IMEM）と `CPFW_DBASE/DWORDS`（DMEM の .data と .rodata の像）の 2 対。H4）。**再起動の規則**: `.data` の原本は DMEM の像の中の「初期値の区画」に置き、`boot.S` が起動のたびに作業の区画へ写す（BRAM は reset で初期値に戻らないため）。p017 の受け入れに「書き換えた `.data` が RESET の後に戻る」を入れる。zedBSD の tree に blob を置くかは U21。
+- **heap**: driver が attach で `CP_HEAP_BASE/LIMIT`（aperture の中、既定 8 MiB。**driver の allocator はこの領域・ring・staging・fence page・result page を session に貸さない**、L14）を与える。firmware の allocator（first-fit、session ごとの上限）。object の表は識別子の hash（64 bit → 12 bit、chain）。記録（command buffer）は heap の中の chunk の list。
+- **watchdog と状態遷移**（M7）: class V の packet の処理も `WDT_CYCLES` の対象。counter は **CPU が `UOP_FIFO` の満で止まっている cycle と DMA の応答待ちの cycle を数えない**（長い submit で誤って発火しないため）。`HALT`・`STEP` の「1 command」は class V では **1 packet（= 1 frame）**。`CPFW_CTRL.HALT` は「今の packet の後で CPU を止める」（`CTRL.HALT` の quiesce の一部として CP が自動で行う）。`CPFW_CTRL.LOAD` は IDLE・HALTED で、かつ CPU が止まっている時だけ受ける。`CAPS[17] VKCP` は **静的**（bitstream に firmware が入っている）、走っているかは `CPFW_STATUS.READY`。reset で残る register に `CP_HEAP_*`・`CPFW_IBASE/IWORDS/DBASE/DWORDS`、消える物に `CPFW_STATUS`・CPU の状態（§2.6 の表に追記）。firmware が止まった時は FAULT 種別 4 → §2.5 の回復（`RESET` は `atg_cpu` も reset し、firmware は BRAM の像から再起動。heap は driver が作り直す）。
 - **ZYBO の bitstream**: 1「2D」(p003・p004) に CPU は入れない。**1'「2D + FW」**（CP + CPU + MC + BLT、p017）で class V の道（`CMD_FILL_BUFFER`/`CMD_COPY_BUFFER` → BLT）を板で確かめる。3「raster」と 4「compute」には CPU を入れない（4 は 78% + 2.5k = 92% で閉じない見込み、U25）: SU と RX/ROP は class N で確かめ、class V の全部の道は Verilator と KC705（p011・p014）。
 
 #### 2.4.8 firmware の中身（p017・p018 の設計の入口）
 
-- 構成: `boot.S`（stack、bss、割り込みの入口）、`packet.c`（ring の packet の受け取り、wire の reader: u32/u64/構造体/配列/pNext の chain。gpu-op.h の「wire form」56〜66 行の規則）、`heap.c`、`object.c`（識別子の表、種類ごとの struct）、`memory.c`（識別子 → address）、`program.c`（binary の header の検証、§3.4.4。他の実装の JIT の場所）、`pipeline.c`（create info → STATE の word の列）、`descriptor.c`、`pass.c`（render pass・framebuffer → ROP/RX の STATE、clear → BLT の FILL）、`record.c`（記録の積み・辿り）、`submit.c`（記録 → µop: bind の状態機械、draw の前に変わった STATE だけ `SET_REG`、push constant → `LOAD_CONST`、barrier → `WAIT_IDLE`/`INVALIDATE`）、`uop.c`（`UOP_FIFO`）、`result.c`。
+- 構成: `boot.S`（stack、bss、`.data` の写し、割り込みの入口）、`packet.c`（frame の受け取り、wire の reader: u32/u64/構造体/配列/pNext の chain。gpu-op.h の「wire form」56〜66 行の規則。**codec は driver と firmware で 1 つの表から生成する**（`ghci_vkwire.inc`: command ごとの引数の形。M21。i915 の `vulkan-codec.inc` は 2808 行、同じ物を 2 度は書かない）、`heap.c`、`object.c`（識別子の表、種類ごとの struct）、`memory.c`（識別子 → address）、`program.c`（binary の header と interface の表の検証、§3.4.4。他の実装の JIT の場所）、`pipeline.c`（create info → STATE の word の列）、`descriptor.c`、`pass.c`（render pass・framebuffer → ROP/RX の STATE、clear → BLT の FILL か内蔵の kernel）、`record.c`（記録の積み・辿り）、`submit.c`（記録 → µop: bind の状態機械、draw の前に変わった STATE だけ `SET_REG`、push constant → `LOAD_CONST`、barrier → `WAIT_IDLE`/`INVALIDATE`）、`blit.c`（内蔵の GSI1 の program: 拡大・縮小の blit、format の変換、clear attachments。binary は firmware の像に入れ、起動で heap に写す）、`uop.c`（`UOP_FIFO`）、`result.c`。
+- **memory の順序の規則**（M6: `atg_mc` は client の間の順序を守らない）: firmware が DMA で heap に書いた物（inline の data、内蔵の program、push constant の写し）を他の client（CP の `LOAD_CONST`、BLT、SU、TU）が読む µop は、**その書き込みの応答が全部返ってから** `UOP_FIFO` に出す（window の「DMA の応答の数」で確かめる）。
 - 1 draw の µop の列（典型）: `SET_REG` × 10〜40（変わった物だけ）、`LOAD_PROGRAM`（program が変わった時）、`LOAD_CONST`（push constant が変わった時: 暗黙の `WAIT_IDLE(SU)` で pipeline が空く。R24）、`DRAW`。
 - 誤りは result に VkResult。firmware が自分の不変条件を破った時（assert）は `CPFW_STATUS.FAULT` と FAULT 種別 4 の道。
-- **他の GHCI の実装**: firmware は vendor の物（GHCI は firmware の中身を決めない。決めるのは class V の意味 = Vulkan の規格の部分集合と、result・session・program・memory の 4 つの固有の command）。
+- **他の GHCI の実装**: firmware は vendor の物（GHCI は firmware の中身を決めない。決めるのは class V の意味 = Vulkan の規格の部分集合と、result・frame・session・program・memory の固有の command）。
 
 #### 2.4.9 class V の 1 frame の流れ（vkCmdDraw を含む command buffer の submit）
 
-1. app → libvulkan: `vkEndCommandBuffer` で記録（93〜135）と `END_COMMAND_BUFFER(91)` を 1 frame に、`GPU_COMMAND_SUBMIT`（libvulkan/context.c の transaction）。
-2. driver `commands.submit`（§6.7）: frame を解く。`SET_REPLY_STREAM` で返事の blob を選ぶ（D）。記録の各 command: 番号が R の白表に有り引数が解ける → class V の packet（JOB_TAG = session、n = 長さ）を ring に写す。`END_COMMAND_BUFFER` も R（REPLY は driver が `VK_SUCCESS`）。trailer（D）を書く。待たない（REPLY を求める R は無い）。doorbell（`RING_WPTR`）。
-3. app → `vkQueueSubmit`: libvulkan は `GPU_JOB_RESERVE`（sequence）→ frame `QUEUE_SUBMIT(18)` + trailer。driver: packet を写し、後ろに `FENCE(fence page の session の word, value = sequence, IRQ)` を置き、doorbell、**fence を待つ**（受理の result）→ 返事 `VK_SUCCESS` と trailer → `jobs.commit`。
-4. CP: ring から class V の packet → `atg_cpu` に割り込み → firmware が `QUEUE_SUBMIT` を解き、command buffer の記録を辿って µop を `UOP_FIFO` に流す（`SET_REG`…`DRAW`…）→ `DONE` → `RPTR` を進める → 次の packet（`FENCE`）は sequencer が実行: 先行の DRAW の完了を待って fence page に書き、`IRQ_STATUS.FENCE`。
-5. driver の IRQ handler: fence page の値 ≥ sequence → `drv_gpu_complete`（job の完了、libvulkan の `vkWaitForFences` が起きる）。
+1. app → libvulkan: `vkEndCommandBuffer` で記録（93〜135）と `END_COMMAND_BUFFER(91)` を 1 frame に、`GPU_COMMAND_SUBMIT`（libvulkan/context.c の transaction、`drv_gpu_completion` 付き）。
+2. driver `commands.submit`（§6.7）: frame を解く。`SET_REPLY_STREAM` で返事の blob を選ぶ（D）。記録の各 command: 番号が R の白表に有り引数が解ける → staging に写す（result の index を付ける）。`END_COMMAND_BUFFER` も R（返事の場所を空ける）。class V の packet（`GHCI_FRAME`、staging の address と長さ、result page）を ring に置き、doorbell（`RING_WPTR`）。返る。
+3. CP: ring から class V の packet → `atg_cpu` に割り込み → firmware が staging を読み、記録を heap に積み、record を書き、「frame done」→ `RESULT` の IRQ → `DONE` → `RPTR`。
+4. driver の reply thread: record を読み、`END_COMMAND_BUFFER` の返事（VkResult）と trailer を書き、`drv_gpu_complete`。libvulkan の `vkEndCommandBuffer` が返る。
+5. app → `vkQueueSubmit`: libvulkan は `GPU_JOB_RESERVE`（token = driver の marker）→ frame `QUEUE_SUBMIT(18)` + trailer を `GPU_COMMAND_SUBMIT` → `GPU_JOB_COMMIT`。driver: 2 と同じく staging + packet、その後ろに class N `FENCE(fence page, value = device の次の fence の値, IRQ)`、session の「最後の fence の値」を更新、doorbell。firmware が `QUEUE_SUBMIT` を解いて記録を辿り µop を流し、受理の record を書く → reply thread が返事と trailer → `drv_gpu_complete`。`commit`（§6.4）は marker を「最後の fence の値」に結ぶ。
+6. sequencer: 先行の DRAW の完了を待って fence page に書き、`FENCE_LAST` を更新、`IRQ_STATUS.FENCE`。driver の IRQ の bottom half: fence page の値を読み、`(int32)(value − marker の値) ≥ 0` の marker を `drv_gpu_complete`（job の完了、libvulkan の `vkWaitForFences` が起きる）。
 
 #### 2.4.10 P2 の p002（HCR・ring・fence・IRQ）との整合
 
-- 変えない: HCR の offset と bit（§2.2、P2 の `ghci_regs.h` と同じ）、CP の状態遷移（§2.6）、ring の約束（§2.7）、fence・IRQ・fault・watchdog・reset（§1.3・§2.5）、`KICK` と STATE の alias（class N の無い最初の道）。
-- 足す（§2.2 の表に追記、P2 は p002 では触らない）: `NATIVE_ISA_ID`（0x048）、`CP_HEAP_BASE/LIMIT`（0x0B0/0x0B4）、`CPFW` の extended capability（id 6、register は 0x0D0〜0x0DF: `CPFW_CTRL`（[0] LOAD W1S、[1] RUN、[2] HALT）、`CPFW_STATUS`（[0] READY、[1] FAULT、[2] ALIVE、[15:8] firmware の状態）、`CPFW_BASE`・`CPFW_WORDS`（host の memory（aperture の中）の firmware の像）、`CPFW_VERSION`、`CPFW_MBOX0..3`）、`CAPS[17] VKCP`（class V を受ける firmware が走っている）、`CAPS[18] FWLOAD`（`CPFW` で載せ替え可）、`CAPS[19]`（`NATIVE_ISA_ID` ≠ `ISA_ID`）、`CAPS[24] SUBGROUP`（§3.4 の shuffle/vote が有る）、`CAPS2` は不変。`UOP_FIFO` は CPU の window だけ（HCR には出さない）。
-- 変える: ring の packet の封筒（§2.4.2。p004 がこの形で作る。p002 の `ghci_packets.h` は placeholder のままでよい）、class N の `RESULT` µop（13）。
-- firmware が無い構成（`CAPS[17]` = 0、ZYBO の bitstream 1・3・4）: driver は class V を送らず、`vk/` は attach しない（BLT・DC・`GHCI_NATIVE` の試験だけ）。`CAPS[2]` = 1 でも `CAPS[17]` = 0 なら Vulkan の device は出さない。
+- 変えない: HCR の offset と bit のうち P2 の `ghci_regs.h`/`.vh` にある物（§2.2。**P2 の実装は EXTCAP の list が 0x100、`PERF` の capability の register（`PERF_SRCn`）が 0x110〜0x11F、`PERF` の counter が 0x080〜0x08C**。版 3 の追加はその後ろに置く、M5）、CP の状態遷移（§2.6）、ring の約束（§2.7）、fence・IRQ・fault・watchdog・reset（§1.3・§2.5）、`KICK` と STATE の alias（class N の無い最初の道）。
+- 足す（§2.2 の表に追記、P2 は p002 では触らない）: `NATIVE_ISA_ID`（0x048）、`CP_HEAP_BASE/LIMIT`（0x0B0/0x0B4）、`VEND`（0x0C0〜0x0DF、8 word: NWARPS、NREGS、NPHYS、PACKED、SB_ENTRIES、PT の大きさ、reserved × 2）、`CPFW` の extended capability（id 6、register は **0x120〜0x13F**: `CPFW_CTRL`（[0] LOAD W1S、[1] RUN、[2] HALT）、`CPFW_STATUS`（[0] READY、[1] FAULT、[2] ALIVE、[15:8] firmware の状態）、`CPFW_IBASE`・`CPFW_IWORDS`（IMEM の像）、`CPFW_DBASE`・`CPFW_DWORDS`（DMEM の像）、`CPFW_VERSION`、`CPFW_MBOX0..3`）、`SA` の capability（id 7、**0x140〜0x14F**、§3.9.3）、`CAPS[17] VKCP`（静的: firmware が入っている）、`CAPS[18] FWLOAD`、`CAPS[19]`（`NATIVE_ISA_ID` ≠ `ISA_ID`）、`CAPS[24] SUBGROUP`、`CAPS[25] SA`、`IRQ_STATUS[7] RESULT`・`[8] RETIRE`、`STATUS[7] SA_BUSY`、FAULT 種別 8。`CAPS2` は不変。`UOP_FIFO` は CPU の window だけ（HCR には出さない）。
+- 変える: ring の packet の封筒（§2.4.2。p004 がこの形で作る。p002 の `ghci_packets.h` は placeholder のままでよい）、class N の `RESULT` µop（13）、class 3 の詰め物。
+- firmware が無い構成（`CAPS[17]` = 0、ZYBO の bitstream 1・3・4）: driver は class V を送らず、`vk/` は attach しない。device の capability は `RESOURCE | TRANSFER | MAPPING | BLOB | SHARE | ALLOCATION_SHARE`（+ `DISPLAY | DISPLAY_EVENTS`）だけで、`CAPSET`・`COMMAND`・`NOTIFICATION`・`JOB` は名乗らない（libvulkan は device を作らない。L12）。`CAPS[2]` = 1 でも `CAPS[17]` = 0 なら Vulkan の device は出さない。
 
 ### 2.5 fence・割り込み・失敗
 
@@ -336,15 +344,15 @@ dword0（共通）: [31:30] class   [29:24] op（class N だけ）   [23:16] JOB
 | 4 FAULTED | FAULT | HALTING と同じ（自動で quiesce まで進む）。`STATUS.FAULT` = 1 | `RESET` だけ → RESETTING |
 | 5 RESETTING | `RESET` ← 1（どの状態からでも。RUNNING からは HALTING を経る） | 読みだけ | `AXI_IDLE` → core の reset、MC の flush → IDLE。`RESET` の bit が落ちる |
 
-- reset で **残る** register: `APERTURE_*`、`RING_BASE/SIZE`、`IRQ_ENABLE`、`WDT_CYCLES`、`SCRATCH`、STATE。**消える**: `RING_WPTR/RPTR`（0）、`IRQ_STATUS`、`FAULT_*`、`FENCE_LAST`（driver が書き戻す）、`CTRL.RUN`、block の内部（cache、PT、warp）。driver は reset の後に ring を先頭から使い直す。
+- reset で **残る** register: `APERTURE_*`、`RING_BASE/SIZE`、`IRQ_ENABLE`、`WDT_CYCLES`、`SCRATCH`、STATE、`CP_HEAP_*`、`CPFW_IBASE/IWORDS/DBASE/DWORDS`、`SA_SU`（版 3）。**消える**: `RING_WPTR/RPTR`（0）、`IRQ_STATUS`、`FAULT_*`、`FENCE_LAST`（driver が書き戻す）、`CTRL.RUN`、`CPFW_STATUS`、CPU の状態（firmware は BRAM の像から再起動）、SA の FIFO と accumulator、block の内部（cache、PT、warp）。driver は reset の後に ring を先頭から使い直す。
 
 ### 2.7 ring の約束
 
 - ring は `RING_SIZE` の byte の、dword の環。`WPTR`・`RPTR` は dword の index（0 ≤ x < size/4）。空: `WPTR == RPTR`。満: `(WPTR + 1) mod n == RPTR`（**1 dword を空ける**）。driver の空きは `(RPTR − WPTR − 1) mod n`。
-- packet は環の端を跨がない: 残りに入らない時は driver が `NOP`（n = 残り − 1）で端まで埋めて先頭へ。CP は header の `n` が `WPTR` を越える時（driver の誤り）を FAULT 種別 3 とする（待たない。driver は **packet 全部を書いてから** `WPTR` を進める）。
+- packet は環の端を跨がない: 残りに入らない時は driver が class 3 の詰め物（§2.4.2、n = 残り − 1。n が 255 を超えてもよい）で端まで埋めて先頭へ。CP は header の `n` が `WPTR` を越える時（driver の誤り）を FAULT 種別 3 とする（待たない。driver は **packet 全部を書いてから** `WPTR` を進める）。
 - doorbell の前の CPU 側の順序: ZYBO は uncached（Normal non-cacheable）の書き込みの後、device の register の書き込みの前に **`dsb st`**（`kern_` の mmio の write が barrier を含むかは p006 で確かめ、含まなければ driver が明示に置く）。KC705 は BAR1（AXI-MM の posted write）の後に **BAR1 の最後の word を読み戻してから** BAR0 の doorbell を書く（posted write の追い越しを防ぐ）。
 - CP は doorbell のたびに `RPTR` の line を **読み直す**（先読みした古い line を捨てる）。CP の先読みは `WPTR` まで。
-- ring が満ちた時: driver は submit ごとに fence を打つので、最も古い未完了の fence の IRQ を待って空きを得る（`RING_EMPTY` の IRQ は使わない）。
+- ring が満ちた時: driver は `IRQ_STATUS[8] RETIRE`（`RPTR` が packet を越えた）を待って空きを得る（`RING_EMPTY` の IRQ は使わない）。v1 の driver の packet は小さい（frame は 8 dword、FENCE は 4 dword）ので実質起きない。
 - `RPTR` は「parse して block に渡した」位置。driver は `RPTR` で ring の再利用を判断してよい（packet の中身は CP が block に写し終えているので、`RPTR` より前は書き換えてよい。block が参照する memory（頂点、texture）は fence で守る）。
 
 ## 3. SU（Shader Unit）と GHCI の標準の shader ISA「GSI1」（版 3。amaterrace-gpu の `docs/gsi1.md` の内容。版 2 の "ATS1"（64 bit の独自の形）を置き換える）
@@ -360,7 +368,7 @@ dword0（共通）: [31:30] class   [29:24] op（class N だけ）   [23:16] JOB
 - **warp は 32 lane の scalar、16 bit packed 付き**（README）。lane ごとに 32 bit の register の列。physical lane は `NPHYS`（8/16/32）で、1 命令を `32/NPHYS` cycle で流す。ISA・compiler・driver・API から見える幅は常に 32（subgroup の幅 = 32）。同じ binary が NPHYS に依らず動く（p008 の受け入れ）。
 - **SM/CU に当たる単位**（版 2 と同じ）: NPHYS の SIMD の datapath、`NWARPS` の常駐の warp の round-robin の scheduler、BRAM の register file（§3.5）、I$・D$、LDS、constant bank、PT、primitive table。
 - **warp の状態**: PC（命令の index）、`EXEC`（32 bit の mask、compiler が `exec.*` で管理。hardware は再収束を扱わない）、`KILLED`（sticky、fragment の discard）、scoreboard の entry（§3.1.1）、`WAIT` の counter（class m・t・x の未完の数）、warp の種類（vertex/fragment/compute）と workgroup の番号。
-- **predication**: lane が EXEC の外なら register の書き込みと memory・texture・export の副作用を行わない。`KILLED` の lane は副作用（`sw`・`atom`・`exp`・`tex`）を行わないが EXEC は変えない（版 2 と同じ）。
+- **predication**: lane が EXEC の外なら register の書き込みと memory・texture・export の副作用を行わない。`KILLED` の lane は副作用（`sw`・`atom`・`exp`・`tex`）を行わないが EXEC は変えない（版 2 と同じ）。**helper lane**（M10）: fragment の warp では RX が EXEC を **quad 単位**（4 lane の全部）で立て、三角形の外の lane（helper）も `qd` と `texb` の微分のために走らせる。副作用の mask = coverage（特殊 operand 119 `mask`、RX が書く）& ~KILLED で、helper の lane は `sw`・`atom`・`exp` を行わない（Vulkan の規則）。compute・vertex の warp では `mask` = EXEC の初期値。
 - **分岐**: warp 単位。`bany`/`bnone`（Boolean の register を EXEC の lane で見る）、`bexnz`/`bexz`（EXEC が 0 でない/0）、`j`。compiler は IR（if-converted、`SELECT`）のまま、loop と「副作用の有る区間の skip」だけに分岐と EXEC を使う（§6.6）。
 - **精度**: fp32 は IEEE の形、丸めは命令の rm（既定 RNE）、denormal は flush（入力も出力も）。fp16 の packed も同じ規則。超越は 2 ulp 程度、`rcp`・`rsq` は 1 ulp（table + Newton 1 段）。整数は 32 bit の 2 の補数。
 - **命令の発行**: warp ごとに in-order、1 命令ずつ。短い命令（class a: ALU、class f: FP の pipeline）は順に完了する。長い命令（class m: memory、t: texture、x: 超越・除算）は順不同に戻る → scoreboard が依存を守る。
@@ -368,9 +376,10 @@ dword0（共通）: [31:30] class   [29:24] op（class N だけ）   [23:16] JOB
 #### 3.1.1 scoreboard（2026-10-23 ユーザー「数は少なくていいので、scoreboardを実装できないでしょうか。性能に大きく影響しますので」）
 
 - warp ごとに **`SB_ENTRIES` 個**（ZYBO 4、KC705 8。p008 で LUT を実測して決める）の entry `{valid, dst[6:0], class[1:0], width[1:0]}`。長い命令（class m・t・x）の発行で entry を取り（dst と、texture なら dst..dst+3 の幅）、戻りの書き込みで返す。entry が無ければ発行を止める（他の warp は発行できる）。
-- 発行の検査（毎 issue）: 命令の rs1・rs2・rs3・rd の各々を全 entry の dst（幅を含む）と比べ、当たれば止める（RAW・WAW。WAR は in-order の読みなので起きない）。比較器は 4 operand × 8 entry × 7 bit ≈ 250 LUT。
+- 発行の検査（毎 issue）: 命令の source（rs1・rs2・rs3 と、`texl`/`texb`/`texf` の暗黙の rs1+1）と dst（rd と、texture の暗黙の rd..rd+3）の **範囲**を全 entry の dst の範囲と比べ、重なれば止める（RAW・WAW。WAR は source を発行の段で読む in-order の設計なので起きない: `sw`・`exp`・`atom` の data も発行の段で読む）。範囲の重なりは entry ごとに 2 つの比較（base ≤ x < base + width）× 5 operand × 8 entry ≈ 400 LUT（版 3 の見積もりを直した、M9）。
 - **`wait` 命令は残す**（class ごとの counter: cm = 未完の `sw`/`atom`（BRESP 待ち）、ct = 未完の texture、cx = 未完の超越・除算）。値の待ちは scoreboard が行うので compiler は `wait` を **store の完了の順序（`fence`・`bar`・`end` の前）**にだけ使う。`end` は暗黙に `wait 0,0,0`。
-- 短い命令の結果は pipeline の順に書き戻る（bypass 無し、同じ warp の次の発行は `32/NPHYS` cycle 後なので、NPHYS 8 では 4 cycle の pipeline が隠れる。NPHYS 32 では interlock で 3 cycle 待つ。版 2 と同じ）。
+- 短い命令（class a・f）の結果は **1 本の固定長の pipeline**（a も f と同じ段で書き戻す。長さは f の 5〜6 段）の順に書き戻る（bypass 無し）ので、a と f の間の WAW は起きない。同じ warp の次の発行は `32/NPHYS` cycle 後: NPHYS 8（4 cycle）では RF の読みの段が結果の書き戻しの 1〜2 cycle 前に来るので **interlock で 1〜2 cycle 待つ**（版 2 の「4 cycle が隠れる」は誤り、M9）。NPHYS 16 で 3〜4、NPHYS 32 で 4〜5 cycle。NWARPS の他の warp が埋める。
+- EXEC が全部 0 の class m・t・x の命令は memory・texture の要求を出さず、scoreboard の entry も取らない（戻りが無いので待てない、M9）。lane ごとの mask は要求の数だけを変え、entry と `cm`・`ct`・`cx` の数は命令ごとに 1。`sw` の `cm` は MC の BRESP で減る（aperture の外は error の応答で減る）。
 - compiler の scheduling（§6.6）: 長い命令の結果を使う命令を遠ざけ、独立の命令で埋める。NWARPS の他の warp が残りの latency を隠す。
 
 ### 3.2 register と operand の空間
@@ -382,8 +391,8 @@ dword0（共通）: [31:30] class   [29:24] op（class N だけ）   [23:16] JOB
 | 64〜95 | `c0`〜`c31`（constant bank の先頭 32 word。以降は `lwc`） | rs1・rs2・rs3 |
 | 96 `zero`、97 `one`（1.0f）、98 `onei`（1）、99 `half`（0.5f）、100 `two`（2.0f）、101 `mone`（−1.0f）、102 `lane`（0〜31）、103 `warp`、104 `exec`、105 `killed`（自分の lane の discard の bit を Boolean に）、106〜108 `wgx/wgy/wgz`、109〜111 `lidx/lidy/lidz`、112 `lidn`（local index）、113 `prim`、114 `front`（Boolean）、115〜117 `nwgx/nwgy/nwgz`、118 `oneh2`（packed 1.0h × 2）、119 `mask`（sample/coverage の mask、v1 は 0xFFFFFFFF）、120 `qstat`（SA の FIFO の数、§3.9.1）、121 `sastat`（SA の状態）、122〜127 reserved | 特殊（inline の定数と system の値。AMD の inline constant、NVIDIA の `SR_*` に当たる） | rs1・rs2・rs3 |
 
-- **x0 の固定は無い**: `r0` も普通の register。RISC-V の pseudo（`mv rd, rs` = `addi rd, rs, 0`、`not` = `xori rd, rs, -1`、`neg`）はそのまま使える。`nop` = `addi r0, r0, 0`（word0 = 0x00000013、word1 = 0）。
-- **Boolean**: 32 bit の all-ones = true、0 = false（共有の IR と同じ）。**全部の比較命令（`slt`・`sltu`・`slti`・`sltiu`・`feq`・`flt`・`fle`・`fne`、packed の `fcmp2`）は Boolean を書く**（RISC-V の 0/1 からの逸脱。U23）。`sel`・`exec.*`・`bany`・`kill` は Boolean を読む（0 でなければ true）。
+- **x0 の固定は無い**: `r0` も普通の register。RISC-V の pseudo（`mv rd, rs` = `addi rd, rs, 0`、`not` = `xori rd, rs, -1`、`neg`）はそのまま使える。`nop` は custom-3 の funct3 111 sub 0（何も書かない。`addi r0, r0, 0` は r0 の scoreboard に掛かるので nop にしない、L11）。
+- **Boolean**: 32 bit の all-ones = true、0 = false（共有の IR と同じ）。**全部の比較命令（`slt`・`sltu`・`slti`・`sltiu`・`feq`・`flt`・`fle`・`fne`、packed の `fcmp2`）は Boolean を書く**（RISC-V の 0/1 からの逸脱。U23）。`exec.*`・`bany`・`ball`・`kill`・`vote`・`ballot` は Boolean を「0 でなければ true」と読む。`sel` は **bit ごと**（rd = (rs1 & rs2) | (~rs1 & rs3)、IR の SELECT と同じ。M15）。
 - 符号化: rd・rs1・rs2 は word0 の RISC-V の位置に下位 5 bit、word1 に上位 2 bit（§3.3）。rs3 は R4 の位置（word0[31:27]）に下位 5 bit、word1 に上位 2 bit。特殊 operand（96〜127）は上位 2 bit が 11 なので **word1 が 0 の命令は r0〜r31 だけを使う純粋な RISC-V の形**になる（手で読める・書ける）。
 
 ### 3.3 命令の形（64 bit 固定。word0 = RISC-V の 32 bit の形、word1 = 拡張。U22）
@@ -394,21 +403,21 @@ word0（little endian の低位の 32 bit。RISC-V の形そのまま）:
   R4  [6:0] opcode [11:7] rd [14:12] rm/funct3 [19:15] rs1 [24:20] rs2 [26:25] fmt/funct2 [31:27] rs3
   I   [6:0] opcode [11:7] rd [14:12] funct3 [19:15] rs1 [31:20] imm[11:0]（符号拡張）
   S   [6:0] opcode [11:7] imm[4:0] [14:12] funct3 [19:15] rs1 [24:20] rs2 [31:25] imm[11:5]
-  B   [6:0] opcode [7] imm[11] [11:8] imm[4:1] [14:12] funct3 [19:15] rs1 [24:20] rs2 [30:25] imm[10:5] [31] imm[12]（単位は命令 = 8 byte。±4096 命令）
+  B   [6:0] opcode [7] imm[11] [11:8] imm[4:1] [14:12] funct3 [19:15] rs1 [24:20] rs2 [30:25] imm[10:5] [31] imm[12]（imm[12:1] を 12 bit の符号付きの**命令数**として読む: 目標 = PC + sext(imm[12:1])。±2048 命令。imm[0] は無い）
   U   [6:0] opcode [11:7] rd [31:12] imm[31:12]
 word1（拡張。0 なら「RISC-V の形のまま、r0〜r31、修飾無し」）:
   [1:0] rd[6:5]  [3:2] rs1[6:5]  [5:4] rs2[6:5]  [7:6] rs3[6:5]
   [8] n1（rs1 を負に）[9] a1（rs1 の絶対値）[10] n2 [11] a2 [12] n3 [13] a3   ※ float の命令だけ。整数の命令では 0
   [14] sat（結果を [0,1] に飽和。float だけ）
   [16:15] hsel（packed: 00 両方、01 low だけ、10 high だけ、11 swap して両方）
-  [21:17] sub（副種別: atomic の種類、texture の mode、quad の種類、shuffle の種類、exp の対象の上位、wait の count）
+  [21:17] sub（副種別: atomic の種類、texture の slot、quad の種類、shuffle の種類、超越の種類、sactl/exec の種類）
   [31:22] imm_hi[9:0]（I/S/B の imm の上に足して 22 bit の符号付き offset）
   U 形（`lui`/`movi`）だけ別: [1:0] rd[6:5]  [13:2] imm[11:0]（`movi` の下位 12 bit。`lui` は 0）  [31:14] 0
 ```
 
 - **なぜ 64 bit 固定か**（U22。§10 の 23・24）: (1) decode が 1 種類（I$ から毎 issue 1 word、PC は命令の index）、(2) FMA の 3 source + 修飾 + 64 本の register + constant/特殊 operand が入る、(3) word1 = 0 で RISC-V の 32 bit の形がそのまま読める、(4) I$ 2 KiB = 256 命令で版 2 と同じ（shader は小さい）。AMD の 32/64 可変・NVIDIA の 128 固定・PowerVR の 64 固定の中で、FPGA で最も単純な物。
 - 命令の index は PC（8 byte 単位）。program の base は `VS_BASE` 等（§2.3、8 byte 揃え）。分岐の offset は命令数。
-- 即値: I/S の imm12 + `imm_hi` で 22 bit（memory の offset ±2 MiB）。`movi rd, imm32`: word0 = `lui` の形（imm[31:12]）、word1 = {[1:0] rd_hi, [13:2] imm[11:0], 残り 0}（U 形は rs を持たないので word1 の [13:2] が空く）。`lui rd, imm20`（word1 = 0）は RISC-V と同じ意味（imm << 12）。両者は word1[13:2] が 0 か否かではなく funct（word0 は同じ）… **`movi` と `lui` は同じ符号化**で、`movi` は「word1[13:2] を足す `lui`」の assembler の名前（word1[13:2] = 0 なら `lui` と同じ）。
+- 即値（M11）: I/S の offset = **sext(imm12) + (sext(imm_hi[9:0]) << 12)**（22 bit の符号付き、±2 MiB。word1 = 0 なら RISC-V の `lw r1, -4(r2)` と同じ値）。B の offset は上の命令数。`lui rd, imm20` は RISC-V と同じ（rd = imm20 << 12）。`movi rd, imm32` は `lui` と同じ符号化で word1[13:2] に imm[11:0] を足した物（rd = (imm20 << 12) | imm[11:0]。word1[13:2] = 0 なら `lui`）。`movi` は assembler の名前で、decoder は `lui` の 1 種類。
 
 ### 3.4 命令の一覧と opcode の対応（v1）
 
@@ -427,12 +436,13 @@ word1（拡張。0 なら「RISC-V の形のまま、r0〜r31、修飾無し」�
 | 1010011 | OP-FP（fmt = 00、single） | `fadd.s fsub.s fmul.s`（funct7 0000000/0000100/0001000）、`fsgnj.s`（= `fmv`、修飾で neg/abs が出来るので `fsgnjn/fsgnjx` は pseudo）、`fmin.s fmax.s`（0010100）、`fsqrt.s`（0101100、class x）、`fcvt.w.s fcvt.wu.s`（1100000、rm: rtz が IR の F2I）、`fcvt.s.w fcvt.s.wu`（1101000）、`feq.s flt.s fle.s`（1010000、funct3 010/001/000）+ **`fne.s`（funct3 011、unordered も true）**、`fround.s`（Zfa: 0100000、rs2 = 00100、rm: rne/rtz/rdn/rup = round even/trunc/floor/ceil）。**`fdiv.s` は無い**（`rcp` + Newton を compiler が組む。IR に FDIV は無い）。`fclass fmv.x.w fmv.w.x` は無い（register file は 1 つ） |
 | 1000011 / 1000111 / 1001011 / 1001111 | MADD / MSUB / NMSUB / NMADD | `fmadd.s rd, rs1, rs2, rs3`（rd = rs1×rs2 + rs3）、`fmsub.s`、`fnmsub.s`、`fnmadd.s`（RISC-V と同じ意味。修飾で負・絶対値も可） |
 | 0001011 | custom-0「memory・同期」 | funct3 000 `lds rd, imm(rs1)`（shared の word）、001 `sts rs2, imm(rs1)`、010 `atom rd, (rs1), rs2`（global、sub = 種類: IR の 11 種 `and or xor xchg add sub smax smin umax umin cmpxchg`、`cmpxchg` の比較値は rs3。MC の atomic unit、D$ の line を無効化、class m）、011 reserved（shared の atomic、v2）、100 `fence`（imm[2:0]: [0] global = 未完の `sw`/`atom` の BRESP を待つ、[1] shared、[2] acquire = D$ を無効化）、101 `bar`（workgroup の全 warp の到達）、110 `wait cm, ct, cx`（imm[11:0] = 3 × 4 bit の上限）、111 `end` |
-| 0101011 | custom-1「texture・入出力・lane の間」 | funct3 000 `texl rd, rs1, rs2`（rs1 = u、rs1+1 = v、rs2 = lod。slot = sub[4:0]。rd..rd+3）、001 `texb rd, rs1, rs2`（rs2 = bias。lod は quad の微分から TU が計算）、010 `texf rd, rs1`（整数の texel、rs1 = x、rs1+1 = y、level = imm[3:0]）、011 `texsz rd, imm`（level の w・h を packed 16 × 2）、100 `exp rs2, imm`（target = imm12: 0x000+k POS の k、0x010+4v+c varying v の c、0x100+c COLOR0 の c、0x104 DEPTH。非同期、`end` で揃う）、101 `lda rd, imm`（primitive table の頂点 imm[1:0] の word imm[7:2]）、110 `qd rd, rs1`（sub: 0 `qdx`（lane^1 との差、fine）、1 `qdy`（lane^2）、2〜5 `qswap`（lane^1 / lane^2 / lane^3 / quad の lane 0 を配る））、111 `shfl rd, rs1, rs2`（sub: 0 idx、1 xor、2 up、3 down、4 bfly。rs2 = lane/mask/delta。**`CAPS[24]` の時だけ**） |
+| 0101011 | custom-1「texture・入出力・lane の間」 | funct3 000 `texl rd, rs1, rs2`（rs1 = u、rs1+1 = v、rs2 = lod。slot = sub[3:0]（16 slot）。rd..rd+3。texel の offset は v1 では無し: IR の offset ≠ 0 は拒む、M14）、001 `texb rd, rs1, rs2`（rs2 = bias。lod は quad の微分から TU が計算）、010 `texf rd, rs1, rs2`（整数の texel、rs1 = x、rs1+1 = y、level = rs2。slot = sub[3:0]）、011 `texsz rd, rs1`（level rs1 の w・h を packed 16 × 2。slot = sub[3:0]）、100 `exp rs2, imm`（target = imm12: 0x000+k POS の k、0x010+4v+c varying v の c、0x100+c COLOR0 の c、0x104 DEPTH。非同期、`end` で揃う）、101 `lda rd, imm`（primitive table の頂点 imm[1:0] の word imm[7:2]）、110 `qd rd, rs1`（sub: 0 `qdx`（lane^1 との差、fine）、1 `qdy`（lane^2）、2〜5 `qswap`（lane^1 / lane^2 / lane^3 / quad の lane 0 を配る））、111 `shfl rd, rs1, rs2`（sub: 0 idx、1 xor、2 up、3 down、4 bfly。rs2 = lane/mask/delta。**`CAPS[24]` の時だけ**） |
 | 1011011 | custom-2「16 bit packed」 | funct3 000 `fadd2`、001 `fsub2`、010 `fmul2`、011 `ffma2`（R4 の形）、100 `fmin2`/`fmax2`（funct7 で）、101 `iadd2`/`isub2`/`imul2`、110 `fcmp2`（funct7: lt/ge/eq/ne、half ごとに 0xFFFF/0）、111 `packh rd, rs1, rs2`（2 つの fp32 → half × 2）/ `unpackh rd, rs1`（sub: low/high → fp32）/ `swaph`（funct7 で）。`packh`/`unpackh` は **`PACKED` に依らず必須**、他は `PACKED` = 0 の構成で FAULT（U15） |
-| 1111011 | custom-3「GPU の制御・超越・選択・投票」 | funct3 000 `sel rd, rs1, rs2, rs3`（R4 の形: rd = rs1 ? rs2 : rs3、bit for bit）、001 `exec.set rs1` / `exec.and rs1` / `exec.or rs1` / `exec.save rd`（sub）、010 `kill rs1`（sticky）、011 超越（sub: 0 `rcp`、1 `rsq`、2 `exp2`、3 `log2`、4 `sin`、5 `cos`、6 `fract`（= x − floor(x)、短い: class f）。0〜5 は class x）、100 `vote rd, rs1`（sub: 0 any、1 all → 全 lane に同じ Boolean。`CAPS[24]`）、101 `ballot rd, rs1`（EXEC の中で rs1 ≠ 0 の lane の mask を全 lane に。`CAPS[24]`）、110 `sactl rs1`（systolic array の制御の word、§3.9.1。`CAPS[25]`）、111 reserved |
+| 1111011 | custom-3「GPU の制御・超越・選択・投票」 | funct3 000 `sel rd, rs1, rs2, rs3`（R4 の形: rd = (rs1 & rs2) | (~rs1 & rs3)）、001 `exec.set rs1` / `exec.and rs1` / `exec.or rs1` / `exec.save rd`（sub）、010 `kill rs1`（sticky）、011 超越（sub: 0 `rcp`、1 `rsq`、2 `exp2`、3 `log2`、4 `sin`、5 `cos`、6 `fract`（= x − floor(x)、短い: class f）。0〜5 は class x）、100 `vote rd, rs1`（sub: 0 any、1 all → 全 lane に同じ Boolean。`CAPS[24]`）、101 `ballot rd, rs1`（EXEC の中で rs1 ≠ 0 の lane の mask を全 lane に。`CAPS[24]`）、110 `sactl rs1`（systolic array の制御の word、§3.9.1。`CAPS[25]`）、111 `nop`（sub 0。他の sub は reserved） |
 | 0000111 / 0100111 / 0001111 / 1110011 / 1010111 / 1110111 | LOAD-FP / STORE-FP / MISC-MEM / SYSTEM / OP-V / OP-VE | **vendor の拡張の空間**（GSI1 は使わない。vendor の ISA（`NATIVE_ISA_ID`）が GSI1 の上位集合ならここに置く） |
 
 - word0[1:0] は常に 11（RISC-V の 32 bit の形の印。00/01/10 は FAULT: 圧縮命令は無い）。
+- 命令ごとの形（L11）: OP・OP-FP・custom の 2 source の命令は R、`fmadd` 系・`sel`・`ffma2`・`atom`（rs3 = cmpxchg の比較値）は R4、OP-IMM・`lw`・`lwc`・`lds`・`lda`・`texsz` は I、`sw`・`sts`・`exp` は S、BRANCH は B、`lui`/`movi` は U、`texl`/`texb`/`texf`/`qd`/`shfl`/`vote`/`ballot`/`sactl`/`exec.*`/`kill`/`fence`/`bar`/`wait`/`end`/`nop` は R（使わない field は 0。`wait` の 3 つの上限は imm12 の 3 × 4 bit なので I）。
 - 未定義の opcode・funct・sub、`CAPS` に無い機能（packed、subgroup）、`nregs` を超える register は **ISA の fault**: warp は止まり、SU が `FAULT` 種別 8（**版 3 で追加**: ISA の誤り。`FAULT_INFO[23:16]` = SU の番号、`FAULT_ADDR` = PC）を立てる → §2.5 の回復。
 
 #### 3.4.2 命令の群と latency の class
@@ -453,7 +463,7 @@ word1（拡張。0 なら「RISC-V の形のまま、r0〜r31、修飾無し」�
 
 #### 3.4.3 入力と出力（版 2 と同じ。GHCI が決めるのは「属性 k は入力 slot k」「fragment の入力は ISA が決める」だけ）
 
-- vertex の warp: VF が属性 k を `r_k` に書いてから始める（k < 16）。出力は `exp`。
+- vertex の warp: VF が属性 k の component（1〜4 word）を STATE `ATTR_DST[k]`（§2.3、0x1C0〜。firmware が program の header の interface の表から書く）の先頭の register から連続に書いてから始める（k < 16。16 属性 × 4 component は NREGS 32 に入らないので、compiler は使う属性と component だけを表に出す、M12）。出力は `exp`（POS、POINT_SIZE = 0x004、varying、SECOND_COLOR = 0x108+c）。
 - fragment の warp: RX が `r0 = b0`、`r1 = b1`、`r2 = b2`（perspective 補正済み、元の 3 頂点に対する barycentric）、`r3 = z`、`r4 = x`、`r5 = y` を書いてから始める。varying は `lda` × 3 + `fmul` + `fmadd` × 2 で compiler が補間（flat は `lda` の頂点 0、noperspective は §3.8 の式）。
 - compute の warp: 入力は特殊 operand（`wg*`、`lid*`、`lidn`、`nwg*`）。
 
@@ -465,13 +475,14 @@ word 2  stage（0 vertex、1 fragment、2 compute）  word 3  flags（[0] packed
 word 4  code_words（64 bit 命令の数 × 2）  word 5  code_offset（header の先頭からの word 数、= 16）
 word 6  nregs（使う r の最大 + 1 ≤ NREGS） word 7  lds_bytes
 word 8  wg_size（x | y << 8 | z << 16）    word 9  const_words（c0.. の使う数）
-word 10 inputs（vertex: 属性の mask、fragment: varying の word 数）  word 11 outputs（vertex: VS_OUT_WORDS、fragment: color の mask | depth << 8）
+word 10 iface_offset（interface の表の word の位置、= 16）  word 11 iface_entries（表の entry の数）
 word 12 entry（code の中の命令の index）   word 13 isa_min_version（1）
-word 14〜15 reserved（0）
-word 16〜 命令（8 byte 揃え）
+word 14 push_bytes（push constant の byte 数）  word 15 reserved（0）
+word 16〜 interface の表（entry ごとに 4 word: kind（1 頂点の属性、2 varying の入力、3 出力、4 uniform block、5 sampled image、6 storage buffer、7 push constant、8 shared の大きさ）、set、binding か location、slot/register/offset/size（kind ごと: 属性 = 先頭の register | component << 8、uniform block = constant の領域の word の offset | size、sampled image = TU の slot、storage = constant bank の base の word（address と大きさを firmware がここに置く）、push = constant の word の offset））
+code_offset〜 命令（8 byte 揃え）
 ```
 
-- firmware（`program.c`）は magic・版・`nregs ≤ NREGS`・flags と `CAPS` の整合・`code_words` を検査し、`GHCI_PROGRAM` の result に VkResult を書く。driver も compile の時に同じ検査をする（二重）。
+- firmware（`program.c`）は magic・版・`nregs ≤ NREGS`・flags と `CAPS` の整合・`code_words`・interface の表（slot の数 ≤ CAPS2、constant の word ≤ 領域）を検査し、`GHCI_PROGRAM` の result に VkResult を書く。driver も compile の時に同じ検査をする（二重）。**interface の表が descriptor と program を結ぶ唯一の約束**（C1）: firmware は draw/dispatch の時に bound の descriptor set の (set, binding) をこの表で TU の slot・constant の領域の offset・storage の base に写し、`SET_REG`/`LOAD_CONST` にする。
 - **native の ISA の直接の送信**: `GHCI_PROGRAM` の ISA の FourCC が `NATIVE_ISA_ID` なら binary の形は vendor の物（GHCI は magic と版の 2 word だけ決める: word 0 = vendor の FourCC、word 1 = 版）。driver は `NATIVE_ISA_ID` の backend を持つ時だけ送る。Amaterrace では native = GSI1 なので区別が無い。
 
 #### 3.4.5 他の実装の CP-JIT（GHCI の規則）
@@ -496,7 +507,7 @@ word 16〜 命令（8 byte 揃え）
 | 超越関数の専用 unit | NVIDIA MUFU、AMD `v_exp_f32` 等 | custom-3 の 011 |
 | LDS・barrier・atomic | 全部 | custom-0 |
 
-- **出典の扱い**（Guardrail「MIT・GPL の出典のデータの引用」）: GSI1 は公開の ISA の文書の**一般的な知識**（命令の種類と意味）から設計し、他の GPU の opcode の値・field の位置・名前は写さない。RISC-V の opcode の値と field の位置は RISC-V の仕様（CC-BY 4.0 の文書。値は事実）から取り、`gsi1_isa.h` の該当 block に「Values referenced: The RISC-V Instruction Set Manual, Volume I (Unprivileged), chapter "RV32I Base Integer Instruction Set" (opcode map), "M", "F", "Zfa", "Zbb"」と書く。code・comment・構造は写さない。zedBSD の driver と amaterrace-gpu の両方 Zlib。
+- **出典の扱い**（Guardrail「MIT・GPL の出典のデータの引用」）: GSI1 は公開の ISA の文書の**一般的な知識**（命令の種類と意味）から設計し、他の GPU の opcode の値・field の位置・名前は写さない。RISC-V の opcode の値と field の位置は RISC-V の仕様（CC-BY 4.0 の文書。値は事実）から取り、`gsi1_isa.h` の該当 block に「Values referenced: The RISC-V Instruction Set Manual, Volume I: Unprivileged ISA, version 20240411, chapter "RV32I Base Integer Instruction Set" (opcode map), "M", "F", "Zfa", "Zbb"」と**版を含めて**書く（Guardrail、L10）。gpu-op の番号を firmware と `docs/ghci.md` が使う所は「Values referenced: zedBSD include/uapi/gpu-op.h（が引く venus-protocol の XML、commit ca19b635…）」。code・comment・構造は写さない。zedBSD の driver と amaterrace-gpu の両方 Zlib。**商標**（推測の懸念、L10）: RISC-V は RISC-V International の商標なので、GSI1 は「RISC-V 互換」を名乗らず、文書では「RISC-V の 32 bit の形を基にした独自の ISA」とだけ書く。
 
 ### 3.5 unit の内部と register file（U12）
 
@@ -536,9 +547,10 @@ word 16〜 命令（8 byte 揃え）
 | ZYBO「graphics + SU」（NPHYS 4、TU 無し、VF 入り） | 9.9k + 7.2k | 17.1k | 21 | 41 | 97% | **当てにしない**（p009 は Verilator と KC705） |
 | KC705 unit（NPHYS 16、C、packed） | 16×700 + 1.5k + 0.3k + 1.8k + 1.5k + 0.6k | 16.9k | 24 RF + 2 + 1 + 4 LDS + 0.5 + 2 + 16 prim（4 複製）≈ 50 | 80 + 6 = 86 | — | — |
 | KC705 N=4 | 4 × 16.9k + 13.4k + MIG 10k + PCIe/XDMA 8k + DC 2k + JTAG 0.3k | **101k（50%）** | 200 + 12 + 4 + 16 + 3 = **235（53%）** | 344 + 35 = **379（45%）** | 325T | 最初の目標 |
-| KC705 N=8 | 8 × 16.9k + 上 + RX 2 本（+3.3k） | **172k（84%）** | 435（**98%**） | 723（86%） | 325T | **BRAM が限界**: N=8 は RF を B（NREGS 32）か複製 2 にするか、primitive table の複製を減らす（p015 で実測して決める）。N=6 なら LUT 138k（68%）・BRAM 335（75%） |
+| **KC705 N=6**（版 3 の板の目標、M17） | 6 × 17.8k（SU + decode/scoreboard 0.4k + shuffle 0.5k）+ 13.4k + MIG 10k + XDMA 8k + DC 2k + JTAG 0.3k + RX 2 本 3.3k + `atg_cpu` 2.5k + `atg_sa` 10k | **156k（77%）** | 300 + 12 + 4 + 16 + 3 + CPU 12 + SA 4 = **351（79%）** | 6 × 86 + 35 + CPU 1 + SA 256 = **808（96%）** | 325T | CPU と SA（32 × 8）を載せる最大。DSP が限界: SA を 32 × 4 にすれば 680（81%） |
+| KC705 N=8 | 8 × 17.8k + 上 + CPU + SA | **192k（94%）** | 435 + 16 = **451（> 445）** | 723 + 257 = **980（> 840）** | 325T | **入らない**（M17）。SA 無し・RF の複製 2 でも BRAM が限界。N=8 は SA 無しの構成として p015 で実測 |
 
-- 結論（R1・U17）: **7010 では GPU の全 block を 1 つの bitstream に載せない**。block ごとの bitstream で workflow と各 block を板で確かめ、全体の結合は Verilator と KC705。KC705 の本命は **N=4 から始めて N=6〜8 を実測で決める**（README の「複数の SU」は満たす。128 lane の目標は N=8 × 16）。
+- 結論（R1・U17）: **7010 では GPU の全 block を 1 つの bitstream に載せない**。block ごとの bitstream で workflow と各 block を板で確かめ、全体の結合は Verilator と KC705。KC705 の本命は **N=4 から始めて N=6（CPU + SA 付き）を目標**にし、N=8 は SA 無しの構成として p015 で実測する（README の「複数の SU」は満たす。版 3 で N=8 + CPU + SA は入らないと分かった、M17）。
 - p002 の最初の仕事は CP+MC+BLT（bitstream 1）を合成して LUT を実測し、この表の係数を直す事。SU の係数は p008 の最初の合成で直す。
 
 ### 3.7 board ごとの parameter と Vulkan の limit
@@ -584,35 +596,37 @@ word 16〜 命令（8 byte 揃え）
 #### 3.9.1 ISA の側: register 63 = `rq`（queue register）
 
 - **operand 番号 63 は GPR でなく FIFO の口 `rq`**（GSI1 の全部の実装で予約。GPR は r0〜r62。U12 の NREGS 32 の構成でも 63 は `rq` で、GPR は r0〜r31。header の `nregs` は GPR の数で 63 を含まない）。`rq` を dst に書くと **push**（SU → SA の in-FIFO に 1 wavefront）、source に読むと **pop**（SA → SU の out-FIFO から 1 wavefront）。
-- **wavefront = 1 entry = 32 lane × 32 bit = 128 byte**（lane i の word が SA の PE の行 i の横の口に対応する）。pop は lane i に entry の word i を渡す。push は lane i の値を word i に置く。
-- **EXEC との関係**: push/pop は wavefront 単位で、lane の mask に依らず 1 entry を進める（EXEC が全部 0 なら命令ごと飛ばす = push も pop も無し）。EXEC の外の lane の push の word は 0、pop の値は捨てる。NaN の規則などは無い（bit の列）。
-- **blocking（back-pressure）**: `rq` を読む命令は out-FIFO が空なら **発行の段で止まる**（その warp だけ。scheduler は他の warp を発行する）。`rq` に書く命令は in-FIFO が満なら同じく止まる。scoreboard の entry は使わない（data は FIFO の BRAM に有り、pop は発行時に `32/NPHYS` cycle で済む短い命令。class a）。1 命令の中で `rq` を source に 2 回書けるが pop は 1 回（同じ値。assembler は警告）。`rq` を source と dst の両方にする命令は pop → 演算 → push（1 entry 進めて 1 entry 出す）。
-- **非 blocking の確かめ**: 特殊 operand 120 `qstat`（[15:0] out-FIFO の entry の数、[31:16] in-FIFO の空きの数、warp ごとに一様）。compiler は `qstat` を見て分岐すれば止まらずに済む。
-- **deadlock**: warp が空の out-FIFO を待ち、SA がその warp の push を待つ組は compiler（と shader の書き手）の責任。watchdog（`WDT_CYCLES`）が最後の網。`bar` の中で `rq` を触るのは禁止（assembler の規則）。
-- **所有**: FIFO の対は SA ごとに 1 組で、**1 つの dispatch**（`DISPATCH` の flags[1] = SA）に結ばれる。その dispatch の warp だけが `rq` を使える。他の warp・他の SU・SA の無い構成で `rq` を触ると ISA の fault（種別 8、`FAULT_ADDR` = PC）。SA の flag の dispatch は SA が結ばれた SU（STATE `SA_SU`）にだけ workgroup を配る（並列度は落ちるが v1 は受ける）。program の header の flags[4]「SA を使う」で firmware が事前に `CAPS[25]` を確かめ、無ければ `GHCI_PROGRAM` の result で拒む。
-- **shader からの制御**: custom-3 の funct3 110 `sactl rs1`（warp で一様な値を SA の制御 word に書く: [1:0] 0 なし、1 tile の開始（weights の stream を始める）、2 drain（accumulator を右へ押し出す）、3 abort、[8] accumulator を 0 に）、特殊 operand 121 `sastat`（[0] busy、[1] 重みの stream 中、[2] drain 中、[15:8] 残りの tile）。制御の word は STATE の `SA_*` でも書ける（§2.3。CP の firmware か class N の `SET_REG`）。shader からの `sactl` は dispatch の中で tile を回す時に CP への往復を避けるため。
+- **wavefront = 1 entry = 32 lane × 32 bit = 128 byte**（lane i の word が SA の PE の行 i の横の口に対応する）。pop は lane i に entry の word i を渡す。push は lane i の値を word i に置く。word の中の型は `SA_CTRL` の dtype で決まる: int16 は word の下位 16 bit（符号付き、上位は無視）、int8 は下位 8 bit。
+- **使える命令**（H9）: `rq` は **class a・f の命令**（整数・fp32・packed・`sel`・`mv` など、発行の時に operand を読み、pipeline の順に書き戻す物）の dst・source にだけ使える。class m・t・x（`lw`・`texl`・超越・除算）の dst に `rq` は **ISA の fault**（戻りの順が発行の順と違い、push の順序が狂うため）。暗黙の連続の register（`texl` の rs1+1、rd..rd+3）が 63 に掛かる命令も fault。
+- **EXEC との関係**（M19）: push/pop は wavefront 単位で、**EXEC に依らず必ず 1 entry 進める**（EXEC が全部 0 でも押す/取る。warp の間で push の数が揃うため）。EXEC の外の lane の push の word は 0（端の tile を 0 で埋める用途に使える）、pop の値は捨てる。
+- **blocking（back-pressure）**: `rq` を読む命令は out-FIFO が空なら **発行の段で止まる**（その warp だけ。scheduler は他の warp を発行する）。`rq` に書く命令は「in-FIFO の空き − 発行済みで未着の push の数（credit）」が 0 なら止まる。scoreboard の entry は使わない（pop は発行時に `32/NPHYS` cycle で済む短い命令。class a）。1 命令の中で `rq` を source に 2 回書けるが pop は 1 回（同じ値。assembler は警告）。`rq` を source と dst の両方にする命令は pop → 演算 → push。
+- **非 blocking の確かめ**: 特殊 operand 120 `qstat`（[15:0] out-FIFO の entry の数、[31:16] in-FIFO の空きの数、warp ごとに一様。読んだ後に他の warp が使い得るので、値は所有している warp でだけ信用できる）。
+- **所有**（H7）: FIFO の対は SA ごとに 1 組で、**1 つの warp** が持つ: `sactl 4`（acquire: SA が空くまでその warp が発行の段で止まる）→ push/pop/`sactl 1〜3` → `sactl 5`（release: in/out-FIFO に残った entry は捨てる）。所有していない warp が `rq`・`sactl 1〜3`・`qstat` を使うと ISA の fault。dispatch の側の条件: `DISPATCH` の flags[1] = SA の dispatch の warp だけが acquire できる（他の dispatch の warp は fault）。CP は SA の dispatch を SA が結ばれた SU（`SA_SU`）にだけ配り、`SA_BUSY` が落ちるまで次の SA の dispatch を待つ。workgroup の中の複数の warp が順に acquire して使う形は許す（1 度に 1 warp）。program の header の flags[4]「SA を使う」で firmware が事前に `CAPS[25]` を確かめ、無ければ `GHCI_PROGRAM` の result で拒む。
+- **deadlock**: 所有している warp が空の out-FIFO を待ち、SA がその warp の push を待つ組は compiler（と shader の書き手）の責任（規則: 1 tile は `SA_K` 回 push してから `SA_COLS_USED` 回 pop）。`bar` を持ったまま acquire しない（assembler の規則）。`HALT`・`RESET` の時は CP が SA に abort を出し、pop の待ちは 0 の entry で解け、push の待ちは捨てて解ける（quiesce が止まらない）。watchdog が最後の網。
+- **shader からの制御**: custom-3 の funct3 110 `sactl rs1`（warp で一様な値を SA の制御 word に書く: [2:0] 0 なし、1 tile の開始（重みの stream を始める）、2 drain（accumulator を右へ押し出す。push が `SA_K` に満たない時は何もせず `sastat[4]` に 1 を立てる）、3 abort、4 acquire、5 release、[8] accumulator を 0 に）、特殊 operand 121 `sastat`（[0] busy、[1] 重みの stream 中、[2] drain 中、[3] この warp が所有、[4] 直前の `sactl` が拒まれた、[15:8] 残りの tile）。`exec.save`・`vote`・`ballot`・`sactl`・`qstat`・`sastat` の結果は EXEC に依らず全 lane に書く（M13）。制御の word は STATE の `SA_*` でも書ける（§2.3。CP の firmware か class N の `SET_REG`）。shader からの `sactl` は dispatch の中で tile を回す時に CP への往復を避けるため。
 
 #### 3.9.2 SA の unit（`atg_sa`、SU と decoupled、MC の client）
 
-- **配置**: `atg_sa` は `atg_su` の中ではなく、`atg_top` の兄弟の block。SU との間は in-FIFO（SU → SA、`SA_FIFO_DEPTH` entry × 128 byte）と out-FIFO（SA → SU）の 2 本だけ。MC には自分の client（重みの読み。優先の group 3）。CP からは STATE の `SA_*` と `DISPATCH` の flag と `STATUS.SA_BUSY`。**無い構成**では `CAPS[25]` = 0、`rq` は fault。
-- **PE の配列**: `SA_ROWS` = 32（wavefront の lane と 1:1。固定）× `SA_COLS`（4/8/16）。**出力固定（output-stationary）の systolic**: 入力の wavefront（activation、A の列）が左の口から右へ 1 step に 1 PE 進み、重み（B の行）が上から下へ MC の stream から 1 step に 1 PE 進み、PE(i, j) が `acc += a × b` を積む。K step（`SA_K`）の後に drain: accumulator を右へ押し出し、右の口から out-FIFO に `SA_COLS` 個の wavefront（j 列目の wavefront の lane i = C[i][j]）が出る。skew（行 i を i step 遅らせる、列 j を j step 遅らせる）は SA の中で行い、ISA からは「K 個 push して COLS 個 pop する」だけに見える。1 tile = 32 × K の A と K × COLS の B → 32 × COLS の C。
-- **重みの stream**: `SA_W_BASE`（GPU の address、aperture の中）、`SA_W_STRIDE`（行の byte）、`SA_K`、`SA_TILES`（続けて回す tile の数。tile ごとに `SA_W_BASE += SA_W_TILE_STRIDE`）。SA は MC から `SA_COLS × SA_K` 個の重みを line 単位で先読みして上の口に流す（BRAM の FIFO、2 line）。aperture の外は FAULT 種別 1（client = SA）。
+- **配置**: `atg_sa` は `atg_su` の中ではなく、`atg_top` の兄弟の block。SU との間は in-FIFO（SU → SA、`SA_FIFO_DEPTH` entry × 128 byte）と out-FIFO（SA → SU）の 2 本だけ。MC には自分の client（重みの読み。優先の group 3。§4.1 の client の内訳に `atg_cpu` と `atg_sa` を足す、L13）。CP からは STATE の `SA_*` と `DISPATCH` の flag と `STATUS[7] SA_BUSY`。**無い構成**では `CAPS[25]` = 0、`rq` は fault。
+- **PE の配列**: `SA_ROWS` = 32（wavefront の lane と 1:1。固定）× `SA_COLS`（4/8/16）。**出力固定（output-stationary）の systolic**: 入力の wavefront（activation、A の列）が左の口から右へ 1 step に 1 PE 進み、重み（B の行）が上から下へ MC の stream から 1 step に 1 PE 進み、PE(i, j) が `acc += a × b` を積む。K step（`SA_K`）の後に drain: accumulator を右へ押し出し、右の口から out-FIFO に `SA_COLS_USED` 個の wavefront が出る（**出る順は列の逆順**: 最初の wavefront が列 COLS−1、最後が列 0。lane i = C[i][j]。M18）。skew（行 i を i step 遅らせる、列 j を j step 遅らせる）は SA の中で行い、ISA からは「K 個 push して COLS 個 pop する」だけに見える。1 tile = 32 × K の A と K × COLS の B → 32 × COLS の C。**1 tile の step 数 ≈ K + 31 + COLS**（skew の充填と排出。K = 8 では利用率 ≈ 17%、K = 128 では ≈ 76%。小さい K は向かない）。
+- **重みの stream**: `SA_W_BASE`（GPU の address、aperture の中）、`SA_W_STRIDE`（行の byte）、`SA_K`、`SA_TILES`（続けて回す tile の数。tile ごとに `SA_W_BASE += SA_W_TILE_STRIDE`）。SA は MC から `SA_COLS × SA_K` 個の重みを line 単位で先読みして上の口に流す。先読みの FIFO は **4 KiB**（BRAM36 1。DDR3 の latency ≈ 100〜200 ns × 3.2 GB/s ≈ 0.5 KiB を十分に覆う、M18）。aperture の外は FAULT 種別 1（client = SA）。
 - **PE の型**（`SA_DTYPE`、capability で名乗る）: v1 は **int16 × int16 → int32 の accumulator**（DSP48E1 1 つ/PE、飽和なし、wrap）と **int8**（同じ DSP に 2 つの 8 bit の積を詰める案は v2。v1 は int8 も 1 DSP/PE、accumulator 32 bit）。**fp16 × fp16 → fp32** は PE ごとに正規化の LUT が +150〜200 要り（32 × 8 で +40〜50k LUT）、v1 では持たない（U29）。bf16 も同じ。shader は packed の命令（`packh` 等）と `fcvt` で入出力を変換する。
-- **大きさ**（推定、325T）: 32 × 8 の int16 = **DSP 256**、accumulator 256 × 32 bit = 8k FF、PE の制御と skew と drain の mux ≈ **LUT 9〜11k**、重みの先読みの FIFO BRAM36 2、in/out-FIFO（深さ 16 × 128 byte × 2）BRAM36 2。GPU の N=4（DSP 379）と合わせて 635（76%）。**N=8 では SA は 32 × 4（DSP 128）**（723 + 128 = 851 > 840 なので N=8 は SU の packed を減らすか SA を 32 × 2 に。p020 で実測）。**7010 には載せない**（32 × 2 でも DSP 64 = 80 の 80% で SU が残らない。`CAPS[25]` = 0。SA の RTL の TB と Verilator で確かめ、板は KC705）。
-- **性能**（325T、gclk 200 MHz、32 × 8 の int16）: 256 MAC/cycle = 51 GMAC/s（102 GOPS）。KC705 の SU 全部（N=8 × 16 lane × fp32 FMA × 200 MHz = 25.6 GFMA/s）の 2 倍の MAC を DSP 128〜256 で得る。重みの帯域: 8 × 2 byte × 200 MHz = 3.2 GB/s（DDR3 の 12.8 GB/s の 1/4）。入力の帯域は SU の push（1 wavefront / 命令の発行 = 128 byte / (32/NPHYS) cycle = 800 MB/s @ NPHYS 16）が律速 → **SA は K ≥ 8 の tile で SU の push 1 回あたり 8 列を進めるので、push の律速でも 32 × 8 MAC/2 cycle = 128 MAC/cycle**。複数の SU から同時に push する形（SA の in-FIFO を SU ごとに持つ）は v2（R30）。
-- **状態と fault**: `STATUS[7] SA_BUSY`（版 3 で追加: busy の bit の 7 を使う）、`PERF` の 4 本目を SA に替える構成は `VEND` で名乗る。HALT・quiesce・RESET は他の block と同じ（SA は MC の client として「新しい AR を止め、応答を待つ」）。reset で FIFO と accumulator は消える。
+- **大きさ**（推定、325T）: 32 × 8 の int16 = **DSP 256**、accumulator 256 × 32 bit = 8k FF、PE の制御と skew と drain の mux ≈ **LUT 9〜11k**、重みの先読み BRAM36 1、in/out-FIFO（深さ 16 × 128 byte × 2）BRAM36 2。**KC705 の板の目標は N=6 の SU + CPU + SA（32 × 8）**（§3.6 の表。N=8 では DSP も BRAM も足りない、M17・R29）。**7010 には載せない**（32 × 2 でも DSP 64 = 80 の 80% で SU が残らない。`CAPS[25]` = 0。SA の RTL の TB と Verilator で確かめ、板は KC705）。
+- **性能**（325T、gclk 200 MHz、32 × 8 の int16）: PE の峰は 256 MAC/cycle = 51 GMAC/s。SU の push は 1 wavefront / 発行（`32/NPHYS` = 2 cycle @NPHYS 16）= 12.8 GB/s で SA の 1 step（1 wavefront/step）に足り、律速は push の前の `lw`（A を memory から読む: `lw` + push で 2 発行 = 4 cycle/wavefront → 利用率 ≤ 50%）と tile の skew（上）。**実効は 64〜128 MAC/cycle の見込み**（p020 で `PERF` で測る）。重みの帯域: 8 × 2 byte × 200 MHz = 3.2 GB/s（DDR3 の 12.8 GB/s の 1/4）。複数の SU から同時に push する形（SA の in-FIFO を SU ごとに持つ）と A も MC から stream する mode は v2（R30）。
+- **状態と fault**: `STATUS[7] SA_BUSY`、`PERF` の 4 本目を SA に替える構成は `VEND` で名乗る。HALT・quiesce・RESET は他の block と同じ（SA は MC の client として「新しい AR を止め、応答を待つ」+ FIFO の abort、§3.9.1）。reset で FIFO と accumulator は消える。dispatch が終わった時（`SA_BUSY` が落ちる = 所有の warp が release したか `end` した）に FIFO に残った entry は捨てる。
 
 #### 3.9.3 GHCI での見え方（標準の optional な capability）
 
-- `CAPS[25] SA`、extended capability `SA`（id 7、register は 0x0E0〜0x0EF）: `SA_CAPS`（[7:0] ROWS = 32、[15:8] COLS、[19:16] dtype の mask（[0] int8、[1] int16、[2] fp16、[3] bf16）、[27:20] FIFO の深さ）、`SA_SU`（結ばれる SU の番号。RW、IDLE/HALTED でだけ）。
-- STATE の `SA` の範囲（0x1B0〜0x1BF、reserved から取る）: 0 `SA_CTRL`（[1:0] 0 停止、1 run（dispatch の開始で重みの stream を始める）、[3:2] dtype、[4] acc を 0 に、[5] shader の `sactl` を許す）、1 `SA_W_BASE`、2 `SA_W_STRIDE`、3 `SA_K`、4 `SA_TILES`、5 `SA_W_TILE_STRIDE`、6 `SA_COLS_USED`（≤ COLS。少ない列で回す）、7〜15 reserved。
-- `DISPATCH` の flags[1] = SA（この dispatch が SA を所有する。CP は `SA_BUSY` が落ちるまで次の SA の dispatch を待つ）。
+- `CAPS[25] SA`、extended capability `SA`（id 7、register は 0x140〜0x14F、M5）: `SA_CAPS`（[7:0] ROWS = 32、[15:8] COLS、[19:16] dtype の mask（[0] int8、[1] int16、[2] fp16、[3] bf16）、[27:20] FIFO の深さ）、`SA_SU`（結ばれる SU の番号。RW、IDLE/HALTED でだけ）。
+- STATE の `SA` の範囲（0x1B0〜0x1BF、reserved から取る）: 0 `SA_CTRL`（[2:0] 0 停止、1 run（dispatch の開始で重みの stream を始める）、[4:3] dtype、[5] acc を 0 に、[6] shader の `sactl` を許す）、1 `SA_W_BASE`、2 `SA_W_STRIDE`、3 `SA_K`、4 `SA_TILES`、5 `SA_W_TILE_STRIDE`、6 `SA_COLS_USED`（≤ COLS。少ない列で回す）、7〜15 reserved。
+- `DISPATCH` の flags[1] = SA（この dispatch の warp が SA を acquire できる。CP は `SA_BUSY` が落ちるまで次の SA の dispatch を待つ）。
 - GSI1 の側: `rq`（63）、`qstat`（120）、`sastat`（121）、`sactl`、header の flags[4]。SA の無い GPU でも `rq` の番号は予約のまま（GPR にしない）。
 
 #### 3.9.4 zedBSD の側（§6.10）
 
-- Vulkan には systolic array の API が無い。**見せ方の推し（U30）**: 標準の拡張 **`VK_KHR_cooperative_matrix`**（`OpCooperativeMatrixLoadKHR`/`MulAddKHR`/`StoreKHR`）を libvulkan が名乗り、SPIR-V の front end が新しい IR の op（`DRV_GPU_IR_COOP_LOAD/MULADD/STORE`、形 32 × K × COLS、int8/int16 → int32）に落とし、GSI1 の backend がそれを「`SA_*` の設定（dispatch の command の constant に置き、firmware が STATE に）+ `rq` への K 回の push + `sactl` + COLS 回の pop + `sw`」に下げる。**libvulkan と共有の compiler（`src/drivers/gpu/compiler/`）の変更が要る**（WS288 の範囲の外 → Q1 に新しい Phase か WS の判断を頼む。p021 に仮置き）。それまでの試験の道は `GPU_OP_GHCI_NATIVE`（class N の `SET_REG` + `DISPATCH(SA)`）と `gsi1asm.py` の手書きの kernel（p020 の受け入れ）。
-- compute の use（ML の推論の GEMM・conv の im2col の後）: driver は SA の有無を `CAPS[25]` で見て、`cooperativeMatrixProperties` に 32 × K × COLS の形を 1 つ（int16 → int32。int8 → int32）だけ名乗る。
+- Vulkan には systolic array の API が無い。`VK_KHR_cooperative_matrix` は subgroup ごとに A・B・C を shader が任意の address から load し、`MulAdd` が C を入力に取るので、**この SA の形（重みは STATE の静的な stream、accumulator を入れる口が無い、SA は 1 つ）では実装できない**（H8）。
+- **見せ方の推し（U30）**: v1 は **GHCI 固有の compute の経路**: (b) `GPU_OP_GHCI_NATIVE`（試験の build）で `SET_REG` の `SA_*` + `LOAD_PROGRAM` + `DISPATCH(SA)` を送り、kernel は `gsi1asm.py` で書く（p020 の受け入れ）。製品の経路（p021、**WS288 の外の変更を含む**）は (c) 独自の拡張 `VK_KEI_systolic_dispatch`（compute pipeline の作成に `SA_*` の設定を chain し、SPIR-V の側は GSI1 の `rq`/`sactl` を inline の asm 相当で出す = 共有の compiler に `OpExtInst` の vendor の set を足す）を Q1 に提案する。`VK_KHR_cooperative_matrix` は「`sactl` で `W_BASE` を register から渡す」「C を push で入れる」「warp ごとの独立の SA」が揃う v2 の Future Work。
+- compute の use（ML の推論の GEMM・conv の im2col の後）: driver は SA の有無を `CAPS[25]` で見て、拡張と capset に 32 × K × COLS の形と dtype を名乗る。
 
 ## 4. MC（Memory Controller）の抽象と host link
 
@@ -716,12 +730,12 @@ word 16〜 命令（8 byte 揃え）
 - ZYBO: PL の memory の pool（§6.1）= aperture。CPU は uncached の alias だけで触る（WS286 §3.12）。`resource_map` は `DRV_GPU_MAPPING_UNCACHED_RAM`。**HAL の変更は無い**（`kern_pmem_*` で足りる）。
 - KC705: GPU の DDR3（1 GB）が aperture。host からは BAR1 の窓（先頭 64 MiB を host visible の heap、残りを device local として memory type を 2 つ報告）と XDMA。
 - 所有: allocation は session が持ち、`close` で全部返す（GPU がまだ参照し得る物は `drain` で待つ）。ring・fence page・staging は device。
-- 寿命の規則: 参照を含む command の fence が signal するまで free しない。`resource_destroy` は「最後の fence ≤ 完了した値」を確かめ、違えば遅延の list に積む。**回収は IRQ の handler ではなく回収の thread**（handler は完了した fence の値を更新して thread を起こす。thread が allocator の mutex を取って返し、`drv_gpu_capacity_changed` を呼ぶ）。
+- 寿命の規則: 参照を含む command の fence が signal するまで free しない。`resource_destroy` は「その時点の session の最後の fence の値（§6.4）≤ 完了した値」を確かめ、違えばその値と共に遅延の list に積む（L7）。**回収は IRQ の handler ではなく回収の thread**（handler は完了した fence の値を更新して thread を起こす。thread が allocator の mutex を取って返し、`drv_gpu_capacity_changed` を呼ぶ）。
 
 ### 6.4 drv_gpu との結び（capability・jobs・capset・command の道）
 
 - **capability**（`drv_gpu_register` の検査（`gpu.c` 1024〜1045 行）と libvulkan の要求（`context.c` 124 行、`instance.c` 732 行）を満たす組）: GPU の device は `RESOURCE | CAPSET | BLOB | TRANSFER | COMMAND | MAPPING | NOTIFICATION | FENCE | JOB | JOB_CAPACITY | SHARE | ALLOCATION_SHARE`（KC705 は + `DISPLAY | DISPLAY_EVENTS`）。DC だけの device は `RESOURCE | TRANSFER | MAPPING | BLOB | SHARE | ALLOCATION_SHARE | DISPLAY | DISPLAY_EVENTS`。
-- **ops**: `commands.submit/drain`（submit = packet を ring に書いて fence を結ぶ、drain = session の pending の fence を全部待つ）、`jobs.reserve/commit/cancel/capacity`（reserve = ring の空き（packet の最大の大きさ）と fence の番号を確保して `drv_gpu_completion` を持つ、commit = doorbell、cancel = 通常は slot を返す、FAULT の cancel = `report_error` の道、capacity = ring の空きの packet の数）、`recovery.stop_begin/stop_poll/fault/reset`（§2.5）、`share.*`、`display.*`（KC705 と DC）、`scanout.*`（DC）。
+- **ops**: `commands.submit/drain`（submit = frame を staging に写し ring に packet を置いて doorbell、`QUEUE_SUBMIT` の frame には後ろに FENCE を置く。完了は reply thread が trailer の後に `drv_gpu_complete`（§2.4.6）。drain = session の pending の frame と fence を全部待つ）、`jobs.reserve/commit/cancel/capacity`（**powervr の `render-runtime.c` の marker の形**、C2: reserve = session の marker（固定の数、例 64）を 1 つ取って completion を持ち token を返す（sequence は core の物で driver は見ない）。commit = marker を「session の最後の fence の値」（直前の `QUEUE_SUBMIT` の frame が置いた FENCE の値。driver の 32 bit の device 全体の fence、§2.5）に結ぶ。その値が既に過ぎていれば commit の中で `drv_gpu_complete`。cancel（通常）= marker を返す。cancel（fault）= completion を保ち、回復で ERROR で完了。capacity = 空きの marker の数）。IRQ の bottom half は fence page の値を読み、過ぎた marker を順に `drv_gpu_complete`、`recovery.stop_begin/stop_poll/fault/reset`（§2.5）、`share.*`、`display.*`（KC705 と DC）、`scanout.*`（DC）。
 - **capset**: `get_capset` は powervr の `runtime_capset`（`render-runtime.c` 175 行）と同じ形: id 4、176 byte、wire 1、XML の版は libvulkan の `VULKAN_PROTOCOL_XML_VERSION`、timelines ≠ 0、160 byte に vendor の magic、164 byte に flag `OPAQUE | STRICT_QUEUE | QUIESCE`（libvulkan が native の device を作る条件）。**libvulkan は変えない**。
 - **native の packet（試験用）**: `GPU_OP_GHCI_NATIVE`（§2.4.5、**0x10104 の案。番号は Q1 に確認**、U10）。payload は class N の packet の列で、driver はそのまま ring に写す。**build の option `CONFIG_GHCI_NATIVE`（試験の image だけ）と root だけ**に限り、driver は opcode の白表（NOP/SET_REG/BLIT/FENCE/WAIT_IDLE/INVALIDATE）と `SET_REG` の index の白表（BLT の範囲だけ）で検査し、address の word は aperture の中かを見る。それ以外は `EINVAL`。`userland/tests/ghci-blit/` が使う。compositor は使わない。
 - 並行性と lock: ring への書き込みは 1 つの mutex（`cp_lock`）。IRQ の handler は spin で `completed_fence` と pending の list を守り、`drv_gpu_complete` は spin の外。
@@ -757,20 +771,27 @@ word 16〜 命令（8 byte 揃え）
 | IADD ISUB IMUL INEG IAND IOR IXOR INOT SHL SHR ASR | `add sub mul`、`sub rd, zero, rs`、`and or xor`、`xori -1`、`sll srl sra` |
 | UDIV UMOD IDIV IREM | `divu remu div rem`（class x） |
 | I2F U2F F2I F2U | `fcvt.s.w fcvt.s.wu fcvt.w.s fcvt.wu.s`（rm = rtz） |
-| ILT IGE ULT UGE IEQ INE | `slt`、`slt`（入れ替え）+ `xori -1`…ではなく `sel` の条件に畳む、`sltu`、`sub` + `slt`… → v1 は `slt sltu` と Boolean の `xori -1`（IGE = not ILT、INE = not IEQ、IEQ = `sub` → `sltu rd, zero, t`（t ≠ 0）の反転）。p010 で 2 命令以内に収める |
-| MOVE / LOOP_BEGIN / LOOP_END | `mv` / label / `exec.save` + 条件 → `exec.and` + `bexnz` + `exec.set` |
+| ILT ULT | `slt`、`sltu`（Boolean） |
+| IGE UGE | `slt`/`sltu` + `xori rd, rd, -1`（2 命令） |
+| IEQ INE | `xor t, a, b` + `sltiu rd, t, 1` / `sltu rd, zero, t`（2 命令） |
+| MOVE / LOOP_BEGIN / LOOP_END | `mv` / `exec.save rS`（loop の前）+ label / 条件 → `exec.and cond` + `bexnz label` + `exec.set rS`（loop の後。`exec.save` は EXEC に依らず全 lane に書く、M13） |
 | SKIP_BEGIN / SKIP_END | `exec.save` + `bexz` + … + `exec.set` |
 | SAMPLE / SAMPLE_BIAS / SAMPLE_LOD | `texb`（bias 0 / bias）/ `texl` |
 | DDX DDX_FINE DDY DDY_FINE | `qd`（sub 0/1）、coarse は `qd` + `qd sub 5` |
 | PACK_HALF / UNPACK_HALF | `packh` / `unpackh` |
 | TEXTURE（LD / RESINFO / SAMPLE* の 2D・array 無し） | `texf` / `texsz` / `texb`・`texl`。cube・3D・array・gather・compare は **拒む**（`ENOTSUP`） |
-| LOAD_STORAGE / STORE_STORAGE / ATOMIC / STORAGE_SIZE | `lw` / `sw` / `atom` / driver が constant bank に置く大きさを `lwc` |
+| LOAD_STORAGE / STORE_STORAGE / ATOMIC / STORAGE_SIZE | `lw` / `sw` / `atom` / firmware が interface の表の storage の entry の constant の word に置く大きさを `lwc`（C1）。述語付き（ir.h の component 1、`ATOMIC_PREDICATED`）は `exec.save` + `exec.and pred` + 命令 + `exec.set`（M14） |
+| ATOMIC（shared、`LOCATION_SHARED`） | **拒む**（shared の atomic は GSI1 v1 で reserved、M14） |
+| TEXTURE の texel の offset ≠ 0、SAMPLE_DERIVS、gather、compare | **拒む**（`ENOTSUP`、M14） |
+| STORE_OUTPUT（POINT_SIZE / SECOND_COLOR / LAYER） | `exp 0x004` / `exp 0x108+c` / 拒む |
+| NOP | 出さない（`nop` は pad だけ） |
 | LOAD_SYSTEM | 特殊 operand（`wg*`、`lid*`、`lidn`、`prim`） |
 | LOAD_SHARED / STORE_SHARED / BARRIER / FENCE | `lds` / `sts` / `bar` / `fence` |
 | LOAD_VERTEX_INPUT / EMIT_VERTEX / END_PRIMITIVE（geometry） | **拒む**（geometry stage 無し） |
-| COOP_LOAD / COOP_MULADD / COOP_STORE（版 3 の案、ir.h にはまだ無い。§3.9.4・§6.10） | `rq` への push × K + `sactl` + `rq` からの pop × COLS + `sw`。SA の無い GPU（`CAPS[25]` = 0）では拒む |
+| SA の拡張の op（版 3 の案、ir.h にはまだ無い: `VK_KEI_systolic_dispatch` の `OpExtInst`、§3.9.4・§6.10） | `sactl`、`rq` の push/pop、`qstat`/`sastat`。SA の無い GPU（`CAPS[25]` = 0）では拒む |
 
-- register の割り当て: linear scan、r0〜r(NREGS−1)。溢れは拒む（`ENOTSUP`、R8）。header の `nregs` に最大 + 1。
+- register の割り当て: linear scan、r0〜r(NREGS−1)（63 は `rq`、§3.9）。溢れは拒む（`ENOTSUP`、R8）。header の `nregs` に最大 + 1。
+- **compile の時点と entry**（C1）: pipeline の作成で stage ごとに `drv_gpu_shader_parse(words, count, stage, …)`。v1 は「その stage の entry point が 1 つの module」だけ受ける（entry の名前で選ぶ API は共有の `spirv.c` に無い。足すのは共有の compiler の変更で Q1 の判断）。binary の interface の表（§3.4.4）は IR の `drv_gpu_shader_ir_uniform`（set、binding、kind、offset、size）と入出力の location から作る。
 - scheduling: 長い命令（class m・t・x）の結果を使う命令を遠ざけ、独立の命令で埋める（scoreboard が止める間を減らす）。`wait` は `sw`/`atom` の完了が要る時（`fence`・`bar` の前）だけ。
 - host の試験: `tests/ghci-gsi1-compiler-host-test.c`（符号化の往復 + `tests/gsi1-model.c`（amaterrace-gpu の `sim/models/gsi1_model.c` の写し、§7.2）で実行して CPU の参照と比べる）。
 - 出典の規則（§3.4.6）: `gsi1_isa.h` の opcode の値の block に RISC-V の仕様の「Values referenced:」。他の GPU の物は写さない。
@@ -778,11 +799,11 @@ word 16〜 命令（8 byte 揃え）
 ### 6.7 Vulkan の executor（`vk/`）= 検証する中継（版 3）
 
 - libvulkan は変えない。`vk/` は gpu-op の stream を**解いて検証し**、§2.4.4 の表のとおりに D（driver が答える）/ R（そのまま ring へ）/ R'（`GPU_OP_GHCI_*` に書き換えて ring へ）/ X（拒む）に分ける。Vulkan の object の意味（pipeline の状態、descriptor の内容、render pass）は firmware の物で、driver は持たない。
-- **既存の executor の構造との対応**: powervr の `vk/`（`vk-stream.c` の frame と route の表、`i915_wire_reader` の再利用）を型にする。route は `device`（D: instance・physical device・device・queue。capset と limit の表）、`memory`（R': allocator、`GHCI_MEMORY`、遅延解放）、`program`（R': compile → `GHCI_PROGRAM`）、`object`（R: 50〜58・65〜89 の長さの計算と識別子の帳簿（session の close で `SESSION_CLOSE` に先立って driver 側の帳簿を消す））、`command`（R: 90〜136 の白表と長さ）、`queue`（R + FENCE + job）、`transport`（D: 178・179・137・180）。i915 の「object → recording → range → transport」の順の dispatch と同じ形で、handler の中身が「長さを数えて写す」に変わる。
+- **既存の executor の構造との対応**: powervr の `vk/`（`vk-stream.c` の frame と route の表、`i915_wire_reader` の再利用）を型にする。route は `device`（D: instance・physical device・device・queue。capset と limit の表）、`memory`（R': allocator、`GHCI_MEMORY`、遅延解放）、`program`（D: module の SPIR-V の帳簿。pipeline の作成で stage ごとに compile → `GHCI_PROGRAM`、C1）、`object`（R: 50〜58・65〜89 の長さの計算と識別子の帳簿（session の close で `SESSION_CLOSE` に先立って driver 側の帳簿を消す））、`command`（R: 90〜136 の白表と長さ）、`queue`（R + FENCE + job）、`transport`（D: 178・179・137・180）。i915 の「object → recording → range → transport」の順の dispatch と同じ形で、handler の中身が「長さを数えて写す」に変わる。
 - **wire の長さ**: handler は各 command の引数を gpu-op.h の「Arguments」の形で読み（構造体は field の順、pNext の chain、配列は count と u64 の count）、読んだ byte 数が packet の `n`。知らない sType の chain は拒む（`EINVAL`）。
-- **返事**: D の返事はその場で書く。R/R' で REPLY を求める command は result page の record を割り当て（dword3）、frame の最後に class N `FENCE(IRQ)` を置き、fence を待ってから record を読んで返事を書く（§2.4.6）。trailer は最後に release store。
+- **返事**: D の返事はその場で書く。R/R' で REPLY を求める command は返事の大きさ分の cursor を空けて result の index を付け、frame を staging に写して ring に `GHCI_FRAME` を置いて返る。device の **reply thread** が `RESULT` の IRQ で record を読んで返事を埋め、trailer を release store で書き、`drv_gpu_complete`（§2.4.6。ioctl の中では眠らない、M3）。
 - **session**: `open` で tag（1〜255、空きの最小）を取り `SESSION_OPEN` を ring に送る。`close` で `drain`（pending の fence を待つ）→ `SESSION_CLOSE` + FENCE → driver の帳簿と allocation を返す。
-- **大きさ**: 4〜6k 行（版 2 の 8〜12k から減る。Vulkan の object の意味が firmware に移ったため）。p019 の LW 22。
+- **大きさ**: 6〜8k 行（codec は生成、帳簿と D の返事と reply thread と layout を含む。版 2 の 8〜12k より減る: Vulkan の object の意味が firmware に移ったため。M1）。p019 の LW 26。
 - 最初の目標は vkdemo の部分集合（U8）: instance/device/queue、memory、buffer・image（2D、RGBA8/BGRA8、D24S8）、shader module、descriptor set（UBO・sampled image・storage）、pipeline、render pass（1 subpass）、command buffer（bind・draw・draw indexed・dispatch・copy・barrier・clear）、fence/semaphore、swapchain は WSI。
 
 ### 6.9 firmware（`fw/cp/`、amaterrace-gpu。版 3）
@@ -793,8 +814,8 @@ word 16〜 命令（8 byte 揃え）
 
 ### 6.10 systolic array の zedBSD の側（版 3、§3.9.4）
 
-- driver: `CAPS[25]` と `SA` の capability を読み、capset と `cooperativeMatrixProperties`（`VK_KHR_cooperative_matrix`、U30）に 32 × K × COLS の int16 → int32 / int8 → int32 の形を名乗る。firmware: `DISPATCH` の flags[1] と STATE の `SA_*`（pipeline の constant か descriptor から）。
-- compiler: 新しい IR の op `DRV_GPU_IR_COOP_LOAD/MULADD/STORE`（共有の `compiler/ir.h`・`spirv.c` の変更 → **WS288 の外、Q1 の判断**。p021 に仮置き）。GSI1 の backend は §6.6 の表の行のとおりに下げる。
+- driver: `CAPS[25]` と `SA` の capability を読み、capset と拡張 `VK_KEI_systolic_dispatch`（案、U30）に 32 × K × COLS の int16 → int32 / int8 → int32 の形を名乗る。`VK_KHR_cooperative_matrix` は v1 の SA の形では実装できない（H8、§3.9.4）。firmware: `DISPATCH` の flags[1] と STATE の `SA_*`（compute pipeline の create info に chain した構造体から）。
+- compiler: SPIR-V の vendor の `OpExtInst` の set（`sactl`・push・pop・`qstat`）を IR の op に（共有の `compiler/ir.h`・`spirv.c` の変更 → **WS288 の外、Q1 の判断**。p021 に仮置き）。GSI1 の backend は §6.6 の表の行のとおりに下げる。
 - 試験の道（p020、libvulkan の拡張の前）: `gsi1asm.py` で書いた GEMM の kernel を `GPU_OP_GHCI_NATIVE`（`SET_REG` の `SA_*` + `LOAD_PROGRAM` + `DISPATCH(SA)`）で流し、`DBG` か `resource_read` で C を読んで CPU の参照と比べる（`userland/tests/ghci-sa/`）。
 
 ### 6.8 試験の道（host → simulation → 板）
@@ -856,23 +877,23 @@ QEMU と実機の証拠は分けて書く。やっていない確認は「未実
 | p006 | zedBSD: devcfg の block の登録と IRQ の受け渡し、`pl-memory.c`、`ghci.c`・`cp.c`・`memory.c`・`blit.c`・`native.c`（`GPU_OP_GHCI_NATIVE`）・`state.c`・`jobs.c`・`capset.c`、display device と scanout、`ghci-blit`・`ghci-display`、host の試験（封筒・allocator・fence の wrap・状態遷移の driver 側） | `ghci-blit` PASS（板）、`ghci-display` の画面（目視）、**detach/reattach の試験**、QEMU armv7-virt の回帰（T1） | p004、p005 | 24 |
 | p007 | RX + ROP（bitstream 3、`DRAW_RAW`、`DEBUG_COLOR`、ROP の順序の scoreboard）→ DC | 三角形の画面、depth、重なる blend の順、Verilator の PNG | p004、p005 | 18 |
 | p008 | SU v0 と **GSI1 の compute の部分集合**（bitstream 4「compute」、CPU 無し）: `atg_su`（NPHYS の sequencing、RF、書き込み port の調停、I$、D$、LDS、const、超越、**scoreboard**（§3.1.1）、64 bit の decode（§3.3））、整数・fp32・memory・LDS・制御・`sel`・`exec.*` の命令、ISA の model（C）、`gsi1asm.py`/`gsi1dis.py`、TB、`DISPATCH`。**U12 の確定、SB_ENTRIES の実測**。板: vector add と reduction を `DBG` で | compute kernel が板で正しい、model と一致（NPHYS 8/16/32）、scoreboard の TB（RAW/WAW/entry 満） | p004、U12、U22 | 34 |
-| p009 | VF + SU の vertex/fragment + PT + primitive table + `lda` + `exp` + `qd` + TU（最近傍 → bilinear）+ texture の命令 + deadlock の回避 + `PACKED`（KC705 の構成）+ `shfl`/`vote`/`ballot`（`CAPS[24]`） | textured な三角形（**Verilator の PNG**。板は KC705 の p014） | p007、p008 | 28 |
-| p010 | compiler の backend（zedBSD `isa/gsi1/`、IR → GSI1、§6.6）、host の試験（符号化の往復 + model で実行して CPU の参照と比べる） | host PASS | p008 | 22 |
-| p011 | **端から端の統合**: libvulkan → `vk/`（p019）→ ring → firmware（p018）→ block で vkdemo の 1 frame（Verilator の harness に `atg_cpu` と firmware を含める）。性能の最初の計測（draw あたりの firmware の cycle） | vkdemo の 1 frame の readback が参照と一致（**Verilator**。板は p014） | p009、p010、p018、p019 | 24（±30%） |
+| p009 | VF + SU の vertex/fragment + PT + primitive table + `lda` + `exp` + `qd` + helper lane と coverage の mask（M10）+ `ATTR_DST`（M12）+ TU（最近傍 → bilinear）+ texture の命令 + deadlock の回避 + `PACKED`（KC705 の構成）+ `shfl`/`vote`/`ballot`（`CAPS[24]`） | textured な三角形（**Verilator の PNG**。板は KC705 の p014） | p007、p008、U27 | 28 |
+| p010 | compiler の backend（zedBSD `isa/gsi1/`、IR → GSI1、§6.6）、**`gsi1_isa.h` の binary の header と interface の表の確定**（C1。p018 はこれに依存）、host の試験（符号化の往復 + model で実行して CPU の参照と比べる、interface の表の検査） | host PASS | p008、U22、U23 | 24 |
+| p011 | **端から端の統合**: libvulkan → `vk/`（p019）→ ring → firmware（p018）→ block で vkdemo の 1 frame。**場**（H6）: host で build した `vk/` と libvulkan を、偽の drv_gpu（`tests/` の host の harness: ioctl の代わりに関数、HCR と memory を Verilator に DPI で結ぶ）と Verilator（`atg_cpu` + firmware を含む）で繋ぐ。性能の最初の計測（draw あたりの firmware の cycle、1 frame の往復） | vkdemo の 1 frame の readback が参照と一致（**Verilator**。板は p014） | p009、p010、p018、p019 | 28（±30%） |
 | p012 | KC705: MIG、MMCM、`LINE_BYTES` 64、JTAG の bridge、CP + BLT + DC（HDMI は U7）、`vivado-build-ip.tcl` | `jtag-reg.sh` で fill → `DBG`、color bar | p004、p005、U7 | 20 |
 | p013 | KC705 の host link A': PCIe + XDMA、BAR、MSI、`pci-attach.c`、`pcie-reload.sh` | guest の zedBSD から `ghci-blit` PASS | p006、p012、U2 | 24（**後回し**: Future Work fw-kc705-pcie） |
 | p014 | KC705 の全 pipeline の bitstream（N=1: VF+SU+RX+TU+ROP、`PACKED`、**CPU と firmware**）、vkdemo を板で（JTAG の bridge で ring と firmware を載せ、画面は DC） | **vkdemo が KC705 で参照と一致** | p011、p012 | 18 |
 | p015 | 複数の SU（N=4 → 6〜8）、work の分配、RX 2 本、200 MHz（R3）、PERF、BRAM の実測で N を決める | N=4 で vkdemo、N≥6 で合成が閉じる | p014 | 18 |
 | p016 | 規約の全文の見直し（C: driver・firmware）、RTL の lint、`docs/ghci.md` 1.0・`docs/gsi1.md` の確定 | 動作は不変 | p015 | 10 |
 | **p017**（新設） | **CP の CPU と firmware の土台**: `atg_cpu`（RV32IM、§2.4.7）、IMEM/DMEM、制御の window、`UOP_FIFO`、`CPFW` の extended capability（load/run/halt/version/mbox）、class V の packet の受け渡しと `RPTR`、watchdog の対象化、`fw/cp/` の build（共有の clang、`-march=rv32im`）、firmware の runtime（boot、heap、packet の reader、result、µop の出力）、**class V の最初の道**: `GHCI_SESSION_OPEN/CLOSE`・`GHCI_MEMORY`・`CREATE/DESTROY_BUFFER`・`BIND_BUFFER_MEMORY`・`CMD_FILL_BUFFER`/`CMD_COPY_BUFFER` の記録と `QUEUE_SUBMIT` → BLT の µop。bitstream 1'「2D + FW」 | TB: CPU の命令の試験（riscv-tests の自前の部分集合）、firmware の fill/copy が Verilator と **板（ZYBO 1'）**で `DBG` の照合に合う、`CPFW` の載せ替え、firmware の無限 loop → watchdog → RESET → 回復 | p004、U19、U20 | 32 |
-| **p018**（新設） | **firmware の Vulkan の object model と draw/dispatch**（§2.4.8）: object の表、image/image view/sampler、shader module（`GHCI_PROGRAM` の検証）、pipeline layout・descriptor set layout/pool/set/update、render pass・framebuffer、graphics/compute pipeline → STATE の word の列、記録の全部の R の command、`QUEUE_SUBMIT` の辿り（bind の状態機械、`SET_REG` の差分、`LOAD_PROGRAM`、`LOAD_CONST`、barrier、clear → BLT、`DRAW`/`DISPATCH`）、result の VkResult、session の close の回収 | Verilator: firmware の試験の harness（host の C から class V の packet を作って流し、µop の列と STATE の期待と比べる）、vkdemo の部分集合の command の列が期待の µop になる | p017、p009（STATE の意味）、U24 | 44（±50%） |
-| **p020**（新設、版 3 の SA） | **systolic array**: `atg_sa`（32 × COLS の int16/int8 の PE、skew、drain、重みの先読み、MC の client、in/out-FIFO）、SU の `rq`（operand 63 の push/pop と発行の blocking、`qstat`/`sastat`/`sactl`）、`DISPATCH(SA)` と STATE の `SA_*`、`CAPS[25]`/`SA` の capability、ISA の model に SA を足す、TB（tile の GEMM が参照と一致、FIFO の満/空の blocking、abort、fault）、KC705 の合成で DSP/LUT を実測して COLS を決める | Verilator: 32 × K × COLS の GEMM（int16）が CPU の参照と一致、**板（KC705、p014 の bitstream に足す）**: `ghci-sa` の GEMM が一致、`PERF` で MAC/cycle | p008、p014（板）、U28〜U30 | 26 |
-| **p021**（新設、版 3 の SA。**WS288 の外の変更を含むので Q1 の判断**） | zedBSD で SA を Vulkan から使う: `VK_KHR_cooperative_matrix` を libvulkan が名乗る、共有の compiler に COOP の IR の op、GSI1 の backend の下げ、driver の capset、`userland/tests/ghci-sa/` を Vulkan の経路に | vkdemo の compute（GEMM）の結果が参照と一致（Verilator、KC705） | p020、p011、U30 | 20（libvulkan と compiler の分は別の WS なら除く） |
-| **p019**（新設） | **zedBSD の `vk/` = 検証する中継**（§6.7）: wire の reader（i915 の `i915_wire_reader` を powervr と同じ形で再利用）、D/R/R'/X の表、D の返事（capset・limit・memory requirements・layout の規則・fence）、R' の書き換え（`GHCI_MEMORY`・`GHCI_PROGRAM`、compile は p010 の backend）、result page と REPLY の frame の待ち、`QUEUE_SUBMIT` の job と FENCE、`EXECUTE_STREAMS` の入れ子、session の open/close、host の試験（gpu-op の frame を作って ring の packet の列を比べる） | host PASS（ring に書かれる packet の列が期待どおり、返事の blob の形が libvulkan の読む形）、**Verilator の端から端は p011** | p006、p010、p017（`GHCI_*` の形） | 22 |
+| **p018**（新設） | **firmware の Vulkan の object model と draw/dispatch**（§2.4.8）: object の表、image/image view/sampler、`GHCI_PROGRAM`（pipeline の stage の binary と interface の表の検証）、pipeline layout・descriptor set layout/pool/set/update、render pass・framebuffer、graphics/compute pipeline → STATE の word の列、記録の全部の R の command、`QUEUE_SUBMIT` の辿り（bind の状態機械、interface の表で descriptor → `SET_REG`/`LOAD_CONST`、`LOAD_PROGRAM`、barrier、clear → BLT、内蔵の blit/clear の kernel、`DRAW`/`DISPATCH`）、record の VkResult と `RESULT` の IRQ、`DESTROY_DEVICE`/session の close の回収 | Verilator: firmware の試験の harness（host の C から staging と frame の packet を作って流し、µop の列と STATE と record の期待と比べる）、vkdemo の部分集合の command の列が期待の µop になる | p017、p009（STATE の意味）、**p010（binary の interface の表）**、U24 | 44（±50%） |
+| **p020**（新設、版 3 の SA） | **systolic array**: `atg_sa`（32 × COLS の int16/int8 の PE、skew、drain、重みの先読み、MC の client、in/out-FIFO）、SU の `rq`（operand 63 の push/pop と発行の blocking、`qstat`/`sastat`/`sactl`）、`DISPATCH(SA)` と STATE の `SA_*`、`CAPS[25]`/`SA` の capability、ISA の model に SA を足す、TB（tile の GEMM が参照と一致、FIFO の満/空の blocking、abort、fault）、KC705 の合成で DSP/LUT を実測して COLS を決める | Verilator: 32 × K × COLS の GEMM（int16）が CPU の参照と一致、**板（KC705、p014 の bitstream に足す。host は無いので `plan/tools/kc705/jtag-reg.sh` で ring・STATE・memory を載せて `DBG` で読む道具 `ghci-sa-jtag.sh` を足す、H6・M20）**: GEMM が一致、`PERF` で MAC/cycle | p008、p014（板）、U28〜U30 | 28 |
+| **p021**（新設、版 3 の SA。**WS288 の外の変更を含むので Q1 の判断**） | zedBSD で SA を Vulkan から使う: 独自の拡張 `VK_KEI_systolic_dispatch`（案）を libvulkan が名乗る、共有の compiler に vendor の `OpExtInst` の set、GSI1 の backend の下げ、driver の capset、`userland/tests/ghci-sa/` を Vulkan の経路に（H8） | GEMM の compute の結果が参照と一致（Verilator、KC705） | p020、p011、U30 | 20（libvulkan と compiler の分は別の WS なら除く） |
+| **p019**（新設） | **zedBSD の `vk/` = 検証する中継**（§6.7）: codec の生成（`ghci_vkwire.inc`、firmware と共有、M21）と wire の reader（i915 の `i915_wire_reader` を powervr と同じ形で再利用）、D/R/R'/X の表、driver の帳簿（M1）、D の返事（capset・limit・memory requirements・**`ghci_layout.h`**（driver 側の正本の写し、M22）・fence）、R' の書き換え（`GHCI_MEMORY`、pipeline の作成で stage ごとの compile → `GHCI_PROGRAM`）、staging と `GHCI_FRAME`、result page と **reply thread**、jobs の marker（§6.4）、`EXECUTE_STREAMS` の入れ子、session の open/close、host の試験（gpu-op の frame を作って staging と ring の packet の列と返事の blob を比べる）、**ZYBO 1' で libvulkan の `vkCmdFillBuffer`/`vkCmdCopyBuffer` を実 driver で通す試験**（H6。T1 に依頼） | host PASS（staging の列と返事の blob の形が libvulkan の読む形）、ZYBO 1' の fill/copy（板）、**Verilator の端から端は p011** | p006、p010、p017（`GHCI_*` の形）、U24、U26 | 26 |
 
-合計 **438 LW**（p013 の 24 を除くと 414。p018 の幅で 392〜460。SA の p020・p021 の 46 を除くと 392）。版 2 は 304。増分の主は firmware（p017 + p018 = 76）で、p011 が 48 → 24 に減った（Vulkan の object の意味が driver から firmware に移った分）。最初の端から端（p002〜p004）は 40 LW、画面まで（p005・p006）で 78 LW。
+合計 **454 LW**（p013 の 24 を除くと 430。p018 の ±22 で 432〜476（L8）。SA の p020・p021 の 48 を除くと 406）。版 2 は 304。増分の主は firmware（p017 + p018 = 76）で、p011 が 48 → 24 に減った（Vulkan の object の意味が driver から firmware に移った分）。最初の端から端（p002〜p004）は 40 LW、画面まで（p005・p006）で 78 LW。
 
-依存の図: p002 → {p003 → p004, p005} → p006; p004 → p007 → p009; p004 → p008 → {p009, p010}; p004 → p017 → p018 ← p009; {p006, p010, p017} → p019; {p009, p010, p018, p019} → p011; {p004, p005} → p012 → p013（後回し）; {p011, p012} → p014 → p015 → p016; {p008, p014} → p020 → p021 ← p011。循環は無い。**Verilator の端から端（p011）の前に板で見える物**: ZYBO の 1・1'・2・3・4 の bitstream（p003・p017・p005・p007・p008）。
+依存の図: p002 → {p003 → p004, p005} → p006; p004 → p007 → p009; p004 → p008 → {p009, p010}; p004 → p017 → p018 ← p009; {p006, p010, p017} → p019; p010 → p018（binary の interface の表、M22）; {p009, p010, p018, p019} → p011; {p004, p005} → p012 → p013（後回し）; {p011, p012} → p014 → p015 → p016; {p008, p014} → p020 → p021 ← p011。循環は無い。**Verilator の端から端（p011）の前に板で見える物**: ZYBO の 1・1'・2・3・4 の bitstream（p003・p017・p005・p007・p008）。
 
 **ws.md の「進め方（案）」（DC → BLT → CP の順）からの変更（U14）**: 版 2 のまま（CP + BLT が先。`DBG_ADDR/DATA` で DDR を読めるので driver も画面も無しに板で結果を照合できる）。
 
@@ -908,7 +929,7 @@ QEMU と実機の証拠は分けて書く。やっていない確認は「未実
 | R24 | （版 3）`LOAD_CONST` が暗黙の `WAIT_IDLE(SU)` を挟むので push constant が変わる draw のたびに pipeline が空く | v1 は受ける（vkdemo・compositor の draw 数では ≤ 1 ms/frame の見込み）。p015 で constant の領域を warp ごとの base（STATE の word を SU が warp の開始で読む）に変える案を実測で決める |
 | R25 | （版 3）`atg_cpu` が 325T -2 で 200 MHz に閉じない | 3 段の短い pipeline、BRAM の IMEM/DMEM を register で挟む。閉じなければ CPU だけ `gclk/2` の領域（`am_afifo` で µop を渡す） |
 | R26 | （版 3）firmware が IMEM 32 KiB に入らない | 目標 64 KiB 以内で設計し、IMEM を 64 KiB（BRAM36 16）に出来る parameter にする。7010 の bitstream 1' でも BRAM は 60 の内 25 |
-| R27 | （版 3）REPLY を求める frame ごとに CP の往復（`QUEUE_SUBMIT` は毎回）で latency が積む | 1 往復 ≈ 数十 µs の見込み（p011 で計測）。遅ければ受理を先に `VK_SUCCESS` で返す（§2.4.6） |
+| R27 | （版 3）REPLY を求める frame ごとに firmware の往復（`QUEUE_SUBMIT`・create は毎回）で latency が積む | result は firmware が解いた時点で書き、GPU の完了は待たない（H1）。1 往復 = firmware が frame を解く時間（µs〜十数 µs）+ IRQ + reply thread。p011 で計測。libvulkan の transport の timeout は 10 s（`context.c`） |
 | R28 | （版 3）firmware の Vulkan の部分集合が compositor の要る物に足りない（p018 の規模 ±50%） | U8 の順（vkdemo → compositor の最小 → mview）で部分集合を固定。足りない物は result の `VK_ERROR_FEATURE_NOT_PRESENT` で見える |
 | R29 | （版 3）SA の DSP が N=8 の SU と合わせて 325T の 840 を超える（32 × 8 で 723 + 256） | N=8 は SA を 32 × 4（128）、または SU の packed を外す。p020 の合成で決める |
 | R30 | （版 3）SA の入力の帯域が 1 つの SU の push に律速される（128 MAC/cycle 程度） | v1 は受ける。v2 で SU ごとの in-FIFO（SA の左の口を SU の数だけ）か、SA が A も MC から stream する mode |
@@ -953,7 +974,7 @@ QEMU と実機の証拠は分けて書く。やっていない確認は「未実
 | **U27**（版 3） | `shfl`/`vote`/`ballot`（subgroup の命令）を GSI1 の **optional**（`CAPS[24]`）にし、Amaterrace は KC705 だけ実装（+0.5k LUT/SU）、ZYBO は無し | **optional** |
 | **U28**（版 3、SA） | FIFO の register の番号: **63**（operand の空間の最上位。GPR は r0〜r62）。NREGS 32 の構成でも 63 | **63** |
 | **U29**（版 3、SA） | SA の v1 の PE の型と大きさ: int16 × int16 → int32（と int8）、32 行 × 8 列（N=4）/ 4 列（N=8）、fp16/bf16 は v2 | **この形**（fp16 の PE は +40〜50k LUT） |
-| **U30**（版 3、SA） | Vulkan からの見せ方: (a) `VK_KHR_cooperative_matrix`（libvulkan と共有の compiler の変更 = WS288 の外。p021）、(b) 当面は `GPU_OP_GHCI_NATIVE` と手書きの kernel だけ（p020）、(c) 独自の拡張 | **(a) を p021 で、それまで (b)**。p021 を WS288 に入れるか別の WS にするかは Q1 |
+| **U30**（版 3、SA） | Vulkan からの見せ方: (a) `VK_KHR_cooperative_matrix`（v1 の SA の形では実装できない、H8: 重みは静的な stream、accumulator の入口が無い、SA が 1 つ）、(b) 当面は `GPU_OP_GHCI_NATIVE` と手書きの kernel だけ（p020）、(c) 独自の拡張 `VK_KEI_systolic_dispatch`（libvulkan と共有の compiler の変更 = WS288 の外。p021） | **(b) を p020、(c) を p021 で**。(a) は v2 の Future Work（条件は §3.9.4）。p021 を WS288 に入れるか別の WS にするかは Q1 |
 
 HAL（`include/hal/hal.h`）の変更は **無い**。
 
@@ -1010,17 +1031,13 @@ HAL（`include/hal/hal.h`）の変更は **無い**。
 9. gpu-op の wire に長さが無いので、driver は中継する command の引数を**全部**解けなければ ring に載せられない（§2.4.2）。知らない sType の chain は拒む。これは bcm2711・i915 と同じ制約で、libvulkan が送る形は gpu-op.h が全部書いている。
 10. class V の packet を firmware が解いている間、ring は止まる（µop は 1 本）。長い object の作成（pipeline）が draw の列に挟まると GPU が空く。v1 は受ける（object の作成は frame の前）。複数の ring（R6）の時に class V を別の ring に分ける。
 11. firmware の無限 loop は watchdog（class V の packet も `WDT_CYCLES` の対象）で FAULT → RESET → firmware の再起動。heap は driver が作り直すが **他の session の object も全部消える**（v1 の回復は device 全体、§2.5 と同じ）。
-12. `END_COMMAND_BUFFER` の返事を待たずに `VK_SUCCESS` にする（§2.4.4）ので、記録の誤り（例: 未対応の command の組み合わせ）は `QUEUE_SUBMIT` の result で出る。libvulkan はその VkResult を `vkQueueSubmit` の返り値にする。Vulkan の規格は `vkEndCommandBuffer` でも `vkQueueSubmit` でも誤りを返せるので許される。
+12. R の command の返事は firmware が command を解いた時点の record から書く（§2.4.6）ので、`vkEndCommandBuffer`・`vkQueueSubmit` の VkResult は Vulkan の規格どおりの場所で返る。GPU の実行の誤りは fence の error（job の ERROR）で出る。
 13. 64 bit 固定の命令で word0 が RISC-V の形でも、**RISC-V の binary は動かない**（x0、Boolean、分岐の意味が違う）。「RISC-V を基にする」の意味は §3 の冒頭に限る。
 14. `shfl` の staging RAM は NPHYS の複製（§3.6 の +0.5k/SU は NPHYS 16 の値）。NPHYS 32 では 32 複製 = 32 Kbit の distributed RAM（1k LUT）。KC705 は NPHYS 16 なので問題ない。
 15. scoreboard の entry が texture の rd..rd+3 を 1 entry で覆う（width）ので、4 register の内の 1 つを読む命令も止まる。正しい。
 16. `ISA fault`（種別 8）は warp を止めるが他の warp は続く → device 全体の FAULT で止める（§2.5）。「他の session は続ける」は parse の誤りだけ、の規則のまま。
 17. `rq` の pop が発行の段で止まる間、同じ warp の後ろの命令は出ない（in-order）が他の warp は出る。SA の dispatch の warp が全部 pop で止まり、SA が drain に入らない（K 回の push が揃わない）と止まる → `sactl 2`（drain）は push が K に満たない時は拒む（`sastat` で分かる）。compiler は K を `SA_K` と一致させる。
 18. `rq` を dst にする命令が EXEC の外の lane で 0 を push する規則は、lane の mask で行列の一部を 0 にする用途（端の tile）に使える。
-
-## 13. review の指摘と対応（版 3、design-reviewer、2026-10-23）
-
-（design-reviewer の実行の後に書く）
 
 ## 12. review の指摘と対応（版 2、design-reviewer、2026-10-23、38 件。節の番号は版 2 の物）
 
@@ -1064,3 +1081,61 @@ HAL（`include/hal/hal.h`）の変更は **無い**。
 | L4 | `/dev/gpuN` の番号 | §6.1: 空いている最小 |
 | L5 | `hal_*` でなく `kern_*`、末尾の保証 | §6.1・§6.3 |
 | L6 | ws.md の mc64、順序の変更の記録、README の確定値の書き方、FRAME_COUNT の 64 bit | ws.md を直す（P2 の path）、U14、README-additions を「proposed」の書き方に、§5.1 の FRAME_COUNT |
+
+## 13. review の指摘と対応（版 3、design-reviewer、2026-10-23、49 件: Critical 2・High 10・Medium 22・Low 15）
+
+reviewer が照合した code: `gpu-op.h`、`gpu.h`、`gpu-job.h`、`drivers/gpu/gpu.h`、`gpu.c`、powervr の `vk-stream.c`・`render-runtime.c`・`vk-draw.c`、`compiler/ir.h`・`spirv.h`、libvulkan の `context.c`・`queue.c`・`sync.c`・`commands.c`・`external-properties.c`・`memory.c`、Guardrail、共有の LLVM の resource dir、amaterrace-gpu の `ghci_regs.h/.vh`・`ghci_packets.h`・`atg_mc.v`・`atg_cp.v`。P1 が対応の前に確かめた物: `spirv.h:48` の `drv_gpu_shader_parse` の stage、`gpu.h:36・53〜56` の ops の形、powervr の `runtime_reserve/commit`（marker、`powervr_session_pend`）、`gpu.c:1140・1155・3310・6032`（`command` と `commands->submit` の使い分け）、`context.c:884〜891・962`（通知の後に trailer を poll）、`build/llvm/lib/clang/<版>/` に `lib/` が無い事、P2 の `ghci_regs.vh` の `GHCI_EXTCAP_LIST = 0x100`・`PERF_SRC0 = 0x110`。
+
+| # | 指摘（要旨） | 対応（節） |
+| --- | --- | --- |
+| C1 | `CREATE_SHADER_MODULE` の時には stage も entry も interface も無く compile できない。binary に resource の表が無い | compile は **pipeline の作成の時**に stage ごと（59・60 は D、65・66 は R' で `GHCI_PROGRAM [pipeline][stage]` を先に送る）。binary の header に **interface の表**（属性・varying・uniform block・sampled image・storage・push・shared）を足し、firmware が descriptor を slot に写す唯一の約束にした。v1 は stage ごとに entry 1 つの module だけ。p010 が表を確定し p018 が依存（§2.4.4・§2.4.5・§3.4.4・§6.6・§8） |
+| C2 | `reserve` に sequence は無く、commit の前に fence が完了し得る。「commit = doorbell」と submit の中の doorbell が矛盾 | powervr の marker の形に: driver の 32 bit の device 全体の fence、`QUEUE_SUBMIT` の frame が FENCE を置いて session の「最後の fence の値」を更新、commit は marker をその値に結ぶ（過ぎていれば commit の中で完了）、通常の cancel・fault の cancel を書いた（§6.4・§2.4.9） |
+| H1 | 返事を完全な FENCE で待つので submit・create が GPU の完了を待つ | result は **firmware が command を解いた時点**で record に書き、frame の最後に `RESULT` の IRQ。FENCE は job の完了だけ。R27 を直した（§2.4.6） |
+| H2 | 1 MiB の記録の frame が ring に入らず、満の時に待つ手段が無い | class V の frame は **staging**（GPU の memory の環、4 MiB）に写し、ring には `GHCI_FRAME`（8 dword）だけ。1 frame に割り込み 1 回。ring の満は `IRQ_STATUS[8] RETIRE` で待つ（§2.4.6・§2.7） |
+| H3 | module の destroy で binary を解放すると pipeline が解放後の memory を実行する | binary は pipeline の物（C1）。`DESTROY_PIPELINE` の後に session の最後の fence が過ぎてから返す（§2.4.4） |
+| H4 | firmware の再起動で DMEM が初期値に戻らず、CPFW は IMEM だけ | `CPFW_IBASE/IWORDS` と `CPFW_DBASE/DWORDS` の 2 対、`.data` の原本を像の中に持ち `boot.S` が毎回写す、p017 の受け入れに試験（§2.4.7・§2.2） |
+| H5 | `-march=rv32im` の clang は `div` を出す。compiler-rt が無い | RV32IM の全部を hardware（逐次の除算器 0.3k LUT）、`mem*`・`__udivdi3` 等は `fw/cp/` に自前。toolchain は変えない（§2.4.7） |
+| H6 | libvulkan + driver + firmware を端から端で流す場が無い（KC705 に host が無い、ZYBO は 1' だけ） | p011 に host の harness（偽の drv_gpu + Verilator の DPI）を明記、p019 に ZYBO 1' で libvulkan の fill/copy、p020 に KC705 の JTAG の道具 `ghci-sa-jtag.sh`（§8） |
+| H7 | SA の FIFO を dispatch の全 warp が共有して混ざる | **1 warp が `sactl 4/5` で acquire/release**（他の warp は fault、acquire は空くまで止まる）。CP は SA の dispatch を直列に（§3.9.1） |
+| H8 | `VK_KHR_cooperative_matrix` はこの SA の形では実装できない | U30 を (b) NATIVE → (c) 独自の拡張 `VK_KEI_systolic_dispatch` に変え、cooperative matrix は v2 の Future Work（条件を書いた）。p021・§6.10・§3.9.4 を直した |
+| H9 | `rq` を class m/t/x の dst にすると順序が狂う。暗黙の register の範囲が 63 に掛かる | `rq` は class a・f だけ、m/t/x の dst と暗黙の範囲が 63 に掛かる命令は ISA の fault。push の満は credit で（§3.9.1） |
+| H10 | firmware が STATE を window から直に書くと非同期の block と競合 | window の STATE は読みだけ。書きは `UOP_FIFO` の `SET_REG` だけ（§2.4.7） |
+| M1 | 「driver は object の意味を知らなくてよい」が D の表と矛盾 | driver が持つ物（帳簿・create info・bind・SPIR-V・fence・記録の状態）を列挙し、p019 を 6〜8k 行・26 LW に（§2.4.4・§6.7） |
+| M2 | 返事の cursor の順序（D と R が混ざる frame） | R の返事の大きさは gpu-op.h の「Reply」で決まるので cursor を空けて後で埋める（§2.4.6） |
+| M3 | ioctl の中で眠る案は NOTIFICATION の形に合わない | 眠らない。device の reply thread が IRQ で返事と trailer を書いてから `drv_gpu_complete`（libvulkan は通知の後に trailer を poll する）（§2.4.6・§6.7） |
+| M4 | session の tag の取り方が 2 通り | tag は node の open。`DESTROY_DEVICE` は D + R で device の下の object だけ返す（§2.4.4） |
+| M5 | `CPFW` と `SA` の offset の重なり、`VEND` の幅、P2 の EXTCAP/PERF の offset とのずれ | `VEND` 0x0C0〜0x0DF（8 word）、`CPFW` 0x120〜0x13F、`SA` 0x140〜0x14F。P2 の `PERF_SRC` 0x110・list 0x100 を事実として書いた（§2.2・§2.4.10） |
+| M6 | MC は client の間の順序を守らない | firmware の DMA の書き込みの応答が揃ってから、それを参照する µop と `RESULT` の IRQ を出す規則（§2.4.6・§2.4.8） |
+| M7 | watchdog・HALT/STEP・CPFW_CTRL.HALT・LOAD・CAPS[17]・reset で残る register | 全部書いた: counter は `UOP_FIFO` の満と DMA の待ちを数えない、STEP = 1 packet、HALT の関係、LOAD の条件、`CAPS[17]` は静的、§2.6 の表に追記（§2.4.7・§2.6） |
+| M8 | fence の値の領域が一貫しない | device 全体の 32 bit の 1 本に統一（§6.4、C2） |
+| M9 | scoreboard の穴（暗黙の register、範囲の WAW、EXEC = 0、WAR、a/f の latency、NPHYS 8 の主張） | 範囲の比較（400 LUT）、暗黙の source/dst を含める、EXEC = 0 は要求も entry も無し、source は発行の段で読む、a と f は 1 本の固定長の pipeline、NPHYS 8 は interlock 1〜2 cycle（§3.1.1） |
+| M10 | helper lane と coverage の規則が無い | EXEC は quad 単位、副作用の mask = coverage（`mask` operand）& ~KILLED（§3.1、p009） |
+| M11 | 分岐の単位と即値の結合が曖昧 | B は imm[12:1] を命令数（±2048）、I/S は sext(imm12) + (sext(imm_hi) << 12)（§3.3） |
+| M12 | 「属性 k = r_k」は vec4 を表せない | 属性の行き先は STATE `ATTR_DST[k]`（0x1C0〜）と interface の表（§2.3・§3.4.3） |
+| M13 | `exec.save`・`vote`・`ballot` の predication、loop の下げ方 | EXEC に依らず全 lane に書く。`exec.save` は loop の前（§3.9.1 の注・§6.6） |
+| M14 | §6.6 の表の漏れ | 述語付きの store/atomic、shared の atomic（拒む）、texel の offset・derivs・gather（拒む）、POINT_SIZE・SECOND_COLOR・LAYER、NOP、`texf`/`texsz` の level を register に（§6.6・§3.4.1） |
+| M15 | `sel` の定義が 2 通り | bit ごと（rd = (rs1 & rs2) \| (~rs1 & rs3)）に統一（§3.2・§3.4.1） |
+| M16 | 拡大・縮小の blit・clear attachments は BLT では出来ない | firmware の内蔵の GSI1 の program（`blit.c`、p018）（§2.4.4・§2.4.8） |
+| M17 | KC705 の N=8 は CPU + SA を足すと BRAM も DSP も超える | 板の目標を **N=6**（156k LUT、351 BRAM、808 DSP）に。N=8 は SA 無しの構成として p015 で実測（§3.6） |
+| M18 | SA の帯域・利用率・先読み・型の詰め方・drain の順 | push 12.8 GB/s、1 tile ≈ K + 31 + COLS step、実効 64〜128 MAC/cycle、先読み 4 KiB、int16/int8 は word の下位、drain は列の逆順（§3.9.2） |
+| M19 | SA の EXEC = 0 と終わり・`sactl 2` の拒み・HALT | push/pop は EXEC に依らず必ず 1 entry、dispatch の終わりで FIFO を捨てる、`sactl 2` の拒みは `sastat[4]`、HALT/RESET は abort で待ちを解く（§3.9.1・§3.9.2） |
+| M20 | `GHCI_NATIVE` の白表が SA の試験を通さない、KC705 に host が無い | 試験の build の白表を広げた（SET_REG 全部、DISPATCH、LOAD_PROGRAM…）、KC705 は JTAG の道具（§2.4.5・p020） |
+| M21 | firmware の性能の見積もりが楽観、codec を 2 度書く | 「数 µs〜十数 µs」に直し p017 で測る。codec は `ghci_vkwire.inc` を 1 つの表から生成して driver と firmware で共有（§2.4.7・§2.4.8・p019） |
+| M22 | Phase の依存の漏れ | `ghci_layout.h` は p019、p010 → p018、p008 ← U22・U23、p009 ← U27、p019 ← U24・U26。toolchain は変えない（H5）（§8） |
+| L1 | 148・150・161 が表に無い | D（external の properties）（§2.4.4） |
+| L2 | `GHCI_*` の受け入れの文の矛盾 | libvulkan は送らない、userland の試験の build は `GHCI_NATIVE` だけ（§2.4.4） |
+| L3 | vendor の opcode の範囲が 3 通り | class 1 の op 0〜63 に統一（§2.1・§2.4.1） |
+| L4 | 詰め物が NOP（n ≤ 255）では埋められない | class 3 の詰め物（§2.7） |
+| L5 | `EINVAL` でも結局 DEVICE_LOST | 文を直した（§2.4.6） |
+| L6 | 256 KiB を超える packet | staging（H2）で上限に当たらない（§2.4.2） |
+| L7 | `FREE_MEMORY` の遅延解放が待つ fence | その時点の session の最後の fence の値（§2.4.4・§6.3） |
+| L8 | LW の範囲の計算 | 454 LW、±22 で 432〜476（§8） |
+| L9 | 下書きの文、節の順、冒頭の件数、ws.md の U の範囲 | `movi`・ILT の文を直した。§6.9 → §6.8 と §12 の前の §13 は版 2 の番号を保つため: §13 は末尾に移した。冒頭と ws.md を直した |
+| L10 | 出典の版、gpu-op の出典の引き継ぎ、商標 | RISC-V の仕様の版（20240411）、gpu-op.h の引用の書き方、「RISC-V 互換」を名乗らない注（§3.4.6） |
+| L11 | `nop` が r0 に書く、`wait` の置き場、`texl` の slot、形の列 | `nop` は custom-3 111、`wait` は imm、slot は sub[3:0]、命令ごとの形の行（§3.2・§3.3・§3.4.1） |
+| L12 | firmware の無い構成の capability | `CAPSET`・`COMMAND`・`NOTIFICATION`・`JOB` を名乗らない（§2.4.10） |
+| L13 | MC の client に `atg_cpu`・SA が無い | §3.9.2 に注（§4.1 の内訳は p002 の実測の時に直す） |
+| L14 | allocator が `CP_HEAP` を除外する規則、shader が heap を壊せる | 除外の規則（§2.4.7）。R7 の「session の隔離が無い」に含む |
+| L15 | `GET_DEVICE_QUEUE2` の文 | 書き直した（§2.4.4） |
+
+未対応で残す物: 無し（全部に対応）。確かめていない事: reviewer の M21（firmware の性能）は推測のまま p017 で測る。L10 の商標は推測の懸念で、文言の変更だけ行った。

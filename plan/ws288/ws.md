@@ -30,7 +30,7 @@
 
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
-| p001 | 設計（block ごとの interface、AXI の口、命令の集合の最初の案、zedBSD の driver との境界）: [design.md](design.md) 版 3（版 2 の 38 件 + 版 3 の review に対応、U1〜U27。版 3: ring の command = gpu-op、CP は `atg_cpu` の firmware、GHCI の標準の shader ISA「GSI1」）、[proposed/README-additions.md](proposed/README-additions.md) | WS286 p003（PL の workflow） | in-progress（2026-10-23 P2 が版 2、P1 が版 3。clear の判定は Q1。p002〜p021 の案は design.md §8） |
+| p001 | 設計（block ごとの interface、AXI の口、命令の集合の最初の案、zedBSD の driver との境界）: [design.md](design.md) 版 3（版 2 の 38 件 + 版 3 の review の 49 件に対応、U1〜U30。版 3: ring の command = gpu-op、CP は `atg_cpu` の firmware、GHCI の標準の shader ISA「GSI1」）、[proposed/README-additions.md](proposed/README-additions.md) | WS286 p003（PL の workflow） | in-progress（2026-10-23 P2 が版 2、P1 が版 3。clear の判定は Q1。p002〜p021 の案は design.md §8） |
 
 ## 現在の状態・再開点
 
