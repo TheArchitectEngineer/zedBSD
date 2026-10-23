@@ -84,6 +84,12 @@ worktree `/home/awe/zedBSD-worktrees/p2-zybo-p008`（4861dd5ce 以降）。image
 - A（zynq、serial、U3）: `plan/tools/zybo/qemu-zynq.sh build/zybo-fpga/vmunix --initrd build/zybo-fpga/root.img --append 'fpga.no-pl-wait=1' --timeout 240 --expect 'fpga: devcfg at f8007000.*emulated' --expect 'login: *$' --then type:root --then expect:Password: --then type:root --then 'expect:root@kei' --then 'type:fpgaload --status' --then 'expect:EMULATED 1' --then 'type:fpgaload /usr/share/fpga/plio.bit' --then 'expect:EMULATED 1' --then 'type:fpgareg read 0' --then 'expect:Input/output error'` → exit 0 で PASS。`fpga:` の行と login 以降の行を返す。
 - 失敗の時（例: `fpgaload: program: Device or resource busy` は model の DMA の queue の STATUS、`Connection timed out` は D_P_DONE）: 最後の行を返す（解析は担当）。
 
+### QEMU zynq の 1 回目（T1、2026-10-23、f327ed43b）と直し
+
+- T1 の結果（Q1 経由）: FAIL。`fpga: devcfg at f8007000, status 00000000, int_sts 00000000, emulated`、login は通り、`fpgaload --status` → `DONE 0 INIT 0 ENABLED 0 PROGRAMMING 0 EMULATED 1 …`、`fpgaload plio.bit` → kernel `fpga: program failed (17)`・`fpgaload: program: Device or resource busy`。原因: QEMU の devcfg の model は STATUS の DMA の queue の bit を持たず 0 を読む（空の印 `DMA_Q_E` が立たない）ので、手順 5 の queue の確かめが `EBUSY` を返した（担当の予想どおり）。
+- 直し（worktree `p2-zybo-p008b`、93d2a053f）: `fpga.skip_waits`（QEMU で `fpga.no-pl-wait=1` の時だけ）の時は queue の空の bit を見ず、満ちた bit だけで拒む。実機の道（skip_waits は 0）は変わらない。`docs/reference/kernel-boot-parameters.md` §7d に 1 文。
+- host: `make ZEDBSD_CONFIG=config/ci/config-zybo.mk -j16 vmunix` と `… config-zybo-fpga.mk BUILD=build/zybo-fpga … root.img` は rc 0・warning 0。実機の再試験はしていない（実機で通る道は変わらないため）。T1 の 2 回目を依頼（同じ command、vmunix `b3d60374…`、root.img `05b0c30b…`）。
+
 ## design との違い
 
 - userland は 2 つの dir（上）。
