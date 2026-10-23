@@ -672,6 +672,7 @@ configure_logic(
 	uint32_t status;
 	uint32_t interrupts;
 	uint64_t deadline;
+	int queue_empty;
 	int error;
 
 	/* Turns the PCAP's clock on when the loader left it off. */
@@ -714,9 +715,19 @@ configure_logic(
 	/* Routes the configuration through the PCAP, unencrypted. */
 	ctrl_update(DRV_ZYNQ_DEVCFG_CTRL_PCAP_PR | DRV_ZYNQ_DEVCFG_CTRL_PCAP_MODE, 0);
 
-	/* Refuses to queue a transfer behind another the interface still holds. */
+	/*
+	 * Refuses to queue a transfer behind another the interface still
+	 * holds.  The emulator's model keeps no queue state in STATUS (it
+	 * reads 0, the queue neither empty nor full), so there only a full
+	 * queue refuses.
+	 */
 	status = devcfg_read(DEVCFG_STATUS);
-	if ((status & STATUS_DMA_Q_E) == 0 || (status & STATUS_DMA_Q_F) != 0)
+	queue_empty = 0;
+	if ((status & STATUS_DMA_Q_E) != 0)
+		queue_empty = 1;
+	if (fpga.skip_waits)
+		queue_empty = 1;
+	if (!queue_empty || (status & STATUS_DMA_Q_F) != 0)
 		return EBUSY;
 
 	/* Sends the data to the logic, not back to memory. */
