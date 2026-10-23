@@ -68,9 +68,18 @@ atg_top_tb の ring の試験: SET_REG+BLIT の FILL と FENCE（IRQ FENCE と R
 - bug 1（RESET の後の STATE）は板では「reset の後の fill」が SRC/CLIP を書き直さずに通る事でしか見ていない（直接の確認は atg_top_tb）。
 - 未実施: watchdog・WAIT_FENCE・STEP・RESULT・wrap は板では流していない（sim だけ）。KC705 は未実施。QEMU は使っていない。
 
+## P1 の router の木（MC）との統合（2026-10-23、Q1 の依頼）
+
+- Q1 の `int-rt`（b9d7d00 = a094748 + P1 の milestone 4: MC が 2 分岐の router の木）を p3-cp に merge した。merge したまま（a094748 の CP）では bug 2 の修正が効かず、atg_top_tb は「DBG stays busy」で落ちていた。木の MC では quiesce が root で止めるので、root の組み立ての buffer に入った BLT の要求の後ろで CP の要求が待つ。
+- 直し方（98885bf）: quiesce で root を止めるのをやめ、**葉で止める**ようにした。`am_amb_to_rt` に `hold`（新しい packet を始めない。header を送り済みの write は data の flit も送るので、router が packet の残りを待って詰まる事は無い）、`atg_mc_tree` に `hold[NCLIENT]`、`atg_mc` に `QUIESCE_EXEMPT` を足し、hold = quiesce & ~QUIESCE_EXEMPT とした。木の中に入っている要求は root が grant する（流し切る。`am_axi_master` の halt は 0 に固定）。`axi_idle` は `pend`（client から受け取って、まだ grant していない要求の数）が 0 であることも要る。atg_top は client 0（CP）を除外にする。atg_cp の `mc_quiesce` は quiesce そのままに戻した（HIGH_MASK を使った細工は外した）。atg_mc_tb の quiesce の検査は「quiesce の窓の中で 1 client が受け取られるのは最大 1 回（write の data の flit）」にした。`atg_mc_arb.v`・`.md` を `git rm` で消した（Q1 の指示）。spec: atg_mc・atg_mc_tree・am_amb_to_rt。
+- 確認: lint 97/97 clean（atg_mc_arb を除いて 98 − 1）、`sim/run.sh` 18/18 PASS、atg_top・atg_mc が seed 2/3/42 で PASS、Verilator PASS。mutation: QUIESCE_EXEMPT を 0 にすると atg_top が FAIL（戻して PASS）。
+- Vivado（98885bf）: **WNS +0.570 ns、WHS +0.026 ns**、LUT 5027（CP 1270、MC 763 = 木 436 + aperture 259、BLT 2811）。bitstream sha256 fc682ba06cee2e5c…。
+- 板（ZYBO 実機、98885bf の bitstream）: `ghci-blt-board.py` が **3 回とも全 check PASS**（seed 1792762754・1792762881・1792763004）。p004 の ring の check・HALTED の DBG・class V → RESET → 回復を含む。
+
 ## 残り・制限
 
 - HALTING は block の非同期の仕事の終わりを待たない（p003 の選択、block は凍る）。RESET は RUNNING から HALTING を経ない。watchdog と BLT の error の JOB_TAG は 0。MC の refusal の FAULT_INFO[23:16] は client 番号（design とは差、spec に記録）。
 - seq の DRAW/DISPATCH/LOAD_CONST/DRAW_RAW/WAIT_VSYNC は busy の model でしか試していない（VF・SU・RX は後の Phase）。`HAS_VSYNC` は atg_top から渡していない（DC の Phase で）。
 - class V の CPU への受け渡し（`v_*`）は ring の TB の model だけ（atg_cpu は P2、p017）。
 - ring は 1 line の buffer で先読みをしない（性能は後で）。
+- KC705 の外の client（DC）は quiesce で止められたまま（以前と同じ）。DC は scanout を続けるべきだが、`pend` が DC の要求も数えるので、除外するには AXI_IDLE の数え方も一緒に直す必要がある（DC/KC705 の Phase で）。
