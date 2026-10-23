@@ -21,7 +21,7 @@
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
 | p001 | 調べと設計（[design.md](design.md) 版 2。U1・U3〜U8 の判断と review 待ち） | — | in-progress |
-| [p002](phase002/phase.md) | JTAG の道具と SPL（kernel 無し、LLVM 不要）、板の probe（8 LW） | U4 | in-progress（実機で済み、Q1 の判定待ち） |
+| [p002](phase002/phase.md) | JTAG の道具と SPL（kernel 無し、LLVM 不要）、板の probe（8 LW） | U4 | cleared（2026-10-23 Q1: 実機で SPL の banner・DDR の 8 MiB の照合・JTAG の reset・load 約 255 KiB/s、jtag-hello.sh PASS） |
 | p003 | PL の block `plio`（openXC7、openFPGALoader、OpenOCD から読み書き）（8 LW） | p002、openXC7 の導入、U5 | planning |
 | p004 | HAL の入口（virt、1 CPU、PNG で HAL READY・PAGING PASS・TIMER TICK）（14 LW） | Q1 の LLVM ARM、boot-test の mode、U1 | planning |
 | p005 | zybo の BSP を JTAG で（QEMU zynq と実機の UART）（10 LW） | p002、p004、U3、serial.py --device | planning |

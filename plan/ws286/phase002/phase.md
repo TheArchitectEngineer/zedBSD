@@ -5,7 +5,7 @@
 - 親: [ws286](../ws.md)、設計: [design.md](../design.md) §4（版 2）・§8 の p002 の行、review: [phase001/review-20261023.md](../phase001/review-20261023.md)（L4・L5・M9 を反映）。
 - Queue: Q1 の割当（P1、2026-10-23、worktree `/home/awe/zedBSD-worktrees/p1-zybo-p002`・branch `agent/p1-zybo-p002`、基点 main eb5e334b8）。
 - 判断: U4（2026-10-23 ユーザー「U項目は読みましたが、全部推しでOKでした。」）→ p002 の担当が板（JTAG・UART）を直に操作する。host の lock `/tmp/zedbsd-zybo-board.lock` を取ってから。
-- Status: in-progress（実装と実機の確かめは済み。clearance は Q1 の判定）。
+- Status: cleared（2026-10-23 Q1 の判定: 受け入れ（JTAG の道具、SPL の build と JTAG の起動、板の probe、DDR の確かめ）を実機で満たした。残り（--no-reset、gdb の port、SPL の bit 同一の再 build、CPU1 の loop の後の jump）は p005 で）
 
 ## 目的と受け入れの条件
 
