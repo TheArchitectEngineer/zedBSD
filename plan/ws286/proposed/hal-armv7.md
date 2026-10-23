@@ -4,6 +4,8 @@
 形は Guardrail の 2026-10-18「新しい port の事前の承認（形を限る）」（WS263〜266）と 2026-10-19（WS271・272）と同じ: arch.h の 1 節、新しい `include/hal/arch/<arch>.h`（aarch64.h・riscv32.h と同じ節の並び）、`hal_get_arch_handoff` の名前付きの値。それ以外の HAL の API の変更は含まない。
 **U1（ユーザー）: この 3 点（D1〜D3）を同じ形で事前承認するか。** 承認の後に案から変わる時は改めて差分を示す。
 
+**状態（版 3、2026-10-23 P2）**: U1 は 2026-10-23 にユーザーが推しで決定（「U項目は読みましたが、全部推しでOKでした。」）。review（[review-20261023.md](../phase001/review-20261023.md)）の対応（design 版 3）で D1〜D3 は変わらない: 影の table・20 word の例外の frame・VFP の sync/forget・SCU と ACTLR・`PHYS_BASE` は全部 HAL の内側、C2 の直し（virt を raw の image で Linux の約束で入れる）でも `armv7.initrd` の出所は同じ `/chosen`、`armv7.fdt` は `r2` の DTB。D2 の `hal_atomic_uint_try_acquire` の失敗の時の `clrex` はそのまま（A15 の erratum 830321 は例外の戻りの monitor の閉じ方の話で、Linux も例外の戻りだけ dummy の `strex` にする: design §3.3）。
+
 ## D1. `include/hal/arch.h`（`HAL_ARCH_RISCV32` の節の後）
 ```c
 #elif defined(HAL_ARCH_ARMV7)
