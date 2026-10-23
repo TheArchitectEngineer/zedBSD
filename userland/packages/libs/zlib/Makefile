@@ -15,10 +15,12 @@ include $(ZEDBSD_ZLIB_DIR)/../../external.mk
 
 # 1.3.2 was the latest release when recorded.  Size and digest are the
 # upstream bytes as measured; the archive's signature was checked (WS034 p001).
+# zlib.net answered the CI runners with a page, so the bytes come from the
+# same release on GitHub (identical size and digest, checked 2026-10-23).
 ZEDBSD_EXT_zlib_VERSION := 1.3.2
 ZEDBSD_EXT_zlib_ROOT := zlib-1.3.2
 ZEDBSD_EXT_zlib_ARCHIVE := zlib-1.3.2.tar.xz
-ZEDBSD_EXT_zlib_URL := https://zlib.net/zlib-1.3.2.tar.xz
+ZEDBSD_EXT_zlib_URL := https://github.com/madler/zlib/releases/download/v1.3.2/zlib-1.3.2.tar.xz
 ZEDBSD_EXT_zlib_SIZE := 1320064
 ZEDBSD_EXT_zlib_SHA256 := d7a0654783a4da529d1bb793b7ad9c3318020af77667bcae35f95d0e42a792f3
 ZEDBSD_EXT_zlib_PATCH_LEVEL := zedbsd1
