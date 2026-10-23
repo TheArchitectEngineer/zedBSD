@@ -5,7 +5,7 @@
 - 親: [ws289](../ws.md)。設計: [design.md](../design.md) 版 2 の §4.4（Zynq の glue と SLCR）・§4.5（RTL8211E）・§4.6（MAC）・§4.7（userland）・§6（`qemu-zynq.sh --net`）・§7・§8 の p005 の行・§9 の p005 の行・§10 の R3/R9/R10。
 - Queue: Q1 の割当（P3、2026-10-23、worktree `/home/awe/zedBSD-worktrees/p3-ws289-p005`、branch `agent/p3-ws289-p005`、基点 main 4f2ab03bc）。Fable は使わない（ユーザー）。
 - 判断と許可: U4（QEMU zynq の LAN は host の 127.0.0.1 の転送 port から SSH で判定）・U5（固定の MAC `02:5a:59:42:4f:30` を既定に、`mac0=` で変える）はユーザー「はい」（design §11）。WS286 の U3（ZYBO の QEMU と実機は生きた serial で判定）・U4（担当が板を JTAG で直に操作、板の lock）。ユーザーの決定「generic cores, not Pi references」（core は p003 の `cadence-gem.c`、glue は Zynq だけの事）。toolchain・HAL の API は変えていない。`src/kern/boot.c` の parameter の表に `mac0` を足した（design §11 の Q1 への依頼 (2)）。
-- Status: in-progress — 実装・build・host 試験・**実機の ZYBO の受け入れ（JTAG、LAN）は済み**。QEMU zynq の受け入れは T1 待ち（下）。T1 の結果を Q1 が判定するまで cleared にしない。
+- Status: cleared（2026-10-23 Q1: 実機の ZYBO（JTAG、ramdisk の root、LAN）で PHY 0 id 001cc915・1000 Mbps・DHCP・host から ssh の uname -m = armv7・8 MiB の scp の往復の cksum と cmp・ping 1000/100 回と flood 20000 回の損失 0・mac0=。T1 の QEMU zynq（SD の root、--net 2289、PHY 7 id 01410cc2、DHCP 10.0.2.15、ssh-check PASS）PASS、5 つの kernel の build warning 0、cadence-gem-host-test PASS（rp1 の trace 一致）。merge d5c244472。100・10 Mbps は未確認（switch が 1000 だけ））
 
 ## 受け入れの条件（design §8.2・§8.3・§9 の p005）
 
