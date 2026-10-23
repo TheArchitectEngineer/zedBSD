@@ -551,7 +551,7 @@ QEMU と実機の証拠は分けて書く。やっていない確認は「未実
 | p010 | compiler の backend（zedBSD `isa/ats1/`）、host の試験 | host PASS | p008 | 20 |
 | p011 | Vulkan の executor `vk/`（vkdemo の部分集合） | vkdemo の 1 frame の readback が参照と一致（**Verilator**。板は p014） | p006、p009、p010 | 48（±50%） |
 | p012 | KC705: MIG、MMCM、`LINE_BYTES` 64、JTAG の bridge、CP + BLT + DC（HDMI は U7）、`vivado-build-ip.tcl` | `jtag-reg.sh` で fill → `DBG`、color bar | p004、p005、U7 | 20 |
-| p013 | KC705 の host link A': PCIe + XDMA、BAR、MSI、`pci-attach.c`、`pcie-reload.sh`（SBR、rescan、flash か realloc） | **guest の zedBSD から `ghci-blit` PASS**（vkdemo は p014） | p006、p012、U2 | 24 | （2026-10-23 後回し: fw-kc705-pcie）
+| p013 | KC705 の host link A': PCIe + XDMA、BAR、MSI、`pci-attach.c`、`pcie-reload.sh`（SBR、rescan、flash か realloc） | **guest の zedBSD から `ghci-blit` PASS**（vkdemo は p014） | p006、p012、U2 | 24（**2026-10-23 後回し**: Future Work fw-kc705-pcie。当面 KC705 は USB JTAG） |
 | p014 | KC705 の全 pipeline の bitstream（N=1: VF+SU+RX+TU+ROP、`PACKED`）、vkdemo を板で | **vkdemo が KC705 で参照と一致** | p009、p011、p012（JTAG の bridge。p013 は後回し） | 16 |
 | p015 | 複数の SU（N=4 → 6〜8）、work の分配、RX 2 本、150 MHz、PERF、BRAM の実測で N を決める | N=4 で vkdemo、N≥6 で合成が閉じる | p014 | 18 |
 | p016 | 規約の全文の見直し（C）、RTL の lint、`docs/ghci.md` 1.0 の確定 | 動作は不変 | p015 | 8 |
