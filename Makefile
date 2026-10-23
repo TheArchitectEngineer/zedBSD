@@ -85,7 +85,8 @@ ZEDBSD_PLATFORM_DIR := $(strip \
 	$(if $(filter sun4u,$(ZEDBSD_PLATFORM)),sparcv9,\
 	$(if $(filter riscv64-virt visionfive2,$(ZEDBSD_PLATFORM)),riscv64,\
 	$(if $(filter riscv32-virt,$(ZEDBSD_PLATFORM)),riscv32,\
-	$(ZEDBSD_PLATFORM)))))))
+	$(if $(filter armv7-virt,$(ZEDBSD_PLATFORM)),armv7,\
+	$(ZEDBSD_PLATFORM))))))))
 
 PLATFORM_MAKEFILE := platform/$(ZEDBSD_PLATFORM_DIR)/Makefile
 
@@ -103,6 +104,11 @@ BUILD := build/$(ZEDBSD_PLATFORM)
 endif
 
 ifeq ($(ZEDBSD_PLATFORM_DIR),riscv32)
+BUILD := build/$(ZEDBSD_PLATFORM)
+endif
+
+# The armv7 boards share one platform directory but not their build trees.
+ifeq ($(ZEDBSD_PLATFORM_DIR),armv7)
 BUILD := build/$(ZEDBSD_PLATFORM)
 endif
 
@@ -211,6 +217,7 @@ ZEDBSD_VARIANTS_arm64_rpi5 := default
 ZEDBSD_VARIANTS_riscv64_virt := default
 ZEDBSD_VARIANTS_riscv64_visionfive2 := default
 ZEDBSD_VARIANTS_riscv32_virt := default
+ZEDBSD_VARIANTS_armv7_virt := default
 ZEDBSD_VARIANTS_sparcv9_sun4u := default
 ZEDBSD_VARIANTS_m68k_x68k := default
 ZEDBSD_VARIANTS_m68k_virt := default
@@ -227,6 +234,7 @@ ZEDBSD_PLATFORM_TARGET_rpi5 := arm64_rpi5
 ZEDBSD_PLATFORM_TARGET_riscv64-virt := riscv64_virt
 ZEDBSD_PLATFORM_TARGET_visionfive2 := riscv64_visionfive2
 ZEDBSD_PLATFORM_TARGET_riscv32-virt := riscv32_virt
+ZEDBSD_PLATFORM_TARGET_armv7-virt := armv7_virt
 ZEDBSD_PLATFORM_TARGET_sun4u := sparcv9_sun4u
 ZEDBSD_PLATFORM_TARGET_x68k := m68k_x68k
 ZEDBSD_PLATFORM_TARGET_m68k-virt := m68k_virt
@@ -905,6 +913,8 @@ else ifeq ($(ZEDBSD_ARCHITECTURE),riscv64)
 ASFLAGS := -c
 else ifeq ($(ZEDBSD_ARCHITECTURE),riscv32)
 ASFLAGS := -c
+else ifeq ($(ZEDBSD_ARCHITECTURE),armv7)
+ASFLAGS := -c
 else ifeq ($(ZEDBSD_ARCHITECTURE),ppc32)
 ASFLAGS := -c
 else ifeq ($(ZEDBSD_ARCHITECTURE),ppc64)
@@ -936,6 +946,8 @@ else ifeq ($(ZEDBSD_ARCHITECTURE),riscv64)
 ZEDBSD_CPPFLAGS += -DHAL_ARCH_RISCV64
 else ifeq ($(ZEDBSD_ARCHITECTURE),riscv32)
 ZEDBSD_CPPFLAGS += -DHAL_ARCH_RISCV32
+else ifeq ($(ZEDBSD_ARCHITECTURE),armv7)
+ZEDBSD_CPPFLAGS += -DHAL_ARCH_ARMV7 -DKERN_USER_ABI_ARMV7
 else ifeq ($(ZEDBSD_ARCHITECTURE),ppc32)
 ZEDBSD_CPPFLAGS += -DHAL_ARCH_PPC32
 else ifeq ($(ZEDBSD_ARCHITECTURE),ppc64)

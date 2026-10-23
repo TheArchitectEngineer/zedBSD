@@ -24,6 +24,7 @@ PLATFORMS = [
     ("riscv64-virt", "riscv64", "virt", "QEMU virt RISC-V 64"),
     ("visionfive2", "riscv64", "visionfive2", "StarFive VisionFive 2"),
     ("riscv32-virt", "riscv32", "virt", "QEMU virt RISC-V 32"),
+    ("armv7-virt", "armv7", "virt", "QEMU virt ARMv7-A"),
     ("sun4u", "sparcv9", "sun4u", "SPARC V9 sun4u"),
     ("x68k", "m68k", "x68k", "Sharp X68000 MC68030"),
     ("m68k-virt", "m68k", "virt", "QEMU virt MC68040"),
@@ -64,6 +65,7 @@ BOARD_VARIANTS = {
     ("riscv64", "virt"): [("default", "Default")],
     ("riscv64", "visionfive2"): [("default", "Default")],
     ("riscv32", "virt"): [("default", "Default")],
+    ("armv7", "virt"): [("default", "Default")],
     ("sparcv9", "sun4u"): [("default", "Default")],
     ("m68k", "x68k"): [("default", "Default")],
     ("m68k", "virt"): [("default", "Default")],
@@ -131,7 +133,7 @@ RETRO_PROGRAMS = ("Xzed", "zwm", "zshell", "zterm")
 # the Desktop's selection while i386 is chosen, so switching back to x86_64
 # or arm64 in the same session writes it again.  RISC-V 64 is treated the
 # same way: its port builds the base system only.
-NO_DESKTOP_ARCHITECTURES = ("i386", "riscv64", "riscv32", "mips32", "mips64")
+NO_DESKTOP_ARCHITECTURES = ("i386", "riscv64", "riscv32", "mips32", "mips64", "armv7")
 
 
 def package_categories(rows: list[list[str]]) -> list[tuple[str, str]]:
