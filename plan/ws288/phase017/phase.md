@@ -3,7 +3,7 @@
 # WS288 p017 CP の CPU と firmware の土台
 
 - 親: [ws.md](../ws.md)。設計: [design.md](../design.md) §8 の p017 の行（§2.4.7 の `atg_cpu`、§2.4.8 の firmware、§2.4.10 の `CPFW`、§6.9）。module の仕様は amaterrace-gpu の `spec/gpu/cp/atg_cpu*.md`。
-- 状態: in-progress（clear の判定は Q1）。RTL の部分（`atg_cpu` の子の全部と TB）は 2026-10-23 P2（下の前半）。残り（CPFW の配線の確認、`fw/cp/` の firmware、class V の最初の道、sim の TB、bitstream 1'、板の確認）は 2026-10-23〜24 P2（下の「後半」）。未実施: Verilator の harness に CPU と firmware を入れること、host の C の単体試験（`fw/cp/tests/`）、M21 の draw の測定（draw はまだ無い）。
+- 状態: cleared（2026-10-24 Q1: amaterrace-gpu 903f861。atg_cpu（RV32IM、4 段、CPI 1.27）と子 7 つ、CPFW の配線、fw/cp/ の firmware（起動・poll の loop・PARK・GHCI_FRAME・session/memory/buffer/command buffer・FILL/COPY_BUFFER・QUEUE_SUBMIT → BLT の µop）。sim 42/42 PASS（atg_top_fw_tb: class V = class N の memory、record、RESULT/RETIRE、watchdog → RESET → .data の復元、CPFW LOAD）、lint 97 clean。bitstream 1'（ZYBO 2D + CPU）: LUT 8257・WNS +0.463 ns。実機の ZYBO で ghci-blt-board.py --fw 3/3 PASS。1 frame 13 command は 32.5k cycle（class N は 12.5k、command あたり約 15 µs）。残り: Verilator に CPU 無し、fw の host 試験無し、HALTED の class V の STEP、heap は DMEM（CP_HEAP は後））
 - 範囲（Q1 の指示、2026-10-23）: `atg_cpu_alu`・`atg_cpu_muldiv`・`atg_cpu_core`・`atg_cpu_mem`・`atg_cpu_win`・`atg_cpu_dma`・`atg_cpu_fw` を spec から実装し、各 module の unit TB と、riscv32 の試験 program を流す CPU の TB を作る。`atg_cp_*`（P3）と `fw/cp/` は触らない。進め方はユーザーの指示（2026-10-23「トップダウンにVerilig実装を進めてください。スタブ、ドライバの使用は恐れずに、パズルのように部分的に進めてください。」）。
 
 ## 置き場所と commit
