@@ -1,6 +1,6 @@
 --- a/Configurations/50-zedbsd.conf
 +++ b/Configurations/50-zedbsd.conf
-@@ -0,0 +1,58 @@
+@@ -0,0 +1,65 @@
 +# -*- mode: perl; -*-
 +# zedBSD cross-build target for OpenSSL.
 +#
@@ -57,6 +57,13 @@
 +        bn_ops           => "BN_LLONG",
 +        asm_arch         => 'x86',
 +        perlasm_scheme   => "elf",
++    },
++    # 32-bit ARM (the ZYBO's Cortex-A9), as linux-armv4 without assembly.
++    "zedbsd-armv7" => {
++        inherit_from     => [ "zedbsd-generic" ],
++        lib_cppflags     => add("-DL_ENDIAN"),
++        bn_ops           => "BN_LLONG RC4_CHAR",
++        perlasm_scheme   => "linux32",
 +    },
 +);
 --- a/os-dep/zedbsd.h

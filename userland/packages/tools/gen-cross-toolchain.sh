@@ -45,6 +45,11 @@ x86_64-*|aarch64-*) abi_flags='-DKERN_USER_ABI_LP64' ;;
 # riscv64 builds nothing with linker relaxation, so no code is addressed
 # through the global pointer (platform/riscv64/userland.mk).
 riscv64-*) abi_flags='-DKERN_USER_ABI_LP64 -mno-relax' ;;
+# armv7 builds for the ZYBO's Cortex-A9 with the sysroot's code flags
+# (toolchain/llvm/sysroot.mk): the VFPv3 and NEON register file, the thread
+# pointer read from TPIDRURO, and no unaligned access, as the C library;
+# the packed struct stat of this ABI is expected, so it is not warned of.
+armv7-*) abi_flags='-DKERN_USER_ABI_ARMV7 -march=armv7-a -mcpu=cortex-a9 -marm -mfloat-abi=hard -mfpu=neon-vfpv3 -mtp=cp15 -mno-unaligned-access -Wno-unaligned-access' ;;
 *) abi_flags='' ;;
 esac
 
