@@ -5,7 +5,7 @@
 - 親: [ws286](../ws.md)、設計: [design.md](../design.md) 版 3 の §7.2〜§7.4・§8 の p010 の行。
 - Queue: Q1 の割当（P2、2026-10-23、worktree `/home/awe/zedBSD-worktrees/p2-zybo-p010`、branch `agent/p2-zybo-p010`、基点 main 244d876e9）。
 - 判断と許可: U3（QEMU zynq と実機は生きた serial で判定）、U4（担当が板を JTAG で直に操作）。toolchain は p007 と同じ Q1 の許可の範囲（sysroot は worktree の `build/` だけで作った。今回 sysroot の規則は変えていない）。共有の LLVM は main の物への symlink で読むだけ。HAL の API は変えていない。
-- Status: in-progress（実機 PASS。T1 の QEMU zynq と virt、Q1 の判定待ち）
+- Status: cleared（2026-10-23 Q1: 実機の ZYBO（JTAG、--initrd root.img）で login: → root → uname -m = armv7、ls・cat・ps・mount・uname -a、UART の受信の割り込み、reboot の SLCR の reset。T2 の QEMU zynq（exit 0、login → armv7）と virt（boot-test PASS、PNG build/review/ws286-p010-virt-after-uname.png）、zybo・virt・amd64・rpi4 の build warning 0。merge 3b9bb61ca。root.img 5 MiB）
 
 ## 受け入れの条件
 
