@@ -7,11 +7,11 @@
 # is PCFG_DONE, design §5.6).  The PL-to-PS interrupt is read on the GIC's
 # SPI status (PL390 spi_status, 0xF8F01D04 bit 29 = ID 61) through the
 # halted CPU0, since the private region is not on the AHB-AP's bus.
-#   plan/ws286/tests/plio-jtag.sh [FILE.bit]   (default build/zybo-pl/plio/plio.bit)
+#   plan/tools/zybo/plio-jtag.sh [FILE.bit]   (default build/zybo-pl/plio/plio.bit)
 # Prints PASS or FAIL.  The LEDs show 0b0101 at the end (LD0 and LD2 on).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
-tools=$(cd "$(dirname -- "$0")/../../tools/zybo" && pwd)
+tools=$(cd "$(dirname -- "$0")" && pwd)
 . "$tools/zybo-common.sh"
 zybo_cfg=$tools/openocd-zybo.cfg
 bit=${1:-$zybo_root/build/zybo-pl/plio/plio.bit}

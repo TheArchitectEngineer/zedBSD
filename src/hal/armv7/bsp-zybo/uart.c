@@ -20,7 +20,7 @@
  * mode for 8 data bits, no parity, 1 stop bit and the normal channel
  * (MR_PARITY_NONE alone), and the status bits RXEMPTY and TXFULL; the
  * divisors BAUDGEN 0xae and BAUDDIV 4, which the board's SPL left
- * (plan/ws286/phase002).
+ * (plan/ws286/design.md section 4.8).
  */
 
 #include <hal/hal.h>

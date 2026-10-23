@@ -143,10 +143,10 @@ ARMV7_APP_LINK = $(ARMV7_USER_CC) $(ARMV7_USER_ARCH_FLAGS) -nostdlib -pie \
  -Wl,--dynamic-linker=/lib/ld.so $(ARMV7_SYSROOT)/usr/lib/crt1.o
 ARMV7_APP_LIBS = -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) -l:libc.so
 
-# The ABI test (plan/ws286/tests/abitest.c), run as init from a root that
+# The ABI test (platform/armv7/tests/abitest.c), run as init from a root that
 # holds nothing else: the loader, the C library and the test.
-ARMV7_ABITEST_SOURCE := plan/ws286/tests/abitest.c
-ARMV7_ABITEST_OBJ := $(DYNAMIC_DIR)/obj/plan/ws286/tests/abitest.o
+ARMV7_ABITEST_SOURCE := platform/armv7/tests/abitest.c
+ARMV7_ABITEST_OBJ := $(DYNAMIC_DIR)/obj/platform/armv7/tests/abitest.o
 ARMV7_ROOT_IMAGE_TOOL := platform/armv7/tools/make-armv7-root-image.py
 
 # The test has thread-local variables of its own, which it reaches through
@@ -184,7 +184,7 @@ ARMV7_ROOT_COMMANDS ?= cat cksum dd df dmesg echo getty init login ls mount \
 # modes of the host keys it makes, so a root with OpenSSH has those commands.
 ARMV7_ROOT_COMMANDS += $(if $(filter openssh,$(ZEDBSD_USER_PROGRAMS)),chmod mkdir)
 # A configuration adds programs to the default set here (the ZYBO's
-# programmable logic tools: plan/ws286/tests/config-zybo-fpga.mk).
+# programmable logic tools: plan/tools/zybo/config-zybo-fpga.mk).
 ARMV7_ROOT_EXTRA_COMMANDS ?=
 ARMV7_ROOT_COMMANDS += $(ARMV7_ROOT_EXTRA_COMMANDS)
 ARMV7_APP_OBJ := $(DYNAMIC_DIR)/obj
