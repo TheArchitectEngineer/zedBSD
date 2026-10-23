@@ -3,7 +3,7 @@
 # ws286-p001 調べと設計（ARMv7-A の HAL・toolchain・ZYBO の BSP・driver）
 
 - 親: [ws286](../ws.md)、Queue: Q1 の割当（P1、2026-10-23、worktree p1-zybo・branch agent/p1-zybo、基点 main 6206d397e）。
-- Status: in-progress（版 3 を書いた。review の全部の指摘に対応。Q1 の判定（再 review の要否と clearance）待ち。U1〜U7 は 2026-10-23 に決定済み）。
+- Status: cleared（2026-10-23 Q1: design.md 版 3 を判定。U1〜U8 はユーザーの決定（「U項目は読みましたが、全部推しでOKでした。」）、p002〜p010 が版 3 で実装・cleared。実装で分かった版 3 との違いは各 phase.md に記録）
 - 成果物: [design.md](../design.md)（版 3）、review [review-20261023.md](review-20261023.md)、[proposed/hal-armv7.md](../proposed/hal-armv7.md)、[proposed/boot-test-armv7.md](../proposed/boot-test-armv7.md)。
 
 ## 目的と受け入れの条件

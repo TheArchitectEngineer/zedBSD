@@ -20,7 +20,7 @@
 
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
-| p001 | 調べと設計（[design.md](design.md) 版 3。review の全指摘に対応、[phase001](phase001/phase.md) の対応の表）（14 LW） | — | in-progress（版 3、Q1 の判定待ち） |
+| p001 | 調べと設計（[design.md](design.md) 版 3。review の全指摘に対応、[phase001](phase001/phase.md) の対応の表）（14 LW） | — | cleared（2026-10-23 Q1: design.md 版 3 を判定。U1〜U8 はユーザーの決定（「U項目は読みましたが、全部推しでOKでした。」）、p002〜p010 が版 3 で実装・cleared。実装で分かった版 3 との違いは各 phase.md に記録） |
 | [p002](phase002/phase.md) | JTAG の道具と SPL（kernel 無し、LLVM 不要）、板の probe（8 LW） | U4 | cleared（2026-10-23 Q1: 実機で SPL の banner・DDR の 8 MiB の照合・JTAG の reset・load 約 255 KiB/s、jtag-hello.sh PASS） |
 | [p003](phase003/phase.md) | PL の block `plio`（openXC7、openFPGALoader、AHB-AP から読み書き）（8 LW） | p002、openXC7 の導入、U5 | cleared（2026-10-23 Q1: openXC7 で bitstream、JTAG で PL を書き、ID・SCRATCH・COUNTER・LED・IRQ（ID 61）を実機で確認、plio-jtag.sh 2 回 PASS。LED の目視とスイッチ・ボタンの入力は未確認でユーザーの試験の一覧へ） |
 | [p004](phase004/phase.md) | HAL の入口（virt、1 CPU、raw の vmunix.bin を QEMU の Linux の約束で、PNG で HAL READY・AEABI・ATOMIC・PAGING PASS・TIMER TICK）（16 LW） | Q1 の LLVM ARM と triple（cache asset の upload はユーザー）、boot-test の mode（版 3 の案）、U1 | cleared（2026-10-23 Q1: QEMU の virt で T1 の Run A（PNG で HAL READY・AEABI・ATOMIC・PAGING・TIMER TICK）と Run B（r2 の DTB・SVC）が PASS、amd64・rpi4 の build warning 0。hal_pmem_map_uncached は p006 までに） |
