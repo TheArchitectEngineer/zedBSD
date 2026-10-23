@@ -5,7 +5,7 @@
 - 親: [ws289](../ws.md)。設計: [design.md](../design.md) 版 2 の §2 D2・§4.1〜§4.3・§4.8・§8・§9 の p003 の行・§10 の R2/R3・§11 の U6。
 - Queue: Q1 の割当（P1、2026-10-23、worktree `/home/awe/zedBSD-worktrees/p1-ws289-p003`、branch `agent/p1-ws289-p003`、基点 main ffde72051 = p002 の汎用 SDHCI の core を含む）。Fable は使わない（ユーザー）。
 - 出典の決定: 2026-10-23 ユーザー（Q1 経由）「rpi4を参照するよりも、共通部分は分離しましょう。」。U6（ユーザー「はい」）: Pi 5 の Ethernet は T1 の実機の確認が p003 の clear の条件。
-- Status: in-progress — **test-wait（T1、実機の Pi 5）**。実装・build・host 試験は済み。T1 の PASS を Q1 が判定するまで cleared にしない。
+- Status: cleared（2026-10-23 Q1: T1 の実機の Pi 5（10.0.30.5、main d3c9f6505 の rpi5 kernel を入れ替え、vmunix.old を保持）で SD の root（mmcblk0 ready、block addressing）・gem: PHY 1 id 600d84a2・en0 1000 Mbps・DHCP 10.0.30.5・SSH・DMA error 0。gateway への ping は起動の直後の 1 回目が 100 中 25 の損失、その後の 4 回（T1 1・Q1 3）は 0、host からの 200 回も 0。register の手順は分離の前と byte 一致（host 試験）なので分離による変化ではないと判定し、起動直後の損失は観察として残す。merge ccf175eae）
 
 ## 範囲と到達点
 
