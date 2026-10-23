@@ -2,7 +2,7 @@
 
 # amaterrace-gpu の README.md への書き足しの案（版 4、2026-10-23 P1。版 2 は Q1 が cdaaf42 で適用済み、版 3 の分は未適用）
 
-Q1 が適用した README（amaterrace-gpu の `README.md`、版 2 の文）のうち、版 3 の設計（[design.md](../design.md) §2.4・§3）で変わる段落の置き換えの案。適用は Q1（P1 は `/home/awe/amaterrace-gpu` に書かない）。U18〜U40 の決定の前は「proposed」の印のまま置く。README（a217bf8）の「Systolic Array: 32 x 32, 0.8 TOPS/SU @200MHz」と LLM の流れの行は U39 の答えで直す（案: 「32 x 32 per SU, 0.41 TOPS per array @200MHz (MAC = 2 ops); the KC705 prototype carries one array on SU0」）。
+Q1 が適用した README（amaterrace-gpu の `README.md`、版 2 の文）のうち、版 3 の設計（[design.md](../design.md) §2.4・§3）で変わる段落の置き換えの案。適用は Q1（P1 は `/home/awe/amaterrace-gpu` に書かない）。U18〜U38 の決定の前は「proposed」の印のまま置く。README（a217bf8）の「Systolic Array: 32 x 32, 0.8 TOPS/SU @200MHz」は U39 の答え（MAC = 2 op × 2）でそのまま。
 
 ## 置き換える段落 1: 「Blocks:」の CP の行
 
@@ -22,17 +22,12 @@ Q1 が適用した README（amaterrace-gpu の `README.md`、版 2 の文）の�
 ## 足す行 1b: 「Blocks:」の MC の行の前（proposed）
 
 ```
-- SA: optional systolic array, a unit decoupled from the SU: a 32-row x N-column
-  output-stationary PE array (SIMD-1 PEs) whose horizontal edge is read and
-  written from the shader ISA through FIFOs (one entry = one SA row = 32 x FP16),
-  and whose INT8 weights and per-column scales stream in from the MC.
-  Activations enter as FP16 and are aligned per row to a shared exponent (block
-  floating point), so the FPGA PEs are integer (12 x 8 -> 32-bit accumulate);
-  results stream out one column per cycle with token-boundary tags while the
-  next tile accumulates in a second accumulator bank, so the SU can run online
-  softmax / layer norm on the stream and push the finished rows back in.
-  KC705 "SA configuration": 2 SUs + a 32x32 SA (proposed). Absent on the XC7Z010;
-  an ASIC configuration uses FP16 PEs with FP32 accumulation.
+- SA: optional systolic array, a unit decoupled from the SU (one per SU at most),
+  with weights streamed from the MC and a FIFO pair to the SU's reserved
+  register rq; online reductions (softmax, layer norm) at its output and
+  normalization on its feedback input, the SU only orchestrating. Its design
+  and implementation are deferred until the SU implements GSI1; it is not part
+  of the KC705 plan.
 ```
 
 ## 置き換える段落 2: 「GHCI (GPU Host Controller Interface):」の節の全部
@@ -119,8 +114,8 @@ GHCI (GPU Host Controller Interface):
   instruction, lanes 0-15 then 16-31) into the systolic array, reading it pops
   one; a read of an empty FIFO or a write to a full one stalls that warp
   at issue (qstat gives the counts without blocking, qtag the token-boundary
-  tags). Packed-FP16 transcendentals (exp2h2/log2h2/rcph2/rsqh2) and the
-  subgroup shuffles are optional in GSI1 and required on the SA configuration.
+  tags). GSI1 adds no instructions for the SA beyond rq and the reserved
+  control/status operands; the SA itself is deferred.
 ```
 
 ## 置き換える段落 4: 「Targets:」の KC705 の行
