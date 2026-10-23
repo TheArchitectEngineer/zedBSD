@@ -123,13 +123,13 @@ main(
 	char **argv)
 {
 	int passed;
-	int role;
+	int differs;
 
 	/* Answers the exec test when this image is the new program. */
-	role = 1;
+	differs = 1;
 	if (argc > 1)
-		role = strcmp(argv[1], ABI_EXEC_CHECK);
-	if (role == 0) {
+		differs = strcmp(argv[1], ABI_EXEC_CHECK);
+	if (differs == 0) {
 		passed = exec_check();
 		if (passed)
 			return 0;
