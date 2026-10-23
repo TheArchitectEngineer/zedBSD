@@ -3,7 +3,7 @@
 # ws288-p023 module の木・空の module・module ごとの spec（part 1: まだ無い module）
 
 - 親: [WS288](../ws.md)。設計: [design.md](../design.md) §7.6・§8（版 4）。
-- 状態: in-progress（2026-10-23 P1: part 1 は実装済み・amaterrace-gpu p1-p023 e3c6698、clear の判定は Q1。part 2 = 既存の module の spec は P2）
+- 状態: cleared（2026-10-23 Q1、ws.md の p023 の行）
 - 担当: P1（2026-10-23）。amaterrace-gpu の worktree `/home/awe/amaterrace-worktrees/p1-p023`（branch `p1-p023`、基点 main a217bf8）。この記録は zedBSD の worktree `/home/awe/zedBSD-worktrees/p1-ws288-p023`。
 - 決定（Q1 が伝えたユーザーの承認）: U18〜U28・U37・U38 は推しのとおり。SA は延期で `atg_sa` の top の port だけ。KC705 は raster/compute 構成だけ。Fable は使わない（ユーザー 2026-10-23「いったんFableの使用をやめてトップダウンにVerilig実装を進めてください。…」）。
 
