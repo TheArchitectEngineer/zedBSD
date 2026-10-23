@@ -211,9 +211,9 @@ __rtld_fork_child(
  * Reads the calling thread's thread pointer (its control block), or 0 when
  * it has none (BUG-110).  Once every thread has a control block, amd64
  * reads the block's first word (kern_tls_prefix.self, its own address) at
- * FS's base, arm64 reads TPIDR_EL0 and riscv64 reads tp, as the loader
- * does (src/rtld/rtld.c); before that, and on other processors,
- * thread_self is asked, since FS may have no base yet.
+ * FS's base, arm64 reads TPIDR_EL0, riscv64 reads tp and 32-bit ARM reads
+ * TPIDRURO, as the loader does (src/rtld/rtld.c); before that, and on
+ * other processors, thread_self is asked, since FS may have no base yet.
  */
 static uintptr_t
 static_thread_pointer(
@@ -234,6 +234,9 @@ static_thread_pointer(
 		return pointer;
 #elif defined(__riscv)
 		__asm__ volatile("mv %0, tp" : "=r"(pointer));
+		return pointer;
+#elif defined(__arm__)
+		__asm__ volatile("mrc p15, 0, %0, c13, c0, 3" : "=r"(pointer));
 		return pointer;
 #else
 		pointer = 0;

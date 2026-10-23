@@ -3734,7 +3734,7 @@ lock_spin(
 			return;
 #if defined(__x86_64__) || defined(__i386__)
 		__asm__ volatile("pause" ::: "memory");
-#elif defined(__aarch64__)
+#elif defined(__aarch64__) || defined(__arm__)
 		__asm__ volatile("yield" ::: "memory");
 #elif defined(__riscv)
 		/*
