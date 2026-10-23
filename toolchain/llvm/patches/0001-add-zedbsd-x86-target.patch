@@ -44,7 +44,16 @@
      case llvm::Triple::Hurd:
        return std::make_unique<HurdTargetInfo<AArch64leTargetInfo>>(Triple,
                                                                     Opts);
-@@ -468,6 +471,9 @@
+@@ -235,6 +238,8 @@
+       return std::make_unique<NetBSDTargetInfo<ARMleTargetInfo>>(Triple, Opts);
+     case llvm::Triple::OpenBSD:
+       return std::make_unique<OpenBSDTargetInfo<ARMleTargetInfo>>(Triple, Opts);
++    case llvm::Triple::ZedBSD:
++      return std::make_unique<ZedBSDTargetInfo<ARMleTargetInfo>>(Triple, Opts);
+     case llvm::Triple::RTEMS:
+       return std::make_unique<RTEMSTargetInfo<ARMleTargetInfo>>(Triple, Opts);
+     case llvm::Triple::Haiku:
+@@ -468,6 +473,9 @@
      case llvm::Triple::OpenBSD:
        return std::make_unique<OpenBSDTargetInfo<RISCV64TargetInfo>>(Triple,
                                                                      Opts);
@@ -54,7 +63,7 @@
      case llvm::Triple::Fuchsia:
        return std::make_unique<FuchsiaTargetInfo<RISCV64TargetInfo>>(Triple,
                                                                      Opts);
-@@ -594,6 +600,8 @@
+@@ -594,6 +602,8 @@
        return std::make_unique<NetBSDI386TargetInfo>(Triple, Opts);
      case llvm::Triple::OpenBSD:
        return std::make_unique<OpenBSDI386TargetInfo>(Triple, Opts);
@@ -63,7 +72,7 @@
      case llvm::Triple::FreeBSD:
        return std::make_unique<FreeBSDTargetInfo<X86_32TargetInfo>>(Triple,
                                                                     Opts);
-@@ -653,6 +661,8 @@
+@@ -653,6 +663,8 @@
        return std::make_unique<NetBSDTargetInfo<X86_64TargetInfo>>(Triple, Opts);
      case llvm::Triple::OpenBSD:
        return std::make_unique<OpenBSDX86_64TargetInfo>(Triple, Opts);
@@ -133,7 +142,7 @@
  TRIPLE_OS(Win32, "windows")
 --- a/llvm/unittests/TargetParser/TripleTest.cpp
 +++ b/llvm/unittests/TargetParser/TripleTest.cpp
-@@ -15,6 +15,36 @@
+@@ -15,6 +15,47 @@
  
  using namespace llvm;
  
@@ -161,10 +170,21 @@
 +  EXPECT_EQ(Triple::ELF, AArch64.getObjectFormat());
 +  EXPECT_TRUE(AArch64.isOSZedBSD());
 +
++  Triple ARMv7("armv7-unknown-zedbsd-eabihf");
++  EXPECT_EQ(Triple::arm, ARMv7.getArch());
++  EXPECT_EQ(Triple::ARMSubArch_v7, ARMv7.getSubArch());
++  EXPECT_EQ(Triple::UnknownVendor, ARMv7.getVendor());
++  EXPECT_EQ(Triple::ZedBSD, ARMv7.getOS());
++  EXPECT_EQ(Triple::EABIHF, ARMv7.getEnvironment());
++  EXPECT_EQ(Triple::ELF, ARMv7.getObjectFormat());
++  EXPECT_TRUE(ARMv7.isOSZedBSD());
++
 +  EXPECT_EQ("x86_64-unknown-zedbsd",
 +            Triple::normalize("x86_64-zedbsd"));
 +  EXPECT_EQ("i386-unknown-zedbsd", Triple::normalize("i386-zedbsd"));
 +  EXPECT_EQ("aarch64-unknown-zedbsd", Triple::normalize("aarch64-zedbsd"));
++  EXPECT_EQ("armv7-unknown-zedbsd-eabihf",
++            Triple::normalize("armv7-zedbsd-eabihf"));
 +}
 +
  namespace {
@@ -239,7 +259,7 @@
 +#endif // LLVM_CLANG_LIB_DRIVER_TOOLCHAINS_ZEDBSD_H
 --- /dev/null
 +++ b/clang/lib/Driver/ToolChains/ZedBSD.cpp
-@@ -0,0 +1,154 @@
+@@ -0,0 +1,157 @@
 +//===---- ZedBSD.cpp - zedBSD ToolChain Implementation -------------------===//
 +//
 +// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
@@ -318,6 +338,8 @@
 +    CmdArgs.push_back("aarch64elf");
 +  else if (Arch == llvm::Triple::riscv64)
 +    CmdArgs.push_back("elf64lriscv");
++  else if (Arch == llvm::Triple::arm || Arch == llvm::Triple::thumb)
++    CmdArgs.push_back("armelf_linux_eabi");
 +  else
 +    CmdArgs.push_back("elf_i386");
 +
@@ -339,9 +361,10 @@
 +  CmdArgs.push_back("separate-code");
 +  CmdArgs.push_back("-z");
 +  CmdArgs.push_back("stack-size=0x100000");
-+  // zedBSD maps 4 KiB pages on AArch64 too, and lays its programs out on
-+  // that boundary rather than on the 64 KiB one ld.lld assumes there.
-+  if (Arch == llvm::Triple::aarch64) {
++  // zedBSD maps 4 KiB pages on AArch64 and ARM too, and lays its programs
++  // out on that boundary rather than on the 64 KiB one ld.lld assumes there.
++  if (Arch == llvm::Triple::aarch64 || Arch == llvm::Triple::arm ||
++      Arch == llvm::Triple::thumb) {
 +    CmdArgs.push_back("-z");
 +    CmdArgs.push_back("max-page-size=4096");
 +  }
@@ -396,11 +419,12 @@
 +}
 --- /dev/null
 +++ b/clang/test/Preprocessor/zedbsd.c
-@@ -0,0 +1,20 @@
+@@ -0,0 +1,26 @@
 +// RUN: %clang_cc1 -E -dM -ffreestanding -triple x86_64-unknown-zedbsd < /dev/null | FileCheck %s --check-prefix=COMMON --check-prefix=X64
 +// RUN: %clang_cc1 -E -dM -ffreestanding -triple i386-unknown-zedbsd < /dev/null | FileCheck %s --check-prefix=COMMON --check-prefix=X86
 +// RUN: %clang_cc1 -E -dM -ffreestanding -triple aarch64-unknown-zedbsd < /dev/null | FileCheck %s --check-prefix=COMMON --check-prefix=A64
 +// RUN: %clang_cc1 -E -dM -ffreestanding -triple riscv64-unknown-zedbsd < /dev/null | FileCheck %s --check-prefix=COMMON --check-prefix=RV64
++// RUN: %clang_cc1 -E -dM -ffreestanding -triple armv7-unknown-zedbsd-eabihf < /dev/null | FileCheck %s --check-prefix=COMMON --check-prefix=ARMV7
 +
 +// COMMON-DAG: #define __ELF__ 1
 +// COMMON-DAG: #define __ZEDBSD__ 1
@@ -414,6 +438,11 @@
 +// A64-DAG: #define __SIZEOF_LONG_DOUBLE__ 16
 +// RV64-DAG: #define __riscv 1
 +// RV64-DAG: #define __SIZEOF_LONG_DOUBLE__ 16
++// ARMV7-DAG: #define __arm__ 1
++// ARMV7-DAG: #define __ARM_ARCH 7
++// ARMV7-DAG: #define __ARM_EABI__ 1
++// ARMV7-DAG: #define __ARM_PCS_VFP 1
++// ARMV7-DAG: #define __SIZEOF_LONG_DOUBLE__ 8
 +// COMMON-NOT: __FreeBSD__
 +// COMMON-NOT: __NetBSD__
 +// COMMON-NOT: __linux__

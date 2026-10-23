@@ -8,9 +8,9 @@ override ZEDBSD_LLVM_ARCHIVE_NAME := llvm-project-23.1.0.src.tar.xz
 override ZEDBSD_LLVM_ARCHIVE_URL := https://github.com/llvm/llvm-project/releases/download/llvmorg-23.1.0/llvm-project-23.1.0.src.tar.xz
 override ZEDBSD_LLVM_ARCHIVE_SIZE := 179140728
 override ZEDBSD_LLVM_ARCHIVE_SHA256 := ab1f0e3ec52448c33e8782eaf0422504b87c7b016b22514653ee0d8fcee479ff
-override ZEDBSD_LLVM_PATCH_LEVEL := zedbsd10
+override ZEDBSD_LLVM_PATCH_LEVEL := zedbsd11
 override ZEDBSD_LLVM_CACHE_TAG := rev-0
-override ZEDBSD_LLVM_CACHE_ASSET := zedbsd-llvm-23.1.0-zedbsd10-x86_64-linux.tar.gz
+override ZEDBSD_LLVM_CACHE_ASSET := zedbsd-llvm-23.1.0-zedbsd11-x86_64-linux.tar.gz
 # Filled from the accepted deterministic archive before the release asset is
 # uploaded. A cache download must never run with this sentinel value.
-override ZEDBSD_LLVM_CACHE_SHA256 := 0a7365804b31c14195df9d3f4085594dcbb0da47d245b4feb761d142f4f4ae34
+override ZEDBSD_LLVM_CACHE_SHA256 := 42903d19bd03c881128bc7880f745229f035bf9d3b40e9f0381412c9a4379033
