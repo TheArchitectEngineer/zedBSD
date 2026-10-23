@@ -34,6 +34,7 @@
 - 回避: `plan/tools/kc705/fasm-hp-input-pair.awk`（`oss-build.sh` が nextpnr の `NAME.raw.fasm` に掛けて `NAME.fasm` を作る）。両半分が LVCMOS の純粋な入力の RIOB18 の tile で、各半分に自分の `LVCMOS12_LVCMOS15_LVCMOS18.IN` を付け、IOB_Y1 の pulldown を外す。
 - 正しさの根拠: Vivado の bitstream を prjxray の bit2fasm で戻すと、RIOB18_X95Y97 の feature は直した openXC7 の bitstream と同じ（両半分の `.IN`、両方 PULLTYPE.NONE）。IOB の残りの差は LED の DRIVE の alias、sysclk の `ZIBUF_LOW_PWR`・`IBUFDS_BANK_GLUE`、RIOB18_X95Y125 の IOB_Y1 の `IBUF_HP_BANK_GLUE` だけで、板の動作には差が出ていない。
 - upstream（openXC7/nextpnr）への報告は未実施（Q1・ユーザーの判断）。
+- 2026-10-23 Q1 の確認: upstream では直っている。openXC7/nextpnr の PR #102「xilinx: write each half's .IN when both halves of an HP input tile receive」（2026-10-13 merge）と #106（RIOB18 の pad、2026-10-14 merge）。main（96809c1a、2026-10-22）の `write_io_config` は短い `LVCMOS12_LVCMOS15.IN` を書かず、相方が使われている時は pulldown を書かない。導入済みの 3e5c2cdd（2026-10-05）はその前。→ 報告は不要。openXC7 の nextpnr を新しくした後に awk の回避が不要になるかを確かめ、要らなければ外す（残件）。
 
 ## 使用量・timing（同じ RTL・XDC）
 
@@ -70,10 +71,11 @@ plan/ws288/tests/bringup-tb.sh
 
 ## 未実施・残件
 
+- 2026-10-23 ユーザーの目視「LEDは点滅していました。OKです」（Q1 の解釈: LED[7:4] の walking one が動いている事の確認。button・DIP の確認ではない）。
 - button を押した時に 1 になることの確認（N/E/S/W/C、DIP の各 bit）はユーザーの目視が要る（未実施）。押すと LED[7:4] に {N,E,S,W} が出る、C で walking one が止まる、DIP で LED[3:0]。
 - 基板の SW 番号と GPIO_SW_* の対応（UG810）は未確認。
 - XDC の CFGBVS・CONFIG_VOLTAGE（KC705 の bank 0 の電圧の出典を確かめてから）。
-- openXC7 の upstream への報告。
+- ~~openXC7 の upstream への報告~~ → upstream で修正済み（上）。nextpnr を更新したら `fasm-hp-input-pair.awk` を外せるか確かめる。
 
 ## Master の Tools に載せる文（案、Q1 が登録）
 
