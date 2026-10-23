@@ -3,7 +3,7 @@
 # WS288 FPGA の GPU の IP（ZYBO で workflow、本命は KC705）
 
 - Master: [plan/master.md](../master.md)（2026-10-23 作成）。Primary Milestone: MG008。Related: WS286（ZYBO）。
-- Status: planning
+- Status: incomplete（2026-10-23: p002 の実行で開始。Master の一覧の写しは Q1）
 - 出典: 2026-10-23 ユーザー「Z-7010のロジック規模で、1シェーダーユニットのGPUを書けると思いますか？…まずはFPGAワークフローを確立するのが目的ではありますが。Kintex KC705ボードが本命のターゲットです。」「ディスプレイコントローラとGPUは別なIPなので、両立しなくてもいいです。このボードは最終ターゲットではないので、まずはworkflow確立がゴールですね。」「了解です。この設計で行きましょう。」
 
 ## 構成（ユーザーと合意、2026-10-23）
@@ -31,6 +31,7 @@
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
 | p001 | 設計（block ごとの interface、AXI の口、命令の集合の最初の案、zedBSD の driver との境界）: [design.md](design.md) 版 2（design-reviewer の 38 件に対応、U1〜U17）、[proposed/README-additions.md](proposed/README-additions.md) | WS286 p003（PL の workflow） | in-progress（2026-10-23 P2。clear の判定は Q1。p002〜p016 の案は design.md §8） |
+| p002 | amaterrace-gpu の骨組み、`docs/ghci.md` 1.0 の草稿（host interface。command と ISA は design v3 の pending）、`am_axi_regs`・`am_axi_master`（quiesce）・`am_afifo`・`atg_mc`、TB と Verilator の枠、bitstream 1 の合成の実測: [phase002](phase002/phase.md) | p001、U1、U3 | in-progress（2026-10-23 P2。host の TB 5 件 PASS・lint 0・Verilator PASS、ZYBO の bitstream 1 は LUT 2,451・FF 2,632・BRAM 0.5・100 MHz で WNS +0.473 ns。clear の判定は Q1） |
 
 ## 現在の状態・再開点
 
@@ -39,3 +40,4 @@
 - 2026-10-23: Vivado 2026.1（~/opt/amd/2026.1/Vivado、settings64.sh）が host にある（ユーザー）。
 - 2026-10-23: KC705 を host に接続（ユーザー、ZYBO を外して）。USB JTAG（Digilent Adept、FT2232H、serial 210203368704）を `openFPGALoader -c digilent --detect` で確認: index 0 xc7k325t（idcode 0x3651093）。USB-UART（CP2103）は未接続（別の USB の cable が要る）。ZYBO の JTAG の serial は 210279785182 で、cfg の adapter serial で区別できる。
 - 2026-10-23 P1（worktree p1-kc705）: KC705 の workflow を確認（[記録](phase001-kc705-bringup.md)）。openXC7 と Vivado 2026.1（BASIC の license で xc7k325t が通る）の両方で `platform/fpga/kc705/bringup` を作り、JTAG で ID・200 MHz の COUNTER・SCRATCH・LED を確認。button S（AB12）が 1 のままだったのは pin・極性ではなく openXC7（nextpnr 3e5c2cdd）が HP bank の入力の対に書く FASM の誤り。`plan/tools/kc705/fasm-hp-input-pair.awk` で回避し、Vivado の bitstream と IOB の設定が一致。再開点: Q1 の判定・Tools の登録、button・DIP を押した時の目視（ユーザー）。
+- 2026-10-23 P2（ws288-p002、worktree p2-ws288-p002）: amaterrace-gpu に骨組み・共通の block・CP の stub・BLT の骨・MC・TB・Verilator の harness・Vivado の script・`docs/ghci.md` の草稿を commit（70aaff5〜217f0a0、push していない）。bitstream 1 の実測で design §3.6 の係数を直した（[phase002](phase002/phase.md)）。再開点: Q1 の判定。p003（CP v0 と ZYBO の板）は KICK と DBG だけで進められ、ring と command（p004）は design v3 の後。
