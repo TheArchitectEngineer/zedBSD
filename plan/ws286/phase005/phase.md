@@ -5,7 +5,7 @@
 - 親: [ws286](../ws.md)、設計: [design.md](../design.md) 版 3 の §1.3・§1.4・§2.2・§3.2・§3.6・§3.11〜§3.14・§4.1・§4.6・§5.1・§5.2・§7.3・§7.4・§8 の p005 の行。
 - Queue: Q1 の割当（P2、2026-10-23、worktree `/home/awe/zedBSD-worktrees/p2-zybo-p005`、branch `agent/p2-zybo-p005`、基点 main 7a9bc6a32）。
 - 判断: U1（HAL の事前承認の 3 点だけ。hal.h は変えていない）、U3（QEMU zynq と実機は生きた serial で判定）、U4（担当が板を JTAG で直に操作、Q1 の割当の許可）。
-- Status: in-progress（受け入れは QEMU（T1）と実機の両方で満たした。Q1 の判定と merge 待ち）
+- Status: cleared（2026-10-23 Q1: 実機の ZYBO（JTAG、生きた UART）で HAL READY・TIMER 10S（+0.09%）・3 回続けて VFS の段まで、T1 の QEMU zynq（最終の d7c1d0fbf、exit 0、TIMER 0S→10S 9.982 s、counter 100 MHz）と virt（boot-test PASS、PNG build/review/ws286-p005-virt-final.png）、zybo・virt・amd64・rpi4 の build warning 0。merge 5cd134061）
 
 ## 受け入れの条件（design §8 の p005、§7.3・§7.4）
 
