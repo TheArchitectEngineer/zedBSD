@@ -5,7 +5,8 @@
 # make; the output stays under BUILD.
 #   plan/tools/kc705/oss-build.sh RTL_DIR [BUILD]   (default build/kc705/oss)
 # RTL_DIR holds NAME.v (top module NAME, the directory's name) and NAME.xdc,
-# e.g. platform/fpga/kc705/bringup.  Output: BUILD/NAME/NAME.bit and the
+# e.g. platform/fpga/kc705/bringup.  Output: BUILD/NAME/NAME.bit (from
+# NAME.fasm, nextpnr's NAME.raw.fasm after fasm-hp-input-pair.awk) and the
 # logs BUILD/NAME/yosys.log, nextpnr.log (utilisation and Fmax).  The chip
 # database is made once into BUILD/chipdb/xc7k325t.bin.  OPENXC7 is the
 # installation (default $HOME/opt/openxc7; ws286 p003).
@@ -40,9 +41,11 @@ yosys -q -l "$build/$name/yosys.log" \
 	-p "synth_xilinx -flatten -abc9 -arch xc7 -top $name; write_json $out.json" \
 	"$rtl"/*.v
 nextpnr-himbaechel --chipdb "$chipdb" --device "$part" --json "$out.json" \
-	-o xdc="$rtl/$name.xdc" -o fasm="$out.fasm" \
+	-o xdc="$rtl/$name.xdc" -o fasm="$out.raw.fasm" \
 	--log "$build/$name/nextpnr.log" ${PNR_ARGS:-} >/dev/null 2>"$build/$name/nextpnr.err" || {
 	tail -20 "$build/$name/nextpnr.log" "$build/$name/nextpnr.err" >&2; exit 1; }
+# openXC7's input pairs on the HP banks need fixing (fasm-hp-input-pair.awk).
+awk -f "$root/plan/tools/kc705/fasm-hp-input-pair.awk" "$out.raw.fasm" "$out.raw.fasm" > "$out.fasm"
 # fpga-as writes to its standard output: keep a failed run's partial file
 # away from the name openFPGALoader is given.
 fpga-as --prjxray_db_path="$PRJXRAY_DB_DIR/$family" --part "$part" "$out.fasm" > "$out.bit.tmp"

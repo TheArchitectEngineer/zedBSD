@@ -9,7 +9,12 @@
 # (default $HOME/opt/amd/2026.1/Vivado/settings64.sh); PART overrides the
 # part.  bash, because settings64.sh is bash.  Prints the utilisation's main
 # rows, WNS/WHS and the license lines.  Vivado 2026.1 does not start without
-# a license file (ws288 phase001).
+# a license file (ws288 phase001): XILINXD_LICENSE_FILE, by default
+# $HOME/Xilinx.lic when that exists (the user's, read only by Vivado).
+# Debian 13 has no libncurses.so.5, which Vivado's Tcl start-up loads; the
+# installation's Ubuntu/24 directory has one (ncurses 6 under the old name),
+# so it goes first on LD_LIBRARY_PATH when the host lacks the library.
+# Standard input is /dev/null: Vivado otherwise waits on it after an error.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
 [ $# -ge 1 ] && [ -d "$1" ] || { echo "usage: vivado-build.sh RTL_DIR [BUILD]" >&2; exit 2; }
@@ -22,13 +27,21 @@ settings=${VIVADO:-$HOME/opt/amd/2026.1/Vivado/settings64.sh}
 part=${PART:-xc7k325tffg900-2}
 [ -f "$settings" ] || { echo "vivado-build: no Vivado at $settings" >&2; exit 1; }
 . "$settings"
+if [ -z "${XILINXD_LICENSE_FILE:-}" ] && [ -f "$HOME/Xilinx.lic" ]; then
+	XILINXD_LICENSE_FILE=$HOME/Xilinx.lic
+	export XILINXD_LICENSE_FILE
+fi
+if ! /sbin/ldconfig -p | grep -q 'libncurses\.so\.5 '; then
+	LD_LIBRARY_PATH=$XILINX_VIVADO/lib/lnx64.o/Ubuntu/24${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+	export LD_LIBRARY_PATH
+fi
 out=$build/$name
 mkdir -p "$out"
 start=$(date +%s)
 # Vivado writes its .Xil scratch into the current directory.
 rc=0
 (cd "$out" && timeout "${VIVADO_TIMEOUT:-1800}" vivado -mode batch -nojournal \
-	-log vivado.log -source "$tcl" -tclargs "$rtl" "$out" "$part" >/dev/null) || rc=$?
+	-log vivado.log -source "$tcl" -tclargs "$rtl" "$out" "$part" </dev/null >/dev/null) || rc=$?
 if [ $rc -ne 0 ]; then
 	grep -E '^(ERROR|CRITICAL WARNING)' "$out/vivado.log" | head -20 >&2
 	echo "vivado-build: failed rc $rc (log $out/vivado.log)" >&2
