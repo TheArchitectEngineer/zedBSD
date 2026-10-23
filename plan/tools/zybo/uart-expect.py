@@ -12,7 +12,13 @@ as "login: ", which ends without a newline) is matched too.  --then gives
 a dialogue to hold, in order, once every REGEX has matched: "type:TEXT"
 types TEXT and a carriage return after a short pause (login throws away
 what was typed before it asks), "expect:REGEX" waits for REGEX in what
-came after the step before it.  Nothing is kept in a file: the judgement is
+came after the step before it, and "run:COMMAND" runs COMMAND on the host
+with sh, showing what it prints, and fails the dialogue when it exits
+nonzero (an ssh or scp to the guest while the line stays watched).  A
+named group of an expect step's REGEX, (?P<name>...), is kept, and
+{name} in a later step's TEXT or COMMAND is replaced by what it matched
+(the address of a DHCP lease, read from ifconfig, for the ssh that
+follows).  Nothing is kept in a file: the judgement is
 made on the line while it is live (the U3 exception, design §7.4).  This is
 the ZYBO stand-in until plan/tools/guest/serial.py takes --device.
 --socket reads an emulator's serial port from its Unix socket instead
@@ -27,6 +33,7 @@ import argparse
 import os
 import re
 import socket
+import subprocess
 import sys
 import termios
 import time
@@ -78,8 +85,8 @@ def main() -> int:
 	parser.add_argument("patterns", nargs="+")
 	arguments = parser.parse_args()
 	for step in arguments.then:
-		if not step.startswith(("type:", "expect:")):
-			parser.error(f"--then takes type:TEXT or expect:REGEX, not {step!r}")
+		if not step.startswith(("type:", "expect:", "run:")):
+			parser.error(f"--then takes type:TEXT, expect:REGEX or run:COMMAND, not {step!r}")
 
 	waiting = [re.compile(pattern) for pattern in arguments.patterns]
 	start = time.monotonic()
@@ -110,12 +117,47 @@ def main() -> int:
 
 	# The line being written, and whether its text has been shown and matched.
 	state = {"pending": "", "closed": False}
+	# What the named groups of the expect steps matched, for later steps.
+	values: dict[str, str] = {}
+
+	def matched(pattern: re.Pattern, text: str) -> bool:
+		"""Tests one pattern on a text, keeping what its named groups took."""
+		found = pattern.search(text)
+		if found is None:
+			return False
+		for name, value in found.groupdict().items():
+			if value is not None:
+				values[name] = value
+		return True
+
+	def substitute(text: str) -> str:
+		"""Puts what the named groups matched in place of their {name}."""
+		for name, value in values.items():
+			text = text.replace("{" + name + "}", value)
+		return text
+
+	def run(command: str) -> bool:
+		"""Runs one host command within the time left; reports its success."""
+		left = max(1.0, deadline - time.monotonic())
+		print(f"uart-expect: run {command!r}", flush=True)
+		try:
+			finished = subprocess.run(["sh", "-c", command], stdout=subprocess.PIPE,
+				stderr=subprocess.STDOUT, timeout=left, check=False)
+		except subprocess.TimeoutExpired:
+			print("uart-expect: the command ran out of time", flush=True)
+			return False
+		for line in finished.stdout.decode("utf-8", "replace").splitlines():
+			print(f"host| {line}", flush=True)
+		if finished.returncode != 0:
+			print(f"uart-expect: the command exited {finished.returncode}", flush=True)
+			return False
+		return True
 
 	def read_lines(patterns: list[re.Pattern]) -> list[re.Pattern]:
 		"""Reads what comes until the patterns match; returns those left."""
 		while patterns and not state["closed"] and time.monotonic() < deadline:
 			# A line still being written may be the prompt waited for.
-			patterns = [p for p in patterns if not p.search(state["pending"])]
+			patterns = [p for p in patterns if not matched(p, state["pending"])]
 			if not patterns:
 				break
 			try:
@@ -133,15 +175,23 @@ def main() -> int:
 			while "\n" in state["pending"]:
 				line, state["pending"] = state["pending"].split("\n", 1)
 				show(line)
-				patterns = [p for p in patterns if not p.search(line)]
+				patterns = [p for p in patterns if not matched(p, line)]
 		return patterns
 
 	waiting = read_lines(waiting)
+	failed = False
 	for step in arguments.then:
-		if waiting:
+		if waiting or failed:
 			break
 		kind, _, text = step.partition(":")
-		if kind == "type":
+		text = substitute(text)
+		if kind == "run":
+			# What the line printed so far is shown before the host's output.
+			if state["pending"]:
+				show(state["pending"])
+				state["pending"] = ""
+			failed = not run(text)
+		elif kind == "type":
 			# The prompt is shown before the text that answers it.
 			if state["pending"]:
 				show(state["pending"])
@@ -159,7 +209,7 @@ def main() -> int:
 		show(state["pending"])
 	for pattern in waiting:
 		print(f"uart-expect: never saw {pattern.pattern!r}", flush=True)
-	return 1 if waiting else 0
+	return 1 if waiting or failed else 0
 
 
 if __name__ == "__main__":

@@ -5,10 +5,16 @@
 # runtime, the accounts and init's configuration.  Of init's service
 # definitions it carries the console's getty and the two it is ordered
 # after: the system log daemon, and networking, which init passes over
-# here since the network daemon it requires is not in the root.
-ARMV7_ROOT_SERVICES := getty_console networking syslogd
+# when the network daemon it requires is not in the root.  A root with the
+# network daemon (a configuration that names networkd) carries its service
+# and the network's configuration, which brings the loopback interface up
+# and leaves a wired interface it does not name to DHCP.
+ARMV7_ROOT_SERVICES := getty_console networking syslogd \
+	$(filter networkd,$(ZEDBSD_USER_PROGRAMS))
 ARMV7_ROOT_DATA := /etc/rc.conf=userland/base/etc/rc.conf \
 	/etc/fstab=userland/base/etc/fstab \
+	$(if $(filter networkd,$(ZEDBSD_USER_PROGRAMS)),\
+ /etc/net.conf=userland/base/etc/net.conf) \
 	$(foreach service,$(ARMV7_ROOT_SERVICES),\
  /etc/service.d/$(service)=userland/base/init/services/$(service))
 # OpenSSH's programs also load libutil.  The packages a configuration names

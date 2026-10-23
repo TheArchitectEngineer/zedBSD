@@ -183,6 +183,13 @@ ARMV7_ROOT_COMMANDS ?= cat cksum dd df dmesg echo getty init login ls mount \
 # The script that starts OpenSSH's server makes /var/empty and sets the
 # modes of the host keys it makes, so a root with OpenSSH has those commands.
 ARMV7_ROOT_COMMANDS += $(if $(filter openssh,$(ZEDBSD_USER_PROGRAMS)),chmod mkdir)
+# The network's programs, those a configuration names (the ZYBO's network
+# login, plan/ws289/tests/config-zybo-ssh.mk): the network daemon, the
+# commands it runs to configure an interface (ifconfig, route) and to take
+# a DHCP lease (dhcpc), the startup command its service runs (net), and
+# ping and hostname to look at the result.
+ARMV7_ROOT_NETWORK_COMMANDS := dhcpc hostname ifconfig net networkd ping route
+ARMV7_ROOT_COMMANDS += $(filter $(ARMV7_ROOT_NETWORK_COMMANDS),$(ZEDBSD_USER_PROGRAMS))
 # A configuration adds programs to the default set here (the ZYBO's
 # programmable logic tools: plan/tools/zybo/config-zybo-fpga.mk).
 ARMV7_ROOT_EXTRA_COMMANDS ?=
@@ -194,6 +201,8 @@ ARMV7_APP_CHECK = $(PYTHON) tools/build/check-dynamic-elf.py --machine armv7 \
 ARMV7_APP_SH_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(ARMV7_APP_OBJ),sh) \
 	$(ARMV7_APP_OBJ)/userland/base/libedit/readline.o
 $(ARMV7_APP_SH_OBJS): DYNAMIC_CPPFLAGS += -Iuserland/base/libedit
+# net's command line reads its interactive input through the same readline.
+$(ARMV7_APP_OBJ)/userland/base/net/main.o: DYNAMIC_CPPFLAGS += -Iuserland/base/libedit
 
 $(BUILD)/bin/sh: $(ARMV7_APP_INPUTS) $(ARMV7_APP_SH_OBJS)
 	@mkdir -p $(dir $@)
@@ -220,7 +229,22 @@ $(BUILD)/bin/$(1): $(ARMV7_APP_INPUTS) $(ARMV7_APP_COMMON_OBJS) \
  $(call ZEDBSD_USERLAND_OBJECTS,$(ARMV7_APP_OBJ),$(1)) $(ARMV7_APP_LIBS) -o $$@
 	$(ARMV7_APP_CHECK) $$@
 endef
-$(foreach command,$(filter-out sh mount umount,$(ARMV7_ROOT_COMMANDS)),\
+# A network program is its objects with the network's shared helpers
+# instead (the interfaces, the addresses, the DHCP messages).
+ARMV7_APP_NET_COMMANDS := $(filter $(USERLAND_NETWORK_PROGRAMS),$(ARMV7_ROOT_COMMANDS))
+ARMV7_APP_NET_COMMON_OBJS := $(addprefix $(ARMV7_APP_OBJ)/userland/base/net/,netutil.o dhcp.o)
+
+define ARMV7_APP_NET_COMMAND
+$(BUILD)/bin/$(1): $(ARMV7_APP_INPUTS) $(ARMV7_APP_NET_COMMON_OBJS) \
+	$(call ZEDBSD_USERLAND_OBJECTS,$(ARMV7_APP_OBJ),$(1))
+	@mkdir -p $$(dir $$@)
+	$(ARMV7_APP_LINK) $(ARMV7_APP_NET_COMMON_OBJS) \
+ $(call ZEDBSD_USERLAND_OBJECTS,$(ARMV7_APP_OBJ),$(1)) $(ARMV7_APP_LIBS) -o $$@
+	$(ARMV7_APP_CHECK) $$@
+endef
+$(foreach command,$(filter-out sh mount umount $(ARMV7_APP_NET_COMMANDS),$(ARMV7_ROOT_COMMANDS)),\
 	$(eval $(call ARMV7_APP_BASIC_COMMAND,$(command))))
+$(foreach command,$(ARMV7_APP_NET_COMMANDS),\
+	$(eval $(call ARMV7_APP_NET_COMMAND,$(command))))
 
 -include $(wildcard $(DYNAMIC_DIR)/obj/*/*/*.d $(DYNAMIC_DIR)/obj/*/*/*/*.d $(DYNAMIC_DIR)/obj/*/*/*/*/*.d)

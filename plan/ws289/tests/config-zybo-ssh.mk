@@ -1,7 +1,8 @@
-# The ZYBO configuration (config/ci/config-zybo.mk) with the external
-# packages of the network login in the root: OpenSSH (with OpenSSL), zlib
-# and the trusted CA certificates.  For WS289 p005; the default ZYBO root
-# carries none of them.  The root is larger to hold them.
+# The ZYBO configuration (config/ci/config-zybo.mk) with the network login
+# in the root: the network daemon and the commands it runs (DHCP on en0),
+# and the external packages OpenSSH (with OpenSSL), zlib and the trusted CA
+# certificates.  For WS289 p005; the default ZYBO root carries none of
+# them.  The root is larger to hold them.
 ZEDBSD_MENU_VERSION := 3
 ZEDBSD_PLATFORM := zybo
 ZEDBSD_ARCHITECTURE := armv7
@@ -56,5 +57,6 @@ CONFIG_DRIVER_BCM2711_VCHIQ := n
 CONFIG_DRIVER_BCM2711_VIDEO := n
 CONFIG_DRIVER_LGY98 := n
 
-ZEDBSD_USER_PROGRAMS := cat echo login ls sh uname ca-certificates openssh openssl zlib
+ZEDBSD_USER_PROGRAMS := cat echo login ls sh uname dhcpc hostname ifconfig net networkd ping route \
+	ca-certificates openssh openssl zlib
 ARMV7_ROOT_MIB := 16

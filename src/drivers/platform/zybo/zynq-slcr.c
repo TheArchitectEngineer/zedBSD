@@ -68,6 +68,27 @@
 #define ZYNQ_PLL_FDIV_MASK		0x7fU
 #define ZYNQ_PLL_BYPASS			0x10U
 
+/*
+ * The fields of ARM_CLK_CTRL and CLK_621_TRUE: the PLL the processor clock
+ * comes from (the ARM PLL for 0 and 1, the DDR PLL for 2, the I/O PLL for
+ * 3), its divider, and the ratio bit that makes the bus clock cpu_1x a
+ * sixth of the divided clock (6:2:1) rather than a quarter (4:2:1).
+ *
+ * Values referenced: Linux v6.12 drivers/clk/zynq/clkc.c (cpu_mux in bits
+ * 5:4 of ARM_CLK_CTRL over armpll, armpll, ddrpll and iopll; cpu_div in
+ * bits 13:8, one-based, zero meaning undivided; cpu_1x_div dividing
+ * cpu_div by 4 + 2 times bit 0 of 621_TRUE).
+ */
+#define ZYNQ_CPU_SRCSEL_SHIFT		4U
+#define ZYNQ_CPU_SRCSEL_MASK		0x3U
+#define ZYNQ_CPU_SRCSEL_DDR		2U
+#define ZYNQ_CPU_SRCSEL_IO		3U
+#define ZYNQ_CPU_DIVISOR_SHIFT		8U
+#define ZYNQ_CPU_DIVISOR_MASK		0x3fU
+#define ZYNQ_CLK_621_TRUE_BIT		0x1U
+#define ZYNQ_CPU_1X_RATIO_421		4U
+#define ZYNQ_CPU_1X_RATIO_621		6U
+
 /* The largest offset of a register in the mapped window. */
 #define ZYNQ_SLCR_LAST_REGISTER		(ZYNQ_SLCR_BYTES - 4U)
 
@@ -216,6 +237,60 @@ drv_zynq_slcr_pll_hz(
 	/* Succeeded: the crystal multiplied by the feedback divider. */
 	multiplier = (control >> ZYNQ_PLL_FDIV_SHIFT) & ZYNQ_PLL_FDIV_MASK;
 	return ZYNQ_PS_CLK_HZ * multiplier;
+}
+
+/*
+ * Reports the bus clock cpu_1x in Hz: the processor clock's PLL divided by
+ * the processor clock's divider and by the 6:2:1 or 4:2:1 ratio.  The
+ * peripherals' register interfaces run on it, and the Ethernet
+ * controller's MDIO clock is divided from it.
+ *
+ * Returns 0 when the SLCR cannot be read or the PLL gives no rate.
+ */
+uint64_t
+drv_zynq_slcr_cpu_1x_hz(
+	void)
+{
+	uint64_t parent;
+	uint32_t control;
+	uint32_t ratio_bit;
+	uint32_t source;
+	uint32_t divisor;
+	uint32_t ratio;
+	int error;
+
+	/* Reads the processor clock's control; without it the rate is unknown. */
+	error = drv_zynq_slcr_read(DRV_ZYNQ_SLCR_ARM_CLK_CTRL, &control);
+	if (error != 0)
+		return 0;
+
+	/* Reads the clock ratio; without it the rate is unknown. */
+	error = drv_zynq_slcr_read(DRV_ZYNQ_SLCR_CLK_621_TRUE, &ratio_bit);
+	if (error != 0)
+		return 0;
+
+	/* Finds the PLL the processor clock comes from. */
+	source = (control >> ZYNQ_CPU_SRCSEL_SHIFT) & ZYNQ_CPU_SRCSEL_MASK;
+	if (source == ZYNQ_CPU_SRCSEL_DDR) {
+		parent = drv_zynq_slcr_pll_hz(DRV_ZYNQ_SLCR_DDR_PLL_CTRL);
+	} else if (source == ZYNQ_CPU_SRCSEL_IO) {
+		parent = drv_zynq_slcr_pll_hz(DRV_ZYNQ_SLCR_IO_PLL_CTRL);
+	} else {
+		parent = drv_zynq_slcr_pll_hz(DRV_ZYNQ_SLCR_ARM_PLL_CTRL);
+	}
+
+	/* The processor clock's divider; zero divides by one. */
+	divisor = (control >> ZYNQ_CPU_DIVISOR_SHIFT) & ZYNQ_CPU_DIVISOR_MASK;
+	if (divisor == 0)
+		divisor = 1;
+
+	/* cpu_1x is a sixth of the divided clock at 6:2:1, a quarter at 4:2:1. */
+	ratio = ZYNQ_CPU_1X_RATIO_421;
+	if ((ratio_bit & ZYNQ_CLK_621_TRUE_BIT) != 0)
+		ratio = ZYNQ_CPU_1X_RATIO_621;
+
+	/* Succeeded: the bus clock, zero when the PLL gave none. */
+	return parent / divisor / ratio;
 }
 
 /* Reports whether an offset names a word-aligned register of the window. */
