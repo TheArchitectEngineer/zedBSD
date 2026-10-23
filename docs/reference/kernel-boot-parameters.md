@@ -68,6 +68,7 @@ overlay-root= overlay-data=
 swap0= swap1= swap2= swap3=
 init=
 kmsg= login=          (ws035-p097, Sections 7a and 7b)
+mac0=                 (ws289-p005, Section 7e)
 ```
 
 ## 3. Block-device selectors
@@ -414,6 +415,30 @@ readable boot from a machine whose configuration is graphical and quiet.
   seen; and some warns of a stuck key during POST when a key is held from
   power-on.  Tapping Space with the modifier after POST avoids both.
 - The BIOS loaders (i386 PC/AT, PC-98, amd64 BIOS) do not read these keys.
+
+## 7e. The Ethernet address: mac0=
+
+`mac0=` gives the first Ethernet port its station address on a board that
+has none of its own where the kernel can read it (ws289-p005, 2026-10-23
+user decision U5).  The value is six pairs of hex digits separated by
+colons, such as `mac0=02:5a:59:42:4f:31`.
+
+```text
+mac0=xx:xx:xx:xx:xx:xx   a unicast address, not all zeros
+```
+
+- Only the ZYBO reads it (the Zynq's GEM0, `en0`).  It takes, in order,
+  `mac0=`, then the `local-mac-address` of GEM0's node in the device tree a
+  loader wrote, then the fixed locally administered `02:5a:59:42:4f:30`
+  with a line in the kernel log.  A fixed address keeps the DHCP lease and
+  the clients' known hosts the same from boot to boot; two boards on one
+  network each need their own `mac0=`.
+- The network driver starts before the kernel parses the line, so it reads
+  the loader's line itself.  A value that is not a unicast address in that
+  form is passed over with a line in the kernel log (`zynq-ethernet: mac0=…
+  is not a unicast address`) and the next source is taken; it does not stop
+  the boot.
+- Other boards ignore it; their ports have addresses of their own.
 
 ## 8. Valid and invalid examples
 
