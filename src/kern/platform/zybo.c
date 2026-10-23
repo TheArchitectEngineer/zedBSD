@@ -16,9 +16,13 @@
  * device, so the UART is found at the address and interrupt the SoC
  * fixes.
  *
- * The board publishes one boot device, the initial ramdisk the loader
- * placed, when there is one: a disk image with an MBR, so the kernel's
- * root search finds the root on it as on a Raspberry Pi 4's SD card.
+ * The board publishes up to two boot devices: the initial ramdisk the
+ * loader placed, when there is one, and the card in the SD slot (SDIO0),
+ * when one comes up.  Both are disk images with an MBR.  A loader that
+ * placed a ramdisk (the JTAG boot, the emulator's) boots from it, so the
+ * ramdisk is the first device, the one the handoff names, and the card
+ * the second; without a ramdisk the card is the first.  A root named by
+ * the boot parameters (rootpart=/dev/mmcblk0p2) is found on either.
  * Halting and rebooting go through the hardware layer (the SLCR's system
  * reset); the board is powered from USB and has no power-off.
  *
@@ -34,6 +38,7 @@
 #include <drivers/disklabel/disklabel.h>
 #include <drivers/generic/ramdisk.h>
 #include <drivers/generic/serial-console.h>
+#include <drivers/platform/zybo/zynq-sdhci.h>
 #include <drivers/serial/cdns-uart.h>
 #include <kern/boot.h>
 #include <kern/disk.h>
@@ -50,8 +55,14 @@
 /* The block size the ramdisk is cut into; a disk image is laid out in it. */
 #define ZYBO_BLOCK_SIZE			512U
 
-/* The BIOS-style id the boot device has, the one the handoff names. */
+/*
+ * The BIOS-style id of the first boot device, the one the handoff names;
+ * the second device has the next one.
+ */
 #define ZYBO_BOOT_ID			0x80U
+
+/* How many boot devices the board publishes at most: the ramdisk and the SD card. */
+#define ZYBO_BOOT_DEVICE_MAX		2U
 
 /* Marks a parameter that the kernel's platform interface passes but this board does not need. */
 #define UNUSED_PARAMETER(parameter)	((void)(parameter))
@@ -75,11 +86,29 @@ static int uart_present;
  */
 static struct disk *ramdisk;
 
-static void attach_uart(void);
-static int publish_ramdisk(void);
+/*
+ * The SD card's disk, mmcblk0, published by kern_platform_init() and kept
+ * for the life of the system; NULL when no card came up.
+ */
+static struct disk *sd_card;
 
 /*
- * Publishes the boot devices of the ZYBO: the ramdisk, if any.
+ * The disks behind the published boot devices, in the order of their
+ * BIOS-style ids from ZYBO_BOOT_ID; filled by kern_platform_init() before
+ * the devices are handed out and kept with them.
+ */
+static struct disk *boot_disks[ZYBO_BOOT_DEVICE_MAX];
+
+/* How many entries of boot_disks are published; set with them. */
+static size_t boot_disk_count;
+
+static void attach_uart(void);
+static int publish_ramdisk(void);
+static void add_boot_device(const struct kern_boot_handoff *handoff, struct kern_boot_device *devices, struct disk *disk);
+
+/*
+ * Publishes the boot devices of the ZYBO: the ramdisk, if any, and the SD
+ * card, if one comes up.
  *
  * Returns the number of devices published.
  */
@@ -89,8 +118,6 @@ kern_platform_init(
 	struct kern_boot_device *devices,
 	size_t capacity)
 {
-	struct kern_boot_device *device;
-	size_t index;
 	int error;
 
 	/* Rejects a handoff that is not the common record. */
@@ -115,31 +142,29 @@ kern_platform_init(
 	/* Starts the disk registry empty, before any disk is published. */
 	disk_registry_reset();
 
-	/* Publishes the ramdisk; without one the board has no boot device. */
+	/* Publishes the ramdisk the loader placed, if it placed one. */
 	error = publish_ramdisk();
-	if (error != 0)
-		return 0;
+	if (error != 0 && error != ENOENT)
+		kern_logf("zybo: ramdisk not published (%d)\n", error);
 
-	/* Describes the ramdisk as the boot device the handoff names. */
-	device = &devices[0];
-	device->device_class = KERN_DEV_SD;
-	device->display_index = 0;
-	device->bios_id = ZYBO_BOOT_ID;
-	device->flags = KERN_DEV_PRESENT;
-	if (handoff->boot_bios_id == ZYBO_BOOT_ID)
-		device->flags |= KERN_DEV_BOOT_ORIGIN;
-	device->sector_size = ZYBO_BLOCK_SIZE;
-	device->cylinders = 0;
-	device->heads = 0;
-	device->sectors = 0;
-	device->controller_location = 0;
+	/* Publishes the card in the SD slot; the boot goes on without one. */
+	error = drv_zynq_sdhci_init(&sd_card);
+	if (error != 0) {
+		kern_logf("zybo: SD card unavailable (%d)\n", error);
+		sd_card = NULL;
+	}
 
-	/* Clears the record's reserved bytes. */
-	for (index = 0; index < sizeof(device->reserved); index++)
-		device->reserved[index] = 0;
+	/* The ramdisk comes first: a loader that placed one boots from it. */
+	boot_disk_count = 0;
+	if (ramdisk != NULL && boot_disk_count < capacity)
+		add_boot_device(handoff, devices, ramdisk);
 
-	/* Succeeded: the single published device. */
-	return 1;
+	/* The SD card follows, or is first when there is no ramdisk. */
+	if (sd_card != NULL && boot_disk_count < capacity)
+		add_boot_device(handoff, devices, sd_card);
+
+	/* Succeeded: the published devices, none when the board has no disk. */
+	return boot_disk_count;
 }
 
 /*
@@ -180,18 +205,30 @@ kern_platform_input_init(
 }
 
 /*
- * Resolves the published boot device to the ramdisk.
+ * Resolves a published boot device to its disk, the ramdisk or the SD
+ * card, by its BIOS-style id.
  */
 struct disk *
 kern_platform_block_device(
 	const struct kern_boot_device *device)
 {
-	/* Only the ramdisk's device has a disk. */
+	uint32_t index;
+
+	/* Only the board's disk devices have a disk. */
 	if (device == NULL || device->device_class != KERN_DEV_SD)
 		return NULL;
 
-	/* Succeeded: the ramdisk, or none when the loader placed none. */
-	return ramdisk;
+	/* Refuses an id below the first device's. */
+	if (device->bios_id < ZYBO_BOOT_ID)
+		return NULL;
+
+	/* Refuses an id past the published devices. */
+	index = device->bios_id - ZYBO_BOOT_ID;
+	if (index >= boot_disk_count)
+		return NULL;
+
+	/* Succeeded: the disk published with that id. */
+	return boot_disks[index];
 }
 
 /*
@@ -331,4 +368,43 @@ publish_ramdisk(
 
 	/* Succeeded: the ramdisk is a disk. */
 	return 0;
+}
+
+/*
+ * Describes the next boot device: a disk of 512-byte blocks with the next
+ * BIOS-style id, the boot origin when that is the id the handoff names.
+ */
+static void
+add_boot_device(
+	const struct kern_boot_handoff *handoff,
+	struct kern_boot_device *devices,
+	struct disk *disk)
+{
+	struct kern_boot_device *device;
+	size_t index;
+
+	/* Takes the next record and the next id. */
+	device = &devices[boot_disk_count];
+	device->device_class = KERN_DEV_SD;
+	device->display_index = (uint8_t)boot_disk_count;
+	device->bios_id = (uint8_t)(ZYBO_BOOT_ID + boot_disk_count);
+	device->flags = KERN_DEV_PRESENT;
+	if (handoff->boot_bios_id == device->bios_id)
+		device->flags |= KERN_DEV_BOOT_ORIGIN;
+	device->sector_size = ZYBO_BLOCK_SIZE;
+	device->cylinders = 0;
+	device->heads = 0;
+	device->sectors = 0;
+	device->controller_location = 0;
+
+	/* Clears the record's reserved bytes. */
+	for (index = 0; index < sizeof(device->reserved); index++)
+		device->reserved[index] = 0;
+
+	/*
+	 * Keeps the disk under the device's id; the count is what
+	 * kern_platform_block_device() resolves ids against.
+	 */
+	boot_disks[boot_disk_count] = disk;
+	boot_disk_count++;
 }

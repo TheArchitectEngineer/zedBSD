@@ -19,8 +19,11 @@ ARMV7_BSP_SOURCES := board.c slcr.c uart.c timer.c
 ARMV7_BSP_ASM_SOURCES := early.S
 
 # The board's binding: the teletype console on the Cadence UART1, whose
-# receive interrupt types into it, and the initial ramdisk as the boot
-# device.
+# receive interrupt types into it, and the boot devices: the initial
+# ramdisk, and the SD card on SDIO0 (the SDHCI driver with the Zynq's
+# glue and the SLCR's clocks).
 ARMV7_PLATFORM_SOURCES := src/kern/platform/zybo.c \
+	src/drivers/platform/zybo/zynq-slcr.c src/drivers/platform/zybo/zynq-sdhci.c \
+	src/drivers/mmc/sdhci.c \
 	src/drivers/serial/cdns-uart.c src/drivers/generic/serial-console.c \
 	src/drivers/generic/ramdisk.c
