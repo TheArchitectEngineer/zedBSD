@@ -143,5 +143,8 @@ GHCI (GPU Host Controller Interface):
 ```
 - rtl/common, rtl/gpu/{cp,blt,vf,rx,su,tu,rop,mc,sa}, rtl/dc (cp/ holds atg_cpu)
 - fw/cp (the command processor firmware, C for RV32IM, built with clang)
+- spec/ (one Markdown spec per module, mirroring rtl/: purpose, ports with
+  handshakes, parameters, a rough state machine, latency targets, corner cases,
+  what the testbench checks; written top-down before the module body)
 - include/ (RTL constants and the shared C headers)
 ```
