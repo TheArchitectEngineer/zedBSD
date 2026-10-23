@@ -3,7 +3,7 @@
 # WS286 Digilent ZYBO（初代、Zynq Z-7010）への移植: ARMv7-A の HAL・BSP・driver
 
 - Master: [plan/master.md](../master.md)（2026-10-23 作成）。Primary Milestone: MG008（HAL の移植と異種機）。
-- Status: incomplete（p001 の設計は版 3、p002 は cleared。2026-10-23 P1: record-audit の WS_NOT_STARTED_BUT_EXEC を直した）
+- Status: incomplete（p001 の設計は版 3、p002 は cleared、p003 は実機で PASS・Q1 の判定待ち。2026-10-23 P1: record-audit の WS_NOT_STARTED_BUT_EXEC を直した）
 - 出典: 2026-10-23 ユーザー「次の計画です。DIGILENT ZYBOボードにzedBSDを移植します。Zynq Z-7010のモデルです。」「初代 ZYBO（Z-7010）です。画面はカーネルの移植後に、RTLを実装します。」「FPGAのツールチェインは私の方でホストにインストールします。ひとまずarmv7のHALと、このボードのBSP、ドライバを実装しましょう。JTAGからのブートはできたらうれしいものの、まずはSDブートで、SSHでカーネルを更新して、Switchbotで再起動、というのがいいですね。PLのプログラミングは、SSH経由でできるようにできそうですか？」
 
 ## 目的と完了の条件（版 3、到達目標は版 2 と同じ）
@@ -22,7 +22,7 @@
 | --- | --- | --- | --- |
 | p001 | 調べと設計（[design.md](design.md) 版 3。review の全指摘に対応、[phase001](phase001/phase.md) の対応の表）（14 LW） | — | in-progress（版 3、Q1 の判定待ち） |
 | [p002](phase002/phase.md) | JTAG の道具と SPL（kernel 無し、LLVM 不要）、板の probe（8 LW） | U4 | cleared（2026-10-23 Q1: 実機で SPL の banner・DDR の 8 MiB の照合・JTAG の reset・load 約 255 KiB/s、jtag-hello.sh PASS） |
-| p003 | PL の block `plio`（openXC7、openFPGALoader、AHB-AP から読み書き）（8 LW） | p002、openXC7 の導入、U5 | planning |
+| [p003](phase003/phase.md) | PL の block `plio`（openXC7、openFPGALoader、AHB-AP から読み書き）（8 LW） | p002、openXC7 の導入、U5 | in-progress（2026-10-23 P1: openXC7 を ~/opt/openxc7 に導入、PS7 + GP0 が通った（Fmax 248 MHz）、実機で plio-jtag.sh PASS ×2、INT_STS の PCFG_DONE は JTAG の後に立つ、IRQ_F2P[0] = ID 61。Q1 の判定待ち。LED の目視・switch はユーザーの一覧へ） |
 | p004 | HAL の入口（virt、1 CPU、raw の vmunix.bin を QEMU の Linux の約束で、PNG で HAL READY・AEABI・ATOMIC・PAGING PASS・TIMER TICK）（16 LW） | Q1 の LLVM ARM と triple（cache asset の upload はユーザー）、boot-test の mode（版 3 の案）、U1 | planning |
 | p005 | zybo の BSP を JTAG で（QEMU zynq と実機の UART、PSS_IDCODE の判別、SCU・ACTLR.SMP、先頭 1 MiB を使わない）（12 LW） | p002、p004、U3 | planning |
 | p006 | task・syscall・signal・VFP・cache（VFP PASS と VFS initialization failed。user mode の受け入れは p007）（14 LW） | p005、U3 | planning |
@@ -44,3 +44,4 @@
 - 2026-10-23 P1（worktree p1-zybo-p002）: p002 を実機で実行。`plan/tools/zybo/`（openocd-zybo.cfg・jtag-reset/probe/boot.sh・spl-build.sh・uart-expect.py）、U-Boot v2025.07 の SPL（build/ の中、GPL）、SPL の banner と breakpoint、DAP → SLCR の reset、DDR の 8 MiB の書き読みと速さ（約 255 KiB/s）、`plan/ws286/tests/jtag-hello.sh` PASS。結果は [phase002](phase002/phase.md)、design §4.8。再開点: Q1 の p002 の判定と Tools の登録。p003 は openXC7 の導入待ち。
 - 2026-10-23 P2（worktree p2-zybo-d3）: design.md 版 3。review（Critical 2・High 5・Medium 11・Low 7）の全部に対応（対応の表は [phase001](phase001/phase.md)）。p002 の実測（main 02a1b7837、§4.8）を merge して反映。主な変更: platform ごとの物理の base（zybo 0、virt 0x40000000）、virt は raw の vmunix.bin を QEMU の Linux の約束で（r2・initrd が JTAG と同じ形で渡る）、PSS_IDCODE で QEMU を判別、影の page table、SCU と ACTLR.SMP を 1 CPU でも、動的 PIE の userland と rtld の ARM 版（p007 20 LW）、login を p010 に分けた、devcfg の手順の直し。HAL の API の追加の変更は無し。`proposed/boot-test-armv7.md` は版 3（raw の image）。再開点: Q1 の p001 の判定、Q1 の LLVM（ARM と triple、cache asset の upload はユーザー）、p003 は openXC7 待ち。
 - 2026-10-23: 共有の LLVM に ARM の target と armv7-unknown-zedbsd-eabihf、patch level zedbsd11（main ab43a07f0）。cache の asset build/releases/zedbsd-llvm-23.1.0-zedbsd11-x86_64-linux.tar.gz（134612899 byte、sha256 42903d19…）は GitHub の rev-0 への upload がユーザーの確認待ち（upload までは push すると CI の toolchain-cache が失敗する）。
+- 2026-10-23 P1（worktree p1-zybo-p003）: p003 を実行。openXC7（toolchain-installer の source builder、yosys 0.69・openXC7/nextpnr 3e5c2cdd・prjxray-db 517d66a3・fpga-as）を `/home/awe/opt/openxc7` に導入。R14 は起きず、`platform/armv7/zybo/pl/plio/`（plio.v・plio.xdc・README）が PS7 + GP0 で通った（LUT 193・FF 197、Fmax 248 MHz）。`plan/tools/zybo/pl-build.sh`・`pl-jtag.sh`、試験 `plan/ws286/tests/plio-tb.sh`（iverilog、PASS）・`plio-jtag.sh`（実機、PASS ×2）。INT_STS は JTAG の書き込みで PCFG_DONE が立つ（`0xf802000f`）、IRQ_F2P[0] は GIC ID 61、PL 無しの GP0 の AHB-AP の読みは AHB-AP を固める（`jtag-reset.sh` で戻る）。結果は [phase003](phase003/phase.md)。途中のユーザーの方針（openXC7 は必須でない、bitstream は別の tree でよい）は phase003 に原文。再開点: Q1 の p003 の判定、design への書き戻し（phase003 の残件）、LED・switch の目視はユーザーの一覧。
