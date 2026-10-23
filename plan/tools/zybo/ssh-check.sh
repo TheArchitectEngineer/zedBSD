@@ -3,7 +3,7 @@
 # exception): ssh in as root and check that the machine is armv7, then send
 # an 8 MiB file of random bytes there and back with scp and check that the
 # guest's cksum and the returned file both match it.
-#   plan/ws289/tests/ssh-check.sh HOST PORT OUTDIR
+#   plan/tools/zybo/ssh-check.sh HOST PORT OUTDIR
 # HOST and PORT are the guest's SSH (127.0.0.1 and the forwarded port of
 # qemu-zynq.sh --net, or the board's DHCP address and 22).  OUTDIR is a
 # directory of the caller's for the two copies of the file (build/tmp/...);
