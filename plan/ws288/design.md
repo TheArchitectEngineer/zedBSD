@@ -922,12 +922,54 @@ QEMU と実機の証拠は分けて書く。やっていない確認は「未実
 
 - MIG・PCIe・XDMA は代えない（ユーザー）。EULA を読むまで public の repository は RTL と TCL だけ、bitstream は release の添付も保留。
 
-## 8. Phase と LW（8 LW ≈ 2〜3 時間。p001 はこの設計。版 3 で p017〜p019 を新設し、p004・p008・p010・p011 を書き直した）
+### 7.6 RTL の進め方: top-down の分割、空の module、module ごとの仕様の text（版 4、2026-10-23 ユーザー）
+
+ユーザー:「方針として、まずブロックをトップダウンに分割して、ブロックのI/Oだけ定義して、空のモジュールを書きましょう。仕様はモジュールごとにテキストファイルにしましょう。ステートもかなり大まかにはテキストに記載しておきましょう。これで、だいぶ下位のAIモデルでもVerilogが記述できるはずです。」
+
+- **順序**: p023（§8）で GPU の全部を module の木に分け、module ごとに (a) port だけの空の Verilog（親に配線済み、Verilator の lint が通る）と (b) 仕様の text（`spec/<path>/<module>.md`）を書く。その後の実装の Phase（p004〜p022）の仕事の単位は **「`spec/X.md` から module X とその TB を実装する」**（1 module = 1 人日 / 下位の model の 1 session の大きさ）。既に実装済みの module（`am_*`、`atg_cp`、`atg_blt`、`atg_mc`、`atg_top`、ZYBO の top）も今の RTL から spec を書く（RTL が正、spec はそれを写す。差があれば spec に「RTL と違う」と書き、直すのは実装の Phase）。
+- **大きさの規則**（U38）: 1 module ≤ **400 行**の Verilog、状態機械は 1 つ、clock の領域は 1 つ（跨ぐ物は `am_afifo`/`am_sync` だけ）、port の数 ≤ 40。超える見込みなら分ける。
+- **置き場所**（U37）: amaterrace-gpu の `spec/` が `rtl/` と同じ path（例 `rtl/gpu/su/atg_su_sb.v` ↔ `spec/gpu/su/atg_su_sb.md`）。board の top は `spec/boards/<board>/<top>.md`。`spec/README.md` に template と規則。design.md（zedBSD の plan）は「なぜ」と全体、spec は「何を」の正本（**spec と RTL が食い違えば RTL を直す**。design.md と spec が食い違えば design.md を直してから spec）。
+- **module の木（p023 の入力。実装の Phase の割り当ては §8 の表）**:
+
+| block | module（`atg_<block>_<part>`） | 主な中身（§） |
+| --- | --- | --- |
+| common | `am_afifo`・`am_fifo`・`am_sync`・`am_axi_regs`・`am_axi_master`（済み）、`am_jtag_regs` | §1.3、§4.4 |
+| CP | `atg_cp_regs`（HCR、EXTCAP）、`atg_cp_state`（STATE の BRAM と alias）、`atg_cp_ring`（RING の DMA、封筒の解読、class の振り分け、RPTR）、`atg_cp_seq`（class N の µop の sequencer: SET_REG/BLIT/DRAW/DISPATCH/WAIT_*/INVALIDATE）、`atg_cp_fence`（FENCE/RESULT の書き込みと BRESP の待ち、FENCE_LAST）、`atg_cp_ctl`（状態遷移、HALT/RESET/quiesce、watchdog、FAULT）、`atg_cp_irq`、`atg_cp_dbg`（DBG_ADDR/DATA）、`atg_cp`（結線。今の stub を分ける） | §2.2〜§2.7 |
+| CPU | `atg_cpu_core`（RV32IM の 3 段: fetch・decode/exec・wb）、`atg_cpu_alu`、`atg_cpu_muldiv`、`atg_cpu_mem`（IMEM/DMEM の BRAM と load/store）、`atg_cpu_win`（制御の window: packet、UOP_FIFO、STATE の読み、DMA、RESULT の IRQ、mailbox、DONE）、`atg_cpu_dma`、`atg_cpu`（結線） | §2.4.7 |
+| BLT | `atg_blt`（済み。400 行を超えるなら `atg_blt_rd`/`atg_blt_wr`/`atg_blt_ctl` に） | §2.3 |
+| VF | `atg_vf_index`（index の読みと restart）、`atg_vf_fetch`（属性の読み、instancing）、`atg_vf_conv`（format の変換、ATTR_DST）、`atg_vf_asm`（primitive の組み立て、PT の予約）、`atg_vf` | §2.3、§3.8 |
+| SU | `atg_su_sched`（warp の slot、round-robin、NPHYS の sequencing）、`atg_su_fetch`（PC、I$ の口）、`atg_su_icache`、`atg_su_dec`（64 bit の decode、operand の番号、修飾）、`atg_su_sb`（scoreboard と wait の counter）、`atg_su_rf`（BRAM の RF、複製、書き込みの調停）、`atg_su_opd`（operand の集め: GPR/c/特殊/rq、修飾）、`atg_su_alu`（整数）、`atg_su_fpu`（fp32、FMA、比較、変換、fround）、`atg_su_pk`（packed）、`atg_su_pkx`（packed の超越）、`atg_su_xu`（fp32 の超越、共有）、`atg_su_div`、`atg_su_exec`（EXEC/KILLED/mask、分岐）、`atg_su_lsu`（lw/sw/atom、coalescer）、`atg_su_dcache`、`atg_su_lds`、`atg_su_cbank`（constant、lwc、LOAD_CONST）、`atg_su_tex`（TU への要求と戻り）、`atg_su_exp`（EXP の buffer、PT/ROP へ）、`atg_su_lda`（primitive table）、`atg_su_lane`（qd・shfl・vote・ballot の staging）、`atg_su_rq`（rq の push/pop、credit、tag、sactl/qstat/qtag）、`atg_su_wb`（書き戻しの調停）、`atg_su`（結線） | §3 |
+| RX | `atg_rx_clip`、`atg_rx_setup`（viewport、edge の係数）、`atg_rx_scan`（quad の走査、coverage）、`atg_rx_order`（warp の連番）、`atg_rx` | §3.8、§2.3 |
+| TU | `atg_tu_addr`（slot、mip、wrap）、`atg_tu_cache`、`atg_tu_filter`（最近傍/bilinear）、`atg_tu` | §2.3 |
+| ROP | `atg_rop_order`（連番の scoreboard）、`atg_rop_ds`（depth/stencil）、`atg_rop_blend`、`atg_rop_wb`（write-combine、書き戻し）、`atg_rop` | §2.3、§3.8 |
+| MC | `atg_mc_arb`、`atg_mc_aper`（aperture の検査）、`atg_mc_atom`、`atg_mc`（済みの物を分ける） | §4.1 |
+| DC | `atg_dc_regs`、`atg_dc_dma`、`atg_dc_tgen`、`atg_dc_vga`、`atg_dc_tmds`、`atg_dc_i2c`、`atg_dc` | §5 |
+| SA | `atg_sa_in`（BFP の揃え、行の scale）、`atg_sa_pe_dsp`/`atg_sa_pe_lut`（PE: 乗算、accumulator 2 組）、`atg_sa_array`（skew、PE の配列）、`atg_sa_drain`（列の stream-out、変換器、tag）、`atg_sa_wfetch`（重みと scale の先読み）、`atg_sa_fifo`（in/out、credit）、`atg_sa_ctl`（tile、mode、sactl、abort）、`atg_sa` | §3.9 |
+| top | `atg_top`（parameter で block の有無）、`boards/zybo/`: `zybo_2d`、`zybo_2dfw`、`zybo_dc`、`zybo_raster`、`zybo_compute`、`boards/kc705/`: `kc705_raster`、`kc705_sa` | §1、§3.6 |
+
+  合計 約 80 module（common 6、CP 9、CPU 7、BLT 1〜3、VF 5、SU 26、RX 5、TU 4、ROP 5、MC 4、DC 7、SA 8、top 8）。
+
+- **spec の template**（`spec/README.md`、各 `spec/<path>/<module>.md` はこの節の順）:
+  1. **目的**（1〜3 文）と block の中の位置（親、子）。
+  2. **parameter**（名前、既定、意味、取り得る値）。
+  3. **port の表**: 名前、方向、幅、clock/reset の領域、意味、**handshake と timing**（valid/ready、1 cycle の pulse、level、「読みの応答は次の cycle」など）。
+  4. **振る舞い**（text。何を入力して何を出すか、順序の約束、他の module との関係）。
+  5. **状態機械**（大まかに: 状態の一覧と、遷移の条件を text で。「IDLE →(start)→ RUN →(done)→ IDLE」の形で十分）。
+  6. **latency / throughput の目標**（cycle 数、1 cycle あたりの処理量、clock の目標）。
+  7. **corner case と誤り**（空/満、同時の要求、reset の途中、aperture の外、EXEC = 0 など）。
+  8. **TB が確かめる事**（`PASS <name>` の一覧。TB の file は `sim/tb/<module>_tb.v`）。
+  9. **参照**（design.md の §、他の spec、出典の規則が要る値の「Values referenced:」）。
+  10. **状態**: 空 / 実装済み（commit）/ RTL と spec の差。
+- **空の module の形**: `plio.v` と同じ先頭の comment（SPDX Zlib）、`default_nettype none`、parameter と port だけ、本体は出力の tie-off（`assign out = '0;`）と `/* spec/<path>/<module>.md */` の 1 行。親は子を instance して配線する（本当の信号の名前で）。`tools/lint.sh`（`verilator --lint-only -Wall`）が木の全部で通る事が p023 の受け入れ。
+- **下位の model での実装**: 実装の Phase の起動の指示は「`spec/X.md` と親の spec を読み、X.v の本体を書き、`sim/tb/X_tb.v` の PASS を全部通す。port と parameter は変えない（変えたい時は spec を直す提案を Q1 に）」の形にする。設計の文脈は spec の §9 の参照で足りるようにする。
+
+## 8. Phase と LW（8 LW ≈ 2〜3 時間。p001 はこの設計。版 3 で p017〜p019 を新設し、p004・p008・p010・p011 を書き直した。版 4: p022 と **p023（module の分割と spec、p004 より前）**を新設。**p004 以降の実装の Phase の仕事の単位は「`spec/X.md` から module X と TB を実装」**（§7.6）で、下の表の「内容」は spec の束の名前として読む（Phase ↔ module の表は §8 の末尾））
 
 | Phase | 内容 | 受け入れ（板で見る物） | 依存 | LW |
 | --- | --- | --- | --- | --- |
 | p002 | amaterrace-gpu の骨組み、`docs/ghci.md` 1.0 の草稿（host interface の部分。command の節は版 3 の §2.4 を写す）、`am_axi_regs`・`am_axi_master`（quiesce 付き）・`am_afifo`・`atg_mc`、TB の枠、Verilator の harness の骨、**bitstream 1（CP+MC+BLT）の合成で LUT を実測し §3.6 を直す**（2026-10-23 P2 が実装中: `rtl/common/*`、`atg_cp.v`（stub）、`atg_blt.v`、`atg_mc.v`、`atg_top.v`、`include/ghci_regs.h` を読んだ） | host: TB PASS、lint 0 | p001、U1、U3 | 14 |
 | p003 | CP v0（HCR、状態遷移、IRQ、STATE、`KICK`、非同期の `DBG`、EXTCAP）+ BLT + ZYBO の top（PS7、GP0、HP0）→ 板: `fpgareg` で fill/copy → `DBG` で DDR を照合。GPU の DDR は DTB の `/reserved-memory/gpu@1c000000`（64 MiB、no-map、`plan/ws288/tests/zybo-gpu-sd.dts`。`make-zybo-boot-files.py` が 512 MiB を要るので `memory@0` は縮めない） | **最初の端から端**: `fpgareg` だけで fill/copy。`IRQ_SET` → `fpgareg wait` | p002 | 12（**cleared 2026-10-23**、実測は §3.6） |
+| **p023**（新設、版 4、**p004 より前**） | **top-down の分割・空の module・module ごとの spec**（§7.6）: (a) GPU の全部（CP と `atg_cpu`、BLT、VF、SU の scheduler/scoreboard/RF/ALU/LSU/cache…、RX、TU、ROP、MC、DC、SA、ZYBO と KC705 の top）を約 80 の module に分ける（1 module ≤ 400 行、1 状態機械）、(b) module ごとに port だけの空の Verilog を書き親に配線して木の全部で `verilator --lint-only` を通す、(c) module ごとに `spec/<path>/<module>.md`（template は §7.6: 目的・parameter・port の表と handshake・振る舞い・大まかな状態機械・latency/throughput・corner case・TB の PASS・参照）。済みの module（`am_*`、`atg_cp`、`atg_blt`、`atg_mc`、`atg_top`、ZYBO の top）は今の RTL から spec を書く。`spec/README.md` に template と規則 | `tools/lint.sh` が木の全部で 0 warning、spec が全 module に有り §1〜§9 が埋まっている、Q1 の読み合わせ（port の名前と幅が design.md と合う） | p001（版 4）、p002（common と stub が有る）、U37、U38 | 44（spec 80 × 0.4 + stub と配線と lint 8 + 済みの module の spec 4） |
 | p004 | ring + **版 3 の封筒（§2.4.2）** + class N の sequencer（§2.4.3 の 14 µop、`RESULT` を含む）+ fence + 割り込み + fault + reset: `RUN`、ring の約束（§2.7）、完全な FENCE、watchdog、FAULT、`RESET` の順、class V の packet は **firmware が無い構成では FAULT 種別 2**。板: `DBG` で ring を書き doorbell、`fpgareg wait` で FENCE、aperture の外で FAULT → RESET → 次の fill が通る | ring の fill → FENCE → IRQ → 値、**fault → reset → 回復**、wrap の TB、class 3 の詰め物 | p003 | 14 |
 | p005 | DC（bitstream 2）: VGA（先）→ TMDS、`TEST_PATTERN` → DDR の framebuffer。窓の offset 0、IRQ_F2P[0] | color bar の目視、framebuffer の目視、`fpgareg wait` で VSYNC | p002 | 14 |
 | p006 | zedBSD: devcfg の block の登録と IRQ の受け渡し、`pl-memory.c`、`ghci.c`・`cp.c`・`memory.c`・`blit.c`・`native.c`（`GPU_OP_GHCI_NATIVE`）・`state.c`・`jobs.c`・`capset.c`、display device と scanout、`ghci-blit`・`ghci-display`、host の試験（封筒・allocator・fence の wrap・状態遷移の driver 側） | `ghci-blit` PASS（板）、`ghci-display` の画面（目視）、**detach/reattach の試験**、QEMU armv7-virt の回帰（T1） | p004、p005 | 24 |
@@ -948,9 +990,24 @@ QEMU と実機の証拠は分けて書く。やっていない確認は「未実
 | **p021**（新設、版 3 の SA。**WS288 の外の変更を含むので Q1 の判断**） | zedBSD で SA を Vulkan から使う: 独自の拡張 `VK_KEI_systolic_dispatch`（案）を libvulkan が名乗る、共有の compiler に vendor の `OpExtInst` の set、GSI1 の backend の下げ、driver の capset、`userland/tests/ghci-sa/` を Vulkan の経路に（H8） | GEMM の compute の結果が参照と一致（Verilator、KC705） | p020、p011、U30 | 20（libvulkan と compiler の分は別の WS なら除く） |
 | **p019**（新設） | **zedBSD の `vk/` = 検証する中継**（§6.7）: codec の生成（`ghci_vkwire.inc`、firmware と共有、M21）と wire の reader（i915 の `i915_wire_reader` を powervr と同じ形で再利用）、D/R/R'/X の表、driver の帳簿（M1）、D の返事（capset・limit・memory requirements・**`ghci_layout.h`**（driver 側の正本の写し、M22）・fence）、R' の書き換え（`GHCI_MEMORY`、pipeline の作成で stage ごとの compile → `GHCI_PROGRAM`）、staging と `GHCI_FRAME`、result page と **reply thread**、jobs の marker（§6.4）、`EXECUTE_STREAMS` の入れ子、session の open/close、host の試験（gpu-op の frame を作って staging と ring の packet の列と返事の blob を比べる）、**ZYBO 1' で libvulkan の `vkCmdFillBuffer`/`vkCmdCopyBuffer` を実 driver で通す試験**（H6。T1 に依頼） | host PASS（staging の列と返事の blob の形が libvulkan の読む形）、ZYBO 1' の fill/copy（板）、**Verilator の端から端は p011** | p006、p010、p017（`GHCI_*` の形）、U24、U26 | 26 |
 
-合計 **490 LW**（p013 の 24 を除くと 466。p018 の ±22 で 468〜512。SA の p020・p021・p022 の 84 を除くと 406）。版 2 は 304。増分の主は firmware（p017 + p018 = 76）で、p011 が 48 → 24 に減った（Vulkan の object の意味が driver から firmware に移った分）。最初の端から端（p002〜p004）は 40 LW、画面まで（p005・p006）で 78 LW。
+合計 **534 LW**（p013 の 24 を除くと 510。p018 の ±22 で 512〜556。SA の p020・p021・p022 の 84 を除くと 450。p023 の 44 は spec と空の module で、後の Phase の実装の見積もりは「spec から書く」前提なので変えていない）。版 2 は 304。増分の主は firmware（p017 + p018 = 76）で、p011 が 48 → 24 に減った（Vulkan の object の意味が driver から firmware に移った分）。最初の端から端（p002〜p004）は 40 LW、画面まで（p005・p006）で 78 LW。
 
-依存の図: p002 → {p003 → p004, p005} → p006; p004 → p007 → p009; p004 → p008 → {p009, p010}; p004 → p017 → p018 ← p009; {p006, p010, p017} → p019; p010 → p018（binary の interface の表、M22）; {p009, p010, p018, p019} → p011; {p004, p005} → p012 → p013（後回し）; {p011, p012} → p014 → p015 → p016; {p008, p014} → p020 → p021 ← p011; {p020, p009} → p022。循環は無い。**Verilator の端から端（p011）の前に板で見える物**: ZYBO の 1・1'・2・3・4 の bitstream（p003・p017・p005・p007・p008）。
+依存の図: p002 → p023（spec）→ {p004, p005, p007, p008, p017, p020} の実装（p003 は済み）; p002 → {p003 → p004, p005} → p006; p004 → p007 → p009; p004 → p008 → {p009, p010}; p004 → p017 → p018 ← p009; {p006, p010, p017} → p019; p010 → p018（binary の interface の表、M22）; {p009, p010, p018, p019} → p011; {p004, p005} → p012 → p013（後回し）; {p011, p012} → p014 → p015 → p016; {p008, p014} → p020 → p021 ← p011; {p020, p009} → p022。循環は無い。**Verilator の端から端（p011）の前に板で見える物**: ZYBO の 1・1'・2・3・4 の bitstream（p003・p017・p005・p007・p008）。
+**Phase ↔ module（版 4、§7.6 の木。各 Phase は列挙した spec の module と TB を実装する）**:
+
+| Phase | module |
+| --- | --- |
+| p004 | `atg_cp_ring`・`atg_cp_seq`・`atg_cp_fence`・`atg_cp_ctl`（ring、watchdog、FAULT/RESET の順）・`atg_cp_irq`、`atg_cp` の結線 |
+| p005 | `atg_dc_*`、`zybo_dc` |
+| p007 | `atg_rx_*`、`atg_rop_*`、`zybo_raster` |
+| p008 | `atg_su_sched`・`fetch`・`icache`・`dec`・`sb`・`rf`・`opd`・`alu`・`fpu`・`xu`・`div`・`exec`・`lsu`・`dcache`・`lds`・`cbank`・`wb`、`atg_su` の結線、`zybo_compute` |
+| p009 | `atg_vf_*`、`atg_su_tex`・`exp`・`lda`・`lane`・`pk`、`atg_tu_*`、`kc705_raster`（N=1） |
+| p012 | `am_jtag_regs`、MIG/MMCM の wrapper、`kc705_raster` の board |
+| p017 | `atg_cpu_*`、`atg_cpu_win`、`CPFW`（`atg_cp_regs` の追加）、`zybo_2dfw` |
+| p020 | `atg_sa_*`、`atg_su_rq` |
+| p022 | `atg_su_pkx`、`kc705_sa` |
+| p015 | `atg_top` の N 本の結線、RX 2 本、work の分配（`atg_cp_seq` の拡張） |
+
 
 **ws.md の「進め方（案）」（DC → BLT → CP の順）からの変更（U14）**: 版 2 のまま（CP + BLT が先。`DBG_ADDR/DATA` で DDR を読めるので driver も画面も無しに板で結果を照合できる）。
 
@@ -1037,6 +1094,8 @@ QEMU と実機の証拠は分けて書く。やっていない確認は「未実
 | **U34**（版 4） | SA 構成の SU の LDS を 64 KiB（BRAM36 16/SU。token の値を取っておく: N ≤ 4096） | **64 KiB** |
 | **U35**（版 4） | SA の所有: v1 は 1 warp（§3.9.1）。v2 で SU ごとに 2 warp が交互に pop と計算（online の処理の律速を半分に） | **v1 は 1 warp**、v2 は Future Work |
 | **U36**（版 4） | online の softmax・layer norm・attention の kernel は `gsi1asm.py` で書いて p022 の受け入れ（Vulkan の経路の前）。cycle 数を `PERF` で記録 | **この順** |
+| **U37**（版 4） | spec の置き場所と形: amaterrace-gpu の `spec/` が `rtl/` と同じ path、Markdown、template は §7.6 の 10 節、`spec/README.md` | **この形** |
+| **U38**（版 4） | module の大きさの規則: ≤ 400 行、状態機械 1 つ、clock の領域 1 つ、port ≤ 40 | **この規則** |
 | **U30**（版 3、SA） | Vulkan からの見せ方: (a) `VK_KHR_cooperative_matrix`（v1 の SA の形では実装できない、H8: 重みは静的な stream、accumulator の入口が無い、SA が 1 つ）、(b) 当面は `GPU_OP_GHCI_NATIVE` と手書きの kernel だけ（p020）、(c) 独自の拡張 `VK_KEI_systolic_dispatch`（libvulkan と共有の compiler の変更 = WS288 の外。p021） | **(b) を p020、(c) を p021 で**。(a) は v2 の Future Work（条件は §3.9.4）。p021 を WS288 に入れるか別の WS にするかは Q1 |
 
 HAL（`include/hal/hal.h`）の変更は **無い**。
