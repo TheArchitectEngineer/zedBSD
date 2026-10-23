@@ -151,8 +151,29 @@
 /* How long the command and data lines may stay inhibited. */
 #define SD_INHIBIT_SECONDS 2U
 
+/*
+ * How long the bus power and then the identification clock are left to
+ * settle before the card is spoken to.  The reset of the controller
+ * switches the bus power off, and a slot whose card supply follows the bus
+ * power powers the card up again only at the write that switches it on.
+ *
+ * Value referenced: Linux v6.12 drivers/mmc/core/core.c (mmc_power_up,
+ * power_delay_ms, 10 ms after the power and again after the clock).
+ */
+#define SD_POWER_SETTLE_MICROSECONDS 10000U
+
 /* How long the card may take to power up after the first ACMD41. */
 #define SD_POWER_UP_SECONDS 2U
+
+/*
+ * The pause between two ACMD41s while the card powers up, which takes the
+ * card tens of milliseconds at least; a card is not asked again at once.
+ *
+ * Value referenced: OpenBSD sys/dev/sdmmc/sdmmc_mem.c, master
+ * 859883f17cb8e20088fece5398547e4264ad30b3 (sdmmc_mem_send_op_cond, 10 ms
+ * between the tries).
+ */
+#define SD_POWER_UP_POLL_MICROSECONDS 10000U
 
 /* How long a command, a data buffer and a read may take before it is abandoned. */
 #define SD_COMMAND_SECONDS 2U
@@ -753,6 +774,9 @@ controller_init(
 	write_register32(unit, REG_INT_ENABLE, 0xffffffffU);
 	write_register32(unit, REG_SIGNAL_ENABLE, 0);
 
+	/* Lets the card's supply settle. */
+	pause_microseconds(SD_POWER_SETTLE_MICROSECONDS);
+
 	/* Starts the card clock at the identification rate. */
 	error = set_clock(unit, SD_IDENTIFY_CLOCK_HZ);
 	if (error != 0) {
@@ -761,6 +785,9 @@ controller_init(
 		/* Failed: the clock did not become stable. */
 		return error;
 	}
+
+	/* Gives the card the clocks it counts before its first command. */
+	pause_microseconds(SD_POWER_SETTLE_MICROSECONDS);
 
 	/* Puts the card in the idle state. */
 	error = command(unit, 0, 0, 0, NULL);
@@ -799,6 +826,9 @@ controller_init(
 		passed = deadline_passed(deadline);
 		if (passed)
 			break;
+
+		/* Gives the card time to power up before it is asked again. */
+		pause_microseconds(SD_POWER_UP_POLL_MICROSECONDS);
 	}
 
 	/* Refuses a card that never answered or never powered up. */
@@ -1115,10 +1145,16 @@ command(
 	write_register32(unit, REG_ARGUMENT, argument);
 	write_register16(unit, REG_COMMAND, (uint16_t)((index << 8) | flags));
 
-	/* Waits for the command to complete. */
+	/*
+	 * Waits for the command to complete.  A command that failed leaves the
+	 * command line inhibited until the line is reset, so it is reset here
+	 * for the next command; the failure is what the caller is told.
+	 */
 	error = wait_interrupt(unit, INT_CMD_COMPLETE, SD_COMMAND_SECONDS);
-	if (error != 0)
+	if (error != 0) {
+		(void)reset_lines(unit, SOFTWARE_RESET_CMD);
 		return error;
+	}
 
 	/* Hands the response to a caller that wants it. */
 	if (response != NULL)
