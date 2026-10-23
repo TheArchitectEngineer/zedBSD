@@ -573,7 +573,7 @@ devfs_cdev_inode(
 	 * alone: the daemon's privileged part opens it (ws143, D16), and so is
 	 * the node it makes its HID devices on (the input bridge, ws143-p005).
 	 * The Zynq's programmable logic is root's: whoever opens it rewrites
-	 * the hardware (ws286-p008).
+	 * the hardware (WS286).
 	 */
 	backlight = backlight_name(device->name);
 	raw = hidraw_name(device->name);

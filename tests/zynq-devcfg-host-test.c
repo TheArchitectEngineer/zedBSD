@@ -15,7 +15,7 @@
  * structures and their request numbers as the zedBSD encoding builds them.
  *
  * cc -std=c11 -Wall -Wextra -Werror -Iinclude -Isrc \
- *    plan/ws286/tests/devcfg-host-test.c \
+ *    tests/zynq-devcfg-host-test.c \
  *    src/drivers/platform/zybo/zynq-devcfg-check.c -o <out> && <out>
  */
 

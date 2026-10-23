@@ -49,7 +49,7 @@
  * silicon's revision.
  *
  * Values referenced: the board's value 0x13722093, read over JTAG
- * (plan/ws286/phase002/phase.md).
+ * (plan/ws286/design.md section 4.8).
  */
 #define BOARD_IDCODE_Z7010	0x03722093U
 #define BOARD_IDCODE_PART_MASK	0x0fffffffU

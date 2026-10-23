@@ -9,7 +9,7 @@
  * The checks of the devcfg driver that need no hardware: which bits of
  * CTRL a request may touch, whether a bitstream has its sync word, and
  * whether the configuration DMA can take a buffer.  They are separate so
- * that plan/ws286/tests/devcfg-host-test.c runs them on the host.
+ * that tests/zynq-devcfg-host-test.c runs them on the host.
  *
  * Values referenced: Linux v6.12 drivers/fpga/zynq-fpga.c,
  * zynq_fpga_has_sync (the sync word 0xAA995566 as the bytes 66 55 99 AA)

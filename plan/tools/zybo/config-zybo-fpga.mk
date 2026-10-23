@@ -2,7 +2,7 @@
 # programmable logic in the root and the plio bitstream beside them
 # (design §7.7, U6 (a)): fpgaload, fpgareg and /usr/share/fpga/plio.bit,
 # taken from plan/tools/zybo/pl-build.sh platform/armv7/zybo/pl/plio
-# (build/zybo-pl/plio/plio.bit, which is built first).  For WS286 p008.
+# (build/zybo-pl/plio/plio.bit, which is built first).  (Used by the WS286 acceptance.)
 ZEDBSD_MENU_VERSION := 3
 ZEDBSD_PLATFORM := zybo
 ZEDBSD_ARCHITECTURE := armv7

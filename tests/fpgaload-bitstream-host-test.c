@@ -16,7 +16,7 @@
  * within the kernel's search.
  *
  * cc -std=c11 -Wall -Wextra -Werror -Iuserland/base/fpgaload \
- *    plan/ws286/tests/bitstream-host-test.c \
+ *    tests/fpgaload-bitstream-host-test.c \
  *    userland/base/fpgaload/bitstream.c -o <out> && <out> [FILE.bit]
  */
 
