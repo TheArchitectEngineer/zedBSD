@@ -24,6 +24,7 @@
 - ZYBO（XC7Z010）: display controller → blitter → command processor → rasterizer＋ROP → shader unit 1 つ → texture unit。display controller と GPU は別の IP で、7010 で同時に載らなくてよい。
 - KC705（XC7K325T）: shader unit を複数並べる。ARM が無いので、x86 の zedBSD から PCIe の GPU として使う案と soft CPU の案がある（後で決める）。Vivado の BASIC（$0）で 325T を扱える（2026-10-23 AMD の page で確認）。
 - RTL の置き場所（2026-10-23 ユーザー「RTLのツリーは分けます。」）: GPU は https://github.com/awemorris/amaterrace-gpu 、CPU は https://github.com/awemorris/sukuna-risc.git （2026-10-23 ユーザー「mc64をsukuna-riscに改名しました。」）。zedBSD の tree には driver・道具・試験を置く。別の repository には RTL・script・project だけを置き、計画（plan/ws288/）は zedBSD のまま（2026-10-23 ユーザー「planはこのままzedBSDを使いましょう。」）。ZYBO の plio と KC705 の bringup は zedBSD に残す。
+- RTL の進め方（2026-10-23 ユーザー「まずブロックをトップダウンに分割して、ブロックのI/Oだけ定義して、空のモジュールを書きましょう。仕様はモジュールごとにテキストファイルにしましょう。ステートもかなり大まかにはテキストに記載しておきましょう。これで、だいぶ下位のAIモデルでもVerilogが記述できるはずです。」）: top-down に module へ分割 → port だけの空の module と module ごとの仕様の text（状態の大まかな遷移を含む）→ 中身は仕様だけを読んで書く。
 - 道具: 2026-10-23 から、支障が無い限り Vivado（2026.1、BASIC の license）を主に使う。DDR3 の PHY などは MIG などの AMD の IP を使う（ユーザー「もし特に作業に支障がなければ、Vivadoを使っていきましょう。DDR3 PHYなんかもMIGがないと無理です。無理ではないが、トークンの無駄と思います。」、Master の decisions-log）。JTAG の書き込みは openFPGALoader、openXC7 の道具は残す。以前の方針は「まず OSS（openXC7・openFPGALoader）、難しければ AMD の tool」。
 
 ## Phase
