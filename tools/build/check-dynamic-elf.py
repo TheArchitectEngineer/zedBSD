@@ -29,6 +29,10 @@ MACHINES = {
     # NONE, 64, RELATIVE, JUMP_SLOT, TLS_DTPMOD64 and TLS_DTPREL64: every
     # module's TLS is dynamic, so TLS_TPREL64 (initial exec) is refused.
     "riscv64": (2, 243, "<", {0, 2, 3, 5, 7, 9}),
+    # NONE, ABS32, TLS_DTPMOD32, TLS_DTPOFF32, GLOB_DAT, JUMP_SLOT and
+    # RELATIVE: every module's TLS is dynamic, so TLS_TPOFF32 (initial
+    # exec) is refused.
+    "armv7": (1, 40, "<", {0, 2, 17, 18, 21, 22, 23}),
 }
 
 # The relative relocation of each machine, the only kind ld.so's own
@@ -39,6 +43,7 @@ BOOTSTRAP_RELATIVE = {
     "aarch64": 1027,
     "sparcv9": 22,
     "riscv64": 3,
+    "armv7": 23,
 }
 
 PRIVATE_RTLD = {
@@ -77,7 +82,41 @@ def unpack_table(data, offset, count, size, fmt, path, what):
     return [struct.unpack_from(fmt, data, offset + i * size) for i in range(count)]
 
 
-def check(path, machine_name, role, expected_needed=None, expected_soname=None, exports_tsv=None):
+def provider_exports(path):
+    """The names a shared object defines for others, from its .dynsym."""
+    data = path.read_bytes()
+    if len(data) < 64 or data[:4] != b"\x7fELF" or data[4] not in (1, 2):
+        fail(path, "provider is not an ELF file")
+    elf_class = data[4]
+    endian = "<" if data[5] == 1 else ">"
+    if elf_class == 1:
+        eh = struct.unpack_from(endian+"16sHHIIIIIHHHHHH", data)
+        shfmt, symfmt = endian+"IIIIIIIIII", endian+"IIIBBH"
+    else:
+        eh = struct.unpack_from(endian+"16sHHIQQQIHHHHHH", data)
+        shfmt, symfmt = endian+"IIQQQQIIQQ", endian+"IBBHQQ"
+    shdrs = unpack_table(data, eh[6], eh[12], eh[11], shfmt, path, "section-header")
+    exports = set()
+    for sh in shdrs:
+        if sh[1] != 11:
+            continue
+        if sh[6] >= len(shdrs):
+            fail(path, "invalid dynsym string-table link")
+        strings_sh = shdrs[sh[6]]
+        strings = data[strings_sh[4]:strings_sh[4]+strings_sh[5]]
+        syms = data[sh[4]:sh[4]+sh[5]]
+        entsize = struct.calcsize(symfmt)
+        for off in range(0, len(syms) - entsize + 1, entsize):
+            sym = struct.unpack_from(symfmt, syms, off)
+            shndx = sym[5] if elf_class == 1 else sym[3]
+            bind = (sym[3] if elf_class == 1 else sym[1]) >> 4
+            visibility = (sym[4] if elf_class == 1 else sym[2]) & 3
+            if shndx != 0 and bind in (1, 2) and visibility in (0, 3):
+                exports.add(cstring(strings, sym[0], path, "export"))
+    return exports
+
+
+def check(path, machine_name, role, expected_needed=None, expected_soname=None, exports_tsv=None, providers=None):
     data = path.read_bytes()
     # Build configurations call the AArch64 architecture arm64.
     if machine_name == "arm64":
@@ -298,10 +337,12 @@ def check(path, machine_name, role, expected_needed=None, expected_soname=None, 
         fail(path, "test module does not exercise TLSDESC")
 
     exports = set()
+    undefined = set()
     if exports_tsv is not None and ".dynsym" not in sections:
         fail(path, "public export verification requires .dynsym")
     if role in ("libc", "module", "rpath-module", "version-definition",
-                "version-consumer", "application", "shared-library") and ".dynsym" in sections:
+                "version-consumer", "application", "shared-library",
+                "program") and ".dynsym" in sections:
         sh, syms, link, entsize = sections[".dynsym"]
         if link >= len(shdrs):
             fail(path, "invalid dynsym string-table link")
@@ -319,6 +360,7 @@ def check(path, machine_name, role, expected_needed=None, expected_soname=None, 
                 exports.add(cstring(strings, name_offset, path, "export"))
             if shndx == 0 and bind == 1:
                 name = cstring(strings, name_offset, path, "symbol")
+                undefined.add(name)
                 if role in ("module", "rpath-module") and name not in {
                     "__tls_get_addr", "___tls_get_addr",
                     "__rtld_exports", "dlopen", "dlclose",
@@ -332,6 +374,18 @@ def check(path, machine_name, role, expected_needed=None, expected_soname=None, 
                 if role == "libc" and name not in PRIVATE_RTLD:
                     fail(path, f"unexpected libc undefined symbol {name}")
 
+
+    # A program linked with -z undefs (the loader's own entry points, such
+    # as __tls_get_addr on a processor without TLS descriptors, are not in
+    # any library it links against) names the libraries that must define
+    # everything else it leaves undefined.
+    if providers:
+        provided = set(PRIVATE_RTLD)
+        for provider in providers:
+            provided |= provider_exports(provider)
+        missing = sorted(undefined - provided)
+        if missing:
+            fail(path, f"undefined symbols no provider defines: {missing}")
 
     if exports_tsv is not None:
         rows = exports_tsv.read_text().splitlines()
@@ -355,6 +409,7 @@ def main():
     parser.add_argument("--needed", action="append", default=[])
     parser.add_argument("--soname")
     parser.add_argument("--exports-tsv", type=Path)
+    parser.add_argument("--provider", action="append", default=[], type=Path)
     parser.add_argument("elf", type=Path)
     args = parser.parse_args()
     if args.role == "shared-library" and not args.soname:
@@ -364,7 +419,8 @@ def main():
             parser.error("explicit dependency/export contracts require a generic role")
     if args.role == "application" and (args.soname or args.exports_tsv):
         parser.error("SONAME and public exports apply only to shared-library")
-    check(args.elf, args.machine, args.role, args.needed, args.soname, args.exports_tsv)
+    check(args.elf, args.machine, args.role, args.needed, args.soname, args.exports_tsv,
+          args.provider)
 
 
 if __name__ == "__main__":

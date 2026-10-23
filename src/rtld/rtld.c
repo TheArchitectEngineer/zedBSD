@@ -44,6 +44,10 @@
 #define RTLD_MACHINE EM_RISCV
 #define RTLD_DATA ELFDATA2LSB
 #define RTLD_RELATIVE R_RISCV_RELATIVE
+#elif defined(HAL_ARCH_ARMV7)
+#define RTLD_MACHINE EM_ARM
+#define RTLD_DATA ELFDATA2LSB
+#define RTLD_RELATIVE R_ARM_RELATIVE
 #else
 #error unsupported runtime-linker architecture
 #endif
@@ -4748,6 +4752,11 @@ apply_value(
 	/* A NONE relocation has nothing to do. */
 	if (type == R_RISCV_NONE)
 		return;
+#elif defined(HAL_ARCH_ARMV7)
+
+	/* A NONE relocation has nothing to do. */
+	if (type == R_ARM_NONE)
+		return;
 #endif
 
 	/* Checks the current offset. */
@@ -5045,6 +5054,67 @@ apply_value(
 		break;
 	default:
 		rtld_fatal("unsupported riscv64 relocation");
+	}
+#elif defined(HAL_ARCH_ARMV7)
+
+	/*
+	 * Applies one 32-bit ARM relocation.  Every one is a REL relocation,
+	 * so its addend is the word it relocates, read above.  A GOT entry
+	 * and a PLT slot both take the symbol's address.  Every module's TLS
+	 * is dynamic, so only the module and offset pair of the
+	 * general-dynamic model is accepted; an initial-exec TLS_TPOFF32
+	 * falls to the refusal below.
+	 */
+	switch (type) {
+	case R_ARM_NONE:
+		/* Nothing to apply. */
+		return;
+	case R_ARM_RELATIVE:
+		/* A relative relocation names no symbol. */
+		if (symbol_index != 0)
+			rtld_fatal("invalid relative relocation");
+
+		/* The object's load address plus the addend. */
+		value = object->base + addend;
+		break;
+	case R_ARM_ABS32:
+		/* The symbol's address plus the addend. */
+		symbol = resolve_relocation_symbol(object, symbol_index);
+		value = symbol + addend;
+		break;
+	case R_ARM_GLOB_DAT:
+	case R_ARM_JUMP_SLOT:
+		/* The symbol's address, bound now; the slot's own word is no addend. */
+		value = resolve_relocation_symbol(object, symbol_index);
+		break;
+	case R_ARM_TLS_DTPMOD32:
+		/* The module of the object itself, or of the symbol's owner. */
+		if (symbol_index == 0) {
+			tls_owner = object;
+		} else {
+			tls_symbol = resolve_tls_symbol(object, symbol_index, &tls_owner);
+		}
+
+		/* Refuses an owner without a TLS module. */
+		if (tls_owner == NULL || tls_owner->tls_module_id == 0)
+			rtld_fatal("TLS module is unavailable");
+
+		/* The owner's module number. */
+		value = tls_owner->tls_module_id;
+		break;
+	case R_ARM_TLS_DTPOFF32:
+		/* Finds the symbol and the module that owns it. */
+		tls_symbol = resolve_tls_symbol(object, symbol_index, &tls_owner);
+
+		/* Refuses a symbol without a TLS module. */
+		if (tls_symbol == NULL || tls_owner->tls_module_id == 0)
+			rtld_fatal("TLS symbol is unavailable");
+
+		/* The symbol's offset in its module's block plus the addend. */
+		value = (uintptr_t)tls_symbol->st_value + addend;
+		break;
+	default:
+		rtld_fatal("unsupported armv7 relocation");
 	}
 #endif
 	*where = value;
@@ -6260,8 +6330,9 @@ setup_premapped_object(
  * handlers too.  On amd64 that is FS's base, which user code cannot read
  * directly, but every control block begins with its own address
  * (kern_tls_prefix.self, set by exec, by this loader and by the static C
- * library), so %fs:0 is the pointer; on arm64 TPIDR_EL0 is the pointer.
- * Elsewhere thread_self is asked.  Reading the register costs nothing,
+ * library), so %fs:0 is the pointer; on arm64 TPIDR_EL0, on riscv64 tp
+ * and on 32-bit ARM TPIDRURO is the pointer.  Elsewhere thread_self is
+ * asked.  Reading the register costs nothing,
  * where the system call cost every global-dynamic TLS access about 200 ns.
  * The dynamic process always has a control block before its first code
  * runs: this loader installs one before the entry point, and a new thread
@@ -6292,6 +6363,14 @@ thread_pointer(
 
 	/* The thread pointer register, which the kernel sets for every thread. */
 	__asm__ volatile("mv %0, tp" : "=r"(value));
+
+	/* Succeeded: the thread pointer. */
+	return value;
+#elif defined(HAL_ARCH_ARMV7)
+	uintptr_t value;
+
+	/* TPIDRURO, which the kernel sets for every thread and user code only reads. */
+	__asm__ volatile("mrc p15, 0, %0, c13, c0, 3" : "=r"(value));
 
 	/* Succeeded: the thread pointer. */
 	return value;

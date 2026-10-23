@@ -628,6 +628,16 @@ read_headers(
 		    raw32.e_phoff > file_size ||
 		    raw32.e_phnum > (file_size - raw32.e_phoff) / sizeof(struct elf32_phdr))
 			return ENOEXEC;
+#if defined(HAL_ARCH_ARMV7)
+
+		/*
+		 * Refuses an image built for the soft-float calling convention,
+		 * which would pass floating-point values in the core registers
+		 * the C library's hard-float functions do not read.
+		 */
+		if ((raw32.e_flags & EF_ARM_ABI_FLOAT_HARD) == 0)
+			return ENOEXEC;
+#endif
 
 		/* Reads the program headers. */
 		raw_programs32 = kern_malloc((size_t)raw32.e_phnum * sizeof(*raw_programs32));
