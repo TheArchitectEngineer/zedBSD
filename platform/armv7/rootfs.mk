@@ -43,11 +43,12 @@ rootfs: $(BUILD)/rootfs/.stamp
 # The root disk: one MBR partition holding the UFS root made from the tree
 # (platform/armv7/tools/make-armv7-root-image.py).  It is loaded over JTAG
 # at about 250 KiB/s, so it is no larger than the tree and the files init,
-# the log and the logins write need.
+# the log and the logins write need: 4 MiB, or 16 MiB with OpenSSH and
+# OpenSSL in the tree.
 # The debugging information of the programs is left out of it: the
 # external packages are built with it (OpenSSH's programs are three times
 # their size with it), and nothing reads it on the board.
-ARMV7_ROOT_MIB ?= 4
+ARMV7_ROOT_MIB ?= $(if $(filter openssh,$(ZEDBSD_USER_PROGRAMS)),16,4)
 ARMV7_STRIP := $(ZEDBSD_TARGET_LLVM_BIN)/llvm-strip
 $(BUILD)/root.img: $(BUILD)/rootfs/.stamp $(ARMV7_ROOT_IMAGE_TOOL) \
 	tools/build/ufs_format.py tools/build/check-ufs-image.py
@@ -68,8 +69,8 @@ $(BUILD)/root.ufs: $(BUILD)/rootfs/.stamp $(ARMV7_ROOT_IMAGE_TOOL) \
 	$(PYTHON) $(ARMV7_ROOT_IMAGE_TOOL) --raw --ufs-size-mib $(ARMV7_SD_ROOT_MIB) \
  --tree $(BUILD)/rootfs $@
 
-# The external packages the ZYBO's root is to carry for the network login
-# (WS289): built here on their own, and put into the root only by a
-# configuration that names them (plan/ws289/tests/config-zybo-ssh.mk).
+# The external packages of the ZYBO's network login (WS289), built on
+# their own; a configuration that names them (config/ci/config-zybo.mk)
+# puts them into the root.
 .PHONY: armv7-packages
 armv7-packages: zlib openssl openssh ca-certificates
