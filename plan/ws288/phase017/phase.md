@@ -41,8 +41,8 @@
 
 | 確認 | コマンド | 結果 |
 | --- | --- | --- |
-| lint | `tools/lint.sh`（Verilator 5.032 `-Wall`） | 全 module と atg_top の 3 形（ZYBO、KC705、ZYBO 1' HAS_CPU）clean |
-| unit TB | `sim/run.sh`（iverilog 12.0、warning も FAIL） | 全 13 PASS: am_afifo、am_axi_master、am_axi_regs、atg_cpu、atg_cpu_alu、atg_cpu_core、atg_cpu_dma、atg_cpu_fw、atg_cpu_mem、atg_cpu_muldiv、atg_cpu_win、atg_mc、atg_top。`SEED=5`（atg_cpu）、`SEED=7`（atg_cpu_dma）でも PASS |
+| lint | `tools/lint.sh`（Verilator 5.032 `-Wall`） | merge の後、0b78ff5 で全部 clean（全 module と atg_top の各形、board top） |
+| unit TB | `sim/run.sh`（iverilog 12.0、warning も FAIL） | main 98885bf の merge の後（b6297d3 + 0b78ff5）に全 23 PASS（atg_cpu の 8 つ: atg_cpu、atg_cpu_alu、atg_cpu_core、atg_cpu_dma、atg_cpu_fw、atg_cpu_mem、atg_cpu_muldiv、atg_cpu_win、と既存・P1/P3 の 15）。merge の前に `SEED=5`（atg_cpu）、`SEED=7`（atg_cpu_dma）でも PASS |
 | Verilator の harness | `sim/verilator/run.sh` | PASS verilator（6120 cycle、既存の物で CPU は入っていない） |
 | core の命令の試験 | `atg_cpu_core_tb` | rv32i（ALU の rr/imm 400、分岐 150 + 後ろ向きの loop、JAL/JALR 30、LUI/AUIPC、x0、load/store の全幅を model と照合 264）、rv32m（8 種 × corner 13×7 + random 200、結果の即時使用）、irq（loop・WFI・1〜40 cycle の全距離の割り込みで結果が変わらない、entry 42 回、入れ子無し、0x10 に入る）、fault 11 種（PC と停止、後の store が起きない）、stall（data port の random な待ち + run の random な 0 で rv32i・rv32m・irq が通る、handshake の保持、run = 0 の 40 cycle 後に stopped） |
 | TB の感度 | 変異を入れて TB が落ちるか（build/mut、使い捨て） | SRA→SRL、REM の符号、入れ子、LH の符号拡張、mepc、data port の handshake、DMA の tag・error 後の格納・書きの数え: どれも FAIL になる事を確かめた |
