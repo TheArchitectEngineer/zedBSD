@@ -40,7 +40,7 @@
 ### ユーザーの未決の判断
 
 <!-- master:open-decisions:start -->
-- KC705（本命の FPGA の target、XC7K325T）: Vivado の無償版で 325T が使えるか（ユーザー「最近のVivadoのライセンス体系変更で、325Tも無料になったそうです。あとで確かめないと。」2026-10-23）。KC705 の WS を作る時に確かめる。
+- （確認 2026-10-23 Q1、AMD の Vivado licensing options の page）KC705（XC7K325T）: 2026.1 からの新しい tier の BASIC（$0、毎年の無償の更新）が「All 7 Series & low-end UltraScale / UltraScale+ devices」、7 Series の行は「Includes Virtex 7 and Zynq 7000 devices」。page の OS の表は BASIC も Windows・Linux に印。BASIC は simulation と ChipScope（ILA）が「Limited Features」。2026.1 からは BASIC でも license file が要る。一部の外部の記事は「BASIC は Windows のみ」と書くが、AMD の page の表と食い違う → 導入の時に実物で確かめる（ユーザー「最近のVivadoのライセンス体系変更で、325Tも無料になったそうです。」）。
 - WS286: openXC7 の host への導入（ユーザー、p003 の前）。LLVM の cache の asset を GitHub の release に upload してよいか（toolchain の変更の時に確かめる）。
 - WS282〜WS285: 実装を始める時期（ユーザー「設計だけ残してラップアップして、後日実装することにします。」）。再開の時に WS282 の試験の画面を出す PC（D11）と買う webcam（D12）。
 - BUG-345（Pi 5 の click が画面に出ない窓）: 再発したら再起動の前に Q1 に知らせてもらう。
