@@ -76,6 +76,15 @@ struct stat {
 };
 #endif
 
+/*
+ * Both sides of the 32-bit ARM interface define HAL_ARCH_ARMV7, and both
+ * must also name its user ABI: without it the layout checks below would
+ * stop the build with an assertion that does not say why.
+ */
+#if defined(HAL_ARCH_ARMV7) && !defined(KERN_USER_ABI_ARMV7)
+#error "armv7 builds define KERN_USER_ABI_ARMV7"
+#endif
+
 #define st_atime st_atim.tv_sec
 #define st_mtime st_mtim.tv_sec
 #define st_ctime st_ctim.tv_sec
@@ -88,8 +97,12 @@ _Static_assert(__builtin_offsetof(struct stat, st_size) == 40, "LP64 stat size")
 _Static_assert(__builtin_offsetof(struct stat, st_atim) == 48, "LP64 stat time");
 _Static_assert(__builtin_offsetof(struct stat, st_blksize) == 96,
 	"LP64 stat blksize");
-#elif defined(KERN_USER_ABI_RISCV32) || defined(KERN_USER_ABI_PPC32) || defined(KERN_USER_ABI_MIPS32)
-/* The 32-bit RISC-V, PowerPC and MIPS (o32) ABIs align 64-bit members to 8 bytes, so their time has padding. */
+#elif defined(KERN_USER_ABI_RISCV32) || defined(KERN_USER_ABI_PPC32) || defined(KERN_USER_ABI_MIPS32) || \
+      defined(KERN_USER_ABI_ARMV7)
+/*
+ * The 32-bit RISC-V, PowerPC, MIPS (o32) and ARM (AAPCS) ABIs align 64-bit
+ * members to 8 bytes, so their time has padding.
+ */
 _Static_assert(sizeof(struct timespec) == 16, "time64 timespec ABI with 8-byte alignment");
 _Static_assert(sizeof(struct stat) == 92, "time64 stat ABI with 8-byte alignment");
 #else
