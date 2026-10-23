@@ -13,8 +13,17 @@ FENCE written into the ring through the debug port, the doorbell, the
 fence's interrupt through fpgareg wait; the debug port in HALTED; a class V
 packet (no firmware: fault kind 2) -> RESET -> the ring again from 0.
 
+With --fw (bitstream 1', "2D + FW", WS288 p017: the CP firmware in the
+CPU's BRAM) the identification expects CAPS[17]/[18] and the CPFW entry,
+and the class V case is a GHCI_FRAME instead: the firmware is started
+(CPFW_CTRL.RUN), a frame of staged commands (session, memory, two buffers,
+a command pool and buffer, vkCmdFillBuffer and vkCmdCopyBuffer of 16-bit
+pixels, END, QUEUE_SUBMIT) written through the debug port, the packet and a
+FENCE in the ring; the area, the result records and the frame's result are
+compared with the model (the same as the class N fill and copy would give).
+
   plan/tools/zybo/ghci-blt-board.py [--bit FILE.bit] [--host HOST]
-      [--base 0x1C000000] [--seed N] [--log FILE]
+      [--base 0x1C000000] [--seed N] [--log FILE] [--fw]
 
 The GPU's memory is the 64 MiB at --base that the board's device tree
 reserves (plan/ws288/tests/zybo-gpu-sd.dts); the aperture is set to it.
@@ -47,6 +56,7 @@ AP_BASE, AP_LIMIT, FAULT_ADDR, FAULT_INFO = 0x060, 0x064, 0x068, 0x06C
 RING_BASE, RING_SIZE, RING_WPTR, RING_RPTR, FENCE_LAST = 0x050, 0x054, 0x058, 0x05C, 0x070
 PERF0, PERF1, PERF_CTRL = 0x080, 0x084, 0x090
 DBG_ADDR, DBG_DATA, DBG_STATUS, KICK, STATE = 0x0A0, 0x0A4, 0x0A8, 0xF00, 0x1000
+CPFW_CTRL, CPFW_STATUS, CPFW_VERSION, CPFW_MBOX3 = 0x120, 0x124, 0x138, 0x15C
 FILL, COPY, TILE, UNTILE = 0, 1, 2, 3
 BLEND, BPP16, REVERSE = 1 << 4, 1 << 8, 1 << 12
 
@@ -169,6 +179,135 @@ def window(base, stride, cols_bytes, rows):
     return [base + y * stride + c for y in range(rows) for c in range(0, cols_bytes, 4)]
 
 
+def fw_frame(board, base, ring, wp, fence_addr, fence1):
+    """The class V case of --fw: starts the firmware, stages a frame, rings it with a FENCE."""
+    area = base + 0x30000          # the memory object: buffer X at +0, Y at +0x4000
+    staging = base + 0x22000
+    results = base + 0x23000
+    frame_result = base + 0x23800
+    fill_words, copy_bytes = 40, 78  # the copy is not whole words: 16-bit pixels
+    data = colour(0x12345678)
+    tag = 5
+    words = []
+
+    def st(v):
+        words.append(v & 0xFFFFFFFF)
+
+    def st64(v):
+        st(v)
+        st(v >> 32)
+
+    def rec(number, index):
+        st(number)
+        st(1)
+        st(index)
+
+    def create_buffer(index, ident):
+        rec(50, index)
+        for v in (1, 1):
+            st64(v)
+        st(12)
+        st64(0)
+        st(0)
+        st64(0x2000)
+        st(3)
+        st(0)
+        st(0)
+        for v in (0, 0, 1, ident):
+            st64(v)
+
+    rec(0x10100, 0); st(tag); st(0); st64(0x800000)
+    rec(0x10102, 1); st64(0x100); st64(area); st64(0x8000); st(0)
+    create_buffer(2, 0x200)
+    create_buffer(3, 0x201)
+    rec(28, 4); [st64(v) for v in (1, 0x200, 0x100, 0)]
+    rec(28, 5); [st64(v) for v in (1, 0x201, 0x100, 0x4000)]
+    rec(85, 6); st64(1); st64(1); st(39); st64(0); st(0); st(0); st64(0); st64(1); st64(0x300)
+    rec(88, 7); st64(1); st64(1); st(40); st64(0); st64(0x300); st(0); st(1); st64(1); st64(0x400)
+    rec(90, 8); st64(0x400); st64(1); st(42); st64(0); st(1); st64(0)
+    st(118); st(0); st(0xFFFFFFFF); [st64(v) for v in (0x400, 0x200, 0, fill_words * 4)]; st(data)
+    st(112); st(0); st(0xFFFFFFFF); [st64(v) for v in (0x400, 0x200, 0x201)]; st(1)
+    [st64(v) for v in (1, 0, 0, copy_bytes)]
+    rec(91, 11); st64(0x400)
+    rec(18, 12); st64(9); st(1); st64(1); st(4); st64(0); st(0); st64(0); st64(0); st(1); st64(1)
+    st64(0x400); st(0); st64(0); st64(0)
+    records = 13
+
+    # The area before (a pattern), the staging, the result page with no-result marks.
+    fill_win = [area + 4 * k for k in range(fill_words + 2)]
+    copy_win = [area + 0x4000 + 4 * k for k in range(copy_bytes // 4 + 3)]
+    for a in fill_win + copy_win:
+        board.add(f"dw {a:#x} {pattern(a):#x}")
+    for i, v in enumerate(words):
+        board.add(f"dw {staging + 4 * i:#x} {v:#x}")
+    for k in range(records * 2 + 2):
+        board.add(f"dw {results + 4 * k:#x} 0xffffffff")
+    # Starts the firmware and waits for its idle state.
+    board.write(CPFW_CTRL, 2)
+    board.add("n=0; while [ $(( ($(r 0x124) >> 8) & 0xff )) -ne 2 ] && [ $n -lt 100 ]; do n=$((n+1)); done")
+    for name, off in (("cpfw_status", CPFW_STATUS), ("cpfw_version", CPFW_VERSION), ("mbox3", CPFW_MBOX3)):
+        board.reg(name, off)
+    # The packet and a FENCE.
+    pkt = [(2 << 30) | (tag << 16) | 8, 0x10105, 2, frame_result, staging, 0, 4 * len(words), results,
+           records, (5 << 24) | (tag << 16) | (1 << 8) | 2, fence_addr, fence1 + 1]
+    for i, v in enumerate(pkt):
+        board.add(f"dw {ring + 4 * (wp + i):#x} {v:#x}")
+    board.write(IRQ_STATUS, 0x1FF)
+    board.write(IRQ_ENABLE, 1 << 0)
+    board.write(RING_WPTR, wp + len(pkt))
+    board.add("echo \"W vframe $(fpgareg wait --ack 0x38 3000 2>&1)\"")
+    board.reg("fence_last_v", FENCE_LAST)
+    board.reg("irq_status_v", IRQ_STATUS)
+    board.reg("ring_rptr_v", RING_RPTR)
+    board.add("echo \"F 3\"")
+    board.read_words(fill_win + copy_win)
+    board.add("echo \"F 4\"")
+    board.read_words([results + 4 * k for k in range(records * 2)] + [frame_result, frame_result + 4])
+    return dict(area=area, fill_win=fill_win, copy_win=copy_win, fill_words=fill_words,
+                copy_bytes=copy_bytes, data=data, results=results, frame_result=frame_result,
+                records=records, fence=fence1 + 1, rptr=wp + len(pkt))
+
+
+def fw_check(check, regs, phase, waits, f):
+    """The checks of the --fw class V case."""
+    check("firmware started (CPFW_STATUS idle, VERSION, .data in MBOX3)",
+          (regs.get("cpfw_status", 0) >> 8) & 0xFF == 2 and regs.get("cpfw_version") == 0x00010000
+          and regs.get("mbox3") == 0x0DA7A001,
+          str({k: hex(regs.get(k, -1)) for k in ("cpfw_status", "cpfw_version", "mbox3")}))
+    got = {a: v for a, (v, s) in phase.get(("F", 3), {}).items()}
+    want = {}
+    for k, a in enumerate(f["fill_win"]):
+        want[a] = f["data"] if k < f["fill_words"] else pattern(a)
+    for k, a in enumerate(f["copy_win"]):
+        if k < f["copy_bytes"] // 4:
+            want[a] = f["data"]
+        elif k == f["copy_bytes"] // 4:
+            want[a] = (pattern(a) & 0xFFFF0000) | (f["data"] & 0xFFFF)
+        else:
+            want[a] = pattern(a)
+    bad = [(a, got.get(a), want[a]) for a in want if got.get(a) != want[a]]
+    check(f"class V frame: fill and copy ({len(want)} words)", not bad and
+          "irq count" in waits.get("vframe", "") and regs.get("fence_last_v") == f["fence"] and
+          regs.get("ring_rptr_v") == f["rptr"],
+          f"{waits.get('vframe', '')} FENCE_LAST {regs.get('fence_last_v', 0):#x} "
+          f"RPTR {regs.get('ring_rptr_v', -1)} " +
+          ", ".join(f"{a:#x} = {g} not {e:#010x}" for a, g, e in bad[:4]))
+    res = {a: v for a, (v, s) in phase.get(("F", 4), {}).items()}
+    rbad = []
+    for k in range(f["records"]):
+        exp = (0xFFFFFFFF, 0xFFFFFFFF) if k in (9, 10) else (0, 0)
+        g = (res.get(f["results"] + 8 * k), res.get(f["results"] + 8 * k + 4))
+        if g != exp:
+            rbad.append((k, g))
+    fr = (res.get(f["frame_result"]), res.get(f["frame_result"] + 4))
+    # fpgareg wait --ack clears IRQ_STATUS; the status it printed holds RESULT (and RETIRE).
+    woke = waits.get("vframe", "status 0").split()[-1]
+    status = int(woke, 0) if woke.startswith("0x") else 0
+    check("class V result records, frame result, IRQ RESULT and RETIRE", not rbad and
+          fr == (0, f["records"]) and status & 0x180 == 0x180,
+          f"records {rbad[:4]} frame {fr} woke with {woke}")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--bit")
@@ -176,6 +315,7 @@ def main():
     parser.add_argument("--base", default="0x1C000000")
     parser.add_argument("--seed", type=int)
     parser.add_argument("--log")
+    parser.add_argument("--fw", action="store_true")
     args = parser.parse_args()
     base = int(args.base, 0)
     global SEED
@@ -189,6 +329,9 @@ def main():
                       ("caps", CAPS), ("cap0", 0x100), ("cap1", 0x104), ("psrc0", 0x110),
                       ("psrc1", 0x114), ("status0", STATUS)):
         board.reg(name, off)
+    if args.fw:
+        for name, off in (("cap2", 0x108), ("cap3", 0x10C), ("cpfw_status0", CPFW_STATUS)):
+            board.reg(name, off)
     # A clean start: RESET, the aperture over the reserved memory.
     board.write(CTRL, 2)
     board.write(IRQ_STATUS, 0x7F)
@@ -330,23 +473,28 @@ def main():
     board.add("echo \"F 1\"")
     board.read_words([src32])
     board.write(CTRL, 1)
-    # A class V packet without firmware: fault kind 2, then RESET and the ring from 0.
     wp = len(pkts)
-    for i, v in enumerate([(2 << 30) | (0x5C << 16) | 1, 0]):
-        board.add(f"dw {ring + 4 * (wp + i):#x} {v:#x}")
-    board.write(IRQ_STATUS, 0x1FF)
-    board.write(IRQ_ENABLE, 1 << 1)
-    board.write(RING_WPTR, wp + 2)
-    board.add("echo \"W vfault $(fpgareg wait --ack 0x38 1000 2>&1)\"")
-    board.reg("fault_info_v", FAULT_INFO)
-    board.reg("fault_addr_v", FAULT_ADDR)
+    if args.fw:
+        frame = fw_frame(board, base, ring, wp, fence_addr, fence1)
+    else:
+        # A class V packet without firmware: fault kind 2, then RESET and the ring from 0.
+        for i, v in enumerate([(2 << 30) | (0x5C << 16) | 1, 0]):
+            board.add(f"dw {ring + 4 * (wp + i):#x} {v:#x}")
+        board.write(IRQ_STATUS, 0x1FF)
+        board.write(IRQ_ENABLE, 1 << 1)
+        board.write(RING_WPTR, wp + 2)
+        board.add("echo \"W vfault $(fpgareg wait --ack 0x38 1000 2>&1)\"")
+        board.reg("fault_info_v", FAULT_INFO)
+        board.reg("fault_addr_v", FAULT_ADDR)
     board.write(CTRL, 2)
     board.reg("status_reset2", STATUS)
     board.reg("ring_wptr_reset", RING_WPTR)
     fence2 = fence1 + 1
+    if args.fw:
+        fence2 = fence1 + 2
     for i, v in enumerate([(5 << 24) | (0x14 << 16) | (1 << 8) | 2, fence_addr, fence2]):
         board.add(f"dw {ring + 4 * i:#x} {v:#x}")
-    board.write(FENCE_LAST, fence1)
+    board.write(FENCE_LAST, fence2 - 1)
     board.write(IRQ_STATUS, 0x1FF)
     board.write(IRQ_ENABLE, 1 << 0)
     board.write(CTRL, 1)
@@ -425,11 +573,17 @@ def main():
           and regs.get("vendor") == 0x414D4154 and regs.get("device") == 0x41544731,
           str({k: hex(regs.get(k, -1)) for k in ("magic", "version", "vendor", "device")}))
     check("device version 0.3", regs.get("devver") == 3, hex(regs.get("devver", -1)))
-    check("CAPS (CP+ring, BLT, 4x4 tiles, state 1, 32-byte lines)", regs.get("caps") == 0x00501803,
-          hex(regs.get("caps", -1)))
-    check("EXTCAP PERF", regs.get("extcap") == 0x100 and regs.get("cap0") == 0x103 and
+    caps = 0x00501803 | (0x00060000 if args.fw else 0)
+    check("CAPS (CP+ring, BLT, 4x4 tiles, state 1, 32-byte lines" + (", VKCP, FWLOAD)" if args.fw else ")"),
+          regs.get("caps") == caps, hex(regs.get("caps", -1)))
+    check("EXTCAP PERF", regs.get("extcap") == 0x100 and
+          regs.get("cap0") == (0x00020103 if args.fw else 0x103) and
           regs.get("cap1") == 0x110 and regs.get("psrc0") == 1 and regs.get("psrc1") == 8,
           str({k: hex(regs.get(k, -1)) for k in ("extcap", "cap0", "cap1", "psrc0", "psrc1")}))
+    if args.fw:
+        check("EXTCAP CPFW, CPFW_STATUS READY", regs.get("cap2") == 0x106 and regs.get("cap3") == 0x120
+              and regs.get("cpfw_status0", 0) & 1 == 1,
+              str({k: hex(regs.get(k, -1)) for k in ("cap2", "cap3", "cpfw_status0")}))
     check("aperture", regs.get("ap_base") == base and regs.get("ap_limit") == base + 0x4000000)
     first = phase.get(("S", 0), {})
     check("DBG write/read", all(first.get(a) == (pattern(a), 0) for a in src_words[:4]),
@@ -482,11 +636,14 @@ def main():
           f"RPTR {regs.get('ring_rptr', -1)} word {fword[0]}")
     check("DBG in HALTED", (regs.get("status_halt2", 0) >> 16) & 0xF == 3 and
           fword[1] == [(pattern(src32), 0)], f"STATUS {regs.get('status_halt2', 0):#x} {fword[1]}")
-    check("class V without firmware -> fault kind 2", "status" in waits.get("vfault", "") and
-          regs.get("fault_info_v") == (0x5C << 24) | (2 << 12) and
-          regs.get("fault_addr_v") == ring + 4 * len(pkts),
-          f"{waits.get('vfault', '')} INFO {regs.get('fault_info_v', 0):#x} "
-          f"ADDR {regs.get('fault_addr_v', 0):#x}")
+    if args.fw:
+        fw_check(check, regs, phase, waits, frame)
+    else:
+        check("class V without firmware -> fault kind 2", "status" in waits.get("vfault", "") and
+              regs.get("fault_info_v") == (0x5C << 24) | (2 << 12) and
+              regs.get("fault_addr_v") == ring + 4 * len(pkts),
+              f"{waits.get('vfault', '')} INFO {regs.get('fault_info_v', 0):#x} "
+              f"ADDR {regs.get('fault_addr_v', 0):#x}")
     check("RESET -> the ring from 0 -> FENCE", (regs.get("status_reset2", -1) >> 16) & 0xF == 0 and
           regs.get("ring_wptr_reset") == 0 and regs.get("fence_last2") == fence2 and
           fword[2] == [(fence2, 0)],
