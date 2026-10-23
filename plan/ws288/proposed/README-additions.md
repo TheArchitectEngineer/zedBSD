@@ -1,8 +1,8 @@
 <!-- awesome-plan project=zedbsd record=ws288-p001-readme-additions -->
 
-# amaterrace-gpu の README.md への書き足しの案（版 3、2026-10-23 P1。版 2 は Q1 が cdaaf42 で適用済み）
+# amaterrace-gpu の README.md への書き足しの案（版 4、2026-10-23 P1。版 2 は Q1 が cdaaf42 で適用済み、版 3 の分は未適用）
 
-Q1 が適用した README（amaterrace-gpu の `README.md`、版 2 の文）のうち、版 3 の設計（[design.md](../design.md) §2.4・§3）で変わる段落の置き換えの案。適用は Q1（P1 は `/home/awe/amaterrace-gpu` に書かない）。U18〜U27 の決定の前は「proposed」の印のまま置く。
+Q1 が適用した README（amaterrace-gpu の `README.md`、版 2 の文）のうち、版 3 の設計（[design.md](../design.md) §2.4・§3）で変わる段落の置き換えの案。適用は Q1（P1 は `/home/awe/amaterrace-gpu` に書かない）。U18〜U38 の決定の前は「proposed」の印のまま置く。README（a217bf8）の「Systolic Array: 32 x 32, 0.8 TOPS/SU @200MHz」は U39 の答え（MAC = 2 op × 2）でそのまま。
 
 ## 置き換える段落 1: 「Blocks:」の CP の行
 
@@ -22,10 +22,12 @@ Q1 が適用した README（amaterrace-gpu の `README.md`、版 2 の文）の�
 ## 足す行 1b: 「Blocks:」の MC の行の前（proposed）
 
 ```
-- SA: optional systolic array, a unit decoupled from the SU: a 32-row x N-column
-  PE array (int16/int8 MAC on DSPs, output-stationary) whose horizontal edge is
-  read and written from the shader ISA through FIFOs (one wavefront = 32 lanes)
-  and whose weights stream in from the MC. Absent on the XC7Z010.
+- SA: optional systolic array, a unit decoupled from the SU (one per SU at most),
+  with weights streamed from the MC and a FIFO pair to the SU's reserved
+  register rq; online reductions (softmax, layer norm) at its output and
+  normalization on its feedback input, the SU only orchestrating. Its design
+  and implementation are deferred until the SU implements GSI1; it is not part
+  of the KC705 plan.
 ```
 
 ## 置き換える段落 2: 「GHCI (GPU Host Controller Interface):」の節の全部
@@ -108,9 +110,12 @@ GHCI (GPU Host Controller Interface):
   2 x fp16 packed arithmetic and the transcendental unit. Comparisons produce
   all-ones/zero Booleans; there is no x0, no separate FP register file and no
   privileged state. Register 63 (rq) is reserved as a FIFO port: writing it
-  pushes a wavefront (32 lanes x 32 bits) into the systolic array, reading it
-  pops one; a read of an empty FIFO or a write to a full one stalls that warp
-  at issue (qstat gives the counts without blocking).
+  pushes one SA row vector (32 x FP16; a 32-lane warp moves two entries per
+  instruction, lanes 0-15 then 16-31) into the systolic array, reading it pops
+  one; a read of an empty FIFO or a write to a full one stalls that warp
+  at issue (qstat gives the counts without blocking, qtag the token-boundary
+  tags). GSI1 adds no instructions for the SA beyond rq and the reserved
+  control/status operands; the SA itself is deferred.
 ```
 
 ## 置き換える段落 4: 「Targets:」の KC705 の行
@@ -134,5 +139,8 @@ GHCI (GPU Host Controller Interface):
 ```
 - rtl/common, rtl/gpu/{cp,blt,vf,rx,su,tu,rop,mc,sa}, rtl/dc (cp/ holds atg_cpu)
 - fw/cp (the command processor firmware, C for RV32IM, built with clang)
+- spec/ (one Markdown spec per module, mirroring rtl/: purpose, ports with
+  handshakes, parameters, a rough state machine, latency targets, corner cases,
+  what the testbench checks; written top-down before the module body)
 - include/ (RTL constants and the shared C headers)
 ```
