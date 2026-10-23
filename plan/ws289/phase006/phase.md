@@ -117,3 +117,5 @@ T1（実機、板の lock、生きた serial）:
 - Master の Tools: `spl-build.sh`（Falcon の fragment と `boot.bin`）、`deploy.sh`、`qemu-zynq.sh --dtb`、`make-zybo-boot-files.py`、`check-zybo-sd-image.py --kernel`、`ZYBO_BOOT_BIN`・`ZYBO_BOOTARGS` の行（担当は master.md を書かない）。master.md の ssh-check.sh の行の「image は `plan/ws289/tests/config-zybo-ssh.mk`」は `config/ci/config-zybo.mk` に。
 - 削除の依頼（担当は rm しない）: `plan/ws289/tests/config-zybo-ssh.mk`（既定の config と同じ組になった。p005 の記録の中の参照は履歴として残す）、`/home/awe/zedBSD-worktrees/p3-ws289-p006/platform/armv7/tools/__pycache__/`（py_compile と checker の import が作った、ignore の対象）、`build/tmp/p006-board/`、`build/p006-spl/zybo-jtag.config`（直す前の script が残した）。
 - docs の howto（ZYBO の SD 起動の手順）: 道具が `plan/` に有る間は書けない（上の差 9）。
+
+- 2026-10-23 Q1: `plan/ws289/tests/config-zybo-ssh.mk` を git rm（既定の `config/ci/config-zybo.mk` と同じ組）、Master の Tools を直し `spl-build.sh`・`deploy.sh`・`make-zybo-boot-files.py`・`qemu-zynq.sh --dtb` を登録。p005 の phase.md の command の記録はその時の物として残す（今は `config/ci/config-zybo.mk` で同じ image）。
