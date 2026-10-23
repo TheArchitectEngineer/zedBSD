@@ -58,8 +58,7 @@ CONFIG_DRIVER_BCM2711_VIDEO := n
 CONFIG_DRIVER_LGY98 := n
 
 ZEDBSD_USER_PROGRAMS := cat echo login ls sh uname fpgaload fpgareg
-ARMV7_ROOT_COMMANDS := cat dmesg echo getty init login ls mount ps reboot \
-	sh swapon syslogd umount uname fpgaload fpgareg
+ARMV7_ROOT_EXTRA_COMMANDS := fpgaload fpgareg
 ZEDBSD_EXTRA_INPUTS := build/zybo-pl/plio/plio.bit
 ZEDBSD_EXTRA_FILES := --file /usr/share/fpga/plio.bit=build/zybo-pl/plio/plio.bit \
 	--mode /usr/share/fpga/plio.bit=0644

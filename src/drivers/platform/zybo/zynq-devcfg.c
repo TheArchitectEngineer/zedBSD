@@ -48,6 +48,7 @@
 
 #include <drivers/generic/dma.h>
 #include <drivers/platform/zybo/zynq-devcfg.h>
+#include <drivers/platform/zybo/zynq-slcr.h>
 #include <hal/hal.h>
 #include <kern/boot.h>
 #include <kern/cdev.h>
@@ -70,20 +71,17 @@
 /* The device number of /dev/fpga0 (the next free one after the DMA test's 0x00170000 and 0x00180000). */
 #define FPGA_DEVICE_NUMBER		0x00190000U
 
-/* The SLCR, and the registers of it the driver writes. */
-#define SLCR_PHYS			0xf8000000U
-#define SLCR_BYTES			0x1000U
-#define SLCR_LOCK			0x004U
-#define SLCR_UNLOCK			0x008U
+/*
+ * The registers of the SLCR the driver uses, through the SLCR's driver
+ * (zynq-slcr.c), which also serves the SD card's clocks, and the clock
+ * enable of PCAP_CLK_CTRL.
+ */
 #define SLCR_PCAP_CLK_CTRL		0x168U
 #define SLCR_FPGA_RST_CTRL		0x240U
 #define SLCR_PSS_IDCODE			0x530U
 #define SLCR_LVL_SHFTR_EN		0x900U
-
-/* The keys of the SLCR's lock, and the clock enable of PCAP_CLK_CTRL. */
-#define SLCR_LOCK_KEY			0x767bU
-#define SLCR_UNLOCK_KEY			0xdf0dU
 #define SLCR_PCAP_CLKACT		0x00000001U
+#define SLCR_WHOLE_WORD			0xffffffffU
 
 /* The logic's four resets held, or all released. */
 #define FPGA_RST_ALL			0x0000000fU
@@ -170,7 +168,6 @@ struct fpga_open {
  * while one waits.
  */
 struct fpga_device {
-	volatile uint8_t *slcr;
 	volatile uint8_t *devcfg;
 	struct drv_dma_device *dma;
 	struct mutex lock;
@@ -239,11 +236,10 @@ drv_zynq_devcfg_attach(
 	int asked;
 	int error;
 
-	/* Maps the SLCR, for the logic's clock, resets and level shifters. */
-	error = kern_device_map(SLCR_PHYS, SLCR_BYTES, KERN_DEVICE_UNCACHED, &mapped);
+	/* Reaches the SLCR, for the logic's clock, resets and level shifters. */
+	error = drv_zynq_slcr_init();
 	if (error != 0)
 		return error;
-	fpga.slcr = mapped;
 
 	/* Maps the device configuration interface. */
 	error = kern_device_map(DEVCFG_PHYS, DEVCFG_BYTES, KERN_DEVICE_UNCACHED, &mapped);
@@ -307,30 +303,38 @@ drv_zynq_devcfg_attach(
 	return 0;
 }
 
-/* Reads one register of the SLCR. */
+/* Reads one register of the SLCR; 0 if the SLCR cannot be read. */
 static uint32_t
 slcr_read(
 	uint32_t offset)
 {
 	uint32_t value;
+	int error;
 
-	/* Every register of the SLCR is a word. */
-	value = kern_mmio_read32(fpga.slcr + offset);
+	/* Reads through the SLCR's driver, which attach has started. */
+	error = drv_zynq_slcr_read(offset, &value);
+	if (error != 0)
+		return 0;
 
 	/* Succeeded: the register's value. */
 	return value;
 }
 
-/* Writes one register of the SLCR, unlocking it for the write and locking it again. */
+/*
+ * Writes one register of the SLCR whole; the SLCR's driver unlocks it for
+ * the write and locks it again, apart from the SD card's writes.
+ */
 static void
 slcr_write_unlocked(
 	uint32_t offset,
 	uint32_t value)
 {
-	/* The SLCR takes a write only between its unlock and lock keys. */
-	kern_mmio_write32(fpga.slcr + SLCR_UNLOCK, SLCR_UNLOCK_KEY);
-	kern_mmio_write32(fpga.slcr + offset, value);
-	kern_mmio_write32(fpga.slcr + SLCR_LOCK, SLCR_LOCK_KEY);
+	int error;
+
+	/* Writes through the SLCR's driver; the offsets are the driver's own constants. */
+	error = drv_zynq_slcr_modify(offset, SLCR_WHOLE_WORD, value);
+	if (error != 0)
+		kern_logf("fpga: SLCR write at %x failed (%d)\n", (unsigned)offset, error);
 }
 
 /* Reads one register of the configuration interface. */
