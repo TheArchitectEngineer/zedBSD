@@ -31,7 +31,7 @@
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
 | p001 | 設計（block ごとの interface、AXI の口、命令の集合の最初の案、zedBSD の driver との境界）: [design.md](design.md) 版 2（design-reviewer の 38 件に対応、U1〜U17）、[proposed/README-additions.md](proposed/README-additions.md) | WS286 p003（PL の workflow） | in-progress（2026-10-23 P2。clear の判定は Q1。p002〜p016 の案は design.md §8） |
-| p002 | amaterrace-gpu の骨組み、`docs/ghci.md` 1.0 の草稿（host interface。command と ISA は design v3 の pending）、`am_axi_regs`・`am_axi_master`（quiesce）・`am_afifo`・`atg_mc`、TB と Verilator の枠、bitstream 1 の合成の実測: [phase002](phase002/phase.md) | p001、U1、U3 | in-progress（2026-10-23 P2。host の TB 5 件 PASS・lint 0・Verilator PASS、ZYBO の bitstream 1 は LUT 2,451・FF 2,632・BRAM 0.5・100 MHz で WNS +0.473 ns。clear の判定は Q1） |
+| p002 | amaterrace-gpu の骨組み、`docs/ghci.md` 1.0 の草稿（host interface。command と ISA は design v3 の pending）、`am_axi_regs`・`am_axi_master`（quiesce）・`am_afifo`・`atg_mc`、TB と Verilator の枠、bitstream 1 の合成の実測: [phase002](phase002/phase.md) | p001、U1、U3 | cleared（2026-10-23 Q1: amaterrace-gpu 70aaff5〜217f0a0 で骨組み・LICENSE（Zlib）・docs/ghci.md の host の interface の草稿・am_axi_regs/am_axi_master/am_afifo/atg_mc・BLT・CP の仮の部分、Verilator 5.032 の lint 11/11 clean、iverilog の TB 5 本 PASS、Verilator の harness PASS、bitstream 1 を Vivado 2026.1 で xc7z010 に配置配線: LUT 2451・FF 2632・BRAM 0.5・100 MHz で WNS +0.473 ns。板は p003。command と ISA は design 版 3 待ちで ghci.md は stub） |
 
 ## 現在の状態・再開点
 
