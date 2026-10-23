@@ -32,7 +32,7 @@
 <!-- master:next:start -->
 1. 新しい Q1 は AGENTS.md・この block を読む。**ユーザーへは日本語で、聞かれた 1 件だけを答える。ユーザーに試験を頼まない。**
 2. **merge・試験の出力は必ず読んで確かめてから記録・報告する**（merge の後に `git log -1 --format='%h %p'`、担当の SHA は `git cat-file -t`）。担当の branch に捨てた変更が残っていないか（例: 2026-10-22 の P2 の buffer の使い回し）を diff の file の一覧で確かめ、必要なら cherry-pick。
-3. 次の番号: BUG-346、q1554、WS288、KL_VERSION 96。古い q・T1 の番号の経緯は git の履歴（2026-10-23 以前の master.md）。
+3. 次の番号: BUG-346、q1554、WS289、KL_VERSION 96。古い q・T1 の番号の経緯は git の履歴（2026-10-23 以前の master.md）。
 4. WS286 の次: (a) review に沿った design 版 3（HAL の物理の base を BSP ごとに、virt は raw の vmunix.bin で r2・initrd・/chosen、QEMU と実機の判別は PSS_IDCODE、shadow の page table、ACTLR.SMP と SCU、rtld と libc の armv7、KERN_USER_ABI_ARMV7、__aeabi_*、devcfg の手順の直し、VFP の lazy の後始末、errata）。(b) LLVM の ARM の target と zedbsd11（Q1 の toolchain の変更、cache の asset の upload はユーザーの確認の後）。(c) openXC7 の導入はユーザー（p003 の前）。(d) U8: SMP・L2・SD・LAN・SD 起動の後の WS を作る。
 5. 日付は host の `date`。記録の整合は [record-integrity.md](record-integrity.md)。1 LW ≈ 実時間 15〜25 分。
 <!-- master:next:end -->
@@ -589,6 +589,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS285](ws285/ws.md) | MG006 | camera の object detection の demo の app（WS282〜WS284 の上） | planning | p001 の設計 |
 | [WS286](ws286/ws.md) | MG008 | Digilent ZYBO（初代、Zynq Z-7010）への移植: ARMv7-A の HAL と JTAG の起動、PL（FPGA）の block を動かすまで（USB は外す） | incomplete | p001 の設計 版 3（review の C1〜L7 を反映、合計 119 LW、残り 97 LW: p003 8・p004 16・p005 12・p006 14・p007 20・p010 8（ramdisk の login、新設）・p008 13・p009 6）、p002 cleared（2026-10-23 JTAG・SPL・DDR）。LLVM の ARM の target は Q1、cache の upload はユーザーの確認待ち |
 | [WS287](ws287/ws.md) | MG008 | EHCI の full-speed・low-speed の device（split transaction、ZYBO の ChipIdea を含む） | planning | 着手は後日 |
+| [WS288](ws288/ws.md) | MG008 | FPGA の GPU の IP（display controller・command processor・blitter・vertex fetcher・rasterizer・shader unit・texture unit・ROP・memory controller）、ZYBO で workflow、本命は KC705 | planning | WS286 p003 の後に p001 |
 | [WS279](ws279/ws.md) | MG008 | Raspberry Pi 5 の GPU（V3D 7.1）と display（HVS6）（2026-10-21 ユーザー） | incomplete | p001 design.md（約 47〜64 LW の Phase 表）、ユーザーの判断 D1〜D4 待ち |
 | [WS278](ws278/ws.md) | MG008 | Raspberry Pi 5 対応（config/ci/config-rpi5.mk、必要なら GPU・WiFi）（2026-10-21 ユーザー） | incomplete | p001 設計・p002 起動 image は main（6757ac6f2）、実機の確認待ち（plan/ws278/tests/rpi5-hw-test.md）、判断 D1〜D3 待ち |
 | [WS275](ws275/ws.md) | MG008 | sun4u に /dev/graphics を実装し Xzed を動かす（2026-10-19 ユーザー） | incomplete（2026-10-19 停止、BUG-337。p001〜p005 cleared・main に merge 50bd10c5f） | BUG-337 |
@@ -637,6 +638,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-23 ユーザー（FPGA の GPU）block の一覧（display controller・command processor・blitter・vertex fetcher・rasterizer・shader unit (with small cache)・texture unit (with small cache)・ROP・memory controller (AXI abstraction)）に「了解です。この設計で行きましょう。」→ [WS288](ws288/ws.md) を planning で作成。ZYBO は workflow の確立、本命は KC705。
 - 2026-10-23 ユーザー「U項目は読みましたが、全部推しでOKでした。」 → WS286 の U1（HAL の事前承認の 3 点、Guardrail の表に記入）、U3（ZYBO の QEMU zynq と実機は生きた serial で判定、AGENTS.md に例外を追記）、U4（JTAG を使う p002・p003 は担当が板を直に触る、T1 とは host の lock で分ける）、U5（RTL は platform/armv7/zybo/pl/plio/）、U6（bitstream は pl-build.sh の出力を試験の ramdisk に --file で写す。「過去の build を image の入力にしない」規則の WS286 の例外）、U7（userland は ARM mode のみ、Thumb-2 は後）を推しで決定。U8（SMP・L2・SD・LAN・SD 起動の後の WS）は Q1 が作る。
 - 2026-10-23 ユーザー「USBは後回しにして、full speed, low speedはWSを作ってあとで対処し、今はFPGAブロックを動作させるということをゴールにして最短で進みましょう。」→ WS286 の目標を JTAG の起動と PL の block の動作に絞り、USB を外す。LS/FS は [WS287](ws287/ws.md) を planning で作成。同じ日に kernel-and-driver-designer と bug-analyzer の model を Opus 5.5 High に（ユーザー、577ccc920）、WS286 では Fable を使わない。
 - 2026-10-23 ユーザー（WS286）「SwitchbotはまだZYBOに接続されていません。USB給電になっています。JTAGからリセットできるならそっちの方がいいですね。ひとまず、openFPGALoaderやopenxc7など、OSSのみで実装を進めてください。難しいとなったらAMDのツールを導入します。」→ OSS の道具だけで進める（U-Boot の SPL、openXC7、openFPGALoader、OpenOCD）。開発は JTAG で load・reset。host に openocd 0.12.0・openFPGALoader 0.13.1 を導入、JTAG の chain（Cortex-A9 の DAP 0x4ba00477、xc7z010 0x3722093）を確認。
