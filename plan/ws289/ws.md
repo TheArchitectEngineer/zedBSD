@@ -3,7 +3,7 @@
 # WS289 ZYBO の単独起動: SD・LAN・SD からの起動
 
 - Master: [plan/master.md](../master.md)（2026-10-23 作成）。Primary Milestone: MG008（HAL の移植と異種機）。Related: [WS286](../ws286/ws.md)（ARMv7 の HAL・ZYBO の BSP、この WS の前提）。
-- Status: incomplete（2026-10-23 p002 の実装が始まった。p001 は Q1 の判定待ち）
+- Status: incomplete（2026-10-23 p002 cleared、p004 in-progress（T1 待ち、実機の card は初期化できず））
 - 出典: 2026-10-23 ユーザー（WS286 p005 の cleared の報告の後）「メモリがあまり多くないのでSDドライバがあるとうれしいです。LANのドライバもついでに動かしてしまえませんか？単独ブートできるといいと思います。」。WS286 を作った時のユーザーの希望「まずはSDブートで、SSHでカーネルを更新して、Switchbotで再起動、というのがいいですね。」も同じ方向。WS286 の design の U8（SMP・L2・SD・LAN・SD 起動は後の WS）のうち SD・LAN・SD 起動をこの WS にした。
 
 ## 目的と完了の条件
