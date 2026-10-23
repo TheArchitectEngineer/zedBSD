@@ -17,8 +17,10 @@
  * The kernel's half holds the direct map of the RAM the device tree
  * describes, in sections, except the sections of the kernel image, which
  * are mapped page by page so that its text alone is executable and its
- * read-only data read-only; and the device window, which hands out whole
- * sections of device registers as drivers ask for them.  The boot runs on
+ * read-only data read-only; the device window, which hands out whole
+ * sections of device registers as drivers ask for them; and the uncached
+ * window, where RAM for a device that does not snoop the caches is mapped
+ * a second time, page by page.  The boot runs on
  * the table locore.S built until armv7_space_init() moves to this one.
  *
  * A user page's logical state is its shadow entry (pte.h): the hardware
@@ -49,6 +51,18 @@
 #define SPACE_SECTION_DEVICE		ARMV7_L1_KERNEL_DEVICE
 #define SPACE_SECTION_NOCACHE		(ARMV7_L1_TYPE_SECTION | ARMV7_L1_SECTION_TEX0 | ARMV7_L1_SECTION_S | \
 					 ARMV7_L1_SECTION_AF | ARMV7_L1_SECTION_XN)
+
+/* The first-level entry index of the uncached window's first section. */
+#define SPACE_UNCACHED_FIRST_INDEX	(ARMV7_UNCACHED_BASE >> ARMV7_SECTION_SHIFT)
+
+/*
+ * How many sections of the uncached window share one page of tables:
+ * each section's table is 1 KiB.
+ */
+#define SPACE_UNCACHED_TABLES_PER_PAGE	(ARMV7_PAGE_SIZE / ARMV7_L2_TABLE_BYTES)
+
+/* The words of the uncached window's map of used pages. */
+#define SPACE_UNCACHED_WORDS		(ARMV7_UNCACHED_PAGES / 32U)
 
 /* The highest address space identifier; 0 is kept for the moments a space changes. */
 #define SPACE_ASID_LAST			255U
@@ -154,6 +168,13 @@ static uint32_t next_asid = 1;
 static volatile unsigned asid_lock;
 
 /*
+ * The uncached window's pages, one bit each, set while a view uses it.
+ * Kept under device_lock, like the window's tables, which once made stay
+ * for the kernel's life.
+ */
+static uint32_t uncached_used[SPACE_UNCACHED_WORDS];
+
+/*
  * How many page-table pages the user spaces and the kernel's half hold,
  * for the memory statistics.  Changed with atomic adds, since each space's
  * tables are changed under that space's own lock.
@@ -167,6 +188,11 @@ static void build_kernel_window(void);
 static void move_to_kernel_table(void);
 static uint32_t kernel_page_descriptor(uintptr_t address);
 static int find_device_run(uint32_t first, uint32_t count, unsigned memory_type, uint32_t *start);
+static int find_uncached_run(uint32_t count, uint32_t *start);
+static int make_uncached_tables(uint32_t first, uint32_t count);
+static uint32_t *uncached_entry(uint32_t page);
+static void mark_uncached(uint32_t first, uint32_t count, int used);
+static int uncached_page_used(uint32_t page);
 static void select_table(uint32_t ttbr0, uint32_t asid);
 static void assign_asid(struct armv7_space *space);
 static int asid_current(const struct armv7_space *space);
@@ -1203,6 +1229,156 @@ hal_space_unmap_device(
 }
 
 /*
+ * Maps managed RAM a second time, uncached, for a device that does not
+ * snoop the caches.
+ *
+ * The view takes free pages of the uncached window, normal non-cacheable
+ * memory that is never executed.  The direct map's lines of the range are
+ * written back and discarded first.  The kernel's own table must be in
+ * use: the window's tables come from the page allocator.
+ */
+int
+hal_pmem_map_uncached(
+	hal_physaddr_t paddr,
+	size_t size,
+	void **vaddr)
+{
+	uint32_t *entry;
+	uint32_t count;
+	uint32_t first;
+	uint32_t index;
+	uint64_t physical;
+	bool ram;
+	bool enabled;
+	int found;
+	int error;
+
+	/* Requires a destination and a page-aligned, non-empty range. */
+	if (vaddr == NULL || size == 0)
+		return HAL_ERR_INVALID;
+	if (((uint64_t)paddr & (ARMV7_PAGE_SIZE - 1U)) != 0)
+		return HAL_ERR_INVALID;
+	if (((uint64_t)size & (ARMV7_PAGE_SIZE - 1U)) != 0)
+		return HAL_ERR_INVALID;
+	if ((uint64_t)size > (uint64_t)ARMV7_UNCACHED_PAGES * ARMV7_PAGE_SIZE)
+		return HAL_ERR_NOMEM;
+
+	/* Refuses anything but RAM, and a boot that has not moved to the kernel's table. */
+	ram = armv7_range_is_ram((uint64_t)paddr, (uint64_t)size);
+	if (!ram)
+		return HAL_ERR_INVALID;
+	if (!kernel_mapping_checked)
+		return HAL_ERR_UNSUPPORTED;
+
+	/* Writes back and drops the direct map's lines before they could shadow the view. */
+	hal_dcache_clean_invalidate_range((uintptr_t)armv7_phys_to_direct((uint64_t)paddr), size);
+
+	/* Takes a run of free pages and the tables under them. */
+	count = (uint32_t)(size / ARMV7_PAGE_SIZE);
+	enabled = armv7_spin_lock(&device_lock);
+
+	/* Finds the run; a full window refuses the view. */
+	found = find_uncached_run(count, &first);
+	if (!found) {
+		armv7_spin_unlock(&device_lock, enabled);
+
+		return HAL_ERR_NOMEM;
+	}
+
+	/* Makes the run's tables; a failed allocation refuses the view. */
+	error = make_uncached_tables(first, count);
+	if (error != HAL_OK) {
+		armv7_spin_unlock(&device_lock, enabled);
+
+		return error;
+	}
+
+	/* Points each page at the RAM, normal non-cacheable, the kernel's alone, never executed. */
+	for (index = 0; index < count; index++) {
+		physical = (uint64_t)paddr + (uint64_t)index * ARMV7_PAGE_SIZE;
+		entry = uncached_entry(first + index);
+		*entry = ((uint32_t)physical & ARMV7_L2_BASE_MASK) | ARMV7_L2_SMALL | ARMV7_L2_TEX0 |
+			 ARMV7_L2_S | ARMV7_L2_AF | ARMV7_L2_XN;
+	}
+	mark_uncached(first, count, 1);
+
+	armv7_spin_unlock(&device_lock, enabled);
+
+	/* Publishes the entries to the table walk; the pages had no translation before. */
+	armv7_dsb();
+	armv7_isb();
+
+	/* Succeeded: the RAM is reachable uncached at the view. */
+	*vaddr = (void *)(uintptr_t)(ARMV7_UNCACHED_BASE + (uintptr_t)first * ARMV7_PAGE_SIZE);
+	return HAL_OK;
+}
+
+/*
+ * Removes a view made by hal_pmem_map_uncached().
+ *
+ * The pages' translations are dropped and the pages go back to the
+ * window; the direct map's lines of the RAM are discarded afterwards, so
+ * that a line a speculative read brought in while the view existed is not
+ * read later.
+ */
+int
+hal_pmem_unmap_uncached(
+	void *vaddr,
+	size_t size)
+{
+	uint32_t *entry;
+	uintptr_t address;
+	uintptr_t page_address;
+	uint32_t count;
+	uint32_t first;
+	uint32_t index;
+	uint64_t physical;
+	bool enabled;
+	int used;
+
+	/* Requires a page-aligned, non-empty range inside the window. */
+	address = (uintptr_t)vaddr;
+	if (size == 0)
+		return HAL_ERR_INVALID;
+	if ((address & (ARMV7_PAGE_SIZE - 1U)) != 0 || ((uint64_t)size & (ARMV7_PAGE_SIZE - 1U)) != 0)
+		return HAL_ERR_INVALID;
+	if (address < ARMV7_UNCACHED_BASE || address >= ARMV7_UNCACHED_LIMIT)
+		return HAL_ERR_INVALID;
+	if ((uint64_t)size > (uint64_t)ARMV7_UNCACHED_LIMIT - address)
+		return HAL_ERR_INVALID;
+	first = (uint32_t)((address - ARMV7_UNCACHED_BASE) / ARMV7_PAGE_SIZE);
+	count = (uint32_t)(size / ARMV7_PAGE_SIZE);
+
+	/* Refuses a range with a page no view uses, before anything is changed. */
+	enabled = armv7_spin_lock(&device_lock);
+
+	for (index = 0; index < count; index++) {
+		used = uncached_page_used(first + index);
+		if (!used) {
+			armv7_spin_unlock(&device_lock, enabled);
+
+			return HAL_ERR_INVALID;
+		}
+	}
+
+	/* Unmaps each page and drops its translation and its direct map's lines. */
+	for (index = 0; index < count; index++) {
+		entry = uncached_entry(first + index);
+		physical = (uint64_t)(*entry & ARMV7_L2_BASE_MASK);
+		*entry = 0;
+		page_address = ARMV7_UNCACHED_BASE + (uintptr_t)(first + index) * ARMV7_PAGE_SIZE;
+		armv7_tlb_flush_kernel_page(page_address);
+		hal_dcache_invalidate_range((uintptr_t)armv7_phys_to_direct(physical), ARMV7_PAGE_SIZE);
+	}
+	mark_uncached(first, count, 0);
+
+	armv7_spin_unlock(&device_lock, enabled);
+
+	/* Succeeded: the range is reachable through the direct map alone. */
+	return HAL_OK;
+}
+
+/*
  * Reports how many user spaces and page-table pages exist.
  */
 void
@@ -1927,4 +2103,141 @@ sync_executable(
 
 	/* Its bytes through the kernel's direct map. */
 	hal_sync_instruction_stream(armv7_phys_to_direct(shadow & ARMV7_PTE_FRAME_MASK), ARMV7_PAGE_SIZE);
+}
+
+/*
+ * Finds the lowest run of free pages of the uncached window.  The caller
+ * holds device_lock.  Reports 0 when there is none.
+ */
+static int
+find_uncached_run(
+	uint32_t count,
+	uint32_t *start)
+{
+	uint32_t candidate;
+	uint32_t length;
+	uint32_t page;
+	int used;
+
+	/* Walks the window, counting the free pages since the last used one. */
+	candidate = 0;
+	length = 0;
+	for (page = 0; page < ARMV7_UNCACHED_PAGES; page++) {
+		used = uncached_page_used(page);
+		if (used) {
+			candidate = page + 1U;
+			length = 0;
+			continue;
+		}
+
+		/* A run long enough is taken. */
+		length++;
+		if (length == count) {
+			*start = candidate;
+			return 1;
+		}
+	}
+
+	/* The window has no such run. */
+	return 0;
+}
+
+/*
+ * Makes the tables under a run of the uncached window's pages, a page of
+ * four sections' tables at a time.  The caller holds device_lock.
+ */
+static int
+make_uncached_tables(
+	uint32_t first,
+	uint32_t count)
+{
+	hal_physaddr_t pages_physical;
+	uint32_t *pages;
+	uint32_t section;
+	uint32_t last_section;
+	uint32_t group;
+	uint32_t index;
+	int error;
+
+	/* Visits the sections the run touches. */
+	section = first / ARMV7_L2_ENTRIES;
+	last_section = (first + count - 1U) / ARMV7_L2_ENTRIES;
+	for (; section <= last_section; section++) {
+		/* A section that has its table already is left as it is. */
+		if (kernel_l1[SPACE_UNCACHED_FIRST_INDEX + section] != 0)
+			continue;
+
+		/* A new page holds the tables of the section's group of four. */
+		error = alloc_table_page(&pages_physical, &pages);
+		if (error != HAL_OK)
+			return error;
+
+		/* Links each table of the page to its section. */
+		group = section - section % SPACE_UNCACHED_TABLES_PER_PAGE;
+		for (index = 0; index < SPACE_UNCACHED_TABLES_PER_PAGE; index++) {
+			kernel_l1[SPACE_UNCACHED_FIRST_INDEX + group + index] =
+				armv7_pte_table_pointer(pages_physical + (hal_physaddr_t)index * ARMV7_L2_TABLE_BYTES);
+		}
+	}
+
+	/* Publishes the new first-level entries to the table walk. */
+	armv7_dsb();
+
+	/* Succeeded: every page of the run has its table. */
+	return HAL_OK;
+}
+
+/*
+ * Reports the second-level entry of one page of the uncached window,
+ * through the direct map; its section's table must exist.
+ */
+static uint32_t *
+uncached_entry(
+	uint32_t page)
+{
+	uint32_t *table;
+	uint32_t pointer;
+
+	/* The section's table, from its first-level entry. */
+	pointer = kernel_l1[SPACE_UNCACHED_FIRST_INDEX + page / ARMV7_L2_ENTRIES];
+	table = armv7_phys_to_direct((uint64_t)(pointer & ARMV7_L1_TABLE_BASE_MASK));
+
+	/* Succeeded: the page's entry. */
+	return &table[page % ARMV7_L2_ENTRIES];
+}
+
+/* Marks a run of the uncached window's pages used or free; the caller holds device_lock. */
+static void
+mark_uncached(
+	uint32_t first,
+	uint32_t count,
+	int used)
+{
+	uint32_t page;
+
+	/* Sets or clears each page's bit. */
+	for (page = first; page < first + count; page++) {
+		if (used) {
+			uncached_used[page / 32U] |= 1U << (page % 32U);
+		} else {
+			uncached_used[page / 32U] &= ~(1U << (page % 32U));
+		}
+	}
+}
+
+/* Reports whether a page of the uncached window is used; the caller holds device_lock. */
+static int
+uncached_page_used(
+	uint32_t page)
+{
+	/* A page past the window is never free. */
+	if (page >= ARMV7_UNCACHED_PAGES)
+		return 1;
+
+	/* A used page has its bit set. */
+	if ((uncached_used[page / 32U] & (1U << (page % 32U))) != 0)
+		return 1;
+
+	/* Succeeded: the page is free. */
+	return 0;
 }

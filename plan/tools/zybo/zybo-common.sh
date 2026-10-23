@@ -40,3 +40,38 @@ zybo_with_uart() {
 		sg dialout -c "$zybo_command"
 	fi
 }
+
+# Writes DIR/zybo.dtb: memory@0 512 MiB and /chosen with the command line
+# and, when START is not empty, the initrd from START to END.  The JTAG boot
+# and the emulator's script (qemu-zynq.sh) give the kernel the same tree.
+#   zybo_make_dtb DIR APPEND [START END]
+zybo_make_dtb() {
+	zybo_dtb_dir=$1 zybo_dtb_append=$2
+	zybo_dtb_initrd=
+	if [ -n "${3:-}" ]; then
+		zybo_dtb_initrd="linux,initrd-start = <$3>; linux,initrd-end = <$4>;"
+	fi
+	zybo_dtb_bootargs=$(printf '%s' "$zybo_dtb_append" | sed 's/\\/\\\\/g; s/"/\\"/g')
+	mkdir -p "$zybo_dtb_dir" || return 1
+	cat > "$zybo_dtb_dir/zybo.dts" <<EOF_DTS
+/dts-v1/;
+/ {
+	#address-cells = <1>;
+	#size-cells = <1>;
+	model = "Digilent ZYBO (JTAG boot)";
+	compatible = "digilent,zynq-zybo", "xlnx,zynq-7000";
+	memory@0 { device_type = "memory"; reg = <0x0 0x20000000>; };
+	chosen { bootargs = "$zybo_dtb_bootargs"; stdout-path = "serial0:115200n8"; $zybo_dtb_initrd };
+};
+EOF_DTS
+	dtc -q -I dts -O dtb -o "$zybo_dtb_dir/zybo.dtb" "$zybo_dtb_dir/zybo.dts"
+}
+
+# Prints the physical end (past the last byte, BSS included) of an ELF's
+# PT_LOAD segments, as 0x%08x.
+#   zybo_elf_phys_end FILE
+zybo_elf_phys_end() {
+	${READELF:-arm-linux-gnueabihf-readelf} -lW "$1" |
+		awk '$1 == "LOAD" { end = strtonum($4) + strtonum($6); if (end > high) high = end }
+		     END { printf "0x%08x\n", high }'
+}

@@ -378,40 +378,6 @@ hal_pmem_get_total_size(
 }
 
 /*
- * Refuses an uncached view of RAM: the HAL makes none yet, and no device
- * of the emulator's virt board needs one, since the emulated devices see
- * what the caches hold.
- */
-int
-hal_pmem_map_uncached(
-	hal_physaddr_t paddr,
-	size_t size,
-	void **vaddr)
-{
-	UNUSED_PARAMETER(paddr);
-	UNUSED_PARAMETER(size);
-	UNUSED_PARAMETER(vaddr);
-
-	/* Failed: no such view exists on this port. */
-	return HAL_ERR_UNSUPPORTED;
-}
-
-/*
- * Refuses to remove an uncached view, which the HAL never makes yet.
- */
-int
-hal_pmem_unmap_uncached(
-	void *vaddr,
-	size_t size)
-{
-	UNUSED_PARAMETER(vaddr);
-	UNUSED_PARAMETER(size);
-
-	/* Failed: no such view exists on this port. */
-	return HAL_ERR_UNSUPPORTED;
-}
-
-/*
  * Collects the physical, task and address-space statistics.
  */
 void

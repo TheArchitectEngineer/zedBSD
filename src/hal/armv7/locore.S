@@ -16,9 +16,16 @@
  * until the MMU is on the code reaches its own data only through
  * physical addresses it computes, and it calls no C.
  *
+ * Only the first processor boots: another that enters here (the
+ * emulator's ELF loader starts every processor at the entry) stops.  The
+ * level 1 data cache is invalidated before it is turned on, since the
+ * Cortex-A9 leaves it unknown at reset, and the board sets up what must be
+ * on before the MMU and the caches (bsp_cpu_early_setup, bsp.h).
+ *
  * The boot table maps the section that holds the image as it is (so the
  * instruction after the MMU is turned on is still mapped) and the first
- * ARMV7_BOOT_MAP_BYTES of RAM in the direct map, in sections.  TTBCR.N
+ * ARMV7_BOOT_MAP_BYTES of RAM in the direct map, in sections, less the
+ * ARMV7_LOW_RAM_SKIP bytes at its start the board keeps out.  TTBCR.N
  * stays 0 so the one table serves both halves.  The C code maps the early
  * devices into it, then builds the kernel's own table from the RAM the
  * device tree describes and moves to it, splitting the address space
@@ -40,6 +47,11 @@ _start:
 
 	/* Keeps the device tree's physical address. */
 	mov r10, r2
+
+	/* A processor other than the first waits for good; the kernel runs on one. */
+	mrc p15, 0, r4, c0, c0, 5
+	ands r4, r4, #0xff
+	bne armv7_halt_loop
 
 	/* Only supervisor mode is supported; another mode stops here. */
 	mrs r4, cpsr
@@ -82,6 +94,9 @@ _start:
 	dsb
 	isb
 
+	/* Drops whatever the level 1 data cache holds, before it is first turned on. */
+	bl invalidate_l1_data
+
 	/* C requires zeroed BSS, which holds the boot table and the boot stack. */
 	ldr r6, =ARMV7_VIRT_OFFSET
 	ldr r4, =__bss_start
@@ -105,17 +120,20 @@ _start:
 	orr r8, r8, r9
 	str r8, [r4, r7, lsl #2]
 
-	/* The first sections of RAM in the direct map. */
-	ldr r7, =(ARMV7_DIRECT_BASE >> ARMV7_SECTION_SHIFT)
-	ldr r8, =ARMV7_PHYS_BASE
+	/* The first sections of RAM in the direct map, past the ones the board keeps out. */
+	ldr r7, =((ARMV7_DIRECT_BASE + ARMV7_LOW_RAM_SKIP) >> ARMV7_SECTION_SHIFT)
+	ldr r8, =(ARMV7_PHYS_BASE + ARMV7_LOW_RAM_SKIP)
 	orr r8, r8, r9
-	ldr r11, =(ARMV7_BOOT_MAP_BYTES >> ARMV7_SECTION_SHIFT)
+	ldr r11, =((ARMV7_BOOT_MAP_BYTES - ARMV7_LOW_RAM_SKIP) >> ARMV7_SECTION_SHIFT)
 2:	str r8, [r4, r7, lsl #2]
 	add r7, r7, #1
 	add r8, r8, #ARMV7_SECTION_SIZE
 	subs r11, r11, #1
 	bne 2b
 	dsb
+
+	/* The board's setup that comes before the MMU and the caches; it keeps r4 to r11. */
+	bl bsp_cpu_early_setup
 
 	/* Domain 0 is checked as a client; one table translates both halves for now. */
 	mov r7, #ARMV7_DACR_CLIENT0
@@ -175,6 +193,54 @@ armv7_halt_loop:
 	wfi
 	b 1b
 	.size armv7_halt_loop, . - armv7_halt_loop
+
+	/*
+	 * Invalidates every line of the level 1 data cache by set and way,
+	 * with the cache off: nothing in it is kept.  It uses r0 to r3 and
+	 * r12 only, and runs before the MMU is on.
+	 *
+	 * Procedure referenced: Linux v6.12 arch/arm/mm/cache-v7.S,
+	 * v7_invalidate_l1 (CSSELR, the geometry in CCSIDR, DCISW for each
+	 * set of each way).
+	 */
+	.balign 4
+	.type invalidate_l1_data, %function
+invalidate_l1_data:
+	/* Selects the level 1 data cache and reads its geometry. */
+	mov r0, #0
+	mcr p15, 2, r0, c0, c0, 0
+	isb
+	mrc p15, 1, r0, c0, c0, 0
+
+	/* r1 is the way's shift, r3 the last way in place, r2 the set's shift. */
+	ldr r3, =0x3ff
+	and r3, r3, r0, lsr #3
+	clz r1, r3
+	lsl r3, r3, r1
+	mov r2, #1
+	lsls r1, r2, r1
+	moveq r1, #1
+	and r2, r0, #0x7
+	add r2, r2, #4
+
+	/* Each way from the last, and in it each set from the last. */
+1:	ldr r12, =0x7fff
+	and r12, r12, r0, lsr #13
+2:	orr r0, r3, r12, lsl r2
+	mcr p15, 0, r0, c7, c6, 2
+	subs r12, r12, #1
+	bpl 2b
+	subs r3, r3, r1
+	bcc 3f
+	mrc p15, 1, r0, c0, c0, 0
+	b 1b
+
+	/* The invalidations are done before anything is cached again. */
+3:	dsb
+	isb
+	bx lr
+	.ltorg
+	.size invalidate_l1_data, . - invalidate_l1_data
 
 	.section .bss.boot, "aw", %nobits
 	.balign 16

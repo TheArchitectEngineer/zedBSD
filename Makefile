@@ -85,7 +85,7 @@ ZEDBSD_PLATFORM_DIR := $(strip \
 	$(if $(filter sun4u,$(ZEDBSD_PLATFORM)),sparcv9,\
 	$(if $(filter riscv64-virt visionfive2,$(ZEDBSD_PLATFORM)),riscv64,\
 	$(if $(filter riscv32-virt,$(ZEDBSD_PLATFORM)),riscv32,\
-	$(if $(filter armv7-virt,$(ZEDBSD_PLATFORM)),armv7,\
+	$(if $(filter armv7-virt zybo,$(ZEDBSD_PLATFORM)),armv7,\
 	$(ZEDBSD_PLATFORM))))))))
 
 PLATFORM_MAKEFILE := platform/$(ZEDBSD_PLATFORM_DIR)/Makefile
@@ -218,6 +218,7 @@ ZEDBSD_VARIANTS_riscv64_virt := default
 ZEDBSD_VARIANTS_riscv64_visionfive2 := default
 ZEDBSD_VARIANTS_riscv32_virt := default
 ZEDBSD_VARIANTS_armv7_virt := default
+ZEDBSD_VARIANTS_armv7_zybo := default
 ZEDBSD_VARIANTS_sparcv9_sun4u := default
 ZEDBSD_VARIANTS_m68k_x68k := default
 ZEDBSD_VARIANTS_m68k_virt := default
@@ -235,6 +236,7 @@ ZEDBSD_PLATFORM_TARGET_riscv64-virt := riscv64_virt
 ZEDBSD_PLATFORM_TARGET_visionfive2 := riscv64_visionfive2
 ZEDBSD_PLATFORM_TARGET_riscv32-virt := riscv32_virt
 ZEDBSD_PLATFORM_TARGET_armv7-virt := armv7_virt
+ZEDBSD_PLATFORM_TARGET_zybo := armv7_zybo
 ZEDBSD_PLATFORM_TARGET_sun4u := sparcv9_sun4u
 ZEDBSD_PLATFORM_TARGET_x68k := m68k_x68k
 ZEDBSD_PLATFORM_TARGET_m68k-virt := m68k_virt

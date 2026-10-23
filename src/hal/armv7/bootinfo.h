@@ -42,6 +42,10 @@ const char *
 armv7_boot_command_line(
 	void);
 
+int
+armv7_boot_has_parameter(
+	const char *name);
+
 const void *
 armv7_kernel_handoff(
 	void);

@@ -12,14 +12,16 @@
  * translation tables and TTBCR.N = 1: the lower 2 GiB belong to the user
  * space TTBR0 selects, and the upper 2 GiB to the kernel's table, which
  * TTBR1 selects on every processor.  The upper half holds the direct
- * map of RAM from 0x80000000 (the image is linked and runs in it) and
- * the device window from 0xc0000000.  The constants are shared by the
- * assembly sources, so they are plain numbers without C suffixes where
- * the assembler reads them.
+ * map of RAM from 0x80000000 (the image is linked and runs in it), the
+ * device window from 0xc0000000 and the uncached window from
+ * 0xd0000000.  The constants are shared by the assembly sources, so they
+ * are plain numbers without C suffixes where the assembler reads them.
  *
  * The platform's makefile gives ARMV7_PHYS_BASE, the physical address
- * the direct map starts at (the board's first byte of RAM), and
- * ARMV7_KERNEL_PHYS, where the loader puts the image.
+ * the direct map starts at (the board's first byte of RAM),
+ * ARMV7_KERNEL_PHYS, where the loader puts the image, and
+ * ARMV7_LOW_RAM_SKIP, how many bytes at the start of RAM the kernel never
+ * maps nor uses (a whole number of sections, zero on most boards).
  */
 
 #ifndef KERN_HAL_ARMV7_DEFS_H
@@ -27,6 +29,9 @@
 
 #if !defined(ARMV7_PHYS_BASE) || !defined(ARMV7_KERNEL_PHYS) || !defined(ARMV7_BOOT_MAP_BYTES)
 #error "the armv7 platform makefile defines ARMV7_PHYS_BASE, ARMV7_KERNEL_PHYS and ARMV7_BOOT_MAP_BYTES"
+#endif
+#if !defined(ARMV7_LOW_RAM_SKIP)
+#error "the armv7 platform makefile defines ARMV7_LOW_RAM_SKIP"
 #endif
 
 /* Marks a parameter a function does not use. */
@@ -72,8 +77,17 @@
  * one section at a time, wherever the window had room.
  */
 #define ARMV7_DEVICE_BASE		0xc0000000
-#define ARMV7_DEVICE_LIMIT		0xe0000000
-#define ARMV7_DEVICE_SECTIONS		512
+#define ARMV7_DEVICE_LIMIT		0xd0000000
+#define ARMV7_DEVICE_SECTIONS		256
+
+/*
+ * The uncached window: RAM handed to a device that does not snoop the
+ * caches is mapped a second time here, page by page and uncached
+ * (hal_pmem_map_uncached()).
+ */
+#define ARMV7_UNCACHED_BASE		0xd0000000
+#define ARMV7_UNCACHED_LIMIT		0xe0000000
+#define ARMV7_UNCACHED_PAGES		65536
 
 /* The user half: TTBR0's 2 GiB, the first page never mapped. */
 #define ARMV7_USER_MINIMUM		0x1000

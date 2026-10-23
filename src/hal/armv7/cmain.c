@@ -9,8 +9,10 @@
  * The armv7 boot processor's first C code: from locore.S to the kernel.
  *
  * The processor's record comes first and then the board's console, so
- * that everything after can report.  The device tree is read through the
- * boot map's direct map, the board's display is set up, the run-time ABI
+ * that everything after can report.  The board names the device tree (the
+ * loader's r2, or where the board's loader puts it), which is read through
+ * the boot map's direct map; RAM the board keeps out (ARMV7_LOW_RAM_SKIP)
+ * is taken out of what it describes.  The board's display is set up, the run-time ABI
  * and the exclusives are checked, then physical memory, the kernel's
  * table, the interrupt controller and the tick, which is seen running
  * before the kernel starts.  The kernel calls back into
@@ -25,6 +27,7 @@
 #include "clock.h"
 #include "defs.h"
 #include "fdt.h"
+#include "int.h"
 #include "irq.h"
 #include "page.h"
 #include "percpu.h"
@@ -50,6 +53,14 @@
 /* How many tick intervals the boot allows for each tick it waits for. */
 #define CMAIN_TICK_WAIT_FACTOR	10U
 
+/*
+ * The boot parameter that asks the boot to time ten seconds of ticks, so
+ * the tick's rate can be checked against a clock outside the machine, and
+ * how long that takes.
+ */
+#define CMAIN_TIMER_CHECK_PARAMETER	"armv7.timer-check"
+#define CMAIN_TIMER_CHECK_SECONDS	10U
+
 /* The bounds of the kernel image, from the linker script. */
 extern char __kernel_vma_start[];
 extern char __kernel_vma_end[];
@@ -62,13 +73,17 @@ static struct armv7_fdt_info cmain_fdt;
 
 static void check_boot_argument(uintptr_t fdt_phys);
 static void check_overlap(uint64_t base, uint64_t size, const char *what);
+static void keep_out_low_ram(struct armv7_fdt_info *info);
+static void report_pending_abort(void);
 static void wait_for_ticks(void);
+static void time_ten_seconds(void);
 
 /*
  * Brings the boot processor from locore.S to kernel_entry().
  *
- * The loader passes the device tree's physical address in r2, and
- * locore.S where the image was loaded.
+ * The loader passes the device tree's physical address in r2 (which the
+ * board may replace with the address its loader uses), and locore.S where
+ * the image was loaded.
  */
 void
 armv7_cmain(
@@ -84,7 +99,8 @@ armv7_cmain(
 	/* The board's console, at the address the board knows, before anything reports. */
 	bsp_early_init();
 
-	/* The boot argument must be a device tree inside the boot map. */
+	/* The board names the device tree, which must lie inside the boot map. */
+	fdt_phys = bsp_find_fdt(fdt_phys);
 	check_boot_argument(fdt_phys);
 
 	/* Reads the tree through the boot map's direct map. */
@@ -93,6 +109,9 @@ armv7_cmain(
 		hal_printf("armv7 device tree: %s\n", armv7_fdt_error(error));
 		HAL_FATAL("invalid armv7 device tree");
 	}
+
+	/* The RAM the board keeps out is no RAM to the rest of the HAL. */
+	keep_out_low_ram(&cmain_fdt);
 
 	/* The tree and the ramdisk must lie outside the image, which overwrote them otherwise. */
 	check_overlap((uint64_t)fdt_phys, cmain_fdt.totalsize, "device tree");
@@ -118,6 +137,7 @@ armv7_cmain(
 		   cmain_fdt.initrd_start,
 		   cmain_fdt.initrd_end);
 	bsp_describe();
+	report_pending_abort();
 
 	/* The run-time ABI's helpers and the exclusives, which the kernel's code relies on. */
 	armv7_aeabi_selftest();
@@ -132,6 +152,7 @@ armv7_cmain(
 	armv7_irq_init();
 	armv7_clock_init();
 	wait_for_ticks();
+	time_ten_seconds();
 
 	/*
 	 * Hands the ticks to the kernel and enters it with interrupts masked:
@@ -158,7 +179,7 @@ check_boot_argument(
 	/* The tree must be inside the RAM the boot map reaches. */
 	if (fdt_phys == 0)
 		HAL_FATAL("armv7 loader passed no device tree");
-	if ((uint64_t)fdt_phys < ARMV7_PHYS_BASE)
+	if ((uint64_t)fdt_phys < (uint64_t)ARMV7_PHYS_BASE + ARMV7_LOW_RAM_SKIP)
 		HAL_FATAL("armv7 device tree below the direct map");
 	if ((uint64_t)fdt_phys - ARMV7_PHYS_BASE >= (uint64_t)ARMV7_BOOT_MAP_BYTES - CMAIN_FDT_READ_LIMIT)
 		HAL_FATAL("armv7 device tree beyond the boot map");
@@ -198,6 +219,66 @@ check_overlap(
 	/* Otherwise the range was lost. */
 	hal_printf("armv7 %s %llx+%llx overlaps the image %llx-%llx\n", what, base, size, image_start, image_end);
 	HAL_FATAL("armv7 loader placed data inside the kernel image");
+}
+
+/*
+ * Takes the RAM the board keeps out (the first ARMV7_LOW_RAM_SKIP bytes
+ * of RAM) off the device tree's banks: a bank wholly inside it is dropped,
+ * and one that starts inside it starts past it.
+ */
+static void
+keep_out_low_ram(
+	struct armv7_fdt_info *info)
+{
+	uint64_t floor;
+	uint64_t end;
+	unsigned index;
+	unsigned kept;
+
+	/* RAM below the floor is the board's own. */
+	floor = (uint64_t)ARMV7_PHYS_BASE + ARMV7_LOW_RAM_SKIP;
+
+	/* Keeps each bank's part above the floor, in the banks' order. */
+	kept = 0;
+	for (index = 0; index < info->memory_count; index++) {
+		/* A bank that ends at or below the floor is dropped. */
+		end = info->memory[index].base + info->memory[index].size;
+		if (end <= floor)
+			continue;
+
+		/* A bank that starts below the floor starts at it. */
+		info->memory[kept].base = info->memory[index].base;
+		info->memory[kept].size = info->memory[index].size;
+		if (info->memory[kept].base < floor) {
+			info->memory[kept].base = floor;
+			info->memory[kept].size = end - floor;
+		}
+		kept++;
+	}
+
+	/* Succeeded: only the banks above the floor are left. */
+	info->memory_count = kept;
+}
+
+/*
+ * Writes the asynchronous abort the loader left pending to the boot log,
+ * when the boot took one as it unmasked them.
+ */
+static void
+report_pending_abort(
+	void)
+{
+	uint32_t status;
+	uint32_t address;
+	int seen;
+
+	/* Asks the trap code whether one was taken. */
+	seen = armv7_trap_pending_abort(&status, &address);
+	if (!seen)
+		return;
+
+	/* Succeeded: the abort is on record and the boot went past it. */
+	hal_printf("ARMV7 PENDING ASYNC ABORT DFSR=%08x DFAR=%08x\n", status, address);
 }
 
 /*
@@ -241,4 +322,57 @@ wait_for_ticks(
 		   (uint32_t)ticks,
 		   frequency,
 		   armv7_clock_tick_irq());
+}
+
+/*
+ * Times ten seconds of ticks when the command line asks for it: one line
+ * as the count starts and one when the ticks of ten seconds have come,
+ * with how far the counter moved meanwhile.  The two lines' arrival on
+ * the serial line, measured by the host's clock, checks the tick's rate.
+ */
+static void
+time_ten_seconds(
+	void)
+{
+	uint64_t start;
+	uint64_t now;
+	uint64_t frequency;
+	uint64_t limit;
+	unsigned long first_tick;
+	unsigned long ticks;
+	unsigned long wanted;
+	int requested;
+
+	/* Only a boot that asks waits the ten seconds. */
+	requested = armv7_boot_has_parameter(CMAIN_TIMER_CHECK_PARAMETER);
+	if (!requested)
+		return;
+
+	/* The ticks of ten seconds, waited for at most twice as long by the counter. */
+	wanted = (unsigned long)CMAIN_TIMER_CHECK_SECONDS * HAL_TIMER_FREQUENCY;
+	(void)armv7_clock_read(&start, &frequency);
+	limit = frequency * CMAIN_TIMER_CHECK_SECONDS * 2U;
+	first_tick = armv7_clock_ticks();
+	hal_puts("ARMV7 TIMER 0S\n");
+
+	/* Counts the ticks with interrupts unmasked. */
+	__asm__ volatile("cpsie i" : : : "memory");
+	for (;;) {
+		ticks = armv7_clock_ticks() - first_tick;
+		if (ticks >= wanted)
+			break;
+		(void)armv7_clock_read(&now, &frequency);
+		if (now - start > limit)
+			break;
+		hal_atomic_relax();
+	}
+	__asm__ volatile("cpsid i" : : : "memory");
+
+	/* Reports the ticks counted and the counter's distance, in its own units. */
+	(void)armv7_clock_read(&now, &frequency);
+	hal_printf("ARMV7 TIMER %uS ticks=%u counter=%llu Hz=%llu\n",
+		   (uint32_t)CMAIN_TIMER_CHECK_SECONDS,
+		   (uint32_t)ticks,
+		   now - start,
+		   frequency);
 }

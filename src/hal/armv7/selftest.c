@@ -181,7 +181,9 @@ armv7_atomic_selftest(
  * Checks the user address spaces from the kernel: a page's first access
  * and first store are recorded by the faults they take, a store to a page
  * made read-only is the kernel's fault, and two spaces map the same
- * address to different memory under their own identifiers.
+ * address to different memory under their own identifiers.  Last, a store
+ * through an uncached view of a page is what the direct map reads once
+ * the view is gone.
  */
 void
 armv7_paging_selftest(
@@ -193,6 +195,8 @@ armv7_paging_selftest(
 	hal_space_t space_b;
 	volatile uint32_t *direct_a;
 	volatile uint32_t *direct_b;
+	volatile uint32_t *uncached;
+	void *view;
 	uint32_t flags;
 	uint32_t value;
 	uint32_t asid_a;
@@ -270,7 +274,7 @@ armv7_paging_selftest(
 	if (value != SELFTEST_PATTERN_STORED)
 		paging_fail(8);
 
-	/* Leaves the spaces and gives everything back. */
+	/* Leaves the spaces and destroys them. */
 	hal_space_switch(HAL_SPACE_SYS);
 	error = hal_space_unmap(space_a, (void *)SELFTEST_USER_ADDRESS, ARMV7_PAGE_SIZE);
 	if (error != HAL_OK)
@@ -280,6 +284,22 @@ armv7_paging_selftest(
 		paging_fail(9);
 	hal_space_destroy(space_a);
 	hal_space_destroy(space_b);
+
+	/* A store through an uncached view reaches the RAM the direct map reads after the view. */
+	error = hal_pmem_map_uncached(page_a, ARMV7_PAGE_SIZE, &view);
+	if (error != HAL_OK)
+		paging_fail(10);
+	uncached = view;
+	uncached[0] = SELFTEST_PATTERN_B;
+	if (uncached[0] != SELFTEST_PATTERN_B)
+		paging_fail(10);
+	error = hal_pmem_unmap_uncached(view, ARMV7_PAGE_SIZE);
+	if (error != HAL_OK)
+		paging_fail(10);
+	if (direct_a[0] != SELFTEST_PATTERN_B)
+		paging_fail(10);
+
+	/* Gives the pages back. */
 	(void)hal_pmem_free(&page_a, ARMV7_PAGE_SIZE);
 	(void)hal_pmem_free(&page_b, ARMV7_PAGE_SIZE);
 

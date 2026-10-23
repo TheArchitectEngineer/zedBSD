@@ -16,8 +16,8 @@
  * Values referenced: ARM DDI 0406C, the CP15 register encodings (opc1,
  * CRn, CRm, opc2) of SCTLR, ACTLR, TTBR0, TTBR1, TTBCR, DACR, DFSR, IFSR,
  * DFAR, IFAR, VBAR, CONTEXTIDR, TPIDRURW, TPIDRURO, TPIDRPRW, MIDR, MPIDR,
- * the TLB maintenance operations and the generic timer's CNTFRQ, CNTPCT,
- * CNTP_CTL and CNTP_CVAL.
+ * ID_MMFR3, the TLB maintenance operations and the generic timer's
+ * CNTFRQ, CNTPCT, CNTP_CTL and CNTP_CVAL.
  */
 
 #ifndef KERN_HAL_ARMV7_ASM_H
@@ -180,6 +180,22 @@ armv7_read_midr(
 
 	/* The implementer, variant, part and revision. */
 	__asm__ volatile("mrc p15, 0, %0, c0, c0, 0" : "=r"(value));
+
+	/* Succeeded: the register's value. */
+	return value;
+}
+
+/*
+ * Reads the memory model feature register 3.
+ */
+static __inline uint32_t
+armv7_read_id_mmfr3(
+	void)
+{
+	uint32_t value;
+
+	/* Among its fields, whether the table walk is coherent with the caches. */
+	__asm__ volatile("mrc p15, 0, %0, c0, c1, 7" : "=r"(value));
 
 	/* Succeeded: the register's value. */
 	return value;

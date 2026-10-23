@@ -126,6 +126,47 @@ armv7_boot_command_line(
 }
 
 /*
+ * Reports whether the command line holds a word, alone or as the name of
+ * a name=value parameter.
+ */
+int
+armv7_boot_has_parameter(
+	const char *name)
+{
+	size_t start;
+	size_t index;
+	char next;
+
+	/* Looks at the start of each word of the line. */
+	start = 0;
+	while (boot_command_line[start] != '\0') {
+		/* Compares the word's first characters with the name. */
+		for (index = 0; name[index] != '\0'; index++) {
+			if (boot_command_line[start + index] != name[index])
+				break;
+		}
+
+		/* The whole name, followed by the word's end or by its value, is a match. */
+		if (name[index] == '\0') {
+			next = boot_command_line[start + index];
+			if (next == '\0' ||
+			    next == ' ' ||
+			    next == '=')
+				return 1;
+		}
+
+		/* Moves past the word and the spaces after it. */
+		while (boot_command_line[start] != '\0' && boot_command_line[start] != ' ')
+			start++;
+		while (boot_command_line[start] == ' ')
+			start++;
+	}
+
+	/* The line does not name it. */
+	return 0;
+}
+
+/*
  * Reports the handoff the kernel's entry reads.
  */
 const void *

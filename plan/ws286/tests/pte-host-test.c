@@ -20,7 +20,7 @@
  *
  * cc -m32 -std=c11 -Wall -Wextra -Werror -Iinclude -Isrc/hal/armv7 \
  *    -DARMV7_PHYS_BASE=0x40000000 -DARMV7_KERNEL_PHYS=0x40010000 \
- *    -DARMV7_BOOT_MAP_BYTES=0x40000000 \
+ *    -DARMV7_BOOT_MAP_BYTES=0x40000000 -DARMV7_LOW_RAM_SKIP=0 \
  *    plan/ws286/tests/pte-host-test.c -o <out> && <out>
  */
 

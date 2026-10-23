@@ -35,7 +35,19 @@ struct armv7_clock_ops {
 	uint32_t (*tick_irq)(void);
 };
 
+/*
+ * The board's entry points.
+ *
+ * bsp_cpu_early_setup runs in locore.S on the boot processor before the
+ * MMU and the caches are on, from the physical copy of the image: it may
+ * use r0 to r3 and r12 only and reach nothing by a linked address (the
+ * ZYBO turns on the SCU and the processor's coherency bits there).
+ * bsp_early_init makes the console reachable; bsp_find_fdt names the
+ * device tree's physical address from the loader's r2, or 0.
+ */
+void bsp_cpu_early_setup(void);
 void bsp_early_init(void);
+uintptr_t bsp_find_fdt(uintptr_t loader_argument);
 void bsp_init(const struct armv7_fdt_info *info);
 void bsp_describe(void);
 void bsp_cons_putc(int character);

@@ -8,7 +8,8 @@ AWK ?= awk
 # sources as definitions and the link script as symbols.
 ARMV7_ADDRESS_DEFINES := -DARMV7_PHYS_BASE=$(ARMV7_PHYS_BASE) \
 	-DARMV7_KERNEL_PHYS=$(ARMV7_KERNEL_PHYS) \
-	-DARMV7_BOOT_MAP_BYTES=$(ARMV7_BOOT_MAP_BYTES)
+	-DARMV7_BOOT_MAP_BYTES=$(ARMV7_BOOT_MAP_BYTES) \
+	-DARMV7_LOW_RAM_SKIP=$(ARMV7_LOW_RAM_SKIP)
 
 # The kernel and the HAL read the compiler's freestanding headers and the
 # tree's include/ and src/, never the C library (as on the other ports).
@@ -37,6 +38,7 @@ ARMV7_CFLAGS := -march=armv7-a -mcpu=cortex-a9 -marm -mfloat-abi=soft -mfpu=none
 ARMV7_KERNEL_LTO_CFLAGS := $(ZEDBSD_KERNEL_LTO_CFLAGS)
 
 ARMV7_BSP_C := $(addprefix src/hal/armv7/$(ARMV7_BSP_DIR)/,$(ARMV7_BSP_SOURCES))
+ARMV7_BSP_S := $(addprefix src/hal/armv7/$(ARMV7_BSP_DIR)/,$(ARMV7_BSP_ASM_SOURCES))
 
 ARMV7_BOOT_C := src/hal/armv7/cmain.c src/hal/armv7/bootinfo.c \
 	src/hal/armv7/fdt.c src/hal/armv7/percpu.c src/hal/armv7/smp.c \
@@ -47,7 +49,8 @@ ARMV7_BOOT_C := src/hal/armv7/cmain.c src/hal/armv7/bootinfo.c \
 	src/hal/idle-suspend-unsupported.c \
 	$(ARMV7_BSP_C)
 ARMV7_BOOT_S := src/hal/armv7/locore.S src/hal/armv7/vectors.S \
-	src/hal/armv7/dispatch.S src/hal/armv7/aeabi.S
+	src/hal/armv7/dispatch.S src/hal/armv7/aeabi.S \
+	$(ARMV7_BSP_S)
 ARMV7_BOOT_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(ARMV7_BOOT_C)) \
 	$(patsubst %.S,$(BUILD)/%.o,$(ARMV7_BOOT_S))
 
