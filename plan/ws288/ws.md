@@ -32,6 +32,7 @@
 - **2026-10-24 ユーザー「では、ZYBOではDCの検証ができたのでもうそれでよしとして、KC705だけをターゲットに変えましょう。」** → 目標の板は KC705 だけ。ZYBO の raster・compute の bitstream（U17）は作らない。ZYBO は DC（p005）の検証まで。
 
 - **2026-10-24 ユーザー（FP16 だけの GPU の話の後）「了解です。そのまま勧めましょう。」→ KC705 の SU は案 A: fp32 は FPU の少ない lane（例: NPHYS 8 の SU に FPU 1〜2 lane、32 lane を順に流す）、fp16 の packed の演算（PACKED）は全 lane。Vulkan の fp32 の正しさは保ち、速さを fp16 に寄せる。案 B（頂点の変換は VF/RX の固定の回路で fp32、SU は fp16 を主に）は合わせて検討。FPU の lane の数は p012〜p015 の合成で決める。**
+- **2026-10-24 ユーザー「FP32は全laneでいいと思います。」→ 直前の案 A（fp32 は FPU の少ない lane）を改める: KC705 の SU は fp32 の FPU を全 lane に持つ（NPHYS 分）。fp16 の packed（PACKED）も持つ。SU の数・NPHYS は KC705 の合成で決める。**
 
 ## Phase
 
