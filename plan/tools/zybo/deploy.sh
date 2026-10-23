@@ -1,7 +1,7 @@
 #!/bin/sh
-# Updates the kernel of a ZYBO that boots from its SD card (WS289 design
-# §5.6) over SSH, and reboots it into the new one: U-Boot SPL reads the
-# kernel from the card's FAT, which the running system has at /boot/boot0.
+# Updates the kernel of a ZYBO that boots from its SD card (WS289 ws.md) over
+# SSH, and reboots it into the new one: U-Boot SPL reads the kernel from the
+# card's FAT, which the running system has at /boot/boot0.
 #   plan/tools/zybo/deploy.sh KERNEL [--host HOST] [--port PORT]
 #       [--dtb FILE] [--wait S] [--no-reboot]
 # KERNEL is the kernel's ELF (such as build/zybo/vmunix) with its raw image

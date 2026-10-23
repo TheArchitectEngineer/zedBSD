@@ -2,7 +2,7 @@
 # Builds U-Boot SPL for the original ZYBO from the U-Boot v2025.07 release.
 # One SPL serves both boots.  The JTAG boot (WS286 design §4): jtag-boot.sh
 # runs it from OCM to set up the clocks, MIO, DDR and UART1, and stops it in
-# board_boot_order.  The SD boot (WS289 design §5): the boot ROM runs it from
+# board_boot_order.  The SD boot (WS289 ws.md): the boot ROM runs it from
 # the card's BOOT.BIN, and it boots the kernel in Falcon mode, reading
 # system.dtb and the FIT vmunix.itb from the card's first partition (FAT)
 # and entering the kernel with r2 = the DTB, as the JTAG boot does.

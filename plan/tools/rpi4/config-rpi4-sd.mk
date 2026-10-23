@@ -1,5 +1,5 @@
-# ws289: the Pi 4 image for the SD regression of the generic SDHCI core
-# (p002, QEMU raspi4b boot-test).  It is the CI Pi 4 configuration without
+# The Pi 4 image for the SD regression of the generic SDHCI core (WS289 p002,
+# QEMU raspi4b boot-test).  It is the CI Pi 4 configuration without
 # the vendor firmware packages, whose licenses are accepted per cache by the
 # user; the SD path needs none of them.
 include config/ci/config-rpi4.mk
