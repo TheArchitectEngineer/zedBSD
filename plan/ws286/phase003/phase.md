@@ -6,7 +6,7 @@
 - Queue: Q1 の割当（P1、2026-10-23、worktree `/home/awe/zedBSD-worktrees/p1-zybo-p003`・branch `agent/p1-zybo-p003`、基点 main 8ce002104）。
 - 判断: U4（担当が板を直に、host の lock `/tmp/zedbsd-zybo-board.lock`）、U5（RTL は `platform/armv7/zybo/pl/plio/`）、D2（OSS だけ: 「ひとまず、openFPGALoaderやopenxc7など、OSSのみで実装を進めてください。難しいとなったらAMDのツールを導入します。」）。
 - 途中の方針の変更（2026-10-23、Q1 経由のユーザーの原文）:「了解です。それならopenxc7は使わなくてもよいかも。RTLを配布物にして、プロジェクト、bitstream は別なツリーでもいいです。あとでリファクタすればいいです。」→ Q1: openXC7 は必須でない、通る見込みなら進めてよい。この時点で openXC7 の build は進んでおり PS7 の対応も確かめていたので、openXC7 のまま進めた（下のとおり通った）。bitstream は tree の外（`build/`）、RTL は tree の中。
-- Status: in-progress（実装と実機の確かめは済み。Q1 の判定待ち）
+- Status: cleared（2026-10-23 Q1 の判定: openXC7 の導入、plio の bitstream、JTAG の書き込み、GP0 の register と IRQ の実機の確認で受け入れを満たした。LED の目視とスイッチ・ボタンは未確認）
 
 ## 目的と受け入れの条件
 
