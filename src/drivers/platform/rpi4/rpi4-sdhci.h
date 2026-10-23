@@ -6,7 +6,7 @@
  */
 
 /*
- * Raspberry Pi 4 eMMC2 SDHCI PIO driver.
+ * The Raspberry Pi 4's and Pi 5's SD controller, handed to the SDHCI driver.
  */
 
 #ifndef KERN_DRIVERS_RPI4_SDHCI_H

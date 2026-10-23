@@ -48,7 +48,7 @@ ARM64_BCM43455_SOURCES := src/drivers/wifi/bcm43455/bcm43455.c \
 # controllers shown to the PCI core and its Ethernet controller.
 ARM64_BOARD_KERNEL_SOURCES_rpi4 := \
 	src/kern/platform/rpi4.c \
-	src/drivers/platform/rpi4/rpi4-sdhci.c \
+	src/drivers/platform/rpi4/rpi4-sdhci.c src/drivers/mmc/sdhci.c \
 	src/drivers/platform/rpi4/rpi4-console.c \
 	src/drivers/platform/rpi4/rpi4-pcie.c \
 	src/drivers/platform/rpi4/rpi4-board.c \
@@ -59,7 +59,7 @@ ARM64_BOARD_KERNEL_SOURCES_rpi4 := \
 	src/drivers/pci/pci.c src/drivers/pci/pci-brcmstb.c
 ARM64_BOARD_KERNEL_SOURCES_rpi5 := \
 	src/kern/platform/rpi5.c \
-	src/drivers/platform/rpi4/rpi4-sdhci.c \
+	src/drivers/platform/rpi4/rpi4-sdhci.c src/drivers/mmc/sdhci.c \
 	src/drivers/platform/rpi4/rpi4-console.c \
 	src/drivers/platform/rpi5/rp1.c \
 	src/drivers/platform/rpi5/rp1-gpio.c \
@@ -409,24 +409,21 @@ rpi5-rp1-host-test: $(BUILD)/tests/rpi5-rp1-host-test $(RPI5_BOOT_FIRMWARE_DTB) 
 CHECK_RUN_TARGETS += rpi5-rp1-host-test
 endif
 
-# The SD driver on the host against a fake controller (BUG-295): the driver
-# is copied without its kernel includes and with its two generic-timer reads
-# replaced by the test's fake timer.
-$(BUILD)/tests/rpi4-sdhci-under-test.c: src/drivers/platform/rpi4/rpi4-sdhci.c
+# The SDHCI driver on the host against a fake controller and card: the
+# driver is copied without its include lines, and the test supplies the
+# kernel types and functions it uses, the fake registers and the fake clock.
+$(BUILD)/tests/sdhci-under-test.c: src/drivers/mmc/sdhci.c
 	@mkdir -p $(dir $@)
-	sed -e '/^#include/d' \
- -e 's/__asm__ volatile("mrs %0,cntpct_el0" : "=r"(value));/value = host_counter();/' \
- -e 's/__asm__ volatile("mrs %0,cntfrq_el0" : "=r"(value));/value = host_frequency();/' \
- $< > $@
+	sed -e '/^#include/d' $< > $@
 
-$(BUILD)/tests/rpi4-sdhci-host-test: tests/rpi4-sdhci-host-test.c \
-	$(BUILD)/tests/rpi4-sdhci-under-test.c
-	$(HOSTCC) -std=c11 -O2 -Wall -Wextra -Werror -I$(BUILD)/tests $< -o $@
+$(BUILD)/tests/sdhci-host-test: tests/sdhci-host-test.c \
+	$(BUILD)/tests/sdhci-under-test.c include/drivers/mmc/sdhci.h
+	$(HOSTCC) -std=c11 -O2 -Wall -Wextra -Werror -Iinclude -I$(BUILD)/tests $< -o $@
 
-rpi4-sdhci-host-test: $(BUILD)/tests/rpi4-sdhci-host-test
+sdhci-host-test: $(BUILD)/tests/sdhci-host-test
 	$<
 
-CHECK_RUN_TARGETS += rpi4-sdhci-host-test
+CHECK_RUN_TARGETS += sdhci-host-test
 
 $(BUILD)/src/hal/cpu-up.o: src/hal/cpu-up.c
 	@mkdir -p $(dir $@)
@@ -858,7 +855,7 @@ $(BUILD)/vmunix: $(BUILD)/kernel.elf \
  --elf $< --image $@ --fix-image
 	$(PYTHON) platform/arm64/tools/check-arm64-vmunix.py --elf $< --image $@
 
-.PHONY: rpi4-fdt-host-test rpi4-sdhci-host-test
+.PHONY: rpi4-fdt-host-test sdhci-host-test
 
 -include $(ARM64_BOOT_OBJS:.o=.d) $(ARM64_KERNEL_OBJS:.o=.d)
 
