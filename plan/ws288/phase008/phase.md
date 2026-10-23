@@ -65,3 +65,20 @@ spec からの違い（各 spec の Status に記録）: XU・DIV は lane group
 3. 入ったら板: `plan/ws288/tests/ghci-su-board.py`（このcommit で追加、未実行。fpgareg の DBG で code と data を書き、KICK bit 2 で DISPATCH、STATUS.SU_BUSY を待って gsi1model と比較）。
 4. SB_ENTRIES・U12 の実測、XU/DIV の命令 buffer、`gsi1dis.py`。
 - Q1 への依頼: worktree `/home/awe/amaterrace-worktrees/p1-su2/tools/__pycache__`（git 管理外）の削除。
+
+## 2026-10-24 Q1: ZYBO の compute の bitstream が入らない原因（Vivado 2026.1、`synth_design -flatten_hierarchy none` の hierarchical の使用量、NPHYS 8・NREGS 32・NWARPS 4）
+
+| module | LUT |
+| --- | --- |
+| SU 全体 | 70,735 |
+| fpu（8 lane、1 lane ≈ 4.9k の組み合わせの fp32 の datapath） | 39,281 |
+| lane | 6,472 |
+| xu | 5,983 |
+| alu（8 lane） | 5,154 |
+| lsu | 2,560 |
+| opd | 2,245 |
+| pk / wb / dcache / sb / sched | 1,762 / 1,479 / 1,163 / 1,151 / 848 |
+
+- 既定（flatten rebuilt）の報告では opd が 43k に見えたが、それは他の unit の論理が混ざった値。真の主因は FPU（7010 の 17,600 LUT の 2 倍以上を FPU だけで使う）。
+- Q1 は opd の lane に依らない部分（定数・warp と workgroup の値・定数の word）を operand ごとに 1 回だけ作る形に直した（amaterrace-gpu、LUT はほぼ変わらず、TB PASS）。
+- 収め方の候補（ユーザーと決める。SU 全体で約 1/5 にする必要）: (a) FPU の物理の lane を NPHYS より少なく（例 FPU は 1〜2 lane で 32 lane を順に流す）、(b) FPU を SHORT_LAT の段に pipeline して乗算を DSP に寄せる、(c) ZYBO の compute の構成は NPHYS 1〜2、(d) xu・lane・alu も同じく lane を絞る。design §3.6 の見積もり（SU 10.1k LUT）は FPU を大きく見誤っていた。
