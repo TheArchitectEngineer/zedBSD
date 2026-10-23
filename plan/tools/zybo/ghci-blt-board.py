@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Checks the Amaterrace GPU's bitstream 1 ("2D", WS288 p003) on the real
+"""Checks the Amaterrace GPU's bitstream 1 ("2D", WS288 p003/p004) on the real
 ZYBO with nothing but fpgareg: no GPU driver.  Over SSH it (optionally)
 loads the bitstream with fpgaload, then runs one shell script on the board
 that reads the GHCI identification and capability registers, writes a
@@ -7,7 +7,11 @@ source pattern into the GPU's memory through the debug port
 (DBG_ADDR/DATA), reads every destination window before and after each
 blit through the same port, and drives the interrupt through
 fpgareg wait.  The host compares the windows against a model of the
-blitter (the testbench's, sim/tb/atg_top_tb.v of amaterrace-gpu).
+blitter (the testbench's, sim/tb/atg_top_tb.v of amaterrace-gpu).  Since
+p004 (DEVICE_VERSION 0.3) it also drives the command ring: a FILL and a
+FENCE written into the ring through the debug port, the doorbell, the
+fence's interrupt through fpgareg wait; the debug port in HALTED; a class V
+packet (no firmware: fault kind 2) -> RESET -> the ring again from 0.
 
   plan/tools/zybo/ghci-blt-board.py [--bit FILE.bit] [--host HOST]
       [--base 0x1C000000] [--seed N] [--log FILE]
@@ -40,6 +44,7 @@ LOCK = "/tmp/zedbsd-zybo-board.lock"
 MAGIC, VERSION, VENDOR, DEVICE, DEVVER, EXTCAP, CAPS = 0x000, 0x004, 0x008, 0x00C, 0x014, 0x018, 0x020
 CTRL, STATUS, IRQ_STATUS, IRQ_ENABLE, IRQ_SET = 0x030, 0x034, 0x038, 0x03C, 0x040
 AP_BASE, AP_LIMIT, FAULT_ADDR, FAULT_INFO = 0x060, 0x064, 0x068, 0x06C
+RING_BASE, RING_SIZE, RING_WPTR, RING_RPTR, FENCE_LAST = 0x050, 0x054, 0x058, 0x05C, 0x070
 PERF0, PERF1, PERF_CTRL = 0x080, 0x084, 0x090
 DBG_ADDR, DBG_DATA, DBG_STATUS, KICK, STATE = 0x0A0, 0x0A4, 0x0A8, 0xF00, 0x1000
 FILL, COPY, TILE, UNTILE = 0, 1, 2, 3
@@ -285,6 +290,73 @@ def main():
     board.read_words(refill["words"])
     blits.append(refill)
 
+    # The ring (p004): 1 KiB at base + 0x20000, the fence word at + 0x21000.
+    ring = base + 0x20000
+    fence_addr = base + 0x21000
+    fence1 = 0x1000 + (SEED & 0xFFF)
+    ringfill = dict(name="ring-fill", op=FILL, dst=base + 0x17000, dstride=64, src=0, sstride=0,
+                    dx=2, dy=1, sx=0, sy=0, w=5, h=2, color=colour(0x00C0FFEE),
+                    win=(base + 0x17000, 64, 32, 4))
+    ringfill["words"] = window(*ringfill["win"])
+    pkts = [(0 << 30) | (1 << 24) | (0x11 << 16) | 22]
+    for idx, val in ((0, FILL), (1, ringfill["dst"]), (2, 64), (3, 0), (4, 0), (5, 0x10002),
+                     (6, 0), (7, 0x20005), (8, ringfill["color"]), (9, 0), (10, 0)):
+        pkts += [idx, val]
+    pkts += [(2 << 24) | (0x12 << 16), (5 << 24) | (0x13 << 16) | (1 << 8) | 2, fence_addr, fence1]
+    board.add(f"echo \"P {len(blits)}\"")
+    board.read_words(ringfill["words"])
+    board.add(f"dw {fence_addr:#x} 0")
+    for i, v in enumerate(pkts):
+        board.add(f"dw {ring + 4 * i:#x} {v:#x}")
+    board.write(RING_BASE, ring)
+    board.write(RING_SIZE, 10)
+    board.write(FENCE_LAST, 0)
+    board.write(IRQ_STATUS, 0x1FF)
+    board.write(IRQ_ENABLE, 1 << 0)
+    board.write(CTRL, 1)
+    board.write(RING_WPTR, len(pkts))
+    board.add("echo \"W fence $(fpgareg wait --ack 0x38 1000 2>&1)\"")
+    board.reg("fence_last", FENCE_LAST)
+    board.reg("ring_rptr", RING_RPTR)
+    board.reg("status_ring", STATUS)
+    board.add(f"echo \"A {len(blits)}\"")
+    board.read_words(ringfill["words"])
+    blits.append(ringfill)
+    board.add("echo \"F 0\"")
+    board.read_words([fence_addr])
+    # The debug port in HALTED (it waited for HALT = 0 before p004).
+    board.write(CTRL, 5)
+    board.reg("status_halt2", STATUS)
+    board.add("echo \"F 1\"")
+    board.read_words([src32])
+    board.write(CTRL, 1)
+    # A class V packet without firmware: fault kind 2, then RESET and the ring from 0.
+    wp = len(pkts)
+    for i, v in enumerate([(2 << 30) | (0x5C << 16) | 1, 0]):
+        board.add(f"dw {ring + 4 * (wp + i):#x} {v:#x}")
+    board.write(IRQ_STATUS, 0x1FF)
+    board.write(IRQ_ENABLE, 1 << 1)
+    board.write(RING_WPTR, wp + 2)
+    board.add("echo \"W vfault $(fpgareg wait --ack 0x38 1000 2>&1)\"")
+    board.reg("fault_info_v", FAULT_INFO)
+    board.reg("fault_addr_v", FAULT_ADDR)
+    board.write(CTRL, 2)
+    board.reg("status_reset2", STATUS)
+    board.reg("ring_wptr_reset", RING_WPTR)
+    fence2 = fence1 + 1
+    for i, v in enumerate([(5 << 24) | (0x14 << 16) | (1 << 8) | 2, fence_addr, fence2]):
+        board.add(f"dw {ring + 4 * i:#x} {v:#x}")
+    board.write(FENCE_LAST, fence1)
+    board.write(IRQ_STATUS, 0x1FF)
+    board.write(IRQ_ENABLE, 1 << 0)
+    board.write(CTRL, 1)
+    board.write(RING_WPTR, 3)
+    board.add("echo \"W fence2 $(fpgareg wait --ack 0x38 1000 2>&1)\"")
+    board.reg("fence_last2", FENCE_LAST)
+    board.add("echo \"F 2\"")
+    board.read_words([fence_addr])
+    board.write(CTRL, 0)
+
     script = board.script()
 
     # Runs it on the board under the host's board lock.
@@ -324,6 +396,9 @@ def main():
             continue
         if part[0] == "R":
             regs[part[1]] = int(part[2], 0)
+        elif part[0] == "F":
+            current = ("F", int(part[1]))
+            phase[current] = {}
         elif part[0] in ("P", "A"):
             current = (part[0], int(part[1]))
             phase[current] = {}
@@ -349,8 +424,8 @@ def main():
     check("identification", regs.get("magic") == 0x47484349 and regs.get("version") == 0x00010000
           and regs.get("vendor") == 0x414D4154 and regs.get("device") == 0x41544731,
           str({k: hex(regs.get(k, -1)) for k in ("magic", "version", "vendor", "device")}))
-    check("device version 0.2", regs.get("devver") == 2, hex(regs.get("devver", -1)))
-    check("CAPS (BLT, 4x4 tiles, state 1, 32-byte lines)", regs.get("caps") == 0x00501802,
+    check("device version 0.3", regs.get("devver") == 3, hex(regs.get("devver", -1)))
+    check("CAPS (CP+ring, BLT, 4x4 tiles, state 1, 32-byte lines)", regs.get("caps") == 0x00501803,
           hex(regs.get("caps", -1)))
     check("EXTCAP PERF", regs.get("extcap") == 0x100 and regs.get("cap0") == 0x103 and
           regs.get("cap1") == 0x110 and regs.get("psrc0") == 1 and regs.get("psrc1") == 8,
@@ -398,6 +473,25 @@ def main():
           f"INFO {regs.get('fault_info', 0):#x} ADDR {regs.get('fault_addr', 0):#x}")
     check("RESET -> IDLE", (regs.get("status_reset", -1) >> 16) & 0xF == 0 and
           regs.get("fault_info_reset") == 0, hex(regs.get("status_reset", -1)))
+    fword = {k: list(phase.get(("F", k), {}).values()) for k in range(3)}
+    check("ring FENCE -> interrupt, FENCE_LAST, fence word, RPTR",
+          "irq count" in waits.get("fence", "") and int(waits.get("fence", "status 0").split()[-1], 0) & 1
+          and regs.get("fence_last") == fence1 and regs.get("ring_rptr") == len(pkts)
+          and fword[0] == [(fence1, 0)],
+          f"{waits.get('fence', '')} FENCE_LAST {regs.get('fence_last', 0):#x} "
+          f"RPTR {regs.get('ring_rptr', -1)} word {fword[0]}")
+    check("DBG in HALTED", (regs.get("status_halt2", 0) >> 16) & 0xF == 3 and
+          fword[1] == [(pattern(src32), 0)], f"STATUS {regs.get('status_halt2', 0):#x} {fword[1]}")
+    check("class V without firmware -> fault kind 2", "status" in waits.get("vfault", "") and
+          regs.get("fault_info_v") == (0x5C << 24) | (2 << 12) and
+          regs.get("fault_addr_v") == ring + 4 * len(pkts),
+          f"{waits.get('vfault', '')} INFO {regs.get('fault_info_v', 0):#x} "
+          f"ADDR {regs.get('fault_addr_v', 0):#x}")
+    check("RESET -> the ring from 0 -> FENCE", (regs.get("status_reset2", -1) >> 16) & 0xF == 0 and
+          regs.get("ring_wptr_reset") == 0 and regs.get("fence_last2") == fence2 and
+          fword[2] == [(fence2, 0)],
+          f"STATUS {regs.get('status_reset2', -1):#x} FENCE_LAST {regs.get('fence_last2', 0):#x} "
+          f"{fword[2]}")
     print(f"blit waits (STATUS polls): {busy_loops}")
     print("PASS ghci-blt-board" if failures == 0 else f"FAIL ghci-blt-board: {failures} checks")
     return 0 if failures == 0 else 1
