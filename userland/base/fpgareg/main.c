@@ -88,6 +88,7 @@ main(
 		status = 2;
 	}
 
+	/* Lets the device go. */
 	close(device);
 
 	/* Reports how it went. */
@@ -165,18 +166,22 @@ command_read(
 		usage();
 		return 2;
 	}
+
+	/* Refuses an offset that is not a number. */
 	error = parse_number(argv[0], &offset);
 	if (error != 0) {
 		usage();
 		return 2;
 	}
 
-	/* Reads the register and shows it. */
+	/* Reads the register. */
 	error = read_register(device, offset, &value);
 	if (error != 0) {
 		fprintf(stderr, "fpgareg: read 0x%x: %s\n", (unsigned)offset, strerror(error));
 		return 1;
 	}
+
+	/* Shows the value in hex, a whole word. */
 	printf("0x%08x\n", (unsigned)value);
 
 	/* Succeeded: the value is shown. */
@@ -198,11 +203,15 @@ command_write(
 		usage();
 		return 2;
 	}
+
+	/* Refuses an offset that is not a number. */
 	error = parse_number(argv[0], &reg.offset);
 	if (error != 0) {
 		usage();
 		return 2;
 	}
+
+	/* Refuses a value that is not a number. */
 	error = parse_number(argv[1], &reg.value);
 	if (error != 0) {
 		usage();
@@ -235,11 +244,13 @@ command_wait(
 	int index;
 	int error;
 
-	/* Takes the options and the timeout. */
+	/* Starts from the defaults: the plio block's status register, one second. */
 	ack_offset = DEFAULT_ACK_OFFSET;
 	request.timeout_ms = DEFAULT_TIMEOUT_MS;
 	request.count = 0;
 	index = 0;
+
+	/* Takes --ack OFFSET when it comes first. */
 	has_ack = 0;
 	if (argc >= 2)
 		has_ack = strcmp(argv[0], "--ack") == 0;
@@ -249,16 +260,24 @@ command_wait(
 			usage();
 			return 2;
 		}
+
+		/* The timeout, if any, follows the option. */
 		index += 2;
 	}
+
+	/* Takes the timeout when one is left. */
 	if (index < argc) {
 		error = parse_number(argv[index], &request.timeout_ms);
 		if (error != 0) {
 			usage();
 			return 2;
 		}
+
+		/* Nothing may follow the timeout. */
 		index++;
 	}
+
+	/* Refuses anything left over. */
 	if (index != argc) {
 		usage();
 		return 2;
@@ -271,12 +290,14 @@ command_wait(
 		return 1;
 	}
 
-	/* Reads the block's status, and clears what it shows, which lowers the line. */
+	/* Reads the block's status. */
 	error = read_register(device, ack_offset, &status);
 	if (error != 0) {
 		fprintf(stderr, "fpgareg: read 0x%x: %s\n", (unsigned)ack_offset, strerror(error));
 		return 1;
 	}
+
+	/* Writes it back to clear what it shows, which lowers the line. */
 	reg.offset = ack_offset;
 	reg.value = status;
 	error = ioctl(device, FPGA_REG_WRITE, &reg);

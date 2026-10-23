@@ -892,6 +892,8 @@ hal_space_prot_query(
 			space_unlock(space, enabled);
 			return HAL_ERR_INVALID;
 		}
+
+		/* Device memory never holds code. */
 		memory_type = (*shadow & ARMV7_PTE_ATTR_MASK) >> ARMV7_PTE_ATTR_SHIFT;
 		if (memory_type == ARMV7_PTE_ATTR_DEVICE && executable) {
 			space_unlock(space, enabled);
@@ -1300,6 +1302,8 @@ hal_pmem_map_uncached(
 		*entry = ((uint32_t)physical & ARMV7_L2_BASE_MASK) | ARMV7_L2_SMALL | ARMV7_L2_TEX0 |
 			 ARMV7_L2_S | ARMV7_L2_AF | ARMV7_L2_XN;
 	}
+
+	/* Marks the window's pages as taken by this view. */
 	mark_uncached(first, count, 1);
 
 	armv7_spin_unlock(&device_lock, enabled);
@@ -1370,6 +1374,8 @@ hal_pmem_unmap_uncached(
 		armv7_tlb_flush_kernel_page(page_address);
 		hal_dcache_invalidate_range((uintptr_t)armv7_phys_to_direct(physical), ARMV7_PAGE_SIZE);
 	}
+
+	/* Gives the window's pages back for another view. */
 	mark_uncached(first, count, 0);
 
 	armv7_spin_unlock(&device_lock, enabled);

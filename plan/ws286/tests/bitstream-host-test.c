@@ -116,6 +116,8 @@ main(
 		printf("FAIL bitstream-host-test (%d)\n", failures);
 		return 1;
 	}
+
+	/* Succeeded: every check held. */
 	printf("PASS bitstream-host-test\n");
 	return 0;
 }
@@ -185,6 +187,8 @@ check_file(
 			break;
 		}
 	}
+
+	/* The data must start as the kernel looks for it, in whole words. */
 	check(found, "real file sync word in the DMA's order");
 	check((size % 4U) == 0, "real file whole words");
 	printf("real file: %zu bytes of data, sync at %zu\n", size, offset);

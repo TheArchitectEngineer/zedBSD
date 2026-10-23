@@ -306,6 +306,8 @@ armv7_fdt_parse(
 	struct_size = read_be32(bytes + FDT_OFF_STRUCT_SIZE);
 	walk.strings_offset = read_be32(bytes + FDT_OFF_STRINGS);
 	strings_size = read_be32(bytes + FDT_OFF_STRINGS_SIZE);
+
+	/* Refuses a structure or a strings block that runs past the blob. */
 	if (walk.struct_offset > totalsize || struct_size > totalsize - walk.struct_offset)
 		return ARMV7_FDT_BAD_STRUCTURE;
 	if (walk.strings_offset > totalsize || strings_size > totalsize - walk.strings_offset)
@@ -398,16 +400,20 @@ read_cells(
 	const uint8_t *bytes,
 	uint32_t cells)
 {
-	/* One cell is a 32-bit number. */
-	if (cells == 1U)
-		return read_be32(bytes);
+	uint64_t number;
 
 	/* No cells is the number zero. */
 	if (cells == 0U)
 		return 0;
 
-	/* Two or more: the last two cells are the low 64 bits. */
-	return read_be64(bytes + (cells - 2U) * 4U);
+	/* One cell is a 32-bit number; two or more end with the low 64 bits. */
+	if (cells == 1U)
+		number = read_be32(bytes);
+	else
+		number = read_be64(bytes + (cells - 2U) * 4U);
+
+	/* Succeeded: the number the cells hold. */
+	return number;
 }
 
 /* Empties the record before a parse. */
@@ -985,16 +991,20 @@ read_number(
 	const uint8_t *value,
 	uint32_t length)
 {
-	/* Two cells are a 64-bit number. */
+	uint64_t number;
+
+	/* A value shorter than a cell is no number. */
+	if (length < 4U)
+		return 0;
+
+	/* Two cells are a 64-bit number, one a 32-bit number. */
 	if (length >= 8U)
-		return read_be64(value);
+		number = read_be64(value);
+	else
+		number = read_be32(value);
 
-	/* One cell is a 32-bit number. */
-	if (length >= 4U)
-		return read_be32(value);
-
-	/* A shorter value is no number. */
-	return 0;
+	/* Succeeded: the value's number. */
+	return number;
 }
 
 /*

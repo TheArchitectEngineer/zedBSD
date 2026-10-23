@@ -60,6 +60,8 @@ main(
 		printf("armv7 pte host test FAIL (%d)\n", failures);
 		return 1;
 	}
+
+	/* Succeeded: every descriptor and transition was as expected. */
 	printf("armv7 pte host test PASS\n");
 	return 0;
 }

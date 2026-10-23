@@ -258,6 +258,8 @@ keep_out_low_ram(
 			info->memory[kept].base = floor;
 			info->memory[kept].size = end - floor;
 		}
+
+		/* The bank is kept. */
 		kept++;
 	}
 
@@ -318,8 +320,12 @@ wait_for_ticks(
 			hal_printf("ARMV7 TIMER FAIL ticks=%u\n", (uint32_t)ticks);
 			armv7_halt_forever();
 		}
+
+		/* Spins politely until the next look. */
 		hal_atomic_relax();
 	}
+
+	/* Masks interrupts again, as the boot runs with them masked. */
 	__asm__ volatile("cpsid i" : : : "memory");
 
 	/* Reports the tick with the rate its counter runs at. */
@@ -371,6 +377,8 @@ time_ten_seconds(
 			break;
 		hal_atomic_relax();
 	}
+
+	/* Masks interrupts again, as the boot runs with them masked. */
 	__asm__ volatile("cpsid i" : : : "memory");
 
 	/* Reports the ticks counted and the counter's distance, in its own units. */
