@@ -273,7 +273,7 @@ static char type_mark(mode_t mode);
 static char entry_mark(const struct entry *item, const struct options *options);
 static void blocks_text(const struct entry *item, const struct options *options, char out[24]);
 static unsigned long long blocks_in_units(unsigned long long blocks, const struct options *options);
-static const struct timespec *entry_time(const struct entry *item, const struct options *options);
+static struct timespec entry_time(const struct entry *item, const struct options *options);
 static int compare_times(const struct timespec *left, const struct timespec *right);
 static void print_total(const struct entry *items, size_t count, const struct options *options);
 static void free_entries(struct entry *items, size_t count);
@@ -1319,8 +1319,8 @@ compare(
 	const struct entry *right,
 	const struct options *options)
 {
-	const struct timespec *left_time;
-	const struct timespec *right_time;
+	struct timespec left_time;
+	struct timespec right_time;
 	int order;
 	int known;
 
@@ -1340,7 +1340,7 @@ compare(
 		/* -t: newer first. */
 		left_time = entry_time(left, options);
 		right_time = entry_time(right, options);
-		order = -compare_times(left_time, right_time);
+		order = -compare_times(&left_time, &right_time);
 	}
 
 	/* Then by name. */
@@ -2791,6 +2791,7 @@ print_long(
 	char group_buffer[24];
 	const char *user;
 	const char *group;
+	struct timespec shown_time;
 	int joined;
 	int link;
 	int padded;
@@ -2811,7 +2812,8 @@ print_long(
 	}
 
 	/* The time (-c, -u), and the owner and the group by name. */
-	ls_time(entry_time(item, options)->tv_sec, when);
+	shown_time = entry_time(item, options);
+	ls_time(shown_time.tv_sec, when);
 	user = uid_name(item->status.st_uid, options->numeric, user_buffer);
 	group = gid_name(item->status.st_gid, options->numeric, group_buffer);
 
@@ -3213,18 +3215,24 @@ blocks_in_units(
 	return blocks;
 }
 
-/* The time of an entry that -t sorts by and -l shows: modified, or with -c changed, with -u accessed. */
-static const struct timespec *
+/*
+ * The time of an entry that -t sorts by and -l shows: modified, or with -c
+ * changed, with -u accessed.  It is a copy: on a 32-bit ABI struct stat is
+ * packed, so a pointer to its time need not be aligned for the time.
+ */
+static struct timespec
 entry_time(
 	const struct entry *item,
 	const struct options *options)
 {
 	/* The field chosen. */
 	if (options->time_field == LS_TIME_CHANGED)
-		return &item->status.st_ctim;
+		return item->status.st_ctim;
 	if (options->time_field == LS_TIME_ACCESSED)
-		return &item->status.st_atim;
-	return &item->status.st_mtim;
+		return item->status.st_atim;
+
+	/* Reports the modification time, the default. */
+	return item->status.st_mtim;
 }
 
 /* Orders two times: less than, equal to or greater than 0 as the first is older, the same or newer. */

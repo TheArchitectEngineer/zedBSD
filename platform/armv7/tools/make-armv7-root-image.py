@@ -8,11 +8,13 @@ partition itself as the root.  There is no FAT boot partition: the board
 loads the kernel and the ramdisk over JTAG, so nothing reads one, and the
 image stays small enough to load that way.
 
-  make-armv7-root-image.py [--ufs-size-mib N] [--dir DEST]...
+  make-armv7-root-image.py [--ufs-size-mib N] [--tree ROOTFS] [--dir DEST]...
       [--file DEST=SOURCE]... OUTPUT
 
---dir makes an empty directory; --file copies a host file to DEST with the
-host file's permission bits.  The UFS root is 4 MiB unless --ufs-size-mib
+--tree copies a staged root tree (the build's rootfs, which carries the
+marker itself) with its permission bits and symbolic links; --dir makes an
+empty directory; --file copies a host file to DEST with the host file's
+permission bits.  The UFS root is 4 MiB unless --ufs-size-mib
 says otherwise (4 MiB is the smallest the format tool makes).
 """
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
@@ -59,12 +61,16 @@ def directory_of(image, directories: dict[str, int], path: str) -> int:
     return inode
 
 
-def build_root(size: int, dirs: list[str], files: list[tuple[str, Path]]) -> bytes:
+def build_root(size: int, tree: Path | None, dirs: list[str],
+               files: list[tuple[str, Path]]) -> bytes:
     sys.path.insert(0, str(TOP / "tools/build"))
     from ufs_format import Image  # noqa: E402
 
     image = Image(size)
     directories = {"": 2}
+    # A staged tree carries the marker itself, and comes alone.
+    if tree is not None:
+        image.add_tree(tree, 2)
     for path in dirs:
         directory_of(image, directories, path.strip("/"))
     for destination, source in files:
@@ -72,8 +78,9 @@ def build_root(size: int, dirs: list[str], files: list[tuple[str, Path]]) -> byt
         parent = directory_of(image, directories, parent_path)
         image.add_file(parent, name, source.read_bytes(),
                        source.stat().st_mode & 0o7777)
-    etc = directory_of(image, directories, "etc")
-    image.add_file(etc, "zedbsd-root", ROOT_MARKER)
+    if tree is None:
+        etc = directory_of(image, directories, "etc")
+        image.add_file(etc, "zedbsd-root", ROOT_MARKER)
     return image.finish()
 
 
@@ -92,6 +99,7 @@ def check_root(root: bytes) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--ufs-size-mib", type=int, default=4)
+    parser.add_argument("--tree", type=Path)
     parser.add_argument("--dir", action="append", default=[])
     parser.add_argument("--file", action="append", default=[])
     parser.add_argument("output", type=Path)
@@ -106,7 +114,11 @@ def main() -> None:
             raise SystemExit(f"invalid --file: {specification}")
         files.append((destination, Path(source)))
 
-    root = build_root(args.ufs_size_mib * 1024 * 1024, args.dir, files)
+    if args.tree is not None and (args.dir or args.file):
+        raise SystemExit("--tree takes no --dir or --file")
+    if args.tree is not None and not args.tree.is_dir():
+        raise SystemExit(f"invalid --tree: {args.tree}")
+    root = build_root(args.ufs_size_mib * 1024 * 1024, args.tree, args.dir, files)
     check_root(root)
 
     root_blocks = len(root) // SECTOR

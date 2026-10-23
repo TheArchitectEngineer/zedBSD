@@ -5,14 +5,16 @@
 # them back, and enters the kernel with r2 = the DTB.  The boot-mode jumper
 # must be on JTAG; nothing is loaded otherwise.
 #   plan/tools/zybo/jtag-boot.sh KERNEL [--dtb FILE] [--append TEXT]
-#       [--initrd root.img] [--no-reset] [--expect REGEX]... [--timeout S]
-#       [--stamp]
+#       [--initrd root.img] [--no-reset] [--expect REGEX]... [--then STEP]...
+#       [--timeout S] [--stamp]
 #   plan/tools/zybo/jtag-boot.sh --spl-only [--expect REGEX]...
 # --spl-only stops with SPL halted (DDR up, the PL still off): for DDR and PL
 # tests over JTAG.  --no-reset skips the reset and SPL and loads into a DDR
 # that an earlier run set up (such as --spl-only).  --expect waits on the live UART for each REGEX (SPL's
 # banner is always one) and gives the exit status; nothing is kept in a file.
 # --stamp puts the host's seconds before each UART line (the TIMER 0S/10S check).
+# --then holds a dialogue on the UART once every REGEX has matched
+# (uart-expect.py: type:TEXT, expect:REGEX), such as a login.
 # KERNEL is a raw image entered at its first byte, 0x00100000, or an ELF:
 # OpenOCD then loads each PT_LOAD at its physical address (BSS is not zeroed;
 # the kernel clears its own) and it is entered at e_entry's physical address.
@@ -33,7 +35,7 @@ kernel_addr=0x00100000
 dtb_addr=0x01F00000
 initrd_addr=0x04000000
 kernel= dtb= append= initrd= reset=1 spl_only= timeout=60 stamp=
-patterns=
+patterns= steps=
 while [ $# -gt 0 ]; do
 	case "$1" in
 	--dtb) dtb=$2; shift 2 ;;
@@ -42,6 +44,8 @@ while [ $# -gt 0 ]; do
 	--no-reset) reset=; shift ;;
 	--spl-only) spl_only=1; shift ;;
 	--expect) patterns="$patterns$2
+"; shift 2 ;;
+	--then) steps="$steps$2
 "; shift 2 ;;
 	--timeout) timeout=$2; shift 2 ;;
 	--stamp) stamp=--stamp; shift ;;
@@ -130,6 +134,7 @@ if [ -n "$reset" ] || [ -n "$patterns" ]; then
 	IFS='
 '
 	for pattern in $patterns; do set -- "$@" "$pattern"; done
+	for step in $steps; do set -- "$@" --then "$step"; done
 	IFS=$old_ifs
 	zybo_with_uart python3 -I "$zybo_dir/uart-expect.py" --device "$zybo_uart" \
 		--timeout "$timeout" $stamp "$@" &

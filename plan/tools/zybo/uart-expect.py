@@ -4,10 +4,15 @@
 Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
     uart-expect.py [--device PATH | --socket PATH] [--baud N] [--timeout S]
-        [--stamp] REGEX...
+        [--stamp] [--then STEP]... REGEX...
 
 Every REGEX must match some line, in any order; it exits 0 when all have,
-and 1 when the time runs out.  Nothing is kept in a file: the judgement is
+and 1 when the time runs out.  A line still being written (a prompt such
+as "login: ", which ends without a newline) is matched too.  --then gives
+a dialogue to hold, in order, once every REGEX has matched: "type:TEXT"
+types TEXT and a carriage return after a short pause (login throws away
+what was typed before it asks), "expect:REGEX" waits for REGEX in what
+came after the step before it.  Nothing is kept in a file: the judgement is
 made on the line while it is live (the U3 exception, design §7.4).  This is
 the ZYBO stand-in until plan/tools/guest/serial.py takes --device.
 --socket reads an emulator's serial port from its Unix socket instead
@@ -69,8 +74,12 @@ def main() -> int:
 	parser.add_argument("--stamp", action="store_true")
 	parser.add_argument("--baud", type=int, default=115200, choices=sorted(SPEEDS))
 	parser.add_argument("--timeout", type=float, default=30.0)
+	parser.add_argument("--then", action="append", default=[])
 	parser.add_argument("patterns", nargs="+")
 	arguments = parser.parse_args()
+	for step in arguments.then:
+		if not step.startswith(("type:", "expect:")):
+			parser.error(f"--then takes type:TEXT or expect:REGEX, not {step!r}")
 
 	waiting = [re.compile(pattern) for pattern in arguments.patterns]
 	start = time.monotonic()
@@ -91,26 +100,63 @@ def main() -> int:
 		else:
 			print(f"uart| {line}", flush=True)
 
-	pending = ""
-	while waiting and time.monotonic() < deadline:
-		try:
-			if client is not None:
-				chunk = client.recv(4096)
-				if not chunk:
-					break
-			else:
-				chunk = os.read(fd, 4096)
-		except (BlockingIOError, InterruptedError):
-			time.sleep(0.02)
-			continue
-		pending += chunk.decode("utf-8", "replace").replace("\r", "")
-		while "\n" in pending:
-			line, pending = pending.split("\n", 1)
-			show(line)
-			waiting = [p for p in waiting if not p.search(line)]
-	if pending:
-		show(pending)
-		waiting = [p for p in waiting if not p.search(pending)]
+	def send(text: str) -> None:
+		"""Types a line on the serial port, as a terminal sends it."""
+		data = (text + "\r").encode()
+		if client is not None:
+			client.sendall(data)
+		else:
+			os.write(fd, data)
+
+	# The line being written, and whether its text has been shown and matched.
+	state = {"pending": "", "closed": False}
+
+	def read_lines(patterns: list[re.Pattern]) -> list[re.Pattern]:
+		"""Reads what comes until the patterns match; returns those left."""
+		while patterns and not state["closed"] and time.monotonic() < deadline:
+			# A line still being written may be the prompt waited for.
+			patterns = [p for p in patterns if not p.search(state["pending"])]
+			if not patterns:
+				break
+			try:
+				if client is not None:
+					chunk = client.recv(4096)
+					if not chunk:
+						state["closed"] = True
+						break
+				else:
+					chunk = os.read(fd, 4096)
+			except (BlockingIOError, InterruptedError):
+				time.sleep(0.02)
+				continue
+			state["pending"] += chunk.decode("utf-8", "replace").replace("\r", "")
+			while "\n" in state["pending"]:
+				line, state["pending"] = state["pending"].split("\n", 1)
+				show(line)
+				patterns = [p for p in patterns if not p.search(line)]
+		return patterns
+
+	waiting = read_lines(waiting)
+	for step in arguments.then:
+		if waiting:
+			break
+		kind, _, text = step.partition(":")
+		if kind == "type":
+			# The prompt is shown before the text that answers it.
+			if state["pending"]:
+				show(state["pending"])
+				state["pending"] = ""
+			time.sleep(0.5)
+			print(f"uart-expect: type {text!r}", flush=True)
+			send(text)
+		else:
+			# Only what follows the step before is searched.
+			if state["pending"]:
+				show(state["pending"])
+				state["pending"] = ""
+			waiting = read_lines([re.compile(text)])
+	if state["pending"]:
+		show(state["pending"])
 	for pattern in waiting:
 		print(f"uart-expect: never saw {pattern.pattern!r}", flush=True)
 	return 1 if waiting else 0
