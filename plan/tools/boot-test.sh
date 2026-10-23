@@ -19,8 +19,8 @@
 #   QEMU           emulator to run (default depends on BOOT_MODE)
 #   BOOT_MODE      uefi-nvme (default), uefi-usb, bios-ide, raspi4b,
 #                  riscv64-virt, riscv64-uboot, riscv64-uboot-gop, riscv32-virt, m68k-virt,
-#                  ppc32-mac99, ppc64-pseries, mips32-malta, mips64-malta
-#                  or sun4u
+#                  ppc32-mac99, ppc64-pseries, mips32-malta, mips64-malta,
+#                  armv7-virt or sun4u
 #   BOOT_PATTERN   what the screen must show, one regular expression per line;
 #                  every one must be seen on some screen (default the login
 #                  prompt, ^(?:\S+ )?login: ?)
@@ -91,6 +91,12 @@
 # BOOT_MODE=ppc64-pseries boots a big-endian 64-bit PowerPC kernel ELF
 # (default build/ppc64-pseries/vmunix) on qemu-system-ppc64's pseries through
 # SLOF, whose VGA display the kernel draws on; 512M (BOOT_MEMORY).
+# BOOT_MODE=armv7-virt boots a raw 32-bit ARMv7-A kernel image (default
+# build/armv7-virt/vmunix.bin) on qemu-system-arm -M virt with a Cortex-A15,
+# a GICv2, 512M (BOOT_MEMORY) and a ramfb display the kernel draws its
+# console on.  QEMU enters a raw image the way it boots Linux, with the
+# device tree in r2, so INITRD and BOOT_APPEND reach the kernel through
+# /chosen; an ELF image (vmunix) would get neither, so it is only gdb's.
 #
 # BOOT_MODE=sun4u boots a SPARC V9 disk image (default build/sun4u/hdd-image.img)
 # in QEMU's sun4u machine from its IDE disk through OpenBIOS, with 256 MiB
@@ -136,6 +142,10 @@ mips32-malta)
 	;;
 mips64-malta)
 	image=${1:-${IMAGE:-${KERNEL:-$root/build/mips64-malta/vmunix}}}
+	boot_interval=${BOOT_INTERVAL:-0.5}
+	;;
+armv7-virt)
+	image=${1:-${IMAGE:-${KERNEL:-$root/build/armv7-virt/vmunix.bin}}}
 	boot_interval=${BOOT_INTERVAL:-0.5}
 	;;
 ppc32-mac99)
@@ -201,6 +211,13 @@ riscv32-virt)
 m68k-virt)
 	qemu=${QEMU:-qemu-system-m68k}
 	required=("$image")
+	;;
+armv7-virt)
+	qemu=${QEMU:-qemu-system-arm}
+	required=("$image")
+	if [[ -n ${INITRD:-} ]]; then
+		required+=("$INITRD")
+	fi
 	;;
 mips32-malta)
 	qemu=${QEMU:-qemu-system-mipsel}
@@ -268,7 +285,8 @@ screenshot=$output/login.png
 # kernel is booted directly and has no disk.
 if [[ $boot_mode != riscv64-virt && $boot_mode != riscv32-virt && $boot_mode != m68k-virt &&
 	$boot_mode != ppc32-mac99 && $boot_mode != ppc64-pseries &&
-	$boot_mode != mips32-malta && $boot_mode != mips64-malta ]]; then
+	$boot_mode != mips32-malta && $boot_mode != mips64-malta &&
+	$boot_mode != armv7-virt ]]; then
 	qemu-img create -q -f qcow2 -F raw -b "$(readlink -f -- "$image")" "$disk"
 fi
 if [[ $boot_mode == uefi-usb || $boot_mode == uefi-nvme ]]; then
@@ -364,6 +382,24 @@ elif [[ $boot_mode == mips32-malta || $boot_mode == mips64-malta ]]; then
 	fi
 	read -r -a mips_extra <<<"${QEMU_EXTRA:-}"
 	"$qemu" "${mips_machine[@]}" "${mips_boot[@]}" "${mips_extra[@]}" \
+		>"$output/qemu.log" 2>&1 &
+elif [[ $boot_mode == armv7-virt ]]; then
+	# The virt machine with one Cortex-A15, a GICv2, a ramfb display the
+	# kernel draws its console on, and the PL011 on a socket for typing
+	# into.  The raw image is booted like Linux: r2 holds the device tree.
+	armv7_machine=(-machine virt,gic-version=2 -cpu cortex-a15 -smp "${BOOT_SMP:-1}"
+		-m "${BOOT_MEMORY:-512M}" -device ramfb -display none -no-reboot
+		-serial "unix:$serial,server,nowait"
+		-qmp "unix:$monitor,server,nowait")
+	armv7_boot=(-kernel "$image")
+	if [[ -n ${INITRD:-} ]]; then
+		armv7_boot+=(-initrd "$INITRD")
+	fi
+	if [[ -n ${BOOT_APPEND:-} ]]; then
+		armv7_boot+=(-append "$BOOT_APPEND")
+	fi
+	read -r -a armv7_extra <<<"${QEMU_EXTRA:-}"
+	"$qemu" "${armv7_machine[@]}" "${armv7_boot[@]}" "${armv7_extra[@]}" \
 		>"$output/qemu.log" 2>&1 &
 elif [[ $boot_mode == ppc32-mac99 ]]; then
 	# The mac99 machine through its firmware, with a 32-bit display the

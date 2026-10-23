@@ -1374,13 +1374,17 @@ build_kernel_window(
 
 /*
  * Moves the boot processor from the boot table to the kernel's: TTBR1
- * takes the kernel's table, TTBR0 the empty lower half under the
- * reserved identifier, and TTBCR splits the space; then every translation
- * of the boot table is dropped.
+ * takes the kernel's table, TTBCR splits the space, and TTBR0 the empty
+ * lower half under the reserved identifier; then every translation of
+ * the boot table is dropped.
  *
  * The code runs in the direct map, which both tables map to the same
  * physical addresses, so the instructions are found whichever table
- * translates them during the move.
+ * translates them during the move.  The split comes before TTBR0 leaves
+ * the boot table: until then TTBR0 translates the upper half too, and
+ * the boot table (16 KiB, aligned to it) still serves as the lower half's
+ * table after the split, so a table walk between two of the writes always
+ * finds a valid table.
  */
 static void
 move_to_kernel_table(
@@ -1392,14 +1396,16 @@ move_to_kernel_table(
 	/* Publishes the kernel's table to the table walk. */
 	armv7_dsb();
 
-	/* TTBR1, then the empty lower half, then the split. */
+	/* TTBR1, then the split, then the empty lower half. */
 	ttbr1 = armv7_pte_ttbr(armv7_virt_to_phys(kernel_l1));
 	ttbr0 = armv7_pte_ttbr(armv7_virt_to_phys(empty_user_l1));
 	armv7_write_ttbr1(ttbr1);
 	armv7_isb();
-	armv7_write_contextidr(0);
-	armv7_write_ttbr0(ttbr0);
 	armv7_write_ttbcr(ARMV7_TTBCR_SPLIT);
+	armv7_isb();
+	armv7_write_contextidr(0);
+	armv7_isb();
+	armv7_write_ttbr0(ttbr0);
 	armv7_isb();
 
 	/* Drops every translation the boot table left. */

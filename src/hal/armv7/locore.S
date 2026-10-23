@@ -53,6 +53,20 @@ _start:
 	cmp r4, r5
 	bne armv7_halt_loop
 
+	/*
+	 * A device tree inside the image's memory would be lost when the
+	 * BSS is zeroed, before anything can report it: stops here, where a
+	 * debugger sees why.  cmain.c checks the tree's whole extent and the
+	 * ramdisk once the console is up.  r4 is the image's first byte.
+	 */
+	ldr r6, =ARMV7_VIRT_OFFSET
+	ldr r5, =_end
+	sub r5, r5, r6
+	cmp r10, r4
+	blo 3f
+	cmp r10, r5
+	blo armv7_halt_loop
+3:
 	/* Turns off the MMU, the caches and the alignment check, in case the loader left them on. */
 	mrc p15, 0, r4, c1, c0, 0
 	ldr r5, =(ARMV7_SCTLR_M | ARMV7_SCTLR_A | ARMV7_SCTLR_C | ARMV7_SCTLR_I)
