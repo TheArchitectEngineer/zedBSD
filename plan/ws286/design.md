@@ -372,6 +372,16 @@ int  bsp_l2_present(void);               /* zybo の §1.4 */
 - 再起動: `reboot`（`hal_reset`、BootROM が SD から読み直す）。止まった時は `jtag-reset.sh`（SD の mode でも同じ DAP の書き込みで reset できる）。SwitchBot は使わない（未接続）。
 - kernel の更新: LAN の WS の後は `deploy.sh`（scp + `reboot`）、それまでは JTAG。
 
+### 4.8 p002 の実測（2026-10-23 P1、実機。詳細は [phase002](phase002/phase.md)）
+
+- 道具は §4.4 のとおり（SPL の build の script の名前は `spl-build.sh`、既定の出力 `build/zybo-spl/out/spl/`）。追加: `jtag-probe.sh`（状態を変えない probe）、`uart-expect.py`（UART の生きた line の expect、`serial.py --device` の代わり）、`zybo-common.sh`（lock）。
+- SPL は `CONFIG_SPL_RAM_DEVICE` を外して build（breakpoint が外れても `hang()` で止まる）。banner `U-Boot SPL 2025.07 (Jul 07 2025 - 19:58:33 +0000)`、breakpoint `board_boot_order` = `0x00000fd8` に毎回当たる。
+- reset は AHB-AP → SLCR で効く。DAP は落ちるが次の process で立て直せる（R15）。DDRC の前に AHB-AP で DDR を読むと AHB-AP が固まる。CPU0 経由の reset は DBGDSCR を DCC fast mode に残す（cfg の examine の event で直す）。
+- PL の TAP の IDCODE は実際は `0x13722093`（§4.3 の「upstream の列に無い」は誤り。自分の cfg にする理由は `target smp` を避ける事だけ）。AP0 は AHB-AP（確認）。
+- JTAG の load は CPU0 の DCC で約 255 KiB/s（15〜20 MHz で頭打ち、30 MHz は不可、AHB-AP は 87 KiB/s）。8 MiB ≈ 32 s。
+- JTAG の流れの PA の低位: `0x0`〜`0x2FFFF` は OCM、`0x30000`〜`0xEFFFF` は external abort、`0xF0000`〜`0xFFFFF` は高位 OCM（CPU1 の BootROM の loop と `0xFFFFFFF0`）の alias。SCU の filter の開始は `0x00100000`、SCU は無効、PL310 は実機にも有り（`CACHE_ID` 0x410000c8）で無効。
+- CPU1 は `0xFFFFFFF0` が `0xFFFFFF2C`（loop 自身）でなくなるまで `wfe` で待ち、変われば I-cache・分岐予測を invalidate してその値へ行く（§1.3 の方法 1 を実機の code で確認）。
+
 ## 5. BSP と driver（zybo）
 
 版 2 の WS286 で作るのは §5.1・§5.2・§5.6・§5.7（reset だけ）・§5.9・§5.10。
