@@ -971,6 +971,9 @@ QEMU と実機の証拠は分けて書く。やっていない確認は「未実
 
 ### 9.2 U 項目（ユーザーの判断。各々に推し）
 
+2026-10-23 ユーザー「推しでオーケーです。」→ U18〜U28・U37・U38 は推しで決定（U29〜U36・U40 は版 4 で取り下げ、U39 は閉じた）。
+
+
 2026-10-23 ユーザー（U2）: PCIe は「フリーズしたときホストPCの再起動は必要ですか？」等の問いの後「了解です。安定してきたらPCIeにしましょう。PCをSwitchbotで電源ON/OFFはできますが、BIOSが停電後の自動電源ONができるかは不明です。」→ U2 は「当面 KC705 は USB JTAG だけ（構成も操作も JTAG の bridge）。GPU が安定したら PCIe（Alveo 型: USB JTAG で構成し PCIe で Linux から。flash の基本の bitstream か部分再構成の固定の領域で link を保つ）」。p013 は Future Work fw-kc705-pcie。README の目標「Synthesis goal is 200MHz on KC705 board and 800MHz for ASIC processes.」（ユーザー、c840a0a）により KC705 の gclk の目標は 200 MHz（p015、R3 の 150 MHz を改める）。
 
 
