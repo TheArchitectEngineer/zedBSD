@@ -183,6 +183,10 @@ ARMV7_ROOT_COMMANDS ?= cat cksum dd df dmesg echo getty init login ls mount \
 # The script that starts OpenSSH's server makes /var/empty and sets the
 # modes of the host keys it makes, so a root with OpenSSH has those commands.
 ARMV7_ROOT_COMMANDS += $(if $(filter openssh,$(ZEDBSD_USER_PROGRAMS)),chmod mkdir)
+# A configuration adds programs to the default set here (the ZYBO's
+# programmable logic tools: plan/ws286/tests/config-zybo-fpga.mk).
+ARMV7_ROOT_EXTRA_COMMANDS ?=
+ARMV7_ROOT_COMMANDS += $(ARMV7_ROOT_EXTRA_COMMANDS)
 ARMV7_APP_OBJ := $(DYNAMIC_DIR)/obj
 ARMV7_APP_CHECK = $(PYTHON) tools/build/check-dynamic-elf.py --machine armv7 \
  --role application --needed libc.so

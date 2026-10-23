@@ -572,6 +572,8 @@ devfs_cdev_inode(
 	 * them can ask the key to sign).  A Bluetooth controller is root's
 	 * alone: the daemon's privileged part opens it (ws143, D16), and so is
 	 * the node it makes its HID devices on (the input bridge, ws143-p005).
+	 * The Zynq's programmable logic is root's: whoever opens it rewrites
+	 * the hardware (ws286-p008).
 	 */
 	backlight = backlight_name(device->name);
 	raw = hidraw_name(device->name);
@@ -585,6 +587,8 @@ devfs_cdev_inode(
 	else if (raw || smartcard || bluetooth || bridge)
 		mode = 0600U;
 	else if (kern_strcmp(device->name, "input-inject") == 0)
+		mode = 0600U;
+	else if (kern_strcmp(device->name, "fpga0") == 0)
 		mode = 0600U;
 	else
 		mode = 0666U;
