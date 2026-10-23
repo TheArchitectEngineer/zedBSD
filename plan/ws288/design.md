@@ -87,6 +87,10 @@
 
 ### 2.1 GHCI が決める物と決めない物（AHCI・xHCI の類推）
 
+- **2026-10-23 ユーザーの決定（command と ISA、版 3 で §2.4・§3 を書き直す）**:「コマンドは、現在のカーネルのコマンド（Venus由来）を使いましょう。ISAはRISC-Vベースでカスタムしましょう。RISC-V仕様に則る必要はないです。ベースにしつつ、他のGPUの平均を取って、実装しやすくよく使われるものを、我々の命令形式にフィットさせて取り込んでいきましょう。」
+  - command: GHCI の ring の command は、zedBSD の kernel の今の command（`include/uapi/gpu-op.h` の Kei GPU command protocol 版 1、番号は Venus の wire format 1 と同じ。zedBSD だけの物は `GPU_OP_OWN_FIRST` から）を使う。版 2 の独自の opcode（§2.4）は置き換える。CP がこの Vulkan の command の流れを解く（firmware か hardware かは版 3 で決める）。
+  - ISA: RISC-V を基にした独自の shader の ISA（GHCI の標準の ISA）。RISC-V の仕様に従う必要は無い。他の GPU（NVIDIA・AMD・Intel・Arm・PowerVR など）で共通によく使われ、実装しやすい物を、我々の命令の形式に合わせて取り込む。版 2 の "ATS1"（64 bit の固定長）は置き換える。
+
 - **2026-10-23 ユーザーの決定（版 2 の「shader の ISA は決めない」を改める）**:「GHCIは標準のシェーダーISAを定義し、ベンダ独自のシェーダISAはオプションで利用可能。標準ISAの実装は、このGPUではハードウェアでそのまま実装されるが、コマンドプロセッサがJITコンパイルしてネイティブISAに変換してもOK。」
   - GHCI は **標準の shader の ISA**（命令・符号化・binary の形・実行の model のうち driver から見える所）を決める。GHCI の GPU は全部この標準の ISA の program を受ける。
   - vendor 独自の ISA は **任意**。`ISA_ID` などで標準の ISA に加えて持てる（driver は使ってもよい）。
