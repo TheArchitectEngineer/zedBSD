@@ -288,6 +288,16 @@ if [[ $boot_mode != riscv64-virt && $boot_mode != riscv32-virt && $boot_mode != 
 	$boot_mode != mips32-malta && $boot_mode != mips64-malta &&
 	$boot_mode != armv7-virt ]]; then
 	qemu-img create -q -f qcow2 -F raw -b "$(readlink -f -- "$image")" "$disk"
+	# QEMU's SD card must be a power of two in size; the overlay grows to the
+	# next one and the image itself is left as it is.
+	if [[ $boot_mode == raspi4b ]]; then
+		size=$(stat -c %s -- "$image")
+		card=1048576
+		while ((card < size)); do
+			card=$((card * 2))
+		done
+		qemu-img resize -q -f qcow2 "$disk" "$card"
+	fi
 fi
 if [[ $boot_mode == uefi-usb || $boot_mode == uefi-nvme ]]; then
 	cp -- "$vars" "$nvram"
