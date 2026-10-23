@@ -3,7 +3,7 @@
 # WS288 FPGA の GPU の IP（ZYBO で workflow、本命は KC705）
 
 - Master: [plan/master.md](../master.md)（2026-10-23 作成）。Primary Milestone: MG008。Related: WS286（ZYBO）。
-- Status: planning
+- Status: incomplete（2026-10-23: p002 の実行で開始。Master の一覧の写しは Q1）
 - 出典: 2026-10-23 ユーザー「Z-7010のロジック規模で、1シェーダーユニットのGPUを書けると思いますか？…まずはFPGAワークフローを確立するのが目的ではありますが。Kintex KC705ボードが本命のターゲットです。」「ディスプレイコントローラとGPUは別なIPなので、両立しなくてもいいです。このボードは最終ターゲットではないので、まずはworkflow確立がゴールですね。」「了解です。この設計で行きましょう。」
 
 ## 構成（ユーザーと合意、2026-10-23）
