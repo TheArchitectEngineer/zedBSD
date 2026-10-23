@@ -145,7 +145,7 @@
 | 0x0B0 | CP_HEAP_BASE | RW | 版 3。firmware の object の heap（aperture の中、32 byte 揃え）。RUNNING では書けない（FAULT 種別 7） |
 | 0x0B4 | CP_HEAP_LIMIT | RW | 同上（終わり、含まない）。既定は driver が 8 MiB を与える |
 | 0x0C0〜0x0DF | VEND（Amaterrace） | R | 8 word: NWARPS、NREGS、NPHYS、PACKED、SB_ENTRIES、PT の entry 数、reserved × 2 |
-| 0x120〜0x13F | CPFW_CTRL / CPFW_STATUS / CPFW_IBASE / CPFW_IWORDS / CPFW_DBASE / CPFW_DWORDS / CPFW_VERSION / CPFW_MBOX0..3 | RW/R | 版 3、extended capability `CPFW`（id 6）。`CPFW_CTRL` [0] LOAD（W1S: IMEM の像と DMEM の像を DMA、`READY` で終わり）、[1] RUN、[2] HALT（今の packet の後で止める）。`CPFW_STATUS` [0] READY、[1] FAULT、[2] ALIVE（heartbeat）、[15:8] firmware の状態。LOAD は IDLE・HALTED で CPU が止まっている時だけ（§2.4.7） |
+| 0x120〜0x13F、0x150〜0x15F | 0x120 CPFW_CTRL / 0x124 CPFW_STATUS / 0x128 CPFW_IBASE / 0x12C CPFW_IWORDS / 0x130 CPFW_DBASE / 0x134 CPFW_DWORDS / 0x138 CPFW_VERSION / 0x13C reserved / **0x150〜0x15C CPFW_MBOX0..3**（2026-10-23 p017 の実装で直した: 0x120〜0x13F の 8 word に 11 個は入らず、0x140〜0x14F は SA の予約） | RW/R | 版 3、extended capability `CPFW`（id 6）。`CPFW_CTRL` [0] LOAD（W1S: IMEM の像と DMEM の像を DMA、`READY` で終わり）、[1] RUN、[2] HALT（今の packet の後で止める）。`CPFW_STATUS` [0] READY、[1] FAULT、[2] ALIVE（heartbeat）、[15:8] firmware の状態。LOAD は IDLE・HALTED で CPU が止まっている時だけ（§2.4.7） |
 | 0x140〜0x14F | SA_CAPS / SA_SU | R / RW | 版 3、extended capability `SA`（id 7、§3.9） |
 | 0x080〜0x08C | PERF0〜3 | R | busy の cycle の合計（標準の意味は「busy の cycle」4 本まで。Amaterrace: SU、RX、TU、MC）。`PERF_CTRL` 0x090 [0] で clear |
 | 0x0A0 | DBG_ADDR | RW | AMB を通した memory の読み書きの address（4 byte 揃え、aperture の検査を受ける）。書くと read を始める（非同期） |
