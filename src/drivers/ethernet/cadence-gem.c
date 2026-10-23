@@ -719,6 +719,8 @@ publish_interface(
 		error = ENOMEM;
 		goto fail;
 	}
+
+	/* Keeps the interface with the controller; the service and the interrupt reach it there. */
 	gem->net = net;
 
 	/* Describes the interface. */
@@ -1656,6 +1658,7 @@ gem_poll(
 	gem = net->driver_data;
 	irq = spin_lock_irqsave(&gem->lock);
 
+	/* A closed interface has no link to follow and no slots in flight. */
 	if (gem->opened != 0) {
 		update_link(gem);
 		reclaim_transmitted(gem);
@@ -1673,6 +1676,7 @@ gem_poll(
 	/* Re-enables the receive interrupts after the batch. */
 	irq = spin_lock_irqsave(&gem->lock);
 
+	/* A closed interface keeps its interrupts off. */
 	if (gem->opened != 0)
 		write_register(gem, GEM_IER, gem->rx_interrupts);
 
