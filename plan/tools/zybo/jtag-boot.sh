@@ -14,7 +14,9 @@
 # KERNEL is a raw image entered at its first byte, 0x00100000, or an ELF:
 # OpenOCD then loads each PT_LOAD at its physical address (BSS is not zeroed;
 # the kernel clears its own) and it is entered at e_entry's physical address.
-# Either way it must lie within 0x00100000 and the DTB.
+# Either way it must lie within 0x00100000 and the DTB, BSS included: for a
+# raw image the ELF of the same name without .bin, when there is one, gives
+# where its BSS ends.
 # Without --dtb a DTB is made here: memory@0 512 MiB, /chosen bootargs from
 # --append, and the initrd's start and end.  Memory map: kernel 0x00100000,
 # DTB 0x01F00000, initrd 0x04000000.
@@ -81,6 +83,13 @@ if [ -z "$spl_only" ]; then
 		kernel_addr=$(printf '0x%08x' "$low") kernel_end=$high
 	else
 		kernel_end=$((kernel_addr + $(wc -c < "$kernel")))
+		# The raw image holds no BSS; its ELF says where the BSS ends.
+		kernel_elf=${kernel%.bin}
+		if [ "$kernel_elf" != "$kernel" ] && [ -f "$kernel_elf" ] &&
+			[ "$(head -c 4 "$kernel_elf" | od -An -tx1 | tr -d ' ')" = 7f454c46 ]; then
+			elf_end=$(zybo_elf_phys_end "$kernel_elf")
+			[ $((elf_end)) -gt "$kernel_end" ] && kernel_end=$((elf_end))
+		fi
 	fi
 	if [ $((kernel_end)) -gt $((dtb_addr)) ] || [ $((kernel_addr)) -lt $((0x00100000)) ]; then
 		printf 'jtag-boot: the kernel (0x%08x-0x%08x) is not within 0x00100000-%s\n' \
@@ -95,24 +104,12 @@ fi
 
 # The DTB, when the caller does not bring one.
 if [ -z "$spl_only" ] && [ -z "$dtb" ]; then
-	initrd_props=
 	if [ -n "$initrd" ]; then
 		initrd_end=$(printf '0x%08x' $((initrd_addr + $(wc -c < "$initrd"))))
-		initrd_props="linux,initrd-start = <$initrd_addr>; linux,initrd-end = <$initrd_end>;"
+		zybo_make_dtb "$boot_out" "$append" "$initrd_addr" "$initrd_end" || exit 1
+	else
+		zybo_make_dtb "$boot_out" "$append" || exit 1
 	fi
-	bootargs=$(printf '%s' "$append" | sed 's/\\/\\\\/g; s/"/\\"/g')
-	cat > "$boot_out/zybo.dts" <<EOF
-/dts-v1/;
-/ {
-	#address-cells = <1>;
-	#size-cells = <1>;
-	model = "Digilent ZYBO (JTAG boot)";
-	compatible = "digilent,zynq-zybo", "xlnx,zynq-7000";
-	memory@0 { device_type = "memory"; reg = <0x0 0x20000000>; };
-	chosen { bootargs = "$bootargs"; stdout-path = "serial0:115200n8"; $initrd_props };
-};
-EOF
-	dtc -q -I dts -O dtb -o "$boot_out/zybo.dtb" "$boot_out/zybo.dts" || exit 1
 	dtb=$boot_out/zybo.dtb
 fi
 
