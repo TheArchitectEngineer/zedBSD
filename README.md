@@ -234,19 +234,31 @@ To run Keiland manually, type:
 
 ## Open Hardware and Project Hardware
 
-Code that runs on commercially available hardware (PCs, Raspberry Pi series, and other
-SBCs) is free for anyone to build and use.  That includes commercial use,
-modification, and redistribution under the [zlib License](LICENSE). Buying
-project hardware is not required to use that part of the system, and that split
-is meant to stay.
+Code that runs on commercially available hardware (PCs, Raspberry Pi
+series, and other SBCs) is free for anyone to build and use.  That
+includes commercial use, modification, and redistribution under the
+[zlib License](LICENSE).  Buying project hardware is not required to
+use that part of the system, and that split is meant to stay.
 
-Some features can only be realized on hardware designed by this project. Those
-features are still published as source, under the same license. They are not a
-closed edition. They depend on that hardware, so they do not run on a generic PC
-or Raspberry Pi. The sold product is the computer, not a paid OS license.
+Some features can only be realized on hardware designed by this
+project.  Those features are still published as source, under the same
+license.  They are not a closed edition.  They depend on that
+hardware, so they do not run on a generic PC or Raspberry Pi.  The
+sold product is the computer, not a paid OS license.
 
 zedBSD stays under zlib as its long-term license.  Improvements to the
 open-hardware system stay freely usable.
+
+Our hardware projects:
+- [Amaterrace GPU](https://github.com/awemorris/amaterrace-gpu)
+- [Sukuna RISC](https://github.com/awemorris/sukuna-risc)
+
+My goal is to provide $50 tablets and $30 SBCs to resource-limited
+areas to help achieve things like more efficient food production and
+lower transportation costs through autonomous driving.
+
+Of course, I'd love to provide the kind of high-end laptops that geeks
+swear by as well!
 
 ---
 
