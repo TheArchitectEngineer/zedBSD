@@ -3,7 +3,7 @@
 # WS288 p002 amaterrace-gpu の骨組み・GHCI 1.0 の草稿・共通の block・TB と Verilator の枠・bitstream 1 の合成の実測
 
 - 親: [ws.md](../ws.md)。設計: [design.md](../design.md) §8 の p002 の行（§1.3 clock・reset・quiesce、§2 GHCI、§3.6 見積もり、§4.1 MC/AMB、§7 repository）。
-- 状態: in-progress（2026-10-23 P2 が実装と host の確認を終えた。clear の判定は Q1）。
+- 状態: cleared（2026-10-23 Q1: amaterrace-gpu 70aaff5〜217f0a0 で骨組み・LICENSE（Zlib）・docs/ghci.md の host の interface の草稿・am_axi_regs/am_axi_master/am_afifo/atg_mc・BLT・CP の仮の部分、Verilator 5.032 の lint 11/11 clean、iverilog の TB 5 本 PASS、Verilator の harness PASS、bitstream 1 を Vivado 2026.1 で xc7z010 に配置配線: LUT 2451・FF 2632・BRAM 0.5・100 MHz で WNS +0.473 ns。板は p003。command と ISA は design 版 3 待ちで ghci.md は stub）
 - 受け入れ（design §8）: host で TB PASS、lint 0。加えて Q1 の依頼: bitstream 1 を Vivado の batch で ZYBO 向けに合成し LUT/FF/BRAM と timing を測り、§3.6 の見積もりを直す。
 - 決定（2026-10-23、Q1 経由のユーザーの決定）: U1〜U17 は推しで承認（U1 Zlib、U3 Verilator を Debian から、cocotb 無し、U15、U16、U17）。U2 は当面 KC705 を USB JTAG だけで（PCIe は Future Work fw-kc705-pcie）。KC705 の gclk の目標 200 MHz。途中で届いた決定: SU に小さな per-warp の scoreboard（design §3.1、p008）、GHCI は標準の shader ISA を定め vendor の ISA は任意、CP の JIT 可、native の ISA の直接の投入も可、**command は zedBSD の kernel の command（Venus 由来）、ISA は RISC-V を元にした独自**（design v3 は P1）。これに従い `docs/ghci.md` は host interface だけを書き、command と ISA の節は「design v3、pending」の stub にした。旧の opcode の decoder は作っていない。
 
