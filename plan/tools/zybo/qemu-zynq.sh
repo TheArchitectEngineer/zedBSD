@@ -7,8 +7,11 @@
 # nothing in r2; the kernel then takes the tree at 0x01F00000).  UART1, the
 # console, is the second serial port, a Unix socket.
 #   plan/tools/zybo/qemu-zynq.sh KERNEL [--append TEXT] [--initrd root.img]
-#       [--sd zybo-sd.img] [--net PORT] [--expect REGEX]... [--then STEP]...
-#       [--timeout S] [--stamp] [--gdb PORT] [--print]
+#       [--dtb FILE] [--sd zybo-sd.img] [--net PORT] [--expect REGEX]...
+#       [--then STEP]... [--timeout S] [--stamp] [--gdb PORT] [--print]
+# --dtb gives the kernel FILE instead of the made tree, such as the SD
+# boot's system.dtb (make sd-image), whose command line names the root on
+# the card; it takes neither --append nor --initrd.
 # --sd puts a disk image in the SD slot of SDIO0 (make sd-image,
 # build/zybo/zybo-sd.img, a power of two in size); the machine writes to
 # it.  With --sd and no --initrd, --append 'rootpart=/dev/mmcblk0p2' takes
@@ -34,12 +37,13 @@ set -u
 
 dtb_addr=0x01f00000
 initrd_addr=0x04000000
-kernel= append= initrd= sd= net_port= timeout=60 stamp= gdb_port= print_only=
+kernel= append= initrd= dtb= sd= net_port= timeout=60 stamp= gdb_port= print_only=
 patterns= steps=
 while [ $# -gt 0 ]; do
 	case "$1" in
 	--append) append=$2; shift 2 ;;
 	--initrd) initrd=$2; shift 2 ;;
+	--dtb) dtb=$2; shift 2 ;;
 	--sd) sd=$2; shift 2 ;;
 	--net) net_port=$2; shift 2 ;;
 	--expect) patterns="$patterns$2
@@ -62,18 +66,25 @@ if [ "$(head -c 4 "$kernel" | od -An -tx1 | tr -d ' ')" != 7f454c46 ]; then
 	echo "qemu-zynq: $kernel is not an ELF (give build/zybo/vmunix, not vmunix.bin)" >&2
 	exit 2
 fi
+if [ -n "$dtb" ] && { [ -n "$append" ] || [ -n "$initrd" ]; }; then
+	echo "qemu-zynq: --dtb takes neither --append nor --initrd" >&2
+	exit 2
+fi
 
 out=${ZYBO_QEMU_OUT:-$zybo_root/build/zybo-qemu}
 sock=$out/uart1.sock
 
-# The same tree the JTAG boot gives the board.
-if [ -n "$initrd" ]; then
+# The same tree the JTAG boot gives the board, unless the caller brings one.
+if [ -n "$dtb" ]; then
+	mkdir -p "$out" || exit 1
+elif [ -n "$initrd" ]; then
 	initrd_end=$(printf '0x%08x' $((initrd_addr + $(wc -c < "$initrd"))))
 	zybo_make_dtb "$out" "$append" "$initrd_addr" "$initrd_end" || exit 1
+	dtb=$out/zybo.dtb
 else
 	zybo_make_dtb "$out" "$append" || exit 1
+	dtb=$out/zybo.dtb
 fi
-dtb=$out/zybo.dtb
 
 set -- -M xilinx-zynq-a9 -smp 1 -m 512M -kernel "$kernel" \
 	-serial null -serial "unix:$sock,server=on,wait=off" \

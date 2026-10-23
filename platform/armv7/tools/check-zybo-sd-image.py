@@ -2,13 +2,20 @@
 """Check the ZYBO's SD card image that make-zybo-sd-image.py writes.
 
   check-zybo-sd-image.py --root-ufs ROOT.UFS [--boot-file DEST=SOURCE]...
-      [--fat-mib N] IMAGE
+      [--fat-mib N] [--kernel VMUNIX.BIN [--bootarg PARAMETER]...] IMAGE
 
 It checks that the image is a power of two in size, that its MBR holds the
 bootable FAT16 boot partition at the first MiB and the UFS root right after
 it, that the boot partition is FAT16 and carries every --boot-file with the
 same contents, and that partition 2 is the UFS root given, a valid UFS with
 the zedBSD root marker.
+
+With --kernel it also checks the files of the SD boot on the boot
+partition, as U-Boot SPL reads them (make-zybo-boot-files.py): vmunix.itb
+is a FIT whose one kernel is VMUNIX.BIN, loaded and entered at 0x00100000,
+and system.dtb gives the board's memory and a command line that names the
+root (rootpart=/dev/mmcblk0p2) and every --bootarg.  A BOOT.BIN among the
+--boot-file files must carry the boot ROM's image header.
 """
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
@@ -29,6 +36,16 @@ BOOT_TYPE = 0x06
 BOOT_ACTIVE = 0x80
 ROOT_TYPE = 0xA5
 ROOT_MARKER = b"zedBSD ufs root v1\n"
+
+# The boot ROM's image header (U-Boot's tools/zynqimage.c describes it):
+# the width detection word and the identifier, then the words up to the
+# checksum, which is the complement of their sum.
+BOOT_ROM_WIDTH_OFFSET = 0x20
+BOOT_ROM_WIDTH_WORD = 0xAA995566
+BOOT_ROM_IDENTIFIER = 0x584C4E58
+BOOT_ROM_CHECKSUM_OFFSET = 0x48
+BOOT_ROM_SOURCE_OFFSET = 0x30
+BOOT_ROM_OCM_BYTES = 0x30000
 
 TOP = Path(__file__).resolve().parents[3]
 
@@ -67,6 +84,55 @@ def check_root(root: bytes) -> None:
     marker = filesystem.read_file(filesystem.lookup("/etc/zedbsd-root"))
     if marker != ROOT_MARKER:
         fail("the UFS root has no zedBSD root marker")
+
+
+def load_boot_files_tool():
+    """Loads make-zybo-boot-files.py, whose checks the card's copies take."""
+    tool = Path(__file__).resolve().parent / "make-zybo-boot-files.py"
+    spec = importlib.util.spec_from_file_location("make_zybo_boot_files", tool)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def check_boot_rom_image(data: bytes) -> None:
+    """Checks that BOOT.BIN starts with the header the boot ROM reads."""
+    if len(data) < BOOT_ROM_CHECKSUM_OFFSET + 4:
+        fail("BOOT.BIN is too short for a boot ROM image")
+    width, identifier = struct.unpack_from("<II", data, BOOT_ROM_WIDTH_OFFSET)
+    if width != BOOT_ROM_WIDTH_WORD or identifier != BOOT_ROM_IDENTIFIER:
+        fail("BOOT.BIN has no boot ROM image header")
+    words = struct.unpack_from("<10I", data, BOOT_ROM_WIDTH_OFFSET)
+    (checksum,) = struct.unpack_from("<I", data, BOOT_ROM_CHECKSUM_OFFSET)
+    if checksum != (~sum(words)) & 0xFFFFFFFF:
+        fail("BOOT.BIN's header checksum is wrong")
+    # The image follows the header (its offset and length are the two words
+    # at 0x30; U-Boot's mkimage gives as the length that of the whole file).
+    # What the boot ROM copies to the on-chip memory and runs must fit its
+    # 192 KiB.
+    source, length = struct.unpack_from("<II", data, BOOT_ROM_SOURCE_OFFSET)
+    if source < BOOT_ROM_CHECKSUM_OFFSET + 4 or source >= len(data):
+        fail("BOOT.BIN's image does not start within the file")
+    if length == 0 or length > len(data):
+        fail("BOOT.BIN's image length is not within the file")
+    if len(data) - source > BOOT_ROM_OCM_BYTES:
+        fail("BOOT.BIN's image is larger than the on-chip memory")
+
+
+def check_sd_boot(args: argparse.Namespace) -> None:
+    """Checks vmunix.itb, system.dtb and BOOT.BIN on the boot partition."""
+    tool = load_boot_files_tool()
+    kernel = args.kernel.read_bytes()
+    try:
+        tool.check_fit(extract(args.image, "/vmunix.itb"), kernel)
+        tool.check_dtb(extract(args.image, "/system.dtb"),
+                       ["rootpart=/dev/mmcblk0p2"] + args.bootarg)
+    except tool.BootFileError as error:
+        fail(str(error))
+    for specification in args.boot_file:
+        destination = specification.partition("=")[0].strip("/")
+        if destination.upper() == "BOOT.BIN":
+            check_boot_rom_image(extract(args.image, "/BOOT.BIN"))
 
 
 def check(args: argparse.Namespace) -> None:
@@ -119,14 +185,21 @@ def check(args: argparse.Namespace) -> None:
         if hashlib.sha256(payload).digest() != digest_file(Path(source)):
             fail(f"/{destination.strip('/')} differs from {source}")
 
+    if args.kernel is not None:
+        check_sd_boot(args)
+
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root-ufs", type=Path, required=True)
     parser.add_argument("--boot-file", action="append", default=[])
     parser.add_argument("--fat-mib", type=int, default=64)
+    parser.add_argument("--kernel", type=Path)
+    parser.add_argument("--bootarg", action="append", default=[])
     parser.add_argument("image", type=Path)
     args = parser.parse_args()
+    if args.bootarg and args.kernel is None:
+        parser.error("--bootarg needs --kernel")
     check(args)
     print(f"ZYBO SD image check: PASS {args.image}")
 

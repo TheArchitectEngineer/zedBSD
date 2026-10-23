@@ -181,10 +181,12 @@ abi-image: $(BUILD)/abi.img
 ARMV7_ROOT_COMMANDS ?= cat cksum dd df dmesg echo getty init login ls mount \
 	ps reboot rm sh swapon sync syslogd time umount uname
 # The script that starts OpenSSH's server makes /var/empty and sets the
-# modes of the host keys it makes, so a root with OpenSSH has those commands.
-ARMV7_ROOT_COMMANDS += $(if $(filter openssh,$(ZEDBSD_USER_PROGRAMS)),chmod mkdir)
+# modes of the host keys it makes, and the kernel update over SSH
+# (plan/tools/zybo/deploy.sh) renames the boot files on /boot/boot0, so a
+# root with OpenSSH has those commands.
+ARMV7_ROOT_COMMANDS += $(if $(filter openssh,$(ZEDBSD_USER_PROGRAMS)),chmod mkdir mv)
 # The network's programs, those a configuration names (the ZYBO's network
-# login, plan/ws289/tests/config-zybo-ssh.mk): the network daemon, the
+# login, config/ci/config-zybo.mk): the network daemon, the
 # commands it runs to configure an interface (ifconfig, route) and to take
 # a DHCP lease (dhcpc), the startup command its service runs (net), and
 # ping and hostname to look at the result.
