@@ -190,8 +190,50 @@
  */
 #define SD_RUN_BLOCKS 128U
 
-/* The size a card is published with while its CSD is not decoded. */
+/*
+ * The size a card is published with when its CSD gives none: a structure
+ * version the driver does not know, or a size that decodes to nothing.
+ */
 #define SD_UNKNOWN_BLOCK_COUNT 0xffffffffULL
+
+/*
+ * How a long response (CMD2's, CMD9's) sits in the four response
+ * registers: bits 127:8 of the card's 136-bit answer, the CRC and the end
+ * bit dropped, as bits 119:0 of the four words.  A field at bit N of the
+ * CSD is at bit N - 8 of the words.
+ *
+ * Values referenced: SD Host Controller Simplified Specification 4.20,
+ * the Response register's mapping of R2; QEMU v10.0.11 hw/sd/sdhci.c
+ * (sdhci_send_command, the 16-byte response).
+ */
+#define RESPONSE_WORDS 4U
+#define RESPONSE_DROPPED_BITS 8U
+
+/*
+ * The fields of the CSD that give the card's size, as the CSD's own bit
+ * positions and widths: the structure version (0 for a standard-capacity
+ * card, 1 for a high-capacity one); for version 1 the read block length,
+ * the device size and its multiplier; for version 2 the device size in
+ * 512 KiB units.
+ *
+ * Values referenced: SD Physical Layer Simplified Specification 9.10,
+ * the CSD register (CSD Version 1.0 and CSD Version 2.0 tables).
+ */
+#define CSD_STRUCTURE_BIT 126U
+#define CSD_STRUCTURE_WIDTH 2U
+#define CSD_STRUCTURE_VERSION_1 0U
+#define CSD_STRUCTURE_VERSION_2 1U
+#define CSD_V1_READ_BL_LEN_BIT 80U
+#define CSD_V1_READ_BL_LEN_WIDTH 4U
+#define CSD_V1_C_SIZE_BIT 62U
+#define CSD_V1_C_SIZE_WIDTH 12U
+#define CSD_V1_C_SIZE_MULT_BIT 47U
+#define CSD_V1_C_SIZE_MULT_WIDTH 3U
+#define CSD_V2_C_SIZE_BIT 48U
+#define CSD_V2_C_SIZE_WIDTH 22U
+
+/* The 512-byte blocks of one unit of a version 2 device size, 512 KiB. */
+#define CSD_V2_BLOCKS_PER_UNIT 1024ULL
 
 /*
  * One controller the driver serves, and the card in its slot.
@@ -271,6 +313,9 @@ static void pause_microseconds(unsigned microseconds);
 static void report_card_detect(const struct drv_sdhci_config *config);
 static int controller_init(struct sdhci_unit *unit);
 static int set_clock(struct sdhci_unit *unit, uint64_t target);
+static void read_long_response(const struct sdhci_unit *unit, uint32_t response[RESPONSE_WORDS]);
+static uint32_t csd_field(const uint32_t response[RESPONSE_WORDS], unsigned bit, unsigned width);
+static uint64_t csd_block_count(const uint32_t response[RESPONSE_WORDS]);
 static int command(struct sdhci_unit *unit, uint32_t index, uint32_t argument, uint16_t flags, uint32_t *response);
 static int app_command(struct sdhci_unit *unit, uint32_t command_index, uint32_t argument, uint16_t flags, uint32_t *response);
 static int wait_bits(struct sdhci_unit *unit, unsigned reg, uint32_t mask, uint32_t expected);
@@ -662,16 +707,19 @@ report_card_detect(
  * transfer state.
  *
  * The card is identified at 400 kHz (CMD0, CMD8, ACMD41, CMD2, CMD3), its
- * CSD is read (CMD9), it is selected (CMD7), an older card is told the
- * block length (CMD16), and the clock goes up to the transfer clock.  The
- * four-line bus is asked for last (ACMD6); a card that refuses it stays on
- * one line.
+ * CSD is read for its size (CMD9), it is selected (CMD7), an older card is
+ * told the block length (CMD16), and the clock goes up to the transfer
+ * clock.  The four-line bus is asked for last (ACMD6); a card that refuses
+ * it stays on one line.
  */
 static int
 controller_init(
 	struct sdhci_unit *unit)
 {
+	uint32_t csd[RESPONSE_WORDS];
 	uint64_t deadline;
+	uint64_t blocks;
+	uint32_t structure;
 	uint32_t response;
 	uint8_t host_control;
 	uint8_t pending;
@@ -792,7 +840,7 @@ controller_init(
 	if (unit->card.rca == 0)
 		return EIO;
 
-	/* Reads the card's CSD, which is not decoded yet. */
+	/* Reads the card's CSD. */
 	error = command(unit, 9, unit->card.rca << 16, CMD_RESP_LONG | CMD_CRC, NULL);
 	if (error != 0) {
 		kern_logf("sdhci: CMD9 %u\n", (unsigned)error);
@@ -800,6 +848,23 @@ controller_init(
 		/* Failed: the card did not send its CSD. */
 		return error;
 	}
+
+	/*
+	 * Takes the card's size from the CSD, which the response registers
+	 * hold until the next command.  A CSD that gives no size leaves the
+	 * size unknown, as a wrong size would cut the partitions short.
+	 */
+	read_long_response(unit, csd);
+	blocks = csd_block_count(csd);
+	unit->card.block_count = SD_UNKNOWN_BLOCK_COUNT;
+	if (blocks != 0)
+		unit->card.block_count = blocks;
+
+	/* Writes the CSD's version and the size taken from it to the boot log. */
+	structure = csd_field(csd, CSD_STRUCTURE_BIT, CSD_STRUCTURE_WIDTH);
+	kern_logf("sdhci: csd structure=%u blocks=%llu\n",
+		  (unsigned)structure,
+		  (unsigned long long)unit->card.block_count);
 
 	/* Selects the card, which moves it to the transfer state. */
 	error = command(unit, 7, unit->card.rca << 16, CMD_RESP_BUSY | CMD_CRC | CMD_INDEX, NULL);
@@ -921,6 +986,102 @@ set_clock(
 	/* Succeeded: the card runs at the divided clock. */
 	unit->card.card_clock = base / (2U * divisor);
 	return 0;
+}
+
+/* Reads the four response registers that hold a long response. */
+static void
+read_long_response(
+	const struct sdhci_unit *unit,
+	uint32_t response[RESPONSE_WORDS])
+{
+	unsigned index;
+
+	/* Reads the words from the lowest bits of the answer up. */
+	for (index = 0; index < RESPONSE_WORDS; index++)
+		response[index] = read_register32(unit, REG_RESPONSE0 + index * 4U);
+}
+
+/*
+ * Extracts one field of the CSD from a long response.
+ *
+ * The bit is the field's lowest bit as the CSD numbers it; the field may
+ * span two of the response's words.
+ */
+static uint32_t
+csd_field(
+	const uint32_t response[RESPONSE_WORDS],
+	unsigned bit,
+	unsigned width)
+{
+	unsigned position;
+	unsigned word;
+	unsigned shift;
+	uint32_t value;
+	uint32_t mask;
+
+	/* Finds the field in the words, which lack the CSD's lowest eight bits. */
+	position = bit - RESPONSE_DROPPED_BITS;
+	word = position / 32U;
+	shift = position % 32U;
+
+	/* Takes the field's low part from its word, and the rest from the next one up. */
+	value = response[word] >> shift;
+	if (shift + width > 32U && word + 1U < RESPONSE_WORDS)
+		value |= response[word + 1U] << (32U - shift);
+
+	/* Succeeded: the field, without the bits above it. */
+	mask = (1U << width) - 1U;
+	return value & mask;
+}
+
+/*
+ * Computes the card's size in 512-byte blocks from its CSD.
+ *
+ * A version 1 CSD gives the size as (C_SIZE + 1) * 2^(C_SIZE_MULT + 2)
+ * blocks of 2^READ_BL_LEN bytes, a version 2 CSD as (C_SIZE + 1) units of
+ * 512 KiB.  Returns 0 for a CSD of any other version, or one whose size
+ * is less than a block.
+ *
+ * Procedure referenced: SD Physical Layer Simplified Specification 9.10,
+ * 5.3.2 (C_SIZE, C_SIZE_MULT, READ_BL_LEN) and 5.3.3 (C_SIZE).
+ */
+static uint64_t
+csd_block_count(
+	const uint32_t response[RESPONSE_WORDS])
+{
+	uint64_t bytes;
+	uint64_t blocks;
+	uint32_t structure;
+	uint32_t size;
+	uint32_t multiplier;
+	uint32_t block_length;
+
+	/* Reads which layout the CSD has. */
+	structure = csd_field(response, CSD_STRUCTURE_BIT, CSD_STRUCTURE_WIDTH);
+
+	/* A high-capacity card counts its size in 512 KiB units. */
+	if (structure == CSD_STRUCTURE_VERSION_2) {
+		size = csd_field(response, CSD_V2_C_SIZE_BIT, CSD_V2_C_SIZE_WIDTH);
+		blocks = ((uint64_t)size + 1U) * CSD_V2_BLOCKS_PER_UNIT;
+
+		/* Succeeded: the high-capacity card's size. */
+		return blocks;
+	}
+
+	/* Refuses a layout the driver does not know, such as an ultra-capacity card's. */
+	if (structure != CSD_STRUCTURE_VERSION_1)
+		return 0;
+
+	/* A standard-capacity card multiplies its device size by two powers of two. */
+	size = csd_field(response, CSD_V1_C_SIZE_BIT, CSD_V1_C_SIZE_WIDTH);
+	multiplier = csd_field(response, CSD_V1_C_SIZE_MULT_BIT, CSD_V1_C_SIZE_MULT_WIDTH);
+	block_length = csd_field(response, CSD_V1_READ_BL_LEN_BIT, CSD_V1_READ_BL_LEN_WIDTH);
+	bytes = ((uint64_t)size + 1U) << (multiplier + 2U);
+	bytes <<= block_length;
+	blocks = bytes / SD_BLOCK_BYTES;
+
+	/* Succeeded: the standard-capacity card's size, zero when less than a block. */
+	return blocks;
 }
 
 /*
@@ -1593,7 +1754,7 @@ publish_disk(
 	disk->d_name[6] = (char)('0' + unit->number);
 	disk->d_name[7] = '\0';
 
-	/* Describes a removable card of 512-byte blocks whose size is not known, moved in runs. */
+	/* Describes a removable card of 512-byte blocks, of the size its CSD gave, moved in runs. */
 	disk->d_flags = DISK_REMOVABLE;
 	disk->d_block_size = SD_BLOCK_BYTES;
 	disk->d_block_count = unit->card.block_count;
