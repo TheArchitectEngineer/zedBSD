@@ -29,6 +29,7 @@
 | p007 | 規約の全文の見直し | 6 | p002〜p006 | planning |
 
 - 合計 78 LW（版 2）。WS286 との順（design §9）: WS286 p006 → p007 → **WS289 p002・p003（WS286 と独立、並行可）** → WS286 p010 → WS289 p004（SD）→ p005（LAN）→ p006（SD 起動）→ WS286 p008（PL）。
+- p005 の前提「Q1: armv7 の package」（design §11 の Q1 への依頼 (1)）: 2026-10-23 P2（worktree p2-armv7-packages、Phase は無い）が済ませた。zlib・openssl・openssh・ca-certificates が armv7 で build できる（`userland/packages/external.mk` の triple `armv7-unknown-zedbsd-eabihf`、`gen-cross-toolchain.sh` の armv7 の code flag、OpenSSL の target `zedbsd-armv7`（patch level zedbsd8）、armv7 の `libutil.so`）。既定の ZYBO の root には入れない。`make ZEDBSD_CONFIG=config/ci/config-zybo.mk armv7-packages` で build だけ、root に入れるのは試験の config [tests/config-zybo-ssh.mk](tests/config-zybo-ssh.mk)（`ARMV7_ROOT_MIB := 16`、image 17 MiB、JTAG の load 69 s。OpenSSH を選ぶと `libutil.so`・`chmod`・`mkdir` も入り、root.img の作成で ELF の debug 情報を落とす）。実機（JTAG）で `ssh -V` = `OpenSSH_10.5p1, OpenSSL 3.5.8 25 Aug 2026`、`openssl version`、`openssl dgst -sha256`、`ssh-keygen -t ed25519`、boot で sshd-start が rsa・ecdsa・ed25519 の host key を作った。sshd の待ち受けと LAN は未確認（p005）。p005 が SD の root を作る時は、この config の program と package の組を元にする。
 - 訂正（design §1.2）: 目的の節の「reset は gpio0 46」は誤りで、`gpio0 46` は USB の PHY の reset。GEM の RTL8211E に reset の GPIO は無い（MDIO の soft reset で足りる）。
 
 ## 現在の状態・再開点

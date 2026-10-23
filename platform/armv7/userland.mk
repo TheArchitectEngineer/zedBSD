@@ -128,6 +128,10 @@ $(DYNAMIC_DIR)/libc.so: $(DYNAMIC_LIBC_OBJS) $(DYNAMIC_BUILTIN_ARCHIVE) \
  --allow-shlib-undefined $(DYNAMIC_LIBC_OBJS) $(DYNAMIC_BUILTIN_ARCHIVE) -o $@
 	$(PYTHON) tools/build/check-dynamic-elf.py --machine armv7 --role libc $@
 
+# libutil (openpty, forkpty, login_tty): the library the external packages
+# link beside the C library (OpenSSH's server, userland/packages/external.mk).
+$(eval $(call ZEDBSD_LIBUTIL_RULE,$(DYNAMIC_DIR),$(ZEDBSD_TARGET_LLVM_BIN)/ld.lld,$(ARMV7_USER_LDFLAGS),armv7))
+
 # A program is crt1, its own objects and the shared C library.
 ARMV7_APP_INPUTS := $(ARMV7_SYSROOT)/usr/lib/crt1.o \
 	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so \
@@ -175,6 +179,9 @@ abi-image: $(BUILD)/abi.img
 # symbol it names is the C library's.
 ARMV7_ROOT_COMMANDS ?= cat dmesg echo getty init login ls mount ps reboot \
 	sh swapon syslogd umount uname
+# The script that starts OpenSSH's server makes /var/empty and sets the
+# modes of the host keys it makes, so a root with OpenSSH has those commands.
+ARMV7_ROOT_COMMANDS += $(if $(filter openssh,$(ZEDBSD_USER_PROGRAMS)),chmod mkdir)
 ARMV7_APP_OBJ := $(DYNAMIC_DIR)/obj
 ARMV7_APP_CHECK = $(PYTHON) tools/build/check-dynamic-elf.py --machine armv7 \
  --role application --needed libc.so

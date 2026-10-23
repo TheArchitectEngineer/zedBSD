@@ -47,12 +47,14 @@ ZEDBSD_EXTERNAL_TRIPLE := $(strip \
 	$(if $(filter amd64,$(ZEDBSD_ARCHITECTURE)),x86_64-unknown-zedbsd,\
 	$(if $(filter i386,$(ZEDBSD_ARCHITECTURE)),i386-unknown-zedbsd,\
 	$(if $(filter arm64,$(ZEDBSD_ARCHITECTURE)),aarch64-unknown-zedbsd,\
-	$(if $(filter riscv64,$(ZEDBSD_ARCHITECTURE)),riscv64-unknown-zedbsd,)))))
+	$(if $(filter riscv64,$(ZEDBSD_ARCHITECTURE)),riscv64-unknown-zedbsd,\
+	$(if $(filter armv7,$(ZEDBSD_ARCHITECTURE)),armv7-unknown-zedbsd-eabihf,))))))
 
 # The LLVM backend of the configured target, for the packages built from LLVM.
 ZEDBSD_EXTERNAL_LLVM_TARGET := $(strip \
 	$(if $(filter arm64,$(ZEDBSD_ARCHITECTURE)),AArch64,\
-	$(if $(filter riscv64,$(ZEDBSD_ARCHITECTURE)),RISCV,X86)))
+	$(if $(filter riscv64,$(ZEDBSD_ARCHITECTURE)),RISCV,\
+	$(if $(filter armv7,$(ZEDBSD_ARCHITECTURE)),ARM,X86))))
 ZEDBSD_EXTERNAL_LLVM_BIN := $(abspath $(ZEDBSD_EXTERNAL_ROOT)/build/llvm/bin)
 ZEDBSD_EXTERNAL_SYSROOT := \
 	$(abspath $(ZEDBSD_EXTERNAL_ROOT)/build/$(ZEDBSD_ARCHITECTURE)/sysroot)
@@ -80,13 +82,13 @@ ZEDBSD_EXTERNAL_CROSS_INPUTS := $(ZEDBSD_EXTERNAL_GEN_CROSS) \
 # one when a package is built on its own).  Only the soname reaches a
 # program, so any build of this tree's libraries serves.  The list is what
 # the packages link: the C library, and libutil (openpty, for OpenSSH),
-# available on both LP64 targets; a package that links another of this tree's
+# available on the LP64 targets and armv7; a package that links another of this tree's
 # shared libraries adds it here.  A copy is refreshed whenever its source
 # changes, and the copies are order-only prerequisites of the wrappers: they
 # have to exist before a package links, and a new C library does not
 # configure the packages again.
 ZEDBSD_EXTERNAL_LINK_DIR := $(ZEDBSD_EXTERNAL_CROSS_DIR)/lib
-ZEDBSD_EXTERNAL_LINK_LIBS := libc.so $(if $(filter amd64 arm64 riscv64,$(ZEDBSD_ARCHITECTURE)),libutil.so)
+ZEDBSD_EXTERNAL_LINK_LIBS := libc.so $(if $(filter amd64 arm64 riscv64 armv7,$(ZEDBSD_ARCHITECTURE)),libutil.so)
 ZEDBSD_EXTERNAL_LINK_SOURCE := $(if $(ZEDBSD_TOPLEVEL_BUILD),\
 	$(BUILD)/dynamic,$(ZEDBSD_EXTERNAL_DYNAMIC))
 
