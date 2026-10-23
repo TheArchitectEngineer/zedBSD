@@ -14,6 +14,8 @@
 - 完了: 実機の ZYBO を SD の boot mode にして電源を入れると、JTAG 無しで起動し、root は SD、LAN で SSH に入れ、SSH で kernel を差し替えて再起動できる。
 - この WS の外: SMP の CPU1・L2（別の WS）、USB（WS287）、PL（WS286 p008）。
 
+- 2026-10-23 ユーザー「rpi4を参照するよりも、共通部分は分離しましょう。」→ SDHCI と Cadence GEM の共通の部分を汎用の driver に分け、Pi 4・Pi 5・ZYBO は薄い glue にする（分離は ZYBO の glue の前の Phase、Pi 側の回帰の確認付き）。
+
 ## Phase（案、p001 の設計で確定）
 
 | Phase | 内容 | 依存 | 状態 |
