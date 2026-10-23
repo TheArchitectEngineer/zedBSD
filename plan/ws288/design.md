@@ -90,6 +90,7 @@
 - **2026-10-23 ユーザーの決定（版 2 の「shader の ISA は決めない」を改める）**:「GHCIは標準のシェーダーISAを定義し、ベンダ独自のシェーダISAはオプションで利用可能。標準ISAの実装は、このGPUではハードウェアでそのまま実装されるが、コマンドプロセッサがJITコンパイルしてネイティブISAに変換してもOK。」
   - GHCI は **標準の shader の ISA**（命令・符号化・binary の形・実行の model のうち driver から見える所）を決める。GHCI の GPU は全部この標準の ISA の program を受ける。
   - vendor 独自の ISA は **任意**。`ISA_ID` などで標準の ISA に加えて持てる（driver は使ってもよい）。
+  - 2026-10-23 ユーザー（続けて）「ネイティブISAを直接送信も可能。」→ driver は標準の ISA の代わりに、その GPU の native（vendor）の ISA の program を直接送ってもよい（CP の JIT を通らない）。program ごとにどちらの ISA かを示す（`LOAD_PROGRAM` の flag か ISA の ID、p002 の ghci.md で決める）。
   - 標準の ISA の実装の仕方は自由: **Amaterrace は hardware がそのまま実行する**（native = 標準）。他の実装は **CP が受け取った標準の ISA を JIT して自分の native の ISA に変えてよい**（driver からは見えない）。
   - これで汎用の driver（zedBSD の `src/drivers/gpu/ghci/`）は ISA の backend を 1 つ（標準の ISA）持てば、どの GHCI の GPU でも shader まで動かせる。下の「決めない」の shader の ISA の行と、§3 の "ATS1" の扱い（標準の ISA の名前と符号化にするか、Amaterrace の native を標準として採るか）、§6.6 の `isa/ats1/` の名前は、p002 の `docs/ghci.md` の草稿と p008 で直す（Amaterrace の native の ISA を GHCI の標準の ISA として書く案が自然）。
 
