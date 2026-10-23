@@ -212,7 +212,7 @@ header: [31:24] opcode  [23:16] flags  [15:8] JOB_TAG  [7:0] n = payload の dwo
 - **物理の lane は parameter `NPHYS`（8/16/32）**: warp の 32 lane を `32/NPHYS` cycle で流す（NVIDIA の 32 の warp を 16 幅の SIMD で 2 cycle、AMD の 64 の wave を 16 幅で 4 cycle と同じ考え）。ISA・compiler・driver・API から見える幅は常に 32。**同じ binary が NPHYS に依らず動く**（p008 の受け入れ: NPHYS 8/16/32 で model と同じ結果）。
 - **SM/CU に当たる 1 つの単位**: NPHYS の SIMD の datapath、`NWARPS` の常駐の warp を round-robin で発行する scheduler（1 warp の 1 命令が `32/NPHYS` cycle を占める）、BRAM の register file、小さな I$・D$、workgroup の shared memory（LDS）、constant bank、post-transform の buffer（PT）、primitive table。workgroup は 1 unit の中（`maxComputeWorkGroupInvocations` = 32 × NWARPS）。
 - **exec mask は compiler が管理する**: warp ごとの `EXEC`（32 bit）を `EXEC_*` 命令で立て下げし、hardware は再収束を扱わない。共有の IR が if-converted で Boolean を 32 bit の all-ones/zero で持つ（`ir.h`）ので、ほとんどの分岐は `SELECT` で消え、`EXEC` が要るのは loop と「副作用の有る命令」だけ。**`KILL` の sticky bit は STG・ATOM・EXP・TEX の副作用を自動で抑える**（killed の lane は書かない。EXEC は変えない）。
-- **待ちも compiler が管理する**: 長い命令（memory、texture、超越関数、除算）は class ごとの counter と `WAIT cm, ct, cx`（AMD の `s_waitcnt` の形）。register ごとの scoreboard を持たない。
+- **待ちは小さな hardware の scoreboard で**（2026-10-23 ユーザー「数は少なくていいので、scoreboardを実装できないでしょうか。性能に大きく影響しますので」、版 2 の「register ごとの scoreboard を持たない」を改める）: warp ごとに、結果がまだ戻っていない長い命令（memory、texture、超越関数、除算）の宛先の register を数個（案: 4〜8 entry、p008 で BRAM・LUT を実測して決める）だけ覚え、発行の時に source・dst がそれに当たる命令だけを止める（RAW・WAW）。当たらない独立の命令は待たずに発行し、scheduler は止まった warp を飛ばして他の warp を発行する。entry が埋まった時は、次の長い命令を entry が空くまで止める。`WAIT cm, ct, cx`（class ごとの counter）は store の完了や memory の順序の待ちのために残し、compiler は値の待ちに WAIT を入れなくてよい。具体の entry 数・比べ方・I$ との関係は p008 の設計で決める（`docs/ats1.md` に反映）。
 - 精度: fp32 は IEEE の形、丸めは最近偶数、denormal は flush。fp16 の packed も同じ規則。超越は 2 ulp 程度。整数は 32 bit（packed は 16 × 2）。
 
 ### 3.2 register と operand の符号化（8 bit）
@@ -481,7 +481,7 @@ MOVI / 32 bit の即値を持つ命令: [31:0] = imm32
 | LOAD_VERTEX_INPUT / EMIT_VERTEX / END_PRIMITIVE（geometry） | **拒む**（geometry stage 無し） |
 
 - register の割り当て: linear scan、r0〜r(NREGS−1)。溢れは拒む（`ENOTSUP`）。
-- scheduling: dst の interlock を独立の命令で埋める、`WAIT` の挿入。
+- scheduling: 長い命令の結果を使う命令を遠ざけて独立の命令で埋める（scoreboard が止める間を減らす）。`WAIT` は store の完了・memory の順序の時だけ。
 - host の試験: `tests/ghci-ats1-compiler-host-test.c`（符号化の往復 + `tests/ats1-model.c`（写し）で実行して CPU の参照と比べる）。
 
 ### 6.7 Vulkan の executor（`vk/`）
