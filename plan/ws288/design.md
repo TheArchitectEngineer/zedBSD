@@ -2040,6 +2040,7 @@ reviewer が照合した物: design.md の §3.1〜§3.6・§2.2〜§2.4・§6�
 | S14 | TU の slot を stage ごとに 16（U60）: **案 A**（Q1 の判断）: STATE を 1024 index に広げ、0x200〜0x2FF を vertex の stage の 16 slot × 16 word、fragment と compute は今の 0x090〜0x18F、tex の命令は warp の種類で bank を選ぶ、`atg_cp_state` 512 → 1024 word、SET_REG の fault の境 1024、`atg_tu_desc` を 32 slot に、SU → TU の要求に stage の bit。案 B（descriptor を memory の table に置き TU が cache する）は後の拡張の候補 | 6 | S9、p027 の cp_seq・cp_state の merge |
 
 | S15 | shared memory（LDS）の atomic（2026-10-25 07:12 Q1 追加、p010 で見つかった Vulkan 1.0 core の食い違い: Workgroup の OpAtomic*）: GSI1 の命令（`atom` の LDS の形か新しい sub）、`atg_su_lds` の read-modify-write、gsi1asm・gsi1dis・gsi1model、compiler の lowering、TB | 4 | — |
+| S16 | TU の row pitch（2026-10-25 08:10 Q1 追加、p018 の P2 の報告: firmware は 1x の attachment の image の各 level の幅を偶数に丸める（ROP の行の規則）ので、奇数の幅の attachment を TU が読み違える）: texture の slot に行の byte 数の word（+7、0 = 詰めた行）を足し、`atg_tu_desc`・`atg_tu_foot`・model・TB を合わせる。`include/ghci_layout.h` と合わせる | 2 | S9・S14 |
 
 計 103 LW（±35%）。S12 は S9 の後、S13 は S8 の後、S14 は S9 の後（S13 と S14 は並行可）。S11（統合）は S2〜S14 の全部の後。
 

@@ -25,3 +25,6 @@
 | 2026-10-25 07:37 | S13（varying 64）を P1 に（S8 の後）。S11（統合）は S12〜S15 の後に別に | P1 の系統が空いた |
 | 2026-10-25 07:50 | p006 を KC705 の PCIe（amd64）向けに書き直して P3 に（p018・p019 と並行）。ZYBO の branch の汎用の部分だけを取り込む。`GPU_OP_GHCI_NATIVE` の番号と `ghcictl` の名前は推しのまま | ZYBO は target から外した。並行できる物は先に（推しで進める許可） |
 | 2026-10-25 08:00 | p006: 共有の build の file（Makefile・pci.drivers・amd64 の vmunix.mk・pcat.c）の既定 off の最小の追加を P3 に許した。DDR の窓は GHCI §15.2 の BAR2（design §6.2 を直した）。capset・COMMAND は executor（p019）ができるまで出さない | Vulkan 1.0 の原則（executor 無しに Vulkan の device を見せない） |
+| 2026-10-25 08:10 | p018: KC705 の CP の CPU の memory を IMEM 64 KiB・DMEM 32 KiB に広げる（firmware の object model が入らない） | design §2.4.7 が IMEM 64 KiB まで許す。KC705 の BRAM に余裕がある |
+| 2026-10-25 08:10 | p018: 新しい gpu-op GHCI_HEAP 0x10108、record の時の µop への翻訳、compiler の bank_first、共有の ghci_layout.h を受け入れた | Vulkan 1.0 では bind を変えると command buffer は無効になるので、record の時の翻訳は許される |
+| 2026-10-25 08:10 | TU の奇数の幅の attachment の読み違いを p030 S16（row pitch の word）として足した | Vulkan 1.0 の原則（attachment を sample して正しく読める） |

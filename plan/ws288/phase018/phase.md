@@ -22,3 +22,5 @@ Verilator の firmware の試験の harness（host の C から staging と fram
 ## 記録
 
 - 2026-10-25 07:13 Q1: 新設。
+- 2026-10-25 08:10 P2 → Q1（途中）: firmware が atg_cpu の 32 KiB の IMEM・16 KiB の DMEM に入らない（DMEM が溢れる: object の表 6.4 KiB など）。P2 の判断: GHCI_HEAP 0x10108（driver が heap を貸す、session の無い時の ring だけ）、record の時に µop へ翻訳、compiler の bank_first（vertex と fragment が constant bank を共有、zedBSD agent/p2-p010 e981c797e、gsi1-host-test 32/0）、共有の `include/ghci_layout.h`（image は linear、1x の attachment は幅を偶数に）。
+  - Q1 の判断: KC705 の atg_cpu を IMEM 64 KiB・DMEM 32 KiB に（design §2.4.7 が許す範囲、atg_top に parameter、既定は今の値）、P2 が p2-p018 で行う。(1)〜(4) は受け入れ。TU の奇数の幅の attachment は p030 の段 S16（row pitch）に。
