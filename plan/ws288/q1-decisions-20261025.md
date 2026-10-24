@@ -23,3 +23,4 @@
 | 2026-10-25 07:12 | P3 の S10: TILE・UNTILE は 16・32 bit を受ける（GHCI を「16 and 32」に）、KEEP は RESOLVE・TILE・blend では断る、fp の平均は ((s0+s1)+(s2+s3))×0.25 を fma で | 既存の試験と互換、Vulkan の resolve は平均の方法を実装に任せる |
 | 2026-10-25 07:36 | P1 が rm を 1 回打ち security の判定で止められた（build/blend2.before、回避なし）。消すのは Q1 が代わりに行った（担当が頼んだ削除で、止められた操作の代行ではない） | AGENTS.md の rm の規則。担当の起動の指示に rm の禁止は書いてある |
 | 2026-10-25 07:37 | S13（varying 64）を P1 に（S8 の後）。S11（統合）は S12〜S15 の後に別に | P1 の系統が空いた |
+| 2026-10-25 07:50 | p006 を KC705 の PCIe（amd64）向けに書き直して P3 に（p018・p019 と並行）。ZYBO の branch の汎用の部分だけを取り込む。`GPU_OP_GHCI_NATIVE` の番号と `ghcictl` の名前は推しのまま | ZYBO は target から外した。並行できる物は先に（推しで進める許可） |
