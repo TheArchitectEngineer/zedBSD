@@ -13,7 +13,7 @@
 | A | VF: `atg_vf_index`・`atg_vf_fetch`・`atg_vf_conv`・`atg_vf_asm` を spec（amaterrace-gpu `spec/gpu/vf/`）から実装、`atg_vf` の結線の確認 | spec §8 の TB 4 本（`atg_vf_index_tb`・`atg_vf_fetch_tb`・`atg_vf_conv_tb`・`atg_vf_asm_tb`）の PASS 行が全部出る、`tools/lint.sh` clean、既存の `sim/run.sh` の PASS が減らない | in-progress（2026-10-24 P1 に依頼） |
 | B1 | `atg_su_exp`（PT・export、PT の block ごとの割り当て）・`atg_su_lda`（primitive table）を spec から実装し単体 TB、exp の port の変更（vl_mask）、`atg_cp_seq` の VF の範囲の SET_REG の待ち | exp・lda の TB の PASS、cp_seq の TB に VF の待ちの case、lint clean | cleared（2026-10-24 Q1: amaterrace-gpu c29f858） |
 | B2 | VF → SU（vertex）→ RX → SU（fragment）→ ROP の `atg_top` の結線（HAS_VF、N=1）、shading された三角形（頂点の色の補間）の scene と model | Verilator（または iverilog）の TB で色と depth が model と一致、PNG | cleared（2026-10-24 Q1: amaterrace-gpu 1d3253e、main の merge ce607b4） |
-| C | TU（`atg_tu_addr`・`cache`・`filter`）と `atg_su_tex`、最近傍 → bilinear | textured な三角形が model と一致 | planned |
+| C | TU（`atg_tu_addr`・`cache`・`filter`）と `atg_su_tex`、最近傍 → bilinear | textured な三角形が model と一致 | in-progress（2026-10-24 P1） |
 
 ## 記録
 - 2026-10-24 Q1: part A を P1（phase-runner、Opus 5.5 high）に依頼。amaterrace-gpu の worktree `~/amaterrace-worktrees/p1-vf`（branch `p1-vf`、基点 main 3839cb5）。範囲は VF の子 4 つと単体 TB 4 本、spec §10 の更新。結果は P1 の返答を Q1 がここに書く。
@@ -27,3 +27,4 @@
   - 実装: `atg_su_pt`（新、PT と block ごとの割り当て）、`atg_su_exp`（fragment の export buffer）、`atg_su_lda`、`atg_rx_frag`（新、covered な quad を最大 8 個で fragment warp、r0〜r5 = b0・b1・b2・z・x+0.5・y+0.5、perspective の b）、`atg_cp_seq` の VF の範囲の SET_REG の待ち、atg_top は VF の primitive を `pt_done` まで RX に通さない。
   - spec の読み（P1、Q1 が承認: 技術の判断で委任の範囲）: (1) exp を `atg_su_exp` と `atg_su_pt` に分割（module の規則）、(2) port の追加（pt の pt_warp・vl_go・vl_mask・pt_done、atg_su の pt_done、exp の fl_*）、(3) exp の読み（quad の位置は r4/r5 の floor、ex_mask は covered かつ exp を受けた lane、kill は exp より前に compiler が置く、書かれない成分は不定、point size と SECOND_COLOR は v1 で保存しない）、(4) r4・r5 は画素の中心（Vulkan の FragCoord）、(5) lda の pw_addr の配置（[10:8] primitive、[7:6] vertex、[5:0] word、0xFFF は map）、(6) scan を `atg_rx_scan` と `atg_rx_frag` に分割、(7) RX の PT の読みは frag を優先。
   - 残件: `atg_cp_seq.v` は 406 行（今回の前から 400 行の上限を 6 行超え、増えていない）→ p016（規約の全文の見直し）で分ける。`atg_top_shade` は iverilog で約 190 秒（`sim/run.sh` の上限 300 秒）。atg_rx_frag は quad 1 つ約 200 cycle で 1 つずつ（p015 の性能）。export buffer と lda の表の大きさの削減は未。合成・timing・板は未実施（範囲外）。part C（TU）は未着手。
+- 2026-10-24 Q1: part C を P1 に依頼（ユーザー「進めてください。」）。worktree `~/amaterrace-worktrees/p1-tu`（branch `p1-tu`、基点 main ce607b4）。
