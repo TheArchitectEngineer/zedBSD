@@ -146,6 +146,8 @@ CASES = [
     ("image.vert", "vertex", [], "", 2e-6, ["lw"]),
     ("varying64.vert", "vertex", [], "", 2e-6, ["exp"]),
     ("varying64.frag", "fragment", [], "", 2e-6, ["lda"]),
+    ("varying64all.vert", "vertex", [], "", 2e-6, ["exp"]),
+    ("varyingloop.vert", "vertex", [], "", 2e-6, ["exp", "exec.save", "bexnz"]),
     ("mrt.frag", "compile-fragment", [], "", 0, ["exp"]),
     ("texture.frag", "compile-fragment", [], "regs=64", 0,
      ["texb", "texl", "texg.b", "texb.c", "texb.3", "texf", "texsz", "texsz.s", "texsz.l"]),

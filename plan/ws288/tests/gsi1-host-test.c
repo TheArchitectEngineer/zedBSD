@@ -773,7 +773,7 @@ run_vertex(
 			pt[lane * (4U + MODEL_VARY) + 4U + w_word] = run->output[lane][REF_SLOT_POSITION][3];
 			pt_known[lane * (4U + MODEL_VARY) + 4U + w_word] = 1U;
 		}
-		for (location = 0U; location < 15U; location++) {
+		for (location = 0U; location < GHCI_GSI1_LOCATIONS; location++) {
 			for (component = 0U; component < 4U; component++) {
 				if (run->written[lane][location][component] == 0U)
 					continue;

@@ -214,15 +214,23 @@ struct gsi1_lowering {
 	uint32_t flags;
 
 	/*
-	 * Each output channel: the value its export reads where it lives
-	 * (GSI1_NOT_DEFINED for none), when the channel is stored once
-	 * outside any loop; otherwise the register the stores copy into
-	 * (GSI1_NO_OPERAND until the first store takes one, kept to the
-	 * end).  And whether the program stores it at all.
+	 * Each output channel of a fragment program, exported at the end: the
+	 * value its export reads where it lives (GSI1_NOT_DEFINED for none),
+	 * when the channel is stored once outside any loop; otherwise the
+	 * register the stores copy into (GSI1_NO_OPERAND until the first
+	 * store takes one, kept to the end).  And, in either stage, whether
+	 * the program stores it at all.
 	 */
 	uint32_t output_value[GSI1_OUTPUT_CHANNELS];
 	uint8_t output_reg[GSI1_OUTPUT_CHANNELS];
 	uint8_t output_written[GSI1_OUTPUT_CHANNELS];
+
+	/*
+	 * Each output channel of a vertex program: the IR instruction of its
+	 * last store, which exports the value stored (GSI1_NOT_DEFINED for a
+	 * channel the program does not store).
+	 */
+	uint32_t output_last[GSI1_OUTPUT_CHANNELS];
 
 	/* A vertex or fragment program: each location's first varying word (GHCI_GSI1_NO_WORD for none). */
 	uint32_t varying_word[GHCI_GSI1_LOCATIONS];
@@ -324,7 +332,7 @@ uint32_t gsi1_io_inputs(const struct gsi1_lowering *lowering, const struct drv_g
 /* gsi1-io.c: checks a graphics program's inputs and outputs and plans their registers and varying words. */
 int gsi1_io_prepare(struct gsi1_lowering *lowering);
 
-/* gsi1-io.c: plans which output channels are exported straight from the value stored. */
+/* gsi1-io.c: plans where each output channel is exported and what the export reads. */
 void gsi1_io_plan_outputs(struct gsi1_lowering *lowering);
 
 /* gsi1-io.c: takes the inputs' registers and computes those the start makes. */

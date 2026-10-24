@@ -10,7 +10,9 @@
  *
  * A vertex warp starts with each attribute's components in the registers
  * the interface table names; the program copies them where it reads them
- * and exports the position, the point size and the varyings at its end.
+ * and exports each component of the position, the point size and the
+ * varyings right after its last store, so that no output holds a register
+ * to the end.
  * Location L component c of the varyings is varying word w + c, w the
  * location's first word (4 L unless the pipeline packs them): a vertex
  * program exports it to 0x010 + w + c, and a fragment program reads it from
@@ -74,7 +76,7 @@ static int lower_varying(struct gsi1_lowering *lowering, const struct drv_gpu_sh
 static void emit_lda(struct gsi1_lowering *lowering, uint32_t rd, uint32_t word, uint32_t vertex);
 static void emit_export(struct gsi1_lowering *lowering, uint32_t operand, uint32_t target);
 static int export_channel(struct gsi1_lowering *lowering, uint32_t channel, uint32_t target);
-static int finish_vertex(struct gsi1_lowering *lowering);
+static int lower_vertex_output(struct gsi1_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction, uint32_t channel);
 static int finish_fragment(struct gsi1_lowering *lowering);
 
 /*
@@ -212,10 +214,14 @@ gsi1_io_prepare(
 }
 
 /*
- * Plans which output channels are exported straight from the value
- * stored: a channel stored once outside every loop is exported from where
- * its value lives, which then lives to the end; any other gets a register
- * of its own at its first store.
+ * Plans where each output channel is exported and what the export reads.
+ *
+ * A vertex program exports a channel right after its last store, from the
+ * value stored, so that no output holds a register to the end.  A fragment
+ * program exports at its end (a discard must come before every export): a
+ * channel stored once outside every loop is exported from where its value
+ * lives, which then lives to the end; any other gets a register of its own
+ * at its first store.
  */
 void
 gsi1_io_plan_outputs(
@@ -226,6 +232,7 @@ gsi1_io_plan_outputs(
 	uint8_t stores[GSI1_OUTPUT_CHANNELS];
 	uint8_t in_loop[GSI1_OUTPUT_CHANNELS];
 	uint32_t value[GSI1_OUTPUT_CHANNELS];
+	uint32_t last[GSI1_OUTPUT_CHANNELS];
 	uint32_t index;
 	uint32_t channel;
 	uint32_t depth;
@@ -237,7 +244,7 @@ gsi1_io_plan_outputs(
 	kern_memset(stores, 0, sizeof(stores));
 	kern_memset(in_loop, 0, sizeof(in_loop));
 
-	/* Counts each channel's stores and notes those inside a loop. */
+	/* Counts each channel's stores, notes those inside a loop, and finds each channel's last one. */
 	depth = 0U;
 	for (index = 0U; index < ir->instruction_count; index++) {
 		instruction = &ir->instructions[index];
@@ -262,12 +269,33 @@ gsi1_io_plan_outputs(
 		if (channel == GSI1_OUTPUT_CHANNELS)
 			continue;
 
-		/* The store, with its value and its nest. */
+		/* The store, with its value, its nest and its place. */
 		if (stores[channel] < 2U)
 			stores[channel]++;
 		value[channel] = instruction->src[0];
+		last[channel] = index;
 		if (depth != 0U)
 			in_loop[channel] = 1U;
+	}
+
+	/*
+	 * A vertex program exports each channel at its last store.  Every lane
+	 * runs that store after any other store to the channel: outside a loop
+	 * every lane runs it, and a lane runs the whole body of each pass of a
+	 * loop (a lane leaves only at the end of a pass), so the last pass it
+	 * runs reaches the last store.  The export there, under the EXEC of
+	 * the pass, leaves the value of the lane's last store, as an export at
+	 * the end of the program would.
+	 */
+	if (ir->stage == DRV_GPU_STAGE_VERTEX) {
+		for (channel = 0U; channel < GSI1_OUTPUT_CHANNELS; channel++) {
+			if (stores[channel] == 0U)
+				continue;
+
+			/* The channel's export follows its last store. */
+			lowering->output_last[channel] = last[channel];
+		}
+		return;
 	}
 
 	/* A channel stored once outside every loop is exported from its value, which lives to the end. */
@@ -362,9 +390,11 @@ gsi1_io_lower_input(
 }
 
 /*
- * Lowers the write of an output: nothing when the export reads the value
- * where it lives, otherwise a copy into the channel's register, taken at
- * its first store and kept to the end.
+ * Lowers the write of an output.  A vertex program exports the value at
+ * the channel's last store and does nothing at the others.  A fragment
+ * program does nothing when the export at its end reads the value where it
+ * lives, and otherwise copies the value into the channel's register, taken
+ * at its first store and kept to the end.
  */
 int
 gsi1_io_lower_output(
@@ -383,6 +413,16 @@ gsi1_io_lower_output(
 		return error;
 	}
 	lowering->output_written[channel] = 1U;
+
+	/* A vertex program's store has a lowering of its own. */
+	if (lowering->ir->stage == DRV_GPU_STAGE_VERTEX) {
+		error = lower_vertex_output(lowering, instruction, channel);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the vertex output is exported, or a later store exports it. */
+		return 0;
+	}
 
 	/* The export reads the value where it lives. */
 	if (lowering->output_value[channel] == instruction->src[0])
@@ -414,20 +454,22 @@ gsi1_io_lower_output(
 	return 0;
 }
 
-/* Emits the exports at the end of a graphics program. */
+/*
+ * Emits the exports at the end of a fragment program; a vertex program's
+ * were made at their stores.
+ */
 int
 gsi1_io_finish(
 	struct gsi1_lowering *lowering)
 {
 	int error;
 
-	/* The stage's exports. */
-	error = 0;
-	if (lowering->ir->stage == DRV_GPU_STAGE_VERTEX) {
-		error = finish_vertex(lowering);
-	} else if (lowering->ir->stage == DRV_GPU_STAGE_FRAGMENT) {
-		error = finish_fragment(lowering);
-	}
+	/* Only a fragment program exports at its end. */
+	if (lowering->ir->stage != DRV_GPU_STAGE_FRAGMENT)
+		return 0;
+
+	/* The fragment program's exports. */
+	error = finish_fragment(lowering);
 	if (error != 0)
 		return error;
 
@@ -1295,59 +1337,56 @@ export_channel(
 }
 
 /*
- * Exports a vertex program's outputs: the position (and its w again as
- * the pipeline's w varying), the point size and the varyings.
+ * Lowers a vertex program's store to an output channel: at the channel's
+ * last store, exports the value stored to the channel's target (the
+ * position's w also to the pipeline's w varying); at an earlier store,
+ * nothing, as the last one exports what every lane ends with.
  */
 static int
-finish_vertex(
-	struct gsi1_lowering *lowering)
+lower_vertex_output(
+	struct gsi1_lowering *lowering,
+	const struct drv_gpu_shader_ir_inst *instruction,
+	uint32_t channel)
 {
-	uint32_t channel;
+	uint32_t source;
 	uint32_t location;
 	uint32_t component;
 	int error;
 
-	/* The position's components. */
-	for (component = 0U; component < 4U; component++) {
-		channel = GSI1_OUTPUT_POSITION + component;
-		if (lowering->output_written[channel] == 0U)
-			continue;
+	/* Only the channel's last store exports. */
+	if (lowering->output_last[channel] != lowering->index)
+		return 0;
 
-		/* Exports the component. */
-		error = export_channel(lowering, channel, GSI1_EXP_POS(component));
-		if (error != 0)
-			return error;
+	/* Finds where the value stored is read from. */
+	error = gsi1_source(lowering, instruction->src[0], &source);
+	if (error != 0)
+		return error;
+
+	/* A position component goes to its own target. */
+	if (channel < GSI1_OUTPUT_POINT_SIZE) {
+		component = channel - GSI1_OUTPUT_POSITION;
+		emit_export(lowering, source, GSI1_EXP_POS(component));
+
+		/* The w again, as the varying the fragment program reads it from. */
+		if (component == 3U && lowering->options.has_w_word != 0U)
+			emit_export(lowering, source, GSI1_EXP_VARYING(lowering->options.w_word));
+
+		/* Succeeded: the position component is exported. */
+		return 0;
 	}
 
-	/* The position's w as the varying the fragment program reads it from. */
-	if (lowering->options.has_w_word != 0U && lowering->output_written[GSI1_OUTPUT_POSITION + 3U] != 0U) {
-		error = export_channel(lowering, GSI1_OUTPUT_POSITION + 3U, GSI1_EXP_VARYING(lowering->options.w_word));
-		if (error != 0)
-			return error;
+	/* The point size goes to its own target. */
+	if (channel == GSI1_OUTPUT_POINT_SIZE) {
+		emit_export(lowering, source, GSI1_EXP_POINT_SIZE);
+		return 0;
 	}
 
-	/* The point size. */
-	if (lowering->output_written[GSI1_OUTPUT_POINT_SIZE] != 0U) {
-		error = export_channel(lowering, GSI1_OUTPUT_POINT_SIZE, GSI1_EXP_POINT_SIZE);
-		if (error != 0)
-			return error;
-	}
+	/* A varying component, to its word (prepare_vertex() refused a location without words). */
+	location = (channel - GSI1_OUTPUT_LOCATIONS) / 4U;
+	component = (channel - GSI1_OUTPUT_LOCATIONS) % 4U;
+	emit_export(lowering, source, GSI1_EXP_VARYING(lowering->varying_word[location] + component));
 
-	/* Each varying component written, to its word. */
-	for (location = 0U; location < GHCI_GSI1_LOCATIONS; location++) {
-		for (component = 0U; component < 4U; component++) {
-			channel = GSI1_OUTPUT_LOCATIONS + 4U * location + component;
-			if (lowering->output_written[channel] == 0U)
-				continue;
-
-			/* Exports the component. */
-			error = export_channel(lowering, channel, GSI1_EXP_VARYING(lowering->varying_word[location] + component));
-			if (error != 0)
-				return error;
-		}
-	}
-
-	/* Succeeded: the vertex is exported. */
+	/* Succeeded: the varying component is exported. */
 	return 0;
 }
 
