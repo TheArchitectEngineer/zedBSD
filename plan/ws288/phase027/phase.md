@@ -22,7 +22,7 @@
 | S2 | RX: `atg_rx_cov`・`atg_rx_bary`（新）、`atg_rx_scan`・`atg_rx_frag` | S1 | 7 | planned |
 | S3 | SU: `atg_su_exp`（r6・0x105・zexp・d_s・`ex_ms`） | S1 | 3 | planned |
 | S4 | ROP: `atg_rop_ms`（新）、`order`・`ds`・`wb` | S1 | 7 | planned |
-| S5 | TU: MS の `texf`・RGB565 の `texf`・`texsz.s`（SU の decode と戻りも） | S1、p009 part F の merge | 4 | planned |
+| S5 | TU: MS の `texf`・RGB565 の `texf`（addr・cache・filter）・`texsz.s`（imm 3、SU の decode） | S1、p009 part F の merge | 5 | planned |
 | S6 | `atg_top_msaa_tb` と scene、resolve4、Verilator、README、GHCI §12.11 | S2〜S5 | 6 | planned |
 
 ## 受け入れ
@@ -34,3 +34,4 @@ design の MSAA の節（review 済み）。scene の 4x の color・depth と r
 - 2026-10-25 01:08 Q1: 新設（part E の P3 の調べで、multisample の sampled image が ROP の MSAA に依存すると分かった）。
 - 2026-10-25 01:37 P2（q1558-i01、設計の段）: design.md 版 5 §15 MSAA を書いた（Vulkan 1.0 core の要求の表は docs.vulkan.org の文面から、RX の sample の coverage、fragment の入力 r6〜r9、SU の `exp 0x105`、ROP の `atg_rop_ms`、sample-interleaved の配置、resolve = firmware の内蔵の draw、TU の `texf` の rs2 = sample（P3 の TEX_IMAGE[15:12] = log2(samples)）、GHCI の draft §12.11、段 S1〜S6 = 29 LW、U43〜U46）。amaterrace-gpu の worktree p2-p027 の `docs/ghci.md` に CAPS[29] と §12.11（draft）。次は design-reviewer。
 - 2026-10-25 02:02 P2: design-reviewer の review 1（18 件: High 2・Medium 8・Low 8、Critical 0）に全部対応（[design-review-msaa.md](../design-review-msaa.md)）。主な変更: RGB565 の `texf`（S5）、resolve の時間を RX の律速で直した（1080p ≈1.0 s @ 100 MHz）、帯域を line の粒度で、`exp 0x105` は最後の書き込みが勝つ、exp の書き手の分離、depth だけの shader は `exp ~0 → 0x105`、TU の slot を予約せず STATE を保存・復元、`texsz.s` の decode、試験を LINE_BYTES 32・64・16 bpp・奇数の幅などに広げた。段の合計 31 LW。
+- 2026-10-25 02:21 P2: review 2（新しい 18 件: High 2・Medium 6・Low 10、review 1 の不十分 9 件を含む）に対応（[design-review-msaa.md](../design-review-msaa.md) の review 2）。主な変更: `texsz.s` を imm 3 に（P3 の part F が imm 2 を `texsz.d` に使った、p3-p009f 3ec9aed で確かめた）、resolve の後は firmware の写しの state を dirty にして出し直す（STATE・constant の読み戻しをやめた）、全 fragment program の終わりに `movi rT, -1; exp rT, 0x105`、RGB565 の `texf` は cache・filter も、d_s は三角形ごとに 1 回、受け入れを PASS の行・MUT・selftest・vec-diff・timeout で機械的に。段の合計 32 LW（S5 5 LW）。ws.md の p010・p018・p019 の依存の列に p027 を足すのは Q1 に依頼。設計の段の成果は review 済み、U43〜U46 はユーザーの判断待ち。
