@@ -923,3 +923,11 @@ WS074 の記録の q590・q594〜q598（Codex の browser3）は main の同じ�
 | q1551 / q1551-i01 | P1（phase-runner、worktree p1・agent/p1-q1551） | PowerVR の driver の comment の自己参照（plan/ の path、WS・Phase・Queue・Bug の番号）を除き、comment だけで意味が分かる形に整理（振る舞いは変えない）。承認: 2026-10-22 ユーザー「plan/ws256/design-peripherals.md section 2.4 みたいなself citationは削除して整理し、ドライバ単体で価値のあるものにしましょう。」 | q1550 | cleared（2026-10-22。a32491b70 を main 77b916e73 に merge、comment だけ・vmunix は前後で byte 単位で同一） |
 | q1552 / q1552-i01 | P1（phase-runner、worktree p1・agent/p1-q1552） | ws270-p007 の 60 fps: 操作ごと（hover・文字の入力・窓の drag・App Home の開閉・WiseView・scroll・app の起動）の 1 frame の時間を aat-input で測る試験を作り、16 ms を超える物を Keiland 側（glass の group 数、glass の結果の cache、frame の隙間・pace）で詰める。承認: 2026-10-22 ユーザー「ソースコードの整理ができたら、さらに最適化をすすめてください。すべての操作で16msで描画でき、60fpsになることが目標です。ただ、どうしても難しければ、retireしてかまいません。」 | q1551 | 実行中（2026-10-22） |
 | q1553 / q1553-i01 | P2（phase-runner、worktree p2・agent/p2-q1553） | ws270-p007 の 60 fps の driver 側: pixel の費用の残り（texture の F16 の sample の道、flat の床）、idle の後の最初の frame の 139 ms（libvulkan・gpu.c の受け付けの待ち）、app の起動時の 1 frame の 191 ms。承認: 同上 | q1551 | 実行中（2026-10-22） |
+
+## 2026-10-24 夜: WS288 p026（q1554）
+
+承認: 2026-10-24 ユーザー「では、まずは気づいた点を直すところから始めましょう。simは長いものも残しつつ手短に確認できるものがあるといいですね。」
+
+| Queue | 担当 | Phase | 範囲 | 結果 |
+| --- | --- | --- | --- | --- |
+| q1554 / q1554-i01 | P1（phase-runner、amaterrace-gpu の worktree `~/amaterrace-worktrees/p1-p026`・branch `p1-p026`、基点 ae6f9c5） | [ws288-p026](ws288/phase026/phase.md) | STATE の番号に名前、source から WS・Phase の番号を外す、短い sim の組。回路は変えない | 実行中（2026-10-24 22:50） |
