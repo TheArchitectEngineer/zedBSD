@@ -1242,7 +1242,9 @@ reviewer が照合した物: design.md の §3.1〜§3.6・§2.2〜§2.4・§6�
 
 未対応で残す物: 無し。その後のユーザーの決定（案 B → SA の延期）で、SA の詳細（1〜16・21〜30・33 の対応）は Appendix A の sketch に移り、計画の critical path からは外れた。U39 は閉じた（§3.9）。確かめていない事: 資源と cycle の数は推定のまま。
 
-## 15. MSAA（multisample の描画と sample する image。版 5、ws288-p027 の設計の段）
+## 15. MSAA（multisample の描画と sample する image。版 5、ws288-p027 の設計の段。版 5.1 で resolve を BLT の RESOLVE に）
+
+**版 5.1**（2026-10-25 P2、ws288-p027 の実装の段の最初、zedBSD の worktree p2-p027（main b5c6f2407）、amaterrace-gpu の worktree p2-p027（main 5a7a5c4 を merge した a928541））: U44 の回答（§15.20）で §15.8 の resolve を **BLT の op RESOLVE**（専用の streaming の engine `atg_blt_rsv`）に書き直し、§15.1・§15.2・§15.9〜§15.20 をそれに合わせた。段 S7 を足し計 39 LW。§15 の外の §2.4.4 の表の gpu-op 122 と §8 の p027 の行の LW（32 → 39）は Q1 が直す。review は [design-review-msaa.md](design-review-msaa.md) の review 3。
 
 2026-10-25 P2（ws288-p027、q1558-i01、zedBSD の worktree p2-p027（基点 bb8e0f161）、amaterrace-gpu の worktree p2-p027（基点 main 87457fa）を読んだ）。承認: 2026-10-25 ユーザー「了解です。SAはfuture workに回します。p009, msaaを優先して実装してください。…」（[phase027](phase027/phase.md)）。この節は設計だけで、RTL・model・firmware・driver は書かない。review の指摘と対応は [design-review-msaa.md](design-review-msaa.md)。
 
@@ -1257,7 +1259,7 @@ reviewer が照合した物: design.md の §3.1〜§3.6・§2.2〜§2.4・§6�
 
 | 項目 | Vulkan の要求（文面の要点） | v1（この設計） |
 | --- | --- | --- |
-| `framebufferColorSampleCounts` | Required Limits の表: min `(VK_SAMPLE_COUNT_1_BIT \| VK_SAMPLE_COUNT_4_BIT)`。「color attachments with floating- or fixed-point formats」 | 1\|4（ROP の RT の format: BGRA8・RGBA8・RGB565。RGB565 の 4x の resolve と sample のために TU の `texf` に 16 bit の texel を足す: §15.9、review 1） |
+| `framebufferColorSampleCounts` | Required Limits の表: min `(VK_SAMPLE_COUNT_1_BIT \| VK_SAMPLE_COUNT_4_BIT)`。「color attachments with floating- or fixed-point formats」 | 1\|4（ROP の RT の format: BGRA8・RGBA8・RGB565。4x の RGB565 の image を sample するために TU の `texf` に 16 bit の texel を足す: §15.9、review 1。resolve は BLT の UNORM565: §15.8） |
 | `framebufferIntegerColorSampleCounts` | 1.2 の limit、min 1 | 1.0 には無い。整数の RT の format は v1 に無い |
 | `framebufferDepthSampleCounts` / `StencilSampleCounts` | min 1\|4 | 1\|4（D24S8・D32F。stencil の op は ROP に未実装: §15.18） |
 | `framebufferNoAttachmentsSampleCounts` | min 1\|4（attachment の無い subpass） | 1\|4（RX の coverage だけ。ROP は書かない） |
@@ -1283,7 +1285,7 @@ reviewer が照合した物: design.md の §3.1〜§3.6・§2.2〜§2.4・§6�
 | FragDepth | 「replace the fragment's calculated depth values for each sample in the input SampleMask」 | sample の全部に同じ値（§15.6） |
 | fragment の操作の順 | sample mask test → fragment shading → multisample coverage（alpha to coverage・alpha to one）→ depth bounds → stencil → depth → … | RX → SU → ROP の `atg_rop_ms` → `atg_rop_ds` → `atg_rop_wb` |
 | polygon の被覆 | point sampling。edge の上の sample は「exactly one of the polygons must result in a covered sample」 | sample ごとに同じ edge 関数と top-left の bias（§15.3） |
-| resolve（render pass の `pResolveAttachments`、`vkCmdResolveImage`） | 「the samples corresponding to each pixel location in the source are converted to a single sample」。整数は 1 つの sample を選ぶ、float・normalized は実装依存。src は sample ≥ 2、dst は 1、同じ format、dst に `COLOR_ATTACHMENT`（maintenance10 の前）。1.0 は color だけ（depth/stencil の resolve は 1.2 の拡張） | firmware の内蔵の resolve の draw（§15.8、U44） |
+| resolve（render pass の `pResolveAttachments`、`vkCmdResolveImage`） | 「the samples corresponding to each pixel location in the source are converted to a single sample」。整数は 1 つの sample を選ぶ、float・normalized は実装依存。src は sample ≥ 2、dst は 1、同じ format、dst に `COLOR_ATTACHMENT`（maintenance10 の前）。1.0 は color だけ（depth/stencil の resolve は 1.2 の拡張） | BLT の op RESOLVE（専用の streaming の engine、UNORM は channel ごとの RNE の平均、整数は sample 0。§15.8、U44） |
 | 他の command | `vkCmdCopyImage` は sample の数が同じなら可（「The sample count of srcImage and dstImage must match」）。image ↔ buffer の copy と blit は MS 不可（記憶） | BLT の COPY・FILL を幅 ×S で（§15.8） |
 
 ### 15.2 決めた事の要約
@@ -1293,7 +1295,7 @@ reviewer が照合した物: design.md の §3.1〜§3.6・§2.2〜§2.4・§6�
 3. **SU** は RTL の core（sched・opd・RF）を変えない。`atg_su_exp` が r6 を snoop し、新しい export の target `0x105`（SampleMask の出力、最後の書き込みが勝つ）を drain の時に r6 と AND する。decode は `texsz.s` だけ足す。`mask` operand（119）と side-effect の lane は今のまま（「どれかの sample が covered な lane」）。
 4. **ROP** に新しい子 `atg_rop_ms`（sample ごとの depth z_s = z_c + d_s、alpha to coverage、alpha to one、coverage の合成）を `atg_rop_order` と `atg_rop_ds` の間に置き、`ds` と `wb` は (lane, sample) の 16 entry を回す。
 5. **memory の配置** = pixel ごとに S 個の sample を連続に（sample-interleaved）、行 = roundup(w, 2) × S × 画素の byte。2×2 の quad の 1 行の全 sample が 1 本の line（32/64 byte）に入る。
-6. **resolve** = firmware の内蔵の draw（fragment の program が `texf` で 4 sample を読み平均、ROP が書く）。新しい RTL 無し（U44）。clear・MS ↔ MS の copy は BLT の FILL/COPY を幅 ×S で。
+6. **resolve** = **BLT の op RESOLVE**（版 5.1、U44 の回答）: BLT の中の新しい streaming の engine `atg_blt_rsv` が MS の src の line を続けて読み、format ごとに平均（UNORM8・UNORM565 は channel ごとの RNE、整数は sample 0、sRGB・float の code は予約）して linear か tile の dst に書く。clear・MS ↔ MS の copy は BLT の FILL/COPY を幅 ×S で。
 7. **TU** の `texf` は MS の slot で **rs2 = sample の index**（level の代わり。MS の image は level 1 つ）。address は x' = x·S + s、行の texel 数 roundup(w, 2)·S。`texsz.s`（imm 3。imm 2 は part F の `texsz.d`）= sample の数。descriptor は P3 の TEX_IMAGE[15:12] = log2(samples)。RGB565 の 4x のために `texf` に 16 bit の texel を足す。
 8. **GHCI**（draft）: CAPS[29] MS4、STATE 0x05E `MS_CTRL`・0x05F `SAMPLE_KILL`、GSI1 の fragment の入力 r6〜r9 と `exp 0x105`、`texf` の MS の読み、`texsz.s`。amaterrace-gpu の `docs/ghci.md` §12.11（draft）に書いた。
 
@@ -1363,46 +1365,65 @@ reviewer が照合した物: design.md の §3.1〜§3.6・§2.2〜§2.4・§6�
 - 大きさ: 1920×1080 の 4x の RGBA8 の color は 33.2 MB、D24S8 も 33.2 MB（1x の 4 倍）。
 - **幅の上限**: BLT と RX・ROP の座標と TU の幅の field は 16 bit なので、MS の image は roundup(w, 2)·S ≤ 65535（4x で **w ≤ 16382**、review 2 の 10）。Vulkan の `maxFramebufferWidth`・`maxImageDimension2D` の最小 4096 は満たす。p019 は MS の image の幅を 16382 以下に検査する（review 1 の 18）。
 
-### 15.8 resolve と clear・copy
+### 15.8 resolve（BLT の RESOLVE の op、専用の streaming の道）と clear・copy
 
-- **resolve = firmware の内蔵の draw**（推し、U44）: firmware（p018）が内蔵の vertex program（region の矩形を 2 つの三角形で: 画面を覆う大きな三角形 1 つは RX の guard band ±16384 px を dst の幅 > 8192 で超えるため、review 2 の 11）と fragment program「resolve4」を持ち、subpass の終わりの `pResolveAttachments` と `vkCmdResolveImage` の各 region・各 layer で:
-  1. `WAIT_IDLE`（ROP の書き込みの BRESP まで）→ `INVALIDATE` T$（ROP が書いた MS の image を TU の cache が古いまま持たないため。これを忘れると古い texel を読む: §15.14）。
-  2. **TU の slot は予約しない**（review 1 の 7: 16 slot を全部 `maxPerStageDescriptorSampledImages` = 16 に出しているので、1 つ予約すると Vulkan の最小に届かない）。resolve は slot 0 を使う。
-  3. **state は保存・復元せず「dirty」にする**（review 2 の 2）: firmware は bind された pipeline・dynamic state・descriptor から STATE の word と LOAD_CONST を作る写しを自分で持つ（p018 の object model）。resolve の draw は必要な範囲を全部書く: VF（TOPOLOGY・FIRST・COUNT・INSTANCE_COUNT・ATTR・ATTR_DST）、RX（VIEWPORT・SCISSOR・CULL・DEPTH_CLAMP・RAST_MODE・VARYING_COUNT・PROVOKING・MS_CTRL = 1x・SAMPLE_KILL = 0）、ROP（RT_*・DEPTH・STENCIL_*・BLEND・WRITE_MASK）、program（VS/FS・CONST_BASE/WORDS・VS_OUT_WORDS）、TU の slot 0、constant の region 0（LOAD_CONST で firmware の heap の小さな block: c0 = srcOffset.x − dstOffset.x、c1 = 同 y、c2 = src の layer）。resolve の後に firmware は **写しの全部を dirty** にし、次の draw/dispatch の前に bind の状態から STATE と LOAD_CONST を出し直す（constant bank は CPU から読めない（`atg_su_cbank`）ので、読み戻す形は取らない）。Vulkan で bound の state は resolve と subpass の境を越えて残る（記憶）が、出し直しで守られる。
-  4. DRAW。resolve4 は x = fcvt.w.s(r4)（rtz、r4 = x + 0.5）+ c0、y 同様、src が 2D array なら `.3` 形の `texf`（rs1+2 = c2）、`texf` × 4（rs2 = 0〜3）、各成分 ((s0 + s1) + (s2 + s3)) × 0.25、`exp` COLOR0（≈32 命令）。整数の format（v1 の RT に無い）は s0 だけ。ROP の UNORM への変換（RNE）が丸めを決める（Vulkan の「implementation-dependent」の範囲）。
-  - **dst が 4×4 tile の時**（review 1 の 8a、review 2 の 12）: `vkCmdResolveImage` の dst は任意の 1x の TRANSFER_DST の image で、driver が SAMPLED の optimal の image を tile に置く事がある。ROP は linear にしか書かない（RT_FORMAT に tile の bit が無い。COLOR_ATTACHMENT の image は今も linear に置く必要がある）。tile の dst には **固定の大きさの一時の linear の帯**（firmware の heap の 256 KiB: 1920 px × 32 行 × 4 byte = 240 KiB。CP_HEAP の既定 8 MiB に 1080p の全面の 7.9 MiB は入らない）に 32 行ずつ resolve し、`WAIT_IDLE` の後に BLT の TILE で写す。
-  - **BLT と ROP の順序**（review 8c、1x にも共通）: BLT の範囲の SET_REG は BLT の busy だけを待つので、render pass の途中の clear（BLT の FILL）と前後の draw の間に firmware は `WAIT_IDLE` を挟む（ROP → BLT、BLT → ROP の両方向）。p018 の規則として書く。
-  - **§2.4.4 の表**: `vkCmdResolveImage`（gpu-op 122）は X → R（この内蔵の draw）に直した。
-  - 新しい RTL は無い（MS の `texf` は sampled MS image のために要る）。format は「TU が `texf` で読め、ROP が書ける format」だけ（v1: BGRA8・RGBA8・RGB565。RGB565 の `texf` は S5 で足す、§15.9）。
-  - **速さ（v1、推定、review 2）**: resolve の draw は RX の fragment の道を通り、`atg_rx_frag` が 1 quad あたり約 200 cycle で律速する（TU の 4 texel/画素 = 4 cycle/画素より遅い）。1080p の 518,400 quad × 200 ≈ 1.04 × 10^8 cycle ≈ **1.0 s @ 100 MHz**（720p で ≈0.46 s）。BLT の RESOLVE の op（U44 の B）も今の BLT の COPY の速さ（64 MB/s、往復で律速）なら 1080p の 4x の読み 33 MB で ≈0.5 s。どちらも v1 は正しさだけで、速さは RX の frag の pipeline 化（p015）か BLT の streaming（p003 の residual）の後に決まる。
+**版 5.1（2026-10-25 P2、ws288-p027 の実装の段の最初）**: ユーザーの U44 の回答（§15.20）で、firmware の内蔵の draw の案（版 5 の A）をやめ、**hardware の resolve** にした。比べた 3 つの置き場所と決めた理由:
+
+| 置き場所 | 長所 | 短所 | 判定 |
+| --- | --- | --- | --- |
+| **BLT の op RESOLVE**（BLT の中に新しい streaming の engine `atg_blt_rsv`） | resolve は「memory の矩形 → memory の矩形」で BLT の形そのもの。GHCI の BLT の STATE（base・stride・xy・size・clip）・`BLIT` の µop・`KICK.BLIT`・STATUS の BLT busy・fault の kind 2/5・MC の client 1 を全部そのまま使える。tile の dst（BLT の 4×4 の式）も同じ engine で書ける。render pass の state（draw の STATE・TU の slot・constant）に触れないので firmware は state を退避も出し直しもしない | BLT の今の 2D の FSM（696 行、U38 の分割が未）に足すと大きくなる → **足さない**: 既存の 2D の engine は名前だけ `atg_blt_2d` に変え（動作は bit で同じ）、resolve は別の子に置き、`atg_blt` は op で振り分ける薄い wrapper にする | **採用** |
+| ROP の道（ROP に resolve の walk を足す） | ROP は RT の format を知っている | ROP は SU からの quad を順に退かせる block で、memory の矩形の walk・clip・tile の dst・`vkCmdResolveImage`（render pass の外）の口が全部新しく要る。ROP の AMB の口は ds と wb が既に共有し、STATE の範囲の busy の待ち（RX/ROP）も draw と絡む | 不採用 |
+| 新しい block（`atg_rsv`、MC の新しい client） | 独立 | GHCI に新しい µop・KICK の bit・STATUS の busy の bit・STATE の範囲が要り、MC の tree に client が 1 つ増える。中身は BLT の op と同じ | 不採用 |
+| （版 5 の A）firmware の内蔵の draw | 新しい RTL 無し | RX の frag の律速で 1080p ≈1.0 s @ 100 MHz、state の退避と出し直し、TU の slot・constant・tile の dst の帯が要る | ユーザーが不採用 |
+
+- **Vulkan の要求（docs.vulkan.org の latest の refpage `vkCmdResolveImage`・`VkImageResolve`、2026-10-25 に WebFetch で読んだ）**: 「If the source format is an integer type, a single sample's value is selected for each pixel」、float・normalized は「implementation-dependent」（sRGB は「should」linear にしてから平均し、書く前に戻す）。`VkImageResolve` の aspectMask は「must only contain VK_IMAGE_ASPECT_COLOR_BIT」（depth/stencil の resolve は `VkImageResolve2` と maintenance10、render pass では 1.2 の depth/stencil resolve で、**Vulkan 1.0 core には無い**）。src は sample ≥ 2、dst は 1、同じ format、dst の format は（maintenance10 の前）`COLOR_ATTACHMENT` の feature、「The union of all source regions, and the union of all destination regions ... must not overlap in memory」。→ v1 は color だけ、整数は sample 0、src と dst の重なりは未定義（検査しない）。
+- **GHCI**（draft、`docs/ghci.md` §8.2 と §12.11）:
+  - BLT_OP の op を [1:0] から **[2:0]** に広げ、**4 = RESOLVE**（CAPS[29] の時）。5〜7 は fault の kind 2。今の [2] は「無視」で、今の firmware と試験は 0 を書くので互換。RESOLVE と blend（[4]）・reverse（[12]）の組み合わせは kind 2。[9:8] は dst の画素の大きさ（= src の 1 sample の大きさ）。
+  - **STATE 0x00B `BLT_RESOLVE`**（BLT の範囲 0x000〜0x01F の空き）: [3:0] src の log2(samples)（v1 は 2 だけ、他は kind 2）、[7:4] 平均の format、[8] dst が 4×4 tile（CAPS[11]）。
+  - 平均の format: **0 UNORM8**（画素の全 byte がそれぞれ 8 bit の unsigned normalized: RGBA8・BGRA8、将来の R8・RG8 も同じ code）、**1 UNORM565**（16 bit の [15:11]・[10:5]・[4:0] の 3 field）、**2 SAMPLE0**（sample 0 を写す: 整数の format）、3 SRGB8_A8（byte 0〜2 は sRGB、byte 3 は linear）、4 SFLOAT16（16 bit ごと）、5 SFLOAT32（32 bit ごと）、6〜15 予約（kind 2）。**v1 の Amaterrace は 0〜2**: 3〜5 は render output がその format を書く時に足す（ROP の RT の format が BGRA8・RGBA8・RGB565 だけなので、MS の sRGB・float の image は v1 では作れない）。それまで 3〜5 は kind 2。
+  - **平均**: UNORM は channel ごとに S 個の code の和 Σ を 4 で割り、**最も近い code に、ちょうど半分は偶数へ**（RNE: q = Σ >> 2、r = Σ & 3、q + (r > 2 ‖ (r = 2 ∧ q が奇数))。Σ ≤ 1020 なので桁あふれしない。normalized の値の算術平均を RNE で code にした値と等しい）。SRGB8_A8 は byte 0〜2 を sRGB → linear にして平均し linear → sRGB（RNE）、byte 3 は UNORM。SFLOAT は fp32 で ((s0 + s1) + (s2 + s3)) × 0.25（RNE、FTZ は他の fp と同じ）、SFLOAT16 はその後 fp16 に RNE。
+  - src の配置は §15.7（sample-interleaved）: src の画素 (x, y) の sample s は `SRC_BASE + y·SRC_STRIDE + (x·S + s)·ps`。BLT_SRC_XY・BLT_SIZE は画素の単位（×S しない）。SRC_BASE は 64 byte、SRC_STRIDE は 2·S·ps の倍数（§15.7 の P）。dst は linear（`DST_BASE + y·DST_STRIDE + x·ps`）か、[8] で BLT の 4×4 tile の式。clip は他の op と同じく dst に掛かり src が一緒に動く。
+- **流れ**（render pass の `pResolveAttachments` と `vkCmdResolveImage` の両方）: firmware（p018）は ROP の書き込みが memory に届いてから（`WAIT_IDLE` ROP、§15.14）、region ごと・layer ごとに BLT の範囲の SET_REG（OP = RESOLVE | ps、SRC = MS の image の base + layer·LAYER_STRIDE、SRC_STRIDE = P、DST、XY、SIZE、CLIP_MAX = 0、BLT_RESOLVE）と `BLIT` を出す。render pass の resolve は src・dst の XY = renderArea の offset、SIZE = extent。`vkCmdResolveImage` は srcOffset・dstOffset・extent、dst が tile なら [8]。**draw の STATE・TU の slot・constant には触れない**（BLT の範囲だけ）ので、退避も dirty も要らない。後の draw が dst を読む・書く時は今の規則（BLT ↔ ROP の `WAIT_IDLE`、TU で読むなら `INVALIDATE` T$）。BLT は cache を持たないので、src の MS の image の T$ の無効化は resolve には要らない。
+- **RTL の形**（module ≤ 400 行・FSM 1 つ・≤ 40 port、§15.16）:
+  - `atg_blt`（wrapper、≈120 行、port は今と同じ 22、parameter `MS4`）: BLT_OP[2] を snoop し、kick を `atg_blt_2d`（[2] = 0）か `atg_blt_rsv`（[2] = 1）へ。`MS4` = 0 で [2] = 1 の kick は wrapper が kind 2（kick の次の cycle、2D と同じ時期）。AMB の口は busy の側に（2 つの engine は同時に動かない: kick は BLT の busy の間に来ない）。組み合わせの mux だけで register の段を足さない（2D の時間を変えない）。busy・done・error は OR、error_kind は mux。
+  - `atg_blt_2d`: 今の `atg_blt` の module の名前だけを変えた物（2D の動作・時間は bit で同じ。U38 の分割はこの Phase の範囲の外）。
+  - **`atg_blt_rsv`**（制御、≈320 行、FSM 1 つ: IDLE → CLIP → MUL → ROW → DRAIN）: 自分の BLT の STATE の写し（OP・DST/SRC の BASE と STRIDE・XY・SIZE・CLIP・RESOLVE）、kick の時の組み合わせの検査（kind 2）、clip、行の起点の乗算（src: SRC_BASE + sy·SRC_STRIDE、dst: linear は DST_BASE + dy·DST_STRIDE、tile は DST_BASE + (dy/4)·DST_STRIDE + (dy%4)·4·ps。2D と同じ shift-and-add で 16 cycle、src と dst を並べて）、行ごとに src の行の line の範囲（first = src_row + sx·S·ps、line0 = first >> LS、off0 = first & (LB−1)、n = ((first + w·S·ps − 1) >> LS) − line0 + 1）を作って行の記述子を `atg_blt_rsv_px` へ、その line を順に読む。次の行: src += SRC_STRIDE、dst は linear なら += DST_STRIDE、tile なら dy%4 = 3 で += DST_STRIDE − 12·ps、他は += 4·ps。**AMB の口を 1 つの request register で持ち**、px の書き込みを読みより先に出す（書き込みが line buffer を空ける）。**読みの credit**: 未応答の読み + px の line の FIFO の数 + request register の読み < 2^DEPTH_LOG2 の時だけ読みを出す（応答に ready が無いので、FIFO の場所を出す時に取る）。応答は client ごとに順（`spec/gpu/mc/atg_mc.md`）なので tag は {7'd0, write} だけ。error の応答で新しい request を止め（px を `abort` で空にする）、未応答が 0 になって kind 5。終わり: 全部の行を出し、px が idle、未応答 0 で `done`。
+  - **`atg_blt_rsv_px`**（画素の道、≈320 行、FSM 1 つ: IDLE → ROW → FLUSH）: 行の記述子の FIFO（`am_fifo`、2 entry）と src の line の FIFO（`am_fifo`、2^DEPTH_LOG2 entry × LINE_BYTES·8 bit、distributed RAM）、2 本の line の window（`w0`・`w1`）と byte の位置 `ptr`。1 cycle に 1 つの **group**（dst の連続した n 画素、n ≤ min(4, LB/(S·ps))、行の残り、linear の dst は dst の line の残り、tile の dst は 4 − x%4（tile の行の中））: window から n·S·ps byte を取り（`ptr` は S·ps の倍数なので mux の位置は 2·LB/(S·ps) 個）、`atg_blt_avg` で平均し（register 1 段）、dst の line の組み立ての buffer（1 本、byte enable 付き）の byte の位置に置く。group の dst の line が buffer の line と違えば先に buffer を書き込みとして出す（FLUSH: ctl が request register に取るまで待つ）。行の終わりで window を捨てる（行の line は全部その行の group が使い切る: line の範囲は行の byte の範囲から作るので）。最後の行の最後の group の後に buffer を出し idle。`ptr + n·S·ps > LB` で `w1` が無ければ待つ。
+  - **`atg_blt_avg`**（組み合わせだけ、≈120 行、FSM 無し）: 入力 4 画素 × 4 sample × ps byte（ps 4: 64 byte、ps 2: 32 byte）、format、ps → 出力 4 画素 × ps byte。UNORM8（byte ごと）・UNORM565（3 field）・SAMPLE0。SRGB8_A8・SFLOAT は code を予約し、足す時はこの module に入れる（入出力の形は同じ）。
+- **速さ（推定）**: 4x・32 bpp・LINE_BYTES 64・揃った linear の dst で、dst の 1 line（16 画素）あたり読み 4 本 + 書き 1 本 = AMB の request 5 つ。px は 1 cycle に 1 group（4 画素 = src の 1 line）なので、口の律速は 5 cycle/dst line。1080p の 4x: src 33.2 MB（518,400 line）+ dst 8.3 MB（129,600 line）= 648,000 request ≈ 3.2 ms @ 200 MHz（口の律速）、DDR3 の実効 7.7〜9.6 GB/s で 41.5 MB ≈ 4.3〜5.4 ms → **memory の帯域で律速**。ただし今の AXI master は `OUTSTANDING_LOG2` = 2（同時に 4 つ）なので、読みの往復の待ち（MIG で ≈40〜60 cycle と見て）で ≈4 line/50 cycle に縛られ、v1 は 1080p で ≈30〜40 ms @ 200 MHz（版 5 の draw の案の ≈1.0 s @ 100 MHz の ≈15 倍速い）。AXI master の outstanding を深くする時（p025）は `DEPTH_LOG2` も合わせる（3〜4。FIFO は distributed RAM で 64 byte × 16 = 8 kbit）。tile の dst は group が tile の行（4 画素）ごとの別の line で、書き込みは line の 1/4（LINE_BYTES 64・32 bpp）の byte enable になる（正しいが書き込みの効率は 1/4。tile の 4 行を一緒に回す形は p025 の候補）。
+- **on-chip（推定、合成していない）**: line の FIFO 4 × 512 bit（LUTRAM ≈0.13k LUT）、window 1 kbit FF、組み立ての buffer 0.6 kbit FF、取り出しの mux（512 bit の 8:1）≈0.5k LUT、平均の加算器（16 byte × 3 段の 10 bit）≈0.2k LUT、制御と乗算 ≈0.4k LUT → **≈1.3k LUT・≈2.2k FF**（KC705 の ≈0.6%）。ZYBO の BLT を持つ bitstream にも入る（`MS4` = 0 なら外れる）。
+
 - **clear**: `vkCmdClearAttachments`・`loadOp CLEAR`・`vkCmdClearColorImage`/`DepthStencilImage` の MS の image = BLT の FILL を (x·S, y, w·S, h) で（同じ stride）。D24S8 の depth だけの clear（stencil の byte を残す）は MS と無関係の既存の欠け（§15.18）。
 - **copy**: `vkCmdCopyImage` の MS ↔ MS（同じ sample 数）= BLT の COPY を (x·S, w·S) で。
+- **BLT と ROP の順序**（1x にも共通）: BLT の範囲の SET_REG は BLT の busy だけを待つので、render pass の途中の clear（BLT の FILL）・resolve（BLT の RESOLVE）と前後の draw の間に firmware は `WAIT_IDLE` を挟む（ROP → BLT、BLT → ROP の両方向）。p018 の規則として書く。
 - **load/store の op**: LOAD・DONT_CARE は何もしない、STORE は ROP が既に memory に書いている（IMR）。
+- **§2.4.4 の表**: `vkCmdResolveImage`（gpu-op 122）は R（BLT の RESOLVE）に直した。
 
 ### 15.9 TU: `texf` の sample の index と descriptor（P3 の part F と合わせる）
 
 - **descriptor**（P3 の案の TEX_IMAGE[15:12]）: **log2(samples)**（0 = 1 sample、2 = 4、他は予約で 0（1 sample）として読む）。MS の slot は TEX_IMAGE[3:0] = 1 level、[8] = 0、[11:9] = 0（2D）か 1（2D array）。
 - **`texf rd, rs1, rs2`（MS の slot）**: rs1 = x、rs1+1 = y（整数）、**rs2 = sample の index**（MS の image は level が 1 つで level の operand が要らないので、同じ operand を sample に使う。新しい命令の形も operand の pass も要らない）。2D array は P3 の「.3」形で rs1+2 = layer、rs2 = sample。address = 線形の (x' = x·S + (s mod S), y)、行の texel 数 roundup(w, 2)·S（§15.7）。座標・sample の範囲外は実装依存（Vulkan も範囲外は保証しない）: v1 は s を mod S、x・y は今の `texf` と同じ扱い。compare と filter は無視（今の `texf` と同じ）。
 - **`texsz.s rd`**（**imm 3**、新、`texsz.l` と同じ no-rs1 の形。imm 2 は P3 の part F が `texsz.d`（layer 数・depth）に使った、review 2 の 1）: rd = S（1 か 4）。SPIR-V の `OpImageQuerySamples`。`texsz rd, rs1` は MS でも level 0 の w・h。decode・SU の側の変更は §15.5 の最後。
-- **RGB565 の `texf`**（review 1 の 1、review 2 の 4）: TU の texel は今 4 byte だけ（ghci §8.4「Texels are 4 bytes」）。4x の RGB565 の attachment を resolve し sample するために、S5 で **`texf` に 16 bit の RGB565 の texel**（UNORM、(R, G, B, 1)、**TEX_IMAGE[7:4] = 4**（part F の空き））を足す: `atg_tu_addr`（address = texel の index × 2）、`atg_tu_cache`（line の中の half word の選択、addr[1] を filter へ、565 の border の raw の値）、`atg_tu_filter`（565 → fp32: R・B は c/31、G は c/63 を RNE で。今の 8 bit ÷ 255 の回路と別）。`texl`/`texb` の 565（filter）は §15.18 の format の欠けとして残す（MS の image は fetch でしか読まれないので MSAA には不要）。format の番号は P3 の TEX_IMAGE[7:4] の空きから（P3・Q1 と合わせる）。
+- **RGB565 の `texf`**（review 1 の 1、review 2 の 4）: TU の texel は今 4 byte だけ（ghci §8.4「Texels are 4 bytes」）。4x の RGB565 の attachment を sample するために（`sampledImageColorSampleCounts` は SAMPLED の color の format の全部に 1|4。resolve は BLT が 565 を直に平均する、§15.8）、S5 で **`texf` に 16 bit の RGB565 の texel**（UNORM、(R, G, B, 1)、**TEX_IMAGE[7:4] = 4**（part F の空き））を足す: `atg_tu_addr`（address = texel の index × 2）、`atg_tu_cache`（line の中の half word の選択、addr[1] を filter へ、565 の border の raw の値）、`atg_tu_filter`（565 → fp32: R・B は c/31、G は c/63 を RNE で。今の 8 bit ÷ 255 の回路と別）。`texl`/`texb` の 565（filter）は §15.18 の format の欠けとして残す（MS の image は fetch でしか読まれないので MSAA には不要）。format の番号は P3 の TEX_IMAGE[7:4] の空きから（P3・Q1 と合わせる）。
 - **SPIR-V の対応**（§12.9 の表に足す）: `OpImageFetch` の Sample operand 付き → `texf`（rs2 = Sample）。MS の image への `texl`/`texb`/`texg` は SPIR-V が許さない（compiler は出さない）。
 - **P3 との合わせ**（Q1 経由、2026-10-25 に連絡済み）: (1) TEX_IMAGE[15:12] の意味を log2(samples) として予約、(2) `atg_tu_addr` の linear の address の段に x' と行の長さの規則を入れる余地。実装は p027 の段 S5（part F の merge の後）。`atg_tu_addr.v` は今 411 行で part F が分割する見込み（分割の後の module に足す）。
 - **`tumodel.py`**: 同じ規則（P3 の part F の後の版に足す）。
 
 ### 15.10 GHCI の追加（draft。amaterrace-gpu の `docs/ghci.md` §3.2 の CAPS[29] と §12.11）
 
-- **CAPS[29] MS4**: 4x の multisample（RX の sample の coverage、ROP、MS の `texf`）。CAPS[27]（graphics）と TU が有る構成で 1。driver は CAPS[29] = 0 なら sample の数 1 だけを報告（Vulkan 1.0 には合わない、と記録）。**番号の衝突**: P3 の part F が CAPS の bit を足すなら Q1 が merge の時に番号を決める（ghci.md に注）。
+- **CAPS[29] MS4**: 4x の multisample（RX の sample の coverage、ROP、MS の `texf`、BLT の RESOLVE）。CAPS[27]（graphics）と TU が有る構成で 1。driver は CAPS[29] = 0 なら sample の数 1 だけを報告（Vulkan 1.0 には合わない、と記録）。**番号の衝突**: P3 の part F が CAPS の bit を足すなら Q1 が merge の時に番号を決める（ghci.md に注）。
 - **STATE 0x05E `MS_CTRL`**（RX の範囲。RX と ROP が読む。CP の sequencer は RX の範囲の SET_REG を RX か ROP が busy の間止めるので、draw の途中で変わらない）: [3:0] log2(samples)（0 = 1、2 = 4、他は 0（1 sample）として読む）、[4] CENTROID（r7〜r9 を書く）、[8] ALPHA_TO_COVERAGE、[9] ALPHA_TO_ONE、他 0。
 - **STATE 0x05F `SAMPLE_KILL`**: [3:0] 落とす sample（= ~pSampleMask[0][3:0]）。**反転にした理由**: STATE の reset 値は 0 で、今の試験と firmware は 0x05F を書かないので、0 = 全部残すにする（P3 の maxLod の反転と同じ考え）。1x は bit 0。
 - **GSI1 の fragment の入出力**（§12 に初めて書く。今は design §3.4.3 にだけ有る。hardware の coverage が使うのは **RX が書いた r6 の値**（exp の snoop）で、program が後で上書きした r6 ではない）: r0 = b0、r1 = b1、r2 = b2（perspective 補正、元の 3 頂点）、r3 = z（1x は [0, 1] に clamp、4x は clamp しない）、r4 = x + 0.5、r5 = y + 0.5、**r6 = SampleMaskIn**（bit s = sample s、sample mask test の後、helper は 0）、**r7〜r9 = centroid の b0〜b2**（MS_CTRL[4] の時）。export の target: 0x100+c COLOR0、0x104 DEPTH、**0x105 SAMPLE_MASK**（最後に書いた値を coverage と AND。S 以上の bit は無視）。color の出力の無い program は `movi rT, -1; exp rT, 0x105` を出す（r3 を 0x104 に出さない）。**CAPS[29] = 0 の実装では r6 は定義されない**（compiler は SampleMaskIn を 1 とする。Amaterrace は常に書く）。
-- ghci.md §12.11 の「image word」は P3 の part F の TEX_IMAGE（merge 待ち）を指す、と draft に明記した（review 15）。
+- ghci.md §12.11 の「image word」は P3 の part F の TEX_IMAGE（merge 済み、§8.4）を指す。
+- **BLT の RESOLVE**（§8.2 に足す）: BLT_OP の op [2:0] の 4 = RESOLVE、STATE 0x00B `BLT_RESOLVE`（[3:0] log2(samples)、[7:4] 平均の format 0 UNORM8・1 UNORM565・2 SAMPLE0・3 SRGB8_A8・4 SFLOAT16・5 SFLOAT32、[8] dst が tile）、平均の規則、src の配置（§15.7）、重なりは未定義。CAPS[29] の意味に「BLT の RESOLVE」を足す。詳細は §15.8。
 - **`texf` の MS と `texsz.s`**: §15.9。
 - 出典の扱い: 標準の位置の値は Vulkan の仕様の表（CC-BY-4.0 の文書の事実の値）。ghci.md の該当の所に「Values referenced: Vulkan specification, Multisampling, standard sample locations (VK_SAMPLE_COUNT_4_BIT)」と書く。文は写さない。
 
 ### 15.11 zedBSD の側（p010・p018・p019 への入力。この Phase では書かない）
 
 - **p010（compiler）**: 共有の SPIR-V の front end（`src/drivers/gpu/compiler/spirv.c`、bcm2711・powervr と共有）に BuiltIn SampleMask（入力・出力）と FragDepth、Centroid を IR の補間の印として足す（他の backend は無視してよい形にする: 今の「効果無し」は 1 sample の device では正しい）、`OpImageQuerySamples`。GSI1 の backend: SampleMaskIn = r6、centroid の varying = r7〜r9（使う program の header に flag、§3.4.4 の flags に [5] を足す案）、出力 SampleMask = `exp 0x105`（invocation の最後の値）、**color の出力の無い fragment の program は `movi rT, -1; exp rT, 0x105`**（r3 を DEPTH に出さない）、MS の fetch = `texf` の rs2（IR は「sample as its layer」の約束なので backend が layer の param を rs2 に置く。MS の array は IR の約束の追加が要る）。
-- **p018（firmware）**: pipeline の multisample の state → MS_CTRL・SAMPLE_KILL、render pass の MS の attachment（RT/DS の stride = P）、resolve の内蔵の draw（§15.8: 写しの state を dirty にして次の draw で出し直す、layer ごと、constant の offset、2 つの三角形、tile の dst の 32 行の帯と TILE）、fragment shader の無い pipeline の内蔵の fragment program（`movi rT, -1; exp rT, 0x105`）、MS の clear・copy の BLT の幅 ×S、BLT と ROP の間の `WAIT_IDLE`、descriptor の TEX_IMAGE[15:12]。p018 の受け入れに firmware の resolve の試験（§15.15 の最後）。
+- **p018（firmware）**: pipeline の multisample の state → MS_CTRL・SAMPLE_KILL、render pass の MS の attachment（RT/DS の stride = P）、resolve は BLT の RESOLVE（§15.8: `WAIT_IDLE` ROP の後、region ごと・layer ごとに BLT の範囲の SET_REG と `BLIT`。VkFormat → 平均の format の表（UNORM 8 bit の channel の format → 0、R5G6B5 → 1、整数 → 2）、tile の dst は BLT_RESOLVE[8]。draw の state には触れない）、fragment shader の無い pipeline の内蔵の fragment program（`movi rT, -1; exp rT, 0x105`）、MS の clear・copy の BLT の幅 ×S、BLT と ROP の間の `WAIT_IDLE`、descriptor の TEX_IMAGE[15:12]。p018 の受け入れに firmware の resolve の試験（§15.15 の最後）。
 - **p019（`vk/`）**: limit と feature（§15.1 の v1 の列）、format の property（attachment に使える format の `sampleCounts` 1\|4）、MS の image の memory requirements（大きさ、alignment 64、P）、validation（MS は 2D・1 level・optimal・幅 ≤ 16382）、COLOR_ATTACHMENT の image は linear に置く規則。
 - **依存の辺**（§8 の図に足した）: p027 → p010（MS の部分）、p027 → p018、p027 → p019。
 
@@ -1421,7 +1442,7 @@ reviewer が照合した物: design.md の §3.1〜§3.6・§2.2〜§2.4・§6�
 
   → v1 の ROP は 1x でも 720p60 で実効の帯域（7.7〜9.6 GB/s）に届く。depth の line の cache（p015）が無いと 4x と 1x の差は小さく、cache の後は 4x の 1080p60 が peak の 12.8 GB/s を超える。**4x の 1080p60 には depth の cache に加え圧縮（line ごとの「全 sample が同じ」の印、fast clear）か tile の on-chip の buffer が要る** → Future Work（U45）。
 - **v1 の速さ（律速は RX）**: `atg_rx_frag` は 1 quad あたり約 200 cycle で 1 つずつ → 100 MHz で ≈0.5 M quad/s ≈ **2 M 画素/s**（720p60 の 55 M 画素/s に 1x でも 27 倍足りない）。4x で RX の frag は r6 で +4 cycle/quad、CENTROID で +60、scan の SAMP は +4/quad。ROP は 1 quad あたり AMB の往復で律速（`atg_rop_ds` が行ごとに読み → 書き → 応答を待つ）で、4x の追加（`S_TEST` の +6 cycle/行、`atg_rop_ms` の ≈24 cycle/quad、blend の 3 回）は往復に比べ小さい（推定）。**v1 の性能の数字は目標にしない**（U45）。
-- **on-chip の追加（v1、推定、合成していない）**: RX: `O[e][s]` 576 FF + `es` 144 FF、加算器 3 本（48 bit）と mux と短絡の比較 ≈0.4k LUT、bary の CENTROID と d_s ≈0.3k LUT。SU: exp の `mr6`・`m5`（lane ごとの 4 bit、distributed RAM）と書いた bit、slot ごとの d_s 512 FF（NWARPS 4。8 で 1024）≈0.15k LUT。ROP: `atg_rop_ms` ≈0.7k LUT（fadd 1 本を含む）+ 0.6k FF、`ds` の sample の z 512 FF・+0.2k LUT、`wb` +0.3k LUT。TU ≈0.05k LUT。**合計 ≈ +2.2k LUT・+2.4k FF・BRAM 0・DSP 0**（KC705 の 1%）。**R33**: MSAA の論理は parameter で外さないので、ZYBO の bitstream 3（raster、47〜56%）にも入る（≈+1.8k LUT。7010 の 100 MHz の timing への影響は p007 の再合成の時に見る。ZYBO は目標の道の外）。
+- **on-chip の追加（v1、推定、合成していない）**: RX: `O[e][s]` 576 FF + `es` 144 FF、加算器 3 本（48 bit）と mux と短絡の比較 ≈0.4k LUT、bary の CENTROID と d_s ≈0.3k LUT。SU: exp の `mr6`・`m5`（lane ごとの 4 bit、distributed RAM）と書いた bit、slot ごとの d_s 512 FF（NWARPS 4。8 で 1024）≈0.15k LUT。ROP: `atg_rop_ms` ≈0.7k LUT（fadd 1 本を含む）+ 0.6k FF、`ds` の sample の z 512 FF・+0.2k LUT、`wb` +0.3k LUT。TU ≈0.05k LUT。**合計 ≈ +2.2k LUT・+2.4k FF・BRAM 0・DSP 0**（KC705 の 1%）。BLT の RESOLVE（版 5.1、§15.8）で **+1.3k LUT・+2.2k FF**、計 ≈ +3.5k LUT・+4.6k FF（KC705 の ≈1.7%）。**R33**: MSAA の論理は parameter で外さないので、ZYBO の bitstream 3（raster、47〜56%）にも入る（≈+1.8k LUT。7010 の 100 MHz の timing への影響は p007 の再合成の時に見る。ZYBO は目標の道の外）。
 - **選ばなかった tile の buffer の量（比較）**: 32×32 px の tile の 4x の color + depth = 32 KiB = BRAM36 × 8（量は入るが、IMR を tile の binning に変える大きな作り直しが要る。§15.19）。
 
 ### 15.13 状態遷移の変更（大まかに。spec の §5 に書く）
@@ -1432,6 +1453,10 @@ reviewer が照合した物: design.md の §3.1〜§3.6・§2.2〜§2.4・§6�
 - `atg_rop_ms`: IDLE →(quad)→ Z（MS: 16 回、1x: 0）→ COV → OUT →(o_ready)→ IDLE。
 - `atg_rop_ds`: IDLE → ROW → RD → TEST（entry 2 か 8）→ WR → … → OUT → IDLE（形は今と同じ）。
 - `atg_rop_wb`: LOOKUP → READ? →（sample ごと: BLEND → MERGE）→ … 。
+- `atg_blt`（wrapper）: FSM 無し。kick の時の BLT_OP[2] で 2D か resolve の engine を選び、busy の側に AMB の口を渡す。
+- `atg_blt_rsv`: IDLE →(kick、受理)→ CLIP →(空)→ IDLE（done）/ →(空でない)→ MUL（16 cycle）→ ROW（行の記述子を px へ、行の line を読む。全部の行の後）→ DRAIN →(px が idle、未応答 0、request 無し)→ IDLE（done、fail なら kind 5）。IDLE →(kick、拒否)→ IDLE（kind 2）。ROW と MUL の中の fail（error の応答）→ DRAIN（px を abort）。
+- `atg_blt_rsv_px`: IDLE →(行の記述子)→ ROW（1 cycle に 1 group）→(行の最後の group)→ IDLE か次の行、最後の行の後と line の変わり目で FLUSH →(ctl が書き込みを取る)→ 前の状態。abort で IDLE と空の FIFO。
+- 資源の寿命（resolve）: line の FIFO の場所は読みを出す時に取り（credit）、px が window に移す時に返る。組み立ての buffer は書き込みが request register に移る時に空く。行の記述子は ctl が出し px が最後の group で返す。
 - 資源の所有と寿命: d_s と smask は warp の slot の寿命（`fl_go` の前の snoop から `xr_valid` の解放まで）、ROP の中では quad の寿命。d_s は「warp = 三角形 1 つ」（v1 の pmap = 0）に頼る（§15.4 の制約）。MS の image の memory は driver の `VkDeviceMemory`（今と同じ）。
 
 ### 15.14 失敗と corner case
@@ -1440,14 +1465,15 @@ reviewer が照合した物: design.md の §3.1〜§3.6・§2.2〜§2.4・§6�
 - **全 sample が落ちた画素**: RX で SAMPLE_KILL により（covered でない、quad の他の lane が covered なら helper）、SU で `exp 0x105` により（ROP に出さない）、ROP で a2c により（書かない）。
 - **depth を出す shader**: zexp の lane は sample の全部に出した値（d_s を足さない）。clamp は今の depth の出力と同じ扱い（`atg_depth_u24` の飽和）。
 - **color の出力の無い shader**（depth だけの pass）: compiler が `movi rT, -1; exp rT, 0x105` を出す（§15.5）。r3 を `exp 0x104` に出すと 4x で全 sample が中心の z（clamp 無し）になる誤り（GHCI §12.11 で禁止）。
-- **MS の image を描いた後に sample する**: firmware は `WAIT_IDLE` + `INVALIDATE` T$ を barrier と resolve の前に必ず出す（でないと T$ の古い line）。driver の barrier（p019）も同じ。
+- **MS の image を描いた後に sample する**: firmware は `WAIT_IDLE` + `INVALIDATE` T$ を barrier の後の sample の前に必ず出す（でないと T$ の古い line）。driver の barrier（p019）も同じ。**resolve**（BLT）は cache を通らないので `WAIT_IDLE` ROP だけでよく、resolve の dst を後で TU で読む時に `WAIT_IDLE` BLT + `INVALIDATE` T$。
+- **resolve の corner case**（§15.8）: src と dst が memory で重なる（Vulkan は禁止）→ 結果は未定義、fault にしない。幅・高さが 0 か clip で空 → memory に触れず `done`。BLT_RESOLVE の samples ≠ 4、format 3〜15、ps と format の不一致（UNORM565 は 16 bit だけ）、blend・reverse との組み合わせ、`MS4` = 0 → kind 2（kick の次の cycle、memory に触れない）。AXI の error の応答 → 新しい request を止め、未応答を drain して kind 5（2D と同じ）。aperture の拒否 → CP が kind 1 を記録して quiesce、BLT は request を持ったまま RESET まで busy（2D と同じ）。quiesce の間は request が待ち、終われば続く。`core_rst_n` で wrapper・2D・resolve の全部が IDLE と空の FIFO に戻る。
 - **stride・base の揃えの誤り**（driver の bug）: ROP は行の 2·S·ps byte が line を跨ぐと誤った line を書く（検査しない。`RT_STRIDE` は今も検査していない）。TB は揃った値だけを使う。p019 の validation で守る。
 - **1x の互換**: SAMPLE_KILL = 0・MS_CTRL = 0（reset 値）で今の出力と bit で同じ（r6 の書き込みと RX の cycle 数を除く）。既存の scene（raster・shade・tex）の PASS で確かめる。
 - **割り込み・DMA**: 新しい割り込み・fault の種類・DMA の道は無い（ROP・TU は今の AMB の client のまま）。quiesce・reset は今の順（§1.3）で、新しい FSM は `core_rst_n` で IDLE に戻る。
 
 ### 15.15 model・TB・scene・Verilator の計画（試験は host の iverilog と Verilator だけ。QEMU と VFIO と板はこの Phase に無い）
 
-- **model**: 新しい `tools/msmodel.py`（`rxmodel.py` を import し、sample の coverage・SAMPLE_KILL・centroid の選択・d_s・r6〜r9・ROP の `atg_rop_ms` の z_s・a2c・a2one・sample ごとの ds と wb・resolve4 の期待）。`rxmodel.py` 本体は 1x の関数を変えない（P3 の `tumodel.py` との衝突を避けるため TU の MS は part F の後の `tumodel.py` に小さく足す）。`gsi1model.py` に r6〜r9・`exp 0x105`。
+- **model**: 新しい `tools/msmodel.py`（`rxmodel.py` を import し、sample の coverage・SAMPLE_KILL・centroid の選択・d_s・r6〜r9・ROP の `atg_rop_ms` の z_s・a2c・a2one・sample ごとの ds と wb・BLT の RESOLVE の期待（UNORM8・UNORM565 の RNE、SAMPLE0、linear・tile の dst、clip）。`rxmodel.py` 本体は 1x の関数を変えない（P3 の `tumodel.py` との衝突を避けるため TU の MS は part F の後の `tumodel.py` に小さく足す）。`gsi1model.py` に r6〜r9・`exp 0x105`。
 - **自己試験の command**: `python3 -I tools/msmodel.py --selftest` が `PASS msmodel.selftest` を出す（1x の関数が `rxmodel.py` と bit で同じ事、4x の sample の位置・tie・a2c の表の自己検査）。
 - **1x の回帰の守り**（review 2 の 8）: 1x の vector を作り直す時、`tools/vec-diff.py`（S1 で書く小さな script）で **87457fa の vector と比べ、差が r6 の書き込みの行と smask・zexp の新しい列だけ**である事を確かめる（`PASS vecdiff.<name>`）。期待値を新しい model だけで作り直して r0〜r5 の誤りを隠さないため。
 - **単体 TB の PASS の行**（各 TB は最後に `PASS <module>` も出す。ROP と RX の TB は LINE_BYTES 32 と 64 の両方で流す）:
@@ -1465,13 +1491,15 @@ reviewer が照合した物: design.md の §3.1〜§3.6・§2.2〜§2.4・§6�
 | `atg_rop_ms_tb`（新） | `atg_rop_ms.depth`（z_s と clamp、zexp）、`atg_rop_ms.a2c`（alpha の表の境）、`atg_rop_ms.a2one`、`atg_rop_ms.bypass1x`（bit で同じ） |
 | `atg_rop_ds_tb` | `atg_rop_ds.ms`（8 つの比較の関数を sample ごと、interleaved の address） |
 | `atg_rop_wb_tb` | `atg_rop_wb.ms`（sample ごとの blend と write mask） |
+| `atg_blt_avg_tb`（新） | `atg_blt_avg.unorm8`（Σ = 0〜1020 の全部の値で RNE、byte の独立）、`atg_blt_avg.rgb565`（3 field の境と RNE）、`atg_blt_avg.sample0` |
+| `atg_blt_rsv_tb`（新、`atg_blt` の wrapper ごと。LINE_BYTES 32 と 64） | `atg_blt_rsv.unorm8`・`.rgb565`・`.sample0`（固定の矩形、Verilog の参照 model と word ごと）、`.offset`（src と dst の x の揃いが違う、line を跨ぐ group）、`.tiled`（tile の dst）、`.clip`、`.random`（seed、format・ps・offset・大きさ・tile・clip を乱数で、応答の遅延と ready の stall も乱数で）、`.stream`（遅延 0 の memory で、揃った 4x・32 bpp・LINE_BYTES 64 の dst の 1 line が 6 cycle 以下）、`.fault`（kind 2 の組み合わせの全部が memory に触れない、AXI の error で drain の後に kind 5）、`.2d`（wrapper を通した FILL・COPY が今の結果と同じ） |
 | `atg_tu_addr_tb`・`atg_tu_cache_tb`・`atg_tu_filter_tb` | `atg_tu_addr.ms`（x′・行の長さ・s mod S・`texsz.s` の S）、`atg_tu_cache.h16`（half word の選択と 565 の border）、`atg_tu_filter.rgb565`（c/31・c/63 の RNE） |
 
-- **故意の誤り**: RTL に `ifdef MUT_<名前>` の誤り（`MUT_SAMPLE_SWAP`（sample 1 と 2 の offset を入れ替え）、`MUT_A2C_STEP`、`MUT_DZ_SIGN`、`MUT_R3_CLAMP`、`MUT_SMASK_AND`（0x105 を重ねて AND））を置き、`iverilog -DMUT_<名前>` で該当の TB の該当の PASS の行が出ず `FAIL` が出る事を確かめる（file を書き換えて戻す手順は使わない）。
-- **scene**（新 `sim/tb/atg_top_msaa_tb.v` + `tools/rx-msaa-scene.py`。N=1。**2 つの形: KC705（LINE_BYTES 64）と、TU 付きの ZYBO の形（`atg_top_tex_tb` と同じ HAS_TU(1)、LINE_BYTES 32）**。RT 64×48 と 63×47。各 run は `timeout 600`）: (1) 辺を共有する 2 つの三角形（sample の二重書き・抜けが無い）、(2) depth で交わる 2 つの三角形（sample ごとの z）、(3) alpha の ramp と a2c、(4) `exp 0x105` の出力、(5) centroid の varying を縁の画素で（三角形の中の値）、(6) resolve4 の draw で 1x の RT へ（offset と 2 layer の src を含む）、(7) MS の depth の image を `texf` で読む draw、(8) **16 bpp（RGB565）の 4x** と resolve、(9) **奇数の幅**の RT（63×47、P = roundup(w, 2)·S·ps）、(10) **4x の draw の直後に 1x の draw**（MS_CTRL の変更が残りの warp に効かない）、(11) SAMPLE_KILL と CENTROID の組み合わせ、(12) **color の出力の無い depth だけの 4x の draw**（`movi rT, -1; exp rT, 0x105`）、(13) `texsz.s`。PASS の行: `atg_top_msaa.<1〜13 の名前>` と `atg_top_msaa`。**受け入れ**: MS の color・depth の image と resolve の結果が `msmodel.py` と **word ごとに一致**、resolve の PNG（6 倍、`build/review/ws288-p027-msaa.png`）。
+- **故意の誤り**: RTL に `ifdef MUT_<名前>` の誤り（`MUT_SAMPLE_SWAP`（sample 1 と 2 の offset を入れ替え）、`MUT_A2C_STEP`、`MUT_DZ_SIGN`、`MUT_R3_CLAMP`、`MUT_SMASK_AND`（0x105 を重ねて AND）、`MUT_RSV_RNE`（UNORM の丸めを半分は上に）、`MUT_RSV_SPLIT`（linear の dst の line の残りで group を切らない））を置き、`iverilog -DMUT_<名前>` で該当の TB の該当の PASS の行が出ず `FAIL` が出る事を確かめる（file を書き換えて戻す手順は使わない）。
+- **scene**（新 `sim/tb/atg_top_msaa_tb.v` + `tools/rx-msaa-scene.py`。N=1。**2 つの形: KC705（LINE_BYTES 64）と、TU 付きの ZYBO の形（`atg_top_tex_tb` と同じ HAS_TU(1)、LINE_BYTES 32）**。RT 64×48 と 63×47。各 run は `timeout 600`）: (1) 辺を共有する 2 つの三角形（sample の二重書き・抜けが無い）、(2) depth で交わる 2 つの三角形（sample ごとの z）、(3) alpha の ramp と a2c、(4) `exp 0x105` の出力、(5) centroid の varying を縁の画素で（三角形の中の値）、(6) MS の color を BLT の RESOLVE で 1x の image へ（offset、2 layer の src、tile の dst を含む）、(7) MS の depth の image を `texf` で読む draw、(8) **16 bpp（RGB565）の 4x** と resolve、(9) **奇数の幅**の RT（63×47、P = roundup(w, 2)·S·ps）、(10) **4x の draw の直後に 1x の draw**（MS_CTRL の変更が残りの warp に効かない）、(11) SAMPLE_KILL と CENTROID の組み合わせ、(12) **color の出力の無い depth だけの 4x の draw**（`movi rT, -1; exp rT, 0x105`）、(13) `texsz.s`。PASS の行: `atg_top_msaa.<1〜13 の名前>` と `atg_top_msaa`。**受け入れ**: MS の color・depth の image と resolve の結果が `msmodel.py` と **word ごとに一致**、resolve の PNG（6 倍、`build/review/ws288-p027-msaa.png`）。
 - **Verilator**: harness に MSAA の mode（scene の (1)(2)(6)）、`make verilator` の PASS に入れる。
 - **回帰**: `make lint` clean。`make sim` の PASS の行の数が **S1 の開始の commit で数えた数**（S1 の記録に commit と数を書く）より減らない。既存の raster・shade・tex の scene が bit で同じ（今の TB がそのまま PASS）。
-- **firmware の resolve の手順**（p018 の受け入れに入れる、review 2 の 18）: p027 の scene の (6) は TB が µop を直に出すので firmware を通らない。p018 の firmware の試験に「resolve の後の draw の STATE と constant が resolve の前の bind から作る物と同じ」「tile の dst の帯の resolve と TILE」「BLT ↔ ROP の `WAIT_IDLE`」を入れる（§15.11）。
+- **firmware の resolve の手順**（p018 の受け入れに入れる、review 2 の 18）: p027 の scene の (6) は TB が STATE と `KICK.BLIT` を直に出すので firmware を通らない。p018 の firmware の試験に「render pass の resolve attachment と `vkCmdResolveImage` の region・layer・tile の dst が BLT の RESOLVE の正しい STATE になる」「BLT ↔ ROP の `WAIT_IDLE`」を入れる（§15.11）。
 
 ### 15.16 module の分け方（1 module ≤ 400 行・FSM 1 つ・≤ 40 port）
 
@@ -1493,21 +1521,27 @@ reviewer が照合した物: design.md の §3.1〜§3.6・§2.2〜§2.4・§6�
 | `atg_tu_cache` | half word の選択、565 の border | +≈20 | 変えない |
 | `atg_tu_filter` | 565 → fp32（RNE） | +≈30 | 変えない |
 | `atg_su_dec_tabc` | `texsz.s`（imm 3、MS4） | +≈8 | 変えない |
+| `atg_blt`（wrapper に書き直し） | op の振り分け、AMB の口の mux、parameter `MS4` | ≈120 | 22（変えない） |
+| `atg_blt_2d`（今の `atg_blt` の名前を変えただけ） | 変えない | 696 | 22 |
+| `atg_blt_rsv`（新） | STATE の写し、検査、clip、乗算、行の walk、読み、AMB の request register、credit | ≈320 | ≈36 |
+| `atg_blt_rsv_px`（新） | 行と line の FIFO、window、group、組み立て、書き込み | ≈320 | ≈26 |
+| `atg_blt_avg`（新） | 平均（UNORM8・UNORM565・SAMPLE0） | ≈120 | 5 |
 | `atg_su`・`atg_top`（wiring） | parameter `MS4` | — | — |
 
 ### 15.17 実装の段と LW（p027 の中。8 LW ≈ 2〜3 時間）
 
 | 段 | 内容 | 受け入れ | 依存 | LW |
 | --- | --- | --- | --- | --- |
-| S1 | `msmodel.py`（RX の sample・centroid・d_s、ROP の ms・ds・wb、resolve4）と `--selftest`、`vec-diff.py`、vector の生成、**GSI1 の道具の全部の変更**（`gsi1model.py`・`gsi1asm.py`・`gsi1dis.py` の r6〜r9・`exp 0x105`・`texsz.s`。S3・S5 は道具を変えない: 衝突を避けるため）、spec の更新（§15.16 の module の spec §3〜§8 を先に直す） | `PASS msmodel.selftest`、各 spec の §8 の PASS の一覧が §15.15 の表と一致、各 spec の port の表の行数が spec の「N ports」の行と一致し ≤ 40（wiring の例外を除く）、`make sim` の PASS の行の数を数えて記録 | この設計の review | 4 |
+| S1 | `msmodel.py`（RX の sample・centroid・d_s、ROP の ms・ds・wb、BLT の RESOLVE）と `--selftest`、`vec-diff.py`、vector の生成、**GSI1 の道具の全部の変更**（`gsi1model.py`・`gsi1asm.py`・`gsi1dis.py` の r6〜r9・`exp 0x105`・`texsz.s`。S3・S5 は道具を変えない: 衝突を避けるため）、spec の更新（§15.16 の module の spec §3〜§8 を先に直す） | `PASS msmodel.selftest`、各 spec の §8 の PASS の一覧が §15.15 の表と一致、各 spec の port の表の行数が spec の「N ports」の行と一致し ≤ 40（wiring の例外を除く）、`make sim` の PASS の行の数を数えて記録 | この設計の review | 4 |
 | S2 | RX: `atg_rx_cov`・`atg_rx_bary`（新）、`atg_rx_scan`・`atg_rx_frag`、TB | §15.15 の RX の PASS（LINE_BYTES 32・64）、`PASS vecdiff.rx_frag`、MUT の FAIL、lint | S1 | 7 |
 | S3 | SU: `atg_su_exp`・`atg_su`（fl_pw_* を exp に、`ex_ms`）、`atg_su_lda`・`atg_su_gfx` の TB | SU の PASS、MUT の FAIL、lint | S1 | 3 |
 | S4 | ROP: `atg_rop_ms`（新）、`order`・`ds`・`wb`、TB | ROP の PASS（LINE_BYTES 32・64）、`.bypass1x`、MUT の FAIL | S1 | 7 |
 | S5 | TU と decode: MS の `texf`（x′・行の長さ）、RGB565 の `texf`（`atg_tu_addr`・`atg_tu_cache` の half の選択と border・`atg_tu_filter` の 565 → fp32）、`texsz.s`（`atg_su_dec_tabc` の imm 3、`atg_tu_addr` の `ta_value` が S、`atg_su`・`atg_top` に parameter `MS4`）、`tumodel.py`、GHCI §12.6 | TU と SU の decode の PASS | S1、**p009 part F の merge** | 5 |
-| S6 | `atg_top`（`ex_ms`、CAPS[29] = `MS4`）、`atg_top_msaa_tb` と scene、resolve4 の program（gsi1asm）、Verilator の mode、README の ROP・RX・TU の行、`docs/ghci.md` §12.11 の確定（draft の印は残す） | §15.15 の scene の `atg_top_msaa.*` の PASS の全部（2 つの形）、`make lint` clean、`make sim` の PASS の行が S1 の数より減らない、`make verilator` PASS、既存の scene の TB が変えずに PASS | S2〜S5 | 6 |
-| 計 | | | | **32 LW**（±30%: 22〜42） |
+| S6 | `atg_top`（`ex_ms`、CAPS[29] = `MS4`）、`atg_top_msaa_tb` と scene、Verilator の mode、README の ROP・RX・TU の行、`docs/ghci.md` §12.11 の確定（draft の印は残す） | §15.15 の scene の `atg_top_msaa.*` の PASS の全部（2 つの形）、`make lint` clean、`make sim` の PASS の行が S1 の数より減らない、`make verilator` PASS、既存の scene の TB が変えずに PASS | S2〜S5、S7 | 6 |
+| S7 | **BLT の RESOLVE**（§15.8）: `atg_blt` を wrapper に、今の物を `atg_blt_2d` に、`atg_blt_rsv`・`atg_blt_rsv_px`・`atg_blt_avg`（新）、`atg_top` の `MS4` を BLT に、spec（`atg_blt.md` を wrapper に、`atg_blt_2d.md`・`atg_blt_rsv.md`・`atg_blt_rsv_px.md`・`atg_blt_avg.md`）、`docs/ghci.md` §8.2 | `atg_blt_avg.*`・`atg_blt_rsv.*` の PASS（LINE_BYTES 32・64）、MUT の FAIL、`atg_top_tb` の `PASS atg_top`（2D が変わらない）、lint | S1 | 7 |
+| 計 | | | | **39 LW**（±30%: 27〜51。版 5 の 32 LW から resolve の hardware の S7 の 7 LW を足した） |
 
-- S2・S3・S4 は §15 の interface が決まれば並行にできる（別の担当、別の worktree）。衝突する所: `atg_top`・`atg_su`・`atg_rop` の wiring と README（S6 で Q1 が合わせる）、GSI1 の道具（S1 が全部を先に直すので S3・S5 は触らない）、`MS4` の parameter（S5 が `atg_su`・`atg_top` に通し、S6 が CAPS に使う）。
+- 順は S1 → S7 → S2 → S3 → S4 → S5 → S6（S7 は S1 の model だけに依り、RX・SU・ROP と重ならないので先に）。S2・S3・S4・S7 は §15 の interface が決まれば並行にできる（別の担当、別の worktree）。衝突する所: `atg_top`・`atg_su`・`atg_rop` の wiring と README（S6 で Q1 が合わせる）、GSI1 の道具（S1 が全部を先に直すので S3・S5 は触らない）、`MS4` の parameter（S5 が `atg_su`・`atg_top` に通し、S6 が CAPS に使う）。
 - 板と timing は対象外（p024・p025）。
 
 ### 15.18 見つけた Vulkan 1.0 core の MSAA 以外の食い違い（この Phase の範囲の外。U46）
@@ -1540,7 +1574,9 @@ reviewer が照合した物: design.md の §3.1〜§3.6・§2.2〜§2.4・§6�
 | sample ごとの z を RX が lane × 4 で計算して SU に運ぶ | RX の plane の評価が quad あたり +44 cycle、exp の lane ごとの word が +4。warp の定数 d_s 4 つなら RX は warp ごとに 1 回、運ぶのは 128 bit |
 | d_s を ord の FIFO で RX → ROP に直接 | ROP の順序の口（RX の直の道と SU の export の合流、§3.8）に「発行した連番ごとの data」の FIFO と、その深さ（同時に未退の連番の数）の上限の論と back-pressure が要る。warp の slot の寿命に乗せる（exp の snoop）なら深さは NWARPS で決まり、順序の口を変えない |
 | ROP が quad の lane の z の差から dz/dx を作る | 丸めた値の差で精度が落ち、shader が depth を出した lane で使えない |
-| resolve を BLT の RESOLVE の op に（U44 の B） | BLT は 696 行で U38 の分割が未。format ごとの平均の回路（UNORM8・565）が要り、format を足すたびに BLT も直す。速さは streaming にすれば draw より速いが、v1 の BLT も往復で律速（COPY 64 MB/s）。p015 の性能の候補にする |
+| resolve を firmware の内蔵の draw に（版 5 の推し A） | ユーザーが「あるべき論」で不採用（§15.20）。RX の frag の律速（1080p ≈1.0 s @ 100 MHz）、draw の state の退避と出し直し、TU の slot・constant、tile の dst の一時の帯と TILE が要る |
+| resolve を ROP の walk に、または新しい block に | §15.8 の比べた表。ROP は quad の順序の block で memory の矩形の walk の口が無い。新しい block は GHCI の µop・KICK・STATUS・MC の client を足すが中身は BLT の op と同じ |
+| resolve を今の BLT の 2D の FSM に足す | 2D の FSM は 696 行（U38）で、往復ごとに待つ形（COPY 64 MB/s）。streaming にするには読みの credit と FIFO が要り、2D の測った動作を変える。別の engine にして 2D を bit で保つ |
 | resolve を compute の kernel に | `sw` で format の pack を shader が書く（≈20 命令多い）、ROP の format の変換を使えない |
 | resolve を ROP の「store の時」に | IMR では後の primitive が sample を変えるので、subpass の終わりまで resolve できない（結局 1 回の全面の pass） |
 | sample shading を v1 に（lane = sample） | 任意の feature（U43）。RX が sample ごとに lane を作り、r4・r5・barycentric を sample の位置にし、exp の 1 lane が 1 sample を書く形（ROP は smask の 1 bit）で後から足せる（この設計の port はそのまま使える） |
@@ -1554,7 +1590,7 @@ reviewer が照合した物: design.md の §3.1〜§3.6・§2.2〜§2.4・§6�
 | U | 問い | 推し | 他の案 |
 | --- | --- | --- | --- |
 | **U43** | `sampleRateShading`（任意の feature: SampleId・SamplePosition・Sample の補間・interpolateAt*）を v1 に入れるか | **入れない**（v1 は 0、Future Work。§15.19 の形で後から足せる） | 入れる（RX と exp の lane = sample の道、+≈6 LW） |
-| **U44** | resolve の作り方 | **A: firmware の内蔵の draw**（新しい RTL 無し、TU と ROP の format の全部に効く。v1 は RX の frag の律速で 1080p の 4x の resolve ≈ 1.0 s @ 100 MHz（720p ≈0.46 s）と遅い。RX の pipeline 化（p015）で全部の draw と一緒に速くなる） | B: BLT の RESOLVE の op（BLT の分割（U38）が先、format ごとの平均の回路。今の BLT の COPY の速さなら 1080p で ≈0.5 s、streaming の後は memory の帯域まで）、C: compute の kernel |
+| **U44** | resolve の作り方 | **（回答で B を「あるべき論」の形に: BLT の op RESOLVE と専用の streaming の engine、§15.8）**。版 5 の推し: A: firmware の内蔵の draw（新しい RTL 無し、TU と ROP の format の全部に効く。v1 は RX の frag の律速で 1080p の 4x の resolve ≈ 1.0 s @ 100 MHz（720p ≈0.46 s）と遅い。RX の pipeline 化（p015）で全部の draw と一緒に速くなる） | B: BLT の RESOLVE の op（BLT の分割（U38）が先、format ごとの平均の回路。今の BLT の COPY の速さなら 1080p で ≈0.5 s、streaming の後は memory の帯域まで）、C: compute の kernel |
 | **U45** | 4x の性能の目標（帯域と律速、§15.12） | **v1（p027）は正しさだけ。性能の数字は RX の frag と ROP の律速（depth の line の cache）を p015 で直した後に決める。1080p60 の 4x は depth の cache に加え圧縮（fast clear・line の印）か tile の buffer の Future Work** | 1080p60 の 4x を今決めて圧縮を p027 か p015 に入れる |
 | **U46** | §15.18 の MSAA 以外の Vulkan 1.0 core の食い違い（stencil の op、D16、stencil の sample、MRT 4、format、point/line、occlusion query、FragDepth/SampleMask の front end、depth だけの clear）をどこで扱うか | **新しい Phase「ROP・format・primitive の Vulkan 1.0 core の残り」を p027 の後・p018 の前に**（firmware と driver がこの形に依るため）。Q1 が範囲と LW を見積もる | p016 の前に後回し（Vulkan の conformance は p028 の後） |
 
