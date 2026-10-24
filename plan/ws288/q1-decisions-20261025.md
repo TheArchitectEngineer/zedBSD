@@ -32,3 +32,5 @@
 | 2026-10-25 08:32 | scratch の案（GHCI §12.10 の kind 14、§12.3 の warp の番号の定義）を承認し P2 に転送。fragment の helper・killed lane の値も spill できるよう、side mask の代わりに EXEC を使う scratch 用の lw・sw の modifier を ISA に足す（P1、RTL は atg_su_dec と lsu の最小の変更） | Vulkan 1.0 の原則（正しい fragment program を拒まない） |
 | 2026-10-25 08:46 | p006 を cleared にした（実機・QEMU は p028）。DC の割り込みが PCIe の MSI に届くかは GHCI §13・§15.2 に書く（書くのは p019 か p028 の担当、driver は poll で両方に対応） | 受け入れの host 試験・build・規約を満たす |
 | 2026-10-25 08:50 | T3 が試験の打ち切りの後に pkill を打ち、権限の判定で拒まれた（回避なし）。Q1 が残りの process が無いことを確かめ、対応は不要とした | 権限の判定の回避をしない規則のとおり。ユーザーに報告する |
+| 2026-10-25 08:59 | p018: firmware は CAPS を読めないので、driver が GHCI_HEAP の 3 語目で resident の warp の数を渡す（P2 の判断を受け入れ） | atg_cpu の窓に HCR の読みが無い |
+| 2026-10-25 08:59 | copy しない scanout（swapchain の image を DC の条件で確保し FB_NEXT で flip）を p019 の範囲に足した | ユーザーの問いへの答え、DC の hardware は対応済み |

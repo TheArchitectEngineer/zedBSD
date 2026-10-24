@@ -22,3 +22,4 @@ host の試験が PASS（staging の列と返事の blob の形が libvulkan の
 ## 記録
 
 - 2026-10-25 08:46 Q1: 新設、P3 に（q1569）。
+- 2026-10-25 08:59 Q1: 範囲に追加（ユーザーの問い「scanoutはバッファをコピーせずにレンダリングターゲットをそのまま出力できますか？」への Q1 の答えから）: **copy しない flip**。swapchain の image を DC の条件（BGRA8・RGBA8・RGB565、1 sample、base と行の揃え、同じ大きさ・stride・format）に合わせて driver が確保し、present は FB_NEXT に address を書いて FLIP_DONE を待つ。合わない buffer だけ今の BLT の copy。DC の割り込みが PCIe の MSI に届くかを GHCI §13・§15.2 に書く。
