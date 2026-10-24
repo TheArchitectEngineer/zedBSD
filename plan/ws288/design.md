@@ -883,7 +883,7 @@ QEMU と実機の証拠は分けて書く。やっていない確認は「未実
 | SA（延期: p023 は `atg_sa` の top の port だけ予約。中の module の spec は SA の設計の時） | `atg_sa_in`、`atg_sa_pe_*`、`atg_sa_array`、`atg_sa_drain`、`atg_sa_red`（出口の reduction、案 B）、`atg_sa_norm`（入口の normalize）、`atg_sa_buf`（token buffer）、`atg_sa_wfetch`、`atg_sa_fifo`、`atg_sa_ctl`、`atg_sa` | Appendix A |
 | top | `atg_top`（parameter で block の有無）、`boards/zybo/`: `zybo_2d`、`zybo_2dfw`、`zybo_dc`、`zybo_raster`、`zybo_compute`、`boards/kc705/`: `kc705_raster`（`kc705_sa` は延期） | §1、§3.6 |
 
-  合計 約 80 module（common 6、CP 9、CPU 7、BLT 1〜3、VF 5、SU 26、RX 5、TU 4、ROP 5、MC 4、DC 7、SA 1 + 延期 10、top 7（`kc705_sa` は延期））。
+  合計 約 80 module（common 6、CP 9、CPU 7、BLT 1〜3、VF 5、SU 27（p009 で `atg_su_pt` を分けた）、RX 6（p009 で `atg_rx_frag` を分けた）、TU 4、ROP 5、MC 4、DC 7、SA 1 + 延期 10、top 7（`kc705_sa` は延期））。
 
 - **spec の template**（`spec/README.md`、各 `spec/<path>/<module>.md` はこの節の順）:
   1. **目的**（1〜3 文）と block の中の位置（親、子）。
@@ -934,7 +934,7 @@ QEMU と実機の証拠は分けて書く。やっていない確認は「未実
 | p005 | `atg_dc_*`、`zybo_dc` |
 | p007 | `atg_rx_*`、`atg_rop_*`、`zybo_raster` |
 | p008 | `atg_su_sched`・`rq`（口の予約だけ）・`fetch`・`icache`・`dec`・`sb`・`rf`・`opd`・`alu`・`fpu`・`xu`・`div`・`exec`・`lsu`・`dcache`・`lds`・`cbank`・`wb`、`atg_su` の結線、`zybo_compute` |
-| p009 | `atg_vf_*`、`atg_su_tex`・`exp`・`lda`、`atg_tu_*`、`kc705_raster`（N=1） |
+| p009 | `atg_vf_*`、`atg_su_tex`・`exp`・`pt`・`lda`、`atg_rx_frag`、`atg_tu_*`、`kc705_raster`（N=1） |
 | p012 | `am_jtag_regs`、MIG/MMCM の wrapper、`kc705_raster` の board |
 | p017 | `atg_cpu_*`、`atg_cpu_win`、`CPFW`（`atg_cp_regs` の追加）、`zybo_2dfw` |
 | p015 | `atg_top` の N 本の結線、RX 2 本、work の分配（`atg_cp_seq` の拡張） |
