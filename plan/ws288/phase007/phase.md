@@ -3,7 +3,8 @@
 # WS288 p007 RX + ROP（bitstream 3「raster」、DRAW_RAW、DEBUG_COLOR、ROP の順序）
 
 - 親: [ws.md](../ws.md)。設計: [design.md](../design.md) §2.3、§2.4.3（DRAW_RAW）、§3.6、§3.8、§8 の p007 の行。
-- 担当: P3（2026-10-24、Q1 の依頼）。状態: in-progress（2026-10-24 ラップアップ: unit の RTL と TB は全部 PASS、atg_top の raster の TB・Vivado・板は未着手。clear の判定は Q1）。
+- 状態: cleared（2026-10-24 Q1。板は p024、timing は p025）
+- 担当: P3（2026-10-24、Q1 の依頼）。経緯: cleared（2026-10-24 22:3x Q1: 受け入れの「三角形の画面、depth、重なる blend の順、Verilator の PNG」を sim で満たす。板は p024、timing は p025 に移した（ユーザー「タイミングの調整と KC705 での確認は別なフェーズに分けた方がいいと思います。」））。以前: in-progress（2026-10-24 ラップアップ: unit の RTL と TB は全部 PASS、atg_top の raster の TB・Vivado・板は未着手。clear の判定は Q1）。
 - ユーザーの方法: 「トップダウンにVerilig実装を進めてください。スタブ、ドライバの使用は恐れずに、パズルのように部分的に進めてください。」
 
 ## 置き場所と commit

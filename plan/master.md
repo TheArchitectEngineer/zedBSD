@@ -11,20 +11,20 @@
 -->
 
 <!-- master:agents:start -->
-- **2026-10-23 整理（ユーザー「作業内容が大きく変わってきたので、master.mdを整理しておいてください。」「OSCデモは完了したので、それも整理ですね」）**: OSC（2026-10-17）のデモとベータ2 は完了。今の主線は ZYBO（WS286）。
-- **ZYBO（[WS286](ws286/ws.md)、fg021）**: 2026-10-23 completed。実機の ZYBO を JTAG から起動し UART で login（armv7）、zedBSD の `fpgaload` で PL を書き `fpgareg` で register と割り込み（ID 61）を確かめた（到達目標）。QEMU 10.0.11 の devcfg は PCAP を完了できない（upstream で修正済み、10.0.11 に無い）。[WS289](ws289/ws.md) も 2026-10-23 completed: SD から単独起動（BOOT.BIN → SPL Falcon → FIT）、root は SD、LAN 1000 Mbps と SSH、`deploy.sh` で kernel の更新、SD の mode のまま JTAG で reset できる。未確認は 100/10 Mbps だけ。次は [WS288](ws288/ws.md)（FPGA の GPU の設計）。
-- **Pi 5（[WS278](ws278/ws.md)・[WS279](ws279/ws.md)）**: LAN・USB・Wi-Fi（WPA2 の接続まで）・fan・GPU（V3D 7.1、HVS6、Keiland の desktop、Vulkan の描画・stencil）が実機で動作。BT は無効、BUG-345（click が画面に出ない窓、未再現）を追跡。
-- **設計だけで止めた物（実装は後日、ユーザー）**: camera・compute・YOLO（[WS282](ws282/ws.md) 版 3・[WS283](ws283/ws.md) 版 2・[WS284](ws284/ws.md) 版 2・[WS285](ws285/ws.md)）。
-- **VF2（ws270-p007）**: 速さの作業は 2026-10-22 に終了（ラップアップ済み）。SwitchBot の plug AC276E42B252 は ZYBO 用に付け替える予定（今は ZYBO は USB 給電で未接続、VF2 の遠隔の電源の操作はしない）。
-- push: origin/main は 3f7fb3742。それ以降の commit は未 push（push はユーザーの指示の時だけ）。
+- **2026-10-24 22:30 ラップアップ（ユーザー「では、オフボーディングしてハンドオーバーします。資料を作って、master.mdから参照し、次のセッションでただちに再開できるようにしてください。」）**: 走っている担当は無い。引き継ぎは **[WS288 handover-20261024-2230.md](ws288/handover-20261024-2230.md)**（再開の手順・Phase の状態・次の候補・toolchain）。
+- **FPGA の GPU（[WS288](ws288/ws.md)）**: RTL は SA（延期）以外が揃い、sim で raster・shading・texture・compute が model と一致。目標の板は KC705 だけ。板の確認は p024、200 MHz は p025（どちらも後回し、ユーザー）。RTL・仕様は `~/amaterrace-gpu`（`docs/ghci.md` が GHCI と GSI1 の仕様）。
+- **ZYBO（[WS286](ws286/ws.md)・[WS289](ws289/ws.md)）**: completed（JTAG・SD 起動、SD・LAN の driver）。
+- **Pi 5（[WS278](ws278/ws.md)・[WS279](ws279/ws.md)）**: 主要な device と GPU の desktop まで実機で動作。BT は無効、BUG-345 が残る。
+- **設計だけで止めた物（実装は後日、ユーザー）**: camera・compute・YOLO（[WS282](ws282/ws.md)〜[WS285](ws285/ws.md)）。
+- push: zedBSD の origin/main は 2d0633814、amaterrace-gpu の origin/main は 936075d。それより後は未 push（push はユーザーの指示の時だけ）。
 <!-- master:agents:end -->
 
 ### 統合と試験の待ち
 
 <!-- master:merge:start -->
-- 全担当の成果は main に merge 済み（2026-10-23 時点、走っている担当は P1 の WS286 p002 だけ）。
+- 全担当の成果は main に merge 済み（2026-10-24 22:30）。未 merge は zedBSD の branch `agent/p2-ws288-p006`（WS288 p006、停止中）だけ。
 - 既定の config の注意: Pi の BT は config-rpi4.mk・config-rpi5.mk で n（ユーザー）、Pi 5 の GPU（CONFIG_DRIVER_BCM2712_GPU）は CI では n、fan（CONFIG_DRIVER_RPI5_FAN）は y、CI の VF2 は CONFIG_POWERVR_DEBUG n。
-- firmware は全部 zedBSD-firmware（rev e13c96f）から取る（VF2 の dtb、Pi 5 の起動の dtb、NVIDIA の GSP を含む）。vendor/raspberrypi-firmware の submodule は削除済み（plan/tools/rpi4-dtb.sh が shallow clone の予備）。
+- firmware は全部 zedBSD-firmware（rev e13c96f）から取る（VF2 の dtb、Pi 5 の起動の dtb、NVIDIA の GSP を含む）。
 <!-- master:merge:end -->
 
 ### Q1 の次の手順
@@ -33,7 +33,7 @@
 1. 新しい Q1 は AGENTS.md・この block を読む。**ユーザーへは日本語で、聞かれた 1 件だけを答える。ユーザーに試験を頼まない。**
 2. **merge・試験の出力は必ず読んで確かめてから記録・報告する**（merge の後に `git log -1 --format='%h %p'`、担当の SHA は `git cat-file -t`）。担当の branch に捨てた変更が残っていないか（例: 2026-10-22 の P2 の buffer の使い回し）を diff の file の一覧で確かめ、必要なら cherry-pick。
 3. 次の番号: BUG-346、q1554、WS290、KL_VERSION 96。古い q・T1 の番号の経緯は git の履歴（2026-10-23 以前の master.md）。
-4. WS286 の次: (a) review に沿った design 版 3（HAL の物理の base を BSP ごとに、virt は raw の vmunix.bin で r2・initrd・/chosen、QEMU と実機の判別は PSS_IDCODE、shadow の page table、ACTLR.SMP と SCU、rtld と libc の armv7、KERN_USER_ABI_ARMV7、__aeabi_*、devcfg の手順の直し、VFP の lazy の後始末、errata）。(b) LLVM の ARM の target と zedbsd11（Q1 の toolchain の変更、cache の asset の upload はユーザーの確認の後）。(c) openXC7 の導入はユーザー（p003 の前）。(d) U8: SMP・L2・SD・LAN・SD 起動の後の WS を作る。
+4. WS288 の次: [handover-20261024-2230.md](ws288/handover-20261024-2230.md) の §5（推し: p009 の残りを閉じる → p018・p010 → p006 の見直し）。担当には amaterrace-gpu の worktree を作って渡し、Q1 が `--no-ff` で merge する。
 5. 日付は host の `date`。記録の整合は [record-integrity.md](record-integrity.md)。1 LW ≈ 実時間 15〜25 分。
 <!-- master:next:end -->
 
@@ -50,17 +50,17 @@
 ### Focus
 
 <!-- master:focus:start -->
-- **fg021 ZYBO（2026-10-23〜、2026-10-23 達成）**: 初代 Digilent ZYBO（Zynq Z-7010）で zedBSD を JTAG から起動し、PL（FPGA）の block を動かす（ユーザー「今はFPGAブロックを動作させるということをゴールにして最短で進みましょう。」）。[WS286](ws286/ws.md)。OSS の道具だけ（AMD の tool は難しい時だけ）。
-- **Pi 5 の仕上げ（WS278・WS279）**: 実機で主要な device と GPU の desktop まで動作。残りは BT・BUG-345・C1 の板・GPU の速さ（p008）。
-- 達成・終了: fg019 ベータ2（2026-10-17 OSC で公開、ユーザー「OSCデモは完了した」）、fg010 OSC のデモ。fg020 VF2 は速さの作業を終えて保留（残りは表の行）。
+- **WS288 の FPGA の GPU（2026-10-23〜）**: KC705 を目標に RTL を一通り揃える（ユーザー「全体のRTLをまずは一通り揃えることを優先したいです。」）。板（p024）と timing（p025）は後。
+- **Pi 5 の仕上げ（WS278・WS279）**: 残りは BT・BUG-345・GPU の速さ。
+- 達成・終了: fg021 ZYBO（2026-10-23）、fg019 ベータ2（2026-10-17 OSC）、fg010 OSC のデモ。fg020 VF2 は保留。
 <!-- master:focus:end -->
 
 ### 止まっている物
 
 <!-- master:blocked:start -->
-- WS286 p003（PL の block）: host に openXC7 が無い（ユーザーの導入待ち）。openXC7 が Zynq の PS7 を扱えるかは未確認（だめなら AMD の tool、ユーザー）。
-- WS286 p004 以降: LLVM に ARM の target が無い（Q1 の toolchain の変更待ち）。
-- VF2: 遠隔の電源（SwitchBot）を ZYBO に回す予定で、VF2 の板は遠隔で再起動しない。
+- WS288 の板（p024）と timing（p025）: ユーザーが始めると言うまで待つ（実装を優先）。
+- WS288 p006: ZYBO 向けに書き始めた branch のまま。KC705 だけの方針と GHCI §11・§15 に合わせた見直しが先。
+- VF2: 遠隔の電源（SwitchBot）は ZYBO 用に付け替える予定で、VF2 の板は遠隔で再起動しない。
 - GitHub への公開は push の指示の時だけ。
 <!-- master:blocked:end -->
 
@@ -589,7 +589,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS285](ws285/ws.md) | MG006 | camera の object detection の demo の app（WS282〜WS284 の上） | planning | p001 の設計 |
 | [WS286](ws286/ws.md) | MG008 | Digilent ZYBO（初代、Zynq Z-7010）への移植: ARMv7-A の HAL と JTAG の起動、PL（FPGA）の block を動かすまで（USB は外す） | completed | 2026-10-23 完了: 実機の ZYBO で JTAG の起動・UART の login・`fpgaload`/`fpgareg` で PL の block（ID・SCRATCH・COUNTER・LED・IRQ 61）。残り（PL310/L2、SMP の CPU1、armv7 の struct stat の詰めた timespec、ptrace の user VA の icache）は ws.md |
 | [WS287](ws287/ws.md) | MG008 | EHCI の full-speed・low-speed の device（split transaction、ZYBO の ChipIdea を含む） | planning | 着手は後日 |
-| [WS288](ws288/ws.md) | MG008 | FPGA の GPU の IP（display controller・command processor・blitter・vertex fetcher・rasterizer・shader unit・texture unit・ROP・memory controller）、ZYBO で workflow、本命は KC705 | incomplete | 2026-10-24 ユーザーの決定で目標の板は KC705 だけ（ZYBO は DC の検証で終了）。cleared p002〜p005・p017・p023、in-progress p006（branch）・p007・p008。次は p012（KC705 の MIG・clock・JTAG の bridge）。引き継ぎ [handover-20261024.md](ws288/handover-20261024.md) |
+| [WS288](ws288/ws.md) | MG008 | FPGA の GPU の IP（display controller・command processor・blitter・vertex fetcher・rasterizer・shader unit・texture unit・ROP・memory controller）、ZYBO で workflow、本命は KC705 | incomplete | 2026-10-24 ユーザーの決定で目標の板は KC705 だけ、RTL を揃えるのを優先（板は p024、timing は p025）。cleared p002〜p005・p007・p008・p012・p017・p023、in-progress p001・p006（branch）・p009。引き継ぎ [handover-20261024-2230.md](ws288/handover-20261024-2230.md) |
 | [WS289](ws289/ws.md) | MG008 | ZYBO の単独起動: SD（SDIO0）・LAN（GEM0 + RTL8211E、SSH）・SD からの起動（BOOT.BIN）。root を SD に。SDHCI・Cadence GEM の共通の部分を汎用の driver に分ける | completed | 2026-10-23 completed。実機の ZYBO が SD の BOOT.BIN → SPL Falcon → FIT kernel で単独起動し、root は SD、LAN 1000 Mbps・DHCP・SSH、`deploy.sh` で kernel 更新と reboot ができる。汎用の SDHCI・Cadence GEM の core を Pi 4/Pi 5/ZYBO の glue に分けた。100/10 Mbps は未確認 |
 | [WS279](ws279/ws.md) | MG008 | Raspberry Pi 5 の GPU（V3D 7.1）と display（HVS6）（2026-10-21 ユーザー） | incomplete | p001 design.md（約 47〜64 LW の Phase 表）、ユーザーの判断 D1〜D4 待ち |
 | [WS278](ws278/ws.md) | MG008 | Raspberry Pi 5 対応（config/ci/config-rpi5.mk、必要なら GPU・WiFi）（2026-10-21 ユーザー） | incomplete | p001 設計・p002 起動 image は main（6757ac6f2）、実機の確認待ち（plan/ws278/tests/rpi5-hw-test.md）、判断 D1〜D3 待ち |
