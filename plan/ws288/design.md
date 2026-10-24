@@ -528,8 +528,8 @@ code_offset〜 命令（8 byte 揃え）
 - **書き込み port の調停**（複製ごとに 1 本）: 優先は (1) ALU の書き戻し（毎 cycle NPHYS lane）、(2) LDG/LDC/TEX/超越/除算の戻り（戻りの FIFO に貯め、ALU の書き戻しが無い cycle か、issue を 1 cycle 止めて書く）、(3) VF/RX の入力（warp の slot が空の時だけ書くので競合しない）。
 - **scheduler**: 毎 cycle、`ready` な warp を round-robin で 1 つ選び、`32/NPHYS` cycle 占める。pipeline は fetch（I$）→ decode → RF 読み（1）→ 実行（1〜6）→ 書き戻し。同じ warp の連続の発行は dst の依存を interlock。
 - **I$**: 2 KiB（256 命令、32 byte line の direct map）。**D$**: 1 KiB（32 line、direct map、write-through、valid の flash clear で無効化）。coalescer: 32 lane の address を line ごとにまとめる（`32/NPHYS` cycle に分けて比較）。**LDS**: 4 KiB（BRAM36 × 1）、KC705 は 16 KiB。**constant bank**: 256 word（BRAM18 × 1）。
-- **PT（post-transform の buffer）**: 32 頂点 × (4 + 32) word = 1152 word（BRAM36 × 1.3 → 2）。vertex の warp は **PT に 32 頂点分の空きを予約できた時だけ**始まる（§3.8）。
-- **primitive table**: NWARPS × 8 primitive × 3 頂点 × 36 word（NWARPS 4 で 3456 word = BRAM36 × 4）。`LDA` は 1 cycle に NPHYS/4 個の primitive を読むので、**table を NPHYS/4 複製**（NPHYS 8 で 2 複製 = BRAM36 × 8、NPHYS 16 で 4 複製 = 16。§3.6 に入れた）。varying を 16 word に絞る ZYBO の構成は半分。
+- **PT（post-transform の buffer）**: 32 頂点 × (4 + 32) word = 1152 word（BRAM36 × 1.3 → 2）。**p030 S13（2026-10-25）で KC705 は 4 + 64 word**（Vulkan 1.0 の 64 component。PT は NPHYS 16 の bank ごとに 4 × 68 word で BRAM18 × 1 のまま、推定）。vertex の warp は **PT に 32 頂点分の空きを予約できた時だけ**始まる（§3.8）。
+- **primitive table**: NWARPS × 8 primitive × 3 頂点 × 36 word（NWARPS 4 で 3456 word = BRAM36 × 4）。`LDA` は 1 cycle に NPHYS/4 個の primitive を読むので、**table を NPHYS/4 複製**（NPHYS 8 で 2 複製 = BRAM36 × 8、NPHYS 16 で 4 複製 = 16。§3.6 に入れた）。varying を 16 word に絞る ZYBO の構成は半分。**p030 S13（2026-10-25）で改めた**: table は varying の word だけ（position の 4 word は RX が写さないので持たない）、KC705 は 64 word、複製は min(NPHYS/4, 2)、同期の読み（BRAM）で 1 つの lane group を NR = NPHYS/4/複製 cycle（NPHYS 16 で 2）に分けて読む（`atg_su_lda` の x_ready が後の cycle で 0）。KC705: 4 × 8 × 3 × 64 = 6144 word × 2 複製 = SU ごとに BRAM36 × 12（推定、旧 16）。
 - **超越・除算の unit**: unit に 1 本ずつ。`RCP/RSQ` は table（BRAM18 × 1）+ Newton 1 段（DSP × 2）、`EXP2/LOG2/SIN/COS` は範囲の縮小 + 多項式（DSP × 4）。
 
 ### 3.6 大きさ（LUT/FF/BRAM36/DSP）の見積もり — **推定**、内訳から計算し直した（版 2）。実測で置き換える
@@ -558,6 +558,7 @@ code_offset〜 命令（8 byte 揃え）
 | **KC705 N=6**（版 3 の板の目標、M17） | 6 × 17.8k（SU + decode/scoreboard 0.4k + shuffle 0.5k）+ 13.4k + MIG 10k + XDMA 8k + DC 2k + JTAG 0.3k + RX 2 本 3.3k + `atg_cpu` 2.5k + `atg_sa` 10k | **156k（77%）** | 300 + 12 + 4 + 16 + 3 + CPU 12 + SA 4 = **351（79%）** | 6 × 86 + 35 + CPU 1 + SA 256 = **808（96%）** | 325T | **版 4 の最後: SA 無し、CPU 付き**（SA は延期）: LUT 146k（72%）、BRAM 347、DSP 552（66%） |
 | KC705 N=8 | 8 × 17.8k + 上 + CPU + SA | **192k（94%）** | 435 + 16 = **451（> 445）** | 723 + 257 = **980（> 840）** | 325T | **入らない**（M17）。SA 無し・RF の複製 2 でも BRAM が限界。N=8 は SA 無しの構成として p015 で実測 |
 
+- **p030 S13（2026-10-25、推定）**: KC705 の primitive table を 64 varying word・複製 2（§3.5）にして、SU ごとの BRAM36 は prim 16 → 12（6144 word × 2）、PT は BRAM18 × 16 のまま。N=6 の BRAM36 の見込みは 347 → 323（445 の 73%）。表の KC705 の行は直していない（旧の内訳のまま）。実測は `make oxc-core`（T、KC705 の SU の parameter を `CORE_PARAMS` で）。
 - 結論（R1・U17）: **7010 では GPU の全 block を 1 つの bitstream に載せない**。block ごとの bitstream で workflow と各 block を板で確かめ、全体の結合は Verilator と KC705。KC705 は **raster/compute 構成だけ**（版 4 の最後: N=4 から始めて N=6、CPU 付き。SA は延期で KC705 に入らなくてよい、§3.9）。N=8 は BRAM が限界で p015 の実測で決める。
 - p002 の実測（2026-10-23、[phase002](phase002/phase.md)）で直す係数: **BLT は 1.0k → 1.4k**（32 bpp の FILL/COPY と clip だけで 1.39k: 2 line の buffer と word 単位の shifter が大半。16 bpp・blend・tile を足した p003 の実測は **2.73k**（§3.6 の bitstream 1 の行））、**MC は 2 client で 0.17k**（そのうち AXI master が 0.15k。client の間の mux は合成の最適化で BLT の側に吸収されて分けて測れない。1 client あたり line 幅の wdata の mux が要るので **推定** で 32 byte の line で約 0.1〜0.15k/client、N=8 の 22 client で 2.5〜3.5k。版 2 の 1.5k は少なめの恐れ。p015 で測る）、**regs 0.4k → 0.3k**、**CP は stub で 0.6k**（ring・fence・状態遷移の全部は p003・p004 で測る。1.8k は据え置き）。BRAM は 5 の見込みに対して 0.5（MC と BLT に FIFO の BRAM が無い）。bitstream 1 の全体は 4.7k の見込みに対して 2.45k（CP を 1.8k にしても 3.7k、21%）。SU の係数は p008 の最初の合成で直す。
 
@@ -567,7 +568,7 @@ code_offset〜 命令（8 byte 揃え）
 | --- | --- | --- |
 | NSU / NPHYS / NWARPS / NREGS | 1 / 8 → 4 / 4 → 2 / 32 | 4 → 6〜8 / 16 / 4 / 64 |
 | LINE_BYTES / AMB_W / AXI3 | 32 / 64 / 1 | 64 / 512 / 0 |
-| I$ / D$ / T$ / LDS / const / varying | 2 KiB / 1 KiB / —（TU 無し）/ 4 KiB / 256 word / 16 word | 2 KiB / 1 KiB / 4 KiB / 16 KiB / 256 word / 32 word |
+| I$ / D$ / T$ / LDS / const / varying | 2 KiB / 1 KiB / —（TU 無し）/ 4 KiB / 256 word / 16 word | 2 KiB / 1 KiB / 4 KiB / 16 KiB / 256 word / 64 word（p030 S13。旧 32） |
 | TU_BILINEAR / ROP_STENCIL / PACKED | — / 0 / 0（**U15**: README の「16-bit packed」からの逸脱。`PACKH/UNPACKH` は有る） | 1 / 1 / 1 |
 | gclk | 100 MHz | 100 → 150 MHz |
 
@@ -576,7 +577,7 @@ code_offset〜 命令（8 byte 揃え）
 | limit / 機能 | Vulkan の最小 | v1 | 備考 |
 | --- | --- | --- | --- |
 | maxVertexInputAttributes | 16 | 16 | 版 2 で 8 → 16 |
-| maxVertexOutputComponents | 64 | 128（32 word）KC705 / 64（16 word）ZYBO | |
+| maxVertexOutputComponents・maxFragmentInputComponents | 64 | 64（64 word）KC705 / 16（16 word）ZYBO | 1 word = 1 component。旧版の「128（32 word）/ 64（16 word）」は誤り（32 word は 32 component）。KC705 は p030 S13 で 32 → 64 word。ZYBO は未達 |
 | maxPerStageDescriptorSamplers / SampledImages | 16 | 16 | 版 2 で 8 → 16 slot |
 | maxComputeWorkGroupInvocations | 128 | 128（NWARPS 4）/ 64（NWARPS 2、ZYBO）| ZYBO は未達 |
 | maxComputeSharedMemorySize | 16 KiB | 16 KiB / 4 KiB（ZYBO） | ZYBO は未達 |
@@ -1665,7 +1666,7 @@ reviewer が照合した物: design.md の §3.1〜§3.6・§2.2〜§2.4・§6�
 | `maxUniformBufferRange` | 16384 | constant bank 256 word | compiler の道（`lw`）か bank の拡張（§16.14） | p010（U50） |
 | `shaderClipDistance`・`shaderCullDistance` | 任意 | 無し | 0 | Future Work |
 | 圧縮の texture の format | **1 組は必須**: 「SAMPLED_IMAGE_BIT, BLIT_SRC_BIT and SAMPLED_IMAGE_FILTER_LINEAR_BIT features must be supported in optimalTilingFeatures for all the formats in at least one of: this table [BC], [ETC2], or [ASTC]」（`formats.adoc` の BCn の表の注、版の ifdef の外 = 1.0 の要求。feature の `textureCompression*` はその組の印） | 無し | **p030 では 0**（2026-10-25 ユーザー「圧縮テクスチャはPCIe GPUの実機bringupの後に回します。」。設計の形は §16.11a、U58） | 後の Phase（Q1） |
-| `maxVertexOutputComponents`・`maxFragmentInputComponents` | 64・64（`limits.adoc`） | **32**（KC705 の VARY_WORDS 32 word = 32 component。§3.7 の「128」は誤り）、ZYBO 16 | p030 では変えない（U59: PT と primitive table の word を 64 に、BRAM の量で決める） | SU `atg_su_pt`・`atg_su_lda`、RX `atg_rx_frag`（U59） |
+| `maxVertexOutputComponents`・`maxFragmentInputComponents` | 64・64（`limits.adoc`） | **32**（KC705 の VARY_WORDS 32 word = 32 component。§3.7 の「128」は誤り、S13 で直した）、ZYBO 16 | **64**（S13、U59: PT と primitive table を 64 word に、table の複製を 2 に。§16.22 の「S13 の実装で決めた事」） | SU `atg_su_pt`・`atg_su_lda`、RX `atg_rx_frag`（U59） |
 | 他の limit（`maxComputeSharedMemorySize` 16384、`maxPushConstantsSize` 128、`maxBoundDescriptorSets` 4、`maxPerStageDescriptorUniformBuffers` 12・`StorageBuffers` 4、`maxImageDimension2D` 4096、`maxImageArrayLayers` 256） | `limits.adoc` の Required Limits | §3.7（LDS 16 KiB・constant 256 word）、他は firmware と compiler | p030 では扱わない（p010・p018・p019 が §3.7 の表で確かめる） | — |
 | `multiViewport`・`sampleRateShading`・`samplerAnisotropy` | 任意 | 無し | 0（sampleRateShading は U43） | Future Work |
 | `alphaToOne` | 任意 | — | 1（p027） | — |
@@ -1985,7 +1986,7 @@ reviewer が照合した物: design.md の §3.1〜§3.6・§2.2〜§2.4・§6�
 
 
 - **故意の誤り**（p027 と同じ `ifdef MUT_<名前>`）: `MUT_STENCIL_FACE`（front/back を入れ替え）、`MUT_STENCIL_WRAP`（wrap を clamp に）、`MUT_LINE_MAJOR`（等しい時に y 主軸）、`MUT_BIAS_R`（D24 の r を 2^−23 に）、`MUT_FARCLIP`（far の平面を外す）、`MUT_WCLIP`（w の平面を外す）、`MUT_ATTR_LIMIT_GE`（limit の比較を ≥ に）、`MUT_SRGB_ROUND`（閾値を 1 つずらす）、`MUT_BEAT_MASK`（後続の beat に ds の前の mask）、`MUT_OCC_BEAT`（beat ごとに数える）。該当の TB の該当の PASS の行が出ず `FAIL` が出る事を `iverilog -DMUT_<名前>` で確かめる。
-- **scene**（新 `sim/tb/atg_top_core_tb.v` + `tools/rx-core-scene.py`、N=1、KC705 の形（LINE_BYTES 64）と TU 付きの ZYBO の形（LINE_BYTES 32）、RT 64×48、各 run `timeout 600`）: (1) stencil の 2 pass（front で INCR_WRAP、back で DECR_WRAP、その後 stencil の EQUAL で色）、(2) D16 の depth、(3) MRT 4（RGBA8・RGBA16F・R32_UINT・RGB565、RT ごとの blend と write mask）、(4) sRGB の RT の blend、(5) point と line（1x と 4x、主軸の等しい line、PointCoord で色）、(6) depth bias（D24・D32F）+ depth clamp + far の clip + scissor より小さい viewport、(7) occlusion の query（1x・4x、`QUERY` の値が model と）、(8) 新しい format の texture（565 の bilinear、RGBA16F の bilinear、R8、R32_UINT の `texf`、stencil の aspect、swizzle）、(9) vertex の format（A2B10G10R10_UNORM、R16G16_SNORM、R8G8B8A8_UINT）と ATTR_LIMIT の外、(10) BLT の depth だけの clear と stencil だけの copy、(11) guard band を出る大きな三角形と line、(12) 4x の stencil + MRT + RGBA32F（1 行が複数の line）、(13) **backtoback**（前の draw の primitive が VF・SU に居る間に次の draw の BLEND・STENCIL・RT_FORMATS・MS_CTRL を変える列）、(14) reversed-Z の投影でカメラの後ろに頂点のある三角形、(15) minDepth = maxDepth の viewport で far の外の三角形（review 2 の H2）、(16) 4x の RGBA16F と sRGB の resolve（BLT の平均 3・4）。(13) は p027 の待ちの修正の後に流す。PASS の行: `atg_top_core.<名前>` と `atg_top_core`。**受け入れ**: 全部の RT・DS の image と query の値が model と word ごとに一致、PNG（6 倍、`build/review/ws288-p030-core.png`）。
+- **scene**（新 `sim/tb/atg_top_core_tb.v` + `tools/rx-core-scene.py`、N=1、KC705 の形（LINE_BYTES 64）と TU 付きの ZYBO の形（LINE_BYTES 32）、RT 64×48、各 run `timeout 600`）: (1) stencil の 2 pass（front で INCR_WRAP、back で DECR_WRAP、その後 stencil の EQUAL で色）、(2) D16 の depth、(3) MRT 4（RGBA8・RGBA16F・R32_UINT・RGB565、RT ごとの blend と write mask）、(4) sRGB の RT の blend、(5) point と line（1x と 4x、主軸の等しい line、PointCoord で色）、(6) depth bias（D24・D32F）+ depth clamp + far の clip + scissor より小さい viewport、(7) occlusion の query（1x・4x、`QUERY` の値が model と）、(8) 新しい format の texture（565 の bilinear、RGBA16F の bilinear、R8、R32_UINT の `texf`、stencil の aspect、swizzle）、(9) vertex の format（A2B10G10R10_UNORM、R16G16_SNORM、R8G8B8A8_UINT）と ATTR_LIMIT の外、(10) BLT の depth だけの clear と stencil だけの copy、(11) guard band を出る大きな三角形と line、(12) 4x の stencil + MRT + RGBA32F（1 行が複数の line）、(13) **backtoback**（前の draw の primitive が VF・SU に居る間に次の draw の BLEND・STENCIL・RT_FORMATS・MS_CTRL を変える列）、(14) reversed-Z の投影でカメラの後ろに頂点のある三角形、(15) minDepth = maxDepth の viewport で far の外の三角形（review 2 の H2）、(16) 4x の RGBA16F と sRGB の resolve（BLT の平均 3・4）、(18) 64 varying word（16 location × 4 component、KC705 の形で VARYING_COUNT 64、location 15 の word 60〜63 を含む、S13 で定義し S11 の scene の TB で流す）。(13) は p027 の待ちの修正の後に流す。PASS の行: `atg_top_core.<名前>` と `atg_top_core`。**受け入れ**: 全部の RT・DS の image と query の値が model と word ごとに一致、PNG（6 倍、`build/review/ws288-p030-core.png`）。
 - **Verilator**: harness に core の mode（scene の (3)(5)(6)）、`make verilator` の PASS に入れる。
 - **回帰**: `make lint` clean。`make sim` の PASS の行の数が **S1 の開始の commit で数えた数**（S1 の記録に commit と数）より減らない。既存の raster・shade・tex・msaa の scene が変えずに PASS（意図した変更は vec-diff の範囲だけ）。
 - 試験は T1・T2・T3 に依頼（2026-10-25 ユーザー「検証はT1, T2, T3に依頼して、P1,P2が実装を先に進めていくことにしましょう。」）。実装の担当は unit TB の短い run だけを自分で流し、`make sim` と `make verilator` の全部は T に頼む。
@@ -2041,6 +2042,9 @@ reviewer が照合した物: design.md の §3.1〜§3.6・§2.2〜§2.4・§6�
 | S15 | shared memory（LDS）の atomic（2026-10-25 07:12 Q1 追加、p010 で見つかった Vulkan 1.0 core の食い違い: Workgroup の OpAtomic*）: GSI1 の命令（`atom` の LDS の形か新しい sub）、`atg_su_lds` の read-modify-write、gsi1asm・gsi1dis・gsi1model、compiler の lowering、TB | 4 | — |
 
 計 103 LW（±35%）。S12 は S9 の後、S13 は S8 の後、S14 は S9 の後（S13 と S14 は並行可）。S11（統合）は S2〜S14 の全部の後。
+
+- **S13 の実装で決めた事**（2026-10-25 P1、amaterrace-gpu の spec §10 にも。Vulkan 1.0 の 64 component の原則で）: (1) primitive table は varying の word だけを持つ（position の 4 word は RX が写さず、どの program も読まない）。`lda` の PT word 0〜3 は 0 を読む（旧は書かれない word で不定）。(2) `pw_addr`[5:0] は varying word w（旧は PT word 4 + w で、6 bit では w ≤ 59 しか書けなかった）。`fl_pw_addr` の 12 bit と d_s の 0xFF8〜0xFFB はそのまま。(3) `lda` の immediate の word を [8:2] の 7 bit（PT word 0〜127）に、[31:9] は無視、gsi1asm は 0〜511 の外を拒む。`GSI1_LDA` の mask を 0x7F、`gsi1_isa.h` に `GSI1_VARYING_WORDS` 64。(4) table の複製は min(NPHYS/4, 2)、同期の読み（BRAM の推論）で 1 lane group を NR cycle（NPHYS 4・8 は 1、16 は 2、32 は 4）、x_ready は後の cycle で 0（他の unit の group はその cycle に出てよい）。結果は group を取った cycle から SHORT_LAT で変わらない。lda の速さは NPHYS 16 で半分（fragment の varying の読みは 1 component につき lda 3 つ）。(5) VARYING_COUNT は 32 bit の値を比べて 64 を超えたら 64（旧は [5:0] だけを見て 32 で切っていた）。GHCI: CAPS[30] で 64、無しで 16。(6) compiler の口: `ghci_gsi1_options.varying_words`（GPU の varying word、0 と 64 超は 64）、location の word がそれを超えたら word 無し、clip w の word が超えたら EINVAL。(7) `gsi1model --prims` の file は vertex ごとに 128 word（PT word 0〜127）、lda は 4 ≤ word < 4 + --vary だけ読む。
+- **S13 の残り**: (a) 64 component を全部書く vertex program は compiler が出力を最後にまとめて export するので register が 64 を超えて拒まれる（16 location × 4 は regs=64 でも「register が足りない」で拒まれた）。出力を最後の書き込みの後に export する（直線の code）か spill が要る: p010 の compiler の範囲（Q1 に依頼）。host 試験は location 13〜15 だけ書く vertex と 16 location を全部読む fragment。(b) scene (18) は S11 の `atg_top_core_tb` で。(c) KC705 の BRAM の実測（`make oxc-core`）は T。
 
 
 | 段 | 内容 | 受け入れ | 依存（衝突を避ける順） | LW |
@@ -2108,7 +2112,7 @@ reviewer が照合した物: design.md の §3.1〜§3.6・§2.2〜§2.4・§6�
 | **U56** | guard band の外の x・y の clip を p030 で入れるか | **入れる**（S3。triangle と line。大きな地面の三角形などで形が変わる） | 後に回し、v1 の app は guard band の中だけ |
 | **U57** | ZYBO の raster の bitstream に p030 の論理が入らない時 | **今は parameter で外さず、p007 の再合成で入らなければ `FMT_FULL` を足す** | 最初から `FMT_FULL` の parameter |
 | **U58** | 1.0 の必須の圧縮の format の組（**実装は p028 の後の別の Phase**: 2026-10-25 ユーザー「圧縮テクスチャはPCIe GPUの実機bringupの後に回します。」） | **ETC2 + EAC**（10 format、decoder ≈1.5k LUT、≈9 LW。§16.11a） | BC（BC6H・BC7 が重い）、ASTC LDR（最も重い） |
-| **U59** | varying の 64 component（`maxVertexOutputComponents`・`maxFragmentInputComponents` の最小）。今は KC705 で 32 word | **p030 の外の新しい項目**（PT の entry と primitive table を 4 + 64 word に。KC705 の BRAM が N=6 で ≈+96 BRAM36（§3.6 の 347 → ≈443 / 445）と限界なので、primitive table の複製の削減か N の見直しと一緒に p015 の前に決める）。それまで v1 は「規格に合わない点」として記録 | p030 で PT を 64 word に（BRAM の見積もりと N の決定が先に要る） |
+| **U59** | varying の 64 component（`maxVertexOutputComponents`・`maxFragmentInputComponents` の最小）。今は KC705 で 32 word | **p030 の外の新しい項目**（PT の entry と primitive table を 4 + 64 word に。KC705 の BRAM が N=6 で ≈+96 BRAM36（§3.6 の 347 → ≈443 / 445）と限界なので、primitive table の複製の削減か N の見直しと一緒に p015 の前に決める）。それまで v1 は「規格に合わない点」として記録 | p030 で PT を 64 word に（BRAM の見積もりと N の決定が先に要る）。**2026-10-25 S13 で実装**: table の複製を 2 に減らして BRAM は増えない（推定 SU ごと −4 BRAM36）、N の見直しは不要の見込み（oxc-core の実測は T） |
 | **U60** | TU の 16 slot が pipeline の全 stage で 1 組（vertex 16 + fragment 16 の pipeline は不可。`maxPerStageDescriptorSampledImages` は stage ごと） | **v1 は「規格に合わない点」として記録**し、slot の増設（descriptor の STATE を広げる）か stage ごとの bank を p015 の前に決める（STATE の 0x090〜0x18F が全部埋まっているので GHCI の変更が要る） | p030 で slot を 32 に（STATE の範囲の作り直し） |
 
 ### 16.25 license と転記

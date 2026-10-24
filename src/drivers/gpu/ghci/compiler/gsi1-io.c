@@ -46,9 +46,6 @@
 /* The binding word of the varying that carries the position's w, in the interface table. */
 #define GSI1_W_LOCATION			0xffffffffU
 
-/* The highest varying word lda reaches: the primitive table's word 63 is varying 59. */
-#define GSI1_VARYING_WORDS		60U
-
 /* The first register of a fragment warp's centroid barycentrics, and of the hardware's fragment inputs. */
 #define GSI1_FRAGMENT_INPUTS		10U
 
@@ -659,7 +656,7 @@ prepare_fragment(
 
 /*
  * Gives each location its first varying word: the pipeline's packing, or
- * 4 L; a location whose words lda cannot reach has none.
+ * 4 L; a location whose words are past the GPU's varying words has none.
  */
 static int
 prepare_varying_words(
@@ -676,8 +673,8 @@ prepare_varying_words(
 		if (lowering->options.has_varying_map != 0U)
 			word = lowering->options.varying_word[location];
 
-		/* A location without a word, or whose four words lda cannot reach, has none. */
-		if (word == GHCI_GSI1_NO_WORD || word + 4U > GSI1_VARYING_WORDS) {
+		/* A location without a word, or whose four words the GPU does not keep, has none. */
+		if (word == GHCI_GSI1_NO_WORD || word + 4U > lowering->options.varying_words) {
 			lowering->varying_word[location] = GHCI_GSI1_NO_WORD;
 			continue;
 		}
@@ -686,9 +683,9 @@ prepare_varying_words(
 		lowering->varying_word[location] = word;
 	}
 
-	/* The varying of the clip w is reachable too. */
-	if (lowering->options.has_w_word != 0U && lowering->options.w_word >= GSI1_VARYING_WORDS) {
-		error = gsi1_refuse(lowering, EINVAL, "the clip w's varying word is past the primitive table");
+	/* The varying of the clip w is one the GPU keeps too. */
+	if (lowering->options.has_w_word != 0U && lowering->options.w_word >= lowering->options.varying_words) {
+		error = gsi1_refuse(lowering, EINVAL, "the clip w's varying word is past the GPU's varying words");
 		return error;
 	}
 

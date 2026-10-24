@@ -1153,6 +1153,10 @@ prepare(
 	if (lowering->options.samples == 0U)
 		lowering->options.samples = 1U;
 
+	/* The GPU's varying words: none given, or more than GSI1 has, reads as the 64 of CAPS[30]. */
+	if (lowering->options.varying_words == 0U || lowering->options.varying_words > GSI1_VARYING_WORDS)
+		lowering->options.varying_words = GSI1_VARYING_WORDS;
+
 	/* The per-value and per-instruction tables. */
 	error = allocate_tables(lowering);
 	if (error != 0)
