@@ -250,7 +250,8 @@
  * layer of an array (r after a 2D coordinate, ai after a cube one).  A 1D
  * image is a 2D one a texel high (its v is 0); a texel buffer is fetched
  * as a 1D image; a multisampled 2D image is fetched with the sample as its
- * layer.  Zero, the 2D kind of no array, is also the shape of an
+ * layer (an array of them, which only a parse with the GHCI features
+ * makes: the layer, then the sample).  Zero, the 2D kind of no array, is also the shape of an
  * instruction that was built without one.
  */
 #define DRV_GPU_IR_IMAGE_2D 0U

@@ -147,6 +147,8 @@ CASES = [
     ("mrt.frag", "compile-fragment", [], "", 0, ["exp"]),
     ("texture.frag", "compile-fragment", [], "regs=64", 0,
      ["texb", "texl", "texg.b", "texb.c", "texb.3", "texf", "texsz", "texsz.s", "texsz.l"]),
+    ("msarray.frag", "compile-fragment", [], "", 0, ["texf.3"]),
+    ("texelbuffer.comp", "compute", ["32", "1"], "", 0, ["lw", "sw"]),
     ("cubegrad.frag", "compile-fragment", [], "regs=64", 0, ["texl.3", "log2", "texsz.d", "exec.save"]),
 ]
 

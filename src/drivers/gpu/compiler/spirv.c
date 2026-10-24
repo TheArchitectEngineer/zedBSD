@@ -12254,7 +12254,8 @@ drv_gpu_spirv_lower_fetch(
 	 */
 	if (type->image_ms != 0U &&
 	    (type->image_dim != DIM_2D ||
-	    type->image_arrayed != 0U)) {
+	    (type->image_arrayed != 0U &&
+	     (parser->features & DRV_GPU_SPIRV_FEATURE_QUERY_SAMPLES) == 0U))) {
 		/*
 		 * Records the unsupported instruction in the caller's
 		 * diagnostic.
@@ -12539,6 +12540,7 @@ drv_gpu_spirv_lower_query(
 	uint32_t shape;
 	uint32_t first;
 	uint32_t index;
+	int buffer;
 
 	/*
 	 * The instruction must carry the image, and the level for
@@ -12552,7 +12554,15 @@ drv_gpu_spirv_lower_query(
 	/* Resolves the image. */
 	image = drv_gpu_spirv_id(parser, word[3]);
 	type = drv_gpu_spirv_image_type(parser, image);
-	if (type == NULL || type->image_dim > DIM_CUBE) {
+
+	/* With the GHCI features a texel buffer's size is its element count. */
+	buffer = 0;
+	if (type != NULL &&
+	    type->image_dim == DIM_BUFFER &&
+	    opcode == OP_IMAGE_QUERY_SIZE &&
+	    (parser->features & DRV_GPU_SPIRV_FEATURE_STORAGE_IMAGE) != 0U)
+		buffer = 1;
+	if (type == NULL || (type->image_dim > DIM_CUBE && buffer == 0)) {
 		/*
 		 * Records the unsupported instruction in the caller's
 		 * diagnostic.
@@ -12591,7 +12601,7 @@ drv_gpu_spirv_lower_query(
 
 	/* Starts the image-query result width from its non-array dimensions. */
 	expected = 1U;
-	if (opcode != OP_IMAGE_QUERY_LEVELS) {
+	if (opcode != OP_IMAGE_QUERY_LEVELS && buffer == 0) {
 		expected = type->image_dim + 1U;
 		if (type->image_dim == DIM_CUBE)
 			expected = 2U;

@@ -1341,6 +1341,7 @@ classify_values(
 	uint32_t special;
 	uint32_t word;
 	uint32_t bits;
+	int defines;
 	int known;
 
 	/* Names the module being classified. */
@@ -1352,7 +1353,8 @@ classify_values(
 		dst = instruction->dst;
 
 		/* Only the single-value definitions are looked at. */
-		if (gsi1_ir_defines(instruction) != 1)
+		defines = gsi1_ir_defines(instruction);
+		if (defines != 1)
 			continue;
 
 		/* A value a MOVE writes, and one met before, is a register value. */
@@ -1467,7 +1469,8 @@ classify_values(
 	/* The results of the four-value instructions live in registers. */
 	for (index = 0U; index < ir->instruction_count; index++) {
 		instruction = &ir->instructions[index];
-		if (gsi1_ir_defines(instruction) != 4)
+		defines = gsi1_ir_defines(instruction);
+		if (defines != 4)
 			continue;
 		for (dst = 0U; dst < 4U; dst++)
 			lowering->kind[instruction->dst + dst] = GSI1_VALUE_REGISTER;

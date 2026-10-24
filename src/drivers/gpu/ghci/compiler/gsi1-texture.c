@@ -86,7 +86,7 @@ static int place_coordinates(struct gsi1_lowering *lowering, const struct gsi1_s
 static int gradient_level(struct gsi1_lowering *lowering, const struct gsi1_sample *sample, uint32_t *level);
 static int add_scaled_square(struct gsi1_lowering *lowering, uint32_t sum, uint32_t gradient, uint32_t scale, int first);
 static int image_size(struct gsi1_lowering *lowering, const struct gsi1_sample *sample, uint32_t *width, uint32_t *height, uint32_t *depth);
-static int lower_query(struct gsi1_lowering *lowering, const struct gsi1_sample *sample, uint32_t dst);
+static int lower_query(struct gsi1_lowering *lowering, const struct gsi1_sample *sample, const struct gsi1_binding *binding, uint32_t dst);
 static int lower_buffer_fetch(struct gsi1_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction, uint32_t uniform, struct gsi1_sample *sample, uint32_t dst);
 static int lower_storage_query(struct gsi1_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction, uint32_t uniform, uint32_t dst);
 static void emit_texture(struct gsi1_lowering *lowering, uint32_t funct3, uint32_t funct7, const struct gsi1_sample *sample, uint32_t dst, uint32_t block, uint32_t rs2);
@@ -131,7 +131,7 @@ gsi1_texture_lower(
 
 	/* The queries. */
 	if (sample.message == DRV_GPU_IR_TEXTURE_RESINFO || sample.message == DRV_GPU_IR_TEXTURE_SAMPLES) {
-		error = lower_query(lowering, &sample, dst);
+		error = lower_query(lowering, &sample, &lowering->binding[uniform], dst);
 		if (error != 0)
 			return error;
 
@@ -394,7 +394,11 @@ read_message(
 		sample->coordinate[0] = param(instruction, 0U);
 		sample->coordinate[1] = param(instruction, 1U);
 		sample->level = param(instruction, 2U);
-		if ((sample->shape & DRV_GPU_IR_IMAGE_MULTISAMPLED) != 0U) {
+		if ((sample->shape & DRV_GPU_IR_IMAGE_MULTISAMPLED) != 0U &&
+		    (sample->shape & DRV_GPU_IR_IMAGE_ARRAYED) != 0U) {
+			sample->layer = param(instruction, 3U);
+			sample->level = param(instruction, 4U);
+		} else if ((sample->shape & DRV_GPU_IR_IMAGE_MULTISAMPLED) != 0U) {
 			sample->level = param(instruction, 3U);
 		} else if (kind == DRV_GPU_IR_IMAGE_3D) {
 			sample->coordinate[2] = param(instruction, 3U);
@@ -749,6 +753,7 @@ static int
 lower_query(
 	struct gsi1_lowering *lowering,
 	const struct gsi1_sample *sample,
+	const struct gsi1_binding *binding,
 	uint32_t dst)
 {
 	uint32_t level;
@@ -758,6 +763,22 @@ lower_query(
 	/* The samples, in the reply's first value. */
 	if (sample->message == DRV_GPU_IR_TEXTURE_SAMPLES) {
 		emit_texsz(lowering, GSI1_TEXSZ_SAMPLES, sample->slot, dst, 0U);
+		return 0;
+	}
+
+	/* A uniform texel buffer's size is its element count, a bank word. */
+	if ((sample->shape & DRV_GPU_IR_IMAGE_KIND_MASK) == DRV_GPU_IR_IMAGE_BUFFER) {
+		if (binding->count_bank == GSI1_NOT_DEFINED) {
+			error = gsi1_refuse(lowering, EINVAL, "a texel buffer's size without its count");
+			return error;
+		}
+		error = gsi1_bank_operand(lowering, binding->count_bank, &level);
+		if (error != 0)
+			return error;
+		gsi1_emit_move(lowering, dst, level);
+		gsi1_emit_move(lowering, dst + 1U, GSI1_ONEI);
+		gsi1_emit_move(lowering, dst + 2U, GSI1_ONEI);
+		gsi1_emit_move(lowering, dst + 3U, GSI1_ONEI);
 		return 0;
 	}
 
