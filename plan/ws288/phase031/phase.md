@@ -23,3 +23,4 @@
 - 2026-10-25 04:10 Q1: 新設（ユーザーの決定）。
 - 2026-10-25 04:27 P1 → Q1: d560d94（親 5a7a5c4）。ZYBO の board・spec・VGA（atg_dc_vga）・ZYBO の firmware の image・tb_shape.vh・ZYBO の lint の stub を docs/old/zybo/ へ git mv、atg_top_* の TB は KC705 だけ、lint.sh・fw-build.sh・vivado-build.sh から ZYBO、DC_CAPS[0] VGA を 0 に。P1 の申告: lint clean 101、単体 TB 7/7 PASS、atg_top_* 6 本は compile だけ（T1-759 に回した）。Q1 の判断: (1) atg_top と block の parameter の既定（LINE_BYTES 32 など）はそのまま（KC705 の値は board の top が渡す）、(2) Verilator の harness が既定の 32 B の形のままで KC705 の 512 bit の形を通らない → p030 S11（統合）で harness を KC705 の形にする、(3) STANDALONE と atg_dc_tmds は残す、(4) 32 B の top の網羅が無くなるのは可。
 - 2026-10-25 05:11 Q1: d560d94 を含む p1-p031 3e24ad1 を amaterrace-gpu の main に merge（a87523c、衝突なし、merge の後 lint clean 103）。P1 の作った空の directory `rtl/common/fmt/` を Q1 が消した。T1-759（d560d94）と T1-762（main 5f3b747）の結果で clear を判定する。
+- 2026-10-25 05:13 Q1: T1-759（d560d94）PASS（top 6 本、sim-quick 78、verilator 5、lint 101、log を Q1 が数えて確かめた）→ cleared。
