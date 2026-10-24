@@ -17,12 +17,12 @@
 
 | 段 | 内容 | 依存 | LW | 状態 |
 | --- | --- | --- | --- | --- |
-| 設計 | design §15、design-reviewer、U43〜U46 | — | 3〜5 | in-progress（q1558-i01） |
+| 設計 | design §15、design-reviewer（[review](../design-review-msaa.md)）、U43〜U46 | — | 3〜5 | in-progress（q1558-i01） |
 | S1 | `msmodel.py`、`gsi1model.py` の r6〜r9・`exp 0x105`、spec の更新 | 設計の review | 4 | planned |
 | S2 | RX: `atg_rx_cov`・`atg_rx_bary`（新）、`atg_rx_scan`・`atg_rx_frag` | S1 | 7 | planned |
 | S3 | SU: `atg_su_exp`（r6・0x105・zexp・d_s・`ex_ms`） | S1 | 3 | planned |
 | S4 | ROP: `atg_rop_ms`（新）、`order`・`ds`・`wb` | S1 | 7 | planned |
-| S5 | TU: MS の `texf`・`texsz.s` | S1、p009 part F の merge | 2 | planned |
+| S5 | TU: MS の `texf`・RGB565 の `texf`・`texsz.s`（SU の decode と戻りも） | S1、p009 part F の merge | 4 | planned |
 | S6 | `atg_top_msaa_tb` と scene、resolve4、Verilator、README、GHCI §12.11 | S2〜S5 | 6 | planned |
 
 ## 受け入れ
@@ -33,3 +33,4 @@ design の MSAA の節（review 済み）。scene の 4x の color・depth と r
 
 - 2026-10-25 01:08 Q1: 新設（part E の P3 の調べで、multisample の sampled image が ROP の MSAA に依存すると分かった）。
 - 2026-10-25 01:37 P2（q1558-i01、設計の段）: design.md 版 5 §15 MSAA を書いた（Vulkan 1.0 core の要求の表は docs.vulkan.org の文面から、RX の sample の coverage、fragment の入力 r6〜r9、SU の `exp 0x105`、ROP の `atg_rop_ms`、sample-interleaved の配置、resolve = firmware の内蔵の draw、TU の `texf` の rs2 = sample（P3 の TEX_IMAGE[15:12] = log2(samples)）、GHCI の draft §12.11、段 S1〜S6 = 29 LW、U43〜U46）。amaterrace-gpu の worktree p2-p027 の `docs/ghci.md` に CAPS[29] と §12.11（draft）。次は design-reviewer。
+- 2026-10-25 02:12 P2: design-reviewer の review 1（18 件: High 2・Medium 8・Low 8、Critical 0）に全部対応（[design-review-msaa.md](../design-review-msaa.md)）。主な変更: RGB565 の `texf`（S5）、resolve の時間を RX の律速で直した（1080p ≈1.0 s @ 100 MHz）、帯域を line の粒度で、`exp 0x105` は最後の書き込みが勝つ、exp の書き手の分離、depth だけの shader は `exp ~0 → 0x105`、TU の slot を予約せず STATE を保存・復元、`texsz.s` の decode、試験を LINE_BYTES 32・64・16 bpp・奇数の幅などに広げた。段の合計 31 LW。
