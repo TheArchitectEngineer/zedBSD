@@ -11,7 +11,7 @@
 -->
 
 <!-- master:agents:start -->
-- **2026-10-25 05:45 自走中（ユーザーは就寝）**: WS288。P2 = p027 S6（MSAA の scene）→ p030 の TU・BLT の系統（S9・S10・S12・S14）。P1 = p030 の RX・ROP・CP の系統（S3〜S8）。T1〜T3 = 試験（amaterrace-gpu の detached の worktree `~/amaterrace-worktrees/t*-NNN`）。その後 p010 → p018 → p019 → p006 → p011。板・PCIe・p028 は実機の環境の後。
+- **2026-10-25 05:45 自走中（ユーザーは就寝、推しで進める。判断の記録 [ws288/q1-decisions-20261025.md](ws288/q1-decisions-20261025.md)）**: WS288。P2 = p027 S6 → p010。P3 = p030 の TU・BLT の系統（S9・S10・S12・S14）。P1 = p030 の RX・ROP・CP の系統（S3〜S8）。T1〜T3 = 試験（amaterrace-gpu の detached の worktree `~/amaterrace-worktrees/t*-NNN`）。その後 p010 → p018 → p019 → p006 → p011。板・PCIe・p028 は実機の環境の後。
 - amaterrace-gpu の main は 5f3b747（T1-762 で make sim 85 PASS）。zedBSD・amaterrace-gpu とも push していない。
 <!-- master:agents:end -->
 
@@ -28,7 +28,7 @@
 <!-- master:next:start -->
 1. 新しい Q1 は AGENTS.md・この block を読む。**ユーザーへは日本語で、聞かれた 1 件だけを答える。ユーザーに試験を頼まない。**
 2. **merge・試験の出力は必ず読んで確かめてから記録・報告する**（merge の後に `git log -1 --format='%h %p'`、担当の SHA は `git cat-file -t`）。担当の branch に捨てた変更が残っていないか（例: 2026-10-22 の P2 の buffer の使い回し）を diff の file の一覧で確かめ、必要なら cherry-pick。
-3. 次の番号: BUG-346、q1563、WS290、KL_VERSION 96。古い q・T1 の番号の経緯は git の履歴（2026-10-23 以前の master.md）。
+3. 次の番号: BUG-346、q1564、WS290、KL_VERSION 96。古い q・T1 の番号の経緯は git の履歴（2026-10-23 以前の master.md）。
 4. WS288 の次: [handover-20261024-2230.md](ws288/handover-20261024-2230.md) の §5（推し: p009 の残りを閉じる → p018・p010 → p006 の見直し）。担当には amaterrace-gpu の worktree を作って渡し、Q1 が `--no-ff` で merge する。
 5. 日付は host の `date`。記録の整合は [record-integrity.md](record-integrity.md)。1 LW ≈ 実時間 15〜25 分。
 <!-- master:next:end -->
@@ -636,6 +636,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-25 05:49 ユーザー「ゴールまで推しで進んでよいです。判断に迷ったら、Vulkan 1.0の原則論で進めてください。あなたが自分で判断した内容はあとで起きたときに教えてください。修正が必要ならそのとき伝えるので、安心して推しで進めてください。テストはT1からT4まで４つ並列にしても負荷的には問題なさそうです。また、ソフトウェアのコーディングと違って、Verilogは確認のために関連ソースコードを読み取る必要性が低いのかもしれませんね、思ったよりトークンを消費していないです。N=3で、P3を立ててOKです。」→ 自走の判断の記録は [ws288/q1-decisions-20261025.md](ws288/q1-decisions-20261025.md)。N=3（P3 を立てる）、試験は T1〜T4 の並列。
 - 2026-10-25 05:45 ユーザー「私はしばらく寝るので、現在のゴールまで自走をお願いします。」→ 自走: N=2（P1・P2）と試験の T1〜T3 で p027 S6 → p030（2 系統）→ p010 → p018 → p019 → p006 → p011 の順。判断が要る点は U 項目として記録して先へ。板（p024）・PCIe（p013）・p028 は実機の環境が整うまで着手しない。push しない。
 - 2026-10-25 05:42 ユーザー「p027 の S6 が終わったら、P2 にこの分担で p030 の TU と BLT の系統を渡してよいです。」→ p030 を 2 系統に: P1 = RX・ROP・CP（S3〜S8）、P2 = TU・BLT（S9・S10・S12・S14）、S13（varying）と S11（統合）は両方の後に Q1 が決める。
 - 2026-10-25 04:52 ユーザー「了解です。最終目標は3nmのASICでmobile向けの1.0-1.5GHzくらいですね。3GHzはそもそもパイプライン段数が全然違うような気がします。」→ WS288 の最終の target: 3 nm の ASIC の mobile 向け 1.0〜1.5 GHz（ws.md・p025 に）。
