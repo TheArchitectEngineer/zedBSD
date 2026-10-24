@@ -41,3 +41,4 @@
   - Q1 の確認: f9d14d6 は commit（親 5ff88da）、worktree で `atg_su_gfx`・`atg_kc705_raster` を再実行して PASS。
   - spec の読み（P2）: (1) shfl/vote/ballot は helper と kill の lane も active に数える（EXEC の上で定義）。Q1 の判断: kill を Vulkan の demote（helper になる）として扱うなら Vulkan の「quad 以外の subgroup の操作で helper が active かは実装依存」の範囲と考える（未確認、Vulkan の文面は p010 の compiler で確かめる）。(2) vertex の warp の kill も PT の export を止める。(3) この SU の deadlock の回避を実際に支えるのは PT の block ごとの割り当て（2 block 以上）で、FRAG_RESERVE は VF が溢れる時に fragment の slot を残す役 → design §3.8 の文を直す（Q1、design の次の版）。
   - design の食い違い: §8 の p009 の行と §14 の 18（packed・subgroup を p022 へ）→ §14 を直す（Q1）。
+- 2026-10-24 23:57 Q1: ユーザーの texture の命令の指示（Master の decisions-log）で、part E の範囲に compare の制限を無くす命令の形の見直しを足して P3 に送った。
