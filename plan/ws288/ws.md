@@ -36,6 +36,9 @@
 
 - **2026-10-24 ユーザー「あとDCはKC705に移植して、HDMI出力を可能にしたいですね。VGAは正直、RTLは残していいけど、もう合成しなくていいです。」→ DC は KC705 に移して HDMI を出す（KC705 の HDMI は ADV7511 の encoder 経由: I2C の設定（`atg_dc_i2c`、今は stub）と並列の画素の data。pin と設定は UG810・board の資料で確かめる、U7）。VGA の RTL（`atg_dc_vga`）は残すが、今後の bitstream では合成しない。**
 
+- **2026-10-25 01:08 ユーザー（最初のゴール）**「了解です。SAはfuture workに回します。p009, msaaを優先して実装してください。そのあと、p010,p018,p019,p006,p011を実装します。KC705のDDR3をVRAMにしてPCIeのGPUボードにすることで、QEMUからパススルーで利用し、ゲストのzedBSDからVulkanを動作させることを、最初のゴールにします。必要なphaseは作成してください。」「VRAMは最終的にはDDR3ではなくホストメモリにしたいですが、その実験のためには、Sukuna RISCを実装してKC705でCPU+GPUを動かす必要があります。まずはPCIe GPUボードとしてzedBSDで動かすところまでやります。」「タイミング調整とパイプライン化は、zedBSD用のGHCIドライバを書いてから、最後に取り組みます。そうすることで、タイミング調整に使える作業時間をコントロールしたいです。」
+  → **最初のゴール**: KC705 の DDR3 を VRAM にした PCIe の GPU の board を、host の QEMU の VFIO の passthrough で guest の zedBSD から Vulkan で動かす（[p028](phase028/phase.md)）。**順**: p009（part F）→ [p027](phase027/phase.md) MSAA → p010 → p018 → p019 → p006（PCIe の amd64 の driver に見直し）→ p011 → p024（板）→ [p013](phase013/phase.md)（PCIe）→ p028。timing の調整とpipeline 化（p025）は driver の後、最後（低い clock の板で先に動かす）。SA は Future Work。VRAM を host の memory に移すのは Future Work fw-kc705-hostmem（Sukuna RISC で KC705 の CPU + GPU の実験が先）。p015（複数の SU）・p014（JTAG の vkdemo）はこのゴールの道の外。
+
 ## Phase
 
 | Phase | 内容 | 依存 | 状態 |
@@ -52,7 +55,15 @@
 | [p009](phase009/phase.md) | VF + SU の vertex/fragment（exp・lda）+ TU。part A = VF の子 4 つ、B = exp・lda と pipeline の結線、C = TU と tex | p008、p007 | in-progress（2026-10-24: part A cleared（30dc42a、VF）、part B cleared（ce607b4、shading の三角形）、part C cleared（00bb02b、TU・texture の三角形）。残り: design §8 の p009 の行の qd・subgroup・deadlock・PACKED・kc705_raster の確認、Vulkan に合わない mip linear・clamp to border。2026-10-24 22:58 part D（P2、q1555）・E（P3、q1556）を開始） |
 | [p012](phase012/phase.md) | KC705 の RTL: board の top、JTAG の bridge、MIG・MMCM の wrapper、DC の HDMI（ADV7511）、sim まで（板は p024） | p004、p005、U7 | cleared（2026-10-24: 9e00981 の JTAG の bridge・I2C・YCbCr 4:2:2 の HDMI・board の top の sim、dbdf6e7 の EXTCAP の DISP・DBG と CAPS[3]・[27]・[28]。板は p024） |
 | [p024](phase024/phase.md) | KC705 の板での確認（MIG の IP、bitstream、JTAG で fill → DBG、HDMI の color bar、scene を板で） | p012 | planned（2026-10-24 新設） |
-| [p025](phase025/phase.md) | timing の調整（KC705 で 200 MHz、blend の 2 段化など） | RTL が揃った後 | planned（2026-10-24 新設） |
+| [p025](phase025/phase.md) | timing の調整（KC705 で 200 MHz、blend の 2 段化など） | p006 の後、最後（2026-10-25 01:08 ユーザー） | planned（2026-10-24 新設） |
+| [p027](phase027/phase.md) | MSAA（4x の描画・depth・resolve、multisample の sampled image）。design の節から | p009 | planned（2026-10-25 01:08 新設） |
+| p010 | compiler の backend（zedBSD `isa/gsi1/`）、`gsi1_isa.h` と interface の表の確定（design §8） | p008 | planned（順: p027 の後） |
+| p018 | firmware の Vulkan の object model と draw/dispatch（design §8）。GHCI §7.2・§11.6 への firmware の追従を含む | p017、p009、p010 | planned（順: p010 の後） |
+| p019 | zedBSD の `vk/`（検証する中継、design §8） | p010、p017、p006 | planned（順: p018 の後） |
+| p011 | 端から端の統合（Verilator の上で libvulkan → `vk/` → firmware → RTL、vkdemo の 1 frame、design §8） | p009、p010、p018、p019 | planned（順: p006 の後） |
+| [p013](phase013/phase.md) | KC705 の PCIe（BAR0 = GHCI、BAR2 = DDR3 の VRAM、MSI、VFIO） | p012、p024、p006 | planned（2026-10-25 01:08 Future Work から戻した） |
+| [p028](phase028/phase.md) | **最初のゴール**: QEMU の VFIO の passthrough の guest の zedBSD から KC705 の GPU で Vulkan | p011、p013、p006、p019、p024 | planned（2026-10-25 01:08 新設） |
+| p014・p015・p016 | JTAG の vkdemo（p014）、複数の SU（p015）、規約の全文と GHCI 1.0（p016）（design §8） | design §8 | planned（ゴールの後） |
 | [p026](phase026/phase.md) | RTL の書き方の直し（STATE の番号に名前、source から WS・Phase の番号を外す）と短い sim（`make sim-quick`）。回路は変えない | なし | cleared（2026-10-25 01:02、amaterrace-gpu 1e1a90c） |
 | p023 | module の木・空の module・module ごとの spec（design §7.6）。part 1（P1）: まだ無い 86 module の port だけの Verilog と spec、`atg_top` の block の parameter、board の top、MC の router の木（2026-10-23 ユーザーの要求で `atg_rt` 等を実装）: [phase023](phase023/phase.md)。part 2（P2）: 既存の module の spec | p001（版 4）、p002、U37、U38 | cleared（2026-10-23 Q1: part 1（P1）= module の木の空の module と spec（CP・CPU・SU 24・VF・RX・TU・ROP・MC と router の木 atg_rt・DC・SA の port の予約・ZYBO と KC705 の board の top）、part 2（P2）= 既存 10 module の spec。lint 97/97 clean、sim 18/18 PASS。amaterrace-gpu main 98885bf まで） |
 

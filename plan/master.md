@@ -50,7 +50,7 @@
 ### Focus
 
 <!-- master:focus:start -->
-- **WS288 の FPGA の GPU（2026-10-23〜）**: KC705 を目標に RTL を一通り揃える（ユーザー「全体のRTLをまずは一通り揃えることを優先したいです。」）。板（p024）と timing（p025）は後。
+- **fg022 KC705 の PCIe の GPU の board（2026-10-25 01:09〜、[WS288](ws288/ws.md)）**: DDR3 を VRAM にした KC705 を host の QEMU に VFIO で passthrough し、guest の zedBSD から Vulkan を動かす（[p028](ws288/phase028/phase.md)）。順: p009 part F → p027 MSAA → p010 → p018 → p019 → p006 → p011 → p024 → p013 → p028。timing（p025）は driver の後、最後。
 - **Pi 5 の仕上げ（WS278・WS279）**: 残りは BT・BUG-345・GPU の速さ。
 - 達成・終了: fg021 ZYBO（2026-10-23）、fg019 ベータ2（2026-10-17 OSC）、fg010 OSC のデモ。fg020 VF2 は保留。
 <!-- master:focus:end -->
@@ -103,6 +103,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 
 | Goal | 当面の成果 | Milestone | 担当の WS | 出典 |
 | --- | --- | --- | --- | --- |
+| **fg022** | KC705（DDR3 を VRAM）を PCIe の GPU の board にし、QEMU の VFIO の passthrough の guest の zedBSD から Vulkan を動かす | MG006 | [WS288](ws288/ws.md) p028 | 2026-10-25 01:09 user（原文は decisions-log） |
 | **fg021** | 初代 ZYBO（Zynq Z-7010）で JTAG から起動し、PL（FPGA）の block を zedBSD から動かす | MG008 | [WS286](ws286/ws.md) | 2026-10-23 user（2026-10-23 達成、WS286 completed） |
 | **fg020** | VisionFive 2 で OS を完全に動かす（framebuffer・SD・rootfs・USB keyboard・LAN・sound・NVMe の実機、PowerVR の driver、Keiland） | MG008 | [WS256](ws256/ws.md)、[WS269](ws269/ws.md)、[WS277](ws277/ws.md)、[WS270](ws270/ws.md) | 2026-10-19 22:58 ユーザー「VisionFive 2にフォーカスします.」 |
 | **fg018** | Linux 標準 GTK4 の実測と互換性の改善 | MG006 | [WS114](ws114/ws.md) | 2026-10-02 user。p007・p008 まで達成 |
@@ -145,11 +146,11 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 依存による実行の順とは別のもの。Queue の権限は変えない。古い順位（2026-10-03〜04）は付録の history-log。
 
 <!-- master:priority:start -->
-2026-10-23 ユーザー（ZYBO）「今はFPGAブロックを動作させるということをゴールにして最短で進みましょう。」→ 最優先は WS286（fg021）。
-1. WS286 ZYBO: design 版 3 → p002 JTAG・SPL → p003 PL の plio（openXC7）→ LLVM の ARM → p004 HAL（QEMU virt）→ p005 BSP → p006 → p007 ramdisk の login → p008 PL を zedBSD から（到達目標）→ p009 規約。
+2026-10-25 01:09 ユーザー（fg022）: 最優先は WS288 の最初のゴール（KC705 の PCIe の GPU の board で guest の zedBSD から Vulkan）。
+1. WS288: p009 part F（TU の core の必須）→ p027 MSAA → p010 compiler → p018 firmware → p019 `vk/` → p006 driver → p011 Verilator の端から端 → p024 板 → p013 PCIe → p028 ゴール → p025 timing。
 2. Pi 5 の残り（WS278・WS279）: ユーザーの指示の時。
-3. 設計だけの物（WS282〜WS285、WS281 malloc、WS287 EHCI の LS/FS、WS280 H.264）: 後日、ユーザーの指示まで着手しない。
-- それ以前の優先順（ベータ2・2026-10-06 の段階）は付録の history-log と git の履歴。
+3. 設計だけの物（WS282〜WS285、WS281 malloc、WS287 EHCI の LS/FS、WS280 H.264）、SA（fw-sa-*）、VRAM を host の memory に（fw-kc705-hostmem）: 後日。
+- それ以前の優先順は付録の history-log と git の履歴。
 <!-- master:priority:end -->
 
 ## 工数の見積もり（残り、LW）
@@ -639,6 +640,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-25 01:09 ユーザー（WS288、最初のゴール）「了解です。SAはfuture workに回します。p009, msaaを優先して実装してください。そのあと、p010,p018,p019,p006,p011を実装します。KC705のDDR3をVRAMにしてPCIeのGPUボードにすることで、QEMUからパススルーで利用し、ゲストのzedBSDからVulkanを動作させることを、最初のゴールにします。必要なphaseは作成してください。」「VRAMは最終的にはDDR3ではなくホストメモリにしたいですが、その実験のためには、Sukuna RISCを実装してKC705でCPU+GPUを動かす必要があります。まずはPCIe GPUボードとしてzedBSDで動かすところまでやります。」「タイミング調整とパイプライン化は、zedBSD用のGHCIドライバを書いてから、最後に取り組みます。そうすることで、タイミング調整に使える作業時間をコントロールしたいです。」→ fg022 を新設、WS288 に p027（MSAA）・p028（ゴール）を新設、p013（PCIe）を Future Work から戻す、p025 は driver の後の最後、fw-kc705-hostmem を Future Work に。p009 part F の multisample の sampled image は p027 へ。
 - 2026-10-25 00:27 ユーザー（WS288 の TU）「必須のtexture昨日は、今入れます。READMEにも追加します。」（「昨日」は「機能」と読む）→ Vulkan 1.0 core で必須の texture の機能（ConstOffset・2D array・3D・cube・unnormalizedCoordinates・sampled multisample）を v1 に入れる（p009 part F を新設）。amaterrace-gpu の README の TU の行も直す。
 - 2026-10-24 23:57 ユーザー（WS288 の GHCI の texture の命令）「tex命令がもし足りないなら、積極的に命令追加してください。ただ、命令数を減らせるかは考えましょう。必要な命令は追加しましょう。GHCIはまだ書きかけなので、積極的に仕様を変更して、よいものを目指しましょう。」→ p009 part E（P3）の範囲に、compare の sampler の制限（bias・明示の lod）を無くす命令の形の見直しを足した。
 - 2026-10-24 ユーザー（GSI1 の `shfl` の sub 4 `bfly` が `xor` と同じ件、(a) 別名のまま (b) `rot` に定義し直す、の問いに）「(b)にしましょう。」→ sub 4 は `shfl.rot`: source = (l + rs2) mod 32（Vulkan の subgroupShuffleRotate）。amaterrace-gpu ae6f9c5（RTL・model・assembler・TB・spec・`docs/ghci.md` §12.5）。
