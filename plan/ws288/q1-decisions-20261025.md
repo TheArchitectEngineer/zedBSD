@@ -28,3 +28,4 @@
 | 2026-10-25 08:10 | p018: KC705 の CP の CPU の memory を IMEM 64 KiB・DMEM 32 KiB に広げる（firmware の object model が入らない） | design §2.4.7 が IMEM 64 KiB まで許す。KC705 の BRAM に余裕がある |
 | 2026-10-25 08:10 | p018: 新しい gpu-op GHCI_HEAP 0x10108、record の時の µop への翻訳、compiler の bank_first、共有の ghci_layout.h を受け入れた | Vulkan 1.0 では bind を変えると command buffer は無効になるので、record の時の翻訳は許される |
 | 2026-10-25 08:10 | TU の奇数の幅の attachment の読み違いを p030 S16（row pitch の word）として足した | Vulkan 1.0 の原則（attachment を sample して正しく読める） |
+| 2026-10-25 08:17 | compiler に spill を入れる（scratch は firmware が warp ごとに割り当てる global の memory、GHCI §12.10 の新しい interface の kind）。その前に純粋な命令を使用の近くへ沈める scheduling | Vulkan 1.0 の原則（正しい shader を拒まない）。LDS は warp ごとの base が無く使えない |

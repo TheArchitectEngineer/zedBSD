@@ -1255,10 +1255,11 @@ allocate_tables(
 	for (index = 0U; index < GSI1_INPUT_COUNT; index++)
 		lowering->input_reg[index] = GSI1_NO_OPERAND;
 
-	/* No output channel has its value or its register yet. */
+	/* No output channel has its value, its register or its last store yet. */
 	for (index = 0U; index < GSI1_OUTPUT_CHANNELS; index++) {
 		lowering->output_value[index] = GSI1_NOT_DEFINED;
 		lowering->output_reg[index] = GSI1_NO_OPERAND;
+		lowering->output_last[index] = GSI1_NOT_DEFINED;
 	}
 
 	/* No location has a varying word yet. */
