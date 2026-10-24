@@ -38,6 +38,27 @@ Ourt current targets are the following:
 | Raspberry Pi Foundation | Raspberry Pi 4   | Arm64       | Arm Cortex-A72   | VideoCore      | VideoCore VI     |
 | PC                      | Any              | x86_64      | Any              | Any            | Intel/NVIDIA/AMD |
 
+Intel GPU driver is tested on:
+
+| Model          | GPU                    | GPU GEN         |
+|----------------|------------------------|-----------------|
+| Core i5 7200U  | Intel HD 620           | Gen9.5          |
+| Core i5 8265U  | Intel UHD 620          | Gen9.5          |
+| Core i5 1135G7 | Intel Iris Xe Graphics | Gen12 Xe-LP TGL |
+| Core i5 1235U  | Intel Iris Xe Graphics | Gen12 Xe-LP ADL |
+
+NVIDIA GPU driver is tested on:
+
+| Model            | Architecture      |
+|------------------|-------------------|
+| GeForce RTX 2070 | Turing            |
+
+AMD GPU driver is tested on:
+
+| Model             | Architecture      |
+|-------------------|-------------------|
+| Radeon RX 5600 XT | RDNA              |
+
 ---
 
 ## Written from Scratch
