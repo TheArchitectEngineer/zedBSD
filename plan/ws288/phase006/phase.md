@@ -23,3 +23,4 @@ host の試験が PASS（件数）、amd64 の vmunix が GHCI の driver と co
 ## 記録
 
 - 2026-10-25 07:50 Q1: ZYBO の版の phase.md（branch agent/p2-ws288-p006）から、KC705 の PCIe の版に書き直した。P3 に（q1566）。
+- 2026-10-25 08:08 P3 → Q1: 段 1（agent/p3-p006 1317d6ef3）。hcr.h・packets.h・frame.h（amaterrace-gpu afdd3f7 の include/ghci_*.h の写し、copyright の行だけ違う）、gpu-op.h の GPU_OP_GHCI_* 0x10100〜0x10107、hardware に触れない ghci-words.h・check.c（fence の wrap、ring の計画、EXTCAP の走査、native の packet の検査）・range.c（first-fit の allocator）・state.c・capset.c・jobs.c。host 試験 plan/ws288/tests/ghci-host-test.sh 126 passed 0 failed（P3 の申告、ring の 20 万回の wrap と allocator の 10 万回の stress を含む）。
