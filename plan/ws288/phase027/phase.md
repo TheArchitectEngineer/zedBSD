@@ -3,7 +3,7 @@
 # ws288-p027 MSAA（multisample の描画と sample する image）
 
 - 親: [WS288](../ws.md)。設計: [design.md](../design.md) **§15 MSAA**（版 5、2026-10-25 P2）。review: [design-review-msaa.md](../design-review-msaa.md)。
-- 状態: in-progress（2026-10-25 q1558-i01 P2: 設計の段。実装の段 S1〜S6 は未着手）
+- 状態: in-progress（2026-10-25 q1560-i01 P2: 実装の段。U44 の書き直し（版 5.1）は review 3 済み、S1 から）
 - 依存: p009（part F の TU、特に multisample の sampled image の読みはこの Phase で）。
 - 承認: 2026-10-25 ユーザー「了解です。SAはfuture workに回します。p009, msaaを優先して実装してください。そのあと、p010,p018,p019,p006,p011を実装します。KC705のDDR3をVRAMにしてPCIeのGPUボードにすることで、QEMUからパススルーで利用し、ゲストのzedBSDからVulkanを動作させることを、最初のゴールにします。必要なphaseは作成してください。」
 
@@ -18,12 +18,14 @@
 | 段 | 内容 | 依存 | LW | 状態 |
 | --- | --- | --- | --- | --- |
 | 設計 | design §15、design-reviewer（[review](../design-review-msaa.md)）、U43〜U46 | — | 3〜5 | in-progress（q1558-i01） |
-| S1 | `msmodel.py`、`gsi1model.py` の r6〜r9・`exp 0x105`、spec の更新 | 設計の review | 4 | planned |
-| S2 | RX: `atg_rx_cov`・`atg_rx_bary`（新）、`atg_rx_scan`・`atg_rx_frag` | S1 | 7 | planned |
-| S3 | SU: `atg_su_exp`（r6・0x105・zexp・d_s・`ex_ms`） | S1 | 3 | planned |
-| S4 | ROP: `atg_rop_ms`（新）、`order`・`ds`・`wb` | S1 | 7 | planned |
-| S5 | TU: MS の `texf`・RGB565 の `texf`（addr・cache・filter）・`texsz.s`（imm 3、SU の decode） | S1、p009 part F の merge | 5 | planned |
-| S6 | `atg_top_msaa_tb` と scene、resolve4、Verilator、README、GHCI §12.11 | S2〜S5 | 6 | planned |
+| S1 | `msmodel.py`（BLT の resolve の期待を含む）、`gsi1model.py` の r6〜r9・`exp 0x105`、spec の更新 | 設計の review | 5 | 実装済み（191913c。spec は各段の最初に） |
+| S2 | RX: `atg_rx_cov`・`atg_rx_bary`（新）、`atg_rx_scan`・`atg_rx_frag` | S1 | 7 | 実装済み・単体 TB PASS（43523e6）、T の試験待ち |
+| S3 | SU: `atg_su_exp`（r6・0x105・zexp・d_s・`ex_ms`） | S1 | 3 | 実装済み・単体 TB PASS（e64cf2b）、T の試験待ち |
+| S4 | ROP: `atg_rop_ms`（新）、`order`・`ds`・`wb` | S1 | 7 | 実装済み・単体 TB PASS（3b205fd）、T の試験待ち |
+| S5 | TU: MS の `texf`・RGB565 の `texf`（addr・cache・filter）・`texsz.s`（imm 3、SU の decode） | S1、p009 part F の merge | 5 | 実装済み・単体 TB PASS（7190b03）、T の試験待ち |
+| S6 | `atg_top_msaa_tb` と scene、BLT の resolve を含む、Verilator、README、GHCI §12.11 | S2〜S5、S7 | 6 | 未着手（再開点は記録の 05:01） |
+| S7 | BLT の RESOLVE（§15.8 版 5.1）: `atg_blt` を wrapper に、`atg_blt_2d`（今の物の名前だけ）、`atg_blt_rsv`・`atg_blt_rsv_px`・`atg_blt_avg`、TB、spec、ghci §8.2 | S1 | 8 | 実装済み・単体 TB PASS（39191ce）、T の試験待ち |
+| (追加) | `atg_cp_seq` の RX・ROP の範囲の待ち（Q1 の依頼、P1 の §16.8a の hazard）: `atg_cp_seq_wait` に分割 | — | 1 | 実装済み・単体 TB PASS（7d56c2a）、T の試験待ち |
 
 ## 受け入れ
 
@@ -39,3 +41,15 @@ design の MSAA の節（review 済み）。scene の 4x の color・depth と r
 - 2026-10-25 02:23 Q1: 設計の段の merge（zedBSD の agent/p2-p027 d661579e8 を main に）。amaterrace-gpu の `docs/ghci.md` の案（p2-p027 f393310）は P3 の part F の ghci.md の書き直しの後に merge する。U43〜U46 はユーザーに提示。実装の段 S1〜S6（32 LW）は part F の merge と U 項目の回答の後。CAPS[29]・format 4・texsz の imm 3 の予約を P3 に伝えた。
 - 2026-10-25 02:32 ユーザーの回答（design §15.20 の冒頭）: U43・U45・U46 は推し、**U44 はあるべき形の hardware の resolve**（firmware の内蔵の draw の案は採らない）。実装の段の最初に §15 の resolve の節を書き直して review する。
 - 2026-10-25 02:54 Q1: 実装の段を P2（phase-runner）に（q1560）。最初に U44 の resolve の節を書き直して review。
+- 2026-10-25 03:24 P2（q1560-i01、実装の段）: amaterrace-gpu の p2-p027 に main 5a7a5c4 を merge（a928541、衝突無し）。**U44 の書き直し**: design §15.8 版 5.1 = resolve は BLT の op RESOLVE（BLT_OP [2:0] = 4、STATE 0x00B BLT_RESOLVE: samples・平均の format（0 UNORM8・1 UNORM565・2 SAMPLE0、3〜5 の sRGB・float は render output がその format を書く時に足す）・tile の dst）、専用の streaming の engine `atg_blt_rsv`（読みの credit と line の FIFO、1 cycle に 1 group、組み立ての buffer）、既存の 2D は `atg_blt_2d` に名前だけ変え `atg_blt` は wrapper。ROP の道・新しい block・draw の案と比べた表は §15.8。Vulkan の refpage（vkCmdResolveImage・VkImageResolve）で 1.0 は color だけ、整数は 1 sample、重なり禁止を確かめた。ghci.md §8.2・§12.11（6bee646）。design-reviewer の review 3（20 件: High 2・Medium 8・Low 10）に全部対応（[review 3](../design-review-msaa.md)、ghci 2803b65）。段 S7（8 LW）を足し、S1 は 5 LW、計 41 LW。§2.4.4 の 122 と §8 の p027 の LW は §15 の外なので Q1 に依頼。
+- 2026-10-25 04:05 P2: **S1**（amaterrace-gpu p2-p027 191913c）: `tools/msmodel.py`（RX の sample の coverage・SAMPLE_KILL・centroid・d_s・r6〜r9、ROP の ms・ds・wb の sample-interleaved、BLT の RESOLVE）と `--selftest`（1x が rxmodel と bit で同じ 300 三角形、4x の各 sample が厳密な edge の判定と同じ、共有の edge で各 sample がちょうど 1 回、SAMPLE_KILL、a2c の表、centroid が三角形の中、RNE の全 Σ、resolve の小さな例）→ `PASS msmodel.selftest`。`gsi1asm.py` に `texsz.s`（imm 3、op 0x4B、MS4 の時だけ、dec の CFGS に MS4）、`gsi1model.py` に `exp 0x105`（最後の書き込み、r6 の init が無ければ 15）と `--ms-out`（{zexp, smask}）。既存の gfx の model の出力 4 file は bit で同じ（確かめた）。`gsi1dis-test.py` PASS。設計からの変更: spec は S1 で一括に直さず各段の最初に直す、`vec-diff.py` は S2（RX の vector の形に依る）、`sim/tb/su/dec_table.hex` の作り直しは S5（RTL が texsz.s を持つ時）、asm の export の名前（`smask`）は今の asm に名前の仕組みが無いので数で書く。
+- 2026-10-25 04:05 P2: **S7**（39191ce）: `atg_blt`（wrapper、22 port、parameter `MS4`）、`atg_blt_2d`（名前だけ変えた 2D）、`atg_blt_rsv`（制御、≈400 行）、`atg_blt_rsv_px`（画素の道）、`atg_blt_avg`（平均）、`include/ghci_regs.{vh,h}` に BLT_RESOLVE・CAPS_MS4、`atg_top` に `MS4`（既定 0）、spec 5 つ。単体 TB: `sim/run.sh atg_blt_rsv` PASS（14 行: 13 の名前 + 全体、seed 1〜4）、`atg_blt_avg` PASS（4 行）。stream: LINE_BYTES 64 で 381 cycle / 64 dst line（≈6）、32 で 701 / 128。故意の誤り: MUT_RSV_RNE（12 項目 FAIL）・SPLIT（9）・RSP（2d・halt）・ROWEND（時間切れ、最後の PASS 無し）・CREDIT（「full FIFO」の FAIL と時間切れ）で全部 FAIL。直した不具合 2 つ（TB で見つけた: group の外の平均の byte が組み立ての line に OR されていた、tile の x の address の bit の位置）。`make lint` clean（115 行）。設計からの変更: `atg_blt_avg_tb` は design のとおり別に置いた。CREDIT の故意の誤りは「+1」では window の 2 本と組み立ての line に吸われて検出できない（credit は保守的）ので「credit 無し」にした。
+- 2026-10-25 04:05 P2: **`atg_cp_seq` の待ちの直し**（Q1 の依頼、7d56c2a）: RX・ROP の範囲の SET_REG は VF・SU・RX・ROP の busy を待つ。待ちの規則を `atg_cp_seq_wait`（130 行）に分け `atg_cp_seq` は 355 行。`atg_cp_seq_tb` に `.drawstate`（DRAW の直後の 0x05E・0x07A、DISPATCH 中の 0x072）を足した: 直す前の RTL（HEAD の `atg_cp_seq.v` を build に写して）で FAIL 3 件、直した後 PASS、`-DMUT_SEQ_DRAWSTATE` で FAIL 3 件。spec 2 つ。未確認: block の handoff の busy の隙間。
+- 2026-10-25 04:09 P2: cp_seq の待ちを広げた（Q1 の 2 つ目の依頼、P1 の p030 の review 2 の H3）: TU の範囲は VF も、program の範囲 0x190〜0x1AF は VF・SU・RX、LOAD_CONST の kick は VF・SU・RX、0x1C0〜0x1DF を VF（f1253ec）。`atg_cp_seq_tb` に `.tuwait`・`.progwait`・`.ldconst`・`.attrlimit_wait`: 前の規則（`-DMUT_SEQ_DRAWSTATE` = 前の RTL と同じ規則）で 4 つとも FAIL、直した後 PASS（PASS 13 行）。
+- 2026-10-25 05:01 P2: **S2〜S5**（amaterrace-gpu p2-p027、最後 6b5f6c8）。
+  - S2（43523e6）: `atg_rx_scan`（MS_CTRL・SAMPLE_KILL の snoop、4x の SAMP 4 cycle、skip、`fq_cov` → `fq_scov`・`fq_ccov`、384 行）、`atg_rx_cov`（新: P = 32A + 96B・Q = 96A − 32B、offset −P/+Q/−Q/+P、skip の bound）、`atg_rx_frag`（r6、CENTROID の pass と r7〜r9、4x の r3 は clamp しない、d_s を三角形ごとに 1 回、0xFF8〜0xFFB、342 行）、`atg_rx_bary`（新: lane の算術を frag から移した、226 行）。vector は新しい `sim/vec/rx_scan_ms.txt`・`rx_frag_ms.txt`（`tools/rx-msaa-vectors.py`）で、既存の `rx_scan.txt`・`rx_frag.txt` は変えずにそのまま PASS（**vec-diff.py の代わり**: 1x の出力は r6 の書き込み以外変わらないことの証拠）。`atg_rx_scan` PASS 6 行、`atg_rx_frag` PASS 4 行。MUT_SAMPLE_SWAP（11 FAIL）・MUT_COV_SKIP・MUT_R3_CLAMP（10）・MUT_DZ_SIGN（205）で FAIL。**設計からの変更**: `atg_rx_cov_tb`・`atg_rx_bary_tb` は作らず scan・frag の TB で（MUT で検出を確かめた）。
+  - S3（e64cf2b）: `atg_su_exp`（mr6・m5 の 4 bit の lane bank、r6 を書かなかった lane は 1111、0x105 は最後の値、zexp、d_s を fl_pw から slot ごとに、`ex_ms` 148 bit、smask 0 の lane は ex_mask から外す、39 port、323 行）、`atg_su`（`ex_ms`）。`atg_su_exp` PASS 4 行（.ms、MUT_SMASK_AND で FAIL）、`atg_su_gfx` PASS 4 行（.ms: gfx.s に exp 0x105 を 2 つ、gen_gfx.py に r6、期待値を gsi1model で作り直した。TB は r6 も書くようにした）、`atg_su_lda` PASS 3 行（.ms）。
+  - S4（3b205fd）: `atg_rop_ms`（新、21 port）、`atg_rop_order`（`ex_ms` → `q_ms`、direct の道は lane の全 sample と lane の z、30 port）、`atg_rop_ds`（`q_smask`・`q_sdepth`・`d_smask`、4x は 8 entry/行）、`atg_rop_wb`（sample ごとに blend の pass）、`atg_rop`・`atg_top` の配線。新しい `atg_rop_ms_tb`（`atg_rop` 全体を `msmodel.rop_quad_ms` と RT・DS の word ごとに、`sim/vec/rop_ms.txt`、LINE_BYTES 32・64、8 run）PASS 5 行、MUT_A2C_STEP で FAIL。既存の ds・wb・order・blend の TB は port を合わせて PASS。
+  - S5（51efaa0・7190b03）: `atg_su_dec`（parameter `MS4`、texsz.s は MS4 無しで ISA fault。tabc は imm 3 を定義）、`sim/tb/su/dec_table.hex` を作り直した、`atg_su_dec` PASS 5 行（.texszs）。TU: `atg_tu_desc`（format 4 の plane）、`atg_tu_addr`（MS の texf、texsz.s、texsz.l/.d の判定の直し）、`atg_tu_foot`（MS の行、2 byte の texel、address bit 1）、`atg_tu_cache`（565 の half word と border）、`atg_tu_filter`（565 の texf は c/31・c/63 の正確な RNE、他は RGBA8 に複製して）。`tools/tumodel.py`・`tu-vectors.py`（新しい section は別の乱数列で、既存の vector は追記だけ、1 byte も変わらないことを git diff で確かめた）。`atg_tu_addr` PASS（.ms、MUT_TU_MSROW で FAIL）、`atg_tu_filter`（.rgb565）、`atg_tu_cache`（.h16）。ghci.md §8.4・§12.6・§12.9。
+  - `make lint` clean（118 行 clean、rc 0）、`tools/lint.sh` の KC705 の形に `-GMS4=1`。
+  - **S6 の再開点**（未着手）: (1) `atg_cp` に parameter `MS4` と CAPS[29]、`atg_top` から渡す。(2) `sim/tb/atg_top_scene.vh` の harness に parameter `MS4`、ring の位置と大きさ（今は 0x5F000・512 語）を parameter に、E 行の間の「C 名前」で case ごとの PASS を出す口。(3) `tools/rx-msaa-scene.py`（rx-shade-scene.py の形、KC705 の形だけ、32×24 程度: 共有の edge・depth の交差・a2c・exp 0x105・centroid・BLT の RESOLVE（offset・2 layer・tile の dst・565）・MS の depth を texf・奇数の幅・4x の後の 1x・SAMPLE_KILL × CENTROID・depth だけ・texsz.s（fcvt.s.w と half の積で 1 と 4 を区別））。(4) `sim/tb/atg_top_msaa_tb.v`。(5) Verilator の MSAA mode。(6) README の ROP・RX・TU・BLT の行、ghci §12.11 の確定。

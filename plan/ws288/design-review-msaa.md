@@ -54,3 +54,31 @@ review 1 の対応の確認: 直った 8（2・3・4・5・11・12・16・17）�
 | 18 | Low | firmware の resolve の手順がどこでも試験されない | p018 の受け入れに入れる項目を書いた（§15.11・§15.15） |
 
 review 2 の後の残り（未確認）: Vulkan の「fragment の stage の無い pipeline」「bound の state が resolve を越えて残る」「4x の FragCoord.z の範囲」は reviewer も P2 も文面を取得していない（記憶・推測と明記）。3 回目の review はしない（Q1 の判断に任せる）。
+
+## review 3（版 5.1、resolve を BLT の RESOLVE に）
+
+- 2026-10-25 design-reviewer（P2 が起動、読むだけ）。対象: zedBSD 45b6e5054 の §15、amaterrace-gpu 6bee646 の ghci.md §8.2・§3.2・§12.11。20 件（Critical 0、High 2、Medium 8、Low 10）。reviewer は `atg_blt.v`・`atg_blt.md`・`atg_mc.md`・`am_fifo.v`・`atg_cp_seq.v`・`ghci_regs.vh`・`atg_rop_blend.v`・`atg_rop_order.v`・`atg_top.v`・`fw/cp/uop.c` を読んだ（Vulkan の refpage は取り直していない）。確かめて問題無しとされた点: BLT_OP[2:0] への拡張の互換（[3:2] は今は無視、書く code は `uop.c` と `atg_top_tb` だけ）、CP の BLT の待ちと 2 つの engine の排他、client ごとの応答の順と credit の要否、UNORM の RNE の式、565 の並び、書き込み優先の request register で deadlock・starvation が無い事、aperture・quiesce・RESET、Vulkan 1.0 の resolve の要求、置き場所の判断、1080p の数。
+- 対応は zedBSD の次の commit（design.md §15）と amaterrace-gpu 2803b65（ghci.md）。
+
+| # | 重さ | 指摘 | 対応（§） |
+| --- | --- | --- | --- |
+| 1 | High | `WAIT_IDLE` ROP では draw の終わりを保証しない（ROP の busy は発行した連番が退いたかだけ） | `WAIT_IDLE` flags = 0（全部）を p018 の規則に、ghci §12.11 にも（§15.8・§15.11・§15.14） |
+| 2 | High | wrapper の応答の振り分けが無い。2D は応答を無条件に数え `wr_out` が wrap する | `own`（kick の時の BLT_OP[2]）の engine にだけ応答を渡す。TB に 2D → resolve → 2D の交互、`MUT_RSV_RSP`（§15.8・§15.15） |
+| 3 | Medium | error_kind を busy で選ぶと誤る | pulse の出所で選ぶ（§15.8） |
+| 4 | Medium | fail・abort: `am_fifo` に clear が無い、abort の後の push、error の応答の data | fail の後と error の応答は push しない、FIFO の reset に abort を混ぜる、load を止める。TB の `.fault` の後に普通の resolve（§15.8・§15.15） |
+| 5 | Medium | request register が fire の cycle に次を取らないと 1 request に 2 cycle | `!q_valid \|\| q_fire` で load、credit の式を書き直した（§15.8） |
+| 6 | Medium | 行の終わりの捨て方は pop がちょうど n 本の時だけ正しい、行が line を共有する | 記述子に n、残り 0 なら load しない。`.rowshare`、`MUT_RSV_ROWEND`・`MUT_RSV_CREDIT`（§15.8・§15.15） |
+| 7 | Medium | 組み合わせの mux が `q_valid` → MC の最悪の path に LUT を足す | `req_valid` は OR、data は `own` の register で選ぶ、`MS4` = 0 は素通し（§15.8） |
+| 8 | Medium | on-chip の見積もりが低い（shifter、wdata、STATE、RAM32M） | ≈2.5〜3k LUT・≈3k FF に、合成の実測を p024・p025 に、ZYBO は `MS4` = 0 を既定に（§15.8・§15.12） |
+| 9 | Medium | code 3〜5 と 10:10:10:2・8 byte の画素が p030 の範囲に無い | p030 への依存として書いた。Q1 が p030 の範囲に記録する（§15.8） |
+| 10 | Medium | RESOLVE の揃えの前提が GHCI に無い | ghci §8.2 に src の base 64・stride 2·S·ps、tile の dst 16·ps、下位 bit は無視（§15.8） |
+| 11 | Low | `atg_top` の `MS4` を S5 と S7 の両方が入れる | S7 が `atg_top`、S5 は `atg_su` だけ（§15.17） |
+| 12 | Low | §2.4.4 の 122 が古いまま | 「Q1 が直す（未）」と書いた（§15.8） |
+| 13 | Low | CAPS[29] の provisional の注の食い違い | part F が新しい bit を使わなかったので確定、と §15.10 に |
+| 14 | Low | GHCI の文の曖昧さ（SRC_BASE の op、[8] の CAPS、565 の言い方、format と ps の組、sRGB・float の精度、sample 数の規範） | 全部直した（ghci §8.2） |
+| 15 | Low | 速さ: 書き込みは 2 flit で 6 cycle/dst line、16 bpp は px が律速、clock の違う比較 | 直した（§15.8） |
+| 16 | Low | 試験の抜け（遅延 0 の memory、`MS4` = 0、HALT、MUT） | TB の中の memory の model、`.nms4`・`.halt`・MUT の 2 つ（§15.15） |
+| 17 | Low | `atg_blt_rsv` の port の余裕 | 記述子と書き込みを 1 本の bus に（§15.16） |
+| 18 | Low | 幅（21 bit・17 bit） | §15.16 に書いた |
+| 19 | Low | LW が楽観 | S1 5・S7 8、計 41 LW（§15.17） |
+| 20 | Low | CTRL.RESET で STATE の写しが消える、`uop.c` は 0x00A まで | RESOLVE は 0x00B まで毎回書く、と p018 の手順に（§15.11） |
