@@ -1989,6 +1989,18 @@ reviewer が照合した物: design.md の §3.1〜§3.6・§2.2〜§2.4・§6�
 
 ### 16.22 実装の段・LW・順（8 LW ≈ 2〜3 時間）
 
+**追加（2026-10-25 04:28、ユーザー「テクスチャ圧縮も含めて、Vulkan 1.0の必須項目を実装してしまいます。」、P1 の案、Q1 の判断）**
+
+| 段 | 内容 | LW | 依存 |
+| --- | --- | --- | --- |
+| S11 に追加 | Verilator の harness を KC705 の形（64 B の line、512 bit の AXI、VlWide の 16 word の beat、run.sh の各 mode に -G で KC705 の parameter） | +2（S11 = 9） | — |
+| S12 | TU の ETC2+EAC（§16.11a）: `tools/etcmodel.py`（5 つの色の mode、punch-through、EAC の alpha と R11/RG11 の UNORM/SNORM、--selftest）、`atg_tu_etc`（新）、`atg_tu_addr` の block の address、`atg_tu_cache` の block の part、bilinear の pass（16 byte の block は 4、8 byte は 2）、`atg_tu_desc` の block の plane、FMT の ROM、`textureCompressionETC2` = 1、scene (17) | 9 | S9 |
+| S13 | varying 64 component（U59）: KC705 の SU_VARY_WORDS 32 → 64、PT の entry、`atg_su_lda` の primitive table（複製を NPHYS/4 から 2 にして読みを 2 cycle に、BRAM の対策、S1 の spec で）、`atg_rx_frag` の index、limit の表（§3.7 の「128」の誤りも）、scene (18)、`make oxc-core` の BRAM の数（T）。BRAM が合わなければ N の見直しをユーザーに諮り、この段は uncleared で止める | 7 | S8、p027 の SU・RX の段の merge |
+| S14 | TU の slot を stage ごとに 16（U60）: **案 A**（Q1 の判断）: STATE を 1024 index に広げ、0x200〜0x2FF を vertex の stage の 16 slot × 16 word、fragment と compute は今の 0x090〜0x18F、tex の命令は warp の種類で bank を選ぶ、`atg_cp_state` 512 → 1024 word、SET_REG の fault の境 1024、`atg_tu_desc` を 32 slot に、SU → TU の要求に stage の bit。案 B（descriptor を memory の table に置き TU が cache する）は後の拡張の候補 | 6 | S9、p027 の cp_seq・cp_state の merge |
+
+計 103 LW（±35%）。S12 は S9 の後、S13 は S8 の後、S14 は S9 の後（S13 と S14 は並行可）。S11（統合）は S2〜S14 の全部の後。
+
+
 | 段 | 内容 | 受け入れ | 依存（衝突を避ける順） | LW |
 | --- | --- | --- | --- | --- |
 | S1 | `atg_fmt_*.vh`、`srgb-tables.py` と `atg_srgb.vh`、`fmtmodel.py --selftest`、`atg_fmt_tb`・`atg_fmt_srgbenc` と TB、Vulkan の必須の表の事実の bit の列（`tools/vk-required-formats.txt`、出典つき）、**全部の p030 の module の spec の §3〜§8 を先に**、GHCI の draft の直し、`make sim` の PASS の行を数えて記録 | `PASS fmtmodel.selftest`、`PASS atg_fmt`、`PASS atg_fmt_srgbenc`、spec の port の表が ≤ 40、lint | この設計の review と **U47〜U59 の回答**。**p027 と並行可**（新しい file だけ） | 6 |
