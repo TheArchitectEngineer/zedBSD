@@ -41,6 +41,8 @@
 
 - **Q1 の保留の直し（2026-10-25 03:23、P2 の p027 の U44 の書き直しから。design.md は P1・P2 の branch も書くので merge の時に main で直す）**: (1) design §2.4.4 の gpu-op 122 を「R（版 5.1: BLT の RESOLVE、§15.8）」に、(2) §8 の p027 の LW 32 → 41（S7 = BLT の resolve 8 LW、S1 +1）、(3) p030 の範囲に BLT RESOLVE の code 3〜5・10:10:10:2・8 byte の画素（P1 に伝えた）、(4) p018 の手順に「RESOLVE は STATE 0x00B まで毎回書く、前の draw は WAIT_IDLE flags=0」。
 
+- **最終の目標の clock（2026-10-25 04:52）**: ユーザー「了解です。最終目標は3nmのASICでmobile向けの1.0-1.5GHzくらいですね。3GHzはそもそもパイプライン段数が全然違うような気がします。」 → GPU の最終の target は 3 nm の ASIC の mobile 向け、1.0〜1.5 GHz。p025 の target の Fmax の検討はこれを ASIC の値として使い、KC705 の値と、ASIC で 1 段に許す論理の深さ（FO4）を分けて決める。
+
 ## Phase
 
 | Phase | 内容 | 依存 | 状態 |
