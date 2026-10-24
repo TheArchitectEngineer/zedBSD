@@ -348,6 +348,9 @@ int gsi1_memory_lower(struct gsi1_lowering *lowering, const struct drv_gpu_shade
 /* gsi1-image.c: lowers a read or a write of a storage image, a texel buffer or an input attachment. */
 int gsi1_image_lower(struct gsi1_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction, uint32_t dst);
 
+/* gsi1-image.c: computes an image atomic's texel address and whether it is inside the image. */
+int gsi1_image_texel(struct gsi1_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction, const struct gsi1_binding *binding, uint32_t *address, uint32_t *inside);
+
 /* gsi1-texture.c: lowers a sample, a fetch, a gather or a query of a sampled image. */
 int gsi1_texture_lower(struct gsi1_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction, uint32_t dst);
 

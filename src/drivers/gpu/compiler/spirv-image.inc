@@ -176,13 +176,14 @@ drv_gpu_spirv_add_constant_uniform(
 }
 
 /*
- * Finds the uniform of a loaded storage image, texel buffer or input
- * attachment by its set and binding; UINT32_MAX for none.
+ * Finds the uniform of a storage image, texel buffer or input attachment
+ * by its set and binding; UINT32_MAX for none.
  */
 static uint32_t
 drv_gpu_spirv_image_uniform(
 	struct drv_gpu_spirv_parser *parser,
-	const struct drv_gpu_spirv_id *image)
+	uint32_t set,
+	uint32_t binding)
 {
 	const struct drv_gpu_shader_ir_uniform *uniform;
 	uint32_t index;
@@ -190,9 +191,9 @@ drv_gpu_spirv_image_uniform(
 	/* Each uniform of the image kinds. */
 	for (index = 0U; index < parser->ir->uniform_count; index++) {
 		uniform = &parser->ir->uniforms[index];
-		if (uniform->set != image->set)
+		if (uniform->set != set)
 			continue;
-		if (uniform->binding != image->binding)
+		if (uniform->binding != binding)
 			continue;
 		if (uniform->kind == DRV_GPU_IR_UNIFORM_STORAGE_IMAGE)
 			return index;
@@ -367,7 +368,7 @@ drv_gpu_spirv_lower_image_read(
 	type = drv_gpu_spirv_image_type(parser, image);
 	uniform = UINT32_MAX;
 	if (type != NULL)
-		uniform = drv_gpu_spirv_image_uniform(parser, image);
+		uniform = drv_gpu_spirv_image_uniform(parser, image->set, image->binding);
 	if (uniform == UINT32_MAX) {
 		/*
 		 * Records the unsupported instruction in the caller's
@@ -472,7 +473,7 @@ drv_gpu_spirv_lower_image_write(
 	type = drv_gpu_spirv_image_type(parser, image);
 	uniform = UINT32_MAX;
 	if (type != NULL)
-		uniform = drv_gpu_spirv_image_uniform(parser, image);
+		uniform = drv_gpu_spirv_image_uniform(parser, image->set, image->binding);
 	if (uniform == UINT32_MAX || type->image_dim == DIM_SUBPASS_DATA) {
 		/*
 		 * Records the unsupported instruction in the caller's
@@ -597,4 +598,86 @@ drv_gpu_spirv_lower_query_samples(
 
 	/* Succeeded: the query is lowered. */
 	return 0;
+}
+
+/*
+ * Lowers OpImageTexelPointer of a storage image or texel buffer of a
+ * 32-bit integer format: the result names the texel (x, y and the layer in
+ * three consecutive values) for the atomic that follows.
+ */
+static int
+drv_gpu_spirv_lower_texel_pointer(
+	struct drv_gpu_spirv_parser *parser,
+	const uint32_t *word,
+	uint32_t count,
+	uint32_t opcode,
+	uint32_t offset)
+{
+	struct drv_gpu_spirv_id *variable;
+	struct drv_gpu_spirv_id *record;
+	struct drv_gpu_spirv_id *pointer_type;
+	struct drv_gpu_spirv_id *type;
+	uint32_t params[3];
+	uint32_t uniform;
+	uint32_t format;
+	int error;
+
+	/* The result type, the result, the image's variable, the coordinate and the sample. */
+	if (count != 6U)
+		return EINVAL;
+
+	/* The image's variable and its type. */
+	variable = drv_gpu_spirv_id(parser, word[3]);
+	if (variable == NULL || variable->kind != ID_VARIABLE || variable->ptr_kind != PTR_SAMPLER)
+		return EINVAL;
+	type = drv_gpu_spirv_id(parser, variable->pointee);
+	if (type == NULL || type->kind != ID_TYPE_IMAGE)
+		return EINVAL;
+
+	/* The image's uniform: a storage image or texel buffer of R32_UINT or R32_SINT. */
+	uniform = drv_gpu_spirv_image_uniform(parser, variable->set, variable->binding);
+	format = 0U;
+	if (uniform != UINT32_MAX)
+		format = parser->ir->uniforms[uniform].format;
+	if (format != 98U && format != 99U) {
+		/*
+		 * Records the unsupported instruction in the caller's
+		 * diagnostic.
+		 */
+		error = drv_gpu_spirv_refuse(
+		    parser,
+		    opcode,
+		    offset,
+		    "image atomic on an image that is not R32_UINT or R32_SINT");
+		return error;
+	}
+
+	/* The three coordinates (a storage image has no samples: the sample is ignored). */
+	error = drv_gpu_spirv_image_params(parser,
+					   type,
+					   word[4],
+					   word,
+					   count,
+					   count,
+					   params,
+					   opcode,
+					   offset);
+	if (error != 0)
+		return error;
+
+	/* The result names the texel. */
+	record = drv_gpu_spirv_id(parser, word[2]);
+	pointer_type = drv_gpu_spirv_id(parser, word[1]);
+	if (record == NULL || record->kind != ID_NONE || pointer_type == NULL)
+		return EINVAL;
+	record->kind = ID_POINTER;
+	record->ptr_kind = PTR_TEXEL;
+	record->type = word[1];
+	record->pointee = pointer_type->type;
+	record->var = word[3];
+	record->uniform = uniform;
+	record->comp[0] = drv_gpu_spirv_consecutive(parser, params, 3U);
+
+	/* Succeeded unless the emit failed, which the parser latched. */
+	return parser->error;
 }

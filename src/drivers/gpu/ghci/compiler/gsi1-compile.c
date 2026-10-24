@@ -392,7 +392,16 @@ gsi1_ir_sources(
 			count++;
 		if (instruction->component == DRV_GPU_IR_ATOMIC_PREDICATED)
 			count++;
-		break;
+
+		/* An image's texel also reads its y and its layer, after the others. */
+		for (index = 0U; index < count; index++)
+			sources[index] = instruction->src[index];
+		if ((instruction->image_shape & DRV_GPU_IR_IMAGE_TEXEL) != 0U) {
+			sources[count] = instruction->src[0] + 1U;
+			sources[count + 1U] = instruction->src[0] + 2U;
+			count += 2U;
+		}
+		return (int)count;
 	case DRV_GPU_IR_TEXTURE:
 	case DRV_GPU_IR_IMAGE_READ:
 		/* The message's parameters are src[1] consecutive values from src[0]. */

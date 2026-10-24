@@ -123,6 +123,7 @@
 #define OP_LOAD 61U
 #define OP_STORE 62U
 #define OP_ACCESS_CHAIN 65U
+#define OP_IMAGE_TEXEL_POINTER 60U
 #define OP_DECORATE 71U
 #define OP_MEMBER_DECORATE 72U
 #define OP_VECTOR_SHUFFLE 79U
@@ -495,6 +496,13 @@
 
 /* A geometry input whose array elements identify primitive vertices. */
 #define PTR_VERTEX 11U
+
+/*
+ * A texel of a storage image an atomic works on (OpImageTexelPointer, only
+ * with the GHCI features): `uniform` names the image, comp[0] the first of
+ * three consecutive integers x, y and the layer.
+ */
+#define PTR_TEXEL 12U
 
 /* What the scalars of a value are, as a type says. */
 #define SCALAR_NONE 0U
@@ -1150,12 +1158,13 @@ static int drv_gpu_spirv_geometry_output(struct drv_gpu_spirv_parser *parser, ui
 static int drv_gpu_spirv_lower_emit(struct drv_gpu_spirv_parser *parser, uint32_t opcode, uint32_t offset);
 static uint32_t drv_gpu_spirv_storage_format(uint32_t image_format);
 static int drv_gpu_spirv_add_constant_uniform(struct drv_gpu_spirv_parser *parser, uint32_t id, uint32_t opcode, uint32_t offset);
-static uint32_t drv_gpu_spirv_image_uniform(struct drv_gpu_spirv_parser *parser, const struct drv_gpu_spirv_id *image);
+static uint32_t drv_gpu_spirv_image_uniform(struct drv_gpu_spirv_parser *parser, uint32_t set, uint32_t binding);
 static uint32_t drv_gpu_spirv_consecutive(struct drv_gpu_spirv_parser *parser, const uint32_t *values, uint32_t count);
 static int drv_gpu_spirv_image_params(struct drv_gpu_spirv_parser *parser, const struct drv_gpu_spirv_id *type, uint32_t coordinate_id, const uint32_t *word, uint32_t count, uint32_t operands, uint32_t *params, uint32_t opcode, uint32_t offset);
 static int drv_gpu_spirv_lower_image_read(struct drv_gpu_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int drv_gpu_spirv_lower_image_write(struct drv_gpu_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int drv_gpu_spirv_lower_query_samples(struct drv_gpu_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
+static int drv_gpu_spirv_lower_texel_pointer(struct drv_gpu_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 
 /*
  * Parses SPIR-V words into the scalar IR of one stage.
@@ -3500,6 +3509,25 @@ drv_gpu_spirv_lower(
 						   count,
 						   opcode,
 						   offset);
+		if (error != 0)
+			return error;
+
+		/*
+		 * Succeeded: this instruction has a complete scalar lowering.
+		 */
+		return 0;
+
+	case OP_IMAGE_TEXEL_POINTER:
+		/* Only a parse with the storage images lowers it. */
+		if ((parser->features & DRV_GPU_SPIRV_FEATURE_STORAGE_IMAGE) == 0U)
+			break;
+
+		/* Names the texel. */
+		error = drv_gpu_spirv_lower_texel_pointer(parser,
+							  word,
+							  count,
+							  opcode,
+							  offset);
 		if (error != 0)
 			return error;
 

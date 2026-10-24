@@ -318,6 +318,39 @@ gsi1_image_lower(
 	return 0;
 }
 
+/*
+ * Computes the address of a 32-bit texel of a storage image or texel
+ * buffer an atomic works on (x, y and the layer are the instruction's
+ * three consecutive values from src[0]), and the Boolean of its being
+ * inside the image.
+ */
+int
+gsi1_image_texel(
+	struct gsi1_lowering *lowering,
+	const struct drv_gpu_shader_ir_inst *instruction,
+	const struct gsi1_binding *binding,
+	uint32_t *address,
+	uint32_t *inside)
+{
+	const struct gsi1_format *format;
+	int error;
+
+	/* A 32-bit integer format. */
+	format = find_format(binding->format);
+	if (format == NULL || format->bytes != 4U || format->bits[0] != 32U) {
+		error = gsi1_refuse(lowering, ENOTSUP, "an image atomic on a format that is not a 32-bit integer");
+		return error;
+	}
+
+	/* The texel's address and whether it is inside. */
+	error = image_address(lowering, instruction, binding, format, address, inside);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the texel's address is in a scratch register. */
+	return 0;
+}
+
 /* Finds a format's description; NULL for one the compiler does not convert. */
 static const struct gsi1_format *
 find_format(

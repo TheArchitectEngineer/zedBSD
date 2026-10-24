@@ -767,9 +767,17 @@ drv_gpu_spirv_lower_atomic(
 		compare = compare_comp[0];
 	}
 
-	/* The word's byte offset in the buffer or in shared memory. */
-	place =
-	    drv_gpu_spirv_storage_offset(parser, pointer, pointer->byte_offset);
+	/*
+	 * The word's byte offset in the buffer or in shared memory; a texel's
+	 * first coordinate.
+	 */
+	if (pointer->ptr_kind == PTR_TEXEL) {
+		place = pointer->comp[0];
+	} else {
+		place = drv_gpu_spirv_storage_offset(parser,
+						     pointer,
+						     pointer->byte_offset);
+	}
 
 	/* Names the result: the word's value before the operation. */
 	record = drv_gpu_spirv_result(parser, word[2], word[1], 1U, 1);
@@ -796,6 +804,10 @@ drv_gpu_spirv_lower_atomic(
 	inst->location = variable->uniform;
 	if (pointer->ptr_kind == PTR_SHARED)
 		inst->location = DRV_GPU_IR_LOCATION_SHARED;
+	if (pointer->ptr_kind == PTR_TEXEL) {
+		inst->location = pointer->uniform;
+		inst->image_shape = DRV_GPU_IR_IMAGE_TEXEL;
+	}
 
 	/* A compare and exchange's comparator is the third source. */
 	if (compare != NO_VALUE)
@@ -893,6 +905,15 @@ drv_gpu_spirv_lower_atomic_access(
 					     offset);
 	if (error != 0)
 		return error;
+
+	/* An image's texel is not loaded or stored atomically. */
+	if (pointer->ptr_kind == PTR_TEXEL) {
+		error = drv_gpu_spirv_refuse(parser,
+					     opcode,
+					     offset,
+					     "atomic load or store of an image's texel");
+		return error;
+	}
 
 	/*
 	 * A load reads the word as any load of its memory does, fenced after
@@ -1011,6 +1032,13 @@ drv_gpu_spirv_atomic_pointer(
 	owner = drv_gpu_spirv_id(parser, base->var);
 	if (owner == NULL)
 		return EINVAL;
+
+	/* A storage image's texel (only the GHCI features make one) is changed atomically too. */
+	if (base->ptr_kind == PTR_TEXEL) {
+		*pointer = base;
+		*variable = owner;
+		return 0;
+	}
 
 	/*
 	 * Only the words of a storage buffer or of shared memory are changed

@@ -358,6 +358,21 @@ execute_lane(
 			return NULL;
 		if (run->helper[lane] != 0U || run->killed[lane] != 0U)
 			return NULL;
+		if (inst->location < REF_UNIFORMS && run->image[inst->location].texels != NULL) {
+			/* A texel of a 32-bit integer image: x, y, the layer. */
+			struct ref_image *image = &run->image[inst->location];
+			uint32_t x = a;
+			uint32_t y = *value_of(run, inst->src[0] + 1U, lane);
+			uint32_t layer = *value_of(run, inst->src[0] + 2U, lane);
+			uint32_t *texel;
+
+			if (x >= image->width || y >= image->height || layer >= image->layers)
+				return NULL;
+			texel = &image->texels[4U * ((layer * image->height + y) * image->width + x)];
+			result[0] = texel[0];
+			texel[0] = atomic_apply(inst->immediate, result[0], b, c);
+			return NULL;
+		}
 		result[0] = storage_word(run, inst->location, a);
 		storage_store(run, inst->location, a, atomic_apply(inst->immediate, result[0], b, c));
 		return NULL;

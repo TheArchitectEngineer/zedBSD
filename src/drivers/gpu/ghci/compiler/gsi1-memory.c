@@ -640,8 +640,9 @@ lower_storage(
 }
 
 /*
- * Lowers an atomic on a storage buffer's word: atom at the address, its
- * old value into dst.  An atomic on shared memory is refused (GSI1 version
+ * Lowers an atomic on a storage buffer's word or a storage image's 32-bit
+ * texel: atom at the address, its old value into dst (a texel outside the
+ * image is not changed).  An atomic on shared memory is refused (GSI1 version
  * 1 has none).
  */
 static int
@@ -660,6 +661,7 @@ lower_atomic(
 	uint32_t save;
 	uint32_t sub;
 	uint32_t sources;
+	uint32_t inside;
 	int clamp;
 	int error;
 
@@ -676,24 +678,33 @@ lower_atomic(
 		return error;
 	}
 
-	/* The buffer. */
+	/* A storage image's texel: its address, and the lanes whose texel is inside. */
+	inside = GSI1_NO_OPERAND;
 	binding = NULL;
-	error = storage_binding(lowering, instruction->location, &binding);
-	if (error != 0)
-		return error;
+	if (instruction->location < lowering->ir->uniform_count &&
+	    (lowering->binding[instruction->location].kind == GSI1_KIND_STORAGE_IMAGE ||
+	     lowering->binding[instruction->location].kind == GSI1_KIND_TEXEL_BUFFER)) {
+		error = gsi1_image_texel(lowering, instruction, &lowering->binding[instruction->location], &address, &inside);
+		if (error != 0)
+			return error;
+	} else {
+		error = storage_binding(lowering, instruction->location, &binding);
+		if (error != 0)
+			return error;
 
-	/* The offset. */
-	error = gsi1_source(lowering, instruction->src[0], &offset);
-	if (error != 0)
-		return error;
+		/* The offset. */
+		error = gsi1_source(lowering, instruction->src[0], &offset);
+		if (error != 0)
+			return error;
 
-	/* The address, clamped with robustBufferAccess. */
-	clamp = 0;
-	if (lowering->options.robust_buffer_access != 0U)
-		clamp = 1;
-	error = gsi1_buffer_address(lowering, binding->bank, offset, clamp, &address);
-	if (error != 0)
-		return error;
+		/* The address, clamped with robustBufferAccess. */
+		clamp = 0;
+		if (lowering->options.robust_buffer_access != 0U)
+			clamp = 1;
+		error = gsi1_buffer_address(lowering, binding->bank, offset, clamp, &address);
+		if (error != 0)
+			return error;
+	}
 
 	/* The value. */
 	error = gsi1_source(lowering, instruction->src[1], &data);
@@ -717,6 +728,17 @@ lower_atomic(
 		error = predicate_begin(lowering, predicate, &save);
 		if (error != 0)
 			return error;
+	}
+
+	/* So does a texel outside its image. */
+	if (inside != GSI1_NO_OPERAND) {
+		if (save == GSI1_NO_OPERAND) {
+			error = gsi1_scratch(lowering, &save);
+			if (error != 0)
+				return error;
+			gsi1_emit_exec(lowering, GSI1_EXEC_SAVE, save);
+		}
+		gsi1_emit_exec(lowering, GSI1_EXEC_AND, inside);
 	}
 
 	/* atom.op dst, (address), data[, compare]. */

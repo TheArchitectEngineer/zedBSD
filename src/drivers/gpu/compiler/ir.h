@@ -262,6 +262,12 @@
 #define DRV_GPU_IR_IMAGE_ARRAYED 0x10U
 #define DRV_GPU_IR_IMAGE_MULTISAMPLED 0x20U
 
+/*
+ * The image_shape bit of an ATOMIC on a storage image's texel (only with the
+ * GHCI features): src[0] .. src[0] + 2 are the texel's x, y and layer.
+ */
+#define DRV_GPU_IR_IMAGE_TEXEL 0x40U
+
 /* The most parameters a TEXTURE instruction passes. */
 #define DRV_GPU_IR_TEXTURE_MAX_PARAMS 11U
 
@@ -588,7 +594,11 @@ enum drv_gpu_shader_ir_op {
 	 * src[2].  The Boolean predicate is the source after the values
 	 * (src[2], or src[3] for a compare and exchange) when `component` is
 	 * DRV_GPU_IR_ATOMIC_PREDICATED.  The code generator asks the memory for
-	 * the old value only when an instruction reads dst.
+	 * the old value only when an instruction reads dst.  With the GHCI
+	 * features `location` may name a storage image or texel buffer of a
+	 * 32-bit integer format, with DRV_GPU_IR_IMAGE_TEXEL in `image_shape`:
+	 * src[0] is then the first of three consecutive integers x, y and the
+	 * layer of the texel, not a byte offset.
 	 */
 	DRV_GPU_IR_ATOMIC,
 
