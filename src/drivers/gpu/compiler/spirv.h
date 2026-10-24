@@ -45,7 +45,37 @@ struct drv_gpu_compile_diagnostic {
 	const char *reason;
 };
 
+/*
+ * The fragment shader's SampleMask input builtin (element 0 of the array),
+ * read raw like a Flat input.  Only a parse with the GHCI features makes it.
+ */
+#define DRV_GPU_SHADER_LOCATION_SAMPLE_MASK 70U
+
+/*
+ * What a parse may lower beyond the profile every backend shares, as bits
+ * of its `features`: the SampleMask input and output and the FragDepth
+ * output builtins, the Centroid decoration recorded on the inputs,
+ * OpImageQuerySamples, the storage images, storage texel buffers and
+ * input attachments with OpImageRead and OpImageWrite, and images in a
+ * compute shader.  A backend asks
+ * only for what it lowers; without a bit the parse refuses what it names,
+ * as before.
+ */
+#define DRV_GPU_SPIRV_FEATURE_SAMPLE_MASK 0x1U
+#define DRV_GPU_SPIRV_FEATURE_FRAG_DEPTH 0x2U
+#define DRV_GPU_SPIRV_FEATURE_CENTROID 0x4U
+#define DRV_GPU_SPIRV_FEATURE_QUERY_SAMPLES 0x8U
+#define DRV_GPU_SPIRV_FEATURE_STORAGE_IMAGE 0x10U
+#define DRV_GPU_SPIRV_FEATURE_INPUT_ATTACHMENT 0x20U
+
+/* A compute shader's sampled and storage images (refused otherwise). */
+#define DRV_GPU_SPIRV_FEATURE_COMPUTE_IMAGES 0x40U
+
+/* The features the GHCI backend lowers. */
+#define DRV_GPU_SPIRV_FEATURES_GHCI 0x7FU
+
 int drv_gpu_shader_parse(const uint32_t *words, size_t word_count, enum drv_gpu_shader_stage stage, struct drv_gpu_shader_ir **out, struct drv_gpu_compile_diagnostic *diagnostic);
+int drv_gpu_shader_parse_features(const uint32_t *words, size_t word_count, enum drv_gpu_shader_stage stage, uint32_t features, struct drv_gpu_shader_ir **out, struct drv_gpu_compile_diagnostic *diagnostic);
 void drv_gpu_shader_ir_free(struct drv_gpu_shader_ir *ir);
 
 #endif /* DRIVERS_GPU_COMPILER_SPIRV_H */
