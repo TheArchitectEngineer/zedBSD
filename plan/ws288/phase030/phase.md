@@ -42,3 +42,4 @@
 - 2026-10-25 05:47 P1 → Q1: S3（RX の clip）af9f8bf（親 48e35a8）。atg_rx_cpoly（新、7 平面の Sutherland–Hodgman）、atg_rx_clip（kind、w ≥ 2^-16、near・far、guard band、line・point、DISCARD）、model と vector（旧 rx_clip.txt は不変）。trivial accept を |x|≤4w に（spec に記録）。P1 の申告: lint 112 clean、atg_rx_clip 13 行・atg_rx_cpoly 4 行・atg_rx_setup PASS、MUT_FARCLIP・MUT_WCLIP で FAIL、旧 clip と新 clip が乱数 6000 と scene の全三角形で一致。T1-763 に。
 - 2026-10-25 06:00 Q1: T1-763（af9f8bf、S2・S3）PASS: sim-quick 84（83 + atg_rx_cpoly）、verilator 5、lint 112。
 - 2026-10-25 06:03 P1 → Q1: S4（RX の setup）b01e9f1（親 af9f8bf）。atg_rx_edge（新、整数の段を移した、line の parallelogram・point の正方形、bbox、viewport の矩形）、atg_rx_setup（micro-op の追加、depth bias、PointCoord の plane、line の plane）、DEPTH_BIAS_*（0x060〜0x062）。P1 の申告: lint 113、atg_rx_setup 9 行 PASS（旧 160 三角形は不変）、MUT_LINE_MAJOR・MUT_BIAS_R で FAIL。T1-765 に。
+- 2026-10-25 06:17 Q1: T1-765（b01e9f1、S4）PASS: sim-quick 84、verilator 5、lint 113。
