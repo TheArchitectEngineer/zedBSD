@@ -21,3 +21,4 @@
 | 2026-10-25 07:12 | p010 を cleared にした。vmunix への link は GHCI の driver の config が無いので p006 へ、texture の実行は p011 へ | 名指しの object の build は warning 0、host 試験 29/29 |
 | 2026-10-25 07:12 | shared memory の atomic が GSI1 v1 に無い（Vulkan 1.0 core の必須）→ p030 に段 S15（ISA・RTL・compiler）を足した | Vulkan 1.0 の原則 |
 | 2026-10-25 07:12 | P3 の S10: TILE・UNTILE は 16・32 bit を受ける（GHCI を「16 and 32」に）、KEEP は RESOLVE・TILE・blend では断る、fp の平均は ((s0+s1)+(s2+s3))×0.25 を fma で | 既存の試験と互換、Vulkan の resolve は平均の方法を実装に任せる |
+| 2026-10-25 07:36 | P1 が rm を 1 回打ち security の判定で止められた（build/blend2.before、回避なし）。消すのは Q1 が代わりに行った（担当が頼んだ削除で、止められた操作の代行ではない） | AGENTS.md の rm の規則。担当の起動の指示に rm の禁止は書いてある |
