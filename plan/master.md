@@ -32,7 +32,7 @@
 <!-- master:next:start -->
 1. 新しい Q1 は AGENTS.md・この block を読む。**ユーザーへは日本語で、聞かれた 1 件だけを答える。ユーザーに試験を頼まない。**
 2. **merge・試験の出力は必ず読んで確かめてから記録・報告する**（merge の後に `git log -1 --format='%h %p'`、担当の SHA は `git cat-file -t`）。担当の branch に捨てた変更が残っていないか（例: 2026-10-22 の P2 の buffer の使い回し）を diff の file の一覧で確かめ、必要なら cherry-pick。
-3. 次の番号: BUG-346、q1559、WS290、KL_VERSION 96。古い q・T1 の番号の経緯は git の履歴（2026-10-23 以前の master.md）。
+3. 次の番号: BUG-346、q1560、WS290、KL_VERSION 96。古い q・T1 の番号の経緯は git の履歴（2026-10-23 以前の master.md）。
 4. WS288 の次: [handover-20261024-2230.md](ws288/handover-20261024-2230.md) の §5（推し: p009 の残りを閉じる → p018・p010 → p006 の見直し）。担当には amaterrace-gpu の worktree を作って渡し、Q1 が `--no-ff` で merge する。
 5. 日付は host の `date`。記録の整合は [record-integrity.md](record-integrity.md)。1 LW ≈ 実時間 15〜25 分。
 <!-- master:next:end -->
@@ -50,7 +50,7 @@
 ### Focus
 
 <!-- master:focus:start -->
-- **fg022 KC705 の PCIe の GPU の board（2026-10-25 01:09〜、[WS288](ws288/ws.md)）**: DDR3 を VRAM にした KC705 を host の QEMU に VFIO で passthrough し、guest の zedBSD から Vulkan を動かす（[p028](ws288/phase028/phase.md)）。順: p009 part F → p027 MSAA → p010 → p018 → p019 → p006 → p011 → p024 → p013 → p028 → p029（host の memory だけ）。timing（p025）は driver の後、最後。
+- **fg022 KC705 の PCIe の GPU の board（2026-10-25 01:09〜、[WS288](ws288/ws.md)）**: DDR3 を VRAM にした KC705 を host の QEMU に VFIO で passthrough し、guest の zedBSD から Vulkan を動かす（[p028](ws288/phase028/phase.md)）。順: p009 part F → p027 MSAA → p030 core の残り → p010 → p018 → p019 → p006 → p011 → p024 → p013 → p028 → p029（host の memory だけ）。timing（p025）は driver の後、最後。
 - **Pi 5 の仕上げ（WS278・WS279）**: 残りは BT・BUG-345・GPU の速さ。
 - 達成・終了: fg021 ZYBO（2026-10-23）、fg019 ベータ2（2026-10-17 OSC）、fg010 OSC のデモ。fg020 VF2 は保留。
 <!-- master:focus:end -->
@@ -147,7 +147,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 
 <!-- master:priority:start -->
 2026-10-25 01:09 ユーザー（fg022）: 最優先は WS288 の最初のゴール（KC705 の PCIe の GPU の board で guest の zedBSD から Vulkan）。
-1. WS288: p009 part F（TU の core の必須）→ p027 MSAA → p010 compiler → p018 firmware → p019 `vk/` → p006 driver → p011 Verilator の端から端 → p024 板 → p013 PCIe → p028 ゴール → p025 timing。
+1. WS288: p009 part F（TU の core の必須）→ p027 MSAA → p030 core の残り → p010 compiler → p018 firmware → p019 `vk/` → p006 driver → p011 Verilator の端から端 → p024 板 → p013 PCIe → p028 ゴール → p025 timing。
 2. Pi 5 の残り（WS278・WS279）: ユーザーの指示の時。
 3. 設計だけの物（WS282〜WS285、WS281 malloc、WS287 EHCI の LS/FS、WS280 H.264）、SA（fw-sa-*）、VRAM を host の memory に（fw-kc705-hostmem）: 後日。
 - それ以前の優先順は付録の history-log と git の履歴。
@@ -640,6 +640,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-25 02:32 ユーザー「U項目は推しでOKです。ただ、U44はちゃんとあるべき論で実装するのがいいと思います。U46は、N=2でもう１つサブエージェントを立てて、実装しましょう。もし検証が多いなら、N=3でもいいです。」→ WS288 design §15.20: U43 sample shading 無し、U44 hardware の resolve（あるべき形）、U45 v1 は正しさだけ、U46 新しい p030（Vulkan 1.0 core の残り）を P1 で開始（N=2: P3 の p009 part F と並行、検証が多ければ N=3）。
 - 2026-10-25 02:06 ユーザー「了解です。MIGの検証コストが低いなら、むしろdiscrete VRAMを先に検証して、あとでCPUができる前にUnified memoryでも動く検証としてPCIeだけどホストメモリだけ使う検証を行うのがよさそうです。」（Q1 の説明: Intel の iGPU は PCIe の link でなく die の中で memory controller につながる。KC705 は PCIe の DMA で host の memory を使える）→ DDR3 の VRAM（p013・p028）が先、その後に p029（PCIe で host の memory だけ）。
 - 2026-10-25 01:53 ユーザー「了解です。Linux 7.3のDRM/KMSで利用できるGPL/zlibデュアルライセンスのドライバと、最新Mesaへのパッチという形で作成しましょう。zedBSDで動いた後でいいです。future workにしておきます。」→ Future Work fw-amaterrace-linux（WS288 p028 の後）。
 - 2026-10-25 01:09 ユーザー（WS288、最初のゴール）「了解です。SAはfuture workに回します。p009, msaaを優先して実装してください。そのあと、p010,p018,p019,p006,p011を実装します。KC705のDDR3をVRAMにしてPCIeのGPUボードにすることで、QEMUからパススルーで利用し、ゲストのzedBSDからVulkanを動作させることを、最初のゴールにします。必要なphaseは作成してください。」「VRAMは最終的にはDDR3ではなくホストメモリにしたいですが、その実験のためには、Sukuna RISCを実装してKC705でCPU+GPUを動かす必要があります。まずはPCIe GPUボードとしてzedBSDで動かすところまでやります。」「タイミング調整とパイプライン化は、zedBSD用のGHCIドライバを書いてから、最後に取り組みます。そうすることで、タイミング調整に使える作業時間をコントロールしたいです。」→ fg022 を新設、WS288 に p027（MSAA）・p028（ゴール）を新設、p013（PCIe）を Future Work から戻す、p025 は driver の後の最後、fw-kc705-hostmem を Future Work に。p009 part F の multisample の sampled image は p027 へ。

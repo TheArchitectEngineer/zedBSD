@@ -37,7 +37,7 @@
 - **2026-10-24 ユーザー「あとDCはKC705に移植して、HDMI出力を可能にしたいですね。VGAは正直、RTLは残していいけど、もう合成しなくていいです。」→ DC は KC705 に移して HDMI を出す（KC705 の HDMI は ADV7511 の encoder 経由: I2C の設定（`atg_dc_i2c`、今は stub）と並列の画素の data。pin と設定は UG810・board の資料で確かめる、U7）。VGA の RTL（`atg_dc_vga`）は残すが、今後の bitstream では合成しない。**
 
 - **2026-10-25 01:08 ユーザー（最初のゴール）**「了解です。SAはfuture workに回します。p009, msaaを優先して実装してください。そのあと、p010,p018,p019,p006,p011を実装します。KC705のDDR3をVRAMにしてPCIeのGPUボードにすることで、QEMUからパススルーで利用し、ゲストのzedBSDからVulkanを動作させることを、最初のゴールにします。必要なphaseは作成してください。」「VRAMは最終的にはDDR3ではなくホストメモリにしたいですが、その実験のためには、Sukuna RISCを実装してKC705でCPU+GPUを動かす必要があります。まずはPCIe GPUボードとしてzedBSDで動かすところまでやります。」「タイミング調整とパイプライン化は、zedBSD用のGHCIドライバを書いてから、最後に取り組みます。そうすることで、タイミング調整に使える作業時間をコントロールしたいです。」
-  → **最初のゴール**: KC705 の DDR3 を VRAM にした PCIe の GPU の board を、host の QEMU の VFIO の passthrough で guest の zedBSD から Vulkan で動かす（[p028](phase028/phase.md)）。**順**: p009（part F）→ [p027](phase027/phase.md) MSAA → p010 → p018 → p019 → p006（PCIe の amd64 の driver に見直し）→ p011 → p024（板）→ [p013](phase013/phase.md)（PCIe）→ p028 → [p029](phase029/phase.md)（host の memory だけ、unified の検証、2026-10-25 02:07 ユーザー）。timing の調整とpipeline 化（p025）は driver の後、最後（低い clock の板で先に動かす）。SA は Future Work。VRAM を host の memory に移すのは Future Work fw-kc705-hostmem（Sukuna RISC で KC705 の CPU + GPU の実験が先）。p015（複数の SU）・p014（JTAG の vkdemo）はこのゴールの道の外。
+  → **最初のゴール**: KC705 の DDR3 を VRAM にした PCIe の GPU の board を、host の QEMU の VFIO の passthrough で guest の zedBSD から Vulkan で動かす（[p028](phase028/phase.md)）。**順**: p009（part F）→ [p027](phase027/phase.md) MSAA → [p030](phase030/phase.md) core の残り → p010 → p018 → p019 → p006（PCIe の amd64 の driver に見直し）→ p011 → p024（板）→ [p013](phase013/phase.md)（PCIe）→ p028 → [p029](phase029/phase.md)（host の memory だけ、unified の検証、2026-10-25 02:07 ユーザー）。timing の調整とpipeline 化（p025）は driver の後、最後（低い clock の板で先に動かす）。SA は Future Work。VRAM を host の memory に移すのは Future Work fw-kc705-hostmem（Sukuna RISC で KC705 の CPU + GPU の実験が先）。p015（複数の SU）・p014（JTAG の vkdemo）はこのゴールの道の外。
 
 ## Phase
 
@@ -57,8 +57,9 @@
 | [p024](phase024/phase.md) | KC705 の板での確認（MIG の IP、bitstream、JTAG で fill → DBG、HDMI の color bar、scene を板で） | p012 | planned（2026-10-24 新設） |
 | [p025](phase025/phase.md) | timing の調整（KC705 で 200 MHz、blend の 2 段化など） | p006 の後、最後（2026-10-25 01:08 ユーザー） | planned（2026-10-24 新設） |
 | [p027](phase027/phase.md) | MSAA（4x の描画・depth・resolve、multisample の sampled image）。design の節から | p009 | in-progress（設計の段は review 済み、design 版 5 §15、2026-10-25 02:23。U43〜U46 待ち） |
+| [p030](phase030/phase.md) | Vulkan 1.0 core の残り（stencil、D16、MRT 4、format、point/line、occlusion query、input attachment、depth だけの clear など、design §15.18） | p027 の後・p018 の前 | in-progress（2026-10-25 02:32 設計の段、q1559 P1） |
 | p010 | compiler の backend（zedBSD `isa/gsi1/`）、`gsi1_isa.h` と interface の表の確定（design §8） | p008、p027 | planned（順: p027 の後） |
-| p018 | firmware の Vulkan の object model と draw/dispatch（design §8）。GHCI §7.2・§11.6 への firmware の追従を含む | p017、p009、p010、p027 | planned（順: p010 の後） |
+| p018 | firmware の Vulkan の object model と draw/dispatch（design §8）。GHCI §7.2・§11.6 への firmware の追従を含む | p017、p009、p010、p027、p030 | planned（順: p010 の後） |
 | p019 | zedBSD の `vk/`（検証する中継、design §8） | p010、p017、p006、p027 | planned（順: p018 の後） |
 | p011 | 端から端の統合（Verilator の上で libvulkan → `vk/` → firmware → RTL、vkdemo の 1 frame、design §8） | p009、p010、p018、p019 | planned（順: p006 の後） |
 | [p013](phase013/phase.md) | KC705 の PCIe（BAR0 = GHCI、BAR2 = DDR3 の VRAM、MSI、VFIO） | p012、p024、p006 | planned（2026-10-25 01:08 Future Work から戻した） |

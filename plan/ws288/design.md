@@ -1549,6 +1549,8 @@ reviewer が照合した物: design.md の §3.1〜§3.6・§2.2〜§2.4・§6�
 
 ### 15.20 U 項目（ユーザーの判断。推し付き）
 
+**回答（2026-10-25 02:32）**: ユーザー「U項目は推しでOKです。ただ、U44はちゃんとあるべき論で実装するのがいいと思います。U46は、N=2でもう１つサブエージェントを立てて、実装しましょう。もし検証が多いなら、N=3でもいいです。」 → U43 = 入れない、U44 = **推しの A を採らず、あるべき形の hardware の resolve**（memory の帯域で streaming する専用の resolve の道、format ごとに正しく平均、整数は 1 つの sample。BLT の RESOLVE の op か ROP の道かは p027 の実装の段の最初に設計を直して決める）、U45 = v1 は正しさだけ、U46 = 新しい Phase [p030](phase030/phase.md)。
+
 | U | 問い | 推し | 他の案 |
 | --- | --- | --- | --- |
 | **U43** | `sampleRateShading`（任意の feature: SampleId・SamplePosition・Sample の補間・interpolateAt*）を v1 に入れるか | **入れない**（v1 は 0、Future Work。§15.19 の形で後から足せる） | 入れる（RX と exp の lane = sample の道、+≈6 LW） |
