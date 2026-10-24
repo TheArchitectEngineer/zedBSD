@@ -52,3 +52,4 @@
 - 2026-10-25 06:50 Q1: P1 は S2〜S7（S5 を含む）で context のため返却（p1-p030b 68f62c9）。P1 の build の残り（build/dbg、lint-*.log、sim/mut*）を Q1 が消した。amaterrace-gpu の main への merge は T1-768（39969e9）・T1-769（68f62c9）の結果の後。S8（MRT）は P1 の新しい起動で同じ branch に。
 - 2026-10-25 06:50 Q1: T1-767（f21675d、P3 の S9）PASS: make sim 87、verilator 5、lint 112。
 - 2026-10-25 07:05 Q1: T1-769（68f62c9、S5）PASS: sim-quick 88、lint 117。P1 の p1-p030b 68f62c9（S2〜S7）を amaterrace-gpu の main に merge（b0db0a6、衝突なし）、続けて P3 の p3-p030t f21675d（S9、T1-767 PASS）を merge（345e292、衝突なし）。merge の後 lint clean 118、atg_tu・atg_tu_addr・atg_tu_ffilt・atg_rop_ds・atg_rop_blend・atg_cp_regs・atg_top PASS。全体は T1-770（T2）。
+- 2026-10-25 07:07 Q1: T1-768（39969e9、S7）PASS: make sim 91 PASS・0 FAIL（TB の数 91 と一致、依頼の 90 は Q1 の数え違い）、msaa 16、verilator 6、lint 116。
