@@ -61,3 +61,4 @@ host の試験が PASS（件数を記録）、zedBSD の vmunix の build が wa
   - Q1 の判定: cleared。受け入れの「vmunix の build が warning 0」は GHCI の driver の config が無いので名指しの object の build（amd64・zybo の config、warning 0）で代え、vmunix への link は p006 へ移す。texture の命令の実行は model に TU が無いので p011（Verilator）で確かめる。bcm2711（ws141 の temp の mesa が要る）と i915 の compiler の host 試験は未実施 → T に回す（i915）。
   - **Vulkan 1.0 core の食い違い**: shared memory の atomic（Workgroup の OpAtomic*）が GSI1 v1 に無く compiler が拒む → p030 に段 S15（LDS の atomic: GSI1 の命令、atg_su_lds、compiler）を足した。
   - 残件: latency の scheduling・FNEG/FABS の修飾への畳み込み・texture の parameter の二重の写し（速さ）、32 register の構成で texture.frag・cubegrad.frag が溢れる（KC705 は 64）、design §6.6 の表の古い行（Q1 が直した）。
+- 2026-10-25 08:07 Q1: S13 の残件 (a)（64 component を全部書く vertex program を register 不足で拒む）を p010 の続きとして P1 に（q1567）。出力の export を最後の書き込みの直後に移す形を先に、足りなければ spill。
