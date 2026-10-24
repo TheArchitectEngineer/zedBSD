@@ -252,10 +252,12 @@ ghci_display_interrupt(
 	if (!display->present)
 		return 0;
 
-	/* What is pending, cleared (write 1 to clear). */
+	/* What is pending; nothing pending is another source's interrupt. */
 	status = ghci_read(device, display->registers + GHCI_DC_IRQ_STATUS) & DC_IRQ_TAKEN;
 	if (status == 0U)
 		return 0;
+
+	/* Clears it (write 1 to clear). */
 	ghci_write(device, display->registers + GHCI_DC_IRQ_STATUS, status);
 
 	/* Counts the syncs, the flips and the underflows. */
@@ -381,6 +383,8 @@ display_mode(
 	error = find_mode(&device->display, request->width, request->height, &index);
 	if (error != 0)
 		return error;
+
+	/* The refresh, when one is asked for, must be the mode's. */
 	mode = &display_modes[index];
 	if (request->refresh_millihz != 0U && request->refresh_millihz != mode->refresh_millihz)
 		return EINVAL;
@@ -519,6 +523,8 @@ display_present(
 		return EINVAL;
 	if (request->stride < request->width * PIXEL_BYTES)
 		return EINVAL;
+
+	/* The end of the last row lies inside what the storage was asked for. */
 	end = request->offset + (uint64_t)request->stride * (request->height - 1U) + (uint64_t)request->width * PIXEL_BYTES;
 	if (end > storage->requested)
 		return EINVAL;

@@ -125,6 +125,8 @@ ghci_pci_attach(
 	device = kern_calloc(1U, sizeof(*device));
 	if (device == NULL)
 		return ENOMEM;
+
+	/* The record belongs to the function. */
 	device->pci = pci;
 
 	/* The register window, which must say GHCI before anything else is touched. */

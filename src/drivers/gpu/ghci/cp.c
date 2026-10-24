@@ -873,6 +873,7 @@ service_hang_check(
 	struct ghci_device *device)
 {
 	uint64_t since;
+	uint64_t limit;
 	unsigned long irq;
 	int busy;
 
@@ -890,9 +891,10 @@ service_hang_check(
 	spin_unlock_irqrestore(&device->irq_lock, irq);
 
 	/* A device without work, or with work that moves, is fine. */
+	limit = kern_ms_to_ticks(GHCI_HANG_MS);
 	if (!busy)
 		return;
-	if (since < kern_ms_to_ticks(GHCI_HANG_MS))
+	if (since < limit)
 		return;
 
 	/* The work hangs. */
