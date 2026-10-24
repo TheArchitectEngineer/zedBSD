@@ -51,6 +51,12 @@ struct ghci_gsi1_options {
 	/* The constant-bank words of the GPU (0 reads as 256). */
 	uint32_t bank_words;
 
+	/*
+	 * The varying words per vertex of the GPU (VARYING_COUNT's limit: 64
+	 * with CAPS[30], 16 without; 0 and values above 64 read as 64).
+	 */
+	uint32_t varying_words;
+
 	/* Nonzero when the GPU writes the sample mask in r6 (CAPS[29]). */
 	uint32_t sample_mask_input;
 

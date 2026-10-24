@@ -51,8 +51,11 @@
 /* The test images: 8 x 8 texels, and two layers when they fit. */
 #define IMAGE_SIDE		8U
 
-/* The varying words the model's primitive table keeps (PT words 4 to 63). */
-#define MODEL_VARY		60U
+/* The varying words the model's primitive table keeps (PT words 4 to 67: CAPS[30]'s 64). */
+#define MODEL_VARY		64U
+
+/* The PT words of a vertex in the model's --prims file. */
+#define MODEL_PT_WORDS		128U
 
 /* One test's options. */
 struct test_options {
@@ -403,7 +406,7 @@ run_fragment(
 	struct test_case *test;
 	static uint32_t regs[4 * 64][32];
 	static uint8_t known[4 * 64][32];
-	static uint32_t prims[4 * 3 * 64];
+	static uint32_t prims[4 * 3 * MODEL_PT_WORDS];
 	uint32_t warps[20];
 	uint32_t exports[1 + 8 * 22];
 	uint32_t ms[8];
@@ -467,7 +470,7 @@ run_fragment(
 			vertex_value[vertex][word] = random_float(&test->seed, -2.0f, 2.0f);
 			if (word == w_word)
 				vertex_value[vertex][word] = random_float(&test->seed, 1.0f, 2.0f);
-			prims[vertex * 64U + 4U + word] = vertex_value[vertex][word];
+			prims[vertex * MODEL_PT_WORDS + 4U + word] = vertex_value[vertex][word];
 		}
 	}
 
@@ -588,7 +591,9 @@ run_fragment(
 				zexp |= 1U << inner;
 			(void)exported;
 		}
-		exports[count++] = (0U << 16) | ((quad == quads - 1U ? 1U : 0U) << 8) | mask;
+
+		/* The quad's one beat (attachment 0, its first and last): seq 0, qlast, qfirst, last, mask. */
+		exports[count++] = (0U << 16) | (1U << 12) | (1U << 11) | ((quad == quads - 1U ? 1U : 0U) << 8) | mask;
 		lane = 4U * quad;
 		exports[count++] = (run->pixel_y[lane] << 16) | run->pixel_x[lane];
 		for (inner = 0U; inner < 4U; inner++) {
@@ -628,7 +633,7 @@ run_fragment(
 	if (write_registers(path, nregs, regs, known) != 0)
 		return 1;
 	snprintf(path, sizeof(path), "%s.prims.hex", argv[3]);
-	if (write_words(path, prims, 4U * 3U * 64U) != 0)
+	if (write_words(path, prims, 4U * 3U * MODEL_PT_WORDS) != 0)
 		return 1;
 	snprintf(path, sizeof(path), "%s.data.hex", argv[3]);
 	if (write_words(path, test->data, MODEL_DATA_WORDS) != 0)

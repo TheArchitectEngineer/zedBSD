@@ -144,6 +144,8 @@ CASES = [
     ("store.frag", "fragment", [], "cover=f3ff3fff", 0, ["sw"]),
     ("basic.vert", "vertex", [], "w=56", 2e-6, ["exp"]),
     ("image.vert", "vertex", [], "", 2e-6, ["lw"]),
+    ("varying64.vert", "vertex", [], "", 2e-6, ["exp"]),
+    ("varying64.frag", "fragment", [], "", 2e-6, ["lda"]),
     ("mrt.frag", "compile-fragment", [], "", 0, ["exp"]),
     ("texture.frag", "compile-fragment", [], "regs=64", 0,
      ["texb", "texl", "texg.b", "texb.c", "texb.3", "texf", "texsz", "texsz.s", "texsz.l"]),
