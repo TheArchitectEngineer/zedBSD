@@ -3,7 +3,7 @@
 # ws288-p027 MSAA（multisample の描画と sample する image）
 
 - 親: [WS288](../ws.md)。設計: [design.md](../design.md) **§15 MSAA**（版 5、2026-10-25 P2）。review: [design-review-msaa.md](../design-review-msaa.md)。
-- 状態: in-progress（2026-10-25 q1560-i02 P2: S1〜S7 実装済み。T の試験（make sim・make verilator・lint）の後に Q1 が判定）
+- 状態: cleared（2026-10-25 06:22 Q1。S1〜S7 と cp_seq の待ちの直し、T1-764 PASS）
 - 依存: p009（part F の TU、特に multisample の sampled image の読みはこの Phase で）。
 - 承認: 2026-10-25 ユーザー「了解です。SAはfuture workに回します。p009, msaaを優先して実装してください。そのあと、p010,p018,p019,p006,p011を実装します。KC705のDDR3をVRAMにしてPCIeのGPUボードにすることで、QEMUからパススルーで利用し、ゲストのzedBSDからVulkanを動作させることを、最初のゴールにします。必要なphaseは作成してください。」
 
@@ -64,3 +64,4 @@ design の MSAA の節（review 済み）。scene の 4x の color・depth と r
   - 未実施: `make sim` 全体・`sim-quick`・`make verilator` 全体（T に依頼）。既存の scene の TB（raster・shade・tex）は harness を変えたので T の試験で PASS を確かめる。
   - review 用の PNG（RTL の resolve の結果を 8 倍）: amaterrace-gpu の worktree p2-p027b の `build/review/msaa-resolve-8x.png`。
 - 2026-10-25 05:55 Q1: S6 を amaterrace-gpu の main に merge（94c5ee2、衝突なし、merge の後 lint clean・atg_top・atg_cp_seq PASS）、zedBSD の agent/p2-p027 bba8bc830 を main に。P2 の mutant の build の残り（build/verilator/obj-msaa-mut ほか）を Q1 が消した。全体の回帰は T1-764（T2、main 94c5ee2）。resolve の PNG（8 倍）は build/review/ws288-p027-msaa-resolve-8x.png。
+- 2026-10-25 06:22 Q1: T1-764（main 94c5ee2）PASS: make sim 86 PASS・0 FAIL（74 本 + 流し直しの 12 本）、atg_top_msaa の 14 case・scene・全体の PASS 16 行、verilator 6（msaa）、lint 111 → **cleared**。残件: block の間の handoff で busy が 1 cycle どれも立たない隙間の確認（全 pipeline の back-to-back、p030 S11 か p011 で）、MUT_SMASK_AND は scene では見えない（unit TB だけ）、Verilator の MSAA は 32 byte の形（KC705 の形は p030 S11）。

@@ -15,3 +15,4 @@
 | 2026-10-25 05:1x | depth の 4 format に FILTER_LINEAR を立て、TU で compare 無しの depth の linear も入れる | Vulkan では FILTER_LINEAR の bit を立てると raw の depth の linear も許される |
 | 2026-10-25 03:0x | cp_seq の待ちの不具合の直しを p027 に入れた（p030 から移した） | p027 が先に main に入るため |
 | 2026-10-25 05:56 | p010（compiler）を P2 に並行で開始（p030 の RTL と別の tree）。compiler は GHCI の draft の仕様（p027・p030 の口）に合わせ、RTL の完成を待たない | N=3、ユーザーの順は p030 の後だが、並行できる物は先に進める（推しで進める許可） |
+| 2026-10-25 06:22 | p027 を cleared にした（T1-764 の make sim が試験の担当の 30 分の上限で途中で止まり、残り 12 本を別に流して合計 86 PASS） | 全部の TB が PASS、MSAA の 14 case が model と一致 |
