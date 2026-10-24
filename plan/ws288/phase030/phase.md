@@ -25,8 +25,12 @@
 
 ## 受け入れ
 
-設計の段: design.md に節（review 済み）、実装の段の分け方と LW。実装の段: 各項目の model・単体 TB・scene が一致、`make lint` clean、`make sim` の PASS が減らない、`make verilator` PASS。板・timing は対象外。
+設計の段: design.md に節（review 済み）、実装の段の分け方と LW。実装の段: 各項目の model・単体 TB・scene が一致、`make lint` clean、`make sim` の PASS が減らない、`make verilator` PASS。板・timing は対象外。**item 8（FragDepth・SampleMask）と item 10（input attachment）は RTL を足さないので、この Phase の受け入れは「GHCI の口と記録」まで**（design §16.13・§16.14。実装と試験は p010・p018 の範囲、U50・U51。2026-10-25 P1、review 21）。
 
 ## 記録
 
 - 2026-10-25 02:32 Q1: 新設（U46 のユーザーの決定）。設計の段を P1（kernel-and-driver-designer）に。
+- 2026-10-25 P1: 設計の草稿を design.md 版 6 の §16 に（Vulkan 1.0 core の limit・feature・必須の format の表、format の土台、ROP・RX・VF・TU・BLT・SU・CP の設計、GHCI の draft（amaterrace-gpu p1-p030 の `docs/ghci.md` §8.5・§12.12・CAPS[30]・FMT・µop 14）、段 S1〜S11 = 68 LW、U47〜U57）。design-reviewer の review はこの後。
+- 2026-10-25 P1: design-reviewer の review 1（35 件: Critical 2・High 4・Medium 16・Low 13、[design-review-p030.md](../design-review-p030.md)）を全部確かめて反映（design §16.26）。Critical: 圧縮の format の 1 組は 1.0 の必須 → ETC2 + EAC（§16.11a、S12、U58）、RX・ROP の範囲の SET_REG の待ちの hazard（87457fa に既に有る）→ §16.8a。Q1 の依頼（BLT の RESOLVE の平均 3〜7・8 byte の画素）を §16.2・§16.12・S10 に。段 S1〜S12 = 88 LW、U47〜U59。受け入れの item 8・10 の範囲を上に直した。
+- 2026-10-25 P1: review 2（23 件: High 4・Medium 5・Low 14）を反映: far も geometric に clip（frag の sample ごとの clip を止めた）、TU・program・LOAD_CONST の待ちの hazard を記録して p027 の修正へ（Q1 に依頼）、BLT の分割を S10 に、stride を 2·S·ps の倍数に、U60（TU の slot が stage で共有）。Q1 の決定で CP の待ちの修正は p027 へ、ユーザーの決定（「圧縮テクスチャはPCIe GPUの実機bringupの後に回します。」）で ETC2 は範囲の外へ。段 S1〜S11 = 79 LW、U47〜U60。設計の段の review 済み（2 回）、U47〜U60 の回答待ち。
+- 2026-10-25 04:06 Q1: 設計の段の merge（zedBSD の agent/p1-p030 11e12742f）。design 版 6 §16、review 2 回（35 件・23 件）全部反映、段 S1〜S11 = 79 LW（ETC2 の S12 はユーザーの決定で外し Future Work fw-amaterrace-ctex）。amaterrace-gpu の `docs/ghci.md` の案（p1-p030 c5e17d5）は p027 の ghci.md と合わせて後で merge。U47〜U60 はユーザーに提示。cp_seq の待ちの直しの範囲（TU・program・LOAD_CONST・ATTR_LIMIT）を p027 の P2 に足した。
