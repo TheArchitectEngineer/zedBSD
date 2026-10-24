@@ -14,3 +14,4 @@
 | 2026-10-25 05:2x | S14 は案 A（STATE を 1024 index に、vertex の stage の 16 slot）。案 B（descriptor を memory の表）は後の拡張 | P1 の推し |
 | 2026-10-25 05:1x | depth の 4 format に FILTER_LINEAR を立て、TU で compare 無しの depth の linear も入れる | Vulkan では FILTER_LINEAR の bit を立てると raw の depth の linear も許される |
 | 2026-10-25 03:0x | cp_seq の待ちの不具合の直しを p027 に入れた（p030 から移した） | p027 が先に main に入るため |
+| 2026-10-25 05:56 | p010（compiler）を P2 に並行で開始（p030 の RTL と別の tree）。compiler は GHCI の draft の仕様（p027・p030 の口）に合わせ、RTL の完成を待たない | N=3、ユーザーの順は p030 の後だが、並行できる物は先に進める（推しで進める許可） |

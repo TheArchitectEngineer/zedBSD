@@ -65,7 +65,7 @@
 | [p027](phase027/phase.md) | MSAA（4x の描画・depth・resolve、multisample の sampled image）。design の節から | p009 | in-progress（設計の段は review 済み、design 版 5 §15、2026-10-25 02:23。U43〜U46 待ち） |
 | [p030](phase030/phase.md) | Vulkan 1.0 core の残り（stencil、D16、MRT 4、format、point/line、occlusion query、input attachment、depth だけの clear など、design §15.18） | p027 の後・p018 の前 | in-progress（2026-10-25 02:32 設計の段、q1559 P1） |
 | [p031](phase031/phase.md) | ZYBO を GPU の target から外す（source は amaterrace-gpu の docs/old/、build・lint・sim・CI から外す） | なし（p030 S1 の前） | cleared（2026-10-25 05:13、T1-759 PASS、main a87523c） |
-| p010 | compiler の backend（zedBSD `isa/gsi1/`）、`gsi1_isa.h` と interface の表の確定（design §8） | p008、p027 | planned（順: p027 の後） |
+| [p010](phase010/phase.md) | compiler の backend（zedBSD `isa/gsi1/`）、`gsi1_isa.h` と interface の表の確定（design §8） | p008、p027 | in-progress（2026-10-25 05:56 q1564 P2） |
 | p018 | firmware の Vulkan の object model と draw/dispatch（design §8）。GHCI §7.2・§11.6 への firmware の追従を含む | p017、p009、p010、p027、p030 | planned（順: p010 の後） |
 | p019 | zedBSD の `vk/`（検証する中継、design §8） | p010、p017、p006、p027 | planned（順: p018 の後） |
 | p011 | 端から端の統合（Verilator の上で libvulkan → `vk/` → firmware → RTL、vkdemo の 1 frame、design §8） | p009、p010、p018、p019 | planned（順: p006 の後） |
