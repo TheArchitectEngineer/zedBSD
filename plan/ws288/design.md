@@ -583,7 +583,7 @@ code_offset〜 命令（8 byte 揃え）
 | mip の段 | 4096 で 13 | 13 | 版 2 で offset を 12 個に |
 | instancing（instanceCount・firstInstance・vertexOffset・per-instance） | 必須 | 有り | 版 2 で VF に足した |
 | indirect の draw/dispatch | 必須 | **無し** | driver が `ENOTSUP`。v2 で CP に `DRAW_INDIRECT`（memory の引数）を足す |
-| cube / 3D / array / gather / compare の texture | 必須（cube・array） | **無し** | compiler が拒む。features で 0 |
+| cube / 3D / array / gather / compare の texture | 必須（cube・array） | **有り**（p009 part E・F、2026-10-25 02:53。GHCI §8.4・§12.9） | multisample の sampled image は p027 |
 | multisample（4x の framebuffer と sampled image、resolve） | 必須（1 と 4） | **p027 で足す**（版 5） | §15。sampleRateShading は無し（U43）。この表の texture・format の行は p009 part E・F で変わった（cube・3D・array・compare は part E・F、正は amaterrace-gpu の README と ghci.md §8.4） |
 | geometry / tessellation | optional | 無し | |
 | spill（register の溢れ） | — | **拒む** | NREGS 32 の ZYBO で多い（R8） |
@@ -774,7 +774,7 @@ code_offset〜 命令（8 byte 揃え）
 | SAMPLE / SAMPLE_BIAS / SAMPLE_LOD | `texb`（bias 0 / bias）/ `texl` |
 | DDX DDX_FINE DDY DDY_FINE | `qd`（sub 0/1）、coarse は `qd` + `qd sub 5` |
 | PACK_HALF / UNPACK_HALF | `packh` / `unpackh` |
-| TEXTURE（LD / RESINFO / SAMPLE* の 2D・array 無し） | `texf` / `texsz` / `texb`・`texl`。cube・3D・array・gather・compare は **拒む**（`ENOTSUP`） |
+| TEXTURE（LD / RESINFO / SAMPLE*・gather・Dref・offset、2D・array・3D・cube） | `texf` / `texsz`（`.l`・`.d`）/ `texb`・`texl`（`.c`・`.3`・offset）/ `texg` / `texqlod`（p009 part E・F で入った、2026-10-25 02:53 Q1 の更新） |
 | LOAD_STORAGE / STORE_STORAGE / ATOMIC / STORAGE_SIZE | `lw` / `sw` / `atom` / firmware が interface の表の storage の entry の constant の word に置く大きさを `lwc`（C1）。述語付き（ir.h の component 1、`ATOMIC_PREDICATED`）は `exec.save` + `exec.and pred` + 命令 + `exec.set`（M14） |
 | ATOMIC（shared、`LOCATION_SHARED`） | **拒む**（shared の atomic は GSI1 v1 で reserved、M14） |
 | TEXTURE の texel の offset ≠ 0、SAMPLE_DERIVS、gather、compare | **拒む**（`ENOTSUP`、M14） |

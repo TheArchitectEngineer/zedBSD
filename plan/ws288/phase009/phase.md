@@ -3,7 +3,7 @@
 # ws288-p009 VF・SU の vertex/fragment・TU（graphics の pipeline の RTL）
 
 - 親: [WS288](../ws.md)。設計: [design.md](../design.md) §2.3（VF の STATE 0x020〜0x04F、ATTR_DST 0x1C0〜）、§3.4.3、§3.7、§3.8、§8 の p009 の行、§7.6 の p009 の module。
-- 状態: in-progress（2026-10-24 Q1。22:58 part D・E を開始、ユーザー「では、p009も始めましょう。」）
+- 状態: cleared（2026-10-25 02:53 Q1。part A〜F が cleared。multisample の sampled image は p027 へ移した）
 - 方針（2026-10-24 ユーザー）:「今回は合成できればいいことにして、KC705での動作とパイプライン分割はあとにしませんか？全体のRTLをまずは一通り揃えることを優先したいです。」→ この Phase は RTL と simulation（iverilog の単体 TB、必要なら Verilator）まで。板と timing は対象外。
 
 ## 部分（part）
@@ -16,7 +16,7 @@
 | C | TU（`atg_tu_addr`・`cache`・`filter`）と `atg_su_tex`、最近傍 → bilinear | textured な三角形が model と一致 | cleared（2026-10-24 Q1: amaterrace-gpu d9d4cf0、main の merge 00bb02b） |
 | D | SU の残り（design §8 の p009 の行）: `qd` と helper lane・coverage の mask（M10）、`shfl`/`vote`/`ballot` の SU での確認、deadlock の回避の確認、`PACKED`（KC705 の構成）、`kc705_raster`（N=1）の確認 | 各項目の TB（または既存の TB の case）が PASS、PACKED=1・SUBGROUP=1 の構成で lint clean、`make sim` の PASS が減らない | cleared（f9d14d6、amaterrace-gpu の merge cf82485） |
 | E | TU の Vulkan 1.0 core に合わない 3 点: mipmapMode LINEAR（trilinear、2 回に分けて引く案）、CLAMP_TO_BORDER（border の色の STATE）、compare（depth の比較の sampler） | `tumodel.py` を広げて TU・`atg_su_tex` の TB と `atg_top_tex` の scene が model と一致、GHCI の STATE・SAMPLER の追加は `docs/ghci.md` に案（Q1 がレビューして merge） | cleared（d8bb9c5、merge 87457fa） |
-| F | TU の Vulkan 1.0 core で必須の残り: ConstOffset、2D array（descriptor の作り直し）、3D、cube（面の選択と境目）、unnormalizedCoordinates（multisample の sampled image は p027 の MSAA へ）。README の TU の行 | `tumodel.py`・TU・`atg_su_tex` の TB と scene が model と一致、GHCI §8.4・§12.9 の更新 | in-progress（2026-10-25 01:11 q1557 P3 の新しい起動） |
+| F | TU の Vulkan 1.0 core で必須の残り: ConstOffset、2D array（descriptor の作り直し）、3D、cube（面の選択と境目）、unnormalizedCoordinates（multisample の sampled image は p027 の MSAA へ）。README の TU の行 | `tumodel.py`・TU・`atg_su_tex` の TB と scene が model と一致、GHCI §8.4・§12.9 の更新 | cleared（fd6b28f、merge a3bb121） |
 
 ## 記録
 - 2026-10-24 Q1: part A を P1（phase-runner、Opus 5.5 high）に依頼。amaterrace-gpu の worktree `~/amaterrace-worktrees/p1-vf`（branch `p1-vf`、基点 main 3839cb5）。範囲は VF の子 4 つと単体 TB 4 本、spec §10 の更新。結果は P1 の返答を Q1 がここに書く。
@@ -48,3 +48,6 @@
   - Q1 の merge: P1 の p026 を 1e1a90c、P2 の part D を cf82485（衝突 1: `atg_top_shade_tb.v` の kc705 の instance、P2 の parameter と p026 の clk_kc705 を合わせた。merge の後 atg_su_gfx・atg_kc705_raster・atg_top_shade(kc705) PASS、lint clean）、P3 の part E を 87457fa（衝突 2: `tools/tumodel.py` と `atg_top_tex_tb.v` の先頭の comment、part E の文を採り WS・Phase の番号を外した。draw の数の古い記述を 7 に直した）。merge の後に lint clean、gsi1dis PASS、`make sim-quick` 79 PASS 0 FAIL、`make verilator` 5 本 PASS。push はしていない。part D・E は cleared。
   - 残件: `atg_top_tex` は iverilog で両方の形で約 10 分（run.sh の既定 300 s を超える、CI も）、`gsi1model.py` は texture の命令で止まる、TU の面積の増加（p025）、`atg_tu_addr.v` の 105〜108 桁の行。
 - 2026-10-25 01:11 Q1: part F を P3 の新しい起動に（q1557、worktree `~/amaterrace-worktrees/p3-p009f`、基点 87457fa）。
+- 2026-10-25 02:53 P3 → Q1（part F の結果）: 2f45ca6・3ec9aed・19c2d2c・a079acc・fd6b28f（基点 87457fa）、56 file。新しい descriptor（+0 BASE、+1 SIZE、+2 IMAGE（level 数・format・tiled・view type・samples の予約・depth/layer 数）、+3 LAYER_STRIDE、+4 SAMPLER、+5 LOD、MIP_OFFSET を廃止して `atg_tu_desc` が level の offset を計算）、2D array・3D（最大 4 pass、filter は accumulator）・cube（`atg_tu_cube`、seamless、角は面の自身の角の texel）・ConstOffset（整数の座標で wrap、mirror は part E と最後の bit が違う）・unnormalized、`.3` の形・`texsz.d`、`atg_tu_lod`・`atg_tu_foot`、GHCI §8.4・§12.9 の書き直し、MSAA の予約（samples・format 4・texsz の imm 3）、README の TU の行。P3 の申告: lint 110 clean、`make sim` 81/81 PASS（21 分）、sim-quick 79 PASS、verilator 5 本 PASS、故意の誤り 21 通りで FAIL。
+  - Q1 の確認: fd6b28f は commit、main（87457fa）へ `--no-ff` で衝突なしに merge、merge の後に lint 110 clean・gsi1dis PASS・TU と SU の単体 TB 7 本 PASS を確かめて a3bb121。`atg_top_tex` が 382 s で run.sh の既定 300 s を超えるので、既定を 900 s にし README の所要時間（約 21 分・約 9 分）を直した（5a7a5c4）。P3 が /tmp に作った写し 2 つ（gsi1asm.py・dec_table.hex、tree と同じ内容）を Q1 が消した。design §3.7 の未達の表と §5 の TEXTURE の行を更新。push はしていない。
+  - 残件: `atg_tu_addr.v` などの 101〜108 桁の行、`atg_top_tex` の iverilog の時間（両方の形で 382 s）。
