@@ -43,3 +43,4 @@
 - 2026-10-25 06:00 Q1: T1-763（af9f8bf、S2・S3）PASS: sim-quick 84（83 + atg_rx_cpoly）、verilator 5、lint 112。
 - 2026-10-25 06:03 P1 → Q1: S4（RX の setup）b01e9f1（親 af9f8bf）。atg_rx_edge（新、整数の段を移した、line の parallelogram・point の正方形、bbox、viewport の矩形）、atg_rx_setup（micro-op の追加、depth bias、PointCoord の plane、line の plane）、DEPTH_BIAS_*（0x060〜0x062）。P1 の申告: lint 113、atg_rx_setup 9 行 PASS（旧 160 三角形は不変）、MUT_LINE_MAJOR・MUT_BIAS_R で FAIL。T1-765 に。
 - 2026-10-25 06:17 Q1: T1-765（b01e9f1、S4）PASS: sim-quick 84、verilator 5、lint 113。
+- 2026-10-25 06:23 P1 → Q1: S6（ROP の blend・occlusion）c5bb920（親 b01e9f1）。atg_rop_fblend（新、sRGB・A2B10G10R10・16F の fp32 blend）、atg_rop_occ（新、40 bit の counter）、atg_rop_blend（RT ごとの state、R8・RG8・1555、fp32 の blend の定数）、ghci_regs の追加。fblend・occ はまだ atg_rop に結線しない（S7・S8 で）。P1 の申告: lint 115、atg_rop_blend 5・atg_rop_fblend 3・atg_rop_occ 2 行 PASS、atg_rop_wb・atg_rop_ms 再 PASS。T1-766 に。
