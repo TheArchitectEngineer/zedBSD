@@ -96,6 +96,13 @@ gsi1_memory_prepare(
 	if (error != 0)
 		return error;
 
+	/* The word of the scratch memory's address, for a compile that spills. */
+	if (lowering->spill.enabled != 0) {
+		error = take_bank(lowering, 1U, &lowering->spill.bank);
+		if (error != 0)
+			return error;
+	}
+
 	/* The uniform blocks. */
 	error = place_blocks(lowering);
 	if (error != 0)

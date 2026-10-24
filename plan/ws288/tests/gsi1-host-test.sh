@@ -22,7 +22,7 @@ compiler="$repo/src/drivers/gpu/ghci/compiler"
 # The harness: the compiler, the shared frontend and optimizer, the reference.
 cc $flags -Wno-declaration-after-statement -o "$out/gsi1-host-test" "$tests/gsi1-host-test.c" "$tests/gsi1-reference.c" \
 	"$compiler/gsi1-compile.c" "$compiler/gsi1-encode.c" "$compiler/gsi1-io.c" "$compiler/gsi1-memory.c" \
-	"$compiler/gsi1-texture.c" "$compiler/gsi1-image.c" \
+	"$compiler/gsi1-texture.c" "$compiler/gsi1-image.c" "$compiler/gsi1-schedule.c" "$compiler/gsi1-spill.c" \
 	"$repo/src/drivers/gpu/compiler/spirv.c" "$repo/src/drivers/gpu/compiler/optimize.c" -lm
 
 # The modules.

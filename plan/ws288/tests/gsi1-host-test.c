@@ -44,6 +44,9 @@
 #define MODEL_DATA_WORDS	4096U
 #define MODEL_BANK_WORDS	256U
 
+/* The GPU address the harness gives a program's scratch memory (interface kind 14), outside the data image. */
+#define MODEL_SCRATCH_BASE	0x00100000U
+
 /* Each buffer or image of a test takes a region of 256 words after the bank. */
 #define REGION_WORDS		256U
 #define REGION_BYTES		(4U * REGION_WORDS)
@@ -78,6 +81,7 @@ struct test_case {
 	uint32_t image_layers[REF_UNIFORMS];
 	struct ref_run *run;
 	uint32_t seed;
+	uint32_t scratch_bytes;
 };
 
 static uint32_t *read_file(const char *path, size_t *words);
@@ -386,7 +390,10 @@ run_compute(
 	args = fopen(path, "w");
 	if (args == NULL)
 		return 1;
-	fprintf(args, "--lanes %u --groups %u --nregs %u\n", lanes, groups, test->program->words[GSI1_H_NREGS] > 32U ? 64U : 32U);
+	fprintf(args, "--lanes %u --groups %u --nregs %u", lanes, groups, test->program->words[GSI1_H_NREGS] > 32U ? 64U : 32U);
+	if (test->scratch_bytes != 0U)
+		fprintf(args, " --scratch %#x,%u", MODEL_SCRATCH_BASE, test->scratch_bytes);
+	fprintf(args, "\n");
 	fclose(args);
 	return 0;
 }
@@ -670,7 +677,10 @@ run_fragment(
 	out = fopen(path, "w");
 	if (out == NULL)
 		return 1;
-	fprintf(out, "--nregs %u --vary %u\n", nregs, MODEL_VARY);
+	fprintf(out, "--nregs %u --vary %u", nregs, MODEL_VARY);
+	if (test->scratch_bytes != 0U)
+		fprintf(out, " --scratch %#x,%u", MODEL_SCRATCH_BASE, test->scratch_bytes);
+	fprintf(out, "\n");
 	fclose(out);
 	return 0;
 }
@@ -817,7 +827,10 @@ run_vertex(
 	out = fopen(path, "w");
 	if (out == NULL)
 		return 1;
-	fprintf(out, "--nregs %u --vary %u\n", nregs, MODEL_VARY);
+	fprintf(out, "--nregs %u --vary %u", nregs, MODEL_VARY);
+	if (test->scratch_bytes != 0U)
+		fprintf(out, " --scratch %#x,%u", MODEL_SCRATCH_BASE, test->scratch_bytes);
+	fprintf(out, "\n");
 	fclose(out);
 	return 0;
 }
@@ -1089,6 +1102,11 @@ bind_interface(
 			}
 			test->run->push = push;
 			test->run->push_size = words[GSI1_H_PUSH_BYTES];
+			continue;
+		}
+		if (kind == GSI1_KIND_SCRATCH) {
+			test->data[entry[GSI1_IF_BINDING]] = MODEL_SCRATCH_BASE;
+			test->scratch_bytes = entry[GSI1_IF_SPECIFIC];
 			continue;
 		}
 		if (kind == GSI1_KIND_ATTRIBUTE || kind == GSI1_KIND_VARYING_IN || kind == GSI1_KIND_OUTPUT ||

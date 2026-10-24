@@ -13,7 +13,10 @@
  * the control flow, and lays out the binary.  gsi1-io.c lowers the
  * inputs and outputs of the vertex and fragment stages, gsi1-memory.c
  * the uniforms, the buffers, the shared memory and the images, and
- * gsi1-texture.c the sampled images.
+ * gsi1-texture.c the sampled images.  A program that does not fit its
+ * registers is compiled again with its pure instructions moved down to
+ * their readers (gsi1-schedule.c), and then with values kept in the
+ * warp's scratch memory (gsi1-spill.c).
  */
 
 #ifndef DRIVERS_GPU_GHCI_COMPILER_GSI1_PRIVATE_H
@@ -38,7 +41,7 @@
 
 /* The most values one IR instruction reads, and the scratch registers it may take. */
 #define GSI1_MAX_SOURCES		DRV_GPU_IR_TEXTURE_MAX_PARAMS
-#define GSI1_SCRATCH_MAX		16U
+#define GSI1_SCRATCH_MAX		32U
 
 /* The most interface entries of a program and bindings of its uniforms. */
 #define GSI1_INTERFACE_MAX		96U
@@ -78,6 +81,71 @@ enum gsi1_value_kind {
 	GSI1_VALUE_REGISTER,
 	GSI1_VALUE_OPERAND,
 	GSI1_VALUE_CONSTANT
+};
+
+/*
+ * The bytes of one word of the scratch memory for the 32 lanes of a warp:
+ * word s of lane l is at 128 s + 4 l of the warp's part.
+ */
+#define GSI1_SPILL_SLOT_BYTES		128U
+
+/*
+ * One place a register value was defined: the value, the register it was
+ * written to, and the code index right after the instructions that wrote
+ * it, where a store into the scratch memory goes when the value is
+ * spilled later.
+ */
+struct gsi1_definition {
+	uint32_t value;
+	uint32_t reg;
+	uint32_t position;
+};
+
+/*
+ * What a compile with spills keeps.
+ *
+ * Only a compile that may spill fills it (enabled is nonzero); its tables
+ * are allocated in gsi1_spill_prepare() and freed with the lowering's.
+ */
+struct gsi1_spill {
+	/* Nonzero when values may be kept in the scratch memory. */
+	int enabled;
+
+	/* The bank word of the scratch memory's address, and the interface entry that names it. */
+	uint32_t bank;
+	uint32_t entry;
+
+	/* The register of the lane's address in the warp's part, and the code index of its movi of the part's words. */
+	uint32_t base;
+	uint32_t patch;
+
+	/* Each value: its scratch word plus one (0: in a register), and the first IR instruction that defines it. */
+	uint32_t *slot;
+	uint32_t *first_definition;
+
+	/* Each value: the IR instruction after which nothing reads or writes it, plus one. */
+	uint32_t *last_touch;
+
+	/* Each value: nonzero once a definition of it is in the list below. */
+	uint8_t *recorded;
+
+	/* Each value: the instruction the lowering is at when it was last read, so that it is not spilled under that instruction. */
+	uint32_t *pinned;
+	uint32_t pin_stamp;
+
+	/* Each value's readers, in order: value v's are reader[reader_start[v]] to reader[reader_start[v + 1] - 1]. */
+	uint32_t *reader_start;
+	uint32_t *reader;
+
+	/* Each scratch word: the IR instruction after which its values are no longer needed, plus one. */
+	uint32_t *slot_busy;
+	uint32_t slot_count;
+	uint32_t slot_capacity;
+
+	/* The places where register values were defined, in code order. */
+	struct gsi1_definition *definition;
+	uint32_t definition_count;
+	uint32_t definition_capacity;
 };
 
 /*
@@ -190,9 +258,13 @@ struct gsi1_lowering {
 	/* Nonzero when a list could not grow. */
 	int out_of_memory;
 
-	/* The loops being lowered: each one's label at its start and the register its EXEC is saved in, innermost last. */
+	/*
+	 * The loops being lowered: each one's label at its start, the register
+	 * its EXEC is saved in, and its LOOP_BEGIN instruction, innermost last.
+	 */
 	uint32_t loop_label[GSI1_LOOP_DEPTH];
 	uint32_t loop_save[GSI1_LOOP_DEPTH];
+	uint32_t loop_start[GSI1_LOOP_DEPTH];
 	uint32_t loop_depth;
 
 	/* The depth of the skippable blocks being lowered. */
@@ -234,6 +306,16 @@ struct gsi1_lowering {
 
 	/* A vertex or fragment program: each location's first varying word (GHCI_GSI1_NO_WORD for none). */
 	uint32_t varying_word[GHCI_GSI1_LOCATIONS];
+
+	/*
+	 * Nonzero once a register was asked for when none was free and none
+	 * could be spilled: the compile is then tried again in a way that
+	 * needs fewer registers.
+	 */
+	int short_of_registers;
+
+	/* The values kept in the scratch memory. */
+	struct gsi1_spill spill;
 };
 
 /* Describes a refusal at the instruction being lowered and returns its error. */
@@ -247,6 +329,9 @@ int gsi1_ir_defines(const struct drv_gpu_shader_ir_inst *instruction);
 
 /* Appends one instruction to the code. */
 void gsi1_emit(struct gsi1_lowering *lowering, uint64_t instruction);
+
+/* Inserts one instruction at a code index, moving the later code, labels and definitions up. */
+void gsi1_insert(struct gsi1_lowering *lowering, uint32_t position, uint64_t instruction);
 
 /* Appends a branch to a label. */
 void gsi1_emit_branch(struct gsi1_lowering *lowering, uint32_t funct3, uint32_t rs1, uint32_t label);
@@ -361,5 +446,41 @@ int gsi1_image_texel(struct gsi1_lowering *lowering, const struct drv_gpu_shader
 
 /* gsi1-texture.c: lowers a sample, a fetch, a gather or a query of a sampled image. */
 int gsi1_texture_lower(struct gsi1_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction, uint32_t dst);
+
+/* gsi1-schedule.c: makes a copy of the instructions with each pure one moved down to its first reader. */
+int gsi1_schedule_sink(const struct drv_gpu_shader_ir *ir, struct drv_gpu_shader_ir_inst **instructions);
+
+/* gsi1-spill.c: plans the spills of a compile that may spill: the readers and lives of the values. */
+int gsi1_spill_prepare(struct gsi1_lowering *lowering);
+
+/* gsi1-spill.c: computes the lane's address in the warp's scratch memory at the program's start. */
+int gsi1_spill_prologue(struct gsi1_lowering *lowering);
+
+/* gsi1-spill.c: starts the lowering of an instruction: the values read before it may be spilled again. */
+void gsi1_spill_next(struct gsi1_lowering *lowering);
+
+/* gsi1-spill.c: keeps a value in its register until the instruction being lowered is done. */
+void gsi1_spill_pin(struct gsi1_lowering *lowering, uint32_t value);
+
+/* gsi1-spill.c: frees a run of registers by moving values into the scratch memory. */
+int gsi1_spill_make_room(struct gsi1_lowering *lowering, uint32_t count, uint32_t *first);
+
+/* gsi1-spill.c: reports whether a value is kept in the scratch memory. */
+int gsi1_spill_is_spilled(const struct gsi1_lowering *lowering, uint32_t value);
+
+/* gsi1-spill.c: reads a spilled value into a scratch register. */
+int gsi1_spill_reload(struct gsi1_lowering *lowering, uint32_t value, uint32_t *operand);
+
+/* gsi1-spill.c: gives a spilled value a scratch register to be defined in, stored after its instruction. */
+int gsi1_spill_destination(struct gsi1_lowering *lowering, uint32_t value, uint32_t *reg);
+
+/* gsi1-spill.c: records where the values an instruction defined live, and stores the spilled ones. */
+int gsi1_spill_defined(struct gsi1_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction);
+
+/* gsi1-spill.c: fills in the size of the warp's scratch memory once the code is done. */
+int gsi1_spill_finish(struct gsi1_lowering *lowering);
+
+/* gsi1-spill.c: frees the spill tables. */
+void gsi1_spill_free(struct gsi1_lowering *lowering);
 
 #endif /* DRIVERS_GPU_GHCI_COMPILER_GSI1_PRIVATE_H */

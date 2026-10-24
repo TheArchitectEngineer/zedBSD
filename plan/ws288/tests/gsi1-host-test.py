@@ -120,7 +120,8 @@ else:
     else:
         ok("encode", "%d known words match gsi1asm and round-trip through gsi1dis" % count)
 
-# 2-4. The modules: (name, mode, harness arguments, options, tolerance, mnemonics the code must have).
+# 2-4. The modules: (name, mode, harness arguments, options, tolerance, mnemonics the code must
+# have, or with "!" must not have).
 CASES = [
     ("integer.comp", "compute", ["64", "4"], "", 0, ["div", "remu", "srai", "slt"]),
     ("float.comp", "compute", ["32", "1"], "floats", 2e-6, ["fround.s", "fract", "fcvt.w.s"]),
@@ -148,6 +149,10 @@ CASES = [
     ("varying64.frag", "fragment", [], "", 2e-6, ["lda"]),
     ("varying64all.vert", "vertex", [], "", 2e-6, ["exp"]),
     ("varyingloop.vert", "vertex", [], "", 2e-6, ["exp", "exec.save", "bexnz"]),
+    ("late.vert", "vertex", [], "", 2e-6, ["exp", "!sw.x"]),
+    ("spill.vert", "vertex", [], "", 2e-6, ["exp", "sw.x", "lw"]),
+    ("spill.comp", "compute", ["64", "2"], "", 0, ["sw.x", "lw", "bexnz"]),
+    ("spill.frag", "fragment", [], "cover=ffff7f3f,floats", 2e-5, ["sw.x", "lw", "qdx", "qbcast"]),
     ("mrt.frag", "compile-fragment", [], "", 0, ["exp"]),
     ("texture.frag", "compile-fragment", [], "regs=64", 0,
      ["texb", "texl", "texg.b", "texb.c", "texb.3", "texf", "texsz", "texsz.s", "texsz.l"]),
@@ -174,7 +179,8 @@ for name, mode, extra, options, tol, mnemonics in CASES:
         continue
     asm, w32, lines = rt
     used = set(ln.split()[0] for ln in lines if ln.startswith("\t"))
-    missing = [m for m in mnemonics if m not in used]
+    missing = [m for m in mnemonics if not m.startswith("!") and m not in used]
+    missing += [m for m in mnemonics if m.startswith("!") and m[1:] in used]
     if missing:
         fail(name, "the code lacks %s" % missing)
         continue
