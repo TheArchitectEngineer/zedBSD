@@ -931,5 +931,5 @@ WS074 の記録の q590・q594〜q598（Codex の browser3）は main の同じ�
 | Queue | 担当 | Phase | 範囲 | 結果 |
 | --- | --- | --- | --- | --- |
 | q1554 / q1554-i01 | P1（phase-runner、amaterrace-gpu の worktree `~/amaterrace-worktrees/p1-p026`・branch `p1-p026`、基点 ae6f9c5） | [ws288-p026](ws288/phase026/phase.md) | STATE の番号に名前、source から WS・Phase の番号を外す、短い sim の組。回路は変えない | 実行中（2026-10-24 22:50） |
-| q1555 / q1555-i01 | P2（phase-runner、amaterrace-gpu の worktree `~/amaterrace-worktrees/p2-p009d`・branch `p2-p009d`、基点 8f4fe1d） | [ws288-p009](ws288/phase009/phase.md) part D | SU の残り: qd・helper lane・coverage の mask、subgroup の確認、deadlock の回避、PACKED、kc705_raster。承認: 2026-10-24 ユーザー「では、p009も始めましょう。」 | 実行中（2026-10-24 22:58） |
+| q1555 / q1555-i01 | P2（phase-runner、amaterrace-gpu の worktree `~/amaterrace-worktrees/p2-p009d`・branch `p2-p009d`、基点 8f4fe1d） | [ws288-p009](ws288/phase009/phase.md) part D | SU の残り: qd・helper lane・coverage の mask、subgroup の確認、deadlock の回避、PACKED、kc705_raster。承認: 2026-10-24 ユーザー「では、p009も始めましょう。」 | 担当の作業は終了（f9d14d6、P2 は返却、main に未 merge） |
 | q1556 / q1556-i01 | P3（phase-runner、worktree `~/amaterrace-worktrees/p3-p009e`・branch `p3-p009e`、基点 8f4fe1d） | [ws288-p009](ws288/phase009/phase.md) part E | TU の trilinear・CLAMP_TO_BORDER・compare。承認: 同上 | 実行中（2026-10-24 22:58） |
