@@ -640,6 +640,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-25 04:11 ユーザー「PCIEの試験環境は今夜整う予定ですので、少し時間が空きました。テクスチャ圧縮も含めて、Vulkan 1.0の必須項目を実装してしまいます。お願いします。」→ p030 に ETC2+EAC（S12）を戻し、varying 64 component・stage ごとの texture の slot 16 も入れる（Vulkan 1.0 core の必須の全部）。Future Work fw-amaterrace-ctex は promoted。
 - 2026-10-25 04:10 ユーザー「U項目は推しでOKです。U57について、ZYBOはもう合成しません。ターゲットから外し、ソースは docs/old/ 以下に移します。」→ WS288 design §16.24 の U47〜U60 は推し、U57 は ZYBO を外すので消えた。新しい p031（ZYBO を target から外す）を P1 に、その後 p030 S1。
 - 2026-10-25 03:47 ユーザー「圧縮テクスチャはPCIe GPUの実機bringupの後に回します。」→ p030 の S12（ETC2+EAC）を外し Future Work fw-amaterrace-ctex（p028 の後）。
 - 2026-10-25 02:33 ユーザー「検証はT1, T2, T3に依頼して、P1,P2が実装を先に進めていくことにしましょう。N=3だと５時間のレートリミットにひっかかりやすいので、N=2がいいですね。」→ WS288 の実装の担当は同時に 2 つ（N=2）。実装の担当は lint・変えた所の単体 TB までで、`make sim`・`sim-quick`・`verilator`・長い scene は試験の担当 T1〜T3 に Q1 経由で回し、結果を待たずに次へ（AGENTS.md の T1 の規則と同じ形）。
