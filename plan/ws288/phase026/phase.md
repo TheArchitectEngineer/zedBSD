@@ -3,7 +3,7 @@
 # ws288-p026 RTL の書き方の直しと短い sim
 
 - 親: [WS288](../ws.md)。規則: amaterrace-gpu の `docs/style.md`、zedBSD の [Guardrail](../../guardrail.md) の「source の中の開発の管理情報」。
-- 状態: in-progress（2026-10-24 22:50 Q1、q1554）
+- 状態: cleared（2026-10-25 01:02 Q1。amaterrace-gpu の merge 1e1a90c）
 - 依存: なし（p009 の前に行う）。
 - 承認: 2026-10-24 ユーザー「では、まずは気づいた点を直すところから始めましょう。simは長いものも残しつつ手短に確認できるものがあるといいですね。」（Q1 が SU の RTL の特徴を説明した時の「気づいた点」1〜3 への回答）
 
@@ -23,3 +23,6 @@
 ## 記録
 
 - 2026-10-24 22:50 Q1: 新設、q1554 で P1 に。
+- 2026-10-25 01:02 P1 → Q1: 8f4fe1d（STATE の名前）・41d56ab（WS・Phase の番号を外す、62 file）・a0b599b（絶対 path を相対に、ユーザー「絶対パスは相対にしましょう。」）・d0a5794（`make sim-quick`）。P1 の申告: lint 106 clean、`make sim` 80/80 PASS（961 s）、`make sim-quick` 78 PASS（345 s）、verilator 5 本 PASS。回路の不変: comment だけの file は comment を除いた token が同じ、part 1 の 15 module は yosys の proc 後の netlist が同じ、core 全体の generic の netlist の stat が同じ。`make oxc-core`（synth_xilinx）は cell の数が 163015 → 162201 と違う（FDRE・DSP・RAM は同じ、LUT・CARRY4・MUXF だけ。base の再実行は 163015 で再現。P1 の推定は行番号の変化で yosys の share・ABC の打ち切りが変わる、未証明）。
+  - Q1 の確認: 4 つの SHA は commit。amaterrace-gpu の main（ae6f9c5）へ `--no-ff` で merge、衝突なし、merge の後に lint clean・`make sim-quick` 78 PASS 0 FAIL を確かめて 1e1a90c（親 ae6f9c5 d0a5794）。Q1 の判定: 受け入れを満たす（generic の netlist が同じなので回路は不変と判断、oxc-core の差は合成の道具の揺れ）→ cleared。
+  - 残件: `sim/tb` の生の STATE の番号、`docs/ghci.md` に VF・RX・ROP・TU・vendor の範囲の名前が無い、CI の `make sim` の既定の timeout 300 s（atg_su 201 s・atg_top_tex は part E の後に約 10 分）。

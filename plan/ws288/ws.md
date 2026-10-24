@@ -53,7 +53,7 @@
 | [p012](phase012/phase.md) | KC705 の RTL: board の top、JTAG の bridge、MIG・MMCM の wrapper、DC の HDMI（ADV7511）、sim まで（板は p024） | p004、p005、U7 | cleared（2026-10-24: 9e00981 の JTAG の bridge・I2C・YCbCr 4:2:2 の HDMI・board の top の sim、dbdf6e7 の EXTCAP の DISP・DBG と CAPS[3]・[27]・[28]。板は p024） |
 | [p024](phase024/phase.md) | KC705 の板での確認（MIG の IP、bitstream、JTAG で fill → DBG、HDMI の color bar、scene を板で） | p012 | planned（2026-10-24 新設） |
 | [p025](phase025/phase.md) | timing の調整（KC705 で 200 MHz、blend の 2 段化など） | RTL が揃った後 | planned（2026-10-24 新設） |
-| [p026](phase026/phase.md) | RTL の書き方の直し（STATE の番号に名前、source から WS・Phase の番号を外す）と短い sim（`make sim-quick`）。回路は変えない | なし | in-progress（2026-10-24 22:50、q1554 P1） |
+| [p026](phase026/phase.md) | RTL の書き方の直し（STATE の番号に名前、source から WS・Phase の番号を外す）と短い sim（`make sim-quick`）。回路は変えない | なし | cleared（2026-10-25 01:02、amaterrace-gpu 1e1a90c） |
 | p023 | module の木・空の module・module ごとの spec（design §7.6）。part 1（P1）: まだ無い 86 module の port だけの Verilog と spec、`atg_top` の block の parameter、board の top、MC の router の木（2026-10-23 ユーザーの要求で `atg_rt` 等を実装）: [phase023](phase023/phase.md)。part 2（P2）: 既存の module の spec | p001（版 4）、p002、U37、U38 | cleared（2026-10-23 Q1: part 1（P1）= module の木の空の module と spec（CP・CPU・SU 24・VF・RX・TU・ROP・MC と router の木 atg_rt・DC・SA の port の予約・ZYBO と KC705 の board の top）、part 2（P2）= 既存 10 module の spec。lint 97/97 clean、sim 18/18 PASS。amaterrace-gpu main 98885bf まで） |
 
 ## 現在の状態・再開点
