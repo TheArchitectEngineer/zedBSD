@@ -3,7 +3,7 @@
 # ws288-p027 MSAA（multisample の描画と sample する image）
 
 - 親: [WS288](../ws.md)。設計: [design.md](../design.md) **§15 MSAA**（版 5、2026-10-25 P2）。review: [design-review-msaa.md](../design-review-msaa.md)。
-- 状態: in-progress（2026-10-25 q1560-i01 P2: 実装の段。U44 の書き直し（版 5.1）は review 3 済み、S1 から）
+- 状態: in-progress（2026-10-25 q1560-i02 P2: S1〜S7 実装済み。T の試験（make sim・make verilator・lint）の後に Q1 が判定）
 - 依存: p009（part F の TU、特に multisample の sampled image の読みはこの Phase で）。
 - 承認: 2026-10-25 ユーザー「了解です。SAはfuture workに回します。p009, msaaを優先して実装してください。そのあと、p010,p018,p019,p006,p011を実装します。KC705のDDR3をVRAMにしてPCIeのGPUボードにすることで、QEMUからパススルーで利用し、ゲストのzedBSDからVulkanを動作させることを、最初のゴールにします。必要なphaseは作成してください。」
 
@@ -23,7 +23,7 @@
 | S3 | SU: `atg_su_exp`（r6・0x105・zexp・d_s・`ex_ms`） | S1 | 3 | 実装済み・単体 TB PASS（e64cf2b）、T の試験待ち |
 | S4 | ROP: `atg_rop_ms`（新）、`order`・`ds`・`wb` | S1 | 7 | 実装済み・単体 TB PASS（3b205fd）、T の試験待ち |
 | S5 | TU: MS の `texf`・RGB565 の `texf`（addr・cache・filter）・`texsz.s`（imm 3、SU の decode） | S1、p009 part F の merge | 5 | 実装済み・単体 TB PASS（7190b03）、T の試験待ち |
-| S6 | `atg_top_msaa_tb` と scene、BLT の resolve を含む、Verilator、README、GHCI §12.11 | S2〜S5、S7 | 6 | 未着手（再開点は記録の 05:01） |
+| S6 | `atg_top_msaa_tb` と scene、BLT の resolve を含む、Verilator、README、GHCI §12.11 | S2〜S5、S7 | 6 | 実装済み・scene PASS（e547bbb）、T の試験待ち |
 | S7 | BLT の RESOLVE（§15.8 版 5.1）: `atg_blt` を wrapper に、`atg_blt_2d`（今の物の名前だけ）、`atg_blt_rsv`・`atg_blt_rsv_px`・`atg_blt_avg`、TB、spec、ghci §8.2 | S1 | 8 | 実装済み・単体 TB PASS（39191ce）、T の試験待ち |
 | (追加) | `atg_cp_seq` の RX・ROP の範囲の待ち（Q1 の依頼、P1 の §16.8a の hazard）: `atg_cp_seq_wait` に分割 | — | 1 | 実装済み・単体 TB PASS（7d56c2a）、T の試験待ち |
 
@@ -54,3 +54,11 @@ design の MSAA の節（review 済み）。scene の 4x の color・depth と r
   - `make lint` clean（118 行 clean、rc 0）、`tools/lint.sh` の KC705 の形に `-GMS4=1`。
   - **S6 の再開点**（未着手）: (1) `atg_cp` に parameter `MS4` と CAPS[29]、`atg_top` から渡す。(2) `sim/tb/atg_top_scene.vh` の harness に parameter `MS4`、ring の位置と大きさ（今は 0x5F000・512 語）を parameter に、E 行の間の「C 名前」で case ごとの PASS を出す口。(3) `tools/rx-msaa-scene.py`（rx-shade-scene.py の形、KC705 の形だけ、32×24 程度: 共有の edge・depth の交差・a2c・exp 0x105・centroid・BLT の RESOLVE（offset・2 layer・tile の dst・565）・MS の depth を texf・奇数の幅・4x の後の 1x・SAMPLE_KILL × CENTROID・depth だけ・texsz.s（fcvt.s.w と half の積で 1 と 4 を区別））。(4) `sim/tb/atg_top_msaa_tb.v`。(5) Verilator の MSAA mode。(6) README の ROP・RX・TU・BLT の行、ghci §12.11 の確定。
 - 2026-10-25 05:11 Q1: P2 は S1〜S5・S7・cp_seq の直しで context のため返却（6b5f6c8）。amaterrace-gpu の main に merge（58697d1、衝突 4 file: lint.sh は KC705 の行と MS4 を合わせ、atg_blt.v・atg_blt.md は P2 の wrapper の形、ghci.md は両方を合わせ CAPS と §12.11・§12.12 の順を直した 5f3b747）。merge の後に lint clean 111、atg_blt_rsv・atg_blt_avg・atg_fmt・atg_fmt_srgbenc・atg_dc_regs・atg_cp_seq・atg_rop_ms・atg_top PASS。P2 の worktree の `build/ms.s` を Q1 が消した。zedBSD の agent/p2-p027 72588743c を main に merge（946c74d88）。T1-757・758・760・761 の後に T1-762（main 5f3b747）。S6 は新しい起動で。
+- 2026-10-25 05:52 P2（q1560-i02、**S6**、amaterrace-gpu の worktree p2-p027b、基点 main 5f3b747、commit e547bbb）:
+  - `atg_cp` に parameter `MS4` と CAPS[29]（= MS4 かつ VF・RX・ROP・TU・SU が有る）、`atg_top` から渡す。spec `atg_cp.md`（parameter と CAPS の式。式の CAPS[26] = TU も直した）・`atg_top.md`（§8 と状態）。
+  - harness `sim/tb/atg_top_scene.vh`: parameter `MS4`・`RING`・`RING_LOG2`・`WAIT_READS`、scene の `C 名前` の行で case ごとに `PASS TB(NAME).case` か FAIL、全 scene の TB で CAPS[29] = MS4 && HAS_VF && HAS_TU && NSU を確かめる。
+  - `tools/rx-msaa-scene.py`（KC705 の形だけ、32×24、14 case: design §15.15 の (1)〜(13) と `texf_odd`。33 三角形・2055 quad・ring 699 語・照合 43264 語、数秒）→ `sim/vec/msaa_scene.txt`（1.75 MB）。`sim/tb/atg_top_msaa_tb.v`。Verilator の `-DMSAA` mode（scene の全部、既定の形 LINE_BYTES 32、`build/verilator/msaa.png` = resolve の結果）と `sim/verilator/run.sh` の build。`sim/run.sh` の LONG に `atg_top_msaa`。
+  - README の BLT・RX・TU・ROP の行と Status の行、ghci §12.9（MS は CAPS[29] で §12.11）、§12.11（draft の印は残し「Amaterrace implements it, in simulation」、SET_REG の待ちを今の規則に）。
+  - 確認（自分で流した。新しい TB の作り込みのため）: iverilog `atg_top_msaa`（KC705 の形）PASS の行 16（case 14 + `.scene` + `atg_top_msaa`、5 分 52 秒、host は他の試験と共用）。Verilator msaa PASS（467652 cycle、3 秒）。Verilator の故意の誤り: MUT_SAMPLE_SWAP・DZ_SIGN・A2C_STEP・COV_SKIP・RSV_RNE（`-Wno-UNUSEDSIGNAL` が要る）・R3_CLAMP・TU_MSROW で scene が FAIL（R3_CLAMP と TU_MSROW は最初の scene で見えず、depth 0 の辺の三角形と `texf_odd` を足して見えるようにした）。MUT_SMASK_AND は scene で見えない（その誤りは r6 & m5 & r6 = r6 & m5 で、snoop の無い lane だけに効く単体の検査用）。iverilog の MUT_TU_MSROW で `FAIL atg_top_msaa(kc705).texf_odd`、他の 13 case は PASS（case ごとの FAIL の口の確認）。`make lint` clean（111 行、rc 0）。
+  - 未実施: `make sim` 全体・`sim-quick`・`make verilator` 全体（T に依頼）。既存の scene の TB（raster・shade・tex）は harness を変えたので T の試験で PASS を確かめる。
+  - review 用の PNG（RTL の resolve の結果を 8 倍）: amaterrace-gpu の worktree p2-p027b の `build/review/msaa-resolve-8x.png`。
