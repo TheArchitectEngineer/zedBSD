@@ -16,6 +16,7 @@
 | C | TU（`atg_tu_addr`・`cache`・`filter`）と `atg_su_tex`、最近傍 → bilinear | textured な三角形が model と一致 | cleared（2026-10-24 Q1: amaterrace-gpu d9d4cf0、main の merge 00bb02b） |
 | D | SU の残り（design §8 の p009 の行）: `qd` と helper lane・coverage の mask（M10）、`shfl`/`vote`/`ballot` の SU での確認、deadlock の回避の確認、`PACKED`（KC705 の構成）、`kc705_raster`（N=1）の確認 | 各項目の TB（または既存の TB の case）が PASS、PACKED=1・SUBGROUP=1 の構成で lint clean、`make sim` の PASS が減らない | 担当の作業は終了（f9d14d6、main に未 merge。p026 の merge の後に Q1 が merge） |
 | E | TU の Vulkan 1.0 core に合わない 3 点: mipmapMode LINEAR（trilinear、2 回に分けて引く案）、CLAMP_TO_BORDER（border の色の STATE）、compare（depth の比較の sampler） | `tumodel.py` を広げて TU・`atg_su_tex` の TB と `atg_top_tex` の scene が model と一致、GHCI の STATE・SAMPLER の追加は `docs/ghci.md` に案（Q1 がレビューして merge） | in-progress（2026-10-24 22:58 q1556 P3） |
+| F | TU の Vulkan 1.0 core で必須の残り: ConstOffset、2D array（descriptor の作り直し）、3D、cube（面の選択と境目）、unnormalizedCoordinates、multisample の sampled image。README の TU の行 | `tumodel.py`・TU・`atg_su_tex` の TB と scene が model と一致、GHCI §8.4・§12.9 の更新 | planned（part E の merge の後に起動） |
 
 ## 記録
 - 2026-10-24 Q1: part A を P1（phase-runner、Opus 5.5 high）に依頼。amaterrace-gpu の worktree `~/amaterrace-worktrees/p1-vf`（branch `p1-vf`、基点 main 3839cb5）。範囲は VF の子 4 つと単体 TB 4 本、spec §10 の更新。結果は P1 の返答を Q1 がここに書く。
@@ -42,3 +43,4 @@
   - spec の読み（P2）: (1) shfl/vote/ballot は helper と kill の lane も active に数える（EXEC の上で定義）。Q1 の判断: kill を Vulkan の demote（helper になる）として扱うなら Vulkan の「quad 以外の subgroup の操作で helper が active かは実装依存」の範囲と考える（未確認、Vulkan の文面は p010 の compiler で確かめる）。(2) vertex の warp の kill も PT の export を止める。(3) この SU の deadlock の回避を実際に支えるのは PT の block ごとの割り当て（2 block 以上）で、FRAG_RESERVE は VF が溢れる時に fragment の slot を残す役 → design §3.8 の文を直す（Q1、design の次の版）。
   - design の食い違い: §8 の p009 の行と §14 の 18（packed・subgroup を p022 へ）→ §14 を直す（Q1）。
 - 2026-10-24 23:57 Q1: ユーザーの texture の命令の指示（Master の decisions-log）で、part E の範囲に compare の制限を無くす命令の形の見直しを足して P3 に送った。
+- 2026-10-25 00:27 Q1: ユーザーの決定（Master の decisions-log）で part F を新設。P3 は context が大きいので part E で返却し、part F は新しい起動に渡す。README の TU の行は part E の分を P3 が直す。
