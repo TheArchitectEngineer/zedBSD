@@ -15,3 +15,4 @@
 | C | TU（`atg_tu_addr`・`cache`・`filter`）と `atg_su_tex`、最近傍 → bilinear | textured な三角形が model と一致 | planned |
 
 ## 記録
+- 2026-10-24 Q1: part A を P1（phase-runner、Opus 5.5 high）に依頼。amaterrace-gpu の worktree `~/amaterrace-worktrees/p1-vf`（branch `p1-vf`、基点 main 3839cb5）。範囲は VF の子 4 つと単体 TB 4 本、spec §10 の更新。結果は P1 の返答を Q1 がここに書く。
