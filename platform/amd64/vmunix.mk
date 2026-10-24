@@ -268,6 +268,24 @@ AMD64_AMDRDNA_VK_SOURCES += src/drivers/gpu/amdrdna/vk/vk-object.c src/drivers/g
 	src/drivers/gpu/amdrdna/vk/vk-descriptor.c src/drivers/gpu/amdrdna/vk/vk-quad.c src/drivers/gpu/amdrdna/vk/vk-float.c \
 	$(filter-out $(AMD64_I915_SOURCES) $(AMD64_NVRTX_SOURCES),src/drivers/gpu/i915/render/codec.c)
 endif
+# The generic GHCI GPU driver (a PCIe GPU with the GPU Host Controller Interface): the device, the ring, the
+# memory, the display, and its GSI1 shader compiler with the shared frontend and optimizer (built here only when
+# no other driver builds them).  CONFIG_GHCI_NATIVE adds the root-only native command of the test images.
+AMD64_GHCI_SOURCES :=
+ifeq ($(CONFIG_DRIVER_PCI_GHCI),y)
+AMD64_GHCI_SOURCES += src/drivers/gpu/ghci/ghci.c src/drivers/gpu/ghci/pci-attach.c src/drivers/gpu/ghci/cp.c \
+	src/drivers/gpu/ghci/memory.c src/drivers/gpu/ghci/range.c src/drivers/gpu/ghci/blit.c \
+	src/drivers/gpu/ghci/state.c src/drivers/gpu/ghci/check.c src/drivers/gpu/ghci/capset.c \
+	src/drivers/gpu/ghci/jobs.c src/drivers/gpu/ghci/isa.c src/drivers/gpu/ghci/display.c \
+	src/drivers/gpu/ghci/adv7511.c src/drivers/gpu/ghci/service.c \
+	src/drivers/gpu/ghci/compiler/gsi1-compile.c src/drivers/gpu/ghci/compiler/gsi1-encode.c \
+	src/drivers/gpu/ghci/compiler/gsi1-io.c src/drivers/gpu/ghci/compiler/gsi1-memory.c \
+	src/drivers/gpu/ghci/compiler/gsi1-texture.c src/drivers/gpu/ghci/compiler/gsi1-image.c \
+	$(filter-out $(AMD64_I915_SOURCES) $(AMD64_NVRTX_SOURCES) $(AMD64_AMDRDNA_COMPILER_SOURCES),src/drivers/gpu/compiler/spirv.c src/drivers/gpu/compiler/optimize.c)
+ifeq ($(CONFIG_GHCI_NATIVE),y)
+AMD64_GHCI_SOURCES += src/drivers/gpu/ghci/native.c
+endif
+endif
 # The i915 test build: checkpoints the production code calls through weak symbols.
 # The runner runs the scenario -DI915_TEST_SCENARIO=<name> (in ZEDBSD_TEST_CPPFLAGS) after the start;
 # I915_TEST_ORACLE=y also links the draw readback the pixel oracle reads (slow: it dumps a frame).
@@ -427,6 +445,7 @@ AMD64_KERNEL_SOURCES := \
 	$(AMD64_AMDRDNA_SOURCES) \
 	$(AMD64_AMDRDNA_COMPILER_SOURCES) \
 	$(AMD64_AMDRDNA_VK_SOURCES) \
+	$(AMD64_GHCI_SOURCES) \
 	$(AMD64_INTEL_WLAN_SOURCES) \
 	$(AMD64_ACPI_SOURCES) \
 	$(AMD64_I2C_SOURCES) \

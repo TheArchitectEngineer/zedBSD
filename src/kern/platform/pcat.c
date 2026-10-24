@@ -55,6 +55,9 @@
 #if CONFIG_DRIVER_PCI_AMDRDNA
 #include <drivers/pci/pci-amdrdna.h>
 #endif
+#if CONFIG_DRIVER_PCI_GHCI
+#include <drivers/pci/pci-ghci.h>
+#endif
 #if CONFIG_DRIVER_PCI_HDA
 #include <drivers/pci/pci-hda.h>
 #endif
@@ -220,6 +223,9 @@ kern_platform_init(
 #if CONFIG_DRIVER_PCI_AMDRDNA
 	int amdrdna_error;
 #endif
+#if CONFIG_DRIVER_PCI_GHCI
+	int ghci_error;
+#endif
 #if CONFIG_DRIVER_PCI_HDA
 	int hda_error;
 #endif
@@ -345,6 +351,13 @@ kern_platform_init(
 	amdrdna_error = drv_pci_amdrdna_driver_register();
 	if (amdrdna_error != 0)
 		kern_logf("pci: amdrdna driver registration failed (%d)\n", amdrdna_error);
+
+#endif
+#if CONFIG_DRIVER_PCI_GHCI
+	/* Offers 3D and other display controllers to the GHCI driver, which keeps those whose BAR0 says GHCI. */
+	ghci_error = drv_pci_ghci_driver_register();
+	if (ghci_error != 0)
+		kern_logf("pci: GHCI driver registration failed (%d)\n", ghci_error);
 
 #endif
 #if CONFIG_DRIVER_PCI_HDA

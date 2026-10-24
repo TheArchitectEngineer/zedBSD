@@ -2010,7 +2010,43 @@ enum gpu_op {
 	 * the buffer is submitted on the video decode queue family.
 	 * Order: inside a coding scope (GPU_OP_CMD_BEGIN_VIDEO_CODING).
 	 */
-	GPU_OP_CMD_DECODE_VIDEO = 0x1000d
+	GPU_OP_CMD_DECODE_VIDEO = 0x1000d,
+
+	/*
+	 * The GHCI gpu-ops: the generic driver of a GPU with the GPU Host
+	 * Controller Interface (ghci/) writes them into the GPU's command ring
+	 * as class 2 packets, which the GPU's command processor firmware
+	 * decodes (GHCI 1.0 section 7.2, draft numbers).  libvulkan never
+	 * sends them; the driver makes SESSION_OPEN, SESSION_CLOSE, MEMORY,
+	 * PROGRAM, FRAME, BUFFER_GRANT and BUFFER_REVOKE itself.
+	 *   SESSION_OPEN  [u32 tag][u32 flags][u64 heap limit in bytes]
+	 *   SESSION_CLOSE [u32 tag]
+	 *   MEMORY        [u64 memory][u64 GPU address][u64 bytes][u32 flags]
+	 *   PROGRAM       [u64 pipeline][u32 stage][u32 ISA][u64 address][u32 bytes][u32 flags]
+	 *   FRAME         [u64 staging address][u32 bytes][u32 result page][u32 records]
+	 *   BUFFER_GRANT  [u32 session][u32 access][u64 GPU address][u64 bytes]
+	 *   BUFFER_REVOKE [u32 session][u64 GPU address][u64 bytes]
+	 *
+	 * GPU_OP_GHCI_NATIVE alone is sent by userland, and only by root on a
+	 * kernel built with CONFIG_GHCI_NATIVE (the test images), through
+	 * GPU_COMMAND: [u32 number][u32 flags 0][u32 count][count class 0
+	 * packets of the GHCI ring].  The driver checks it (a few standard
+	 * micro-operations, every blitter rectangle and fence inside the
+	 * session's memory), gives every packet the session's job tag and
+	 * copies the packets into the ring followed by a fence of its own.
+	 * The GPU address of a blob of a GHCI device is its resource id.
+	 * Sent by: userland/tests/ghci-blit.
+	 * Decoded by: ghci/native.c: ghci_native_command, ghci/check.c:
+	 * ghci_native_prepare.
+	 */
+	GPU_OP_GHCI_SESSION_OPEN = 0x10100,
+	GPU_OP_GHCI_SESSION_CLOSE = 0x10101,
+	GPU_OP_GHCI_MEMORY = 0x10102,
+	GPU_OP_GHCI_PROGRAM = 0x10103,
+	GPU_OP_GHCI_NATIVE = 0x10104,
+	GPU_OP_GHCI_FRAME = 0x10105,
+	GPU_OP_GHCI_BUFFER_GRANT = 0x10106,
+	GPU_OP_GHCI_BUFFER_REVOKE = 0x10107
 };
 
 #endif
