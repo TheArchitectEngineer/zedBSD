@@ -2038,6 +2038,8 @@ reviewer が照合した物: design.md の §3.1〜§3.6・§2.2〜§2.4・§6�
 
 ### 16.24 U 項目（ユーザーの判断。推し付き）
 
+**回答（2026-10-25 04:10）**: ユーザー「U項目は推しでOKです。U57について、ZYBOはもう合成しません。ターゲットから外し、ソースは docs/old/ 以下に移します。」 → U47〜U60 は推し。U57 は無くなった: ZYBO は GPU の target から外し、source は amaterrace-gpu の `docs/old/` へ（[p031](phase031/phase.md)）。
+
 | U | 問い | 推し | 他の案 |
 | --- | --- | --- | --- |
 | **U47** | STATE の format の番号を VkFormat の値にし、0 を今の field（legacy）にするか | **する**（firmware の表が不要、GHCI の流儀、今の試験が変わらない） | GHCI 独自の 6 bit の番号 |

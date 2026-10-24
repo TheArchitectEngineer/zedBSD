@@ -32,7 +32,7 @@
 <!-- master:next:start -->
 1. 新しい Q1 は AGENTS.md・この block を読む。**ユーザーへは日本語で、聞かれた 1 件だけを答える。ユーザーに試験を頼まない。**
 2. **merge・試験の出力は必ず読んで確かめてから記録・報告する**（merge の後に `git log -1 --format='%h %p'`、担当の SHA は `git cat-file -t`）。担当の branch に捨てた変更が残っていないか（例: 2026-10-22 の P2 の buffer の使い回し）を diff の file の一覧で確かめ、必要なら cherry-pick。
-3. 次の番号: BUG-346、q1561、WS290、KL_VERSION 96。古い q・T1 の番号の経緯は git の履歴（2026-10-23 以前の master.md）。
+3. 次の番号: BUG-346、q1562、WS290、KL_VERSION 96。古い q・T1 の番号の経緯は git の履歴（2026-10-23 以前の master.md）。
 4. WS288 の次: [handover-20261024-2230.md](ws288/handover-20261024-2230.md) の §5（推し: p009 の残りを閉じる → p018・p010 → p006 の見直し）。担当には amaterrace-gpu の worktree を作って渡し、Q1 が `--no-ff` で merge する。
 5. 日付は host の `date`。記録の整合は [record-integrity.md](record-integrity.md)。1 LW ≈ 実時間 15〜25 分。
 <!-- master:next:end -->
@@ -50,7 +50,7 @@
 ### Focus
 
 <!-- master:focus:start -->
-- **fg022 KC705 の PCIe の GPU の board（2026-10-25 01:09〜、[WS288](ws288/ws.md)）**: DDR3 を VRAM にした KC705 を host の QEMU に VFIO で passthrough し、guest の zedBSD から Vulkan を動かす（[p028](ws288/phase028/phase.md)）。順: p009 part F → p027 MSAA → p030 core の残り → p010 → p018 → p019 → p006 → p011 → p024 → p013 → p028 → p029（host の memory だけ）。timing（p025）は driver の後、最後。
+- **fg022 KC705 の PCIe の GPU の board（2026-10-25 01:09〜、[WS288](ws288/ws.md)）**: DDR3 を VRAM にした KC705 を host の QEMU に VFIO で passthrough し、guest の zedBSD から Vulkan を動かす（[p028](ws288/phase028/phase.md)）。順: p009 part F → p027 MSAA → p031 ZYBO を外す → p030 core の残り → p010 → p018 → p019 → p006 → p011 → p024 → p013 → p028 → p029（host の memory だけ）。timing（p025）は driver の後、最後。
 - **Pi 5 の仕上げ（WS278・WS279）**: 残りは BT・BUG-345・GPU の速さ。
 - 達成・終了: fg021 ZYBO（2026-10-23）、fg019 ベータ2（2026-10-17 OSC）、fg010 OSC のデモ。fg020 VF2 は保留。
 <!-- master:focus:end -->
@@ -640,6 +640,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-25 04:10 ユーザー「U項目は推しでOKです。U57について、ZYBOはもう合成しません。ターゲットから外し、ソースは docs/old/ 以下に移します。」→ WS288 design §16.24 の U47〜U60 は推し、U57 は ZYBO を外すので消えた。新しい p031（ZYBO を target から外す）を P1 に、その後 p030 S1。
 - 2026-10-25 03:47 ユーザー「圧縮テクスチャはPCIe GPUの実機bringupの後に回します。」→ p030 の S12（ETC2+EAC）を外し Future Work fw-amaterrace-ctex（p028 の後）。
 - 2026-10-25 02:33 ユーザー「検証はT1, T2, T3に依頼して、P1,P2が実装を先に進めていくことにしましょう。N=3だと５時間のレートリミットにひっかかりやすいので、N=2がいいですね。」→ WS288 の実装の担当は同時に 2 つ（N=2）。実装の担当は lint・変えた所の単体 TB までで、`make sim`・`sim-quick`・`verilator`・長い scene は試験の担当 T1〜T3 に Q1 経由で回し、結果を待たずに次へ（AGENTS.md の T1 の規則と同じ形）。
 - 2026-10-25 02:32 ユーザー「U項目は推しでOKです。ただ、U44はちゃんとあるべき論で実装するのがいいと思います。U46は、N=2でもう１つサブエージェントを立てて、実装しましょう。もし検証が多いなら、N=3でもいいです。」→ WS288 design §15.20: U43 sample shading 無し、U44 hardware の resolve（あるべき形）、U45 v1 は正しさだけ、U46 新しい p030（Vulkan 1.0 core の残り）を P1 で開始（N=2: P3 の p009 part F と並行）。
