@@ -21,3 +21,4 @@ host の試験が PASS（件数を記録）、zedBSD の vmunix の build が wa
 ## 記録
 
 - 2026-10-25 05:56 Q1: 新設、P2 に（q1564）。
+- 2026-10-25 06:58 P2 → Q1: 段 1（GSI1 の backend の本体）zedBSD agent/p2-p010 6fd59cc1f、amaterrace p2-p010 e609dc7。`src/drivers/gpu/ghci/compiler/`（gsi1_isa.h の写し、encode・compile・io・memory・texture・image）、共有の front end に feature の bit つきの `drv_gpu_shader_parse_features`（既存の `drv_gpu_shader_parse` は features 0 で従来どおり）、SampleMask・FragDepth・Centroid・QuerySamples・storage image・texel buffer・input attachment を GHCI だけに開放。host 試験 `plan/ws288/tests/gsi1-host-test.sh` 26/26 PASS（P2 の申告）。P2 の判断: skip の block は分岐しない（SELECT の parser の約束のため）、noperspective・FragCoord.w は vertex が clip w を余分の varying に出す、VertexIndex・InstanceIndex は interface kind 13。
