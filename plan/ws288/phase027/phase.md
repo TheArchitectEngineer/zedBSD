@@ -3,7 +3,7 @@
 # ws288-p027 MSAA（multisample の描画と sample する image）
 
 - 親: [WS288](../ws.md)。設計: [design.md](../design.md)（MSAA の節は無い。この Phase の最初に足す）。
-- 状態: planned（2026-10-25 01:08 Q1 新設）
+- 状態: in-progress（2026-10-25 01:12 q1558 P2: 設計の段）
 - 依存: p009（part F の TU、特に multisample の sampled image の読みはこの Phase で）。
 - 承認: 2026-10-25 ユーザー「了解です。SAはfuture workに回します。p009, msaaを優先して実装してください。そのあと、p010,p018,p019,p006,p011を実装します。KC705のDDR3をVRAMにしてPCIeのGPUボードにすることで、QEMUからパススルーで利用し、ゲストのzedBSDからVulkanを動作させることを、最初のゴールにします。必要なphaseは作成してください。」
 
@@ -20,3 +20,4 @@ design の MSAA の節（review 済み）。scene の 4x の color・depth と r
 ## 記録
 
 - 2026-10-25 01:08 Q1: 新設（part E の P3 の調べで、multisample の sampled image が ROP の MSAA に依存すると分かった）。
+- 2026-10-25 01:12 Q1: 設計の段を P2（kernel-and-driver-designer）に（q1558）。part F（P3）と並行。実装の段は設計の review と part F の merge の後。
