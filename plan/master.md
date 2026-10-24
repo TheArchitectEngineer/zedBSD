@@ -11,7 +11,7 @@
 -->
 
 <!-- master:agents:start -->
-- **2026-10-24 22:50 再開**: P1 が [ws288-p026](ws288/phase026/phase.md)（RTL の書き方の直しと短い sim、q1554、amaterrace-gpu の worktree `~/amaterrace-worktrees/p1-p026`）。その後 p009 の残り（ユーザー「p009を最初にやりましょう。」）。前回の引き継ぎは [handover-20261024-2230.md](ws288/handover-20261024-2230.md)。
+- **2026-10-24 22:50 再開**: P1 が [ws288-p026](ws288/phase026/phase.md)（RTL の書き方の直しと短い sim、q1554、amaterrace-gpu の worktree `~/amaterrace-worktrees/p1-p026`）。22:58 から p009 の残りを P2（part D、SU、q1555）・P3（part E、TU、q1556）が並行（ユーザー「では、p009も始めましょう。」）。前回の引き継ぎは [handover-20261024-2230.md](ws288/handover-20261024-2230.md)。
 - **FPGA の GPU（[WS288](ws288/ws.md)）**: RTL は SA（延期）以外が揃い、sim で raster・shading・texture・compute が model と一致。目標の板は KC705 だけ。板の確認は p024、200 MHz は p025（どちらも後回し、ユーザー）。RTL・仕様は `~/amaterrace-gpu`（`docs/ghci.md` が GHCI と GSI1 の仕様）。
 - **ZYBO（[WS286](ws286/ws.md)・[WS289](ws289/ws.md)）**: completed（JTAG・SD 起動、SD・LAN の driver）。
 - **Pi 5（[WS278](ws278/ws.md)・[WS279](ws279/ws.md)）**: 主要な device と GPU の desktop まで実機で動作。BT は無効、BUG-345 が残る。
@@ -32,7 +32,7 @@
 <!-- master:next:start -->
 1. 新しい Q1 は AGENTS.md・この block を読む。**ユーザーへは日本語で、聞かれた 1 件だけを答える。ユーザーに試験を頼まない。**
 2. **merge・試験の出力は必ず読んで確かめてから記録・報告する**（merge の後に `git log -1 --format='%h %p'`、担当の SHA は `git cat-file -t`）。担当の branch に捨てた変更が残っていないか（例: 2026-10-22 の P2 の buffer の使い回し）を diff の file の一覧で確かめ、必要なら cherry-pick。
-3. 次の番号: BUG-346、q1555、WS290、KL_VERSION 96。古い q・T1 の番号の経緯は git の履歴（2026-10-23 以前の master.md）。
+3. 次の番号: BUG-346、q1557、WS290、KL_VERSION 96。古い q・T1 の番号の経緯は git の履歴（2026-10-23 以前の master.md）。
 4. WS288 の次: [handover-20261024-2230.md](ws288/handover-20261024-2230.md) の §5（推し: p009 の残りを閉じる → p018・p010 → p006 の見直し）。担当には amaterrace-gpu の worktree を作って渡し、Q1 が `--no-ff` で merge する。
 5. 日付は host の `date`。記録の整合は [record-integrity.md](record-integrity.md)。1 LW ≈ 実時間 15〜25 分。
 <!-- master:next:end -->

@@ -3,7 +3,7 @@
 # ws288-p009 VF・SU の vertex/fragment・TU（graphics の pipeline の RTL）
 
 - 親: [WS288](../ws.md)。設計: [design.md](../design.md) §2.3（VF の STATE 0x020〜0x04F、ATTR_DST 0x1C0〜）、§3.4.3、§3.7、§3.8、§8 の p009 の行、§7.6 の p009 の module。
-- 状態: in-progress（2026-10-24 Q1）
+- 状態: in-progress（2026-10-24 Q1。22:58 part D・E を開始、ユーザー「では、p009も始めましょう。」）
 - 方針（2026-10-24 ユーザー）:「今回は合成できればいいことにして、KC705での動作とパイプライン分割はあとにしませんか？全体のRTLをまずは一通り揃えることを優先したいです。」→ この Phase は RTL と simulation（iverilog の単体 TB、必要なら Verilator）まで。板と timing は対象外。
 
 ## 部分（part）
@@ -14,6 +14,8 @@
 | B1 | `atg_su_exp`（PT・export、PT の block ごとの割り当て）・`atg_su_lda`（primitive table）を spec から実装し単体 TB、exp の port の変更（vl_mask）、`atg_cp_seq` の VF の範囲の SET_REG の待ち | exp・lda の TB の PASS、cp_seq の TB に VF の待ちの case、lint clean | cleared（2026-10-24 Q1: amaterrace-gpu c29f858） |
 | B2 | VF → SU（vertex）→ RX → SU（fragment）→ ROP の `atg_top` の結線（HAS_VF、N=1）、shading された三角形（頂点の色の補間）の scene と model | Verilator（または iverilog）の TB で色と depth が model と一致、PNG | cleared（2026-10-24 Q1: amaterrace-gpu 1d3253e、main の merge ce607b4） |
 | C | TU（`atg_tu_addr`・`cache`・`filter`）と `atg_su_tex`、最近傍 → bilinear | textured な三角形が model と一致 | cleared（2026-10-24 Q1: amaterrace-gpu d9d4cf0、main の merge 00bb02b） |
+| D | SU の残り（design §8 の p009 の行）: `qd` と helper lane・coverage の mask（M10）、`shfl`/`vote`/`ballot` の SU での確認、deadlock の回避の確認、`PACKED`（KC705 の構成）、`kc705_raster`（N=1）の確認 | 各項目の TB（または既存の TB の case）が PASS、PACKED=1・SUBGROUP=1 の構成で lint clean、`make sim` の PASS が減らない | in-progress（2026-10-24 22:58 q1555 P2） |
+| E | TU の Vulkan 1.0 core に合わない 3 点: mipmapMode LINEAR（trilinear、2 回に分けて引く案）、CLAMP_TO_BORDER（border の色の STATE）、compare（depth の比較の sampler） | `tumodel.py` を広げて TU・`atg_su_tex` の TB と `atg_top_tex` の scene が model と一致、GHCI の STATE・SAMPLER の追加は `docs/ghci.md` に案（Q1 がレビューして merge） | in-progress（2026-10-24 22:58 q1556 P3） |
 
 ## 記録
 - 2026-10-24 Q1: part A を P1（phase-runner、Opus 5.5 high）に依頼。amaterrace-gpu の worktree `~/amaterrace-worktrees/p1-vf`（branch `p1-vf`、基点 main 3839cb5）。範囲は VF の子 4 つと単体 TB 4 本、spec §10 の更新。結果は P1 の返答を Q1 がここに書く。
@@ -34,3 +36,4 @@
   - **Vulkan の規格に合わない点（未解決、後の Phase）**: mipmapMode LINEAR（trilinear、1 lane に texel 8 つ）と CLAMP_TO_BORDER は Vulkan 1.0 の core で必須だが v1 の TU はしない。2 回に分けて引く・border の色の STATE を足すなどで直す。compare（shadow）も無い。
   - 残件: 速さ（addr の pipeline、cache の banking と 2 つの miss、filter の 1 cycle に quad 1 つ）は p015。`gsi1model.py` は texture の命令で止まる（SU 単体の TB に TU の model が無い）。未試験: 16 bit の format、texf・texsz の scene での確認。`atg_cp_seq.v` は 408 行（p016 で分ける）。
   - p009 の全体: part A・B・C は cleared。design §8 の p009 の行の残り（`qd`・`shfl`/`vote`/`ballot` の SU での確認、deadlock の回避の確認、`PACKED`、`kc705_raster` の N=1 の board）は未確認なので Phase は in-progress のまま。
+- 2026-10-24 22:58 Q1: 残りを part D（SU、P2、q1555）と E（TU、P3、q1556）に分けて並行で依頼（ユーザー「では、p009も始めましょう。」）。基点は p026 の途中の 8f4fe1d（STATE の名前が入った版）。p026 と衝突する所（file の先頭の comment など）は Q1 が merge の時に解く。
