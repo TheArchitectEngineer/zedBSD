@@ -23,7 +23,7 @@ host の試験が PASS（件数）、amd64 の vmunix が GHCI の driver と co
 ## 記録
 
 - 2026-10-25 07:50 Q1: ZYBO の版の phase.md（branch agent/p2-ws288-p006）から、KC705 の PCIe の版に書き直した。P3 に（q1566）。
-- 2026-10-25 08:50 P3（q1566-i01、worktree p3-p006 基点 7c9262ea8 → 699e2b087）: 実装・build・host 試験。段 1 1317d6ef3、段 2・3 4004764bb、段 4 d56558d49、規約の直し 699e2b087。
+- 2026-10-25 08:44 P3（q1566-i01、worktree p3-p006 基点 7c9262ea8 → 699e2b087）: 実装・build・host 試験。段 1 1317d6ef3、段 2・3 4004764bb、段 4 d56558d49、規約の直し 699e2b087。
 
 ## 結果（2026-10-25 P3）
 
