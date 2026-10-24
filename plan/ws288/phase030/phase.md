@@ -30,3 +30,4 @@
 ## 記録
 
 - 2026-10-25 02:32 Q1: 新設（U46 のユーザーの決定）。設計の段を P1（kernel-and-driver-designer）に。
+- 2026-10-25 P1: 設計の草稿を design.md 版 6 の §16 に（Vulkan 1.0 core の limit・feature・必須の format の表、format の土台、ROP・RX・VF・TU・BLT・SU・CP の設計、GHCI の draft（amaterrace-gpu p1-p030 の `docs/ghci.md` §8.5・§12.12・CAPS[30]・FMT・µop 14）、段 S1〜S11 = 68 LW、U47〜U57）。design-reviewer の review はこの後。
