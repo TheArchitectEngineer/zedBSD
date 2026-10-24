@@ -82,3 +82,4 @@ spec からの違い（各 spec の Status に記録）: XU・DIV は lane group
 - 既定（flatten rebuilt）の報告では opd が 43k に見えたが、それは他の unit の論理が混ざった値。真の主因は FPU（7010 の 17,600 LUT の 2 倍以上を FPU だけで使う）。
 - Q1 は opd の lane に依らない部分（定数・warp と workgroup の値・定数の word）を operand ごとに 1 回だけ作る形に直した（amaterrace-gpu、LUT はほぼ変わらず、TB PASS）。
 - 収め方の候補（ユーザーと決める。SU 全体で約 1/5 にする必要）: (a) FPU の物理の lane を NPHYS より少なく（例 FPU は 1〜2 lane で 32 lane を順に流す）、(b) FPU を SHORT_LAT の段に pipeline して乗算を DSP に寄せる、(c) ZYBO の compute の構成は NPHYS 1〜2、(d) xu・lane・alu も同じく lane を絞る。design §3.6 の見積もり（SU 10.1k LUT）は FPU を大きく見誤っていた。
+- 2026-10-24 Q1: 残件の `atg_mc_atom`（MC の atomic の unit、p023 の stub のまま。SU の atom は板・sim で止まる）を P1 に依頼（ユーザー「次の1つを進めます」）。worktree `~/amaterrace-worktrees/p1-atom`（branch `p1-atom`、基点 main b181b44）。範囲: spec から実装と単体 TB、MC の結線の確認、SU の atom の program が model と一致する sim、古い「p023 stub」のヘッダの表記の整理（exec・fetch・icache・lane・sched・wb・rq）。
