@@ -23,7 +23,8 @@
  * OUT is a path prefix: OUT.bin is the program; OUT.data.hex, .warps.hex,
  * .init.hex, .prims.hex are the model's inputs; OUT.expect.* what it
  * must produce; OUT.args the model's other arguments.  OPTIONS are
- * comma-separated: samples=N, points, robust, w=WORD, regs=N, mask (the
+ * comma-separated: samples=N, points, robust, w=WORD, regs=N, bank=N (the
+ * first constant-bank word), mask (the
  * GPU writes r6), cover=HEX (the fragment warp's coverage), floats (the
  * buffers hold small floats), ia0=VKFORMAT (input attachment 0's format).
  */
@@ -876,6 +877,8 @@ parse_options(
 			options->compile.w_word = (uint32_t)strtoul(item + 2, NULL, 0);
 		} else if (strncmp(item, "regs=", 5) == 0) {
 			options->compile.registers = (uint32_t)strtoul(item + 5, NULL, 0);
+		} else if (strncmp(item, "bank=", 5) == 0) {
+			options->compile.bank_first = (uint32_t)strtoul(item + 5, NULL, 0);
 		} else if (strcmp(item, "mask") == 0) {
 			options->compile.sample_mask_input = 1U;
 		} else if (strncmp(item, "cover=", 6) == 0) {

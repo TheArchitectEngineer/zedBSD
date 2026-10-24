@@ -134,6 +134,8 @@ CASES = [
       "atoms.smax", "atoms.smin", "atoms.xchg", "atoms.cmpxchg"]),
     ("uniform.comp", "compute", ["32", "1"], "", 0, []),
     ("uniform.comp:robust", "compute", ["32", "1"], "robust", 0, ["minu"]),
+    ("uniform.comp:bank", "compute", ["32", "1"], "bank=40", 0, []),
+    ("basic.frag:bank", "fragment", [], "w=56,bank=20", 2e-6, ["lda"]),
     ("groups.comp", "compute", ["32", "4"], "", 0, []),
     ("half.comp", "compute", ["32", "1"], "floats", 1e-6, ["packh", "unpackh.lo"]),
     ("image.comp", "compute", ["64", "1"], "", 1e-6, ["lw", "sw"]),

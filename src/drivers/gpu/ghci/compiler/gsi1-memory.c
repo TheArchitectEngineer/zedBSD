@@ -76,14 +76,22 @@ gsi1_memory_prepare(
 	/* Names the module being laid out. */
 	ir = lowering->ir;
 
-	/* The push constants from word 0: c0 is the first push word. */
-	lowering->push_bank = 0U;
+	/*
+	 * The push constants from the first word the program may use (word 0
+	 * unless the pipeline's other stage takes the words below: one bank
+	 * serves the vertex and the fragment warps of a draw).
+	 */
+	if (lowering->options.bank_first >= lowering->options.bank_words) {
+		error = gsi1_refuse(lowering, EINVAL, "the first constant-bank word is past the bank");
+		return error;
+	}
+	lowering->push_bank = lowering->options.bank_first;
 	push_words = (ir->push_bytes + 3U) / 4U;
-	if (push_words > lowering->options.bank_words) {
+	if (push_words > lowering->options.bank_words - lowering->push_bank) {
 		error = gsi1_refuse(lowering, ENOTSUP, "more push constants than the constant bank holds");
 		return error;
 	}
-	lowering->bank_used = push_words;
+	lowering->bank_used = lowering->push_bank + push_words;
 
 	/* The push constants' entry. */
 	if (push_words != 0U) {
