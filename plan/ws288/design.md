@@ -717,7 +717,7 @@ code_offset〜 命令（8 byte 揃え）
   3. `drv_gpu_unregister` を呼ぶ。0 なら完了。`EBUSY`（1 と 3 の間に open された）なら device はもう offline なので、**その session が閉じるまで `drv_gpu_unregister` を retry**（devcfg の `FPGA_PROGRAM` は最大 5 s 待ち、超えたら `EBUSY` を返す。device は offline のまま次の retry で回収され、次の attach は新しい登録）。
   4. その後に devcfg が level shifter と reset に触る（outstanding の AXI が無い事を 2 で確かめている）。
   - **JTAG（openFPGALoader）での PL の書き直しは block が attach している間は禁止**（`pl-jtag.sh` は zedBSD を見られないので、運用の規則として `fpgaload --disable` を先に打つ。design の試験の script がこの順を守る）。
-- KC705（A'）: PCI の class code 0x038000 で照合し、BAR0 の `GHCI_MAGIC` を読んで確かめる。BAR0 = HCR + DC（128 KiB、`DRV_GPU_MAPPING_DEVICE`）、BAR1 = DDR の窓（64 MiB）。XDMA の channel は `resource_read/write` と ring・program・const の転送に。MSI 4 本。
+- KC705（A'）: PCI の class code 0x038000 で照合し、BAR0 の `GHCI_MAGIC` を読んで確かめる。BAR0 = HCR + DC（128 KiB、`DRV_GPU_MAPPING_DEVICE`）、**BAR2**（2026-10-25 08:00 Q1: GHCI §15.2 に合わせて BAR1 から直した）= DDR の窓（64 MiB）。XDMA の channel は `resource_read/write` と ring・program・const の転送に。MSI 4 本。
 - attach の順: `GHCI_MAGIC`・`GHCI_VERSION.major`・`CAPS`・`ISA_ID`（backend が有るか）を確かめ → `CAPS[0]` なら `CTRL.RESET` → `MEM_READY` を 1 s 待つ → `APERTURE` → `RING_BASE/SIZE` → fence page と `FENCE_LAST` → `IRQ_ENABLE` → `RUN`。`CAPS[3]` なら display の ops を足す。
 
 ### 6.3 memory（所有権・寿命・coherency）
