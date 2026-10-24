@@ -123,6 +123,7 @@
 #define OP_LOAD 61U
 #define OP_STORE 62U
 #define OP_ACCESS_CHAIN 65U
+#define OP_IMAGE_TEXEL_POINTER 60U
 #define OP_DECORATE 71U
 #define OP_MEMBER_DECORATE 72U
 #define OP_VECTOR_SHUFFLE 79U
@@ -146,6 +147,9 @@
 #define OP_IMAGE_QUERY_SIZE_LOD 103U
 #define OP_IMAGE_QUERY_SIZE 104U
 #define OP_IMAGE_QUERY_LEVELS 106U
+#define OP_IMAGE_READ 98U
+#define OP_IMAGE_WRITE 99U
+#define OP_IMAGE_QUERY_SAMPLES 107U
 #define OP_CONVERT_F_TO_U 109U
 #define OP_CONVERT_F_TO_S 110U
 #define OP_CONVERT_S_TO_F 111U
@@ -284,6 +288,7 @@
 #define DEC_INDEX 32U
 #define DEC_BINDING 33U
 #define DEC_DESCRIPTOR_SET 34U
+#define DEC_INPUT_ATTACHMENT_INDEX 43U
 #define DEC_OFFSET 35U
 #define DEC_NON_WRITABLE 24U
 #define DEC_NON_READABLE 25U
@@ -305,6 +310,10 @@
 #define BUILTIN_FRONT_FACING 17U
 #define BUILTIN_VERTEX_INDEX 42U
 #define BUILTIN_INSTANCE_INDEX 43U
+
+/* The fragment built-ins only a parse with the GHCI features lowers. */
+#define BUILTIN_SAMPLE_MASK 20U
+#define BUILTIN_FRAG_DEPTH 22U
 
 /* The built-in inputs of a compute shader. */
 #define BUILTIN_NUM_WORKGROUPS 24U
@@ -462,6 +471,10 @@
 #define DIM_3D 2U
 #define DIM_CUBE 3U
 #define DIM_BUFFER 5U
+#define DIM_SUBPASS_DATA 6U
+
+/* An image type's Sampled operand of a storage image (SPIR-V spec, OpTypeImage). */
+#define IMAGE_SAMPLED_STORAGE 2U
 
 /* Pointer target kinds. */
 #define PTR_NONE 0U
@@ -483,6 +496,13 @@
 
 /* A geometry input whose array elements identify primitive vertices. */
 #define PTR_VERTEX 11U
+
+/*
+ * A texel of a storage image an atomic works on (OpImageTexelPointer, only
+ * with the GHCI features): `uniform` names the image, comp[0] the first of
+ * three consecutive integers x, y and the layer.
+ */
+#define PTR_TEXEL 12U
 
 /* What the scalars of a value are, as a type says. */
 #define SCALAR_NONE 0U
@@ -595,6 +615,20 @@ struct drv_gpu_spirv_id {
 	uint8_t image_arrayed;
 	uint8_t image_ms;
 
+	/*
+	 * An image type: its Sampled operand (1 with a sampler, 2 a storage
+	 * image) and its Image Format.
+	 */
+	uint8_t image_sampled;
+	uint8_t image_format;
+
+	/*
+	 * A variable decorated Centroid, and its InputAttachmentIndex plus one
+	 * (zero when undecorated); recorded only with the GHCI features.
+	 */
+	uint8_t centroid;
+	uint32_t input_attachment_index;
+
 	/* A structure type decorated BufferBlock: a storage buffer's block. */
 	uint8_t buffer_block;
 
@@ -649,6 +683,9 @@ struct drv_gpu_spirv_id {
 	 */
 	uint8_t member_flat[MAX_MEMBERS];
 	uint8_t member_noperspective[MAX_MEMBERS];
+
+	/* An interface block member decorated Centroid (only with the GHCI features). */
+	uint8_t member_centroid[MAX_MEMBERS];
 
 	/*
 	 * The scalars of a value (a label's predicate, a constant's first use).
@@ -827,6 +864,9 @@ struct drv_gpu_spirv_parser {
 	struct drv_gpu_spirv_id *ids;
 	struct drv_gpu_shader_ir *ir;
 
+	/* What the parse lowers beyond the shared profile (DRV_GPU_SPIRV_FEATURE_*). */
+	uint32_t features;
+
 	/* Instruction slots of ir->instructions. */
 	uint32_t capacity;
 
@@ -956,7 +996,7 @@ static int drv_gpu_spirv_declare_constant_composite(struct drv_gpu_spirv_parser 
 static int drv_gpu_spirv_declare_variable(struct drv_gpu_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int drv_gpu_spirv_decoration_ignored(uint32_t decoration);
 static int drv_gpu_spirv_add_io(struct drv_gpu_spirv_parser *parser, uint32_t id, uint32_t type_id, int is_input, uint32_t opcode, uint32_t offset);
-static int drv_gpu_spirv_add_io_run(struct drv_gpu_spirv_parser *parser, int is_input, uint32_t location, uint32_t count, uint32_t components, uint32_t flat, uint32_t noperspective);
+static int drv_gpu_spirv_add_io_run(struct drv_gpu_spirv_parser *parser, int is_input, uint32_t location, uint32_t count, uint32_t components, uint32_t flat, uint32_t noperspective, uint32_t centroid);
 static void drv_gpu_spirv_add_uniform(struct drv_gpu_spirv_parser *parser, uint32_t id, uint32_t kind);
 static int drv_gpu_spirv_pass_body(struct drv_gpu_spirv_parser *parser);
 static int drv_gpu_spirv_lower(struct drv_gpu_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
@@ -1116,6 +1156,15 @@ static int drv_gpu_spirv_lower_load_vertex(struct drv_gpu_spirv_parser *parser, 
 static int drv_gpu_spirv_gl_in_location(struct drv_gpu_spirv_parser *parser, const struct drv_gpu_spirv_id *pointer, const struct drv_gpu_spirv_id *variable, uint32_t slot, uint32_t *location, uint32_t *component, uint32_t opcode, uint32_t offset);
 static int drv_gpu_spirv_geometry_output(struct drv_gpu_spirv_parser *parser, uint32_t builtin, uint32_t *location, uint32_t opcode, uint32_t offset);
 static int drv_gpu_spirv_lower_emit(struct drv_gpu_spirv_parser *parser, uint32_t opcode, uint32_t offset);
+static uint32_t drv_gpu_spirv_storage_format(uint32_t image_format);
+static int drv_gpu_spirv_add_constant_uniform(struct drv_gpu_spirv_parser *parser, uint32_t id, uint32_t opcode, uint32_t offset);
+static uint32_t drv_gpu_spirv_image_uniform(struct drv_gpu_spirv_parser *parser, uint32_t set, uint32_t binding);
+static uint32_t drv_gpu_spirv_consecutive(struct drv_gpu_spirv_parser *parser, const uint32_t *values, uint32_t count);
+static int drv_gpu_spirv_image_params(struct drv_gpu_spirv_parser *parser, const struct drv_gpu_spirv_id *type, uint32_t coordinate_id, const uint32_t *word, uint32_t count, uint32_t operands, uint32_t *params, uint32_t opcode, uint32_t offset);
+static int drv_gpu_spirv_lower_image_read(struct drv_gpu_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
+static int drv_gpu_spirv_lower_image_write(struct drv_gpu_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
+static int drv_gpu_spirv_lower_query_samples(struct drv_gpu_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
+static int drv_gpu_spirv_lower_texel_pointer(struct drv_gpu_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 
 /*
  * Parses SPIR-V words into the scalar IR of one stage.
@@ -1130,6 +1179,37 @@ drv_gpu_shader_parse(
 	const uint32_t *words,
 	size_t word_count,
 	enum drv_gpu_shader_stage stage,
+	struct drv_gpu_shader_ir **out,
+	struct drv_gpu_compile_diagnostic *diagnostic)
+{
+	int error;
+
+	/* The profile every backend shares, without the features. */
+	error = drv_gpu_shader_parse_features(words,
+					      word_count,
+					      stage,
+					      0U,
+					      out,
+					      diagnostic);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the IR is the caller's. */
+	return 0;
+}
+
+/*
+ * Parses SPIR-V words into the scalar IR of one stage, lowering what the
+ * bits of `features` (DRV_GPU_SPIRV_FEATURE_*) add.
+ *
+ * Returns as drv_gpu_shader_parse().
+ */
+int
+drv_gpu_shader_parse_features(
+	const uint32_t *words,
+	size_t word_count,
+	enum drv_gpu_shader_stage stage,
+	uint32_t features,
 	struct drv_gpu_shader_ir **out,
 	struct drv_gpu_compile_diagnostic *diagnostic)
 {
@@ -1196,6 +1276,7 @@ drv_gpu_shader_parse(
 	parser->words = (uint32_t)word_count;
 	parser->bound = words[3];
 	parser->ir = ir;
+	parser->features = features;
 	parser->predicate = PREDICATE_ALWAYS;
 	parser->pending_merge = NO_VALUE;
 	parser->zero_value = NO_VALUE;
@@ -1770,6 +1851,13 @@ drv_gpu_spirv_declare_decoration(
 		record->noperspective = 1U;
 	} else if (word[2] == DEC_BUFFER_BLOCK) {
 		record->buffer_block = 1U;
+	} else if (word[2] == DEC_CENTROID &&
+		   (parser->features & DRV_GPU_SPIRV_FEATURE_CENTROID) != 0U) {
+		record->centroid = 1U;
+	} else if (word[2] == DEC_INPUT_ATTACHMENT_INDEX &&
+		   count >= 4U &&
+		   (parser->features & DRV_GPU_SPIRV_FEATURE_INPUT_ATTACHMENT) != 0U) {
+		record->input_attachment_index = word[3] + 1U;
 	} else {
 		/* A decoration without effect, or one that is refused. */
 		ignored = drv_gpu_spirv_decoration_ignored(word[2]);
@@ -1887,6 +1975,9 @@ drv_gpu_spirv_declare_member_decoration(
 		record->member_flat[member] = 1U;
 	} else if (word[3] == DEC_NO_PERSPECTIVE) {
 		record->member_noperspective[member] = 1U;
+	} else if (word[3] == DEC_CENTROID &&
+		   (parser->features & DRV_GPU_SPIRV_FEATURE_CENTROID) != 0U) {
+		record->member_centroid[member] = 1U;
 	} else {
 		/*
 		 * A decoration without effect (RelaxedPrecision, Centroid, the
@@ -1958,6 +2049,8 @@ drv_gpu_spirv_declare_type(
 		record->image_dim = (uint8_t)word[3];
 		record->image_arrayed = (uint8_t)word[5];
 		record->image_ms = (uint8_t)word[6];
+		record->image_sampled = (uint8_t)word[7];
+		record->image_format = (uint8_t)word[8];
 		break;
 
 	case OP_TYPE_FUNCTION:
@@ -2387,6 +2480,15 @@ drv_gpu_spirv_declare_variable(
 			record->has_location = 1U;
 			record->location = DRV_GPU_SHADER_LOCATION_PRIMITIVE_ID;
 			record->flat = 1U;
+		} else if (record->builtin == BUILTIN_SAMPLE_MASK &&
+			   (parser->features & DRV_GPU_SPIRV_FEATURE_SAMPLE_MASK) != 0U) {
+			/*
+			 * gl_SampleMaskIn[0]: the samples of the pixel the
+			 * primitive covers, read bit for bit.
+			 */
+			record->has_location = 1U;
+			record->location = DRV_GPU_SHADER_LOCATION_SAMPLE_MASK;
+			record->flat = 1U;
 		}
 	}
 
@@ -2466,9 +2568,12 @@ drv_gpu_spirv_declare_variable(
 		record->ptr_kind = PTR_PUSH;
 	} else if (storage == SC_UNIFORM_CONSTANT) {
 		record->ptr_kind = PTR_SAMPLER;
-		drv_gpu_spirv_add_uniform(parser,
-					  word[2],
-					  DRV_GPU_IR_UNIFORM_SAMPLED_IMAGE);
+		error = drv_gpu_spirv_add_constant_uniform(parser,
+							   word[2],
+							   opcode,
+							   offset);
+		if (error != 0)
+			return error;
 	} else if (storage == SC_STORAGE_BUFFER ||
 		   (storage == SC_UNIFORM && buffer_block != 0)) {
 		record->ptr_kind = PTR_SSBO;
@@ -2601,7 +2706,8 @@ drv_gpu_spirv_add_io(
 						 1U,
 						 components,
 						 variable->flat,
-						 variable->noperspective);
+						 variable->noperspective,
+						 variable->centroid);
 		if (error != 0) {
 			/*
 			 * Records the unsupported instruction in the caller's
@@ -2669,7 +2775,8 @@ drv_gpu_spirv_add_io(
 						 locations,
 						 components,
 						 variable->flat,
-						 variable->noperspective);
+						 variable->noperspective,
+						 variable->centroid);
 		if (error != 0) {
 			/*
 			 * Records the unsupported instruction in the caller's
@@ -2734,7 +2841,8 @@ drv_gpu_spirv_add_io(
 		    4U,
 		    variable->flat | type->member_flat[member],
 		    variable->noperspective |
-			type->member_noperspective[member]);
+			type->member_noperspective[member],
+		    variable->centroid | type->member_centroid[member]);
 		if (error != 0) {
 			/*
 			 * Records the unsupported instruction in the caller's
@@ -2769,7 +2877,8 @@ drv_gpu_spirv_add_io_run(
 	uint32_t count,
 	uint32_t components,
 	uint32_t flat,
-	uint32_t noperspective)
+	uint32_t noperspective,
+	uint32_t centroid)
 {
 	struct drv_gpu_shader_ir_io *list;
 	uint32_t *used;
@@ -2795,6 +2904,7 @@ drv_gpu_spirv_add_io_run(
 		list[*used].type = 0U;
 		list[*used].flat = flat;
 		list[*used].noperspective = noperspective;
+		list[*used].centroid = centroid;
 		(*used)++;
 	}
 
@@ -3000,8 +3110,12 @@ drv_gpu_spirv_lower(
 			drv_gpu_spirv_loop_begin(parser, loop);
 	}
 
-	/* A compute shader refuses what its dispatch cannot give it. */
-	if (parser->ir->stage == DRV_GPU_STAGE_COMPUTE) {
+	/*
+	 * A compute shader refuses what its dispatch cannot give it (a parse
+	 * with the compute images binds images in a compute shader too).
+	 */
+	if (parser->ir->stage == DRV_GPU_STAGE_COMPUTE &&
+	    (parser->features & DRV_GPU_SPIRV_FEATURE_COMPUTE_IMAGES) == 0U) {
 		refusal = drv_gpu_spirv_compute_refusal(opcode);
 		if (refusal != NULL) {
 			/*
@@ -3395,6 +3509,25 @@ drv_gpu_spirv_lower(
 						   count,
 						   opcode,
 						   offset);
+		if (error != 0)
+			return error;
+
+		/*
+		 * Succeeded: this instruction has a complete scalar lowering.
+		 */
+		return 0;
+
+	case OP_IMAGE_TEXEL_POINTER:
+		/* Only a parse with the storage images lowers it. */
+		if ((parser->features & DRV_GPU_SPIRV_FEATURE_STORAGE_IMAGE) == 0U)
+			break;
+
+		/* Names the texel. */
+		error = drv_gpu_spirv_lower_texel_pointer(parser,
+							  word,
+							  count,
+							  opcode,
+							  offset);
 		if (error != 0)
 			return error;
 
@@ -3907,6 +4040,54 @@ drv_gpu_spirv_lower(
 						  count,
 						  opcode,
 						  offset);
+		if (error != 0)
+			return error;
+
+		/*
+		 * Succeeded: this instruction has a complete scalar lowering.
+		 */
+		return 0;
+
+	case OP_IMAGE_READ:
+	case OP_IMAGE_WRITE:
+		/* Only a parse with the storage images or the input attachments lowers these. */
+		if ((parser->features & (DRV_GPU_SPIRV_FEATURE_STORAGE_IMAGE |
+					 DRV_GPU_SPIRV_FEATURE_INPUT_ATTACHMENT)) == 0U)
+			break;
+
+		/* Lowers the read or the write. */
+		if (opcode == OP_IMAGE_READ) {
+			error = drv_gpu_spirv_lower_image_read(parser,
+							       word,
+							       count,
+							       opcode,
+							       offset);
+		} else {
+			error = drv_gpu_spirv_lower_image_write(parser,
+								word,
+								count,
+								opcode,
+								offset);
+		}
+		if (error != 0)
+			return error;
+
+		/*
+		 * Succeeded: this instruction has a complete scalar lowering.
+		 */
+		return 0;
+
+	case OP_IMAGE_QUERY_SAMPLES:
+		/* Only a parse with the sample query lowers it. */
+		if ((parser->features & DRV_GPU_SPIRV_FEATURE_QUERY_SAMPLES) == 0U)
+			break;
+
+		/* Lowers the query. */
+		error = drv_gpu_spirv_lower_query_samples(parser,
+							  word,
+							  count,
+							  opcode,
+							  offset);
 		if (error != 0)
 			return error;
 
@@ -5985,6 +6166,14 @@ drv_gpu_spirv_lower_store_output(
 			builtin_location = DRV_GPU_IR_LOCATION_POSITION;
 		} else if (builtin == BUILTIN_POINT_SIZE) {
 			builtin_location = DRV_GPU_IR_LOCATION_POINT_SIZE;
+		} else if (builtin == BUILTIN_FRAG_DEPTH &&
+			   parser->ir->stage == DRV_GPU_STAGE_FRAGMENT &&
+			   (parser->features & DRV_GPU_SPIRV_FEATURE_FRAG_DEPTH) != 0U) {
+			builtin_location = DRV_GPU_IR_LOCATION_FRAG_DEPTH;
+		} else if (builtin == BUILTIN_SAMPLE_MASK &&
+			   parser->ir->stage == DRV_GPU_STAGE_FRAGMENT &&
+			   (parser->features & DRV_GPU_SPIRV_FEATURE_SAMPLE_MASK) != 0U) {
+			builtin_location = DRV_GPU_IR_LOCATION_SAMPLE_MASK;
 		} else {
 			/*
 			 * Records the unsupported instruction in the caller's
@@ -12093,7 +12282,8 @@ drv_gpu_spirv_lower_fetch(
 	 */
 	if (type->image_ms != 0U &&
 	    (type->image_dim != DIM_2D ||
-	    type->image_arrayed != 0U)) {
+	    (type->image_arrayed != 0U &&
+	     (parser->features & DRV_GPU_SPIRV_FEATURE_QUERY_SAMPLES) == 0U))) {
 		/*
 		 * Records the unsupported instruction in the caller's
 		 * diagnostic.
@@ -12378,6 +12568,7 @@ drv_gpu_spirv_lower_query(
 	uint32_t shape;
 	uint32_t first;
 	uint32_t index;
+	int buffer;
 
 	/*
 	 * The instruction must carry the image, and the level for
@@ -12391,7 +12582,15 @@ drv_gpu_spirv_lower_query(
 	/* Resolves the image. */
 	image = drv_gpu_spirv_id(parser, word[3]);
 	type = drv_gpu_spirv_image_type(parser, image);
-	if (type == NULL || type->image_dim > DIM_CUBE) {
+
+	/* With the GHCI features a texel buffer's size is its element count. */
+	buffer = 0;
+	if (type != NULL &&
+	    type->image_dim == DIM_BUFFER &&
+	    opcode == OP_IMAGE_QUERY_SIZE &&
+	    (parser->features & DRV_GPU_SPIRV_FEATURE_STORAGE_IMAGE) != 0U)
+		buffer = 1;
+	if (type == NULL || (type->image_dim > DIM_CUBE && buffer == 0)) {
 		/*
 		 * Records the unsupported instruction in the caller's
 		 * diagnostic.
@@ -12430,7 +12629,7 @@ drv_gpu_spirv_lower_query(
 
 	/* Starts the image-query result width from its non-array dimensions. */
 	expected = 1U;
-	if (opcode != OP_IMAGE_QUERY_LEVELS) {
+	if (opcode != OP_IMAGE_QUERY_LEVELS && buffer == 0) {
 		expected = type->image_dim + 1U;
 		if (type->image_dim == DIM_CUBE)
 			expected = 2U;
@@ -16024,3 +16223,6 @@ drv_gpu_spirv_result(
 
 /* The geometry part of the parser. */
 #include "spirv-geometry.inc"
+
+/* The storage images, the input attachments and the sample query. */
+#include "spirv-image.inc"

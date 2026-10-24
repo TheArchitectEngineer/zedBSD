@@ -18,3 +18,6 @@
 | 2026-10-25 06:22 | p027 を cleared にした（T1-764 の make sim が試験の担当の 30 分の上限で途中で止まり、残り 12 本を別に流して合計 86 PASS） | 全部の TB が PASS、MSAA の 14 case が model と一致 |
 | 2026-10-25 06:30 | P3 の S9: TEX_FORMAT = 0 の時は今の動作のまま（depth の compare 無しは nearest）。driver は常に VkFormat を書くので、FILTER_LINEAR の bit との食い違いは起きない | 既存の試験の vector を変えないため。driver（p006・p019）は TEX_FORMAT を必ず書く規則にする |
 | 2026-10-25 06:58 | P2 の p010 の判断を受け入れた: skip の block を分岐にしない（正しさ優先、速さは後）、noperspective・FragCoord.w は余分の varying、VertexIndex・InstanceIndex は interface kind 13 で firmware が届ける | 正しさ優先。分岐の最適化は後で |
+| 2026-10-25 07:12 | p010 を cleared にした。vmunix への link は GHCI の driver の config が無いので p006 へ、texture の実行は p011 へ | 名指しの object の build は warning 0、host 試験 29/29 |
+| 2026-10-25 07:12 | shared memory の atomic が GSI1 v1 に無い（Vulkan 1.0 core の必須）→ p030 に段 S15（ISA・RTL・compiler）を足した | Vulkan 1.0 の原則 |
+| 2026-10-25 07:12 | P3 の S10: TILE・UNTILE は 16・32 bit を受ける（GHCI を「16 and 32」に）、KEEP は RESOLVE・TILE・blend では断る、fp の平均は ((s0+s1)+(s2+s3))×0.25 を fma で | 既存の試験と互換、Vulkan の resolve は平均の方法を実装に任せる |

@@ -61,6 +61,16 @@
 #define DRV_GPU_IR_UNIFORM_STORAGE 3U
 
 /*
+ * The kinds only a parse with the GHCI features makes: a storage image, a
+ * storage texel buffer and an input attachment, which IMAGE_READ and
+ * IMAGE_WRITE reach (the uniform's `format` and `input_attachment_index`
+ * say what they hold).
+ */
+#define DRV_GPU_IR_UNIFORM_STORAGE_IMAGE 4U
+#define DRV_GPU_IR_UNIFORM_TEXEL_BUFFER 5U
+#define DRV_GPU_IR_UNIFORM_INPUT_ATTACHMENT 6U
+
+/*
  * The set of the storage buffer a compute shader reads gl_NumWorkGroups
  * from: a uniform of kind DRV_GPU_IR_UNIFORM_STORAGE with this
  * set and binding 0 names three words -- the group counts x, y, z -- that
@@ -134,6 +144,14 @@
 #define DRV_GPU_IR_LOCATION_LAYER 0xFFFFFFFBU
 
 /*
+ * The STORE_OUTPUT locations of a fragment shader's FragDepth builtin and of
+ * its SampleMask builtin (element 0 of the array, the samples a 32-bit word
+ * names), component 0.  Only a parse with the GHCI features makes them.
+ */
+#define DRV_GPU_IR_LOCATION_FRAG_DEPTH 0xFFFFFFFAU
+#define DRV_GPU_IR_LOCATION_SAMPLE_MASK 0xFFFFFFF9U
+
+/*
  * The `immediate` bit of a LOAD_VERTEX_INPUT whose input vertex is chosen
  * at run time: src[0] is then the integer number of the
  * vertex, and the other bits are zero.
@@ -203,6 +221,13 @@
 #define DRV_GPU_IR_TEXTURE_LD 7U
 #define DRV_GPU_IR_TEXTURE_GATHER4 8U
 #define DRV_GPU_IR_TEXTURE_RESINFO 10U
+
+/*
+ * The samples of a multisampled image (OpImageQuerySamples), in the reply's
+ * first value; its one parameter is zero.  Only a parse with the GHCI
+ * features makes it.
+ */
+#define DRV_GPU_IR_TEXTURE_SAMPLES 11U
 #define DRV_GPU_IR_TEXTURE_GATHER4_COMPARE 16U
 #define DRV_GPU_IR_TEXTURE_SAMPLE_DERIV_COMPARE 20U
 
@@ -225,7 +250,8 @@
  * layer of an array (r after a 2D coordinate, ai after a cube one).  A 1D
  * image is a 2D one a texel high (its v is 0); a texel buffer is fetched
  * as a 1D image; a multisampled 2D image is fetched with the sample as its
- * layer.  Zero, the 2D kind of no array, is also the shape of an
+ * layer (an array of them, which only a parse with the GHCI features
+ * makes: the layer, then the sample).  Zero, the 2D kind of no array, is also the shape of an
  * instruction that was built without one.
  */
 #define DRV_GPU_IR_IMAGE_2D 0U
@@ -235,6 +261,12 @@
 #define DRV_GPU_IR_IMAGE_KIND_MASK 0xFU
 #define DRV_GPU_IR_IMAGE_ARRAYED 0x10U
 #define DRV_GPU_IR_IMAGE_MULTISAMPLED 0x20U
+
+/*
+ * The image_shape bit of an ATOMIC on a storage image's texel (only with the
+ * GHCI features): src[0] .. src[0] + 2 are the texel's x, y and layer.
+ */
+#define DRV_GPU_IR_IMAGE_TEXEL 0x40U
 
 /* The most parameters a TEXTURE instruction passes. */
 #define DRV_GPU_IR_TEXTURE_MAX_PARAMS 11U
@@ -562,7 +594,11 @@ enum drv_gpu_shader_ir_op {
 	 * src[2].  The Boolean predicate is the source after the values
 	 * (src[2], or src[3] for a compare and exchange) when `component` is
 	 * DRV_GPU_IR_ATOMIC_PREDICATED.  The code generator asks the memory for
-	 * the old value only when an instruction reads dst.
+	 * the old value only when an instruction reads dst.  With the GHCI
+	 * features `location` may name a storage image or texel buffer of a
+	 * 32-bit integer format, with DRV_GPU_IR_IMAGE_TEXEL in `image_shape`:
+	 * src[0] is then the first of three consecutive integers x, y and the
+	 * layer of the texel, not a byte offset.
 	 */
 	DRV_GPU_IR_ATOMIC,
 
@@ -628,6 +664,28 @@ enum drv_gpu_shader_ir_op {
 	 */
 	DRV_GPU_IR_END_PRIMITIVE,
 
+	/*
+	 * dst .. dst + 3 = the texel of the storage image, storage texel buffer
+	 * or input attachment `location` (an index of the uniform list): its
+	 * parameters are the src[1] consecutive integers from src[0] -- x, y
+	 * and the layer or a 3D image's z as the image has them (an input
+	 * attachment: the offset dx, dy from the fragment's own pixel, then the
+	 * sample of a multisampled one); with `component` 1 only where the
+	 * Boolean src[2] holds, the other channels' dst left as they were.  The
+	 * components the image's format lacks read (0, 0, 0, 1).  Only a parse
+	 * with the GHCI features makes it.
+	 */
+	DRV_GPU_IR_IMAGE_READ,
+
+	/*
+	 * The texel of the storage image or storage texel buffer `location` at
+	 * the src[1] consecutive integers from src[0] (as IMAGE_READ) = the four
+	 * consecutive values from src[2], converted to the image's format; with
+	 * `component` 1 only where the Boolean src[3] holds.  Only a parse with
+	 * the GHCI features makes it.
+	 */
+	DRV_GPU_IR_IMAGE_WRITE,
+
 	/* The number of operations above; it is not an operation of its own. */
 	DRV_GPU_IR_OP_COUNT
 };
@@ -655,6 +713,13 @@ struct drv_gpu_shader_ir_io {
 	 * space.
 	 */
 	uint32_t noperspective;
+
+	/*
+	 * Nonzero for a Centroid input: interpolated at a point of the pixel
+	 * the primitive covers.  Only a parse with the GHCI features records it;
+	 * with one sample per pixel the centre is that point.
+	 */
+	uint32_t centroid;
 };
 
 /*
@@ -671,6 +736,15 @@ struct drv_gpu_shader_ir_uniform {
 	uint32_t kind;
 	uint32_t offset;
 	uint32_t size;
+
+	/*
+	 * A storage image or texel buffer: the VkFormat its SPIR-V image format
+	 * names; an input attachment: its InputAttachmentIndex, and whether it
+	 * is multisampled.  Zero for the other kinds.
+	 */
+	uint32_t format;
+	uint32_t input_attachment_index;
+	uint32_t multisampled;
 };
 
 /*
