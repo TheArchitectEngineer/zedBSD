@@ -306,6 +306,12 @@ CONFIG_DRIVER_PCI_NVRTX ?= $(if $(filter amd64,$(ZEDBSD_PLATFORM)),y,n)
 CONFIG_DRIVER_PCI_AMDRDNA ?= $(if $(filter amd64,$(ZEDBSD_PLATFORM)),y,n)
 CONFIG_AMDRDNA_CONTROL ?= y
 
+# The generic GHCI GPU driver (a PCIe GPU with the GPU Host Controller
+# Interface) is off by default; CONFIG_GHCI_NATIVE adds the root-only native
+# command of the test images.
+CONFIG_DRIVER_PCI_GHCI ?= n
+CONFIG_GHCI_NATIVE ?= n
+
 # HD Audio is on by default where its driver builds (amd64); a config written
 # by the menu names it explicitly.
 CONFIG_DRIVER_PCI_HDA ?= $(if $(filter amd64,$(ZEDBSD_PLATFORM)),y,n)
@@ -807,6 +813,8 @@ ZEDBSD_CONFIG_CPPFLAGS := \
 	-DCONFIG_DRIVER_PCI_NVRTX=$(if $(filter y,$(CONFIG_DRIVER_PCI_NVRTX)),1,0) \
 	-DCONFIG_DRIVER_PCI_AMDRDNA=$(if $(filter y,$(CONFIG_DRIVER_PCI_AMDRDNA)),1,0) \
 	-DCONFIG_AMDRDNA_CONTROL=$(if $(filter y,$(CONFIG_AMDRDNA_CONTROL)),1,0) \
+	-DCONFIG_DRIVER_PCI_GHCI=$(if $(filter y,$(CONFIG_DRIVER_PCI_GHCI)),1,0) \
+	-DCONFIG_GHCI_NATIVE=$(if $(filter y,$(CONFIG_GHCI_NATIVE)),1,0) \
 	-DCONFIG_DRIVER_PCI_HDA=$(if $(filter y,$(CONFIG_DRIVER_PCI_HDA)),1,0) \
 	-DCONFIG_DRIVER_PCI_INTEL_AX211=$(if $(filter y,$(CONFIG_DRIVER_PCI_INTEL_AX211)),1,0) \
 	-DCONFIG_DRIVER_BCM2711_GENET=$(if $(filter y,$(CONFIG_DRIVER_BCM2711_GENET)),1,0) \
@@ -1066,7 +1074,7 @@ KERN_BOOT_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(KERN_BOOT_SOURCES))
 # generic fd support stays in kern.
 #
 
-KERN_GPU_BACKENDS := $(CONFIG_DRIVER_PCI_VENUS) $(CONFIG_DRIVER_PCI_I915)
+KERN_GPU_BACKENDS := $(CONFIG_DRIVER_PCI_VENUS) $(CONFIG_DRIVER_PCI_I915) $(CONFIG_DRIVER_PCI_GHCI)
 KERN_GPU_SOURCES :=
 ifneq ($(filter y,$(KERN_GPU_BACKENDS)),)
 KERN_GPU_SOURCES := src/drivers/gpu/gpu.c src/drivers/gpu/gpu-fence.c

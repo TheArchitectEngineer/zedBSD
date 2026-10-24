@@ -2,7 +2,9 @@
 # Host test of the GHCI driver's arithmetic on words (src/drivers/gpu/ghci/ghci-words.h):
 # fences and their wrap, the ring's room and padding, the extended capability list, the
 # allocator of GPU addresses, the driver's packets, the native command check, the capset
-# record and the job markers (plan/ws288/tests/ghci-host-test.c).
+# record and the job markers (plan/ws288/tests/ghci-host-test.c); then the driver's device, ring,
+# memory, transfers, faults, hangs and native command against a model of a GHCI GPU
+# (plan/ws288/tests/ghci-driver-host-test.c).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 #
 # usage: plan/ws288/tests/ghci-host-test.sh   (from anywhere)
@@ -20,8 +22,12 @@ flags="-std=gnu11 -O1 -g -DKERN_USER_ABI_LP64 -I$repo/include -I$repo/src -idira
 cc $flags -o "$out/ghci-host-test" "$tests/ghci-host-test.c" "$ghci/check.c" "$ghci/range.c" \
 	"$ghci/state.c" "$ghci/capset.c" "$ghci/jobs.c"
 
+cc $flags -DCONFIG_GHCI_NATIVE=1 -o "$out/ghci-driver-host-test" "$tests/ghci-driver-host-test.c" "$ghci/ghci.c" \
+	"$ghci/cp.c" "$ghci/memory.c" "$ghci/blit.c" "$ghci/native.c" "$ghci/check.c" "$ghci/range.c" "$ghci/state.c"
+
 status=0
 timeout 120 "$out/ghci-host-test" || status=1
+timeout 120 "$out/ghci-driver-host-test" || status=1
 if [ "$status" -ne 0 ]; then
 	echo "FAIL ghci-host-test ($out)"
 	exit 1
