@@ -56,10 +56,10 @@
 | [p012](phase012/phase.md) | KC705 の RTL: board の top、JTAG の bridge、MIG・MMCM の wrapper、DC の HDMI（ADV7511）、sim まで（板は p024） | p004、p005、U7 | cleared（2026-10-24: 9e00981 の JTAG の bridge・I2C・YCbCr 4:2:2 の HDMI・board の top の sim、dbdf6e7 の EXTCAP の DISP・DBG と CAPS[3]・[27]・[28]。板は p024） |
 | [p024](phase024/phase.md) | KC705 の板での確認（MIG の IP、bitstream、JTAG で fill → DBG、HDMI の color bar、scene を板で） | p012 | planned（2026-10-24 新設） |
 | [p025](phase025/phase.md) | timing の調整（KC705 で 200 MHz、blend の 2 段化など） | p006 の後、最後（2026-10-25 01:08 ユーザー） | planned（2026-10-24 新設） |
-| [p027](phase027/phase.md) | MSAA（4x の描画・depth・resolve、multisample の sampled image）。design の節から | p009 | planned（2026-10-25 01:08 新設） |
-| p010 | compiler の backend（zedBSD `isa/gsi1/`）、`gsi1_isa.h` と interface の表の確定（design §8） | p008 | planned（順: p027 の後） |
-| p018 | firmware の Vulkan の object model と draw/dispatch（design §8）。GHCI §7.2・§11.6 への firmware の追従を含む | p017、p009、p010 | planned（順: p010 の後） |
-| p019 | zedBSD の `vk/`（検証する中継、design §8） | p010、p017、p006 | planned（順: p018 の後） |
+| [p027](phase027/phase.md) | MSAA（4x の描画・depth・resolve、multisample の sampled image）。design の節から | p009 | in-progress（設計の段は review 済み、design 版 5 §15、2026-10-25 02:23。U43〜U46 待ち） |
+| p010 | compiler の backend（zedBSD `isa/gsi1/`）、`gsi1_isa.h` と interface の表の確定（design §8） | p008、p027 | planned（順: p027 の後） |
+| p018 | firmware の Vulkan の object model と draw/dispatch（design §8）。GHCI §7.2・§11.6 への firmware の追従を含む | p017、p009、p010、p027 | planned（順: p010 の後） |
+| p019 | zedBSD の `vk/`（検証する中継、design §8） | p010、p017、p006、p027 | planned（順: p018 の後） |
 | p011 | 端から端の統合（Verilator の上で libvulkan → `vk/` → firmware → RTL、vkdemo の 1 frame、design §8） | p009、p010、p018、p019 | planned（順: p006 の後） |
 | [p013](phase013/phase.md) | KC705 の PCIe（BAR0 = GHCI、BAR2 = DDR3 の VRAM、MSI、VFIO） | p012、p024、p006 | planned（2026-10-25 01:08 Future Work から戻した） |
 | [p028](phase028/phase.md) | **最初のゴール**: QEMU の VFIO の passthrough の guest の zedBSD から KC705 の GPU で Vulkan | p011、p013、p006、p019、p024 | planned（2026-10-25 01:08 新設） |
