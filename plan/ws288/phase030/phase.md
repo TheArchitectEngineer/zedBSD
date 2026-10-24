@@ -40,3 +40,4 @@
 - 2026-10-25 05:42 Q1: T1-762（main 5f3b747、p031・p030 S1・p027 S1〜S5・S7 の merge の後）PASS: make sim 85 PASS・0 FAIL（Q1 が log を数えた）、sim-quick 83、verilator 5、lint 111。**p030 の回帰の基準 = 85 本**。
 - 2026-10-25 05:42 ユーザー「p027 の S6 が終わったら、P2 にこの分担で p030 の TU と BLT の系統を渡してよいです。」→ P1 = S3〜S8（RX・ROP・CP）、P2 = S9・S10・S12・S14（TU・BLT）、S13・S11 は後で Q1 が割り当てる。
 - 2026-10-25 05:47 P1 → Q1: S3（RX の clip）af9f8bf（親 48e35a8）。atg_rx_cpoly（新、7 平面の Sutherland–Hodgman）、atg_rx_clip（kind、w ≥ 2^-16、near・far、guard band、line・point、DISCARD）、model と vector（旧 rx_clip.txt は不変）。trivial accept を |x|≤4w に（spec に記録）。P1 の申告: lint 112 clean、atg_rx_clip 13 行・atg_rx_cpoly 4 行・atg_rx_setup PASS、MUT_FARCLIP・MUT_WCLIP で FAIL、旧 clip と新 clip が乱数 6000 と scene の全三角形で一致。T1-763 に。
+- 2026-10-25 06:00 Q1: T1-763（af9f8bf、S2・S3）PASS: sim-quick 84（83 + atg_rx_cpoly）、verilator 5、lint 112。
