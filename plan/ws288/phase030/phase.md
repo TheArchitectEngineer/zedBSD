@@ -66,3 +66,4 @@
   - S12: `tools/etcmodel.py`（Khronos Data Format Spec の ETC2 節の原文から）、`atg_tu_etc`（組み合わせ）、block の address と pass（8 byte block は 2、16 byte は 4 pass）、atg_top で HAS_ETC = HAS_TU。
   - S14: 案 A。STATE 768 語（0x200〜0x2FF = vertex の stage の 16 slot）、SET_REG の境 0x300、alias 0x1BFC、broadcast の index 10 bit（TU 以外は index < 512 だけ）、SU → TU の tx_vs、`atg_tu_desc` 32 slot。
 - 2026-10-25 07:49 P3 → Q1: TU・BLT の系統の S9・S10・S12・S14 を終えて返却（p3-p030t 4b4bdad、zedBSD e666c23d0 を main に merge）。S14: STATE を 768 語（0x200〜0x2FF が vertex の stage の 16 slot）、SET_REG の fault の境 0x300、CP の STATE の index 10 bit（TU 以外は index < 512 の時だけ st_we）、tx_vs、atg_tu_desc 32 slot。P3 の申告: lint 125、TU・BLT・CP・SU・top の TB PASS、MUT 5 種で FAIL。P3 の build の残りと scratchpad の Khronos の原文を Q1 が消した。T1-775 に（T3 が T1-771 の後）。残件: vertex の shader で texture を引く scene は無い（S11）、atg_cp.v は 429 行（前から、p016）。
+- 2026-10-25 07:50 Q1: T1-773（2cf347b、S15）PASS: sim-quick 90、verilator 6、lint 118。
