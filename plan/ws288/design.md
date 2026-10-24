@@ -745,7 +745,7 @@ code_offset〜 命令（8 byte 揃え）
 
 ### 6.6 compiler の backend（`isa/gsi1/`、IR → GSI1。版 3）
 
-**更新（2026-10-25 07:12 Q1）**: 実装は `src/drivers/gpu/ghci/compiler/`（p010）。下の表のうち texture の offset・gather・compare・cube・3D・array を「拒む」とする行は古い: p009 part E・F と p010 で全部対応した（GHCI §12.9）。拒む物は cube array・dual-source blend・gl_Layer と、v1 では shared memory の atomic（p030 S15 で足す）。
+**更新（2026-10-25 07:12 Q1）**: 実装は `src/drivers/gpu/ghci/compiler/`（p010）。下の表のうち texture の offset・gather・compare・cube・3D・array を「拒む」とする行は古い: p009 part E・F と p010 で全部対応した（GHCI §12.9）。拒む物は cube array・dual-source blend・gl_Layer。shared memory の atomic は p030 S15 で `atoms`（`atom` の sub[4]）として足した（2026-10-25 P2）。
 
 - 入力は共有の `struct drv_gpu_shader_ir`（`src/drivers/gpu/compiler/ir.h`、op の一覧は 263〜633 行）。SPIR-V の front end は書かない（Guardrail: compile は kernel 空間の driver）。出力は §3.4.4 の binary（header + 64 bit の命令）。backend の表 `struct ghci_isa_backend {fourcc, compile, release, limits}` に "GSI1" を登録し、`ISA_ID` で選ぶ（GHCI 1.0 の shader 付きの GPU は全部 "GSI1" なので、実質この 1 つ）。
 - **IR の op の対応表（全部）**:
@@ -2037,7 +2037,7 @@ reviewer が照合した物: design.md の §3.1〜§3.6・§2.2〜§2.4・§6�
 | S13 | varying 64 component（U59）: KC705 の SU_VARY_WORDS 32 → 64、PT の entry、`atg_su_lda` の primitive table（複製を NPHYS/4 から 2 にして読みを 2 cycle に、BRAM の対策、S1 の spec で）、`atg_rx_frag` の index、limit の表（§3.7 の「128」の誤りも）、scene (18)、`make oxc-core` の BRAM の数（T）。BRAM が合わなければ N の見直しをユーザーに諮り、この段は uncleared で止める | 7 | S8、p027 の SU・RX の段の merge |
 | S14 | TU の slot を stage ごとに 16（U60）: **案 A**（Q1 の判断）: STATE を 1024 index に広げ、0x200〜0x2FF を vertex の stage の 16 slot × 16 word、fragment と compute は今の 0x090〜0x18F、tex の命令は warp の種類で bank を選ぶ、`atg_cp_state` 512 → 1024 word、SET_REG の fault の境 1024、`atg_tu_desc` を 32 slot に、SU → TU の要求に stage の bit。案 B（descriptor を memory の table に置き TU が cache する）は後の拡張の候補 | 6 | S9、p027 の cp_seq・cp_state の merge |
 
-| S15 | shared memory（LDS）の atomic（2026-10-25 07:12 Q1 追加、p010 で見つかった Vulkan 1.0 core の食い違い: Workgroup の OpAtomic*）: GSI1 の命令（`atom` の LDS の形か新しい sub）、`atg_su_lds` の read-modify-write、gsi1asm・gsi1dis・gsi1model、compiler の lowering、TB | 4 | — |
+| S15 | shared memory（LDS）の atomic（2026-10-25 07:12 Q1 追加、p010 で見つかった Vulkan 1.0 core の食い違い: Workgroup の OpAtomic*）: GSI1 の命令（`atom` の LDS の形か新しい sub）、`atg_su_lds` の read-modify-write、gsi1asm・gsi1dis・gsi1model、compiler の lowering、TB。**実装（2026-10-25 P2）**: `atom` の sub[4] = 1 を shared memory の形 `atoms.<op>`（命令の数は増やさない、rs1 は LDS の byte address、即値なし）。lane の衝突は lane の順（global の atom と同じ規則）、`atg_su_lds` は side-effect の lane ごとに 2 cycle（読み → 新しい値の書き）、group を 1 つずつ取るので他の lds・sts・atoms に対して不可分。GHCI §12.2・§12.5・§12.6・§12.8・§12.10 | 4 | — |
 
 計 103 LW（±35%）。S12 は S9 の後、S13 は S8 の後、S14 は S9 の後（S13 と S14 は並行可）。S11（統合）は S2〜S14 の全部の後。
 

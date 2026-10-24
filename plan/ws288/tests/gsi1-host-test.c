@@ -208,6 +208,10 @@ run_encode(
 	EMIT(gsi1_encode_r4(GSI1_OP_CUSTOM0, GSI1_F3_ATOM, 1, 2, 3, 4, &extra), "atom.cmpxchg r1, (r2), r3, r4");
 	extra.sub = GSI1_ATOM_ADD;
 	EMIT(gsi1_encode_r4(GSI1_OP_CUSTOM0, GSI1_F3_ATOM, 1, 2, 3, 0, &extra), "atom.add r1, (r2), r3");
+	extra.sub = GSI1_ATOM_UMIN | GSI1_ATOM_SHARED;
+	EMIT(gsi1_encode_r4(GSI1_OP_CUSTOM0, GSI1_F3_ATOM, 40, 41, 42, 0, &extra), "atoms.umin r40, (r41), r42");
+	extra.sub = GSI1_ATOM_CMPXCHG | GSI1_ATOM_SHARED;
+	EMIT(gsi1_encode_r4(GSI1_OP_CUSTOM0, GSI1_F3_ATOM, 1, 2, 3, 4, &extra), "atoms.cmpxchg r1, (r2), r3, r4");
 	EMIT(gsi1_encode_i(GSI1_OP_CUSTOM0, GSI1_F3_LDS, 5, 6, 64, 0), "lds r5, 64(r6)");
 	EMIT(gsi1_encode_s(GSI1_OP_CUSTOM0, GSI1_F3_STS, GSI1_ZERO, 7, 128), "sts r7, 128(zero)");
 	EMIT(gsi1_encode_i(GSI1_OP_CUSTOM0, GSI1_F3_FENCE, 0, 0, 5, 0), "fence 5");

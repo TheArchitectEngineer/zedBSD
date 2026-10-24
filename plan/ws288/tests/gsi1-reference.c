@@ -373,6 +373,12 @@ execute_lane(
 			texel[0] = atomic_apply(inst->immediate, result[0], b, c);
 			return NULL;
 		}
+		if (inst->location == DRV_GPU_IR_LOCATION_SHARED) {
+			/* A word of the workgroup's shared memory. */
+			result[0] = run->shared[(a / 4U) % 4096U];
+			run->shared[(a / 4U) % 4096U] = atomic_apply(inst->immediate, result[0], b, c);
+			return NULL;
+		}
 		result[0] = storage_word(run, inst->location, a);
 		storage_store(run, inst->location, a, atomic_apply(inst->immediate, result[0], b, c));
 		return NULL;
