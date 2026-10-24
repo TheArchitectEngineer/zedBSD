@@ -1785,6 +1785,7 @@ reviewer が照合した物: design.md の §3.1〜§3.6・§2.2〜§2.4・§6�
   - blend しない書き込み（integer、R32F 系、blend 無効）は pack だけ（`atg_fmt_pack`）。
 - **write mask**: u8 の道は今の通り、f32 の道と pack は `keep` の bit で旧値を残す（packed の format は bit の単位）。
 - **`atg_rop_wb` の分割**（p027 の後 ≈330 行 + 上 → 400 を超える）: **`atg_rop_wb`**（line の buffer、AMB、beat と行と line の順序、≈300）と **`atg_rop_wpix`（新、≈250、FSM 無し）**（line の中の pixel の位置、RT の state の選択、dst の unpack、u8/f32 の道の選択と結果の merge）。
+- **S8 の実装で決めた事**（2026-10-25 P1、amaterrace-gpu の spec §10 にも）: (1) `atg_rop_fblend` は `atg_rop_wpix` の子（wb の port を 40 以下に保つため。wb は 32 port、wpix 35）。(2) row が 1 本の line に入る時（2·S·ps ≤ LINE_BYTES）は今の通り 2 行の line を先に揃えて sample ごとの pass、入らない時（4x で 8・16 byte の画素）は行ごと・line ごとに 1 pass（slot = line の中の E = LINE_BYTES/ps 個の (画素, sample)）。(3) 読まずに置いた line は読みの要らない beat にだけ当たる（`erd`）。(4) nocol の beat は `atg_rop_ds` が wb に渡し wb が捨てる（occlusion は `atg_rop` が qfirst の beat の d_smask で数える。§16.7 の「wb へ渡さない」から変えた、結果は同じ）。(5) 1 つの warp の beat は全部同じ `ex_mask`（ある lane が出さなかった attachment の値は未定義、GHCI §12.12 に一文）。(6) `atg_su_exp_drain` は `atg_su_exp` の子（`atg_su` の結線を変えない、exp は 39 port のまま）、warp ごとに FIRST の 1 cycle。(7) pack の道（integer・R32F 系）の結果は `atg_fmt_pack` の keep で旧値と bit の単位で merge。
 
 ### 16.8 occlusion query（item 7）
 
