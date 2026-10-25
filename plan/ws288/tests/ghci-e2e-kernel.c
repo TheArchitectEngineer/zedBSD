@@ -10,14 +10,15 @@
  * part (the register window, the local window and the interrupt are the
  * link's), the locks and wait queues of one thread, the clock of the
  * simulation, the heap, and the service thread, which runs whenever a
- * wait gives it room.
+ * wait gives it room; and what the display case reads of the display.
  *
  * The test has one thread.  A sleep of the driver runs the GPU's clock
  * and calls the interrupt handler when the line is high, as an interrupt
  * would come in while the thread sleeps.  The service thread's round runs
- * in a sleep or a pump only when neither the device's lock nor its ring's
- * lock is held, as the real thread would block on them; a wait that
- * needs the service thread while holding them would hang the kernel too.
+ * in a sleep or a pump only when none of the device's lock, its ring's
+ * lock and its display's lock is held, as the real thread would block on
+ * them; a wait that needs the service thread while holding them would
+ * hang the kernel too.
  */
 
 #include <errno.h>
@@ -30,6 +31,7 @@
 #include "drivers/gpu/ghci/ghci.h"
 #include "kern/clock.h"
 #include "kern/cred.h"
+#include "kern/poll.h"
 #include "drivers/gpu/ghci/hcr.h"
 
 #include "ghci-e2e.h"
@@ -40,6 +42,9 @@
 
 /* Where the local window would be on the host's bus (only recorded by the driver). */
 #define WINDOW_PHYSICAL			0xe0000000ULL
+
+/* The record page: 64 bytes past the fence word, plane 0's 8 bytes first (display-scan.c). */
+#define RECORD_OFFSET			64U
 
 /* The cycles one look of a waiting thread lets the GPU run, at most. */
 #define PUMP_CYCLES			2000U
@@ -163,6 +168,83 @@ e2e_board_now_ns(void)
 	atg_link_stats(&stats);
 	nanoseconds = stats.cycles * 1000000000ULL / atg_link_clock_hz();
 	return nanoseconds;
+}
+
+/*
+ * Reads what the display shows: the controller's registers, plane 0's
+ * record and the driver's image, as nothing else runs.
+ */
+void
+e2e_display_state(
+	struct e2e_display_state *state)
+{
+	struct ghci_display *display;
+	uint32_t registers;
+	uint64_t record;
+
+	/* Nothing when the GPU has no display. */
+	memset(state, 0, sizeof(*state));
+	display = &e2e_device.display;
+	state->present = display->present;
+	if (!display->present)
+		return;
+
+	/* The controller's registers, through the DISP2 window. */
+	registers = display->registers;
+	state->fb_base = ghci_read(&e2e_device, registers + GHCI_DC_FB_BASE);
+	state->fb_stride = ghci_read(&e2e_device, registers + GHCI_DC_FB_STRIDE);
+	state->ctrl = ghci_read(&e2e_device, registers + GHCI_DC_CTRL);
+	state->status = ghci_read(&e2e_device, registers + GHCI_DC_STATUS);
+	state->frame_count = ghci_read(&e2e_device, registers + GHCI_DC_FRAME_COUNT);
+	state->scan_sum = ghci_read(&e2e_device, registers + GHCI_DC_SCAN_SUM);
+	state->scan_words = ghci_read(&e2e_device, registers + GHCI_DC_SCAN_WORDS);
+
+	/* Plane 0's record {value, FRAME_COUNT}, in one 64-bit read as the driver reads it. */
+	record = *(volatile uint64_t *)(e2e_device.fence_page->view + RECORD_OFFSET);
+	state->record_value = (uint32_t)record;
+	state->record_frame = (uint32_t)(record >> 32);
+
+	/* The driver's own view of what it shows. */
+	state->shown_base = display->shown.base;
+	state->shown_stride = display->shown.stride;
+	state->shown_copy_frame = display->shown.copy_frame;
+	state->enabled = display->enabled;
+	state->adopted = display->adopted;
+}
+
+/*
+ * Runs the board until the display controller has begun frames more
+ * frames, or the time is up.
+ */
+int
+e2e_display_frames(
+	uint32_t frames,
+	uint64_t timeout_ns)
+{
+	uint32_t registers;
+	uint32_t first;
+	uint32_t now;
+	uint64_t deadline;
+
+	/* A GPU without a display begins no frame. */
+	if (!e2e_device.display.present)
+		return ETIMEDOUT;
+
+	/* Rounds of the board, as a waiting thread's, until FRAME_COUNT moved on far enough. */
+	registers = e2e_device.display.registers;
+	first = ghci_read(&e2e_device, registers + GHCI_DC_FRAME_COUNT);
+	deadline = e2e_board_now_ns() + timeout_ns;
+	for (;;) {
+		now = ghci_read(&e2e_device, registers + GHCI_DC_FRAME_COUNT);
+		if (now - first >= frames)
+			break;
+		if (e2e_board_now_ns() >= deadline)
+			return ETIMEDOUT;
+		e2e_board_pump();
+	}
+
+	/* Succeeded: the frames began. */
+	return 0;
 }
 
 /* The kernel's MMIO reads: the register window is the link's. */
@@ -443,67 +525,11 @@ ghci_service_start(
 	return 0;
 }
 
-/* The display controller is not on the simulated board: no display. */
-int
-ghci_display_attach(
-	struct ghci_device *device)
-{
-	device->display.present = 0;
-	return 0;
-}
-
+/* The waiters on poll readiness: the fake core's poll looks again after each round anyway. */
 void
-ghci_display_detach(
-	struct ghci_device *device)
+poll_notify(void)
 {
-	(void)device;
 }
-
-void
-ghci_display_session_close(
-	struct ghci_device *device,
-	struct ghci_session *session)
-{
-	(void)device;
-	(void)session;
-}
-
-void
-ghci_display_service(
-	struct ghci_device *device,
-	unsigned work)
-{
-	(void)device;
-	(void)work;
-}
-
-void
-ghci_display_recover_begin(
-	struct ghci_device *device)
-{
-	(void)device;
-}
-
-void
-ghci_display_recover_count(
-	struct ghci_device *device)
-{
-	(void)device;
-}
-
-void
-ghci_display_recover_end(
-	struct ghci_device *device,
-	int running)
-{
-	(void)device;
-	(void)running;
-}
-
-/* No display operations: the node offers none. */
-const struct drv_gpu_display_ops ghci_display_ops;
-const struct drv_gpu_display_ops ghci_display_cursor_ops;
-const struct drv_gpu_scanout_ops ghci_scanout_ops;
 
 /* Runs the GPU's clock for one look and calls the interrupt handler when the line is high. */
 static void
@@ -536,7 +562,9 @@ service_round(void)
 	/* A round inside a round, or one the device's locks would block, does not run. */
 	if (service_running_now)
 		return;
-	if (e2e_device.lock.locked != 0U || e2e_device.cp_lock.locked != 0U)
+	if (e2e_device.lock.locked != 0U ||
+	    e2e_device.cp_lock.locked != 0U ||
+	    e2e_device.display.lock.locked != 0U)
 		return;
 
 	/* Nothing to do before the period ends. */

@@ -138,6 +138,7 @@ Future Work は実行を許可しない。
 | fw-sa-core | WS288 の systolic array の本体（旧 p020、36 LW）: `atg_sa`（SU と decoupled、重みは MC から stream、`rq` の FIFO）。design の Appendix A の sketch から | LLM・行列の計算 | 2026-10-23 ユーザー「SAの設計と実装はかなり後に回して、SUがきちんとISAを実装できてからにします。」 | defer | WS288 の p008〜p010 が cleared（SU が GSI1 を実装）| plan/ws288/design.md §3.9・§8・Appendix A |
 | fw-sa-online | SA の online の softmax・layer norm（旧 p022、32 LW ±50%）: 案 B（SA の出口で集計、入口で正規化、SU は指揮だけ） | 同上 | 2026-10-23 ユーザー「案BでSAに寄せましょう。SUはミニマルな形にしましょう。」 | defer | fw-sa-core の後 | plan/ws288/design.md Appendix A |
 | fw-sa-vulkan | SA の Vulkan の経路（旧 p021、20 LW）: 独自の拡張 `VK_KEI_systolic_dispatch`。libvulkan と共有の compiler の変更を含むので別の WS の候補 | Vulkan から SA を使う | 2026-10-23 WS288 design 版 3・4 | defer | fw-sa-core の後 | plan/ws288/design.md §3.9・Appendix A |
+| fw-amaterrace-noc | LLM の SU 間の NoC: SU ごとに patch を担当し結果を合わせる流れ（reduce・all-gather）を、メモリを経由せずに運ぶ網。候補: fat tree と router での加算（in-network reduction）、ring、2D mesh。メモリの木とは別の網か、同じ木を太くするか。今の MC の木（atg_rt の 2 分岐）は全部が 1 つの root へ向かう集約の木。関連: atg_rt の重み付きの arbitration（NSU を増やす時の公平さ） | 帯域と公平さ（SU が増えると深さで取り分が偏る、SU 間の転送が root と DDR3 に集中する） | 2026-10-25 18:43 ユーザー「現在は1 SUなのでFat Treeはまだ不要です。でも、LLM対応するときには、SUごとにパッチを担当して、それをマージするためにやはりfat-treeなどのNoC的なトポロジは必要かなあと考えてはいます。」 | defer | SA・LLM の Phase、または NSU が 4 を超える時（U83） | plan/ws288/design.md §4.1 |
 
 2026-10-05 Q1（WS140 の結果の反映）: F-070（ld.so の上限の動的化）は WS140 で実装した（0484201b・360c7dbe・a555c47a、T1-164 PASS、amd64）。ws115-p010 の手順 1（定数を上げる）は不要になったので、再開の時は gtk4-widget-factory の起動から確かめる。
 

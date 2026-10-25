@@ -24,6 +24,11 @@
  *   vkdemo=PPM      one frame of vkdemo's offscreen renderer (the
  *                   textured cuboid at 1000 ms), written to PPM for the
  *                   independent oracle
+ *   display=PPM     that frame (the PPM the vkdemo case wrote) shown on
+ *                   the display controller: a copied present of ordinary
+ *                   storage, then a shared present of a mappable blob,
+ *                   each checked by FB_BASE, plane 0's flip record, the
+ *                   scanned memory and the next frame's SCAN_SUM
  *
  * Every case prints "PASS e2e.<case>" or "FAIL e2e.<case>: ..." and its
  * GPU cycles, the firmware's packet cycles, the µop words and the round
@@ -32,10 +37,17 @@
  * script runs (vkdemo_oracle.py), not here.
  */
 
+#include <errno.h>
+#include <fcntl.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
+#include <sys/mman.h>
+#include <unistd.h>
+#include <uapi/gpu.h>
+#include <uapi/gpu-display.h>
 #include <vulkan/vulkan.h>
 
 #include "ghci-e2e.h"
@@ -55,6 +67,17 @@
 
 /* The vkdemo frame's shader time. */
 #define VKDEMO_TIME_MS			1000U
+
+/* The display case's frame: vkdemo's, rows of 4-byte pixels without padding, and its RGB bytes in the PPM. */
+#define DISPLAY_STRIDE			(VKDEMO_WIDTH * 4U)
+#define DISPLAY_FRAME_BYTES		(DISPLAY_STRIDE * VKDEMO_HEIGHT)
+#define DISPLAY_RGB_BYTES		(VKDEMO_WIDTH * VKDEMO_HEIGHT * 3U)
+
+/* A flip record's bit 31: the flip was cancelled (GHCI section 13.2). */
+#define DISPLAY_RECORD_CANCELLED	0x80000000U
+
+/* How long the display case waits for the controller's frames, in nanoseconds of simulated time. */
+#define DISPLAY_FRAMES_TIMEOUT_NS	1000000000ULL
 
 /* Waits for a fence for at most this many nanoseconds of simulated time. */
 #define FENCE_TIMEOUT_NS		60000000000ULL
@@ -121,6 +144,12 @@ static int case_fill(void);
 static int case_copy(void);
 static int case_compute(const char *path);
 static int case_vkdemo(const char *path);
+static int case_display(const char *path);
+static int display_frame_read(const char *path, uint8_t *rgb);
+static uint32_t display_image(const uint8_t *rgb, int bgra, uint8_t *image);
+static int display_run(int fd, const uint8_t *bgra, uint32_t bgra_sum, const uint8_t *rgba, uint32_t rgba_sum, uint8_t **mapped);
+static int display_present(int fd, const struct gpu_display_info *query, uint64_t lease, uint64_t handle, uint32_t format, int blob, uint64_t *sequence);
+static int display_check(const char *what, int fd, uint64_t lease, uint64_t sequence, const uint8_t *image, const uint8_t *mapped, uint32_t sum, const struct e2e_display_state *before, struct e2e_display_state *after);
 static void measure_start(struct measure *measure);
 static void measure_report(const char *name, const struct measure *measure);
 static uint32_t *module_read(const char *path, size_t *bytes);
@@ -183,6 +212,7 @@ case_run(
 	int copy;
 	int compute;
 	int vkdemo;
+	int display;
 	int error;
 
 	/* Which case the word names (a nonzero comparison: not that case). */
@@ -190,6 +220,7 @@ case_run(
 	copy = strcmp(name, "copy");
 	compute = strncmp(name, "compute=", 8U);
 	vkdemo = strncmp(name, "vkdemo=", 7U);
+	display = strncmp(name, "display=", 8U);
 
 	/* The case, with what follows its '=' when it takes a path. */
 	if (fill == 0) {
@@ -200,6 +231,8 @@ case_run(
 		error = case_compute(name + 8);
 	} else if (vkdemo == 0) {
 		error = case_vkdemo(name + 7);
+	} else if (display == 0) {
+		error = case_display(name + 8);
 	} else {
 		printf("FAIL ghci-e2e: unknown case %s\n", name);
 		error = 1;
@@ -995,6 +1028,582 @@ case_vkdemo(
 
 	/* Succeeded: the frame is written (the oracle decides). */
 	printf("PASS e2e.vkdemo: frame %s sha256 %s\n", path, digest);
+	return 0;
+}
+
+/*
+ * Shows vkdemo's frame (the PPM the vkdemo case wrote) on the display:
+ * a present of ordinary storage, which the blitter copies into a frame of
+ * the driver's, then one of a mappable blob, which the controller scans
+ * where the session wrote it, each checked against the image (display_run).
+ */
+static int
+case_display(
+	const char *path)
+{
+	uint8_t *rgb;
+	uint8_t *bgra;
+	uint8_t *rgba;
+	uint8_t *mapped;
+	uint32_t bgra_sum;
+	uint32_t rgba_sum;
+	int fd;
+	int error;
+
+	/* The frame's pixels and the two images made of them. */
+	rgb = malloc(DISPLAY_RGB_BYTES);
+	bgra = malloc(DISPLAY_FRAME_BYTES);
+	rgba = malloc(DISPLAY_FRAME_BYTES);
+	error = 0;
+	if (rgb == NULL)
+		error = 1;
+	if (bgra == NULL)
+		error = 1;
+	if (rgba == NULL)
+		error = 1;
+	if (error != 0) {
+		printf("FAIL e2e.display: no memory for the images\n");
+		free(rgb);
+		free(bgra);
+		free(rgba);
+		return 1;
+	}
+
+	/* vkdemo's frame, as BGRA (the copied present) and RGBA (the blob) words with their sums. */
+	error = display_frame_read(path, rgb);
+	if (error != 0) {
+		printf("FAIL e2e.display: vkdemo's frame %s could not be read (the vkdemo case runs first)\n", path);
+		free(rgb);
+		free(bgra);
+		free(rgba);
+		return 1;
+	}
+	bgra_sum = display_image(rgb, 1, bgra);
+	rgba_sum = display_image(rgb, 0, rgba);
+	free(rgb);
+
+	/* An open of the node, as a compositor's. */
+	fd = open("/dev/gpu0", O_RDWR);
+	if (fd < 0) {
+		printf("FAIL e2e.display: the node could not be opened (%d)\n", errno);
+		free(bgra);
+		free(rgba);
+		return 1;
+	}
+
+	/* The lease, the two presents and the release. */
+	mapped = NULL;
+	error = display_run(fd, bgra, bgra_sum, rgba, rgba_sum, &mapped);
+
+	/* The mapping and the open go; the close ends a lease a failure left and destroys the resources. */
+	if (mapped != NULL)
+		(void)munmap(mapped, DISPLAY_FRAME_BYTES);
+	(void)close(fd);
+	free(bgra);
+	free(rgba);
+
+	/* A failed step (it printed why). */
+	if (error != 0)
+		return 1;
+
+	/* Succeeded: both presents were shown as they were written. */
+	printf("PASS e2e.display: a copied and a shared present of vkdemo's frame (FB_BASE, records, SCAN_SUM)\n");
+	return 0;
+}
+
+/*
+ * Reads vkdemo's frame from its PPM: 320 x 240 RGB bytes.  Returns 0, or
+ * 1 when the file is not that.
+ */
+static int
+display_frame_read(
+	const char *path,
+	uint8_t *rgb)
+{
+	FILE *file;
+	unsigned width;
+	unsigned height;
+	unsigned maximum;
+	size_t got;
+	int fields;
+	int separator;
+
+	/* The file. */
+	file = fopen(path, "rb");
+	if (file == NULL)
+		return 1;
+
+	/* The header: P6, the size, the largest value, one whitespace byte. */
+	fields = fscanf(file, "P6 %u %u %u", &width, &height, &maximum);
+	separator = fgetc(file);
+	if (fields != 3) {
+		(void)fclose(file);
+		return 1;
+	}
+	if (width != VKDEMO_WIDTH) {
+		(void)fclose(file);
+		return 1;
+	}
+	if (height != VKDEMO_HEIGHT) {
+		(void)fclose(file);
+		return 1;
+	}
+	if (maximum != 255U) {
+		(void)fclose(file);
+		return 1;
+	}
+	if (separator == EOF) {
+		(void)fclose(file);
+		return 1;
+	}
+
+	/* The pixels. */
+	got = fread(rgb, 1U, DISPLAY_RGB_BYTES, file);
+	(void)fclose(file);
+	if (got != DISPLAY_RGB_BYTES)
+		return 1;
+
+	/* Succeeded: the frame's pixels. */
+	return 0;
+}
+
+/*
+ * Makes an image of the frame's pixels, opaque, in BGRA (bgra nonzero) or
+ * RGBA byte order, rows of DISPLAY_STRIDE bytes; reports the 32-bit sum of
+ * its little-endian pixel words, as the controller's SCAN_SUM sums a frame.
+ */
+static uint32_t
+display_image(
+	const uint8_t *rgb,
+	int bgra,
+	uint8_t *image)
+{
+	const uint8_t *source;
+	uint8_t *target;
+	uint32_t sum;
+	uint32_t word;
+	uint32_t index;
+
+	/* Every pixel in order, its word added to the sum. */
+	sum = 0U;
+	for (index = 0U; index < VKDEMO_WIDTH * VKDEMO_HEIGHT; index++) {
+		source = &rgb[index * 3U];
+		target = &image[index * 4U];
+		if (bgra) {
+			target[0] = source[2];
+			target[2] = source[0];
+		} else {
+			target[0] = source[0];
+			target[2] = source[2];
+		}
+		target[1] = source[1];
+		target[3] = 0xffU;
+		word = (uint32_t)target[0];
+		word |= (uint32_t)target[1] << 8;
+		word |= (uint32_t)target[2] << 16;
+		word |= (uint32_t)target[3] << 24;
+		sum += word;
+	}
+
+	/* Succeeded: the image is made. */
+	return sum;
+}
+
+/*
+ * The display case's steps on an open of the node: the output and its one
+ * mode, the claim, the copied present and its check, the blob (mapped
+ * into *mapped) and its shared present and check, the release.  Returns
+ * 0, or 1 after printing the step that failed.
+ */
+static int
+display_run(
+	int fd,
+	const uint8_t *bgra,
+	uint32_t bgra_sum,
+	const uint8_t *rgba,
+	uint32_t rgba_sum,
+	uint8_t **mapped)
+{
+	struct gpu_display_info query;
+	struct gpu_display_mode mode;
+	struct gpu_display_claim claim;
+	struct gpu_display_release release;
+	struct gpu_display_wait wait;
+	struct gpu_resource_create storage;
+	struct gpu_blob_create blob;
+	struct gpu_resource_map map;
+	struct gpu_transfer transfer;
+	struct e2e_display_state before;
+	struct e2e_display_state after;
+	uint64_t sequence;
+	void *view;
+	int error;
+
+	/* The one output: connected, with blobs, its preferred mode vkdemo's frame (the simulated controller's test mode). */
+	memset(&query, 0, sizeof(query));
+	query.version = GPU_ABI_VERSION;
+	query.size = sizeof(query);
+	query.index = 0U;
+	error = ioctl(fd, GPU_DISPLAY_QUERY, &query);
+	if (error != 0) {
+		printf("FAIL e2e.display: the query (%d)\n", errno);
+		return 1;
+	}
+	printf("  e2e.display: output %u, generation %llu, %ux%u at %u mHz, flags %08x\n", (unsigned)query.display_id,
+	    (unsigned long long)query.generation, (unsigned)query.preferred_width, (unsigned)query.preferred_height,
+	    (unsigned)query.refresh_millihz, (unsigned)query.flags);
+	if ((query.flags & GPU_DISPLAY_CONNECTED) == 0U) {
+		printf("FAIL e2e.display: the output is not connected\n");
+		return 1;
+	}
+	if ((query.flags & GPU_DISPLAY_BLOB) == 0U) {
+		printf("FAIL e2e.display: the output takes no blob\n");
+		return 1;
+	}
+	if (query.preferred_width != VKDEMO_WIDTH) {
+		printf("FAIL e2e.display: the preferred mode is not vkdemo's frame\n");
+		return 1;
+	}
+	if (query.preferred_height != VKDEMO_HEIGHT) {
+		printf("FAIL e2e.display: the preferred mode is not vkdemo's frame\n");
+		return 1;
+	}
+
+	/* The controller names one mode, the frame's. */
+	memset(&mode, 0, sizeof(mode));
+	mode.version = GPU_ABI_VERSION;
+	mode.size = sizeof(mode);
+	mode.display_id = query.display_id;
+	mode.operation = GPU_DISPLAY_MODE_ENUMERATE;
+	mode.generation = query.generation;
+	mode.index = 0U;
+	error = ioctl(fd, GPU_DISPLAY_MODE, &mode);
+	if (error != 0) {
+		printf("FAIL e2e.display: the mode enumeration (%d)\n", errno);
+		return 1;
+	}
+	if (mode.count != 1U) {
+		printf("FAIL e2e.display: %u modes, not the test mode alone\n", (unsigned)mode.count);
+		return 1;
+	}
+	if (mode.width != VKDEMO_WIDTH) {
+		printf("FAIL e2e.display: mode 0 is %ux%u\n", (unsigned)mode.width, (unsigned)mode.height);
+		return 1;
+	}
+	if (mode.height != VKDEMO_HEIGHT) {
+		printf("FAIL e2e.display: mode 0 is %ux%u\n", (unsigned)mode.width, (unsigned)mode.height);
+		return 1;
+	}
+
+	/* The lease on plane 0. */
+	memset(&claim, 0, sizeof(claim));
+	claim.version = GPU_ABI_VERSION;
+	claim.size = sizeof(claim);
+	claim.display_id = query.display_id;
+	claim.plane_index = 0U;
+	claim.generation = query.generation;
+	error = ioctl(fd, GPU_DISPLAY_CLAIM, &claim);
+	if (error != 0) {
+		printf("FAIL e2e.display: the claim (%d)\n", errno);
+		return 1;
+	}
+
+	/* Ordinary storage holding the BGRA image. */
+	memset(&storage, 0, sizeof(storage));
+	storage.version = GPU_ABI_VERSION;
+	storage.size = sizeof(storage);
+	storage.bytes = DISPLAY_FRAME_BYTES;
+	storage.usage = GPU_RESOURCE_USAGE_STORAGE;
+	error = ioctl(fd, GPU_RESOURCE_CREATE, &storage);
+	if (error != 0) {
+		printf("FAIL e2e.display: the storage (%d)\n", errno);
+		return 1;
+	}
+	memset(&transfer, 0, sizeof(transfer));
+	transfer.version = GPU_ABI_VERSION;
+	transfer.size = sizeof(transfer);
+	transfer.handle = storage.handle;
+	transfer.offset = 0U;
+	transfer.address = (uint64_t)(uintptr_t)bgra;
+	transfer.bytes = DISPLAY_FRAME_BYTES;
+	error = ioctl(fd, GPU_RESOURCE_WRITE, &transfer);
+	if (error != 0) {
+		printf("FAIL e2e.display: the storage's write (%d)\n", errno);
+		return 1;
+	}
+
+	/* The copied present lights the controller and returns once adopted. */
+	e2e_display_state(&before);
+	error = display_present(fd, &query, claim.lease, storage.handle, GPU_PIXEL_BGRA8888, 0, &sequence);
+	if (error != 0) {
+		printf("FAIL e2e.display: the copied present (%d)\n", error);
+		return 1;
+	}
+	error = display_check("copied", fd, claim.lease, sequence, bgra, NULL, bgra_sum, &before, &after);
+	if (error != 0)
+		return 1;
+
+	/* A mappable blob holding the RGBA image, written through its mapping. */
+	memset(&blob, 0, sizeof(blob));
+	blob.version = GPU_ABI_VERSION;
+	blob.size = sizeof(blob);
+	blob.bytes = DISPLAY_FRAME_BYTES;
+	blob.flags = GPU_BLOB_MAPPABLE;
+	error = ioctl(fd, GPU_BLOB_CREATE, &blob);
+	if (error != 0) {
+		printf("FAIL e2e.display: the blob (%d)\n", errno);
+		return 1;
+	}
+	memset(&map, 0, sizeof(map));
+	map.version = GPU_ABI_VERSION;
+	map.size = sizeof(map);
+	map.handle = blob.handle;
+	error = ioctl(fd, GPU_RESOURCE_MAP, &map);
+	if (error != 0) {
+		printf("FAIL e2e.display: the blob's map (%d)\n", errno);
+		return 1;
+	}
+	view = mmap(NULL, DISPLAY_FRAME_BYTES, PROT_READ | PROT_WRITE, MAP_SHARED, fd, (off_t)map.offset);
+	if (view == MAP_FAILED) {
+		printf("FAIL e2e.display: the blob's mapping (%d)\n", errno);
+		return 1;
+	}
+	*mapped = view;
+	memcpy(*mapped, rgba, DISPLAY_FRAME_BYTES);
+
+	/* The shared present: the controller flips to the blob where it is. */
+	before = after;
+	error = display_present(fd, &query, claim.lease, blob.handle, GPU_PIXEL_RGBA8888, 1, &sequence);
+	if (error != 0) {
+		printf("FAIL e2e.display: the shared present (%d)\n", error);
+		return 1;
+	}
+	error = display_check("shared", fd, claim.lease, sequence, rgba, *mapped, rgba_sum, &before, &after);
+	if (error != 0)
+		return 1;
+
+	/* The release turns the controller dark and lets the blob go before it returns. */
+	memset(&release, 0, sizeof(release));
+	release.version = GPU_ABI_VERSION;
+	release.size = sizeof(release);
+	release.lease = claim.lease;
+	error = ioctl(fd, GPU_DISPLAY_RELEASE, &release);
+	if (error != 0) {
+		printf("FAIL e2e.display: the release (%d)\n", errno);
+		return 1;
+	}
+	e2e_display_state(&after);
+	if (after.enabled) {
+		printf("FAIL e2e.display: the controller is still lit after the release\n");
+		return 1;
+	}
+
+	/* A wait on the ended lease is refused. */
+	memset(&wait, 0, sizeof(wait));
+	wait.version = GPU_ABI_VERSION;
+	wait.size = sizeof(wait);
+	wait.lease = claim.lease;
+	wait.sequence = sequence;
+	error = ioctl(fd, GPU_DISPLAY_WAIT, &wait);
+	if (error == 0) {
+		printf("FAIL e2e.display: a wait on the released lease succeeded\n");
+		return 1;
+	}
+	if (errno != EBUSY) {
+		printf("FAIL e2e.display: a wait on the released lease answered errno %d, not EBUSY\n", errno);
+		return 1;
+	}
+
+	/* Succeeded: every step passed. */
+	return 0;
+}
+
+/*
+ * Presents a whole frame of the lease from a resource (a blob when blob
+ * is nonzero, ordinary storage otherwise) and reports its sequence; the
+ * call returns once the frame is adopted.  Returns 0 or the errno.
+ */
+static int
+display_present(
+	int fd,
+	const struct gpu_display_info *query,
+	uint64_t lease,
+	uint64_t handle,
+	uint32_t format,
+	int blob,
+	uint64_t *sequence)
+{
+	struct gpu_display_present present;
+	int error;
+
+	/* A FIFO present of the frame at the output's refresh. */
+	memset(&present, 0, sizeof(present));
+	present.version = GPU_ABI_VERSION;
+	present.size = sizeof(present);
+	present.lease = lease;
+	present.handle = handle;
+	present.offset = 0U;
+	present.width = VKDEMO_WIDTH;
+	present.height = VKDEMO_HEIGHT;
+	present.stride = DISPLAY_STRIDE;
+	present.format = format;
+	present.refresh_millihz = query->refresh_millihz;
+	present.flags = GPU_DISPLAY_PRESENT_FIFO;
+	if (blob)
+		present.flags |= GPU_DISPLAY_PRESENT_BLOB;
+	present.generation = query->generation;
+	error = ioctl(fd, GPU_DISPLAY_PRESENT, &present);
+	if (error != 0) {
+		error = errno;
+		return error;
+	}
+
+	/* Succeeded: the frame's number. */
+	*sequence = present.sequence;
+	return 0;
+}
+
+/*
+ * Checks what the controller shows after a present returned: it is lit
+ * and scans the driver's image (a frame of the driver's holding the image,
+ * or, shared, the blob's own memory at mapped); plane 0's record is new
+ * and not cancelled; the frame is adopted and a wait answers at once; and
+ * the next whole frame scanned sums to the image's sum.  Fills after.
+ * Returns 0, or 1 after printing what differs.
+ */
+static int
+display_check(
+	const char *what,
+	int fd,
+	uint64_t lease,
+	uint64_t sequence,
+	const uint8_t *image,
+	const uint8_t *mapped,
+	uint32_t sum,
+	const struct e2e_display_state *before,
+	struct e2e_display_state *after)
+{
+	struct gpu_display_wait wait;
+	const uint8_t *local;
+	uint32_t local_base;
+	uint32_t local_bytes;
+	uint32_t window_bytes;
+	uint32_t offset;
+	uint32_t row;
+	int differs;
+	int error;
+
+	/* What the display shows now. */
+	e2e_display_state(after);
+	printf("  e2e.display %s: sequence %llu adopted %llu, FB_BASE %08x stride %u, record %08x frame %u (count %u), copy frame %d\n",
+	    what, (unsigned long long)sequence, (unsigned long long)after->adopted, (unsigned)after->fb_base,
+	    (unsigned)after->fb_stride, (unsigned)after->record_value, (unsigned)after->record_frame,
+	    (unsigned)after->frame_count, after->shown_copy_frame);
+
+	/* Lit, scanning the image the driver says it shows, which is adopted. */
+	if (!after->enabled) {
+		printf("FAIL e2e.display %s: the controller is dark\n", what);
+		return 1;
+	}
+	if (after->fb_base != after->shown_base) {
+		printf("FAIL e2e.display %s: FB_BASE %08x is not the driver's image %08x\n", what, (unsigned)after->fb_base, (unsigned)after->shown_base);
+		return 1;
+	}
+	if (after->adopted < sequence) {
+		printf("FAIL e2e.display %s: the present returned before its adoption\n", what);
+		return 1;
+	}
+
+	/* Plane 0's record: a new flip's, not cancelled, taken at a frame already begun. */
+	if (after->record_value == before->record_value) {
+		printf("FAIL e2e.display %s: no new record\n", what);
+		return 1;
+	}
+	if ((after->record_value & DISPLAY_RECORD_CANCELLED) != 0U) {
+		printf("FAIL e2e.display %s: the flip was cancelled\n", what);
+		return 1;
+	}
+	if (after->record_value == 0U) {
+		printf("FAIL e2e.display %s: the record is empty\n", what);
+		return 1;
+	}
+	if (after->record_frame > after->frame_count) {
+		printf("FAIL e2e.display %s: the record's frame %u is ahead of FRAME_COUNT %u\n", what, (unsigned)after->record_frame, (unsigned)after->frame_count);
+		return 1;
+	}
+
+	/* The image lies in the local memory at FB_BASE: the blob's own bytes, or a copy of them. */
+	local = atg_link_local(&local_base, &local_bytes, &window_bytes);
+	offset = after->fb_base - local_base;
+	if (offset > local_bytes - DISPLAY_STRIDE * VKDEMO_HEIGHT) {
+		printf("FAIL e2e.display %s: FB_BASE %08x is outside the local memory\n", what, (unsigned)after->fb_base);
+		return 1;
+	}
+	if (mapped != NULL) {
+		if (mapped != local + offset) {
+			printf("FAIL e2e.display %s: FB_BASE is not the blob the session mapped\n", what);
+			return 1;
+		}
+		if (after->shown_copy_frame >= 0) {
+			printf("FAIL e2e.display %s: a shared present shows a frame of the driver's\n", what);
+			return 1;
+		}
+	} else {
+		if (after->shown_copy_frame < 0) {
+			printf("FAIL e2e.display %s: a copied present shows no frame of the driver's\n", what);
+			return 1;
+		}
+	}
+
+	/* Every row of the scanned memory is the image's. */
+	for (row = 0U; row < VKDEMO_HEIGHT; row++) {
+		differs = memcmp(local + offset + row * after->fb_stride, image + row * DISPLAY_STRIDE, DISPLAY_STRIDE);
+		if (differs != 0) {
+			printf("FAIL e2e.display %s: row %u of the scanned memory is not the image's\n", what, (unsigned)row);
+			return 1;
+		}
+	}
+
+	/* The adoption is there already: a wait without time answers at once. */
+	memset(&wait, 0, sizeof(wait));
+	wait.version = GPU_ABI_VERSION;
+	wait.size = sizeof(wait);
+	wait.lease = lease;
+	wait.sequence = sequence;
+	wait.timeout_ns = 0U;
+	error = ioctl(fd, GPU_DISPLAY_WAIT, &wait);
+	if (error != 0) {
+		printf("FAIL e2e.display %s: the wait (%d)\n", what, errno);
+		return 1;
+	}
+	if (wait.completed_sequence < sequence) {
+		printf("FAIL e2e.display %s: the wait reports %llu\n", what, (unsigned long long)wait.completed_sequence);
+		return 1;
+	}
+
+	/* Two frames on, the last whole frame was the image's: its words and their sum. */
+	error = e2e_display_frames(2U, DISPLAY_FRAMES_TIMEOUT_NS);
+	if (error != 0) {
+		printf("FAIL e2e.display %s: the controller began no frames\n", what);
+		return 1;
+	}
+	e2e_display_state(after);
+	printf("  e2e.display %s: SCAN_SUM %08x (image %08x), SCAN_WORDS %u, FRAME_COUNT %u\n", what,
+	    (unsigned)after->scan_sum, (unsigned)sum, (unsigned)after->scan_words, (unsigned)after->frame_count);
+	if (after->scan_words != VKDEMO_WIDTH * VKDEMO_HEIGHT) {
+		printf("FAIL e2e.display %s: the frame had %u words\n", what, (unsigned)after->scan_words);
+		return 1;
+	}
+	if (after->scan_sum != sum) {
+		printf("FAIL e2e.display %s: the frame scanned is not the image\n", what);
+		return 1;
+	}
+	if (after->fb_base != after->shown_base) {
+		printf("FAIL e2e.display %s: FB_BASE moved\n", what);
+		return 1;
+	}
+
+	/* Succeeded: the controller shows the image. */
 	return 0;
 }
 
