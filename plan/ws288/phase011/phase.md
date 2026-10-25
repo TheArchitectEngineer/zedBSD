@@ -21,7 +21,7 @@ vkdemo の 1 frame の readback が参照と一致（Verilator）、fill・copy�
 ## 記録
 
 - 2026-10-25 09:59 Q1: 新設。
-- 2026-10-25 11:45 P3（q1572-i01、zedBSD の worktree p3-p006 基点 ad7d5b54a → 58aa4de56、amaterrace-gpu の worktree p3-p011 基点 5262af6 → 0b19d6b）: 実装・build・Verilator の端から端の run。判定は Q1。
+- 2026-10-25 11:25 P3（q1572-i01、zedBSD の worktree p3-p006 基点 ad7d5b54a → 58aa4de56、amaterrace-gpu の worktree p3-p011 基点 5262af6 → 0b19d6b）: 実装・build・Verilator の端から端の run。判定は Q1。
 
 ## 結果（2026-10-25 P3）
 
