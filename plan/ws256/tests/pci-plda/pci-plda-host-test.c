@@ -50,6 +50,15 @@
 #define REG_MASK		0x180U
 #define REG_STATUS		0x184U
 #define REG_MESSAGE		0x3f0U
+#define REG_MSI_ADDRESS		0x190U
+#define REG_MSI_STATUS		0x194U
+
+/* The message address the fake block reports, and its message bit. */
+#define FAKE_MSI_ADDRESS	0x190U
+#define STATUS_MSI		(1U << 28)
+
+/* Where the fake NVMe controller's MSI capability sits (64-bit addresses). */
+#define FAKE_MSI_CAPABILITY	0x50U
 #define REG_ATR(n, word)	(0x800U + (n) * 0x20U + (word) * 4U)
 
 /* The pins' status bits, and one that is an event. */
@@ -90,6 +99,7 @@ struct fake_rc {
 	kern_irq_handler_t handler;
 	void *argument;
 	unsigned unmasks;
+	unsigned msi_acknowledges;
 };
 
 /* A device's handler as the check sees it. */
@@ -505,6 +515,11 @@ kern_mmio_write32(
 			rc->acknowledge_sequence = ++sequence;
 			return;
 		}
+		if (offset == REG_MSI_STATUS) {
+			put32(rc->apb, offset, get32(rc->apb, offset) & ~value);
+			rc->msi_acknowledges++;
+			return;
+		}
 		if (offset == REG_FUNCTION_WORD) {
 			rc->function_writes++;
 			if (rc->selected != 0)
@@ -564,6 +579,10 @@ main(
 	struct drv_pci_plda *hosts[2];
 	struct fixture first;
 	struct fixture second;
+	struct fixture third;
+	struct drv_pci_irq irq;
+	uint8_t *msi;
+	unsigned count;
 	struct drv_fdt fdt;
 	uint32_t nodes[3];
 	uint32_t node;
@@ -601,6 +620,7 @@ main(
 	put32(rcs[1].bar, 0x1cU, 0x1U);
 	rcs[0].irq = 56;
 	rcs[1].irq = 57;
+	put32(rcs[1].apb, REG_MSI_ADDRESS, FAKE_MSI_ADDRESS);
 
 	/* A disabled node is refused. */
 	error = drv_pci_plda_describe(&fdt, nodes[2], &config);
@@ -759,6 +779,56 @@ main(
 	interrupt(&rcs[1], STATUS_INTA, 0x707U);
 	check(second.calls == 2U && eoi_calls == 7U, "host 1 still serves its pin");
 
+	/* Only the MSI controller node offers messages. */
+	check(strstr(log_text, "pcie1: MSI at 190, 32 vectors") != NULL, "host 1 reads its message address");
+	check(strstr(log_text, "pcie0: MSI") == NULL, "host 0, not an MSI controller, offers no messages");
+	count = 0;
+	error = drv_pci_device_allocate_irqs(first.device, DRV_PCI_IRQ_ALLOW_MSI, 1, 1, &irq, &count);
+	check(error == ENOTSUP, "host 0 refuses MSI");
+
+	/* Host 1's NVMe controller takes one message through the host's hooks. */
+	memset(&third, 0, sizeof(third));
+	third.device = second.device;
+	count = 0;
+	error = drv_pci_device_allocate_irqs(third.device, DRV_PCI_IRQ_ALLOW_MSIX | DRV_PCI_IRQ_ALLOW_MSI | DRV_PCI_IRQ_ALLOW_INTX, 1, 1, &irq, &count);
+	check(error == 0 && count == 1U && irq.type == DRV_PCI_IRQ_MSI, "MSI is chosen over the pin, MSI-X is not offered");
+	error = drv_pci_device_establish_irq(third.device, &irq, fixture_handler, &third, "plda-msi", &third.cookie);
+	check(error == 0, "the message handler is established");
+	msi = config_of(&rcs[1], 1, FAKE_MSI_CAPABILITY);
+	check(get32(msi, 4) == FAKE_MSI_ADDRESS && get32(msi, 8) == 0, "the function writes to the block's message address");
+	check((get32(msi, 12) & 0xffffU) == 0, "the data is vector 0");
+	check((get32(msi, 0) & 0x00010000U) != 0, "MSI is enabled in the function");
+	check(get32(rcs[1].apb, REG_MASK) == (STATUS_INTA | STATUS_MSI), "host 1 lets messages through beside INTA");
+	check(get32(rcs[0].apb, REG_MASK) == 0, "host 0's mask is untouched");
+
+	/* A message: the local status is acknowledged before the handler, then the vector's. */
+	put32(rcs[1].apb, REG_MSI_STATUS, 0x1U);
+	interrupt(&rcs[1], STATUS_MSI, 0x808U);
+	check(third.calls == 1U && second.calls == 2U, "the message runs its handler alone");
+	check(rcs[1].acknowledged == STATUS_MSI && rcs[1].acknowledge_sequence < third.sequence, "the local status is acknowledged before the message's handler");
+	check(get32(rcs[1].apb, REG_MSI_STATUS) == 0, "the message status is acknowledged");
+	check(eoi_calls == 8U && last_acknowledge == 0x808U, "one EOI for a message");
+	check(handler_with_lock == 0, "the message handler runs with no host lock held");
+
+	/* A message and the pin together: both run, one EOI. */
+	put32(rcs[1].apb, REG_MSI_STATUS, 0x1U);
+	interrupt(&rcs[1], STATUS_MSI | STATUS_INTA, 0x909U);
+	check(third.calls == 2U && second.calls == 3U && eoi_calls == 9U, "a message and a pin together each run once, one EOI");
+
+	/* A vector nobody owns is acknowledged and not served. */
+	put32(rcs[1].apb, REG_MSI_STATUS, 0x20U);
+	interrupt(&rcs[1], STATUS_MSI, 0xa0aU);
+	check(third.calls == 2U && get32(rcs[1].apb, REG_MSI_STATUS) == 0 && eoi_calls == 10U, "an unowned vector is acknowledged, not served");
+
+	/* Taking the message off masks the messages again and disables MSI. */
+	error = drv_pci_device_disestablish_irq_checked(third.device, third.cookie);
+	check(error == 0, "the message handler comes off");
+	check(get32(rcs[1].apb, REG_MASK) == STATUS_INTA, "host 1 masks messages once none is established");
+	check((get32(msi, 0) & 0x00010000U) == 0, "MSI is disabled in the function");
+	put32(rcs[1].apb, REG_MSI_STATUS, 0x1U);
+	interrupt(&rcs[1], STATUS_MSI, 0xb0bU);
+	check(third.calls == 2U && eoi_calls == 11U, "a removed message is not served, the interrupt still ends");
+
 	/* Reports the count. */
 	printf("pci plda: %u PASS, %u FAIL\n", passes, failures);
 	if (failures != 0)
@@ -847,7 +917,7 @@ static void
 reset_endpoint(
 	struct fake_rc *rc)
 {
-	put32(config_of(rc, 1, 0), 0x04U, 0);
+	put32(config_of(rc, 1, 0), 0x04U, get32(config_of(rc, 1, 0), 0x04U) & 0xffff0000U);
 	put32(config_of(rc, 1, 0), 0x10U, 0x4U);
 	put32(config_of(rc, 1, 0), 0x14U, 0);
 }
@@ -961,6 +1031,13 @@ rc_init(
 	put32(config_of(rc, 1, 0), 0x0cU, 0);
 	put32(config_of(rc, 1, 0), 0x10U, (uint32_t)bar | 0x4U);
 	put32(config_of(rc, 1, 0), 0x3cU, 0x00000100U);
+
+	/* The NVMe controller has an MSI capability, 64-bit, one message. */
+	if (class_code != 0x0c033000U) {
+		put32(config_of(rc, 1, 0), 0x04U, 0x00100006U);
+		put32(config_of(rc, 1, 0), 0x34U, FAKE_MSI_CAPABILITY);
+		put32(config_of(rc, 1, 0), FAKE_MSI_CAPABILITY, 0x00800005U);
+	}
 }
 
 /* Reads a whole file. */
