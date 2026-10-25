@@ -48,3 +48,5 @@
 | 5 | 面積の見通し | p024 の板の build で 1 SU が LUT 約 105%（215k / 203.8k）。p037 の後の見込み、pipeline で増える FF、board の SU_PK_SHARED=1、U80（PACKED）・U81（SUBGROUP）の効果、KC705 に入れる案 |
 
 成果: plan/ws288/design.md に新しい節（p025 の設計の段、版を上げる）と、ユーザーに判断を求める U 項目（推し付き）。RTL・amaterrace の source は変えない（読むだけ）。design-reviewer で review。
+
+- 2026-10-25 23:02 P2（q1583、zedBSD の worktree p2-p025、branch agent/p2-p025、基点 main 05cfe206c。amaterrace-gpu main e64da02 を読んだだけ、Vivado は回していない）: 項目 1〜5 を [design.md](../design.md) **§19（版 9）** に書いた（1: §19.2 の経路の表、2: §19.3 の K1〜K4 と ASIC の 2 つの推定、3: §19.4 の領域の表と sclk ↔ gclk の 14 の channel・XDC、4: §19.5 の段の入れ方・`SHORT_LAT` と bus の使用率・p032 の論点 8 つ、5: §19.6 の面積の見込み）。U100〜U109（推し付き、§19.13）。design-reviewer の 24 件（High 6・Medium 11・Low 7、Critical 0）を全部受けて直した（§19.15）。推し: SU を独立の sclk 200 MHz・他は gclk 100 MHz（K2）、ASIC は 1.0 GHz を基準・1.5 GHz を伸ばし代、class a・f の 1 本の pipeline のまま `SHORT_LAT` 約 10〜12、境は `am_afifo` の上の channel（ASYNC parameter）、面積の判断（U106）を T2・T3 の前に（今の見込み 216k〜223k は K2 の目安 173k に入らない）、CDC（T1）は別の Phase（U109）。実装の段 T0〜T5 は 72 LW（T1 を分ければ p025 は 44）。状態: 設計の段は済み、ユーザーの U の判断待ち。p025 の実装は p037 の merge と U100・U106・U109 の判断の後。
