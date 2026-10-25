@@ -26,3 +26,9 @@ GHCI の文、RTL の TB（窓を閉じると BAR2 の書きが捨てられ読�
 ## 記録
 
 - 2026-10-25 17:57 Q1: 新設、P2 に（amaterrace の worktree p2-p040 は p1-p039 575dcf6 から、zedBSD の worktree は新しく）。
+- 2026-10-25 P2 → Q1 設計（Q1 が受け入れ）:
+  - GHCI: G1 MEM +0x10 WINDOW_CTRL（RW）[0] ENABLE、電源・function の reset で 1、CTRL.RESET では変えない。0 = 窓への host の書きは捨て・読みは 0・bus は普通に完了。MEM の version 1 のまま。G2 §11.1 窓は local memory の見え方、driver が自分の frame buffer を scanout したら普通の local、窓を使わない driver は閉じる。G3 §13 起動の frame buffer の引き継ぎ: attach で DC が ENABLE なら FB_BASE などが起動の frame buffer、driver の最初の flip が取られるまでその範囲と窓を保ち、その後に返して窓を閉じてよい。MEM の capability は 5 word で 0x1C0 に入らない → 0x1E0 へ（EXTCAP で見つける、PROT は 0x1D0 のまま）。
+  - RTL: R1 atg_cp_regs の WINDOW_CTRL（board の rst_n）→ atg_cp → atg_top の win_en。R2 新 rtl/common/am_axi_gate.v（閉じると AW・W を受けて B OKAY、AR に len+1 beat の 0、方向ごとに outstanding が無い時だけ切り替え）、TB・spec。R3 KC705 の atg_kc705_pcie m2 と atg_kc705_mig s2 の間に gate（user_clk、win_en を am_sync）、atg_kc705_pcie_tb に group。
+  - driver: D1 HOST_LIMIT を読み aperture を [最初の page, max(local の終わり, HOST_LIMIT))。D2 kind_for: DRIVER（ring・fence・bounce・vk の engine・staging・PROT の表）と MAPPABLE は host memory（HOST_LIMIT の下・local の外）、DEVICE は local、unified は host。local に CPU の view を持たない（CPU からの転送は host の bounce と BLT の copy）。D3 scanout の 2 frame は local、cursor の staging は host で CPU が変換し BLT で local へ。D4 窓を閉じる: DC が点いていなければ attach で、点いていれば最初の自分の flip が取られた後。D5 Vulkan の heap: discrete で heap 0 device-local・heap 1 host（HOST_VISIBLE|COHERENT）。
+  - e2e: link に host memory の model [0, 0x8000_0000)（2 GiB の mmap NORESERVE）と local [0x8000_0000, +1 GiB)、応答に要求の AXI ID、ID と行き先の食い違いを stray に数える。e2e の kernel の kern_pmem_alloc_limited は host の model から。device->window は guard の配列（driver が窓を使えば分かる）。判定: case PASS・oracle mismatch 0・stray 0・guard 無傷・最後に WINDOW_CTRL が 0。
+  - Q1: e2e と link の変更は P3 の D6（同じ file）が main に入った後に（P2 に伝えた）。
