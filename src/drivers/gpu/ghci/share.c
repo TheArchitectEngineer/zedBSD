@@ -35,6 +35,7 @@
 #include <uapi/gpu-scanout.h>
 
 #include "ghci.h"
+#include "vk/vk-node.h"
 
 /*
  * One exported allocation: the device, the memory it holds, and the
@@ -197,11 +198,26 @@ share_import(
 		session->allocation_count++;
 	}
 
+	/*
+	 * A protected importer is granted the memory (it is another
+	 * session's, or nobody's after its owner let it go), before any frame
+	 * of its that uses the import; without a grant entry there is no
+	 * import.
+	 */
+	if (error == 0) {
+		error = ghci_vk_prot_grant(device, session, alias);
+		if (error != 0) {
+			ghci_allocation_drop(device, session, alias);
+			alias = NULL;
+		}
+	}
+
 	mutex_unlock(&device->lock);
 
-	/* A session that holds as many resources as it may. */
+	/* A session that holds as many resources as it may, or no grant. */
 	if (error != 0) {
-		kern_free(alias);
+		if (alias != NULL)
+			kern_free(alias);
 		return error;
 	}
 

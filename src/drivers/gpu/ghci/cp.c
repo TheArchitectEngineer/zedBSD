@@ -914,7 +914,7 @@ recover(
 	spin_unlock_irqrestore(&device->irq_lock, irq);
 
 	status = ghci_read(device, GHCI_STATUS);
-	kern_logf("ghci: %s: %s: status %08x fault %08x (kind %u, block %u, tag %u) at %08x; resetting\n",
+	kern_logf("ghci: %s: %s: status %08x fault %08x (kind %u, block %u, tag %u%s) at %08x; resetting\n",
 	    device->name,
 	    reason,
 	    (unsigned)status,
@@ -922,6 +922,7 @@ recover(
 	    (unsigned)GHCI_FAULT_KIND(info),
 	    (unsigned)GHCI_FAULT_BLOCK(info),
 	    (unsigned)GHCI_FAULT_JOB_TAG(info),
+	    (info & GHCI_FAULT_PROT) != 0U ? ", refused by session protection" : "",
 	    (unsigned)address);
 
 	/* The reset quiesces the GPU and keeps the aperture, the ring's place and the interrupt mask. */

@@ -40,6 +40,35 @@ int ghci_vk_session_open(struct ghci_device *device, struct ghci_session *owner)
 void ghci_vk_session_close(struct ghci_device *device, struct ghci_session *owner);
 
 /*
+ * The identities of the GHCI_MEMORY records session protection makes for
+ * a protected session's memory that no vkAllocateMemory names: this bit
+ * and the memory's GPU address.  The executor refuses a client's memory
+ * identity with this bit.
+ */
+#define GHCI_VK_PROT_IDENTITY		(1ULL << 63)
+
+/*
+ * Gives a protected session's allocation to the firmware as the session's
+ * own memory (read_only: a program's): 0 (also for a session that is not
+ * protected) or EIO.  The device's lock is held.
+ */
+int ghci_vk_prot_own(struct ghci_device *device, struct ghci_session *owner, struct ghci_allocation *allocation, int read_only);
+
+/*
+ * Grants a protected session its import of another session's memory (a
+ * blob whose backing is that memory): 0 (also when none is needed),
+ * ENOSPC or EIO.  The device's lock is held.
+ */
+int ghci_vk_prot_grant(struct ghci_device *device, struct ghci_session *owner, struct ghci_allocation *alias);
+
+/*
+ * Takes back the firmware's record or grant of an allocation of a session
+ * that goes, after the session's work in the ring.  The device's lock is
+ * held.
+ */
+void ghci_vk_prot_release(struct ghci_device *device, struct ghci_session *owner, struct ghci_allocation *allocation);
+
+/*
  * Finds the allocation of a session's VkDeviceMemory, for the blob that
  * maps it: EINVAL when the session has no memory of that identity, or
  * when the memory is not host visible.  The device's lock is held.

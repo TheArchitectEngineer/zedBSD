@@ -85,6 +85,9 @@
 
 /* The model's display controller: its window (256 bytes) in the register window, its two modes. */
 #define MODEL_DISP2_REGISTERS		0x400U
+
+/* Where the PROT capability's registers are (model_setup_protection). */
+#define MODEL_PROT_REGISTERS		0x1C0U
 #define MODEL_DC_WORDS			64U
 #define MODEL_DC_MODES			2U
 
@@ -157,6 +160,23 @@ static uint32_t model_frame_bytes;
 static uint32_t model_frame_records;
 static unsigned model_control_packets;
 static uint32_t model_last_control;
+
+/*
+ * The control packets (not frames) in the order the model ran them: the
+ * gpu-op, the packet's tag and its first arguments; the log keeps the
+ * first MODEL_CONTROL_LOG.
+ */
+#define MODEL_CONTROL_LOG		64U
+#define MODEL_CONTROL_ARGUMENTS		7U
+struct model_control {
+	uint32_t opcode;
+	uint32_t tag;
+	uint32_t flags;
+	uint32_t arguments[MODEL_CONTROL_ARGUMENTS];
+	uint32_t table;		/* PROT_TABLE when it ran */
+};
+static struct model_control model_controls[MODEL_CONTROL_LOG];
+static unsigned model_control_count;
 
 /*
  * The model's display controller: whether it exists, its registers by
@@ -313,6 +333,10 @@ kern_mmio_write32(
 		model_run();
 		return;
 	}
+
+	/* An aperture's write sets PROT_TABLE to 0 (section 11.6). */
+	if (offset == GHCI_APERTURE_BASE || offset == GHCI_APERTURE_LIMIT)
+		model_registers[(MODEL_PROT_REGISTERS + GHCI_PROT_TABLE) / 4U] = 0U;
 
 	/* Every other register is stored. */
 	model_registers[offset / 4U] = value;
@@ -1046,6 +1070,16 @@ model_class_v(
 	} else {
 		model_control_packets++;
 		model_last_control = opcode;
+		if (model_control_count < MODEL_CONTROL_LOG) {
+			model_controls[model_control_count].opcode = opcode;
+			model_controls[model_control_count].tag = (ring[at] >> 16) & 0xFFU;
+			model_controls[model_control_count].flags = flags;
+			for (index = 0U; index < MODEL_CONTROL_ARGUMENTS; index++)
+				model_controls[model_control_count].arguments[index] = index + 3U < count ? ring[at + 4U + index] : 0U;
+			model_controls[model_control_count].table =
+			    model_registers[(MODEL_PROT_REGISTERS + GHCI_PROT_TABLE) / 4U];
+			model_control_count++;
+		}
 	}
 
 	/* The packet's own result, then RESULT. */

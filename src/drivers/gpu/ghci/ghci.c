@@ -434,6 +434,7 @@ identify_memory(
 	uint32_t version;
 	uint64_t local_end;
 	uint64_t window;
+	uint32_t caps;
 	int error;
 
 	/* No local memory unless the MEM capability says so: the GPU is unified. */
@@ -463,11 +464,26 @@ identify_memory(
 		device->local_size = 0x100000000ULL - device->local_base;
 	}
 
-	/* The session protection is only recorded: the driver does not ask for protected sessions yet. */
+	/*
+	 * Session protection (section 11.6): its registers, and the open of
+	 * the sessions of other users than root PROTECTED.  Only a GPU whose
+	 * granule is 4 KiB (the driver's page) is used protected.
+	 */
 	error = ghci_extcap_find(ghci_read_context, device, device->extcap, device->register_bytes, GHCI_XCAP_PROT, &registers, &version);
 	device->protection = 0;
-	if (error == 0)
-		device->protection = 1;
+	device->prot_registers = 0U;
+	if (error == 0) {
+		caps = ghci_read(device, registers + GHCI_PROT_CAPS);
+		if (GHCI_PROT_GRANULE_LOG2(caps) == 12U && GHCI_PROT_SESSIONS(caps) != 0U) {
+			device->protection = 1;
+			device->prot_registers = registers;
+			kern_logf("ghci: %s: session protection: %u sessions, %u grants\n", device->name,
+			    (unsigned)GHCI_PROT_SESSIONS(caps), (unsigned)GHCI_PROT_GRANTS(caps));
+		} else {
+			kern_logf("ghci: %s: session protection of granule 2^%u not used\n", device->name,
+			    (unsigned)GHCI_PROT_GRANULE_LOG2(caps));
+		}
+	}
 }
 
 /* Names the device "ghci:<vendor>:<device>" from its FourCCs. */
@@ -1036,10 +1052,19 @@ allocation_make(
 {
 	int error;
 
-	/* Everything is done under the device's lock. */
+	/*
+	 * Everything is done under the device's lock.  A protected session's
+	 * resource is its own memory to the firmware (no vkAllocateMemory
+	 * names it).
+	 */
 	mutex_lock(&device->lock);
 
 	error = ghci_allocation_make(device, session, use, bytes, blob, result);
+	if (error == 0) {
+		error = ghci_vk_prot_own(device, session, *result, 0);
+		if (error != 0)
+			ghci_allocation_drop(device, session, *result);
+	}
 
 	mutex_unlock(&device->lock);
 
@@ -1125,8 +1150,13 @@ ghci_allocation_drop(
 	struct ghci_session *session,
 	struct ghci_allocation *allocation)
 {
-	/* Off the list, then back now, after the session's last fence, or after its last user. */
+	/*
+	 * Off the list, what session protection gave it taken back (after the
+	 * session's work in the ring), then back now, after the session's last
+	 * fence, or after its last user.
+	 */
 	allocation_unlist(session, allocation);
+	ghci_vk_prot_release(device, session, allocation);
 	ghci_memory_release(device, allocation);
 }
 

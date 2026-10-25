@@ -164,6 +164,7 @@
 #define GHCI_FAULT_KIND(f) (((f) >> 12) & 0xFu)
 #define GHCI_FAULT_BLOCK(f) (((f) >> 16) & 0xFFu)
 #define GHCI_FAULT_JOB_TAG(f) (((f) >> 24) & 0xFFu)
+#define GHCI_FAULT_PROT (1u << 9) /* refused by session protection (section 11.6) */
 #define GHCI_FAULT_APERTURE 1u
 #define GHCI_FAULT_OPCODE 2u
 #define GHCI_FAULT_RING 3u
@@ -202,11 +203,13 @@
 #define GHCI_MEM_LOCAL_SIZE 0x4u /* 0 = no local memory (unified) */
 #define GHCI_MEM_WINDOW_SIZE 0x8u /* 0 = no local window */
 
-/* The PROT capability's register (from its register offset, section 11.6). */
+/* The PROT capability's registers (from its register offset, section 11.6). */
 #define GHCI_PROT_CAPS 0x0u
+#define GHCI_PROT_TABLE 0x4u /* the table's address, 4 KiB aligned (0: none) */
+#define GHCI_PROT_TABLE_BYTES 0x8u /* its bytes for the aperture */
 #define GHCI_PROT_SESSIONS(c) ((c) & 0xFFu)
 #define GHCI_PROT_GRANULE_LOG2(c) (((c) >> 8) & 0xFFu)
-#define GHCI_PROT_RANGES(c) (((c) >> 16) & 0xFFFFu)
+#define GHCI_PROT_GRANTS(c) (((c) >> 16) & 0xFFFFu)
 
 /*
  * The PERF capability's registers (from its register offset): PERF_SRCn

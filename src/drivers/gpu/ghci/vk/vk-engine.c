@@ -51,6 +51,7 @@
 #define TRAILER_VERSION			((1U << 22) | (1U << 12))
 
 static int engine_heap(struct ghci_device *device);
+static void engine_protection(struct ghci_device *device);
 static int frame_ready(struct ghci_device *device, struct ghci_vk_frame *frame);
 static void frame_finish(struct ghci_device *device, struct ghci_vk_frame *frame, int error);
 #ifdef GHCI_VK_TRACE
@@ -123,6 +124,10 @@ ghci_vk_engine_start(
 			ghci_memory_free(device, engine->control);
 		if (engine->staging != NULL)
 			ghci_memory_free(device, engine->staging);
+		if (device->prot_table != NULL) {
+			ghci_memory_free(device, device->prot_table);
+			device->prot_table = NULL;
+		}
 	}
 
 	mutex_unlock(&device->lock);
@@ -158,6 +163,10 @@ ghci_vk_engine_stop(
 	ghci_memory_free(device, engine->heap);
 	ghci_memory_free(device, engine->control);
 	ghci_memory_free(device, engine->staging);
+	if (device->prot_table != NULL) {
+		ghci_memory_free(device, device->prot_table);
+		device->prot_table = NULL;
+	}
 
 	mutex_unlock(&device->lock);
 
@@ -222,6 +231,48 @@ ghci_vk_engine_control(
 
 	/* Succeeded: the firmware's VkResult. */
 	*status = (int32_t)result[0];
+	return 0;
+}
+
+/*
+ * Sends one GHCI gpu-op as a class 2 packet of a session (NULL: the
+ * driver's own) without a result, and does not wait for it.
+ */
+int
+ghci_vk_engine_post(
+	struct ghci_device *device,
+	struct ghci_session *owner,
+	uint32_t opcode,
+	const uint32_t *arguments,
+	uint32_t count)
+{
+	uint32_t packet[CONTROL_HEAD_DWORDS + CONTROL_ARGUMENTS_MAX];
+	struct ghci_ticket ticket;
+	uint32_t tag;
+	uint32_t index;
+	int error;
+
+	/* A few words of arguments only. */
+	if (count > CONTROL_ARGUMENTS_MAX)
+		return EINVAL;
+
+	/* The packet: the session's tag (0 for the driver's own), the gpu-op, no result, the arguments. */
+	tag = GHCI_TAG_DRIVER;
+	if (owner != NULL)
+		tag = owner->tag;
+	packet[0] = GHCI_PKT_V(tag, CONTROL_HEAD_DWORDS - 1U + count);
+	packet[1] = opcode;
+	packet[2] = 0U;
+	packet[3] = 0U;
+	for (index = 0U; index < count; index++)
+		packet[CONTROL_HEAD_DWORDS + index] = arguments[index];
+
+	/* Into the ring with the fence after it; the work after it is ordered after it. */
+	error = ghci_cp_submit(device, owner, packet, CONTROL_HEAD_DWORDS + count, &ticket);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the packet is in the ring. */
 	return 0;
 }
 
@@ -444,6 +495,9 @@ engine_heap(
 	int32_t status;
 	int error;
 
+	/* Session protection's table first: the firmware marks its own part of the heap in it. */
+	engine_protection(device);
+
 	/* The heap's place and size, and the warps the GPU runs at once. */
 	engine = device->vk;
 	arguments[0] = engine->heap->gpu_address;
@@ -464,6 +518,60 @@ engine_heap(
 	/* Succeeded: sessions may open. */
 	engine->heap_ready = 1;
 	return 0;
+}
+
+/*
+ * Lends the GPU the table of session protection (docs/ghci.md section
+ * 11.6) in the driver's order: after APERTURE and RUN, the table zeroed
+ * by the processor, then PROT_TABLE, then GHCI_HEAP.  Also after a reset
+ * (the reset and the aperture's write set PROT_TABLE to 0; the old bytes
+ * are cleared again).  A GPU whose table cannot be had runs its sessions
+ * unprotected, and says so.  The device's lock is held.
+ */
+static void
+engine_protection(
+	struct ghci_device *device)
+{
+	uint32_t bytes;
+	uint32_t address;
+	int error;
+
+	/* Nothing to lend without the capability. */
+	if (!device->protection)
+		return;
+
+	/* The table's size for the aperture, which is written by now. */
+	bytes = ghci_read(device, device->prot_registers + GHCI_PROT_TABLE_BYTES);
+	if (bytes == 0U || (bytes & (GHCI_PAGE_BYTES - 1U)) != 0U) {
+		kern_logf("ghci: %s: protection table of %u bytes: sessions unprotected\n", device->name, (unsigned)bytes);
+		device->protection = 0;
+		return;
+	}
+
+	/* The table, once: driver memory the processor can clear, 4 KiB aligned. */
+	if (device->prot_table == NULL) {
+		error = ghci_memory_alloc(device, NULL, GHCI_USE_DRIVER, bytes, &device->prot_table);
+		if (error != 0 || device->prot_table->view == NULL) {
+			kern_logf("ghci: %s: no memory for the protection table (%d): sessions unprotected\n", device->name, error);
+			if (error == 0)
+				ghci_memory_free(device, device->prot_table);
+			device->prot_table = NULL;
+			device->protection = 0;
+			return;
+		}
+	}
+
+	/* Zeros (nobody owns anything), seen by the GPU before PROT_TABLE names them. */
+	kern_memset(device->prot_table->view, 0, device->prot_table->bytes);
+	kern_io_write_barrier();
+	ghci_write(device, device->prot_registers + GHCI_PROT_TABLE, device->prot_table->gpu_address);
+
+	/* A GPU that did not take it (a protected session still mapped) protects nothing. */
+	address = ghci_read(device, device->prot_registers + GHCI_PROT_TABLE);
+	if (address != device->prot_table->gpu_address) {
+		kern_logf("ghci: %s: PROT_TABLE not taken (%08x): sessions unprotected\n", device->name, (unsigned)address);
+		device->protection = 0;
+	}
 }
 
 /* Reports whether a frame is done: its results are in and the fence it waits for has passed. */
