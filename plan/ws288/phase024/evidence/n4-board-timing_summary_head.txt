@@ -1,0 +1,390 @@
+Copyright 1986-2022 Xilinx, Inc. All Rights Reserved. Copyright 2022-2026 Advanced Micro Devices, Inc. All Rights Reserved.
+-------------------------------------------------------------------------------------------------------------------------------------------------
+| Tool Version : Vivado v.2026.1 (lin64) Build 6511674 Tue Jun 16 11:01:26 MDT 2026
+| Date         : Mon Oct 26 05:54:31 2026
+| Host         : centris running 64-bit Debian GNU/Linux 13 (trixie)
+| Command      : report_timing_summary -max_paths 10 -file /home/awe/amaterrace-worktrees/p1-n4/build/vivado/atg_kc705_raster/timing_summary.rpt
+| Design       : atg_kc705_raster
+| Device       : 7k325t-ffg900
+| Speed File   : -2  PRODUCTION 1.12 2017-02-17
+| Design State : Routed
+-------------------------------------------------------------------------------------------------------------------------------------------------
+
+Timing Summary Report
+
+------------------------------------------------------------------------------------------------
+| Timer Settings
+| --------------
+------------------------------------------------------------------------------------------------
+
+  Enable Multi Corner Analysis               :  Yes
+  Enable Pessimism Removal                   :  Yes
+  Pessimism Removal Resolution               :  Nearest Common Node
+  Enable Input Delay Default Clock           :  No
+  Enable Preset / Clear Arcs                 :  No
+  Disable Flight Delays                      :  No
+  Ignore I/O Paths                           :  No
+  Timing Early Launch at Borrowing Latches   :  No
+  Borrow Time for Max Delay Exceptions       :  Yes
+  Merge Timing Exceptions                    :  Yes
+  Inter-SLR Compensation                     :  Conservative
+
+  Corner  Analyze    Analyze    
+  Name    Max Paths  Min Paths  
+  ------  ---------  ---------  
+  Slow    Yes        Yes        
+  Fast    Yes        Yes        
+
+
+------------------------------------------------------------------------------------------------
+| Report Methodology
+| ------------------
+------------------------------------------------------------------------------------------------
+
+No report available as report_methodology has not been run prior. Run report_methodology on the current design for the summary of methodology violations.
+
+
+
+check_timing report
+
+Table of Contents
+-----------------
+1. checking no_clock (0)
+2. checking constant_clock (0)
+3. checking pulse_width_clock (0)
+4. checking unconstrained_internal_endpoints (0)
+5. checking no_input_delay (12)
+6. checking no_output_delay (27)
+7. checking multiple_clock (0)
+8. checking generated_clocks (0)
+9. checking loops (0)
+10. checking partial_input_delay (0)
+11. checking partial_output_delay (0)
+12. checking latch_loops (0)
+
+1. checking no_clock (0)
+------------------------
+ There are 0 register/latch pins with no clock.
+
+
+2. checking constant_clock (0)
+------------------------------
+ There are 0 register/latch pins with constant_clock.
+
+
+3. checking pulse_width_clock (0)
+---------------------------------
+ There are 0 register/latch pins which need pulse_width check
+
+
+4. checking unconstrained_internal_endpoints (0)
+------------------------------------------------
+ There are 0 pins that are not constrained for maximum delay.
+
+ There are 0 pins that are not constrained for maximum delay due to constant clock.
+
+
+5. checking no_input_delay (12)
+-------------------------------
+ There are 8 input ports with no input delay specified. (HIGH)
+
+ There are 4 input ports with no input delay but user has a false path constraint. (MEDIUM)
+
+
+6. checking no_output_delay (27)
+--------------------------------
+ There is 1 port with no output delay specified. (HIGH)
+
+ There are 26 ports with no output delay but user has a false path constraint (MEDIUM)
+
+ There are 0 ports with no output delay but with a timing clock defined on it or propagating through it
+
+
+7. checking multiple_clock (0)
+------------------------------
+ There are 0 register/latch pins with multiple clocks.
+
+
+8. checking generated_clocks (0)
+--------------------------------
+ There are 0 generated clocks that are not connected to a clock source.
+
+
+9. checking loops (0)
+---------------------
+ There are 0 combinational loops in the design.
+
+
+10. checking partial_input_delay (0)
+------------------------------------
+ There are 0 input ports with partial input delay specified.
+
+
+11. checking partial_output_delay (0)
+-------------------------------------
+ There are 0 ports with partial output delay specified.
+
+
+12. checking latch_loops (0)
+----------------------------
+ There are 0 combinational latch loops in the design through latch input
+
+
+
+------------------------------------------------------------------------------------------------
+| Design Timing Summary
+| ---------------------
+------------------------------------------------------------------------------------------------
+
+    WNS(ns)      TNS(ns)  TNS Failing Endpoints  TNS Total Endpoints      WHS(ns)      THS(ns)  THS Failing Endpoints  THS Total Endpoints     WPWS(ns)     TPWS(ns)  TPWS Failing Endpoints  TPWS Total Endpoints  
+    -------      -------  ---------------------  -------------------      -------      -------  ---------------------  -------------------     --------     --------  ----------------------  --------------------  
+      0.177        0.000                      0               371696        0.033        0.000                      0               371692        0.000        0.000                       0                135620  
+
+
+All user specified timing constraints are met.
+
+
+------------------------------------------------------------------------------------------------
+| Clock Summary
+| -------------
+------------------------------------------------------------------------------------------------
+
+Clock                                                                                                                                                          Waveform(ns)         Period(ns)      Frequency(MHz)
+-----                                                                                                                                                          ------------         ----------      --------------
+pcie_refclk                                                                                                                                                    {0.000 5.000}        10.000          100.000         
+sysclk                                                                                                                                                         {0.000 2.500}        5.000           200.000         
+  a_fb                                                                                                                                                         {0.000 12.500}       25.000          40.000          
+  a_px                                                                                                                                                         {0.000 19.853}       39.706          25.185          
+  b_fb                                                                                                                                                         {0.000 25.000}       50.000          20.000          
+  b_px                                                                                                                                                         {0.000 6.737}        13.474          74.219          
+  clk_ref_mmcm_400                                                                                                                                             {0.000 1.250}        2.500           400.000         
+  freq_refclk                                                                                                                                                  {1.172 1.797}        1.250           800.000         
+    u_memc_ui_top_axi/mem_intfc0/ddr_phy_top0/u_ddr_mc_phy_wrapper/u_ddr_mc_phy/ddr_phy_4lanes_0.u_ddr_phy_4lanes/ddr_byte_lane_A.ddr_byte_lane_A/iserdes_clk  {1.172 1.797}        1.250           800.000         
+      iserdes_clkdiv                                                                                                                                           {1.172 2.422}        2.500           400.000         
+    u_memc_ui_top_axi/mem_intfc0/ddr_phy_top0/u_ddr_mc_phy_wrapper/u_ddr_mc_phy/ddr_phy_4lanes_0.u_ddr_phy_4lanes/ddr_byte_lane_B.ddr_byte_lane_B/iserdes_clk  {1.172 1.797}        1.250           800.000         
+      iserdes_clkdiv_1                                                                                                                                         {1.172 2.422}        2.500           400.000         
+    u_memc_ui_top_axi/mem_intfc0/ddr_phy_top0/u_ddr_mc_phy_wrapper/u_ddr_mc_phy/ddr_phy_4lanes_0.u_ddr_phy_4lanes/ddr_byte_lane_C.ddr_byte_lane_C/iserdes_clk  {1.172 1.797}        1.250           800.000         
+      iserdes_clkdiv_2                                                                                                                                         {1.172 2.422}        2.500           400.000         
+    u_memc_ui_top_axi/mem_intfc0/ddr_phy_top0/u_ddr_mc_phy_wrapper/u_ddr_mc_phy/ddr_phy_4lanes_0.u_ddr_phy_4lanes/ddr_byte_lane_D.ddr_byte_lane_D/iserdes_clk  {1.172 1.797}        1.250           800.000         
+      iserdes_clkdiv_3                                                                                                                                         {1.172 2.422}        2.500           400.000         
+    u_memc_ui_top_axi/mem_intfc0/ddr_phy_top0/u_ddr_mc_phy_wrapper/u_ddr_mc_phy/ddr_phy_4lanes_2.u_ddr_phy_4lanes/ddr_byte_lane_A.ddr_byte_lane_A/iserdes_clk  {1.172 1.797}        1.250           800.000         
+      iserdes_clkdiv_4                                                                                                                                         {1.172 2.422}        2.500           400.000         
+    u_memc_ui_top_axi/mem_intfc0/ddr_phy_top0/u_ddr_mc_phy_wrapper/u_ddr_mc_phy/ddr_phy_4lanes_2.u_ddr_phy_4lanes/ddr_byte_lane_B.ddr_byte_lane_B/iserdes_clk  {1.172 1.797}        1.250           800.000         
+      iserdes_clkdiv_5                                                                                                                                         {1.172 2.422}        2.500           400.000         
+    u_memc_ui_top_axi/mem_intfc0/ddr_phy_top0/u_ddr_mc_phy_wrapper/u_ddr_mc_phy/ddr_phy_4lanes_2.u_ddr_phy_4lanes/ddr_byte_lane_C.ddr_byte_lane_C/iserdes_clk  {1.172 1.797}        1.250           800.000         
+      iserdes_clkdiv_6                                                                                                                                         {1.172 2.422}        2.500           400.000         
+    u_memc_ui_top_axi/mem_intfc0/ddr_phy_top0/u_ddr_mc_phy_wrapper/u_ddr_mc_phy/ddr_phy_4lanes_2.u_ddr_phy_4lanes/ddr_byte_lane_D.ddr_byte_lane_D/iserdes_clk  {1.172 1.797}        1.250           800.000         
+      iserdes_clkdiv_7                                                                                                                                         {1.172 2.422}        2.500           400.000         
+  g_fb                                                                                                                                                         {0.000 2.500}        5.000           200.000         
+  g_out                                                                                                                                                        {0.000 25.000}       50.000          20.000          
+  mem_refclk                                                                                                                                                   {0.000 0.625}        1.250           800.000         
+    oserdes_clk                                                                                                                                                {0.000 0.625}        1.250           800.000         
+      oserdes_clkdiv                                                                                                                                           {0.000 1.250}        2.500           400.000         
+    oserdes_clk_1                                                                                                                                              {0.000 0.625}        1.250           800.000         
+      oserdes_clkdiv_1                                                                                                                                         {0.000 1.250}        2.500           400.000         
+    oserdes_clk_10                                                                                                                                             {0.000 0.625}        1.250           800.000         
+      oserdes_clkdiv_10                                                                                                                                        {0.000 1.250}        2.500           400.000         
+    oserdes_clk_2                                                                                                                                              {0.000 0.625}        1.250           800.000         
+      oserdes_clkdiv_2                                                                                                                                         {0.000 1.250}        2.500           400.000         
+    oserdes_clk_3                                                                                                                                              {0.000 0.625}        1.250           800.000         
+      oserdes_clkdiv_3                                                                                                                                         {0.000 1.250}        2.500           400.000         
+    oserdes_clk_4                                                                                                                                              {0.000 0.625}        1.250           800.000         
+      oserdes_clkdiv_4                                                                                                                                         {0.000 2.500}        5.000           200.000         
+    oserdes_clk_5                                                                                                                                              {0.000 0.625}        1.250           800.000         
+      oserdes_clkdiv_5                                                                                                                                         {0.000 2.500}        5.000           200.000         
+    oserdes_clk_6                                                                                                                                              {0.000 0.625}        1.250           800.000         
+      oserdes_clkdiv_6                                                                                                                                         {0.000 2.500}        5.000           200.000         
+    oserdes_clk_7                                                                                                                                              {0.000 0.625}        1.250           800.000         
+      oserdes_clkdiv_7                                                                                                                                         {0.000 1.250}        2.500           400.000         
+    oserdes_clk_8                                                                                                                                              {0.000 0.625}        1.250           800.000         
+      oserdes_clkdiv_8                                                                                                                                         {0.000 1.250}        2.500           400.000         
+    oserdes_clk_9                                                                                                                                              {0.000 0.625}        1.250           800.000         
+      oserdes_clkdiv_9                                                                                                                                         {0.000 1.250}        2.500           400.000         
+  mmcm_clkfbout                                                                                                                                                {0.000 2.500}        5.000           200.000         
+  pll_clk3_out                                                                                                                                                 {0.000 2.500}        5.000           200.000         
+    clk_pll_i                                                                                                                                                  {0.000 2.500}        5.000           200.000         
+    mmcm_ps_clk_bufg_in                                                                                                                                        {0.000 5.000}        10.000          100.000         
+  pll_clkfbout                                                                                                                                                 {0.000 2.500}        5.000           200.000         
+  sync_pulse                                                                                                                                                   {0.547 1.797}        20.000          50.000          
+tck                                                                                                                                                            {0.000 16.666}       33.333          30.000          
+txoutclk                                                                                                                                                       {0.000 5.000}        10.000          100.000         
+  clk_125mhz                                                                                                                                                   {0.000 4.000}        8.000           125.000         
+    clk_125mhz_mux_X0Y0                                                                                                                                        {0.000 4.000}        8.000           125.000         
+      oobclk_125mhz_master_lane0_X0Y0                                                                                                                          {0.000 8.000}        16.000          62.500          
+      oobclk_125mhz_master_lane1_X0Y0                                                                                                                          {0.000 8.000}        16.000          62.500          
+      oobclk_125mhz_master_lane2_X0Y0                                                                                                                          {0.000 8.000}        16.000          62.500          
+      oobclk_125mhz_master_lane3_X0Y0                                                                                                                          {0.000 8.000}        16.000          62.500          
+  clk_250mhz                                                                                                                                                   {0.000 2.000}        4.000           250.000         
+    clk_250mhz_mux_X0Y0                                                                                                                                        {0.000 2.000}        4.000           250.000         
+      oobclk_250mhz_master_lane0_X0Y0                                                                                                                          {0.000 8.000}        16.000          62.500          
+      oobclk_250mhz_master_lane1_X0Y0                                                                                                                          {0.000 8.000}        16.000          62.500          
+      oobclk_250mhz_master_lane2_X0Y0                                                                                                                          {0.000 8.000}        16.000          62.500          
+      oobclk_250mhz_master_lane3_X0Y0                                                                                                                          {0.000 8.000}        16.000          62.500          
+  mmcm_fb                                                                                                                                                      {0.000 5.000}        10.000          100.000         
+  userclk1                                                                                                                                                     {0.000 2.000}        4.000           250.000         
+  userclk2                                                                                                                                                     {0.000 4.000}        8.000           125.000         
+
+
+------------------------------------------------------------------------------------------------
+| Intra Clock Table
+| -----------------
+------------------------------------------------------------------------------------------------
+
+Clock                                                                                                                                                              WNS(ns)      TNS(ns)  TNS Failing Endpoints  TNS Total Endpoints      WHS(ns)      THS(ns)  THS Failing Endpoints  THS Total Endpoints     WPWS(ns)     TPWS(ns)  TPWS Failing Endpoints  TPWS Total Endpoints  
+-----                                                                                                                                                              -------      -------  ---------------------  -------------------      -------      -------  ---------------------  -------------------     --------     --------  ----------------------  --------------------  
+pcie_refclk                                                                                                                                                          9.029        0.000                      0                   28        0.172        0.000                      0                   28        4.358        0.000                       0                    43  
+sysclk                                                                                                                                                               2.858        0.000                      0                   78        0.108        0.000                      0                   78        1.000        0.000                       0                    41  
+  a_fb                                                                                                                                                                                                                                                                                                          23.929        0.000                       0                     2  
+  a_px                                                                                                                                                              32.045        0.000                      0                  497        0.106        0.000                      0                  497       19.453        0.000                       0                   340  
+  b_fb                                                                                                                                                                                                                                                                                                          48.929        0.000                       0                     2  
+  b_px                                                                                                                                                               5.791        0.000                      0                  497        0.106        0.000                      0                  497        6.337        0.000                       0                   340  
+  clk_ref_mmcm_400                                                                                                                                                   1.481        0.000                      0                   14        0.192        0.000                      0                   14        0.062        0.000                       0                    19  
+  freq_refclk                                                                                                                                                                                                                                                                                                    0.143        0.000                       0                    23  
+    u_memc_ui_top_axi/mem_intfc0/ddr_phy_top0/u_ddr_mc_phy_wrapper/u_ddr_mc_phy/ddr_phy_4lanes_0.u_ddr_phy_4lanes/ddr_byte_lane_A.ddr_byte_lane_A/iserdes_clk                                                                                                                                                    0.180        0.000                       0                    16  
+      iserdes_clkdiv                                                                                                                                                 0.906        0.000                      0                   33        0.070        0.000                      0                   33        0.336        0.000                       0                     9  
+    u_memc_ui_top_axi/mem_intfc0/ddr_phy_top0/u_ddr_mc_phy_wrapper/u_ddr_mc_phy/ddr_phy_4lanes_0.u_ddr_phy_4lanes/ddr_byte_lane_B.ddr_byte_lane_B/iserdes_clk                                                                                                                                                    0.180        0.000                       0                    16  
+      iserdes_clkdiv_1                                                                                                                                               1.024        0.000                      0                   33        0.070        0.000                      0                   33        0.336        0.000                       0                     9  
+    u_memc_ui_top_axi/mem_intfc0/ddr_phy_top0/u_ddr_mc_phy_wrapper/u_ddr_mc_phy/ddr_phy_4lanes_0.u_ddr_phy_4lanes/ddr_byte_lane_C.ddr_byte_lane_C/iserdes_clk                                                                                                                                                    0.180        0.000                       0                    16  
+      iserdes_clkdiv_2                                                                                                                                               1.031        0.000                      0                   33        0.070        0.000                      0                   33        0.336        0.000                       0                     9  
+    u_memc_ui_top_axi/mem_intfc0/ddr_phy_top0/u_ddr_mc_phy_wrapper/u_ddr_mc_phy/ddr_phy_4lanes_0.u_ddr_phy_4lanes/ddr_byte_lane_D.ddr_byte_lane_D/iserdes_clk                                                                                                                                                    0.180        0.000                       0                    16  
+      iserdes_clkdiv_3                                                                                                                                               1.028        0.000                      0                   33        0.070        0.000                      0                   33        0.336        0.000                       0                     9  
+    u_memc_ui_top_axi/mem_intfc0/ddr_phy_top0/u_ddr_mc_phy_wrapper/u_ddr_mc_phy/ddr_phy_4lanes_2.u_ddr_phy_4lanes/ddr_byte_lane_A.ddr_byte_lane_A/iserdes_clk                                                                                                                                                    0.180        0.000                       0                    16  
+      iserdes_clkdiv_4                                                                                                                                               1.002        0.000                      0                   33        0.070        0.000                      0                   33        0.336        0.000                       0                     9  
+    u_memc_ui_top_axi/mem_intfc0/ddr_phy_top0/u_ddr_mc_phy_wrapper/u_ddr_mc_phy/ddr_phy_4lanes_2.u_ddr_phy_4lanes/ddr_byte_lane_B.ddr_byte_lane_B/iserdes_clk                                                                                                                                                    0.180        0.000                       0                    16  
+      iserdes_clkdiv_5                                                                                                                                               1.028        0.000                      0                   33        0.070        0.000                      0                   33        0.336        0.000                       0                     9  
+    u_memc_ui_top_axi/mem_intfc0/ddr_phy_top0/u_ddr_mc_phy_wrapper/u_ddr_mc_phy/ddr_phy_4lanes_2.u_ddr_phy_4lanes/ddr_byte_lane_C.ddr_byte_lane_C/iserdes_clk                                                                                                                                                    0.180        0.000                       0                    16  
+      iserdes_clkdiv_6                                                                                                                                               0.954        0.000                      0                   33        0.070        0.000                      0                   33        0.336        0.000                       0                     9  
+    u_memc_ui_top_axi/mem_intfc0/ddr_phy_top0/u_ddr_mc_phy_wrapper/u_ddr_mc_phy/ddr_phy_4lanes_2.u_ddr_phy_4lanes/ddr_byte_lane_D.ddr_byte_lane_D/iserdes_clk                                                                                                                                                    0.180        0.000                       0                    16  
+      iserdes_clkdiv_7                                                                                                                                               1.022        0.000                      0                   33        0.070        0.000                      0                   33        0.336        0.000                       0                     9  
+  g_fb                                                                                                                                                                                                                                                                                                           3.929        0.000                       0                     2  
+  g_out                                                                                                                                                              3.604        0.000                      0               283321        0.051        0.000                      0               283321       24.232        0.000                       0                102499  
+  mem_refclk                                                                                                                                                         0.177        0.000                      0                    3        0.314        0.000                      0                    3        0.090        0.000                       0                    23  
+    oserdes_clk                                                                                                                                                      0.196        0.000                      0                    4        0.369        0.000                      0                    4        0.180        0.000                       0                    12  
+      oserdes_clkdiv                                                                                                                                                 1.520        0.000                      0                   36        0.064        0.000                      0                   36        0.336        0.000                       0                    11  
+    oserdes_clk_1                                                                                                                                                    0.183        0.000                      0                    4        0.375        0.000                      0                    4        0.180        0.000                       0                    12  
+      oserdes_clkdiv_1                                                                                                                                               1.389        0.000                      0                   36        0.068        0.000                      0                   36        0.336        0.000                       0                    11  
+    oserdes_clk_10                                                                                                                                                   0.203        0.000                      0                    4        0.364        0.000                      0                    4        0.180        0.000                       0                    12  
+      oserdes_clkdiv_10                                                                                                                                              1.357        0.000                      0                   36        0.061        0.000                      0                   36        0.336        0.000                       0                    11  
+    oserdes_clk_2                                                                                                                                                    0.191        0.000                      0                    4        0.371        0.000                      0                    4        0.180        0.000                       0                    12  
+      oserdes_clkdiv_2                                                                                                                                               1.506        0.000                      0                   36        0.066        0.000                      0                   36        0.336        0.000                       0                    11  
+    oserdes_clk_3                                                                                                                                                    0.203        0.000                      0                    4        0.364        0.000                      0                    4        0.180        0.000                       0                    12  
+      oserdes_clkdiv_3                                                                                                                                               1.351        0.000                      0                   36        0.061        0.000                      0                   36        0.336        0.000                       0                    11  
+    oserdes_clk_4                                                                                                                                                                                                                                                                                                0.180        0.000                       0                    12  
+      oserdes_clkdiv_4                                                                                                                                               4.020        0.000                      0                   48        0.064        0.000                      0                   48        1.586        0.000                       0                    13  
+    oserdes_clk_5                                                                                                                                                                                                                                                                                                0.180        0.000                       0                     7  
+      oserdes_clkdiv_5                                                                                                                                               3.999        0.000                      0                   24        0.072        0.000                      0                   24        1.586        0.000                       0                     7  
+    oserdes_clk_6                                                                                                                                                                                                                                                                                                0.180        0.000                       0                     5  
+      oserdes_clkdiv_6                                                                                                                                               3.893        0.000                      0                   20        0.070        0.000                      0                   20        1.586        0.000                       0                     6  
+    oserdes_clk_7                                                                                                                                                    0.196        0.000                      0                    4        0.369        0.000                      0                    4        0.180        0.000                       0                    12  
+      oserdes_clkdiv_7                                                                                                                                               1.400        0.000                      0                   36        0.064        0.000                      0                   36        0.336        0.000                       0                    11  
+    oserdes_clk_8                                                                                                                                                    0.183        0.000                      0                    4        0.375        0.000                      0                    4        0.180        0.000                       0                    12  
+      oserdes_clkdiv_8                                                                                                                                               1.499        0.000                      0                   36        0.068        0.000                      0                   36        0.336        0.000                       0                    11  
+    oserdes_clk_9                                                                                                                                                    0.191        0.000                      0                    4        0.371        0.000                      0                    4        0.180        0.000                       0                    12  
+      oserdes_clkdiv_9                                                                                                                                               1.506        0.000                      0                   36        0.066        0.000                      0                   36        0.336        0.000                       0                    11  
+  mmcm_clkfbout                                                                                                                                                                                                                                                                                                  3.929        0.000                       0                     2  
+  pll_clk3_out                                                                                                                                                                                                                                                                                                   1.100        0.000                       0                     3  
+    clk_pll_i                                                                                                                                                        0.408        0.000                      0                49332        0.054        0.000                      0                49332        1.250        0.000                       0                 17981  
+    mmcm_ps_clk_bufg_in                                                                                                                                              1.713        0.000                      0                   20        0.195        0.000                      0                   20        4.650        0.000                       0                    24  
+  pll_clkfbout                                                                                                                                                                                                                                                                                                   3.929        0.000                       0                     2  
+  sync_pulse                                                                                                                                                                                                                                                                                                     0.178        0.000                       0                    23  
+tck                                                                                                                                                                 28.174        0.000                      0                  205        0.111        0.000                      0                  205       16.266        0.000                       0                   142  
+txoutclk                                                                                                                                                                                                                                                                                                         3.000        0.000                       0                     3  
+  clk_125mhz                                                                                                                                                         3.062        0.000                      0                  914        0.106        0.000                      0                  914        2.286        0.000                       0                   400  
+    clk_125mhz_mux_X0Y0                                                                                                                                              4.373        0.000                      0                 3192        0.056        0.000                      0                 3192        3.600        0.000                       0                  1467  
+      oobclk_125mhz_master_lane0_X0Y0                                                                                                                                                                                                                                                                           14.462        0.000                       0                     1  
+      oobclk_125mhz_master_lane1_X0Y0                                                                                                                                                                                                                                                                           14.462        0.000                       0                     1  
+      oobclk_125mhz_master_lane2_X0Y0                                                                                                                                                                                                                                                                           14.462        0.000                       0                     1  
+      oobclk_125mhz_master_lane3_X0Y0                                                                                                                                                                                                                                                                           14.462        0.000                       0                     1  
+  clk_250mhz                                                                                                                                                                                                                                                                                                     2.591        0.000                       0                     2  
+    clk_250mhz_mux_X0Y0                                                                                                                                              0.380        0.000                      0                 3192        0.056        0.000                      0                 3192        0.000        0.000                       0                  1467  
+      oobclk_250mhz_master_lane0_X0Y0                                                                                                                                                                                                                                                                           14.462        0.000                       0                     1  
+      oobclk_250mhz_master_lane1_X0Y0                                                                                                                                                                                                                                                                           14.462        0.000                       0                     1  
+      oobclk_250mhz_master_lane2_X0Y0                                                                                                                                                                                                                                                                           14.462        0.000                       0                     1  
+      oobclk_250mhz_master_lane3_X0Y0                                                                                                                                                                                                                                                                           14.462        0.000                       0                     1  
+  mmcm_fb                                                                                                                                                                                                                                                                                                        8.929        0.000                       0                     2  
+  userclk1                                                                                                                                                           1.772        0.000                      0                  362        0.033        0.000                      0                  362        0.097        0.000                       0                    11  
+  userclk2                                                                                                                                                           0.506        0.000                      0                31933        0.054        0.000                      0                31933        3.232        0.000                       0                 12124  
+
+
+------------------------------------------------------------------------------------------------
+| Inter Clock Table
+| -----------------
+------------------------------------------------------------------------------------------------
+
+From Clock                                                                                                                                                 To Clock                                                                                                                                                       WNS(ns)      TNS(ns)  TNS Failing Endpoints  TNS Total Endpoints      WHS(ns)      THS(ns)  THS Failing Endpoints  THS Total Endpoints  
+----------                                                                                                                                                 --------                                                                                                                                                       -------      -------  ---------------------  -------------------      -------      -------  ---------------------  -------------------  
+clk_pll_i                                                                                                                                                  sysclk                                                                                                                                                          12.478        0.000                      0                    1                                                                        
+clk_pll_i                                                                                                                                                  u_memc_ui_top_axi/mem_intfc0/ddr_phy_top0/u_ddr_mc_phy_wrapper/u_ddr_mc_phy/ddr_phy_4lanes_0.u_ddr_phy_4lanes/ddr_byte_lane_A.ddr_byte_lane_A/iserdes_clk        4.013        0.000                      0                    8       18.613        0.000                      0                    8  
+clk_pll_i                                                                                                                                                  u_memc_ui_top_axi/mem_intfc0/ddr_phy_top0/u_ddr_mc_phy_wrapper/u_ddr_mc_phy/ddr_phy_4lanes_0.u_ddr_phy_4lanes/ddr_byte_lane_B.ddr_byte_lane_B/iserdes_clk        3.122        0.000                      0                    8       19.127        0.000                      0                    8  
+clk_pll_i                                                                                                                                                  u_memc_ui_top_axi/mem_intfc0/ddr_phy_top0/u_ddr_mc_phy_wrapper/u_ddr_mc_phy/ddr_phy_4lanes_0.u_ddr_phy_4lanes/ddr_byte_lane_C.ddr_byte_lane_C/iserdes_clk        2.085        0.000                      0                    8       19.667        0.000                      0                    8  
+clk_pll_i                                                                                                                                                  u_memc_ui_top_axi/mem_intfc0/ddr_phy_top0/u_ddr_mc_phy_wrapper/u_ddr_mc_phy/ddr_phy_4lanes_0.u_ddr_phy_4lanes/ddr_byte_lane_D.ddr_byte_lane_D/iserdes_clk        1.000        0.000                      0                    8       20.125        0.000                      0                    8  
+clk_pll_i                                                                                                                                                  u_memc_ui_top_axi/mem_intfc0/ddr_phy_top0/u_ddr_mc_phy_wrapper/u_ddr_mc_phy/ddr_phy_4lanes_2.u_ddr_phy_4lanes/ddr_byte_lane_A.ddr_byte_lane_A/iserdes_clk        0.226        0.000                      0                    8       20.877        0.000                      0                    8  
+clk_pll_i                                                                                                                                                  u_memc_ui_top_axi/mem_intfc0/ddr_phy_top0/u_ddr_mc_phy_wrapper/u_ddr_mc_phy/ddr_phy_4lanes_2.u_ddr_phy_4lanes/ddr_byte_lane_B.ddr_byte_lane_B/iserdes_clk        0.735        0.000                      0                    8       20.350        0.000                      0                    8  
+clk_pll_i                                                                                                                                                  u_memc_ui_top_axi/mem_intfc0/ddr_phy_top0/u_ddr_mc_phy_wrapper/u_ddr_mc_phy/ddr_phy_4lanes_2.u_ddr_phy_4lanes/ddr_byte_lane_C.ddr_byte_lane_C/iserdes_clk        1.710        0.000                      0                    8       19.831        0.000                      0                    8  
+clk_pll_i                                                                                                                                                  u_memc_ui_top_axi/mem_intfc0/ddr_phy_top0/u_ddr_mc_phy_wrapper/u_ddr_mc_phy/ddr_phy_4lanes_2.u_ddr_phy_4lanes/ddr_byte_lane_D.ddr_byte_lane_D/iserdes_clk        2.677        0.000                      0                    8       19.362        0.000                      0                    8  
+sync_pulse                                                                                                                                                 mem_refclk                                                                                                                                                       0.222        0.000                      0                    3        0.083        0.000                      0                    3  
+oserdes_clk                                                                                                                                                oserdes_clkdiv                                                                                                                                                   0.482        0.000                      0                   15        0.073        0.000                      0                   15  
+oserdes_clk_1                                                                                                                                              oserdes_clkdiv_1                                                                                                                                                 0.505        0.000                      0                   15        0.061        0.000                      0                   15  
+oserdes_clk_10                                                                                                                                             oserdes_clkdiv_10                                                                                                                                                0.505        0.000                      0                   15        0.067        0.000                      0                   15  
+oserdes_clk_2                                                                                                                                              oserdes_clkdiv_2                                                                                                                                                 0.505        0.000                      0                   15        0.075        0.000                      0                   15  
+oserdes_clk_3                                                                                                                                              oserdes_clkdiv_3                                                                                                                                                 0.505        0.000                      0                   15        0.067        0.000                      0                   15  
+oserdes_clk_4                                                                                                                                              oserdes_clkdiv_4                                                                                                                                                 0.505        0.000                      0                   13        0.068        0.000                      0                   13  
+oserdes_clk_5                                                                                                                                              oserdes_clkdiv_5                                                                                                                                                 0.505        0.000                      0                    7        0.081        0.000                      0                    7  
+oserdes_clk_6                                                                                                                                              oserdes_clkdiv_6                                                                                                                                                 0.505        0.000                      0                    6        0.093        0.000                      0                    6  
+oserdes_clk_7                                                                                                                                              oserdes_clkdiv_7                                                                                                                                                 0.422        0.000                      0                   15        0.073        0.000                      0                   15  
+oserdes_clk_8                                                                                                                                              oserdes_clkdiv_8                                                                                                                                                 0.505        0.000                      0                   15        0.077        0.000                      0                   15  
+oserdes_clk_9                                                                                                                                              oserdes_clkdiv_9                                                                                                                                                 0.472        0.000                      0                   15        0.073        0.000                      0                   15  
+sysclk                                                                                                                                                     clk_pll_i                                                                                                                                                       16.366        0.000                      0                   12        0.071        0.000                      0                   12  
+mmcm_ps_clk_bufg_in                                                                                                                                        clk_pll_i                                                                                                                                                        2.051        0.000                      0                    9        0.112        0.000                      0                    9  
+clk_pll_i                                                                                                                                                  mmcm_ps_clk_bufg_in                                                                                                                                              2.582        0.000                      0                    1        0.506        0.000                      0                    1  
+clk_125mhz_mux_X0Y0                                                                                                                                        clk_125mhz                                                                                                                                                       5.341        0.000                      0                   18        0.292        0.000                      0                   18  
+clk_250mhz_mux_X0Y0                                                                                                                                        clk_125mhz                                                                                                                                                       1.221        0.000                      0                   18        0.101        0.000                      0                   18  
+clk_125mhz                                                                                                                                                 clk_125mhz_mux_X0Y0                                                                                                                                              6.247        0.000                      0                    5        0.249        0.000                      0                    5  
+userclk2                                                                                                                                                   clk_125mhz_mux_X0Y0                                                                                                                                              5.497        0.000                      0                    2        0.118        0.000                      0                    2  
+clk_125mhz                                                                                                                                                 clk_250mhz_mux_X0Y0                                                                                                                                              2.127        0.000                      0                    5        0.058        0.000                      0                    5  
+userclk2                                                                                                                                                   clk_250mhz_mux_X0Y0                                                                                                                                              1.497        0.000                      0                    2        0.118        0.000                      0                    2  
+clk_125mhz_mux_X0Y0                                                                                                                                        userclk2                                                                                                                                                         5.184        0.000                      0                    2        0.261        0.000                      0                    2  
+clk_250mhz_mux_X0Y0                                                                                                                                        userclk2                                                                                                                                                         1.184        0.000                      0                    2        0.261        0.000                      0                    2  
+
+
+------------------------------------------------------------------------------------------------
+| Other Path Groups Table
+| -----------------------
+------------------------------------------------------------------------------------------------
+
+Path Group           From Clock           To Clock                 WNS(ns)      TNS(ns)  TNS Failing Endpoints  TNS Total Endpoints      WHS(ns)      THS(ns)  THS Failing Endpoints  THS Total Endpoints  
+----------           ----------           --------                 -------      -------  ---------------------  -------------------      -------      -------  ---------------------  -------------------  
+**async_default**    userclk2             clk_125mhz_mux_X0Y0        5.155        0.000                      0                    2        0.715        0.000                      0                    2  
+**async_default**    userclk2             clk_250mhz_mux_X0Y0        1.155        0.000                      0                    2        0.715        0.000                      0                    2  
+**async_default**    clk_pll_i            clk_pll_i                  2.284        0.000                      0                  113        0.171        0.000                      0                  113  
+**async_default**    g_out                g_out                     47.493        0.000                      0                  427        0.137        0.000                      0                  427  
+**async_default**    userclk2             userclk2                   5.922        0.000                      0                  316        0.272        0.000                      0                  316  
+**default**          clk_pll_i                                       0.481        0.000                      0                    3                                                                        
+
+
+------------------------------------------------------------------------------------------------
+| Timing Details
+| --------------
+------------------------------------------------------------------------------------------------
+
+
+---------------------------------------------------------------------------------------------------
+From Clock:  pcie_refclk
+  To Clock:  pcie_refclk
+
+Setup :            0  Failing Endpoints,  Worst Slack        9.029ns,  Total Violation        0.000ns
+Hold  :            0  Failing Endpoints,  Worst Slack        0.172ns,  Total Violation        0.000ns
+PW    :            0  Failing Endpoints,  Worst Slack        4.358ns,  Total Violation        0.000ns
+---------------------------------------------------------------------------------------------------
+
+
+Max Delay Paths
+--------------------------------------------------------------------------------------
+Slack (MET) :             9.029ns  (required time - arrival time)
+  Source:                 pcie/bridge/inst/comp_axi_enhanced_pcie/comp_enhanced_core_top_wrap/axi_pcie_enhanced_core_top_i/pcie_7x_v2_0_2_inst/pcie_top_with_gt_top.gt_ges.gt_top_i/pipe_wrapper_i/pipe_lane[0].gt_wrapper_i/cpllPDInst/cpllpd_wait_reg[94]_srl31/CLK
+                            (rising edge-triggered cell SRLC32E clocked by pcie_refclk  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Destination:            pcie/bridge/inst/comp_axi_enhanced_pcie/comp_enhanced_core_top_wrap/axi_pcie_enhanced_core_top_i/pcie_7x_v2_0_2_inst/pcie_top_with_gt_top.gt_ges.gt_top_i/pipe_wrapper_i/pipe_lane[0].gt_wrapper_i/cpllPDInst/cpllpd_wait_reg[95]/D
+                            (rising edge-triggered cell FDRE clocked by pcie_refclk  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Path Group:             pcie_refclk
+  Path Type:              Setup (Max at Slow Process Corner)
+  Requirement:            10.000ns  (pcie_refclk rise@10.000ns - pcie_refclk rise@0.000ns)
