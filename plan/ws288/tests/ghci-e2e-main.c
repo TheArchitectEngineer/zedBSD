@@ -26,7 +26,9 @@
  *                   independent oracle
  *   display=PPM     that frame (the PPM the vkdemo case wrote) shown on
  *                   the display controller: a copied present of ordinary
- *                   storage, then a shared present of a mappable blob,
+ *                   storage, then a shared present of a blob of the
+ *                   GPU's local memory (written by a transfer: GHCI
+ *                   section 11.3 scans out local memory only),
  *                   each checked by FB_BASE, plane 0's flip record, the
  *                   scanned memory and the next frame's SCAN_SUM
  *
@@ -147,9 +149,9 @@ static int case_vkdemo(const char *path);
 static int case_display(const char *path);
 static int display_frame_read(const char *path, uint8_t *rgb);
 static uint32_t display_image(const uint8_t *rgb, int bgra, uint8_t *image);
-static int display_run(int fd, const uint8_t *bgra, uint32_t bgra_sum, const uint8_t *rgba, uint32_t rgba_sum, uint8_t **mapped);
+static int display_run(int fd, const uint8_t *bgra, uint32_t bgra_sum, const uint8_t *rgba, uint32_t rgba_sum);
 static int display_present(int fd, const struct gpu_display_info *query, uint64_t lease, uint64_t handle, uint32_t format, int blob, uint64_t *sequence);
-static int display_check(const char *what, int fd, uint64_t lease, uint64_t sequence, const uint8_t *image, const uint8_t *mapped, uint32_t sum, const struct e2e_display_state *before, struct e2e_display_state *after);
+static int display_check(const char *what, int fd, uint64_t lease, uint64_t sequence, const uint8_t *image, uint32_t blob_address, uint32_t sum, const struct e2e_display_state *before, struct e2e_display_state *after);
 static void measure_start(struct measure *measure);
 static void measure_report(const char *name, const struct measure *measure);
 static uint32_t *module_read(const char *path, size_t *bytes);
@@ -189,8 +191,10 @@ main(
 		measure_report(name, &measure);
 	}
 
-	/* The detach and the end of the simulation. */
-	e2e_board_stop();
+	/* The detach and the end of the simulation, with the check of where the driver kept its memory. */
+	error = e2e_board_stop();
+	if (error != 0)
+		cases_failed++;
 
 	/* A failed case fails the run. */
 	if (cases_failed != 0U) {
@@ -1034,8 +1038,9 @@ case_vkdemo(
 /*
  * Shows vkdemo's frame (the PPM the vkdemo case wrote) on the display:
  * a present of ordinary storage, which the blitter copies into a frame of
- * the driver's, then one of a mappable blob, which the controller scans
- * where the session wrote it, each checked against the image (display_run).
+ * the driver's, then one of a blob of local memory (written by a
+ * transfer), which the controller scans where it is, each checked against
+ * the image (display_run).
  */
 static int
 case_display(
@@ -1044,7 +1049,6 @@ case_display(
 	uint8_t *rgb;
 	uint8_t *bgra;
 	uint8_t *rgba;
-	uint8_t *mapped;
 	uint32_t bgra_sum;
 	uint32_t rgba_sum;
 	int fd;
@@ -1092,12 +1096,9 @@ case_display(
 	}
 
 	/* The lease, the two presents and the release. */
-	mapped = NULL;
-	error = display_run(fd, bgra, bgra_sum, rgba, rgba_sum, &mapped);
+	error = display_run(fd, bgra, bgra_sum, rgba, rgba_sum);
 
-	/* The mapping and the open go; the close ends a lease a failure left and destroys the resources. */
-	if (mapped != NULL)
-		(void)munmap(mapped, DISPLAY_FRAME_BYTES);
+	/* The open goes; the close ends a lease a failure left and destroys the resources. */
 	(void)close(fd);
 	free(bgra);
 	free(rgba);
@@ -1211,8 +1212,9 @@ display_image(
 
 /*
  * The display case's steps on an open of the node: the output and its one
- * mode, the claim, the copied present and its check, the blob (mapped
- * into *mapped) and its shared present and check, the release.  Returns
+ * mode, the claim, the copied present and its check, the blob (local
+ * memory, written by a transfer) and its shared present and check, the
+ * release.  Returns
  * 0, or 1 after printing the step that failed.
  */
 static int
@@ -1221,8 +1223,7 @@ display_run(
 	const uint8_t *bgra,
 	uint32_t bgra_sum,
 	const uint8_t *rgba,
-	uint32_t rgba_sum,
-	uint8_t **mapped)
+	uint32_t rgba_sum)
 {
 	struct gpu_display_info query;
 	struct gpu_display_mode mode;
@@ -1231,12 +1232,10 @@ display_run(
 	struct gpu_display_wait wait;
 	struct gpu_resource_create storage;
 	struct gpu_blob_create blob;
-	struct gpu_resource_map map;
 	struct gpu_transfer transfer;
 	struct e2e_display_state before;
 	struct e2e_display_state after;
 	uint64_t sequence;
-	void *view;
 	int error;
 
 	/* The one output: connected, with blobs, its preferred mode vkdemo's frame (the simulated controller's test mode). */
@@ -1339,37 +1338,37 @@ display_run(
 		printf("FAIL e2e.display: the copied present (%d)\n", error);
 		return 1;
 	}
-	error = display_check("copied", fd, claim.lease, sequence, bgra, NULL, bgra_sum, &before, &after);
+	error = display_check("copied", fd, claim.lease, sequence, bgra, 0U, bgra_sum, &before, &after);
 	if (error != 0)
 		return 1;
 
-	/* A mappable blob holding the RGBA image, written through its mapping. */
+	/*
+	 * A blob of the GPU's own (local) memory holding the RGBA image,
+	 * written by a transfer (the driver's copy through host memory): the
+	 * controller scans local memory only (GHCI section 11.3).
+	 */
 	memset(&blob, 0, sizeof(blob));
 	blob.version = GPU_ABI_VERSION;
 	blob.size = sizeof(blob);
 	blob.bytes = DISPLAY_FRAME_BYTES;
-	blob.flags = GPU_BLOB_MAPPABLE;
+	blob.flags = 0U;
 	error = ioctl(fd, GPU_BLOB_CREATE, &blob);
 	if (error != 0) {
 		printf("FAIL e2e.display: the blob (%d)\n", errno);
 		return 1;
 	}
-	memset(&map, 0, sizeof(map));
-	map.version = GPU_ABI_VERSION;
-	map.size = sizeof(map);
-	map.handle = blob.handle;
-	error = ioctl(fd, GPU_RESOURCE_MAP, &map);
+	memset(&transfer, 0, sizeof(transfer));
+	transfer.version = GPU_ABI_VERSION;
+	transfer.size = sizeof(transfer);
+	transfer.handle = blob.handle;
+	transfer.offset = 0U;
+	transfer.address = (uint64_t)(uintptr_t)rgba;
+	transfer.bytes = DISPLAY_FRAME_BYTES;
+	error = ioctl(fd, GPU_RESOURCE_WRITE, &transfer);
 	if (error != 0) {
-		printf("FAIL e2e.display: the blob's map (%d)\n", errno);
+		printf("FAIL e2e.display: the blob's write (%d)\n", errno);
 		return 1;
 	}
-	view = mmap(NULL, DISPLAY_FRAME_BYTES, PROT_READ | PROT_WRITE, MAP_SHARED, fd, (off_t)map.offset);
-	if (view == MAP_FAILED) {
-		printf("FAIL e2e.display: the blob's mapping (%d)\n", errno);
-		return 1;
-	}
-	*mapped = view;
-	memcpy(*mapped, rgba, DISPLAY_FRAME_BYTES);
 
 	/* The shared present: the controller flips to the blob where it is. */
 	before = after;
@@ -1378,7 +1377,7 @@ display_run(
 		printf("FAIL e2e.display: the shared present (%d)\n", error);
 		return 1;
 	}
-	error = display_check("shared", fd, claim.lease, sequence, rgba, *mapped, rgba_sum, &before, &after);
+	error = display_check("shared", fd, claim.lease, sequence, rgba, blob.resource_id, rgba_sum, &before, &after);
 	if (error != 0)
 		return 1;
 
@@ -1466,7 +1465,7 @@ display_present(
 /*
  * Checks what the controller shows after a present returned: it is lit
  * and scans the driver's image (a frame of the driver's holding the image,
- * or, shared, the blob's own memory at mapped); plane 0's record is new
+ * or, shared, the blob's own memory at blob_address); plane 0's record is new
  * and not cancelled; the frame is adopted and a wait answers at once; and
  * the next whole frame scanned sums to the image's sum.  Fills after.
  * Returns 0, or 1 after printing what differs.
@@ -1478,7 +1477,7 @@ display_check(
 	uint64_t lease,
 	uint64_t sequence,
 	const uint8_t *image,
-	const uint8_t *mapped,
+	uint32_t blob_address,
 	uint32_t sum,
 	const struct e2e_display_state *before,
 	struct e2e_display_state *after)
@@ -1539,9 +1538,9 @@ display_check(
 		printf("FAIL e2e.display %s: FB_BASE %08x is outside the local memory\n", what, (unsigned)after->fb_base);
 		return 1;
 	}
-	if (mapped != NULL) {
-		if (mapped != local + offset) {
-			printf("FAIL e2e.display %s: FB_BASE is not the blob the session mapped\n", what);
+	if (blob_address != 0U) {
+		if (after->fb_base != blob_address) {
+			printf("FAIL e2e.display %s: FB_BASE is not the session's blob %08x\n", what, (unsigned)blob_address);
 			return 1;
 		}
 		if (after->shown_copy_frame >= 0) {

@@ -53,3 +53,15 @@ GHCI の文、RTL の TB（窓を閉じると BAR2 の書きが捨てられ読�
 - build: make -j16 ZEDBSD_CONFIG=plan/ws288/tests/config-amd64-ghci.mk BUILD=build/p040 build/p040/vmunix rc 0、warning 0、kernel include check PASS、amd64 vmunix check PASS。
 - **注意**: e2e（ghci-e2e.sh）は今の link に host memory が無い（kern_pmem_alloc_limited が ENOMEM）ので、この driver では ring が取れず start で止まる。e2e の link と kernel の変更は P3 の D6 の後（Q1 の指示）。それまで e2e は FAIL の見込み（未実行）。
 
+### p039 の main への合わせ（Q1 の指示、P2）
+
+- amaterrace-gpu p2-p039m ea37240（親 575dcf6 = p039、cfc49dd = main の p035・one-vector の MSI）: 11 file の衝突を解いた（MC は p039 の ID と am_axi_master、p035 の ROOT_KEEP。atg_mc_tb は main の case D・E と p039 の 2 行き先を case F に。board top は p035 の DC 内蔵と 1 vector の MSI と p039 の split・HOST_LIMIT。atg_kc705_pcie は p039 の s_clk・host_dn と MSI_Vector_Num 0）。確認（P2）: lint.sh rc 0（158 clean）、sim/run.sh の am_axi_master・am_axi_split・atg_mc（A〜F）・atg_mc_prot・atg_mc_atom・atg_cp_regs・atg_cp_disp・atg_dc・atg_dc_dma・atg_dc_mode・atg_dc_regs・atg_dc_cursor・atg_dc_tgen +quick・atg_top・atg_top_prot・atg_top_fw・atg_kc705_pcie・atg_kc705_raster PASS、e2e（zedBSD main 8b624aebd、display 込み）PASS 9 行・oracle の mismatch 0・stray 0。T は T1-802（Q1）。
+
+### e2e の置き場所の試験（2026-10-25 P2）
+
+- amaterrace-gpu p2-p040 d0d3d92（47fc3ce と ea37240 の merge、p040 の部分だけ解いた: atg_cp_regs の MEM 0x1E0 と DISP2 の 0x200、atg_cp の x_rdata と win_en、board top、pcie_tb、atg_cp_regs.md、ghci.md は main が §13 を 13.1 DISP・13.2 DISP2 に分けたので引き継ぎの規則を「13.3 Handing over a boot framebuffer」に）。merge の後: lint rc 0、atg_cp_regs・am_axi_gate・atg_cp_disp・atg_top・atg_top_prot・atg_top_fw・atg_kc705_pcie（.window 込み）・atg_kc705_raster・atg_dc PASS。
+- amaterrace-gpu p2-p040 8a0571c（link）: sim/verilator/link.cpp に host memory の model（[0, LINK_HOST_LIMIT = 0x8000_0000)、2 GiB の mmap NORESERVE）、応答は要求の AXI ID（m_bid・m_rid）、local は ID 0・host は ID 1 だけ、外か ID 違いは stray、stats に local_beats・host_beats、atg_link_host()・atg_link_window_open()（atg_top の win_en）。link-build.sh に -GHOST_LIMIT と -DLINK_HOST_LIMIT。
+- zedBSD（この commit）: ghci-e2e-kernel.c の kern_pmem_alloc_limited を link の host memory から（16 MiB から順に、再利用しない）、kern_pmem_to_kernel、driver の窓の mapping を guard の配列に、e2e_board_stop で「動いている間は窓が閉じている・detach で開く・guard 不変・host_beats > 0・stray 0」を確かめ、外れたら case の失敗に（ghci-e2e.h・main.c）。display の case の shared present は mappable の blob（今は host memory、GHCI §11.3・§13.2 で scan-out できない）から、local の blob（flags 0）に GPU_RESOURCE_WRITE（driver の bounce と BLT の copy）で書く形に替え、FB_BASE がその blob の address であることを見る。
+- 確認（P2）: ghci-e2e.sh（AMATERRACE_GPU=p2-p040 8a0571c の作業木、zedBSD agent/p2-p040）→ PASS 9 行（link-build、fill、copy、compute、vkdemo、display、ghci-e2e、vkdemo-oracle、ghci-e2e.sh）、oracle の mismatch_pixels 0、各 case の stray 0、placement: failures 0・guard の変化 0・host beats 19476・local beats 84799・host RAM 22,126,592 byte。display の copied は FB_BASE 0x8400_0000（窓の先の local）、shared は 0x8409_6000。最初の実行（display を直す前）は display の shared present が EINVAL（host の blob）で FAIL、他は PASS・placement OK。ghci-host-test.sh 134/180/166 passed、0 failed。
+- 未実施（T へ）: make sim 全部・sim-quick・Verilator fw-run、KC705 の実機（BAR2 の窓を閉じた時の挙動、GPU → host の DMA）。e2e の placement の check が古い driver で FAIL することは流していない（host 試験の guard と kind の check で代える）。
+

@@ -7,8 +7,9 @@
 
 /*
  * The kernel under the GHCI driver in the end-to-end test: the PCI glue's
- * part (the register window, the local window and the interrupt are the
- * link's), the locks and wait queues of one thread, the clock of the
+ * part (the register window and the interrupt are the link's; the local
+ * window's mapping is a guard the driver must not touch), the host RAM the
+ * GPU reaches (the link's host memory below its HOST_LIMIT), the locks and wait queues of one thread, the clock of the
  * simulation, the heap, and the service thread, which runs whenever a
  * wait gives it room; and what the display case reads of the display.
  *
@@ -49,6 +50,13 @@
 /* The cycles one look of a waiting thread lets the GPU run, at most. */
 #define PUMP_CYCLES			2000U
 
+/* Where the kernel's host RAM for the GPU starts in the link's host memory (address 0 stays unused). */
+#define HOST_FIRST			0x01000000U
+
+/* What the local window's stand-in holds, and its size; the driver must leave it alone. */
+#define GUARD_BYTE			0x3cU
+#define GUARD_BYTES			(64U << 20)
+
 /*
  * The device the test drives.
  *
@@ -79,6 +87,22 @@ static int service_running_now;
 /* The tick the service thread's last round ran at, for its period. */
 static uint64_t service_last_tick;
 
+/*
+ * The link's host memory (the GPU's bus addresses 0 to host_limit), and
+ * the next byte the kernel's RAM allocator hands out: runs are not reused
+ * (the test's 2 GiB are far more than its allocations).
+ */
+static uint8_t *host_memory;
+static uint32_t host_limit;
+static uint64_t host_next;
+
+/*
+ * The local window's stand-in: not the GPU's local memory, so that an
+ * access of the driver through the window shows here and never reaches
+ * the GPU (GHCI section 11.3: the driver does not use the window).
+ */
+static uint8_t window_guard[GUARD_BYTES];
+
 static void board_round(void);
 static void service_round(void);
 
@@ -106,12 +130,20 @@ e2e_board_start(void)
 	if (cycles_per_tick == 0U)
 		cycles_per_tick = 1U;
 
-	/* The bus fields, as pci-attach.c fills them: BAR0 and BAR2. */
+	/* The host memory the GPU reaches, from which the kernel's RAM for the GPU comes. */
+	host_memory = atg_link_host(&host_limit);
+	host_next = HOST_FIRST;
+
+	/* The bus fields, as pci-attach.c fills them: BAR0 and BAR2 (the guard, at most its size). */
 	local = atg_link_local(&local_base, &local_bytes, &window_bytes);
+	(void)local;
+	if (window_bytes > GUARD_BYTES)
+		window_bytes = GUARD_BYTES;
+	memset(window_guard, GUARD_BYTE, sizeof(window_guard));
 	memset(&e2e_device, 0, sizeof(e2e_device));
 	e2e_device.registers = (volatile uint8_t *)register_window;
 	e2e_device.register_bytes = sizeof(register_window);
-	e2e_device.window = local;
+	e2e_device.window = window_guard;
 	e2e_device.window_physical = WINDOW_PHYSICAL;
 	e2e_device.window_bytes = window_bytes;
 
@@ -127,20 +159,83 @@ e2e_board_start(void)
 }
 
 /*
- * Stops the driver and the simulation.
+ * Stops the driver and the simulation, and checks where the driver kept
+ * its memory (GHCI section 11.3): the local window closed while it ran and
+ * open again after the detach, its mapping never touched, the GPU's host
+ * memory used, no GPU access outside the memories or with the wrong ID.
  */
-void
+int
 e2e_board_stop(void)
 {
+	struct atg_link_stats stats;
+	uint32_t index;
+	unsigned changed;
+	int window_open;
+	int failures;
 	int error;
+
+	/* The window as the driver left it while it ran. */
+	failures = 0;
+	window_open = atg_link_window_open();
+	if (window_open) {
+		printf("  e2e: the local window is open while the driver runs\n");
+		failures++;
+	}
 
 	/* The detach, which needs every session closed. */
 	error = ghci_device_stop(&e2e_device);
-	if (error != 0)
+	if (error != 0) {
 		printf("  e2e: the driver did not stop (%d)\n", error);
+		failures++;
+	}
+
+	/* The detach opens the window again, as after a reset. */
+	window_open = atg_link_window_open();
+	if (!window_open) {
+		printf("  e2e: the local window stays closed after the detach\n");
+		failures++;
+	}
+
+	/* The window's stand-in, byte by byte. */
+	changed = 0U;
+	for (index = 0U; index < sizeof(window_guard); index++) {
+		if (window_guard[index] != GUARD_BYTE)
+			changed++;
+	}
+	if (changed != 0U) {
+		printf("  e2e: the driver changed %u bytes through the local window\n", changed);
+		failures++;
+	}
+
+	/* The GPU's accesses: some to host memory, none astray. */
+	atg_link_stats(&stats);
+	if (stats.host_beats == 0U) {
+		printf("  e2e: the GPU never reached host memory\n");
+		failures++;
+	}
+	if (stats.stray_accesses != 0U) {
+		printf("  e2e: %llu GPU accesses outside the memories or with the wrong ID\n", (unsigned long long)stats.stray_accesses);
+		failures++;
+	}
+
+	/* What the placement check saw. */
+	printf("  e2e: placement: failures %d, guard changed %u, host beats %llu, local beats %llu, stray %llu, host RAM handed out %llu bytes\n",
+	    failures,
+	    changed,
+	    (unsigned long long)stats.host_beats,
+	    (unsigned long long)stats.local_beats,
+	    (unsigned long long)stats.stray_accesses,
+	    (unsigned long long)(host_next - HOST_FIRST));
 
 	/* The simulation ends. */
 	atg_link_stop();
+
+	/* Reports a placement the driver got wrong. */
+	if (failures != 0)
+		return EIO;
+
+	/* Succeeded: the memory was where GHCI section 11.3 puts it. */
+	return 0;
 }
 
 /*
@@ -476,9 +571,10 @@ kern_free(
 }
 
 /*
- * RAM below 4 GiB for the GPU: the board has no path to the host's memory
- * (its GPU reaches only its DDR3), so a driver that asks for some is told
- * there is none.
+ * RAM for the GPU: a run of the link's host memory (the board's GPU
+ * reaches the host below HOST_LIMIT through its PCIe bridge), aligned,
+ * ending at or below max_address.  Runs are handed out in order and not
+ * reused.
  */
 int
 kern_pmem_alloc_limited(
@@ -488,15 +584,24 @@ kern_pmem_alloc_limited(
 	size_t boundary,
 	struct kern_pmem *run)
 {
-	(void)size;
-	(void)alignment;
-	(void)max_address;
-	(void)boundary;
-	(void)run;
+	uint64_t start;
 
-	/* Nothing to hand out. */
-	printf("  e2e: the driver asked for host memory, which the board cannot reach\n");
-	return ENOMEM;
+	(void)boundary;
+
+	/* The next aligned run, which must fit below the limits. */
+	if (alignment == 0U)
+		alignment = 1U;
+	start = (host_next + alignment - 1U) & ~((uint64_t)alignment - 1U);
+	if (start + size > host_limit)
+		return ENOMEM;
+	if (start + size - 1U > max_address)
+		return ENOMEM;
+
+	/* Succeeded: the run is the caller's. */
+	host_next = start + size;
+	run->paddr = start;
+	run->size = size;
+	return 0;
 }
 
 int
@@ -511,8 +616,12 @@ void *
 kern_pmem_to_kernel(
 	hal_physaddr_t address)
 {
-	(void)address;
-	return NULL;
+	/* Only the host memory has a view. */
+	if (address >= host_limit)
+		return NULL;
+
+	/* Succeeded: the byte of the link's host memory. */
+	return host_memory + address;
 }
 
 /* The service thread is not a thread here: its rounds run in the sleeps and pumps. */
