@@ -59,4 +59,4 @@ host の試験が PASS（staging の列と返事の blob の形が libvulkan の
 - 規約の全文の見直しは自分で 1 回（paragraph の comment、閉じ括弧の後の空行、複合条件、呼び出しを条件に入れない、public の順）。正式な見直しは p016。
 - design §6.7 の「知らない sType の chain を拒む」: 生成 codec は pNext の presence word を読み飛ばす（libvulkan は chain を付けない）。chain の付いた wire は長さを誤るが、firmware の session（tag）の中で閉じる。
 - display の present は今の copy の形のまま（copy しない flip と DC の割り込みは p035）。
-- 削除の依頼（Q1 の pipeline で）: worktree の `build/p019`・`build/p019-ci`・`build/amd64`・`build/tmp`・`build/p019-make.log`・`build/p019-ci.log`、symlink `build/llvm`・`build/NoctLang`。
+- 削除の依頼（Q1 の pipeline で）: worktree の `build/p019`・`build/p019-ci`・`build/tmp`・`build/p019-make.log`・`build/p019-ci.log`、symlink `build/llvm`・`build/NoctLang`。
