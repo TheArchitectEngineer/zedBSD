@@ -66,3 +66,22 @@
 - 2026-10-25 21:43 P1 → Q1（申告）: atg_su_h2f（am_add 1、旧と 300k 一致）と atg_su_hrnd（am_add 2、旧と 1M 一致）を module に = aca7a95（親 c5b1299、spec あり）、P4 に渡した。favg は P3、ffma の module の SHA が出たら P3 が付け替える。P1 の次: atg_su_rnd（1M 一致）→ ffma・rint・i2f・fadd → fpu。
 - 2026-10-25 21:51 ユーザー「いったんP1をラップアップしてください。」→ P1 に通常のラップアップを依頼（安全な commit の地点で記録と引き継ぎを残して止まる）。
 - 2026-10-25 21:52 ユーザー「P1は動作時間が非常に長くなっており、正常にタスクを処理できなくなっていると判断しました。」→ Q1 が P1（a95cd50…、p034 から続いた長い起動）を止めた。状態: amaterrace p1-p037 の commit の先端 aca7a95（atg_su_h2f・hrnd）。未 commit: rtl/gpu/su/atg_su_rnd.v（P1 の申告で旧と 1M 一致）・spec/gpu/su/atg_su_rnd.md・rtl/gpu/su/atg_su_ffma.v・atg_su_ffma_p.v（未検証）。zedBSD の agent/p1-p030 は 066157c6a のまま（ラップアップの記録は書かれなかった）。新しい P1 を同じ名前で起動し、未 commit の file を検証してから続ける。
+- 2026-10-25 21:53 Q1: 起動したばかりの新しい P1 を止め、作業の項目を整理し直した（ユーザー「新しいP1に作業してもらう項目をきちんと整理した上で、P1を立てて作業を依頼してください。」）。
+
+### P1 の作業の項目（2026-10-25 21:53、q1577-i02）
+
+前提: amaterrace の worktree ~/amaterrace-worktrees/p1-p037、branch p1-p037、commit の先端 aca7a95（atg_su_h2f・atg_su_hrnd まで）。他の担当の範囲（触らない）: include/atg_su_fp16.vh と atg_su_pk = P4、atg_blt_favg と fmt の全部 = P3、rtl/gpu/cp・mc = P2。
+
+| # | 項目 | 対象（include/atg_su_fp.vh の function、算術の数） | 呼び出し側 | 状態 |
+| --- | --- | --- | --- | --- |
+| 1 | 前の P1 の未 commit の file を確かめる | rtl/gpu/su/atg_su_rnd.v と spec（申告: 旧と 1M 一致）、atg_su_ffma.v・atg_su_ffma_p.v（未検証） | — | 検証して commit、合わなければ書き直す |
+| 2 | 丸め | atg_su_rnd（2） | atg_su_ffma_p、atg_su_xu | 1 の後 |
+| 3 | FMA | atg_su_ffma（1）・atg_su_ffma_p（18）、atg_su_fsig は算術無し | atg_su_fpu、atg_tu_fma（comment だけ）、atg_blt_favg（P3 が付け替える） | module を commit したら SHA を Q1 へ（P3 に渡す） |
+| 4 | 加算 | atg_su_fadd（9） | atg_su_lane（2 か所） | |
+| 5 | 整数化・変換 | atg_su_rint（4）・atg_su_i2f（1）・atg_su_f2i（3） | atg_su_fpu | |
+| 6 | atg_su_fpu の付け替え | 上の module を lane ごとに 1 つずつ（今の function と同じ共有）、fpu の中の function（f2i_n 3・fpu 1）も | — | pipeline と latency は不変 |
+| 7 | atg_su_xu・atg_su_lane の付け替え | — | — | |
+| 8 | .vh から算術の function を消す | fadd・rnd・ffma・ffma_p・rint・i2f・f2i（算術の無い flush・fsig・fround・fminmax・fcmp・sat は残す、flush は atg_su_fp16.vh も使う） | — | |
+| 9 | 確認 | 各 module を旧 function と ≥1M（EQ_FP の指数）、fpu・lane・xu を HEAD と ≥100k cycle、TB atg_su_fpu・atg_su_pk（PK_SHARED は fpu を使う）・atg_su_lane・atg_su_xu・atg_su_gfx・atg_su +quick、lint、arith-lint（atg_su_fp.vh と fpu が 0）、TB の時間が大きく伸びていないこと | — | |
+
+進め方: 1 項目ごとに検証して WIP の commit、Q1 に SHA を送る。起動が長くなったら安全な地点でラップアップ。記録は zedBSD の agent/p1-p030（066157c6a、main を merge してから）の phase037。
