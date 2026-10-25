@@ -46,3 +46,4 @@
 | 2026-10-25 11:01 | Vivado の実測で KC705 の 1 SU の core が LUT 422k（容量の 207%）。機能を変えない削減を P2 に続けさせ、形を変える削減（U80〜）はユーザーに諮る。最初のゴールの板（p024）の前の最大の課題として報告する | 推しで決めてよい範囲を超える（製品の形の判断） |
 | 2026-10-25 11:20 | firmware の end render pass は常に WAIT_IDLE + INVALIDATE（P3 の判断を受け入れ） | Vulkan 1.0 の原則（過剰な同期は許される）、firmware は subpass dependency を持たない |
 | 2026-10-25 11:32 | p011 を cleared にした（vkdemo の 1 frame が Verilator の上で oracle と一致）。vkQueueSubmit を待たずに返す firmware の直し（再生の前に結果を書く）を次の担当に | Vulkan の submit は仕事を待たない原則 |
+| 2026-10-25 12:04 | P1 が見つけた「TU・CPU の DMA の MC の outstanding が busy に入っていない」を、保護に限らず CP の WAIT_IDLE の条件にも入れる直しにした | WAIT_IDLE・INVALIDATE の正しさ（Vulkan の barrier の意味） |
