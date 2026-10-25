@@ -66,7 +66,7 @@
 | [p030](phase030/phase.md) | Vulkan 1.0 core の残り（stencil、D16、MRT 4、format、point/line、occlusion query、input attachment、depth だけの clear など、design §15.18） | p027 の後・p018 の前 | in-progress（2026-10-25 02:32 設計の段、q1559 P1） |
 | [p031](phase031/phase.md) | ZYBO を GPU の target から外す（source は amaterrace-gpu の docs/old/、build・lint・sim・CI から外す） | なし（p030 S1 の前） | cleared（2026-10-25 05:13、T1-759 PASS、main a87523c） |
 | [p034](phase034/phase.md) | session の保護（GHCI §11.6 の PROT: memory の要求の session の番号、MC の範囲の表と検査、GRANT・REVOKE、driver の保護した session） | p018、p006、p019 | in-progress（2026-10-25 09:07 q1570 P1: 設計の段） |
-| [p035](phase035/phase.md) | DC を GHCI の GPU の一部に（`rtl/gpu/dc/` へ、CP の command で制御、present は queue の操作で copy しない、割り込みは GHCI の IRQ に統合、GHCI §13 の書き直し） | p018、p006、p019 | planned（2026-10-25 09:02 新設） |
+| [p035](phase035/phase.md) | DC を GHCI の GPU の一部に（`rtl/gpu/dc/` へ、CP の command で制御、present は queue の操作で copy しない、割り込みは GHCI の IRQ に統合、GHCI §13 の書き直し） | p018、p006、p019 | in-progress（2026-10-25 12:34 P3: 設計の段 design §18 版 8、review 2 回、U90〜U99、判定は Q1） |
 | [p036](phase036/phase.md) | KC705 に GPU が入る面積（yosys で LUT 245k > 203.8k、Vivado の測定・内訳・機能を変えない削減・形を変える案） | p030、p027 | in-progress（2026-10-25 09:43 q1571 P2） |
 | [p010](phase010/phase.md) | compiler の backend（zedBSD `isa/gsi1/`）、`gsi1_isa.h` と interface の表の確定（design §8） | p008、p027 | cleared（2026-10-25 07:12: GSI1 の backend、gsi1_isa.h と interface の表の確定、host 試験 29/29。vmunix の link は p006） |
 | [p018](phase018/phase.md) | firmware の Vulkan の object model と draw/dispatch（design §8）。GHCI §7.2・§11.6 への firmware の追従を含む | p017、p009、p010、p027、p030 | cleared（2026-10-25 10:16: firmware の Vulkan の object model、Verilator の firmware の harness 6 case 一致、amaterrace-gpu 252a11e） |

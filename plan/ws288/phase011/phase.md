@@ -104,4 +104,5 @@ vkdemo の 1 frame の readback が参照と一致（Verilator）、fill・copy�
 
   vkdemo の frame 全体は 1,090,343 → 1,092,309 cycle（1 frame をすぐ待つので変わらない。job の commit → fence は 147,734 → 974,933 で、仕事の時間が fence の側に移った）。
 - 確認（自分で実行、件数は出力で数えた）: `fw/cp/tests/run.sh` fwtest 6/6・kernels 2/2（新しい check 5 つ: RESULT が replay の前、replay が RESULT の後に走り fill が入る、frame の中の submit の後の reset の前に replay、その fill。前の firmware に戻すと「RESULT before the submit's replay」が FAIL を確認）、`tools/fw-build.sh` warning 0・IMEM 61,032 B / 64 KiB（+452 B）・DMEM image 3,616 B、`AMATERRACE_GPU=<p3-p035> plan/ws288/tests/ghci-e2e.sh` の PASS 8 行（link-build・fill・copy・compute・vkdemo・ghci-e2e・vkdemo-oracle・ghci-e2e.sh）、oracle mismatch 0・checked 76,045、sha256 6a446b50…e9ac（前と同じ）。
-- T に: `sim/verilator/fw-run.sh`（firmware の harness、fwtest の scene に新しい step が入った）、`make sim-quick`（RTL は不変なので回帰の確認だけ）。
+- `sim/verilator/fw-run.sh`（Verilator の firmware の harness、P3 が流した、2026-10-25 11:4x〜12:0x）: `PASS fw.sessions`・`fw.buffers`（10 step、µop 256 語の差 0、result 72 語の差 0）・`fw.images`・`fw.draw`・`fw.compute`・`fw.transfer`・`PASS verilator fw`（7 行、exit 0）。
+- T に: `make sim-quick`（RTL は不変なので回帰の確認だけ）。
