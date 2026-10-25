@@ -522,6 +522,7 @@ test_packets(void)
 {
 	struct ghci_blit blit;
 	uint32_t out[GHCI_BLIT_PACKET_DWORDS];
+	uint32_t pairs[4];
 	uint32_t dwords;
 	int error;
 
@@ -575,6 +576,27 @@ test_packets(void)
 	expect(out[23] == ((2U << 24) | (9U << 16)), "packet blit BLIT");
 	error = ghci_packet_blit(&blit, 9U, out, GHCI_BLIT_PACKET_DWORDS - 1U, &dwords);
 	expect(error == ENOSPC, "packet blit without room");
+
+	/* A DISP_SET of two pairs waiting for the controller's idle: op 15, flag 1, four dwords. */
+	pairs[0] = 0x10U;
+	pairs[1] = 0x41U;
+	pairs[2] = 0x28U;
+	pairs[3] = 2560U;
+	error = ghci_packet_disp_set(0U, 1, pairs, 2U, out, &dwords);
+	expect(error == 0 && dwords == 5U, "packet disp set size");
+	expect(out[0] == ((15U << 24) | (1U << 8) | 4U), "packet disp set header");
+	expect(out[1] == 0x10U && out[2] == 0x41U && out[3] == 0x28U && out[4] == 2560U, "packet disp set pairs in order");
+	error = ghci_packet_disp_set(0U, 0, pairs, 0U, out, &dwords);
+	expect(error == EINVAL, "packet disp set without a pair");
+	error = ghci_packet_disp_set(0U, 0, pairs, GHCI_DISP_SET_PAIRS_MAX + 1U, out, &dwords);
+	expect(error == EINVAL, "packet disp set past its payload count");
+
+	/* A FLIP of the cursor's plane with COMPLETE: op 16, flag 1, four dwords. */
+	ghci_packet_flip(4U, 1, 1U, 0x80001000U, 0x80000048U, 0x7fffffffU, out);
+	expect(out[0] == ((16U << 24) | (4U << 16) | (1U << 8) | 4U), "packet flip header");
+	expect(out[1] == 1U && out[2] == 0x80001000U && out[3] == 0x80000048U && out[4] == 0x7fffffffU, "packet flip payload");
+	ghci_packet_flip(0U, 0, 0U, 0U, 0U, 1U, out);
+	expect(out[0] == ((16U << 24) | 4U), "packet flip without COMPLETE");
 }
 
 /* Builds a native command stream from packets of dwords dwords in all. */

@@ -41,7 +41,7 @@ static int sharing_blob(void *opaque, void *session, const struct gpu_blob_creat
 static void sharing_destroy(void *opaque, void *session, void *object);
 static int sharing_export(void *opaque, void *session, void *object, const struct gpu_image_descriptor *image, void **result);
 static void sharing_release(void *opaque, void *object);
-static int sharing_import(void *opaque, void *session, void *object, void **result, uint32_t *identifier);
+static int sharing_import(void *opaque, void *session, void *object, uint32_t flags, void **result, uint32_t *identifier);
 static void sharing_drop(struct sharing_memory *memory);
 static void export_prepare(struct gpu_resource_export *request, uint64_t handle);
 static int sharing_ioctl(struct test_file *file, unsigned long command, void *request);
@@ -365,6 +365,7 @@ sharing_import(
 	void *opaque,
 	void *session,
 	void *object,
+	uint32_t flags,
 	void **result,
 	uint32_t *identifier)
 {
@@ -374,6 +375,7 @@ sharing_import(
 
 	/* A destination alias can fail without consuming the source capability. */
 	(void)opaque;
+	(void)flags;
 	alias = kern_calloc(1U, sizeof(*alias));
 	if (alias == NULL)
 		return ENOMEM;

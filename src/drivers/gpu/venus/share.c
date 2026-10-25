@@ -32,7 +32,7 @@ struct venus_shared_context {
 
 static int share_export(void *device, void *private_session, void *object, const struct gpu_image_descriptor *image, void **result);
 static void share_release(void *device, void *object);
-static int share_import(void *device, void *private_session, void *object, void **result, uint32_t *resource_id);
+static int share_import(void *device, void *private_session, void *object, uint32_t flags, void **result, uint32_t *resource_id);
 static int share_promote(struct venus_controller *controller, struct venus_resource *resource, const struct gpu_image_descriptor *image);
 static int share_context_add(struct venus_controller *controller, struct venus_share *share, uint32_t context);
 static void share_context_drop(struct venus_controller *controller, struct venus_share *share, uint32_t context);
@@ -252,6 +252,7 @@ share_import(
 	void *device,
 	void *private_session,
 	void *object,
+	uint32_t flags,
 	void **result,
 	uint32_t *resource_id)
 {
@@ -261,6 +262,8 @@ share_import(
 	struct venus_share *share;
 	struct venus_resource *alias;
 	int error;
+
+	(void)flags;
 
 	/* Failed import exposes neither a destination wrapper nor a resource identity. */
 	controller = device;

@@ -51,6 +51,16 @@
 #define ADV7511_REVISION		0x14U
 
 /*
+ * The transmitter's status register and its hot-plug bit: the level of
+ * the HPD line from the sink.
+ *
+ * Value referenced: Analog Devices ADV7511 Programming Guide (register
+ * 0x42, bit 6 HPD state).  Not yet checked on the board.
+ */
+#define ADV7511_STATUS_REGISTER		0x42U
+#define ADV7511_STATUS_HPD		0x40U
+
+/*
  * One write of the transmitter's set-up: a register and its value.
  */
 struct adv7511_write {
@@ -136,6 +146,33 @@ ghci_adv7511_start(
 	}
 
 	/* Succeeded: the transmitter takes the controller's output. */
+	return 0;
+}
+
+/*
+ * Reads whether the ADV7511 sees a sink on its hot-plug line.  Returns 0
+ * with connected 1 or 0, or EIO when the transmitter did not answer.
+ */
+int
+ghci_adv7511_sensed(
+	struct ghci_device *device,
+	uint32_t registers,
+	int *connected)
+{
+	uint32_t status;
+	int error;
+
+	/* The status register, through the switch channel the start opened. */
+	error = i2c_read_register(device, registers, ADV7511_ADDRESS, ADV7511_STATUS_REGISTER, &status);
+	if (error != 0)
+		return EIO;
+
+	/* The HPD line's level. */
+	*connected = 0;
+	if ((status & ADV7511_STATUS_HPD) != 0U)
+		*connected = 1;
+
+	/* Succeeded: the line was read. */
 	return 0;
 }
 

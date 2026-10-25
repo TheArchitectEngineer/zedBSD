@@ -7,8 +7,9 @@
 
 /*
  * The packets the GHCI driver writes into the ring itself: fences,
- * padding, the waits and invalidations that order its own work, and the
- * standard state words of one blitter operation.
+ * padding, the waits and invalidations that order its own work, the
+ * standard state words of one blitter operation, and the display
+ * controller's register writes and flips.
  */
 
 #include <stddef.h>
@@ -92,6 +93,70 @@ ghci_packet_invalidate(
 {
 	/* The caches dropped travel in the flags. */
 	out[0] = GHCI_PKT_N(GHCI_PKT_CLASS_STD, GHCI_OP_INVALIDATE, tag, caches & INVALIDATE_CACHES, 0U);
+}
+
+/*
+ * Writes a DISP_SET packet.
+ */
+int
+ghci_packet_disp_set(
+	uint32_t tag,
+	int wait_idle,
+	const uint32_t *pairs,
+	uint32_t pair_count,
+	uint32_t *out,
+	uint32_t *dwords)
+{
+	uint32_t flags;
+	uint32_t index;
+
+	/* One pair at least, and no more than the payload count holds. */
+	if (pair_count == 0U)
+		return EINVAL;
+	if (pair_count > GHCI_DISP_SET_PAIRS_MAX)
+		return EINVAL;
+
+	/* The wait for the controller's idle travels in the flags. */
+	flags = 0U;
+	if (wait_idle != 0)
+		flags = GHCI_DISP_SET_WAIT_IDLE;
+
+	/* The header and the (offset, value) pairs, in the order the controller takes them. */
+	out[0] = GHCI_PKT_N(GHCI_PKT_CLASS_STD, GHCI_OP_DISP_SET, tag, flags, 2U * pair_count);
+	for (index = 0U; index < 2U * pair_count; index++)
+		out[1U + index] = pairs[index];
+
+	/* Succeeded: the packet is written. */
+	*dwords = 1U + 2U * pair_count;
+	return 0;
+}
+
+/*
+ * Writes a FLIP packet.
+ */
+void
+ghci_packet_flip(
+	uint32_t tag,
+	int complete,
+	uint32_t plane,
+	uint32_t image,
+	uint32_t record,
+	uint32_t value,
+	uint32_t *out)
+{
+	uint32_t flags;
+
+	/* COMPLETE makes the flip wait for every earlier command first. */
+	flags = 0U;
+	if (complete != 0)
+		flags = GHCI_FLIP_COMPLETE;
+
+	/* The header, the plane, the image, the record's address and the value written there. */
+	out[0] = GHCI_PKT_N(GHCI_PKT_CLASS_STD, GHCI_OP_FLIP, tag, flags, 4U);
+	out[1] = plane;
+	out[2] = image;
+	out[3] = record;
+	out[4] = value;
 }
 
 /*

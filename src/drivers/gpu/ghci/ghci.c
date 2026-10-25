@@ -100,6 +100,10 @@ ghci_device_start(
 	if (error != 0)
 		return error;
 
+	error = mutex_init(&device->display.lock, LOCK_RANK_DEVICE, "ghci display");
+	if (error != 0)
+		return error;
+
 	spin_init(&device->irq_lock, LOCK_RANK_DEVICE, "ghci interrupt");
 	waitq_init(&device->fence_wake, "ghci fence");
 	waitq_init(&device->service_wake, "ghci service");
@@ -120,9 +124,19 @@ ghci_device_start(
 	if (error != 0)
 		return error;
 
+	/*
+	 * Finds the display controller, if the GPU has one, and sets it dark.
+	 * This comes before the processor runs: once it runs, the host no
+	 * longer writes the controller's scan-out registers (the ring does).
+	 */
+	error = ghci_display_attach(device);
+	if (error != 0)
+		kern_logf("ghci: %s: display controller not started (%d)\n", device->name, error);
+
 	/* Starts the ring, the fences and the interrupt; the processor then runs. */
 	error = ghci_cp_start(device);
 	if (error != 0) {
+		ghci_display_detach(device);
 		ghci_memory_fini(device);
 		return error;
 	}
@@ -130,6 +144,7 @@ ghci_device_start(
 	/* Starts the thread that recovers from faults and gives deferred memory back. */
 	error = ghci_service_start(device);
 	if (error != 0) {
+		ghci_display_detach(device);
 		ghci_cp_stop(device);
 		ghci_memory_fini(device);
 		return error;
@@ -143,11 +158,6 @@ ghci_device_start(
 	error = ghci_vk_engine_start(device);
 	if (error != 0)
 		kern_logf("ghci: %s: no Vulkan executor (%d)\n", device->name, error);
-
-	/* Finds the display controller, if the GPU has one, and starts it. */
-	error = ghci_display_attach(device);
-	if (error != 0)
-		kern_logf("ghci: %s: display controller not started (%d)\n", device->name, error);
 
 	/* Publishes the device. */
 	error = register_device(device);
@@ -569,10 +579,17 @@ register_device(
 	if (device->vk != NULL)
 		ghci_vk_node_bind(device);
 
-	/* The display controller's operations, when the GPU has one. */
+	/*
+	 * The display controller's operations, when the GPU has one: with the
+	 * cursor's when the controller has a cursor plane, and the scan-out
+	 * query that lets libvulkan choose the shared or the copied route.
+	 */
 	if (device->display.present) {
 		device->ops.capabilities |= GPU_CAP_DISPLAY | GPU_CAP_DISPLAY_EVENTS;
 		device->ops.display = &ghci_display_ops;
+		if ((device->display.controller_caps & GHCI_DC_CAPS_CURSOR) != 0U)
+			device->ops.display = &ghci_display_cursor_ops;
+		device->ops.scanout = &ghci_scanout_ops;
 	}
 
 	/* Publishes the node. */
@@ -788,8 +805,8 @@ gpu_resource_destroy(
 
 	/*
 	 * Off the session's list, then back now or after the session's last
-	 * fence.  The display never scans a session's storage (a presentation
-	 * copies it into the driver's frames), so nothing else holds it.
+	 * fence.  A blob the display scans is held by the display, and goes
+	 * back once the controller no longer scans it.
 	 */
 	mutex_lock(&device->lock);
 

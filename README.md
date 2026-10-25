@@ -146,14 +146,46 @@ microkernel-based operating systems.
 zedBSD adopts a layered architecture to resolve these trade-offs and deliver a
 tightly integrated, cohesive desktop experience directly at the OS level.
 
+### /sbin/init
+
+- `/sbin/init` reads `/etc/rc.conf` and controls system services.
+- `/sbin/service` is a CLI client for `init` that also provides an interactive console mode.
+- `/etc/rc.conf` is a YAML-like configuration file.
+
+### /sbin/networkd
+
+- `/sbin/networkd` reads `/etc/net.conf` and manages network configuration.
+- `/sbin/net` is a Cisco/Juniper-style CLI client for `networkd`, featuring commands such as `commit confirmed`.
+- `/sbin/ifconfig` provides generic network ioctl access.
+- `/sbin/wifi` provides WiFi ioctl access.
+- `/sbin/dhcpc` is a DHCP client
+
+### /sbin/audiod
+
+- `/sbin/audiod` is the audio server, featuring a zero-copy audio playback.
+- It also has a compatible `libpulse` interface.
+
+### /sbin/volumed
+
+- `/sbin/volumed` manages removable media.
+
+### /sbin/sessiond
+
+- `/sbin/sessiond` is the graphical login and privilege separation manager.
+- It integrates with `/sbin/passkey` to enable FIDO2-based login authentication.
+- `/bin/wayland` is designed to function as both a login screen and a graphical session.
+
 ---
 
 ## Keiland Desktop
 
-- The desktop server integrates Wayland, audio, Wi-Fi, Bluetooth, SMS, and image/video media management.
-- The compositor supports Touch Mode (single app), Desktop Mode (multiple windows), and Game Mode (direct scanout).
+- The desktop server integrates Wayland, audio, Wi-Fi, Bluetooth, SMS,
+  and image/video media management.
+- The compositor supports Touch Mode (single app), Desktop Mode
+  (multiple windows), and Game Mode (direct scanout).
 - Users can seamlessly switch between modes via the touch UI/UX.
-- The compositor integrates various on-screen keyboards and touch-oriented IMEs.
+- The compositor integrates various on-screen keyboards and
+  touch-oriented IMEs.
 - A unified UI toolkit is used for both touch and mouse inputs.
 - GTK/Qt apps can run via the standard Wayland protocol.
 
@@ -214,12 +246,14 @@ make keiland-linux
 make keiland-linux-install
 ```
 
-`make keiland-linux` first checks with the package manager (apt, dnf/yum, or
-pacman) that the packages the build needs are installed. When some are missing,
-it lists them and, on a terminal, offers to install them with sudo; otherwise it
-prints the command and stops. After a successful build, it offers to install
-Keiland immediately, which makes `make keiland-linux-install` unnecessary. With
-`KEILAND_ASK=n`, it asks nothing and only prints. The package names are in
+`make keiland-linux` first checks with the package manager (apt,
+dnf/yum, or pacman) that the packages the build needs are
+installed. When some are missing, it lists them and, on a terminal,
+offers to install them with sudo; otherwise it prints the command and
+stops. After a successful build, it offers to install Keiland
+immediately, which makes `make keiland-linux-install`
+unnecessary. With `KEILAND_ASK=n`, it asks nothing and only
+prints. The package names are in
 [userland/desktop/LINUX.md](userland/desktop/LINUX.md).
 
 Then restart your display manager (e.g., GDM).
@@ -241,8 +275,9 @@ make keiland-freebsd
 make keiland-freebsd-install
 ```
 
-As on Linux, `make keiland-freebsd` checks the needed packages with `pkg`,
-offers to install the missing ones, and offers to install Keiland after a successful build
+As on Linux, `make keiland-freebsd` checks the needed packages with
+`pkg`, offers to install the missing ones, and offers to install
+Keiland after a successful build
 ([userland/desktop/README.freebsd.md](userland/desktop/README.freebsd.md)).
 
 To run Keiland manually, type:
@@ -444,9 +479,10 @@ To cover the initial costs, I would need to fund this project through crowdfundi
 
 ## Web Browser
 
-zedBSD's libbrowser is being developed against WPT (Web Platform Tests), with
-the behavior of Chrome's V8 and Blink engines serving as the test oracle.  AI
-agents are run in a loop until the tests reach a 95% pass rate.
+zedBSD's libbrowser is being developed against WPT (Web Platform
+Tests), with the behavior of Chrome's V8 and Blink engines serving as
+the test oracle.  AI agents are run in a loop until the tests reach a
+95% pass rate.
 
 ---
 
@@ -475,8 +511,9 @@ including the desktop, is engineered from the ground up.
 ## License
 
 zedBSD and Keiland Desktop are distributed under the zlib License. See
-[LICENSE](LICENSE). The license is not a placeholder for a later proprietary
-release. The system is meant to stay published under zlib, including features
-that run only on project hardware. What runs on open hardware PCs, Raspberry Pi,
-and the other public targets stays free for anyone to use while conformance
-work, including a future UNIX certification, continues.
+[LICENSE](LICENSE). The license is not a placeholder for a later
+proprietary release. The system is meant to stay published under zlib,
+including features that run only on project hardware. What runs on
+open hardware PCs, Raspberry Pi, and the other public targets stays
+free for anyone to use while conformance work, including a future UNIX
+certification, continues.

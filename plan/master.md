@@ -28,7 +28,7 @@
 <!-- master:next:start -->
 1. 新しい Q1 は AGENTS.md・この block を読む。**ユーザーへは日本語で、聞かれた 1 件だけを答える。ユーザーに試験を頼まない。**
 2. **merge・試験の出力は必ず読んで確かめてから記録・報告する**（merge の後に `git log -1 --format='%h %p'`、担当の SHA は `git cat-file -t`）。担当の branch に捨てた変更が残っていないか（例: 2026-10-22 の P2 の buffer の使い回し）を diff の file の一覧で確かめ、必要なら cherry-pick。
-3. 次の番号: BUG-346、q1578、WS290、KL_VERSION 96。古い q・T1 の番号の経緯は git の履歴（2026-10-23 以前の master.md）。
+3. 次の番号: BUG-346、q1579、WS290、KL_VERSION 96。古い q・T1 の番号の経緯は git の履歴（2026-10-23 以前の master.md）。
 4. WS288 の次: [handover-20261024-2230.md](ws288/handover-20261024-2230.md) の §5（推し: p009 の残りを閉じる → p018・p010 → p006 の見直し）。担当には amaterrace-gpu の worktree を作って渡し、Q1 が `--no-ff` で merge する。
 5. 日付は host の `date`。記録の整合は [record-integrity.md](record-integrity.md)。1 LW ≈ 実時間 15〜25 分。
 <!-- master:next:end -->
@@ -636,6 +636,9 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-25 14:05 ユーザー「ではTUのfilterはパイプラインにしてください。」（Q1 の説明「TU の fp32 の filter は 1 cycle に全部を行う状態機械で、pipeline は p025 に回していた」の後）→ ws288-p038 を新設（p025 の前倒し、TU の filter だけ）、P2。
+- 2026-10-25 14:02 ユーザー「zedBSDのGPUのcoreを直すのは、callbackにflagsを足すのがいいです。Venusだけの動作確認でよく、他はビルドが通ればいいです。影響範囲がごく小さいからです。」（Q1 の案 1「今の callback に flags の引数を足す」と案 2「任意の callback を足す（推し）」の後）→ `drv_gpu_share_ops.import_resource` に flags の引数を足し、core は同じ device の import でも GPU_IMPORT_SCANOUT を渡す。実装する 8 つの driver（i915・amdrdna・nvrtx・venus・powervr・bcm2711 の render と display・ghci）の形を合わせる。確認は Venus の動作（QEMU、T に）と、他の driver の build だけ。ws288-p035 の D7 に入れて P3。
+- 2026-10-25 14:01 ユーザー（Q1 の問い「CP の firmware の IMEM が満杯（65,520/65,536 byte）です。どう広げますか？」）「IMEM を 128 KiB」→ WS288: CP の CPU の IMEM を 128 KiB に（KC705 で BRAM36 +16、CPU の回路は不変、address の範囲・link の script・fault の境を変える）。RV32C は足さない。ws288-p034 の R6 の中で P1。
 - 2026-10-25 13:10 ユーザー「CPUは了解です、そのままでいいです」（Q1 の説明「CP の CPU は割り込みで execute 段の未開始の命令と前の 2 段を捨てるが、flush は分岐と共有で、fetch だけで受ける形にしても減るのは数十 LUT」の後）→ WS288 の CP の CPU（atg_cpu_core）の割り込みの受け方は今のまま。
 - 2026-10-25 13:10 ユーザー（Q1 の問い「p037…小さな counter や pointer の +1、比較（< や ==）も共通の module にしますか？」への回答）「counter も含める」→ ws288-p037: 信号の + - は counter の +1 も含めて全部 rtl/common の共通の module を instance にする。対象外は比較・parameter の式・定数の量の shift・TB。同じ日の指示「すべてのモジュールにおいて、乗算器は * の記号ではなく、自前のモジュールにするのがいいですね。…そのモジュールがDSPセルになるかをチェックすればいいので。」→ p037 を新設（[phase037](ws288/phase037/phase.md)）。
 - 2026-10-25 12:51 ユーザー「SUはパイプラインにしましょう。ということは、FPUもパイプライン化がひつようですね。」→ WS288 の SU（FPU を含む）は、DSP を複数 cycle で使い回す形ではなく pipeline にする（p025 で、[phase025](ws288/phase025/phase.md)）。同じ発言の「atg_su_fpu.v…１つの乗算回路を共有できていない疑い」→ p036 の P2 に乗算の共有を依頼。

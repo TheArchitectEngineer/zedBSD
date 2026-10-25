@@ -38,6 +38,12 @@
 /* The dwords of a one-word packet without payload (BLIT, WAIT_IDLE, INVALIDATE). */
 #define GHCI_BARE_PACKET_DWORDS		1U
 
+/* The dwords of a FLIP packet: the header, the plane, the image, the record and the value. */
+#define GHCI_FLIP_PACKET_DWORDS		5U
+
+/* The most (offset, value) pairs of one DISP_SET packet (its payload count is 8 bits). */
+#define GHCI_DISP_SET_PAIRS_MAX		127U
+
 /* The state words one blitter operation writes (BLT_OP to BLT_CLIP_MAX). */
 #define GHCI_BLIT_STATE_WORDS		11U
 
@@ -202,6 +208,22 @@ void ghci_packet_wait_idle(uint32_t tag, uint32_t units, uint32_t *out);
 
 /* Writes an INVALIDATE packet of the caches named by flags. */
 void ghci_packet_invalidate(uint32_t tag, uint32_t caches, uint32_t *out);
+
+/*
+ * Writes a DISP_SET packet of pair_count (offset, value) pairs of the
+ * display controller's registers, given in pairs as offset, value,
+ * offset, value; wait_idle makes the processor wait afterwards until the
+ * controller is idle.  Returns 0 with the dwords written (1 + 2 x
+ * pair_count), or EINVAL for no pair or more than one packet holds.
+ */
+int ghci_packet_disp_set(uint32_t tag, int wait_idle, const uint32_t *pairs, uint32_t pair_count, uint32_t *out, uint32_t *dwords);
+
+/*
+ * Writes a FLIP packet (GHCI_FLIP_PACKET_DWORDS dwords) that makes image
+ * the plane's pending image and writes {value, FRAME_COUNT} to record at
+ * its take; complete makes it wait first for every earlier command.
+ */
+void ghci_packet_flip(uint32_t tag, int complete, uint32_t plane, uint32_t image, uint32_t record, uint32_t value, uint32_t *out);
 
 /*
  * Writes the packets of one blitter operation: a SET_REG of its state

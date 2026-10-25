@@ -121,7 +121,7 @@ static int blob_create_placed(void *opaque, void *private_session, const struct 
 static int allocate_blob(struct display_device *controller, struct display_session *session, const struct gpu_blob_create *request, const struct gpu_placement *placement, void **result, uint32_t *identifier);
 static int export_resource(void *opaque, void *private_session, void *private_resource, const struct gpu_image_descriptor *image, void **result);
 static void release_shared(void *opaque, void *private_shared);
-static int import_resource(void *opaque, void *private_session, void *private_shared, void **result, uint32_t *identifier);
+static int import_resource(void *opaque, void *private_session, void *private_shared, uint32_t flags, void **result, uint32_t *identifier);
 static int export_backing(void *opaque, void *private_shared, struct drv_gpu_scanout_backing *backing);
 static int import_image(void *opaque, void *private_session, const struct gpu_image_descriptor *image, const struct drv_gpu_scanout_backing *backing, void **result);
 static int retain_resource(struct display_device *controller, struct display_session *session, struct bcm2711_buffer *buffer, const struct gpu_image_descriptor *image, void **result);
@@ -1718,6 +1718,7 @@ import_resource(
 	void *opaque,
 	void *private_session,
 	void *private_shared,
+	uint32_t flags,
 	void **result,
 	uint32_t *identifier)
 {
@@ -1727,6 +1728,8 @@ import_resource(
 	struct gpu_image_descriptor image;
 	bool has_image;
 	int error;
+
+	(void)flags;
 
 	/* Borrowed capability storage remains live throughout this callback. */
 	*identifier = 0;
