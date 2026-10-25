@@ -3,7 +3,7 @@
 # ws288-p034 session の保護（GHCI §11.6、PROT capability）
 
 - 親: [WS288](../ws.md)。仕様: amaterrace-gpu `docs/ghci.md` §11.6（PROT、`BUFFER_GRANT` 0x10106・`BUFFER_REVOKE` 0x10107、`PROT_CAPS`）。
-- 状態: planned（2026-10-25 08:57 Q1 新設）。次に空いた担当に渡す（N=3）。
+- 状態: in-progress（2026-10-25 09:07 q1570 P1: S16 の後に設計の段）。
 - 依存: p018（firmware の session・heap・object の表）、p006（driver、cleared）、p019（vk/）。RTL の MC の変更は p030 の後の main の上で。
 - 承認: 2026-10-25 08:57 ユーザー「了解です。せっかくなので実装してしまってください。」（Q1 が buffer の context ID（GHCI §11.6 の session の保護、PROT）は未実装と答えた後）
 
