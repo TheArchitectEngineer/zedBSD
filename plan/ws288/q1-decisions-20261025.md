@@ -52,3 +52,4 @@
 | 2026-10-25 12:41 | P3 の firmware の submit の直し（RESULT を先に、DONE は replay の後）を受け入れた | DONE の後は CP が driver の FENCE に進むので、replay を DONE の後にすると fence が早すぎる |
 - 2026-10-25 12:47 p035 の順（P3 の案を採用）: D1 → D2a（rtl/dc を rtl/gpu/dc へ、MC は触らない）→ D3 → D5 を先に。D2b（MC）と D4（cp_seq など）は P1 の p034 の MC・seq の変更が amaterrace の main に入ってから。atg_cp_seq の busy_in を 9 bit にし、bit 8 を DC の待ち（disp_wait、B_ALL と WAIT_IDLE の 8 bit の mask の外）にする（design §18.4 の busy_in[0] は P1 の B_MEM と衝突するため）。
 - 2026-10-25 12:52 p034 の R6（CP の firmware）は、P3 の 398a738（submit の直し、fw/cp）が T1-788 を通って amaterrace の main に入ってから、その上で始める（衝突を避ける）。それまで P1 は R5 の残り。
+- 2026-10-25 13:28 p035 の D7（zedBSD の driver の側、RTL に依らない部分: DISP2 の発見・mode の表・attach の順・hcr.h の写し・host 試験）を P3 が D2b・D4 の待ちの間に先に進める。zedBSD の hcr.h は P3 が DISP2・IRQ・DC の define だけを足し、P1 の R7 が PROT の名前（GHCI_PROT_RANGES → GHCI_PROT_GRANTS）を直す。vk/ は P3 の持ち物で、P1 は Q1 を通して聞いてから触る。
