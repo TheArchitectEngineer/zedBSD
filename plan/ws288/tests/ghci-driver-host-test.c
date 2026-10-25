@@ -40,6 +40,7 @@
 #include "drivers/gpu/ghci/hcr.h"
 #include "drivers/gpu/ghci/packets.h"
 #include "uapi/gpu.h"
+#include "uapi/gpu-allocation.h"
 #include "uapi/gpu-op.h"
 
 /* The model's register window (128 KiB) and the place of its extended capabilities. */
@@ -1051,7 +1052,7 @@ test_discrete(void)
 	session = opaque;
 	error = core_ops->get_info(core_private, opaque, &info);
 	expect(error == 0, "discrete info");
-	expect(info.capabilities == (GPU_CAP_RESOURCE | GPU_CAP_BLOB | GPU_CAP_TRANSFER | GPU_CAP_MAPPING | GPU_CAP_COMMAND), "discrete capabilities");
+	expect(info.capabilities == (GPU_CAP_RESOURCE | GPU_CAP_BLOB | GPU_CAP_TRANSFER | GPU_CAP_MAPPING | GPU_CAP_COMMAND | GPU_CAP_SHARE | GPU_CAP_ALLOCATION_SHARE), "discrete capabilities");
 	expect(strcmp(info.driver_name, "ghci:AMAT:ATG1") == 0, "discrete driver name");
 	expect(session->tag == 1U, "discrete first session takes tag 1");
 
@@ -1099,9 +1100,9 @@ test_discrete(void)
 	error = core_ops->blob_create(core_private, opaque, &blob_request, &object, &resource_id);
 	expect(error == 0, "discrete second blob");
 	other = object;
-	blob_request.flags = GPU_BLOB_SHAREABLE;
+	blob_request.flags = GPU_BLOB_SHAREABLE | GPU_BLOB_CROSS_DEVICE;
 	error = core_ops->blob_create(core_private, opaque, &blob_request, &object, &resource_id);
-	expect(error == ENOTSUP, "discrete shareable blob refused");
+	expect(error == ENOTSUP, "discrete blob for another device refused");
 	blob_request.flags = 0U;
 	blob_request.blob_id = 5U;
 	error = core_ops->blob_create(core_private, opaque, &blob_request, &object, &resource_id);

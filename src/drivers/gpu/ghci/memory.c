@@ -284,10 +284,13 @@ ghci_memory_unhold(
 	if (!allocation->released)
 		return;
 
-	/* The owner gave it back meanwhile: it waits for the fence it took then. */
+	/*
+	 * The owner gave it back meanwhile: it waits for the newest fence now,
+	 * since the users that held it (another session's work among them) may
+	 * have submitted work on it after the owner let it go.
+	 */
 	allocation->released = 0;
-	ticket.fence = allocation->fence;
-	ticket.generation = allocation->generation;
+	ghci_cp_last(device, &ticket);
 	ghci_memory_defer(device, allocation, &ticket);
 }
 

@@ -37,8 +37,9 @@
 
 #include "drivers/gpu/i915/render/vulkan-codec.inc"
 
-/* The flags of GHCI_MEMORY: the memory is host visible. */
+/* The flags of GHCI_MEMORY: the memory is host visible, and it is another session's. */
 #define MEMORY_HOST_VISIBLE		0x1U
+#define MEMORY_IMPORTED			0x2U
 
 /* The memory types an object may use: both. */
 #define MEMORY_TYPE_BITS		((1U << GHCI_VK_MEMORY_TYPES) - 1U)
@@ -59,6 +60,8 @@
 #define RESULT_EVENT_RESET		4U
 
 static int allocate_memory(struct ghci_vk_build *build, uint32_t flags, struct i915_wire_reader *reader);
+static int import_memory(struct ghci_vk_build *build, uint32_t flags, uint32_t resource, uint64_t size, uint32_t type, uint64_t memory);
+static int stage_memory(struct ghci_vk_build *build, uint32_t flags, uint64_t memory, const struct ghci_allocation *allocation, uint32_t memory_flags, uint32_t *index);
 static int free_memory(struct ghci_vk_build *build, uint32_t flags, struct i915_wire_reader *reader);
 static int memory_commitment(struct ghci_vk_build *build, uint32_t flags, struct i915_wire_reader *reader);
 static int relay_with_result(struct ghci_vk_build *build, uint32_t opcode, uint32_t flags, struct i915_wire_reader *reader, size_t start);
@@ -225,7 +228,7 @@ allocate_memory(
 	struct ghci_vk_object *object;
 	struct ghci_allocation *allocation;
 	enum ghci_memory_use use;
-	uint32_t arguments[7];
+	uint32_t memory_flags;
 	uint64_t chained;
 	uint64_t size;
 	uint64_t memory;
@@ -256,7 +259,15 @@ allocate_memory(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* An export by the handle types of a session is a plain allocation; an import is not taken. */
+	/* An import names a blob of the session; an export the handle types it is shared by. */
+	if (chained != 0U && extension == GPU_OP_RECORD_IMPORT_RESOURCE) {
+		error = import_memory(build, flags, value, size, type, memory);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the memory is imported. */
+		return 0;
+	}
 	if (chained != 0U && extension != VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO)
 		return ENOTSUP;
 	if (chained != 0U && (value == 0U || (value & ~EXTERNAL_HANDLES) != 0U))
@@ -302,16 +313,10 @@ allocate_memory(
 	object->as.memory.type = type;
 
 	/* GHCI_MEMORY: the identity, the GPU address, the bytes and whether the host sees it. */
-	arguments[0] = (uint32_t)memory;
-	arguments[1] = (uint32_t)(memory >> 32);
-	arguments[2] = allocation->gpu_address;
-	arguments[3] = 0U;
-	arguments[4] = allocation->bytes;
-	arguments[5] = 0U;
-	arguments[6] = 0U;
+	memory_flags = 0U;
 	if (type == GHCI_VK_MEMORY_HOST)
-		arguments[6] = MEMORY_HOST_VISIBLE;
-	error = ghci_vk_stage(build, GPU_OP_GHCI_MEMORY, flags, arguments, sizeof(arguments), &index);
+		memory_flags = MEMORY_HOST_VISIBLE;
+	error = stage_memory(build, flags, memory, allocation, memory_flags, &index);
 	if (error != 0)
 		return error;
 
@@ -321,6 +326,97 @@ allocate_memory(
 		return error;
 
 	/* Succeeded: the memory is the session's. */
+	return 0;
+}
+
+/*
+ * Imports another session's memory a blob of the session shows (the
+ * import record's resource id): the memory object holds that memory, and
+ * the firmware is told its address as GHCI_MEMORY with the import flag.
+ */
+static int
+import_memory(
+	struct ghci_vk_build *build,
+	uint32_t flags,
+	uint32_t resource,
+	uint64_t size,
+	uint32_t type,
+	uint64_t memory)
+{
+	struct ghci_vk_object *object;
+	struct ghci_allocation *blob;
+	struct ghci_allocation *backing;
+	uint32_t memory_flags;
+	uint32_t index;
+	int error;
+
+	/* A blob of the session that holds the whole size. */
+	blob = ghci_allocation_blob(build->session->owner, resource);
+	if (blob == NULL)
+		return EINVAL;
+	if (size > blob->requested)
+		return EINVAL;
+	if (type >= GHCI_VK_MEMORY_TYPES)
+		return EINVAL;
+
+	/* The memory it shows: the import's, or the blob's own. */
+	backing = blob;
+	if (blob->backing != NULL)
+		backing = blob->backing;
+
+	/* The memory object holds it. */
+	error = ghci_vk_object_add(build->session, GHCI_VK_MEMORY, memory, &object);
+	if (error != 0)
+		return error;
+	ghci_memory_hold(backing);
+	object->as.memory.allocation = backing;
+	object->as.memory.bytes = size;
+	object->as.memory.type = type;
+	object->as.memory.imported = 1;
+
+	/* GHCI_MEMORY with the import flag. */
+	memory_flags = MEMORY_IMPORTED;
+	if (type == GHCI_VK_MEMORY_HOST)
+		memory_flags |= MEMORY_HOST_VISIBLE;
+	error = stage_memory(build, flags, memory, backing, memory_flags, &index);
+	if (error != 0)
+		return error;
+
+	/* The firmware's result, the presence word and the identity. */
+	error = create_reply(build, flags, index, memory);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the memory is imported. */
+	return 0;
+}
+
+/* Stages GHCI_MEMORY [u64 memory][u64 GPU address][u64 bytes][u32 flags]. */
+static int
+stage_memory(
+	struct ghci_vk_build *build,
+	uint32_t flags,
+	uint64_t memory,
+	const struct ghci_allocation *allocation,
+	uint32_t memory_flags,
+	uint32_t *index)
+{
+	uint32_t arguments[7];
+	int error;
+
+	/* The identity, the GPU address, the bytes and the flags. */
+	arguments[0] = (uint32_t)memory;
+	arguments[1] = (uint32_t)(memory >> 32);
+	arguments[2] = allocation->gpu_address;
+	arguments[3] = 0U;
+	arguments[4] = allocation->bytes;
+	arguments[5] = 0U;
+	arguments[6] = memory_flags;
+	error = ghci_vk_stage(build, GPU_OP_GHCI_MEMORY, flags, arguments, sizeof(arguments), index);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the record is staged. */
 	return 0;
 }
 
@@ -352,6 +448,12 @@ free_memory(
 	object = ghci_vk_object_find(build->session, GHCI_VK_MEMORY, memory);
 	if (object == NULL)
 		return 0;
+
+	/* An imported memory is let go with its record (which unholds it after the work so far). */
+	if (object->as.memory.imported) {
+		ghci_vk_object_remove(build->session, object);
+		return 0;
+	}
 
 	/* Its memory goes back after the frame; the record goes now. */
 	error = ghci_vk_release_later(build, object->as.memory.allocation);

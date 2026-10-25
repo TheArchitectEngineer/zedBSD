@@ -147,8 +147,9 @@ struct ghci_session;
  *
  * holds counts the users that keep the memory although its owner may
  * give it back (a frame writing its replies into it, the blobs that show
- * a Vulkan memory object); released says the owner gave it back while it
- * was held, with fence and generation the ticket it then waits for.  A
+ * a Vulkan memory object, the exports and their imports); released says
+ * the owner gave it back while it was held: it then waits for the newest
+ * fence when its last user lets it go.  A
  * blob of a Vulkan memory object has no memory of its own: backing is the
  * allocation it shows, which it holds.
  */
@@ -499,6 +500,13 @@ const struct ghci_isa_backend *ghci_isa_select(uint32_t caps, uint32_t isa_id);
 
 /* The display operations of a device with a display controller. */
 extern const struct drv_gpu_display_ops ghci_display_ops;
+
+/*
+ * The sharing of memory between a device's sessions (share.c).
+ */
+
+/* The sharing operations of every device. */
+extern const struct drv_gpu_share_ops ghci_share_ops;
 
 /* Finds and starts the display controller; 0 also when there is none (display.present stays 0). */
 int ghci_display_attach(struct ghci_device *device);

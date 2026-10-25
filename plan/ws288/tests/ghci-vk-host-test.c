@@ -303,6 +303,8 @@ test_executor(void)
 	struct ghci_allocation *reply;
 	struct ghci_allocation *alias;
 	struct ghci_allocation *stream;
+	struct ghci_allocation *imported;
+	struct ghci_allocation *second_reply;
 	struct ghci_vk_object *object;
 	struct ghci_session *session;
 	const uint32_t *records;
@@ -310,6 +312,8 @@ test_executor(void)
 	uint32_t reply_id;
 	uint32_t alias_id;
 	uint32_t stream_id;
+	uint32_t import_id;
+	uint32_t second_reply_id;
 	uint32_t memory_address;
 	uint32_t memory_bytes;
 	unsigned completions;
@@ -318,6 +322,8 @@ test_executor(void)
 	unsigned index;
 	void *object_pointer;
 	void *opaque;
+	void *second;
+	void *shared;
 	void *token;
 	int error;
 
@@ -821,6 +827,81 @@ test_executor(void)
 	expect(alias->backing->released && alias->backing->holds == 1U, "vk freed memory held by its blob");
 	core_ops->resource_destroy(core_private, opaque, alias);
 	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+
+	/*
+	 * Sharing: a second memory's blob exported, imported into a second
+	 * session, which imports it as its own memory object.  The memory
+	 * stays while any of them holds it.
+	 */
+	memset(reply->view, 0, REPLY_BYTES);
+	frame_begin(&frame, reply_id);
+	command(&frame, GPU_OP_ALLOCATE_MEMORY, GPU_OP_FLAG_REPLY);
+	put64(&frame, ID_DEVICE);
+	put64(&frame, 1U);
+	put32(&frame, 5U);
+	put64(&frame, 1U);
+	put32(&frame, 1000072002U);
+	put64(&frame, 0U);
+	put32(&frame, 0x201U);
+	put64(&frame, 4096U);
+	put32(&frame, 1U);
+	put64(&frame, 0U);
+	put64(&frame, 1U);
+	put64(&frame, ID_HOST_MEMORY);
+	frame_end(&frame);
+	error = submit(opaque, &frame);
+	ghci_vk_service(&device);
+	expect(error == 0 && reply_word(reply, 1U) == 0U, "vk exportable memory");
+	memset(&blob_request, 0, sizeof(blob_request));
+	blob_request.bytes = 4096U;
+	blob_request.blob_id = ID_HOST_MEMORY;
+	blob_request.flags = GPU_BLOB_SHAREABLE | GPU_BLOB_MAPPABLE;
+	error = core_ops->blob_create(core_private, opaque, &blob_request, &object_pointer, &alias_id);
+	alias = object_pointer;
+	expect(error == 0, "vk shareable blob of the memory");
+	error = core_ops->share->export_resource(core_private, opaque, alias, NULL, &shared);
+	expect(error == 0 && shared != NULL, "vk memory exported");
+	error = core_ops->open(core_private, &second);
+	expect(error == 0, "vk second session");
+	error = core_ops->share->import_resource(core_private, second, shared, &object_pointer, &import_id);
+	imported = object_pointer;
+	expect(error == 0 && import_id == alias_id && imported->backing == alias->backing, "vk import shows the same memory");
+	memset(&blob_request, 0, sizeof(blob_request));
+	blob_request.bytes = REPLY_BYTES;
+	blob_request.flags = GPU_BLOB_MAPPABLE;
+	error = core_ops->blob_create(core_private, second, &blob_request, &object_pointer, &second_reply_id);
+	second_reply = object_pointer;
+	expect(error == 0, "vk second reply blob");
+	frame_begin(&frame, second_reply_id);
+	command(&frame, GPU_OP_ALLOCATE_MEMORY, GPU_OP_FLAG_REPLY);
+	put64(&frame, ID_DEVICE);
+	put64(&frame, 1U);
+	put32(&frame, 5U);
+	put64(&frame, 1U);
+	put32(&frame, GPU_OP_RECORD_IMPORT_RESOURCE);
+	put64(&frame, 0U);
+	put32(&frame, import_id);
+	put64(&frame, 4096U);
+	put32(&frame, 1U);
+	put64(&frame, 0U);
+	put64(&frame, 1U);
+	put64(&frame, ID_MEMORY);
+	frame_end(&frame);
+	error = submit(second, &frame);
+	ghci_vk_service(&device);
+	records = staged(&record_count);
+	expect(error == 0 && records != NULL && records[0] == GPU_OP_GHCI_MEMORY, "vk imported memory announced");
+	if (records != NULL)
+		expect(records[5] == import_id && records[9] == 3U, "vk imported memory's address and import flag");
+	expect(reply_word(second_reply, 1U) == 0U && reply_word(second_reply, 4U) == ID_MEMORY, "vk imported memory's reply");
+	expect(alias->backing->holds == 4U, "vk memory held by the blob, the export, the import and its memory object");
+	core_ops->commands->drain(core_private, second);
+	core_ops->resource_destroy(core_private, second, second_reply);
+	core_ops->resource_destroy(core_private, second, imported);
+	core_ops->close(core_private, second);
+	core_ops->share->release(core_private, shared);
+	expect(alias->backing->holds == 1U && !alias->backing->released, "vk memory back with its blob only");
+	core_ops->resource_destroy(core_private, opaque, alias);
 
 	/* A reset: the frames in flight fail, the session is lost, the heap is lent again. */
 	errors = core_session_errors;

@@ -281,17 +281,19 @@ bucket_of(
 	return (uint32_t)(mixed % GHCI_VK_BUCKETS);
 }
 
-/* Frees an object's record and what the record alone holds (a module's words). */
+/* Frees an object's record and what the record alone holds (a module's words, an import's hold). */
 static void
 object_free(
 	struct ghci_vk_session *session,
 	struct ghci_vk_object *object)
 {
-	(void)session;
-
 	/* A shader module holds its SPIR-V words. */
 	if (object->kind == GHCI_VK_SHADER && object->as.shader.words != NULL)
 		kern_free(object->as.shader.words);
+
+	/* An imported memory object holds another session's memory. */
+	if (object->kind == GHCI_VK_MEMORY && object->as.memory.imported)
+		ghci_memory_unhold(session->device, object->as.memory.allocation);
 
 	/* The record. */
 	kern_free(object);

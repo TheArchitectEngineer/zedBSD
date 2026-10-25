@@ -136,11 +136,14 @@ struct ghci_vk_device {
  * A VkDeviceMemory: the allocation that holds it, its type and the bytes
  * libvulkan asked for.  The allocation is on the session's list, so the
  * session's close gives it back even when the memory was never freed.
+ * An imported memory object is another session's memory, which the object
+ * holds (imported) instead of owning it.
  */
 struct ghci_vk_memory {
 	struct ghci_allocation *allocation;
 	uint64_t bytes;
 	uint32_t type;
+	int imported;
 };
 
 /* A VkBuffer: its size and usage, which decide its memory requirements. */

@@ -20,6 +20,7 @@
 #include <stdint.h>
 
 #include <drivers/gpu/gpu.h>
+#include <drivers/gpu/gpu-share.h>
 #include <kern/clock.h>
 #include <kern/cred.h>
 #include <kern/device-io.h>
@@ -29,6 +30,7 @@
 #include <kern/sched.h>
 #include <uapi/errno.h>
 #include <uapi/gpu.h>
+#include <uapi/gpu-allocation.h>
 #include <uapi/gpu-display.h>
 #include <uapi/gpu-op.h>
 
@@ -43,11 +45,15 @@
 /* The smallest memory line the driver aligns to (2^5 bytes, the smallest GHCI defines). */
 #define LINE_LOG2_MIN			5U
 
-/* The capabilities of every device: storage, blobs, transfers and processor mappings. */
-#define BASE_CAPABILITIES		(GPU_CAP_RESOURCE | GPU_CAP_BLOB | GPU_CAP_TRANSFER | GPU_CAP_MAPPING)
+/*
+ * The capabilities of every device: storage, blobs, transfers, processor
+ * mappings, and the sharing of memory between its sessions.
+ */
+#define BASE_CAPABILITIES		(GPU_CAP_RESOURCE | GPU_CAP_BLOB | GPU_CAP_TRANSFER | GPU_CAP_MAPPING | \
+					 GPU_CAP_SHARE | GPU_CAP_ALLOCATION_SHARE)
 
-/* The blob flags a device takes: only mapping (sharing needs the share operations). */
-#define BLOB_FLAGS			GPU_BLOB_MAPPABLE
+/* The blob flags a device takes: mapping and sharing within the device (not with another device). */
+#define BLOB_FLAGS			(GPU_BLOB_MAPPABLE | GPU_BLOB_SHAREABLE)
 
 static int identify(struct ghci_device *device);
 static void identify_memory(struct ghci_device *device);
@@ -490,6 +496,7 @@ register_device(
 	device->ops.resource_read = gpu_resource_read;
 	device->ops.resource_write = gpu_resource_write;
 	device->ops.resource_map = gpu_resource_map;
+	device->ops.share = &ghci_share_ops;
 
 	/*
 	 * The command operation: a test kernel's native command, for root
@@ -757,7 +764,7 @@ gpu_blob_create(
 	enum ghci_memory_use use;
 	int error;
 
-	/* Only the mapping flag: the device does not share blobs. */
+	/* Mapping and sharing within the device; another device cannot import this memory. */
 	if ((request->flags & ~BLOB_FLAGS) != 0U)
 		return ENOTSUP;
 
