@@ -3,7 +3,7 @@
 # ws288-p038 TU の filter の pipeline（p025 の前倒し）
 
 - 親: [WS288](../ws.md)。p025（timing の 1 段目）の範囲のうち TU の filter だけを先に行う。
-- 状態: in-progress（2026-10-25 14:05 Q1、q1578 P2）
+- 状態: cleared（2026-10-25 17:53 Q1。T1-797 PASS、amaterrace main 86ca58a。met しない経路は p025 への申し送りの表）
 - 依存: p036 の d94076c（T1-791 で試験中）の上。
 
 ## 決定（2026-10-25 14:05 ユーザー）
@@ -47,3 +47,4 @@ Q1 の説明（ffilt は 1 cycle に選択・ETC の展開・unpack・重み・F
     | ffilt st → tx の CE、filter nq → tx の CE | −4.083 / −2.017 | 1 / 1 | a4e323b で直した、未測定 |
 - 2026-10-25 16:47 P2 → Q1（申告）: 572ffe1（400 行の分割の後）の TU の配線後の WNS −21.448 ns（atg_tu_addr k → r_plane、84 段、前 −35.142）、合成 −24.381。LUT 26,754・FF 14,948・BRAM 8・DSP 60。block ごと（slack / 段）: ffilt −4.098/7（lane・texel の選択 → front/raw1 の 128 bit の mux、配線）、filter −2.617/6（ctl11[5] → rr12、fanout 160 + 40 bit の加算）、filter/pre −1.322/3、ffilt/front/etc −1.012/7、ffilt/fma −0.297/5、cvt −0.031/4、cache −4.938/12、addr/cubeu −11.122/33、addr/desc −15.905/28、addr −21.448/84。申し送りに追加: ffilt の issue の選択（index を 1 cycle 前に register、または 2 cycle の issue）、filter の acc の flag の fanout（ctl11[5] の複製）、残りの enable の複製。T1-797 に回した。
 - 2026-10-25 17:07 P2 区切り（q1578-i01）: 先端 572ffe1（cda8e8c…a4e323b、572ffe1 は 400 行の分割: atg_tu_ffilt → ffilt と atg_tu_ffront（13 段）、atg_tu_filter → fpre・fsum×4・frnd×4・fword、atg_tu_etc → etc と atg_tu_eac）。各 leaf は am_ を除いて 400 行以下（filter 370・ffilt 387・etc 304）。TB 全部・lint 141 clean・mutation は申告どおり。T1-797 で試験中。
+- 2026-10-25 17:53 Q1: T1-797 PASS（make sim 101・msaa 16・verilator 7・fw-run 6 case 0 differ・lint 141・ghci-e2e 8 PASS mismatch 0）→ 572ffe1 を amaterrace-gpu の main に merge = 86ca58a（親 8533ca6 572ffe1、衝突なし）。sim の時間: atg_top_core 780 → 1022 s、msaa 401 → 519 s、tex 283 → 358 s（TU の fp32 の filter の quad ごとの drain による処理量の低下、cycle の数で。clock が上がる分は sim に現れない）。→ **p038 は cleared**（範囲の外の経路は p025 へ）。merge の後の lint・sim-quick・e2e を Q1 が実行中。
