@@ -37,3 +37,5 @@
 | 2026-10-25 09:00 | GHCI に標準の HCR の register RESIDENT_WARPS（NSU×NWARPS）を足す（P2 が RTL と GHCI、P3 の driver が読んで GHCI_HEAP の 3 語目に渡す）。vendor の register の読みは使わない | 汎用の driver に vendor の code を入れない（GHCI の汎用の原則） |
 | 2026-10-25 09:13 | S16 は「行の byte 数」でなく行の丸めの規則（TEX_ROW [1:0] = 切り上げの texel 数の log2）にする P1 の案を受け入れ、P2 の firmware に伝えた | level ごとに行の byte 数が違い、1 つの word では表せない（P1 の指摘） |
 | 2026-10-25 09:43 | KC705 の core（1 SU）が yosys の数で LUT 245k と容量 203.8k を超える → p036（面積）を p024 の前に新設して P2 に。機能を変えない削減は P2、形を変える案（NPHYS・FPU の lane など）は U 項目でユーザーに | 最初のゴールに板が要る。Vivado の実測を先に |
+| 2026-10-25 10:00 | p019 を cleared にし、P3 の決定（codec の再利用・timeline・中継・spec constant）を受け入れた | host 試験と build を満たす |
+| 2026-10-25 10:00 | GHCI に lane あたりの register の数の標準の field を足す（次に RTL を触る担当に）。未知の pNext は読み飛ばす | GHCI の汎用の原則（vendor の code 無しで driver が読める）、libvulkan の振る舞い |

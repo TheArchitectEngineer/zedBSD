@@ -105,6 +105,7 @@
 #define GHCI_WORK_RECLAIM		1U
 #define GHCI_WORK_RECOVER		2U
 #define GHCI_WORK_STOP			4U
+#define GHCI_WORK_REPLY			8U
 
 /*
  * The kinds of memory an allocation is in (see the head of this file).
@@ -143,6 +144,14 @@ struct ghci_session;
  * the processor's physical address of it (0 for HIDDEN) and gpu_address
  * the address the GPU uses.  bytes is the size handed out (whole pages);
  * requested what the caller asked for.  run is the RAM of HOST memory.
+ *
+ * holds counts the users that keep the memory although its owner may
+ * give it back (a frame writing its replies into it, the blobs that show
+ * a Vulkan memory object, the exports and their imports); released says
+ * the owner gave it back while it was held: it then waits for the newest
+ * fence when its last user lets it go.  A
+ * blob of a Vulkan memory object has no memory of its own: backing is the
+ * allocation it shows, which it holds.
  */
 struct ghci_allocation {
 	struct ghci_allocation *next;
@@ -157,6 +166,9 @@ struct ghci_allocation {
 	uint32_t fence;
 	uint64_t generation;
 	int blob;
+	unsigned holds;
+	int released;
+	struct ghci_allocation *backing;
 };
 
 /*
@@ -165,11 +177,16 @@ struct ghci_allocation {
  * tag is the job tag every packet of the session carries.  outstanding
  * says that last_fence (the fence after the session's newest submission)
  * may not have passed yet; it is cleared once seen passed, so an old value
- * is never compared after the 32-bit circle has turned.  The device's
+ * is never compared after the 32-bit circle has turned.  vk is the
+ * session's Vulkan executor (NULL on a device without one).  The device's
  * lock protects every field.
  */
+struct ghci_vk_session;
+struct ghci_vk_engine;
+
 struct ghci_session {
 	struct ghci_device *device;
+	struct ghci_vk_session *vk;
 	struct ghci_session *next;
 	struct ghci_allocation *allocations;
 	unsigned allocation_count;
@@ -322,6 +339,9 @@ struct ghci_device {
 
 	/* The display controller. */
 	struct ghci_display display;
+
+	/* The Vulkan executor; NULL when the command processor has no firmware or no shader unit. */
+	struct ghci_vk_engine *vk;
 };
 
 /*
@@ -382,6 +402,9 @@ int ghci_cp_wait(struct ghci_device *device, const struct ghci_ticket *ticket, u
 /* Reports the ticket of the newest submission. */
 void ghci_cp_last(struct ghci_device *device, struct ghci_ticket *ticket);
 
+/* Reports the fence the GPU has completed, read afresh. */
+uint32_t ghci_cp_completed(struct ghci_device *device);
+
 /* Reports whether a ticket is done (passed, or ended by a reset): 1 when it is. */
 int ghci_cp_done(struct ghci_device *device, uint32_t fence, uint64_t generation);
 
@@ -432,6 +455,25 @@ uint64_t ghci_memory_reclaim(struct ghci_device *device);
 /* Reports whether a run of GPU addresses lies inside one of a session's allocations: 1 when it does. */
 int ghci_memory_owned(struct ghci_session *session, uint32_t address, uint32_t bytes);
 
+/* Keeps an allocation from going back while its user still writes it. */
+void ghci_memory_hold(struct ghci_allocation *allocation);
+
+/* Lets a held allocation go; one its owner gave back meanwhile goes back now or after its fence. */
+void ghci_memory_unhold(struct ghci_device *device, struct ghci_allocation *allocation);
+
+/*
+ * The allocations of a session (ghci.c).  The device's lock is held.
+ */
+
+/* Makes a cleared allocation for a session and lists it. */
+int ghci_allocation_make(struct ghci_device *device, struct ghci_session *session, enum ghci_memory_use use, uint64_t bytes, int blob, struct ghci_allocation **result);
+
+/* Takes an allocation off its session's list and gives it back now or after the session's last fence. */
+void ghci_allocation_drop(struct ghci_device *device, struct ghci_session *session, struct ghci_allocation *allocation);
+
+/* Finds a blob of a session by its resource id (its GPU address), or NULL. */
+struct ghci_allocation *ghci_allocation_blob(struct ghci_session *session, uint32_t resource_id);
+
 /*
  * The blitter (blit.c).  The device's lock is held.
  */
@@ -458,6 +500,13 @@ const struct ghci_isa_backend *ghci_isa_select(uint32_t caps, uint32_t isa_id);
 
 /* The display operations of a device with a display controller. */
 extern const struct drv_gpu_display_ops ghci_display_ops;
+
+/*
+ * The sharing of memory between a device's sessions (share.c).
+ */
+
+/* The sharing operations of every device. */
+extern const struct drv_gpu_share_ops ghci_share_ops;
 
 /* Finds and starts the display controller; 0 also when there is none (display.present stays 0). */
 int ghci_display_attach(struct ghci_device *device);

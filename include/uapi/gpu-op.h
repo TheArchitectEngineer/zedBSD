@@ -2026,6 +2026,7 @@ enum gpu_op {
 	 *   FRAME         [u64 staging address][u32 bytes][u32 result page][u32 records]
 	 *   BUFFER_GRANT  [u32 session][u32 access][u64 GPU address][u64 bytes]
 	 *   BUFFER_REVOKE [u32 session][u64 GPU address][u64 bytes]
+	 *   HEAP          [u64 GPU address][u64 bytes][u32 warps]
 	 *
 	 * GPU_OP_GHCI_NATIVE alone is sent by userland, and only by root on a
 	 * kernel built with CONFIG_GHCI_NATIVE (the test images), through
@@ -2046,7 +2047,8 @@ enum gpu_op {
 	GPU_OP_GHCI_NATIVE = 0x10104,
 	GPU_OP_GHCI_FRAME = 0x10105,
 	GPU_OP_GHCI_BUFFER_GRANT = 0x10106,
-	GPU_OP_GHCI_BUFFER_REVOKE = 0x10107
+	GPU_OP_GHCI_BUFFER_REVOKE = 0x10107,
+	GPU_OP_GHCI_HEAP = 0x10108
 };
 
 #endif

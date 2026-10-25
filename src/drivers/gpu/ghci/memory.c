@@ -207,8 +207,31 @@ ghci_memory_release(
 	struct ghci_allocation *allocation)
 {
 	struct ghci_session *session;
+	struct ghci_allocation *backing;
 	struct ghci_ticket ticket;
 	int done;
+
+	/* A blob that shows a Vulkan memory object has no memory of its own: it lets that memory go. */
+	if (allocation->backing != NULL) {
+		backing = allocation->backing;
+		kern_free(allocation);
+		ghci_memory_unhold(device, backing);
+		return;
+	}
+
+	/*
+	 * An allocation that is still held stays until its last user lets it
+	 * go, and then waits for every fence issued now: the newest fence is
+	 * at least the owner's last one.
+	 */
+	if (allocation->holds != 0U) {
+		ghci_cp_last(device, &ticket);
+		allocation->released = 1;
+		allocation->session = NULL;
+		allocation->fence = ticket.fence;
+		allocation->generation = ticket.generation;
+		return;
+	}
 
 	/* An allocation of a session that has submitted nothing since its last fence passed goes now. */
 	session = allocation->session;
@@ -228,6 +251,46 @@ ghci_memory_release(
 	/* The deferred list keeps it, with the fence that frees it. */
 	ticket.fence = session->last_fence;
 	ticket.generation = session->last_generation;
+	ghci_memory_defer(device, allocation, &ticket);
+}
+
+/*
+ * Keeps an allocation from going back while its user still writes it.
+ */
+void
+ghci_memory_hold(
+	struct ghci_allocation *allocation)
+{
+	/* One more user keeps the memory. */
+	allocation->holds++;
+}
+
+/*
+ * Lets a held allocation go.
+ */
+void
+ghci_memory_unhold(
+	struct ghci_device *device,
+	struct ghci_allocation *allocation)
+{
+	struct ghci_ticket ticket;
+
+	/* One user fewer; the others keep it. */
+	allocation->holds--;
+	if (allocation->holds != 0U)
+		return;
+
+	/* An allocation its owner still has stays with the owner. */
+	if (!allocation->released)
+		return;
+
+	/*
+	 * The owner gave it back meanwhile: it waits for the newest fence now,
+	 * since the users that held it (another session's work among them) may
+	 * have submitted work on it after the owner let it go.
+	 */
+	allocation->released = 0;
+	ghci_cp_last(device, &ticket);
 	ghci_memory_defer(device, allocation, &ticket);
 }
 

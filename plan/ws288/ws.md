@@ -70,8 +70,8 @@
 | [p036](phase036/phase.md) | KC705 に GPU が入る面積（yosys で LUT 245k > 203.8k、Vivado の測定・内訳・機能を変えない削減・形を変える案） | p030、p027 | in-progress（2026-10-25 09:43 q1571 P2） |
 | [p010](phase010/phase.md) | compiler の backend（zedBSD `isa/gsi1/`）、`gsi1_isa.h` と interface の表の確定（design §8） | p008、p027 | cleared（2026-10-25 07:12: GSI1 の backend、gsi1_isa.h と interface の表の確定、host 試験 29/29。vmunix の link は p006） |
 | [p018](phase018/phase.md) | firmware の Vulkan の object model と draw/dispatch（design §8）。GHCI §7.2・§11.6 への firmware の追従を含む | p017、p009、p010、p027、p030 | in-progress（2026-10-25 09:33 実装 commit 済み、amaterrace p2-p018 2ce0fe6、T の Verilator の結果待ち） |
-| [p019](phase019/phase.md) | zedBSD の `vk/`（検証する中継、design §8） | p010、p017、p006、p027 | in-progress（2026-10-25 08:46 q1569 P3） |
-| p011 | 端から端の統合（Verilator の上で libvulkan → `vk/` → firmware → RTL、vkdemo の 1 frame、design §8） | p009、p010、p018、p019 | planned（順: p006 の後） |
+| [p019](phase019/phase.md) | zedBSD の `vk/`（検証する中継、design §8） | p010、p017、p006、p027 | cleared（2026-10-25 10:00: vk/ の executor、host 試験 126・76・137、vmunix の warning 0。firmware の上は p011） |
+| [p011](phase011/phase.md) | 端から端の統合（Verilator の上で libvulkan → `vk/` → firmware → RTL、vkdemo の 1 frame、design §8） | p009、p010、p018、p019 | planned（2026-10-25 09:59 phase.md、p019 の merge の後に P3） |
 | [p013](phase013/phase.md) | KC705 の PCIe（BAR0 = GHCI、BAR2 = DDR3 の VRAM、MSI、VFIO） | p012、p024、p006 | planned（2026-10-25 01:08 Future Work から戻した） |
 | [p028](phase028/phase.md) | **最初のゴール**: QEMU の VFIO の passthrough の guest の zedBSD から KC705 の GPU で Vulkan | p011、p013、p006、p019、p024 | planned（2026-10-25 01:08 新設） |
 | [p029](phase029/phase.md) | PCIe の board で host の memory だけを使う（unified memory の検証、DDR3 無し） | p028 | planned（2026-10-25 02:06 新設） |
