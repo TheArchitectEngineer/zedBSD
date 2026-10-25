@@ -3,7 +3,7 @@
 # ws256-p026 PLDA の PCIe の MSI（VF2）
 
 - 親: [WS256](../ws.md)。設計: [design-peripherals.md](../design-peripherals.md) §3.5・§3.6・§7（MSI の demux は Future Work だった）。
-- 状態: in-progress（2026-10-26 P2 が実装と実機の確かめを済ませ、Q1 の判定を待つ。branch agent/p2-ws256p024）
+- 状態: cleared（2026-10-26 Q1、q1589。記録の末尾）
 - 目的: VF2 の M.2 の KC705（WS288 [p043](../../ws288/phase043/phase.md)、GHCI は MSI 1 つ、今の bitstream は MSI が無効だと割り込みを出さない）と NVMe で MSI を使う。
 
 ## 決定
