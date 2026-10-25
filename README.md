@@ -170,7 +170,7 @@ tightly integrated, cohesive desktop experience directly at the OS level.
 
 ### /sbin/sessiond
 
-- `/sbin/sessiond` is the graphical login and priviledge separation manager.
+- `/sbin/sessiond` is the graphical login and privilege separation manager.
 - It integrates with `/sbin/passkey` to enable FIDO2-based login authentication.
 - `/bin/wayland` is designed to function as both a login screen and a graphical session.
 
