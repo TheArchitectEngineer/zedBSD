@@ -2,7 +2,7 @@
 
 # WS288 の設計: FPGA の GPU の IP「Amaterrace GPU」と GHCI — ZYBO（XC7Z010）で workflow、本命は KC705（XC7K325T）
 
-2026-10-23 P2（ws288-p001、worktree p2-ws288-p001、基点 main c327d0c73）。親: [WS288](ws.md)。**版 8**（2026-10-25 P3、ws288-p035 の設計の段、zedBSD の worktree p3-p006、amaterrace-gpu の worktree p3-p035（aa78b64 の上）: **§18 DC を GHCI の GPU の一部に**を新設: DC を `rtl/gpu/dc/` の atg_top の子に（board の reset の domain）、新しい capability DISP2、scanout の register は CP の RUNNING の間は ring の µop（新しい 15 DISP_SET・16 FLIP）だけが書き host は IDLE・HALTED・FAULTED だけ（RUNNING の write は捨てて BAD_WRITE）、present = FLIP（plane ごとの待ちの slot、取り込みで `atg_cp_disp` の record の書き手が `{value, FRAME_COUNT}` を書き IRQ_STATUS.FLIP）、DC は「全部の unit」に入らない、scanout の誤りは device の fault にしない、event は IRQ_STATUS [12:9]、mode の表、cursor の plane（gclk で合成）、image の条件と SHARED・COPY の route、ADV7511 と HPD は host の driver のまま、driver の UNGATED・queue・scan の hold・recover の数え直し、GHCI §13.2 の案、試験、段 D1〜D8 と 51 LW、U90〜U99、review 2 回（28 件・21 件）の対応は §18.15・§18.16）。**版 7**（2026-10-25 P1、ws288-p034 の設計の段、worktree p1-p030、基点 main 485108a30: **§17 session の保護**（GHCI §11.6、PROT）を新設: granule ごとの所有の表と MC の root の PLB・grant の CAM、AMB の header の chk・slot、unit は 1 度に 1 つの session（drain・invalidate・scrub）、firmware の µop と DMA の検査、heap の private と可視の区分、driver の方針、GHCI の draft、model・TB、段 R1〜R8 と 54 LW、U61〜U72、review 2 回（33 件・21 件）の対応。review は [design-review-p034.md](design-review-p034.md)）。**版 6**（2026-10-25 P1、ws288-p030 の設計の段、worktree p1-p030、基点 main 32b51bf34: **§16 Vulkan 1.0 core の残り**を新設（limit・feature・必須の format の表、format の共通の土台と FMT capability、ROP の stencil・D16・depth bounds・depth の clip/clamp/bias・MRT 4 の beat・f32 の blend・occlusion の counter、RX の point・line・viewport の矩形・guard band の clip・depth bias、VF の format と robust の limit、TU の format と swizzle と f32 の filter、BLT の KEEP、µop 14 QUERY、GHCI の draft、model・TB・scene、段 S1〜S11 と 79 LW（ETC2 は後の Phase）、U47〜U60、review 2 回（35 件・23 件）の対応）。§8 に p030 の行を足した。review は [design-review-p030.md](design-review-p030.md)）。**版 5**（2026-10-25 P2、ws288-p027 の設計の段、worktree p2-p027、基点 main bb8e0f161: **§15 MSAA** を新設（Vulkan 1.0 core の multisample の要求の表、RX の sample の coverage、fragment の入力 r6〜r9、SU の exp 0x105、ROP の `atg_rop_ms`、sample-interleaved の配置、resolve の内蔵の draw、TU の `texf` の sample、GHCI の draft、model・TB・scene、段と LW、U43〜U46）。§3.7 と §8 に p027 の行を足した。review は [design-review-msaa.md](design-review-msaa.md)）。**版 4**（同日 P1、worktree p1-ws288-d4、基点 main b9284693c → main c10f7ea78 を merge: ユーザーの版 4 の決定の列（FP16/INT8 の mixed precision → online の softmax/LN → SIMD-8 の取り下げ → 案 B（SA に寄せ SU は最小）→ **SA の設計と実装は延期、SU が GSI1 を実装してから。SA は KC705 に入らなくてよい**）の最後の形: §3.9 は SU ↔ SA の大まかな整合（`rq` = r63 の予約、entry = SA の vector、decoupled な SA、案 B の構成、KC705 は raster/compute 構成だけ）の 5 点だけに縮め、詳細の sketch は Appendix A（延期）に移した。GSI1 は版 3 の最小の形（packed の超越は無し）。p020〜p022 は Future Work（trigger: p008〜p010 cleared）。§7.6 の RTL の進め方（top-down の分割・空の module・spec）と p023 を新設、p003 の実測と reserved-memory を反映、U39 は閉じた。design-reviewer の v4 の指摘（High 7・Medium 15・Low 11）と対応は §14。review 1 の README（a217bf8）との食い違いは U39）。**版 3**（同日 P1、worktree p1-ws288-d3、基点 main 01f261168: ユーザーの 4 つの決定（§2.1 の冒頭）に合わせて §2.4（ring の command = Kei GPU command protocol の gpu-op、CP は RISC-V 風の `atg_cpu` の firmware が解く）と §3（GHCI の標準の shader ISA「GSI1」、RISC-V の 32 bit の形を低位に持つ 64 bit 固定、小さな hardware の scoreboard）を書き直し、§6.6・§6.7・§6.9・§8（p017〜p019 の新設、392 LW）・§3.9（systolic array と ISA の FIFO の register `rq`、同日のユーザーの要件）・§6.10・§9（R23〜R30、U18〜U30）・§10（21〜30）・§11・§13 を足した。版 2 の節の番号は保った。design-reviewer の指摘（Critical 2・High 10・Medium 22・Low 15）と対応は §13（末尾）。**版 2**（同日: design-reviewer の指摘 38 件（Critical 3・High 15・Medium 14・Low 6）の全部に対応。対応の表は §12。版 1 からの主な変更: detach と reset の順序（§1.3・§6.2）、FENCE の意味（§2.4）、drv_gpu の capability と jobs と capset（§6.4）、window と IRQ の devcfg の事実への修正（§5.1・§6.2）、CP の状態遷移と ring の約束（§2.6・§2.7）、fault は v1 は device 全体（§2.5）、統一 shader の deadlock と ROP の順序（§3.8）、cache の無効化（§2.4 `INVALIDATE`）、見積もりの計算し直しと **7010 では block を分けた bitstream で確かめる**方針（§3.6・R1）、GHCI の標準と vendor の境（§2.1）、KC705 は 1 device（§6.5）、Phase の循環の解消（§8）。）
+2026-10-23 P2（ws288-p001、worktree p2-ws288-p001、基点 main c327d0c73）。親: [WS288](ws.md)。**版 9**（2026-10-25 P2、ws288-p025 の設計の段、zedBSD の worktree p2-p025、基点 main 05cfe206c、amaterrace-gpu は main e64da02 を読んだだけ: **§19 timing**（目標の Fmax、clock の領域、pipeline の方針、面積の見通し）を新設: p036・p038・p024 の測定の経路の棚卸し、KC705 の案 K1〜K4 と推し K2（SU を独立の sclk 200 MHz、他は gclk 100 MHz）、ASIC（3 nm、1.0〜1.5 GHz）の見込みを 2 つの推定の方法で、sclk ↔ gclk の境の 14 の channel と `am_cdc_*`・`am_rst_cdc`、XDC の gray の pointer の制約、SU の `SHORT_LAT` 6 → 約 11〜12 と bus の使用率の見積もり、経路の種類ごとの段の入れ方、p032 への論点、面積の見込み（板で約 216k〜223k、K2 の目安 LUT ≤ 85%）、実装の段 T0〜T5 と 68 LW、U100〜U108）。**版 8**（2026-10-25 P3、ws288-p035 の設計の段、zedBSD の worktree p3-p006、amaterrace-gpu の worktree p3-p035（aa78b64 の上）: **§18 DC を GHCI の GPU の一部に**を新設: DC を `rtl/gpu/dc/` の atg_top の子に（board の reset の domain）、新しい capability DISP2、scanout の register は CP の RUNNING の間は ring の µop（新しい 15 DISP_SET・16 FLIP）だけが書き host は IDLE・HALTED・FAULTED だけ（RUNNING の write は捨てて BAD_WRITE）、present = FLIP（plane ごとの待ちの slot、取り込みで `atg_cp_disp` の record の書き手が `{value, FRAME_COUNT}` を書き IRQ_STATUS.FLIP）、DC は「全部の unit」に入らない、scanout の誤りは device の fault にしない、event は IRQ_STATUS [12:9]、mode の表、cursor の plane（gclk で合成）、image の条件と SHARED・COPY の route、ADV7511 と HPD は host の driver のまま、driver の UNGATED・queue・scan の hold・recover の数え直し、GHCI §13.2 の案、試験、段 D1〜D8 と 51 LW、U90〜U99、review 2 回（28 件・21 件）の対応は §18.15・§18.16）。**版 7**（2026-10-25 P1、ws288-p034 の設計の段、worktree p1-p030、基点 main 485108a30: **§17 session の保護**（GHCI §11.6、PROT）を新設: granule ごとの所有の表と MC の root の PLB・grant の CAM、AMB の header の chk・slot、unit は 1 度に 1 つの session（drain・invalidate・scrub）、firmware の µop と DMA の検査、heap の private と可視の区分、driver の方針、GHCI の draft、model・TB、段 R1〜R8 と 54 LW、U61〜U72、review 2 回（33 件・21 件）の対応。review は [design-review-p034.md](design-review-p034.md)）。**版 6**（2026-10-25 P1、ws288-p030 の設計の段、worktree p1-p030、基点 main 32b51bf34: **§16 Vulkan 1.0 core の残り**を新設（limit・feature・必須の format の表、format の共通の土台と FMT capability、ROP の stencil・D16・depth bounds・depth の clip/clamp/bias・MRT 4 の beat・f32 の blend・occlusion の counter、RX の point・line・viewport の矩形・guard band の clip・depth bias、VF の format と robust の limit、TU の format と swizzle と f32 の filter、BLT の KEEP、µop 14 QUERY、GHCI の draft、model・TB・scene、段 S1〜S11 と 79 LW（ETC2 は後の Phase）、U47〜U60、review 2 回（35 件・23 件）の対応）。§8 に p030 の行を足した。review は [design-review-p030.md](design-review-p030.md)）。**版 5**（2026-10-25 P2、ws288-p027 の設計の段、worktree p2-p027、基点 main bb8e0f161: **§15 MSAA** を新設（Vulkan 1.0 core の multisample の要求の表、RX の sample の coverage、fragment の入力 r6〜r9、SU の exp 0x105、ROP の `atg_rop_ms`、sample-interleaved の配置、resolve の内蔵の draw、TU の `texf` の sample、GHCI の draft、model・TB・scene、段と LW、U43〜U46）。§3.7 と §8 に p027 の行を足した。review は [design-review-msaa.md](design-review-msaa.md)）。**版 4**（同日 P1、worktree p1-ws288-d4、基点 main b9284693c → main c10f7ea78 を merge: ユーザーの版 4 の決定の列（FP16/INT8 の mixed precision → online の softmax/LN → SIMD-8 の取り下げ → 案 B（SA に寄せ SU は最小）→ **SA の設計と実装は延期、SU が GSI1 を実装してから。SA は KC705 に入らなくてよい**）の最後の形: §3.9 は SU ↔ SA の大まかな整合（`rq` = r63 の予約、entry = SA の vector、decoupled な SA、案 B の構成、KC705 は raster/compute 構成だけ）の 5 点だけに縮め、詳細の sketch は Appendix A（延期）に移した。GSI1 は版 3 の最小の形（packed の超越は無し）。p020〜p022 は Future Work（trigger: p008〜p010 cleared）。§7.6 の RTL の進め方（top-down の分割・空の module・spec）と p023 を新設、p003 の実測と reserved-memory を反映、U39 は閉じた。design-reviewer の v4 の指摘（High 7・Medium 15・Low 11）と対応は §14。review 1 の README（a217bf8）との食い違いは U39）。**版 3**（同日 P1、worktree p1-ws288-d3、基点 main 01f261168: ユーザーの 4 つの決定（§2.1 の冒頭）に合わせて §2.4（ring の command = Kei GPU command protocol の gpu-op、CP は RISC-V 風の `atg_cpu` の firmware が解く）と §3（GHCI の標準の shader ISA「GSI1」、RISC-V の 32 bit の形を低位に持つ 64 bit 固定、小さな hardware の scoreboard）を書き直し、§6.6・§6.7・§6.9・§8（p017〜p019 の新設、392 LW）・§3.9（systolic array と ISA の FIFO の register `rq`、同日のユーザーの要件）・§6.10・§9（R23〜R30、U18〜U30）・§10（21〜30）・§11・§13 を足した。版 2 の節の番号は保った。design-reviewer の指摘（Critical 2・High 10・Medium 22・Low 15）と対応は §13（末尾）。**版 2**（同日: design-reviewer の指摘 38 件（Critical 3・High 15・Medium 14・Low 6）の全部に対応。対応の表は §12。版 1 からの主な変更: detach と reset の順序（§1.3・§6.2）、FENCE の意味（§2.4）、drv_gpu の capability と jobs と capset（§6.4）、window と IRQ の devcfg の事実への修正（§5.1・§6.2）、CP の状態遷移と ring の約束（§2.6・§2.7）、fault は v1 は device 全体（§2.5）、統一 shader の deadlock と ROP の順序（§3.8）、cache の無効化（§2.4 `INVALIDATE`）、見積もりの計算し直しと **7010 では block を分けた bitstream で確かめる**方針（§3.6・R1）、GHCI の標準と vendor の境（§2.1）、KC705 は 1 device（§6.5）、Phase の循環の解消（§8）。）
 この Phase は設計だけで、RTL も C も書かない。RTL の置き場所は https://github.com/awemorris/amaterrace-gpu （この Phase では書かない。clone `/home/awe/amaterrace-gpu` は commit 1791b32「Initial」= ユーザーの `README.md` だけ）、計画はこの zedBSD の `plan/ws288/`（2026-10-23 ユーザー「planはこのままzedBSDを使いましょう。」）。FPGA の CPU は https://github.com/awemorris/sukuna-risc.git （2026-10-23 ユーザー「mc64をsukuna-riscに改名しました。」）。
 
 **ユーザーの仕様（amaterrace-gpu の README.md、1791b32 → 版 4 の時点では a217bf8: 「LLM: CP --> VF --> SU --> SA --> SU --> SA -> ... --> SU --> ROP -> MC」「Systolic Array: 32 x 32, 0.8 TOPS/SU @200MHz」が足された。SA の節との整合は U39、2026-10-23「概略を書きました。書き足してOKです。」）が上位**。この設計はそれに従う: block の名前と略号 **GHCI**（この project が提案する、Vulkan 互換の GPU のための標準の HCI）、**DC**（Display Controller）、**CP**（Command Processor）、**BLT**（Blitter）、**VF**（Vertex Fetcher）、**RX**（Rasterizer）、**SU**（Shader Unit）、**TU**（Texture Unit）、**ROP**（Buffer Writer）、**MC**（Memory Controller）。全体は `CPU -- (AXI4) -- CP`、fill/copy は `CP → BLT → MC`、primitive は `CP → VF → SU → RX → SU → ROP → MC`（TU は 2 段目の SU から）。shader は「Warp: 32-lane scalar with 16-bit packed」、register file は未定（「xxx」→ §3.5 と U12 で提案、[proposed/README-additions.md](proposed/README-additions.md) に README への書き足しの案）。
@@ -570,7 +570,7 @@ code_offset〜 命令（8 byte 揃え）
 | LINE_BYTES / AMB_W / AXI3 | 32 / 64 / 1 | 64 / 512 / 0 |
 | I$ / D$ / T$ / LDS / const / varying | 2 KiB / 1 KiB / —（TU 無し）/ 4 KiB / 256 word / 16 word | 2 KiB / 1 KiB / 4 KiB / 16 KiB / 256 word / 64 word（p030 S13。旧 32） |
 | TU_BILINEAR / ROP_STENCIL / PACKED | — / 0 / 0（**U15**: README の「16-bit packed」からの逸脱。`PACKH/UNPACKH` は有る） | 1 / 1 / 1 |
-| gclk | 100 MHz | 100 → 150 MHz |
+| gclk | 100 MHz | 100 → 150 MHz（版 9: §19 の推しは gclk 100 MHz・SU の sclk 200 MHz、U100） |
 
 **Vulkan 1.0 の最小の limit と v1 の未達（driver が報告する値。libvulkan の N1・N2 と同じ「規格に合わない点」として記録し、U8 の app が要る物から足す）**:
 
@@ -926,7 +926,7 @@ QEMU と実機の証拠は分けて書く。やっていない確認は「未実
 | p015 | 複数の SU（N=4 → 6〜8）、work の分配、RX 2 本（200 MHz の timing は p025）、PERF、BRAM の実測で N を決める | N=4 で vkdemo、N≥6 で合成が閉じる | p014 | 18 |
 | p016 | 規約の全文の見直し（C: driver・firmware）、RTL の lint、`docs/ghci.md` 1.0・`docs/gsi1.md` の確定 | 動作は不変 | p015 | 10 |
 | **p024**（新設、2026-10-24 ユーザー「タイミングの調整と KC705 での確認は別なフェーズに分けた方がいいと思います。」） | **KC705 の板での確認**: MIG の IP の生成（`vivado-build-ip.tcl`）、bitstream、JTAG の bridge で fill → `DBG`、HDMI（ADV7511）の color bar、p007・p009 の raster・shade・tex の scene を板で（timing を詰めない低い clock でよい） | 実機で fill → `DBG`、color bar、scene が sim と一致 | p012 | — |
-| **p025**（新設、同上） | **timing の調整**: KC705 で 200 MHz（R3）。blend の 2 段化（`plan/ws288/blend-stage-split.patch`）、RX・ROP・SU・TU の pipeline の分割、out-of-context の Vivado での測定 | KC705 の全 pipeline が 200 MHz で WNS ≥ 0 | RTL が揃った後（p009 以降） | — |
+| **p025**（新設、同上） | **timing の調整**（**版 9: 目標の Fmax・clock の領域・段は §19、推しは SU 200 MHz・他 100 MHz（U100）**）: KC705 で 200 MHz（R3）。blend の 2 段化（`plan/ws288/blend-stage-split.patch`）、RX・ROP・SU・TU の pipeline の分割、out-of-context の Vivado での測定 | KC705 の全 pipeline が 200 MHz で WNS ≥ 0 | RTL が揃った後（p009 以降） | — |
 | **p027**（新設、版 5） | **MSAA**（§15）: RX の sample の coverage（`atg_rx_cov`）と fragment の入力 r6〜r9（`atg_rx_bary`）、SU の `exp 0x105` と `ex_ms`、ROP の `atg_rop_ms` と sample ごとの ds・wb、TU の MS の `texf`、`msmodel.py`、`atg_top_msaa_tb`、Verilator、GHCI §12.11（draft） | MS の color・depth と resolve が model と word ごとに一致（sim、KC705 と ZYBO の形）、既存の scene が bit で同じ | p009（part F）、U43〜U46 | 41（版 5.1: S7 の BLT の resolve 8、S1 +1） |
 | **p030**（新設、版 6） | **Vulkan 1.0 core の残り**（§16）: format の土台（`atg_fmt_*`、sRGB、FMT capability）、VF の format と ATTR_LIMIT、RX の clip（line・point・guard band・depth clamp）と setup（parallelogram・正方形・viewport・bias）、CP の `QUERY`、ROP の f32 の blend・stencil・D16・bounds・clamp・MRT 4・occlusion、TU の format・swizzle・f32 の filter、BLT の分割・KEEP・画素 8/64/128 bit・RESOLVE の平均 3〜7、`atg_top_core_tb`（ETC2 と CP の待ちの修正は範囲の外） | §16.20 の scene が model と word ごとに一致（sim、2 つの形）、既存の scene が bit で同じ（意図した差は vec-diff）、`make verilator` PASS | p027（S5・S7〜S10 の前に各段の merge、CP の待ちの修正）、p009 part F（S9）、U47〜U60 | 79 |
 | **p017**（新設） | **CP の CPU と firmware の土台**: `atg_cpu`（RV32IM、§2.4.7）、IMEM/DMEM、制御の window、`UOP_FIFO`、`CPFW` の extended capability（load/run/halt/version/mbox）、class V の packet の受け渡しと `RPTR`、watchdog の対象化、`fw/cp/` の build（共有の clang、`-march=rv32im`）、firmware の runtime（boot、heap、packet の reader、result、µop の出力）、**class V の最初の道**: `GHCI_SESSION_OPEN/CLOSE`・`GHCI_MEMORY`・`CREATE/DESTROY_BUFFER`・`BIND_BUFFER_MEMORY`・`CMD_FILL_BUFFER`/`CMD_COPY_BUFFER` の記録と `QUEUE_SUBMIT` → BLT の µop。bitstream 1'「2D + FW」 | TB: CPU の命令の試験（riscv-tests の自前の部分集合）、firmware の fill/copy が Verilator と **板（ZYBO 1'）**で `DBG` の照合に合う、`CPFW` の載せ替え、firmware の無限 loop → watchdog → RESET → 回復 | p004、U19、U20 | 32 |
@@ -2905,3 +2905,329 @@ D3・D4 は D2 の後に並行できる。D7 は p006・p019 の後。画面の�
 - **D6**: `atg_top_disp_tb` は CPU と firmware を入れない（DISP µop は firmware が要らない）、draw の三角形も入れない（RX・ROP は atg_top_tex と Verilator の e2e）。小さな mode（32 × 4）と 25 MHz の pclk。MC の flush が DC の読みに当たる場合は atg_mc_tb の D・E で確かめる（この TB では稀にしか当たらず `MUT_MC_NOKEEP` で FAIL にならない）。
 - **D6 の後半（Verilator の e2e、q1576-i04、amaterrace-gpu e447ecd）**: Q1 の決定（2026-10-25 17:31）どおり、`atg_dc_mode` に parameter `TEST_MODE`（atg_dc の `TEST_MODE`、atg_top の `DC_TEST_MODE`、既定 0）を足した。1 の時、mode の表は 320 × 240（vkdemo の frame、H 320/8/8/8・V 240/2/2/2、1 frame 84,624 pclk、25,000 kHz、PCLK_SEL 0）の 1 つだけで、DC_CAPS[11:9] は 1（`atg_dc_regs` の新しい parameter `MODES`）。`sim/verilator/link-build.sh` だけが `-GHAS_DISP=1 -GDC_HAS_I2C=0 -GDC_TEST_MODE=1` にする（KC705 の板・lint・他の TB は 0 のまま）。`link.cpp` は pclk を gclk の 1/4（gclk が low の間に 2 cycle ごとに反転、edge が重ならない）で回し、`prst_n` を board の reset と一緒に上げ、I2C の入力を 1 にする。driver は変えていない（controller が名乗る mode から最大の物を選ぶ）。zedBSD の `ghci-e2e` は display.c・display-scan.c・adv7511.c を link し、偽の core に display の ioctl（query・mode・claim・release・present（BLOB と非 BLOB、UNGATED の adoption の待ち）・wait）、case `display`（§18.12 の Verilator の display）を足した。
 - **D8**: GHCI §13.2 の印を他の draft の節と同じ「Draft (Amaterrace implements it, in simulation)」にした。`GHCI_VERSION` の minor は上げていない（GHCI 全体が 1.0 draft のまま、MSAA・PROT も上げていない。上げるかは Q1 の判断）。
+
+## 19. timing: 目標の Fmax、clock の領域、pipeline の方針、面積の見通し（版 9、ws288-p025 の設計の段）
+
+2026-10-25 P2（q1583、zedBSD の worktree p2-p025、基点 main 05cfe206c。amaterrace-gpu は main e64da02 を読んだだけで変えていない。Vivado は回していない）。[p025](phase025/phase.md) の「P2 の作業の項目」1〜5 の設計。**RTL は変えない**: p037（算術の am_ の module への置き換え、P1・P3・P4 が実行中）の後に p025 の実装の段（§19.10）で行う。
+
+### 19.0 出典と確認の水準
+
+- **測った物（この project の Vivado 2026.1、xc7k325tffg900-2、out-of-context、5 ns、clock 1 つ）**: p036 の 2d2bd25（KC705 の形、NPHYS 8、NSU 1、PK_SHARED 0）の合成と配置配線（[evidence/ooc-kc705-n8-routed-timing_summary.rpt](phase036/evidence/ooc-kc705-n8-routed-timing_summary.rpt)、WNS −34.388 ns は Q1 が report で確かめた。block ごとの最悪の値は P2 の申告で、Q1 は block ごとの report を確かめていない）、p036 の d94076c の合成の LUT 167,293（Q1 が確かめた）、p038 の TU の単体（572ffe1、配線後、P2 の申告）、p024 の板の全体の合成（8040e3d、place で停止、P2 の申告）、2026-10-24 の ROP の blend（WNS −4.207 ns、[p025](phase025/phase.md) の範囲の記録）。**どれも p037 の前の RTL**で、p037 の後に測り直す（§19.10 の T0）。
+- **読んだ RTL（e64da02）**: `atg_su`（port）、`atg_su_sb`（短い interlock と `CD_W = 4`）、`atg_su_opd`（i_valid → x_valid 2 cycle、`unit_ready` の戻り）、`atg_su_fpu`・`atg_su_lane`・`atg_su_pk`・`atg_su_alu`（`SHORT_LAT` 6、計算は pipe[0] の前）、`atg_su_pt`（pt_rdata は pt_rd の次の cycle）、`atg_su_dcache`・`atg_tu_cache`（miss は 1 つだけ outstanding）、`atg_rx_clip`（pt_rdata を次の cycle に取る）、`atg_vf_conv`（vl_* を 1 cycle に 1 word、ready 無し）、`atg_top`（graphics の port は SU 0 だけ）、`am_afifo`（gray の pointer を 2 段で同期、相手の pointer は最大 3 cycle 遅れて見える、両側の reset を同時に 3 cycle 以上）、`am_sync`、`boards/kc705/lib/atg_kc705_clk.v`（SYSCLK 200 MHz → MMCM の VCO 1000 MHz、O0 = gclk、O1〜O6 は空き）、`atg_kc705_raster.xdc`（clock は `set_clock_groups -asynchronous` で分けている）、`atg_kc705_mig.v`（gclk → ui_clk 200 MHz は AXI の clock converter）、`atg_kc705_pcie.v`（user_clk = axi_aclk_out 125 MHz）、`docs/ghci.md` の GCLK_HZ（0x01C）と PERF。zedBSD の `src/drivers/gpu/ghci/compiler/gsi1-schedule.c`（純粋な命令を最初の読み手の前まで沈めるだけで、latency の model は無い）。
+- **測っていない一般知識（未確認、数字は幅で使う）**: XC7K325T -2 の DSP48E1・BRAM・BUFG・MMCM の上限（DS182・UG472 を読み直していない）、FPGA と ASIC の速さの差（Kuon & Rose, "Measuring the Gap Between FPGAs and ASICs", IEEE TCAD 2007: 90 nm で critical path の遅れが約 3〜4.6 倍）、28 nm → 3 nm の速さの伸び（foundry の公開の値の積み重ねで約 1.8〜2.5 倍）、3 nm の FO4。**ASIC の library で合成した値は無い**。
+
+### 19.1 決めた事の要約（推し。U100〜U108 でユーザーの判断を受ける）
+
+1. **KC705 の目標（U100）**: SU を独立の clock **`sclk` = 200 MHz**、他の block（CP と CPU、VF、RX、TU、ROP、BLT、MC の木と root、DC の memory の側）は **`gclk` = 100 MHz**。p025（1 段目）の受け入れは「gclk 100 MHz の block が OOC の配線後で WNS ≥ 0、SU が単体の OOC で 200 MHz」を目標にし、met しない経路は p032 へ（ユーザーの 3 段の方針）。gclk の 125〜150 MHz は面積が減った後の伸ばし代。
+2. **ASIC（U101）**: 3 nm の mobile、**1.0 GHz を基準、1.5 GHz を伸ばし代**。KC705 の 200 MHz の段の深さ（1 段に LUT 約 5 段）は、FPGA と ASIC の差の推定で ASIC の約 1.1〜1.75 GHz に当たるので、**SU は KC705 の 200 MHz の構造でそのまま ASIC の目標に届く見込み**（推定）。gclk の 100 MHz の構造の block は ASIC の約 0.55〜0.9 GHz で、ASIC では gclk を sclk の半分で回すか、もう一度 pipeline を深くする（後の WS）。
+3. **clock の領域（U102・U103）**: `sclk`（全部の SU が 1 つの sclk）・`gclk`・既存の `mclk`（MIG の ui_clk）・`uclk`（PCIe）・`pclk`・`tck`・`ref_clk`。sclk と gclk の境は **SU の port の全部**（約 4.3k bit）で、新しい `am_cdc_*` の channel（`am_afifo` の上、parameter `ASYNC`: 0 なら同じ clock の同期 FIFO）。sclk は今の mmcm_g の空いた O1 から作る（MMCM を増やさない）。
+4. **SU の pipeline（U104）**: class a と f の **1 本の固定長の pipeline は保つ**（WAW を起こさない今の設計）。`SHORT_LAT` を 6 → **約 11〜12**（FPU の fp32 の FMA を p038 の `atg_tu_fma` と同じ 10 段前後に）。ISA と compiler の約束は変わらない（scoreboard の interlock が隠す）。`atg_su_sb` の `CD_W` は `SHORT_LAT` から計算する parameter に。NPHYS 8・NWARPS 4 では、runnable な warp が 3 つ以上なら依存の続く命令でも bus は埋まる（§19.5.2）。
+5. **pipeline の形（U108）**: 止まらない固定の latency の段（valid の bit だけが流れ、datapath の FF に reset と CE を付けない）+ 終わりの skid の FIFO と credit（p038 の `atg_tu_filter` の形）。enable の大きな fanout を作らない。unit が bus を止める `unit_ready` の戻りは、issue の段で決まる予定（PK_SHARED の 2 cycle、`lane` の 2 × G）に置き換える。
+6. **面積（U105・U106）**: 板の top に `SU_PK_SHARED = 1` を渡す（2026-10-25 12:41 のユーザーの「後者で合成してみましょう」を板にも）。p037 の後に板の全体を **合成だけ**（P&R はしない）して module ごとの LUT を取り、LUT ≤ 85%（gclk 100 / sclk 200 の目安）に入らなければ、U80・U81・U84 と §19.6 の候補からユーザーが選ぶ。pipeline の FF は +20〜30k（推定）で FF は余る（板で 29%）。LUT は +3〜6%（推定）。
+7. **GHCI（U107）**: 変えない。`GCLK_HZ` は gclk の Hz のまま、PERF は gclk で数える（SU の busy は同期して gclk で数える）。sclk の Hz は vendor の register（`VEND`）に debug 用として置く。
+
+### 19.2 経路の棚卸し（item 1）
+
+原因の種類: **A** = 1 cycle に演算の全部（FP・address の式）、**F** = fanout（enable・FSM の decode が広い register へ）、**M** = 広い mux・選択、**R** = 配線（logic の段は少ないが混雑で延びる）。段 = Vivado の logic levels（CARRY4 も 1 段と数える）。値は §19.0 の出所のまま（p037 の前）。
+
+| block | 経路（始点 → 終点） | 合成の slack ns / 段 | 配線後の slack ns / 段 / 遅れ ns | 種類 | 出所 | 今の状態と次 |
+| --- | --- | --- | --- | --- | --- | --- |
+| SU/FPU | `opd/b_warp_reg` → `fpu/pipe_reg[0]`（operand の選択・修飾 → fp32 の FMA の全部） | −31.55 / 114（CARRY4 50・LUT6 39、logic 8.9・配線 27.3） | −33.99 / 118 / 38.6 | A（+M: opd の段 B の operand の mux が FPU の前に直結） | p036 2d2bd25 | p037 が function を module にした（pipeline は不変）。p025 T2 で 10 段前後に |
+| SU/PK | PK の fp16 の演算 | −19.0 / 49 | −26.1 / 66 / 31.1 | A | 同上（PK_SHARED 0） | PK_SHARED 1 では fp16 は FPU の datapath（FPU の pipeline に入る）、PK は整数と pack だけ |
+| SU/lane | `qd` の差（fp32 の減算、`atg_su_fadd` 2 か所）と shfl の staging | −23.0 / 75 | −30.3 / 70 / 35.1 | A | 同上 | T2: fadd を pipeline に（`SHORT_LAT` の中） |
+| SU/LSU | coalescer の比較・address | −0.53 / 16 | −10.5 / 11 / 15.5 | R（+A） | 同上 | 面積が減れば 100 MHz は近い。200 MHz には 1 段 |
+| TU/addr | `atg_tu_addr` k → r_plane（plane・LOD の式、29 の演算子が inline） | −24.381（TU 全体） | −21.448 / 84 | A | p038 572ffe1 | T3: 式を段に、descriptor の値を load の時に前計算（§19.5.1 の 2） |
+| TU/desc | cs → d_off の LUTRAM（level の offset を 1 cycle） | — | −15.905 / 28 | A | 同上 | T3: offset を descriptor の書き込みの時に表に |
+| TU/cube | job → ns/nt_num（面の選択と除算の準備） | — | −11.122 / 33 | A | 同上 | T3: 2 段 |
+| TU/cache | t → mline の CE、addr の FSM → cache の tc_ctl | — | −4.938 / 12（a0295a7 では −6.689 / 9・−4.750 / 13） | F | 同上 | T3: enable の複製、handshake を register に |
+| TU/ffilt | lane・texel の選択 → front/raw1 の 128 bit の mux | — | −4.098 / 7 | M | 同上 | 100 MHz は満たす。200 MHz は index を 1 cycle 前に（p038 の申し送り） |
+| TU/filter | ctl11[5] → rr12（fanout 160 + 40 bit の加算） | — | −2.617 / 6 | F | 同上 | flag の複製 |
+| TU/etc・fma・cvt | ETC の decode、FMA の lz8 → st9、cvt → BRAM の address | +1.2 / +1.4 / +1.4（合成） | −1.012 / 7、−0.297 / 5、−0.031 / 4 | R | 同上 | 配線だけ。面積が減れば消える見込み |
+| ROP/blend | `atg_rop_blend` の stage 3（operation・mask・format を 1 cycle） | — | −4.207（約 108 MHz） | A | 2026-10-24 | [blend-stage-split.patch](blend-stage-split.patch)（LAT 3 → 4、未適用）を T3 で |
+| ROP/wb | `rt_reg` → `edat`（line への書き込みの選択） | −9.36 / 38（ROP 全体） | −24.0 / 21 / 29.0 | M + R | p036 2d2bd25 | p036 で byte の書き込みを slot ごとの shift に直した後の値は未測定。T0 で測る |
+| BLT/favg | RESOLVE の fp の平均・sRGB の encode | −23.6 / 84 | −30.4 / 94 / 35.4 | A | 同上 | T3: 平均と encode を段に（p037 の P3 が module にした後） |
+| RX | setup の microcode の datapath・edge（`atg_rx_fadd`/`fmul` は 4 段の pipeline 済み、最悪の経路の始点・終点は未記録） | −10.8 / 50 | −18.7 / 45 / 23.7 | A（推定） | 同上 | T0 で始点・終点を取り、T3 で段に。microcode の schedule は `tools/rx-ucode.py` が latency を前提にする（§19.5.2） |
+| VF | `atg_vf_conv`（format の変換） | −8.06 / 31 | −15.6 / 14 / 20.3 | A + R | 同上 | p036 で 1 成分ずつにした後は未測定。T0 |
+| CP | `atg_cp_*` | −1.31 / 14 | −13.3 / 11 / 18.3 | R | 同上 | 100 MHz は満たす見込み（混雑が減れば） |
+| MC | 木と root（PLB・grant） | −1.15 / 18 | −11.7 / 10 / 16.7 | R | 同上 | 同上 |
+| CPU | `atg_cpu_core` | −0.49 / 14 | −6.8 / 11 / 11.6 | R | 同上 | 同上（R25: 200 MHz なら 3 段の短い pipeline の見直し） |
+| 板の外の IP | MIG（ui_clk 200 MHz）・PCIe（125 MHz）・AXI の converter | — | 未測定（板の P&R は回していない） | — | — | IP の中は Xilinx の物。p024 の板の build で |
+
+- **読み**: (1) 合成の段数が大きい物（FPU 114、TU 97 → p038 の後 84、BLT 94、lane 75、PK 49、RX 50）は **A**: 演算の全部を 1 cycle に置いている。(2) 配線後に段の少ない経路（CP 11 段で 18.3 ns、MC 10 段で 16.7 ns）が 10〜12 ns を失うのは **R**: LUT 95% の混雑（p036 の申告）。100 MHz の block の多くは、面積が減れば pipeline を足さずに満たす見込み。(3) **F** と **M** は p038 で幾つか直した（a4e323b の CE の複製、max_fanout 64）。
+- **棚卸しの抜け（T0 で埋める）**: SU の XU（超越）・div・LDA・EXP・RF の読み（BRAM の出力の register の有無）・scheduler、RX の始点・終点、DC の pclk の側、板の IP の境。p037 の後の全部の値。
+
+### 19.3 目標の Fmax（item 2）
+
+#### 19.3.1 XC7K325T -2 の部品の上限と、1 段に置ける logic（**一般知識、DS182 は読み直していない**）
+
+| 部品 | 上限の目安 | この設計での意味 |
+| --- | --- | --- |
+| DSP48E1 | 全部の register（AREG/BREG・MREG・PREG）を使って約 600 MHz 級、MREG 無しでは大きく下がる | 乗算は `am_mul` の `LAT`（p036・p037）で DSP の中の register を使う。200 MHz は余裕。DSP から fabric の経路は 1 段に数える |
+| BRAM36 | 出力の register 付きで約 500 MHz 級、無しでは clock → 出力が 2 ns 前後 | RF・PT・LDS・cache の BRAM は出力の register（DO_REG）か直後の FF を付けると 200 MHz は余裕。付けないと読みの後の mux が 1 段に入らない |
+| CARRY4 | 4 bit で約 0.1 ns、鎖の出入りに約 0.5 ns | 32〜48 bit の加算は 1 段に入る。CARRY4 は Vivado の「段」に数えられるので、段数だけで判断しない |
+| BUFG・MMCM | BUFG は約 600 MHz 級、MMCM の VCO は 600〜1440 MHz（`atg_kc705_clk.v` の comment、未確認） | 200・250 MHz の clock は作れる |
+
+この project の実測から得た 1 段の目安（p038 の TU の配線後: 7 段で 5.3 ns、5 段で 5.3 ns、fanout 160 の 6 段で 7.6 ns）: clock → 出力・setup・jitter で約 1 ns を引き、**LUT 1 段 ≈ 0.7〜0.8 ns**（配線込み、混雑の少ない時）。
+
+| 目標 | 周期 | 1 段の LUT の段（fanout ≤ 64、混雑の少ない時） | 当てはまる物 |
+| --- | --- | --- | --- |
+| 100 MHz | 10 ns | ≤ 11 | gclk の block（§19.1-1） |
+| 125 MHz | 8 ns | ≤ 9 | gclk の伸ばし代 |
+| 150 MHz | 6.67 ns | ≤ 7 | sclk の予備の値（§19.10 の T2 で 200 が届かない時） |
+| 200 MHz | 5 ns | ≤ 5 | sclk。p038 の `atg_tu_fma`（10 段）は合成 +1.40 ns、配線 −0.105 ns（混雑の分） |
+| 250 MHz | 4 ns | ≤ 3〜4 | 推さない（BRAM・DSP の全部の register と、LUT 85% 超の混雑では無理が大きい） |
+
+#### 19.3.2 KC705 の案
+
+| 案 | gclk | sclk | pipeline の仕事 | 面積の条件 | ASIC への繋がり | 判断 |
+| --- | --- | --- | --- | --- | --- | --- |
+| K1 | 100 | = gclk（1 つの領域） | 小（1 段 ≤ 11） | LUT ≤ 約 90% | SU も 100 MHz の構造 → ASIC の約 0.55〜0.9 GHz | ユーザーの「SU は特に分離」に合わない。予備（ASYNC = 0 の板） |
+| **K2（推し）** | **100** | **200** | SU は深く（FMA 約 10 段）、他は小 | LUT ≤ 約 85%（§19.6） | SU は ASIC の 1.1〜1.75 GHz の構造、他は後で | ユーザーの「SU を分ける」と「ASIC で 200 MHz でも足りない」に、仕事の量を抑えて応える |
+| K3 | 200 | 200 | 全部の block を深く（address・control も 1 段 ≤ 5） | LUT ≤ 約 75%（NSU 1 の今の形では −60k 以上が要る、§19.6） | 全部が ASIC の目標の構造 | README の「200MHz on KC705」の文字どおり。KC705 では面積の判断（機能を外す）が先に要る。p032・p033 の領域 |
+| K4 | 125〜150 | 250 | SU は K2 よりさらに深く | LUT ≤ 約 70% | ASIC の 1.5 GHz に余裕 | 推さない（§19.3.1 の 250 MHz の行） |
+
+- **推しの理由**: (1) 性能の主は SU（fp32 の FMA が SU の throughput）、fixed function の block は 100 MHz で 640×480〜720p に足りる（ROP は 1 quad/cycle で 100 MHz なら 400 Mpixel/s、DC の 720p60 は 221 MB/s）。(2) gclk の block は面積の大半（SU 以外で約 129k LUT、p036）で、これを 200 MHz に深くすると FF と LUT が増え、混雑がまた timing を壊す。(3) sclk と gclk を別にすれば、SU の pipeline の仕事は他の block の進みと切り離せる（SU を先に 200 MHz の構造に、他は 100 MHz で板を通す）。
+- **K2 の限界（正直に）**: (a) **memory の帯域**: MC の木と root が gclk 100 MHz なので、AMB の 1 line = 64 byte で read の peak は 6.4 GB/s、write は 2 flit で 3.2 GB/s（§4.1）。DDR3-1600 の 64 bit（12.8 GB/s peak、MIG の ui_clk 200 MHz）の半分。640×480 の板の目標では足りるが、p015 で memory が律速なら MC を mclk の領域に移す（§19.12 の 6）。(b) **texture の latency**: TU が gclk なので、texture の往復は sclk で見て約 2 倍の cycle と CDC の分（§19.4.3）。warp の数と scoreboard が隠す範囲を超えると fragment の shader が止まる。(c) **SU の 200 MHz は単体の OOC で測る**: 板の全体の混雑（LUT 85% 前後）の中で SU が 200 MHz を保つかは、板の P&R（p025 の後）まで分からない。届かなければ sclk を MMCM の divider で 167・150 MHz に下げる（RTL は同じ）。
+
+#### 19.3.3 ASIC（3 nm、mobile、1.0〜1.5 GHz）の見込み（**推定**、ASIC の library で合成していない）
+
+- **方法 1（FPGA と ASIC の差、主）**: 同じ process で FPGA の critical path は ASIC の約 3〜4.6 倍遅い（Kuon & Rose 2007、90 nm）。KC705 は 28 nm、目標は 3 nm で、その間の速さの伸びを約 1.8〜2.5 倍とすると、**KC705 で f MHz の構造は ASIC で約 5.4f〜11.5f**。→ 100 MHz の構造は約 0.55〜1.15 GHz、150 MHz は約 0.8〜1.7 GHz、200 MHz は約 1.1〜2.3 GHz。幅の中ほどを使い、§19.1 では 100 MHz ≈ 0.55〜0.9 GHz、200 MHz ≈ 1.1〜1.75 GHz と書いた（low voltage の mobile の library で遅くなる側に寄せた）。
+- **方法 2（FO4 での確かめ、楽観）**: 3 nm の mobile の電圧で FO4 を約 8〜12 ps とし、flip-flop・clock の skew・jitter・OCV で周期の約 15% を引くと、1.5 GHz で約 47〜71 FO4、1.0 GHz で約 71〜106 FO4 が 1 段の logic。LUT 6 入力の関数を gate 2〜3 段（約 3〜5 FO4）とすれば、KC705 の 100 MHz の段（LUT ≤ 11）は約 33〜55 FO4 で、**ASIC の 1.5 GHz にも入る**。ただし ASIC の配線・合成の効率を数えていない（方法 1 の差の大半はそこ）ので楽観。
+- **2 つの方法の差は約 2 倍**。安全側（方法 1）で計画する: **SU は KC705 の 200 MHz の構造**（どちらの方法でも ASIC の 1.0〜1.5 GHz に入る）、gclk の block は KC705 の 100 MHz の構造（方法 2 では入るが方法 1 では 1.0 GHz に届かない）→ ASIC では gclk = sclk/2 の 2 つの領域のまま（fixed function の throughput は足りる: ROP 1 quad/cycle で 500 MHz なら 2 Gpixel/s）か、後の WS でもう一度深くする。
+- **ASIC で FPGA と変わる所**: (1) **SRAM**: KC705 の BRAM は 200 MHz で上限の半分以下だが、ASIC の小さな 2 port の SRAM は 1.5 GHz で 1 周期のほとんどを使う（推定）→ RF の読みは ASIC で 2 cycle になり得る。`atg_su_opd` の段の数を parameter（`OPD_LAT`）にし、`atg_su_sb` の interlock の定数（今の G + 1）もそこから計算する（§19.5.2）。(2) **配線**: block の間の長い bus（SU ↔ RX・TU・ROP の 500〜850 bit）は ASIC で register の slice が要る。MC の木は 1 hop に 1 段の register を既に持つ（§4.1）。`am_cdc_*` の channel は同期の形（ASYNC = 0）でも register の slice として残せる。(3) **retiming**: ASIC の合成は register を自動で動かせるので、RTL の段の境は「段の数が足りる事」が大事で、境の位置の最適化は ASIC で詰める。am_ の module の `LAT` と `SHORT_LAT` を parameter に保つ（ASIC で FMA を 4〜5 段に戻せる）。
+- **README との食い違い**: amaterrace-gpu の README は「800 MHz is the goal on ASIC processes」（c840a0a）。2026-10-25 04:52 のユーザーの発言は「3nmのASICでmobile向けの1.0-1.5GHzくらい」。後の発言を使った。README の直しはユーザーの判断（U101）。
+
+### 19.4 clock の領域（item 3）
+
+#### 19.4.1 領域の表（KC705、推し）
+
+| 領域 | 周波数（推し） | 源 | 中身 |
+| --- | --- | --- | --- |
+| `sclk`（新） | 200 MHz（予備 167・150） | mmcm_g の **CLKOUT1**（VCO 1000 MHz / `SCLK_DIVIDE` 5）、BUFG | 全部の SU（`atg_su` × NSU）。SU の中の I$・D$・LDS・RF・PT・primitive table・cbank・XU・div |
+| `gclk` | 100 MHz（伸ばし代 125・150） | mmcm_g の CLKOUT0（`GCLK_DIVIDE` 10。今の placeholder 50 = 20 MHz を置き換える） | CP（`atg_cp`・`atg_cpu`・firmware の IMEM/DMEM）、VF、RX、TU、ROP、BLT、MC の木と root（PROT の PLB・grant を含む）、DC の DMA・register・cursor の合成（§18 で gclk） |
+| `mclk` | 200 MHz（MIG の ui_clk、DDR3 の 4:1） | MIG の中の MMCM | MIG の AXI。gclk ↔ mclk は今の AXI の clock converter（`atg_kc705_axi_cc`、512 bit） |
+| `uclk` | 125 MHz（PCIe の axi_aclk_out） | PCIe の core | BAR0 → `am_axi_cdc` → gclk、BAR2 と GPU → host は AXI の converter（今のまま） |
+| `pclk` | 25.185 / 74.22 MHz | pll_a / mmcm_b → BUFGMUX | DC の timing generator と出力（今のまま） |
+| `tck` | ≤ 30 MHz | BSCANE2 | JTAG の bridge（`am_jtag_regs` の握手、今のまま） |
+| `ref_clk` | 200 MHz | SYSCLK の BUFG | MIG の system clock・IDELAYCTRL（今のまま） |
+
+- **MMCM と BUFG の数**: sclk は mmcm_g の空いた出力を使うので clock の管理の部品は増えない。今の使用は MMCM 約 4（mmcm_g・mmcm_b・MIG・PCIe の pipe clock）と PLL 約 2（pll_a・MIG）で、325T の 10 + 10 に対して余る（MIG・PCIe の中の数は IP の生成物で確かめていない）。BUFG は sclk で 1 つ増え、32 に対して 15 前後（推定）。
+- **gclk と sclk の比**: 同じ VCO の 2 つの出力なので位相は揃うが、**関係の無い clock として扱う**（`am_afifo` で渡し、Vivado の timing では同期の関係を使わない）。2:1 の同期の設計（§19.12 の 2）は選ばない: gclk・sclk の値を別々に動かせなくなる（予備の 167 MHz、gclk の 125 MHz）。
+- **ASIC**: sclk・gclk は別の PLL（または 1 つの PLL の 2 出力）と DVFS の単位。`ASYNC = 0` の時は同じ clock の 1 つの領域になる（mobile の ASIC で GPU 全体を 1 つの clock にする判断も残せる、§19.12 の 7）。
+
+#### 19.4.2 sclk ↔ gclk の境の channel（SU の port の全部。KC705 では graphics の port は SU 0 だけ、SU 1〜は compute の port だけ）
+
+| # | channel（`atg_su` の port） | 向き | 幅（bit、推定） | 今の handshake | 境での形 | RTL の変更 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | command: STATE の broadcast（`st_we/idx/wdata`）、`cs_kick`・`lc_kick`、`inv`、`scrub` | g → s | 約 48 | 書きっ放し（ready 無し） | **1 本の順序付きの FIFO**（STATE の書き込みの後の kick が必ず後に着く）。CP 側の credit で満杯を避ける | `atg_cp_state`・`atg_cp_seq` に ready（credit）。kick と STATE の順序は FIFO が保つ |
+| 2 | status: `busy`・`fault`・`fault_addr`・`scrub_busy` | s → g | 1 + 1 + 32 + 1 | level | `am_sync`（level）。`fault_addr` は fault が立つ前に固定し、fault の同期の後に gclk で取る | **busy の偽の idle を防ぐ**: CP 側に「送ったが SU が受け取った印をまだ返さない command」の数を持ち、`WAIT_IDLE(SU)` の idle = その数が 0 かつ同期した busy が 0（§19.7） |
+| 3 | VF → SU の vertex の warp: `vl_req/gnt/slot/ptbase`、`vl_we/reg/lane/data/go/mask` | g ↔ s | 要求・許可 約 12、書き込み 約 76 | 許可の後は書きっ放し | 要求と許可は 4 相の握手（`am_sync`）、書き込みは FIFO | **`atg_vf_conv` に `vl_ready`（back-pressure）を足す**（1 warp で最大 32 lane × 64 register の word は FIFO に入らない） |
+| 4 | RX → SU の fragment の warp: `fl_req/gnt/slot`、`fl_we/reg/lane/data`、`fl_pw_*`、`fl_go/mask/info` | g ↔ s | 要求・許可 約 4、書き込み 約 185 | 同上 | 同上 | **`atg_rx_frag`・`atg_rx_bary` に back-pressure** |
+| 5 | RX の PT の読み: `pt_rd/idx/word` → `pt_rdata` | g → s、s → g | 15 / 32 | 1 cycle の同期の読み（`atg_rx_clip` が次の cycle に取る） | 要求の FIFO と応答の FIFO（順序どおり） | **`atg_rx_clip` の読みを tag 無しの streaming に**（要求を続けて出し、応答を順に取る。`pt_busy` で止まる形は残す） |
+| 6 | `pt_free/pt_free_idx`（RX → SU）、`pt_done[7:0]`（SU → VF・RX） | g → s、s → g | 9 / 8 | pulse / level | pt_free は FIFO（RX の側の 1 本）。**pt_done は level の同期にしない**: `atg_su_pt` は block を新しい vertex の warp が取る時（pt_take、vl_gnt と同じ時）に done を 0 にし、warp の終わりで 1 にする。bit ごとの `am_sync` では、gclk の側が古い 1 を見たまま新しい warp の許可（channel 3）を先に受け、RX が終わっていない block を読む順序の誤りが起き得る。→ **vl_gnt（slot・ptbase）と「block b の done」を 1 本の s → g の event の FIFO に入れ、gclk の側が done の写しを持つ**（許可の受け取りでその block の写しを 0、done の event で 1） | `atg_top` の `prim_ok` は gclk の写しを見る。VF の許可の握手（channel 3 の要求・許可）はこの event の FIFO に合わせる |
+| 7 | TU: `tx_*` | s → g | 約 686 | valid/ready | `am_afifo`（深さ 4〜8） | 無し |
+| 8 | TU: `tr_*` | g → s | 約 529 | valid/ready | 同上 | 無し |
+| 9 | ROP: `ex_*` | s → g | 約 847 | valid/ready | 同上（深さ 4） | 無し |
+| 10 | ROP: `ex_next`（次に退かせる連番） | g → s | 16 | level（1 ずつ増える） | gray の符号で `am_sync`（FIFO の pointer と同じ） | `atg_su_exp_drain` は等しい時だけ出すので、古い値は遅れるだけ |
+| 11 | D$ の AMB（`d_req_*`・`d_rsp_*`） | s → g、g → s | 611 / 522 | 要求は valid/ready、**応答は ready 無し** | 要求 FIFO と応答 FIFO。応答の FIFO の深さ ≥ outstanding の上限、SU 側の credit で要求を止める | 今の D$ は outstanding 1 なので深さ 2 で足りる |
+| 12 | I$ の AMB（`i_req_*`・`i_rsp_*`） | 同上 | 約 35（read だけ: wdata と be を渡さない）/ 522 | 同上 | 同上 | wrapper が I$ の wdata・be を落とす |
+| 13 | atomic（`at_*`） | s → g、g → s | 98 / 33 | valid/ready、応答は ready 無し | 同上（credit） | 無し |
+| 14 | SA（`sa_*`、予約） | — | — | — | 今は tie-off。SA を足す時は SA を sclk に置く（SU と 1 対 1） | 無し |
+
+- **合計**: SU 0 で約 4.3k bit、compute だけの SU で約 1.9k bit。`am_afifo` の記憶は LUTRAM（RAM32M = 4 LUT で 32 深 × 6 bit）で、**SU 0 で約 3〜4k LUT、他の SU で約 1.5k LUT**（gray の pointer と credit を含む、推定。325T の約 1.7% と 0.7%）。BRAM の FIFO（72 bit 幅で 512 深）にすると 612 bit の channel に BRAM36 が 9 つで、割合で LUTRAM より高い（§19.12 の 3）。
+- **新しい common の module**（p037 の規則に合わせ、算術は am_ の module で）: `am_cdc_fifo`（`am_afifo` + `ASYNC` parameter: 0 なら同じ clock の `am_fifo` で同じ深さ・同じ port）、`am_cdc_credit`（ready の無い応答のための credit の counter と FIFO の組）、`am_cdc_hs`（4 相の握手）、`am_cdc_gray`（単調な counter を gray で渡す）、`am_rst_cdc`（§19.7 の reset の握手）。`atg_su_cdc`（新しい wrapper: `atg_su` の外側で channel 1〜13 を並べる、`atg_top` の `g_su` の中に置く）。
+- **置き場所の判断**: CDC は `atg_su` の外の wrapper に置き、`atg_su` の中は 1 つの clock のまま（SU の TB はそのまま使える）。MC の木の leaf（`am_amb_to_rt`）は gclk に置き、CDC は SU の AMB の口と leaf の間（MC の木は全部 gclk）。
+
+#### 19.4.3 境の遅れ（推定）
+
+- `am_afifo` は書き側 1 cycle（pointer の更新）+ 読み側 2 段の同期 + 比較 1 cycle で、**片道 ≈ 書き側の 1 周期 + 読み側の 3 周期**。gclk 100 MHz・sclk 200 MHz で s → g ≈ 5 + 30 = 35 ns、g → s ≈ 10 + 15 = 25 ns、往復 ≈ 60 ns ≈ **sclk の 12 cycle**。
+- 効く所: D$ の miss（outstanding 1）の往復は今の MC の木（KC705 で 5 hop × 2）+ AXI の converter + MIG に約 60 ns 増える（推定 +20〜25%）。I$ の miss も同じ。texture は往復 + TU の pipeline（gclk の cycle で数え sclk では 2 倍）。export は片道で、ROP の順序の待ち（`ex_next`）は gclk → sclk の片道の遅れが足される。STATE の書き込みと kick は片道 + CP の credit の往復。
+- 隠し方: 長い命令（class m・t・x）は scoreboard と他の warp が隠す（§3.1.1）。D$ の outstanding 1 は throughput の限界で、p015（複数の SU、PERF）の課題として残す（timing の範囲の外）。
+
+#### 19.4.4 制約（XDC）と道具
+
+- **今の XDC の弱さ**: 全部の領域の間を `set_clock_groups -asynchronous` にしているので、`am_afifo` の gray の pointer の bus の skew も timing の対象から外れる。2 段の同期は「pointer の bit の到着の差が 1 周期より小さい」事を前提にする（gray なので 1 bit ずつ変わる前提が崩れる）。LUT 85% 前後の混雑で配線が数 ns に延びると前提が崩れ得る（今の 20〜100 MHz では余裕だったが、200 MHz の sclk で詰まる）。
+- **推し**: gclk ↔ sclk（と、ついでに既存の am_afifo・am_sync の境）は clock group ではなく、gray の pointer に `set_max_delay -datapath_only`（速い方の周期）と `set_bus_skew`（速い方の周期）、`am_sync` の 1 段目に `ASYNC_REG`（既に有る）。LUTRAM の非同期の読み（am_afifo の記憶 → 読み側）も `set_max_delay -datapath_only`。制約は module の名前で書く（`-hier -filter {REF_NAME == am_afifo}` の形、実装の段で Vivado の版で確かめる）。
+- **OOC の tcl**: `tools/vivado-ooc.tcl` は port `clk` の 1 つの clock だけを作る。`atg_top` の OOC には `sclk` の port の clock を足す引数（例 `CLOCKS=clk:10,sclk:5`）を足す。SU の単体の OOC は今のまま（`clk` を 5 ns）。
+
+### 19.5 pipeline の方針（item 4）
+
+#### 19.5.1 経路の種類ごとの段の入れ方
+
+1. **FP の datapath（SU の FPU・PK の残り・lane の fadd・XU の多項式、TU の filter（済み）、ROP の fblend、BLT の favg、RX の fadd/fmul/fdiv（4 段済み）、VF・fmt の変換）**: p038 の `atg_tu_fma` を型に、**1 つの fp32 の FMA の pipeline module を共有の部品にする**（p037 の P1 の `atg_su_ffma` の module を、`LAT` parameter を持つ段付きの形にする）。段の目安（200 MHz）: (1) operand の register（opd の段 B の出力）、(2) unpack・flush・special・n/a、(3〜5) 仮数の積（`am_mul` の LAT 3: DSP の AREG/BREG・MREG・PREG）、(6) 指数の差と alignment の shift（`am_shift` を 2 段の mux に）、(7) 加算（48 bit、CARRY4）、(8) LZC と正規化、(9) 丸めと pack、(10) 後処理（sat・min/max の選択・Boolean・fp16 の半分の pack）。100 MHz の block では隣の 2 段ずつを 1 つにする（`LAT` で）。**結果は今と bit で同じ**（`tools/gsi1fp.py`・`tumodel.py` の model と比べる）。
+2. **address の計算（TU の addr・desc・cube、ROP の wpix の offset、VF の fetch、SU の LSU の coalescer、MC の PLB の overlap）**: (a) 式を段に（乗算は `am_mul` の LAT、加算の木の間に register）、(b) **draw・descriptor の単位で決まる値を前計算**（例: TU の level の offset と pitch を descriptor の書き込みの時に表に置き、quad ごとの道から外す。ROP の attachment の base と stride の積も同じ）。(b) は算法の置き換えで、p032 の Fable の論点（§19.5.4）。
+3. **fanout・control（TU の cache・filter の enable、addr → cache の handshake、FSM の decode が広い register へ）**: 次の状態の decode を 1 cycle 前に register に、flag の複製（`max_fanout` を RTL の attribute で、p038 と同じ）、広い datapath の register は CE を付けず毎 cycle load して valid の bit で区別、datapath の FF に reset を付けない（control set を減らす: 板の build で 2,930）。
+4. **広い mux・選択（SU の opd の operand の選択、TU の ffilt の lane・texel の 128 bit の選択、ROP の wb の line への書き込み、BLT）**: 選択の index（one-hot）を 1 cycle 前に register に、mux の木の中ほどに register（2 段の選択）。SU の opd は段 B の出力を register にして FPU の前に 1 段（今は opd の mux → FPU が 1 つの経路、§19.2 の最悪の経路）。
+5. **memory（BRAM・LUTRAM）**: BRAM の読みの直後に register（DO_REG か FF）、BRAM → logic → BRAM を 1 cycle に置かない。LUTRAM の非同期の読みを組み合わせの深い経路の始点にしない（TU の desc の d_off）。RF の BRAM に DO_REG を付けると opd の段が 2 → 3 になる: `OPD_LAT` の parameter と interlock の定数を合わせる。
+6. **配線（R）**: 面積を減らす（§19.6）のが先。次に floorplan（SU を pblock に、sclk の領域を 1 つの clock region の列にまとめる）。block の間の長い bus に register の slice（`am_cdc_fifo` の ASYNC = 0 で同じ形）。
+7. **止め方（U108）**: pipeline の中で止めない（valid の bit が流れるだけ）。下流が止まり得る所は、入口で credit を見て送り、出口の skid の FIFO（深さ = pipeline の段の数 + 余り）が受ける（p038 の `atg_tu_filter`: 出力の FIFO 4 と credit）。止める信号を pipeline の全段の CE に配らない。**SU の bus を unit が止める `unit_ready`（PK_SHARED の high の半分の cycle、`lane` の shfl の 2 × G cycle）は、issue の段（`atg_su_sb`・`opd`）が uop から予定を作る形に**（unit からの組み合わせの戻りを無くす）。
+
+#### 19.5.2 latency が与える影響
+
+**SU（scoreboard・ISA・性能）**
+
+- `SHORT_LAT` は class a と f の結果が bus の後に戻るまでの cycle（今 6）。FPU を 10 段前後にすると、opd の register 1 と後処理 1 を足して **約 11〜12**。ALU・lane・LDA・PK の結果も同じ長さに遅らせる（1 本の固定長の pipeline、§3.1.1 の WAW を起こさない形）。遅らせる register は SRL（LUT の shift register）で安い。
+- **`atg_su_sb` の `CD_W = 4`**: 短い書き手の countdown は `SHORT_LAT + 1` まで数えるので、今の幅では `SHORT_LAT ≤ 14`。`CD_W = clog2(SHORT_LAT + 2)` にする（約 10 LUT）。
+- **ISA**: 変わらない。latency は scoreboard の interlock（読み手は書き手の countdown が G + 1 以下になるまで待つ）が隠し、GSI1 の binary は NPHYS・`SHORT_LAT` に依らず動く（§3.1）。`docs/gsi1.md` §3.4.2 の「f（DSP の pipeline、4〜6）」は「実装が決める」に直す（文書だけ）。
+- **compiler**: zedBSD の `gsi1-schedule.c` は純粋な命令を最初の読み手の直前に沈める（latency の model が無い）ので、依存の続く命令が隣り合い、latency はそのまま stall になる。latency を見て独立の命令を間に挟む list scheduling は性能の改善で、正しさには要らない（Future Work の候補、Q1 が登録を判断）。
+- **性能の見積もり**（`atg_su_sb` の説明からの近似: 同じ warp の依存する次の命令は約 `SHORT_LAT + 1` cycle 後、1 命令は bus を G = 32/NPHYS cycle 使う。NPHYS 8 で G = 4。全部の命令が直前に依存する最悪の場合、bus の使用率 ≈ min(1, k × G / (SHORT_LAT + 1))、k = runnable な warp の数。**TB で測って直す**）:
+
+| SHORT_LAT | k = 1 | k = 2 | k = 3 | k = 4 | 1 秒の group の数（k = 2）、sclk |
+| --- | --- | --- | --- | --- | --- |
+| 6（今、100 MHz 相当） | 57% | 100% | 100% | 100% | 100 M（100 MHz） |
+| 8 | 44% | 89% | 100% | 100% | — |
+| 10 | 36% | 73% | 100% | 100% | — |
+| 12（推しの見込み） | 31% | 62% | 92% | 100% | **124 M（200 MHz）** |
+| 14（今の CD_W の上限） | 27% | 53% | 80% | 100% | 106 M（200 MHz） |
+
+  → **200 MHz で SHORT_LAT 12 は、k ≥ 1 のどこでも 100 MHz で SHORT_LAT 6 より遅くならない**（k = 1 で 62 M 対 57 M）。NWARPS 4 の KC705（fragment の予約 2）で、長い命令の待ちで runnable が 2 以下になると使用率が下がる。NWARPS 8 は BRAM が要る（§3.5 の構成 D）ので v1 では変えない。
+
+**他の block**
+
+| block | 増える latency | 効く所 | 対処 |
+| --- | --- | --- | --- |
+| TU | p038 で quad ごとの drain（nearest 14.6 → 28.4 cycle など） | fragment の texture の待ち（scoreboard が隠す範囲）と、quad の throughput | p032 の論点: 次の quad を drain の前に入れる（pass の重ね）。gclk 100 MHz で sclk から見ると 2 倍 |
+| ROP | blend の LAT 3 → 4（patch）、fblend・wb の段 | 同じ line の続く quad の読み書きの依存（wb の 2 line の entry の間） | LAT の parameter で wb の待ちが合う事を TB で確かめる（`atg_rop_*` の TB と `atg_top_msaa`） |
+| RX | setup の microcode の FP の latency | primitive ごとの setup の cycle（小さな三角形の throughput） | `tools/rx-ucode.py` が fadd/fmul/fdiv の latency を前提に schedule を作る → LAT を変える時は生成し直す |
+| VF・BLT | 段の分 | stream の throughput は変わらない、最初の結果が遅れるだけ | 無し |
+| CP・CPU・MC | 100 MHz では変えない見込み | — | — |
+| CDC | §19.4.3 | D$・I$ の miss、texture、export の順序 | §19.4.3 |
+
+#### 19.5.3 p025 の 1 段目でしない事
+
+- 算法の置き換え・近似（例: FMA を別の形に、TU の LOD の近似）は p032 の Fable の助言の後（ユーザーの 3 段の方針）。p025 は「同じ結果のまま段を入れる」と「fanout・選択の register 化」だけ。
+- 面積を減らす機能の判断（U80・U81・U84 など）はユーザーの判断で、p025 は測って選択肢を示す。
+
+#### 19.5.4 p032（Fable 5.1 High の助言）に渡す論点
+
+1. TU の address: descriptor の書き込みの時の前計算（level の offset・pitch の表）で quad ごとの道から乗算を外せるか。cube の面の選択と除算の準備を `rcp` の table + 1 段にできるか（Vulkan の精度の要求の中で）。
+2. SU の FMA の段数と ASIC: 200 MHz の KC705 で 10 段、ASIC の 1.0〜1.5 GHz で 4〜5 段に戻す `LAT` の分け方。`SHORT_LAT` を class f と a で分ける（2 つの latency と書き戻しの衝突の調停）価値があるか。
+3. TU の drain: 次の quad を重ねる形と、fragment の warp の数・scoreboard の entry で texture の latency を隠せる範囲。
+4. RX の setup: microcode の datapath（fadd・fmul・fdiv が 1 つずつ）の段と、primitive の setup の throughput（小さな三角形）。
+5. ROP の blend の 8 bit の道と f32 の道を 1 つにできるか（面積）、throughput（RGBA8 は 1 quad/cycle）を保つ条件。
+6. BLT の favg（RESOLVE の fp・sRGB の平均）を shader（compute）に移す価値（§15.8 の決定の見直しになる）。
+7. 繰り返しの指針: 各回に何を測り（block の OOC の合成と配線、段数、LUT・FF）、どこで打ち切るか。
+
+### 19.6 面積の見通し（item 5）
+
+| 時点・構成 | LUT | FF | BRAM36 | DSP | 出所 |
+| --- | --- | --- | --- | --- | --- |
+| p036 d94076c、OOC の core（NPHYS 8、PK_SHARED 1、NSU 1、MIG・PCIe・DC 無し） | 167,293（82%） | 78,371 | 106.5 | 146 | Q1 が report で確かめた（LUT）、他は P2 の申告 |
+| p024 8040e3d、板の全体（PK_SHARED 0、p038 の TU、MIG・PCIe・DC・AXI の converter 込み） | 215,131 combined（105%）・247,510 total | 120,230（29%） | 127 + 19/2 | 183 | P2 の申告、place で停止 |
+| 差（板 − core）の内訳の推定 | +48k = PK_SHARED 0（+約 8k）+ MIG・PCIe・AXI の 512 bit の converter と crossbar・DC（+約 35〜40k、IP の内訳は未測定）+ p038 の TU（LUT −約 2k、FF +6.7k） | | | | 推定 |
+
+**p025 の後の見込み（板、NSU 1、推定）**:
+
+| 項目 | LUT の増減 | 根拠 |
+| --- | --- | --- |
+| 板の top に `SU_PK_SHARED = 1`（U105） | −約 8k | p036 の OOC: PK + FPU 31.4k → 23.7k（PK だけでは 14,459 → 2,953 だが FPU が shared の形で増える） |
+| p037（算術の am_ の module） | 未知（±数 k） | p036 で共有は済み。置き換えは同じ回路の書き直しが主。T0 で測る |
+| sclk ↔ gclk の CDC（§19.4.2） | +3k〜+4k | LUTRAM |
+| pipeline の register と control（SU・TU・ROP・RX・BLT・VF） | +6k〜+12k（LUT）、+20k〜+30k（FF） | p038 の TU で LUT −1.9k・FF +6.7k（28,631 / 8,281 → 26,754 / 14,948、filter の重複を除いた分を含む）。SU の 8 lane × 約 6 段 × 約 150 bit ≈ 7k FF など |
+| **合計の見込み** | **約 216k〜223k（106〜110%）** | 入らない |
+
+- **timing に要る空き**: 7 series で LUT 85% を超えると配線の混雑が timing を大きく壊す（p036 の配線後: 95% で短い経路も 10〜12 ns を失った）。K2（gclk 100 / sclk 200）の目安は **LUT ≤ 85%（約 173k）**、K3（全部 200）は **≤ 75%（約 153k）**。→ K2 で **約 −43k〜−50k** が要る。
+- **減らす手（推定、Vulkan への影響つき。ユーザーの判断は U106 で、測った後に）**:
+
+| 手 | LUT の効果（推定） | Vulkan・性能への影響 | 状態 |
+| --- | --- | --- | --- |
+| U81 SUBGROUP 1 → 0 | −約 2〜4k（p036 の SU 単体: NPHYS 8 で P1S1 69.1k と P0S0 52.8k の差 16.3k から、PK packed の約 14k を引いた残り。**測り直す**） | Vulkan 1.1 の subgroup の機能が無くなる（1.0 には要らない） | 未決（p036） |
+| U80 PACKED 1 → 0（PK_SHARED 1 の上） | −約 3k（PK shared 2,953 + decode） | fp16 の算術の命令が無くなる（1.0 は求めない）。fp16 の packed の速さの利点（§3.6 の 2026-10-24 の案）が無くなる | 未決 |
+| U84 fp32 の FPU を一部の lane に（例 8 → 4） | −約 10k（FPU 20.8k の半分） | fp32 の throughput が半分 | 未決（保留） |
+| SU_NPHYS 8 → 4（新しい案、推さない） | −約 15〜20k（FPU・lane・opd・RF の bank） | SU の throughput が半分、U82 の決定の見直し | 案だけ |
+| TU の 8 bit の filter と fp32 の filter を 1 つに（p036 の範囲 4 の案） | −約 5〜8k | 8 bit の texture の throughput が下がり得る | p032 の論点 |
+| BLT の favg を shader に（§19.5.4 の 6） | −約 5〜8k | RESOLVE の fp・sRGB の format が shader の dispatch に（firmware の変更） | p032 の論点 |
+| RX の cpoly の pb を BRAM に（p036 の候補） | −約 2〜3k | 無し（clipper の作り直し） | 候補 |
+| ROP の 8 bit と f32 の blend を 1 つに | −約 5〜10k | RGBA8 の throughput の条件（§19.5.4 の 5） | p032 の論点 |
+| 板の DC・PCIe を外した timing の確かめ用の build | −約 20〜30k | 最初のゴール（PCIe の GPU）には使えない。timing の測定だけ | 推さない（測定は OOC で足りる） |
+
+- **FF・BRAM・DSP**: FF は +20〜30k で約 35〜37%、BRAM は CDC を LUTRAM にするので増えない、DSP は FMA の段で変わらない（183 / 840）。**律速は LUT だけ**。
+- **NSU > 1**: KC705 で 1 SU が 85% に入らない間は、U83（NSU の目標 4〜6 → 当面 1、未決）の推しのまま。
+
+### 19.7 状態遷移・資源の所有と寿命・並行性（CDC で変わる所）
+
+- **CTRL.RESET の順（§1.3）**: 今は quiesce の後に core の reset を **1 cycle**。sclk の領域と境の FIFO は「両側を同時に、遅い clock の 3 cycle 以上」の reset が要る（`am_afifo` の約束）。→ `atg_cp_ctl` の reset を **握手**に: `am_rst_cdc` が gclk で reset を立て、sclk に同期して SU と境の FIFO の両側を reset し、sclk の側が reset を見た印を gclk に返し、両側で最小の cycle を満たしてから下ろし、CP は「両側が解けた」印の後に `RESET` の bit を落とす。watchdog の FAULT → HALT → quiesce → driver の RESET も同じ。**SU が止まった（hang）まま、境の FIFO が満杯でも、両側を同時に reset するので正しく空になる**（FIFO の内容は捨てる: reset の意味どおり）。
+- **quiesce**: MC の木は gclk のままなので AXI の quiesce は変わらない。SU の AMB の要求は境の FIFO の中に残り得る → `axi_idle` は「境の要求 FIFO が空」も条件に入れる（root の grant を止める前に FIFO の中の要求も木に入れて応答を返す、または reset で捨てる）。HALT の間に SU の D$ の応答が境の FIFO に残る事は無い（応答は必ず返り、credit で FIFO に入る）。
+- **WAIT_IDLE(SU) と偽の idle（§19.4.2 の 2）**: CP が kick を送った直後、SU の busy の同期はまだ 0。CP は channel 1 に送った command の数と SU が返した「受け取った」数（gray の counter、channel 1 の逆向き）を比べ、差が 0 かつ busy の同期が 0 の時だけ idle。session の切り替えの scrub（§17.6）も同じ（scrub_busy の同期の前に scrub の command が SU に着いた事を確かめる）。
+- **順序**: STATE の書き込みと kick は 1 本の FIFO で順を保つ。vertex の warp の許可と PT の block の done は 1 本の s → g の event の FIFO（§19.4.2 の 6: done を level で同期すると、block の取り直しの後に古い done を見て RX が早く読む）。VF の vertex の書き込みと `vl_go` も 1 本の FIFO。RX の fragment の書き込み・primitive table の書き込み・`fl_go` も 1 本。RX の PT の読み（channel 5）と pt_free（channel 6）は別の FIFO なので、RX は pt_free を出す前に、その primitive の読みの応答を全部受け取る（今も読みの後に free するので変えない）。
+- **所有**: 境の FIFO は `atg_su_cdc` が持ち、寿命は core の reset の領域と同じ。
+
+### 19.8 失敗と corner case
+
+| 場合 | 振る舞い |
+| --- | --- |
+| sclk の MMCM が lock しない、または sclk が止まる | sclk の reset は `mmcm_g` の LOCKED（gclk と同じ MMCM）で解けるので、gclk が動けば sclk も動く。sclk だけ止まる事は板では無い。SU が応答しなければ watchdog（gclk）→ FAULT → RESET の握手は sclk の reset の印が返らず止まる → **`am_rst_cdc` に gclk の timeout を付け、来なければ STATUS に印**（driver は PCIe の reset に上げる。§1.3 の AXI_STUCK と同じ扱い） |
+| 境の FIFO が満杯で、SU が止まった | 上流（CP・VF・RX・TU・ROP）は ready で待つ。watchdog が切れ、reset の握手で両側を空にする |
+| ASYNC = 0（同じ clock） | `am_cdc_fifo` は同期の FIFO。境の遅れは 1〜2 cycle に減る。TB は同じ（cycle の数だけ変わる） |
+| gclk と sclk の比が変わる（150・167 MHz） | RTL は比に依らない（TB を比 1:1・1:2・2:1・5:7 で流す、§19.9） |
+| gray の pointer の skew が制約されていない | §19.4.4 の制約で防ぐ。Vivado の report_cdc で確かめる（実装の段） |
+| ex_next の同期が遅い | export が遅れるだけ（等しい時だけ出す） |
+| D$ の応答が境の FIFO に入らない | credit が要求を止めるので起きない（credit の数 = FIFO の深さ） |
+
+### 19.9 試験の計画（host の iverilog・Verilator と Vivado の OOC。QEMU・VFIO・板はこの Phase に無い）
+
+- **CDC の module**: `am_cdc_fifo`・`am_cdc_credit`・`am_cdc_hs`・`am_cdc_gray`・`am_rst_cdc` の TB を 2 つの clock の比（1:1・1:2・2:1・5:7・7:5、位相をずらす）で、乱数の valid・ready、reset を流している途中で両側に入れる場合、ASYNC = 0 の場合。
+- **`atg_su_cdc` と `atg_top`**: 既存の scene の TB（`atg_top_core`・`atg_top_tex`・`atg_top_msaa`・`atg_top_prot`・`atg_top_disp`・`atg_top_fw`）を sclk ≠ gclk（比 2:1 と 5:7）と ASYNC = 0 で流し、結果が今と word で同じ（vec-diff）。cycle の数は変わる（期待しない）。reset の握手の TB（SU が hang の時の RESET、watchdog）。
+- **SU の pipeline**: `atg_su_fpu`・`pk`・`lane`・`lda`・`alu`・`sb` の TB を新しい `SHORT_LAT` で、`gsi1model.py` と bit で同じ。`atg_su_gfx`・`atg_su` の +quick。interlock の性能（§19.5.2 の表）を TB で数える（依存の続く命令の列を k = 1〜4 の warp で）。
+- **Verilator**: `make verilator`、fw-run、ghci-e2e（Q1・T が流す）。Verilator は 2 つの clock を TB の C++ で回す。
+- **timing**: Vivado の OOC（`tools/vivado-ooc.sh`、lock `/tmp/zedbsd-vivado.lock`）で block ごとに 5 ns（SU）と 10 ns（gclk の block）の合成と配置配線、段数、LUT・FF・DSP・BRAM の前後。`atg_top` は 2 つの clock の OOC。**板の P&R は回さない**（2026-10-25 20:35 ユーザー「20MHzも低すぎます。その段階でP&Rをやっても、あとでひっくり返るので、無駄になりそうです」、20:36 の順「p037 → p025 → board の P&R と bitstream → p024 → p028」）。板の全体の **合成だけ**を T0 で（U105）。
+- 試験の流し方は AGENTS.md の方針: 実装の担当は変えた module の TB と build（warning 0）まで、make sim の全部と Verilator は T に回す。
+
+### 19.10 実装の段（p025 の中、8 LW ≈ 2〜3 時間）と受け入れ
+
+ユーザーの「タイミング調整に使える作業時間をコントロールしたい」（2026-10-25 01:08）に合わせ、**どの段の後でも止められる順**にした（T2 の後は ASYNC = 0 の 1 つの clock の板、T3 の後は gclk 100 MHz の板が作れる）。
+
+| 段 | 中身 | 受け入れ | LW |
+| --- | --- | --- | --- |
+| T0 | p037 の merge の後の基準: block ごとの OOC（5 ns と 10 ns、合成と配線）、§19.2 の表の更新と抜けの経路、板の全体の合成だけ（`SU_PK_SHARED = 1`、hierarchy の utilization） | 表と report が `plan/ws288/phase025/evidence/` に | 4 |
+| T2 | SU の pipeline: FPU（共有の段付きの FMA）、PK の残り、lane の fadd、LDA・ALU の遅れ、opd の段 B の register と `OPD_LAT`、`sb` の `CD_W`、`unit_ready` の予定化（§19.5.1 の 7） | SU の TB が bit で同じ、SU の単体の OOC で 5 ns の WNS（met しなければ申し送り）、§19.5.2 の表を TB で測った値に | 20 |
+| T3 | gclk の block を 10 ns に: TU の addr・desc・cube・cache、ROP の blend の patch・fblend・wb、RX、BLT の favg、VF の conv、CP・MC・CPU の確かめ | 各 TB が今と同じ、block の OOC で 10 ns の WNS（met しなければ申し送り） | 16 |
+| T1 | CDC: `am_cdc_*`・`am_rst_cdc` と TB、`atg_su_cdc`、VF・RX の back-pressure、PT の読みの streaming、command の FIFO と CP の credit、idle の数え方、`atg_cp_ctl` の reset の握手、`atg_kc705_clk` の O1 と `SCLK_DIVIDE`、XDC（§19.4.4）、OOC の tcl の 2 つの clock | §19.9 の CDC と scene の TB、2 つの clock の `atg_top` の OOC | 24 |
+| T4（伸ばし代） | gclk の block の FP の datapath を 5 ns の構造に（ASIC 向け）、gclk 125 MHz の試し | 時間が余った時だけ | 8 |
+| T5 | p032 への申し送りの表（経路・WNS・段・試した事・理由）、T への依頼の取りまとめ | p025 の受け入れ（ユーザーの 3 段の方針: met しない経路が残っても cleared） | 4 |
+
+- 合計 **68 LW（T4 を除く）、±40%**。T2 は p037 の P1 の FPU の module（`atg_su_ffma` など）が main に入った後に始める。T1 は T2・T3 と別の file が多いので並べられる（`atg_top`・`atg_cp_ctl`・VF・RX は T3 と重なる: 担当を分ける時は Q1 が file の所有を決める）。
+- **p025 の受け入れ（phase.md と同じ、目標の値を U100 で直す）**: gclk の block と SU の目標の周波数で OOC の WNS ≥ 0 になった経路と、ならなかった経路の申し送りの表。sim の TB は全部 PASS のまま（T）。met しない経路が残っても cleared。
+
+### 19.11 GHCI・driver・firmware への影響
+
+- **GHCI**: 変えない（U107）。`GCLK_HZ` は gclk の Hz。watchdog（`WDT_CYCLES`）と PERF は gclk で数える（SU の busy は同期した level を gclk で数える。PERF の「SU busy cycles」の意味は「gclk の cycle の内 SU が busy だった数」で今と同じ）。sclk の Hz は amaterrace の vendor の register（`VEND` の空き、`docs/ghci.md` の vendor の節に 1 行）。
+- **driver**（zedBSD `src/drivers/gpu/ghci/`）: 変更無し（`gclk_hz` を読むだけ）。timestamp は今も無い（`timestampComputeAndGraphics` = FALSE）。
+- **firmware**（`fw/cp/`）: CPU は gclk のまま。STATE の書き込みと kick の順序は hardware の FIFO が保つので変更無し。`GCLK_HZ` を使う timeout は gclk の値で正しい（板の top の `GCLK_HZ` を `GCLK_DIVIDE` から計算している）。
+- **compiler**: 正しさの変更無し。latency を見る scheduling は Future Work の候補（§19.5.2）。
+
+### 19.12 選ばなかった案と理由
+
+1. **全部を 1 つの clock で 200 MHz（K3）**: README の文字どおりだが、KC705 の今の形（NSU 1 で LUT 105%）では −60k 以上の機能の判断が先に要り、fixed function の block の深い pipeline は FF・LUT と混雑を増やす。p032・p033 の領域として残す。
+2. **sclk = 2 × gclk の同期の関係（同じ MMCM、CDC 無しの 2:1 の多 cycle の path）**: 境の遅れが小さい（1〜2 cycle）が、gclk と sclk を別に動かせない（予備の 167 MHz・gclk 125 MHz）、Vivado の multicycle の制約が全部の境の signal に要る、ASIC の DVFS と合わない。ASYNC = 0 の形で「同じ clock」は残す。
+3. **境の FIFO を BRAM（FIFO36E1）に**: LUT を使わないが、612 bit の channel に BRAM36 が 9 つ（325T の 2%）で、LUTRAM の約 400 LUT（0.2%）より割合で高い。LUT が律速の今でも、境の LUT は合計 3〜4k なので LUTRAM のまま。
+4. **SU と TU を 1 つの shader の cluster の領域に（NVIDIA の SM・Mali の shader core の形）**: SU ↔ TU の境（約 1.2k bit）が無くなり texture の latency が減るが、TU の address の経路（配線後 −21 ns @ 5 ns）を 200 MHz にする仕事が要り、TU の MC の口が境を越える。v1 は SU だけ（ユーザーの「SU は特に」）。U102 の別案として残す。
+5. **CDC を `atg_su` の中（各子 module の口）に**: 境の bit が増え（RF・LDS は中）、SU の TB が 2 つの clock を要る。外の wrapper の方が SU の中を 1 つの clock に保てる。
+6. **MC の木と root を mclk（MIG の 200 MHz）に**: memory の帯域が gclk に縛られなくなる（K2 の限界 (a)）が、全部の client（CP・BLT・VF・TU・ROP・DC）の leaf に境が要り、PROT の root（§17）も跨ぐ。p015 で memory が律速なら見直す。
+7. **mobile の ASIC で GPU 全体を 1 つの clock に（Kepler 以降の形、hot clock を使わない）**: 電力の効率は良い（深い pipeline と高い電圧を shader だけに使わない）。ASIC の判断は後で、`ASYNC = 0` で RTL はどちらにもなる。KC705 では 2 つの領域が面積と仕事の量で有利。
+8. **class a と f で別の latency（a は短く 2〜3、f は長く 10〜12）**: 整数の依存の列が速いが、書き戻しの bus で a と f の結果が同じ cycle に重なる（2 本の書き込み port か予約が要る）、WAW の規則が増える。v1 は 1 本の固定長（§3.1.1）。p032 の論点 2。
+9. **FPU を pipeline にせず DSP を複数 cycle で使い回す**: ユーザーの決定（2026-10-25 12:51「SUはパイプラインにしましょう。ということは、FPUもパイプライン化がひつようですね。」）で取らない。
+
+### 19.13 U 項目（ユーザーの判断。推し付き）
+
+| # | 問い | 推し | 理由・影響 |
+| --- | --- | --- | --- |
+| **U100** | KC705 の目標の Fmax | **K2: sclk（SU）200 MHz、gclk（他）100 MHz**。p025 の 1 段目はこの値で、met しない経路は p032 へ。gclk の 125〜150 MHz は面積が減った後の伸ばし代、sclk の予備は 167・150 MHz | §19.3.2。K1（全部 100）・K3（全部 200）・K4（125〜150 / 250）は理由とともに表に |
+| **U101** | ASIC の目標の扱い | **1.0 GHz を基準、1.5 GHz を伸ばし代**。KC705 の 200 MHz の構造の SU は ASIC の約 1.1〜1.75 GHz（推定）、100 MHz の構造の block は ASIC で sclk の半分の clock か後の WS で深く。amaterrace-gpu の README の「800 MHz is the goal on ASIC processes」を 1.0〜1.5 GHz（3 nm、mobile）に直すかはユーザー（README はユーザーの file） | §19.3.3。ASIC の library の数字は無い（推定の幅は約 2 倍） |
+| **U102** | clock の領域の分け方 | **sclk = 全部の SU だけ**。TU・RX・VF・ROP・BLT・CP（CPU を含む）・MC・DC の memory の側は gclk。mclk・uclk・pclk・tck・ref_clk は今のまま | §19.4.1。別案: SU + TU の cluster（§19.12 の 4） |
+| **U103** | 境の形 | **全部の境を `am_afifo` の上の `am_cdc_*` の channel（ASYNC parameter で同期の形にもなる）**、XDC は gray の pointer に max_delay と bus_skew（clock group だけにしない） | §19.4.2・§19.4.4。2:1 の同期は §19.12 の 2 |
+| **U104** | SU の短い命令の latency | **class a と f の 1 本の固定長の pipeline を保ち、`SHORT_LAT` を約 11〜12 に**（整数の ALU の結果も同じ長さ）。ISA は変えない、`docs/gsi1.md` の latency の記述は「実装が決める」に | §19.5.2 の表: 200 MHz なら k ≥ 1 のどこでも今より遅くならない（推定）。別案は §19.12 の 8 |
+| **U105** | 板の top の `SU_PK_SHARED` と、板の全体の合成 | **板に `SU_PK_SHARED = 1` を渡す**（2026-10-25 12:41「後者で合成してみましょう」を板にも）。p037 の後に板の全体を **合成だけ**（P&R はしない）して module ごとの LUT を取る | §19.6。今の板の top は既定 0（fp16 を 2 つ同時）のまま |
+| **U106** | 面積の目標と減らす手の選び方 | **K2 の目安は板の LUT ≤ 85%**。T0 の測定の後、入らなければ §19.6 の表から選ぶ（推しの順: U81 → U80 → p032 の算法の論点 → U84）。U80・U81・U83・U84 は p036 のまま未決で、この節は見積もりを足しただけ | 測る前に機能を外さない。U81 の効果は測り直すと小さい見込み（約 2〜4k） |
+| **U107** | GHCI の clock の報告 | **GHCI は変えない**（`GCLK_HZ` = gclk、PERF・watchdog は gclk）。sclk の Hz は vendor の register に debug 用 | §19.11 |
+| **U108** | pipeline の止め方 | **止まらない固定の latency の段 + 出口の skid の FIFO と credit**、datapath の FF に reset と CE を付けない、unit から bus への `unit_ready` は issue の段の予定に置き換える | §19.5.1 の 3・7。p038 の `atg_tu_filter` で確かめた形 |
+
+### 19.14 license と転記
+
+- amaterrace-gpu・zedBSD とも zlib（`SPDX-License-Identifier: Zlib`）。この節は amaterrace-gpu の RTL（e64da02）を読んで設計を書いただけで、code は写していない（module・port・parameter の名前は事実として引いた）。
+- Xilinx の DS182・UG472 の値は部品の事実として引く（この節の値は一般知識の幅で、版を読み直していない。実装の段で使う値は文書の版を書いて引き直す）。Kuon & Rose（IEEE TCAD 2007）は結論の数字だけを一般知識として引いた（文は写していない）。foundry の速さの伸びは公開の発表の一般知識の積み重ね（版・出典の文は写していない）。
+- 新しい RTL（実装の段）は amaterrace-gpu の規則（`docs/style.md`、p037 の算術の規則）で書く。Xilinx の IP の生成物は repository に入れない（§4.1、今のまま）。
+
+### 19.15 review の指摘と対応
+
+（design-reviewer の結果をここに書く。）
