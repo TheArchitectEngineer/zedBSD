@@ -162,7 +162,8 @@ tightly integrated, cohesive desktop experience directly at the OS level.
 
 ### /sbin/audiod
 
-- `/sbin/audiod` is the audio server.
+- `/sbin/audiod` is the audio server, featuring a zero-copy audio playback.
+- It also has a compatible `libpulse` interface.
 
 ### /sbin/volumed
 
