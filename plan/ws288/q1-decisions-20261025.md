@@ -35,3 +35,4 @@
 | 2026-10-25 08:59 | p018: firmware は CAPS を読めないので、driver が GHCI_HEAP の 3 語目で resident の warp の数を渡す（P2 の判断を受け入れ） | atg_cpu の窓に HCR の読みが無い |
 | 2026-10-25 08:59 | copy しない scanout（swapchain の image を DC の条件で確保し FB_NEXT で flip）を p019 の範囲に足した | ユーザーの問いへの答え、DC の hardware は対応済み |
 | 2026-10-25 09:00 | GHCI に標準の HCR の register RESIDENT_WARPS（NSU×NWARPS）を足す（P2 が RTL と GHCI、P3 の driver が読んで GHCI_HEAP の 3 語目に渡す）。vendor の register の読みは使わない | 汎用の driver に vendor の code を入れない（GHCI の汎用の原則） |
+| 2026-10-25 09:13 | S16 は「行の byte 数」でなく行の丸めの規則（TEX_ROW [1:0] = 切り上げの texel 数の log2）にする P1 の案を受け入れ、P2 の firmware に伝えた | level ごとに行の byte 数が違い、1 つの word では表せない（P1 の指摘） |
