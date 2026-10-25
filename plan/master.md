@@ -28,7 +28,7 @@
 <!-- master:next:start -->
 1. 新しい Q1 は AGENTS.md・この block を読む。**ユーザーへは日本語で、聞かれた 1 件だけを答える。ユーザーに試験を頼まない。**
 2. **merge・試験の出力は必ず読んで確かめてから記録・報告する**（merge の後に `git log -1 --format='%h %p'`、担当の SHA は `git cat-file -t`）。担当の branch に捨てた変更が残っていないか（例: 2026-10-22 の P2 の buffer の使い回し）を diff の file の一覧で確かめ、必要なら cherry-pick。
-3. 次の番号: BUG-346、q1580、WS290、KL_VERSION 96。古い q・T1 の番号の経緯は git の履歴（2026-10-23 以前の master.md）。
+3. 次の番号: BUG-346、q1581、WS290、KL_VERSION 96。古い q・T1 の番号の経緯は git の履歴（2026-10-23 以前の master.md）。
 4. WS288 の次: [handover-20261024-2230.md](ws288/handover-20261024-2230.md) の §5（推し: p009 の残りを閉じる → p018・p010 → p006 の見直し）。担当には amaterrace-gpu の worktree を作って渡し、Q1 が `--no-ff` で merge する。
 5. 日付は host の `date`。記録の整合は [record-integrity.md](record-integrity.md)。1 LW ≈ 実時間 15〜25 分。
 <!-- master:next:end -->
@@ -636,6 +636,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-25 17:07 ユーザー「MCはIDの使い分けを実装しましょう。KC705ボードでなく、汎用の部品として、AXI ２つの振り分けをするモジュールを作って、KC705で利用しましょう。」（Q1 の説明「MC に AXI を 2 本より、1 本で行き先ごとに ID を分ける方がよい」の後）→ ws288-p039 を新設（P1）。
 - 2026-10-25 16:30 ユーザー（Q1 の問い「KC705 の PCIe の IP は、DMA mode と AXI の bridge のどちらで作りますか？」）「AXI の bridge」→ ws288-p013: XDMA の bridge mode（7 series に無ければ axi_pcie）。GPU → host memory の AXI の slave の口を持ち、p029 と host・DDR3 の両方の形にそのまま使う。MSI は標準だけ。
 - 2026-10-25 15:58 ユーザー（Q1 の問い「算術の共通の module の instance で、module が 400 行の上限（U38）を超えた時はどうしますか？」）「am_ の行を数えない」→ amaterrace-gpu の spec/README の規則に追記（1309d5b）: rtl/common の算術の module（am_add・am_sub・am_addsub・am_mul・am_div・am_shift）の instance の行は 400 行に数えず、残りで 400 行以下を保つ。
 - 2026-10-25 15:49 ユーザー「PCIeブリッジを今から作ってください。」（Q1 の答え「KC705 の PCIe（p013）はまだ planned、bridge の RTL と sim は板無しで作れる」の後）→ ws288-p013 の板の要らない部分を先に（P2、q1579）。
