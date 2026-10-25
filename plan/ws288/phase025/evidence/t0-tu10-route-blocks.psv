@@ -1,0 +1,19 @@
+cell|slack|delay|logic|net|levels|start|end|maxfanout|net
+*|-15.118|24.966|11.947|13.019|67|addr/k_reg[0]_rep/C|addr/foot/u_lbk/ta_addr[511]_i_24_psdsp_5/D|94|addr/lsel/r_val[31]_i_127_n_0
+addr/cubeu|-6.177|16.126|3.507|12.619|39|addr/job_reg[0]/C|addr/cubeu/ns_num_reg[7]/D|215|addr/cubeu/u_m3/p_0_in__0[0]
+addr/desc|-8.927|18.579|9.240|9.339|28|addr/desc/cs_reg_rep[1]/C|addr/desc/d_off_reg_0_63_21_23/RAMC/I|440|addr/desc/u_pd/fi_l_inferred__0/m_i_65[1]
+addr/foot|-15.118|24.966|11.947|13.019|67|addr/k_reg[0]_rep/C|addr/foot/u_lbk/ta_addr[511]_i_24_psdsp_5/D|94|addr/lsel/r_val[31]_i_127_n_0
+addr/tcrd|-12.137|21.080|9.120|11.960|58|addr/k_reg[0]_rep/C|addr/tcrd/u_pw/m__0/PCIN[0]|94|addr/lsel/r_val[31]_i_127_n_0
+addr/u_lstr|no path
+ffilt/fma|3.992|5.596|0.580|5.016|5|ffilt/front/mv_reg[13][8]__0/C|ffilt/fma/u_mul/g_r.r_reg[1]/A[14]|26|ffilt/front/cvt/mv_reg[13][3]__0_29
+ffilt/front|-0.555|10.526|0.656|9.870|7|ffilt/rem_reg[4]/C|ffilt/front/raw1_reg[14]/D|164|ffilt/front/rem_reg[0]_3
+filter/g_acc?0?.sum|4.533|4.994|0.868|4.126|6|filter/pre/ka4_reg[6]/C|filter/g_acc[0].sum/g_pr[2].u_pr/g_r.r_reg[1]/B[4]|12|filter/pre/ka4[6]
+filter/g_acc?1?.sum|6.357|2.207|0.348|1.859|0|filter/pre/w5_reg[3]/CLK|filter/g_acc[1].sum/g_pr[3].u_pr/g_r.r_reg[1]/A[13]|4|filter/g_acc[1].sum/g_pr[3].u_pr/o_w[13]
+filter/g_acc?2?.sum|5.964|2.600|0.348|2.252|0|filter/pre/w5_reg[2]/CLK|filter/g_acc[2].sum/g_pr[2].u_pr/g_r.r_reg[1]/A[15]|4|filter/g_acc[2].sum/g_pr[2].u_pr/o_w[15]
+filter/g_acc?3?.sum|7.034|1.530|0.348|1.182|0|filter/pre/w5_reg[1]/CLK|filter/g_acc[3].sum/g_pr[1].u_pr/g_r.r_reg[1]/A[0]|4|filter/g_acc[3].sum/g_pr[1].u_pr/o_w[0]
+filter/g_cv?0?.rnd|5.179|4.823|0.580|4.243|6|filter/g_cv[0].rnd/lz16_reg[5]/C|filter/g_cv[0].rnd/nst17_reg/D|130|filter/g_cv[0].rnd/lz16[5]
+filter/g_cv?1?.rnd|5.469|4.503|0.724|3.779|6|filter/g_cv[1].rnd/lz16_reg[6]/C|filter/g_cv[1].rnd/nst17_reg/D|129|filter/g_cv[1].rnd/lz16[6]
+filter/g_cv?2?.rnd|5.800|4.172|0.481|3.691|6|filter/g_cv[2].rnd/lz16_reg[6]/C|filter/g_cv[2].rnd/nst17_reg/D|129|filter/g_cv[2].rnd/lz16[6]
+filter/g_cv?3?.rnd|4.030|5.973|0.685|5.288|6|filter/g_cv[3].rnd/lz16_reg[5]/C|filter/g_cv[3].rnd/nst17_reg/D|133|filter/g_cv[3].rnd/lz16[5]
+filter/outq|3.016|6.811|0.532|6.279|4|filter/dl_reg[18][22]__0/C|filter/outq/mem_reg_0_3_438_443/RAMB/I|96|filter/g_cv[0].rnd/asmb[318]_i_2
+filter/pre|3.799|5.742|0.446|5.296|5|filter/vw1_reg[1]/C|filter/pre/kn2_reg[0]/S|11|filter/pre/ka32_2_reg[32]_0[1]

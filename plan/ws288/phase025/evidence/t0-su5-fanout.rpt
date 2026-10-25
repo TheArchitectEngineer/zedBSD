@@ -1,0 +1,52 @@
+Copyright 1986-2022 Xilinx, Inc. All Rights Reserved. Copyright 2022-2026 Advanced Micro Devices, Inc. All Rights Reserved.
+---------------------------------------------------------------------------------------------------------------------------------------------------
+| Tool Version : Vivado v.2026.1 (lin64) Build 6511674 Tue Jun 16 11:01:26 MDT 2026
+| Date         : Mon Oct 26 02:33:03 2026
+| Host         : centris running 64-bit Debian GNU/Linux 13 (trixie)
+| Command      : report_high_fanout_nets -max_nets 30 -timing -file /home/awe/amaterrace-worktrees/p1-p025t0/build/vivado/ooc-t0-su5/an-fanout.rpt
+| Design       : atg_su
+| Device       : xc7k325t
+| Design State : Synthesized
+---------------------------------------------------------------------------------------------------------------------------------------------------
+
+High Fan-out Nets Information
+
+1. Summary
+----------
+
++------------------------------+--------+-------------+-----------------+-----------------+
+| Net Name                     | Fanout | Driver Type | Worst Slack(ns) | Worst Delay(ns) |
++------------------------------+--------+-------------+-----------------+-----------------+
+| sched/p_0_in__1              |   3955 | LUT1        |             inf |           0.593 |
+| exp/sc/r_wa[0]               |   2192 | LUT3        |           3.505 |           0.455 |
+| exp/sc/r_wa[1]               |   2192 | LUT3        |           3.471 |           0.527 |
+| exp/sc/r_wa[2]               |   2192 | LUT3        |           3.512 |           0.446 |
+| exp/sc/r_wa[3]               |   2192 | LUT3        |           3.501 |           0.417 |
+| exp/sc/ADDRD[0]              |   1760 | LUT3        |           3.535 |           0.455 |
+| exp/sc/ADDRD[1]              |   1760 | LUT3        |           3.468 |           0.527 |
+| opd/rst_n_5                  |    803 | LUT3        |           2.364 |           0.272 |
+| opd/rst_n_0                  |    784 | LUT2        |           2.564 |           0.272 |
+| tex/FSM_onehot_st_reg[2]_0   |    768 | FDRE        |           4.072 |           0.416 |
+| tex/crd[1215]_i_1_n_41       |    768 | LUT4        |           1.940 |           0.593 |
+| tex/tx_tag[7]                |    645 | FDRE        |             inf |           0.267 |
+| exp/drain/dq[0]              |    640 | FDRE        |             inf |           0.416 |
+| lds/lanes[7]_i_1__1_n_41     |    639 | LUT4        |           3.090 |           0.272 |
+| dcache/q_write_i_1_n_41      |    562 | LUT3        |           3.306 |           0.272 |
+| lsu/cur[7]_i_1_n_41          |    562 | LUT3        |           2.802 |           0.272 |
+| opd/rst_n_2                  |    548 | LUT2        |           1.854 |           0.272 |
+| alu/sv                       |    542 | LUT6        |          -3.808 |           0.407 |
+| fl_pw_addr[0]                |    530 | PORT        |             inf |           0.000 |
+| fl_pw_addr[1]                |    530 | PORT        |             inf |           0.000 |
+| opd/mine_pk                  |    530 | LUT4        |           2.562 |           0.407 |
+| tex/lastq[0]_i_1_n_41        |    522 | LUT4        |           2.368 |           0.272 |
+| dcache/r_rdata[511]_i_1_n_41 |    513 | LUT3        |           3.094 |           0.272 |
+| cbank/lbuf[511]_i_1_n_41     |    512 | LUT6        |           3.379 |           0.272 |
+| imux/rst_n_0                 |    512 | LUT4        |           3.751 |           0.272 |
+| imux/rst_n_1                 |    512 | LUT5        |           3.251 |           0.593 |
+| opd/b_uop_reg[85]_rep_n_41   |    512 | FDRE        |           3.961 |           0.527 |
+| tex/crd[1279]_i_1_n_41       |    512 | LUT4        |           1.940 |           0.593 |
+| tex/ret/p_0_in[1023]         |    512 | LUT5        |           3.509 |           0.272 |
+| tex/ret/p_0_in[511]          |    512 | LUT5        |           3.509 |           0.272 |
++------------------------------+--------+-------------+-----------------+-----------------+
+
+

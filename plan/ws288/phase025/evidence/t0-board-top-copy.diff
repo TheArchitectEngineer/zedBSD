@@ -1,0 +1,4 @@
+300a301
+> 		.MS4(1),	/* T0 measurement copy, not committed */
+308a310
+> 		.SU_PK_SHARED(1),	/* T0 measurement copy (U105), not committed */

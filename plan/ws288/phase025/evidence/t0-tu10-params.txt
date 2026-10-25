@@ -1,0 +1,1 @@
+vivado-ooc: atg_tu ADDR_W=32 LINE_BYTES=64 LINE_SHIFT=6

@@ -1,0 +1,65 @@
+cell|slack|delay|logic|net|levels|start|end|maxfanout|net
+alu|-9.718|16.290|1.528|14.762|17|opd/b_warp_reg[0]_rep/C|alu/pipe_reg[3][211]_srl4___alu_pipe_reg_r_2/D|125|opd/g_lane[6].u_cl2/s_d[996]_i_7_0
+cbank|-6.248|12.575|0.481|12.094|6|opd/b_uop_reg[6]_rep__13/C|cbank/crq_reg[0]/R|285|opd/cr_en
+cbank/sc|4.996|1.411|0.345|1.066|2|cbank/sc/a_reg[1]/C|cbank/sc/a_reg[0]/CE|8|cbank/sc/a[7]_i_1_n_41
+dcache|1.267|5.013|0.600|4.413|5|dcache/q_line_reg[2]/C|dcache/data_reg_0/ENBWREN|80|dcache/tags_reg_0_15_7_7/A2
+dec|-11.058|17.385|0.973|16.412|15|alu/pipe_reg[5][275]/C|dec/u_uop_reg[76]/R|542|xu/sv
+div|-6.235|12.821|0.973|11.848|9|opd/b_warp_reg[0]_rep/C|div/rb_reg[115]/D|125|opd/g_lane[5].u_cl2/b_warp_reg[1]_rep_1
+exec|-9.856|16.496|6.706|9.790|15|sched/wg_x_reg[6]/C|exec/exec_r_reg[77]/D|21|sched/u_lanes/info[639]_i_3_n_41
+exp|-16.810|23.367|6.127|17.240|12|sched/wg_x_reg[6]/C|exp/g_bank[5].mz_reg_0_15_24_29/RAMA/WADR2|432|exp/g_bank[5].mz_reg_0_15_24_29/ADDRD2
+exp/drain|-15.858|22.174|6.131|16.043|12|sched/wg_x_reg[6]/C|exp/drain/seq_reg[18]/CE|130|sched/u_l31/D[0]
+exp/sc|4.637|1.699|0.508|1.191|2|exp/sc/a_reg[3]/C|exp/sc/a_reg[0]/CE|6|exp/sc/sc_a[3]
+fetch|-9.059|15.732|1.068|14.664|15|alu/pipe_reg[5][275]/C|fetch/rp_reg[1]/D|542|xu/sv
+fpu|-38.840|45.417|9.758|35.659|128|opd/b_warp_reg[0]_rep/C|fpu/pipe_reg[3][203]_srl4___alu_pipe_reg_r_2_srlopt/D|125|opd/g_lane[5].u_cl2/b_warp_reg[1]_rep_1
+fpu/g_lane?0?.mul|no path
+fpu/g_lane?1?.mul|no path
+fpu/g_lane?2?.mul|no path
+fpu/g_lane?3?.mul|no path
+fpu/g_lane?4?.mul|no path
+fpu/g_lane?5?.mul|no path
+fpu/g_lane?6?.mul|no path
+fpu/g_lane?7?.mul|no path
+icache|-4.829|11.109|1.555|9.554|13|sched/st_reg[8]/C|icache/data_reg_6/ENARDEN|36|icache/tags_reg_0_31_0_5/ADDRC3
+lane|-24.112|30.614|5.058|25.556|57|opd/b_warp_reg[1]_replica_2/C|lane/pipe_reg[3][207]_srl4___alu_pipe_reg_r_2/D|125|opd/g_lane[5].u_cl1/s_d[769]_i_8_0
+lda|-11.089|17.281|6.213|11.068|14|sched/wg_x_reg[6]/C|lda/g_copy[0].m_reg_4/ADDRARDADDR[14]|18|sched/u_l31/fl_gnt
+lda/sc|4.012|2.325|0.394|1.931|3|lda/sc/a_reg[4]/C|lda/sc/a_reg[10]/CE|13|lda/sc/a[0]_i_1__1_n_41
+lds|-5.099|11.756|1.492|10.264|13|opd/b_warp_reg[0]_rep/C|lds/radr_reg[83]/D|157|opd/g_lane[6].u_cl1/s_d[995]_i_10_1
+lds/sc|4.295|2.112|0.352|1.760|3|lds/sc/a_reg[7]/C|lds/sc/a_reg[0]/CE|12|lds/sc/a[0]_i_1__2_n_41
+lsu|-9.377|16.019|1.260|14.759|11|lsu/pend_reg[6]/C|lsu/cwd_reg[282]/D|189|lsu/lead[1]
+opd|-11.481|17.888|0.973|16.915|15|alu/pipe_reg[5][275]/C|opd/a_uop_reg[40]/CE|542|xu/sv
+pk|-17.361|24.033|2.981|21.052|34|opd/b_warp_reg[0]_rep/C|pk/pipe_reg[0][238]/D|125|opd/g_lane[6].u_cl2/s_d[996]_i_7_0
+pk/g_lane?0?.u_hi|no path
+pk/g_lane?0?.u_lo|no path
+pk/g_lane?1?.u_hi|no path
+pk/g_lane?1?.u_lo|no path
+pk/g_lane?2?.u_hi|no path
+pk/g_lane?2?.u_lo|no path
+pk/g_lane?3?.u_hi|no path
+pk/g_lane?3?.u_lo|no path
+pk/g_lane?4?.u_hi|no path
+pk/g_lane?4?.u_lo|no path
+pk/g_lane?5?.u_hi|no path
+pk/g_lane?5?.u_lo|no path
+pk/g_lane?6?.u_hi|no path
+pk/g_lane?6?.u_lo|no path
+pk/g_lane?7?.u_hi|no path
+pk/g_lane?7?.u_lo|no path
+pt|-6.663|13.089|1.016|12.073|10|opd/b_warp_reg[0]_rep/C|pt/g_bank[3].m_reg/DIADI[19]|125|opd/g_lane[5].u_cl2/b_warp_reg[1]_rep_1
+pt/sc|4.402|2.004|0.546|1.458|3|pt/sc/a_reg[1]/C|pt/sc/a_reg[4]/CE|10|pt/sc/a[9]_i_1_n_41
+pt/u_raddr|no path
+pt/u_waddr|no path
+rf|-9.619|15.953|0.809|15.144|11|alu/pipe_reg[5][275]/C|rf/lane[4].m2_reg/DIADI[6]|542|xu/sv
+rf/sc|4.361|2.280|0.457|1.823|3|rf/sc/a_reg[1]/C|rf/sc/on_reg_rep__1/D|7|rf/sc/a_reg[1]
+sb|-11.121|17.528|0.973|16.555|15|alu/pipe_reg[5][275]/C|sb/e_base_reg[54]/CE|542|xu/sv
+sched|-11.341|17.983|1.102|16.881|18|alu/pipe_reg[5][275]/C|sched/st_reg[8]/D|542|xu/sv
+sched/u_l31|no path
+sched/u_lanes|no path
+sched/u_lxy|no path
+tex|-9.240|15.554|0.315|15.239|2|opd/b_uop_reg[3]/C|tex/tx_slot_reg[3]/CE|803|tex/rd_reg[0]_0
+tex/ret|-3.289|9.931|1.002|8.929|11|alu/pipe_reg[5][275]/C|tex/ret/FSM_onehot_st_reg[0]/D|542|xu/sv
+wb|-5.763|12.260|6.084|6.176|11|sched/wg_x_reg[6]/C|wb/inq[1].q/mem_reg_0_15_42_44/RAMB/I|18|sched/u_l31/fl_gnt
+wb/inq?0?.q|-5.611|12.065|6.084|5.981|11|sched/wg_x_reg[6]/C|wb/inq[0].q/mem_reg_0_15_42_44__0/DP/I|18|sched/u_l31/launching_reg
+wb/inq?1?.q|-5.763|12.260|6.084|6.176|11|sched/wg_x_reg[6]/C|wb/inq[1].q/mem_reg_0_15_42_44/RAMB/I|18|sched/u_l31/fl_gnt
+xu|-19.408|26.049|6.655|19.394|30|xu/li_reg[0]/C|xu/z_reg[3]/D|89|xu/u_tsh/li[0]
+xu/u_prod|-8.523|14.870|6.441|8.429|17|xu/rop_reg[1]/C|xu/u_prod/m/A[1]|249|xu/u_prod/Q[0]
+xu/u_tp|no path

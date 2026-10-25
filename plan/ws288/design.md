@@ -2929,30 +2929,35 @@ D3・D4 は D2 の後に並行できる。D7 は p006・p019 の後。画面の�
 
 ### 19.2 経路の棚卸し（item 1）
 
-原因の種類: **A** = 1 cycle に演算の全部（FP・address の式）、**F** = fanout（enable・FSM の decode が広い register へ）、**M** = 広い mux・選択、**R** = 配線（logic の段は少ないが混雑で延びる）。段 = Vivado の logic levels（CARRY4 も 1 段と数える）。値は §19.0 の出所のまま（p037 の前）。
+原因の種類: **A** = 1 cycle に演算の全部（FP・address の式）、**F** = fanout（enable・FSM の decode・reset が広い register へ）、**M** = 広い mux・選択、**R** = 配線（logic の段は少ないが混雑で延びる）。段 = Vivado の logic levels（CARRY4 も 1 段と数える）。**2026-10-26 P1（p025 T0）が amaterrace-gpu 8e529b3（p037 の後）で測り直した**: xc7k325tffg900-2、Vivado 2026.1、OOC、flatten の既定（rebuilt）、KC705 の形（NPHYS 8、PK_SHARED 1、MS4 1、PROT は板の値）。SU は単体（`atg_su`）を 6.67 ns で配置配線・5 ns で合成、gclk の block は core 全体（`atg_top`）の 10 ns の合成と、TU・BLT・RX の単体の 10 ns の配置配線。遅れ = logic + 配線（配線の値は、合成では Vivado の見積もり、配線後は実際）。目標の段 = ceil(遅れ / 周期)（**推定**: register の分の時間と、段を切る位置の偏りを数えていない）。単体の配線は板の混雑（LUT 94〜100%、[phase.md](phase025/phase.md) の T0）を含まないので、板では悪くなる見込み。前の値（p036・p038）は最後の列。report は [phase025/evidence/](phase025/evidence/) の t0-*。
 
-| block | 経路（始点 → 終点） | 合成の slack ns / 段 | 配線後の slack ns / 段 / 遅れ ns | 種類 | 出所 | 今の状態と次 |
+| block | 経路（始点 → 終点） | 段 | 遅れ ns = logic + 配線（slack ns、測り方） | 種類 | 目標の段（推定）: sclk 150 / 200 MHz、gclk 100 MHz | 前（p036 2d2bd25・p038 572ffe1、5 ns） |
 | --- | --- | --- | --- | --- | --- | --- |
-| SU/FPU | `opd/b_warp_reg` → `fpu/pipe_reg[0]`（operand の選択・修飾 → fp32 の FMA の全部） | −31.55 / 114（CARRY4 50・LUT6 39、logic 8.9・配線 27.3） | −33.99 / 118 / 38.6 | A（+M: opd の段 B の operand の mux が FPU の前に直結） | p036 2d2bd25 | p037 が function を module にした（pipeline は不変）。p025 T2 で 10 段前後に |
-| SU/PK | PK の fp16 の演算 | −19.0 / 49 | −26.1 / 66 / 31.1 | A | 同上（PK_SHARED 0） | PK_SHARED 1 では fp16 は FPU の datapath（FPU の pipeline に入る）、PK は整数と pack だけ |
-| SU/lane | `qd` の差（fp32 の減算、`atg_su_fadd` 2 か所）と shfl の staging | −23.0 / 75 | −30.3 / 70 / 35.1 | A | 同上 | T2: fadd を pipeline に（`SHORT_LAT` の中） |
-| SU/LSU | coalescer の比較・address | −0.53 / 16 | −10.5 / 11 / 15.5 | R（+A） | 同上 | 面積が減れば 100 MHz は近い。200 MHz には 1 段 |
-| TU/addr | `atg_tu_addr` k → r_plane（plane・LOD の式、29 の演算子が inline） | −24.381（TU 全体） | −21.448 / 84 | A | p038 572ffe1 | T3: 式を段に、descriptor の値を load の時に前計算（§19.5.1 の 2） |
-| TU/desc | cs → d_off の LUTRAM（level の offset を 1 cycle） | — | −15.905 / 28 | A | 同上 | T3: offset を descriptor の書き込みの時に表に |
-| TU/cube | job → ns/nt_num（面の選択と除算の準備） | — | −11.122 / 33 | A | 同上 | T3: 2 段 |
-| TU/cache | t → mline の CE、addr の FSM → cache の tc_ctl | — | −4.938 / 12（a0295a7 では −6.689 / 9・−4.750 / 13） | F | 同上 | T3: enable の複製、handshake を register に |
-| TU/ffilt | lane・texel の選択 → front/raw1 の 128 bit の mux | — | −4.098 / 7 | M | 同上 | 100 MHz は満たす。200 MHz は index を 1 cycle 前に（p038 の申し送り） |
-| TU/filter | ctl11[5] → rr12（fanout 160 + 40 bit の加算） | — | −2.617 / 6 | F | 同上 | flag の複製 |
-| TU/etc・fma・cvt | ETC の decode、FMA の lz8 → st9、cvt → BRAM の address | +1.2 / +1.4 / +1.4（合成） | −1.012 / 7、−0.297 / 5、−0.031 / 4 | R | 同上 | 配線だけ。面積が減れば消える見込み |
-| ROP/blend | `atg_rop_blend` の stage 3（operation・mask・format を 1 cycle） | — | −4.207（約 108 MHz） | A | 2026-10-24 | [blend-stage-split.patch](blend-stage-split.patch)（LAT 3 → 4、未適用）を T3 で |
-| ROP/wb | `rt_reg` → `edat`（line への書き込みの選択） | −9.36 / 38（ROP 全体） | −24.0 / 21 / 29.0 | M + R | p036 2d2bd25 | p036 で byte の書き込みを slot ごとの shift に直した後の値は未測定。T0 で測る |
-| BLT/favg | RESOLVE の fp の平均・sRGB の encode | −23.6 / 84 | −30.4 / 94 / 35.4 | A | 同上 | T3: 平均と encode を段に（p037 の P3 が module にした後） |
-| RX | setup の microcode の datapath・edge（`atg_rx_fadd`/`fmul` は 4 段の pipeline 済み、`atg_rx_fdiv` は 27 cycle の逐次、最悪の経路の始点・終点は未記録） | −10.8 / 50 | −18.7 / 45 / 23.7 | A（推定） | 同上 | T0 で始点・終点を取り、T3 で段に。microcode の schedule は `tools/rx-ucode.py` が latency を前提にする（§19.5.2） |
-| VF | `atg_vf_conv`（format の変換） | −8.06 / 31 | −15.6 / 14 / 20.3 | A + R | 同上 | p036 で 1 成分ずつにした後は未測定。T0 |
-| CP | `atg_cp_*` | −1.31 / 14 | −13.3 / 11 / 18.3 | R | 同上 | 100 MHz は満たす見込み（混雑が減れば） |
-| MC | 木と root（PLB・grant） | −1.15 / 18 | −11.7 / 10 / 16.7 | R | 同上 | 同上 |
-| CPU | `atg_cpu_core` | −0.49 / 14 | −6.8 / 11 / 11.6 | R | 同上 | 同上（R25: 200 MHz なら 3 段の短い pipeline の見直し） |
-| 板の外の IP | MIG（ui_clk 200 MHz）・PCIe（125 MHz）・AXI の converter | — | 未測定（板の P&R は回していない） | — | — | IP の中は Xilinx の物。p024 の板の build で |
+| SU/FPU | `opd/b_warp_reg`（複製）→ opd の operand の選択（`opc` → lane ごとの 32 bit の `u_cl` の加算 → `opl` の mux → `fmod`）→ `atg_su_fpu_op`（FRACT の rint → i2f → fma、PK_SHARED の fp16）→ `fpu/pipe_reg[3]` | 128 | **45.417 = 9.758 + 35.659**（−38.840、配線 6.67 ns）。合成 5 ns: 129 段、42.921 = 9.920 + 33.001（−38.005）。FPU の単体の合成: 112 段、39.780 = 8.693 + 31.087（`k_op_reg` → `pipe_reg[3][0]`）。opd の分は配線後の 45.4 ns の内の最初の約 6〜10 ns | A + M | 7 / 10 | 合成 −31.55 / 114、配線 −33.99 / 118 / 38.6 |
+| SU/lane | `opd/b_warp_reg[1]_replica_2` → `lane/pipe_reg[3]`（quad の差の fadd、shfl） | 57 | **30.614 = 5.058 + 25.556**（−24.112、配線 6.67 ns）。合成 5 ns: 59 段、20.100 | A | 5 / 7 | 合成 −23.0 / 75、配線 −30.3 / 70 / 35.1 |
+| SU/XU | `xu/li_reg` → `xu/z_reg`（超越の多項式） | 30 | **26.049 = 6.655 + 19.394**（−19.408、配線）。合成 5 ns: 38 段、13.114（`rx_reg` → `z_reg`） | A | 4 / 6 | （無し） |
+| SU/PK | `opd/b_warp_reg[0]_rep` → `pk/pipe_reg[0]`（PK_SHARED 1: 整数と pack の残り） | 34 | **24.033 = 2.981 + 21.052**（−17.361、配線、opd の fanout 125）。合成 5 ns: 37 段、14.572 | A + M | 4 / 5 | PK_SHARED 0 で合成 −19.0 / 49、配線 −26.1 / 66 / 31.1 |
+| SU/EXP | `sched/wg_x_reg` → DSP（register 無しの乗算、A → P）→ `exp` の LUTRAM の address（fanout 432） | 12 | **23.367 = 6.127 + 17.240**（−16.810、配線）。合成 5 ns: 13 段、11.329 | A + F | 4 / 5（DSP の MREG・PREG と address の複製） | （無し） |
+| SU の書き戻し → issue の control | `alu/pipe_reg[5]`（短い結果の valid）→ net `sv`（fanout 542）→ `sched/st`・`dec/u_uop` の R・`sb/e_base` の CE・`opd/a_uop` の CE・`fetch`・`rf` | 15〜18 | **17.983 = 1.102 + 16.881**（sched、−11.341、配線）、sb 17.528、opd 17.888、dec 17.385。合成 5 ns: `wb/inq[0].q/wp_reg` → R・CE（fanout 280）18〜19 段、8.668 = 1.081 + 7.587（−3.929） | F | 段では直らない: valid の複製・decode を 1 cycle 前に・`unit_ready` を issue の予定に（§19.5.1 の 3・7）。最低 3 / 4 | （無し） |
+| SU/sb の issue（`atg_su_sb`） | `sb/e_base_reg` → `opd/take`（fanout 116）→ `opd/a_uop` の CE | 10 | **8.643 = 0.898 + 7.745**（−2.236、配線）。合成 5 ns: 11 段、6.480（−1.848）。dec → sb: 10 段、10.885（−4.479、配線） | F | 2 / 2（`take` の複製、比較を 1 cycle 前に） | （無し） |
+| SU/opd の operand の選択 | `sched` → `opd/b_warp` → 8 lane × 3 operand の選択。flatten none（p037 の P2）では fanout **2,585** の 1 本、rebuilt では Vivado が `b_warp_reg` を複製して 1 本あたり 125〜131 | — | FPU・lane・PK・ALU・DIV・PT・LDS の経路の始点（ALU: 17 段、16.290 = 1.528 + 14.762、−9.718、配線） | M + F | 1（段 B の出力を register に、§19.5.1 の 4。`OPD_LAT`） | 合成 −31.55（FPU の経路の一部） |
+| SU/sched・LDA・exec | `sched/wg_x_reg` → DSP（乗算）→ `sched/fl_s`・`lda` の BRAM の address・`exec` | 11〜15 | sched 15.345 = 6.084 + 9.261（−8.768）、LDA 17.281 = 6.213 + 11.068（−11.089）、exec 16.496（−9.856）、配線 | A | 3 / 4（DSP の register） | 合成 −5.90 / 15（sched → exp） |
+| SU/LSU | `lsu/pend_reg` → `lsu/cwd_reg`（coalescer、`lead` の fanout 189） | 11 | **16.019 = 1.260 + 14.759**（−9.377、配線） | F + R | 3 / 4 | 合成 −0.53 / 16、配線 −10.5 / 11 / 15.5 |
+| SU のその他 | opd の `b_uop`（複製）・`cr_en` から tex・cbank・div・pt・lds・wb・icache | 2〜13 | tex 15.554 = 0.315 + 15.239（2 段、fanout 803）、div 12.821、pt 13.089、cbank 12.575（fanout 285）、wb 12.260、lds 11.756、icache 11.109（−4.83〜−9.24、配線）。dcache だけ met（+1.267） | F | 2 / 3（enable の複製） | （無し） |
+| TU/addr の foot | `addr/k_reg[0]_rep` → `foot/u_lbk` の `ta_addr`（line の address） | 67 | **24.966 = 11.947 + 13.019**（−15.118、TU の単体の配線 10 ns）。core の合成 10 ns: 72 段、28.014 = 12.601 + 15.413（−18.473、`crd` → `foot/u_kp` の DSP） | A | 3 | 配線 −21.448 / 84（TU 全体） |
+| TU/addr の tcrd | `addr/k_reg[0]_rep` → `tcrd/u_pw` の DSP の PCIN | 58 | **21.080 = 9.120 + 11.960**（−12.137、配線） | A | 3 | （同じ経路の一部） |
+| TU/desc | `desc/cs_reg` → `d_off` の LUTRAM（fanout 440） | 28 | **18.579 = 9.240 + 9.339**（−8.927、配線） | A + F | 2 | 配線 −15.905 / 28 |
+| TU/cube | `addr/job_reg` → `cubeu/ns_num`（fanout 215） | 39 | **16.126 = 3.507 + 12.619**（−6.177、配線） | A | 2 | 配線 −11.122 / 33 |
+| TU/ffilt | `ffilt/rem_reg` → `front/raw1`（fanout 164） | 7 | 10.526 = 0.656 + 9.870（−0.555、配線） | M + F | 2（index を 1 cycle 前に） | 配線 −4.098 / 7 |
+| TU/filter・ffilt の fma | — | 4〜6 | met（filter +2.906、fma +3.992、配線） | — | 1 | 配線 −2.617 / 6 |
+| BLT/favg（MS4 1 の時だけ） | `rsv/px/fv/p_reg` → `out_p`（h2f → `atg_su_ffma_p` → f2h、sRGB の encode） | 72 | **26.184 = 6.695 + 19.489**（−16.212、BLT の単体の配線 10 ns）。core の合成: 82 段、28.397（−18.423） | A | 3 | 合成 −23.6 / 84、配線 −30.4 / 94 / 35.4 |
+| RX/setup の edge | `setup/edge_u/sv_reg` → `bx1`・`by1`（edge の乗算 `u_m_x1`） | 48 | **14.625 = 6.422 + 8.203**（−4.654、RX の単体の配線 10 ns）。core の合成: 53 段、15.923（−5.949）。frag の bary の fmul −0.434（配線） | A | 2 | 合成 −10.8 / 50、配線 −18.7 / 45 / 23.7（始点・終点は未記録だった） |
+| MC の grant → 全部の client | `mc/grant/p_v_reg` → PROT の PLB の `pl_data`（LUTRAM、fanout 194）→ `mc/cnt/unit_n` と、CPU の dma・VF の index・CP の fence・ROP の ds・TU と SU の cache・DC の dma の状態 | 28〜39 | **14.711 = 3.533 + 11.178**（mc/cnt、−4.697、core の合成 10 ns）。client 側: CPU −3.217（36 段、13.231）、VF −3.094、TU cache −2.753、CP −2.780、SU dcache −2.633、ROP ds −2.471、DC dma −1.598（合成） | F + A | 2（grant・PLB の応答を 1 段の register に。CP・CPU・VF・DC・cache が一緒に直る） | MC 合成 −1.15 / 18、配線 −11.7 / 10（p036 の形） |
+| ROP/wb の fblend | `wb/wpix/fblend/fmt_reg` → comp の decode（fanout 119）→ LUTRAM | 35 | 13.334 = 3.099 + 10.235（−3.513、core の合成）。blend: 29 段、11.417（−1.443、[blend-stage-split.patch](blend-stage-split.patch) は未適用のまま） | A + M | 2 | 合成 −9.36 / 38、配線 −24.0 / 21 / 29.0（wb）。blend の stage 3 は 2026-10-24 に −4.207（5 ns） |
+| VF/conv | `conv/c_vk_reg` → `vl_data`（`atg_fmt_comp`、fanout 165） | 32 | 12.344 = 2.542 + 9.802（−2.370、core の合成）。index は MC の grant から −3.094 | A + F | 2 | 合成 −8.06 / 31、配線 −15.6 / 14 |
+| DC | cursor の BRAM → `pixels` の LUTRAM | 17 | 12.348 = 8.121 + 4.227（−2.614、core の合成）。pclk の側は OOC では制約が無い（unconstrained） | A（BRAM の出力の register 無し） | 2（DO_REG） | 合成 −7.79 / 22（p037） |
+| CP・CPU | MC の grant から（上の行）。CP の中は u_ctl +0.527 | — | 上の行 | F | MC の行で | 合成 −1.31 / 14・−0.49 / 14 |
+| 板の外の IP | MIG（ui_clk 200 MHz）・PCIe（125 MHz）・AXI の converter | — | timing は未測定（板は合成だけ、gclk は p024 の低い値）。面積は phase.md の T0 | — | — | 未測定 |
 
 - **読み**: (1) 合成の段数が大きい物（FPU 114、TU 97 → p038 の後 84、BLT 94、lane 75、PK 49、RX 50）は **A**: 演算の全部を 1 cycle に置いている。(2) 配線後に段の少ない経路（CP 11 段で 18.3 ns、MC 10 段で 16.7 ns）が 10〜12 ns を失うのは **R**: LUT 95% の混雑（p036 の申告）。100 MHz の block の多くは、面積が減れば pipeline を足さずに満たす見込み。(3) **F** と **M** は p038 で幾つか直した（a4e323b の CE の複製、max_fanout 64）。
 - **棚卸しの抜け（T0 で埋める）**: SU の XU（超越）・div・LDA・EXP・RF の読み（BRAM の出力の register の有無）・scheduler、RX の始点・終点、DC の pclk の側、板の IP の境。p037 の後の全部の値。

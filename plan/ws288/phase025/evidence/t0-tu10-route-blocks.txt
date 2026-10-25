@@ -1,0 +1,3 @@
+addr           slack  -15.118  delay  24.966  levels  67  addr/k_reg[0]_rep/C -> addr/foot/u_lbk/ta_addr[511]_i_24_psdsp_5/D
+filter         slack    2.906  delay   7.001  levels   4  filter/dl_reg[18][22]__0/C -> filter/asmb_reg[56]/D
+ffilt          slack   -0.555  delay  10.526  levels   7  ffilt/rem_reg[4]/C -> ffilt/front/raw1_reg[14]/D

@@ -1,0 +1,13 @@
+what|slack|delay|logic|net|levels|start|end|maxfanout|net
+sb-from|-0.178|6.480|0.986|5.494|11|sb/e_base_reg[87]/C|opd/a_grp_reg[0]/R|116|opd/take
+sb-to|-2.259|8.668|1.081|7.587|18|wb/inq[0].q/wp_reg[2]/C|sb/e_base_reg[60]/CE|280|wb/inq[1].q/rp_reg[0]_0[0]
+sched-to-opd|no path
+sb-to-sched|-0.107|6.751|1.119|5.632|14|sb/e_base_reg[87]/C|sched/st_reg[8]/D|18|sb/g_cnt[0].u_ct/e_base_reg[87]_0
+dec-to-sb|0.469|6.215|1.318|4.897|12|dec/u_warp_reg[0]/C|sb/cm_reg[11]/D|172|dec/u_uop_reg[0]_0
+opd-from|-36.335|42.921|9.920|33.001|129|opd/b_warp_reg[1]_rep/C|fpu/pipe_reg[3][192]_srl4___alu_pipe_reg_r_2/D|131|opd/g_lane[6].u_cl2/g_bank[4].m_reg_i_39_1
+opd-to|-2.873|9.175|1.120|8.055|19|wb/inq[0].q/wp_reg[2]/C|opd/a_grp_reg[0]/R|280|wb/inq[1].q/rp_reg[0]_0[0]
+opd-to-fpu|-36.335|42.921|9.920|33.001|129|opd/b_warp_reg[1]_rep/C|fpu/pipe_reg[3][192]_srl4___alu_pipe_reg_r_2/D|131|opd/g_lane[6].u_cl2/g_bank[4].m_reg_i_39_1
+opd-to-alu|-0.962|7.548|2.117|5.431|19|opd/b_warp_reg[1]_rep/C|alu/pipe_reg[3][64]_srl4___alu_pipe_reg_r_2/D|125|opd/g_lane[6].u_cl2/s_d[996]_i_7_0
+rf-to-opd|no path
+sched-to-sched|-3.689|10.333|6.214|4.119|12|sched/wg_x_reg[7]/C|sched/st_reg[0]/D|18|sched/u_l31/launching_reg
+wb-to-rf|0.064|6.140|0.862|5.278|13|wb/inq[0].q/wp_reg[2]/C|rf/lane[0].m1_reg/WEA[0]|280|wb/inq[1].q/rp_reg[0]_0[0]

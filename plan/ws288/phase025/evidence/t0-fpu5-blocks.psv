@@ -1,0 +1,4 @@
+cell|slack|delay|logic|net|levels|start|end|maxfanout|net
+port-in|-34.181|39.634|8.390|31.244|112|x_uop[5]|pipe_reg[3][0]_srl4___pipe_reg_r_2/D|128|m_i_81_n_61
+port-out|3.322|1.106|0.346|0.760|1|busy_reg_rep__6/C|x_ready|6|busy_reg_rep__6_n_61
+all|-34.864|39.780|8.693|31.087|112|k_op_reg[2]/C|pipe_reg[3][0]_srl4___pipe_reg_r_2/D|128|m_i_81_n_61

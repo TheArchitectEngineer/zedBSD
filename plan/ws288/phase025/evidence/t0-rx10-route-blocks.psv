@@ -1,0 +1,11 @@
+cell|slack|delay|logic|net|levels|start|end|maxfanout|net
+*|-4.654|14.625|6.422|8.203|48|setup/edge_u/sv_reg[0][0]_replica/C|setup/edge_u/bx1_reg[15]/D|46|setup/edge_u/u_m_x1/sv_reg[0][23][0]
+clip/cpoly|1.302|8.540|0.784|7.756|10|clip/cpoly/dd_reg[1][20]/C|clip/cpoly/pb_reg_r7_0_31_132_137/RAMA/I|224|clip/cpoly/pb_reg_r2_0_31_132_137/ADDRA0
+frag/bary|-0.434|10.342|2.427|7.915|26|frag/qi_reg[1]/C|frag/bary/fmul/spv2_reg[31]_srl2/D|108|frag/bary/fmul/u_p1/fl_data[29]_INST_0_i_18_0
+scan/cv|2.432|7.202|1.440|5.762|18|scan/cv/g_e[2].oq_reg[2][47]/C|scan/cv/g_e[2].o_lowm_reg[102]/S|44|scan/cv/g_e[2].oq_reg_n_0_[2][47]
+scan/fadd|2.578|7.418|1.235|6.183|12|scan/zc_reg[3]/C|scan/fadd/d1_reg[7]/D|142|scan/fmul/zc0_out[3]
+scan/fmul|1.003|8.580|2.166|6.414|16|scan/zc_reg[3]/C|scan/fmul/u_p1/m/A[11]|142|scan/fmul/u_e_n/zc0_out[1]
+setup/edge_u|-4.654|14.625|6.422|8.203|48|setup/edge_u/sv_reg[0][0]_replica/C|setup/edge_u/bx1_reg[15]/D|46|setup/edge_u/u_m_x1/sv_reg[0][23][0]
+setup/fadd|3.988|5.984|1.189|4.795|11|setup/fadd/lz3_reg[3]/C|setup/fadd/o_r_reg[6]/D|33|setup/fadd/lz3[3]
+setup/fdiv|1.855|7.779|2.000|5.779|19|setup/fdiv/rem_reg[5]/C|setup/fdiv/o_r_reg[0]/R|41|setup/fdiv/ge
+setup/fmul|4.955|4.666|0.708|3.958|2|setup/pc_reg_rep/CLKARDCLK|setup/fmul/u_p1/m/B[6]|67|setup/fmul/u_p1/DOADO[5]

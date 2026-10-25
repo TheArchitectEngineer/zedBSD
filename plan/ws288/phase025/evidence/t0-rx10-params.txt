@@ -1,0 +1,1 @@
+vivado-ooc: atg_rx HAS_SU=1

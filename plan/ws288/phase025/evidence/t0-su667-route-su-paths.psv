@@ -1,0 +1,13 @@
+what|slack|delay|logic|net|levels|start|end|maxfanout|net
+sb-from|-2.236|8.643|0.898|7.745|10|sb/e_base_reg[13]/C|opd/a_uop_reg[40]/CE|116|opd/take
+sb-to|-11.121|17.528|0.973|16.555|15|alu/pipe_reg[5][275]/C|sb/e_base_reg[54]/CE|542|xu/sv
+sched-to-opd|no path
+sb-to-sched|-2.097|8.738|1.027|7.711|13|sb/e_base_reg[13]/C|sched/st_reg[8]/D|172|dec/u_uop_reg[0]_0
+dec-to-sb|-4.479|10.885|0.900|9.985|10|dec/u_uop_reg[15]/C|sb/e_base_reg[54]/CE|172|dec/u_uop_reg[0]_0
+opd-from|-38.840|45.417|9.758|35.659|128|opd/b_warp_reg[0]_rep/C|fpu/pipe_reg[3][203]_srl4___alu_pipe_reg_r_2_srlopt/D|125|opd/g_lane[5].u_cl2/b_warp_reg[1]_rep_1
+opd-to|-11.481|17.888|0.973|16.915|15|alu/pipe_reg[5][275]/C|opd/a_uop_reg[40]/CE|542|xu/sv
+opd-to-fpu|-38.840|45.417|9.758|35.659|128|opd/b_warp_reg[0]_rep/C|fpu/pipe_reg[3][203]_srl4___alu_pipe_reg_r_2_srlopt/D|125|opd/g_lane[5].u_cl2/b_warp_reg[1]_rep_1
+opd-to-alu|-9.718|16.290|1.528|14.762|17|opd/b_warp_reg[0]_rep/C|alu/pipe_reg[3][211]_srl4___alu_pipe_reg_r_2/D|125|opd/g_lane[6].u_cl2/s_d[996]_i_7_0
+rf-to-opd|no path
+sched-to-sched|-8.768|15.345|6.084|9.261|11|sched/wg_x_reg[6]/C|sched/fl_s_reg[1]/D|130|sched/fl_s_reg[1]_0
+wb-to-rf|-9.056|15.390|0.895|14.495|13|wb/inq[0].q/rp_reg[0]/C|rf/lane[4].m2_reg/DIADI[6]|280|wb/inq[1].q/rp_reg[0]_0[0]

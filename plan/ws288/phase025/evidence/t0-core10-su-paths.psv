@@ -1,0 +1,13 @@
+what|slack|delay|logic|net|levels|start|end|maxfanout|net
+sb-from|1.670|8.304|1.289|7.015|22|g_su[0].su/sb/cm_reg[22]/C|regs/r_data_reg[2]/D|92|cp/u_seq/p_reg[1]_0
+sb-to|1.076|8.663|1.081|7.582|18|g_su[0].su/wb/inq[0].q/wp_reg[2]/C|g_su[0].su/sb/e_base_reg[24]/CE|280|g_su[0].su/wb/inq[1].q/rp_reg[0]_0[0]
+sched-to-opd|3.023|6.609|0.905|5.704|14|g_su[0].su/sched/st_reg[5]/C|g_su[0].su/opd/a_grp_reg[0]/R|258|g_su[0].su/opd/b_uop_reg[3]_0
+sb-to-sched|2.279|7.695|1.250|6.445|21|g_su[0].su/sb/cm_reg[22]/C|g_su[0].su/sched/st_reg[8]/D|258|g_su[0].su/opd/b_uop_reg[3]_0
+dec-to-sb|3.828|6.186|1.318|4.868|12|g_su[0].su/dec/u_warp_reg[0]/C|g_su[0].su/sb/cm_reg[11]/D|171|g_su[0].su/dec/u_uop_reg[0]_0
+opd-from|-33.005|42.921|9.920|33.001|129|g_su[0].su/opd/b_warp_reg[1]_rep/C|g_su[0].su/fpu/pipe_reg[3][192]_srl4___g_tu.tu_filter_vd_reg_r_1/D|131|g_su[0].su/opd/g_lane[6].u_cl2/i___54_i_7_1
+opd-to|0.495|9.137|1.120|8.017|19|g_su[0].su/wb/inq[0].q/wp_reg[2]/C|g_su[0].su/opd/a_grp_reg[0]/R|280|g_su[0].su/wb/inq[1].q/rp_reg[0]_0[0]
+opd-to-fpu|-33.005|42.921|9.920|33.001|129|g_su[0].su/opd/b_warp_reg[1]_rep/C|g_su[0].su/fpu/pipe_reg[3][192]_srl4___g_tu.tu_filter_vd_reg_r_1/D|131|g_su[0].su/opd/g_lane[6].u_cl2/i___54_i_7_1
+opd-to-alu|2.368|7.548|2.117|5.431|19|g_su[0].su/opd/b_warp_reg[1]_rep/C|g_su[0].su/alu/pipe_reg[3][64]_srl4___g_tu.tu_filter_vd_reg_r_1/D|125|g_su[0].su/opd/g_lane[6].u_cl2/s_d[996]_i_7_0
+rf-to-opd|no path
+sched-to-sched|-0.365|10.339|6.214|4.125|12|g_su[0].su/sched/wg_x_reg[7]/C|g_su[0].su/sched/st_reg[0]/D|23|g_su[0].su/sched/u_l31/launching_reg
+wb-to-rf|3.394|6.140|0.862|5.278|13|g_su[0].su/wb/inq[0].q/wp_reg[2]/C|g_su[0].su/rf/lane[0].m1_reg/WEA[0]|280|g_su[0].su/wb/inq[1].q/rp_reg[0]_0[0]

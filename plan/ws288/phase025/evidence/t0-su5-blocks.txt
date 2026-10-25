@@ -1,0 +1,24 @@
+sched          slack   -5.359  delay  10.333  levels  12  sched/wg_x_reg[7]/C -> sched/st_reg[0]/D
+fetch          slack   -3.185  delay   8.159  levels  18  wb/inq[0].q/wp_reg[2]/C -> fetch/rp_reg[0]/D
+icache         slack   -1.784  delay   6.523  levels  13  sched/st_reg[0]/C -> icache/FSM_onehot_state_reg[0]/CE
+dec            slack   -4.308  delay   8.940  levels  18  wb/inq[0].q/wp_reg[2]/C -> dec/u_uop_reg[0]/R
+sb             slack   -3.929  delay   8.668  levels  18  wb/inq[0].q/wp_reg[2]/C -> sb/e_base_reg[60]/CE
+rf             slack   -1.606  delay   6.140  levels  13  wb/inq[0].q/wp_reg[2]/C -> rf/lane[0].m1_reg/WEA[0]
+opd            slack   -4.543  delay   9.175  levels  19  wb/inq[0].q/wp_reg[2]/C -> opd/a_grp_reg[0]/R
+alu            slack   -2.632  delay   7.548  levels  19  opd/b_warp_reg[1]_rep/C -> alu/pipe_reg[3][64]_srl4___alu_pipe_reg_r_2/D
+fpu            slack  -38.005  delay  42.921  levels 129  opd/b_warp_reg[1]_rep/C -> fpu/pipe_reg[3][192]_srl4___alu_pipe_reg_r_2/D
+pk             slack   -9.598  delay  14.572  levels  37  opd/b_uop_reg[35]/C -> pk/pipe_reg[0][119]/D
+lane           slack  -15.263  delay  20.100  levels  59  opd/b_uop_reg[35]/C -> lane/pipe_reg[3][54]_srl4___alu_pipe_reg_r_2/D
+lda            slack   -6.810  delay  11.332  levels  14  sched/wg_x_reg[7]/C -> lda/g_copy[0].m_reg_0/ADDRARDADDR[13]
+exec           slack   -5.250  delay  10.224  levels  13  sched/wg_x_reg[7]/C -> exec/exec_r_reg[1]/D
+lsu            slack   -0.825  delay   5.839  levels  15  opd/b_warp_reg[1]_rep/C -> lsu/radr_reg[93]/D
+lds            slack   -0.591  delay   5.605  levels  11  opd/b_warp_reg[1]_rep/C -> lds/radr_reg[83]/D
+cbank          slack   -0.206  delay   5.180  levels  12  wb/inq[0].q/wp_reg[2]/C -> cbank/st_reg[0]/D
+tex            slack   -0.921  delay   5.895  levels  19  opd/b_uop_reg[35]/C -> tex/crd_reg[1183]/D
+xu             slack   -8.140  delay  13.114  levels  38  xu/rx_reg[125]/C -> xu/z_reg[34]/D
+div            slack    0.212  delay   4.762  levels  12  opd/b_warp_reg[1]_rep/C -> div/ra_reg[213]/D
+dcache         slack    1.864  delay   2.746  levels   5  dcache/q_line_reg[0]/C -> dcache/data_reg_0/ENBWREN
+exp            slack   -6.697  delay  11.329  levels  13  sched/wg_x_reg[7]/C -> exp/dw_reg[0]/R
+pt             slack   -5.467  delay  10.441  levels  13  sched/wg_x_reg[7]/C -> pt/cnt_reg[11]/D
+rq: no path
+wb             slack   -5.299  delay  10.097  levels  11  sched/wg_x_reg[7]/C -> wb/inq[1].q/mem_reg_0_15_42_44/RAMA_D1/I

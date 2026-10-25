@@ -1,0 +1,11 @@
+cell|slack|delay|logic|net|levels|start|end|maxfanout|net
+*|-16.212|26.184|6.695|19.489|72|g_rsv.rsv/px/fv/p_reg[0]/C|g_rsv.rsv/px/fv/out_p_reg[41]/D|189|g_rsv.rsv/px/fv/a_icf/sm_reg[31]_i_36_0
+b2d/bl|2.681|7.290|0.577|6.713|4|b2d/src_off_reg[0]/C|b2d/bl/a_s_reg[1]/D|128|b2d/h_copy/Q[0]
+b2d/cfg|unconstrained|6.044|0.043|6.001|1|rst_n|b2d/cfg/s_color_reg[97]/R|1476|b2d/cfg/p_0_in_2
+b2d/dacc|2.021|7.949|1.534|6.415|13|b2d/cfg/s_op_reg[13]/C|b2d/dacc/r_reg[25]/D|168|b2d/cfg/s_op_reg[13]_0
+b2d/port|1.964|7.684|0.501|7.183|4|b2d/port/wr_out_reg[2]/C|b2d/port/req_wdata_reg[297]/CE|604|b2d/port/slot[1]_i_1_n_7
+b2d/sacc|2.187|7.814|1.587|6.227|12|b2d/cfg/s_op_reg[13]/C|b2d/sacc/r_reg[25]/D|168|b2d/cfg/s_op_reg[13]_0
+g_rsv.rsv/cfg|unconstrained|7.962|0.043|7.919|1|rst_n|g_rsv.rsv/cfg/s_src_xy_reg[16]/R|1476|g_rsv.rsv/cfg/SR[0]
+g_rsv.rsv/dacc|1.675|8.296|1.639|6.657|14|b2d/cfg/s_op_reg[13]/C|g_rsv.rsv/dacc/r_reg[29]/D|168|b2d/cfg/s_op_reg[13]_0
+g_rsv.rsv/px|-16.212|26.184|6.695|19.489|72|g_rsv.rsv/px/fv/p_reg[0]/C|g_rsv.rsv/px/fv/out_p_reg[41]/D|189|g_rsv.rsv/px/fv/a_icf/sm_reg[31]_i_36_0
+g_rsv.rsv/sacc|2.292|7.548|1.164|6.384|10|b2d/cfg/s_op_reg[13]/C|g_rsv.rsv/sacc/r_reg[27]/D|168|b2d/cfg/s_op_reg[13]_0
