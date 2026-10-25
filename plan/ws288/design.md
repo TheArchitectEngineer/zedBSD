@@ -2389,7 +2389,7 @@ BRAM は使わない。KC705（203,800 LUT）には余る。
 | `atg_mc_tree`・`am_amb_to_rt` | 変 | chk・tbl・slot の入力と header、HAS_PROT の時 `ROOT_CLIENT` を木から外し root の別の入口へ | +40 |
 | `am_amb_mux` | 変 | requester の side band（parameter の幅） | +15 |
 | `atg_cp_prot` | 新（`atg_cp` の子） | SLOT_MAP・SLOT_TAG・prot_unit・resid・切り替えの FSM、µop の slot の計算、window の 0x28〜0x32 | ≈300 |
-| `atg_cp_seq_wait` | 変 | pre の `ok`（seq 本体は 374 行のまま、port も増やさない） | +15 |
+| `atg_cp_seq_wait`・`atg_cp_seq` | 変 | pre の `ok`。seq は今の µop の tag・fw_active を出し `ok` を受ける（38 → 40 port、374 行に +10） | +25 |
 | `atg_cp_fence` | 変 | f_chk・f_slot | +10 |
 | `atg_cpu_win`・`atg_cpu_dma` | 変 | UOP_FIFO の entry の 7 bit（DONE で class 2 の slot を 0 に）、DMA_GO[17]・[18] と DMA の slot の latch | +30 |
 | `atg_cpu` | 変 | 今 40 port: sub-bus を `atg_cp_prot` へ（5 本）、FIFO の head の slot・SELF、PKT_INFO の時の SLOT_MAP の値、UOP_SELF、DMA の side band を group にまとめる（AMB の group に side band、sub-bus を 1 group） | +20 |
