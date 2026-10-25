@@ -33,3 +33,4 @@
 - 2026-10-25 14:28 Q1: 73d8dc2 の merge の後の確認: lint rc 0・133 clean・warning 0、sim-quick rc 0・95 PASS・0 FAIL。
 - 2026-10-25 14:46 P3 → Q1（申告）: DC の算術（p3-p035 9ea9b83、親 89b0621 = main 73d8dc2 の merge）: rtl/gpu/dc の arith-lint 102 → 0（全体 1205 → 1103、p3-p035 の数え方）。ycc の定数の積 9 つは am_add/am_sub の shift と加算の鎖（DSP 無し）、tmds の popcount は nibble の表と am_add 1 つ、cursor は出力の channel ごとに 1 つの blender（am_mul 8×8 が 3 つ = DSP 3）。DC の TB 全部・lint PASS、7 module を元と 200,000 cycle の乱数入力で毎 cycle 比べて全部一致（申告）。T は T1-790 の後。
 - 2026-10-25 14:46 Q1: P1 が p034 R7 に入ったので、p037 の BLT（avg・favg を含む全部）を P3 に移した（amaterrace の worktree p3-p037、main 73d8dc2 から）。VF の残りは p036 の d94076c が main に入った後。
+- 2026-10-25 14:46 Q1 訂正: P3 は BLT の依頼を受ける前に区切った（p3-p037 の worktree は使われず Q1 が消した）。BLT（avg・favg を含む全部）と VF の残りは P1（p1-p037、main 73d8dc2 を merge してから。VF は p036 の d94076c が main に入った後）。
