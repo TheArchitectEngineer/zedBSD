@@ -83,3 +83,4 @@
   - T に: make sim-quick（atg_su_lds・atg_su_dec・atg_su +quick を含む）と make verilator、lint。
 - 2026-10-25 10:00 Q1: T1-782（dc471f9、S16 と main の merge）PASS: make sim 97、msaa 16、verilator 6、lint 127。
 - 2026-10-25 10:16 Q1: P1 の p1-p030b（S8・S13・S16・sw.x、dc471f9）と P2 の p2-p018（S15 と p018）を合わせた 5262af6 を amaterrace-gpu の main に merge（252a11e、T1-783 PASS）。p030 の段は S11（統合）を残して全部 main に入った。
+- 2026-10-25 10:34 Q1: S11（統合）を P1 に（q1573、amaterrace-gpu の main 252a11e から）。

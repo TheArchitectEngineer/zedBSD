@@ -41,3 +41,4 @@
 | 2026-10-25 10:00 | GHCI に lane あたりの register の数の標準の field を足す（次に RTL を触る担当に）。未知の pNext は読み飛ばす | GHCI の汎用の原則（vendor の code 無しで driver が読める）、libvulkan の振る舞い |
 | 2026-10-25 10:07 | P3 の指摘で、GHCI §11.3 の MEM の capability（XCAP 8）を RTL に足す（atg_cp_regs の parameter、既定 0）。lane あたりの register の数を RESIDENT_WARPS の [23:16] に。両方 P3 が p011 の中で | discrete の KC705 を driver が正しく扱うのに要る、GHCI の汎用の原則 |
 | 2026-10-25 10:18 | P3 の判断: KC705 の LOCAL_BASE を 0x8000_0000（MIG の 1 GiB の alias）にして 2 GiB 未満を PCIe の host の bus address に残す、を受け入れた | p029（host の memory だけ）と両立する |
+| 2026-10-25 10:34 | p034 の U61〜U72（所有の表 + PLB + CAM、protected の session 31、hardware の scrub、root でない session を全部保護、GRANT は drain しない、STATE は消さない、PROT_CAPS[31:16] は grant の数、firmware の DMA の拒否は fault、内蔵の領域は public、ring の CP 側の µop は検査しない、CAM 64、robustBufferAccess の漏れの device 全体の fault を v1 は受け入れる）を全部推しで決めた | ユーザーの推しで進める許可。最初のゴールの道の外なので、実装は空いた担当に |
