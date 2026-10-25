@@ -3,7 +3,7 @@
 # ws288-p035 DC を GHCI の GPU の一部に（CP の command で制御、present は queue の操作、割り込みは GHCI の IRQ）
 
 - 親: [WS288](../ws.md)。今の仕様: amaterrace-gpu `docs/ghci.md` §13（DISP の capability、host が register を直に触る）、§4（IRQ_STATUS）。RTL: `rtl/dc/`（atg_dc・dma・i2c・regs・tgen・tmds・ycc）。
-- 状態: in-progress（2026-10-25 12:34 P3: 設計の段を終えた、判定は Q1。実装の段 D1〜D8 は未着手）。
+- 状態: in-progress（2026-10-25 13:01 P3、q1576-i01: 実装の段 D1・D2a を commit した。続きは D3・D5。D2b（MC）と D4（CP）は P1 の p034 の merge の後）。
 - 依存: p018（firmware）、p006（driver の display.c）、p019（vk/ の swapchain と present）。p019 の「copy しない flip」の段はこの Phase に置き換える。
 - 承認: 2026-10-25 09:02 ユーザー「DCがGPUとは別になってしまっていますが、確かに伝統的にはそういう構成だったように思いますが、Vulkan Displayのcapabilityというような抽象化と考えれば、gpu/に移して、CPへのコマンドで制御可能にしてもいいかもしれません。そうすれば、コピーせずにscanoutするのが自然になるでしょう。GHCIの仕様にDCも入れてしまって、割り込みもGHCIの仕様にしませんか？」
 
@@ -35,3 +35,11 @@ design の review、TB と host の試験が PASS、`make sim` の PASS が減�
 - U 項目: U90〜U99（推し付き、§18.10）。RTL・firmware・driver・GHCI の文はまだ変えていない。
 - v1 で達しない事（§18.1）: zedBSD の display の core は producer の fence を CPU で待ってから backend を呼ぶ。そのため「前の draw の完了」を FLIP の COMPLETE に任せるには core の変更が要る（U98、後の Phase）。また ring が 1 本なので、FLIP は長い class 2 の packet の後ろで待つ（p028 で測る）。
 - 2026-10-25 12:41 Q1: P3 の設計（zedBSD agent/p3-p006 4b92046f3: design §18 版 8、review 2 回 28・21 件）を main に merge。U90〜U99 はユーザーの「推しで進めてよい」に従い推しで決める（起きている時に見せる）。実装の段 D1〜D8（51 LW）は次に空いた担当に。番号（DISP2 の id 11、µop 15・16、IRQ [12:9]）は p034 の draft と照合してから。
+- 2026-10-25 13:01 P3（q1576-i01、amaterrace-gpu の worktree p3-p035、main f9f817e を merge した a0fec17 の上）: 実装の段。
+  - **D1**（3fc9e79）: GHCI §13 を 13.1 DISP と 13.2 DISP2（draft）に分け、§3.1（IRQ [12:9]）・§3.2・§4（id 11）・§7.3（µop 15 DISP_SET・16 FLIP と表の後の段落。P1 が直した WAIT_IDLE の行は触らない）・§10・§15 を直した。§15 の下にずれていた §12.12 を §13 の前へ戻した。`ghci_regs.h`・`.vh`・`ghci_packets.h` に追加だけの定義。新しい spec: `atg_cp_disp`（34 port）・`atg_cp_seq_dec`（10）・`atg_dc_cursor`（23）。
+  - **番号の照合**: §15〜§17 と重ならない（FMT は id 10、PROT は id 9、µop は 14 QUERY まで、IRQ は [8] まで。P1 の p034 は µop・IRQ・HCR の offset を足さない）。DISP2 の窓は HCR の 0x200〜0x2FF（空き）。XCAP_MASK は D4 で 10 → 11 bit にする。
+  - **確認 C3**: `atg_cp_seq` は今 40 port（clk・rst_n を含む）。kick 5 本を kick と 3 bit の code に束ねて −3、P1 の +2 で 39。
+  - **§18.4 からの変更**（Q1 承認 2026-10-25）: P1 の p034 が `busy_in[0]` を B_MEM（unit の memory の未応答、B_ALL = 0xFF）に使った。そのため DC の待ちは `busy_in` を 9 bit に広げた bit 8 にする。bit 8 は B_ALL にも WAIT_IDLE の 8 bit の mask にも入らない。DISP_SET の flags[0] の待ちは擬似の index 0x3BF をやめ、kick の code で `atg_cp_disp` に知らせる。
+  - **自分で決めた事**: (1) record は HALTING の間も送る。送らないと、HALTING で slot を待つ FLIP が詰まる。record を待たせるのは HALTED・FAULTED・RESETTING だけ。(2) record の write が誤りの応答でも IRQ.FLIP を立てる（STATUS[4] と一緒に）。(3) ENABLE = 0 の時の FLIP(1) はすぐに cancelled で取る。(4) `am_amb_mux` は応答の valid を requester ごとに分けるので、DMA の tag を見る変更は要らない。(5) DISP_ERROR は ENABLE = 1 の間 1 frame に 1 回まで。
+  - **D2a**: f82b687 は移動だけ（`rtl/dc`・`spec/dc` → `rtl/gpu/dc`・`spec/gpu/dc`、README の行）。8cc0aab は次のとおり: `atg_top` が `HAS_DISP` で `atg_dc` を子に持つ（`C_DC` は C_EXT の場所、+0x10000 の decode はまだ今のまま）。新しい port は pclk・prst_n・pclk_sel・tmds・px_*・I2C。board の top から DC を外した。lint の KC705 の形は EXT_CLIENT=1 の代わりに HAS_DISP=1。atg_top の 4 つの TB は新しい入力をつないだ。`STANDALONE` は D3 で消す（DC の TB の書き直しと一緒）。
+  - **check**: `tools/lint.sh` は全部 clean。`sim/run.sh` で atg_kc705_raster・atg_top・atg_dc・atg_dc_regs・atg_dc_dma が PASS（5 件）。長い atg_top_* の 7 つは iverilog の build が warning 0 で、実行していない。
