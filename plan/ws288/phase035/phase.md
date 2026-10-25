@@ -3,7 +3,7 @@
 # ws288-p035 DC を GHCI の GPU の一部に（CP の command で制御、present は queue の操作、割り込みは GHCI の IRQ）
 
 - 親: [WS288](../ws.md)。今の仕様: amaterrace-gpu `docs/ghci.md` §13（DISP の capability、host が register を直に触る）、§4（IRQ_STATUS）。RTL: `rtl/dc/`（atg_dc・dma・i2c・regs・tgen・tmds・ycc）。
-- 状態: in-progress（2026-10-25 13:01 P3、q1576-i01: 実装の段 D1・D2a を commit した。続きは D3・D5。D2b（MC）と D4（CP）は P1 の p034 の merge の後）。
+- 状態: in-progress（2026-10-25 13:28 P3、q1576-i01: 実装の段 D1・D2a・D3・D5 を commit した。D2b（MC）と D4（CP）は P1 の p034 の merge の後、D6〜D8 はその後）。
 - 依存: p018（firmware）、p006（driver の display.c）、p019（vk/ の swapchain と present）。p019 の「copy しない flip」の段はこの Phase に置き換える。
 - 承認: 2026-10-25 09:02 ユーザー「DCがGPUとは別になってしまっていますが、確かに伝統的にはそういう構成だったように思いますが、Vulkan Displayのcapabilityというような抽象化と考えれば、gpu/に移して、CPへのコマンドで制御可能にしてもいいかもしれません。そうすれば、コピーせずにscanoutするのが自然になるでしょう。GHCIの仕様にDCも入れてしまって、割り込みもGHCIの仕様にしませんか？」
 
@@ -43,3 +43,8 @@ design の review、TB と host の試験が PASS、`make sim` の PASS が減�
   - **自分で決めた事**: (1) record は HALTING の間も送る。送らないと、HALTING で slot を待つ FLIP が詰まる。record を待たせるのは HALTED・FAULTED・RESETTING だけ。(2) record の write が誤りの応答でも IRQ.FLIP を立てる（STATUS[4] と一緒に）。(3) ENABLE = 0 の時の FLIP(1) はすぐに cancelled で取る。(4) `am_amb_mux` は応答の valid を requester ごとに分けるので、DMA の tag を見る変更は要らない。(5) DISP_ERROR は ENABLE = 1 の間 1 frame に 1 回まで。
   - **D2a**: f82b687 は移動だけ（`rtl/dc`・`spec/dc` → `rtl/gpu/dc`・`spec/gpu/dc`、README の行）。8cc0aab は次のとおり: `atg_top` が `HAS_DISP` で `atg_dc` を子に持つ（`C_DC` は C_EXT の場所、+0x10000 の decode はまだ今のまま）。新しい port は pclk・prst_n・pclk_sel・tmds・px_*・I2C。board の top から DC を外した。lint の KC705 の形は EXT_CLIENT=1 の代わりに HAS_DISP=1。atg_top の 4 つの TB は新しい入力をつないだ。`STANDALONE` は D3 で消す（DC の TB の書き直しと一緒）。
   - **check**: `tools/lint.sh` は全部 clean。`sim/run.sh` で atg_kc705_raster・atg_top・atg_dc・atg_dc_regs・atg_dc_dma が PASS（5 件）。長い atg_top_* の 7 つは iverilog の build が warning 0 で、実行していない。
+- 2026-10-25 13:28 P3（q1576-i01）: **D3**（f25f651）と **D5**（8fb0a51）。
+  - **D3**: DC は内部の bus `d_*`（6 bit の index、読みは組み合わせ）を持つ。plane 0 の flip は taken/cancel を出す（CP の物だけ）。STATUS は §13.2 の形にした。BAD_WRITE は ENABLE = 1 の間の timing・stride・size・PCLK_SEL と、ENABLE を 1 のまま FORMAT を変える CTRL で立つ（GHCI の文もそう直した）。DISP_ERROR は点灯中 1 frame に 1 回まで。新しい子 `atg_dc_mode` は mode の表（driver と同じ 2 mode）、CONNECTED と HOTPLUG、CURSOR_POS・CTRL・BASE を持つ。`atg_dc_regs` は 39 port。DMA に clear・done・err を足した。DC の reset で未応答の読みの数を消さない（消すと遅れた応答で数が回り込んで DMA が止まる。今までの潜在の誤り。mutation で TB が捕まえる事を確かめた）。STANDALONE・DC の IRQ の register・`GHCI_DC_STANDALONE_DISP` を消した。atg_top には D4 までの仮の橋（host の +0x10000 → `d_*`、門無し、CP の flip 無し）。
+  - **D5**: `atg_dc_cursor`（339 行、gclk だけ、23 port）。64 × 64 premultiplied の合成を DMA と pixel FIFO の間で行う。BRAM は 4096 × 32。読みは dma_done の後、取り込みは次の frame の始め、読み込み中は隠す。ENABLE 0・ENABLE の落ち・DC の reset で cancel、読みの誤りも扱う。`atg_dc` の中の `am_amb_mux` で DMA が先、cursor が後。HAS_CURSOR は既定 1（KC705 は DC_CAPS[8] = 1）。
+  - **check**: `tools/lint.sh` は全部 clean。`sim/run.sh` で PASS は 11 件: atg_dc、atg_dc_cursor（load・blend・pos・fmt・cancel・err。R と B を入れ替える mutation で FAIL になる。565 の恒等は 65536 値の全部）、atg_dc_regs（map・bad・flip・status）、atg_dc_mode（新）、atg_dc_dma（clear を追加）、atg_dc_i2c、atg_dc_tmds、atg_dc_ycc、atg_dc_tgen +quick、atg_kc705_raster、atg_top。
+  - **p037**（2026-10-25 ユーザーの新しい規則: 信号の算術は am_ の module で）: D3・D5 は普通の書き方のまま。am_ の module が main に入ったら書き直す（Q1 の指示）。
