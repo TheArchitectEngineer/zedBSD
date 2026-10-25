@@ -74,15 +74,15 @@
 
 | # | 項目 | 対象（include/atg_su_fp.vh の function、算術の数） | 呼び出し側 | 状態 |
 | --- | --- | --- | --- | --- |
-| 1 | 前の P1 の未 commit の file を確かめる | rtl/gpu/su/atg_su_rnd.v と spec（申告: 旧と 1M 一致）、atg_su_ffma.v・atg_su_ffma_p.v（未検証） | — | 検証して commit、合わなければ書き直す |
-| 2 | 丸め | atg_su_rnd（2） | atg_su_ffma_p、atg_su_xu | 1 の後 |
-| 3 | FMA | atg_su_ffma（1）・atg_su_ffma_p（18）、atg_su_fsig は算術無し | atg_su_fpu、atg_tu_fma（comment だけ）、atg_blt_favg（P3 が付け替える） | module を commit したら SHA を Q1 へ（P3 に渡す） |
-| 4 | 加算 | atg_su_fadd（9） | atg_su_lane（2 か所） | |
-| 5 | 整数化・変換 | atg_su_rint（4）・atg_su_i2f（1）・atg_su_f2i（3） | atg_su_fpu | |
-| 6 | atg_su_fpu の付け替え | 上の module を lane ごとに 1 つずつ（今の function と同じ共有）、fpu の中の function（f2i_n 3・fpu 1）も | — | pipeline と latency は不変 |
-| 7 | atg_su_xu・atg_su_lane の付け替え | — | — | |
-| 8 | .vh から算術の function を消す | fadd・rnd・ffma・ffma_p・rint・i2f・f2i（算術の無い flush・fsig・fround・fminmax・fcmp・sat は残す、flush は atg_su_fp16.vh も使う） | — | |
-| 9 | 確認 | 各 module を旧 function と ≥1M（EQ_FP の指数）、fpu・lane・xu を HEAD と ≥100k cycle、TB atg_su_fpu・atg_su_pk（PK_SHARED は fpu を使う）・atg_su_lane・atg_su_xu・atg_su_gfx・atg_su +quick、lint、arith-lint（atg_su_fp.vh と fpu が 0）、TB の時間が大きく伸びていないこと | — | |
+| 1 | 前の P1 の未 commit の file を確かめる | rtl/gpu/su/atg_su_rnd.v と spec（申告: 旧と 1M 一致）、atg_su_ffma.v・atg_su_ffma_p.v（未検証） | — | 済（98cd537・d37545c） |
+| 2 | 丸め | atg_su_rnd（2） | atg_su_ffma_p、atg_su_xu | 済（98cd537） |
+| 3 | FMA | atg_su_ffma（1）・atg_su_ffma_p（18）、atg_su_fsig は算術無し | atg_su_fpu、atg_tu_fma（comment だけ）、atg_blt_favg（P3 が付け替える） | 済（d37545c） |
+| 4 | 加算 | atg_su_fadd（9） | atg_su_lane（2 か所） | 済（4f0a9fb） |
+| 5 | 整数化・変換 | atg_su_rint（4）・atg_su_i2f（1）・atg_su_f2i（3） | atg_su_fpu | 済（685e744） |
+| 6 | atg_su_fpu の付け替え | 上の module を lane ごとに 1 つずつ（今の function と同じ共有）、fpu の中の function（f2i_n 3・fpu 1）も | — | 済（06ad2a4） |
+| 7 | atg_su_xu・atg_su_lane の付け替え | — | — | 済（187e2b9、lane は 4f0a9fb） |
+| 8 | .vh から算術の function を消す | fadd・rnd・ffma・ffma_p・rint・i2f・f2i（算術の無い flush・fsig・fround・fminmax・fcmp・sat は残す、flush は atg_su_fp16.vh も使う） | — | 済（3a78265、favg は P3 の c13637b が要る） |
+| 9 | 確認 | 各 module を旧 function と ≥1M（EQ_FP の指数）、fpu・lane・xu を HEAD と ≥100k cycle、TB atg_su_fpu・atg_su_pk（PK_SHARED は fpu を使う）・atg_su_lane・atg_su_xu・atg_su_gfx・atg_su +quick、lint、arith-lint（atg_su_fp.vh と fpu が 0）、TB の時間が大きく伸びていないこと | — | 済（P1 の host の確認、下の 23:39） |
 
 進め方: 1 項目ごとに検証して WIP の commit、Q1 に SHA を送る。起動が長くなったら安全な地点でラップアップ。記録は zedBSD の agent/p1-p030（066157c6a、main を merge してから）の phase037。
 - 2026-10-25 21:56 Q1: ユーザー「予防的に、P2もラップアップして立て直しましょう。」→ P2 にラップアップを依頼。
@@ -116,3 +116,7 @@ main に未だ入っていない p037 の物: P1 の cd8e65c まで（T1-804 待
 - 2026-10-25 22:42 P3（q1577）fmt の pack・unpack・srgbenc（amaterrace p3-p037f fad03f2、基点 b2cf2df + P1 c5b1299 + P1 d37545c）: 呼び出し → instance: dtest の unorm 2 → 1（mux）、f2unorm 1。favg の h2f 2（新 atg_fmt_h2f）、f2h 1、fma → 乗算器なしの atg_su_ffma_p（係数 1.0/0.25）。vf_conv の comp 1（fp16 の形式 6/7 も兼ね、自前の fp16 の変換器を削った）。srgbenc は加算器なし（one-hot の step）。fblend の comp 4 → 2（channel と alpha）、pack 7 → 1。wpix の pack 96 → 4（atg_fmt_pack #(N, FMTS)）。atg_rop_mrt の sim: 81 s（b2cf2df）/ 約 409 s（c5b1299）/ 99 s（今）。b2cf2df との等価は 200k〜300k cycle で全 PASS、mutation は検出。module と旧 function は 1M で 0 誤り。TB 22 PASS、lint 188 clean、arith-lint は fmt・rop・blt・vf・include の fmt で 0（全体 212 → 165）。残り: make sim・Verilator・KC705 の合成（T）。fblend の f2unorm と f2h の RNE の右 shift の共有は未（可能性として記録）。
 - 2026-10-25 22:5x Q1: P3 の依頼で p3-p037f に include/atg_fmt_pack.vh・atg_fmt_unpack.vh の git rm を commit = c13637b（親 fad03f2）。`include も Makefile・tools・sim の script の参照も無いことを git grep で確かめた（残るのは「former function」の注記だけ）。
 - 2026-10-25 23:0x P1（項目 4〜6）p1-p037: 4f0a9fb（新 atg_su_fadd、atg_su_lane は quad ごとに fadd 2 つ、y は assign で generate の always 無し）→ 685e744（新 atg_su_rint・atg_su_i2f・atg_su_f2i、f2i が fpu の f2i_n を置き換え）→ 2b32f1c（P4 ad716f7 の merge、衝突なし）→ 06ad2a4（新 atg_su_fpu_op、fpu の packed fp16 は atg_su_h2f×3・am_sub・atg_su_hrnd、rtl/gpu/su の arith-lint 0。新 rtl/common/am_msb（priority encoder、算術でない）と spec）。am_msb の理由: module にすると iverilog が function の 6 倍遅い（ffma 200k: 15 s → 95 s）、原因は always @(*) の msb と sticky の loop が入力の glitch ごとに走ること。am_msb と 1 の shift の mask で 25 s。TB の時間（2b32f1c → 06ad2a4）: fpu 22 → 31 s、pk 70 → 84 s、lane 23 → 17 s。確認: module と旧 function 1M で 0 誤り、fpu を HEAD と 200k cycle（2 形）、lane を 100k（2 形）で等価、仕込んだ不具合 2 つは DIFF、TB fpu・pk・lane PASS、verilator -Wall clean。次: 項目 7（atg_su_xu の atg_su_rnd）。Q1 が 06ad2a4 の親の鎖を確かめた。
+- 2026-10-25 23:39 P1（q1577-i02、項目 1〜9）amaterrace-gpu p1-p037 の先端 3a78265（親 187e2b9）: 98cd537（atg_su_rnd、前の P1 の未 commit の file を旧 function と 1M・指数の上下限 1M・仮数が全部 1 の 1M で 0 誤差）→ d37545c（atg_su_ffma・atg_su_ffma_p、ffma は .vh を include せず仮数を直に（VARHIDDEN 21 個のため）、1M で 0 誤差）→ 4f0a9fb（atg_su_fadd、lane は quad ごとに 2 つ）→ 685e744（atg_su_rint・atg_su_i2f・atg_su_f2i。f2i は fpu の f2i_n を置き換え、旧の atg_su_f2i function は呼び出し無し）→ 2b32f1c（P4 の ad716f7 の merge、衝突なし）→ 06ad2a4（atg_su_fpu_op = 旧 fpu function、fpu の lane は atg_su_h2f×3・am_sub・atg_su_hrnd、新 rtl/common/am_msb）→ 187e2b9（atg_su_xu の rnd を instance に、am_ を除く 399 行）→ 3a78265（include/atg_su_fp.vh から fadd・rnd・ffma・ffma_p・rint・i2f・f2i と未使用の fround を削除、atg_su_fp16.vh から hrnd・h2f を削除、atg_tu_fma_tb の参照は sim/tb/atg_su_fp_ref.vh（旧 function の写し、ref_su_*））。
+  - **iverilog の遅さ**: module にした ffma は function の 6 倍遅かった（200k 演算で function 15 s、module 95 s）。原因は always @(*) の中の msb・sticky の loop が、前段の論理が落ち着くまでの入力の変化ごとに走り直すこと。am_msb（loop 無しの優先 encoder）と、all ones を am_shift した mask の sticky に替えて 25 s。TB の時間（2b32f1c → 新）: atg_su_fpu 22 → 31 s、atg_su_pk 70 → 84 s、atg_su_lane 23 → 17 s、atg_su_gfx 81 → 80 s、atg_tu_fma 36 → 35 s。P3 の atg_rop_mrt の遅さも同じ形かもしれない。
+  - 確認（P1、host）: 各 module を旧 function と 1M（build/tmp/fvm2/run.py、fp の指数・特別な値）で 0 誤差（fadd は打ち消しの 1M も、rint は旧が X の指数 150 を除く）。atg_su_fpu を HEAD（function 版）と 200k cycle（FPU・PK の uop を多めに、既定と PACKED+PK_SHARED）PASS、誤りを 2 つ仕込むと DIFF。atg_su_lane（2 つの形）100k・atg_su_xu（2 つの形）100k〜200k PASS、xu の rm の誤りで DIFF。verilator -Wall の変えた module clean。P3 の c13637b（favg が atg_su_ffma_p の instance）を merge した試しの状態（commit せず merge --abort）で: tools/lint.sh rc 0・195 clean・FAILED 0、arith-lint 全体 97・include/atg_su_fp.vh・atg_su_fp16.vh・rtl/gpu/su は 0、TB atg_su_fpu・pk・pk_half・lane・xu・gfx・tu_fma・blt_avg・blt・atg_su +quick（146 s）PASS。
+  - **注意**: 3a78265 だけでは build できない（atg_blt_favg が消した atg_su_ffma function を呼ぶ）。P3 の c13637b と一緒に main へ。未実施（T へ）: make sim 全部・Verilator の e2e・KC705 の合成の LUT・DSP。
