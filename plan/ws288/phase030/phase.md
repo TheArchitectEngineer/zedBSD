@@ -81,3 +81,4 @@
   - compiler: `gsi1-memory.c` の lower_atomic が Workgroup の atomic を atoms に（compute だけ、flags LDS・ATOMIC）。host 試験に `sharedatomic.comp`（2 warp の共有の word の全 op・lane ごとの word の old 値・条件つき）と encode の 2 語。
   - 確認（P2 が流した）: `sim/run.sh atg_su_lds` PASS（rw・mask・atom、seed 1〜4）、`MUT_LDS_ATOM_RAW`・`MUT_LDS_ATOM_NOCMP` で atom が FAIL（各 10 行）、`atg_su_dec` PASS、`atg_su:+quick` PASS（nphys8・nphys32・nosubgroup、63 s、program 6 = reduce を含む）、`tools/gsi1dis-test.py` PASS（table 8760、raw 5504）、`tools/lint.sh` exit 0・clean 118 行。zedBSD: `gsi1-host-test.sh` 30 passed 0 failed（sharedatomic.comp の比べた 512 語が一致）、`gsi1-memory.o` を config-amd64・config-zybo の名指しの target で build、warning 0。
   - T に: make sim-quick（atg_su_lds・atg_su_dec・atg_su +quick を含む）と make verilator、lint。
+- 2026-10-25 10:00 Q1: T1-782（dc471f9、S16 と main の merge）PASS: make sim 97、msaa 16、verilator 6、lint 127。
