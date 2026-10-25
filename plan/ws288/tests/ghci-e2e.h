@@ -42,6 +42,31 @@ struct e2e_core_stats {
 	uint64_t job_cycles_max;
 };
 
+/*
+ * What the display shows, as the display case checks it: the display
+ * controller's registers (read through the DISP2 window), plane 0's flip
+ * record in the record page, and the driver's own view of the image it
+ * shows (copy_frame -1: a session's blob scanned where it is, 0 or 1: one
+ * of the driver's two frames a copied present filled).
+ */
+struct e2e_display_state {
+	int present;
+	uint32_t fb_base;
+	uint32_t fb_stride;
+	uint32_t ctrl;
+	uint32_t status;
+	uint32_t frame_count;
+	uint32_t scan_sum;
+	uint32_t scan_words;
+	uint32_t record_value;
+	uint32_t record_frame;
+	uint32_t shown_base;
+	uint32_t shown_stride;
+	int shown_copy_frame;
+	int enabled;
+	uint64_t adopted;
+};
+
 /* Starts the simulated board and the driver on it: 0, or an error. */
 int e2e_board_start(void);
 
@@ -57,6 +82,16 @@ void e2e_board_pump(void);
 
 /* The simulated time in nanoseconds since the board started. */
 uint64_t e2e_board_now_ns(void);
+
+/* Reads what the display shows. */
+void e2e_display_state(struct e2e_display_state *state);
+
+/*
+ * Runs the board (as a waiting thread would) until the display controller
+ * has begun frames more frames, at most timeout_ns of simulated time:
+ * 0, or ETIMEDOUT.
+ */
+int e2e_display_frames(uint32_t frames, uint64_t timeout_ns);
 
 /* Registers the fake core's /dev/gpu0 node for the driver's operations. */
 void e2e_core_register(const struct drv_gpu_ops *ops, void *private_data);

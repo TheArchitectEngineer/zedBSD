@@ -4,11 +4,13 @@
 # Vulkan executor and compiler on kernel stubs (ghci-e2e-kernel.c), to amaterrace-gpu's atg_top with
 # the CP firmware in Verilator (sim/verilator/link.h, built by its link-build.sh).  One process, one
 # thread, simulated time (ghci-e2e.h).  Then vkdemo's frame against the independent oracle
-# (plan/ws014/tests/vkdemo_oracle.py).
+# (plan/ws014/tests/vkdemo_oracle.py), and that frame shown on the display controller (the link's
+# controller names one test mode of vkdemo's size).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 #
 # usage: plan/ws288/tests/ghci-e2e.sh [CASE...]   (from anywhere)
-#        CASE: fill, copy, compute, vkdemo (default: all four, in that order); build: only build
+#        CASE: fill, copy, compute, vkdemo, display (default: all five, in that order; display shows
+#        the frame vkdemo wrote, so it runs after vkdemo); build: only build
 #        AMATERRACE_GPU=<checkout> picks the amaterrace-gpu tree (default ~/amaterrace-gpu).
 #        GHCI_E2E_TRACE=1 builds the executor with its diagnostic trace (GHCI_VK_TRACE: every staged
 #        record and every result that is not success, in the log).
@@ -30,7 +32,7 @@ else
 fi
 # The compilers' own temporary files go there too, not to /tmp.
 export TMPDIR="$out"
-cases=${*:-fill copy compute vkdemo}
+cases=${*:-fill copy compute vkdemo display}
 
 # The GPU: atg_top in the KC705's shape with the committed firmware image.
 "$gpu/sim/verilator/link-build.sh" "$out/link"
@@ -80,6 +82,7 @@ done
 ghci="$repo/src/drivers/gpu/ghci"
 for source in "$ghci/ghci.c" "$ghci/cp.c" "$ghci/memory.c" "$ghci/blit.c" "$ghci/native.c" "$ghci/check.c" \
 	"$ghci/range.c" "$ghci/share.c" "$ghci/state.c" "$ghci/capset.c" "$ghci/jobs.c" "$ghci/isa.c" \
+	"$ghci/display.c" "$ghci/display-scan.c" "$ghci/adv7511.c" \
 	"$ghci"/vk/*.c "$ghci"/compiler/*.c "$repo/src/drivers/gpu/compiler/spirv.c" \
 	"$repo/src/drivers/gpu/compiler/optimize.c" "$repo/src/drivers/gpu/i915/render/codec.c"; do
 	compile "$kernel" "$source"
@@ -108,6 +111,7 @@ for name in $cases; do
 	fill | copy) arguments="$arguments $name" ;;
 	compute) arguments="$arguments compute=$out/scale.spv" ;;
 	vkdemo) arguments="$arguments vkdemo=$out/vkdemo.ppm" ;;
+	display) arguments="$arguments display=$out/vkdemo.ppm" ;;
 	*) echo "FAIL ghci-e2e: unknown case $name"; exit 1 ;;
 	esac
 done
