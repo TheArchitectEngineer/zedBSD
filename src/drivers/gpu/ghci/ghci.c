@@ -120,9 +120,19 @@ ghci_device_start(
 	if (error != 0)
 		return error;
 
+	/*
+	 * Finds the display controller, if the GPU has one, and sets it dark.
+	 * This comes before the processor runs: once it runs, the host no
+	 * longer writes the controller's scan-out registers (the ring does).
+	 */
+	error = ghci_display_attach(device);
+	if (error != 0)
+		kern_logf("ghci: %s: display controller not started (%d)\n", device->name, error);
+
 	/* Starts the ring, the fences and the interrupt; the processor then runs. */
 	error = ghci_cp_start(device);
 	if (error != 0) {
+		ghci_display_detach(device);
 		ghci_memory_fini(device);
 		return error;
 	}
@@ -130,6 +140,7 @@ ghci_device_start(
 	/* Starts the thread that recovers from faults and gives deferred memory back. */
 	error = ghci_service_start(device);
 	if (error != 0) {
+		ghci_display_detach(device);
 		ghci_cp_stop(device);
 		ghci_memory_fini(device);
 		return error;
@@ -143,11 +154,6 @@ ghci_device_start(
 	error = ghci_vk_engine_start(device);
 	if (error != 0)
 		kern_logf("ghci: %s: no Vulkan executor (%d)\n", device->name, error);
-
-	/* Finds the display controller, if the GPU has one, and starts it. */
-	error = ghci_display_attach(device);
-	if (error != 0)
-		kern_logf("ghci: %s: display controller not started (%d)\n", device->name, error);
 
 	/* Publishes the device. */
 	error = register_device(device);

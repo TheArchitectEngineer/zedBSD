@@ -99,6 +99,9 @@
 /* The fence distance at which a submission waits for the GPU (a quarter of the circle). */
 #define GHCI_FENCE_WINDOW		0x40000000U
 
+/* The most modes a display controller can name (DC_CAPS[11:9]). */
+#define GHCI_DISPLAY_MODES_MAX		8U
+
 /* The tries at host memory that does not fall into the local range. */
 #define GHCI_HOST_TRIES			8U
 
@@ -198,8 +201,28 @@ struct ghci_session {
 };
 
 /*
- * The display controller of a device (display.c): its registers, the one
- * lease, the mode shown and the driver's two frames, into which a
+ * One mode of the display controller, as its mode table (MODE_INDEX and
+ * the MODE registers) names it: the size, the refresh the clock and the
+ * totals give, the porches and syncs, the sync polarity (SYNC_POL) and the
+ * PCLK_SEL value that picks its pixel clock.  Read once at the attach.
+ */
+struct ghci_display_mode {
+	uint32_t width;
+	uint32_t height;
+	uint32_t refresh_millihz;
+	uint32_t h_front;
+	uint32_t h_sync;
+	uint32_t h_back;
+	uint32_t v_front;
+	uint32_t v_sync;
+	uint32_t v_back;
+	uint32_t sync_polarity;
+	uint32_t clock_select;
+};
+
+/*
+ * The display controller of a device (display.c, the DISP2 capability):
+ * its registers, its mode table, the one lease, the mode shown and the driver's two frames, into which a
  * presentation copies the session's storage and which the controller
  * scans in turn.
  *
@@ -215,7 +238,9 @@ struct ghci_display {
 	uint32_t controller_id;
 	uint32_t controller_version;
 	uint32_t controller_caps;
+	struct ghci_display_mode modes[GHCI_DISPLAY_MODES_MAX];
 	unsigned mode_count;
+	int connected;
 	struct ghci_session *owner;
 	uint64_t lease;
 	uint64_t next_lease;

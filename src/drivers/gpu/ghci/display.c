@@ -6,8 +6,9 @@
  */
 
 /*
- * The display of a GHCI device: the display controller of the DISP
- * capability, as one output with one plane.
+ * The display of a GHCI device: the display controller of the DISP2
+ * capability, a unit of the GPU, as one output with one plane.  The
+ * controller's mode table names the modes.
  *
  * The controller is not lit at the start: it starts scanning only when
  * the holder of the display's lease presents its first frame.  A
@@ -42,13 +43,12 @@
 #define DISPLAY_GENERATION		1U
 #define DISPLAY_TOPOLOGY		1U
 
-/* The controller's capability bits: the external transmitter and the number of modes. */
+/* The controller's capability bits: the external transmitter and the TMDS output. */
 #define DC_CAPS_TRANSMITTER		0x4U
 #define DC_CAPS_TMDS			0x2U
-#define DC_CAPS_MODES(caps)		(((caps) >> 9) & 0x7U)
 
-/* The controller's STATUS: idle once ENABLE is off and no read is outstanding. */
-#define DC_STATUS_IDLE			0x4U
+/* The version of the DISP2 capability the driver knows. */
+#define DISP2_VERSION			1U
 
 /* How long the detach waits for the controller to be idle, and a presentation for its flip. */
 #define DC_IDLE_MS			100U
@@ -57,39 +57,9 @@
 /* The frame's pixels: 32 bits. */
 #define PIXEL_BYTES			4U
 
-/* The display controller's interrupts the driver takes. */
-#define DC_IRQ_TAKEN			(GHCI_DC_IRQ_VSYNC | GHCI_DC_IRQ_UNDERFLOW | GHCI_DC_IRQ_FLIP_DONE)
-
-/*
- * One mode of the controller: its size, refresh, timing and the PCLK_SEL
- * value that picks its pixel clock.
- */
-struct display_mode {
-	uint32_t width;
-	uint32_t height;
-	uint32_t refresh_millihz;
-	uint32_t h_front;
-	uint32_t h_sync;
-	uint32_t h_back;
-	uint32_t v_front;
-	uint32_t v_sync;
-	uint32_t v_back;
-	uint32_t sync_polarity;
-	uint32_t clock_select;
-};
-
-/*
- * The modes of the Amaterrace display controller ("ATDC"), by PCLK_SEL:
- * 640x480 at 60 Hz (25.2 MHz, both syncs low) and 1280x720 at 60 Hz
- * (74.25 MHz, both syncs high).
- *
- * Values referenced: CTA-861 (video formats 1 and 4: the porches, the
- * sync widths and the polarities).
- */
-static const struct display_mode display_modes[] = {
-	{ 640U, 480U, 60000U, 16U, 96U, 48U, 10U, 2U, 33U, 0U, 0U },
-	{ 1280U, 720U, 60000U, 110U, 40U, 220U, 5U, 5U, 20U, 3U, 1U }
-};
+/* The MODE registers' fields: a count in the low half, another in the high half. */
+#define MODE_LOW(word)			((word) & 0xffffU)
+#define MODE_HIGH(word)			((word) >> 16)
 
 static int display_query(void *private_data, void *opaque, struct gpu_display_info *request);
 static int display_mode(void *private_data, void *opaque, struct gpu_display_mode *request);
@@ -98,6 +68,7 @@ static int display_release(void *private_data, void *opaque, const struct gpu_di
 static int display_present(void *private_data, void *opaque, void *object, struct gpu_display_present *request);
 static int display_wait(void *private_data, void *opaque, struct gpu_display_wait *request);
 static int display_events(void *private_data, void *opaque, uint64_t *sequence);
+static int modes_read(struct ghci_device *device);
 static unsigned largest_mode(const struct ghci_display *display);
 static int find_mode(const struct ghci_display *display, uint32_t width, uint32_t height, unsigned *mode);
 static int frames_take(struct ghci_device *device);
@@ -150,35 +121,50 @@ ghci_display_attach(
 	if ((device->caps & GHCI_CAPS_DISP) == 0U)
 		return 0;
 
-	/* The controller's registers, from the DISP capability. */
-	error = ghci_extcap_find(ghci_read_context, device, device->extcap, device->register_bytes, GHCI_XCAP_DISP, &registers, &version);
+	/*
+	 * The controller's registers, from the DISP2 capability: a controller
+	 * that is a unit of the GPU, which the ring drives.  A DISP capability
+	 * (a controller the host drives by itself) is not served here.
+	 */
+	error = ghci_extcap_find(ghci_read_context, device, device->extcap, device->register_bytes, GHCI_XCAP_DISP2, &registers, &version);
 	if (error != 0)
 		return error;
-	if (registers > device->register_bytes - 0x80U)
+
+	/* The capability's window of 256 bytes lies inside the register window. */
+	if (device->register_bytes < GHCI_DC2_WINDOW)
+		return EINVAL;
+	if (registers > device->register_bytes - GHCI_DC2_WINDOW)
 		return EINVAL;
 
-	/* The controller's identity; the driver knows the modes of the Amaterrace controller. */
+	/* Refuses a version of the capability the driver does not know. */
+	if (version != DISP2_VERSION) {
+		kern_logf("ghci: %s: DISP2 version %u is not known\n", device->name, (unsigned)version);
+		return ENOTSUP;
+	}
+
+	/* The controller's identity and what it can do. */
 	display->registers = registers;
 	display->controller_id = ghci_read(device, registers + GHCI_DC_ID);
 	display->controller_version = ghci_read(device, registers + GHCI_DC_VERSION);
 	display->controller_caps = ghci_read(device, registers + GHCI_DC_CAPS);
-	if (display->controller_id != GHCI_DC_ID_VALUE) {
-		kern_logf("ghci: %s: display controller %08x has no known modes\n", device->name, (unsigned)display->controller_id);
-		return ENOTSUP;
-	}
 
-	/* The modes the controller has, of those the driver knows. */
-	display->mode_count = DC_CAPS_MODES(display->controller_caps);
-	if (display->mode_count > sizeof(display_modes) / sizeof(display_modes[0]))
-		display->mode_count = sizeof(display_modes) / sizeof(display_modes[0]);
-	if (display->mode_count == 0U)
-		return ENOTSUP;
+	/* The modes, from the controller's own table. */
+	error = modes_read(device);
+	if (error != 0)
+		return error;
 
-	/* The controller starts reset and dark, with its interrupts on. */
+	/*
+	 * The controller starts reset and dark.  The host writes it directly
+	 * here, before the command processor runs: once it runs, the ring
+	 * alone changes what the controller shows.
+	 */
 	ghci_write(device, registers + GHCI_DC_CTRL, GHCI_DC_CTRL_RESET);
 	controller_off(device);
-	ghci_write(device, registers + GHCI_DC_IRQ_STATUS, DC_IRQ_TAKEN);
-	ghci_write(device, registers + GHCI_DC_IRQ_ENABLE, DC_IRQ_TAKEN);
+
+	/* Whether a sink is connected, as the controller was last told (1 when nobody told it). */
+	display->connected = 0;
+	if ((ghci_read(device, registers + GHCI_DC_CONNECTED) & 1U) != 0U)
+		display->connected = 1;
 
 	/* An external HDMI transmitter is set up now; it shows nothing until the controller scans. */
 	if ((display->controller_caps & DC_CAPS_TRANSMITTER) != 0U) {
@@ -213,7 +199,6 @@ ghci_display_detach(
 	mutex_lock(&device->lock);
 
 	lease_end(device);
-	ghci_write(device, device->display.registers + GHCI_DC_IRQ_ENABLE, 0U);
 
 	mutex_unlock(&device->lock);
 }
@@ -238,45 +223,19 @@ ghci_display_session_close(
 
 /*
  * Serves the display controller's interrupt.
+ *
+ * A DISP2 controller has no interrupt status of its own: its events are
+ * bits of the GPU's IRQ_STATUS, which the command processor's handler
+ * reads.  Reports that nothing of the controller's was pending.
  */
 int
 ghci_display_interrupt(
 	struct ghci_device *device)
 {
-	struct ghci_display *display;
-	uint32_t status;
-	unsigned long irq;
+	(void)device;
 
-	/* A device without a display controller has no interrupt of it. */
-	display = &device->display;
-	if (!display->present)
-		return 0;
-
-	/* What is pending; nothing pending is another source's interrupt. */
-	status = ghci_read(device, display->registers + GHCI_DC_IRQ_STATUS) & DC_IRQ_TAKEN;
-	if (status == 0U)
-		return 0;
-
-	/* Clears it (write 1 to clear). */
-	ghci_write(device, display->registers + GHCI_DC_IRQ_STATUS, status);
-
-	/* Counts the syncs, the flips and the underflows. */
-	irq = spin_lock_irqsave(&device->irq_lock);
-
-	if ((status & GHCI_DC_IRQ_VSYNC) != 0U)
-		display->vsyncs++;
-	if ((status & GHCI_DC_IRQ_FLIP_DONE) != 0U)
-		display->flips++;
-	if ((status & GHCI_DC_IRQ_UNDERFLOW) != 0U)
-		display->underflows++;
-
-	spin_unlock_irqrestore(&device->irq_lock, irq);
-
-	/* Wakes a presentation that waits for its flip. */
-	waitq_wake_all(&display->flip_wake);
-
-	/* Succeeded: the interrupt was the controller's. */
-	return 1;
+	/* Succeeded: the controller has no status of its own to serve. */
+	return 0;
 }
 
 /* Describes the one output. */
@@ -288,8 +247,8 @@ display_query(
 {
 	struct ghci_device *device;
 	struct ghci_display *display;
-	const struct display_mode *current;
-	const struct display_mode *largest;
+	const struct ghci_display_mode *current;
+	const struct ghci_display_mode *largest;
 
 	(void)opaque;
 
@@ -309,11 +268,13 @@ display_query(
 	/* The output, its plane and its formats, under the device's lock. */
 	mutex_lock(&device->lock);
 
-	current = &display_modes[display->mode];
-	largest = &display_modes[largest_mode(display)];
+	current = &display->modes[display->mode];
+	largest = &display->modes[largest_mode(display)];
 	request->display_id = DISPLAY_ID;
 	request->generation = DISPLAY_GENERATION;
-	request->flags = GPU_DISPLAY_CONNECTED | GPU_DISPLAY_FIFO;
+	request->flags = GPU_DISPLAY_FIFO;
+	if (display->connected)
+		request->flags |= GPU_DISPLAY_CONNECTED;
 	if (display->enabled)
 		request->flags |= GPU_DISPLAY_ACTIVE;
 	request->plane_count = 1U;
@@ -347,7 +308,7 @@ display_mode(
 	struct gpu_display_mode *request)
 {
 	struct ghci_device *device;
-	const struct display_mode *mode;
+	const struct ghci_display_mode *mode;
 	unsigned index;
 	int error;
 
@@ -368,7 +329,7 @@ display_mode(
 		if (request->index >= device->display.mode_count)
 			return EINVAL;
 
-		mode = &display_modes[request->index];
+		mode = &device->display.modes[request->index];
 		request->width = mode->width;
 		request->height = mode->height;
 		request->refresh_millihz = mode->refresh_millihz;
@@ -385,7 +346,7 @@ display_mode(
 		return error;
 
 	/* The refresh, when one is asked for, must be the mode's. */
-	mode = &display_modes[index];
+	mode = &device->display.modes[index];
 	if (request->refresh_millihz != 0U && request->refresh_millihz != mode->refresh_millihz)
 		return EINVAL;
 
@@ -643,13 +604,106 @@ display_events(
 	return 0;
 }
 
-/* Reports the index of the largest mode of the controller. */
+/*
+ * Reads the controller's mode table into the display.  Returns 0, or
+ * ENOTSUP when the controller names no mode the driver can use.
+ */
+static int
+modes_read(
+	struct ghci_device *device)
+{
+	struct ghci_display *display;
+	struct ghci_display_mode *mode;
+	uint32_t registers;
+	uint32_t count;
+	uint32_t word;
+	uint32_t flags;
+	uint64_t clock_khz;
+	uint64_t total;
+	uint32_t index;
+
+	display = &device->display;
+	registers = display->registers;
+
+	/* The number of modes the controller names, at most what the display keeps. */
+	count = GHCI_DC_CAPS_MODES(display->controller_caps);
+	if (count > GHCI_DISPLAY_MODES_MAX)
+		count = GHCI_DISPLAY_MODES_MAX;
+
+	/* Reads each mode through MODE_INDEX; a mode without a size or a clock is skipped. */
+	display->mode_count = 0U;
+	for (index = 0U; index < count; index++) {
+		mode = &display->modes[display->mode_count];
+		ghci_write(device, registers + GHCI_DC_MODE_INDEX, index);
+
+		/* The horizontal timing: active pixels and sync, then the porches. */
+		word = ghci_read(device, registers + GHCI_DC_MODE_H0);
+		mode->width = MODE_LOW(word);
+		mode->h_sync = MODE_HIGH(word);
+		word = ghci_read(device, registers + GHCI_DC_MODE_H1);
+		mode->h_front = MODE_LOW(word);
+		mode->h_back = MODE_HIGH(word);
+
+		/* The vertical timing, in lines. */
+		word = ghci_read(device, registers + GHCI_DC_MODE_V0);
+		mode->height = MODE_LOW(word);
+		mode->v_sync = MODE_HIGH(word);
+		word = ghci_read(device, registers + GHCI_DC_MODE_V1);
+		mode->v_front = MODE_LOW(word);
+		mode->v_back = MODE_HIGH(word);
+
+		/* The sync polarities (SYNC_POL's two bits) and the clock's PCLK_SEL value. */
+		flags = ghci_read(device, registers + GHCI_DC_MODE_FLAGS);
+		mode->sync_polarity = flags & 3U;
+		mode->clock_select = GHCI_DC_MODE_PCLK_SEL(flags);
+
+		/* A mode without a size or a clock cannot be shown. */
+		clock_khz = ghci_read(device, registers + GHCI_DC_MODE_CLOCK);
+		if (mode->width == 0U ||
+		    mode->height == 0U ||
+		    clock_khz == 0U)
+			continue;
+
+		/* The pixel clocks of one whole frame, the blanking included. */
+		total = (uint64_t)(mode->width + mode->h_front + mode->h_sync + mode->h_back) *
+		    (mode->height + mode->v_front + mode->v_sync + mode->v_back);
+
+		/* The refresh the clock gives over the frame's totals, in millihertz, rounded. */
+		mode->refresh_millihz = (uint32_t)((clock_khz * 1000000U + total / 2U) / total);
+		display->mode_count++;
+	}
+
+	/* A controller without a usable mode has no display. */
+	if (display->mode_count == 0U)
+		return ENOTSUP;
+
+	/* Succeeded: the modes are known. */
+	return 0;
+}
+
+/* Reports the index of the largest mode of the controller, by its pixels. */
 static unsigned
 largest_mode(
 	const struct ghci_display *display)
 {
-	/* The table is in increasing size: the last mode the controller has. */
-	return display->mode_count - 1U;
+	uint64_t pixels;
+	uint64_t largest_pixels;
+	unsigned largest;
+	unsigned index;
+
+	/* The first of the modes with the most pixels. */
+	largest = 0U;
+	largest_pixels = 0U;
+	for (index = 0U; index < display->mode_count; index++) {
+		pixels = (uint64_t)display->modes[index].width * display->modes[index].height;
+		if (pixels > largest_pixels) {
+			largest = index;
+			largest_pixels = pixels;
+		}
+	}
+
+	/* Succeeded: the largest mode. */
+	return largest;
 }
 
 /* Finds the mode of a size among the controller's.  Returns 0 or EINVAL. */
@@ -664,9 +718,9 @@ find_mode(
 
 	/* Looks at each mode the controller has. */
 	for (index = 0U; index < display->mode_count; index++) {
-		if (display_modes[index].width != width)
+		if (display->modes[index].width != width)
 			continue;
-		if (display_modes[index].height != height)
+		if (display->modes[index].height != height)
 			continue;
 
 		*mode = index;
@@ -682,7 +736,7 @@ static int
 frames_take(
 	struct ghci_device *device)
 {
-	const struct display_mode *largest;
+	const struct ghci_display_mode *largest;
 	uint64_t bytes;
 	unsigned index;
 	int error;
@@ -692,7 +746,7 @@ frames_take(
 		return 0;
 
 	/* Each frame holds the largest mode, in memory the controller scans. */
-	largest = &display_modes[largest_mode(&device->display)];
+	largest = &device->display.modes[largest_mode(&device->display)];
 	bytes = (uint64_t)largest->width * largest->height * PIXEL_BYTES;
 	for (index = 0U; index < 2U; index++) {
 		error = ghci_memory_alloc(device, NULL, GHCI_USE_MAPPABLE, bytes, &device->display.frames[index]);
@@ -733,7 +787,7 @@ controller_off(
 	/* ENABLE off; the controller then finishes its reads. */
 	registers = device->display.registers;
 	ghci_write(device, registers + GHCI_DC_CTRL, 0U);
-	error = ghci_poll(device, registers + GHCI_DC_STATUS, DC_STATUS_IDLE, DC_STATUS_IDLE, DC_IDLE_MS);
+	error = ghci_poll(device, registers + GHCI_DC_STATUS, GHCI_DC_ST_IDLE, GHCI_DC_ST_IDLE, DC_IDLE_MS);
 	if (error != 0)
 		kern_logf("ghci: %s: display controller not idle\n", device->name);
 	device->display.enabled = 0;
@@ -747,11 +801,11 @@ controller_on(
 	uint32_t format,
 	uint32_t frame)
 {
-	const struct display_mode *timing;
+	const struct ghci_display_mode *timing;
 	uint32_t registers;
 	uint32_t control;
 
-	timing = &display_modes[mode];
+	timing = &device->display.modes[mode];
 	registers = device->display.registers;
 
 	/* The timing, the clock and the frame's size and rows, changed only while ENABLE is off. */

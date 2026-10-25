@@ -41,7 +41,7 @@
 #define IRQ_TAKEN			(GHCI_IRQ_FENCE | GHCI_IRQ_FAULT | GHCI_IRQ_WATCHDOG | GHCI_IRQ_RESULT)
 
 /* Every bit of IRQ_STATUS, cleared at the start. */
-#define IRQ_ALL				0x1ffU
+#define IRQ_ALL				0x1fffU
 
 /* How often a wait for a fence looks at the fence page when no interrupt comes. */
 #define FENCE_POLL_MS			10U
