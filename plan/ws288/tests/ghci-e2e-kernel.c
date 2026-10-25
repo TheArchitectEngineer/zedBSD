@@ -29,6 +29,7 @@
 
 #include "drivers/gpu/ghci/ghci.h"
 #include "kern/clock.h"
+#include "kern/cred.h"
 #include "drivers/gpu/ghci/hcr.h"
 
 #include "ghci-e2e.h"
@@ -333,6 +334,21 @@ sched_sleep(
 		service_round();
 		now = clock_ticks();
 	} while (now < timeout_tick);
+}
+
+/* The caller is root: its sessions are not protected (the harness is a tool). */
+const struct ucred *
+cred_current(void)
+{
+	return NULL;
+}
+
+int
+cred_is_superuser(
+	const struct ucred *credentials)
+{
+	(void)credentials;
+	return 1;
 }
 
 /* The log goes to standard output. */
