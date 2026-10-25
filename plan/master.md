@@ -28,7 +28,7 @@
 <!-- master:next:start -->
 1. 新しい Q1 は AGENTS.md・この block を読む。**ユーザーへは日本語で、聞かれた 1 件だけを答える。ユーザーに試験を頼まない。**
 2. **merge・試験の出力は必ず読んで確かめてから記録・報告する**（merge の後に `git log -1 --format='%h %p'`、担当の SHA は `git cat-file -t`）。担当の branch に捨てた変更が残っていないか（例: 2026-10-22 の P2 の buffer の使い回し）を diff の file の一覧で確かめ、必要なら cherry-pick。
-3. 次の番号: BUG-346、q1581、WS290、KL_VERSION 96。古い q・T1 の番号の経緯は git の履歴（2026-10-23 以前の master.md）。
+3. 次の番号: BUG-346、q1582、WS290、KL_VERSION 96。古い q・T1 の番号の経緯は git の履歴（2026-10-23 以前の master.md）。
 4. WS288 の次: [handover-20261024-2230.md](ws288/handover-20261024-2230.md) の §5（推し: p009 の残りを閉じる → p018・p010 → p006 の見直し）。担当には amaterrace-gpu の worktree を作って渡し、Q1 が `--no-ff` で merge する。
 5. 日付は host の `date`。記録の整合は [record-integrity.md](record-integrity.md)。1 LW ≈ 実時間 15〜25 分。
 <!-- master:next:end -->
@@ -636,6 +636,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-25 17:57 ユーザー「では、この設計でGHCI仕様をアップデートして、zedBSDのドライバを仕様に合わせて変更し、RTLも必要に合わせて修正しましょう。」（Q1 の提案: MEM に window の enable の bit、driver が自分の scanout の後に窓を閉じる、console・panic は scanout の経路、driver の置き場所を GHCI §11.3 どおりに）→ ws288-p040 を新設（P2）。同じ日の前の問い「GOPの使用を終了して、ドライバがGOPのフレームバッファを引き継がずに…BAR2を無効にすることはできますか？…コンソールはグラフィックセッション確立後はもう二度と使用しなくていいですし、もし使用するとしても、scanout capabilityのあるGPUドライバをVulkan Display extensionと一緒に使って、/dev/consoleドライバが/dev/gpu0ドライバなどをバックエンドにできるはずです。」
 - 2026-10-25 17:49 ユーザー「optionally, for a ring or fence memory in local memory は削除して、フレームバッファだけにしましょう。ring, fenceをホストに置かない現代GPUは少ないように思います。そうすると、BAR2が64bitという制約は削除できるのでは。ただし、64bitに対応しているかは、capabilityになるのでしょうか。」→ GHCI: local window（BAR2）は frame buffer 専用、ring・fence は常に host memory。§15.2 の BAR2 は 32 bit か 64 bit（PCI の BAR の型の bit で分かるので GHCI の capability は不要、Q1 の答え）、prefetchable は推奨。P1 が amaterrace-gpu の docs/ghci.md を直す。
 - 2026-10-25 17:07 ユーザー「MCはIDの使い分けを実装しましょう。KC705ボードでなく、汎用の部品として、AXI ２つの振り分けをするモジュールを作って、KC705で利用しましょう。」（Q1 の説明「MC に AXI を 2 本より、1 本で行き先ごとに ID を分ける方がよい」の後）→ ws288-p039 を新設（P1）。
 - 2026-10-25 16:30 ユーザー（Q1 の問い「KC705 の PCIe の IP は、DMA mode と AXI の bridge のどちらで作りますか？」）「AXI の bridge」→ ws288-p013: XDMA の bridge mode（7 series に無ければ axi_pcie）。GPU → host memory の AXI の slave の口を持ち、p029 と host・DDR3 の両方の形にそのまま使う。MSI は標準だけ。

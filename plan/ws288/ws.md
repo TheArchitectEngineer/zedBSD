@@ -71,6 +71,7 @@
 | [p037](phase037/phase.md) | 算術の共通の module（乗算・除算・加算・減算・shift を rtl/common の am_ の module に限り、必要な個数だけ instance にする） | なし | in-progress（2026-10-25 12:58 q1577 P1） |
 | [p038](phase038/phase.md) | TU の filter の pipeline（p025 の前倒し、ffilt の前半を段に分け FMA を pipeline に、累算の順番で依存を避ける） | p036 | cleared（2026-10-25 17:53: TU の配線後 WNS −35.1 → −21.4 ns、filter の部分は合成で 5 ns、amaterrace main 86ca58a） |
 | [p039](phase039/phase.md) | MC の行き先ごとの AXI の ID と、汎用の AXI の 2 つへの振り分けの module（KC705 で MIG と PCIe の GPU → host に） | p034、p013 | in-progress（2026-10-25 17:07 q1580 P2） |
+| [p040](phase040/phase.md) | GHCI の memory の置き場所を設計どおりに（ring・fence・host-visible は host、BAR2 は frame buffer だけ、窓を閉じる bit）: GHCI・RTL・zedBSD の driver | p039 | in-progress（2026-10-25 17:57 q1581 P2） |
 | [p010](phase010/phase.md) | compiler の backend（zedBSD `isa/gsi1/`）、`gsi1_isa.h` と interface の表の確定（design §8） | p008、p027 | cleared（2026-10-25 07:12: GSI1 の backend、gsi1_isa.h と interface の表の確定、host 試験 29/29。vmunix の link は p006） |
 | [p018](phase018/phase.md) | firmware の Vulkan の object model と draw/dispatch（design §8）。GHCI §7.2・§11.6 への firmware の追従を含む | p017、p009、p010、p027、p030 | cleared（2026-10-25 10:16: firmware の Vulkan の object model、Verilator の firmware の harness 6 case 一致、amaterrace-gpu 252a11e） |
 | [p019](phase019/phase.md) | zedBSD の `vk/`（検証する中継、design §8） | p010、p017、p006、p027 | cleared（2026-10-25 10:00: vk/ の executor、host 試験 126・76・137、vmunix の warning 0。firmware の上は p011） |
