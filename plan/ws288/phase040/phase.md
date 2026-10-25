@@ -3,7 +3,7 @@
 # ws288-p040 GHCI の memory の置き場所の設計どおりの実装（host の ring・fence、BAR2 は frame buffer だけ、窓を閉じる bit）
 
 - 親: [WS288](../ws.md)。関係: [p039](../phase039/phase.md)（GPU → host の経路、HOST_LIMIT）、[p006](../phase006/phase.md)（driver）、[p013](../phase013/phase.md)。
-- 状態: in-progress（2026-10-25 17:57 Q1、q1581 P2）
+- 状態: cleared（2026-10-25 21:35 Q1。amaterrace main 4ee7a1f・zedBSD main 9971c812f、T1-803 と merge の後の確認）
 - 依存: p039（575dcf6、T1-801 で試験中。main に入る前は p1-p039 の上で作り、後で main に合わせる）。
 
 ## 決定（2026-10-25 17:57 ユーザー）
@@ -68,3 +68,4 @@ GHCI の文、RTL の TB（窓を閉じると BAR2 の書きが捨てられ読�
 - 未実施（T へ）: make sim 全部・sim-quick・Verilator fw-run、KC705 の実機（BAR2 の窓を閉じた時の挙動、GPU → host の DMA）。e2e の placement の check が古い driver で FAIL することは流していない（host 試験の guard と kind の check で代える）。
 
 - 2026-10-25 21:03 Q1: T1-803 の唯一の FAIL（atg_top_disp の port）は ef81e65 で直った → amaterrace p2-p040 ef81e65 を main に merge = 4ee7a1f（衝突なし）、zedBSD agent/p2-p040 7a3720e62（driver db57828e9 と e2e）を main に merge = 9971c812f（phase024・040 の追記の衝突は両方を残した、行の欠けなし）。merge の後の lint・sim-quick・TB・host 試験・vmunix・ghci-e2e（placement の行）を Q1 が実行中。
+- 2026-10-25 21:35 Q1: merge の後の確認: lint rc 0・161 clean・warning 0、sim-quick rc 0・109 PASS・0 FAIL、atg_cp_regs・am_axi_gate・atg_kc705_pcie・atg_top_disp・atg_top PASS、ghci-host-test 134/180/166 passed 0 failed、vmunix rc 0・warning 0、ghci-e2e rc 0・9 PASS・mismatch 0・「placement: failures 0, guard changed 0, host beats 19476, local beats 84799, stray 0」。→ **p040 は cleared**。範囲の外のまま: 本当の GOP の引き継ぎ、panic の画面（driver・kernel だけの話、PCIe の実機の後）、起動の console の取り上げ。
