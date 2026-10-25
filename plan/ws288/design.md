@@ -2461,6 +2461,8 @@ R2・R3・R4 は R1 の後に並行できる。R6 は P2 の p018 が main に�
 - **置き場所**: `atg_cp_prot` は `atg_cp` の子ではなく `atg_top` の中で `atg_cpu` の横（PROT は firmware が要る。`atg_cp` は既に 439 行）。MC は `atg_mc_prot` の他に `atg_mc_plb`・`atg_mc_asm`・`atg_mc_cnt` に分けた（各 400 行以内）。CP の client 0 の side band は `am_amb_mux` を変えずに、mux が選んだ requester が fence unit の時だけ付ける。
 - **MC**: 重なる 2 度目の INV も受けて walk をもう一度 stale にする（§17.5 の「受けず」より安全。firmware は PROT_INFO[3] を待つので繰り返さない）。CAM の grant は PLB の miss でも許す（walk 不要）。tbase = 0 の chk の要求と slot 0 の chk（public の read 以外）は拒む。拒んだ read の data は 0 を全部の構成で。
 - **CP**: resid の「SU の RAM が書かれた印」は SU から取らず、`atg_cp_prot` が SU を使う µop（BLIT 以外の unit の µop）の kick で数える。SU の scrub は既存の write port に mux で足す（RAM の宣言と読みは不変、P2 の BRAM の点検と重ならないように。Q1 の指示）。PROT_TABLE を lock の間に書くのは無視（kind 7 の fault は出さない、GHCI の文も直す）。CTRL.RESET で PROT_TABLE は 0。
+- **firmware（R6、2026-10-25 14:23）**: 範囲の記録（§17.8 の「書いた範囲の記録」）を捨てた: memory の object と可視の block の release が disown し、session ごとの granule の数が close で 0 でない時か表の書き込みが失敗した時だけ表の全体を掃く（DMEM が足りなかった）。slab は 1 line の block だけ、大きい可視の block は専用の granule。記録の data は 4 KiB の可視の data chunk（µop の chunk の marker が名指す）。間接の引数は要る line だけ読む。
+- **IMEM**（2026-10-25、ユーザー「IMEM を 128 KiB」）: 保護の firmware で 64 KiB の IMEM が 65520 byte になった。IMEM を 128 KiB（0x0000_0000〜0x0001_FFFF）、DMEM を 0x0002_0000 に移した。§2.4.7 の IMEM の大きさの記述はこれで読み替える。
 - **残り（未実施）**: host の KICK は切り替えを通らない（IDLE と HALTED だけで受ける）、DRAIN の間の watchdog の tag、合成の timing。
 
 ## Appendix A. SA の設計の sketch（**延期**。2026-10-23 ユーザー「SAの設計と実装はかなり後に回して、SUがきちんとISAを実装できてからにします。」SU が GSI1 を実装した後に設計し直す。計画の critical path には無い。版 4 の review（§14）の 33 件に対応した時点の案で、**README の 0.8 TOPS/SU（×2）は満たしていない**（1 MAC/PE/cycle）。KC705 の SA 構成の数字も参考のみ）
