@@ -33,3 +33,4 @@
 - 2026-10-25 20:21 P2 → Q1（申告）: board 全体の Vivado の 1 回目は配置で止まった（bank 34 の DCI に bank 33 の DCI_CASCADE {32 34} が要る、CPU_RESET の AB7 が bank 34 の VR の pin）→ XDC を直し、BSCANE2 の TCK の pin に create_clock。2 回目を実行中。p2-p024 に 0b5e89e を merge = 8bfdb71。
 - 2026-10-25 20:34 ユーザー「全部置き換えてからでいいと思います」（原文は Master の decisions-log）→ board 全体の合成・配置配線・bitstream の本番は p037 の後。今の 2 回目は流れの確認として終え、結果（制約・DRC・20 MHz の timing）を記録して止める。P2 は p037 の CP・MC（p039 が main に入ったので始められる）に移る。
 - 2026-10-25 20:35 ユーザー「20MHzも低すぎます。その段階でP&Rをやっても、あとでひっくり返るので、無駄になりそうです」→ P2 の board の Vivado の 2 回目を止める、board の P&R は回さない、gclk 20 MHz（Q1 の判断）は取り消し（MMCM の設定は parameter として残す）。
+- 2026-10-25 20:36 ユーザーの順（Master の decisions-log）: board の P&R は p037 と p025 の後。
