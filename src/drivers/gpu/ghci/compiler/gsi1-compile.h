@@ -57,6 +57,14 @@ struct ghci_gsi1_options {
 	 */
 	uint32_t varying_words;
 
+	/*
+	 * The first constant-bank word the program may use.  The vertex and
+	 * the fragment program of a pipeline share one bank, so the fragment
+	 * program is compiled from the vertex program's header word 9 (its
+	 * words used) on.
+	 */
+	uint32_t bank_first;
+
 	/* Nonzero when the GPU writes the sample mask in r6 (CAPS[29]). */
 	uint32_t sample_mask_input;
 

@@ -53,6 +53,7 @@ static int lower_uniform_word(struct gsi1_lowering *lowering, const struct drv_g
 static int lower_storage(struct gsi1_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction, uint32_t dst);
 static int lower_atomic(struct gsi1_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction, uint32_t dst);
 static int lower_shared(struct gsi1_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction, uint32_t dst);
+static int shared_atomic_address(struct gsi1_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction, uint32_t *address);
 static int lower_sync(struct gsi1_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction);
 static int atomic_sub(uint32_t operation, uint32_t *sub);
 static int storage_binding(struct gsi1_lowering *lowering, uint32_t uniform, const struct gsi1_binding **binding);
@@ -75,14 +76,22 @@ gsi1_memory_prepare(
 	/* Names the module being laid out. */
 	ir = lowering->ir;
 
-	/* The push constants from word 0: c0 is the first push word. */
-	lowering->push_bank = 0U;
+	/*
+	 * The push constants from the first word the program may use (word 0
+	 * unless the pipeline's other stage takes the words below: one bank
+	 * serves the vertex and the fragment warps of a draw).
+	 */
+	if (lowering->options.bank_first >= lowering->options.bank_words) {
+		error = gsi1_refuse(lowering, EINVAL, "the first constant-bank word is past the bank");
+		return error;
+	}
+	lowering->push_bank = lowering->options.bank_first;
 	push_words = (ir->push_bytes + 3U) / 4U;
-	if (push_words > lowering->options.bank_words) {
+	if (push_words > lowering->options.bank_words - lowering->push_bank) {
 		error = gsi1_refuse(lowering, ENOTSUP, "more push constants than the constant bank holds");
 		return error;
 	}
-	lowering->bank_used = push_words;
+	lowering->bank_used = lowering->push_bank + push_words;
 
 	/* The push constants' entry. */
 	if (push_words != 0U) {
@@ -647,10 +656,10 @@ lower_storage(
 }
 
 /*
- * Lowers an atomic on a storage buffer's word or a storage image's 32-bit
- * texel: atom at the address, its old value into dst (a texel outside the
- * image is not changed).  An atomic on shared memory is refused (GSI1 version
- * 1 has none).
+ * Lowers an atomic on a storage buffer's word, a storage image's 32-bit
+ * texel or a word of shared memory: atom (atoms for shared memory, sub[4])
+ * at the address, its old value into dst (a texel outside the image is not
+ * changed).
  */
 static int
 lower_atomic(
@@ -672,12 +681,6 @@ lower_atomic(
 	int clamp;
 	int error;
 
-	/* Shared memory has no atomics in GSI1 version 1. */
-	if (instruction->location == DRV_GPU_IR_LOCATION_SHARED) {
-		error = gsi1_refuse(lowering, ENOTSUP, "an atomic on shared memory (GSI1 version 1 has none)");
-		return error;
-	}
-
 	/* The operation's sub-operation. */
 	error = atomic_sub(instruction->immediate, &sub);
 	if (error != 0) {
@@ -685,10 +688,20 @@ lower_atomic(
 		return error;
 	}
 
-	/* A storage image's texel: its address, and the lanes whose texel is inside. */
+	/*
+	 * The word's address: a byte offset in shared memory, a storage image's
+	 * texel (with the lanes whose texel is inside), or a storage buffer's
+	 * word.
+	 */
 	inside = GSI1_NO_OPERAND;
 	binding = NULL;
-	if (instruction->location < lowering->ir->uniform_count &&
+	if (instruction->location == DRV_GPU_IR_LOCATION_SHARED) {
+		/* Shared memory is a compute program's; atoms wraps at its size, as lds and sts do. */
+		error = shared_atomic_address(lowering, instruction, &address);
+		if (error != 0)
+			return error;
+		sub |= GSI1_ATOM_SHARED;
+	} else if (instruction->location < lowering->ir->uniform_count &&
 	    (lowering->binding[instruction->location].kind == GSI1_KIND_STORAGE_IMAGE ||
 	     lowering->binding[instruction->location].kind == GSI1_KIND_TEXEL_BUFFER)) {
 		error = gsi1_image_texel(lowering, instruction, &lowering->binding[instruction->location], &address, &inside);
@@ -759,6 +772,35 @@ lower_atomic(
 		predicate_end(lowering, save);
 
 	/* Succeeded: the atomic is lowered. */
+	return 0;
+}
+
+/*
+ * Gives the byte address in shared memory of an atomic's word.
+ */
+static int
+shared_atomic_address(
+	struct gsi1_lowering *lowering,
+	const struct drv_gpu_shader_ir_inst *instruction,
+	uint32_t *address)
+{
+	int error;
+
+	/* Shared memory is a compute program's. */
+	if (lowering->ir->stage != DRV_GPU_STAGE_COMPUTE) {
+		error = gsi1_refuse(lowering, EINVAL, "shared memory outside a compute shader");
+		return error;
+	}
+
+	/* The byte offset is the address; atoms has no immediate. */
+	error = gsi1_source(lowering, instruction->src[0], address);
+	if (error != 0)
+		return error;
+
+	/* The program uses shared memory. */
+	lowering->flags |= GSI1_FLAG_LDS;
+
+	/* Succeeded: the address is in a register or an operand. */
 	return 0;
 }
 

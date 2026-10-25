@@ -746,7 +746,7 @@ code_offset〜 命令（8 byte 揃え）
 
 ### 6.6 compiler の backend（`isa/gsi1/`、IR → GSI1。版 3）
 
-**更新（2026-10-25 07:12 Q1）**: 実装は `src/drivers/gpu/ghci/compiler/`（p010）。下の表のうち texture の offset・gather・compare・cube・3D・array を「拒む」とする行は古い: p009 part E・F と p010 で全部対応した（GHCI §12.9）。拒む物は cube array・dual-source blend・gl_Layer と、v1 では shared memory の atomic（p030 S15 で足す）。
+**更新（2026-10-25 07:12 Q1）**: 実装は `src/drivers/gpu/ghci/compiler/`（p010）。下の表のうち texture の offset・gather・compare・cube・3D・array を「拒む」とする行は古い: p009 part E・F と p010 で全部対応した（GHCI §12.9）。拒む物は cube array・dual-source blend・gl_Layer。shared memory の atomic は p030 S15 で `atoms`（`atom` の sub[4]）として足した（2026-10-25 P2）。
 
 - 入力は共有の `struct drv_gpu_shader_ir`（`src/drivers/gpu/compiler/ir.h`、op の一覧は 263〜633 行）。SPIR-V の front end は書かない（Guardrail: compile は kernel 空間の driver）。出力は §3.4.4 の binary（header + 64 bit の命令）。backend の表 `struct ghci_isa_backend {fourcc, compile, release, limits}` に "GSI1" を登録し、`ISA_ID` で選ぶ（GHCI 1.0 の shader 付きの GPU は全部 "GSI1" なので、実質この 1 つ）。
 - **IR の op の対応表（全部）**:
