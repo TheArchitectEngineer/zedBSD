@@ -139,6 +139,8 @@ ghci_vk_relay_route(
 			*handled = 0;
 			return 0;
 		}
+
+		/* A recorded command. */
 		error = record(build, opcode, flags, reader);
 		break;
 	}
@@ -326,6 +328,8 @@ decode_create_info(
 			reader->error = 1;
 			break;
 		}
+
+		/* The create info, then the identity from a copy of the reader. */
 		i915_vkc_dec_VkRenderPassCreateInfo(reader, arena, pass);
 		tail = *reader;
 		identity = ghci_vk_create_tail(&tail);
@@ -1130,6 +1134,8 @@ decode_clear(
 			skip_u32s(reader, 2U);
 			decode_clear_value(reader);
 		}
+
+		/* The rectangles. */
 		(void)drv_i915_wire_read_u32(reader);
 		count = read_array(reader);
 		for (index = 0U; index < count && reader->error == 0; index++)

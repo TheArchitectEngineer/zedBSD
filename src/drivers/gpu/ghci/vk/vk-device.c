@@ -1125,8 +1125,12 @@ create_device(
 		if (error != 0)
 			result = (uint32_t)VK_ERROR_INITIALIZATION_FAILED;
 	}
-	if (result == (uint32_t)VK_SUCCESS && info.pEnabledFeatures != NULL)
-		object->as.device.robust = (info.pEnabledFeatures->robustBufferAccess != VK_FALSE);
+
+	/* A device made with robustBufferAccess has its programs check their buffer offsets. */
+	if (result == (uint32_t)VK_SUCCESS &&
+	    info.pEnabledFeatures != NULL &&
+	    info.pEnabledFeatures->robustBufferAccess != VK_FALSE)
+		object->as.device.robust = 1;
 
 	/* The result, and the identity when it succeeded. */
 	if (flags != 0U) {

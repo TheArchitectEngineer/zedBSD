@@ -241,6 +241,8 @@ create_module(
 			kern_free(words);
 		return error;
 	}
+
+	/* The record keeps the words. */
 	object->as.shader.words = words;
 	object->as.shader.word_count = (uint32_t)count;
 
@@ -438,6 +440,8 @@ create_pipelines(
 			error = decode_compute(build, reader, &pipelines[index]);
 		}
 	}
+
+	/* A create info the codec did not take. */
 	if (error != 0)
 		return error;
 
@@ -469,6 +473,8 @@ create_pipelines(
 			for (index = 0U; index < count; index++)
 				drv_i915_wire_reply_u64(&build->reply, 0U);
 		}
+
+		/* Succeeded: the reply says why nothing was made. */
 		return 0;
 	}
 
@@ -673,6 +679,8 @@ add_stage(
 		if (pipeline->stages[index].stage == kind)
 			return EINVAL;
 	}
+
+	/* Refuses a stage past what a pipeline has. */
 	if (pipeline->stage_count == GHCI_VK_STAGES)
 		return EINVAL;
 
@@ -717,6 +725,7 @@ compile_pipeline(
 		if (pipeline->stages[index].stage != DRV_GPU_STAGE_FRAGMENT)
 			continue;
 
+		/* Compiles it, and looks whether it reads the w. */
 		result = compile_stage(build, options, &pipeline->stages[index]);
 		if (result != (uint32_t)VK_SUCCESS)
 			return result;
@@ -731,6 +740,7 @@ compile_pipeline(
 		if (pipeline->stages[index].stage == DRV_GPU_STAGE_FRAGMENT)
 			continue;
 
+		/* Compiles it. */
 		result = compile_stage(build, options, &pipeline->stages[index]);
 		if (result != (uint32_t)VK_SUCCESS)
 			return result;
@@ -959,6 +969,8 @@ release_pipeline(
 			build->session->device->isa->release(stage->program);
 			stage->program = NULL;
 		}
+
+		/* The memory it was placed in. */
 		if (stage->memory != NULL) {
 			ghci_allocation_drop(build->session->device, build->session->owner, stage->memory);
 			stage->memory = NULL;
@@ -1001,6 +1013,8 @@ destroy_pipeline(
 		if (error != 0)
 			return error;
 	}
+
+	/* The record goes now. */
 	ghci_vk_object_remove(build->session, object);
 
 	/* Succeeded: the pipeline is destroyed. */
@@ -1061,13 +1075,20 @@ specialize(
 		if (opcode == SPIRV_OP_SPEC_CONSTANT) {
 			if (length >= 4U) {
 				found = spec_value(specialization, words, count, words[at + 2U], value, &bytes);
-				if (found && bytes == 4U && length == 4U)
+				/* A 32-bit value fills one word, a 64-bit one two. */
+				if (found &&
+				    bytes == 4U &&
+				    length == 4U) {
 					words[at + 3U] = value[0];
-				if (found && bytes == 8U && length == 5U) {
+				} else if (found &&
+					   bytes == 8U &&
+					   length == 5U) {
 					words[at + 3U] = value[0];
 					words[at + 4U] = value[1];
 				}
 			}
+
+			/* It is a constant now. */
 			words[at] = (length << 16) | SPIRV_OP_CONSTANT;
 			continue;
 		}
@@ -1128,6 +1149,8 @@ spec_value(
 			break;
 		}
 	}
+
+	/* A constant without a SpecId keeps its default. */
 	if (!decorated)
 		return 0;
 

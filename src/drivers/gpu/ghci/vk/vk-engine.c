@@ -282,6 +282,8 @@ ghci_vk_frame_queue(
 	} else {
 		engine->frames_last->next = frame;
 	}
+
+	/* It is the last one now. */
 	engine->frames_last = frame;
 	frame->session->pending++;
 }
@@ -372,6 +374,7 @@ ghci_vk_reset(
 		count = 0U;
 		mutex_lock(&device->lock);
 
+		/* The oldest frames, without their replies: the firmware will not write their results. */
 		while (count < SERVICE_BATCH && engine->frames != NULL) {
 			frame = engine->frames;
 			done[count] = frame->completion;
@@ -382,6 +385,7 @@ ghci_vk_reset(
 
 		mutex_unlock(&device->lock);
 
+		/* The core hears of them outside the lock; a batch that was not full was the last. */
 		complete_all(done, errors, count);
 		if (count < SERVICE_BATCH)
 			break;
@@ -395,6 +399,7 @@ ghci_vk_reset(
 	 */
 	mutex_lock(&device->lock);
 
+	/* Each open of the device. */
 	for (owner = device->sessions;
 	     owner != NULL;
 	     owner = owner->next) {
@@ -505,6 +510,8 @@ frame_finish(
 			kern_io_read_barrier();
 			frame_status = (int32_t)frame->page[RESULT_WORDS * frame->records];
 		}
+
+		/* The replies' words, then the trailer. */
 		frame_patch(device, frame, frame_status);
 		frame_trailer(frame);
 	}
@@ -635,6 +642,7 @@ retire_jobs(
 		if (owner->vk == NULL)
 			continue;
 
+		/* Its markers whose fence passed, and its failed ones. */
 		taken = ghci_jobs_retire(&owner->vk->jobs, completed, (void **)(done + count), errors + count, capacity - count);
 		count += taken;
 	}

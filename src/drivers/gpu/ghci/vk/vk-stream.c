@@ -151,7 +151,9 @@ ghci_vk_submit(
 	}
 
 	/* Nothing for the firmware, nothing to wait for and nothing of the session ahead: the frame is done now. */
-	if (build.records == 0U && session->pending == 0U && !build.wait_fence) {
+	if (build.records == 0U &&
+	    session->pending == 0U &&
+	    !build.wait_fence) {
 		error = finish_now(device, &build, completion);
 		build_free(&build);
 		if (error != 0)
@@ -205,6 +207,7 @@ ghci_vk_drain(
 		if (pending == 0U && done)
 			return;
 
+		/* Lets the service thread complete them, then looks again. */
 		ghci_service_wake(device, GHCI_WORK_REPLY);
 		ghci_sleep_ms(1U);
 	}
@@ -256,6 +259,8 @@ ghci_vk_stage(
 			kern_memcpy(grown, build->stage, build->stage_bytes);
 			kern_free(build->stage);
 		}
+
+		/* The frame's stage is the new buffer. */
 		build->stage = grown;
 		build->stage_capacity = capacity;
 	}
@@ -906,6 +911,8 @@ stage_frame(
 		ghci_sleep_ms(1U);
 		mutex_lock(&device->lock);
 	}
+
+	/* A ring that stayed full, or a frame no ring holds. */
 	if (error == EAGAIN)
 		return EBUSY;
 	if (error != 0)

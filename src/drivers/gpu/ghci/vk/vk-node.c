@@ -235,6 +235,7 @@ node_commit(
 	if (owner->outstanding)
 		fence = owner->last_fence;
 
+	/* Binds the marker to that fence. */
 	if (error == 0)
 		error = ghci_jobs_commit(&owner->vk->jobs, index, completion, fence, completed, &passed);
 

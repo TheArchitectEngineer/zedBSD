@@ -212,6 +212,79 @@ ghci_vk_memory_blob(
 }
 
 /*
+ * Writes a query copy's results into a reply: for each query its result
+ * (32 or 64 bits) and, when asked, its availability; VK_NOT_READY when a
+ * query is not available and partial results were not asked for.
+ */
+void
+ghci_vk_query_copy(
+	struct ghci_device *device,
+	struct ghci_vk_session *session,
+	const struct ghci_vk_patch *patch,
+	uint8_t *view)
+{
+	struct ghci_vk_object *object;
+	volatile uint32_t *slots;
+	uint8_t *data;
+	uint32_t result;
+	uint32_t query;
+	uint32_t low;
+	uint32_t high;
+	uint32_t available;
+	uint32_t lost;
+	uint32_t at;
+	int wide;
+
+	/* The pool's slots in the heap. */
+	object = ghci_vk_object_find(session, GHCI_VK_QUERY_POOL, patch->identity);
+	slots = NULL;
+	if (object != NULL)
+		slots = heap_words(device, object->as.heap.address, object->as.heap.count * QUERY_SLOT_BYTES);
+
+	/* A pool that went meanwhile reports the loss. */
+	if (slots == NULL) {
+		lost = (uint32_t)VK_ERROR_DEVICE_LOST;
+		kern_memcpy(view + patch->offset, &lost, 4U);
+		return;
+	}
+
+	/* Each query's result (64 bits when asked for) and availability at its stride. */
+	result = (uint32_t)VK_SUCCESS;
+	wide = 0;
+	if ((patch->flags & VK_QUERY_RESULT_64_BIT) != 0U)
+		wide = 1;
+	data = view + patch->offset + 12U;
+	for (query = 0U; query < patch->count; query++) {
+		low = slots[(patch->first + query) * 4U];
+		high = slots[(patch->first + query) * 4U + 1U];
+		available = slots[(patch->first + query) * 4U + 2U];
+		at = query * patch->stride;
+
+		/* A query not yet available, without partial results, writes no result. */
+		if (!available && (patch->flags & VK_QUERY_RESULT_PARTIAL_BIT) == 0U) {
+			result = RESULT_NOT_READY;
+		} else if (wide && at + 8U <= patch->bytes) {
+			kern_memcpy(data + at, &low, 4U);
+			kern_memcpy(data + at + 4U, &high, 4U);
+		} else if (at + 4U <= patch->bytes) {
+			kern_memcpy(data + at, &low, 4U);
+		}
+
+		/* The availability word after the result, when asked for. */
+		if ((patch->flags & VK_QUERY_RESULT_WITH_AVAILABILITY_BIT) != 0U) {
+			at += 4U;
+			if (wide)
+				at += 4U;
+			if (at + 4U <= patch->bytes)
+				kern_memcpy(data + at, &available, 4U);
+		}
+	}
+
+	/* The result word. */
+	kern_memcpy(view + patch->offset, &result, 4U);
+}
+
+/*
  * vkAllocateMemory: [device][u64 1][u32 sType][u64 chain] and, with a
  * chain, [u32 sType][u64 0][u32 value], then [u64 size][u32 type][u64 0]
  * [u64 1][memory] -> [result][u64 1][memory].  The driver takes the GPU
@@ -268,9 +341,13 @@ allocate_memory(
 		/* Succeeded: the memory is imported. */
 		return 0;
 	}
+
+	/* Another chain than the export is not taken. */
 	if (chained != 0U && extension != VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO)
 		return ENOTSUP;
-	if (chained != 0U && (value == 0U || (value & ~EXTERNAL_HANDLES) != 0U))
+	if (chained != 0U &&
+	    (value == 0U ||
+	     (value & ~EXTERNAL_HANDLES) != 0U))
 		return ENOTSUP;
 
 	/* A type of the device. */
@@ -1139,6 +1216,8 @@ create_heap_object(
 	} else {
 		i915_vkc_dec_VkEventCreateInfo(reader, &build->session->arena, &event_info);
 	}
+
+	/* The tail and its identity. */
 	identity = ghci_vk_create_tail(reader);
 	if (reader->error != 0)
 		return EINVAL;
@@ -1301,79 +1380,6 @@ query_results(
 
 	/* Succeeded: the results are copied when the frame completes. */
 	return 0;
-}
-
-/*
- * Writes a query copy's results into a reply: for each query its result
- * (32 or 64 bits) and, when asked, its availability; VK_NOT_READY when a
- * query is not available and partial results were not asked for.
- */
-void
-ghci_vk_query_copy(
-	struct ghci_device *device,
-	struct ghci_vk_session *session,
-	const struct ghci_vk_patch *patch,
-	uint8_t *view)
-{
-	struct ghci_vk_object *object;
-	volatile uint32_t *slots;
-	uint8_t *data;
-	uint32_t result;
-	uint32_t query;
-	uint32_t low;
-	uint32_t high;
-	uint32_t available;
-	uint32_t lost;
-	uint32_t at;
-	int wide;
-
-	/* The pool's slots in the heap. */
-	object = ghci_vk_object_find(session, GHCI_VK_QUERY_POOL, patch->identity);
-	slots = NULL;
-	if (object != NULL)
-		slots = heap_words(device, object->as.heap.address, object->as.heap.count * QUERY_SLOT_BYTES);
-
-	/* A pool that went meanwhile reports the loss. */
-	if (slots == NULL) {
-		lost = (uint32_t)VK_ERROR_DEVICE_LOST;
-		kern_memcpy(view + patch->offset, &lost, 4U);
-		return;
-	}
-
-	/* Each query's result (64 bits when asked for) and availability at its stride. */
-	result = (uint32_t)VK_SUCCESS;
-	wide = 0;
-	if ((patch->flags & VK_QUERY_RESULT_64_BIT) != 0U)
-		wide = 1;
-	data = view + patch->offset + 12U;
-	for (query = 0U; query < patch->count; query++) {
-		low = slots[(patch->first + query) * 4U];
-		high = slots[(patch->first + query) * 4U + 1U];
-		available = slots[(patch->first + query) * 4U + 2U];
-		at = query * patch->stride;
-
-		/* A query not yet available, without partial results, writes no result. */
-		if (!available && (patch->flags & VK_QUERY_RESULT_PARTIAL_BIT) == 0U) {
-			result = RESULT_NOT_READY;
-		} else if (wide && at + 8U <= patch->bytes) {
-			kern_memcpy(data + at, &low, 4U);
-			kern_memcpy(data + at + 4U, &high, 4U);
-		} else if (at + 4U <= patch->bytes) {
-			kern_memcpy(data + at, &low, 4U);
-		}
-
-		/* The availability word after the result, when asked for. */
-		if ((patch->flags & VK_QUERY_RESULT_WITH_AVAILABILITY_BIT) != 0U) {
-			at += 4U;
-			if (wide)
-				at += 4U;
-			if (at + 4U <= patch->bytes)
-				kern_memcpy(data + at, &available, 4U);
-		}
-	}
-
-	/* The result word. */
-	kern_memcpy(view + patch->offset, &result, 4U);
 }
 
 /* Reports the processor's view of a run of the firmware's heap, or NULL for a run outside it. */
