@@ -65,7 +65,7 @@
 | [p027](phase027/phase.md) | MSAA（4x の描画・depth・resolve、multisample の sampled image）。design の節から | p009 | cleared（2026-10-25 06:22: MSAA 4x、BLT の resolve、cp_seq の待ち、T1-764 PASS、amaterrace-gpu 94c5ee2） |
 | [p030](phase030/phase.md) | Vulkan 1.0 core の残り（stencil、D16、MRT 4、format、point/line、occlusion query、input attachment、depth だけの clear など、design §15.18） | p027 の後・p018 の前 | cleared（2026-10-25 12:44: Vulkan 1.0 core の必須の全部、S1〜S16、core の scene 22 case、T1-785 PASS、amaterrace-gpu f9f817e） |
 | [p031](phase031/phase.md) | ZYBO を GPU の target から外す（source は amaterrace-gpu の docs/old/、build・lint・sim・CI から外す） | なし（p030 S1 の前） | cleared（2026-10-25 05:13、T1-759 PASS、main a87523c） |
-| [p034](phase034/phase.md) | session の保護（GHCI §11.6 の PROT: memory の要求の session の番号、MC の範囲の表と検査、GRANT・REVOKE、driver の保護した session） | p018、p006、p019 | in-progress（2026-10-25 09:07 q1570 P1: 設計の段） |
+| [p034](phase034/phase.md) | session の保護（GHCI §11.6 の PROT: memory の要求の session の番号、MC の範囲の表と検査、GRANT・REVOKE、driver の保護した session） | p018、p006、p019 | cleared（2026-10-25 17:13: R1〜R8 と IMEM 128 KiB・grant の共有・DMEM 64 KiB、amaterrace main 464b3c7） |
 | [p035](phase035/phase.md) | DC を GHCI の GPU の一部に（`rtl/gpu/dc/` へ、CP の command で制御、present は queue の操作で copy しない、割り込みは GHCI の IRQ に統合、GHCI §13 の書き直し） | p018、p006、p019 | in-progress（2026-10-25 12:34 P3: 設計の段 design §18 版 8、review 2 回、U90〜U99、判定は Q1） |
 | [p036](phase036/phase.md) | KC705 に GPU が入る面積（yosys で LUT 245k > 203.8k、Vivado の測定・内訳・機能を変えない削減・形を変える案） | p030、p027 | in-progress（2026-10-25 09:43 q1571 P2） |
 | [p037](phase037/phase.md) | 算術の共通の module（乗算・除算・加算・減算・shift を rtl/common の am_ の module に限り、必要な個数だけ instance にする） | なし | in-progress（2026-10-25 12:58 q1577 P1） |

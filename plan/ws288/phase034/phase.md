@@ -3,7 +3,7 @@
 # ws288-p034 session の保護（GHCI §11.6、PROT capability）
 
 - 親: [WS288](../ws.md)。仕様: amaterrace-gpu `docs/ghci.md` §11.6（PROT、`BUFFER_GRANT` 0x10106・`BUFFER_REVOKE` 0x10107、`PROT_CAPS`）。
-- 状態: in-progress（2026-10-25 10:34 Q1: 設計の段は review 済み（design §17 版 7、review 2 回 33・21 件）。U61〜U72 は推しで決めた。実装の段 R1〜R8 = 54 LW は次に空いた担当に）
+- 状態: cleared（2026-10-25 17:13 Q1。R1〜R8、IMEM 128 KiB、grant の共有、DMEM 64 KiB が amaterrace main 464b3c7 と zedBSD main に。T1-787・789・794・796 と merge の後の確認）
 - 依存: p018（firmware の session・heap・object の表）、p006（driver、cleared）、p019（vk/）。RTL の MC の変更は p030 の後の main の上で。
 - 承認: 2026-10-25 08:57 ユーザー「了解です。せっかくなので実装してしまってください。」（Q1 が buffer の context ID（GHCI §11.6 の session の保護、PROT）は未実装と答えた後）
 
@@ -79,3 +79,4 @@ TB と host の試験が PASS、`make lint` clean、`make sim` の PASS が減�
 - 2026-10-25 16:13 Q1: P1 の R7 の code（0929425e2）は、Q1 が記録だけと思って a720b1a49 の merge で zedBSD の main に入れていた（T 前）。ghci-e2e.sh の link が cred_current・cred_is_superuser の未定義で失敗 → Q1 が plan/ws288/tests/ghci-e2e-kernel.c に stub（root、保護しない）を足し、e2e を amaterrace main と 9ea9b83 の両方で PASS（8 PASS・mismatch 0）。R7 の vmunix と host 試験は P1 の申告で PASS、zedBSD main の上で Q1 が e2e を確かめた。
 - 2026-10-25 16:44 Q1: aaf8e35 の merge の後の確認（Q1）: lint rc 0・140 clean・warning 0、fw/cp/tests rc 0、fw-run.sh rc 0・6 case 0 differ、sim-quick rc 0・99 PASS・0 FAIL、atg_top_prot rc 0、ghci-e2e rc 0・mismatch 0。
 - 2026-10-25 16:44 Q1: T1-796 の fw-run の FAIL は P1 の 28424d6（harness の待ちを 80000 に、P1 が fw-run.sh rc 0・6 case 0 differ を確認）で直った → 28424d6（R8・grant の共有・DMEM 64 KiB・OBJECT_MAX 512・harness の直し）を amaterrace-gpu の main に merge = 464b3c7（tools/lint.sh の衝突: IMEM 32768・DMEM 16384・NPHYS 8 を取った）。merge の後の lint・fwtest・fw-run・TB・sim-quick・e2e を Q1 が実行中。これで p034 の RTL・firmware・driver は全部 main（zedBSD の R7 は既に main）。
+- 2026-10-25 17:13 Q1: 464b3c7 の merge の後の確認: lint rc 0・140 clean・warning 0、fw/cp/tests rc 0、fw-run.sh rc 0・6 case 0 differ、atg_top_prot・atg_top_fw・atg_cpu_core PASS、sim-quick rc 0・99 PASS・0 FAIL、ghci-e2e rc 0・mismatch 0。→ **p034 は cleared**。残り（範囲の外）: KC705 の HAS_PROT の Vivado の面積と timing（p036・p025 の合成で）、Linux の driver（fw-amaterrace-linux）。
