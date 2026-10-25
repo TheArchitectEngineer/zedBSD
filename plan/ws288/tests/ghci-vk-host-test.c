@@ -86,9 +86,11 @@ static const struct ghci_isa_backend fake_isa = {
 	GHCI_FOURCC('G', 'S', 'I', '1'), "GSI1", fake_compile, fake_release
 };
 
-/* How many programs the stand-in compiler made and gave back. */
+/* How many programs the stand-in compiler made and gave back, and the words it was last given. */
 static unsigned fake_compiles;
 static unsigned fake_releases;
+static uint32_t fake_words[64];
+static size_t fake_word_count;
 
 /*
  * Runs the executor's cases on a discrete model GPU with firmware.
@@ -251,10 +253,13 @@ fake_compile(
 {
 	struct ghci_gsi1_program *made;
 
-	(void)words;
-	(void)word_count;
 	(void)options;
 	(void)diagnostic;
+
+	/* Keeps the words it was given (the specialized module). */
+	fake_word_count = word_count;
+	if (word_count <= 64U)
+		memcpy(fake_words, words, word_count * 4U);
 
 	/* The record and its words. */
 	made = calloc(1U, sizeof(*made));
@@ -313,6 +318,7 @@ test_executor(void)
 	uint32_t alias_id;
 	uint32_t stream_id;
 	uint32_t import_id;
+	uint32_t slots[8];
 	uint32_t second_reply_id;
 	uint32_t memory_address;
 	uint32_t memory_bytes;
@@ -797,6 +803,124 @@ test_executor(void)
 		expect(records[22] == GPU_OP_CREATE_GRAPHICS_PIPELINES, "vk graphics create relayed");
 	}
 	expect(reply_word(reply, 1U) == 0U && reply_word(reply, 4U) == ID_PIPELINE + 0x100U, "vk graphics pipeline made");
+
+	/*
+	 * Specialization: a module with OpDecorate %5 SpecId 7, %5 =
+	 * OpSpecConstant %int 3 and %6 = OpSpecConstantTrue %bool, a compute
+	 * pipeline that gives SpecId 7 the value 42; the compiler sees
+	 * OpConstant %int 42 and OpConstantTrue.
+	 */
+	memset(reply->view, 0, REPLY_BYTES);
+	frame_begin(&frame, reply_id);
+	command(&frame, GPU_OP_CREATE_SHADER_MODULE, GPU_OP_FLAG_REPLY);
+	put64(&frame, ID_DEVICE);
+	put64(&frame, 1U);
+	put32(&frame, 16U);
+	put64(&frame, 0U);
+	put32(&frame, 0U);
+	put64(&frame, 16U * 4U);
+	put64(&frame, 16U);
+	put32(&frame, 0x07230203U);
+	put32(&frame, 0x00010000U);
+	put32(&frame, 0U);
+	put32(&frame, 8U);
+	put32(&frame, 0U);
+	put32(&frame, (4U << 16) | 71U);
+	put32(&frame, 5U);
+	put32(&frame, 1U);
+	put32(&frame, 7U);
+	put32(&frame, (4U << 16) | 50U);
+	put32(&frame, 2U);
+	put32(&frame, 5U);
+	put32(&frame, 3U);
+	put32(&frame, (3U << 16) | 48U);
+	put32(&frame, 3U);
+	put32(&frame, 6U);
+	put64(&frame, 0U);
+	put64(&frame, 1U);
+	put64(&frame, ID_MODULE + 0x200U);
+	command(&frame, GPU_OP_CREATE_COMPUTE_PIPELINES, GPU_OP_FLAG_REPLY);
+	put64(&frame, ID_DEVICE);
+	put64(&frame, 0U);
+	put32(&frame, 1U);
+	put64(&frame, 1U);
+	put32(&frame, 29U);
+	put64(&frame, 0U);
+	put32(&frame, 0U);
+	put32(&frame, 18U);
+	put64(&frame, 0U);
+	put32(&frame, 0U);
+	put32(&frame, 0x20U);
+	put64(&frame, ID_MODULE + 0x200U);
+	put64(&frame, 5U);
+	put32(&frame, 0x6e69616dU);
+	put32(&frame, 0U);
+	put64(&frame, 1U);
+	put32(&frame, 1U);
+	put64(&frame, 1U);
+	put32(&frame, 7U);
+	put32(&frame, 0U);
+	put64(&frame, 4U);
+	put64(&frame, 4U);
+	put64(&frame, 4U);
+	put32(&frame, 42U);
+	put64(&frame, 0x200U);
+	put64(&frame, 0U);
+	put32(&frame, 0xffffffffU);
+	put64(&frame, 0U);
+	put64(&frame, 1U);
+	put64(&frame, ID_PIPELINE + 0x200U);
+	frame_end(&frame);
+	error = submit(opaque, &frame);
+	ghci_vk_service(&device);
+	expect(error == 0 && reply_word(reply, 7U) == 0U, "vk specialized pipeline made");
+	expect(fake_word_count == 16U, "vk compiler given the whole module");
+	expect(fake_words[9] == ((4U << 16) | 43U) && fake_words[12] == 42U, "vk OpSpecConstant became OpConstant 42");
+	expect(fake_words[13] == ((3U << 16) | 41U), "vk OpSpecConstantTrue became OpConstantTrue");
+
+	/* Queries: the results are copied from the pool's slots in the heap when the frame completes. */
+	memset(reply->view, 0, REPLY_BYTES);
+	model_aux[0] = device.vk->heap->gpu_address + 1024U;
+	frame_begin(&frame, reply_id);
+	command(&frame, GPU_OP_CREATE_QUERY_POOL, GPU_OP_FLAG_REPLY);
+	put64(&frame, ID_DEVICE);
+	put64(&frame, 1U);
+	put32(&frame, 11U);
+	put64(&frame, 0U);
+	put32(&frame, 0U);
+	put32(&frame, 0U);
+	put32(&frame, 2U);
+	put32(&frame, 0U);
+	put64(&frame, 0U);
+	put64(&frame, 1U);
+	put64(&frame, ID_POOL + 0x100U);
+	frame_end(&frame);
+	error = submit(opaque, &frame);
+	ghci_vk_service(&device);
+	model_aux[0] = 0U;
+	expect(error == 0 && reply_word(reply, 1U) == 0U, "vk query pool made");
+	memset(slots, 0, sizeof(slots));
+	slots[0] = 123U;
+	slots[2] = 1U;
+	memcpy(device.vk->heap->view + 1024U, slots, sizeof(slots));
+	memset(reply->view, 0, REPLY_BYTES);
+	frame_begin(&frame, reply_id);
+	command(&frame, GPU_OP_GET_QUERY_POOL_RESULTS, GPU_OP_FLAG_REPLY);
+	put64(&frame, ID_DEVICE);
+	put64(&frame, ID_POOL + 0x100U);
+	put32(&frame, 0U);
+	put32(&frame, 2U);
+	put64(&frame, 16U);
+	put64(&frame, 16U);
+	put64(&frame, 8U);
+	put32(&frame, 4U);
+	frame_end(&frame);
+	error = submit(opaque, &frame);
+	ghci_vk_service(&device);
+	expect(error == 0, "vk query results taken");
+	expect(reply_word(reply, 1U) == 1U, "vk second query not ready");
+	expect(reply_word(reply, 2U) == 16U && reply_word(reply, 4U) == 123U && reply_word(reply, 5U) == 1U, "vk first query's result and availability");
+	expect(reply_word(reply, 7U) == 0U, "vk second query's availability");
 
 	/* An event: the firmware's aux is its address in the heap, where the host sets it. */
 	memset(reply->view, 0, REPLY_BYTES);

@@ -786,6 +786,12 @@ finish_now(
 	for (index = 0U; index < build->release_count; index++)
 		ghci_allocation_drop(device, build->session->owner, build->releases[index]);
 
+	/* A query copy, the only patch of a frame without records, reads the pool's words now. */
+	for (index = 0U; index < build->patch_count; index++) {
+		if (build->patches[index].kind == GHCI_VK_PATCH_QUERY_RESULTS)
+			ghci_vk_query_copy(device, build->session, &build->patches[index], build->reply_blob->view);
+	}
+
 	/* The trailer: [VkResult 0][u64 1], then the version, released last. */
 	if (build->trailer) {
 		view = build->reply_blob->view;
