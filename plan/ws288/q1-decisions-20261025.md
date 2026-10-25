@@ -51,3 +51,4 @@
 | 2026-10-25 12:41 | p035 の U90〜U99 を推しで決めた（RUNNING の間の host の write は捨てて BAD_WRITE、class 0 の µop、ADV7511 と HPD は host の driver、cursor を実装、DC の読みは検査しない、driver の queue 深さ 2 と hardware の slot 1、GHCI の mode の表、単独の DC は RTL の STANDALONE を消す、display の core の変更は後で、互換は DISP2） | ユーザーの推しで進める許可 |
 | 2026-10-25 12:41 | P3 の firmware の submit の直し（RESULT を先に、DONE は replay の後）を受け入れた | DONE の後は CP が driver の FENCE に進むので、replay を DONE の後にすると fence が早すぎる |
 - 2026-10-25 12:47 p035 の順（P3 の案を採用）: D1 → D2a（rtl/dc を rtl/gpu/dc へ、MC は触らない）→ D3 → D5 を先に。D2b（MC）と D4（cp_seq など）は P1 の p034 の MC・seq の変更が amaterrace の main に入ってから。atg_cp_seq の busy_in を 9 bit にし、bit 8 を DC の待ち（disp_wait、B_ALL と WAIT_IDLE の 8 bit の mask の外）にする（design §18.4 の busy_in[0] は P1 の B_MEM と衝突するため）。
+- 2026-10-25 12:52 p034 の R6（CP の firmware）は、P3 の 398a738（submit の直し、fw/cp）が T1-788 を通って amaterrace の main に入ってから、その上で始める（衝突を避ける）。それまで P1 は R5 の残り。
