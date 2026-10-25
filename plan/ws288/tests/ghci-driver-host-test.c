@@ -76,9 +76,19 @@
 #endif
 #define MODEL_WINDOW_PHYSICAL		0xe0000000ULL
 
-/* The model's host RAM for the unified GPU: 8 MiB at 256 MiB, handed out by a bump allocator. */
+/*
+ * The model's host RAM: 32 MiB at 256 MiB (a test that includes the
+ * model may give it more), handed out by a bump allocator; the GPU
+ * reaches the host below 2 GiB (MEM HOST_LIMIT).
+ */
 #define MODEL_HOST_BASE			0x10000000U
-#define MODEL_HOST_BYTES		(8U << 20)
+#ifndef MODEL_HOST_BYTES
+#define MODEL_HOST_BYTES		(32U << 20)
+#endif
+#define MODEL_HOST_LIMIT		0x80000000U
+
+/* What the stand-in of the local window holds; the driver must leave it alone. */
+#define MODEL_GUARD_BYTE		0x3cU
 
 /* The state words of the model's blitter. */
 #define MODEL_STATE_WORDS		512U
@@ -107,6 +117,13 @@ static uint8_t model_local[MODEL_LOCAL_BYTES];
 /* The model's host RAM and the next free byte of it. */
 static uint8_t model_host[MODEL_HOST_BYTES];
 static uint32_t model_host_next;
+
+/*
+ * The stand-in of the local window's bus mapping: not the model's local
+ * memory, so that any access of the driver through the window shows here
+ * and never reaches the GPU (the driver does not use the window).
+ */
+static uint8_t model_window_guard[MODEL_WINDOW_BYTES];
 
 /*
  * The model's command processor: its state, ring pointers, interrupt
@@ -224,6 +241,7 @@ static void model_fault(uint32_t kind, uint32_t header);
 static void model_blit(void);
 static void model_interrupt(void);
 static void model_setup_window(int discrete);
+static unsigned model_guard_changed(void);
 static int model_class_v(const uint32_t *ring, uint32_t at, uint32_t count);
 static uint32_t model_dc_read(uint32_t offset);
 static void model_dc_write(uint32_t offset, uint32_t value);
@@ -949,6 +967,24 @@ model_interrupt(void)
 	}
 }
 
+/* Counts the bytes of the window's stand-in that the driver changed. */
+static unsigned
+model_guard_changed(void)
+{
+	unsigned changed;
+	uint32_t index;
+
+	/* Looks at every byte of the stand-in. */
+	changed = 0U;
+	for (index = 0U; index < sizeof(model_window_guard); index++) {
+		if (model_window_guard[index] != MODEL_GUARD_BYTE)
+			changed++;
+	}
+
+	/* Succeeded: the number of changed bytes. */
+	return changed;
+}
+
 /* Writes the identification, the capabilities and the extended capability list of the model. */
 static void
 model_setup_window(
@@ -958,6 +994,7 @@ model_setup_window(
 	memset(model_registers, 0, sizeof(model_registers));
 	memset(model_local, 0x5a, sizeof(model_local));
 	memset(model_host, 0xa5, sizeof(model_host));
+	memset(model_window_guard, MODEL_GUARD_BYTE, sizeof(model_window_guard));
 	model_host_next = 0U;
 	model_dc_present = 0;
 	model_reset();
@@ -979,6 +1016,8 @@ model_setup_window(
 	model_registers[(MODEL_MEM_REGISTERS + GHCI_MEM_LOCAL_BASE) / 4U] = MODEL_LOCAL_BASE;
 	model_registers[(MODEL_MEM_REGISTERS + GHCI_MEM_LOCAL_SIZE) / 4U] = MODEL_LOCAL_BYTES;
 	model_registers[(MODEL_MEM_REGISTERS + GHCI_MEM_WINDOW_SIZE) / 4U] = MODEL_WINDOW_BYTES;
+	model_registers[(MODEL_MEM_REGISTERS + GHCI_MEM_HOST_LIMIT) / 4U] = MODEL_HOST_LIMIT;
+	model_registers[(MODEL_MEM_REGISTERS + GHCI_MEM_WINDOW_CTRL) / 4U] = GHCI_MEM_WINDOW_ENABLE;
 }
 
 #ifndef GHCI_MODEL_ONLY
@@ -1481,7 +1520,7 @@ test_discrete(void)
 	memset(&device, 0, sizeof(device));
 	device.registers = (volatile uint8_t *)model_registers;
 	device.register_bytes = sizeof(model_registers);
-	device.window = model_local;
+	device.window = model_window_guard;
 	device.window_physical = MODEL_WINDOW_PHYSICAL;
 	device.window_bytes = MODEL_WINDOW_BYTES;
 	model_device = &device;
@@ -1492,10 +1531,15 @@ test_discrete(void)
 	expect(strcmp(device.name, "ghci:AMAT:ATG1") == 0, "discrete name");
 	expect(device.local_base == MODEL_LOCAL_BASE && device.local_size == MODEL_LOCAL_BYTES, "discrete local memory");
 	expect(device.local_window == MODEL_WINDOW_BYTES, "discrete window");
+	expect(device.host_limit == MODEL_HOST_LIMIT, "discrete host limit");
 	expect(model_state == GHCI_ST_RUNNING, "discrete processor runs");
-	expect(model_registers[GHCI_APERTURE_BASE / 4U] == MODEL_LOCAL_BASE, "discrete aperture base is the local memory");
-	expect(model_registers[GHCI_APERTURE_LIMIT / 4U] == MODEL_LOCAL_BASE + MODEL_LOCAL_BYTES, "discrete aperture limit is the local memory's end");
-	expect(device.ring != NULL && device.ring->kind == GHCI_MEMORY_VISIBLE, "discrete ring in the window");
+	expect(model_registers[GHCI_APERTURE_BASE / 4U] == 32U, "discrete aperture from the first line");
+	expect(model_registers[GHCI_APERTURE_LIMIT / 4U] == MODEL_LOCAL_BASE + MODEL_LOCAL_BYTES, "discrete aperture covers the host and the local memory");
+	expect((model_registers[(MODEL_MEM_REGISTERS + GHCI_MEM_WINDOW_CTRL) / 4U] & GHCI_MEM_WINDOW_ENABLE) == 0U, "discrete window closed");
+	expect(device.ring != NULL && device.ring->kind == GHCI_MEMORY_HOST, "discrete ring in host memory");
+	expect(device.ring->gpu_address >= MODEL_HOST_BASE && device.ring->gpu_address < MODEL_HOST_LIMIT, "discrete ring below the host limit");
+	expect(device.fence_page != NULL && device.fence_page->kind == GHCI_MEMORY_HOST, "discrete fence page in host memory");
+	expect(device.bounce != NULL && device.bounce->kind == GHCI_MEMORY_HOST, "discrete bounce buffer in host memory");
 	expect(model_registers[GHCI_RING_BASE / 4U] == device.ring->gpu_address, "discrete ring base");
 	expect(model_registers[GHCI_RING_SIZE / 4U] == GHCI_RING_SIZE_LOG2, "discrete ring size");
 	expect(model_irq_enable == (GHCI_IRQ_FENCE | GHCI_IRQ_FAULT | GHCI_IRQ_WATCHDOG | GHCI_IRQ_RESULT | GHCI_IRQ_FLIP | GHCI_IRQ_DISP_ERROR | GHCI_IRQ_HOTPLUG), "discrete interrupts enabled");
@@ -1510,30 +1554,30 @@ test_discrete(void)
 	expect(strcmp(info.driver_name, "ghci:AMAT:ATG1") == 0, "discrete driver name");
 	expect(session->tag == 1U, "discrete first session takes tag 1");
 
-	/* Storage is in the window, cleared, and maps as device memory. */
+	/* Storage the processor maps is host memory, cleared, and maps as RAM. */
 	memset(&storage_request, 0, sizeof(storage_request));
 	storage_request.bytes = 10000U;
 	storage_request.usage = GPU_RESOURCE_USAGE_STORAGE;
 	error = core_ops->resource_create(core_private, opaque, &storage_request, &object);
 	storage = object;
-	expect(error == 0 && storage->kind == GHCI_MEMORY_VISIBLE, "discrete storage in the window");
+	expect(error == 0 && storage->kind == GHCI_MEMORY_HOST, "discrete storage in host memory");
 	expect(storage->bytes == 12288U && storage->requested == 10000U, "discrete storage in whole pages");
 	failures = 0;
 	for (index = 0U; index < storage->bytes; index++) {
 		if (storage->view[index] != 0U)
 			failures++;
 	}
-	expect(failures == 0, "discrete storage cleared by the blitter");
+	expect(failures == 0, "discrete storage cleared");
 	error = core_ops->resource_map(core_private, opaque, object, &mapping);
-	expect(error == 0 && mapping.attributes == DRV_GPU_MAPPING_DEVICE, "discrete storage maps as device memory");
-	expect(mapping.physical == MODEL_WINDOW_PHYSICAL + (storage->gpu_address - MODEL_LOCAL_BASE), "discrete storage's physical place");
+	expect(error == 0 && mapping.attributes == 0U, "discrete storage maps as RAM");
+	expect(mapping.physical == storage->gpu_address, "discrete storage's physical place is its bus address");
 
-	/* A blob that is not mappable is the GPU's own memory past the window, named by its address. */
+	/* A blob that is not mappable is the GPU's own local memory past the window, named by its address. */
 	memset(&blob_request, 0, sizeof(blob_request));
 	blob_request.bytes = sizeof(pattern);
 	error = core_ops->blob_create(core_private, opaque, &blob_request, &object, &resource_id);
 	blob = object;
-	expect(error == 0 && blob->kind == GHCI_MEMORY_HIDDEN, "discrete device blob past the window");
+	expect(error == 0 && blob->kind == GHCI_MEMORY_UNWINDOWED, "discrete device blob past the window");
 	expect(resource_id == blob->gpu_address && blob->view == NULL, "discrete blob named by its GPU address");
 	error = core_ops->resource_map(core_private, opaque, object, &mapping);
 	expect(error == EINVAL, "discrete hidden blob does not map");
@@ -1622,17 +1666,17 @@ test_discrete(void)
 	dwords = native_fill(stream, storage->gpu_address, 16U, 1U, storage->gpu_address + 4096U, 78U);
 	error = core_ops->command(core_private, opaque, stream, dwords * 4U);
 	expect(error == 0, "discrete paused native command");
-	free_before = ghci_range_free_bytes(&device.hidden);
+	free_before = ghci_range_free_bytes(&device.unwindowed);
 	core_ops->resource_destroy(core_private, opaque, other);
 	expect(device.deferred != NULL, "discrete destroyed blob deferred");
-	expect(ghci_range_free_bytes(&device.hidden) == free_before, "discrete deferred blob still in use");
+	expect(ghci_range_free_bytes(&device.unwindowed) == free_before, "discrete deferred blob still in use");
 	ghci_service_step(&device, GHCI_WORK_RECLAIM);
 	expect(device.deferred != NULL, "discrete reclaim waits for the fence");
 	model_paused = 0;
 	model_run();
 	ghci_service_step(&device, GHCI_WORK_RECLAIM);
 	expect(device.deferred == NULL, "discrete reclaim after the fence");
-	expect(ghci_range_free_bytes(&device.hidden) == free_before + 4096U, "discrete blob memory back");
+	expect(ghci_range_free_bytes(&device.unwindowed) == free_before + 4096U, "discrete blob memory back");
 	expect(core_capacity_notes != 0U, "discrete capacity announced");
 
 	/* A fault: the processor stops, the service resets it, old tickets end with an error, the ring runs again. */
@@ -1674,7 +1718,9 @@ test_discrete(void)
 	expect(error == 0, "discrete stop");
 	expect(model_state == GHCI_ST_IDLE, "discrete processor idle after the stop");
 	expect(model_registers[GHCI_APERTURE_LIMIT / 4U] == 0U, "discrete aperture empty after the stop");
-	expect(device.visible.count == 0U && device.hidden.count == 0U, "discrete local memory all back");
+	expect(device.windowed.count == 0U && device.unwindowed.count == 0U, "discrete local memory all back");
+	expect((model_registers[(MODEL_MEM_REGISTERS + GHCI_MEM_WINDOW_CTRL) / 4U] & GHCI_MEM_WINDOW_ENABLE) != 0U, "discrete window open again after the stop");
+	expect(model_guard_changed() == 0U, "discrete driver did not touch the local window");
 	model_device = NULL;
 }
 
@@ -1821,7 +1867,7 @@ test_display(void)
 	memset(&device, 0, sizeof(device));
 	device.registers = (volatile uint8_t *)model_registers;
 	device.register_bytes = sizeof(model_registers);
-	device.window = model_local;
+	device.window = model_window_guard;
 	device.window_physical = MODEL_WINDOW_PHYSICAL;
 	device.window_bytes = MODEL_WINDOW_BYTES;
 	model_device = &device;
@@ -1887,7 +1933,8 @@ test_display(void)
 	expect((model_dc[GHCI_DC_CTRL / 4U] & GHCI_DC_CTRL_ENABLE) != 0U, "display lit by the ring");
 	expect(model_dc[GHCI_DC_FB_BASE / 4U] == device.display.frames[0]->gpu_address, "display scans the first frame");
 	expect(model_dc[GHCI_DC_H_ACTIVE / 4U] == 640U && model_dc[GHCI_DC_FB_STRIDE / 4U] == 2560U, "display timing and rows written by DISP_SET");
-	expect(memcmp(device.display.frames[0]->view, storage->view, 640U * 480U * 4U) == 0, "display frame holds the copy");
+	expect(device.display.frames[0]->kind == GHCI_MEMORY_UNWINDOWED && device.display.frames[0]->view == NULL, "display frames in local memory");
+	expect(memcmp(model_memory(device.display.frames[0]->gpu_address, 640U * 480U * 4U), storage->view, 640U * 480U * 4U) == 0, "display frame holds the copy");
 	expect(model_dc_bad_writes == 0U && model_dc_slot_busy == 0U, "display no refused write, no busy slot");
 
 	/* A second copied frame flips to the other frame at a vertical sync. */
@@ -2138,7 +2185,8 @@ test_display(void)
 	error = ghci_device_stop(&device);
 	expect(error == 0, "display stop");
 	expect((model_dc[GHCI_DC_CTRL / 4U] & GHCI_DC_CTRL_ENABLE) == 0U, "display dark after the stop");
-	expect(device.visible.count == 0U && device.hidden.count == 0U, "display local memory all back");
+	expect(device.windowed.count == 0U && device.unwindowed.count == 0U, "display local memory all back");
+	expect(model_guard_changed() == 0U, "display driver did not touch the local window");
 	expect(model_dc_slot_busy == 0U && model_dc_bad_writes == 0U, "display: never a busy slot or a refused write");
 	model_device = NULL;
 }

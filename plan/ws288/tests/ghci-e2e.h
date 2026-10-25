@@ -70,8 +70,8 @@ struct e2e_display_state {
 /* Starts the simulated board and the driver on it: 0, or an error. */
 int e2e_board_start(void);
 
-/* Stops the driver and the simulation. */
-void e2e_board_stop(void);
+/* Stops the driver and the simulation: 0, or EIO when the driver's memory was not where GHCI puts it. */
+int e2e_board_stop(void);
 
 /*
  * Runs the board for a while as the kernel would between two looks of a

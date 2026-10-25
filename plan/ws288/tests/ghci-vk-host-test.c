@@ -24,6 +24,7 @@
 #define GHCI_MODEL_ONLY 1
 #define MODEL_LOCAL_BYTES		(64U << 20)
 #define MODEL_WINDOW_BYTES		(32U << 20)
+#define MODEL_HOST_BYTES		(64U << 20)
 
 #include "ghci-driver-host-test.c"
 
@@ -348,7 +349,7 @@ test_executor(void)
 	memset(&device, 0, sizeof(device));
 	device.registers = (volatile uint8_t *)model_registers;
 	device.register_bytes = sizeof(model_registers);
-	device.window = model_local;
+	device.window = model_window_guard;
 	device.window_physical = MODEL_WINDOW_PHYSICAL;
 	device.window_bytes = MODEL_WINDOW_BYTES;
 	model_device = &device;
@@ -449,7 +450,11 @@ test_executor(void)
 	error = submit(opaque, &frame);
 	expect(error == 0, "vk memory properties taken");
 	expect(reply_word(reply, 3U) == 2U, "vk two memory types");
-	expect(reply_word(reply, 8U) == 7U, "vk type 1 is device local, host visible and coherent");
+	expect(reply_word(reply, 6U) == 1U && reply_word(reply, 7U) == 0U, "vk type 0 is device local, in heap 0");
+	expect(reply_word(reply, 8U) == 6U && reply_word(reply, 9U) == 1U, "vk type 1 is host visible and coherent, in heap 1");
+	expect(reply_word(reply, 70U) == 2U, "vk two heaps on a discrete GPU");
+	expect(reply_word(reply, 73U) == MODEL_LOCAL_BYTES && reply_word(reply, 75U) == 1U, "vk heap 0 is the local memory, device local");
+	expect(reply_word(reply, 76U) == (uint32_t)GHCI_RESOURCE_MAX_BYTES && reply_word(reply, 78U) == 0U, "vk heap 1 is host memory");
 
 	/* The device and its queue on timeline 1. */
 	memset(reply->view, 0, REPLY_BYTES);
@@ -1147,6 +1152,7 @@ test_executor(void)
 	error = ghci_device_stop(&device);
 	expect(error == 0, "vk stop");
 	expect(device.vk == NULL, "vk executor gone");
+	expect(model_guard_changed() == 0U, "vk driver did not touch the local window");
 	model_device = NULL;
 
 	/* A second open and close of a fresh device leaves the firmware's session closed. */
@@ -1155,7 +1161,7 @@ test_executor(void)
 	memset(&device, 0, sizeof(device));
 	device.registers = (volatile uint8_t *)model_registers;
 	device.register_bytes = sizeof(model_registers);
-	device.window = model_local;
+	device.window = model_window_guard;
 	device.window_physical = MODEL_WINDOW_PHYSICAL;
 	device.window_bytes = MODEL_WINDOW_BYTES;
 	model_device = &device;
@@ -1243,7 +1249,7 @@ test_protection(void)
 	memset(&device, 0, sizeof(device));
 	device.registers = (volatile uint8_t *)model_registers;
 	device.register_bytes = sizeof(model_registers);
-	device.window = model_local;
+	device.window = model_window_guard;
 	device.window_physical = MODEL_WINDOW_PHYSICAL;
 	device.window_bytes = MODEL_WINDOW_BYTES;
 	model_device = &device;
@@ -1333,5 +1339,6 @@ test_protection(void)
 	ghci_service_step(&device, GHCI_WORK_RECLAIM);
 	error = ghci_device_stop(&device);
 	expect(error == 0 && device.prot_table == NULL, "prot stop gives the table back");
+	expect(model_guard_changed() == 0U, "prot driver did not touch the local window");
 	model_device = NULL;
 }

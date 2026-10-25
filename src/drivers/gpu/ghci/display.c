@@ -904,10 +904,11 @@ find_mode(
 
 /*
  * Takes the driver's buffers once: two frames of the largest mode that a
- * copied present fills, and, with a cursor plane, two cursor surfaces and
- * the staging of their copies, all in memory the processor maps and the
- * controller scans.  They stay until the detach.  The device's lock is
- * held.
+ * copied present fills, which only the GPU writes (local memory on a
+ * discrete GPU, GHCI section 11.3), and, with a cursor plane, two cursor
+ * surfaces and the staging of their copies, which the processor converts
+ * (host memory, which the controller reads by DMA).
+ * They stay until the detach.  The device's lock is held.
  */
 static int
 buffers_take(
@@ -927,7 +928,7 @@ buffers_take(
 		if (display->frames[index] != NULL)
 			continue;
 
-		error = ghci_memory_alloc(device, NULL, GHCI_USE_MAPPABLE, bytes, &display->frames[index]);
+		error = ghci_memory_alloc(device, NULL, GHCI_USE_DEVICE, bytes, &display->frames[index]);
 		if (error != 0)
 			return error;
 	}
