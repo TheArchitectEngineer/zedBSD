@@ -6,15 +6,21 @@
  */
 
 /*
- * The GHCI device's memory: the allocators of local memory (the part in
- * the local window and the part past it), host RAM below 4 GiB, the
- * aperture that bounds every access of the GPU, and the allocations that
- * wait for the GPU before they go back.
+ * The GHCI device's memory: the allocators of local memory (the range the
+ * local window shows and the part past it), host RAM, the aperture that
+ * bounds every access of the GPU, the local window's switch, and the
+ * allocations that wait for the GPU before they go back.
+ *
+ * The placement follows GHCI section 11.3: what the processor writes or
+ * reads (the ring, the fences, the bounce buffer, mapped memory) is host
+ * memory, and memory only the GPU uses is local on a discrete GPU.  The
+ * processor never reaches local memory itself; copies by the GPU move
+ * data between the two.
  *
  * Host memory is reached by the GPU at its bus address, which on the PC
  * host is its physical address (the host bridge maps bus addresses one
- * to one); it must lie outside the GPU's local range, inside the
- * aperture and below 4 GiB.
+ * to one); it must lie outside the GPU's local range, below the GPU's
+ * HOST_LIMIT and inside the aperture.
  */
 
 #include <stddef.h>
@@ -37,9 +43,10 @@ static enum ghci_memory_kind kind_for(const struct ghci_device *device, enum ghc
 static int local_take(struct ghci_device *device, struct ghci_allocation *allocation, enum ghci_memory_kind kind);
 static int host_take(struct ghci_device *device, struct ghci_allocation *allocation);
 static int host_usable(const struct ghci_device *device, const struct kern_pmem *run);
+static uint64_t host_end(const struct ghci_device *device);
 
 /*
- * Sets up the allocators from the local memory and the window.
+ * Sets up the aperture and the allocators of local memory.
  */
 int
 ghci_memory_init(
@@ -47,7 +54,7 @@ ghci_memory_init(
 {
 	uint64_t line_mask;
 	uint64_t local_end;
-	uint64_t usable_end;
+	uint64_t aperture_end;
 	uint64_t window_end;
 	int error;
 
@@ -60,37 +67,37 @@ ghci_memory_init(
 	if (device->protection && line_mask < GHCI_PAGE_BYTES - 1U)
 		line_mask = GHCI_PAGE_BYTES - 1U;
 	local_end = (uint64_t)device->local_base + device->local_size;
-	usable_end = local_end;
-	if (usable_end > ADDRESS_SPACE_END - device->line_bytes)
-		usable_end = ADDRESS_SPACE_END - device->line_bytes;
 
 	/*
-	 * A discrete GPU with a window keeps everything in local memory, so
-	 * its aperture is exactly the local memory.  Otherwise the GPU also
-	 * reaches host memory, and the aperture opens the 32-bit space but
-	 * its first line, so that address 0 is never reached.
+	 * The aperture covers the host addresses and the local memory: from
+	 * the first line (address 0 is never reached) to whichever of the two
+	 * ends higher.
 	 */
-	if (device->local_window != 0U) {
-		device->aperture_base = (uint32_t)(device->local_base & ~line_mask);
-		device->aperture_limit = (uint32_t)(usable_end & ~line_mask);
-	} else {
-		device->aperture_base = (uint32_t)(line_mask + 1U);
-		device->aperture_limit = (uint32_t)(ADDRESS_SPACE_END - (line_mask + 1U));
-	}
+	aperture_end = host_end(device);
+	if (local_end > aperture_end)
+		aperture_end = local_end;
+	if (aperture_end > ADDRESS_SPACE_END - (line_mask + 1U))
+		aperture_end = ADDRESS_SPACE_END - (line_mask + 1U);
+	device->aperture_base = (uint32_t)(line_mask + 1U);
+	device->aperture_limit = (uint32_t)(aperture_end & ~line_mask);
 
-	/* The part of local memory the window shows. */
+	/* Local memory past the aperture's end is not used. */
+	if (local_end > device->aperture_limit)
+		local_end = device->aperture_limit;
+
+	/* The range of local memory the window shows. */
 	window_end = (uint64_t)device->local_base + device->local_window;
-	if (window_end > usable_end)
-		window_end = usable_end;
+	if (window_end > local_end)
+		window_end = local_end;
 	if (device->local_window != 0U) {
-		error = range_make(&device->visible, &device->visible_extents, device->local_base, window_end);
+		error = range_make(&device->windowed, &device->windowed_extents, device->local_base, window_end);
 		if (error != 0)
 			return error;
 	}
 
-	/* The rest of local memory, which only the GPU reaches. */
-	if (device->local_size != 0U && window_end < usable_end) {
-		error = range_make(&device->hidden, &device->hidden_extents, window_end, usable_end);
+	/* The rest of local memory. */
+	if (device->local_size != 0U && window_end < local_end) {
+		error = range_make(&device->unwindowed, &device->unwindowed_extents, window_end, local_end);
 		if (error != 0) {
 			ghci_memory_fini(device);
 			return error;
@@ -108,17 +115,42 @@ void
 ghci_memory_fini(
 	struct ghci_device *device)
 {
-	/* The table of the window's allocator. */
-	if (device->visible_extents != NULL) {
-		kern_free(device->visible_extents);
-		device->visible_extents = NULL;
+	/* The table of the window range's allocator. */
+	if (device->windowed_extents != NULL) {
+		kern_free(device->windowed_extents);
+		device->windowed_extents = NULL;
 	}
 
-	/* The table of the hidden part's allocator. */
-	if (device->hidden_extents != NULL) {
-		kern_free(device->hidden_extents);
-		device->hidden_extents = NULL;
+	/* The table of the allocator of the rest of local memory. */
+	if (device->unwindowed_extents != NULL) {
+		kern_free(device->unwindowed_extents);
+		device->unwindowed_extents = NULL;
 	}
+}
+
+/*
+ * Opens or closes the local window to the host.
+ *
+ * The driver does not use the window: it closes it while it drives the
+ * device, so that a stray access through the window cannot change local
+ * memory, and opens it again (as after a reset) when it lets the device go.
+ */
+void
+ghci_memory_window_set(
+	struct ghci_device *device,
+	int open)
+{
+	uint32_t control;
+
+	/* A GPU without a window has nothing to switch. */
+	if (device->mem_registers == 0U || device->local_window == 0U)
+		return;
+
+	/* WINDOW_CTRL.ENABLE; CTRL.RESET does not change it. */
+	control = 0U;
+	if (open)
+		control = GHCI_MEM_WINDOW_ENABLE;
+	ghci_write(device, device->mem_registers + GHCI_MEM_WINDOW_CTRL, control);
 }
 
 /*
@@ -152,16 +184,14 @@ ghci_memory_alloc(
 	allocation->bytes = (uint32_t)pages_bytes;
 	allocation->requested = bytes;
 
-	/* The memory of the use's kind; device-local memory may also come from the window. */
+	/* The memory of the use's kind; local memory comes from the window's range when the rest is full. */
 	kind = kind_for(device, use);
 	if (kind == GHCI_MEMORY_HOST) {
 		error = host_take(device, allocation);
 	} else {
-		error = local_take(device, allocation, kind);
-		if (error == ENOMEM &&
-		    kind == GHCI_MEMORY_HIDDEN &&
-		    device->local_window != 0U)
-			error = local_take(device, allocation, GHCI_MEMORY_VISIBLE);
+		error = local_take(device, allocation, GHCI_MEMORY_UNWINDOWED);
+		if (error == ENOMEM)
+			error = local_take(device, allocation, GHCI_MEMORY_WINDOWED);
 	}
 
 	/* No memory: the record goes too. */
@@ -187,10 +217,10 @@ ghci_memory_free(
 
 	/* Gives the memory back to where it came from. */
 	error = 0;
-	if (allocation->kind == GHCI_MEMORY_VISIBLE) {
-		error = ghci_range_free(&device->visible, allocation->gpu_address);
-	} else if (allocation->kind == GHCI_MEMORY_HIDDEN) {
-		error = ghci_range_free(&device->hidden, allocation->gpu_address);
+	if (allocation->kind == GHCI_MEMORY_WINDOWED) {
+		error = ghci_range_free(&device->windowed, allocation->gpu_address);
+	} else if (allocation->kind == GHCI_MEMORY_UNWINDOWED) {
+		error = ghci_range_free(&device->unwindowed, allocation->gpu_address);
 	} else {
 		error = kern_pmem_free(&allocation->run);
 		device->host_bytes -= allocation->bytes;
@@ -410,15 +440,11 @@ kind_for(
 	const struct ghci_device *device,
 	enum ghci_memory_use use)
 {
-	/* Memory only the GPU uses is local when the GPU has a part past the window. */
-	if (use == GHCI_USE_DEVICE && device->hidden_extents != NULL)
-		return GHCI_MEMORY_HIDDEN;
+	/* Memory only the GPU uses is local on a discrete GPU (past the window first, see ghci_memory_alloc). */
+	if (use == GHCI_USE_DEVICE && device->local_size != 0U)
+		return GHCI_MEMORY_UNWINDOWED;
 
-	/* Everything else is in the window when there is one. */
-	if (device->local_window != 0U)
-		return GHCI_MEMORY_VISIBLE;
-
-	/* A GPU without a window into its local memory keeps the rest in host memory. */
+	/* What the processor writes or reads, and the driver's own buffers, are host memory. */
 	return GHCI_MEMORY_HOST;
 }
 
@@ -431,13 +457,12 @@ local_take(
 {
 	struct ghci_range_map *map;
 	uint32_t address;
-	uint64_t offset;
 	int error;
 
 	/* The allocator of the kind; a GPU may have no memory of it. */
-	map = &device->hidden;
-	if (kind == GHCI_MEMORY_VISIBLE)
-		map = &device->visible;
+	map = &device->unwindowed;
+	if (kind == GHCI_MEMORY_WINDOWED)
+		map = &device->windowed;
 	if (map->extents == NULL)
 		return ENOMEM;
 
@@ -448,26 +473,21 @@ local_take(
 	if (error != 0)
 		return error;
 
-	/* The GPU's address of it, and for the window the processor's view. */
+	/* The GPU's address of it; the processor has no view of local memory. */
 	allocation->kind = kind;
 	allocation->gpu_address = address;
 	allocation->view = NULL;
 	allocation->physical = 0U;
-	if (kind == GHCI_MEMORY_VISIBLE) {
-		offset = (uint64_t)address - device->local_base;
-		allocation->view = (uint8_t *)device->window + offset;
-		allocation->physical = device->window_physical + offset;
-	}
 
 	/* Succeeded: the run is the allocation's. */
 	return 0;
 }
 
 /*
- * Takes host RAM for an allocation: one contiguous run below 4 GiB that
- * lies inside the aperture and outside the local range.  A run that does
- * not is held while another is tried, so it is not handed out again, and
- * every held run goes back at the end.
+ * Takes host RAM for an allocation: one contiguous run below the GPU's
+ * HOST_LIMIT that lies inside the aperture and outside the local range.
+ * A run that does not is held while another is tried, so it is not
+ * handed out again, and every held run goes back at the end.
  */
 static int
 host_take(
@@ -476,17 +496,23 @@ host_take(
 {
 	struct kern_pmem held[GHCI_HOST_TRIES];
 	struct kern_pmem run;
+	uint64_t limit;
 	unsigned held_count;
 	unsigned index;
 	int usable;
 	int error;
+
+	/* The end of the host addresses the GPU reaches inside its aperture. */
+	limit = host_end(device);
+	if (limit > device->aperture_limit)
+		limit = device->aperture_limit;
 
 	/* Tries a bounded number of runs. */
 	held_count = 0U;
 	error = ENOMEM;
 	for (index = 0U; index < GHCI_HOST_TRIES; index++) {
 		/* A run the GPU can name. */
-		error = kern_pmem_alloc_limited(allocation->bytes, GHCI_PAGE_BYTES, (uint64_t)device->aperture_limit - 1U, 0U, &run);
+		error = kern_pmem_alloc_limited(allocation->bytes, GHCI_PAGE_BYTES, limit - 1U, 0U, &run);
 		if (error != 0)
 			break;
 
@@ -522,7 +548,7 @@ host_take(
 	return 0;
 }
 
-/* Reports whether a run of RAM is inside the aperture and outside the local range: 1 when it is. */
+/* Reports whether a run of RAM is a host address range inside the aperture, outside the local range: 1 when it is. */
 static int
 host_usable(
 	const struct ghci_device *device,
@@ -536,10 +562,12 @@ host_usable(
 	start = run->paddr;
 	end = start + run->size;
 
-	/* It must lie inside the aperture. */
+	/* It must lie inside the aperture and below HOST_LIMIT. */
 	if (start < device->aperture_base)
 		return 0;
 	if (end > device->aperture_limit)
+		return 0;
+	if (end > host_end(device))
 		return 0;
 
 	/* A GPU without local memory has no range to avoid. */
@@ -555,4 +583,17 @@ host_usable(
 
 	/* Succeeded: the run meets the local range and is not usable. */
 	return 0;
+}
+
+/* Reports the end of the GPU's host addresses: HOST_LIMIT, or 2^32 when it says all. */
+static uint64_t
+host_end(
+	const struct ghci_device *device)
+{
+	/* A GPU that reports no limit reaches the host up to the end of its address space. */
+	if (device->host_limit == 0U)
+		return ADDRESS_SPACE_END;
+
+	/* Succeeded: the limit the GPU reported. */
+	return device->host_limit;
 }

@@ -170,6 +170,9 @@ ghci_device_start(
 		return error;
 	}
 
+	/* The driver does not use the local window: it is closed while the driver has the device. */
+	ghci_memory_window_set(device, 0);
+
 	/* Says what the device is: its version, capabilities, memory, display and executor. */
 	kern_logf("ghci: %s: ready (GHCI %u.%u, caps %08x, local %u MiB, window %u MiB, display %u, vulkan %u)\n",
 	    device->name,
@@ -228,6 +231,9 @@ ghci_device_stop(
 	mutex_unlock(&device->lock);
 
 	ghci_memory_fini(device);
+
+	/* The local window opens again, as after a reset, for whoever has the device next. */
+	ghci_memory_window_set(device, 1);
 
 	/* Succeeded: the bus glue may release the bus resources. */
 	return 0;
@@ -425,7 +431,7 @@ identify(
 	return 0;
 }
 
-/* Reads the MEM and PROT capabilities: the local memory, its window and the protection. */
+/* Reads the MEM and PROT capabilities: the local memory, its window, the host's limit and the protection. */
 static void
 identify_memory(
 	struct ghci_device *device)
@@ -441,13 +447,19 @@ identify_memory(
 	device->local_base = 0U;
 	device->local_size = 0U;
 	device->local_window = 0U;
+	device->host_limit = 0U;
+	device->mem_registers = 0U;
 
 	/* Finds the MEM capability. */
 	error = ghci_extcap_find(ghci_read_context, device, device->extcap, device->register_bytes, GHCI_XCAP_MEM, &registers, &version);
 	if (error == 0) {
+		device->mem_registers = registers;
 		device->local_base = ghci_read(device, registers + GHCI_MEM_LOCAL_BASE);
 		device->local_size = ghci_read(device, registers + GHCI_MEM_LOCAL_SIZE);
 		window = ghci_read(device, registers + GHCI_MEM_WINDOW_SIZE);
+
+		/* The end of the GPU addresses that reach the host (0: all of them). */
+		device->host_limit = ghci_read(device, registers + GHCI_MEM_HOST_LIMIT);
 
 		/* The window shows no more than local memory, and no more than the bus mapped. */
 		if (window > device->local_size)
@@ -989,13 +1001,11 @@ gpu_resource_map(
 	if (allocation->view == NULL)
 		return EINVAL;
 
-	/* The local window is device memory; host memory is ordinary RAM. */
+	/* Only host memory has a view: ordinary RAM. */
 	mapping->physical = allocation->physical;
 	mapping->address = allocation->view;
 	mapping->bytes = allocation->bytes;
 	mapping->attributes = 0U;
-	if (allocation->kind == GHCI_MEMORY_VISIBLE)
-		mapping->attributes = DRV_GPU_MAPPING_DEVICE;
 
 	/* Succeeded: the view is described. */
 	return 0;

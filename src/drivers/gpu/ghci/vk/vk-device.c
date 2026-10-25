@@ -650,10 +650,11 @@ features(
 
 /*
  * vkGetPhysicalDeviceMemoryProperties: [physical][u64 1][u64 32][u64 16]
- * -> [u64 1][properties].  Two types: device local (type 0), and device
- * local, host visible and coherent (type 1).  A discrete GPU with memory
- * past its window has two heaps, the window's and the rest; otherwise
- * one heap holds both types.
+ * -> [u64 1][properties].  Two types, device local (type 0) and host
+ * visible and coherent (type 1).  A discrete GPU has two heaps (GHCI
+ * section 11.3): its local memory (device local, type 0) and host memory
+ * (type 1).  A unified GPU has one device-local heap for both, and its
+ * type 1 is device local too.
  */
 static int
 memory_properties(
@@ -663,8 +664,7 @@ memory_properties(
 {
 	VkPhysicalDeviceMemoryProperties *record;
 	struct ghci_device *device;
-	uint64_t visible_bytes;
-	uint64_t hidden_bytes;
+	uint64_t local_bytes;
 
 	/* The physical device, the presence word and the two extents. */
 	(void)drv_i915_wire_read_u64(reader);
@@ -680,13 +680,12 @@ memory_properties(
 	if (record == NULL)
 		return ENOMEM;
 
-	/* The memory the processor reaches, and the memory only the GPU reaches. */
-	visible_bytes = device->visible.limit - device->visible.base;
-	hidden_bytes = device->hidden.limit - device->hidden.base;
-	if (device->local_size == 0U || device->local_window == 0U) {
-		visible_bytes = GHCI_RESOURCE_MAX_BYTES;
-		hidden_bytes = 0U;
-	}
+	/* The local memory the allocators hand out (none on a unified GPU). */
+	local_bytes = 0U;
+	if (device->windowed_extents != NULL)
+		local_bytes += device->windowed.limit - device->windowed.base;
+	if (device->unwindowed_extents != NULL)
+		local_bytes += device->unwindowed.limit - device->unwindowed.base;
 
 	/* The types: device local first, as the specification orders them by fewer properties. */
 	record->memoryTypeCount = GHCI_VK_MEMORY_TYPES;
@@ -697,15 +696,20 @@ memory_properties(
 	    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 	record->memoryTypes[GHCI_VK_MEMORY_HOST].heapIndex = 0U;
 
-	/* The heaps: the window's, and the rest of the GPU's memory when there is any. */
+	/* A unified GPU: one device-local heap of host memory holds both types. */
 	record->memoryHeapCount = 1U;
-	record->memoryHeaps[0].size = visible_bytes;
+	record->memoryHeaps[0].size = GHCI_RESOURCE_MAX_BYTES;
 	record->memoryHeaps[0].flags = VK_MEMORY_HEAP_DEVICE_LOCAL_BIT;
-	if (hidden_bytes != 0U) {
+
+	/* A discrete GPU: the local memory's heap, and host memory, which is not device local. */
+	if (local_bytes != 0U) {
 		record->memoryHeapCount = 2U;
-		record->memoryHeaps[1].size = hidden_bytes;
-		record->memoryHeaps[1].flags = VK_MEMORY_HEAP_DEVICE_LOCAL_BIT;
-		record->memoryTypes[GHCI_VK_MEMORY_DEVICE].heapIndex = 1U;
+		record->memoryHeaps[0].size = local_bytes;
+		record->memoryHeaps[1].size = GHCI_RESOURCE_MAX_BYTES;
+		record->memoryHeaps[1].flags = 0U;
+		record->memoryTypes[GHCI_VK_MEMORY_HOST].propertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+		    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+		record->memoryTypes[GHCI_VK_MEMORY_HOST].heapIndex = 1U;
 	}
 
 	/* The presence word and the record. */

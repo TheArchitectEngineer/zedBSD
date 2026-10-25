@@ -20,16 +20,21 @@
  * Memory.  A GPU with local memory (the MEM capability) is discrete; one
  * without is unified.  The driver hands out three kinds of memory:
  *
- *  - VISIBLE: local memory inside the local window, which the processor
- *    reaches through the bus mapping;
- *  - HIDDEN: local memory past the window, which only the GPU reaches;
- *  - HOST: host RAM below 4 GiB, which the GPU reaches by DMA.
+ *  - WINDOWED: local memory in the range the local window shows;
+ *  - UNWINDOWED: local memory past that range;
+ *  - HOST: host RAM below the GPU's HOST_LIMIT and outside its local
+ *    memory, which the GPU reaches by DMA.
  *
- * A discrete GPU with a window keeps everything in local memory: the
- * ring, the fence page and the bounce buffer of the transfers go in the
- * window, as do the allocations the processor maps, and the aperture is
- * exactly the local memory.  Without a window (or without local memory)
- * those go in host memory and the aperture opens the 32-bit space.
+ * The processor reaches only host memory (GHCI section 11.3): the ring,
+ * the fence page, the bounce buffer, the executor's own buffers and every
+ * allocation the processor maps are host memory, and memory only the GPU
+ * uses is local on a discrete GPU (past the window first; the window's
+ * range is ordinary local memory to the driver).  Data moves between the
+ * two by the GPU's copies.  The driver does not use the local window and
+ * closes it once the device is published (the display controller is set
+ * dark at the attach, so no boot framebuffer is shown through it), and
+ * opens it again at the detach.  The aperture covers the host addresses
+ * and the local memory.
  *
  * Locks.  lock (a mutex) serializes the sessions, the allocators, the
  * lists of allocations and the device's life; display.lock (a mutex,
@@ -126,8 +131,8 @@
  * The kinds of memory an allocation is in (see the head of this file).
  */
 enum ghci_memory_kind {
-	GHCI_MEMORY_VISIBLE = 1,
-	GHCI_MEMORY_HIDDEN,
+	GHCI_MEMORY_WINDOWED = 1,
+	GHCI_MEMORY_UNWINDOWED,
 	GHCI_MEMORY_HOST
 };
 
@@ -155,9 +160,9 @@ struct ghci_session;
  * reset generation, until the service thread gives it back.  The device's
  * lock protects the lists and every field.
  *
- * view is the processor's kernel view (NULL for HIDDEN memory), physical
- * the processor's physical address of it (0 for HIDDEN) and gpu_address
- * the address the GPU uses.  bytes is the size handed out (whole pages);
+ * view is the processor's kernel view (NULL for local memory), physical
+ * the processor's physical address of it (0 for local memory) and
+ * gpu_address the address the GPU uses.  bytes is the size handed out (whole pages);
  * requested what the caller asked for.  run is the RAM of HOST memory.
  *
  * holds counts the users that keep the memory although its owner may
@@ -443,6 +448,8 @@ struct ghci_device {
 	uint32_t local_base;
 	uint64_t local_size;
 	uint64_t local_window;
+	uint64_t host_limit;
+	uint32_t mem_registers;
 	int protection;
 	uint32_t prot_registers;
 	struct ghci_allocation *prot_table;
@@ -458,10 +465,10 @@ struct ghci_device {
 	int withdrawing;
 
 	/* The allocators of local memory and the allocations waiting for the GPU. */
-	struct ghci_range_map visible;
-	struct ghci_range_map hidden;
-	struct ghci_range_extent *visible_extents;
-	struct ghci_range_extent *hidden_extents;
+	struct ghci_range_map windowed;
+	struct ghci_range_map unwindowed;
+	struct ghci_range_extent *windowed_extents;
+	struct ghci_range_extent *unwindowed_extents;
 	struct ghci_allocation *deferred;
 	uint64_t host_bytes;
 	uint32_t aperture_base;
@@ -578,14 +585,17 @@ void ghci_service_wake(struct ghci_device *device, unsigned work);
 
 /*
  * The memory (memory.c).  The device's lock is held for every call but
- * ghci_memory_init and ghci_memory_fini.
+ * ghci_memory_init, ghci_memory_fini and ghci_memory_window_set.
  */
 
-/* Sets up the allocators from the local memory and the window. */
+/* Sets up the aperture and the allocators of local memory. */
 int ghci_memory_init(struct ghci_device *device);
 
 /* Gives back the allocators' tables at the detach. */
 void ghci_memory_fini(struct ghci_device *device);
+
+/* Opens or closes the local window to the host (the MEM capability's WINDOW_CTRL). */
+void ghci_memory_window_set(struct ghci_device *device, int open);
 
 /* Takes memory for a use; session NULL keeps it for the device.  The memory is not cleared. */
 int ghci_memory_alloc(struct ghci_device *device, struct ghci_session *session, enum ghci_memory_use use, uint64_t bytes, struct ghci_allocation **result);
