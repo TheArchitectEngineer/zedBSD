@@ -1,0 +1,195 @@
+Copyright 1986-2022 Xilinx, Inc. All Rights Reserved. Copyright 2022-2026 Advanced Micro Devices, Inc. All Rights Reserved.
+------------------------------------------------------------------------------------------------------------------------------------------------------------------
+| Tool Version : Vivado v.2026.1 (lin64) Build 6511674 Tue Jun 16 11:01:26 MDT 2026
+| Date         : Sun Oct 25 13:42:45 2026
+| Host         : centris running 64-bit Debian GNU/Linux 13 (trixie)
+| Command      : report_utilization -hierarchical -hierarchical_depth 8 -file /home/awe/amaterrace-worktrees/p2-p036/build/vivado/ooc-fin2-n/utilization_hier.rpt
+| Design       : atg_top
+| Device       : xc7k325tffg900-2
+| Speed File   : -2
+| Design State : Synthesized
+------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Utilization Design Information
+
+Table of Contents
+-----------------
+1. Utilization by Hierarchy
+
+1. Utilization by Hierarchy
+---------------------------
+
++-----------------------------+------------------------------+------------+------------+---------+------+-------+--------+--------+------------+
+|           Instance          |            Module            | Total LUTs | Logic LUTs | LUTRAMs | SRLs |  FFs  | RAMB36 | RAMB18 | DSP Blocks |
++-----------------------------+------------------------------+------------+------------+---------+------+-------+--------+--------+------------+
+| atg_top                     |                        (top) |     167293 |     160859 |    5122 | 1312 | 78371 |     99 |     15 |        146 |
+|   (atg_top)                 |                        (top) |        117 |        117 |       0 |    0 |     0 |      0 |      0 |          0 |
+|   blt                       |                      atg_blt |      16751 |      16347 |     404 |    0 |  8647 |      0 |      0 |          0 |
+|     (blt)                   |                      atg_blt |        316 |        316 |       0 |    0 |     3 |      0 |      0 |          0 |
+|     b2d                     |                   atg_blt_2d |       5666 |       5666 |       0 |    0 |  3959 |      0 |      0 |          0 |
+|       (b2d)                 |                   atg_blt_2d |       3867 |       3867 |       0 |    0 |   534 |      0 |      0 |          0 |
+|       bl                    |                atg_blt_blend |        896 |        896 |       0 |    0 |   694 |      0 |      0 |          0 |
+|       cfg                   |                  atg_blt_cfg |        423 |        423 |       0 |    0 |   428 |      0 |      0 |          0 |
+|       dacc                  |               atg_blt_acc__3 |         97 |         97 |       0 |    0 |    81 |      0 |      0 |          0 |
+|       port                  |                 atg_blt_port |         19 |         19 |       0 |    0 |  2141 |      0 |      0 |          0 |
+|       sacc                  |                  atg_blt_acc |         97 |         97 |       0 |    0 |    81 |      0 |      0 |          0 |
+|       seg                   |                  atg_blt_seg |        267 |        267 |       0 |    0 |     0 |      0 |      0 |          0 |
+|     g_rsv.rsv               |                  atg_blt_rsv |      10769 |      10365 |     404 |    0 |  4685 |      0 |      0 |          0 |
+|       (g_rsv.rsv)           |                  atg_blt_rsv |        523 |        523 |       0 |    0 |   883 |      0 |      0 |          0 |
+|       cfg                   |               atg_blt_cfg__1 |        162 |        162 |       0 |    0 |   305 |      0 |      0 |          0 |
+|       dacc                  |               atg_blt_acc__1 |         95 |         95 |       0 |    0 |    80 |      0 |      0 |          0 |
+|       px                    |               atg_blt_rsv_px |       9897 |       9493 |     404 |    0 |  3340 |      0 |      0 |          0 |
+|         (px)                |               atg_blt_rsv_px |       3835 |       3835 |       0 |    0 |  2525 |      0 |      0 |          0 |
+|         av                  |                  atg_blt_avg |       1745 |       1745 |       0 |    0 |     0 |      0 |      0 |          0 |
+|         fv                  |                 atg_blt_favg |       3897 |       3897 |       0 |    0 |   805 |      0 |      0 |          0 |
+|           (fv)              |                 atg_blt_favg |       3717 |       3717 |       0 |    0 |   760 |      0 |      0 |          0 |
+|           enc               |              atg_fmt_srgbenc |        180 |        180 |       0 |    0 |    45 |      0 |      0 |          0 |
+|         lq                  |      am_fifo__parameterized3 |        355 |         11 |     344 |    0 |     6 |      0 |      0 |          0 |
+|         rq                  |      am_fifo__parameterized2 |         65 |          5 |      60 |    0 |     4 |      0 |      0 |          0 |
+|       sacc                  |               atg_blt_acc__2 |         92 |         92 |       0 |    0 |    77 |      0 |      0 |          0 |
+|   cp                        |                       atg_cp |       2169 |       2169 |       0 |    0 |  1615 |      2 |      1 |          0 |
+|     u_state                 |                 atg_cp_state |        111 |        111 |       0 |    0 |    22 |      2 |      0 |          0 |
+|     u_amb                   |   am_amb_mux__parameterized0 |        106 |        106 |       0 |    0 |     3 |      0 |      0 |          0 |
+|     u_ctl                   |                   atg_cp_ctl |        369 |        369 |       0 |    0 |   212 |      0 |      0 |          0 |
+|     u_dbg                   |                   atg_cp_dbg |        258 |        258 |       0 |    0 |   104 |      0 |      0 |          0 |
+|     u_fence                 |                 atg_cp_fence |        318 |        318 |       0 |    0 |   140 |      0 |      0 |          0 |
+|     u_regs                  |                  atg_cp_regs |        227 |        227 |       0 |    0 |   140 |      0 |      0 |          0 |
+|     u_ring                  |                  atg_cp_ring |        440 |        440 |       0 |    0 |   735 |      0 |      0 |          0 |
+|     u_seq                   |                   atg_cp_seq |        254 |        254 |       0 |    0 |   188 |      0 |      0 |          0 |
+|       (u_seq)               |                   atg_cp_seq |        196 |        196 |       0 |    0 |   188 |      0 |      0 |          0 |
+|       wt                    |              atg_cp_seq_wait |         58 |         58 |       0 |    0 |     0 |      0 |      0 |          0 |
+|   g_atom.atom               |                  atg_mc_atom |        480 |        480 |       0 |    0 |   169 |      0 |      0 |          0 |
+|   g_cpu.cpu                 |                      atg_cpu |       3286 |       2858 |     428 |    0 |  1858 |     24 |      0 |          4 |
+|     win                     |                  atg_cpu_win |        230 |        206 |      24 |    0 |   104 |      0 |      0 |          0 |
+|       (win)                 |                  atg_cpu_win |        188 |        188 |       0 |    0 |    94 |      0 |      0 |          0 |
+|     core                    |                 atg_cpu_core |       1430 |       1382 |      48 |    0 |   510 |      0 |      0 |          4 |
+|       (core)                |                 atg_cpu_core |        556 |        508 |      48 |    0 |   302 |      0 |      0 |          0 |
+|       alu                   |               atg_cpu_alu__1 |        427 |        427 |       0 |    0 |     0 |      0 |      0 |          0 |
+|       muldiv                |               atg_cpu_muldiv |        403 |        403 |       0 |    0 |   208 |      0 |      0 |          4 |
+|     dma                     |                  atg_cpu_dma |       1054 |        698 |     356 |    0 |   779 |      0 |      0 |          0 |
+|     fw                      |                   atg_cpu_fw |        491 |        491 |       0 |    0 |   398 |      0 |      0 |          0 |
+|     mem                     |                  atg_cpu_mem |         79 |         79 |       0 |    0 |    67 |     24 |      0 |          0 |
+|   g_rop.rop                 |                      atg_rop |      30032 |      29847 |     154 |   31 | 10603 |      0 |      8 |         23 |
+|     wb                      |                   atg_rop_wb |      16880 |      16708 |     154 |   18 |  4725 |      0 |      4 |          4 |
+|       (wb)                  |                   atg_rop_wb |       5865 |       5839 |      26 |    0 |  2397 |      0 |      0 |          0 |
+|       wpix                  |                 atg_rop_wpix |      11015 |      10869 |     128 |   18 |  2328 |      0 |      4 |          4 |
+|         (wpix)              |                 atg_rop_wpix |       5200 |       5200 |       0 |    0 |   530 |      0 |      4 |          2 |
+|         fblend              |               atg_rop_fblend |       5815 |       5669 |     128 |   18 |  1798 |      0 |      0 |          2 |
+|           (fblend)          |               atg_rop_fblend |       5105 |       4977 |     128 |    0 |  1448 |      0 |      0 |          0 |
+|           enc               |           atg_fmt_srgbenc__1 |        182 |        182 |       0 |    0 |    45 |      0 |      0 |          0 |
+|           fadd              |               atg_rx_fadd__5 |        416 |        403 |       0 |   13 |   191 |      0 |      0 |          0 |
+|           fmul              |                  atg_rx_fmul |        112 |        107 |       0 |    5 |   114 |      0 |      0 |          2 |
+|     blend                   |                atg_rop_blend |       7431 |       7431 |       0 |    0 |  1708 |      0 |      0 |         17 |
+|     ds                      |                   atg_rop_ds |       2254 |       2254 |       0 |    0 |  2445 |      0 |      4 |          2 |
+|       (ds)                  |                   atg_rop_ds |        961 |        961 |       0 |    0 |  2445 |      0 |      4 |          2 |
+|       dtest                 |                atg_rop_dtest |       1293 |       1293 |       0 |    0 |     0 |      0 |      0 |          0 |
+|     ms                      |                   atg_rop_ms |       2288 |       2275 |       0 |   13 |  1648 |      0 |      0 |          0 |
+|       (ms)                  |                   atg_rop_ms |       1869 |       1869 |       0 |    0 |  1461 |      0 |      0 |          0 |
+|       fadd                  |                  atg_rx_fadd |        419 |        406 |       0 |   13 |   187 |      0 |      0 |          0 |
+|     order                   |                atg_rop_order |        504 |        504 |       0 |    0 |    32 |      0 |      0 |          0 |
+|     rmux                    |                am_amb_mux__1 |        609 |        609 |       0 |    0 |     4 |      0 |      0 |          0 |
+|   g_rx.rx                   |                       atg_rx |      16976 |      15432 |    1472 |   72 | 10221 |      0 |      1 |         10 |
+|     setup                   |                 atg_rx_setup |       4904 |       4510 |     376 |   18 |  2485 |      0 |      1 |          4 |
+|       (setup)               |                 atg_rx_setup |       1489 |       1113 |     376 |    0 |   776 |      0 |      1 |          0 |
+|       edge_u                |                  atg_rx_edge |       2692 |       2692 |       0 |    0 |  1281 |      0 |      0 |          2 |
+|       fadd                  |               atg_rx_fadd__1 |        416 |        403 |       0 |   13 |   191 |      0 |      0 |          0 |
+|       fdiv                  |               atg_rx_fdiv__1 |        195 |        195 |       0 |    0 |   123 |      0 |      0 |          0 |
+|       fmul                  |               atg_rx_fmul__1 |        112 |        107 |       0 |    5 |   114 |      0 |      0 |          2 |
+|     clip                    |                  atg_rx_clip |       5206 |       4188 |    1000 |   18 |  2971 |      0 |      0 |          2 |
+|       (clip)                |                  atg_rx_clip |       1916 |       1916 |       0 |    0 |  1689 |      0 |      0 |          0 |
+|       cpoly                 |                 atg_rx_cpoly |       3290 |       2272 |    1000 |   18 |  1282 |      0 |      0 |          2 |
+|         (cpoly)             |                 atg_rx_cpoly |       2570 |       1570 |    1000 |    0 |   854 |      0 |      0 |          0 |
+|         fadd                |               atg_rx_fadd__4 |        407 |        394 |       0 |   13 |   191 |      0 |      0 |          0 |
+|         fdiv                |                  atg_rx_fdiv |        198 |        198 |       0 |    0 |   123 |      0 |      0 |          0 |
+|         fmul                |               atg_rx_fmul__4 |        115 |        110 |       0 |    5 |   114 |      0 |      0 |          2 |
+|     frag                    |                  atg_rx_frag |       2853 |       2771 |      64 |   18 |  2866 |      0 |      0 |          2 |
+|       (frag)                |                  atg_rx_frag |       1314 |       1314 |       0 |    0 |  1409 |      0 |      0 |          0 |
+|       bary                  |                  atg_rx_bary |       1539 |       1457 |      64 |   18 |  1457 |      0 |      0 |          2 |
+|         (bary)              |                  atg_rx_bary |        850 |        786 |      64 |    0 |  1039 |      0 |      0 |          0 |
+|         fadd                |               atg_rx_fadd__2 |        419 |        406 |       0 |   13 |   187 |      0 |      0 |          0 |
+|         fdiv                |               atg_rx_fdiv__2 |        157 |        157 |       0 |    0 |   121 |      0 |      0 |          0 |
+|         fmul                |               atg_rx_fmul__2 |        113 |        108 |       0 |    5 |   110 |      0 |      0 |          2 |
+|     scan                    |                  atg_rx_scan |       3996 |       3946 |      32 |   18 |  1883 |      0 |      0 |          2 |
+|       (scan)                |                  atg_rx_scan |       2189 |       2157 |      32 |    0 |  1151 |      0 |      0 |          0 |
+|       cv                    |                   atg_rx_cov |       1279 |       1279 |       0 |    0 |   435 |      0 |      0 |          0 |
+|       fadd                  |               atg_rx_fadd__3 |        419 |        406 |       0 |   13 |   187 |      0 |      0 |          0 |
+|       fmul                  |               atg_rx_fmul__3 |        109 |        104 |       0 |    5 |   110 |      0 |      0 |          2 |
+|   g_su[0].su                |                       atg_su |      60272 |      56931 |    2132 | 1209 | 18487 |     66 |      3 |         62 |
+|     xu                      |                    atg_su_xu |       2986 |       2986 |       0 |    0 |   912 |      0 |      0 |         12 |
+|     alu                     |                   atg_su_alu |       3612 |       3336 |       0 |  276 |   560 |      0 |      0 |          0 |
+|     cbank                   |                 atg_su_cbank |        453 |        381 |      72 |    0 |  1107 |      0 |      1 |          0 |
+|     dcache                  |                atg_su_dcache |       1130 |       1086 |      44 |    0 |  1100 |      7 |      1 |          0 |
+|     dec                     |                   atg_su_dec |        320 |        320 |       0 |    0 |   119 |      0 |      0 |          0 |
+|       (dec)                 |                   atg_su_dec |        148 |        148 |       0 |    0 |   119 |      0 |      0 |          0 |
+|       tab                   |               atg_su_dec_tab |         90 |         90 |       0 |    0 |     0 |      0 |      0 |          0 |
+|       tabc                  |              atg_su_dec_tabc |         82 |         82 |       0 |    0 |     0 |      0 |      0 |          0 |
+|     div                     |                   atg_su_div |        631 |        631 |       0 |    0 |   939 |      0 |      0 |          0 |
+|     exec                    |                  atg_su_exec |        581 |        560 |       0 |   21 |   336 |      0 |      0 |          0 |
+|     exp                     |                   atg_su_exp |       4357 |       2501 |    1856 |    0 |  2282 |      0 |      0 |          0 |
+|       (exp)                 |                   atg_su_exp |       4254 |       2398 |    1856 |    0 |  2196 |      0 |      0 |          0 |
+|       drain                 |             atg_su_exp_drain |        103 |        103 |       0 |    0 |    86 |      0 |      0 |          0 |
+|     fetch                   |                 atg_su_fetch |         73 |         13 |      60 |    0 |     7 |      0 |      0 |          0 |
+|     fpu                     |                   atg_su_fpu |      20813 |      20537 |       0 |  276 |  1088 |      0 |      0 |         32 |
+|       (fpu)                 |                   atg_su_fpu |      20437 |      20161 |       0 |  276 |  1088 |      0 |      0 |          0 |
+|     icache                  |                atg_su_icache |        349 |        333 |      16 |    0 |   580 |      7 |      1 |          0 |
+|     lane                    |                  atg_su_lane |       7504 |       7228 |       0 |  276 |  1816 |      0 |      0 |          0 |
+|     lda                     |                   atg_su_lda |        170 |         86 |       0 |   84 |   270 |     16 |      0 |          0 |
+|     lds                     |                   atg_su_lds |        748 |        748 |       0 |    0 |   910 |      4 |      0 |          0 |
+|     lsu                     |                   atg_su_lsu |       4836 |       4836 |       0 |    0 |  1621 |      0 |      0 |          0 |
+|     opd                     |                   atg_su_opd |       2514 |       2514 |       0 |    0 |   236 |      0 |      0 |          0 |
+|     pk                      |                    atg_su_pk |       2952 |       2676 |       0 |  276 |   814 |      0 |      0 |         16 |
+|     pt                      |                    atg_su_pt |        166 |        166 |       0 |    0 |    24 |      8 |      0 |          0 |
+|     sb                      |                    atg_su_sb |       1831 |       1831 |       0 |    0 |   476 |      0 |      0 |          0 |
+|     sched                   |                 atg_su_sched |       1008 |       1008 |       0 |    0 |   874 |      0 |      0 |          2 |
+|     tex                     |                   atg_su_tex |       1465 |       1445 |      20 |    0 |  2388 |      0 |      0 |          0 |
+|       (tex)                 |                   atg_su_tex |       1157 |       1157 |       0 |    0 |  1322 |      0 |      0 |          0 |
+|       ret                   |               atg_su_tex_ret |        308 |        288 |      20 |    0 |  1066 |      0 |      0 |          0 |
+|         (ret)               |               atg_su_tex_ret |        280 |        280 |       0 |    0 |  1060 |      0 |      0 |          0 |
+|     wb                      |                    atg_su_wb |       1735 |       1671 |      64 |    0 |    26 |      0 |      0 |          0 |
+|       (wb)                  |                    atg_su_wb |       1647 |       1647 |       0 |    0 |     6 |      0 |      0 |          0 |
+|   g_tu.tu                   |                       atg_tu |      27824 |      27328 |     496 |    0 |  8220 |      7 |      1 |         45 |
+|     (g_tu.tu)               |                       atg_tu |        260 |        260 |       0 |    0 |     0 |      0 |      0 |          0 |
+|     addr                    |                  atg_tu_addr |      13366 |      12898 |     468 |    0 |  2989 |      0 |      0 |         30 |
+|       (addr)                |                  atg_tu_addr |       4331 |       4331 |       0 |    0 |  2010 |      0 |      0 |         10 |
+|       cubeu                 |                  atg_tu_cube |       1199 |       1199 |       0 |    0 |   159 |      0 |      0 |          0 |
+|       desc                  |                  atg_tu_desc |       1855 |       1387 |     468 |    0 |   820 |      0 |      0 |          6 |
+|       foot                  |                  atg_tu_foot |       4214 |       4214 |       0 |    0 |     0 |      0 |      0 |         14 |
+|       lodu                  |                   atg_tu_lod |       1767 |       1767 |       0 |    0 |     0 |      0 |      0 |          0 |
+|     cache                   |                 atg_tu_cache |        661 |        633 |      28 |    0 |  1463 |      7 |      1 |          0 |
+|     ffilt                   |                 atg_tu_ffilt |       6102 |       6102 |       0 |    0 |  1770 |      0 |      0 |          3 |
+|       (ffilt)               |                 atg_tu_ffilt |       4708 |       4708 |       0 |    0 |  1770 |      0 |      0 |          3 |
+|       etc                   |                   atg_tu_etc |       1394 |       1394 |       0 |    0 |     0 |      0 |      0 |          0 |
+|     filter                  |                atg_tu_filter |       7435 |       7435 |       0 |    0 |  1998 |      0 |      0 |         12 |
+|   g_vf.vf                   |                       atg_vf |       4747 |       4735 |      12 |    0 |  5604 |      0 |      1 |          2 |
+|     vasm                    |                   atg_vf_asm |        472 |        460 |      12 |    0 |   495 |      0 |      0 |          0 |
+|     conv                    |                  atg_vf_conv |       1373 |       1373 |       0 |    0 |   524 |      0 |      1 |          0 |
+|     fetch                   |                 atg_vf_fetch |       1886 |       1886 |       0 |    0 |  3103 |      0 |      0 |          2 |
+|     index                   |                 atg_vf_index |        983 |        983 |       0 |    0 |  1480 |      0 |      0 |          0 |
+|   mc                        |                       atg_mc |       4596 |       4572 |      24 |    0 | 12856 |      0 |      0 |          0 |
+|     (mc)                    |                       atg_mc |         41 |         41 |       0 |    0 |   685 |      0 |      0 |          0 |
+|     axi                     |                am_axi_master |        372 |        348 |      24 |    0 |  1180 |      0 |      0 |          0 |
+|       (axi)                 |                am_axi_master |        328 |        328 |       0 |    0 |  1168 |      0 |      0 |          0 |
+|     tree                    |                  atg_mc_tree |       4156 |       4156 |       0 |    0 | 10991 |      0 |      0 |          0 |
+|       g_rt[9].rt            |    atg_rt__parameterized2__2 |        269 |        269 |       0 |    0 |  1036 |      0 |      0 |          0 |
+|       g_leaf[0].g_used.leaf |                 am_amb_to_rt |         82 |         82 |       0 |    0 |     1 |      0 |      0 |          0 |
+|       g_leaf[1].g_used.leaf | am_amb_to_rt__parameterized0 |        260 |        260 |       0 |    0 |     1 |      0 |      0 |          0 |
+|       g_leaf[2].g_used.leaf | am_amb_to_rt__parameterized1 |        259 |        259 |       0 |    0 |     1 |      0 |      0 |          0 |
+|       g_leaf[5].g_used.leaf | am_amb_to_rt__parameterized4 |        259 |        259 |       0 |    0 |     1 |      0 |      0 |          0 |
+|       g_leaf[6].g_used.leaf | am_amb_to_rt__parameterized5 |         68 |         68 |       0 |    0 |     1 |      0 |      0 |          0 |
+|       g_leaf[7].g_used.leaf | am_amb_to_rt__parameterized6 |        261 |        261 |       0 |    0 |     2 |      0 |      0 |          0 |
+|       g_root.leaf           | am_amb_to_rt__parameterized8 |        261 |        261 |       0 |    0 |     2 |      0 |      0 |          0 |
+|       g_root.rt             |       atg_rt__parameterized3 |        268 |        268 |       0 |    0 |  1045 |      0 |      0 |          0 |
+|       g_rt[10].rt           |    atg_rt__parameterized2__3 |        269 |        269 |       0 |    0 |  1033 |      0 |      0 |          0 |
+|       g_rt[11].rt           |    atg_rt__parameterized2__4 |        525 |        525 |       0 |    0 |  1033 |      0 |      0 |          0 |
+|       g_rt[12].rt           |    atg_rt__parameterized2__5 |          6 |          6 |       0 |    0 |   546 |      0 |      0 |          0 |
+|       g_rt[1].rt            |                       atg_rt |        267 |        267 |       0 |    0 |  1040 |      0 |      0 |          0 |
+|       g_rt[2].rt            |    atg_rt__parameterized0__1 |        268 |        268 |       0 |    0 |  1039 |      0 |      0 |          0 |
+|       g_rt[3].rt            |       atg_rt__parameterized0 |          7 |          7 |       0 |    0 |   548 |      0 |      0 |          0 |
+|       g_rt[4].rt            |    atg_rt__parameterized1__1 |        268 |        268 |       0 |    0 |  1038 |      0 |      0 |          0 |
+|       g_rt[5].rt            |    atg_rt__parameterized1__2 |        268 |        268 |       0 |    0 |  1035 |      0 |      0 |          0 |
+|       g_rt[6].rt            |    atg_rt__parameterized1__3 |          7 |          7 |       0 |    0 |   547 |      0 |      0 |          0 |
+|       g_rt[8].rt            |    atg_rt__parameterized2__1 |        269 |        269 |       0 |    0 |  1037 |      0 |      0 |          0 |
+|   regs                      |                  am_axi_regs |         43 |         43 |       0 |    0 |    91 |      0 |      0 |          0 |
++-----------------------------+------------------------------+------------+------------+---------+------+-------+--------+--------+------------+
+
+
