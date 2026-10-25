@@ -51,8 +51,14 @@ ghci_memory_init(
 	uint64_t window_end;
 	int error;
 
-	/* The aperture is aligned to the memory line; its limit register cannot say 2^32. */
+	/*
+	 * The aperture is aligned to the memory line (to the 4 KiB granule of
+	 * session protection when the GPU has it: the table's granules are the
+	 * pages); its limit register cannot say 2^32.
+	 */
 	line_mask = (uint64_t)device->line_bytes - 1U;
+	if (device->protection && line_mask < GHCI_PAGE_BYTES - 1U)
+		line_mask = GHCI_PAGE_BYTES - 1U;
 	local_end = (uint64_t)device->local_base + device->local_size;
 	usable_end = local_end;
 	if (usable_end > ADDRESS_SPACE_END - device->line_bytes)
@@ -68,8 +74,8 @@ ghci_memory_init(
 		device->aperture_base = (uint32_t)(device->local_base & ~line_mask);
 		device->aperture_limit = (uint32_t)(usable_end & ~line_mask);
 	} else {
-		device->aperture_base = device->line_bytes;
-		device->aperture_limit = (uint32_t)(ADDRESS_SPACE_END - device->line_bytes);
+		device->aperture_base = (uint32_t)(line_mask + 1U);
+		device->aperture_limit = (uint32_t)(ADDRESS_SPACE_END - (line_mask + 1U));
 	}
 
 	/* The part of local memory the window shows. */

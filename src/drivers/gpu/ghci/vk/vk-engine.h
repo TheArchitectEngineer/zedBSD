@@ -28,6 +28,14 @@
 int ghci_vk_engine_control(struct ghci_device *device, struct ghci_session *owner, uint32_t opcode, const uint32_t *arguments, uint32_t count, int32_t *status);
 
 /*
+ * Sends one GHCI gpu-op as a class 2 packet of a session (NULL: the
+ * driver's own) without a result, and does not wait: the work after it
+ * in the ring is ordered after it.  Returns 0, or why it is not in the
+ * ring.
+ */
+int ghci_vk_engine_post(struct ghci_device *device, struct ghci_session *owner, uint32_t opcode, const uint32_t *arguments, uint32_t count);
+
+/*
  * Takes bytes of the staging ring for a frame.  Returns 0 with the
  * offset of the run and the bytes it uses up (the run and the end of the
  * ring it skipped), EAGAIN while frames in flight hold the room, or E2BIG

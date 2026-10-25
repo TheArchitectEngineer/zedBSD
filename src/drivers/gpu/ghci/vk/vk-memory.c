@@ -332,6 +332,10 @@ allocate_memory(
 	if (reader->error != 0)
 		return EINVAL;
 
+	/* The identities of session protection's records are the driver's. */
+	if ((memory & GHCI_VK_PROT_IDENTITY) != 0U)
+		return EINVAL;
+
 	/* An import names a blob of the session; an export the handle types it is shared by. */
 	if (chained != 0U && extension == GPU_OP_RECORD_IMPORT_RESOURCE) {
 		error = import_memory(build, flags, value, size, type, memory);
@@ -514,9 +518,11 @@ free_memory(
 	size_t start;
 	int error;
 
-	/* The destroy form, relayed. */
+	/* The destroy form, relayed; not of an identity of session protection's records (the driver's). */
 	start = reader->offset;
 	memory = ghci_vk_destroy_form(reader);
+	if ((memory & GHCI_VK_PROT_IDENTITY) != 0U)
+		return EINVAL;
 	error = ghci_vk_relay(build, GPU_OP_FREE_MEMORY, flags, reader, start, &index);
 	if (error != 0)
 		return error;

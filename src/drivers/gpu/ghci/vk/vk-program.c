@@ -913,6 +913,14 @@ place_program(
 	/* The binary. */
 	kern_memcpy(stage->memory->view, stage->program->words, (size_t)bytes);
 
+	/* A protected session's program: its own memory to the firmware, read-only (I$ and PROGRAM read it). */
+	error = ghci_vk_prot_own(build->session->device, build->session->owner, stage->memory, 1);
+	if (error != 0) {
+		ghci_allocation_drop(build->session->device, build->session->owner, stage->memory);
+		stage->memory = NULL;
+		return (uint32_t)VK_ERROR_OUT_OF_DEVICE_MEMORY;
+	}
+
 	/* Succeeded: the program is in GPU memory. */
 	return (uint32_t)VK_SUCCESS;
 }

@@ -17,7 +17,8 @@
  * trailer, the trailer), submits it through the node's operations, and
  * compares what the driver staged for the firmware (the records after a
  * frame's result page) and what it wrote into the reply blob with what
- * libvulkan reads.
+ * libvulkan reads.  A case on a model with the PROT capability checks
+ * session protection's side in the driver (docs/ghci.md section 11.6).
  */
 
 #define GHCI_MODEL_ONLY 1
@@ -80,6 +81,8 @@ static const uint32_t *staged(uint32_t *records);
 static int fake_compile(const uint32_t *words, size_t word_count, enum drv_gpu_shader_stage stage, const struct ghci_gsi1_options *options, struct ghci_gsi1_program **program, struct ghci_gsi1_diagnostic *diagnostic);
 static void fake_release(struct ghci_gsi1_program *program);
 static void test_executor(void);
+static void test_protection(void);
+static const struct model_control *control_find(uint32_t opcode, unsigned from, unsigned *at);
 
 /* The stand-in compiler: every module compiles to the same small program. */
 static const struct ghci_isa_backend fake_isa = {
@@ -101,6 +104,7 @@ main(void)
 {
 	/* The cases. */
 	test_executor();
+	test_protection();
 
 	/* Reports the counts of the checks. */
 	printf("ghci-vk-host-test: %u passed, %u failed\n", checks_passed, checks_failed);
@@ -1164,5 +1168,170 @@ test_executor(void)
 	expect(model_last_control == GPU_OP_GHCI_SESSION_CLOSE, "vk SESSION_CLOSE sent at the close");
 	error = ghci_device_stop(&device);
 	expect(error == 0, "vk second stop");
+	model_device = NULL;
+}
+
+/* Finds the first control packet of a gpu-op in the model's log from an index (NULL: none). */
+static const struct model_control *
+control_find(
+	uint32_t opcode,
+	unsigned from,
+	unsigned *at)
+{
+	unsigned index;
+
+	/* The log in the model's order. */
+	for (index = from; index < model_control_count; index++) {
+		if (model_controls[index].opcode == opcode) {
+			if (at != NULL)
+				*at = index;
+			return &model_controls[index];
+		}
+	}
+
+	/* No such packet. */
+	return NULL;
+}
+
+/*
+ * Session protection on a model GPU with the PROT capability: the table
+ * lent in the driver's order (zeroed, PROT_TABLE, then GHCI_HEAP), a
+ * session of a user who is not root opened PROTECTED and its resources
+ * given to the firmware as its own (a GHCI_MEMORY of a synthetic identity,
+ * FREE_MEMORY when they go), root's session unprotected, an import of
+ * root's memory into the protected session granted and revoked, and a
+ * client's memory identity of the synthetic kind refused.
+ */
+static void
+test_protection(void)
+{
+	static struct ghci_device device;
+	struct gpu_blob_create blob_request;
+	const struct model_control *control;
+	struct ghci_allocation *blob;
+	struct ghci_allocation *root_blob;
+	struct ghci_allocation *imported;
+	struct ghci_session *session;
+	uint32_t table_bytes;
+	uint32_t blob_id;
+	uint32_t root_id;
+	uint32_t import_id;
+	unsigned at;
+	unsigned index;
+	void *object_pointer;
+	void *opaque;
+	void *root;
+	void *shared;
+	int zero;
+	int error;
+
+	/* The model with firmware and a shader unit, and PROT after MEM: 31 sessions, 4 KiB, 64 grants. */
+	model_setup_window(1);
+	model_registers[GHCI_CAPS / 4U] |= GHCI_CAPS_FIRMWARE | GHCI_CAPS_SHADER | (5U << 4);
+	model_registers[GHCI_CAPS2 / 4U] = 1U | (16U << 8) | (16U << 16) | (4U << 24) | (4U << 28);
+	model_registers[GHCI_ISA_ID / 4U] = GHCI_FOURCC('G', 'S', 'I', '1');
+	model_registers[GHCI_RESIDENT_WARPS / 4U] = (64U << 16) | 16U;
+	model_registers[MODEL_EXTCAP / 4U] = GHCI_XCAP_MEM | (1U << 8) | (2U << 16);
+	model_registers[MODEL_EXTCAP / 4U + 2U] = GHCI_XCAP_PROT | (1U << 8);
+	model_registers[MODEL_EXTCAP / 4U + 3U] = MODEL_PROT_REGISTERS;
+	model_registers[(MODEL_PROT_REGISTERS + GHCI_PROT_CAPS) / 4U] = 31U | (12U << 8) | (64U << 16);
+	table_bytes = ((MODEL_LOCAL_BYTES >> 12) + 4095U) & ~4095U;
+	model_registers[(MODEL_PROT_REGISTERS + GHCI_PROT_TABLE_BYTES) / 4U] = table_bytes;
+	model_registers[(MODEL_PROT_REGISTERS + GHCI_PROT_TABLE) / 4U] = 0U;
+	model_isa = &fake_isa;
+	memset(model_local, 0xA5, sizeof(model_local));
+	memset(&device, 0, sizeof(device));
+	device.registers = (volatile uint8_t *)model_registers;
+	device.register_bytes = sizeof(model_registers);
+	device.window = model_local;
+	device.window_physical = MODEL_WINDOW_PHYSICAL;
+	device.window_bytes = MODEL_WINDOW_BYTES;
+	model_device = &device;
+	model_control_count = 0U;
+	core_superuser = 0;
+
+	/* The start: the table zeroed and named before the heap is lent. */
+	error = ghci_device_start(&device);
+	expect(error == 0 && device.vk != NULL, "prot start");
+	expect(device.protection && device.prot_table != NULL, "prot capability used");
+	expect(device.prot_table != NULL && device.prot_table->bytes >= table_bytes, "prot table of PROT_TABLE_BYTES");
+	expect(device.prot_table != NULL &&
+	    model_registers[(MODEL_PROT_REGISTERS + GHCI_PROT_TABLE) / 4U] == device.prot_table->gpu_address, "prot PROT_TABLE written");
+	zero = device.prot_table != NULL;
+	for (index = 0U; zero && index < table_bytes; index++) {
+		if (device.prot_table->view[index] != 0U)
+			zero = 0;
+	}
+	expect(zero, "prot table zeroed");
+	control = control_find(GPU_OP_GHCI_HEAP, 0U, NULL);
+	expect(control != NULL && device.prot_table != NULL && control->table == device.prot_table->gpu_address,
+	    "prot GHCI_HEAP after PROT_TABLE");
+	expect((device.aperture_base & 4095U) == 0U, "prot aperture on a granule");
+
+	/* A user's session: PROTECTED. */
+	error = core_ops->open(core_private, &opaque);
+	session = opaque;
+	expect(error == 0 && session->protected, "prot user session protected");
+	control = control_find(GPU_OP_GHCI_SESSION_OPEN, 0U, &at);
+	expect(control != NULL && control->arguments[0] == session->tag && control->arguments[1] == GHCI_SESSION_PROTECTED,
+	    "prot SESSION_OPEN PROTECTED");
+
+	/* Its resource is its own memory to the firmware: GHCI_MEMORY of the synthetic identity. */
+	memset(&blob_request, 0, sizeof(blob_request));
+	blob_request.bytes = 8192U;
+	blob_request.flags = GPU_BLOB_MAPPABLE;
+	error = core_ops->blob_create(core_private, opaque, &blob_request, &object_pointer, &blob_id);
+	blob = object_pointer;
+	expect(error == 0 && blob->prot_owned, "prot resource owned");
+	control = control_find(GPU_OP_GHCI_MEMORY, at, &at);
+	expect(control != NULL && control->tag == session->tag && control->arguments[0] == blob->gpu_address &&
+	    control->arguments[1] == (uint32_t)(GHCI_VK_PROT_IDENTITY >> 32) && control->arguments[2] == blob->gpu_address &&
+	    control->arguments[4] == blob->bytes && control->arguments[6] == 0U, "prot GHCI_MEMORY of the resource");
+
+	/* Root's session is not protected, and its resource is not given. */
+	core_superuser = 1;
+	error = core_ops->open(core_private, &root);
+	core_superuser = 0;
+	expect(error == 0 && !((struct ghci_session *)root)->protected, "prot root session unprotected");
+	control = control_find(GPU_OP_GHCI_SESSION_OPEN, at + 1U, &at);
+	expect(control != NULL && control->arguments[1] == 0U, "prot root SESSION_OPEN not PROTECTED");
+	memset(&blob_request, 0, sizeof(blob_request));
+	blob_request.bytes = 4096U;
+	blob_request.flags = GPU_BLOB_MAPPABLE | GPU_BLOB_SHAREABLE;
+	error = core_ops->blob_create(core_private, root, &blob_request, &object_pointer, &root_id);
+	root_blob = object_pointer;
+	expect(error == 0 && !root_blob->prot_owned && control_find(GPU_OP_GHCI_MEMORY, at, NULL) == NULL,
+	    "prot root resource not given");
+
+	/* Root's export imported by the user: granted, read and write; its destroy revokes it. */
+	error = core_ops->share->export_resource(core_private, root, root_blob, NULL, &shared);
+	expect(error == 0, "prot root export");
+	error = core_ops->share->import_resource(core_private, opaque, shared, 0U, &object_pointer, &import_id);
+	imported = object_pointer;
+	expect(error == 0 && imported->prot_granted, "prot import granted");
+	control = control_find(GPU_OP_GHCI_BUFFER_GRANT, at, &at);
+	expect(control != NULL && control->tag == 0U && control->arguments[0] == session->tag && control->arguments[1] == 3U &&
+	    control->arguments[2] == root_blob->gpu_address && control->arguments[4] == root_blob->bytes, "prot BUFFER_GRANT");
+	core_ops->resource_destroy(core_private, opaque, imported);
+	control = control_find(GPU_OP_GHCI_BUFFER_REVOKE, at, &at);
+	expect(control != NULL && control->arguments[0] == session->tag && control->arguments[1] == root_blob->gpu_address &&
+	    control->arguments[3] == root_blob->bytes, "prot BUFFER_REVOKE at the import's destroy");
+
+	/* The resource's destroy frees the synthetic identity (no result asked). */
+	core_ops->resource_destroy(core_private, opaque, blob);
+	control = control_find(GPU_OP_FREE_MEMORY, at, &at);
+	expect(control != NULL && control->tag == session->tag && control->flags == 0U &&
+	    control->arguments[3] == (uint32_t)(GHCI_VK_PROT_IDENTITY >> 32), "prot FREE_MEMORY of the resource");
+
+	/* The close: SESSION_CLOSE, and nothing taken back after it (the firmware closed it all). */
+	core_ops->commands->drain(core_private, opaque);
+	core_ops->close(core_private, opaque);
+	expect(model_last_control == GPU_OP_GHCI_SESSION_CLOSE, "prot SESSION_CLOSE");
+	core_ops->share->release(core_private, shared);
+	core_ops->commands->drain(core_private, root);
+	core_ops->close(core_private, root);
+	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	error = ghci_device_stop(&device);
+	expect(error == 0 && device.prot_table == NULL, "prot stop gives the table back");
 	model_device = NULL;
 }

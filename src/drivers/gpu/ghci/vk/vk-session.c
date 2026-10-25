@@ -15,19 +15,36 @@
  * firmware's objects of the tag back.  The driver's records of the
  * session's objects go with the close; the GPU memory they name is on the
  * session's list of allocations and is given back by the device's close.
+ *
+ * Session protection (docs/ghci.md section 11.6): on a GPU with the PROT
+ * capability the sessions of other users than root are opened PROTECTED.
+ * Their memory that no vkAllocateMemory names (the resources the core
+ * makes, the programs' memory) is given to the firmware as the session's
+ * own with a GHCI_MEMORY of a synthetic identity (GHCI_VK_PROT_IDENTITY
+ * and the address), and an import of another session's memory is a
+ * BUFFER_GRANT, revoked when the import goes.
  */
 
 #include <stddef.h>
 #include <stdint.h>
 
+#include <kern/cred.h>
 #include <kern/kcrt.h>
 #include <kern/klog.h>
 #include <kern/kmem.h>
 #include <uapi/errno.h>
 
+#include "../frame.h"
 #include "vk.h"
 #include "vk-engine.h"
 
+/* The flags of GHCI_MEMORY the synthetic identities use: read-only (a program). */
+#define MEMORY_READ_ONLY		0x4U
+
+/* VK_ERROR_OUT_OF_DEVICE_MEMORY: the firmware has no protected slot left. */
+#define RESULT_OUT_OF_DEVICE_MEMORY	(-2)
+
+static int prot_alive(const struct ghci_session *owner);
 static uint32_t bucket_of(enum ghci_vk_kind kind, uint64_t identity);
 static void object_free(struct ghci_vk_session *session, struct ghci_vk_object *object);
 
@@ -40,9 +57,17 @@ ghci_vk_session_open(
 	struct ghci_session *owner)
 {
 	struct ghci_vk_session *session;
+	const struct ucred *credentials;
 	uint32_t arguments[4];
+	uint32_t flags;
 	int32_t status;
 	int error;
+
+	/* Other users than root are protected from each other where the GPU can (root is not: the tools). */
+	flags = 0U;
+	credentials = cred_current();
+	if (device->protection && !cred_is_superuser(credentials))
+		flags = GHCI_SESSION_PROTECTED;
 
 	/* The executor's record. */
 	session = kern_calloc(1U, sizeof(*session));
@@ -65,13 +90,17 @@ ghci_vk_session_open(
 
 	/* SESSION_OPEN [u32 tag][u32 flags][u64 heap limit]: the limit is the heap's whole size. */
 	arguments[0] = owner->tag;
-	arguments[1] = 0U;
+	arguments[1] = flags;
 	arguments[2] = GHCI_VK_HEAP_BYTES;
 	arguments[3] = 0U;
 	error = ghci_vk_engine_control(device, owner, GPU_OP_GHCI_SESSION_OPEN, arguments, 4U, &status);
 	if (error == 0 && status != 0) {
 		kern_logf("ghci: %s: the firmware refused session %u (%d)\n", device->name, (unsigned)owner->tag, (int)status);
 		error = EIO;
+
+		/* No protected slot left: the open is refused, never made unprotected. */
+		if (flags != 0U && status == RESULT_OUT_OF_DEVICE_MEMORY)
+			error = ENOSPC;
 	}
 
 	/* A session the firmware did not open leaves nothing behind. */
@@ -84,7 +113,152 @@ ghci_vk_session_open(
 	/* Succeeded: the open has its executor. */
 	session->opened = 1;
 	owner->vk = session;
+	owner->protected = flags != 0U;
 	return 0;
+}
+
+/*
+ * Gives a protected session's allocation to the firmware as the session's
+ * own memory (read-only for a program), so that its work reaches it.
+ * Returns 0 (also for a session that is not protected), or EIO when the
+ * firmware refused it.  The device's lock is held.
+ */
+int
+ghci_vk_prot_own(
+	struct ghci_device *device,
+	struct ghci_session *owner,
+	struct ghci_allocation *allocation,
+	int read_only)
+{
+	uint64_t identity;
+	uint32_t arguments[7];
+	int32_t status;
+	int error;
+
+	/* Only a protected session's work is checked. */
+	if (!owner->protected || !prot_alive(owner))
+		return 0;
+
+	/* GHCI_MEMORY [u64 memory][u64 address][u64 bytes][u32 flags] of the synthetic identity. */
+	identity = GHCI_VK_PROT_IDENTITY | allocation->gpu_address;
+	arguments[0] = (uint32_t)identity;
+	arguments[1] = (uint32_t)(identity >> 32);
+	arguments[2] = allocation->gpu_address;
+	arguments[3] = 0U;
+	arguments[4] = allocation->bytes;
+	arguments[5] = 0U;
+	arguments[6] = read_only ? MEMORY_READ_ONLY : 0U;
+	error = ghci_vk_engine_control(device, owner, GPU_OP_GHCI_MEMORY, arguments, 7U, &status);
+	if (error == 0 && status != 0) {
+		kern_logf("ghci: %s: session %u: memory at %08x not protected (%d)\n", device->name, (unsigned)owner->tag,
+		    (unsigned)allocation->gpu_address, (int)status);
+		error = EIO;
+	}
+	if (error != 0)
+		return error;
+
+	/* Succeeded: its release gives it back. */
+	allocation->prot_owned = 1;
+	return 0;
+}
+
+/*
+ * Grants a protected session an import of another session's memory
+ * (BUFFER_GRANT, read and write: an imported external memory is the
+ * importer's to use).  Returns 0 (also when no grant is needed), ENOSPC
+ * when the GPU has no grant entry left, or EIO.  The device's lock is held.
+ */
+int
+ghci_vk_prot_grant(
+	struct ghci_device *device,
+	struct ghci_session *owner,
+	struct ghci_allocation *alias)
+{
+	uint32_t arguments[6];
+	int32_t status;
+	int error;
+
+	/* Only a protected session needs a grant, and not for its own memory. */
+	if (!owner->protected || !prot_alive(owner))
+		return 0;
+	if (alias->backing != NULL && alias->backing->session == owner)
+		return 0;
+
+	/* BUFFER_GRANT [u32 session][u32 access][u64 address][u64 bytes], in the ring before the importer's frames. */
+	arguments[0] = owner->tag;
+	arguments[1] = GHCI_GRANT_READ | GHCI_GRANT_WRITE;
+	arguments[2] = alias->gpu_address;
+	arguments[3] = 0U;
+	arguments[4] = alias->bytes;
+	arguments[5] = 0U;
+	error = ghci_vk_engine_control(device, NULL, GPU_OP_GHCI_BUFFER_GRANT, arguments, 6U, &status);
+	if (error != 0)
+		return error;
+	if (status == RESULT_OUT_OF_DEVICE_MEMORY)
+		return ENOSPC;
+	if (status != 0)
+		return EIO;
+
+	/* Succeeded: the release revokes it. */
+	alias->prot_granted = 1;
+	return 0;
+}
+
+/*
+ * Takes back what session protection gave an allocation of a session
+ * that goes: its synthetic GHCI_MEMORY (FREE_MEMORY) or its grant
+ * (BUFFER_REVOKE), in the ring after the session's work that used it.  A
+ * session the firmware closed or lost has nothing left there.  The
+ * device's lock is held.
+ */
+void
+ghci_vk_prot_release(
+	struct ghci_device *device,
+	struct ghci_session *owner,
+	struct ghci_allocation *allocation)
+{
+	uint64_t identity;
+	uint32_t arguments[6];
+	int error;
+
+	/* Nothing given, or nothing left to take back. */
+	if (!allocation->prot_owned && !allocation->prot_granted)
+		return;
+	if (owner == NULL || !prot_alive(owner)) {
+		allocation->prot_owned = 0;
+		allocation->prot_granted = 0;
+		return;
+	}
+
+	/* FREE_MEMORY [u64 device][u64 memory][u64 0] of the synthetic identity (no drain: nothing uses it). */
+	error = 0;
+	if (allocation->prot_owned) {
+		identity = GHCI_VK_PROT_IDENTITY | allocation->gpu_address;
+		arguments[0] = 0U;
+		arguments[1] = 0U;
+		arguments[2] = (uint32_t)identity;
+		arguments[3] = (uint32_t)(identity >> 32);
+		arguments[4] = 0U;
+		arguments[5] = 0U;
+		error = ghci_vk_engine_post(device, owner, GPU_OP_FREE_MEMORY, arguments, 6U);
+		allocation->prot_owned = 0;
+	}
+
+	/* BUFFER_REVOKE [u32 session][u64 address][u64 bytes]: after the work before it. */
+	if (allocation->prot_granted) {
+		arguments[0] = owner->tag;
+		arguments[1] = allocation->gpu_address;
+		arguments[2] = 0U;
+		arguments[3] = allocation->bytes;
+		arguments[4] = 0U;
+		error = ghci_vk_engine_post(device, NULL, GPU_OP_GHCI_BUFFER_REVOKE, arguments, 5U);
+		allocation->prot_granted = 0;
+	}
+
+	/* A packet that did not reach the ring leaves the session's close to take it back. */
+	if (error != 0)
+		kern_logf("ghci: %s: session %u: protection of %08x not taken back (%d)\n", device->name,
+		    (unsigned)owner->tag, (unsigned)allocation->gpu_address, error);
 }
 
 /*
@@ -297,4 +471,17 @@ object_free(
 
 	/* The record. */
 	kern_free(object);
+}
+
+/* Reports whether the firmware still has a session's objects (opened, not closed or lost). */
+static int
+prot_alive(
+	const struct ghci_session *owner)
+{
+	/* The executor's record says it. */
+	if (owner->vk == NULL || !owner->vk->opened || owner->vk->lost)
+		return 0;
+
+	/* Succeeded: the firmware has the session. */
+	return 1;
 }

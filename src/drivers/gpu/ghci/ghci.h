@@ -167,6 +167,12 @@ struct ghci_session;
  * fence when its last user lets it go.  A
  * blob of a Vulkan memory object has no memory of its own: backing is the
  * allocation it shows, which it holds.
+ *
+ * Session protection (docs/ghci.md section 11.6): prot_owned says the
+ * firmware was given the allocation as the protected session's own memory
+ * (a synthetic GHCI_MEMORY, see ghci_vk_prot_own), prot_granted that an
+ * import was granted to its protected session (BUFFER_GRANT), so that the
+ * release takes it back.
  */
 struct ghci_allocation {
 	struct ghci_allocation *next;
@@ -184,6 +190,8 @@ struct ghci_allocation {
 	unsigned holds;
 	int released;
 	struct ghci_allocation *backing;
+	int prot_owned;
+	int prot_granted;
 };
 
 /*
@@ -193,8 +201,10 @@ struct ghci_allocation {
  * says that last_fence (the fence after the session's newest submission)
  * may not have passed yet; it is cleared once seen passed, so an old value
  * is never compared after the 32-bit circle has turned.  vk is the
- * session's Vulkan executor (NULL on a device without one).  The device's
- * lock protects every field.
+ * session's Vulkan executor (NULL on a device without one).  protected
+ * says the firmware's session was opened PROTECTED (a GPU with the PROT
+ * capability, an opener that is not root).  The device's lock protects
+ * every field.
  */
 struct ghci_vk_session;
 struct ghci_vk_engine;
@@ -209,6 +219,7 @@ struct ghci_session {
 	uint32_t last_fence;
 	uint64_t last_generation;
 	int outstanding;
+	int protected;
 };
 
 /*
@@ -433,6 +444,8 @@ struct ghci_device {
 	uint64_t local_size;
 	uint64_t local_window;
 	int protection;
+	uint32_t prot_registers;
+	struct ghci_allocation *prot_table;
 	const struct ghci_isa_backend *isa;
 	char name[32];
 
