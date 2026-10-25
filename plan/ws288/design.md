@@ -983,7 +983,7 @@ QEMU と実機の証拠は分けて書く。やっていない確認は「未実
 | R23 | （版 3）image の layout の式が driver（memory requirements の返事）と firmware（bind・draw）で食い違う | 式は `ghci_layout.h` の 1 つの C の関数（amaterrace-gpu が正本、zedBSD は写し、§7.2）。host の試験で両方の写しを同じ入力で比べる（p019） |
 | R24 | （版 3）`LOAD_CONST` が暗黙の `WAIT_IDLE(SU)` を挟むので push constant が変わる draw のたびに pipeline が空く | v1 は受ける（vkdemo・compositor の draw 数では ≤ 1 ms/frame の見込み）。p015 で constant の領域を warp ごとの base（STATE の word を SU が warp の開始で読む）に変える案を実測で決める |
 | R25 | （版 3）`atg_cpu` が 325T -2 で 200 MHz に閉じない | 3 段の短い pipeline、BRAM の IMEM/DMEM を register で挟む。閉じなければ CPU だけ `gclk/2` の領域（`am_afifo` で µop を渡す） |
-| R26 | （版 3）firmware が IMEM 32 KiB に入らない | 目標 64 KiB 以内で設計し、IMEM を 64 KiB（BRAM36 16）に出来る parameter にする。7010 の bitstream 1' でも BRAM は 60 の内 25 |
+| R26 | （版 3）firmware が IMEM 32 KiB に入らない | 目標 64 KiB 以内で設計し、IMEM を 64 KiB（BRAM36 16）に出来る parameter にする。7010 の bitstream 1' でも BRAM は 60 の内 25 | **（2026-10-25 ユーザー「IMEM を 128 KiB」: KC705 は IMEM 128 KiB（BRAM36 32）、DMEM は 0x0002_0000 から。firmware が 64 KiB を使い切ったため。p034 の R6、amaterrace p1-p034 34cb3ae）**
 | R27 | （版 3）REPLY を求める frame ごとに firmware の往復（`QUEUE_SUBMIT`・create は毎回）で latency が積む | result は firmware が解いた時点で書き、GPU の完了は待たない（H1）。1 往復 = firmware が frame を解く時間（µs〜十数 µs）+ IRQ + reply thread。p011 で計測。libvulkan の transport の timeout は 10 s（`context.c`） |
 | R28 | （版 3）firmware の Vulkan の部分集合が compositor の要る物に足りない（p018 の規模 ±50%） | U8 の順（vkdemo → compositor の最小 → mview）で部分集合を固定。足りない物は result の `VK_ERROR_FEATURE_NOT_PRESENT` で見える |
 | R29 | （版 3 → 版 4、延期）SA の DSP が 325T に入らない | SA は延期で KC705 に入らなくてよい（§3.9）。Appendix A の sketch |
