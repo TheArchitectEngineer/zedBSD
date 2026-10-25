@@ -3,7 +3,7 @@
 # ws288-p025 timing の調整 1 段目（target の Fmax と clock の領域の検討、KC705 での調整）
 
 - 親: [WS288](../ws.md)。設計: [design.md](../design.md) §8 の p025 の行、R3。
-- 状態: in-progress（2026-10-26 Q1: T0 済み（q1585）、U106 の判断待ち。2026-10-24 新設: ユーザー「タイミングの調整と KC705 での確認は別なフェーズに分けた方がいいと思います。」）
+- 状態: in-progress（2026-10-26 Q1: T0 済み（q1585）。U106 は NPHYS 4 だけ、T2 以降は実機の検証（p024・p013・p028）の後（2026-10-26 04:29 ユーザー）。2026-10-24 新設: ユーザー「タイミングの調整と KC705 での確認は別なフェーズに分けた方がいいと思います。」）
 - 依存（2026-10-25 01:08 ユーザー「タイミング調整とパイプライン化は、zedBSD用のGHCIドライバを書いてから、最後に取り組みます。そうすることで、タイミング調整に使える作業時間をコントロールしたいです。」）: zedBSD の GHCI の driver（p006）の後、最後。以前の依存: RTL が一通り揃った後（p009 以降。ユーザー「全体のRTLをまずは一通り揃えることを優先したいです。」）。
 
 ## 範囲
@@ -132,3 +132,4 @@
 #### 再開点
 
 - T0 は済み（表と report が evidence/ に）。次は **U106 の判断**（上の推し）。その後 T2（SU の pipeline）・T3（gclk の block）。T2 の最初の対象: FPU の operand の register（opd の段 B）と FRACT の直列、短い結果の valid の fanout（`sv` 542）。T3 の最初: MC の grant・PLB の応答の register（1 つで CP・CPU・VF・DC・cache が直る見込み）、TU の addr の foot・tcrd、RX の edge。
+- 2026-10-26 04:29 ユーザー「うーん、3だけ入れて、PCIeで実機検証します。そのあとで最適化しましょう。」（Q1 の U106 の推し 1〜4: 1 MS4=1、2 PACKED 0・SUBGROUP 0、3 SU_NPHYS 8 → 4、4 BLT の RESOLVE を shader に）→ U106: KC705 の板は **3 の SU_NPHYS 4 だけ**（MS4・PACKED・SUBGROUP は今の板の top のまま、RESOLVE は変えない）。順を変える: NPHYS 4 の対応の確認と板の top → KC705 の board の P&R・bitstream → p024（板）・p013（PCIe）→ p028（VFIO の guest の Vulkan）の実機の検証 → その後に最適化（p025 の T2・T3、p041 の CDC、p032、p033）。2026-10-25 20:36 の順（p037 → p025 → p032 → p033 → board）のうち、p025 以降の最適化を実機の検証の後に回す。板の clock は配線の結果の Fmax に合わせる（p025 の前なので低い）。

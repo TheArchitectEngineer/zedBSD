@@ -42,3 +42,4 @@
   - ユーザーの判断（Q1 経由、2026-10-25）:「全部置き換えてからでいいと思います」（板の合成は p037 の算術の置き換えの後）、「20MHzも低すぎます。その段階でP&Rをやっても、あとでひっくり返るので、無駄になりそうです」→ 板の P&R はもう流さない。MIG・ip.tcl・XDC は commit 済み、gclk は parameter のまま。
   - 申し送り: 1 SU の KC705 の形で LUT が 105 %（combined）: 面積の削減（p036・p037 の続き、SU・TU の規模）か NSU・機能の選択が要る。生成物は amaterrace の worktree p2-p024 の build/vivado/（ip-all/ip が core、atg_kc705_raster/vivado.log）。
 
+- 2026-10-26 04:29 ユーザー「うーん、3だけ入れて、PCIeで実機検証します。そのあとで最適化しましょう。」（Q1 の U106 の推し 1〜4: 1 MS4=1、2 PACKED 0・SUBGROUP 0、3 SU_NPHYS 8 → 4、4 BLT の RESOLVE を shader に）→ U106: KC705 の板は **3 の SU_NPHYS 4 だけ**（MS4・PACKED・SUBGROUP は今の板の top のまま、RESOLVE は変えない）。順を変える: NPHYS 4 の対応の確認と板の top → KC705 の board の P&R・bitstream → p024（板）・p013（PCIe）→ p028（VFIO の guest の Vulkan）の実機の検証 → その後に最適化（p025 の T2・T3、p041 の CDC、p032、p033）。2026-10-25 20:36 の順（p037 → p025 → p032 → p033 → board）のうち、p025 以降の最適化を実機の検証の後に回す。板の clock は配線の結果の Fmax に合わせる（p025 の前なので低い）。
