@@ -45,6 +45,9 @@
 /* The smallest memory line the driver aligns to (2^5 bytes, the smallest GHCI defines). */
 #define LINE_LOG2_MIN			5U
 
+/* CPFW_STATUS from the CPFW capability's registers, whose first is CPFW_CTRL. */
+#define CPFW_STATUS_OFFSET		(GHCI_CPFW_STATUS - GHCI_CPFW_CTRL)
+
 /*
  * The capabilities of every device: storage, blobs, transfers, processor
  * mappings, and the sharing of memory between its sessions.
@@ -309,6 +312,52 @@ ghci_poll(
 	return ETIMEDOUT;
 }
 
+/*
+ * Starts the command processor's firmware after a reset.
+ *
+ * CTRL.RESET stops the firmware's processor (CPFW_CTRL.RUN reads 0
+ * after it), so the driver sets RUN after every reset and waits until
+ * the image is ready and the processor runs.  A GPU with firmware but no
+ * CPFW capability starts its firmware itself.
+ */
+int
+ghci_firmware_start(
+	struct ghci_device *device)
+{
+	uint32_t registers;
+	uint32_t version;
+	uint32_t status;
+	int error;
+
+	/* A command processor without firmware has nothing to start. */
+	if ((device->caps & GHCI_CAPS_FIRMWARE) == 0U)
+		return 0;
+
+	/* Finds the CPFW capability; without one, the firmware runs on its own. */
+	error = ghci_extcap_find(ghci_read_context, device, device->extcap, device->register_bytes, GHCI_XCAP_CPFW, &registers, &version);
+	if (error != 0)
+		return 0;
+
+	/* RUN (CPFW_CTRL, the capability's first register) lets the processor out of its stop; the image stays as the reset left it. */
+	ghci_write(device, registers, GHCI_CPFW_CTRL_RUN);
+
+	/* The firmware runs once its image is ready, with no fault, and the processor is not held. */
+	error = ghci_poll(
+		device,
+		registers + CPFW_STATUS_OFFSET,
+		GHCI_CPFW_STATUS_READY | GHCI_CPFW_STATUS_FAULT | GHCI_CPFW_STATUS_STOPPED,
+		GHCI_CPFW_STATUS_READY,
+		GHCI_FIRMWARE_WAIT_MS);
+	if (error != 0) {
+		status = ghci_read(device, registers + CPFW_STATUS_OFFSET);
+		kern_logf("ghci: %s: firmware did not start (CPFW_STATUS %08x)\n", device->name, (unsigned)status);
+		return EIO;
+	}
+
+	/* Succeeded: the firmware runs. */
+	return 0;
+}
+
 /* Reads the identification and capabilities, and refuses a window that is not GHCI 1 with a ring. */
 static int
 identify(
@@ -470,7 +519,12 @@ reset_hardware(
 		return EIO;
 	}
 
-	/* Succeeded: the GPU is idle with its memory ready. */
+	/* The firmware of the command processor, which the reset stopped. */
+	error = ghci_firmware_start(device);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the GPU is idle with its memory ready and its firmware running. */
 	return 0;
 }
 

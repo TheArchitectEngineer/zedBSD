@@ -849,6 +849,10 @@ recover(
 	ghci_write(device, GHCI_CTRL, GHCI_CTRL_RESET);
 	error = ghci_poll(device, GHCI_CTRL, GHCI_CTRL_RESET, 0U, GHCI_RESET_WAIT_MS);
 
+	/* The reset stopped the firmware too; it runs again before the ring does. */
+	if (error == 0)
+		error = ghci_firmware_start(device);
+
 	/* Every fence issued so far is done: with an error, for the generation that ends here. */
 	irq = spin_lock_irqsave(&device->irq_lock);
 

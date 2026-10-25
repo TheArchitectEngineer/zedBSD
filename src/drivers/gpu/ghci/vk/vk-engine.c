@@ -53,6 +53,9 @@
 static int engine_heap(struct ghci_device *device);
 static int frame_ready(struct ghci_device *device, struct ghci_vk_frame *frame);
 static void frame_finish(struct ghci_device *device, struct ghci_vk_frame *frame, int error);
+#ifdef GHCI_VK_TRACE
+static void frame_trace(const struct ghci_vk_frame *frame, int32_t frame_status);
+#endif
 static void frame_patch(struct ghci_device *device, struct ghci_vk_frame *frame, int32_t frame_status);
 static void frame_trailer(struct ghci_vk_frame *frame);
 static unsigned retire_jobs(struct ghci_device *device, struct drv_gpu_completion **done, int *errors, unsigned capacity);
@@ -518,6 +521,11 @@ frame_finish(
 			frame_status = (int32_t)frame->page[RESULT_WORDS * frame->records];
 		}
 
+#ifdef GHCI_VK_TRACE
+		/* The diagnostic trace of a build that asks for it: the frame's results that are not success. */
+		frame_trace(frame, frame_status);
+#endif
+
 		/* The replies' words, then the trailer. */
 		frame_patch(device, frame, frame_status);
 		frame_trailer(frame);
@@ -685,3 +693,25 @@ store32(
 	bytes[offset + 2U] = (uint8_t)(value >> 16);
 	bytes[offset + 3U] = (uint8_t)(value >> 24);
 }
+
+#ifdef GHCI_VK_TRACE
+/* Logs a frame's own result and every record's result that is not VK_SUCCESS (a diagnostic build's). */
+static void
+frame_trace(
+	const struct ghci_vk_frame *frame,
+	int32_t frame_status)
+{
+	unsigned index;
+	int32_t status;
+
+	/* The frame. */
+	kern_logf("ghci: vk: frame of %u records: %d\n", (unsigned)frame->records, (int)frame_status);
+
+	/* Its records' failures. */
+	for (index = 0U; index < frame->records; index++) {
+		status = (int32_t)frame->page[RESULT_WORDS * index];
+		if (status != 0)
+			kern_logf("ghci: vk: record %u: %d (aux %08x)\n", index, (int)status, (unsigned)frame->page[RESULT_WORDS * index + 1U]);
+	}
+}
+#endif
