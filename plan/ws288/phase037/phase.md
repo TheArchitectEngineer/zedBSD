@@ -26,3 +26,6 @@
 ## 記録
 
 - 2026-10-25 12:58 Q1: 新設、P1 に（p034 の R6 が P3 の 398a738 の merge 待ちの間）。
+- 2026-10-25 13:10 ユーザーの回答（Q1 の問い「小さな counter や pointer の +1、比較（< や ==）も共通の module にしますか？」）: 「counter も含める」（選択肢の説明: 信号の + - は counter の +1 も全部、共通の module を instance にする。比較・parameter の式・定数の shift だけ対象外）。→ 範囲の 1 の「対象の外」は、parameter・localparam の式、定数の量の shift、比較（< > == など）、TB と sim/ に確定。
+- 2026-10-25 13:10 P1 → Q1: 95b6481（p1-p037、基点 481030c）: docs/style.md の Arithmetic 節、am_add・am_sub・am_addsub・am_div（1 bit/cycle）・am_shift、am_mul は P2 の 40e8377 の file を同じ内容で、sim/tb/am_arith_tb.v PASS、spec/common の 5 本（cell は期待値、OOC 未実施）、tools/arith-lint.py（Verilator の XML で数える、今 1203、うち include/ の function 157）。
+- 2026-10-25 13:10 Q1 の判断（P1 の問い）: (a) include/*.vh の function の算術も規則の対象（ユーザー「すべてのモジュールにおいて」）。lint は include/ も数える。function は module に作り直す。FP・format・TU の function（atg_su_fp・fp16・tu_fn・fmt_pack・fmt_unpack・tu_fmt）は P2、depth などその他は P1。(b) CP・MC・SU の書き換えは p034 が main に入ってから。先に VF・BLT（avg/favg は P2）。
