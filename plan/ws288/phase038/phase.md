@@ -25,3 +25,4 @@ Q1 の説明（ffilt は 1 cycle に選択・ETC の展開・unpack・重み・F
 ## 記録
 
 - 2026-10-25 14:05 Q1: 新設、P2 に（新しい起動、p2-p036 の d94076c から branch p2-p038）。
+- 2026-10-25 15:17 P2 → Q1（申告、途中）: cda8e8c（p2-p038、親 a1fe096 = d94076c に main 73d8dc2 を merge）。新しい atg_tu_fma（fp32 の FMA の pipeline 10 段、atg_su_ffma と bit 一致、TB 175k PASS）、atg_fmt_cvt（atg_fmt_comp の pipeline 5 段）。atg_tu_ffilt: 順番 texel → lane → 成分、前半 8 段、同じ累算器の 6 cycle 以内だけ待つ（5 では FAIL、6 で正確）。1 quad の cycle: nearest 14.6 → 23.6、bilinear 32.2 → 43.1、多 pass 80.3 → 74.3、gather 24.0 → 29.1。atg_tu_filter: 18 段で止まらず quad を重ねる（出力の FIFO 4 と credit）、3420 quad で 39,436 → 33,306 cycle。atg_tu: もう片方の経路が idle の時に pass を渡す。TB atg_tu_filter・ffilt・tu・tu_fma・fmt_cvt・atg_top_tex PASS、lint clean、arith-lint ffilt 105 → 26（atg_tu_etc に残る）・filter 55 → 0。基準の TU の OOC（d94076c、配線後）: WNS −35.142 ns・117 段・LUT 28,796・FF 8,310・BRAM 7.5・DSP 45。cda8e8c の OOC を実行中。
