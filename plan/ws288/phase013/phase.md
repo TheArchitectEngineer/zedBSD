@@ -42,3 +42,4 @@ host の Linux で KC705 が PCIe の device として見え、BAR0 の GHCI の
 
 - 2026-10-25 01:08 Q1: Future Work fw-kc705-pcie から戻して計画（ユーザーの最初のゴール）。
 - 2026-10-25 15:49 Q1: ユーザー「PCIeブリッジを今から作ってください。」→ 板の要らない部分（上の 1〜4）を P2 に（q1579、p038 の今の OOC の記録の後）。
+- 2026-10-25 16:30 ユーザー「AXI の bridge」（判断 P1、原文は Master の decisions-log）。BAR2 を MC を通さず interconnect で DDR3 へ、の P2 の案も Q1 が採用。
