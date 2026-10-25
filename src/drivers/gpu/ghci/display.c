@@ -6,21 +6,30 @@
  */
 
 /*
- * The display of a GHCI device: the display controller of the DISP2
- * capability, a unit of the GPU, as one output with one plane.  The
- * controller's mode table names the modes.
+ * The display operations of a GHCI device: one output, the display
+ * controller of the DISP2 capability, with its primary plane and, when
+ * the controller has one, a cursor plane (display-scan.c drives the
+ * controller through the ring).
  *
- * The controller is not lit at the start: it starts scanning only when
- * the holder of the display's lease presents its first frame.  A
- * presentation copies the session's storage, by the blitter, into the
- * one of the driver's two frames that is not on the screen, flips to it
- * at the next vertical sync and returns once the flip was taken, so the
- * storage is never borrowed past the call and a wait answers at once.
- * The frame's size picks the mode among the controller's modes.  The end
- * of the lease turns the controller off and gives the frames back.
+ * A present records a frame and returns; the core then waits for its
+ * adoption (DRV_GPU_DISPLAY_UNGATED), so presents, waits and the cursor
+ * do not queue behind each other on an open.  A frame is shown one of two
+ * ways, chosen once for a swapchain by libvulkan from the constraints:
  *
- * The display's events are its topology sequence, which stays at one:
- * the controller reports no hot plug.
+ *  - shared (a blob the session presents): the controller scans the
+ *    session's memory where it is, which the display holds until the
+ *    controller no longer scans it;
+ *  - copied (ordinary storage): the blitter copies the storage into the
+ *    one of the driver's two frames that is not on the screen, and the
+ *    storage is not borrowed past the call.
+ *
+ * The frame's size picks the mode among the controller's modes; a frame
+ * of another mode, format or stride than the one lit lights the
+ * controller again.  The end of the lease turns the controller dark and
+ * lets its images go.
+ *
+ * The display's events are its topology sequence, which a change of the
+ * connection moves; a new connection is a new generation of the output.
  */
 
 #include <stddef.h>
@@ -34,32 +43,21 @@
 #include <uapi/errno.h>
 #include <uapi/gpu.h>
 #include <uapi/gpu-display.h>
+#include <uapi/gpu-scanout.h>
 
+#include "display-scan.h"
 #include "ghci.h"
 #include "hcr.h"
 
-/* The display's identity: one output, of one generation, whose topology never changes. */
-#define DISPLAY_ID			1U
-#define DISPLAY_GENERATION		1U
-#define DISPLAY_TOPOLOGY		1U
+/* How long a release waits for the controller to go dark and let its images go. */
+#define RELEASE_WAIT_MS			1000U
 
-/* The controller's capability bits: the external transmitter and the TMDS output. */
-#define DC_CAPS_TRANSMITTER		0x4U
-#define DC_CAPS_TMDS			0x2U
+/* The longest a display wait waits, in nanoseconds: one second. */
+#define WAIT_MAX_NS			1000000000ULL
 
-/* The version of the DISP2 capability the driver knows. */
-#define DISP2_VERSION			1U
-
-/* How long the detach waits for the controller to be idle, and a presentation for its flip. */
-#define DC_IDLE_MS			100U
-#define FLIP_WAIT_MS			100U
-
-/* The frame's pixels: 32 bits. */
-#define PIXEL_BYTES			4U
-
-/* The MODE registers' fields: a count in the low half, another in the high half. */
-#define MODE_LOW(word)			((word) & 0xffffU)
-#define MODE_HIGH(word)			((word) >> 16)
+/* The cursor's image: 64 x 64 pixels of 4 bytes, rows 256 bytes apart. */
+#define CURSOR_STRIDE			(GHCI_DC_CURSOR_SIZE * GHCI_DISPLAY_PIXEL_BYTES)
+#define CURSOR_BYTES			(CURSOR_STRIDE * GHCI_DC_CURSOR_SIZE)
 
 static int display_query(void *private_data, void *opaque, struct gpu_display_info *request);
 static int display_mode(void *private_data, void *opaque, struct gpu_display_mode *request);
@@ -68,21 +66,18 @@ static int display_release(void *private_data, void *opaque, const struct gpu_di
 static int display_present(void *private_data, void *opaque, void *object, struct gpu_display_present *request);
 static int display_wait(void *private_data, void *opaque, struct gpu_display_wait *request);
 static int display_events(void *private_data, void *opaque, uint64_t *sequence);
-static int modes_read(struct ghci_device *device);
-static unsigned largest_mode(const struct ghci_display *display);
-static int find_mode(const struct ghci_display *display, uint32_t width, uint32_t height, unsigned *mode);
-static int frames_take(struct ghci_device *device);
-static void frames_give(struct ghci_device *device);
-static void controller_off(struct ghci_device *device);
-static void controller_on(struct ghci_device *device, unsigned mode, uint32_t format, uint32_t frame);
-static int flip_wait(struct ghci_device *device, uint32_t frame);
-static void lease_end(struct ghci_device *device);
+static int display_cursor_set(void *private_data, void *opaque, void *object, const struct gpu_display_cursor_image *request);
+static int display_cursor_move(void *private_data, void *opaque, const struct gpu_display_cursor_move *request);
+static int display_cursor_hide(void *private_data, void *opaque, const struct gpu_display_cursor_hide *request);
+static int display_adoption_wait(void *private_data, void *opaque, uint64_t lease, uint64_t *sequence, uint64_t *adopted);
+static int scanout_query_device(void *private_data, void *opaque, struct gpu_device_info *request);
+static int scanout_constraints(void *private_data, void *opaque, struct gpu_scanout_constraints *request);
 
 /*
- * The display operations of a GHCI device with a display controller:
- * query, mode, claim, release, present, wait and the topology sequence.
- * Presentations wait under the open's admission; there is no cursor, no
- * overlay and no display control.  Immutable.
+ * The display operations of a GHCI device whose controller has no cursor
+ * plane: query, mode, claim, release, the ungated present and wait with
+ * the adoption wait, and the topology sequence.  There is no overlay and
+ * no display control.  Immutable.
  */
 const struct drv_gpu_display_ops ghci_display_ops = {
 	display_query,
@@ -97,146 +92,55 @@ const struct drv_gpu_display_ops ghci_display_ops = {
 	NULL,
 	NULL,
 	NULL,
-	NULL,
-	0U,
+	display_adoption_wait,
+	DRV_GPU_DISPLAY_UNGATED,
 	NULL,
 	NULL
 };
 
 /*
- * Finds and starts the display controller.
+ * The display operations of a GHCI device whose controller has a cursor
+ * plane: the same, and the cursor's three operations.  Immutable.
  */
-int
-ghci_display_attach(
-	struct ghci_device *device)
-{
-	struct ghci_display *display;
-	uint32_t registers;
-	uint32_t version;
-	int error;
-
-	/* A GPU without a display controller in its window has no display. */
-	display = &device->display;
-	display->present = 0;
-	if ((device->caps & GHCI_CAPS_DISP) == 0U)
-		return 0;
-
-	/*
-	 * The controller's registers, from the DISP2 capability: a controller
-	 * that is a unit of the GPU, which the ring drives.  A DISP capability
-	 * (a controller the host drives by itself) is not served here.
-	 */
-	error = ghci_extcap_find(ghci_read_context, device, device->extcap, device->register_bytes, GHCI_XCAP_DISP2, &registers, &version);
-	if (error != 0)
-		return error;
-
-	/* The capability's window of 256 bytes lies inside the register window. */
-	if (device->register_bytes < GHCI_DC2_WINDOW)
-		return EINVAL;
-	if (registers > device->register_bytes - GHCI_DC2_WINDOW)
-		return EINVAL;
-
-	/* Refuses a version of the capability the driver does not know. */
-	if (version != DISP2_VERSION) {
-		kern_logf("ghci: %s: DISP2 version %u is not known\n", device->name, (unsigned)version);
-		return ENOTSUP;
-	}
-
-	/* The controller's identity and what it can do. */
-	display->registers = registers;
-	display->controller_id = ghci_read(device, registers + GHCI_DC_ID);
-	display->controller_version = ghci_read(device, registers + GHCI_DC_VERSION);
-	display->controller_caps = ghci_read(device, registers + GHCI_DC_CAPS);
-
-	/* The modes, from the controller's own table. */
-	error = modes_read(device);
-	if (error != 0)
-		return error;
-
-	/*
-	 * The controller starts reset and dark.  The host writes it directly
-	 * here, before the command processor runs: once it runs, the ring
-	 * alone changes what the controller shows.
-	 */
-	ghci_write(device, registers + GHCI_DC_CTRL, GHCI_DC_CTRL_RESET);
-	controller_off(device);
-
-	/* Whether a sink is connected, as the controller was last told (1 when nobody told it). */
-	display->connected = 0;
-	if ((ghci_read(device, registers + GHCI_DC_CONNECTED) & 1U) != 0U)
-		display->connected = 1;
-
-	/* An external HDMI transmitter is set up now; it shows nothing until the controller scans. */
-	if ((display->controller_caps & DC_CAPS_TRANSMITTER) != 0U) {
-		error = ghci_adv7511_start(device, registers);
-		if (error != 0)
-			kern_logf("ghci: %s: HDMI transmitter not set up (%d)\n", device->name, error);
-	}
-
-	/* The display exists, without a lease. */
-	display->owner = NULL;
-	display->next_lease = 1U;
-	display->mode = largest_mode(display);
-	display->format = GHCI_DC_FMT_BGRA8;
-	display->present = 1;
-
-	/* Succeeded: the display is ready for a lease. */
-	return 0;
-}
+const struct drv_gpu_display_ops ghci_display_cursor_ops = {
+	display_query,
+	display_mode,
+	display_claim,
+	display_release,
+	display_present,
+	display_wait,
+	display_events,
+	NULL,
+	NULL,
+	display_cursor_set,
+	display_cursor_move,
+	display_cursor_hide,
+	display_adoption_wait,
+	DRV_GPU_DISPLAY_UNGATED,
+	NULL,
+	NULL
+};
 
 /*
- * Turns the display controller off for the detach.
+ * The scan-out query of a GHCI device with a display: its roles and the
+ * constraints of the shared and copied routes.  The renderer and the
+ * display are one device, so an import is the ordinary share import.
+ * Immutable.
  */
-void
-ghci_display_detach(
-	struct ghci_device *device)
-{
-	/* A device without a display has nothing to turn off. */
-	if (!device->display.present)
-		return;
+const struct drv_gpu_scanout_ops ghci_scanout_ops = {
+	scanout_query_device,
+	scanout_constraints,
+	NULL
+};
 
-	/* The controller dark and quiet, the lease and the frames gone. */
-	mutex_lock(&device->lock);
-
-	lease_end(device);
-
-	mutex_unlock(&device->lock);
-}
-
-/*
- * Ends a closing session's lease; the device's lock is held.
- */
-void
-ghci_display_session_close(
-	struct ghci_device *device,
-	struct ghci_session *session)
-{
-	/* Only the lease's holder has anything on the display. */
-	if (!device->display.present)
-		return;
-	if (device->display.owner != session)
-		return;
-
-	/* The lease ends with its session. */
-	lease_end(device);
-}
-
-/*
- * Serves the display controller's interrupt.
- *
- * A DISP2 controller has no interrupt status of its own: its events are
- * bits of the GPU's IRQ_STATUS, which the command processor's handler
- * reads.  Reports that nothing of the controller's was pending.
- */
-int
-ghci_display_interrupt(
-	struct ghci_device *device)
-{
-	(void)device;
-
-	/* Succeeded: the controller has no status of its own to serve. */
-	return 0;
-}
+static int lease_check(struct ghci_display *display, void *opaque, uint64_t lease, uint64_t generation);
+static int find_mode(const struct ghci_display *display, uint32_t width, uint32_t height, unsigned *mode);
+static int buffers_take(struct ghci_device *device);
+static int present_shared(struct ghci_device *device, void *opaque, struct ghci_allocation *storage, unsigned mode, uint32_t format, struct gpu_display_present *request);
+static int present_copied(struct ghci_device *device, void *opaque, struct ghci_allocation *storage, unsigned mode, uint32_t format, struct gpu_display_present *request);
+static void memory_let_go(struct ghci_device *device, struct ghci_allocation *memory);
+static int cursor_surface_free(const struct ghci_display *display);
+static void cursor_convert(const uint8_t *staging, uint8_t *surface, uint32_t width, uint32_t height, int swap);
 
 /* Describes the one output. */
 static int
@@ -265,21 +169,23 @@ display_query(
 	if (request->index != 0U)
 		return EINVAL;
 
-	/* The output, its plane and its formats, under the device's lock. */
-	mutex_lock(&device->lock);
+	/* The output, its plane and its formats, under the display's lock. */
+	mutex_lock(&display->lock);
 
 	current = &display->modes[display->mode];
-	largest = &display->modes[largest_mode(display)];
-	request->display_id = DISPLAY_ID;
-	request->generation = DISPLAY_GENERATION;
-	request->flags = GPU_DISPLAY_FIFO;
+	largest = &display->modes[ghci_scan_largest_mode(display)];
+	request->display_id = GHCI_DISPLAY_ID;
+	request->generation = display->generation;
+	request->flags = GPU_DISPLAY_FIFO | GPU_DISPLAY_BLOB;
 	if (display->connected)
 		request->flags |= GPU_DISPLAY_CONNECTED;
 	if (display->enabled)
 		request->flags |= GPU_DISPLAY_ACTIVE;
+	if ((display->controller_caps & GHCI_DC_CAPS_CURSOR) != 0U)
+		request->flags |= GPU_DISPLAY_HAS_CURSOR;
 	request->plane_count = 1U;
 	request->formats = GPU_DISPLAY_FORMAT_BGRA8888 | GPU_DISPLAY_FORMAT_RGBA8888;
-	request->max_frame_bytes = (uint64_t)largest->width * largest->height * PIXEL_BYTES;
+	request->max_frame_bytes = (uint64_t)ghci_scan_stride(device, largest->width) * largest->height;
 	request->current_width = current->width;
 	request->current_height = current->height;
 	request->preferred_width = largest->width;
@@ -288,7 +194,7 @@ display_query(
 	request->max_height = largest->height;
 	request->refresh_millihz = current->refresh_millihz;
 
-	mutex_unlock(&device->lock);
+	mutex_unlock(&display->lock);
 
 	/* The monitor's size is not read (no EDID through the controller). */
 	request->physical_width_mm = 0U;
@@ -309,19 +215,27 @@ display_mode(
 {
 	struct ghci_device *device;
 	const struct ghci_display_mode *mode;
+	uint64_t generation;
 	unsigned index;
 	int error;
 
 	(void)opaque;
 
-	/* Only the one output of this generation exists. */
+	/* The output's generation now. */
 	device = private_data;
-	if (request->display_id != DISPLAY_ID)
+	mutex_lock(&device->display.lock);
+
+	generation = device->display.generation;
+
+	mutex_unlock(&device->display.lock);
+
+	/* Only the one output of this generation exists. */
+	if (request->display_id != GHCI_DISPLAY_ID)
 		return ENOENT;
-	if (request->generation != DISPLAY_GENERATION)
+	if (request->generation != generation)
 		return ESTALE;
 
-	/* Enumeration: the modes in order. */
+	/* Enumeration: the modes in order (the table never changes after the attach). */
 	if (request->operation == GPU_DISPLAY_MODE_ENUMERATE) {
 		request->count = device->display.mode_count;
 		if (request->index == GPU_DISPLAY_COUNT_ONLY)
@@ -355,7 +269,7 @@ display_mode(
 	return 0;
 }
 
-/* Gives the display's lease to a session; EBUSY while another holds it. */
+/* Gives the display's lease to a session; EBUSY while another holds it or a lease is still ending. */
 static int
 display_claim(
 	void *private_data,
@@ -366,44 +280,59 @@ display_claim(
 	struct ghci_display *display;
 	int error;
 
-	/* Only plane 0 of the one output of this generation exists. */
+	/* Only plane 0 of the one output exists. */
 	device = private_data;
 	display = &device->display;
-	if (request->display_id != DISPLAY_ID)
+	if (request->display_id != GHCI_DISPLAY_ID)
 		return ENOENT;
-	if (request->generation != DISPLAY_GENERATION)
-		return ESTALE;
 	if (request->plane_index != 0U)
 		return EINVAL;
 
-	/* Takes the lease when it is free, with the frames the presentations copy into. */
+	/* The frames a copied present fills and the cursor's surfaces, under the device's lock. */
 	mutex_lock(&device->lock);
 
-	if (display->owner != NULL) {
-		mutex_unlock(&device->lock);
-		return EBUSY;
-	}
-
-	error = frames_take(device);
+	error = buffers_take(device);
 	if (error != 0) {
 		mutex_unlock(&device->lock);
 		return error;
 	}
 
-	/* The session holds a new lease with no frame yet; the controller stays dark until the first. */
-	display->owner = opaque;
-	display->lease = display->next_lease;
-	display->next_lease++;
-	display->sequence = 0U;
-	request->lease = display->lease;
+	/* Takes the lease when it is free and the last one has finished ending. */
+	mutex_lock(&display->lock);
 
+	error = 0;
+	if (request->generation != display->generation) {
+		error = ESTALE;
+	} else if (display->owner != NULL || display->ending) {
+		error = EBUSY;
+	} else {
+		/* The session holds a new lease with no frame yet; the controller stays as it is until the first. */
+		display->owner = opaque;
+		display->lease = display->next_lease;
+		display->next_lease++;
+		display->sequence = 0U;
+		display->adopted = 0U;
+		display->uncertain = 0;
+		display->cursor_image = 0;
+		request->lease = display->lease;
+	}
+
+	mutex_unlock(&display->lock);
 	mutex_unlock(&device->lock);
+
+	/* Reports a lease that could not be taken. */
+	if (error != 0)
+		return error;
 
 	/* Succeeded: the session holds the display. */
 	return 0;
 }
 
-/* Ends the lease of its holder; EINVAL for another session's lease. */
+/*
+ * Ends the lease of its holder: the controller goes dark and lets its
+ * images go before the call returns (or, past a bounded time, soon
+ * after).  EINVAL for another session's lease.
+ */
 static int
 display_release(
 	void *private_data,
@@ -412,30 +341,62 @@ display_release(
 {
 	struct ghci_device *device;
 	struct ghci_display *display;
+	uint64_t deadline;
+	uint64_t mark;
+	uint64_t now;
+	int done;
 
 	/* Only the holder's own lease ends. */
 	device = private_data;
 	display = &device->display;
-	mutex_lock(&device->lock);
+	mutex_lock(&display->lock);
 
 	if (display->owner != opaque || display->lease != request->lease) {
-		mutex_unlock(&device->lock);
+		mutex_unlock(&display->lock);
 		return EINVAL;
 	}
 
-	lease_end(device);
+	ghci_scan_lease_end(device);
 
-	mutex_unlock(&device->lock);
+	mutex_unlock(&display->lock);
 
-	/* Succeeded: the controller is dark and the lease free. */
+	/* Waits a bounded time for the dark packet and the cancelled records. */
+	deadline = clock_ticks() + kern_ms_to_ticks(RELEASE_WAIT_MS);
+	for (;;) {
+		mark = ghci_scan_mark(device);
+		mutex_lock(&display->lock);
+
+		done = ghci_scan_lease_done(device);
+
+		mutex_unlock(&display->lock);
+
+		/* Ends once everything was let go, or at the deadline (the service thread finishes it). */
+		ghci_scan_flush(device);
+		now = clock_ticks();
+		if (done)
+			break;
+		if (now >= deadline)
+			break;
+
+		ghci_scan_sleep(device, mark, deadline);
+	}
+
+	/* A controller slow to go dark is finished by the service thread. */
+	if (!done) {
+		kern_logf("ghci: %s: display lease ended before the controller went dark\n", device->name);
+		ghci_service_wake(device, GHCI_WORK_DISPLAY);
+	}
+
+	/* Succeeded: the lease is free (once the controller is dark, for a new claim). */
 	return 0;
 }
 
 /*
- * Shows a frame of the lease holder: copies the storage into the frame
- * not on the screen and flips to it at the next vertical sync.  Returns
- * 0 with the frame's sequence, EINVAL for another session's lease or a
- * frame the controller cannot show, or the copy's or the flip's error.
+ * Records a frame of the lease holder and returns its number; the core
+ * then waits for its adoption.  Returns 0, EINVAL for a frame the
+ * controller cannot show, EBUSY for another session's lease or an
+ * uncertain output, ESTALE for an old generation, ENXIO when
+ * disconnected, or the copy's error.
  */
 static int
 display_present(
@@ -447,109 +408,61 @@ display_present(
 	struct ghci_device *device;
 	struct ghci_display *display;
 	struct ghci_allocation *storage;
-	struct ghci_allocation *frame;
-	struct ghci_blit blit;
 	uint64_t end;
 	uint32_t format;
 	unsigned mode;
-	unsigned back;
 	int error;
 
 	device = private_data;
 	display = &device->display;
 	storage = object;
 
-	/* Only whole frames of storage: blobs are not scanned. */
-	if ((request->flags & GPU_DISPLAY_PRESENT_BLOB) != 0U)
-		return EINVAL;
-
 	/* The two packed formats the controller scans. */
-	if (request->format == GPU_DISPLAY_FORMAT_BGRA8888) {
+	if (request->format == GPU_PIXEL_BGRA8888) {
 		format = GHCI_DC_FMT_BGRA8;
-	} else if (request->format == GPU_DISPLAY_FORMAT_RGBA8888) {
+	} else if (request->format == GPU_PIXEL_RGBA8888) {
 		format = GHCI_DC_FMT_RGBA8;
 	} else {
 		return EINVAL;
 	}
 
-	/* The frame's size is one of the modes. */
+	/* The frame's size is one of the modes (the table never changes after the attach). */
 	error = find_mode(display, request->width, request->height, &mode);
 	if (error != 0)
 		return error;
 
 	/* Rows of whole pixels, each at least a row wide, inside the storage. */
-	if ((request->stride % PIXEL_BYTES) != 0U)
+	if ((request->stride % GHCI_DISPLAY_PIXEL_BYTES) != 0U)
 		return EINVAL;
-	if ((request->offset % PIXEL_BYTES) != 0U)
+	if ((request->offset % GHCI_DISPLAY_PIXEL_BYTES) != 0U)
 		return EINVAL;
-	if (request->stride < request->width * PIXEL_BYTES)
+	if (request->stride < request->width * GHCI_DISPLAY_PIXEL_BYTES)
 		return EINVAL;
 
 	/* The end of the last row lies inside what the storage was asked for. */
-	end = request->offset + (uint64_t)request->stride * (request->height - 1U) + (uint64_t)request->width * PIXEL_BYTES;
+	end = request->offset + (uint64_t)request->stride * (request->height - 1U) + (uint64_t)request->width * GHCI_DISPLAY_PIXEL_BYTES;
 	if (end > storage->requested)
 		return EINVAL;
 
-	/* Everything below is the lease holder's, under the device's lock. */
-	mutex_lock(&device->lock);
-
-	if (display->owner != opaque || display->lease != request->lease) {
-		mutex_unlock(&device->lock);
-		return EINVAL;
-	}
-
-	/* The copy into the frame that is not on the screen, by the blitter. */
-	back = display->shown ^ 1U;
-	if (!display->enabled)
-		back = 0U;
-	frame = display->frames[back];
-	kern_memset(&blit, 0, sizeof(blit));
-	blit.op = GHCI_BLT_COPY;
-	blit.src_base = storage->gpu_address + (uint32_t)request->offset;
-	blit.src_stride = request->stride;
-	blit.dst_base = frame->gpu_address;
-	blit.dst_stride = request->width * PIXEL_BYTES;
-	blit.width = request->width;
-	blit.height = request->height;
-	error = ghci_blit_run(device, &blit);
-	if (error != 0) {
-		mutex_unlock(&device->lock);
-		return error;
-	}
-
-	/* The first frame, a new mode or a new format lights the controller on the frame; later ones flip. */
-	if (!display->enabled || display->mode != mode || display->format != format) {
-		controller_off(device);
-		controller_on(device, mode, format, frame->gpu_address);
-		display->mode = mode;
-		display->format = format;
+	/* A blob is scanned where it is; ordinary storage is copied. */
+	if ((request->flags & GPU_DISPLAY_PRESENT_BLOB) != 0U) {
+		error = present_shared(device, opaque, storage, mode, format, request);
 	} else {
-		ghci_write(device, display->registers + GHCI_DC_FB_NEXT, frame->gpu_address);
-		error = flip_wait(device, frame->gpu_address);
+		error = present_copied(device, opaque, storage, mode, format, request);
 	}
-
-	/* A flip that was not taken leaves the frame on the screen as it was. */
-	if (error != 0) {
-		mutex_unlock(&device->lock);
+	if (error != 0)
 		return error;
-	}
 
-	/* The frame is on the screen. */
-	display->shown = back;
-	display->sequence++;
-	display->shown_time_ns = clock_ticks() * (KERN_NSEC_PER_SEC / KERN_CLOCK_HZ);
-	request->sequence = display->sequence;
-
-	mutex_unlock(&device->lock);
-
-	/* Succeeded: the frame is shown and the storage no longer borrowed. */
+	/* Succeeded: the frame is recorded with its number in the request. */
 	return 0;
 }
 
 /*
- * Reports the newest frame shown under the lease: a presentation returns
- * once shown, so this answers at once.  EBUSY for another session's
- * lease, EINVAL for a sequence not presented yet, EAGAIN before the first.
+ * Reports the newest frame adopted under the lease, waiting up to the
+ * request's time (at most a second) for its sequence.  EBUSY for another
+ * session's lease, EINVAL for a sequence not presented yet, EAGAIN when
+ * the time is zero and the sequence is not adopted, ETIMEDOUT, ENXIO when
+ * disconnected.
  */
 static int
 display_wait(
@@ -559,151 +472,409 @@ display_wait(
 {
 	struct ghci_device *device;
 	struct ghci_display *display;
+	uint64_t timeout_ns;
+	uint64_t deadline;
+	uint64_t mark;
+	uint64_t now;
 	int error;
 
-	/* Reads the lease's newest frame under the device's lock. */
+	/* The wait ends at most a second from now. */
 	device = private_data;
 	display = &device->display;
-	mutex_lock(&device->lock);
+	timeout_ns = request->timeout_ns;
+	if (timeout_ns > WAIT_MAX_NS)
+		timeout_ns = WAIT_MAX_NS;
+	deadline = clock_ticks() + kern_ms_to_ticks((timeout_ns + 999999U) / 1000000U);
 
-	error = 0;
-	if (display->owner != opaque || display->lease != request->lease) {
-		error = EBUSY;
-	} else if (request->sequence > display->sequence) {
-		error = EINVAL;
-	} else if (display->sequence == 0U) {
+	/* Looks at the records, sleeping between looks, until the sequence is adopted. */
+	for (;;) {
+		mark = ghci_scan_mark(device);
+		mutex_lock(&display->lock);
+
+		ghci_scan_update(device);
 		error = EAGAIN;
-	} else {
-		request->completed_sequence = display->sequence;
-		request->present_time_ns = display->shown_time_ns;
-		request->generation = DISPLAY_GENERATION;
+		if (display->owner != opaque || display->lease != request->lease) {
+			error = EBUSY;
+		} else if (!display->connected) {
+			error = ENXIO;
+		} else if (request->sequence > display->sequence) {
+			error = EINVAL;
+		} else if (display->adopted != 0U && display->adopted >= request->sequence) {
+			error = 0;
+			request->completed_sequence = display->adopted;
+			request->present_time_ns = display->shown_time_ns;
+			request->generation = display->generation;
+		}
+
+		mutex_unlock(&display->lock);
+
+		/* Ends at an answer, at once for a zero time, or at the deadline. */
+		ghci_scan_flush(device);
+		now = clock_ticks();
+		if (error != EAGAIN)
+			break;
+		if (timeout_ns == 0U)
+			break;
+		if (now >= deadline) {
+			error = ETIMEDOUT;
+			break;
+		}
+
+		ghci_scan_sleep(device, mark, deadline);
 	}
 
-	mutex_unlock(&device->lock);
-
-	/* Reports a wait the lease does not allow. */
+	/* Reports a wait the lease does not allow, or one that ran out. */
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the sequence has been shown. */
+	/* Succeeded: the sequence has been adopted. */
 	return 0;
 }
 
-/* Reports the topology sequence: one, which no hot plug moves.  No lock, no hardware access. */
+/* Reports the topology sequence, under the interrupt's lock only.  No hardware access. */
 static int
 display_events(
 	void *private_data,
 	void *opaque,
 	uint64_t *sequence)
 {
-	(void)private_data;
+	struct ghci_device *device;
+	unsigned long irq;
+
 	(void)opaque;
 
-	/* Succeeded: the first and only topology. */
-	*sequence = DISPLAY_TOPOLOGY;
+	/* The sequence a change of the connection moves. */
+	device = private_data;
+	irq = spin_lock_irqsave(&device->irq_lock);
+
+	*sequence = device->display.topology;
+
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+
+	/* Succeeded: the sequence is read. */
 	return 0;
 }
 
 /*
- * Reads the controller's mode table into the display.  Returns 0, or
- * ENOTSUP when the controller names no mode the driver can use.
+ * Sets the cursor's image from session storage: the blitter copies the
+ * rows into the driver's staging, and the processor puts them in a free
+ * cursor surface (red and blue swapped for RGBA8888, the rest of the
+ * 64 x 64 image cleared), which is then flipped.  EBUSY when both
+ * surfaces are in use (the call may succeed a refresh later).
  */
 static int
-modes_read(
-	struct ghci_device *device)
+display_cursor_set(
+	void *private_data,
+	void *opaque,
+	void *object,
+	const struct gpu_display_cursor_image *request)
 {
+	struct ghci_device *device;
 	struct ghci_display *display;
-	struct ghci_display_mode *mode;
-	uint32_t registers;
-	uint32_t count;
-	uint32_t word;
-	uint32_t flags;
-	uint64_t clock_khz;
-	uint64_t total;
-	uint32_t index;
+	struct ghci_allocation *storage;
+	struct ghci_blit blit;
+	int surface;
+	int swap;
+	int error;
 
+	device = private_data;
 	display = &device->display;
-	registers = display->registers;
+	storage = object;
 
-	/* The number of modes the controller names, at most what the display keeps. */
-	count = GHCI_DC_CAPS_MODES(display->controller_caps);
-	if (count > GHCI_DISPLAY_MODES_MAX)
-		count = GHCI_DISPLAY_MODES_MAX;
+	/* A free surface of the lease's display, and the staging for the copy. */
+	mutex_lock(&display->lock);
 
-	/* Reads each mode through MODE_INDEX; a mode without a size or a clock is skipped. */
-	display->mode_count = 0U;
-	for (index = 0U; index < count; index++) {
-		mode = &display->modes[display->mode_count];
-		ghci_write(device, registers + GHCI_DC_MODE_INDEX, index);
+	error = lease_check(display, opaque, request->lease, request->generation);
+	surface = -1;
+	if (error == 0) {
+		surface = cursor_surface_free(display);
+		if (surface < 0 || display->cursor_copying)
+			error = EBUSY;
+	}
+	if (error == 0)
+		display->cursor_copying = 1;
 
-		/* The horizontal timing: active pixels and sync, then the porches. */
-		word = ghci_read(device, registers + GHCI_DC_MODE_H0);
-		mode->width = MODE_LOW(word);
-		mode->h_sync = MODE_HIGH(word);
-		word = ghci_read(device, registers + GHCI_DC_MODE_H1);
-		mode->h_front = MODE_LOW(word);
-		mode->h_back = MODE_HIGH(word);
+	mutex_unlock(&display->lock);
 
-		/* The vertical timing, in lines. */
-		word = ghci_read(device, registers + GHCI_DC_MODE_V0);
-		mode->height = MODE_LOW(word);
-		mode->v_sync = MODE_HIGH(word);
-		word = ghci_read(device, registers + GHCI_DC_MODE_V1);
-		mode->v_front = MODE_LOW(word);
-		mode->v_back = MODE_HIGH(word);
+	/* Reports a lease that does not allow the change, or no free surface. */
+	if (error != 0)
+		return error;
 
-		/* The sync polarities (SYNC_POL's two bits) and the clock's PCLK_SEL value. */
-		flags = ghci_read(device, registers + GHCI_DC_MODE_FLAGS);
-		mode->sync_polarity = flags & 3U;
-		mode->clock_select = GHCI_DC_MODE_PCLK_SEL(flags);
+	/* The rows into the staging, by the blitter, outside the display's lock. */
+	kern_memset(&blit, 0, sizeof(blit));
+	blit.op = GHCI_BLT_COPY;
+	blit.src_base = storage->gpu_address + (uint32_t)request->offset;
+	blit.src_stride = request->stride;
+	blit.dst_base = display->staging->gpu_address;
+	blit.dst_stride = CURSOR_STRIDE;
+	blit.width = request->width;
+	blit.height = request->height;
+	error = ghci_blit_run(device, &blit);
 
-		/* A mode without a size or a clock cannot be shown. */
-		clock_khz = ghci_read(device, registers + GHCI_DC_MODE_CLOCK);
-		if (mode->width == 0U ||
-		    mode->height == 0U ||
-		    clock_khz == 0U)
-			continue;
+	/* The surface takes the rows and is flipped, while the lease is still the caller's. */
+	mutex_lock(&display->lock);
 
-		/* The pixel clocks of one whole frame, the blanking included. */
-		total = (uint64_t)(mode->width + mode->h_front + mode->h_sync + mode->h_back) *
-		    (mode->height + mode->v_front + mode->v_sync + mode->v_back);
-
-		/* The refresh the clock gives over the frame's totals, in millihertz, rounded. */
-		mode->refresh_millihz = (uint32_t)((clock_khz * 1000000U + total / 2U) / total);
-		display->mode_count++;
+	display->cursor_copying = 0;
+	if (error == 0)
+		error = lease_check(display, opaque, request->lease, request->generation);
+	if (error == 0) {
+		swap = 0;
+		if (request->format == GPU_PIXEL_RGBA8888)
+			swap = 1;
+		cursor_convert(display->staging->view, display->surfaces[surface]->view, request->width, request->height, swap);
+		display->cursor_image = 1;
+		ghci_scan_cursor(device, surface);
 	}
 
-	/* A controller without a usable mode has no display. */
-	if (display->mode_count == 0U)
-		return ENOTSUP;
+	mutex_unlock(&display->lock);
 
-	/* Succeeded: the modes are known. */
+	/* Reports a copy that failed or a lease that ended meanwhile. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the image shows from the controller's next read of it. */
 	return 0;
 }
 
-/* Reports the index of the largest mode of the controller, by its pixels. */
-static unsigned
-largest_mode(
-	const struct ghci_display *display)
+/* Shows the cursor at a place, from the next frame; EINVAL before an image was set. */
+static int
+display_cursor_move(
+	void *private_data,
+	void *opaque,
+	const struct gpu_display_cursor_move *request)
 {
-	uint64_t pixels;
-	uint64_t largest_pixels;
-	unsigned largest;
-	unsigned index;
+	struct ghci_device *device;
+	struct ghci_display *display;
+	uint32_t position;
+	int error;
 
-	/* The first of the modes with the most pixels. */
-	largest = 0U;
-	largest_pixels = 0U;
-	for (index = 0U; index < display->mode_count; index++) {
-		pixels = (uint64_t)display->modes[index].width * display->modes[index].height;
-		if (pixels > largest_pixels) {
-			largest = index;
-			largest_pixels = pixels;
-		}
+	/* The cursor's registers are the host's in every state of the processor. */
+	device = private_data;
+	display = &device->display;
+	mutex_lock(&display->lock);
+
+	error = lease_check(display, opaque, request->lease, request->generation);
+	if (error == 0 && !display->cursor_image)
+		error = EINVAL;
+	if (error == 0) {
+		position = ((uint32_t)request->x & 0xffffU) | ((uint32_t)request->y << 16);
+		ghci_write(device, display->registers + GHCI_DC_CURSOR_POS, position);
+		ghci_write(device, display->registers + GHCI_DC_CURSOR_CTRL, 1U);
 	}
 
-	/* Succeeded: the largest mode. */
-	return largest;
+	mutex_unlock(&display->lock);
+
+	/* Reports a lease that does not allow the move. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the controller takes the place at the start of the next frame. */
+	return 0;
+}
+
+/* Hides the cursor from the next frame; its image is kept. */
+static int
+display_cursor_hide(
+	void *private_data,
+	void *opaque,
+	const struct gpu_display_cursor_hide *request)
+{
+	struct ghci_device *device;
+	struct ghci_display *display;
+	int error;
+
+	/* The cursor's register is the host's in every state of the processor. */
+	device = private_data;
+	display = &device->display;
+	mutex_lock(&display->lock);
+
+	error = lease_check(display, opaque, request->lease, request->generation);
+	if (error == 0)
+		ghci_write(device, display->registers + GHCI_DC_CURSOR_CTRL, 0U);
+
+	mutex_unlock(&display->lock);
+
+	/* Reports a lease that does not allow the change. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the controller hides the cursor from the next frame. */
+	return 0;
+}
+
+/*
+ * Waits for the adoption of a recorded present (the ungated core's second
+ * step), holding no pin and no lock while it sleeps.  sequence holds the
+ * record's number, which is also the number the caller sees; adopted,
+ * when given, receives the highest adopted number.  EBUSY when the lease
+ * ended, EIO when the GPU no longer runs, ETIMEDOUT when the adoption did
+ * not come (the lease's later presents then fail with EBUSY).
+ */
+static int
+display_adoption_wait(
+	void *private_data,
+	void *opaque,
+	uint64_t lease,
+	uint64_t *sequence,
+	uint64_t *adopted)
+{
+	struct ghci_device *device;
+	struct ghci_display *display;
+	uint64_t deadline;
+	uint64_t mark;
+	uint64_t now;
+	int usable;
+	int error;
+
+	/* The adoption comes within a bounded time. */
+	device = private_data;
+	display = &device->display;
+	deadline = clock_ticks() + kern_ms_to_ticks(GHCI_DISPLAY_ADOPTION_MS);
+
+	/* Looks at the records, sleeping between looks, until the record is adopted. */
+	for (;;) {
+		mark = ghci_scan_mark(device);
+		mutex_lock(&display->lock);
+
+		ghci_scan_update(device);
+		usable = ghci_scan_ring_usable(device);
+		error = EAGAIN;
+		if (display->owner != opaque || display->lease != lease) {
+			error = EBUSY;
+		} else if (display->adopted >= *sequence) {
+			error = 0;
+		} else if (display->uncertain) {
+			error = ETIMEDOUT;
+		} else if (!usable) {
+			error = EIO;
+		}
+		if (adopted != NULL)
+			*adopted = display->adopted;
+
+		mutex_unlock(&display->lock);
+
+		/* Ends at an answer, or at the deadline: the output is then uncertain. */
+		ghci_scan_flush(device);
+		now = clock_ticks();
+		if (error != EAGAIN)
+			break;
+		if (now >= deadline) {
+			mutex_lock(&display->lock);
+
+			display->uncertain = 1;
+
+			mutex_unlock(&display->lock);
+
+			kern_logf("ghci: %s: present %llu not adopted in time\n", device->name, (unsigned long long)*sequence);
+			error = ETIMEDOUT;
+			break;
+		}
+
+		ghci_scan_sleep(device, mark, deadline);
+	}
+
+	/* Reports a lease that ended, a lost GPU or an adoption that did not come. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the record is shown, or replaced by one that is. */
+	return 0;
+}
+
+/* Reports the device's roles: a renderer when it runs commands, and a display. */
+static int
+scanout_query_device(
+	void *private_data,
+	void *opaque,
+	struct gpu_device_info *request)
+{
+	struct ghci_device *device;
+
+	(void)opaque;
+
+	/* The display always; the renderer with the command operation. */
+	device = private_data;
+	request->roles = GPU_DEVICE_DISPLAY;
+	if ((device->ops.capabilities & GPU_CAP_COMMAND) != 0U)
+		request->roles |= GPU_DEVICE_RENDER;
+
+	/* Succeeded: the roles are known (no companion: the device renders for itself). */
+	return 0;
+}
+
+/*
+ * Reports the constraints of the output's generation: the shared and
+ * copied routes, the two packed formats, rows and images on the memory
+ * line, and no placement (every blob of a GPU with local memory is in
+ * local memory, which the controller scans).
+ */
+static int
+scanout_constraints(
+	void *private_data,
+	void *opaque,
+	struct gpu_scanout_constraints *request)
+{
+	struct ghci_device *device;
+	uint64_t generation;
+	uint32_t line;
+
+	(void)opaque;
+
+	/* The output's generation now. */
+	device = private_data;
+	mutex_lock(&device->display.lock);
+
+	generation = device->display.generation;
+
+	mutex_unlock(&device->display.lock);
+
+	/* Only the one output of this generation exists. */
+	if (request->display_id != GHCI_DISPLAY_ID)
+		return ENOENT;
+	if (request->generation != generation)
+		return ESTALE;
+
+	/* The memory line the controller reads, a power of two. */
+	line = ghci_scan_stride(device, 1U);
+
+	/* Succeeded: the routes and their layout. */
+	request->flags = GPU_SCANOUT_SHARED | GPU_SCANOUT_COPY;
+	request->formats = GPU_DISPLAY_FORMAT_BGRA8888 | GPU_DISPLAY_FORMAT_RGBA8888;
+	request->stride_alignment = line;
+	request->offset_alignment = line;
+	request->placement = 0U;
+	request->max_dma_address = 0U;
+	return 0;
+}
+
+/*
+ * Checks that a request names this open's lease of the output's current
+ * generation, connected and not uncertain.  Returns 0, EBUSY, ESTALE or
+ * ENXIO; the display's lock is held.
+ */
+static int
+lease_check(
+	struct ghci_display *display,
+	void *opaque,
+	uint64_t lease,
+	uint64_t generation)
+{
+	/* Another open's lease, none, or one whose adoption did not come. */
+	if (display->owner != opaque)
+		return EBUSY;
+	if (display->lease != lease)
+		return EBUSY;
+	if (display->uncertain)
+		return EBUSY;
+
+	/* An old generation of the output, or one without a sink. */
+	if (generation != display->generation)
+		return ESTALE;
+	if (!display->connected)
+		return ENXIO;
+
+	/* Succeeded: the lease may change the output. */
+	return 0;
 }
 
 /* Finds the mode of a size among the controller's.  Returns 0 or EINVAL. */
@@ -731,144 +902,369 @@ find_mode(
 	return EINVAL;
 }
 
-/* Takes the two frames of the largest mode; the device's lock is held. */
+/*
+ * Takes the driver's buffers once: two frames of the largest mode that a
+ * copied present fills, and, with a cursor plane, two cursor surfaces and
+ * the staging of their copies, all in memory the processor maps and the
+ * controller scans.  They stay until the detach.  The device's lock is
+ * held.
+ */
 static int
-frames_take(
+buffers_take(
 	struct ghci_device *device)
 {
+	struct ghci_display *display;
 	const struct ghci_display_mode *largest;
 	uint64_t bytes;
 	unsigned index;
 	int error;
 
-	/* Frames that are already there are kept. */
-	if (device->display.frames[0] != NULL)
-		return 0;
-
-	/* Each frame holds the largest mode, in memory the controller scans. */
-	largest = &device->display.modes[largest_mode(&device->display)];
-	bytes = (uint64_t)largest->width * largest->height * PIXEL_BYTES;
+	/* Each frame holds the largest mode, with rows on the memory line. */
+	display = &device->display;
+	largest = &display->modes[ghci_scan_largest_mode(display)];
+	bytes = (uint64_t)ghci_scan_stride(device, largest->width) * largest->height;
 	for (index = 0U; index < 2U; index++) {
-		error = ghci_memory_alloc(device, NULL, GHCI_USE_MAPPABLE, bytes, &device->display.frames[index]);
-		if (error != 0) {
-			frames_give(device);
+		if (display->frames[index] != NULL)
+			continue;
+
+		error = ghci_memory_alloc(device, NULL, GHCI_USE_MAPPABLE, bytes, &display->frames[index]);
+		if (error != 0)
 			return error;
-		}
 	}
 
-	/* Succeeded: the frames are the display's. */
+	/* A controller without a cursor plane needs no surface. */
+	if ((display->controller_caps & GHCI_DC_CAPS_CURSOR) == 0U)
+		return 0;
+
+	/* The two cursor surfaces. */
+	for (index = 0U; index < 2U; index++) {
+		if (display->surfaces[index] != NULL)
+			continue;
+
+		error = ghci_memory_alloc(device, NULL, GHCI_USE_MAPPABLE, CURSOR_BYTES, &display->surfaces[index]);
+		if (error != 0)
+			return error;
+	}
+
+	/* The staging the blitter copies a session's rows into. */
+	if (display->staging == NULL) {
+		error = ghci_memory_alloc(device, NULL, GHCI_USE_MAPPABLE, CURSOR_BYTES, &display->staging);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: the buffers are the display's. */
 	return 0;
 }
 
-/* Gives the frames back once the controller no longer reads them; the device's lock is held. */
-static void
-frames_give(
-	struct ghci_device *device)
-{
-	unsigned index;
-
-	/* Each frame that was taken. */
-	for (index = 0U; index < 2U; index++) {
-		if (device->display.frames[index] != NULL) {
-			ghci_memory_free(device, device->display.frames[index]);
-			device->display.frames[index] = NULL;
-		}
-	}
-}
-
-/* Turns the controller off and waits until it reads no memory. */
-static void
-controller_off(
-	struct ghci_device *device)
-{
-	uint32_t registers;
-	int error;
-
-	/* ENABLE off; the controller then finishes its reads. */
-	registers = device->display.registers;
-	ghci_write(device, registers + GHCI_DC_CTRL, 0U);
-	error = ghci_poll(device, registers + GHCI_DC_STATUS, GHCI_DC_ST_IDLE, GHCI_DC_ST_IDLE, DC_IDLE_MS);
-	if (error != 0)
-		kern_logf("ghci: %s: display controller not idle\n", device->name);
-	device->display.enabled = 0;
-}
-
-/* Programs a mode, the format and the frame of a controller that is off, and turns it on. */
-static void
-controller_on(
+/*
+ * Records a shared present: the blob's memory, held by the display, is
+ * scanned where it is.  The image lies in memory the controller scans
+ * (local memory on a GPU that has it), its first row and its stride on
+ * the memory line.  A FIFO present waits for room in the queue.
+ */
+static int
+present_shared(
 	struct ghci_device *device,
+	void *opaque,
+	struct ghci_allocation *storage,
 	unsigned mode,
 	uint32_t format,
-	uint32_t frame)
+	struct gpu_display_present *request)
 {
-	const struct ghci_display_mode *timing;
-	uint32_t registers;
-	uint32_t control;
+	struct ghci_display *display;
+	struct ghci_display_image image;
+	struct ghci_allocation *memory;
+	uint32_t line;
+	uint64_t deadline;
+	uint64_t mark;
+	uint64_t now;
+	int usable;
+	int fifo;
+	int error;
 
-	timing = &device->display.modes[mode];
-	registers = device->display.registers;
+	/* The memory the blob shows: its own, or the allocation a Vulkan memory blob shows. */
+	display = &device->display;
+	memory = storage;
+	if (storage->backing != NULL)
+		memory = storage->backing;
 
-	/* The timing, the clock and the frame's size and rows, changed only while ENABLE is off. */
-	ghci_write(device, registers + GHCI_DC_H_ACTIVE, timing->width);
-	ghci_write(device, registers + GHCI_DC_H_FP, timing->h_front);
-	ghci_write(device, registers + GHCI_DC_H_SYNC, timing->h_sync);
-	ghci_write(device, registers + GHCI_DC_H_BP, timing->h_back);
-	ghci_write(device, registers + GHCI_DC_V_ACTIVE, timing->height);
-	ghci_write(device, registers + GHCI_DC_V_FP, timing->v_front);
-	ghci_write(device, registers + GHCI_DC_V_SYNC, timing->v_sync);
-	ghci_write(device, registers + GHCI_DC_V_BP, timing->v_back);
-	ghci_write(device, registers + GHCI_DC_SYNC_POL, timing->sync_polarity);
-	ghci_write(device, registers + GHCI_DC_PCLK_SEL, timing->clock_select);
-	ghci_write(device, registers + GHCI_DC_FB_STRIDE, timing->width * PIXEL_BYTES);
-	ghci_write(device, registers + GHCI_DC_FB_SIZE, GHCI_XY(timing->width, timing->height));
+	/* The controller scans local memory only, on a GPU that has it. */
+	if (device->local_size != 0U && memory->kind == GHCI_MEMORY_HOST)
+		return EINVAL;
 
-	/* With ENABLE off, FB_NEXT is taken at once. */
-	ghci_write(device, registers + GHCI_DC_FB_NEXT, frame);
+	/* The first row and the stride are on the memory line. */
+	line = ghci_scan_stride(device, 1U);
+	if (((storage->gpu_address + (uint32_t)request->offset) % line) != 0U)
+		return EINVAL;
+	if ((request->stride % line) != 0U)
+		return EINVAL;
 
-	/* The format and the output (HDMI when the controller drives one), then ENABLE. */
-	control = GHCI_DC_CTRL_FORMAT(format);
-	if ((device->display.controller_caps & (DC_CAPS_TMDS | DC_CAPS_TRANSMITTER)) != 0U)
-		control |= GHCI_DC_CTRL_OUTPUT_HDMI;
-	ghci_write(device, registers + GHCI_DC_CTRL, control);
-	ghci_write(device, registers + GHCI_DC_CTRL, control | GHCI_DC_CTRL_ENABLE);
-	device->display.enabled = 1;
-}
+	/* The image the controller scans. */
+	kern_memset(&image, 0, sizeof(image));
+	image.base = storage->gpu_address + (uint32_t)request->offset;
+	image.stride = request->stride;
+	image.format = format;
+	image.mode = mode;
+	image.memory = memory;
+	image.copy_frame = -1;
+	fifo = 0;
+	if ((request->flags & GPU_DISPLAY_PRESENT_FIFO) != 0U)
+		fifo = 1;
 
-/* Waits until the controller scans a frame (the flip was taken at a sync).  Returns 0 or ETIMEDOUT. */
-static int
-flip_wait(
-	struct ghci_device *device,
-	uint32_t frame)
-{
-	uint32_t scanned;
-	unsigned waited;
+	/* The display holds the memory until the controller no longer scans it. */
+	mutex_lock(&device->lock);
 
-	/* FB_BASE says which frame is scanned; it is looked at every millisecond, a bounded time. */
-	for (waited = 0U; waited <= FLIP_WAIT_MS; waited++) {
-		scanned = ghci_read(device, device->display.registers + GHCI_DC_FB_BASE);
-		if (scanned == frame)
-			return 0;
+	ghci_memory_hold(memory);
 
-		ghci_sleep_ms(1U);
+	mutex_unlock(&device->lock);
+
+	/* Records the image, waiting for room in the queue when it is full. */
+	deadline = clock_ticks() + kern_ms_to_ticks(GHCI_DISPLAY_ADOPTION_MS);
+	for (;;) {
+		mark = ghci_scan_mark(device);
+		mutex_lock(&display->lock);
+
+		ghci_scan_update(device);
+		error = lease_check(display, opaque, request->lease, request->generation);
+		usable = ghci_scan_ring_usable(device);
+		if (error == 0 && !usable)
+			error = EIO;
+		if (error == 0 && display->copy_frame_busy >= 0)
+			error = EAGAIN;
+		if (error == 0) {
+			image.sequence = display->sequence + 1U;
+			error = ghci_scan_record(device, &image, fifo);
+		}
+		if (error == 0) {
+			display->sequence = image.sequence;
+			request->sequence = image.sequence;
+		}
+
+		mutex_unlock(&display->lock);
+
+		/* Ends once recorded or refused; a full queue is waited for, a bounded time. */
+		ghci_scan_flush(device);
+		now = clock_ticks();
+		if (error != EAGAIN)
+			break;
+		if (now >= deadline) {
+			error = EBUSY;
+			break;
+		}
+
+		ghci_scan_sleep(device, mark, deadline);
 	}
 
-	/* The controller did not take the flip. */
-	kern_logf("ghci: %s: flip not taken\n", device->name);
-	return ETIMEDOUT;
+	/* A present that was not recorded lets the memory go. */
+	if (error != 0) {
+		memory_let_go(device, memory);
+		return error;
+	}
+
+	/* Succeeded: the image is recorded. */
+	return 0;
 }
 
-/* Ends the lease: the controller goes dark and the frames go back; the device's lock is held. */
-static void
-lease_end(
-	struct ghci_device *device)
+/*
+ * Records a copied present: once every present before it was placed and
+ * plane 0 has no flip placed, the blitter copies the storage into the
+ * driver's frame not on the screen, which is then recorded.  The storage
+ * is not borrowed after the call.
+ */
+static int
+present_copied(
+	struct ghci_device *device,
+	void *opaque,
+	struct ghci_allocation *storage,
+	unsigned mode,
+	uint32_t format,
+	struct gpu_display_present *request)
 {
-	/* Dark first, so the frames are no longer read. */
-	if (device->display.enabled)
-		controller_off(device);
+	struct ghci_display *display;
+	struct ghci_display_image image;
+	struct ghci_blit blit;
+	uint64_t deadline;
+	uint64_t mark;
+	uint64_t now;
+	int usable;
+	int frame;
+	int error;
 
-	/* The frames, the lease and its sequence. */
-	frames_give(device);
-	device->display.owner = NULL;
-	device->display.lease = 0U;
-	device->display.sequence = 0U;
+	/* Waits until the frame not on the screen is free: nothing waits and no flip is placed. */
+	display = &device->display;
+	deadline = clock_ticks() + kern_ms_to_ticks(GHCI_DISPLAY_ADOPTION_MS);
+	frame = -1;
+	for (;;) {
+		mark = ghci_scan_mark(device);
+		mutex_lock(&display->lock);
+
+		ghci_scan_update(device);
+		error = lease_check(display, opaque, request->lease, request->generation);
+		usable = ghci_scan_ring_usable(device);
+		if (error == 0 && !usable)
+			error = EIO;
+		if (error == 0) {
+			error = EAGAIN;
+			if (display->queue_count == 0U &&
+			    !display->flips[0].placed &&
+			    display->copy_frame_busy < 0)
+				error = 0;
+		}
+		if (error == 0) {
+			/* The frame the controller does not scan; it is the copy's until recorded. */
+			frame = 0;
+			if (display->shown.copy_frame == 0)
+				frame = 1;
+			display->copy_frame_busy = frame;
+		}
+
+		mutex_unlock(&display->lock);
+
+		/* Ends once a frame is the copy's or the present is refused, or at the deadline. */
+		ghci_scan_flush(device);
+		now = clock_ticks();
+		if (error != EAGAIN)
+			break;
+		if (now >= deadline) {
+			error = EBUSY;
+			break;
+		}
+
+		ghci_scan_sleep(device, mark, deadline);
+	}
+
+	/* Reports a present that may not be recorded. */
+	if (error != 0)
+		return error;
+
+	/* The copy into the frame, by the blitter, outside the display's lock. */
+	kern_memset(&blit, 0, sizeof(blit));
+	blit.op = GHCI_BLT_COPY;
+	blit.src_base = storage->gpu_address + (uint32_t)request->offset;
+	blit.src_stride = request->stride;
+	blit.dst_base = display->frames[frame]->gpu_address;
+	blit.dst_stride = ghci_scan_stride(device, request->width);
+	blit.width = request->width;
+	blit.height = request->height;
+	error = ghci_blit_run(device, &blit);
+
+	/* The frame is recorded while the lease is still the caller's. */
+	mutex_lock(&display->lock);
+
+	display->copy_frame_busy = -1;
+	if (error == 0)
+		error = lease_check(display, opaque, request->lease, request->generation);
+	if (error == 0) {
+		kern_memset(&image, 0, sizeof(image));
+		image.sequence = display->sequence + 1U;
+		image.base = display->frames[frame]->gpu_address;
+		image.stride = blit.dst_stride;
+		image.format = format;
+		image.mode = mode;
+		image.memory = NULL;
+		image.copy_frame = frame;
+		error = ghci_scan_record(device, &image, 1);
+	}
+	if (error == 0) {
+		display->sequence = image.sequence;
+		request->sequence = image.sequence;
+	}
+
+	mutex_unlock(&display->lock);
+
+	/* Reports a copy that failed, or a lease that ended meanwhile. */
+	ghci_scan_flush(device);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the copied frame is recorded. */
+	return 0;
+}
+
+/* Lets go of memory the display held for a present that was not recorded. */
+static void
+memory_let_go(
+	struct ghci_device *device,
+	struct ghci_allocation *memory)
+{
+	/* The hold goes under the device's lock; memory its owner gave back waits for the newest fence. */
+	mutex_lock(&device->lock);
+
+	ghci_memory_unhold(device, memory);
+
+	mutex_unlock(&device->lock);
+
+	/* The deferred memory goes back from the service thread. */
+	ghci_service_wake(device, GHCI_WORK_RECLAIM);
+}
+
+/* Reports a cursor surface neither shown nor flipped, or -1 when both are in use. */
+static int
+cursor_surface_free(
+	const struct ghci_display *display)
+{
+	int surface;
+
+	/* The first surface the controller does not have and no flip names. */
+	for (surface = 0; surface < 2; surface++) {
+		if (surface == display->cursor_shown)
+			continue;
+		if (display->flips[1].placed && display->flips[1].surface == surface)
+			continue;
+
+		return surface;
+	}
+
+	/* Both are the controller's for now. */
+	return -1;
+}
+
+/*
+ * Puts a cursor image's rows from the staging into a surface: BGRA8
+ * pixels (red and blue swapped from RGBA8 when swap is set), the part
+ * past the image's width and height cleared.
+ */
+static void
+cursor_convert(
+	const uint8_t *staging,
+	uint8_t *surface,
+	uint32_t width,
+	uint32_t height,
+	int swap)
+{
+	const uint8_t *source;
+	uint8_t *target;
+	uint32_t row;
+	uint32_t column;
+
+	/* Each pixel of the 64 x 64 surface. */
+	for (row = 0U; row < GHCI_DC_CURSOR_SIZE; row++) {
+		for (column = 0U; column < GHCI_DC_CURSOR_SIZE; column++) {
+			source = &staging[row * CURSOR_STRIDE + column * GHCI_DISPLAY_PIXEL_BYTES];
+			target = &surface[row * CURSOR_STRIDE + column * GHCI_DISPLAY_PIXEL_BYTES];
+
+			/* Outside the image: transparent black. */
+			if (row >= height || column >= width) {
+				target[0] = 0U;
+				target[1] = 0U;
+				target[2] = 0U;
+				target[3] = 0U;
+				continue;
+			}
+
+			/* The pixel, in the controller's BGRA order. */
+			if (swap) {
+				target[0] = source[2];
+				target[1] = source[1];
+				target[2] = source[0];
+				target[3] = source[3];
+			} else {
+				target[0] = source[0];
+				target[1] = source[1];
+				target[2] = source[2];
+				target[3] = source[3];
+			}
+		}
+	}
 }

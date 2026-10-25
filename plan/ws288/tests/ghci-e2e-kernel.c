@@ -452,16 +452,42 @@ ghci_display_session_close(
 	(void)session;
 }
 
-int
-ghci_display_interrupt(
+void
+ghci_display_service(
+	struct ghci_device *device,
+	unsigned work)
+{
+	(void)device;
+	(void)work;
+}
+
+void
+ghci_display_recover_begin(
 	struct ghci_device *device)
 {
 	(void)device;
-	return 0;
+}
+
+void
+ghci_display_recover_count(
+	struct ghci_device *device)
+{
+	(void)device;
+}
+
+void
+ghci_display_recover_end(
+	struct ghci_device *device,
+	int running)
+{
+	(void)device;
+	(void)running;
 }
 
 /* No display operations: the node offers none. */
 const struct drv_gpu_display_ops ghci_display_ops;
+const struct drv_gpu_display_ops ghci_display_cursor_ops;
+const struct drv_gpu_scanout_ops ghci_scanout_ops;
 
 /* Runs the GPU's clock for one look and calls the interrupt handler when the line is high. */
 static void

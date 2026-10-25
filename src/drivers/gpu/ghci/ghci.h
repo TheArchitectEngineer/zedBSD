@@ -32,9 +32,9 @@
  * those go in host memory and the aperture opens the 32-bit space.
  *
  * Locks.  lock (a mutex) serializes the sessions, the allocators, the
- * lists of allocations, the display and the device's life; cp_lock (a
- * mutex, taken after lock when both are held) serializes the ring and
- * the reset.  irq_lock (a spinlock, taken by the interrupt handler)
+ * lists of allocations and the device's life; display.lock (a mutex,
+ * taken after lock) serializes the display; cp_lock (a mutex, taken after
+ * both) serializes the ring and the reset.  irq_lock (a spinlock, taken by the interrupt handler)
  * protects the completed fence, the reset generation, the fault's record
  * and the service thread's work, and is the condition lock of the fence
  * and service wait queues.
@@ -102,6 +102,16 @@
 /* The most modes a display controller can name (DC_CAPS[11:9]). */
 #define GHCI_DISPLAY_MODES_MAX		8U
 
+/*
+ * The presents the display keeps waiting for the controller's one
+ * pending flip: two, and one more for a flip a reset gave back.
+ */
+#define GHCI_DISPLAY_QUEUE		3U
+#define GHCI_DISPLAY_QUEUE_DEPTH	2U
+
+/* The held memory the display lets go of once its lock is let go. */
+#define GHCI_DISPLAY_DROPS		16U
+
 /* The tries at host memory that does not fall into the local range. */
 #define GHCI_HOST_TRIES			8U
 
@@ -110,6 +120,7 @@
 #define GHCI_WORK_RECOVER		2U
 #define GHCI_WORK_STOP			4U
 #define GHCI_WORK_REPLY			8U
+#define GHCI_WORK_DISPLAY		16U
 
 /*
  * The kinds of memory an allocation is in (see the head of this file).
@@ -221,16 +232,85 @@ struct ghci_display_mode {
 };
 
 /*
- * The display controller of a device (display.c, the DISP2 capability):
- * its registers, its mode table, the one lease, the mode shown and the driver's two frames, into which a
- * presentation copies the session's storage and which the controller
- * scans in turn.
+ * A submission's place in the fence order: the fence value written after
+ * it and the reset generation it was written in.  A reset completes every
+ * fence of an older generation with an error.
+ */
+struct ghci_ticket {
+	uint32_t fence;
+	uint64_t generation;
+};
+
+/*
+ * One image of plane 0 the display has recorded: a present's frame.
  *
- * The device's lock protects everything but the interrupt's counters,
- * which irq_lock protects: vsyncs counts vertical syncs and flips the
- * flips that completed, and flip_wake wakes a presentation that waits for
- * its flip.  shown is the frame index (0 or 1) on the screen; sequence
- * counts the lease's presentations.
+ * sequence is the present's number in the lease (0 for none).  base is
+ * the GPU address the controller scans, with the rows stride bytes apart
+ * in the controller's format; mode is the mode the image fills.  A shared
+ * image (a blob the session presents) is memory the display holds until
+ * the controller no longer scans it; a copied one is one of the driver's
+ * two frames (copy_frame 0 or 1, memory NULL).
+ */
+struct ghci_display_image {
+	uint64_t sequence;
+	uint32_t base;
+	uint32_t stride;
+	uint32_t format;
+	unsigned mode;
+	struct ghci_allocation *memory;
+	int copy_frame;
+};
+
+/*
+ * The one flip of a plane that the driver has placed in the ring and
+ * whose record it has not seen yet.  The driver places a plane's next
+ * flip only after this one's record, so the controller's one pending
+ * flip per plane never makes the ring wait.
+ *
+ * value is the 31-bit value the record carries; light says the flip is
+ * part of a run that lights the controller.  image is plane 0's,
+ * surface the cursor surface of plane 1.
+ */
+struct ghci_display_flip {
+	int placed;
+	uint32_t value;
+	int light;
+	struct ghci_display_image image;
+	int surface;
+};
+
+/*
+ * The display controller of a device (display.c and display-scan.c, the
+ * DISP2 capability): one output with a primary plane and, when the
+ * controller has one, a cursor plane.  The ring changes what it shows: a
+ * present is a FLIP of a shared image or of one of the driver's two
+ * frames into which it copied the session's storage.
+ *
+ * lock serializes everything here but topology and the interrupt's
+ * wake-up; it is taken after the device's lock and before cp_lock.
+ * topology (the event sequence of the output) is read and moved under
+ * irq_lock.  The registers, the identity and the mode table are read at
+ * the attach and never change.
+ *
+ * The lease: owner and lease name the holder; ending says a lease ended
+ * and the controller is still going dark (no claim until it is), dark_ticket
+ * the fence of the packet that turns it off.  sequence is the lease's last
+ * present number and adopted the highest one shown with every lower one
+ * (replaced ones count); uncertain says an adoption did not come in time,
+ * after which the lease's presents fail.
+ *
+ * What is lit: enabled, the mode, the format and the stride of plane 0;
+ * shown is the image it scans.  flips[] are the planes' placed flips,
+ * queue[] the presents still waiting for plane 0's flip, oldest first.
+ * copy_frame_busy is the driver's frame a copied present is filling (-1
+ * for none): no present is recorded until it is.  drops[] is held memory
+ * let go of once the lock is let go (the device's lock frees it).
+ *
+ * The cursor: surfaces[] are the driver's two images of plane 1 and
+ * staging the copy of a session's rows; cursor_shown is the surface the
+ * controller has (-1 for none), cursor_pending one to flip once the
+ * controller is lit (-1 for none); cursor_copying says a copy into the
+ * staging runs.  The errors and the connection are the service thread's.
  */
 struct ghci_display {
 	int present;
@@ -240,21 +320,56 @@ struct ghci_display {
 	uint32_t controller_caps;
 	struct ghci_display_mode modes[GHCI_DISPLAY_MODES_MAX];
 	unsigned mode_count;
+	struct mutex lock;
+	struct wait_queue flip_wake;
+	uint64_t topology;
+
+	/* The connection and the output's generation. */
 	int connected;
+	uint64_t generation;
+	uint64_t hotplug_tick;
+
+	/* The lease. */
 	struct ghci_session *owner;
 	uint64_t lease;
 	uint64_t next_lease;
+	int ending;
+	int dark_placed;
+	struct ghci_ticket dark_ticket;
 	uint64_t sequence;
+	uint64_t adopted;
 	uint64_t shown_time_ns;
+	int uncertain;
+
+	/* What the controller shows and what waits for it. */
+	int enabled;
 	unsigned mode;
 	uint32_t format;
-	int enabled;
+	uint32_t stride;
+	struct ghci_display_image shown;
+	struct ghci_display_flip flips[2];
+	struct ghci_display_image queue[GHCI_DISPLAY_QUEUE];
+	unsigned queue_count;
+	uint32_t next_value;
 	struct ghci_allocation *frames[2];
-	unsigned shown;
-	uint64_t vsyncs;
-	uint64_t flips;
-	uint32_t underflows;
-	struct wait_queue flip_wake;
+	int copy_frame_busy;
+	struct ghci_allocation *drops[GHCI_DISPLAY_DROPS];
+	unsigned drop_count;
+
+	/* The cursor plane. */
+	struct ghci_allocation *surfaces[2];
+	struct ghci_allocation *staging;
+	int cursor_shown;
+	int cursor_pending;
+	int cursor_image;
+	int cursor_copying;
+
+	/* The scan-out errors: the count of this second, the mask and the reads that kept failing. */
+	unsigned error_count;
+	uint64_t error_tick;
+	int error_masked;
+	unsigned read_errors;
+	unsigned underflows;
 };
 
 /*
@@ -371,16 +486,6 @@ struct ghci_device {
 };
 
 /*
- * A submission's place in the fence order: the fence value written after
- * it and the reset generation it was written in.  A reset completes every
- * fence of an older generation with an error.
- */
-struct ghci_ticket {
-	uint32_t fence;
-	uint64_t generation;
-};
-
-/*
  * The device (ghci.c).
  */
 
@@ -424,6 +529,9 @@ void ghci_cp_stop(struct ghci_device *device);
  * 0 with the submission's ticket, or why nothing was written.
  */
 int ghci_cp_submit(struct ghci_device *device, struct ghci_session *session, const uint32_t *packets, uint32_t dwords, struct ghci_ticket *ticket);
+
+/* Writes packets of the driver's own into the ring without a fence, and rings the doorbell. */
+int ghci_cp_submit_unfenced(struct ghci_device *device, const uint32_t *packets, uint32_t dwords);
 
 /* Waits a bounded time for a ticket.  Returns 0, ETIMEDOUT, or EIO when a reset ended it. */
 int ghci_cp_wait(struct ghci_device *device, const struct ghci_ticket *ticket, unsigned milliseconds);
@@ -527,8 +635,12 @@ const struct ghci_isa_backend *ghci_isa_select(uint32_t caps, uint32_t isa_id);
  * The display controller (display.c).
  */
 
-/* The display operations of a device with a display controller. */
+/* The display operations of a device with a display controller, with and without a cursor plane. */
 extern const struct drv_gpu_display_ops ghci_display_ops;
+extern const struct drv_gpu_display_ops ghci_display_cursor_ops;
+
+/* The scan-out route's query of a device with a display controller. */
+extern const struct drv_gpu_scanout_ops ghci_scanout_ops;
 
 /*
  * The sharing of memory between a device's sessions (share.c).
@@ -546,11 +658,23 @@ void ghci_display_detach(struct ghci_device *device);
 /* Ends a closing session's lease. */
 void ghci_display_session_close(struct ghci_device *device, struct ghci_session *session);
 
-/* Serves the display controller's interrupt; nonzero when it had one. */
-int ghci_display_interrupt(struct ghci_device *device);
+/* Does the display's part of a round of the service thread: records, errors, the connection, a lease's end. */
+void ghci_display_service(struct ghci_device *device, unsigned work);
+
+/* Takes the display's lock before a reset of the command processor. */
+void ghci_display_recover_begin(struct ghci_device *device);
+
+/* Counts the display's flips again while the reset processor is idle; cp_lock is held. */
+void ghci_display_recover_count(struct ghci_device *device);
+
+/* Places again what the reset lost (when the GPU came back) and lets the display's lock go. */
+void ghci_display_recover_end(struct ghci_device *device, int running);
 
 /* Finds an ADV7511 behind the display controller's I2C master and sets it up: 0, ENODEV or EIO. */
 int ghci_adv7511_start(struct ghci_device *device, uint32_t registers);
+
+/* Reads whether the ADV7511 sees a sink on its hot-plug line: 0 with the answer, or EIO. */
+int ghci_adv7511_sensed(struct ghci_device *device, uint32_t registers, int *connected);
 
 /*
  * The native command of the test kernels (native.c).
