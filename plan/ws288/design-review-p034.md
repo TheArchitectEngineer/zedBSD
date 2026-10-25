@@ -43,3 +43,31 @@
 | 31 | Low | KC705 は aperture = local memory。表の 0 埋めの手順、walk の read の axi_idle | RUN の後に BLT（tag 0）で 0、その FENCE の後に PROTECTED を開く。walk は axi_idle と quiesce に数える（§17.3・§17.5・§17.9） |
 | 32 | Low | 段の R1 と危険の R1 の名前の重複、R6 の LW が過小、MEMORY の flag の合意 | 危険は「確認 C1・C2」に、R6 13 LW（計 51）、R1 に P3 との合意（§17.17） |
 | 33 | Low | U に足す判断 | U69（public）・U70（ring の CP 側）・U71（CAM の数）・U72（robust）を足し、slab は §17.8 で決めた |
+
+## 2 回目（design-reviewer、2026-10-25、21 件: Critical 1・High 3・Medium 6・Low 11）
+
+対象は 1 回目の対応の後の §17（zedBSD 0fe1902fa）。1 回目の #1・#4・#6・#9・#12・#15・#16・#17・#24・#25・#27・#28・#29・#30 は解けていると確かめられ、#2・#5・#7・#8・#11・#13・#14・#19・#22・#23・#31 に新しい穴か残りが有った（下の N の行）。対応は全部 §17 の本文に入れた。
+
+| # | 重大度 | 指摘（要約） | 対応（§17） |
+| --- | --- | --- | --- |
+| N1 | Critical | slot を消しても resid が残り、同じ番号の新しい session が scrub されずに前の session の残りを見る | PROT_SLOT の消去で resid = s なら MIXED、prot_unit = s なら 0・known = 0。resid の none・slot（0 も持ち主）・MIXED を別の値に（§17.6・§17.12）、TB と `MUT_CPPROT_CLOSEKEEP`（§17.15） |
+| N2 | High | SU の export buffer（`atg_su_exp`）の残りを ROP が書く | scrub の表に足した（§17.7）、`atg_su_exp` 40 port（§17.16）、TB の case |
+| N3 | High | KC705 の表の BLT の 0 埋めが tbl の規則で拒まれる | driver が PROT_TABLE を書く前に 0 にし、PROT_TABLE は protected の session が無い間だけ書ける（RUN の中でも）。順を §17.3・§17.9 に |
+| N4 | High | 内蔵の領域が granule に揃わず public と private が同居 | public を 4 KiB に切り上げ、wait word を private へ、free list を granule の境から、slab の整列の確保（§17.8）、fwtest の case |
+| N5 | Medium | #11 が未解決: park の後の同じ client の要求で木の全部（DC も）止まる | HAS_PROT の時 DC（ROOT_CLIENT）を root の別の入口に（§17.5・§17.11・§17.16）、TB で DC の遅れの上限 |
+| N6 | Medium | 同じ client の chk の 0 と 1 が追い越す | 判定の段か park に要求が有る client の後続は chk に依らず待つ（§17.5）、TB の `order` |
+| N7 | Medium | REVOKE・CLOSE の drain が切り替えの DRAIN より弱い、木の中の要求 | `atg_mc` の chk_idle の counter を DRAIN に、同じ条件を PROT_INFO[2] に出し firmware が待つ（§17.6・§17.8） |
+| N8 | Medium | INV の「待つ」を window で作れない、12 bit の数、CP → MC の配線 | PROT_INFO[3] の INV の pending を firmware が待つ、PROT_INV_G・PROT_INV_N（32 bit）、配線の group を §17.16 に |
+| N9 | Medium | 自分の blob の import、storage の blob、CAM の数 | backing の所有が importer と違う時だけ GRANT、storage の blob に合成の所有の MEMORY、session ごとの grant の上限、R1 で `share.c` を読む（§17.3・§17.9） |
+| N10 | Medium | #19 の一部: `atg_cpu`・`atg_cp_ctl`・seq の port・`atg_su`・`atg_su_exp` が表に無い | §17.16 に足し、§17.6 の seq の port を 38 → 40 に直した |
+| N11 | Low | client 0 の拒否は device の fault にならない | client 0 の保護の拒否を device の fault にする（§17.6） |
+| N12 | Low | recover の APERTURE の書き込みで PROT_TABLE が 0 に戻る | 起動と recover の順を §17.3・§17.9 に |
+| N13 | Low | CAM の limit の 20 bit で G1 = 2^20 を表せない | limit を 21 bit に（§17.3） |
+| N14 | Low | DONE で class 2 の slot を戻さない、SELF の unit の µop、DMA の slot の latch | DONE で 0、SELF は CP 側の µop だけ、DMA_GO で latch（§17.6） |
+| N15 | Low | 合成の identity を client が名指せる | 予約した名前の空間と vk の拒否（§17.9） |
+| N16 | Low | §17.2 の PROGRAM の範囲と §17.8 の食い違い | §17.2 から PROGRAM を外した（program は driver の MEMORY READ_ONLY） |
+| N17 | Low | 判定の段と park の FF が過小 | §17.14 を直した（要求の全部を持つ register、throughput 1/cycle） |
+| N18 | Low | 表の全体の掃きの時間が過小 | 書いた範囲の記録だけを 0 に、全体の掃きは記録が溢れた時だけ、10〜20 ms（§17.8・§17.11） |
+| N19 | Low | U70 の GHCI の文に driver の義務が無い | 「driver は protected の session の class 0/1 の CP 側の µop に client の address を入れない」を規範に（§17.10） |
+| N20 | Low | 試験の計画が上の誤りを検出できない | §17.15 に N1・N2・N4・N5・N6・N7 の case |
+| N21 | Low | slot 0 の data も持ち主として数える事 | resid の encode に明記（§17.6） |
