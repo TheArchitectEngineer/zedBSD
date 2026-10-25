@@ -3,7 +3,7 @@
 # ws256-p024 PCIe1（M.2）と NVMe の実機、NVMe の root
 
 - 親: [WS256](../ws.md)。設計: [design-peripherals.md](../design-peripherals.md) §3.11（§3.5 の PLDA、§3.6 の NVMe の INTx）。
-- 状態: in-progress（2026-10-26 05:59 Q1、q1587）
+- 状態: cleared（2026-10-26 Q1、q1587。記録の末尾）
 - 依存: p017（NVMe の INTx、cleared）・p020（PLDA の PCIe0 と VL805、cleared）・p015（SD の root）。
 
 ## 指示（2026-10-26 ユーザー）
