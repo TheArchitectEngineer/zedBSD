@@ -725,6 +725,79 @@ test_executor(void)
 	object = ghci_vk_object_find(session->vk, GHCI_VK_PIPELINE, ID_PIPELINE);
 	expect(object != NULL && object->as.pipeline.program_count == 1U, "vk pipeline holds its program");
 
+	/* A graphics pipeline of two stages: both programs before the create, the fragment one compiled first. */
+	memset(reply->view, 0, REPLY_BYTES);
+	frame_begin(&frame, reply_id);
+	command(&frame, GPU_OP_CREATE_GRAPHICS_PIPELINES, GPU_OP_FLAG_REPLY);
+	put64(&frame, ID_DEVICE);
+	put64(&frame, 0U);
+	put32(&frame, 1U);
+	put64(&frame, 1U);
+	put32(&frame, 28U);
+	put64(&frame, 0U);
+	put32(&frame, 0U);
+	put32(&frame, 2U);
+	put64(&frame, 2U);
+	for (index = 0U; index < 2U; index++) {
+		put32(&frame, 18U);
+		put64(&frame, 0U);
+		put32(&frame, 0U);
+		put32(&frame, index == 0U ? 0x1U : 0x10U);
+		put64(&frame, ID_MODULE);
+		put64(&frame, 5U);
+		put32(&frame, 0x6e69616dU);
+		put32(&frame, 0U);
+		put64(&frame, 0U);
+	}
+	put64(&frame, 0U);
+	put64(&frame, 1U);
+	put32(&frame, 20U);
+	put64(&frame, 0U);
+	put32(&frame, 0U);
+	put32(&frame, 0U);
+	put32(&frame, 0U);
+	put64(&frame, 0U);
+	put64(&frame, 0U);
+	put64(&frame, 1U);
+	put32(&frame, 23U);
+	put64(&frame, 0U);
+	put32(&frame, 0U);
+	put32(&frame, 0U);
+	put32(&frame, 0U);
+	put32(&frame, 0U);
+	put32(&frame, 0U);
+	put32(&frame, 0U);
+	put32(&frame, 0U);
+	put32(&frame, 0U);
+	put32(&frame, 0U);
+	put32(&frame, 0U);
+	put32(&frame, 0x3f800000U);
+	put64(&frame, 0U);
+	put64(&frame, 0U);
+	put64(&frame, 0U);
+	put64(&frame, 0U);
+	put64(&frame, 0x200U);
+	put64(&frame, 0x300U);
+	put32(&frame, 0U);
+	put64(&frame, 0U);
+	put32(&frame, 0xffffffffU);
+	put64(&frame, 0U);
+	put64(&frame, 1U);
+	put64(&frame, ID_PIPELINE + 0x100U);
+	frame_end(&frame);
+	error = submit(opaque, &frame);
+	ghci_vk_service(&device);
+	expect(error == 0, "vk graphics pipeline frame taken");
+	expect(fake_compiles == 3U && fake_releases == 3U, "vk two stages compiled");
+	records = staged(&record_count);
+	expect(record_count == 3U && records != NULL, "vk two programs and the create");
+	if (records != NULL) {
+		expect(records[0] == GPU_OP_GHCI_PROGRAM && records[5] == 0U, "vk vertex program");
+		expect(records[11] == GPU_OP_GHCI_PROGRAM && records[16] == 1U, "vk fragment program");
+		expect(records[22] == GPU_OP_CREATE_GRAPHICS_PIPELINES, "vk graphics create relayed");
+	}
+	expect(reply_word(reply, 1U) == 0U && reply_word(reply, 4U) == ID_PIPELINE + 0x100U, "vk graphics pipeline made");
+
 	/* An event: the firmware's aux is its address in the heap, where the host sets it. */
 	memset(reply->view, 0, REPLY_BYTES);
 	model_aux[0] = device.vk->heap->gpu_address + 256U;
