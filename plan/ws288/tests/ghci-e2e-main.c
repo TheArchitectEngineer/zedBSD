@@ -83,14 +83,31 @@ struct buffer {
 	void *mapped;
 };
 
+/*
+ * The calls of vkQueueSubmit (libvulkan's, wrapped: __wrap_vkQueueSubmit)
+ * and the GPU cycles they took to return, in total and the longest.
+ */
+struct submit_stats {
+	uint64_t calls;
+	uint64_t cycles;
+	uint64_t cycles_max;
+};
+
 /* The counts of a case's start, which its report subtracts. */
 struct measure {
 	struct atg_link_stats link;
 	struct e2e_core_stats core;
+	struct submit_stats submit;
 };
 
 /* The count of the cases that failed, which decides the run's result. */
 static unsigned cases_failed;
+
+/* The vkQueueSubmit calls so far; the longest is reset at each case's start. */
+static struct submit_stats submits;
+
+VkResult __real_vkQueueSubmit(VkQueue queue, uint32_t count, const VkSubmitInfo *submit, VkFence fence);
+VkResult __wrap_vkQueueSubmit(VkQueue queue, uint32_t count, const VkSubmitInfo *submit, VkFence fence);
 
 static int vulkan_open(struct vulkan *vulkan);
 static void vulkan_close(struct vulkan *vulkan);
@@ -988,6 +1005,10 @@ measure_start(
 {
 	atg_link_stats(&measure->link);
 	e2e_core_stats(&measure->core);
+
+	/* The case's longest vkQueueSubmit is its own. */
+	submits.cycles_max = 0U;
+	measure->submit = submits;
 }
 
 /* Prints what a case took: the GPU's cycles, the firmware's, the µops, the round trips. */
@@ -1002,6 +1023,7 @@ measure_report(
 	uint64_t jobs;
 	uint64_t command_average;
 	uint64_t job_average;
+	uint64_t calls;
 
 	/* The counts now, and the averages of the round trips. */
 	atg_link_stats(&link);
@@ -1032,7 +1054,47 @@ measure_report(
 		    (unsigned long long)jobs,
 		    (unsigned long long)job_average);
 	}
+	calls = submits.calls - measure->submit.calls;
+	if (calls != 0U) {
+		printf("  measure %s: %llu vkQueueSubmit, %llu cycles each to return on average, the longest %llu\n",
+		    name,
+		    (unsigned long long)calls,
+		    (unsigned long long)((submits.cycles - measure->submit.cycles) / calls),
+		    (unsigned long long)submits.cycles_max);
+	}
 	fflush(stdout);
+}
+
+/*
+ * Calls libvulkan's vkQueueSubmit and counts the GPU cycles until it
+ * returns (Vulkan's submit does not wait for the work).
+ */
+VkResult
+__wrap_vkQueueSubmit(
+	VkQueue queue,
+	uint32_t count,
+	const VkSubmitInfo *submit,
+	VkFence fence)
+{
+	struct atg_link_stats before;
+	struct atg_link_stats after;
+	uint64_t cycles;
+	VkResult result;
+
+	/* The cycles around the call. */
+	atg_link_stats(&before);
+	result = __real_vkQueueSubmit(queue, count, submit, fence);
+	atg_link_stats(&after);
+
+	/* The counts. */
+	cycles = after.cycles - before.cycles;
+	submits.calls++;
+	submits.cycles += cycles;
+	if (cycles > submits.cycles_max)
+		submits.cycles_max = cycles;
+
+	/* Succeeded: libvulkan's answer. */
+	return result;
 }
 
 /* Reads a SPIR-V module from a file into words the caller frees, or NULL. */

@@ -2,7 +2,7 @@
 
 # WS288 の設計: FPGA の GPU の IP「Amaterrace GPU」と GHCI — ZYBO（XC7Z010）で workflow、本命は KC705（XC7K325T）
 
-2026-10-23 P2（ws288-p001、worktree p2-ws288-p001、基点 main c327d0c73）。親: [WS288](ws.md)。**版 7**（2026-10-25 P1、ws288-p034 の設計の段、worktree p1-p030、基点 main 485108a30: **§17 session の保護**（GHCI §11.6、PROT）を新設: granule ごとの所有の表と MC の root の PLB・grant の CAM、AMB の header の chk・slot、unit は 1 度に 1 つの session（drain・invalidate・scrub）、firmware の µop と DMA の検査、heap の private と可視の区分、driver の方針、GHCI の draft、model・TB、段 R1〜R8 と 54 LW、U61〜U72、review 2 回（33 件・21 件）の対応。review は [design-review-p034.md](design-review-p034.md)）。**版 6**（2026-10-25 P1、ws288-p030 の設計の段、worktree p1-p030、基点 main 32b51bf34: **§16 Vulkan 1.0 core の残り**を新設（limit・feature・必須の format の表、format の共通の土台と FMT capability、ROP の stencil・D16・depth bounds・depth の clip/clamp/bias・MRT 4 の beat・f32 の blend・occlusion の counter、RX の point・line・viewport の矩形・guard band の clip・depth bias、VF の format と robust の limit、TU の format と swizzle と f32 の filter、BLT の KEEP、µop 14 QUERY、GHCI の draft、model・TB・scene、段 S1〜S11 と 79 LW（ETC2 は後の Phase）、U47〜U60、review 2 回（35 件・23 件）の対応）。§8 に p030 の行を足した。review は [design-review-p030.md](design-review-p030.md)）。**版 5**（2026-10-25 P2、ws288-p027 の設計の段、worktree p2-p027、基点 main bb8e0f161: **§15 MSAA** を新設（Vulkan 1.0 core の multisample の要求の表、RX の sample の coverage、fragment の入力 r6〜r9、SU の exp 0x105、ROP の `atg_rop_ms`、sample-interleaved の配置、resolve の内蔵の draw、TU の `texf` の sample、GHCI の draft、model・TB・scene、段と LW、U43〜U46）。§3.7 と §8 に p027 の行を足した。review は [design-review-msaa.md](design-review-msaa.md)）。**版 4**（同日 P1、worktree p1-ws288-d4、基点 main b9284693c → main c10f7ea78 を merge: ユーザーの版 4 の決定の列（FP16/INT8 の mixed precision → online の softmax/LN → SIMD-8 の取り下げ → 案 B（SA に寄せ SU は最小）→ **SA の設計と実装は延期、SU が GSI1 を実装してから。SA は KC705 に入らなくてよい**）の最後の形: §3.9 は SU ↔ SA の大まかな整合（`rq` = r63 の予約、entry = SA の vector、decoupled な SA、案 B の構成、KC705 は raster/compute 構成だけ）の 5 点だけに縮め、詳細の sketch は Appendix A（延期）に移した。GSI1 は版 3 の最小の形（packed の超越は無し）。p020〜p022 は Future Work（trigger: p008〜p010 cleared）。§7.6 の RTL の進め方（top-down の分割・空の module・spec）と p023 を新設、p003 の実測と reserved-memory を反映、U39 は閉じた。design-reviewer の v4 の指摘（High 7・Medium 15・Low 11）と対応は §14。review 1 の README（a217bf8）との食い違いは U39）。**版 3**（同日 P1、worktree p1-ws288-d3、基点 main 01f261168: ユーザーの 4 つの決定（§2.1 の冒頭）に合わせて §2.4（ring の command = Kei GPU command protocol の gpu-op、CP は RISC-V 風の `atg_cpu` の firmware が解く）と §3（GHCI の標準の shader ISA「GSI1」、RISC-V の 32 bit の形を低位に持つ 64 bit 固定、小さな hardware の scoreboard）を書き直し、§6.6・§6.7・§6.9・§8（p017〜p019 の新設、392 LW）・§3.9（systolic array と ISA の FIFO の register `rq`、同日のユーザーの要件）・§6.10・§9（R23〜R30、U18〜U30）・§10（21〜30）・§11・§13 を足した。版 2 の節の番号は保った。design-reviewer の指摘（Critical 2・High 10・Medium 22・Low 15）と対応は §13（末尾）。**版 2**（同日: design-reviewer の指摘 38 件（Critical 3・High 15・Medium 14・Low 6）の全部に対応。対応の表は §12。版 1 からの主な変更: detach と reset の順序（§1.3・§6.2）、FENCE の意味（§2.4）、drv_gpu の capability と jobs と capset（§6.4）、window と IRQ の devcfg の事実への修正（§5.1・§6.2）、CP の状態遷移と ring の約束（§2.6・§2.7）、fault は v1 は device 全体（§2.5）、統一 shader の deadlock と ROP の順序（§3.8）、cache の無効化（§2.4 `INVALIDATE`）、見積もりの計算し直しと **7010 では block を分けた bitstream で確かめる**方針（§3.6・R1）、GHCI の標準と vendor の境（§2.1）、KC705 は 1 device（§6.5）、Phase の循環の解消（§8）。）
+2026-10-23 P2（ws288-p001、worktree p2-ws288-p001、基点 main c327d0c73）。親: [WS288](ws.md)。**版 8**（2026-10-25 P3、ws288-p035 の設計の段、zedBSD の worktree p3-p006、amaterrace-gpu の worktree p3-p035（aa78b64 の上）: **§18 DC を GHCI の GPU の一部に**を新設: DC を `rtl/gpu/dc/` の atg_top の子に（board の reset の domain）、新しい capability DISP2、scanout の register は CP の RUNNING の間は ring の µop（新しい 15 DISP_SET・16 FLIP）だけが書き host は IDLE・HALTED・FAULTED だけ（RUNNING の write は捨てて BAD_WRITE）、present = FLIP（plane ごとの待ちの slot、取り込みで `atg_cp_disp` の record の書き手が `{value, FRAME_COUNT}` を書き IRQ_STATUS.FLIP）、DC は「全部の unit」に入らない、scanout の誤りは device の fault にしない、event は IRQ_STATUS [12:9]、mode の表、cursor の plane（gclk で合成）、image の条件と SHARED・COPY の route、ADV7511 と HPD は host の driver のまま、driver の UNGATED・queue・scan の hold・recover の数え直し、GHCI §13.2 の案、試験、段 D1〜D8 と 51 LW、U90〜U99、review 2 回（28 件・21 件）の対応は §18.15・§18.16）。**版 7**（2026-10-25 P1、ws288-p034 の設計の段、worktree p1-p030、基点 main 485108a30: **§17 session の保護**（GHCI §11.6、PROT）を新設: granule ごとの所有の表と MC の root の PLB・grant の CAM、AMB の header の chk・slot、unit は 1 度に 1 つの session（drain・invalidate・scrub）、firmware の µop と DMA の検査、heap の private と可視の区分、driver の方針、GHCI の draft、model・TB、段 R1〜R8 と 54 LW、U61〜U72、review 2 回（33 件・21 件）の対応。review は [design-review-p034.md](design-review-p034.md)）。**版 6**（2026-10-25 P1、ws288-p030 の設計の段、worktree p1-p030、基点 main 32b51bf34: **§16 Vulkan 1.0 core の残り**を新設（limit・feature・必須の format の表、format の共通の土台と FMT capability、ROP の stencil・D16・depth bounds・depth の clip/clamp/bias・MRT 4 の beat・f32 の blend・occlusion の counter、RX の point・line・viewport の矩形・guard band の clip・depth bias、VF の format と robust の limit、TU の format と swizzle と f32 の filter、BLT の KEEP、µop 14 QUERY、GHCI の draft、model・TB・scene、段 S1〜S11 と 79 LW（ETC2 は後の Phase）、U47〜U60、review 2 回（35 件・23 件）の対応）。§8 に p030 の行を足した。review は [design-review-p030.md](design-review-p030.md)）。**版 5**（2026-10-25 P2、ws288-p027 の設計の段、worktree p2-p027、基点 main bb8e0f161: **§15 MSAA** を新設（Vulkan 1.0 core の multisample の要求の表、RX の sample の coverage、fragment の入力 r6〜r9、SU の exp 0x105、ROP の `atg_rop_ms`、sample-interleaved の配置、resolve の内蔵の draw、TU の `texf` の sample、GHCI の draft、model・TB・scene、段と LW、U43〜U46）。§3.7 と §8 に p027 の行を足した。review は [design-review-msaa.md](design-review-msaa.md)）。**版 4**（同日 P1、worktree p1-ws288-d4、基点 main b9284693c → main c10f7ea78 を merge: ユーザーの版 4 の決定の列（FP16/INT8 の mixed precision → online の softmax/LN → SIMD-8 の取り下げ → 案 B（SA に寄せ SU は最小）→ **SA の設計と実装は延期、SU が GSI1 を実装してから。SA は KC705 に入らなくてよい**）の最後の形: §3.9 は SU ↔ SA の大まかな整合（`rq` = r63 の予約、entry = SA の vector、decoupled な SA、案 B の構成、KC705 は raster/compute 構成だけ）の 5 点だけに縮め、詳細の sketch は Appendix A（延期）に移した。GSI1 は版 3 の最小の形（packed の超越は無し）。p020〜p022 は Future Work（trigger: p008〜p010 cleared）。§7.6 の RTL の進め方（top-down の分割・空の module・spec）と p023 を新設、p003 の実測と reserved-memory を反映、U39 は閉じた。design-reviewer の v4 の指摘（High 7・Medium 15・Low 11）と対応は §14。review 1 の README（a217bf8）との食い違いは U39）。**版 3**（同日 P1、worktree p1-ws288-d3、基点 main 01f261168: ユーザーの 4 つの決定（§2.1 の冒頭）に合わせて §2.4（ring の command = Kei GPU command protocol の gpu-op、CP は RISC-V 風の `atg_cpu` の firmware が解く）と §3（GHCI の標準の shader ISA「GSI1」、RISC-V の 32 bit の形を低位に持つ 64 bit 固定、小さな hardware の scoreboard）を書き直し、§6.6・§6.7・§6.9・§8（p017〜p019 の新設、392 LW）・§3.9（systolic array と ISA の FIFO の register `rq`、同日のユーザーの要件）・§6.10・§9（R23〜R30、U18〜U30）・§10（21〜30）・§11・§13 を足した。版 2 の節の番号は保った。design-reviewer の指摘（Critical 2・High 10・Medium 22・Low 15）と対応は §13（末尾）。**版 2**（同日: design-reviewer の指摘 38 件（Critical 3・High 15・Medium 14・Low 6）の全部に対応。対応の表は §12。版 1 からの主な変更: detach と reset の順序（§1.3・§6.2）、FENCE の意味（§2.4）、drv_gpu の capability と jobs と capset（§6.4）、window と IRQ の devcfg の事実への修正（§5.1・§6.2）、CP の状態遷移と ring の約束（§2.6・§2.7）、fault は v1 は device 全体（§2.5）、統一 shader の deadlock と ROP の順序（§3.8）、cache の無効化（§2.4 `INVALIDATE`）、見積もりの計算し直しと **7010 では block を分けた bitstream で確かめる**方針（§3.6・R1）、GHCI の標準と vendor の境（§2.1）、KC705 は 1 device（§6.5）、Phase の循環の解消（§8）。）
 この Phase は設計だけで、RTL も C も書かない。RTL の置き場所は https://github.com/awemorris/amaterrace-gpu （この Phase では書かない。clone `/home/awe/amaterrace-gpu` は commit 1791b32「Initial」= ユーザーの `README.md` だけ）、計画はこの zedBSD の `plan/ws288/`（2026-10-23 ユーザー「planはこのままzedBSDを使いましょう。」）。FPGA の CPU は https://github.com/awemorris/sukuna-risc.git （2026-10-23 ユーザー「mc64をsukuna-riscに改名しました。」）。
 
 **ユーザーの仕様（amaterrace-gpu の README.md、1791b32 → 版 4 の時点では a217bf8: 「LLM: CP --> VF --> SU --> SA --> SU --> SA -> ... --> SU --> ROP -> MC」「Systolic Array: 32 x 32, 0.8 TOPS/SU @200MHz」が足された。SA の節との整合は U39、2026-10-23「概略を書きました。書き足してOKです。」）が上位**。この設計はそれに従う: block の名前と略号 **GHCI**（この project が提案する、Vulkan 互換の GPU のための標準の HCI）、**DC**（Display Controller）、**CP**（Command Processor）、**BLT**（Blitter）、**VF**（Vertex Fetcher）、**RX**（Rasterizer）、**SU**（Shader Unit）、**TU**（Texture Unit）、**ROP**（Buffer Writer）、**MC**（Memory Controller）。全体は `CPU -- (AXI4) -- CP`、fill/copy は `CP → BLT → MC`、primitive は `CP → VF → SU → RX → SU → ROP → MC`（TU は 2 段目の SU から）。shader は「Warp: 32-lane scalar with 16-bit packed」、register file は未定（「xxx」→ §3.5 と U12 で提案、[proposed/README-additions.md](proposed/README-additions.md) に README への書き足しの案）。
@@ -2454,6 +2454,346 @@ R2・R3・R4 は R1 の後に並行できる。R6 は P2 の p018 が main に�
 ### 17.21 review の指摘と対応
 
 全文は [design-review-p034.md](design-review-p034.md)。1 回目（design-reviewer、2026-10-25、33 件: Critical 2・High 5・Medium 16・Low 10）と 2 回目（同日、21 件: Critical 1・High 3・Medium 6・Low 11）の全部を本文に反映した。2 回目の主な変更: slot を消す時に resid を MIXED に（N1）、export buffer の scrub（N2）、表は PROT_TABLE を書く前に driver が 0 にし PROT_TABLE は protected の session が無い間だけ書ける（N3）、内蔵の領域の granule の整列（N4）、DC を root の別の入口に（N5）、同じ client の順序（N6）、drain に木の chk = 1 の要求の counter と window の drained（N7）、INV の pending の bit と 32 bit の数（N8）、share と合成の identity（N9・N15）、module の表の追加（N10）。
+
+## 18. DC を GHCI の GPU の一部に（CP の command で制御、present は queue の操作、割り込みは GHCI の IRQ。版 8、ws288-p035 の設計の段）
+
+2026-10-25 P3（ws288-p035、q1574-i01、zedBSD の worktree p3-p006（main 101a2f742 の上）、amaterrace-gpu の worktree p3-p035（main aa78b64 の上））。承認: 2026-10-25 09:02 ユーザー「DCがGPUとは別になってしまっていますが、確かに伝統的にはそういう構成だったように思いますが、Vulkan Displayのcapabilityというような抽象化と考えれば、gpu/に移して、CPへのコマンドで制御可能にしてもいいかもしれません。そうすれば、コピーせずにscanoutするのが自然になるでしょう。GHCIの仕様にDCも入れてしまって、割り込みもGHCIの仕様にしませんか？」（[phase035](phase035/phase.md)）、同日「ゴールまで推しで進んでよいです。判断に迷ったら、Vulkan 1.0の原則論で進めてください。」。この節は設計だけで、RTL・firmware・driver・GHCI の文は書かない（実装の段は Q1 が後で割り当てる）。§4.2・§4.3 の MSI の表・§5・§6.5 の DC の記述は、この節が実装された時に置き換わる（§18.14 の D8）。design-reviewer の review（1 回目 28 件: Critical 2・High 7・Medium 13・Low 6、2 回目 21 件: High 5・Medium 10・Low 6）は全部を本文に反映し、対応の表は §18.15・§18.16。
+
+### 18.0 出典と確認の水準
+
+- **読んだ物（実測）**: amaterrace-gpu（p3-p035、aa78b64 + 398a738）の `docs/ghci.md` §3.1（HCR、IRQ_STATUS は [8:0] まで）、§3.2（CAPS[3] DISP、[10] WAIT_VSYNC）、§3.3（STATUS[7] は空きに見えるが `atg_top.v` 377 行で `sa_busy` が繋がり、この設計の §3.9・Appendix A が SA_BUSY に予約している）、§4（DISP は id 1）、§5（CP の状態と「RUNNING では STATE の alias・KICK は無視して fault kind 6・7」）、§7.3（µop 0〜14、WAIT_IDLE の flags は 8 bit の mask）、§9、§10（「DC は CTRL.RESET で reset しない」）、§13（DISP、DC の単独の device の形）、§15.2（MSI は 1 vector）、§16（minor は追加だけ）。`include/ghci_regs.h`・`ghci_packets.h`（op 14 まで）・`ghci_layout.h`（linear、行は w × ps（attachment は w を偶数に）、image は 64 B に揃う）。`spec/dc/atg_dc.md`・`atg_dc_dma.md`（base と stride は LINE_BYTES に揃える）・`atg_dc_regs.md`（128 B の窓、`w_off[6:0]`）、`rtl/dc/`（7 file、1348 行。`atg_dc_regs.v` は既に `flip_pending` を持ち vsync の `ev_flip && flip_pending` で取る、DC の CTRL.RESET は pending を pulse 無しで消す）、`rtl/gpu/cp/atg_cp_seq.v`（port 38: uop の書き込み（`uop_we`・`uop_idx` 10 bit）、fence の要求（`f_op` 2 bit）、`busy_in` 8 bit）、`atg_cp_seq_wait.v`（`B_ALL = 8'hFE`: bit 7 を含む。FENCE・RESULT・QUERY・WAIT_IDLE(0) の pre）、`atg_cp_ctl.v`（client ≠ 0 の MC の fault は device の fault）、`spec/gpu/cp/atg_cp_fence.md`（FSM 1 つ、WAIT_FENCE は watchdog まで握る、firmware の µop も通る）、`spec/README.md`（1 module 1 clock domain、crossing は `am_afifo`・`am_sync` だけ、port の group は AXI・AMB・HCR snoop だけ）、`boards/kc705/atg_kc705_raster.v`（DC は atg_top の外、`xr_*`、MC の client EXT、`dc_irq` は LED だけ）、`rtl/gpu/top/atg_top.v` の `HAS_DISP`・`EXT_CLIENT`・`ROOT_CLIENT`。zedBSD（p3-p006）: `src/drivers/gpu/ghci/display.c`（820 行: 2 つの driver の frame に BLT で copy、FB_NEXT を host が書いて FLIP_DONE を待つ、BLOB の present は EINVAL、modes は "ATDC" の 2 つを driver が知る、`registers > register_bytes − 0x80` の検査）、`adv7511.c`（246 行）、`ghci.c`（`ghci_cp_start`（RUN）が `ghci_display_attach` より先）、`cp.c`（`IRQ_TAKEN`、`program_ring` が IRQ_STATUS に `IRQ_ALL` を書く）、`include/drivers/gpu/gpu-display.h`（UNGATED と adoption_wait、power/refresh は両方か無し、cursor の 3 つ）、`include/uapi/gpu-scanout.h`（`GPU_PLACEMENT_*` は DMA32・CONTIGUOUS・COHERENT だけ、`GPU_SCANOUT_SHARED`/`COPY`、「the route is selected once for a swapchain, never per presentation」）、`include/uapi/gpu-display.h`（present の BLOB と FIFO、非 BLOB は「呼び出しの後は storage を借りない」、cursor は 64 × 64 まで・BGRA8888 か RGBA8888・premultiplied・呼び出しの間に copy・面が尽きたら EBUSY・device の fault で隠す、adoption の timeout の後の present は EBUSY）、`userland/desktop/libvulkan/wsi-display.c`（present は PRESENT_SYNC（wait_fd）か、worker が producer の完了を確かめてから PRESENT、`display_mutex` を present の間持つ）、§17（DC は EXT、検査しない、root の別の入口）。
+- **推定**: LUT・FF・BRAM（合成していない）、flip の遅れ、LW。
+- **未確認**: KC705 の ADV7511 の INT（HPD の割り込み）の線が FPGA の pin に来るか（UG810 未読、ADI の kc705 の constraint には無い）、ADV7511 の HPD の register（0x42[6] は programming guide の記憶）と HPD の落ちで設定が消える事（実機 p024）。
+
+### 18.1 目標と範囲（v1 で達する物と達しない物）
+
+- **目標**: (1) DC は GPU の unit の 1 つ（`rtl/gpu/dc/`、`atg_top` の子）。(2) scanout の状態（ENABLE・FB・timing・format）は CP が RUNNING の間 **ring の µop** だけが変える: present は ring の中の FLIP で、ring の順で前の packet の後に置かれ、次の vsync で切り替わる。driver の frame への copy も host の FB_NEXT の write も無い。(3) DC の event（vblank・flip の取り込み・scanout の誤り・hotplug）は **GHCI の IRQ_STATUS** の bit（PCIe の MSI は 1 vector のまま）。(4) display・mode・plane の列挙は GHCI の register（`VK_KHR_display` の display・mode・plane に対応）。(5) DC の条件に合う swapchain は直に scan（SHARED の route）、合わない時は copy の route（ring の BLT の後に FLIP）。(6) cursor の plane。
+- **v1 で達しない物（正直に）**: zedBSD の display の core は PRESENT_SYNC の依存（producer の fence）を backend を呼ぶ前に CPU で待ち、libvulkan の PRESENT の道も worker が producer を待つ。だから v1 では「前の draw の完了」を CPU が確かめてから FLIP が ring に入り、producer の完了 → CPU の wake-up → FLIP の間に vsync を逃し得る。GHCI の FLIP は前の仕事を自分で待てる（COMPLETE）ので、core が依存を backend に渡す形にすれば CPU は外れる（U98、後の Phase）。また ring は 1 本で、FLIP は他の session の長い class 2 の packet（firmware の replay）の後ろで待つ: 負荷の下では FIFO の present が vsync を逃し得る（risk §18.13、p028 で「負荷の下の flip の vsync の取り逃し率」を測る。対策の候補は display 用の高い優先の ring（CAPS2[7:0] の rings、後の版））。
+- **範囲の外**: overlay の plane（zedBSD の `commit`/`overlay_info`）、scaler、複数の output、programmable な pixel clock（EDID の任意の mode）、tile の image、display の電源と refresh（`GPU_CAP_DISPLAY_CONTROL`、power/refresh は v1 で両方無し）、zedBSD の display の core の変更（U98）。
+
+### 18.2 決めた事の要約
+
+1. **置き場所**: `rtl/dc/` → `rtl/gpu/dc/`、`spec/dc/` → `spec/gpu/dc/`。`atg_top` が `HAS_DISP` で `atg_dc` を子に持つ（pclk・video・I2C の pin は atg_top の port）。DC の MC の client は atg_top の中の `C_DC`（`ROOT_CLIENT`、§17.5 の root の別の入口）。**DC と `C_DC` の root の入口は board の reset（DC と同じ）の domain に置き、CTRL.RESET（core の reset）の「memory client の queue の flush」から外す**（scanout の read は GPU の reset を跨ぐ）。MC は既に board の reset で動くので、domain だけでは足りない: `atg_mc` の `QUIESCE_EXEMPT` に C_DC を入れ（HALTING・HALTED・FAULTED・RS_WAIT の間も scan を止めない）、`axi_idle` を GPU 自身の client の未応答と DC の未応答に分けて数え（HALTED・RESET の待ちが DC の読みの切れ目を待たない）、CTRL.RESET の flush は C_DC の道（root の入口・木の C_DC の枝・応答の道）を残す（DC の要求と応答を捨てると `atg_dc_dma` の `inflight` が戻らず DMA が止まる）。HAS_PROT の構成では DC は §17.5 の root の別の入口を通り、そこも flush から外す。`EXT_CLIENT` は別の外の client のために残し KC705 は 0。単独の DC の parameter `STANDALONE` は消す（使う board が無い。GHCI の「CP の無い DC」の文は残す、U97）。
+2. **新しい capability（U99）**: CP の有る GPU の DC は新しい capability **DISP2**（id 11、draft の番号）で名乗る。DISP（id 1）は CP の無い DC だけ（今の register の意味のまま）。今の driver は DISP2 を知らないので display を作らないだけで、RUNNING の中の直の write で fault する事は起きない（GHCI §16 の minor の規則を守る）。
+3. **書く者の境（U90）**: DISP2 の register は 4 種。**R**（ID・CAPS・STATUS・FB_BASE・FRAME_COUNT・mode の表・CURSOR_BASE）はいつでも host が読む。**I**（MODE_INDEX）はいつでも host が書く（副作用無し）。**S**（scanout: CTRL・FB_STRIDE・FB_SIZE・timing・SYNC_POL・PCLK_SEL、と FB_NEXT）は CP が RUNNING・HALTING の間は ring の µop だけ。host は IDLE・HALTED・FAULTED で書ける（bring-up・JTAG・recovery・panic の消灯）。RUNNING・HALTING の host の write は**捨てて STATUS[5] BAD_WRITE（sticky）を立てる**（device の fault にしない: DC は CTRL.RESET で戻らないので、reset しても何も直らない）。**C**（cursor の位置と表示: CURSOR_POS・CURSOR_CTRL）と **L**（link: I2C・CONNECTED）と **W**（STATUS の W1C）はいつでも host が書く（memory を指さない。cursor は GPU の負荷に依らず動く）。**排他**: CP の DISP の µop（DISP_SET の書き込み・FLIP の slot への置き込み）は CP が RUNNING・HALTING の時だけ効き、IDLE・HALTED・FAULTED の間は捨てる（その µop は何もせずに終わる。HALTED の STEP の DISP µop も同じ）。だから host と CP が同じ時に S を書く事は無い（HALTED の間に packet の残りの DISP_SET が host の消灯を覆さない）。
+4. **command は class 0 の µop（U91）**: **15 DISP_SET**（S の register のうち FB_NEXT を除く物と C の register への (offset, value) の対。flags[0] WAIT_IDLE: 書いた後 DISP の STATUS.idle を待つ（watchdog の対象））、**16 FLIP**（plane、base、record、value。flags[0] COMPLETE）。STATUS の busy の bit と WAIT_IDLE の mask は**使わない**（bit 7 は SA。DC は FENCE・RESULT・QUERY・WAIT_IDLE(0)・FLIP COMPLETE の「全部の unit」に入らない: 点いている DC は idle にならないので入れると全部が止まる）。firmware は要らない（CAPS[17] = 0 の GPU でも動く）。DISP_SET と FLIP は ring の µop だけ（ring は driver だけが書く）: firmware の UOP_FIFO からは fault kind 2。
+5. **present = FLIP**: FLIP は（COMPLETE なら FENCE と同じに前の仕事の全部の完了を待って）base を確かめ（aperture の外、MEM の有る GPU で local memory の外、揃いの違反は fault 3）、plane の **待ちの slot** に base と record を置き、ring は先へ進む。DC が取り込むと（plane 0 は次の vsync、ENABLE = 0 の時はすぐ。plane 1 は BRAM に読んだ後の frame の始め。ENABLE の落ち・DC の reset では cancelled ですぐ）、`atg_cp_disp` の record の書き手が `{value, FRAME_COUNT}` を書き、その応答の後に IRQ_STATUS.FLIP。slot は plane ごとに 1 つで、前の record の応答が来るまで次の FLIP を受けない（record は重ならない）。slot に置くのは前の仕事の待ち（COMPLETE）と slot の空きの待ちが**両方済んだ後**（seq の exec の時点、§18.4）で、payload を受けた時点ではない。slot が埋まっている FLIP は seq が待つ（watchdog の対象）が、driver は slot の空きを数えて置くので通常は起きない（§18.8）。
+6. **割り込み**: IRQ_STATUS [9] VBLANK、[10] FLIP、[11] DISP_ERROR（scanout の read の誤り・underflow・record の write の誤り。STATUS[1]・[3]・[4] が何かを言う。DC は 1 frame に高々 1 回だけ立てる）、[12] HOTPLUG（CONNECTED の変化）。IRQ_ENABLE も同じ bit。§4.3 の「XDMA の user IRQ 1 = DC」は無くなり MSI は 1 vector。
+7. **scanout の誤りは device の fault にしない**: `C_DC` の MC の誤り（aperture の外・AXI の error）は `atg_cp_ctl` の device の fault から外し、DC は誤った line の画素を 0（黒）にして DISP_ERROR を立て、次の frame も同じ base を読む（driver が消灯か別の FB で直す）。record の write の誤りは捨てて STATUS[4] と DISP_ERROR（reset を跨いで再送しない）。
+8. **mode と plane の列挙（U96）**: DISP2 に mode の表（MODE_INDEX と 6 つの R）と plane の数（DC_CAPS）。driver は vendor の mode の表を持たない。
+9. **image の条件**: format は DC_CAPS[7:4]（Amaterrace: BGRA8・RGBA8・RGB565。SRGB の VkFormat も同じ bit の並び）、1 sample、linear（`ghci_layout.h` の 2D・level 0・layer 0）、base と stride は **LINE_BYTES（KC705 64 B）に揃う**（v1 の 2 mode の行は 2560・5120 B で 64 の倍数、image は 64 B に揃うので足りる。DC の DMA は変えない）、大きさは mode と同じ（scaler も窓も無い）、local memory の中（MEM の LOCAL の範囲。v1 は host memory を scan しない: 720p60 の 221 MB/s の read を PCIe で取ると underflow の risk）。合わない swapchain は copy の route。
+10. **cursor の plane（U93）**: plane 1 = 64 × 64 の BGRA8（premultiplied、行は 256 B）。DC は gclk の中で、DMA が出す画素の流れ（pixel FIFO の前）に cursor を合成する（新しい clock の crossing は無い）。
+11. **transmitter と hotplug（U92）**: ADV7511 の設定と HPD の監視は**今のまま host の driver**（`adv7511.c`、L の register はいつでも host の物）。HPD は driver の service thread が I2C で 1 s ごとに読み、CONNECTED に書く（→ HOTPLUG。CONNECTED の reset の値は 1 = 不明は接続と見なす）。DC_CAPS[12]（DC が自分で接続を知る）は Amaterrace では 0。
+12. **session の保護（U94）**: DC の読みは §17 のとおり検査しない（root）。FLIP は driver の µop で、scan してよい image は driver が確かめる（lease の持ち主の session の allocation、または share で import した物）。driver は scan されている allocation を flip で外れるまで持つ（free を遅らせる）。record の write も chk = 0（driver の memory）。
+
+### 18.3 GHCI の変更（§13 の書き直しの案、draft。実装の段 D1 で `docs/ghci.md` に書き、D8 で確定）
+
+- §3.1 IRQ_STATUS: [9] VBLANK、[10] FLIP、[11] DISP_ERROR、[12] HOTPLUG（DISP2 の event）。IRQ_ENABLE は [12:0]。§3.2 CAPS[3] の文に「DISP or DISP2」。§4 の表に id 11 DISP2。
+- §7.3 の µop（WAIT_IDLE の行に「0 = every unit; a display controller is not a unit here」を足す）:
+
+| Op | Name | Payload | Meaning |
+| --- | --- | --- | --- |
+| 15 | DISP_SET | (offset, value) x n/2 | (DISP2.) Writes DISP2 registers of kinds S (but not FB_NEXT) and C in ring order; it does not wait for earlier work (send WAIT_IDLE first when that matters). flags[0]: afterwards waits until DISP2 STATUS.idle (the watchdog applies). An odd n or another offset: fault 3. From the firmware's micro-op FIFO: fault 2 |
+| 16 | FLIP | 4: plane, base, record, value | (DISP2.) flags[0] COMPLETE: first waits as FENCE does for every earlier command to finish and its writes to be answered. base outside the aperture, outside local memory (with a MEM capability), or not aligned (plane 0: the memory line; plane 1: 64 bytes); record not 8-byte aligned: fault 3. Then waits until the plane has no pending flip and no unanswered record (the watchdog applies) and makes base the plane's pending image. When the controller takes it (plane 0: at the next vsync, at once while CTRL.ENABLE is 0; plane 1: once the controller has read the image, between two frames, whether the cursor is shown or not; a pending flip of either plane is taken as cancelled when ENABLE falls or at the controller's reset), the GPU writes {value, FRAME_COUNT} to record (8-byte aligned, the GPU's own write: no session check; record 0: no write) and raises IRQ_STATUS.FLIP after that write's response (at the take when record is 0). A cancelled flip's record has bit 31 of value set (the driver's values use 31 bits); a host write of FB_NEXT also cancels a pending flip of plane 0. DISP_SET and FLIP take effect only while the CP is RUNNING or HALTING (in other states, a STEP included, they do nothing). From the firmware's micro-op FIFO: fault 2 |
+
+- §13 に DISP2 の節（案）を足し、今の §13 は「13.1 DISP: a display controller without a command processor」として残す:
+
+```
+13.2 DISP2: a display controller that is a unit of the GPU
+
+A GPU with a command processor names its display controller with a DISP2
+capability (ID 11). The command processor changes what it shows, in ring
+order, with the micro-ops DISP_SET and FLIP (section 7.3); its events are
+IRQ_STATUS bits 9-12 (section 9.2). A display controller is not one of
+the units that FENCE, RESULT, QUERY, WAIT_IDLE with flags 0 and FLIP
+COMPLETE wait for, and its memory reads are not counted by AXI_IDLE or
+stopped by a quiesce. It has its own reset (CTRL.RESET of DISP2) and is not
+reset by the GPU's: it keeps scanning through a GPU reset, and a pending
+flip is still taken. The GPU writes the record of a flip taken while the
+command processor is HALTED, FAULTED or RESETTING, or quiesced, only after
+it runs again. An error of a scan-out read is not a device fault: the
+controller shows black for the rest of the frame and reports DISP_ERROR.
+
+Registers: a window of 256 bytes at the capability's register offset.
+Kinds: R read-only, read by the host in every state. I an index without
+side effects, written by the host in every state. S scanout: written by
+DISP_SET (FB_NEXT by FLIP only) while the command processor is RUNNING or
+HALTING, and by the host in IDLE, HALTED and FAULTED; a host write in
+RUNNING or HALTING is ignored and sets STATUS.BAD_WRITE. C cursor, L link
+and W (the write-1-to-clear bits of STATUS): written by the host in every
+state (C also by DISP_SET). DISP_SET and FLIP do nothing outside RUNNING
+and HALTING, so the host and the command processor never write S at the
+same time. A write of the timing, FB_STRIDE, FB_SIZE, CTRL.FORMAT or
+PCLK_SEL while ENABLE = 1 is ignored and sets BAD_WRITE.
+
+| Offset | Name | Kind | Contents |
+| 0x00 | DC_ID | R | FourCC of the controller |
+| 0x04 | DC_VERSION | R | [31:16] major, [15:0] minor |
+| 0x08 | DC_CAPS | R | [0] VGA, [1] TMDS, [2] external transmitter on the I2C registers, [7:4] formats ([4] BGRA8, [5] RGBA8, [6] RGB565), [8] cursor plane, [11:9] number of modes, [12] the controller senses the connection itself |
+| 0x10 | CTRL | S | [0] ENABLE, [1] RESET (W1S), [2] TEST_PATTERN, [5:4] FORMAT (0 BGRA8, 1 RGBA8, 2 RGB565), [6] OUTPUT (0 VGA, 1 HDMI) |
+| 0x14 | STATUS | R, W | [0] running, [1] underflow, [2] idle (ENABLE = 0 and no memory access outstanding, the cursor's included), [3] read error, [4] record error, [5] BAD_WRITE ([1], [3]-[5] sticky, W1C; each raises DISP_ERROR at most once a frame), [15:6] reserved, [27:16] current line, [28] CONNECTED, [29] plane 0 flip pending, [30] plane 1 flip pending, [31] a taken flip's record is not written yet |
+| 0x20 | FB_BASE | R | The image being scanned out (plane 0) |
+| 0x24 | FB_NEXT | S | Plane 0's pending image (FLIP writes it; a host write replaces a pending flip, which is cancelled); taken at the next vsync, at once while ENABLE = 0 |
+| 0x28 | FB_STRIDE | S | Bytes per row, a multiple of the memory line |
+| 0x2C | FB_SIZE | S | [15:0] width, [31:16] height |
+| 0x30..0x4C | H_ACTIVE .. V_BP | S | Timing |
+| 0x50 | SYNC_POL | S | [0] hsync, [1] vsync; 1 = active high |
+| 0x54 | FRAME_COUNT | R | Vsync count, cleared by the controller's reset (not a time base) |
+| 0x58 | PCLK_SEL | S | The mode's clock choice (MODE_FLAGS[7:4]) |
+| 0x60..0x68 | I2C_CTRL, I2C_DATA, I2C_STATUS | L | As in DISP |
+| 0x6C | CONNECTED | L | [0] the sink is connected (1 after the controller's reset); a write that changes it raises HOTPLUG. Read-only with DC_CAPS[12] |
+| 0x70..0x7C | vendor | R | Implementation-defined |
+| 0x80 | MODE_INDEX | I | Selects a mode, 0 .. DC_CAPS[11:9] - 1 |
+| 0x84 | MODE_H0 | R | [15:0] active pixels, [31:16] sync |
+| 0x88 | MODE_H1 | R | [15:0] front porch, [31:16] back porch |
+| 0x8C | MODE_V0 | R | [15:0] active lines, [31:16] sync |
+| 0x90 | MODE_V1 | R | [15:0] front porch, [31:16] back porch |
+| 0x94 | MODE_CLOCK | R | Pixel clock in kHz |
+| 0x98 | MODE_FLAGS | R | [0] hsync, [1] vsync active high; [7:4] the PCLK_SEL value |
+| 0xA0 | CURSOR_BASE | R | The cursor image shown (plane 1; FLIP sets it) |
+| 0xA4 | CURSOR_POS | C | [15:0] x, [31:16] y (signed: the image's top-left corner; parts outside are clipped); taken at the start of the next frame |
+| 0xA8 | CURSOR_CTRL | C | [0] shown; taken at the start of the next frame |
+| 0xB0, 0xB4 | TAKEN0, TAKEN1 | R | The value of the plane's last taken flip (bit 31: cancelled), kept through a GPU reset |
+
+- An image is scanned as rows of FB_SIZE.width pixels FB_STRIDE bytes
+  apart, in linear layout (section 8, ghci_layout.h), one sample, in local
+  memory where a MEM capability says there is local memory.
+- Plane 1 (DC_CAPS[8]) is a 64 x 64 image of BGRA8 rows 256 bytes apart,
+  premultiplied, blended over plane 0 as c + round(p x (255 - a) / 255),
+  saturated (red and blue swapped for an RGBA8 plane 0; an RGB565 plane 0
+  widened by repeating its top bits and narrowed by rounding). The
+  controller reads a newly flipped cursor image once, between the end of a
+  frame's reads and the next frame, and shows it from that frame (the
+  take). TEST_PATTERN shows no cursor.
+- To stop: DISP_SET CTRL.ENABLE = 0 with flags[0] (or the host in IDLE,
+  HALTED or FAULTED, then poll STATUS.idle). Clearing ENABLE takes every
+  pending flip at once, as cancelled. CTRL is written as a whole word
+  (FORMAT and OUTPUT with ENABLE).
+- The timing, FB_STRIDE, FB_SIZE, FORMAT and PCLK_SEL change only with
+  ENABLE = 0. STATUS.underflow is cleared when ENABLE goes from 0 to 1; a
+  frame starts with a vsync after ENABLE.
+```
+
+- §15.2 の Interrupts の行に「the events of a DISP2 display controller are bits of IRQ_STATUS: one vector covers them」。
+- version: DISP2 は version 1。GHCI_VERSION の minor を上げる（capability・µop・IRQ の bit の追加、§16 に合う）。
+
+### 18.4 RTL: CP の中の道（新しい子 `atg_cp_disp`）
+
+- **持つ物**: plane ごとの待ちの slot `{valid, base, record, value}`（2 つ）、payload の staging、TAKEN0/1（最後に取った value と cancelled）、record の未送の印、**record の書き手**（CP の `am_amb_mux` の新しい leaf（4 つ目、ID_W 2 に入る）、chk = 0・tbl = 0・slot = 0 を §17.4 の side band に繋ぐ（§17 の R3 と D4 のどちらが後に merge しても後の方が繋ぐ。§17.5 の client ごとの順序で、chk = 1 の PLB の miss の後に record が少し待つのは許す）、8 byte を 1 beat で write、応答の後に IRQ の pulse。fence unit とは別: fence unit の FSM は 1 つで、ring と firmware の WAIT_FENCE が watchdog まで握るので、record を遅らせない）、DC の register の内部の bus の調停、host の門、event の集め。**`atg_cp_disp` と DC は board の reset の domain**（CTRL.RESET で slot と未送の record が消えない）。
+- **seq との口（D1 で port を確かめる、確認 C3）**: (1) **index**: DISP_SET の対は今の uop の書き込みの port（`uop_we`・`uop_idx` 10 bit）の **0x3C0〜0x3FF**、FLIP の payload の 4 語は staging の 0x3B8〜0x3BB、DISP_SET の flags[0] は擬似の index 0x3BF への書き込み。`atg_cp` は `uop_idx[9:8] == 2'b11` を `atg_cp_state` に渡さず（state の mem は 0x2FF まで、TU への broadcast にも出さない）`atg_cp_disp` に回す。seq は DISP_SET と FLIP の payload を SET_REG の `set_val` の道でなく `pay_wait = 0` の別の枝で書き、offset が 0x100 以上・4 の倍数でない・上位の bit が立つ時は seq が fault 3（`fault_addr` = offset）。(2) **待ち**: 今は使われていない `busy_in[0]`（`atg_cp.v` で 0、`B_ALL = 8'hFE` は bit 0 を含まない）を `disp_busy` にする: staging に FLIP が有る時は「その plane の slot か record が埋まっている」、0x3BF が書かれた後は「DC が idle でない」。FLIP は exec の pre の mask を `(COMPLETE ? B_ALL : 0) | 1`、DISP_SET の flags[0] は post の mask を bit 0 で待つ。「全部の unit」の待ち（FENCE・RESULT・QUERY・WAIT_IDLE(0)）は bit 0 を含まないので DC を待たない。(3) **kick**: `raw_kick`・`lc_kick`・`blt_kick`・`draw_kick`・`cs_kick` を 1 本の kick の valid と 3 bit の code にまとめ、code に `disp`（FLIP）を足す。`atg_cp_disp` は exec の kick の時に staging の FLIP を確かめて（fault 3）slot に置く: 前の仕事と slot の空きの待ちの後。seq の port は今 40（clk・rst_n を含む。spec の「38」は clk・rst_n を除いた数と見られ、D1 で数え方を揃える）→ kick の束ねで −3 → §17 の +2 → 39。seq の行は 374 + §17 の R3 + op 15・16 の decode（`h_need`、HAS_DISP の parameter と無い時の fault 2、`use_fw` の fault 2、対の写像と offset の検査）で 400 を超えるので、D1 で payload の decode を子 `atg_cp_seq_dec` に分ける計画を立てる。
+- **取り込みと record**: DC の `taken[p]`（plane 0 は vsync、plane 1 は BRAM への読みの後、どちらも ENABLE の落ちと DC の reset では cancelled）で slot を降ろし、TAKENp を書き、record ≠ 0 なら record の書き手に渡す（STATUS[31] はその間 1）。CP が HALTED・FAULTED・RESETTING・QUIESCED の間は送らず、CP が IDLE か RUNNING に戻ってから送る（§5・§10 の quiesce の約束）。host の FB_NEXT の write で slot が降りる時も cancelled（value の bit 31）。
+- **host の門**（窓の decode は `atg_cp_regs`。host の read も `atg_cp_regs` が内部の bus で DC に 1 cycle で読みに行く）: host の write を DISP2 の窓（256 B）と比べ、S なら CP の state が IDLE・HALTED・FAULTED の時だけ通し、他は捨てて BAD_WRITE。C・L・I・W はいつでも通す。seq の DISP の書き込みと kick は逆に RUNNING・HALTING の時だけ通す（§18.2-3 の排他）。門は 1 段の host の write の buffer を持ち、seq の write と同じ cycle でも捨てない（host の bus は止めない）。JTAG の bridge（DBG）の write も同じ門。
+- **調停**: 内部の bus の書き手は seq > host の buffer。firmware の道は作らない（U92 で firmware は DC を触らない）。
+- **UOP_FIFO の DISP µop**: seq は µop の出どころ（`fw_active`）を知る。FIFO からの 15・16 は fault kind 2。
+- **IRQ**: VBLANK・DISP_ERROR・HOTPLUG の DC の pulse と record の応答（FLIP）を `atg_cp_irq` の [12:9] に。
+- **MC の fault の扱い**: `atg_cp_ctl` は `mc_fault_client == C_DC` を device の fault にしない（`atg_top` が C_DC の番号を parameter で渡す）。DC の read の誤りは DC が自分で STATUS[3] に。
+- **`atg_cp_disp` の fault 3**: `atg_cp_ctl` の fault の源は今 8 つ全部使われている（`NSRC = 8`）ので 9 にする（`SRC_*` の幅と vector）。tag は kick の時に latch した seq の今の µop の tag。
+
+### 18.5 RTL: DC の変更（`rtl/gpu/dc/`）
+
+- **`atg_dc_regs`**（今 280 行）: (a) 窓を 256 B（8 bit の decode）。(b) 今の `flip_pending` に、ENABLE の落ち・DC の reset・ENABLE = 0 の FB_NEXT の write でもすぐ取る形と `taken[0]` の pulse を足す（今の RTL は DC の reset で pending を pulse 無しで消し、ENABLE = 0 の write で古い pending を残す: 直す）。(c) mode の表（parameter の ROM、Amaterrace の 2 mode: 640 × 480 @ 60 = 25,200 kHz、1280 × 720 @ 60 = 74,250 kHz、今の driver の表と同じ値）と MODE_INDEX。(d) CONNECTED（reset で 1、変化の write で pulse）。(e) CURSOR_POS・CURSOR_CTRL（frame の始めに取る）と plane 1 の pending（`taken[1]`）。(f) STATUS の [3]〜[5]・[28]〜[30]、DISP_ERROR の pulse は 1 frame に 1 回まで。(g) DISP2 では IRQ_STATUS/ENABLE を作らず event の pulse を外へ（CP の無い DISP の形は parameter で残すか、STANDALONE と一緒に消す: U97 で消す）。(h) register の bus は内部の bus 1 つ（窓の decode は `atg_cp_regs`、§18.4）。(i) ENABLE = 1 の間の timing・FB_STRIDE・FB_SIZE・CTRL.FORMAT・PCLK_SEL の write は捨てて BAD_WRITE。(j) TAKEN0/1 と STATUS[31]（`atg_cp_disp` から）。行が 400 を超えそうなら mode の表と cursor の register を子 `atg_dc_mode` に分ける。
+- **`atg_dc_dma`**: base と stride は LINE_BYTES のまま。変えるのは 2 つ: read の error の応答を `err` の出力に（STATUS[3]。画素は今のとおりその line が 0）、`inflight` と `keep` が自分の応答だけを数えるように `rsp_tag[7:4]` を見る（cursor の読みと AMB の口を共有するので）。
+- **`atg_dc` の中の `am_amb_mux`**: DMA（優先）と `atg_dc_cursor` の 2 つの requester を DC の 1 つの AMB の口にまとめる（tag の上位で返事を分ける）。
+- **`atg_dc_cursor`（新、gclk だけ、U93）**: DMA の出す画素（`px_valid`・`px_data`、pixel FIFO の前）を通しに受け、行と列を数えて (x, y) を作り、cursor の BRAM（16 KiB、BRAM36 × 4）と CURSOR_POS を比べて合成し pixel FIFO に出す（gclk 100 MHz の 1 px/cycle は 74.25 MHz の pclk より速い）。位置・表示は DMA の frame の始め（`frame_start`）に取る（gclk の中、新しい crossing 無し）。新しい cursor の image は、DMA がその frame の最後の line を読み終えた後から次の `frame_start`（back porch の始め）の前までに読む（256 line、≈600 gclk。窓は垂直の front porch と sync と最後の行の先読みの分: 720p で ≈(5 + 5 + 1.5) 行 × 1650 pclk ≈ 19k pclk ≈ 26k gclk、480p で ≈12 行 × 800 ≈ 13k gclk）。cursor が隠れていても読む。読み終えた次の `frame_start` が取り込み（`taken[1]`）。ENABLE = 0・DC の reset では読まずに cancelled。読みの error は cursor を消し STATUS[3]。RGB565 の primary では DMA の画素を上位 bit の繰り返しで 8 bit に広げて合成し、丸めて 565 に戻す（alpha 0 で元の画素がそのまま残る事を TB で確かめる）。RGBA8 の primary では cursor の R と B を入れ替える。TEST_PATTERN では cursor を出さない。合成は `c + round(p × (255 − a) / 255)` を飽和（BLT の blend と同じ丸め）。STATUS.idle は cursor の読みも数える。
+- **`atg_dc`**: 子 `atg_dc_cursor`、`taken[1:0]`・event の pulse・内部の register の bus、`STANDALONE` を消す。port は spec/README の数え方（AMB は 1 group、他は 1 本ずつ）で 40 以下か D1 で確かめ、超えれば video の出力を子 `atg_dc_out` の結線に寄せる。
+- **`atg_top`**: `HAS_DISP` で `atg_dc` と `atg_cp_disp` の配線、`C_DC`、pclk・prst_n・pclk_sel・video（tmds・px 4 本）・I2C（4 本）の port。今の `xr_*`・`x_vsync`・`x_req_*` は HAS_DISP の外の DC のための物で、HAS_DISP = 1 では使わない。
+- **board の top（`atg_kc705_raster`）**: DC の instance を消し、video と I2C の pin を atg_top へ。`EXT_CLIENT(0)`、`HAS_DISP(1)`。
+
+**module の表**（1 module ≤ 400 行・FSM 1 つ・≤ 40 port、port は spec/README の group で数える）:
+
+| module | 新/変 | 中身 | 推定の行・port |
+| --- | --- | --- | --- |
+| `atg_cp_disp` | 新（`atg_cp` の子） | slot 2 つ、staging、TAKEN、record の書き手（AMB の leaf、FSM 1 つ）、index の decode と fault、host の門と buffer、排他、event | ≈320 行、≈32 port（AMB 1 group） |
+| `atg_cp_seq` | 変 | op 15・16、`busy_in[0]` の待ち、kick の code、payload の decode を子へ | 374 + R3 → 子に分けて ≤ 400、port 39 |
+| `atg_cp_seq_dec` | 新（seq の子、D1 で決める） | payload の decode（SET_REG・DISP_SET の対の写像と検査、FLIP の staging） | ≈150 |
+| `atg_cp_ctl` | 変 | C_DC の MC の誤りを device の fault から外す、fault の源 9 | +15 |
+| `atg_mc`・`atg_mc_tree`・`am_axi_master` | 変 | QUIESCE_EXEMPT に C_DC、axi_idle の分け、flush で C_DC の道を残す | +40 |
+| `atg_dc_dma` | 変 | err の出力、自分の tag だけ数える | +10 |
+| `atg_cp_regs` | 変 | DISP2 の EXTCAP、窓の decode と門への道 | +30 |
+| `atg_cp_irq` | 変 | [12:9] | +10 |
+| `atg_cp` | 変（結線） | `atg_cp_disp`（今 436 行の結線の module: 結線の一部を `atg_cp_disp` に寄せて増やさない） | ≈440 |
+| `atg_dc_regs` | 変 | §18.5 の (a)〜(h) | 280 → ≈380（超えれば `atg_dc_mode` を分ける） |
+| `atg_dc_cursor` | 新（`atg_dc` の子） | 合成、BRAM、読みの FSM | ≈250 行、≈25 port |
+| `atg_dc` | 変（結線） | cursor・taken・event・内部の bus | ≈220 |
+| `atg_top` | 変（結線） | DC と `atg_cp_disp`、C_DC、video・I2C の port | +60 |
+| `atg_kc705_raster` | 変 | DC を消す | −30 |
+
+### 18.6 firmware（`fw/cp/`）
+
+- **変更無し**（U92 で ADV7511 と HPD は host の driver に残す）。firmware は DISP_SET・FLIP を UOP_FIFO に書かない（hardware が fault 2 で止める）。IMEM（61,032 / 65,536 B）に影響しない。
+
+### 18.7 zedBSD の driver（`src/drivers/gpu/ghci/`）
+
+- **attach の順**: `ghci_display_attach`（DISP2 を探し、mode の表を読み、host が直に DC を reset・消灯・CONNECTED を読み、ADV7511 を設定）を `ghci_cp_start`（RUN）の**前**に移す（RUN の後の直の S の write は BAD_WRITE で捨てられる）。DISP2 の version を確かめる。窓の大きさの検査は `registers > register_bytes − 0x100`。
+- **lock**: display の lock を新しく（`device->lock` → display の lock → `cp_lock` の順）。host の直の S の write は全部 `cp_lock` の中（recover の RUN の書き込みも `cp_lock` の中なので、「CP が止まっている」と見てから書くまでに RUN にならない）。MODE_INDEX と MODE_* の読みも display の lock の中（共有の index）。DC の CTRL.RESET は I2C も reset するので、I2C の使用（ADV7511・HPD の poll）と CTRL.RESET も display の lock で直列にする。**待ちの規則**: record を待つ者（mode の変更・消灯・adoption_wait）は service thread に頼らず record の page と TAKENp を自分で poll する（service thread が display の lock を待っていても詰まらない）。service thread は lock を持ったまま ring の空きや record を待たない。recover（service thread）は display の lock → `cp_lock` の順に取る（宣言の順と同じ）。
+- **点灯と消灯**（ring の packet、tag 0、`cp.c` の native の packet の道）: 点灯 = `DISP_SET(flags[0]; CTRL = FORMAT | OUTPUT)`（ENABLE = 0）→ `DISP_SET(timing, SYNC_POL, PCLK_SEL, FB_STRIDE, FB_SIZE)` → `FLIP(0, base, record, n)`（ENABLE = 0 なのですぐ取る）→ `DISP_SET(CTRL = FORMAT | OUTPUT | ENABLE)` → `FENCE`。消灯 = `DISP_SET(flags[0]; CTRL = FORMAT | OUTPUT)`（pending の flip は cancelled で取られ record が来る）→ `FENCE`。FLIP だけの packet（present・cursor）には FENCE を付けない（`cp.c` に fence 無しの submit を足す: FENCE の `B_ALL` の drain が他の session を止めないように）。CP が RUNNING でない時（attach・recover の間・FAULTED）は host が直に書く。FORMAT の変更（BGRA ↔ RGBA）・mode の変更は点灯のし直し（今の code と同じ）。
+- **mode**: DC_CAPS[11:9] と MODE_*（driver の `display_modes[]` を消す）。
+- **route（swapchain ごとに 1 度、`gpu_scanout_constraints` の約束。判定は import で）**: `GPU_DISPLAY_CONSTRAINTS` に flags = `GPU_SCANOUT_SHARED | GPU_SCANOUT_COPY`、formats（BGRA8・RGBA8）、stride_alignment = 64、offset_alignment = 64、placement = 0（KC705 の `memory.c` は blob を全部 local memory に置く: scanout の blob を local に置く事を driver が保証し、local が尽きたら ENOMEM）を答える。libvulkan が route を選ぶ:
+  - **SHARED**: libvulkan は swapchain の image を `GPU_RESOURCE_IMPORT` の `GPU_IMPORT_SCANOUT` で試す（`wsi-display.c`: 失敗の ENOTSUP・EXDEV で COPY に戻る）。driver の `share.c` の `import_resource` が §18.2 の 9 の条件（local memory・format・大きさ = 今の mode・stride）を確かめ、合わなければ ENOTSUP。present（BLOB）はその GPU address を FLIP（COMPLETE 無し、§18.1 の producer の待ちは core が済ませた）。present の検査（EINVAL）は防御として残す。image の stride か format が点いている FB_STRIDE・CTRL.FORMAT と違う present（mode の変更の後など）は点灯のし直し。
+  - **COPY**（非 BLOB の present）: 今の driver の 2 つの frame に BLIT（ring）→ FENCE を待つ（「呼び出しの後は storage を借りない」）→ FLIP。
+- **非同期の present**: display の ops に `DRV_GPU_DISPLAY_UNGATED` と `adoption_wait` を足す。present は記録し、plane の slot が空なら FLIP を置き、埋まっていれば driver の queue（深さ 2、U95）に積み、すぐ返す。`GPU_DISPLAY_PRESENT_FIFO` の無い present は queue の未送の最後を置き換える（置き換えられた present の sequence は replacement で adopted）。record は 8 B に揃った 1 回の 64 bit の読みで取る（2 回の 32 bit の読みは裂け得る）。FLIP の IRQ で **service thread**（IRQ の handler でなく）が record の page を読み（非 coherent の platform では §11.4 の DMA の sync の後）、32 bit の record の値を 64 bit の sequence に戻し（fence と同じ wrap の比較）、adopted を進め、queue の次の FLIP を置き、前に scan されていた allocation の **scan の hold** を外し、`poll_notify` する。cancelled の record（value の bit 31。driver の value は 31 bit）は「見せずに外れた」。FRAME_COUNT は DC の reset で 0 に戻るので時刻には使わない。adoption_wait は sequence に届くのを待つ（timeout の後の present は UAPI のとおり EBUSY）。
+- **scan の hold**: FLIP を置いた allocation と scan されている allocation は、それが外れる record が来るまで free・reclaim しない（allocation の参照を 1 つ持つ）。lease の終わり・session の close は、`device->lock` の中では「lease を終える」印だけを付け、消灯の packet と record の待ち・hold の解放は display の lock の下で service thread が行う（`device->lock` の中で ring を待たない）。その後片付けが終わるまで新しい claim は EBUSY（後から来る消灯の packet が新しい lease の点灯を消さない）。
+- **mode の変更と queue**: mode の変更は queue の未送の present を落とし（replacement で adopted）、slot の分だけ record を待つ（≤ 1 frame、display の lock の中、service thread は record の処理に `device->lock` を取らない）。
+- **record の page**: driver の fence page の隣の 64 B（driver の memory、CTRL.RESET で消えない）。plane ごとに 8 B。
+- **recover**（CTRL.RESET）: ring の中にまだ取られていない FLIP は ring の作り直しで消える。driver は reset の後の IDLE の間（RUN の前）に STATUS[31]（未送の record）が 0 になるのを待ち（上限 100 ms）、record の page・TAKEN0/1・STATUS[29]・[30] を読み、置いた数と来た数を数え直す（TAKENp が最後に置いた FLIP の value なら取られた、slot が埋まっていればまだ、どちらでもなければ ring の中で消えた）: 消えた FLIP は、その session が生きていれば queue の頭に戻して置き直し、lost なら消灯して replacement で adopted。`program_ring` の `IRQ_STATUS = IRQ_ALL` が record の FLIP の bit を消し得るので、recover の後に record の page を 1 度 poll する。cursor は recover で隠す（UAPI「device の fault で隠す」: host の直の CURSOR_CTRL = 0）。CONNECTED も読み直す（HOTPLUG の bit は reset で消える）。
+- **割り込み**: `cp.c` の `IRQ_TAKEN` に FLIP・DISP_ERROR・HOTPLUG。VBLANK は v1 では使わない（power/refresh は無し、present の待ちは record）。DISP_ERROR は DC が 1 frame に 1 回まで: service thread が STATUS[1]・[3]・[4]・[5] を数えて W1C（W はいつでも書ける）、[3] が続けば消灯（scan する image が悪い）、1 s に 30 回を超えたら DISP_ERROR を mask し 1 s 後に戻す（60 回/s の IRQ を続けない）。BAD_WRITE は driver の誤りとして log。`irq_mask` は `irq_lock` の中で変える。
+- **hotplug**（U92）: service thread が 1 s ごとに ADV7511 の HPD を I2C で読み（`adv7511.c` に関数を足す）、CONNECTED に書く。HOTPLUG の IRQ で output の connected と topology の sequence を変え（`poll_notify` は service thread から）、つながり直しで output の generation を進め ADV7511 を設定し直す。切れている間の present は ENXIO、DC は点いたまま（害は無い）。
+- **cursor**（DC_CAPS[8] で `GPU_DISPLAY_HAS_CURSOR`）: driver の cursor の面 2 つ（64 × 64 × 4、local memory、64 B に揃う）。`cursor_set` は storage を BLIT（ring）で driver の window の中の staging に写し FENCE を待ち、CPU で BGRA への並べ替え（RGBA8888 の時）と 64 × 64 への 0 埋めをして空いている面に書き、FLIP(1)。2 つの面が両方使われている（見せている面と pending の面）時は EBUSY（UAPI の「refresh の後に成功し得る」）。`cursor_move` は host の直の `CURSOR_POS` と `CURSOR_CTRL = 1`、`cursor_hide` は `CURSOR_CTRL = 0`（C の register はいつでも host が書け、ring を待たない）。面は record（取り込み = BRAM に読んだ後）が来てから空きと見なす。消灯中の `cursor_set` は面に書くだけで、FLIP(1) は次の点灯の後に置く。
+- **zedBSD の header の写し**（`hcr.h`・`ghci-words.h`）: DISP2 の register・µop 15/16・IRQ の bit。
+- **vk/**: 変更無し。
+
+### 18.8 状態遷移・順序・並行性
+
+- **present の順序**: libvulkan の present → core が producer を待つ → driver の present が FLIP を ring に置く（slot が空の時）→ ring の順で seq が FLIP を取り slot に置き次の packet へ → DC が次の vsync で取り込む → record → IRQ.FLIP → service thread が adoption を進め、前の image の hold を外す（Vulkan の acquire がその image を返せる）。
+- **slot が埋まっている FLIP**: driver の数え（置いた FLIP − 来た record、recover で数え直す）で通常は起きない。起きても seq は 1 frame（≤ 16.7 ms = 1.67M cycle @100 MHz、watchdog 2^28 より短い）待つ。DC が消灯された（vsync が来ない）場合は ENABLE の落ちが slot をすぐ取るので、待ちは終わる。DISP_SET の flags[0] の待ちも DC の idle で終わる（ENABLE = 0 なら DMA の outstanding が尽きて立つ）。
+- **GPU の fault と reset**: DC は reset しないので画面は残る。slot の取り込みは起き、record は CP が動き出してから送る。driver は §18.7 の recover で数え直す。
+- **HALT**: HALTING の間に取った FLIP は slot に置いて packet が終わる（その後の vsync での取り込みは DC の仕事で、record は RUNNING に戻ってから）。HALTED では host が直に書ける（debug）。
+- **panic・早期の console**: zedBSD は KC705 を PCIe の card として x86 の host（と QEMU の guest）で使い、早期の console と panic の console は host の物（KC705 は console にしない、v1）。KC705 の画面に出す必要がある時の道は GHCI に残る: host が CTRL.HALT を書き、HALTED を待ち（上限 100 ms）、S の register を直に書く（FAULTED なら待たずに書ける）。
+- **lease の終わり・detach**: 消灯 → record（pending はすぐ取られる）→ hold を外す → frame を返す。detach は §6.2 の順（CP の停止の前に消灯、DC の idle を待つ）。
+
+### 18.9 失敗と corner case
+
+1. 悪い base（aperture の外・local の外・揃わない）の FLIP → fault 3（driver の誤り）。検査を通った base の read が AXI の error → DISP_ERROR・黒・device の fault は無し、driver が消灯。
+2. 悪い record の address → fault 3。write の誤り → 捨てて STATUS[4]、再送しない。
+3. DISP_SET の FB_NEXT・範囲の外の offset・奇数の n → fault 3。firmware の FIFO からの DISP µop → fault 2。
+4. RUNNING の host の S の write → 捨てて BAD_WRITE（driver の誤りを service thread が log）。
+5. pending の flip の間の ENABLE の落ち・DC の reset → cancelled ですぐ取る（record が来る）。隠れた cursor の FLIP(1) は BRAM に読んでから取る（2 回目の review の 6 で直した）。
+6. host の FB_NEXT の write（IDLE・HALTED・FAULTED）で pending の flip → cancelled の record。
+7. underflow が続く（帯域の不足）→ DISP_ERROR は 1 frame に 1 回まで。
+8. scan されている allocation の free・session の lost → hold で free を遅らせ、lost なら消灯の後に hold を外す。
+9. 切断の間の present → ENXIO、つながり直しで generation が進む。
+10. CTRL.RESET を跨ぐ FLIP → slot のは取られて record、ring の中の未取のは消え driver が置き直す。
+11. DC の無い GPU（CAPS[3] = 0）で DISP µop → fault 2（今の未知の op と同じ）。
+
+### 18.10 U 項目（ユーザーの判断。推し付き）
+
+**回答の方針**: 2026-10-25 ユーザー「ゴールまで推しで進んでよいです。判断に迷ったら、Vulkan 1.0の原則論で進めてください。」に従い、Q1 が推しで決めてよい（起きた時にユーザーに見せる）。
+
+| U | 問い | 推し | 他の案 |
+| --- | --- | --- | --- |
+| **U90** | host と CP の書く境 | **scanout（S）は CP の RUNNING・HALTING の間は ring の µop だけ、IDLE・HALTED・FAULTED は host も。RUNNING の host の write は捨てて BAD_WRITE（device の fault にしない）。cursor の位置（C）・link（L）・読む register はいつでも host** | (a) host は常に書けない（JTAG の bring-up と FAULTED の消灯の道が無い）、(b) host も常に書ける（ring の FLIP と host の FB_NEXT が競う）、(c) RUNNING の host の write を fault 7（STATE の alias と同じ。だが DC は reset で戻らない） |
+| **U91** | display の command の形 | **class 0 の µop（DISP_SET・FLIP）を sequencer が実行**（firmware が要らない、flip の遅れが firmware の loop に依らない、ring の順そのもの） | class 2 の gpu-op（firmware が DC を操作。firmware の packet の間 ring が止まり、firmware の無い GPU で display が無い） |
+| **U92** | transmitter（ADV7511）の設定と HPD | **今のまま host の driver**（bring-up・RUN の前・firmware の無い構成でも画面が出る、IMEM を使わない） | firmware（board ごとの物を汎用の driver から出せるが、firmware が動かない時に画面が出ない、IMEM の残り 4.5 KiB） |
+| **U93** | cursor の plane | **実装する**（64 × 64 BGRA8 premultiplied、gclk で DMA の画素に合成、BRAM36 × 4・≈0.5k LUT。compositor が cursor の移動で再合成しない、GPU の負荷に依らず動く） | 作らない（compositor が software の cursor） |
+| **U94** | DC の読みの検査（§17） | **検査しない（root）。FLIP は driver の µop で、driver が image の持ち主を確かめる** | FLIP に session の slot を付け DC の読みを検査（拒否が画面を黒にするだけになるが、MC の検査の入口が DC に要る） |
+| **U95** | present の queue | **driver の software の queue（深さ 2）+ hardware の slot 1**（FIFO と mailbox を driver が作る、ring を止めない） | hardware の slot を深く（RTL が増える）、queue 無し（present が flip まで待つ: 今の形） |
+| **U96** | mode の列挙 | **GHCI の mode の表（MODE_INDEX と 6 つの R）**（driver が vendor の表を持たない） | driver が DC_ID ごとの表（今）、EDID（programmable な clock が要る、後の版） |
+| **U97** | 単独の DC | **GHCI の DISP（CP の無い DC）の文は残し、Amaterrace の RTL の `STANDALONE` は消す**（ZYBO の target は 2026-10-25 に外れた） | 両方残す、両方消す |
+| **U98** | producer の待ちを GPU に任せる（zedBSD の display の core の変更） | **後で別の Phase か WS**（core が PRESENT_SYNC の依存を backend に渡す flag。全部の display の driver に関わる。GHCI の FLIP の COMPLETE は今から有る） | この Phase で core を変える |
+| **U99** | GHCI の互換 | **新しい capability DISP2（id 11）**（今の driver は DISP2 を知らないので display を作らないだけ。§16 の minor の規則を守る） | DISP の version 2（今の driver が RUNNING で直に書いて誤る）、GHCI の major を上げる |
+
+### 18.11 選ばなかった案と理由
+
+- **DC が record を自分で書く**（DC の AMB の口に write）: DC は read だけの client のままにし、record の書き手は CP の側（IRQ の順序を CP の irq と同じ所で作る）。
+- **CP の fence unit が record を書く**: FSM が 1 つで、ring と firmware の WAIT_FENCE が watchdog まで握るので、record が際限なく遅れ得る（review 5）。
+- **STATUS の busy の bit に DC**: bit 7 は SA で、WAIT_IDLE の 8 bit の mask に空きが無い。また「全部の unit」に DC が入ると、点いている間 FENCE が終わらない（review 1・2）。
+- **host が fence を待って FB_NEXT を書く**（今）: 毎 frame の BLT の copy と host の register の write が要る。
+- **列挙も command で**: 読むだけの情報に ring の往復が要る。
+- **DC の slot を深く**: driver の queue で足り、1 slot の方が検証が易しい。
+- **DC の割り込みを別の MSI の vector に**: GHCI の割り込みは 1 本（§9.2・§15.2）。
+- **host memory の scan**: PCIe の read の遅れと帯域で underflow の risk。
+- **DC の DMA を 4 byte の揃えに**: v1 の mode の行は 64 B の倍数で、image も 64 B に揃うので要らない（review 15）。行が 64 B の倍数でない mode が出た時に見直す。
+- **cursor を pclk で合成**: BRAM が 2 つの clock に跨ぎ、位置の crossing も要る（spec/README の 1 module 1 clock の規則）。gclk で DMA の画素に合成すれば crossing は今の pixel FIFO だけ。
+- **ADV7511 を firmware に**: §18.10 U92。
+
+### 18.12 試験の計画（host の iverilog・Verilator、driver の host 試験。QEMU・板はこの Phase に無い。画面は p024・p028）
+
+- `sim/tb/atg_cp_disp_tb.v`（新）: group `set`（0x3C0〜0x3FF の写し、FB_NEXT・範囲の外・奇数の n の fault 3、flags[0] の idle の待ち）、`flip`（base・record の検査の fault 3、slot の空き・埋まり・取り込みで降りる、record の応答まで次を受けない、COMPLETE の待ち（unit の busy と応答。DC は入らない）、record `{value, FRAME_COUNT}` と IRQ.FLIP が write の応答の後、record 0 は IRQ だけ）、`take`（ENABLE の落ち・DC の reset で cancelled ですぐ取る、plane 1 は BRAM の読みの後に取る、隠れた cursor でも同じ）、`excl`（HALTED・FAULTED の間の seq の DISP_SET と FLIP は何もしない、HALTED の host の消灯を packet の残りが覆さない、STEP）、`order`（COMPLETE の FLIP は前の draw の終わりの前に slot に入らない、payload の受けで置かない）、`taken`（TAKEN0/1・STATUS[31]、reset の後の IDLE で record が出る）、`cancel`（host の FB_NEXT で cancelled の record）、`gate`（IDLE・HALTED・FAULTED は通る、RUNNING・HALTING は捨てて BAD_WRITE、C・L・I はいつでも、host の buffer は seq と同じ cycle でも捨てない）、`fifo`（UOP_FIFO の 15・16 は fault 2）、`reset`（slot と record が CTRL.RESET を跨ぐ、HALTED・FAULTED の間は送らない）、`err`（record の write の誤りは捨てて STATUS[4]、再送しない）。MUT: `MUT_DISP_EARLYSLOT`（payload の受けで slot に置く）、`MUT_DISP_NOEXCL`、`MUT_DISP_NOGATE`、`MUT_DISP_EARLYIRQ`（応答の前の IRQ）、`MUT_DISP_NOWAIT`（COMPLETE を無視）、`MUT_DISP_FIFOOK`、`MUT_DISP_NOTAKE`（ENABLE の落ちで取らない）、`MUT_DISP_HALTSEND`（HALTED で record を送る）。
+- `sim/tb/atg_cp_seq_tb.v`: DC が点いている間も FENCE・RESULT・QUERY・WAIT_IDLE(0) が終わる（DC が「全部」に入らない）。
+- `sim/tb/atg_cp_ctl_tb.v`: C_DC の MC の誤りが device の fault にならない、fault の源 9。
+- `sim/tb/atg_mc_tb.v`: quiesce・HALTED の間も C_DC の要求が通る、axi_idle が DC を数えない、CTRL.RESET の flush の後も C_DC の未応答の応答が返る（`atg_dc_dma` の `inflight` が戻る）。
+- `sim/tb/atg_dc_dma_tb.v`: 他の tag の応答を数えない、err の出力。
+- `sim/tb/atg_dc_regs_tb.v`・`atg_dc_tb.v`: 256 B の窓、pending と taken（vsync・ENABLE の落ち・DC の reset・ENABLE = 0 の write）、mode の表、CONNECTED の reset の値と pulse、STATUS の sticky と W1C、DISP_ERROR は 1 frame に 1 回（underflow が続く形）、read の error で黒と STATUS[3]。
+- `sim/tb/atg_dc_cursor_tb.v`（新）: 端の clip（負の位置・右下の外）、alpha 0・255・中間（丸めと飽和）、非 premultiplied の値で飽和、frame の始めでの位置の取り込み（frame の途中の CURSOR_POS の write で frame が裂けない）、新しい image の読みが frame の外に収まる、RGB565 の primary、読みの error。
+- `sim/tb/atg_top_disp_tb.v`（新、KC705 の形、firmware 入り）: ring に driver と同じ形の packet: BLIT の fill → FLIP(COMPLETE) → DC が scan した画素（SCAN_SUM）= fill、draw（三角形）→ FLIP → 画素 = 参照、点灯の列、消灯と pending の取り込み、ring の WAIT_FENCE の間の取り込み（record が遅れない）、CTRL.RESET を跨ぐ FLIP。
+- **CDC**: 新しい crossing は無い（cursor は gclk）。今の pixel FIFO・`am_sync` の crossing は変えない事を D2・D3 の review で確かめる（iverilog・Verilator は metastability を見ないので、crossing の一覧を spec に書いて目で見る）。
+- Verilator: `ghci-e2e` に display の case（driver の display の ops を偽の core から呼び、vkdemo の frame を BLOB で present → FB_BASE がその image の address・record・IRQ、SCAN_SUM が image と一致、COPY の route も）。P1 の harness の KC705 の形（p030 S11）の後。
+- driver の host 試験（`ghci-host-test.c`）: 点灯・消灯の packet の列（CTRL の全部の word）、mode の変更と flip の同時（詰まらない）、lease の後片付けの間の claim の EBUSY、queue と mailbox の置き換え、hold の解放、record の wrap、cancelled、recover の数え直し（ring の中の未取の FLIP の置き直し、`program_ring` の後の poll）、cursor の EBUSY と並べ替え、attach の順（RUN の前の直の write）。vmunix の build の warning 0。
+- 回帰: `make sim` の PASS の数が減らない（T）。
+
+### 18.13 risk
+
+- **負荷の下の flip の取り逃し**（§18.1）: 1 本の ring で FLIP が長い class 2 の packet の後ろに並ぶ。p028 で測り、多ければ display 用の ring（後の版）か U98。
+- **cursor の BRAM**: BRAM36 × 4、≈0.5k LUT（p036 の面積の数字に足す）。
+- **seq の port と行**: `busy_in[0]` と kick の束ねで port は 39（§17 の後）。行は `atg_cp_seq_dec` に分けて 400 以内（D1 の確認 C3）。
+- **ADV7511 の HPD**: register と設定の消え方が未確認（実機 p024）。
+- **P1・P2 との重なり**: `atg_top`・`atg_cp`・`sim/verilator/harness.cpp` は P1（p030 S11）、`atg_cp_seq` は §17 の R3 も触る。実装の段の順は Q1 が決める。
+
+### 18.14 実装の段・LW・順（8 LW ≈ 2〜3 時間）
+
+| 段 | 内容 | 受け入れ | 依存 | LW |
+| --- | --- | --- | --- | --- |
+| D1 | GHCI の §3.1・§3.2・§4・§7.3・§13.2・§15.2 の draft、`include/ghci_regs.h`・`ghci_packets.h` の番号（draft: id 11、op 15・16、IRQ [12:9]、uop index 0x3B8〜0x3FF。他の draft（p027・p030・p034）の番号と照合）、新しい module と変わる module の spec、確認 C3（seq の port） | spec の port ≤ 40、番号の Q1 の確認 | この設計の review と U90〜U99 | 3 |
+| D2 | RTL の移動（`rtl/gpu/dc/`・`spec/gpu/dc/`・`sim/run.sh`・lint の list）、atg_top の子に（board の reset の domain、C_DC）、MC の QUIESCE_EXEMPT・axi_idle の分け・flush で C_DC を残す、board の top の簡素化、`STANDALONE` を消す | 今の DC の TB と `atg_kc705_raster` の TB の PASS、`atg_mc` の新しい group、lint | D1、P1 の S11 の merge | 8 |
+| D3 | DC: 窓 256 B、pending と taken の直し、mode の表、CONNECTED、STATUS、DISP_ERROR、BAD_WRITE、TAKEN、内部の bus、DMA の err と tag、DC の中の `am_amb_mux` | `atg_dc_regs`・`atg_dc_dma`・`atg_dc` の TB PASS（新しい group） | D2 | 5 |
+| D4 | CP: `atg_cp_disp`（record の書き手・§17 の side band を含む）、seq の op 15・16・`busy_in[0]`・kick の束ね・`atg_cp_seq_dec`、`atg_cp` の index の振り分け、IRQ の [12:9]、host の門と排他、UOP_FIFO の拒否、`atg_cp_ctl` の C_DC と fault の源 9、`XCAP_MASK` の幅と EXTCAP の list の配置 | `atg_cp_disp` の PASS と MUT、`atg_cp_seq`・`atg_cp_ctl`・`atg_cp_regs` PASS | D1（D3 と並行: DC の `taken` は TB の stub）、§17 の R3 との順は Q1 | 12 |
+| D5 | cursor の plane `atg_dc_cursor`（U93） | `atg_dc_cursor` PASS | D3 | 5 |
+| D6 | `atg_top_disp_tb`、Verilator の display の case | 各 PASS | D2〜D5 | 3 |
+| D7 | driver: attach の順、display の lock と待ちの規則、DISP2、ring の点灯・消灯と fence 無しの submit、mode の表、route（SHARED の import の判定・COPY）、UNGATED と adoption_wait、queue と mailbox、hold、claim の EBUSY、record と wrap と 64 bit の読み、recover の数え直し（STATUS[31]・TAKEN）、IRQ の bit と DISP_ERROR の mask、hotplug の poll、cursor、`hcr.h` の写し、license と転記（§17.20 と同じ） | host 試験 PASS、vmunix の warning 0 | D4、p006・p019 の merge | 13 |
+| D8 | GHCI の確定、design の §4.2・§4.3・§5・§6.5 の書き換え、README の行、`make sim` の数（T） | `make sim` の PASS が減らない（T） | D2〜D7 | 2 |
+| 計 | | | | **51 LW**（±35%: 33〜69） |
+
+D3・D4 は D2 の後に並行できる。D7 は p006・p019 の後。画面の確認は p024（KC705 の板）と p028。
+
+### 18.15 review の指摘と対応（design-reviewer、2026-10-25、28 件: Critical 2・High 7・Medium 13・Low 6）
+
+| # | 重さ | 指摘 | 対応 |
+| --- | --- | --- | --- |
+| 1 | Critical | DC busy を WAIT_IDLE の bit 7 に入れると `B_ALL` に含まれ、点灯中の FENCE・RESULT・QUERY・firmware の WAIT_IDLE(0)・FLIP COMPLETE が終わらない | DC を busy の bit から外し「全部の unit」に入らないと GHCI に書いた。idle の待ちは DISP_SET の flags[0]（§18.2-4・§18.3・§18.4） |
+| 2 | Critical | STATUS[7] は SA（`sa_busy`）と §3.9 の予約 | bit 7 を使わない（同上、§18.0 を直した） |
+| 3 | High | ENABLE の落ち・DC の reset で pending の flip が取られず slot が詰まる（ring の deadlock、hold の漏れ）。ENABLE = 0 の write で古い pending が残る | ENABLE の落ち・DC の reset・ENABLE = 0 の write ですぐ取り `taken` を pulse（§18.3・§18.5 (b)、TB の `take`、MUT。cursor の off で取る形は 2 回目の 6 で取り下げた） |
+| 4 | High | scanout の read の誤りが device の fault になり reset を繰り返す。record の誤りも reset を跨いで再送 | C_DC の誤りは device の fault にせず黒と DISP_ERROR、FLIP の base を parse で検査（fault 3）、record の誤りは捨てる（§18.2-7・§18.4・§18.9） |
+| 5 | High | fence unit は FSM 1 つで WAIT_FENCE が握る、record の深さ、§17 の chk | `atg_cp_disp` に自分の record の書き手（chk = 0）、record の応答まで次の FLIP を受けない（§18.2-5・§18.4・§18.11） |
+| 6 | High | ADV7511 を firmware に移すと bring-up・RUN の前・firmware の無い構成で画面が出ない、早期の console が未決 | U92 の推しを host の driver に変えた、CONNECTED の reset の値、早期・panic の console の道（§18.2-11・§18.8・§18.10） |
+| 7 | High | reset を跨ぐ時の driver の側（ring の中の未取の FLIP、数え、`program_ring` の IRQ の clear、HALTED の quiesce） | record は CP が動き出してから送る、driver の recover の数え直しと poll（§18.4・§18.7・§18.8、host 試験） |
+| 8 | High | host の門の競争と attach の順（RUN の後の直の write）、STEP と host の write の同じ cycle | attach の display の初期化を RUN の前に、直の write は `cp_lock` の中、門の host の buffer、RUNNING の write は fault でなく BAD_WRITE（§18.2-3・§18.4・§18.7、U90） |
+| 9 | High | slot と直の FB_NEXT の write の衝突 | FB_NEXT は DISP_SET で書けない（fault 3）、host の write は pending を cancelled の record で降ろす（§18.3・§18.9） |
+| 10 | Medium | cursor の module が 2 つの clock に跨ぐ、CURSOR_POS の crossing | gclk で DMA の画素に合成（crossing 無し）、位置は frame の始めに取る（§18.5、§18.11） |
+| 11 | Medium | cursor の契約（RGBA、EBUSY、ring の後ろで止まる、丸め、読みの時、fault で隠す） | CPU で並べ替え、両面が使用中は EBUSY、C の register はいつでも host、round と飽和、読みは frame の外で 1 度、recover で隠す（§18.3・§18.5・§18.7） |
+| 12 | Medium | placement に local の bit が無い、route は swapchain ごと、非 BLOB の copy の道、power/refresh、FORMAT の変更、32 bit の record | placement 0 と driver の保証、route は SHARED・COPY を libvulkan が 1 度選ぶ、COPY は BLIT + FENCE の後に FLIP、power/refresh は v1 で両方無し、FORMAT は点灯のし直し、record を 64 bit に戻す（§18.1・§18.7） |
+| 13 | Medium | DISP v2 は minor の規則に反する | 新しい capability DISP2（U99） |
+| 14 | Medium | 窓が 128 B を超える | 256 B と 8 bit の decode、driver の検査（§18.3・§18.5・§18.7） |
+| 15 | Medium | 4 byte の揃えは v1 に要らない、1.3% の数字の誤り | DMA を変えない、stride_alignment 64（§18.2-9・§18.11） |
+| 16 | Medium | port と行の予算（DISP の group は不可、seq の port、module の表が無い） | seq は今の uop の port を使い +1（kick の束ね）、module の表（§18.4・§18.5） |
+| 17 | Medium | lock の順、session の close で ring を待つ、HOTPLUG の通知 | display の lock と順、close は印だけで service thread が行う、mode の変更は queue を落とす、通知は service thread（§18.7） |
+| 18 | Medium | underflow の割り込みの嵐、VBLANK の動的な有効と `irq_mask` | DISP_ERROR は 1 frame に 1 回まで、VBLANK は v1 で使わない、`irq_mask` は `irq_lock` の中（§18.2-6・§18.7） |
+| 19 | Medium | v1 の present は CPU が producer を待つ、ring の後ろで並ぶ | §18.1 に書き、p028 で測る、U98（§18.1・§18.13） |
+| 20 | Medium | hotplug の意味（generation、切断中の present、reset で消える bit） | §18.7 の hotplug、recover で CONNECTED を読み直す |
+| 21 | Medium | 段の依存と LW（D7 と firmware、attach、`hcr.h`、license） | firmware の段を無くし（U92）、D7 に足して 12 LW、D4 を 10 LW、D4 の stub（§18.14） |
+| 22 | Medium | 試験の計画の抜け | §18.12 に足した（take・FENCE と点灯・誤り・WAIT_FENCE の間の取り込み・cancel・reset・嵐・CDC） |
+| 23 | Low | cursor の読みの窓の数字 | 読みの窓を「frame の最後の読みの後から次の frame の始めまで」に直した（§18.5） |
+| 24 | Low | 今の RTL は既に `flip_pending` を持つ | §18.0・§18.5 (b) を直し、D3 を 4 LW に |
+| 25 | Low | record 0 の IRQ、payload の置き場、落とした文、idle と cursor、MODE_INDEX の共有 | record 0 は取り込みで IRQ だけ、payload は `atg_cp_disp` の index、underflow の clear と OUTPUT の文を戻した、idle は cursor の読みも数える、MODE の読みは display の lock の中（§18.3・§18.4・§18.7） |
+| 26 | Low | atg_top の中の DC の reset の domain | board の reset の domain、CTRL.RESET の flush から外す（§18.2-1） |
+| 27 | Low | record の page の coherence | §11.4 の DMA の sync の後に読む（§18.7） |
+| 28 | Low | window の番号の照合 | firmware の window は使わなくなった。uop の index の番号は D1 で他の draft と照合（§18.14） |
+
+### 18.16 review の指摘と対応（2 回目、design-reviewer、2026-10-25、21 件: High 5・Medium 10・Low 6）
+
+| # | 重さ | 指摘 | 対応 |
+| --- | --- | --- | --- |
+| 1 | High | FLIP が COMPLETE の待ちの前（payload の受け）で slot に入り得る、DISP_SET の flags[0] が `atg_cp_disp` に見えない | slot に置くのは exec の kick（code `disp`）の時、待ちは pre の mask に `busy_in[0]`（`B_ALL` は bit 0 を含まない）、flags[0] は擬似の index 0x3BF（§18.2-5・§18.4）、TB `order` と MUT |
+| 2 | High | MC の quiesce・flush・axi_idle から DC を外す設計と段が無い（`inflight` が戻らず DMA が止まる） | `QUIESCE_EXEMPT`・axi_idle の分け・flush で C_DC を残す（§18.2-1、module の表、D2 に +4 LW、`atg_mc_tb`） |
+| 3 | High | recover で「取られたが record が未送」と「ring で消えた」を区別できない | TAKEN0/1 と STATUS[31]、recover は RUN の前の IDLE で未送の record を待ってから読む（§18.3・§18.4・§18.7） |
+| 4 | High | HALTED・FAULTED の間も seq が packet を続け、host が直に書いた物を覆す | 排他: seq の DISP µop は RUNNING・HALTING だけ効き、他では何もしない（§18.2-3・§18.3・§18.4、TB `excl`） |
+| 5 | Medium〜High | driver の lock の順で待ちが詰まる | 待つ者は record を自分で poll、service thread は lock を持って待たない、recover は display → `cp_lock`（§18.7、host 試験） |
+| 6 | Medium | 隠れた cursor の FLIP(1) がすぐ取られ面が再利用される | plane 1 の取り込みは BRAM の読みの後（隠れていても）、ENABLE = 0・reset は cancelled、消灯中の cursor_set は点灯の後に FLIP（§18.3・§18.5・§18.7） |
+| 7 | Medium | cursor と DMA が AMB の口を共有すると `inflight`・`keep` が壊れる、「frame の残りを黒」は今の RTL と違う | DC の中の `am_amb_mux`、DMA が自分の tag だけ数える、err の出力、黒は誤った line（§18.2-7・§18.5、D3） |
+| 8 | Medium | 0x3xx の index の実装の穴（state の範囲外・TU の broadcast・SET_REG の道・offset の折り返し） | `atg_cp` が 0x3xx を state に渡さない、`pay_wait = 0` の別の枝、offset の検査は seq（§18.4） |
+| 9 | Medium | seq の port の起点と変更の見積もり | port は 40（clk・rst_n を含む）から kick の束ねで 39、`atg_cp_seq_dec` に分ける（§18.4・module の表・§18.13） |
+| 10 | Medium | `atg_cp_disp` の fault 3 の出口が無い（NSRC 8 は満ち） | fault の源を 9 に（§18.4・module の表） |
+| 11 | Medium | STATUS の W1C の kind が無い、BAD_WRITE と IRQ | kind W（いつでも）、BAD_WRITE も DISP_ERROR（1 frame に 1 回）（§18.2-3・§18.3・§18.7） |
+| 12 | Medium | SHARED の条件を present の EINVAL にすると COPY に戻れない、FLIP は stride と format を持たない | 判定は import（`GPU_IMPORT_SCANOUT`、ENOTSUP）、present の EINVAL は防御、stride・format が違えば点灯のし直し（§18.7） |
+| 13 | Medium | §17 との接続（record の書き手の side band、client の順序、XCAP_MASK の幅と list の配置） | §18.4 の record の書き手、D4 に `XCAP_MASK` と list の配置と §17 の R3 との順 |
+| 14 | Medium | lease の後片付けと新しい claim の競合 | 後片付けまで claim は EBUSY（§18.7、host 試験） |
+| 15 | Low | cursor の読みの窓の数字（frame_start は back porch の始め） | 720p ≈26k gclk、480p ≈13k gclk に直した（§18.5） |
+| 16 | Low | CTRL の word の全体の書き込みで FORMAT・OUTPUT が消える、ENABLE = 1 の間の timing の write | CTRL = FORMAT \| OUTPUT \| ENABLE、ENABLE = 1 の間の write は捨てて BAD_WRITE（§18.3・§18.5 (i)・§18.7） |
+| 17 | Low | 8 B の record が裂けて読める、FRAME_COUNT を時刻に | cancelled を value の bit 31 に、64 bit の 1 回の読み、FRAME_COUNT は時刻にしない（§18.3・§18.7） |
+| 18 | Low | cursor の合成の細目（RGBA8 の入れ替え、RGB565 の広げ方、TEST_PATTERN） | §18.3・§18.5 に書いた |
+| 19 | Low | FLIP ごとに driver の FENCE が付き全部を drain する | FLIP だけの packet は fence 無しの submit（§18.7） |
+| 20 | Low | DISP_ERROR の数、窓の decode の場所の食い違い、host の read の道 | 1 s に 30 回で mask、decode と read は `atg_cp_regs`（§18.4・§18.5 (h)・§18.7） |
+| 21 | Low | DC の CTRL.RESET は I2C も reset する | I2C の使用と CTRL.RESET を display の lock で直列（§18.7） |
+
 
 ## Appendix A. SA の設計の sketch（**延期**。2026-10-23 ユーザー「SAの設計と実装はかなり後に回して、SUがきちんとISAを実装できてからにします。」SU が GSI1 を実装した後に設計し直す。計画の critical path には無い。版 4 の review（§14）の 33 件に対応した時点の案で、**README の 0.8 TOPS/SU（×2）は満たしていない**（1 MAC/PE/cycle）。KC705 の SA 構成の数字も参考のみ）
 

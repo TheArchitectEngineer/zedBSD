@@ -48,3 +48,5 @@
 | 2026-10-25 11:32 | p011 を cleared にした（vkdemo の 1 frame が Verilator の上で oracle と一致）。vkQueueSubmit を待たずに返す firmware の直し（再生の前に結果を書く）を次の担当に | Vulkan の submit は仕事を待たない原則 |
 | 2026-10-25 12:04 | P1 が見つけた「TU・CPU の DMA の MC の outstanding が busy に入っていない」を、保護に限らず CP の WAIT_IDLE の条件にも入れる直しにした | WAIT_IDLE・INVALIDATE の正しさ（Vulkan の barrier の意味） |
 | 2026-10-25 12:21 | p036 の U80〜U84 は、ユーザーの前の決定（PACKED を持つ、FP32 は全 lane、NSU 4〜6）を覆すので推しで決めずユーザーに諮る。U85（GHCI §8.5 が既に求める整列に ROP を合わせる）だけは仕様どおりなので P2 の推しで進めてよいと判断 | 推しで進める許可は、ユーザーが明示した決定の見直しまでは含まないと解釈した |
+| 2026-10-25 12:41 | p035 の U90〜U99 を推しで決めた（RUNNING の間の host の write は捨てて BAD_WRITE、class 0 の µop、ADV7511 と HPD は host の driver、cursor を実装、DC の読みは検査しない、driver の queue 深さ 2 と hardware の slot 1、GHCI の mode の表、単独の DC は RTL の STANDALONE を消す、display の core の変更は後で、互換は DISP2） | ユーザーの推しで進める許可 |
+| 2026-10-25 12:41 | P3 の firmware の submit の直し（RESULT を先に、DONE は replay の後）を受け入れた | DONE の後は CP が driver の FENCE に進むので、replay を DONE の後にすると fence が早すぎる |
