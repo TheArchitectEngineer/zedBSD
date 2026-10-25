@@ -21,3 +21,4 @@ vkdemo の 1 frame の readback が参照と一致（Verilator）、fill・copy�
 ## 記録
 
 - 2026-10-25 09:59 Q1: 新設。
+- 2026-10-25 10:18 P3 → Q1: 段 0（amaterrace p3-p011 c3816d5、zedBSD agent/p3-p006 50f5545aa）。MEM の capability（XCAP 8、register 0x1C0・0x1C4・0x1C8、既定 0 で載せない）と RESIDENT_WARPS[23:16] = NREGS。KC705 の board の top: LOCAL_BASE 0x8000_0000（MIG の 1 GiB の alias、2 GiB 未満を PCIe の host の bus address に残す: P3 の判断）、1 GiB、窓 64 MiB。driver の vk/ が [23:16] を読んで compile に渡す。P3 の申告: atg_cp_regs 6 行・atg_kc705_raster 5 行 PASS、lint 127、host 試験 126・76・139。
