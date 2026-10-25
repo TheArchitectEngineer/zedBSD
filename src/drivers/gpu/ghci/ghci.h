@@ -15,7 +15,10 @@
  * capability list say what it has, and nothing in the driver names a
  * vendor.  The bus glue (pci-attach.c) maps the window, the optional
  * window onto the GPU's own memory and the interrupt, and hands them to
- * ghci_device_start().
+ * ghci_device_start().  On a bus that delivers no interrupt of the GPU's
+ * (the VisionFive 2's root complex takes no MSI and the board may have no
+ * INTx pin) the device is polled: a thread runs the interrupt handler's
+ * work every GHCI_POLL_MS, and the GPU's IRQ_ENABLE stays zero.
  *
  * Memory.  A GPU with local memory (the MEM capability) is discrete; one
  * without is unified.  The driver hands out three kinds of memory:
@@ -34,7 +37,9 @@
  * closes it once the device is published (the display controller is set
  * dark at the attach, so no boot framebuffer is shown through it), and
  * opens it again at the detach.  The aperture covers the host addresses
- * and the local memory.
+ * and the local memory.  Where the GPU's accesses do not snoop the
+ * processor's caches, the processor reaches host memory through an
+ * uncached view of it, and so do the user mappings.
  *
  * Locks.  lock (a mutex) serializes the sessions, the allocators, the
  * lists of allocations and the device's life; display.lock (a mutex,
@@ -42,7 +47,7 @@
  * both) serializes the ring and the reset.  irq_lock (a spinlock, taken by the interrupt handler)
  * protects the completed fence, the reset generation, the fault's record
  * and the service thread's work, and is the condition lock of the fence
- * and service wait queues.
+ * service and poll wait queues.
  */
 
 #ifndef DRIVERS_GPU_GHCI_H
@@ -100,6 +105,9 @@
  */
 #define GHCI_SERVICE_PERIOD_MS		1000U
 #define GHCI_HANG_MS			10000U
+
+/* How often a polled device's interrupt status and fence page are looked at. */
+#define GHCI_POLL_MS			1U
 
 /* The fence distance at which a submission waits for the GPU (a quarter of the circle). */
 #define GHCI_FENCE_WINDOW		0x40000000U
@@ -425,6 +433,16 @@ struct ghci_device {
 	unsigned irq_count;
 	void *irq_cookie;
 
+	/*
+	 * How the bus glue left the device: polled says no interrupt is taken
+	 * (the poll thread does the handler's work and IRQ_ENABLE stays zero);
+	 * host_uncached says the GPU does not snoop the processor's caches, so
+	 * host memory is reached through an uncached view.  Both are set
+	 * before ghci_device_start() and never change.
+	 */
+	int polled;
+	int host_uncached;
+
 	/* The locks, the wait queues and the service thread. */
 	struct mutex lock;
 	struct mutex cp_lock;
@@ -433,6 +451,14 @@ struct ghci_device {
 	struct wait_queue service_wake;
 	unsigned service_work;
 	int service_running;
+
+	/*
+	 * The poll thread of a polled device (irq_lock): poll_stop asks it to
+	 * leave, and it clears poll_running as it leaves.
+	 */
+	struct wait_queue poll_wake;
+	int poll_stop;
+	int poll_running;
 
 	/* The identification and the capabilities. */
 	uint32_t version;
@@ -448,6 +474,7 @@ struct ghci_device {
 	uint32_t local_base;
 	uint64_t local_size;
 	uint64_t local_window;
+	uint64_t hardware_window;
 	uint64_t host_limit;
 	uint32_t mem_registers;
 	int protection;
@@ -568,6 +595,9 @@ int ghci_cp_done(struct ghci_device *device, uint32_t fence, uint64_t generation
 /* The interrupt handler of the device. */
 int ghci_cp_interrupt(void *argument);
 
+/* Writes IRQ_ENABLE from irq_mask, or zero on a polled device. */
+void ghci_cp_irq_enable(struct ghci_device *device);
+
 /* Starts the service thread of the device. */
 int ghci_service_start(struct ghci_device *device);
 
@@ -582,6 +612,15 @@ void ghci_service_stop(struct ghci_device *device);
 
 /* Wakes the service thread for work. */
 void ghci_service_wake(struct ghci_device *device, unsigned work);
+
+/* Starts the poll thread of a polled device (nothing on another). */
+int ghci_poll_start(struct ghci_device *device);
+
+/* The poll thread's body (service.c starts it). */
+void ghci_poll_main(void *argument);
+
+/* Stops the poll thread and waits for it to leave. */
+void ghci_poll_stop(struct ghci_device *device);
 
 /*
  * The memory (memory.c).  The device's lock is held for every call but

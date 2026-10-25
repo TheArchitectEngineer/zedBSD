@@ -382,19 +382,33 @@ ghci_cp_interrupt(
 	unsigned long irq;
 	int handled;
 
-	/* Masks the GPU's interrupt and reads what is pending. */
+	/* The device whose interrupt, or whose poll, this is. */
 	device = argument;
-	ghci_write(device, GHCI_IRQ_ENABLE, 0U);
-	status = ghci_read(device, GHCI_IRQ_STATUS) & IRQ_TAKEN;
+
+	/*
+	 * A polled device raises no interrupt: its IRQ_STATUS still records
+	 * the events, of which the poll takes those the driver has enabled
+	 * (a masked scan-out error waits as it would for an interrupt).
+	 */
+	if (device->polled) {
+		status = ghci_read(device, GHCI_IRQ_STATUS);
+		status &= device->irq_mask;
+	} else {
+		/* Masks the GPU's interrupt and reads what is pending. */
+		ghci_write(device, GHCI_IRQ_ENABLE, 0U);
+		status = ghci_read(device, GHCI_IRQ_STATUS);
+		status &= IRQ_TAKEN;
+	}
 
 	/* Clears what was pending (write 1 to clear). */
 	if (status != 0U)
 		ghci_write(device, GHCI_IRQ_STATUS, status);
 
 	/* Unmasks what the driver takes; a bit still pending then sends a new message. */
-	ghci_write(device, GHCI_IRQ_ENABLE, device->irq_mask);
+	if (!device->polled)
+		ghci_write(device, GHCI_IRQ_ENABLE, device->irq_mask);
 
-	/* An interrupt with nothing pending is another device's on a shared line. */
+	/* An interrupt with nothing pending is another device's on a shared line (or a quiet poll). */
 	handled = 0;
 	if (status != 0U)
 		handled = 1;
@@ -457,6 +471,26 @@ ghci_cp_interrupt(
 
 	/* Succeeded: the interrupt was the device's. */
 	return handled;
+}
+
+/*
+ * Writes IRQ_ENABLE from irq_mask, or zero on a polled device.
+ *
+ * A polled device's interrupt stays off, so that a line or a message no
+ * handler serves is never raised; the poll reads IRQ_STATUS instead.
+ */
+void
+ghci_cp_irq_enable(
+	struct ghci_device *device)
+{
+	/* A polled device keeps every interrupt off. */
+	if (device->polled) {
+		ghci_write(device, GHCI_IRQ_ENABLE, 0U);
+		return;
+	}
+
+	/* The interrupts the driver takes. */
+	ghci_write(device, GHCI_IRQ_ENABLE, device->irq_mask);
 }
 
 /*
@@ -557,6 +591,100 @@ ghci_service_main(
 	device->service_running = 0;
 
 	spin_unlock_irqrestore(&device->irq_lock, irq);
+}
+
+/*
+ * Runs the poll thread of a polled device: every GHCI_POLL_MS it does the
+ * interrupt handler's work (the fence page, the faults, the firmware's
+ * results and the display's events), until asked to stop.
+ */
+void
+ghci_poll_main(
+	void *argument)
+{
+	struct ghci_device *device;
+	uint64_t sequence;
+	uint64_t wake;
+	unsigned long irq;
+	int stop;
+
+	/* The device the thread looks at. */
+	device = argument;
+
+	/* Looks at the device until asked to stop. */
+	for (;;) {
+		/* Sleeps for one period, or until the stop asks. */
+		irq = spin_lock_irqsave(&device->irq_lock);
+
+		if (!device->poll_stop) {
+			wake = clock_ticks() + kern_ms_to_ticks(GHCI_POLL_MS);
+			sequence = waitq_sequence(&device->poll_wake);
+			(void)waitq_sleep(&device->poll_wake, &device->irq_lock, sequence, wake, 0U);
+		}
+		stop = device->poll_stop;
+
+		spin_unlock_irqrestore(&device->irq_lock, irq);
+
+		/* Leaves when the device stops. */
+		if (stop)
+			break;
+
+		/* Does what an interrupt would have started. */
+		(void)ghci_cp_interrupt(device);
+	}
+
+	/* Tells the stop that the thread has left. */
+	irq = spin_lock_irqsave(&device->irq_lock);
+
+	device->poll_running = 0;
+
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+}
+
+/*
+ * Stops the poll thread and waits for it to leave.
+ *
+ * It comes before the ring and the fence page go back, which the poll reads.
+ */
+void
+ghci_poll_stop(
+	struct ghci_device *device)
+{
+	unsigned long irq;
+	unsigned waited;
+	int running;
+
+	/* Asks the thread to leave and wakes it. */
+	irq = spin_lock_irqsave(&device->irq_lock);
+
+	device->poll_stop = 1;
+	running = device->poll_running;
+
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+
+	/* A device that was never polled has no thread to wait for. */
+	if (!running)
+		return;
+
+	waitq_wake_all(&device->poll_wake);
+
+	/* Waits, a bounded time, until it says it has left. */
+	for (waited = 0U; waited < SERVICE_STOP_MS; waited += 10U) {
+		irq = spin_lock_irqsave(&device->irq_lock);
+
+		running = device->poll_running;
+
+		spin_unlock_irqrestore(&device->irq_lock, irq);
+
+		/* The thread has left. */
+		if (!running)
+			return;
+
+		ghci_sleep_ms(10U);
+	}
+
+	/* A thread that does not leave is reported; the device stays allocated. */
+	kern_logf("ghci: %s: poll thread did not stop\n", device->name);
 }
 
 /*
@@ -870,7 +998,7 @@ program_ring(
 	/* The interrupts: everything old cleared, the driver's ones on (the handler restores the mask). */
 	device->irq_mask = IRQ_TAKEN;
 	ghci_write(device, GHCI_IRQ_STATUS, IRQ_ALL);
-	ghci_write(device, GHCI_IRQ_ENABLE, device->irq_mask);
+	ghci_cp_irq_enable(device);
 }
 
 /*

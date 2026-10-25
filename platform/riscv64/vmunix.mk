@@ -241,6 +241,32 @@ endif
 ifeq ($(CONFIG_DRIVER_PCI_NVME),y)
 RISCV64_PCI_DEVICE_SOURCES += src/drivers/pci/pci-nvme.c
 endif
+# The generic GHCI GPU driver (a PCIe GPU with the GPU Host Controller Interface, the KC705 board in the
+# VisionFive 2's M.2 slot): the device, the ring, the memory, the display, its GSI1 shader compiler with the
+# shared frontend and optimizer, and its Vulkan executor with the i915 executor's wire codec (built here only
+# when the PowerVR driver does not build it).  CONFIG_GHCI_NATIVE adds the root-only native command of the
+# test images.
+ifeq ($(CONFIG_DRIVER_PCI_GHCI),y)
+RISCV64_PCI_DEVICE_SOURCES += src/drivers/gpu/ghci/ghci.c src/drivers/gpu/ghci/pci-attach.c src/drivers/gpu/ghci/cp.c \
+	src/drivers/gpu/ghci/memory.c src/drivers/gpu/ghci/range.c src/drivers/gpu/ghci/blit.c \
+	src/drivers/gpu/ghci/state.c src/drivers/gpu/ghci/check.c src/drivers/gpu/ghci/capset.c \
+	src/drivers/gpu/ghci/jobs.c src/drivers/gpu/ghci/isa.c src/drivers/gpu/ghci/display.c \
+	src/drivers/gpu/ghci/display-scan.c \
+	src/drivers/gpu/ghci/adv7511.c src/drivers/gpu/ghci/service.c src/drivers/gpu/ghci/share.c \
+	src/drivers/gpu/ghci/compiler/gsi1-compile.c src/drivers/gpu/ghci/compiler/gsi1-encode.c \
+	src/drivers/gpu/ghci/compiler/gsi1-io.c src/drivers/gpu/ghci/compiler/gsi1-memory.c \
+	src/drivers/gpu/ghci/compiler/gsi1-texture.c src/drivers/gpu/ghci/compiler/gsi1-image.c \
+	src/drivers/gpu/ghci/compiler/gsi1-schedule.c src/drivers/gpu/ghci/compiler/gsi1-spill.c \
+	src/drivers/gpu/compiler/spirv.c src/drivers/gpu/compiler/optimize.c \
+	src/drivers/gpu/ghci/vk/vk-engine.c src/drivers/gpu/ghci/vk/vk-node.c \
+	src/drivers/gpu/ghci/vk/vk-session.c src/drivers/gpu/ghci/vk/vk-stream.c src/drivers/gpu/ghci/vk/vk-device.c \
+	src/drivers/gpu/ghci/vk/vk-format.c src/drivers/gpu/ghci/vk/vk-memory.c src/drivers/gpu/ghci/vk/vk-program.c \
+	src/drivers/gpu/ghci/vk/vk-relay.c \
+	$(filter-out $(RISCV64_PLATFORM_SOURCES_$(ZEDBSD_BOARD)),src/drivers/gpu/i915/render/codec.c)
+ifeq ($(CONFIG_GHCI_NATIVE),y)
+RISCV64_PCI_DEVICE_SOURCES += src/drivers/gpu/ghci/native.c
+endif
+endif
 
 # The virt board's ECAM host and the VisionFive 2's two PLDA
 # root complexes.

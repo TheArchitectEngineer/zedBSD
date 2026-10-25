@@ -13,6 +13,15 @@
  * The GPU makes no memory access until bus mastering is on and the
  * aperture is set.
  *
+ * A host that offers none of the three (the VisionFive 2's PLDA root
+ * complexes take no message, and a function may have no INTx pin), or a
+ * kernel built with CONFIG_GHCI_POLL, leaves the device polled.  A
+ * window BAR the host did not place, or could not map, leaves the device
+ * without a local window, which the driver does not use anyway.  A bus
+ * whose DMA does not snoop the processor's caches, or a kernel built with
+ * CONFIG_GHCI_HOST_UNCACHED, has the processor reach host memory through
+ * uncached views.
+ *
  * Values referenced: GHCI 1.0 (draft) section 15.2 (the PCIe binding:
  * the class codes, BAR0, BAR2 and the interrupt).
  */
@@ -21,6 +30,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <drivers/generic/dma.h>
 #include <drivers/pci/pci.h>
 #include <drivers/pci/pci-ghci.h>
 #include <kern/kcrt.h>
@@ -55,8 +65,9 @@ static int ghci_pci_attach(struct drv_pci_device *pci, const struct drv_pci_id *
 static int ghci_pci_detach(struct drv_pci_device *pci, unsigned flags);
 static void ghci_pci_shutdown(struct drv_pci_device *pci);
 static int map_registers(struct ghci_device *device);
-static int map_window(struct ghci_device *device);
+static void map_window(struct ghci_device *device);
 static int take_interrupt(struct ghci_device *device);
+static void choose_host_view(struct ghci_device *device);
 static void release_bus(struct ghci_device *device);
 
 /*
@@ -145,15 +156,13 @@ ghci_pci_attach(
 		return ENODEV;
 	}
 
-	/* The local window, when the function has one. */
-	error = map_window(device);
-	if (error != 0) {
-		release_bus(device);
-		kern_free(device);
-		return error;
-	}
+	/* The local window, when the function has one the host placed. */
+	map_window(device);
 
-	/* The interrupt, before the GPU can raise one. */
+	/* How the processor reaches the host memory the GPU uses. */
+	choose_host_view(device);
+
+	/* The interrupt, before the GPU can raise one, or the poll. */
 	error = take_interrupt(device);
 	if (error != 0) {
 		release_bus(device);
@@ -289,8 +298,15 @@ map_registers(
 	return 0;
 }
 
-/* Claims and maps BAR2, the local window, when there is one. */
-static int
+/*
+ * Claims and maps BAR2, the local window, when there is one.
+ *
+ * The window is optional to the driver, which does not use it: a BAR2
+ * the host left unplaced (it did not fit the host's window) or could
+ * not map leaves the device without one, and its local memory is the
+ * GPU's alone.
+ */
+static void
 map_window(
 	struct ghci_device *device)
 {
@@ -298,21 +314,29 @@ map_window(
 	uint64_t bytes;
 	int error;
 
-	/* A function without a memory BAR2 has no window: its local memory is the GPU's alone. */
+	/* A function without a memory BAR2 has no window. */
 	device->window = NULL;
 	device->window_bytes = 0U;
 	error = drv_pci_device_bar(device->pci, BAR_WINDOW, &bar);
 	if (error != 0)
-		return 0;
+		return;
 	if (bar.type != DRV_PCI_BAR_MEMORY32 && bar.type != DRV_PCI_BAR_MEMORY64)
-		return 0;
+		return;
 	if (bar.size == 0U)
-		return 0;
+		return;
+
+	/* A BAR the host did not place decodes nothing. */
+	if (bar.bus_address == 0U) {
+		kern_logf("ghci: BAR2 (%llu MiB) not placed; no local window\n", (unsigned long long)(bar.size >> 20));
+		return;
+	}
 
 	/* No other driver maps the window. */
 	error = drv_pci_device_claim_bar(device->pci, BAR_WINDOW);
-	if (error != 0)
-		return error;
+	if (error != 0) {
+		kern_logf("ghci: BAR2 not claimed (%d); no local window\n", error);
+		return;
+	}
 
 	/*
 	 * Maps it uncached, so a write reaches the GPU's memory in program
@@ -328,25 +352,66 @@ map_window(
 	    DRV_PCI_MAP_READ | DRV_PCI_MAP_WRITE | DRV_PCI_MAP_NOCACHE,
 	    &device->window_map);
 	if (error != 0) {
+		kern_logf("ghci: BAR2 not mapped (%d); no local window\n", error);
 		drv_pci_device_release_bar(device->pci, BAR_WINDOW);
-		return error;
+		return;
 	}
 
 	/* The processor's view of the window and its physical place, for user mappings. */
 	device->window = device->window_map.address;
 	device->window_physical = device->window_map.physical_address;
 	device->window_bytes = bytes;
-
-	/* Succeeded: the window is mapped. */
-	return 0;
 }
 
-/* Takes one interrupt, a message where the function offers one, and puts the handler on it. */
+/*
+ * Decides whether the processor reaches host memory through uncached
+ * views: when the bus's DMA does not snoop the caches, or when the kernel
+ * is built to.
+ */
+static void
+choose_host_view(
+	struct ghci_device *device)
+{
+	struct drv_dma_device *dma;
+	int coherent;
+
+	/* The bus's DMA: a function without one is taken as coherent, as on the PC. */
+	coherent = 1;
+	dma = drv_pci_device_dma(device->pci);
+	if (dma != NULL)
+		coherent = drv_dma_device_is_coherent(dma);
+
+	/* A coherent bus shares the direct map, unless the kernel says otherwise. */
+	device->host_uncached = 0;
+	if (!coherent) {
+		device->host_uncached = 1;
+	} else if (CONFIG_GHCI_HOST_UNCACHED) {
+		device->host_uncached = 1;
+	}
+
+	/* Says which view the processor uses. */
+	if (device->host_uncached)
+		kern_logf("ghci: host memory reached uncached (bus DMA %s)\n", coherent ? "coherent" : "not coherent");
+}
+
+/*
+ * Takes one interrupt, a message where the function offers one, and puts
+ * the handler on it; a host that offers none, or a kernel built to poll,
+ * leaves the device polled.
+ */
 static int
 take_interrupt(
 	struct ghci_device *device)
 {
 	int error;
+
+	/* A kernel built to poll takes no interrupt. */
+	device->polled = 0;
+	if (CONFIG_GHCI_POLL) {
+		kern_logf("ghci: polled every %u ms (CONFIG_GHCI_POLL)\n", (unsigned)GHCI_POLL_MS);
+		device->polled = 1;
+		return 0;
+	}
 
 	/* One vector: MSI-X, MSI, or the INTx pin. */
 	error = drv_pci_device_allocate_irqs(device->pci,
@@ -355,6 +420,13 @@ take_interrupt(
 	    1U,
 	    &device->irq,
 	    &device->irq_count);
+	if (error == ENOTSUP || error == ENODEV) {
+		/* No message and no pin: the poll stands in for the interrupt. */
+		kern_logf("ghci: no interrupt offered (%d); polled every %u ms\n", error, (unsigned)GHCI_POLL_MS);
+		device->irq_count = 0U;
+		device->polled = 1;
+		return 0;
+	}
 	if (error != 0)
 		return error;
 	if (device->irq_count != 1U)
@@ -364,6 +436,10 @@ take_interrupt(
 	error = drv_pci_device_establish_irq(device->pci, &device->irq, ghci_cp_interrupt, device, "ghci", &device->irq_cookie);
 	if (error != 0)
 		return error;
+
+	/* Says when the GPU raises the INTx pin rather than a message. */
+	if (device->irq.type == DRV_PCI_IRQ_INTX)
+		kern_logf("ghci: interrupt on the INTx pin\n");
 
 	/* Succeeded: the handler serves the GPU's interrupt. */
 	return 0;

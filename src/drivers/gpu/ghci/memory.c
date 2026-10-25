@@ -18,9 +18,13 @@
  * data between the two.
  *
  * Host memory is reached by the GPU at its bus address, which on the PC
- * host is its physical address (the host bridge maps bus addresses one
- * to one); it must lie outside the GPU's local range, below the GPU's
- * HOST_LIMIT and inside the aperture.
+ * host and on the VisionFive 2's root complexes is its physical address
+ * (the host bridge maps bus addresses one to one); it must lie outside
+ * the GPU's local range, below the GPU's HOST_LIMIT and inside the
+ * aperture, and so below 4 GiB.  Where the GPU does not snoop the
+ * processor's caches (host_uncached), the processor's view of host
+ * memory is an uncached second mapping of it, made when the memory is
+ * taken and removed before it goes back.
  */
 
 #include <stddef.h>
@@ -38,11 +42,23 @@
 /* The end of the 32-bit GPU address space. */
 #define ADDRESS_SPACE_END		0x100000000ULL
 
+/*
+ * The uncached views of RAM.
+ *
+ * A HAL without uncached views leaves them out of the kernel; they are
+ * weak so that the kernel links, and a null test refuses host memory to
+ * a device that needs the view (host_uncached) on such a kernel.
+ */
+extern int kern_pmem_map_uncached(const struct kern_pmem *run, void **mapped) __attribute__((weak));
+extern int kern_pmem_unmap_uncached(void *mapped, size_t size) __attribute__((weak));
+
 static int range_make(struct ghci_range_map *map, struct ghci_range_extent **extents, uint64_t base, uint64_t limit);
 static enum ghci_memory_kind kind_for(const struct ghci_device *device, enum ghci_memory_use use);
 static int local_take(struct ghci_device *device, struct ghci_allocation *allocation, enum ghci_memory_kind kind);
 static int host_take(struct ghci_device *device, struct ghci_allocation *allocation);
 static int host_usable(const struct ghci_device *device, const struct kern_pmem *run);
+static int host_view(struct ghci_device *device, struct ghci_allocation *allocation);
+static int host_give(struct ghci_device *device, struct ghci_allocation *allocation);
 static uint64_t host_end(const struct ghci_device *device);
 
 /*
@@ -134,6 +150,7 @@ ghci_memory_fini(
  * The driver does not use the window: it closes it while it drives the
  * device, so that a stray access through the window cannot change local
  * memory, and opens it again (as after a reset) when it lets the device go.
+ * The switch follows the GPU's window, also when the bus left it unmapped.
  */
 void
 ghci_memory_window_set(
@@ -143,7 +160,7 @@ ghci_memory_window_set(
 	uint32_t control;
 
 	/* A GPU without a window has nothing to switch. */
-	if (device->mem_registers == 0U || device->local_window == 0U)
+	if (device->mem_registers == 0U || device->hardware_window == 0U)
 		return;
 
 	/* WINDOW_CTRL.ENABLE; CTRL.RESET does not change it. */
@@ -222,8 +239,7 @@ ghci_memory_free(
 	} else if (allocation->kind == GHCI_MEMORY_UNWINDOWED) {
 		error = ghci_range_free(&device->unwindowed, allocation->gpu_address);
 	} else {
-		error = kern_pmem_free(&allocation->run);
-		device->host_bytes -= allocation->bytes;
+		error = host_give(device, allocation);
 	}
 
 	/* A run the allocator does not know is reported, not given back twice. */
@@ -537,11 +553,19 @@ host_take(
 	if (error != 0)
 		return ENOMEM;
 
-	/* The GPU's address of it is its bus address; the processor uses the direct map. */
+	/* The GPU's address of it is its bus address. */
 	allocation->kind = GHCI_MEMORY_HOST;
 	allocation->gpu_address = (uint32_t)allocation->run.paddr;
 	allocation->physical = allocation->run.paddr;
-	allocation->view = kern_pmem_to_kernel(allocation->run.paddr);
+
+	/* The processor's view of it: the direct map, or an uncached one. */
+	error = host_view(device, allocation);
+	if (error != 0) {
+		(void)kern_pmem_free(&allocation->run);
+		return error;
+	}
+
+	/* The bytes of host memory the device holds. */
 	device->host_bytes += allocation->bytes;
 
 	/* Succeeded: the run is the allocation's. */
@@ -582,6 +606,71 @@ host_usable(
 		return 1;
 
 	/* Succeeded: the run meets the local range and is not usable. */
+	return 0;
+}
+
+/*
+ * Gives the processor its view of a host allocation: the direct map where
+ * the GPU snoops the caches, else an uncached mapping, so that neither
+ * side needs cache maintenance.
+ */
+static int
+host_view(
+	struct ghci_device *device,
+	struct ghci_allocation *allocation)
+{
+	void *mapped;
+	int error;
+
+	/* A GPU that snoops the caches shares the direct map with the processor. */
+	if (!device->host_uncached) {
+		allocation->view = kern_pmem_to_kernel(allocation->run.paddr);
+		return 0;
+	}
+
+	/* A kernel without uncached views cannot give one. */
+	if (kern_pmem_map_uncached == NULL) {
+		kern_logf("ghci: %s: no uncached view of host memory on this kernel\n", device->name);
+		return ENOTSUP;
+	}
+
+	/* The uncached view; the cached lines of the run are written back and dropped first. */
+	error = kern_pmem_map_uncached(&allocation->run, &mapped);
+	if (error != 0) {
+		kern_logf("ghci: %s: no uncached view of host memory (%d)\n", device->name, error);
+		return error;
+	}
+
+	/* Succeeded: the processor reaches the run through the uncached view. */
+	allocation->view = (uint8_t *)mapped;
+	return 0;
+}
+
+/* Removes the processor's view of a host allocation and gives its RAM back. */
+static int
+host_give(
+	struct ghci_device *device,
+	struct ghci_allocation *allocation)
+{
+	int error;
+
+	/*
+	 * The uncached view goes first; a view that cannot be removed keeps
+	 * its RAM, which is not handed out again while it may be reached.
+	 */
+	if (device->host_uncached && kern_pmem_unmap_uncached != NULL) {
+		error = kern_pmem_unmap_uncached(allocation->view, allocation->run.size);
+		if (error != 0)
+			return error;
+	}
+
+	/* The RAM goes back. */
+	error = kern_pmem_free(&allocation->run);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the device holds the bytes no more. */
+	device->host_bytes -= allocation->bytes;
 	return 0;
 }
 

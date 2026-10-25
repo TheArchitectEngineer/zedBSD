@@ -226,6 +226,15 @@ static unsigned model_dc_disp_sets;
 /* The mutexes locked twice on the test's one thread (each would hang the kernel). */
 static unsigned lock_errors;
 
+/*
+ * The uncached views of host RAM the driver made and removed: each view
+ * is the run's own bytes in the model (the model has no cache), so only
+ * the counts and the bytes still viewed show what the driver did.
+ */
+static unsigned uncached_maps;
+static unsigned uncached_unmaps;
+static uint64_t uncached_bytes;
+
 /* The model's two modes, as MODE_H0 .. MODE_FLAGS read them: 640 x 480 and 1280 x 720 at 60 Hz. */
 static const uint32_t model_dc_modes[MODEL_DC_MODES][6] = {
 	{ (96U << 16) | 640U, (48U << 16) | 16U, (2U << 16) | 480U, (33U << 16) | 10U, 25200U, 0x00U },
@@ -256,6 +265,7 @@ static void model_setup_display(void);
 static void test_discrete(void);
 static void test_unified(void);
 static void test_display(void);
+static void test_polled_uncached(void);
 #endif
 
 /* The kernel's MMIO: the register window is the model's. */
@@ -580,6 +590,30 @@ kern_pmem_to_kernel(
 	return &model_host[address - MODEL_HOST_BASE];
 }
 
+/* An uncached view of a run: the run's bytes in the model, counted. */
+int
+kern_pmem_map_uncached(
+	const struct kern_pmem *run,
+	void **mapped)
+{
+	uncached_maps++;
+	uncached_bytes += run->size;
+	*mapped = &model_host[run->paddr - MODEL_HOST_BASE];
+	return 0;
+}
+
+/* The removal of an uncached view, counted. */
+int
+kern_pmem_unmap_uncached(
+	void *mapped,
+	size_t size)
+{
+	(void)mapped;
+	uncached_unmaps++;
+	uncached_bytes -= size;
+	return 0;
+}
+
 /* The GPU core: the registration is remembered; the reports are counted. */
 int
 drv_gpu_register(
@@ -656,6 +690,15 @@ ghci_service_start(
 	return 0;
 }
 
+/* The model raises its interrupt, so no device of the test is polled. */
+int
+ghci_poll_start(
+	struct ghci_device *device)
+{
+	(void)device;
+	return 0;
+}
+
 const struct ghci_isa_backend *
 ghci_isa_select(
 	uint32_t caps,
@@ -678,6 +721,7 @@ main(void)
 	test_discrete();
 	test_unified();
 	test_display();
+	test_polled_uncached();
 	expect(lock_errors == 0U, "no mutex locked twice");
 
 	/* Reports the counts of the checks. */
@@ -1781,6 +1825,89 @@ test_unified(void)
 	core_ops->close(core_private, opaque);
 	error = ghci_device_stop(&device);
 	expect(error == 0, "unified stop");
+	model_device = NULL;
+}
+
+/*
+ * The unified GPU as the VisionFive 2 has it (ws288-p043): polled, with
+ * no interrupt (IRQ_ENABLE stays 0 and the poll takes the enabled bits of
+ * IRQ_STATUS), and with host memory reached through uncached views (the
+ * user's mapping is uncached RAM, and every view goes at the stop).
+ */
+static void
+test_polled_uncached(void)
+{
+	static struct ghci_device device;
+	struct gpu_resource_create storage_request;
+	struct drv_gpu_mapping mapping;
+	struct ghci_allocation *storage;
+	struct ghci_ticket ticket;
+	uint32_t packets[1];
+	uint32_t stream[32];
+	uint32_t dwords;
+	uint32_t word;
+	unsigned maps;
+	int error;
+	void *object;
+	void *opaque;
+
+	/* The model without local memory, and a polled device that views host memory uncached. */
+	model_setup_window(0);
+	memset(&device, 0, sizeof(device));
+	device.registers = (volatile uint8_t *)model_registers;
+	device.register_bytes = sizeof(model_registers);
+	device.polled = 1;
+	device.host_uncached = 1;
+	model_device = &device;
+	uncached_maps = 0U;
+	uncached_unmaps = 0U;
+	uncached_bytes = 0U;
+
+	/* The start keeps the interrupt off and views the ring, the fence page and the bounce buffer uncached. */
+	error = ghci_device_start(&device);
+	expect(error == 0, "polled start");
+	expect(model_irq_enable == 0U, "polled: IRQ_ENABLE stays 0");
+	expect(device.irq_mask != 0U, "polled: the driver still takes its interrupts by poll");
+	expect(uncached_maps >= 3U, "uncached: ring, fence page and bounce buffer viewed uncached");
+	expect(device.ring->view == &model_host[device.ring->physical - MODEL_HOST_BASE], "uncached: the ring's view is the uncached one");
+
+	/* The GPU's work is seen through the uncached views: a fill of storage and a fence. */
+	core_ops->open(core_private, &opaque);
+	memset(&storage_request, 0, sizeof(storage_request));
+	storage_request.bytes = 8192U;
+	storage_request.usage = GPU_RESOURCE_USAGE_STORAGE;
+	maps = uncached_maps;
+	error = core_ops->resource_create(core_private, opaque, &storage_request, &object);
+	storage = object;
+	expect(error == 0 && storage->kind == GHCI_MEMORY_HOST, "uncached: storage in host RAM");
+	expect(uncached_maps == maps + 1U, "uncached: storage viewed uncached");
+	error = core_ops->resource_map(core_private, opaque, object, &mapping);
+	expect(error == 0 && mapping.attributes == DRV_GPU_MAPPING_UNCACHED_RAM, "uncached: storage maps as uncached RAM");
+	core_superuser = 1;
+	dwords = native_fill(stream, storage->gpu_address, 64U, 0x55667788U, storage->gpu_address + 4096U, 9U);
+	error = core_ops->command(core_private, opaque, stream, dwords * 4U);
+	memcpy(&word, &storage->view[252], 4U);
+	expect(error == 0 && word == 0x55667788U, "polled: native fill without an interrupt");
+	ghci_packet_invalidate(0U, 1U, &packets[0]);
+	error = ghci_cp_submit(&device, NULL, packets, 1U, &ticket);
+	if (error == 0)
+		error = ghci_cp_wait(&device, &ticket, 100U);
+	expect(error == 0, "polled: fence seen without an interrupt");
+	expect(model_irq_enable == 0U, "polled: IRQ_ENABLE still 0 after work");
+
+	/* A poll takes the enabled events and clears them, and leaves the interrupt off. */
+	model_irq_status = GHCI_IRQ_FENCE | GHCI_IRQ_SOFT;
+	(void)ghci_cp_interrupt(&device);
+	expect(model_irq_status == GHCI_IRQ_SOFT, "polled: the poll clears what the driver takes, not the rest");
+	expect(model_irq_enable == 0U, "polled: the poll does not enable the interrupt");
+	model_irq_status = 0U;
+
+	/* The close and the stop give every uncached view back. */
+	core_ops->close(core_private, opaque);
+	error = ghci_device_stop(&device);
+	expect(error == 0, "polled stop");
+	expect(uncached_unmaps == uncached_maps && uncached_bytes == 0U, "uncached: every view removed at the stop");
+	core_superuser = 0;
 	model_device = NULL;
 }
 
