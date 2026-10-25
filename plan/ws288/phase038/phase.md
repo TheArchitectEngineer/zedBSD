@@ -45,3 +45,4 @@ Q1 の説明（ffilt は 1 cycle に選択・ETC の展開・unpack・重み・F
     | ffilt/etc w → delta1 | −1.396 | 10 | 4 段にした。RGB の mode・色・modifier の経路が E1 に |
     | ffilt/fma lz8 → st9、cvt pos0 → BRAM の address | −0.105 / −0.052 | 7 / 4 | 配線だけ、合成は +1.4 |
     | ffilt st → tx の CE、filter nq → tx の CE | −4.083 / −2.017 | 1 / 1 | a4e323b で直した、未測定 |
+- 2026-10-25 16:47 P2 → Q1（申告）: 572ffe1（400 行の分割の後）の TU の配線後の WNS −21.448 ns（atg_tu_addr k → r_plane、84 段、前 −35.142）、合成 −24.381。LUT 26,754・FF 14,948・BRAM 8・DSP 60。block ごと（slack / 段）: ffilt −4.098/7（lane・texel の選択 → front/raw1 の 128 bit の mux、配線）、filter −2.617/6（ctl11[5] → rr12、fanout 160 + 40 bit の加算）、filter/pre −1.322/3、ffilt/front/etc −1.012/7、ffilt/fma −0.297/5、cvt −0.031/4、cache −4.938/12、addr/cubeu −11.122/33、addr/desc −15.905/28、addr −21.448/84。申し送りに追加: ffilt の issue の選択（index を 1 cycle 前に register、または 2 cycle の issue）、filter の acc の flag の fanout（ctl11[5] の複製）、残りの enable の複製。T1-797 に回した。
