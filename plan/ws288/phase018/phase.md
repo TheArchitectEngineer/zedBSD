@@ -31,3 +31,4 @@ Verilator の firmware の試験の harness（host の C から staging と fram
 - 2026-10-25 09:15 Q1: T1-778（cfee60e、段 2）PASS: sim-quick 90、verilator 6、lint 118。
 - 2026-10-25 09:19 P2 → Q1: p2-p018 f0116cf（親 2e012f9）。D24S8 の stencil の aspect と buffer の間の copy を内蔵の compute の kernel で（programs/s8_to_image.s・s8_from_image.s）、TEX_ROW を TEX_FORMAT の次に書く（attachment の配置で 1 sample・非圧縮なら 1）。P2 の申告: fwtest 6/6・kernels.py 2/2 PASS、fw-build warning 0、IMEM 60576 B / 64 KiB、atg_top_fw PASS。T1-781 に。次は Verilator の firmware の harness（p018 の受け入れ）。
 - 2026-10-25 09:25 Q1: T1-780（2e012f9、RESIDENT_WARPS と blit）PASS: sim-quick 90、verilator 6、lint 118。
+- 2026-10-25 09:34 Q1: T1-781（f0116cf）PASS: lint 118、sim-quick 90。
