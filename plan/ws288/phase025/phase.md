@@ -35,3 +35,16 @@
 - 2026-10-25 04:12 確認（ユーザー「タイミングの調整は、Vulkan 1.0の必須項目のロジック実装後、さらにドライバとlibvulkanを実装させたあとに行う方針で、変更なしです。」）: 依存は p030（Vulkan 1.0 core の必須の logic）・p006（driver）・p019（libvulkan の側の `vk/`）の後。方針は変えない。
 - 2026-10-25 12:51 ユーザー「SUはパイプラインにしましょう。ということは、FPUもパイプライン化がひつようですね。」→ SU の FPU は（複数 cycle で DSP を使い回す形ではなく）pipeline にする。Q1 の確認: atg_su_fpu・atg_su_alu は今、全部の計算を pipe[0] の前の組み合わせで行い、pipe[1..5] は遅らせるだけ（SHORT_LAT 6）。計算を各段へ分ければ、latency・scoreboard（atg_su_sb の short interlock）・ISA は変えずに pipeline にできる。
 - 2026-10-25 20:36 ユーザー「そうです。ちゃんと演算器を置き換え終えて、パイプライン化を終わらせてから、取り組み直しましょう」→ 順: p037（演算器の置き換え）→ **p025**（目標の Fmax を決め pipeline、p038 の申し送りの表と p036 の block ごとの最悪の経路を使う）→ KC705 の board の P&R と bitstream → p024（板）→ p028。p025 の依存（p030・p006・p019）は満たした。
+- 2026-10-25 21:59 Q1: ユーザー「P2を再度作成します。依頼事項は整理して伝えます。」→ 新しい P2 に p025 の「最初に決める事」の準備（設計の文書だけ、RTL は変えない。p037 と衝突しない）を依頼。
+
+### P2 の作業の項目（2026-10-25 21:59、q1583、設計の準備だけ）
+
+| # | 項目 | 中身 |
+| --- | --- | --- |
+| 1 | 経路の棚卸し | p036 の block ごとの最悪の経路（合成と配線後）、p038 の申し送りの表（TU の addr・desc・cube・cache など）、p025 の既知（ROP の blend）を 1 つの表に。block・経路・段数・遅れ・原因の種類（1 cycle に全部を計算、fanout、配線） |
+| 2 | 目標の Fmax の案 | KC705（FPGA）の block ごとの目標と、ASIC（3 nm、mobile、1.0〜1.5 GHz）での見込みを分けて。根拠（XC7K325T -2 の DSP48E1・BRAM・CARRY4 の実力、ASIC の FO4 の段数の目安）。案は複数（例: 全体 100 MHz・SU だけ 150〜200 MHz など）と推し |
+| 3 | clock の領域の案 | SU を独立の clock の領域に。CP・VF・RX・TU・ROP・MC・DC の分け方、境の am_afifo・am_sync の位置と遅れ、MC と MIG の ui_clk、PCIe の user clock、pclk。KC705 の MMCM の出力の数の制約 |
+| 4 | pipeline の方針の案 | 経路の種類ごと（FP の datapath、address の計算、fanout）の段の入れ方、latency が scoreboard（SHORT_LAT）・ISA・性能（warp の数で隠せるか）に与える影響、p032（Fable の助言）に渡す論点 |
+| 5 | 面積の見通し | p024 の板の build で 1 SU が LUT 約 105%（215k / 203.8k）。p037 の後の見込み、pipeline で増える FF、board の SU_PK_SHARED=1、U80（PACKED）・U81（SUBGROUP）の効果、KC705 に入れる案 |
+
+成果: plan/ws288/design.md に新しい節（p025 の設計の段、版を上げる）と、ユーザーに判断を求める U 項目（推し付き）。RTL・amaterrace の source は変えない（読むだけ）。design-reviewer で review。
