@@ -58,3 +58,4 @@
 - KC705 の GHCI の MSI（WS288 p043、P3）。GHCI の handler は仕事が有った時に非 0 を返す事（0 だと PLDA が 8 回 run し直す）。
 - 仕事の無い message（NVMe の ISR が前の割り込みで先に取った分）でも run し直しの 8 回 × 16 回の読みが掛かる。rw.sh の時間は INTx と同じだったが、測ってはいない。
 - MSI-X、複数の message（MME）は出さない。
+- 2026-10-26 07:30 Q1: agent/p2-ws256p024 565ac7991（p026 の 4 commit）を main に merge = 7ec661a6e（衝突なし）。受け入れ（実機の NVMe が MSI で動く: log の「pcie1: MSI at 190」「nvme: … MSI」、rw.sh 21/21・電源の入れ直しの後 7/7・回復 0、PCIe0 の VL805 は INTx のまま、build の warning 0（VF2・amd64・rpi4）、host の試験 180 + 35 PASS と mutation 3 種の検出）を満たす → **cleared**。PCI core の変更（drv_pci_bus_ops の msi_establish・msi_disestablish、7 つの呼び出しを helper に、hook の無い host は今までどおり）は amd64・arm64 の QEMU の回帰が未実施（WS の区切りで T に）。残り: MSI-X・複数の message、仕事の無い message の再試行の費用（未測定）。
