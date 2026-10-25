@@ -47,3 +47,4 @@
 | 2026-10-25 11:20 | firmware の end render pass は常に WAIT_IDLE + INVALIDATE（P3 の判断を受け入れ） | Vulkan 1.0 の原則（過剰な同期は許される）、firmware は subpass dependency を持たない |
 | 2026-10-25 11:32 | p011 を cleared にした（vkdemo の 1 frame が Verilator の上で oracle と一致）。vkQueueSubmit を待たずに返す firmware の直し（再生の前に結果を書く）を次の担当に | Vulkan の submit は仕事を待たない原則 |
 | 2026-10-25 12:04 | P1 が見つけた「TU・CPU の DMA の MC の outstanding が busy に入っていない」を、保護に限らず CP の WAIT_IDLE の条件にも入れる直しにした | WAIT_IDLE・INVALIDATE の正しさ（Vulkan の barrier の意味） |
+| 2026-10-25 12:21 | p036 の U80〜U84 は、ユーザーの前の決定（PACKED を持つ、FP32 は全 lane、NSU 4〜6）を覆すので推しで決めずユーザーに諮る。U85（GHCI §8.5 が既に求める整列に ROP を合わせる）だけは仕様どおりなので P2 の推しで進めてよいと判断 | 推しで進める許可は、ユーザーが明示した決定の見直しまでは含まないと解釈した |
