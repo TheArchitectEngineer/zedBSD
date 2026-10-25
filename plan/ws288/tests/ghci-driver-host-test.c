@@ -18,6 +18,14 @@
  * driver's handler.  The kernel's services the driver uses (locks, wait
  * queues, the clock, MMIO, RAM, the GPU core) are stubs: the test runs on
  * one thread, and every sleep advances a fake clock and lets the model run.
+ *
+ * With the FIRMWARE capability the model also takes class 2 packets as a
+ * stand-in for the command processor's firmware: the GHCI control
+ * gpu-ops succeed, and a GHCI_FRAME writes a result for each of its
+ * records (model_aux gives their aux words) and the frame's result, then
+ * raises RESULT.  The Vulkan executor's test (ghci-vk-host-test.c)
+ * includes this file with GHCI_MODEL_ONLY, which leaves out this test's
+ * own checks and main.
  */
 
 #include <errno.h>
@@ -39,10 +47,15 @@
 #define MODEL_EXTCAP			0x100U
 #define MODEL_MEM_REGISTERS		0x180U
 
-/* The model's local memory: 8 MiB at 2 GiB, of which the window shows the first 4 MiB. */
+/*
+ * The model's local memory: 8 MiB at 2 GiB, of which the window shows the
+ * first 4 MiB (a test that includes the model may give it more).
+ */
 #define MODEL_LOCAL_BASE		0x80000000U
+#ifndef MODEL_LOCAL_BYTES
 #define MODEL_LOCAL_BYTES		(8U << 20)
 #define MODEL_WINDOW_BYTES		(4U << 20)
+#endif
 #define MODEL_WINDOW_PHYSICAL		0xe0000000ULL
 
 /* The model's host RAM for the unified GPU: 8 MiB at 256 MiB, handed out by a bump allocator. */
@@ -100,6 +113,28 @@ static unsigned core_session_errors;
 static unsigned core_capacity_notes;
 static int core_superuser;
 
+/*
+ * What the core's completions saw: how many, and the error of the last;
+ * and the compiler the driver gets (none unless a test gives one).
+ */
+static unsigned core_completions;
+static int core_last_completion_error;
+static const struct ghci_isa_backend *model_isa;
+
+/*
+ * The model firmware: the aux word of each record of the next frames
+ * (by result index, 0 past the table), the frames it took, and the last
+ * frame's staging address, bytes and record count.
+ */
+#define MODEL_AUX_WORDS			64U
+static uint32_t model_aux[MODEL_AUX_WORDS];
+static unsigned model_frames;
+static uint32_t model_frame_staging;
+static uint32_t model_frame_bytes;
+static uint32_t model_frame_records;
+static unsigned model_control_packets;
+static uint32_t model_last_control;
+
 static void expect(int held, const char *name);
 static void model_reset(void);
 static void model_run(void);
@@ -109,8 +144,11 @@ static void model_fault(uint32_t kind, uint32_t header);
 static void model_blit(void);
 static void model_interrupt(void);
 static void model_setup_window(int discrete);
+static int model_class_v(const uint32_t *ring, uint32_t at, uint32_t count);
+#ifndef GHCI_MODEL_ONLY
 static void test_discrete(void);
 static void test_unified(void);
+#endif
 
 /* The kernel's MMIO: the register window is the model's. */
 uint32_t
@@ -203,6 +241,11 @@ kern_mmio_write32(
 /* The barriers do nothing on the host. */
 void
 kern_io_write_barrier(void)
+{
+}
+
+void
+kern_io_read_barrier(void)
 {
 }
 
@@ -444,6 +487,16 @@ drv_gpu_capacity_changed(
 	core_capacity_notes++;
 }
 
+void
+drv_gpu_complete(
+	struct drv_gpu_completion *completion,
+	int error)
+{
+	(void)completion;
+	core_completions++;
+	core_last_completion_error = error;
+}
+
 /* The credentials: root or not, as the test says. */
 const struct ucred *
 cred_current(void)
@@ -475,7 +528,7 @@ ghci_isa_select(
 {
 	(void)caps;
 	(void)isa_id;
-	return NULL;
+	return model_isa;
 }
 
 int
@@ -512,6 +565,7 @@ ghci_display_interrupt(
 
 const struct drv_gpu_display_ops ghci_display_ops;
 
+#ifndef GHCI_MODEL_ONLY
 /*
  * Runs both GPUs: a discrete one with a window onto part of its local
  * memory, and a unified one.
@@ -533,6 +587,7 @@ main(void)
 	/* Succeeded: every check held. */
 	return 0;
 }
+#endif
 
 /* Counts one check, and names it when it failed. */
 static void
@@ -702,9 +757,11 @@ model_packet(
 		return -1;
 	}
 
-	/* Padding is skipped; only standard micro-operations are known. */
+	/* Padding is skipped; a gpu-op goes to the model firmware, when there is one. */
 	if (class == GHCI_PKT_CLASS_PAD)
 		return 0;
+	if (class == GHCI_PKT_CLASS_V && (model_registers[GHCI_CAPS / 4U] & GHCI_CAPS_FIRMWARE) != 0U)
+		return model_class_v(ring, at, count);
 	if (class != GHCI_PKT_CLASS_STD) {
 		model_fault(GHCI_FAULT_OPCODE, header);
 		return -1;
@@ -829,6 +886,78 @@ model_setup_window(
 	model_registers[(MODEL_MEM_REGISTERS + GHCI_MEM_WINDOW_SIZE) / 4U] = MODEL_WINDOW_BYTES;
 }
 
+/*
+ * Runs a class 2 packet as the model firmware: [gpu-op][flags][result]
+ * [arguments].  The control gpu-ops succeed; a frame writes each record's
+ * result and the frame's own, then RESULT.
+ */
+static int
+model_class_v(
+	const uint32_t *ring,
+	uint32_t at,
+	uint32_t count)
+{
+	uint32_t pair[2];
+	uint32_t opcode;
+	uint32_t flags;
+	uint32_t result;
+	uint32_t page;
+	uint32_t records;
+	uint32_t index;
+	uint8_t *word;
+
+	/* The head. */
+	if (count < 3U) {
+		model_fault(GHCI_FAULT_RING, ring[at]);
+		return -1;
+	}
+	opcode = ring[at + 1U];
+	flags = ring[at + 2U];
+	result = ring[at + 3U];
+
+	/* A frame: each record's result, by index. */
+	pair[0] = 0U;
+	pair[1] = 0U;
+	if (opcode == GPU_OP_GHCI_FRAME && count >= 8U) {
+		model_frames++;
+		model_frame_staging = ring[at + 4U];
+		model_frame_bytes = ring[at + 6U];
+		page = ring[at + 7U];
+		records = ring[at + 8U];
+		model_frame_records = records;
+		for (index = 0U; index < records; index++) {
+			pair[1] = 0U;
+			if (index < MODEL_AUX_WORDS)
+				pair[1] = model_aux[index];
+			word = model_memory(page + 8U * index, 8U);
+			if (word == NULL) {
+				model_fault(GHCI_FAULT_APERTURE, ring[at]);
+				return -1;
+			}
+			memcpy(word, pair, 8U);
+		}
+		pair[1] = records;
+	} else {
+		model_control_packets++;
+		model_last_control = opcode;
+	}
+
+	/* The packet's own result, then RESULT. */
+	if ((flags & 2U) != 0U) {
+		word = model_memory(result, 8U);
+		if (word == NULL) {
+			model_fault(GHCI_FAULT_APERTURE, ring[at]);
+			return -1;
+		}
+		memcpy(word, pair, 8U);
+		model_irq_status |= GHCI_IRQ_RESULT;
+	}
+
+	/* The packet was taken. */
+	return 0;
+}
+
+#ifndef GHCI_MODEL_ONLY
 /* Builds a native command of a fill and a fence into stream; returns its dwords. */
 static uint32_t
 native_fill(
@@ -914,7 +1043,7 @@ test_discrete(void)
 	expect(device.ring != NULL && device.ring->kind == GHCI_MEMORY_VISIBLE, "discrete ring in the window");
 	expect(model_registers[GHCI_RING_BASE / 4U] == device.ring->gpu_address, "discrete ring base");
 	expect(model_registers[GHCI_RING_SIZE / 4U] == GHCI_RING_SIZE_LOG2, "discrete ring size");
-	expect(model_irq_enable == (GHCI_IRQ_FENCE | GHCI_IRQ_FAULT | GHCI_IRQ_WATCHDOG), "discrete interrupts enabled");
+	expect(model_irq_enable == (GHCI_IRQ_FENCE | GHCI_IRQ_FAULT | GHCI_IRQ_WATCHDOG | GHCI_IRQ_RESULT), "discrete interrupts enabled");
 	expect(core_ops != NULL && core_private == &device, "discrete registered");
 
 	/* The device's capabilities: storage, blobs, transfers, mappings and the test's native command. */
@@ -1153,3 +1282,4 @@ test_unified(void)
 	expect(error == 0, "unified stop");
 	model_device = NULL;
 }
+#endif
