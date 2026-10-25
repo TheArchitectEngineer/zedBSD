@@ -28,7 +28,7 @@
 <!-- master:next:start -->
 1. 新しい Q1 は AGENTS.md・この block を読む。**ユーザーへは日本語で、聞かれた 1 件だけを答える。ユーザーに試験を頼まない。**
 2. **merge・試験の出力は必ず読んで確かめてから記録・報告する**（merge の後に `git log -1 --format='%h %p'`、担当の SHA は `git cat-file -t`）。担当の branch に捨てた変更が残っていないか（例: 2026-10-22 の P2 の buffer の使い回し）を diff の file の一覧で確かめ、必要なら cherry-pick。
-3. 次の番号: BUG-346、q1582、WS290、KL_VERSION 96。古い q・T1 の番号の経緯は git の履歴（2026-10-23 以前の master.md）。
+3. 次の番号: BUG-346、q1583、WS290、KL_VERSION 96。古い q・T1 の番号の経緯は git の履歴（2026-10-23 以前の master.md）。
 4. WS288 の次: [handover-20261024-2230.md](ws288/handover-20261024-2230.md) の §5（推し: p009 の残りを閉じる → p018・p010 → p006 の見直し）。担当には amaterrace-gpu の worktree を作って渡し、Q1 が `--no-ff` で merge する。
 5. 日付は host の `date`。記録の整合は [record-integrity.md](record-integrity.md)。1 LW ≈ 実時間 15〜25 分。
 <!-- master:next:end -->
@@ -636,6 +636,10 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-25 21:34 ユーザー「スピードアップします。N=4にして、書き換えのスループットを上げられますか？」→ 実装の担当を N=4（P1〜P4）に。p037 の残りを分ける: P1 = atg_su_fp.vh・atg_su_fp16.vh と atg_su_fpu・atg_su_pk、P3 = atg_fmt_pack.vh・atg_fmt_unpack.vh と atg_fmt_srgbenc、P2 = MC と CP の CPU（atg_cpu_*）、P4 = CP の残り（atg_cp_*）。
+- 2026-10-25 20:36 ユーザー「そうです。ちゃんと演算器を置き換え終えて、パイプライン化を終わらせてから、取り組み直しましょう」（Q1 の推し「p037 → p025（目標の Fmax を決めて pipeline）→ board の P&R と bitstream → p024 → p028」への回答）→ WS288 の順をこれに決定。p037 の後に p025 に入る（driver・libvulkan は揃った）。
+- 2026-10-25 20:35 ユーザー「20MHzも低すぎます。その段階でP&Rをやっても、あとでひっくり返るので、無駄になりそうです」→ KC705 の board の配置配線は今は回さない（P2 の 2 回目を止める）。gclk 20 MHz は目標ではない（Q1 の bring-up の値の取り消し）。board の P&R の時期はユーザーに確かめる。
+- 2026-10-25 20:34 ユーザー「全部置き換えてからでいいと思います」（Q1 の問い「板に載せる最初の bitstream に置き換え後の版を使うなら p037 が終わるまで待って合成し直す、どちらにしますか」への回答）→ KC705 の board 全体の配置配線・bitstream は p037（全 module の演算器の置き換え）が終わってから。今 P2 が流している 2 回目は build の流れ（制約・DRC）の確認として終えるが、それ以上は回さない。
 - 2026-10-25 17:57 ユーザー「では、この設計でGHCI仕様をアップデートして、zedBSDのドライバを仕様に合わせて変更し、RTLも必要に合わせて修正しましょう。」（Q1 の提案: MEM に window の enable の bit、driver が自分の scanout の後に窓を閉じる、console・panic は scanout の経路、driver の置き場所を GHCI §11.3 どおりに）→ ws288-p040 を新設（P2）。同じ日の前の問い「GOPの使用を終了して、ドライバがGOPのフレームバッファを引き継がずに…BAR2を無効にすることはできますか？…コンソールはグラフィックセッション確立後はもう二度と使用しなくていいですし、もし使用するとしても、scanout capabilityのあるGPUドライバをVulkan Display extensionと一緒に使って、/dev/consoleドライバが/dev/gpu0ドライバなどをバックエンドにできるはずです。」
 - 2026-10-25 17:49 ユーザー「optionally, for a ring or fence memory in local memory は削除して、フレームバッファだけにしましょう。ring, fenceをホストに置かない現代GPUは少ないように思います。そうすると、BAR2が64bitという制約は削除できるのでは。ただし、64bitに対応しているかは、capabilityになるのでしょうか。」→ GHCI: local window（BAR2）は frame buffer 専用、ring・fence は常に host memory。§15.2 の BAR2 は 32 bit か 64 bit（PCI の BAR の型の bit で分かるので GHCI の capability は不要、Q1 の答え）、prefetchable は推奨。P1 が amaterrace-gpu の docs/ghci.md を直す。
 - 2026-10-25 17:07 ユーザー「MCはIDの使い分けを実装しましょう。KC705ボードでなく、汎用の部品として、AXI ２つの振り分けをするモジュールを作って、KC705で利用しましょう。」（Q1 の説明「MC に AXI を 2 本より、1 本で行き先ごとに ID を分ける方がよい」の後）→ ws288-p039 を新設（P1）。

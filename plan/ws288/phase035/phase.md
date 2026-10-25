@@ -3,7 +3,7 @@
 # ws288-p035 DC を GHCI の GPU の一部に（CP の command で制御、present は queue の操作、割り込みは GHCI の IRQ）
 
 - 親: [WS288](../ws.md)。今の仕様: amaterrace-gpu `docs/ghci.md` §13（DISP の capability、host が register を直に触る）、§4（IRQ_STATUS）。RTL: `rtl/dc/`（atg_dc・dma・i2c・regs・tgen・tmds・ycc）。
-- 状態: in-progress（2026-10-25 18:03 P3、q1576-i04: D6 の後半（Verilator の e2e で display を点ける）を amaterrace-gpu p3-p035 e447ecd と zedBSD agent/p3-p006 に commit。ghci-e2e は 9 PASS（新しい e2e.display を含む）・vkdemo の oracle の mismatch 0。残り: make sim・長い atg_top_* は T（T1-800 ほか）。判定は Q1）。
+- 状態: cleared（2026-10-25 19:08 Q1。D1〜D8 と D7（driver）、amaterrace main cfc49dd・zedBSD main a0e492167。T1-790・795・800 と merge の後の確認）
 - 依存: p018（firmware）、p006（driver の display.c）、p019（vk/ の swapchain と present）。p019 の「copy しない flip」の段はこの Phase に置き換える。
 - 承認: 2026-10-25 09:02 ユーザー「DCがGPUとは別になってしまっていますが、確かに伝統的にはそういう構成だったように思いますが、Vulkan Displayのcapabilityというような抽象化と考えれば、gpu/に移して、CPへのコマンドで制御可能にしてもいいかもしれません。そうすれば、コピーせずにscanoutするのが自然になるでしょう。GHCIの仕様にDCも入れてしまって、割り込みもGHCIの仕様にしませんか？」
 
@@ -118,3 +118,6 @@ design の review、TB と host の試験が PASS、`make sim` の PASS が減�
   - 未実施: make sim の全部・長い atg_top_*（T1-800 の分）、Vivado の ip.tcl の作り直し（NUM_MSI_REQ 0）、板。
   - scratch（Q1 に削除の依頼）: zedBSD worktree の `build/tmp/p035e2e-i05`。
 - 2026-10-25 18:38 Q1: P3 の cfc49dd（e447ecd と main 0470d08 の merge、MSI を 1 vector に、P3 が e2e 9 PASS・display を含む・mismatch 0 を申告）で amaterrace-gpu の main を fast-forward = cfc49dd。zedBSD の agent/p3-p006 72882ba29（e2e の display の case 62a39ebbc を含む）を main に merge = a0e492167。merge の後の lint・sim-quick・atg_top_disp・atg_kc705_pcie・fwtest・ghci-e2e（display を含む）を Q1 が実行中。make sim 全部は T1-800（4626d0a）で済み、D6・D8・MSI の差分は上の確認で。
+- 2026-10-25 19:08 Q1: cfc49dd・a0e492167 の merge の後の確認: lint rc 0・154 clean・warning 0、sim-quick rc 0・106 PASS・0 FAIL、atg_top_disp・atg_kc705_pcie PASS、fwtest rc 0、ghci-e2e rc 0・9 PASS（e2e.display: copy と shared の present で FB_BASE・record・SCAN_SUM）・mismatch 0。→ **p035 は cleared**。残り（範囲の外）: 板での HDMI の表示（p024）、panic の画面、起動の frame buffer の引き継ぎ（p040 の範囲の外）、ip.tcl の 1 vector の MSI の Vivado での作り直し（p024）。
+- 2026-10-25 21:25 Q1（ユーザー「よくわかりませんが通らない試験は修正しておきましょう」）: plan/ws141/tests/v3d-hardware-host-test.c に kern_gpu_telemetry_register の stub（hw.gputelemetry に何も載せない）を足した。render-device.c が呼ぶのに試験に stub が無く link が落ちていた（P3 が 2026-10-25 に見つけた既存の誤り）。sh plan/ws141/tests/v3d-hardware-host-test.sh rc 0・PASS。
+- 2026-10-25 21:25 Q1: MSI の 1 vector の IP の作り直しは済んでいた: P2 が p2-p024 で ip.tcl の 9 つの core を Vivado 2026.1 で生成した時に axi_pcie の NUM_MSI_REQ 0 が入り（build の xci で確認）、port は stub と一致。残件から外す（p2-p024 の ip.tcl の変更は p024 の本番の時に main へ）。
