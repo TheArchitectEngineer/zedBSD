@@ -20,3 +20,4 @@ guest の zedBSD から Vulkan の program が KC705 の GPU で動き、readbac
 ## 記録
 
 - 2026-10-25 01:08 Q1: 新設（ユーザーの最初のゴール）。VRAM を host の memory にする形は Future Work（fw-kc705-hostmem、Sukuna RISC で KC705 の CPU + GPU を動かす実験が先）。
+- 2026-10-26 04:41 ユーザー「グラフィックデバイスなしでもPCのUEFIって起動できるんでしたっけ？」→「じゃあPCのLinux qemuじゃなくて、Pi5のM.2でzedBSDで試そうか」→（Q1 が zedBSD に BCM2712 の pcie1 の root complex の driver・MSI・非一貫の DMA の cache の扱いが無いと答えた後）「うーん、じゃあ先にLinuxを試しましょう。」→ Q1 の問い「「先に Linux」はどちらの意味ですか？」の回答「PC の Linux + QEMU VFIO」。→ 最初のゴールは元の p028 のまま（PC の Linux を host に KC705 を vfio-pci に渡し、QEMU の guest の zedBSD から Vulkan）。host の PC は内蔵 GPU のある機種を使う。Pi 5 の M.2 で zedBSD が直に使う案は後の候補（Future Work: pcie1 の driver・MSI・cache の clean/invalidate）。
