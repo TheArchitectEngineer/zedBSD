@@ -525,6 +525,9 @@ kern_mmio_write32(
 		put32(rc->config, offset, (value & ~(rc->endpoint_bar_size - 1U)) | 0x4U);
 		return;
 	}
+	/* The endpoint has only BAR0 (64-bit): BAR2 to BAR5 read 0. */
+	if (bus == 1 && reg >= 0x18U && reg < 0x28U)
+		return;
 	put32(rc->config, offset, value);
 }
 
@@ -567,11 +570,13 @@ main(
 	size_t length;
 	void *blob;
 	unsigned index;
+	bool oversize;
 	int error;
 
-	/* Reads the tree. */
-	if (argc != 2)
+	/* Reads the tree; "oversize" gives the NVMe a BAR larger than its window. */
+	if (argc != 2 && argc != 3)
 		return 2;
+	oversize = argc == 3 && strcmp(argv[2], "oversize") == 0;
 	blob = read_file(argv[1], &length);
 	if (blob == NULL)
 		return 2;
@@ -588,7 +593,8 @@ main(
 
 	/* An xHCI below the first root complex, an NVMe controller below the second. */
 	rc_init(&rcs[0], 0x2b000000ULL, 0x940000000ULL, 0x30000000ULL, 0x0c033000U, 0x1000U);
-	rc_init(&rcs[1], 0x2c000000ULL, 0x9c0000000ULL, 0x38000000ULL, 0x01080200U, 0x4000U);
+	rc_init(&rcs[1], 0x2c000000ULL, 0x9c0000000ULL, 0x38000000ULL, 0x01080200U,
+		oversize ? 0x10000000U : 0x4000U);
 	put32(rcs[0].bar, 0, 0x20U);
 	put32(rcs[0].bar, 0x24U, 0x1U);
 	put32(rcs[1].bar, 0x14U, 0x00460001U);
@@ -635,6 +641,19 @@ main(
 		/* Publishes it. */
 		error = drv_pci_plda_publish(hosts[index]);
 		check(error == 0, "publish succeeds");
+	}
+
+	/* A BAR larger than the window is left at 0 and the root port is still set up. */
+	if (oversize) {
+		check(strstr(log_text, "pcie1: BAR0 of 01:00.0 (268435456 bytes) does not fit the window, left unassigned") != NULL,
+		      "the BAR that does not fit is named");
+		check(get32(config_of(&rcs[1], 1, 0), 0x10U) == 0x4U && get32(config_of(&rcs[1], 1, 0), 0x14U) == 0,
+		      "the BAR that does not fit is left at 0, both halves");
+		check(get32(rcs[1].config, 0x20U) == 0x0000fff0U, "the root port forwards no memory");
+		check((get32(rcs[1].config, 0x04U) & 0xffffU) == 0x6U, "the root port still gets MEM and MASTER");
+		check(strstr(log_text, "pcie0: 01:00.0 BAR0 at 30000000 (4096 bytes)") != NULL, "the other host's BAR is placed");
+		printf("pci plda oversize: %u PASS, %u FAIL\n", passes, failures);
+		return failures != 0;
 	}
 
 	/* The firmware's endpoint state was reported before the reset. */

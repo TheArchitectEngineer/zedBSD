@@ -1,7 +1,8 @@
 #!/bin/sh
 # Host check of the PLDA PCIe root complex driver (ws256-p020): the real
 # pci-plda.c, pci.c and fdt.c on fake registers for the VisionFive 2's two
-# root complexes, once plainly and once with ASan/UBSan.  No emulator.
+# root complexes, once plainly and once with ASan/UBSan, each also with an
+# NVMe BAR larger than its window (ws256-p024).  No emulator.
 #   plan/ws256/tests/pci-plda/run.sh OUTDIR
 # OUTDIR is the caller's (for example one made by plan/tools/fresh-out.sh
 # under build/tmp/); the script removes nothing.
@@ -19,10 +20,12 @@ sources="$root/src/drivers/pci/pci.c $root/src/drivers/pci/pci-plda.c $root/src/
 # shellcheck disable=SC2086
 $cc $flags -O2 $sources -o "$out/pci-plda-host-test"
 "$out/pci-plda-host-test" "$out/vf2-pcie.dtb"
+"$out/pci-plda-host-test" "$out/vf2-pcie.dtb" oversize
 
 # shellcheck disable=SC2086
 $cc $flags -O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all \
 	$sources -o "$out/pci-plda-host-test-sanitize"
 ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 "$out/pci-plda-host-test-sanitize" "$out/vf2-pcie.dtb"
+ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 "$out/pci-plda-host-test-sanitize" "$out/vf2-pcie.dtb" oversize
 
 echo "pci plda: ordinary, ASan/UBSan PASS"

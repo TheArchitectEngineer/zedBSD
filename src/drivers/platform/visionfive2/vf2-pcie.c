@@ -22,6 +22,7 @@
 #include "drivers/platform/visionfive2/vf2-pinctrl.h"
 #include "drivers/platform/visionfive2/vf2-syscon.h"
 #include <drivers/pci/pci.h>
+#include <drivers/pci/pci-ghci.h>
 #include <drivers/pci/pci-nvme.h>
 #include <drivers/pci/pci-plda.h>
 #include <drivers/pci/pci-xhci.h>
@@ -200,13 +201,13 @@ drv_vf2_pcie_input_ready(
 
 /*
  * Registers the drivers the configuration selects behind the root
- * complexes: xHCI with its USB class drivers, and NVMe.
+ * complexes: xHCI with its USB class drivers, NVMe and GHCI.
  */
 static void
 register_drivers(
 	void)
 {
-#if CONFIG_DRIVER_PCI_XHCI || CONFIG_DRIVER_PCI_NVME
+#if CONFIG_DRIVER_PCI_XHCI || CONFIG_DRIVER_PCI_NVME || CONFIG_DRIVER_PCI_GHCI
 	int error;
 #endif
 
@@ -249,6 +250,16 @@ register_drivers(
 	error = drv_pci_nvme_driver_register();
 	if (error != 0)
 		kern_logf("nvme: PCI driver registration failed (%d)\n", error);
+#endif
+
+	/*
+	 * Offers 3D and other display controllers to the GHCI driver, which
+	 * keeps those whose BAR0 says GHCI.
+	 */
+#if CONFIG_DRIVER_PCI_GHCI
+	error = drv_pci_ghci_driver_register();
+	if (error != 0)
+		kern_logf("ghci: PCI driver registration failed (%d)\n", error);
 #endif
 }
 

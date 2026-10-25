@@ -1298,7 +1298,8 @@ assign_function(
  * Measures one BAR and places it in the 32-bit window.
  *
  * Wide reports a 64-bit BAR, whose upper half is the next slot.  An I/O BAR
- * is left unassigned: the root complex has no I/O window.
+ * is left unassigned: the root complex has no I/O window.  A BAR that does
+ * not fit what is left of the window is set to 0 and left unassigned.
  */
 static int
 assign_bar(
@@ -1355,13 +1356,21 @@ assign_bar(
 	    placed < host->window_next ||
 	    placed > window_end ||
 	    size > window_end - placed) {
-		kern_logf("pcie%u: BAR%u of %02x:%02x.%u does not fit the window\n",
+		/*
+		 * Leaves this BAR at 0, not at the sizing value, and goes on, so
+		 * the other BARs and the root port's window are still set up.
+		 */
+		(void)host_config_write(host, address, offset, 4U, 0);
+		if (*wide)
+			(void)host_config_write(host, address, offset + 4U, 4U, 0);
+		kern_logf("pcie%u: BAR%u of %02x:%02x.%u (%llu bytes) does not fit the window, left unassigned\n",
 			  host->config.segment,
 			  index,
 			  address->bus,
 			  address->device,
-			  address->function);
-		return ENOSPC;
+			  address->function,
+			  (unsigned long long)size);
+		return 0;
 	}
 
 	/* Programs the address; the window lies below 4 GiB. */
