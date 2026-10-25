@@ -53,6 +53,7 @@
 | [p023](phase023/phase.md) | DMA の coherency の確かめ（陽性の対照、64 KiB の buffer、8 回）、非 coherent なら予備 (i)（確保ごとの uncached の別名、HAL の BSP）（§2.4・§3.9）（予備 (i) の code は WS269 p004 が作って持ち、WS256 は要れば使う。2026-10-19 Q1、q1321） | p013・p022・#15 | 3〜7 | in-progress（試験の cdev と core は済み（86e86aa07、merge 2e9779837）、実機で cat /dev/vf2-dmatest の答えをユーザーが読むのを待つ） |
 | [p024](phase024/phase.md) | NVMe の実機と NVMe の root（p017 から分けた）: M.2 の SSD の読み書き、pcat の形の root の選び方（§3.11） | p017・p020・p015 | 3〜4 | in-progress（2026-10-26 q1587、PCIe1（M.2）の実機） |
 | [p025](phase025/phase.md) | VF2 の skeleton（p005 から分けた、板の前）: `visionfive2.c` の最小、`platform/riscv64/vmunix.mk` の vf2 の枝、config・menuconfig、bsp-visionfive2 の最小（`hal_dcache_*` は ccache の FLUSH64）、build（§3.10） | p004 | 2〜3 | cleared（2026-10-19 Q1、build） |
+| [p026](phase026/phase.md) | PLDA の PCIe の MSI（pci-plda.c の MSI の受け口と demux、PCI core の host の MSI の道。出典は OpenBSD stfpcie.c と Linux pcie-plda-host.c の値だけ、2026-10-26 ユーザー） | p024 | 3〜6 | planned（2026-10-26 新設） |
 
 合計: p001〜p010 は 76〜106 LW（うち Q1 の p009・p010 4〜6、実機の debug 4〜8。[design.md](design.md) §6）。p011・p013〜p024 は 69〜108 LW（[design-peripherals.md](design-peripherals.md) §4.1、改訂 4。p025 の 2〜3 は p005 から移した分）。
 
