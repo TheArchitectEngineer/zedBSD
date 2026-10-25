@@ -2455,6 +2455,103 @@ R2・R3・R4 は R1 の後に並行できる。R6 は P2 の p018 が main に�
 
 全文は [design-review-p034.md](design-review-p034.md)。1 回目（design-reviewer、2026-10-25、33 件: Critical 2・High 5・Medium 16・Low 10）と 2 回目（同日、21 件: Critical 1・High 3・Medium 6・Low 11）の全部を本文に反映した。2 回目の主な変更: slot を消す時に resid を MIXED に（N1）、export buffer の scrub（N2）、表は PROT_TABLE を書く前に driver が 0 にし PROT_TABLE は protected の session が無い間だけ書ける（N3）、内蔵の領域の granule の整列（N4）、DC を root の別の入口に（N5）、同じ client の順序（N6）、drain に木の chk = 1 の要求の counter と window の drained（N7）、INV の pending の bit と 32 bit の数（N8）、share と合成の identity（N9・N15）、module の表の追加（N10）。
 
+### 17.22 実装の段で設計から変えた事（2026-10-25 P1、q1575-i01。amaterrace-gpu p1-p034）
+
+- **確認の結果**: C1 = TU の busy は自分の要求と応答を覆わない、CPU の DMA の write の応答はどの busy にも無い → MC に `unit_idle`（CP と DC 以外の client の、leaf が取ってから応答までの counter、`atg_mc_cnt`）を足し、DRAIN と、PROT に依らず CP の FENCE・WAIT_IDLE（flags に依らず）・RESULT・QUERY の待ち（seq の busy の bit 0）に入れた（Q1 の指示）。C2 = 記録は自己完結（STATE の cache は記録の中の `fw_rstate.emitted` だけ）→ U66 のまま。DC: KC705 の gclk は **100 MHz**（§17.0・§17.7・§17.11 の 200 MHz は誤り。scrub は約 62 µs、交代 300 回/s で ≈1.9%）、pixel FIFO 2048 で 720p に約 2760 cycle の余裕。
+- **置き場所**: `atg_cp_prot` は `atg_cp` の子ではなく `atg_top` の中で `atg_cpu` の横（PROT は firmware が要る。`atg_cp` は既に 439 行）。MC は `atg_mc_prot` の他に `atg_mc_plb`・`atg_mc_asm`・`atg_mc_cnt` に分けた（各 400 行以内）。CP の client 0 の side band は `am_amb_mux` を変えずに、mux が選んだ requester が fence unit の時だけ付ける。
+- **MC**: 重なる 2 度目の INV も受けて walk をもう一度 stale にする（§17.5 の「受けず」より安全。firmware は PROT_INFO[3] を待つので繰り返さない）。CAM の grant は PLB の miss でも許す（walk 不要）。tbase = 0 の chk の要求と slot 0 の chk（public の read 以外）は拒む。拒んだ read の data は 0 を全部の構成で。
+- **CP**: resid の「SU の RAM が書かれた印」は SU から取らず、`atg_cp_prot` が SU を使う µop（BLIT 以外の unit の µop）の kick で数える。SU の scrub は既存の write port に mux で足す（RAM の宣言と読みは不変、P2 の BRAM の点検と重ならないように。Q1 の指示）。PROT_TABLE を lock の間に書くのは無視（kind 7 の fault は出さない、GHCI の文も直す）。CTRL.RESET で PROT_TABLE は 0。
+- **残り（未実施）**: host の KICK は切り替えを通らない（IDLE と HALTED だけで受ける）、DRAIN の間の watchdog の tag、合成の timing。
+
+## Appendix A. SA の設計の sketch（**延期**。2026-10-23 ユーザー「SAの設計と実装はかなり後に回して、SUがきちんとISAを実装できてからにします。」SU が GSI1 を実装した後に設計し直す。計画の critical path には無い。版 4 の review（§14）の 33 件に対応した時点の案で、**README の 0.8 TOPS/SU（×2）は満たしていない**（1 MAC/PE/cycle）。KC705 の SA 構成の数字も参考のみ）
+
+ユーザー（版 3）:「シェーダISAのレジスタのうち、1つをreservedにできる？このレジスタはFIFOにつながってて、systolic arrayのwavefrontのリードやライトに使えるよ。シェーダユニットはオプションでsystolic array (SA)を持つことができ、SAのPEの横方向にシェーダISAからFIFOでRWアクセスできるよ。SAはSUの中にあるわけではなく、SAとSUはdecoupledなユニットだよ。SAにはMCから重みをストリーミングできるよ。」
+ユーザー（版 4、2026-10-23）:「SAを使う場合、KC705ではプロトタイプなのでSUは2個くらいでいいのですが、FP16/INT8 mixed precisionにできそうですか？重みはINT8で、演算はFP16です。あ、そうか、SUがFP16 packedに対応していれば、16 laneでも32x32 SAと釣り合うのか。」「SUには、softmaxやlayer normを、SAから1サイクルずつ出力をフェッチして、トークン1つが全部そろう前に1データずつオンライン処理していって、データがそろったら結果を確定して、SAに折り返しで送り返しで書き込んでいく、というフローに対応させたいです」「了解、SIMD-8はやめましょう。」**「了解です。SUにベクトル命令と投機的オンラインsoftmaxの実装を考えましたが、ハードウェア効率が悪すぎるので、案BでSAに寄せましょう。SUはミニマルな形にしましょう。」**
+README（a217bf8、ユーザー）: 「LLM: CP --> VF --> SU --> SA --> SU --> SA -> ... --> SU --> ROP -> MC」「Systolic Array: 32 x 32, 0.8 TOPS/SU @200MHz」→ **U39**（§9.2）。この節の推し: SA は SU に 1 対 1（SU ごとに最大 1 つ）、KC705 の prototype は SU 2 個 + SA 1 つ（SU0 に結ぶ）、VF/RX/TU/ROP は SA 構成に載せない。
+
+版 4（案 B）の要点: (1) KC705 の **SA 構成**（別の bitstream）= SU 2 個（NPHYS 16、`PACKED` は graphics のため、LDS 16 KiB）+ SA **32 × 32**、入力は FP16（block floating point で PE は整数）、重みは INT8 を MC から stream、出力は FP16/FP32。(2) SA は tile の終わりに **1 列/cycle で stream-out**し、**出口の reduction の段**（行 = token ごとに online の softmax の m・s か layer norm の Welford）が 1 列/cycle で統計を進め、生の x は SA の **token buffer** に取っておく。token の行が揃ったら SA が確定（1/s か rstd）し、**入口の normalize の段**が buffer の x を 1 列/cycle で正規化して次の tile の activation に折り返す（softmax: `exp2(x − m)·(1/s)`、LN: `(x − mean)·rstd·γ_j + β_j`）。(3) **SU は指揮だけ**（tile の順、address、tag、確定の合図 = `sactl`）。SU の vector 命令と投機的な online softmax（版 4 の最初の案）は hardware の効率が悪いので取り下げ（ユーザー、§10 の 34）。GSI1 は版 3 の最小の形に戻す（packed の超越は無し、subgroup は optional のまま）。(4) PE は SIMD 1。raster 構成は別の bitstream。
+
+### A.1 ISA の側: register 63 = `rq`（queue register）と `sactl`
+
+- **operand 番号 63 は GPR でなく FIFO の口 `rq`**（GSI1 の全部の実装で予約。GPR は r0〜r62）。dst に書くと push（SU → SA の in-FIFO）、source に読むと pop（SA → SU の out-FIFO）。案 B では attention・LN の経路は SA の中で閉じるので、`rq` は **GEMM の結果を SU が受ける時・activation を SU が作る時だけ**使う。
+- **entry = 32 値 × 16 bit（FP16）= 64 byte**（SA の左の口の 1 本の vector: 行 i に 1 値。push では step t の a_0..31(t)、pop では出力の列 j の C[0..31][j]）。lane l は slot 2l・2l+1 を packed（下位 half = slot 2l）で持つ。**32 lane の warp の push/pop は常に 2 entry**（lane 0〜15 = entry A、16〜31 = entry B）。NPHYS 16 で 1 entry/cycle。FIFO の口の幅は NPHYS × 32 bit。発行の時に 2 entry（pop）/ credit 2（push）を確かめ、途中では止めない。FP32 の出力は 1 列 = 2 entry（lane l = slot l）。
+- **偶奇の規則**（review 2）: push は A = 偶数の step、B = 奇数。pop は A = 偶数の列、B = 奇数。SA は入出力を entry の対に揃える: `SA_K` は偶数（奇数は `sactl` が拒み `sastat[4]`）、`SA_COLS_USED` が奇数なら SA が最後に PAD の entry（tag PAD、値 0）を足す、FP32 は常に 2 entry、BFP の行の scale は「scale + PAD」の 2 entry、abort の後は FIFO を空にして偶奇を 0 に戻す。
+- **使える命令**: `rq` は class a・f の命令の dst・source だけ。class m・t・x の dst に `rq`、暗黙の連続の register が 63 に掛かる命令は ISA の fault。
+- **EXEC との関係**: push/pop は EXEC に依らず必ず 2 entry 進める。EXEC の外の lane の push の値は 0、pop の値は捨てる。SA の kernel は EXEC を全部 1 に保つ（規約）。
+- **blocking**: pop は out-FIFO に 2 entry 無ければ、push は credit が 2 無ければ、発行の段でその warp だけ止まる。scoreboard の entry は使わない。
+- **tag**（6 bit）: [0] FIRST、[1] LAST（tile の最後の列の entry だけ）、[2] TILE_LAST（最後の tile の最後の列の entry だけ）、[3] HI（FP32 の上位）、[4] ABORT、[5] PAD。特殊 operand **122 `qtag`** = この warp が最後に実行した pop の 2 entry の tag（lane 0〜15 = A、16〜31 = B、EXEC に依らず）。
+- **所有**: SA は **SU に 1 対 1**（`SA_SU`、build の parameter。KC705 の SA 構成は SU0 だけ）。その SU の **1 つの warp** が持つ: `sactl.ctl 4`（acquire。所有していなくても使える唯一の `sactl`）→ 指揮 → `sactl.ctl 5`（release）。所有していない warp の `rq`・`sactl`・`qstat`・`qtag` は ISA の fault。`DISPATCH` の flags[1] = SA の dispatch の warp だけが acquire できる。SA の無い SU（KC705 の SU1）は普通の compute（量子化、前後の処理）に使う。
+- **deadlock**: 「push して pop していない tile ≤ 1 + DBUF」かつ「未読の出力の entry ≤ out-FIFO の深さ 64」。案 B の attention・LN では SU は pop しないので、SA の出力は token buffer か memory（`SA_O_BASE`）に行き、FIFO の規則は要らない。`bar` を持ったまま acquire しない。abort は FAULT・RESET の時だけ（pop は ABORT の entry、push は捨てる）。`HALT` は dispatch を完走させる（watchdog が網）。
+- **`sactl`（指揮の命令。custom-3 funct3 110、sub で対象）**: sub 0 `sactl.ctl`（word の形は STATE の `SA_CTRL` と同じ bit + [3:0] の command: 0 なし、1 **start**（tile の列: `SA_TILES` 個。重みと列の scale の stream、BFP なら次の push が行の scale）、2 drain（強制）、3 abort、4 acquire、5 release、6 **finalize**（出口の統計を確定: softmax は r_i = 1/s_i、LN は rstd_i。TILE_LAST の後でだけ。`SA_CTRL.AUTOFIN` なら自動）、7 **feedback**（token buffer の x を入口の normalize の段を通して activation にし、`SA_TILES` 個の tile を回す。重みは `wbase`）、8 **reset**（統計と token buffer を空に）、9 **wait**（SA の今の command が終わるまでこの warp を止める。polling の代わり）、[5] accumulator を 0 に）、sub 1 `sactl.wbase`、sub 2 `sactl.sbase`（列の scale。LN の feedback では γ_j・β_j の列の base）、sub 3 `sactl.k`（偶数、≤ 8192）、sub 4 `sactl.tiles`、sub 5 `sactl.obase`（出力の memory の address `SA_O_BASE`）。値は lane 0（EXEC に依らず）。特殊 operand 121 `sastat`（[0] busy、[1] 重みの stream 中、[2] stream-out 中、[3] この warp が所有、[4] 直前の `sactl` が拒まれた、[5] 裏の accumulator が空いている、[6] 飽和が起きた（sticky）、[7] BFP、[8] 統計が確定済み、[9] token buffer が溢れた（sticky）、[15:8→15:10] 残りの tile）。`exec.save`・`vote`・`ballot`・`sactl`・`qstat`・`qtag`・`sastat` は EXEC に依らず全 lane に書く。
+
+### A.2 SA の unit（`atg_sa`、SU と decoupled、MC の client。版 4 の datapath）
+
+- **配置と段**: `atg_sa` は `atg_top` の兄弟。段は **入口**（in-FIFO か token buffer → normalize（任意）→ BFP の揃え → 配列の左の口）、**配列**（32 × `SA_COLS` の PE、2 組の accumulator）、**出口**（drain → 並べ替え → 変換器 → **reduction（任意）** → out-FIFO か memory の書き込み（`SA_O_BASE`）か token buffer）。MC の client は 2 つ（重み・scale・γ/β の読み、出力の書き込み）。CP からは STATE の `SA_*`、`DISPATCH` の flag、`STATUS[7] SA_BUSY`。無い構成では `CAPS[25]` = 0。
+- **PE の配列**: `SA_ROWS` = 32（固定）× `SA_COLS`（parameter。KC705 は 16 → 32、U31）。出力固定（activation は左から右、重みは上から下、PE(i, j) が `acc += a × b`）。skew は SA の中。PE の段数は DSP の PE と LUT の PE で揃える。PE は SIMD 1。
+- **mixed precision = block floating point**（Q1 の案）: PE は整数（int12 × int8 → int20、int32 の accumulator、`SA_K` ≤ 8192）。入口で行ごとの共有の指数 E_i（行の scale の FP16 の biased の指数）に揃えた 12 bit の符号付き仮数: `m12 = RNE((1.m) >> (E_i − E))`（右 shift だけ、15 を超えれば 0）。|x| > scale は ±2047 に飽和して `sastat[6]`。subnormal・0 は 0、Inf/NaN は飽和 + sticky。重みは INT8（列の scale s_j は FP16、`SA_S_BASE` から tile ごとに 32 × FP16）。**行の scale の出所**: SU が push する時は SU が作る（A.5 の規約: `fmax2` の列 → `shfl` xor 16 → `fmax2` → push。subgroup が無い構成では `lds` で合わせる）。**feedback の時は normalize の段が作る**（softmax: max P = 1/s_i を scale に、LN: 列の走査の前に y の max を 1 回計算するために buffer を 2 回読む（下））。
+- **出口の変換（stream-out）**: 列 j の 32 個の acc を行ごとに `acc × 2^(E_i − 15 − 10) × s_j` で FP32 に（32 個の変換器: 正規化 + FP32 × FP16、乗算は DSP 1 ずつ）、`SA_CTRL.OUT` で FP16（RNE、±65504 に飽和 + sticky）か FP32。精度の上界: 行の max と同じ指数の値は FP16 と同じ、max より 2^-k 小さい値は k bit を失う、内積の絶対誤差 ≤ K · max|a| · max|w| · 2^-11。
+- **stream-out の順と deskew**: tile の全部が揃った後（K + 62 step）、行ごとに accumulator を右へ shift（列 31 から順に右の口へ = 降順）→ 2 × 32 entry の並べ替えの buffer（LUTRAM 4 KiB、ping-pong）→ **昇順**（列 0 から、tag FIRST）で 1 列/cycle。遅れ 32 cycle。行き先（`SA_CTRL.ODST`）: 0 out-FIFO（SU が pop）、1 memory（`SA_O_BASE` + 列 × 64 byte、`SA_O_STRIDE`。1 line/cycle = 12.8 GB/s @200 MHz は出力の burst の間だけ。DDR3 が追い付かなければ back-pressure で stream-out が止まる）、2 token buffer（下。reduction と組）。out-FIFO が満なら stream-out は止まり、次の tile は裏の bank で続く。
+- **出口の reduction の段（`atg_sa_red`、案 B）**: 行ごと（32 行 = 32 token）の状態の register を持ち、stream-out の列を **1 列/cycle** で受ける。mode（`SA_CTRL.RED`）: **softmax** = m_i（running max）と s_i（rescale した running sum）: m' = max(m, x)、s = s·2^(m − m') + 2^(x − m')（x は変換器の出力 FP32。2^(·) は行ごとに 2 本の exp2（入力 ≤ 0、table 64 entry + 線形補間、FP16 相当の精度、pipeline）、s は FP32（仮数 24 bit × 11 bit の LUT の乗算 + 加算）。mask の列は −65504 として送る（`SA_CTRL.MASK` で列の範囲 `SA_MASK_COL` 以降を mask: causal の attention）。**LN（Welford）** = n_i・mean_i・M2_i（FP32: delta = x − mean、mean += delta × (1/n)（1/n は 1 本の table、n ≤ `SA_BUF_COLS`）、M2 += delta × (x − mean)）。同時に生の x（FP16）を **token buffer** に書く（列 c の 32 値 = 1 行 64 byte）。PAD の列は数えない。statistic は `sactl.ctl 8` で 0 に、`finalize` で確定（softmax: r_i = 1/s_i を 1 本の rcp（Newton、FP32）で 32 行を順に ≈ 40 cycle、LN: rstd_i = rsqrt(M2_i / n_i + eps) を同様に ≈ 48 cycle）。推定: exp2 64 本 × 150 LUT = 9.6k、FP32 の乗算と加算 32 × 150 = 4.8k、Welford の FP32 の FMA 32 × 2 × 150 = 9.6k（softmax と LN で演算器を共有して ≈ 10k）、1/n の table BRAM 1、状態 32 × 3 × 32 bit = 3k FF → **≈ 14k LUT、DSP 0**（乗算の一方が ≤ 11 bit なので LUT。U42）。
+- **token buffer（`atg_sa_buf`）**: BRAM、`SA_BUF_COLS` 列 × 32 行 × 16 bit。KC705 は **2048 列 = 128 KiB = BRAM36 32**（U41。raster 構成の BRAM の空きで足りる）。1 列/cycle の書き（出口）と読み（入口）を同時に（2 port）。溢れ（N > `SA_BUF_COLS`）は `sastat[9]` と `SA_CTRL.SPILL` で memory（`SA_O_BASE`）へ 1 line/cycle で退避し、feedback は memory から読む（帯域で遅くなる。v1 は実装するが性能は保証しない）。
+- **入口の normalize の段（`atg_sa_norm`、案 B）**: `feedback` の command で token buffer（か memory）の列を **1 列/cycle** で読み、行ごとに **softmax**: `p = 2^(x − m_i) × r_i`（exp2 32 本 + FP32 × FP32 の乗算 32 本 = DSP 32 × 2 = 64（24 bit の仮数）→ r_i を FP16 に落とし 11 × 24 の LUT の乗算にして DSP 0。推し: LUT）、**LN**: `y = (x − mean_i) × rstd_i × γ_c + β_c`（γ_c・β_c は列ごとの FP16 を `SA_S_BASE`（`sactl.sbase`）から stream、行ごとに FP32 の減算 + 乗算 2 + 加算 → 32 × 300 LUT ≈ 9.6k）→ FP16 → BFP の揃え → 配列。**行の scale**: softmax は max p = r_i（既知、`finalize` で作る）、LN は y の max が走査の前に分からないので feedback の最初の pass で y を計算して max だけ取り（1 列/cycle、`SA_BUF_COLS` ≤ 2048 で ≤ 2048 cycle）、2 回目の pass で揃えて流す（`SA_CTRL.TWOPASS`。softmax は 1 pass）。推定: **≈ 12k LUT、DSP 0〜32**。
+- **裏の accumulator（DBUF）と stall**: PE は accumulator を 2 組（DSP の PE: bank A = P register、bank B = fabric。LUT の PE: 2 組 fabric）。tile n の drain の間に tile n+1 を積む。tile n+2 が始まる時に bank B が drain 中なら SA 全体を止める。
+- **重み・scale・γ/β の stream**: `SA_W_BASE`（INT8、行 32 byte、`SA_W_STRIDE`）、`SA_S_BASE`（列の scale / γ、`SA_S_TILE_STRIDE`。LN の β は `SA_S_BASE` の次の 64 byte）、`SA_K`、`SA_TILES`、`SA_W_TILE_STRIDE`、`SA_O_BASE`/`SA_O_STRIDE`。先読みは BRAM36 × 4（256 bit）。重みの帯域 6.4 GB/s @200 MHz。aperture の外は FAULT 種別 1。
+- **大きさ**（推定、325T、U31。p020・p022 の合成で実測）:
+
+| 部分 | 32 × 32（DSP の PE 576 + LUT の PE 448） | 32 × 16（DSP だけ 512） |
+| --- | --- | --- |
+| 乗算（LUT の PE ≈ 95 LUT） | 43k | 0 |
+| accumulator（DSP の PE: bank B 32 FF + mux 16 LUT、LUT の PE: 2 組 + 加算器 48 LUT） | 9k + 22k = 31k | 8k |
+| 入口の揃え 1.3k、変換器 5.8k + DSP 32、並べ替え 1k、FIFO 2.2k、制御/skew/tag 10 LUT/PE | 20k | 15k |
+| **reduction**（案 B）14k、**normalize** 12k、token buffer の制御 1k | 27k | 27k |
+| **合計** | **≈ 121k LUT、DSP 608、FF ≈ 75k、BRAM36 37**（先読み 4 + scale 1 + buffer 32） | **≈ 50k LUT、DSP 544、BRAM36 37** |
+
+  SA 構成の全体（§3.6）: 32 × 32 で ≈ 178k LUT（**87%、配線が閉じない恐れ**）、32 × 16 で ≈ 107k（52%）。**U31 の推し: p020 は 32 × 16、32 × 32 は p022 の後に LUT の PE を減らして（32 × 24: DSP 576 + LUT 192 ≈ 90k → 全体 ≈ 147k、72%）実測**。DSP: 2 × 86 + 1 + 608 = 781（93%）/ 717（85%）。
+- **性能（峰）**: 32 × 32 で 1024 MAC/cycle = 0.41 TOPS @200 MHz（MAC = 2 op）。案 B では attention・LN が **SA に律速（≈ 1 列/cycle）**で、A.5 の例は峰の 4〜5 割。
+- **状態と fault**: `STATUS[7] SA_BUSY`。HALT・quiesce・RESET は他の block と同じ（MC の client 2 つとも「新しい AR/AW を止め、応答を待つ」。abort は FAULT/RESET だけ）。reset で FIFO・accumulator・統計・token buffer は消える。
+
+### A.3 GHCI での見え方（標準の optional な capability）
+
+- `CAPS[25] SA`、`CAPS[27] GRAPHICS`（VF・RX・ROP が有る。SA 構成は 0: driver は compute の queue family だけ、firmware は draw を拒む）、extended capability `SA`（id 7、0x140〜0x14F）: `SA_CAPS`（[7:0] ROWS = 32、[15:8] COLS、[19:16] 入力の型の mask（[0] FP16 BFP、[1] FP16（FP の PE）、[2] INT8、[3] INT16）、[23:20] 重みの型（[0] INT8、[1] FP16、[2] INT16）、[27:24] log2(FIFO の深さ)、[28] DBUF、[29] tag、[30] reduction/normalize（案 B）、[31] memory の出力）、`SA_CAPS2`（[15:0] `SA_BUF_COLS`、[16] spill）、`SA_SU`（R）。
+- STATE の `SA` の範囲（0x1B0〜0x1BF）: 0 `SA_CTRL`（[2:0] 0 停止、1 run、[4:3] 入力の型、[5] acc を 0 に、[6] shader の `sactl` を許す、[7] BFP、[8] DBUF、[10:9] OUT（0 FP16、1 FP32）、[12:11] 重みの型、[14:13] **RED**（0 なし、1 softmax、2 LN）、[16:15] **ODST**（0 out-FIFO、1 memory、2 token buffer）、[17] AUTOFIN、[18] TWOPASS、[19] MASK、[20] SPILL）、1 `SA_W_BASE`、2 `SA_W_STRIDE`、3 `SA_K`、4 `SA_TILES`、5 `SA_W_TILE_STRIDE`、6 `SA_COLS_USED`、7 `SA_S_BASE`、8 `SA_S_TILE_STRIDE`、9 `SA_O_BASE`、10 `SA_O_STRIDE`、11 `SA_MASK_COL`、12 `SA_EPS`（LN の ε、FP32）、13〜15 reserved。
+- `DISPATCH` の flags[1] = SA。GSI1 の側: `rq`（63）、`qstat`（120）、`sastat`（121）、`qtag`（122）、`sactl.*`、header の flags[4]。**SA 構成で必須の optional の命令は無い**（案 B。`shfl` は有れば行の scale の合わせに使い、無ければ `lds`）。`CAPS[26]` と header の flags[5] は reserved（版 4 の packed の超越は取り下げ）。
+- FP の PE の実装（ASIC）も scale + PAD を受けて捨てる（kernel は同じ）。
+
+### A.4 zedBSD の側（§6.10）
+
+- Vulkan には systolic array の API が無い。`VK_KHR_cooperative_matrix` はこの SA の形では実装できない（版 3 の H8）。**見せ方の推し（U30）**: v1 は GHCI 固有の compute の経路: (b) `GPU_OP_GHCI_NATIVE`（試験の build）で `SET_REG` の `SA_*` + `LOAD_PROGRAM` + `DISPATCH(SA)`、kernel（指揮の `sactl` の列）は `gsi1asm.py`（p020・p022）。製品の経路（p021、WS288 の外）は (c) 独自の拡張 `VK_KEI_systolic_dispatch`（案 B では **指揮だけなので GEMM・attention・LN の全部を拡張の構造体（SA_* の設定の列）で表せる**: FP16 の IR は要らない）。
+- compute の use: driver は `CAPS[25]`・`CAPS[27]`・`SA_CAPS/2` を読み、拡張と capset に形と型と reduction の有無を名乗る。
+
+### A.5 案 B の流れ（attention と layer norm）と cycle 数（SA に律速）
+
+**取り下げた案**（記録）: 版 4 の最初の案は SU の packed FP16 の命令（`exp2h2` 等）と `rq` の pop/push で online の softmax/LN を SU の warp が 1 列ずつ処理する物で、1 warp で 25〜28 cycle/列（SA の 1 列/cycle の 1/25）、SU に packed の超越 5k LUT/SU と subgroup が要った。ユーザー「SUにベクトル命令と投機的オンラインsoftmaxの実装を考えましたが、ハードウェア効率が悪すぎるので、案BでSAに寄せましょう。SUはミニマルな形にしましょう。」で SA の段に移した（§10 の 34）。
+
+**SU の kernel（指揮だけ。attention の 1 head、query 32 token の block ごと）**:
+```
+sactl.ctl 4 (acquire) ; sactl.ctl 8 (reset)
+; S = Q·Kᵀ: Q の block を push（64 列 × 2 命令 = 128 命令）… または Q も memory から: ここでは SU が push
+SET SA_CTRL = run | BFP | DBUF | RED=softmax | ODST=buffer | MASK ; sactl.wbase K_block ; sactl.sbase K_scale ; sactl.k 64 ; sactl.tiles 4 ; sactl.ctl 1 (start)
+push scale+PAD ; push Q の 64 列（tile ごとに同じ Q を 4 回 push: 4 × 64 × 2 命令。または Q を memory から読む mode = v2）
+sactl.ctl 9 (wait) ; sactl.ctl 6 (finalize: r_i = 1/s_i)
+; O = P·V: feedback
+SET SA_CTRL = run | BFP | DBUF | ODST=memory ; sactl.wbase V ; sactl.sbase V_scale ; sactl.k 128 ; sactl.tiles 2 ; sactl.obase O ; sactl.ctl 7 (feedback)
+sactl.ctl 9 (wait) ; sactl.ctl 5 (release)
+```
+約 40 命令。SU の時間は Q の push（4 tile × 64 列 × 2 命令 × 2 cycle ≈ 1,000 cycle）だけで、残りは `wait` で止まっている（他の warp・SU1 は別の仕事を進められる）。
+
+**例 1: attention（1 head、N = 128 token、d = 64。K・V は INT8 + 列の scale、Q は FP16）、query 32 token の block ごと、SA 32 × 32**:
+- S の 4 tile: 入力 4 × 64 step、DBUF で重なり、stream-out 4 × 32 列 → **≈ 4 × 64 + 62 + 32 + 3 × 32（drain は 1 列/cycle、tile ごと）≈ 450 cycle**。reduction は stream-out と同じ 1 列/cycle（pipeline の遅れ ≈ 12）。生の x は token buffer に（128 列）。
+- finalize: 32 行の rcp ≈ 40 cycle。
+- feedback（P × V、128 列の P を normalize の段で作りながら入力、K = 128、出力 64 列 = 2 tile）: 2 × 128 step（P は buffer から 2 回読む）+ 62 + 32 + 32 ≈ **380 cycle**、出力は memory へ（64 line）。
+- block ≈ 450 + 40 + 380 ≈ **870 cycle**。4 block ≈ 3,500 cycle ≈ **17 µs @200 MHz（35 µs @100 MHz）**。MAC 2.1 M / 3,500 ≈ **600 MAC/cycle（32 × 32 の峰の 59%）**。32 × 16 では tile の数が倍で ≈ 6,000 cycle（峰 512 の 70%）。
+- **遅れ（最後の列から最初の正規化した出力まで）**: S の最後の列が reduction を出て（≈ 12）→ finalize（≈ 40）→ feedback の最初の列が normalize を通って配列に入る（≈ 10）→ 最初の出力の列が右の口に出る（K + 62 = 190）→ 並べ替え（32）→ **≈ 280 cycle**。
+**例 2: layer norm（32 token × d = 256。入力は前の段の projection の tile の stream）**: projection 8 tile（K = 256）≈ 8 × 256 + 62 + 32 + 7 × 32 ≈ 2,370 cycle で reduction が Welford を進め x を buffer に；finalize（rsqrt）≈ 48；feedback の TWOPASS: pass 1（y の max、256 列）256 + pass 2（正規化して次の tile の入力か memory へ）256 ≈ 520 → **≈ 2,950 cycle ≈ 15 µs @200 MHz**。遅れ（最後の列 → 最初の y）≈ 12 + 48 + 256（pass 1）+ 10 ≈ 330 cycle（TWOPASS 無し = memory へ出すだけなら ≈ 70）。
+**律速**: SA の配列（K step/tile + skew）と 1 列/cycle の段。SU は指揮だけで空く。v2: Q も memory から読む入口（SU の push を無くす）、SU ごとの SA。
+
+### A.6 ASIC の構成（parameter）
+
+- PE = FP16 × FP16 → FP32 の accumulate（`SA_CAPS[19:16]` の [1]。scale + PAD は受けて捨てる）。`SA_ROWS` = 32、`SA_COLS` は parameter（64・128）。reduction・normalize・token buffer は同じ形で幅だけ parameter。SA は SU ごとに 1 つ（README の LLM の流れ）。目標 800 MHz: 32 × 32 で 1.6 TOPS/SA。PE は SIMD 1（SIMD-8 は取り下げ: §10 の 33）。
+
 ## 18. DC を GHCI の GPU の一部に（CP の command で制御、present は queue の操作、割り込みは GHCI の IRQ。版 8、ws288-p035 の設計の段）
 
 2026-10-25 P3（ws288-p035、q1574-i01、zedBSD の worktree p3-p006（main 101a2f742 の上）、amaterrace-gpu の worktree p3-p035（main aa78b64 の上））。承認: 2026-10-25 09:02 ユーザー「DCがGPUとは別になってしまっていますが、確かに伝統的にはそういう構成だったように思いますが、Vulkan Displayのcapabilityというような抽象化と考えれば、gpu/に移して、CPへのコマンドで制御可能にしてもいいかもしれません。そうすれば、コピーせずにscanoutするのが自然になるでしょう。GHCIの仕様にDCも入れてしまって、割り込みもGHCIの仕様にしませんか？」（[phase035](phase035/phase.md)）、同日「ゴールまで推しで進んでよいです。判断に迷ったら、Vulkan 1.0の原則論で進めてください。」。この節は設計だけで、RTL・firmware・driver・GHCI の文は書かない（実装の段は Q1 が後で割り当てる）。§4.2・§4.3 の MSI の表・§5・§6.5 の DC の記述は、この節が実装された時に置き換わる（§18.14 の D8）。design-reviewer の review（1 回目 28 件: Critical 2・High 7・Medium 13・Low 6、2 回目 21 件: High 5・Medium 10・Low 6）は全部を本文に反映し、対応の表は §18.15・§18.16。
@@ -2793,93 +2890,3 @@ D3・D4 は D2 の後に並行できる。D7 は p006・p019 の後。画面の�
 | 19 | Low | FLIP ごとに driver の FENCE が付き全部を drain する | FLIP だけの packet は fence 無しの submit（§18.7） |
 | 20 | Low | DISP_ERROR の数、窓の decode の場所の食い違い、host の read の道 | 1 s に 30 回で mask、decode と read は `atg_cp_regs`（§18.4・§18.5 (h)・§18.7） |
 | 21 | Low | DC の CTRL.RESET は I2C も reset する | I2C の使用と CTRL.RESET を display の lock で直列（§18.7） |
-
-
-## Appendix A. SA の設計の sketch（**延期**。2026-10-23 ユーザー「SAの設計と実装はかなり後に回して、SUがきちんとISAを実装できてからにします。」SU が GSI1 を実装した後に設計し直す。計画の critical path には無い。版 4 の review（§14）の 33 件に対応した時点の案で、**README の 0.8 TOPS/SU（×2）は満たしていない**（1 MAC/PE/cycle）。KC705 の SA 構成の数字も参考のみ）
-
-ユーザー（版 3）:「シェーダISAのレジスタのうち、1つをreservedにできる？このレジスタはFIFOにつながってて、systolic arrayのwavefrontのリードやライトに使えるよ。シェーダユニットはオプションでsystolic array (SA)を持つことができ、SAのPEの横方向にシェーダISAからFIFOでRWアクセスできるよ。SAはSUの中にあるわけではなく、SAとSUはdecoupledなユニットだよ。SAにはMCから重みをストリーミングできるよ。」
-ユーザー（版 4、2026-10-23）:「SAを使う場合、KC705ではプロトタイプなのでSUは2個くらいでいいのですが、FP16/INT8 mixed precisionにできそうですか？重みはINT8で、演算はFP16です。あ、そうか、SUがFP16 packedに対応していれば、16 laneでも32x32 SAと釣り合うのか。」「SUには、softmaxやlayer normを、SAから1サイクルずつ出力をフェッチして、トークン1つが全部そろう前に1データずつオンライン処理していって、データがそろったら結果を確定して、SAに折り返しで送り返しで書き込んでいく、というフローに対応させたいです」「了解、SIMD-8はやめましょう。」**「了解です。SUにベクトル命令と投機的オンラインsoftmaxの実装を考えましたが、ハードウェア効率が悪すぎるので、案BでSAに寄せましょう。SUはミニマルな形にしましょう。」**
-README（a217bf8、ユーザー）: 「LLM: CP --> VF --> SU --> SA --> SU --> SA -> ... --> SU --> ROP -> MC」「Systolic Array: 32 x 32, 0.8 TOPS/SU @200MHz」→ **U39**（§9.2）。この節の推し: SA は SU に 1 対 1（SU ごとに最大 1 つ）、KC705 の prototype は SU 2 個 + SA 1 つ（SU0 に結ぶ）、VF/RX/TU/ROP は SA 構成に載せない。
-
-版 4（案 B）の要点: (1) KC705 の **SA 構成**（別の bitstream）= SU 2 個（NPHYS 16、`PACKED` は graphics のため、LDS 16 KiB）+ SA **32 × 32**、入力は FP16（block floating point で PE は整数）、重みは INT8 を MC から stream、出力は FP16/FP32。(2) SA は tile の終わりに **1 列/cycle で stream-out**し、**出口の reduction の段**（行 = token ごとに online の softmax の m・s か layer norm の Welford）が 1 列/cycle で統計を進め、生の x は SA の **token buffer** に取っておく。token の行が揃ったら SA が確定（1/s か rstd）し、**入口の normalize の段**が buffer の x を 1 列/cycle で正規化して次の tile の activation に折り返す（softmax: `exp2(x − m)·(1/s)`、LN: `(x − mean)·rstd·γ_j + β_j`）。(3) **SU は指揮だけ**（tile の順、address、tag、確定の合図 = `sactl`）。SU の vector 命令と投機的な online softmax（版 4 の最初の案）は hardware の効率が悪いので取り下げ（ユーザー、§10 の 34）。GSI1 は版 3 の最小の形に戻す（packed の超越は無し、subgroup は optional のまま）。(4) PE は SIMD 1。raster 構成は別の bitstream。
-
-### A.1 ISA の側: register 63 = `rq`（queue register）と `sactl`
-
-- **operand 番号 63 は GPR でなく FIFO の口 `rq`**（GSI1 の全部の実装で予約。GPR は r0〜r62）。dst に書くと push（SU → SA の in-FIFO）、source に読むと pop（SA → SU の out-FIFO）。案 B では attention・LN の経路は SA の中で閉じるので、`rq` は **GEMM の結果を SU が受ける時・activation を SU が作る時だけ**使う。
-- **entry = 32 値 × 16 bit（FP16）= 64 byte**（SA の左の口の 1 本の vector: 行 i に 1 値。push では step t の a_0..31(t)、pop では出力の列 j の C[0..31][j]）。lane l は slot 2l・2l+1 を packed（下位 half = slot 2l）で持つ。**32 lane の warp の push/pop は常に 2 entry**（lane 0〜15 = entry A、16〜31 = entry B）。NPHYS 16 で 1 entry/cycle。FIFO の口の幅は NPHYS × 32 bit。発行の時に 2 entry（pop）/ credit 2（push）を確かめ、途中では止めない。FP32 の出力は 1 列 = 2 entry（lane l = slot l）。
-- **偶奇の規則**（review 2）: push は A = 偶数の step、B = 奇数。pop は A = 偶数の列、B = 奇数。SA は入出力を entry の対に揃える: `SA_K` は偶数（奇数は `sactl` が拒み `sastat[4]`）、`SA_COLS_USED` が奇数なら SA が最後に PAD の entry（tag PAD、値 0）を足す、FP32 は常に 2 entry、BFP の行の scale は「scale + PAD」の 2 entry、abort の後は FIFO を空にして偶奇を 0 に戻す。
-- **使える命令**: `rq` は class a・f の命令の dst・source だけ。class m・t・x の dst に `rq`、暗黙の連続の register が 63 に掛かる命令は ISA の fault。
-- **EXEC との関係**: push/pop は EXEC に依らず必ず 2 entry 進める。EXEC の外の lane の push の値は 0、pop の値は捨てる。SA の kernel は EXEC を全部 1 に保つ（規約）。
-- **blocking**: pop は out-FIFO に 2 entry 無ければ、push は credit が 2 無ければ、発行の段でその warp だけ止まる。scoreboard の entry は使わない。
-- **tag**（6 bit）: [0] FIRST、[1] LAST（tile の最後の列の entry だけ）、[2] TILE_LAST（最後の tile の最後の列の entry だけ）、[3] HI（FP32 の上位）、[4] ABORT、[5] PAD。特殊 operand **122 `qtag`** = この warp が最後に実行した pop の 2 entry の tag（lane 0〜15 = A、16〜31 = B、EXEC に依らず）。
-- **所有**: SA は **SU に 1 対 1**（`SA_SU`、build の parameter。KC705 の SA 構成は SU0 だけ）。その SU の **1 つの warp** が持つ: `sactl.ctl 4`（acquire。所有していなくても使える唯一の `sactl`）→ 指揮 → `sactl.ctl 5`（release）。所有していない warp の `rq`・`sactl`・`qstat`・`qtag` は ISA の fault。`DISPATCH` の flags[1] = SA の dispatch の warp だけが acquire できる。SA の無い SU（KC705 の SU1）は普通の compute（量子化、前後の処理）に使う。
-- **deadlock**: 「push して pop していない tile ≤ 1 + DBUF」かつ「未読の出力の entry ≤ out-FIFO の深さ 64」。案 B の attention・LN では SU は pop しないので、SA の出力は token buffer か memory（`SA_O_BASE`）に行き、FIFO の規則は要らない。`bar` を持ったまま acquire しない。abort は FAULT・RESET の時だけ（pop は ABORT の entry、push は捨てる）。`HALT` は dispatch を完走させる（watchdog が網）。
-- **`sactl`（指揮の命令。custom-3 funct3 110、sub で対象）**: sub 0 `sactl.ctl`（word の形は STATE の `SA_CTRL` と同じ bit + [3:0] の command: 0 なし、1 **start**（tile の列: `SA_TILES` 個。重みと列の scale の stream、BFP なら次の push が行の scale）、2 drain（強制）、3 abort、4 acquire、5 release、6 **finalize**（出口の統計を確定: softmax は r_i = 1/s_i、LN は rstd_i。TILE_LAST の後でだけ。`SA_CTRL.AUTOFIN` なら自動）、7 **feedback**（token buffer の x を入口の normalize の段を通して activation にし、`SA_TILES` 個の tile を回す。重みは `wbase`）、8 **reset**（統計と token buffer を空に）、9 **wait**（SA の今の command が終わるまでこの warp を止める。polling の代わり）、[5] accumulator を 0 に）、sub 1 `sactl.wbase`、sub 2 `sactl.sbase`（列の scale。LN の feedback では γ_j・β_j の列の base）、sub 3 `sactl.k`（偶数、≤ 8192）、sub 4 `sactl.tiles`、sub 5 `sactl.obase`（出力の memory の address `SA_O_BASE`）。値は lane 0（EXEC に依らず）。特殊 operand 121 `sastat`（[0] busy、[1] 重みの stream 中、[2] stream-out 中、[3] この warp が所有、[4] 直前の `sactl` が拒まれた、[5] 裏の accumulator が空いている、[6] 飽和が起きた（sticky）、[7] BFP、[8] 統計が確定済み、[9] token buffer が溢れた（sticky）、[15:8→15:10] 残りの tile）。`exec.save`・`vote`・`ballot`・`sactl`・`qstat`・`qtag`・`sastat` は EXEC に依らず全 lane に書く。
-
-### A.2 SA の unit（`atg_sa`、SU と decoupled、MC の client。版 4 の datapath）
-
-- **配置と段**: `atg_sa` は `atg_top` の兄弟。段は **入口**（in-FIFO か token buffer → normalize（任意）→ BFP の揃え → 配列の左の口）、**配列**（32 × `SA_COLS` の PE、2 組の accumulator）、**出口**（drain → 並べ替え → 変換器 → **reduction（任意）** → out-FIFO か memory の書き込み（`SA_O_BASE`）か token buffer）。MC の client は 2 つ（重み・scale・γ/β の読み、出力の書き込み）。CP からは STATE の `SA_*`、`DISPATCH` の flag、`STATUS[7] SA_BUSY`。無い構成では `CAPS[25]` = 0。
-- **PE の配列**: `SA_ROWS` = 32（固定）× `SA_COLS`（parameter。KC705 は 16 → 32、U31）。出力固定（activation は左から右、重みは上から下、PE(i, j) が `acc += a × b`）。skew は SA の中。PE の段数は DSP の PE と LUT の PE で揃える。PE は SIMD 1。
-- **mixed precision = block floating point**（Q1 の案）: PE は整数（int12 × int8 → int20、int32 の accumulator、`SA_K` ≤ 8192）。入口で行ごとの共有の指数 E_i（行の scale の FP16 の biased の指数）に揃えた 12 bit の符号付き仮数: `m12 = RNE((1.m) >> (E_i − E))`（右 shift だけ、15 を超えれば 0）。|x| > scale は ±2047 に飽和して `sastat[6]`。subnormal・0 は 0、Inf/NaN は飽和 + sticky。重みは INT8（列の scale s_j は FP16、`SA_S_BASE` から tile ごとに 32 × FP16）。**行の scale の出所**: SU が push する時は SU が作る（A.5 の規約: `fmax2` の列 → `shfl` xor 16 → `fmax2` → push。subgroup が無い構成では `lds` で合わせる）。**feedback の時は normalize の段が作る**（softmax: max P = 1/s_i を scale に、LN: 列の走査の前に y の max を 1 回計算するために buffer を 2 回読む（下））。
-- **出口の変換（stream-out）**: 列 j の 32 個の acc を行ごとに `acc × 2^(E_i − 15 − 10) × s_j` で FP32 に（32 個の変換器: 正規化 + FP32 × FP16、乗算は DSP 1 ずつ）、`SA_CTRL.OUT` で FP16（RNE、±65504 に飽和 + sticky）か FP32。精度の上界: 行の max と同じ指数の値は FP16 と同じ、max より 2^-k 小さい値は k bit を失う、内積の絶対誤差 ≤ K · max|a| · max|w| · 2^-11。
-- **stream-out の順と deskew**: tile の全部が揃った後（K + 62 step）、行ごとに accumulator を右へ shift（列 31 から順に右の口へ = 降順）→ 2 × 32 entry の並べ替えの buffer（LUTRAM 4 KiB、ping-pong）→ **昇順**（列 0 から、tag FIRST）で 1 列/cycle。遅れ 32 cycle。行き先（`SA_CTRL.ODST`）: 0 out-FIFO（SU が pop）、1 memory（`SA_O_BASE` + 列 × 64 byte、`SA_O_STRIDE`。1 line/cycle = 12.8 GB/s @200 MHz は出力の burst の間だけ。DDR3 が追い付かなければ back-pressure で stream-out が止まる）、2 token buffer（下。reduction と組）。out-FIFO が満なら stream-out は止まり、次の tile は裏の bank で続く。
-- **出口の reduction の段（`atg_sa_red`、案 B）**: 行ごと（32 行 = 32 token）の状態の register を持ち、stream-out の列を **1 列/cycle** で受ける。mode（`SA_CTRL.RED`）: **softmax** = m_i（running max）と s_i（rescale した running sum）: m' = max(m, x)、s = s·2^(m − m') + 2^(x − m')（x は変換器の出力 FP32。2^(·) は行ごとに 2 本の exp2（入力 ≤ 0、table 64 entry + 線形補間、FP16 相当の精度、pipeline）、s は FP32（仮数 24 bit × 11 bit の LUT の乗算 + 加算）。mask の列は −65504 として送る（`SA_CTRL.MASK` で列の範囲 `SA_MASK_COL` 以降を mask: causal の attention）。**LN（Welford）** = n_i・mean_i・M2_i（FP32: delta = x − mean、mean += delta × (1/n)（1/n は 1 本の table、n ≤ `SA_BUF_COLS`）、M2 += delta × (x − mean)）。同時に生の x（FP16）を **token buffer** に書く（列 c の 32 値 = 1 行 64 byte）。PAD の列は数えない。statistic は `sactl.ctl 8` で 0 に、`finalize` で確定（softmax: r_i = 1/s_i を 1 本の rcp（Newton、FP32）で 32 行を順に ≈ 40 cycle、LN: rstd_i = rsqrt(M2_i / n_i + eps) を同様に ≈ 48 cycle）。推定: exp2 64 本 × 150 LUT = 9.6k、FP32 の乗算と加算 32 × 150 = 4.8k、Welford の FP32 の FMA 32 × 2 × 150 = 9.6k（softmax と LN で演算器を共有して ≈ 10k）、1/n の table BRAM 1、状態 32 × 3 × 32 bit = 3k FF → **≈ 14k LUT、DSP 0**（乗算の一方が ≤ 11 bit なので LUT。U42）。
-- **token buffer（`atg_sa_buf`）**: BRAM、`SA_BUF_COLS` 列 × 32 行 × 16 bit。KC705 は **2048 列 = 128 KiB = BRAM36 32**（U41。raster 構成の BRAM の空きで足りる）。1 列/cycle の書き（出口）と読み（入口）を同時に（2 port）。溢れ（N > `SA_BUF_COLS`）は `sastat[9]` と `SA_CTRL.SPILL` で memory（`SA_O_BASE`）へ 1 line/cycle で退避し、feedback は memory から読む（帯域で遅くなる。v1 は実装するが性能は保証しない）。
-- **入口の normalize の段（`atg_sa_norm`、案 B）**: `feedback` の command で token buffer（か memory）の列を **1 列/cycle** で読み、行ごとに **softmax**: `p = 2^(x − m_i) × r_i`（exp2 32 本 + FP32 × FP32 の乗算 32 本 = DSP 32 × 2 = 64（24 bit の仮数）→ r_i を FP16 に落とし 11 × 24 の LUT の乗算にして DSP 0。推し: LUT）、**LN**: `y = (x − mean_i) × rstd_i × γ_c + β_c`（γ_c・β_c は列ごとの FP16 を `SA_S_BASE`（`sactl.sbase`）から stream、行ごとに FP32 の減算 + 乗算 2 + 加算 → 32 × 300 LUT ≈ 9.6k）→ FP16 → BFP の揃え → 配列。**行の scale**: softmax は max p = r_i（既知、`finalize` で作る）、LN は y の max が走査の前に分からないので feedback の最初の pass で y を計算して max だけ取り（1 列/cycle、`SA_BUF_COLS` ≤ 2048 で ≤ 2048 cycle）、2 回目の pass で揃えて流す（`SA_CTRL.TWOPASS`。softmax は 1 pass）。推定: **≈ 12k LUT、DSP 0〜32**。
-- **裏の accumulator（DBUF）と stall**: PE は accumulator を 2 組（DSP の PE: bank A = P register、bank B = fabric。LUT の PE: 2 組 fabric）。tile n の drain の間に tile n+1 を積む。tile n+2 が始まる時に bank B が drain 中なら SA 全体を止める。
-- **重み・scale・γ/β の stream**: `SA_W_BASE`（INT8、行 32 byte、`SA_W_STRIDE`）、`SA_S_BASE`（列の scale / γ、`SA_S_TILE_STRIDE`。LN の β は `SA_S_BASE` の次の 64 byte）、`SA_K`、`SA_TILES`、`SA_W_TILE_STRIDE`、`SA_O_BASE`/`SA_O_STRIDE`。先読みは BRAM36 × 4（256 bit）。重みの帯域 6.4 GB/s @200 MHz。aperture の外は FAULT 種別 1。
-- **大きさ**（推定、325T、U31。p020・p022 の合成で実測）:
-
-| 部分 | 32 × 32（DSP の PE 576 + LUT の PE 448） | 32 × 16（DSP だけ 512） |
-| --- | --- | --- |
-| 乗算（LUT の PE ≈ 95 LUT） | 43k | 0 |
-| accumulator（DSP の PE: bank B 32 FF + mux 16 LUT、LUT の PE: 2 組 + 加算器 48 LUT） | 9k + 22k = 31k | 8k |
-| 入口の揃え 1.3k、変換器 5.8k + DSP 32、並べ替え 1k、FIFO 2.2k、制御/skew/tag 10 LUT/PE | 20k | 15k |
-| **reduction**（案 B）14k、**normalize** 12k、token buffer の制御 1k | 27k | 27k |
-| **合計** | **≈ 121k LUT、DSP 608、FF ≈ 75k、BRAM36 37**（先読み 4 + scale 1 + buffer 32） | **≈ 50k LUT、DSP 544、BRAM36 37** |
-
-  SA 構成の全体（§3.6）: 32 × 32 で ≈ 178k LUT（**87%、配線が閉じない恐れ**）、32 × 16 で ≈ 107k（52%）。**U31 の推し: p020 は 32 × 16、32 × 32 は p022 の後に LUT の PE を減らして（32 × 24: DSP 576 + LUT 192 ≈ 90k → 全体 ≈ 147k、72%）実測**。DSP: 2 × 86 + 1 + 608 = 781（93%）/ 717（85%）。
-- **性能（峰）**: 32 × 32 で 1024 MAC/cycle = 0.41 TOPS @200 MHz（MAC = 2 op）。案 B では attention・LN が **SA に律速（≈ 1 列/cycle）**で、A.5 の例は峰の 4〜5 割。
-- **状態と fault**: `STATUS[7] SA_BUSY`。HALT・quiesce・RESET は他の block と同じ（MC の client 2 つとも「新しい AR/AW を止め、応答を待つ」。abort は FAULT/RESET だけ）。reset で FIFO・accumulator・統計・token buffer は消える。
-
-### A.3 GHCI での見え方（標準の optional な capability）
-
-- `CAPS[25] SA`、`CAPS[27] GRAPHICS`（VF・RX・ROP が有る。SA 構成は 0: driver は compute の queue family だけ、firmware は draw を拒む）、extended capability `SA`（id 7、0x140〜0x14F）: `SA_CAPS`（[7:0] ROWS = 32、[15:8] COLS、[19:16] 入力の型の mask（[0] FP16 BFP、[1] FP16（FP の PE）、[2] INT8、[3] INT16）、[23:20] 重みの型（[0] INT8、[1] FP16、[2] INT16）、[27:24] log2(FIFO の深さ)、[28] DBUF、[29] tag、[30] reduction/normalize（案 B）、[31] memory の出力）、`SA_CAPS2`（[15:0] `SA_BUF_COLS`、[16] spill）、`SA_SU`（R）。
-- STATE の `SA` の範囲（0x1B0〜0x1BF）: 0 `SA_CTRL`（[2:0] 0 停止、1 run、[4:3] 入力の型、[5] acc を 0 に、[6] shader の `sactl` を許す、[7] BFP、[8] DBUF、[10:9] OUT（0 FP16、1 FP32）、[12:11] 重みの型、[14:13] **RED**（0 なし、1 softmax、2 LN）、[16:15] **ODST**（0 out-FIFO、1 memory、2 token buffer）、[17] AUTOFIN、[18] TWOPASS、[19] MASK、[20] SPILL）、1 `SA_W_BASE`、2 `SA_W_STRIDE`、3 `SA_K`、4 `SA_TILES`、5 `SA_W_TILE_STRIDE`、6 `SA_COLS_USED`、7 `SA_S_BASE`、8 `SA_S_TILE_STRIDE`、9 `SA_O_BASE`、10 `SA_O_STRIDE`、11 `SA_MASK_COL`、12 `SA_EPS`（LN の ε、FP32）、13〜15 reserved。
-- `DISPATCH` の flags[1] = SA。GSI1 の側: `rq`（63）、`qstat`（120）、`sastat`（121）、`qtag`（122）、`sactl.*`、header の flags[4]。**SA 構成で必須の optional の命令は無い**（案 B。`shfl` は有れば行の scale の合わせに使い、無ければ `lds`）。`CAPS[26]` と header の flags[5] は reserved（版 4 の packed の超越は取り下げ）。
-- FP の PE の実装（ASIC）も scale + PAD を受けて捨てる（kernel は同じ）。
-
-### A.4 zedBSD の側（§6.10）
-
-- Vulkan には systolic array の API が無い。`VK_KHR_cooperative_matrix` はこの SA の形では実装できない（版 3 の H8）。**見せ方の推し（U30）**: v1 は GHCI 固有の compute の経路: (b) `GPU_OP_GHCI_NATIVE`（試験の build）で `SET_REG` の `SA_*` + `LOAD_PROGRAM` + `DISPATCH(SA)`、kernel（指揮の `sactl` の列）は `gsi1asm.py`（p020・p022）。製品の経路（p021、WS288 の外）は (c) 独自の拡張 `VK_KEI_systolic_dispatch`（案 B では **指揮だけなので GEMM・attention・LN の全部を拡張の構造体（SA_* の設定の列）で表せる**: FP16 の IR は要らない）。
-- compute の use: driver は `CAPS[25]`・`CAPS[27]`・`SA_CAPS/2` を読み、拡張と capset に形と型と reduction の有無を名乗る。
-
-### A.5 案 B の流れ（attention と layer norm）と cycle 数（SA に律速）
-
-**取り下げた案**（記録）: 版 4 の最初の案は SU の packed FP16 の命令（`exp2h2` 等）と `rq` の pop/push で online の softmax/LN を SU の warp が 1 列ずつ処理する物で、1 warp で 25〜28 cycle/列（SA の 1 列/cycle の 1/25）、SU に packed の超越 5k LUT/SU と subgroup が要った。ユーザー「SUにベクトル命令と投機的オンラインsoftmaxの実装を考えましたが、ハードウェア効率が悪すぎるので、案BでSAに寄せましょう。SUはミニマルな形にしましょう。」で SA の段に移した（§10 の 34）。
-
-**SU の kernel（指揮だけ。attention の 1 head、query 32 token の block ごと）**:
-```
-sactl.ctl 4 (acquire) ; sactl.ctl 8 (reset)
-; S = Q·Kᵀ: Q の block を push（64 列 × 2 命令 = 128 命令）… または Q も memory から: ここでは SU が push
-SET SA_CTRL = run | BFP | DBUF | RED=softmax | ODST=buffer | MASK ; sactl.wbase K_block ; sactl.sbase K_scale ; sactl.k 64 ; sactl.tiles 4 ; sactl.ctl 1 (start)
-push scale+PAD ; push Q の 64 列（tile ごとに同じ Q を 4 回 push: 4 × 64 × 2 命令。または Q を memory から読む mode = v2）
-sactl.ctl 9 (wait) ; sactl.ctl 6 (finalize: r_i = 1/s_i)
-; O = P·V: feedback
-SET SA_CTRL = run | BFP | DBUF | ODST=memory ; sactl.wbase V ; sactl.sbase V_scale ; sactl.k 128 ; sactl.tiles 2 ; sactl.obase O ; sactl.ctl 7 (feedback)
-sactl.ctl 9 (wait) ; sactl.ctl 5 (release)
-```
-約 40 命令。SU の時間は Q の push（4 tile × 64 列 × 2 命令 × 2 cycle ≈ 1,000 cycle）だけで、残りは `wait` で止まっている（他の warp・SU1 は別の仕事を進められる）。
-
-**例 1: attention（1 head、N = 128 token、d = 64。K・V は INT8 + 列の scale、Q は FP16）、query 32 token の block ごと、SA 32 × 32**:
-- S の 4 tile: 入力 4 × 64 step、DBUF で重なり、stream-out 4 × 32 列 → **≈ 4 × 64 + 62 + 32 + 3 × 32（drain は 1 列/cycle、tile ごと）≈ 450 cycle**。reduction は stream-out と同じ 1 列/cycle（pipeline の遅れ ≈ 12）。生の x は token buffer に（128 列）。
-- finalize: 32 行の rcp ≈ 40 cycle。
-- feedback（P × V、128 列の P を normalize の段で作りながら入力、K = 128、出力 64 列 = 2 tile）: 2 × 128 step（P は buffer から 2 回読む）+ 62 + 32 + 32 ≈ **380 cycle**、出力は memory へ（64 line）。
-- block ≈ 450 + 40 + 380 ≈ **870 cycle**。4 block ≈ 3,500 cycle ≈ **17 µs @200 MHz（35 µs @100 MHz）**。MAC 2.1 M / 3,500 ≈ **600 MAC/cycle（32 × 32 の峰の 59%）**。32 × 16 では tile の数が倍で ≈ 6,000 cycle（峰 512 の 70%）。
-- **遅れ（最後の列から最初の正規化した出力まで）**: S の最後の列が reduction を出て（≈ 12）→ finalize（≈ 40）→ feedback の最初の列が normalize を通って配列に入る（≈ 10）→ 最初の出力の列が右の口に出る（K + 62 = 190）→ 並べ替え（32）→ **≈ 280 cycle**。
-**例 2: layer norm（32 token × d = 256。入力は前の段の projection の tile の stream）**: projection 8 tile（K = 256）≈ 8 × 256 + 62 + 32 + 7 × 32 ≈ 2,370 cycle で reduction が Welford を進め x を buffer に；finalize（rsqrt）≈ 48；feedback の TWOPASS: pass 1（y の max、256 列）256 + pass 2（正規化して次の tile の入力か memory へ）256 ≈ 520 → **≈ 2,950 cycle ≈ 15 µs @200 MHz**。遅れ（最後の列 → 最初の y）≈ 12 + 48 + 256（pass 1）+ 10 ≈ 330 cycle（TWOPASS 無し = memory へ出すだけなら ≈ 70）。
-**律速**: SA の配列（K step/tile + skew）と 1 列/cycle の段。SU は指揮だけで空く。v2: Q も memory から読む入口（SU の push を無くす）、SU ごとの SA。
-
-### A.6 ASIC の構成（parameter）
-
-- PE = FP16 × FP16 → FP32 の accumulate（`SA_CAPS[19:16]` の [1]。scale + PAD は受けて捨てる）。`SA_ROWS` = 32、`SA_COLS` は parameter（64・128）。reduction・normalize・token buffer は同じ形で幅だけ parameter。SA は SU ごとに 1 つ（README の LLM の流れ）。目標 800 MHz: 32 × 32 で 1.6 TOPS/SA。PE は SIMD 1（SIMD-8 は取り下げ: §10 の 33）。
