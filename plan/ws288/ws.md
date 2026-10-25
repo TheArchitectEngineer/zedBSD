@@ -74,7 +74,7 @@
 | [p013](phase013/phase.md) | KC705 の PCIe（BAR0 = GHCI、BAR2 = DDR3 の VRAM、MSI、VFIO） | p012、p024、p006 | planned（2026-10-25 01:08 Future Work から戻した） |
 | [p028](phase028/phase.md) | **最初のゴール**: QEMU の VFIO の passthrough の guest の zedBSD から KC705 の GPU で Vulkan | p011、p013、p006、p019、p024 | planned（2026-10-25 01:08 新設） |
 | [p029](phase029/phase.md) | PCIe の board で host の memory だけを使う（unified memory の検証、DDR3 無し） | p028 | planned（2026-10-25 02:06 新設） |
-| p014・p015・p016 | JTAG の vkdemo（p014）、複数の SU（p015）、規約の全文と GHCI 1.0（p016）（design §8） | design §8 | planned（ゴールの後） |
+| p014・p015・p016 | JTAG の vkdemo（p014）、複数の SU（p015）、規約の全文と GHCI 1.0（p016）（design §8）。p015 に **cache の blocking**（2026-10-25 09:15 ユーザー「遅延タイルはいらないけと、キャッシュブロッキングには必要だな」（tile-based rendering の説明の後）: TBDR はしない。描画の先と depth を 4×4 の tile（64 byte = KC705 の line）に並べ、RX の quad の順を tile の順にして ROP の color・depth の cache を効かせる）を入れる | design §8 | planned（ゴールの後） |
 | [p026](phase026/phase.md) | RTL の書き方の直し（STATE の番号に名前、source から WS・Phase の番号を外す）と短い sim（`make sim-quick`）。回路は変えない | なし | cleared（2026-10-25 01:02、amaterrace-gpu 1e1a90c） |
 | p023 | module の木・空の module・module ごとの spec（design §7.6）。part 1（P1）: まだ無い 86 module の port だけの Verilog と spec、`atg_top` の block の parameter、board の top、MC の router の木（2026-10-23 ユーザーの要求で `atg_rt` 等を実装）: [phase023](phase023/phase.md)。part 2（P2）: 既存の module の spec | p001（版 4）、p002、U37、U38 | cleared（2026-10-23 Q1: part 1（P1）= module の木の空の module と spec（CP・CPU・SU 24・VF・RX・TU・ROP・MC と router の木 atg_rt・DC・SA の port の予約・ZYBO と KC705 の board の top）、part 2（P2）= 既存 10 module の spec。lint 97/97 clean、sim 18/18 PASS。amaterrace-gpu main 98885bf まで） |
 
