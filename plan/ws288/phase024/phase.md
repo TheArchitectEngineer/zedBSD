@@ -27,3 +27,4 @@
 ## 記録
 
 - 2026-10-24 Q1: 新設。p012 の part B（板）と、p007・p008・p009 で後回しにした KC705 の確認をここに集める。
+- 2026-10-25 19:21 Q1: 板の要らない準備を先に（P2、q1582）: (1) MIG の core（atg_kc705_ddr3）を ip.tcl で作る（今は「p024 で」と書いて未作成）、port を読み戻して wrapper と lint の stub を合わせる。(2) gclk を板の bring-up 用に下げる: Fmax は合成の見積もりで約 23〜25 MHz なので、MMCM の gclk を 20 MHz に（Q1 の判断、ユーザーの「合成できて640x480などの小さな画面で出力できたら、それでよし」から。50 MHz は p025 の pipeline の後）、XDC の clock の制約と PCIe の user clock・MIG の ui_clk・pclk との clock group。(3) KC705 の board 全体（MIG・PCIe・DC を含む）の合成・配置配線・bitstream の生成を Vivado で（板は無しで）、使用量と 20 MHz の timing の結果。
