@@ -85,3 +85,23 @@ vkdemo の 1 frame の readback が参照と一致（Verilator）、fill・copy�
 - 削除の依頼（Q1 の pipeline で）: zedBSD の worktree の `build/tmp/p011-try`・`build/tmp/p011-dev`・`build/tmp/ghci-e2e.*`・`build/tmp/ghci-host.*`・`build/tmp/p011-fresh.log`・`build/p011`・`build/p011-make.log`、symlink `build/llvm`・`build/NoctLang`。amaterrace-gpu の worktree の `build/verilator-link`・`build/fw-host`・`build/fw-cp`・`build/sim`・`build/lint-p011.log`・`build/link-build-run.log`。
 - 2026-10-25 11:32 Q1: amaterrace-gpu の p3-p011 0b19d6b を main に（aa78b64）、zedBSD の agent/p3-p006 e2ead179a を main に（895147e55）。merge した両方の main で `AMATERRACE_GPU=~/amaterrace-gpu plan/ws288/tests/ghci-e2e.sh` が 8 行 PASS、vkdemo の oracle の mismatch 0・checked 76,045、sha256 6a446b50…e9ac（P3 の 3 回と同じ）（Q1 が流した）。画像は build/review/ws288-p011-vkdemo-4x.png。→ **cleared**。RTL の全体は T1-784。
   - 性能の残件（Q1 の判断、推し）: vkQueueSubmit の返事が GPU の仕事の終わりまで返らない（firmware が packet の中で記録を再生し WAIT_IDLE で止まる）→ firmware が再生の前に frame の結果を書いて返す形にする（firmware だけの変更、Vulkan の submit は待たない原則）。次の担当に。LINK_READ_CYCLES を PCIe に近い値にした計測は未。
+
+## 追記: vkQueueSubmit を待たずに返す（q1574-i01 の 1、2026-10-25 P3）
+
+- 2026-10-25 11:45 P3（amaterrace-gpu p3-p035 基点 aa78b64 → 398a738、zedBSD agent/p3-p006）: 実装・host 試験・Verilator の端から端の run。判定は Q1。
+- **形**: firmware の QUEUE_SUBMIT は command buffer を確かめて（session の executable な primary か、one-time なら INVALID に）list（16 個）に置くだけにし、replay は packet の結果（record の結果・frame の結果）を書いて flush し RESULT を上げた後に走らせ、その後に DONE（`fw/cp/submit.c` の `fw_submit_run`、`fw/cp/packet.c`）。frame の中で submit でない record の前には list の replay を先に走らせる（後の command は前の submit の仕事を見る: 今までの順序と同じ）。list が満ちたら先に走らせる。malformed な submit は自分の entry を落とし one-time の状態を戻す。
+- **Q1 の推しとの違い（P3 の判断）**: 「replay を packet の外（DONE の後）」は採らなかった。DONE で CP は次の ring の packet（driver が packet の後に置く FENCE）へ進むので、replay が DONE の後だと FENCE が仕事より先に走り fence が早く signal される。RESULT を先に・DONE を replay の後に、で FENCE の順序と後の packet の順序は変わらない。代わりに ring は replay の間は次の packet を取らない（今と同じ。後の transaction は GPU の仕事の後になる）。
+- **fault・session**: replay が RESULT の後に失敗（recording の line を memory が拒む、marker の失敗）したら、その session を lost にし、後の QUEUE_SUBMIT は VK_ERROR_DEVICE_LOST で何も走らせない（Vulkan 1.0: device lost は後の command で知らせてよい、fence は success でもよい）。session の close は packet なので replay の後。RESET は CPU の .bss を消すので list も消える。watchdog・fault・halt の扱いは packet の中のままで不変。
+- **GHCI の文**（docs/ghci.md §7.2）: result は「decoded and checked」、submit は仕事を待たない（firmware は RESULT の後に仕事を渡してよい、後の submit でない command と RING_RPTR の通過の前には渡す、driver は RPTR・RESULT を「渡した」と取らない、渡す時の失敗は session を lost に）。fw/cp/README.md も。driver は変えていない（frame の完了は result page で判断し、RPTR を使わない: vk-engine.c の frame_ready を確認。staging は decode の後には読まない）。
+- 計測（zedBSD `plan/ws288/tests/ghci-e2e-main.c` に `__wrap_vkQueueSubmit` で vkQueueSubmit が返るまでの cycle を足した、`ghci-e2e.sh` の wrap に `--wrap=vkQueueSubmit`）:
+
+| case | vkQueueSubmit が返るまで（前、aa78b64） | 後（398a738） |
+| --- | --- | --- |
+| fill | 21,932 | 3,711 |
+| copy | 31,078 | 3,723 |
+| compute | 9,863 | 3,711 |
+| vkdemo の frame | 829,816 | 3,723 |
+
+  vkdemo の frame 全体は 1,090,343 → 1,092,309 cycle（1 frame をすぐ待つので変わらない。job の commit → fence は 147,734 → 974,933 で、仕事の時間が fence の側に移った）。
+- 確認（自分で実行、件数は出力で数えた）: `fw/cp/tests/run.sh` fwtest 6/6・kernels 2/2（新しい check 5 つ: RESULT が replay の前、replay が RESULT の後に走り fill が入る、frame の中の submit の後の reset の前に replay、その fill。前の firmware に戻すと「RESULT before the submit's replay」が FAIL を確認）、`tools/fw-build.sh` warning 0・IMEM 61,032 B / 64 KiB（+452 B）・DMEM image 3,616 B、`AMATERRACE_GPU=<p3-p035> plan/ws288/tests/ghci-e2e.sh` の PASS 8 行（link-build・fill・copy・compute・vkdemo・ghci-e2e・vkdemo-oracle・ghci-e2e.sh）、oracle mismatch 0・checked 76,045、sha256 6a446b50…e9ac（前と同じ）。
+- T に: `sim/verilator/fw-run.sh`（firmware の harness、fwtest の scene に新しい step が入った）、`make sim-quick`（RTL は不変なので回帰の確認だけ）。

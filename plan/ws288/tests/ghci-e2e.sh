@@ -90,9 +90,10 @@ compile "$kernel -I$gpu/sim/verilator" "$tests/ghci-e2e-kernel.c"
 compile "$host -I$gpu/sim/verilator" "$tests/ghci-e2e-core.c"
 compile "$host -I$gpu/sim/verilator -I$vkdemo" "$tests/ghci-e2e-main.c"
 
-# One program; libvulkan's calls of the C library go to the fake core.
+# One program; libvulkan's calls of the C library go to the fake core, and the cases' vkQueueSubmit
+# (vkdemo's too) to the measure in ghci-e2e-main.c.
 wrap="-Wl,--wrap=open,--wrap=close,--wrap=ioctl,--wrap=mmap,--wrap=munmap,--wrap=poll,--wrap=fcntl"
-wrap="$wrap,--wrap=opendir,--wrap=readdir,--wrap=closedir,--wrap=clock_gettime,--wrap=nanosleep"
+wrap="$wrap,--wrap=opendir,--wrap=readdir,--wrap=closedir,--wrap=clock_gettime,--wrap=nanosleep,--wrap=vkQueueSubmit"
 # shellcheck disable=SC2086
 c++ $sanitize -o "$out/ghci-e2e" $objects $linkflags $wrap -lm
 if [ "$cases" = build ]; then
