@@ -17,6 +17,18 @@ Q1 の説明（MC に AXI を 2 本付けるより、1 本のまま行き先ご�
 3. **KC705 での利用**: board top で MC → am_axi_split → (0) MIG（DDR3）、(1) PCIe の bridge の GPU → host の AXI の slave（p013 の口、P2 と調整。p013 の v1 の DECERR の端の代わりに本物の口へ）。BAR2 の経路（MIG の前の interconnect）とは別。
 4. driver・firmware の置き場所の方針（ring・fence を host に置くなど）は範囲の外（必要なら後の Phase）。
 
+## 設計（P2 2026-10-25 17:16、Q1 が転記。P2 の worktree p1-p039 に 60d6e25 を merge = 0ed7436）
+
+- D1 行き先の判定は parameter: MC の root が grant の後の line（保護の walk を含む）を [LOCAL_BASE, LOCAL_BASE+LOCAL_BYTES) なら local、他は host。LOCAL_* は atg_top の parameter = GHCI の MEM の LOCAL_BASE/LOCAL_SIZE（read-only）。register にすると board の固定の振り分け（am_axi_split の parameter）と食い違い得るため。
+- D2 GHCI の追加: MEM の capability に +0xC HOST_LIMIT（R）「LOCAL の外で HOST_LIMIT より下の GPU address が host に届く。0 = 2^32 まで」。どちらでもない address は bus error（fault kind 5）。driver は host の buffer を local の外かつ HOST_LIMIT の下に置く。KC705 = 0x8000_0000。atg_cp_regs の 0x1CC。**zedBSD の driver（p006 の範囲）がこの word を読む必要がある。**
+- D3 AXI ID 1 bit: 0 = local、1 = host。LOCAL_BYTES = 0（unified）は全部 ID 0。atg_top に m_awid/m_arid/m_bid/m_rid。
+- D4 client ごとの順序は am_axi_master で: 要求は順序の key（client 番号、walk は 0xFF）を持ち、ID・方向ごとの FIFO（新 am_fifo_key）が outstanding の key を持つ。同じ方向・同じ key の burst が別の ID に outstanding の間は受けない。読みと書きは方向ごと（AMB の規則のまま）。応答は ID ごとの FIFO、BEATS > 1 は ID ごとの組み立ての buffer。BLT の host → local の copy は読み・書きの方向が別なので待たない。
+- D5 保護・aperture は不変（分類はその後）。D6 quiesce・flush・axi_idle は両方の ID を見る。unit_idle は不変。
+- D7 DC の root の自分の entry は最優先のまま、DC が待つのは自分の別の行き先の outstanding の時だけ。
+- D8 am_axi_split（rtl/common）: slave 1 → master 2、parameter の範囲（range 0 優先、burst の開始 address で判定、4 KiB 境界）、ID・方向ごとの count と行き先、別の行き先に outstanding のある ID の要求は待つ、W は AW の順（deadlock を避ける）、範囲外は DECERR、B は round-robin・R は burst 単位で合流、幅と clock は不変。
+- D9 KC705: LOCAL_BASE 0x8000_0000・LOCAL_BYTES 1 GiB・HOST_LIMIT 0x8000_0000。range 0 = local → MIG、range 1 = [0, 2 GiB) → PCIe の GPU → host（512 bit・gclk・ID 4、中で 512 → 128 の幅の変換と clock の変換）。MIG の口に ID は無い（構成上 ID 0 だけ）。sim の model に host memory、board TB で CP の debug port から host の窓に読み書き。
+- 注意: MC の既存の算術（atg_mc_cnt・atg_mc_prot）は p037 の範囲で未変換。P1 が MC を書き換える時に atg_mc.v・am_axi_master.v と衝突し得る → MC の p037 は p039 の後。
+
 ## 受け入れ
 
 - am_axi_split の TB（範囲の振り分け、ID ごとの応答、同じ ID の待ち、DECERR）PASS、MC の TB に 2 つの行き先の場合（client ごとの順序が保たれる）を足して PASS、lint clean、arith-lint で新しい code が 0。
