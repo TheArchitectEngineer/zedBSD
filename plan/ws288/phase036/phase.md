@@ -22,3 +22,4 @@ Vivado の測定の結果と module の内訳、機能を変えない削減の�
 ## 記録
 
 - 2026-10-25 09:43 Q1: 新設（T1-776 の oxc-core の結果から）。
+- 2026-10-25 11:01 P2 → Q1（測定の段）: Vivado 2026.1 の OOC の合成（xc7k325t、KC705 の board top の parameter と MS4=1、NSU 1、基点 5262af6）で **LUT 421,947（207%）**・FF 86,960・BRAM36 換算 99・DSP 530。T1-776 の yosys と同じ形を Vivado で測ると LUT 298,488（yosys 245k より多い: yosys の過大ではない）。上位: ROP 163k（atg_rop_wpix 74k・atg_rop_fblend 69k、format の pack・unpack が汎用の関数で format が可変）、SU 161k（opd の行 112k は FPU・PK の組み合わせ、FPU 16 lane で約 33k・PK 約 51k）、TU 37.5k、BLT 26k（resolve の px 11k・srgbenc 5.6k）、RX 17k。commit 35ff7b9: FPU の演算器の共有（lane 2,421 → 2,074 LUT、DSP 17 → 6）、PK の fp16 の FMA と compare の共有（lane 3,191 → 1,780 LUT）で SU は推定 −28k LUT・−176 DSP。次は ROP の pack・unpack の format の定数化（機能は同じ）。
