@@ -32,9 +32,13 @@
 #include "ghci.h"
 #include "hcr.h"
 #include "packets.h"
+#include "vk/vk-node.h"
 
-/* The interrupts the driver takes from the command processor. */
-#define IRQ_TAKEN			(GHCI_IRQ_FENCE | GHCI_IRQ_FAULT | GHCI_IRQ_WATCHDOG)
+/*
+ * The interrupts the driver takes from the command processor: the fence,
+ * a fault, the watchdog, and the firmware's results of a frame.
+ */
+#define IRQ_TAKEN			(GHCI_IRQ_FENCE | GHCI_IRQ_FAULT | GHCI_IRQ_WATCHDOG | GHCI_IRQ_RESULT)
 
 /* Every bit of IRQ_STATUS, cleared at the start. */
 #define IRQ_ALL				0x1ffU
@@ -370,6 +374,30 @@ ghci_cp_last(
 }
 
 /*
+ * Reports the fence the GPU has completed, read afresh from the fence page.
+ */
+uint32_t
+ghci_cp_completed(
+	struct ghci_device *device)
+{
+	unsigned long irq;
+	uint32_t completed;
+
+	/* The fence page may have moved without an interrupt yet. */
+	refresh_completed(device);
+
+	/* The completed value, read with the interrupt's lock. */
+	irq = spin_lock_irqsave(&device->irq_lock);
+
+	completed = device->completed;
+
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+
+	/* Reports the value. */
+	return completed;
+}
+
+/*
  * Reports whether a ticket is done.
  */
 int
@@ -435,12 +463,21 @@ ghci_cp_interrupt(
 	if (status == 0U)
 		return handled;
 
-	/* A fence wrote the fence page: the waiters and the reclaim look again. */
+	/* A fence wrote the fence page: the waiters, the job markers and the reclaim look again. */
 	if ((status & GHCI_IRQ_FENCE) != 0U) {
 		refresh_completed(device);
 		irq = spin_lock_irqsave(&device->irq_lock);
 
-		device->service_work |= GHCI_WORK_RECLAIM;
+		device->service_work |= GHCI_WORK_RECLAIM | GHCI_WORK_REPLY;
+
+		spin_unlock_irqrestore(&device->irq_lock, irq);
+	}
+
+	/* The firmware wrote a frame's results: the service thread completes its replies. */
+	if ((status & GHCI_IRQ_RESULT) != 0U) {
+		irq = spin_lock_irqsave(&device->irq_lock);
+
+		device->service_work |= GHCI_WORK_REPLY;
 
 		spin_unlock_irqrestore(&device->irq_lock, irq);
 	}
@@ -584,6 +621,13 @@ ghci_service_step(
 
 	/* Work that stopped moving resets it too. */
 	service_hang_check(device);
+
+	/*
+	 * The executor's frames whose results are in and its job markers whose
+	 * fences passed, before the reclaim: a frame's reply blob is held
+	 * until its replies are written.
+	 */
+	ghci_vk_service(device);
 
 	/* Memory the GPU is done with goes back. */
 	mutex_lock(&device->lock);
@@ -836,6 +880,10 @@ recover(
 
 	/* The sessions whose work was in flight lose it. */
 	fail_sessions(device, generation);
+
+	/* The firmware restarted: the executor's frames and objects are gone, and it takes its heap again. */
+	if (error == 0)
+		ghci_vk_reset(device);
 }
 
 /* Reports the loss to every session whose last submission belonged to an ended generation. */

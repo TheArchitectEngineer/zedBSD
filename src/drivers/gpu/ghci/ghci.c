@@ -30,10 +30,12 @@
 #include <uapi/errno.h>
 #include <uapi/gpu.h>
 #include <uapi/gpu-display.h>
+#include <uapi/gpu-op.h>
 
 #include "ghci.h"
 #include "hcr.h"
 #include "packets.h"
+#include "vk/vk-node.h"
 
 /* The major version of GHCI the driver knows. */
 #define KNOWN_MAJOR			1U
@@ -66,6 +68,8 @@ static int gpu_resource_write(void *private_data, void *opaque, void *object, ui
 static int gpu_resource_map(void *private_data, void *opaque, void *object, struct drv_gpu_mapping *mapping);
 static int gpu_command(void *private_data, void *opaque, const void *stream, uint32_t bytes);
 static int allocation_make(struct ghci_device *device, struct ghci_session *session, enum ghci_memory_use use, uint64_t bytes, int blob, struct ghci_allocation **result);
+static int blob_of_memory(struct ghci_device *device, struct ghci_session *session, uint64_t identity, struct ghci_allocation **result);
+static void session_give_back(struct ghci_device *device, struct ghci_session *session);
 static int allocation_range(const struct ghci_allocation *allocation, uint64_t offset, uint32_t length);
 static void allocation_unlist(struct ghci_session *session, struct ghci_allocation *allocation);
 
@@ -122,6 +126,15 @@ ghci_device_start(
 		return error;
 	}
 
+	/*
+	 * The Vulkan executor, when the command processor has firmware that
+	 * decodes gpu-ops and the GPU has a shader unit.  A GPU without one
+	 * still serves its memory, its native commands and its display.
+	 */
+	error = ghci_vk_engine_start(device);
+	if (error != 0)
+		kern_logf("ghci: %s: no Vulkan executor (%d)\n", device->name, error);
+
 	/* Finds the display controller, if the GPU has one, and starts it. */
 	error = ghci_display_attach(device);
 	if (error != 0)
@@ -131,21 +144,23 @@ ghci_device_start(
 	error = register_device(device);
 	if (error != 0) {
 		ghci_display_detach(device);
-		ghci_service_stop(device);
 		ghci_cp_stop(device);
+		ghci_service_stop(device);
+		ghci_vk_engine_stop(device);
 		ghci_memory_fini(device);
 		return error;
 	}
 
-	/* Says what the device is: its version, capabilities, memory and display. */
-	kern_logf("ghci: %s: ready (GHCI %u.%u, caps %08x, local %u MiB, window %u MiB, display %u)\n",
+	/* Says what the device is: its version, capabilities, memory, display and executor. */
+	kern_logf("ghci: %s: ready (GHCI %u.%u, caps %08x, local %u MiB, window %u MiB, display %u, vulkan %u)\n",
 	    device->name,
 	    (unsigned)(device->version >> 16),
 	    (unsigned)(device->version & 0xffffU),
 	    (unsigned)device->caps,
 	    (unsigned)(device->local_size >> 20),
 	    (unsigned)(device->local_window >> 20),
-	    (unsigned)device->display.present);
+	    (unsigned)device->display.present,
+	    (unsigned)(device->vk != NULL));
 
 	/* Succeeded: the device is published. */
 	return 0;
@@ -182,6 +197,9 @@ ghci_device_stop(
 	ghci_display_detach(device);
 	ghci_cp_stop(device);
 	ghci_service_stop(device);
+
+	/* The executor's heap and staging ring go back with the rest. */
+	ghci_vk_engine_stop(device);
 
 	/* Gives every allocation that waited for the GPU back, and the allocators' tables. */
 	mutex_lock(&device->lock);
@@ -455,6 +473,7 @@ static int
 register_device(
 	struct ghci_device *device)
 {
+	int native;
 	int error;
 
 	/* The table every device has. */
@@ -472,11 +491,22 @@ register_device(
 	device->ops.resource_write = gpu_resource_write;
 	device->ops.resource_map = gpu_resource_map;
 
-	/* A test kernel's native command, for root only. */
-	if (CONFIG_GHCI_NATIVE && ghci_native_command != NULL) {
+	/*
+	 * The command operation: a test kernel's native command, for root
+	 * only.  libvulkan needs the capability too, but sends its frames
+	 * through the queued submission of the executor.
+	 */
+	native = 0;
+	if (CONFIG_GHCI_NATIVE && ghci_native_command != NULL)
+		native = 1;
+	if (native || device->vk != NULL) {
 		device->ops.capabilities |= GPU_CAP_COMMAND;
 		device->ops.command = gpu_command;
 	}
+
+	/* The Vulkan executor's capset, frames, jobs and recovery, when the device has one. */
+	if (device->vk != NULL)
+		ghci_vk_node_bind(device);
 
 	/* The display controller's operations, when the GPU has one. */
 	if (device->display.present) {
@@ -558,9 +588,16 @@ gpu_open(
 		error = tag_take(device, &session->tag);
 	}
 
+	/* The session's executor, which opens the firmware's session of the tag. */
+	session->device = device;
+	if (error == 0 && device->vk != NULL) {
+		error = ghci_vk_session_open(device, session);
+		if (error != 0)
+			tag_give(device, session->tag);
+	}
+
 	/* Lists the session with the device. */
 	if (error == 0) {
-		session->device = device;
 		session->next = device->sessions;
 		device->sessions = session;
 		device->session_count++;
@@ -588,7 +625,6 @@ gpu_close(
 	struct ghci_device *device;
 	struct ghci_session *session;
 	struct ghci_session **position;
-	struct ghci_allocation *allocation;
 
 	device = private_data;
 	session = opaque;
@@ -599,13 +635,12 @@ gpu_close(
 	/* The display lease ends first, so its frame is no longer scanned from the session's memory. */
 	ghci_display_session_close(device, session);
 
+	/* The executor closes the firmware's session and forgets its objects. */
+	if (session->vk != NULL)
+		ghci_vk_session_close(device, session);
+
 	/* Each allocation goes back now, or after the session's last fence. */
-	while (session->allocations != NULL) {
-		allocation = session->allocations;
-		session->allocations = allocation->next;
-		session->allocation_count--;
-		ghci_memory_release(device, allocation);
-	}
+	session_give_back(device, session);
 
 	/* Finds the session on the device's list. */
 	position = &device->sessions;
@@ -697,8 +732,7 @@ gpu_resource_destroy(
 	 */
 	mutex_lock(&device->lock);
 
-	allocation_unlist(opaque, allocation);
-	ghci_memory_release(device, allocation);
+	ghci_allocation_drop(device, opaque, allocation);
 
 	mutex_unlock(&device->lock);
 
@@ -727,9 +761,17 @@ gpu_blob_create(
 	if ((request->flags & ~BLOB_FLAGS) != 0U)
 		return ENOTSUP;
 
-	/* A blob of a Vulkan memory object needs the Vulkan executor, which this device has not. */
-	if (request->blob_id != 0U)
-		return EINVAL;
+	/* A blob of a Vulkan memory object shows that object's memory. */
+	if (request->blob_id != 0U) {
+		error = blob_of_memory(private_data, opaque, request->blob_id, &allocation);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the blob is the session's, named by the memory's GPU address. */
+		*result = allocation;
+		*resource_id = allocation->gpu_address;
+		return 0;
+	}
 
 	/* A mappable blob is memory the processor reaches; another is the GPU's own. */
 	use = GHCI_USE_DEVICE;
@@ -874,8 +916,20 @@ gpu_command(
 	uint32_t bytes)
 {
 	const struct ucred *credentials;
+	const uint32_t *words;
 	int superuser;
 	int error;
+
+	/* Only the native command comes this way; a kernel without it takes none. */
+	words = stream;
+	if (bytes < 4U)
+		return EINVAL;
+	if (words[0] != GPU_OP_GHCI_NATIVE)
+		return ENOTSUP;
+	if (!CONFIG_GHCI_NATIVE)
+		return ENOTSUP;
+	if (ghci_native_command == NULL)
+		return ENOTSUP;
 
 	/* Native packets reach memory directly, so only root sends them. */
 	credentials = cred_current();
@@ -892,9 +946,38 @@ gpu_command(
 	return 0;
 }
 
-/* Makes a cleared allocation for a session and lists it. */
+/* Makes a cleared allocation for a session and lists it, under the device's lock. */
 static int
 allocation_make(
+	struct ghci_device *device,
+	struct ghci_session *session,
+	enum ghci_memory_use use,
+	uint64_t bytes,
+	int blob,
+	struct ghci_allocation **result)
+{
+	int error;
+
+	/* Everything is done under the device's lock. */
+	mutex_lock(&device->lock);
+
+	error = ghci_allocation_make(device, session, use, bytes, blob, result);
+
+	mutex_unlock(&device->lock);
+
+	/* Reports memory that could not be had. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the allocation is the session's. */
+	return 0;
+}
+
+/*
+ * Makes a cleared allocation for a session and lists it.
+ */
+int
+ghci_allocation_make(
 	struct ghci_device *device,
 	struct ghci_session *session,
 	enum ghci_memory_use use,
@@ -912,21 +995,14 @@ allocation_make(
 	if (bytes > GHCI_RESOURCE_MAX_BYTES)
 		return EINVAL;
 
-	/* Everything below is under the device's lock. */
-	mutex_lock(&device->lock);
-
 	/* Refuses a session that holds as many resources as it may. */
-	if (session->allocation_count >= GHCI_SESSION_RESOURCES) {
-		mutex_unlock(&device->lock);
+	if (session->allocation_count >= GHCI_SESSION_RESOURCES)
 		return ENOSPC;
-	}
 
 	/* The memory. */
 	error = ghci_memory_alloc(device, session, use, bytes, &allocation);
-	if (error != 0) {
-		mutex_unlock(&device->lock);
+	if (error != 0)
 		return error;
-	}
 
 	/*
 	 * The memory may hold what another session left: it is cleared
@@ -947,7 +1023,6 @@ allocation_make(
 	if (error != 0) {
 		ghci_cp_last(device, &ticket);
 		ghci_memory_defer(device, allocation, &ticket);
-		mutex_unlock(&device->lock);
 		ghci_service_wake(device, GHCI_WORK_RECLAIM);
 		return error;
 	}
@@ -958,11 +1033,155 @@ allocation_make(
 	session->allocations = allocation;
 	session->allocation_count++;
 
-	mutex_unlock(&device->lock);
-
 	/* Succeeded: the allocation is the session's. */
 	*result = allocation;
 	return 0;
+}
+
+/*
+ * Takes an allocation off its session's list and gives it back.
+ */
+void
+ghci_allocation_drop(
+	struct ghci_device *device,
+	struct ghci_session *session,
+	struct ghci_allocation *allocation)
+{
+	/* Off the list, then back now, after the session's last fence, or after its last user. */
+	allocation_unlist(session, allocation);
+	ghci_memory_release(device, allocation);
+}
+
+/*
+ * Finds a blob of a session by its resource id.
+ */
+struct ghci_allocation *
+ghci_allocation_blob(
+	struct ghci_session *session,
+	uint32_t resource_id)
+{
+	struct ghci_allocation *allocation;
+
+	/* Zero names nothing. */
+	if (resource_id == 0U)
+		return NULL;
+
+	/* Looks at each of the session's allocations for a blob of that address. */
+	for (allocation = session->allocations;
+	     allocation != NULL;
+	     allocation = allocation->next) {
+		/* Storage and Vulkan memory are not blobs. */
+		if (!allocation->blob)
+			continue;
+
+		/* The blob the id names. */
+		if (allocation->gpu_address == resource_id)
+			return allocation;
+	}
+
+	/* No blob of the session has that id. */
+	return NULL;
+}
+
+/*
+ * Makes the blob of a Vulkan memory object: a record that shows the
+ * memory's allocation and holds it, so the memory stays while the blob
+ * is mapped even when the memory object is freed first.
+ */
+static int
+blob_of_memory(
+	struct ghci_device *device,
+	struct ghci_session *session,
+	uint64_t identity,
+	struct ghci_allocation **result)
+{
+	struct ghci_allocation *backing;
+	struct ghci_allocation *alias;
+	int error;
+
+	/* The blob's record. */
+	alias = kern_calloc(1U, sizeof(*alias));
+	if (alias == NULL)
+		return ENOMEM;
+
+	/* The memory object, under the device's lock. */
+	mutex_lock(&device->lock);
+
+	error = 0;
+	backing = NULL;
+	if (device->vk == NULL) {
+		error = EINVAL;
+	} else if (session->allocation_count >= GHCI_SESSION_RESOURCES) {
+		error = ENOSPC;
+	} else {
+		error = ghci_vk_memory_blob(device, session, identity, &backing);
+	}
+
+	/* The blob shows the same memory and holds it; it is listed as the session's. */
+	if (error == 0) {
+		alias->session = session;
+		alias->kind = backing->kind;
+		alias->gpu_address = backing->gpu_address;
+		alias->bytes = backing->bytes;
+		alias->requested = backing->requested;
+		alias->view = backing->view;
+		alias->physical = backing->physical;
+		alias->blob = 1;
+		alias->backing = backing;
+		ghci_memory_hold(backing);
+		alias->next = session->allocations;
+		session->allocations = alias;
+		session->allocation_count++;
+	}
+
+	mutex_unlock(&device->lock);
+
+	/* A memory object the session does not have. */
+	if (error != 0) {
+		kern_free(alias);
+		return error;
+	}
+
+	/* Succeeded: the blob is the session's. */
+	*result = alias;
+	return 0;
+}
+
+/*
+ * Gives every allocation of a closing session back: the blobs that show
+ * Vulkan memory first, so the memory they hold is let go before it is
+ * given back itself.  The device's lock is held.
+ */
+static void
+session_give_back(
+	struct ghci_device *device,
+	struct ghci_session *session)
+{
+	struct ghci_allocation **position;
+	struct ghci_allocation *allocation;
+
+	/* The blobs of Vulkan memory. */
+	position = &session->allocations;
+	while (*position != NULL) {
+		allocation = *position;
+		if (allocation->backing == NULL) {
+			position = &allocation->next;
+			continue;
+		}
+
+		/* Unlinks it and lets the memory it shows go. */
+		*position = allocation->next;
+		session->allocation_count--;
+		ghci_memory_release(device, allocation);
+	}
+
+	/* Then everything else, now or after the session's last fence. */
+	while (session->allocations != NULL) {
+		allocation = session->allocations;
+		session->allocations = allocation->next;
+		session->allocation_count--;
+		ghci_memory_release(device, allocation);
+	}
 }
 
 /* Checks that a copy stays inside what the caller asked the allocation for. */

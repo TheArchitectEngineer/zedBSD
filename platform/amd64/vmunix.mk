@@ -282,6 +282,13 @@ AMD64_GHCI_SOURCES += src/drivers/gpu/ghci/ghci.c src/drivers/gpu/ghci/pci-attac
 	src/drivers/gpu/ghci/compiler/gsi1-io.c src/drivers/gpu/ghci/compiler/gsi1-memory.c \
 	src/drivers/gpu/ghci/compiler/gsi1-texture.c src/drivers/gpu/ghci/compiler/gsi1-image.c \
 	$(filter-out $(AMD64_I915_SOURCES) $(AMD64_NVRTX_SOURCES) $(AMD64_AMDRDNA_COMPILER_SOURCES),src/drivers/gpu/compiler/spirv.c src/drivers/gpu/compiler/optimize.c)
+# Its Vulkan executor, a checking relay to the command processor's firmware, with the i915 executor's wire
+# codec it shares (built here only when no other driver builds it).
+AMD64_GHCI_SOURCES += src/drivers/gpu/ghci/vk/vk-engine.c src/drivers/gpu/ghci/vk/vk-node.c \
+	src/drivers/gpu/ghci/vk/vk-session.c src/drivers/gpu/ghci/vk/vk-stream.c src/drivers/gpu/ghci/vk/vk-device.c \
+	src/drivers/gpu/ghci/vk/vk-format.c src/drivers/gpu/ghci/vk/vk-memory.c src/drivers/gpu/ghci/vk/vk-program.c \
+	src/drivers/gpu/ghci/vk/vk-relay.c \
+	$(filter-out $(AMD64_I915_SOURCES) $(AMD64_NVRTX_SOURCES) $(AMD64_AMDRDNA_VK_SOURCES),src/drivers/gpu/i915/render/codec.c)
 ifeq ($(CONFIG_GHCI_NATIVE),y)
 AMD64_GHCI_SOURCES += src/drivers/gpu/ghci/native.c
 endif
