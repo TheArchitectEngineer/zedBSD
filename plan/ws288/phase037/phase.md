@@ -65,3 +65,4 @@
 - 2026-10-25 21:41 Q1 訂正（分け方の誤り）: atg_cp_* は P2 が既に書き換えていた（p2-p037cm c0bd4db、MC と一緒、等価 PASS）。P4 は CP をやめ、include/atg_su_fp16.vh と atg_su_pk へ（P1 の c5b1299 から）。P1 は atg_su_fp.vh と atg_su_fpu。P2 は CPU（atg_cpu_*）を仕上げて CP・MC を 1 つの SHA で。
 - 2026-10-25 21:43 P1 → Q1（申告）: atg_su_h2f（am_add 1、旧と 300k 一致）と atg_su_hrnd（am_add 2、旧と 1M 一致）を module に = aca7a95（親 c5b1299、spec あり）、P4 に渡した。favg は P3、ffma の module の SHA が出たら P3 が付け替える。P1 の次: atg_su_rnd（1M 一致）→ ffma・rint・i2f・fadd → fpu。
 - 2026-10-25 21:51 ユーザー「いったんP1をラップアップしてください。」→ P1 に通常のラップアップを依頼（安全な commit の地点で記録と引き継ぎを残して止まる）。
+- 2026-10-25 21:52 ユーザー「P1は動作時間が非常に長くなっており、正常にタスクを処理できなくなっていると判断しました。」→ Q1 が P1（a95cd50…、p034 から続いた長い起動）を止めた。状態: amaterrace p1-p037 の commit の先端 aca7a95（atg_su_h2f・hrnd）。未 commit: rtl/gpu/su/atg_su_rnd.v（P1 の申告で旧と 1M 一致）・spec/gpu/su/atg_su_rnd.md・rtl/gpu/su/atg_su_ffma.v・atg_su_ffma_p.v（未検証）。zedBSD の agent/p1-p030 は 066157c6a のまま（ラップアップの記録は書かれなかった）。新しい P1 を同じ名前で起動し、未 commit の file を検証してから続ける。
