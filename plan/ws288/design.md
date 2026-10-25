@@ -2455,6 +2455,14 @@ R2・R3・R4 は R1 の後に並行できる。R6 は P2 の p018 が main に�
 
 全文は [design-review-p034.md](design-review-p034.md)。1 回目（design-reviewer、2026-10-25、33 件: Critical 2・High 5・Medium 16・Low 10）と 2 回目（同日、21 件: Critical 1・High 3・Medium 6・Low 11）の全部を本文に反映した。2 回目の主な変更: slot を消す時に resid を MIXED に（N1）、export buffer の scrub（N2）、表は PROT_TABLE を書く前に driver が 0 にし PROT_TABLE は protected の session が無い間だけ書ける（N3）、内蔵の領域の granule の整列（N4）、DC を root の別の入口に（N5）、同じ client の順序（N6）、drain に木の chk = 1 の要求の counter と window の drained（N7）、INV の pending の bit と 32 bit の数（N8）、share と合成の identity（N9・N15）、module の表の追加（N10）。
 
+### 17.22 実装の段で設計から変えた事（2026-10-25 P1、q1575-i01。amaterrace-gpu p1-p034）
+
+- **確認の結果**: C1 = TU の busy は自分の要求と応答を覆わない、CPU の DMA の write の応答はどの busy にも無い → MC に `unit_idle`（CP と DC 以外の client の、leaf が取ってから応答までの counter、`atg_mc_cnt`）を足し、DRAIN と、PROT に依らず CP の FENCE・WAIT_IDLE（flags に依らず）・RESULT・QUERY の待ち（seq の busy の bit 0）に入れた（Q1 の指示）。C2 = 記録は自己完結（STATE の cache は記録の中の `fw_rstate.emitted` だけ）→ U66 のまま。DC: KC705 の gclk は **100 MHz**（§17.0・§17.7・§17.11 の 200 MHz は誤り。scrub は約 62 µs、交代 300 回/s で ≈1.9%）、pixel FIFO 2048 で 720p に約 2760 cycle の余裕。
+- **置き場所**: `atg_cp_prot` は `atg_cp` の子ではなく `atg_top` の中で `atg_cpu` の横（PROT は firmware が要る。`atg_cp` は既に 439 行）。MC は `atg_mc_prot` の他に `atg_mc_plb`・`atg_mc_asm`・`atg_mc_cnt` に分けた（各 400 行以内）。CP の client 0 の side band は `am_amb_mux` を変えずに、mux が選んだ requester が fence unit の時だけ付ける。
+- **MC**: 重なる 2 度目の INV も受けて walk をもう一度 stale にする（§17.5 の「受けず」より安全。firmware は PROT_INFO[3] を待つので繰り返さない）。CAM の grant は PLB の miss でも許す（walk 不要）。tbase = 0 の chk の要求と slot 0 の chk（public の read 以外）は拒む。拒んだ read の data は 0 を全部の構成で。
+- **CP**: resid の「SU の RAM が書かれた印」は SU から取らず、`atg_cp_prot` が SU を使う µop（BLIT 以外の unit の µop）の kick で数える。SU の scrub は既存の write port に mux で足す（RAM の宣言と読みは不変、P2 の BRAM の点検と重ならないように。Q1 の指示）。PROT_TABLE を lock の間に書くのは無視（kind 7 の fault は出さない、GHCI の文も直す）。CTRL.RESET で PROT_TABLE は 0。
+- **残り（未実施）**: host の KICK は切り替えを通らない（IDLE と HALTED だけで受ける）、DRAIN の間の watchdog の tag、合成の timing。
+
 ## Appendix A. SA の設計の sketch（**延期**。2026-10-23 ユーザー「SAの設計と実装はかなり後に回して、SUがきちんとISAを実装できてからにします。」SU が GSI1 を実装した後に設計し直す。計画の critical path には無い。版 4 の review（§14）の 33 件に対応した時点の案で、**README の 0.8 TOPS/SU（×2）は満たしていない**（1 MAC/PE/cycle）。KC705 の SA 構成の数字も参考のみ）
 
 ユーザー（版 3）:「シェーダISAのレジスタのうち、1つをreservedにできる？このレジスタはFIFOにつながってて、systolic arrayのwavefrontのリードやライトに使えるよ。シェーダユニットはオプションでsystolic array (SA)を持つことができ、SAのPEの横方向にシェーダISAからFIFOでRWアクセスできるよ。SAはSUの中にあるわけではなく、SAとSUはdecoupledなユニットだよ。SAにはMCから重みをストリーミングできるよ。」
