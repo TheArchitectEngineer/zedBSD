@@ -68,6 +68,7 @@ ghci_vk_engine_start(
 	struct ghci_device *device)
 {
 	struct ghci_vk_engine *engine;
+	uint32_t resident;
 	int error;
 
 	/* A command processor without firmware decodes no gpu-op: such a GPU has no Vulkan device. */
@@ -85,8 +86,14 @@ ghci_vk_engine_start(
 	if (engine == NULL)
 		return ENOMEM;
 
-	/* The warps the GPU runs at once, which the firmware sizes the programs' scratch by. */
-	engine->warps = ghci_read(device, GHCI_RESIDENT_WARPS) & 0xffffU;
+	/*
+	 * The warps the GPU runs at once, which the firmware sizes the
+	 * programs' scratch by, and the registers of a lane, which the
+	 * compiler allocates within (0 on a GPU that does not say: 32).
+	 */
+	resident = ghci_read(device, GHCI_RESIDENT_WARPS);
+	engine->warps = GHCI_RESIDENT_WARPS_COUNT(resident);
+	engine->registers = GHCI_RESIDENT_WARPS_NREGS(resident);
 
 	/* The heap, the control page and the staging ring: memory of the device's own. */
 	mutex_lock(&device->lock);

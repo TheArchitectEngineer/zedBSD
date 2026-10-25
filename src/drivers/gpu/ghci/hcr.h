@@ -41,7 +41,9 @@
 #define GHCI_IRQ_ENABLE 0x03Cu
 #define GHCI_IRQ_SET 0x040u
 #define GHCI_WDT_CYCLES 0x044u
-#define GHCI_RESIDENT_WARPS 0x04Cu	/* R: [15:0] the warps the GPU runs at once (NSU x NWARPS) */
+#define GHCI_RESIDENT_WARPS 0x04Cu	/* R: [15:0] the warps the GPU runs at once (NSU x NWARPS), [23:16] registers per lane */
+#define GHCI_RESIDENT_WARPS_COUNT(v) ((v) & 0xFFFFu)
+#define GHCI_RESIDENT_WARPS_NREGS(v) (((v) >> 16) & 0xFFu) /* general registers per lane (32 or 64) */
 #define GHCI_RING_BASE 0x050u
 #define GHCI_RING_SIZE 0x054u
 #define GHCI_RING_WPTR 0x058u
@@ -228,6 +230,9 @@
 #define GHCI_S_BLT_CLIP_MIN (GHCI_S_BLT + 9u)
 #define GHCI_S_BLT_CLIP_MAX (GHCI_S_BLT + 10u)
 #define GHCI_S_BLT_RESOLVE (GHCI_S_BLT + 11u) /* RESOLVE (draft, CAPS[29]) */
+#define GHCI_S_BLT_COLOR1 (GHCI_S_BLT + 12u) /* CAPS[30]: bits 63:32 of a wide FILL */
+#define GHCI_S_BLT_COLOR2 (GHCI_S_BLT + 13u)
+#define GHCI_S_BLT_COLOR3 (GHCI_S_BLT + 14u)
 
 /*
  * The other ranges.  docs/ghci.md section 8.3 defines the program range;
@@ -296,6 +301,8 @@
 /* TU (docs/ghci.md section 8.4): slot s's words, TEX_IMAGE, TEX_SAMPLER
  * and TEX_LOD. */
 #define GHCI_S_TEX(s, w) (GHCI_S_TU + 16u * (s) + (w))
+#define GHCI_S_TU_VS 0x200u /* CAPS[30]: the vertex stage's 16 slots */
+#define GHCI_S_TEX_VS(s, w) (GHCI_S_TU_VS + 16u * (s) + (w))
 #define GHCI_TEX_BASE 0u /* level 0 of layer 0, a multiple of 64 */
 #define GHCI_TEX_SIZE 1u /* [15:0] width, [31:16] height */
 #define GHCI_TEX_IMAGE 2u
@@ -303,6 +310,8 @@
 #define GHCI_TEX_SAMPLER 4u
 #define GHCI_TEX_LOD 5u
 #define GHCI_TEX_FORMAT 6u /* CAPS[30], docs/ghci.md section 8.5 */
+#define GHCI_TEX_ROW 7u /* [1:0]: rows of w_l rounded up to 2^n texels (0: packed) */
+#define GHCI_TROW_ALIGN(n) ((unsigned)(n) & 3u) /* 1: an attachment's even rows */
 #define GHCI_TFMT_VKFORMAT(f) ((unsigned)(f) & 0xFFu) /* 0: TEX_IMAGE's format */
 #define GHCI_TFMT_STENCIL (1u << 8) /* the stencil aspect of D24_UNORM_S8_UINT */
 #define GHCI_TFMT_SWIZZLE(r, g, b, a) /* VkComponentSwizzle */ \
@@ -369,9 +378,18 @@
 #define GHCI_BLT_RSV_UNORM8 (0u << 4) /* BLT_RESOLVE[7:4]: the average */
 #define GHCI_BLT_RSV_UNORM565 (1u << 4)
 #define GHCI_BLT_RSV_SAMPLE0 (2u << 4)
+#define GHCI_BLT_RSV_SRGB8_A8 (3u << 4)
+#define GHCI_BLT_RSV_SFLOAT16 (4u << 4)
+#define GHCI_BLT_RSV_SFLOAT32 (5u << 4)
+#define GHCI_BLT_RSV_UNORM2_10_10_10 (6u << 4) /* CAPS[30] */
+#define GHCI_BLT_RSV_UNORM1555 (7u << 4) /* CAPS[30] */
 #define GHCI_BLT_RSV_TILED (1u << 8)
 #define GHCI_BLT_BLEND_OVER (1u << 4)
 #define GHCI_BLT_BPP16 (1u << 8)
+#define GHCI_BLT_BPP64 (2u << 8) /* CAPS[30] */
+#define GHCI_BLT_BPP8 (3u << 8) /* CAPS[30] */
+#define GHCI_BLT_BPP128 (1u << 13) /* CAPS[30], with [9:8] = 0 */
+#define GHCI_BLT_KEEP(m) (((unsigned)(m) & 0xFu) << 16) /* CAPS[30]: bytes of a 32-bit pixel kept */
 #define GHCI_BLT_REVERSE (1u << 12)
 #define GHCI_XY(x, y) (((unsigned)(y) << 16) | ((unsigned)(x) & 0xFFFFu))
 

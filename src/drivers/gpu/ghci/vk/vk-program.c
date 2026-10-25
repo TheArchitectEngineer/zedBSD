@@ -848,10 +848,10 @@ fill_options(
 	uint32_t attachment;
 	uint32_t index;
 
-	/* The GPU: its constant bank, its varying words and its sample mask input. */
+	/* The GPU: its registers, its constant bank, its varying words and its sample mask input. */
 	gpu = build->session->device;
 	kern_memset(options, 0, sizeof(*options));
-	options->registers = 0U;
+	options->registers = gpu->vk->registers;
 	options->bank_words = GHCI_CAPS2_CONST_WORDS(gpu->caps2);
 	options->varying_words = VARYING_WORDS_BASIC;
 	if ((gpu->caps & CAPS_VULKAN_CORE) != 0U)
