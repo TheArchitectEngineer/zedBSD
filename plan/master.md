@@ -11,7 +11,7 @@
 -->
 
 <!-- master:agents:start -->
-- **2026-10-25 10:16 自走中（ユーザーは就寝、推しで進める。判断の記録 [ws288/q1-decisions-20261025.md](ws288/q1-decisions-20261025.md)）**: WS288。cleared: p009・p010・p026・p027・p031・p006・p018・p019。p030 は S11 だけ残る。動いている: P1 = p034 の設計、P2 = p036（KC705 の面積: yosys で LUT 245k > 203.8k）、P3 = p011（端から端の統合）。
+- **2026-10-25 10:16 自走中（ユーザーは就寝、推しで進める。判断の記録 [ws288/q1-decisions-20261025.md](ws288/q1-decisions-20261025.md)）**: WS288。cleared: p009・p010・p026・p027・p031・p006・p018・p019・**p011（2026-10-25 11:32、vkdemo の 1 frame が Verilator の上で oracle と一致）**。p030 は S11（P1）。p036（P2）: Vivado で LUT 422k = KC705 の 207%、形を変える削減はユーザーに諮る。
 - amaterrace-gpu の main は 252a11e（T1-783: make sim 97・firmware の harness 6 case 一致）。zedBSD・amaterrace-gpu とも push していない。
 <!-- master:agents:end -->
 

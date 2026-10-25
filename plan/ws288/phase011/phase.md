@@ -3,7 +3,7 @@
 # ws288-p011 端から端の統合（Verilator の上で libvulkan → vk/ → firmware → RTL）
 
 - 親: [WS288](../ws.md)。設計: [design.md](../design.md) §8 の p011 の行（H6 の場）、§6.7、§6.8（試験の道）。
-- 状態: planned（2026-10-25 09:59 Q1 新設）。p019 の merge の後に P3 に。
+- 状態: cleared（2026-10-25 11:32 Q1。vkdemo の 1 frame が Verilator の上で oracle と一致）
 - 依存: p009・p027・p030（RTL）、p010（compiler）、p018（firmware、P2 の Verilator の firmware の harness `sim/verilator/fw_harness.cpp`・`fw-run.sh`）、p019（vk/、zedBSD の host 試験に model の GPU と stand-in の firmware）、p006（driver）。
 - 承認: 2026-10-25 ユーザー「…そのあと、p010,p018,p019,p006,p011を実装します。…」「ゴールまで推しで進んでよいです。判断に迷ったら、Vulkan 1.0の原則論で進めてください。…」
 
@@ -83,3 +83,5 @@ vkdemo の 1 frame の readback が参照と一致（Verilator）、fill・copy�
 - 性能の所見（vkQueueSubmit の返事が GPU の仕事の終わりまで遅れる）の扱いは Q1 の判断。
 - link の read の往復（`LINK_READ_CYCLES`）を PCIe の値にした計測は未実施。
 - 削除の依頼（Q1 の pipeline で）: zedBSD の worktree の `build/tmp/p011-try`・`build/tmp/p011-dev`・`build/tmp/ghci-e2e.*`・`build/tmp/ghci-host.*`・`build/tmp/p011-fresh.log`・`build/p011`・`build/p011-make.log`、symlink `build/llvm`・`build/NoctLang`。amaterrace-gpu の worktree の `build/verilator-link`・`build/fw-host`・`build/fw-cp`・`build/sim`・`build/lint-p011.log`・`build/link-build-run.log`。
+- 2026-10-25 11:32 Q1: amaterrace-gpu の p3-p011 0b19d6b を main に（aa78b64）、zedBSD の agent/p3-p006 e2ead179a を main に（895147e55）。merge した両方の main で `AMATERRACE_GPU=~/amaterrace-gpu plan/ws288/tests/ghci-e2e.sh` が 8 行 PASS、vkdemo の oracle の mismatch 0・checked 76,045、sha256 6a446b50…e9ac（P3 の 3 回と同じ）（Q1 が流した）。画像は build/review/ws288-p011-vkdemo-4x.png。→ **cleared**。RTL の全体は T1-784。
+  - 性能の残件（Q1 の判断、推し）: vkQueueSubmit の返事が GPU の仕事の終わりまで返らない（firmware が packet の中で記録を再生し WAIT_IDLE で止まる）→ firmware が再生の前に frame の結果を書いて返す形にする（firmware だけの変更、Vulkan の submit は待たない原則）。次の担当に。LINK_READ_CYCLES を PCIe に近い値にした計測は未。
