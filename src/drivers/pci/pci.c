@@ -242,7 +242,7 @@ static void pci_intx_unmask_after_message(struct pci_irq_cookie *cookie);
 static void pci_irq_dispatch(int irq, kern_irq_ack_t acknowledge, void *argument);
 static int message_register(struct pci_irq_cookie *cookie, const char *source, uint64_t *address, uint32_t *event);
 static int message_unregister(struct pci_irq_cookie *cookie);
-static void message_run(void *argument);
+static int message_run(void *argument);
 static void pci_intx_dispatch(int irq, kern_irq_ack_t acknowledge, void *argument);
 static int describe_visit(struct drv_pci_device *device, void *argument);
 static bool pci_probe_waits(const struct drv_pci_device *device);
@@ -3844,16 +3844,16 @@ message_unregister(
 }
 
 /*
- * Runs a host's message interrupt for its cookie; the host ends its own
- * interrupt afterwards.
+ * Runs a host's message interrupt for its cookie and reports whether the
+ * handler found work; the host ends its own interrupt afterwards.
  */
-static void
+static int
 message_run(
 	void *argument)
 {
 	struct pci_irq_cookie *cookie = argument;
 
-	(void)cookie->handler(cookie->argument);
+	return cookie->handler(cookie->argument);
 }
 
 /* Serves one interrupt and hands it to the right handler. */

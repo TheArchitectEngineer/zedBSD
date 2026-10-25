@@ -73,13 +73,26 @@
  * the data a function writes being its vector.  Linux
  * drivers/pci/controller/plda/pcie-plda.h (GPL-2.0), values only --
  * IMSI_ADDR 0x190, ISTATUS_MSI 0x194, PM_MSI_INT_MSI bit 28,
- * PLDA_MAX_NUM_MSI_IRQS 32 -- the same values, read to check them; no
- * code is taken from it (the user, 2026-10-26: "Linux も値だけ参考").
+ * PLDA_MAX_NUM_MSI_IRQS 32 -- the same values, read to check them, and
+ * the message address 0x190 its StarFive host gives functions when the
+ * message address register is not read (the JH7110's reads 0, seen on the
+ * VisionFive 2 on 2026-10-26); no code is taken from it (the user,
+ * 2026-10-26: "Linux も値だけ参考").
  */
 #define PLDA_INTERRUPT_MSI		0x10000000U
 #define PLDA_MSI_ADDRESS		0x190U
 #define PLDA_MSI_STATUS			0x194U
 #define PLDA_MSI_VECTORS		32U
+#define PLDA_MSI_DEFAULT_ADDRESS	0x190U
+
+/*
+ * How many times one interrupt reads the message status, how many times a
+ * handler that found no work is run again, and how many register reads
+ * the wait between those runs is.
+ */
+#define PLDA_MSI_PASSES			8U
+#define PLDA_MSI_RETRIES		8U
+#define PLDA_MSI_SETTLE_READS		16U
 
 /* The capability that describes a function's MSI. */
 #define PCI_CAPABILITY_MSI		0x05U
@@ -229,6 +242,7 @@ struct drv_pci_plda {
 	unsigned messages_used;
 	uint32_t msi_address;
 	bool msi_ready;
+	bool late_message_noted;
 	const struct drv_pci_plda_window *bar_window;
 	uint64_t window_next;
 	struct drv_dma_device *dma;
@@ -267,6 +281,8 @@ static void host_intx_mask(void *context, unsigned vector);
 static void host_intx_unmask(void *context, unsigned vector);
 static int host_msi_establish(void *context, struct drv_pci_device *device, drv_pci_msi_run_t run, void *argument, unsigned *handle, uint64_t *address, uint32_t *data);
 static int host_msi_disestablish(void *context, unsigned handle);
+static void settle(struct drv_pci_plda *host);
+static void note_late_message(struct drv_pci_plda *host, unsigned vector, unsigned retries);
 static void serve_messages(struct drv_pci_plda *host);
 static void start_messages(struct drv_pci_plda *host);
 static void write_interrupt_mask(struct drv_pci_plda *host);
@@ -1895,11 +1911,15 @@ write_interrupt_mask(
  * The address is the block's own: the function writes its vector there.
  * Procedure referenced: OpenBSD sys/arch/riscv64/dev/stfpcie.c 1.4 (ISC),
  * the attach: the message address is read from the register, not set.
+ * A register that reads 0 gives the address the StarFive block is known
+ * to receive at (Value(s) referenced above).
  */
 static void
 start_messages(
 	struct drv_pci_plda *host)
 {
+	uint32_t address;
+
 	/* Leaves the messages off where the tree does not ask for them. */
 	if (!host->config.msi)
 		return;
@@ -1907,16 +1927,17 @@ start_messages(
 	/* Clears what any earlier owner of the block left raised. */
 	register_write(host, PLDA_MSI_STATUS, 0xffffffffU);
 
-	/* Reads the address and refuses an empty one. */
-	host->msi_address = register_read(host, PLDA_MSI_ADDRESS);
-	if (host->msi_address == 0) {
-		kern_logf("pcie%u: MSI address register reads 0; MSI unavailable\n", host->config.segment);
-		return;
-	}
+	/* Reads the address; an empty register means the block's known one. */
+	address = register_read(host, PLDA_MSI_ADDRESS);
+	host->msi_address = address != 0 ? address : PLDA_MSI_DEFAULT_ADDRESS;
 
 	/* Succeeded: functions may be offered MSI. */
 	host->msi_ready = true;
-	kern_logf("pcie%u: MSI at %x, %u vectors\n", host->config.segment, host->msi_address, PLDA_MSI_VECTORS);
+	kern_logf("pcie%u: MSI at %x (register %x), %u vectors\n",
+		  host->config.segment,
+		  host->msi_address,
+		  address,
+		  PLDA_MSI_VECTORS);
 }
 
 /*
@@ -2059,10 +2080,58 @@ host_msi_disestablish(
 }
 
 /*
+ * Waits a short while in interrupt context, by reading the block's
+ * interrupt mask PLDA_MSI_SETTLE_READS times.
+ */
+static void
+settle(
+	struct drv_pci_plda *host)
+{
+	unsigned read;
+
+	for (read = 0; read < PLDA_MSI_SETTLE_READS; read++)
+		(void)register_read(host, PLDA_INTERRUPT_MASK);
+}
+
+/*
+ * Notes, once per host, a message whose handler found its work only when
+ * run again.
+ */
+static void
+note_late_message(
+	struct drv_pci_plda *host,
+	unsigned vector,
+	unsigned retries)
+{
+	if (host->late_message_noted)
+		return;
+	host->late_message_noted = true;
+	kern_logf("pcie%u: MSI %u found its work after %u retries (the message came before the data)\n",
+		  host->config.segment,
+		  vector,
+		  retries);
+}
+
+/*
  * Runs each message vector that arrived.
  *
- * The message status is acknowledged before the handlers, since a message
- * is an edge: one that arrives while they run raises its bit again.
+ * The message status is read and acknowledged first, then the block's
+ * message bit: on the JH7110, with the message bit cleared first, the bit
+ * was raised again once the message status was acknowledged (seen on the
+ * VisionFive 2 on 2026-10-26), and each message brought one more interrupt
+ * with nothing to serve.  A message that
+ * arrives after the status was read raises its bits again; one that
+ * arrives in between is taken by reading the status again after the
+ * handlers, until it reads 0.  A message is an edge: its status is
+ * acknowledged before its handler.
+ *
+ * On the JH7110 a message can also arrive before the memory writes the
+ * function made before sending it are seen (seen on the VisionFive 2 on
+ * 2026-10-26: the NVMe controller's first completion was not in memory
+ * when its message was served, and no other message came).  A handler
+ * that finds no work is run again after a short wait, up to
+ * PLDA_MSI_RETRIES times.
+ *
  * Procedure referenced: OpenBSD sys/arch/riscv64/dev/stfpcie.c 1.4 (ISC),
  * the message handler: read the status, write it back, run each bit's
  * handler.
@@ -2076,44 +2145,63 @@ serve_messages(
 	unsigned long enabled;
 	uint32_t status;
 	unsigned vector;
+	unsigned pass;
+	unsigned retry;
 	void *argument;
+	int handled;
 
-	/* Reads which vectors arrived and acknowledges them. */
-	status = register_read(host, PLDA_MSI_STATUS);
-	if (status == 0)
-		return;
-	register_write(host, PLDA_MSI_STATUS, status);
+	/* Serves the vectors until the message status reads 0. */
+	for (pass = 0; pass < PLDA_MSI_PASSES; pass++) {
+		/* Reads which vectors arrived and acknowledges them, then the message bit. */
+		status = register_read(host, PLDA_MSI_STATUS);
+		if (status != 0)
+			register_write(host, PLDA_MSI_STATUS, status);
+		register_write(host, PLDA_INTERRUPT_STATUS, PLDA_INTERRUPT_MSI);
+		if (status == 0)
+			break;
 
-	/* Runs each arrived vector that a cookie owns. */
-	for (vector = 0; vector < PLDA_MSI_VECTORS; vector++) {
-		/* Skips a vector that did not arrive. */
-		if ((status & (1U << vector)) == 0)
-			continue;
+		/* Runs each arrived vector that a cookie owns. */
+		for (vector = 0; vector < PLDA_MSI_VECTORS; vector++) {
+			/* Skips a vector that did not arrive. */
+			if ((status & (1U << vector)) == 0)
+				continue;
 
-		/* Takes the vector's entry and counts this interrupt on it. */
-		enabled = spin_lock_irqsave(&host->lock);
+			/* Takes the vector's entry and counts this interrupt on it. */
+			enabled = spin_lock_irqsave(&host->lock);
 
-		message = &host->messages[vector];
-		run = message->run;
-		argument = message->argument;
-		if (run != NULL)
-			message->in_flight++;
+			message = &host->messages[vector];
+			run = message->run;
+			argument = message->argument;
+			if (run != NULL)
+				message->in_flight++;
 
-		spin_unlock_irqrestore(&host->lock, enabled);
+			spin_unlock_irqrestore(&host->lock, enabled);
 
-		/* An empty vector is not served. */
-		if (run == NULL)
-			continue;
+			/* An empty vector is not served. */
+			if (run == NULL)
+				continue;
 
-		/* Runs the cookie's handler with the host lock released. */
-		run(argument);
+			/* Runs the cookie's handler with the host lock released. */
+			handled = run(argument);
 
-		/* Gives the vector back to a waiting removal. */
-		enabled = spin_lock_irqsave(&host->lock);
+			/*
+			 * Runs it again, a little later, while it finds no work:
+			 * the message can arrive before the function's data.
+			 */
+			for (retry = 0; handled == 0 && retry < PLDA_MSI_RETRIES; retry++) {
+				settle(host);
+				handled = run(argument);
+			}
+			if (retry != 0 && handled != 0)
+				note_late_message(host, vector, retry);
 
-		message->in_flight--;
+			/* Gives the vector back to a waiting removal. */
+			enabled = spin_lock_irqsave(&host->lock);
 
-		spin_unlock_irqrestore(&host->lock, enabled);
+			message->in_flight--;
+
+			spin_unlock_irqrestore(&host->lock, enabled);
+		}
 	}
 }
 
@@ -2188,8 +2276,11 @@ host_interrupt(
 		spin_unlock_irqrestore(&host->lock, enabled);
 	}
 
-	/* Acknowledges what was read, only after every pin's handler. */
-	register_write(host, PLDA_INTERRUPT_STATUS, status);
+	/*
+	 * Acknowledges what was read, only after every pin's handler; the
+	 * message bit is the messages' own to clear.
+	 */
+	register_write(host, PLDA_INTERRUPT_STATUS, status & ~PLDA_INTERRUPT_MSI);
 
 	/* Runs the messages that arrived. */
 	if ((status & PLDA_INTERRUPT_MSI) != 0)

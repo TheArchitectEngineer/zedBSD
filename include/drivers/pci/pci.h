@@ -134,12 +134,13 @@ typedef void (
 	void *);
 
 /*
- * Runs the handler of one message interrupt and returns.
+ * Runs the handler of one message interrupt and returns what the handler
+ * returned: nonzero when it found work.
  *
  * Like drv_pci_intx_run_t it sends no end of interrupt: the host that
  * received the message ends its own interrupt once.
  */
-typedef void (
+typedef int (
 	*drv_pci_msi_run_t)(
 	void *);
 
@@ -249,7 +250,8 @@ struct drv_pci_bus_ops {
 	 * msi_disestablish, and the address and data the function writes.
 	 * The host calls run(argument) from its own interrupt each time the
 	 * message arrives, without its own lock held, and ends its interrupt
-	 * itself, once.  It returns 0, ENOSPC when no message is free, or
+	 * itself, once.  A host whose messages can pass the function's earlier
+	 * writes may call run again while it reports no work.  It returns 0, ENOSPC when no message is free, or
 	 * another error.
 	 *
 	 * msi_disestablish frees the message and waits until no hart is still

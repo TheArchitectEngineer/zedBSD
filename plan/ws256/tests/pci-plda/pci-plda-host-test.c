@@ -100,6 +100,7 @@ struct fake_rc {
 	void *argument;
 	unsigned unmasks;
 	unsigned msi_acknowledges;
+	uint64_t msi_acknowledge_sequence;
 };
 
 /* A device's handler as the check sees it. */
@@ -108,6 +109,7 @@ struct fixture {
 	void *cookie;
 	unsigned calls;
 	uint64_t sequence;
+	unsigned empty_runs;
 };
 
 /* The two fake root complexes, set up by main(). */
@@ -518,6 +520,7 @@ kern_mmio_write32(
 		if (offset == REG_MSI_STATUS) {
 			put32(rc->apb, offset, get32(rc->apb, offset) & ~value);
 			rc->msi_acknowledges++;
+			rc->msi_acknowledge_sequence = ++sequence;
 			return;
 		}
 		if (offset == REG_FUNCTION_WORD) {
@@ -780,7 +783,7 @@ main(
 	check(second.calls == 2U && eoi_calls == 7U, "host 1 still serves its pin");
 
 	/* Only the MSI controller node offers messages. */
-	check(strstr(log_text, "pcie1: MSI at 190, 32 vectors") != NULL, "host 1 reads its message address");
+	check(strstr(log_text, "pcie1: MSI at 190 (register 190), 32 vectors") != NULL, "host 1 reads its message address");
 	check(strstr(log_text, "pcie0: MSI") == NULL, "host 0, not an MSI controller, offers no messages");
 	count = 0;
 	error = drv_pci_device_allocate_irqs(first.device, DRV_PCI_IRQ_ALLOW_MSI, 1, 1, &irq, &count);
@@ -801,12 +804,15 @@ main(
 	check(get32(rcs[1].apb, REG_MASK) == (STATUS_INTA | STATUS_MSI), "host 1 lets messages through beside INTA");
 	check(get32(rcs[0].apb, REG_MASK) == 0, "host 0's mask is untouched");
 
-	/* A message: the local status is acknowledged before the handler, then the vector's. */
+	/* A message: its status is acknowledged before the message bit, both before the handler. */
 	put32(rcs[1].apb, REG_MSI_STATUS, 0x1U);
 	interrupt(&rcs[1], STATUS_MSI, 0x808U);
 	check(third.calls == 1U && second.calls == 2U, "the message runs its handler alone");
-	check(rcs[1].acknowledged == STATUS_MSI && rcs[1].acknowledge_sequence < third.sequence, "the local status is acknowledged before the message's handler");
-	check(get32(rcs[1].apb, REG_MSI_STATUS) == 0, "the message status is acknowledged");
+	check(rcs[1].msi_acknowledge_sequence != 0 && rcs[1].msi_acknowledge_sequence < third.sequence,
+	      "the message status is acknowledged before the handler");
+	check(rcs[1].acknowledged == STATUS_MSI && rcs[1].msi_acknowledge_sequence < rcs[1].acknowledge_sequence,
+	      "the message bit is acknowledged after the message status");
+	check(get32(rcs[1].apb, REG_MSI_STATUS) == 0 && get32(rcs[1].apb, REG_STATUS) == 0, "both bits are cleared");
 	check(eoi_calls == 8U && last_acknowledge == 0x808U, "one EOI for a message");
 	check(handler_with_lock == 0, "the message handler runs with no host lock held");
 
@@ -814,11 +820,30 @@ main(
 	put32(rcs[1].apb, REG_MSI_STATUS, 0x1U);
 	interrupt(&rcs[1], STATUS_MSI | STATUS_INTA, 0x909U);
 	check(third.calls == 2U && second.calls == 3U && eoi_calls == 9U, "a message and a pin together each run once, one EOI");
+	check(get32(rcs[1].apb, REG_STATUS) == 0, "the pin and the message bit are both acknowledged");
+
+	/* A message whose data comes later: the handler runs again until it finds work. */
+	third.empty_runs = 3;
+	put32(rcs[1].apb, REG_MSI_STATUS, 0x1U);
+	interrupt(&rcs[1], STATUS_MSI, 0xa0aU);
+	check(third.calls == 6U && third.empty_runs == 0, "a handler that finds nothing runs again, here 3 more times");
+	check(strstr(log_text, "pcie1: MSI 0 found its work after 3 retries") != NULL, "the late message is noted");
+	third.empty_runs = 100;
+	put32(rcs[1].apb, REG_MSI_STATUS, 0x1U);
+	interrupt(&rcs[1], STATUS_MSI, 0xb0bU);
+	check(third.calls == 15U && third.empty_runs == 91U, "a handler that never finds work runs 1 + 8 times");
+	check(eoi_calls == 11U, "one EOI each");
+	third.empty_runs = 0;
+
+	/* The message bit with no vector: cleared, nothing served. */
+	put32(rcs[1].apb, REG_MSI_STATUS, 0);
+	interrupt(&rcs[1], STATUS_MSI, 0xc0cU);
+	check(third.calls == 15U && get32(rcs[1].apb, REG_STATUS) == 0 && eoi_calls == 12U, "a message bit with no vector is cleared, nothing served");
 
 	/* A vector nobody owns is acknowledged and not served. */
 	put32(rcs[1].apb, REG_MSI_STATUS, 0x20U);
-	interrupt(&rcs[1], STATUS_MSI, 0xa0aU);
-	check(third.calls == 2U && get32(rcs[1].apb, REG_MSI_STATUS) == 0 && eoi_calls == 10U, "an unowned vector is acknowledged, not served");
+	interrupt(&rcs[1], STATUS_MSI, 0xd0dU);
+	check(third.calls == 15U && get32(rcs[1].apb, REG_MSI_STATUS) == 0 && eoi_calls == 13U, "an unowned vector is acknowledged, not served");
 
 	/* Taking the message off masks the messages again and disables MSI. */
 	error = drv_pci_device_disestablish_irq_checked(third.device, third.cookie);
@@ -827,7 +852,7 @@ main(
 	check((get32(msi, 0) & 0x00010000U) == 0, "MSI is disabled in the function");
 	put32(rcs[1].apb, REG_MSI_STATUS, 0x1U);
 	interrupt(&rcs[1], STATUS_MSI, 0xb0bU);
-	check(third.calls == 2U && eoi_calls == 11U, "a removed message is not served, the interrupt still ends");
+	check(third.calls == 15U && eoi_calls == 14U, "a removed message is not served, the interrupt still ends");
 
 	/* Reports the count. */
 	printf("pci plda: %u PASS, %u FAIL\n", passes, failures);
@@ -986,6 +1011,10 @@ fixture_handler(
 		handler_with_lock++;
 	fixture->calls++;
 	fixture->sequence = ++sequence;
+	if (fixture->empty_runs != 0) {
+		fixture->empty_runs--;
+		return 0;
+	}
 	return 1;
 }
 
