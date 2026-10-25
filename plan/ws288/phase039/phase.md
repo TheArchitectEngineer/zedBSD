@@ -3,7 +3,7 @@
 # ws288-p039 MC の行き先ごとの AXI の ID と、汎用の AXI の 2 つへの振り分けの module
 
 - 親: [WS288](../ws.md)。関係: [p013](../phase013/phase.md)（PCIe の bridge の GPU → host の AXI の slave）、[p029](../phase029/phase.md)（host の memory だけ）。
-- 状態: in-progress（2026-10-25 17:07 Q1、q1580 P2）
+- 状態: cleared（2026-10-25 21:03 Q1。amaterrace main 7f37a2e、T1-801・802 と merge の後の確認）
 - 依存: p034（MC の保護、main 464b3c7）。
 
 ## 決定（2026-10-25 17:07 ユーザー）
@@ -43,3 +43,4 @@ Q1 の説明（MC に AXI を 2 本付けるより、1 本のまま行き先ご�
 - 2026-10-25 18:50 Q1: main（cfc49dd、p035 と p013 の 1 vector の MSI を含む）と p039 の 575dcf6 は 15 file で衝突（P2 の p040 の試みで判明）。p039 は前の P2 の作 → 今の P2 が新しい branch p2-p039m（575dcf6 から）で main を merge して解く（MSI は main の 1 vector、DC は atg_top の中、MC の ID・am_axi_split・HOST_LIMIT は p039）。その版を T に回し main へ。T1-801（575dcf6）は参考の結果として扱う。
 - 2026-10-25 19:03 P2 → Q1（申告）: p2-p039m ea37240（親 575dcf6 cfc49dd）、11 file の衝突を解いた（atg_mc は p039 の am_axi_master の ID と p035 の ROOT_KEEP の両方、atg_mc_tb は case D・E（ROOT_KEEP）と p039 の 2 つの行き先を case F に、board top は DC を atg_top の中・1 vector の MSI と p039 の split・HOST_LIMIT・m_*id、atg_kc705_pcie は p039 の s_clk・host_dn と 1 vector）。lint 158 clean、MC・CP・DC・top・KC705・PCIe の 18 の TB PASS、e2e（zedBSD main 8b624aebd）9 PASS・display を含む・mismatch 0・stray 0。T1-802 に回した。
 - 2026-10-25 20:21 Q1: P2 の 0b5e89e（atg_top_disp_tb の m_bid・m_rid を 0 に、atg_top_disp PASS）で T1-802 の唯一の FAIL を直した → amaterrace-gpu の main（3629a4e、p037 の SU・VF・BLT を含む）に merge = 7f37a2e（衝突なし）。merge の後の lint・sim-quick・TB 7 本・fw-run・ghci-e2e を Q1 が実行中。
+- 2026-10-25 21:03 Q1: 7f37a2e の merge の後の確認: lint rc 0・160 clean・warning 0、sim-quick rc 0・108 PASS・0 FAIL、TB 7 本（atg_top_disp・atg_mc・am_axi_split・atg_kc705_pcie・atg_kc705_raster・atg_su・atg_blt）PASS、fw-run 6 case 0 differ、ghci-e2e rc 0・9 PASS・mismatch 0。→ **p039 は cleared**。残り: axi_pcie の posted write の BRESP と fence の順序（p024 か PG055）。
