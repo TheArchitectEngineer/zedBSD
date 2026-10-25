@@ -56,3 +56,4 @@
 - 2026-10-25 17:31 p035 の D6 の後半（Verilator の e2e で画面を点ける）の mode: atg_dc_mode に試験だけの小さな mode の parameter を足し、link-build（Verilator の e2e）でだけその mode を名乗らせる（driver は変えない。hardware が名乗る mode から driver が選ぶ、という Vulkan・GHCI の原則のまま）。720p は Verilator で 1 frame 約 124 万 pixel clock で重すぎるため。
 - 2026-10-25 17:31 GHCI の minor の version は D8 で上げない（MSAA・PROT と同じく、release の時にまとめて）。
 - 2026-10-25 19:21 KC705 の板の bring-up の gclk は 20 MHz（Fmax の見積もり約 23〜25 MHz に余裕を持たせる。ユーザーの「合成できて640x480などの小さな画面で出力できたら、それでよし」。50 MHz は p025 の pipeline の後）。
+- 2026-10-25 20:35 取り消し: KC705 の bring-up の gclk 20 MHz（ユーザー「20MHzも低すぎます」）。
