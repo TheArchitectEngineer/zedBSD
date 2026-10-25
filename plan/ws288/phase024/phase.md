@@ -3,7 +3,7 @@
 # ws288-p024 KC705 の板での確認
 
 - 親: [WS288](../ws.md)。設計: [design.md](../design.md) §8 の p024 の行。
-- 状態: planned（2026-10-24 Q1。新設: ユーザー「タイミングの調整と KC705 での確認は別なフェーズに分けた方がいいと思います。」、その前に「タイミングの調整はまだ行わないので、KC705 での動作確認は後にします。実装を優先し、次のフェーズへ進んでも OK です。」）
+- 状態: in-progress（2026-10-26 KC705 の JTAG の構成で DONE が上がらない、P1 が調べる）（2026-10-24 Q1。新設: ユーザー「タイミングの調整と KC705 での確認は別なフェーズに分けた方がいいと思います。」、その前に「タイミングの調整はまだ行わないので、KC705 での動作確認は後にします。実装を優先し、次のフェーズへ進んでも OK です。」）
 - 依存: [p012](../phase012/phase.md)（KC705 の RTL）。timing（[p025](../phase025/phase.md)）は待たない: 低い clock で確かめる。
 
 ## 方針（2026-10-25 04:28）
@@ -81,3 +81,4 @@ U106 のユーザーの判断（2026-10-26 04:29「うーん、3だけ入れて�
 - 削除の依頼（Q1 の pipeline、P1 は rm していない）: `~/amaterrace-worktrees/p1-n4/build/exp/`（sim の試し）、`build/ip-copy/`（IP の写し 251 MB、板の build を繰り返すなら残す）、`build/lda_tb.bak`、scratchpad の `exp/`。bitstream と dcp は実機の段まで残す。
 - 2026-10-26 06:02 ユーザー「parameterの追加はOKです。XDCは、足しておきますが、再合成はせずにJTAGで書き込んでいきます。」→ (1) atg_su_wb の新しい parameter SHORT_LAT（FIFO の深さを latency から、P1 の 0dd9f72）を承認。(2) KC705 の XDC に CFGBVS・CONFIG_VOLTAGE を足す（Q1 の記憶の値 CFGBVS VCCO・CONFIG_VOLTAGE 2.5、UG810 で要確認）が、再合成はしない。板には今の bitstream（p1-n4 0dd9f72、sha256 678b9aad…）を JTAG で書く。XDC の変更は T1-806 の後に amaterrace の main で。
 - 2026-10-26 07:27 Q1: T1-806 全 PASS（Q1 が rc と PASS・FAIL・e2e の数を log で数え直した）→ amaterrace main を 0dd9f72 に fast-forward。続けて XDC に CFGBVS VCCO・CONFIG_VOLTAGE 2.5 を足した = ae22e0c（再合成はしない、ユーザー。値は UG912 の 7 series の 2.5 V の形で、KC705 の UG810・回路図とは未照合。DRC の検査だけに効く）。板の bitstream は p1-n4 0dd9f72 の物（sha256 678b9aad…）。
+- 2026-10-26 07:45 ユーザー「KC705の電源を入れました。プログラムしてオーケーです」→ Q1 が JTAG で書いた（openFPGALoader v0.13.1、-c digilent --ftdi-serial 210203368704、idcode 0x3651093 xc7k325t、/tmp/zedbsd-kc705-board.lock、p1-n4 0dd9f72 の bitstream sha256 678b9aad…、rc 0）。**構成が終わらない**: STAT 0x40181d8c（MMCM lock 1・DCI match 1・INIT 1・MODE 101 JTAG・EOS 0・GTS 0・GWE 0・Release Done 0・Done 0・STARTUP の state 110 = phase 4（UG470 の gray）、書いた直後の 1 回は 011）。再度の読み出しでも変わらない。3 回書いて同じ。原因の調べは P1（新しい起動）に。
