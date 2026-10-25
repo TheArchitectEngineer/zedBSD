@@ -11,8 +11,8 @@
 -->
 
 <!-- master:agents:start -->
-- **2026-10-25 05:45 自走中（ユーザーは就寝、推しで進める。判断の記録 [ws288/q1-decisions-20261025.md](ws288/q1-decisions-20261025.md)）**: WS288。P2 = p027 S6 → p010。P3 = p030 の TU・BLT の系統（S9・S10・S12・S14）。P1 = p030 の RX・ROP・CP の系統（S3〜S8）。T1〜T3 = 試験（amaterrace-gpu の detached の worktree `~/amaterrace-worktrees/t*-NNN`）。その後 p010 → p018 → p019 → p006 → p011。板・PCIe・p028 は実機の環境の後。
-- amaterrace-gpu の main は 5f3b747（T1-762 で make sim 85 PASS）。zedBSD・amaterrace-gpu とも push していない。
+- **2026-10-25 10:16 自走中（ユーザーは就寝、推しで進める。判断の記録 [ws288/q1-decisions-20261025.md](ws288/q1-decisions-20261025.md)）**: WS288。cleared: p009・p010・p026・p027・p031・p006・p018・p019。p030 は S11 だけ残る。動いている: P1 = p034 の設計、P2 = p036（KC705 の面積: yosys で LUT 245k > 203.8k）、P3 = p011（端から端の統合）。
+- amaterrace-gpu の main は 252a11e（T1-783: make sim 97・firmware の harness 6 case 一致）。zedBSD・amaterrace-gpu とも push していない。
 <!-- master:agents:end -->
 
 ### 統合と試験の待ち

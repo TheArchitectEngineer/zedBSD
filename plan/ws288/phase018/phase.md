@@ -3,7 +3,7 @@
 # ws288-p018 CP の firmware の Vulkan の object model と draw/dispatch
 
 - 親: [WS288](../ws.md)。設計: [design.md](../design.md) §2.4（ring の class V・gpu-op の中継、§2.4.8 object model）、§6.9（firmware）、§8 の p018 の行、§15（MSAA: resolve は BLT の RESOLVE、STATE 0x00B まで毎回書き、前の draw は `WAIT_IDLE` flags 0 で待つ）、§16（p030: format・MRT・query・stencil・depth bias などの STATE と µop 14 QUERY）。
-- 状態: in-progress（2026-10-25 09:33 P2: 実装は全部の段を commit 済み。Verilator の firmware の harness と長い試験は T の結果待ち。Q1 が T の結果で cleared を判定する）。先に p030 の段 S15（shared memory の atomic）を同じ担当が行った（q1565、amaterrace-gpu 2cf347b）。
+- 状態: cleared（2026-10-25 10:16 Q1。T1-783 で Verilator の firmware の harness の 6 case が全部一致）
 - 依存: p017（CP の CPU と firmware の土台）、p009、p010（binary の interface の表、cleared）、p027（cleared）、p030（RTL は並行で実装中。firmware は GHCI の draft の STATE に合わせる）。
 - 承認: 2026-10-25 ユーザー「…そのあと、p010,p018,p019,p006,p011を実装します。…」「ゴールまで推しで進んでよいです。判断に迷ったら、Vulkan 1.0の原則論で進めてください。…」
 
@@ -77,3 +77,4 @@ Verilator の firmware の試験の harness（host の C から staging と fram
 - descriptor の array は要素 0 だけ（compiler の制限）。
 - ZYBO の 32 KiB の firmware はこの image に入らない（KC705 だけ）。
 - 2026-10-25 09:42 Q1: P2 は返却（p2-p018 2ce0fe6: Verilator の firmware の harness・fwtest -t の trace・README、zedBSD agent/p2-p010 36b5ff761: bank_first・S15 の compiler・記録）。zedBSD の agent/p2-p010 を main に merge（衝突: gsi1-compile.h の option の 2 つを両方残した、plan の 4 file）。amaterrace-gpu は P1 の p1-p030b dc471f9 と合わせた 5262af6 を Q1 が作った（衝突: atg_top の CP の parameter、ghci.md の 3 か所、atg_su_dec.md、gsi1model.py、dec_table.hex は gsi1asm --dec-table で作り直した）。5262af6 で lint 127 clean、gsi1dis PASS、atg_su_dec・lds・lsu・gfx・opd・atg_cp_regs・atg_top_fw・atg_top・atg_tu PASS、zedBSD の gsi1-host-test 40 passed 0 failed。全体と firmware の harness は T1-783（T4）。P2 の build の残りを Q1 が消した。p018 の clear は T1-783 の fw-run.sh の結果で判定する。
+- 2026-10-25 10:16 Q1: T1-783（5262af6）PASS: make sim 97・msaa 16・verilator 6・**fw-run.sh の sessions・buffers・images・draw（vkdemo の frame の列）・compute・transfer が µop・result・STATE とも 0 differ、PASS verilator fw**・lint 127（Q1 が log を数えた）。5262af6 を amaterrace-gpu の main に merge（252a11e）。→ p018 は cleared。残件: IMEM 60.6 KiB / 64、descriptor の配列は element 0 だけ（compiler の制限）、timestamp は出さない、ZYBO の 32 KiB には入らない（KC705 だけ）。
