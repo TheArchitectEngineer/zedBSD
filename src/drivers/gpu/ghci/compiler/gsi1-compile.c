@@ -27,6 +27,12 @@
  * IR's loop variables say.  A skippable block runs for every lane.  A
  * discard sets the lanes' KILLED bits,
  * which take away their side effects; they keep running.
+ *
+ * A program whose values do not fit the registers is not refused for it:
+ * it is compiled again with its pure instructions moved down to their
+ * readers (gsi1-schedule.c), and when that is not enough, once more with
+ * values kept in the warp's scratch memory (gsi1-spill.c).  A program
+ * that fits is compiled as the parser ordered it.
  */
 
 #include "gsi1-private.h"
@@ -64,6 +70,8 @@
 #define GSI1_FLOAT_MINUS_ONE		0xbf800000U
 
 static int compile_parsed(const struct drv_gpu_shader_ir *parsed, const struct ghci_gsi1_options *options, struct ghci_gsi1_program **program, struct ghci_gsi1_diagnostic *diagnostic);
+static int compile_sunk(const struct drv_gpu_shader_ir *ir, const struct ghci_gsi1_options *options, struct ghci_gsi1_program **program, struct ghci_gsi1_diagnostic *diagnostic);
+static int compile_once(const struct drv_gpu_shader_ir *ir, const struct ghci_gsi1_options *options, int spill, struct ghci_gsi1_program **program, struct ghci_gsi1_diagnostic *diagnostic, int *short_of_registers);
 static int prepare(struct gsi1_lowering *lowering);
 static int allocate_tables(struct gsi1_lowering *lowering);
 static int check_instructions(struct gsi1_lowering *lowering);
@@ -167,7 +175,8 @@ ghci_gsi1_compile(
  *
  * Returns 0 with the program in *program, EINVAL for a malformed program,
  * ENOTSUP for one the compiler does not cover (both with the diagnostic),
- * or ENOMEM.
+ * or ENOMEM.  A program short of registers as the parser ordered it is
+ * compiled with its pure instructions sunk, and then with spills.
  */
 int
 ghci_gsi1_compile_ir(
@@ -176,8 +185,7 @@ ghci_gsi1_compile_ir(
 	struct ghci_gsi1_program **program,
 	struct ghci_gsi1_diagnostic *diagnostic)
 {
-	struct gsi1_lowering *lowering;
-	struct ghci_gsi1_program *result;
+	int short_of_registers;
 	int error;
 
 	/* A refused compile never leaves an old output pointer live. */
@@ -189,60 +197,24 @@ ghci_gsi1_compile_ir(
 	if (ir == NULL)
 		return EINVAL;
 
-	/* The state lives in the heap: its tables are larger than a kernel stack likes. */
-	lowering = kern_calloc(1U, sizeof(*lowering));
-	if (lowering == NULL)
-		return ENOMEM;
-
-	/* The state starts empty with the options. */
-	lowering->ir = ir;
-	lowering->diagnostic = diagnostic;
-	if (options != NULL)
-		lowering->options = *options;
-
-	/* Allocates the result record. */
-	result = kern_calloc(1U, sizeof(*result));
-	if (result == NULL) {
-		kern_free(lowering);
-		return ENOMEM;
-	}
-	result->stage = ir->stage;
-
-	/* Checks the program and plans its values, inputs, outputs and uniforms. */
-	error = prepare(lowering);
-
-	/* Fills the inputs the start makes. */
+	/* The program as the parser ordered it, with registers only. */
+	short_of_registers = 0;
+	error = compile_once(ir, options, 0, program, diagnostic, &short_of_registers);
 	if (error == 0)
-		error = gsi1_io_prologue(lowering);
+		return 0;
 
-	/* Lowers every instruction in order. */
-	if (error == 0)
-		error = lower_all(lowering);
-
-	/* The exports and the end. */
-	if (error == 0)
-		error = finish(lowering);
-
-	/* The branches find their labels. */
-	if (error == 0)
-		error = resolve_branches(lowering);
-
-	/* The header, the interface table and the code. */
-	if (error == 0)
-		error = build_binary(lowering, result);
-
-	/* The tables are only the compilation's. */
-	free_tables(lowering);
-	kern_free(lowering);
-
-	/* A refused program is never handed over. */
-	if (error != 0) {
-		ghci_gsi1_program_free(result);
+	/* Reports a refusal for anything but the registers. */
+	if (error != ENOTSUP || short_of_registers == 0)
 		return error;
-	}
+
+	/* The registers do not hold the values: sunk, and then spilled. */
+	if (diagnostic != NULL)
+		kern_memset(diagnostic, 0, sizeof(*diagnostic));
+	error = compile_sunk(ir, options, program, diagnostic);
+	if (error != 0)
+		return error;
 
 	/* Succeeded: the caller owns the program. */
-	*program = result;
 	return 0;
 }
 
@@ -540,6 +512,53 @@ gsi1_emit(
 }
 
 /*
+ * Inserts one instruction at a code index (a spill's store after a
+ * definition made earlier): the later instructions, the labels at or after
+ * the index and the definitions recorded there move up by one.
+ */
+void
+gsi1_insert(
+	struct gsi1_lowering *lowering,
+	uint32_t position,
+	uint64_t instruction)
+{
+	uint32_t index;
+
+	/* The list grows by one at its end. */
+	gsi1_emit(lowering, 0U);
+	if (lowering->out_of_memory != 0)
+		return;
+
+	/* The instructions from the index move up, with their branch labels. */
+	kern_memmove(&lowering->code[position + 1U], &lowering->code[position], (lowering->count - 1U - position) * sizeof(*lowering->code));
+	kern_memmove(&lowering->branch_label[position + 1U],
+		     &lowering->branch_label[position],
+		     (lowering->count - 1U - position) * sizeof(*lowering->branch_label));
+
+	/* The new instruction, which is not a branch. */
+	lowering->code[position] = instruction;
+	lowering->branch_label[position] = 0U;
+
+	/* The labels that name an instruction from the index on name it where it is now. */
+	for (index = 0U; index < lowering->label_count; index++) {
+		if (lowering->label_at[index] == GSI1_NOT_DEFINED)
+			continue;
+		if (lowering->label_at[index] >= position)
+			lowering->label_at[index]++;
+	}
+
+	/* The definitions recorded from the index on, likewise. */
+	for (index = 0U; index < lowering->spill.definition_count; index++) {
+		if (lowering->spill.definition[index].position >= position)
+			lowering->spill.definition[index].position++;
+	}
+
+	/* The start's movi of the scratch memory's size, likewise. */
+	if (lowering->spill.enabled != 0 && lowering->spill.patch >= position)
+		lowering->spill.patch++;
+}
+
+/*
  * Appends a branch to a label; its offset is filled in once every label
  * is placed.
  */
@@ -618,8 +637,8 @@ gsi1_place_label(
 /*
  * Takes the lowest free register.
  *
- * Returns ENOTSUP when every register of the lane is taken: the compiler
- * does not spill.
+ * Returns ENOTSUP when every register of the lane is taken and none can
+ * be spilled.
  */
 int
 gsi1_take_register(
@@ -678,7 +697,23 @@ gsi1_take_block(
 		return 0;
 	}
 
-	/* No run is free: the program needs more registers than the lane has. */
+	/* No run is free: a compile that spills frees one, and takes it. */
+	error = gsi1_spill_make_room(lowering, count, &first);
+	if (error == 0) {
+		for (inner = 0U; inner < count; inner++)
+			lowering->taken[first + inner] = 1U;
+		if (first + count > lowering->register_highest)
+			lowering->register_highest = first + count;
+		*reg = first;
+		return 0;
+	}
+
+	/* Reports a failure to grow a list. */
+	if (error == ENOMEM)
+		return error;
+
+	/* No run can be freed: the program needs more registers than the lane has. */
+	lowering->short_of_registers = 1;
 	error = gsi1_refuse(lowering, ENOTSUP, "the program needs more registers than a lane has");
 	return error;
 }
@@ -789,6 +824,7 @@ gsi1_source(
 	uint32_t *operand)
 {
 	uint32_t reg;
+	int spilled;
 	int error;
 
 	/* A constant is put into a scratch register. */
@@ -803,11 +839,25 @@ gsi1_source(
 		return 0;
 	}
 
+	/* A value kept in the scratch memory is read into a scratch register. */
+	spilled = gsi1_spill_is_spilled(lowering, value);
+	if (spilled != 0 && lowering->operand[value] == GSI1_NO_OPERAND) {
+		error = gsi1_spill_reload(lowering, value, operand);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the value is in the scratch register. */
+		return 0;
+	}
+
 	/* A value that has no operand yet is read before it is defined. */
 	if (lowering->operand[value] == GSI1_NO_OPERAND) {
 		error = gsi1_refuse(lowering, EINVAL, "a value is read before it is defined");
 		return error;
 	}
+
+	/* The value's register stays until the instruction is done. */
+	gsi1_spill_pin(lowering, value);
 
 	/* Succeeded: the value's own operand. */
 	*operand = lowering->operand[value];
@@ -1118,6 +1168,143 @@ compile_parsed(
 }
 
 /*
+ * Compiles a program with its pure instructions sunk to their readers:
+ * with registers only, and when they do not hold the values, with spills.
+ */
+static int
+compile_sunk(
+	const struct drv_gpu_shader_ir *ir,
+	const struct ghci_gsi1_options *options,
+	struct ghci_gsi1_program **program,
+	struct ghci_gsi1_diagnostic *diagnostic)
+{
+	struct drv_gpu_shader_ir sunk;
+	struct drv_gpu_shader_ir_inst *instructions;
+	int short_of_registers;
+	int error;
+
+	/* The instructions with the pure ones sunk. */
+	error = gsi1_schedule_sink(ir, &instructions);
+	if (error != 0)
+		return error;
+
+	/* The program with them: everything else is the parsed program's. */
+	sunk = *ir;
+	sunk.instructions = instructions;
+
+	/* With registers only. */
+	short_of_registers = 0;
+	error = compile_once(&sunk, options, 0, program, diagnostic, &short_of_registers);
+
+	/* Still short of registers: with spills. */
+	if (error == ENOTSUP && short_of_registers != 0) {
+		if (diagnostic != NULL)
+			kern_memset(diagnostic, 0, sizeof(*diagnostic));
+		short_of_registers = 0;
+		error = compile_once(&sunk, options, 1, program, diagnostic, &short_of_registers);
+	}
+
+	/* The sunk instructions are only this compile's. */
+	kern_free(instructions);
+
+	/* Reports why the program could not be compiled. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the caller owns the program. */
+	return 0;
+}
+
+/*
+ * Compiles a program once, with spills when `spill` is nonzero.
+ *
+ * Returns 0 with the program in *program, or the refusal; sets
+ * *short_of_registers when a register was asked for and none could be
+ * found.
+ */
+static int
+compile_once(
+	const struct drv_gpu_shader_ir *ir,
+	const struct ghci_gsi1_options *options,
+	int spill,
+	struct ghci_gsi1_program **program,
+	struct ghci_gsi1_diagnostic *diagnostic,
+	int *short_of_registers)
+{
+	struct gsi1_lowering *lowering;
+	struct ghci_gsi1_program *result;
+	int error;
+
+	/* The state lives in the heap: its tables are larger than a kernel stack likes. */
+	lowering = kern_calloc(1U, sizeof(*lowering));
+	if (lowering == NULL)
+		return ENOMEM;
+
+	/* The state starts empty with the options. */
+	lowering->ir = ir;
+	lowering->diagnostic = diagnostic;
+	lowering->spill.enabled = spill;
+	if (options != NULL)
+		lowering->options = *options;
+
+	/* Allocates the result record. */
+	result = kern_calloc(1U, sizeof(*result));
+	if (result == NULL) {
+		kern_free(lowering);
+		return ENOMEM;
+	}
+	result->stage = ir->stage;
+
+	/* Checks the program and plans its values, inputs, outputs and uniforms. */
+	error = prepare(lowering);
+
+	/* Fills the inputs the start makes. */
+	if (error == 0)
+		error = gsi1_io_prologue(lowering);
+
+	/* The lane's address in the scratch memory, when the compile spills. */
+	if (error == 0)
+		error = gsi1_spill_prologue(lowering);
+
+	/* Lowers every instruction in order. */
+	if (error == 0)
+		error = lower_all(lowering);
+
+	/* The exports and the end. */
+	if (error == 0)
+		error = finish(lowering);
+
+	/* The branches find their labels. */
+	if (error == 0)
+		error = resolve_branches(lowering);
+
+	/* The size of the scratch memory. */
+	if (error == 0)
+		error = gsi1_spill_finish(lowering);
+
+	/* The header, the interface table and the code. */
+	if (error == 0)
+		error = build_binary(lowering, result);
+
+	/* Whether the registers ran out, for the caller's next try. */
+	*short_of_registers = lowering->short_of_registers;
+
+	/* The tables are only the compilation's. */
+	free_tables(lowering);
+	kern_free(lowering);
+
+	/* A refused program is never handed over. */
+	if (error != 0) {
+		ghci_gsi1_program_free(result);
+		return error;
+	}
+
+	/* Succeeded: the caller owns the program. */
+	*program = result;
+	return 0;
+}
+
+/*
  * Checks the program and prepares its lowering: the tables, the kind of
  * every value, the instructions not to lower, the last read of every value
  * and input, the inputs and outputs, and the uniforms' places.
@@ -1195,6 +1382,11 @@ prepare(
 
 	/* The outputs exported straight from where their values live. */
 	gsi1_io_plan_outputs(lowering);
+
+	/* The values' lives and readers, for the spills. */
+	error = gsi1_spill_prepare(lowering);
+	if (error != 0)
+		return error;
 
 	/* Succeeded: the program can be lowered. */
 	lowering->index = 0U;
@@ -1777,6 +1969,9 @@ lower_all(
 		if (lowering->dead[index] != 0U)
 			continue;
 
+		/* The values the last instruction read may be spilled again. */
+		gsi1_spill_next(lowering);
+
 		/* The destination's register (none for a value that has an operand of its own). */
 		error = define_destination(lowering, instruction, &dst);
 		if (error != 0)
@@ -1784,6 +1979,11 @@ lower_all(
 
 		/* The instruction's GSI1 instructions. */
 		error = lower(lowering, instruction, dst);
+		if (error != 0)
+			return error;
+
+		/* Where the values it defined live, for a spill later; the spilled ones are stored. */
+		error = gsi1_spill_defined(lowering, instruction);
 		if (error != 0)
 			return error;
 
@@ -1816,6 +2016,7 @@ define_destination(
 	uint32_t reg;
 	uint32_t channel;
 	int defines;
+	int spilled;
 	int error;
 
 	/* Nothing defined, nothing taken. */
@@ -1830,9 +2031,11 @@ define_destination(
 		if (error != 0)
 			return error;
 
-		/* Each result names its register. */
-		for (channel = 0U; channel < 4U; channel++)
+		/* Each result names its register, which stays until the instruction is done. */
+		for (channel = 0U; channel < 4U; channel++) {
 			lowering->operand[instruction->dst + channel] = (uint8_t)(reg + channel);
+			gsi1_spill_pin(lowering, instruction->dst + channel);
+		}
 		*dst = reg;
 		return 0;
 	}
@@ -1841,6 +2044,16 @@ define_destination(
 	if (lowering->kind[instruction->dst] != GSI1_VALUE_REGISTER)
 		return 0;
 
+	/* A spilled loop variable defined again is written in a scratch register and stored after. */
+	spilled = gsi1_spill_is_spilled(lowering, instruction->dst);
+	if (spilled != 0) {
+		error = gsi1_spill_destination(lowering, instruction->dst, &reg);
+		if (error != 0)
+			return error;
+		*dst = reg;
+		return 0;
+	}
+
 	/* A value seen before (a loop variable) keeps its register; a new one takes the lowest free. */
 	if (lowering->operand[instruction->dst] == GSI1_NO_OPERAND) {
 		error = gsi1_take_register(lowering, &reg);
@@ -1848,6 +2061,9 @@ define_destination(
 			return error;
 		lowering->operand[instruction->dst] = (uint8_t)reg;
 	}
+
+	/* The register stays until the instruction is done. */
+	gsi1_spill_pin(lowering, instruction->dst);
 
 	/* Succeeded: the register the value lives in. */
 	*dst = lowering->operand[instruction->dst];
@@ -2537,6 +2753,7 @@ lower_loop(
 		gsi1_place_label(lowering, label);
 		lowering->loop_save[lowering->loop_depth] = save;
 		lowering->loop_label[lowering->loop_depth] = label;
+		lowering->loop_start[lowering->loop_depth] = lowering->index;
 		lowering->loop_depth++;
 		return 0;
 	}
@@ -2794,6 +3011,9 @@ finish(
 		return error;
 	}
 
+	/* The values the last instruction read may be spilled again. */
+	gsi1_spill_next(lowering);
+
 	/* The outputs. */
 	error = gsi1_io_finish(lowering);
 	if (error != 0)
@@ -2976,4 +3196,7 @@ free_tables(
 	kern_free(lowering->code);
 	kern_free(lowering->branch_label);
 	kern_free(lowering->label_at);
+
+	/* The spill tables. */
+	gsi1_spill_free(lowering);
 }

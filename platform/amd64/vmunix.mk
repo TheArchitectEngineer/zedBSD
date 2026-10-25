@@ -281,6 +281,7 @@ AMD64_GHCI_SOURCES += src/drivers/gpu/ghci/ghci.c src/drivers/gpu/ghci/pci-attac
 	src/drivers/gpu/ghci/compiler/gsi1-compile.c src/drivers/gpu/ghci/compiler/gsi1-encode.c \
 	src/drivers/gpu/ghci/compiler/gsi1-io.c src/drivers/gpu/ghci/compiler/gsi1-memory.c \
 	src/drivers/gpu/ghci/compiler/gsi1-texture.c src/drivers/gpu/ghci/compiler/gsi1-image.c \
+	src/drivers/gpu/ghci/compiler/gsi1-schedule.c src/drivers/gpu/ghci/compiler/gsi1-spill.c \
 	$(filter-out $(AMD64_I915_SOURCES) $(AMD64_NVRTX_SOURCES) $(AMD64_AMDRDNA_COMPILER_SOURCES),src/drivers/gpu/compiler/spirv.c src/drivers/gpu/compiler/optimize.c)
 ifeq ($(CONFIG_GHCI_NATIVE),y)
 AMD64_GHCI_SOURCES += src/drivers/gpu/ghci/native.c
