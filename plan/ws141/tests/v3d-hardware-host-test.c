@@ -19,6 +19,7 @@
 #include <kern/kmem.h>
 #include <kern/thread.h>
 #include <kern/sched.h>
+#include <kern/sysctl.h>
 #include <uapi/gpu-allocation.h>
 #include <uapi/errno.h>
 
@@ -612,6 +613,19 @@ model_wait(
 		test_hub[0x50 / 4] |= 0x10;
 	handled = test_engine.irq.service(test_engine.irq.owner);
 	assert(handled);
+}
+
+/* Lists nothing in hw.gputelemetry: the fixture has no sysctl tree. */
+int
+kern_gpu_telemetry_register(
+	const char *driver,
+	kern_gpu_telemetry_read_t read,
+	void *context)
+{
+	(void)driver;
+	(void)read;
+	(void)context;
+	return 0;
 }
 
 /* Supplies no wall-clock elapsed time to non-timing pass diagnostics. */
