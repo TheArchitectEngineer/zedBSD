@@ -11,7 +11,9 @@
  * (src/drivers/gpu/gpu.c, gpu-fence.c) serves them, reduced to what one
  * thread of one process needs: sessions, resources and their mappings,
  * queued commands and their completion records, job reservations bound to
- * fence payloads, fences, and readiness for poll.
+ * fence payloads, fences, readiness for poll, and the display's query,
+ * mode, claim, release, present (of ordinary storage and of a blob, with
+ * the adoption wait of an ungated display) and wait.
  *
  * libvulkan's calls of the C library reach this file through the
  * linker's --wrap: open, close, ioctl, mmap, munmap, poll, fcntl,
@@ -23,8 +25,8 @@
  *
  * Deliberately simpler than the kernel's core: no credentials (every open
  * reads and writes), no supervision deadlines, no sharing between opens,
- * and a refusal for what libvulkan's offscreen use does not reach
- * (display, export and import, placed blobs).
+ * and a refusal for what the cases do not reach (the display's events,
+ * cursor, power and overlays, export and import, placed blobs).
  */
 
 #define _GNU_SOURCE 1
@@ -43,7 +45,9 @@
 #include <time.h>
 
 #include <drivers/gpu/gpu.h>
+#include <drivers/gpu/gpu-display.h>
 #include <uapi/gpu.h>
+#include <uapi/gpu-display.h>
 #include <uapi/gpu-fence.h>
 #include <uapi/gpu-job.h>
 
@@ -115,10 +119,15 @@ struct drv_gpu_completion {
 	uint64_t started;
 };
 
-/* One resource of an open: the driver's object, its handle and its mapping token. */
+/*
+ * One resource of an open: the driver's object, whether it is a blob (or
+ * ordinary storage), its bytes, its handle and its mapping token.
+ */
 struct resource {
 	int used;
 	void *object;
+	int blob;
+	uint64_t bytes;
 	uint64_t handle;
 	uint32_t resource_id;
 	uint64_t map_offset;
@@ -209,7 +218,7 @@ static int node_open(int *fd);
 static void node_close(struct node_open *open);
 static int node_ioctl(struct node_open *open, unsigned long request, void *argument);
 static struct resource *resource_find(struct node_open *open, uint64_t handle);
-static int resource_add(struct node_open *open, void *object, uint32_t resource_id, uint64_t *handle);
+static int resource_add(struct node_open *open, void *object, int blob, uint64_t bytes, uint32_t resource_id, uint64_t *handle);
 static int ioctl_blob_create(struct node_open *open, struct gpu_blob_create *request);
 static int ioctl_resource_create(struct node_open *open, struct gpu_resource_create *request);
 static int ioctl_resource_destroy(struct node_open *open, struct gpu_resource_destroy *request);
@@ -223,6 +232,8 @@ static int ioctl_job_capacity(struct node_open *open, struct gpu_job_capacity *r
 static int ioctl_fence_create(struct gpu_fence_create *request);
 static int ioctl_fence_state(unsigned long command, struct gpu_fence_state *request);
 static int ioctl_fence_bind(struct node_open *open, struct gpu_fence_bind *request);
+static int ioctl_display(struct node_open *open, unsigned long request, void *argument);
+static int ioctl_display_present(struct node_open *open, struct gpu_display_present *request);
 static int completion_take(struct node_open *open, struct drv_gpu_completion **result);
 static struct drv_gpu_completion *completion_find(struct node_open *open, uint64_t sequence);
 static void completion_free(struct drv_gpu_completion *completion);
@@ -989,11 +1000,20 @@ node_ioctl(
 		error = ioctl_fence_bind(open, argument);
 		return error;
 
+	case GPU_DISPLAY_QUERY:
+	case GPU_DISPLAY_MODE:
+	case GPU_DISPLAY_CLAIM:
+	case GPU_DISPLAY_RELEASE:
+	case GPU_DISPLAY_PRESENT:
+	case GPU_DISPLAY_WAIT:
+		error = ioctl_display(open, request, argument);
+		return error;
+
 	default:
 		break;
 	}
 
-	/* A request this node does not offer (display, export and import, placed blobs). */
+	/* A request this node does not offer (the display's others, export and import, placed blobs). */
 	return ENOTTY;
 }
 
@@ -1020,6 +1040,8 @@ static int
 resource_add(
 	struct node_open *open,
 	void *object,
+	int blob,
+	uint64_t bytes,
 	uint32_t resource_id,
 	uint64_t *handle)
 {
@@ -1037,6 +1059,8 @@ resource_add(
 	memset(&open->resources[index], 0, sizeof(open->resources[index]));
 	open->resources[index].used = 1;
 	open->resources[index].object = object;
+	open->resources[index].blob = blob;
+	open->resources[index].bytes = bytes;
 	open->resources[index].resource_id = resource_id;
 	open->resources[index].handle = open->next_handle;
 	open->next_handle++;
@@ -1062,7 +1086,7 @@ ioctl_blob_create(
 		return error;
 
 	/* Its handle. */
-	error = resource_add(open, object, resource_id, &request->handle);
+	error = resource_add(open, object, 1, request->bytes, resource_id, &request->handle);
 	if (error != 0) {
 		core_ops->resource_destroy(core_private, open->backend, object);
 		return error;
@@ -1088,7 +1112,7 @@ ioctl_resource_create(
 		return error;
 
 	/* Its handle. */
-	error = resource_add(open, object, 0U, &request->handle);
+	error = resource_add(open, object, 0, request->bytes, 0U, &request->handle);
 	if (error != 0) {
 		core_ops->resource_destroy(core_private, open->backend, object);
 		return error;
@@ -1502,6 +1526,200 @@ ioctl_fence_bind(
 	entry->fence->bound = 1;
 
 	/* Succeeded: the generation waits for the work. */
+	return 0;
+}
+
+/*
+ * Serves a display request as the kernel's core does: the header, the
+ * inputs the core checks itself, then the driver's operation.  The cases
+ * use the one output's query, mode, claim, present, wait and release.
+ */
+static int
+ioctl_display(
+	struct node_open *open,
+	unsigned long request,
+	void *argument)
+{
+	const struct drv_gpu_display_ops *ops;
+	struct gpu_display_info *query;
+	struct gpu_display_mode *mode;
+	struct gpu_display_claim *claim;
+	struct gpu_display_release *release;
+	struct gpu_display_wait *wait;
+	uint32_t index;
+	int error;
+
+	/* A driver without a display offers none of these. */
+	ops = core_ops->display;
+	if (ops == NULL)
+		return ENOTTY;
+
+	switch (request) {
+	case GPU_DISPLAY_QUERY:
+		/* Only the ordinal is an input; the snapshot is the driver's. */
+		query = argument;
+		if (query->version != GPU_ABI_VERSION ||
+		    query->size != sizeof(*query))
+			return EINVAL;
+		index = query->index;
+		memset(query, 0, sizeof(*query));
+		query->version = GPU_ABI_VERSION;
+		query->size = sizeof(*query);
+		query->index = index;
+		error = ops->query(core_private, open->backend, query);
+		if (error != 0)
+			return error;
+		if (index == GPU_DISPLAY_COUNT_ONLY)
+			return 0;
+
+		/* An output the driver names has an identity and a generation. */
+		if (query->display_id == 0U)
+			return EIO;
+		if (query->generation == 0U)
+			return EIO;
+		return 0;
+
+	case GPU_DISPLAY_MODE:
+		/* Enumeration or validation of a display of a generation. */
+		mode = argument;
+		if (mode->version != GPU_ABI_VERSION ||
+		    mode->size != sizeof(*mode))
+			return EINVAL;
+		if (mode->display_id == 0U ||
+		    mode->generation == 0U ||
+		    mode->count != 0U ||
+		    mode->flags != 0U)
+			return EINVAL;
+		error = ops->mode(core_private, open->backend, mode);
+		return error;
+
+	case GPU_DISPLAY_CLAIM:
+		/* A new lease, never zero. */
+		claim = argument;
+		if (claim->version != GPU_ABI_VERSION ||
+		    claim->size != sizeof(*claim))
+			return EINVAL;
+		if (claim->display_id == 0U ||
+		    claim->generation == 0U ||
+		    claim->lease != 0U)
+			return EINVAL;
+		error = ops->claim(core_private, open->backend, claim);
+		if (error != 0)
+			return error;
+		if (claim->lease == 0U)
+			return EIO;
+		return 0;
+
+	case GPU_DISPLAY_RELEASE:
+		/* The driver checks that the lease is this open's. */
+		release = argument;
+		if (release->version != GPU_ABI_VERSION ||
+		    release->size != sizeof(*release) ||
+		    release->lease == 0U)
+			return EINVAL;
+		error = ops->release(core_private, open->backend, release);
+		return error;
+
+	case GPU_DISPLAY_PRESENT:
+		error = ioctl_display_present(open, argument);
+		return error;
+
+	case GPU_DISPLAY_WAIT:
+		/* The outputs are zero on input. */
+		wait = argument;
+		if (wait->version != GPU_ABI_VERSION ||
+		    wait->size != sizeof(*wait))
+			return EINVAL;
+		if (wait->lease == 0U ||
+		    wait->completed_sequence != 0U ||
+		    wait->present_time_ns != 0U ||
+		    wait->generation != 0U)
+			return EINVAL;
+		error = ops->wait(core_private, open->backend, wait);
+		return error;
+
+	default:
+		break;
+	}
+
+	/* Not a display request. */
+	return ENOTTY;
+}
+
+/*
+ * Serves a present: the frame's storage (a blob for a BLOB present,
+ * ordinary storage otherwise) holds the whole image; the driver records
+ * it, and for an ungated display the core then waits for its adoption.
+ */
+static int
+ioctl_display_present(
+	struct node_open *open,
+	struct gpu_display_present *request)
+{
+	const struct drv_gpu_display_ops *ops;
+	struct resource *resource;
+	uint64_t image_bytes;
+	int blob;
+	int error;
+
+	/* The header and the inputs: a lease of a generation, FIFO with or without BLOB, no sequence yet. */
+	ops = core_ops->display;
+	if (request->version != GPU_ABI_VERSION ||
+	    request->size != sizeof(*request))
+		return EINVAL;
+	if (request->lease == 0U ||
+	    request->generation == 0U ||
+	    request->sequence != 0U)
+		return EINVAL;
+	if (request->flags != GPU_DISPLAY_PRESENT_FIFO &&
+	    request->flags != (GPU_DISPLAY_PRESENT_FIFO | GPU_DISPLAY_PRESENT_BLOB))
+		return EINVAL;
+
+	/* Packed rows of one of the two formats. */
+	if (request->width == 0U ||
+	    request->width > UINT32_MAX / 4U ||
+	    request->height == 0U ||
+	    request->refresh_millihz == 0U)
+		return EINVAL;
+	if (request->format != GPU_PIXEL_BGRA8888 &&
+	    request->format != GPU_PIXEL_RGBA8888)
+		return EINVAL;
+	if (request->stride < request->width * 4U ||
+	    (request->stride & 3U) != 0U)
+		return EINVAL;
+
+	/* The open's storage of the kind the present names, holding the whole image. */
+	resource = resource_find(open, request->handle);
+	if (resource == NULL)
+		return ENOENT;
+	blob = 0;
+	if ((request->flags & GPU_DISPLAY_PRESENT_BLOB) != 0U)
+		blob = 1;
+	if (resource->blob != blob)
+		return EINVAL;
+	if (request->offset > resource->bytes)
+		return EINVAL;
+	image_bytes = (uint64_t)request->stride * request->height;
+	if (image_bytes > resource->bytes - request->offset)
+		return EINVAL;
+
+	/* The driver records the frame (an ungated one without waiting for it). */
+	error = ops->present(core_private, open->backend, resource->object, request);
+	if (error != 0)
+		return error;
+
+	/* An ungated present waits for its adoption, holding nothing. */
+	if ((ops->flags & DRV_GPU_DISPLAY_UNGATED) != 0U) {
+		error = ops->adoption_wait(core_private, open->backend, request->lease, &request->sequence, NULL);
+		if (error != 0)
+			return error;
+	}
+
+	/* A present names a frame of the lease's sequence. */
+	if (request->sequence == 0U)
+		return EIO;
+
+	/* Succeeded: the frame is shown, or replaced by one that is. */
 	return 0;
 }
 
