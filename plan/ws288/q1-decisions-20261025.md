@@ -39,3 +39,4 @@
 | 2026-10-25 09:43 | KC705 の core（1 SU）が yosys の数で LUT 245k と容量 203.8k を超える → p036（面積）を p024 の前に新設して P2 に。機能を変えない削減は P2、形を変える案（NPHYS・FPU の lane など）は U 項目でユーザーに | 最初のゴールに板が要る。Vivado の実測を先に |
 | 2026-10-25 10:00 | p019 を cleared にし、P3 の決定（codec の再利用・timeline・中継・spec constant）を受け入れた | host 試験と build を満たす |
 | 2026-10-25 10:00 | GHCI に lane あたりの register の数の標準の field を足す（次に RTL を触る担当に）。未知の pNext は読み飛ばす | GHCI の汎用の原則（vendor の code 無しで driver が読める）、libvulkan の振る舞い |
+| 2026-10-25 10:07 | P3 の指摘で、GHCI §11.3 の MEM の capability（XCAP 8）を RTL に足す（atg_cp_regs の parameter、既定 0）。lane あたりの register の数を RESIDENT_WARPS の [23:16] に。両方 P3 が p011 の中で | discrete の KC705 を driver が正しく扱うのに要る、GHCI の汎用の原則 |
