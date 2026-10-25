@@ -637,7 +637,7 @@ code_offset〜 命令（8 byte 揃え）
 ### 4.2 DC の memory の口
 
 - ZYBO: DC は `S_AXI_HP1` を自分の `am_axi_master`（read だけ）で読む。GPU と DC が別の bitstream なので共有の問題は無い。
-- KC705: 1 つの `atg_mc` の client（優先の group 1）として読む。line の FIFO（2 行）が有れば優先だけで足りる。quiesce・reset の対象から外す（§1.3）。
+- KC705: 1 つの `atg_mc` の client（`C_DC`、優先）として読む。line の FIFO（2 行）が有れば優先だけで足りる。**版 8（§18、p035 D2b で実装）**: `C_DC` は root の自分の入口（`ROOT_KEEP`、PROT の有無に依らない）を持ち、`QUIESCE_EXEMPT` に入り、CTRL.RESET の flush は C_DC の leaf・入口・誤りの応答を残し、`axi_idle` は DC の要求を待たない（scanout は GPU の HALT・FAULT・reset を跨ぐ）。
 
 ### 4.3 KC705 の host link（案と推し）
 
@@ -649,7 +649,7 @@ code_offset〜 命令（8 byte 揃え）
 | C. **既存の soft RISC-V（VexRiscv 等、Sv32）+ riscv32 の BSP** | MMU 付きの RISC-V の soft core（MIT） | B より早い | 外部の core の導入。遅い CPU で kernel の中の compile が遅い |
 | D. **JTAG だけ**（HCR への bridge、§4.4） | OpenOCD の `drscan` で register を読み書き、DDR は `DBG_ADDR/DATA` | PCIe も CPU も無しで MIG・CP・BLT・DC・SU を板で確かめられる。**KC705 の最初の milestone の道** | 遅い。本番の道ではない |
 
-**推し**: **D で KC705 の最初の milestone（MIG + CP + BLT + DC、SU の compute）を通し、本番は A'**。A' の PC はユーザーの判断（**U2**）。B は sukuna-risc の進み次第で後から足す。C は A' が使えない時の予備。MSI の vector の表（A/A'）: XDMA の user IRQ 0 = GPU の IRQ の線、user IRQ 1 = DC、XDMA の channel の IRQ（H2C/C2H）はその後の vector（driver は `drv_pci_device_allocate_irqs` で 4 本を取る。**XDMA の vector の割り当ての規則は PG195 未読で未確認**、p013 で読む）。
+**推し**: **D で KC705 の最初の milestone（MIG + CP + BLT + DC、SU の compute）を通し、本番は A'**。A' の PC はユーザーの判断（**U2**）。B は sukuna-risc の進み次第で後から足す。C は A' が使えない時の予備。MSI の vector の表（A/A'）: XDMA の user IRQ 0 = GPU の IRQ の線（**版 8（§18）で DC の event も GHCI の IRQ_STATUS [12:9] に入ったので、DC の別の vector は無い**）、XDMA の channel の IRQ（H2C/C2H）はその後の vector（driver は `drv_pci_device_allocate_irqs` で 4 本を取る。**XDMA の vector の割り当ての規則は PG195 未読で未確認**、p013 で読む）。
 
 ### 4.4 KC705 の JTAG の bridge（`am_jtag_regs`、GHCI の `DBG` capability）
 
@@ -658,9 +658,11 @@ code_offset〜 命令（8 byte 揃え）
 
 ## 5. DC（Display Controller、`atg_dc`、別の IP）
 
+**版 8（§18、ws288-p035 で実装、2026-10-25）で置き換え**: KC705 の DC は GPU の unit（`rtl/gpu/dc/`、`atg_top` の子、board の reset の domain）。GHCI の capability は DISP2（id 11、窓は HCR の 0x200〜0x2FF、`atg_cp_disp` が host の write を CP の state で門にかける）。scanout の register は CP が RUNNING・HALTING の間は ring の µop DISP_SET・FLIP だけが書き、present は FLIP（copy しない）。DC の event は IRQ_STATUS [12:9]。mode の表・cursor の plane（plane 1）・CONNECTED は DC が持つ。下の §5.1〜§5.2 の KC705 の記述（+0x10000 の窓、DC の IRQ_STATUS/IRQ_ENABLE、host が FB_NEXT を書く flip）は版 7 までの物で、ZYBO の DC（DISP、id 1、CP の無い形）の記録として残す（ZYBO は 2026-10-24 に目標から外れ、RTL の `STANDALONE` は p035 D3 で消した）。
+
 ### 5.1 中身
 
-- `atg_dc_regs`（AXI の slave）: ZYBO の DC だけの bitstream は **devcfg の固定の窓 `0x43C00000` の offset 0 に GHCI の header（0x000〜0x024 の 10 word: `DEVICE_ID` "ATDC"、`ISA_ID` 0、`CAPS` = [3] だけ、`EXTCAP` → `DISP` の entry が +0x200 を指す）** を置き、IRQ_F2P[0]（GIC 61）を使う。汎用の driver は `CAPS[0]` = 0（CP 無し）を見て ring・aperture・`MEM_READY` に触らず、display だけの device として attach する。KC705 は GPU の窓の +0x10000（`DISP` の entry が指す）で、同じ device の display の ops になる（§6.5）。
+- `atg_dc_regs`（AXI の slave）: ZYBO の DC だけの bitstream は **devcfg の固定の窓 `0x43C00000` の offset 0 に GHCI の header（0x000〜0x024 の 10 word: `DEVICE_ID` "ATDC"、`ISA_ID` 0、`CAPS` = [3] だけ、`EXTCAP` → `DISP` の entry が +0x200 を指す）** を置き、IRQ_F2P[0]（GIC 61）を使う。汎用の driver は `CAPS[0]` = 0（CP 無し）を見て ring・aperture・`MEM_READY` に触らず、display だけの device として attach する。KC705 は版 7 まで GPU の窓の +0x10000（`DISP` の entry が指す）だった。版 8 では DISP2 の窓（HCR の 0x200、§18.3）で、同じ device の display の ops になる（§6.5）。
 
 | offset（DISP の register の先頭から） | 名前 | R/W | 中身 |
 | --- | --- | --- | --- |
@@ -687,7 +689,7 @@ code_offset〜 命令（8 byte 揃え）
 ### 5.2 zedBSD の側（§6.5）
 
 - ZYBO（別々の bitstream）: DC は display だけの GHCI の device（`drv_gpu_display_ops` の query/mode/claim/release/present/wait/events、`scanout` の `query_device`/`constraints`/`import_image`（borrowed の physical pages を DMA の到達と cache の属性で検査: ZYBO は `gpu.mem` の領域の中の linear の image だけ受ける））。GPU の device は `share`（`export_resource`/`release`/`import_resource`/`get_scanout_backing`）を持つ。libvulkan の `VK_KHR_display` の WSI がそのまま使える。
-- KC705: 1 つの device に display の ops も載せる（same-device scanout は普通の share の import で足りる、`gpu-scanout.h`）。
+- KC705: 1 つの device に display の ops も載せる（same-device scanout は普通の share の import で足りる、`gpu-scanout.h`）。版 8（§18.7、p035 D7）: driver（`display.c`・`display-scan.c`）は DISP2 を探し、点灯・消灯・present・cursor を ring の packet（DISP_SET・FLIP）で行い、record の page で取り込みを知る。route は SHARED（import の時に `GPU_IMPORT_SCANOUT` で判定）と COPY。
 
 ### 5.3 未確認の事と最初の確かめ
 
@@ -741,8 +743,8 @@ code_offset〜 命令（8 byte 揃え）
 ### 6.5 display device
 
 - ZYBO: `display/display.c` が display だけの device を登録（`drv_gpu_unregister` できる寿命。bcm2711 の static の形は取らない）。`query`（1 output、mode は 640×480@60 と 1280×720@60）、`mode`（timing と `PCLK_SEL`）、`claim/release`（lease は 1 つ）、`present`（`FB_NEXT`）、`wait`・`events`（64 bit の software の sequence、VSYNC で進める）。`scanout.import_image` で GPU の device が export した allocation（pool の中の linear の image）を scan に使う。
-- KC705: 1 つの device に display の ops（same-device の share の import）。
-- cursor・overlay は無し。
+- KC705: 1 つの device に display の ops（same-device の share の import）。**版 8（§18.7、p035 D7 で実装）**: DISP2、ring の点灯・消灯（DISP_SET）、present = FLIP（SHARED は copy しない、COPY は driver の frame への BLIT の後）、UNGATED と adoption_wait、queue（深さ 2）と mailbox、scan の hold、recover の数え直し（STATUS[31]・TAKEN0/1）、DISP_ERROR の数と mask、hotplug の poll（ADV7511 の HPD）。
+- cursor は版 8 で plane 1（64 × 64 BGRA8、DC が gclk で合成、§18.5 の `atg_dc_cursor`）。overlay は無し。
 
 ### 6.6 compiler の backend（`isa/gsi1/`、IR → GSI1。版 3）
 
@@ -2895,3 +2897,10 @@ D3・D4 は D2 の後に並行できる。D7 は p006・p019 の後。画面の�
 | 19 | Low | FLIP ごとに driver の FENCE が付き全部を drain する | FLIP だけの packet は fence 無しの submit（§18.7） |
 | 20 | Low | DISP_ERROR の数、窓の decode の場所の食い違い、host の read の道 | 1 s に 30 回で mask、decode と read は `atg_cp_regs`（§18.4・§18.5 (h)・§18.7） |
 | 21 | Low | DC の CTRL.RESET は I2C も reset する | I2C の使用と CTRL.RESET を display の lock で直列（§18.7） |
+
+### 18.17 実装の段で設計から変えた事（2026-10-25 P3、q1576-i03。amaterrace-gpu p3-p035）
+
+- **D2b（MC）**: §18.2-1 の「C_DC を QUIESCE_EXEMPT・axi_idle の分け・flush で残す」を `atg_mc` の新しい parameter `ROOT_KEEP`（atg_top: HAS_DISP で 1）にまとめた。ROOT_KEEP は ROOT_CLIENT に root の自分の入口を与える（§17.5 の ROOT_SPLIT を HAS_PROT が無くても使う）。flush は DC の leaf・入口（`asm_d`）・DC の誤りの応答を残す。`axi_idle` は ROOT_KEEP の時「DC 以外の要求が木と root に無い（pend を mask）・DC 以外の AXI への grant が全部応答された（`atg_mc_cnt` の新しい counter ax、rst_n だけで消える）・DC 以外の誤りの応答が無い・応答の flit が木に無い」。merge の解決の誤り 2 つ（MC_UNITS と protection の side band が EXT_CLIENT だけを見て、DC が unit_idle に数えられ chk を付けられた）も直した。
+- **D4（CP）**: (1) host の門の 1 段の buffer: host は毎 cycle 書けるので、buffer が埋まっている間 `disp_wait` を立て、seq の次の DISP_SET の書き込みを待たせる（§18.4 の「seq は 2 cycle に 1 回」の前提を置き換え）。(2) FLIP の fault 3 は kick の cycle に組み合わせで出す（`atg_cp_ctl` が seq の次の header より先に FAULTED になる）。(3) kick の code は BLT・DRAW・CS・LC・RAW・PERF_RESET・FLIP・DISP の idle の 8 つ（3 bit に収まる）。seq の使っていない `n_last`・`fw_last` を外して port は 39。(4) record は IDLE・RUNNING・HALTING の時だけ要求し、出した要求は ready まで保つ（RS_WAIT は CP の client を含む `mc_idle` を待つので flush に消されない）。(5) CP は DISP（id 1）を名乗らない: XCAP は 11 bit で DISP2 だけ（list は 10 個まで 0x1C0 の前に入る）。(6) DC の MC の誤りは `atg_cp_ctl` の `DC_CLIENT` で device の fault から外す（protection の拒否は除く）。(7) DISP_SET の対は seq の `sidx` に 0x3C0 + offset / 4 を置き、SET_REG と同じ書き込みの道を通る。
+- **D6**: `atg_top_disp_tb` は CPU と firmware を入れない（DISP µop は firmware が要らない）、draw の三角形も入れない（RX・ROP は atg_top_tex と Verilator の e2e）。小さな mode（32 × 4）と 25 MHz の pclk。MC の flush が DC の読みに当たる場合は atg_mc_tb の D・E で確かめる（この TB では稀にしか当たらず `MUT_MC_NOKEEP` で FAIL にならない）。Verilator の display の case は未実施（§18.12 の最後、残り）。
+- **D8**: GHCI §13.2 の印を他の draft の節と同じ「Draft (Amaterrace implements it, in simulation)」にした。`GHCI_VERSION` の minor は上げていない（GHCI 全体が 1.0 draft のまま、MSAA・PROT も上げていない。上げるかは Q1 の判断）。
