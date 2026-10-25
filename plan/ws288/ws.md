@@ -66,7 +66,7 @@
 | [p030](phase030/phase.md) | Vulkan 1.0 core の残り（stencil、D16、MRT 4、format、point/line、occlusion query、input attachment、depth だけの clear など、design §15.18） | p027 の後・p018 の前 | in-progress（2026-10-25 02:32 設計の段、q1559 P1） |
 | [p031](phase031/phase.md) | ZYBO を GPU の target から外す（source は amaterrace-gpu の docs/old/、build・lint・sim・CI から外す） | なし（p030 S1 の前） | cleared（2026-10-25 05:13、T1-759 PASS、main a87523c） |
 | [p010](phase010/phase.md) | compiler の backend（zedBSD `isa/gsi1/`）、`gsi1_isa.h` と interface の表の確定（design §8） | p008、p027 | cleared（2026-10-25 07:12: GSI1 の backend、gsi1_isa.h と interface の表の確定、host 試験 29/29。vmunix の link は p006） |
-| [p018](phase018/phase.md) | firmware の Vulkan の object model と draw/dispatch（design §8）。GHCI §7.2・§11.6 への firmware の追従を含む | p017、p009、p010、p027、p030 | planned（順: p010 の後） |
+| [p018](phase018/phase.md) | firmware の Vulkan の object model と draw/dispatch（design §8）。GHCI §7.2・§11.6 への firmware の追従を含む | p017、p009、p010、p027、p030 | in-progress（2026-10-25 09:33 実装 commit 済み、amaterrace p2-p018 2ce0fe6、T の Verilator の結果待ち） |
 | p019 | zedBSD の `vk/`（検証する中継、design §8） | p010、p017、p006、p027 | planned（順: p018 の後） |
 | p011 | 端から端の統合（Verilator の上で libvulkan → `vk/` → firmware → RTL、vkdemo の 1 frame、design §8） | p009、p010、p018、p019 | planned（順: p006 の後） |
 | [p013](phase013/phase.md) | KC705 の PCIe（BAR0 = GHCI、BAR2 = DDR3 の VRAM、MSI、VFIO） | p012、p024、p006 | planned（2026-10-25 01:08 Future Work から戻した） |
