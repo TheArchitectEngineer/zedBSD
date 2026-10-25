@@ -1538,7 +1538,7 @@ irq_mask_set(
 	} else if (device->irq_mask != 0U) {
 		device->irq_mask |= GHCI_IRQ_DISP_ERROR;
 	}
-	ghci_write(device, GHCI_IRQ_ENABLE, device->irq_mask);
+	ghci_cp_irq_enable(device);
 
 	spin_unlock_irqrestore(&device->irq_lock, irq);
 

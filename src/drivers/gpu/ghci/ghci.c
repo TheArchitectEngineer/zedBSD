@@ -107,6 +107,7 @@ ghci_device_start(
 	spin_init(&device->irq_lock, LOCK_RANK_DEVICE, "ghci interrupt");
 	waitq_init(&device->fence_wake, "ghci fence");
 	waitq_init(&device->service_wake, "ghci service");
+	waitq_init(&device->poll_wake, "ghci poll");
 	waitq_init(&device->display.flip_wake, "ghci flip");
 
 	/* Reads what the GPU is and has; a window that is not GHCI 1 is left alone. */
@@ -141,10 +142,24 @@ ghci_device_start(
 		return error;
 	}
 
+	/*
+	 * Starts the poll thread of a device that takes no interrupt, which
+	 * stands in for the handler from here on (the executor's start below
+	 * already waits for the firmware's results).
+	 */
+	error = ghci_poll_start(device);
+	if (error != 0) {
+		ghci_display_detach(device);
+		ghci_cp_stop(device);
+		ghci_memory_fini(device);
+		return error;
+	}
+
 	/* Starts the thread that recovers from faults and gives deferred memory back. */
 	error = ghci_service_start(device);
 	if (error != 0) {
 		ghci_display_detach(device);
+		ghci_poll_stop(device);
 		ghci_cp_stop(device);
 		ghci_memory_fini(device);
 		return error;
@@ -163,6 +178,7 @@ ghci_device_start(
 	error = register_device(device);
 	if (error != 0) {
 		ghci_display_detach(device);
+		ghci_poll_stop(device);
 		ghci_cp_stop(device);
 		ghci_service_stop(device);
 		ghci_vk_engine_stop(device);
@@ -214,9 +230,14 @@ ghci_device_stop(
 	if (error != 0)
 		return error;
 
-	/* Quiets the hardware: the display first, then the processor, then the thread. */
+	/*
+	 * Quiets the hardware: the display first, then the processor, then the
+	 * threads.  The poll stops before the ring and the fence page it reads
+	 * go back; the processor's stop looks at the fence page itself.
+	 */
 	device->gpu = NULL;
 	ghci_display_detach(device);
+	ghci_poll_stop(device);
 	ghci_cp_stop(device);
 	ghci_service_stop(device);
 
@@ -447,6 +468,7 @@ identify_memory(
 	device->local_base = 0U;
 	device->local_size = 0U;
 	device->local_window = 0U;
+	device->hardware_window = 0U;
 	device->host_limit = 0U;
 	device->mem_registers = 0U;
 
@@ -457,6 +479,9 @@ identify_memory(
 		device->local_base = ghci_read(device, registers + GHCI_MEM_LOCAL_BASE);
 		device->local_size = ghci_read(device, registers + GHCI_MEM_LOCAL_SIZE);
 		window = ghci_read(device, registers + GHCI_MEM_WINDOW_SIZE);
+
+		/* The GPU's window, which WINDOW_CTRL switches even when the bus did not map it. */
+		device->hardware_window = window;
 
 		/* The end of the GPU addresses that reach the host (0: all of them). */
 		device->host_limit = ghci_read(device, registers + GHCI_MEM_HOST_LIMIT);
@@ -991,12 +1016,13 @@ gpu_resource_map(
 	void *object,
 	struct drv_gpu_mapping *mapping)
 {
+	struct ghci_device *device;
 	struct ghci_allocation *allocation;
 
-	(void)private_data;
 	(void)opaque;
 
 	/* Memory only the GPU reaches cannot be mapped. */
+	device = private_data;
 	allocation = object;
 	if (allocation->view == NULL)
 		return EINVAL;
@@ -1006,6 +1032,10 @@ gpu_resource_map(
 	mapping->address = allocation->view;
 	mapping->bytes = allocation->bytes;
 	mapping->attributes = 0U;
+
+	/* Where the GPU does not snoop the caches, the user's mapping is uncached like the kernel's view. */
+	if (device->host_uncached)
+		mapping->attributes = DRV_GPU_MAPPING_UNCACHED_RAM;
 
 	/* Succeeded: the view is described. */
 	return 0;

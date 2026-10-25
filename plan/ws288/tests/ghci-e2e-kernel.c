@@ -634,6 +634,15 @@ ghci_service_start(
 	return 0;
 }
 
+/* The link raises its interrupt line, so the device is not polled and has no poll thread. */
+int
+ghci_poll_start(
+	struct ghci_device *device)
+{
+	(void)device;
+	return 0;
+}
+
 /* The waiters on poll readiness: the fake core's poll looks again after each round anyway. */
 void
 poll_notify(void)
