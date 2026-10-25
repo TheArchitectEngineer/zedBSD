@@ -33,3 +33,4 @@
 
 - 2026-10-24 Q1: 新設。p007 の記録の「200 MHz の作業は p015（R3）でまとめて」をここに移した。
 - 2026-10-25 04:12 確認（ユーザー「タイミングの調整は、Vulkan 1.0の必須項目のロジック実装後、さらにドライバとlibvulkanを実装させたあとに行う方針で、変更なしです。」）: 依存は p030（Vulkan 1.0 core の必須の logic）・p006（driver）・p019（libvulkan の側の `vk/`）の後。方針は変えない。
+- 2026-10-25 12:51 ユーザー「SUはパイプラインにしましょう。ということは、FPUもパイプライン化がひつようですね。」→ SU の FPU は（複数 cycle で DSP を使い回す形ではなく）pipeline にする。Q1 の確認: atg_su_fpu・atg_su_alu は今、全部の計算を pipe[0] の前の組み合わせで行い、pipe[1..5] は遅らせるだけ（SHORT_LAT 6）。計算を各段へ分ければ、latency・scoreboard（atg_su_sb の short interlock）・ISA は変えずに pipeline にできる。
