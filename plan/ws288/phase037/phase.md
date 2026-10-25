@@ -3,7 +3,7 @@
 # ws288-p037 算術の共通の module（乗算・除算・加算・減算・shift を am_ の module に限る）
 
 - 親: [WS288](../ws.md)。規則: amaterrace-gpu の `docs/style.md`（この Phase で規則を足す）。
-- 状態: in-progress（2026-10-25 12:58 Q1、q1577 P1）
+- 状態: cleared（2026-10-26 02:1x Q1。T1-805 全 PASS、arith-lint 0、合成の前後は記録の末尾）
 - 依存: なし。p036（P2、FPU の am_mul・TU・ROP・RX の削減）・p034（P1）・p035（P3、DC）と同じ file を触るので、block ごとに担当を分ける（下）。
 
 ## 決定（2026-10-25 12:58 ユーザー）
@@ -132,3 +132,11 @@ main に未だ入っていない p037 の物: P1 の cd8e65c まで（T1-804 待
   - 読み（p037 の分が主な所）: su/fpu は LUT +4.5k（n8）/ +3.0k（pks）、DSP −16、−4.2〜−4.5 ns と悪くなった（機能の追加は無いので p037 の書き換えの分）。pks の su/pk は d94076c の 2,952 → 7,250（+4.3k）・−5.6 ns: 共有の形でも lane ごとの atg_su_pk_half（16 個 × 約 360）が残っている（p037 の書き換えの分、PK_SHARED の削減が戻った可能性、RTL は読み切っていない）。su/lane は +5.8 ns・−1.0k LUT、su/xu は −1.3 ns・−0.7k LUT。vf −2.4〜−2.7 ns、rop は d94076c から −3.9 ns（fblend の comp を 4 → 2 に共有した前の mux）、blt −2.7 ns（favg を ffma_p に）。p037 の分でない所: tu/filter・ffilt の改善は p038、TU・ROP・VF の LUT の減りの大半は p036 の後半（212bb3f・fe4aca5・03626b1〜dcb6dd3）、mc・cp・cpu の悪化は p034 の PROT の経路（mc/cnt の加算の鎖の形は p037 の可能性、分けていない）、dc は p035。
   - 未実施: 配置配線（指示どおり）、板の全体の合成（MIG・PCIe 込み）、pks の n8 との差の RTL の原因の確認。削除の候補は Q1 へ（下の報告）。
 - 2026-10-26 01:5x Q1: P2 の合成（q1584）の数を evidence の utilization.rpt・timing_summary.rpt で確かめた（LUT 181,957 / 175,319、WNS −35.761 / −43.101）。読み: FPU が +4.5k LUT・4.2 ns 遅く、PK_SHARED=1 の pk の共有の節約が 2,952 → 7,250 LUT に減った（P2 は p037 の後退と見る、RTL は未追跡）。Q1 の疑い: 測定は OOC_FLATTEN=none（module の境で最適化しない）で、旧版は function が 1 つの module の中に展開され最適化されていたが、新版は am_ の module の境で切れる。board の build（flatten の既定 rebuilt）では差が小さい可能性がある。→ 公平な比較として rebuilt で 2d2bd25 と 8e529b3（PK 0・1）を Q1 が流す（q1-syn）。その結果で FPU・pk の直しを p037 の残りにするか決める。
+- 2026-10-26 02:1x Q1 の合成（flatten の既定 rebuilt = board の build と同じ、OOC、xc7k325t-2、5 ns、合成だけ、3 本を並行、VIVADO_THREADS 4）。evidence/p037-rb-*。
+  | 版 | LUT | DSP | 合成の WNS | Fmax の見積もり | 最悪の経路 |
+  | --- | --- | --- | --- | --- | --- |
+  | 2d2bd25（p037 の前、その版の既定の形） | 196,245（96.29%） | 178 | −32.243 ns | 26.9 MHz | tu/ffilt ctl → 96 段 |
+  | 8e529b3 PK 0 | **168,445（82.65%）** | 192 | **−30.413 ns** | **28.5 MHz** | su/exec → 107 段 |
+  | 8e529b3 PK 1 | **163,440（80.20%）** | 192 | −38.008 ns | 23.2 MHz | su/opd b_warp → fpu、129 段 |
+  - 読み: rebuilt では LUT が −27.8k（−14%、IMEM・DMEM の倍・DC・p034 の PROT を足した上で）、Fmax は 26.9 → 28.5 MHz。flatten none で見えた FPU の +4.5k・pk の共有の節約の消失は、module の境で最適化が切れる測り方の影響が大きい（rebuilt の階層の行は最適化で混ざるので block ごとには比べない）。PK 1 の Fmax が低いのは shared の pk が FPU の FMA を通る経路（d94076c の flatten none でも −39.2 ns）で、p037 の後退とは言えない。DSP +14 は TU・ROP・BLT の am_mul（p036・p038 の分を含む）。
+  - 受け入れの判定: 規則（docs/style.md）・共通の module の TB・arith-lint 0・make sim/verilator/lint PASS（T1-805）・KC705 の合成の LUT・DSP の前後（上）が揃った → **cleared**（2026-10-26 Q1）。残り（p025 へ）: flatten none の FPU・pk の差（module の境）、opd の operand の選択の fanout 2,585、FRACT が rint → i2f → fma を直列。
