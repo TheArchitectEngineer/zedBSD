@@ -36,12 +36,15 @@
 
 /*
  * The interrupts the driver takes from the command processor: the fence,
- * a fault, the watchdog, and the firmware's results of a frame.
+ * a fault, the watchdog, the firmware's results of a frame, and the
+ * display controller's events (a flip's record, an error, a change of
+ * the connection; its vertical sync is not used).
  */
-#define IRQ_TAKEN			(GHCI_IRQ_FENCE | GHCI_IRQ_FAULT | GHCI_IRQ_WATCHDOG | GHCI_IRQ_RESULT)
+#define IRQ_DISPLAY			(GHCI_IRQ_FLIP | GHCI_IRQ_DISP_ERROR | GHCI_IRQ_HOTPLUG)
+#define IRQ_TAKEN			(GHCI_IRQ_FENCE | GHCI_IRQ_FAULT | GHCI_IRQ_WATCHDOG | GHCI_IRQ_RESULT | IRQ_DISPLAY)
 
 /* Every bit of IRQ_STATUS, cleared at the start. */
-#define IRQ_ALL				0x1ffU
+#define IRQ_ALL				0x1fffU
 
 /* How often a wait for a fence looks at the fence page when no interrupt comes. */
 #define FENCE_POLL_MS			10U
@@ -55,6 +58,7 @@
 static void ring_put(struct ghci_device *device, uint32_t index, uint32_t value);
 static uint32_t ring_get(struct ghci_device *device, uint32_t index);
 static int ring_room(struct ghci_device *device, uint32_t need, uint32_t *pad);
+static int ring_write(struct ghci_device *device, struct ghci_session *session, const uint32_t *packets, uint32_t dwords, int fenced, struct ghci_ticket *ticket);
 static void refresh_completed(struct ghci_device *device);
 static int fence_window_wait(struct ghci_device *device);
 static void program_ring(struct ghci_device *device);
@@ -189,97 +193,12 @@ ghci_cp_submit(
 	uint32_t dwords,
 	struct ghci_ticket *ticket)
 {
-	uint32_t fence_packet[GHCI_FENCE_PACKET_DWORDS];
-	uint32_t index;
-	uint32_t need;
-	uint32_t pad;
-	uint32_t tag;
-	uint32_t fence;
-	uint32_t last;
-	unsigned long irq;
-	int idle;
 	int error;
 
-	/* The run is the packets and the fence after them. */
-	need = dwords + GHCI_FENCE_PACKET_DWORDS;
-	tag = GHCI_TAG_DRIVER;
-	if (session != NULL)
-		tag = session->tag;
-
-	/* One writer of the ring at a time. */
-	mutex_lock(&device->cp_lock);
-
-	/* A device that stopped or was lost takes nothing. */
-	if (!device->running || device->lost) {
-		mutex_unlock(&device->cp_lock);
-		return EIO;
-	}
-
-	/* The fence values in flight stay well inside half the circle. */
-	error = fence_window_wait(device);
-	if (error != 0) {
-		mutex_unlock(&device->cp_lock);
+	/* The packets and the fence after them. */
+	error = ring_write(device, session, packets, dwords, 1, ticket);
+	if (error != 0)
 		return error;
-	}
-
-	/* Waits for room, which the processor makes as it parses. */
-	error = ring_room(device, need, &pad);
-	if (error != 0) {
-		mutex_unlock(&device->cp_lock);
-		return error;
-	}
-
-	/* The padding up to the end of the ring, which the processor skips. */
-	if (pad != 0U) {
-		ring_put(device, device->wptr, GHCI_PKT_PAD(pad - 1U));
-		for (index = 1U; index < pad; index++)
-			ring_put(device, device->wptr + index, 0U);
-		device->wptr = 0U;
-	}
-
-	/* The packets. */
-	for (index = 0U; index < dwords; index++)
-		ring_put(device, device->wptr + index, packets[index]);
-
-	/* The driver's fence after them, which raises the fence interrupt. */
-	fence = device->fence_issued + 1U;
-	ghci_packet_fence(tag, device->fence_page->gpu_address, fence, 1, fence_packet);
-	for (index = 0U; index < GHCI_FENCE_PACKET_DWORDS; index++)
-		ring_put(device, device->wptr + dwords + index, fence_packet[index]);
-
-	/*
-	 * The fence is issued before the doorbell, so the interrupt of its
-	 * write always finds it issued; an idle device starts its hang clock
-	 * now.
-	 */
-	irq = spin_lock_irqsave(&device->irq_lock);
-
-	idle = 0;
-	if (device->completed == device->fence_issued)
-		idle = 1;
-	device->fence_issued = fence;
-	if (idle)
-		device->progress_tick = clock_ticks();
-	ticket->fence = fence;
-	ticket->generation = device->generation;
-
-	spin_unlock_irqrestore(&device->irq_lock, irq);
-
-	/*
-	 * The ring's words must reach the GPU before the doorbell: a ring in
-	 * local memory is read back (the read returns after the writes), and
-	 * the write barrier orders the doorbell after them.
-	 */
-	last = device->wptr + need - 1U;
-	if (device->ring->kind != GHCI_MEMORY_HOST)
-		(void)ring_get(device, last);
-	kern_io_write_barrier();
-
-	/* The doorbell. */
-	device->wptr = (device->wptr + need) % device->ring_dwords;
-	ghci_write(device, GHCI_RING_WPTR, device->wptr);
-
-	mutex_unlock(&device->cp_lock);
 
 	/* The session's memory now waits for this fence before it goes back. */
 	if (session != NULL) {
@@ -287,6 +206,31 @@ ghci_cp_submit(
 		session->last_generation = ticket->generation;
 		session->outstanding = 1;
 	}
+
+	/* Succeeded: the packets are in the ring. */
+	return 0;
+}
+
+/*
+ * Writes packets of the driver's own into the ring without a fence after
+ * them, and rings the doorbell.
+ *
+ * A flip needs no fence: its record says when it was taken, and a fence
+ * would drain every unit of the GPU behind the other sessions' work.
+ */
+int
+ghci_cp_submit_unfenced(
+	struct ghci_device *device,
+	const uint32_t *packets,
+	uint32_t dwords)
+{
+	struct ghci_ticket ticket;
+	int error;
+
+	/* The packets alone. */
+	error = ring_write(device, NULL, packets, dwords, 0, &ticket);
+	if (error != 0)
+		return error;
 
 	/* Succeeded: the packets are in the ring. */
 	return 0;
@@ -427,7 +371,7 @@ ghci_cp_done(
 
 /*
  * The interrupt handler of the device: the fence, a fault, the watchdog,
- * and the display controller's own interrupt.
+ * the firmware's results and the display controller's events.
  */
 int
 ghci_cp_interrupt(
@@ -436,7 +380,6 @@ ghci_cp_interrupt(
 	struct ghci_device *device;
 	uint32_t status;
 	unsigned long irq;
-	int display;
 	int handled;
 
 	/* Masks the GPU's interrupt and reads what is pending. */
@@ -451,15 +394,12 @@ ghci_cp_interrupt(
 	/* Unmasks what the driver takes; a bit still pending then sends a new message. */
 	ghci_write(device, GHCI_IRQ_ENABLE, device->irq_mask);
 
-	/* The display controller has its own status. */
-	display = ghci_display_interrupt(device);
-
-	/* An interrupt of neither is another device's on a shared line. */
+	/* An interrupt with nothing pending is another device's on a shared line. */
 	handled = 0;
-	if (status != 0U || display)
+	if (status != 0U)
 		handled = 1;
 
-	/* Nothing of the command processor's to serve. */
+	/* Nothing of the GPU's to serve. */
 	if (status == 0U)
 		return handled;
 
@@ -494,6 +434,21 @@ ghci_cp_interrupt(
 		device->service_work |= GHCI_WORK_RECOVER;
 
 		spin_unlock_irqrestore(&device->irq_lock, irq);
+	}
+
+	/*
+	 * A flip's record, a scan-out error or a change of the connection: the
+	 * service thread reads the controller, and whoever waits for a flip
+	 * reads the record page again.
+	 */
+	if ((status & IRQ_DISPLAY) != 0U) {
+		irq = spin_lock_irqsave(&device->irq_lock);
+
+		device->service_work |= GHCI_WORK_DISPLAY;
+
+		spin_unlock_irqrestore(&device->irq_lock, irq);
+
+		waitq_wake_all(&device->display.flip_wake);
 	}
 
 	/* Wakes the fence waiters and the service thread. */
@@ -622,6 +577,9 @@ ghci_service_step(
 	/* Work that stopped moving resets it too. */
 	service_hang_check(device);
 
+	/* The display's records, errors and connection, and the end of a lease. */
+	ghci_display_service(device, work);
+
 	/*
 	 * The executor's frames whose results are in and its job markers whose
 	 * fences passed, before the reclaim: a frame's reply blob is held
@@ -700,6 +658,120 @@ ring_room(
 		return error;
 
 	/* Succeeded: the run fits. */
+	return 0;
+}
+
+/*
+ * Writes a run of packets into the ring, with the driver's fence after it
+ * when fenced is nonzero (the ticket is then the fence's), and rings the
+ * doorbell.
+ */
+static int
+ring_write(
+	struct ghci_device *device,
+	struct ghci_session *session,
+	const uint32_t *packets,
+	uint32_t dwords,
+	int fenced,
+	struct ghci_ticket *ticket)
+{
+	uint32_t fence_packet[GHCI_FENCE_PACKET_DWORDS];
+	uint32_t index;
+	uint32_t need;
+	uint32_t pad;
+	uint32_t tag;
+	uint32_t fence;
+	uint32_t last;
+	unsigned long irq;
+	int idle;
+	int error;
+
+	/* The run is the packets and, when fenced, the fence after them. */
+	need = dwords;
+	if (fenced)
+		need = dwords + GHCI_FENCE_PACKET_DWORDS;
+	tag = GHCI_TAG_DRIVER;
+	if (session != NULL)
+		tag = session->tag;
+
+	/* One writer of the ring at a time. */
+	mutex_lock(&device->cp_lock);
+
+	/* A device that stopped or was lost takes nothing. */
+	if (!device->running || device->lost) {
+		mutex_unlock(&device->cp_lock);
+		return EIO;
+	}
+
+	/* The fence values in flight stay well inside half the circle. */
+	error = fence_window_wait(device);
+	if (error != 0) {
+		mutex_unlock(&device->cp_lock);
+		return error;
+	}
+
+	/* Waits for room, which the processor makes as it parses. */
+	error = ring_room(device, need, &pad);
+	if (error != 0) {
+		mutex_unlock(&device->cp_lock);
+		return error;
+	}
+
+	/* The padding up to the end of the ring, which the processor skips. */
+	if (pad != 0U) {
+		ring_put(device, device->wptr, GHCI_PKT_PAD(pad - 1U));
+		for (index = 1U; index < pad; index++)
+			ring_put(device, device->wptr + index, 0U);
+		device->wptr = 0U;
+	}
+
+	/* The packets. */
+	for (index = 0U; index < dwords; index++)
+		ring_put(device, device->wptr + index, packets[index]);
+
+	/* The driver's fence after them, which raises the fence interrupt. */
+	if (fenced) {
+		fence = device->fence_issued + 1U;
+		ghci_packet_fence(tag, device->fence_page->gpu_address, fence, 1, fence_packet);
+		for (index = 0U; index < GHCI_FENCE_PACKET_DWORDS; index++)
+			ring_put(device, device->wptr + dwords + index, fence_packet[index]);
+
+		/*
+		 * The fence is issued before the doorbell, so the interrupt of its
+		 * write always finds it issued; an idle device starts its hang clock
+		 * now.
+		 */
+		irq = spin_lock_irqsave(&device->irq_lock);
+
+		idle = 0;
+		if (device->completed == device->fence_issued)
+			idle = 1;
+		device->fence_issued = fence;
+		if (idle)
+			device->progress_tick = clock_ticks();
+		ticket->fence = fence;
+		ticket->generation = device->generation;
+
+		spin_unlock_irqrestore(&device->irq_lock, irq);
+	}
+
+	/*
+	 * The ring's words must reach the GPU before the doorbell: a ring in
+	 * local memory is read back (the read returns after the writes), and
+	 * the write barrier orders the doorbell after them.
+	 */
+	last = device->wptr + need - 1U;
+	if (device->ring->kind != GHCI_MEMORY_HOST)
+		(void)ring_get(device, last);
+	kern_io_write_barrier();
+
+	/* The doorbell. */
+	device->wptr = (device->wptr + need) % device->ring_dwords;
+	ghci_write(device, GHCI_RING_WPTR, device->wptr);
+
+	mutex_unlock(&device->cp_lock);
+
+	/* Succeeded: the packets are in the ring. */
 	return 0;
 }
 
@@ -817,12 +889,19 @@ recover(
 	unsigned long irq;
 	int error;
 
+	/*
+	 * The display's flips are counted again across the reset: its lock is
+	 * taken before the ring's, the order every presentation takes them in.
+	 */
+	ghci_display_recover_begin(device);
+
 	/* No submission while the processor is reset. */
 	mutex_lock(&device->cp_lock);
 
 	/* A device that stopped or was already lost is left as it is. */
 	if (!device->running || device->lost) {
 		mutex_unlock(&device->cp_lock);
+		ghci_display_recover_end(device, 0);
 		return;
 	}
 
@@ -869,15 +948,23 @@ recover(
 
 	spin_unlock_irqrestore(&device->irq_lock, irq);
 
-	/* A GPU that does not come back from its reset is lost until the detach. */
+	/*
+	 * A GPU that does not come back from its reset is lost until the
+	 * detach.  One that does is idle now: the display learns which of its
+	 * flips were taken before the ring starts again.
+	 */
 	if (error != 0) {
 		kern_logf("ghci: %s: reset did not end; the device is lost\n", device->name);
 	} else {
+		ghci_display_recover_count(device);
 		program_ring(device);
 		ghci_write(device, GHCI_CTRL, GHCI_CTRL_RUN | GHCI_CTRL_WDT_EN);
 	}
 
 	mutex_unlock(&device->cp_lock);
+
+	/* The display places again what the reset lost and lets its lock go. */
+	ghci_display_recover_end(device, error == 0);
 
 	/* The waiters see the new generation. */
 	waitq_wake_all(&device->fence_wake);

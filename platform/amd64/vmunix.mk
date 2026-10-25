@@ -277,6 +277,7 @@ AMD64_GHCI_SOURCES += src/drivers/gpu/ghci/ghci.c src/drivers/gpu/ghci/pci-attac
 	src/drivers/gpu/ghci/memory.c src/drivers/gpu/ghci/range.c src/drivers/gpu/ghci/blit.c \
 	src/drivers/gpu/ghci/state.c src/drivers/gpu/ghci/check.c src/drivers/gpu/ghci/capset.c \
 	src/drivers/gpu/ghci/jobs.c src/drivers/gpu/ghci/isa.c src/drivers/gpu/ghci/display.c \
+	src/drivers/gpu/ghci/display-scan.c \
 	src/drivers/gpu/ghci/adv7511.c src/drivers/gpu/ghci/service.c src/drivers/gpu/ghci/share.c \
 	src/drivers/gpu/ghci/compiler/gsi1-compile.c src/drivers/gpu/ghci/compiler/gsi1-encode.c \
 	src/drivers/gpu/ghci/compiler/gsi1-io.c src/drivers/gpu/ghci/compiler/gsi1-memory.c \

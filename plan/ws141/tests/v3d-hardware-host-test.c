@@ -1945,7 +1945,7 @@ check_resources(
 	assert(error == 0 && mapping.physical == buffer->memory.paddr && mapping.bytes == 8192);
 	error = test_operations->share->export_resource(test_controller, first, resource, NULL, &shared);
 	assert(error == 0 && buffer->references == 2);
-	error = test_operations->share->import_resource(test_controller, second, shared, &alias, &identifier);
+	error = test_operations->share->import_resource(test_controller, second, shared, 0U, &alias, &identifier);
 	assert(error == 0 && identifier == 1 && buffer->references == 3);
 	imported = alias;
 	assert(imported->view->address == 12288 && imported->view != resource->view);

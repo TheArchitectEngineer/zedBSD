@@ -21,6 +21,10 @@
  * valid. Release consumes only that reference and cannot fail. Import borrows
  * the shared object and returns an independently owned session resource; its
  * ordinary resource_destroy callback retires it. Failures return no ownership.
+ * Import gets the request's GPU_IMPORT_* flags: GPU_IMPORT_SCANOUT asks for a
+ * resource the backend's own display can scan out, which a backend may refuse
+ * with ENOTSUP for an allocation its display cannot scan (the caller then
+ * copies instead); a backend without that limit ignores the flags.
  * The GPU core retains the registered device until all exported references end.
  *
  * A nonnull image requests the existing immutable linear scanout contract.
@@ -31,7 +35,7 @@
 struct drv_gpu_share_ops {
 	int (*export_resource)(void *, void *, void *, const struct gpu_image_descriptor *, void **);
 	void (*release)(void *, void *);
-	int (*import_resource)(void *, void *, void *, void **, uint32_t *);
+	int (*import_resource)(void *, void *, void *, uint32_t, void **, uint32_t *);
 
 	/* Optional physical view remains borrowed while the exported object lives. */
 	int (*get_scanout_backing)(void *, void *, struct drv_gpu_scanout_backing *);

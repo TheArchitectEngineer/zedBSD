@@ -6,9 +6,10 @@
  */
 
 /*
- * The host test of the GHCI driver's device, ring, memory and native
- * command (src/drivers/gpu/ghci/ghci.c, cp.c, memory.c, blit.c,
- * native.c) against a model of a GHCI GPU.
+ * The host test of the GHCI driver's device, ring, memory, native
+ * command and display (src/drivers/gpu/ghci/ghci.c, cp.c, memory.c,
+ * blit.c, native.c, display.c, display-scan.c) against a model of a GHCI
+ * GPU.
  *
  * The model is a register window, local memory with a window onto part
  * of it, and a command processor that parses the ring when the doorbell
@@ -26,6 +27,17 @@
  * raises RESULT.  The Vulkan executor's test (ghci-vk-host-test.c)
  * includes this file with GHCI_MODEL_ONLY, which leaves out this test's
  * own checks and main.
+ *
+ * With a DISP2 capability (model_setup_display) the model also has a
+ * display controller that is a unit of the GPU: the gate of the host's
+ * scan-out writes (refused while the processor runs, with BAD_WRITE),
+ * DISP_SET and FLIP in the ring, one pending flip per plane taken at the
+ * next vertical sync (every sleep of the test is one; model_dc_hold
+ * holds them), at once while ENABLE is 0 (cancelled for the cursor), and
+ * as cancelled when ENABLE falls; the record {value, FRAME_COUNT} and
+ * IRQ_STATUS.FLIP at the take; TAKEN0 and TAKEN1; the mode table; and
+ * CONNECTED with HOTPLUG.  A mutex locked twice is counted as an error:
+ * on one thread it would never come back.
  */
 
 #include <errno.h>
@@ -37,11 +49,15 @@
 
 #include "drivers/gpu/ghci/ghci.h"
 #include "kern/clock.h"
+#include "kern/poll.h"
 #include "drivers/gpu/ghci/hcr.h"
 #include "drivers/gpu/ghci/packets.h"
 #include "uapi/gpu.h"
 #include "uapi/gpu-allocation.h"
 #include "uapi/gpu-op.h"
+#include "uapi/gpu-display.h"
+#include "uapi/gpu-scanout.h"
+#include "drivers/gpu/gpu-display.h"
 
 /* The model's register window (128 KiB) and the place of its extended capabilities. */
 #define MODEL_WINDOW_WORDS		32768U
@@ -49,13 +65,14 @@
 #define MODEL_MEM_REGISTERS		0x180U
 
 /*
- * The model's local memory: 8 MiB at 2 GiB, of which the window shows the
- * first 4 MiB (a test that includes the model may give it more).
+ * The model's local memory: 32 MiB at 2 GiB, of which the window shows
+ * the first 16 MiB (room for the display's two frames of 1280 x 720); a
+ * test that includes the model may give it more.
  */
 #define MODEL_LOCAL_BASE		0x80000000U
 #ifndef MODEL_LOCAL_BYTES
-#define MODEL_LOCAL_BYTES		(8U << 20)
-#define MODEL_WINDOW_BYTES		(4U << 20)
+#define MODEL_LOCAL_BYTES		(32U << 20)
+#define MODEL_WINDOW_BYTES		(16U << 20)
 #endif
 #define MODEL_WINDOW_PHYSICAL		0xe0000000ULL
 
@@ -65,6 +82,11 @@
 
 /* The state words of the model's blitter. */
 #define MODEL_STATE_WORDS		512U
+
+/* The model's display controller: its window (256 bytes) in the register window, its two modes. */
+#define MODEL_DISP2_REGISTERS		0x400U
+#define MODEL_DC_WORDS			64U
+#define MODEL_DC_MODES			2U
 
 /*
  * The counts of the checks that held and that failed.  Every check adds
@@ -136,6 +158,43 @@ static uint32_t model_frame_records;
 static unsigned model_control_packets;
 static uint32_t model_last_control;
 
+/*
+ * The model's display controller: whether it exists, its registers by
+ * word, the sticky errors of STATUS, each plane's pending flip, a record
+ * that waits for the processor to leave a state that does not write it,
+ * the frame count, and whether the test holds the vertical syncs.
+ * slot_busy counts flips placed on a plane that had one pending (the
+ * driver never should), dc_flips the FLIP packets parsed, and
+ * dc_bad_writes the host writes the gate refused.
+ */
+struct model_dc_flip {
+	int pending;
+	uint32_t base;
+	uint32_t record;
+	uint32_t value;
+	int due;
+	uint32_t due_words[2];
+};
+static int model_dc_present;
+static uint32_t model_dc[MODEL_DC_WORDS];
+static uint32_t model_dc_sticky;
+static struct model_dc_flip model_dc_slot[2];
+static uint32_t model_dc_frames;
+static int model_dc_hold;
+static unsigned model_dc_slot_busy;
+static unsigned model_dc_flips;
+static unsigned model_dc_bad_writes;
+static unsigned model_dc_disp_sets;
+
+/* The mutexes locked twice on the test's one thread (each would hang the kernel). */
+static unsigned lock_errors;
+
+/* The model's two modes, as MODE_H0 .. MODE_FLAGS read them: 640 x 480 and 1280 x 720 at 60 Hz. */
+static const uint32_t model_dc_modes[MODEL_DC_MODES][6] = {
+	{ (96U << 16) | 640U, (48U << 16) | 16U, (2U << 16) | 480U, (33U << 16) | 10U, 25200U, 0x00U },
+	{ (40U << 16) | 1280U, (220U << 16) | 110U, (5U << 16) | 720U, (20U << 16) | 5U, 74250U, 0x13U }
+};
+
 static void expect(int held, const char *name);
 static void model_reset(void);
 static void model_run(void);
@@ -146,9 +205,19 @@ static void model_blit(void);
 static void model_interrupt(void);
 static void model_setup_window(int discrete);
 static int model_class_v(const uint32_t *ring, uint32_t at, uint32_t count);
+static uint32_t model_dc_read(uint32_t offset);
+static void model_dc_write(uint32_t offset, uint32_t value);
+static int model_dc_scanout_register(uint32_t offset);
+static void model_dc_apply(uint32_t offset, uint32_t value);
+static void model_dc_take(unsigned plane, int cancelled);
+static void model_dc_records_flush(void);
+static int model_dc_packet(const uint32_t *ring, uint32_t at, uint32_t op, uint32_t flags, uint32_t count);
+static void model_vsync(void);
 #ifndef GHCI_MODEL_ONLY
+static void model_setup_display(void);
 static void test_discrete(void);
 static void test_unified(void);
+static void test_display(void);
 #endif
 
 /* The kernel's MMIO: the register window is the model's. */
@@ -161,6 +230,10 @@ kern_mmio_read32(
 
 	/* The register's offset in the window. */
 	offset = (uint32_t)((const volatile uint8_t *)address - (const volatile uint8_t *)model_registers);
+
+	/* The display controller's window. */
+	if (model_dc_present && offset >= MODEL_DISP2_REGISTERS && offset < MODEL_DISP2_REGISTERS + GHCI_DC2_WINDOW)
+		return model_dc_read(offset - MODEL_DISP2_REGISTERS);
 
 	/* The registers that the processor computes. */
 	if (offset == GHCI_STATUS) {
@@ -202,6 +275,12 @@ kern_mmio_write32(
 
 	/* The register's offset in the window. */
 	offset = (uint32_t)((volatile uint8_t *)address - (volatile uint8_t *)model_registers);
+
+	/* The display controller's window. */
+	if (model_dc_present && offset >= MODEL_DISP2_REGISTERS && offset < MODEL_DISP2_REGISTERS + GHCI_DC2_WINDOW) {
+		model_dc_write(offset - MODEL_DISP2_REGISTERS, value);
+		return;
+	}
 
 	/* IRQ_STATUS is write-1-to-clear; IRQ_ENABLE may raise a pending interrupt. */
 	if (offset == GHCI_IRQ_STATUS) {
@@ -267,14 +346,19 @@ void
 mutex_lock(
 	struct mutex *mutex)
 {
-	(void)mutex;
+	/* A second lock of the same mutex on one thread would never come back. */
+	if (mutex->locked != 0U) {
+		lock_errors++;
+		printf("FAIL mutex locked twice\n");
+	}
+	mutex->locked = 1U;
 }
 
 void
 mutex_unlock(
 	struct mutex *mutex)
 {
-	(void)mutex;
+	mutex->locked = 0U;
 }
 
 void
@@ -337,6 +421,7 @@ waitq_sleep(
 	(void)deadline;
 	(void)flags;
 	fake_ticks++;
+	model_vsync();
 	model_run();
 	return 0;
 }
@@ -364,7 +449,14 @@ sched_sleep(
 		fake_ticks = timeout_tick;
 	else
 		fake_ticks++;
+	model_vsync();
 	model_run();
+}
+
+/* Waiters on poll are woken: nothing waits in the test. */
+void
+poll_notify(void)
+{
 }
 
 /* The log goes to standard output. */
@@ -513,7 +605,7 @@ cred_is_superuser(
 	return core_superuser;
 }
 
-/* The parts of the driver the test does not run: the thread, the display and the compiler. */
+/* The parts of the driver the test does not run: the thread and the compiler. */
 int
 ghci_service_start(
 	struct ghci_device *device)
@@ -532,51 +624,19 @@ ghci_isa_select(
 	return model_isa;
 }
 
-int
-ghci_display_attach(
-	struct ghci_device *device)
-{
-	device->display.present = 0;
-	return 0;
-}
-
-void
-ghci_display_detach(
-	struct ghci_device *device)
-{
-	(void)device;
-}
-
-void
-ghci_display_session_close(
-	struct ghci_device *device,
-	struct ghci_session *session)
-{
-	(void)device;
-	(void)session;
-}
-
-int
-ghci_display_interrupt(
-	struct ghci_device *device)
-{
-	(void)device;
-	return 0;
-}
-
-const struct drv_gpu_display_ops ghci_display_ops;
-
 #ifndef GHCI_MODEL_ONLY
 /*
- * Runs both GPUs: a discrete one with a window onto part of its local
- * memory, and a unified one.
+ * Runs the GPUs: a discrete one with a window onto part of its local
+ * memory, a unified one, and a discrete one with a display controller.
  */
 int
 main(void)
 {
-	/* The discrete GPU, then the unified one. */
+	/* The discrete GPU, the unified one, then a discrete one with a display controller. */
 	test_discrete();
 	test_unified();
+	test_display();
+	expect(lock_errors == 0U, "no mutex locked twice");
 
 	/* Reports the counts of the checks. */
 	printf("ghci-driver-host-test: %u passed, %u failed\n", checks_passed, checks_failed);
@@ -619,6 +679,9 @@ model_reset(void)
 	model_fault_address = 0U;
 	model_registers[GHCI_FENCE_LAST / 4U] = 0U;
 	model_registers[GHCI_CTRL / 4U] = 0U;
+
+	/* The reset processor is idle: a record the display owed is written now. */
+	model_dc_records_flush();
 }
 
 /* Reports the bytes of GPU memory at an address, or NULL outside the aperture or any memory. */
@@ -784,6 +847,12 @@ model_packet(
 		model_blit();
 		break;
 
+	case GHCI_OP_DISP_SET:
+	case GHCI_OP_FLIP:
+		if (model_dc_packet(ring, at, op, flags, count) != 0)
+			return -1;
+		break;
+
 	case GHCI_OP_FENCE:
 		word = model_memory(ring[at + 1U], 4U);
 		if (word == NULL) {
@@ -866,6 +935,7 @@ model_setup_window(
 	memset(model_local, 0x5a, sizeof(model_local));
 	memset(model_host, 0xa5, sizeof(model_host));
 	model_host_next = 0U;
+	model_dc_present = 0;
 	model_reset();
 	model_paused = 0;
 
@@ -886,6 +956,41 @@ model_setup_window(
 	model_registers[(MODEL_MEM_REGISTERS + GHCI_MEM_LOCAL_SIZE) / 4U] = MODEL_LOCAL_BYTES;
 	model_registers[(MODEL_MEM_REGISTERS + GHCI_MEM_WINDOW_SIZE) / 4U] = MODEL_WINDOW_BYTES;
 }
+
+#ifndef GHCI_MODEL_ONLY
+/*
+ * Writes a discrete GPU with a DISP2 display controller: 64-byte lines
+ * (KC705's), the MEM capability followed by DISP2, and a controller with
+ * a TMDS output, BGRA8 and RGBA8, a cursor plane, two modes and a sink
+ * connected.
+ */
+static void
+model_setup_display(void)
+{
+	/* The discrete GPU, then its display. */
+	model_setup_window(1);
+	model_registers[GHCI_CAPS / 4U] = GHCI_CAPS_CP | GHCI_CAPS_BLT | GHCI_CAPS_DISP | (6U << 20);
+	model_registers[MODEL_EXTCAP / 4U] = GHCI_XCAP_MEM | (1U << 8) | (2U << 16);
+	model_registers[MODEL_EXTCAP / 4U + 2U] = GHCI_XCAP_DISP2 | (1U << 8);
+	model_registers[MODEL_EXTCAP / 4U + 3U] = MODEL_DISP2_REGISTERS;
+
+	/* The controller, dark, with nothing pending. */
+	memset(model_dc, 0, sizeof(model_dc));
+	memset(model_dc_slot, 0, sizeof(model_dc_slot));
+	model_dc[GHCI_DC_ID / 4U] = GHCI_FOURCC('A', 'T', 'D', 'C');
+	model_dc[GHCI_DC_VERSION / 4U] = 0x00010000U;
+	model_dc[GHCI_DC_CAPS / 4U] = 0x2U | 0x10U | 0x20U | GHCI_DC_CAPS_CURSOR | (MODEL_DC_MODES << 9);
+	model_dc[GHCI_DC_CONNECTED / 4U] = 1U;
+	model_dc_sticky = 0U;
+	model_dc_frames = 0U;
+	model_dc_hold = 0;
+	model_dc_slot_busy = 0U;
+	model_dc_flips = 0U;
+	model_dc_bad_writes = 0U;
+	model_dc_disp_sets = 0U;
+	model_dc_present = 1;
+}
+#endif
 
 /*
  * Runs a class 2 packet as the model firmware: [gpu-op][flags][result]
@@ -956,6 +1061,321 @@ model_class_v(
 
 	/* The packet was taken. */
 	return 0;
+}
+
+/* Reads a register of the display controller's window. */
+static uint32_t
+model_dc_read(
+	uint32_t offset)
+{
+	uint32_t value;
+	uint32_t index;
+
+	/* STATUS: what the controller does now, its sticky errors and its pending flips. */
+	if (offset == GHCI_DC_STATUS) {
+		value = model_dc_sticky;
+		if ((model_dc[GHCI_DC_CTRL / 4U] & GHCI_DC_CTRL_ENABLE) != 0U) {
+			value |= GHCI_DC_ST_RUNNING;
+		} else {
+			value |= GHCI_DC_ST_IDLE;
+		}
+		if ((model_dc[GHCI_DC_CONNECTED / 4U] & 1U) != 0U)
+			value |= GHCI_DC_ST_CONNECTED;
+		if (model_dc_slot[0].pending)
+			value |= GHCI_DC_ST_PENDING0;
+		if (model_dc_slot[1].pending)
+			value |= GHCI_DC_ST_PENDING1;
+		if (model_dc_slot[0].due || model_dc_slot[1].due)
+			value |= GHCI_DC_ST_RECORD;
+		return value;
+	}
+
+	/* The mode the index selects. */
+	if (offset >= GHCI_DC_MODE_H0 && offset <= GHCI_DC_MODE_FLAGS) {
+		index = model_dc[GHCI_DC_MODE_INDEX / 4U];
+		if (index >= MODEL_DC_MODES)
+			return 0U;
+		return model_dc_modes[index][(offset - GHCI_DC_MODE_H0) / 4U];
+	}
+
+	/* The frame count. */
+	if (offset == GHCI_DC_FRAME_COUNT)
+		return model_dc_frames;
+
+	/* Every other register reads what is stored. */
+	return model_dc[offset / 4U];
+}
+
+/* Writes a register of the display controller's window from the host, through the gate. */
+static void
+model_dc_write(
+	uint32_t offset,
+	uint32_t value)
+{
+	int scanout;
+
+	/* STATUS clears the sticky errors it names. */
+	if (offset == GHCI_DC_STATUS) {
+		model_dc_sticky &= ~value;
+		return;
+	}
+
+	/* CONNECTED raises HOTPLUG when it changes. */
+	if (offset == GHCI_DC_CONNECTED) {
+		if ((model_dc[offset / 4U] & 1U) != (value & 1U))
+			model_irq_status |= GHCI_IRQ_HOTPLUG;
+		model_dc[offset / 4U] = value & 1U;
+		return;
+	}
+
+	/* The index, the cursor and the I2C registers are the host's in every state. */
+	scanout = model_dc_scanout_register(offset);
+	if (!scanout) {
+		if (offset == GHCI_DC_MODE_INDEX ||
+		    offset == GHCI_DC_CURSOR_POS ||
+		    offset == GHCI_DC_CURSOR_CTRL ||
+		    (offset >= GHCI_DC_I2C_CTRL && offset <= GHCI_DC_I2C_DATA))
+			model_dc[offset / 4U] = value;
+		return;
+	}
+
+	/* The scan-out registers are the ring's while the processor runs: the write is refused. */
+	if (model_state == GHCI_ST_RUNNING || model_state == GHCI_ST_HALTING) {
+		model_dc_sticky |= GHCI_DC_ST_BAD_WRITE;
+		model_dc_bad_writes++;
+		return;
+	}
+
+	/* FB_NEXT from the host replaces plane 0's pending flip, cancelled; with ENABLE 0 it shows at once. */
+	if (offset == GHCI_DC_FB_NEXT) {
+		if (model_dc_slot[0].pending)
+			model_dc_take(0U, 1);
+		if ((model_dc[GHCI_DC_CTRL / 4U] & GHCI_DC_CTRL_ENABLE) == 0U)
+			model_dc[GHCI_DC_FB_BASE / 4U] = value;
+		model_dc[offset / 4U] = value;
+		return;
+	}
+
+	/* The rest as DISP_SET writes it. */
+	model_dc_apply(offset, value);
+}
+
+/* Reports whether an offset is a scan-out register (kind S). */
+static int
+model_dc_scanout_register(
+	uint32_t offset)
+{
+	if (offset == GHCI_DC_CTRL)
+		return 1;
+	if (offset >= GHCI_DC_FB_NEXT && offset <= GHCI_DC_SYNC_POL)
+		return 1;
+	if (offset == GHCI_DC_PCLK_SEL)
+		return 1;
+	return 0;
+}
+
+/* Writes a scan-out or cursor register as the controller takes it (DISP_SET, or the host through the gate). */
+static void
+model_dc_apply(
+	uint32_t offset,
+	uint32_t value)
+{
+	uint32_t old;
+	int enabled;
+
+	/* CTRL: the controller's reset, ENABLE falling (every pending flip cancelled), FORMAT kept while lit. */
+	old = model_dc[GHCI_DC_CTRL / 4U];
+	enabled = (old & GHCI_DC_CTRL_ENABLE) != 0U;
+	if (offset == GHCI_DC_CTRL) {
+		if ((value & GHCI_DC_CTRL_RESET) != 0U) {
+			if (model_dc_slot[0].pending)
+				model_dc_take(0U, 1);
+			if (model_dc_slot[1].pending)
+				model_dc_take(1U, 1);
+			model_dc[GHCI_DC_CTRL / 4U] = 0U;
+			model_dc[GHCI_DC_CONNECTED / 4U] = 1U;
+			model_dc_frames = 0U;
+			return;
+		}
+		if (enabled && (value & GHCI_DC_CTRL_ENABLE) != 0U && (value & 0x30U) != (old & 0x30U)) {
+			model_dc_sticky |= GHCI_DC_ST_BAD_WRITE;
+			model_dc_bad_writes++;
+			value = (value & ~0x30U) | (old & 0x30U);
+		}
+		model_dc[GHCI_DC_CTRL / 4U] = value;
+		if (enabled && (value & GHCI_DC_CTRL_ENABLE) == 0U) {
+			if (model_dc_slot[0].pending)
+				model_dc_take(0U, 1);
+			if (model_dc_slot[1].pending)
+				model_dc_take(1U, 1);
+		}
+		return;
+	}
+
+	/* The timing and the image's rows change only while ENABLE is 0. */
+	if (enabled && offset != GHCI_DC_CURSOR_POS && offset != GHCI_DC_CURSOR_CTRL) {
+		model_dc_sticky |= GHCI_DC_ST_BAD_WRITE;
+		model_dc_bad_writes++;
+		return;
+	}
+	model_dc[offset / 4U] = value;
+}
+
+/*
+ * Takes a plane's pending flip: TAKENn, the image (unless cancelled),
+ * the record {value, FRAME_COUNT} and FLIP; a record due while the
+ * processor is halted or faulted waits until it leaves those states.
+ */
+static void
+model_dc_take(
+	unsigned plane,
+	int cancelled)
+{
+	struct model_dc_flip *flip;
+	uint32_t value;
+	uint8_t *record;
+
+	flip = &model_dc_slot[plane];
+	flip->pending = 0;
+	value = flip->value;
+	if (cancelled)
+		value |= GHCI_FLIP_CANCELLED;
+	if (plane == 0U) {
+		model_dc[GHCI_DC_TAKEN0 / 4U] = value;
+		if (!cancelled)
+			model_dc[GHCI_DC_FB_BASE / 4U] = flip->base;
+	} else {
+		model_dc[GHCI_DC_TAKEN1 / 4U] = value;
+		if (!cancelled)
+			model_dc[GHCI_DC_CURSOR_BASE / 4U] = flip->base;
+	}
+
+	/* The record, now or once the processor writes again. */
+	flip->due_words[0] = value;
+	flip->due_words[1] = model_dc_frames;
+	flip->due = 1;
+	if (model_state == GHCI_ST_HALTED || model_state == GHCI_ST_FAULTED)
+		return;
+	flip->due = 0;
+	if (flip->record != 0U) {
+		record = model_memory(flip->record, 8U);
+		if (record == NULL) {
+			model_dc_sticky |= GHCI_DC_ST_RECORD_ERROR;
+		} else {
+			memcpy(record, flip->due_words, 8U);
+		}
+	}
+	model_irq_status |= GHCI_IRQ_FLIP;
+}
+
+/* Writes the records that waited for the processor to leave HALTED or FAULTED. */
+static void
+model_dc_records_flush(void)
+{
+	unsigned plane;
+	uint8_t *record;
+
+	for (plane = 0U; plane < 2U; plane++) {
+		if (!model_dc_slot[plane].due)
+			continue;
+		model_dc_slot[plane].due = 0;
+		if (model_dc_slot[plane].record != 0U) {
+			record = model_memory(model_dc_slot[plane].record, 8U);
+			if (record != NULL)
+				memcpy(record, model_dc_slot[plane].due_words, 8U);
+		}
+		model_irq_status |= GHCI_IRQ_FLIP;
+	}
+}
+
+/* Runs a DISP_SET or a FLIP: 0, or a fault. */
+static int
+model_dc_packet(
+	const uint32_t *ring,
+	uint32_t at,
+	uint32_t op,
+	uint32_t flags,
+	uint32_t count)
+{
+	struct model_dc_flip *flip;
+	uint32_t index;
+	uint32_t offset;
+	uint32_t plane;
+	uint32_t line;
+
+	(void)flags;
+
+	/* A GPU without a display controller has no such operation. */
+	if (!model_dc_present) {
+		model_fault(GHCI_FAULT_OPCODE, ring[at]);
+		return -1;
+	}
+
+	/* DISP_SET: (offset, value) pairs of scan-out and cursor registers, FB_NEXT not among them. */
+	if (op == GHCI_OP_DISP_SET) {
+		model_dc_disp_sets++;
+		if ((count % 2U) != 0U || count == 0U) {
+			model_fault(GHCI_FAULT_RING, ring[at]);
+			return -1;
+		}
+		for (index = 0U; index < count; index += 2U) {
+			offset = ring[at + 1U + index];
+			if (offset >= GHCI_DC2_WINDOW || (offset % 4U) != 0U || offset == GHCI_DC_FB_NEXT ||
+			    (!model_dc_scanout_register(offset) && offset != GHCI_DC_CURSOR_POS && offset != GHCI_DC_CURSOR_CTRL)) {
+				model_fault(GHCI_FAULT_RING, ring[at]);
+				return -1;
+			}
+			model_dc_apply(offset, ring[at + 2U + index]);
+		}
+		return 0;
+	}
+
+	/* FLIP: plane, base, record, value; the base on the line (64 bytes for the cursor), the record on 8 bytes. */
+	model_dc_flips++;
+	if (count != 4U) {
+		model_fault(GHCI_FAULT_RING, ring[at]);
+		return -1;
+	}
+	plane = ring[at + 1U];
+	line = 1U << GHCI_CAPS_LINE_LOG2(model_registers[GHCI_CAPS / 4U]);
+	if (plane == 1U)
+		line = 64U;
+	if (plane > 1U || (ring[at + 2U] % line) != 0U || (ring[at + 3U] % 8U) != 0U) {
+		model_fault(GHCI_FAULT_RING, ring[at]);
+		return -1;
+	}
+	flip = &model_dc_slot[plane];
+	if (flip->pending)
+		model_dc_slot_busy++;
+	flip->pending = 1;
+	flip->base = ring[at + 2U];
+	flip->record = ring[at + 3U];
+	flip->value = ring[at + 4U];
+
+	/* With ENABLE 0 plane 0 takes it at once, and the cursor's is cancelled at once. */
+	if ((model_dc[GHCI_DC_CTRL / 4U] & GHCI_DC_CTRL_ENABLE) == 0U)
+		model_dc_take(plane, plane == 1U);
+	return 0;
+}
+
+/* One vertical sync of a lit controller, unless the test holds them: each plane takes its pending flip. */
+static void
+model_vsync(void)
+{
+	/* A dark or absent controller, or a held one, has no sync. */
+	if (!model_dc_present || model_dc_hold)
+		return;
+	if ((model_dc[GHCI_DC_CTRL / 4U] & GHCI_DC_CTRL_ENABLE) == 0U)
+		return;
+
+	/* The frame, and the flips it takes. */
+	model_dc_frames++;
+	if (model_dc_slot[0].pending)
+		model_dc_take(0U, 0);
+	if (model_dc_slot[1].pending)
+		model_dc_take(1U, 0);
+	model_irq_status |= GHCI_IRQ_VBLANK;
+	model_interrupt();
 }
 
 #ifndef GHCI_MODEL_ONLY
@@ -1044,7 +1464,7 @@ test_discrete(void)
 	expect(device.ring != NULL && device.ring->kind == GHCI_MEMORY_VISIBLE, "discrete ring in the window");
 	expect(model_registers[GHCI_RING_BASE / 4U] == device.ring->gpu_address, "discrete ring base");
 	expect(model_registers[GHCI_RING_SIZE / 4U] == GHCI_RING_SIZE_LOG2, "discrete ring size");
-	expect(model_irq_enable == (GHCI_IRQ_FENCE | GHCI_IRQ_FAULT | GHCI_IRQ_WATCHDOG | GHCI_IRQ_RESULT), "discrete interrupts enabled");
+	expect(model_irq_enable == (GHCI_IRQ_FENCE | GHCI_IRQ_FAULT | GHCI_IRQ_WATCHDOG | GHCI_IRQ_RESULT | GHCI_IRQ_FLIP | GHCI_IRQ_DISP_ERROR | GHCI_IRQ_HOTPLUG), "discrete interrupts enabled");
 	expect(core_ops != NULL && core_private == &device, "discrete registered");
 
 	/* The device's capabilities: storage, blobs, transfers, mappings and the test's native command. */
@@ -1281,6 +1701,411 @@ test_unified(void)
 	core_ops->close(core_private, opaque);
 	error = ghci_device_stop(&device);
 	expect(error == 0, "unified stop");
+	model_device = NULL;
+}
+
+/* Fills a present request of the lease's frame: the size, rows, format and flags, generation 1. */
+static void
+display_frame(
+	struct gpu_display_present *present,
+	uint64_t lease,
+	uint32_t width,
+	uint32_t height,
+	uint32_t flags)
+{
+	memset(present, 0, sizeof(*present));
+	present->lease = lease;
+	present->width = width;
+	present->height = height;
+	present->stride = width * 4U;
+	present->format = GPU_PIXEL_BGRA8888;
+	present->refresh_millihz = 60000U;
+	present->flags = flags;
+	present->generation = 1U;
+}
+
+/* Makes a session's blob of local memory for a frame of 640 x 480. */
+static struct ghci_allocation *
+display_blob(
+	void *opaque)
+{
+	struct gpu_blob_create request;
+	uint32_t resource_id;
+	void *object;
+	int error;
+
+	memset(&request, 0, sizeof(request));
+	request.bytes = 640U * 480U * 4U;
+	error = core_ops->blob_create(core_private, opaque, &request, &object, &resource_id);
+	expect(error == 0, "display blob made");
+	return object;
+}
+
+/*
+ * Runs a discrete GPU with a display controller: the attach before the
+ * processor runs, the copied and shared routes, the queue and its
+ * mailbox, the scan holds, a new mode, the cursor, a reset that loses a
+ * flip, the connection, the error mask, the lease's end and the stop.
+ */
+static void
+test_display(void)
+{
+	static struct ghci_device device;
+	const struct drv_gpu_display_ops *ops;
+	struct gpu_display_info info;
+	struct gpu_display_claim claim;
+	struct gpu_display_release release;
+	struct gpu_display_present present;
+	struct gpu_display_wait wait;
+	struct gpu_display_cursor_image cursor;
+	struct gpu_display_cursor_move move;
+	struct gpu_scanout_constraints constraints;
+	struct gpu_resource_create storage_request;
+	struct ghci_allocation *storage;
+	struct ghci_allocation *large;
+	struct ghci_allocation *small;
+	struct ghci_allocation *blobs[4];
+	struct ghci_allocation *alias;
+	struct gpu_image_descriptor image;
+	uint32_t resource_id;
+	void *shared;
+	uint64_t sequence;
+	uint64_t replaced;
+	uint64_t adopted;
+	uint64_t lease;
+	uint64_t topology;
+	uint32_t word;
+	unsigned flips;
+	unsigned index;
+	int error;
+	void *object;
+	void *opaque;
+	void *other;
+
+	/* The model and the device's bus fields. */
+	model_setup_display();
+	memset(&device, 0, sizeof(device));
+	device.registers = (volatile uint8_t *)model_registers;
+	device.register_bytes = sizeof(model_registers);
+	device.window = model_local;
+	device.window_physical = MODEL_WINDOW_PHYSICAL;
+	device.window_bytes = MODEL_WINDOW_BYTES;
+	model_device = &device;
+
+	/* The attach writes the controller before the processor runs; the display's operations are registered. */
+	error = ghci_device_start(&device);
+	expect(error == 0 && device.display.present, "display start");
+	expect(device.display.mode_count == 2U, "display two modes from the controller's table");
+	expect(device.display.modes[0].width == 640U && device.display.modes[0].refresh_millihz == 60000U, "display 640 x 480 at 60 Hz");
+	expect(device.display.modes[1].width == 1280U && device.display.modes[1].refresh_millihz == 60000U, "display 1280 x 720 at 60 Hz");
+	expect(device.display.modes[1].clock_select == 1U && device.display.modes[1].sync_polarity == 3U, "display mode flags read");
+	expect(model_dc_bad_writes == 0U, "display attach writes before the processor runs");
+	expect((model_irq_enable & (GHCI_IRQ_FLIP | GHCI_IRQ_DISP_ERROR | GHCI_IRQ_HOTPLUG)) == (GHCI_IRQ_FLIP | GHCI_IRQ_DISP_ERROR | GHCI_IRQ_HOTPLUG), "display interrupts enabled");
+	expect((model_irq_enable & GHCI_IRQ_VBLANK) == 0U, "display vertical sync not taken");
+	expect(core_ops->display == &ghci_display_cursor_ops && core_ops->scanout == &ghci_scanout_ops, "display operations with the cursor and the scan-out query");
+	expect((core_ops->display->flags & DRV_GPU_DISPLAY_UNGATED) != 0U, "display presents are ungated");
+	ops = core_ops->display;
+
+	/* The output: connected, shared and copied frames, a cursor, the largest mode preferred. */
+	core_ops->open(core_private, &opaque);
+	core_ops->open(core_private, &other);
+	memset(&info, 0, sizeof(info));
+	error = ops->query(core_private, opaque, &info);
+	expect(error == 0 && (info.flags & GPU_DISPLAY_CONNECTED) != 0U && (info.flags & GPU_DISPLAY_HAS_CURSOR) != 0U, "display query");
+	expect(info.preferred_width == 1280U && info.generation == 1U, "display preferred mode and generation");
+	memset(&constraints, 0, sizeof(constraints));
+	constraints.display_id = 1U;
+	constraints.generation = 1U;
+	error = core_ops->scanout->constraints(core_private, opaque, &constraints);
+	expect(error == 0 && constraints.flags == (GPU_SCANOUT_SHARED | GPU_SCANOUT_COPY), "display constraints: shared and copied");
+	expect(constraints.stride_alignment == 64U && constraints.offset_alignment == 64U, "display constraints: the memory line");
+	constraints.generation = 2U;
+	error = core_ops->scanout->constraints(core_private, opaque, &constraints);
+	expect(error == ESTALE, "display constraints of another generation");
+
+	/* The lease, and another open refused while it is held. */
+	memset(&claim, 0, sizeof(claim));
+	claim.display_id = 1U;
+	claim.generation = 1U;
+	error = ops->claim(core_private, opaque, &claim);
+	lease = claim.lease;
+	expect(error == 0 && lease != 0U, "display claim");
+	error = ops->claim(core_private, other, &claim);
+	expect(error == EBUSY, "display second claim refused");
+
+	/* A copied frame lights the controller: the run in the ring, the flip taken at once, the frame adopted. */
+	memset(&storage_request, 0, sizeof(storage_request));
+	storage_request.bytes = 640U * 480U * 4U;
+	storage_request.usage = GPU_RESOURCE_USAGE_STORAGE;
+	error = core_ops->resource_create(core_private, opaque, &storage_request, &object);
+	storage = object;
+	expect(error == 0, "display storage");
+	for (index = 0U; index < 640U * 480U; index++) {
+		word = 0x00010203U + index;
+		memcpy(&storage->view[index * 4U], &word, 4U);
+	}
+	display_frame(&present, lease, 640U, 480U, GPU_DISPLAY_PRESENT_FIFO);
+	error = ops->present(core_private, opaque, storage, &present);
+	sequence = present.sequence;
+	expect(error == 0 && sequence == 1U, "display copied present recorded");
+	error = ops->adoption_wait(core_private, opaque, lease, &sequence, &adopted);
+	expect(error == 0 && adopted == 1U, "display copied present adopted");
+	expect((model_dc[GHCI_DC_CTRL / 4U] & GHCI_DC_CTRL_ENABLE) != 0U, "display lit by the ring");
+	expect(model_dc[GHCI_DC_FB_BASE / 4U] == device.display.frames[0]->gpu_address, "display scans the first frame");
+	expect(model_dc[GHCI_DC_H_ACTIVE / 4U] == 640U && model_dc[GHCI_DC_FB_STRIDE / 4U] == 2560U, "display timing and rows written by DISP_SET");
+	expect(memcmp(device.display.frames[0]->view, storage->view, 640U * 480U * 4U) == 0, "display frame holds the copy");
+	expect(model_dc_bad_writes == 0U && model_dc_slot_busy == 0U, "display no refused write, no busy slot");
+
+	/* A second copied frame flips to the other frame at a vertical sync. */
+	error = ops->present(core_private, opaque, storage, &present);
+	sequence = present.sequence;
+	expect(error == 0 && sequence == 2U, "display second copied present");
+	error = ops->adoption_wait(core_private, opaque, lease, &sequence, &adopted);
+	expect(error == 0 && model_dc[GHCI_DC_FB_BASE / 4U] == device.display.frames[1]->gpu_address, "display scans the second frame");
+	memset(&wait, 0, sizeof(wait));
+	wait.lease = lease;
+	wait.sequence = 2U;
+	error = ops->wait(core_private, opaque, &wait);
+	expect(error == 0 && wait.completed_sequence == 2U && wait.generation == 1U, "display wait answers the adopted frame");
+	wait.sequence = 9U;
+	error = ops->wait(core_private, opaque, &wait);
+	expect(error == EINVAL, "display wait for a frame not presented");
+
+	/* A shared frame is scanned where it is and held while scanned. */
+	for (index = 0U; index < 4U; index++)
+		blobs[index] = display_blob(opaque);
+	display_frame(&present, lease, 640U, 480U, GPU_DISPLAY_PRESENT_FIFO | GPU_DISPLAY_PRESENT_BLOB);
+	error = ops->present(core_private, opaque, blobs[0], &present);
+	sequence = present.sequence;
+	if (error == 0)
+		error = ops->adoption_wait(core_private, opaque, lease, &sequence, &adopted);
+	expect(error == 0 && model_dc[GHCI_DC_FB_BASE / 4U] == blobs[0]->gpu_address, "display scans a shared frame");
+	expect(blobs[0]->holds == 1U, "display holds the shared frame it scans");
+	error = ops->present(core_private, opaque, blobs[1], &present);
+	sequence = present.sequence;
+	if (error == 0)
+		error = ops->adoption_wait(core_private, opaque, lease, &sequence, &adopted);
+	expect(error == 0 && model_dc[GHCI_DC_FB_BASE / 4U] == blobs[1]->gpu_address, "display scans the next shared frame");
+	expect(blobs[0]->holds == 0U && blobs[1]->holds == 1U, "display lets the frame no longer scanned go");
+
+	/* An import for the display: a frame of a mode imports; another size is refused, and imports for rendering. */
+	memset(&image, 0, sizeof(image));
+	image.width = 640U;
+	image.height = 480U;
+	image.stride = 2560U;
+	image.format = GPU_PIXEL_BGRA8888;
+	image.tiling = GPU_IMAGE_LINEAR;
+	error = core_ops->share->export_resource(core_private, opaque, blobs[0], &image, &shared);
+	expect(error == 0, "display export of a frame");
+	error = core_ops->share->import_resource(core_private, opaque, shared, GPU_IMPORT_SCANOUT, &object, &resource_id);
+	alias = object;
+	expect(error == 0 && alias->backing == blobs[0], "display import of a frame the controller scans");
+	error = ops->present(core_private, opaque, alias, &present);
+	sequence = present.sequence;
+	if (error == 0)
+		error = ops->adoption_wait(core_private, opaque, lease, &sequence, &adopted);
+	expect(error == 0 && model_dc[GHCI_DC_FB_BASE / 4U] == blobs[0]->gpu_address, "display scans an imported frame");
+	expect(blobs[0]->holds == 3U, "display holds the imported frame's memory");
+	core_ops->share->release(core_private, shared);
+	core_ops->resource_destroy(core_private, opaque, alias);
+	expect(blobs[0]->holds == 1U, "display's hold stays when the import goes");
+	image.width = 100U;
+	error = core_ops->share->export_resource(core_private, opaque, blobs[3], &image, &shared);
+	expect(error == 0, "display export of an image of no mode");
+	error = core_ops->share->import_resource(core_private, opaque, shared, GPU_IMPORT_SCANOUT, &object, &resource_id);
+	expect(error == ENOTSUP, "display import refused for an image the controller cannot scan");
+	error = core_ops->share->import_resource(core_private, opaque, shared, 0U, &object, &resource_id);
+	expect(error == 0, "display same image imports for rendering");
+	core_ops->resource_destroy(core_private, opaque, object);
+	core_ops->share->release(core_private, shared);
+	expect(blobs[3]->holds == 0U, "display rendering import let go");
+
+	/* Frames the controller cannot scan, another lease, another generation. */
+	present.stride = 640U * 4U + 4U;
+	error = ops->present(core_private, opaque, blobs[2], &present);
+	expect(error == EINVAL, "display shared rows off the memory line refused");
+	present.stride = 640U * 4U;
+	present.lease = lease + 1U;
+	error = ops->present(core_private, opaque, blobs[2], &present);
+	expect(error == EBUSY, "display present of another lease refused");
+	present.lease = lease;
+	present.generation = 7U;
+	error = ops->present(core_private, opaque, blobs[2], &present);
+	expect(error == ESTALE, "display present of another generation refused");
+	present.generation = 1U;
+	expect(blobs[2]->holds == 0U, "display refused presents hold nothing");
+
+	/* The queue: one flip pending, one waiting, a mailbox present replacing the waiting one. */
+	model_dc_hold = 1;
+	error = ops->present(core_private, opaque, blobs[2], &present);
+	expect(error == 0 && device.display.flips[0].placed && device.display.queue_count == 0U, "display queue: the flip is placed");
+	error = ops->present(core_private, opaque, blobs[3], &present);
+	replaced = present.sequence;
+	expect(error == 0 && device.display.queue_count == 1U && blobs[3]->holds == 1U, "display queue: the next waits");
+	present.flags = GPU_DISPLAY_PRESENT_BLOB;
+	error = ops->present(core_private, opaque, blobs[0], &present);
+	sequence = present.sequence;
+	expect(error == 0 && device.display.queue_count == 1U && sequence == replaced + 1U, "display mailbox present replaces the waiting one");
+	expect(blobs[3]->holds == 0U && blobs[0]->holds == 2U, "display replaced frame let go (the new one is held as shown and as waiting)");
+	expect(model_dc_slot_busy == 0U, "display no flip placed on a busy slot");
+	model_dc_hold = 0;
+	error = ops->adoption_wait(core_private, opaque, lease, &replaced, &adopted);
+	expect(error == 0 && adopted >= replaced, "display replaced present adopted with its replacement");
+	error = ops->adoption_wait(core_private, opaque, lease, &sequence, &adopted);
+	expect(error == 0 && model_dc[GHCI_DC_FB_BASE / 4U] == blobs[0]->gpu_address, "display mailbox frame shown");
+	expect(blobs[1]->holds == 0U && blobs[2]->holds == 0U && blobs[0]->holds == 1U, "display holds only the frame shown");
+	present.flags = GPU_DISPLAY_PRESENT_FIFO | GPU_DISPLAY_PRESENT_BLOB;
+
+	/* A frame of the other mode lights the controller again on that mode. */
+	storage_request.bytes = 1280U * 720U * 4U;
+	error = core_ops->resource_create(core_private, opaque, &storage_request, &object);
+	large = object;
+	expect(error == 0, "display large storage");
+	display_frame(&present, lease, 1280U, 720U, GPU_DISPLAY_PRESENT_FIFO);
+	error = ops->present(core_private, opaque, large, &present);
+	sequence = present.sequence;
+	if (error == 0)
+		error = ops->adoption_wait(core_private, opaque, lease, &sequence, &adopted);
+	expect(error == 0 && model_dc[GHCI_DC_H_ACTIVE / 4U] == 1280U && model_dc[GHCI_DC_FB_STRIDE / 4U] == 5120U, "display new mode lit");
+	expect(model_dc[GHCI_DC_PCLK_SEL / 4U] == 1U && model_dc[GHCI_DC_SYNC_POL / 4U] == 3U, "display new mode's clock and syncs");
+	expect(blobs[0]->holds == 0U && model_dc_bad_writes == 0U, "display new mode lets the old frame go");
+
+	/* The cursor: RGBA rows put in BGRA order, the rest cleared, flipped and shown; a move by the host. */
+	storage_request.bytes = 32U * 32U * 4U;
+	error = core_ops->resource_create(core_private, opaque, &storage_request, &object);
+	small = object;
+	for (index = 0U; index < 32U * 32U; index++) {
+		word = 0x11223344U;
+		memcpy(&small->view[index * 4U], &word, 4U);
+	}
+	memset(&cursor, 0, sizeof(cursor));
+	cursor.lease = lease;
+	cursor.width = 32U;
+	cursor.height = 32U;
+	cursor.stride = 128U;
+	cursor.format = GPU_PIXEL_RGBA8888;
+	cursor.generation = 1U;
+	error = ops->cursor_set(core_private, opaque, small, &cursor);
+	expect(error == 0, "display cursor set");
+	memcpy(&word, &device.display.surfaces[0]->view[0], 4U);
+	expect(word == 0x11443322U, "display cursor red and blue swapped");
+	memcpy(&word, &device.display.surfaces[0]->view[40U * 256U + 40U * 4U], 4U);
+	expect(word == 0U, "display cursor cleared past the image");
+	ghci_sleep_ms(1U);
+	ghci_service_step(&device, GHCI_WORK_DISPLAY);
+	expect(model_dc[GHCI_DC_CURSOR_BASE / 4U] == device.display.surfaces[0]->gpu_address && device.display.cursor_shown == 0, "display cursor surface taken");
+	memset(&move, 0, sizeof(move));
+	move.lease = lease;
+	move.x = -5;
+	move.y = 7;
+	move.generation = 1U;
+	error = ops->cursor_move(core_private, opaque, &move);
+	expect(error == 0 && model_dc[GHCI_DC_CURSOR_POS / 4U] == 0x0007fffbU && model_dc[GHCI_DC_CURSOR_CTRL / 4U] == 1U, "display cursor moved by the host");
+	model_dc_hold = 1;
+	error = ops->cursor_set(core_private, opaque, small, &cursor);
+	expect(error == 0 && device.display.flips[1].placed && device.display.flips[1].surface == 1, "display cursor's second surface flipped");
+	error = ops->cursor_set(core_private, opaque, small, &cursor);
+	expect(error == EBUSY, "display cursor busy while both surfaces are in use");
+	model_dc_hold = 0;
+
+	/* A reset loses a flip still in the ring: counted again, placed again, shown. */
+	ghci_sleep_ms(1U);
+	ghci_service_step(&device, GHCI_WORK_DISPLAY);
+	model_paused = 1;
+	display_frame(&present, lease, 640U, 480U, GPU_DISPLAY_PRESENT_FIFO | GPU_DISPLAY_PRESENT_BLOB);
+	error = ops->present(core_private, opaque, blobs[1], &present);
+	sequence = present.sequence;
+	expect(error == 0 && device.display.flips[0].placed, "display flip in the ring before the reset");
+	flips = model_dc_flips;
+	ghci_service_step(&device, GHCI_WORK_RECOVER);
+	expect(device.display.flips[0].placed && model_wptr != 0U && model_rptr == 0U, "display lost flip placed again in the new ring");
+	expect(model_dc[GHCI_DC_CURSOR_CTRL / 4U] == 0U, "display cursor hidden by the reset");
+	model_paused = 0;
+	model_run();
+	expect(model_dc_flips == flips + 1U, "display placed-again flip parsed once");
+	error = ops->adoption_wait(core_private, opaque, lease, &sequence, &adopted);
+	expect(error == 0 && model_dc[GHCI_DC_FB_BASE / 4U] == blobs[1]->gpu_address, "display lost flip shown after the reset");
+	expect(model_dc_slot_busy == 0U && model_dc_bad_writes == 0U, "display reset: no busy slot, no refused write");
+
+	/* Errors: too many in a second mask the error interrupt until the next second. */
+	for (index = 0U; index < 32U; index++) {
+		model_dc_sticky |= GHCI_DC_ST_UNDERFLOW;
+		ghci_service_step(&device, GHCI_WORK_DISPLAY);
+	}
+	expect((model_irq_enable & GHCI_IRQ_DISP_ERROR) == 0U, "display error interrupt masked after a storm");
+	fake_ticks += kern_ms_to_ticks(1000U) + 1U;
+	ghci_service_step(&device, 0U);
+	expect((model_irq_enable & GHCI_IRQ_DISP_ERROR) != 0U, "display error interrupt back the next second");
+
+	/* A read error round after round turns the controller dark; the next present lights it. */
+	for (index = 0U; index < 3U; index++) {
+		model_dc_sticky |= GHCI_DC_ST_READ_ERROR;
+		ghci_service_step(&device, GHCI_WORK_DISPLAY);
+	}
+	expect((model_dc[GHCI_DC_CTRL / 4U] & GHCI_DC_CTRL_ENABLE) == 0U && !device.display.enabled, "display dark after read errors");
+	error = ops->present(core_private, opaque, blobs[2], &present);
+	sequence = present.sequence;
+	if (error == 0)
+		error = ops->adoption_wait(core_private, opaque, lease, &sequence, &adopted);
+	expect(error == 0 && (model_dc[GHCI_DC_CTRL / 4U] & GHCI_DC_CTRL_ENABLE) != 0U, "display lit again by the next present");
+
+	/* The connection: lost (presents refused), back as a new generation. */
+	topology = 0U;
+	(void)ops->events(core_private, opaque, &topology);
+	model_dc_write(GHCI_DC_CONNECTED, 0U);
+	model_interrupt();
+	ghci_service_step(&device, device.service_work);
+	error = ops->present(core_private, opaque, blobs[3], &present);
+	expect(error == ENXIO && !device.display.connected, "display present refused while disconnected");
+	(void)ops->events(core_private, opaque, &sequence);
+	expect(sequence == topology + 1U, "display topology moved at the disconnection");
+	model_dc_write(GHCI_DC_CONNECTED, 1U);
+	model_interrupt();
+	ghci_service_step(&device, device.service_work);
+	error = ops->present(core_private, opaque, blobs[3], &present);
+	expect(error == ESTALE && device.display.generation == 2U, "display old generation refused after the reconnection");
+	present.generation = 2U;
+	error = ops->present(core_private, opaque, blobs[3], &present);
+	sequence = present.sequence;
+	if (error == 0)
+		error = ops->adoption_wait(core_private, opaque, lease, &sequence, &adopted);
+	expect(error == 0 && model_dc[GHCI_DC_FB_BASE / 4U] == blobs[3]->gpu_address, "display present of the new generation shown");
+
+	/* The release: dark, the frame let go, the lease free for another open. */
+	memset(&release, 0, sizeof(release));
+	release.lease = lease;
+	error = ops->release(core_private, opaque, &release);
+	expect(error == 0 && (model_dc[GHCI_DC_CTRL / 4U] & GHCI_DC_CTRL_ENABLE) == 0U, "display release turns it dark");
+	expect(blobs[3]->holds == 0U && !device.display.ending, "display release lets everything go");
+	claim.generation = 2U;
+	error = ops->claim(core_private, other, &claim);
+	expect(error == 0, "display claimed by the other open");
+
+	/* The other open lights it and closes: the service thread finishes the end; no claim before. */
+	storage_request.bytes = 640U * 480U * 4U;
+	error = core_ops->resource_create(core_private, other, &storage_request, &object);
+	display_frame(&present, claim.lease, 640U, 480U, GPU_DISPLAY_PRESENT_FIFO);
+	present.generation = 2U;
+	error = ops->present(core_private, other, object, &present);
+	sequence = present.sequence;
+	if (error == 0)
+		error = ops->adoption_wait(core_private, other, claim.lease, &sequence, &adopted);
+	expect(error == 0 && device.display.enabled, "display lit by the other open");
+	core_ops->close(core_private, other);
+	error = ops->claim(core_private, opaque, &claim);
+	expect(error == EBUSY && device.display.ending, "display claim waits for the closed lease's end");
+	ghci_service_step(&device, GHCI_WORK_DISPLAY);
+	expect(!device.display.ending && (model_dc[GHCI_DC_CTRL / 4U] & GHCI_DC_CTRL_ENABLE) == 0U, "display closed lease ended by the service thread");
+	error = ops->claim(core_private, opaque, &claim);
+	expect(error == 0, "display claimed again");
+
+	/* The stop: dark, every buffer back. */
+	core_ops->close(core_private, opaque);
+	error = ghci_device_stop(&device);
+	expect(error == 0, "display stop");
+	expect((model_dc[GHCI_DC_CTRL / 4U] & GHCI_DC_CTRL_ENABLE) == 0U, "display dark after the stop");
+	expect(device.visible.count == 0U && device.hidden.count == 0U, "display local memory all back");
+	expect(model_dc_slot_busy == 0U && model_dc_bad_writes == 0U, "display: never a busy slot or a refused write");
 	model_device = NULL;
 }
 #endif

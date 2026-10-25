@@ -57,7 +57,7 @@ static int node_resource_write(void *private_data, void *session, void *object, 
 static int node_resource_map(void *private_data, void *session, void *object, struct drv_gpu_mapping *mapping);
 static int node_export(void *private_data, void *session, void *object, const struct gpu_image_descriptor *image, void **result);
 static void node_release(void *private_data, void *shared);
-static int node_import(void *private_data, void *session, void *shared, void **result, uint32_t *resource_id);
+static int node_import(void *private_data, void *session, void *shared, uint32_t flags, void **result, uint32_t *resource_id);
 static int node_range(const struct amdrdna_resource *resource, uint64_t offset, uint32_t bytes);
 static void node_blob_unlisted(struct amdrdna_node *node, struct amdrdna_resource *resource);
 
@@ -793,12 +793,15 @@ node_import(
 	void *private_data,
 	void *session,
 	void *shared,
+	uint32_t flags,
 	void **result,
 	uint32_t *resource_id)
 {
 	struct amdrdna_node *node;
 	struct amdrdna_backing *backing;
 	struct amdrdna_resource *resource;
+
+	(void)flags;
 
 	/* The node and what the core passed in. */
 	node = private_data;

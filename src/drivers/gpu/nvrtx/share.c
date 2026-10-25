@@ -51,7 +51,7 @@
 
 static int share_export(void *private_data, void *session, void *object, const struct gpu_image_descriptor *image, void **result);
 static void share_release(void *private_data, void *shared);
-static int share_import(void *private_data, void *session, void *shared, void **result, uint32_t *resource_id);
+static int share_import(void *private_data, void *session, void *shared, uint32_t flags, void **result, uint32_t *resource_id);
 static int share_query_device(void *private_data, void *session, struct gpu_device_info *request);
 static int share_constraints(void *private_data, void *session, struct gpu_scanout_constraints *request);
 
@@ -142,12 +142,15 @@ share_import(
 	void *private_data,
 	void *session,
 	void *shared,
+	uint32_t flags,
 	void **result,
 	uint32_t *resource_id)
 {
 	struct nvrtx_node *node;
 	struct nvrtx_backing *backing;
 	struct nvrtx_resource *resource;
+
+	(void)flags;
 
 	node = private_data;
 	backing = shared;
