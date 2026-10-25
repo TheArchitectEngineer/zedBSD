@@ -2,7 +2,7 @@
 
 # WS288 の設計: FPGA の GPU の IP「Amaterrace GPU」と GHCI — ZYBO（XC7Z010）で workflow、本命は KC705（XC7K325T）
 
-2026-10-23 P2（ws288-p001、worktree p2-ws288-p001、基点 main c327d0c73）。親: [WS288](ws.md)。**版 7**（2026-10-25 P1、ws288-p034 の設計の段、worktree p1-p030、基点 main 485108a30: **§17 session の保護**（GHCI §11.6、PROT）を新設: granule ごとの所有の表と MC の root の PLB・grant の CAM、AMB の header の chk・slot、unit は 1 度に 1 つの session（drain・invalidate・scrub）、firmware の µop と DMA の検査、heap の private と可視の区分、driver の方針、GHCI の draft、model・TB、段 R1〜R8 と 45 LW、U61〜U68。review は [design-review-p034.md](design-review-p034.md)）。**版 6**（2026-10-25 P1、ws288-p030 の設計の段、worktree p1-p030、基点 main 32b51bf34: **§16 Vulkan 1.0 core の残り**を新設（limit・feature・必須の format の表、format の共通の土台と FMT capability、ROP の stencil・D16・depth bounds・depth の clip/clamp/bias・MRT 4 の beat・f32 の blend・occlusion の counter、RX の point・line・viewport の矩形・guard band の clip・depth bias、VF の format と robust の limit、TU の format と swizzle と f32 の filter、BLT の KEEP、µop 14 QUERY、GHCI の draft、model・TB・scene、段 S1〜S11 と 79 LW（ETC2 は後の Phase）、U47〜U60、review 2 回（35 件・23 件）の対応）。§8 に p030 の行を足した。review は [design-review-p030.md](design-review-p030.md)）。**版 5**（2026-10-25 P2、ws288-p027 の設計の段、worktree p2-p027、基点 main bb8e0f161: **§15 MSAA** を新設（Vulkan 1.0 core の multisample の要求の表、RX の sample の coverage、fragment の入力 r6〜r9、SU の exp 0x105、ROP の `atg_rop_ms`、sample-interleaved の配置、resolve の内蔵の draw、TU の `texf` の sample、GHCI の draft、model・TB・scene、段と LW、U43〜U46）。§3.7 と §8 に p027 の行を足した。review は [design-review-msaa.md](design-review-msaa.md)）。**版 4**（同日 P1、worktree p1-ws288-d4、基点 main b9284693c → main c10f7ea78 を merge: ユーザーの版 4 の決定の列（FP16/INT8 の mixed precision → online の softmax/LN → SIMD-8 の取り下げ → 案 B（SA に寄せ SU は最小）→ **SA の設計と実装は延期、SU が GSI1 を実装してから。SA は KC705 に入らなくてよい**）の最後の形: §3.9 は SU ↔ SA の大まかな整合（`rq` = r63 の予約、entry = SA の vector、decoupled な SA、案 B の構成、KC705 は raster/compute 構成だけ）の 5 点だけに縮め、詳細の sketch は Appendix A（延期）に移した。GSI1 は版 3 の最小の形（packed の超越は無し）。p020〜p022 は Future Work（trigger: p008〜p010 cleared）。§7.6 の RTL の進め方（top-down の分割・空の module・spec）と p023 を新設、p003 の実測と reserved-memory を反映、U39 は閉じた。design-reviewer の v4 の指摘（High 7・Medium 15・Low 11）と対応は §14。review 1 の README（a217bf8）との食い違いは U39）。**版 3**（同日 P1、worktree p1-ws288-d3、基点 main 01f261168: ユーザーの 4 つの決定（§2.1 の冒頭）に合わせて §2.4（ring の command = Kei GPU command protocol の gpu-op、CP は RISC-V 風の `atg_cpu` の firmware が解く）と §3（GHCI の標準の shader ISA「GSI1」、RISC-V の 32 bit の形を低位に持つ 64 bit 固定、小さな hardware の scoreboard）を書き直し、§6.6・§6.7・§6.9・§8（p017〜p019 の新設、392 LW）・§3.9（systolic array と ISA の FIFO の register `rq`、同日のユーザーの要件）・§6.10・§9（R23〜R30、U18〜U30）・§10（21〜30）・§11・§13 を足した。版 2 の節の番号は保った。design-reviewer の指摘（Critical 2・High 10・Medium 22・Low 15）と対応は §13（末尾）。**版 2**（同日: design-reviewer の指摘 38 件（Critical 3・High 15・Medium 14・Low 6）の全部に対応。対応の表は §12。版 1 からの主な変更: detach と reset の順序（§1.3・§6.2）、FENCE の意味（§2.4）、drv_gpu の capability と jobs と capset（§6.4）、window と IRQ の devcfg の事実への修正（§5.1・§6.2）、CP の状態遷移と ring の約束（§2.6・§2.7）、fault は v1 は device 全体（§2.5）、統一 shader の deadlock と ROP の順序（§3.8）、cache の無効化（§2.4 `INVALIDATE`）、見積もりの計算し直しと **7010 では block を分けた bitstream で確かめる**方針（§3.6・R1）、GHCI の標準と vendor の境（§2.1）、KC705 は 1 device（§6.5）、Phase の循環の解消（§8）。）
+2026-10-23 P2（ws288-p001、worktree p2-ws288-p001、基点 main c327d0c73）。親: [WS288](ws.md)。**版 7**（2026-10-25 P1、ws288-p034 の設計の段、worktree p1-p030、基点 main 485108a30: **§17 session の保護**（GHCI §11.6、PROT）を新設: granule ごとの所有の表と MC の root の PLB・grant の CAM、AMB の header の chk・slot、unit は 1 度に 1 つの session（drain・invalidate・scrub）、firmware の µop と DMA の検査、heap の private と可視の区分、driver の方針、GHCI の draft、model・TB、段 R1〜R8 と 51 LW、U61〜U72、review 1 回目 33 件の対応。review は [design-review-p034.md](design-review-p034.md)）。**版 6**（2026-10-25 P1、ws288-p030 の設計の段、worktree p1-p030、基点 main 32b51bf34: **§16 Vulkan 1.0 core の残り**を新設（limit・feature・必須の format の表、format の共通の土台と FMT capability、ROP の stencil・D16・depth bounds・depth の clip/clamp/bias・MRT 4 の beat・f32 の blend・occlusion の counter、RX の point・line・viewport の矩形・guard band の clip・depth bias、VF の format と robust の limit、TU の format と swizzle と f32 の filter、BLT の KEEP、µop 14 QUERY、GHCI の draft、model・TB・scene、段 S1〜S11 と 79 LW（ETC2 は後の Phase）、U47〜U60、review 2 回（35 件・23 件）の対応）。§8 に p030 の行を足した。review は [design-review-p030.md](design-review-p030.md)）。**版 5**（2026-10-25 P2、ws288-p027 の設計の段、worktree p2-p027、基点 main bb8e0f161: **§15 MSAA** を新設（Vulkan 1.0 core の multisample の要求の表、RX の sample の coverage、fragment の入力 r6〜r9、SU の exp 0x105、ROP の `atg_rop_ms`、sample-interleaved の配置、resolve の内蔵の draw、TU の `texf` の sample、GHCI の draft、model・TB・scene、段と LW、U43〜U46）。§3.7 と §8 に p027 の行を足した。review は [design-review-msaa.md](design-review-msaa.md)）。**版 4**（同日 P1、worktree p1-ws288-d4、基点 main b9284693c → main c10f7ea78 を merge: ユーザーの版 4 の決定の列（FP16/INT8 の mixed precision → online の softmax/LN → SIMD-8 の取り下げ → 案 B（SA に寄せ SU は最小）→ **SA の設計と実装は延期、SU が GSI1 を実装してから。SA は KC705 に入らなくてよい**）の最後の形: §3.9 は SU ↔ SA の大まかな整合（`rq` = r63 の予約、entry = SA の vector、decoupled な SA、案 B の構成、KC705 は raster/compute 構成だけ）の 5 点だけに縮め、詳細の sketch は Appendix A（延期）に移した。GSI1 は版 3 の最小の形（packed の超越は無し）。p020〜p022 は Future Work（trigger: p008〜p010 cleared）。§7.6 の RTL の進め方（top-down の分割・空の module・spec）と p023 を新設、p003 の実測と reserved-memory を反映、U39 は閉じた。design-reviewer の v4 の指摘（High 7・Medium 15・Low 11）と対応は §14。review 1 の README（a217bf8）との食い違いは U39）。**版 3**（同日 P1、worktree p1-ws288-d3、基点 main 01f261168: ユーザーの 4 つの決定（§2.1 の冒頭）に合わせて §2.4（ring の command = Kei GPU command protocol の gpu-op、CP は RISC-V 風の `atg_cpu` の firmware が解く）と §3（GHCI の標準の shader ISA「GSI1」、RISC-V の 32 bit の形を低位に持つ 64 bit 固定、小さな hardware の scoreboard）を書き直し、§6.6・§6.7・§6.9・§8（p017〜p019 の新設、392 LW）・§3.9（systolic array と ISA の FIFO の register `rq`、同日のユーザーの要件）・§6.10・§9（R23〜R30、U18〜U30）・§10（21〜30）・§11・§13 を足した。版 2 の節の番号は保った。design-reviewer の指摘（Critical 2・High 10・Medium 22・Low 15）と対応は §13（末尾）。**版 2**（同日: design-reviewer の指摘 38 件（Critical 3・High 15・Medium 14・Low 6）の全部に対応。対応の表は §12。版 1 からの主な変更: detach と reset の順序（§1.3・§6.2）、FENCE の意味（§2.4）、drv_gpu の capability と jobs と capset（§6.4）、window と IRQ の devcfg の事実への修正（§5.1・§6.2）、CP の状態遷移と ring の約束（§2.6・§2.7）、fault は v1 は device 全体（§2.5）、統一 shader の deadlock と ROP の順序（§3.8）、cache の無効化（§2.4 `INVALIDATE`）、見積もりの計算し直しと **7010 では block を分けた bitstream で確かめる**方針（§3.6・R1）、GHCI の標準と vendor の境（§2.1）、KC705 は 1 device（§6.5）、Phase の循環の解消（§8）。）
 この Phase は設計だけで、RTL も C も書かない。RTL の置き場所は https://github.com/awemorris/amaterrace-gpu （この Phase では書かない。clone `/home/awe/amaterrace-gpu` は commit 1791b32「Initial」= ユーザーの `README.md` だけ）、計画はこの zedBSD の `plan/ws288/`（2026-10-23 ユーザー「planはこのままzedBSDを使いましょう。」）。FPGA の CPU は https://github.com/awemorris/sukuna-risc.git （2026-10-23 ユーザー「mc64をsukuna-riscに改名しました。」）。
 
 **ユーザーの仕様（amaterrace-gpu の README.md、1791b32 → 版 4 の時点では a217bf8: 「LLM: CP --> VF --> SU --> SA --> SU --> SA -> ... --> SU --> ROP -> MC」「Systolic Array: 32 x 32, 0.8 TOPS/SU @200MHz」が足された。SA の節との整合は U39、2026-10-23「概略を書きました。書き足してOKです。」）が上位**。この設計はそれに従う: block の名前と略号 **GHCI**（この project が提案する、Vulkan 互換の GPU のための標準の HCI）、**DC**（Display Controller）、**CP**（Command Processor）、**BLT**（Blitter）、**VF**（Vertex Fetcher）、**RX**（Rasterizer）、**SU**（Shader Unit）、**TU**（Texture Unit）、**ROP**（Buffer Writer）、**MC**（Memory Controller）。全体は `CPU -- (AXI4) -- CP`、fill/copy は `CP → BLT → MC`、primitive は `CP → VF → SU → RX → SU → ROP → MC`（TU は 2 段目の SU から）。shader は「Warp: 32-lane scalar with 16-bit packed」、register file は未定（「xxx」→ §3.5 と U12 で提案、[proposed/README-additions.md](proposed/README-additions.md) に README への書き足しの案）。
@@ -2187,230 +2187,254 @@ reviewer が照合した物: design.md の §3.1〜§3.6・§2.2〜§2.4・§6�
 
 ## 17. session の保護（GHCI §11.6、PROT capability。版 7、ws288-p034 の設計の段）
 
-2026-10-25 P1（ws288-p034、q1570-i01、zedBSD の worktree p1-p030（基点 main 485108a30）、amaterrace-gpu の worktree p1-p030b（main 492ff1e を merge した 84eb577 の上、S16 の dc471f9））。承認: 2026-10-25 08:57 ユーザー「了解です。せっかくなので実装してしまってください。」（Q1 が buffer の context ID（GHCI §11.6 の session の保護）は未実装と答えた後）、同日「ゴールまで推しで進んでよいです。判断に迷ったら、Vulkan 1.0の原則論で進めてください。」（[phase034](phase034/phase.md)）。この節は設計だけで、RTL・firmware・driver は書かない（実装の段は Q1 が後で割り当てる）。review の指摘と対応は [design-review-p034.md](design-review-p034.md)（§17.21）。
+2026-10-25 P1（ws288-p034、q1570-i01、zedBSD の worktree p1-p030（基点 main 485108a30）、amaterrace-gpu の worktree p1-p030b（main 492ff1e を merge した 84eb577 の上、S16 の dc471f9））。承認: 2026-10-25 08:57 ユーザー「了解です。せっかくなので実装してしまってください。」（Q1 が buffer の context ID（GHCI §11.6 の session の保護）は未実装と答えた後）、同日「ゴールまで推しで進んでよいです。判断に迷ったら、Vulkan 1.0の原則論で進めてください。」（[phase034](phase034/phase.md)）。この節は設計だけで、RTL・firmware・driver は書かない（実装の段は Q1 が後で割り当てる）。review の指摘と対応は [design-review-p034.md](design-review-p034.md) と §17.21（1 回目 33 件: Critical 2・High 5・Medium 16・Low 10。全部を本文に反映した）。
 
 ### 17.0 出典と確認の水準
 
-- **読んだ物（実測）**: amaterrace-gpu の `docs/ghci.md` §3.4（FAULT_INFO: kind 1 =「aperture の外、または session に許されない」、[11:9] は空き）、§4（PROT は id 9）、§7.1〜§7.3（job tag は dword0[23:16]、class 2 の job tag が session、ring-only の 4 つの gpu-op、µop 0〜14）、§9.1（complete な FENCE）、§10、§11.1〜§11.6（PROT の draft: SESSION_OPEN の PROTECTED、MEMORY の所有、BUFFER_GRANT 0x10106・REVOKE 0x10107、granule、検査の対象、違反は kind 1、PROT_CAPS）。`spec/gpu/mc/atg_mc.md`（root が 1 本の AXI の前で aperture と window を検査、assembly buffer、`err_v`、refusal の `rsp_rdata` は「AXI master の最後の read の data（意味なし）」、DC は `ROOT_CLIENT` で優先）、`spec/common/am_amb_to_rt.md`（header の bit 3 は 0、末尾は 0 の余り）、`rtl/gpu/top/atg_top.v`（client: 0 CP（ring・fence・dbg を `am_amb_mux`）、1 BLT、CPU、VF、TU、ROP、ATOM、SA、EXT（KC705 の DC）、SU ごとに D$ と I$+定数）、`spec/gpu/cp/atg_cp_seq.md`（ring の µop と firmware の UOP_FIFO の µop は同じ sequencer、`fw_active` の間は firmware の物だけ、`inv` の 4 bit、fence unit の `f_*`）、`atg_cp_seq_wait.md`（pre/post の待ち）、`atg_cpu_win.md`（PKT_INFO の JOB_TAG、UOP、DMA_*）、`atg_cpu_dma.md`、`spec/gpu/su/atg_su_{dcache,rf,lds,cbank,pt}.md`（D$ は write-through、RF は NWARPS × NREGS × 32 lane、LDS は KC705 16 KiB・1 lane/cycle、cbank 256 word、PT は 64 entry × 64 word）、`spec/gpu/rop/atg_rop_wb.md`（idle の 16 cycle で dirty を書き空にする）。P2 の firmware（`p2-p018` 2ce0fe6、読むだけ）: `fw/cp/cmd.c`（SESSION_OPEN は flags ≠ 0 を FEATURE_NOT_PRESENT、GRANT/REVOKE は unsupported、**MEMORY は frame の中でも受ける**）、`heap.c`（driver が貸す heap、line 単位の first fit、session ごとの limit、FW_SESSIONS 32）、`record.c`（recording は heap の chunk の µop の列と inline の data、replay は DMA で読み FIFO へ）、`draw.c`（constant bank の image は recording の data、uniform の words を BLT が image に写し、LOAD_CONST が読む）、`pipeline.c`（scratch は pipeline の block の後ろ）。zedBSD の driver（main 485108a30）: `src/drivers/gpu/ghci/memory.c`（4 KiB の page の allocator、aperture は discrete の window 有りなら local、他は 32 bit の全体）、`ghci.c`（PROT は記録するだけ、`allocation_make` は session の memory を clear してから渡す、`GHCI_SESSION_RESOURCES` 4096）、`frame.h`。P3 の `vk/`（`agent/p3-p006` c705971a5、読むだけ）: `vk-memory.c`（vkAllocateMemory は driver が memory を取り GHCI_MEMORY を frame に stage する）、`vk-relay.c`（client の command は codec で解いた物だけを中継）、`vk-session.c`。
-- **推定**（合成していない・測っていない）: LUT・FF の量、DDR3 の read の遅れ（KC705 の MIG で gclk の 40〜80 cycle と見た）、PLB の miss の率、scrub の cycle。
-- **未確認**: 各 unit の busy が自分の MC の要求の応答まで覆うか（FENCE の完全さの前提。§17.6 の R1）、zedBSD の share（dma-buf の import）の ghci の driver の道の細部（`gpu-share.h` の `import_image` を ghci がどう実装するか、p019 の範囲）。
+- **読んだ物（実測）**: amaterrace-gpu の `docs/ghci.md` §3.4（FAULT_INFO: kind 1 =「aperture の外、または session に許されない」、[11:9] は空き）、§4（PROT は id 9）、§5、§7.1〜§7.3（job tag は dword0[23:16]、class 2 の job tag が session、ring-only の 4 つの gpu-op、µop 0〜14）、§9.1（complete な FENCE）、§10、§11.1〜§11.6（PROT の draft）。`spec/gpu/mc/atg_mc.md`（root が 1 本の AXI の前で aperture と window を検査、assembly buffer は 1 つ、`err_v`、拒否の `rsp_rdata` は「AXI master の最後の read の data」、DC は `ROOT_CLIENT` で優先、外に出す idle は `axi_idle` だけ）、`spec/common/am_amb_to_rt.md`（header の bit 3 は 0、末尾は 0 の余り、header は request の間 入力から作り直す）、`rtl/gpu/top/atg_top.v`（client: 0 CP（ring・fence・dbg を `am_amb_mux`）、1 BLT、CPU、VF、TU、ROP、ATOM、SA、EXT（KC705 の DC）、SU ごとに D$ と I$+定数）、`spec/gpu/cp/atg_cp_seq.md`（ring と UOP_FIFO の µop は同じ sequencer、`fw_active` の間は firmware の物だけ、`inv` 4 bit、fence unit の `f_*`、cmd_active と watchdog）、`atg_cp_seq_wait.md`、`atg_cpu_win.md`（PKT_INFO の JOB_TAG、UOP、DMA_*、sub-bus 0x10〜0x3F、**「µops written outside a packet wait for the next one」**、DONE は FIFO が空になるのを待つ）、`atg_cpu_dma.md`、`spec/gpu/su/atg_su_{dcache,rf,lds,cbank,pt,lda}.md`（D$ は write-through、RF は NWARPS × NREGS × 32 lane で「No reset of the contents」、LDS は KC705 16 KiB・1 word/cycle、cbank 256 word、PT は 64 entry × 68 word の 16 bank、lda の primitive table は KC705 で 2 copy × 6144 word）、`spec/gpu/rop/atg_rop_wb.md`（idle の 16 cycle で dirty を書き空にする）。P2 の firmware（`p2-p018` 2ce0fe6、読むだけ）: `fw/cp/cmd.c`（SESSION_OPEN は flags ≠ 0 を FEATURE_NOT_PRESENT、GRANT/REVOKE は unsupported、MEMORY は frame の中でも受け、object の作成は失敗し得る）、`heap.c`（driver が貸す heap、line 単位の first fit、中身は消さない、FW_SESSIONS 32）、`builtin.c`（heap の先頭に identity buffer・内蔵の GSI1 program・firmware の wait word）、`submit.c`（`fw_wait_units` = WAIT_IDLE + wait word への RESULT を DMA で読んで待つ）、`record.c`・`uop.c`（recording は heap の chunk の µop と inline の data、replay は DMA で読み FIFO へ）、`draw.c`（constant bank の image は recording の data、uniform の words を BLT が image に写し LOAD_CONST が読む。VF が identity buffer を読む）、`image.c`・`pipeline.c`（内蔵の program を I$ が読む、scratch は pipeline の block の後ろ）、`query.c`（`fw_query_copy` は client の dst に `fw_store`）。zedBSD の driver（main 485108a30）: `src/drivers/gpu/ghci/cp.c`（`ghci_cp_submit` は frame の後の FENCE を **session の tag** で作る）、`memory.c`（aperture の base は window の無い時 line_bytes で **4 KiB に揃っていない**）、`ghci.c`、`frame.h`。P3 の `vk/`（`agent/p3-p006` ad7d5b54a、読むだけ）: `vk-memory.c`（GHCI_MEMORY の flags は **[0] HOST_VISIBLE、[1] IMPORTED**、import は importer の frame に IMPORTED の MEMORY）、`vk-program.c`（`place_program` は session の allocation に binary を置き PROGRAM だけを送る）、`vk-relay.c`、`vk.h`（firmware の heap は 16 MiB）。
+- **推定**（合成していない・測っていない）: LUT・FF、DDR3 の read の遅れ（KC705 の gclk 200 MHz で 40〜80 cycle と見た）、PLB の miss の率、scrub の cycle、table の RMW の時間。
+- **未確認**: DC の FIFO の余裕（PLB の miss の stall に耐えるか、§17.5）、各 unit の busy が自分の MC の応答まで覆うか（確認 C1、§17.6）、記録が自分の要る STATE を全部書くか（確認 C2、§17.7）、Vulkan の app の allocation の頻度。
 
 ### 17.1 守る物と範囲（threat model）
 
-- **守る物**: 保護した session（protected）の仕事は、(a) その session が所有する memory と (b) その session に grant された memory の外を読み書きしない。(c) 他の session の仕事が GPU の中に残した data（register・shared memory・定数・varying・cache）を見ない。
-- **相手**: 保護した session の client（user の process）。その client が作れる物は全部疑う: Vulkan の command の引数（address・offset・size）、shader（kernel の compiler が作るが、SPIR-V の未定義の値や未初期化の読みは起き得る）、記録の内容、host から書ける自分の memory の中身。
-- **信じる物**: zedBSD の kernel の driver（ring・frame・staging・result page は driver の memory で client に map しない）、CP の firmware、hardware。
-- **範囲の外**（GHCI §11.6 の文と同じ）: 他の client の仕事を止める事（違反は fault で device 全体の reset、v1）、timing の side channel、保護しない session（driver 0 と unprotected の session は検査しない。OS の方針で使い分ける）、DC の scanout、root の NATIVE。
+- **守る物**: 保護した session（protected）の仕事は、(a) その session が所有する memory、(b) その session に grant された memory、(c) 全部の protected の session に公開した読むだけの firmware の領域（public）の外を読み書きしない。(d) 他の session の仕事が GPU の中に残した data（register・shared memory・定数・varying・cache・firmware の heap の再利用の前の中身）を見ない。
+- **相手**: 保護した session の client（user の process）。その client が作れる物は全部疑う: Vulkan の command の引数（address・offset・size）、shader（kernel の compiler が作るが、SPIR-V の未定義の値や未初期化の読みは起き得る）、記録の中の data、host から書ける自分の memory の中身。
+- **信じる物**: zedBSD の kernel の driver（ring・frame・staging・result page・fence page は driver の memory で client に map しない）、CP の firmware、hardware。
+- **範囲の外**（GHCI §11.6 と同じ）: 他の client の仕事を止める事（違反は fault → device 全体の reset、v1: robustBufferAccess の compiler の漏れも含め、protected の session の範囲の外の access は全部の session の DEVICE_LOST になる。§17.13）、timing の side channel、保護しない session（driver 0 と unprotected の session は検査しない）、DC の scanout、root の NATIVE。
 
 ### 17.2 決めた事の要約
 
-1. **所有の表は memory に、検査は MC の root で**: granule（4 KiB）ごとに 1 byte の owner の表（PROT_TABLE、driver が確保し 0 で埋める）、root の小さな cache（PLB）が引き、grant は root の CAM（PROT_GRANTS 個）が並行に引く。miss は表の 1 line を読む間 root を止める（U61）。
-2. **session の番号**: job tag（8 bit）を protected の slot（1〜63、6 bit）に CP の表（SLOT_MAP）で写す。PROT_CAPS[7:0] = 63（U62）。
-3. **要求に slot を付ける**: AMB の header に chk（1 bit）と slot（6 bit）。unit（BLT・VF・TU・ROP・ATOM・SA・SU の D$/I$）は CP の `prot_unit`（今の unit の session）を付け、CP の fence unit は µop ごとの slot、CPU の DMA は firmware が DMA ごとに選ぶ（DMA_GO[17]）。DC と ring と debug port は付けない（検査しない）。
-4. **unit は 1 度に 1 つの session**: CP は unit を動かす µop の slot が `prot_unit` と違う時、**drain**（FENCE と同じ完了の条件）→ cache の invalidate（D$・T$・定数・I$）→（新しい slot が protected なら）**scrub**（SU の RF・LDS・PT・primitive table・cbank を 0 に、使われた物だけ）→ `prot_unit` を変える。session を跨いで仕事が重ならない（U63）。
-5. **firmware の µop は class 2 の packet の session で動く**: CP 側の µop（FENCE・RESULT・WAIT_FENCE・QUERY）も含めて検査する。firmware が session のために使う heap（scratch、記録の data、query pool、event）は session の所有の granule に置く。記録の µop の列・object の record は firmware の private のまま（session は触れない）。
-6. **拒んだ要求**: 作らない、read の応答の data は 0、fault kind 1、FAULT_INFO[9] = 1（保護による拒否）、[31:24] = その slot の job tag。
-7. **順序**: MEMORY・FREE_MEMORY は表を直して PLB を無効化（drain 無し）。GRANT・REVOKE・SESSION_CLOSE は drain の後に適用（GHCI の「後の仕事に効く、前の仕事は終わるまで access を保つ」を正確に）（U65）。
-8. **driver**: PROT が有れば root でない client の session を全部 protected で開く（U64）。表を確保し PROT_TABLE を RUN の前に書く。program の binary は MEMORY の READ_ONLY で渡す。import は GRANT、release は REVOKE。
+1. **所有の表は memory に、検査は MC の root で**: granule（4 KiB、絶対の番号 g = address >> 12）ごとに 1 byte の表（PROT_TABLE、driver が確保し 0 にする）、root の小さな cache（PLB）が引き、grant は root の CAM（PROT_GRANTS 個）が並行に引く（U61）。
+2. **session の番号**: job tag を protected の slot（1〜PROT_SLOTS、KC705 31、byte の 6 bit で 63 まで）に CP の表（SLOT_MAP）で写す（U62）。
+3. **要求に slot を付ける**: AMB の header に chk・tbl（各 1 bit）と slot（6 bit）。unit は CP の `prot_unit`、firmware の µop と DMA は class 2 の packet の slot。ring の class 0/1 の CP 側の µop（driver の FENCE・RESULT）・ring・debug port・DC は検査しない。
+4. **unit は 1 度に 1 つの session**: unit を動かす µop の slot が `prot_unit` と違う時、CP が drain → invalidate → scrub（GPU の中の残りが他の session の物の時だけ）→ `prot_unit` を変える（U63）。
+5. **firmware**: firmware の µop は class 2 の slot で検査する。ただし firmware 自身の待ち（wait word への RESULT・WAIT_FENCE）は UOP の window の SELF の bit で検査しない。heap は private・session の可視の slab（確保の前に 0 で埋める）・public（読むだけ）の 3 区分。
+6. **拒んだ要求**: 作らない、read の応答の data は 0、fault kind 1、FAULT_INFO[9] = 1、[31:24] = その slot の job tag。
+7. **順序**: MEMORY・FREE_MEMORY・PROGRAM の範囲は表を直して該当の PLB の line を無効化（drain 無し）。GRANT はすぐ効く（drain 無し、U65）。REVOKE・SESSION_CLOSE は drain の後に。
+8. **driver**: PROT の有る device では root でない client の session を全部 protected で開く（U64）。表を確保し 0 にし PROT_TABLE を書く。program の allocation は MEMORY の READ_ONLY（flags[2]）、import は ring の GRANT（frame の IMPORTED の MEMORY は表を触らない）、release は REVOKE。
 
 ### 17.3 session の slot と所有の表
 
-- **slot**: protected の session ごとに firmware が SESSION_OPEN で 1〜63 の空きの最小を割り当てる。CP の `SLOT_MAP[256]`（6 bit、job tag → slot、0 = 検査しない）と `SLOT_TAG[64]`（8 bit、slot → job tag、fault の報告用）を firmware が CPU の window から書く。CTRL.RESET で 0。
-- **所有の表（PROT_TABLE）**: aperture [APERTURE_BASE, APERTURE_LIMIT) の granule g = (address − APERTURE_BASE) >> 12 ごとに 1 byte: [5:0] owner の slot（0 = どの protected の session も所有しない）、[6] read-only（owner は読むだけ: program の binary）、[7] 0。大きさ PROT_TABLE_BYTES = ceil((LIMIT − BASE) / 4096) を line に切り上げ（4 GiB の aperture で 1 MiB、1 GiB で 256 KiB）。
-  - driver が driver の memory（どの session も所有しない = 0 の byte）に確保して 0 で埋め、PROT_TABLE（host の register、line に揃える、0 = 表無し）に RUN の前に書く。RUN の間は aperture と同じく lock（kind 7）。firmware が DMA で読み書きし、MC が引く。driver は RUN の間は読まない・書かない。
+- **slot**: protected の session ごとに firmware が SESSION_OPEN で 1〜PROT_SLOTS を **round-robin**（直前に閉じた slot を最後に回す）で割り当てる。tag 0 の PROTECTED は拒む（GHCI「Session 0 is the driver's own and is never protected」）。CP の `SLOT_MAP[256]`（6 bit、job tag → slot、0 = 検査しない、**[0] は 0 に固定**）と `SLOT_TAG[64]`（8 bit、slot → job tag）を firmware が書く。CTRL.RESET で 0。PROT_SLOTS は KC705 で 31（firmware の FW_SESSIONS 32 と合わせる、U62）。
+- **所有の表（PROT_TABLE）**: 絶対の granule の番号 g（address >> 12）の [G0, G1) について、1 byte: [5:0] owner の slot（0 = どの protected の session も所有しない）、[6] read-only（owner は読むだけ）、[7] public（全部の protected の session が読める。owner は 0）。G0 = floor(APERTURE_BASE / 4096)、G1 = ceil(APERTURE_LIMIT / 4096)、PROT_TABLE_BYTES = G1 − G0 を 4 KiB に切り上げ（4 GiB の aperture で 1 MiB、1 GiB で 256 KiB）。aperture が 4 KiB に揃っていなくても page が granule を跨がない。
+  - driver が driver の memory（byte 0 の領域）に **4 KiB に揃えて**確保し、PROT_TABLE（host の register）に書く。書いた時に hardware が G0・G1 を latch する。aperture の register を書くと PROT_TABLE は 0 に戻る（表と aperture の食い違いを防ぐ）。PROT_TABLE は RUN の間は lock（kind 7）。0 で埋めるのは driver: KC705（aperture = local memory）は RUN の後に BLT（tag 0）で埋め、その FENCE の後に最初の PROTECTED の SESSION_OPEN を出す（表は protected の session が無い間は使われない）。host memory の表は CPU で埋める。
   - 表の書式は vendor の物（GHCI は「PROT_TABLE_BYTES の memory を driver が貸す」だけを決める）。
-- **grant の CAM（PROT_GRANTS 個、KC705 64）**: entry = {valid, slot 6 bit, read, write, base と limit（granule の番号、20 bit ずつ）}。firmware が CPU の window の 4 つの register（GIDX・GBASE・GLIMIT・GCTL）で書く。CTRL.RESET で全部 invalid。PROT_CAPS[31:16] = PROT_GRANTS（GHCI の「ranges (owned and granted)」を「grants」に直す、U67）。
-- **許可の判定**（chk = 1 の要求、slot s、granule g、write w）: `own = table[g][5:0] == s && !(w && table[g][6])`、`grant = ∃e: e.valid && e.slot == s && e.base ≤ g < e.limit && (w ? e.write : e.read)`。許す = own || grant。s = 0 の chk は来ない（leaf が chk を 0 にする）。aperture・window の外は今の検査が先に拒む。atomic（ATOM の client）は read と write の両方が要る（write で判定し、read-only の granule は拒む）。
+- **grant の CAM（PROT_GRANTS 個、KC705 64）**: entry = {valid, slot 6 bit, read, write, base と limit（絶対の granule の番号、20 bit ずつ）}。firmware が CPU の window の register で書く。同じ範囲の grant が 2 つ有れば entry も 2 つ（REVOKE は 1 つだけ消す）。CTRL.RESET で全部 invalid。PROT_CAPS[31:16] = PROT_GRANTS（U67）。
+- **許可の判定**（chk = 1、slot s、granule g、write w）: g ∉ [G0, G1) → 拒む。b = table[g]: `own = b[5:0] == s && !(w && b[6])`、`pub = b[7] && !w`、`grant = ∃e: e.valid && e.slot == s && e.base ≤ g < e.limit && (w ? e.write : e.read)`。許す = own || pub || grant。atomic（ATOM の client）は write として判定。aperture・window の外は今の検査が先に拒む。
+- **表を守る**: [PROT_TABLE, +PROT_TABLE_BYTES) への write は header の tbl = 1（CPU の DMA の DMA_GO[18] だけが立てる）の時だけ許す（chk に依らない多重の防御: firmware の DMA が client の address で表を書く誤りを止める）。
 
 ### 17.4 要求に slot を付ける道（client ごと）
 
 | client | 何の要求 | chk・slot | 理由 |
 | --- | --- | --- | --- |
 | 0 CP: ring | ring の読み | 0 | driver の memory |
-| 0 CP: fence unit | FENCE・RESULT・WAIT_FENCE・QUERY の読み書き | µop の slot: ring の µop は dword0 の job tag を SLOT_MAP で引いた値、firmware の µop は class 2 の packet の slot | ring の class 0/1 は GHCI で検査の対象、firmware の µop は session の代わり（§17.8） |
+| 0 CP: fence unit、ring の µop | driver の FENCE・RESULT（session の tag の packet も） | 0 | ring は driver が書く。driver の fence page・result は driver の memory（`cp.c` は frame の後の FENCE を session の tag で作る: 検査すると毎回 fault する）。GHCI の文を「ring の class 0/1 の CP 側の µop は driver の物で検査しない」に直す |
+| 0 CP: fence unit、firmware の µop | FENCE・RESULT・WAIT_FENCE・QUERY | chk = 1、slot = class 2 の slot。UOP の window の SELF = 1 の µop packet は 0 | 前者は session の代わり（query pool・event は session の可視の slab）、後者は firmware 自身の待ち（wait word） |
 | 0 CP: debug port | DBG_ADDR | 0 | bring-up、driver |
-| CPU（firmware の DMA） | heap・frame・result page・表・session の buffer | DMA_GO[17] = 1 の DMA だけ chk = 1、slot = 処理中の class 2 の packet の slot | firmware が session の address（buffer の address、indirect の引数）を読み書きする時だけ |
+| CPU（firmware の DMA） | heap・frame・result page・表・session の buffer | DMA_GO[17] = 1 の DMA だけ chk = 1、slot = class 2 の slot。DMA_GO[18] = tbl | session の address を読み書きする時だけ（呼び出しごとの表を R6 の受け入れに） |
 | BLT・VF・TU・ROP・ATOM・SA・SU の D$・I$+定数 | unit の仕事 | chk = `prot_unit != 0`、slot = `prot_unit` | unit は 1 度に 1 つの session（§17.6） |
-| EXT（KC705 の DC） | scanout | 0 | driver の物（GHCI §11.6） |
+| EXT（KC705 の DC） | scanout | 0 | driver の物 |
 
-- header: bit 3 = chk（今は 0）、byte enable の後に slot の 6 bit（`am_amb_to_rt.md` の「rest」の余り、64 B の line で 116 + 6 bit / 512）。leaf（`am_amb_to_rt`）は request の間 chk・slot を header に入れるだけ。`prot_unit` は unit が idle の時しか変わらないので、待っている要求の slot が途中で変わる事は無い。
-- `am_amb_mux`（CP の client 0）は requester ごとの chk・slot を選んで出す（parameter の幅の side band を足す。ROP の中の `am_amb_mux` は 0 を繋ぐ）。
+- header: bit 3 = chk、byte enable の後に tbl（1 bit）と slot（6 bit）（64 B の line で 116 + 7 / 512）。leaf（`am_amb_to_rt`）は入力の chk・tbl・slot を header に入れる。header は request の間 入力から作り直されるので、unit の要求が leaf で待つ間に `prot_unit` が変わらない事を drain が保証する（§17.6）。
+- `am_amb_mux` は parameter の幅の side band を足し、CP の client 0 だけが requester ごとの chk・tbl・slot を使う。ROP・VF・SU の中の `am_amb_mux` は 0 を繋ぐ（unit の slot は `atg_top` が client ごとに与える）。
 
-### 17.5 MC の検査（新しい子 `atg_mc_prot`、root の中）
+### 17.5 MC の検査（新しい子 `atg_mc_prot` と `atg_mc_grant`、root の中）
 
-- **PLB**（protection lookaside）: `PROT_PLB` line（KC705 16）、全結合、round-robin の置き換え。1 line = 表の LINE_BYTES byte = LINE_BYTES 個の granule（64 B の line で 256 KiB、16 line で 4 MiB の reach）。tag = g >> log2(LINE_BYTES)。data は LUTRAM（16 × 64 byte）。
-- **引く時**: header の flit が assembly buffer に入る cycle に、その address で PLB の tag の比較と grant の CAM の比較を行い、結果（hit・許す）を buffer と一緒に register に持つ。grant の判定（`grant`）は今と同じ cycle に使える。追加の遅れは hit なら 0。PLB か CAM が変わった（fill・PROT_INV・CAM の書き込み）cycle の後は buffer の判定をもう 1 度行う（1 cycle の stall）。
-- **miss**: buffer の要求を止めたまま（今の `err_v` と同じく何も grant しない）、表の line（PROT_TABLE + (g & ~(LINE_BYTES − 1))）を AXI master に読む（内部の要求、client 番号 0xFF の印で応答を root が取り、木に流さない）。応答で line を詰め、判定し直す。PROT_INV がその間に来たら詰めずに捨てて読み直す（世代の bit）。表の読みが AXI の error なら fault kind 5（今の AXI の error と同じ）。
-- **拒否**: 今の aperture の拒否と同じ道（`grant_bad` → `err_v` → error の応答と `fault` の pulse）。**応答の data は 0**（今は「最後の read の data」で、他の session の data が漏れ得た: aperture の拒否も 0 にする）。`fault_prot`（保護の拒否）と `fault_slot` を CP に出し、CP が FAULT_INFO[9] と [31:24]（SLOT_TAG[slot]）にする。
-- **PROT_INV**: firmware の window の書き込みで 1 cycle の pulse、PLB を全部 invalid に。flush（CTRL.RESET）でも PLB と CAM は空。
-- **検査しない時**（chk = 0）: PLB を引かず、PLB も汚さない。HAS_PROT = 0 の構成は `atg_mc_prot` が無く、header の chk は 0 に固定（今の動作、今の試験が変わらない）。
+- **PLB**: `PROT_PLB` line（KC705 16）、全結合、round-robin。1 line = 表の LINE_BYTES byte = LINE_BYTES 個の granule（64 B の line で 256 KiB、16 line で 4 MiB の reach）。tag = (g − G0) >> log2(LINE_BYTES)（14 bit）。data は byte-lane の LUTRAM。
+- **判定は 1 段の pipeline**: chk = 1 の要求は assembly buffer から判定の段（PLB の tag の比較・byte の選択・slot の比較、並行に CAM の比較）を 1 cycle で通り、次の cycle に grant する（chk = 1 の要求に +1 cycle、throughput は 1/cycle）。chk = 0 の要求は判定の段を通らず今と同じ。判定の段の結果は PLB・CAM の変化（fill・無効化・CAM の書き込み）の cycle の後に判定し直す（1 cycle の stall）。R2 の受け入れに 200 MHz の timing（合成の実測）を入れる。
+- **miss**: miss の要求を **退避の register（park）**に移し、表の line（PROT_TABLE + (g − G0) の line）を AXI master に読む（内部の要求、client 番号 0xFF の印で応答を root が取り、木に流さない。`axi_idle` と quiesce の drain に数える）。park の間、root は chk = 0 の要求（DC・CP・CPU の検査しない物）と、park と別の client の hit の要求を grant する。park と同じ client の要求、もう 1 つの miss は待つ（client ごとの順序を保つ）。応答で line を詰め、park を判定し直す。表の read の AXI の error は fault kind 5。
+- **無効化**: PROT_INV（firmware の window、[19:0] 先頭の granule と [31:20] line の数、0 = 全部）は範囲に重なる PLB の line だけを消す。walk の発行の後に重なる PROT_INV が来たら、その応答を捨てて 1 度だけ読み直す（2 度目の INV は待つ: livelock しない）。flush（CTRL.RESET）で PLB と CAM は空。
+- **拒否**: 今の aperture の拒否と同じ道（`grant_bad` → `err_v` → error の応答と `fault`）。**応答の data は 0**（aperture の拒否も 0 にする。今は「最後の read の data」で漏れ得た）。`fault_prot`・`fault_slot` を CP に出す。
+- **HAS_PROT = 0**: `atg_mc_prot` が無く、header の chk・tbl は 0 に固定（今の動作、今の試験が変わらない）。
 
 ### 17.6 CP: unit の session の切り替え（新しい子 `atg_cp_prot`）
 
-- **持つ物**: SLOT_MAP・SLOT_TAG、`prot_unit`（6 bit、unit が今動かしている session の slot、0 = driver か unprotected）、`known`（`prot_unit` が有効か。SLOT_MAP で slot を消すと、その slot が `prot_unit` なら known = 0）、SU の RAM ごとの dirty の bit（scrub の後 0、unit が書いたら 1。SU から）。
-- **sequencer との約束**: `atg_cp_seq` は unit を動かす µop（BLIT・DRAW・DISPATCH・LOAD_CONST・DRAW_RAW と class 1 の全部）の kick の前に、その µop の slot（ring: dword0 の tag → SLOT_MAP、firmware: class 2 の packet の slot。firmware が dword0 に書いた tag は使わない）を `atg_cp_prot` に示し、`ok` を待つ（`atg_cp_seq_wait` の pre の条件に 1 つ足す）。UOP_FIFO の entry は slot を持たない（FIFO の µop は全部その時の class 2 の packet の物: `fw_active` の間だけ取り、DONE の後の µop は残らない事を S の段で確かめる。残るなら entry に slot を足す）。
-- **切り替え**（slot s ≠ `prot_unit` か !known）: (1) **DRAIN**: FENCE と同じ完了の条件（全部の unit が idle、unit の client の MC の要求が全部応答済み）を待つ。(2) **INV**: `inv` = 4'b1111 の pulse（D$・T$・定数・I$）。ROP の write-back は idle で空になっている。(3) **SCRUB**（s ≠ 0 の時だけ）: SU に `scrub` の pulse、dirty の RAM だけ 0 で埋め、SU の busy が落ちるのを待つ。(4) `prot_unit` = s、known = 1。(5) `ok`。s = 0（driver・unprotected）への切り替えは (1) だけ（driver は信じる。次に protected に入る時に (2)(3) を行う）。
-- **R1**（実装の段の最初に確かめる）: 各 unit の busy が自分の MC の要求の応答まで覆う事。覆わない unit が有れば DRAIN に MC の unit の client の idle を足す。
-- **fence unit**: `f_*` に `f_chk`・`f_slot` を足し、AMB の要求に付ける（ring の µop は SLOT_MAP の slot、firmware の µop は class 2 の slot）。CP 側の µop は unit の切り替えを要らない（自分の slot を持つ）。
-- **CPU の window**（`atg_cpu_win`）: 0x28 PROT_SLOT（W: [7:0] tag、[13:8] slot（0 = 消す）→ SLOT_MAP と SLOT_TAG）、0x29 PROT_INV（W: PLB の無効化）、0x2A〜0x2D PROT_GIDX・GBASE・GLIMIT・GCTL（grant の CAM）、0x2E PROT_INFO（R: [0] HAS_PROT、[1] PROT_TABLE ≠ 0、[31:8] PROT_TABLE の address >> 8。firmware が表の場所を知る）、DMA_GO[17] = chk。
-- **host の register**（`atg_cp_regs`、EXTCAP の PROT の entry、version 1）: +0x0 PROT_CAPS（R: [7:0] 63、[15:8] 12、[31:16] PROT_GRANTS）、+0x4 PROT_TABLE（RW、line に揃える、RUN の間は lock）、+0x8 PROT_TABLE_BYTES（R、今の aperture から）。
-- **FAULT_INFO**: 保護の拒否は kind 1 と [9] = 1、[31:24] = SLOT_TAG[fault_slot]。chk = 0 の unit の要求の fault（aperture の外など）は [31:24] = SLOT_TAG[`prot_unit`]（今の「0 のことがある」より良い）。
+- **持つ物**: SLOT_MAP・SLOT_TAG、`prot_unit`（6 bit）、`known`、`resid`（SU の RAM が今持つ data の持ち主: none・slot・MIXED。scrub で none、SU の RAM が書かれたら `prot_unit` を足す。**reset の値は MIXED**: RAM の中身は CTRL.RESET で消えない）。
+- **µop の slot**: ring の µop は dword0 の tag → SLOT_MAP。firmware の µop は UOP_FIFO の entry ごとの slot（書いた時に latch した「今の class 2 の packet の slot」。packet の外で書いた µop（`atg_cpu_win.md`: 次の packet を待つ）は slot 0 = firmware 自身の物で、firmware はそこに session の address を入れない）と SELF の bit。class 2 の slot は PKT_INFO で packet を取った時に SLOT_MAP[JOB_TAG] を latch する。
+- **sequencer との約束**: `atg_cp_seq` は unit を動かす µop（BLIT・DRAW・DISPATCH・LOAD_CONST・DRAW_RAW と class 1 の全部）の kick の前に、その µop の slot を `atg_cp_prot` に示し `ok` を待つ（`atg_cp_seq_wait` の pre の条件に 1 つ、slot の計算は `atg_cp_prot` に置き seq の port を増やさない: seq の今の header の tag と fw_active を `atg_cp_prot` が直に見る）。host の KICK は slot 0 の µop として同じ道を通る。
+- **切り替え**（slot s ≠ `prot_unit` か !known）: (1) **DRAIN**: 全部の unit の busy が 0、unit の client の leaf に待つ要求が無い（`atg_top` が `c_req_valid` の unit の client の OR を `atg_cp` に返す）、確認 C1 を満たす事。(2) **INV**: `inv` = 4'b1111、occlusion の counter の clear。(3) **SCRUB**: s ≠ 0 で resid ∉ {none, s} の時だけ、SU に `scrub`、SU の busy が落ちるまで待つ、resid = none。(4) `prot_unit` = s、known = 1。(5) `ok`。DRAIN の間の watchdog は前の slot の仕事として数える（fault の tag は SLOT_TAG[前の prot_unit]。新しい µop の cmd_active は立てない）。
+- **確認 C1**（R1 で）: 各 unit の busy が自分の MC の要求の応答まで覆う事。覆わない unit が有れば、`atg_mc` から unit の client の outstanding の counter を出して DRAIN に足す（port の group が 1 つ増える）。
+- **fence unit**: `f_chk`・`f_slot` を足す（ring の µop は 0、firmware の µop は entry の slot と SELF）。
+- **CPU の window**（sub-bus 0x10〜0x3F の先、`atg_cp_prot` に置く）: 0x28 PROT_SLOT（W: [7:0] tag、[13:8] slot（0 = 消す））、0x29 PROT_INV、0x2A〜0x2D PROT_GIDX・GBASE・GLIMIT・GCTL（CAM の書き込みは `atg_cp` → `atg_top` → `atg_mc` の 4 本の配線 gw_*）、0x2E PROT_INFO（R: [0] HAS_PROT、[1] 表が有る、[13:8] PROT_SLOTS）、0x2F PROT_TBASE（R: 表の address）、0x30 PROT_G0、0x31 PROT_G1、0x32 UOP_SELF（W: 次の µop packet の SELF）、DMA_GO[17] = chk、[18] = tbl。
+- **host の register**（`atg_cp_regs`、EXTCAP の PROT の entry、version 1）: +0x0 PROT_CAPS（R: [7:0] PROT_SLOTS、[15:8] 12、[31:16] PROT_GRANTS）、+0x4 PROT_TABLE（RW、4 KiB に揃える、RUN の間は lock、aperture の書き込みで 0）、+0x8 PROT_TABLE_BYTES（R）。
+- **FAULT_INFO**: 保護の拒否は kind 1、[9] = 1、[31:24] = SLOT_TAG[fault_slot]。chk = 0 の unit の fault は `prot_unit` ≠ 0 なら SLOT_TAG[`prot_unit`]、0 なら今の seq の tag のまま。
 
-### 17.7 GPU の中に残る data（scrub と invalidate）
+### 17.7 GPU の中に残る data
 
 | 物 | 残り方 | 扱い |
 | --- | --- | --- |
-| D$・T$・I$・定数の cache | 前の session の line が hit し得る | 切り替えで invalidate（INVALIDATE の 4 bit） |
-| ROP の write-back の line | idle で書いて空になる | DRAIN で空 |
-| SU の RF（KC705: 4 warp × 64 reg × 32 lane、512 行 × 3 copy） | 未初期化の register の読み（SPIR-V の OpUndef など）で見える | SCRUB（1 行/cycle、3 copy は同時に。512 cycle） |
-| SU の LDS（KC705 16 KiB） | shared memory は未初期化で読める | SCRUB（1 word/cycle で 4096 cycle。dirty の時だけ） |
-| SU の PT・primitive table（64 × 64 word、複製 2） | vertex が書かなかった varying の word を fragment が読める | SCRUB（dirty の時だけ） |
-| SU の cbank（256 word） | LOAD_CONST の words の外の定数の読み | SCRUB |
-| STATE（CP の register file） | 前の session の address・state の値 | **消さない**（address などの metadata だけで、data ではない。読んだ address への access は MC が拒む。firmware の STATE の cache と衝突しない、U66） |
-| SA（HAS_SA、今は KC705 に無い） | accumulator | SA を入れる時に scrub を足す（Appendix A の延期と同じ） |
+| D$・T$・I$・定数の cache | 前の session の line が hit し得る | 切り替えで invalidate |
+| ROP の write-back の line | idle で書いて空 | DRAIN |
+| occlusion の counter | GPU に 1 つ | 切り替えで clear |
+| SU の RF（KC705: 512 行 × 3 copy） | 未初期化の register の読み | SCRUB（1 行/cycle、3 copy 同時、512 cycle） |
+| SU の LDS（16 KiB） | 未初期化の shared memory | SCRUB（1 word/cycle、4096 cycle） |
+| SU の lda の primitive table（2 copy × 6144 word） | vertex が書かなかった varying の word | SCRUB（全 copy 同時、6144 cycle。**律速、graphics の session で毎回 dirty**。幅の広い書き込み（bank を並列）で短くする案は R4 で） |
+| SU の PT（64 × 68 word、16 bank） | 同上 | SCRUB（約 272 cycle） |
+| SU の cbank（256 word） | LOAD_CONST の words の外 | SCRUB |
+| firmware の heap の可視の slab | 前の session の scratch・bank の image | 確保の時に firmware が DMA で 0 にしてから owner を書く（§17.8） |
+| STATE | 前の session の address と state | **消さない**（U66）。firmware は前と違う session の class 2 の packet を始める時に STATE の cache を捨てる。確認 C2（R6）: 記録が自分の読む STATE を全部書く事（書かないと B の draw が A の address で fault する = 正当な B の DoS） |
+| SA（HAS_SA、KC705 に無い） | accumulator | SA を入れる時に scrub を足す |
 
-scrub の時間（KC705、推定）: dirty の物全部で約 4.5k cycle（LDS が律速、SU は並行）。graphics だけの session は LDS が dirty にならない。
+scrub の時間（KC705、推定）: 約 6.2k cycle（lda が律速、SU は並行）= 200 MHz で 31 µs。resid が同じ session なら 0（A → driver の blit → A は scrub しない）。
 
 ### 17.8 firmware（P2 の `fw/cp/`、実装の段で）
 
-- **SESSION_OPEN**（ring だけ）: flags[0] PROTECTED: PROT_INFO[0] = 0 → VK_ERROR_FEATURE_NOT_PRESENT、PROT_INFO[1] = 0（表が無い）→ VK_ERROR_INITIALIZATION_FAILED、slot が無い → VK_ERROR_OUT_OF_DEVICE_MEMORY。slot を取り PROT_SLOT を書く。
-- **MEMORY**（protected の session、frame の中も可: frame は driver が作る）: address と bytes が granule に揃わなければ VK_ERROR_INITIALIZATION_FAILED（driver の誤り）。範囲の granule の byte を DMA で読み、全部 0 の時だけ owner = slot（flags[1] READ_ONLY なら [6]）を書く（0 でない byte が有れば失敗、他の session の memory を守る）。DMA の書き込みの応答を待ち（DMA_STATUS[15:8] = 0）、PROT_INV。
-- **FREE_MEMORY**: その object の範囲の byte のうち owner = slot の物を 0 に、PROT_INV（drain は要らない: Vulkan は使用中の memory の free を禁じる。違反した session の仕事が fault するだけ）。
-- **BUFFER_GRANT / BUFFER_REVOKE**（ring だけ）: session が protected で、範囲が granule に揃う事。WAIT_IDLE（全部）の µop を出して完了を待ち、CAM の entry を足す（空きが無ければ OUT_OF_DEVICE_MEMORY）・同じ範囲の entry を消す（無ければ何もせず VK_SUCCESS。GHCI に「無い grant の revoke は何もしない」と書く）。表は変えない（grant は CAM だけ）。
-- **SESSION_CLOSE**: WAIT_IDLE、その session の memory の object・heap の可視の chunk の byte を 0 に、その slot の CAM の entry を全部消す、PROT_SLOT で slot を消す（CP の known = 0）、PROT_INV。
-- **heap の 2 つの区分**: (a) **private**（object の record、記録の µop の列、pipeline の state、descriptor の写し）: 表の byte 0、session の仕事から見えない。firmware は DMA（chk = 0）で読み書きする。(b) **可視**（protected の session の: pipeline の scratch、記録の inline の data = constant bank の image と vkCmdUpdateBuffer の data、query pool の slot、event の word）: granule に揃えた chunk、owner = その slot（rw）。firmware はこの区分の中身を信じない（session が書き換え得る: data として読むだけ、address や µop として使わない）。記録は µop の chunk（private）と data の chunk（可視）に分ける（今は同じ chunk に inline）。
-- **DMA_GO[17]**: session の address（VkBuffer・indirect の引数・copy の相手）を firmware が直接読み書きする DMA は 1。frame・result page・heap の private・表は 0。
-- **µop**: firmware の µop は全部 class 2 の packet の slot で検査される（§17.4）。firmware が CP 側の µop（QUERY・WAIT_FENCE・RESULT）に使う address は可視の区分に置く。
-- **DMEM の上限**: CAM の写し（64 entry）と slot の表（63）を DMEM に。
+- **SESSION_OPEN**（ring だけ）: PROTECTED: PROT_INFO[0] = 0 → VK_ERROR_FEATURE_NOT_PRESENT、tag 0 → VK_ERROR_FEATURE_NOT_PRESENT、表が無い → VK_ERROR_INITIALIZATION_FAILED、slot が無い → VK_ERROR_OUT_OF_DEVICE_MEMORY。slot を取り PROT_SLOT を書く。
+- **MEMORY**（protected の session）: flags[1] IMPORTED は表を触らない（access は driver が ring で先に出す GRANT）。それ以外: 範囲が granule に揃わない → VK_ERROR_INITIALIZATION_FAILED。object を作ってから、範囲の byte を DMA で読み、全部 0 の時だけ owner = slot（flags[2] READ_ONLY なら [6] も）を書く（0 でない byte → object を消して VK_ERROR_INITIALIZATION_FAILED: 他の session の memory を守り、driver の誤りを見つける）。書き込みの応答を待ち、範囲の PROT_INV。1 GiB の allocation は 4096 line の RMW（推定 数 ms、frame の decode を止める）。
+- **FREE_MEMORY**: IMPORTED でなければ範囲の byte のうち owner = slot の物を 0 に、PROT_INV（drain 無し: Vulkan は使用中の free を禁じる。違反した session の仕事は fault し、v1 では device 全体の reset）。
+- **BUFFER_GRANT**（ring だけ）: protected の session、granule に揃う範囲。drain せず CAM に足す（空きが無ければ OUT_OF_DEVICE_MEMORY、U65）。
+- **BUFFER_REVOKE**（ring だけ）: `fw_wait_units`（SELF の µop）で drain、同じ {session, 範囲} の entry を 1 つ消す（無ければ何もせず VK_SUCCESS）。
+- **SESSION_CLOSE**: drain、その session の memory の object と可視の slab の byte を 0 に、**表の全体から byte の owner = slot を掃く**（1 MiB で 16k line の DMA、推定 数 ms。close の時だけ）、その slot の CAM の entry を消す、PROT_SLOT で slot を消す（known = 0）、全部の PROT_INV。
+- **heap の 3 区分**:
+  - (a) **private**（object の record、記録の µop の chunk、pipeline の state、descriptor の写し、firmware の wait word）: byte 0。firmware の DMA（chk = 0）だけ。
+  - (b) **session の可視の slab**（scratch、記録の data の chunk = constant bank の image と vkCmdUpdateBuffer の data、query pool、event の word）: session ごとに granule に揃えた slab を持ち、その中を line 単位で貸す（granule ごとに貸すと 16 MiB の共有の heap が 4096 個で尽きる）。slab を取る時に DMA で 0 にし、その後 owner = slot を書く。上限は SESSION_OPEN の heap limit。firmware は中身を信じない（data として読むだけ）。記録は µop の chunk（private）と data の chunk（可視）に分ける（今は同じ chunk に inline）。
+  - (c) **public**（identity buffer、内蔵の GSI1 program）: heap を貸された時に byte [7] = 1（全 protected の session が読む、書けない）。
+- **µop**: firmware の µop は class 2 の slot で検査される。firmware 自身の待ち（`fw_wait_units` の WAIT_IDLE + RESULT）は UOP_SELF = 1。SELF の packet に session の address を入れない。
+- **DMA_GO[17]**: session の address（VkBuffer、indirect の引数、`fw_query_copy` の dst、copy の相手）を読み書きする DMA は 1、line の store と reader の cache は chk を line ごとに持つ。DMA_GO[18] は表の書き込みだけ。全部の DMA の呼び出し（`fw_store`・`fw_copy_in`・`fw_copy_out`・`fw_reader`・`fw_dma_read`）の chk の表を R6 の受け入れにする。
+- **sessions**: FW_SESSIONS 32 のまま、PROT_SLOTS 31。
 
 ### 17.9 driver（zedBSD の `src/drivers/gpu/ghci/`、実装の段で）
 
-- **attach**: PROT が有れば PROT_CAPS を読み、PROT_TABLE_BYTES の driver の memory を取って 0 で埋め、PROT_TABLE に RUN の前に書く。reset の後（CTRL.RESET）も表を 0 で埋め直す（firmware は session を失う。v1 は全部の session が device lost）。
-- **session**: PROT が有り表が書けた device では、root でない process の session を SESSION_OPEN の PROTECTED で開く。slot が尽きたら open は ENOSPC（保護しない session に落とさない）。root の session は保護しない（NATIVE の試験の道具が自由な address を使う、U64）。
-- **memory**: session の allocation は今どおり page（4 KiB）単位。program の binary は MEMORY の flags[1] READ_ONLY（session の I$ は読める、書けない）。ring・fence page・staging・frame・result page・表は driver の memory（client に map しない）。
-- **share**: 他の session の allocation を import したら、importer の最初の submit より前に ring に BUFFER_GRANT(importer の tag、read|write（Vulkan の外部 memory は import した側が全部使える）、address、bytes)。importer が release したら BUFFER_REVOKE。exporter の free は importer が全部 revoke し fence が過ぎるまで遅らせる。
-- **relay**: client の stream の GHCI の gpu-op（0x10100〜）は中継しない（今の codec が Vulkan の command だけを解くので守られている。protected の時の約束として明記）。
-- **fault**: FAULT_INFO の [9] と [31:24] の session を log に出す。
+- **attach**: PROT が有れば PROT_CAPS を読み、aperture の base を 4 KiB に揃え（window の無い時の line_bytes を 4 KiB に）、PROT_TABLE_BYTES を 4 KiB に揃えた driver の memory に取り、PROT_TABLE に書く（RUN の前）。host memory の表は CPU で 0 に、local memory の表は RUN の後に BLT（tag 0）で 0 にし、その FENCE を待ってから protected の session を開く。CTRL.RESET の後も 0 にし直す（firmware は session を失う。v1 は全部の session が device lost）。
+- **session**: root でない process の session を PROTECTED で開く。slot が尽きたら open は ENOSPC（保護しない session に落とさない）。root の session は保護しない（U64）。
+- **FENCE と RESULT**: 今どおり（session の tag の FENCE は ring の class 0 で、検査しない）。
+- **memory**: session の allocation は page（4 KiB）単位。program の allocation は driver の合成の identity で MEMORY flags[2] READ_ONLY を frame に入れ、release で FREE_MEMORY。ring・fence page・staging・frame・result page・表は driver の memory（client に map しない）。
+- **share**: import の時、importer の frame（IMPORTED の MEMORY を含む）より前に ring に BUFFER_GRANT(importer の tag、read|write（Vulkan の外部 memory は import した側が全部使える）、address、bytes)。importer が free したら、その frame の後に BUFFER_REVOKE。exporter の free は importer が全部 revoke し fence が過ぎるまで遅らせる。CAM が尽きたら import は VK_ERROR_OUT_OF_DEVICE_MEMORY。
+- **relay**: client の stream の GHCI の gpu-op（0x10100〜）は中継しない（今の codec が守る。protected の約束として明記）。
+- **fault**: FAULT_INFO の [9] と session を log に出す。
 
-### 17.10 GHCI の変更（draft。実装の段で `docs/ghci.md` に書いて確定）
+### 17.10 GHCI の変更（draft。R1 で `docs/ghci.md` に書き、R8 で確定）
 
-- §11.6: 上の slot・PROT_TABLE（driver が貸す memory、書式は vendor の物）・PROT_TABLE_BYTES・PROT_CAPS[31:16] = grants、unit の仕事は 1 つの session ずつ（実装の自由として「仕事の間で session を跨ぐ data を残さない」を規範に: registers・shared memory・定数・varying・cache）、firmware の µop も session の検査の対象、拒んだ read は 0 を返す、無い grant の revoke は何もしない、GRANT/REVOKE/SESSION_CLOSE は前の仕事が終わってから効く。
-- §7.2: MEMORY の flags[1] READ_ONLY。
+- §11.6:
+  - slot・PROT_TABLE（driver が 4 KiB に揃えて貸し 0 にする memory、書式は vendor の物、aperture を書くと 0 に戻る）・PROT_TABLE_BYTES・PROT_CAPS[31:16] = grants。
+  - 検査の対象: unit の仕事、firmware が session のために出す µop と DMA。**ring の class 0/1 の CP 側の µop（driver の FENCE・RESULT）は driver の物で検査しない**（draft の「the fence and result writes of its packets」を直す）。ring の class 0/1 の unit の µop は packet の tag の session で検査する。
+  - GPU の中に残る data: protected の session の仕事は、他の session の仕事が残した register・shared memory・定数・varying・cache の data を見ない（規範）。
+  - 拒んだ read は 0 を返す。GRANT は後の仕事に効く（前の仕事に早く効いてもよい）、REVOKE・SESSION_CLOSE は前の仕事が終わってから。REVOKE は同じ範囲の grant を 1 つ消し、無ければ何もしない。
+  - MEMORY: 範囲が他の session の物、または granule に揃わない → VK_ERROR_INITIALIZATION_FAILED。IMPORTED（flags[1]）は所有を作らない（GRANT が要る）。PROTECTED で表が無い → VK_ERROR_INITIALIZATION_FAILED。tag 0 の PROTECTED → VK_ERROR_FEATURE_NOT_PRESENT。
+- §7.2: MEMORY の flags（[0] HOST_VISIBLE、[1] IMPORTED: P3 の今の定義を GHCI に、[2] READ_ONLY）。
 - §3.4: FAULT_INFO[9] = session の保護による拒否。
 - §4: PROT の register（+0x4 PROT_TABLE、+0x8 PROT_TABLE_BYTES）。
 
 ### 17.11 性能（推定）
 
-- **hit**: 遅れ 0（判定は buffer に入る cycle に、register に持つ）。throughput は今と同じ 1 read/cycle。
-- **miss**: 表の 1 line の read の間（KC705 の DDR3 で gclk 40〜80 cycle、推定）root は何も grant しない。line の reach は 256 KiB（64 B の line）: 流れる access（framebuffer の行、vertex、copy）は 256 KiB に 1 回、texture の random な読みは T$ の miss の一部が PLB の miss になる。最悪の DC の遅れは miss 1 回分（DC は root の隣で優先なので、次の miss の前に通る）。
-- **切り替え**: drain（仕事しだい）+ invalidate 1 cycle + scrub（0〜4.5k cycle）。frame ごとに session が交代する desktop（60 fps × 5 session = 300 回/s）で ≈1.4 ms/s（≈0.15%、scrub の分。drain は仕事の終わりを待つだけで、交代が無い時も FENCE で待っている）。
-- **GRANT・REVOKE・CLOSE の drain**: import と close の時だけ。
+- **hit**: chk = 1 の要求に +1 cycle（判定の段）、throughput は今と同じ 1/cycle。chk = 0 は今と同じ。
+- **miss**: 表の 1 line の read（gclk 40〜80 cycle、推定）。park の間も chk = 0 と別の client の hit は通るので、DC は止まらない（DC の要求が park と同じ client になる事は無い）。止まるのは park と同じ client の要求ともう 1 つの miss。line の reach は 256 KiB: 流れる access は 256 KiB に 1 回、texture の random な読みは T$ の miss の一部が PLB の miss になる。
+- **切り替え**: drain（仕事しだい。交代が無くても FENCE で待っている時間と重なる）+ 1 cycle + scrub（resid が他の session の時 約 6.2k cycle = 31 µs）。60 fps × 5 session の交代（300 回/s）で ≈9.3 ms/s ≈ 0.9%（driver の presentation の blit（tag 0）を挟んでも、resid が変わらないので scrub は増えない）。
+- **表の更新**: MEMORY・FREE_MEMORY は範囲の line の RMW（1 GiB で 4096 line、数 ms）、SESSION_CLOSE は表の全体を掃く（1 MiB で数 ms）。
+- **REVOKE・CLOSE の drain**: release と close の時だけ。
 
 ### 17.12 状態遷移・所有と寿命・並行性
 
-- **CP の `atg_cp_prot`**: IDLE →(unit の µop の slot ≠ prot_unit か !known)→ DRAIN → INV → SCRUB（s ≠ 0）→ IDLE（ok）。DRAIN の間に fault（FAULTED）→ RESET で全部 0。
-- **`atg_mc_prot`**: IDLE →(chk の miss)→ WALK（表の read）→ FILL → IDLE（判定し直し）。PROT_INV は WALK の結果を捨てる。
-- **所有**: 表は driver の memory、中身は firmware が書く。CAM・SLOT_MAP は firmware が書き、CTRL.RESET で消える。slot の寿命 = SESSION_OPEN〜SESSION_CLOSE、close で表の byte と CAM を消してから slot を再利用する。
-- **並行**: firmware の表の書き込み（CPU の DMA）と unit の要求は同じ AXI master を通る。firmware は DMA の書き込みの応答の後に PROT_INV を書くので、後の PLB の miss は新しい表を読む。ring の packet は順に処理され、firmware の class 2 の間は他の packet を取らない（今の約束）。
+- **`atg_cp_prot`**: IDLE →(unit の µop の slot ≠ prot_unit か !known)→ DRAIN → INV → SCRUB（s ≠ 0 かつ resid ∉ {none, s}）→ IDLE（ok）。FAULTED → RESET で SLOT_MAP・SLOT_TAG・prot_unit・known = 0、resid = MIXED。
+- **`atg_mc_prot`**: IDLE →(chk の miss)→ WALK → FILL → IDLE（park を判定し直し）。重なる PROT_INV は WALK の結果を 1 度だけ捨てる。
+- **所有**: 表は driver の memory、中身は firmware が書く（tbl の DMA だけ）。CAM・SLOT_MAP は firmware が書き、CTRL.RESET で消える。slot の寿命 = SESSION_OPEN〜SESSION_CLOSE、close で表の全体から slot を掃き CAM を消してから round-robin で再利用する。
+- **並行**: firmware の表の書き込み（CPU の DMA）と unit の要求は同じ AXI master を通る。firmware は DMA の書き込みの応答の後に PROT_INV を書くので、後の miss は新しい表を読む。class 2 の間は他の packet を取らない（今の約束）、DONE は UOP_FIFO が空になるまで待つ（今の約束）。
 
 ### 17.13 失敗と corner case
 
-1. 保護した session が他の session の memory を texture・vertex・store・copy で触る → fault kind 1、[9]、session の tag。data は 0、書き込みは起きない。
-2. 未初期化の register・LDS・varying の読み → 切り替えの scrub で 0（同じ session の前の仕事の値は見える: それは自分の data）。
-3. 表の granule の byte が他の session の物の時の MEMORY → firmware が拒む（driver の誤りを検出）。
-4. FREE_MEMORY の後にその memory を使う session の仕事 → fault（Vulkan の規則違反、自分の仕事だけ）。
-5. revoke の前の仕事 → drain で終わってから消える（GHCI の約束）。
-6. slot の再利用 → close で byte・CAM を消し、known = 0 で次の仕事は scrub から。
-7. PROT_TABLE = 0 で PROTECTED の open → INITIALIZATION_FAILED。
-8. CTRL.RESET → PLB・CAM・SLOT_MAP・prot_unit が空、firmware は session を失い、driver は表を 0 で埋め直す。
-9. 表の read の AXI の error → fault kind 5。
-10. HAS_PROT = 0 → PROT の capability が無く、PROTECTED・GRANT・REVOKE は FEATURE_NOT_PRESENT（今の firmware の動作）。
-11. firmware の DMA で session の address を読む（DMA_GO[17]）時の拒否 → fault（v1 は device 全体、U68）。
-12. ATOM の要求が read-only の granule → 拒否（write として判定）。
-13. 1 つの line が granule を跨ぐ事は無い（line ≤ 64 B、granule 4 KiB）。
+1. protected の session が他の session の memory を texture・vertex・store・copy・firmware の DMA で触る → fault kind 1、[9]、session の tag、data 0、書き込みは起きない。v1 は device 全体の reset で、全部の session が DEVICE_LOST（robustBufferAccess の compiler（p010）の漏れでも同じ。p010 の robust を R5 の試験に入れる）。
+2. 未初期化の register・LDS・varying・cbank の読み → 他の session の残りは scrub で 0。同じ session の前の仕事の値は見える。
+3. reset の後の最初の protected の session → resid = MIXED なので scrub する。
+4. 表の byte が他の session の物の時の MEMORY → 拒む。object の作成の失敗 → byte を書かない。
+5. FREE_MEMORY の後にその memory を使う → fault（自分の規則違反、v1 は device 全体）。
+6. REVOKE の前の仕事 → drain で終わってから消える。同じ範囲の 2 つの grant の 1 つの REVOKE → 1 つ残る。
+7. slot の再利用 → close で表の全体を掃き、round-robin、known = 0。
+8. PROT_TABLE = 0 で PROTECTED の open → INITIALIZATION_FAILED。aperture を書いた → PROT_TABLE = 0。
+9. CTRL.RESET → PLB・CAM・SLOT_MAP・prot_unit が空、driver は表を 0 にし直す。
+10. 表の read の AXI の error → fault kind 5。
+11. HAS_PROT = 0 → PROT の capability が無く、PROTECTED・GRANT・REVOKE は FEATURE_NOT_PRESENT。
+12. ATOM が read-only・public の granule → 拒否。
+13. packet の外で書いた µop → slot 0（firmware 自身の物）。次の packet の slot で動かない。
+14. DRAIN の間の watchdog → 前の slot の fault。
+15. 表への tbl 無しの write → 拒否（kind 1、[9]）。
 
 ### 17.14 on-chip の量（推定、合成していない）
 
-| 物 | LUT | FF | BRAM |
-| --- | --- | --- | --- |
-| `atg_mc_prot`: PLB 16 line（tag 比較 16 × 18 bit、data の LUTRAM 16 × 512 bit）、walker | ≈0.6k | ≈0.4k | 0 |
-| grant の CAM 64 entry（base・limit の 20 bit の比較 × 2、slot の比較） | ≈2.5k | ≈3k | 0 |
-| `atg_cp_prot`: SLOT_MAP 256 × 6（LUTRAM）、SLOT_TAG 64 × 8、FSM | ≈0.3k | ≈0.1k | 0 |
-| SU の scrub（RF・LDS・PT・lda・cbank の書き込みの mux と counter）× N | ≈0.15k × N | ≈0.05k × N | 0 |
-| header の 7 bit（木の各段） | 小 | 7 × 段 × 2 | 0 |
-| 計（KC705、N = 6） | ≈4.3k | ≈3.8k | 0 |
+| 物 | LUT | FF |
+| --- | --- | --- |
+| `atg_mc_prot`: PLB 16 line（tag 14 bit、byte-lane の LUTRAM 64 本）、判定の段、park、walker | ≈1.2k | ≈0.6k |
+| `atg_mc_grant`: CAM 64 entry | ≈2.5k | ≈3k |
+| `atg_cp_prot`: SLOT_MAP（LUTRAM）、SLOT_TAG、FSM、window | ≈0.4k | ≈0.2k |
+| UOP_FIFO の entry に 7 bit | 小 | ≈0.1k |
+| SU の scrub × N | ≈0.15k × N | ≈0.05k × N |
+| header の 8 bit（木の各段） | 小 | 8 × 段 × 2 |
+| 計（KC705、N = 6） | ≈5k | ≈4.3k |
 
-KC705（203,800 LUT）には余る。ZYBO は target から外れた（U57 の回答）。
+BRAM は使わない。KC705（203,800 LUT）には余る。
 
-### 17.15 model・TB・試験の計画（試験は host の iverilog・Verilator と firmware の host 試験。QEMU・板はこの Phase に無い。実機は p028 の後）
+### 17.15 model・TB・試験の計画（host の iverilog・Verilator と firmware の host 試験。QEMU・板はこの Phase に無い。実機は p028 の後）
 
-- `tools/protmodel.py`: 表・CAM・slot による判定の参照（`allowed(table, grants, slot, g, write)`）と、TB の vector（`sim/vec/prot_*.txt`）を作る。`--selftest`（read-only・grant の境・slot 0）。
-- `sim/tb/atg_mc_prot_tb.v`（新）: 乱数の表を memory の model に、乱数の CAM、chk・slot・write の乱数の要求。group: `hit`（許す・拒む）、`miss`（walk、置き換え、16 line を越える reach）、`inv`（walk の途中の PROT_INV で捨てて読み直す）、`grant`（CAM の境、read と write）、`ro`（read-only）、`bypass`（chk = 0 は PLB を汚さず遅れ無し）、`refuse`（error の応答、data 0、fault・client・slot・prot）。MUT: `MUT_PROT_NOCHK`（全部許す）、`MUT_PROT_STALE`（PROT_INV を無視）、`MUT_PROT_RO`（[6] を無視）、`MUT_PROT_DATA`（拒否の data を 0 にしない）。
-- `sim/tb/atg_mc_tb.v`: header の chk・slot が 2 つの形の木を通る（今の case は chk = 0 で変わらない）。
-- `sim/tb/atg_cp_prot_tb.v`（新）: SLOT_MAP、切り替えの順（busy が落ちるまで kick しない、inv の pulse、scrub は s ≠ 0 だけ、prot_unit の更新）、known の消し方、ring の µop と firmware の µop の slot、fence unit の chk・slot。MUT: `MUT_CPPROT_NODRAIN`、`MUT_CPPROT_NOSCRUB`。
-- `sim/tb/atg_su_scrub_tb.v`（新）か `atg_su` の group: scrub の後に RF・LDS・PT・cbank が 0、dirty で無い物は触らない、scrub の間 busy。
-- `sim/tb/atg_top_prot_tb.v`（新、KC705 の形、firmware 入り = `atg_top_fw` と同じ作り）: ring に SESSION_OPEN(A, B: PROTECTED)、MEMORY(A: a)、MEMORY(B: b)、A の frame で a の中の copy（成功）、A の frame で b → a の copy（fault kind 1、[9]、tag A、a は変わらない）、RESET、GRANT(A, read, b) → 成功、REVOKE → fault、unprotected の C は b を読める、A の compute が LDS に書き B の compute が初期化せずに読む → 0。Verilator の mode `PROT` も（T に）。
-- firmware の host 試験（`fw/cp/tests/fwtest.c`）: MEMORY・FREE_MEMORY・CLOSE の後の表の byte、CAM の書き込み、GRANT・REVOKE・CLOSE の前の WAIT_IDLE、他の session の granule への MEMORY の拒否、PROTECTED の 3 つの失敗、可視の chunk の owner。
-- driver: vmunix の build の warning 0（`check.c` の host 試験が使えれば import → grant の道）。
+- `tools/protmodel.py`: 判定の参照（own・pub・grant・ro・表の範囲・tbl）、TB の vector、`--selftest`。
+- `sim/tb/atg_mc_prot_tb.v`（新）: group `hit`、`miss`（walk、置き換え、reach の外）、`park`（park の間に chk = 0 と別の client の hit が通り、同じ client は待つ、DC の遅れを測って PASS の行に出す）、`inv`（範囲の無効化、walk の途中の INV で 1 度だけ読み直し、2 度目は待つ）、`recheck`（判定の段の中の要求が fill・INV・CAM の後に判定し直される）、`grant`（CAM の境と 1 ずれ、重複の entry）、`ro`・`pub`、`tbl`（表への write）、`range`（[G0, G1) の外、aperture の base ≠ 0）、`bypass`、`refuse`（data 0、fault・client・slot・prot、拒んだ write が AXI に出ない）。MUT: `MUT_PROT_NOCHK`、`MUT_PROT_STALE`、`MUT_PROT_RO`、`MUT_PROT_DATA`、`MUT_PROT_RECHECK`（判定し直しを省く）、`MUT_PROT_LIMIT`（CAM の limit を ≤ に）、`MUT_PROT_TBL`。
+- `sim/tb/atg_mc_tb.v`: header の chk・tbl・slot が 2 つの形の木を通る（leaf・mux で落ちない）。今の case は変わらない。
+- `sim/tb/atg_cp_prot_tb.v`（新）: SLOT_MAP（[0] は 0）、切り替えの順（busy と leaf の要求が無くなるまで kick しない、inv と occ の clear、scrub は resid が他の時だけ、prot_unit）、known、ring の µop と firmware の µop の slot、FIFO の entry の slot と SELF、packet の外で書いた µop は slot 0、fence unit の chk・slot、DMA_GO[17]・[18]、KICK、DRAIN の watchdog の tag。MUT: `MUT_CPPROT_NODRAIN`、`MUT_CPPROT_NOSCRUB`、`MUT_CPPROT_NOINV`、`MUT_CPPROT_RESID0`（resid の reset を none に）、`MUT_CPPROT_DMACHK`（DMA_GO[17] を無視）、`MUT_CPPROT_FCHK`（f_chk を落とす）。
+- `atg_su` の group `scrub`: scrub の後に RF・LDS・lda・PT・cbank が 0、scrub の間 busy、書いた RAM の印。
+- `sim/tb/atg_top_prot_tb.v`（新、KC705 の形、firmware 入り）: ring に driver と同じ形の packet（session の tag の frame と FENCE）。SESSION_OPEN(A, B: PROTECTED)、MEMORY(A: a)、MEMORY(B: b)、A の a の中の copy（成功、FENCE も成功）、vertex index を使う draw と vkCmdBlitImage と indirect の draw（public・可視の slab の道）、A の b → a の copy（fault kind 1、[9]、tag A、a は変わらない）。RESET の後、driver の手順で表を 0 にし直し session を開き直して MEMORY を出し直し、GRANT(A, read, b) → 成功、同じ grant をもう 1 つ → REVOKE 1 つで成功のまま、REVOKE もう 1 つ → fault。unprotected の C は b を読める。A の compute が LDS に書き B の compute が初期化せずに読む → 0、A の draw の後 B の fragment が書かれない varying を読む → 0、A の scratch と bank の image の slab を close の後に B が取って読む → 0、reset の後の別の session の未初期化の読み → 0、aperture の base ≠ 0。Verilator の mode `PROT` も（T に）。
+- firmware の host 試験（`fw/cp/tests/fwtest.c`）: MEMORY・FREE_MEMORY・IMPORTED・READ_ONLY・CLOSE の後の表の byte、object の作成の失敗で byte を書かない、CAM（重複）、REVOKE と CLOSE の前の SELF の drain、他の session の granule への MEMORY の拒否、PROTECTED の 4 つの失敗、slab の 0 埋めと owner、public の byte、DMA の呼び出しの chk の表。
+- driver: vmunix の build の warning 0。
 - 回帰: 今の `make sim` の PASS の数が減らない（HAS_PROT = 0 の形は動作が同じ）。
 
-### 17.16 module の分け方（1 module ≤ 400 行・FSM 1 つ・≤ 40 port）
+### 17.16 module の分け方（1 module ≤ 400 行・FSM 1 つ・≤ 40 port、port は group で数える（U38））
 
 | module | 新/変 | 中身 | 推定の行 |
 | --- | --- | --- | --- |
-| `atg_mc_prot` | 新（`atg_mc` の子） | PLB、walker の FSM、判定 | ≈250 |
-| `atg_mc_grant` | 新（`atg_mc_prot` の子） | grant の CAM と書き込みの port | ≈120 |
-| `atg_mc` | 変 | header の chk・slot、拒否の data 0、walk の AXI の要求と応答の振り分け、fault_prot・fault_slot | +60 |
-| `atg_mc_tree`・`am_amb_to_rt` | 変 | chk・slot の入力と header | +20 |
+| `atg_mc_prot` | 新（`atg_mc` の子） | 判定の段、PLB、park、walker の FSM、拒否の data 0 と grant の振り分け（今の `atg_mc` の root の grant の部分をここへ移す） | ≈330 |
+| `atg_mc_grant` | 新（`atg_mc_prot` の子） | CAM と書き込みの port | ≈120 |
+| `atg_mc` | 変 | root の grant を `atg_mc_prot` へ移し（−60 行）、header の bit、walk の応答の振り分け | 366 → ≈350 |
+| `atg_mc_tree`・`am_amb_to_rt` | 変 | chk・tbl・slot の入力と header | +20 |
 | `am_amb_mux` | 変 | requester の side band（parameter の幅） | +15 |
-| `atg_cp_prot` | 新（`atg_cp` の子） | SLOT_MAP・SLOT_TAG・prot_unit・切り替えの FSM | ≈200 |
-| `atg_cp_seq`・`atg_cp_seq_wait` | 変 | µop の slot、pre の `ok` | +30 |
+| `atg_cp_prot` | 新（`atg_cp` の子） | SLOT_MAP・SLOT_TAG・prot_unit・resid・切り替えの FSM、µop の slot の計算、window の 0x28〜0x32 | ≈300 |
+| `atg_cp_seq_wait` | 変 | pre の `ok`（seq 本体は 374 行のまま、port も増やさない） | +15 |
 | `atg_cp_fence` | 変 | f_chk・f_slot | +10 |
-| `atg_cpu_win`・`atg_cpu_dma` | 変 | window の register、DMA_GO[17] | +40 |
+| `atg_cpu_win`・`atg_cpu_dma` | 変 | UOP_FIFO の entry の 7 bit、DMA_GO[17]・[18] | +30 |
 | `atg_cp_regs` | 変 | PROT の EXTCAP と 3 つの register、FAULT_INFO[9] | +40 |
-| `atg_su` の子（rf・lds・pt・lda・cbank） | 変 | scrub の書き込み、dirty | +20 ずつ |
-| `atg_top` | 変 | HAS_PROT、配線 | +40 |
-
-`atg_cp.v` は今 429 行（前から、p016）: `atg_cp_prot` の結線を足す前に結線の一部を子へ移す（S の段で）。
+| `atg_cp` | 変 | `atg_cp_prot` の結線（今 429 行: 先に結線の一部を子へ移す） | ≈400 |
+| `atg_su` の子（rf・lds・lda・pt・cbank） | 変 | scrub の書き込み、書いた印 | +20 ずつ |
+| `atg_top` | 変 | HAS_PROT、chk・slot・gw_*・leaf の要求の OR の配線 | +50 |
 
 ### 17.17 実装の段・LW・順（8 LW ≈ 2〜3 時間）
 
 | 段 | 内容 | 受け入れ | 依存 | LW |
 | --- | --- | --- | --- | --- |
-| R1 | GHCI §11.6・§7.2・§3.4・§4 の draft、新しい module の spec（§3〜§8）、`protmodel.py --selftest`、R1 の確かめ（unit の busy と MC の応答） | selftest PASS、spec の port ≤ 40 | この設計の review と U61〜U68 | 3 |
-| R2 | MC: `am_amb_to_rt`・`atg_mc_tree` の header、`atg_mc_prot`・`atg_mc_grant`、`atg_mc` の root、拒否の data 0 | `atg_mc_prot` の group と MUT、`atg_mc` PASS（今の case が変わらない）、lint | R1 | 9 |
-| R3 | CP: `atg_cp_prot`、seq の pre、fence unit、`am_amb_mux`、`atg_cpu_win`・`dma`、`atg_cp_regs` | `atg_cp_prot` の PASS と MUT、`atg_cp_seq`・`atg_cp_regs`・`atg_cpu_dma` PASS | R1 | 8 |
-| R4 | SU の scrub と dirty | scrub の PASS、`atg_su:+quick` PASS | R1 | 4 |
-| R5 | `atg_top` の HAS_PROT と配線、KC705 の parameter、`atg_top_prot_tb`（firmware は R6 の物）、Verilator の mode | lint、`atg_top` PASS（HAS_PROT = 0 で同じ）、`atg_top_prot` は R6 の後 | R2〜R4 | 5 |
-| R6 | firmware: slot・表・CAM・heap の 2 区分・記録の data の chunk・DMA_GO[17]・gpu-op、fwtest | fwtest PASS、`atg_top_prot` PASS（T） | R3、p018 の merge | 9 |
-| R7 | driver: 表、PROTECTED の方針、READ_ONLY、import の grant/revoke、fault の log | vmunix の warning 0 | R6、p019 の merge | 5 |
+| R1 | GHCI の draft（§17.10）、新しい module の spec（§3〜§8）、`protmodel.py --selftest`、確認 C1、MEMORY の flags[2] と import・program の手順の P3（p019）との合意 | selftest PASS、spec の port の group ≤ 40 | この設計の review と U61〜U72 | 3 |
+| R2 | MC: header、`atg_mc_prot`・`atg_mc_grant`、root の grant の移し替え、拒否の data 0 | `atg_mc_prot` の group と MUT、`atg_mc` PASS（今の case が変わらない）、lint、timing の実測（T） | R1 | 10 |
+| R3 | CP: `atg_cp_prot`、seq_wait の pre、fence unit、`am_amb_mux`、`atg_cpu_win`・`dma`、`atg_cp_regs`、`atg_cp` の結線の整理 | `atg_cp_prot` の PASS と MUT、`atg_cp_seq`・`atg_cp_regs`・`atg_cpu_dma`・`atg_cpu_win` PASS | R1 | 9 |
+| R4 | SU の scrub と書いた印（lda の幅の広い書き込みの検討） | scrub の PASS、`atg_su:+quick` PASS | R1 | 4 |
+| R5 | `atg_top` の HAS_PROT と配線、KC705 の parameter、`atg_top_prot_tb`、Verilator の mode、p010 の robust の case | lint、`atg_top` PASS（HAS_PROT = 0 で同じ）、`atg_top_prot` は R6 の後 | R2〜R4 | 5 |
+| R6 | firmware: slot（round-robin）・表（掃き）・CAM・heap の 3 区分（slab と 0 埋め、public）・記録の data の chunk・UOP_SELF・DMA_GO[17]/[18] の監査の表・STATE の cache・gpu-op、fwtest | fwtest PASS、DMA の表、確認 C2、`atg_top_prot` PASS（T） | R3、p018 の merge | 13 |
+| R7 | driver: aperture の 4 KiB、表、PROTECTED の方針、READ_ONLY の program、import の grant/revoke、fault の log | vmunix の warning 0 | R6、p019 の merge | 5 |
 | R8 | GHCI の確定、README の行、`make sim` の数（T） | `make sim` の PASS が減らない（T） | R2〜R7 | 2 |
-| 計 | | | | **45 LW**（±35%: 29〜61） |
+| 計 | | | | **51 LW**（±35%: 33〜69） |
 
-R2・R3・R4 は R1 の後に並行できる。R6 は P2 の p018（firmware の object model）が main に入った後、R7 は P3 の p019 の後。
+R2・R3・R4 は R1 の後に並行できる。R6 は P2 の p018 が main に入った後、R7 は P3 の p019 の後。
 
 ### 17.18 選ばなかった案と理由
 
-- **要求ごとに session を全部の unit に流す**（drain 無しで session を跨いで重ねる）: VF → SU → RX → ROP、TU、cache の line ごとに slot を持つ。block の全部と cache の tag が変わり、scrub も warp ごとになる。session の交代は frame の単位で、drain は FENCE で既に払っている待ちと同じ程度なので、割に合わない。
-- **session ごとの範囲の CAM（切り替えで firmware が積む）**: 表の miss が無い。だが 1 session の範囲の数に上限（16〜64）ができ、Vulkan 1.0 の `maxMemoryAllocationCount` ≥ 4096 を protected の session で守れない（driver の allocator を session ごとの大きな chunk に作り直せば数は減るが、host の memory の連続の確保が難しい）。
-- **granule ごとの 32 bit の bitmask（slot ごとの r/w）を表に**: grant も表で表せ CAM が要らない。だが表が 4 倍（4 GiB で 4 MiB）、PLB の reach が 1/4、revoke の度に重なりの計算が要る。grant は Vulkan 1.0 core の外（外部 memory の拡張）で数が少ないので CAM で足りる。
+- **要求ごとに session を全部の unit に流す**（drain 無しで session を跨いで重ねる）: block の全部と cache の tag が変わり、scrub も warp ごとになる。session の交代は frame の単位で、drain は FENCE で既に払っている待ちと重なるので、割に合わない。
+- **session ごとの範囲の CAM（切り替えで firmware が積む）**: miss が無い。だが 1 session の範囲の数に上限（16〜64）ができ、Vulkan 1.0 の `maxMemoryAllocationCount` ≥ 4096 を protected の session で守れない。
+- **granule ごとの 32 bit の bitmask（slot ごとの r/w）**: grant も表で表せるが、表が 4 倍、PLB の reach が 1/4、revoke ごとに重なりの計算。grant は Vulkan 1.0 core の外（外部 memory）で数が少ないので CAM で足りる。
 - **firmware の software の検査だけ**: unit の access は firmware を通らない。
-- **GPU MMU（address の変換、GHCI の MMU capability）**: page table の walk、TLB、driver の page table の管理と、規模も変更も大きい。GHCI は MMU を後の版の capability として予約している。
-- **scrub を compute の kernel（software）で**: RF の全部の行を覆う保証が scheduler に依る、PT・cbank は届かない。
-- **STATE も切り替えで消す**: firmware の STATE の cache（「最後に書いた pipeline」）と衝突し、守る物（data）は増えない。
+- **GPU MMU（address の変換、GHCI の MMU capability）**: page table の walk、TLB、driver の page table の管理と、規模も変更も大きい。後の版の capability。
+- **scrub を compute の kernel（software）で**: RF の全部の行を覆う保証が scheduler に依る、PT・lda・cbank に届かない。
+- **driver の FENCE を tag 0 に変える**: driver の変更と fault の帰属の作り直しが要る。ring は driver の物なので、ring の CP 側の µop を検査しない方が単純で、守る物は変わらない（NATIVE は root だけ、root は保護しない）。
+- **heap の可視の区分を granule ごとに貸す**: 16 MiB の共有の heap が 4096 個で尽き、1 つの session が他を止める。
 
 ### 17.19 U 項目（ユーザーの判断。推し付き）
 
 | U | 問い | 推し | 他の案 |
 | --- | --- | --- | --- |
 | **U61** | 隔離の方式 | **memory の所有の表（granule 1 byte）+ root の PLB + grant の CAM**（allocation の数に上限が無い、表は小さい、検査は root の 1 か所） | session ごとの範囲の CAM（miss 無し、allocation の数に上限）、GPU MMU |
-| **U62** | 同時に開ける protected の session の数 | **63**（owner の 6 bit、byte に収まる。表と PLB の大きさは変わらない） | 15（4 bit）、255（2 byte の entry、PLB の reach が半分） |
-| **U63** | GPU の中に残る data（RF・LDS・varying・定数）の扱い | **session の切り替えで hardware が 0 にする（使われた物だけ）**（OS の process の隔離の原則。切り替え ≈4.5k cycle 以下） | software の kernel で消す（覆いきれない）、消さない（GHCI に「保護は memory だけ」と書く） |
-| **U64** | どの session を保護するか | **PROT の有る device では root でない client の session を全部**、root は保護しない（NATIVE の道具）。slot が尽きたら open を断る | root も含め全部、client の申告（flag）で選ぶ |
-| **U65** | GRANT にも drain を入れるか | **入れる**（GHCI の「後の仕事に効く」を正確に。import の時だけ） | GRANT はすぐ効かせる（前の仕事が少し早く access を得るのは安全側の誤差） |
-| **U66** | STATE（CP の register file）を切り替えで消すか | **消さない**（address などの metadata で data でない。読んだ address は MC が拒む） | 消す（firmware の STATE の cache を session ごとに捨てる） |
-| **U67** | PROT_CAPS[31:16] の意味 | **grant の数**（所有の memory は表なので範囲の上限が無い。GHCI の draft の「owned and granted」を直す） | 今の文のまま（所有も数える。意味の無い上限） |
-| **U68** | firmware の DMA（session の address）の拒否 | **hardware の検査で fault（v1 は device 全体）**（unit と同じ規則、firmware に検査の重複が無い） | firmware が software で先に確かめ、その session だけ VK_ERROR_DEVICE_LOST |
+| **U62** | 同時に開ける protected の session の数 | **31**（firmware の FW_SESSIONS 32 に合わせる。byte の 6 bit で 63 まで広げられる） | 63（firmware の session の表を 64 に） |
+| **U63** | GPU の中に残る data の扱い | **session の切り替えで hardware が 0 にする（他の session の残りの時だけ）**（OS の process の隔離の原則。≈31 µs、交代 300 回/s で ≈0.9%） | software の kernel、消さない（GHCI に「保護は memory だけ」） |
+| **U64** | どの session を保護するか | **root でない client の session を全部**、root は保護しない（NATIVE の道具）。slot が尽きたら open を断る | root も含め全部、client の申告で選ぶ |
+| **U65** | GRANT に drain を入れるか | **入れない**（access を足すだけで隔離は破れない。REVOKE・CLOSE だけ drain） | 入れる（「後の仕事に効く」を正確に） |
+| **U66** | STATE を切り替えで消すか | **消さない**（address などの metadata。読んだ address は MC が拒む。firmware は session の変わり目で STATE の cache を捨て、記録の自己完結を確認 C2 で確かめる） | 切り替えで既定の値に戻す |
+| **U67** | PROT_CAPS[31:16] の意味 | **grant の数** | 今の文（所有も数える） |
+| **U68** | firmware の DMA（session の address）の拒否 | **hardware の検査で fault（v1 は device 全体）** | firmware が先に確かめ、その session だけ DEVICE_LOST |
+| **U69** | firmware の内蔵の領域（identity buffer・内蔵の program）の見せ方 | **表の byte の [7] public（全 protected の session が読む）** | CAM の wildcard の entry、固定の PUBLIC_BASE/LIMIT の register |
+| **U70** | ring の class 0/1 の CP 側の µop（driver の FENCE・RESULT）を検査するか | **しない**（GHCI の draft の文を直す。driver の今の FENCE の作りのまま） | driver の FENCE を tag 0 にし、文のまま検査 |
+| **U71** | grant の CAM の数（compositor が非 root の時、client の window ごとに swapchain の image ≈3） | **64**（KC705、≈20 window） | 128（≈5k LUT） |
+| **U72** | robustBufferAccess の漏れが device 全体の fault になる事 | **v1 は受け入れ、p010 の robust を R5 の試験に入れる**（範囲の外の access は compiler が clamp する前提を記録） | MC の拒否をその session だけの error にする（v1 の回復の範囲の外） |
 
 ### 17.20 license と転記
 
@@ -2418,7 +2442,7 @@ R2・R3・R4 は R1 の後に並行できる。R6 は P2 の p018（firmware の
 
 ### 17.21 review の指摘と対応
 
-（design-reviewer の後に書く）
+全文は [design-review-p034.md](design-review-p034.md)。1 回目（design-reviewer、2026-10-25、33 件: Critical 2・High 5・Medium 16・Low 10）の全部を本文に反映した。
 
 ## Appendix A. SA の設計の sketch（**延期**。2026-10-23 ユーザー「SAの設計と実装はかなり後に回して、SUがきちんとISAを実装できてからにします。」SU が GSI1 を実装した後に設計し直す。計画の critical path には無い。版 4 の review（§14）の 33 件に対応した時点の案で、**README の 0.8 TOPS/SU（×2）は満たしていない**（1 MAC/PE/cycle）。KC705 の SA 構成の数字も参考のみ）
 
