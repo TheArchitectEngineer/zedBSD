@@ -2018,6 +2018,7 @@ block_ioctl(
 	unsigned long request,
 	uintptr_t argument)
 {
+	struct block_identity identity;
 	struct kern_block_info info;
 	struct ucred *cred;
 	int allowed;
@@ -2066,12 +2067,14 @@ block_ioctl(
 	if (file->f_data == NULL)
 		return ENXIO;
 
-	/* The identity query needs a result to fill. */
+	/* Copies the identity out through the user-access boundary. */
 	if (request == BLKGETIDENTITY) {
 		if (argument == 0)
 			return EFAULT;
-		error = block_identity_get(file->f_data,
-		    (struct block_identity *)argument);
+		error = block_identity_get(file->f_data, &identity);
+		if (error != 0)
+			return error;
+		error = copyout(&identity, argument, sizeof(identity));
 		return error;
 	}
 
