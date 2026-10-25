@@ -3115,6 +3115,14 @@ D3・D4 は D2 の後に並行できる。D7 は p006・p019 の後。画面の�
 7. 繰り返しの指針: 各回に何を測り（block の OOC の合成と配線、段数、LUT・FF）、どこで打ち切るか。
 8. export の順序（`ex_next`）が境の往復で warp ごとに直列になる件（§19.4.2 の 10）: ROP が受け取れる連番の窓を SU に渡す形など。
 
+#### 19.5.5 FP の演算器の共通化と target 別の実装（2026-10-26 ユーザーとの相談、Phase は [p042](phase042/phase.md)）
+
+- **RTL の階層**（ユーザー「rtl/ bsp/ --> JTAGとか library/ gpu/ みたいなのがいいと思いました」）: `rtl/bsp/`（FPGA の family・process に依存する primitive。`xilinx7/`・`generic/`・将来の `asic/` を file list で選ぶ。今の am_jtag_regs の BSCANE2 など）、`rtl/library/`（`arith/` = 整数の演算 am_add・am_sub・am_addsub・am_shift・am_mul・am_div・am_msb、`fp/` = 共通の FP の演算器、`bus/` = AXI・AMB・FIFO・CDC・同期）、`rtl/gpu/`（今のまま）。板に固有の top・XDC・IP・clock は `boards/<板>/` のまま。arith-lint の規則は「rtl/library/arith と fp の外は 0」に。
+- **重複をまとめる**: fp32 の加算（`atg_su_fadd` 組合せ、`atg_rx_fadd` 4 段）、乗算（`atg_rx_fmul`）、FMA（`atg_su_ffma`・`atg_su_ffma_p`、`atg_tu_fma` 10 段、BLT が `atg_su_ffma_p` を使う）、fp16 → fp32（`atg_su_h2f`・`atg_fmt_h2f`）を `rtl/library/fp/` の 1 つずつに（段数は parameter）。
+- **約束**: (1) target の版は同じ module の名前と port で、`ifdef` を散らさず file list で選ぶ（小さな違いだけ `ifdef`）。(2) 各 module が `localparam LAT`（段数）を公開し、呼び出し側（SU の `SHORT_LAT`・scoreboard、RX・TU の valid）はその値で合わせる（U104・U108）。(3) どの target でも結果は GSI1 の規則で bit 単位で同じ。generic と各 target を等価の harness（旧 p037 の function と module の比較の形）で比べる回帰。(4) datapath の module（FMA など）は `STAGES` の parameter を持ち、段の位置を module の中で決める（KC705 は少ない段、ASIC は多い段）。
+- **FMA の構造**（2026-10-26 の相談）: FPGA では乗算は DSP48E1 のまま（MREG・PREG に段）で、肝は桁合わせ・正規化・丸めの段の分け方。ASIC では積を carry-save のまま加数と 3:2 で足し CPA を 1 回にする FMA 用の乗算（`am_mul_csa` の案、`rtl/library/fp/` か `arith/`）、桁合わせを乗算と並行、LZA、sticky の先回り、fp16×2・int8 への木の分割。KC705 は今の `am_mul` + `am_addsub` に戻せる形にする。
+- **外部の部品**（Future Work [fw-amaterrace-asic-flow](../future-work.md)）: Synopsys DesignWare（`ifdef USE_DESIGNWARE`）、Xilinx UNIMACRO（`ifdef USE_UNIMACRO`、推論で DSP の register に入らない時の保険）、open-source の FPnew・HardFloat・FloPoCo は、ASIC の流れ（商用か OpenROAD か）が決まった時に `rtl/bsp/` と `rtl/library/fp/` の target の版として検討する。
+
 ### 19.6 面積の見通し（item 5）
 
 | 時点・構成 | LUT | FF | BRAM36 | DSP | 出所 |

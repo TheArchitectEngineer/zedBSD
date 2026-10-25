@@ -73,6 +73,7 @@
 | [p039](phase039/phase.md) | MC の行き先ごとの AXI の ID と、汎用の AXI の 2 つへの振り分けの module（KC705 で MIG と PCIe の GPU → host に） | p034、p013 | cleared（2026-10-25 21:03: MC の行き先ごとの AXI の ID、am_axi_split、HOST_LIMIT、KC705 で MIG と PCIe の GPU → host、amaterrace main 7f37a2e） |
 | [p040](phase040/phase.md) | GHCI の memory の置き場所を設計どおりに（ring・fence・host-visible は host、BAR2 は frame buffer だけ、窓を閉じる bit）: GHCI・RTL・zedBSD の driver | p039 | cleared（2026-10-25 21:35: ring・fence・host-visible は host memory、BAR2 は frame buffer だけで WINDOW_CTRL で閉じる、Vulkan の heap 2 つ、amaterrace main 4ee7a1f） |
 | [p041](phase041/phase.md) | SU の clock の領域（CDC、sclk ↔ gclk。U109 で p025 から分けた） | p025 の T2 と並べられる | planned（2026-10-26 新設） |
+| [p042](phase042/phase.md) | RTL の階層（rtl/bsp・rtl/library・rtl/gpu）と FP の演算器の重複の整理（fadd・fmul・FMA・変換を rtl/library/fp に、機能は不変） | 実機の検証の後、p025 の T2 の前 | planned（2026-10-26 新設） |
 | [p010](phase010/phase.md) | compiler の backend（zedBSD `isa/gsi1/`）、`gsi1_isa.h` と interface の表の確定（design §8） | p008、p027 | cleared（2026-10-25 07:12: GSI1 の backend、gsi1_isa.h と interface の表の確定、host 試験 29/29。vmunix の link は p006） |
 | [p018](phase018/phase.md) | firmware の Vulkan の object model と draw/dispatch（design §8）。GHCI §7.2・§11.6 への firmware の追従を含む | p017、p009、p010、p027、p030 | cleared（2026-10-25 10:16: firmware の Vulkan の object model、Verilator の firmware の harness 6 case 一致、amaterrace-gpu 252a11e） |
 | [p019](phase019/phase.md) | zedBSD の `vk/`（検証する中継、design §8） | p010、p017、p006、p027 | cleared（2026-10-25 10:00: vk/ の executor、host 試験 126・76・137、vmunix の warning 0。firmware の上は p011） |
