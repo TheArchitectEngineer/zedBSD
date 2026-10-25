@@ -88,6 +88,7 @@ static const struct ghci_isa_backend fake_isa = {
 
 /* How many programs the stand-in compiler made and gave back, and the words it was last given. */
 static unsigned fake_compiles;
+static uint32_t fake_registers;
 static unsigned fake_releases;
 static uint32_t fake_words[64];
 static size_t fake_word_count;
@@ -253,10 +254,10 @@ fake_compile(
 {
 	struct ghci_gsi1_program *made;
 
-	(void)options;
 	(void)diagnostic;
 
-	/* Keeps the words it was given (the specialized module). */
+	/* Keeps the registers it may use and the words it was given (the specialized module). */
+	fake_registers = options->registers;
 	fake_word_count = word_count;
 	if (word_count <= 64U)
 		memcpy(fake_words, words, word_count * 4U);
@@ -338,7 +339,7 @@ test_executor(void)
 	model_registers[GHCI_CAPS / 4U] |= GHCI_CAPS_FIRMWARE | GHCI_CAPS_SHADER | (5U << 4);
 	model_registers[GHCI_CAPS2 / 4U] = 1U | (16U << 8) | (16U << 16) | (4U << 24) | (4U << 28);
 	model_registers[GHCI_ISA_ID / 4U] = GHCI_FOURCC('G', 'S', 'I', '1');
-	model_registers[GHCI_RESIDENT_WARPS / 4U] = 16U;
+	model_registers[GHCI_RESIDENT_WARPS / 4U] = (64U << 16) | 16U;
 	model_isa = &fake_isa;
 	memset(&device, 0, sizeof(device));
 	device.registers = (volatile uint8_t *)model_registers;
@@ -354,6 +355,7 @@ test_executor(void)
 	expect(device.vk != NULL, "vk executor made");
 	expect(model_last_control == GPU_OP_GHCI_HEAP, "vk heap lent to the firmware");
 	expect(device.vk->warps == 16U, "vk resident warps read");
+	expect(device.vk->registers == 64U, "vk registers per lane read");
 	expect(device.vk->heap_ready, "vk heap taken");
 	expect(model_irq_enable == (GHCI_IRQ_FENCE | GHCI_IRQ_FAULT | GHCI_IRQ_WATCHDOG | GHCI_IRQ_RESULT), "vk result interrupt enabled");
 
@@ -717,6 +719,7 @@ test_executor(void)
 	ghci_vk_service(&device);
 	expect(error == 0, "vk pipeline frame taken");
 	expect(fake_compiles == 1U && fake_releases == 1U, "vk one stage compiled and its record freed");
+	expect(fake_registers == 64U, "vk compile within the GPU's registers per lane");
 	records = staged(&record_count);
 	expect(record_count == 2U && records != NULL && records[0] == GPU_OP_GHCI_PROGRAM, "vk GHCI_PROGRAM before the create");
 	if (records != NULL) {

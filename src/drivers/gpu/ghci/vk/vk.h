@@ -349,6 +349,7 @@ struct ghci_vk_engine {
 	struct ghci_vk_frame *frames_last;
 	int heap_ready;
 	uint32_t warps;
+	uint32_t registers;
 	int faulted;
 	int fmt_present;
 	uint32_t color_attachments;

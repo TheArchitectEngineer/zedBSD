@@ -79,6 +79,9 @@ static int stage_frame(struct ghci_device *device, struct ghci_vk_build *build, 
 static void after_submit(struct ghci_device *device, struct ghci_vk_build *build, const struct ghci_ticket *ticket);
 static void build_free(struct ghci_vk_build *build);
 static int grow(void **items, unsigned *capacity, unsigned count, size_t element);
+#ifdef GHCI_VK_TRACE
+static uint32_t trace_word(const void *bytes, uint32_t offset);
+#endif
 static void store_word(uint8_t *bytes, uint32_t offset, uint32_t value);
 
 /*
@@ -275,6 +278,14 @@ ghci_vk_stage(
 	if (bytes != 0U)
 		kern_memcpy(build->stage + build->stage_bytes, arguments, bytes);
 	build->stage_bytes += bytes;
+
+#ifdef GHCI_VK_TRACE
+	/* The diagnostic trace of a build that asks for it: each staged record. */
+	kern_logf("ghci: vk: stage record %u: command %u flags %x, %u bytes: %08x %08x %08x %08x\n",
+	    (unsigned)build->records, (unsigned)opcode, (unsigned)flags, (unsigned)bytes,
+	    (unsigned)(bytes >= 4U ? trace_word(arguments, 0U) : 0U), (unsigned)(bytes >= 8U ? trace_word(arguments, 4U) : 0U),
+	    (unsigned)(bytes >= 12U ? trace_word(arguments, 8U) : 0U), (unsigned)(bytes >= 16U ? trace_word(arguments, 12U) : 0U));
+#endif
 
 	/* Succeeded: the record's index names its result. */
 	*index = build->records;
@@ -970,6 +981,11 @@ stage_frame(
 	packet[7] = page_address;
 	packet[8] = build->records;
 
+#ifdef GHCI_VK_TRACE
+	/* The diagnostic trace of a build that asks for it: where the frame is. */
+	kern_logf("ghci: vk: frame at %08x, %u bytes, result page %08x\n", (unsigned)records_address, (unsigned)build->stage_bytes, (unsigned)page_address);
+#endif
+
 	/* Into the ring, with the device's fence after it. */
 	error = ghci_cp_submit(device, build->session->owner, packet, FRAME_PACKET_DWORDS, &ticket);
 	if (error != 0) {
@@ -1082,3 +1098,18 @@ store_word(
 	bytes[offset + 2U] = (uint8_t)(value >> 16);
 	bytes[offset + 3U] = (uint8_t)(value >> 24);
 }
+
+#ifdef GHCI_VK_TRACE
+/* Reads a word of a record's arguments for the diagnostic trace. */
+static uint32_t
+trace_word(
+	const void *bytes,
+	uint32_t offset)
+{
+	uint32_t word;
+
+	/* The word, wherever it is aligned. */
+	kern_memcpy(&word, (const uint8_t *)bytes + offset, sizeof(word));
+	return word;
+}
+#endif

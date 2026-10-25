@@ -84,6 +84,7 @@
  */
 #define GHCI_RESET_WAIT_MS		1000U
 #define GHCI_MEMORY_WAIT_MS		1000U
+#define GHCI_FIRMWARE_WAIT_MS		1000U
 #define GHCI_RING_WAIT_MS		2000U
 #define GHCI_FENCE_WAIT_MS		5000U
 #define GHCI_HALT_WAIT_MS		1000U
@@ -378,6 +379,9 @@ void ghci_sleep_ms(unsigned milliseconds);
 
 /* Waits up to a time for (register & mask) == value.  Returns 0 or ETIMEDOUT. */
 int ghci_poll(struct ghci_device *device, uint32_t offset, uint32_t mask, uint32_t value, unsigned milliseconds);
+
+/* Starts the command processor's firmware after a reset, when the GPU has a CPFW capability: 0 or EIO. */
+int ghci_firmware_start(struct ghci_device *device);
 
 /*
  * The command processor (cp.c).
