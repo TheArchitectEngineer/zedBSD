@@ -242,6 +242,8 @@ find_place(
 	int listed;
 	int reads;
 	int defines;
+	int opens;
+	int closes;
 
 	/* The sources whose definitions the instruction must not cross. */
 	instruction = &list[at];
@@ -273,7 +275,8 @@ find_place(
 		}
 
 		/* A block that starts here: the first one at this depth is where a reader inside it sends the instruction. */
-		if (opens_block(&list[index]) != 0) {
+		opens = opens_block(&list[index]);
+		if (opens != 0) {
 			if (depth == 0U)
 				block_start = index;
 			depth++;
@@ -281,7 +284,8 @@ find_place(
 		}
 
 		/* The end of the instruction's own block stops it before the end. */
-		if (closes_block(&list[index]) != 0) {
+		closes = closes_block(&list[index]);
+		if (closes != 0) {
 			if (depth == 0U)
 				return index;
 			depth--;

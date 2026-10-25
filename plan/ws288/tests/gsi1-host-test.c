@@ -197,6 +197,7 @@ run_encode(
 	EMIT(gsi1_encode_i(GSI1_OP_LOAD, GSI1_F3_LWC, 3, GSI1_ZERO, 200, 0), "lwc r3, 200(zero)");
 	EMIT(gsi1_encode_s(GSI1_OP_STORE, GSI1_F3_SW, 8, 9, -8), "sw r9, -8(r8)");
 	EMIT(gsi1_encode_s(GSI1_OP_STORE, GSI1_F3_SW, 8, 9, 40000), "sw r9, 40000(r8)");
+	EMIT(gsi1_encode_s(GSI1_OP_STORE, GSI1_F3_SW, 40, 9, 384) | ((uint64_t)(GSI1_SW_X << GSI1_W1_SUB_SHIFT) << 32), "sw.x r9, 384(r40)");
 	EMIT(gsi1_encode_b(GSI1_F3_BEXNZ, 0, -5), "bexnz -5");
 	EMIT(gsi1_encode_b(GSI1_F3_BNONE, 33, 3000), "bnone r33, 3000");
 	EMIT(gsi1_encode_b(GSI1_F3_J, 0, 7), "j 7");
