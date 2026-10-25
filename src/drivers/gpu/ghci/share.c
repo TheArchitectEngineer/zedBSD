@@ -17,6 +17,12 @@
  * session that shows the same memory and holds it too.  The memory goes
  * back once its owner, every export and every import have let it go,
  * after the newest fence then issued.
+ *
+ * An import for the display (GPU_IMPORT_SCANOUT) is refused with ENOTSUP
+ * unless the display controller can scan the exported image where it
+ * is: an image of one of the controller's modes, its first row and its
+ * stride on the memory line, in local memory on a GPU that has it.  The
+ * caller then copies its frames instead.
  */
 
 #include <stddef.h>
@@ -26,21 +32,28 @@
 #include <drivers/gpu/gpu-share.h>
 #include <kern/kmem.h>
 #include <uapi/errno.h>
+#include <uapi/gpu-scanout.h>
 
 #include "ghci.h"
 
 /*
- * One exported allocation: the device and the memory it holds.  It lives
- * from the export to its release, whatever happens to the sessions.
+ * One exported allocation: the device, the memory it holds, and the
+ * image the export described (has_image 0 for an allocation-only
+ * export), whose first row lies at gpu_address.  It lives from the
+ * export to its release, whatever happens to the sessions.
  */
 struct ghci_share {
 	struct ghci_device *device;
 	struct ghci_allocation *memory;
+	int has_image;
+	struct gpu_image_descriptor image;
+	uint32_t gpu_address;
 };
 
 static int share_export(void *private_data, void *opaque, void *object, const struct gpu_image_descriptor *image, void **result);
 static void share_release(void *private_data, void *shared);
-static int share_import(void *private_data, void *opaque, void *shared, void **result, uint32_t *resource_id);
+static int share_import(void *private_data, void *opaque, void *shared, uint32_t flags, void **result, uint32_t *resource_id);
+static int share_scannable(struct ghci_device *device, const struct ghci_share *share);
 
 /* The sharing operations; the table lives as long as the kernel. */
 const struct drv_gpu_share_ops ghci_share_ops = {
@@ -51,9 +64,10 @@ const struct drv_gpu_share_ops ghci_share_ops = {
 };
 
 /*
- * Exports a session's allocation: the record holds its memory.  The
- * image, when there is one, was checked by the core against the
- * resource; every GHCI allocation is linear memory, so it adds nothing.
+ * Exports a session's allocation: the record holds its memory and keeps
+ * the image, when there is one, for an import for the display.  The core
+ * checked the image against the resource; every GHCI allocation is
+ * linear memory.
  */
 static int
 share_export(
@@ -68,7 +82,6 @@ share_export(
 	struct ghci_share *share;
 
 	(void)opaque;
-	(void)image;
 
 	/* The record. */
 	device = private_data;
@@ -84,6 +97,12 @@ share_export(
 	share->memory = allocation;
 	if (allocation->backing != NULL)
 		share->memory = allocation->backing;
+	share->gpu_address = allocation->gpu_address;
+	if (image != NULL) {
+		share->has_image = 1;
+		share->image = *image;
+		share->gpu_address = allocation->gpu_address + (uint32_t)image->offset;
+	}
 	ghci_memory_hold(share->memory);
 
 	mutex_unlock(&device->lock);
@@ -118,13 +137,15 @@ share_release(
 
 /*
  * Imports an export into a session: a blob of the session that shows the
- * same memory and holds it, named by its GPU address.
+ * same memory and holds it, named by its GPU address.  An import for the
+ * display needs an image the controller scans where it is.
  */
 static int
 share_import(
 	void *private_data,
 	void *opaque,
 	void *shared,
+	uint32_t flags,
 	void **result,
 	uint32_t *resource_id)
 {
@@ -132,6 +153,7 @@ share_import(
 	struct ghci_session *session;
 	struct ghci_share *share;
 	struct ghci_allocation *alias;
+	int scannable;
 	int error;
 
 	/* An export of this device only. */
@@ -140,6 +162,13 @@ share_import(
 	share = shared;
 	if (share->device != device)
 		return EINVAL;
+
+	/* An import for the display only of an image the controller scans; the caller copies otherwise. */
+	if ((flags & GPU_IMPORT_SCANOUT) != 0U) {
+		scannable = share_scannable(device, share);
+		if (!scannable)
+			return ENOTSUP;
+	}
 
 	/* The blob's record. */
 	alias = kern_calloc(1U, sizeof(*alias));
@@ -180,4 +209,51 @@ share_import(
 	*result = alias;
 	*resource_id = alias->gpu_address;
 	return 0;
+}
+
+/*
+ * Reports whether the display controller can scan an export's image
+ * where it is: 1 when it can.
+ */
+static int
+share_scannable(
+	struct ghci_device *device,
+	const struct ghci_share *share)
+{
+	const struct ghci_display_mode *mode;
+	uint32_t line;
+	unsigned index;
+	int sized;
+
+	/* A device without a display scans nothing; an allocation-only export has no image. */
+	if (!device->display.present)
+		return 0;
+	if (!share->has_image)
+		return 0;
+
+	/* The controller scans local memory only, on a GPU that has it. */
+	if (device->local_size != 0U && share->memory->kind == GHCI_MEMORY_HOST)
+		return 0;
+
+	/* The first row and the stride lie on the memory line. */
+	line = device->line_bytes;
+	if (line == 0U)
+		return 0;
+	if ((share->gpu_address % line) != 0U)
+		return 0;
+	if ((share->image.stride % line) != 0U)
+		return 0;
+
+	/* The image is the size of one of the controller's modes (it has no scaler). */
+	sized = 0;
+	for (index = 0U; index < device->display.mode_count; index++) {
+		mode = &device->display.modes[index];
+		if (mode->width == share->image.width && mode->height == share->image.height)
+			sized = 1;
+	}
+	if (!sized)
+		return 0;
+
+	/* Succeeded: the controller scans the image where it is. */
+	return 1;
 }

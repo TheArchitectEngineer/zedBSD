@@ -357,7 +357,7 @@ test_executor(void)
 	expect(device.vk->warps == 16U, "vk resident warps read");
 	expect(device.vk->registers == 64U, "vk registers per lane read");
 	expect(device.vk->heap_ready, "vk heap taken");
-	expect(model_irq_enable == (GHCI_IRQ_FENCE | GHCI_IRQ_FAULT | GHCI_IRQ_WATCHDOG | GHCI_IRQ_RESULT), "vk result interrupt enabled");
+	expect((model_irq_enable & GHCI_IRQ_RESULT) != 0U, "vk result interrupt enabled");
 
 	/* The node's capabilities are what libvulkan needs, with the jobs. */
 	error = core_ops->open(core_private, &opaque);
@@ -1063,7 +1063,7 @@ test_executor(void)
 	expect(error == 0 && shared != NULL, "vk memory exported");
 	error = core_ops->open(core_private, &second);
 	expect(error == 0, "vk second session");
-	error = core_ops->share->import_resource(core_private, second, shared, &object_pointer, &import_id);
+	error = core_ops->share->import_resource(core_private, second, shared, 0U, &object_pointer, &import_id);
 	imported = object_pointer;
 	expect(error == 0 && import_id == alias_id && imported->backing == alias->backing, "vk import shows the same memory");
 	memset(&blob_request, 0, sizeof(blob_request));

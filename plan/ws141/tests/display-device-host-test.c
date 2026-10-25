@@ -326,7 +326,7 @@ main(
 	image.tiling = GPU_IMAGE_LINEAR;
 	error = test_operations->share->export_resource(test_device, first, resource, &image, &capability);
 	assert(error == 0);
-	error = test_operations->share->import_resource(test_device, second, capability, &alias, &identifier);
+	error = test_operations->share->import_resource(test_device, second, capability, 0U, &alias, &identifier);
 	assert(error == 0 && identifier != 0);
 	error = test_operations->share->get_scanout_backing(test_device, capability, &backing);
 	assert(error == 0 && backing.page_count == 2025 && backing.page_bytes == 4096);

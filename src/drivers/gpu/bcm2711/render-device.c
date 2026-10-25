@@ -48,7 +48,7 @@ static int render_write(void *opaque, void *private_session, void *private_resou
 static int render_map(void *opaque, void *private_session, void *private_resource, struct drv_gpu_mapping *mapping);
 static int render_export(void *opaque, void *private_session, void *private_resource, const struct gpu_image_descriptor *image, void **result);
 static void render_release(void *opaque, void *shared);
-static int render_import(void *opaque, void *private_session, void *shared, void **result, uint32_t *identifier);
+static int render_import(void *opaque, void *private_session, void *shared, uint32_t flags, void **result, uint32_t *identifier);
 static int render_backing(void *opaque, void *shared, struct drv_gpu_scanout_backing *backing);
 static int render_device(void *opaque, void *private_session, struct gpu_device_info *info);
 static int render_stop_begin(void *opaque, void *private_session, int error);
@@ -613,6 +613,7 @@ render_import(
 	void *opaque,
 	void *private_session,
 	void *shared,
+	uint32_t flags,
 	void **result,
 	uint32_t *identifier)
 {
@@ -620,6 +621,8 @@ render_import(
 	struct bcm2711_buffer *buffer;
 	bool ready;
 	int error;
+
+	(void)flags;
 
 	/* The retained common capability guarantees the borrowed allocation survives this call. */
 	controller = opaque;

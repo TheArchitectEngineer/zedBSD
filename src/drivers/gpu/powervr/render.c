@@ -74,7 +74,7 @@ static int render_write(void *device, void *session, void *resource, uint64_t of
 static int render_map(void *device, void *session, void *resource, struct drv_gpu_mapping *mapping);
 static int render_export(void *device, void *session, void *resource, const struct gpu_image_descriptor *image, void **result);
 static void render_release(void *device, void *shared);
-static int render_import(void *device, void *session, void *shared, void **result, uint32_t *identifier);
+static int render_import(void *device, void *session, void *shared, uint32_t flags, void **result, uint32_t *identifier);
 static int render_backing(void *device, void *shared, struct drv_gpu_scanout_backing *backing);
 static int render_query(void *device, void *session, struct gpu_device_info *info);
 static int resource_make(struct powervr_session *session, struct powervr_buffer *buffer, int mappable, int shareable, struct powervr_resource **result);
@@ -1401,6 +1401,7 @@ render_import(
 	void *device,
 	void *opaque,
 	void *object,
+	uint32_t flags,
 	void **result,
 	uint32_t *identifier)
 {
@@ -1409,6 +1410,8 @@ render_import(
 	struct powervr_shared *shared;
 	struct powervr_resource *resource;
 	int error;
+
+	(void)flags;
 
 	/* The export the core kept alive for this call. */
 	render = device;

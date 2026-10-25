@@ -4735,6 +4735,7 @@ gpu_allocation_import_ioctl(
 		device->private_data,
 		session->backend,
 		shared->object,
+		request.flags,
 		&object,
 		&resource_id);
 	if (error != 0) {
@@ -5350,11 +5351,12 @@ gpu_import_ioctl(
 		/* Foreign scanout requires explicit backing and destination DMA validation. */
 		error = gpu_scanout_import(session, shared, &object);
 	} else if (device->ops->share != NULL) {
-		/* An ordinary same-device alias remains usable by its native renderer. */
+		/* An ordinary same-device alias remains usable by its native renderer; SCANOUT asks for one its display scans. */
 		error = device->ops->share->import_resource(
 			device->private_data,
 			session->backend,
 			shared->object,
+			request.flags,
 			&object,
 			&resource_id);
 	} else {

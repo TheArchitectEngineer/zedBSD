@@ -45,7 +45,7 @@ static int i915_blob_create(void *opaque, void *private_session, const struct gp
 static int i915_resource_map(void *opaque, void *private_session, void *private_object, struct drv_gpu_mapping *mapping);
 static int i915_share_export(void *opaque, void *private_session, void *private_object, const struct gpu_image_descriptor *image, void **result);
 static void i915_share_release(void *opaque, void *shared);
-static int i915_share_import(void *opaque, void *private_session, void *shared, void **result, uint32_t *resource_id);
+static int i915_share_import(void *opaque, void *private_session, void *shared, uint32_t flags, void **result, uint32_t *resource_id);
 
 /*
  * The sharing operations of the node.
@@ -463,6 +463,7 @@ i915_share_import(
 	void *opaque,
 	void *private_session,
 	void *shared,
+	uint32_t flags,
 	void **result,
 	uint32_t *resource_id)
 {
@@ -471,6 +472,8 @@ i915_share_import(
 	struct i915_gem_object *source;
 	struct i915_gem_object *alias;
 	int error;
+
+	(void)flags;
 
 	/* A failed import stays invisible to the core's resource table. */
 	device = opaque;
