@@ -1,0 +1,401 @@
+From Clock:  g_out
+  To Clock:  g_out
+
+Setup :            0  Failing Endpoints,  Worst Slack        3.604ns,  Total Violation        0.000ns
+Hold  :            0  Failing Endpoints,  Worst Slack        0.051ns,  Total Violation        0.000ns
+PW    :            0  Failing Endpoints,  Worst Slack       24.232ns,  Total Violation        0.000ns
+---------------------------------------------------------------------------------------------------
+
+
+Max Delay Paths
+--------------------------------------------------------------------------------------
+Slack (MET) :             3.604ns  (required time - arrival time)
+  Source:                 gpu/g_su[0].su/opd/b_warp_reg[0]_rep/C
+                            (rising edge-triggered cell FDRE clocked by g_out  {rise@0.000ns fall@25.000ns period=50.000ns})
+  Destination:            gpu/g_su[0].su/fpu/pipe_reg[3][69]_srl4___gpu_g_tu.tu_filter_vd_reg_r_1/D
+                            (rising edge-triggered cell SRL16E clocked by g_out  {rise@0.000ns fall@25.000ns period=50.000ns})
+  Path Group:             g_out
+  Path Type:              Setup (Max at Slow Process Corner)
+  Requirement:            50.000ns  (g_out rise@50.000ns - g_out rise@0.000ns)
+  Data Path Delay:        46.330ns  (logic 9.356ns (20.194%)  route 36.974ns (79.806%))
+  Logic Levels:           105  (CARRY4=39 LUT2=5 LUT3=6 LUT4=11 LUT5=13 LUT6=31)
+  Clock Path Skew:        0.044ns (DCD - SCD + CPR)
+    Destination Clock Delay (DCD):    8.682ns = ( 58.682 - 50.000 ) 
+    Source Clock Delay      (SCD):    9.193ns
+    Clock Pessimism Removal (CPR):    0.554ns
+  Clock Uncertainty:      0.084ns  ((TSJ^2 + DJ^2)^1/2) / 2 + PE
+    Total System Jitter     (TSJ):    0.071ns
+    Discrete Jitter          (DJ):    0.153ns
+    Phase Error              (PE):    0.000ns
+
+    Location             Delay type                Incr(ns)  Path(ns)    Netlist Resource(s)
+  -------------------------------------------------------------------    -------------------
+                         (clock g_out rise edge)      0.000     0.000 r  <hidden>
+    AD12                                              0.000     0.000 r  sys_clk_p
+                         net (fo=0)                   0.000     0.000    clocks/sys_clk_p
+    AD12                 IBUFDS (Prop_ibufds_I_O)     0.832     0.832 r  clocks/sys_buf/O
+                         net (fo=1, routed)           2.299     3.131    clocks/sys_ibuf
+    BUFGCTRL_X0Y1        BUFG (Prop_bufg_I_O)         0.093     3.224 r  clocks/ref_bufg/O
+                         net (fo=40, routed)          1.936     5.160    clocks/sys_clk_i
+    MMCME2_ADV_X1Y0      MMCME2_ADV (Prop_mmcme2_adv_CLKIN1_CLKOUT0)
+                                                      0.077     5.237 r  clocks/mmcm_g/CLKOUT0
+                         net (fo=1, routed)           2.469     7.706    clocks/g_out
+    BUFGCTRL_X0Y3        BUFG (Prop_bufg_I_O)         0.093     7.799 r  clocks/g_bufg/O
+                         net (fo=102518, routed)      1.394     9.193    gpu/g_su[0].su/opd/clk
+    SLICE_X51Y105        FDRE                                         r  gpu/g_su[0].su/opd/b_warp_reg[0]_rep/C
+  -------------------------------------------------------------------    -------------------
+    SLICE_X51Y105        FDRE (Prop_fdre_C_Q)         0.223     9.416 r  gpu/g_su[0].su/opd/b_warp_reg[0]_rep/Q
+                         net (fo=87, routed)          1.379    10.795    gpu/g_su[0].su/sched/rdat[104]_i_29_1
+    SLICE_X44Y134        LUT6 (Prop_lut6_I1_O)        0.043    10.838 r  gpu/g_su[0].su/sched/smw[124]_i_6/O
+                         net (fo=4, routed)           1.369    12.207    gpu/g_su[0].su/opd/g_lane[3].u_cl1/q_info[33]
+    SLICE_X61Y107        LUT4 (Prop_lut4_I3_O)        0.055    12.262 f  gpu/g_su[0].su/opd/g_lane[3].u_cl1/ra[108]_i_14/O
+                         net (fo=1, routed)           0.459    12.721    gpu/g_su[0].su/opd/g_lane[3].u_cl1/ra[108]_i_14_n_15
+    SLICE_X61Y107        LUT6 (Prop_lut6_I5_O)        0.137    12.858 r  gpu/g_su[0].su/opd/g_lane[3].u_cl1/ra[108]_i_9/O
+                         net (fo=5, routed)           0.836    13.694    gpu/g_su[0].su/opd/g_lane[3].u_cl1_n_21
+    SLICE_X68Y88         LUT6 (Prop_lut6_I2_O)        0.043    13.737 r  gpu/g_su[0].su/opd/ra[108]_i_4/O
+                         net (fo=9, routed)           0.462    14.199    g_su[0].su/opd/opc_return[12]
+    SLICE_X70Y88         CARRY4 (Prop_carry4_DI[2]_CO[3])
+                                                      0.202    14.401 r  opd/g_lane[2].u_cl1/ra_reg[76]_i_2/CO[3]
+                         net (fo=1, routed)           0.000    14.401    opd/g_lane[2].u_cl1/ra_reg[76]_i_2_n_15
+    SLICE_X70Y89         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.054    14.455 r  opd/g_lane[2].u_cl1/ra_reg[81]_i_2/CO[3]
+                         net (fo=1, routed)           0.000    14.455    opd/g_lane[2].u_cl1/ra_reg[81]_i_2_n_15
+    SLICE_X70Y90         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.054    14.509 r  opd/g_lane[2].u_cl1/i___20_i_4/CO[3]
+                         net (fo=1, routed)           0.000    14.509    opd/g_lane[2].u_cl1/i___20_i_4_n_15
+    SLICE_X70Y91         CARRY4 (Prop_carry4_CI_O[3])
+                                                      0.151    14.660 f  opd/g_lane[2].u_cl1/i__i_9/O[3]
+                         net (fo=2, routed)           0.440    15.099    gpu/g_su[0].su/opd/rx_reg[93][13]
+    SLICE_X67Y96         LUT5 (Prop_lut5_I2_O)        0.120    15.219 f  gpu/g_su[0].su/opd/i__i_5__5/O
+                         net (fo=113, routed)         1.704    16.924    gpu/g_su[0].su/opd/b_uop_reg[72]_1[25]
+    SLICE_X15Y72         LUT4 (Prop_lut4_I0_O)        0.043    16.967 f  gpu/g_su[0].su/opd/i__i_11__1/O
+                         net (fo=3, routed)           0.581    17.547    gpu/g_su[0].su/opd/i__i_11__1_n_15
+    SLICE_X16Y69         LUT5 (Prop_lut5_I4_O)        0.051    17.598 f  gpu/g_su[0].su/opd/i__i_3__5/O
+                         net (fo=111, routed)         1.007    18.606    gpu/g_su[0].su/opd/i__i_11__1_0
+    SLICE_X37Y82         LUT2 (Prop_lut2_I1_O)        0.134    18.740 f  gpu/g_su[0].su/opd/i___39_i_3__2/O
+                         net (fo=7, routed)           1.250    19.990    gpu/g_su[0].su/fpu/g_lane[2].u_op/i___62_i_40__1_13
+    SLICE_X14Y70         LUT6 (Prop_lut6_I3_O)        0.043    20.033 f  gpu/g_su[0].su/fpu/g_lane[2].u_op/i___39/O
+                         net (fo=3, routed)           0.369    20.402    gpu/g_su[0].su/opd/i___62_i_27__1_3
+    SLICE_X14Y69         LUT6 (Prop_lut6_I3_O)        0.043    20.445 f  gpu/g_su[0].su/opd/i___62_i_40__1/O
+                         net (fo=1, routed)           0.275    20.720    gpu/g_su[0].su/opd/i___62_i_40__1_n_15
+    SLICE_X14Y68         LUT6 (Prop_lut6_I1_O)        0.043    20.763 r  gpu/g_su[0].su/opd/i___62_i_27__1/O
+                         net (fo=1, routed)           0.541    21.304    gpu/g_su[0].su/fpu/g_lane[2].u_op/i___62_i_5_5
+    SLICE_X8Y65          LUT6 (Prop_lut6_I3_O)        0.043    21.347 r  gpu/g_su[0].su/fpu/g_lane[2].u_op/i___62_i_17/O
+                         net (fo=1, routed)           0.000    21.347    gpu/g_su[0].su/fpu/g_lane[2].u_op/i___62_i_17_n_15
+    SLICE_X8Y65          CARRY4 (Prop_carry4_S[0]_CO[3])
+                                                      0.246    21.593 r  gpu/g_su[0].su/fpu/g_lane[2].u_op/i___62_i_5/CO[3]
+                         net (fo=1, routed)           0.000    21.593    gpu/g_su[0].su/fpu/g_lane[2].u_op/i___62_i_5_n_15
+    SLICE_X8Y66          CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.054    21.647 r  gpu/g_su[0].su/fpu/g_lane[2].u_op/i___202_i_1/CO[3]
+                         net (fo=1, routed)           0.000    21.647    gpu/g_su[0].su/fpu/g_lane[2].u_op/i___202_i_1_n_15
+    SLICE_X8Y67          CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.054    21.701 r  gpu/g_su[0].su/fpu/g_lane[2].u_op/i___62_i_7/CO[3]
+                         net (fo=1, routed)           0.000    21.701    gpu/g_su[0].su/fpu/g_lane[2].u_op/i___62_i_7_n_15
+    SLICE_X8Y68          CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.054    21.755 r  gpu/g_su[0].su/fpu/g_lane[2].u_op/i___197_i_5/CO[3]
+                         net (fo=1, routed)           0.000    21.755    gpu/g_su[0].su/fpu/g_lane[2].u_op/i___197_i_5_n_15
+    SLICE_X8Y69          CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.054    21.809 r  gpu/g_su[0].su/fpu/g_lane[2].u_op/i___201_i_4/CO[3]
+                         net (fo=1, routed)           0.000    21.809    gpu/g_su[0].su/fpu/g_lane[2].u_op/i___201_i_4_n_15
+    SLICE_X8Y70          CARRY4 (Prop_carry4_CI_O[0])
+                                                      0.108    21.917 r  gpu/g_su[0].su/fpu/g_lane[2].u_op/i___201_i_2/O[0]
+                         net (fo=2, routed)           0.425    22.342    gpu/g_su[0].su/opd/n_36[20]
+    SLICE_X2Y69          LUT6 (Prop_lut6_I5_O)        0.123    22.465 r  gpu/g_su[0].su/opd/i___82_i_4__3/O
+                         net (fo=3, routed)           0.461    22.926    gpu/g_su[0].su/opd/i___82_i_4__3_n_15
+    SLICE_X5Y72          LUT4 (Prop_lut4_I0_O)        0.043    22.969 r  gpu/g_su[0].su/opd/i___3_i_14__3/O
+                         net (fo=1, routed)           0.355    23.324    gpu/g_su[0].su/opd/i___3_i_14__3_n_15
+    SLICE_X5Y72          LUT6 (Prop_lut6_I5_O)        0.043    23.367 r  gpu/g_su[0].su/opd/i___3_i_3__5/O
+                         net (fo=51, routed)          0.507    23.874    gpu/g_su[0].su/opd/i___3_i_14__3_0
+    SLICE_X3Y71          LUT3 (Prop_lut3_I1_O)        0.051    23.925 f  gpu/g_su[0].su/opd/i___3_i_4__5/O
+                         net (fo=3, routed)           0.448    24.373    gpu/g_su[0].su/opd/i___3_i_4__5_n_15
+    SLICE_X1Y70          LUT6 (Prop_lut6_I2_O)        0.136    24.509 f  gpu/g_su[0].su/opd/i___1_i_5__4/O
+                         net (fo=7, routed)           0.444    24.953    gpu/g_su[0].su/opd/i___1_i_5__4_n_15
+    SLICE_X0Y70          LUT6 (Prop_lut6_I2_O)        0.043    24.996 r  gpu/g_su[0].su/opd/i___1_i_1__5/O
+                         net (fo=37, routed)          0.589    25.585    gpu/g_su[0].su/opd/i___3_i_2__5_0
+    SLICE_X0Y73          LUT5 (Prop_lut5_I1_O)        0.043    25.628 r  gpu/g_su[0].su/opd/i___63_i_6__1/O
+                         net (fo=2, routed)           0.352    25.980    gpu/g_su[0].su/opd/i___63_i_6__1_n_15
+    SLICE_X1Y73          LUT3 (Prop_lut3_I2_O)        0.051    26.031 r  gpu/g_su[0].su/opd/i___63_i_4__2/O
+                         net (fo=2, routed)           0.241    26.271    gpu/g_su[0].su/fpu/g_lane[2].u_op/i___187_i_7__0_2
+    SLICE_X1Y73          LUT6 (Prop_lut6_I5_O)        0.136    26.407 f  gpu/g_su[0].su/fpu/g_lane[2].u_op/i___63/O
+                         net (fo=2, routed)           0.299    26.707    gpu/g_su[0].su/opd/i___187_i_5__1_0
+    SLICE_X4Y73          LUT2 (Prop_lut2_I1_O)        0.043    26.750 r  gpu/g_su[0].su/opd/i___187_i_7__0/O
+                         net (fo=1, routed)           0.360    27.110    gpu/g_su[0].su/opd/i___187_i_7__0_n_15
+    SLICE_X4Y73          LUT6 (Prop_lut6_I4_O)        0.043    27.153 r  gpu/g_su[0].su/opd/i___187_i_5__1/O
+                         net (fo=2, routed)           0.379    27.531    gpu/g_su[0].su/fpu/g_lane[2].u_op/i___190_i_3__2_0[0]
+    SLICE_X2Y72          LUT6 (Prop_lut6_I0_O)        0.043    27.574 r  gpu/g_su[0].su/fpu/g_lane[2].u_op/i___187_i_6/O
+                         net (fo=1, routed)           0.000    27.574    gpu/g_su[0].su/fpu/g_lane[2].u_op/i___187_i_6_n_15
+    SLICE_X2Y72          CARRY4 (Prop_carry4_S[0]_CO[3])
+                                                      0.246    27.820 r  gpu/g_su[0].su/fpu/g_lane[2].u_op/i___187_i_4/CO[3]
+                         net (fo=1, routed)           0.000    27.820    gpu/g_su[0].su/fpu/g_lane[2].u_op/i___187_i_4_n_15
+    SLICE_X2Y73          CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.054    27.874 r  gpu/g_su[0].su/fpu/g_lane[2].u_op/i___183_i_4/CO[3]
+                         net (fo=1, routed)           0.000    27.874    gpu/g_su[0].su/fpu/g_lane[2].u_op/i___183_i_4_n_15
+    SLICE_X2Y74          CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.054    27.928 r  gpu/g_su[0].su/fpu/g_lane[2].u_op/i___179_i_4/CO[3]
+                         net (fo=1, routed)           0.007    27.935    gpu/g_su[0].su/fpu/g_lane[2].u_op/i___179_i_4_n_15
+    SLICE_X2Y75          CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.054    27.989 r  gpu/g_su[0].su/fpu/g_lane[2].u_op/i___6_i_7/CO[3]
+                         net (fo=1, routed)           0.000    27.989    gpu/g_su[0].su/fpu/g_lane[2].u_op/i___6_i_7_n_15
+    SLICE_X2Y76          CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.054    28.043 r  gpu/g_su[0].su/fpu/g_lane[2].u_op/i___6_i_5/CO[3]
+                         net (fo=1, routed)           0.000    28.043    gpu/g_su[0].su/fpu/g_lane[2].u_op/i___6_i_5_n_15
+    SLICE_X2Y77          CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.054    28.097 r  gpu/g_su[0].su/fpu/g_lane[2].u_op/i___6_i_4/CO[3]
+                         net (fo=1, routed)           0.000    28.097    gpu/g_su[0].su/fpu/g_lane[2].u_op/i___6_i_4_n_15
+    SLICE_X2Y78          CARRY4 (Prop_carry4_CI_CO[0])
+                                                      0.133    28.230 f  gpu/g_su[0].su/fpu/g_lane[2].u_op/i___6_i_1/CO[0]
+                         net (fo=30, routed)          0.678    28.908    gpu/g_su[0].su/opd/i___168_i_6__1_0[0]
+    SLICE_X1Y73          LUT3 (Prop_lut3_I2_O)        0.128    29.036 r  gpu/g_su[0].su/opd/i___4_i_8__2/O
+                         net (fo=2, routed)           0.414    29.450    gpu/g_su[0].su/opd/i___4_i_8__2_n_15
+    SLICE_X10Y73         LUT6 (Prop_lut6_I1_O)        0.043    29.493 f  gpu/g_su[0].su/opd/i___4_i_3__3/O
+                         net (fo=2, routed)           0.485    29.978    gpu/g_su[0].su/opd/fpu/g_lane[2].u_op/data9[24]
+    SLICE_X16Y75         LUT6 (Prop_lut6_I0_O)        0.043    30.021 r  gpu/g_su[0].su/opd/i___4_i_1__5/O
+                         net (fo=9, routed)           0.528    30.549    gpu/g_su[0].su/opd/fpu/g_lane[2].u_op/u_fma/c150[1]
+    SLICE_X15Y80         LUT2 (Prop_lut2_I0_O)        0.043    30.592 f  gpu/g_su[0].su/opd/i___168_i_4__1/O
+                         net (fo=32, routed)          0.383    30.976    gpu/g_su[0].su/fpu/g_lane[2].u_op/i___213_i_11__1_0
+    SLICE_X16Y80         LUT3 (Prop_lut3_I1_O)        0.043    31.019 r  gpu/g_su[0].su/fpu/g_lane[2].u_op/i___193/O
+                         net (fo=8, routed)           0.429    31.448    gpu/g_su[0].su/fpu/g_lane[2].u_op/i___168_i_3__1
+    SLICE_X15Y78         LUT3 (Prop_lut3_I1_O)        0.043    31.491 r  gpu/g_su[0].su/fpu/g_lane[2].u_op/i___135/O
+                         net (fo=1, routed)           0.000    31.491    gpu/g_su[0].su/opd/u_fma/u_kadj/i___26_i_15__1_0[1]
+    SLICE_X15Y78         CARRY4 (Prop_carry4_S[1]_O[2])
+                                                      0.282    31.773 f  gpu/g_su[0].su/opd/i___8_i_16__1/O[2]
+                         net (fo=17, routed)          0.639    32.412    gpu/g_su[0].su/opd/i___138_0[6]
+    SLICE_X5Y81          LUT6 (Prop_lut6_I2_O)        0.122    32.534 r  gpu/g_su[0].su/opd/i___160_i_13__1/O
+                         net (fo=40, routed)          0.722    33.256    gpu/g_su[0].su/opd/i___160_i_13__1_n_15
+    SLICE_X2Y88          LUT4 (Prop_lut4_I1_O)        0.051    33.307 r  gpu/g_su[0].su/opd/i___214_i_15__1/O
+                         net (fo=3, routed)           0.331    33.638    gpu/g_su[0].su/opd/i___214_i_15__1_n_15
+    SLICE_X0Y88          LUT5 (Prop_lut5_I4_O)        0.138    33.776 r  gpu/g_su[0].su/opd/i___15_i_47__1/O
+                         net (fo=3, routed)           0.449    34.225    gpu/g_su[0].su/opd/i___15_i_47__1_n_15
+    SLICE_X1Y88          LUT5 (Prop_lut5_I4_O)        0.043    34.268 r  gpu/g_su[0].su/opd/i___15_i_41__1/O
+                         net (fo=2, routed)           0.443    34.710    gpu/g_su[0].su/opd/i___15_i_41__1_n_15
+    SLICE_X0Y85          LUT6 (Prop_lut6_I3_O)        0.043    34.753 r  gpu/g_su[0].su/opd/i___15_i_40__1/O
+                         net (fo=1, routed)           0.440    35.194    gpu/g_su[0].su/opd/i___15_i_40__1_n_15
+    SLICE_X0Y83          LUT3 (Prop_lut3_I1_O)        0.051    35.245 r  gpu/g_su[0].su/opd/i___15_i_26__1/O
+                         net (fo=4, routed)           0.526    35.770    gpu/g_su[0].su/opd/i___15_i_26__1_n_15
+    SLICE_X8Y82          LUT5 (Prop_lut5_I1_O)        0.136    35.906 r  gpu/g_su[0].su/opd/i___144_i_49__1/O
+                         net (fo=1, routed)           0.000    35.906    gpu/g_su[0].su/opd/i___144_i_49__1_n_15
+    SLICE_X8Y82          CARRY4 (Prop_carry4_S[1]_CO[3])
+                                                      0.256    36.162 r  gpu/g_su[0].su/opd/i___144_i_37__1/CO[3]
+                         net (fo=1, routed)           0.000    36.162    gpu/g_su[0].su/opd/i___144_i_37__1_n_15
+    SLICE_X8Y83          CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.054    36.216 r  gpu/g_su[0].su/opd/i___144_i_28__1/CO[3]
+                         net (fo=1, routed)           0.000    36.216    gpu/g_su[0].su/opd/i___144_i_28__1_n_15
+    SLICE_X8Y84          CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.054    36.270 r  gpu/g_su[0].su/opd/i___144_i_19__1/CO[3]
+                         net (fo=1, routed)           0.000    36.270    gpu/g_su[0].su/opd/i___144_i_19__1_n_15
+    SLICE_X8Y85          CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.054    36.324 r  gpu/g_su[0].su/opd/i___144_i_10__1/CO[3]
+                         net (fo=1, routed)           0.000    36.324    gpu/g_su[0].su/opd/i___144_i_10__1_n_15
+    SLICE_X8Y86          CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.054    36.378 r  gpu/g_su[0].su/opd/i___144_i_7__1/CO[3]
+                         net (fo=1, routed)           0.000    36.378    gpu/g_su[0].su/opd/i___144_i_7__1_n_15
+    SLICE_X8Y87          CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.054    36.432 r  gpu/g_su[0].su/opd/i___144_i_6__1/CO[3]
+                         net (fo=1, routed)           0.000    36.432    gpu/g_su[0].su/opd/i___144_i_6__1_n_15
+    SLICE_X8Y88          CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.054    36.486 r  gpu/g_su[0].su/opd/i___144_i_5__1/CO[3]
+                         net (fo=1, routed)           0.000    36.486    gpu/g_su[0].su/opd/i___144_i_5__1_n_15
+    SLICE_X8Y89          CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.054    36.540 r  gpu/g_su[0].su/opd/i___144_i_4__1/CO[3]
+                         net (fo=1, routed)           0.000    36.540    gpu/g_su[0].su/opd/i___144_i_4__1_n_15
+    SLICE_X8Y90          CARRY4 (Prop_carry4_CI_CO[2])
+                                                      0.110    36.650 f  gpu/g_su[0].su/opd/i___144_i_2__1/CO[2]
+                         net (fo=1, routed)           0.508    37.158    gpu/g_su[0].su/opd/fpu/g_lane[2].u_op/u_fma/pge
+    SLICE_X13Y82         LUT6 (Prop_lut6_I0_O)        0.128    37.286 r  gpu/g_su[0].su/opd/i___144_i_1__1/O
+                         net (fo=104, routed)         0.774    38.060    gpu/g_su[0].su/fpu/g_lane[2].u_op/i___13_i_20__1_1
+    SLICE_X6Y78          LUT4 (Prop_lut4_I3_O)        0.047    38.107 r  gpu/g_su[0].su/fpu/g_lane[2].u_op/i___162/O
+                         net (fo=1, routed)           0.192    38.299    gpu/g_su[0].su/opd/u_fma/u_nrm/i___105_i_11__1_1
+    SLICE_X7Y78          CARRY4 (Prop_carry4_CYINIT_CO[3])
+                                                      0.378    38.677 r  gpu/g_su[0].su/opd/i___121_i_5__1/CO[3]
+                         net (fo=1, routed)           0.000    38.677    gpu/g_su[0].su/opd/i___121_i_5__1_n_15
+    SLICE_X7Y79          CARRY4 (Prop_carry4_CI_O[1])
+                                                      0.166    38.843 f  gpu/g_su[0].su/opd/i___108_i_2__1/O[1]
+                         net (fo=14, routed)          0.987    39.830    gpu/g_su[0].su/opd/fpu/g_lane[2].u_op/u_fma/sum[5]
+    SLICE_X3Y99          LUT6 (Prop_lut6_I1_O)        0.123    39.953 r  gpu/g_su[0].su/opd/i___15_i_13__2/O
+                         net (fo=1, routed)           0.358    40.311    gpu/g_su[0].su/opd/i___15_i_13__2_n_15
+    SLICE_X3Y98          LUT5 (Prop_lut5_I2_O)        0.054    40.365 r  gpu/g_su[0].su/opd/i___15_i_2__4/O
+                         net (fo=1, routed)           0.151    40.516    gpu/g_su[0].su/fpu/g_lane[2].u_op/i___13_i_74__1
+    SLICE_X3Y98          LUT6 (Prop_lut6_I2_O)        0.137    40.653 r  gpu/g_su[0].su/fpu/g_lane[2].u_op/i___15/O
+                         net (fo=1, routed)           0.251    40.904    gpu/g_su[0].su/opd/i___13_i_66__1_0
+    SLICE_X4Y98          LUT6 (Prop_lut6_I2_O)        0.043    40.947 r  gpu/g_su[0].su/opd/i___13_i_74__1/O
+                         net (fo=1, routed)           0.104    41.050    gpu/g_su[0].su/opd/i___13_i_74__1_n_15
+    SLICE_X4Y98          LUT6 (Prop_lut6_I2_O)        0.043    41.093 r  gpu/g_su[0].su/opd/i___13_i_66__1/O
+                         net (fo=1, routed)           0.239    41.332    gpu/g_su[0].su/opd/i___13_i_66__1_n_15
+    SLICE_X4Y98          LUT6 (Prop_lut6_I2_O)        0.043    41.375 r  gpu/g_su[0].su/opd/i___13_i_58__1/O
+                         net (fo=1, routed)           0.187    41.563    gpu/g_su[0].su/opd/i___13_i_58__1_n_15
+    SLICE_X4Y97          LUT6 (Prop_lut6_I5_O)        0.043    41.606 r  gpu/g_su[0].su/opd/i___13_i_37__1/O
+                         net (fo=1, routed)           0.444    42.050    gpu/g_su[0].su/opd/i___13_i_37__1_n_15
+    SLICE_X3Y96          LUT6 (Prop_lut6_I3_O)        0.043    42.093 r  gpu/g_su[0].su/opd/i___13_i_12__1/O
+                         net (fo=1, routed)           0.353    42.447    gpu/g_su[0].su/opd/i___13_i_12__1_n_15
+    SLICE_X4Y95          LUT5 (Prop_lut5_I1_O)        0.043    42.490 r  gpu/g_su[0].su/opd/i___13_i_2__3/O
+                         net (fo=5, routed)           0.458    42.948    gpu/g_su[0].su/fpu/g_lane[2].u_op/msb_34[1]
+    SLICE_X9Y95          LUT4 (Prop_lut4_I1_O)        0.043    42.991 r  gpu/g_su[0].su/fpu/g_lane[2].u_op/i___13/O
+                         net (fo=36, routed)          0.910    43.901    gpu/g_su[0].su/opd/u_fma/u_nrm/i___92_i_2__1_0
+    SLICE_X4Y104         LUT4 (Prop_lut4_I2_O)        0.051    43.952 f  gpu/g_su[0].su/opd/u_fma/u_nrm/pipe_reg[3][67]_srl4___gpu_g_tu.tu_filter_vd_reg_r_1_i_156/O
+                         net (fo=30, routed)          0.680    44.632    gpu/g_su[0].su/opd/u_fma/u_nrm/pipe_reg[3][67]_srl4___gpu_g_tu.tu_filter_vd_reg_r_1_i_156_n_15
+    SLICE_X0Y101         LUT6 (Prop_lut6_I3_O)        0.136    44.768 r  gpu/g_su[0].su/opd/u_fma/u_nrm/pipe_reg[3][67]_srl4___gpu_g_tu.tu_filter_vd_reg_r_1_i_140/O
+                         net (fo=5, routed)           0.601    45.368    gpu/g_su[0].su/opd/u_fma/u_nrm/pipe_reg[3][67]_srl4___gpu_g_tu.tu_filter_vd_reg_r_1_i_140_n_15
+    SLICE_X2Y106         LUT6 (Prop_lut6_I3_O)        0.043    45.411 r  gpu/g_su[0].su/opd/u_fma/u_nrm/pipe_reg[3][67]_srl4___gpu_g_tu.tu_filter_vd_reg_r_1_i_77/O
+                         net (fo=1, routed)           0.367    45.778    gpu/g_su[0].su/opd/u_fma/u_nrm/pipe_reg[3][67]_srl4___gpu_g_tu.tu_filter_vd_reg_r_1_i_77_n_15
+    SLICE_X2Y106         LUT6 (Prop_lut6_I5_O)        0.043    45.821 r  gpu/g_su[0].su/opd/u_fma/pipe_reg[3][67]_srl4___gpu_g_tu.tu_filter_vd_reg_r_1_i_39/O
+                         net (fo=1, routed)           0.415    46.236    gpu/g_su[0].su/opd/u_fma/pipe_reg[3][67]_srl4___gpu_g_tu.tu_filter_vd_reg_r_1_i_39_n_15
+    SLICE_X1Y108         LUT4 (Prop_lut4_I3_O)        0.043    46.279 r  gpu/g_su[0].su/opd/u_fma/pipe_reg[3][67]_srl4___gpu_g_tu.tu_filter_vd_reg_r_1_i_22/O
+                         net (fo=2, routed)           0.501    46.780    gpu/g_su[0].su/opd/u_fma/pipe_reg[3][67]_srl4___gpu_g_tu.tu_filter_vd_reg_r_1_i_22_n_15
+    SLICE_X1Y104         LUT6 (Prop_lut6_I3_O)        0.043    46.823 r  gpu/g_su[0].su/opd/pipe_reg[3][67]_srl4___gpu_g_tu.tu_filter_vd_reg_r_1_i_16/O
+                         net (fo=1, routed)           0.752    47.575    gpu/g_su[0].su/opd/fpu/g_lane[2].u_op/u_fma/u_rnd/a2
+    SLICE_X10Y86         LUT5 (Prop_lut5_I1_O)        0.043    47.618 r  gpu/g_su[0].su/opd/pipe_reg[3][67]_srl4___gpu_g_tu.tu_filter_vd_reg_r_1_i_10/O
+                         net (fo=2, routed)           0.463    48.081    gpu/g_su[0].su/opd/fpu/g_lane[2].u_op/u_fma/u_rnd/p_3_out[0]
+    SLICE_X12Y86         LUT4 (Prop_lut4_I0_O)        0.043    48.124 r  gpu/g_su[0].su/opd/pipe_reg[3][67]_srl4___gpu_g_tu.tu_filter_vd_reg_r_1_i_11/O
+                         net (fo=1, routed)           0.000    48.124    gpu/g_su[0].su/opd/pipe_reg[3][67]_srl4___gpu_g_tu.tu_filter_vd_reg_r_1_i_11_n_15
+    SLICE_X12Y86         CARRY4 (Prop_carry4_S[0]_CO[3])
+                                                      0.246    48.370 r  gpu/g_su[0].su/opd/pipe_reg[3][67]_srl4___gpu_g_tu.tu_filter_vd_reg_r_1_i_6/CO[3]
+                         net (fo=1, routed)           0.000    48.370    gpu/g_su[0].su/opd/pipe_reg[3][67]_srl4___gpu_g_tu.tu_filter_vd_reg_r_1_i_6_n_15
+    SLICE_X12Y87         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.054    48.424 r  gpu/g_su[0].su/opd/pipe_reg[3][71]_srl4___gpu_g_tu.tu_filter_vd_reg_r_1_i_6/CO[3]
+                         net (fo=1, routed)           0.000    48.424    gpu/g_su[0].su/opd/pipe_reg[3][71]_srl4___gpu_g_tu.tu_filter_vd_reg_r_1_i_6_n_15
+    SLICE_X12Y88         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.054    48.478 r  gpu/g_su[0].su/opd/pipe_reg[3][75]_srl4___gpu_g_tu.tu_filter_vd_reg_r_1_i_6/CO[3]
+                         net (fo=1, routed)           0.000    48.478    gpu/g_su[0].su/opd/pipe_reg[3][75]_srl4___gpu_g_tu.tu_filter_vd_reg_r_1_i_6_n_15
+    SLICE_X12Y89         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.054    48.532 r  gpu/g_su[0].su/opd/i___26_i_16__2/CO[3]
+                         net (fo=1, routed)           0.000    48.532    gpu/g_su[0].su/opd/i___26_i_16__2_n_15
+    SLICE_X12Y90         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.054    48.586 r  gpu/g_su[0].su/opd/i___26_i_13__2/CO[3]
+                         net (fo=1, routed)           0.000    48.586    gpu/g_su[0].su/opd/i___26_i_13__2_n_15
+    SLICE_X12Y91         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.054    48.640 r  gpu/g_su[0].su/opd/i___26_i_8__4/CO[3]
+                         net (fo=1, routed)           0.000    48.640    gpu/g_su[0].su/opd/i___26_i_8__4_n_15
+    SLICE_X12Y92         CARRY4 (Prop_carry4_CI_CO[0])
+                                                      0.133    48.773 r  gpu/g_su[0].su/opd/i___26_i_2__3/CO[0]
+                         net (fo=24, routed)          0.771    49.544    gpu/g_su[0].su/fpu/g_lane[2].u_op/i___27_i_1__4_1[0]
+    SLICE_X18Y75         LUT2 (Prop_lut2_I1_O)        0.128    49.672 r  gpu/g_su[0].su/fpu/g_lane[2].u_op/i___26/O
+                         net (fo=1, routed)           0.000    49.672    gpu/g_su[0].su/fpu/g_lane[2].u_op_n_43
+    SLICE_X18Y75         CARRY4 (Prop_carry4_S[0]_O[1])
+                                                      0.217    49.889 f  gpu/g_su[0].su/fpu/i___27_i_1__4/O[1]
+                         net (fo=3, routed)           0.449    50.338    gpu/g_su[0].su/fpu/g_lane[2].u_op/p_4_in_5[1]
+    SLICE_X18Y78         LUT2 (Prop_lut2_I1_O)        0.125    50.463 r  gpu/g_su[0].su/fpu/g_lane[2].u_op/i___27/O
+                         net (fo=1, routed)           0.190    50.652    gpu/g_su[0].su/fpu/g_lane[2].u_op_n_44
+    SLICE_X19Y77         CARRY4 (Prop_carry4_CYINIT_CO[3])
+                                                      0.287    50.939 r  gpu/g_su[0].su/fpu/pipe_reg[3][94]_srl4___gpu_g_tu.tu_filter_vd_reg_r_1_i_13/CO[3]
+                         net (fo=1, routed)           0.000    50.939    gpu/g_su[0].su/opd/pipe_reg[3][94]_srl4___gpu_g_tu.tu_filter_vd_reg_r_1_i_4_0[0]
+    SLICE_X19Y78         CARRY4 (Prop_carry4_CI_CO[0])
+                                                      0.139    51.078 r  gpu/g_su[0].su/opd/pipe_reg[3][94]_srl4___gpu_g_tu.tu_filter_vd_reg_r_1_i_8/CO[0]
+                         net (fo=31, routed)          0.477    51.556    gpu/g_su[0].su/opd/pipe_reg[3][94]_srl4___gpu_g_tu.tu_filter_vd_reg_r_1_i_8_n_18
+    SLICE_X13Y84         LUT4 (Prop_lut4_I3_O)        0.131    51.687 f  gpu/g_su[0].su/opd/pipe_reg[3][73]_srl4___gpu_g_tu.tu_filter_vd_reg_r_1_i_5/O
+                         net (fo=1, routed)           0.271    51.958    gpu/g_su[0].su/opd/pipe_reg[3][73]_srl4___gpu_g_tu.tu_filter_vd_reg_r_1_i_5_n_15
+    SLICE_X15Y82         LUT6 (Prop_lut6_I2_O)        0.043    52.001 r  gpu/g_su[0].su/opd/pipe_reg[3][73]_srl4___gpu_g_tu.tu_filter_vd_reg_r_1_i_3/O
+                         net (fo=1, routed)           0.233    52.234    gpu/g_su[0].su/opd/pipe_reg[3][73]_srl4___gpu_g_tu.tu_filter_vd_reg_r_1_i_3_n_15
+    SLICE_X15Y81         LUT5 (Prop_lut5_I1_O)        0.043    52.277 f  gpu/g_su[0].su/opd/pipe_reg[3][73]_srl4___gpu_g_tu.tu_filter_vd_reg_r_1_i_2/O
+                         net (fo=3, routed)           0.834    53.111    gpu/g_su[0].su/opd/fpu/g_lane[2].u_op/x[9]
+    SLICE_X38Y82         LUT4 (Prop_lut4_I3_O)        0.049    53.160 f  gpu/g_su[0].su/opd/pipe_reg[3][95]_srl4___gpu_g_tu.tu_filter_vd_reg_r_1_i_22/O
+                         net (fo=1, routed)           0.659    53.819    gpu/g_su[0].su/opd/pipe_reg[3][95]_srl4___gpu_g_tu.tu_filter_vd_reg_r_1_i_22_n_15
+    SLICE_X39Y82         LUT5 (Prop_lut5_I4_O)        0.139    53.958 f  gpu/g_su[0].su/opd/pipe_reg[3][95]_srl4___gpu_g_tu.tu_filter_vd_reg_r_1_i_9/O
+                         net (fo=1, routed)           0.387    54.344    gpu/g_su[0].su/opd/pipe_reg[3][95]_srl4___gpu_g_tu.tu_filter_vd_reg_r_1_i_9_n_15
+    SLICE_X40Y82         LUT5 (Prop_lut5_I2_O)        0.132    54.476 f  gpu/g_su[0].su/opd/pipe_reg[3][95]_srl4___gpu_g_tu.tu_filter_vd_reg_r_1_i_3/O
+                         net (fo=32, routed)          0.729    55.206    gpu/g_su[0].su/opd/fpu/g_lane[2].u_op/atg_su_sat1
+    SLICE_X55Y82         LUT5 (Prop_lut5_I1_O)        0.043    55.249 r  gpu/g_su[0].su/opd/pipe_reg[3][69]_srl4___gpu_g_tu.tu_filter_vd_reg_r_1_i_1__1/O
+                         net (fo=1, routed)           0.274    55.522    gpu/g_su[0].su/fpu/pipe_reg[4][69]_gpu_g_tu.tu_filter_vd_reg_r_2_1
+    SLICE_X56Y82         SRL16E                                       r  gpu/g_su[0].su/fpu/pipe_reg[3][69]_srl4___gpu_g_tu.tu_filter_vd_reg_r_1/D
+  -------------------------------------------------------------------    -------------------
+
+                         (clock g_out rise edge)     50.000    50.000 r  <hidden>
+    AD12                                              0.000    50.000 r  sys_clk_p
+                         net (fo=0)                   0.000    50.000    clocks/sys_clk_p
+    AD12                 IBUFDS (Prop_ibufds_I_O)     0.735    50.735 r  clocks/sys_buf/O
+                         net (fo=1, routed)           2.173    52.908    clocks/sys_ibuf
+    BUFGCTRL_X0Y1        BUFG (Prop_bufg_I_O)         0.083    52.991 r  clocks/ref_bufg/O
+                         net (fo=40, routed)          1.776    54.767    clocks/sys_clk_i
+    MMCME2_ADV_X1Y0      MMCME2_ADV (Prop_mmcme2_adv_CLKIN1_CLKOUT0)
+                                                      0.073    54.840 r  clocks/mmcm_g/CLKOUT0
+                         net (fo=1, routed)           2.336    57.176    clocks/g_out
+    BUFGCTRL_X0Y3        BUFG (Prop_bufg_I_O)         0.083    57.259 r  clocks/g_bufg/O
+                         net (fo=102518, routed)      1.423    58.682    gpu/g_su[0].su/fpu/clk
+    SLICE_X56Y82         SRL16E                                       r  gpu/g_su[0].su/fpu/pipe_reg[3][69]_srl4___gpu_g_tu.tu_filter_vd_reg_r_1/CLK
+                         clock pessimism              0.554    59.237    <hidden>
+                         clock uncertainty           -0.084    59.152    <hidden>
+    SLICE_X56Y82         SRL16E (Setup_srl16e_CLK_D)
+                                                     -0.026    59.126    gpu/g_su[0].su/fpu/pipe_reg[3][69]_srl4___gpu_g_tu.tu_filter_vd_reg_r_1
+  -------------------------------------------------------------------
+                         required time                         59.126    <hidden>
+                         arrival time                         -55.522    <hidden>
+  -------------------------------------------------------------------
+                         slack                                  3.604    <hidden>
+
+Slack (MET) :             3.653ns  (required time - arrival time)
+  Source:                 gpu/g_su[0].su/opd/b_warp_reg[0]_rep/C
+                            (rising edge-triggered cell FDRE clocked by g_out  {rise@0.000ns fall@25.000ns period=50.000ns})
+  Destination:            gpu/g_su[0].su/fpu/pipe_reg[3][64]_srl4___gpu_g_tu.tu_filter_vd_reg_r_1/D
+                            (rising edge-triggered cell SRL16E clocked by g_out  {rise@0.000ns fall@25.000ns period=50.000ns})
+  Path Group:             g_out
+  Path Type:              Setup (Max at Slow Process Corner)
+  Requirement:            50.000ns  (g_out rise@50.000ns - g_out rise@0.000ns)
+  Data Path Delay:        46.283ns  (logic 9.356ns (20.215%)  route 36.927ns (79.785%))
+  Logic Levels:           105  (CARRY4=39 LUT2=5 LUT3=6 LUT4=11 LUT5=13 LUT6=31)
+  Clock Path Skew:        0.043ns (DCD - SCD + CPR)
+    Destination Clock Delay (DCD):    8.681ns = ( 58.681 - 50.000 ) 
+    Source Clock Delay      (SCD):    9.193ns
+    Clock Pessimism Removal (CPR):    0.554ns
+  Clock Uncertainty:      0.084ns  ((TSJ^2 + DJ^2)^1/2) / 2 + PE
+    Total System Jitter     (TSJ):    0.071ns
+    Discrete Jitter          (DJ):    0.153ns
+    Phase Error              (PE):    0.000ns
+
+    Location             Delay type                Incr(ns)  Path(ns)    Netlist Resource(s)
+  -------------------------------------------------------------------    -------------------
+                         (clock g_out rise edge)      0.000     0.000 r  <hidden>
+    AD12                                              0.000     0.000 r  sys_clk_p
+                         net (fo=0)                   0.000     0.000    clocks/sys_clk_p
+    AD12                 IBUFDS (Prop_ibufds_I_O)     0.832     0.832 r  clocks/sys_buf/O
+                         net (fo=1, routed)           2.299     3.131    clocks/sys_ibuf
+    BUFGCTRL_X0Y1        BUFG (Prop_bufg_I_O)         0.093     3.224 r  clocks/ref_bufg/O
+                         net (fo=40, routed)          1.936     5.160    clocks/sys_clk_i
+    MMCME2_ADV_X1Y0      MMCME2_ADV (Prop_mmcme2_adv_CLKIN1_CLKOUT0)
+                                                      0.077     5.237 r  clocks/mmcm_g/CLKOUT0
+                         net (fo=1, routed)           2.469     7.706    clocks/g_out
+    BUFGCTRL_X0Y3        BUFG (Prop_bufg_I_O)         0.093     7.799 r  clocks/g_bufg/O
+                         net (fo=102518, routed)      1.394     9.193    gpu/g_su[0].su/opd/clk
+    SLICE_X51Y105        FDRE                                         r  gpu/g_su[0].su/opd/b_warp_reg[0]_rep/C
+  -------------------------------------------------------------------    -------------------
+    SLICE_X51Y105        FDRE (Prop_fdre_C_Q)         0.223     9.416 r  gpu/g_su[0].su/opd/b_warp_reg[0]_rep/Q
+                         net (fo=87, routed)          1.379    10.795    gpu/g_su[0].su/sched/rdat[104]_i_29_1
+    SLICE_X44Y134        LUT6 (Prop_lut6_I1_O)        0.043    10.838 r  gpu/g_su[0].su/sched/smw[124]_i_6/O
+                         net (fo=4, routed)           1.369    12.207    gpu/g_su[0].su/opd/g_lane[3].u_cl1/q_info[33]
+    SLICE_X61Y107        LUT4 (Prop_lut4_I3_O)        0.055    12.262 f  gpu/g_su[0].su/opd/g_lane[3].u_cl1/ra[108]_i_14/O
+                         net (fo=1, routed)           0.459    12.721    gpu/g_su[0].su/opd/g_lane[3].u_cl1/ra[108]_i_14_n_15
+    SLICE_X61Y107        LUT6 (Prop_lut6_I5_O)        0.137    12.858 r  gpu/g_su[0].su/opd/g_lane[3].u_cl1/ra[108]_i_9/O
+                         net (fo=5, routed)           0.836    13.694    gpu/g_su[0].su/opd/g_lane[3].u_cl1_n_21
+    SLICE_X68Y88         LUT6 (Prop_lut6_I2_O)        0.043    13.737 r  gpu/g_su[0].su/opd/ra[108]_i_4/O
+                         net (fo=9, routed)           0.462    14.199    g_su[0].su/opd/opc_return[12]
+    SLICE_X70Y88         CARRY4 (Prop_carry4_DI[2]_CO[3])
+                                                      0.202    14.401 r  opd/g_lane[2].u_cl1/ra_reg[76]_i_2/CO[3]
+                         net (fo=1, routed)           0.000    14.401    opd/g_lane[2].u_cl1/ra_reg[76]_i_2_n_15
+    SLICE_X70Y89         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.054    14.455 r  opd/g_lane[2].u_cl1/ra_reg[81]_i_2/CO[3]
+                         net (fo=1, routed)           0.000    14.455    opd/g_lane[2].u_cl1/ra_reg[81]_i_2_n_15
+    SLICE_X70Y90         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.054    14.509 r  opd/g_lane[2].u_cl1/i___20_i_4/CO[3]
+                         net (fo=1, routed)           0.000    14.509    opd/g_lane[2].u_cl1/i___20_i_4_n_15
+    SLICE_X70Y91         CARRY4 (Prop_carry4_CI_O[3])
+                                                      0.151    14.660 f  opd/g_lane[2].u_cl1/i__i_9/O[3]
+                         net (fo=2, routed)           0.440    15.099    gpu/g_su[0].su/opd/rx_reg[93][13]
+    SLICE_X67Y96         LUT5 (Prop_lut5_I2_O)        0.120    15.219 f  gpu/g_su[0].su/opd/i__i_5__5/O
+                         net (fo=113, routed)         1.704    16.924    gpu/g_su[0].su/opd/b_uop_reg[72]_1[25]
+    SLICE_X15Y72         LUT4 (Prop_lut4_I0_O)        0.043    16.967 f  gpu/g_su[0].su/opd/i__i_11__1/O
+                         net (fo=3, routed)           0.581    17.547    gpu/g_su[0].su/opd/i__i_11__1_n_15
+    SLICE_X16Y69         LUT5 (Prop_lut5_I4_O)        0.051    17.598 f  gpu/g_su[0].su/opd/i__i_3__5/O
+                         net (fo=111, routed)         1.007    18.606    gpu/g_su[0].su/opd/i__i_11__1_0
+    SLICE_X37Y82         LUT2 (Prop_lut2_I1_O)        0.134    18.740 f  gpu/g_su[0].su/opd/i___39_i_3__2/O
+                         net (fo=7, routed)           1.250    19.990    gpu/g_su[0].su/fpu/g_lane[2].u_op/i___62_i_40__1_13
+    SLICE_X14Y70         LUT6 (Prop_lut6_I3_O)        0.043    20.033 f  gpu/g_su[0].su/fpu/g_lane[2].u_op/i___39/O
+                         net (fo=3, routed)           0.369    20.402    gpu/g_su[0].su/opd/i___62_i_27__1_3
+    SLICE_X14Y69         LUT6 (Prop_lut6_I3_O)        0.043    20.445 f  gpu/g_su[0].su/opd/i___62_i_40__1/O
+                         net (fo=1, routed)           0.275    20.720    gpu/g_su[0].su/opd/i___62_i_40__1_n_15
+    SLICE_X14Y68         LUT6 (Prop_lut6_I1_O)        0.043    20.763 r  gpu/g_su[0].su/opd/i___62_i_27__1/O
+                         net (fo=1, routed)           0.541    21.304    gpu/g_su[0].su/fpu/g_lane[2].u_op/i___62_i_5_5
+    SLICE_X8Y65          LUT6 (Prop_lut6_I3_O)        0.043    21.347 r  gpu/g_su[0].su/fpu/g_lane[2].u_op/i___62_i_17/O
+                         net (fo=1, routed)           0.000    21.347    gpu/g_su[0].su/fpu/g_lane[2].u_op/i___62_i_17_n_15
+    SLICE_X8Y65          CARRY4 (Prop_carry4_S[0]_CO[3])
+                                                      0.246    21.593 r  gpu/g_su[0].su/fpu/g_lane[2].u_op/i___62_i_5/CO[3]
+                         net (fo=1, routed)           0.000    21.593    gpu/g_su[0].su/fpu/g_lane[2].u_op/i___62_i_5_n_15
+    SLICE_X8Y66          CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.054    21.647 r  gpu/g_su[0].su/fpu/g_lane[2].u_op/i___202_i_1/CO[3]

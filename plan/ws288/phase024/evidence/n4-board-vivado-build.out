@@ -1,0 +1,12 @@
+| Slice LUTs                 | 167991 |     0 |          0 |    203800 | 82.43 |
+| Slice Registers            | 115255 |     2 |          0 |    407600 | 28.28 |
+| Slice Registers                            | 115255 |     0 |          0 |    407600 | 28.28 |
+| Block RAM Tile    | 147.5 |     0 |          0 |       445 | 33.15 |
+| DSPs           |  168 |     0 |          0 |       840 | 20.00 |
+| Bonded IOB                  |  149 |   149 |          0 |       500 | 29.80 |
+| BUFGCTRL   |   13 |     0 |          0 |        32 | 40.63 |
+| BUFGCTRL               |      2 |                Clock |
+vivado-build: atg_kc705_raster on xc7k325tffg900-2 WNS 0.177 ns WHS 0.033 ns
+vivado-build: 393 warnings, 0 critical, 2103 s
+vivado-build: /home/awe/amaterrace-worktrees/p1-n4/build/vivado/atg_kc705_raster/atg_kc705_raster.bit 11443820 bytes, sha256 678b9aad624345c3
+rc=0
