@@ -367,11 +367,13 @@ __wrap_open(
 {
 	va_list arguments;
 	unsigned mode;
+	int differs;
 	int error;
 	int fd;
 
 	/* The node: a new session of the driver. */
-	if (strcmp(path, NODE_PATH) == 0) {
+	differs = strcmp(path, NODE_PATH);
+	if (differs == 0) {
 		error = node_open(&fd);
 		if (error != 0) {
 			errno = error;
@@ -534,6 +536,7 @@ __wrap_poll(
 	nfds_t count,
 	int timeout)
 {
+	struct descriptor *entry;
 	uint64_t deadline;
 	uint64_t now;
 	nfds_t index;
@@ -544,7 +547,8 @@ __wrap_poll(
 	/* Only files of the C library: its own poll. */
 	fake = 0;
 	for (index = 0U; index < count; index++) {
-		if (descriptor_of(fds[index].fd) != NULL)
+		entry = descriptor_of(fds[index].fd);
+		if (entry != NULL)
 			fake = 1;
 	}
 	if (!fake) {
@@ -562,7 +566,8 @@ __wrap_poll(
 		ready = 0;
 		for (index = 0U; index < count; index++) {
 			fds[index].revents = 0;
-			if (descriptor_of(fds[index].fd) != NULL) {
+			entry = descriptor_of(fds[index].fd);
+			if (entry != NULL) {
 				fds[index].revents = readiness(fds[index].fd, fds[index].events);
 			} else if (fds[index].fd >= 0) {
 				other = __real_poll(&fds[index], 1U, 0);
@@ -633,9 +638,11 @@ __wrap_opendir(
 	const char *name)
 {
 	DIR *directory;
+	int differs;
 
 	/* The fake /dev. */
-	if (strcmp(name, "/dev") == 0) {
+	differs = strcmp(name, "/dev");
+	if (differs == 0) {
 		directory_listed = 0;
 		return (DIR *)(void *)&directory_stream;
 	}

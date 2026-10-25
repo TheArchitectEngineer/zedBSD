@@ -99,6 +99,7 @@ static void buffer_drop(struct vulkan *vulkan, struct buffer *buffer);
 static int record_begin(struct vulkan *vulkan);
 static int record_submit(struct vulkan *vulkan);
 static void barrier(struct vulkan *vulkan, VkAccessFlags source, VkAccessFlags destination, VkPipelineStageFlags source_stage, VkPipelineStageFlags destination_stage);
+static int case_run(const char *name);
 static int case_fill(void);
 static int case_copy(void);
 static int case_compute(const char *path);
@@ -136,18 +137,7 @@ main(
 	for (index = 1; index < argc; index++) {
 		name = argv[index];
 		measure_start(&measure);
-		if (strcmp(name, "fill") == 0) {
-			error = case_fill();
-		} else if (strcmp(name, "copy") == 0) {
-			error = case_copy();
-		} else if (strncmp(name, "compute=", 8U) == 0) {
-			error = case_compute(name + 8);
-		} else if (strncmp(name, "vkdemo=", 7U) == 0) {
-			error = case_vkdemo(name + 7);
-		} else {
-			printf("FAIL ghci-e2e: unknown case %s\n", name);
-			error = 1;
-		}
+		error = case_run(name);
 		if (error != 0)
 			cases_failed++;
 		measure_report(name, &measure);
@@ -164,6 +154,45 @@ main(
 
 	/* Succeeded: every case passed. */
 	printf("PASS ghci-e2e\n");
+	return 0;
+}
+
+/* Runs the case a command-line word names: 0 when it passed. */
+static int
+case_run(
+	const char *name)
+{
+	int fill;
+	int copy;
+	int compute;
+	int vkdemo;
+	int error;
+
+	/* Which case the word names (a nonzero comparison: not that case). */
+	fill = strcmp(name, "fill");
+	copy = strcmp(name, "copy");
+	compute = strncmp(name, "compute=", 8U);
+	vkdemo = strncmp(name, "vkdemo=", 7U);
+
+	/* The case, with what follows its '=' when it takes a path. */
+	if (fill == 0) {
+		error = case_fill();
+	} else if (copy == 0) {
+		error = case_copy();
+	} else if (compute == 0) {
+		error = case_compute(name + 8);
+	} else if (vkdemo == 0) {
+		error = case_vkdemo(name + 7);
+	} else {
+		printf("FAIL ghci-e2e: unknown case %s\n", name);
+		error = 1;
+	}
+
+	/* A failed case. */
+	if (error != 0)
+		return 1;
+
+	/* Succeeded: the case passed. */
 	return 0;
 }
 
@@ -971,12 +1000,20 @@ measure_report(
 	struct e2e_core_stats core;
 	uint64_t commands;
 	uint64_t jobs;
+	uint64_t command_average;
+	uint64_t job_average;
 
-	/* The counts now. */
+	/* The counts now, and the averages of the round trips. */
 	atg_link_stats(&link);
 	e2e_core_stats(&core);
 	commands = core.commands - measure->core.commands;
 	jobs = core.jobs - measure->core.jobs;
+	command_average = 0U;
+	if (commands != 0U)
+		command_average = (core.command_cycles - measure->core.command_cycles) / commands;
+	job_average = 0U;
+	if (jobs != 0U)
+		job_average = (core.job_cycles - measure->core.job_cycles) / jobs;
 
 	/* One line of the totals, and the round trips. */
 	printf("  measure %s: %llu cycles, firmware in packets %llu, µop words %llu, register reads %llu writes %llu, stray %llu\n",
@@ -991,9 +1028,9 @@ measure_report(
 		printf("  measure %s: %llu transactions, %llu cycles each on average; %llu jobs, %llu cycles each on average\n",
 		    name,
 		    (unsigned long long)commands,
-		    (unsigned long long)(commands != 0U ? (core.command_cycles - measure->core.command_cycles) / commands : 0U),
+		    (unsigned long long)command_average,
 		    (unsigned long long)jobs,
-		    (unsigned long long)(jobs != 0U ? (core.job_cycles - measure->core.job_cycles) / jobs : 0U));
+		    (unsigned long long)job_average);
 	}
 	fflush(stdout);
 }

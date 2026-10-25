@@ -155,13 +155,13 @@ e2e_board_pump(void)
 uint64_t
 e2e_board_now_ns(void)
 {
-	uint64_t cycles;
 	struct atg_link_stats stats;
+	uint64_t nanoseconds;
 
 	/* The cycles run, in nanoseconds of the GPU's clock. */
 	atg_link_stats(&stats);
-	cycles = stats.cycles;
-	return cycles * 1000000000ULL / atg_link_clock_hz();
+	nanoseconds = stats.cycles * 1000000000ULL / atg_link_clock_hz();
+	return nanoseconds;
 }
 
 /* The kernel's MMIO reads: the register window is the link's. */
@@ -341,12 +341,14 @@ kern_logf(
 	const char *format,
 	...)
 {
+	struct atg_link_stats stats;
 	va_list arguments;
 	int written;
 
-	/* One line of the driver's log, marked as such. */
+	/* One line of the driver's log, marked as such, with the GPU's cycle. */
+	atg_link_stats(&stats);
 	va_start(arguments, format);
-	printf("  log: ");
+	printf("  log %llu: ", (unsigned long long)stats.cycles);
 	written = vprintf(format, arguments);
 	va_end(arguments);
 	return written;
@@ -487,6 +489,7 @@ service_round(void)
 {
 	unsigned work;
 	uint64_t now;
+	uint64_t period;
 
 	/* A round inside a round, or one the device's locks would block, does not run. */
 	if (service_running_now)
@@ -496,8 +499,9 @@ service_round(void)
 
 	/* Nothing to do before the period ends. */
 	now = clock_ticks();
+	period = kern_ms_to_ticks(GHCI_SERVICE_PERIOD_MS);
 	work = e2e_device.service_work;
-	if (work == 0U && now - service_last_tick < kern_ms_to_ticks(GHCI_SERVICE_PERIOD_MS))
+	if (work == 0U && now - service_last_tick < period)
 		return;
 
 	/* The round: the work taken as the thread takes it. */
