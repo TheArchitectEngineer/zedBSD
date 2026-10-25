@@ -44,3 +44,4 @@
 | 2026-10-25 10:34 | p034 の U61〜U72（所有の表 + PLB + CAM、protected の session 31、hardware の scrub、root でない session を全部保護、GRANT は drain しない、STATE は消さない、PROT_CAPS[31:16] は grant の数、firmware の DMA の拒否は fault、内蔵の領域は public、ring の CP 側の µop は検査しない、CAM 64、robustBufferAccess の漏れの device 全体の fault を v1 は受け入れる）を全部推しで決めた | ユーザーの推しで進める許可。最初のゴールの道の外なので、実装は空いた担当に |
 | 2026-10-25 10:58 | p011 の端から端の harness で見つかった driver の CPFW の RUN の書き忘れと、atg_cpu_win の packet の取り直しの不具合を、P3 の推しの形で直させた | 端から端の試験の目的どおりの発見 |
 | 2026-10-25 11:01 | Vivado の実測で KC705 の 1 SU の core が LUT 422k（容量の 207%）。機能を変えない削減を P2 に続けさせ、形を変える削減（U80〜）はユーザーに諮る。最初のゴールの板（p024）の前の最大の課題として報告する | 推しで決めてよい範囲を超える（製品の形の判断） |
+| 2026-10-25 11:20 | firmware の end render pass は常に WAIT_IDLE + INVALIDATE（P3 の判断を受け入れ） | Vulkan 1.0 の原則（過剰な同期は許される）、firmware は subpass dependency を持たない |
