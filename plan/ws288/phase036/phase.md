@@ -33,3 +33,4 @@ Vivado の測定の結果と module の内訳、機能を変えない削減の�
   - 40e8377: PK_SHARED（atg_top の SU_PK_SHARED、既定 0 = 今の 2 つ同時の形）。shared は FPU の fp32 の FMA で低い半分と高い半分を 2 cycle、round-to-odd の後に fp16 へ 1 回の丸め（二重丸めの 6 例で RNE なら FAIL・RTO なら PASS を確認）。PK の TB 4000 vector、FPU の TB、atg_su_gfx（NPHYS 8・PK_SHARED）PASS。OOC NPHYS 8: PK packed 14,459 LUT / 32 DSP、shared 2,953 LUT / 16 DSP、FPU（packed、共有前）16,929 LUT / 48 DSP。
   - am_mul（rtl/common、use_dsp）を追加し、FPU の lane は FMA の仮数と mul/mulh* で符号付き 33×33 の am_mul 1 つを共有。前は lane に FMA の 24×24 と整数の 33×33 の 2 つ（整数の 4 つの `*` は合成で既に 1 つに共有されていた）、lane あたり 6 DSP。共有後の値は測定中。
   - b008260: atg_fmt_unpack の unorm と正規化器を共有、3,417 → 2,608 LUT。atg_tu_filter 9,220 → 6,887、ffilt 10,892 → 10,234。TB 11 本 PASS・lint clean（申告）。
+- 2026-10-25 13:16 Q1: b6b2936（T1-786 PASS）を amaterrace-gpu の main に merge = 481030c（親 f9f817e b6b2936、衝突なし）。merge の後に Q1 が lint rc 0・127 clean、sim-quick rc 0・94 PASS・0 FAIL を確かめた。
