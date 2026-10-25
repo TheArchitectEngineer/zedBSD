@@ -85,3 +85,16 @@
 | 9 | 確認 | 各 module を旧 function と ≥1M（EQ_FP の指数）、fpu・lane・xu を HEAD と ≥100k cycle、TB atg_su_fpu・atg_su_pk（PK_SHARED は fpu を使う）・atg_su_lane・atg_su_xu・atg_su_gfx・atg_su +quick、lint、arith-lint（atg_su_fp.vh と fpu が 0）、TB の時間が大きく伸びていないこと | — | |
 
 進め方: 1 項目ごとに検証して WIP の commit、Q1 に SHA を送る。起動が長くなったら安全な地点でラップアップ。記録は zedBSD の agent/p1-p030（066157c6a、main を merge してから）の phase037。
+- 2026-10-25 21:56 Q1: ユーザー「予防的に、P2もラップアップして立て直しましょう。」→ P2 にラップアップを依頼。
+
+### 担当と依頼の一覧（2026-10-25 21:56 Q1、引き継ぎ用）
+
+| 担当 | 依頼 | amaterrace の branch（worktree）と状態 | 触らない範囲 |
+| --- | --- | --- | --- |
+| P1（新しい起動 2026-10-25 21:56 前後） | p037: include/atg_su_fp.vh の算術の function を module に、atg_su_fpu・atg_su_xu・atg_su_lane の付け替え（上の「P1 の作業の項目」1〜9） | p1-p037（同名）、先端 aca7a95、未 commit: atg_su_rnd.v・spec・atg_su_ffma.v・atg_su_ffma_p.v（前の P1 の物、項目 1 で検証） | fp16 の include と pk、favg と fmt、cp・mc |
+| P2（ラップアップ中、後に新しい起動） | p037: MC（atg_mc_*）と CP の全部（atg_cp_* と atg_cpu_*） | p2-p037cm（同名）、先端 c6f9348（c0bd4db = atg_cp_* と MC、その後 CPU）、未 commit: atg_cp_prot.v | su・fmt・tu など |
+| P3 | p037: include/atg_fmt_pack.vh・atg_fmt_unpack.vh を module に（P1 の c5b1299 を引き継ぎ）、atg_fmt_srgbenc、呼び出し側 atg_rop_dtest・atg_blt_favg（atg_su_ffma の付け替えは P1 の module の SHA の後）・atg_vf_conv、.vh の削除、spec、atg_rop_mrt の TB が 79 → 402 s に伸びた件を直す | p3-p037f（同名）、先端 abf6446、未 commit: favg・fmt_pack・srgbenc・rop_dtest・fblend・wpix・vf_conv・fmt の lint の top | su_fp・cp・mc |
+| P4 | p037: include/atg_su_fp16.vh を module に（P1 の atg_su_h2f・atg_su_hrnd を使う）、atg_su_pk | p4-p037cp（同名）、先端 aca7a95、未 commit: atg_su_fp16.vh・atg_su_pk.v、新 atg_su_pk_half.v と TB | su_fp と fpu（P1）、cp |
+
+試験の担当: T1 が T1-804（main 7f37a2e + P1 の cd8e65c の試験用の merge 3953ace: ROP・RX・TU の残り）を実行中。T2〜T4 は空き。
+main に未だ入っていない p037 の物: P1 の cd8e65c まで（T1-804 待ち）、c5b1299・aca7a95（fmt の一部と fp16 の module、P3・P4 の作業の基点）、P2 の c6f9348。p037 が全部終わったら、まとめて T と merge、その後 p025。
