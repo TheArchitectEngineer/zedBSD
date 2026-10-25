@@ -817,6 +817,7 @@ finish_queued(
 {
 	struct ghci_vk_frame *frame;
 	struct ghci_session *owner;
+	struct ghci_ticket ticket;
 	int error;
 
 	/* The frame's record. */
@@ -851,6 +852,12 @@ finish_queued(
 			kern_free(frame);
 			return error;
 		}
+	}
+
+	/* A frame without records still gives back what it freed, after the newest fence. */
+	if (build->records == 0U) {
+		ghci_cp_last(device, &ticket);
+		after_submit(device, build, &ticket);
 	}
 
 	/* The reply blob stays while the frame writes into it. */
