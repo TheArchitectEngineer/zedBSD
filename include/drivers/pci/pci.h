@@ -133,6 +133,17 @@ typedef void (
 	*drv_pci_intx_run_t)(
 	void *);
 
+/*
+ * Runs the handler of one message interrupt and returns what the handler
+ * returned: nonzero when it found work.
+ *
+ * Like drv_pci_intx_run_t it sends no end of interrupt: the host that
+ * received the message ends its own interrupt once.
+ */
+typedef int (
+	*drv_pci_msi_run_t)(
+	void *);
+
 struct drv_pci_bus_ops {
 	/* Zero selects conventional 256-byte PCI configuration space. */
 	unsigned config_space_size;
@@ -225,6 +236,39 @@ struct drv_pci_bus_ops {
 		unsigned);
 	void (
 		*intx_unmask)(
+		void *,
+		unsigned);
+
+	/*
+	 * A host that receives its functions' message interrupts itself sets
+	 * both, or neither; with neither the core takes each message from
+	 * kern_irq_register_msi(), as before.  Both are called in thread
+	 * context with no core lock held.
+	 *
+	 * msi_establish takes one free message of the host for (run,
+	 * argument): it reports in its last three arguments a handle for
+	 * msi_disestablish, and the address and data the function writes.
+	 * The host calls run(argument) from its own interrupt each time the
+	 * message arrives, without its own lock held, and ends its interrupt
+	 * itself, once.  A host whose messages can pass the function's earlier
+	 * writes may call run again while it reports no work.  It returns 0, ENOSPC when no message is free, or
+	 * another error.
+	 *
+	 * msi_disestablish frees the message and waits until no hart is still
+	 * inside run for it.  It returns 0 once drained, or EBUSY with the
+	 * message kept as it was.
+	 */
+	int (
+		*msi_establish)(
+		void *,
+		struct drv_pci_device *,
+		drv_pci_msi_run_t,
+		void *,
+		unsigned *,
+		uint64_t *,
+		uint32_t *);
+	int (
+		*msi_disestablish)(
 		void *,
 		unsigned);
 };

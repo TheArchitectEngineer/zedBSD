@@ -309,6 +309,14 @@ start_host(
 		return error;
 	}
 
+	/*
+	 * Keeps the USB controller's root complex on its pins, as it was
+	 * brought up: only the M.2 slot's offers MSI, which the device tree
+	 * allows on both.
+	 */
+	if (board->group == VF2_STG_PCIE0_GROUP)
+		config->msi = false;
+
 	/* Applies the clock request and wake pins; ENOENT means there are none. */
 	changed = 0;
 	error = drv_vf2_pinctrl_apply_default(fdt, node, &changed);

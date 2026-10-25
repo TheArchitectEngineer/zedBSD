@@ -158,6 +158,11 @@ struct pci_irq_cookie {
 	struct drv_pci_mapping table;
 	unsigned table_mapped;
 	unsigned message_registered;
+	/*
+	 * The message came from the host's msi_establish rather than from
+	 * kern_irq_register_msi(); irq then holds the host's handle.
+	 */
+	unsigned host_message;
 	unsigned msi_state_saved;
 	uint16_t msi_control_saved;
 	uint16_t msi_data_saved;
@@ -235,6 +240,9 @@ static int disestablish_intx(struct pci_irq_cookie *cookie);
 static void pci_intx_mask_for_message(struct pci_irq_cookie *cookie);
 static void pci_intx_unmask_after_message(struct pci_irq_cookie *cookie);
 static void pci_irq_dispatch(int irq, kern_irq_ack_t acknowledge, void *argument);
+static int message_register(struct pci_irq_cookie *cookie, const char *source, uint64_t *address, uint32_t *event);
+static int message_unregister(struct pci_irq_cookie *cookie);
+static int message_run(void *argument);
 static void pci_intx_dispatch(int irq, kern_irq_ack_t acknowledge, void *argument);
 static int describe_visit(struct drv_pci_device *device, void *argument);
 static bool pci_probe_waits(const struct drv_pci_device *device);
@@ -1936,7 +1944,7 @@ drv_pci_device_disestablish_irq_checked(
 			}
 
 			/* Checks the operation status. */
-			status = kern_irq_unregister_msi(cookie->irq);
+			status = message_unregister(cookie);
 			if (status != 0)
 				return status == EBUSY ? EBUSY : EIO;
 			cookie->message_registered = 0;
@@ -1978,7 +1986,7 @@ drv_pci_device_disestablish_irq_checked(
 		/* Handles the cookie condition. */
 		if (cookie->message_registered) {
 			/* Checks the operation status. */
-			status = kern_irq_unregister_msi(cookie->irq);
+			status = message_unregister(cookie);
 			if (status != 0)
 				return status == EBUSY ? EBUSY : EIO;
 			cookie->message_registered = 0;
@@ -3388,8 +3396,7 @@ establish_msi(
 	pci_source(&device->address, source);
 
 	/* Checks the operation status. */
-	error = kern_irq_register_msi(source, pci_irq_dispatch, cookie,
-				     &cookie->irq, &address, &event);
+	error = message_register(cookie, source, &address, &event);
 	if (error != 0)
 		return error == ENOMEM ? ENOMEM : EIO;
 	cookie->message_registered = 1;
@@ -3452,7 +3459,7 @@ fail:
 
 	/* Checks the hal irq unregister msi result. */
 	if (cookie->message_registered &&
-	    kern_irq_unregister_msi(cookie->irq) == 0)
+	    message_unregister(cookie) == 0)
 		cookie->message_registered = 0;
 	(void)drv_pci_device_config_write32(
 		device, cookie->capability + PCI_MSI_ADDRESS,
@@ -3548,8 +3555,7 @@ establish_msix(
 	pci_source(&cookie->device->address, source);
 
 	/* Checks the operation status. */
-	error = kern_irq_register_msi(source, pci_irq_dispatch, cookie,
-				     &cookie->irq, &address, &event);
+	error = message_register(cookie, source, &address, &event);
 	if (error != 0) {
 		error = error == ENOMEM ? ENOMEM : EIO;
 		goto fail;
@@ -3572,7 +3578,7 @@ establish_msix(
 		error = EIO;
 
 		/* Checks the hal irq unregister msi result. */
-		if (kern_irq_unregister_msi(cookie->irq) == 0)
+		if (message_unregister(cookie) == 0)
 			cookie->message_registered = 0;
 		goto fail;
 	}
@@ -3586,7 +3592,7 @@ fail:
 
 	/* Checks the hal irq unregister msi result. */
 	if (cookie->message_registered &&
-	    kern_irq_unregister_msi(cookie->irq) == 0)
+	    message_unregister(cookie) == 0)
 		cookie->message_registered = 0;
 
 	/* Handles the cookie condition. */
@@ -3776,6 +3782,78 @@ disestablish_intx(
 
 	/* Succeeded: the pin has no handler left. */
 	return 0;
+}
+
+/*
+ * Takes one message interrupt for a cookie: from the host when the host
+ * receives its own messages, otherwise from the interrupt layer.
+ */
+static int
+message_register(
+	struct pci_irq_cookie *cookie,
+	const char *source,
+	uint64_t *address,
+	uint32_t *event)
+{
+	const struct drv_pci_bus_ops *ops;
+	unsigned handle;
+	int error;
+
+	/* Without the host hooks the interrupt layer gives the message. */
+	ops = cookie->device->bus->ops;
+	if (ops->msi_establish == NULL || ops->msi_disestablish == NULL)
+		return kern_irq_register_msi(source, pci_irq_dispatch, cookie,
+					     &cookie->irq, address, event);
+
+	/* Asks the host for one of its messages. */
+	error = ops->msi_establish(cookie->device->bus->host, cookie->device,
+				   message_run, cookie, &handle, address, event);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the host's handle names the message. */
+	cookie->irq = (int)handle;
+	cookie->host_message = 1;
+	return 0;
+}
+
+/*
+ * Gives a cookie's message interrupt back to where it came from.
+ */
+static int
+message_unregister(
+	struct pci_irq_cookie *cookie)
+{
+	const struct drv_pci_bus_ops *ops;
+	int error;
+
+	/* A message of the interrupt layer goes back there. */
+	if (!cookie->host_message)
+		return kern_irq_unregister_msi(cookie->irq);
+
+	/* A message of the host goes back to the host. */
+	ops = cookie->device->bus->ops;
+	error = ops->msi_disestablish(cookie->device->bus->host,
+				      (unsigned)cookie->irq);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the cookie holds no message. */
+	cookie->host_message = 0;
+	return 0;
+}
+
+/*
+ * Runs a host's message interrupt for its cookie and reports whether the
+ * handler found work; the host ends its own interrupt afterwards.
+ */
+static int
+message_run(
+	void *argument)
+{
+	struct pci_irq_cookie *cookie = argument;
+
+	return cookie->handler(cookie->argument);
 }
 
 /* Serves one interrupt and hands it to the right handler. */

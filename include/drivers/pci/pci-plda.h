@@ -13,7 +13,9 @@
  * device tree's ranges describe.  The four legacy pins and the root
  * complex's own events share one interrupt line: the driver reads the
  * status, runs the pins' lines through the PCI core's pin hooks, and
- * acknowledges.  What lies outside the block -- the reset line PERST#, the
+ * acknowledges.  A root complex the device tree calls an MSI controller
+ * also receives its functions' message interrupts on that line and hands
+ * them to the PCI core's message hooks.  What lies outside the block -- the reset line PERST#, the
  * link state and the selection of the root port's function -- belongs to
  * the board, which hands the driver its operations.
  */
@@ -56,6 +58,8 @@ struct drv_pci_plda_window {
  * what the device tree does not say.  intx_vector[n] is the host's own
  * number for pin n + 1, the interrupt map's specifier, zero where the map
  * routes no pin.  segment tells the root complexes apart in the PCI core.
+ * msi says the node is an MSI controller (msi-controller), so the host
+ * offers MSI to its functions.
  */
 struct drv_pci_plda_config {
 	uint64_t register_base;
@@ -68,6 +72,7 @@ struct drv_pci_plda_config {
 	unsigned window_count;
 	struct drv_pci_plda_window windows[DRV_PCI_PLDA_WINDOW_MAX];
 	unsigned intx_vector[DRV_PCI_PLDA_INTX_COUNT];
+	bool msi;
 };
 
 /*
