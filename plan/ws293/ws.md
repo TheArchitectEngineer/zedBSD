@@ -19,4 +19,4 @@
 
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 改名（git mv、file 名・include・build の規則・試験・文書の参照）と回帰 | P4 の WS252・q1601 の後（i915 の source を同時に触らない） | in-progress（2026-10-27 P4: 改名・build warning 0・host 試験・5330 PASS、cleared は Q1） |
+| [p001](phase001/phase.md) | 改名（git mv、file 名・include・build の規則・試験・文書の参照）と回帰 | P4 の WS252・q1601 の後（i915 の source を同時に触らない） | cleared（2026-10-27 01:39 Q1、merge 3eef78c3e） |
