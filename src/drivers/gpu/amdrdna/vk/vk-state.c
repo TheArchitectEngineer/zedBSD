@@ -601,8 +601,8 @@ amdrdna_vk_state_programs(
 /*
  * Writes a legacy vertex program: its code, counts and inputs, its five
  * user SGPRs, and the stages of a legacy vertex program in wave32.  After
- * a primitive shader's draw the geometry engine is flushed first, which
- * GFX10 needs.
+ * a primitive shader's draw (or at the buffer's first draw) the geometry
+ * engine is flushed first, which GFX10 needs.
  *
  * Procedure referenced: Mesa 25.0.7 src/amd/vulkan/radv_cmd_buffer.c
  * (radv_emit_hw_vs; radv_CmdBindPipeline: VGT_FLUSH on a change from NGG
@@ -620,10 +620,10 @@ state_vertex_program(
 {
 	uint32_t words[5];
 
-	/* The flush after a primitive shader's draws. */
-	if (pm4->primitive_shader_drawn) {
+	/* The flush after a primitive shader's draws, or at the buffer's first draw. */
+	if (pm4->vertex_stage != AMDRDNA_VK_STAGE_LEGACY) {
 		amdrdna_vk_pm4_event(pm4, AMDRDNA_PM4_EVENT_GEOMETRY_FLUSHED, 0U);
-		pm4->primitive_shader_drawn = false;
+		pm4->vertex_stage = AMDRDNA_VK_STAGE_LEGACY;
 	}
 
 	/* The code, counts and inputs. */
@@ -649,6 +649,8 @@ state_vertex_program(
  * Writes a vertex program run as a primitive shader in wave32: its code, counts and inputs, the table in the stage's user
  * data address, its three user SGPRs, the CUs it runs on, the subgroup's
  * size and output, and the stages of a passthrough primitive shader.
+ * After a legacy vertex program's draw (or at the buffer's first draw) the
+ * geometry engine is flushed first.
  *
  * Procedure referenced: Mesa 25.0.7 src/amd/vulkan/radv_cmd_buffer.c
  * (radv_emit_hw_ngg, the GFX10 path; radv_emit_vgt_shader_config_gfx6,
@@ -667,6 +669,12 @@ state_primitive_shader(
 	uint32_t instance_mask)
 {
 	uint32_t words[3];
+
+	/* The flush after a legacy vertex program's draws, or at the buffer's first draw. */
+	if (pm4->vertex_stage != AMDRDNA_VK_STAGE_PRIMITIVE) {
+		amdrdna_vk_pm4_event(pm4, AMDRDNA_PM4_EVENT_GEOMETRY_FLUSHED, 0U);
+		pm4->vertex_stage = AMDRDNA_VK_STAGE_PRIMITIVE;
+	}
 
 	/* The code: its address, then the counts and inputs words. */
 	words[0] = (uint32_t)(vertex->va >> AMDRDNA_SH_CODE_LOW_SHIFT);
@@ -696,9 +704,8 @@ state_primitive_shader(
 	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_PRIMITIVE_EXPORT_FORMAT, AMDRDNA_CX_PRIMITIVE_EXPORT_ONE);
 	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_GEOMETRY_INSTANCES, AMDRDNA_CX_GEOMETRY_ONE_INSTANCE);
 
-	/* The stages of a passthrough primitive shader in wave32; the geometry engine holds its work now. */
+	/* The stages of a passthrough primitive shader in wave32. */
 	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_STAGES, AMDRDNA_CX_STAGES_PRIMITIVE | AMDRDNA_CX_STAGES_PASSTHROUGH);
-	pm4->primitive_shader_drawn = true;
 }
 
 /*

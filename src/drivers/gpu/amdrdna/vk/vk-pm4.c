@@ -44,8 +44,8 @@ amdrdna_vk_pm4_start(
 	pm4->capacity = capacity;
 	pm4->full = false;
 
-	/* What drew before this buffer is not known, so a legacy draw flushes first. */
-	pm4->primitive_shader_drawn = true;
+	/* What drew before this buffer is not known, so the first draw flushes first. */
+	pm4->vertex_stage = AMDRDNA_VK_STAGE_UNKNOWN;
 }
 
 /*

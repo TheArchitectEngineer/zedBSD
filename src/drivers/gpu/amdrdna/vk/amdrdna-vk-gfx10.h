@@ -67,7 +67,8 @@
 
 /*
  * The flush of the geometry engine (index 0), which GFX10 needs between a
- * draw by a primitive shader and a later draw by a legacy vertex program.
+ * draw by a primitive shader and a later draw by a legacy vertex program
+ * (and which RADV also sends at the first pipeline of a command buffer).
  *
  * Values referenced: Mesa 25.0.7 src/amd/registers/gfx10.json (the enum
  * VGT_EVENT_TYPE: VGT_FLUSH 36) and src/amd/vulkan/radv_cs.c
@@ -718,18 +719,22 @@
  * An indirect buffer of packets being written: its words, how many are
  * written, and its capacity.  A packet that would pass the end is not
  * written and full is set; the writer is then used no more.
- * primitive_shader_drawn says that a draw by a primitive shader may be in
- * the geometry engine since its last flush: set at the start (the buffer
- * before is not known) and by each such draw, cleared by the flush a
- * legacy vertex program's draw needs after one.
+ * vertex_stage is the kind of vertex stage the buffer's last draw used
+ * (AMDRDNA_VK_STAGE_*): unknown at the start, as the buffer before is not
+ * known; a draw by the other kind flushes the geometry engine first.
  */
 struct amdrdna_vk_pm4 {
 	uint32_t *words;
 	uint32_t count;
 	uint32_t capacity;
 	bool full;
-	bool primitive_shader_drawn;
+	uint32_t vertex_stage;
 };
+
+/* The kinds of vertex stage a buffer's draws use: not known yet, a legacy vertex program, a primitive shader. */
+#define AMDRDNA_VK_STAGE_UNKNOWN		0U
+#define AMDRDNA_VK_STAGE_LEGACY			1U
+#define AMDRDNA_VK_STAGE_PRIMITIVE		2U
 
 void amdrdna_vk_pm4_start(struct amdrdna_vk_pm4 *pm4, uint32_t *words, uint32_t capacity);
 void amdrdna_vk_pm4_packet(struct amdrdna_vk_pm4 *pm4, uint32_t operation, uint32_t body_words, bool compute);
