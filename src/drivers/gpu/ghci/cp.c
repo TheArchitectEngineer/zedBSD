@@ -1013,6 +1013,7 @@ recover(
 	uint32_t info;
 	uint32_t address;
 	uint32_t status;
+	uint32_t page_value;
 	uint64_t generation;
 	unsigned long irq;
 	int error;
@@ -1052,6 +1053,23 @@ recover(
 	    (unsigned)GHCI_FAULT_JOB_TAG(info),
 	    (info & GHCI_FAULT_PROT) != 0U ? ", refused by session protection" : "",
 	    (unsigned)address);
+
+	/*
+	 * Where the ring and the fences stood: the GPU's last fence beside the
+	 * one the fence page in host memory holds tells a fence the GPU wrote
+	 * but the host did not see from one the GPU never reached.
+	 */
+	page_value = 0U;
+	if (device->fence_page != NULL)
+		page_value = ((volatile uint32_t *)device->fence_page->view)[0];
+	kern_logf("ghci: %s: ring rptr %08x wptr %08x, fence last %08x page %08x issued %08x, irq %08x\n",
+	    device->name,
+	    (unsigned)ghci_read(device, GHCI_RING_RPTR),
+	    (unsigned)ghci_read(device, GHCI_RING_WPTR),
+	    (unsigned)ghci_read(device, GHCI_FENCE_LAST),
+	    (unsigned)page_value,
+	    (unsigned)device->fence_issued,
+	    (unsigned)ghci_read(device, GHCI_IRQ_STATUS));
 
 	/* The reset quiesces the GPU and keeps the aperture, the ring's place and the interrupt mask. */
 	ghci_write(device, GHCI_CTRL, GHCI_CTRL_RESET);
