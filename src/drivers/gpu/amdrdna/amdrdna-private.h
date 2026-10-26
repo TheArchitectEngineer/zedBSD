@@ -514,12 +514,15 @@ struct amdrdna_display {
 };
 
 /*
- * A run of VRAM that GPU work reads and writes: a blob of a session, the
- * executor's own memory, or a check's buffer.
+ * A run of memory that GPU work reads and writes: VRAM of a blob of a
+ * session, of the executor's own memory or of a check's buffer, or system
+ * memory the executor's command buffers are written in.
  *
  * vram is its offset and bytes its size in whole pages; asked is the size
  * it was made for; cpu says it lies in the CPU's window (else in the VRAM
- * only the GPU reaches).  refs counts its holders (the blob, every export and
+ * only the GPU reaches).  A run of system memory (system set) has no VRAM:
+ * dma is its contiguous run, which the CPU writes through its cache and
+ * the GPU reads coherently with it.  refs counts its holders (the blob, every export and
  * import of it, every address space it is mapped in for the executor),
  * under the address spaces' lock; the last one gives the VRAM back unless
  * kept is set: GPU work nobody could stop may still touch it.
@@ -530,6 +533,8 @@ struct amdrdna_backing {
 	uint64_t asked;
 	uint32_t refs;
 	bool cpu;
+	bool system;
+	struct drv_dma_buffer dma;
 	bool kept;
 };
 
@@ -1229,6 +1234,12 @@ amdrdna_backing_create(
 	struct amdrdna_device *device,
 	uint64_t bytes,
 	bool cpu,
+	struct amdrdna_backing **result);
+
+int
+amdrdna_backing_create_system(
+	struct amdrdna_device *device,
+	uint64_t bytes,
 	struct amdrdna_backing **result);
 
 void

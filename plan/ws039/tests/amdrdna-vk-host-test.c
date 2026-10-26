@@ -265,6 +265,13 @@ amdrdna_vk_gpu_alloc(void *owner, uint64_t bytes, void **token, uint8_t **cpu, u
 	return 0;
 }
 
+/* The executor's system-memory runs are the same fake runs. */
+int
+amdrdna_vk_gpu_alloc_system(void *owner, uint64_t bytes, void **token, uint8_t **cpu, uint64_t *va)
+{
+	return amdrdna_vk_gpu_alloc(owner, bytes, token, cpu, va);
+}
+
 void
 amdrdna_vk_gpu_free(void *owner, void *token)
 {
@@ -1130,8 +1137,8 @@ test_memory(void)
 	    "memory: buffer reply");
 	check(reply_u32(&at) == GPU_OP_GET_BUFFER_MEMORY_REQUIREMENTS && reply_u64(&at) == 1 && reply_u64(&at) == 1024 &&
 	    reply_u64(&at) == 256 && reply_u32(&at) == 3, "memory: buffer requirements (rounded to 256, either type)");
-	check(reply_u32(&at) == GPU_OP_CREATE_IMAGE && reply_u32(&at) == (uint32_t)VK_ERROR_FEATURE_NOT_PRESENT,
-	    "memory: an image of two levels is refused by name");
+	check(reply_u32(&at) == GPU_OP_CREATE_IMAGE && reply_u32(&at) == VK_SUCCESS && reply_u64(&at) == 1 && reply_u64(&at) == 0x203,
+	    "memory: an image of two levels is made (ws291-p002a: mip chains)");
 	check(reply_u32(&at) == GPU_OP_CREATE_IMAGE && reply_u32(&at) == (uint32_t)VK_ERROR_FEATURE_NOT_PRESENT,
 	    "memory: an image of a float format is refused by name");
 	image = amdrdna_vk_payload(session, I915_VK_OBJ_IMAGE, 0x201);
@@ -1577,7 +1584,7 @@ test_pipeline(const char *directory)
 	check(pass != NULL && pass->colour == 1 && pass->format == VK_FORMAT_B8G8R8A8_UNORM && pass->load_op == VK_ATTACHMENT_LOAD_OP_CLEAR,
 	    "pipeline: the render pass");
 	framebuffer = amdrdna_vk_payload(session, I915_VK_OBJ_FRAMEBUFFER, 0x40b);
-	check(framebuffer != NULL && framebuffer->width == 64 && framebuffer->view != NULL && framebuffer->view->identity == 0x408,
+	check(framebuffer != NULL && framebuffer->width == 64 && framebuffer->views[0] != NULL && framebuffer->views[0]->identity == 0x408,
 	    "pipeline: the framebuffer");
 
 	/* 0x40c the graphics pipeline as pipeline_encode_graphics() writes it. */

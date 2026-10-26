@@ -338,6 +338,7 @@ amdrdna_space_map(
 	struct amdrdna_device *device;
 	struct amdrdna_table *leaf;
 	uint64_t access;
+	uint64_t system_access;
 	uint64_t start;
 	uint64_t page;
 	uint64_t entry;
@@ -348,6 +349,15 @@ amdrdna_space_map(
 	device = space->device;
 	access = AMDRDNA_PAGE_PRESENT | AMDRDNA_PAGE_READ | AMDRDNA_PAGE_WRITE | AMDRDNA_PAGE_EXECUTE;
 	access |= AMDRDNA_PAGE_TYPE_NONCOHERENT << AMDRDNA_PAGE_TYPE_SHIFT;
+
+	/*
+	 * A page of system memory: present, readable, writable, executable, in
+	 * system memory, snooped (coherent with the CPU's caches) and not kept
+	 * in the GPU's caches, as the system-memory table maps its pages.
+	 */
+	system_access = AMDRDNA_PAGE_PRESENT | AMDRDNA_PAGE_READ | AMDRDNA_PAGE_WRITE | AMDRDNA_PAGE_EXECUTE;
+	system_access |= AMDRDNA_PAGE_SYSTEM | AMDRDNA_PAGE_COHERENT;
+	system_access |= AMDRDNA_PAGE_TYPE_UNCACHED << AMDRDNA_PAGE_TYPE_SHIFT;
 
 	/* Takes the addresses and writes one entry per page, under the space's lock. */
 	mutex_lock(&space->lock);
@@ -365,9 +375,13 @@ amdrdna_space_map(
 		if (error != 0)
 			break;
 
-		/* The page's entry: its VRAM's physical address and the bits. */
+		/* The page's entry: its VRAM's physical address and the bits, or its system page's bus address and the system bits. */
 		amdrdna_vm_split(start + page, index);
-		entry = amdrdna_vm_leaf_entry(backing->vram + page + device->frame_buffer_physical, access);
+		if (backing->system) {
+			entry = amdrdna_vm_leaf_entry(backing->dma.device_address + page, system_access);
+		} else {
+			entry = amdrdna_vm_leaf_entry(backing->vram + page + device->frame_buffer_physical, access);
+		}
 		space_table_write(device, leaf, index[SPACE_LEAF_LEVEL], entry);
 		leaf->count++;
 	}
@@ -925,6 +939,57 @@ amdrdna_backing_create(
 	return 0;
 }
 
+/*
+ * Creates a backing of system memory: a zeroed contiguous run, in whole
+ * 64 KiB steps, the CPU writes through its cache and the GPU reads
+ * coherently with it, held once by the caller.
+ *
+ * Returns 0, EINVAL for no bytes, or ENOMEM.
+ */
+int
+amdrdna_backing_create_system(
+	struct amdrdna_device *device,
+	uint64_t bytes,
+	struct amdrdna_backing **result)
+{
+	struct amdrdna_backing *backing;
+	uint64_t whole;
+	int error;
+
+	/* Some bytes, in whole steps. */
+	*result = NULL;
+	if (bytes == 0U)
+		return EINVAL;
+	whole = (bytes + SPACE_MAPPING_ALIGN - 1U) & ~(SPACE_MAPPING_ALIGN - 1U);
+
+	/* The record. */
+	backing = kern_calloc(1U, sizeof(*backing));
+	if (backing == NULL)
+		return ENOMEM;
+
+	/* The run, on the mapping boundary, where the GPU reaches it. */
+	error = drv_dma_alloc_coherent(device->dma, (size_t)whole, SPACE_MAPPING_ALIGN, &backing->dma);
+	if (error != 0) {
+		kern_free(backing);
+		return ENOMEM;
+	}
+
+	/* Cleared, so no earlier contents show. */
+	kern_memset(backing->dma.address, 0, (size_t)whole);
+
+	/* One holder: the caller. */
+	backing->bytes = whole;
+	backing->asked = bytes;
+	backing->refs = 1U;
+	backing->cpu = true;
+	backing->system = true;
+	backing->kept = false;
+
+	/* Succeeded: the backing is the caller's. */
+	*result = backing;
+	return 0;
+}
+
 /* Takes one more reference to a backing. */
 void
 amdrdna_backing_get(
@@ -967,9 +1032,12 @@ amdrdna_backing_put(
 	if (refs != 0U)
 		return;
 
-	/* The VRAM goes back unless it is kept for good. */
-	if (!kept)
+	/* The memory goes back unless it is kept for good: the system run, or the VRAM. */
+	if (!kept && backing->system) {
+		drv_dma_free_coherent(device->dma, &backing->dma);
+	} else if (!kept) {
 		amdrdna_vram_give(device, backing->cpu, backing->vram, backing->bytes);
+	}
 
 	/* The record. */
 	kern_free(backing);
@@ -991,7 +1059,7 @@ amdrdna_backing_keep(
 	spin_unlock_irqrestore(&device->spaces.lock, irq);
 }
 
-/* Reports where the CPU reads and writes a backing in its window; NULL for one outside the window. */
+/* Reports where the CPU reads and writes a backing: in its window, or its system run; NULL for VRAM outside the window. */
 volatile uint8_t *
 amdrdna_backing_cpu(
 	struct amdrdna_device *device,
@@ -1002,6 +1070,10 @@ amdrdna_backing_cpu(
 	/* Outside the window the CPU does not reach it. */
 	if (!backing->cpu)
 		return NULL;
+
+	/* A run of system memory is written through the CPU's own view of it. */
+	if (backing->system)
+		return backing->dma.address;
 
 	/* The window's view of the VRAM. */
 	cpu = amdrdna_vram_cpu(device, backing->vram);
